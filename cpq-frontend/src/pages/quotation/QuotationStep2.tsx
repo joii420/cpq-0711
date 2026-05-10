@@ -1,0 +1,1681 @@
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Popover, Button, Segmented, Alert, Space, message } from 'antd';
+import { evaluateExpression, getGlobalPathCache } from '../../utils/formulaEngine';
+import { usePathFormulaCache } from './usePathFormulaCache';
+import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey } from './useDriverExpansions';
+import type { DriftDetectionResult } from '../../types/quotation-drift';
+import { quotationDriftService } from '../../services/quotationDriftService';
+import { useAuthStore } from '../../stores/authStore';
+import LinkedExcelView from './LinkedExcelView';
+import ComparisonView from './ComparisonView';
+import { datasourceService } from '../../services/datasourceService';
+import { materialMappingService } from '../../services/materialMappingService';
+import ElementPriceHint from './components/ElementPriceHint';
+import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
+import { quotationService } from '../../services/quotationService';
+import { templateService } from '../../services/templateService';
+import './quotation.css';
+
+// 与 QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard 中的同名函数保持完全对齐。
+// BASIC_DATA / INPUT_TEXT / INPUT_NUMBER 缺一个就会让对应字段被误归为通用 INPUT，
+// 触发渲染分支用 <input> 而不是 BASIC_DATA 的只读 span。
+function normalizeFieldType(raw: string):
+  'FIXED_VALUE' | 'DATA_SOURCE' | 'INPUT' | 'INPUT_TEXT' | 'INPUT_NUMBER' | 'FORMULA' | 'BASIC_DATA' {
+  const t = (raw || '').toUpperCase();
+  if (t === 'FORMULA') return 'FORMULA';
+  if (t === 'FIXED_VALUE' || t === 'FIXED') return 'FIXED_VALUE';
+  if (t === 'DATA_SOURCE') return 'DATA_SOURCE';
+  if (t === 'BASIC_DATA') return 'BASIC_DATA';
+  if (t === 'INPUT_TEXT') return 'INPUT_TEXT';
+  if (t === 'INPUT_NUMBER') return 'INPUT_NUMBER';
+  return 'INPUT';
+}
+
+export interface ComponentField {
+  name: string;
+  field_type: 'FIXED_VALUE' | 'DATA_SOURCE' | 'INPUT' | 'INPUT_TEXT' | 'INPUT_NUMBER' | 'FORMULA' | 'BASIC_DATA';
+  content?: string;
+  is_amount?: boolean;
+  is_subtotal?: boolean;
+  is_required?: boolean;
+  formula_name?: string;  // FORMULA fields: which formula definition to use
+  datasource_binding?: {
+    datasource_id: string;
+    datasource_code?: string;
+    datasource_name?: string;
+    param_bindings?: { param_code: string; param_name: string; bound_field_name: string }[];
+  };
+  /** BASIC_DATA 字段绑定的 BNF 路径 */
+  basic_data_path?: string;
+  sort_order?: number;
+  // Backward-compat aliases
+  key?: string;
+  label?: string;
+}
+
+export interface ComponentFormula {
+  name: string;
+  expression: any[];
+  result_type?: string;
+}
+
+export interface ComponentDataItem {
+  componentId: string;
+  componentCode: string;
+  componentType?: string;  // 'NORMAL' | 'SUBTOTAL'
+  tabName: string;
+  fields: ComponentField[];
+  formulas: ComponentFormula[];
+  formulaAssignments?: Record<string, string>;  // fieldIndex -> formulaName, from template (legacy)
+  rows: Record<string, any>[];
+  subtotal: number;
+  /** Y1.5 行驱动 BNF 路径(从模板快照透传)— 非空时 Step2 按 expand-driver 返回的 N 行渲染 */
+  dataDriverPath?: string;
+}
+
+export interface LineItem {
+  productId: string;
+  productName: string;
+  productPartNo: string;
+  /** PRD: 产品卡片优先用"客户视角"展示——customer_part_name + customer_product_no
+   *  来自 mat_customer_part_mapping 按 (customerId, hfPartNo) 反查；缺失则回退 productName/productPartNo。 */
+  customerPartName?: string;
+  customerProductNo?: string;
+  customerDrawingNo?: string;
+  /** PRD: 卡片右侧"生产料号"小卡片——按 productPartNo 查 mat_part 主档 */
+  hfPartInfo?: {
+    partNo?: string;
+    partName?: string;
+    specification?: string;
+    sizeInfo?: string;
+    statusCode?: string;
+  };
+  templateId: string;
+  templateName: string;
+  productAttributeValues: Record<string, any>;
+  productAttributes?: { name: string; field_type: string; required: boolean; default_value?: string; source?: string }[];
+  componentData: ComponentDataItem[];
+  subtotal: number;
+  subtotalFormula?: any[];  // Token array from template.subtotal_formula
+}
+
+export type LineItemUpdater = Partial<LineItem> | ((prev: LineItem) => Partial<LineItem>);
+
+export interface QuotationStep2Props {
+  lineItems: LineItem[];
+  onAddProduct: () => void;
+  onRemoveProduct: (index: number) => void;
+  onUpdateLineItem: (index: number, data: LineItemUpdater) => void;
+  /** 批量从基础数据导入产品 — 由父组件实现 setLineItems(prev => [...prev, ...newItems]) */
+  onAddBatch?: (newItems: LineItem[]) => void;
+  customerId?: string;
+  quotationId?: string;
+  /** 已绑定的客户报价模板 ID(BasicDataImportV5ToQuotation 创建时写入 quotation) */
+  customerTemplateId?: string;
+  /** V72：核价模板 ID(template 表 templateKind='COSTING')。
+   *  「核价单」视图的产品卡片按这套组件渲染；与 customerTemplateId 同等地位，但用于不同视图。 */
+  costingCardTemplateId?: string;
+  /** 报价漂移检测结果(来自报价单 getById 返回的 driftDetection 字段) */
+  driftDetection?: DriftDetectionResult;
+  /** 刷新报价单后的回调(用于横幅刷新按钮) */
+  onRefreshQuotation?: () => void;
+}
+
+// ─── BASIC_DATA path 求值结果格式化 ─────────────────────────────────────────
+// 后端 FormulaEngine `{path}` 返回值可能是: number / string / boolean / null /
+// Map(单行多列) / List<Map>(多行)。BASIC_DATA 字段是单元格语义,这里把任意类型
+// 投影成显示字符串。null/empty → 返回 null(UI 显示 —);多值 → 第一个 + "(+N)"提示。
+function formatPathValue(v: any): string | null {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (typeof v === 'string') return v;
+  if (Array.isArray(v)) {
+    if (v.length === 0) return null;
+    const first = formatPathValue(v[0]);
+    if (v.length === 1) return first;
+    return first ? `${first} (共 ${v.length} 项)` : `共 ${v.length} 项`;
+  }
+  if (typeof v === 'object') {
+    // 取第一个非 null 字段值
+    for (const k of Object.keys(v)) {
+      if (v[k] != null && v[k] !== '') {
+        const sub = formatPathValue(v[k]);
+        if (sub) return sub;
+      }
+    }
+    // 全为空 → 返回 JSON 截短
+    const json = JSON.stringify(v);
+    return json.length > 30 ? json.slice(0, 30) + '...' : json;
+  }
+  return String(v);
+}
+
+// ─── Formula helpers ─────────────────────────────────────────────────────────
+
+/** Resolve which formula definition applies to a FORMULA field */
+function resolveFormula(
+  comp: ComponentDataItem,
+  formulaFieldName: string
+): ComponentFormula | undefined {
+  if (!comp.formulas) return undefined;
+
+  // 1. Template-level binding
+  const fieldIndex = comp.fields.findIndex(f => (f.name || f.key) === formulaFieldName && f.field_type === 'FORMULA');
+  if (fieldIndex >= 0 && comp.formulaAssignments) {
+    const assignedName = comp.formulaAssignments[String(fieldIndex)];
+    if (assignedName) {
+      const found = comp.formulas.find(f => f.name === assignedName);
+      if (found) return found;
+    }
+  }
+
+  // 2. Exact name match
+  const byName = comp.formulas.find(f => f.name === formulaFieldName);
+  if (byName) return byName;
+
+  // 3. Positional fallback
+  if (fieldIndex >= 0) {
+    const posIdx = comp.fields
+      .filter(f => f.field_type === 'FORMULA')
+      .findIndex(f => (f.name || f.key) === formulaFieldName);
+    if (posIdx >= 0 && posIdx < comp.formulas.length) return comp.formulas[posIdx];
+  }
+  return undefined;
+}
+
+/** Get dependency field names from a formula expression (only 'field' type tokens) */
+function getFormulaDeps(formula: ComponentFormula): string[] {
+  if (!formula.expression) return [];
+  return formula.expression
+    .filter((t: any) => t.type === 'field' && t.value)
+    .map((t: any) => t.value as string);
+}
+
+/**
+ * Compute ALL formula fields for a single row in topological (dependency) order.
+ * Returns a map of fieldName -> computed value.
+ */
+function computeAllFormulas(
+  comp: ComponentDataItem,
+  row: Record<string, any>,
+  allComponentSubtotals?: Record<string, number>,
+  quotationFields?: Record<string, number>,
+  pathCache?: Record<string, number>,
+  partNo?: string,
+  // Y1.5 driver 行级 BASIC_DATA 值：key = "{path}", value = 该行该路径的标量/列表。
+  // 提供后，BASIC_DATA 字段优先按当前行取值；缺失再回退到 partNo 维度的 globalPathCache。
+  // 不传则保持旧行为（第一行公式覆盖全行）。
+  basicDataValues?: Record<string, any>,
+): Record<string, number | null> {
+  if (!comp.fields || !comp.formulas) return {};
+
+  // Collect FORMULA fields and their resolved formulas
+  const formulaFields: { name: string; formula: ComponentFormula }[] = [];
+  for (const f of comp.fields) {
+    if (f.field_type !== 'FORMULA') continue;
+    const name = f.name || f.key || '';
+    const formula = resolveFormula(comp, name);
+    if (formula) formulaFields.push({ name, formula });
+  }
+  if (formulaFields.length === 0) return {};
+
+  // Build dependency graph among formula fields
+  const formulaNameSet = new Set(formulaFields.map(ff => ff.name));
+  const deps: Record<string, string[]> = {};
+  for (const ff of formulaFields) {
+    deps[ff.name] = getFormulaDeps(ff.formula).filter(d => formulaNameSet.has(d));
+  }
+
+  // Topological sort (Kahn's algorithm)
+  const inDegree: Record<string, number> = {};
+  for (const ff of formulaFields) inDegree[ff.name] = 0;
+  for (const ff of formulaFields) {
+    for (const dep of deps[ff.name]) {
+      inDegree[dep] = (inDegree[dep] || 0); // ensure dep exists
+    }
+  }
+  // inDegree counts how many formulas depend on each
+  // Actually we need: for each formula, how many of its deps are not yet computed
+  const revInDegree: Record<string, number> = {};
+  for (const ff of formulaFields) revInDegree[ff.name] = deps[ff.name].length;
+  const queue: string[] = formulaFields.filter(ff => revInDegree[ff.name] === 0).map(ff => ff.name);
+  const order: string[] = [];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    order.push(cur);
+    // Find formulas that depend on cur
+    for (const ff of formulaFields) {
+      if (deps[ff.name].includes(cur)) {
+        revInDegree[ff.name]--;
+        if (revInDegree[ff.name] === 0) queue.push(ff.name);
+      }
+    }
+  }
+  // Any remaining (cycle) — add them at end, they'll get null
+  for (const ff of formulaFields) {
+    if (!order.includes(ff.name)) order.push(ff.name);
+  }
+
+  // Evaluate in order, feeding results into fieldValues
+  const fieldValues: Record<string, number> = {};
+  for (const f of comp.fields) {
+    if (f.field_type !== 'FORMULA') {
+      const key = f.name || f.key || '';
+      // BASIC_DATA 字段：优先用本行 driver 展开值（按 {path} 索引），
+      // 否则回退到 partNo 级 path cache。后者是聚合多行结果，对于 driver
+      // 展开（如 mat_bom 元素行）会让所有行算出同一个值——必须用前者。
+      if (f.field_type === 'BASIC_DATA' && f.basic_data_path && partNo) {
+        let cached: any = undefined;
+        if (basicDataValues) {
+          const lookupKey = bnfDriverLookupKey(f.basic_data_path);
+          if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
+            cached = basicDataValues[lookupKey];
+          }
+        }
+        if (cached === undefined) {
+          const cacheKey = `${partNo}::${f.basic_data_path}`;
+          const cache = pathCache ?? (getGlobalPathCache() as Record<string, any>);
+          cached = cache[cacheKey];
+        }
+        // 数值直接用；字符串/对象通过 formatPathValue 取首值再 parseFloat
+        let num: number | null = null;
+        if (typeof cached === 'number') {
+          num = cached;
+        } else if (cached != null) {
+          const formatted = formatPathValue(cached);
+          if (formatted != null) {
+            const parsed = parseFloat(formatted);
+            if (!isNaN(parsed)) num = parsed;
+          }
+        }
+        fieldValues[key] = num ?? 0;  // 未求值或非数值时占 0,UI 重渲染后刷新
+        continue;
+      }
+      // FIXED_VALUE 字段如果当前行没值（driver 展开行 / 旧 row 回读未经 handleAddRow），
+      // 用 field.content 兜底，避免公式把 材料损耗 这类配置型字段按 0 算。
+      let raw: any = row[key];
+      if ((raw === undefined || raw === null || raw === '')
+          && f.field_type === 'FIXED_VALUE'
+          && f.content != null && f.content !== '') {
+        raw = f.content;
+      }
+      const val = parseFloat(raw);
+      if (!isNaN(val)) fieldValues[key] = val;
+    }
+  }
+
+  const results: Record<string, number | null> = {};
+  for (const name of order) {
+    const ff = formulaFields.find(f => f.name === name)!;
+    try {
+      const val = evaluateExpression(
+        ff.formula.expression, fieldValues,
+        allComponentSubtotals || {}, undefined, quotationFields,
+        pathCache, partNo, basicDataValues
+      );
+      results[name] = val;
+      fieldValues[name] = val; // feed result for downstream formulas
+    } catch {
+      results[name] = null;
+    }
+  }
+  return results;
+}
+
+/** Compute a single formula field value (convenience wrapper using computeAllFormulas cache) */
+function computeFormula(
+  comp: ComponentDataItem,
+  formulaFieldName: string,
+  row: Record<string, any>,
+  allComponentSubtotals?: Record<string, number>,
+  _formulaCache?: Record<string, number | null>,
+  quotationFields?: Record<string, number>,
+  pathCache?: Record<string, number>,
+  partNo?: string,
+): number | null {
+  // Use cache if provided (from computeAllFormulas)
+  if (_formulaCache && formulaFieldName in _formulaCache) return _formulaCache[formulaFieldName];
+
+  // Fallback: compute all and return the requested one
+  const all = computeAllFormulas(comp, row, allComponentSubtotals, quotationFields, pathCache, partNo);
+  return all[formulaFieldName] ?? null;
+}
+
+/** FIXED_VALUE 默认值兜底 — 与 effectiveRows 派生处保持完全一致 */
+function fillFixedDefaults(
+  fields: ComponentField[],
+  raw: Record<string, any>,
+): Record<string, any> {
+  let cloned: Record<string, any> | null = null;
+  for (const f of fields) {
+    if (f.field_type !== 'FIXED_VALUE') continue;
+    if (f.content == null || f.content === '') continue;
+    const k = f.name || f.key || '';
+    if (!k) continue;
+    if (raw[k] !== undefined && raw[k] !== null && raw[k] !== '') continue;
+    if (!cloned) cloned = { ...raw };
+    cloned[k] = f.content;
+  }
+  return cloned ?? raw;
+}
+
+function computeTabSubtotal(
+  comp: ComponentDataItem,
+  allComponentSubtotals?: Record<string, number>,
+  quotationFields?: Record<string, number>,
+  pathCache?: Record<string, number>,
+  partNo?: string,
+  // Y1.5：driver 行展开。提供后按 rowCount 迭代，每行用各自的 basicDataValues
+  // —— 与 ProductCard 渲染层 effectiveRows 一致；不传则退化为按 comp.rows 迭代（旧行为）。
+  driverExpansion?: import('./useDriverExpansions').DriverExpansion,
+): number {
+  if (!comp?.fields || !comp?.rows) return 0;
+  const subtotalField = comp.fields.find(f => f.is_subtotal);
+  if (!subtotalField) return 0;
+  // 与渲染层 effectiveRows 完全一致: driver 展开 + 用户追加行并存,
+  // V126.1: 取 max(driver.rowCount, comp.rows.length), 让用户追加行也参与列小计.
+  const useDriver = driverExpansion && driverExpansion.rowCount > 0;
+  const driverCount = useDriver ? driverExpansion!.rowCount : 0;
+  const rowCount = useDriver
+    ? Math.max(driverCount, comp.rows.length)
+    : comp.rows.length;
+  let sum = 0;
+  for (let i = 0; i < rowCount; i++) {
+    const baseRow = comp.rows[i] ?? {};
+    const row = fillFixedDefaults(comp.fields, baseRow);
+    const basicDataValues = (useDriver && i < driverCount) ? driverExpansion!.rows[i]?.basicDataValues : undefined;
+    const cache = computeAllFormulas(
+      comp, row, allComponentSubtotals, quotationFields, pathCache, partNo, basicDataValues,
+    );
+    sum += cache[subtotalField.name] ?? 0;
+  }
+  return sum;
+}
+
+function computeProductSubtotal(
+  item: LineItem,
+  // 让 caller 把 driverExpansions / customerId 透传进来 —— 不传则退化为旧行为（仅 comp.rows）
+  driverExpansions?: import('./useDriverExpansions').DriverExpansionMap,
+  customerId?: string,
+): number {
+  if (!item.componentData || item.componentData.length === 0) return item.subtotal || 0;
+
+  const partNo = item.productPartNo;
+  const lookupExpansion = (componentId?: string) => {
+    if (!driverExpansions || !partNo || !componentId) return undefined;
+    const k = driverExpansionKey(partNo, componentId, customerId);
+    return driverExpansions[k];
+  };
+
+  // Compute NORMAL component subtotals first
+  const componentSubtotals: Record<string, number> = {};
+  for (const comp of item.componentData) {
+    if (!comp?.fields || comp.componentType === 'SUBTOTAL') continue;
+    // partNo + driverExpansion 一起传 —— BASIC_DATA 字段才能按行取值，
+    // 不然落到全局 path cache 第一项 / 当 0 算（产品小计 156.80 vs 列小计 750.80 的根因）
+    const subtotal = computeTabSubtotal(
+      comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp.componentId),
+    );
+    if (comp.componentId) componentSubtotals[comp.componentId] = subtotal;
+    if (comp.componentCode) componentSubtotals[comp.componentCode] = subtotal;
+    componentSubtotals[comp.tabName] = subtotal;
+  }
+
+  // Find SUBTOTAL component and use its first formula as product subtotal
+  const subtotalComp = item.componentData.find(c => c.componentType === 'SUBTOTAL');
+  if (subtotalComp && subtotalComp.formulas && subtotalComp.formulas.length > 0) {
+    const formula = subtotalComp.formulas[0];
+    if (formula.expression && formula.expression.length > 0) {
+      // Build NUMBER product attribute values
+      const productAttrs: Record<string, number> = {};
+      for (const attr of item.productAttributes || []) {
+        if (attr.field_type === 'NUMBER') {
+          const val = parseFloat(item.productAttributeValues?.[attr.name]);
+          if (!isNaN(val)) productAttrs[attr.name] = val;
+        }
+      }
+      try {
+        return evaluateExpression(formula.expression, {}, componentSubtotals, productAttrs);
+      } catch {
+        return 0;
+      }
+    }
+  }
+
+  // Fallback: use legacy subtotalFormula if present
+  if (item.subtotalFormula && item.subtotalFormula.length > 0) {
+    const productAttrs: Record<string, number> = {};
+    for (const attr of item.productAttributes || []) {
+      if (attr.field_type === 'NUMBER') {
+        const val = parseFloat(item.productAttributeValues?.[attr.name]);
+        if (!isNaN(val)) productAttrs[attr.name] = val;
+      }
+    }
+    try {
+      return evaluateExpression(item.subtotalFormula, {}, componentSubtotals, productAttrs);
+    } catch {
+      return 0;
+    }
+  }
+
+  // Final fallback: sum of all component subtotals
+  return Object.values(componentSubtotals).reduce((s, v) => s + v, 0);
+}
+
+// ─── ProductCard ─────────────────────────────────────────────────────────────
+
+interface ProductCardProps {
+  item: LineItem;
+  index: number;
+  onRemove: () => void;
+  onUpdate: (data: LineItemUpdater) => void;
+  customerId?: string;
+  /** Y1.5 行驱动展开结果(由父级 useDriverExpansions 返回) */
+  driverExpansions?: import('./useDriverExpansions').DriverExpansionMap;
+}
+
+const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions }) => {
+  const [activeTab, setActiveTab] = useState(0);
+  const [dsLoading, setDsLoading] = useState<Record<string, boolean>>({});
+  const [dsErrors, setDsErrors] = useState<Record<string, string>>({});
+  // Material match state for border coloring
+  const [matchStatus, setMatchStatus] = useState<'MATCHED_Y' | 'MATCHED_N' | 'NO_MATCH' | null>(null);
+  const [matchInfo, setMatchInfo] = useState<any>(null);
+
+  // Match customerPartNo when customerId is available
+  useEffect(() => {
+    const customerPartNo = (item as any).customerPartNo;
+    if (!customerId || !customerPartNo) return;
+    let cancelled = false;
+    materialMappingService.match(customerId, customerPartNo)
+      .then((res: any) => {
+        if (cancelled) return;
+        const matched = res.data || res;
+        if (matched && matched.materialNo) {
+          const status = matched.statusCode === 'Y' ? 'MATCHED_Y' : 'MATCHED_N';
+          setMatchStatus(status);
+          setMatchInfo(matched);
+        } else {
+          setMatchStatus('NO_MATCH');
+          setMatchInfo(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) { setMatchStatus('NO_MATCH'); setMatchInfo(null); }
+      });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerId, (item as any).customerPartNo]);
+
+  // 300ms debounce timers per blur event
+  const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // 5-minute cache: cacheKey → { value, timestamp }
+  const dsCache = useRef<Map<string, { value: any; timestamp: number }>>(new Map());
+
+  const handleAttrChange = (fieldKey: string, value: string) => {
+    onUpdate((prevItem: LineItem) => ({
+      productAttributeValues: {
+        ...prevItem.productAttributeValues,
+        [fieldKey]: value,
+      },
+    }));
+  };
+
+  // 三个 row-mutator 全部使用函数式 setState（onUpdate(prev => ...)），
+  // 避免与 driver 展开异步回填、autoSave 定时保存、DATA_SOURCE auto-query
+  // 等异步事件竞争时把旧版本 item.componentData 写回，造成"看着输入了但只
+  // 留下一两次按键"的 race（典型表现：产品卡 A 的多行被保住，产品卡 B
+  // 同样操作只剩 1 行）。
+  const handleRowChange = (
+    tabIndex: number,
+    rowIndex: number,
+    fieldKey: string,
+    value: any
+  ) => {
+    onUpdate((prevItem: LineItem) => ({
+      componentData: prevItem.componentData.map((comp, ci) => {
+        if (ci !== tabIndex) return comp;
+        // 在 driver 展开模式下，UI 行数 (rowCount) 可能 > comp.rows.length。
+        // rowIndex 越界则先补齐空行再 patch。
+        let rows = comp.rows;
+        if (rowIndex >= rows.length) {
+          const filler = Array.from({ length: rowIndex - rows.length + 1 }, () => ({}));
+          rows = [...rows, ...filler];
+        }
+        const newRows = rows.map((row, ri) =>
+          ri !== rowIndex ? row : { ...row, [fieldKey]: value }
+        );
+        return { ...comp, rows: newRows };
+      }),
+    }));
+  };
+
+  const handleDeleteRow = (tabIndex: number, rowIndex: number) => {
+    onUpdate((prevItem: LineItem) => ({
+      componentData: prevItem.componentData.map((comp, ci) => {
+        if (ci !== tabIndex) return comp;
+        return { ...comp, rows: comp.rows.filter((_, ri) => ri !== rowIndex) };
+      }),
+    }));
+  };
+
+  const handleAddRow = (tabIndex: number) => {
+    onUpdate((prevItem: LineItem) => ({
+      componentData: prevItem.componentData.map((comp, ci) => {
+        if (ci !== tabIndex) return comp;
+        const emptyRow: Record<string, any> = { row_index: comp.rows.length };
+        comp.fields.forEach(f => {
+          const key = f.name || f.key || '';
+          if (f.field_type === 'FIXED_VALUE') {
+            emptyRow[key] = f.content ?? '';
+          } else if (f.field_type === 'FORMULA') {
+            // no stored value
+          } else if (f.field_type === 'DATA_SOURCE') {
+            emptyRow[key] = null;
+          } else {
+            emptyRow[key] = '';
+          }
+        });
+        return { ...comp, rows: [...comp.rows, emptyRow] };
+      }),
+    }));
+  };
+
+  // Functional row update: reads latest state from parent, only patches one field.
+  // This prevents stale-closure overwrites when DS query returns after user has edited other fields.
+  const patchRowField = useCallback((
+    tabIndex: number,
+    rowIndex: number,
+    fieldKey: string,
+    value: any,
+  ) => {
+    onUpdate((prevItem: LineItem) => ({
+      componentData: prevItem.componentData.map((comp, ci) => {
+        if (ci !== tabIndex) return comp;
+        let rows = comp.rows;
+        if (rowIndex >= rows.length) {
+          const filler = Array.from({ length: rowIndex - rows.length + 1 }, () => ({}));
+          rows = [...rows, ...filler];
+        }
+        const newRows = rows.map((row, ri) =>
+          ri !== rowIndex ? row : { ...row, [fieldKey]: value }
+        );
+        return { ...comp, rows: newRows };
+      }),
+    }));
+  }, [onUpdate]);
+
+  // Execute a single DATA_SOURCE field query for a specific row
+  const executeDsQuery = useCallback(async (
+    tabIndex: number,
+    rowIndex: number,
+    dsField: ComponentField,
+  ) => {
+    const binding = dsField.datasource_binding!;
+    const paramBindings = binding.param_bindings || [];
+    const comp = item.componentData[tabIndex];
+    if (!comp) return;
+
+    // Collect all param values — all must be filled
+    const params: Record<string, string> = {};
+    let allFilled = true;
+    for (const pb of paramBindings) {
+      const val = comp.rows[rowIndex]?.[pb.bound_field_name];
+      if (val == null || val === '') { allFilled = false; break; }
+      params[pb.param_code] = String(val);
+    }
+    if (!allFilled) return;
+
+    const dsKey = dsField.name || dsField.key || '';
+    const loadingKey = `${tabIndex}-${rowIndex}-${dsField.name}`;
+    const errorKey = loadingKey;
+
+    // Check 5-minute cache
+    const cacheKey = `${binding.datasource_id}-${JSON.stringify(params)}`;
+    const cached = dsCache.current.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
+      patchRowField(tabIndex, rowIndex, dsKey, cached.value);
+      setDsErrors(prev => {
+        const next = { ...prev };
+        delete next[errorKey];
+        return next;
+      });
+      return;
+    }
+
+    // Show loading state
+    setDsLoading(prev => ({ ...prev, [loadingKey]: true }));
+    setDsErrors(prev => {
+      const next = { ...prev };
+      delete next[errorKey];
+      return next;
+    });
+
+    try {
+      const res = await datasourceService.execute(binding.datasource_id, { testParams: params });
+
+      let result: string | number | null = null;
+      const payload = res?.data;
+      if (payload != null && typeof payload === 'object') {
+        result = payload.extractedValue ?? payload.rawResponse ?? null;
+      } else if (typeof payload === 'string' || typeof payload === 'number') {
+        result = payload;
+      }
+      if (result != null && typeof result === 'object') {
+        result = String(result);
+      }
+
+      dsCache.current.set(cacheKey, { value: result, timestamp: Date.now() });
+      // Use functional update — reads latest row from state, won't overwrite user's concurrent edits
+      patchRowField(tabIndex, rowIndex, dsKey, result);
+    } catch (e: any) {
+      setDsErrors(prev => ({ ...prev, [errorKey]: e.message || '查询失败' }));
+      patchRowField(tabIndex, rowIndex, dsKey, null);
+    } finally {
+      setDsLoading(prev => ({ ...prev, [loadingKey]: false }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.componentData, patchRowField]);
+
+  const handleInputBlur = (tabIndex: number, rowIndex: number, fieldName: string) => {
+    const timerKey = `${tabIndex}-${rowIndex}-${fieldName}`;
+    if (debounceTimers.current[timerKey]) {
+      clearTimeout(debounceTimers.current[timerKey]);
+    }
+    debounceTimers.current[timerKey] = setTimeout(() => {
+      const comp = item.componentData[tabIndex];
+      if (!comp) return;
+
+      for (const dsField of comp.fields) {
+        if (dsField.field_type !== 'DATA_SOURCE' || !dsField.datasource_binding) continue;
+        const binding = dsField.datasource_binding;
+        const paramBindings = binding.param_bindings || [];
+
+        if (paramBindings.length > 0) {
+          const paramBinding = paramBindings.find(p => p.bound_field_name === fieldName);
+          if (!paramBinding) continue;
+        }
+
+        executeDsQuery(tabIndex, rowIndex, dsField);
+      }
+    }, 300);
+  };
+
+  // Auto-trigger parameterless DATA_SOURCE queries when rows exist
+  const triggeredNoParam = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    (item.componentData ?? []).forEach((comp, tabIndex) => {
+      const fields = comp?.fields ?? [];
+      const rows = comp?.rows ?? [];
+      const noParamDsFields = fields.filter(
+        f => f.field_type === 'DATA_SOURCE' &&
+          f.datasource_binding &&
+          (!f.datasource_binding.param_bindings || f.datasource_binding.param_bindings.length === 0)
+      );
+      if (noParamDsFields.length === 0) return;
+
+      rows.forEach((_row, rowIndex) => {
+        for (const dsField of noParamDsFields) {
+          const key = `${tabIndex}-${rowIndex}-${dsField.name}`;
+          if (triggeredNoParam.current.has(key)) continue;
+          triggeredNoParam.current.add(key);
+          executeDsQuery(tabIndex, rowIndex, dsField);
+        }
+      });
+    });
+  }, [item.componentData, executeDsQuery]);
+
+  const formatCurrency = (val: number) =>
+    `¥ ${(val || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  // Filter out SUBTOTAL components from tabs (they render as product subtotal)
+  const normalComponents = (item.componentData ?? []).filter(c => c?.componentType !== 'SUBTOTAL');
+  const activeComponent = normalComponents[activeTab];
+
+  // Y1.5: 当前 active 组件的 driver 展开结果(可空)
+  // 不依赖 dataDriverPath 字段(可能在快照里缺失) — 直接按 rowCount 判断是否走展开渲染
+  const activeDriverExpansion = (() => {
+    if (!activeComponent || !item.productPartNo) return undefined;
+    if (!activeComponent.componentId) return undefined;
+    const key = driverExpansionKey(item.productPartNo, activeComponent.componentId, customerId);
+    return driverExpansions?.[key];
+  })();
+
+  // Compute cross-component subtotals for formula evaluation in the active tab
+  // Key by componentId (UUID), componentCode, and tabName for maximum compatibility
+  const allComponentSubtotals: Record<string, number> = {};
+  for (const comp of item.componentData) {
+    // partNo + driverExpansion 一起传给 computeTabSubtotal —— 让含 BASIC_DATA 字段的公式
+    // 按 rowCount 迭代 driver 展开行，每行用各自的 basicDataValues。
+    // 不传 driverExpansion 时会退化为按 comp.rows 迭代 + 全局 path cache（旧行为，含量取首值），
+    // 列小计与产品小计因此曾经各算各的（见反模式 AP-18）。
+    const expansion = (item.productPartNo && comp.componentId)
+      ? driverExpansions?.[driverExpansionKey(item.productPartNo, comp.componentId, customerId)]
+      : undefined;
+    const subtotal = computeTabSubtotal(
+      comp, allComponentSubtotals, undefined, undefined, item.productPartNo, expansion,
+    );
+    if (comp.componentId) allComponentSubtotals[comp.componentId] = subtotal;
+    if (comp.componentCode) allComponentSubtotals[comp.componentCode] = subtotal;
+    allComponentSubtotals[comp.tabName] = subtotal;
+  }
+
+  // Dynamic product attribute fields from template definition
+  const attrFields = item.productAttributes || [];
+
+  const borderColor =
+    matchStatus === 'MATCHED_Y' ? '#52c41a' :
+    matchStatus === 'MATCHED_N' ? '#ff4d4f' :
+    matchStatus === 'NO_MATCH' ? '#ff4d4f' :
+    undefined;
+
+  const matchPopoverContent = matchInfo ? (
+    <div style={{ minWidth: 200 }}>
+      <div><b>内部料号:</b> {matchInfo.materialNo}</div>
+      <div><b>名称:</b> {matchInfo.name || matchInfo.materialName}</div>
+      <div><b>规格:</b> {matchInfo.specification || '-'}</div>
+      <div><b>状态:</b> {matchInfo.statusCode === 'Y' ? '可生产' : '停产'}</div>
+    </div>
+  ) : (
+    <div>未找到匹配的内部料号</div>
+  );
+
+  return (
+    <div
+      className="qt-product-card"
+      style={borderColor ? { border: `2px solid ${borderColor}`, borderRadius: 6 } : undefined}
+    >
+      {/* Card Header — 客户视角优先 */}
+      <div className="qt-card-header">
+        <div className="qt-card-header-left">
+          <span className="qt-product-name">
+            {item.customerPartName || item.productName || `产品 ${index + 1}`}
+          </span>
+          {(item.customerProductNo || item.productPartNo) && (
+            <span className="qt-sku-badge">
+              {item.customerProductNo ? `客户产品编号: ${item.customerProductNo}` : `料号: ${item.productPartNo}`}
+            </span>
+          )}
+          {item.templateName && (
+            <span className="qt-template-badge">模板: {item.templateName}</span>
+          )}
+          {matchStatus && (
+            <Popover content={matchPopoverContent} title="料号信息" trigger="click">
+              <Button
+                size="small"
+                type="link"
+                style={{ padding: '0 4px', color: borderColor, fontSize: 12 }}
+              >
+                料号信息
+              </Button>
+            </Popover>
+          )}
+        </div>
+        <div className="qt-card-header-right" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {item.productPartNo && (
+            <Popover
+              title="生产料号"
+              trigger="click"
+              placement="bottomRight"
+              content={
+                <div style={{ minWidth: 280, fontSize: 13 }}>
+                  <div style={{ marginBottom: 6 }}>
+                    <span style={{ color: '#8c8c8c' }}>料号：</span>
+                    <span style={{ fontFamily: 'monospace' }}>{item.hfPartInfo?.partNo || item.productPartNo}</span>
+                  </div>
+                  <div style={{ marginBottom: 6 }}>
+                    <span style={{ color: '#8c8c8c' }}>名称：</span>
+                    <span>{item.hfPartInfo?.partName || '—'}</span>
+                  </div>
+                  <div style={{ marginBottom: 6 }}>
+                    <span style={{ color: '#8c8c8c' }}>规格：</span>
+                    <span>{item.hfPartInfo?.specification || '—'}</span>
+                  </div>
+                  <div style={{ marginBottom: 6 }}>
+                    <span style={{ color: '#8c8c8c' }}>尺寸：</span>
+                    <span>{item.hfPartInfo?.sizeInfo || '—'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#8c8c8c' }}>生产状态：</span>
+                    <span>{item.hfPartInfo?.statusCode || '—'}</span>
+                  </div>
+                </div>
+              }
+            >
+              <span
+                style={{
+                  background: '#e6f4ff',
+                  color: '#0958d9',
+                  border: '1px solid #91caff',
+                  borderRadius: 4,
+                  padding: '2px 10px',
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                  cursor: 'pointer',
+                }}
+                title="点击查看生产料号详情"
+              >
+                生产料号: {item.productPartNo}
+              </span>
+            </Popover>
+          )}
+          <button className="qt-action-btn delete" type="button" onClick={onRemove}>
+            删除
+          </button>
+        </div>
+      </div>
+
+      {/* Product Attributes */}
+      {attrFields.length > 0 && (
+        <div className="qt-product-attrs">
+          <div className="qt-attrs-title">产品属性</div>
+          <div className="qt-attrs-grid">
+            {attrFields.map(field => {
+              const isReadonly = field.field_type === 'FIXED_VALUE' || (field.source && field.source !== 'CUSTOM');
+              const inputType = field.field_type === 'NUMBER' ? 'number' : 'text';
+              return (
+                <div key={field.name} className="qt-attr-field">
+                  <label className="qt-attr-label">
+                    {field.name}
+                    {field.required && <span style={{ color: '#e53e3e', marginLeft: 2 }}>*</span>}
+                  </label>
+                  {isReadonly ? (
+                    <span
+                      className="qt-attr-input"
+                      style={{ background: '#f5f5f5', color: '#595959', cursor: 'default', display: 'inline-block', lineHeight: '28px' }}
+                    >
+                      {item.productAttributeValues?.[field.name] || '—'}
+                    </span>
+                  ) : field.field_type === 'TEXTAREA' ? (
+                    <textarea
+                      className="qt-attr-input"
+                      rows={2}
+                      placeholder={field.default_value ?? ''}
+                      value={item.productAttributeValues?.[field.name] ?? ''}
+                      onChange={e => handleAttrChange(field.name, e.target.value)}
+                      style={{ resize: 'vertical' }}
+                    />
+                  ) : (
+                    <input
+                      className="qt-attr-input"
+                      type={inputType}
+                      step={inputType === 'number' ? 'any' : undefined}
+                      placeholder={field.default_value ?? ''}
+                      value={item.productAttributeValues?.[field.name] ?? ''}
+                      onChange={e => handleAttrChange(field.name, e.target.value)}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Component Tabs */}
+      {normalComponents.length > 0 ? (
+        <div className="qt-tab-section">
+          {/* Tab Header */}
+          <div className="qt-tab-header">
+            {normalComponents.map((comp, ci) => (
+              <button
+                key={`tab-${ci}-${comp.componentId}`}
+                className={`qt-tab-btn${activeTab === ci ? ' active' : ''}`}
+                type="button"
+                onClick={() => setActiveTab(ci)}
+              >
+                {comp.tabName}
+              </button>
+            ))}
+          </div>
+
+          {/* Active Tab Content */}
+          {activeComponent && activeComponent.fields && (
+            <div>
+              <table className="qt-cost-table">
+                <thead>
+                  <tr>
+                    {activeComponent.fields.map(field => (
+                      <th key={field.name || field.key}>{field.label || field.name}</th>
+                    ))}
+                    <th style={{ width: 40 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    // Y1.5: 当 driver 展开存在且 rowCount > 0 → driver 行 + 用户追加行并存。
+                    // V126.1: 行数 = max(driver.rowCount, comp.rows.length), 让 handleAddRow 追加的
+                    //         user-only 行也能渲染、删除. driver 绑定行(i < rowCount) 锁定删除.
+                    const useDriver = activeDriverExpansion && activeDriverExpansion.rowCount > 0;
+                    const driverCount = useDriver ? activeDriverExpansion!.rowCount : 0;
+                    const effectiveCount = useDriver
+                      ? Math.max(driverCount, activeComponent.rows.length)
+                      : activeComponent.rows.length;
+                    // FIXED_VALUE 默认值回填：driver 展开行 / 旧报价单回读的行都有可能没经过 handleAddRow，
+                    // 导致 row[key] === undefined。回填后单元格 / 公式 / 列小计 / 产品小计 共享同一份数据视图。
+                    const effectiveRows = Array.from({ length: effectiveCount }, (_, i) => {
+                      const isDriverBound = useDriver && i < driverCount;
+                      return {
+                        row: fillFixedDefaults(activeComponent.fields, activeComponent.rows[i] ?? {}),
+                        rowIndex: i,
+                        basicDataValues: isDriverBound ? activeDriverExpansion!.rows[i]?.basicDataValues : undefined,
+                        driverRow: isDriverBound ? activeDriverExpansion!.rows[i]?.driverRow : undefined,
+                        isDriverBound,
+                      };
+                    });
+                    return effectiveRows;
+                  })().map(({ row, rowIndex, basicDataValues, isDriverBound }) => {
+                    // Pre-compute all formulas for this row in dependency order
+                    // partNo 透传供 path token 拼 cache key;pathCache 由 evaluateExpression 内部回退到模块级
+                    // basicDataValues 透传：driver 展开时按行取 BASIC_DATA 值，避免所有行用第一行结果
+                    const formulaCache = computeAllFormulas(
+                      activeComponent, row, allComponentSubtotals,
+                      undefined, undefined, item.productPartNo, basicDataValues
+                    );
+                    return (
+                    <tr key={rowIndex} style={(row._preset || isDriverBound) ? { background: '#fafafa' } : undefined}>
+                      {activeComponent.fields.map(field => {
+                        const key = field.name || field.key || '';
+                        const loadingKey = `${activeTab}-${rowIndex}-${field.name}`;
+                        const errorKey = loadingKey;
+                        const isRequiredEmpty =
+                          field.field_type === 'DATA_SOURCE' &&
+                          field.is_required &&
+                          row[key] == null;
+                        return (
+                          <td
+                            key={key}
+                            className={[
+                              field.field_type === 'FORMULA' ? 'qt-formula-cell' : '',
+                              isRequiredEmpty ? 'qt-ds-required-empty' : '',
+                            ].filter(Boolean).join(' ') || undefined}
+                          >
+                            {field.field_type === 'FORMULA' ? (
+                              <span className="qt-formula-cell-value">
+                                {formulaCache[field.name] != null ? formulaCache[field.name] : '—'}
+                              </span>
+                            ) : field.field_type === 'BASIC_DATA' ? (
+                              (() => {
+                                const path = field.basic_data_path ?? '';
+                                if (!path) return <span className="qt-ds-placeholder">未配置路径</span>;
+                                // Y1.5: 优先从 driver 展开结果取(已隐式 JOIN driver 行)
+                                if (basicDataValues) {
+                                  const lookupKey = bnfDriverLookupKey(path);
+                                  if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
+                                    const v = (basicDataValues as Record<string, any>)[lookupKey];
+                                    const formatted = formatPathValue(v);
+                                    if (formatted === null) return <span className="qt-ds-placeholder">—</span>;
+                                    const isMulti = Array.isArray(v) && v.length > 1;
+                                    if (isMulti) {
+                                      const tooltip = v.map((it: any) => formatPathValue(it) ?? '—').join(' / ');
+                                      return <span className="qt-ds-value" title={tooltip}>{formatted}</span>;
+                                    }
+                                    return <span className="qt-ds-value">{formatted}</span>;
+                                  }
+                                  return <span className="qt-ds-loading">加载中…</span>;
+                                }
+                                // V118: 第二优先级 — 直接从 row 数据取. row_data 已经按 driver 行展开存了
+                                // 标量值 (snapshotRows 写入), 不该再去 globalPathCache 取 N 行 array
+                                // 显示成 "(共N项)" — 那是新建未保存态才用的最终兜底.
+                                const fieldKey = field.name || field.key || '';
+                                if (fieldKey) {
+                                  const rowVal = (row as Record<string, any>)[fieldKey];
+                                  if (rowVal !== undefined && rowVal !== null && rowVal !== '') {
+                                    // 标量值 / 单元素 array 都直接展示
+                                    const formatted = formatPathValue(rowVal);
+                                    if (formatted !== null) {
+                                      const isMulti = Array.isArray(rowVal) && rowVal.length > 1;
+                                      if (isMulti) {
+                                        const tooltip = rowVal.map((it: any) => formatPathValue(it) ?? '—').join(' / ');
+                                        return <span className="qt-ds-value" title={tooltip}>{formatted}</span>;
+                                      }
+                                      return <span className="qt-ds-value">{formatted}</span>;
+                                    }
+                                  }
+                                }
+                                // 第三优先级 — globalPathCache (新建未保存或 row_data 缺字段时的兜底)
+                                const cacheKey = `${item.productPartNo ?? ''}::${path}`;
+                                const cache = getGlobalPathCache() as Record<string, any>;
+                                if (!Object.prototype.hasOwnProperty.call(cache, cacheKey)) {
+                                  return <span className="qt-ds-loading">加载中…</span>;
+                                }
+                                const v = cache[cacheKey];
+                                const formatted = formatPathValue(v);
+                                if (formatted === null) return <span className="qt-ds-placeholder">—</span>;
+                                // 多值时加 tooltip 显示完整列表
+                                const isMulti = Array.isArray(v) && v.length > 1;
+                                if (isMulti) {
+                                  const tooltip = v.map((it: any) => formatPathValue(it) ?? '—').join(' / ');
+                                  return <span className="qt-ds-value" title={tooltip}>{formatted}</span>;
+                                }
+                                return <span className="qt-ds-value">{formatted}</span>;
+                              })()
+                            ) : field.field_type === 'DATA_SOURCE' ? (
+                              dsLoading[loadingKey] ? (
+                                <span className="qt-ds-loading">查询中...</span>
+                              ) : dsErrors[errorKey] ? (
+                                <span className="qt-ds-error" title={dsErrors[errorKey]}>查询失败</span>
+                              ) : row[key] != null ? (
+                                <span className="qt-ds-value">{typeof row[key] === 'object' ? JSON.stringify(row[key]) : row[key]}</span>
+                              ) : (
+                                <span className="qt-ds-placeholder">—</span>
+                              )
+                            ) : (() => {
+                              const isNumber = field.field_type === 'INPUT_NUMBER' || field.is_amount;
+                              // 元素行：row.element_name 有值，且当前字段是单价字段
+                              const elementName: string | undefined = row.element_name || undefined;
+                              const isUnitPriceField =
+                                field.is_amount === true ||
+                                key === 'unit_price' ||
+                                key === 'element_actual_unit_price';
+                              const showElementHint = !!(elementName && isUnitPriceField);
+                              const input = (
+                                <input
+                                  type={isNumber ? 'number' : 'text'}
+                                  step={isNumber ? 'any' : undefined}
+                                  value={row[key] ?? ''}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    if (isNumber && val !== '' && !/^-?\d*\.?\d*$/.test(val)) return;
+                                    handleRowChange(activeTab, rowIndex, key, val);
+                                  }}
+                                  onBlur={() => handleInputBlur(activeTab, rowIndex, key)}
+                                />
+                              );
+                              if (!showElementHint) return input;
+                              return (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'nowrap' }}>
+                                  {input}
+                                  <ElementPriceHint elementName={elementName!} />
+                                </div>
+                              );
+                            })()}
+                          </td>
+                        );
+                      })}
+                      <td style={{ textAlign: 'center' }}>
+                        {row._preset ? (
+                          <span title="固定行，不可删除" style={{ color: '#ccc', fontSize: 12, cursor: 'default' }}>🔒</span>
+                        ) : isDriverBound ? (
+                          <span title="基础数据自动展开行，不可删除（请在基础数据导入侧调整）" style={{ color: '#ccc', fontSize: 12, cursor: 'default' }}>🔗</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRow(activeTab, rowIndex)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#ff4d4f',
+                              cursor: 'pointer',
+                              fontSize: 14,
+                              padding: '0 4px',
+                            }}
+                            title="删除行"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+                {/* Tab subtotal row */}
+                {activeComponent.fields.some(f => f.is_subtotal) && (
+                  <tfoot>
+                    <tr className="qt-subtotal-row">
+                      {activeComponent.fields.map((field, fi) => {
+                        if (field.is_subtotal) {
+                          const tabSubtotal = allComponentSubtotals[activeComponent.componentCode]
+                            ?? allComponentSubtotals[activeComponent.tabName]
+                            ?? 0;
+                          return (
+                            <td key={field.name || fi} className="qt-subtotal-cell">
+                              {formatCurrency(tabSubtotal)}
+                            </td>
+                          );
+                        }
+                        if (fi === 0) {
+                          return <td key={field.name || fi} className="qt-subtotal-label-cell">小计</td>;
+                        }
+                        return <td key={field.name || fi} />;
+                      })}
+                      <td />
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+              <button
+                className="qt-add-row-btn"
+                type="button"
+                onClick={() => handleAddRow(activeTab)}
+              >
+                + 添加行
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        // No component data — message instead of placeholder tabs
+        <div className="qt-no-component-data">
+          请通过添加产品选择模板后自动加载组件结构
+        </div>
+      )}
+
+      {/* Subtotal Bar */}
+      <div className="qt-subtotal-bar">
+        <span className="qt-subtotal-label">产品小计</span>
+        <span className="qt-subtotal-value">
+          {formatCurrency(
+            item.componentData.length > 0
+              ? computeProductSubtotal(item, driverExpansions, customerId)
+              : item.subtotal
+          )}
+        </span>
+      </div>
+    </div>
+  );
+};
+
+// ─── QuotationStep2 ───────────────────────────────────────────────────────────
+
+const QuotationStep2: React.FC<QuotationStep2Props> = ({
+  lineItems,
+  onAddProduct,
+  onAddBatch,
+  customerTemplateId,
+  costingCardTemplateId,
+  onRemoveProduct,
+  onUpdateLineItem,
+  customerId,
+  quotationId,
+  driftDetection,
+  onRefreshQuotation,
+}) => {
+  // 两级 tab：左侧 mainTab（报价单 / 核价单 / 比对视图），右侧 viewType（产品卡片 / Excel视图）。
+  // 比对视图为单一展示，无 viewType 切换。
+  const [mainTab, setMainTab] = useState<'quote' | 'costing' | 'comparison'>('quote');
+  const [viewType, setViewType] = useState<'card' | 'excel'>('card');
+  const [refreshing, setRefreshing] = useState(false);
+  const [autoPopulating, setAutoPopulating] = useState(false);
+  const autoPopulatedRef = useRef(false); // 防止 onAddBatch ref 变化导致 useEffect 重复执行
+  const { user } = useAuthStore();
+  const isSalesRep = user?.role === 'SALES_REP';
+
+  // 自动展开:URL 含 ?autoPopulate=1 + customerTemplateId 存在 + 当前 lineItems 为空 → 一次性导入该客户基础数据涉及的所有料号
+  // 该副作用只触发一次,完成后清掉 query 防止刷新页面重复执行
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shouldAutoPopulate = params.get('autoPopulate') === '1';
+    if (!shouldAutoPopulate) return;
+    if (autoPopulatedRef.current) return; // 已执行过,不再触发(避免 onAddBatch ref 变化重复触发)
+    if (!customerId || !customerTemplateId || !onAddBatch) return;
+    if (lineItems.length > 0) return;
+    if (autoPopulating) return;
+    autoPopulatedRef.current = true;
+
+    const importRecordId = params.get('importRecordId') || undefined;
+    setAutoPopulating(true);
+    (async () => {
+      try {
+        const [candRes, tmplRes] = await Promise.all([
+          quotationService.listCustomerPartCandidates(customerId, importRecordId),
+          templateService.getById(customerTemplateId),
+        ]);
+        const partList: any[] = (candRes.data as any) || [];
+        const tmpl = tmplRes.data;
+        if (partList.length === 0) {
+          message.info('该客户暂无基础数据料号,请先导入或手工添加产品');
+          return;
+        }
+        // 复用 BulkImportPartsDrawer 的 helper 生成完整 componentData / 公式结构
+        const items = partList.map((p: any) => buildLineItemFromTemplate(tmpl, p));
+        onAddBatch(items);
+        message.success(`已基于模板「${tmpl.name}${tmpl.version ?? ''}」自动加入 ${items.length} 个产品`);
+      } catch (e: any) {
+        message.error(`自动展开失败:${e?.message ?? '未知错误'},请手动点「+ 添加产品」`);
+      } finally {
+        setAutoPopulating(false);
+        // 清掉 URL 参数,避免刷新页面重复触发
+        const url = new URL(window.location.href);
+        url.searchParams.delete('autoPopulate');
+        url.searchParams.delete('importRecordId');
+        window.history.replaceState({}, '', url.pathname + url.search);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerId, customerTemplateId, onAddBatch]);
+
+  // BNF 路径异步求值缓存(Phase A4)— 公式含 path token 时,后端按 (partNo, path) 求值后写入模块级 cache
+  // ProductCard 子组件中的 evaluateExpression 在不传 pathCache 时回退到模块级(setGlobalPathCache),
+  // 此处保留 hook 调用以触发后台求值 + 组件 re-render
+  usePathFormulaCache(lineItems, customerId);
+  // 核价单视图同样需要按 costing 模板下的 path token 求值；hook 内部基于 (partNo, path) 缓存，
+  // 与 quote 侧调用结果合并到同一全局 cache，互不冲突
+  // 调用位置在 costingLineItems 声明之后
+
+  // 报价模板 componentsSnapshot — 用来在「报价单」视图过滤掉核价模板独有的组件
+  // （核价单卡片视图编辑时会把核价模板组件 union-merge 进底层 lineItems[i].componentData，
+  //  报价单视图直接读 componentData 会把核价模板的 tab 也漏出来 — AP-19）
+  const [quoteTemplateComponentIds, setQuoteTemplateComponentIds] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    if (!customerTemplateId) {
+      setQuoteTemplateComponentIds(null);
+      return;
+    }
+    templateService.getById(customerTemplateId)
+      .then((res: any) => {
+        const tmpl = res.data;
+        let snapshot: any[] = [];
+        try {
+          snapshot = tmpl?.componentsSnapshot
+            ? (typeof tmpl.componentsSnapshot === 'string'
+                ? JSON.parse(tmpl.componentsSnapshot)
+                : tmpl.componentsSnapshot)
+            : [];
+        } catch { snapshot = []; }
+        const ids = new Set<string>();
+        if (Array.isArray(snapshot)) {
+          for (const sc of snapshot) {
+            const cid = sc?.componentId || sc?.component_id;
+            if (cid) ids.add(String(cid));
+          }
+        }
+        setQuoteTemplateComponentIds(ids);
+      })
+      .catch(() => setQuoteTemplateComponentIds(new Set()));
+  }, [customerTemplateId]);
+
+  // 「报价单」视图过滤后的 lineItems：componentData 仅保留 quoteTemplateComponentIds 命中的组件
+  // （快照拉到之前先放行 — 否则首屏会瞬间显示空 ProductCard）
+  const quoteLineItems = React.useMemo<LineItem[]>(() => {
+    if (!quoteTemplateComponentIds || quoteTemplateComponentIds.size === 0) return lineItems;
+    return lineItems.map(li => {
+      const filtered = (li.componentData || []).filter(cd => {
+        if (!cd?.componentId) return true; // 兼容老数据：没有 componentId 的不过滤
+        return quoteTemplateComponentIds.has(String(cd.componentId));
+      });
+      // 长度一致就直接返回原对象（避免引用变化触发不必要的下游重渲染）
+      if (filtered.length === li.componentData.length) return li;
+      return { ...li, componentData: filtered };
+    });
+  }, [lineItems, quoteTemplateComponentIds]);
+
+  // V72：核价模板 componentsSnapshot — 「核价单」视图按这套组件渲染产品卡片
+  // 用 ref+state 缓存模板拉取结果，避免 mainTab 切换时重复发请求
+  const [costingTemplateSnapshot, setCostingTemplateSnapshot] = useState<any[] | null>(null);
+  const [costingTemplateProductAttrs, setCostingTemplateProductAttrs] = useState<any[] | null>(null);
+  const [costingTemplateLoading, setCostingTemplateLoading] = useState(false);
+  useEffect(() => {
+    if (!costingCardTemplateId) {
+      setCostingTemplateSnapshot(null);
+      setCostingTemplateProductAttrs(null);
+      return;
+    }
+    setCostingTemplateLoading(true);
+    templateService.getById(costingCardTemplateId)
+      .then((res: any) => {
+        const tmpl = res.data;
+        let snapshot: any[] = [];
+        try {
+          snapshot = tmpl?.componentsSnapshot
+            ? (typeof tmpl.componentsSnapshot === 'string'
+                ? JSON.parse(tmpl.componentsSnapshot)
+                : tmpl.componentsSnapshot)
+            : [];
+        } catch { snapshot = []; }
+        setCostingTemplateSnapshot(Array.isArray(snapshot) ? snapshot : []);
+        setCostingTemplateProductAttrs(Array.isArray(tmpl?.productAttributes) ? tmpl.productAttributes : []);
+      })
+      .catch(() => {
+        setCostingTemplateSnapshot([]);
+        setCostingTemplateProductAttrs([]);
+      })
+      .finally(() => setCostingTemplateLoading(false));
+  }, [costingCardTemplateId]);
+
+  // 把 customerTemplate 视图下的 lineItem 映射成 costingTemplate 视图下的 lineItem：
+  // 同 productId / productPartNo 行 → 复用产品身份（保持顺序、数量与"报价单"一致）；
+  // componentData → 按 costingTemplate.componentsSnapshot 重建（rows 沿用底层 lineItem.componentData 中 componentId 命中的；否则空行）
+  const costingLineItems = React.useMemo<LineItem[]>(() => {
+    if (!costingTemplateSnapshot || costingTemplateSnapshot.length === 0) return lineItems;
+    const buildField = (f: any): ComponentField => ({
+      name: f.name || f.key || '',
+      field_type: normalizeFieldType(f.field_type || f.type || ''),
+      content: f.content,
+      is_amount: f.is_amount,
+      is_subtotal: f.is_subtotal,
+      is_required: f.is_required,
+      formula_name: f.formula_name,
+      datasource_binding: f.datasource_binding,
+      basic_data_path: f.basic_data_path,
+      sort_order: f.sort_order,
+      label: f.label || f.name || '',
+      key: f.name || f.key || '',
+    });
+    return lineItems.map(li => {
+      const baseByCompId = new Map<string, ComponentDataItem>();
+      (li.componentData || []).forEach(cd => {
+        if (cd.componentId) baseByCompId.set(cd.componentId, cd);
+      });
+      const newComponentData: ComponentDataItem[] = costingTemplateSnapshot.map((sc: any) => {
+        const componentId = sc.componentId || sc.component_id || '';
+        const matched = componentId ? baseByCompId.get(componentId) : undefined;
+        const fields: ComponentField[] = (sc.fields || []).map(buildField);
+        const formulas: ComponentFormula[] = (sc.formulas || []).map((fm: any) => ({
+          name: fm.name || '',
+          expression: Array.isArray(fm.expression) ? fm.expression : [],
+          result_type: fm.result_type,
+        }));
+        const rows = matched?.rows && matched.rows.length > 0 ? matched.rows : [{}];
+        return {
+          componentId,
+          componentCode: sc.componentCode || sc.component_code || matched?.componentCode || '',
+          componentType: sc.component_type || sc.componentType || matched?.componentType || 'NORMAL',
+          tabName: sc.tabName || sc.tab_name || '',
+          fields,
+          formulas,
+          rows,
+          subtotal: matched?.subtotal || 0,
+          dataDriverPath: sc.data_driver_path || sc.dataDriverPath || matched?.dataDriverPath,
+        } as ComponentDataItem;
+      });
+      // productAttributes 也一并替换为核价模板的 schema（产品属性区域显示与核价模板一致）
+      const productAttributes = (costingTemplateProductAttrs || []).map((a: any) => ({
+        name: a.name,
+        field_type: a.field_type || a.type,
+        required: !!a.required,
+        default_value: a.default_value,
+        source: a.source,
+      }));
+      return {
+        ...li,
+        componentData: newComponentData,
+        productAttributes,
+      };
+    });
+  }, [lineItems, costingTemplateSnapshot, costingTemplateProductAttrs]);
+
+  // 核价单视图的产品卡片编辑回写：
+  // 1. 收到的 update 是基于 costingLineItems[index] 的 partial（来自 ProductCard onUpdate）
+  // 2. 如果改的是 componentData：把 costing 视图下的 componentData 按 componentId 合并回底层 lineItems[index].componentData（命中替换 / 缺失追加），未命中的 quote 视图组件保持不动 → 双视图共享同一份持久化数据
+  // 3. 如果改的是 productAttributeValues / productAttributes 等行外字段：直接落到底层 lineItem
+  const handleUpdateCostingLineItem = React.useCallback((index: number, updater: LineItemUpdater) => {
+    if (!costingLineItems[index]) return;
+    const partial: Partial<LineItem> = typeof updater === 'function'
+      ? (updater as (prev: LineItem) => Partial<LineItem>)(costingLineItems[index])
+      : updater;
+    if (!partial) return;
+    if (partial.componentData) {
+      const costingNew = partial.componentData;
+      onUpdateLineItem(index, (prev: LineItem) => {
+        const baseList = Array.isArray(prev.componentData) ? [...prev.componentData] : [];
+        const baseIdx = new Map<string, number>();
+        baseList.forEach((cd, i) => { if (cd.componentId) baseIdx.set(cd.componentId, i); });
+        costingNew.forEach(cn => {
+          if (!cn.componentId) return;
+          const at = baseIdx.get(cn.componentId);
+          if (at != null) {
+            baseList[at] = { ...baseList[at], ...cn };
+          } else {
+            // costing 模板独有组件 → 追加到底层 componentData，让保存时一并持久化
+            baseList.push(cn);
+            baseIdx.set(cn.componentId, baseList.length - 1);
+          }
+        });
+        const rest = { ...partial };
+        delete rest.componentData;
+        return { componentData: baseList, ...rest };
+      });
+      return;
+    }
+    onUpdateLineItem(index, partial);
+  }, [costingLineItems, onUpdateLineItem]);
+
+  // 报价单视图的产品卡片编辑回写（同核价单逻辑，方向相反）：
+  // 1. 收到的 update 基于 quoteLineItems[index] —— 它是 lineItems[index] 用 quoteTemplateComponentIds 过滤后的子集
+  // 2. ProductCard 内部 onUpdate 回调按"过滤后子集"的位置索引（tabIndex）操作 componentData，
+  //    若直接交给 handleUpdateLineItem，updater 会被 prev=完整 lineItem 调用 → 索引错位
+  // 3. 这里在过滤子集上跑 updater 算出 partial.componentData，再按 componentId union-merge 回底层完整 componentData
+  const handleUpdateQuoteLineItem = React.useCallback((index: number, updater: LineItemUpdater) => {
+    if (!quoteLineItems[index]) return;
+    const partial: Partial<LineItem> = typeof updater === 'function'
+      ? (updater as (prev: LineItem) => Partial<LineItem>)(quoteLineItems[index])
+      : updater;
+    if (!partial) return;
+    if (partial.componentData) {
+      const quoteNew = partial.componentData;
+      onUpdateLineItem(index, (prev: LineItem) => {
+        const baseList = Array.isArray(prev.componentData) ? [...prev.componentData] : [];
+        const baseIdx = new Map<string, number>();
+        baseList.forEach((cd, i) => { if (cd.componentId) baseIdx.set(cd.componentId, i); });
+        quoteNew.forEach(qn => {
+          if (!qn.componentId) return;
+          const at = baseIdx.get(qn.componentId);
+          if (at != null) {
+            baseList[at] = { ...baseList[at], ...qn };
+          } else {
+            // 报价模板独有组件（罕见场景，通常报价模板组件已在 baseList 里）→ 追加
+            baseList.push(qn);
+            baseIdx.set(qn.componentId, baseList.length - 1);
+          }
+        });
+        const rest = { ...partial };
+        delete rest.componentData;
+        return { componentData: baseList, ...rest };
+      });
+      return;
+    }
+    onUpdateLineItem(index, partial);
+  }, [quoteLineItems, onUpdateLineItem]);
+
+  // 核价单视图的 path token 求值缓存（与上方 quote 侧 hook 调用合并到同一 globalPathCache）
+  usePathFormulaCache(costingLineItems, customerId);
+
+  // Y1.5: 行驱动展开 — 含 dataDriverPath 的组件按后端返回的 N 行渲染,BASIC_DATA 值直接来自此 hook
+  // 报价单卡片所需的展开（按 customerTemplate 视图下的 componentData 收集）
+  const driverExpansionsQuote = useDriverExpansions(lineItems, customerId);
+  // 核价单卡片所需的展开（按 costingTemplate 视图下的 componentData 收集；
+  // 与 quote 侧 key = `${partNo}::${componentId}::${customerId}` 自动去重）
+  const driverExpansionsCosting = useDriverExpansions(costingLineItems, customerId);
+  // 合并两侧 → 报价/核价两个视图共用同一份 expansions map（同 key 后写入的 costing 不会覆盖 quote，反之亦然，因为 key 含 componentId）
+  const driverExpansions = React.useMemo(() => ({
+    ...driverExpansionsQuote,
+    ...driverExpansionsCosting,
+  }), [driverExpansionsQuote, driverExpansionsCosting]);
+
+  const handleRefreshVersions = async () => {
+    if (!quotationId) return;
+    setRefreshing(true);
+    try {
+      await quotationDriftService.refreshVersions(quotationId);
+      message.success('已更新至最新版本基础数据');
+      onRefreshQuotation?.();
+    } catch {
+      message.error('刷新版本失败，请稍后重试');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // 构建漂移横幅文案
+  const buildDriftMessage = () => {
+    if (!driftDetection?.driftedRecords?.length) return '基础数据已更新，部分版本已过期';
+    const parts = driftDetection.driftedRecords.map((r) =>
+      r.displayMessage || `${r.tableName} 升至 v${r.currentVersion}，原 v${r.referencedVersion} 已过期`
+    );
+    return `基础数据已更新（${parts.join('；')}）`;
+  };
+
+  return (
+    <div>
+      {/* 漂移横幅 */}
+      {driftDetection?.hasDrift && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={buildDriftMessage()}
+          action={
+            isSalesRep ? (
+              <Button
+                size="small"
+                type="primary"
+                loading={refreshing}
+                onClick={handleRefreshVersions}
+              >
+                使用最新版本
+              </Button>
+            ) : undefined
+          }
+        />
+      )}
+
+      {/* Step Header — 两级 tab：mainTab 左、viewType 右；comparison 模式隐藏右侧 */}
+      <div className="qt-step2-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <Segmented
+            options={[
+              { label: '📝 报价单', value: 'quote' },
+              { label: '📊 核价单', value: 'costing', disabled: !quotationId },
+              { label: '📈 比对视图', value: 'comparison', disabled: !quotationId },
+            ]}
+            value={mainTab}
+            onChange={v => setMainTab(v as any)}
+            size="small"
+          />
+          {mainTab !== 'comparison' && (
+            <span
+              style={{
+                padding: '2px 10px',
+                borderRadius: 12,
+                background: '#fff7e6',
+                color: '#d46b08',
+                fontSize: 12,
+              }}
+              title="此区域内的字段可以由用户直接填写"
+            >
+              📝 用户填写区，可编辑
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {mainTab !== 'comparison' && (
+            <>
+              <span style={{ fontSize: 12, color: '#8c8c8c' }}>视图:</span>
+              <Segmented
+                options={[
+                  { label: '📋 产品卡片', value: 'card' },
+                  { label: '📑 Excel 视图', value: 'excel' },
+                ]}
+                value={viewType}
+                onChange={v => setViewType(v as any)}
+                size="small"
+              />
+            </>
+          )}
+          {mainTab === 'quote' && (
+            <button className="qt-add-product-btn" type="button" onClick={onAddProduct}>
+              + 添加产品
+            </button>
+          )}
+        </div>
+      </div>
+
+      {mainTab === 'comparison' && quotationId ? (
+        <ComparisonView quotationId={quotationId} />
+      ) : mainTab === 'costing' && viewType === 'excel' && quotationId ? (
+        // 核价单 — Excel 视图（V73/V74 起按 linkedTemplateId 反查 costing_template 渲染）：
+        // 入口 = 报价单的 costingCardTemplateId（核价模板）→ 反查 linked_template_id 命中的 Excel 模板
+        <LinkedExcelView
+          linkedTemplateId={costingCardTemplateId}
+          lineItems={costingLineItems}
+          customerId={customerId}
+          viewLabel="核价单 Excel 视图"
+        />
+      ) : mainTab === 'costing' && viewType === 'card' && quotationId ? (
+        // 核价单 — 产品卡片视图(V72)：与"报价单卡片视图"产品数量/排序一致，
+        // 但卡片内部组件按"核价模板(template_kind='COSTING')"重建。
+        // 编辑回写：handleUpdateCostingLineItem 把 componentData 按 componentId 合并回底层 lineItems[index]。
+        !costingCardTemplateId ? (
+          <Alert
+            type="warning"
+            showIcon
+            message="该报价单未绑定核价模板"
+            description="请回到「报价单管理」选择「编辑」后在产品分类抽屉里补选核价模板，或在数据库中通过 quotation.costing_card_template_id 字段配置。"
+            style={{ margin: 24 }}
+          />
+        ) : costingTemplateLoading ? (
+          <div style={{ textAlign: 'center', padding: 48, color: '#999' }}>正在加载核价模板…</div>
+        ) : (costingTemplateSnapshot && costingTemplateSnapshot.length === 0) ? (
+          <Alert
+            type="warning"
+            showIcon
+            message="核价模板未配置任何组件"
+            description="请前往「模板配置」打开该核价模板，添加组件并发布后重试。"
+            style={{ margin: 24 }}
+          />
+        ) : lineItems.length === 0 ? (
+          <div className="qt-empty-state">
+            <div className="qt-empty-icon">📦</div>
+            <div style={{ fontSize: 16 }}>暂无产品</div>
+            <div style={{ marginTop: 8 }}>请先在「报价单」视图中添加产品</div>
+          </div>
+        ) : (
+          <div className="qt-products-list">
+            {costingLineItems.map((item, index) => (
+              <ProductCard
+                key={item.productId ? `costing-${item.productId}-${index}` : `costing-item-${index}`}
+                item={item}
+                index={index}
+                onRemove={() => onRemoveProduct(index)}
+                onUpdate={(data) => handleUpdateCostingLineItem(index, data)}
+                customerId={customerId}
+                driverExpansions={driverExpansions}
+              />
+            ))}
+          </div>
+        )
+      ) : mainTab === 'quote' && viewType === 'excel' ? (
+        // 报价单 — Excel 视图（V73/V74 起同样按 linkedTemplateId 反查 costing_template 渲染）：
+        // 入口 = 报价单的 customerTemplateId（报价模板）→ 反查 linked_template_id 命中的 Excel 模板
+        <LinkedExcelView
+          linkedTemplateId={customerTemplateId}
+          lineItems={quoteLineItems}
+          customerId={customerId}
+          viewLabel="报价单 Excel 视图"
+        />
+      ) : lineItems.length === 0 ? (
+        <div className="qt-empty-state">
+          <div className="qt-empty-icon">{autoPopulating ? '⏳' : '📦'}</div>
+          <div style={{ fontSize: 16 }}>
+            {autoPopulating ? '正在按已绑定模板自动加载产品...' : '还未添加任何产品'}
+          </div>
+          {!autoPopulating && (
+            <div style={{ marginTop: 8 }}>
+              {'点击"+ 添加产品"按钮开始配置'}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="qt-products-list">
+          {quoteLineItems.map((item, index) => (
+            <ProductCard
+              key={item.productId ? `${item.productId}-${index}` : `item-${index}`}
+              item={item}
+              index={index}
+              onRemove={() => onRemoveProduct(index)}
+              onUpdate={(data) => handleUpdateQuoteLineItem(index, data)}
+              customerId={customerId}
+              driverExpansions={driverExpansions}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export { computeProductSubtotal, computeAllFormulas };
+export default QuotationStep2;

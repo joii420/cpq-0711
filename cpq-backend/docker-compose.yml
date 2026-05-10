@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cpq-postgres
+    environment:
+      POSTGRES_DB: cpq_db
+      POSTGRES_USER: cpq_user
+      POSTGRES_PASSWORD: cpq_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - cpq-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cpq_user -d cpq_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  cpq-pgdata:

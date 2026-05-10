@@ -1,0 +1,1210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>产品选型与模板关联</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 顶部导航栏 */
+        .top-navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 40px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .navbar-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .navbar-title {
+            font-size: 22px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .navbar-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .btn-white {
+            background: white;
+            color: #667eea;
+        }
+
+        .btn-white:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-outline {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-outline:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        /* 主内容区 */
+        .main-layout {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 320px 1fr 420px;
+            overflow: hidden;
+        }
+
+        /* 左侧产品分类 */
+        .product-sidebar {
+            background: #f8fafc;
+            border-right: 1px solid #e2e8f0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 24px 20px 16px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .sidebar-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+
+        .sidebar-subtitle {
+            font-size: 13px;
+            color: #718096;
+        }
+
+        .search-box {
+            margin: 16px 20px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 10px 16px 10px 40px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23718096' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 12px center;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .product-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .product-category {
+            margin-bottom: 24px;
+        }
+
+        .category-header {
+            padding: 12px 12px 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .product-item {
+            background: white;
+            padding: 16px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .product-item:hover {
+            border-color: #cbd5e0;
+            transform: translateX(4px);
+        }
+
+        .product-item.active {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #f0f4ff 0%, #e8efff 100%);
+        }
+
+        .product-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 8px;
+        }
+
+        .product-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .product-badge {
+            background: #e2e8f0;
+            color: #4a5568;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .product-item.active .product-badge {
+            background: #667eea;
+            color: white;
+        }
+
+        .product-code {
+            font-size: 12px;
+            color: #718096;
+            margin-bottom: 6px;
+        }
+
+        .product-tags {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .product-tag {
+            background: #edf2f7;
+            color: #4a5568;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        /* 中间配置区 */
+        .config-area {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .config-tabs {
+            display: flex;
+            background: white;
+            border-bottom: 2px solid #e2e8f0;
+            padding: 0 40px;
+        }
+
+        .config-tab {
+            padding: 16px 24px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            font-size: 15px;
+            font-weight: 500;
+            color: #718096;
+            transition: all 0.2s;
+        }
+
+        .config-tab:hover {
+            color: #667eea;
+        }
+
+        .config-tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .config-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px 40px;
+        }
+
+        /* 工序选择卡片 */
+        .process-section {
+            margin-bottom: 32px;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .select-all-btn {
+            padding: 6px 12px;
+            background: #edf2f7;
+            color: #4a5568;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .select-all-btn:hover {
+            background: #e2e8f0;
+        }
+
+        .process-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+        }
+
+        .process-card {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .process-card:hover {
+            border-color: #cbd5e0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .process-card.selected {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #f0f4ff 0%, #e8efff 100%);
+        }
+
+        .process-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 8px;
+        }
+
+        .process-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .process-checkbox {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #cbd5e0;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .process-card.selected .process-checkbox {
+            background: #667eea;
+            border-color: #667eea;
+            position: relative;
+        }
+
+        .process-card.selected .process-checkbox::after {
+            content: '✓';
+            position: absolute;
+            color: white;
+            font-size: 14px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .process-code {
+            font-size: 12px;
+            color: #718096;
+        }
+
+        /* 模板绑定区 */
+        .template-binding {
+            margin-top: 32px;
+        }
+
+        .binding-header {
+            background: linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 100%);
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .binding-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+
+        .binding-subtitle {
+            font-size: 14px;
+            color: #718096;
+        }
+
+        .template-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 16px;
+        }
+
+        .template-card {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .template-card:hover {
+            border-color: #cbd5e0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+
+        .template-card.selected {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #f0f4ff 0%, #e8efff 100%);
+        }
+
+        .template-card.selected::before {
+            content: '✓';
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 28px;
+            height: 28px;
+            background: #667eea;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .template-header {
+            display: flex;
+            align-items: start;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .template-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            flex-shrink: 0;
+        }
+
+        .template-info {
+            flex: 1;
+        }
+
+        .template-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 4px;
+        }
+
+        .template-category {
+            font-size: 13px;
+            color: #718096;
+        }
+
+        .template-desc {
+            font-size: 13px;
+            color: #4a5568;
+            line-height: 1.5;
+            margin-bottom: 12px;
+        }
+
+        .template-meta {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .template-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: #718096;
+        }
+
+        .template-meta-icon {
+            width: 16px;
+            height: 16px;
+        }
+
+        .add-template-card {
+            border-style: dashed;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 200px;
+            gap: 12px;
+        }
+
+        .add-template-card:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .add-icon {
+            width: 48px;
+            height: 48px;
+            background: #edf2f7;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: #667eea;
+        }
+
+        .add-text {
+            font-size: 14px;
+            font-weight: 500;
+            color: #718096;
+        }
+
+        /* 右侧配置摘要 */
+        .summary-sidebar {
+            background: #f8fafc;
+            border-left: 1px solid #e2e8f0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .summary-header {
+            padding: 24px 20px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .summary-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+
+        .summary-subtitle {
+            font-size: 13px;
+            color: #718096;
+        }
+
+        .summary-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .summary-section {
+            margin-bottom: 24px;
+        }
+
+        .summary-section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .summary-item {
+            background: white;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .summary-item-label {
+            color: #718096;
+            margin-bottom: 4px;
+        }
+
+        .summary-item-value {
+            color: #2d3748;
+            font-weight: 600;
+        }
+
+        .summary-list {
+            list-style: none;
+        }
+
+        .summary-list-item {
+            background: white;
+            padding: 10px 12px;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+        }
+
+        .summary-dot {
+            width: 6px;
+            height: 6px;
+            background: #667eea;
+            border-radius: 50%;
+        }
+
+        .summary-count {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px;
+            border-radius: 8px;
+            text-align: center;
+            margin-top: auto;
+        }
+
+        .count-label {
+            font-size: 13px;
+            opacity: 0.9;
+            margin-bottom: 4px;
+        }
+
+        .count-value {
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .summary-actions {
+            padding: 20px;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .action-button {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 10px;
+        }
+
+        .action-button.primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .action-button.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .action-button.secondary {
+            background: white;
+            color: #667eea;
+            border: 1px solid #e2e8f0;
+        }
+
+        .action-button.secondary:hover {
+            background: #f8f9ff;
+        }
+
+        /* 空状态 */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #718096;
+        }
+
+        .empty-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 16px;
+            opacity: 0.3;
+        }
+
+        .empty-text {
+            font-size: 14px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 顶部导航 -->
+        <div class="top-navbar">
+            <div class="navbar-content">
+                <div class="navbar-title">
+                    🔗 产品选型与模板关联
+                </div>
+                <div class="navbar-actions">
+                    <button class="btn btn-outline" onclick="previewBinding()">👁 预览配置</button>
+                    <button class="btn btn-white" onclick="saveBinding()">💾 保存关联</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主布局 -->
+        <div class="main-layout">
+            <!-- 左侧产品列表 -->
+            <div class="product-sidebar">
+                <div class="sidebar-header">
+                    <div class="sidebar-title">产品库</div>
+                    <div class="sidebar-subtitle">选择需要配置的产品</div>
+                </div>
+
+                <div class="search-box">
+                    <input type="text" class="search-input" placeholder="搜索产品名称或编码..." oninput="searchProducts(this.value)">
+                </div>
+
+                <div class="product-list" id="productList">
+                    <div class="product-category">
+                        <div class="category-header">标准件</div>
+                        <div class="product-item active" onclick="selectProduct(this, 'standard-001')">
+                            <div class="product-item-header">
+                                <div class="product-name">精密轴承座</div>
+                                <div class="product-badge">已配置</div>
+                            </div>
+                            <div class="product-code">PRD-STD-001</div>
+                            <div class="product-tags">
+                                <span class="product-tag">表面处理</span>
+                                <span class="product-tag">机加工</span>
+                            </div>
+                        </div>
+
+                        <div class="product-item" onclick="selectProduct(this, 'standard-002')">
+                            <div class="product-item-header">
+                                <div class="product-name">联轴器</div>
+                                <div class="product-badge">3</div>
+                            </div>
+                            <div class="product-code">PRD-STD-002</div>
+                            <div class="product-tags">
+                                <span class="product-tag">热处理</span>
+                                <span class="product-tag">装配</span>
+                            </div>
+                        </div>
+
+                        <div class="product-item" onclick="selectProduct(this, 'standard-003')">
+                            <div class="product-item-header">
+                                <div class="product-name">法兰盘</div>
+                                <div class="product-badge">1</div>
+                            </div>
+                            <div class="product-code">PRD-STD-003</div>
+                            <div class="product-tags">
+                                <span class="product-tag">CNC加工</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="product-category">
+                        <div class="category-header">定制件</div>
+                        <div class="product-item" onclick="selectProduct(this, 'custom-001')">
+                            <div class="product-item-header">
+                                <div class="product-name">特殊齿轮</div>
+                                <div class="product-badge">新</div>
+                            </div>
+                            <div class="product-code">PRD-CUS-001</div>
+                            <div class="product-tags">
+                                <span class="product-tag">定制加工</span>
+                                <span class="product-tag">检测</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 中间配置区 -->
+            <div class="config-area">
+                <div class="config-tabs">
+                    <div class="config-tab active" onclick="switchTab(this, 'process')">工序选择</div>
+                    <div class="config-tab" onclick="switchTab(this, 'template')">模板绑定</div>
+                </div>
+
+                <div class="config-content" id="configContent">
+                    <!-- 工序选择页 -->
+                    <div id="processTab" class="tab-panel">
+                        <div class="process-section">
+                            <div class="section-header">
+                                <div class="section-title">表面处理工序</div>
+                                <button class="select-all-btn" onclick="selectAllInSection('surface')">全选</button>
+                            </div>
+                            <div class="process-grid" id="surfaceGrid">
+                                <div class="process-card selected" onclick="toggleProcess(this, 'surface-001')">
+                                    <div class="process-card-header">
+                                        <div>
+                                            <div class="process-name">电镀工序</div>
+                                            <div class="process-code">MRO-LP-SLJC</div>
+                                        </div>
+                                        <div class="process-checkbox"></div>
+                                    </div>
+                                </div>
+
+                                <div class="process-card" onclick="toggleProcess(this, 'surface-002')">
+                                    <div class="process-card-header">
+                                        <div>
+                                            <div class="process-name">喷涂工序</div>
+                                            <div class="process-code">MRO-LP-PTD</div>
+                                        </div>
+                                        <div class="process-checkbox"></div>
+                                    </div>
+                                </div>
+
+                                <div class="process-card" onclick="toggleProcess(this, 'surface-003')">
+                                    <div class="process-card-header">
+                                        <div>
+                                            <div class="process-name">抛光工序</div>
+                                            <div class="process-code">MRO-LP-PGC</div>
+                                        </div>
+                                        <div class="process-checkbox"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="process-section">
+                            <div class="section-header">
+                                <div class="section-title">机加工序</div>
+                                <button class="select-all-btn" onclick="selectAllInSection('machining')">全选</button>
+                            </div>
+                            <div class="process-grid" id="machiningGrid">
+                                <div class="process-card selected" onclick="toggleProcess(this, 'machining-001')">
+                                    <div class="process-card-header">
+                                        <div>
+                                            <div class="process-name">CNC加工</div>
+                                            <div class="process-code">MRO-MC-CNC</div>
+                                        </div>
+                                        <div class="process-checkbox"></div>
+                                    </div>
+                                </div>
+
+                                <div class="process-card" onclick="toggleProcess(this, 'machining-002')">
+                                    <div class="process-card-header">
+                                        <div>
+                                            <div class="process-name">车削加工</div>
+                                            <div class="process-code">MRO-MC-CXJ</div>
+                                        </div>
+                                        <div class="process-checkbox"></div>
+                                    </div>
+                                </div>
+
+                                <div class="process-card" onclick="toggleProcess(this, 'machining-003')">
+                                    <div class="process-card-header">
+                                        <div>
+                                            <div class="process-name">铣削加工</div>
+                                            <div class="process-code">MRO-MC-XXJ</div>
+                                        </div>
+                                        <div class="process-checkbox"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 模板绑定页 -->
+                    <div id="templateTab" class="tab-panel" style="display: none;">
+                        <div class="template-binding">
+                            <div class="binding-header">
+                                <div class="binding-title">为产品配置绑定报价模板</div>
+                                <div class="binding-subtitle">选择的工序组合将自动匹配对应的报价单模板</div>
+                            </div>
+
+                            <div class="template-grid">
+                                <div class="template-card selected" onclick="toggleTemplate(this, 'template-001')">
+                                    <div class="template-header">
+                                        <div class="template-icon">📋</div>
+                                        <div class="template-info">
+                                            <div class="template-name">标准件报价模板</div>
+                                            <div class="template-category">标准件 · 通用</div>
+                                        </div>
+                                    </div>
+                                    <div class="template-desc">
+                                        适用于标准机械零件的报价，包含投料、加工、表面处理等完整工序
+                                    </div>
+                                    <div class="template-meta">
+                                        <div class="template-meta-item">
+                                            <svg class="template-meta-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                            </svg>
+                                            8个页签
+                                        </div>
+                                        <div class="template-meta-item">
+                                            <svg class="template-meta-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                            </svg>
+                                            最近使用
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="template-card" onclick="toggleTemplate(this, 'template-002')">
+                                    <div class="template-header">
+                                        <div class="template-icon">⚙️</div>
+                                        <div class="template-info">
+                                            <div class="template-name">精密加工报价模板</div>
+                                            <div class="template-category">定制件 · 精密</div>
+                                        </div>
+                                    </div>
+                                    <div class="template-desc">
+                                        专为高精度零件设计，含详细的检测工序和质量控制项
+                                    </div>
+                                    <div class="template-meta">
+                                        <div class="template-meta-item">
+                                            <svg class="template-meta-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                            </svg>
+                                            10个页签
+                                        </div>
+                                        <div class="template-meta-item">
+                                            <svg class="template-meta-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                            </svg>
+                                            已验证
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="template-card" onclick="toggleTemplate(this, 'template-003')">
+                                    <div class="template-header">
+                                        <div class="template-icon">🔧</div>
+                                        <div class="template-info">
+                                            <div class="template-name">表面处理专用模板</div>
+                                            <div class="template-category">标准件 · 表面处理</div>
+                                        </div>
+                                    </div>
+                                    <div class="template-desc">
+                                        针对表面处理工序优化，包含电镀、喷涂等详细成本项
+                                    </div>
+                                    <div class="template-meta">
+                                        <div class="template-meta-item">
+                                            <svg class="template-meta-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                            </svg>
+                                            6个页签
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="template-card add-template-card" onclick="createNewTemplate()">
+                                    <div class="add-icon">+</div>
+                                    <div class="add-text">创建新模板</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧摘要 -->
+            <div class="summary-sidebar">
+                <div class="summary-header">
+                    <div class="summary-title">配置摘要</div>
+                    <div class="summary-subtitle">当前产品的配置信息</div>
+                </div>
+
+                <div class="summary-content">
+                    <div class="summary-section">
+                        <div class="summary-section-title">产品信息</div>
+                        <div class="summary-item">
+                            <div class="summary-item-label">产品名称</div>
+                            <div class="summary-item-value">精密轴承座</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-item-label">产品编码</div>
+                            <div class="summary-item-value">PRD-STD-001</div>
+                        </div>
+                    </div>
+
+                    <div class="summary-section">
+                        <div class="summary-section-title">已选工序 (2)</div>
+                        <ul class="summary-list" id="selectedProcessList">
+                            <li class="summary-list-item">
+                                <div class="summary-dot"></div>
+                                电镀工序 (MRO-LP-SLJC)
+                            </li>
+                            <li class="summary-list-item">
+                                <div class="summary-dot"></div>
+                                CNC加工 (MRO-MC-CNC)
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="summary-section">
+                        <div class="summary-section-title">已绑定模板 (1)</div>
+                        <ul class="summary-list" id="selectedTemplateList">
+                            <li class="summary-list-item">
+                                <div class="summary-dot"></div>
+                                标准件报价模板
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="summary-count">
+                        <div class="count-label">配置完成度</div>
+                        <div class="count-value">100%</div>
+                    </div>
+                </div>
+
+                <div class="summary-actions">
+                    <button class="action-button primary" onclick="saveBinding()">保存配置</button>
+                    <button class="action-button secondary" onclick="resetConfig()">重置配置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentProduct = 'standard-001';
+        let selectedProcesses = ['surface-001', 'machining-001'];
+        let selectedTemplates = ['template-001'];
+
+        // 切换产品
+        function selectProduct(element, productId) {
+            document.querySelectorAll('.product-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            element.classList.add('active');
+            currentProduct = productId;
+            
+            // 这里可以加载产品的已有配置
+            console.log('选择产品:', productId);
+        }
+
+        // 切换标签页
+        function switchTab(element, tabName) {
+            document.querySelectorAll('.config-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            element.classList.add('active');
+
+            document.getElementById('processTab').style.display = tabName === 'process' ? 'block' : 'none';
+            document.getElementById('templateTab').style.display = tabName === 'template' ? 'block' : 'none';
+        }
+
+        // 切换工序选择
+        function toggleProcess(element, processId) {
+            element.classList.toggle('selected');
+            
+            if (element.classList.contains('selected')) {
+                if (!selectedProcesses.includes(processId)) {
+                    selectedProcesses.push(processId);
+                }
+            } else {
+                selectedProcesses = selectedProcesses.filter(id => id !== processId);
+            }
+            
+            updateSummary();
+        }
+
+        // 切换模板选择
+        function toggleTemplate(element, templateId) {
+            element.classList.toggle('selected');
+            
+            if (element.classList.contains('selected')) {
+                if (!selectedTemplates.includes(templateId)) {
+                    selectedTemplates.push(templateId);
+                }
+            } else {
+                selectedTemplates = selectedTemplates.filter(id => id !== templateId);
+            }
+            
+            updateSummary();
+        }
+
+        // 更新摘要
+        function updateSummary() {
+            const processNames = {
+                'surface-001': '电镀工序 (MRO-LP-SLJC)',
+                'surface-002': '喷涂工序 (MRO-LP-PTD)',
+                'surface-003': '抛光工序 (MRO-LP-PGC)',
+                'machining-001': 'CNC加工 (MRO-MC-CNC)',
+                'machining-002': '车削加工 (MRO-MC-CXJ)',
+                'machining-003': '铣削加工 (MRO-MC-XXJ)'
+            };
+
+            const templateNames = {
+                'template-001': '标准件报价模板',
+                'template-002': '精密加工报价模板',
+                'template-003': '表面处理专用模板'
+            };
+
+            // 更新工序列表
+            const processList = document.getElementById('selectedProcessList');
+            processList.innerHTML = selectedProcesses.map(id => `
+                <li class="summary-list-item">
+                    <div class="summary-dot"></div>
+                    ${processNames[id] || id}
+                </li>
+            `).join('');
+
+            // 更新模板列表
+            const templateList = document.getElementById('selectedTemplateList');
+            templateList.innerHTML = selectedTemplates.map(id => `
+                <li class="summary-list-item">
+                    <div class="summary-dot"></div>
+                    ${templateNames[id] || id}
+                </li>
+            `).join('');
+
+            // 更新标题
+            document.querySelector('.summary-section:nth-child(2) .summary-section-title').textContent = `已选工序 (${selectedProcesses.length})`;
+            document.querySelector('.summary-section:nth-child(3) .summary-section-title').textContent = `已绑定模板 (${selectedTemplates.length})`;
+        }
+
+        // 全选工序
+        function selectAllInSection(section) {
+            const grid = document.getElementById(section + 'Grid');
+            const cards = grid.querySelectorAll('.process-card');
+            const allSelected = Array.from(cards).every(card => card.classList.contains('selected'));
+            
+            cards.forEach(card => {
+                if (allSelected) {
+                    card.classList.remove('selected');
+                } else {
+                    card.classList.add('selected');
+                }
+            });
+
+            updateSummary();
+        }
+
+        // 搜索产品
+        function searchProducts(keyword) {
+            const items = document.querySelectorAll('.product-item');
+            items.forEach(item => {
+                const name = item.querySelector('.product-name').textContent;
+                const code = item.querySelector('.product-code').textContent;
+                if (name.toLowerCase().includes(keyword.toLowerCase()) || 
+                    code.toLowerCase().includes(keyword.toLowerCase())) {
+                    item.style.display = 'block';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        }
+
+        // 保存关联配置
+        function saveBinding() {
+            if (selectedProcesses.length === 0) {
+                alert('请至少选择一个工序！');
+                return;
+            }
+
+            if (selectedTemplates.length === 0) {
+                alert('请至少绑定一个模板！');
+                return;
+            }
+
+            const config = {
+                productId: currentProduct,
+                processes: selectedProcesses,
+                templates: selectedTemplates,
+                timestamp: new Date().toISOString()
+            };
+
+            console.log('保存配置:', config);
+            
+            // 这里可以保存到 localStorage 或发送到服务器
+            localStorage.setItem(`binding_${currentProduct}`, JSON.stringify(config));
+            
+            alert('配置保存成功！\n\n' + 
+                  `产品: ${currentProduct}\n` +
+                  `工序数: ${selectedProcesses.length}\n` +
+                  `模板数: ${selectedTemplates.length}`);
+        }
+
+        // 预览配置
+        function previewBinding() {
+            const config = {
+                productId: currentProduct,
+                processes: selectedProcesses,
+                templates: selectedTemplates
+            };
+
+            const preview = JSON.stringify(config, null, 2);
+            alert('配置预览:\n\n' + preview);
+        }
+
+        // 重置配置
+        function resetConfig() {
+            if (confirm('确定要重置当前配置吗？')) {
+                selectedProcesses = [];
+                selectedTemplates = [];
+                
+                document.querySelectorAll('.process-card').forEach(card => {
+                    card.classList.remove('selected');
+                });
+                
+                document.querySelectorAll('.template-card').forEach(card => {
+                    card.classList.remove('selected');
+                });
+                
+                updateSummary();
+            }
+        }
+
+        // 创建新模板
+        function createNewTemplate() {
+            alert('跳转到模板配置页面...\n\n将打开产品卡片模板配置器');
+            // 这里可以跳转到模板配置页面
+            // window.location.href = 'template-config.html';
+        }
+
+        // 初始化
+        updateSummary();
+    </script>
+</body>
+</html>

@@ -1,0 +1,1240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>客户定价策略管理</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+
+        /* 顶部导航 */
+        .top-header {
+            background: white;
+            padding: 20px 40px;
+            border-bottom: 1px solid #e8ecf1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .header-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .header-subtitle {
+            font-size: 13px;
+            color: #718096;
+            margin-top: 4px;
+        }
+
+        .header-right {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #4a5568;
+            border: 1px solid #e2e8f0;
+        }
+
+        .btn-secondary:hover {
+            background: #f7fafc;
+            border-color: #cbd5e0;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        /* 主内容区 */
+        .main-container {
+            display: flex;
+            height: calc(100vh - 81px);
+        }
+
+        /* 左侧客户列表 */
+        .customer-sidebar {
+            width: 360px;
+            background: white;
+            border-right: 1px solid #e8ecf1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid #e8ecf1;
+        }
+
+        .search-box {
+            position: relative;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 10px 14px 10px 38px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #a0aec0;
+        }
+
+        .filter-tabs {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .filter-tab {
+            padding: 6px 14px;
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #4a5568;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+        }
+
+        .customer-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .customer-item {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f7fafc;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .customer-item:hover {
+            background: #f7fafc;
+        }
+
+        .customer-item.active {
+            background: #eef2ff;
+            border-left: 3px solid #667eea;
+        }
+
+        .customer-item.active::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: #667eea;
+        }
+
+        .customer-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 6px;
+        }
+
+        .customer-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 12px;
+            color: #718096;
+        }
+
+        .customer-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .badge-vip {
+            background: #fef5e7;
+            color: #f39c12;
+        }
+
+        .badge-standard {
+            background: #e8f5e9;
+            color: #4caf50;
+        }
+
+        .badge-diamond {
+            background: #fce4ec;
+            color: #e91e63;
+        }
+
+        /* 右侧定价策略配置区 */
+        .pricing-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px 40px;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #a0aec0;
+        }
+
+        .empty-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+
+        .empty-text {
+            font-size: 16px;
+        }
+
+        .pricing-header {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+
+        .pricing-customer-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .customer-info-left h2 {
+            font-size: 22px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+
+        .customer-tags {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .tag {
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .tag-level {
+            background: #fef5e7;
+            color: #f39c12;
+        }
+
+        .tag-industry {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .customer-stats {
+            display: flex;
+            gap: 32px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #718096;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        /* 策略配置卡片 */
+        .strategy-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #e8ecf1;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .form-label {
+            font-size: 14px;
+            color: #4a5568;
+            font-weight: 500;
+        }
+
+        .form-label.required::before {
+            content: '* ';
+            color: #f56565;
+        }
+
+        .form-input,
+        .form-select {
+            padding: 10px 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .form-input:focus,
+        .form-select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-input::placeholder {
+            color: #a0aec0;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .input-addon {
+            padding: 10px 14px;
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 14px;
+            color: #4a5568;
+            min-width: 50px;
+            text-align: center;
+        }
+
+        /* 切换开关 */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            height: 26px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #cbd5e0;
+            transition: .3s;
+            border-radius: 26px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(22px);
+        }
+
+        .switch-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+        }
+
+        /* 定价规则表格 */
+        .pricing-rules {
+            margin-top: 16px;
+        }
+
+        .rule-item {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            position: relative;
+        }
+
+        .rule-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .rule-title {
+            font-weight: 600;
+            color: #2d3748;
+            font-size: 14px;
+        }
+
+        .rule-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            color: #718096;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .icon-btn:hover {
+            background: #e2e8f0;
+            color: #2d3748;
+        }
+
+        .add-rule-btn {
+            width: 100%;
+            padding: 12px;
+            border: 2px dashed #cbd5e0;
+            background: white;
+            color: #667eea;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .add-rule-btn:hover {
+            border-color: #667eea;
+            background: #f7fafc;
+        }
+
+        /* 信息提示 */
+        .info-box {
+            background: #eff6ff;
+            border-left: 3px solid #3b82f6;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #1e40af;
+            margin-top: 12px;
+        }
+
+        .warning-box {
+            background: #fef3c7;
+            border-left: 3px solid #f59e0b;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #92400e;
+            margin-top: 12px;
+        }
+
+        /* 历史记录 */
+        .history-timeline {
+            margin-top: 16px;
+        }
+
+        .timeline-item {
+            display: flex;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .timeline-item:last-child {
+            border-bottom: none;
+        }
+
+        .timeline-dot {
+            width: 8px;
+            height: 8px;
+            background: #667eea;
+            border-radius: 50%;
+            margin-top: 6px;
+            flex-shrink: 0;
+        }
+
+        .timeline-content {
+            flex: 1;
+        }
+
+        .timeline-time {
+            font-size: 12px;
+            color: #718096;
+            margin-bottom: 4px;
+        }
+
+        .timeline-text {
+            font-size: 14px;
+            color: #2d3748;
+        }
+
+        /* 底部操作栏 */
+        .bottom-actions {
+            position: fixed;
+            bottom: 0;
+            left: 360px;
+            right: 0;
+            background: white;
+            padding: 16px 40px;
+            border-top: 1px solid #e8ecf1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.04);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+        }
+
+        /* 响应式 */
+        @media (max-width: 1024px) {
+            .customer-sidebar {
+                width: 300px;
+            }
+
+            .bottom-actions {
+                left: 300px;
+            }
+        }
+
+        /* 滚动条样式 */
+        .customer-list::-webkit-scrollbar,
+        .pricing-content::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .customer-list::-webkit-scrollbar-track,
+        .pricing-content::-webkit-scrollbar-track {
+            background: #f7fafc;
+        }
+
+        .customer-list::-webkit-scrollbar-thumb,
+        .pricing-content::-webkit-scrollbar-thumb {
+            background: #cbd5e0;
+            border-radius: 3px;
+        }
+
+        .customer-list::-webkit-scrollbar-thumb:hover,
+        .pricing-content::-webkit-scrollbar-thumb:hover {
+            background: #a0aec0;
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航 -->
+    <div class="top-header">
+        <div class="header-left">
+            <div>
+                <div class="header-title">客户定价策略管理</div>
+                <div class="header-subtitle">为不同客户配置个性化定价规则和折扣策略</div>
+            </div>
+        </div>
+        <div class="header-right">
+            <button class="btn btn-secondary" onclick="exportStrategy()">📤 导出策略</button>
+            <button class="btn btn-secondary" onclick="importStrategy()">📥 导入策略</button>
+        </div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="main-container">
+        <!-- 左侧客户列表 -->
+        <div class="customer-sidebar">
+            <div class="sidebar-header">
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" class="search-input" placeholder="搜索客户名称..." 
+                           oninput="searchCustomers(this.value)">
+                </div>
+                <div class="filter-tabs">
+                    <button class="filter-tab active" onclick="filterCustomers('all')">全部</button>
+                    <button class="filter-tab" onclick="filterCustomers('vip')">VIP</button>
+                    <button class="filter-tab" onclick="filterCustomers('diamond')">钻石</button>
+                </div>
+            </div>
+
+            <div class="customer-list" id="customerList">
+                <!-- 客户列表项 -->
+                <div class="customer-item active" onclick="selectCustomer(this, 1)">
+                    <div class="customer-name">智慧制造科技有限公司</div>
+                    <div class="customer-meta">
+                        <span class="customer-badge badge-diamond">钻石客户</span>
+                        <span>智能制造</span>
+                    </div>
+                </div>
+
+                <div class="customer-item" onclick="selectCustomer(this, 2)">
+                    <div class="customer-name">深圳创新科技集团</div>
+                    <div class="customer-meta">
+                        <span class="customer-badge badge-vip">VIP客户</span>
+                        <span>电子科技</span>
+                    </div>
+                </div>
+
+                <div class="customer-item" onclick="selectCustomer(this, 3)">
+                    <div class="customer-name">华东工业设备公司</div>
+                    <div class="customer-meta">
+                        <span class="customer-badge badge-vip">VIP客户</span>
+                        <span>工业设备</span>
+                    </div>
+                </div>
+
+                <div class="customer-item" onclick="selectCustomer(this, 4)">
+                    <div class="customer-name">绿能环保科技</div>
+                    <div class="customer-meta">
+                        <span class="customer-badge badge-standard">标准客户</span>
+                        <span>环保科技</span>
+                    </div>
+                </div>
+
+                <div class="customer-item" onclick="selectCustomer(this, 5)">
+                    <div class="customer-name">上海智联自动化</div>
+                    <div class="customer-meta">
+                        <span class="customer-badge badge-vip">VIP客户</span>
+                        <span>自动化</span>
+                    </div>
+                </div>
+
+                <div class="customer-item" onclick="selectCustomer(this, 6)">
+                    <div class="customer-name">北京精密仪器研究所</div>
+                    <div class="customer-meta">
+                        <span class="customer-badge badge-diamond">钻石客户</span>
+                        <span>科研机构</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧定价策略配置区 -->
+        <div class="pricing-content" id="pricingContent">
+            <!-- 客户信息头部 -->
+            <div class="pricing-header">
+                <div class="pricing-customer-info">
+                    <div class="customer-info-left">
+                        <h2>智慧制造科技有限公司</h2>
+                        <div class="customer-tags">
+                            <span class="tag tag-level">钻石客户</span>
+                            <span class="tag tag-industry">智能制造</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="customer-stats">
+                    <div class="stat-item">
+                        <div class="stat-label">历史订单</div>
+                        <div class="stat-value">15单</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">累计金额</div>
+                        <div class="stat-value">¥1,280,000</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">平均折扣</div>
+                        <div class="stat-value">8.5折</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">信用额度</div>
+                        <div class="stat-value">¥500,000</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 基础定价策略 -->
+            <div class="strategy-card">
+                <div class="card-title">
+                    💰 基础定价策略
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label required">定价策略名称</label>
+                        <input type="text" class="form-input" value="智慧制造-钻石客户策略" placeholder="请输入策略名称">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label required">策略类型</label>
+                        <select class="form-select">
+                            <option value="discount">折扣策略</option>
+                            <option value="tiered">阶梯定价</option>
+                            <option value="volume">批量折扣</option>
+                            <option value="custom">自定义策略</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">生效日期</label>
+                        <input type="date" class="form-input" value="2026-01-01">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">失效日期</label>
+                        <input type="date" class="form-input" placeholder="留空表示长期有效">
+                    </div>
+                </div>
+
+                <div class="form-group full-width">
+                    <div class="switch-label">
+                        <span class="form-label">启用自动定价</span>
+                        <label class="switch">
+                            <input type="checkbox" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="info-box">
+                        💡 启用后,系统将根据设定的规则自动计算最优价格,无需手动调整
+                    </div>
+                </div>
+            </div>
+
+            <!-- 折扣规则 -->
+            <div class="strategy-card">
+                <div class="card-title">
+                    🎯 折扣规则设置
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">基础折扣率</label>
+                        <div class="input-group">
+                            <input type="number" class="form-input" value="85" min="0" max="100">
+                            <div class="input-addon">%</div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">最低折扣限制</label>
+                        <div class="input-group">
+                            <input type="number" class="form-input" value="75" min="0" max="100">
+                            <div class="input-addon">%</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pricing-rules">
+                    <div class="rule-item">
+                        <div class="rule-header">
+                            <div class="rule-title">批量折扣规则</div>
+                            <div class="rule-actions">
+                                <button class="icon-btn" onclick="editRule(this)">✏️</button>
+                                <button class="icon-btn" onclick="deleteRule(this)">🗑️</button>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">订单金额</label>
+                                <div class="input-group">
+                                    <div class="input-addon">≥</div>
+                                    <input type="number" class="form-input" value="50000">
+                                    <div class="input-addon">元</div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">额外折扣</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-input" value="3">
+                                    <div class="input-addon">%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rule-item">
+                        <div class="rule-header">
+                            <div class="rule-title">季度返点规则</div>
+                            <div class="rule-actions">
+                                <button class="icon-btn" onclick="editRule(this)">✏️</button>
+                                <button class="icon-btn" onclick="deleteRule(this)">🗑️</button>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">季度销售额</label>
+                                <div class="input-group">
+                                    <div class="input-addon">≥</div>
+                                    <input type="number" class="form-input" value="200000">
+                                    <div class="input-addon">元</div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">返点比例</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-input" value="2">
+                                    <div class="input-addon">%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="add-rule-btn" onclick="addNewRule()">
+                        ➕ 添加新规则
+                    </button>
+                </div>
+            </div>
+
+            <!-- 产品分类定价 -->
+            <div class="strategy-card">
+                <div class="card-title">
+                    📦 产品分类定价
+                </div>
+
+                <div class="form-group full-width">
+                    <div class="switch-label">
+                        <span class="form-label">启用分类定价</span>
+                        <label class="switch">
+                            <input type="checkbox" id="enableCategoryPricing" onchange="toggleCategoryPricing()">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="categoryPricingRules" style="display: none; margin-top: 16px;">
+                    <div class="rule-item">
+                        <div class="rule-header">
+                            <div class="rule-title">标准产品</div>
+                            <div class="rule-actions">
+                                <button class="icon-btn">✏️</button>
+                                <button class="icon-btn">🗑️</button>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">折扣率</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-input" value="85">
+                                    <div class="input-addon">%</div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">适用产品数</label>
+                                <input type="text" class="form-input" value="23个产品" disabled>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rule-item">
+                        <div class="rule-header">
+                            <div class="rule-title">定制产品</div>
+                            <div class="rule-actions">
+                                <button class="icon-btn">✏️</button>
+                                <button class="icon-btn">🗑️</button>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">折扣率</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-input" value="90">
+                                    <div class="input-addon">%</div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">适用产品数</label>
+                                <input type="text" class="form-input" value="8个产品" disabled>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="add-rule-btn" onclick="addCategoryRule()">
+                        ➕ 添加产品分类
+                    </button>
+                </div>
+            </div>
+
+            <!-- 支付条款 -->
+            <div class="strategy-card">
+                <div class="card-title">
+                    💳 支付条款设置
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">默认付款方式</label>
+                        <select class="form-select">
+                            <option value="advance30">预付30%,货到付70%</option>
+                            <option value="advance50">预付50%,货到付50%</option>
+                            <option value="monthly">月结30天</option>
+                            <option value="monthly60">月结60天</option>
+                            <option value="quarterly">季度结算</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">账期天数</label>
+                        <div class="input-group">
+                            <input type="number" class="form-input" value="30">
+                            <div class="input-addon">天</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">提前付款折扣</label>
+                        <div class="input-group">
+                            <input type="number" class="form-input" value="2" step="0.1">
+                            <div class="input-addon">%</div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">延期付款罚息</label>
+                        <div class="input-group">
+                            <input type="number" class="form-input" value="0.05" step="0.01">
+                            <div class="input-addon">%/天</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 审批流程 -->
+            <div class="strategy-card">
+                <div class="card-title">
+                    ✅ 审批设置
+                </div>
+
+                <div class="form-group">
+                    <div class="switch-label">
+                        <span class="form-label">需要审批</span>
+                        <label class="switch">
+                            <input type="checkbox" id="requireApproval" checked onchange="toggleApprovalSettings()">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="approvalSettings">
+                    <div class="form-row" style="margin-top: 16px;">
+                        <div class="form-group">
+                            <label class="form-label">审批人</label>
+                            <select class="form-select">
+                                <option value="manager">销售经理</option>
+                                <option value="director">销售总监</option>
+                                <option value="cfo">财务总监</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">触发条件</label>
+                            <select class="form-select">
+                                <option value="always">所有订单</option>
+                                <option value="amount">金额超过阈值</option>
+                                <option value="discount">折扣超过阈值</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="warning-box">
+                        ⚠️ 当折扣率低于75%或订单金额超过100,000元时,需要销售总监审批
+                    </div>
+                </div>
+            </div>
+
+            <!-- 修改历史 -->
+            <div class="strategy-card">
+                <div class="card-title">
+                    📜 修改历史
+                </div>
+
+                <div class="history-timeline">
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">2026-01-30 14:35</div>
+                            <div class="timeline-text">张经理修改了基础折扣率: 88% → 85%</div>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">2026-01-15 10:20</div>
+                            <div class="timeline-text">李总监添加了季度返点规则</div>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">2026-01-01 09:00</div>
+                            <div class="timeline-text">系统创建了定价策略</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部操作栏 -->
+    <div class="bottom-actions">
+        <div>
+            <button class="btn btn-secondary" onclick="previewStrategy()">👁️ 预览效果</button>
+        </div>
+        <div class="action-buttons">
+            <button class="btn btn-secondary" onclick="resetStrategy()">重置</button>
+            <button class="btn btn-secondary" onclick="saveDraft()">💾 保存草稿</button>
+            <button class="btn btn-primary" onclick="saveStrategy()">✅ 保存策略</button>
+        </div>
+    </div>
+
+    <script>
+        // 选择客户
+        function selectCustomer(element, customerId) {
+            // 移除所有active类
+            document.querySelectorAll('.customer-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            // 添加active类到当前元素
+            element.classList.add('active');
+            
+            // 这里可以加载对应客户的定价策略
+            console.log('选择客户:', customerId);
+        }
+
+        // 搜索客户
+        function searchCustomers(keyword) {
+            const items = document.querySelectorAll('.customer-item');
+            items.forEach(item => {
+                const name = item.querySelector('.customer-name').textContent;
+                if (name.toLowerCase().includes(keyword.toLowerCase())) {
+                    item.style.display = 'block';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        }
+
+        // 筛选客户
+        function filterCustomers(type) {
+            // 更新tab状态
+            document.querySelectorAll('.filter-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // 筛选客户列表
+            const items = document.querySelectorAll('.customer-item');
+            items.forEach(item => {
+                const badge = item.querySelector('.customer-badge');
+                if (type === 'all') {
+                    item.style.display = 'block';
+                } else if (type === 'vip' && badge.textContent.includes('VIP')) {
+                    item.style.display = 'block';
+                } else if (type === 'diamond' && badge.textContent.includes('钻石')) {
+                    item.style.display = 'block';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        }
+
+        // 切换分类定价
+        function toggleCategoryPricing() {
+            const checkbox = document.getElementById('enableCategoryPricing');
+            const rules = document.getElementById('categoryPricingRules');
+            rules.style.display = checkbox.checked ? 'block' : 'none';
+        }
+
+        // 切换审批设置
+        function toggleApprovalSettings() {
+            const checkbox = document.getElementById('requireApproval');
+            const settings = document.getElementById('approvalSettings');
+            settings.style.display = checkbox.checked ? 'block' : 'none';
+        }
+
+        // 添加新规则
+        function addNewRule() {
+            alert('打开添加规则对话框');
+        }
+
+        // 添加分类规则
+        function addCategoryRule() {
+            alert('打开添加产品分类对话框');
+        }
+
+        // 编辑规则
+        function editRule(button) {
+            alert('编辑规则');
+        }
+
+        // 删除规则
+        function deleteRule(button) {
+            if (confirm('确定要删除这条规则吗?')) {
+                button.closest('.rule-item').remove();
+            }
+        }
+
+        // 预览效果
+        function previewStrategy() {
+            alert('打开预览窗口,展示定价策略应用效果');
+        }
+
+        // 保存草稿
+        function saveDraft() {
+            // 收集表单数据
+            const data = {
+                timestamp: new Date().toISOString(),
+                strategyName: document.querySelector('input[placeholder="请输入策略名称"]').value
+            };
+            
+            localStorage.setItem('pricing_strategy_draft', JSON.stringify(data));
+            alert('草稿保存成功!');
+        }
+
+        // 保存策略
+        function saveStrategy() {
+            // 验证必填项
+            const strategyName = document.querySelector('input[placeholder="请输入策略名称"]').value;
+            if (!strategyName) {
+                alert('请输入策略名称!');
+                return;
+            }
+
+            // 这里可以调用API保存策略
+            if (confirm('确定要保存此定价策略吗?')) {
+                console.log('保存定价策略');
+                alert('定价策略保存成功!');
+            }
+        }
+
+        // 重置策略
+        function resetStrategy() {
+            if (confirm('确定要重置所有设置吗?')) {
+                location.reload();
+            }
+        }
+
+        // 导出策略
+        function exportStrategy() {
+            alert('导出当前客户的定价策略为Excel/JSON文件');
+        }
+
+        // 导入策略
+        function importStrategy() {
+            alert('导入定价策略配置文件');
+        }
+
+        // 页面加载时恢复草稿
+        window.addEventListener('load', function() {
+            const draft = localStorage.getItem('pricing_strategy_draft');
+            if (draft) {
+                const data = JSON.parse(draft);
+                console.log('恢复草稿:', data);
+            }
+        });
+    </script>
+</body>
+</html>

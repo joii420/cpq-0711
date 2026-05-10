@@ -1,0 +1,524 @@
+/* ===== ComponentManagement shared styles - matches prototype ===== */
+
+/* ====== LAYOUT ====== */
+.cm-layout {
+  display: flex;
+  height: calc(100vh - 112px);
+  background: #f0f2f5;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 13px;
+  color: #333;
+  margin: -24px;
+}
+
+/* ====== LEFT PANEL ====== */
+.cm-left-panel {
+  width: 220px;
+  background: #fff;
+  border-right: 1px solid #e4e7ed;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.cm-left-header {
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid #e4e7ed;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.cm-left-header h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0;
+}
+
+.cm-btn-icon {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 4px;
+  color: #909399;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
+}
+
+.cm-btn-icon:hover {
+  background: #f0f2f5;
+  color: #409eff;
+}
+
+.cm-tree-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+/* Override Ant Design Tree to match prototype */
+.cm-tree-container .ant-tree {
+  font-size: 12.5px;
+  background: transparent;
+}
+
+.cm-tree-container .ant-tree .ant-tree-treenode {
+  padding: 1px 0;
+}
+
+.cm-tree-container .ant-tree .ant-tree-node-content-wrapper {
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.cm-tree-container .ant-tree .ant-tree-node-content-wrapper:hover {
+  background: #f5f7fa;
+}
+
+.cm-tree-container .ant-tree .ant-tree-node-content-wrapper.ant-tree-node-selected {
+  background: #ecf5ff;
+  color: #409eff;
+}
+
+.cm-tree-container .ant-tree .ant-tree-title {
+  font-size: 12.5px;
+}
+
+/* ====== CENTER PANEL ====== */
+.cm-center-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+
+.cm-center-toolbar {
+  background: #fff;
+  border-bottom: 1px solid #e4e7ed;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.cm-center-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.cm-canvas-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #f0f2f5;
+  min-height: 0;
+}
+
+.cm-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #909399;
+  gap: 12px;
+}
+
+.cm-empty-state-icon {
+  font-size: 48px;
+  color: #c0c4cc;
+}
+
+.cm-empty-state-text {
+  font-size: 13px;
+  color: #909399;
+}
+
+/* ====== CARD SECTIONS ====== */
+.cm-card-section {
+  background: #fff;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  overflow: visible;
+  flex-shrink: 0;
+}
+
+.cm-card-section-header {
+  padding: 9px 14px;
+  background: #fafafa;
+  border-bottom: 1px solid #e4e7ed;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #606266;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.cm-card-section-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cm-section-badge {
+  background: #e1f0ff;
+  color: #409eff;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.cm-card-section-body {
+  padding: 12px 14px;
+}
+
+/* ====== HEADER PREVIEW ====== */
+.cm-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cm-preview-table th {
+  background: #fafbfc;
+  border: 1px solid #ebeef5;
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: #606266;
+  font-weight: 500;
+}
+
+.cm-preview-table td {
+  border: 1px solid #ebeef5;
+  padding: 10px 12px;
+  text-align: center;
+  color: #c0c4cc;
+  font-size: 12px;
+}
+
+.cm-subtotal-col {
+  background: #fffbf0 !important;
+}
+
+.cm-subtotal-th {
+  background: #fff8e6 !important;
+  color: #e6a23c !important;
+}
+
+/* ====== FIELD CONFIG TABLE ====== */
+.cm-config-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cm-config-table th {
+  background: #f5f7fa;
+  border: 1px solid #ebeef5;
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 12px;
+  color: #606266;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.cm-config-table td {
+  border: 1px solid #ebeef5;
+  padding: 5px 8px;
+  vertical-align: middle;
+}
+
+.cm-config-table tr:hover td {
+  background: #fafcff;
+}
+
+.cm-subtotal-row td {
+  background: #fffbf0;
+}
+
+.cm-drag-handle {
+  color: #c0c4cc;
+  cursor: grab;
+  font-size: 14px;
+  padding: 0 4px;
+  display: inline-block;
+}
+
+.cm-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Override Ant Design table inside card */
+.cm-card-section .ant-table-thead > tr > th {
+  background: #f5f7fa;
+  border-bottom: 1px solid #ebeef5;
+  font-size: 12px;
+  color: #606266;
+  font-weight: 500;
+  padding: 7px 10px;
+}
+
+.cm-card-section .ant-table-tbody > tr > td {
+  border-bottom: 1px solid #ebeef5;
+  padding: 5px 8px;
+}
+
+.cm-card-section .ant-table-tbody > tr:hover > td {
+  background: #fafcff;
+}
+
+/* Subtotal row highlight */
+.cm-subtotal-table-row td {
+  background: #fffbf0 !important;
+}
+
+/* ====== FORMULA TOOLBAR ====== */
+.cm-formula-toolbar {
+  padding: 8px 14px;
+  border-bottom: 1px solid #ebeef5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cm-formula-toolbar-label {
+  font-size: 11.5px;
+  color: #909399;
+  margin-right: 4px;
+}
+
+.cm-op-chip {
+  padding: 3px 10px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  color: #606266;
+  user-select: none;
+  transition: all 0.15s;
+  line-height: 1.4;
+}
+
+.cm-op-chip:hover {
+  border-color: #409eff;
+  color: #409eff;
+  background: #ecf5ff;
+}
+
+.cm-op-chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cm-op-chip-hint {
+  font-size: 11px;
+  color: #c0c4cc;
+}
+
+/* ====== RIGHT PANEL ====== */
+.cm-right-panel {
+  width: 230px;
+  background: #fff;
+  border-left: 1px solid #e4e7ed;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.cm-right-tabs {
+  display: flex;
+  border-bottom: 1px solid #e4e7ed;
+  flex-shrink: 0;
+}
+
+.cm-right-tab {
+  flex: 1;
+  padding: 11px 8px;
+  text-align: center;
+  font-size: 12.5px;
+  cursor: pointer;
+  color: #606266;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  user-select: none;
+}
+
+.cm-right-tab.active {
+  color: #409eff;
+  border-bottom-color: #409eff;
+  font-weight: 500;
+}
+
+.cm-right-tab:hover:not(.active) {
+  background: #f5f7fa;
+}
+
+.cm-right-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.cm-right-empty {
+  text-align: center;
+  color: #c0c4cc;
+  font-size: 12px;
+  margin-top: 30px;
+}
+
+/* ====== FIELD CARDS ====== */
+.cm-field-card {
+  border: 1px solid #e4e7ed;
+  border-radius: 5px;
+  padding: 7px 10px;
+  margin-bottom: 6px;
+  cursor: grab;
+  background: #fff;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-left: 3px solid #409eff;
+}
+
+.cm-field-card:hover {
+  border-color: #409eff;
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.12);
+}
+
+.cm-field-card:active {
+  cursor: grabbing;
+}
+
+.cm-field-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.cm-field-card-name {
+  font-size: 12.5px;
+  color: #303133;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cm-field-card-type {
+  font-size: 11px;
+  color: #909399;
+  margin-top: 1px;
+}
+
+.cm-section-divider {
+  font-size: 11px;
+  color: #909399;
+  padding: 6px 2px 4px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+.cm-subtotal-card {
+  border: 1px solid #e4e7ed;
+  border-radius: 5px;
+  padding: 7px 10px;
+  margin-bottom: 6px;
+  cursor: grab;
+  background: #fffdf7;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-left: 3px solid #e6a23c;
+}
+
+.cm-subtotal-card:hover {
+  border-color: #e6a23c;
+  box-shadow: 0 2px 8px rgba(230, 162, 60, 0.12);
+}
+
+.cm-subtotal-card:active {
+  cursor: grabbing;
+}
+
+.cm-subtotal-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.cm-subtotal-card-name {
+  font-size: 12.5px;
+  color: #303133;
+  font-weight: 500;
+}
+
+.cm-subtotal-card-comp {
+  font-size: 11px;
+  color: #909399;
+  margin-top: 1px;
+}
+
+/* ====== FORMULA ZONE (inside card) ====== */
+.cm-formula-add-row {
+  padding: 6px 12px;
+  display: flex;
+}
+
+/* Toolbar btn group */
+.cm-toolbar-btn-group {
+  display: flex;
+  gap: 8px;
+}
+
+.cm-btn {
+  padding: 5px 14px;
+  border-radius: 4px;
+  border: 1px solid #dcdfe6;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  color: #606266;
+  transition: all 0.15s;
+}
+
+.cm-btn:hover {
+  border-color: #409eff;
+  color: #409eff;
+}
+
+.cm-btn-primary {
+  background: #409eff;
+  border-color: #409eff;
+  color: #fff;
+}
+
+.cm-btn-primary:hover {
+  background: #66b1ff;
+  border-color: #66b1ff;
+  color: #fff;
+}
+
+.cm-btn-sm {
+  padding: 3px 10px;
+  font-size: 12px;
+}

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", "SimSun", Arial, sans-serif; font-size: 12px; color: #333; padding: 20px; }
+  .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; font-weight: bold; }
+  .header .sub { font-size: 13px; color: #666; margin-top: 4px; }
+  .section { margin-bottom: 16px; }
+  .section-title { font-size: 13px; font-weight: bold; background: #f0f0f0; padding: 4px 8px; border-left: 3px solid #555; margin-bottom: 8px; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; padding: 0 4px; }
+  .info-item { display: flex; }
+  .info-label { color: #666; min-width: 90px; }
+  .info-value { font-weight: 500; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  th { background: #555; color: #fff; padding: 5px 6px; text-align: center; border: 1px solid #444; }
+  td { padding: 4px 6px; border: 1px solid #ccc; text-align: center; }
+  tr:nth-child(even) td { background: #fafafa; }
+  .amount-row td { font-weight: bold; background: #f5f5f5; }
+  .summary-table { width: 50%; margin-left: auto; }
+  .summary-table td { padding: 5px 8px; }
+  .terms { font-size: 11px; color: #555; border: 1px solid #ddd; padding: 8px; border-radius: 3px; }
+  .footer { margin-top: 24px; border-top: 1px solid #ccc; padding-top: 10px; display: flex; justify-content: space-between; font-size: 11px; color: #888; }
+  .page-break { page-break-before: always; }
+  @media print {
+    body { padding: 10px; }
+    .no-print { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>报价单</h1>
+  <div class="sub">Quotation</div>
+</div>
+
+<div class="section">
+  <div class="section-title">基本信息</div>
+  <div class="info-grid">
+    <div class="info-item"><span class="info-label">报价单号：</span><span class="info-value">{quotation.quotationNumber}</span></div>
+    <div class="info-item"><span class="info-label">报价日期：</span><span class="info-value">{quotation.createdAt}</span></div>
+    <div class="info-item"><span class="info-label">有效期至：</span><span class="info-value">{quotation.expiryDate}</span></div>
+    <div class="info-item"><span class="info-label">状态：</span><span class="info-value">{quotation.statusLabel}</span></div>
+    <div class="info-item"><span class="info-label">项目名称：</span><span class="info-value">{quotation.projectName}</span></div>
+    <div class="info-item"><span class="info-label">报价类型：</span><span class="info-value">{quotation.quoteType}</span></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">客户信息</div>
+  <div class="info-grid">
+    <div class="info-item"><span class="info-label">客户名称：</span><span class="info-value">{quotation.snapshotCustomerName}</span></div>
+    <div class="info-item"><span class="info-label">客户等级：</span><span class="info-value">{quotation.snapshotCustomerLevel}</span></div>
+    <div class="info-item"><span class="info-label">联系人：</span><span class="info-value">{quotation.contactName}</span></div>
+    <div class="info-item"><span class="info-label">联系电话：</span><span class="info-value">{quotation.contactPhone}</span></div>
+    <div class="info-item"><span class="info-label">联系邮箱：</span><span class="info-value">{quotation.contactEmail}</span></div>
+    <div class="info-item"><span class="info-label">地区：</span><span class="info-value">{quotation.snapshotCustomerRegion}</span></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">产品明细</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:40px">序号</th>
+        <th>产品规格</th>
+        <th style="width:80px">产品分类</th>
+        <th style="width:120px">属性值</th>
+        {#if showDiscount}<th style="width:80px">折扣率(%)</th>{/if}
+        <th style="width:100px">小计(元)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {#for item in lineItems}
+      <tr>
+        <td>{item_count}</td>
+        <td style="text-align:left">{item.specification}</td>
+        <td>{item.category}</td>
+        <td style="text-align:left;font-size:10px">{item.attributeValues}</td>
+        {#if showDiscount}<td>{item.discountRate}</td>{/if}
+        <td style="text-align:right">{item.subtotal}</td>
+      </tr>
+      {/for}
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <table class="summary-table">
+    <tr class="amount-row"><td>原价合计：</td><td style="text-align:right">￥{quotation.originalAmount}</td></tr>
+    {#if showDiscount}<tr><td>折扣率：</td><td style="text-align:right">{quotation.finalDiscountRate}%</td></tr>{/if}
+    <tr class="amount-row"><td style="font-size:13px">报价总金额：</td><td style="text-align:right;font-size:14px;color:#c00">￥{quotation.totalAmount}</td></tr>
+  </table>
+</div>
+
+{#if quotation.paymentTerms}
+<div class="section">
+  <div class="section-title">付款条款</div>
+  <div class="terms">{quotation.paymentTerms}</div>
+</div>
+{/if}
+
+{#if quotation.deliveryCycle}
+<div class="section">
+  <div class="section-title">交货周期</div>
+  <div class="terms">{quotation.deliveryCycle} 天</div>
+</div>
+{/if}
+
+<div class="footer">
+  <span>本报价单由系统自动生成，具体以合同为准。</span>
+  <span>打印时间：{printTime}</span>
+</div>
+
+</body>
+</html>

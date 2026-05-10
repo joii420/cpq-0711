@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>产品工序选型配置系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+        }
+
+        /* 头部 */
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-title {
+            font-size: 24px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: white;
+            color: #667eea;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        /* 产品信息卡片 */
+        .product-info {
+            background: linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 100%);
+            padding: 30px 40px;
+            border-bottom: 2px solid #e8ecf1;
+        }
+
+        .product-info-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .info-label {
+            font-size: 13px;
+            color: #718096;
+            font-weight: 500;
+        }
+
+        .info-value {
+            font-size: 15px;
+            color: #2d3748;
+            font-weight: 600;
+        }
+
+        /* 主内容区 */
+        .main-content {
+            display: grid;
+            grid-template-columns: 300px 1fr 380px;
+            min-height: 600px;
+        }
+
+        /* 左侧类别导航 */
+        .category-sidebar {
+            background: #f8fafc;
+            border-right: 1px solid #e8ecf1;
+            padding: 24px 0;
+        }
+
+        .category-title {
+            padding: 0 24px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .category-list {
+            list-style: none;
+        }
+
+        .category-item {
+            padding: 14px 24px;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: #4a5568;
+            font-size: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 3px solid transparent;
+        }
+
+        .category-item:hover {
+            background: white;
+            color: #667eea;
+        }
+
+        .category-item.active {
+            background: white;
+            color: #667eea;
+            font-weight: 600;
+            border-left-color: #667eea;
+        }
+
+        .category-badge {
+            background: #e8ecf1;
+            color: #4a5568;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .category-item.active .category-badge {
+            background: #667eea;
+            color: white;
+        }
+
+        /* 中间工序选择区 */
+        .process-area {
+            padding: 30px 40px;
+            overflow-y: auto;
+            max-height: 700px;
+        }
+
+        .process-area::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .process-area::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .process-area::-webkit-scrollbar-thumb {
+            background: #cbd5e0;
+            border-radius: 4px;
+        }
+
+        .process-area::-webkit-scrollbar-thumb:hover {
+            background: #a0aec0;
+        }
+
+        .process-category-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #e8ecf1;
+        }
+
+        .process-grid {
+            display: grid;
+            gap: 16px;
+        }
+
+        .process-card {
+            border: 2px solid #e8ecf1;
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            background: white;
+        }
+
+        .process-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 16px rgba(102, 126, 234, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .process-card.selected {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 100%);
+        }
+
+        .process-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .process-info {
+            flex: 1;
+        }
+
+        .process-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 6px;
+        }
+
+        .process-code {
+            font-size: 13px;
+            color: #718096;
+            font-family: 'Courier New', monospace;
+        }
+
+        .process-checkbox {
+            width: 24px;
+            height: 24px;
+            border: 2px solid #cbd5e0;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            transition: all 0.3s;
+            flex-shrink: 0;
+        }
+
+        .process-card.selected .process-checkbox {
+            background: #667eea;
+            border-color: #667eea;
+        }
+
+        .process-checkbox::after {
+            content: "✓";
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .process-card.selected .process-checkbox::after {
+            opacity: 1;
+        }
+
+        .process-description {
+            font-size: 14px;
+            color: #718096;
+            line-height: 1.6;
+        }
+
+        .process-tag {
+            display: inline-block;
+            background: #fef3c7;
+            color: #92400e;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-top: 12px;
+        }
+
+        /* 右侧已选工序 */
+        .selected-sidebar {
+            background: #f8fafc;
+            border-left: 1px solid #e8ecf1;
+            padding: 30px 24px;
+            overflow-y: auto;
+            max-height: 700px;
+        }
+
+        .selected-sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .selected-sidebar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+
+        .selected-sidebar::-webkit-scrollbar-thumb {
+            background: #cbd5e0;
+            border-radius: 3px;
+        }
+
+        .selected-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+
+        .selected-count {
+            font-size: 13px;
+            color: #718096;
+            margin-bottom: 20px;
+        }
+
+        .selected-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .selected-item {
+            background: white;
+            border: 1px solid #e8ecf1;
+            border-radius: 8px;
+            padding: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s;
+        }
+
+        .selected-item:hover {
+            border-color: #667eea;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+        }
+
+        .selected-item-info {
+            flex: 1;
+        }
+
+        .selected-item-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 4px;
+        }
+
+        .selected-item-code {
+            font-size: 12px;
+            color: #718096;
+            font-family: 'Courier New', monospace;
+        }
+
+        .remove-btn {
+            width: 24px;
+            height: 24px;
+            border: none;
+            background: #fee;
+            color: #dc2626;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+            flex-shrink: 0;
+        }
+
+        .remove-btn:hover {
+            background: #dc2626;
+            color: white;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #a0aec0;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 16px;
+            opacity: 0.3;
+        }
+
+        .empty-state p {
+            font-size: 14px;
+        }
+
+        .summary-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .summary-row:last-child {
+            margin-bottom: 0;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.3);
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .summary-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .summary-value {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        @media (max-width: 1200px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+
+            .category-sidebar,
+            .selected-sidebar {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <div class="header">
+            <div class="header-title">
+                <span>🔧</span>
+                产品工序选型配置系统
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-primary" onclick="saveConfiguration()">保存配置</button>
+                <button class="btn btn-secondary" onclick="resetConfiguration()">重置</button>
+            </div>
+        </div>
+
+        <!-- 产品基础信息 -->
+        <div class="product-info">
+            <div class="product-info-title">
+                📦 产品基础信息
+            </div>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">产品名称</span>
+                    <span class="info-value">液压由壬套装</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">产品编号</span>
+                    <span class="info-value">MRO-BZCC-SC28T</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">产品类型</span>
+                    <span class="info-value">五金机械</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">规格型号</span>
+                    <span class="info-value">标准型-28件套</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">材质</span>
+                    <span class="info-value">铝合金 + 不锈钢</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">创建时间</span>
+                    <span class="info-value">2026-01-31</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 左侧类别导航 -->
+            <div class="category-sidebar">
+                <div class="category-title">工序类别</div>
+                <ul class="category-list">
+                    <li class="category-item active" onclick="switchCategory('surface')">
+                        表面处理工序
+                        <span class="category-badge">8</span>
+                    </li>
+                    <li class="category-item" onclick="switchCategory('machining')">
+                        机加工序
+                        <span class="category-badge">6</span>
+                    </li>
+                    <li class="category-item" onclick="switchCategory('heat')">
+                        热处理工序
+                        <span class="category-badge">4</span>
+                    </li>
+                    <li class="category-item" onclick="switchCategory('assembly')">
+                        装配工序
+                        <span class="category-badge">5</span>
+                    </li>
+                    <li class="category-item" onclick="switchCategory('inspection')">
+                        检测工序
+                        <span class="category-badge">7</span>
+                    </li>
+                    <li class="category-item" onclick="switchCategory('packaging')">
+                        包装工序
+                        <span class="category-badge">3</span>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- 中间工序选择区 -->
+            <div class="process-area" id="processArea">
+                <div class="process-category-title">表面处理工序</div>
+                <div class="process-grid">
+                    <div class="process-card" onclick="toggleProcess(this, '电镀工序', 'MRO-LP-SLJC')">
+                        <div class="process-card-header">
+                            <div class="process-info">
+                                <div class="process-name">电镀工序</div>
+                                <div class="process-code">MRO-LP-SLJC</div>
+                            </div>
+                            <div class="process-checkbox"></div>
+                        </div>
+                        <div class="process-description">
+                            对产品表面进行电镀处理，提升产品耐腐蚀性和美观度
+                        </div>
+                        <span class="process-tag">必选工序</span>
+                    </div>
+
+                    <div class="process-card" onclick="toggleProcess(this, '喷涂工序', 'MRO-LP-PTD')">
+                        <div class="process-card-header">
+                            <div class="process-info">
+                                <div class="process-name">喷涂工序</div>
+                                <div class="process-code">MRO-LP-PTD</div>
+                            </div>
+                            <div class="process-checkbox"></div>
+                        </div>
+                        <div class="process-description">
+                            采用静电喷涂技术，为产品表面提供保护涂层
+                        </div>
+                    </div>
+
+                    <div class="process-card" onclick="toggleProcess(this, '抛光工序', 'MRO-LP-PGC')">
+                        <div class="process-card-header">
+                            <div class="process-info">
+                                <div class="process-name">抛光工序</div>
+                                <div class="process-code">MRO-LP-PGC</div>
+                            </div>
+                            <div class="process-checkbox"></div>
+                        </div>
+                        <div class="process-description">
+                            机械抛光处理，提升产品表面光洁度和触感
+                        </div>
+                    </div>
+
+                    <div class="process-card" onclick="toggleProcess(this, '阳极氧化', 'MRO-LP-YJYH')">
+                        <div class="process-card-header">
+                            <div class="process-info">
+                                <div class="process-name">阳极氧化</div>
+                                <div class="process-code">MRO-LP-YJYH</div>
+                            </div>
+                            <div class="process-checkbox"></div>
+                        </div>
+                        <div class="process-description">
+                            铝合金表面阳极氧化处理，增强耐磨性和装饰效果
+                        </div>
+                    </div>
+
+                    <div class="process-card" onclick="toggleProcess(this, '磷化处理', 'MRO-LP-LHCL')">
+                        <div class="process-card-header">
+                            <div class="process-info">
+                                <div class="process-name">磷化处理</div>
+                                <div class="process-code">MRO-LP-LHCL</div>
+                            </div>
+                            <div class="process-checkbox"></div>
+                        </div>
+                        <div class="process-description">
+                            金属表面磷化膜处理，提高防锈能力和涂层附着力
+                        </div>
+                    </div>
+
+                    <div class="process-card" onclick="toggleProcess(this, '镀铬工序', 'MRO-LP-DGGX')">
+                        <div class="process-card-header">
+                            <div class="process-info">
+                                <div class="process-name">镀铬工序</div>
+                                <div class="process-code">MRO-LP-DGGX</div>
+                            </div>
+                            <div class="process-checkbox"></div>
+                        </div>
+                        <div class="process-description">
+                            表面镀铬处理，提供高硬度和镜面效果
+                        </div>
+                    </div>
+
+                    <div class="process-card" onclick="toggleProcess(this, '电泳涂装', 'MRO-LP-DYTZ')">
+                        <div class="process-card-header">
+                            <div class="process-info">
+                                <div class="process-name">电泳涂装</div>
+                                <div class="process-code">MRO-LP-DYTZ</div>
+                            </div>
+                            <div class="process-checkbox"></div>
+                        </div>
+                        <div class="process-description">
+                            电泳工艺涂装，涂层均匀性好，环保高效
+                        </div>
+                    </div>
+
+                    <div class="process-card" onclick="toggleProcess(this, '喷砂处理', 'MRO-LP-PSCL')">
+                        <div class="process-card-header">
+                            <div class="process-info">
+                                <div class="process-name">喷砂处理</div>
+                                <div class="process-code">MRO-LP-PSCL</div>
+                            </div>
+                            <div class="process-checkbox"></div>
+                        </div>
+                        <div class="process-description">
+                            利用高速砂粒去除表面氧化层和毛刺，形成均匀粗糙度
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧已选工序 -->
+            <div class="selected-sidebar">
+                <div class="selected-title">已选工序</div>
+                <div class="selected-count">已选择 <strong id="selectedCount">0</strong> 个工序</div>
+                
+                <div class="selected-list" id="selectedList">
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                        </svg>
+                        <p>还未选择任何工序<br>请在左侧选择需要的工序</p>
+                    </div>
+                </div>
+
+                <div class="summary-box" id="summaryBox" style="display: none;">
+                    <div class="summary-row">
+                        <span class="summary-label">表面处理工序</span>
+                        <span class="summary-value" id="surfaceCount">0</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">机加工序</span>
+                        <span class="summary-value" id="machiningCount">0</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">总工序数</span>
+                        <span class="summary-value" id="totalCount">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedProcesses = [];
+        const processes = {
+            surface: [
+                { name: '电镀工序', code: 'MRO-LP-SLJC', desc: '对产品表面进行电镀处理，提升产品耐腐蚀性和美观度', required: true },
+                { name: '喷涂工序', code: 'MRO-LP-PTD', desc: '采用静电喷涂技术，为产品表面提供保护涂层' },
+                { name: '抛光工序', code: 'MRO-LP-PGC', desc: '机械抛光处理，提升产品表面光洁度和触感' },
+                { name: '阳极氧化', code: 'MRO-LP-YJYH', desc: '铝合金表面阳极氧化处理，增强耐磨性和装饰效果' },
+                { name: '磷化处理', code: 'MRO-LP-LHCL', desc: '金属表面磷化膜处理，提高防锈能力和涂层附着力' },
+                { name: '镀铬工序', code: 'MRO-LP-DGGX', desc: '表面镀铬处理，提供高硬度和镜面效果' },
+                { name: '电泳涂装', code: 'MRO-LP-DYTZ', desc: '电泳工艺涂装，涂层均匀性好，环保高效' },
+                { name: '喷砂处理', code: 'MRO-LP-PSCL', desc: '利用高速砂粒去除表面氧化层和毛刺，形成均匀粗糙度' }
+            ],
+            machining: [
+                { name: 'CNC加工', code: 'MRO-MC-CNC', desc: '数控机床精密加工，保证产品尺寸精度' },
+                { name: '车削加工', code: 'MRO-MC-CXJ', desc: '车床旋转切削加工，适用于圆柱形零件' },
+                { name: '铣削加工', code: 'MRO-MC-XXJ', desc: '铣床多刃刀具加工，适用于平面和型面' },
+                { name: '钻孔攻丝', code: 'MRO-MC-ZKGS', desc: '钻孔和攻丝加工，形成螺纹连接' },
+                { name: '磨削加工', code: 'MRO-MC-MXJ', desc: '磨床高精度表面加工，达到镜面效果' },
+                { name: '线切割', code: 'MRO-MC-XQG', desc: '电火花线切割，适用于复杂型面加工' }
+            ],
+            heat: [
+                { name: '淬火处理', code: 'MRO-HT-CHC', desc: '快速冷却热处理，提高材料硬度' },
+                { name: '回火处理', code: 'MRO-HT-HHC', desc: '淬火后加热处理，消除内应力' },
+                { name: '正火处理', code: 'MRO-HT-ZHC', desc: '加热后空冷处理，细化晶粒' },
+                { name: '退火处理', code: 'MRO-HT-THC', desc: '缓慢冷却处理，降低硬度便于加工' }
+            ],
+            assembly: [
+                { name: '总装配', code: 'MRO-AS-ZZP', desc: '产品主要零部件装配组合' },
+                { name: '部件装配', code: 'MRO-AS-BJZP', desc: '产品子部件预装配' },
+                { name: '螺栓连接', code: 'MRO-AS-LSLJ', desc: '采用螺栓螺母进行机械连接' },
+                { name: '焊接装配', code: 'MRO-AS-HJZP', desc: '通过焊接方式实现零件连接' },
+                { name: '胶接装配', code: 'MRO-AS-JJZP', desc: '采用胶粘剂实现零件连接' }
+            ],
+            inspection: [
+                { name: '尺寸检测', code: 'MRO-IN-CCJC', desc: '使用量具测量产品关键尺寸' },
+                { name: '外观检测', code: 'MRO-IN-WGJC', desc: '目视或仪器检查产品外观质量' },
+                { name: '功能测试', code: 'MRO-IN-GNCS', desc: '验证产品功能是否符合要求' },
+                { name: '强度测试', code: 'MRO-IN-QDCS', desc: '测试产品承载能力和强度' },
+                { name: '气密性检测', code: 'MRO-IN-QMXJC', desc: '检测产品密封性能' },
+                { name: '光谱分析', code: 'MRO-IN-GPFX', desc: '分析材料化学成分' },
+                { name: '硬度测试', code: 'MRO-IN-YDCS', desc: '测量材料表面硬度' }
+            ],
+            packaging: [
+                { name: '包装入库', code: 'MRO-PK-BZRK', desc: '产品包装后入库存储' },
+                { name: '防护包装', code: 'MRO-PK-FHBZ', desc: '采用防护材料进行包装保护' },
+                { name: '标识贴标', code: 'MRO-PK-BSTB', desc: '粘贴产品标识和合格证' }
+            ]
+        };
+
+        function toggleProcess(card, name, code) {
+            const isSelected = card.classList.contains('selected');
+            
+            if (isSelected) {
+                card.classList.remove('selected');
+                selectedProcesses = selectedProcesses.filter(p => p.code !== code);
+            } else {
+                card.classList.add('selected');
+                selectedProcesses.push({ name, code });
+            }
+            
+            updateSelectedList();
+        }
+
+        function updateSelectedList() {
+            const selectedList = document.getElementById('selectedList');
+            const selectedCount = document.getElementById('selectedCount');
+            const summaryBox = document.getElementById('summaryBox');
+            
+            selectedCount.textContent = selectedProcesses.length;
+            
+            if (selectedProcesses.length === 0) {
+                selectedList.innerHTML = `
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                        </svg>
+                        <p>还未选择任何工序<br>请在左侧选择需要的工序</p>
+                    </div>
+                `;
+                summaryBox.style.display = 'none';
+                return;
+            }
+            
+            summaryBox.style.display = 'block';
+            
+            selectedList.innerHTML = selectedProcesses.map(process => `
+                <div class="selected-item">
+                    <div class="selected-item-info">
+                        <div class="selected-item-name">${process.name}</div>
+                        <div class="selected-item-code">${process.code}</div>
+                    </div>
+                    <button class="remove-btn" onclick="removeProcess('${process.code}')">×</button>
+                </div>
+            `).join('');
+            
+            // Update summary counts
+            const surfaceCount = selectedProcesses.filter(p => p.code.includes('-LP-')).length;
+            const machiningCount = selectedProcesses.filter(p => p.code.includes('-MC-')).length;
+            document.getElementById('surfaceCount').textContent = surfaceCount;
+            document.getElementById('machiningCount').textContent = machiningCount;
+            document.getElementById('totalCount').textContent = selectedProcesses.length;
+        }
+
+        function removeProcess(code) {
+            const cards = document.querySelectorAll('.process-card');
+            cards.forEach(card => {
+                const cardCode = card.querySelector('.process-code').textContent;
+                if (cardCode === code) {
+                    card.classList.remove('selected');
+                }
+            });
+            
+            selectedProcesses = selectedProcesses.filter(p => p.code !== code);
+            updateSelectedList();
+        }
+
+        function switchCategory(category) {
+            const categoryItems = document.querySelectorAll('.category-item');
+            categoryItems.forEach(item => item.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            
+            const categoryTitles = {
+                surface: '表面处理工序',
+                machining: '机加工序',
+                heat: '热处理工序',
+                assembly: '装配工序',
+                inspection: '检测工序',
+                packaging: '包装工序'
+            };
+            
+            const processArea = document.getElementById('processArea');
+            const categoryData = processes[category];
+            
+            processArea.innerHTML = `
+                <div class="process-category-title">${categoryTitles[category]}</div>
+                <div class="process-grid">
+                    ${categoryData.map(process => {
+                        const isSelected = selectedProcesses.some(p => p.code === process.code);
+                        return `
+                            <div class="process-card ${isSelected ? 'selected' : ''}" onclick="toggleProcess(this, '${process.name}', '${process.code}')">
+                                <div class="process-card-header">
+                                    <div class="process-info">
+                                        <div class="process-name">${process.name}</div>
+                                        <div class="process-code">${process.code}</div>
+                                    </div>
+                                    <div class="process-checkbox"></div>
+                                </div>
+                                <div class="process-description">${process.desc}</div>
+                                ${process.required ? '<span class="process-tag">必选工序</span>' : ''}
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        function saveConfiguration() {
+            if (selectedProcesses.length === 0) {
+                alert('请至少选择一个工序！');
+                return;
+            }
+            
+            console.log('保存的工序配置：', selectedProcesses);
+            alert(`已保存 ${selectedProcesses.length} 个工序配置！\n\n${selectedProcesses.map(p => `• ${p.name} (${p.code})`).join('\n')}`);
+        }
+
+        function resetConfiguration() {
+            if (confirm('确定要重置所有选择吗？')) {
+                selectedProcesses = [];
+                const cards = document.querySelectorAll('.process-card');
+                cards.forEach(card => card.classList.remove('selected'));
+                updateSelectedList();
+            }
+        }
+    </script>
+</body>
+</html>

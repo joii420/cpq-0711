@@ -1,0 +1,67 @@
+<h2>CPQ V1 实施方案：单人全栈开发策略</h2>
+<p class="subtitle">三种实施路径的核心差异在于模块切分和风险管控方式</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>垂直切片法（推荐）</h3>
+      <p><strong>核心思路</strong>：按业务价值链垂直切割，每个阶段交付一个可运行的端到端功能闭环</p>
+      <div style="margin-top:12px; padding:12px; background:rgba(102,126,234,0.08); border-radius:8px; font-size:14px;">
+        <strong>6 个阶段：</strong><br>
+        <span style="color:#667eea">P0</span> 项目骨架 + 认证 →
+        <span style="color:#667eea">P1</span> 主数据 + 数据源 →
+        <span style="color:#667eea">P2</span> 配置中心（组件→模板→关联）→<br>
+        <span style="color:#667eea">P3</span> 计算引擎 POC + 集成 →
+        <span style="color:#667eea">P4</span> 报价全流程（生成→审批→输出）→
+        <span style="color:#667eea">P5</span> 收尾打磨
+      </div>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>优势</h4><ul><li>每阶段可演示、可测试</li><li>风险前置（P3 引擎验证）</li><li>单人开发节奏可控</li></ul></div>
+        <div class="cons"><h4>挑战</h4><ul><li>需要严格控制每阶段不回头改</li><li>前期看不到报价核心功能</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>核心优先法</h3>
+      <p><strong>核心思路</strong>：先用最小数据做通报价全流程骨架，再逐步丰富各模块</p>
+      <div style="margin-top:12px; padding:12px; background:rgba(102,126,234,0.08); border-radius:8px; font-size:14px;">
+        <strong>路径：</strong><br>
+        骨架 + 硬编码数据 → 报价生成器原型 → 逐步替换为真实模块 → 补全管理功能
+      </div>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>优势</h4><ul><li>最快看到核心报价流程</li><li>早期可获取用户反馈</li></ul></div>
+        <div class="cons"><h4>挑战</h4><ul><li>大量返工（硬编码→真实数据）</li><li>单人开发返工成本高</li><li>架构容易变形</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>按 PRD 里程碑原序</h3>
+      <p><strong>核心思路</strong>：严格按 PRD M0-M7 顺序，但调整为单人节奏</p>
+      <div style="margin-top:12px; padding:12px; background:rgba(102,126,234,0.08); border-radius:8px; font-size:14px;">
+        <strong>路径：</strong><br>
+        M0→M1→M2→M2b→M3→M4a→M4b→M5→M6→M7（与PRD一致，去除并行假设）
+      </div>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>优势</h4><ul><li>与PRD完全对齐，沟通成本低</li><li>里程碑清晰</li></ul></div>
+        <div class="cons"><h4>挑战</h4><ul><li>PRD排期假设团队分工，单人会拉长</li><li>M2b数据源管理排在配置中心前面，但实际可以延后</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:24px; padding:16px; background:rgba(72,187,120,0.08); border-left:3px solid #48bb78; border-radius:0 8px 8px 0;">
+  <strong>推荐方案 A（垂直切片法）的理由：</strong>
+  <ul style="margin:8px 0 0 0; font-size:14px;">
+    <li><strong>单人开发最忌返工</strong> — 方案B的"先原型后替换"对团队合理，对单人是双倍工作量</li>
+    <li><strong>PRD 已足够详细</strong> — 不需要通过原型验证需求，可以直接按 PRD 建设</li>
+    <li><strong>数据管道自底向上</strong> — 组件→模板→报价的依赖链决定了必须先建基础</li>
+    <li><strong>引擎风险需要早期隔离</strong> — Drools POC 在 P3 独立验证，不阻塞前序工作</li>
+  </ul>
+</div>

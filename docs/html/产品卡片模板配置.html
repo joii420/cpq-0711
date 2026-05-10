@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>产品卡片模板配置</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: #f5f5f5;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* 顶部工具栏 */
+        .top-toolbar {
+            position: fixed;
+            top: 0;
+            left: 280px;
+            right: 350px;
+            height: 60px;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 30px;
+            z-index: 100;
+        }
+
+        .toolbar-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .save-btn {
+            padding: 10px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+            transition: all 0.2s;
+        }
+
+        .save-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        /* 左侧组件面板 */
+        .components-panel {
+            width: 280px;
+            background: white;
+            border-right: 1px solid #e0e0e0;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .panel-section {
+            margin-bottom: 30px;
+        }
+
+        .panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #1976d2;
+        }
+
+        .component-item {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            cursor: move;
+            font-size: 13px;
+            font-weight: 500;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+            transition: all 0.2s;
+        }
+
+        .component-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .component-item.formula {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .component-item.tab {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        /* 中间画布区域 */
+        .canvas-area {
+            flex: 1;
+            background: #fafafa;
+            overflow-y: auto;
+            padding: 90px 30px 30px 30px;
+        }
+
+        /* 产品卡片容器 */
+        .product-card-container {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .product-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .product-header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .view-switch {
+            display: flex;
+            background: #f5f5f5;
+            border-radius: 6px;
+            padding: 4px;
+        }
+
+        .view-btn {
+            padding: 6px 16px;
+            background: transparent;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: #666;
+            transition: all 0.2s;
+        }
+
+        .view-btn.active {
+            background: white;
+            color: #1976d2;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .product-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .toggle-tabs-btn {
+            padding: 8px 16px;
+            background: #e3f2fd;
+            color: #1976d2;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .toggle-tabs-btn:hover {
+            background: #bbdefb;
+        }
+
+        /* 产品属性区域 */
+        .product-attributes {
+            background: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .attributes-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .attributes-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .add-attribute-btn {
+            padding: 6px 12px;
+            background: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .add-attribute-btn:hover {
+            background: #45a049;
+        }
+
+        .attributes-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        .attribute-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .attribute-item input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .remove-attribute-btn {
+            padding: 6px 10px;
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        /* 页签容器 */
+        .tabs-section {
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+
+        .tabs-section.collapsed {
+            max-height: 0;
+            margin: 0;
+            opacity: 0;
+        }
+
+        .tab-dropzone {
+            min-height: 50px;
+            border: 2px dashed #ddd;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 10px;
+            text-align: center;
+            color: #999;
+            font-size: 13px;
+        }
+
+        .tab-dropzone.drag-over {
+            border-color: #1976d2;
+            background: #e3f2fd;
+        }
+
+        .tabs-container {
+            margin-top: 20px;
+        }
+
+        .tab-header {
+            display: flex;
+            border-bottom: 2px solid #e0e0e0;
+            gap: 4px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            padding: 12px 20px;
+            background: #f5f5f5;
+            border: none;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .tab-btn.active {
+            background: #1976d2;
+            color: white;
+        }
+
+        .tab-btn:not(.active):hover {
+            background: #e0e0e0;
+        }
+
+        .tab-remove {
+            margin-left: 8px;
+            color: #999;
+            font-weight: bold;
+        }
+
+        .tab-btn.active .tab-remove {
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* 表格样式 */
+        .cost-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        .cost-table th,
+        .cost-table td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid #e0e0e0;
+        }
+
+        .cost-table th {
+            background: #f5f5f5;
+            font-weight: 600;
+            font-size: 13px;
+            color: #333;
+        }
+
+        .cost-table td {
+            font-size: 14px;
+        }
+
+        .cost-table input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .cost-table .formula-cell {
+            background: #fff3e0;
+            cursor: pointer;
+            position: relative;
+            min-height: 40px;
+        }
+
+        .cost-table .formula-cell.has-formula {
+            background: #e8f5e9;
+        }
+
+        .formula-display {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px;
+        }
+
+        .formula-text {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #2e7d32;
+        }
+
+        .formula-result {
+            font-weight: 600;
+            color: #1976d2;
+        }
+
+        .add-row-btn {
+            margin-top: 10px;
+            padding: 8px 16px;
+            background: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+
+        .add-row-btn:hover {
+            background: #45a049;
+        }
+
+        /* 产品小计 */
+        .product-subtotal {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            margin-top: 20px;
+            padding: 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+            color: white;
+            gap: 12px;
+        }
+
+        .subtotal-label {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .subtotal-cell {
+            flex: 1;
+            text-align: right;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            cursor: pointer;
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        .subtotal-cell.has-formula {
+            background: rgba(76, 175, 80, 0.3);
+        }
+
+        /* 简易视图网格 */
+        .simple-view {
+            display: none;
+        }
+
+        .simple-view.active {
+            display: block;
+        }
+
+        .simple-grid {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        .simple-grid th,
+        .simple-grid td {
+            padding: 10px 12px;
+            text-align: left;
+            border: 1px solid #e0e0e0;
+            font-size: 13px;
+        }
+
+        .simple-grid th {
+            background: #f5f5f5;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .simple-grid td {
+            background: #fafafa;
+            color: #666;
+        }
+
+        /* 右侧配置面板 */
+        .config-panel {
+            width: 350px;
+            background: white;
+            border-left: 1px solid #e0e0e0;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .config-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #1976d2;
+        }
+
+        .config-section {
+            margin-bottom: 24px;
+        }
+
+        .config-section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 12px;
+        }
+
+        .config-group {
+            margin-bottom: 16px;
+        }
+
+        .config-group label {
+            display: block;
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .config-group input,
+        .config-group select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .config-group input:focus,
+        .config-group select:focus {
+            outline: none;
+            border-color: #1976d2;
+        }
+
+        .variable-item {
+            background: #f5f5f5;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .variable-item input,
+        .variable-item select {
+            width: 100%;
+            padding: 8px;
+            margin-top: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .variable-item label {
+            font-size: 12px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .add-variable-btn {
+            width: 100%;
+            padding: 10px;
+            background: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+
+        .add-variable-btn:hover {
+            background: #1976d2;
+        }
+
+        .formula-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .save-formula-btn {
+            width: 100%;
+            padding: 12px;
+            background: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 12px;
+        }
+
+        .save-formula-btn:hover {
+            background: #45a049;
+        }
+
+        .delete-variable-btn {
+            padding: 4px 8px;
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-top: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 顶部工具栏 -->
+        <div class="top-toolbar">
+            <div class="toolbar-title">产品卡片模板配置</div>
+            <button class="save-btn" onclick="saveTemplate()">💾 保存模板</button>
+        </div>
+
+        <!-- 左侧组件面板 -->
+        <div class="components-panel">
+            <div class="panel-section">
+                <div class="panel-title">页签组件</div>
+                <div class="component-item tab" draggable="true" data-type="tab-input">
+                    📥 投料金额
+                </div>
+                <div class="component-item tab" draggable="true" data-type="tab-return">
+                    ♻️ 回料金额
+                </div>
+                <div class="component-item tab" draggable="true" data-type="tab-account">
+                    📊 应计金额
+                </div>
+                <div class="component-item tab" draggable="true" data-type="tab-material">
+                    🧱 原材料成本
+                </div>
+                <div class="component-item tab" draggable="true" data-type="tab-processing">
+                    ⚙️ 加工费用
+                </div>
+                <div class="component-item tab" draggable="true" data-type="tab-tax">
+                    💰 税费
+                </div>
+                <div class="component-item tab" draggable="true" data-type="tab-outsource">
+                    🔧 外购件
+                </div>
+                <div class="component-item tab" draggable="true" data-type="tab-other">
+                    📝 其他费用
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-title">计算组件</div>
+                <div class="component-item formula" draggable="true" data-type="formula">
+                    🧮 计算公式
+                </div>
+            </div>
+        </div>
+
+        <!-- 中间画布区域 -->
+        <div class="canvas-area">
+            <div class="product-card-container" id="product-template">
+                <div class="product-header">
+                    <div class="product-header-left">
+                        <div class="view-switch">
+                            <button class="view-btn active" onclick="switchView('detail')">明细</button>
+                            <button class="view-btn" onclick="switchView('simple')">简易</button>
+                        </div>
+                        <span class="product-title">产品卡片模板</span>
+                    </div>
+                    <button class="toggle-tabs-btn" onclick="toggleTabs()">
+                        <span id="toggleIcon">▼</span> 收缩/展开页签
+                    </button>
+                </div>
+
+                <!-- 产品属性配置 -->
+                <div class="product-attributes">
+                    <div class="attributes-header">
+                        <div class="attributes-title">产品属性字段</div>
+                        <button class="add-attribute-btn" onclick="addAttribute()">+ 添加字段</button>
+                    </div>
+                    <div class="attributes-grid" id="attributesGrid">
+                        <div class="attribute-item">
+                            <input type="text" placeholder="产品名称" value="产品名称">
+                            <button class="remove-attribute-btn" onclick="removeAttribute(this)">×</button>
+                        </div>
+                        <div class="attribute-item">
+                            <input type="text" placeholder="规格型号" value="规格型号">
+                            <button class="remove-attribute-btn" onclick="removeAttribute(this)">×</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 明细视图 -->
+                <div class="detail-view active">
+                    <div class="tabs-section" id="tabsSection">
+                        <div class="tab-dropzone">拖拽页签组件到此处</div>
+                        <div class="tabs-container"></div>
+                    </div>
+                </div>
+
+                <!-- 简易视图 -->
+                <div class="simple-view">
+                    <table class="simple-grid" id="simpleGrid">
+                        <thead>
+                            <tr>
+                                <th>页签</th>
+                                <th>项目</th>
+                                <th>数值</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="3" style="text-align: center; color: #999;">暂无数据</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 产品小计 -->
+                <div class="product-subtotal">
+                    <span class="subtotal-label">产品小计：</span>
+                    <div class="subtotal-cell" data-formula-id="subtotal-template">
+                        拖拽公式到此处或点击配置
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧配置面板 -->
+        <div class="config-panel" id="configPanel">
+            <div class="config-title">模板配置</div>
+            
+            <div class="config-section">
+                <div class="config-section-title">基本信息</div>
+                <div class="config-group">
+                    <label>产品分类</label>
+                    <input type="text" id="categoryInput" placeholder="例如：标准件、定制件、原材料">
+                </div>
+                <div class="config-group">
+                    <label>模板名称</label>
+                    <input type="text" id="templateNameInput" placeholder="例如：标准产品模板">
+                </div>
+                <div class="config-group">
+                    <label>模板描述</label>
+                    <input type="text" id="templateDescInput" placeholder="简单描述该模板的用途">
+                </div>
+            </div>
+
+            <div class="config-section">
+                <div class="config-section-title">使用说明</div>
+                <p style="color: #666; font-size: 13px; line-height: 1.6;">
+                    1. 设置产品分类和模板名称<br>
+                    2. 配置产品属性字段<br>
+                    3. 拖拽页签组件添加数据表<br>
+                    4. 配置计算公式<br>
+                    5. 点击保存模板按钮
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局状态
+        let draggedType = null;
+        let currentFormulaCell = null;
+        let tabsCollapsed = false;
+        let currentView = 'detail';
+
+        const dropzone = document.querySelector('.tab-dropzone');
+        const configPanel = document.getElementById('configPanel');
+
+        // 拖拽开始
+        document.querySelectorAll('.component-item').forEach(item => {
+            item.addEventListener('dragstart', (e) => {
+                draggedType = e.target.dataset.type;
+                e.dataTransfer.effectAllowed = 'copy';
+            });
+        });
+
+        // 页签拖放区域
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (draggedType && draggedType.startsWith('tab-')) {
+                dropzone.classList.add('drag-over');
+            }
+        });
+
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('drag-over');
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('drag-over');
+            
+            if (draggedType && draggedType.startsWith('tab-')) {
+                createTab(draggedType);
+            }
+        });
+
+        // 创建页签
+        function createTab(tabType) {
+            const tabsContainer = document.querySelector('.tabs-container');
+            const tabHeader = tabsContainer.querySelector('.tab-header') || createTabHeader(tabsContainer);
+            
+            const tabId = `tab-${Date.now()}`;
+            const tabConfig = getTabConfig(tabType);
+            
+            // 创建标签按钮
+            const tabBtn = document.createElement('button');
+            tabBtn.className = 'tab-btn';
+            tabBtn.dataset.tabId = tabId;
+            tabBtn.innerHTML = `${tabConfig.name} <span class="tab-remove" onclick="removeTab(event, '${tabId}')">×</span>`;
+            tabBtn.onclick = (e) => {
+                if (!e.target.classList.contains('tab-remove')) {
+                    activateTab(tabId);
+                }
+            };
+            tabHeader.appendChild(tabBtn);
+
+            // 创建标签内容
+            const tabContent = document.createElement('div');
+            tabContent.className = 'tab-content';
+            tabContent.id = tabId;
+            tabContent.dataset.tabName = tabConfig.name;
+            tabContent.innerHTML = createTabContent(tabConfig);
+            tabsContainer.appendChild(tabContent);
+
+            // 设置表格单元格拖放
+            setupTableCellDrop(tabContent);
+
+            // 激活新标签
+            activateTab(tabId);
+
+            // 更新简易视图
+            updateSimpleView();
+        }
+
+        // 创建标签头部
+        function createTabHeader(tabsContainer) {
+            const header = document.createElement('div');
+            header.className = 'tab-header';
+            tabsContainer.appendChild(header);
+            return header;
+        }
+
+        // 获取标签配置
+        function getTabConfig(tabType) {
+            const configs = {
+                'tab-input': {
+                    name: '投料金额',
+                    columns: ['材料名称', '毛重(kg)', '净重(kg)', '单价(元/kg)', '金额']
+                },
+                'tab-return': {
+                    name: '回料金额',
+                    columns: ['回料重量', '单价(元/kg)', '金额']
+                },
+                'tab-account': {
+                    name: '应计金额',
+                    columns: ['净金额', '损耗率', '应计金额']
+                },
+                'tab-material': {
+                    name: '原材料成本',
+                    columns: ['材料', '含量(%)', '价格']
+                },
+                'tab-processing': {
+                    name: '加工费用',
+                    columns: ['项目', '价格']
+                },
+                'tab-tax': {
+                    name: '税费',
+                    columns: ['税率', '税额']
+                },
+                'tab-outsource': {
+                    name: '外购件',
+                    columns: ['项目', '价格']
+                },
+                'tab-other': {
+                    name: '其他费用',
+                    columns: ['项目', '价格']
+                }
+            };
+            return configs[tabType];
+        }
+
+        // 创建标签内容
+        function createTabContent(config) {
+            const headers = config.columns.map(col => `<th>${col}</th>`).join('');
+            const isPrice = (col) => col.includes('价格') || col.includes('税额') || col.includes('金额') || col.includes('应计');
+            const firstRow = config.columns.map(col => 
+                isPrice(col) 
+                    ? `<td class="formula-cell" data-col="${col}">拖拽公式到此处</td>` 
+                    : `<td><input type="text" placeholder="输入${col}"></td>`
+            ).join('');
+            
+            return `
+                <table class="cost-table">
+                    <thead>
+                        <tr>${headers}</tr>
+                    </thead>
+                    <tbody>
+                        <tr>${firstRow}</tr>
+                    </tbody>
+                </table>
+                <button class="add-row-btn" onclick="addTableRow(this)">+ 添加行</button>
+            `;
+        }
+
+        // 添加表格行
+        function addTableRow(btn) {
+            const table = btn.previousElementSibling;
+            const tbody = table.querySelector('tbody');
+            const headers = Array.from(table.querySelectorAll('th')).map(th => th.textContent);
+            
+            const row = document.createElement('tr');
+            headers.forEach(header => {
+                const td = document.createElement('td');
+                const isPrice = header.includes('价格') || header.includes('税额') || header.includes('金额') || header.includes('应计');
+                if (isPrice) {
+                    td.className = 'formula-cell';
+                    td.dataset.col = header;
+                    td.textContent = '拖拽公式到此处';
+                } else {
+                    td.innerHTML = `<input type="text" placeholder="输入${header}">`;
+                }
+                row.appendChild(td);
+            });
+            tbody.appendChild(row);
+
+            // 为新行设置拖放
+            const tabContent = btn.closest('.tab-content');
+            setupTableCellDrop(tabContent);
+
+            // 更新简易视图
+            updateSimpleView();
+        }
+
+        // 设置表格单元格拖放
+        function setupTableCellDrop(tabContent) {
+            const cells = tabContent.querySelectorAll('.formula-cell');
+            cells.forEach(cell => {
+                cell.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    if (draggedType === 'formula') {
+                        cell.style.background = '#bbdefb';
+                    }
+                });
+
+                cell.addEventListener('dragleave', () => {
+                    if (!cell.classList.contains('has-formula')) {
+                        cell.style.background = '';
+                    }
+                });
+
+                cell.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    if (draggedType === 'formula') {
+                        cell.classList.add('has-formula');
+                        cell.style.background = '';
+                        if (!cell.dataset.formulaId) {
+                            cell.dataset.formulaId = `formula-${Date.now()}`;
+                            cell.innerHTML = `
+                                <div class="formula-display">
+                                    <span class="formula-text">点击配置公式</span>
+                                    <span class="formula-result">0.00</span>
+                                </div>
+                            `;
+                        }
+                        cell.onclick = () => openFormulaConfig(cell);
+                    }
+                });
+            });
+        }
+
+        // 设置小计单元格拖放
+        const subtotalCell = document.querySelector('.subtotal-cell');
+        subtotalCell.onclick = () => openFormulaConfig(subtotalCell);
+        
+        subtotalCell.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (draggedType === 'formula') {
+                subtotalCell.style.background = 'rgba(255, 255, 255, 0.4)';
+            }
+        });
+
+        subtotalCell.addEventListener('dragleave', () => {
+            subtotalCell.style.background = '';
+        });
+
+        subtotalCell.addEventListener('drop', (e) => {
+            e.preventDefault();
+            if (draggedType === 'formula') {
+                subtotalCell.classList.add('has-formula');
+                subtotalCell.style.background = '';
+                if (!subtotalCell.dataset.formulaData) {
+                    subtotalCell.innerHTML = `
+                        <div class="formula-display">
+                            <span class="formula-text">点击配置公式</span>
+                            <span class="formula-result" style="color: white; font-size: 20px;">0.00</span>
+                        </div>
+                    `;
+                }
+            }
+        });
+
+        // 打开公式配置
+        function openFormulaConfig(cell) {
+            currentFormulaCell = cell;
+            const savedData = cell.dataset.formulaData ? JSON.parse(cell.dataset.formulaData) : { variables: [], formula: '' };
+            const isSubtotal = cell.classList.contains('subtotal-cell');
+
+            let title = '计算公式配置';
+            let hint = '';
+            
+            if (isSubtotal) {
+                title = '产品小计配置';
+                hint = '<p style="color: #ff9800; font-size: 13px; margin-bottom: 10px;">💡 提示：可以引用各个页签中的计算结果</p>';
+            }
+
+            configPanel.innerHTML = `
+                <div class="config-title">${title}</div>
+                ${hint}
+                
+                <div class="config-section">
+                    <div class="config-section-title">变量列表</div>
+                    <div id="variablesList"></div>
+                    <button class="add-variable-btn" onclick="addVariable()">+ 添加变量</button>
+                </div>
+
+                <div class="config-section">
+                    <div class="config-section-title">计算公式</div>
+                    <textarea class="formula-input" id="formulaInput" placeholder="例如: (var1 + var2) * var3&#10;支持运算符: + - * / ( )">${savedData.formula}</textarea>
+                    <button class="save-formula-btn" onclick="saveFormula()">保存公式</button>
+                </div>
+            `;
+
+            // 渲染已保存的变量
+            savedData.variables.forEach(variable => {
+                addVariable(variable);
+            });
+        }
+
+        // 添加变量
+        function addVariable(data = null) {
+            const variablesList = document.getElementById('variablesList');
+            const variableId = `var-${Date.now()}`;
+            
+            const variableItem = document.createElement('div');
+            variableItem.className = 'variable-item';
+            variableItem.dataset.variableId = variableId;
+            variableItem.innerHTML = `
+                <label>变量名</label>
+                <input type="text" class="var-name" placeholder="例如: var1" value="${data?.name || ''}">
+                
+                <label style="margin-top: 8px;">变量来源</label>
+                <select class="var-source">
+                    <option value="constant" ${data?.source === 'constant' ? 'selected' : ''}>常量</option>
+                    <option value="input" ${data?.source === 'input' ? 'selected' : ''}>用户输入</option>
+                    <option value="cell" ${data?.source === 'cell' ? 'selected' : ''}>其他单元格</option>
+                </select>
+                
+                <label style="margin-top: 8px;">值/来源</label>
+                <input type="text" class="var-value" placeholder="输入值或单元格引用" value="${data?.value || ''}">
+                
+                <button class="delete-variable-btn" onclick="this.closest('.variable-item').remove()">删除</button>
+            `;
+            variablesList.appendChild(variableItem);
+        }
+
+        // 保存公式
+        function saveFormula() {
+            if (!currentFormulaCell) return;
+
+            const variables = [];
+            document.querySelectorAll('.variable-item').forEach(item => {
+                variables.push({
+                    name: item.querySelector('.var-name').value,
+                    source: item.querySelector('.var-source').value,
+                    value: item.querySelector('.var-value').value
+                });
+            });
+
+            const formula = document.getElementById('formulaInput').value;
+
+            // 保存数据到单元格
+            currentFormulaCell.dataset.formulaData = JSON.stringify({ variables, formula });
+
+            // 计算结果
+            const result = calculateFormula(variables, formula);
+            
+            // 检查是否是小计单元格
+            const isSubtotal = currentFormulaCell.classList.contains('subtotal-cell');
+            
+            // 更新显示
+            if (isSubtotal) {
+                currentFormulaCell.querySelector('.formula-text').textContent = formula || '未设置公式';
+                currentFormulaCell.querySelector('.formula-result').textContent = result.toFixed(2);
+            } else {
+                currentFormulaCell.querySelector('.formula-text').textContent = formula || '未设置公式';
+                currentFormulaCell.querySelector('.formula-result').textContent = result.toFixed(2);
+            }
+
+            alert('公式保存成功！');
+
+            // 更新简易视图
+            updateSimpleView();
+        }
+
+        // 计算公式
+        function calculateFormula(variables, formula) {
+            if (!formula) return 0;
+
+            try {
+                let expression = formula;
+                variables.forEach(v => {
+                    const value = v.source === 'constant' ? parseFloat(v.value) || 0 : 0;
+                    expression = expression.replace(new RegExp(v.name, 'g'), value);
+                });
+                
+                return eval(expression) || 0;
+            } catch (error) {
+                console.error('公式计算错误:', error);
+                return 0;
+            }
+        }
+
+        // 激活标签
+        function activateTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+
+            const btn = document.querySelector(`[data-tab-id="${tabId}"]`);
+            if (btn) btn.classList.add('active');
+            
+            const content = document.getElementById(tabId);
+            if (content) content.classList.add('active');
+        }
+
+        // 移除标签
+        function removeTab(event, tabId) {
+            event.stopPropagation();
+            
+            const btn = document.querySelector(`[data-tab-id="${tabId}"]`);
+            const content = document.getElementById(tabId);
+            
+            const wasActive = btn.classList.contains('active');
+            
+            btn.remove();
+            content.remove();
+
+            // 如果删除的是活动标签，激活第一个标签
+            if (wasActive) {
+                const firstBtn = document.querySelector('.tab-btn');
+                if (firstBtn) {
+                    activateTab(firstBtn.dataset.tabId);
+                }
+            }
+
+            // 更新简易视图
+            updateSimpleView();
+        }
+
+        // 收缩/展开页签
+        function toggleTabs() {
+            const tabsSection = document.getElementById('tabsSection');
+            const icon = document.getElementById('toggleIcon');
+            tabsCollapsed = !tabsCollapsed;
+            
+            if (tabsCollapsed) {
+                tabsSection.classList.add('collapsed');
+                icon.textContent = '▶';
+            } else {
+                tabsSection.classList.remove('collapsed');
+                icon.textContent = '▼';
+            }
+        }
+
+        // 切换视图
+        function switchView(view) {
+            currentView = view;
+            const detailView = document.querySelector('.detail-view');
+            const simpleView = document.querySelector('.simple-view');
+            const viewBtns = document.querySelectorAll('.view-btn');
+
+            viewBtns.forEach(btn => btn.classList.remove('active'));
+            
+            if (view === 'detail') {
+                detailView.classList.add('active');
+                simpleView.classList.remove('active');
+                viewBtns[0].classList.add('active');
+            } else {
+                detailView.classList.remove('active');
+                simpleView.classList.add('active');
+                viewBtns[1].classList.add('active');
+                updateSimpleView();
+            }
+        }
+
+        // 更新简易视图
+        function updateSimpleView() {
+            const simpleGrid = document.getElementById('simpleGrid');
+            const tbody = simpleGrid.querySelector('tbody');
+            tbody.innerHTML = '';
+
+            const tabContents = document.querySelectorAll('.tab-content');
+            
+            if (tabContents.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #999;">暂无数据</td></tr>';
+                return;
+            }
+
+            tabContents.forEach(tabContent => {
+                const tabName = tabContent.dataset.tabName;
+                const table = tabContent.querySelector('.cost-table');
+                const headers = Array.from(table.querySelectorAll('th')).map(th => th.textContent);
+                const rows = table.querySelectorAll('tbody tr');
+
+                rows.forEach((row, rowIndex) => {
+                    const cells = row.querySelectorAll('td');
+                    cells.forEach((cell, cellIndex) => {
+                        const tr = document.createElement('tr');
+                        
+                        // 页签列
+                        const tabCell = document.createElement('td');
+                        tabCell.textContent = rowIndex === 0 ? tabName : '';
+                        tr.appendChild(tabCell);
+
+                        // 项目列
+                        const itemCell = document.createElement('td');
+                        itemCell.textContent = headers[cellIndex];
+                        tr.appendChild(itemCell);
+
+                        // 数值列
+                        const valueCell = document.createElement('td');
+                        const input = cell.querySelector('input');
+                        const formulaResult = cell.querySelector('.formula-result');
+                        
+                        if (input) {
+                            valueCell.textContent = input.value || '-';
+                        } else if (formulaResult) {
+                            valueCell.textContent = formulaResult.textContent;
+                        } else if (cell.classList.contains('formula-cell')) {
+                            valueCell.textContent = '待配置';
+                        } else {
+                            valueCell.textContent = cell.textContent;
+                        }
+                        
+                        tr.appendChild(valueCell);
+                        tbody.appendChild(tr);
+                    });
+                });
+            });
+        }
+
+        // 添加属性字段
+        function addAttribute() {
+            const grid = document.getElementById('attributesGrid');
+            const item = document.createElement('div');
+            item.className = 'attribute-item';
+            item.innerHTML = `
+                <input type="text" placeholder="字段名称">
+                <button class="remove-attribute-btn" onclick="removeAttribute(this)">×</button>
+            `;
+            grid.appendChild(item);
+        }
+
+        // 移除属性字段
+        function removeAttribute(btn) {
+            btn.closest('.attribute-item').remove();
+        }
+
+        // 保存模板
+        function saveTemplate() {
+            const category = document.getElementById('categoryInput').value;
+            const templateName = document.getElementById('templateNameInput').value;
+            const templateDesc = document.getElementById('templateDescInput').value;
+
+            if (!category || !templateName) {
+                alert('请填写产品分类和模板名称！');
+                return;
+            }
+
+            // 收集属性字段
+            const attributes = [];
+            document.querySelectorAll('#attributesGrid .attribute-item input').forEach(input => {
+                if (input.value) {
+                    attributes.push(input.value);
+                }
+            });
+
+            // 收集页签配置
+            const tabs = [];
+            document.querySelectorAll('.tab-content').forEach(tabContent => {
+                const tabName = tabContent.dataset.tabName;
+                const table = tabContent.querySelector('.cost-table');
+                const headers = Array.from(table.querySelectorAll('th')).map(th => th.textContent);
+                
+                // 收集公式配置
+                const formulas = [];
+                tabContent.querySelectorAll('.formula-cell').forEach(cell => {
+                    if (cell.dataset.formulaData) {
+                        formulas.push({
+                            column: cell.dataset.col,
+                            formulaData: JSON.parse(cell.dataset.formulaData)
+                        });
+                    }
+                });
+
+                tabs.push({
+                    name: tabName,
+                    columns: headers,
+                    formulas: formulas
+                });
+            });
+
+            // 收集小计配置
+            const subtotal = {
+                formulaData: subtotalCell.dataset.formulaData ? JSON.parse(subtotalCell.dataset.formulaData) : null
+            };
+
+            const template = {
+                category,
+                templateName,
+                templateDesc,
+                attributes,
+                tabs,
+                subtotal,
+                createdAt: new Date().toISOString()
+            };
+
+            console.log('保存的模板配置:', template);
+            
+            // 这里可以将模板保存到 localStorage 或发送到服务器
+            localStorage.setItem(`template_${category}_${templateName}`, JSON.stringify(template));
+            
+            alert(`模板"${templateName}"保存成功！\n分类：${category}`);
+        }
+    </script>
+</body>
+</html>

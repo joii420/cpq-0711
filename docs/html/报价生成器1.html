@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>报价单新增 - 选择客户</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+
+        /* 顶部导航 */
+        .top-header {
+            background: white;
+            padding: 20px 40px;
+            border-bottom: 1px solid #e8ecf1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .header-subtitle {
+            font-size: 13px;
+            color: #718096;
+            margin-top: 4px;
+        }
+
+        .back-btn {
+            padding: 8px 20px;
+            background: white;
+            color: #4a5568;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .back-btn:hover {
+            background: #f7fafc;
+            border-color: #cbd5e0;
+        }
+
+        /* 步骤导航 */
+        .steps-nav {
+            background: white;
+            padding: 40px 40px 30px;
+            border-bottom: 1px solid #e8ecf1;
+        }
+
+        .steps-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+        }
+
+        .steps-line {
+            position: absolute;
+            top: 24px;
+            left: 80px;
+            right: 80px;
+            height: 2px;
+            background: #e2e8f0;
+            z-index: 0;
+        }
+
+        .steps-line-progress {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s;
+            width: 0%;
+        }
+
+        .step-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .step-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: white;
+            border: 2px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            transition: all 0.3s;
+        }
+
+        .step-item.active .step-icon {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: #667eea;
+            color: white;
+        }
+
+        .step-item.completed .step-icon {
+            background: #48bb78;
+            border-color: #48bb78;
+            color: white;
+        }
+
+        .step-label {
+            font-size: 14px;
+            color: #718096;
+            font-weight: 500;
+        }
+
+        .step-item.active .step-label {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .step-item.completed .step-label {
+            color: #48bb78;
+        }
+
+        /* 主内容区 */
+        .main-container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 40px;
+            display: grid;
+            grid-template-columns: 1fr 360px;
+            gap: 20px;
+        }
+
+        /* 左侧表单区 */
+        .form-area {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #e8ecf1;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .form-label {
+            font-size: 14px;
+            color: #4a5568;
+            font-weight: 500;
+        }
+
+        .form-label.required::before {
+            content: '* ';
+            color: #f56565;
+        }
+
+        .form-input,
+        .form-select {
+            padding: 10px 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .form-input:focus,
+        .form-select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-input::placeholder {
+            color: #a0aec0;
+        }
+
+        .form-input:disabled {
+            background: #f7fafc;
+            color: #a0aec0;
+        }
+
+        .customer-select {
+            display: flex;
+            gap: 10px;
+        }
+
+        .customer-select .form-input {
+            flex: 1;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #667eea;
+            border: 1px solid #667eea;
+        }
+
+        .btn-secondary:hover {
+            background: #f0f4ff;
+        }
+
+        .form-hint {
+            font-size: 12px;
+            color: #a0aec0;
+            margin-top: 4px;
+        }
+
+        /* 右侧信息卡片 */
+        .info-sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .info-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+
+        .info-card-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #f7fafc;
+            font-size: 14px;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            color: #718096;
+        }
+
+        .info-value {
+            color: #2d3748;
+            font-weight: 600;
+        }
+
+        .info-value.highlight {
+            color: #667eea;
+        }
+
+        .info-value.danger {
+            color: #e53e3e;
+        }
+
+        .ai-score {
+            background: linear-gradient(135deg, #fef5e7 0%, #fdebd0 100%);
+            border: 1px solid #f9e79f;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+
+        .ai-score-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: #d68910;
+            font-weight: 600;
+        }
+
+        .score-bar {
+            height: 8px;
+            background: #f9e79f;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .score-progress {
+            height: 100%;
+            background: linear-gradient(135deg, #f39c12 0%, #d68910 100%);
+            transition: width 0.3s;
+        }
+
+        .score-tip {
+            font-size: 12px;
+            color: #7f6000;
+            margin-top: 8px;
+        }
+
+        .help-card {
+            background: linear-gradient(135deg, #e6f7ff 0%, #d6f0ff 100%);
+            border: 1px solid #91d5ff;
+        }
+
+        .help-item {
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(145, 213, 255, 0.3);
+            font-size: 13px;
+            line-height: 1.6;
+            color: #096dd9;
+        }
+
+        .help-item:last-child {
+            border-bottom: none;
+        }
+
+        .help-item strong {
+            color: #0050b3;
+        }
+
+        /* 底部操作栏 */
+        .bottom-actions {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-top: 1px solid #e8ecf1;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.04);
+            z-index: 100;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+        }
+
+        /* 客户搜索下拉 */
+        .customer-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 80px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            margin-top: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 10;
+            display: none;
+        }
+
+        .customer-dropdown.show {
+            display: block;
+        }
+
+        .customer-option {
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border-bottom: 1px solid #f7fafc;
+        }
+
+        .customer-option:hover {
+            background: #f7fafc;
+        }
+
+        .customer-option:last-child {
+            border-bottom: none;
+        }
+
+        .customer-option-name {
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 4px;
+        }
+
+        .customer-option-info {
+            font-size: 12px;
+            color: #718096;
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航 -->
+    <div class="top-header">
+        <div>
+            <div class="header-title">报价单新增</div>
+            <div class="header-subtitle">专业的CPC报价单流程</div>
+        </div>
+        <button class="back-btn" onclick="goBack()">← 返回</button>
+    </div>
+
+    <!-- 步骤导航 -->
+    <div class="steps-nav">
+        <div class="steps-container">
+            <div class="steps-line">
+                <div class="steps-line-progress"></div>
+            </div>
+            
+            <div class="step-item active">
+                <div class="step-icon">👤</div>
+                <div class="step-label">选择客户</div>
+            </div>
+
+            <div class="step-item">
+                <div class="step-icon">🛍️</div>
+                <div class="step-label">产品配置</div>
+            </div>
+
+            <div class="step-item">
+                <div class="step-icon">💰</div>
+                <div class="step-label">价格策略</div>
+            </div>
+
+            <div class="step-item">
+                <div class="step-icon">📄</div>
+                <div class="step-label">商务条款</div>
+            </div>
+
+            <div class="step-item">
+                <div class="step-icon">✓</div>
+                <div class="step-label">预览确认</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主内容 -->
+    <div class="main-container">
+        <!-- 左侧表单 -->
+        <div class="form-area">
+            <div class="section-title">
+                <span>📋</span>
+                <span>客户信息</span>
+            </div>
+            
+            <div class="form-grid">
+                <div class="form-group full-width">
+                    <label class="form-label required">客户选择</label>
+                    <div class="customer-select" style="position: relative;">
+                        <input type="text" class="form-input" id="customerInput" 
+                               placeholder="输入客户名称搜索..." 
+                               oninput="searchCustomer(this.value)"
+                               onfocus="showCustomerDropdown()"
+                               value="杭州智能制造股份公司">
+                        <div class="customer-dropdown" id="customerDropdown">
+                            <div class="customer-option" onclick="selectCustomer(this)">
+                                <div class="customer-option-name">杭州智能制造股份公司</div>
+                                <div class="customer-option-info">客户编号: CUS-001 | 钻石客户</div>
+                            </div>
+                            <div class="customer-option" onclick="selectCustomer(this)">
+                                <div class="customer-option-name">上海精密机械有限公司</div>
+                                <div class="customer-option-info">客户编号: CUS-002 | 黄金客户</div>
+                            </div>
+                            <div class="customer-option" onclick="selectCustomer(this)">
+                                <div class="customer-option-name">深圳高科技发展集团</div>
+                                <div class="customer-option-info">客户编号: CUS-003 | 银牌客户</div>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="openNewCustomerDialog()">+ 新增客户</button>
+                    </div>
+                    <div class="form-hint">系统自动生成报价单号，保存后自动生成</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">报价单号</label>
+                    <input type="text" class="form-input" value="QT-" placeholder="保存后自动生成" disabled>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label required">报价单名称</label>
+                    <input type="text" class="form-input" id="quotationName" 
+                           placeholder="例如：杭州智能制造股份公司-报价单-20260131">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">联系人</label>
+                    <input type="text" class="form-input" id="contactPerson" 
+                           placeholder="从客户带出" value="张经理">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">联系电话</label>
+                    <input type="text" class="form-input" id="contactPhone" 
+                           placeholder="从客户带出" value="13800138000">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">联系邮箱</label>
+                    <input type="email" class="form-input" id="contactEmail" 
+                           placeholder="从客户带出" value="contact@smart-mfg.com">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">项目名称</label>
+                    <input type="text" class="form-input" id="projectName" 
+                           placeholder="请输入项目名称">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">关联商机</label>
+                    <select class="form-select" id="opportunity">
+                        <option value="">可选</option>
+                        <option value="opp1">智能制造设备采购项目</option>
+                        <option value="opp2">年度合作框架协议</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">销售代表</label>
+                    <input type="text" class="form-input" value="sales_manager" disabled>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">报价类型</label>
+                    <select class="form-select" id="quotationType">
+                        <option value="standard">标准报价</option>
+                        <option value="discount">折扣报价</option>
+                        <option value="bulk">批量报价</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">成交概率</label>
+                    <input type="number" class="form-input" id="probability" 
+                           placeholder="60" min="0" max="100" value="60">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">优先级</label>
+                    <select class="form-select" id="priority">
+                        <option value="high">高</option>
+                        <option value="medium" selected>中</option>
+                        <option value="low">低</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">交易阶段</label>
+                    <select class="form-select" id="stage">
+                        <option value="initial">初期接触</option>
+                        <option value="requirement">需求确认</option>
+                        <option value="quotation" selected>报价阶段</option>
+                        <option value="negotiation">商务谈判</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">预计成交日期</label>
+                    <input type="date" class="form-input" id="expectedDate">
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧信息卡片 -->
+        <div class="info-sidebar">
+            <!-- 客户画像 -->
+            <div class="info-card">
+                <div class="info-card-title">
+                    📊 客户画像
+                </div>
+                <div class="info-row">
+                    <span class="info-label">客户等级</span>
+                    <span class="info-value danger">钻石客户</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">所属行业</span>
+                    <span class="info-value">智能制造</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">信用额度</span>
+                    <span class="info-value">¥500,000</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">历史订单</span>
+                    <span class="info-value">15单</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">累计金额</span>
+                    <span class="info-value">¥1,280,000</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">付款方式</span>
+                    <span class="info-value">预付30%</span>
+                </div>
+
+                <div class="ai-score">
+                    <div class="ai-score-header">
+                        🤖 AI预测成交率: 60%
+                    </div>
+                    <div class="score-bar">
+                        <div class="score-progress" style="width: 60%"></div>
+                    </div>
+                    <div class="score-tip">
+                        基于客户画像、历史记录等智能预测
+                    </div>
+                </div>
+            </div>
+
+            <!-- 操作提示 -->
+            <div class="info-card help-card">
+                <div class="info-card-title" style="color: #0050b3;">
+                    💡 操作提示
+                </div>
+                <div class="help-item">
+                    <strong>第一步：</strong>选择或新增客户，填写基本信息
+                </div>
+                <div class="help-item">
+                    <strong>第二步：</strong>点击"下一步"进入产品配置
+                </div>
+                <div class="help-item">
+                    <strong>第三步：</strong>配置产品工序和报价模板
+                </div>
+                <div class="help-item">
+                    <strong>提示：</strong>系统会根据客户信息自动填充部分字段
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部操作栏 -->
+    <div class="bottom-actions">
+        <div>
+            <button class="btn btn-secondary" onclick="saveDraft()">💾 保存草稿</button>
+        </div>
+        <div class="action-buttons">
+            <button class="btn btn-secondary" onclick="goBack()">取消</button>
+            <button class="btn btn-primary" onclick="nextStep()">下一步 →</button>
+        </div>
+    </div>
+
+    <script>
+        // 搜索客户
+        function searchCustomer(keyword) {
+            // 这里可以调用API搜索客户
+            console.log('搜索客户:', keyword);
+        }
+
+        // 显示客户下拉
+        function showCustomerDropdown() {
+            document.getElementById('customerDropdown').classList.add('show');
+        }
+
+        // 隐藏客户下拉
+        document.addEventListener('click', function(e) {
+            const dropdown = document.getElementById('customerDropdown');
+            const input = document.getElementById('customerInput');
+            if (!dropdown.contains(e.target) && e.target !== input) {
+                dropdown.classList.remove('show');
+            }
+        });
+
+        // 选择客户
+        function selectCustomer(element) {
+            const name = element.querySelector('.customer-option-name').textContent;
+            document.getElementById('customerInput').value = name;
+            document.getElementById('customerDropdown').classList.remove('show');
+            
+            // 自动填充客户信息
+            document.getElementById('contactPerson').value = '张经理';
+            document.getElementById('contactPhone').value = '13800138000';
+            document.getElementById('contactEmail').value = 'contact@smart-mfg.com';
+            
+            // 更新报价单名称建议
+            const date = new Date().toISOString().split('T')[0].replace(/-/g, '');
+            document.getElementById('quotationName').placeholder = `${name}-报价单-${date}`;
+        }
+
+        // 新增客户
+        function openNewCustomerDialog() {
+            alert('打开新增客户对话框');
+        }
+
+        // 保存草稿
+        function saveDraft() {
+            const data = {
+                customer: document.getElementById('customerInput').value,
+                quotationName: document.getElementById('quotationName').value,
+                contactPerson: document.getElementById('contactPerson').value,
+                contactPhone: document.getElementById('contactPhone').value,
+                contactEmail: document.getElementById('contactEmail').value,
+                projectName: document.getElementById('projectName').value,
+                opportunity: document.getElementById('opportunity').value,
+                quotationType: document.getElementById('quotationType').value,
+                probability: document.getElementById('probability').value,
+                priority: document.getElementById('priority').value,
+                stage: document.getElementById('stage').value,
+                expectedDate: document.getElementById('expectedDate').value
+            };
+
+            localStorage.setItem('quotation_draft_step1', JSON.stringify(data));
+            alert('草稿保存成功！');
+        }
+
+        // 下一步
+        function nextStep() {
+            const customer = document.getElementById('customerInput').value;
+            const quotationName = document.getElementById('quotationName').value;
+
+            if (!customer) {
+                alert('请选择客户！');
+                return;
+            }
+
+            if (!quotationName) {
+                alert('请填写报价单名称！');
+                return;
+            }
+
+            // 保存当前步骤数据
+            saveDraft();
+
+            // 跳转到产品配置页面
+            window.location.href = 'quotation-create-step2.html';
+        }
+
+        // 返回
+        function goBack() {
+            if (confirm('确定要返回吗？未保存的数据将会丢失。')) {
+                window.history.back();
+            }
+        }
+
+        // 页面加载时恢复草稿
+        window.addEventListener('load', function() {
+            const draft = localStorage.getItem('quotation_draft_step1');
+            if (draft) {
+                const data = JSON.parse(draft);
+                document.getElementById('customerInput').value = data.customer || '';
+                document.getElementById('quotationName').value = data.quotationName || '';
+                document.getElementById('contactPerson').value = data.contactPerson || '';
+                document.getElementById('contactPhone').value = data.contactPhone || '';
+                document.getElementById('contactEmail').value = data.contactEmail || '';
+                document.getElementById('projectName').value = data.projectName || '';
+                document.getElementById('opportunity').value = data.opportunity || '';
+                document.getElementById('quotationType').value = data.quotationType || 'standard';
+                document.getElementById('probability').value = data.probability || '60';
+                document.getElementById('priority').value = data.priority || 'medium';
+                document.getElementById('stage').value = data.stage || 'quotation';
+                document.getElementById('expectedDate').value = data.expectedDate || '';
+            }
+        });
+    </script>
+</body>
+</html>

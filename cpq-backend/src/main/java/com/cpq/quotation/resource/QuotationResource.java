@@ -1,0 +1,392 @@
+package com.cpq.quotation.resource;
+
+import com.cpq.common.dto.ApiResponse;
+import com.cpq.common.dto.PageResult;
+import com.cpq.common.exception.BusinessException;
+import com.cpq.common.security.RoleAllowed;
+import com.cpq.common.security.SessionHelper;
+import com.cpq.importexcel.dto.ImportResultDTO;
+import com.cpq.quotation.dto.CreateQuotationRequest;
+import com.cpq.quotation.dto.QuotationDTO;
+import com.cpq.quotation.dto.SaveDraftRequest;
+import com.cpq.quotation.service.ExcelViewService;
+import com.cpq.quotation.service.QuotationEmailService;
+import com.cpq.quotation.service.QuotationExportService;
+import com.cpq.quotation.service.CustomerPartCandidateService;
+import com.cpq.quotation.service.QuotationService;
+import com.cpq.quotation.dto.CustomerPartCandidateDTO;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.util.List;
+import com.cpq.quotation.snapshot.FieldTraceDTO;
+import com.cpq.system.entity.User;
+import io.vertx.core.http.HttpServerRequest;
+import jakarta.inject.Inject;
+import jakarta.validation.Valid;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import org.jboss.resteasy.reactive.RestForm;
+import org.jboss.resteasy.reactive.multipart.FileUpload;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.Map;
+import java.util.UUID;
+
+@Path("/api/cpq/quotations")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+@RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
+public class QuotationResource {
+
+    @Inject
+    QuotationService quotationService;
+
+    @Inject
+    QuotationExportService exportService;
+
+    @Inject
+    QuotationEmailService emailService;
+
+    @Inject
+    ExcelViewService excelViewService;
+
+    @Inject
+    SessionHelper sessionHelper;
+
+    @Inject
+    CustomerPartCandidateService candidateService;
+
+    @GET
+    public ApiResponse<PageResult<QuotationDTO>> list(
+            @QueryParam("page") @DefaultValue("0") int page,
+            @QueryParam("size") @DefaultValue("20") int size,
+            @QueryParam("status") String status,
+            @QueryParam("salesRepId") UUID salesRepId,
+            @QueryParam("assignedApproverId") UUID assignedApproverId,
+            @QueryParam("keyword") String keyword) {
+        return ApiResponse.success(quotationService.list(page, size, status, salesRepId, assignedApproverId, keyword));
+    }
+
+    @GET
+    @Path("/{id}")
+    public ApiResponse<QuotationDTO> getById(@PathParam("id") UUID id) {
+        return ApiResponse.success(quotationService.getById(id));
+    }
+
+    @POST
+    public ApiResponse<QuotationDTO> create(@Valid CreateQuotationRequest request, @Context HttpServerRequest httpRequest) {
+        UUID salesRepId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
+        return ApiResponse.success(quotationService.create(request, salesRepId));
+    }
+
+    /**
+     * Step2 "批量从基础数据导入产品" 候选列表 — 列出该客户可加入报价单的所有料号
+     * (客户专属 mapping + 全局 mat_part)
+     */
+    @GET
+    @Path("/customer-part-candidates")
+    public ApiResponse<List<CustomerPartCandidateDTO>> listCustomerPartCandidates(
+            @QueryParam("customerId") UUID customerId,
+            @QueryParam("importRecordId") UUID importRecordId) {
+        if (customerId == null) {
+            return ApiResponse.error(400, "customerId 不能为空");
+        }
+        return ApiResponse.success(candidateService.listCandidates(customerId, importRecordId));
+    }
+
+    @PUT
+    @Path("/{id}/draft")
+    public ApiResponse<QuotationDTO> saveDraft(@PathParam("id") UUID id, SaveDraftRequest request) {
+        return ApiResponse.success(quotationService.saveDraft(id, request));
+    }
+
+    @POST
+    @Path("/{id}/calculate-discount")
+    public ApiResponse<QuotationDTO> calculateDiscount(@PathParam("id") UUID id, Map<String, Object> body) {
+        if (body == null || body.get("originalAmount") == null) {
+            throw new com.cpq.common.exception.BusinessException(400, "originalAmount is required");
+        }
+        BigDecimal originalAmount;
+        try {
+            originalAmount = new BigDecimal(body.get("originalAmount").toString());
+        } catch (NumberFormatException e) {
+            throw new com.cpq.common.exception.BusinessException(400, "originalAmount must be a number");
+        }
+        return ApiResponse.success(quotationService.calculateDiscount(id, originalAmount));
+    }
+
+    /**
+     * v5.1 §10 提交报价单：DRAFT→SUBMITTED + 写入提交快照。
+     * 权限：仅 SALES_REP 可提交（Resource 层注解 + Service 层守卫双重保护）。
+     */
+    @POST
+    @Path("/{id}/submit")
+    @RoleAllowed({"SALES_REP", "SYSTEM_ADMIN"})
+    public ApiResponse<QuotationDTO> submit(@PathParam("id") UUID id,
+                                             @Context HttpServerRequest request) {
+        UUID currentUserId = sessionHelper.getCurrentUserIdOrFallback(request);
+        return ApiResponse.success(quotationService.submit(id, currentUserId));
+    }
+
+    /**
+     * v5.1 §10 获取报价单提交快照。
+     */
+    @GET
+    @Path("/{id}/snapshot")
+    public ApiResponse<Object> getSnapshot(@PathParam("id") UUID id) {
+        String snapshotJson = quotationService.getSnapshot(id);
+        if (snapshotJson == null || snapshotJson.isBlank()) {
+            return ApiResponse.success(null);
+        }
+        // 将原始 JSON 字符串反序列化后返回，避免双重序列化
+        try {
+            Object parsed = new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readValue(snapshotJson, Object.class);
+            return ApiResponse.success(parsed);
+        } catch (Exception e) {
+            return ApiResponse.success(snapshotJson);
+        }
+    }
+
+    /**
+     * v5.1 §4.9 字段级追溯 API。
+     *
+     * <p>示例：GET /api/cpq/quotations/{id}/field-trace?fieldPath=mat_fee.xxx|yyy.unit_price
+     */
+    @GET
+    @Path("/{id}/field-trace")
+    public ApiResponse<FieldTraceDTO> getFieldTrace(
+            @PathParam("id") UUID id,
+            @QueryParam("fieldPath") String fieldPath) {
+        return ApiResponse.success(quotationService.getFieldTrace(id, fieldPath));
+    }
+
+    /**
+     * PERF-FULL-RECALC-10: 全表重算 DRAFT 报价单的所有公式字段。
+     * 仅 DRAFT 状态可用；其他状态返回 400"已提交报价单不可重算"。
+     */
+    @POST
+    @Path("/{id}/recalculate")
+    @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
+    public ApiResponse<QuotationDTO> recalculate(@PathParam("id") UUID id) {
+        return ApiResponse.success(quotationService.recalculate(id));
+    }
+
+    @POST
+    @Path("/{id}/approve")
+    public ApiResponse<QuotationDTO> approve(@PathParam("id") UUID id, Map<String, String> body, @Context HttpServerRequest request) {
+        UUID currentUserId = sessionHelper.getCurrentUserIdOrFallback(request);
+        String comment = body != null ? body.get("comment") : null;
+        return ApiResponse.success(quotationService.approve(id, comment, currentUserId));
+    }
+
+    @POST
+    @Path("/{id}/reject")
+    public ApiResponse<QuotationDTO> reject(@PathParam("id") UUID id, Map<String, String> body, @Context HttpServerRequest request) {
+        UUID currentUserId = sessionHelper.getCurrentUserIdOrFallback(request);
+        String comment = body != null ? body.get("comment") : null;
+        return ApiResponse.success(quotationService.reject(id, comment, currentUserId));
+    }
+
+    @POST
+    @Path("/{id}/withdraw")
+    public ApiResponse<QuotationDTO> withdraw(@PathParam("id") UUID id, @Context HttpServerRequest request) {
+        UUID currentUserId = sessionHelper.getCurrentUserIdOrFallback(request);
+        return ApiResponse.success(quotationService.withdraw(id, currentUserId));
+    }
+
+    @POST
+    @Path("/{id}/copy")
+    public ApiResponse<QuotationDTO> copy(@PathParam("id") UUID id) {
+        return ApiResponse.success(quotationService.copy(id));
+    }
+
+    @DELETE
+    @Path("/{id}")
+    public ApiResponse<Void> delete(@PathParam("id") UUID id) {
+        quotationService.delete(id);
+        return ApiResponse.success();
+    }
+
+    // ---- M5: Quotation Output ----
+
+    @POST
+    @Path("/{id}/export/html")
+    @Produces(MediaType.TEXT_HTML)
+    public Response exportHtml(
+            @PathParam("id") UUID id,
+            @QueryParam("showDiscount") @DefaultValue("true") boolean showDiscount,
+            @QueryParam("showProcesses") @DefaultValue("true") boolean showProcesses,
+            @QueryParam("showTabDetails") @DefaultValue("false") boolean showTabDetails) {
+        byte[] html = exportService.exportHtml(id, showDiscount, showProcesses, showTabDetails);
+        return Response.ok(html, MediaType.TEXT_HTML)
+                .header("Content-Disposition", "inline; filename=\"quotation.html\"")
+                .build();
+    }
+
+    @POST
+    @Path("/{id}/export/pdf")
+    @Produces(MediaType.TEXT_HTML)
+    public Response exportPdf(
+            @PathParam("id") UUID id,
+            Map<String, Object> body) {
+        boolean showDiscount = body != null && Boolean.TRUE.equals(body.get("showDiscount"));
+        boolean showProcesses = body == null || !Boolean.FALSE.equals(body.get("showProcesses"));
+        boolean showTabDetails = body != null && Boolean.TRUE.equals(body.get("showTabDetails"));
+        // Return HTML for browser print-to-PDF (pragmatic approach)
+        byte[] html = exportService.exportHtml(id, showDiscount, showProcesses, showTabDetails);
+        return Response.ok(html, MediaType.TEXT_HTML)
+                .header("Content-Disposition", "inline; filename=\"quotation.html\"")
+                .build();
+    }
+
+    @POST
+    @Path("/{id}/export/excel")
+    @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    public Response exportExcel(
+            @PathParam("id") UUID id,
+            Map<String, Object> body) {
+        boolean showDiscount = body == null || !Boolean.FALSE.equals(body.get("showDiscount"));
+        boolean includeRawData = body != null && Boolean.TRUE.equals(body.get("includeRawData"));
+        byte[] excel = exportService.exportExcel(id, showDiscount, includeRawData);
+        QuotationDTO q = quotationService.getById(id);
+        String filename = (q.quotationNumber != null ? q.quotationNumber : "quotation") + ".xlsx";
+        return Response.ok(excel)
+                .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                .build();
+    }
+
+    @POST
+    @Path("/{id}/send")
+    public ApiResponse<QuotationDTO> sendQuotation(@PathParam("id") UUID id, Map<String, Object> body) {
+        String to = body != null ? (String) body.get("to") : null;
+        String cc = body != null ? (String) body.get("cc") : null;
+        String subject = body != null ? (String) body.get("subject") : null;
+        String emailBody = body != null ? (String) body.get("body") : null;
+        boolean attachExcel = body != null && Boolean.TRUE.equals(body.get("attachExcel"));
+        return ApiResponse.success(emailService.send(id, to, cc, subject, emailBody, attachExcel));
+    }
+
+    // ---- Excel View v2 ----
+
+    @GET
+    @Path("/{id}/excel-view")
+    public ApiResponse<Map<String, Object>> getExcelView(@PathParam("id") UUID id) {
+        return ApiResponse.success(excelViewService.getExcelView(id));
+    }
+
+    @PUT
+    @Path("/{id}/excel-view")
+    public ApiResponse<Void> updateExcelViewCell(
+            @PathParam("id") UUID id,
+            Map<String, Object> body) {
+        if (body == null) throw new WebApplicationException("Request body is required", 400);
+        Object lineItemIdObj = body.get("lineItemId");
+        Object colKeyObj = body.get("colKey");
+        Object value = body.get("value");
+        if (lineItemIdObj == null || colKeyObj == null) {
+            throw new WebApplicationException("lineItemId and colKey are required", 400);
+        }
+        UUID lineItemId = UUID.fromString(lineItemIdObj.toString());
+        String colKey = colKeyObj.toString();
+        excelViewService.updateExcelViewCell(id, lineItemId, colKey, value);
+        return ApiResponse.success();
+    }
+
+    @GET
+    @Path("/{id}/export-excel-view")
+    @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    public Response exportExcelView(@PathParam("id") UUID id) {
+        byte[] excel = excelViewService.exportExcelView(id);
+        QuotationDTO q = quotationService.getById(id);
+        String filename = (q.quotationNumber != null ? q.quotationNumber : "quotation") + "-view.xlsx";
+        return Response.ok(excel)
+                .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                .build();
+    }
+
+    @PUT
+    @Path("/{id}/extend")
+    public ApiResponse<QuotationDTO> extend(@PathParam("id") UUID id, Map<String, String> body) {
+        if (body == null) {
+            throw new com.cpq.common.exception.BusinessException(400, "Request body is required");
+        }
+        // Accept both "newExpiryDate" (canonical) and "expiryDate" (alias) for ergonomics
+        String dateStr = body.get("newExpiryDate");
+        if (dateStr == null || dateStr.isBlank()) dateStr = body.get("expiryDate");
+        if (dateStr == null || dateStr.isBlank()) {
+            throw new com.cpq.common.exception.BusinessException(400,
+                    "newExpiryDate is required (ISO date format yyyy-MM-dd)");
+        }
+        LocalDate newExpiryDate;
+        try {
+            newExpiryDate = LocalDate.parse(dateStr);
+        } catch (java.time.format.DateTimeParseException e) {
+            throw new com.cpq.common.exception.BusinessException(400,
+                    "Invalid date format, expected yyyy-MM-dd: " + dateStr);
+        }
+        return ApiResponse.success(quotationService.extend(id, newExpiryDate));
+    }
+
+    @POST
+    @Path("/{id}/accept")
+    public ApiResponse<QuotationDTO> accept(@PathParam("id") UUID id, @Context HttpServerRequest request) {
+        UUID currentUserId = sessionHelper.getCurrentUserIdOrFallback(request);
+        return ApiResponse.success(quotationService.accept(id, currentUserId));
+    }
+
+    /**
+     * v5.1 §6.6 DRAFT 漂移检测：用户接受漂移后重新计算公式 + 更新 referenced_versions。
+     *
+     * <p>权限：仅 SALES_REP（或 SYSTEM_ADMIN）可调用；SALES_MANAGER 无操作权限。
+     */
+    @POST
+    @Path("/{id}/refresh-versions")
+    public ApiResponse<QuotationDTO> refreshVersions(@PathParam("id") UUID id,
+                                                      @Context HttpServerRequest request) {
+        UUID currentUserId = sessionHelper.getCurrentUserIdOrFallback(request);
+        return ApiResponse.success(quotationService.refreshVersions(id, currentUserId));
+    }
+
+    @POST
+    @Path("/{id}/reject-by-customer")
+    public ApiResponse<QuotationDTO> rejectByCustomer(@PathParam("id") UUID id, Map<String, String> body,
+                                                       @Context HttpServerRequest request) {
+        String comment = body != null ? body.get("comment") : null;
+        UUID currentUserId = sessionHelper.getCurrentUserIdOrFallback(request);
+        return ApiResponse.success(quotationService.rejectByCustomer(id, comment, currentUserId));
+    }
+
+    /**
+     * QIMP-V5-REIMPORT-15/16: 重新导入报价单基础数据（仅 DRAFT 状态可用）。
+     *
+     * <p>Request (multipart/form-data):
+     *   - file: 新的 Excel 文件（.xlsx）
+     *
+     * <p>Response: ImportResultDTO（含 importRecordId、status、totalRows 等）
+     */
+    @POST
+    @Path("/{id}/reimport-basic-data")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @RoleAllowed({"SALES_REP", "SALES_MANAGER", "SYSTEM_ADMIN"})
+    public ApiResponse<ImportResultDTO> reimportBasicData(
+            @PathParam("id") UUID id,
+            @RestForm("file") FileUpload file,
+            @Context HttpServerRequest request) {
+        if (file == null) {
+            throw new BusinessException(400, "file 不能为空");
+        }
+        UUID userId = sessionHelper.getCurrentUserIdOrFallback(request);
+        try (InputStream is = Files.newInputStream(file.uploadedFile())) {
+            ImportResultDTO result = quotationService.reimportBasicData(id, is, userId);
+            return ApiResponse.success(result);
+        } catch (BusinessException be) {
+            throw be;
+        } catch (Exception e) {
+            throw new BusinessException(400, "重新导入基础数据失败: " + e.getMessage());
+        }
+    }
+}

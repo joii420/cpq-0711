@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>组件管理 - 原型图</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #f0f2f5;
+  height: 100vh;
+  overflow: hidden;
+  font-size: 13px;
+  color: #333;
+}
+
+/* ====== LAYOUT ====== */
+.layout {
+  display: flex;
+  height: 100vh;
+}
+
+/* ====== LEFT PANEL ====== */
+.left-panel {
+  width: 220px;
+  background: #fff;
+  border-right: 1px solid #e4e7ed;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.left-header {
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid #e4e7ed;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.left-header h3 { font-size: 13px; font-weight: 600; color: #303133; }
+.btn-icon {
+  width: 24px; height: 24px;
+  border: none; background: none; cursor: pointer;
+  border-radius: 4px; color: #909399; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, color .15s;
+}
+.btn-icon:hover { background: #f0f2f5; color: #409eff; }
+
+.tree-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+.tree-item {
+  display: flex; align-items: center;
+  padding: 5px 10px 5px 0;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background .15s;
+  position: relative;
+}
+.tree-item:hover { background: #f5f7fa; }
+.tree-item.active { background: #ecf5ff; color: #409eff; }
+.tree-toggle {
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  color: #c0c4cc; font-size: 10px; flex-shrink: 0;
+  transition: transform .2s;
+}
+.tree-toggle.open { transform: rotate(90deg); }
+.tree-icon { margin-right: 5px; font-size: 14px; }
+.tree-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+.tree-actions {
+  display: none;
+  gap: 2px;
+}
+.tree-item:hover .tree-actions { display: flex; }
+.tree-action-btn {
+  width: 20px; height: 20px;
+  border: none; background: none; cursor: pointer;
+  border-radius: 3px; color: #909399; font-size: 12px;
+  display: flex; align-items: center; justify-content: center;
+}
+.tree-action-btn:hover { background: #e8eaec; color: #409eff; }
+.tree-action-btn.del:hover { color: #f56c6c; }
+
+.tree-children { padding-left: 18px; }
+.tree-comp {
+  display: flex; align-items: center;
+  padding: 4px 10px 4px 28px;
+  cursor: pointer; border-radius: 4px;
+  transition: background .15s;
+  position: relative;
+}
+.tree-comp:hover { background: #f5f7fa; }
+.tree-comp.active { background: #ecf5ff; color: #409eff; }
+.tree-comp .tree-actions { display: none; }
+.tree-comp:hover .tree-actions { display: flex; }
+.comp-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%; background: #c0c4cc;
+  margin-right: 7px; flex-shrink: 0;
+}
+.tree-comp.active .comp-dot { background: #409eff; }
+
+/* ====== CENTER PANEL ====== */
+.center-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.center-toolbar {
+  background: #fff;
+  border-bottom: 1px solid #e4e7ed;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.center-title { font-size: 14px; font-weight: 600; color: #303133; }
+.toolbar-right { display: flex; gap: 8px; }
+.btn {
+  padding: 5px 14px;
+  border-radius: 4px;
+  border: 1px solid #dcdfe6;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  color: #606266;
+  transition: all .15s;
+}
+.btn:hover { border-color: #409eff; color: #409eff; }
+.btn-primary {
+  background: #409eff; border-color: #409eff; color: #fff;
+}
+.btn-primary:hover { background: #66b1ff; border-color: #66b1ff; color: #fff; }
+
+.canvas-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Table 1 - Preview header */
+.section-label {
+  font-size: 11px;
+  color: #909399;
+  font-weight: 500;
+  margin-bottom: 6px;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+}
+.card-section {
+  background: #fff;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.card-section-header {
+  padding: 9px 14px;
+  background: #fafafa;
+  border-bottom: 1px solid #e4e7ed;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #606266;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.card-section-header .badge {
+  background: #e1f0ff; color: #409eff;
+  font-size: 11px; padding: 1px 7px;
+  border-radius: 10px; font-weight: 500;
+}
+
+.preview-table { width: 100%; border-collapse: collapse; }
+.preview-table th {
+  background: #fafbfc;
+  border: 1px solid #ebeef5;
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: #606266;
+  font-weight: 500;
+}
+.preview-table td {
+  border: 1px solid #ebeef5;
+  padding: 10px 12px;
+  text-align: center;
+  color: #c0c4cc;
+  font-size: 12px;
+}
+.subtotal-col { background: #fffbf0 !important; }
+.subtotal-th { background: #fff8e6 !important; color: #e6a23c !important; }
+
+/* Table 2 - Field config */
+.config-table { width: 100%; border-collapse: collapse; }
+.config-table th {
+  background: #f5f7fa;
+  border: 1px solid #ebeef5;
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 12px;
+  color: #606266;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.config-table td {
+  border: 1px solid #ebeef5;
+  padding: 5px 8px;
+  vertical-align: middle;
+}
+.config-table tr:hover td { background: #fafcff; }
+.drag-handle {
+  color: #c0c4cc; cursor: grab; font-size: 14px; padding: 0 4px;
+}
+.drag-handle:active { cursor: grabbing; }
+input[type="text"].cell-input, input[type="text"].cell-input-sm {
+  width: 100%; border: 1px solid #dcdfe6;
+  border-radius: 3px; padding: 4px 7px;
+  font-size: 12px; color: #303133;
+  outline: none; transition: border-color .15s;
+}
+input[type="text"].cell-input:focus { border-color: #409eff; }
+input[type="text"].cell-input-sm { max-width: 120px; }
+select.cell-select {
+  width: 100%; border: 1px solid #dcdfe6;
+  border-radius: 3px; padding: 4px 6px;
+  font-size: 12px; color: #303133;
+  outline: none; background: #fff;
+}
+select.cell-select:focus { border-color: #409eff; }
+input[type="checkbox"].cell-check {
+  width: 15px; height: 15px; cursor: pointer;
+  accent-color: #409eff;
+}
+.subtotal-row td { background: #fffbf0; }
+
+/* Table 3 - Formula */
+.formula-toolbar {
+  padding: 8px 14px;
+  border-bottom: 1px solid #ebeef5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.formula-toolbar-label { font-size: 11.5px; color: #909399; margin-right: 4px; }
+.op-chip {
+  padding: 3px 10px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  background: #fff;
+  cursor: grab;
+  font-size: 13px;
+  color: #606266;
+  user-select: none;
+  transition: all .15s;
+}
+.op-chip:hover { border-color: #409eff; color: #409eff; background: #ecf5ff; }
+.op-chip:active { cursor: grabbing; }
+
+.formula-table { width: 100%; border-collapse: collapse; }
+.formula-table th {
+  background: #f5f7fa;
+  border: 1px solid #ebeef5;
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 12px;
+  color: #606266;
+  font-weight: 500;
+}
+.formula-table td {
+  border: 1px solid #ebeef5;
+  padding: 6px 8px;
+  vertical-align: middle;
+}
+.formula-table tr:hover td { background: #fafcff; }
+.formula-zone {
+  min-height: 36px;
+  border: 1.5px dashed #c0c4cc;
+  border-radius: 4px;
+  padding: 5px 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  background: #fafafa;
+  cursor: text;
+  transition: border-color .15s, background .15s;
+}
+.formula-zone.dragover { border-color: #409eff; background: #ecf5ff; }
+.formula-chip {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.formula-chip.field { background: #e1f0ff; color: #409eff; border: 1px solid #c6e0ff; }
+.formula-chip.op { background: #f0f9eb; color: #67c23a; border: 1px solid #d5f0c2; }
+.formula-chip.subtotal { background: #fff8e6; color: #e6a23c; border: 1px solid #ffe4a0; }
+.formula-chip .remove {
+  cursor: pointer; color: currentColor; opacity: .6; font-size: 13px; line-height: 1;
+}
+.formula-chip .remove:hover { opacity: 1; }
+.formula-add-row {
+  padding: 6px 12px;
+  display: flex;
+}
+
+/* ====== RIGHT PANEL ====== */
+.right-panel {
+  width: 230px;
+  background: #fff;
+  border-left: 1px solid #e4e7ed;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.right-tabs {
+  display: flex;
+  border-bottom: 1px solid #e4e7ed;
+  flex-shrink: 0;
+}
+.right-tab {
+  flex: 1;
+  padding: 11px 8px;
+  text-align: center;
+  font-size: 12.5px;
+  cursor: pointer;
+  color: #606266;
+  border-bottom: 2px solid transparent;
+  transition: all .15s;
+}
+.right-tab.active { color: #409eff; border-bottom-color: #409eff; font-weight: 500; }
+.right-tab:hover:not(.active) { background: #f5f7fa; }
+
+.right-content { flex: 1; overflow-y: auto; padding: 10px; }
+.right-content .empty-tip {
+  text-align: center; color: #c0c4cc; font-size: 12px; margin-top: 30px;
+}
+
+.field-card {
+  border: 1px solid #e4e7ed;
+  border-radius: 5px;
+  padding: 7px 10px;
+  margin-bottom: 6px;
+  cursor: grab;
+  background: #fff;
+  transition: all .15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.field-card:hover { border-color: #409eff; box-shadow: 0 2px 8px rgba(64,158,255,.12); }
+.field-card:active { cursor: grabbing; }
+.field-card-icon { font-size: 13px; }
+.field-card-info { flex: 1; min-width: 0; }
+.field-card-name { font-size: 12.5px; color: #303133; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.field-card-type { font-size: 11px; color: #909399; margin-top: 1px; }
+.field-card-tag {
+  font-size: 10.5px; padding: 1px 6px; border-radius: 10px; flex-shrink: 0;
+}
+.tag-subtotal { background: #fff8e6; color: #e6a23c; border: 1px solid #ffe4a0; }
+.tag-amount { background: #fef0f0; color: #f56c6c; border: 1px solid #ffcfcf; }
+
+.section-divider {
+  font-size: 11px; color: #909399;
+  padding: 6px 2px 4px;
+  font-weight: 500;
+  letter-spacing: .3px;
+}
+
+.subtotal-card {
+  border: 1px solid #e4e7ed;
+  border-radius: 5px;
+  padding: 7px 10px;
+  margin-bottom: 6px;
+  cursor: grab;
+  background: #fffdf7;
+  transition: all .15s;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.subtotal-card:hover { border-color: #e6a23c; box-shadow: 0 2px 8px rgba(230,162,60,.12); }
+.subtotal-card:active { cursor: grabbing; }
+.subtotal-card-icon { font-size: 14px; }
+.subtotal-card-name { font-size: 12.5px; color: #303133; font-weight: 500; }
+.subtotal-card-comp { font-size: 11px; color: #909399; margin-top: 1px; }
+
+/* ====== MODAL ====== */
+.modal-mask {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999;
+}
+.modal-mask.hidden { display: none; }
+.modal {
+  background: #fff;
+  border-radius: 8px;
+  width: 400px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.18);
+  overflow: hidden;
+}
+.modal-header {
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid #e4e7ed;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-header h4 { font-size: 15px; font-weight: 600; color: #303133; }
+.modal-close {
+  width: 26px; height: 26px;
+  border: none; background: none; cursor: pointer;
+  border-radius: 50%; color: #909399; font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-close:hover { background: #f5f7fa; color: #303133; }
+.modal-body { padding: 20px; }
+.form-row { margin-bottom: 16px; }
+.form-label { font-size: 12.5px; color: #606266; margin-bottom: 6px; font-weight: 500; }
+.form-label .required { color: #f56c6c; margin-left: 2px; }
+.form-input {
+  width: 100%; border: 1px solid #dcdfe6;
+  border-radius: 4px; padding: 8px 12px;
+  font-size: 13px; color: #303133; outline: none;
+  transition: border-color .15s;
+}
+.form-input:focus { border-color: #409eff; }
+.form-row-inline { display: flex; gap: 10px; }
+.form-row-inline .form-row { flex: 1; }
+.modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid #e4e7ed;
+  display: flex; justify-content: flex-end; gap: 10px;
+}
+
+/* ====== SCROLLBAR ====== */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d8dce5; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #b4bccc; }
+
+/* breadcrumb */
+.breadcrumb {
+  font-size: 12px; color: #909399; display: flex; align-items: center; gap: 4px;
+}
+.breadcrumb .sep { color: #c0c4cc; }
+.breadcrumb .cur { color: #303133; font-weight: 500; }
+</style>
+</head>
+<body>
+
+<!-- Modal: New Component -->
+<div class="modal-mask hidden" id="newCompModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h4>新增组件</h4>
+      <button class="modal-close" onclick="closeModal('newCompModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-label">组件名称<span class="required">*</span></div>
+        <input class="form-input" type="text" id="newCompName" placeholder="请输入组件名称" />
+      </div>
+      <div class="form-row">
+        <div class="form-label">列数<span class="required">*</span></div>
+        <input class="form-input" type="number" id="newCompCols" placeholder="请输入列数（如：3）" min="1" max="12" value="3" />
+      </div>
+      <div class="form-row" style="margin-bottom:0">
+        <div class="form-label">目录</div>
+        <input class="form-input" type="text" id="newCompDir" readonly style="background:#f5f7fa;color:#909399" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('newCompModal')">取消</button>
+      <button class="btn btn-primary" onclick="createComponent()">确定创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: New Directory -->
+<div class="modal-mask hidden" id="newDirModal">
+  <div class="modal" style="width:360px">
+    <div class="modal-header">
+      <h4>新建目录</h4>
+      <button class="modal-close" onclick="closeModal('newDirModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row" style="margin-bottom:0">
+        <div class="form-label">目录名称<span class="required">*</span></div>
+        <input class="form-input" type="text" id="newDirName" placeholder="请输入目录名称" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('newDirModal')">取消</button>
+      <button class="btn btn-primary" onclick="createDir()">确定</button>
+    </div>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- ===== LEFT PANEL ===== -->
+  <div class="left-panel">
+    <div class="left-header">
+      <h3>组件列表</h3>
+      <div style="display:flex;gap:2px">
+        <button class="btn-icon" title="新建目录" onclick="openNewDirModal()">📁</button>
+      </div>
+    </div>
+    <div class="tree-container" id="treeContainer">
+      <!-- rendered by JS -->
+    </div>
+  </div>
+
+  <!-- ===== CENTER PANEL ===== -->
+  <div class="center-panel">
+    <div class="center-toolbar">
+      <div>
+        <div class="center-title" id="canvasTitle">投料组件</div>
+        <div class="breadcrumb" style="margin-top:2px">
+          <span>生产管理</span><span class="sep">›</span><span class="cur" id="canvasBread">投料组件</span>
+        </div>
+      </div>
+      <div class="toolbar-right">
+        <button class="btn">重置</button>
+        <button class="btn btn-primary">保存</button>
+      </div>
+    </div>
+
+    <div class="canvas-scroll" id="canvasScroll">
+
+      <!-- Table 1: Column preview -->
+      <div>
+        <div class="section-label">📋 表头预览（组件列头）</div>
+        <div class="card-section">
+          <div class="card-section-header">
+            <span>列头展示</span>
+            <span class="badge" id="colCountBadge">3 列</span>
+          </div>
+          <div style="padding:0 1px 1px">
+            <table class="preview-table" id="previewTable">
+              <thead><tr id="previewHeaderRow"></tr></thead>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Table 2: Field config -->
+      <div>
+        <div class="section-label">⚙️ 字段配置</div>
+        <div class="card-section">
+          <div class="card-section-header">
+            <span>字段设置</span>
+            <span style="font-size:11px;color:#909399;font-weight:400;margin-left:auto">拖拽行手柄可排序 · 可设置小计列（仅限一个）</span>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="config-table" id="fieldConfigTable">
+              <thead>
+                <tr>
+                  <th style="width:28px"></th>
+                  <th style="min-width:110px">字段名称</th>
+                  <th style="min-width:120px">字段类型</th>
+                  <th style="min-width:120px">内容</th>
+                  <th style="width:70px;text-align:center">金额字段</th>
+                  <th style="width:70px;text-align:center">小计字段</th>
+                  <th style="min-width:110px">说明</th>
+                </tr>
+              </thead>
+              <tbody id="fieldConfigBody">
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Table 3: Formula management -->
+      <div id="formulaSection">
+        <div class="section-label">🧮 公式管理</div>
+        <div class="card-section">
+          <div class="card-section-header">
+            <span>公式配置</span>
+            <span style="font-size:11px;color:#909399;font-weight:400;margin-left:auto">从右侧拖拽字段/小计到公式区域</span>
+          </div>
+          <div class="formula-toolbar">
+            <span class="formula-toolbar-label">运算符：</span>
+            <span class="op-chip" draggable="true" data-op="+">＋</span>
+            <span class="op-chip" draggable="true" data-op="-">－</span>
+            <span class="op-chip" draggable="true" data-op="×">×</span>
+            <span class="op-chip" draggable="true" data-op="÷">÷</span>
+            <span class="op-chip" draggable="true" data-op="(">(</span>
+            <span class="op-chip" draggable="true" data-op=")">)</span>
+            <span class="op-chip" draggable="true" data-op="%">%</span>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="formula-table">
+              <thead>
+                <tr>
+                  <th style="width:120px">公式名称</th>
+                  <th>公式表达式</th>
+                  <th style="width:80px">结果类型</th>
+                  <th style="width:60px">操作</th>
+                </tr>
+              </thead>
+              <tbody id="formulaBody">
+                <tr>
+                  <td><input type="text" class="cell-input" value="成本合计" /></td>
+                  <td>
+                    <div class="formula-zone" id="fz0" ondragover="onDragOver(event, 'fz0')" ondragleave="onDragLeave('fz0')" ondrop="onDrop(event,'fz0')">
+                      <span class="formula-chip field" draggable="true">材料单价 <span class="remove" onclick="removeChip(this)">×</span></span>
+                      <span class="formula-chip op">×</span>
+                      <span class="formula-chip field">使用数量 <span class="remove" onclick="removeChip(this)">×</span></span>
+                      <span class="formula-chip op">+</span>
+                      <span class="formula-chip subtotal">回料·小计 <span class="remove" onclick="removeChip(this)">×</span></span>
+                    </div>
+                  </td>
+                  <td>
+                    <select class="cell-select"><option>金额</option><option>数量</option><option>文本</option></select>
+                  </td>
+                  <td style="text-align:center">
+                    <button class="tree-action-btn del" onclick="removeRow(this)" title="删除">🗑</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="formula-add-row">
+            <button class="btn" onclick="addFormulaRow()">+ 新增公式</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /canvas-scroll -->
+  </div>
+
+  <!-- ===== RIGHT PANEL ===== -->
+  <div class="right-panel">
+    <div class="right-tabs">
+      <div class="right-tab active" id="tab-fields" onclick="switchTab('fields')">字段列表</div>
+      <div class="right-tab" id="tab-datasource" onclick="switchTab('datasource')">其他数据源</div>
+    </div>
+    <div class="right-content" id="rightContent">
+      <!-- rendered by JS -->
+    </div>
+  </div>
+
+</div><!-- /layout -->
+
+<script>
+// ===================== DATA =====================
+let currentDirId = null;
+let currentCompId = null;
+let currentTab = 'fields';
+
+const treeData = [
+  {
+    id: 'd1', type: 'dir', name: '生产管理', open: true,
+    children: [
+      {
+        id: 'c1', type: 'comp', name: '投料组件', cols: 3,
+        fields: [
+          { name: '材料编码', ftype: '固定值', content: '', amount: false, subtotal: false, note: '' },
+          { name: '材料单价', ftype: '数据源', content: '基础资料.单价', amount: true, subtotal: false, note: '从基础资料取值' },
+          { name: '使用数量', ftype: '输入框', content: '', amount: false, subtotal: false, note: '手动录入' },
+          // subtotal col
+          { name: '小计', ftype: '公式', content: '', amount: true, subtotal: true, note: '小计求和' },
+        ],
+        formulas: []
+      },
+      { id: 'c2', type: 'comp', name: '回料组件', cols: 4,
+        fields: [
+          { name: '回料品名', ftype: '固定值', content: '', amount: false, subtotal: false, note: '' },
+          { name: '回收数量', ftype: '输入框', content: '', amount: false, subtotal: false, note: '' },
+          { name: '回收单价', ftype: '数据源', content: '基础资料.单价', amount: true, subtotal: false, note: '' },
+          { name: '小计', ftype: '公式', content: '', amount: true, subtotal: true, note: '' },
+        ],
+        formulas: []
+      },
+    ]
+  },
+  {
+    id: 'd2', type: 'dir', name: '质检管理', open: false,
+    children: [
+      { id: 'c3', type: 'comp', name: '检测项目', cols: 3,
+        fields: [
+          { name: '检测项目', ftype: '固定值', content: '', amount: false, subtotal: false, note: '' },
+          { name: '检测费用', ftype: '输入框', content: '', amount: true, subtotal: false, note: '' },
+          { name: '小计', ftype: '公式', content: '', amount: true, subtotal: true, note: '' },
+        ],
+        formulas: []
+      }
+    ]
+  }
+];
+
+// ===================== TREE RENDER =====================
+function renderTree() {
+  const container = document.getElementById('treeContainer');
+  container.innerHTML = '';
+  treeData.forEach(dir => {
+    container.appendChild(renderDir(dir));
+  });
+}
+
+function renderDir(dir) {
+  const wrapper = document.createElement('div');
+
+  const row = document.createElement('div');
+  row.className = 'tree-item' + (currentDirId === dir.id && !currentCompId ? ' active' : '');
+  row.innerHTML = `
+    <span class="tree-toggle ${dir.open ? 'open' : ''}">▶</span>
+    <span class="tree-icon">📁</span>
+    <span class="tree-label">${dir.name}</span>
+    <div class="tree-actions">
+      <button class="tree-action-btn" title="新增组件" onclick="openNewCompModal('${dir.id}', '${dir.name}', event)">＋</button>
+      <button class="tree-action-btn del" title="删除目录" onclick="deleteDir('${dir.id}', event)">🗑</button>
+    </div>
+  `;
+  row.querySelector('.tree-toggle').addEventListener('click', (e) => {
+    e.stopPropagation();
+    dir.open = !dir.open;
+    renderTree();
+  });
+  row.addEventListener('click', () => {
+    currentDirId = dir.id;
+    currentCompId = null;
+    renderTree();
+  });
+  wrapper.appendChild(row);
+
+  if (dir.open) {
+    const children = document.createElement('div');
+    children.className = 'tree-children';
+    dir.children.forEach(comp => {
+      children.appendChild(renderComp(comp, dir));
+    });
+    wrapper.appendChild(children);
+  }
+  return wrapper;
+}
+
+function renderComp(comp, dir) {
+  const row = document.createElement('div');
+  row.className = 'tree-comp' + (currentCompId === comp.id ? ' active' : '');
+  row.innerHTML = `
+    <span class="comp-dot"></span>
+    <span class="tree-label">${comp.name}</span>
+    <div class="tree-actions">
+      <button class="tree-action-btn del" title="删除组件" onclick="deleteComp('${dir.id}','${comp.id}',event)">🗑</button>
+    </div>
+  `;
+  row.addEventListener('click', () => {
+    currentDirId = dir.id;
+    currentCompId = comp.id;
+    renderTree();
+    loadComponent(comp, dir);
+  });
+  return row;
+}
+
+// ===================== LOAD COMPONENT =====================
+function loadComponent(comp, dir) {
+  document.getElementById('canvasTitle').textContent = comp.name;
+  document.getElementById('canvasBread').textContent = comp.name;
+
+  // Table 1 preview
+  const colCount = comp.fields.length;
+  document.getElementById('colCountBadge').textContent = colCount + ' 列';
+  const headerRow = document.getElementById('previewHeaderRow');
+  headerRow.innerHTML = '';
+  comp.fields.forEach(f => {
+    const th = document.createElement('th');
+    th.textContent = f.name || '列？';
+    if (f.subtotal) th.className = 'subtotal-th';
+    headerRow.appendChild(th);
+  });
+
+  // Table 2 field config
+  renderFieldConfig(comp);
+
+  // Right panel
+  renderRightPanel(comp);
+}
+
+function renderFieldConfig(comp) {
+  const tbody = document.getElementById('fieldConfigBody');
+  tbody.innerHTML = '';
+  comp.fields.forEach((f, idx) => {
+    const tr = document.createElement('tr');
+    if (f.subtotal) tr.className = 'subtotal-row';
+    tr.innerHTML = `
+      <td style="text-align:center"><span class="drag-handle" title="拖拽排序">⠿</span></td>
+      <td><input type="text" class="cell-input" value="${f.name}" oninput="updateField(${idx},'name',this.value)" /></td>
+      <td>
+        <select class="cell-select" onchange="updateField(${idx},'ftype',this.value)">
+          ${['数据源','公式','固定值','输入框'].map(t=>`<option ${f.ftype===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+      </td>
+      <td><input type="text" class="cell-input" value="${f.content}" oninput="updateField(${idx},'content',this.value)" /></td>
+      <td style="text-align:center"><input type="checkbox" class="cell-check" ${f.amount?'checked':''} onchange="updateField(${idx},'amount',this.checked)" /></td>
+      <td style="text-align:center"><input type="checkbox" class="cell-check" ${f.subtotal?'checked':''} onchange="toggleSubtotal(${idx},this)" /></td>
+      <td><input type="text" class="cell-input" value="${f.note}" oninput="updateField(${idx},'note',this.value)" /></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function updateField(idx, key, val) {
+  const comp = getCurrentComp();
+  if (!comp) return;
+  comp.fields[idx][key] = val;
+  // sync preview
+  const ths = document.getElementById('previewHeaderRow').querySelectorAll('th');
+  if (key === 'name' && ths[idx]) ths[idx].textContent = val;
+  renderRightPanel(comp);
+}
+
+function toggleSubtotal(idx, el) {
+  const comp = getCurrentComp();
+  if (!comp) return;
+  if (el.checked) {
+    // uncheck all others
+    comp.fields.forEach((f, i) => { if (i !== idx) f.subtotal = false; });
+  }
+  comp.fields[idx].subtotal = el.checked;
+  renderFieldConfig(comp);
+  renderRightPanel(comp);
+  // update preview
+  const ths = document.getElementById('previewHeaderRow').querySelectorAll('th');
+  comp.fields.forEach((f, i) => {
+    if (ths[i]) ths[i].className = f.subtotal ? 'subtotal-th' : '';
+  });
+}
+
+function getCurrentComp() {
+  if (!currentCompId) return null;
+  for (const dir of treeData) {
+    const c = dir.children.find(x => x.id === currentCompId);
+    if (c) return c;
+  }
+  return null;
+}
+
+// ===================== RIGHT PANEL =====================
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tab-fields').className = 'right-tab' + (tab === 'fields' ? ' active' : '');
+  document.getElementById('tab-datasource').className = 'right-tab' + (tab === 'datasource' ? ' active' : '');
+  const comp = getCurrentComp();
+  renderRightPanel(comp);
+}
+
+function renderRightPanel(comp) {
+  const container = document.getElementById('rightContent');
+  if (currentTab === 'fields') {
+    if (!comp) { container.innerHTML = '<div class="empty-tip">请先选择组件</div>'; return; }
+    container.innerHTML = '<div class="section-divider">当前组件字段</div>';
+    comp.fields.forEach(f => {
+      const card = document.createElement('div');
+      card.className = 'field-card';
+      card.draggable = true;
+      card.dataset.fieldName = f.name;
+      card.dataset.fieldType = 'field';
+      card.addEventListener('dragstart', onFieldDragStart);
+      const typeIcon = { '数据源': '🔗', '公式': '🧮', '固定值': '📌', '输入框': '✏️' };
+      let tags = '';
+      if (f.subtotal) tags += `<span class="field-card-tag tag-subtotal">小计</span>`;
+      if (f.amount) tags += `<span class="field-card-tag tag-amount" style="margin-left:2px">金额</span>`;
+      card.innerHTML = `
+        <span class="field-card-icon">${typeIcon[f.ftype]||'📄'}</span>
+        <div class="field-card-info">
+          <div class="field-card-name">${f.name||'(未命名)'}</div>
+          <div class="field-card-type">${f.ftype}</div>
+        </div>
+        ${tags}
+      `;
+      container.appendChild(card);
+    });
+  } else {
+    // other datasource - show subtotals from other components
+    container.innerHTML = '<div class="section-divider">其他组件小计</div>';
+    let found = false;
+    treeData.forEach(dir => {
+      dir.children.forEach(c => {
+        if (c.id === currentCompId) return;
+        const sub = c.fields.find(f => f.subtotal);
+        if (!sub) return;
+        found = true;
+        const card = document.createElement('div');
+        card.className = 'subtotal-card';
+        card.draggable = true;
+        card.dataset.fieldName = c.name + '·小计';
+        card.dataset.fieldType = 'subtotal';
+        card.addEventListener('dragstart', onFieldDragStart);
+        card.innerHTML = `
+          <span class="subtotal-card-icon">Σ</span>
+          <div>
+            <div class="subtotal-card-name">${sub.name}</div>
+            <div class="subtotal-card-comp">来自：${c.name}</div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    });
+    if (!found) container.innerHTML += '<div class="empty-tip" style="margin-top:12px">暂无其他组件小计</div>';
+  }
+}
+
+// ===================== DRAG & DROP =====================
+let dragData = null;
+
+function onFieldDragStart(e) {
+  dragData = { name: e.currentTarget.dataset.fieldName, type: e.currentTarget.dataset.fieldType };
+  e.dataTransfer.effectAllowed = 'copy';
+}
+
+document.querySelectorAll('.op-chip').forEach(chip => {
+  chip.addEventListener('dragstart', e => {
+    dragData = { name: chip.dataset.op, type: 'op' };
+    e.dataTransfer.effectAllowed = 'copy';
+  });
+});
+
+function onDragOver(e, zoneId) {
+  e.preventDefault();
+  document.getElementById(zoneId).classList.add('dragover');
+}
+function onDragLeave(zoneId) {
+  document.getElementById(zoneId).classList.remove('dragover');
+}
+function onDrop(e, zoneId) {
+  e.preventDefault();
+  document.getElementById(zoneId).classList.remove('dragover');
+  if (!dragData) return;
+  const zone = document.getElementById(zoneId);
+  const chip = document.createElement('span');
+  chip.className = 'formula-chip ' + (dragData.type === 'op' ? 'op' : dragData.type === 'subtotal' ? 'subtotal' : 'field');
+  chip.draggable = true;
+  if (dragData.type === 'op') {
+    chip.textContent = dragData.name;
+  } else {
+    chip.innerHTML = `${dragData.name} <span class="remove" onclick="removeChip(this)">×</span>`;
+  }
+  zone.appendChild(chip);
+  dragData = null;
+}
+
+function removeChip(el) {
+  el.parentElement.remove();
+}
+
+// ===================== FORMULA ROWS =====================
+let fzCounter = 10;
+function addFormulaRow() {
+  fzCounter++;
+  const tbody = document.getElementById('formulaBody');
+  const tr = document.createElement('tr');
+  const zoneId = 'fz' + fzCounter;
+  tr.innerHTML = `
+    <td><input type="text" class="cell-input" placeholder="公式名称" /></td>
+    <td>
+      <div class="formula-zone" id="${zoneId}" ondragover="onDragOver(event,'${zoneId}')" ondragleave="onDragLeave('${zoneId}')" ondrop="onDrop(event,'${zoneId}')">
+        <span style="color:#c0c4cc;font-size:12px">从右侧拖拽字段，或拖入运算符…</span>
+      </div>
+    </td>
+    <td><select class="cell-select"><option>金额</option><option>数量</option><option>文本</option></select></td>
+    <td style="text-align:center"><button class="tree-action-btn del" onclick="removeRow(this)">🗑</button></td>
+  `;
+  tbody.appendChild(tr);
+}
+
+function removeRow(btn) {
+  btn.closest('tr').remove();
+}
+
+// ===================== MODAL =====================
+let pendingDirId = null;
+
+function openNewCompModal(dirId, dirName, e) {
+  e.stopPropagation();
+  pendingDirId = dirId;
+  document.getElementById('newCompName').value = '';
+  document.getElementById('newCompCols').value = '3';
+  document.getElementById('newCompDir').value = dirName;
+  document.getElementById('newCompModal').classList.remove('hidden');
+}
+
+function openNewDirModal() {
+  document.getElementById('newDirName').value = '';
+  document.getElementById('newDirModal').classList.remove('hidden');
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.add('hidden');
+}
+
+function createComponent() {
+  const name = document.getElementById('newCompName').value.trim();
+  const cols = parseInt(document.getElementById('newCompCols').value) || 3;
+  if (!name) { alert('请输入组件名称'); return; }
+
+  const dir = treeData.find(d => d.id === pendingDirId);
+  if (!dir) return;
+
+  const fields = [];
+  for (let i = 1; i <= cols; i++) {
+    fields.push({ name: '列' + i, ftype: '输入框', content: '', amount: false, subtotal: false, note: '' });
+  }
+
+  const comp = {
+    id: 'c' + Date.now(),
+    type: 'comp',
+    name,
+    cols,
+    fields,
+    formulas: []
+  };
+  dir.children.push(comp);
+  dir.open = true;
+  closeModal('newCompModal');
+  currentDirId = pendingDirId;
+  currentCompId = comp.id;
+  renderTree();
+  loadComponent(comp, dir);
+}
+
+function createDir() {
+  const name = document.getElementById('newDirName').value.trim();
+  if (!name) { alert('请输入目录名称'); return; }
+  treeData.push({ id: 'd' + Date.now(), type: 'dir', name, open: false, children: [] });
+  closeModal('newDirModal');
+  renderTree();
+}
+
+function deleteDir(dirId, e) {
+  e.stopPropagation();
+  if (!confirm('确定删除该目录及其下所有组件？')) return;
+  const idx = treeData.findIndex(d => d.id === dirId);
+  if (idx !== -1) treeData.splice(idx, 1);
+  if (currentDirId === dirId) { currentDirId = null; currentCompId = null; }
+  renderTree();
+}
+
+function deleteComp(dirId, compId, e) {
+  e.stopPropagation();
+  if (!confirm('确定删除该组件？')) return;
+  const dir = treeData.find(d => d.id === dirId);
+  if (!dir) return;
+  const idx = dir.children.findIndex(c => c.id === compId);
+  if (idx !== -1) dir.children.splice(idx, 1);
+  if (currentCompId === compId) currentCompId = null;
+  renderTree();
+}
+
+// ===================== INIT =====================
+renderTree();
+// Auto-select first comp
+const firstDir = treeData[0];
+const firstComp = firstDir.children[0];
+currentDirId = firstDir.id;
+currentCompId = firstComp.id;
+renderTree();
+loadComponent(firstComp, firstDir);
+
+// Make op-chips draggable after DOM is ready
+document.querySelectorAll('.op-chip').forEach(chip => {
+  chip.addEventListener('dragstart', e => {
+    dragData = { name: chip.dataset.op, type: 'op' };
+    e.dataTransfer.effectAllowed = 'copy';
+  });
+});
+</script>
+</body>
+</html>

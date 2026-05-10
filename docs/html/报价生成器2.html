@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>报价单新增 - 产品配置</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+            padding-bottom: 80px;
+        }
+
+        .top-header {
+            background: white;
+            padding: 20px 40px;
+            border-bottom: 1px solid #e8ecf1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .header-subtitle {
+            font-size: 13px;
+            color: #718096;
+            margin-top: 4px;
+        }
+
+        .back-btn {
+            padding: 8px 20px;
+            background: white;
+            color: #4a5568;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        /* 步骤导航 */
+        .steps-nav {
+            background: white;
+            padding: 40px 40px 30px;
+            border-bottom: 1px solid #e8ecf1;
+        }
+
+        .steps-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+        }
+
+        .steps-line {
+            position: absolute;
+            top: 24px;
+            left: 80px;
+            right: 80px;
+            height: 2px;
+            background: #e2e8f0;
+        }
+
+        .steps-line-progress {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            width: 25%;
+        }
+
+        .step-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .step-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: white;
+            border: 2px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .step-item.active .step-icon {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: #667eea;
+            color: white;
+        }
+
+        .step-item.completed .step-icon {
+            background: #48bb78;
+            border-color: #48bb78;
+            color: white;
+        }
+
+        .step-label {
+            font-size: 14px;
+            color: #718096;
+            font-weight: 500;
+        }
+
+        .step-item.active .step-label {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .step-item.completed .step-label {
+            color: #48bb78;
+        }
+
+        /* 主内容 */
+        .main-container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 40px;
+        }
+
+        .content-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #667eea;
+            border: 1px solid #667eea;
+        }
+
+        /* 产品列表 */
+        .products-list {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* 产品卡片容器 */
+        .product-card-container {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 24px;
+            position: relative;
+        }
+
+        .container-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .product-info {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            flex: 1;
+        }
+
+        .product-info input {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .container-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .action-btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .action-btn.switch {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .action-btn.delete {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .action-btn:hover {
+            opacity: 0.8;
+        }
+
+        .toggle-tabs-btn {
+            padding: 8px 16px;
+            background: #f5f5f5;
+            color: #666;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        /* 产品属性 */
+        .product-attributes {
+            background: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .attributes-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        .attribute-item input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        /* 页签区域 */
+        .tabs-section {
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+
+        .tabs-section.collapsed {
+            max-height: 0;
+            opacity: 0;
+        }
+
+        .tabs-container {
+            margin-top: 20px;
+        }
+
+        .tab-header {
+            display: flex;
+            border-bottom: 2px solid #e0e0e0;
+            gap: 4px;
+            margin-bottom: 20px;
+        }
+
+        .tab-btn {
+            padding: 12px 20px;
+            background: #f5f5f5;
+            border: none;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+        }
+
+        .tab-btn.active {
+            background: #1976d2;
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .cost-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .cost-table th,
+        .cost-table td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid #e0e0e0;
+        }
+
+        .cost-table th {
+            background: #f5f5f5;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .cost-table input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .add-row-btn {
+            margin-top: 10px;
+            padding: 8px 16px;
+            background: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        /* 产品小计 */
+        .product-subtotal {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            margin-top: 20px;
+            padding: 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+            color: white;
+            gap: 12px;
+        }
+
+        .subtotal-label {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .subtotal-value {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        /* 底部操作 */
+        .bottom-actions {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-top: 1px solid #e8ecf1;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            z-index: 100;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+        }
+
+        /* 模态框 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 1200px;
+            max-height: 90vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            padding: 24px 30px;
+            border-bottom: 1px solid #e8ecf1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .close-btn {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: #f7fafc;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 20px;
+        }
+
+        .modal-body {
+            padding: 30px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .modal-footer {
+            padding: 20px 30px;
+            border-top: 1px solid #e8ecf1;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        /* 产品选择界面 */
+        .selection-layout {
+            display: grid;
+            grid-template-columns: 200px 1fr;
+            gap: 30px;
+        }
+
+        .category-list {
+            list-style: none;
+        }
+
+        .category-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            color: #4a5568;
+        }
+
+        .category-item:hover {
+            background: #f7fafc;
+        }
+
+        .category-item.active {
+            background: #f0f4ff;
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+
+        .product-option {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 16px;
+            cursor: pointer;
+        }
+
+        .product-option:hover {
+            border-color: #cbd5e0;
+        }
+
+        .product-option.selected {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .product-option-name {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .product-option-code {
+            font-size: 12px;
+            color: #718096;
+        }
+
+        /* 工序选择界面 */
+        .process-section {
+            margin-bottom: 30px;
+        }
+
+        .process-section-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #2d3748;
+        }
+
+        .process-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        .process-card {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px;
+            cursor: pointer;
+        }
+
+        .process-card:hover {
+            border-color: #cbd5e0;
+        }
+
+        .process-card.selected {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .process-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .process-name {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .process-checkbox {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #cbd5e0;
+            border-radius: 4px;
+        }
+
+        .process-card.selected .process-checkbox {
+            background: #667eea;
+            border-color: #667eea;
+            position: relative;
+        }
+
+        .process-card.selected .process-checkbox::after {
+            content: '✓';
+            position: absolute;
+            color: white;
+            font-size: 14px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .process-code {
+            font-size: 12px;
+            color: #718096;
+            margin-top: 4px;
+        }
+
+        /* 模板选择 */
+        .template-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .template-option {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+        }
+
+        .template-option:hover {
+            border-color: #cbd5e0;
+        }
+
+        .template-option.selected {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .template-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            margin-bottom: 12px;
+        }
+
+        .template-name {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .template-desc {
+            font-size: 13px;
+            color: #718096;
+            line-height: 1.5;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: #a0aec0;
+        }
+
+        .empty-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航 -->
+    <div class="top-header">
+        <div>
+            <div class="header-title">报价单新增 - 产品配置</div>
+            <div class="header-subtitle">为客户配置报价产品</div>
+        </div>
+        <button class="back-btn" onclick="goBack()">← 返回</button>
+    </div>
+
+    <!-- 步骤导航 -->
+    <div class="steps-nav">
+        <div class="steps-container">
+            <div class="steps-line">
+                <div class="steps-line-progress"></div>
+            </div>
+            
+            <div class="step-item completed">
+                <div class="step-icon">✓</div>
+                <div class="step-label">选择客户</div>
+            </div>
+
+            <div class="step-item active">
+                <div class="step-icon">🛍️</div>
+                <div class="step-label">产品配置</div>
+            </div>
+
+            <div class="step-item">
+                <div class="step-icon">💰</div>
+                <div class="step-label">价格策略</div>
+            </div>
+
+            <div class="step-item">
+                <div class="step-icon">📄</div>
+                <div class="step-label">商务条款</div>
+            </div>
+
+            <div class="step-item">
+                <div class="step-icon">✓</div>
+                <div class="step-label">预览确认</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主内容 -->
+    <div class="main-container">
+        <div class="content-header">
+            <div class="section-title">产品列表</div>
+            <button class="btn btn-primary" onclick="openProductSelection()">+ 添加产品</button>
+        </div>
+
+        <div class="products-list" id="productsList">
+            <!-- 空状态 -->
+            <div class="empty-state" id="emptyState">
+                <div class="empty-icon">📦</div>
+                <div style="font-size: 16px;">还未添加任何产品</div>
+                <div style="margin-top: 8px;">点击"添加产品"按钮开始配置</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部操作 -->
+    <div class="bottom-actions">
+        <button class="btn btn-secondary" onclick="saveDraft()">💾 保存草稿</button>
+        <div class="action-buttons">
+            <button class="btn btn-secondary" onclick="prevStep()">← 上一步</button>
+            <button class="btn btn-primary" onclick="nextStep()">下一步 →</button>
+        </div>
+    </div>
+
+    <!-- 产品选择模态框 -->
+    <div class="modal" id="productModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">第一步：选择产品</div>
+                <button class="close-btn" onclick="closeModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="selection-layout">
+                    <div>
+                        <h3 style="margin-bottom: 16px;">产品分类</h3>
+                        <ul class="category-list">
+                            <li class="category-item active" onclick="selectCategory(this)">标准件</li>
+                            <li class="category-item" onclick="selectCategory(this)">定制件</li>
+                            <li class="category-item" onclick="selectCategory(this)">原材料</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 style="margin-bottom: 16px;">选择产品</h3>
+                        <div class="products-grid" id="productsGrid">
+                            <div class="product-option" onclick="selectProduct(this)" data-product="精密轴承座">
+                                <div class="product-option-name">精密轴承座</div>
+                                <div class="product-option-code">PRD-STD-001</div>
+                            </div>
+                            <div class="product-option" onclick="selectProduct(this)" data-product="联轴器">
+                                <div class="product-option-name">联轴器</div>
+                                <div class="product-option-code">PRD-STD-002</div>
+                            </div>
+                            <div class="product-option" onclick="selectProduct(this)" data-product="法兰盘">
+                                <div class="product-option-name">法兰盘</div>
+                                <div class="product-option-code">PRD-STD-003</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn btn-primary" onclick="toProcessSelection()">下一步：选择工序</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 工序选择模态框 -->
+    <div class="modal" id="processModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">第二步：选择工序</div>
+                <button class="close-btn" onclick="closeModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="process-section">
+                    <div class="process-section-title">表面处理工序</div>
+                    <div class="process-grid">
+                        <div class="process-card" onclick="toggleProcess(this)">
+                            <div class="process-card-header">
+                                <div>
+                                    <div class="process-name">电镀工序</div>
+                                    <div class="process-code">MRO-LP-SLJC</div>
+                                </div>
+                                <div class="process-checkbox"></div>
+                            </div>
+                        </div>
+                        <div class="process-card" onclick="toggleProcess(this)">
+                            <div class="process-card-header">
+                                <div>
+                                    <div class="process-name">喷涂工序</div>
+                                    <div class="process-code">MRO-LP-PTD</div>
+                                </div>
+                                <div class="process-checkbox"></div>
+                            </div>
+                        </div>
+                        <div class="process-card" onclick="toggleProcess(this)">
+                            <div class="process-card-header">
+                                <div>
+                                    <div class="process-name">抛光工序</div>
+                                    <div class="process-code">MRO-LP-PGC</div>
+                                </div>
+                                <div class="process-checkbox"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="process-section">
+                    <div class="process-section-title">机加工序</div>
+                    <div class="process-grid">
+                        <div class="process-card" onclick="toggleProcess(this)">
+                            <div class="process-card-header">
+                                <div>
+                                    <div class="process-name">CNC加工</div>
+                                    <div class="process-code">MRO-MC-CNC</div>
+                                </div>
+                                <div class="process-checkbox"></div>
+                            </div>
+                        </div>
+                        <div class="process-card" onclick="toggleProcess(this)">
+                            <div class="process-card-header">
+                                <div>
+                                    <div class="process-name">车削加工</div>
+                                    <div class="process-code">MRO-MC-CXJ</div>
+                                </div>
+                                <div class="process-checkbox"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="backToProductSelection()">← 上一步</button>
+                <button class="btn btn-primary" onclick="toTemplateSelection()">下一步：选择模板</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模板选择模态框 -->
+    <div class="modal" id="templateModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">第三步：选择报价模板</div>
+                <button class="close-btn" onclick="closeModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="template-grid">
+                    <div class="template-option" onclick="selectTemplate(this)">
+                        <div class="template-icon">📋</div>
+                        <div class="template-name">标准件报价模板</div>
+                        <div class="template-desc">适用于标准机械零件，包含投料、加工、表面处理等工序</div>
+                    </div>
+                    <div class="template-option" onclick="selectTemplate(this)">
+                        <div class="template-icon">⚙️</div>
+                        <div class="template-name">精密加工报价模板</div>
+                        <div class="template-desc">专为高精度零件设计，含详细检测工序</div>
+                    </div>
+                    <div class="template-option" onclick="selectTemplate(this)">
+                        <div class="template-icon">🔧</div>
+                        <div class="template-name">表面处理专用模板</div>
+                        <div class="template-desc">针对表面处理工序优化的报价模板</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="backToProcessSelection()">← 上一步</button>
+                <button class="btn btn-primary" onclick="confirmAddProduct()">确认添加</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedProductData = {
+            product: null,
+            processes: [],
+            template: null
+        };
+
+        let productCounter = 0;
+
+        // 打开产品选择
+        function openProductSelection() {
+            selectedProductData = { product: null, processes: [], template: null };
+            document.getElementById('productModal').classList.add('show');
+        }
+
+        // 关闭模态框
+        function closeModal() {
+            document.querySelectorAll('.modal').forEach(m => m.classList.remove('show'));
+        }
+
+        // 选择分类
+        function selectCategory(element) {
+            document.querySelectorAll('.category-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            element.classList.add('active');
+        }
+
+        // 选择产品
+        function selectProduct(element) {
+            document.querySelectorAll('.product-option').forEach(opt => {
+                opt.classList.remove('selected');
+            });
+            element.classList.add('selected');
+            selectedProductData.product = element.dataset.product;
+        }
+
+        // 到工序选择
+        function toProcessSelection() {
+            if (!selectedProductData.product) {
+                alert('请先选择产品！');
+                return;
+            }
+            document.getElementById('productModal').classList.remove('show');
+            document.getElementById('processModal').classList.add('show');
+        }
+
+        // 返回产品选择
+        function backToProductSelection() {
+            document.getElementById('processModal').classList.remove('show');
+            document.getElementById('productModal').classList.add('show');
+        }
+
+        // 切换工序
+        function toggleProcess(element) {
+            element.classList.toggle('selected');
+            const processName = element.querySelector('.process-name').textContent;
+            const processCode = element.querySelector('.process-code').textContent;
+            
+            if (element.classList.contains('selected')) {
+                selectedProductData.processes.push({ name: processName, code: processCode });
+            } else {
+                selectedProductData.processes = selectedProductData.processes.filter(
+                    p => p.code !== processCode
+                );
+            }
+        }
+
+        // 到模板选择
+        function toTemplateSelection() {
+            if (selectedProductData.processes.length === 0) {
+                alert('请至少选择一个工序！');
+                return;
+            }
+            document.getElementById('processModal').classList.remove('show');
+            document.getElementById('templateModal').classList.add('show');
+        }
+
+        // 返回工序选择
+        function backToProcessSelection() {
+            document.getElementById('templateModal').classList.remove('show');
+            document.getElementById('processModal').classList.add('show');
+        }
+
+        // 选择模板
+        function selectTemplate(element) {
+            document.querySelectorAll('.template-option').forEach(opt => {
+                opt.classList.remove('selected');
+            });
+            element.classList.add('selected');
+            selectedProductData.template = element.querySelector('.template-name').textContent;
+        }
+
+        // 确认添加产品
+        function confirmAddProduct() {
+            if (!selectedProductData.template) {
+                alert('请选择模板！');
+                return;
+            }
+
+            // 隐藏空状态
+            document.getElementById('emptyState').style.display = 'none';
+
+            // 创建产品卡片
+            productCounter++;
+            const productCard = createProductCard(selectedProductData);
+            document.getElementById('productsList').appendChild(productCard);
+
+            closeModal();
+            alert('产品添加成功！');
+        }
+
+        // 创建产品卡片
+        function createProductCard(data) {
+            const container = document.createElement('div');
+            container.className = 'product-card-container';
+            container.innerHTML = `
+                <div class="container-header">
+                    <div class="product-info">
+                        <span style="font-weight: 600; font-size: 16px;">产品 ${productCounter}</span>
+                        <input type="text" placeholder="产品名称" value="${data.product}" style="width: 200px;">
+                        <input type="text" placeholder="规格型号" style="width: 150px;">
+                    </div>
+                    <div class="container-actions">
+                        <button class="toggle-tabs-btn" onclick="toggleTabs(this)">
+                            <span class="toggle-icon">▼</span> 收缩/展开
+                        </button>
+                        <button class="action-btn switch" onclick="switchTemplate(this)">🔄 切换模板</button>
+                        <button class="action-btn delete" onclick="deleteProduct(this)">删除</button>
+                    </div>
+                </div>
+
+                <div class="product-attributes">
+                    <div class="attributes-grid">
+                        <div class="attribute-item">
+                            <input type="text" placeholder="数量" value="100">
+                        </div>
+                        <div class="attribute-item">
+                            <input type="text" placeholder="单位" value="件">
+                        </div>
+                        <div class="attribute-item">
+                            <input type="text" placeholder="交期" value="30天">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tabs-section">
+                    <div class="tabs-container">
+                        <div class="tab-header">
+                            <button class="tab-btn active" onclick="switchTab(this, 'material')">投料金额</button>
+                            <button class="tab-btn" onclick="switchTab(this, 'processing')">加工费用</button>
+                        </div>
+                        
+                        <div class="tab-content active" data-tab="material">
+                            <table class="cost-table">
+                                <thead>
+                                    <tr>
+                                        <th>材料名称</th>
+                                        <th>毛重(kg)</th>
+                                        <th>净重(kg)</th>
+                                        <th>单价(元/kg)</th>
+                                        <th>金额</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><input type="text" placeholder="不锈钢304"></td>
+                                        <td><input type="text" placeholder="10"></td>
+                                        <td><input type="text" placeholder="8"></td>
+                                        <td><input type="text" placeholder="50"></td>
+                                        <td><input type="text" placeholder="400" readonly></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <button class="add-row-btn">+ 添加行</button>
+                        </div>
+
+                        <div class="tab-content" data-tab="processing">
+                            <table class="cost-table">
+                                <thead>
+                                    <tr>
+                                        <th>项目</th>
+                                        <th>价格</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><input type="text" placeholder="CNC加工"></td>
+                                        <td><input type="text" placeholder="200"></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <button class="add-row-btn">+ 添加行</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="product-subtotal">
+                    <span class="subtotal-label">产品小计：</span>
+                    <span class="subtotal-value">¥ 0.00</span>
+                </div>
+            `;
+
+            return container;
+        }
+
+        // 切换标签页
+        function switchTab(btn, tab) {
+            const container = btn.closest('.product-card-container');
+            container.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            container.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            btn.classList.add('active');
+            container.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+        }
+
+        // 收缩展开
+        function toggleTabs(btn) {
+            const container = btn.closest('.product-card-container');
+            const section = container.querySelector('.tabs-section');
+            const icon = btn.querySelector('.toggle-icon');
+            
+            section.classList.toggle('collapsed');
+            icon.textContent = section.classList.contains('collapsed') ? '▶' : '▼';
+        }
+
+        // 切换模板
+        function switchTemplate(btn) {
+            alert('打开模板选择对话框');
+        }
+
+        // 删除产品
+        function deleteProduct(btn) {
+            if (confirm('确定删除此产品吗？')) {
+                btn.closest('.product-card-container').remove();
+                
+                if (document.querySelectorAll('.product-card-container').length === 0) {
+                    document.getElementById('emptyState').style.display = 'block';
+                }
+            }
+        }
+
+        // 保存草稿
+        function saveDraft() {
+            alert('草稿已保存');
+        }
+
+        // 上一步
+        function prevStep() {
+            window.location.href = 'quotation-create-step1.html';
+        }
+
+        // 下一步
+        function nextStep() {
+            if (document.querySelectorAll('.product-card-container').length === 0) {
+                alert('请至少添加一个产品！');
+                return;
+            }
+            alert('进入下一步：价格策略');
+        }
+
+        // 返回
+        function goBack() {
+            if (confirm('确定返回吗？未保存的数据将丢失。')) {
+                window.history.back();
+            }
+        }
+    </script>
+</body>
+</html>

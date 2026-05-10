@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>客户报价单输出</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+
+        /* 顶部工具栏 */
+        .top-toolbar {
+            background: white;
+            padding: 16px 40px;
+            border-bottom: 1px solid #e8ecf1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+
+        .toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .toolbar-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .toolbar-info {
+            display: flex;
+            gap: 20px;
+            font-size: 13px;
+            color: #718096;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .toolbar-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #667eea;
+            border: 1px solid #667eea;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        /* 主容器 */
+        .main-container {
+            padding: 30px 40px;
+            padding-bottom: 100px;
+        }
+
+        /* 报价单头部 */
+        .quotation-header {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+
+        .header-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #2d3748;
+            text-align: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .header-info-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        .info-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .info-label {
+            font-size: 13px;
+            color: #718096;
+            font-weight: 500;
+        }
+
+        .info-value {
+            font-size: 14px;
+            color: #2d3748;
+            font-weight: 600;
+        }
+
+        /* 产品列表容器 */
+        .products-section {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* 产品卡片 */
+        .product-card {
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            overflow: hidden;
+        }
+
+        .product-card:last-child {
+            margin-bottom: 0;
+        }
+
+        .product-card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .product-name {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .product-meta {
+            font-size: 13px;
+            opacity: 0.9;
+            margin-top: 4px;
+        }
+
+        .product-subtotal {
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        /* 行转列表格 */
+        .product-table-container {
+            overflow-x: auto;
+            padding: 16px;
+        }
+
+        .pivot-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            min-width: 1200px;
+        }
+
+        .pivot-table th,
+        .pivot-table td {
+            border: 1px solid #cbd5e0;
+            padding: 10px 12px;
+            text-align: center;
+        }
+
+        /* 表头 - 页签名称（第一行，合并单元格） */
+        .pivot-table thead tr:first-child th {
+            background: linear-gradient(135deg, #f0f4ff 0%, #e8efff 100%);
+            font-weight: 700;
+            font-size: 14px;
+            color: #2d3748;
+            padding: 14px 12px;
+            border: 2px solid #cbd5e0;
+        }
+
+        /* 列标题（第二行） */
+        .pivot-table thead tr:nth-child(2) th {
+            background: #f7fafc;
+            font-weight: 600;
+            font-size: 12px;
+            color: #4a5568;
+            padding: 10px 8px;
+        }
+
+        /* 不同页签的列颜色标识 */
+        .pivot-table .tab-group-1 {
+            background-color: #fef5e7;
+        }
+
+        .pivot-table .tab-group-2 {
+            background-color: #e8f5e9;
+        }
+
+        .pivot-table .tab-group-3 {
+            background-color: #e3f2fd;
+        }
+
+        .pivot-table .tab-group-4 {
+            background-color: #f3e5f5;
+        }
+
+        .pivot-table .tab-group-5 {
+            background-color: #fce4ec;
+        }
+
+        /* 数据行 */
+        .pivot-table tbody td {
+            background: white;
+            font-size: 13px;
+            color: #2d3748;
+        }
+
+        /* 汇总行 */
+        .pivot-table .summary-row {
+            background: #f7fafc !important;
+            font-weight: 700;
+        }
+
+        /* 总计区域 */
+        .total-section {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            margin-bottom: 24px;
+        }
+
+        .total-grid {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 40px;
+        }
+
+        .terms-content {
+            font-size: 14px;
+            color: #4a5568;
+            line-height: 1.8;
+        }
+
+        .total-table {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 15px;
+        }
+
+        .total-row:last-child {
+            border-bottom: none;
+        }
+
+        .total-row.final {
+            margin-top: 12px;
+            padding-top: 16px;
+            border-top: 2px solid #667eea;
+            font-size: 20px;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        /* 签名区域 */
+        .signature-section {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            margin-bottom: 24px;
+        }
+
+        .signature-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 60px;
+            margin-top: 30px;
+        }
+
+        .signature-box {
+            text-align: center;
+        }
+
+        .signature-line {
+            border-top: 2px solid #2d3748;
+            margin: 50px 0 10px 0;
+        }
+
+        .signature-label {
+            font-size: 14px;
+            color: #718096;
+            margin-bottom: 8px;
+        }
+
+        /* 底部固定栏 */
+        .bottom-toolbar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-top: 1px solid #e8ecf1;
+            padding: 16px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.04);
+            z-index: 100;
+        }
+
+        .zoom-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .zoom-btn {
+            width: 32px;
+            height: 32px;
+            border: 1px solid #e2e8f0;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            color: #4a5568;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .zoom-btn:hover {
+            background: #f7fafc;
+        }
+
+        .zoom-level {
+            font-size: 13px;
+            color: #4a5568;
+            min-width: 50px;
+            text-align: center;
+        }
+
+        .scroll-hint {
+            font-size: 13px;
+            color: #718096;
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部工具栏 -->
+    <div class="top-toolbar">
+        <div class="toolbar-left">
+            <div class="toolbar-title">客户报价单</div>
+            <div class="toolbar-info">
+                <div class="info-item">
+                    📋 QT-20260203-001
+                </div>
+                <div class="info-item">
+                    👤 杭州智能制造股份公司
+                </div>
+                <div class="info-item">
+                    📅 2026-02-03
+                </div>
+            </div>
+        </div>
+        <div class="toolbar-actions">
+            <button class="btn btn-secondary" onclick="printQuotation()">
+                🖨️ 打印
+            </button>
+            <button class="btn btn-secondary" onclick="exportExcel()">
+                📊 导出Excel
+            </button>
+            <button class="btn btn-secondary" onclick="exportPDF()">
+                📄 导出PDF
+            </button>
+            <button class="btn btn-primary" onclick="sendToCustomer()">
+                📧 发送给客户
+            </button>
+        </div>
+    </div>
+
+    <!-- 主容器 -->
+    <div class="main-container">
+        <!-- 报价单头部 -->
+        <div class="quotation-header">
+            <div class="header-title">产品报价单</div>
+            <div class="header-info-grid">
+                <div class="info-group">
+                    <div class="info-label">报价单号</div>
+                    <div class="info-value">QT-20260203-001</div>
+                </div>
+                <div class="info-group">
+                    <div class="info-label">报价日期</div>
+                    <div class="info-value">2026-02-03</div>
+                </div>
+                <div class="info-group">
+                    <div class="info-label">客户名称</div>
+                    <div class="info-value">杭州智能制造股份公司</div>
+                </div>
+                <div class="info-group">
+                    <div class="info-label">联系人</div>
+                    <div class="info-value">张经理 / 13800138000</div>
+                </div>
+                <div class="info-group">
+                    <div class="info-label">项目名称</div>
+                    <div class="info-value">2026年度采购项目</div>
+                </div>
+                <div class="info-group">
+                    <div class="info-label">有效期</div>
+                    <div class="info-value">30天</div>
+                </div>
+                <div class="info-group">
+                    <div class="info-label">付款方式</div>
+                    <div class="info-value">预付30%，发货前付清</div>
+                </div>
+                <div class="info-group">
+                    <div class="info-label">交货周期</div>
+                    <div class="info-value">30天</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 产品列表 -->
+        <div class="products-section">
+            <div class="section-title">
+                📦 产品明细
+            </div>
+
+            <!-- 产品1：使用标准件报价模板 -->
+            <div class="product-card">
+                <div class="product-card-header">
+                    <div>
+                        <div class="product-name">产品1：精密轴承座</div>
+                        <div class="product-meta">规格型号：SPEC-001 | 数量：100件 | 模板：标准件报价模板 v2.0</div>
+                    </div>
+                    <div class="product-subtotal">小计：¥12,500.00</div>
+                </div>
+                <div class="product-table-container">
+                    <table class="pivot-table">
+                        <thead>
+                            <!-- 第一行：页签名称（合并单元格） -->
+                            <tr>
+                                <th rowspan="2" style="width: 80px;">序号</th>
+                                <th colspan="15">投料金额</th>
+                                <th colspan="3">回料金额</th>
+                                <th colspan="4">应计金额</th>
+                                <th colspan="2">税费</th>
+                                <th colspan="3">其他</th>
+                            </tr>
+                            <!-- 第二行：列名 -->
+                            <tr>
+                                <!-- 投料金额 - 材料1 -->
+                                <th>材料1名称</th>
+                                <th>含量(%)</th>
+                                <th>毛重(kg)</th>
+                                <th>净重(kg)</th>
+                                <th>单价(元/kg)</th>
+                                <th>金额(元)</th>
+                                
+                                <!-- 投料金额 - 材料2 -->
+                                <th>材料2名称</th>
+                                <th>含量(%)</th>
+                                <th>净重(kg)</th>
+                                <th>单价(元/kg)</th>
+                                <th>金额(元)</th>
+                                
+                                <!-- 投料金额 - 材料3 -->
+                                <th>材料3名称</th>
+                                <th>净重(kg)</th>
+                                <th>单价(元/kg)</th>
+                                <th>金额(元)</th>
+                                
+                                <!-- 回料金额 -->
+                                <th>回料重量(kg)</th>
+                                <th>单价(元/kg)</th>
+                                <th>金额(元)</th>
+                                
+                                <!-- 应计金额 -->
+                                <th>项目</th>
+                                <th>成本(元)</th>
+                                <th>加成率(%)</th>
+                                <th>金额(元)</th>
+                                
+                                <!-- 税费 -->
+                                <th>税率(%)</th>
+                                <th>税额(元)</th>
+                                
+                                <!-- 其他 -->
+                                <th>运费(元)</th>
+                                <th>包装费(元)</th>
+                                <th>其他(元)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- 数据行 -->
+                            <tr>
+                                <td>1</td>
+                                <!-- 投料金额 - 材料1：不锈钢304 -->
+                                <td class="tab-group-1">不锈钢304</td>
+                                <td class="tab-group-1">70</td>
+                                <td class="tab-group-1">10.0</td>
+                                <td class="tab-group-1">7.0</td>
+                                <td class="tab-group-1">52.00</td>
+                                <td class="tab-group-1">364.00</td>
+                                
+                                <!-- 投料金额 - 材料2：铬 -->
+                                <td class="tab-group-1">铬</td>
+                                <td class="tab-group-1">20</td>
+                                <td class="tab-group-1">2.0</td>
+                                <td class="tab-group-1">85.00</td>
+                                <td class="tab-group-1">170.00</td>
+                                
+                                <!-- 投料金额 - 材料3：镍 -->
+                                <td class="tab-group-1">镍</td>
+                                <td class="tab-group-1">1.0</td>
+                                <td class="tab-group-1">120.00</td>
+                                <td class="tab-group-1">120.00</td>
+                                
+                                <!-- 回料金额 -->
+                                <td class="tab-group-2">1.5</td>
+                                <td class="tab-group-2">30.00</td>
+                                <td class="tab-group-2">45.00</td>
+                                
+                                <!-- 应计金额 -->
+                                <td class="tab-group-3">CNC加工</td>
+                                <td class="tab-group-3">80.00</td>
+                                <td class="tab-group-3">25</td>
+                                <td class="tab-group-3">100.00</td>
+                                
+                                <!-- 税费 -->
+                                <td class="tab-group-4">13</td>
+                                <td class="tab-group-4">85.02</td>
+                                
+                                <!-- 其他 -->
+                                <td class="tab-group-5">15.00</td>
+                                <td class="tab-group-5">8.00</td>
+                                <td class="tab-group-5">5.00</td>
+                            </tr>
+                            
+                            <!-- 汇总行 -->
+                            <tr class="summary-row">
+                                <td>小计</td>
+                                <!-- 投料金额 - 材料1汇总 -->
+                                <td class="tab-group-1">不锈钢304</td>
+                                <td class="tab-group-1">-</td>
+                                <td class="tab-group-1">-</td>
+                                <td class="tab-group-1">-</td>
+                                <td class="tab-group-1">-</td>
+                                <td class="tab-group-1">364.00</td>
+                                
+                                <!-- 投料金额 - 材料2汇总 -->
+                                <td class="tab-group-1">铬</td>
+                                <td class="tab-group-1">-</td>
+                                <td class="tab-group-1">-</td>
+                                <td class="tab-group-1">-</td>
+                                <td class="tab-group-1">170.00</td>
+                                
+                                <!-- 投料金额 - 材料3汇总 -->
+                                <td class="tab-group-1">镍</td>
+                                <td class="tab-group-1">-</td>
+                                <td class="tab-group-1">-</td>
+                                <td class="tab-group-1">120.00</td>
+                                
+                                <!-- 回料金额汇总 -->
+                                <td class="tab-group-2" colspan="2">回料</td>
+                                <td class="tab-group-2">45.00</td>
+                                
+                                <!-- 应计金额汇总 -->
+                                <td class="tab-group-3" colspan="3">加工</td>
+                                <td class="tab-group-3">100.00</td>
+                                
+                                <!-- 税费汇总 -->
+                                <td class="tab-group-4">税费</td>
+                                <td class="tab-group-4">85.02</td>
+                                
+                                <!-- 其他费用汇总 -->
+                                <td class="tab-group-5" colspan="2">其他</td>
+                                <td class="tab-group-5">28.00</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 产品2：使用精密加工报价模板 -->
+            <div class="product-card">
+                <div class="product-card-header">
+                    <div>
+                        <div class="product-name">产品2：联轴器</div>
+                        <div class="product-meta">规格型号：SPEC-002 | 数量：50件 | 模板：精密加工报价模板 v1.5</div>
+                    </div>
+                    <div class="product-subtotal">小计：¥8,600.00</div>
+                </div>
+                <div class="product-table-container">
+                    <table class="pivot-table">
+                        <thead>
+                            <tr>
+                                <th rowspan="2" style="width: 80px;">序号</th>
+                                <th colspan="5">原材料成本</th>
+                                <th colspan="4">加工费用</th>
+                                <th colspan="3">表面处理</th>
+                                <th colspan="2">检测费用</th>
+                                <th colspan="2">税费及其他</th>
+                            </tr>
+                            <tr>
+                                <!-- 原材料成本 -->
+                                <th>材料</th>
+                                <th>重量(kg)</th>
+                                <th>单价(元/kg)</th>
+                                <th>损耗率(%)</th>
+                                <th>金额(元)</th>
+                                
+                                <!-- 加工费用 -->
+                                <th>工序</th>
+                                <th>工时(h)</th>
+                                <th>单价(元/h)</th>
+                                <th>金额(元)</th>
+                                
+                                <!-- 表面处理 -->
+                                <th>处理方式</th>
+                                <th>面积(㎡)</th>
+                                <th>金额(元)</th>
+                                
+                                <!-- 检测费用 -->
+                                <th>检测项目</th>
+                                <th>金额(元)</th>
+                                
+                                <!-- 税费及其他 -->
+                                <th>税费(元)</th>
+                                <th>其他(元)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>1</td>
+                                <!-- 原材料成本 -->
+                                <td class="tab-group-1">铝合金7075</td>
+                                <td class="tab-group-1">5.0</td>
+                                <td class="tab-group-1">68.00</td>
+                                <td class="tab-group-1">8</td>
+                                <td class="tab-group-1">367.20</td>
+                                
+                                <!-- 加工费用 -->
+                                <td class="tab-group-2">精密车削</td>
+                                <td class="tab-group-2">2.5</td>
+                                <td class="tab-group-2">80.00</td>
+                                <td class="tab-group-2">200.00</td>
+                                
+                                <!-- 表面处理 -->
+                                <td class="tab-group-3">阳极氧化</td>
+                                <td class="tab-group-3">0.8</td>
+                                <td class="tab-group-3">120.00</td>
+                                
+                                <!-- 检测费用 -->
+                                <td class="tab-group-4">三坐标检测</td>
+                                <td class="tab-group-4">50.00</td>
+                                
+                                <!-- 税费及其他 -->
+                                <td class="tab-group-5">95.84</td>
+                                <td class="tab-group-5">35.00</td>
+                            </tr>
+                            
+                            <tr class="summary-row">
+                                <td>小计</td>
+                                <td class="tab-group-1" colspan="4">原材料</td>
+                                <td class="tab-group-1">367.20</td>
+                                
+                                <td class="tab-group-2" colspan="3">加工费</td>
+                                <td class="tab-group-2">200.00</td>
+                                
+                                <td class="tab-group-3" colspan="2">表面处理</td>
+                                <td class="tab-group-3">120.00</td>
+                                
+                                <td class="tab-group-4">检测</td>
+                                <td class="tab-group-4">50.00</td>
+                                
+                                <td class="tab-group-5">税费</td>
+                                <td class="tab-group-5">130.84</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 产品3：使用表面处理专用模板 -->
+            <div class="product-card">
+                <div class="product-card-header">
+                    <div>
+                        <div class="product-name">产品3：法兰盘</div>
+                        <div class="product-meta">规格型号：SPEC-003 | 数量：80件 | 模板：表面处理专用模板 v1.0</div>
+                    </div>
+                    <div class="product-subtotal">小计：¥6,240.00</div>
+                </div>
+                <div class="product-table-container">
+                    <table class="pivot-table">
+                        <thead>
+                            <tr>
+                                <th rowspan="2" style="width: 80px;">序号</th>
+                                <th colspan="4">基材成本</th>
+                                <th colspan="5">电镀工序</th>
+                                <th colspan="3">质检包装</th>
+                                <th colspan="2">费用汇总</th>
+                            </tr>
+                            <tr>
+                                <!-- 基材成本 -->
+                                <th>材料</th>
+                                <th>用量(kg)</th>
+                                <th>单价(元/kg)</th>
+                                <th>金额(元)</th>
+                                
+                                <!-- 电镀工序 -->
+                                <th>镀层</th>
+                                <th>表面积(dm²)</th>
+                                <th>厚度(μm)</th>
+                                <th>单价(元/dm²)</th>
+                                <th>金额(元)</th>
+                                
+                                <!-- 质检包装 -->
+                                <th>质检(元)</th>
+                                <th>包装(元)</th>
+                                <th>运输(元)</th>
+                                
+                                <!-- 费用汇总 -->
+                                <th>税费(元)</th>
+                                <th>单价(元)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>1</td>
+                                <!-- 基材成本 -->
+                                <td class="tab-group-1">Q235钢</td>
+                                <td class="tab-group-1">3.2</td>
+                                <td class="tab-group-1">12.00</td>
+                                <td class="tab-group-1">38.40</td>
+                                
+                                <!-- 电镀工序 -->
+                                <td class="tab-group-2">镀锌</td>
+                                <td class="tab-group-2">45</td>
+                                <td class="tab-group-2">8</td>
+                                <td class="tab-group-2">0.60</td>
+                                <td class="tab-group-2">27.00</td>
+                                
+                                <!-- 质检包装 -->
+                                <td class="tab-group-3">3.00</td>
+                                <td class="tab-group-3">2.50</td>
+                                <td class="tab-group-3">1.50</td>
+                                
+                                <!-- 费用汇总 -->
+                                <td class="tab-group-4">9.36</td>
+                                <td class="tab-group-4">78.00</td>
+                            </tr>
+                            
+                            <tr class="summary-row">
+                                <td>小计</td>
+                                <td class="tab-group-1" colspan="3">基材</td>
+                                <td class="tab-group-1">38.40</td>
+                                
+                                <td class="tab-group-2" colspan="4">电镀</td>
+                                <td class="tab-group-2">27.00</td>
+                                
+                                <td class="tab-group-3" colspan="3">质检包装运输</td>
+                                <td class="tab-group-3">7.00</td>
+                                
+                                <td class="tab-group-4">税费</td>
+                                <td class="tab-group-4">9.36</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 总计 -->
+        <div class="total-section">
+            <div class="total-grid">
+                <div>
+                    <div class="section-title" style="margin-bottom: 16px;">📋 商务条款</div>
+                    <div class="terms-content">
+                        1. <strong>付款方式：</strong>预付30%，发货前付清余款<br>
+                        2. <strong>交货周期：</strong>30天（自订单确认之日起）<br>
+                        3. <strong>运输方式：</strong>物流配送，运费到付<br>
+                        4. <strong>质保期：</strong>自验收合格之日起12个月<br>
+                        5. <strong>验收标准：</strong>按国家标准及双方确认的技术要求<br>
+                        6. <strong>包装要求：</strong>标准包装，确保运输安全<br>
+                        7. <strong>报价有效期：</strong>本报价单自签发之日起30天内有效
+                    </div>
+                </div>
+                <div>
+                    <div class="section-title" style="margin-bottom: 16px;">💰 金额汇总</div>
+                    <div class="total-table">
+                        <div class="total-row">
+                            <span>产品1 - 精密轴承座 (100件)</span>
+                            <span>¥12,500.00</span>
+                        </div>
+                        <div class="total-row">
+                            <span>产品2 - 联轴器 (50件)</span>
+                            <span>¥8,600.00</span>
+                        </div>
+                        <div class="total-row">
+                            <span>产品3 - 法兰盘 (80件)</span>
+                            <span>¥6,240.00</span>
+                        </div>
+                        <div class="total-row" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #cbd5e0;">
+                            <span>小计</span>
+                            <span>¥27,340.00</span>
+                        </div>
+                        <div class="total-row">
+                            <span>优惠折扣 (5%)</span>
+                            <span style="color: #48bb78;">-¥1,367.00</span>
+                        </div>
+                        <div class="total-row final">
+                            <span>总计（含税）</span>
+                            <span>¥25,973.00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 签名区域 -->
+        <div class="signature-section">
+            <div class="section-title">📝 签字确认</div>
+            <div class="signature-grid">
+                <div class="signature-box">
+                    <div class="signature-label">供应商（盖章）</div>
+                    <div class="signature-line"></div>
+                    <div class="signature-label" style="margin-top: 10px;">日期：_______________</div>
+                </div>
+                <div class="signature-box">
+                    <div class="signature-label">客户（盖章）</div>
+                    <div class="signature-line"></div>
+                    <div class="signature-label" style="margin-top: 10px;">日期：_______________</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部工具栏 -->
+    <div class="bottom-toolbar">
+        <div class="zoom-controls">
+            <button class="zoom-btn" onclick="zoomOut()">−</button>
+            <div class="zoom-level" id="zoomLevel">100%</div>
+            <button class="zoom-btn" onclick="zoomIn()">+</button>
+        </div>
+        <div class="scroll-hint">
+            💡 表格可横向滚动查看完整数据
+        </div>
+    </div>
+
+    <script>
+        let currentZoom = 1.0;
+
+        // 缩放功能
+        function zoomIn() {
+            if (currentZoom < 1.5) {
+                currentZoom += 0.1;
+                applyZoom();
+            }
+        }
+
+        function zoomOut() {
+            if (currentZoom > 0.6) {
+                currentZoom -= 0.1;
+                applyZoom();
+            }
+        }
+
+        function applyZoom() {
+            document.querySelector('.main-container').style.transform = `scale(${currentZoom})`;
+            document.querySelector('.main-container').style.transformOrigin = 'top center';
+            document.getElementById('zoomLevel').textContent = Math.round(currentZoom * 100) + '%';
+        }
+
+        // 打印功能
+        function printQuotation() {
+            window.print();
+        }
+
+        // 导出Excel
+        function exportExcel() {
+            alert('正在导出Excel文件，保留行转列格式...');
+        }
+
+        // 导出PDF
+        function exportPDF() {
+            alert('正在导出PDF文件...');
+        }
+
+        // 发送给客户
+        function sendToCustomer() {
+            if (confirm('确定发送报价单给客户吗？\n\n收件人：zhang@smart-mfg.com\n附件：QT-20260203-001.pdf')) {
+                alert('报价单已成功发送！');
+            }
+        }
+
+        // 打印样式
+        const style = document.createElement('style');
+        style.innerHTML = `
+            @media print {
+                .top-toolbar,
+                .bottom-toolbar {
+                    display: none;
+                }
+                
+                .main-container {
+                    transform: none !important;
+                    padding: 20px;
+                }
+                
+                .product-card {
+                    page-break-inside: avoid;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>

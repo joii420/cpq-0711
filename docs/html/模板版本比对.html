@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>产品卡片模板比对</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+
+        /* 顶部导航 */
+        .top-header {
+            background: white;
+            padding: 20px 40px;
+            border-bottom: 1px solid #e8ecf1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .header-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .header-subtitle {
+            font-size: 13px;
+            color: #718096;
+            margin-top: 4px;
+        }
+
+        .compare-mode {
+            display: flex;
+            gap: 8px;
+            background: #f7fafc;
+            padding: 4px;
+            border-radius: 8px;
+        }
+
+        .mode-btn {
+            padding: 8px 16px;
+            border: none;
+            background: transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: #718096;
+            transition: all 0.2s;
+        }
+
+        .mode-btn.active {
+            background: white;
+            color: #667eea;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #667eea;
+            border: 1px solid #667eea;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        /* 模板选择区 */
+        .template-selector-bar {
+            background: white;
+            padding: 20px 40px;
+            border-bottom: 1px solid #e8ecf1;
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .template-select-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .select-label {
+            font-size: 13px;
+            color: #718096;
+            font-weight: 500;
+        }
+
+        .template-select {
+            padding: 10px 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+
+        .template-select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .vs-divider {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 20px;
+            font-weight: 700;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        /* 统计栏 */
+        .stats-bar {
+            background: linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 100%);
+            padding: 20px 40px;
+            border-bottom: 1px solid #e8ecf1;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .stat-item {
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #718096;
+            margin-bottom: 6px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #2d3748;
+        }
+
+        .stat-value.added {
+            color: #48bb78;
+        }
+
+        .stat-value.removed {
+            color: #f56565;
+        }
+
+        .stat-value.modified {
+            color: #ed8936;
+        }
+
+        /* 主对比区域 */
+        .compare-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            padding: 30px 40px;
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+
+        .template-panel {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+
+        .template-panel.left {
+            border: 2px solid #667eea;
+        }
+
+        .template-panel.right {
+            border: 2px solid #764ba2;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .panel-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .panel-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .template-panel.left .panel-badge {
+            background: #e8efff;
+            color: #667eea;
+        }
+
+        .template-panel.right .panel-badge {
+            background: #f3e8ff;
+            color: #764ba2;
+        }
+
+        /* 模板信息 */
+        .template-info {
+            background: #f8fafc;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            font-size: 13px;
+        }
+
+        .info-label {
+            color: #718096;
+        }
+
+        .info-value {
+            color: #2d3748;
+            font-weight: 600;
+        }
+
+        /* 属性对比 */
+        .attributes-section {
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .attributes-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .attribute-chip {
+            padding: 8px 12px;
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #4a5568;
+        }
+
+        .attribute-chip.added {
+            background: #f0fff4;
+            border-color: #9ae6b4;
+            color: #22543d;
+        }
+
+        .attribute-chip.removed {
+            background: #fff5f5;
+            border-color: #feb2b2;
+            color: #742a2a;
+            text-decoration: line-through;
+        }
+
+        .attribute-chip.modified {
+            background: #fffaf0;
+            border-color: #fbd38d;
+            color: #7c2d12;
+        }
+
+        /* 页签对比 */
+        .tabs-section {
+            margin-bottom: 24px;
+        }
+
+        .tab-item {
+            padding: 12px;
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .tab-item.added {
+            background: #f0fff4;
+            border-color: #9ae6b4;
+        }
+
+        .tab-item.removed {
+            background: #fff5f5;
+            border-color: #feb2b2;
+            opacity: 0.6;
+        }
+
+        .tab-item.modified {
+            background: #fffaf0;
+            border-color: #fbd38d;
+        }
+
+        .tab-name {
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .change-badge {
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .change-badge.added {
+            background: #48bb78;
+            color: white;
+        }
+
+        .change-badge.removed {
+            background: #f56565;
+            color: white;
+        }
+
+        .change-badge.modified {
+            background: #ed8936;
+            color: white;
+        }
+
+        .tab-columns {
+            font-size: 12px;
+            color: #718096;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .column-tag {
+            padding: 3px 8px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+        }
+
+        .column-tag.added {
+            background: #c6f6d5;
+            border-color: #48bb78;
+            color: #22543d;
+        }
+
+        .column-tag.removed {
+            background: #fed7d7;
+            border-color: #f56565;
+            color: #742a2a;
+            text-decoration: line-through;
+        }
+
+        /* 公式对比 */
+        .formulas-section {
+            margin-bottom: 24px;
+        }
+
+        .formula-item {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+
+        .formula-item.modified {
+            background: #fffaf0;
+            border-color: #fbd38d;
+            border-left: 4px solid #ed8936;
+        }
+
+        .formula-item.added {
+            background: #f0fff4;
+            border-color: #9ae6b4;
+            border-left: 4px solid #48bb78;
+        }
+
+        .formula-item.removed {
+            background: #fff5f5;
+            border-color: #feb2b2;
+            border-left: 4px solid #f56565;
+            opacity: 0.7;
+        }
+
+        .formula-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .formula-location {
+            font-size: 13px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .formula-expression {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+            color: #2d3748;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 8px;
+        }
+
+        .formula-expression.highlight {
+            background: #fef5e7;
+            border-color: #f39c12;
+        }
+
+        .formula-variables {
+            font-size: 12px;
+            color: #718096;
+        }
+
+        .variable-tag {
+            display: inline-block;
+            padding: 2px 6px;
+            background: #e2e8f0;
+            border-radius: 3px;
+            margin: 2px;
+        }
+
+        /* 差异图例 */
+        .legend {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+            z-index: 100;
+        }
+
+        .legend-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 10px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+
+        .legend-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+
+        .legend-color.added {
+            background: #48bb78;
+        }
+
+        .legend-color.removed {
+            background: #f56565;
+        }
+
+        .legend-color.modified {
+            background: #ed8936;
+        }
+
+        .legend-color.unchanged {
+            background: #cbd5e0;
+        }
+
+        /* 展开/折叠按钮 */
+        .expand-all-btn {
+            padding: 8px 16px;
+            background: #edf2f7;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #4a5568;
+            margin-bottom: 16px;
+        }
+
+        .expand-all-btn:hover {
+            background: #e2e8f0;
+        }
+
+        /* 滚动同步指示器 */
+        .sync-indicator {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(102, 126, 234, 0.9);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            display: none;
+            z-index: 1000;
+        }
+
+        .sync-indicator.show {
+            display: block;
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* 空状态 */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #a0aec0;
+        }
+
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+
+        /* 详细差异模式 */
+        .detail-mode {
+            display: none;
+        }
+
+        .detail-mode.active {
+            display: block;
+        }
+
+        .diff-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+
+        .diff-table th,
+        .diff-table td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid #e2e8f0;
+            font-size: 13px;
+        }
+
+        .diff-table th {
+            background: #f7fafc;
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        .diff-row.added {
+            background: #f0fff4;
+        }
+
+        .diff-row.removed {
+            background: #fff5f5;
+        }
+
+        .diff-row.modified {
+            background: #fffaf0;
+        }
+
+        .diff-cell.changed {
+            font-weight: 600;
+            color: #ed8936;
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航 -->
+    <div class="top-header">
+        <div class="header-left">
+            <div>
+                <div class="header-title">产品卡片模板比对</div>
+                <div class="header-subtitle">对比两个模板的差异详情</div>
+            </div>
+            <div class="compare-mode">
+                <button class="mode-btn active" onclick="switchMode('overview')">总览模式</button>
+                <button class="mode-btn" onclick="switchMode('detail')">详细对比</button>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-secondary" onclick="exportComparison()">📥 导出报告</button>
+            <button class="btn btn-primary" onclick="goBack()">返回</button>
+        </div>
+    </div>
+
+    <!-- 模板选择栏 -->
+    <div class="template-selector-bar">
+        <div class="template-select-group">
+            <label class="select-label">选择模板 A</label>
+            <select class="template-select" id="templateA" onchange="loadTemplates()">
+                <option value="template1">标准件报价模板 v1.0</option>
+                <option value="template2">标准件报价模板 v2.0</option>
+                <option value="template3">精密加工报价模板 v1.0</option>
+            </select>
+        </div>
+
+        <div class="vs-divider">VS</div>
+
+        <div class="template-select-group">
+            <label class="select-label">选择模板 B</label>
+            <select class="template-select" id="templateB" onchange="loadTemplates()">
+                <option value="template1">标准件报价模板 v1.0</option>
+                <option value="template2" selected>标准件报价模板 v2.0</option>
+                <option value="template3">精密加工报价模板 v1.0</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- 统计栏 -->
+    <div class="stats-bar">
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-label">总差异项</div>
+                <div class="stat-value">8</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">新增项</div>
+                <div class="stat-value added">3</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">删除项</div>
+                <div class="stat-value removed">2</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">修改项</div>
+                <div class="stat-value modified">3</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">相似度</div>
+                <div class="stat-value" style="color: #667eea;">75%</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主对比区域 -->
+    <div class="compare-container" id="overviewMode">
+        <!-- 左侧模板 -->
+        <div class="template-panel left">
+            <div class="panel-header">
+                <div class="panel-title">模板 A</div>
+                <div class="panel-badge">原版本</div>
+            </div>
+
+            <!-- 模板信息 -->
+            <div class="template-info">
+                <div class="info-row">
+                    <span class="info-label">模板名称</span>
+                    <span class="info-value">标准件报价模板</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">版本号</span>
+                    <span class="info-value">v1.0</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">创建时间</span>
+                    <span class="info-value">2026-01-15</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">产品分类</span>
+                    <span class="info-value">标准件</span>
+                </div>
+            </div>
+
+            <!-- 产品属性 -->
+            <div class="attributes-section">
+                <div class="section-title">📝 产品属性</div>
+                <div class="attributes-list">
+                    <div class="attribute-chip">产品名称</div>
+                    <div class="attribute-chip">规格型号</div>
+                    <div class="attribute-chip removed">材质等级 (已删除)</div>
+                    <div class="attribute-chip">数量单位</div>
+                </div>
+            </div>
+
+            <!-- 页签配置 -->
+            <div class="tabs-section">
+                <div class="section-title">📑 页签配置</div>
+                
+                <div class="tab-item">
+                    <div class="tab-name">
+                        <span>投料金额</span>
+                        <span class="change-badge" style="background: #cbd5e0; color: #4a5568;">未变更</span>
+                    </div>
+                    <div class="tab-columns">
+                        <span class="column-tag">材料名称</span>
+                        <span class="column-tag">毛重(kg)</span>
+                        <span class="column-tag">净重(kg)</span>
+                        <span class="column-tag">单价(元/kg)</span>
+                        <span class="column-tag">金额</span>
+                    </div>
+                </div>
+
+                <div class="tab-item modified">
+                    <div class="tab-name">
+                        <span>加工费用</span>
+                        <span class="change-badge modified">已修改</span>
+                    </div>
+                    <div class="tab-columns">
+                        <span class="column-tag">项目</span>
+                        <span class="column-tag removed">工时(小时)</span>
+                        <span class="column-tag">价格</span>
+                    </div>
+                </div>
+
+                <div class="tab-item removed">
+                    <div class="tab-name">
+                        <span>原材料成本</span>
+                        <span class="change-badge removed">已删除</span>
+                    </div>
+                    <div class="tab-columns">
+                        <span class="column-tag">材料</span>
+                        <span class="column-tag">含量(%)</span>
+                        <span class="column-tag">价格</span>
+                    </div>
+                </div>
+
+                <div class="tab-item">
+                    <div class="tab-name">
+                        <span>税费</span>
+                        <span class="change-badge" style="background: #cbd5e0; color: #4a5568;">未变更</span>
+                    </div>
+                    <div class="tab-columns">
+                        <span class="column-tag">税率</span>
+                        <span class="column-tag">税额</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 计算公式 -->
+            <div class="formulas-section">
+                <div class="section-title">🧮 计算公式</div>
+                
+                <div class="formula-item">
+                    <div class="formula-header">
+                        <span class="formula-location">投料金额 → 金额</span>
+                        <span class="change-badge" style="background: #cbd5e0; color: #4a5568;">未变更</span>
+                    </div>
+                    <div class="formula-expression">
+                        净重 * 单价
+                    </div>
+                    <div class="formula-variables">
+                        变量: <span class="variable-tag">净重</span> <span class="variable-tag">单价</span>
+                    </div>
+                </div>
+
+                <div class="formula-item modified">
+                    <div class="formula-header">
+                        <span class="formula-location">加工费用 → 价格</span>
+                        <span class="change-badge modified">公式已修改</span>
+                    </div>
+                    <div class="formula-expression highlight">
+                        工时 * 50
+                    </div>
+                    <div class="formula-variables">
+                        变量: <span class="variable-tag">工时</span>
+                    </div>
+                </div>
+
+                <div class="formula-item removed">
+                    <div class="formula-header">
+                        <span class="formula-location">原材料成本 → 价格</span>
+                        <span class="change-badge removed">已删除</span>
+                    </div>
+                    <div class="formula-expression">
+                        材料单价 * 含量 / 100
+                    </div>
+                    <div class="formula-variables">
+                        变量: <span class="variable-tag">材料单价</span> <span class="variable-tag">含量</span>
+                    </div>
+                </div>
+
+                <div class="formula-item">
+                    <div class="formula-header">
+                        <span class="formula-location">产品小计</span>
+                        <span class="change-badge" style="background: #cbd5e0; color: #4a5568;">未变更</span>
+                    </div>
+                    <div class="formula-expression">
+                        SUM(所有页签金额)
+                    </div>
+                    <div class="formula-variables">
+                        变量: <span class="variable-tag">投料金额</span> <span class="variable-tag">加工费用</span> <span class="variable-tag">税费</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧模板 -->
+        <div class="template-panel right">
+            <div class="panel-header">
+                <div class="panel-title">模板 B</div>
+                <div class="panel-badge">新版本</div>
+            </div>
+
+            <!-- 模板信息 -->
+            <div class="template-info">
+                <div class="info-row">
+                    <span class="info-label">模板名称</span>
+                    <span class="info-value">标准件报价模板</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">版本号</span>
+                    <span class="info-value">v2.0</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">创建时间</span>
+                    <span class="info-value">2026-01-31</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">产品分类</span>
+                    <span class="info-value">标准件</span>
+                </div>
+            </div>
+
+            <!-- 产品属性 -->
+            <div class="attributes-section">
+                <div class="section-title">📝 产品属性</div>
+                <div class="attributes-list">
+                    <div class="attribute-chip">产品名称</div>
+                    <div class="attribute-chip">规格型号</div>
+                    <div class="attribute-chip">数量单位</div>
+                    <div class="attribute-chip added">交货日期 (新增)</div>
+                </div>
+            </div>
+
+            <!-- 页签配置 -->
+            <div class="tabs-section">
+                <div class="section-title">📑 页签配置</div>
+                
+                <div class="tab-item">
+                    <div class="tab-name">
+                        <span>投料金额</span>
+                        <span class="change-badge" style="background: #cbd5e0; color: #4a5568;">未变更</span>
+                    </div>
+                    <div class="tab-columns">
+                        <span class="column-tag">材料名称</span>
+                        <span class="column-tag">毛重(kg)</span>
+                        <span class="column-tag">净重(kg)</span>
+                        <span class="column-tag">单价(元/kg)</span>
+                        <span class="column-tag">金额</span>
+                    </div>
+                </div>
+
+                <div class="tab-item modified">
+                    <div class="tab-name">
+                        <span>加工费用</span>
+                        <span class="change-badge modified">已修改</span>
+                    </div>
+                    <div class="tab-columns">
+                        <span class="column-tag">项目</span>
+                        <span class="column-tag added">单价(元/件)</span>
+                        <span class="column-tag">价格</span>
+                    </div>
+                </div>
+
+                <div class="tab-item added">
+                    <div class="tab-name">
+                        <span>质量检测</span>
+                        <span class="change-badge added">新增</span>
+                    </div>
+                    <div class="tab-columns">
+                        <span class="column-tag">检测项目</span>
+                        <span class="column-tag">检测费用</span>
+                    </div>
+                </div>
+
+                <div class="tab-item">
+                    <div class="tab-name">
+                        <span>税费</span>
+                        <span class="change-badge" style="background: #cbd5e0; color: #4a5568;">未变更</span>
+                    </div>
+                    <div class="tab-columns">
+                        <span class="column-tag">税率</span>
+                        <span class="column-tag">税额</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 计算公式 -->
+            <div class="formulas-section">
+                <div class="section-title">🧮 计算公式</div>
+                
+                <div class="formula-item">
+                    <div class="formula-header">
+                        <span class="formula-location">投料金额 → 金额</span>
+                        <span class="change-badge" style="background: #cbd5e0; color: #4a5568;">未变更</span>
+                    </div>
+                    <div class="formula-expression">
+                        净重 * 单价
+                    </div>
+                    <div class="formula-variables">
+                        变量: <span class="variable-tag">净重</span> <span class="variable-tag">单价</span>
+                    </div>
+                </div>
+
+                <div class="formula-item modified">
+                    <div class="formula-header">
+                        <span class="formula-location">加工费用 → 价格</span>
+                        <span class="change-badge modified">公式已修改</span>
+                    </div>
+                    <div class="formula-expression highlight">
+                        数量 * 单价
+                    </div>
+                    <div class="formula-variables">
+                        变量: <span class="variable-tag">数量</span> <span class="variable-tag">单价</span>
+                    </div>
+                </div>
+
+                <div class="formula-item added">
+                    <div class="formula-header">
+                        <span class="formula-location">质量检测 → 检测费用</span>
+                        <span class="change-badge added">新增</span>
+                    </div>
+                    <div class="formula-expression">
+                        基础费用 + 200
+                    </div>
+                    <div class="formula-variables">
+                        变量: <span class="variable-tag">基础费用</span>
+                    </div>
+                </div>
+
+                <div class="formula-item modified">
+                    <div class="formula-header">
+                        <span class="formula-location">产品小计</span>
+                        <span class="change-badge modified">公式已修改</span>
+                    </div>
+                    <div class="formula-expression highlight">
+                        SUM(所有页签金额) + 质量检测费
+                    </div>
+                    <div class="formula-variables">
+                        变量: <span class="variable-tag">投料金额</span> <span class="variable-tag">加工费用</span> <span class="variable-tag">税费</span> <span class="variable-tag">质量检测</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 详细对比模式 -->
+    <div class="detail-mode" id="detailMode">
+        <div style="max-width: 1400px; margin: 30px auto; padding: 0 40px;">
+            <h2 style="margin-bottom: 20px; color: #2d3748;">详细差异对比表</h2>
+            
+            <table class="diff-table">
+                <thead>
+                    <tr>
+                        <th>类别</th>
+                        <th>项目</th>
+                        <th>模板 A (v1.0)</th>
+                        <th>模板 B (v2.0)</th>
+                        <th>变更类型</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="diff-row removed">
+                        <td>产品属性</td>
+                        <td>材质等级</td>
+                        <td>存在</td>
+                        <td class="diff-cell changed">-</td>
+                        <td><span class="change-badge removed">删除</span></td>
+                    </tr>
+                    <tr class="diff-row added">
+                        <td>产品属性</td>
+                        <td>交货日期</td>
+                        <td class="diff-cell changed">-</td>
+                        <td>存在</td>
+                        <td><span class="change-badge added">新增</span></td>
+                    </tr>
+                    <tr class="diff-row modified">
+                        <td>页签</td>
+                        <td>加工费用 - 列配置</td>
+                        <td>项目, 工时(小时), 价格</td>
+                        <td class="diff-cell changed">项目, 单价(元/件), 价格</td>
+                        <td><span class="change-badge modified">修改</span></td>
+                    </tr>
+                    <tr class="diff-row removed">
+                        <td>页签</td>
+                        <td>原材料成本</td>
+                        <td>存在</td>
+                        <td class="diff-cell changed">-</td>
+                        <td><span class="change-badge removed">删除</span></td>
+                    </tr>
+                    <tr class="diff-row added">
+                        <td>页签</td>
+                        <td>质量检测</td>
+                        <td class="diff-cell changed">-</td>
+                        <td>存在</td>
+                        <td><span class="change-badge added">新增</span></td>
+                    </tr>
+                    <tr class="diff-row modified">
+                        <td>公式</td>
+                        <td>加工费用 → 价格</td>
+                        <td>工时 * 50</td>
+                        <td class="diff-cell changed">数量 * 单价</td>
+                        <td><span class="change-badge modified">修改</span></td>
+                    </tr>
+                    <tr class="diff-row removed">
+                        <td>公式</td>
+                        <td>原材料成本 → 价格</td>
+                        <td>材料单价 * 含量 / 100</td>
+                        <td class="diff-cell changed">-</td>
+                        <td><span class="change-badge removed">删除</span></td>
+                    </tr>
+                    <tr class="diff-row added">
+                        <td>公式</td>
+                        <td>质量检测 → 检测费用</td>
+                        <td class="diff-cell changed">-</td>
+                        <td>基础费用 + 200</td>
+                        <td><span class="change-badge added">新增</span></td>
+                    </tr>
+                    <tr class="diff-row modified">
+                        <td>公式</td>
+                        <td>产品小计</td>
+                        <td>SUM(所有页签金额)</td>
+                        <td class="diff-cell changed">SUM(所有页签金额) + 质量检测费</td>
+                        <td><span class="change-badge modified">修改</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 差异图例 -->
+    <div class="legend">
+        <div class="legend-title">差异图例</div>
+        <div class="legend-item">
+            <div class="legend-color added"></div>
+            <span>新增项</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color removed"></div>
+            <span>删除项</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color modified"></div>
+            <span>修改项</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color unchanged"></div>
+            <span>未变更</span>
+        </div>
+    </div>
+
+    <!-- 同步滚动指示器 -->
+    <div class="sync-indicator" id="syncIndicator">
+        🔄 双屏同步滚动中...
+    </div>
+
+    <script>
+        let currentMode = 'overview';
+
+        // 切换模式
+        function switchMode(mode) {
+            currentMode = mode;
+            
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            if (mode === 'overview') {
+                document.getElementById('overviewMode').style.display = 'grid';
+                document.getElementById('detailMode').classList.remove('active');
+            } else {
+                document.getElementById('overviewMode').style.display = 'none';
+                document.getElementById('detailMode').classList.add('active');
+            }
+        }
+
+        // 加载模板
+        function loadTemplates() {
+            const templateA = document.getElementById('templateA').value;
+            const templateB = document.getElementById('templateB').value;
+            
+            if (templateA === templateB) {
+                alert('请选择不同的模板进行比对！');
+                return;
+            }
+
+            console.log('对比模板:', templateA, 'vs', templateB);
+            // 这里可以调用API加载实际的模板数据
+        }
+
+        // 导出比对报告
+        function exportComparison() {
+            alert('导出PDF报告功能');
+            // 实现导出逻辑
+        }
+
+        // 返回
+        function goBack() {
+            window.history.back();
+        }
+
+        // 同步滚动
+        let isScrolling = false;
+        const panels = document.querySelectorAll('.template-panel');
+        
+        panels.forEach((panel, index) => {
+            panel.addEventListener('scroll', function() {
+                if (isScrolling) return;
+                
+                isScrolling = true;
+                
+                // 显示同步指示器
+                const indicator = document.getElementById('syncIndicator');
+                indicator.classList.add('show');
+                setTimeout(() => {
+                    indicator.classList.remove('show');
+                }, 1000);
+
+                // 同步另一个面板的滚动
+                const otherPanel = panels[index === 0 ? 1 : 0];
+                otherPanel.scrollTop = this.scrollTop;
+                
+                setTimeout(() => {
+                    isScrolling = false;
+                }, 50);
+            });
+        });
+
+        // 页面加载时执行
+        window.addEventListener('load', function() {
+            console.log('模板比对页面已加载');
+        });
+    </script>
+</body>
+</html>

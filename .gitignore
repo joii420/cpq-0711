@@ -1,0 +1,38 @@
+# Java / Maven
+cpq-backend/target/
+*.class
+*.jar
+*.war
+*.log
+.mvn/wrapper/maven-wrapper.jar
+
+# Quarkus
+cpq-backend/.quarkus/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+*.swp
+*.swo
+
+# Node / Frontend
+cpq-frontend/node_modules/
+cpq-frontend/dist/
+cpq-frontend/.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Docker
+docker-compose.override.yml

@@ -1,0 +1,197 @@
+<h2>垂直切片法：6 阶段实施路线图</h2>
+<p class="subtitle">每个阶段交付可运行的端到端功能闭环，依赖关系自底向上</p>
+
+<!-- Phase 0 -->
+<div style="margin-bottom:20px; border:1px solid rgba(102,126,234,0.3); border-radius:12px; overflow:hidden;">
+  <div style="background:linear-gradient(135deg,#667eea,#764ba2); color:white; padding:12px 16px; font-weight:600; display:flex; justify-content:space-between; align-items:center;">
+    <span>P0 — 项目骨架 + 认证基础</span>
+    <span style="background:rgba(255,255,255,0.2); padding:2px 10px; border-radius:12px; font-size:13px;">~2 周</span>
+  </div>
+  <div style="padding:16px; font-size:14px;">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+      <div>
+        <div style="font-weight:600; color:#667eea; margin-bottom:4px;">后端</div>
+        <ul style="margin:0; padding-left:18px;">
+          <li>Quarkus 项目初始化 + 分层架构</li>
+          <li>Flyway 数据库迁移框架</li>
+          <li>User/Region/Department 表 + CRUD API</li>
+          <li>Session 认证 + 角色权限中间件</li>
+          <li>首次登录改密 + 密码重置</li>
+          <li>统一错误处理 + API 规范</li>
+        </ul>
+      </div>
+      <div>
+        <div style="font-weight:600; color:#667eea; margin-bottom:4px;">前端</div>
+        <ul style="margin:0; padding-left:18px;">
+          <li>React + Ant Design 项目初始化</li>
+          <li>路由 + 状态管理 + 布局骨架</li>
+          <li>登录页 + 改密页</li>
+          <li>用户管理页（CRUD）</li>
+          <li>区域/部门字典管理页</li>
+        </ul>
+      </div>
+    </div>
+    <div style="margin-top:12px; padding:8px 12px; background:rgba(72,187,120,0.08); border-radius:6px; font-size:13px;">
+      <strong>✓ 交付标准：</strong>能登录、能管理用户/区域/部门、权限中间件拦截生效
+    </div>
+  </div>
+</div>
+
+<!-- Phase 1 -->
+<div style="margin-bottom:20px; border:1px solid rgba(102,126,234,0.3); border-radius:12px; overflow:hidden;">
+  <div style="background:linear-gradient(135deg,#667eea,#764ba2); color:white; padding:12px 16px; font-weight:600; display:flex; justify-content:space-between; align-items:center;">
+    <span>P1 — 主数据管理 + 数据源</span>
+    <span style="background:rgba(255,255,255,0.2); padding:2px 10px; border-radius:12px; font-size:13px;">~4 周</span>
+  </div>
+  <div style="padding:16px; font-size:14px;">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+      <div>
+        <div style="font-weight:600; color:#667eea; margin-bottom:4px;">模块</div>
+        <ul style="margin:0; padding-left:18px;">
+          <li><strong>客户管理</strong>：CRUD + 多联系人 + 等级筛选</li>
+          <li><strong>产品管理</strong>：CRUD + Excel 导入 + 品类</li>
+          <li><strong>工序管理</strong>：6 大类种子数据 + API</li>
+          <li><strong>数据源管理</strong>：SQL/API 配置 + 测试 + 权限隔离</li>
+        </ul>
+      </div>
+      <div>
+        <div style="font-weight:600; color:#667eea; margin-bottom:4px;">关键决策</div>
+        <ul style="margin:0; padding-left:18px;">
+          <li>数据源提前到 P1 而非 PRD 的 M2b</li>
+          <li>原因：组件管理依赖数据源（DATA_SOURCE 字段类型）</li>
+          <li>只读数据库连接在此阶段配置</li>
+          <li>AES 加密存储在此阶段实现</li>
+        </ul>
+      </div>
+    </div>
+    <div style="margin-top:12px; padding:8px 12px; background:rgba(72,187,120,0.08); border-radius:6px; font-size:13px;">
+      <strong>✓ 交付标准：</strong>客户/产品/工序/数据源 完整 CRUD，数据源可测试执行
+    </div>
+  </div>
+</div>
+
+<!-- Phase 2 -->
+<div style="margin-bottom:20px; border:1px solid rgba(102,126,234,0.3); border-radius:12px; overflow:hidden;">
+  <div style="background:linear-gradient(135deg,#667eea,#764ba2); color:white; padding:12px 16px; font-weight:600; display:flex; justify-content:space-between; align-items:center;">
+    <span>P2 — 配置中心（自底向上）</span>
+    <span style="background:rgba(255,255,255,0.2); padding:2px 10px; border-radius:12px; font-size:13px;">~5 周</span>
+  </div>
+  <div style="padding:16px; font-size:14px;">
+    <div style="margin-bottom:8px; padding:10px; background:rgba(237,137,54,0.08); border-radius:6px;">
+      <strong>构建顺序（严格依赖链）：</strong>
+      <div style="margin-top:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <span style="background:#667eea; color:white; padding:4px 10px; border-radius:16px; font-size:13px;">① 组件管理</span>
+        <span>→</span>
+        <span style="background:#667eea; color:white; padding:4px 10px; border-radius:16px; font-size:13px;">② 模板配置</span>
+        <span>→</span>
+        <span style="background:#667eea; color:white; padding:4px 10px; border-radius:16px; font-size:13px;">③ 工序选型</span>
+        <span>→</span>
+        <span style="background:#667eea; color:white; padding:4px 10px; border-radius:16px; font-size:13px;">④ 产品-模板关联</span>
+        <span>→</span>
+        <span style="background:#764ba2; color:white; padding:4px 10px; border-radius:16px; font-size:13px;">⑤ 版本比对</span>
+      </div>
+    </div>
+    <ul style="margin:0; padding-left:18px;">
+      <li><strong>组件管理</strong>（~2周）：目录树 + 字段配置 + 公式拖拽构建器 + DATA_SOURCE 字段绑定弹窗 — <em>最复杂的前端交互</em></li>
+      <li><strong>模板配置</strong>（~1.5周）：拖拽组装 + 产品属性 + 小计公式 + 发布/快照/版本</li>
+      <li><strong>工序选型 + 模板关联</strong>（~1周）：产品绑定工序 + 工序组合↔模板绑定</li>
+      <li><strong>版本比对</strong>（~0.5周）：快照数据比对 + 差异展示</li>
+    </ul>
+    <div style="margin-top:12px; padding:8px 12px; background:rgba(72,187,120,0.08); border-radius:6px; font-size:13px;">
+      <strong>✓ 交付标准：</strong>能创建组件 → 组装模板 → 发布快照 → 绑定产品+工序 → 版本比对
+    </div>
+  </div>
+</div>
+
+<!-- Phase 3 -->
+<div style="margin-bottom:20px; border:1px solid rgba(102,126,234,0.3); border-radius:12px; overflow:hidden;">
+  <div style="background:linear-gradient(135deg,#ed8936,#e53e3e); color:white; padding:12px 16px; font-weight:600; display:flex; justify-content:space-between; align-items:center;">
+    <span>P3 — 计算引擎（技术风险隔离）</span>
+    <span style="background:rgba(255,255,255,0.2); padding:2px 10px; border-radius:12px; font-size:13px;">~2.5 周</span>
+  </div>
+  <div style="padding:16px; font-size:14px;">
+    <div style="margin-bottom:8px; padding:10px; background:rgba(229,62,62,0.06); border-radius:6px;">
+      <strong>⚠ 技术风险集中阶段</strong> — Drools POC 决定后续路径
+    </div>
+    <ul style="margin:0; padding-left:18px;">
+      <li><strong>Drools POC</strong>：验证 7.74.x + Quarkus 3.23.3 + Java 17 动态 DRL 加载</li>
+      <li><strong>折扣计算引擎</strong>：Drools 实现 + KieBase 缓存 + salience 映射</li>
+      <li><strong>审批路由引擎</strong>：FIXED/DYNAMIC 规则 + 兜底机制</li>
+      <li><strong>JEXL 公式引擎</strong>：后端校验 + 循环引用检测</li>
+      <li><strong>前端 JS 公式引擎</strong>：与 JEXL 等价实现 + 容差校验</li>
+      <li><strong>定价策略模块</strong>：策略 CRUD + 规则管理（引擎消费方）</li>
+    </ul>
+    <div style="margin-top:8px; padding:8px 12px; background:rgba(237,137,54,0.08); border-radius:6px; font-size:13px;">
+      <strong>降级方案：</strong>POC 失败 → 纯 Java Service 实现，接口不变，对上层零影响
+    </div>
+    <div style="margin-top:8px; padding:8px 12px; background:rgba(72,187,120,0.08); border-radius:6px; font-size:13px;">
+      <strong>✓ 交付标准：</strong>PRD 验收标准全 7 条通过（单元测试 100%、集成测试、一致性验证、@Blocking、性能基准、降级开关）
+    </div>
+  </div>
+</div>
+
+<!-- Phase 4 -->
+<div style="margin-bottom:20px; border:1px solid rgba(102,126,234,0.3); border-radius:12px; overflow:hidden;">
+  <div style="background:linear-gradient(135deg,#667eea,#764ba2); color:white; padding:12px 16px; font-weight:600; display:flex; justify-content:space-between; align-items:center;">
+    <span>P4 — 报价全流程</span>
+    <span style="background:rgba(255,255,255,0.2); padding:2px 10px; border-radius:12px; font-size:13px;">~6 周</span>
+  </div>
+  <div style="padding:16px; font-size:14px;">
+    <div style="margin-bottom:8px; font-weight:600; color:#764ba2;">最大阶段 — 系统核心价值所在</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+      <div>
+        <div style="font-weight:600; color:#667eea; margin-bottom:4px;">报价生成器（5 步向导）</div>
+        <ul style="margin:0; padding-left:18px; font-size:13px;">
+          <li>Step1: 客户选择 + 联系人 + 元数据</li>
+          <li>Step2: 产品配置（三步弹窗 + 页签组件 + 数据录入 + DATA_SOURCE 交互）</li>
+          <li>Step3: 价格策略应用（Drools 调用）</li>
+          <li>Step4: 商务条款</li>
+          <li>Step5: 提交审批（快照 + 路由）</li>
+          <li>草稿自动保存机制</li>
+        </ul>
+      </div>
+      <div>
+        <div style="font-weight:600; color:#667eea; margin-bottom:4px;">审批 + 输出 + 管理</div>
+        <ul style="margin:0; padding-left:18px; font-size:13px;">
+          <li>审批流程（通过/退回/通知）</li>
+          <li>审批规则配置（系统管理子模块）</li>
+          <li>报价单详情页 + 状态机操作</li>
+          <li>报价单管理列表页</li>
+          <li>报价单复制功能</li>
+          <li>站内通知模块</li>
+          <li>操作日志模块</li>
+        </ul>
+      </div>
+    </div>
+    <div style="margin-top:12px; padding:8px 12px; background:rgba(72,187,120,0.08); border-radius:6px; font-size:13px;">
+      <strong>✓ 交付标准：</strong>完整报价闭环可走通 — 创建→填写→折扣→提交→审批→状态流转
+    </div>
+  </div>
+</div>
+
+<!-- Phase 5 -->
+<div style="margin-bottom:20px; border:1px solid rgba(102,126,234,0.3); border-radius:12px; overflow:hidden;">
+  <div style="background:linear-gradient(135deg,#48bb78,#38a169); color:white; padding:12px 16px; font-weight:600; display:flex; justify-content:space-between; align-items:center;">
+    <span>P5 — 输出 + 收尾打磨</span>
+    <span style="background:rgba(255,255,255,0.2); padding:2px 10px; border-radius:12px; font-size:13px;">~3 周</span>
+  </div>
+  <div style="padding:16px; font-size:14px;">
+    <ul style="margin:0; padding-left:18px;">
+      <li>PDF 导出（Quarkus Qute 模板 + 中文字体）</li>
+      <li>Excel 导出（Apache POI）</li>
+      <li>打印样式优化</li>
+      <li>邮件发送（报价单 + 通知统一）</li>
+      <li>延期 / 客户反馈标记（ACCEPTED/REJECTED）</li>
+      <li>定时任务（5 个 Scheduler 任务）</li>
+      <li>端到端测试 + Bug 修复</li>
+    </ul>
+    <div style="margin-top:12px; padding:8px 12px; background:rgba(72,187,120,0.08); border-radius:6px; font-size:13px;">
+      <strong>✓ 交付标准：</strong>V1 功能完整，可进入 UAT
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:24px; padding:16px; background:rgba(102,126,234,0.06); border-radius:12px; text-align:center;">
+  <strong>总估算：~22.5 周</strong>（单人全栈 + Claude 辅助）<br>
+  <span style="font-size:13px; color:#666;">与 PRD 24 周基本对齐，但去除了团队并行假设，按单人串行重新分配</span>
+</div>
