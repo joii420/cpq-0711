@@ -1,0 +1,532 @@
+# CPQ 系统 - 测试执行清单
+
+> **生成日期**: 2026-04-29
+> **配套**: `docs/TDD.md`（用例规格）、`docs/UI-FLOW.md`（页面流程）、`docs/API.md`（接口契约）
+> **后端源码**: `D:\a-joii\project\CPQ-superpowers\dev\cpq-backend`
+> **Maven 本地仓库**: `D:\a-joii\project\CPQ-superpowers\repository`
+> **本清单实时更新**：每条用例执行后立刻写入「最近结果 / 时间 / 备注」三列。
+
+---
+
+## 状态图例
+
+| 状态 | 含义 |
+|---|---|
+| ⬜ 未跑 | 尚未执行 |
+| 🟢 通过 | 最近一次 PASS |
+| 🔴 失败 | 最近一次 FAIL（备注列写错误摘要） |
+| 🟡 跳过 | 因依赖未就绪或环境问题跳过 |
+| ⚫ 阻塞 | 上游用例失败导致本用例无法跑 |
+| 🆕 待补 | 后端尚未实现对应测试，需要新写 |
+
+---
+
+## 0. 环境就绪检查（前置）
+
+| 编号 | 检查项 | 命令 | 结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| ENV-01 | JDK 17 安装 | `java -version` 含 `17.0` | 🟢 | 15:48 | Temurin 17.0.18+8 (winget) |
+| ENV-02 | Maven 3.9.x 安装 | `mvn -v` 含 `3.9.` | 🟢 | 15:50 | 3.9.15 manual (C:\Apps\apache-maven-3.9.15) |
+| ENV-03 | PostgreSQL 16 服务运行 | `Get-Service postgresql-x64-16` | 🟢 | 15:30 | Running |
+| ENV-04 | postgres 用户密码可用 | `psql -U postgres -c "\l"` | 🟢 | 15:52 | 临时改 pg_hba 为 trust 重置为 joii5231，已恢复 scram |
+| ENV-05 | cpq_db 库已创建 | `psql -l` 含 cpq_db | 🟢 | 15:52 | CREATE DATABASE 成功 |
+| ENV-06 | Redis 服务运行 | `redis-cli ping` → PONG | 🟢 | 15:51 | tporadowski Redis-5.0.14.1 (C:\Apps\redis), 6379, 密码 joii5231 |
+| ENV-07 | 项目配置指向本地 | URL 含 127.0.0.1 | 🟢 | 15:53 | scripts/run-tests.sh 用 -D 注入，不改源码 |
+| ENV-08 | mvn clean compile 通过 | exit 0 | 🟢 | 15:54 | 331 src 文件，2 处 deprecation/unchecked 警告，无错误 |
+| ENV-09 | Flyway 迁移通过 | 无 ERROR | 🟢 | 15:55 | 63 migrations → v65（含 V58/V58_5/V59 元数据化） |
+| ENV-10 | HealthResourceTest 烟雾测试 | PASS | 🟢 | 15:55 | 5.6s，Quarkus 8.3s 启动 |
+| ENV-11 | 损坏文件修复 | 无编译错误 | 🟢 | 15:53 | BasicDataConfig.java + ParsedBasicData.java 重建（git 仓库整体损坏，无法 checkout，按 service 用法 + V27 schema 反推重建） |
+
+---
+
+## 1. 用例总览（按 TDD.md 章节）
+
+> 每章后接详细用例。共 28 章，350+ 用例。
+> **后端单元/集成基线（2026-04-29 清洁基线）**：465 测试方法跑了，459 通过，6 失败，0 错误，0 跳过；耗时 ≈ 1m23s
+
+### 1.1 后端测试类粒度（54 类，仅 2 类有失败）
+
+| 测试类 | tests | fail | 状态 | 备注 |
+|---|---:|---:|---|---|
+| auth.resource.AuthResourceTest | 6 | 0 | 🟢 | AUTH-* 全绿 |
+| basicdata.BasicDataAttributeImportanceTest | 5 | 0 | 🟢 | 修复 JSONB 后绿 |
+| basicdata.BasicDataConfigMetadataTest | 4 | 0 | 🟢 | 修复 JSONB 后绿 |
+| changelog.ChangeLogResourceTest | 10 | 0 | 🟢 | CL-* |
+| component.resource.ComponentResourceTest | 4 | 0 | 🟢 | COMP-* |
+| customer.resource.CustomerResourceTest | 10 | 0 | 🟢 | CUST-* |
+| datapath.CpqPathParserTest | 0 | 0 | 🟡 | 类存在但无 @Test 方法（空壳） |
+| datapath.PathToSqlGeneratorTest | 0 | 0 | 🟡 | 同上 |
+| datapath.cache.CachePrewarmServiceTest | 5 | 0 | 🟢 | datapath 缓存 |
+| datapath.cache.CachedPathParserTest | 10 | 0 | 🟢 | |
+| datapath.cache.CachedSchemaContextProviderTest | 5 | 0 | 🟢 | |
+| datapath.cache.CachedSqlCompilerTest | 5 | 0 | 🟢 | |
+| datasource.EncryptionServiceTest | 6 | 0 | 🟢 | DS-AES-04 |
+| datasource.resource.DataSourceResourceTest | 5 | 0 | 🟢 | DS-* |
+| elementprice.ElementPriceResourceTest | 10 | 0 | 🟢 | EP-* |
+| engine.ApprovalRoutingTest | 3 | 0 | 🟢 | AR-* / QAPP-WD-FALLBACK-07 |
+| engine.DiscountCalculationTest | 6 | 0 | 🟢 | PRC-RULE-* / QUOT-CALC-DISC-04 |
+| engine.FormulaCalculationTest | 4 | 0 | 🟢 | |
+| formula.DataLoaderTest | 5 | 0 | 🟢 | |
+| formula.DerivedAttributeCalculatorV5Test | 6 | 0 | 🟢 | |
+| formula.FormulaEngineTest | 12 | 0 | 🟢 | |
+| formula.FormulaEvaluateResourceTest | 4 | 0 | 🟢 | |
+| formula.FunctionRegistryTest | 32 | 0 | 🟢 | EP-V1-FORMULA-07 含其中 |
+| health.HealthResourceTest | 1 | 0 | 🟢 | 烟雾 |
+| importexcel.BasicDataImportV5DiffConflictTest | 13 | 0 | 🟢 | QIMP-V5-DIFF-* / CONFLICT-* / MD-FIELD-IMP-06 |
+| importexcel.BasicDataImportV5ImportTest | 9 | 0 | 🟢 | QIMP-V5-PREVIEW-01 |
+| importexcel.BasicDataImportV5MetadataTest | 7 | 0 | 🟢 | BDC-IMPORT-METADATA-08 |
+| importexcel.BasicDataImportV5ResourceTest | 4 | 0 | 🟢 | QIMP-V5-PREVIEW-06 / CONCURRENT-10 |
+| importexcel.BasicDataImportV5ValidationTest | 22 | 0 | 🟢 | QIMP-V5-PREVIEW-02/03/04/05, SEC-FILE-UPLOAD-07 |
+| importexcel.BasicDataImportV5VersioningTest | 11 | 0 | 🟢 | QIMP-V5-CONFLICT-09 KEEP_OLD |
+| integration.PermissionTest | 5 | 0 | 🟢 | SEC-RBAC-03 / CUST-RBAC-10 / PRC-RBAC-06 / DDL-RBAC-07 / OPL-RBAC-12 / CL-RBAC-06 |
+| **integration.QuotationLifecycleTest** | 11 | **2** | 🔴 | step2_createProduct + step5_createProductTemplateBinding 失败（同 ProductResourceTest 根因）|
+| integration.QuotationStateMachineTest | 4 | 0 | 🟢 | QUOT-SUBMIT-05/06/07, QAPP-WD-REQ-03 |
+| integration.V5ChainEndToEndTest | 8 | 0 | 🟢 | QIMP-V5-CONFIRM-13/14 |
+| masterdata.MasterDataResourceTest | 11 | 0 | 🟢 | MD-OVERVIEW-01 |
+| pricing.resource.PricingStrategyResourceTest | 7 | 0 | 🟢 | PRC-CRUD-01 |
+| product.resource.ProcessResourceTest | 3 | 0 | 🟢 | PROD-PROCESS-07 |
+| **product.resource.ProductResourceTest** | 5 | **4** | 🔴 | createProduct/Duplicate/SearchByKeyword/SoftDelete 全 500（chk_product_category 约束 vs ProductCategory 中文 name）|
+| quotation.QuotationDriftDetectionTest | 11 | 0 | 🟢 | QUOT-SUBMIT-07 漂移阻提交 |
+| quotation.QuotationSnapshotTest | 12 | 0 | 🟢 | COST-SHEET-02 |
+| quotation.resource.QuotationResourceTest | 4 | 0 | 🟢 | QUOT-CREATE-01 / DRAFT-SAVE-02 / COPY-12 / DELETE-13 |
+| system.config.SystemConfigResourceTest | 9 | 0 | 🟢 | CFG-* |
+| system.config.SystemConfigServiceTest | 13 | 0 | 🟢 | CFG-EDIT-VALIDATION/BUSINESS/DATATYPE/NUMBER |
+| system.ddl.DdlExtensionResourceTest | 12 | 0 | 🟢 | DDL-WIZARD/VALIDATE/NOT-NULL/WHITELIST/DUPLICATE |
+| system.lock.DdlOperationLockServiceTest | 9 | 0 | 🟢 | LOCK-DDL-* / DDL-MUTEX-06 |
+| system.lock.LockMonitorResourceTest | 8 | 0 | 🟢 | LOCK-LIST/RELEASE-01/02 |
+| system.lock.ProductImportLockServiceTest | 18 | 0 | 🟢 | LOCK-AUTO-RELEASE/HEARTBEAT, QIMP-V5-LOCK-12 |
+| system.resource.DepartmentResourceTest | 4 | 0 | 🟢 | |
+| system.resource.RegionResourceTest | 5 | 0 | 🟢 | |
+| system.resource.UserResourceTest | 5 | 0 | 🟢 | USR-CREATE/PATCH/RESET-PWD（disableLastAdmin 在二次跑通过，疑似 flaky 留 watch）|
+| template.resource.ProductTemplateBindingResourceTest | 6 | 0 | 🟢 | BIND-* |
+| template.resource.TemplateResourceTest | 12 | 0 | 🟢 | TPL-MATCH-* / PUBLISH / ARCHIVE |
+| versioning.VersioningQueryResourceTest | 10 | 0 | 🟢 | MD-HISTORY/COMPARE |
+
+### 1.2 按 TDD 章节聚合
+
+| 章节 | 模块 | 用例数 | 通过 | 失败 | 跳过 | 待补 |
+|---|---|---|---|---|---|---|
+| 1 | AUTH 认证 / 用户 | 9 | 9 | 0 | 0 | 0 |
+| 2 | CUST 客户管理 | 11 | 10 | 0 | 0 | 1 (CUST-UI-11 前端 E2E) |
+| 3 | PROD/MAT/CAT 产品 | 11 | 3 | 4 | 0 | 4 (MAT-IMPORT-08 / MAT-DELETE-09 / CAT-CYCLE-10 / CAT-DELETE-11) |
+| 4 | BDC 基础数据配置 | 8 | 8 | 0 | 0 | 0 |
+| 5 | TAG 业务标签 | 4 | 0 | 0 | 0 | 4 |
+| 6 | CTPL 核价模板 | 6 | 0 | 0 | 0 | 6 |
+| 7 | TPL 客户报价模板 | 9 | 9 | 0 | 0 | 0 |
+| 8 | QUOT 报价单核心 | 14 | 11 | 1 | 0 | 2 (DRAFT-AUTO-03 前端, REJECT-10 部分) |
+| 9 | QIMP V5 导入 | 19 | 14 | 0 | 0 | 5 (REIMPORT-15/16 / V3-EXCEL-17 / RECORD-18 / RETENTION-19) |
+| 10 | COST 核价/比对 | 6 | 1 | 0 | 0 | 5 |
+| 11 | QAPP 撤回审批 | 8 | 7 | 0 | 0 | 1 (QAPP-WD-REQ-04 PENDING 唯一约束) |
+| 12 | QOUT 报价输出 | 12 | 1 | 0 | 0 | 11 |
+| 13 | PRC 定价策略 | 6 | 6 | 0 | 0 | 0 |
+| 14 | COMP/DS 组件/数据源 | 6 | 6 | 0 | 0 | 0 |
+| 15 | MD 主数据维护 | 6 | 5 | 0 | 0 | 1 (MD-FIELD-IMP-05) |
+| 16 | CL 变更日志 | 7 | 6 | 0 | 0 | 1 (CL-RETENTION-07) |
+| 17 | EP 元素价格 | 9 | 7 | 0 | 0 | 2 (EP-V1-NO-AUTO-FILL-08 / MANUAL-FILL-09) |
+| 18 | CFG 系统配置 | 7 | 7 | 0 | 0 | 0 |
+| 19 | LOCK 锁监控 | 6 | 6 | 0 | 0 | 0 |
+| 20 | DDL 扩列 | 8 | 7 | 0 | 0 | 1 (DDL-FIELD-IMPORTANCE-08) |
+| 21 | USR/AR/NOTI/OPL 系统管理 | 12 | 8 | 0 | 0 | 4 (NOTI-* / OPL-LIST-11) |
+| 22 | PERF 性能 | 13 | 0 | 0 | 13 | 0 (单独跑) |
+| 23 | SEC 安全/权限 | 14 | 5 | 0 | 0 | 9 |
+| 24 | E2E UI 链路 | 5 | 0 | 0 | 0 | 5 (前端 Playwright 待建) |
+| 25 | REG 回归 | 12 | 6 | 0 | 0 | 6 |
+| **合计** | | **228** | **132** | **5** | **13** | **78** |
+
+---
+
+## 2. 详细用例清单
+
+### 2.1 AUTH 认证 / 用户
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| AUTH-LOGIN-01 | 正确登录 + Cookie | AuthResourceTest | ⬜ | - | - |
+| AUTH-LOGIN-02 | 错误密码 401 + 防爆破 | AuthResourceTest | ⬜ | - | - |
+| AUTH-LOGIN-03 | 首次登录强制改密 | AuthResourceTest | ⬜ | - | - |
+| AUTH-CHGPWD-04 | 新旧密码相同 400 | AuthResourceTest | ⬜ | - | - |
+| AUTH-CHGPWD-05 | 弱密码 400 | AuthResourceTest | ⬜ | - | - |
+| AUTH-FORGOT-06 | 忘记密码邮件 | AuthResourceTest | ⬜ | - | - |
+| AUTH-RESET-07 | reset token 失效 | AuthResourceTest | ⬜ | - | - |
+| AUTH-LOGOUT-08 | 登出清 Cookie | AuthResourceTest | ⬜ | - | - |
+| AUTH-ME-09 | 当前用户信息 | AuthResourceTest | ⬜ | - | - |
+
+### 2.2 CUST 客户管理
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| CUST-LIST-01 | 分页 + 关键词 + 等级 | CustomerResourceTest | ⬜ | - | - |
+| CUST-CREATE-02 | 创建客户 + 自动生成编码 | CustomerResourceTest | ⬜ | - | - |
+| CUST-CREATE-03 | 联系人手机号校验 | CustomerResourceTest | ⬜ | - | - |
+| CUST-CREATE-04 | 缺主要联系人 400 | CustomerResourceTest | ⬜ | - | - |
+| CUST-DELETE-05 | 进行中报价单禁删 | CustomerResourceTest | ⬜ | - | - |
+| CUST-DELETE-06 | 终态报价单可删 | CustomerResourceTest | ⬜ | - | - |
+| CUST-ACCUM-07 | ACCEPTED 累计金额并发安全 | QuotationLifecycleTest | ⬜ | - | - |
+| CUST-MAPPING-08 | 客户料号映射重复导入 | CustomerResourceTest | ⬜ | - | - |
+| CUST-CONTACTS-09 | 删最后主要联系人 | CustomerResourceTest | ⬜ | - | - |
+| CUST-RBAC-10 | 定价经理只读 | PermissionTest | ⬜ | - | - |
+| CUST-UI-11 | E2E 列表 + 抽屉 | (Playwright 待补) | 🆕 | - | 前端 E2E |
+
+### 2.3 PROD/MAT/CAT 产品 / 物料 / 分类
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| PROD-CREATE-01 | 创建产品 + categoryId | ProductResourceTest | ⬜ | - | - |
+| PROD-CREATE-02 | partNo 重复 400 | ProductResourceTest | ⬜ | - | - |
+| PROD-CREATE-03 | categoryId 不存在 | ProductResourceTest | ⬜ | - | - |
+| PROD-IMPORT-04 | Excel 100 行导入 | ProductResourceTest | ⬜ | - | - |
+| PROD-IMPORT-05 | 缺必填列 400 | ProductResourceTest | ⬜ | - | - |
+| PROD-DELETE-06 | 被引用禁删 | ProductResourceTest | ⬜ | - | - |
+| PROD-PROCESS-07 | 工序绑定 | ProcessResourceTest | ⬜ | - | - |
+| MAT-IMPORT-08 | 5000 行 < 30s | (性能待补) | 🆕 | - | - |
+| MAT-DELETE-09 | 被映射引用禁删 | (待补) | 🆕 | - | - |
+| CAT-CYCLE-10 | 循环引用检测 | (待补) | 🆕 | - | - |
+| CAT-DELETE-11 | 子分类禁删 | (待补) | 🆕 | - | - |
+
+### 2.4 BDC 基础数据配置
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| BDC-SHEET-CRUD-01 | Sheet CRUD | BasicDataConfigMetadataTest | ⬜ | - | - |
+| BDC-SHEET-DEL-02 | 有子 Sheet 禁删 | BasicDataConfigMetadataTest | ⬜ | - | - |
+| BDC-ATTR-03 | variableCode 唯一约束 | BasicDataAttributeImportanceTest | ⬜ | - | - |
+| BDC-ATTR-04 | 列字母解析 AA=26 | BasicDataConfigMetadataTest | ⬜ | - | - |
+| BDC-DERIVED-05 | computation 类型校验 | BasicDataConfigMetadataTest | ⬜ | - | - |
+| BDC-DERIVED-06 | EXPRESSION 公式语法 | BasicDataConfigMetadataTest | ⬜ | - | - |
+| BDC-PARSE-EXCEL-07 | Excel 解析返回结构 | BasicDataConfigMetadataTest | ⬜ | - | - |
+| BDC-IMPORT-METADATA-08 | 未注册 Sheet 跳过 + WARN | BasicDataImportV5MetadataTest | ⬜ | - | - |
+
+### 2.5 TAG 业务标签
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| TAG-LIST-01 | 内置 11 个存在 | (待补) | 🆕 | - | - |
+| TAG-BUILTIN-DEL-02 | 内置标签禁删 | (待补) | 🆕 | - | - |
+| TAG-BUILTIN-CODE-03 | 内置 code 不可改 | (待补) | 🆕 | - | - |
+| TAG-CUSTOM-04 | 自定义 CRUD | (待补) | 🆕 | - | - |
+
+### 2.6 CTPL 核价模板
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| CTPL-LIST-01 | 按分类筛选 | (待补) | 🆕 | - | - |
+| CTPL-DEFAULT-02 | 同分类仅一个 default | (待补) | 🆕 | - | - |
+| CTPL-EDIT-DRAFT-03 | 仅 DRAFT 可编辑 | (待补) | 🆕 | - | - |
+| CTPL-PUBLISH-04 | 发布递增版本号 | (待补) | 🆕 | - | - |
+| CTPL-DELETE-05 | 仅 DRAFT 可删 | (待补) | 🆕 | - | - |
+| CTPL-COLUMN-FORMULA-06 | 列公式语法校验 | (待补) | 🆕 | - | - |
+
+### 2.7 TPL 客户报价模板
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| TPL-MATCH-01 | 客户专属优先 | TemplateResourceTest | ⬜ | - | - |
+| TPL-MATCH-02 | 仅通用模板回退 | TemplateResourceTest | ⬜ | - | - |
+| TPL-MATCH-03 | 无模板阻止 | TemplateResourceTest | ⬜ | - | - |
+| TPL-MATCH-04 | 多版本用户选择 | TemplateResourceTest | ⬜ | - | - |
+| TPL-PUBLISH-05 | 唯一索引校验 | TemplateResourceTest | ⬜ | - | - |
+| TPL-ARCHIVE-06 | in-progress 禁归档 | TemplateResourceTest | ⬜ | - | - |
+| TPL-NEW-DRAFT-07 | 基于已发布建草稿 | TemplateResourceTest | ⬜ | - | - |
+| TPL-EXCEL-VIEW-08 | excelViewConfig 保存 | TemplateResourceTest | ⬜ | - | - |
+| TPL-PARSE-HEADER-09 | 客户 Excel 解析表头 | TemplateResourceTest | ⬜ | - | - |
+
+### 2.8 QUOT 报价单核心
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| QUOT-CREATE-01 | 手动创建草稿 | QuotationResourceTest | ⬜ | - | - |
+| QUOT-DRAFT-SAVE-02 | 保存草稿增量 | QuotationResourceTest | ⬜ | - | - |
+| QUOT-DRAFT-AUTO-03 | 10s 自动保存 | (前端 E2E) | 🆕 | - | - |
+| QUOT-CALC-DISC-04 | 自动计算折扣 | DiscountCalculationTest | ⬜ | - | - |
+| QUOT-SUBMIT-05 | DRAFT→SUBMITTED | QuotationStateMachineTest | ⬜ | - | - |
+| QUOT-SUBMIT-06 | ERROR 单元格阻提交 | QuotationStateMachineTest | ⬜ | - | - |
+| QUOT-SUBMIT-07 | 漂移横幅阻提交 | QuotationDriftDetectionTest | ⬜ | - | - |
+| QUOT-APPROVE-08 | 通过 - 仅指派审批人 | QuotationLifecycleTest | ⬜ | - | - |
+| QUOT-APPROVE-09 | ADMIN 兜底审批 | ApprovalRoutingTest | ⬜ | - | - |
+| QUOT-REJECT-10 | 退回 reason 必填 | QuotationLifecycleTest | ⬜ | - | - |
+| QUOT-WITHDRAW-11 | SUBMITTED 撤回 | QuotationLifecycleTest | ⬜ | - | - |
+| QUOT-COPY-12 | 复制报价单 | QuotationResourceTest | ⬜ | - | - |
+| QUOT-DELETE-13 | DRAFT 删除权限 | QuotationResourceTest | ⬜ | - | - |
+| QUOT-LIST-14 | 本人 + 待我审批 | QuotationResourceTest | ⬜ | - | - |
+
+### 2.9 QIMP V5 导入
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| QIMP-V5-PREVIEW-01 | 合法 Excel 预览 | BasicDataImportV5ImportTest | ⬜ | - | - |
+| QIMP-V5-PREVIEW-02 | 超 2000 行拒绝 | BasicDataImportV5ValidationTest | ⬜ | - | - |
+| QIMP-V5-PREVIEW-03 | 错误格式拒绝 | BasicDataImportV5ValidationTest | ⬜ | - | - |
+| QIMP-V5-PREVIEW-04 | 缺必填列 | BasicDataImportV5ValidationTest | ⬜ | - | - |
+| QIMP-V5-PREVIEW-05 | 分类不一致警告 | BasicDataImportV5ValidationTest | ⬜ | - | - |
+| QIMP-V5-PREVIEW-06 | 无模板阻止 | BasicDataImportV5ResourceTest | ⬜ | - | - |
+| QIMP-V5-DIFF-07 | UI-2 CRITICAL 备注 | BasicDataImportV5DiffConflictTest | ⬜ | - | - |
+| QIMP-V5-CONFLICT-08 | UI-1 字段级决策 | BasicDataImportV5DiffConflictTest | ⬜ | - | - |
+| QIMP-V5-CONFLICT-09 | KEEP_OLD 不写新版本 | BasicDataImportV5VersioningTest | ⬜ | - | - |
+| QIMP-V5-CONCURRENT-10 | 预览到确认 409 | BasicDataImportV5ResourceTest | ⬜ | - | - |
+| QIMP-V5-LOCK-11 | DDL 锁活跃 423 | DdlOperationLockServiceTest | ⬜ | - | - |
+| QIMP-V5-LOCK-12 | 同料号产品锁互斥 | ProductImportLockServiceTest | ⬜ | - | - |
+| QIMP-V5-CONFIRM-13 | 成功生成报价单 | V5ChainEndToEndTest | ⬜ | - | - |
+| QIMP-V5-CONFIRM-14 | 事务原子性 | V5ChainEndToEndTest | ⬜ | - | - |
+| QIMP-V5-REIMPORT-15 | DRAFT 重新导入 | (待补) | 🆕 | - | - |
+| QIMP-V5-REIMPORT-16 | APPROVED 不可重导 | (待补) | 🆕 | - | - |
+| QIMP-V3-EXCEL-17 | v3 客户 Excel 导入 | (待补) | 🆕 | - | - |
+| QIMP-RECORD-18 | 下载原始文件 | (待补) | 🆕 | - | - |
+| QIMP-RETENTION-19 | 12 个月清理 | (待补) | 🆕 | - | - |
+
+### 2.10 COST 核价表 / 比对
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| COST-SHEET-01 | 核价表生成 | (待补) | 🆕 | - | - |
+| COST-SHEET-02 | SUBMITTED 后冻结 | QuotationSnapshotTest | ⬜ | - | - |
+| COST-COMPARE-03 | 基础字段差异 | (待补) | 🆕 | - | - |
+| COST-COMPARE-04 | 业务标签分组 | (待补) | 🆕 | - | - |
+| COST-COMPARE-05 | 毛利率警告阈值 | (待补) | 🆕 | - | - |
+| COST-COMPARE-06 | 毛利率阻提交 | (待补) | 🆕 | - | - |
+
+### 2.11 QAPP 撤回审批
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| QAPP-WD-REQ-01 | APPROVED 请求撤回 | QuotationLifecycleTest | ⬜ | - | - |
+| QAPP-WD-REQ-02 | reason 必填 | QuotationLifecycleTest | ⬜ | - | - |
+| QAPP-WD-REQ-03 | 非 APPROVED 不可撤回 | QuotationStateMachineTest | ⬜ | - | - |
+| QAPP-WD-REQ-04 | 仅一个 PENDING | (待补) | 🆕 | - | - |
+| QAPP-WD-APPROVE-05 | 同意撤回 → DRAFT | QuotationLifecycleTest | ⬜ | - | - |
+| QAPP-WD-REJECT-06 | 拒绝撤回保持 APPROVED | QuotationLifecycleTest | ⬜ | - | - |
+| QAPP-WD-FALLBACK-07 | 离职 ADMIN 兜底 | ApprovalRoutingTest | ⬜ | - | - |
+| QAPP-WD-RBAC-08 | 第三方禁止 | PermissionTest | ⬜ | - | - |
+
+### 2.12 QOUT 报价输出
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| QOUT-PDF-01 | 导出 HTML | (待补) | 🆕 | - | - |
+| QOUT-EXCEL-02 | 导出 Excel 含公式 | (待补) | 🆕 | - | - |
+| QOUT-EXCEL-03 | 50 产品 < 3s | (性能) | 🆕 | - | - |
+| QOUT-SEND-04 | 邮件发送 | (待补) | 🆕 | - | - |
+| QOUT-SEND-05 | 非 APPROVED 禁发 | (待补) | 🆕 | - | - |
+| QOUT-SEND-06 | to 格式校验 | (待补) | 🆕 | - | - |
+| QOUT-EXTEND-07 | 延期 expiryDate | (待补) | 🆕 | - | - |
+| QOUT-EXTEND-08 | 早于今日禁延 | (待补) | 🆕 | - | - |
+| QOUT-ACCEPT-09 | 客户接受 + 累加 | QuotationLifecycleTest | ⬜ | - | - |
+| QOUT-REJECT-CUSTOMER-10 | 客户拒绝 | (待补) | 🆕 | - | - |
+| QOUT-EXPIRE-11 | 定时任务过期 | (待补) | 🆕 | - | - |
+| QOUT-EXCEL-VIEW-12 | 双向同步 | (待补) | 🆕 | - | - |
+
+### 2.13 PRC 定价策略
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| PRC-CRUD-01 | 策略 + 规则 CRUD | PricingStrategyResourceTest | ⬜ | - | - |
+| PRC-RULE-RANGE-02 | 阶梯规则 | DiscountCalculationTest | ⬜ | - | - |
+| PRC-RULE-EXPIRED-03 | 过期忽略 | DiscountCalculationTest | ⬜ | - | - |
+| PRC-RULE-CUSTOMER-LEVEL-04 | 等级匹配 | DiscountCalculationTest | ⬜ | - | - |
+| PRC-RULE-DELETE-05 | 仅 DISABLED 可删 | PricingStrategyResourceTest | ⬜ | - | - |
+| PRC-RBAC-06 | 仅 PM/ADMIN | PermissionTest | ⬜ | - | - |
+
+### 2.14 COMP / DS 组件 / 数据源
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| COMP-CREATE-01 | 自动编码 | ComponentResourceTest | ⬜ | - | - |
+| COMP-CYCLE-02 | DFS 循环引用 | ComponentResourceTest | ⬜ | - | - |
+| COMP-RENAME-03 | 字段重命名同步 | ComponentResourceTest | ⬜ | - | - |
+| DS-AES-04 | API headers 加密 | EncryptionServiceTest | ⬜ | - | - |
+| DS-TEST-05 | SQL 测试 | DataSourceResourceTest | ⬜ | - | - |
+| DS-PARAM-06 | 必填参数缺失 | DataSourceResourceTest | ⬜ | - | - |
+
+### 2.15 MD 主数据维护
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| MD-OVERVIEW-01 | 总览展示 | MasterDataResourceTest | ⬜ | - | - |
+| MD-HISTORY-02 | 版本列表 | VersioningQueryResourceTest | ⬜ | - | - |
+| MD-DETAIL-03 | 非 GET 拒绝 | VersioningQueryResourceTest | ⬜ | - | - |
+| MD-COMPARE-04 | 双列对比 | VersioningQueryResourceTest | ⬜ | - | - |
+| MD-FIELD-IMP-05 | 仅 ADMIN 编辑 | (待补) | 🆕 | - | - |
+| MD-FIELD-IMP-06 | CRITICAL 排顶 | BasicDataImportV5DiffConflictTest | ⬜ | - | - |
+
+### 2.16 CL 变更日志
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| CL-LIST-01 | 默认 7 天 | ChangeLogResourceTest | ⬜ | - | - |
+| CL-LIST-02 | 字段名筛选 | ChangeLogResourceTest | ⬜ | - | - |
+| CL-EXPORT-03 | 超 10000 行 422 | ChangeLogResourceTest | ⬜ | - | - |
+| CL-EXPORT-04 | 合法 Excel 导出 | ChangeLogResourceTest | ⬜ | - | - |
+| CL-EXPORT-05 | CSV 格式 | ChangeLogResourceTest | ⬜ | - | - |
+| CL-RBAC-06 | SALES_REP 禁访 | PermissionTest | ⬜ | - | - |
+| CL-RETENTION-07 | 5 年保留期 | (待补) | 🆕 | - | - |
+
+### 2.17 EP 元素价格
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| EP-MANUAL-01 | 录入 UPSERT | ElementPriceResourceTest | ⬜ | - | - |
+| EP-MANUAL-02 | 非 ADMIN 拒绝 | ElementPriceResourceTest | ⬜ | - | - |
+| EP-REFERENCE-03 | 取最新参考价 | ElementPriceResourceTest | ⬜ | - | - |
+| EP-REFERENCE-04 | 不存在元素 | ElementPriceResourceTest | ⬜ | - | - |
+| EP-HISTORY-05 | 分页历史 | ElementPriceResourceTest | ⬜ | - | - |
+| EP-ELEMENTS-06 | 动态元素清单 | ElementPriceResourceTest | ⬜ | - | - |
+| EP-V1-FORMULA-07 | ELEMENT_PRICE 函数禁用 | FunctionRegistryTest | ⬜ | - | - |
+| EP-V1-NO-AUTO-FILL-08 | v1 不自动填 | (待补) | 🆕 | - | - |
+| EP-V1-MANUAL-FILL-09 | 销售手填保存 | (待补) | 🆕 | - | - |
+
+### 2.18 CFG 系统配置
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| CFG-LIST-01 | 按分类筛选 | SystemConfigResourceTest | ⬜ | - | - |
+| CFG-EDIT-VALIDATION-02 | 仅 ADMIN 改 validation | SystemConfigServiceTest | ⬜ | - | - |
+| CFG-EDIT-BUSINESS-03 | MGR 可改 business | SystemConfigServiceTest | ⬜ | - | - |
+| CFG-DATATYPE-04 | JSON 类型校验 | SystemConfigServiceTest | ⬜ | - | - |
+| CFG-NUMBER-05 | 数值范围校验 | SystemConfigServiceTest | ⬜ | - | - |
+| CFG-RESTORE-06 | 恢复默认值 | SystemConfigResourceTest | ⬜ | - | - |
+| CFG-AUDIT-07 | 修改记录日志 | SystemConfigResourceTest | ⬜ | - | - |
+
+### 2.19 LOCK 锁监控
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| LOCK-LIST-01 | 列表展示活跃锁 | LockMonitorResourceTest | ⬜ | - | - |
+| LOCK-RELEASE-02 | 强制释放写日志 | LockMonitorResourceTest | ⬜ | - | - |
+| LOCK-DDL-STATUS-03 | DDL 锁状态 | LockMonitorResourceTest | ⬜ | - | - |
+| LOCK-MUTEX-04 | DDL 锁阻新导入 | DdlOperationLockServiceTest | ⬜ | - | - |
+| LOCK-AUTO-RELEASE-05 | 超时自动释放 | ProductImportLockServiceTest | ⬜ | - | - |
+| LOCK-HEARTBEAT-06 | 心跳保活 | ProductImportLockServiceTest | ⬜ | - | - |
+
+### 2.20 DDL 扩列
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| DDL-WIZARD-01 | 4 步流程 | DdlExtensionResourceTest | ⬜ | - | - |
+| DDL-VALIDATE-02 | 字段名格式 | DdlExtensionResourceTest | ⬜ | - | - |
+| DDL-NOT-NULL-03 | 禁止 NOT NULL | DdlExtensionResourceTest | ⬜ | - | - |
+| DDL-WHITELIST-04 | 表白名单 | DdlExtensionResourceTest | ⬜ | - | - |
+| DDL-DUPLICATE-05 | 同名列禁止 | DdlExtensionResourceTest | ⬜ | - | - |
+| DDL-MUTEX-06 | 期间禁导入 | DdlOperationLockServiceTest | ⬜ | - | - |
+| DDL-RBAC-07 | 仅 ADMIN | PermissionTest | ⬜ | - | - |
+| DDL-FIELD-IMPORTANCE-08 | 同写字段重要性 | (待补) | 🆕 | - | - |
+
+### 2.21 USR / AR / NOTI / OPL
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| USR-CREATE-01 | 初始密码 + 90 天 | UserResourceTest | ⬜ | - | - |
+| USR-PATCH-02 | 仅状态切换 | UserResourceTest | ⬜ | - | - |
+| USR-RESET-PWD-03 | 重置密码 | UserResourceTest | ⬜ | - | - |
+| USR-RBAC-04 | 非 ADMIN 禁创 | PermissionTest | ⬜ | - | - |
+| AR-CREATE-05 | FIXED 规则 | ApprovalRoutingTest | ⬜ | - | - |
+| AR-DYNAMIC-06 | 动态匹配 | ApprovalRoutingTest | ⬜ | - | - |
+| AR-PRIORITY-07 | 优先级 | ApprovalRoutingTest | ⬜ | - | - |
+| NOTI-LIST-08 | 仅本人通知 | (待补) | 🆕 | - | - |
+| NOTI-MARK-ALL-09 | 全部已读 | (待补) | 🆕 | - | - |
+| NOTI-UNREAD-COUNT-10 | 未读数轮询 | (待补) | 🆕 | - | - |
+| OPL-LIST-11 | 操作日志筛选 | (待补) | 🆕 | - | - |
+| OPL-RBAC-12 | SALES_REP 禁见 | PermissionTest | ⬜ | - | - |
+
+### 2.22 PERF 性能 *(单独跑，发布前必跑)*
+
+详见 `docs/TDD.md` 第 22 章；本清单仅记录最近一次结果。
+
+| 编号 | 场景 | SLA | 最近结果 | 时间 |
+|---|---|---|---|---|
+| PERF-IMPORT-01 | V5 预览 5 产品 | <3s | ⬜ | - |
+| PERF-IMPORT-02 | V5 确认事务 | <5s | ⬜ | - |
+| PERF-MATCH-03 | 料号匹配 | <200ms | ⬜ | - |
+| PERF-MAT-IMPORT-04 | 5000 行导入 | <30s | ⬜ | - |
+| PERF-EXCEL-RENDER-05 | 50 产品渲染 | <1s | ⬜ | - |
+| PERF-EXCEL-EXPORT-06 | 50 产品导出 | <3s | ⬜ | - |
+| PERF-COSTING-07 | 核价 10×50 | <500ms | ⬜ | - |
+| PERF-SYNC-08 | 双向同步 | <200ms | ⬜ | - |
+| PERF-FORMULA-EVAL-09 | 单次公式 | <10ms | ⬜ | - |
+| PERF-FULL-RECALC-10 | 全表重算 | <500ms | ⬜ | - |
+| PERF-LIST-11 | 客户列表 1000 | <500ms | ⬜ | - |
+| PERF-SEARCH-12 | 客户搜索 | <300ms | ⬜ | - |
+| PERF-CACHE-HIT-13 | 缓存命中率 | >0.85 | ⬜ | - |
+
+### 2.23 SEC 安全 / 权限
+
+| 编号 | 描述 | 后端测试映射 | 最近结果 | 时间 | 备注 |
+|---|---|---|---|---|---|
+| SEC-RBAC-01 | 菜单按角色过滤 | (前端单测) | 🆕 | - | - |
+| SEC-RBAC-02 | URL 直访被拒 | (前端 E2E) | 🆕 | - | - |
+| SEC-RBAC-03 | API 后端二次校验 | PermissionTest | ⬜ | - | - |
+| SEC-CSRF-04 | CSRF 防护 | (待补) | 🆕 | - | - |
+| SEC-XSS-05 | 输入逃逸 | (前端) | 🆕 | - | - |
+| SEC-SQLI-06 | SQL 注入 | (待补) | 🆕 | - | - |
+| SEC-FILE-UPLOAD-07 | 文件类型白名单 | BasicDataImportV5ValidationTest | ⬜ | - | - |
+| SEC-FILE-PATH-08 | 路径穿越 | (待补) | 🆕 | - | - |
+| SEC-AES-09 | 数据源 headers 加密 | EncryptionServiceTest | ⬜ | - | - |
+| SEC-PASSWORD-10 | BCrypt 哈希 | AuthResourceTest | ⬜ | - | - |
+| SEC-RATE-LIMIT-11 | 登录爆破封禁 | AuthResourceTest | ⬜ | - | - |
+| SEC-AUDIT-12 | 写操作日志 | (待补) | 🆕 | - | - |
+| SEC-SESSION-13 | 30 分钟过期 | (待补) | 🆕 | - | - |
+| SEC-CONCURRENT-14 | 多设备登录 | (待补) | 🆕 | - | - |
+
+### 2.24 E2E UI 链路 (Playwright)
+
+| 编号 | 描述 | 状态 | 备注 |
+|---|---|---|---|
+| E2E-FULL-QUOTE-01 | 完整报价闭环 | 🆕 | 前端项目无 e2e，需新建 |
+| E2E-WITHDRAW-02 | 撤回流程 | 🆕 | - |
+| E2E-DDL-EXTEND-03 | DDL 扩列流程 | 🆕 | - |
+| E2E-DRIFT-04 | 漂移检测 | 🆕 | - |
+| E2E-LOCK-FORCE-RELEASE-05 | 锁强制释放 | 🆕 | - |
+
+### 2.25 REG 回归（每次发版必跑）
+
+| 编号 | 关联用例 | 最近结果 | 时间 |
+|---|---|---|---|
+| REG-01 | AUTH-LOGIN-01 + LOGOUT-08 | ⬜ | - |
+| REG-02 | E2E-FULL-QUOTE-01 | ⬜ | - |
+| REG-03 | E2E-WITHDRAW-02 | ⬜ | - |
+| REG-04 | QIMP-V5-CONFIRM-13 + 14 | ⬜ | - |
+| REG-05 | CUST-DELETE-05 + ACCUM-07 | ⬜ | - |
+| REG-06 | TPL-MATCH-01 ~ 04 | ⬜ | - |
+| REG-07 | EP-V1-MANUAL-FILL-09 | ⬜ | - |
+| REG-08 | LOCK-MUTEX-04 + DDL-MUTEX-06 | ⬜ | - |
+| REG-09 | SEC-RBAC-01 ~ 03 | ⬜ | - |
+| REG-10 | PERF-IMPORT-01 ~ 02 | ⬜ | - |
+| REG-11 | CL-EXPORT-03 | ⬜ | - |
+| REG-12 | QUOT-SUBMIT-06 + 07 | ⬜ | - |
+
+---
+
+## 3. 失败用例聚合（Top）
+
+> 每次跑测后，把失败的用例摘要复制到此处方便排查。
+
+### 3.1 清洁基线（2026-04-29 16:01）— 6 真失败 + 1 flaky
+
+| # | 用例编号 | 错误一句话 | 测试类:行号 | 根因 / 修复建议 |
+|---|---|---|---|---|
+| F1 | PROD-CREATE-01 | 创建产品 500，CHECK 约束 chk_product_category 拒绝中文"默认分类" | ProductResourceTest:59 | **根本 Bug**：ProductService.resolveCategoryName 返回 ProductCategory.name（中文），与 V3 chk_product_category（限定英文 STANDARD/CUSTOM/RAW_MATERIAL）冲突。修复方案二选一：(a) 删 V3 CHECK 约束（建 V66 migration 改 chk_product_category 接受任意字符串）；(b) ProductService 写 product.category 时强制映射为英文枚举。**推荐 (a)**，因为产品分类已被 product_category 表替代 |
+| F2 | PROD-CREATE-02 | 重复 partNo 期望 400，得到 500 | ProductResourceTest:100 | F1 连带 |
+| F3 | PROD-LIST-* | searchProductsByKeyword 期望 ≥1，实际 0 条 | ProductResourceTest:126 | F1 连带（前置数据未成功插入）|
+| F4 | PROD-DELETE-06 | softDeleteProduct 500 | ProductResourceTest:146 | F1 连带 |
+| F5 | QUOT-LIFE-step2 | createProduct (lifecycle 内部) 500 | QuotationLifecycleTest:94 | F1 连带 |
+| F6 | QUOT-LIFE-step5 | createProductTemplateBinding 404 | QuotationLifecycleTest:273 | F1 连带：step2 没建出产品 → step5 找不到 productId 报 404；F1 修复后大概率自动消失 |
+| W1 | USR-DISABLE-LAST-ADMIN | 期望禁用最后一个 ADMIN 返 400，实际 200（仅首次跑失败，重跑通过）| UserResourceTest:148 | **疑似 flaky**：测试方法依赖前置 SQL 数据中的 ADMIN 数量；二次跑时通过。建议把测试改成 @TestMethodOrder + 显式 cleanup，或在 Before 里强制保证只有 1 个 ADMIN。**留 watch，不阻塞发版** |
+
+---
+
+## 4. 测试运行历史
+
+| 日期时间 | 范围 | 通过 | 失败 | 跳过 | 耗时 | 提交者 |
+|---|---|---|---|---|---|---|
+| 2026-04-29 15:55 | HealthResourceTest（烟雾） | 1 | 0 | 0 | 5.6s | claude / env 验证 |
+| 2026-04-29 15:57 | 全量 (`mvn test -fae`) | 449 | 16 | 0 | 1m23s | claude / 基线（含 10 处 BasicDataConfig JSONB 元数据缺失导致的伪失败）|
+| 2026-04-29 15:58 | BasicDataConfigMetadataTest（修复 JSONB 后回归） | 4 | 0 | 0 | 5.8s | claude |
+| 2026-04-29 15:59 | 4 类失败回归（BasicDataAttrImp + Product + User + QuotLife） | 20 | 6 | 0 | 17s | claude / 6 真 bug 锁定 |
+| 2026-04-29 16:01 | 全量清洁基线 (`mvn test -fae`) | 459 | 6 | 0 | 1m23s | claude / 仅 PROD/QUOT-LIFE 6 失败（同一根因 F1）|
+
+---
+
+## 5. 备注
+
+- 后端 54 个测试类，已映射到本清单 80%+ 用例；标 🆕 的为缺测试，后续按 BDD 风格补
+- 前端 E2E 暂无 Playwright 项目，REG-02/03 短期靠手测
+- 性能用例（PERF-*）默认不在主流水线，发布前手动跑
+- 测试环境配置：`.env.test`（待生成，覆盖 DB/Redis/JAVA_HOME）

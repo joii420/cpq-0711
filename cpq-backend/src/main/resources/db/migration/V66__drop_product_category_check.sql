@@ -1,0 +1,18 @@
+-- V66: 删除 product 表的 chk_product_category CHECK 约束
+--
+-- 背景：
+--   V3 创建 product 表时硬编码了 category IN ('STANDARD','CUSTOM','RAW_MATERIAL') 约束。
+--   V4 引入 product_category 表后，分类管理已交给用户配置（含中文 name 字段）。
+--   ProductService.resolveCategoryName() 写入 product.category 时使用 product_category.name（中文），
+--   与旧 CHECK 冲突，导致所有创建产品的 API 调用 500（违反 chk_product_category）。
+--
+-- 修复：
+--   删除 chk_product_category 约束，category 列成为自由字符串字段（与 product_category.name 同步）。
+--   product.category_id 仍是真实分类引用源。
+--
+-- 影响：
+--   - ProductResourceTest 4 个失败用例转绿（createProduct/Duplicate/SearchByKeyword/SoftDelete）
+--   - QuotationLifecycleTest step2/step5 转绿（依赖产品创建）
+--
+-- 关联清单：docs/TEST-CHECKLIST.md F1
+ALTER TABLE product DROP CONSTRAINT IF EXISTS chk_product_category;
