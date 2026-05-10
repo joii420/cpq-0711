@@ -1,12 +1,16 @@
 package com.cpq.quotation.service;
 
 import com.cpq.common.exception.BusinessException;
+import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineComponentData;
 import com.cpq.quotation.entity.QuotationLineItem;
+import com.cpq.template.dto.TemplateFormulaDTO;
 import com.cpq.template.entity.Template;
+import com.cpq.template.service.TemplateFormulaService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -25,6 +29,13 @@ public class ExcelViewService {
 
     private static final Logger LOG = Logger.getLogger(ExcelViewService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /**
+     * Stage 2 集成：FORMULA 列 [名称] 引用先查模板公式，命中则走 TemplateFormulaService 求值。
+     * 使用 @Inject 注入，避免循环依赖（TemplateFormulaService 不依赖 ExcelViewService）。
+     */
+    @Inject
+    TemplateFormulaService templateFormulaService;
 
     // ---- Template excel-view-config API ----
 
@@ -86,10 +97,20 @@ public class ExcelViewService {
         }
 
         List<Map<String, Object>> columns = parseJsonArray(template.excelViewConfig);
+        // Stage 2: 预加载模板公式 Map（供 FORMULA 列 [名称] 引用时快速命中）
+        List<TemplateFormulaDTO> templateFormulas = templateFormulaService.listByTemplate(templateId);
+        Map<String, TemplateFormulaDTO> formulaByName = new LinkedHashMap<>();
+        for (TemplateFormulaDTO f : templateFormulas) formulaByName.put(f.name, f);
+
+        // Stage 2: 获取报价单 customerId（供模板公式 SUM_OVER 使用）
+        UUID quotationCustomerId = null;
+        Quotation quotation = Quotation.findById(quotationId);
+        if (quotation != null) quotationCustomerId = quotation.customerId;
+
         List<Map<String, Object>> rows = new ArrayList<>();
 
         for (QuotationLineItem li : lineItems) {
-            Map<String, Object> row = buildRowData(li, columns);
+            Map<String, Object> row = buildRowData(li, columns, templateId, formulaByName, quotationCustomerId);
             row.put("_lineItemId", li.id.toString());
             rows.add(row);
         }
@@ -100,9 +121,15 @@ public class ExcelViewService {
         return result;
     }
 
-    private Map<String, Object> buildRowData(QuotationLineItem li, List<Map<String, Object>> columns) {
+    /**
+     * Stage 2 重载：带模板 ID + 公式 Map + customerId 参数，支持 FORMULA 列的 [名称] 引用先查模板公式。
+     */
+    private Map<String, Object> buildRowData(QuotationLineItem li,
+                                              List<Map<String, Object>> columns,
+                                              UUID templateId,
+                                              Map<String, TemplateFormulaDTO> formulaByName,
+                                              UUID quotationCustomerId) {
         Map<String, Object> productAttrs = parseJsonMap(li.productAttributeValues);
-        // Load component data rows for this line item
         List<QuotationLineComponentData> componentDataList =
             QuotationLineComponentData.list("lineItemId = ?1 ORDER BY sortOrder ASC", li.id);
 
@@ -114,6 +141,13 @@ public class ExcelViewService {
                 componentRowData.putAll(rowDataList.get(0));
             }
         }
+
+        // Stage 2: 提取 partNo 和 customerId（供模板公式 SUM_OVER 等聚合函数使用）
+        String partNo = extractPartNo(li, componentRowData);
+        UUID customerId = quotationCustomerId;
+
+        // Stage 2: 逐列计算，VARIABLE 列先算好，FORMULA 列引用时可以直接用 cachedCells
+        Map<String, Object> cachedCells = new LinkedHashMap<>();
 
         Map<String, Object> row = new LinkedHashMap<>();
         for (Map<String, Object> col : columns) {
@@ -131,6 +165,18 @@ public class ExcelViewService {
                     String fieldKey = (String) col.get("field_key");
                     yield fieldKey != null ? componentRowData.get(fieldKey) : null;
                 }
+                case "VARIABLE" -> {
+                    // VARIABLE 列已由 LinkedExcelView / 前端负责，这里取 componentRowData 的同名字段
+                    // 或直接从 componentRowData 取（如 BNF 路径查值由前端 hook 完成）
+                    yield componentRowData.get(colKey);
+                }
+                case "FORMULA" -> {
+                    // Stage 2: FORMULA 列 [名称] 引用先查模板公式，再 fallback 到 cachedCells
+                    String formulaExpr = (String) col.get("formula");
+                    yield evaluateFormulaColumn(
+                            formulaExpr, colKey, templateId, formulaByName,
+                            cachedCells, columns, customerId, partNo);
+                }
                 case "EXCEL_FORMULA" -> {
                     // Return the formula string for the frontend to evaluate
                     yield col.get("formula");
@@ -139,8 +185,120 @@ public class ExcelViewService {
                 default -> null;
             };
             row.put(colKey, value);
+            cachedCells.put(colKey, value);  // 供后续 FORMULA 列引用
         }
         return row;
+    }
+
+    /**
+     * 兼容旧签名（无模板公式支持）。
+     */
+    private Map<String, Object> buildRowData(QuotationLineItem li, List<Map<String, Object>> columns) {
+        return buildRowData(li, columns, li.templateId, Map.of(), null);
+    }
+
+    /**
+     * Stage 2: 求值 FORMULA 列表达式。
+     *
+     * 处理流程：
+     * 1. 去掉前导 "="
+     * 2. 扫 [名称] 引用 → 先查 formulaByName（模板公式），命中则调 TemplateFormulaService.evaluateFormula
+     * 3. 未命中模板公式 → fallback 到 cachedCells（同行前面已算好的列值）
+     * 4. 替换后用 JEXL 或直接返回结果
+     *
+     * 注意：目前 ExcelViewService 不持有 DataLoader（RequestScoped），
+     * 所以模板公式求值委托给 TemplateFormulaService，由它内部持有 DataLoader。
+     */
+    private Object evaluateFormulaColumn(String formulaExpr,
+                                          String colKey,
+                                          UUID templateId,
+                                          Map<String, TemplateFormulaDTO> formulaByName,
+                                          Map<String, Object> cachedCells,
+                                          List<Map<String, Object>> columns,
+                                          UUID customerId, String partNo) {
+        if (formulaExpr == null || formulaExpr.isBlank()) return null;
+        // 去掉前导 "="
+        String expr = formulaExpr.startsWith("=") ? formulaExpr.substring(1).trim() : formulaExpr.trim();
+
+        // 扫描 [名称] 引用，替换为数值字面量
+        java.util.regex.Pattern bracketPat = java.util.regex.Pattern.compile("\\[([^\\[\\]]+)]");
+        java.util.regex.Matcher m = bracketPat.matcher(expr);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            String ref = m.group(1).trim();
+            Object refVal = resolveFormulaRef(ref, templateId, formulaByName, cachedCells, customerId, partNo);
+            String literal = toNumericStr(refVal);
+            m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(literal));
+        }
+        m.appendTail(sb);
+        String resolved = sb.toString();
+
+        // 用轻量 JEXL 求值（纯算术）
+        try {
+            org.apache.commons.jexl3.JexlEngine jexl = new org.apache.commons.jexl3.JexlBuilder()
+                    .silent(true).strict(false).create();
+            Object result = jexl.createExpression(resolved).evaluate(new org.apache.commons.jexl3.MapContext());
+            return normalizeNumeric(result);
+        } catch (Exception e) {
+            LOG.debugf("[ExcelView] FORMULA col '%s' eval failed: expr='%s' err=%s", colKey, resolved, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 解析 FORMULA 中的 [名称] 引用：
+     * 1. 先查模板公式（formulaByName）→ 调 TemplateFormulaService.evaluateFormula
+     * 2. fallback：查 cachedCells（同行前面已算好的列）
+     * 3. 再 fallback：返回 null（最终用 0 替代）
+     */
+    private Object resolveFormulaRef(String ref,
+                                      UUID templateId,
+                                      Map<String, TemplateFormulaDTO> formulaByName,
+                                      Map<String, Object> cachedCells,
+                                      UUID customerId, String partNo) {
+        // 1. 模板公式命中
+        if (formulaByName.containsKey(ref) && templateId != null
+                && partNo != null && !partNo.isBlank()) {
+            try {
+                Object v = templateFormulaService.evaluateFormula(templateId, ref, customerId, partNo);
+                LOG.debugf("[ExcelView] [%s] → templateFormula → %s", ref, v);
+                return v;
+            } catch (Exception e) {
+                LOG.debugf("[ExcelView] templateFormula eval failed for [%s]: %s", ref, e.getMessage());
+            }
+        }
+        // 2. cachedCells fallback
+        if (cachedCells.containsKey(ref)) {
+            return cachedCells.get(ref);
+        }
+        // 3. not found
+        return null;
+    }
+
+    /** 提取料号：优先从 productAttributeValues 取 hf_part_no，其次从 componentRowData */
+    private String extractPartNo(QuotationLineItem li, Map<String, Object> componentRowData) {
+        Map<String, Object> attrs = parseJsonMap(li.productAttributeValues);
+        Object pn = attrs.get("hf_part_no");
+        if (pn == null) pn = componentRowData.get("hf_part_no");
+        return pn != null ? pn.toString() : null;
+    }
+
+    /** 转数值字符串（用于表达式替换） */
+    private String toNumericStr(Object v) {
+        if (v == null) return "0";
+        if (v instanceof java.math.BigDecimal bd) return bd.toPlainString();
+        if (v instanceof Number n) return new java.math.BigDecimal(n.toString()).toPlainString();
+        String s = v.toString().trim();
+        try { new java.math.BigDecimal(s); return s; } catch (Exception e) { return "0"; }
+    }
+
+    /** 规范化数值结果 */
+    private Object normalizeNumeric(Object v) {
+        if (v instanceof Double d) return java.math.BigDecimal.valueOf(d);
+        if (v instanceof Float f) return new java.math.BigDecimal(f.toString());
+        if (v instanceof Long l) return java.math.BigDecimal.valueOf(l);
+        if (v instanceof Integer i) return java.math.BigDecimal.valueOf(i);
+        return v;
     }
 
     // ---- Quotation excel-view PUT (cell update) ----

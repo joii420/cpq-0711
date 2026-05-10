@@ -56,6 +56,15 @@ public class Template extends PanacheEntityBase {
     @Column(name = "excel_view_config", columnDefinition = "jsonb")
     public String excelViewConfig;
 
+    /**
+     * V145 (Stage 1) — 模板公式数组 JSONB.
+     * 结构: [{name, expression, data_type, depends_on, description}]
+     * 仅 DRAFT 状态可改；保存时由 TemplateFormulaService 做拓扑排序 + 循环依赖检测。
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "formulas", columnDefinition = "jsonb", nullable = false)
+    public String formulas = "[]";
+
     @Column(nullable = false, length = 20)
     public String status = "DRAFT";
 

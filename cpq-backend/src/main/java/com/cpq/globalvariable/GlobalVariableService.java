@@ -70,6 +70,23 @@ public class GlobalVariableService {
         return rows.isEmpty() ? Optional.empty() : Optional.of(rowToDef(rows.get(0)));
     }
 
+    /**
+     * 按中文业务名（name 字段）查找变量定义。
+     * 用于 @变量名 解析中按中文名匹配（Stage 2 TemplateFormulaService 调用）。
+     */
+    @Transactional(Transactional.TxType.SUPPORTS)
+    public Optional<GlobalVariableDefinition> getByName(String name) {
+        if (name == null || name.isBlank()) return Optional.empty();
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT code, name, var_type, source_view, key_columns::text, value_column, " +
+                "       label_template, unit, description, sort_order, is_active, updated_at " +
+                "FROM global_variable_definition WHERE name = :n AND is_active = true LIMIT 1")
+                .setParameter("n", name)
+                .getResultList();
+        return rows.isEmpty() ? Optional.empty() : Optional.of(rowToDef(rows.get(0)));
+    }
+
     private GlobalVariableDefinition rowToDef(Object[] r) {
         GlobalVariableDefinition d = new GlobalVariableDefinition();
         d.code         = (String) r[0];

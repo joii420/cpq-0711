@@ -7,6 +7,7 @@ import {
   message,
   Modal,
   Table,
+  Tabs,
 } from 'antd';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -28,6 +29,7 @@ import SubtotalDropBar from './SubtotalDropBar';
 import TemplateConfigPanel from './TemplateConfigPanel';
 import ViewToggle from './ViewToggle';
 import ExcelViewConfigTab from './ExcelViewConfigTab';
+import TemplateFormulasPanel from './TemplateFormulasPanel';
 import './styles.css';
 
 const { Text } = Typography;
@@ -43,6 +45,7 @@ const TemplateConfiguration: React.FC = () => {
   const [productAttrs, setProductAttrs] = useState<ProductAttribute[]>([]);
   const [activeTabKey, setActiveTabKey] = useState('');
   const [viewMode, setViewMode] = useState<'detail' | 'simple' | 'excel'>('detail');
+  const [centerTab, setCenterTab] = useState<'components' | 'formulas'>('components');
   const [excelViewConfig, setExcelViewConfig] = useState<any>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -398,22 +401,26 @@ const TemplateConfiguration: React.FC = () => {
             {dirty && !saving && <Text className="tm-status-saving">未保存</Text>}
           </div>
           <Space>
-            <ViewToggle mode={viewMode as 'detail' | 'simple'} onChange={v => setViewMode(v)} />
-            <button
-              className={`tm-view-btn${viewMode === 'excel' ? ' active' : ''}`}
-              style={{
-                padding: '4px 12px',
-                borderRadius: 6,
-                border: '1px solid #d9d9d9',
-                background: viewMode === 'excel' ? '#1890ff' : '#fff',
-                color: viewMode === 'excel' ? '#fff' : '#595959',
-                cursor: 'pointer',
-                fontSize: 13,
-              }}
-              onClick={() => setViewMode(viewMode === 'excel' ? 'detail' : 'excel')}
-            >
-              Excel视图
-            </button>
+            {centerTab === 'components' && (
+              <>
+                <ViewToggle mode={viewMode as 'detail' | 'simple'} onChange={v => setViewMode(v)} />
+                <button
+                  className={`tm-view-btn${viewMode === 'excel' ? ' active' : ''}`}
+                  style={{
+                    padding: '4px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #d9d9d9',
+                    background: viewMode === 'excel' ? '#1890ff' : '#fff',
+                    color: viewMode === 'excel' ? '#fff' : '#595959',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                  }}
+                  onClick={() => setViewMode(viewMode === 'excel' ? 'detail' : 'excel')}
+                >
+                  Excel视图
+                </button>
+              </>
+            )}
             {isDraft && (
               <button className="tm-save-btn" onClick={handleSave}>
                 💾 保存模板
@@ -422,59 +429,78 @@ const TemplateConfiguration: React.FC = () => {
           </Space>
         </div>
 
-        {/* Scrollable canvas */}
-        <div className="tm-canvas-scroll">
-          {/* Product card container */}
-          <div className="tm-product-card-container">
-            {/* Product Attributes */}
-            <ProductAttributesGrid
-              attributes={productAttrs}
-              disabled={!isDraft}
-              onChange={(a) => {
-                setProductAttrs(a);
-                markDirty();
-              }}
-            />
+        {/* Center tabs: 组件配置 / 公式 */}
+        <Tabs
+          activeKey={centerTab}
+          onChange={k => setCenterTab(k as 'components' | 'formulas')}
+          style={{ padding: '0 16px' }}
+          items={[
+            {
+              key: 'components',
+              label: '组件配置',
+              children: (
+                <div className="tm-canvas-scroll" style={{ padding: 0 }}>
+                  <div className="tm-product-card-container">
+                    <ProductAttributesGrid
+                      attributes={productAttrs}
+                      disabled={!isDraft}
+                      onChange={(a) => {
+                        setProductAttrs(a);
+                        markDirty();
+                      }}
+                    />
 
-            {/* Tab Components */}
-            {viewMode === 'excel' ? (
-              id ? (
-                <ExcelViewConfigTab
+                    {viewMode === 'excel' ? (
+                      id ? (
+                        <ExcelViewConfigTab
+                          templateId={id}
+                          isDraft={isDraft || false}
+                          excelViewConfig={excelViewConfig}
+                          onChange={setExcelViewConfig}
+                          productAttributes={productAttrs}
+                          componentsSnapshot={availableComponents}
+                        />
+                      ) : null
+                    ) : viewMode === 'detail' ? (
+                      <TabComponentArea
+                        tabComponents={tcs}
+                        componentsSnapshot={availableComponents}
+                        activeTabKey={activeTabKey}
+                        onTabChange={setActiveTabKey}
+                        onRemoveTab={handleRemoveTab}
+                        onMoveUp={handleMoveUp}
+                        onMoveDown={handleMoveDown}
+                        isDraft={isDraft || false}
+                        presetRowsMap={presetRowsMap}
+                        onPresetRowsChange={handlePresetRowsChange}
+                      />
+                    ) : (
+                      renderSimpleSummary()
+                    )}
+
+                    <SubtotalDropBar
+                      tcs={tcs}
+                      availableComponents={availableComponents}
+                      isDraft={isDraft || false}
+                      onRemove={(tcId) => handleRemoveTab(tcId)}
+                    />
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: 'formulas',
+              label: '公式',
+              children: id ? (
+                <TemplateFormulasPanel
                   templateId={id}
-                  isDraft={isDraft || false}
-                  excelViewConfig={excelViewConfig}
-                  onChange={setExcelViewConfig}
-                  productAttributes={productAttrs}
-                  componentsSnapshot={availableComponents}
+                  templateStatus={template.status}
+                  onChange={() => {/* 公式变更不影响主模板 dirty 状态 */}}
                 />
-              ) : null
-            ) : viewMode === 'detail' ? (
-              <TabComponentArea
-                tabComponents={tcs}
-                componentsSnapshot={availableComponents}
-                activeTabKey={activeTabKey}
-                onTabChange={setActiveTabKey}
-                onRemoveTab={handleRemoveTab}
-                onMoveUp={handleMoveUp}
-                onMoveDown={handleMoveDown}
-                isDraft={isDraft || false}
-                presetRowsMap={presetRowsMap}
-                onPresetRowsChange={handlePresetRowsChange}
-              />
-            ) : (
-              renderSimpleSummary()
-            )}
-
-            {/* Subtotal Component Drop Zone */}
-            <SubtotalDropBar
-              tcs={tcs}
-              availableComponents={availableComponents}
-              isDraft={isDraft || false}
-              onRemove={(tcId) => handleRemoveTab(tcId)}
-            />
-          </div>
-
-        </div>
+              ) : null,
+            },
+          ]}
+        />
       </div>
 
       {/* Right panel: Config Panel */}
