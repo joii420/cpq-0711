@@ -83,7 +83,8 @@ const allMenuItems: MenuItem[] = [
     children: [
       { key: '/components', label: '组件管理', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
       { key: '/templates', label: '模板配置', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/costing-templates', label: 'Excel 模板配置', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
+      // V149 Stage 3: "Excel 模板配置" 菜单已合并到 "模板配置" 内的 Excel 视图 Tab.
+      // 路由 /costing-templates 保留 (向后兼容书签/直链), 但不再在导航中暴露.
       { key: '/costing-part-data', label: '料号级核价数据', roles: ['PRICING_MANAGER', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
       { key: '/costing-summary', label: '核价单', roles: ['PRICING_MANAGER', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
       { key: '/global-variables', label: '全局变量配置', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
