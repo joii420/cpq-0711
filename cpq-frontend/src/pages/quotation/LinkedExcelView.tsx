@@ -14,7 +14,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Table, Card, Spin, Alert, Tag } from 'antd';
-import { costingTemplateService } from '../../services/costingTemplateService';
+import { templateService } from '../../services/templateService';
 import type { CostingTemplate, CostingTemplateColumn } from '../../services/costingTemplateService';
 import { formulaService } from '../../services/formulaService';
 import type { LineItem } from './QuotationStep2';
@@ -142,19 +142,27 @@ const LinkedExcelView: React.FC<Props> = ({ linkedTemplateId, lineItems, quotati
     }
     setLoading(true);
     setError(null);
-    costingTemplateService
-      .list({ linkedTemplateId, status: 'PUBLISHED' })
-      .then((r) => {
-        const list = r.data || [];
-        if (list.length === 0) {
+    // V149 Stage 3 / V150: Excel 视图配置直接从 template.excel_view_config 读
+    // (老的"反查 costing_template 表"路径在 V150 合并后失效, 改为直接读模板自身)
+    templateService
+      .getExcelViewConfig(linkedTemplateId)
+      .then((r: any) => {
+        // ApiResponse 信封解包: r.data 可能是 array (V150 后) 或 {columns:[]} (V150 前兼容)
+        const raw = r?.data ?? r;
+        const cols = Array.isArray(raw)
+          ? raw
+          : Array.isArray(raw?.columns) ? raw.columns : [];
+        if (cols.length === 0) {
           setExcelTemplate(null);
           return;
         }
-        // is_default=true 优先；否则取第一份（list 内已按 createdAt DESC 排序）
-        const def = list.find((t) => t.isDefault);
-        setExcelTemplate(def || list[0]);
+        // 复用 parsedColumns 下游逻辑: 把 cols 包装成"伪 CostingTemplate", columns 序列化字符串
+        setExcelTemplate({
+          id: linkedTemplateId,
+          columns: JSON.stringify(cols),
+        } as CostingTemplate);
       })
-      .catch((e: any) => setError(e?.message ?? '加载关联 Excel 模板失败'))
+      .catch((e: any) => setError(e?.message ?? '加载 Excel 视图配置失败'))
       .finally(() => setLoading(false));
   }, [linkedTemplateId]);
 
