@@ -8,10 +8,12 @@ import {
 } from '@ant-design/icons';
 import { templateService } from '../../services/templateService';
 import { customerService } from '../../services/customerService';
+import VariableLabelPickerDrawer from '../../components/VariableLabelPickerDrawer';
 
 const { Text } = Typography;
 
-type SourceType = 'PRODUCT_ATTRIBUTE' | 'COMPONENT_FIELD' | 'EXCEL_FORMULA' | 'FIXED_VALUE';
+// V149 Stage 3: 加入 VARIABLE — 引用已命名的视图列 (V149 字段库)
+type SourceType = 'PRODUCT_ATTRIBUTE' | 'COMPONENT_FIELD' | 'EXCEL_FORMULA' | 'FIXED_VALUE' | 'VARIABLE';
 
 interface ExcelViewColumn {
   col_key: string;
@@ -19,6 +21,7 @@ interface ExcelViewColumn {
   source_type: SourceType;
   source_name?: string;
   value?: string | { component_code: string; field_name: string; row_index: number };
+  variable_path?: string; // V149 Stage 3: source_type='VARIABLE' 时使用
 }
 
 interface ImportSettings {
@@ -62,6 +65,7 @@ const SOURCE_TYPE_OPTIONS: { label: string; value: SourceType }[] = [
   { label: '组件字段', value: 'COMPONENT_FIELD' },
   { label: 'Excel公式', value: 'EXCEL_FORMULA' },
   { label: '固定值', value: 'FIXED_VALUE' },
+  { label: '📚 已命名字段', value: 'VARIABLE' }, // V149 Stage 3
 ];
 
 function getNextColKey(columns: ExcelViewColumn[]): string {
@@ -122,6 +126,22 @@ const ExcelViewConfigTab: React.FC<Props> = ({
   const [customers, setCustomers] = useState<any[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
   const [headerParsing, setHeaderParsing] = useState(false);
+  // V149 Stage 3: 字段库 picker
+  const [labelPickerOpen, setLabelPickerOpen] = useState(false);
+  const [labelPickerColIdx, setLabelPickerColIdx] = useState<number | null>(null);
+  const openLabelPicker = (idx: number) => {
+    setLabelPickerColIdx(idx);
+    setLabelPickerOpen(true);
+  };
+  const handleLabelPick = (path: string, label: { displayName: string }) => {
+    if (labelPickerColIdx != null) {
+      const c = config.columns[labelPickerColIdx];
+      const newTitle = !c.title || c.title === '新列' ? label.displayName : c.title;
+      updateColumn(labelPickerColIdx, { variable_path: path, title: newTitle });
+    }
+    setLabelPickerOpen(false);
+    setLabelPickerColIdx(null);
+  };
 
   // Sync external changes
   useEffect(() => {
@@ -315,6 +335,35 @@ const ExcelViewConfigTab: React.FC<Props> = ({
             disabled={!isDraft}
           />
         );
+      case 'VARIABLE': {
+        // V149 Stage 3: 引用 V149 字段库
+        const path = col.variable_path || '';
+        return (
+          <Space.Compact style={{ width: 280 }}>
+            <Input
+              size="small"
+              readOnly
+              value={path}
+              placeholder="点击右侧 📚 从字段库选"
+              title={path || undefined}
+              disabled={!isDraft}
+              onClick={() => isDraft && openLabelPicker(index)}
+              style={{
+                cursor: isDraft ? 'pointer' : 'not-allowed',
+                fontFamily: 'Consolas, Monaco, monospace',
+              }}
+            />
+            <Button
+              size="small"
+              disabled={!isDraft}
+              onClick={() => openLabelPicker(index)}
+              title="从 V149 字段库选已命名的视图列"
+            >
+              📚 选
+            </Button>
+          </Space.Compact>
+        );
+      }
       default:
         return null;
     }
@@ -560,6 +609,14 @@ const ExcelViewConfigTab: React.FC<Props> = ({
           <b>公式提示：</b>在Excel公式中使用 <code>{'{row}'}</code> 表示当前行号，例如 <code>=B{'{row}'}*C{'{row}'}</code>
         </div>
       )}
+
+      {/* V149 Stage 3: 字段库 picker — source_type='VARIABLE' 时使用 */}
+      <VariableLabelPickerDrawer
+        open={labelPickerOpen}
+        onClose={() => { setLabelPickerOpen(false); setLabelPickerColIdx(null); }}
+        onPick={handleLabelPick}
+        initialPath={labelPickerColIdx != null ? (config.columns[labelPickerColIdx]?.variable_path || '') : ''}
+      />
     </div>
   );
 };
