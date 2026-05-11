@@ -307,9 +307,19 @@ const LinkedExcelView: React.FC<Props> = ({ linkedTemplateId, lineItems, quotati
           }
         }
       }
+      // 业务约定: "产品"列优先显示客户料号 (客户看报价单时使用的料号),
+      // HF 内部料号作为 fallback. 两者都缺时再回落到产品名 / 序号.
+      const liAny = li as any;
+      const productLabel =
+        liAny.customerPartNo
+        || liAny.customerProductNo
+        || li.productPartNo
+        || li.productName
+        || `产品 ${i + 1}`;
       return {
         __key: li.productId ? `${li.productId}-${i}` : `row-${i}`,
-        __label: li.productPartNo || li.productName || `产品 ${i + 1}`,
+        __label: productLabel,
+        __hfPartNo: li.productPartNo, // 透传给 render 显示二级信息
         __noData: noCostingData,
         ...cellValues,
       };
@@ -357,20 +367,25 @@ const LinkedExcelView: React.FC<Props> = ({ linkedTemplateId, lineItems, quotati
   const visibleColumns = parsedColumns.filter((col) => !col.hidden);
   const tableColumns = [
     {
-      title: '产品',
+      title: '客户料号',
       dataIndex: '__label',
       key: '__label',
       fixed: 'left' as const,
-      width: 220,
+      width: 240,
       render: (v: string, row: any) => (
-        <span>
-          <span style={{ fontFamily: 'monospace' }}>{v}</span>
+        <div>
+          <div style={{ fontFamily: 'monospace', fontWeight: 500 }}>{v}</div>
+          {row?.__hfPartNo && row.__hfPartNo !== v && (
+            <div style={{ fontSize: 10, color: '#999', fontFamily: 'monospace' }}>
+              HF: {row.__hfPartNo}
+            </div>
+          )}
           {row?.__noData && (
-            <Tag color="default" style={{ marginLeft: 6, fontSize: 10 }}>
+            <Tag color="default" style={{ marginTop: 2, fontSize: 10 }}>
               无核价数据
             </Tag>
           )}
-        </span>
+        </div>
       ),
     },
     ...visibleColumns.map((col) => ({
