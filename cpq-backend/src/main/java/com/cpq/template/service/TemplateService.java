@@ -287,10 +287,13 @@ public class TemplateService {
         // 会让所有"创建为新草稿"出来的核价模板退化成报价模板。
         draft.templateKind = source.templateKind != null ? source.templateKind : "QUOTATION";
         draft.componentsSnapshot = null;
+        // V145+: 公式 / Excel 视图配置 必须随新草稿带出,否则草稿"瘸腿"
+        draft.formulas = source.formulas != null ? source.formulas : "[]";
+        draft.excelViewConfig = source.excelViewConfig;
         draft.status = "DRAFT";
         draft.persist();
 
-        // Copy TemplateComponent associations
+        // Copy TemplateComponent associations (含 preset_rows / formula_assignments)
         List<TemplateComponent> sourceTcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", sourceId);
         for (TemplateComponent stc : sourceTcs) {
             TemplateComponent newTc = new TemplateComponent();
@@ -298,6 +301,8 @@ public class TemplateService {
             newTc.componentId = stc.componentId;
             newTc.tabName = stc.tabName;
             newTc.sortOrder = stc.sortOrder;
+            newTc.presetRows = stc.presetRows != null ? stc.presetRows : "[]";
+            newTc.formulaAssignments = stc.formulaAssignments != null ? stc.formulaAssignments : "{}";
             newTc.persist();
         }
 

@@ -9,6 +9,8 @@ import type { ComparisonTag } from '../../services/comparisonTagService';
 import { templateService } from '../../services/templateService';
 import PathPickerDrawer from '../component/PathPickerDrawer';
 import GlobalVariablePickerDrawer from '../../components/GlobalVariablePickerDrawer';
+import VariableLabelPickerDrawer from '../../components/VariableLabelPickerDrawer';
+import { variableLabelService, type VariableLabel } from '../../services/variableLabelService';
 
 const KIND_LABEL: Record<string, string> = { QUOTATION: '报价模板', COSTING: '核价模板' };
 const KIND_COLOR: Record<string, string> = { QUOTATION: 'blue', COSTING: 'purple' };
@@ -32,12 +34,25 @@ const CostingTemplateConfig: React.FC = () => {
   // V104: 全局变量选择抽屉 — 用户挑变量+key 后, 自动编译为 BNF 路径填到 variable_path
   const [gvPickerOpen, setGvPickerOpen] = useState(false);
   const [gvPickerColIdx, setGvPickerColIdx] = useState<number | null>(null);
+  // V149: 字段库选择抽屉 — 从已命名视图列直接选 raw variable_path
+  const [labelPickerOpen, setLabelPickerOpen] = useState(false);
+  const [labelPickerColIdx, setLabelPickerColIdx] = useState<number | null>(null);
+  // V149 Phase 2: 样本求值 — sample hf_part_no + evalResults 缓存 + labelMap 中文名查询
+  const [sampleHfPartNo, setSampleHfPartNo] = useState<string>('');
+  const [evalResults, setEvalResults] = useState<Record<number, string>>({});
+  const [labelMap, setLabelMap] = useState<Record<string, VariableLabel>>({});
   // 公式编辑抽屉（FORMULA 列单独编辑，与变量分支分开）
   const [formulaDrawerOpen, setFormulaDrawerOpen] = useState(false);
   const [formulaDrawerColIdx, setFormulaDrawerColIdx] = useState<number | null>(null);
   const [formulaDraft, setFormulaDraft] = useState<string>('');
 
   useEffect(() => {
+    // V149: 顺手拉一次 labels 用于行内显示中文名 (失败时静默退化)
+    variableLabelService.list().then(list => {
+      const m: Record<string, VariableLabel> = {};
+      for (const v of list) m[v.variablePath] = v;
+      setLabelMap(m);
+    });
     Promise.all([
       costingTemplateService.getById(id!),
       comparisonTagService.list('ACTIVE'),
@@ -97,6 +112,42 @@ const CostingTemplateConfig: React.FC = () => {
     }
     setGvPickerOpen(false);
     setGvPickerColIdx(null);
+  };
+
+  // V149: 字段库 picker — 从已命名视图列选 raw variable_path
+  const openLabelPicker = (idx: number) => {
+    setLabelPickerColIdx(idx);
+    setLabelPickerOpen(true);
+  };
+  const handleLabelPick = (path: string, label: { displayName: string }) => {
+    if (labelPickerColIdx != null) {
+      const c = columns[labelPickerColIdx];
+      const newTitle = !c.title || c.title === '新列' ? label.displayName : c.title;
+      updateCol(labelPickerColIdx, {
+        variable_path: path,
+        source_type: 'VARIABLE',
+        title: newTitle,
+      });
+    }
+    setLabelPickerOpen(false);
+    setLabelPickerColIdx(null);
+  };
+
+  // V149 Phase 2: 行内试算 — 调 eval API 拿当前样本下的值
+  const handleEvalRow = async (idx: number) => {
+    const c = columns[idx];
+    if (!c?.variable_path) {
+      message.warning('该列未配置 variable_path');
+      return;
+    }
+    if (!sampleHfPartNo.trim()) {
+      message.warning('请先在顶部填入调试样本零件号 (例 3120012574)');
+      return;
+    }
+    setEvalResults(prev => ({ ...prev, [idx]: '⏳ 求值中...' }));
+    const v = await variableLabelService.evalAt(c.variable_path, sampleHfPartNo.trim());
+    const display = v == null || v === '' ? '(无数据)' : String(v);
+    setEvalResults(prev => ({ ...prev, [idx]: display }));
   };
 
   // 公式抽屉
@@ -209,20 +260,42 @@ const CostingTemplateConfig: React.FC = () => {
       title: '变量路径 / 公式',
       render: (_: any, r: CostingTemplateColumn, idx: number) => {
         const isVar = r.source_type === 'VARIABLE';
-        const display = isVar ? (r.variable_path || '') : (r.formula || '');
         const open = () => isVar ? openPathPicker(idx) : openFormulaDrawer(idx);
+        const label = isVar && r.variable_path ? labelMap[r.variable_path] : undefined;
+        const evalText = evalResults[idx];
+        // 显示策略: 已注册的 VARIABLE 用中文名作主显示, raw path 降到下方小字 + hover title
+        const display = isVar
+          ? (label ? label.displayName : (r.variable_path || ''))
+          : (r.formula || '');
+        const useChineseFont = isVar && !!label;
         return (
+          <div style={{ width: '100%' }}>
           <Space.Compact style={{ width: '100%' }}>
             <Input
               readOnly
               value={display}
               placeholder={isVar ? '点击右侧按钮选择路径 / 全局变量' : '点击右侧按钮编辑公式'}
-              style={{ background: display ? '#fff' : '#fafafa', cursor: 'pointer', fontFamily: 'Consolas, Monaco, monospace' }}
+              title={isVar && r.variable_path ? r.variable_path : undefined}
+              style={{
+                background: display ? '#fff' : '#fafafa',
+                cursor: 'pointer',
+                fontFamily: useChineseFont ? undefined : 'Consolas, Monaco, monospace',
+                fontWeight: useChineseFont ? 500 : undefined,
+              }}
               onClick={() => !isReadOnly && open()}
             />
             <Button disabled={isReadOnly} onClick={open} icon={<EditOutlined />}>
               {isVar ? '路径' : '编辑'}
             </Button>
+            {isVar && (
+              <Button
+                disabled={isReadOnly}
+                onClick={() => openLabelPicker(idx)}
+                title="V149: 从已命名字段库选 (按业务分类显示中文名), 适合普通用户"
+              >
+                📚 字段库
+              </Button>
+            )}
             {isVar && (
               <Button
                 disabled={isReadOnly}
@@ -232,7 +305,35 @@ const CostingTemplateConfig: React.FC = () => {
                 🌐 全局变量
               </Button>
             )}
+            {isVar && r.variable_path && (
+              <Button
+                onClick={() => handleEvalRow(idx)}
+                title={sampleHfPartNo ? `按样本 ${sampleHfPartNo} 试算当前值` : '请先填顶部调试样本零件号'}
+              >
+                ▶ 试算
+              </Button>
+            )}
           </Space.Compact>
+          {(label || evalText || (isVar && r.variable_path && !label)) && (
+            <div style={{ marginTop: 4, fontSize: 11, lineHeight: '18px' }}>
+              {label && (label.dataType || label.unit) && (
+                <Tag color="blue" style={{ marginRight: 6 }}>
+                  {label.dataType ?? ''}{label.unit ? ` ${label.unit}` : ''}
+                </Tag>
+              )}
+              {isVar && r.variable_path && (
+                <span style={{ color: '#bbb', fontFamily: 'Consolas, Monaco, monospace', fontSize: 10 }}>
+                  {r.variable_path}
+                </span>
+              )}
+              {evalText && (
+                <span style={{ color: '#52c41a', fontFamily: 'Consolas, Monaco, monospace', marginLeft: 8 }}>
+                  = {evalText}
+                </span>
+              )}
+            </div>
+          )}
+          </div>
         );
       },
     },
@@ -287,9 +388,19 @@ const CostingTemplateConfig: React.FC = () => {
           <Tag color="blue">{template.version}</Tag>
           {template.isDefault && <Tag color="gold">默认</Tag>}
         </Space>
-        {!isReadOnly && (
-          <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>保存</Button>
-        )}
+        <Space>
+          <Input
+            allowClear
+            placeholder="调试样本零件号 (如 3120012574)"
+            value={sampleHfPartNo}
+            onChange={(e) => setSampleHfPartNo(e.target.value)}
+            style={{ width: 240 }}
+            title="V149 Phase 2: 填入零件号后, 行内 ▶ 按钮可试算当前样本下的字段值"
+          />
+          {!isReadOnly && (
+            <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>保存</Button>
+          )}
+        </Space>
       </div>
 
       <Card title="基本信息" style={{ marginBottom: 16 }}>
@@ -404,6 +515,14 @@ const CostingTemplateConfig: React.FC = () => {
         onPick={handleGvPick}
         title="插入全局变量 — 自动生成 BNF 路径"
         allowDynamic={false}
+      />
+
+      {/* V149: 字段库选择抽屉 — 从已命名视图列直接选 raw variable_path */}
+      <VariableLabelPickerDrawer
+        open={labelPickerOpen}
+        onClose={() => { setLabelPickerOpen(false); setLabelPickerColIdx(null); }}
+        onPick={handleLabelPick}
+        initialPath={labelPickerColIdx != null ? (columns[labelPickerColIdx]?.variable_path || '') : ''}
       />
 
       {/* 公式编辑抽屉（与变量路径独立，FORMULA 列才会打开） */}

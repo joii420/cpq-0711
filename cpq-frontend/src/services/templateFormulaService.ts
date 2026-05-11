@@ -251,8 +251,13 @@ export const templateFormulaService = {
       return completionsCache.get(templateId)!;
     }
     try {
-      const result = await api.get(`/templates/${templateId}/formula-completions`);
-      const data = result as unknown as FormulaCompletionsResponse;
+      // api.get 返回的是 ApiResponse 信封 { code, message, data },需要解包 .data
+      const result = (await api.get(`/templates/${templateId}/formula-completions`)) as unknown as { data: FormulaCompletionsResponse };
+      const data: FormulaCompletionsResponse = result?.data ?? {
+        templateFormulas: [],
+        components: [],
+        globalVariables: [],
+      };
       completionsCache.set(templateId, data);
       return data;
     } catch {
@@ -281,8 +286,14 @@ export const templateFormulaService = {
       return functionsCache;
     }
     try {
-      const result = await api.get('/formulas/functions');
-      const data = result as unknown as FunctionDef[];
+      // api.get 返回的是 ApiResponse 信封 { code, message, data },需要解包 .data
+      const result = (await api.get('/formulas/functions')) as unknown as { data: FunctionDef[] };
+      const data: FunctionDef[] = Array.isArray(result?.data) ? result.data : [];
+      if (data.length === 0) {
+        // 后端有响应但 data 为空,退化到 mock 保证函数选择器可用
+        functionsCache = MOCK_FUNCTIONS;
+        return MOCK_FUNCTIONS;
+      }
       functionsCache = data;
       return data;
     } catch {
