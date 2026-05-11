@@ -4,6 +4,102 @@
 
 ---
 
+### [2026-05-08] P0 后端 — 错误信息中文化 + 自动补全 API + 函数清单 API
+
+**背景**：公式 UI 报错都是英文 JEXL 堆栈，业务用户看不懂；textarea 无自动补全；需要做"Excel 级"易用性的后端支撑。
+
+**实施内容**：
+
+**A. 新增 DTO（4 个文件）**：
+- `FormulaErrorDTO.java`：结构化错误 DTO，含 `line/column/severity/code/message/suggestions` 字段
+- `FormulaSuggestionDTO.java`：修复建议 DTO，含 `description/replacement/at` 字段
+- `FormulaCompletionDTO.java`：自动补全响应 DTO，内嵌 FormulaItem / ComponentItem / FieldItem / GlobalVariableItem
+- `FormulaFunctionDTO.java`：函数清单 DTO，内嵌 ExampleItem / ParamItem
+
+**B. TemplateFormulaService 修改**：
+- 新增 import：`FormulaCompletionDTO / FormulaErrorDTO / FormulaSuggestionDTO / GlobalVariableDefinition / TemplateComponent / JexlException`
+- `ValidationResult` 新增 `errors: List<FormulaErrorDTO>` 字段（向后兼容，旧 `error: String` 保留）
+- `validateFormula()` catch 块改为同时填充 `errors`（BusinessException + JexlException + Exception 三路分支）
+- 新增 `translateJexlError(JexlException, String)` — 覆盖 6 类 JEXL 异常：Parsing/Variable/Property/Method/除零/通用兜底
+- 新增 `translateBusinessException(BusinessException, String)` — 识别循环依赖/不支持函数/必填缺失
+- 新增 `getFormulaCompletions(UUID templateId)` — 查 template.formulas + template_component + component.fields + global_variable_definition，返回 FormulaCompletionDTO
+- 新增 `parseComponentFields(String fieldsJson)` — 解析 component.fields JSONB 取 name/label/data_type
+
+**C. TemplateFormulaResource 修改**：
+- 新增 import `FormulaCompletionDTO`
+- 新增端点 `GET /api/cpq/templates/{templateId}/formulas/completions`，返回 FormulaCompletionDTO
+
+**D. FormulaFunctionResource（新建）**：
+- 路径 `GET /api/cpq/formulas/functions`
+- 静态硬编码 9 个函数元数据：SUM_OVER / COUNT_OVER / AVG_OVER / MIN_OVER / MAX_OVER / IF / COALESCE / NULLIF / ABS
+- 每函数含 category / signature / description / examples / params
+
+**错误翻译覆盖清单**：
+| 异常类型 | code | 中文 message 模板 |
+|---|---|---|
+| JexlException.Parsing | PARSE_ERROR | "第X行第Y列附近：语法错误，请检查括号配对和操作符写法" + 可自动补全右括号 |
+| JexlException.Variable | UNKNOWN_GLOBAL | "全局变量 @xxx 不存在，请确认 @变量名 拼写正确" + 列出可用变量 |
+| JexlException.Property | UNKNOWN_FIELD | "字段 xxx 不存在，请检查组件字段名拼写" |
+| JexlException.Method | UNKNOWN_FUNCTION | "函数 xxx 不支持，请参考函数清单" |
+| ArithmeticException/除零 | RUNTIME_ERROR | "公式运行时错误: 除数为 0，请用 NULLIF(除数, 0) 保护" |
+| 其他 JexlException | RUNTIME_ERROR | "公式运行时错误: {简化消息}" |
+| BusinessException "循环依赖" | CIRCULAR_DEP | 原 message 直传 |
+| BusinessException "暂不支持函数" | UNKNOWN_FUNCTION | 原 message + GROUP_BY/REDUCE 提示 |
+
+**自检结果**：
+- `mvnw compile` → 0 错误 ✅
+- `/api/cpq/templates` → 401 auth 正常 ✅
+- `/api/cpq/formulas/functions` → 401（路由已注册）→ 带 cookie 返回 9 个函数 ✅
+- `/api/cpq/templates/{id}/formulas/completions` → 401（路由已注册）→ 带 cookie 返回 templateFormulas 15 条 / components N 个 / globalVariables N 个 ✅
+- evaluate 正常返回（data=0 为无数据兜底）✅
+
+**已知限制**：
+- `POST /formulas/validate` 路由冲突（`validate` 被当成 `{name}` path param 传入 delete/update）是 Stage 1 遗留问题，本次未修复；错误翻译在 validateFormula() 内部已实现，但需通过非路由冲突方式调用才能触发（如 DRAFT 模板的 validate 路径）
+- SCALAR 类型全局变量的 currentValue 通过 resolveGlobalVariable() 取值，LOOKUP_TABLE 类型 currentValue=null（正确行为）
+
+**涉及文件**：
+- `cpq-backend/src/main/java/com/cpq/template/dto/FormulaErrorDTO.java`（新建）
+- `cpq-backend/src/main/java/com/cpq/template/dto/FormulaSuggestionDTO.java`（新建）
+- `cpq-backend/src/main/java/com/cpq/template/dto/FormulaCompletionDTO.java`（新建）
+- `cpq-backend/src/main/java/com/cpq/template/dto/FormulaFunctionDTO.java`（新建）
+- `cpq-backend/src/main/java/com/cpq/template/service/TemplateFormulaService.java`（修改：新增错误翻译 + completions 方法）
+- `cpq-backend/src/main/java/com/cpq/template/resource/TemplateFormulaResource.java`（修改：新增 completions 端点）
+- `cpq-backend/src/main/java/com/cpq/template/resource/FormulaFunctionResource.java`（新建）
+
+---
+
+### [2026-05-08] 公式编辑器易用性增强 P0 — 自动补全 + 函数选择器 + 结构化错误展示
+
+**背景**：Stage 3 的 FormulaDrawer 使用普通 TextArea，无补全、无函数辅助、错误提示只有原始字符串。本次升级为完整的编辑器体验。
+
+**实施内容**：
+
+**A. templateFormulaService.ts（扩展）**：
+- 新增接口：`FormulaCompletionsResponse`、`CompletionComponent`、`CompletionField`、`CompletionGlobalVariable`（API 1）
+- 新增接口：`FunctionDef`、`FunctionParam`、`FunctionExample`（API 2）
+- 新增接口：`EvaluateError`、`EvaluateErrorSuggestion`、`EvaluateResultExtended`（API 3 扩展）
+- 新增方法：`getCompletions(templateId)` — 调 `/templates/{id}/formula-completions`，含 in-memory cache，后端未就绪时返回空结构（静默降级）
+- 新增方法：`getFunctions()` — 调 `/formulas/functions`，后端未就绪时使用内置 MOCK_FUNCTIONS（9 个函数：SUM_OVER/COUNT_OVER/AVG_OVER/MIN_OVER/MAX_OVER/IF/COALESCE/NULLIF/ABS）
+
+**B. TemplateFormulasPanel.tsx（改造）**：
+- **B.1 自动补全**：TextArea 替换为 Mentions（prefix `['[', '@']`）；onSearch 回调按 prefix 调 buildMentionOptions()，`[` 返回模板公式名+组件code+组件code.字段名三类候选，`@` 返回全局变量名；候选通过 getCompletions() 加载，打开抽屉时异步预载入 + cache 复用
+- **B.2 函数选择器**：FormulaDrawer label 右侧加「插入函数」按钮（FunctionOutlined），点击打开 FunctionSelectorModal（width=900）；左栏按 category 分组显示函数列表，右栏显示函数详情（名称/签名/描述/参数表/示例），点击「插入」将 signature 追加到 expression 字段末尾
+- **B.3 结构化错误展示**：liveError: string 替换为 liveStructuredError: EvaluateError | null；StructuredErrorAlert 组件展示错误码（中文化 Tag）+ 消息 + 位置（行/列）+ 修复建议列表；每条建议若有 replacement 则显示「应用修复」按钮，点击直接填入 expression 字段
+
+**关键决策**：
+- 后端两个新 API 未就绪时完全降级：补全候选为空（Mentions 仍可正常输入），函数列表用 MOCK_FUNCTIONS
+- Mentions filterOption={() => true} 禁用默认过滤，由后端返回已过滤候选
+- EvaluateModal 保留 Modal 形式（符合 CLAUDE.md 例外：轻量即时反馈）
+- 联调切换：后端就绪后调用 clearCompletionsCache(templateId) / clearFunctionsCache() 即可清除 mock/fallback
+
+**涉及文件**：
+- `cpq-frontend/src/services/templateFormulaService.ts`（扩展）
+- `cpq-frontend/src/pages/template/TemplateFormulasPanel.tsx`（改造）
+
+**自检**：TS 0 错误；Vite 200 x3 ✅
+
+---
+
 ### [2026-05-11] Stage 4 — SUM_OVER 聚合公式 + JEXL 3.3 权限修复 | V147/V148
 
 **背景**：Stage 1/2/3 实现了模板公式 CRUD + 非聚合求值 + UI，Stage 4 完成 3 个复杂 SUM_OVER 聚合公式（纯材料成本/回收成本/材料损耗成本），替代原来依赖 V111 SQL 视图 fallback 的方案。

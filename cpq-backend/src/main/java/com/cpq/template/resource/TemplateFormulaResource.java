@@ -2,6 +2,7 @@ package com.cpq.template.resource;
 
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.security.RoleAllowed;
+import com.cpq.template.dto.FormulaCompletionDTO;
 import com.cpq.template.dto.TemplateFormulaDTO;
 import com.cpq.template.service.TemplateFormulaService;
 import com.cpq.template.service.TemplateFormulaService.ValidationResult;
@@ -103,5 +104,28 @@ public class TemplateFormulaResource {
         String partNo = body != null && body.get("partNo") != null ? body.get("partNo").toString() : null;
         String expression = body != null && body.get("expression") != null ? body.get("expression").toString() : null;
         return ApiResponse.success(service.debugSumOver(expression, partNo));
+    }
+
+    /**
+     * P0 自动补全 API: 返回当前模板的公式 / 组件字段 / 全局变量三类候选数据.
+     *
+     * <pre>
+     *   GET /api/cpq/templates/{templateId}/formula-completions
+     * </pre>
+     *
+     * <p>响应结构：
+     * <pre>{
+     *   "templateFormulas": [{name, dataType, description}],
+     *   "components":       [{code, name, fields:[{name, label, dataType}]}],
+     *   "globalVariables":  [{name, code, dataType, currentValue, description, unit, varType}]
+     * }</pre>
+     *
+     * <p>供前端公式 textarea 触发自动补全时调用（每次打开公式编辑器时预加载一次）。
+     */
+    @GET
+    @Path("/completions")
+    @RoleAllowed({"SALES_REP", "SALES_MANAGER", "SYSTEM_ADMIN", "PRICING_MANAGER"})
+    public ApiResponse<FormulaCompletionDTO> getCompletions(@PathParam("templateId") UUID templateId) {
+        return ApiResponse.success(service.getFormulaCompletions(templateId));
     }
 }

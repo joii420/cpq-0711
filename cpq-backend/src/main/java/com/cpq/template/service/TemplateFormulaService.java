@@ -6,15 +6,21 @@ import com.cpq.formula.EvaluationContext;
 import com.cpq.formula.FormulaEngine;
 import com.cpq.formula.FormulaError;
 import com.cpq.formula.dataloader.DataLoader;
+import com.cpq.globalvariable.GlobalVariableDefinition;
 import com.cpq.globalvariable.GlobalVariableService;
+import com.cpq.template.dto.FormulaCompletionDTO;
+import com.cpq.template.dto.FormulaErrorDTO;
+import com.cpq.template.dto.FormulaSuggestionDTO;
 import com.cpq.template.dto.TemplateFormulaDTO;
 import com.cpq.template.entity.Template;
+import com.cpq.template.entity.TemplateComponent;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.apache.commons.jexl3.JexlBuilder;
+import org.apache.commons.jexl3.JexlException;
 import org.apache.commons.jexl3.introspection.JexlPermissions;
 
 import javax.sql.DataSource;
@@ -219,6 +225,17 @@ public class TemplateFormulaService {
         } catch (BusinessException be) {
             result.valid = false;
             result.error = be.getMessage();
+            // P0: 结构化错误，把 BusinessException 转为 FormulaErrorDTO
+            result.errors = List.of(translateBusinessException(be, dto != null ? dto.expression : null));
+        } catch (JexlException je) {
+            result.valid = false;
+            FormulaErrorDTO err = translateJexlError(je, dto != null ? dto.expression : null);
+            result.error = err.message;
+            result.errors = List.of(err);
+        } catch (Exception e) {
+            result.valid = false;
+            result.error = "公式校验时发生意外错误: " + e.getMessage();
+            result.errors = List.of(new FormulaErrorDTO("RUNTIME_ERROR", result.error));
         }
         return result;
     }
@@ -1067,6 +1084,320 @@ public class TemplateFormulaService {
         catch (Exception e) { return "[]"; }
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // P0: 错误信息中文化 — JEXL / Business 异常翻译
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * 将 JexlException 翻译为结构化中文 FormulaErrorDTO.
+     *
+     * <h2>覆盖的异常类型</h2>
+     * <ul>
+     *   <li>JexlException.Parsing   → PARSE_ERROR  "第X行第Y列附近语法错误"</li>
+     *   <li>JexlException.Variable  → UNKNOWN_GLOBAL "@xxx 不存在"</li>
+     *   <li>JexlException.Property  → UNKNOWN_FIELD "字段X在组件Y中不存在"</li>
+     *   <li>JexlException.Method    → UNKNOWN_FUNCTION "函数X不支持"</li>
+     *   <li>其他 JexlException      → RUNTIME_ERROR "公式运行时错误"</li>
+     * </ul>
+     */
+    public FormulaErrorDTO translateJexlError(JexlException je, String expression) {
+        if (je == null) return new FormulaErrorDTO("RUNTIME_ERROR", "公式执行发生未知错误");
+
+        String rawMsg = je.getMessage() != null ? je.getMessage() : je.getClass().getSimpleName();
+
+        // ── 1. 语法解析错误 (JexlException.Parsing) ──────────────────────────
+        if (je instanceof JexlException.Parsing) {
+            Integer line = extractJexlLine(je);
+            Integer col  = extractJexlColumn(je);
+            String locDesc = buildLocationDesc(line, col);
+            List<FormulaSuggestionDTO> suggestions = new ArrayList<>();
+            suggestions.add(new FormulaSuggestionDTO("检查括号是否配对（左括号数量 = 右括号数量）"));
+            suggestions.add(new FormulaSuggestionDTO("检查操作符两侧是否有操作数，如 a + b 不能写成 a +"));
+            suggestions.add(new FormulaSuggestionDTO("检查字符串是否用单引号包裹，如 'CNY'"));
+            // 尝试自动补全右括号
+            if (expression != null) {
+                int open = countChar(expression, '(');
+                int close = countChar(expression, ')');
+                if (open > close) {
+                    String fixed = expression + ")".repeat(open - close);
+                    suggestions.add(0, new FormulaSuggestionDTO(
+                            "添加 " + (open - close) + " 个缺失的右括号", fixed));
+                }
+            }
+            return new FormulaErrorDTO("PARSE_ERROR",
+                    locDesc + "语法错误，请检查括号配对和操作符写法",
+                    line, col).withSuggestions(suggestions);
+        }
+
+        // ── 2. 未定义变量（通常是 @xxx 全局变量引用失败）─────────────────────
+        if (je instanceof JexlException.Variable jv) {
+            String varRef = extractVariableName(rawMsg, jv);
+            List<FormulaSuggestionDTO> suggestions = new ArrayList<>();
+            suggestions.add(new FormulaSuggestionDTO(
+                    "检查 @变量名 拼写，或在「全局变量管理」中确认该变量已注册且状态为活跃"));
+            // 列出当前已注册的全局变量名供参考
+            try {
+                List<GlobalVariableDefinition> defs = globalVariableService.listAll();
+                if (!defs.isEmpty()) {
+                    String available = defs.stream()
+                            .map(d -> "@" + d.name)
+                            .reduce((a, b) -> a + "、" + b)
+                            .orElse("");
+                    suggestions.add(new FormulaSuggestionDTO("当前可用的全局变量：" + available));
+                }
+            } catch (Exception ignored) {}
+            return new FormulaErrorDTO("UNKNOWN_GLOBAL",
+                    "全局变量 " + varRef + " 不存在，请确认 @变量名 拼写正确")
+                    .withSuggestions(suggestions);
+        }
+
+        // ── 3. 属性不存在（字段引用失败，如 [组件.字段] 中字段名错误）──────────
+        if (je instanceof JexlException.Property jp) {
+            String propRef = extractPropertyName(rawMsg);
+            List<FormulaSuggestionDTO> suggestions = new ArrayList<>();
+            suggestions.add(new FormulaSuggestionDTO(
+                    "检查 [组件code.字段名] 中的字段名是否存在于该组件定义中"));
+            suggestions.add(new FormulaSuggestionDTO(
+                    "字段名大小写敏感，请与组件字段定义保持一致"));
+            return new FormulaErrorDTO("UNKNOWN_FIELD",
+                    "字段 " + propRef + " 不存在，请检查组件字段名拼写")
+                    .withSuggestions(suggestions);
+        }
+
+        // ── 4. 方法不存在（调用了不支持的函数）─────────────────────────────────
+        if (je instanceof JexlException.Method jm) {
+            String methodRef = extractMethodName(rawMsg);
+            List<FormulaSuggestionDTO> suggestions = new ArrayList<>();
+            suggestions.add(new FormulaSuggestionDTO(
+                    "支持的聚合函数：SUM_OVER / COUNT_OVER / AVG_OVER / MIN_OVER / MAX_OVER"));
+            suggestions.add(new FormulaSuggestionDTO(
+                    "支持的条件函数：IF(条件, 真值, 假值)"));
+            suggestions.add(new FormulaSuggestionDTO(
+                    "支持的数学函数：ABS(值) / NULLIF(值, 比较值) / COALESCE(值1, 值2, ...)"));
+            return new FormulaErrorDTO("UNKNOWN_FUNCTION",
+                    "函数 " + methodRef + " 不支持，请参考函数清单")
+                    .withSuggestions(suggestions);
+        }
+
+        // ── 5. 除零 / 算术错误 ──────────────────────────────────────────────
+        if (rawMsg != null && (rawMsg.contains("divide by zero") || rawMsg.contains("/ by zero")
+                || rawMsg.contains("division") || je.getCause() instanceof ArithmeticException)) {
+            List<FormulaSuggestionDTO> suggestions = new ArrayList<>();
+            suggestions.add(new FormulaSuggestionDTO(
+                    "用 NULLIF 包裹除数，避免除零: expr / NULLIF(除数, 0)"));
+            return new FormulaErrorDTO("RUNTIME_ERROR",
+                    "公式运行时错误: 除数为 0，请用 NULLIF(除数, 0) 保护")
+                    .withSuggestions(suggestions);
+        }
+
+        // ── 6. 通用运行时错误兜底 ────────────────────────────────────────────
+        String friendlyMsg = simplifyJexlMessage(rawMsg);
+        return new FormulaErrorDTO("RUNTIME_ERROR", "公式运行时错误: " + friendlyMsg);
+    }
+
+    /**
+     * 将 BusinessException 翻译为 FormulaErrorDTO.
+     * BusinessException 通常由 validateSingle / validateGraph 抛出（中文 message），
+     * 这里做二次分类，识别循环依赖等特殊情况。
+     */
+    public FormulaErrorDTO translateBusinessException(BusinessException be, String expression) {
+        String msg = be.getMessage() != null ? be.getMessage() : "公式校验失败";
+        // 循环依赖
+        if (msg.contains("循环依赖")) {
+            return new FormulaErrorDTO("CIRCULAR_DEP", msg);
+        }
+        // 不支持的函数
+        if (msg.contains("暂不支持函数")) {
+            List<FormulaSuggestionDTO> suggestions = List.of(
+                    new FormulaSuggestionDTO("GROUP_BY / REDUCE 尚未实现，请用 SUM_OVER / COUNT_OVER 等聚合函数替代"));
+            return new FormulaErrorDTO("UNKNOWN_FUNCTION", msg).withSuggestions(suggestions);
+        }
+        // 表达式为空 / 字段缺失 → PARSE_ERROR
+        if (msg.contains("必填") || msg.contains("为空")) {
+            return new FormulaErrorDTO("PARSE_ERROR", msg);
+        }
+        // 通用兜底
+        return new FormulaErrorDTO("RUNTIME_ERROR", msg);
+    }
+
+    // ── 私有工具：JEXL 错误信息解析 ─────────────────────────────────────────
+
+    private Integer extractJexlLine(JexlException je) {
+        try {
+            // JexlException 的 info 字段（JexlInfo）含行列信息
+            var info = je.getInfo();
+            if (info != null) return info.getLine();
+        } catch (Exception ignored) {}
+        // fallback: 从 message 解析 "at line X"
+        return extractIntFromMsg(je.getMessage(), "at line (\\d+)");
+    }
+
+    private Integer extractJexlColumn(JexlException je) {
+        try {
+            var info = je.getInfo();
+            if (info != null) return info.getColumn();
+        } catch (Exception ignored) {}
+        return extractIntFromMsg(je.getMessage(), "column (\\d+)");
+    }
+
+    private Integer extractIntFromMsg(String msg, String regex) {
+        if (msg == null) return null;
+        Matcher m = Pattern.compile(regex).matcher(msg);
+        if (m.find()) {
+            try { return Integer.parseInt(m.group(1)); } catch (Exception ignored) {}
+        }
+        return null;
+    }
+
+    private String buildLocationDesc(Integer line, Integer col) {
+        if (line != null && col != null) return "第 " + line + " 行第 " + col + " 列附近：";
+        if (line != null) return "第 " + line + " 行附近：";
+        return "";
+    }
+
+    private String extractVariableName(String rawMsg, JexlException je) {
+        if (rawMsg == null) return "<未知变量>";
+        // JexlException.Variable message 通常含 "undefined variable 'xxx'" 或 "variable 'xxx'"
+        Matcher m = Pattern.compile("undefined variable[^']*'([^']+)'").matcher(rawMsg);
+        if (m.find()) return "@" + m.group(1);
+        m = Pattern.compile("variable[^']*'([^']+)'").matcher(rawMsg);
+        if (m.find()) return "@" + m.group(1);
+        // 从 JexlInfo 的 detail 取（JEXL 3.3 API）
+        try {
+            var info = je.getInfo();
+            if (info != null && info.getDetail() != null) return info.getDetail().toString();
+        } catch (Exception ignored) {}
+        return "<未知变量>";
+    }
+
+    private String extractPropertyName(String rawMsg) {
+        if (rawMsg == null) return "<未知字段>";
+        Matcher m = Pattern.compile("property[^']*'([^']+)'").matcher(rawMsg);
+        if (m.find()) return m.group(1);
+        m = Pattern.compile("not found[^']*'([^']+)'").matcher(rawMsg);
+        if (m.find()) return m.group(1);
+        return "<未知字段>";
+    }
+
+    private String extractMethodName(String rawMsg) {
+        if (rawMsg == null) return "<未知函数>";
+        Matcher m = Pattern.compile("method[^']*'([^']+)'").matcher(rawMsg);
+        if (m.find()) return m.group(1);
+        m = Pattern.compile("'([A-Z_][A-Z0-9_]*)'").matcher(rawMsg);
+        if (m.find()) return m.group(1);
+        return "<未知函数>";
+    }
+
+    private String simplifyJexlMessage(String rawMsg) {
+        if (rawMsg == null) return "未知错误";
+        // 去掉 JEXL 内部包前缀，只保留关键词
+        return rawMsg
+                .replaceAll("org\\.apache\\.commons\\.jexl3\\.[A-Za-z.]+:\\s*", "")
+                .replaceAll("com\\.cpq\\.[A-Za-z.]+:\\s*", "")
+                .trim();
+    }
+
+    private int countChar(String s, char c) {
+        int count = 0;
+        for (int i = 0; i < s.length(); i++) if (s.charAt(i) == c) count++;
+        return count;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // P0: 自动补全 API — 返回模板公式 / 组件字段 / 全局变量三类候选
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * 构造当前模板的公式自动补全数据。
+     *
+     * <ul>
+     *   <li>templateFormulas — 从 template.formulas JSONB 读取所有公式</li>
+     *   <li>components       — 从 template_component JOIN component 读取绑定的组件及字段</li>
+     *   <li>globalVariables  — 从 global_variable_definition 读取全部活跃变量</li>
+     * </ul>
+     */
+    @Transactional(Transactional.TxType.SUPPORTS)
+    public FormulaCompletionDTO getFormulaCompletions(UUID templateId) {
+        Template t = Template.findById(templateId);
+        if (t == null) throw new BusinessException(404, "Template not found: " + templateId);
+
+        FormulaCompletionDTO dto = new FormulaCompletionDTO();
+
+        // 1. 模板公式列表
+        List<TemplateFormulaDTO> formulaList = parseFormulas(t.formulas);
+        dto.templateFormulas = formulaList.stream().map(f -> {
+            FormulaCompletionDTO.FormulaItem item = new FormulaCompletionDTO.FormulaItem();
+            item.name = f.name;
+            item.dataType = f.dataType;
+            item.description = f.description;
+            return item;
+        }).collect(java.util.stream.Collectors.toList());
+
+        // 2. 绑定组件列表（JOIN component 表拿字段）
+        List<TemplateComponent> tcList = TemplateComponent.list("templateId = ?1", templateId);
+        List<FormulaCompletionDTO.ComponentItem> compItems = new ArrayList<>();
+        for (TemplateComponent tc : tcList) {
+            Component comp = Component.findById(tc.componentId);
+            if (comp == null) continue;
+            List<FormulaCompletionDTO.FieldItem> fieldItems = parseComponentFields(comp.fields);
+            compItems.add(new FormulaCompletionDTO.ComponentItem(comp.code, comp.name, fieldItems));
+        }
+        dto.components = compItems;
+
+        // 3. 全局变量列表
+        List<GlobalVariableDefinition> gvDefs = globalVariableService.listAll();
+        List<FormulaCompletionDTO.GlobalVariableItem> gvItems = new ArrayList<>();
+        for (GlobalVariableDefinition def : gvDefs) {
+            FormulaCompletionDTO.GlobalVariableItem item = new FormulaCompletionDTO.GlobalVariableItem();
+            item.name = def.name;
+            item.code = def.code;
+            item.dataType = "DECIMAL";
+            item.description = def.description;
+            item.unit = def.unit;
+            item.varType = def.varType;
+            // SCALAR 类型尝试通过 resolveGlobalVariable 取当前值（LOOKUP_TABLE 不取，避免 key 不确定）
+            if (!def.isLookup()) {
+                try {
+                    BigDecimal val = resolveGlobalVariable(def.name);
+                    if (val == null) val = resolveGlobalVariable(def.code);
+                    item.currentValue = val;
+                } catch (Exception ignored) {
+                    // 取值失败静默忽略，currentValue 保持 null
+                }
+            }
+            gvItems.add(item);
+        }
+        dto.globalVariables = gvItems;
+
+        return dto;
+    }
+
+    /**
+     * 从 component.fields JSONB 解析字段列表，提取 name/label/dataType.
+     * JSONB 结构：[{name, label, data_type, field_type, ...}, ...]
+     */
+    @SuppressWarnings("unchecked")
+    private List<FormulaCompletionDTO.FieldItem> parseComponentFields(String fieldsJson) {
+        if (fieldsJson == null || fieldsJson.isBlank()) return new ArrayList<>();
+        try {
+            List<Map<String, Object>> rows = MAPPER.readValue(
+                    fieldsJson, new TypeReference<List<Map<String, Object>>>() {});
+            List<FormulaCompletionDTO.FieldItem> out = new ArrayList<>(rows.size());
+            for (Map<String, Object> row : rows) {
+                String name = strOrNull(row.get("name"));
+                if (name == null || name.isBlank()) continue;
+                String label = strOrNull(row.getOrDefault("label", row.get("display_name")));
+                String dt = strOrNull(row.getOrDefault("data_type", row.get("dataType")));
+                if (dt == null) dt = "TEXT";
+                out.add(new FormulaCompletionDTO.FieldItem(name, label != null ? label : name, dt));
+            }
+            return out;
+        } catch (Exception e) {
+            LOG.debugf("parseComponentFields failed: %s", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
     private String strOrNull(Object v) { return v == null ? null : v.toString(); }
 
     /** 把 Object 转为数值字面量字符串（用于表达式替换） */
@@ -1170,8 +1501,16 @@ public class TemplateFormulaService {
 
     public static class ValidationResult {
         public boolean valid;
+        /** 向后兼容：旧版纯文本错误信息（deprecated，优先用 errors） */
         public String error;
         public List<String> dependsOn;
+        /**
+         * P0 结构化错误列表（新增）.
+         * valid=false 时，此列表包含至少一条 FormulaErrorDTO，
+         * 含中文 message / code / line / column / suggestions。
+         * valid=true 时为 null。
+         */
+        public List<FormulaErrorDTO> errors;
     }
 
     // ─────────────────────────────────────────────────────────────────
