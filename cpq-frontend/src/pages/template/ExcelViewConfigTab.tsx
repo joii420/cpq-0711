@@ -84,10 +84,16 @@ function getNextColKey(columns: ExcelViewColumn[]): string {
 
 function parseConfig(raw: any): ExcelViewConfig {
   if (!raw) return { columns: [] };
+  let parsed: any = raw;
   if (typeof raw === 'string') {
-    try { return JSON.parse(raw); } catch { return { columns: [] }; }
+    try { parsed = JSON.parse(raw); } catch { return { columns: [] }; }
   }
-  return raw as ExcelViewConfig;
+  if (!parsed) return { columns: [] };
+  // V150 兼容: template.excel_view_config 在合并后可能是数组 [...] (来自 costing_template.columns)
+  // 也可能是对象 { columns: [...], import_settings: {...} } (原报价模板结构).
+  if (Array.isArray(parsed)) return { columns: parsed };
+  if (Array.isArray(parsed.columns)) return parsed as ExcelViewConfig;
+  return { columns: [] };
 }
 
 function buildComponentFieldOptions(componentsSnapshot: any[]): { label: string; value: string; raw: { component_code: string; field_name: string; row_index: number } }[] {
