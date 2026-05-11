@@ -371,21 +371,9 @@ const LinkedExcelView: React.FC<Props> = ({ linkedTemplateId, lineItems, quotati
       dataIndex: '__label',
       key: '__label',
       fixed: 'left' as const,
-      width: 240,
-      render: (v: string, row: any) => (
-        <div>
-          <div style={{ fontFamily: 'monospace', fontWeight: 500 }}>{v}</div>
-          {row?.__hfPartNo && row.__hfPartNo !== v && (
-            <div style={{ fontSize: 10, color: '#999', fontFamily: 'monospace' }}>
-              HF: {row.__hfPartNo}
-            </div>
-          )}
-          {row?.__noData && (
-            <Tag color="default" style={{ marginTop: 2, fontSize: 10 }}>
-              无核价数据
-            </Tag>
-          )}
-        </div>
+      width: 200,
+      render: (v: string) => (
+        <span style={{ fontFamily: 'monospace' }}>{v}</span>
       ),
     },
     ...visibleColumns.map((col) => ({
