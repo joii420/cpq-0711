@@ -367,7 +367,7 @@ const CustomerManagement: React.FC = () => {
         destroyOnClose
       >
         <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Divider orientation="left" plain>基本信息</Divider>
+          <Divider titlePlacement="left" plain>基本信息</Divider>
           <Form.Item name="name" label="客户名称" rules={[{ required: true, message: '请输入客户名称' }]}>
             <Input />
           </Form.Item>
@@ -396,7 +396,7 @@ const CustomerManagement: React.FC = () => {
             <Input.TextArea rows={2} />
           </Form.Item>
 
-          <Divider orientation="left" plain>统计信息（只读）</Divider>
+          <Divider titlePlacement="left" plain>统计信息（只读）</Divider>
           {editingCustomer && (
             <Space wrap style={{ marginBottom: 16 }}>
               <Text type="secondary">累计金额：</Text>
@@ -413,7 +413,7 @@ const CustomerManagement: React.FC = () => {
             <InputNumber style={{ width: '100%' }} precision={2} min={0} />
           </Form.Item>
 
-          <Divider orientation="left" plain>联系人</Divider>
+          <Divider titlePlacement="left" plain>联系人</Divider>
           <div style={{ marginBottom: 8 }}>
             <Button
               size="small"

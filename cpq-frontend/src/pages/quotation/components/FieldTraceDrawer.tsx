@@ -93,7 +93,7 @@ const FieldTraceDrawer: React.FC<FieldTraceDrawerProps> = ({
           {/* 公式定义 */}
           {trace.formula && (
             <>
-              <Divider orientation="left">公式定义</Divider>
+              <Divider titlePlacement="left">公式定义</Divider>
               <Paragraph
                 style={{
                   background: '#f6f8fa',
@@ -113,7 +113,7 @@ const FieldTraceDrawer: React.FC<FieldTraceDrawerProps> = ({
           {/* 公式输入值 */}
           {formulaInputRows.length > 0 && (
             <>
-              <Divider orientation="left">公式输入值</Divider>
+              <Divider titlePlacement="left">公式输入值</Divider>
               <Table
                 dataSource={formulaInputRows}
                 columns={inputColumns}

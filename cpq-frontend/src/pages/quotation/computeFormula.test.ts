@@ -48,6 +48,7 @@ function computeFormula(
 // Scenario: formula.name matches FORMULA field.name (PRD standard)
 const compExactMatch: ComponentDataItem = {
   componentId: 'comp-1',
+  componentCode: 'COMP_EXACT',
   tabName: '投料金额',
   fields: [
     { name: '单价', field_type: 'INPUT' },
@@ -71,6 +72,7 @@ const compExactMatch: ComponentDataItem = {
 // Scenario: formula.name does NOT match (real bug: "物料公式" vs "金额")
 const compNameMismatch: ComponentDataItem = {
   componentId: 'comp-2',
+  componentCode: 'COMP_NAME_MISMATCH',
   tabName: '投料金额',
   fields: [
     { name: '单价', field_type: 'INPUT' },
@@ -94,6 +96,7 @@ const compNameMismatch: ComponentDataItem = {
 // Scenario: multiple FORMULA fields, positional matching
 const compMultiFormula: ComponentDataItem = {
   componentId: 'comp-3',
+  componentCode: 'COMP_MULTI',
   tabName: '加工费用',
   fields: [
     { name: '工时', field_type: 'INPUT' },
@@ -129,6 +132,7 @@ const compMultiFormula: ComponentDataItem = {
 // Scenario: no formulas defined
 const compNoFormulas: ComponentDataItem = {
   componentId: 'comp-4',
+  componentCode: 'COMP_NO_FORMULAS',
   tabName: '其他',
   fields: [
     { name: '备注', field_type: 'INPUT' },
@@ -142,6 +146,7 @@ const compNoFormulas: ComponentDataItem = {
 // Scenario: formula references a FORMULA field (circular — should get 0 from fieldValues)
 const compCircularRef: ComponentDataItem = {
   componentId: 'comp-5',
+  componentCode: 'COMP_CIRCULAR',
   tabName: '投料金额',
   fields: [
     { name: '单价', field_type: 'INPUT' },

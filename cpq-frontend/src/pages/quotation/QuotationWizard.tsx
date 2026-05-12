@@ -216,7 +216,7 @@ const QuotationWizard: React.FC = () => {
   // setInterval 注册时只依赖 quotationId，会捕获首次渲染时的 autoSaveDraft 闭包，
   // 其中 lineItems 仍为初始 []。改用最新值 ref，让定时器始终调用最新版本的 autoSaveDraft，
   // 避免每 10 秒自动保存的负载里 lineItems 永远是空数组（页面刷新后表格全空的根因）。
-  const autoSaveDraftRef = useRef<() => Promise<void>>();
+  const autoSaveDraftRef = useRef<(() => Promise<void>) | undefined>(undefined);
   // 基础数据导入流程：autoPopulate 完成后立即触发一次保存草稿，把"已自动加入 N 个产品"
   // 持久化下来，避免用户刷新前丢数据。一次性，避免重复触发。
   const importAutoSavedRef = useRef(false);
@@ -360,7 +360,7 @@ const QuotationWizard: React.FC = () => {
               const rowsEnr = Array.isArray(ec.rows) ? ec.rows : [];
               // 用户输入若已超过 enriched 默认行（filler 扩展过）以用户为准
               // 用户没动过（rowsCur 为空 / 都是空对象）则用 enriched 默认值
-              const hasUserInput = rowsCur && rowsCur.some(r =>
+              const hasUserInput = rowsCur && rowsCur.some((r: Record<string, any>) =>
                 r && Object.keys(r).some(k => k !== 'row_index' && r[k] != null && r[k] !== '')
               );
               return {
@@ -1147,7 +1147,7 @@ const QuotationWizard: React.FC = () => {
         extra={
           <Space>
             {quotationId && (
-              <Button icon={<SaveOutlined />} onClick={handleSaveDraft}>
+              <Button icon={<SaveOutlined />} onClick={() => handleSaveDraft()}>
                 保存草稿
               </Button>
             )}

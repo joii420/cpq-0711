@@ -66,7 +66,7 @@ export const elementPriceService = {
     }
     return api.get<ElementReferenceDTO>('/element-prices/reference', {
       params: { elementName, priceDate },
-    }) as Promise<ElementReferenceDTO | null>;
+    }) as unknown as Promise<ElementReferenceDTO | null>;
   },
 
   /** 查询历史价格列表（分页） */
@@ -89,7 +89,7 @@ export const elementPriceService = {
       const paged = items.slice(start, start + size);
       return { data: paged, total: items.length, page, size };
     }
-    return api.get<ElementPriceHistoryPageDTO>('/element-prices/history', { params }) as Promise<ElementPriceHistoryPageDTO>;
+    return api.get<ElementPriceHistoryPageDTO>('/element-prices/history', { params }) as unknown as Promise<ElementPriceHistoryPageDTO>;
   },
 
   /** 手动录入参考价 */
@@ -108,6 +108,6 @@ export const elementPriceService = {
       await new Promise(r => setTimeout(r, 150));
       return MOCK_AVAILABLE_ELEMENTS;
     }
-    return api.get<AvailableElementDTO[]>('/element-prices/available-elements') as Promise<AvailableElementDTO[]>;
+    return api.get<AvailableElementDTO[]>('/element-prices/available-elements') as unknown as Promise<AvailableElementDTO[]>;
   },
 };

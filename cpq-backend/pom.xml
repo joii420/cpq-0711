@@ -109,6 +109,11 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-qute</artifactId>
         </dependency>
+        <!-- Vert.x reactive routes — used by SpaFallbackRoute for SPA HTML5 history fallback -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-reactive-routes</artifactId>
+        </dependency>
         <!-- Redis for distributed session storage -->
         <dependency>
             <groupId>io.quarkus</groupId>

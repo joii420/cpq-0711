@@ -36,3 +36,26 @@ Desktop.ini
 
 # Docker
 docker-compose.override.yml
+
+# === 业务数据 / 凭证 / 本地状态 (不入库) ===
+# 客户上传/导入的真实业务 Excel
+cpq-backend/data/imports/
+# Playwright 测试登录态 token / cookies
+cpq-frontend/e2e/.auth/
+# Playwright 测试运行结果
+cpq-frontend/test-results/
+# 数据库 dump / 备份压缩包
+data/*.sql
+data/*.rar
+data/template/
+# 调试 log (滚动)
+*.log.*
+# 本地 Claude 状态
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+# 临时 / 规划文件
+preview.tmp.json
+temp
+findings.md
+progress.md
+task_plan.md

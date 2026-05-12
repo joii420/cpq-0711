@@ -45,7 +45,7 @@ export async function batchExpandDriver(tasks: BatchExpandTask[]): Promise<Batch
   }
   const allResults: BatchExpandResultItem[] = [];
   for (const chunk of chunks) {
-    const resp = await api.post('/components/batch-expand', { tasks: chunk });
+    const resp: any = await api.post('/components/batch-expand', { tasks: chunk });
     // 外层 ApiResponse 包裹: resp.data.results 或 resp.results
     const results: BatchExpandResultItem[] = resp?.data?.results ?? resp?.results ?? [];
     allResults.push(...results);

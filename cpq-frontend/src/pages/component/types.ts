@@ -36,7 +36,7 @@ export interface FieldItem {
   is_amount?: boolean;
   is_subtotal?: boolean;
   notes?: string;
-  datasource_binding?: { datasource_id: string; params?: unknown };
+  datasource_binding?: { datasource_id: string; datasource_name?: string; datasource_code?: string; params?: unknown };
   formula_name?: string;  // FORMULA fields: which formula definition to use
   /** BASIC_DATA 字段绑定的 BNF 路径(如 mat_part.unit_weight 或 元素BOM[元素='Ag'].组成含量) */
   basic_data_path?: string;

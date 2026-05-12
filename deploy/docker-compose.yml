@@ -1,0 +1,52 @@
+# CPQ application — single-image deployment.
+# External PostgreSQL 16 and Redis are expected to be reachable from the
+# Docker host. Set connection info via .env (copy from .env.example).
+#
+# Run from THIS directory (dev/deploy/):
+#   cd dev/deploy
+#   docker compose --env-file .env up -d --build
+#   docker compose logs -f app
+#   docker compose down
+
+services:
+  app:
+    image: cpq:latest
+    container_name: cpq-app
+    build:
+      # Build context is the parent dir (dev/) so Dockerfile's
+      # COPY cpq-frontend/... and COPY cpq-backend/... resolve correctly.
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    ports:
+      # Host 8200 (frontend entrypoint) -> container 8201 (Quarkus HTTP).
+      - "${HTTP_PORT:-8200}:8201"
+    environment:
+      # --- Database (external PostgreSQL 16) ---
+      DB_HOST:     "${DB_HOST}"
+      DB_PORT:     "${DB_PORT:-5432}"
+      DB_NAME:     "${DB_NAME:-cpq_db}"
+      DB_USERNAME: "${DB_USERNAME}"
+      DB_PASSWORD: "${DB_PASSWORD}"
+      # --- Redis (external) ---
+      REDIS_HOST:     "${REDIS_HOST}"
+      REDIS_PORT:     "${REDIS_PORT:-6379}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      REDIS_DB:       "${REDIS_DB:-0}"
+      # --- App secrets ---
+      CPQ_ENCRYPTION_KEY: "${CPQ_ENCRYPTION_KEY}"
+      # --- JVM tuning (optional override) ---
+      JAVA_OPTS: "${JAVA_OPTS:--XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -Duser.timezone=Asia/Shanghai -Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8201/api/cpq/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    # CentOS 7 hosts: ensure /etc/docker/daemon.json has json-file rotation,
+    # otherwise long-running containers fill /var/lib/docker.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"

@@ -155,6 +155,8 @@ export const changeLogService = {
     return {
       items: pageData.content ?? pageData.items ?? [],
       total: pageData.totalElements ?? pageData.total ?? 0,
+      page: pageData.number ?? pageData.page ?? params.page ?? 0,
+      size: pageData.size ?? params.size ?? 20,
     };
   },
 

@@ -74,7 +74,7 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
         <Select
           value={record.field_type}
           onChange={(val) => updateField(record.key, { field_type: val })}
-          options={FIELD_TYPE_OPTIONS}
+          options={[...FIELD_TYPE_OPTIONS]}
           size="small"
           style={{ width: '100%' }}
         />

@@ -1,0 +1,51 @@
+# CPQ — air-gapped (offline) deployment compose.
+# Use this on the INTERNAL network host where:
+#   - Docker cannot reach Docker Hub / Maven Central / npm registry
+#   - The cpq:latest image was already imported via `docker load`
+#   - External PostgreSQL 16 + Redis are reachable on the intranet
+#
+# Run from the directory containing this file + .env:
+#   docker compose -f docker-compose.offline.yml --env-file .env up -d
+#   docker compose -f docker-compose.offline.yml logs -f app
+#   docker compose -f docker-compose.offline.yml down
+#
+# NOTE: There is intentionally NO `build:` block. If the cpq:latest image is
+# missing, this compose fails fast instead of trying to build (which would
+# attempt to pull node:24-alpine etc. and hang on the intranet).
+
+services:
+  app:
+    image: cpq:latest
+    container_name: cpq-app
+    restart: unless-stopped
+    pull_policy: never                 # never try to pull from a registry
+    ports:
+      # Host 8200 (frontend entrypoint) -> container 8201 (Quarkus HTTP).
+      - "${HTTP_PORT:-8200}:8201"
+    environment:
+      # --- Database (intranet PostgreSQL 16) ---
+      DB_HOST:     "${DB_HOST}"
+      DB_PORT:     "${DB_PORT:-5432}"
+      DB_NAME:     "${DB_NAME:-cpq_db}"
+      DB_USERNAME: "${DB_USERNAME}"
+      DB_PASSWORD: "${DB_PASSWORD}"
+      # --- Redis (intranet) ---
+      REDIS_HOST:     "${REDIS_HOST}"
+      REDIS_PORT:     "${REDIS_PORT:-6379}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      REDIS_DB:       "${REDIS_DB:-0}"
+      # --- App secrets ---
+      CPQ_ENCRYPTION_KEY: "${CPQ_ENCRYPTION_KEY}"
+      # --- JVM tuning (optional override) ---
+      JAVA_OPTS: "${JAVA_OPTS:--XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -Duser.timezone=Asia/Shanghai -Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8201/api/cpq/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
