@@ -262,8 +262,9 @@ public class BasicDataImportServiceV5 {
 
             // B1.5: 把本次导入的 v2000 行重新标签为新版本号
             // 限制: 仅 mat_* 4 张表 (含 import_record_id 列); costing_part_* 9 张表留下次 PR
+            // 必须通过 self.get() CDI proxy 调用以激活 @Transactional (本方法非事务)
             if (!partVersionByHfPart.isEmpty() && result.importRecordId != null) {
-                relabelImportedRows(result.importRecordId, partVersionByHfPart);
+                self.get().relabelImportedRows(result.importRecordId, partVersionByHfPart);
             }
         }
         return result;
@@ -275,7 +276,8 @@ public class BasicDataImportServiceV5 {
      * mat_fee / mat_plating_fee) — 它们都有 import_record_id 列.
      * costing_part_* 9 张表无 import_record_id, 留下次 PR (需先加列).
      */
-    private void relabelImportedRows(UUID importRecordId,
+    @Transactional
+    public void relabelImportedRows(UUID importRecordId,
                                        java.util.Map<String, Integer> partVersionByHfPart) {
         String[] tables = {"mat_bom", "mat_process", "mat_fee", "mat_plating_fee"};
         for (String table : tables) {
