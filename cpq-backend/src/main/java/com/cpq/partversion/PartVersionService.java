@@ -45,9 +45,13 @@ import java.util.UUID;
  * </ul>
  */
 @ApplicationScoped
+@SuppressWarnings("unused")
 public class PartVersionService {
 
     @Inject EntityManager em;
+
+    /** Self-injection: 让 wipeBasicData 通过 CDI 代理调 wipeSingleTable 才能触发 REQUIRES_NEW */
+    @Inject jakarta.enterprise.inject.Instance<PartVersionService> self;
 
     /** 参与版本管理的明细表 (V153 已加 part_version 列). mat_part 不在内 (维度表). */
     private static final List<String> VERSIONED_TABLES = List.of(
@@ -250,20 +254,34 @@ public class PartVersionService {
     // 临时 admin: 清空报价基础数据 (用于测试重置)
     // 不清空: customer / product / template / component / costing_part_*
     // ============================================================
-    @Transactional
     public java.util.Map<String, Integer> wipeBasicData() {
         java.util.LinkedHashMap<String, Integer> stats = new java.util.LinkedHashMap<>();
         // 顺序很重要 - 先删 FK 引用方, 后删被引用方
         // 注意: 不删 mat_part (物料主档, 有 plating_fee 等 FK 引用, 删会让事务回滚)
         // 不删 import_record (有其他表 FK 引用); 它们留着不影响重新导入测试
+        // V6: 加 mat_*_staging 和 import_session 系列表
+        // 每个 DELETE 用 REQUIRES_NEW 独立事务,一个失败不影响其他表
         String[] tables = {
+                // 报价单链
                 "quotation_line_component_data",
                 "quotation_line_process",
                 "quotation_line_item_snapshot",
                 "quotation_line_item",
                 "quotation_approval",
                 "quotation",
+                // V6 staging 系列 (按依赖顺序: staging 先于 session)
+                "mat_part_staging",
+                "mat_customer_part_mapping_staging",
+                "mat_bom_staging",
+                "mat_process_staging",
+                "mat_fee_staging",
+                "mat_plating_fee_staging",
+                "mat_plating_plan_staging",
+                "import_session_decision",
+                "import_session",
+                // 版本日志
                 "mat_part_version_log",
+                // 正式表 (按依赖顺序)
                 "mat_plating_fee",
                 "mat_plating_plan",
                 "mat_fee",
@@ -271,17 +289,29 @@ public class PartVersionService {
                 "mat_bom",
                 "mat_customer_part_mapping"
         };
+        // 通过 self CDI 代理调用 wipeSingleTable,才能触发 @Transactional(REQUIRES_NEW)
+        PartVersionService proxy = self.get();
         for (String t : tables) {
-            try {
-                int n = em.createNativeQuery("DELETE FROM " + t).executeUpdate();
-                stats.put(t, n);
-                Log.infof("WIPE: %s deleted %d rows", t, n);
-            } catch (Exception e) {
-                stats.put(t, -1);
-                Log.warnf("WIPE: %s failed: %s", t, e.getMessage());
-            }
+            stats.put(t, proxy.wipeSingleTable(t));
         }
         return stats;
+    }
+
+    /**
+     * 单表 DELETE,REQUIRES_NEW 独立事务。任何异常自动回滚本表,不影响其他表。
+     * 旧实现把所有 DELETE 放进单个 @Transactional → 一旦某表 DELETE 抛异常,
+     * 整个 JTA 事务标记 rollback-only,后续所有 DELETE 都失败 (-1)。
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public int wipeSingleTable(String table) {
+        try {
+            int n = em.createNativeQuery("DELETE FROM " + table).executeUpdate();
+            Log.infof("WIPE: %s deleted %d rows", table, n);
+            return n;
+        } catch (Exception e) {
+            Log.warnf("WIPE: %s failed: %s", table, e.getMessage());
+            return -1;
+        }
     }
 
     // ============================================================
