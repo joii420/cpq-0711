@@ -235,6 +235,7 @@ public class BasicDataImportServiceV5 {
         ImportResultDTO result = importBasicDataV5(excelStream, customerId, userId, resolutions, templateKind);
 
         // B1.6: 导入成功后处理 BUMP 决策 — 写 mat_part_version_log + bump current_version
+        java.util.Map<String, Integer> partVersionByHfPart = new java.util.HashMap<>();
         if ("SUCCESS".equals(result.status) && partVersionDecisions != null && !partVersionDecisions.isEmpty()) {
             for (var entry : partVersionDecisions.entrySet()) {
                 String key = entry.getKey();
@@ -251,16 +252,54 @@ public class BasicDataImportServiceV5 {
                     int newVer = partVersionService.applyVersionBump(
                             cpn, hf, userId,
                             "import-V5-bump",
-                            null,  // contentHash B1 不算指纹
-                            null   // diffSummary B1 不传 diff
-                    );
+                            null, null);
+                    partVersionByHfPart.put(hf, newVer);
                     LOG.infof("B1: (%s, %s) version bumped to v%d", cpn, hf, newVer);
                 } catch (Exception e) {
                     LOG.warnf("B1: bump version failed for (%s, %s): %s", cpn, hf, e.getMessage());
                 }
             }
+
+            // B1.5: 把本次导入的 v2000 行重新标签为新版本号
+            // 限制: 仅 mat_* 4 张表 (含 import_record_id 列); costing_part_* 9 张表留下次 PR
+            if (!partVersionByHfPart.isEmpty() && result.importRecordId != null) {
+                relabelImportedRows(result.importRecordId, partVersionByHfPart);
+            }
         }
         return result;
+    }
+
+    /**
+     * B1.5: 把本次导入 (import_record_id) 中, hfPartNo 在 partVersionByHfPart map 中的行,
+     * part_version 从 2000 改为目标版本号. 仅处理 mat_* 4 张表 (mat_bom / mat_process /
+     * mat_fee / mat_plating_fee) — 它们都有 import_record_id 列.
+     * costing_part_* 9 张表无 import_record_id, 留下次 PR (需先加列).
+     */
+    private void relabelImportedRows(UUID importRecordId,
+                                       java.util.Map<String, Integer> partVersionByHfPart) {
+        String[] tables = {"mat_bom", "mat_process", "mat_fee", "mat_plating_fee"};
+        for (String table : tables) {
+            for (var entry : partVersionByHfPart.entrySet()) {
+                String hf = entry.getKey();
+                Integer newVer = entry.getValue();
+                if (hf == null || newVer == null) continue;
+                try {
+                    int updated = em.createNativeQuery(
+                            "UPDATE " + table + " SET part_version = :nv " +
+                            "WHERE import_record_id = :iid AND hf_part_no = :hf AND part_version = 2000")
+                            .setParameter("nv", newVer)
+                            .setParameter("iid", importRecordId)
+                            .setParameter("hf", hf)
+                            .executeUpdate();
+                    if (updated > 0) {
+                        LOG.infof("B1.5: %s 行 (hf=%s) v2000 → v%d, 影响 %d 行",
+                                table, hf, newVer, updated);
+                    }
+                } catch (Exception e) {
+                    LOG.warnf("B1.5: relabel %s for hf=%s failed: %s", table, hf, e.getMessage());
+                }
+            }
+        }
     }
 
     /**
