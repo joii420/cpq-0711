@@ -1,6 +1,35 @@
-导入# CPQ 系统开发记录
+# CPQ 系统开发记录
 
 > 用于多 Agent 共享记忆，记录每次开发的核心内容、修复的关键问题、重要决策。
+
+---
+
+### [2026-05-12] V6 staging 导入向导后端 Phases 2-7 全量实施
+
+**背景**：实施 `docs/superpowers/specs/2026-05-12-import-v6-staging-design.md` 设计文档中的后端改动（Phases 2-7）。Phase 1（V159 DB migration）之前已完成。
+
+**新建文件**：
+- `cpq-backend/.../importsession/entity/ImportSession.java`：import_session 表 Panache 实体
+- `cpq-backend/.../importsession/entity/ImportSessionDecision.java`：import_session_decision 表复合 PK 实体
+- `cpq-backend/.../importsession/dto/` 6个 DTO：UploadResultDTO, DiffPayloadDTO, PartVersionDecisionItem, CustomerConflictItem, OrphanItem, DecisionUpdateRequest, CommitRequest, CommitResult
+- `cpq-backend/.../importsession/service/StagingWriter.java`：Excel 解析 + 7张 staging 表批量 INSERT
+- `cpq-backend/.../importsession/service/DiffDetector.java`：差异检测（版本/冲突/孤儿行），只读
+- `cpq-backend/.../importsession/service/StagingMerger.java`：staging→mat_* UPSERT 合并（BUMP/NEW/NO_BUMP 决策路由）
+- `cpq-backend/.../importsession/service/ImportSessionService.java`：upload/updateDecisions/commit/cancel 业务编排
+- `cpq-backend/.../importsession/resource/ImportSessionResource.java`：REST 端点（4个）
+
+**改动文件**：
+- `ExcelViewService.java`：新增 `regenerateAllSnapshots(UUID quotationId)` 公开方法
+- `QuotationService.java`：注入 ExcelViewService；`updateLineItemPartVersion` 后调 `regenerateAllSnapshots`
+
+**关键决策**：
+- `ON CONFLICT (customer_product_no, hf_part_no)` 匹配 V151 创建的 `uq_mat_cust_part_global` 部分唯一索引（非 customer_id 三元组）
+- `mat_part` PK = `part_no VARCHAR`（无 id 列），UPSERT 不插 id
+- `ParsedBasicData.requiredErrors` 转 `List<String>` 供 `ValidationSummary.errors` 消费
+- `StagingMerger.clearStaging` 采用显式 DELETE 而非依赖 CASCADE（commit 时 session 状态变 COMMITTED 但行保留，需主动清 staging）
+- Agroal JDBC 连接自动加入已有 JTA 事务，无需手动 setAutoCommit
+
+**自检结论**：`mvnw compile -q` 0 错误；4 个端点 POST/PUT/POST/DELETE 返回 401（auth 正常，非 404/500）
 
 ---
 
