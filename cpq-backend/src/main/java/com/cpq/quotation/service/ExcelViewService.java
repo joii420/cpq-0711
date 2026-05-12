@@ -198,6 +198,46 @@ public class ExcelViewService {
     }
 
     /**
+     * V6：重算整张报价单所有 line_item 的 excel_view_snapshot。
+     *
+     * <p>调用场景：QuotationService.updateLineItemPartVersion 切换 partVersionLocked 后
+     * 调此方法刷新整单 snapshot，使 Excel 视图实时反映新版本数据。
+     *
+     * <p>在已有 @Transactional 事务内执行；逐行 buildRowData + persist，任何一行失败整体回滚。
+     *
+     * @param quotationId 报价单 ID
+     */
+    @Transactional
+    public void regenerateAllSnapshots(UUID quotationId) {
+        Quotation quotation = Quotation.findById(quotationId);
+        if (quotation == null) return;
+
+        List<QuotationLineItem> lineItems = QuotationLineItem.list(
+                "quotationId = ?1 ORDER BY sortOrder ASC", quotationId);
+        if (lineItems.isEmpty()) return;
+
+        UUID templateId = lineItems.get(0).templateId;
+        Template template = templateId != null ? (Template) Template.findById(templateId) : null;
+        if (template == null || template.excelViewConfig == null || template.excelViewConfig.isBlank()) {
+            LOG.debugf("regenerateAllSnapshots: quotation=%s template=%s has no excelViewConfig, skip",
+                    quotationId, templateId);
+            return;
+        }
+
+        List<Map<String, Object>> columns = parseJsonArray(template.excelViewConfig);
+        List<TemplateFormulaDTO> templateFormulas = templateFormulaService.listByTemplate(templateId);
+        Map<String, TemplateFormulaDTO> formulaByName = new LinkedHashMap<>();
+        for (TemplateFormulaDTO f : templateFormulas) formulaByName.put(f.name, f);
+
+        for (QuotationLineItem li : lineItems) {
+            Map<String, Object> snapshot = buildRowData(li, columns, templateId, formulaByName, quotation.customerId);
+            li.excelViewSnapshot = toJson(snapshot);
+            li.persist();
+        }
+        LOG.infof("regenerateAllSnapshots: rebuilt %d snapshots for quotation=%s", lineItems.size(), quotationId);
+    }
+
+    /**
      * Stage 2: 求值 FORMULA 列表达式。
      *
      * 处理流程：

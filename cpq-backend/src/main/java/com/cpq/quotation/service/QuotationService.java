@@ -70,6 +70,9 @@ public class QuotationService {
     @Inject
     EntityManager em;
 
+    @Inject
+    ExcelViewService excelViewService;
+
     private static final java.util.Set<String> VALID_QUOTATION_STATUSES = java.util.Set.of(
             "DRAFT", "SUBMITTED", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "EXPIRED", "CANCELLED"
     );
@@ -1492,5 +1495,7 @@ public class QuotationService {
         }
         li.partVersionLocked = newVersion;
         li.persist();
+        // V6: 版本切换后重算整单所有 line_item 的 excel_view_snapshot
+        excelViewService.regenerateAllSnapshots(quotationId);
     }
 }
