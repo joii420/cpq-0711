@@ -599,7 +599,11 @@ const QuotationWizard: React.FC = () => {
         // 拿不到料号，BASIC_DATA 列（物料/元素/含量/材料损耗）全空。
         productPartNo: li.productPartNo || null,
         productName: li.productName || null,
-        customerPartNo: (li as any).customerPartNo || null,
+        // V6 修复: buildLineItemFromTemplate 写入的字段名是 customerProductNo
+        // (与 mat_customer_part_mapping.customer_product_no 对齐), 但后端 SaveDraft DTO
+        // 字段名是 customerPartNo。这里加兜底, 否则 SaveDraft 收到 null
+        // → 跳过 part_version_locked 查询 → 卡片版本号停在 2000 + 读路径丢版本过滤 → BOM 重复显示。
+        customerPartNo: (li as any).customerPartNo || (li as any).customerProductNo || null,
         productAttributeValues: JSON.stringify(li.productAttributeValues || {}),
         subtotal: computeProductSubtotalSafe(li, driverExpansions, customerIdValue),
         sortOrder: idx,
