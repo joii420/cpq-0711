@@ -908,9 +908,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           lockedVersion={item.partVersionLocked ?? 2000}
           onApplied={async (newVer) => {
             try {
-              await partVersionService.updateLineItemVersion(quotationId, item.id!, newVer);
-              onUpdate({ partVersionLocked: newVer });
-              message.success(`本行料号版本已切换到 v${newVer}`);
+              const result = await partVersionService.updateLineItemVersion(quotationId, item.id!, newVer);
+              // V6：同步更新 excelViewSnapshot，让 ProductCard 立即按新版本数据渲染
+              const updates: Record<string, any> = { partVersionLocked: result.partVersionLocked ?? newVer };
+              if (result.excelViewSnapshot !== undefined) {
+                updates.excelViewSnapshot = result.excelViewSnapshot;
+              }
+              onUpdate(updates);
+              message.success(`已切换至 v${result.partVersionLocked ?? newVer}，公式已重算`);
             } catch (e) {
               message.error('切换失败: ' + (e as Error).message);
             }

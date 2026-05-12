@@ -1,208 +1,50 @@
-import React, { useReducer, useCallback } from 'react';
+/**
+ * BasicDataImportV5Wizard — V6 staging-based 三步导入向导
+ *
+ * Step 1: 选客户 + 上传 Excel → POST /import-session/upload → sessionId + diffPayload
+ * Step 2: 版本确认（料号版本 + 客户冲突 + 孤儿行）→ debounce PUT /import-session/{id}/decisions
+ * Step 3: 创建报价单表单 → POST /import-session/{id}/commit → 跳转 /quotations/{id}/edit
+ *
+ * 设计文档：docs/superpowers/specs/2026-05-12-import-v6-staging-design.md
+ */
+import React, { useState, useCallback, useRef } from 'react';
 import {
   Alert,
   Button,
+  Collapse,
   Drawer,
   Modal,
-  Popconfirm,
-  Result,
   Select,
   Space,
   Spin,
   Steps,
   Typography,
   Upload,
+  message,
 } from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
 import type { UploadFile } from 'antd/es/upload/interface';
-import { basicDataImportV5Service } from '../../services/basicDataImportV5Service';
+import { useNavigate } from 'react-router-dom';
+import { importSessionService } from '../../services/importSessionService';
 import type {
-  ImportResultDTOV5,
-  ResolutionDTO,
-} from '../../types/import-v5';
-import BasicDataDiffDrawer from './BasicDataDiffDrawer';
-import CustomerConflictDrawer from './CustomerConflictDrawer';
-import OrphanRowsDrawer from './OrphanRowsDrawer';
+  DiffPayload,
+  PartVersionDecisionItem,
+  CustomerConflictItem,
+  OrphanItem,
+  PartVersionAction,
+  CustomerConflictAction,
+  OrphanAction,
+  DecisionEntry,
+} from '../../types/import-v6';
+import PartVersionDecisionList from './PartVersionDecisionList';
+import CustomerConflictSection from './CustomerConflictSection';
+import OrphanRowsSection from './OrphanRowsSection';
+import QuotationCreateForm, { type QuotationFormValue } from './QuotationCreateForm';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 const { Dragger } = Upload;
 const { Option } = Select;
-
-// ────────────────────────────────────────────────
-// 状态机类型
-// ────────────────────────────────────────────────
-type Step =
-  | 'UPLOAD'
-  | 'PREVIEW_LOADING'
-  | 'UI2'
-  | 'UI1'
-  | 'UI3'
-  | 'CONFIRMING'
-  | 'DONE'
-  | 'ERROR';
-
-interface State {
-  step: Step;
-  file: File | null;
-  customerId: string;
-  previewResult: ImportResultDTOV5 | null;
-  basicResolutions: Map<string, ResolutionDTO>;
-  customerResolutions: Map<string, ResolutionDTO>;
-  orphanResolutions: ResolutionDTO[];
-  importRecordId?: string;
-  error?: { code: number; message: string };
-}
-
-type Action =
-  | { type: 'SET_FILE'; file: File | null }
-  | { type: 'SET_CUSTOMER'; customerId: string }
-  | { type: 'START_PREVIEW' }
-  | { type: 'PREVIEW_SUCCESS'; result: ImportResultDTOV5 }
-  | { type: 'PREVIEW_ERROR'; code: number; message: string }
-  | { type: 'UI2_CONFIRM' }
-  | { type: 'UI1_CONFIRM' }
-  | { type: 'UI3_CONFIRM'; orphanResolutions: ResolutionDTO[] }
-  | { type: 'START_CONFIRMING' }
-  | { type: 'CONFIRM_SUCCESS'; importRecordId: string }
-  | { type: 'CONFIRM_ERROR'; code: number; message: string }
-  | { type: 'SET_BASIC_RESOLUTION'; key: string; res: ResolutionDTO }
-  | { type: 'SET_CUSTOMER_RESOLUTION'; key: string; res: ResolutionDTO }
-  | { type: 'RESET' };
-
-const initialState: State = {
-  step: 'UPLOAD',
-  file: null,
-  customerId: '',
-  previewResult: null,
-  basicResolutions: new Map(),
-  customerResolutions: new Map(),
-  orphanResolutions: [],
-};
-
-function reducer(state: State, action: Action): State {
-  switch (action.type) {
-    case 'SET_FILE':
-      return { ...state, file: action.file };
-    case 'SET_CUSTOMER':
-      return { ...state, customerId: action.customerId };
-    case 'START_PREVIEW':
-      return { ...state, step: 'PREVIEW_LOADING', error: undefined };
-    case 'PREVIEW_SUCCESS': {
-      const result = action.result;
-      // 后端有可能返回 null,统一规整为数组
-      const safeResult: ImportResultDTOV5 = {
-        ...result,
-        basicDataDiffs: result.basicDataDiffs ?? [],
-        customerDataConflicts: result.customerDataConflicts ?? [],
-        orphanRows: result.orphanRows ?? [],
-        validation: result.validation ?? { hasErrors: false, errors: [], warnings: [] },
-      };
-      // 校验失败时不进入差异/冲突/写入流程,直接转 ERROR 展示错误
-      if (safeResult.validation.hasErrors) {
-        const errs = safeResult.validation.errors ?? [];
-        const msg = errs.length > 0
-          ? errs.map((e: any) =>
-              typeof e === 'string'
-                ? e
-                : `[${e.bvCode ?? ''}] ${e.sheet ?? ''}${e.row ? ' 行 ' + e.row : ''} ${e.message ?? JSON.stringify(e)}`
-            ).join('\n')
-          : '校验未通过,请检查 Excel 数据';
-        return {
-          ...state,
-          step: 'ERROR',
-          previewResult: safeResult,
-          error: { code: 400, message: msg },
-        };
-      }
-      // 流程：UI2(基础差异) → UI1(客户冲突) → UI3(孤儿行) → CONFIRMING
-      let nextStep: Step = 'CONFIRMING';
-      if (safeResult.basicDataDiffs.length > 0) {
-        nextStep = 'UI2';
-      } else if (safeResult.customerDataConflicts.length > 0) {
-        nextStep = 'UI1';
-      } else if (safeResult.orphanRows.length > 0) {
-        nextStep = 'UI3';
-      }
-      return {
-        ...state,
-        step: nextStep,
-        previewResult: safeResult,
-        basicResolutions: new Map(),
-        customerResolutions: new Map(),
-        orphanResolutions: [],
-      };
-    }
-    case 'PREVIEW_ERROR':
-      return {
-        ...state,
-        step: 'ERROR',
-        error: { code: action.code, message: action.message },
-      };
-    case 'UI2_CONFIRM': {
-      const hasConflicts = (state.previewResult?.customerDataConflicts?.length ?? 0) > 0;
-      const hasOrphans = (state.previewResult?.orphanRows?.length ?? 0) > 0;
-      let nextStep: Step = 'CONFIRMING';
-      if (hasConflicts) nextStep = 'UI1';
-      else if (hasOrphans) nextStep = 'UI3';
-      return { ...state, step: nextStep };
-    }
-    case 'UI1_CONFIRM': {
-      const hasOrphans = (state.previewResult?.orphanRows?.length ?? 0) > 0;
-      return { ...state, step: hasOrphans ? 'UI3' : 'CONFIRMING' };
-    }
-    case 'UI3_CONFIRM':
-      return { ...state, step: 'CONFIRMING', orphanResolutions: action.orphanResolutions };
-    case 'START_CONFIRMING':
-      return { ...state, step: 'CONFIRMING', error: undefined };
-    case 'CONFIRM_SUCCESS':
-      return { ...state, step: 'DONE', importRecordId: action.importRecordId };
-    case 'CONFIRM_ERROR':
-      return {
-        ...state,
-        step: 'ERROR',
-        error: { code: action.code, message: action.message },
-      };
-    case 'SET_BASIC_RESOLUTION': {
-      const m = new Map(state.basicResolutions);
-      m.set(action.key, action.res);
-      return { ...state, basicResolutions: m };
-    }
-    case 'SET_CUSTOMER_RESOLUTION': {
-      const m = new Map(state.customerResolutions);
-      m.set(action.key, action.res);
-      return { ...state, customerResolutions: m };
-    }
-    case 'RESET':
-      return { ...initialState, customerId: state.customerId, orphanResolutions: [] };
-    default:
-      return state;
-  }
-}
-
-// ────────────────────────────────────────────────
-// 步骤序号映射（供 Steps 组件显示）
-// ────────────────────────────────────────────────
-function stepIndex(step: Step): number {
-  switch (step) {
-    case 'UPLOAD':
-    case 'PREVIEW_LOADING':
-      return 0;
-    case 'UI2':
-      return 1;
-    case 'UI1':
-      return 2;
-    case 'UI3':
-      return 3;
-    case 'CONFIRMING':
-      return 4;
-    case 'DONE':
-      return 5;
-    case 'ERROR':
-      return 0;
-    default:
-      return 0;
-  }
-}
+const { Panel } = Collapse;
 
 // ────────────────────────────────────────────────
 // Props
@@ -212,17 +54,22 @@ interface BasicDataImportV5WizardProps {
   customers: { id: string; name: string }[];
   defaultCustomerId?: string;
   onClose: () => void;
-  onSuccess?: (importRecordId: string, customerId: string) => void;
-  /** V90: 允许调用方覆盖 Drawer 标题 (默认 "V5 增强导入向导", 核价基础数据导入用 "核价基础数据 Excel 导入") */
+  onSuccess?: (quotationId: string, customerId: string) => void;
   title?: string;
-  /** V90: 隐藏客户选择器(核价基础数据全局,不绑客户)。开启时自动用首个可用 customer 兜底, 上传不需要再选 */
-  hideCustomer?: boolean;
-  /** V94: 'QUOTATION' (报价单基础数据) / 'COSTING' (核价基础数据)。后端按此选择同名 sheet 的不同配置。默认 QUOTATION */
-  templateKind?: 'QUOTATION' | 'COSTING';
 }
 
 // ────────────────────────────────────────────────
-// 组件主体
+// 默认表单值
+// ────────────────────────────────────────────────
+const defaultCreateForm: QuotationFormValue = {
+  name: '',
+  categoryId: undefined,
+  customerTemplateId: undefined,
+  costingTemplateId: undefined,
+};
+
+// ────────────────────────────────────────────────
+// 主组件
 // ────────────────────────────────────────────────
 const BasicDataImportV5Wizard: React.FC<BasicDataImportV5WizardProps> = ({
   open,
@@ -231,169 +78,259 @@ const BasicDataImportV5Wizard: React.FC<BasicDataImportV5WizardProps> = ({
   onClose,
   onSuccess,
   title,
-  hideCustomer,
-  templateKind,
 }) => {
-  const requestKind = templateKind ?? 'QUOTATION';
+  const navigate = useNavigate();
 
-  // V90: hideCustomer=true 时, 用首个 customer 兜底(核价数据不依赖 customer_id, 仅满足 V5 service 必填参数)
-  const initialCustomerId = defaultCustomerId
-    ?? (hideCustomer && customers.length > 0 ? customers[0].id : '');
-  const [state, dispatch] = useReducer(reducer, {
-    ...initialState,
-    customerId: initialCustomerId,
-  });
+  // ── 步骤 (1-indexed) ──
+  const [step, setStep] = useState<1 | 2 | 3>(1);
 
-  const { step, file, customerId, previewResult, basicResolutions, customerResolutions, orphanResolutions } = state;
+  // ── Step 1 状态 ──
+  const [customerId, setCustomerId] = useState<string>(defaultCustomerId ?? '');
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  // hideCustomer 模式下, 当 customers 列表异步加载完时, 兜底 customerId 仍未设置 → 自动取首条
+  // ── Step 2 状态（从 diffPayload 初始化） ──
+  const [sessionId, setSessionId] = useState<string>('');
+  const [partVersions, setPartVersions] = useState<PartVersionDecisionItem[]>([]);
+  const [conflicts, setConflicts] = useState<CustomerConflictItem[]>([]);
+  const [orphans, setOrphans] = useState<OrphanItem[]>([]);
+  const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
+
+  // ── Step 3 状态 ──
+  const [createForm, setCreateForm] = useState<QuotationFormValue>(defaultCreateForm);
+  const [formValid, setFormValid] = useState(false);
+  const [committing, setCommitting] = useState(false);
+
+  // debounce timer ref
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── 重置所有状态 ──
+  const resetAll = useCallback(() => {
+    setStep(1);
+    setCustomerId(defaultCustomerId ?? '');
+    setFile(null);
+    setUploading(false);
+    setUploadError(null);
+    setSessionId('');
+    setPartVersions([]);
+    setConflicts([]);
+    setOrphans([]);
+    setValidationWarnings([]);
+    setCreateForm(defaultCreateForm);
+    setFormValid(false);
+    setCommitting(false);
+  }, [defaultCustomerId]);
+
+  // 每次打开时重置
   React.useEffect(() => {
-    if (hideCustomer && !customerId && customers.length > 0) {
-      dispatch({ type: 'SET_CUSTOMER', customerId: customers[0].id });
-    }
-  }, [hideCustomer, customerId, customers]);
+    if (open) resetAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
-  // 文件上传列表（受控）
+  // ── 文件列表（受控） ──
   const fileList: UploadFile[] = file
     ? [{ uid: '1', name: file.name, status: 'done', size: file.size } as UploadFile]
     : [];
 
-  // 执行预览
-  const handlePreview = useCallback(async () => {
+  // ────────────────────────────────────────────────
+  // Step 1 → Step 2：上传文件
+  // ────────────────────────────────────────────────
+  const handleUpload = async () => {
     if (!file || !customerId) return;
-    dispatch({ type: 'START_PREVIEW' });
+    setUploading(true);
+    setUploadError(null);
     try {
-      const result = await basicDataImportV5Service.preview(file, customerId, requestKind);
-      dispatch({ type: 'PREVIEW_SUCCESS', result });
-    } catch (err: any) {
-      dispatch({
-        type: 'PREVIEW_ERROR',
-        code: err?.response?.status ?? 500,
-        message: err?.message ?? '预览失败，请重试',
-      });
-    }
-  }, [file, customerId, requestKind]);
+      const result = await importSessionService.upload(customerId, file);
+      const diff: DiffPayload = result.diffPayload ?? {
+        partVersionDecisions: [],
+        customerConflicts: [],
+        orphanRows: [],
+        validation: { hasErrors: false, errors: [], warnings: [] },
+      };
 
-  // 执行确认导入
-  const handleConfirm = useCallback(async () => {
-    if (!file || !customerId) return;
-    const allResolutions = [
-      ...Array.from(basicResolutions.values()),
-      ...Array.from(customerResolutions.values()),
-      ...orphanResolutions,
-    ];
-    // B2: 料号版本决策 — preview 返回 partVersionPreview 含本次涉及的料号清单
-    // 弹 Modal 询问用户是否升版 (而非 auto-BUMP 无感升版)
-    const previewItems = previewResult?.partVersionPreview ?? [];
-    let partVersionDecisions: Record<string, string> = {};
-    if (previewItems.length > 0) {
-      const userChoice = await new Promise<'BUMP' | 'NO_CHANGE'>((resolve) => {
-        Modal.confirm({
-          title: '料号版本升级确认',
-          width: 640,
-          content: (
-            <div>
-              <p style={{ marginBottom: 8 }}>
-                以下 <strong>{previewItems.length}</strong> 个料号有数据变更, 是否升版?
-              </p>
-              <p style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 12 }}>
-                升版后: 创建新版本号 v{previewItems[0]?.suggestedNewVersion}; 新建的报价单将使用新版本, 已发布报价单不受影响.
-              </p>
-              <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 4, padding: 8 }}>
-                {previewItems.map((item, i) => (
-                  <div key={i} style={{ padding: '4px 0', fontSize: 13, borderBottom: i < previewItems.length - 1 ? '1px solid #fafafa' : 'none' }}>
-                    <span style={{ color: '#0958d9' }}>{item.customerProductNo}</span>
-                    {' / '}
-                    <span style={{ fontFamily: 'monospace', color: '#595959' }}>{item.hfPartNo}</span>
-                    {' '}
-                    <span style={{ color: '#bbb' }}>v{item.currentVersion} → </span>
-                    <strong style={{ color: '#389e0d' }}>v{item.suggestedNewVersion}</strong>
-                  </div>
-                ))}
-              </div>
-              <p style={{ fontSize: 12, color: '#8c8c8c', marginTop: 8 }}>
-                差异详情已在前面"基础数据差异确认"步骤展示. 此步仅决定是否触发版本升级.
-              </p>
-            </div>
-          ),
-          okText: '全部升版',
-          cancelText: '不升版 (覆盖当前)',
-          onOk: () => resolve('BUMP'),
-          onCancel: () => resolve('NO_CHANGE'),
-        });
-      });
-      for (const item of previewItems) {
-        partVersionDecisions[`${item.customerProductNo}|${item.hfPartNo}`] = userChoice;
+      // 校验失败直接展示错误
+      if (diff.validation?.hasErrors) {
+        const errs = diff.validation.errors ?? [];
+        setUploadError(errs.length > 0 ? errs.join('\n') : '校验未通过，请检查 Excel 数据');
+        return;
       }
-    }
-    try {
-      const result = await basicDataImportV5Service.confirm(
-        file, customerId, allResolutions, requestKind, partVersionDecisions
+
+      setSessionId(result.sessionId);
+      // 将 defaultAction 赋给 action 字段（后端返回 defaultAction，前端展示为初始值）
+      setPartVersions(
+        (diff.partVersionDecisions ?? []).map((item: any) => ({
+          ...item,
+          action: item.action ?? item.defaultAction ?? 'BUMP',
+        }))
       );
-      dispatch({
-        type: 'CONFIRM_SUCCESS',
-        importRecordId: result.importRecordId ?? '',
-      });
-      onSuccess?.(result.importRecordId ?? '', customerId);
+      setConflicts(
+        (diff.customerConflicts ?? []).map((item: any) => ({
+          ...item,
+          action: item.action ?? 'USE_EXCEL',
+        }))
+      );
+      setOrphans(
+        (diff.orphanRows ?? []).map((item: any) => ({
+          ...item,
+          action: item.action ?? 'DISCARD',
+        }))
+      );
+      setValidationWarnings(diff.validation?.warnings ?? []);
+      setStep(2);
     } catch (err: any) {
-      const code = err?.response?.status ?? 500;
-      if (code === 409) {
-        // 数据已被他人修改
-        Modal.warning({
-          title: '数据已被他人修改',
-          content: '检测到数据在预览后已被他人修改，请重新预览以获取最新状态。',
-          okText: '重新预览',
-          onOk: () => dispatch({ type: 'RESET' }),
-        });
-      } else {
-        dispatch({
-          type: 'CONFIRM_ERROR',
-          code,
-          message: err?.message ?? '导入失败，请重试',
-        });
-      }
+      setUploadError(err?.message ?? '上传失败，请重试');
+    } finally {
+      setUploading(false);
     }
-  }, [file, customerId, basicResolutions, customerResolutions, orphanResolutions, onSuccess, requestKind]);
-
-  // 关闭向导（带确认）
-  const handleClose = () => {
-    if (step === 'UPLOAD' || step === 'DONE' || step === 'ERROR') {
-      onClose();
-    }
-    // 其他步骤由 Popconfirm 处理
   };
 
-  // CONFIRMING 步骤自动触发
-  React.useEffect(() => {
-    if (step === 'CONFIRMING') {
-      handleConfirm();
-    }
-  }, [step, handleConfirm]);
+  // ────────────────────────────────────────────────
+  // Step 2：决策变更 → debounce 500ms PUT /decisions
+  // ────────────────────────────────────────────────
+  const sendDecisions = useCallback(
+    (
+      pv: PartVersionDecisionItem[],
+      cc: CustomerConflictItem[],
+      or: OrphanItem[]
+    ) => {
+      if (!sessionId) return;
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+      debounceTimer.current = setTimeout(async () => {
+        const decisions: DecisionEntry[] = [
+          ...pv.map((item) => ({
+            decisionType: 'PART_VERSION' as const,
+            decisionKey: item.key,
+            action: item.action,
+          })),
+          ...cc.map((item) => ({
+            decisionType: 'CUSTOMER_CONFLICT' as const,
+            decisionKey: item.key,
+            action: item.action,
+          })),
+          ...or.map((item) => ({
+            decisionType: 'ORPHAN' as const,
+            decisionKey: item.key,
+            action: item.action,
+            ...(item.action === 'LINK_EXISTING' && (item as any).targetPartId
+              ? { targetPartId: (item as any).targetPartId }
+              : {}),
+          })),
+        ];
+        try {
+          await importSessionService.updateDecisions(sessionId, { decisions });
+        } catch {
+          // 静默失败，用户下一次操作或 commit 时会重试
+        }
+      }, 500);
+    },
+    [sessionId]
+  );
+
+  const handleVersionChange = (key: string, action: PartVersionAction) => {
+    const updated = partVersions.map((item) =>
+      item.key === key ? { ...item, action } : item
+    );
+    setPartVersions(updated);
+    sendDecisions(updated, conflicts, orphans);
+  };
+
+  const handleConflictChange = (key: string, action: CustomerConflictAction) => {
+    const updated = conflicts.map((item) =>
+      item.key === key ? { ...item, action } : item
+    );
+    setConflicts(updated);
+    sendDecisions(partVersions, updated, orphans);
+  };
+
+  const handleOrphanChange = (key: string, action: OrphanAction) => {
+    const updated = orphans.map((item) =>
+      item.key === key ? { ...item, action } : item
+    );
+    setOrphans(updated);
+    sendDecisions(partVersions, conflicts, updated);
+  };
 
   // ────────────────────────────────────────────────
-  // UPLOAD 步骤内容
+  // Step 3 → Commit：创建报价单
   // ────────────────────────────────────────────────
-  const renderUploadStep = () => (
+  const handleCommit = async () => {
+    if (!formValid || !sessionId) return;
+    if (!createForm.customerTemplateId) {
+      message.warning('请先选择客户报价模板');
+      return;
+    }
+    setCommitting(true);
+    try {
+      const result = await importSessionService.commit(sessionId, {
+        name: createForm.name,
+        categoryId: createForm.categoryId!,
+        customerTemplateId: createForm.customerTemplateId,
+        costingTemplateId: createForm.costingTemplateId,
+      });
+      message.success('报价单已创建，正在跳转…');
+      onSuccess?.(result.quotationId, customerId);
+      const qs = new URLSearchParams({ autoPopulate: '1' });
+      navigate(`/quotations/${result.quotationId}/edit?${qs.toString()}`);
+      onClose();
+    } catch (err: any) {
+      message.error(err?.message ?? '创建报价单失败，请重试');
+    } finally {
+      setCommitting(false);
+    }
+  };
+
+  // ────────────────────────────────────────────────
+  // 关闭保护：二次确认 → DELETE session
+  // ────────────────────────────────────────────────
+  const handleCloseRequest = () => {
+    if (step === 1 && !sessionId) {
+      // 尚未上传，直接关闭
+      onClose();
+      return;
+    }
+    Modal.confirm({
+      title: '确认取消导入？',
+      content: '取消后本次上传的 staging 数据将被清除，正式数据表不受影响。',
+      okText: '确认取消',
+      cancelText: '继续操作',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        if (sessionId) {
+          try {
+            await importSessionService.cancel(sessionId);
+          } catch {
+            // 忽略清理失败，服务端有 24h 自动清理
+          }
+        }
+        resetAll();
+        onClose();
+      },
+    });
+  };
+
+  // ────────────────────────────────────────────────
+  // 渲染 Step 1
+  // ────────────────────────────────────────────────
+  const renderStep1 = () => (
     <Space direction="vertical" style={{ width: '100%' }} size={16}>
-      {!hideCustomer && (
-        <div>
-          <Text strong>选择客户</Text>
-          <Select
-            style={{ width: '100%', marginTop: 8 }}
-            placeholder="请选择客户"
-            value={customerId || undefined}
-            onChange={(val) => dispatch({ type: 'SET_CUSTOMER', customerId: val })}
-            showSearch
-            optionFilterProp="children"
-          >
-            {customers.map((c) => (
-              <Option key={c.id} value={c.id}>
-                {c.name}
-              </Option>
-            ))}
-          </Select>
-        </div>
-      )}
+      <div>
+        <Text strong>选择客户</Text>
+        <Select
+          style={{ width: '100%', marginTop: 8 }}
+          placeholder="请选择客户"
+          value={customerId || undefined}
+          onChange={(val) => setCustomerId(val)}
+          showSearch
+          optionFilterProp="children"
+        >
+          {customers.map((c) => (
+            <Option key={c.id} value={c.id}>
+              {c.name}
+            </Option>
+          ))}
+        </Select>
+      </div>
 
       <div>
         <Text strong>上传 Excel 文件</Text>
@@ -401,10 +338,11 @@ const BasicDataImportV5Wizard: React.FC<BasicDataImportV5WizardProps> = ({
           style={{ marginTop: 8 }}
           accept=".xlsx,.xls"
           beforeUpload={(f) => {
-            dispatch({ type: 'SET_FILE', file: f });
+            setFile(f);
+            setUploadError(null);
             return false; // 阻止自动上传
           }}
-          onRemove={() => dispatch({ type: 'SET_FILE', file: null })}
+          onRemove={() => { setFile(null); setUploadError(null); }}
           fileList={fileList}
           maxCount={1}
         >
@@ -416,176 +354,194 @@ const BasicDataImportV5Wizard: React.FC<BasicDataImportV5WizardProps> = ({
         </Dragger>
       </div>
 
-      <Button
-        type="primary"
-        block
-        disabled={!file || !customerId}
-        onClick={handlePreview}
-      >
-        开始预览 & 差异分析
-      </Button>
+      {uploadError && (
+        <Alert
+          type="error"
+          showIcon
+          message="上传/校验失败"
+          description={<pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 12 }}>{uploadError}</pre>}
+        />
+      )}
     </Space>
   );
 
   // ────────────────────────────────────────────────
-  // DONE 步骤内容
+  // 渲染 Step 2
   // ────────────────────────────────────────────────
-  const renderDoneStep = () => (
-    <Result
-      status="success"
-      title="基础数据导入成功"
-      subTitle={
-        state.importRecordId
-          ? `导入记录 ID：${state.importRecordId}，数据已写入系统。`
-          : '数据已成功写入系统。'
-      }
-      extra={[
-        <Button key="close" type="primary" onClick={onClose}>
-          关闭
-        </Button>,
-        <Button key="again" onClick={() => dispatch({ type: 'RESET' })}>
-          再次导入
-        </Button>,
-      ]}
-    />
+  const renderStep2 = () => (
+    <Space direction="vertical" style={{ width: '100%' }} size={16}>
+      {validationWarnings.length > 0 && (
+        <Alert
+          type="warning"
+          closable
+          message="导入警告"
+          description={
+            <ul style={{ margin: 0, paddingLeft: 16 }}>
+              {validationWarnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+          }
+        />
+      )}
+
+      <Collapse
+        defaultActiveKey={['versions', 'conflicts', 'orphans']}
+        bordered={false}
+      >
+        {/* 区块 A：料号版本变更 */}
+        <Panel
+          key="versions"
+          header={
+            <Space>
+              <Text strong>料号版本变更</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {partVersions.length > 0
+                  ? `${partVersions.length} 个料号`
+                  : '无'}
+              </Text>
+            </Space>
+          }
+        >
+          <PartVersionDecisionList
+            items={partVersions}
+            onChange={handleVersionChange}
+          />
+        </Panel>
+
+        {/* 区块 B：客户冲突 */}
+        <Panel
+          key="conflicts"
+          header={
+            <Space>
+              <Text strong>客户料号冲突</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {conflicts.length > 0 ? `${conflicts.length} 个冲突` : '无'}
+              </Text>
+            </Space>
+          }
+        >
+          <CustomerConflictSection
+            items={conflicts}
+            onChange={handleConflictChange}
+          />
+        </Panel>
+
+        {/* 区块 C：孤儿行 */}
+        <Panel
+          key="orphans"
+          header={
+            <Space>
+              <Text strong>孤儿行处理</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {orphans.length > 0 ? `${orphans.length} 条孤儿行` : '无'}
+              </Text>
+            </Space>
+          }
+        >
+          <OrphanRowsSection
+            items={orphans}
+            onChange={handleOrphanChange}
+          />
+        </Panel>
+      </Collapse>
+    </Space>
   );
 
   // ────────────────────────────────────────────────
-  // ERROR 步骤内容
+  // 渲染 Step 3
   // ────────────────────────────────────────────────
-  const renderErrorStep = () => (
-    <Result
-      status="error"
-      title="操作失败"
-      subTitle={state.error?.message ?? '未知错误'}
-      extra={[
-        <Button key="retry" type="primary" onClick={() => dispatch({ type: 'RESET' })}>
-          重新开始
-        </Button>,
-        <Button key="close" onClick={onClose}>
-          关闭
-        </Button>,
-      ]}
-    />
-  );
-
-  // ────────────────────────────────────────────────
-  // 主抽屉内容
-  // ────────────────────────────────────────────────
-  const renderMainContent = () => {
-    if (step === 'PREVIEW_LOADING') {
-      return (
-        <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          <Spin size="large" tip="正在分析差异，请稍候…" />
-        </div>
-      );
-    }
-    if (step === 'CONFIRMING') {
-      return (
-        <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          <Spin size="large" tip="正在写入数据，请稍候…" />
-        </div>
-      );
-    }
-    if (step === 'DONE') return renderDoneStep();
-    if (step === 'ERROR') return renderErrorStep();
-    // UPLOAD / UI2 / UI1 — 主抽屉始终显示上传步骤，子抽屉叠加
-    return renderUploadStep();
+  const renderStep3 = () => {
+    const customer = customers.find((c) => c.id === customerId);
+    return (
+      <QuotationCreateForm
+        customerId={customerId}
+        customerName={customer?.name ?? ''}
+        value={createForm}
+        onChange={setCreateForm}
+        onValidityChange={setFormValid}
+      />
+    );
   };
 
-  // 主抽屉 close 按钮（带 Popconfirm）
-  const needConfirmClose = step !== 'UPLOAD' && step !== 'DONE' && step !== 'ERROR';
-  const closeIcon = needConfirmClose ? (
-    <Popconfirm
-      title="未保存的决策将丢失，确认关闭向导？"
-      onConfirm={onClose}
-      okText="确认关闭"
-      cancelText="继续"
-      placement="bottomLeft"
-    >
-      <span style={{ cursor: 'pointer' }}>×</span>
-    </Popconfirm>
-  ) : undefined;
+  // ────────────────────────────────────────────────
+  // Drawer Footer 按钮
+  // ────────────────────────────────────────────────
+  const renderFooter = () => {
+    if (step === 1) {
+      return (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Button onClick={handleCloseRequest}>取消</Button>
+          <Button
+            type="primary"
+            loading={uploading}
+            disabled={!file || !customerId || uploading}
+            onClick={handleUpload}
+          >
+            {uploading ? '分析中…' : '下一步'}
+          </Button>
+        </div>
+      );
+    }
+
+    if (step === 2) {
+      return (
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <Button danger onClick={handleCloseRequest}>取消并清理</Button>
+          <Space>
+            <Button onClick={() => setStep(1)}>上一步</Button>
+            <Button type="primary" onClick={() => setStep(3)}>下一步</Button>
+          </Space>
+        </div>
+      );
+    }
+
+    // step === 3
+    return (
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <Button danger onClick={handleCloseRequest}>取消并清理</Button>
+        <Space>
+          <Button onClick={() => setStep(2)}>上一步</Button>
+          <Button
+            type="primary"
+            loading={committing}
+            disabled={!formValid || committing}
+            onClick={handleCommit}
+          >
+            {committing ? '创建中…' : '创建报价单'}
+          </Button>
+        </Space>
+      </div>
+    );
+  };
 
   return (
-    <>
-      {/* 主容器 Drawer */}
-      <Drawer
-        title={title ?? "V5 增强导入向导"}
-        placement="right"
-        width={720}
-        open={open}
-        onClose={needConfirmClose ? undefined : handleClose}
-        closeIcon={closeIcon}
-        destroyOnClose={false}
-      >
-        {/* 步骤指示器 */}
-        <Steps
-          current={stepIndex(step)}
-          size="small"
-          style={{ marginBottom: 24 }}
-          items={[
-            { title: '上传文件' },
-            { title: '差异确认' },
-            { title: '冲突解决' },
-            { title: '孤儿处理' },
-            { title: '写入数据' },
-            { title: '完成' },
-          ]}
-        />
-
-        {/* 预览校验警告 */}
-        {previewResult?.validation?.warnings?.length ? (
-          <Alert
-            type="warning"
-            closable
-            style={{ marginBottom: 16 }}
-            message="预览警告"
-            description={
-              <ul style={{ margin: 0, paddingLeft: 16 }}>
-                {previewResult.validation.warnings.map((w: any, i: number) => (
-                  <li key={i}>
-                    {typeof w === 'string'
-                      ? w
-                      : `[${w.bvCode ?? ''}] ${w.sheet ?? ''}${w.row ? ' 行 ' + w.row : ''} ${w.message ?? ''}`}
-                  </li>
-                ))}
-              </ul>
-            }
-          />
-        ) : null}
-
-        {renderMainContent()}
-      </Drawer>
-
-      {/* UI-2 基础数据差异抽屉（叠加在主抽屉右侧） */}
-      <BasicDataDiffDrawer
-        open={step === 'UI2'}
-        diffs={previewResult?.basicDataDiffs ?? []}
-        resolutions={basicResolutions}
-        onChange={(key, res) => dispatch({ type: 'SET_BASIC_RESOLUTION', key, res })}
-        onConfirm={() => dispatch({ type: 'UI2_CONFIRM' })}
-        onCancel={onClose}
+    <Drawer
+      title={title ?? '基础数据导入（V6）'}
+      placement="right"
+      width={960}
+      open={open}
+      onClose={handleCloseRequest}
+      maskClosable={false}
+      keyboard={false}
+      destroyOnClose={false}
+      footer={renderFooter()}
+    >
+      {/* 顶部步骤指示器 */}
+      <Steps
+        current={step - 1}
+        size="small"
+        style={{ marginBottom: 24 }}
+        items={[
+          { title: '上传文件' },
+          { title: '版本确认' },
+          { title: '创建报价单' },
+        ]}
       />
 
-      {/* UI-1 客户冲突抽屉（叠加在最右侧） */}
-      <CustomerConflictDrawer
-        open={step === 'UI1'}
-        conflicts={previewResult?.customerDataConflicts ?? []}
-        resolutions={customerResolutions}
-        onChange={(key, res) => dispatch({ type: 'SET_CUSTOMER_RESOLUTION', key, res })}
-        onConfirm={() => dispatch({ type: 'UI1_CONFIRM' })}
-        onCancel={onClose}
-      />
-
-      {/* UI-3 孤儿行处理抽屉（叠加在最右侧） */}
-      <OrphanRowsDrawer
-        open={step === 'UI3'}
-        orphans={previewResult?.orphanRows ?? []}
-        onClose={onClose}
-        onConfirm={(resolutions) => dispatch({ type: 'UI3_CONFIRM', orphanResolutions: resolutions })}
-      />
-    </>
+      {/* 步骤内容 */}
+      {step === 1 && renderStep1()}
+      {step === 2 && renderStep2()}
+      {step === 3 && renderStep3()}
+    </Drawer>
   );
 };
 

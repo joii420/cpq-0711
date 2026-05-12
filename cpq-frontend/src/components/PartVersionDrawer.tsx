@@ -20,8 +20,8 @@ interface Props {
   onClose: () => void;
   customerProductNo: string;
   hfPartNo: string;
-  /** 升版/切版本成功后回调 (传新版本号) */
-  onApplied?: (newVersion: number) => void;
+  /** 升版/切版本成功后回调 (传新版本号 + 新 snapshot；select 模式下 snapshot 由调用方通过 updateLineItemVersion 返回值获取) */
+  onApplied?: (newVersion: number, newSnapshot?: any) => void;
   /**
    * 模式:
    * - 'manage' (默认): 完整版本管理 — 三路判定 + 升版 + 切换全局激活版本.

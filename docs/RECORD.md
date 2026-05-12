@@ -4,6 +4,73 @@
 
 ---
 
+### [2026-05-12] Phase 8 — V6 staging 导入向导前端全量实施
+
+**背景**：实施 `2026-05-12-import-v6-staging-design.md` 设计文档中的全部前端改动（Phase 8.1～8.7）。
+
+**新建文件**：
+- `cpq-frontend/src/types/import-v6.ts`：V6 全量类型定义（DecisionType/PartVersionAction/CustomerConflictAction/OrphanAction/RowDiff/PartVersionDecisionItem/CustomerConflictItem/OrphanItem/ValidationResult/DiffPayload/UploadResult/DecisionEntry/DecisionUpdateRequest/CommitRequest/CommitResult）
+- `cpq-frontend/src/services/importSessionService.ts`：upload/updateDecisions/commit/cancel 四个端点封装
+- `cpq-frontend/src/pages/quotation/PartVersionDecisionList.tsx`：料号版本决策列表（BUMP/NO_BUMP 每料号独立 toggle + sheet 差异展开）
+- `cpq-frontend/src/pages/quotation/CustomerConflictSection.tsx`：客户冲突内嵌 Section（去 Drawer 壳，使用 V6 CustomerConflictItem 类型）
+- `cpq-frontend/src/pages/quotation/OrphanRowsSection.tsx`：孤儿行内嵌 Section（去 Drawer 壳，使用 V6 OrphanItem 类型，决策改为 DISCARD/CREATE_NEW）
+- `cpq-frontend/src/pages/quotation/QuotationCreateForm.tsx`：创建报价单表单复用组件（从 BasicDataImportV5ToQuotation 的 CreateQuotationDrawer 抽出）
+
+**修改文件**：
+- `BasicDataImportV5Wizard.tsx`：完全重写为 3 步向导（上传→版本确认→创建报价单），Drawer width=960，maskClosable/keyboard=false，关闭二次确认 DELETE session
+- `BasicDataImportV5ToQuotation.tsx`：简化为薄壳（仅拉客户列表 + 渲染 Wizard），移除 CreateQuotationDrawer 和第二阶段逻辑
+- `partVersionService.ts`：updateLineItemVersion 返回类型扩展加 `excelViewSnapshot?: any`
+- `PartVersionDrawer.tsx`：onApplied props 第二参扩展为 `newSnapshot?: any`
+- `QuotationStep2.tsx`：onApplied 回调同时更新 excelViewSnapshot + message 改为「已切换至 v{n}，公式已重算」
+
+**关键决策**：
+- Step 2 debounce 500ms 自动 PUT /decisions，幂等，静默失败（不阻断用户操作）
+- 新料号在 PartVersionDecisionList 中禁用 BUMP/NO_BUMP Radio，强制显示「将以 v2000 创建」
+- 关闭保护：Modal.confirm 二次确认后 DELETE session，正式表无副作用
+- QuotationCreateForm 使用受控模式（value/onChange），onValidityChange 通知父组件是否可提交
+
+**自检结果**：TS 0 错误；全部 5 个新建/修改 .tsx 文件 Vite 200；主入口 200
+
+---
+
+### [2026-05-12] 架构变更 — 基础数据导入向导改为 V6 staging 三步流程（设计稿）
+
+**背景**：V5 六步向导（上传→UI2 基础差异→UI1 客户冲突→UI3 孤儿行→写入→完成）已暴露 5 大痛点：
+- 步骤冗余、用户认知负担重
+- `POST /confirm` 一次性写入 `mat_*` 正式表 → 中途取消即污染基础数据
+- 升版决策粒度粗（只支持「全部升版/全部不升版」二选一）
+- NO_BUMP 语义错误（=覆盖当前版本，与版本管理精神冲突）
+- 草稿态切换版本不重算 `excel_view_snapshot`
+
+**决策**：改为 staging-based 三步流程「上传文件 → 版本确认 → 创建报价单」。
+
+**关键设计**：
+1. 新增 `import_session` + `import_session_decision` + `mat_*_staging`（7 张暂存表，V159 迁移）
+2. 写入事务延迟到 `POST /sessions/{id}/commit`（点「创建报价单」时）一次性原子提交 staging → mat_* + 创建报价单 + 生成 snapshot
+3. 取消任何 step → `DELETE /sessions/{id}` CASCADE 清 staging，正式表无副作用
+4. 24h 未 commit 的 session 由 scheduled job 清理
+5. NO_BUMP 语义改为「丢弃 staging 数据，line_item.part_version_locked = 当前 DB 版本」
+6. 升版决策每料号独立 BUMP/NO_BUMP toggle，新料号强制走 NEW
+7. UI2/UI1/UI3 合并进 Step 2「版本确认」（3 个 Collapse 区块）
+8. 后端 `PUT /quotations/{id}/line-items/{lid}/part-version` 扩展：同步重算 snapshot 并落库
+
+**涉及文件（设计稿）**：
+- `docs/superpowers/specs/2026-05-12-import-v6-staging-design.md`（新建，本次架构决策唯一权威设计文档）
+- `docs/superpowers/specs/2026-04-26-cpq-design-v5.1.md`（顶部加废弃声明，V5 六步流程相关章节请勿再参考）
+- `docs/PRD.md`（变更日志加 v2.8 两条）
+- `docs/反模式.md`（新增 AP-23「上传即写库」反模式）
+
+**关键决策（与用户对齐 5 项）**：
+- Q1：延迟事务实现 → A. 暂存表方案
+- Q2：UI1/UI3 去向 → A. 合并进版本确认
+- Q3：决策粒度 → A. 每料号独立 toggle
+- Q4：差异展示 → B. Sheet 级计数 + 可展开 row-level 详情
+- Q5：切换版本数据刷新 → B. 立即重算 snapshot
+
+**状态**：设计稿已写，待用户审阅后进入 `superpowers:writing-plans` 编写实施计划。**当前代码尚未实施任何变更**，旧 V5 流程仍在线运行。
+
+---
+
 ### [2026-05-08] P0 后端 — 错误信息中文化 + 自动补全 API + 函数清单 API
 
 **背景**：公式 UI 报错都是英文 JEXL 堆栈，业务用户看不懂；textarea 无自动补全；需要做"Excel 级"易用性的后端支撑。

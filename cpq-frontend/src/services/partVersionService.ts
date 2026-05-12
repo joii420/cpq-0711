@@ -117,11 +117,11 @@ export const partVersionService = {
     quotationId: string,
     lineItemId: string,
     version: number
-  ): Promise<{ quotationId: string; lineItemId: string; partVersionLocked: number }> => {
+  ): Promise<{ quotationId: string; lineItemId: string; partVersionLocked: number; excelViewSnapshot?: any }> => {
     const res = (await api.put(
       `/quotations/${encodeURIComponent(quotationId)}/line-items/${encodeURIComponent(lineItemId)}/part-version`,
       { version }
-    )) as unknown as { data: { quotationId: string; lineItemId: string; partVersionLocked: number } };
+    )) as unknown as { data: { quotationId: string; lineItemId: string; partVersionLocked: number; excelViewSnapshot?: any } };
     return res.data;
   },
 };
