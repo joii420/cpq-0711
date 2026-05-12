@@ -15,6 +15,10 @@ public class CostingPartElementBom extends PanacheEntityBase {
     @Column(name = "input_material_no", nullable = false, length = 100)
     public String inputMaterialNo;
 
+    /** 料号版本管理 (V153): 与 input_material_no 共同组成业务唯一键, 默认 2000 */
+    @Column(name = "part_version", nullable = false)
+    public Integer partVersion = 2000;
+
     @Column(name = "seq_no", nullable = false)
     public Integer seqNo;
 

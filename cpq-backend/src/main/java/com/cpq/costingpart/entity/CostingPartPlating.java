@@ -15,6 +15,10 @@ public class CostingPartPlating extends PanacheEntityBase {
     @Column(name = "plating_no", nullable = false, length = 100)
     public String platingNo;
 
+    /** 料号版本管理 (V153): 与 plating_no 共同组成业务唯一键, 默认 2000 */
+    @Column(name = "part_version", nullable = false)
+    public Integer partVersion = 2000;
+
     @Column(name = "version_number", nullable = false, length = 50)
     public String versionNumber;
 

@@ -1977,7 +1977,7 @@ public class BasicDataImportServiceV5 {
                 "  currency, unit, ref_calc_version, is_active, created_at, updated_at" +
                 ") VALUES (:hf, :pn, :pname, :ct, :price, " +
                 "  COALESCE(:cur, 'CNY'), COALESCE(:unit, 'KG'), :ver, :active, now(), now()) " +
-                "ON CONFLICT (hf_part_no, process_no, cost_type) DO UPDATE SET " +
+                "ON CONFLICT (hf_part_no, process_no, cost_type, part_version) DO UPDATE SET " +
                 "  process_name = COALESCE(EXCLUDED.process_name, costing_part_process_cost.process_name), " +
                 "  unit_price = EXCLUDED.unit_price, " +
                 "  currency = EXCLUDED.currency, unit = EXCLUDED.unit, " +
@@ -2006,7 +2006,7 @@ public class BasicDataImportServiceV5 {
                 "  currency, unit, is_active, created_at, updated_at" +
                 ") VALUES (:hf, :pn, :pname, :seq, :tno, :cost, :pcnt, :ccnt, :uprice, " +
                 "  COALESCE(:cur, 'CNY'), COALESCE(:unit, 'PCS'), :active, now(), now()) " +
-                "ON CONFLICT (hf_part_no, process_no, seq_no) DO UPDATE SET " +
+                "ON CONFLICT (hf_part_no, process_no, seq_no, part_version) DO UPDATE SET " +
                 "  process_name = COALESCE(EXCLUDED.process_name, costing_part_tooling_cost.process_name), " +
                 "  tooling_no = EXCLUDED.tooling_no, " +
                 "  tooling_unit_cost = EXCLUDED.tooling_unit_cost, " +
@@ -2041,7 +2041,7 @@ public class BasicDataImportServiceV5 {
                 "  fixed_loss_qty, loss_rate, is_active, created_at, updated_at" +
                 ") VALUES (:hf, :seq, :imn, :pn, :pname, :iqty, :iunit, :oqty, :ounit, " +
                 "  :olr, :flq, :lr, :active, now(), now()) " +
-                "ON CONFLICT (hf_part_no, seq_no) DO UPDATE SET " +
+                "ON CONFLICT (hf_part_no, seq_no, part_version) DO UPDATE SET " +
                 "  input_material_no = EXCLUDED.input_material_no, " +
                 "  process_no = EXCLUDED.process_no, process_name = EXCLUDED.process_name, " +
                 "  input_qty = EXCLUDED.input_qty, input_unit = EXCLUDED.input_unit, " +
@@ -2080,7 +2080,7 @@ public class BasicDataImportServiceV5 {
                 "  input_material_no, seq_no, element_code, composition_pct, loss_rate, " +
                 "  is_active, created_at, updated_at" +
                 ") VALUES (:imn, :seq, :ec, :cp, :lr, :active, now(), now()) " +
-                "ON CONFLICT (input_material_no, seq_no, element_code) DO UPDATE SET " +
+                "ON CONFLICT (input_material_no, seq_no, element_code, part_version) DO UPDATE SET " +
                 "  composition_pct = EXCLUDED.composition_pct, " +
                 "  loss_rate = EXCLUDED.loss_rate, " +
                 "  is_active = EXCLUDED.is_active, updated_at = now()";
@@ -2105,7 +2105,7 @@ public class BasicDataImportServiceV5 {
                 "  hf_part_no, stage, primary_seq_no, seq_no, requirement_code, requirement_desc, " +
                 "  scrap_rate, is_active, created_at, updated_at" +
                 ") VALUES (:hf, :stage, :pseq, :seq, :rcode, :rdesc, :sr, :active, now(), now()) " +
-                "ON CONFLICT (hf_part_no, stage, primary_seq_no, seq_no) DO UPDATE SET " +
+                "ON CONFLICT (hf_part_no, stage, primary_seq_no, seq_no, part_version) DO UPDATE SET " +
                 "  requirement_code = EXCLUDED.requirement_code, " +
                 "  requirement_desc = EXCLUDED.requirement_desc, " +
                 "  scrap_rate = EXCLUDED.scrap_rate, " +
@@ -2137,7 +2137,7 @@ public class BasicDataImportServiceV5 {
                 "  plating_area_cm2, layer_thickness_um, requirement, is_active, " +
                 "  created_at, updated_at" +
                 ") VALUES (:pno, :ver, :seq, :ea, :area, :th, :req, :active, now(), now()) " +
-                "ON CONFLICT (plating_no, version_number, seq_no) DO UPDATE SET " +
+                "ON CONFLICT (plating_no, version_number, seq_no, part_version) DO UPDATE SET " +
                 "  element_attr = EXCLUDED.element_attr, " +
                 "  plating_area_cm2 = EXCLUDED.plating_area_cm2, " +
                 "  layer_thickness_um = EXCLUDED.layer_thickness_um, " +
@@ -2175,7 +2175,7 @@ public class BasicDataImportServiceV5 {
                 "  plating_material_fee, currency, price_unit, defect_rate, is_active, " +
                 "  created_at, updated_at" +
                 ") VALUES (:hf, :pc, :pv, :pf, :mf, :cur, :pu, :dr, :active, now(), now()) " +
-                "ON CONFLICT (hf_part_no, plating_plan_code, plan_version) DO UPDATE SET " +
+                "ON CONFLICT (hf_part_no, plating_plan_code, plan_version, part_version) DO UPDATE SET " +
                 "  plating_process_fee = EXCLUDED.plating_process_fee, " +
                 "  plating_material_fee = EXCLUDED.plating_material_fee, " +
                 "  currency = EXCLUDED.currency, price_unit = EXCLUDED.price_unit, " +
@@ -2207,7 +2207,7 @@ public class BasicDataImportServiceV5 {
                 "  created_at, updated_at" +
                 ") VALUES (:hf, :dno, :ver, :dpf, :dmf, COALESCE(:cur,'CNY'), COALESCE(:unit,'KG'), " +
                 "  :lr, :active, now(), now()) " +
-                "ON CONFLICT (hf_part_no, design_drawing_no, version_number) DO UPDATE SET " +
+                "ON CONFLICT (hf_part_no, design_drawing_no, version_number, part_version) DO UPDATE SET " +
                 "  design_proc_fee = EXCLUDED.design_proc_fee, " +
                 "  design_material_fee = EXCLUDED.design_material_fee, " +
                 "  currency = EXCLUDED.currency, unit = EXCLUDED.unit, " +
@@ -2236,7 +2236,7 @@ public class BasicDataImportServiceV5 {
         String sql = "INSERT INTO costing_part_weight(" +
                 "  hf_part_no, weight_g_per_pcs, is_active, created_at, updated_at" +
                 ") VALUES (:hf, :w, :active, now(), now()) " +
-                "ON CONFLICT (hf_part_no) DO UPDATE SET " +
+                "ON CONFLICT (hf_part_no, part_version) DO UPDATE SET " +
                 "  weight_g_per_pcs = EXCLUDED.weight_g_per_pcs, " +
                 "  is_active = EXCLUDED.is_active, updated_at = now()";
         em.createNativeQuery(sql)

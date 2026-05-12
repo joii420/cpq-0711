@@ -57,6 +57,14 @@ public class QuotationLineItem extends PanacheEntityBase {
     @Column(name = "customer_part_no", length = 200)
     public String customerPartNo;
 
+    /**
+     * 料号版本管理 (V155): 本行报价使用的 (customer_product_no, hf_part_no) 版本号.
+     * 创建时从 mat_customer_part_mapping.current_version 拷贝, 已发布后锁死.
+     * S5 阶段 QuotationService.createDraft 写入, ExcelViewService/SnapshotCollectorService 读取.
+     */
+    @Column(name = "part_version_locked", nullable = false)
+    public Integer partVersionLocked = 2000;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "excel_view_snapshot", columnDefinition = "jsonb")
     public String excelViewSnapshot;
@@ -71,3 +79,5 @@ public class QuotationLineItem extends PanacheEntityBase {
         }
     }
 }
+// trigger rebuild 1778556012
+// trigger 1778556042625124400
