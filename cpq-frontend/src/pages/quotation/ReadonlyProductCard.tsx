@@ -106,6 +106,12 @@ function computeFormula(
 const formatCurrency = (val: number) =>
   `¥ ${(val || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+/** 单元格值格式化: boolean → 是/否, 其他 → String(v) */
+const formatCellValue = (v: any): string => {
+  if (typeof v === 'boolean') return v ? '是' : '否';
+  return String(v);
+};
+
 const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   lineItem,
   index,
@@ -270,7 +276,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
               <div key={k} className="qt-attr-field">
                 <label className="qt-attr-label">{k}</label>
                 <span className="qt-attr-input" style={{ background: '#fafafa', border: '1px solid #e8e8e8', padding: '4px 8px', borderRadius: 4 }}>
-                  {v != null ? String(v) : '—'}
+                  {v != null ? formatCellValue(v) : '—'}
                 </span>
               </div>
             ))}
@@ -352,7 +358,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                               </span>
                             ) : (
                               <span style={showTrace ? { display: 'inline-flex', alignItems: 'center', gap: 2 } : undefined}>
-                                {row[key] != null ? String(row[key]) : '—'}
+                                {row[key] != null ? formatCellValue(row[key]) : '—'}
                                 {showTrace && (
                                   <FieldTraceIcon
                                     quotationId={quotationId!}
