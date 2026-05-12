@@ -20,8 +20,22 @@ interface Props {
   onClose: () => void;
   customerProductNo: string;
   hfPartNo: string;
-  /** 升版/切版本成功后回调 (传新激活版本号) */
+  /** 升版/切版本成功后回调 (传新版本号) */
   onApplied?: (newVersion: number) => void;
+  /**
+   * 模式:
+   * - 'manage' (默认): 完整版本管理 — 三路判定 + 升版 + 切换全局激活版本.
+   *   适用于"料号版本管理"独立入口页, 用于主数据维护.
+   * - 'select': 简化版本选择 — 只列出历史版本, 点击即切换本行报价单使用的版本.
+   *   适用于报价单产品卡片内的版本切换. 不显示判定/升版/切换全局激活版本.
+   *   升版仅在数据导入时确定, 报价单内仅做"选择已存在的版本".
+   */
+  mode?: 'manage' | 'select';
+  /**
+   * select 模式下, 当前 line_item 已锁定的版本号 (高亮显示).
+   * manage 模式忽略.
+   */
+  lockedVersion?: number;
 }
 
 const ACTION_LABEL: Record<DecisionAction, string> = {
@@ -38,7 +52,9 @@ const ACTION_COLOR: Record<DecisionAction, string> = {
 
 const PartVersionDrawer: React.FC<Props> = ({
   open, onClose, customerProductNo, hfPartNo, onApplied,
+  mode = 'manage', lockedVersion,
 }) => {
+  const isSelectMode = mode === 'select';
   const [loading, setLoading] = useState(false);
   const [currentVersion, setCurrentVersion] = useState<number>(2000);
   const [history, setHistory] = useState<PartVersionLog[]>([]);
@@ -148,86 +164,111 @@ const PartVersionDrawer: React.FC<Props> = ({
           <Descriptions bordered size="small" column={1} style={{ marginBottom: 16 }}>
             <Descriptions.Item label="客户产品编号">{customerProductNo}</Descriptions.Item>
             <Descriptions.Item label="宏丰料号">{hfPartNo}</Descriptions.Item>
+            {isSelectMode && lockedVersion != null && (
+              <Descriptions.Item label="本行使用版本">
+                <Tag color="green" style={{ fontSize: 14 }}>v{lockedVersion}</Tag>
+              </Descriptions.Item>
+            )}
             <Descriptions.Item label="当前激活版本">
-              <Tag color="green" style={{ fontSize: 14 }}>v{currentVersion}</Tag>
+              <Tag color={isSelectMode ? 'default' : 'green'} style={{ fontSize: 14 }}>v{currentVersion}</Tag>
             </Descriptions.Item>
             <Descriptions.Item label="历史版本数">{history.length}</Descriptions.Item>
           </Descriptions>
 
-          <Divider orientation="left">
-            <Space>
-              <ArrowUpOutlined />
-              <span>三路判定</span>
-            </Space>
-          </Divider>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            <InfoCircleOutlined /> S2 阶段为占位实现, 默认建议 NEW_VERSION. S3 接入 Excel 解析后会真实判定 NO_CHANGE / REVERT / NEW_VERSION.
-          </Text>
-          <div style={{ marginTop: 12, marginBottom: 12 }}>
-            <Button type="primary" loading={proposing} onClick={handlePropose}>
-              运行判定
-            </Button>
-          </div>
+          {!isSelectMode && (
+            <>
+              <Divider orientation="left">
+                <Space>
+                  <ArrowUpOutlined />
+                  <span>三路判定</span>
+                </Space>
+              </Divider>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                <InfoCircleOutlined /> S2 阶段为占位实现, 默认建议 NEW_VERSION. S3 接入 Excel 解析后会真实判定 NO_CHANGE / REVERT / NEW_VERSION.
+              </Text>
+              <div style={{ marginTop: 12, marginBottom: 12 }}>
+                <Button type="primary" loading={proposing} onClick={handlePropose}>
+                  运行判定
+                </Button>
+              </div>
 
-          {decision && (
-            <div style={{ padding: 12, background: '#fafafa', borderRadius: 6, marginBottom: 16 }}>
-              <Space direction="vertical" style={{ width: '100%' }}>
-                <Tag color={ACTION_COLOR[decision.action]} style={{ fontSize: 14 }}>
-                  {ACTION_LABEL[decision.action]}
-                </Tag>
-                <Text>建议版本号: <strong>v{decision.proposedVersion}</strong></Text>
-                {decision.matchedHash && (
-                  <Text type="secondary" style={{ fontSize: 11, fontFamily: 'Consolas, monospace' }}>
-                    匹配指纹: {decision.matchedHash}
-                  </Text>
-                )}
-                {decision.action === 'NEW_VERSION' && (
-                  <Button type="primary" icon={<ArrowUpOutlined />} onClick={handleApplyBump}>
-                    执行升版到 v{decision.proposedVersion}
-                  </Button>
-                )}
+              {decision && (
+                <div style={{ padding: 12, background: '#fafafa', borderRadius: 6, marginBottom: 16 }}>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <Tag color={ACTION_COLOR[decision.action]} style={{ fontSize: 14 }}>
+                      {ACTION_LABEL[decision.action]}
+                    </Tag>
+                    <Text>建议版本号: <strong>v{decision.proposedVersion}</strong></Text>
+                    {decision.matchedHash && (
+                      <Text type="secondary" style={{ fontSize: 11, fontFamily: 'Consolas, monospace' }}>
+                        匹配指纹: {decision.matchedHash}
+                      </Text>
+                    )}
+                    {decision.action === 'NEW_VERSION' && (
+                      <Button type="primary" icon={<ArrowUpOutlined />} onClick={handleApplyBump}>
+                        执行升版到 v{decision.proposedVersion}
+                      </Button>
+                    )}
+                  </Space>
+                </div>
+              )}
+
+              <Divider orientation="left">
+                <Space>
+                  <SwapOutlined />
+                  <span>切换激活版本</span>
+                </Space>
+              </Divider>
+              <Space>
+                <Select
+                  style={{ width: 180 }}
+                  value={switchTarget}
+                  onChange={setSwitchTarget}
+                  options={[
+                    { label: `v${currentVersion} (当前)`, value: currentVersion },
+                    ...history
+                      .filter(h => h.version !== currentVersion)
+                      .map(h => ({ label: `v${h.version}`, value: h.version })),
+                  ]}
+                />
+                <Button icon={<SwapOutlined />} onClick={handleSwitchVersion}
+                        disabled={switchTarget == null || switchTarget === currentVersion}>
+                  切换到此版本
+                </Button>
               </Space>
-            </div>
+            </>
           )}
 
           <Divider orientation="left">
-            <Space>
-              <SwapOutlined />
-              <span>切换激活版本</span>
-            </Space>
+            {isSelectMode ? '选择本行使用的版本' : '历史版本'}
           </Divider>
-          <Space>
-            <Select
-              style={{ width: 180 }}
-              value={switchTarget}
-              onChange={setSwitchTarget}
-              options={[
-                { label: `v${currentVersion} (当前)`, value: currentVersion },
-                ...history
-                  .filter(h => h.version !== currentVersion)
-                  .map(h => ({ label: `v${h.version}`, value: h.version })),
-              ]}
-            />
-            <Button icon={<SwapOutlined />} onClick={handleSwitchVersion}
-                    disabled={switchTarget == null || switchTarget === currentVersion}>
-              切换到此版本
-            </Button>
-          </Space>
-
-          <Divider orientation="left">历史版本</Divider>
           {history.length === 0 ? (
             <Empty description="暂无历史版本" />
           ) : (
             <div style={{ maxHeight: 360, overflowY: 'auto' }}>
-              {history.map(h => (
-                <div key={h.version} style={{
+              {history.map(h => {
+                // select 模式高亮 = 本行锁定版本; manage 模式高亮 = 全局激活版本
+                const isActive = isSelectMode
+                  ? (lockedVersion != null && h.version === lockedVersion)
+                  : h.version === currentVersion;
+                const canClick = isSelectMode && !isActive;
+                return (
+                <div key={h.version}
+                  onClick={canClick ? () => {
+                    onApplied?.(h.version);
+                    onClose();
+                  } : undefined}
+                  style={{
                   padding: 10, marginBottom: 8,
-                  border: '1px solid #f0f0f0', borderRadius: 6,
-                  background: h.version === currentVersion ? '#f6ffed' : '#fff',
+                  border: isActive ? '1px solid #b7eb8f' : '1px solid #f0f0f0',
+                  borderRadius: 6,
+                  background: isActive ? '#f6ffed' : '#fff',
+                  cursor: canClick ? 'pointer' : 'default',
+                  transition: 'all 0.2s',
                 }}>
                   <Space>
-                    <Tag color={h.version === currentVersion ? 'green' : 'default'}>
-                      v{h.version}
+                    <Tag color={isActive ? 'green' : 'default'}>
+                      v{h.version}{isActive && isSelectMode ? ' (当前)' : ''}
                     </Tag>
                     {h.sourceExcel && <Text type="secondary" style={{ fontSize: 12 }}>{h.sourceExcel}</Text>}
                     {h.createdAt && (
@@ -247,7 +288,8 @@ const PartVersionDrawer: React.FC<Props> = ({
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </>

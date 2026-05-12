@@ -896,13 +896,16 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         </div>
       </div>
 
-      {/* 料号版本切换 Drawer (新需求) */}
+      {/* 料号版本切换 Drawer — 报价单内只做"选择已存在的版本", 不升版.
+          升版的语义属于"主数据导入"时, 报价单只是消费版本. */}
       {item.customerProductNo && item.productPartNo && quotationId && item.id && (
         <PartVersionDrawer
           open={versionDrawerOpen}
           onClose={() => setVersionDrawerOpen(false)}
           customerProductNo={item.customerProductNo}
           hfPartNo={item.productPartNo}
+          mode="select"
+          lockedVersion={item.partVersionLocked ?? 2000}
           onApplied={async (newVer) => {
             try {
               await partVersionService.updateLineItemVersion(quotationId, item.id!, newVer);
