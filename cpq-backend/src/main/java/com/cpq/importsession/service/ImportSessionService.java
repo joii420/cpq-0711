@@ -225,8 +225,32 @@ public class ImportSessionService {
         LOG.infof("V6 commit: session=%s → quotation=%s", sessionId, quotationId);
 
         // 把 quotation_id 回写到 import_record 建立双向追溯
+        // V6 修复"全 NO_BUMP 时 listCandidates 找不到料号":
+        //   把本次涉及的 (cpn, hf) 集合写入 import_record.metadata JSONB,
+        //   CustomerPartCandidateService 优先从 metadata 拿 hf 集合,
+        //   这样 NO_BUMP (不写 mat_process/fee/plating_fee 的 import_record_id) 也能找到候选
         importRecord.quotationId = quotationId;
         importRecord.matchedRows = appliedVersions.size();
+        try {
+            java.util.List<java.util.Map<String, String>> hfPairs = new java.util.ArrayList<>();
+            for (String key : appliedVersions.keySet()) {
+                String[] parts = key.split("\\|", 2);
+                if (parts.length == 2) {
+                    java.util.Map<String, String> pair = new java.util.LinkedHashMap<>();
+                    pair.put("cpn", parts[0]);
+                    pair.put("hf", parts[1]);
+                    hfPairs.add(pair);
+                }
+            }
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            java.util.Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+            metadata.put("v6", true);
+            metadata.put("sessionId", sessionId.toString());
+            metadata.put("hfPairs", hfPairs);
+            importRecord.metadata = mapper.writeValueAsString(metadata);
+        } catch (Exception jsonEx) {
+            LOG.warnf("V6 commit: serialize metadata failed (非致命): %s", jsonEx.getMessage());
+        }
         importRecord.persist();
 
         // 5. 清 staging（主动清除，session 仍保留作审计）
