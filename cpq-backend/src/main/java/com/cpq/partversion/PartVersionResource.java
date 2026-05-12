@@ -4,7 +4,6 @@ import com.cpq.partversion.dto.DiffSummary;
 import com.cpq.partversion.dto.PartVersionLogDTO;
 import com.cpq.partversion.dto.VersionDecisionDTO;
 import com.cpq.partversion.dto.VersionProposeRequest;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -20,11 +19,14 @@ import java.util.UUID;
  *
  * <p>独立端点, 不嵌入 BasicDataImportV5Resource. 业务功能不变.
  * <p>S3 阶段前端使用此接口实现"按料号卡片 + 3 选项决策"导入预览 UI.
+ *
+ * <p>认证: 与其他 Resource (QuotationResource 等) 一致依赖全局 auth filter;
+ * 系统实际角色是 SALES_REP / SALES_MANAGER / PRICING_MANAGER / SYSTEM_ADMIN,
+ * 不使用 USER/ADMIN, 故不在此处加 @RolesAllowed.
  */
 @Path("/api/cpq/part-version")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-@RolesAllowed({"USER", "ADMIN"})
 public class PartVersionResource {
 
     @Inject PartVersionService service;
