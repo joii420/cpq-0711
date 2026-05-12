@@ -1,5 +1,7 @@
 package com.cpq.importexcel.dto;
 
+import com.cpq.partversion.dto.PartVersionPreviewDTO;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -25,6 +27,14 @@ public class ImportResultDTO {
 
     /** UI-3: 孤儿行列表 — DB 有但本次 Excel 无的 is_current=true 行，前端让用户选 DELETE_ORPHAN / KEEP_ORPHAN */
     public List<OrphanRowDTO> orphanRows = new ArrayList<>();
+
+    /**
+     * 料号版本管理 B1: 本次 Excel 涉及的料号版本预览.
+     * 每个 (customer_product_no, hf_part_no) 一项, 含 current_version + 建议 newVersion.
+     * 前端展示并允许用户为每个料号选 BUMP / NO_CHANGE / SKIP.
+     * confirm 阶段, 前端通过新参数 partVersionDecisions 把决策传回.
+     */
+    public List<PartVersionPreviewDTO> partVersionPreview = new ArrayList<>();
 
     // 统计
     public int matPartCreated;
