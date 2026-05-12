@@ -68,6 +68,13 @@ public class BasicDataImportV5Resource {
      * }
      * }
      */
+    /**
+     * @deprecated 自 V6 (2026-05-12) 起，导入向导改为 staging-based 三步流程。
+     *             新调用方应使用 {@link com.cpq.importsession.resource.ImportSessionResource#upload}。
+     *             本端点保留作为历史兼容，预计 6 个月后移除。
+     *             设计：docs/superpowers/specs/2026-05-12-import-v6-staging-design.md
+     */
+    @Deprecated(since = "v6", forRemoval = false)
     @POST
     @Path("/preview")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
@@ -125,6 +132,12 @@ public class BasicDataImportV5Resource {
      *   - file: Excel (.xlsx) 文件
      *   - resolutions: JSON 字符串（可选），格式: [{type,tableName,rowKey,fieldName,decision,note,oldValueAtPreview}]
      */
+    /**
+     * @deprecated 自 V6 (2026-05-12) 起，写入事务延迟到 staging→mat_* 合并阶段。
+     *             新调用方应使用 {@link com.cpq.importsession.resource.ImportSessionResource#commit}。
+     *             本端点保留作为历史兼容，预计 6 个月后移除。
+     */
+    @Deprecated(since = "v6", forRemoval = false)
     @POST
     @Path("/confirm")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
