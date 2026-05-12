@@ -295,6 +295,8 @@ const QuotationWizard: React.FC = () => {
           rawAttrs['图号'] = li.customerDrawingNo;
         }
         return ({
+        // line_item id (后端 DTO 已带, 用于版本切换 PATCH endpoint)
+        id: li.id,
         productId: li.productId || '',
         productName: li.productName || '',
         productPartNo: li.productPartNo || '',
@@ -312,6 +314,8 @@ const QuotationWizard: React.FC = () => {
         productAttributeValues: rawAttrs,
         componentData: li.componentData || [],
         subtotal: li.subtotal || 0,
+        // 料号版本锁定 (后端 DTO 已带, 用于产品卡片版本 Tag 显示)
+        partVersionLocked: li.partVersionLocked,
       }) as LineItem;
       });
       setLineItems(basicItems);
