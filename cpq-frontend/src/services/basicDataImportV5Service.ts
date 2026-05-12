@@ -135,7 +135,8 @@ export const basicDataImportV5Service = {
     file: File,
     customerId: string,
     resolutions: ResolutionDTO[],
-    templateKind: string = 'QUOTATION'
+    templateKind: string = 'QUOTATION',
+    partVersionDecisions?: Record<string, string>
   ): Promise<ImportResultDTOV5> => {
     if (USE_MOCK) {
       await new Promise((r) => setTimeout(r, 1000));
@@ -146,6 +147,9 @@ export const basicDataImportV5Service = {
     fd.append('customerId', customerId);
     fd.append('resolutions', JSON.stringify(resolutions));
     fd.append('templateKind', templateKind);
+    if (partVersionDecisions && Object.keys(partVersionDecisions).length > 0) {
+      fd.append('partVersionDecisions', JSON.stringify(partVersionDecisions));
+    }
     const res = await api.post('/import/basic-data/v5/confirm', fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }) as any;

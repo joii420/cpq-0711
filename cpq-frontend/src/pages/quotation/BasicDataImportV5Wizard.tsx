@@ -282,8 +282,17 @@ const BasicDataImportV5Wizard: React.FC<BasicDataImportV5WizardProps> = ({
       ...Array.from(customerResolutions.values()),
       ...orphanResolutions,
     ];
+    // B2: 料号版本决策 — preview 返回的 partVersionPreview 默认全部 BUMP (升版)
+    // 后续 PR 可加 UI 让用户按料号选 BUMP / NO_CHANGE / SKIP, 当前自动升所有料号
+    const partVersionDecisions: Record<string, string> = {};
+    const previewItems = previewResult?.partVersionPreview ?? [];
+    for (const item of previewItems) {
+      partVersionDecisions[`${item.customerProductNo}|${item.hfPartNo}`] = 'BUMP';
+    }
     try {
-      const result = await basicDataImportV5Service.confirm(file, customerId, allResolutions, requestKind);
+      const result = await basicDataImportV5Service.confirm(
+        file, customerId, allResolutions, requestKind, partVersionDecisions
+      );
       dispatch({
         type: 'CONFIRM_SUCCESS',
         importRecordId: result.importRecordId ?? '',

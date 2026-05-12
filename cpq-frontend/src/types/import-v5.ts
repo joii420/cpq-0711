@@ -53,6 +53,15 @@ export interface OrphanRowDTO {
   importance: Importance;
 }
 
+export interface PartVersionPreviewItem {
+  customerProductNo: string;
+  hfPartNo: string;
+  currentVersion: number;
+  suggestedNewVersion: number;
+  defaultAction: 'BUMP' | 'NO_CHANGE' | 'SKIP';
+  diffSummary: string | null;
+}
+
 export interface ImportResultDTOV5 {
   status: string;
   importRecordId: string | null;
@@ -65,4 +74,6 @@ export interface ImportResultDTOV5 {
   basicDataDiffs: BasicDataDiffDTO[];
   customerDataConflicts: CustomerDataConflictDTO[];
   orphanRows: OrphanRowDTO[];
+  /** B1: 料号版本管理 — 本次 Excel 涉及的料号版本预览 */
+  partVersionPreview?: PartVersionPreviewItem[];
 }

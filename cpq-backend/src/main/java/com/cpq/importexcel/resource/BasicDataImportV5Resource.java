@@ -132,7 +132,8 @@ public class BasicDataImportV5Resource {
     public ApiResponse<ImportResultDTO> confirm(@RestForm("customerId") UUID customerId,
                                                  @RestForm("file") FileUpload file,
                                                  @RestForm("resolutions") String resolutionsJson,
-                                                 @RestForm("templateKind") String templateKind) {
+                                                 @RestForm("templateKind") String templateKind,
+                                                 @RestForm("partVersionDecisions") String partVersionDecisionsJson) {
         if (customerId == null) {
             throw new BusinessException(400, "customerId 不能为空");
         }
@@ -142,13 +143,30 @@ public class BasicDataImportV5Resource {
         UUID userId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
         List<ResolutionDTO> resolutions = parseResolutions(resolutionsJson);
         String kind = (templateKind != null && !templateKind.isBlank()) ? templateKind : "QUOTATION";
+        // B1: 解析料号版本决策 (key='cpn|hf', value='BUMP'/'NO_CHANGE'/'SKIP')
+        java.util.Map<String, String> partVersionDecisions = parsePartVersionDecisions(partVersionDecisionsJson);
         try (InputStream is = java.nio.file.Files.newInputStream(file.uploadedFile())) {
-            ImportResultDTO result = serviceV5.importBasicDataV5(is, customerId, userId, resolutions, kind);
+            ImportResultDTO result;
+            if (partVersionDecisions != null && !partVersionDecisions.isEmpty()) {
+                result = serviceV5.importBasicDataV5(is, customerId, userId, resolutions, kind, partVersionDecisions);
+            } else {
+                result = serviceV5.importBasicDataV5(is, customerId, userId, resolutions, kind);
+            }
             return ApiResponse.success(result);
         } catch (BusinessException be) {
             throw be;
         } catch (Exception e) {
             throw new BusinessException(500, "导入失败: " + e.getMessage());
+        }
+    }
+
+    /** B1: 解析 partVersionDecisions JSON Map. */
+    private java.util.Map<String, String> parsePartVersionDecisions(String json) {
+        if (json == null || json.isBlank()) return null;
+        try {
+            return MAPPER.readValue(json, new TypeReference<java.util.Map<String, String>>() {});
+        } catch (Exception e) {
+            throw new BusinessException(400, "partVersionDecisions JSON 格式错误: " + e.getMessage());
         }
     }
 
