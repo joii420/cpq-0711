@@ -108,16 +108,37 @@ public class DataLoader {
                                                                     Map<String, Object> driverRow,
                                                                     String partNo,
                                                                     UUID customerId) {
+        return loadByPath(path, driverRow, partNo, customerId, null);
+    }
+
+    /**
+     * 料号版本管理 B3: 增加 partVersion 参数的重载.
+     *
+     * <p>partVersion 来自报价单上下文 (quotation_line_item.part_version_locked):
+     * <ul>
+     *   <li>非空 → 注入 AND part_version=N 到 14 张版本化表 (V153)</li>
+     *   <li>null → 行为与旧 loadByPath(path, driverRow, partNo, customerId) 完全等价</li>
+     * </ul>
+     *
+     * <p>resultCache 用 normalized path 作 key, part_version 注入后进入 path 字面,
+     * 因此不同 partVersion 自动有独立 cache 项, 无串混风险.
+     */
+    public CompletableFuture<List<Map<String, Object>>> loadByPath(String path,
+                                                                    Map<String, Object> driverRow,
+                                                                    String partNo,
+                                                                    UUID customerId,
+                                                                    Integer partVersion) {
         if (path == null || path.isBlank()) {
             return CompletableFuture.completedFuture(List.of());
         }
         boolean noDriver = (driverRow == null || driverRow.isEmpty());
         boolean noPartNo = (partNo == null || partNo.isBlank());
         boolean noCustomer = (customerId == null);
-        if (noDriver && noPartNo && noCustomer) {
+        boolean noVersion = (partVersion == null);
+        if (noDriver && noPartNo && noCustomer && noVersion) {
             return loadByPath(path);
         }
-        String rewritten = implicitJoinRewriter.rewriteWithContext(path, driverRow, partNo, customerId,
+        String rewritten = implicitJoinRewriter.rewriteWithContext(path, driverRow, partNo, customerId, partVersion,
                 com.cpq.datapath.sql.SchemaContext.defaultContext());
         return loadByPath(rewritten);
     }

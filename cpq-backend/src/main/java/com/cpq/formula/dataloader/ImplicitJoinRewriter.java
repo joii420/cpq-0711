@@ -109,6 +109,23 @@ public class ImplicitJoinRewriter {
                                       String partNo,
                                       UUID customerId,
                                       SchemaContext schema) {
+        return rewriteWithContext(fieldPath, driverRow, partNo, customerId, null, schema);
+    }
+
+    /**
+     * 料号版本管理 B3: 增加 partVersion 参数的重载.
+     *
+     * @param partVersion 料号版本号 (来自 quotation_line_item.part_version_locked).
+     *                    非空且物理表是 V153 加了 part_version 列的 14 张表时,
+     *                    自动注入 AND part_version=N.
+     *                    null → 不注入, 行为与旧 rewriteWithContext 完全等价.
+     */
+    public String rewriteWithContext(String fieldPath,
+                                      Map<String, Object> driverRow,
+                                      String partNo,
+                                      UUID customerId,
+                                      Integer partVersion,
+                                      SchemaContext schema) {
         if (fieldPath == null || fieldPath.isBlank()) return fieldPath;
 
         // 合并 driver 上下文:partNo / customerId + driverRow(后者优先)
@@ -121,6 +138,11 @@ public class ImplicitJoinRewriter {
         }
         if (customerId != null) {
             effective.put("customer_id", customerId);
+        }
+        // 料号版本管理 (B3): 仅当 partVersion 非空时注入. tableCols.contains 会自动过滤
+        // 那些没有 part_version 列的表 (mat_part / mat_customer_part_mapping / 视图等).
+        if (partVersion != null) {
+            effective.put("part_version", partVersion);
         }
         if (driverRow != null) effective.putAll(driverRow);
 
