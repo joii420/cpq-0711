@@ -102,6 +102,7 @@ const allMenuItems: MenuItem[] = [
     children: [
       { key: '/master-data', label: '数据总览', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
       { key: '/master-data/history', icon: <HistoryOutlined />, label: '历史版本', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
+      { key: '/part-versions', label: '料号版本管理', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
       { key: '/master-data/field-importance', label: '字段重要性', roles: ['SYSTEM_ADMIN'] },
     ],
   },

@@ -46,6 +46,7 @@ import SystemConfigPage from '../pages/system-config/SystemConfigPage';
 import FieldImportancePage from '../pages/master-data/FieldImportancePage';
 import LockMonitorPage from '../pages/system-monitor/LockMonitorPage';
 import DdlExtensionPage from '../pages/system-monitor/DdlExtensionPage';
+import PartVersionPage from '../pages/partversion/PartVersionPage';
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -99,6 +100,7 @@ const router = createBrowserRouter([
       { path: 'master-data/field-importance', element: <FieldImportancePage /> },
       { path: 'system-monitor/locks', element: <LockMonitorPage /> },
       { path: 'system-monitor/ddl-extension', element: <DdlExtensionPage /> },
+      { path: 'part-versions', element: <PartVersionPage /> },
     ],
   },
 ]);
