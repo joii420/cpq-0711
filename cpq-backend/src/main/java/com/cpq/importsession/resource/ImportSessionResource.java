@@ -25,12 +25,12 @@ import java.util.UUID;
  * V6 导入会话 REST 端点。
  *
  * <p>路由：
- *   POST   /api/cpq/import/sessions/upload         — Step 1：上传 Excel，建 session，检测差异
- *   PUT    /api/cpq/import/sessions/{id}/decisions  — Step 2：更新版本决策（BUMP/NO_BUMP/...）
- *   POST   /api/cpq/import/sessions/{id}/commit     — Step 3：创建报价单，合并 staging → mat_*
- *   DELETE /api/cpq/import/sessions/{id}            — 取消/放弃 session
+ *   POST   /api/cpq/import-session/upload          — Step 1：上传 Excel，建 session，检测差异
+ *   PUT    /api/cpq/import-session/{id}/decisions  — Step 2：更新版本决策（BUMP/NO_BUMP/...）
+ *   POST   /api/cpq/import-session/{id}/commit     — Step 3：创建报价单，合并 staging → mat_*
+ *   DELETE /api/cpq/import-session/{id}            — 取消/放弃 session
  */
-@Path("/api/cpq/import/sessions")
+@Path("/api/cpq/import-session")
 @Produces(MediaType.APPLICATION_JSON)
 public class ImportSessionResource {
 

@@ -122,11 +122,12 @@ public class QuotationResource {
         } catch (NumberFormatException e) {
             throw new com.cpq.common.exception.BusinessException(400, "version must be an integer");
         }
-        quotationService.updateLineItemPartVersion(id, lineItemId, version);
+        String snapshot = quotationService.updateLineItemPartVersion(id, lineItemId, version);
         Map<String, Object> resp = new HashMap<>();
         resp.put("quotationId", id);
         resp.put("lineItemId", lineItemId);
         resp.put("partVersionLocked", version);
+        resp.put("excelViewSnapshot", snapshot);  // V6: 让前端立即按新版本数据渲染卡片
         return ApiResponse.success(resp);
     }
 

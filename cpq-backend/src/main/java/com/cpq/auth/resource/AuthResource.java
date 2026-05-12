@@ -1,5 +1,6 @@
 package com.cpq.auth.resource;
 
+// touch 2026-05-12: V159 import_session + staging tables (V6 import flow)
 import com.cpq.auth.dto.ChangePasswordRequest;
 import com.cpq.auth.dto.ForgotPasswordRequest;
 import com.cpq.auth.dto.LoginRequest;

@@ -1460,7 +1460,7 @@ public class QuotationService {
      * 仅 DRAFT 态可改; 目标版本必须在 mat_part_version_log 历史中存在 (v2000 是基线, 永远合法).
      */
     @Transactional
-    public void updateLineItemPartVersion(UUID quotationId, UUID lineItemId, int newVersion) {
+    public String updateLineItemPartVersion(UUID quotationId, UUID lineItemId, int newVersion) {
         Quotation q = Quotation.findById(quotationId);
         if (q == null) {
             throw new BusinessException(404, "Quotation not found: " + quotationId);
@@ -1497,5 +1497,8 @@ public class QuotationService {
         li.persist();
         // V6: 版本切换后重算整单所有 line_item 的 excel_view_snapshot
         excelViewService.regenerateAllSnapshots(quotationId);
+        // 重读切换的 line_item 拿最新 snapshot 返给前端立即渲染
+        QuotationLineItem refreshed = QuotationLineItem.findById(lineItemId);
+        return refreshed != null ? refreshed.excelViewSnapshot : null;
     }
 }
