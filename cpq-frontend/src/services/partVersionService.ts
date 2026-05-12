@@ -108,4 +108,20 @@ export const partVersionService = {
     )) as unknown as { data: { customerProductNo: string; hfPartNo: string; activeVersion: number } };
     return res.data;
   },
+
+  /**
+   * 切换某 quotation_line_item 的 part_version_locked.
+   * 仅 DRAFT 态的报价单可用; 后端会校验目标版本在 mat_part_version_log 中存在.
+   */
+  updateLineItemVersion: async (
+    quotationId: string,
+    lineItemId: string,
+    version: number
+  ): Promise<{ quotationId: string; lineItemId: string; partVersionLocked: number }> => {
+    const res = (await api.put(
+      `/quotations/${encodeURIComponent(quotationId)}/line-items/${encodeURIComponent(lineItemId)}/part-version`,
+      { version }
+    )) as unknown as { data: { quotationId: string; lineItemId: string; partVersionLocked: number } };
+    return res.data;
+  },
 };

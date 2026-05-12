@@ -17,6 +17,7 @@ import com.cpq.quotation.service.QuotationService;
 import com.cpq.quotation.dto.CustomerPartCandidateDTO;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.util.HashMap;
 import java.util.List;
 import com.cpq.quotation.snapshot.FieldTraceDTO;
 import com.cpq.system.entity.User;
@@ -101,6 +102,32 @@ public class QuotationResource {
     @Path("/{id}/draft")
     public ApiResponse<QuotationDTO> saveDraft(@PathParam("id") UUID id, SaveDraftRequest request) {
         return ApiResponse.success(quotationService.saveDraft(id, request));
+    }
+
+    /**
+     * 料号版本管理: 切换某 line_item 的 part_version_locked. 仅 DRAFT 态可改.
+     */
+    @PUT
+    @Path("/{id}/line-items/{lineItemId}/part-version")
+    public ApiResponse<Map<String, Object>> updateLineItemPartVersion(
+            @PathParam("id") UUID id,
+            @PathParam("lineItemId") UUID lineItemId,
+            Map<String, Object> body) {
+        if (body == null || body.get("version") == null) {
+            throw new com.cpq.common.exception.BusinessException(400, "version 不能为空");
+        }
+        int version;
+        try {
+            version = Integer.parseInt(body.get("version").toString());
+        } catch (NumberFormatException e) {
+            throw new com.cpq.common.exception.BusinessException(400, "version must be an integer");
+        }
+        quotationService.updateLineItemPartVersion(id, lineItemId, version);
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("quotationId", id);
+        resp.put("lineItemId", lineItemId);
+        resp.put("partVersionLocked", version);
+        return ApiResponse.success(resp);
     }
 
     @POST

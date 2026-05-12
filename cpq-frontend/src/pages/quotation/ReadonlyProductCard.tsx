@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { evaluateExpression } from '../../utils/formulaEngine';
 import { templateService } from '../../services/templateService';
+import { useAuthStore } from '../../stores/authStore';
 import type { ComponentDataItem, ComponentField, ComponentFormula } from './QuotationStep2';
 import FieldTraceIcon from './components/FieldTraceIcon';
 import './quotation.css';
@@ -114,8 +115,16 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   const [activeTab, setActiveTab] = useState(0);
   const [components, setComponents] = useState<ComponentDataItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuthStore();
 
   const attrValues: Record<string, any> = parseJson(lineItem.productAttributeValues, {});
+
+  // 料号版本 Tag 显示规则 (新需求):
+  // - 草稿态 (DRAFT): 不显示 (草稿走 QuotationStep2 编辑视图, 那里已显示并可切换)
+  // - 已提交态 (非 DRAFT): 仅销售经理(SALES_MANAGER) + 系统管理员(SYSTEM_ADMIN) 可见, 不可修改
+  // - 其他角色 (SALES_REP / PRICING_MANAGER 等普通用户): 不显示
+  const canSeeVersionTag = quotationStatus !== 'DRAFT'
+      && (user?.role === 'SALES_MANAGER' || user?.role === 'SYSTEM_ADMIN');
 
   // Enrich componentData with fields/formulas from template snapshot
   useEffect(() => {
@@ -236,12 +245,12 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
               生产料号: {lineItem.productPartNo}
             </span>
           )}
-          {/* 料号版本锁定 (S5): 显示该行报价使用的版本号 (业务功能不变 — 仅展示) */}
-          {lineItem.partVersionLocked != null && (
+          {/* 料号版本锁定 — 仅已提交报价单且角色为销售经理/系统管理员时显示, 不可修改 */}
+          {canSeeVersionTag && lineItem.partVersionLocked != null && (
             <span
               className="qt-sku-badge"
               style={{ background: '#f6ffed', color: '#389e0d', border: '1px solid #b7eb8f' }}
-              title="料号版本管理 — 本行报价数据锁定版本"
+              title="料号版本锁定 — 本行报价数据锁定版本 (不可修改)"
             >
               版本: v{lineItem.partVersionLocked}
             </span>

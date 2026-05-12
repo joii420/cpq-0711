@@ -13,6 +13,8 @@ import { materialMappingService } from '../../services/materialMappingService';
 import ElementPriceHint from './components/ElementPriceHint';
 import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
 import { quotationService } from '../../services/quotationService';
+import { partVersionService } from '../../services/partVersionService';
+import PartVersionDrawer from '../../components/PartVersionDrawer';
 import { templateService } from '../../services/templateService';
 import './quotation.css';
 
@@ -97,6 +99,10 @@ export interface LineItem {
   componentData: ComponentDataItem[];
   subtotal: number;
   subtotalFormula?: any[];  // Token array from template.subtotal_formula
+  /** 料号版本锁定: 本行报价使用的 (customer_product_no, hf_part_no) 版本号 */
+  partVersionLocked?: number;
+  /** line_item id (后端 PATCH 需要; 新创建未持久化的 line_item 无 id) */
+  id?: string;
 }
 
 export type LineItemUpdater = Partial<LineItem> | ((prev: LineItem) => Partial<LineItem>);
@@ -472,10 +478,13 @@ interface ProductCardProps {
   customerId?: string;
   /** Y1.5 行驱动展开结果(由父级 useDriverExpansions 返回) */
   driverExpansions?: import('./useDriverExpansions').DriverExpansionMap;
+  /** 报价单 ID (用于料号版本切换 PATCH 调用); 未传则版本 Tag 仅显示不可点击 */
+  quotationId?: string;
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions }) => {
+const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, quotationId }) => {
   const [activeTab, setActiveTab] = useState(0);
+  const [versionDrawerOpen, setVersionDrawerOpen] = useState(false);
   const [dsLoading, setDsLoading] = useState<Record<string, boolean>>({});
   const [dsErrors, setDsErrors] = useState<Record<string, string>>({});
   // Material match state for border coloring
@@ -860,11 +869,51 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
               </span>
             </Popover>
           )}
+          {/* 料号版本号 Tag — 草稿态可点击切换 (新需求) */}
+          {item.customerProductNo && item.productPartNo && (
+            <span
+              style={{
+                background: '#f6ffed',
+                color: '#389e0d',
+                border: '1px solid #b7eb8f',
+                borderRadius: 4,
+                padding: '2px 10px',
+                fontSize: 12,
+                fontFamily: 'monospace',
+                cursor: quotationId && item.id ? 'pointer' : 'default',
+              }}
+              title={quotationId && item.id ? '点击切换料号版本' : '料号版本 (草稿创建后可切换)'}
+              onClick={() => {
+                if (quotationId && item.id) setVersionDrawerOpen(true);
+              }}
+            >
+              版本: v{item.partVersionLocked ?? 2000}
+            </span>
+          )}
           <button className="qt-action-btn delete" type="button" onClick={onRemove}>
             删除
           </button>
         </div>
       </div>
+
+      {/* 料号版本切换 Drawer (新需求) */}
+      {item.customerProductNo && item.productPartNo && quotationId && item.id && (
+        <PartVersionDrawer
+          open={versionDrawerOpen}
+          onClose={() => setVersionDrawerOpen(false)}
+          customerProductNo={item.customerProductNo}
+          hfPartNo={item.productPartNo}
+          onApplied={async (newVer) => {
+            try {
+              await partVersionService.updateLineItemVersion(quotationId, item.id!, newVer);
+              onUpdate({ partVersionLocked: newVer });
+              message.success(`本行料号版本已切换到 v${newVer}`);
+            } catch (e) {
+              message.error('切换失败: ' + (e as Error).message);
+            }
+          }}
+        />
+      )}
 
       {/* Product Attributes */}
       {attrFields.length > 0 && (
@@ -1632,6 +1681,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
                 onRemove={() => onRemoveProduct(index)}
                 onUpdate={(data) => handleUpdateCostingLineItem(index, data)}
                 customerId={customerId}
+                quotationId={quotationId}
                 driverExpansions={driverExpansions}
               />
             ))}
@@ -1668,6 +1718,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
               onRemove={() => onRemoveProduct(index)}
               onUpdate={(data) => handleUpdateQuoteLineItem(index, data)}
               customerId={customerId}
+              quotationId={quotationId}
               driverExpansions={driverExpansions}
             />
           ))}

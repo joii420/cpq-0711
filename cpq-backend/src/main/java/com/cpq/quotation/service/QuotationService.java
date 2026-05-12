@@ -1451,4 +1451,46 @@ public class QuotationService {
         }
         return null;
     }
+
+    /**
+     * 料号版本管理 (新需求): 更改某 line_item 的 part_version_locked.
+     * 仅 DRAFT 态可改; 目标版本必须在 mat_part_version_log 历史中存在 (v2000 是基线, 永远合法).
+     */
+    @Transactional
+    public void updateLineItemPartVersion(UUID quotationId, UUID lineItemId, int newVersion) {
+        Quotation q = Quotation.findById(quotationId);
+        if (q == null) {
+            throw new BusinessException(404, "Quotation not found: " + quotationId);
+        }
+        if (!"DRAFT".equals(q.status)) {
+            throw new BusinessException(400, "只有草稿状态的报价单可以切换料号版本");
+        }
+        QuotationLineItem li = QuotationLineItem.findById(lineItemId);
+        if (li == null || !quotationId.equals(li.quotationId)) {
+            throw new BusinessException(404, "Line item not found in this quotation: " + lineItemId);
+        }
+        if (li.customerPartNo == null || li.customerPartNo.isBlank()
+                || li.productPartNoSnapshot == null || li.productPartNoSnapshot.isBlank()) {
+            throw new BusinessException(400,
+                    "该行缺少 customer_product_no 或 hf_part_no, 无法切换版本");
+        }
+        if (newVersion < 2000) {
+            throw new BusinessException(400, "Invalid version: " + newVersion);
+        }
+        if (newVersion > 2000) {
+            Object exists = em.createNativeQuery(
+                    "SELECT 1 FROM mat_part_version_log " +
+                    "WHERE customer_product_no = :cpn AND hf_part_no = :hf AND version = :v")
+                    .setParameter("cpn", li.customerPartNo)
+                    .setParameter("hf", li.productPartNoSnapshot)
+                    .setParameter("v", newVersion)
+                    .getResultList().stream().findFirst().orElse(null);
+            if (exists == null) {
+                throw new BusinessException(400, "版本 v" + newVersion + " 不在 ("
+                        + li.customerPartNo + ", " + li.productPartNoSnapshot + ") 的历史中");
+            }
+        }
+        li.partVersionLocked = newVersion;
+        li.persist();
+    }
 }
