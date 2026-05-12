@@ -74,7 +74,27 @@ public class PartVersionService {
     /** 指纹排除的元数据列 (用户决策 #4). 各表如有这些列, 计算指纹时排除. */
     private static final List<String> METADATA_COLS = List.of(
             "id", "created_at", "updated_at", "created_by", "updated_by",
-            "import_record_id", "imported_by", "source_excel", "import_batch_id"
+            "import_record_id", "imported_by", "source_excel", "import_batch_id",
+            // V6: staging 表专有元数据列（与 mat_* 正式表对齐，让双方指纹可比）
+            "staging_id", "import_session_id", "part_version", "is_current", "version"
+    );
+
+    /** V6: 参与版本指纹比对的 staging 表名列表（与 MAT_TABLES_FOR_FP 一一对应） */
+    private static final List<String> STAGING_TABLES_FOR_FP = List.of(
+            "mat_bom_staging",
+            "mat_process_staging",
+            "mat_fee_staging",
+            "mat_plating_plan_staging",
+            "mat_plating_fee_staging"
+    );
+
+    /** V6: 正式表参与指纹比对的子集（与 STAGING_TABLES_FOR_FP 对齐顺序） */
+    private static final List<String> MAT_TABLES_FOR_FP = List.of(
+            "mat_bom",
+            "mat_process",
+            "mat_fee",
+            "mat_plating_plan",
+            "mat_plating_fee"
     );
 
     // ============================================================
@@ -141,6 +161,74 @@ public class PartVersionService {
             combined.append(table).append('=').append(tableHash).append(';');
         }
         return md5Hex(combined.toString());
+    }
+
+    // ============================================================
+    // V6: staging 指纹基础设施
+    // ============================================================
+
+    /**
+     * V6: 计算 (sessionId, cpn, hf) 在 mat_*_staging 中的"待提交数据指纹"。
+     *
+     * <p>与 computeMatFingerprintForStagingCompare 配合：两侧 md5 相同 → NO_BUMP；
+     * 不同 → BUMP（数据真有变化）。
+     *
+     * <p>METADATA_COLS 已扩展了 staging_id/import_session_id/part_version/is_current/version，
+     * 使 staging 与 mat_* 双方列集合对齐，指纹可直接比较。
+     */
+    public String computeStagingFingerprint(UUID sessionId, String customerProductNo, String hfPartNo) {
+        StringBuilder combined = new StringBuilder();
+        for (int i = 0; i < STAGING_TABLES_FOR_FP.size(); i++) {
+            String stagingTable = STAGING_TABLES_FOR_FP.get(i);
+            String matTable     = MAT_TABLES_FOR_FP.get(i);
+            String tableHash = computeStagingTableFingerprint(stagingTable, sessionId,
+                    customerProductNo, hfPartNo);
+            combined.append(matTable).append('=').append(tableHash).append(';');
+        }
+        return md5Hex(combined.toString());
+    }
+
+    /**
+     * V6: 计算正式表 (cpn, hf, version) 的指纹，只跨与 STAGING_TABLES_FOR_FP 对齐的 5 张 mat_* 表
+     * （不含 costing_part_*），让 staging vs mat_* 双方指纹按相同表集合算出，可直接比较。
+     */
+    public String computeMatFingerprintForStagingCompare(String customerProductNo, String hfPartNo,
+                                                          int version) {
+        StringBuilder combined = new StringBuilder();
+        for (String table : MAT_TABLES_FOR_FP) {
+            String tableHash = computeTableFingerprint(table, customerProductNo, hfPartNo, version);
+            combined.append(table).append('=').append(tableHash).append(';');
+        }
+        return md5Hex(combined.toString());
+    }
+
+    /** 单张 staging 表的指纹：按 import_session_id + hf_part_no (+ cpn 如有) 过滤 */
+    private String computeStagingTableFingerprint(String stagingTable, UUID sessionId,
+                                                   String cpn, String hf) {
+        List<String> dataCols = listDataColumns(stagingTable);
+        if (dataCols.isEmpty()) return "EMPTY";
+
+        StringBuilder filterSb = new StringBuilder();
+        if (dataCols.contains("customer_product_no")) filterSb.append(" AND customer_product_no = :cpn");
+        if (dataCols.contains("hf_part_no"))          filterSb.append(" AND hf_part_no = :hf");
+
+        String colsExpr = String.join(", ",
+                dataCols.stream().map(c -> "COALESCE(" + c + "::text, '')").toList());
+        String sql = "SELECT COALESCE(md5(string_agg(row_text, ',' ORDER BY row_text)), 'EMPTY') FROM (" +
+                " SELECT concat_ws('|', " + colsExpr + ") AS row_text" +
+                " FROM " + stagingTable +
+                " WHERE import_session_id = :sid" + filterSb +
+                ") t";
+        try {
+            jakarta.persistence.Query q = em.createNativeQuery(sql).setParameter("sid", sessionId);
+            if (dataCols.contains("customer_product_no")) q.setParameter("cpn", cpn);
+            if (dataCols.contains("hf_part_no"))          q.setParameter("hf", hf);
+            Object r = q.getSingleResult();
+            return r == null ? "EMPTY" : r.toString();
+        } catch (Exception e) {
+            Log.warnf(e, "PartVersion: staging 表 %s 指纹计算失败, 视为 EMPTY", stagingTable);
+            return "EMPTY";
+        }
     }
 
     // ============================================================

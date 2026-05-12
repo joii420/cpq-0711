@@ -79,7 +79,8 @@ public class ImportSessionService {
         ParsedBasicData data = stagingWriter.parseAndWriteStaging(excel, customerId, session.id);
 
         // 3. 检测差异（只读，不写库）
-        var partVersionDecisions = diffDetector.detectPartVersions(data, customerId);
+        // V6 fix: 传 session.id 启用指纹比对，避免重复导入相同数据时因精度/类型边界误判 BUMP
+        var partVersionDecisions = diffDetector.detectPartVersions(data, customerId, session.id);
         var customerConflicts    = diffDetector.detectCustomerConflicts(data, customerId);
         var orphanRows           = diffDetector.detectOrphanRows(data, customerId);
 

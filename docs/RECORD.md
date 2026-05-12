@@ -4,6 +4,18 @@
 
 ---
 
+### [2026-05-12] V6 DiffDetector 指纹比对修复 — 重复导入相同数据误判 BUMP
+
+**根因**：`DiffDetector.detectPartVersions` 旧逻辑用"行数 + 关键字段对比"判定 BUMP/NO_BUMP，存在多处边界陷阱：(1) `computeCountDiff` 对 mat_process/mat_fee/mat_plating_fee 用 `is_current=true` 过滤导致行数偏差；(2) BigDecimal 精度格式不一致（`0.5` vs `0.50`）；(3) seq_no 类型不一致（Excel Integer vs DB BigInteger）。任一边界 bug → diff>0 → action=BUMP，导致重复导入完全相同的 Excel 被误判升版。
+
+**修复**：复用 `PartVersionService` 已有的 md5 指纹基础设施，改为 staging 表 vs mat_* 正式表双侧 md5 比对。`METADATA_COLS` 扩展 5 个 staging 元数据列让双方列集合对齐；新增 `computeStagingFingerprint` / `computeMatFingerprintForStagingCompare`；`DiffDetector.detectPartVersions` 增加 3-arg 重载（sessionId 非 null 走指纹路径，null 退化旧逻辑向后兼容）；`ImportSessionService.upload` 传 `session.id`。
+
+**涉及文件**：`PartVersionService.java` | `DiffDetector.java` | `ImportSessionService.java`
+
+**关键决策**：指纹比对仅跨 5 张 mat_* 表（不含 costing_part_*，costing 数据不由 Excel 导入决定）；旧调用方不传 sessionId 行为完全不变。
+
+---
+
 ### [2026-05-12] expand-driver 全链路加 partVersion — 修复 BOM 数据 3 倍重复
 
 **根因**：`ComponentDriverService.expand` 不接 partVersion 参数 → `PartVersionContext` 始终 null → `ImplicitJoinRewriter` 不注入 `AND part_version=N` 谓词 → 拉取版本化表所有历史版本 → 同料号显示 N 个版本叠加重复行。

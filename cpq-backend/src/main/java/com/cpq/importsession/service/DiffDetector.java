@@ -42,17 +42,29 @@ public class DiffDetector {
     // ── 料号版本差异检测 ──────────────────────────────────────────────────────
 
     /**
+     * 向后兼容重载：不传 sessionId 时走旧的行级字段对比逻辑。
+     */
+    public List<PartVersionDecisionItem> detectPartVersions(ParsedBasicData data, UUID customerId) {
+        return detectPartVersions(data, customerId, null);
+    }
+
+    /**
      * 为 ParsedBasicData 中的每个 (cpn, hf) pair 生成版本决策项。
      *
      * <p>逻辑：
      *   1. 从 mappings 行收集 (cpn, hf)；无 mappings 时从 BOM/工艺/费用中收集 hf 再查 DB 补 cpn
      *   2. 调 PartVersionService.getCurrentVersion 判断 isNew
-     *   3. isNew=true → action=NEW, suggestedVersion=2000
-     *   4. isNew=false → 计算 sheetDiffs；全为 0 则 action=NO_BUMP，否则 action=BUMP
-     *   5. 生成 rowLevelDiff（BOM field-level 对比）
+     *   3. isNew=true  → action=NEW, suggestedVersion=2000
+     *   4. isNew=false + sessionId 非 null → V6 指纹比对判定 BUMP/NO_BUMP
+     *      （规避 BigDecimal 精度 / seq_no 类型 / is_current 过滤等边界 bug）
+     *   5. isNew=false + sessionId=null → 旧行级字段对比（向后兼容）
+     *   6. 生成 rowLevelDiff（BOM field-level 对比，仅 BUMP 时）
+     *
+     * @param sessionId 非 null 时启用指纹比对（推荐），null 时退化为旧逻辑
      */
     @SuppressWarnings("unchecked")
-    public List<PartVersionDecisionItem> detectPartVersions(ParsedBasicData data, UUID customerId) {
+    public List<PartVersionDecisionItem> detectPartVersions(ParsedBasicData data, UUID customerId,
+                                                             UUID sessionId) {
         // 1. 从 mapping 行收集 (hf → cpn) 映射
         Map<String, String> cpnByHf = new LinkedHashMap<>();
         for (ParsedBasicData.MappingRow r : data.mappings) {
@@ -104,23 +116,42 @@ public class DiffDetector {
             Integer currentVersion = currentOpt.orElse(null);
             Integer suggestedVersion = isNew ? 2000 : (currentVersion + 1);
 
-            // 3. 计算 sheet 级差异计数
-            Map<String, Integer> sheetDiffs = computeSheetDiffs(data, hf, currentVersion);
-
-            // 4. 默认 action：isNew=NEW；有变更=BUMP；无变更=NO_BUMP
+            Map<String, Integer> sheetDiffs;
+            Map<String, List<PartVersionDecisionItem.RowDiff>> rowLevelDiff;
             String action;
+
             if (isNew) {
+                // 全新料号
                 action = "NEW";
+                sheetDiffs = computeSheetDiffs(data, hf, null);
+                rowLevelDiff = Collections.emptyMap();
+            } else if (sessionId != null) {
+                // V6 指纹比对路径：staging 表 md5 vs mat_* 正式表 md5
+                String stagingFp = partVersionService.computeStagingFingerprint(sessionId, cpn, hf);
+                String matFp     = partVersionService.computeMatFingerprintForStagingCompare(
+                        cpn, hf, currentVersion);
+                boolean hasChange = !stagingFp.equals(matFp);
+                LOG.infof("V6 fingerprint compare (%s|%s, v=%d): staging=%s mat=%s → %s",
+                        cpn, hf, currentVersion,
+                        stagingFp.substring(0, Math.min(8, stagingFp.length())),
+                        matFp.substring(0, Math.min(8, matFp.length())),
+                        hasChange ? "BUMP" : "NO_BUMP");
+                action = hasChange ? "BUMP" : "NO_BUMP";
+                sheetDiffs = hasChange
+                        ? computeSheetDiffs(data, hf, currentVersion)
+                        : Map.of("bom", 0, "process", 0, "fee", 0, "plating_fee", 0);
+                rowLevelDiff = hasChange
+                        ? computeRowLevelDiff(data, hf, currentVersion)
+                        : Collections.emptyMap();
             } else {
+                // 旧行级字段对比路径（向后兼容，sessionId=null 时）
+                sheetDiffs = computeSheetDiffs(data, hf, currentVersion);
                 boolean hasChange = sheetDiffs.values().stream().anyMatch(v -> v > 0);
                 action = hasChange ? "BUMP" : "NO_BUMP";
+                rowLevelDiff = hasChange
+                        ? computeRowLevelDiff(data, hf, currentVersion)
+                        : Collections.emptyMap();
             }
-
-            // 5. row-level diff（仅对非新料号且有变更的 BOM 计算）
-            Map<String, List<PartVersionDecisionItem.RowDiff>> rowLevelDiff =
-                    (action.equals("BUMP"))
-                    ? computeRowLevelDiff(data, hf, currentVersion)
-                    : Collections.emptyMap();
 
             PartVersionDecisionItem item = new PartVersionDecisionItem();
             item.key = key;
