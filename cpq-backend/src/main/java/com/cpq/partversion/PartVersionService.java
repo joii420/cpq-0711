@@ -247,6 +247,44 @@ public class PartVersionService {
     }
 
     // ============================================================
+    // 临时 admin: 清空报价基础数据 (用于测试重置)
+    // 不清空: customer / product / template / component / costing_part_*
+    // ============================================================
+    @Transactional
+    public java.util.Map<String, Integer> wipeBasicData() {
+        java.util.LinkedHashMap<String, Integer> stats = new java.util.LinkedHashMap<>();
+        // 顺序很重要 - 先删 FK 引用方, 后删被引用方
+        // 注意: 不删 mat_part (物料主档, 有 plating_fee 等 FK 引用, 删会让事务回滚)
+        // 不删 import_record (有其他表 FK 引用); 它们留着不影响重新导入测试
+        String[] tables = {
+                "quotation_line_component_data",
+                "quotation_line_process",
+                "quotation_line_item_snapshot",
+                "quotation_line_item",
+                "quotation_approval",
+                "quotation",
+                "mat_part_version_log",
+                "mat_plating_fee",
+                "mat_plating_plan",
+                "mat_fee",
+                "mat_process",
+                "mat_bom",
+                "mat_customer_part_mapping"
+        };
+        for (String t : tables) {
+            try {
+                int n = em.createNativeQuery("DELETE FROM " + t).executeUpdate();
+                stats.put(t, n);
+                Log.infof("WIPE: %s deleted %d rows", t, n);
+            } catch (Exception e) {
+                stats.put(t, -1);
+                Log.warnf("WIPE: %s failed: %s", t, e.getMessage());
+            }
+        }
+        return stats;
+    }
+
+    // ============================================================
     // 内部: 单表指纹计算
     // ============================================================
 

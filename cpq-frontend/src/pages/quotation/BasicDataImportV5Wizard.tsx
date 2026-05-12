@@ -282,12 +282,49 @@ const BasicDataImportV5Wizard: React.FC<BasicDataImportV5WizardProps> = ({
       ...Array.from(customerResolutions.values()),
       ...orphanResolutions,
     ];
-    // B2: 料号版本决策 — preview 返回的 partVersionPreview 默认全部 BUMP (升版)
-    // 后续 PR 可加 UI 让用户按料号选 BUMP / NO_CHANGE / SKIP, 当前自动升所有料号
-    const partVersionDecisions: Record<string, string> = {};
+    // B2: 料号版本决策 — preview 返回 partVersionPreview 含本次涉及的料号清单
+    // 弹 Modal 询问用户是否升版 (而非 auto-BUMP 无感升版)
     const previewItems = previewResult?.partVersionPreview ?? [];
-    for (const item of previewItems) {
-      partVersionDecisions[`${item.customerProductNo}|${item.hfPartNo}`] = 'BUMP';
+    let partVersionDecisions: Record<string, string> = {};
+    if (previewItems.length > 0) {
+      const userChoice = await new Promise<'BUMP' | 'NO_CHANGE'>((resolve) => {
+        Modal.confirm({
+          title: '料号版本升级确认',
+          width: 640,
+          content: (
+            <div>
+              <p style={{ marginBottom: 8 }}>
+                以下 <strong>{previewItems.length}</strong> 个料号有数据变更, 是否升版?
+              </p>
+              <p style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 12 }}>
+                升版后: 创建新版本号 v{previewItems[0]?.suggestedNewVersion}; 新建的报价单将使用新版本, 已发布报价单不受影响.
+              </p>
+              <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 4, padding: 8 }}>
+                {previewItems.map((item, i) => (
+                  <div key={i} style={{ padding: '4px 0', fontSize: 13, borderBottom: i < previewItems.length - 1 ? '1px solid #fafafa' : 'none' }}>
+                    <span style={{ color: '#0958d9' }}>{item.customerProductNo}</span>
+                    {' / '}
+                    <span style={{ fontFamily: 'monospace', color: '#595959' }}>{item.hfPartNo}</span>
+                    {' '}
+                    <span style={{ color: '#bbb' }}>v{item.currentVersion} → </span>
+                    <strong style={{ color: '#389e0d' }}>v{item.suggestedNewVersion}</strong>
+                  </div>
+                ))}
+              </div>
+              <p style={{ fontSize: 12, color: '#8c8c8c', marginTop: 8 }}>
+                差异详情已在前面"基础数据差异确认"步骤展示. 此步仅决定是否触发版本升级.
+              </p>
+            </div>
+          ),
+          okText: '全部升版',
+          cancelText: '不升版 (覆盖当前)',
+          onOk: () => resolve('BUMP'),
+          onCancel: () => resolve('NO_CHANGE'),
+        });
+      });
+      for (const item of previewItems) {
+        partVersionDecisions[`${item.customerProductNo}|${item.hfPartNo}`] = userChoice;
+      }
     }
     try {
       const result = await basicDataImportV5Service.confirm(

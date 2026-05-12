@@ -121,6 +121,20 @@ public class PartVersionResource {
             Map<String, DiffSummary> diffByTable
     ) {}
 
+    /**
+     * 临时 admin: 清空报价基础数据 + 报价单 (不清模板/组件/客户/产品/核价表).
+     * 仅用于测试重置场景, 后续 PR 应移除.
+     */
+    @POST
+    @Path("/admin/wipe-basic-data")
+    public Response wipeBasicData() {
+        Map<String, Integer> stats = service.wipeBasicData();
+        Map<String, Object> body = new HashMap<>();
+        body.put("deletedByTable", stats);
+        body.put("note", "清空成功. 可重新导入 Excel 测试.");
+        return ok(body);
+    }
+
     private static Response ok(Object data) {
         Map<String, Object> resp = new HashMap<>();
         resp.put("code", 0);
