@@ -156,6 +156,8 @@ public class QuotationDTO {
         public List<ProcessDTO> processes;
         public List<ComponentDataDTO> componentData;
         public SnapshotDTO snapshot;
+        /** 料号版本锁定 (S5): 该行报价使用的 (customer_product_no, hf_part_no) 版本号 */
+        public Integer partVersionLocked;
 
         public static LineItemDTO from(QuotationLineItem li) {
             LineItemDTO dto = new LineItemDTO();
@@ -163,6 +165,7 @@ public class QuotationDTO {
             dto.productId = li.productId;
             dto.templateId = li.templateId;
             dto.customerPartNo = li.customerPartNo;
+            dto.partVersionLocked = li.partVersionLocked;
             dto.productAttributeValues = li.productAttributeValues;
             dto.subtotal = li.subtotal;
             dto.systemDiscountRate = li.systemDiscountRate;

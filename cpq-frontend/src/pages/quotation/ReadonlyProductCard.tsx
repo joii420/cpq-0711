@@ -236,6 +236,16 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
               生产料号: {lineItem.productPartNo}
             </span>
           )}
+          {/* 料号版本锁定 (S5): 显示该行报价使用的版本号 (业务功能不变 — 仅展示) */}
+          {lineItem.partVersionLocked != null && (
+            <span
+              className="qt-sku-badge"
+              style={{ background: '#f6ffed', color: '#389e0d', border: '1px solid #b7eb8f' }}
+              title="料号版本管理 — 本行报价数据锁定版本"
+            >
+              版本: v{lineItem.partVersionLocked}
+            </span>
+          )}
           {lineItem.snapshot?.productCategory && (
             <span className="qt-template-badge">{lineItem.snapshot.productCategory}</span>
           )}

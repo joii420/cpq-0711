@@ -276,6 +276,25 @@ public class QuotationService {
                 }
                 li.persist();
 
+                // 料号版本管理 (S5): 拷贝 mat_customer_part_mapping.current_version → part_version_locked
+                // 业务功能不变 — 仅写入 line_item 的版本快照, 读路径仍按旧方式工作
+                if (li.customerPartNo != null && !li.customerPartNo.isBlank()
+                        && li.productPartNoSnapshot != null && !li.productPartNoSnapshot.isBlank()) {
+                    try {
+                        Object cur = em.createNativeQuery(
+                                "SELECT current_version FROM mat_customer_part_mapping " +
+                                "WHERE customer_product_no = :cpn AND hf_part_no = :hf LIMIT 1")
+                                .setParameter("cpn", li.customerPartNo)
+                                .setParameter("hf", li.productPartNoSnapshot)
+                                .getResultList().stream().findFirst().orElse(null);
+                        if (cur != null) {
+                            li.partVersionLocked = ((Number) cur).intValue();
+                        }
+                    } catch (Exception e) {
+                        // 失败保留默认 2000, 不阻塞报价单创建
+                    }
+                }
+
                 // 收集 partNo 供版本快照（通过 Product 查询 HF 料号）
                 if (liDraft.productId != null) {
                     Product product = Product.findById(liDraft.productId);

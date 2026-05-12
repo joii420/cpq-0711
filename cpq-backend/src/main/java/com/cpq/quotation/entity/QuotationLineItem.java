@@ -79,5 +79,3 @@ public class QuotationLineItem extends PanacheEntityBase {
         }
     }
 }
-// trigger rebuild 1778556012
-// trigger 1778556042625124400
