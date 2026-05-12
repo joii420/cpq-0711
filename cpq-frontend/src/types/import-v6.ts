@@ -122,4 +122,6 @@ export interface CommitRequest {
 export interface CommitResult {
   quotationId: string;
   sessionId: string;
+  /** 本次 commit 产生的 import_record.id，跳转 URL 加 importRecordId 让 Step2 按本次过滤料号 */
+  importRecordId?: string;
 }

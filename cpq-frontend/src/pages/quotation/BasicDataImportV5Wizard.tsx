@@ -270,7 +270,11 @@ const BasicDataImportV5Wizard: React.FC<BasicDataImportV5WizardProps> = ({
       });
       message.success('报价单已创建，正在跳转…');
       onSuccess?.(result.quotationId, customerId);
+      // V6: 带 importRecordId 让 Step2 按本次导入精确过滤涉及料号
+      //     避免拉客户全部历史 mapping → 显示多余产品
+      //     （参见 AP-23 / CustomerPartCandidateService.java 注释）
       const qs = new URLSearchParams({ autoPopulate: '1' });
+      if (result.importRecordId) qs.set('importRecordId', result.importRecordId);
       navigate(`/quotations/${result.quotationId}/edit?${qs.toString()}`);
       onClose();
     } catch (err: any) {

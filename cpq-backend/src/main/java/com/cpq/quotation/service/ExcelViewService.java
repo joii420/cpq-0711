@@ -129,6 +129,11 @@ public class ExcelViewService {
                                               UUID templateId,
                                               Map<String, TemplateFormulaDTO> formulaByName,
                                               UUID quotationCustomerId) {
+        // V6: 把本行的 part_version_locked 推入 ThreadLocal，深层 DataLoader.loadByPath
+        // 自动注入 AND part_version=N 谓词，避免拉取所有历史版本数据导致 BOM 等表"X 项 (共N项)" 重复显示。
+        // partVersion=null 时行为与旧逻辑完全一致。
+        com.cpq.formula.dataloader.PartVersionContext.set(li.partVersionLocked);
+        try {
         Map<String, Object> productAttrs = parseJsonMap(li.productAttributeValues);
         List<QuotationLineComponentData> componentDataList =
             QuotationLineComponentData.list("lineItemId = ?1 ORDER BY sortOrder ASC", li.id);
@@ -188,6 +193,9 @@ public class ExcelViewService {
             cachedCells.put(colKey, value);  // 供后续 FORMULA 列引用
         }
         return row;
+        } finally {
+            com.cpq.formula.dataloader.PartVersionContext.clear();
+        }
     }
 
     /**

@@ -108,7 +108,11 @@ public class DataLoader {
                                                                     Map<String, Object> driverRow,
                                                                     String partNo,
                                                                     UUID customerId) {
-        return loadByPath(path, driverRow, partNo, customerId, null);
+        // V6: 自动从 ThreadLocal 拾取 partVersion，深层求值代码无需修改签名即可注入版本谓词。
+        // 上游（ExcelViewService.buildRowData / regenerateAllSnapshots）在调用前 set(),
+        // finally clear()。partVersion=null 时行为完全等同旧 4-arg 语义。
+        Integer ctxVersion = PartVersionContext.get();
+        return loadByPath(path, driverRow, partNo, customerId, ctxVersion);
     }
 
     /**

@@ -65,7 +65,8 @@ public class StagingMerger {
             UUID sessionId,
             List<ImportSessionDecision> decisions,
             UUID userId,
-            String sourceExcel) {
+            String sourceExcel,
+            UUID importRecordId) {
 
         Map<String, Integer> appliedVersions = new HashMap<>();
 
@@ -103,7 +104,7 @@ public class StagingMerger {
                     // 先将 staging 写入正式表（用 currentVersion+1 作为版本号，由 applyVersionBump 算）
                     // 这里先用 currentVersion 写入，applyVersionBump 会 bump mapping 记录
                     int targetVersion = (currentVersion != null ? currentVersion : 2000) + 1;
-                    mergeStagingToMat(sessionId, cpn, hf, targetVersion);
+                    mergeStagingToMat(sessionId, cpn, hf, targetVersion, importRecordId);
                     // 再升版号（写 mat_part_version_log + bump mapping.current_version）
                     appliedVersion = partVersionService.applyVersionBump(
                             cpn, hf, userId, sourceExcel, null, null);
@@ -111,7 +112,7 @@ public class StagingMerger {
                 }
                 case "NEW" -> {
                     // 新料号，先确保 mapping 行存在（由 mergeStagingToMat 写 mapping staging）
-                    mergeStagingToMat(sessionId, cpn, hf, 2000);
+                    mergeStagingToMat(sessionId, cpn, hf, 2000, importRecordId);
                     appliedVersion = 2000;
                     LOG.infof("StagingMerger: NEW (%s, %s) → v%d", cpn, hf, appliedVersion);
                 }
@@ -142,7 +143,8 @@ public class StagingMerger {
      *
      * <p>版本号注入：staging 中的 part_version=2000 基线值在此处替换为 targetVersion。
      */
-    private void mergeStagingToMat(UUID sessionId, String cpn, String hf, int targetVersion) {
+    private void mergeStagingToMat(UUID sessionId, String cpn, String hf, int targetVersion,
+                                     UUID importRecordId) {
         try (Connection conn = dataSource.getConnection()) {
             // 1. mat_customer_part_mapping（UPSERT：若不存在则插入，存在则不覆盖 mapping 主数据）
             mergeMapping(conn, sessionId, cpn, hf, targetVersion);
@@ -150,12 +152,12 @@ public class StagingMerger {
             mergePart(conn, sessionId, hf);
             // 3. mat_bom
             mergeBom(conn, sessionId, hf, targetVersion);
-            // 4. mat_process
-            mergeProcess(conn, sessionId, cpn, hf, targetVersion);
+            // 4. mat_process — 带 import_record_id（CustomerPartCandidateService 据此过滤本次料号）
+            mergeProcess(conn, sessionId, cpn, hf, targetVersion, importRecordId);
             // 5. mat_fee
-            mergeFee(conn, sessionId, cpn, hf, targetVersion);
+            mergeFee(conn, sessionId, cpn, hf, targetVersion, importRecordId);
             // 6. mat_plating_fee
-            mergePlatingFee(conn, sessionId, cpn, hf, targetVersion);
+            mergePlatingFee(conn, sessionId, cpn, hf, targetVersion, importRecordId);
             // 7. mat_plating_plan（plating_plan_code 来自 staging，按 hf 关联）
             mergePlatingPlan(conn, sessionId, hf, targetVersion);
         } catch (BusinessException be) {
@@ -243,12 +245,18 @@ public class StagingMerger {
     }
 
     private void mergeProcess(Connection conn, UUID sessionId, String cpn, String hf,
-                               int targetVersion) throws Exception {
-        // 先将同 hf + part_version 的旧行 is_current=false（不物理删除，保留历史）
-        // 然后从 staging INSERT 新版本行，is_current=true
+                               int targetVersion, UUID importRecordId) throws Exception {
+        // 先把同 hf + targetVersion 的旧行物理 DELETE（避免同版本号下叠加重复行；旧版本号行不动）
+        try (PreparedStatement del = conn.prepareStatement(
+                "DELETE FROM mat_process WHERE hf_part_no = ? AND part_version = ?")) {
+            del.setString(1, hf);
+            del.setInt(2, targetVersion);
+            del.executeUpdate();
+        }
+        // 同时把同 hf 其它版本 is_current 置 false（保持只有 targetVersion 是 current）
         try (PreparedStatement upd = conn.prepareStatement(
                 "UPDATE mat_process SET is_current = false " +
-                "WHERE hf_part_no = ? AND part_version = ?")) {
+                "WHERE hf_part_no = ? AND part_version <> ?")) {
             upd.setString(1, hf);
             upd.setInt(2, targetVersion);
             upd.executeUpdate();
@@ -258,27 +266,34 @@ public class StagingMerger {
             "  (id, customer_id, hf_part_no, seq_no, sub_seq_no, process_code, assembly_process, " +
             "   component_part_no, component_name, supplier_code, supplier_name, quantity, " +
             "   quantity_unit, unit_price, freight, currency, price_unit, " +
-            "   part_version, is_current, version) " +
+            "   part_version, is_current, version, import_record_id) " +
             "SELECT gen_random_uuid(), s.customer_id, s.hf_part_no, s.seq_no, s.sub_seq_no, " +
             "       s.process_code, s.assembly_process, s.component_part_no, s.component_name, " +
             "       s.supplier_code, s.supplier_name, s.quantity, s.quantity_unit, " +
             "       s.unit_price, s.freight, s.currency, s.price_unit, " +
-            "       ?, true, 1 " +
+            "       ?, true, 1, ? " +
             "FROM mat_process_staging s " +
             "WHERE s.import_session_id = ? AND s.hf_part_no = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, targetVersion);
-            ps.setObject(2, sessionId);
-            ps.setString(3, hf);
+            ps.setObject(2, importRecordId);
+            ps.setObject(3, sessionId);
+            ps.setString(4, hf);
             ps.executeUpdate();
         }
     }
 
     private void mergeFee(Connection conn, UUID sessionId, String cpn, String hf,
-                           int targetVersion) throws Exception {
+                           int targetVersion, UUID importRecordId) throws Exception {
+        try (PreparedStatement del = conn.prepareStatement(
+                "DELETE FROM mat_fee WHERE hf_part_no = ? AND part_version = ?")) {
+            del.setString(1, hf);
+            del.setInt(2, targetVersion);
+            del.executeUpdate();
+        }
         try (PreparedStatement upd = conn.prepareStatement(
                 "UPDATE mat_fee SET is_current = false " +
-                "WHERE hf_part_no = ? AND part_version = ?")) {
+                "WHERE hf_part_no = ? AND part_version <> ?")) {
             upd.setString(1, hf);
             upd.setInt(2, targetVersion);
             upd.executeUpdate();
@@ -289,28 +304,35 @@ public class StagingMerger {
             "   dim_input_material_no, dim_input_material_name, dim_element_name, " +
             "   dim_assembly_process, dim_sub_seq_no, price_floating, settlement_rise_ratio, " +
             "   fixed_rise_value, rise_currency, rise_unit, reject_rate, " +
-            "   part_version, is_current, version) " +
+            "   part_version, is_current, version, import_record_id) " +
             "SELECT gen_random_uuid(), s.customer_id, s.hf_part_no, s.fee_type, s.seq_no, " +
             "       s.fee_value, s.fee_ratio, s.currency, s.price_unit, " +
             "       s.dim_input_material_no, s.dim_input_material_name, s.dim_element_name, " +
             "       s.dim_assembly_process, s.dim_sub_seq_no, s.price_floating, " +
             "       s.settlement_rise_ratio, s.fixed_rise_value, s.rise_currency, s.rise_unit, " +
-            "       s.reject_rate, ?, true, 1 " +
+            "       s.reject_rate, ?, true, 1, ? " +
             "FROM mat_fee_staging s " +
             "WHERE s.import_session_id = ? AND s.hf_part_no = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, targetVersion);
-            ps.setObject(2, sessionId);
-            ps.setString(3, hf);
+            ps.setObject(2, importRecordId);
+            ps.setObject(3, sessionId);
+            ps.setString(4, hf);
             ps.executeUpdate();
         }
     }
 
     private void mergePlatingFee(Connection conn, UUID sessionId, String cpn, String hf,
-                                  int targetVersion) throws Exception {
+                                  int targetVersion, UUID importRecordId) throws Exception {
+        try (PreparedStatement del = conn.prepareStatement(
+                "DELETE FROM mat_plating_fee WHERE hf_part_no = ? AND part_version = ?")) {
+            del.setString(1, hf);
+            del.setInt(2, targetVersion);
+            del.executeUpdate();
+        }
         try (PreparedStatement upd = conn.prepareStatement(
                 "UPDATE mat_plating_fee SET is_current = false " +
-                "WHERE hf_part_no = ? AND part_version = ?")) {
+                "WHERE hf_part_no = ? AND part_version <> ?")) {
             upd.setString(1, hf);
             upd.setInt(2, targetVersion);
             upd.executeUpdate();
@@ -319,16 +341,17 @@ public class StagingMerger {
             "INSERT INTO mat_plating_fee " +
             "  (id, customer_id, hf_part_no, plating_plan_code, plan_version, " +
             "   plating_process_fee, plating_material_fee, currency, price_unit, defect_rate, " +
-            "   part_version, is_current, version) " +
+            "   part_version, is_current, version, import_record_id) " +
             "SELECT gen_random_uuid(), s.customer_id, s.hf_part_no, s.plating_plan_code, s.plan_version, " +
             "       s.plating_process_fee, s.plating_material_fee, s.currency, s.price_unit, " +
-            "       s.defect_rate, ?, true, 1 " +
+            "       s.defect_rate, ?, true, 1, ? " +
             "FROM mat_plating_fee_staging s " +
             "WHERE s.import_session_id = ? AND s.hf_part_no = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, targetVersion);
-            ps.setObject(2, sessionId);
-            ps.setString(3, hf);
+            ps.setObject(2, importRecordId);
+            ps.setObject(3, sessionId);
+            ps.setString(4, hf);
             ps.executeUpdate();
         }
     }

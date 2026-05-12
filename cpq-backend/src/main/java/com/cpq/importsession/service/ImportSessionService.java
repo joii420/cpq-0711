@@ -178,9 +178,25 @@ public class ImportSessionService {
                 })
                 .toList();
 
+        // 1.5 先创建 ImportRecord 拿到 importRecordId（StagingMerger 写入正式表时需要）
+        //     业务用途：CustomerPartCandidateService 在前端 autoPopulate 流程中按
+        //     import_record_id 过滤"本次导入涉及的料号"，避免拉客户全部历史 mapping
+        //     (参见 AP-23 / CustomerPartCandidateService.java 注释)
+        com.cpq.importexcel.entity.ImportRecord importRecord = new com.cpq.importexcel.entity.ImportRecord();
+        importRecord.customerId = session.customerId;
+        importRecord.importedBy = userId != null ? userId : session.customerId;  // userId 缺省时用 customerId 占位
+        importRecord.originalFileName = session.sourceExcel != null ? session.sourceExcel : "v6-import.xlsx";
+        importRecord.importStatus = "SUCCESS";
+        importRecord.totalRows = partVersionDecisions.size();
+        importRecord.matchedRows = 0;  // commit 后续会按真实写入数填充
+        importRecord.persist();
+        em.flush();  // 让 import_record 行立即落库（StagingMerger 用 JDBC 写 FK 要看到）
+        UUID importRecordId = importRecord.id;
+        LOG.infof("V6 commit: created import_record=%s for session=%s", importRecordId, sessionId);
+
         // 2. 合并 staging → mat_*（BUMP/NEW 写正式表，NO_BUMP 跳过）
         Map<String, Integer> appliedVersions = stagingMerger.applyPartVersionDecisions(
-                sessionId, partVersionDecisions, userId, session.sourceExcel);
+                sessionId, partVersionDecisions, userId, session.sourceExcel, importRecordId);
 
         // 3. 更新每条决策的 appliedVersion（写回 JSONB）
         for (Map.Entry<String, Integer> entry : appliedVersions.entrySet()) {
@@ -207,6 +223,11 @@ public class ImportSessionService {
         UUID quotationId = quotationDTO.id;
         LOG.infof("V6 commit: session=%s → quotation=%s", sessionId, quotationId);
 
+        // 把 quotation_id 回写到 import_record 建立双向追溯
+        importRecord.quotationId = quotationId;
+        importRecord.matchedRows = appliedVersions.size();
+        importRecord.persist();
+
         // 5. 清 staging（主动清除，session 仍保留作审计）
         stagingMerger.clearStaging(sessionId);
 
@@ -216,7 +237,7 @@ public class ImportSessionService {
                 .setParameter("sid", sessionId)
                 .executeUpdate();
 
-        return new CommitResult(quotationId, sessionId);
+        return new CommitResult(quotationId, sessionId, importRecordId);
     }
 
     // ── cancel ────────────────────────────────────────────────────────────────
