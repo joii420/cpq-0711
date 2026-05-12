@@ -19,5 +19,11 @@ public class BatchExpandDriverRequest {
         public UUID customerId;
         /** 料号（可选） */
         public String partNo;
+        /**
+         * 料号版本号（可选）。传入后 ImplicitJoinRewriter 注入 AND part_version=N 谓词，
+         * 只拉该版本数据，避免历史版本叠加重复。
+         * null = 不注入版本过滤（向后兼容旧调用方）。
+         */
+        public Integer partVersion;
     }
 }

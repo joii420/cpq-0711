@@ -88,7 +88,8 @@ public class ComponentResource {
             ExpandDriverRequest req) {
         UUID customerId = req != null ? req.customerId : null;
         String partNo = req != null ? req.partNo : null;
-        return ApiResponse.success(componentDriverService.expand(id, customerId, partNo));
+        Integer partVersion = req != null ? req.partVersion : null;
+        return ApiResponse.success(componentDriverService.expand(id, customerId, partNo, partVersion));
     }
 
     /**
@@ -114,9 +115,9 @@ public class ComponentResource {
         }
         for (Task t : req.tasks) {
             Result r = new Result();
-            r.key = ComponentDriverService.cacheKey(t.componentId, t.customerId, t.partNo);
+            r.key = ComponentDriverService.cacheKey(t.componentId, t.customerId, t.partNo, t.partVersion);
             try {
-                r.data = componentDriverService.expand(t.componentId, t.customerId, t.partNo);
+                r.data = componentDriverService.expand(t.componentId, t.customerId, t.partNo, t.partVersion);
                 r.status = "OK";
             } catch (Exception e) {
                 r.status = "ERROR";

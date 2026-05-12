@@ -7,6 +7,7 @@ import com.cpq.formula.EvaluationContext;
 import com.cpq.formula.FormulaEngine;
 import com.cpq.formula.FormulaError;
 import com.cpq.formula.dataloader.DataLoader;
+import com.cpq.formula.dataloader.PartVersionContext;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -62,12 +63,22 @@ public class ComponentDriverService {
     DataLoader dataLoader;
 
     /**
-     * 构建缓存 key，与 BatchExpandDriverResponse.Result.key 格式一致。
+     * 构建缓存 key（4-arg，含 partVersion 维度）。
+     * key 格式: "componentId:customerId:partNo:partVersion"（null 用 "_" 占位）
      */
-    public static String cacheKey(UUID componentId, UUID customerId, String partNo) {
+    public static String cacheKey(UUID componentId, UUID customerId, String partNo, Integer partVersion) {
         return componentId + ":"
                 + (customerId != null ? customerId.toString() : "_")
-                + ":" + (partNo != null && !partNo.isBlank() ? partNo : "_");
+                + ":" + (partNo != null && !partNo.isBlank() ? partNo : "_")
+                + ":" + (partVersion != null ? partVersion.toString() : "_");
+    }
+
+    /**
+     * 构建缓存 key（3-arg 向后兼容重载，partVersion=null）。
+     * 委托给 4-arg 重载，key 末段为 "_"。
+     */
+    public static String cacheKey(UUID componentId, UUID customerId, String partNo) {
+        return cacheKey(componentId, customerId, partNo, null);
     }
 
     /**
@@ -79,9 +90,22 @@ public class ComponentDriverService {
         LOG.infof("[expand-driver cache] evictAll called, estimated entries before evict=%d", sizeBefore);
     }
 
+    /**
+     * 向后兼容 3-arg 重载，partVersion=null（不注入版本过滤）。
+     */
     public ExpandDriverResponse expand(UUID componentId, UUID customerId, String partNo) {
-        // 进程级缓存：先查 cache，hit 直接返回
-        String key = cacheKey(componentId, customerId, partNo);
+        return expand(componentId, customerId, partNo, null);
+    }
+
+    /**
+     * 4-arg 重载：含 partVersion，set/clear PartVersionContext 确保 ImplicitJoinRewriter
+     * 在 DataLoader 查询时注入 AND part_version=N 谓词，避免历史版本数据叠加重复。
+     *
+     * @param partVersion 料号版本号；null = 不注入版本过滤（行为等同旧版）
+     */
+    public ExpandDriverResponse expand(UUID componentId, UUID customerId, String partNo, Integer partVersion) {
+        // 进程级缓存：先查 cache，hit 直接返回（key 含 partVersion 维度）
+        String key = cacheKey(componentId, customerId, partNo, partVersion);
         ExpandDriverResponse cached = expandCache.getIfPresent(key);
         if (cached != null) {
             LOG.debugf("[expand-driver cache] HIT key=%s", key);
@@ -93,8 +117,8 @@ public class ComponentDriverService {
         }
 
         // [Y1.5 DEBUG] 排查日志 — 确认 dataDriverPath 落库 + 入参
-        LOG.infof("[Y1.5 expand-driver] componentId=%s code=%s dataDriverPath=%s partNo=%s customerId=%s",
-                componentId, component.code, component.dataDriverPath, partNo, customerId);
+        LOG.infof("[Y1.5 expand-driver] componentId=%s code=%s dataDriverPath=%s partNo=%s customerId=%s partVersion=%s",
+                componentId, component.code, component.dataDriverPath, partNo, customerId, partVersion);
 
         ExpandDriverResponse resp = new ExpandDriverResponse();
         resp.driverPath = component.dataDriverPath;
@@ -107,35 +131,41 @@ public class ComponentDriverService {
             return resp;
         }
 
-        // 1. 查 driver 行 — 用 (partNo, customerId) 作为基础上下文隐式 JOIN
-        List<Map<String, Object>> driverRows;
+        // 注入 partVersion 到 ThreadLocal，DataLoader/ImplicitJoinRewriter 在版本化表查询时读取
+        PartVersionContext.set(partVersion);
         try {
-            driverRows = dataLoader.loadByPath(component.dataDriverPath, null, partNo, customerId).get();
-        } catch (InterruptedException | ExecutionException e) {
-            LOG.warnf("Driver path resolve failed: path=%s, err=%s",
-                    component.dataDriverPath, e.getMessage());
-            throw new BusinessException("driver 路径查询失败: " + e.getMessage());
-        }
-        if (driverRows == null) driverRows = List.of();
-        resp.rowCount = driverRows.size();
-
-        // 2. 拿 BASIC_DATA 字段路径列表
-        List<String> basicDataPaths = parseBasicDataPaths(component.fields);
-
-        // 3. 对每一行,逐路径求值
-        for (Map<String, Object> driverRow : driverRows) {
-            ExpandDriverResponse.Row row = new ExpandDriverResponse.Row();
-            row.driverRow = driverRow;
-            row.basicDataValues = new LinkedHashMap<>();
-            for (String fieldPath : basicDataPaths) {
-                Object value = evaluatePath(fieldPath, driverRow, customerId, partNo);
-                row.basicDataValues.put(fieldPath, value);
+            // 1. 查 driver 行 — 用 (partNo, customerId) 作为基础上下文隐式 JOIN
+            List<Map<String, Object>> driverRows;
+            try {
+                driverRows = dataLoader.loadByPath(component.dataDriverPath, null, partNo, customerId).get();
+            } catch (InterruptedException | ExecutionException e) {
+                LOG.warnf("Driver path resolve failed: path=%s, err=%s",
+                        component.dataDriverPath, e.getMessage());
+                throw new BusinessException("driver 路径查询失败: " + e.getMessage());
             }
-            resp.rows.add(row);
+            if (driverRows == null) driverRows = List.of();
+            resp.rowCount = driverRows.size();
+
+            // 2. 拿 BASIC_DATA 字段路径列表
+            List<String> basicDataPaths = parseBasicDataPaths(component.fields);
+
+            // 3. 对每一行,逐路径求值
+            for (Map<String, Object> driverRow : driverRows) {
+                ExpandDriverResponse.Row row = new ExpandDriverResponse.Row();
+                row.driverRow = driverRow;
+                row.basicDataValues = new LinkedHashMap<>();
+                for (String fieldPath : basicDataPaths) {
+                    Object value = evaluatePath(fieldPath, driverRow, customerId, partNo);
+                    row.basicDataValues.put(fieldPath, value);
+                }
+                resp.rows.add(row);
+            }
+        } finally {
+            PartVersionContext.clear();
         }
 
-        LOG.infof("[Y1.5 expand-driver] expanded: id=%s code=%s rows=%d fieldsPerRow=%d",
-                componentId, component.code, resp.rowCount, basicDataPaths.size());
+        LOG.infof("[Y1.5 expand-driver] expanded: id=%s code=%s rows=%d partVersion=%s",
+                componentId, component.code, resp.rowCount, partVersion);
         // miss 路径成功计算后写入缓存（异常会在上方抛出，不会执行到此处，确保错误不缓存）
         expandCache.put(key, resp);
         return resp;

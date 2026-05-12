@@ -5,6 +5,8 @@ export interface BatchExpandTask {
   componentId: string;
   customerId?: string | null;
   partNo?: string | null;
+  /** 料号版本号（可选）。传入后后端注入 AND part_version=N 过滤，避免历史版本叠加重复。 */
+  partVersion?: number | null;
 }
 
 export interface BatchExpandResultItem {
@@ -21,14 +23,15 @@ export interface BatchExpandResultItem {
 
 /**
  * 构造与后端 cacheKey 一致的字符串，用于匹配 batch 结果。
- * 后端规则: componentId:customerId:partNo，null/undefined 填 "_"
+ * 后端规则: componentId:customerId:partNo:partVersion，null/undefined 填 "_"
  */
 export function buildBatchKey(
   componentId: string,
   customerId?: string | null,
   partNo?: string | null,
+  partVersion?: number | null,
 ): string {
-  return `${componentId}:${customerId ?? '_'}:${partNo ?? '_'}`;
+  return `${componentId}:${customerId ?? '_'}:${partNo ?? '_'}:${partVersion ?? '_'}`;
 }
 
 /**

@@ -55,6 +55,8 @@ export function useDriverExpansions(
     return JSON.stringify(
       (lineItems || []).map((li) => ({
         pn: li.productPartNo,
+        // partVersionLocked 变化（版本切换）必须触发重查，加入指纹
+        pv: li.partVersionLocked ?? null,
         cids: (li.componentData || [])
           .filter((cd) => cd.componentId && cd.componentType !== 'SUBTOTAL')
           .map((cd) => cd.componentId)
@@ -68,17 +70,18 @@ export function useDriverExpansions(
   //       直接对所有 componentId 探测;后端按组件实时读 data_driver_path,
   //       未配 driver 的组件返回 rowCount=0,前端按单行兜底渲染。
   const tasks = useMemo(() => {
-    const out: Array<{ key: string; componentId: string; partNo: string }> = [];
+    const out: Array<{ key: string; componentId: string; partNo: string; partVersion: number | null }> = [];
     const seen = new Set<string>();
     for (const item of lineItems || []) {
       if (!item.productPartNo) continue;
+      const partVersion = item.partVersionLocked ?? null;
       for (const comp of item.componentData || []) {
         if (!comp.componentId) continue;
         if (comp.componentType === 'SUBTOTAL') continue;
         const key = driverExpansionKey(item.productPartNo, comp.componentId, customerId);
         if (seen.has(key)) continue;
         seen.add(key);
-        out.push({ key, componentId: comp.componentId, partNo: item.productPartNo });
+        out.push({ key, componentId: comp.componentId, partNo: item.productPartNo, partVersion });
       }
     }
     return out;
@@ -102,12 +105,14 @@ export function useDriverExpansions(
       componentId: t.componentId,
       customerId: customerId ?? null,
       partNo: t.partNo,
+      // 传入版本号，后端注入 AND part_version=N 谓词，避免历史版本数据叠加重复
+      partVersion: t.partVersion,
     }));
 
-    // 建立 batchKey(后端格式) → 本地 driverExpansionKey 的映射
+    // 建立 batchKey(后端格式，含 partVersion) → 本地 driverExpansionKey 的映射
     const batchKeyToLocalKey: Record<string, string> = {};
     for (const t of missing) {
-      const bk = buildBatchKey(t.componentId, customerId, t.partNo);
+      const bk = buildBatchKey(t.componentId, customerId, t.partNo, t.partVersion);
       batchKeyToLocalKey[bk] = t.key;
     }
 

@@ -4,6 +4,18 @@
 
 ---
 
+### [2026-05-12] expand-driver 全链路加 partVersion — 修复 BOM 数据 3 倍重复
+
+**根因**：`ComponentDriverService.expand` 不接 partVersion 参数 → `PartVersionContext` 始终 null → `ImplicitJoinRewriter` 不注入 `AND part_version=N` 谓词 → 拉取版本化表所有历史版本 → 同料号显示 N 个版本叠加重复行。
+
+**修复（全链路）**：ExpandDriverRequest / BatchExpandDriverRequest.Task 各加 `partVersion` 字段；ComponentDriverService 新增 4-arg `expand`+`cacheKey` 重载（set/clear PartVersionContext，cacheKey 末段加 partVersion 维度）；旧 3-arg 方法委托给新重载（向后兼容）；ComponentResource 两个端点传 partVersion；前端 BatchExpandTask 加 `partVersion`，buildBatchKey 升级为 4-segment，useDriverExpansions fingerprint 加 `pv` 字段，batchTasks 传 partVersion，batchKeyToLocalKey 用 4-arg key。
+
+**涉及文件**：`ExpandDriverRequest.java` | `BatchExpandDriverRequest.java` | `ComponentDriverService.java` | `ComponentResource.java` | `componentService.ts` | `useDriverExpansions.ts`
+
+**关键决策**：旧调用方不传 partVersion 时行为完全不变（null 不注入谓词）；前端本地 driverExpansionKey 不含 partVersion（不破坏 Map 结构）；后端 cacheKey 含 partVersion 区分不同版本槽，测试前需清缓存（evict 端点或重启）。
+
+---
+
 ### [2026-05-12] V6 staging 导入向导 — 全栈实施完成（最终）
 
 **实施完成**：spec `docs/superpowers/specs/2026-05-12-import-v6-staging-design.md` 中 Phases 1-9 全部落地。
