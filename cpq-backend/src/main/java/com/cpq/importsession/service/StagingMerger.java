@@ -170,7 +170,8 @@ public class StagingMerger {
     private void mergeMapping(Connection conn, UUID sessionId, String cpn, String hf,
                                int targetVersion) throws Exception {
         // UPSERT：若 mapping 不存在则从 staging 插入（新料号），已存在则更新 current_version
-        // V151 创建的唯一索引 uq_mat_cust_part_global 约束为 (customer_product_no, hf_part_no)
+        // V151 创建的 uq_mat_cust_part_global 是部分唯一索引（WHERE 谓词限定 NOT NULL），
+        // ON CONFLICT 必须显式匹配相同 WHERE 谓词，否则 PG 报 "no unique constraint matching"
         String sql =
             "INSERT INTO mat_customer_part_mapping " +
             "  (id, customer_id, customer_product_no, customer_part_name, customer_drawing_no, " +
@@ -182,6 +183,7 @@ public class StagingMerger {
             "WHERE s.import_session_id = ? " +
             "  AND s.hf_part_no = ? AND s.customer_product_no = ? " +
             "ON CONFLICT (customer_product_no, hf_part_no) " +
+            "  WHERE customer_product_no IS NOT NULL AND hf_part_no IS NOT NULL " +
             "DO UPDATE SET current_version = EXCLUDED.current_version, updated_at = now()";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, targetVersion);
