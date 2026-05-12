@@ -69,6 +69,10 @@ public class ImportSessionService {
         session.status = "PENDING";
         session.sourceExcel = fileName;
         session.persist();
+        // 关键：强制 flush 让 INSERT 在当前事务里立即落库
+        // 否则 StagingWriter 用独立 JDBC Connection 跑 INSERT 时，session 行尚未 flush
+        // → FK violation: mat_part_staging_import_session_id_fkey
+        em.flush();
         LOG.infof("V6 upload: created session=%s customer=%s user=%s", session.id, customerId, userId);
 
         // 2. 解析 Excel + 写 staging（StagingWriter 在当前事务内执行）
