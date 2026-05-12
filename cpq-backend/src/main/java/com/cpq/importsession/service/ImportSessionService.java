@@ -184,9 +184,11 @@ public class ImportSessionService {
 
         // 3. 更新每条决策的 appliedVersion（写回 JSONB）
         for (Map.Entry<String, Integer> entry : appliedVersions.entrySet()) {
+            // Hibernate native 查询不识别 PG 的 `:v::int` 类型强转（误解为参数名），
+            // 改用 SQL 标准 `cast(:v as integer)` 写法。
             em.createNativeQuery(
                     "UPDATE import_session_decision " +
-                    "SET decision_value = decision_value || jsonb_build_object('appliedVersion', :v::int) " +
+                    "SET decision_value = decision_value || jsonb_build_object('appliedVersion', cast(:v as integer)) " +
                     "WHERE import_session_id = :sid AND decision_type = 'PART_VERSION' AND decision_key = :k")
                     .setParameter("v", entry.getValue())
                     .setParameter("sid", sessionId)
