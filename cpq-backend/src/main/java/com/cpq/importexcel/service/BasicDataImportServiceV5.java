@@ -89,6 +89,10 @@ public class BasicDataImportServiceV5 {
     @Inject
     ComponentDriverService componentDriverService;
 
+    /** B1: 料号版本管理服务 — 升版后写 mat_part_version_log + bump current_version */
+    @Inject
+    com.cpq.partversion.PartVersionService partVersionService;
+
     /**
      * CDI self-reference — needed so that @Transactional methods called from non-transactional
      * methods within the same bean go through the CDI proxy (transaction interceptor is applied).
@@ -215,6 +219,48 @@ public class BasicDataImportServiceV5 {
     public ImportResultDTO importBasicDataV5(InputStream excelStream, UUID customerId, UUID userId,
                                               List<ResolutionDTO> resolutions) {
         return importBasicDataV5(excelStream, customerId, userId, resolutions, "QUOTATION");
+    }
+
+    /**
+     * B1 重载: 加 partVersionDecisions 接收用户料号版本决策.
+     *
+     * @param partVersionDecisions Map, key="cpn|hf", value="BUMP"/"NO_CHANGE"/"SKIP".
+     *                             null 或空 = 全部不升版 (与旧 4 参重载等价).
+     *                             B1.5 阶段才接入 INSERT 参数化, 此时升版只 bump mapping
+     *                             + 写 log, 实际数据行 part_version 仍 = 2000.
+     */
+    public ImportResultDTO importBasicDataV5(InputStream excelStream, UUID customerId, UUID userId,
+                                              List<ResolutionDTO> resolutions, String templateKind,
+                                              java.util.Map<String, String> partVersionDecisions) {
+        ImportResultDTO result = importBasicDataV5(excelStream, customerId, userId, resolutions, templateKind);
+
+        // B1.6: 导入成功后处理 BUMP 决策 — 写 mat_part_version_log + bump current_version
+        if ("SUCCESS".equals(result.status) && partVersionDecisions != null && !partVersionDecisions.isEmpty()) {
+            for (var entry : partVersionDecisions.entrySet()) {
+                String key = entry.getKey();
+                String action = entry.getValue();
+                if (!"BUMP".equals(action)) continue;  // 仅 BUMP 触发升版
+                int sep = key.indexOf('|');
+                if (sep < 0) {
+                    LOG.warnf("partVersionDecisions key 格式错误 (应为 'cpn|hf'): %s", key);
+                    continue;
+                }
+                String cpn = key.substring(0, sep);
+                String hf = key.substring(sep + 1);
+                try {
+                    int newVer = partVersionService.applyVersionBump(
+                            cpn, hf, userId,
+                            "import-V5-bump",
+                            null,  // contentHash B1 不算指纹
+                            null   // diffSummary B1 不传 diff
+                    );
+                    LOG.infof("B1: (%s, %s) version bumped to v%d", cpn, hf, newVer);
+                } catch (Exception e) {
+                    LOG.warnf("B1: bump version failed for (%s, %s): %s", cpn, hf, e.getMessage());
+                }
+            }
+        }
+        return result;
     }
 
     /**
