@@ -179,6 +179,8 @@ public class BasicDataImportServiceV5 {
             result.basicDataDiffs = detectBasicDataDiffs(data, customerId);
             result.customerDataConflicts = detectCustomerDataConflicts(data, customerId);
             result.orphanRows = detectOrphanRows(data, customerId);
+            // B1: 料号版本预览 — 为每个 (cpn, hf) 提供 currentVersion + 建议 newVersion
+            result.partVersionPreview = detectPartVersionPreview(data, customerId);
         }
 
         return result;
@@ -3440,5 +3442,50 @@ public class BasicDataImportServiceV5 {
 
     private boolean isAllowedColumn(String c) {
         return c != null && ALLOWED_COLUMNS.contains(c.toLowerCase());
+    }
+
+    /**
+     * B1: 检测本次 Excel 涉及的 (customer_product_no, hf_part_no) 集合,
+     * 为每个料号生成 PartVersionPreviewDTO. 默认 action=BUMP, suggestedNewVersion=current+1.
+     */
+    @SuppressWarnings("unchecked")
+    private java.util.List<com.cpq.partversion.dto.PartVersionPreviewDTO> detectPartVersionPreview(
+            com.cpq.importexcel.parser.ParsedBasicData data, java.util.UUID customerId) {
+        // 1. 聚合所有 hfPartNo (去重)
+        java.util.Set<String> hfPartNos = new java.util.HashSet<>();
+        for (var r : data.matBoms) if (r.hfPartNo != null && !r.hfPartNo.isBlank()) hfPartNos.add(r.hfPartNo);
+        for (var r : data.matProcesses) if (r.hfPartNo != null && !r.hfPartNo.isBlank()) hfPartNos.add(r.hfPartNo);
+        for (var r : data.matFees) if (r.hfPartNo != null && !r.hfPartNo.isBlank()) hfPartNos.add(r.hfPartNo);
+        for (var r : data.platingFees) if (r.hfPartNo != null && !r.hfPartNo.isBlank()) hfPartNos.add(r.hfPartNo);
+        for (var r : data.mappings) if (r.hfPartNo != null && !r.hfPartNo.isBlank()) hfPartNos.add(r.hfPartNo);
+        for (var r : data.costingPartRows) {
+            String hf = r.values != null ? r.values.get("hf_part_no") : null;
+            if (hf != null && !hf.isBlank()) hfPartNos.add(hf);
+        }
+
+        if (hfPartNos.isEmpty()) return java.util.List.of();
+
+        // 2. 查 mapping 获取 (cpn, hf, current_version)
+        java.util.List<Object[]> rows = em.createNativeQuery(
+                "SELECT customer_product_no, hf_part_no, current_version " +
+                "FROM mat_customer_part_mapping " +
+                "WHERE customer_id = :cid " +
+                "  AND hf_part_no IN :hfs " +
+                "  AND customer_product_no IS NOT NULL")
+                .setParameter("cid", customerId)
+                .setParameter("hfs", hfPartNos)
+                .getResultList();
+
+        // 3. 组装 (cpn, hf) → DTO
+        java.util.List<com.cpq.partversion.dto.PartVersionPreviewDTO> result = new java.util.ArrayList<>();
+        for (Object[] r : rows) {
+            String cpn = r[0] == null ? null : r[0].toString();
+            String hf = r[1] == null ? null : r[1].toString();
+            int currentVer = r[2] == null ? 2000 : ((Number) r[2]).intValue();
+            if (cpn != null && hf != null) {
+                result.add(com.cpq.partversion.dto.PartVersionPreviewDTO.forBump(cpn, hf, currentVer));
+            }
+        }
+        return result;
     }
 }
