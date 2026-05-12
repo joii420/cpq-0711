@@ -4,6 +4,50 @@
 
 ---
 
+### [2026-05-12] V6 staging 导入向导 — 全栈实施完成（最终）
+
+**实施完成**：spec `docs/superpowers/specs/2026-05-12-import-v6-staging-design.md` 中 Phases 1-9 全部落地。
+
+**关键交付**：
+- ✅ **Phase 1 DB**: V159 `import_session` + `import_session_decision` + 7 张 `mat_*_staging` 表（PL/pgSQL 动态生成 + CASCADE 清理）
+- ✅ **Phase 2-7 后端**: ImportSession/Decision 实体 + 8 DTO + StagingWriter + DiffDetector + StagingMerger + ImportSessionService + SessionCleanupJob (@Scheduled 1h) + ImportSessionResource 4 端点
+- ✅ **Phase 7 snapshot 重算**: `QuotationService.updateLineItemPartVersion` 返回值 `void → String`，PUT `/quotations/{id}/line-items/{lid}/part-version` 响应新增 `excelViewSnapshot` 字段
+- ✅ **Phase 8 前端**: types/import-v6.ts + importSessionService.ts + PartVersionDecisionList + Customer/Orphan Section + QuotationCreateForm + BasicDataImportV5Wizard 3 步重写 + BasicDataImportV5ToQuotation 简化 + PartVersionDrawer/QuotationStep2 接 snapshot
+- ✅ **Phase 9 弃用 + 契约修复**:
+  - V5 `/preview` `/confirm` 加 `@Deprecated(since="v6")` Javadoc 指向新端点
+  - 后端 path 修正：`/import/sessions` → `/import-session`（匹配前端 spec）
+
+**最终路由契约（V6）**：
+```
+POST   /api/cpq/import-session/upload                      → 上传 + 解析 + 写 staging + 检测差异 → {sessionId, diffPayload}
+PUT    /api/cpq/import-session/{id}/decisions              → 更新决策（debounce 500ms 触发）
+POST   /api/cpq/import-session/{id}/commit                 → atomic：staging→mat_* + 建报价单 + 生成 snapshot
+DELETE /api/cpq/import-session/{id}                        → 取消（CASCADE 清 staging）
+PUT    /api/cpq/quotations/{id}/line-items/{lid}/part-version  → 返回 {partVersionLocked, excelViewSnapshot}
+```
+
+**Commits（V6 全链）**：
+- `699f0f4` fix: 修复前后端契约不一致（path + snapshot 返回）
+- `c4dcd5b` chore: mark V5 /preview /confirm endpoints @Deprecated
+- `a0e5e3b` docs: update RECORD.md with V6 backend Phases 2-7 implementation notes
+- `80c795b` feat: V6 import staging workflow Phases 4-7
+- `571695d` feat: Phase 3 StagingWriter + DiffDetector
+- `8d818dc` feat: V6 staging-based 导入向导前端全量实施（Phase 8）
+- `5e0c454` feat: Phase 2 entities + DTOs
+
+**Smoke 测试自检**：
+- 后端 `./mvnw compile -o` → BUILD SUCCESS
+- 4 个 V6 端点 + 1 个 V5 老端点（DELETE/POST/PUT 测试）全部返回 401（auth filter 拦截，路由已注册）
+- 前端 `tsc --noEmit` → 0 错误；5 个关键 .tsx 文件 Vite 200；主入口 / → 200
+
+**遗留 / 后续工作**：
+- 端到端真实流程（实际 Excel 上传 → 升版/不升版决策 → 提交 → 创建报价单 → 切换版本）尚需用户手动验证
+- staging 表 mat_part 列拷贝时若源表有自增 PK 序列需特别注意（V159 已 DROP NOT NULL，commit 时 gen_random_uuid()）
+- 客户冲突 / 孤儿行决策应用逻辑暂用默认 USE_EXCEL，后续可在 StagingMerger.applyCustomerConflictDecisions / applyOrphanDecisions 中扩展具体业务行为
+- 临时 admin `/admin/wipe-basic-data` 端点保留作为开发期测试工具
+
+---
+
 ### [2026-05-12] V6 staging 导入向导后端 Phases 2-7 全量实施
 
 **背景**：实施 `docs/superpowers/specs/2026-05-12-import-v6-staging-design.md` 设计文档中的后端改动（Phases 2-7）。Phase 1（V159 DB migration）之前已完成。
