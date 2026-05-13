@@ -39,6 +39,14 @@ public class SaveDraftRequest {
         public String productPartNo;
         public String productName;
         public String customerPartNo;
+        /**
+         * V6 兼容字段: 前端 BulkImportPartsDrawer.buildLineItemFromTemplate 写入字段名是
+         * customerProductNo (与 mat_customer_part_mapping.customer_product_no 对齐)。
+         * 旧 QuotationWizard.buildDraftPayload 只读 customerPartNo, 漏这条路径,
+         * 导致 SaveDraft 收到 customerPartNo=null → 跳过 part_version_locked 查询。
+         * saveDraft 处理时 customerPartNo 为空 fallback 到 customerProductNo。
+         */
+        public String customerProductNo;
         public String productAttributeValues;
         public BigDecimal subtotal;
         public Integer sortOrder;

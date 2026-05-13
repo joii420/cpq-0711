@@ -274,8 +274,14 @@ public class QuotationService {
                 if (liDraft.productName != null && !liDraft.productName.isBlank()) {
                     li.productNameSnapshot = liDraft.productName;
                 }
-                if (liDraft.customerPartNo != null && !liDraft.customerPartNo.isBlank()) {
-                    li.customerPartNo = liDraft.customerPartNo;
+                // V6 修复: 兼容前端 BulkImportPartsDrawer.buildLineItemFromTemplate 写的 customerProductNo 字段
+                // 若 customerPartNo 为空 fallback 到 customerProductNo，避免 part_version_locked 漏查
+                String effectiveCpn = (liDraft.customerPartNo != null && !liDraft.customerPartNo.isBlank())
+                        ? liDraft.customerPartNo
+                        : ((liDraft.customerProductNo != null && !liDraft.customerProductNo.isBlank())
+                                ? liDraft.customerProductNo : null);
+                if (effectiveCpn != null) {
+                    li.customerPartNo = effectiveCpn;
                 }
                 li.persist();
 
