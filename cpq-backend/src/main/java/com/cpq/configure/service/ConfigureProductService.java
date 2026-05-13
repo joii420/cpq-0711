@@ -288,6 +288,7 @@ public class ConfigureProductService {
                 .executeUpdate();
         }
     }
+    // T20: resolvePart + validateCustomPart + 落库辅助 — 完成
 
     // ───────────────────────────────────────────────────────────────────────
     // T21: configure 主入口 + 组合产品 + buildLineItems
