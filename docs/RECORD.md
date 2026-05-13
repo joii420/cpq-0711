@@ -4,6 +4,440 @@
 
 ---
 
+### [2026-05-13] Phase 6 — T25+T26 前端 configure service wrappers
+
+**文件**（新建 4 个）：
+- `cpq-frontend/src/types/configure.ts` — configure 领域 TypeScript 类型（ProductType, PartMode, ConfigureProductRequest/Response, LookupFingerprintRequest/Response, SearchPartResult 等 9 个接口/类型）
+- `cpq-frontend/src/services/configureProductService.ts` — 封装 3 个 endpoint：searchParts / lookupFingerprint / configureProduct
+- `cpq-frontend/src/services/materialRecipeService.ts` — 封装 GET /material-recipes + GET /material-recipes/{id}；含 MaterialRecipeLite / MaterialRecipeElement / MaterialRecipeDetail 接口
+- `cpq-frontend/src/services/compositeProcessService.ts` — 封装 GET /composite-processes；含 parseParamSchema() 纯函数（JSON.parse + 类型校验，parse 失败返 []）
+
+**关键决策**：
+- 项目 `api.ts` interceptor 已在 response 阶段 unwrap `response.data`，因此所有 service 直接 `return res as T`，不写 `res.data`（与任务规格中的示例写法不同，已适配为项目实际模式）
+- T25 commit SHA: 43cb7d0；T26 commit SHA: e4d07d7
+- tsc --noEmit 0 错误
+
+---
+
+### [2026-05-14] Phase 5 — T24 ConfigureProductServiceTest 8 场景集成测试
+
+**文件**：`configure/ConfigureProductServiceTest.java`（新建，391 行）
+
+**8 个测试场景**：
+1. `existing_returnsLineItem_noNewMatPart` — existing 路径复用已有料号，countConfiguredMatPart 不变
+2. `custom_uncached_createsMatPartAndBom` — custom 首次建立，配置指纹写入，count+1，前缀 CFG-AgNi-
+3. `custom_cached_reusesHfPartNo` — 同事务内二次相同配置命中指纹复用，count 不变
+4. `custom_sumNot100_throws` — 元素含量和 = 90 → IllegalArgumentException
+5. `custom_lockedElementModified_throws` — AgCu85 的 Ag locked=85，传 90 → IllegalArgumentException
+6. `composite_allNew_buildsParentAndChildrenAndAssemblyBom` — 全新 COMPOSITE：3 configured mat_part，2 ASSEMBLY bom，1 composite_process
+7. `composite_childrenReused_onlyParentCreated` — 子配件复用指纹，仅父级新建，reusedHfPartNos 含 pn1/pn2
+8. `composite_participatingLessThan2_throws` — validateRequest 在 getCustomerIdFromQuotation 前抛出，无需有效 quotation
+
+**隔离策略**（关键决策）：
+- `@TestTransaction` 覆盖所有 DB 写用例，事务结束自动 rollback
+- `seedQuotationId()`: 在当前事务内 INSERT customer（code=`T24-<uuid8>`）+ quotation（`QT-T24-<uuid8>`），依赖 V1 已提交的 admin user
+- `seedExistingMatPart()`: INSERT part_no=`T24-EXIST-<uuid8>`，无 config_fingerprint（模拟历史导入料号）
+- `countConfiguredMatPart()` 只计数 `config_fingerprint IS NOT NULL`，不受历史料号干扰
+- Case 4/5 需要有效 quotation（`validateRequest` 通过后才进 `getCustomerIdFromQuotation` 再进 `validateCustomPart`），故均加了 `@TestTransaction` + `seedQuotationId()`
+- Case 8 在 `validateRequest` 内抛出（participating<2），在 `getCustomerIdFromQuotation` 之前，故不需要有效 quotation，无需 `@TestTransaction`
+- AgCu90(locked, Ag=90/Cu=10)、AgCu85(locked, Ag=85/Cu=15)、AgNi90(editable, Ag∈[85,95]/Ni∈[5,15]) 均来自 V171 seed，持久不回滚
+- RIVET 来自 V172 seed
+
+**测试结果**：`Tests run: 8, Failures: 0, Errors: 0, Skipped: 0` ✅
+**提交**：`efbb995`
+
+---
+
+### [2026-05-13] Phase 4 Batch 3 — T22+T23 REST Resource 层
+
+**T22 — ConfigureProductResource**：
+- 新建 `configure/resource/ConfigureProductResource.java`
+- `@Path("/api/cpq/quotations")`，两个端点：
+  - `POST /configure/lookup-fingerprint` → 委托 `ConfigureProductService.lookupFingerprint`
+  - `POST /{quotationId}/configure-product` → 委托 `ConfigureProductService.configure`，从 `SecurityIdentity` 提取 operatorId（UUID 容错）
+- `@RoleAllowed({"SALES_REP","SALES_MANAGER","PRICING_MANAGER","SYSTEM_ADMIN"})` — 使用项目自定义注解（非 jakarta）
+- 提交：`afdd010`
+
+**T23 — ConfigureSearchResource**：
+- 新建 `configure/resource/ConfigureSearchResource.java`
+- `GET /api/cpq/quotations/configure/search-parts?q=<keyword>&size=50`
+- 原生 SQL：`mat_part LEFT JOIN material_recipe ON mr.id = mp.material_recipe_id`，ILIKE 多字段模糊搜索（part_no / part_name / specification / size_info / recipe.symbol / recipe.name），结果 ≤ 200 行
+- **Schema 验证**：所有列名与 V44（mat_part）+ V164（material_recipe）+ V167（material_recipe_id FK）完全一致，无偏差
+- 提交：`b4466ce`
+
+**自检**：两端点均返回 HTTP 401（auth 正常）✅；无其他文件泄漏 ✅
+
+**涉及文件**：
+- `configure/resource/ConfigureProductResource.java`（新建，62 行）
+- `configure/resource/ConfigureSearchResource.java`（新建，78 行）
+
+---
+
+### [2026-05-13] Phase 4 Batch 2 补丁 — ConfigureProductService 3 项阻塞缺陷修复
+
+**背景**：P4 批2 交付后发现 3 个阻塞级质量问题，本次专项修复。
+
+**修复 1 — insertProcesses 实现**：
+- 原因：`mat_process.customer_id NOT NULL` 导致上次跳过；本次在 `configure()` 入口新增 `getCustomerIdFromQuotation(quotationId)` 从 `quotation` 表拉取 `customer_id`
+- 传递路径：`configure()` → `resolvePart(pr, operatorId, customerId, reused)`（新增参数）→ `insertProcesses(hfPartNo, processIds, customerId)`
+- `insertProcesses` 实现：按 processIds 顺序查 `process.code`，INSERT `mat_process` (customer_id, hf_part_no, version=1, is_current=true, seq_no, process_code, part_version=2000, status='ACTIVE')
+- UNIQUE 约束 `uq_mat_process_current`：(customer_id, hf_part_no, part_version, seq_no, sub_seq_no) WHERE is_current=true，sub_seq_no NULL 时每行独立不冲突
+
+**修复 2 — ON CONFLICT 指纹去重**：
+- 原：`ON CONFLICT (part_no) DO NOTHING` 错误，对 PRIMARY KEY 去重而非指纹
+- 改：`ON CONFLICT (config_fingerprint) WHERE config_fingerprint IS NOT NULL DO NOTHING`
+- PG 16.13 验证：`uq_mat_part_fingerprint` 是 partial unique index (WHERE config_fingerprint IS NOT NULL)，PG 11+ 支持此语法精确推断
+
+**修复 3 — initPartVersionBaseline 维持文档化 skip**（非阻塞确认）：
+- `mat_part_version_log` PK=(customer_product_no NOT NULL, hf_part_no, version)，经 JDBC 直查确认
+- configure 阶段无 customer_product_no（客户绑定发生在后续数据导入），无法写基线行
+- 基线由 V156（`INSERT ... FROM mat_customer_part_mapping`）和 `PartVersionService` 在 per-customer 导入流程时写入，这是正确的架构分工
+
+**Schema 验证（JDBC 直查 PG 16.13）**：
+- `mat_bom.is_current` 不存在 ✓（前实现者正确）
+- `quotation_line_item.quantity` 不存在 ✓（前实现者正确）
+- `mat_part_version_log` PK=(customer_product_no NOT NULL, hf_part_no, version) ✓
+- `uq_mat_part_fingerprint` = partial unique index WHERE config_fingerprint IS NOT NULL ✓
+- `process` 表有 `code` 列 ✓；`quotation` 表有 `customer_id NOT NULL` ✓
+- PostgreSQL 16.13 ✓
+
+**自检**：HTTP 401（auth 正常）✅；仅动 `ConfigureProductService.java`，无泄漏 ✅
+
+**涉及文件**：
+- `configure/service/ConfigureProductService.java`（修改，从 479→507 行）
+- **提交**：`fae894a`
+
+---
+
+### [2026-05-13] Phase 4 Batch 2 — T19+T20+T21 ConfigureProductService（选配功能核心服务）
+
+**背景**：选配功能 Phase 4 第二批任务，新建 `ConfigureProductService.java`，实现 lookupFingerprint + resolvePart + configure 主入口。
+
+**T19 — ConfigureProductService 骨架 + lookupFingerprint**：
+- 新建 `configure/service/ConfigureProductService.java`：`@ApplicationScoped`，注入 `EntityManager` / `FingerprintCalculator` / `PartNoProvider`
+- `lookupFingerprint(req)`: SIMPLE→`simpleFingerprint`，COMPOSITE→`compositeFingerprint`，查 `mat_part.config_fingerprint`，命中返回 hfPartNo + snapshot
+- `buildSnapshot(hfPartNo)`: 读 `mat_part.unit_weight`，读 `mat_process`（DISTINCT ON seq_no），读 `mat_composite_process`（V166 重命名后的 `hf_part_no` 列）
+- 提交：`36572b5`
+
+**T20 — resolvePart + validateCustomPart + 落库辅助**：
+- `resolvePart`: existing 路径验证 `mat_part.part_no`；custom 路径算指纹→命中复用→未命中新建
+- `validateCustomPart`: 含量 ±0.01% 容差 + locked/range 双校验
+- `insertMatPart`: `ON CONFLICT (part_no) DO NOTHING`，写 `config_fingerprint`/`product_type`/`material_recipe_id`
+- `insertElementBom`: 写 `mat_bom` ELEMENT 行（`part_version=2000`，无 `is_current` 列）
+- **Schema 偏差**: `mat_process.customer_id NOT NULL` → `insertProcesses` 未实现；`processIds` 留待 per-customer 导入流程
+- **Schema 偏差**: `mat_part_version_log` PK 需 `customer_product_no` → `initPartVersionBaseline` 未实现
+- 提交：`d72c2a9`
+
+**T21 — configure 主入口 + 组合产品 + buildLineItems**：
+- `configure(quotationId, req, operatorId)`: `@Transactional`，PASS1 resolvePart，PASS2 组合父级，PASS3 buildLineItems
+- `validateRequest`: SIMPLE size=1，COMPOSITE size∈[2,8]，compositeProcesses 参与方≥2
+- `insertAssemblyBom`: 写 `mat_bom` ASSEMBLY 行，`child_part_no` 列（V168 新增）
+- `insertCompositeProcesses`: Jackson 序列化 `participating_parts`/`param_values` 为 JSONB，写 `mat_composite_process.hf_part_no`（V166 重命名）
+- `insertLineItem`: 写 `quotation_line_item`，使用 `product_part_no_snapshot`（V30 新增），无 `quantity` 列（从未在迁移中添加），`product_id`/`template_id` nullable（V30 已 DROP NOT NULL）
+- **Schema 偏差**: `quotation_line_item` 无 `quantity` 列 → 从 INSERT 中去掉
+- 提交：`34a4b2c`
+
+**自检结果**：
+- 编译：Quarkus dev-mode 热重载 `HTTP 401`（auth 正常）✅（T19 + T20 + T21 三次验证）
+- 文件：479 行，仅动 `ConfigureProductService.java`，无其他文件泄漏
+
+**关键决策**：
+- `mat_process.customer_id NOT NULL` 是本批最大 schema 偏差：选配生成的料号是"全局料号"（跨客户），mat_process 是客户级表，不能在无 customerId 的 configure 流程中写入。processIds 将由 per-customer 数据导入（现有 V6 导入流程）按需写入 mat_process。
+- `mat_part_version_log` 同理：version log 需 customer_product_no，configure 阶段不存在此信息，基线由导入流程（V156/PartVersionService）写入。
+- `mat_bom` 无 `is_current`：V44 建表、V153 只加了 `part_version`，从未加 `is_current`。规格中的 `is_current = true` 是规格错误，实际 INSERT 去掉。
+- `quotation_line_item` 无 `quantity`：同上，实际迁移从未添加。
+
+**涉及文件**：
+- `configure/service/ConfigureProductService.java`（新建，479 行）
+- **提交**：T19=`36572b5` | T20=`d72c2a9` | T21=`34a4b2c`
+
+---
+
+### [2026-05-13] Phase 3 Batch 2 — T16+T17 configure 包 Service + Resource 层（选配功能 Phase 3）
+
+**背景**：选配功能 Phase 3 第二批任务，在 Batch 1 实体基础上实现 Service + Resource + DTO 层。
+
+**T16 — MaterialRecipeService + MaterialRecipeResource + 2 DTOs**：
+- 新建 `configure/dto/MaterialRecipeDTO.java`：列表 DTO，`elements` 字段仅详情端点填充，列表端点保持 `null`
+- 新建 `configure/dto/MaterialRecipeElementDTO.java`：元素 DTO，映射 `BigDecimal` pct 字段
+- 新建 `configure/service/MaterialRecipeService.java`：`listActive()` 列表（无 elements）+ `getDetail(UUID)` 详情（带 elements）
+- 新建 `configure/resource/MaterialRecipeResource.java`：`GET /api/cpq/material-recipes` + `GET /api/cpq/material-recipes/{id}`
+- 提交：`63c33b5`
+
+**T17 — CompositeProcessService + CompositeProcessResource + DTO**：
+- 新建 `configure/dto/CompositeProcessDefDTO.java`：`paramSchema` 字段为原始 JSON 字符串直传（JSONB raw passthrough）
+- 新建 `configure/service/CompositeProcessService.java`：`listActive()` 按 `sortOrder` 排序
+- 新建 `configure/resource/CompositeProcessResource.java`：`GET /api/cpq/composite-processes`
+- 提交：`462a23d`
+
+**自检结果**：
+- 编译：Quarkus dev-mode 热重载无错误
+- `GET /api/cpq/material-recipes` → 200，返回 12 条 AgCu/AgNi 等材质，`elements: null` 正确
+- `GET /api/cpq/material-recipes/324dc333-...` → 200，返回含 `elements` 数组（Ag 85%, Cu 15%）正确
+- `GET /api/cpq/composite-processes` → 200，返回 6 条（RIVET/RESISTANCE_WELD 等），`paramSchema` JSON 字符串正常透传
+- 两个 commit 均仅含目标 7 文件，无泄漏
+
+**关键决策**：
+- `MaterialRecipeService.listActive()` 不加载 elements（性能优化，前端列表场景无需元素明细）
+- `CompositeProcessDefDTO.paramSchema` 保持 `String` 原始 JSON 透传，不在后端反序列化（避免引入 JSONB 类型映射复杂性，前端直接 `JSON.parse`）
+- dev-mode 无 auth filter 拦截（200 而非 401 是正常开发环境行为）
+
+**涉及文件**：
+- `configure/dto/MaterialRecipeDTO.java`（新建）
+- `configure/dto/MaterialRecipeElementDTO.java`（新建）
+- `configure/service/MaterialRecipeService.java`（新建）
+- `configure/resource/MaterialRecipeResource.java`（新建）
+- `configure/dto/CompositeProcessDefDTO.java`（新建）
+- `configure/service/CompositeProcessService.java`（新建）
+- `configure/resource/CompositeProcessResource.java`（新建）
+- **提交**：T16=`63c33b5` | T17=`462a23d`
+
+---
+
+### [2026-05-13] Phase 3 Batch 1 — T13+T14+T15 configure 包基础层（选配功能 Phase 3）
+
+**背景**：选配功能 Phase 3 第一批任务，创建 `com.cpq.configure` 新包，实现指纹计算器、材质实体、组合工艺实体。
+
+**T13 — FingerprintCalculator + 9 单元测试**：
+- 新建 `configure/FingerprintCalculator.java`：`@ApplicationScoped`，F2 算法
+  - `simpleFingerprint(recipeCode, elements)` → `sha256("v1|SIMPLE|code|elem1=pct,elem2=pct")`（元素内部按 elementCode 排序）
+  - `compositeFingerprint(childHfPartNos)` → `sha256("v1|COMBO|sorted_children")`（子料号内部排序）
+  - `normalize(BigDecimal)` 用 `stripTrailingZeros().toPlainString()` 防 `"90"` vs `"90.0"` 误判
+- 新建 `configure/FingerprintCalculatorTest.java`：9 个 `@QuarkusTest` 用例全部通过
+- 提交：`3fb6396`
+
+**T14 — MaterialRecipe + MaterialRecipeElement Panache 实体**：
+- 新建 `configure/entity/MaterialRecipe.java`：映射 `material_recipe` 表，含 `findByCodeOrThrow(code)` 工厂方法
+- 新建 `configure/entity/MaterialRecipeElement.java`：映射 `material_recipe_element` 表，`BigDecimal` 处理 pct 字段
+- 无 JSONB 字段，纯关系列映射
+- 提交：`2e099c0`
+
+**T15 — CompositeProcessDef + MatCompositeProcess 实体 (JSONB)**：
+- 新建 `configure/entity/CompositeProcessDef.java`：JSONB 字段 `param_schema` 用 `@JdbcTypeCode(SqlTypes.JSON)`
+- 新建 `configure/entity/MatCompositeProcess.java`：两个 JSONB 字段 `participating_parts(List<String>)` + `param_values(Map<String,Object>)`；`hf_part_no` 字段对齐 V166 重命名（原 `parent_hf_part_no`）
+- 提交：`5c25fd4`
+
+**关键问题修复 — Quarkus 3.34+ JSONB 启动校验**：
+- 根因：Quarkus 3.34 新增校验：检测到 `quarkus.jackson.write-dates-as-timestamps=false`（Quarkus 默认值）+ `@JdbcTypeCode(SqlTypes.JSON)` 时拒绝启动，报 `IllegalStateException: Persistence unit uses Quarkus' main formatting facilities`
+- 修复：`application.properties` 加 `quarkus.hibernate-orm.mapping.format.global=ignore`
+- 此配置同时解除了 dev-mode 热重载 500 错误
+- 注意：此问题只在测试环境（干净 JVM 启动）时暴露；dev-mode 之前因 AOT 缓存未触发检查
+
+**自检结果**：
+- T13：`Tests run: 9, Failures: 0, Errors: 0` — BUILD SUCCESS（两次验证，含 T15 实体加入后）
+- T14/T15：`mvnw compile` 0 错误；`/api/cpq/products` 返回 401（auth 正常）
+- psql 本地未安装，DB 烟雾测试跳过（V171/V172/V165/V166 seed 已在前序任务验证）
+
+**涉及文件**：
+- `configure/FingerprintCalculator.java`（新建）
+- `configure/FingerprintCalculatorTest.java`（新建）
+- `configure/entity/MaterialRecipe.java`（新建）
+- `configure/entity/MaterialRecipeElement.java`（新建）
+- `configure/entity/CompositeProcessDef.java`（新建）
+- `configure/entity/MatCompositeProcess.java`（新建）
+- `application.properties`（加 `mapping.format.global=ignore`）
+- **提交**：T13=`3fb6396` | T14=`2e099c0` | T15=`5c25fd4`
+
+---
+
+### [2026-05-13] Phase 2 T12 — AutoAllocatePartNoProvider 集成测试（选配功能 Phase 2 Task 12）
+
+**背景**：选配功能 Phase 2 第十二个任务，为 T11 实现的 `AutoAllocatePartNoProvider` 编写 4 个 `@QuarkusTest` 集成测试用例。
+
+**变更内容**：
+- 新建 `AutoAllocatePartNoProviderTest.java`：
+  - `apply_returnsExpectedFormat`：单次调用验证格式 `^CFG-AgCu-\d{6}$`
+  - `apply_concurrent10Threads_allUnique`：10 线程 CountDownLatch 并发取号，`HashSet` 验证无重复
+  - `apply_nullContext_throws`：null context 抛 `IllegalArgumentException`
+  - `apply_blankSymbol_throws`：空字符串 + 纯空白 symbol 各抛 `IllegalArgumentException`
+- 修复 `application-test.properties`（`src/main/resources/`）：
+  - 旧值 `172.16.18.40:5431` / `pg15` / `postgres` 是另一开发者本地 DB，在本机不可用（SSL EOF + auth failure）
+  - 改为当前 dev DB `10.177.152.12:5432` / `postgres` / `joii5231`，加 `?sslmode=disable`
+  - 该修复解除了所有 `@QuarkusTest` 类的启动阻塞（Flyway cold-start SSL EOFException）
+
+**自检结果**：
+- `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0` — BUILD SUCCESS
+- 并发测试消耗 `part_no_sequence` 表 `CFG-AgNi-` 前缀 10 个序号（正常）
+- 提交：`9ee5057`
+
+**关键决策**：
+- `application-test.properties` 在 `src/main/resources/`（不是 `src/test/resources/`），Quarkus `%test` profile 自动加载，优先级低于 `src/test/resources/application.properties`（后者覆盖 Redis 等配置）
+- 测试 DB 应与 dev DB 保持一致（任务描述已说明"test connects to same DB as dev"）；旧 `172.16.18.40` 配置应被视为历史遗留，后续新环境迁移时需再更新
+
+**涉及文件**：`partno/AutoAllocatePartNoProviderTest.java`（新建）| `application-test.properties`（修复 DB 连接）| **提交**：9ee5057
+
+---
+
+### [2026-05-13] Phase 2 T11 — AutoAllocatePartNoProvider V1 实现（选配功能 Phase 2 Task 11）
+
+**背景**：选配功能 Phase 2 第十一个任务，实现 `PartNoProvider` 接口的 V1 本地自动分配策略，以 `part_no_sequence` 表为序列源分配 `CFG-{symbol}-{6位流水}` 格式的料号。
+
+**变更内容**：
+- 新建 `AutoAllocatePartNoProvider.java`：
+  - `@ApplicationScoped` + `@LookupIfProperty(name="cpq.partno.provider", stringValue="auto", lookupIfMissing=true)` — 默认激活，无需显式配置；设置 `cpq.partno.provider=external` 即切换到 V2 实现
+  - `@Transactional` 包裹 `apply()` — RC 隔离级别下 `SELECT ... FOR UPDATE` 行锁串行化同 prefix 的取号，不同 prefix 无锁冲突
+  - 空 prefix 行兜底：`INSERT ON CONFLICT DO NOTHING` → 返回 1（保险机制，V174 已 seed 所有 CFG- 前缀）
+  - `String.format("%s%06d", prefix, next)` — 零填充6位，如 `CFG-AgCu-000001`
+  - null/blank symbol 抛 `IllegalArgumentException`；DB 故障包装为 `PartNoProvisionException`
+- 修改 `PartNoProvider.java`：接口加 `@FunctionalInterface` 注解（单方法接口）
+
+**自检结果**：
+- Quarkus dev-mode 热重载后 `/api/cpq/products` 返回 401（auth 正常，无编译错误）
+- psql 未在本地安装，DB 烟雾测试跳过（V174 seed 已在 T9 验证）
+
+**关键决策**：
+- `lookupIfMissing=true` 是让 auto 成为默认值的正确 CDI 做法，无需在 `application.properties` 显式写 `cpq.partno.provider=auto`
+- `nextSequence` 拆为私有方法，`@Transactional` 仅在 `apply()` 上声明，事务边界清晰
+- INSERT 兜底写 `next_val=2` 而非 1，因为本次分配的是 1（当前值），下一调用从 2 开始
+
+**涉及文件**：`partno/AutoAllocatePartNoProvider.java`（新建）| `partno/PartNoProvider.java`（加 @FunctionalInterface）| **提交**：1d0e20c
+
+---
+
+### [2026-05-13] V171 — seed 12 个材质配方 + 27 条元素含量（选配功能 Phase 1 Task 6）
+
+**背景**：选配功能 Phase 1 第六个迁移任务，为 material_recipe / material_recipe_element 表填充种子数据（选配抽屉 P2 材质库）。
+
+**注意事项（版本号偏移）**：
+- 任务描述使用 V170，但 V170 已被另一 Agent 的 `seed_b_formulas_for_excel_template` 占用（untracked 状态）
+- 本脚本顺延至 **V171**；T7(组合工艺 seed) 及后续任务也需相应顺延
+
+**变更内容**：
+- `V171__seed_material_recipes.sql`：12 个材质配方 + 27 条元素行
+  - locked 类 5 个配方 10 行：AgCu85/90、AgCdO、AgPd、AuAg（is_locked=true，无 min/max）
+  - editable 类 4 个配方 8 行：AgNi90/95、AgW60/72（is_locked=false，含 min/max）
+  - partial 类 3 个配方 9 行：AgSnO2/b（Ag 锁定、SnO2+In2O3 可调）、CuCr（Cu 锁定、Cr+Zr 可调）
+  - 全部 `ON CONFLICT DO NOTHING` 幂等，符合 `chk_recipe_element_range` 约束
+- `application.properties`：新增 `quarkus.flyway.out-of-order=true`
+  - 原因：多 Agent 并行开发时 V162/V163（低版本）在 V164+ 已应用后才被发现，Flyway 无 out-of-order 时拒绝启动
+  - 修复后 Quarkus dev-mode 可正常处理乱序迁移
+
+**自检结果**：
+- SQL 静态审查通过：12 条 recipe 行满足 CHECK 约束；27 条 element 行满足 chk_recipe_element_range
+- 计数验证：locked(10)+editable(8)+partial(9)=27
+- min_pct≤max_pct 所有行均满足
+- Quarkus dev-mode 在本次会话中已完全停止（Java 进程退出），无法做 HTTP 验证；需下次启动时确认 V171 success=t
+
+**关键决策**：
+- 版本号偏移到 V171 是正确做法；不能复用 V170（Flyway 基于文件名 checksum 对账，重命名已存在文件会导致 checksum mismatch）
+- out-of-order=true 是多 Agent 开发的标准配置，不影响生产环境（Flyway 仍按版本顺序执行，只允许补打历史版本）
+
+**涉及文件**：`db/migration/V171__seed_material_recipes.sql` | `application.properties` | **提交**：f485bdc
+
+---
+
+### [2026-05-13] V168 — mat_bom.bom_type 扩 ASSEMBLY + child_part_no 列（选配功能 Phase 1 Task 4）
+
+**背景**：选配功能 Phase 1 第四个迁移任务，为 mat_bom 表扩展 ASSEMBLY bom_type 以表达组合产品的"父→子配件"关系。
+
+**安全检查发现**：
+- 实际约束名为 `chk_mat_bom_type`（非任务描述中的 `chk_mat_bom_bom_type`），且仅含 `INCOMING/ELEMENT` 两值（无 OUTPUT），与任务描述不符
+- 迁移脚本用 `DROP CONSTRAINT IF EXISTS` 同时删除两个名字，确保幂等性
+- `child_part_no` 列迁移前确认不存在，安全推进
+
+**变更内容**：
+- 删除旧约束 `chk_mat_bom_type`（及兼容名 `chk_mat_bom_bom_type`）
+- 新建约束 `chk_mat_bom_bom_type`：`bom_type IN ('ELEMENT','INCOMING','OUTPUT','ASSEMBLY')`
+- 新增列 `child_part_no VARCHAR(64) NULL`：ASSEMBLY 行的子配件料号，其他 bom_type 为 NULL
+- 新建部分索引 `idx_mat_bom_child_part_no`：`WHERE child_part_no IS NOT NULL`
+
+**自检结果**：V168 success=t ✅；CHECK 含 ASSEMBLY ✅；child_part_no varchar/YES ✅；部分索引存在 ✅；commit SHA 1062f7e ✅
+
+**关键决策**：
+- 旧约束名与任务描述不一致，采用双重 DROP IF EXISTS 策略（两个名字都删）保证安全
+- OUTPUT 值原本不在旧约束中，V168 一并纳入新约束，与任务目标对齐
+
+**涉及文件**：`cpq-backend/src/main/resources/db/migration/V168__extend_mat_bom_bom_type_assembly.sql` | **提交**：1062f7e
+
+---
+
+### [2026-05-13] V167 — mat_part 加 3 列（选配功能 Phase 1 Task 3）
+
+**背景**：选配功能 Phase 1 第三个迁移任务，给 mat_part 表新增支持"添加产品—选配"所需的 3 列。
+
+**变更内容**：
+- `material_recipe_id UUID NULL` — FK → material_recipe(id) ON DELETE SET NULL；旧料号留 NULL
+- `product_type VARCHAR(16) NOT NULL DEFAULT 'SIMPLE'` — CHECK (IN ('SIMPLE','COMPOSITE'))
+- `config_fingerprint VARCHAR(64) NULL` — 配置指纹(sha256 hex)；UNIQUE 部分索引(WHERE NOT NULL)
+- 3 个辅助索引：uq_mat_part_fingerprint / idx_mat_part_recipe / idx_mat_part_product_type
+
+**关键决策**：
+- product_type 设 NOT NULL + DEFAULT 'SIMPLE'，存量行自动升级为 SIMPLE；不影响历史数据
+- config_fingerprint 用部分唯一索引（NULL 不参与唯一性），允许多行同时为 NULL
+
+**涉及文件**：`db/migration/V167__alter_mat_part_add_configure_cols.sql` | **提交**：2017f89
+
+---
+
+### [2026-05-13] V165 — composite_process_def + mat_composite_process（选配功能 Phase 1 Task 2）
+
+**背景**：选配功能 Phase 1 第二个迁移任务，为组合工艺体系建立字典表与实例表。
+
+**交付**：`db/migration/V165__composite_process_def_and_mat.sql` — 创建两张表：
+- `composite_process_def`：组合工艺字典（铆接/焊接/钎焊等），字段含 code(UNIQUE)/name/icon/description/param_schema(JSONB DEFAULT '[]')/sort_order/status(ACTIVE|INACTIVE)/created_at；CHECK 约束约束 status 枚举
+- `mat_composite_process`：工艺实例（挂在父料号上），FK → composite_process_def(code)；字段含 parent_hf_part_no/def_code/seq_no/participating_parts(JSONB)/param_values(JSONB DEFAULT '{}')/part_version(DEFAULT 2000)/is_current/created_at/created_by；UNIQUE(parent_hf_part_no, seq_no, part_version)；索引含 `IF NOT EXISTS`（Task 1 审查建议改进）
+
+**自检结果**：Quarkus dev 401(auth 正常) ✅；V165 success=true ✅；composite_process_def=9列(id/code/name/icon/description/param_schema/sort_order/status/created_at) ✅；mat_composite_process=10列(id/parent_hf_part_no/def_code/seq_no/participating_parts/param_values/part_version/is_current/created_at/created_by) ✅；commit SHA 81203dc ✅
+
+**关键决策**：
+- `CREATE INDEX IF NOT EXISTS` 与 `CREATE TABLE IF NOT EXISTS` 保持一致（对比 Task 1 仅 TABLE 用了 IF NOT EXISTS）
+- JDBC 验证写法延续 Task 1 模式（JDK E:\develop\jdk-17.0.2 + pg jar 42.7.10，DB 10.177.152.12:5432）
+- 临时 V165Check.java 用 Write 工具写入项目根目录，验证完立即删除
+
+**涉及文件**：`cpq-backend/src/main/resources/db/migration/V165__composite_process_def_and_mat.sql`
+
+---
+
+### [2026-05-13] V164 — material_recipe + material_recipe_element 字典表（选配功能 Phase 1 Task 1）
+
+**背景**：选配功能（Configure Product）Phase 1 第一个迁移任务，为材质配方体系建立字典表基础。
+
+**交付**：`db/migration/V164__material_recipe_and_element.sql` — 创建两张表：
+- `material_recipe`：材质配方字典，字段含 code/symbol/name/spec_label/recipe_type(locked|editable|partial)/sort_order/status(ACTIVE|INACTIVE)/审计列；唯一约束 code；两个 CHECK 约束
+- `material_recipe_element`：元素含量明细，FK → material_recipe.id CASCADE，字段含 element_code/element_name/default_pct/min_pct/max_pct/is_locked；UNIQUE(recipe_id, element_code)；CHECK 确保 locked 行无范围列、非 locked 行 min_pct/max_pct 非空且 min≤max
+
+**自检结果**：V164 success=true ✅；material_recipe=EXISTS ✅；material_recipe_element=EXISTS ✅；列结构完整（12列/10列，类型全部匹配）✅；commit SHA f84b167 ✅
+
+**关键决策**：
+- psql 未安装于开发机，改用 Maven 本地 PostgreSQL JDBC jar + Java 程序验证（`E:\develop\jdk-17.0.2` + `org\postgresql\postgresql\42.7.10`）
+- DB 主机为 `10.177.152.12:5432`（非 localhost），由 application.properties `DB_HOST` 默认值确认
+- 未修改 V162/V163；V160/V161 为另一开发者未提交的 untracked 文件，未触碰
+
+**涉及文件**：`cpq-backend/src/main/resources/db/migration/V164__material_recipe_and_element.sql`
+
+---
+
+### [2026-05-13] V162 + Step3 优惠策略改造 — 行级年用量阶梯折扣
+
+**背景**:报价单 Step3 从"整单单一折扣率"改为"按行配置 + 年用量阶梯折扣"。需求源:用户原型表头 [产品/年用量/优惠金额来源/可优惠金额基数/折扣/优惠金额/计价单位/币种/单价/优惠后单价/总金额] + 4 档阶梯写死(<200=0 / 200-499=10 / 500-999=20 / ≥1000=30)。
+
+**核心决策(spec D1–D6)**:
+- D1:年用量计入合计 → `quotation.total_amount = SUM(line_total_amount)`,`line_total_amount = annual_volume × line_final_price`
+- D2:"优惠金额来源" 8 项下拉(7 metric + SUBTOTAL 兜底),`v_costing_summary_full` 该列为 NULL 时灰显
+- D3:旧整单折扣 `system_discount_rate / final_discount_rate` 字段保留,V1 不写入(置 100)
+- D4:`DiscountStrategy` 接口 + `@LookupIfProperty` 切换;V1 = `AnnualVolumeStepDiscount`;V2 切 `PricingStrategyDiscount` 读 PricingStrategy 表(前端 0 改动)
+- D5:V1 不允许手动覆盖折扣率(可审计)
+- D6:进 Step3 强刷 `lineUnitPrice ← lineItem.subtotal`(对齐 v1.8 步骤间刷新规则)
+
+**交付(全部自检绿)**:
+- **后端**:V162__step3_annual_volume_discount.sql(9 列 + 部分索引 + 9 COMMENT);`com.cpq.discount` 包 4 新类(DiscountStrategy / Context / Result / AnnualVolumeStepDiscount);`SaveDraftRequest.LineItemDraft` + `QuotationDTO.LineItemDTO` + `QuotationLineItem` 各加 9 字段;`QuotationService.saveDraft` 写 9 字段、`updateTotal` 改为 SUM(line_total_amount)、`submit` 加 ±0.01 容差复算;`AnnualVolumeStepDiscountTest` 15 个测试全绿(4 阶梯边界 + null 输入 + 负价熔断 + totalAmount scale=4)
+- **前端**:`cpq-frontend/src/utils/discountStrategy.ts`(V1 阶梯函数)、`services/discountSourceService.ts`(8 项元数据 + `fetchBaseAmount`);`pages/quotation/QuotationStep3.tsx`(11 列 Table + 金额汇总 Statistic);`QuotationWizard.tsx` 4 处改动(import / applyQuotationData / buildDraftPayload / renderStep3);LineItem interface + LineItemDTO type 各加 9 字段
+
+**关键文件**:`docs/superpowers/specs/2026-05-13-step3-annual-volume-discount.md`(权威设计) | `db/migration/V162__step3_annual_volume_discount.sql` | `cpq-backend/src/main/java/com/cpq/discount/` | `cpq-frontend/src/pages/quotation/QuotationStep3.tsx`
+
+**反模式防护**:
+- **AP-2**:DTO 9 字段 round-trip(save → reload → DTO.from 完整)
+- **AP-9**:Step3 异步 `fetchBaseAmount` 完成后只覆盖 `discountBaseAmount` + 重算下游 5,函数式 setState 不动用户当前输入的 `annualVolume`
+- **AP-10**:Step3 所有 mutator 用 `onUpdate(prev => prev.map(...))`,与 QuotationStep2 既有写法一致
+- **AP-11**:WYSIWYG — 6 个屏幕派生值(基数/折扣/优惠金额/单价/优惠后单价/总金额)全部 commit 入库,半年后审计可复现
+- **AP-18**:V162 写完后改 java 内容(非 mtime)触发完整重启 Flyway
+
+**PRD 同步**:`docs/PRD-v3.md` §3.2.3 第三步章节重写 + §9.8 演进史增 v3.1 条目。`docs/PRD.md` 已废弃归档,本次未改。
+
+**已知遗留(spec §11)**:阶梯边界硬编码在前后端两份(未来沉入 system_config);"优惠后单价" > 单价时静默截到 0 待加 Toast 警示;Step2 改 subtotal 后再进 Step3 的"产品数据变更"Toast 提示未实现(RISK-3)。
+
+---
+
 ### [2026-05-13] V160 修复 — BUMP 后产品卡片多版本叠加 + v2000 标签
 
 **症状**：从基础数据导入 → 料号冲突触发版本升级 → 创建报价单后，产品卡片"元素 / 来料 / 成品"等 tab 同时显示 v2000 和 v2001 两套数据（8 行 BOM 而非 4 行），且卡片右上角版本号显示 v2000。
