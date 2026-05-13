@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Popover, Button, Segmented, Alert, Space, message } from 'antd';
+import { Popover, Button, Segmented, Alert, Space, message, Dropdown } from 'antd';
+import { DatabaseOutlined, SettingOutlined, PlusOutlined, DownOutlined } from '@ant-design/icons';
 import { evaluateExpression, getGlobalPathCache } from '../../utils/formulaEngine';
 import { usePathFormulaCache } from './usePathFormulaCache';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey } from './useDriverExpansions';
@@ -103,6 +104,26 @@ export interface LineItem {
   partVersionLocked?: number;
   /** line_item id (后端 PATCH 需要; 新创建未持久化的 line_item 无 id) */
   id?: string;
+
+  // ★ Step3 新增 9 字段（spec §5.3，字段名严格按 camelCase 锁定）
+  /** 年用量（用户输入，驱动阶梯折扣） */
+  annualVolume?: number;
+  /** 优惠金额来源 metric_code（MATERIAL_COST/PROCESS_FEE/.../SUBTOTAL） */
+  discountSource?: string;
+  /** 可优惠金额基数 — commit 时快照 */
+  discountBaseAmount?: number;
+  /** 实际折扣率 % (0-100，V1 由阶梯引擎硬算) */
+  discountRateApplied?: number;
+  /** 单件优惠金额（= base × rate / 100） */
+  lineDiscountAmount?: number;
+  /** 单价 = subtotal 快照（防 Step2 后续被改） */
+  lineUnitPrice?: number;
+  /** 优惠后单价（= lineUnitPrice - lineDiscountAmount） */
+  lineFinalPrice?: number;
+  /** 行总金额（= annualVolume × lineFinalPrice；Σ 即整单 total_amount） */
+  lineTotalAmount?: number;
+  /** 命中的折扣规则编号（V1 = ANNUAL_VOLUME_STEP_V1） */
+  discountRuleCode?: string;
 }
 
 export type LineItemUpdater = Partial<LineItem> | ((prev: LineItem) => Partial<LineItem>);
@@ -110,6 +131,8 @@ export type LineItemUpdater = Partial<LineItem> | ((prev: LineItem) => Partial<L
 export interface QuotationStep2Props {
   lineItems: LineItem[];
   onAddProduct: () => void;
+  /** 选配添加 — 打开 ConfigureProductDrawer */
+  onAddConfigured?: () => void;
   onRemoveProduct: (index: number) => void;
   onUpdateLineItem: (index: number, data: LineItemUpdater) => void;
   /** 批量从基础数据导入产品 — 由父组件实现 setLineItems(prev => [...prev, ...newItems]) */
@@ -1269,6 +1292,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
 const QuotationStep2: React.FC<QuotationStep2Props> = ({
   lineItems,
   onAddProduct,
+  onAddConfigured,
   onAddBatch,
   customerTemplateId,
   costingCardTemplateId,
@@ -1662,9 +1686,28 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
             </>
           )}
           {mainTab === 'quote' && (
-            <button className="qt-add-product-btn" type="button" onClick={onAddProduct}>
-              + 添加产品
-            </button>
+            <Dropdown
+              menu={{
+                items: [
+                  {
+                    key: 'classic',
+                    label: '从已有产品添加',
+                    icon: <DatabaseOutlined />,
+                    onClick: () => onAddProduct?.(),
+                  },
+                  {
+                    key: 'configure',
+                    label: '选配添加',
+                    icon: <SettingOutlined />,
+                    onClick: () => onAddConfigured?.(),
+                  },
+                ],
+              }}
+            >
+              <Button type="primary">
+                <PlusOutlined /> 添加产品 <DownOutlined />
+              </Button>
+            </Dropdown>
           )}
         </div>
       </div>

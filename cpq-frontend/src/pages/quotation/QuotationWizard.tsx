@@ -14,10 +14,14 @@ import { quotationDriftService } from '../../services/quotationDriftService';
 import { quotationSnapshotService } from '../../services/quotationSnapshotService';
 import { customerService } from '../../services/customerService';
 import QuotationStep2, { computeProductSubtotal, computeAllFormulas } from './QuotationStep2';
+import QuotationStep3 from './QuotationStep3';
 import type { DriftDetectionResult } from '../../types/quotation-drift';
 import type { LineItem, ComponentDataItem, ComponentField, ComponentFormula } from './QuotationStep2';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey } from './useDriverExpansions';
 import AddProductModal from './AddProductModal';
+import ConfigureProductDrawer from './ConfigureProductDrawer';
+import QuotationCreateForm from './QuotationCreateForm';
+import type { QuotationFormValue } from './QuotationCreateForm';
 import { templateService } from '../../services/templateService';
 import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
 
@@ -205,6 +209,10 @@ const QuotationWizard: React.FC = () => {
   const [customerTemplateId, setCustomerTemplateId] = useState<string | undefined>();
   // V72：核价模板（template 表 templateKind='COSTING'）— 用于「核价单」视图渲染产品卡片
   const [costingCardTemplateId, setCostingCardTemplateId] = useState<string | undefined>();
+  // T34: 选配添加 Drawer 开关
+  const [configureDrawerOpen, setConfigureDrawerOpen] = useState(false);
+  // T35: Step1 表单（QuotationCreateForm 4 字段）是否已填完
+  const [step1Valid, setStep1Valid] = useState(false);
   // Driver 展开结果上提到 wizard 层，便于 buildDraftPayload 在保存前
   // 把 BASIC_DATA / FORMULA 计算结果快照写入 rowData（WYSIWYG）。
   const customerIdValue = (selectedCustomer?.id) || form.getFieldValue('customerId') || undefined;
@@ -243,12 +251,8 @@ const QuotationWizard: React.FC = () => {
     }
   }, [quotationId]);
 
-  // P2-7: Auto-calculate discount when entering step 3 (index 2)
-  useEffect(() => {
-    if (currentStep === 2 && quotationId) {
-      handleCalculateDiscount();
-    }
-  }, [currentStep]);
+  // Step3 初始化逻辑已移入 QuotationStep3 组件内部（D6 强刷 lineUnitPrice = subtotal）
+  // 旧的整单折扣自动计算 effect 已废弃（V1 行级折扣由 Step3 组件处理）
 
   const applyQuotationData = (q: any) => {
     setQuotation(q);
@@ -316,6 +320,16 @@ const QuotationWizard: React.FC = () => {
         subtotal: li.subtotal || 0,
         // 料号版本锁定 (后端 DTO 已带, 用于产品卡片版本 Tag 显示)
         partVersionLocked: li.partVersionLocked,
+        // Step3 新增 9 字段回读（AP-2：round-trip 不丢字段）
+        annualVolume: li.annualVolume ?? undefined,
+        discountSource: li.discountSource ?? undefined,
+        discountBaseAmount: li.discountBaseAmount != null ? Number(li.discountBaseAmount) : undefined,
+        discountRateApplied: li.discountRateApplied != null ? Number(li.discountRateApplied) : undefined,
+        lineDiscountAmount: li.lineDiscountAmount != null ? Number(li.lineDiscountAmount) : undefined,
+        lineUnitPrice: li.lineUnitPrice != null ? Number(li.lineUnitPrice) : undefined,
+        lineFinalPrice: li.lineFinalPrice != null ? Number(li.lineFinalPrice) : undefined,
+        lineTotalAmount: li.lineTotalAmount != null ? Number(li.lineTotalAmount) : undefined,
+        discountRuleCode: li.discountRuleCode ?? undefined,
       }) as LineItem;
       });
       setLineItems(basicItems);
@@ -637,6 +651,16 @@ const QuotationWizard: React.FC = () => {
         subtotal: computeProductSubtotalSafe(li, driverExpansions, customerIdValue),
         sortOrder: idx,
         processIds: [],
+        // Step3 新增 9 字段透传（AP-2：round-trip 不丢字段，字段名严格对齐 spec §5.3）
+        annualVolume: li.annualVolume ?? null,
+        discountSource: li.discountSource ?? null,
+        discountBaseAmount: li.discountBaseAmount ?? null,
+        discountRateApplied: li.discountRateApplied ?? null,
+        lineDiscountAmount: li.lineDiscountAmount ?? null,
+        lineUnitPrice: li.lineUnitPrice ?? null,
+        lineFinalPrice: li.lineFinalPrice ?? null,
+        lineTotalAmount: li.lineTotalAmount ?? null,
+        discountRuleCode: li.discountRuleCode ?? null,
         componentData: (li.componentData || []).map((cd, ci) => ({
           componentId: cd.componentId || null,
           tabName: cd.tabName || '',
@@ -872,9 +896,12 @@ const QuotationWizard: React.FC = () => {
                 disabled={isImportFlow}
               />
             </Form.Item>
-            <Form.Item name="name" label="报价单名称" rules={[{ required: true, message: '请输入名称' }]}>
-              <Input placeholder="输入报价单名称" />
-            </Form.Item>
+            {/* 未选客户时显示基础名称输入框；选客户后由 QuotationCreateForm 接管名称字段 */}
+            {!selectedCustomer && (
+              <Form.Item name="name" label="报价单名称" rules={[{ required: true, message: '请输入名称' }]}>
+                <Input placeholder="输入报价单名称" />
+              </Form.Item>
+            )}
             <Row gutter={16}>
               <Col span={12}>
                 <Form.Item name="projectName" label="项目名称">
@@ -984,6 +1011,34 @@ const QuotationWizard: React.FC = () => {
           )}
         </Col>
       </Row>
+
+      {/* T35: 选择客户后显示 产品分类 + 模板选择 四字段表单，必须填完才能下一步 */}
+      {selectedCustomer && (
+        <Card title="产品分类 + 模板选择" size="small" style={{ marginTop: 16 }}>
+          <QuotationCreateForm
+            customerId={selectedCustomer.id}
+            customerName={selectedCustomer.name}
+            value={{
+              name: form.getFieldValue('name') ?? '',
+              categoryId: form.getFieldValue('categoryId'),
+              customerTemplateId: form.getFieldValue('customerTemplateId') ?? customerTemplateId,
+              costingTemplateId: form.getFieldValue('costingCardTemplateId') ?? costingCardTemplateId,
+            }}
+            onChange={(v: QuotationFormValue) => {
+              form.setFieldsValue({
+                name: v.name,
+                categoryId: v.categoryId,
+                customerTemplateId: v.customerTemplateId,
+                costingCardTemplateId: v.costingTemplateId,
+              });
+              // 同步到 wizard 层的 state，让 Step2 / buildDraftPayload 能拿到最新模板 ID
+              if (v.customerTemplateId !== undefined) setCustomerTemplateId(v.customerTemplateId);
+              if (v.costingTemplateId !== undefined) setCostingCardTemplateId(v.costingTemplateId);
+            }}
+            onValidityChange={setStep1Valid}
+          />
+        </Card>
+      )}
     </div>
   );
 
@@ -992,6 +1047,7 @@ const QuotationWizard: React.FC = () => {
       <QuotationStep2
         lineItems={lineItems}
         onAddProduct={() => setAddProductModalOpen(true)}
+        onAddConfigured={() => setConfigureDrawerOpen(true)}
         onAddBatch={(items) => setLineItems((prev) => {
           // 去重:同一 productPartNo 只保留一份(以现有为准,新增的覆盖不了)
           const existing = new Set(prev.map((p) => p.productPartNo).filter(Boolean));
@@ -1016,45 +1072,26 @@ const QuotationWizard: React.FC = () => {
           setAddProductModalOpen(false);
         }}
       />
+
+      <ConfigureProductDrawer
+        open={configureDrawerOpen}
+        quotationId={quotationId || ''}
+        onCancel={() => setConfigureDrawerOpen(false)}
+        onConfirm={(items) => {
+          setLineItems(prev => [...prev, ...items]);
+          setConfigureDrawerOpen(false);
+        }}
+      />
     </div>
   );
 
-  const renderStep3 = () => {
-    const originalAmount = lineItems.reduce((sum, li) => sum + computeProductSubtotal(li, driverExpansions, customerIdValue), 0);
-    const discountRate = form.getFieldValue('finalDiscountRate') || quotation?.finalDiscountRate || 100;
-    const totalAmount = originalAmount * discountRate / 100;
-
-    return (
-      <Card title="定价与折扣" size="small">
-        <Descriptions column={2} bordered>
-          <Descriptions.Item label="原始总金额">
-            <Text strong>¥{originalAmount.toLocaleString()}</Text>
-          </Descriptions.Item>
-          <Descriptions.Item label="系统折扣率">
-            {quotation?.systemDiscountRate || 100}%
-          </Descriptions.Item>
-          <Descriptions.Item label="最终总金额">
-            <Text strong style={{ color: '#1890ff', fontSize: 18 }}>¥{totalAmount.toLocaleString()}</Text>
-          </Descriptions.Item>
-          <Descriptions.Item label="产品行数">{lineItems.length}</Descriptions.Item>
-        </Descriptions>
-
-        <Divider />
-
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Button onClick={handleCalculateDiscount}>自动计算折扣</Button>
-
-          <Form.Item name="finalDiscountRate" label="手动折扣率 (%)">
-            <InputNumber min={0} max={100} precision={2} style={{ width: 200 }} />
-          </Form.Item>
-
-          <Form.Item name="discountAdjustmentReason" label="折扣调整原因">
-            <TextArea rows={3} placeholder="输入手动调整折扣的原因" />
-          </Form.Item>
-        </Space>
-      </Card>
-    );
-  };
+  const renderStep3 = () => (
+    <QuotationStep3
+      lineItems={lineItems}
+      baseCurrency={quotation?.baseCurrency || 'CNY'}
+      onUpdate={(updater) => setLineItems(prev => updater(prev))}
+    />
+  );
 
   const renderStep4 = () => (
     <Card title="交易条款" size="small">
@@ -1221,7 +1258,12 @@ const QuotationWizard: React.FC = () => {
           <Button disabled={currentStep === 0} onClick={prev}>
             上一步
           </Button>
-          <Button type="primary" onClick={next} disabled={currentStep === steps.length - 1}>
+          <Button
+            type="primary"
+            onClick={next}
+            disabled={currentStep === steps.length - 1 || (currentStep === 0 && !!selectedCustomer && !step1Valid)}
+            title={currentStep === 0 && !!selectedCustomer && !step1Valid ? '请先填写产品分类和报价模板' : undefined}
+          >
             下一步
           </Button>
         </div>
