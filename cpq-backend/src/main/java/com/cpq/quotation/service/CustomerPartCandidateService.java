@@ -65,7 +65,8 @@ public class CustomerPartCandidateService {
             "       m.base_currency, m.quote_currency, " +
             "       (m.id IS NOT NULL) AS customer_specific, " +
             "       im.name AS im_name, im.specification AS im_spec, " +
-            "       im.size AS im_size, im.status_code AS im_status " +
+            "       im.size AS im_size, im.status_code AS im_status, " +
+            "       m.current_version " +
             "FROM mat_part p " +
             "LEFT JOIN mat_customer_part_mapping m " +
             "       ON m.hf_part_no = p.part_no AND m.customer_id = :customerId " +
@@ -112,6 +113,9 @@ public class CustomerPartCandidateService {
             info.sizeInfo = row[12] != null ? (String) row[12] : null;
             info.statusCode = row[13] != null ? (String) row[13] : null;
             dto.hfPartInfo = info;
+            // V161+ 修复: 透传 mapping.current_version → 前端 buildLineItemFromTemplate
+            // 写入 LineItem.partVersionLocked, 首次自动展开就带正确版本号 → driver 注入 part_version=N
+            dto.currentVersion    = row[14] != null ? ((Number) row[14]).intValue() : null;
             result.add(dto);
         }
         LOG.debugf("listCandidates(customerId=%s) → %d rows", customerId, result.size());
@@ -162,7 +166,8 @@ public class CustomerPartCandidateService {
             "       m.base_currency, m.quote_currency, " +
             "       (m.id IS NOT NULL) AS customer_specific, " +
             "       im.name AS im_name, im.specification AS im_spec, " +
-            "       im.size AS im_size, im.status_code AS im_status " +
+            "       im.size AS im_size, im.status_code AS im_status, " +
+            "       m.current_version " +
             "FROM mat_part p " +
             "LEFT JOIN mat_customer_part_mapping m " +
             "       ON m.hf_part_no = p.part_no AND m.customer_id = :customerId " +
@@ -195,6 +200,8 @@ public class CustomerPartCandidateService {
             info.sizeInfo = row[12] != null ? (String) row[12] : null;
             info.statusCode = row[13] != null ? (String) row[13] : null;
             dto.hfPartInfo = info;
+            // V161+ 修复: V6 路径同样透传 current_version
+            dto.currentVersion    = row[14] != null ? ((Number) row[14]).intValue() : null;
             result.add(dto);
         }
         LOG.infof("V6 listCandidates(customerId=%s, importRecordId=%s) → %d 行 (hfPairs=%d)",

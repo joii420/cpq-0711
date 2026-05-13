@@ -1,0 +1,398 @@
+
+<style>
+*{box-sizing:border-box;}
+.step-dot{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;flex-shrink:0;}
+.mat-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:7px;cursor:pointer;border:0.5px solid transparent;transition:background .12s,border .12s;}
+.mat-row:hover{background:#f5f4ff;border-color:#c5cae9;}
+.mat-row.selected{background:#f0effe;border:1.5px solid #5c6bc0;}
+.type-badge{font-size:10px;padding:2px 7px;border-radius:4px;white-space:nowrap;flex-shrink:0;}
+.elem-row{display:grid;grid-template-columns:52px 1fr 120px;gap:8px;align-items:center;padding:7px 0;border-bottom:0.5px solid #f0f0f0;font-size:12px;}
+.elem-row:last-child{border-bottom:none;}
+.editable-input{width:76px;border:0.5px solid #c5cae9;border-radius:5px;padding:4px 6px;font-size:12px;text-align:right;color:#333;outline:none;background:#fff;}
+.editable-input:focus{border-color:#5c6bc0;}
+.process-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border:0.5px solid #e8e8e8;border-radius:7px;font-size:12px;color:#333;cursor:pointer;margin-bottom:5px;transition:background .12s;}
+.process-item:hover{background:#f5f4ff;}
+.process-item.added{background:#f0effe;border-color:#9fa8da;}
+.added-row{display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f8f7ff;border-radius:7px;font-size:12px;color:#333;margin-bottom:5px;}
+.btn-primary{font-size:13px;border:none;border-radius:6px;padding:7px 22px;background:#5c6bc0;color:#fff;cursor:pointer;}
+.btn-secondary{font-size:13px;border:0.5px solid #bbb;border-radius:6px;padding:7px 22px;background:#fff;color:#555;cursor:pointer;}
+.btn-sm{font-size:11px;border:0.5px solid #9fa8da;border-radius:5px;padding:3px 9px;background:#fff;color:#5c6bc0;cursor:pointer;white-space:nowrap;}
+.btn-del{font-size:14px;border:none;background:none;color:#bbb;cursor:pointer;line-height:1;padding:0 2px;}
+.panel{display:none;flex:1;overflow:hidden;flex-direction:column;}
+.panel.active{display:flex;}
+.search-wrap{position:relative;}
+.search-wrap i{position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:13px;color:#bbb;}
+.search-wrap input{width:100%;padding:7px 10px 7px 28px;font-size:12px;border:0.5px solid #ddd;border-radius:6px;outline:none;color:#333;}
+.search-wrap input:focus{border-color:#5c6bc0;}
+.highlight{color:#5c6bc0;font-weight:600;}
+.empty-hint{text-align:center;padding:32px 0;color:#ccc;font-size:12px;}
+</style>
+
+<div style="position:relative;width:100%;min-height:640px;background:#f0f2f5;border-radius:var(--border-radius-lg);overflow:hidden;font-family:var(--font-sans);">
+
+  <!-- Page BG hint -->
+  <div style="padding:16px 24px;opacity:.4;">
+    <div style="background:#fff;border-radius:6px;padding:10px 16px;">
+      <div style="font-size:12px;color:#5c6bc0;font-weight:500;margin-bottom:6px;">编辑报价单 QT-20260513-1424 · 草稿 — 步骤 2 / 5</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;font-size:11px;color:#ccc;text-align:center;">
+        <span>来源</span><span>料号</span><span>物料名称</span><span>数量</span><span>单价</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- DRAWER -->
+  <div id="drawer" style="position:absolute;top:0;right:0;width:640px;height:100%;background:#fff;border-left:0.5px solid #dde1e7;display:flex;flex-direction:column;box-shadow:-6px 0 20px rgba(0,0,0,0.09);">
+
+    <!-- Header -->
+    <div style="padding:14px 20px 0;border-bottom:0.5px solid #eee;flex-shrink:0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <span style="font-size:15px;font-weight:500;color:#222;">添加产品 — 选配</span>
+        <button onclick="document.getElementById('drawer').style.display='none'" style="border:none;background:none;font-size:18px;color:#999;cursor:pointer;line-height:1;" aria-label="关闭">✕</button>
+      </div>
+      <div id="stepBar" style="display:flex;align-items:center;margin-bottom:14px;font-size:12px;"></div>
+    </div>
+
+    <!-- Content -->
+    <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;">
+
+      <!-- STEP 1 材质选择 -->
+      <div id="panel1" class="panel active">
+        <!-- Top: search + list -->
+        <div style="display:flex;flex:1;overflow:hidden;">
+
+          <!-- Left: list -->
+          <div style="width:260px;border-right:0.5px solid #eee;display:flex;flex-direction:column;">
+            <div style="padding:12px 14px 8px;flex-shrink:0;">
+              <div style="font-size:12px;font-weight:500;color:#444;margin-bottom:8px;">材质库</div>
+              <div class="search-wrap">
+                <i class="ti ti-search" aria-hidden="true"></i>
+                <input type="text" id="matSearch" placeholder="输入材质名称或化学式…" oninput="filterMat(this.value)" />
+              </div>
+              <div id="matCount" style="font-size:11px;color:#aaa;margin-top:6px;">共 <span id="matCountNum">12</span> 种材质</div>
+            </div>
+            <div style="flex:1;overflow-y:auto;padding:0 10px 12px;" id="matList"></div>
+          </div>
+
+          <!-- Right: element detail -->
+          <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+            <div id="elemPanel" style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding:14px 16px;">
+              <div id="noSelHint" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#ccc;font-size:12px;">
+                <i class="ti ti-arrow-left" style="font-size:24px;margin-bottom:8px;" aria-hidden="true"></i>
+                从左侧选择材质查看成分
+              </div>
+              <div id="elemDetail" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-shrink:0;">
+                  <div>
+                    <div style="font-size:14px;font-weight:500;color:#222;" id="elemTitle"></div>
+                    <div style="font-size:11px;color:#888;margin-top:2px;" id="elemSubtitle"></div>
+                  </div>
+                  <span id="elemBadge" class="type-badge"></span>
+                </div>
+                <div style="font-size:11px;color:#aaa;margin-bottom:8px;flex-shrink:0;" id="elemNote"></div>
+                <div style="flex:1;overflow-y:auto;background:#fafafa;border-radius:8px;border:0.5px solid #eee;padding:8px 14px;" id="elemRows"></div>
+                <div id="sumWrap" style="margin-top:8px;padding:6px 14px;background:#fff8e1;border-radius:6px;font-size:11px;color:#f57f17;display:none;flex-shrink:0;">
+                  <i class="ti ti-alert-triangle" style="font-size:12px;vertical-align:-1px;margin-right:4px;" aria-hidden="true"></i>
+                  <span id="sumTip"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 2 工序选择 -->
+      <div id="panel2" class="panel" style="flex-direction:row;">
+        <div style="width:260px;border-right:0.5px solid #eee;display:flex;flex-direction:column;">
+          <div style="padding:12px 14px 8px;flex-shrink:0;">
+            <div style="font-size:12px;font-weight:500;color:#444;margin-bottom:8px;">工序库</div>
+            <div class="search-wrap">
+              <i class="ti ti-search" aria-hidden="true"></i>
+              <input type="text" placeholder="搜索工序…" oninput="filterProc(this.value)" />
+            </div>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:0 14px 12px;" id="procList"></div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+          <div style="padding:12px 16px 8px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;">
+            <div style="font-size:12px;font-weight:500;color:#444;">已选工序 <span id="procCount" style="background:#e8eaf6;color:#5c6bc0;font-size:11px;padding:1px 7px;border-radius:10px;margin-left:4px;">0</span></div>
+            <span style="font-size:11px;color:#aaa;">按添加顺序排列</span>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:0 16px 12px;" id="addedProcs"></div>
+        </div>
+      </div>
+
+      <!-- STEP 3 确认 -->
+      <div id="panel3" class="panel" style="flex-direction:column;overflow-y:auto;padding:24px 28px;">
+        <div style="width:52px;height:52px;border-radius:50%;background:#e8f5e9;display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 12px;">✅</div>
+        <div style="text-align:center;font-size:15px;font-weight:500;color:#333;margin-bottom:4px;">选配完成</div>
+        <div style="text-align:center;font-size:12px;color:#888;margin-bottom:20px;">确认以下信息后点击「确认添加」</div>
+        <div style="border:0.5px solid #e0e0e0;border-radius:10px;overflow:hidden;margin-bottom:14px;">
+          <div style="background:#f5f4ff;padding:9px 16px;font-size:12px;font-weight:500;color:#5c6bc0;"><i class="ti ti-box" aria-hidden="true"></i> 材质信息</div>
+          <div style="padding:12px 16px;" id="sum1"></div>
+        </div>
+        <div style="border:0.5px solid #e0e0e0;border-radius:10px;overflow:hidden;">
+          <div style="background:#f5f4ff;padding:9px 16px;font-size:12px;font-weight:500;color:#5c6bc0;"><i class="ti ti-list-check" aria-hidden="true"></i> 工序列表</div>
+          <div style="padding:12px 16px;" id="sum2"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div style="padding:11px 20px;border-top:0.5px solid #eee;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+      <div style="font-size:11px;color:#aaa;" id="footHint"></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-secondary" id="btnBack" style="display:none;" onclick="goBack()">上一步</button>
+        <button class="btn-secondary" onclick="document.getElementById('drawer').style.display='none'">取消</button>
+        <button class="btn-primary" id="btnNext" onclick="goNext()">下一步</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const mats = [
+  {id:'AgCu85',sym:'AgCu',name:'银铜合金',spec:'85/15',type:'locked',elems:[{s:'Ag',n:'银',v:85},{s:'Cu',n:'铜',v:15}]},
+  {id:'AgCu90',sym:'AgCu',name:'银铜合金',spec:'90/10',type:'locked',elems:[{s:'Ag',n:'银',v:90},{s:'Cu',n:'铜',v:10}]},
+  {id:'AgNi90',sym:'AgNi',name:'银镍合金',spec:'90/10',type:'editable',elems:[{s:'Ag',n:'银',v:90,min:85,max:95},{s:'Ni',n:'镍',v:10,min:5,max:15}]},
+  {id:'AgNi95',sym:'AgNi',name:'银镍合金',spec:'95/5',type:'editable',elems:[{s:'Ag',n:'银',v:95,min:90,max:99},{s:'Ni',n:'镍',v:5,min:1,max:10}]},
+  {id:'AgSnO2',sym:'AgSnO₂',name:'银氧化锡',spec:'88/12',type:'partial',elems:[{s:'Ag',n:'银',v:88},{s:'SnO₂',n:'氧化锡',v:12,min:8,max:16},{s:'In₂O₃',n:'氧化铟',v:0.5,min:0,max:1.5}]},
+  {id:'AgSnO2b',sym:'AgSnO₂',name:'银氧化锡',spec:'85/15',type:'partial',elems:[{s:'Ag',n:'银',v:85},{s:'SnO₂',n:'氧化锡',v:15,min:10,max:18}]},
+  {id:'AgCdO',sym:'AgCdO',name:'银氧化镉',spec:'85/15',type:'locked',elems:[{s:'Ag',n:'银',v:85},{s:'CdO',n:'氧化镉',v:15}]},
+  {id:'AgW60',sym:'AgW',name:'银钨合金',spec:'60/40',type:'editable',elems:[{s:'Ag',n:'银',v:60,min:40,max:80},{s:'W',n:'钨',v:40,min:20,max:60}]},
+  {id:'AgW72',sym:'AgW',name:'银钨合金',spec:'72/28',type:'editable',elems:[{s:'Ag',n:'银',v:72,min:60,max:80},{s:'W',n:'钨',v:28,min:20,max:40}]},
+  {id:'CuCr',sym:'CuCr',name:'铜铬合金',spec:'99/1',type:'partial',elems:[{s:'Cu',n:'铜',v:99},{s:'Cr',n:'铬',v:0.8,min:0.3,max:1.5},{s:'Zr',n:'锆',v:0.2,min:0,max:0.5}]},
+  {id:'AgPd',sym:'AgPd',name:'银钯合金',spec:'70/30',type:'locked',elems:[{s:'Ag',n:'银',v:70},{s:'Pd',n:'钯',v:30}]},
+  {id:'AuAg',sym:'AuAg',name:'金银合金',spec:'75/25',type:'locked',elems:[{s:'Au',n:'金',v:75},{s:'Ag',n:'银',v:25}]},
+];
+
+const procs = [
+  {id:'p1',name:'冲压成型',cat:'成型',time:'2h'},
+  {id:'p2',name:'粉末冶金烧结',cat:'烧结',time:'6h'},
+  {id:'p3',name:'表面镀银',cat:'表面处理',time:'1.5h'},
+  {id:'p4',name:'激光切割',cat:'加工',time:'1h'},
+  {id:'p5',name:'超声波焊接',cat:'连接',time:'0.5h'},
+  {id:'p6',name:'热处理退火',cat:'热处理',time:'3h'},
+  {id:'p7',name:'精密研磨',cat:'精加工',time:'2h'},
+  {id:'p8',name:'质量检测',cat:'检验',time:'1h'},
+  {id:'p9',name:'包装入库',cat:'包装',time:'0.5h'},
+];
+
+let step = 1;
+let selMat = null;
+let elemVals = {};
+let addedProcs = [];
+
+const typeInfo = {
+  locked:  {label:'标准锁定', bg:'#fce4ec', color:'#c62828', note:'该材质为标准配方，元素含量已锁定'},
+  editable:{label:'含量可调', bg:'#e8f5e9', color:'#2e7d32', note:'所有元素含量均可在范围内调整'},
+  partial: {label:'部分可调', bg:'#fff8e1', color:'#f57f17', note:'绿色字段可调，灰色字段已锁定'},
+};
+
+function hi(str, q){
+  if(!q) return str;
+  const re = new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
+  return str.replace(re,'<span class="highlight">$1</span>');
+}
+
+function filterMat(q){
+  const kw = q.trim().toLowerCase();
+  const filtered = mats.filter(m=>
+    !kw ||
+    m.sym.toLowerCase().includes(kw) ||
+    m.name.includes(kw) ||
+    m.spec.includes(kw)
+  );
+  document.getElementById('matCountNum').textContent = filtered.length;
+  renderMatList(filtered, kw);
+}
+
+function renderMatList(list, q=''){
+  const el = document.getElementById('matList');
+  if(!list.length){
+    el.innerHTML = `<div class="empty-hint"><i class="ti ti-mood-empty" style="font-size:24px;display:block;margin-bottom:6px;" aria-hidden="true"></i>未找到匹配材质</div>`;
+    return;
+  }
+  el.innerHTML = list.map(m=>{
+    const ti = typeInfo[m.type];
+    const isSel = selMat && selMat.id===m.id;
+    return `<div class="mat-row ${isSel?'selected':''}" onclick="selectMat('${m.id}')">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:500;color:#222;margin-bottom:1px;">${hi(m.sym,q)} <span style="font-weight:400;color:#888;font-size:11px;">${hi(m.name,q)}</span></div>
+        <div style="font-size:11px;color:#aaa;">${hi(m.spec,q)}</div>
+      </div>
+      <span class="type-badge" style="background:${ti.bg};color:${ti.color};">${ti.label}</span>
+    </div>`;
+  }).join('');
+}
+
+function selectMat(id){
+  selMat = mats.find(m=>m.id===id);
+  elemVals = {};
+  selMat.elems.forEach(e=>{ elemVals[e.s]=e.v; });
+  const kw = document.getElementById('matSearch').value.trim().toLowerCase();
+  const filtered = mats.filter(m=>!kw||m.sym.toLowerCase().includes(kw)||m.name.includes(kw)||m.spec.includes(kw));
+  renderMatList(filtered, kw);
+  renderElemDetail();
+}
+
+function renderElemDetail(){
+  if(!selMat){ document.getElementById('noSelHint').style.display='flex'; document.getElementById('elemDetail').style.display='none'; return; }
+  document.getElementById('noSelHint').style.display='none';
+  const d = document.getElementById('elemDetail');
+  d.style.display='flex';
+  const ti = typeInfo[selMat.type];
+  document.getElementById('elemTitle').textContent = selMat.sym + ' ' + selMat.name;
+  document.getElementById('elemSubtitle').textContent = '配比 ' + selMat.spec;
+  const badge = document.getElementById('elemBadge');
+  badge.textContent = ti.label;
+  badge.style.background = ti.bg;
+  badge.style.color = ti.color;
+  document.getElementById('elemNote').innerHTML = `<i class="ti ti-info-circle" style="font-size:12px;vertical-align:-1px;margin-right:3px;" aria-hidden="true"></i>${ti.note}`;
+  renderElemRows();
+}
+
+function renderElemRows(){
+  const rows = selMat.elems.map(e=>{
+    const canEdit = (selMat.type==='editable')||(selMat.type==='partial'&&e.min!==undefined);
+    const valDisp = elemVals[e.s]??e.v;
+    const input = canEdit
+      ? `<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;">
+           <input class="editable-input" type="number" min="${e.min}" max="${e.max}" step="0.1" value="${valDisp}" 
+             onchange="setElem('${e.s}',this.value)" />
+           <span style="font-size:11px;color:#888;width:12px;">%</span>
+         </div>`
+      : `<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;font-size:12px;color:#999;">
+           ${valDisp}%&nbsp;<i class="ti ti-lock" style="font-size:11px;" aria-hidden="true"></i>
+         </div>`;
+    const rangeHint = canEdit ? `<span style="font-size:10px;color:#bbb;margin-left:4px;">${e.min}–${e.max}</span>` : '';
+    return `<div class="elem-row">
+      <span style="display:inline-flex;align-items:center;gap:3px;background:#e8eaf6;color:#5c6bc0;font-size:11px;padding:2px 7px;border-radius:4px;font-weight:600;">${e.s}</span>
+      <span style="color:#555;font-size:12px;">${e.n}${rangeHint}</span>
+      ${input}
+    </div>`;
+  }).join('');
+  document.getElementById('elemRows').innerHTML = rows;
+  checkSum();
+}
+
+function setElem(sym, val){
+  elemVals[sym] = parseFloat(val)||0;
+  checkSum();
+}
+
+function checkSum(){
+  if(!selMat) return;
+  const editableElems = selMat.elems.filter(e=>(selMat.type==='editable')||(selMat.type==='partial'&&e.min!==undefined));
+  if(!editableElems.length){ document.getElementById('sumWrap').style.display='none'; return; }
+  const total = selMat.elems.reduce((a,e)=>a+(parseFloat(elemVals[e.s])||0),0);
+  const wrap = document.getElementById('sumWrap');
+  const tip = document.getElementById('sumTip');
+  const diff = Math.abs(total-100);
+  if(diff>0.01){
+    wrap.style.display='block';
+    wrap.style.background= diff>5?'#fce4ec':'#fff8e1';
+    wrap.style.color= diff>5?'#c62828':'#f57f17';
+    tip.textContent = `当前各元素含量之和为 ${total.toFixed(1)}%，建议调整至 100%`;
+  } else {
+    wrap.style.background='#e8f5e9'; wrap.style.color='#2e7d32';
+    tip.textContent='✓ 各元素含量之和为 100%，配比正确';
+    wrap.style.display='block';
+  }
+}
+
+function filterProc(q){
+  const kw = q.trim();
+  const list = procs.filter(p=>!kw||p.name.includes(kw)||p.cat.includes(kw));
+  renderProcLib(list, kw);
+}
+
+function renderProcLib(list, q=''){
+  const el = document.getElementById('procList');
+  el.innerHTML = list.map(p=>{
+    const isAdded = addedProcs.find(a=>a.id===p.id);
+    return `<div class="process-item ${isAdded?'added':''}" id="plib_${p.id}">
+      <div>
+        <div style="font-weight:500;margin-bottom:2px;">${hi(p.name,q)}</div>
+        <span style="font-size:11px;background:${isAdded?'#e8eaf6':'#f0f0f0'};color:${isAdded?'#5c6bc0':'#888'};padding:2px 6px;border-radius:4px;">${p.cat}</span>
+        <span style="font-size:11px;color:#bbb;margin-left:5px;">${p.time}</span>
+      </div>
+      <button class="btn-sm" onclick="toggleProc('${p.id}')">${isAdded?'已添加':'+ 添加'}</button>
+    </div>`;
+  }).join('') || `<div class="empty-hint">无匹配工序</div>`;
+}
+
+function toggleProc(id){
+  const idx = addedProcs.findIndex(a=>a.id===id);
+  if(idx>-1) addedProcs.splice(idx,1);
+  else addedProcs.push(procs.find(p=>p.id===id));
+  renderProcLib(procs, '');
+  renderAddedProcs();
+}
+
+function renderAddedProcs(){
+  const el = document.getElementById('addedProcs');
+  document.getElementById('procCount').textContent = addedProcs.length;
+  if(!addedProcs.length){
+    el.innerHTML=`<div class="empty-hint"><i class="ti ti-plus-circle" style="font-size:26px;display:block;margin-bottom:6px;" aria-hidden="true"></i>从左侧添加工序</div>`;
+    return;
+  }
+  el.innerHTML = addedProcs.map((p,i)=>`
+    <div class="added-row">
+      <span style="width:20px;height:20px;border-radius:50%;background:#e8eaf6;color:#5c6bc0;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</span>
+      <span style="flex:1;font-weight:500;">${p.name}</span>
+      <span style="font-size:11px;background:#e8eaf6;color:#5c6bc0;padding:2px 6px;border-radius:4px;">${p.cat}</span>
+      <button class="btn-del" onclick="toggleProc('${p.id}')" aria-label="移除">✕</button>
+    </div>`).join('');
+}
+
+function renderSummary(){
+  const m = selMat;
+  const elemRows = m ? m.elems.map(e=>`
+    <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:0.5px solid #f5f5f5;">
+      <span style="color:#888;">${e.s}（${e.n}）</span>
+      <span style="font-weight:500;color:#333;">${elemVals[e.s]??e.v} %</span>
+    </div>`).join('') : '<span style="font-size:12px;color:#ccc;">未选择材质</span>';
+  document.getElementById('sum1').innerHTML = m
+    ? `<div style="font-size:13px;font-weight:500;color:#333;margin-bottom:8px;">${m.sym} ${m.name} · ${m.spec}</div>${elemRows}`
+    : '<span style="font-size:12px;color:#ccc;">未选择材质</span>';
+  document.getElementById('sum2').innerHTML = addedProcs.length
+    ? addedProcs.map((p,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px;border-bottom:0.5px solid #f5f5f5;">
+        <span style="width:18px;height:18px;border-radius:50%;background:#e8eaf6;color:#5c6bc0;font-size:11px;display:inline-flex;align-items:center;justify-content:center;">${i+1}</span>
+        <span style="flex:1;">${p.name}</span>
+        <span style="font-size:11px;color:#888;">${p.cat} · ${p.time}</span>
+      </div>`).join('')
+    : '<div style="font-size:12px;color:#bbb;text-align:center;padding:10px 0;">暂未添加工序</div>';
+}
+
+function renderStepBar(){
+  const labels = ['材质选择','工序选择','完成选配'];
+  document.getElementById('stepBar').innerHTML = labels.map((s,i)=>{
+    const n=i+1, done=n<step, active=n===step;
+    const bg=done||active?'#5c6bc0':'#e0e0e0', fc=done||active?'#fff':'#999', tc=active?'#5c6bc0':done?'#5c6bc0':'#aaa', fw=active?'500':'400';
+    return `<span class="step-dot" style="background:${bg};color:${fc};">${done?'✓':n}</span>
+      <span style="margin-left:5px;color:${tc};font-weight:${fw};">${s}</span>
+      ${i<2?`<div style="flex:1;height:1px;background:${done?'#5c6bc0':'#e0e0e0'};margin:0 10px;"></div>`:''}`;
+  }).join('');
+}
+
+function goNext(){
+  if(step===1){ step=2; renderProcLib(procs); renderAddedProcs(); }
+  else if(step===2){ step=3; renderSummary(); }
+  else { document.getElementById('drawer').style.display='none'; return; }
+  updateUI();
+}
+function goBack(){ if(step>1){ step--; updateUI(); } }
+
+function updateUI(){
+  [1,2,3].forEach(n=>{ document.getElementById('panel'+n).classList.toggle('active',n===step); });
+  document.getElementById('btnBack').style.display = step>1?'':'none';
+  document.getElementById('btnNext').textContent = step===3?'确认添加':'下一步';
+  const hints=['请从左侧选择材质，并确认元素成分','从工序库中选择所需工序','核对选配信息后确认添加'];
+  document.getElementById('footHint').textContent = hints[step-1];
+  renderStepBar();
+}
+
+renderMatList(mats);
+updateUI();
+</script>

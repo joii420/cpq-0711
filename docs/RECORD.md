@@ -4,6 +4,51 @@
 
 ---
 
+### [2026-05-13] V160 修复 — BUMP 后产品卡片多版本叠加 + v2000 标签
+
+**症状**：从基础数据导入 → 料号冲突触发版本升级 → 创建报价单后，产品卡片"元素 / 来料 / 成品"等 tab 同时显示 v2000 和 v2001 两套数据（8 行 BOM 而非 4 行），且卡片右上角版本号显示 v2000。
+
+**根因（4 次修复都没修对的真相）**：`v_q_*_merged` 视图（V128/V133/V135/V136/V137/V141 共 6 个 quotation 合并视图）SELECT 投影**均未包含 part_version 列**。V153 给底表 `mat_bom/mat_fee/mat_process/mat_plating_fee/mat_plating_plan` 加上 part_version 后，视图层因列结构不变，`ImplicitJoinRewriter.getColumns` 拿到的视图列集合不含 `part_version` → `tableCols.contains("part_version")=false` → 跳过 `AND part_version=N` 谓词注入 → 返多版本叠加。`mat_fee` 分支因 `is_current=true` 兜底为单版本，但 `mat_bom` 分支无此保护必然叠加。
+
+**修复**：V160 DROP CASCADE + 重建 6 个视图，每个 SELECT 分支末尾追加 `part_version` 列：`mat_bom/mat_fee/mat_process` 分支直接 SELECT 该表 part_version；`mat_plating_fee LEFT JOIN mat_plating_plan` 取 `f.part_version`（Q2=C plating_plan 信息已被 V141 LEFT JOIN 融进 FEE 行，无独立 PLAN 分支需处理）。`v_q_part_info_merged` 不动（底表 mapping/mat_part/exchange_rate 非版本化）。
+
+**涉及文件**：`db/migration/V160__expose_part_version_in_q_merged_views.sql`（新建）
+
+**关键决策**：
+- 不动 `ImplicitJoinRewriter` —— 它的逻辑本身正确，问题在视图层"信号源"
+- 不动 V128/V133/V135/V136/V137/V141 —— 历史 migration 保持不可变，V160 是补丁
+- DDL 后必须 touch `ImplicitJoinRewriter.java` 重启 Quarkus 清进程级 `tableColumnsCache`
+
+**诊断/验证脚本**：`data/diagnose-v6-version-leak.sql`（修前定位根因，7 段只读）、`data/verify-v160.sql`（修后回归验证，4 段只读）
+
+**前置 BUMP 链路已对（本次诊断顺带确认）**：
+- ✅ `StagingMerger.mergeBom` 写新版到 `part_version=N+1`
+- ✅ `PartVersionService.applyVersionBump` 写 `mat_part_version_log` + UPDATE `mat_customer_part_mapping.current_version`
+- ✅ `QuotationService.saveDraft` 读 mapping → 写 `line_item.part_version_locked`（report 124/125 已为 2001）
+- ✅ `ComponentDriverService.expand(4-arg)` 设 `PartVersionContext.set(partVersion)`
+- ✅ `DataLoader.loadByPath(4-arg)` 自动 `PartVersionContext.get()`
+- ❌ 唯一漏点：6 个 `v_q_*_merged` 视图缺 part_version 投影（本次修复）
+
+**验证**：`v_q_element_merged` 修后查 hf=3120012580：v=2000→4 行（v2000 ELEMENT）, v=2001→6 行（v2001 ELEMENT 4 + v2001 ELEMENT_RECYCLE 2）, 无过滤→10 行。过滤逻辑生效。
+
+---
+
+### [2026-05-13] V161 同族补丁 — v_c_*_merged 19 视图同样缺 part_version
+
+**起因**：V160 修完 `v_q_*` 后，翻 Quarkus dev log 发现用户活动会触发 `v_c_*_merged` 系列查询（核价单 tab 用），V142 创建的 20 个核价合并视图与 v_q_* **同病同源** — 也没暴露 part_version。如果用户切到核价 tab 同样会出现多版本叠加。
+
+**修复**：V161 DROP CASCADE + 重建 19 个视图（`v_c_part_mapping_merged` 不动 — 底表 mapping/mat_part 非版本化）。每个 SELECT 加 `part_version`：
+- `costing_part_*` / `mat_fee` 分支直接 SELECT 该表的 part_version 列
+- **JOIN 视图加 part_version 等值对齐**（防跨版本污染）：
+  - `v_c_raw_element_bom_merged`：`mb.part_version = eb.part_version`
+  - `v_c_plating_scheme_merged`：`cpp.part_version = f.part_version`
+
+**涉及文件**：`db/migration/V161__expose_part_version_in_c_merged_views.sql`（新建）
+
+**自检**：Flyway 应用成功（log "now at version v161"），DO $$ 内自检报 19/19 视图含 part_version。touch `ImplicitJoinRewriter.java` 已清进程级 `tableColumnsCache`。
+
+---
+
 ### [2026-05-12] V6 DiffDetector 指纹比对修复 — 重复导入相同数据误判 BUMP
 
 **根因**：`DiffDetector.detectPartVersions` 旧逻辑用"行数 + 关键字段对比"判定 BUMP/NO_BUMP，存在多处边界陷阱：(1) `computeCountDiff` 对 mat_process/mat_fee/mat_plating_fee 用 `is_current=true` 过滤导致行数偏差；(2) BigDecimal 精度格式不一致（`0.5` vs `0.50`）；(3) seq_no 类型不一致（Excel Integer vs DB BigInteger）。任一边界 bug → diff>0 → action=BUMP，导致重复导入完全相同的 Excel 被误判升版。

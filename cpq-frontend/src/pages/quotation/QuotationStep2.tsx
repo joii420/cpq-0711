@@ -378,13 +378,14 @@ function computeTabSubtotal(
   if (!comp?.fields || !comp?.rows) return 0;
   const subtotalField = comp.fields.find(f => f.is_subtotal);
   if (!subtotalField) return 0;
-  // 与渲染层 effectiveRows 完全一致: driver 展开 + 用户追加行并存,
-  // V126.1: 取 max(driver.rowCount, comp.rows.length), 让用户追加行也参与列小计.
+  // V160/V161 后修订: driver 是数据真相源 (mat_bom / mat_fee / costing_part_* 全部版本化).
+  // 早期 V126.1 取 max 让"用户追加行"也参与列小计, 但 V160/V161 之前 driver 因视图缺
+  // part_version 列返多版本叠加, autoSave 会把过量行回写 quotation_line_component_data;
+  // 修复后 driver 正确返 N 行 → max(N, M>N)=M → 多 M-N 行成"鬼魂"行 (BASIC_DATA 永远加载中).
+  // 用 driverCount 为准: driver-bound 模式下 comp.rows 多出的尾巴视为陈旧持久化, 不参与小计.
   const useDriver = driverExpansion && driverExpansion.rowCount > 0;
   const driverCount = useDriver ? driverExpansion!.rowCount : 0;
-  const rowCount = useDriver
-    ? Math.max(driverCount, comp.rows.length)
-    : comp.rows.length;
+  const rowCount = useDriver ? driverCount : comp.rows.length;
   let sum = 0;
   for (let i = 0; i < rowCount; i++) {
     const baseRow = comp.rows[i] ?? {};
@@ -515,6 +516,33 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId, (item as any).customerPartNo]);
+
+  // V160/V161 修订: 自动清理 driver 之外的陈旧持久化行.
+  // 历史 BUMP 链路若在视图未暴露 part_version 时跑过, autoSave 会把多版本叠加的 N+M 行
+  // 写进 quotation_line_component_data. V160/V161 修好后 driver 正确返 N 行, 但 comp.rows
+  // 仍有 N+M 行 → 渲染层用 driverCount 已隐去 (前两处修改), 这里同步把 state 收窄,
+  // 防止下次 autoSave 把这 M 行又持久化回 DB.
+  // 依赖只放 driverExpansions: 仅在 driver 加载/刷新时检查; 收窄后 comp.rows.length<=N 稳定不再触发.
+  useEffect(() => {
+    if (!driverExpansions || !item.productPartNo || !item.componentData) return;
+    let needPrune = false;
+    const newComponentData = item.componentData.map(comp => {
+      // SUBTOTAL 组件 / 未 enrich 完成的组件 comp.rows 可能 undefined; 缺 componentId 也跳过
+      if (!comp || !comp.componentId || !Array.isArray(comp.rows)) return comp;
+      const key = driverExpansionKey(item.productPartNo, comp.componentId, customerId);
+      const exp = driverExpansions[key];
+      if (!exp || exp.rowCount === 0) return comp;
+      if (comp.rows.length > exp.rowCount) {
+        needPrune = true;
+        return { ...comp, rows: comp.rows.slice(0, exp.rowCount) };
+      }
+      return comp;
+    });
+    if (needPrune) {
+      onUpdate(() => ({ componentData: newComponentData }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driverExpansions]);
 
   // 300ms debounce timers per blur event
   const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -1001,13 +1029,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                 </thead>
                 <tbody>
                   {(() => {
-                    // Y1.5: 当 driver 展开存在且 rowCount > 0 → driver 行 + 用户追加行并存。
-                    // V126.1: 行数 = max(driver.rowCount, comp.rows.length), 让 handleAddRow 追加的
-                    //         user-only 行也能渲染、删除. driver 绑定行(i < rowCount) 锁定删除.
+                    // Y1.5: driver 展开存在且 rowCount > 0 → 仅渲染 driver 行 (V160/V161 修订).
+                    // 历史 V126.1 取 max 是因当时考虑"用户追加行"场景, 但实际 driver-bound
+                    // 组件不应让用户追加超过 driver 的额外行 — 这些行无 basicDataValues,
+                    // BASIC_DATA cell 永停在"加载中…". 见上方 computeComponentSubtotal 同步注释.
                     const useDriver = activeDriverExpansion && activeDriverExpansion.rowCount > 0;
                     const driverCount = useDriver ? activeDriverExpansion!.rowCount : 0;
                     const effectiveCount = useDriver
-                      ? Math.max(driverCount, activeComponent.rows.length)
+                      ? driverCount
                       : activeComponent.rows.length;
                     // FIXED_VALUE 默认值回填：driver 展开行 / 旧报价单回读的行都有可能没经过 handleAddRow，
                     // 导致 row[key] === undefined。回填后单元格 / 公式 / 列小计 / 产品小计 共享同一份数据视图。

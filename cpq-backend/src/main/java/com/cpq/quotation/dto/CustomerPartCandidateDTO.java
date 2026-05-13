@@ -46,6 +46,10 @@ public class CustomerPartCandidateDTO {
     /** 是否客户专属(true=有 mat_customer_part_mapping,false=只是全局料号) */
     public boolean customerSpecific;
 
+    /** mat_customer_part_mapping.current_version — 自动加产品时透传到 line_item.part_version_locked,
+     *  避免初次从 import 跳转过来时 partVersion 缺省导致 ImplicitJoinRewriter 不注入版本过滤. */
+    public Integer currentVersion;
+
     /** 「生产料号管理」(internal_material) 视角的料号详情——供产品卡片右侧 popover 用。
      *  数据源：internal_material 按 material_no = part_no 反查；缺失时为 null。
      */

@@ -52,6 +52,8 @@ interface CustomerPartCandidate {
   };
   quoteCurrency?: string;
   customerSpecific: boolean;
+  /** mat_customer_part_mapping.current_version — 后端 V161+ 透传, 用于初始化 LineItem.partVersionLocked */
+  currentVersion?: number;
 }
 
 interface Props {
@@ -181,6 +183,10 @@ export function buildLineItemFromTemplate(tmpl: any, part: CustomerPartCandidate
     productId: '',  // V5 流程不依赖 v3 product 表
     productName: part.partName || part.customerPartName || part.partNo,
     productPartNo: part.partNo,
+    // V161+ 修复: 后端 listCandidates 透传 mapping.current_version, 这里直接写入 LineItem.
+    // 避免首次从 import 跳转过来 partVersion 缺省 → ImplicitJoinRewriter 不注入版本过滤 → 多版本叠加.
+    // 缺省 2000 作为兜底(新料号或 mapping 缺失时 driver 也能查到默认版本数据).
+    partVersionLocked: part.currentVersion ?? 2000,
     // PRD：客户视角的产品卡片 — 候选数据里就有 customerPartName / customerProductNo / customerDrawingNo，
     // 这里直接装进 LineItem 字段，让导入后第一次进入编辑页就以"客户料号名称"为主显示。
     // 否则要等保存草稿+刷新走 loadLineItems 路径才能从 mat_customer_part_mapping 反查回来。

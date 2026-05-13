@@ -459,6 +459,32 @@ const QuotationWizard: React.FC = () => {
     loadContacts(custId);
   };
 
+  // SaveDraft 成功后用响应回填 lineItem.partVersionLocked
+  // 仅按 id 匹配后只更新版本字段，不动 productAttributeValues / componentData 等用户可能正在编辑的字段
+  // 无变更时返回原 state 引用，跳过 re-render
+  const syncPartVersionLockedFromResponse = (resData: any) => {
+    if (!resData?.lineItems) return;
+    const pvMap = new Map<string, number>();
+    for (const li of resData.lineItems) {
+      if (li?.id != null && li?.partVersionLocked != null) {
+        pvMap.set(String(li.id), li.partVersionLocked);
+      }
+    }
+    if (pvMap.size === 0) return;
+    setLineItems(prev => {
+      let changed = false;
+      const next = prev.map(item => {
+        const pv = pvMap.get(String(item.id));
+        if (pv != null && pv !== item.partVersionLocked) {
+          changed = true;
+          return { ...item, partVersionLocked: pv };
+        }
+        return item;
+      });
+      return changed ? next : prev;
+    });
+  };
+
   const autoSaveDraft = useCallback(async () => {
     if (!quotationId) return;
     try {
@@ -467,7 +493,10 @@ const QuotationWizard: React.FC = () => {
       const payloadStr = JSON.stringify(payload);
       if (payloadStr === lastSaveRef.current) return;
       lastSaveRef.current = payloadStr;
-      await quotationService.saveDraft(quotationId, payload);
+      const res = await quotationService.saveDraft(quotationId, payload);
+      // BUMP 后端把新 partVersionLocked 写入 DB，前端本地 state 需同步回填，
+      // 避免「卡片版本号停在旧值直到强刷」的 UX 漂移
+      syncPartVersionLockedFromResponse(res?.data);
       // P2-9: backup to localStorage on success
       localStorage.setItem(`cpq-draft-${quotationId}`, JSON.stringify(payload));
     } catch {
@@ -733,6 +762,8 @@ const QuotationWizard: React.FC = () => {
       const payload = buildDraftPayload(values);
       const res = await quotationService.saveDraft(quotationId, payload);
       setQuotation(res.data);
+      // 同步回填 lineItem.partVersionLocked，避免 BUMP 后卡片版本号停在旧值直到强刷
+      syncPartVersionLockedFromResponse(res.data);
       if (!silent) message.success('草稿已保存');
       localStorage.setItem(`cpq-draft-${quotationId}`, JSON.stringify(payload));
     } catch (e: any) {
