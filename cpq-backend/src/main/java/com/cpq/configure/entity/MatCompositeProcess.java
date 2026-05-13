@@ -10,6 +10,8 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -34,11 +36,11 @@ public class MatCompositeProcess extends PanacheEntityBase {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "participating_parts", columnDefinition = "jsonb")
-    public List<String> participatingParts;
+    public List<String> participatingParts = new ArrayList<>();
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "param_values", columnDefinition = "jsonb")
-    public Map<String, Object> paramValues;
+    public Map<String, Object> paramValues = new HashMap<>();
 
     @Column(name = "part_version")
     public int partVersion = 2000;

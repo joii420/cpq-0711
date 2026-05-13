@@ -27,7 +27,7 @@ public class CompositeProcessDef extends PanacheEntityBase {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "param_schema", columnDefinition = "jsonb")
-    public Object paramSchema;
+    public String paramSchema = "[]";
 
     @Column(name = "sort_order")
     public int sortOrder;
