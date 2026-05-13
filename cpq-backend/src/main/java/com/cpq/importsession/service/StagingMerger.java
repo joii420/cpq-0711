@@ -171,7 +171,13 @@ public class StagingMerger {
 
     private void mergeMapping(Connection conn, UUID sessionId, String cpn, String hf,
                                int targetVersion) throws Exception {
-        // UPSERT：若 mapping 不存在则从 staging 插入（新料号），已存在则更新 current_version
+        // UPSERT：mapping 不存在则 INSERT（NEW 路径 current_version=2000）；已存在则只 touch updated_at
+        // 关键修复 (V6 双重 bump):
+        //   BUMP 路径下 targetVersion=N+1=2001，若 ON CONFLICT DO UPDATE 强制写 current_version=EXCLUDED=2001,
+        //   后续 applyVersionBump 会读到 2001 再 bump 到 2002 → mapping=2002 但 mat_bom 数据 @v=2001
+        //   → SaveDraft 拷贝 mapping=2002 到 line_item.partVersionLocked
+        //   → 卡片版本号错乱 + expand-driver 用 partVersion=2002 查不到任何数据
+        //   修复: ON CONFLICT 时不动 current_version, 让 applyVersionBump 独立 bump（N → N+1）
         // V151 创建的 uq_mat_cust_part_global 是部分唯一索引（WHERE 谓词限定 NOT NULL），
         // ON CONFLICT 必须显式匹配相同 WHERE 谓词，否则 PG 报 "no unique constraint matching"
         String sql =
@@ -186,7 +192,7 @@ public class StagingMerger {
             "  AND s.hf_part_no = ? AND s.customer_product_no = ? " +
             "ON CONFLICT (customer_product_no, hf_part_no) " +
             "  WHERE customer_product_no IS NOT NULL AND hf_part_no IS NOT NULL " +
-            "DO UPDATE SET current_version = EXCLUDED.current_version, updated_at = now()";
+            "DO UPDATE SET updated_at = now()";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, targetVersion);
             ps.setObject(2, sessionId);
