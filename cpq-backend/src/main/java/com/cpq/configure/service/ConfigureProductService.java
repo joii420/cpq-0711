@@ -28,20 +28,26 @@ import java.util.stream.Collectors;
  * <p>三大职责:
  * <ol>
  *   <li>{@link #lookupFingerprint} — P2→P3 之间实时查指纹是否命中已有料号</li>
- *   <li>{@link #configure} — P5 确认时一锅端: 落 mat_part/mat_bom/mat_composite_process + 返 LineItem</li>
+ *   <li>{@link #configure} — P5 确认时一锅端: 落 mat_part/mat_bom/mat_process/mat_composite_process + 返 LineItem</li>
  *   <li>helper: resolvePart / validateCustomPart / insertMatPart / insertElementBom /
- *       insertAssemblyBom / insertCompositeProcesses / insertLineItem / buildLineItems</li>
+ *       insertProcesses / insertAssemblyBom / insertCompositeProcesses / insertLineItem / buildLineItems</li>
  * </ol>
  *
  * <p><b>Schema 偏差说明</b> (相对 T20/T21 原始规格):
  * <ul>
- *   <li>{@code mat_process}: 含 NOT NULL customer_id 约束, 选配流程无 customerId 上下文,
- *       故 {@code insertProcesses} 未实现 — processIds 将在后续 per-customer 配置时通过数据导入写入.</li>
- *   <li>{@code mat_part_version_log}: PK 为 (customer_product_no, hf_part_no, version),
- *       选配阶段无 customer_product_no, 故 {@code initPartVersionBaseline} 未实现 — 基线由导入流程写入.</li>
- *   <li>{@code mat_bom}: V153 仅加了 part_version, 无 is_current 列; INSERT 语句去掉该列.</li>
- *   <li>{@code quotation_line_item}: 无 quantity 列 (迁移中从未添加); INSERT 语句去掉该列.
+ *   <li>{@code mat_bom}: V153 仅加了 part_version，无 is_current 列；INSERT 语句去掉该列.</li>
+ *   <li>{@code quotation_line_item}: 无 quantity 列 (迁移中从未添加)；INSERT 语句去掉该列.
  *       product_id / template_id 在 V30 已改为 nullable — 选配行直接填 product_part_no_snapshot.</li>
+ *   <li>{@code mat_part_version_log}: PK 为 (customer_product_no NOT NULL, hf_part_no, version).
+ *       选配阶段没有 customer_product_no（料号-客户映射尚未建立），故 {@code initPartVersionBaseline}
+ *       无法实现 — 基线行将在后续数据导入（PartVersionService / V156）时由 per-customer 流程写入.
+ *       这是架构层设计决定：configure 产生全局料号 (mat_part)，客户绑定由导入流程完成.</li>
+ *   <li>{@code insertProcesses}: 原 T20 未实现因 mat_process.customer_id NOT NULL.
+ *       P4 批2补丁 (2026-05-13) 修复: configure() 入口从 quotation 表拉 customer_id,
+ *       传递到 resolvePart → insertProcesses，现已实现.</li>
+ *   <li>{@code ON CONFLICT 指纹}: 原用 ON CONFLICT (part_no) DO NOTHING，已修正为
+ *       ON CONFLICT (config_fingerprint) WHERE config_fingerprint IS NOT NULL DO NOTHING
+ *       (PG 16 partial unique index inference，对应 V167 建的 uq_mat_part_fingerprint).</li>
  * </ul>
  */
 @ApplicationScoped
@@ -160,13 +166,13 @@ public class ConfigureProductService {
      * <ul>
      *   <li>existing 路径: 直接验证存在后返回,不动基础表</li>
      *   <li>custom 命中指纹: 复用,不动基础表</li>
-     *   <li>custom 未命中: 新建 mat_part + mat_bom (ELEMENT N 行)</li>
+     *   <li>custom 未命中: 新建 mat_part + mat_bom (ELEMENT N 行) + mat_process (若有 processIds)</li>
      * </ul>
      *
-     * <p>注意: mat_process INSERT 需要 customer_id(NOT NULL),选配流程无 customerId 上下文,
-     * 故 processIds 暂不写入 mat_process — 后续 per-customer 导入流程负责.
+     * <p>注意: mat_part_version_log 基线行需要 customer_product_no (NOT NULL PK 成员),
+     * configure 阶段不存在此信息，基线由 per-customer 数据导入流程 (V156/PartVersionService) 写入.
      */
-    String resolvePart(PartRequest pr, UUID operatorId, List<String> reused) {
+    String resolvePart(PartRequest pr, UUID operatorId, UUID customerId, List<String> reused) {
         if ("existing".equals(pr.partMode)) {
             if (pr.existingHfPartNo == null || pr.existingHfPartNo.isBlank()) {
                 throw new IllegalArgumentException("existing 模式 existingHfPartNo 必填");
@@ -208,7 +214,19 @@ public class ConfigureProductService {
 
         insertMatPart(hfPartNo, "SIMPLE", fp, pr.unitWeightGrams, recipe.id);
         insertElementBom(hfPartNo, pr.elements);
-        // processIds 留待 per-customer 数据导入写 mat_process (含 customer_id NOT NULL)
+
+        // 写 mat_process — 需要 customerId (NOT NULL)
+        if (pr.processIds != null && !pr.processIds.isEmpty()) {
+            if (customerId == null) {
+                throw new IllegalArgumentException(
+                    "选配 custom 配件含 processIds 但 quotation 无 customer_id");
+            }
+            insertProcesses(hfPartNo, pr.processIds, customerId);
+        }
+
+        // mat_part_version_log 基线行: PK (customer_product_no NOT NULL, hf_part_no, version)
+        // configure 阶段无 customer_product_no (客户产品号在数据导入后才存在)
+        // 基线由 PartVersionService / V156 在 per-customer 导入流程时写入
 
         return hfPartNo;
     }
@@ -256,14 +274,21 @@ public class ConfigureProductService {
         }
     }
 
+    /**
+     * 插入 mat_part 行.
+     *
+     * <p>使用 ON CONFLICT (config_fingerprint) WHERE config_fingerprint IS NOT NULL DO NOTHING
+     * — PG 16 支持对 partial unique index 使用 conflict target + predicate 语法.
+     * 对应 V167 创建的 uq_mat_part_fingerprint 索引.
+     * 若存在并发相同配置竞争，conflict 处理为幂等忽略.
+     */
     void insertMatPart(String hfPartNo, String productType, String fingerprint,
                        BigDecimal unitWeight, UUID materialRecipeId) {
-        // mat_part PK = part_no; unit_weight DECIMAL(18,4); material_recipe_id UUID nullable
         em.createNativeQuery(
                 "INSERT INTO mat_part (part_no, product_type, config_fingerprint, " +
                 "unit_weight, material_recipe_id, created_at, updated_at) " +
                 "VALUES (:pn, :pt, :fp, :uw, :mri, NOW(), NOW()) " +
-                "ON CONFLICT (part_no) DO NOTHING")
+                "ON CONFLICT (config_fingerprint) WHERE config_fingerprint IS NOT NULL DO NOTHING")
             .setParameter("pn", hfPartNo)
             .setParameter("pt", productType)
             .setParameter("fp", fingerprint)
@@ -288,6 +313,50 @@ public class ConfigureProductService {
                 .executeUpdate();
         }
     }
+
+    /**
+     * 写 mat_process 工艺行 — P4 批2 补丁实现.
+     *
+     * <p>从 quotation 获取的 customerId 满足 customer_id NOT NULL 约束.
+     * process 字典表的 code 列即对应 mat_process.process_code.
+     * mat_process UNIQUE INDEX uq_mat_process_current:
+     *   (customer_id, hf_part_no, part_version, seq_no, sub_seq_no) WHERE is_current=true
+     * sub_seq_no 为 NULL 时 UNIQUE index 使用 NULL 语义 (每行唯一,不冲突),
+     * 故重复调用（指纹命中复用路径）不会再走到这里.
+     *
+     * <p>注意: insertProcesses 仅在"未命中指纹 → 新建"路径调用，不存在重复写入风险.
+     */
+    @SuppressWarnings("unchecked")
+    void insertProcesses(String hfPartNo, List<UUID> processIds, UUID customerId) {
+        int seq = 1;
+        for (UUID processId : processIds) {
+            List<Object> rows = em.createNativeQuery(
+                    "SELECT code FROM process WHERE id = :id")
+                .setParameter("id", processId)
+                .getResultList();
+            if (rows.isEmpty()) {
+                throw new IllegalArgumentException("工艺不存在: " + processId);
+            }
+            String code = (String) rows.get(0);
+
+            // mat_process required columns (from V44 + V153):
+            //   customer_id NOT NULL, hf_part_no NOT NULL, version INT DEFAULT 1,
+            //   is_current BOOLEAN NOT NULL DEFAULT true, seq_no NOT NULL,
+            //   status NOT NULL DEFAULT 'ACTIVE', part_version INT NOT NULL DEFAULT 2000
+            // process_code is VARCHAR nullable but we fill it from the process dict
+            em.createNativeQuery(
+                    "INSERT INTO mat_process " +
+                    "(customer_id, hf_part_no, version, is_current, seq_no, " +
+                    "process_code, part_version, status, created_at, updated_at) " +
+                    "VALUES (:cid, :p, 1, true, :sq, :code, 2000, 'ACTIVE', NOW(), NOW())")
+                .setParameter("cid", customerId)
+                .setParameter("p", hfPartNo)
+                .setParameter("sq", seq++)
+                .setParameter("code", code)
+                .executeUpdate();
+        }
+    }
+
     // T20: resolvePart + validateCustomPart + 落库辅助 — 完成
 
     // ───────────────────────────────────────────────────────────────────────
@@ -300,12 +369,15 @@ public class ConfigureProductService {
                                               UUID operatorId) {
         validateRequest(req);
 
+        // P4 批2 补丁: 从 quotation 拉 customer_id，传给 resolvePart → insertProcesses
+        UUID customerId = getCustomerIdFromQuotation(quotationId);
+
         List<String> childHfPartNos = new ArrayList<>();
         List<String> reused = new ArrayList<>();
 
         // PASS 1: 解析每个配件
         for (PartRequest pr : req.parts) {
-            childHfPartNos.add(resolvePart(pr, operatorId, reused));
+            childHfPartNos.add(resolvePart(pr, operatorId, customerId, reused));
         }
 
         // PASS 2: 组合产品父级
@@ -337,6 +409,23 @@ public class ConfigureProductService {
         resp.fingerprintMatched = !reused.isEmpty();
         resp.reusedHfPartNos = reused;
         return resp;
+    }
+
+    /**
+     * 从 quotation 表获取 customer_id.
+     * configure 流程需要 customerId 用于 mat_process 插入 (customer_id NOT NULL 约束).
+     */
+    @SuppressWarnings("unchecked")
+    private UUID getCustomerIdFromQuotation(UUID quotationId) {
+        List<Object> rows = em.createNativeQuery(
+                "SELECT customer_id FROM quotation WHERE id = :q")
+            .setParameter("q", quotationId)
+            .getResultList();
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException("quotation 不存在: " + quotationId);
+        }
+        Object cid = rows.get(0);
+        return cid == null ? null : UUID.fromString(cid.toString());
     }
 
     void validateRequest(ConfigureProductRequest req) {
