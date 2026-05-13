@@ -8,6 +8,7 @@ package com.cpq.partno;
  *
  * <p>切换方式:{@code application.properties} 改 {@code cpq.partno.provider=auto|external}.
  */
+@FunctionalInterface
 public interface PartNoProvider {
 
     /**
