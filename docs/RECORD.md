@@ -4,6 +4,80 @@
 
 ---
 
+### [2026-05-13] Phase 8 — T34+T35 入口改造
+
+**文件**：
+- `cpq-frontend/src/pages/quotation/QuotationStep2.tsx` — T34：添加产品按钮改为 Antd Dropdown（两项：从已有产品添加 / 选配添加）；新增 `onAddConfigured?: () => void` 可选 prop；新增 `Dropdown`、`DatabaseOutlined`、`SettingOutlined`、`PlusOutlined`、`DownOutlined` 导入
+- `cpq-frontend/src/pages/quotation/QuotationWizard.tsx` — T34+T35：引入 `ConfigureProductDrawer` + `QuotationCreateForm`；新增 `configureDrawerOpen` 和 `step1Valid` 两个 state；Step2 增加 `onAddConfigured` 传参；`renderStep2` 增加 `<ConfigureProductDrawer>` 挂载；Step1 在客户选中后渲染 `<QuotationCreateForm>`（产品分类 + 报价模板 + 核价模板 4 字段）；`onChange` 同步回 form + state（`customerTemplateId` / `costingCardTemplateId`）；"下一步"按钮在 `Step1 && selectedCustomer && !step1Valid` 时 disabled
+
+**关键决策**：
+- T35 名称字段处理采用 Option A：未选客户时显示原始 `Form.Item name="name"` 输入框；选客户后隐藏，由 `QuotationCreateForm` 内部的名称字段接管（含默认值 `${customerName} 报价单`），`onChange` 同步回外层 form，避免视觉重复
+- `step1Valid` 判定逻辑在 `QuotationCreateForm` 内部：`name.trim() && categoryId && customerTemplateId` 三者非空才为 true；核价模板非必填不阻断
+- "下一步"禁用条件：`currentStep === 0 && !!selectedCustomer && !step1Valid`（未选客户时允许直接下一步创建报价单，选了客户后才要求填完模板）
+- T34+T35 的 QuotationWizard.tsx 修改在同一次 commit 中打包，SHA `2e87a16`
+
+**自检**：tsc --noEmit 0 错误；QuotationStep2.tsx Vite 200；QuotationWizard.tsx Vite 200
+
+**提交**：T34+T35 `2e87a16`
+
+---
+
+### [2026-05-13] Phase 7 Batch 3 — T32+T33 Step4CompositeProcess / Step5Summary
+
+**文件**（各替换占位）：
+- `cpq-frontend/src/pages/quotation/configure/Step4CompositeProcess.tsx` — T32：组合工艺选配（左侧工艺库卡片列表，右侧已选工艺卡 + Tag.CheckableTag 配件 chip + 动态参数表单；最少 2 个配件约束）
+- `cpq-frontend/src/pages/quotation/configure/Step5Summary.tsx` — T33：选配确认页（CheckCircleFilled 顶部 + 产品类型 Card + 配件明细 Descriptions 含只读/填写分支 + 组合工艺摘要）
+
+**关键决策**：
+- Step4 调用 `compositeProcessService.list()` 拉取工艺库，`parseParamSchema()` 解析 JSONB paramSchema 为动态表单字段（number → InputNumber，text → Input）
+- Step4 togglePart 守护：`participatingPartIndexes.length <= 2` 时不允许再移除，确保至少 2 个配件参与
+- Step5 单重字段：`partMode === 'existing'` 或 `reusedFromExisting` 不为 null 时显示只读快照值 + Tag；否则渲染 InputNumber 可填写
+- Step5 工序展示：复用路径用 snapshot.processes[].processCode join '→'；自定义路径只显示数量（工序 id 列表）
+- tsc --noEmit 0 错误；Step4 Vite 200；Step5 Vite 200
+
+**提交**：T32 `18ffb6c`；T33 `550da1e`
+
+---
+
+### [2026-05-13] Phase 7 Batch 2 — T29+T30+T31 Step1SearchPart / Step2Material / Step3Process
+
+**文件**（各替换占位）：
+- `cpq-frontend/src/pages/quotation/configure/Step1SearchPart.tsx` — T29：料号搜索（防抖 300ms，高亮选中行，无匹配 → 虚线卡片切换 custom 模式）
+- `cpq-frontend/src/pages/quotation/configure/Step2Material.tsx` — T30：材质选择 + 元素含量编辑（双栏布局，480px 高；locked/editable/partial 三类标签；matLocked 时左栏只显示绑定材质、右栏含 LockOutlined 提示；含量百分比总和校验 Alert）
+- `cpq-frontend/src/pages/quotation/configure/Step3Process.tsx` — T31：工序选择（双栏布局，左侧搜索候选列表，右侧已选顺序列表；toggle 添加/移除；api.get('/processes') 处理数组/data/content 三种返回结构）
+
+**关键决策**：
+- Step2Material 的 `loadDetail` 在 `part.selectedRecipeCode` 或 `recipes` 变化时触发，elementOverrides 为空时才初始化默认值（避免覆盖用户手动调整）
+- Step3Process 的 api.get('/processes') 用 res?.data ?? res?.content ?? [] 兼容不同后端分页结构
+- Step1 选中"无匹配料号"卡片时 partMode='custom'，matLocked=false，后续步骤解锁材质与工序编辑
+- 3 文件 tsc --noEmit 0 错误；Vite 200 全通
+
+**提交**：T29 `0f1a20a`；T30 `f6483b4`；T31 `ea9a398`
+
+---
+
+### [2026-05-13] Phase 7 Batch 1 — T27+T28 ConfigureProductDrawer 主壳 + Step0ProductType
+
+**文件**（新建 7 个）：
+- `cpq-frontend/src/pages/quotation/ConfigureProductDrawer.tsx` — 选配主 Drawer，宽度 960，placement=right，含完整状态机（globalStep 0-3 + subStep 0-2 + 配件索引 ci）
+- `cpq-frontend/src/pages/quotation/configure/Step0ProductType.tsx` — T28 完整实现：Radio.Group 独立/组合产品选择 + COMPOSITE 时 InputNumber 配件数量（2-8）
+- `cpq-frontend/src/pages/quotation/configure/Step1SearchPart.tsx` — 占位（T29 实现）
+- `cpq-frontend/src/pages/quotation/configure/Step2Material.tsx` — 占位（T30 实现）
+- `cpq-frontend/src/pages/quotation/configure/Step3Process.tsx` — 占位（T31 实现）
+- `cpq-frontend/src/pages/quotation/configure/Step4CompositeProcess.tsx` — 占位（T32 实现）
+- `cpq-frontend/src/pages/quotation/configure/Step5Summary.tsx` — 占位（T33 实现）
+
+**关键决策**：
+- globalStep(0-3) + subStep(0-2) 二维状态机：globalStep=1 时 subStep 0=料号搜索 / 1=材质 / 2=工序；COMPOSITE 时 globalStep=2 为组合工艺步
+- 指纹命中路径：subStep=1 → lookupFingerprint → 命中则弹 Modal.confirm（Drawer 规范例外：此处用 Modal 是指纹复用确认，符合轻量二次确认场景）→ 跳过 P3 直接推进
+- Step0 中 Radio.Button 设 `height: 'auto', padding: 16, whiteSpace: 'normal'` 以支持多行描述文本
+- T28 Edit 在 T27 git add 之前完成，故 Step0 完整实现与 6 个文件同在 commit d5964fe
+- tsc --noEmit 0 错误；ConfigureProductDrawer.tsx → Vite 200；Step0ProductType.tsx → Vite 200
+
+**提交**：`d5964fe`
+
+---
+
 ### [2026-05-13] Phase 6 — T25+T26 前端 configure service wrappers
 
 **文件**（新建 4 个）：
