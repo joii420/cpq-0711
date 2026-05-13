@@ -476,4 +476,5 @@ public class ConfigureProductService {
         m.put("parentLineItemId", parentId);
         return m;
     }
+    // T21: configure 主入口 + 组合产品 + buildLineItems — 完成
 }
