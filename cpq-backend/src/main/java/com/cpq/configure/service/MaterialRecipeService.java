@@ -5,6 +5,7 @@ import com.cpq.configure.dto.MaterialRecipeElementDTO;
 import com.cpq.configure.entity.MaterialRecipe;
 import com.cpq.configure.entity.MaterialRecipeElement;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.ws.rs.NotFoundException;
 
 import java.util.List;
 import java.util.UUID;
@@ -24,7 +25,7 @@ public class MaterialRecipeService {
     public MaterialRecipeDTO getDetail(UUID id) {
         MaterialRecipe r = MaterialRecipe.findById(id);
         if (r == null) {
-            throw new IllegalArgumentException("material_recipe 不存在: " + id);
+            throw new NotFoundException("material_recipe 不存在: " + id);
         }
         MaterialRecipeDTO dto = toDTOLite(r);
         dto.elements = MaterialRecipeElement.<MaterialRecipeElement>find(
