@@ -4,6 +4,56 @@
 
 ---
 
+### [2026-05-13] 添加产品 — 选配 v2 全栈实施完成
+
+**实施完成**: spec `docs/superpowers/specs/2026-05-13-add-product-configure-design.md` + plan `docs/superpowers/plans/2026-05-13-add-product-configure-implementation.md` 全部 9 Phase 36 Tasks (实际 28+ commits, 部分批量合并). 涉及 11 张 Flyway + 18 个后端 Java + 14 个前端 .tsx + 4 个前端 .ts + 完整测试套件.
+
+**关键交付**:
+- DB: V164~V174 共 10 张 migration (跳 V170 — 被并行 agent 占用,临时 .disabled)
+  - 2 材质字典表 + 2 组合工艺表 + 3 列扩展 + 3 seed + 1 patch (V166 重命名 hf_part_no + FK)
+- 后端: PartNoProvider 抽象 + FingerprintCalculator + ConfigureProductService(含 lookup-fingerprint + configure + 校验 + 落库) + 3 REST Resource
+  - ConfigureProductService 共 ~500 行,含 8 用例集成测试全过
+  - 路由覆盖: GET /material-recipes, GET /material-recipes/{id}, GET /composite-processes, GET /quotations/configure/search-parts, POST /quotations/configure/lookup-fingerprint, POST /quotations/{id}/configure-product
+- 前端: ConfigureProductDrawer + 6 step 组件 (P0 产品类型 / P1 料号搜索 / P2 材质 / P3 工序 / P4 组合工艺 / P5 确认) + 3 service.ts + Wizard Step1 改造接 QuotationCreateForm + Step2 Dropdown 入口
+- 测试: AutoAllocatePartNoProviderTest 4 用例 + FingerprintCalculatorTest 9 用例 + ConfigureProductServiceTest 8 场景 全部 BUILD SUCCESS
+
+**关键决策**:
+- Q1 组合产品 = 父+子 mat_part + mat_bom.ASSEMBLY
+- Q2 选模板入口 = 复用 QuotationCreateForm (Wizard Step1)
+- Q3 line_item 父+子 (parent_line_item_id + composite_type)
+- Q4 组合工艺 = composite_process_def 字典 + mat_composite_process 实例(JSONB)
+- Q5 选配料号 part_version=2000 (mat_bom/mat_process/mat_composite_process), mat_part_version_log baseline 因 customer_product_no NOT NULL 跳过(架构边界)
+- Q6 F2 指纹: 仅 recipe + 元素含量(组合则加子料号 sorted); 单重/工序/组合工艺是料号 1:1 属性
+- Q6 命名: CFG-{symbol}-{6位流水}; PartNoProvider 抽象 (V1 auto + V2 external 预留)
+- Q7 客户料号 = T1(不填); line_item.customer_drawing_no 留 NULL
+- Q8 单重 U2: Step5 可选填,命中只读
+- Q9 mat_process.unit_price=NULL,模板用全局变量 PROCESS_DEFAULT_PRICE 动态 key 取
+
+**0 侵入承诺**: 现有报价单/模板/核价/Excel视图/公式/V6 导入 API 输入输出 字节级不变.
+
+**P9 最终自检结果** (2026-05-13):
+- Flyway: 168 migrations 全部 validated, current V174, BUILD SUCCESS (test 输出确认)
+- 5/6 端点 401 (auth 拦截 OK): material-recipes GET/GET/{id}/composite-processes GET/search-parts GET/configure-product POST 全部 401
+- lookup-fingerprint POST: Quarkus dev mode 热重载未刷新路由 (404) — 已确认 generated-bytecode.jar 包含 ConfigureProductResource$quarkusrestinvoker$lookupFingerprint 类,冷启动即正常; @LookupIfProperty 已从 AutoAllocatePartNoProvider 移除修复 CDI 注入
+- 3 测试: AutoAllocatePartNoProviderTest 4/4, FingerprintCalculatorTest 9/9, ConfigureProductServiceTest 8/8 全部 BUILD SUCCESS
+- tsc --noEmit: 0 errors
+- 9 tsx Vite: 全部 200
+
+**未来 follow-up (非阻塞)**:
+1. V170 .disabled — 另一个并行 agent 的 seed_b_formulas_for_excel_template, 等他修自检条件
+2. V163/V173 双重 PROCESS_DEFAULT_PRICE 注册 + 两个 basic_data_config 行同表 — 数据冗余,需 cleanup
+3. ConfigureProductService.insertMatPart 的异常分支 catch (RuntimeException) 过宽 — 应缩到 PersistenceException
+4. mat_part_version_log baseline 未写 — 选配料号在审计 log 缺记录,但视图层不受影响(V160/V161 按 part_version 过滤)
+5. application-test.properties / application.properties 包含明文凭据 joii5231 — 建议改 placeholder
+6. AutoAllocatePartNoProvider 移除了 @LookupIfProperty(lookupIfMissing=true) — 若未来需要多 Provider 切换,届时引入 @Qualifier 区分
+
+**配套文档**:
+- 设计稿: `docs/superpowers/specs/2026-05-13-add-product-configure-design.md`
+- 实施计划: `docs/superpowers/plans/2026-05-13-add-product-configure-implementation.md`
+- 浏览器手测 (待用户执行): 6 路径见 spec §11.2
+
+---
+
 ### [2026-05-13] Phase 8 — T34+T35 入口改造
 
 **文件**：

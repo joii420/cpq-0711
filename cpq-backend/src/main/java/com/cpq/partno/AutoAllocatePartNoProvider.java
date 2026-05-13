@@ -1,6 +1,5 @@
 package com.cpq.partno;
 
-import io.quarkus.arc.lookup.LookupIfProperty;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -9,17 +8,14 @@ import jakarta.transaction.Transactional;
 /**
  * PartNoProvider V1 实现:本地按 {@code part_no_sequence} 表自动分配 {@code CFG-{symbol}-{6位流水}}.
  *
- * <p>启用条件:{@code application.properties} 设置 {@code cpq.partno.provider=auto}
- * (或不设置 — 默认走此实现).
- *
- * <p>切换到 V2 外部 API:设置 {@code cpq.partno.provider=external} 即可,业务代码 0 改动.
+ * <p>当前为唯一实现,直接作为默认 CDI bean 注入.
+ * <p>如需切换 V2 外部 API,届时引入 Qualifier 区分即可,业务代码改动极小.
  *
  * <p>并发安全:每次 {@link #apply} 在 {@code @Transactional} 内
  * {@code SELECT ... FOR UPDATE} part_no_sequence 行,行锁串行化同 prefix 的取号.
  * 不同 prefix 之间无锁冲突.
  */
 @ApplicationScoped
-@LookupIfProperty(name = "cpq.partno.provider", stringValue = "auto", lookupIfMissing = true)
 public class AutoAllocatePartNoProvider implements PartNoProvider {
 
     @Inject
