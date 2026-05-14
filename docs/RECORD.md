@@ -4,6 +4,27 @@
 
 ---
 
+### [2026-05-13] A2 后端: Process (普通工序) CRUD
+
+**实施**: 为 `process` 表补齐写端点 (原只有 GET list).
+
+**文件**:
+- `cpq-backend/src/main/java/com/cpq/product/dto/ProcessUpsertRequest.java` — 新建，字段: code/name/category/description/isRequired/sortOrder/status
+- `cpq-backend/src/main/java/com/cpq/product/service/ProcessService.java` — 新增 `getById` / `create` / `update` / `deleteSoft` + `validateUpsert` 私有方法
+- `cpq-backend/src/main/java/com/cpq/product/resource/ProcessResource.java` — 新增 `GET /{id}` / `POST` / `PUT /{id}` / `DELETE /{id}`
+
+**关键决策**:
+- 模块在 `com.cpq.product`（不是独立 `process` 包），与 ProcessDTO/ProductProcess 同属 product 模块
+- 软删 = `status = 'DISABLED'`（DB CHECK 约束: ACTIVE/DISABLED，不是 INACTIVE）
+- 写端点方法级 `@RoleAllowed({"SYSTEM_ADMIN"})`，覆盖类级 `SALES_REP/SALES_MANAGER/SYSTEM_ADMIN` 读权限
+- `validateUpsert` 校验: code/name 非空 + category 枚举（6项）+ status 枚举（2项）+ code 唯一性（排除自身 id）
+- 无 Flyway 变更（schema 已由 V4 建立）
+
+**自检**: GET list 401 / GET detail 401 / POST 401 / PUT 401 / DELETE 401 — Quarkus hot reload 验证通过
+**提交**: `bd169a3`
+
+---
+
 ### [2026-05-13] 添加产品 — 选配 v2 全栈实施完成
 
 **实施完成**: spec `docs/superpowers/specs/2026-05-13-add-product-configure-design.md` + plan `docs/superpowers/plans/2026-05-13-add-product-configure-implementation.md` 全部 9 Phase 36 Tasks (实际 28+ commits, 部分批量合并). 涉及 11 张 Flyway + 18 个后端 Java + 14 个前端 .tsx + 4 个前端 .ts + 完整测试套件.
