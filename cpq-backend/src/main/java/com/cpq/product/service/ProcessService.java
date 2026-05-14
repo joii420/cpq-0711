@@ -2,6 +2,7 @@ package com.cpq.product.service;
 
 import com.cpq.common.exception.BusinessException;
 import com.cpq.product.dto.ProcessDTO;
+import com.cpq.product.dto.ProcessUpsertRequest;
 import com.cpq.product.dto.ProductProcessDTO;
 import com.cpq.product.entity.Process;
 import com.cpq.product.entity.ProductProcess;
@@ -10,6 +11,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
+import jakarta.ws.rs.NotFoundException;
 import org.jboss.logging.Logger;
 
 import java.util.*;
@@ -21,6 +23,14 @@ public class ProcessService {
 
     private static final Logger LOG = Logger.getLogger(ProcessService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static final List<String> VALID_CATEGORIES = List.of(
+            "SURFACE_TREATMENT", "MACHINING", "HEAT_TREATMENT",
+            "ASSEMBLY", "INSPECTION", "PACKAGING");
+
+    private static final List<String> VALID_STATUSES = List.of("ACTIVE", "DISABLED");
+
+    // ── Read ──────────────────────────────────────────────────────────────────
 
     public List<ProcessDTO> listAll() {
         return Process.<Process>find("ORDER BY category, sortOrder")
@@ -36,6 +46,75 @@ public class ProcessService {
                 .stream()
                 .map(ProcessDTO::from)
                 .collect(Collectors.toList());
+    }
+
+    public ProcessDTO getById(UUID id) {
+        Process p = Process.findById(id);
+        if (p == null) throw new NotFoundException("process 不存在: " + id);
+        return ProcessDTO.from(p);
+    }
+
+    // ── CRUD ──────────────────────────────────────────────────────────────────
+
+    @Transactional
+    public ProcessDTO create(ProcessUpsertRequest req) {
+        validateUpsert(req, null);
+        Process p = new Process();
+        p.code = req.code.trim();
+        p.name = req.name.trim();
+        p.category = req.category;
+        p.description = req.description;
+        p.isRequired = req.isRequired != null ? req.isRequired : false;
+        p.sortOrder = req.sortOrder != null ? req.sortOrder : 0;
+        p.status = req.status != null ? req.status : "ACTIVE";
+        p.persist();
+        LOG.infof("Created process id=%s code=%s", p.id, p.code);
+        return ProcessDTO.from(p);
+    }
+
+    @Transactional
+    public ProcessDTO update(UUID id, ProcessUpsertRequest req) {
+        validateUpsert(req, id);
+        Process p = Process.findById(id);
+        if (p == null) throw new NotFoundException("process 不存在: " + id);
+        p.code = req.code.trim();
+        p.name = req.name.trim();
+        p.category = req.category;
+        p.description = req.description;
+        if (req.isRequired != null) p.isRequired = req.isRequired;
+        if (req.sortOrder != null) p.sortOrder = req.sortOrder;
+        if (req.status != null) p.status = req.status;
+        p.persist();
+        LOG.infof("Updated process id=%s code=%s", p.id, p.code);
+        return ProcessDTO.from(p);
+    }
+
+    @Transactional
+    public void deleteSoft(UUID id) {
+        Process p = Process.findById(id);
+        if (p == null) throw new NotFoundException("process 不存在: " + id);
+        p.status = "DISABLED";
+        p.persist();
+        LOG.infof("Soft-deleted (DISABLED) process id=%s code=%s", p.id, p.code);
+    }
+
+    private void validateUpsert(ProcessUpsertRequest req, UUID idForUpdate) {
+        if (req == null) throw new IllegalArgumentException("request body 必填");
+        if (req.code == null || req.code.isBlank()) throw new IllegalArgumentException("code 必填");
+        if (req.name == null || req.name.isBlank()) throw new IllegalArgumentException("name 必填");
+        if (req.category == null || !VALID_CATEGORIES.contains(req.category)) {
+            throw new IllegalArgumentException(
+                    "category 必须为: SURFACE_TREATMENT / MACHINING / HEAT_TREATMENT / ASSEMBLY / INSPECTION / PACKAGING");
+        }
+        if (req.status != null && !VALID_STATUSES.contains(req.status)) {
+            throw new IllegalArgumentException("status 必须为 ACTIVE 或 DISABLED");
+        }
+        // code 唯一性校验（排除自身）
+        String trimmed = req.code.trim();
+        Process dup = Process.find("code = ?1", trimmed).firstResult();
+        if (dup != null && (idForUpdate == null || !dup.id.equals(idForUpdate))) {
+            throw new IllegalArgumentException("code 已存在: " + trimmed);
+        }
     }
 
     public List<UUID> getProductProcessIds(UUID productId) {
