@@ -4,6 +4,31 @@
 
 ---
 
+### [2026-05-13] B2+C 前端: 工序管理页 (Tab 普通/组合) + 路由 + 菜单
+
+**实施**: ProcessManagement 页面 Tab 切换 CRUD，含两个 EditDrawer，路由和菜单注册。
+
+**文件**:
+- `cpq-frontend/src/services/processService.ts` — 扩展: 新增 `Process` / `ProcessUpsertRequest` 接口 + `PROCESS_CATEGORIES` 常量 + `list/detail/create/update/deleteSoft` 方法；保留原有 `listAll/getProductProcesses/bindProcesses/unbindAll`
+- `cpq-frontend/src/services/compositeProcessService.ts` — 扩展: 新增 `status` 字段到 `CompositeProcessDef` + `CompositeProcessDefUpsertRequest` 接口 + `detail/create/update/deleteSoft` 方法；保留原有 `list/parseParamSchema`
+- `cpq-frontend/src/pages/config/ProcessManagement.tsx` — 新建，Card+Tabs 壳，Tab 切换 regular/composite
+- `cpq-frontend/src/pages/config/RegularProcessTab.tsx` — 新建，SelectableTable + 工具栏 (编辑/停用) + 新建按钮
+- `cpq-frontend/src/pages/config/RegularProcessEditDrawer.tsx` — 新建，960px Drawer，6 字段表单
+- `cpq-frontend/src/pages/config/CompositeProcessTab.tsx` — 新建，SelectableTable + 工具栏 + 新建按钮
+- `cpq-frontend/src/pages/config/CompositeProcessEditDrawer.tsx` — 新建，960px Drawer，基本字段 + paramSchema 结构化编辑器 (内联可编辑 Table)
+- `cpq-frontend/src/router/index.tsx` — 追加路由: `config/material-recipes` + `config/processes`
+- `cpq-frontend/src/layouts/MainLayout.tsx` — 追加菜单: "材质管理" + "工序管理" 至配置中心 group
+
+**关键决策**:
+- `process` 表 status 枚举: `ACTIVE`/`DISABLED`（停用=软删）；`composite_process_def` 表: `ACTIVE`/`INACTIVE` — 两处不同，代码中各自硬编码正确值
+- paramSchema 编辑器: 内联 Table 行编辑（id/label/unit/type/placeholder），存为 `CompositeProcessParamDef[]` 传后端，后端序列化为 JSONB；读取时用 `parseParamSchema()` 反序列化
+- 停用动作复用 `deleteSoft`（后端 DELETE 接口实现软删），符合 MaterialRecipe 同等模式
+- 路由同时补齐 B1 遗留的 `material-recipes` 路由（B1 任务只建了页面组件，未注册路由）
+
+**自检**: TS 0 错误；9 个文件 Vite 全部 200
+
+---
+
 ### [2026-05-13] A2 后端: Process (普通工序) CRUD
 
 **实施**: 为 `process` 表补齐写端点 (原只有 GET list).
