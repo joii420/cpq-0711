@@ -56,6 +56,16 @@ interface BasicDataImportV5WizardProps {
   onClose: () => void;
   onSuccess?: (quotationId: string, customerId: string) => void;
   title?: string;
+  /**
+   * V90+V94 历史扩展占位:隐藏客户选择(核价基础数据导入用),组件内部消费由后续 follow-up 实现.
+   * 当前仅接受 prop 防止 TS 报错;运行时无效果.
+   */
+  hideCustomer?: boolean;
+  /**
+   * V94 历史扩展占位:导入目标模板类型 ('QUOTATION' / 'COSTING' / 'BOTH'),
+   * 影响 BasicDataImportServiceV5.parseExcel 的 requestKind 路由.组件内部消费由后续 follow-up 实现.
+   */
+  templateKind?: string;
 }
 
 // ────────────────────────────────────────────────

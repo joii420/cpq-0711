@@ -16,7 +16,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Table, Card, Spin, Alert, Tag } from 'antd';
 import { templateService } from '../../services/templateService';
 import type { CostingTemplate, CostingTemplateColumn } from '../../services/costingTemplateService';
-import { formulaService } from '../../services/formulaService';
+import { batchEvaluate, buildEvalKey } from '../../services/formulaService';
 import type { LineItem } from './QuotationStep2';
 
 /** BNF path cache key: `${partNo}::${path}` */
@@ -196,33 +196,52 @@ const LinkedExcelView: React.FC<Props> = ({ linkedTemplateId, lineItems, quotati
     return out;
   }, [lineItems, parsedColumns]);
 
-  // 异步批量求值缺失的 path
+  // 异步批量求值缺失的 path — 改成一次 batch-evaluate 调用(后端 PathBatchEvaluator
+  // 按 path 聚合同 path 多 partNo 为 1 条 IN SQL,N×M 请求 → 1 个 HTTP)。
   useEffect(() => {
     const missing = pathTasks.filter((t) => !(pathCacheKey(t.partNo, t.path) in pathCache));
     if (missing.length === 0) return;
-    Promise.all(
-      missing.map((t) =>
-        formulaService.evaluate({
-          expression: `{${t.path}}`,
-          partNo: t.partNo,
-          customerId,
-        }).then((res: any) => ({ task: t, res })).catch(() => ({ task: t, res: null }))
-      )
-    ).then((results) => {
-      setPathCache((prev) => {
-        const next = { ...prev };
-        for (const { task, res } of results) {
-          const k = pathCacheKey(task.partNo, task.path);
-          if (res && res.data?.success) {
-            next[k] = res.data.result ?? null;
-          } else {
-            // 求值失败 → 标记 null 避免反复重试，UI 显示 '—'
-            next[k] = null;
+
+    const tasks = missing.map((t) => ({
+      expression: `{${t.path}}`,
+      customerId: customerId || null,
+      partNo: t.partNo,
+    }));
+
+    batchEvaluate(tasks)
+      .then((items) => {
+        // 用后端返回的 key 反查 partNo+path,失败 task 也要回填 null 避免反复重试
+        const itemByKey: Record<string, typeof items[number]> = {};
+        for (const it of items) itemByKey[it.key] = it;
+
+        setPathCache((prev) => {
+          const next = { ...prev };
+          for (const t of missing) {
+            const expr = `{${t.path}}`;
+            const reqKey = buildEvalKey(expr, customerId || null, t.partNo);
+            const item = itemByKey[reqKey];
+            const cacheK = pathCacheKey(t.partNo, t.path);
+            if (item && item.status === 'OK' && item.data?.success) {
+              next[cacheK] = item.data.result ?? null;
+            } else {
+              // 求值失败/未匹配 → 标记 null 避免反复重试,UI 显示 '—'
+              next[cacheK] = null;
+            }
           }
-        }
-        return next;
+          return next;
+        });
+      })
+      .catch(() => {
+        // 网络层失败:全体标 null 防 retry 循环
+        setPathCache((prev) => {
+          const next = { ...prev };
+          for (const t of missing) {
+            const cacheK = pathCacheKey(t.partNo, t.path);
+            if (!(cacheK in next)) next[cacheK] = null;
+          }
+          return next;
+        });
       });
-    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathTasks, customerId]);
 

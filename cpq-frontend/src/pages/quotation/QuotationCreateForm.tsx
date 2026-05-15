@@ -24,12 +24,15 @@ interface CostingCardTemplate {
   customerName?: string | null;
 }
 
-type MatchType = 'CUSTOMER_SPECIFIC' | 'GENERAL_FALLBACK' | 'NONE';
+// 2026-05-14: 后端新增 MIXED 状态表示同时命中客户专属 + 通用模板
+type MatchType = 'CUSTOMER_SPECIFIC' | 'GENERAL_FALLBACK' | 'MIXED' | 'NONE';
 interface MatchedTemplate {
   id: string;
   name: string;
   version?: string;
   categoryName?: string;
+  /** customerId 决定每条 template 的来源:= 当前客户 → 客户专属;null/undefined → 通用 */
+  customerId?: string | null;
   customerName?: string;
 }
 interface MatchResult {
@@ -172,6 +175,20 @@ const QuotationCreateForm: React.FC<Props> = ({
         />
       );
     }
+    // 2026-05-14: 新增 MIXED 分支 — 客户专属 + 通用同时存在
+    if (matchResult.matchType === 'MIXED') {
+      const specificCount = matchResult.templates.filter((t) => t.customerId === customerId).length;
+      const generalCount = matchResult.templates.length - specificCount;
+      return (
+        <Alert
+          type="success"
+          showIcon
+          message={`客户专属 ${specificCount} 个 + 通用 ${generalCount} 个可选`}
+          description="客户专属模板已为该客户定制,优先推荐使用;通用模板作为补充选择。"
+          style={{ marginBottom: 12 }}
+        />
+      );
+    }
     const isFallback = matchResult.matchType === 'GENERAL_FALLBACK';
     return (
       <Alert
@@ -232,30 +249,41 @@ const QuotationCreateForm: React.FC<Props> = ({
 
       {renderMatchHint()}
 
-      {/* 报价模板 */}
+      {/* 报价模板 — 2026-05-14: 按 customerId 给每个 option 加 Tag 区分客户专属 / 通用 */}
       {matchResult && matchResult.templates.length > 0 && (
         <Form.Item
           required
           label={
             <span>
               报价模板{' '}
-              {matchResult.matchType === 'CUSTOMER_SPECIFIC'
-                ? <Tag color="purple">客户专属</Tag>
-                : <Tag color="cyan">通用兜底</Tag>}
+              {matchResult.matchType === 'CUSTOMER_SPECIFIC' && <Tag color="purple">客户专属</Tag>}
+              {matchResult.matchType === 'GENERAL_FALLBACK' && <Tag color="cyan">通用兜底</Tag>}
+              {matchResult.matchType === 'MIXED' && <Tag color="blue">客户专属 + 通用 可选</Tag>}
             </span>
           }
           validateStatus={!value.customerTemplateId ? 'error' : ''}
           help={!value.customerTemplateId ? '请选择报价模板' : undefined}
-          tooltip={matchResult.templates.length > 1 ? '匹配到多个版本，请选择一个' : undefined}
+          tooltip={matchResult.templates.length > 1 ? '已按"客户专属优先 → 通用"排序,请选择一个' : undefined}
         >
           <Select
             value={value.customerTemplateId}
             onChange={(v) => onChange({ ...value, customerTemplateId: v })}
-            options={matchResult.templates.map((t) => ({
-              value: t.id,
-              label: `${t.name}${t.version ? ' ' + t.version : ''}`,
-            }))}
+            options={matchResult.templates.map((t) => {
+              const isSpecific = !!t.customerId && t.customerId === customerId;
+              return {
+                value: t.id,
+                label: (
+                  <span>
+                    {t.name}{t.version ? ' ' + t.version : ''}{' '}
+                    {isSpecific
+                      ? <Tag color="purple" style={{ marginLeft: 4 }}>客户专属</Tag>
+                      : <Tag color="cyan" style={{ marginLeft: 4 }}>通用</Tag>}
+                  </span>
+                ),
+              };
+            })}
             placeholder="请选择模板"
+            optionLabelProp="label"
           />
         </Form.Item>
       )}

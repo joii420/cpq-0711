@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, Tag, InputNumber, Descriptions } from 'antd';
 import { CheckCircleFilled } from '@ant-design/icons';
 import type { ProductType } from '../../../types/configure';
 import type { PartState, CompositeProcessAdded } from '../ConfigureProductDrawer';
+import { compositeProcessService, type CompositeProcessDef } from '../../../services/compositeProcessService';
 
 interface Props {
   productType: ProductType;
@@ -11,7 +12,18 @@ interface Props {
   onUpdatePart: (idx: number, patch: Partial<PartState>) => void;
 }
 
-const Step5Summary: React.FC<Props> = ({ productType, parts, addedCProcs, onUpdatePart }) => (
+const Step5Summary: React.FC<Props> = ({ productType, parts, addedCProcs, onUpdatePart }) => {
+  const [cpDefs, setCpDefs] = useState<CompositeProcessDef[]>([]);
+
+  useEffect(() => {
+    if (productType !== 'COMPOSITE' || addedCProcs.length === 0) return;
+    compositeProcessService.list().then(setCpDefs).catch(() => setCpDefs([]));
+  }, [productType, addedCProcs.length]);
+
+  const defNameByCode = (code: string) =>
+    cpDefs.find(d => d.code === code)?.name ?? code;
+
+  return (
   <div>
     <div style={{ textAlign: 'center', marginBottom: 20 }}>
       <CheckCircleFilled style={{ fontSize: 36, color: '#52c41a' }} />
@@ -87,7 +99,7 @@ const Step5Summary: React.FC<Props> = ({ productType, parts, addedCProcs, onUpda
       <Card title="组合工艺" size="small">
         {addedCProcs.map((a, i) => (
           <div key={i} style={{ borderBottom: '0.5px solid #f0f0f0', padding: '8px 0' }}>
-            <b>{a.defCode}</b>
+            <b>{defNameByCode(a.defCode)}</b>
             <span style={{ marginLeft: 8, color: '#888' }}>
               参与配件: {a.participatingPartIndexes.map(idx => parts[idx]?.name).join(' + ')}
             </span>
@@ -101,6 +113,7 @@ const Step5Summary: React.FC<Props> = ({ productType, parts, addedCProcs, onUpda
       </Card>
     )}
   </div>
-);
+  );
+};
 
 export default Step5Summary;

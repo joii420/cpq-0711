@@ -34,7 +34,7 @@ export interface CompositeProcessDefUpsertRequest {
 export const compositeProcessService = {
   async list(): Promise<CompositeProcessDef[]> {
     const res = await api.get('/composite-processes');
-    return (res as CompositeProcessDef[]) ?? [];
+    return (res as unknown as CompositeProcessDef[]) ?? [];
   },
 
   /** Parse paramSchema raw JSON string into typed list. Returns [] on parse error. */

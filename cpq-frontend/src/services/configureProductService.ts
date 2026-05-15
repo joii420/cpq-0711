@@ -12,12 +12,12 @@ export const configureProductService = {
     const res = await api.get('/quotations/configure/search-parts', {
       params: { q, size },
     });
-    return (res as SearchPartResult[]) ?? [];
+    return (res as unknown as SearchPartResult[]) ?? [];
   },
 
   async lookupFingerprint(req: LookupFingerprintRequest): Promise<LookupFingerprintResponse> {
     const res = await api.post('/quotations/configure/lookup-fingerprint', req);
-    return res as LookupFingerprintResponse;
+    return res as unknown as LookupFingerprintResponse;
   },
 
   async configureProduct(
@@ -25,6 +25,6 @@ export const configureProductService = {
     req: ConfigureProductRequest,
   ): Promise<ConfigureProductResponse> {
     const res = await api.post(`/quotations/${quotationId}/configure-product`, req);
-    return res as ConfigureProductResponse;
+    return res as unknown as ConfigureProductResponse;
   },
 };

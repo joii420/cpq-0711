@@ -72,6 +72,17 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
     }));
   }, []);
 
+  // 自定义路径配件的"完整性"校验:返回 null=OK,字符串=失败原因(单条 toast 内容)
+  const validateCustomPart = (p: PartState, label: string): string | null => {
+    if (p.partMode !== 'custom') return null;
+    if (!p.selectedRecipeCode) return `${label}:请先选择材质`;
+    const sum = Object.values(p.elementOverrides).reduce((a, b) => a + (Number(b) || 0), 0);
+    if (Math.abs(sum - 100) > 0.01) {
+      return `${label}:元素含量之和 ${sum.toFixed(2)}%,必须 = 100%`;
+    }
+    return null;
+  };
+
   const checkFingerprintAndAdvance = useCallback(async (): Promise<boolean> => {
     const cur = parts[ci];
     if (!cur || cur.partMode !== 'custom' || !cur.selectedRecipeCode) return false;
@@ -137,6 +148,10 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
     if (globalStep === 1) {
       if (subStep === 0) { setSubStep(1); return; }
       if (subStep === 1) {
+        const cur = parts[ci];
+        const partLabel = productType === 'COMPOSITE' ? `配件 ${ci + 1}` : '产品';
+        const err = cur ? validateCustomPart(cur, partLabel) : null;
+        if (err) { message.warning(err); return; }
         const matched = await checkFingerprintAndAdvance();
         if (matched) return;
         setSubStep(2);
@@ -173,6 +188,12 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
   }, [globalStep, subStep, ci, parts.length, productType]);
 
   const submitConfigure = async () => {
+    // 提交前最后一道防线:全量配件逐个扫,任一不合规则列原因不发请求
+    for (let i = 0; i < parts.length; i++) {
+      const label = productType === 'COMPOSITE' ? `配件 ${i + 1}` : '产品';
+      const err = validateCustomPart(parts[i], label);
+      if (err) { message.warning(err); return; }
+    }
     setSubmitting(true);
     try {
       const partsReq: PartRequest[] = parts.map(p => ({

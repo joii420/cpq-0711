@@ -36,12 +36,25 @@ export function buildBatchKey(
 
 /**
  * POST /api/cpq/components/batch-expand
- * 自动按 100 拆分(后端上限)，顺序请求后合并。
- * status=ERROR 的条目仍写入结果（data=null），避免调用方反复重试。
+ *
+ * 设计目标:**一次 HTTP 请求覆盖整个报价单的全部 driver 展开**。
+ * 旧策略 CHUNK=100 导致 N=2000 task 拆成 20 个 HTTP — 违背"一次查询"目标。
+ * 后端 ComponentDriverService.batchExpand 已按 (componentId, customerId, partVersion) 聚合到
+ * IN SQL,单批携带数千 task 对 DB 压力可控。
+ *
+ * 现策略:CHUNK = 5000(实质"一次性"),正常报价单 1 个 HTTP 完成。
+ * 后端 BATCH_MAX 同步从 100 提到 5000。
+ *
+ * status=ERROR 的条目仍写入结果(data=null),避免调用方反复重试。
  */
 export async function batchExpandDriver(tasks: BatchExpandTask[]): Promise<BatchExpandResultItem[]> {
   if (tasks.length === 0) return [];
-  const CHUNK = 100;
+  const CHUNK = 5000;
+  if (tasks.length <= CHUNK) {
+    const resp: any = await api.post('/components/batch-expand', { tasks });
+    return (resp?.data?.results ?? resp?.results ?? []) as BatchExpandResultItem[];
+  }
+  // 兜底:极端大批量分片(>5000),正常路径走不到
   const chunks: BatchExpandTask[][] = [];
   for (let i = 0; i < tasks.length; i += CHUNK) {
     chunks.push(tasks.slice(i, i + CHUNK));
@@ -49,7 +62,6 @@ export async function batchExpandDriver(tasks: BatchExpandTask[]): Promise<Batch
   const allResults: BatchExpandResultItem[] = [];
   for (const chunk of chunks) {
     const resp: any = await api.post('/components/batch-expand', { tasks: chunk });
-    // 外层 ApiResponse 包裹: resp.data.results 或 resp.results
     const results: BatchExpandResultItem[] = resp?.data?.results ?? resp?.results ?? [];
     allResults.push(...results);
   }

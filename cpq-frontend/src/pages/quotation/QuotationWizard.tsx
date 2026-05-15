@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Steps, Button, Card, Form, Input, Select, DatePicker, InputNumber,
   Space, Table, message, Descriptions, Tag, Divider, Row, Col,
-  Typography, Spin,
+  Typography, Spin, Alert,
 } from 'antd';
 import {
   SaveOutlined, SendOutlined,
@@ -59,6 +59,14 @@ function normalizeFieldType(raw: string):
   return 'INPUT';
 }
 
+/**
+ * Template fetch dedupe — 走 service-level Promise-cache(`templateService.getByIdCached`),
+ * 与其他报价单组件(ReadonlyProductCard、Step2 等)共享同一个 in-flight Promise → 同 templateId 全局 1 次 HTTP。
+ */
+function fetchTemplateOnce(templateId: string): Promise<any> {
+  return templateService.getByIdCached(templateId);
+}
+
 /** Enrich saved componentData with fields/formulas from template snapshot */
 async function enrichComponentData(
   templateId: string,
@@ -74,7 +82,7 @@ async function enrichComponentData(
     return { ...saved, rows: Array.isArray(parsed) ? parsed : [] };
   });
   try {
-    const res = await templateService.getById(templateId);
+    const res = await fetchTemplateOnce(templateId);
     const tmpl = res.data;
     const snapshot: any[] = parseJson(tmpl.componentsSnapshot, []);
 
@@ -154,7 +162,7 @@ async function enrichComponentData(
 async function loadProductAttributes(templateId: string): Promise<NonNullable<LineItem['productAttributes']>> {
   if (!templateId) return [];
   try {
-    const res = await templateService.getById(templateId);
+    const res = await fetchTemplateOnce(templateId);
     const tmpl = res.data;
     const productAttrs: any[] = parseJson(tmpl.productAttributes, []);
     return productAttrs.map((attr: any) => ({
@@ -213,6 +221,14 @@ const QuotationWizard: React.FC = () => {
   const [configureDrawerOpen, setConfigureDrawerOpen] = useState(false);
   // T35: Step1 表单（QuotationCreateForm 4 字段）是否已填完
   const [step1Valid, setStep1Valid] = useState(false);
+  // ★ Bug 修复: QuotationCreateForm 是受控组件，必须把 4 字段值放到 React state，
+  // 否则用户输入 → form.setFieldsValue → 不触发 wizard 重渲染 → value prop 不变 → input 看起来无法填写
+  const [step1FormValue, setStep1FormValue] = useState<QuotationFormValue>({
+    name: '',
+    categoryId: undefined,
+    customerTemplateId: undefined,
+    costingTemplateId: undefined,
+  });
   // Driver 展开结果上提到 wizard 层，便于 buildDraftPayload 在保存前
   // 把 BASIC_DATA / FORMULA 计算结果快照写入 rowData（WYSIWYG）。
   const customerIdValue = (selectedCustomer?.id) || form.getFieldValue('customerId') || undefined;
@@ -283,6 +299,13 @@ const QuotationWizard: React.FC = () => {
     }
     setCustomerTemplateId(q.customerTemplateId || undefined);
     setCostingCardTemplateId(q.costingCardTemplateId || undefined);
+    // 把已有报价单的 4 字段回灌到 Step1 React state, 让编辑模式下「选择模板」Card 显示已存值
+    setStep1FormValue({
+      name: q.name || '',
+      categoryId: q.categoryId || undefined,
+      customerTemplateId: q.customerTemplateId || undefined,
+      costingTemplateId: q.costingCardTemplateId || undefined,
+    });
     if (q.lineItems) {
       // Build basic lineItems first, then enrich componentData from template snapshots
       const basicItems: LineItem[] = q.lineItems.map((li: any) => {
@@ -441,7 +464,22 @@ const QuotationWizard: React.FC = () => {
   const loadContacts = async (custId: string) => {
     try {
       const res = await customerService.listContacts(custId);
-      setContacts(res.data || []);
+      const list = res.data || [];
+      setContacts(list);
+      // 2026-05-14: PRD §3.2.1 — 客户加载完成后自动选主要联系人(isPrimary=true).
+      // 仅当 contactId 尚未选定时触发,避免覆盖编辑模式已存值或用户手动调整.
+      const currentContactId = form.getFieldValue('contactId');
+      if (!currentContactId) {
+        const primary = list.find((c: any) => c.isPrimary);
+        if (primary) {
+          form.setFieldsValue({
+            contactId: primary.id,
+            contactName: primary.name,
+            contactPhone: primary.phone,
+            contactEmail: primary.email,
+          });
+        }
+      }
     } catch {
       setContacts([]);
     }
@@ -468,9 +506,26 @@ const QuotationWizard: React.FC = () => {
   }, []);
 
   const handleCustomerSelect = (custId: string) => {
+    const prevCustomerId = form.getFieldValue('customerId');
     form.setFieldValue('customerId', custId);
+    // 切换客户时(prev !== curr)清空旧联系人字段,让 loadContacts 自动选新客户的主要联系人.
+    // 首次选客户(prev 为空)时不需要清(本来就空),也走 auto-pick.
+    if (prevCustomerId && prevCustomerId !== custId) {
+      form.setFieldsValue({
+        contactId: undefined,
+        contactName: '',
+        contactPhone: '',
+        contactEmail: '',
+      });
+    }
     loadCustomerDetail(custId);
     loadContacts(custId);
+    // 把基础信息卡里用户可能已输入的"报价单名称"灌进 step1FormValue,
+    // 避免 QuotationCreateForm 受控渲染时显示空 + 自动填充"<客户名> 报价单"覆盖用户输入
+    const existingName = form.getFieldValue('name');
+    if (existingName) {
+      setStep1FormValue(prev => ({ ...prev, name: existingName }));
+    }
   };
 
   // SaveDraft 成功后用响应回填 lineItem.partVersionLocked
@@ -588,7 +643,7 @@ const QuotationWizard: React.FC = () => {
       try {
         const [candRes, tmplRes] = await Promise.all([
           quotationService.listCustomerPartCandidates(customerId, importRecordId),
-          templateService.getById(customerTemplateId),
+          templateService.getByIdCached(customerTemplateId),
         ]);
         const partList: any[] = (candRes.data as any) || [];
         const tmpl = tmplRes.data;
@@ -856,6 +911,69 @@ const QuotationWizard: React.FC = () => {
     }));
   };
 
+  /**
+   * B.3 选配产品确认回调 — 走标准 enrichment 路径.
+   *
+   * 流程:
+   * 1. 把后端 minimal DTO 映射为完整 LineItem (与 applyQuotationData 同款 mapping, 但选配场景客户料号
+   *    映射 / hfPartInfo 都暂为空, 后续刷新走 GET 后会从 DB join 反查回来)
+   * 2. 函数式 setLineItems 追加新行 (防 AP-9 race: 用户切走 / 添加其他产品时不丢)
+   * 3. 异步 enrichComponentData + loadProductAttributes 拉模板 schema, 合回 state 时按 id 匹配,
+   *    用户已开始编辑的字段保留 (与 applyQuotationData 的 enrich 合并策略一致)
+   *
+   * 关键: 选配 line_item 落库时后端已经把 template_id + product_attribute_values 默认值写好,
+   * 前端 enrichment 不再依赖 quotation.customer_template_id 全局兜底.
+   */
+  const onConfigureConfirm = async (rawItems: any[]) => {
+    setConfigureDrawerOpen(false);
+    if (!rawItems || rawItems.length === 0) return;
+    const basicItems: LineItem[] = rawItems.map((li: any) => {
+      const rawAttrs = li.productAttributeValues
+        ? (typeof li.productAttributeValues === 'string'
+            ? (() => { try { return JSON.parse(li.productAttributeValues); } catch { return {}; } })()
+            : li.productAttributeValues)
+        : {};
+      return ({
+        id: li.id,
+        productId: li.productId || '',
+        productName: li.productName || '',
+        productPartNo: li.productPartNo || '',
+        customerPartNo: li.customerPartNo || '',
+        customerPartName: li.customerPartName || '',
+        customerProductNo: li.customerProductNo || '',
+        customerDrawingNo: li.customerDrawingNo || '',
+        hfPartInfo: li.hfPartInfo || undefined,
+        templateId: li.templateId || customerTemplateId || '',
+        templateName: li.templateName || '',
+        productAttributeValues: rawAttrs,
+        componentData: li.componentData || [],
+        subtotal: li.subtotal || 0,
+        partVersionLocked: li.partVersionLocked,
+      }) as LineItem;
+    });
+    // 1. 立即追加新行 (函数式, 防 race)
+    setLineItems(prev => [...prev, ...basicItems]);
+    // 2. 异步拉模板 schema (componentData + productAttributes), 合回 state
+    const enriched = await Promise.all(basicItems.map(async (li) => {
+      if (!li.templateId) return li;
+      const [enrichedCompData, productAttributes] = await Promise.all([
+        enrichComponentData(li.templateId, li.componentData),
+        loadProductAttributes(li.templateId),
+      ]);
+      return { ...li, componentData: enrichedCompData, productAttributes };
+    }));
+    // 3. 按 id 匹配回灌 (用户已开始编辑的不动 — 但选配新行 id 唯一不冲突, 简单 replace 即可)
+    setLineItems(prev => prev.map(cur => {
+      const updated = enriched.find(e => e.id && e.id === cur.id);
+      if (!updated) return cur;
+      return {
+        ...cur,
+        componentData: updated.componentData,
+        productAttributes: updated.productAttributes,
+      };
+    }));
+  };
+
   const next = () => {
     if (currentStep === 0 && !quotationId) {
       handleCreateQuotation().then(() => {
@@ -1012,26 +1130,44 @@ const QuotationWizard: React.FC = () => {
         </Col>
       </Row>
 
-      {/* T35: 选择客户后显示 产品分类 + 模板选择 四字段表单，必须填完才能下一步 */}
+      {/* T35 + A 视觉: 选客户后渲染独立「选择模板」Card —— 模板提供"选配产品"的卡片渲染结构.
+          入口 B (基础数据导入流程) 时, 模板已经在导入抽屉里选定, 加 Alert 提示用户无需重复. */}
       {selectedCustomer && (
-        <Card title="产品分类 + 模板选择" size="small" style={{ marginTop: 16 }}>
+        <Card
+          title={
+            <span>
+              选择模板 <Text type="secondary" style={{ fontSize: 13, fontWeight: 'normal', marginLeft: 8 }}>
+                决定产品卡片 / Excel 视图的结构,以及"选配添加"使用的组件集
+              </Text>
+            </span>
+          }
+          size="small"
+          style={{ marginTop: 16 }}
+        >
+          {isImportFlow && (
+            <Alert
+              type="success"
+              showIcon
+              message="✓ 模板已在基础数据导入时选定,可直接进入下一步"
+              style={{ marginBottom: 12 }}
+            />
+          )}
           <QuotationCreateForm
             customerId={selectedCustomer.id}
             customerName={selectedCustomer.name}
-            value={{
-              name: form.getFieldValue('name') ?? '',
-              categoryId: form.getFieldValue('categoryId'),
-              customerTemplateId: form.getFieldValue('customerTemplateId') ?? customerTemplateId,
-              costingTemplateId: form.getFieldValue('costingCardTemplateId') ?? costingCardTemplateId,
-            }}
+            value={step1FormValue}
             onChange={(v: QuotationFormValue) => {
+              // 1. React state 是受控组件的唯一真相源 - 必须先 setState 才能让 input 显示新值
+              setStep1FormValue(v);
+              // 2. 同步到 antd form (用于 Step5 submit 时 form.validateFields / form.getFieldsValue)
               form.setFieldsValue({
                 name: v.name,
                 categoryId: v.categoryId,
                 customerTemplateId: v.customerTemplateId,
                 costingCardTemplateId: v.costingTemplateId,
               });
-              // 同步到 wizard 层的 state，让 Step2 / buildDraftPayload 能拿到最新模板 ID
+              // 3. 同步到 wizard 层的 customerTemplateId / costingCardTemplateId state，
+              //    让 Step2 选配 Dropdown / buildDraftPayload 能拿到最新模板 ID
               if (v.customerTemplateId !== undefined) setCustomerTemplateId(v.customerTemplateId);
               if (v.costingTemplateId !== undefined) setCostingCardTemplateId(v.costingTemplateId);
             }}
@@ -1077,10 +1213,7 @@ const QuotationWizard: React.FC = () => {
         open={configureDrawerOpen}
         quotationId={quotationId || ''}
         onCancel={() => setConfigureDrawerOpen(false)}
-        onConfirm={(items) => {
-          setLineItems(prev => [...prev, ...items]);
-          setConfigureDrawerOpen(false);
-        }}
+        onConfirm={onConfigureConfirm}
       />
     </div>
   );

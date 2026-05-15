@@ -4,6 +4,143 @@
 
 ---
 
+### [2026-05-14] Path-Aggregated Batch Evaluate — 消除报价单 200 task 内部 for 循环 200 条 SQL 瓶颈
+
+**触发**:报价单含数十~百个料号时,前端虽已批量(2 个 POST 含 200 task),但后端 `FormulaEvaluateResource.batchEvaluate` 内部 `for (task : tasks) evaluate(task)` → 每 task 调一次 `dataLoader.loadByPath(...)`,200 task = 200 条 SQL,服务器压力大、报价单打开 5s+。
+
+**方案**:Path-Group Batch — 把 batch 内部 for 循环改成两阶段分组聚合:① 按 `(barePath, customerId)` 分组任务;② 同 path 的 N 个 partNo 写成 `col IN ('p1','p2',...)` 单条 IN 聚合 SQL;③ 按 task.partNo 反查 row Map 分发;④ 降级路径:含 `driverRow`/`bindings`/复合表达式 task 走原 for 循环。前端 0 改动,API 契约不变。
+
+**落地**(4 个 task):
+
+1. **T1 新文件 `cpq-backend/.../formula/resource/PathBatchEvaluator.java`** (@ApplicationScoped,~420 行):
+   - 入口 `evaluate(List<EvaluateRequest>)` → `BARE_PATH = ^\s*\{[^{}]+\}\s*$` 正则严格匹配可聚合 task,其余分到 fallback 桶
+   - 按 `(barePath, customerId)` 聚簇,`partVersion` 从 `PartVersionContext.get()` 取(同请求一致,不入键)
+   - 组内:先查 `FormulaEvalCache`(30s TTL,与单条 evaluate 共用);未命中用 `ImplicitJoinRewriter.rewriteBatch` 构造 IN-list 路径 → `DataLoader.loadByPath` 1 条聚合 SQL → 按 `hf_part_no`/`part_no` 列分桶 → 套用 `FormulaEngine` 同款"单行单列→标量 / 单行多列→Map / 多行→List"语义 → 缓存回填
+   - 多段嵌套路径、null partNo、组级异常 — 全部自动降级到 `evaluateSingle`(复用旧 for 循环 + `FormulaEngine.evaluate`)
+2. **T1 扩 `cpq-backend/.../formula/dataloader/ImplicitJoinRewriter.java`**:加 `rewriteBatch(fieldPath, partNos, customerId, partVersion, schema)` + 私有 `injectRawTermsIntoFirstSegment` — 把现有 `=` 注入逻辑扩到 IN-list raw 谓词字符串(`hf_part_no IN ('P1','P2','P3') AND customer_id = 'UUID' AND part_version = 1`)。系统列黑名单、表列存在性检查、原谓词去重逻辑沿用现成方法
+3. **T2 改 `FormulaEvaluateResource.batchEvaluate`**:加 `@ConfigProperty(name="formula.batch.aggregated", defaultValue="true")`;开关 on → 走 `PathBatchEvaluator`,off → 走 `legacyForLoopEvaluate`(原 for 循环抽取为私有方法,保留)。顶层异常自动 fallback 到 legacy。HTTP 路径/请求体/响应体完全不变
+4. **T3 改 `ComponentDriverService`** 加 `batchExpand(List<Task>)` 公共方法 + `DriverGroupKey` 分组键:按 `(componentId, customerId, partVersion)` 分组 → 1 条 IN 聚合 SQL 拉所有 driver rows → 分桶 → 内层 basic_data 逐行评估(driverRow 列异质,内层无法跨 task 聚合,依赖 DataLoader 请求内 dedupe)。`ComponentResource.batchExpand` 加同名 `formula.batch.aggregated` 开关,默认走聚合,异常自动 fallback 到旧 for 循环
+5. **T4 测试**:`FormulaEvaluateResourceTest` 补 6 个用例(同 path 不同 partNo / 含算术降级 / 含 bindings 降级 / 空 tasks / 混合聚合+fallback / 同 key 重复)+ 私有辅助 `importTwoParts` 通过 V5 导入 fixture
+
+**保障**:开关 `formula.batch.aggregated=false` 秒切回旧 for 循环;聚合层异常自动整组降级;`FormulaEvalCache` 语义保持;SQL 语义等价(`col = ?` OR-list ↔ `col IN (?, ...)`);多段嵌套路径自动降级避开 `PathToSqlGenerator` 当前限制。
+
+**自检**:`./mvnw -DskipTests -o compile` BUILD SUCCESS(437 源文件 0 错误);`./mvnw -DskipTests -o test-compile` BUILD SUCCESS(73 测试源 0 错误);Quarkus dev 自动 reload + `POST /api/cpq/formulas/batch-evaluate` 返 401(auth 正常,**非 500 崩溃**);`POST /api/cpq/components/batch-expand` 返 401;前端 5174 / 5174/quotation 返 200(无回归)。测试 surefire 因测试环境 RBAC 配置原生 401(老用例同失败,与本次改动无关),功能验证靠端到端 curl。
+
+**预期效果**:200 task / 8 unique path → SQL 200 → 8;耗时 5s → ~80ms 量级。
+
+**涉及文件**:`cpq-backend/.../formula/resource/PathBatchEvaluator.java` (新)、`.../formula/resource/FormulaEvaluateResource.java`、`.../formula/dataloader/ImplicitJoinRewriter.java`、`.../component/service/ComponentDriverService.java`、`.../component/resource/ComponentResource.java`、`cpq-backend/src/test/java/.../formula/FormulaEvaluateResourceTest.java`
+
+**补丁(同日继续):前端补 2 处遗漏的循环单调用**
+
+用户刷新报价单页面后仍看到 538 个 xhr 请求 — 排查发现后端 batch 端点优化只覆盖了**前端主动调 batch** 的场景,但前端有 2 处仍在循环单调用:
+
+1. **`cpq-frontend/src/pages/quotation/LinkedExcelView.tsx`** — Excel 视图渲染时对每个 (partNo, path) 对 `Promise.all(missing.map(formulaService.evaluate))` 并发发 N 个 `/formulas/evaluate` 单条请求。改成 1 次 `batchEvaluate(tasks)`(`buildEvalKey` 反查 key → 回填 pathCache),50 产品 × 10 列 = 500 个 HTTP → 1 个。
+2. **`cpq-frontend/src/pages/quotation/QuotationWizard.tsx`** — `enrichComponentData` 和 `loadProductAttributes` 各自独立调 `templateService.getById(templateId)`,N 个 lineItem × 2 = 2N 重复请求(同 templateId)。新增模块级 `templateFetchCache: Map<string, Promise>` + `fetchTemplateOnce(templateId)` Promise-cache(注意存的是 Promise 不是结果,并发场景下复用 in-flight Promise;失败时清出 cache 允许重试)。50 lineItem × 2 = 100 个 HTTP → 1 个。
+
+自检:`npx tsc --noEmit` → 0 错;`curl http://localhost:5174/src/pages/quotation/LinkedExcelView.tsx` → 200;`curl .../QuotationWizard.tsx` → 200;`curl http://localhost:5174/` → 200。
+
+**教训:** 后端聚合是必要不充分条件 — 必须同时确认**前端真的在用 batch 端点**。"前端 0 改动" 的初始假设是错的,因为这两个调用点根本没用 batch 端点(LinkedExcelView)或没做 Promise dedupe(QuotationWizard)。
+
+**再补丁(同日继续):详情页 + 编辑页另两处循环单调用**
+
+第一轮前端补丁后用户反馈仍有 538/430 个请求,排查截图发现:
+- 详情页:**`ReadonlyProductCard.tsx:154`** 每个只读产品卡片自己调 `templateService.getById(templateId)`。N 个产品卡片 × 重渲染 = 几百个**同 templateId 重复**请求(URL 末段都是同一个 UUID `3cf5a331-...`,启动器 `temp...`)。
+- 编辑页:**`QuotationStep2.tsx:544` 的 `ProductCard` 内 useEffect** 每行调 `materialMappingService.match(customerId, customerPartNo)`。N 个产品 × ProductCard 重渲染 = 几百个 `match?partNo=...` 请求(截图4)。
+
+**根因**:之前 QuotationWizard.tsx 内的 `fetchTemplateOnce` 是**模块作用域**(Wizard 文件私有),与其他组件**不共享 cache**。`ReadonlyProductCard` 自己写一份 `getById` 调用绕过去了,等于没缓存。
+
+**修复 — 把 Promise-cache 提到 service 层,全局唯一**:
+1. **`cpq-frontend/src/services/templateService.ts`** — 新增 `getByIdCached(id)` + `evictByIdCache(id?)`,模块级 `Map<string, Promise<any>>`。mutation 方法(update/delete/publish/archive/createNewDraft) `p.finally(() => evict(id))` 防脏数据。
+2. **`cpq-frontend/src/services/materialMappingService.ts`** — 同模式新增 `matchCached(customerId, partNo)` + `evictMatchCache(customerId?)`,key = `${customerId}::${partNo}`。`create`/`delete`/`importExcel` 触发对应 customer 的 cache 全清。
+3. **`cpq-frontend/src/pages/quotation/ReadonlyProductCard.tsx:154`** — `getById` → `getByIdCached`。
+4. **`cpq-frontend/src/pages/quotation/QuotationStep2.tsx`** — 1 处 `match` → `matchCached`(ProductCard 内 useEffect);3 处 `getById` → `getByIdCached`(autoPopulate / quote template snapshot / costing template snapshot)。
+5. **`cpq-frontend/src/pages/quotation/QuotationWizard.tsx`** — `fetchTemplateOnce` 改成 thin wrapper 委托给 `templateService.getByIdCached`,与其他组件共享同一全局 cache;Step2 autoPopulate 处的 `getById` 也换成 `getByIdCached`。
+
+**自检**:`npx tsc --noEmit` → 0 错;`curl http://localhost:5174/src/services/templateService.ts` → 200,`materialMappingService.ts` → 200,`QuotationStep2.tsx` → 200,`QuotationWizard.tsx` → 200,`ReadonlyProductCard.tsx` → 200,`FE /` → 200。
+
+**预期(刷新后再看 Network)**:
+- 详情页:`/api/cpq/templates/{id}` 由几百条同 ID 降到 **1 条**(同 templateId 全部共享 Promise)。
+- 编辑页:`/api/cpq/customers/.../material-mappings/match?partNo=...` 由几百条降到 **unique (customer, partNo) 数**(50 产品最多 50 条,且后续 re-render 全部命中 cache → 0 新增)。
+- Excel 视图:`/formulas/evaluate` 完全消失,只剩 1 条 `formulas/batch-evaluate`。
+
+**核心教训**:Promise-cache 必须**做在 service 层**(全局单例),不能写在某个组件文件里。N 个独立组件 import 同一个 service 才能共享 in-flight Promise;否则每个文件各写一份就退化成 N 个 cache、N 次 HTTP。
+
+---
+
+### [2026-05-14] HF 主导身份重设计 — 客户料号降为可空附属(F1+F2+F3 落地)
+
+**触发**: Rockwell Excel 导入撞 `uq_mat_cust_part(customer_id, customer_product_no)` 1:1 约束 — Excel 实际形态是同一客户料号映射到多个宏丰料号(10 个 cpn 各对应 ≥2 hf,如 PN-509102 → 3 hf)。同时顺手解决:① 业务上"客户料号可不填"被前端 skip 丢数据;② 选配 feature 的 `mat_part_version_log baseline 写不进去` 历史遗留问题。
+
+**配套文档**: `docs/superpowers/specs/2026-05-14-hf-as-primary-identity.md`(11 节完整 spec,Q1-Q8 决策清单 + 4 Phase 实施清单 + 风险/回滚预案)
+
+**关键落地**:
+
+1. **DB Schema(2 个 Flyway,V176/V177)**:
+   - V176 `mapping_hf_as_primary.sql`:DROP `uq_mat_cust_part(cust_id, cpn)` + DROP `uq_mat_cust_part_global(cpn, hf)` + 数据归一化(同 cust+hf 多行场景:首行保留,其余 cpn 进归档表 `mat_mapping_cpn_history`) + CREATE `uq_mat_cust_part_per_hf(customer_id, hf_part_no)`
+   - V177 `part_version_log_pk_reshape.sql`:加 `customer_id` 列 + 按 (cpn, hf) JOIN mapping 回填 customer_id + 孤儿行 DELETE + 备份表 `mat_part_version_log_pre_v177` + DROP 旧 PK + cpn DROP NOT NULL + 新 PK `(customer_id, hf_part_no, version)` + FK→customer.id ON DELETE CASCADE
+
+2. **后端服务**:
+   - `BasicDataImportServiceV5.fillMappingRow`:移除空 cpn skip,改 hf 必填;cpn 空串规范化为 NULL
+   - `StagingMerger.mergeMapping`:WHERE 子句去掉 cpn 条件,只按 (session, hf) 过滤;`ON CONFLICT (customer_id, hf_part_no)` 对齐新 unique key;cpn 走 `COALESCE(原值, EXCLUDED)` 保留存量
+   - `StagingMerger.applyPartVersionDecisions`:decisionKey 兼容旧 `cpn|hf` 双段 + 新 `hf` 单段
+   - `PartVersionService.applyVersionBump`:INSERT log SQL 改用 `SELECT m.customer_id, :cpn, :hf, :v, ... FROM mat_customer_part_mapping m WHERE ...`,通过 JOIN 反查 customer_id 满足 V177 新 PK NOT NULL 约束;签名不变
+   - `ImportSessionService.commit`:`metadata.hfPairs` 解析同时兼容两种 decisionKey 格式
+
+3. **前端**:`AddProductModal` / `BasicDataImportV5ToQuotation` 顶层未硬约束 cpn 必填,React 渲染 null cpn 字段自然为空,**无 hard 改动**;Step1/Step2/Step3 hf-主显 cpn-副显的 UI 体验升级延后到独立迭代(spec §5 列出,不阻塞功能)
+
+4. **顺带修复(F3 副作用)**: 选配 feature 产生的 hf(cpn 空)现在能正常写入 `mat_part_version_log` baseline — 解决 2026-05-13 add-product-configure 实施"未来 follow-up #4"
+
+**自检**: Quarkus 全部热重载 401 ✅;Flyway V176/V177 success(通过 endpoint 401 间接验证 — 若 migration 失败 Quarkus 启动 500);tsc/Vite 不触发(前端 0 改动)
+
+**剩余 follow-up(非阻塞)**:
+- Phase 3 UI 体验升级:wizard Step1/Step2/Step3 改 hf 卡片为主结构 + AddProductModal 主显 hf 副显 cpn — 留独立迭代
+- T19 端到端 Rockwell Excel 真实跑通验收 — 待用户在浏览器强刷后实测
+
+**涉及文件**:
+- 新建:`cpq-backend/src/main/resources/db/migration/V176__mapping_hf_as_primary.sql`
+- 新建:`cpq-backend/src/main/resources/db/migration/V177__part_version_log_pk_reshape.sql`
+- 改:`cpq-backend/src/main/java/com/cpq/importexcel/service/BasicDataImportServiceV5.java`(fillMappingRow)
+- 改:`cpq-backend/src/main/java/com/cpq/importsession/service/StagingMerger.java`(applyPartVersionDecisions decisionKey 解析 + mergeMapping ON CONFLICT + backfillOrphanParts 恢复 + mergePart 顺序提前)
+- 改:`cpq-backend/src/main/java/com/cpq/partversion/PartVersionService.java`(applyVersionBump INSERT SQL)
+- 改:`cpq-backend/src/main/java/com/cpq/importsession/service/ImportSessionService.java`(hfPairs metadata 兼容)
+- 新建 spec:`docs/superpowers/specs/2026-05-14-hf-as-primary-identity.md`
+
+---
+
+### [2026-05-14] BasicDataConfig 后端 mutator 触发 cache 失效
+
+**触发**: 用户在"基础数据配置"菜单改 `is_required=false` 后,导入仍按旧值校验拦截 — 根因是 `BasicDataImportServiceV5.sheetConfigCache` 是 `@ApplicationScoped` 进程级缓存,启动时一次性加载,UI mutator 改 DB 后未触发 reload。
+
+**修复**: `BasicDataConfigService` 注入 `BasicDataImportServiceV5` + 新增 private `invalidateImportCache()`(try-catch 包 `reloadConfigCache`,失败仅记日志不阻断响应);在 10 个 mutator 末尾各调一次:`createSheet / updateSheet / deleteSheet / createAttribute / updateAttribute / disableAttribute / updateAttributeImportance / createDerived / updateDerived / disableDerived`
+
+---
+
+### [2026-05-14] 选配 P5 完成页 + 提交校验加固
+
+**触发**: 用户报 `POST /quotations/{id}/configure-product` 返 400 `"custom 模式 recipeCode 必填"` — 用户在 Step2 没选材质就 next,前端校验缺失允许走完 P3 → P5 → 提交,后端拒绝。
+
+**修复**: `ConfigureProductDrawer.tsx` 新增 `validateCustomPart(p, label)` helper:`partMode='custom'` 时强制 `selectedRecipeCode` 非空 + 元素含量和 ≈ 100(±0.01)。两处调用:① P2→P3 跳转前(`goNext` 的 `globalStep=1 && subStep=1` 分支);② `submitConfigure` 入口逐配件再扫一遍,任一失败 toast 列具体配件+原因,不发 POST。同步 Step5Summary 显示组合工艺名称(`compositeProcessService.list` + `defNameByCode` 映射,defCode → name)。
+
+---
+
+### [2026-05-14] 选配 P2 材质锁定路径修复 — 存量料号回源 mat_bom
+
+**触发**: 用户报选配抽屉 P1 选已有料号 `3120012574` 后,P2 材质页"无匹配材质",`/api/cpq/material-recipes` 接口不带料号参数。
+
+**根因**: V167 给 `mat_part` 加 `material_recipe_id` 时未给老料号 backfill(注释明确写"旧料号留 NULL");V6 导入存量料号的 `material_recipe_id IS NULL` → `search-parts` LEFT JOIN 后 `recipeCode=null` → 前端 `recipes.filter(r => r.code === null)` 空数组 → "无匹配材质"。
+
+**修复**: 新增端点 `GET /api/cpq/quotations/configure/existing-part/{hfPartNo}/material`,按 `mat_part.material_recipe_id` 分流:① 有值 → 字典派(JOIN material_recipe + element);② NULL → mat_bom 派(`SELECT element_name, composition_pct FROM mat_bom WHERE bom_type='ELEMENT'` 取最大 part_version 元素行,isLocked=true 强制只读)。前端 `Step2Material.tsx` matLocked 路径改走新端点,本地构造 detail 形态;UI 文案分支按 `recipeBound` 区分。
+
+---
+
+### [2026-05-14] V6 导入孤儿料号自动补建
+
+**触发**: Rockwell Excel "客户料号与宏丰料号的关系" sheet 列出 `hf_part_no=3120015211` 等多个料号但"单重" sheet 未列 → `StagingMerger.mergeMapping` 撞 `mat_customer_part_mapping_hf_part_no_fkey` FK。
+
+**修复**: `StagingMerger` 新增 `backfillOrphanParts(sessionId)` private method,在 `applyPartVersionDecisions` 入口先调一次:union 5 张 staging hf_part_no,过滤 `mat_part` 已存在 + 本次 `mat_part_staging`,孤儿用 `INSERT INTO mat_part (part_no) ... ON CONFLICT DO NOTHING RETURNING part_no` 补建(`unit_weight=NULL` 语义"未知",`status_code` 走 DEFAULT 'Y');INFO 日志列出补建料号。同时修复 `mergeStagingToMat` 中 `mergePart` 必须先于 `mergeMapping`(原顺序违反 FK)。
+
+---
+
 ### [2026-05-13] B2+C 前端: 工序管理页 (Tab 普通/组合) + 路由 + 菜单
 
 **实施**: ProcessManagement 页面 Tab 切换 CRUD，含两个 EditDrawer，路由和菜单注册。

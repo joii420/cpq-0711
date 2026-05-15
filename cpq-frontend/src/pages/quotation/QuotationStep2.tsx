@@ -152,12 +152,33 @@ export interface QuotationStep2Props {
 
 // ─── BASIC_DATA path 求值结果格式化 ─────────────────────────────────────────
 // 后端 FormulaEngine `{path}` 返回值可能是: number / string / boolean / null /
+// mat_fee.fee_type / mat_bom.bom_type 等 enum 值的中文标签
+// 与 V58_5__basic_data_seed.sql 配置的 sheet_name 对齐,用户视图侧统一显示中文
+const ENUM_LABEL: Record<string, string> = {
+  // mat_fee.fee_type (V58_5 line 51-89)
+  INCOMING_FIXED: '来料固定加工费',
+  INCOMING_OTHER: '来料其他费用',
+  FINISHED_FIXED: '成品固定加工费',
+  FINISHED_OTHER: '成品其他费用',
+  INCOMING_ANNUAL_DOWN: '来料年降',
+  ASSEMBLY_PROCESS: '组装加工费',
+  ASSEMBLY_ANNUAL_DOWN: '组装加工费年降',
+  ANNUAL_REDUCTION_FACTOR: '年降系数',
+  // mat_bom.bom_type
+  ELEMENT: '元素 BOM',
+  INCOMING: '来料 BOM',
+  ASSEMBLY: '组装 BOM',
+};
+
 // Map(单行多列) / List<Map>(多行)。BASIC_DATA 字段是单元格语义,这里把任意类型
 // 投影成显示字符串。null/empty → 返回 null(UI 显示 —);多值 → 第一个 + "(+N)"提示。
 function formatPathValue(v: any): string | null {
   if (v == null || v === '') return null;
   if (typeof v === 'number' || typeof v === 'boolean') return String(v);
-  if (typeof v === 'string') return v;
+  if (typeof v === 'string') {
+    // 已知 enum 值显示中文标签;陌生字符串原样返回
+    return ENUM_LABEL[v] ?? v;
+  }
   if (Array.isArray(v)) {
     if (v.length === 0) return null;
     const first = formatPathValue(v[0]);
@@ -520,7 +541,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     const customerPartNo = (item as any).customerPartNo;
     if (!customerId || !customerPartNo) return;
     let cancelled = false;
-    materialMappingService.match(customerId, customerPartNo)
+    // 用 cached 版本: 同 (customerId, partNo) 并发/重复调用复用 1 个 in-flight Promise → 1 次 HTTP
+    materialMappingService.matchCached(customerId, customerPartNo)
       .then((res: any) => {
         if (cancelled) return;
         const matched = res.data || res;
@@ -1308,54 +1330,16 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   const [mainTab, setMainTab] = useState<'quote' | 'costing' | 'comparison'>('quote');
   const [viewType, setViewType] = useState<'card' | 'excel'>('card');
   const [refreshing, setRefreshing] = useState(false);
-  const [autoPopulating, setAutoPopulating] = useState(false);
-  const autoPopulatedRef = useRef(false); // 防止 onAddBatch ref 变化导致 useEffect 重复执行
+  // autoPopulating state 保留 — UI(空状态文案、loading)仍在用,但实际触发已移除。
+  // 父组件 QuotationWizard 已接管 autoPopulate(L631-668),Step2 内的重复实现会导致
+  // 同 URL 含 ?autoPopulate=1 时 Wizard + Step2 各 fetch+append 一次,产生 2× 重复 lineItem,
+  // 落库后表现为每个料号在 quotation_line_item 表里有 2 条同 partNo 的记录(134ms 间隔)。
+  // 删除本 effect 后 autoPopulate 单一入口在 Wizard,不再双 append。
+  const [autoPopulating, _setAutoPopulating] = useState(false);
+  // 留个 setter 给可能的外部场景(目前未用); _setAutoPopulating 命名以表示有意未消费 var-warn
+  void _setAutoPopulating;
   const { user } = useAuthStore();
   const isSalesRep = user?.role === 'SALES_REP';
-
-  // 自动展开:URL 含 ?autoPopulate=1 + customerTemplateId 存在 + 当前 lineItems 为空 → 一次性导入该客户基础数据涉及的所有料号
-  // 该副作用只触发一次,完成后清掉 query 防止刷新页面重复执行
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const shouldAutoPopulate = params.get('autoPopulate') === '1';
-    if (!shouldAutoPopulate) return;
-    if (autoPopulatedRef.current) return; // 已执行过,不再触发(避免 onAddBatch ref 变化重复触发)
-    if (!customerId || !customerTemplateId || !onAddBatch) return;
-    if (lineItems.length > 0) return;
-    if (autoPopulating) return;
-    autoPopulatedRef.current = true;
-
-    const importRecordId = params.get('importRecordId') || undefined;
-    setAutoPopulating(true);
-    (async () => {
-      try {
-        const [candRes, tmplRes] = await Promise.all([
-          quotationService.listCustomerPartCandidates(customerId, importRecordId),
-          templateService.getById(customerTemplateId),
-        ]);
-        const partList: any[] = (candRes.data as any) || [];
-        const tmpl = tmplRes.data;
-        if (partList.length === 0) {
-          message.info('该客户暂无基础数据料号,请先导入或手工添加产品');
-          return;
-        }
-        // 复用 BulkImportPartsDrawer 的 helper 生成完整 componentData / 公式结构
-        const items = partList.map((p: any) => buildLineItemFromTemplate(tmpl, p));
-        onAddBatch(items);
-        message.success(`已基于模板「${tmpl.name}${tmpl.version ?? ''}」自动加入 ${items.length} 个产品`);
-      } catch (e: any) {
-        message.error(`自动展开失败:${e?.message ?? '未知错误'},请手动点「+ 添加产品」`);
-      } finally {
-        setAutoPopulating(false);
-        // 清掉 URL 参数,避免刷新页面重复触发
-        const url = new URL(window.location.href);
-        url.searchParams.delete('autoPopulate');
-        url.searchParams.delete('importRecordId');
-        window.history.replaceState({}, '', url.pathname + url.search);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerId, customerTemplateId, onAddBatch]);
 
   // BNF 路径异步求值缓存(Phase A4)— 公式含 path token 时,后端按 (partNo, path) 求值后写入模块级 cache
   // ProductCard 子组件中的 evaluateExpression 在不传 pathCache 时回退到模块级(setGlobalPathCache),
@@ -1374,7 +1358,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       setQuoteTemplateComponentIds(null);
       return;
     }
-    templateService.getById(customerTemplateId)
+    templateService.getByIdCached(customerTemplateId)
       .then((res: any) => {
         const tmpl = res.data;
         let snapshot: any[] = [];
@@ -1424,7 +1408,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       return;
     }
     setCostingTemplateLoading(true);
-    templateService.getById(costingCardTemplateId)
+    templateService.getByIdCached(costingCardTemplateId)
       .then((res: any) => {
         const tmpl = res.data;
         let snapshot: any[] = [];
@@ -1697,9 +1681,20 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
                   },
                   {
                     key: 'configure',
-                    label: '选配添加',
+                    // B.4: 模板未选时禁用 + tooltip 提示, 避免新建 line_item 缺 template_id
+                    // (后端有 quotation.customer_template_id 全局兜底, 但缺模板 = 卡片 / Excel 视图都无渲染源)
+                    label: customerTemplateId
+                      ? '选配添加'
+                      : <span title="请先回 Step1 选择报价模板">选配添加</span>,
                     icon: <SettingOutlined />,
-                    onClick: () => onAddConfigured?.(),
+                    disabled: !customerTemplateId,
+                    onClick: () => {
+                      if (!customerTemplateId) {
+                        message.warning('请先回 Step1 选择报价模板,选配产品才能正确渲染卡片');
+                        return;
+                      }
+                      onAddConfigured?.();
+                    },
                   },
                 ],
               }}

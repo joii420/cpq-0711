@@ -1,7 +1,17 @@
 # CPQ 报价系统 - 产品需求文档 (PRD)
 
-> **文档版本**: v2.0  
+> ⚠️ **本文档已废弃 (2026-05-13)**
+>
+> 当前活跃 PRD 已迁出至 **[`docs/PRD-v3.md`](./PRD-v3.md)**,本文档保留为**历史档案**,**不再维护**。
+>
+> 迁移原因与对照见 `docs/PRD-v3.md` 第 0.2 节「与旧 PRD 的关系」、第 9.7 节「v3.0 决策日志」。
+>
+> 本文档仍可作为**变更决策回溯**用途(v1.0~v2.8 共 80+ 条变更日志),但**任何与当前代码实现冲突的描述,以 `docs/PRD-v3.md` + 代码为准**。
+
+> **文档版本**: v2.8 (历史档案)  
 > **编写日期**: 2026-04-11  
+> **最后维护**: 2026-05-12  
+> **废弃日期**: 2026-05-13  
 > **项目代号**: CPQ (Configure, Price, Quote)  
 > **技术栈**: Node.js 24 + Java 17 + Quarkus 3.23.3 + PostgreSQL 16
 
@@ -152,6 +162,8 @@
 | v2.6 | 2026-04-27 | 新增模块十七：并发锁机制 | 产品级悲观锁（自适应粒度：料号级/客户级）+ DDL全局锁（单行UPSERT），双向互斥协议（HTTP 423），心跳续期30s，超时扫描60s定时任务，管理员强制释放API；V1无UI监控页面；对应v5.1第2项后端交付 |
 | v2.7 | 2026-04-28 | 模板产品分类接通字典 | 模板分类从硬编码（标准件/定制件/原材料）改为「产品分类管理」字典（product_category 表），前端模板编辑/列表/筛选改用 categoryId UUID FK；旧 category VARCHAR 字段保留向前兼容 |
 | v2.7 | 2026-04-28 | 撤销模板单PUBLISHED约束 | V62 DROP V28 引入的 partial unique index（uq_template_general_published / uq_template_customer_published），同 (customer_id, category_id) 允许多个 PUBLISHED 版本并存，回归 PRD L744 多版本设计；publish 不再自动归档旧版，由用户主动操作 |
+| v2.8 | 2026-05-12 | 基础数据导入向导改为 V6 staging 三步流程 | V5 六步向导废弃。新流程：上传文件 → 版本确认（合并 UI1/UI2/UI3）→ 创建报价单。引入 `import_session` + `mat_*_staging` 暂存表；写入事务延迟到「创建报价单」按下时；取消即清理 staging，正式表无副作用。NO_BUMP 语义改为"用 DB 现有版本数据"，「覆盖当前版本」语义彻底删除。设计稿：`docs/superpowers/specs/2026-05-12-import-v6-staging-design.md` |
+| v2.8 | 2026-05-12 | 草稿态版本切换补齐快照重算 | 后端 `PUT /quotations/{id}/line-items/{lid}/part-version` 端点扩展：除更新 part_version_locked 外，同步调 `SnapshotCollectorService.collect()` 重新生成 `excel_view_snapshot` 落库。前端 `PartVersionDrawer mode='select'` 切换后立即用返回 snapshot 更新卡片，公式重算 |
 
 ---
 

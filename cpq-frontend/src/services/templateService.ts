@@ -1,14 +1,73 @@
 import api from './api';
 
+/**
+ * 模块级 Template Promise-cache — 报价单页面 N 个产品卡片各自调 `getById(templateId)` 会爆 N 个
+ * 重复请求(常见 N=50~200)。这里把 in-flight Promise 缓存到模块作用域,N 个并发调用复用 1 个 Promise → 1 次 HTTP。
+ *
+ * 设计要点:
+ *  - 存 Promise 不是结果,这样**并发**场景第一个调用还没 resolve 时第二个调用就能复用同一 in-flight Promise
+ *  - 失败 Promise 自动从 cache 移除,允许下次重试(避免错误固化)
+ *  - mutation 方法(update/delete/publish/archive/createNewDraft) 调用后立即 evict 对应 id,避免读到脏数据
+ *  - 页面刷新自动清空(因为这是模块级 in-memory cache)
+ */
+const templatePromiseCache = new Map<string, Promise<any>>();
+
+function evictTemplateCache(id?: string) {
+  if (id) templatePromiseCache.delete(id);
+  else templatePromiseCache.clear();
+}
+
 export const templateService = {
   list: (params?: any) => api.get('/templates', { params }) as Promise<any>,
+
+  /** 原始 getById — 不走缓存。除非有特殊需求(强制刷新),否则**应该用 getByIdCached**。 */
   getById: (id: string) => api.get(`/templates/${id}`) as Promise<any>,
+
+  /**
+   * Promise-cached 版本 — 同 id 并发/重复调用复用 1 个 Promise → 1 次 HTTP。
+   * 适用所有"按 id 拉模板元数据"场景(报价单产品卡片、Excel 视图、enrich 等)。
+   */
+  getByIdCached: (id: string): Promise<any> => {
+    if (!id) return api.get(`/templates/${id}`) as Promise<any>;
+    const cached = templatePromiseCache.get(id);
+    if (cached) return cached;
+    const p = (api.get(`/templates/${id}`) as Promise<any>).catch((err) => {
+      templatePromiseCache.delete(id);
+      throw err;
+    });
+    templatePromiseCache.set(id, p);
+    return p;
+  },
+
+  /** 显式清缓存(测试或特殊刷新场景用)。 */
+  evictByIdCache: evictTemplateCache,
+
   create: (data: any) => api.post('/templates', data) as Promise<any>,
-  update: (id: string, data: any) => api.put(`/templates/${id}`, data) as Promise<any>,
-  delete: (id: string) => api.delete(`/templates/${id}`) as Promise<any>,
-  publish: (id: string, data?: any) => api.post(`/templates/${id}/publish`, data || {}) as Promise<any>,
-  archive: (id: string, force = false) => api.post(`/templates/${id}/archive?force=${force}`, {}) as Promise<any>,
-  createNewDraft: (id: string) => api.post(`/templates/${id}/new-draft`, {}) as Promise<any>,
+  update: (id: string, data: any) => {
+    const p = api.put(`/templates/${id}`, data) as Promise<any>;
+    p.finally(() => evictTemplateCache(id));
+    return p;
+  },
+  delete: (id: string) => {
+    const p = api.delete(`/templates/${id}`) as Promise<any>;
+    p.finally(() => evictTemplateCache(id));
+    return p;
+  },
+  publish: (id: string, data?: any) => {
+    const p = api.post(`/templates/${id}/publish`, data || {}) as Promise<any>;
+    p.finally(() => evictTemplateCache(id));
+    return p;
+  },
+  archive: (id: string, force = false) => {
+    const p = api.post(`/templates/${id}/archive?force=${force}`, {}) as Promise<any>;
+    p.finally(() => evictTemplateCache(id));
+    return p;
+  },
+  createNewDraft: (id: string) => {
+    const p = api.post(`/templates/${id}/new-draft`, {}) as Promise<any>;
+    p.finally(() => evictTemplateCache(id));
+    return p;
+  },
   getVersionHistory: (seriesId: string) => api.get(`/templates/series/${seriesId}/versions`) as Promise<any>,
   // components
   listComponents: (templateId: string) => api.get(`/templates/${templateId}/components`) as Promise<any>,

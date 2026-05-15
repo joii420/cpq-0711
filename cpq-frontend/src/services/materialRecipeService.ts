@@ -67,22 +67,22 @@ export interface MaterialRecipeUpsertRequest {
 export const materialRecipeService = {
   async list(): Promise<MaterialRecipeLite[]> {
     const res = await api.get('/material-recipes');
-    return (res as MaterialRecipeLite[]) ?? [];
+    return (res as unknown as MaterialRecipeLite[]) ?? [];
   },
 
   async detail(id: string): Promise<MaterialRecipeDetail> {
     const res = await api.get(`/material-recipes/${id}`);
-    return res as MaterialRecipeDetail;
+    return res as unknown as MaterialRecipeDetail;
   },
 
   async create(req: MaterialRecipeUpsertRequest): Promise<MaterialRecipeDetail> {
     const res = await api.post('/material-recipes', req);
-    return res as MaterialRecipeDetail;
+    return res as unknown as MaterialRecipeDetail;
   },
 
   async update(id: string, req: MaterialRecipeUpsertRequest): Promise<MaterialRecipeDetail> {
     const res = await api.put(`/material-recipes/${id}`, req);
-    return res as MaterialRecipeDetail;
+    return res as unknown as MaterialRecipeDetail;
   },
 
   async deleteSoft(id: string): Promise<void> {
@@ -93,6 +93,8 @@ export const materialRecipeService = {
     const res = await api.get(
       `/quotations/configure/existing-part/${encodeURIComponent(hfPartNo)}/material`,
     );
-    return res as ExistingPartMaterial;
+    // api interceptor 已在运行时 unwrap response.data,但 TS 类型仍是 AxiosResponse;
+    // 用 unknown 中转避开"AxiosResponse 缺少 ExistingPartMaterial 字段"的严格检查
+    return res as unknown as ExistingPartMaterial;
   },
 };

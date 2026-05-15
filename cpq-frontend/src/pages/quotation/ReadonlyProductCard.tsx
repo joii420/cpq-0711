@@ -151,7 +151,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
         return;
       }
       try {
-        const res = await templateService.getById(lineItem.templateId);
+        // 用 cached 版本: N 个 ReadonlyProductCard 共享 1 个 in-flight Promise → 1 次 HTTP
+        const res = await templateService.getByIdCached(lineItem.templateId);
         const snapshot: any[] = parseJson(res.data.componentsSnapshot, []);
 
         const enriched: ComponentDataItem[] = rawCompData.map((saved: any) => {

@@ -32,7 +32,8 @@ Templates and components use JSONB storage for flexible field/formula configurat
 
 ## Key Documents
 
-- `docs/PRD.md` - Full product requirements with data models, user scenarios, and project plan（功能交付的唯一标准）
+- `docs/PRD-v3.md` - Full product requirements with data models, user scenarios, and project plan（功能交付的唯一标准,2026-05-13 起活跃版本）
+- `docs/PRD.md` - 已废弃的历史 PRD (v1.0~v2.8),仅作变更决策回溯用途,**不再维护**
 - `docs/RECORD.md` - Development record for multi-agent shared memory（开始工作前必须先阅读此文件了解历史上下文）
 - `docs/反模式.md` - 反模式速查（PR 自检用，新增功能前必读）
 - `docs/列表操作规范.md` - 列表页面的工具栏动作规范（**所有列表页面必须按此规范实现**，详见下方"UI 交互规范"）
@@ -47,8 +48,9 @@ Templates and components use JSONB storage for flexible field/formula configurat
 All UI, prototypes, and PRD are in Chinese. Code artifacts (variables, APIs, comments) should use English.
 
 ## 开发规范
-- 当需求发生变更时，必须同步更新 PRD.md 的对应章节
-- 在 PRD.md 末尾的变更日志中记录所有调整
+- 当需求发生变更时，必须同步更新 PRD-v3.md 的对应章节
+- 在 PRD-v3.md 末尾或第 9 章演进史中记录所有调整
+- 不要再修改 PRD.md（已废弃归档）
 
 ## UI 交互规范
 - **统一使用抽屉（Drawer）替代弹窗（Modal）**：所有需要弹出式交互的场景（新建/编辑表单、详情查看、多步骤向导、批量导入、确认配置等）一律使用抽屉组件从屏幕右侧滑出，不再使用居中 Modal。
@@ -69,8 +71,8 @@ All UI, prototypes, and PRD are in Chinese. Code artifacts (variables, APIs, com
 
 ## 质量保证规范
 1. **严格单元测试**：每次编码完成后进行代码审核和单元自测，如果发现问题进行修复，然后重复进行代码审核和单元自测，直到完全符合要求为止
-2. **PRD 驱动交付**：严格按照 `docs/PRD.md` 文档内容进行功能交付，PRD 文档作为测试预期结果的唯一标准
-3. **需求变更沟通**：如果用户要求的修改内容与 PRD 文档中的预期不符，必须先与用户沟通确认修改方案，确认后将最终修改方案同步更新到 `docs/PRD.md` 中（含变更日志）
+2. **PRD 驱动交付**：严格按照 `docs/PRD-v3.md` 文档内容进行功能交付，PRD-v3.md 作为测试预期结果的唯一标准（旧 `docs/PRD.md` 已废弃归档，仅作变更决策回溯）
+3. **需求变更沟通**：如果用户要求的修改内容与 PRD-v3.md 中的预期不符，必须先与用户沟通确认修改方案，确认后将最终修改方案同步更新到 `docs/PRD-v3.md` 中（含演进史章节）
 4. **开发记录（多Agent共享记忆）**：
    - **开始工作前**：必须先阅读 `docs/RECORD.md` 了解历史开发上下文和已知问题
    - **完成工作后**：必须将本次开发的核心内容或修复的核心问题追加到 `docs/RECORD.md`

@@ -1,149 +1,222 @@
 
 <style>
 *{box-sizing:border-box;}
-.step-dot{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;flex-shrink:0;}
-.mat-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:7px;cursor:pointer;border:0.5px solid transparent;transition:background .12s,border .12s;}
+.panel{display:none;flex:1;overflow:hidden;flex-direction:column;}
+.panel.active{display:flex;}
+.type-card{border:0.5px solid #e0e0e0;border-radius:10px;padding:16px 18px;cursor:pointer;transition:border .15s,background .12s;flex:1;}
+.type-card:hover{border-color:#9fa8da;background:#fafafe;}
+.type-card.selected{border:1.5px solid #5c6bc0;background:#f0effe;}
+.pn-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:7px;cursor:pointer;border:0.5px solid #e8e8e8;margin-bottom:5px;transition:background .12s,border .15s;}
+.pn-row:hover{background:#f5f4ff;border-color:#c5cae9;}
+.pn-row.selected{background:#f0effe;border:1.5px solid #5c6bc0;}
+.pn-none{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:7px;cursor:pointer;border:1.5px dashed #c5cae9;margin-top:8px;color:#5c6bc0;font-size:12px;transition:background .12s;}
+.pn-none:hover{background:#f5f4ff;}
+.pn-none.selected{background:#f0effe;border-style:solid;}
+.mat-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:7px;cursor:pointer;border:0.5px solid transparent;transition:background .12s,border .15s;}
 .mat-row:hover{background:#f5f4ff;border-color:#c5cae9;}
 .mat-row.selected{background:#f0effe;border:1.5px solid #5c6bc0;}
-.type-badge{font-size:10px;padding:2px 7px;border-radius:4px;white-space:nowrap;flex-shrink:0;}
-.elem-row{display:grid;grid-template-columns:52px 1fr 120px;gap:8px;align-items:center;padding:7px 0;border-bottom:0.5px solid #f0f0f0;font-size:12px;}
+.elem-row{display:grid;grid-template-columns:56px 1fr 112px;gap:8px;align-items:center;padding:7px 0;border-bottom:0.5px solid #f0f0f0;font-size:12px;}
 .elem-row:last-child{border-bottom:none;}
-.editable-input{width:76px;border:0.5px solid #c5cae9;border-radius:5px;padding:4px 6px;font-size:12px;text-align:right;color:#333;outline:none;background:#fff;}
-.editable-input:focus{border-color:#5c6bc0;}
-.process-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border:0.5px solid #e8e8e8;border-radius:7px;font-size:12px;color:#333;cursor:pointer;margin-bottom:5px;transition:background .12s;}
-.process-item:hover{background:#f5f4ff;}
-.process-item.added{background:#f0effe;border-color:#9fa8da;}
-.added-row{display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f8f7ff;border-radius:7px;font-size:12px;color:#333;margin-bottom:5px;}
+.ei{width:72px;border:0.5px solid #c5cae9;border-radius:5px;padding:4px 6px;font-size:12px;text-align:right;color:#333;outline:none;background:#fff;}
+.ei:focus{border-color:#5c6bc0;}
+.proc-item{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border:0.5px solid #e8e8e8;border-radius:7px;font-size:12px;cursor:pointer;margin-bottom:4px;transition:background .12s;}
+.proc-item:hover{background:#f5f4ff;}
+.proc-item.added{background:#f0effe;border-color:#9fa8da;}
+.added-row{display:flex;align-items:center;gap:7px;padding:6px 9px;background:#f8f7ff;border-radius:7px;font-size:12px;margin-bottom:4px;}
+.badge{font-size:10px;padding:2px 7px;border-radius:4px;white-space:nowrap;flex-shrink:0;}
 .btn-primary{font-size:13px;border:none;border-radius:6px;padding:7px 22px;background:#5c6bc0;color:#fff;cursor:pointer;}
 .btn-secondary{font-size:13px;border:0.5px solid #bbb;border-radius:6px;padding:7px 22px;background:#fff;color:#555;cursor:pointer;}
 .btn-sm{font-size:11px;border:0.5px solid #9fa8da;border-radius:5px;padding:3px 9px;background:#fff;color:#5c6bc0;cursor:pointer;white-space:nowrap;}
 .btn-del{font-size:14px;border:none;background:none;color:#bbb;cursor:pointer;line-height:1;padding:0 2px;}
-.panel{display:none;flex:1;overflow:hidden;flex-direction:column;}
-.panel.active{display:flex;}
-.search-wrap{position:relative;}
-.search-wrap i{position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:13px;color:#bbb;}
-.search-wrap input{width:100%;padding:7px 10px 7px 28px;font-size:12px;border:0.5px solid #ddd;border-radius:6px;outline:none;color:#333;}
-.search-wrap input:focus{border-color:#5c6bc0;}
-.highlight{color:#5c6bc0;font-weight:600;}
-.empty-hint{text-align:center;padding:32px 0;color:#ccc;font-size:12px;}
+.hi{color:#5c6bc0;font-weight:600;}
+.empty{text-align:center;padding:22px 0;color:#ccc;font-size:12px;}
+.sum-sec{border:0.5px solid #e0e0e0;border-radius:10px;overflow:hidden;margin-bottom:11px;}
+.sum-hd{background:#f5f4ff;padding:8px 16px;font-size:12px;font-weight:500;color:#5c6bc0;}
+.sum-bd{padding:11px 16px;}
+.part-node{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;border:2px solid #e0e0e0;background:#fff;color:#bbb;flex-shrink:0;cursor:pointer;transition:all .2s;}
+.part-node.done{background:#5c6bc0;border-color:#5c6bc0;color:#fff;}
+.part-node.active{background:#fff;border-color:#5c6bc0;color:#5c6bc0;box-shadow:0 0 0 3px rgba(92,107,192,.15);}
+.sub-dot{width:7px;height:7px;border-radius:50%;background:#e0e0e0;}
+.sub-dot.done{background:#5c6bc0;}
+.sub-dot.active{background:#5c6bc0;box-shadow:0 0 0 2px rgba(92,107,192,.25);}
+
+/* combo process */
+.cproc-card{border:0.5px solid #e0e0e0;border-radius:9px;padding:12px 14px;cursor:pointer;margin-bottom:8px;transition:border .15s,background .12s;}
+.cproc-card:hover{border-color:#9fa8da;background:#fafafe;}
+.cproc-card.selected{border:1.5px solid #5c6bc0;background:#f0effe;}
+.part-chip{display:inline-flex;align-items:center;gap:4px;background:#e8eaf6;color:#5c6bc0;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:500;}
+.added-cproc{border:0.5px solid #c5cae9;border-radius:8px;padding:10px 14px;margin-bottom:8px;background:#f9f8ff;}
+.param-field label{display:block;font-size:11px;color:#888;margin-bottom:3px;}
+.param-field input,.param-field select{width:100%;padding:5px 8px;font-size:12px;border:0.5px solid #ddd;border-radius:5px;outline:none;color:#333;background:#fff;}
+.param-field input:focus,.param-field select:focus{border-color:#5c6bc0;}
 </style>
 
-<div style="position:relative;width:100%;min-height:640px;background:#f0f2f5;border-radius:var(--border-radius-lg);overflow:hidden;font-family:var(--font-sans);">
-
-  <!-- Page BG hint -->
-  <div style="padding:16px 24px;opacity:.4;">
+<div style="position:relative;width:100%;min-height:700px;background:#f0f2f5;border-radius:var(--border-radius-lg);overflow:hidden;font-family:var(--font-sans);">
+  <div style="padding:16px 24px;opacity:.3;">
     <div style="background:#fff;border-radius:6px;padding:10px 16px;">
-      <div style="font-size:12px;color:#5c6bc0;font-weight:500;margin-bottom:6px;">编辑报价单 QT-20260513-1424 · 草稿 — 步骤 2 / 5</div>
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;font-size:11px;color:#ccc;text-align:center;">
-        <span>来源</span><span>料号</span><span>物料名称</span><span>数量</span><span>单价</span>
-      </div>
+      <div style="font-size:12px;color:#5c6bc0;font-weight:500;margin-bottom:4px;">编辑报价单 QT-20260513-1424 · 草稿</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;font-size:11px;color:#ccc;text-align:center;"><span>来源</span><span>料号</span><span>物料名称</span><span>数量</span><span>单价</span></div>
     </div>
   </div>
 
-  <!-- DRAWER -->
-  <div id="drawer" style="position:absolute;top:0;right:0;width:640px;height:100%;background:#fff;border-left:0.5px solid #dde1e7;display:flex;flex-direction:column;box-shadow:-6px 0 20px rgba(0,0,0,0.09);">
+  <div id="drw" style="position:absolute;top:0;right:0;width:690px;height:100%;background:#fff;border-left:0.5px solid #dde1e7;display:flex;flex-direction:column;box-shadow:-6px 0 20px rgba(0,0,0,0.09);">
 
     <!-- Header -->
-    <div style="padding:14px 20px 0;border-bottom:0.5px solid #eee;flex-shrink:0;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+    <div style="padding:13px 20px 0;border-bottom:0.5px solid #eee;flex-shrink:0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
         <span style="font-size:15px;font-weight:500;color:#222;">添加产品 — 选配</span>
-        <button onclick="document.getElementById('drawer').style.display='none'" style="border:none;background:none;font-size:18px;color:#999;cursor:pointer;line-height:1;" aria-label="关闭">✕</button>
+        <button onclick="document.getElementById('drw').style.display='none'" style="border:none;background:none;font-size:18px;color:#999;cursor:pointer;">✕</button>
       </div>
-      <div id="stepBar" style="display:flex;align-items:center;margin-bottom:14px;font-size:12px;"></div>
+      <div id="globalBar" style="display:flex;align-items:center;margin-bottom:10px;font-size:11px;"></div>
     </div>
 
-    <!-- Content -->
+    <!-- Part progress (combo only) -->
+    <div id="partProgressWrap" style="display:none;background:#fafafa;border-bottom:0.5px solid #eee;padding:10px 20px 8px;flex-shrink:0;">
+      <div id="partProgressBar" style="display:flex;align-items:center;gap:0;margin-bottom:8px;"></div>
+      <div id="subStepBar" style="display:flex;align-items:center;gap:4px;font-size:11px;"></div>
+    </div>
+
     <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;">
 
-      <!-- STEP 1 材质选择 -->
-      <div id="panel1" class="panel active">
-        <!-- Top: search + list -->
-        <div style="display:flex;flex:1;overflow:hidden;">
-
-          <!-- Left: list -->
-          <div style="width:260px;border-right:0.5px solid #eee;display:flex;flex-direction:column;">
-            <div style="padding:12px 14px 8px;flex-shrink:0;">
-              <div style="font-size:12px;font-weight:500;color:#444;margin-bottom:8px;">材质库</div>
-              <div class="search-wrap">
-                <i class="ti ti-search" aria-hidden="true"></i>
-                <input type="text" id="matSearch" placeholder="输入材质名称或化学式…" oninput="filterMat(this.value)" />
-              </div>
-              <div id="matCount" style="font-size:11px;color:#aaa;margin-top:6px;">共 <span id="matCountNum">12</span> 种材质</div>
-            </div>
-            <div style="flex:1;overflow-y:auto;padding:0 10px 12px;" id="matList"></div>
+      <!-- P0: 产品类型 -->
+      <div id="p0" class="panel active" style="flex-direction:column;padding:22px 26px;overflow-y:auto;">
+        <div style="font-size:13px;font-weight:500;color:#333;margin-bottom:5px;">请选择产品类型</div>
+        <div style="font-size:12px;color:#888;margin-bottom:18px;">选择后决定本次选配的配置方式</div>
+        <div style="display:flex;gap:14px;margin-bottom:16px;">
+          <div class="type-card selected" id="tc_single" onclick="selectType('single')">
+            <div style="font-size:26px;margin-bottom:8px;">🔩</div>
+            <div style="font-size:13px;font-weight:500;color:#222;margin-bottom:4px;">独立产品</div>
+            <div style="font-size:12px;color:#888;line-height:1.6;">单一零件，完成料号 → 材质 → 工序选配</div>
           </div>
-
-          <!-- Right: element detail -->
-          <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
-            <div id="elemPanel" style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding:14px 16px;">
-              <div id="noSelHint" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#ccc;font-size:12px;">
-                <i class="ti ti-arrow-left" style="font-size:24px;margin-bottom:8px;" aria-hidden="true"></i>
-                从左侧选择材质查看成分
-              </div>
-              <div id="elemDetail" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-shrink:0;">
-                  <div>
-                    <div style="font-size:14px;font-weight:500;color:#222;" id="elemTitle"></div>
-                    <div style="font-size:11px;color:#888;margin-top:2px;" id="elemSubtitle"></div>
-                  </div>
-                  <span id="elemBadge" class="type-badge"></span>
-                </div>
-                <div style="font-size:11px;color:#aaa;margin-bottom:8px;flex-shrink:0;" id="elemNote"></div>
-                <div style="flex:1;overflow-y:auto;background:#fafafa;border-radius:8px;border:0.5px solid #eee;padding:8px 14px;" id="elemRows"></div>
-                <div id="sumWrap" style="margin-top:8px;padding:6px 14px;background:#fff8e1;border-radius:6px;font-size:11px;color:#f57f17;display:none;flex-shrink:0;">
-                  <i class="ti ti-alert-triangle" style="font-size:12px;vertical-align:-1px;margin-right:4px;" aria-hidden="true"></i>
-                  <span id="sumTip"></span>
-                </div>
-              </div>
-            </div>
+          <div class="type-card" id="tc_combo" onclick="selectType('combo')">
+            <div style="font-size:26px;margin-bottom:8px;">🔧</div>
+            <div style="font-size:13px;font-weight:500;color:#222;margin-bottom:4px;">组合产品</div>
+            <div style="font-size:12px;color:#888;line-height:1.6;">多配件各自选配，再进行组合工艺（如铆接、焊接）</div>
+          </div>
+        </div>
+        <div id="comboCountWrap" style="display:none;background:#fafafe;border:0.5px solid #e8eaf6;border-radius:9px;padding:14px 16px;">
+          <div style="font-size:12px;font-weight:500;color:#5c6bc0;margin-bottom:10px;">配件数量</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <button onclick="changePartCount(-1)" style="width:28px;height:28px;border-radius:50%;border:0.5px solid #c5cae9;background:#fff;color:#5c6bc0;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;">−</button>
+            <span id="partCountDisplay" style="font-size:14px;font-weight:500;color:#333;width:20px;text-align:center;">2</span>
+            <button onclick="changePartCount(1)" style="width:28px;height:28px;border-radius:50%;border:0.5px solid #c5cae9;background:#fff;color:#5c6bc0;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;">+</button>
+            <span style="font-size:12px;color:#aaa;">个配件（最少 2 个）</span>
           </div>
         </div>
       </div>
 
-      <!-- STEP 2 工序选择 -->
-      <div id="panel2" class="panel" style="flex-direction:row;">
-        <div style="width:260px;border-right:0.5px solid #eee;display:flex;flex-direction:column;">
-          <div style="padding:12px 14px 8px;flex-shrink:0;">
-            <div style="font-size:12px;font-weight:500;color:#444;margin-bottom:8px;">工序库</div>
-            <div class="search-wrap">
-              <i class="ti ti-search" aria-hidden="true"></i>
-              <input type="text" placeholder="搜索工序…" oninput="filterProc(this.value)" />
+      <!-- P1: 料号 -->
+      <div id="p1" class="panel" style="flex-direction:column;overflow:hidden;">
+        <div style="padding:10px 20px 8px;flex-shrink:0;">
+          <div style="position:relative;">
+            <i class="ti ti-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:#bbb;" aria-hidden="true"></i>
+            <input id="mainSearch" type="text" placeholder="输入料号、材质、规格或尺寸…"
+              style="width:100%;padding:10px 14px 10px 36px;font-size:13px;border:0.5px solid #ddd;border-radius:8px;outline:none;color:#333;"
+              oninput="doSearch(this.value)" onfocus="this.style.borderColor='#5c6bc0'" onblur="this.style.borderColor='#ddd'"/>
+          </div>
+          <div style="font-size:11px;color:#aaa;margin-top:5px;">匹配 <span id="matchCnt" style="color:#5c6bc0;font-weight:500;">—</span> 条结果</div>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:0 20px 14px;" id="pnResults">
+          <div class="empty"><i class="ti ti-search" style="font-size:26px;display:block;margin-bottom:8px;" aria-hidden="true"></i>输入关键词开始搜索</div>
+        </div>
+      </div>
+
+      <!-- P2: 材质 -->
+      <div id="p2" class="panel" style="flex-direction:row;overflow:hidden;">
+        <div style="width:228px;border-right:0.5px solid #eee;display:flex;flex-direction:column;">
+          <div style="padding:10px 14px 8px;flex-shrink:0;">
+            <div style="font-size:12px;font-weight:500;color:#444;margin-bottom:6px;">材质</div>
+            <div id="matSearchWrap" style="position:relative;">
+              <i class="ti ti-search" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:13px;color:#bbb;" aria-hidden="true"></i>
+              <input type="text" id="matSearch" placeholder="化学式 / 名称…" oninput="filterMat(this.value)"
+                style="width:100%;padding:7px 10px 7px 28px;font-size:12px;border:0.5px solid #ddd;border-radius:6px;outline:none;color:#333;"/>
+            </div>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:0 10px 12px;" id="matList"></div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding:12px 16px;">
+          <div id="noMatSel" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#ccc;font-size:12px;">
+            <i class="ti ti-arrow-left" style="font-size:24px;margin-bottom:7px;" aria-hidden="true"></i>从左侧选择材质
+          </div>
+          <div id="elemDetail" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;flex-shrink:0;">
+              <div><div style="font-size:13px;font-weight:500;color:#222;" id="eTitle"></div><div style="font-size:11px;color:#888;margin-top:1px;" id="eSub"></div></div>
+              <span id="eBadge" class="badge"></span>
+            </div>
+            <div id="eLockBanner" style="background:#fff3e0;color:#e65100;border-radius:7px;padding:7px 12px;font-size:11px;display:none;align-items:center;gap:6px;margin-bottom:8px;flex-shrink:0;">
+              <i class="ti ti-lock" style="font-size:13px;" aria-hidden="true"></i>料号已绑定该材质，元素含量锁定
+            </div>
+            <div id="eNote" style="font-size:11px;color:#aaa;margin-bottom:8px;flex-shrink:0;"></div>
+            <div style="flex:1;overflow-y:auto;background:#fafafa;border-radius:8px;border:0.5px solid #eee;padding:8px 14px;" id="eRows"></div>
+            <div id="sumWrap" style="margin-top:7px;padding:6px 12px;border-radius:6px;font-size:11px;display:none;flex-shrink:0;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- P3: 工序 -->
+      <div id="p3" class="panel" style="flex-direction:row;">
+        <div style="width:228px;border-right:0.5px solid #eee;display:flex;flex-direction:column;">
+          <div style="padding:10px 14px 8px;flex-shrink:0;">
+            <div style="font-size:12px;font-weight:500;color:#444;margin-bottom:6px;">工序库</div>
+            <div style="position:relative;">
+              <i class="ti ti-search" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:13px;color:#bbb;" aria-hidden="true"></i>
+              <input type="text" placeholder="搜索工序…" oninput="filterProc(this.value)"
+                style="width:100%;padding:7px 10px 7px 28px;font-size:12px;border:0.5px solid #ddd;border-radius:6px;outline:none;color:#333;"/>
             </div>
           </div>
           <div style="flex:1;overflow-y:auto;padding:0 14px 12px;" id="procList"></div>
         </div>
         <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
-          <div style="padding:12px 16px 8px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;">
-            <div style="font-size:12px;font-weight:500;color:#444;">已选工序 <span id="procCount" style="background:#e8eaf6;color:#5c6bc0;font-size:11px;padding:1px 7px;border-radius:10px;margin-left:4px;">0</span></div>
-            <span style="font-size:11px;color:#aaa;">按添加顺序排列</span>
+          <div style="padding:10px 16px 8px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;">
+            <div style="font-size:12px;font-weight:500;color:#444;">已选工序 <span id="procCnt" style="background:#e8eaf6;color:#5c6bc0;font-size:11px;padding:1px 7px;border-radius:10px;margin-left:4px;">0</span></div>
+            <span style="font-size:11px;color:#aaa;">按添加顺序</span>
           </div>
           <div style="flex:1;overflow-y:auto;padding:0 16px 12px;" id="addedProcs"></div>
         </div>
       </div>
 
-      <!-- STEP 3 确认 -->
-      <div id="panel3" class="panel" style="flex-direction:column;overflow-y:auto;padding:24px 28px;">
-        <div style="width:52px;height:52px;border-radius:50%;background:#e8f5e9;display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 12px;">✅</div>
-        <div style="text-align:center;font-size:15px;font-weight:500;color:#333;margin-bottom:4px;">选配完成</div>
-        <div style="text-align:center;font-size:12px;color:#888;margin-bottom:20px;">确认以下信息后点击「确认添加」</div>
-        <div style="border:0.5px solid #e0e0e0;border-radius:10px;overflow:hidden;margin-bottom:14px;">
-          <div style="background:#f5f4ff;padding:9px 16px;font-size:12px;font-weight:500;color:#5c6bc0;"><i class="ti ti-box" aria-hidden="true"></i> 材质信息</div>
-          <div style="padding:12px 16px;" id="sum1"></div>
+      <!-- P4: 组合工艺 (combo only) -->
+      <div id="p4" class="panel" style="flex-direction:row;overflow:hidden;">
+        <!-- Left: combo process library -->
+        <div style="width:228px;border-right:0.5px solid #eee;display:flex;flex-direction:column;">
+          <div style="padding:10px 14px 8px;flex-shrink:0;">
+            <div style="font-size:12px;font-weight:500;color:#444;margin-bottom:3px;">组合工艺库</div>
+            <div style="font-size:11px;color:#aaa;margin-bottom:7px;">涉及多配件的连接工艺</div>
+            <div style="position:relative;">
+              <i class="ti ti-search" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:13px;color:#bbb;" aria-hidden="true"></i>
+              <input type="text" placeholder="搜索工艺…" oninput="filterCProc(this.value)"
+                style="width:100%;padding:7px 10px 7px 28px;font-size:12px;border:0.5px solid #ddd;border-radius:6px;outline:none;color:#333;"/>
+            </div>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:0 12px 12px;" id="cprocList"></div>
         </div>
-        <div style="border:0.5px solid #e0e0e0;border-radius:10px;overflow:hidden;">
-          <div style="background:#f5f4ff;padding:9px 16px;font-size:12px;font-weight:500;color:#5c6bc0;"><i class="ti ti-list-check" aria-hidden="true"></i> 工序列表</div>
-          <div style="padding:12px 16px;" id="sum2"></div>
+        <!-- Right: added combo processes -->
+        <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+          <div style="padding:10px 16px 8px;flex-shrink:0;">
+            <div style="font-size:12px;font-weight:500;color:#444;margin-bottom:2px;">已选组合工艺 <span id="cprocCnt" style="background:#e8eaf6;color:#5c6bc0;font-size:11px;padding:1px 7px;border-radius:10px;margin-left:4px;">0</span></div>
+            <div style="font-size:11px;color:#aaa;">每项工艺需指定参与配件</div>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:0 16px 12px;" id="addedCProcs"></div>
         </div>
       </div>
 
+      <!-- P5: 完成 -->
+      <div id="p5" class="panel" style="flex-direction:column;overflow-y:auto;padding:20px 24px;">
+        <div style="width:52px;height:52px;border-radius:50%;background:#e8f5e9;display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 10px;">✅</div>
+        <div style="text-align:center;font-size:15px;font-weight:500;color:#333;margin-bottom:3px;">选配完成</div>
+        <div style="text-align:center;font-size:12px;color:#888;margin-bottom:16px;">请核对以下信息，确认后点击「确认添加」</div>
+        <div class="sum-sec"><div class="sum-hd">产品类型</div><div class="sum-bd" id="s0"></div></div>
+        <div class="sum-sec"><div class="sum-hd">配件明细</div><div class="sum-bd" id="s1"></div></div>
+        <div id="s_combo_wrap" class="sum-sec" style="display:none;"><div class="sum-hd">组合工艺</div><div class="sum-bd" id="s2"></div></div>
+      </div>
     </div>
 
     <!-- Footer -->
-    <div style="padding:11px 20px;border-top:0.5px solid #eee;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
-      <div style="font-size:11px;color:#aaa;" id="footHint"></div>
-      <div style="display:flex;gap:8px;">
+    <div style="padding:10px 20px;border-top:0.5px solid #eee;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+      <div style="font-size:11px;color:#aaa;flex:1;min-width:0;padding-right:12px;line-height:1.4;" id="footHint"></div>
+      <div style="display:flex;gap:8px;flex-shrink:0;">
         <button class="btn-secondary" id="btnBack" style="display:none;" onclick="goBack()">上一步</button>
-        <button class="btn-secondary" onclick="document.getElementById('drawer').style.display='none'">取消</button>
+        <button class="btn-secondary" onclick="document.getElementById('drw').style.display='none'">取消</button>
         <button class="btn-primary" id="btnNext" onclick="goNext()">下一步</button>
       </div>
     </div>
@@ -151,248 +224,428 @@
 </div>
 
 <script>
-const mats = [
+// ── DATA ──
+const allPNs=[
+  {pn:'4NEG5300001',mat:'AgCu',matId:'AgCu85',matName:'银铜合金',spec:'触点',dim:'5×3×1.5mm',tol:'±0.05',stock:320,status:'在产'},
+  {pn:'4NEG5300002',mat:'AgCu',matId:'AgCu85',matName:'银铜合金',spec:'触点',dim:'6×4×2.0mm',tol:'±0.05',stock:150,status:'在产'},
+  {pn:'4NEG5300003',mat:'AgCu',matId:'AgCu85',matName:'银铜合金',spec:'铆钉',dim:'φ4×3mm',tol:'±0.10',stock:0,status:'停产'},
+  {pn:'4NEG5301001',mat:'AgNi',matId:'AgNi90',matName:'银镍合金',spec:'触点',dim:'5×3×1.5mm',tol:'±0.05',stock:200,status:'在产'},
+  {pn:'4NEG5301002',mat:'AgNi',matId:'AgNi90',matName:'银镍合金',spec:'镶嵌件',dim:'3×2×1mm',tol:'±0.05',stock:60,status:'在产'},
+  {pn:'4NEG5302001',mat:'AgSnO₂',matId:'AgSnO2',matName:'银氧化锡',spec:'触点',dim:'5×3×1.5mm',tol:'±0.05',stock:400,status:'在产'},
+  {pn:'4NEG5302002',mat:'AgSnO₂',matId:'AgSnO2',matName:'银氧化锡',spec:'铆钉',dim:'φ5×4mm',tol:'±0.10',stock:200,status:'在产'},
+  {pn:'4NEG5304101',mat:'AgW',matId:'AgW72',matName:'银钨合金',spec:'触点',dim:'6×4×2.5mm',tol:'±0.05',stock:120,status:'在产'},
+  {pn:'4NEG5305001',mat:'CuCr',matId:'CuCr',matName:'铜铬合金',spec:'触点',dim:'5×3×1.5mm',tol:'±0.10',stock:180,status:'在产'},
+];
+const mats=[
   {id:'AgCu85',sym:'AgCu',name:'银铜合金',spec:'85/15',type:'locked',elems:[{s:'Ag',n:'银',v:85},{s:'Cu',n:'铜',v:15}]},
-  {id:'AgCu90',sym:'AgCu',name:'银铜合金',spec:'90/10',type:'locked',elems:[{s:'Ag',n:'银',v:90},{s:'Cu',n:'铜',v:10}]},
   {id:'AgNi90',sym:'AgNi',name:'银镍合金',spec:'90/10',type:'editable',elems:[{s:'Ag',n:'银',v:90,min:85,max:95},{s:'Ni',n:'镍',v:10,min:5,max:15}]},
-  {id:'AgNi95',sym:'AgNi',name:'银镍合金',spec:'95/5',type:'editable',elems:[{s:'Ag',n:'银',v:95,min:90,max:99},{s:'Ni',n:'镍',v:5,min:1,max:10}]},
   {id:'AgSnO2',sym:'AgSnO₂',name:'银氧化锡',spec:'88/12',type:'partial',elems:[{s:'Ag',n:'银',v:88},{s:'SnO₂',n:'氧化锡',v:12,min:8,max:16},{s:'In₂O₃',n:'氧化铟',v:0.5,min:0,max:1.5}]},
-  {id:'AgSnO2b',sym:'AgSnO₂',name:'银氧化锡',spec:'85/15',type:'partial',elems:[{s:'Ag',n:'银',v:85},{s:'SnO₂',n:'氧化锡',v:15,min:10,max:18}]},
-  {id:'AgCdO',sym:'AgCdO',name:'银氧化镉',spec:'85/15',type:'locked',elems:[{s:'Ag',n:'银',v:85},{s:'CdO',n:'氧化镉',v:15}]},
-  {id:'AgW60',sym:'AgW',name:'银钨合金',spec:'60/40',type:'editable',elems:[{s:'Ag',n:'银',v:60,min:40,max:80},{s:'W',n:'钨',v:40,min:20,max:60}]},
   {id:'AgW72',sym:'AgW',name:'银钨合金',spec:'72/28',type:'editable',elems:[{s:'Ag',n:'银',v:72,min:60,max:80},{s:'W',n:'钨',v:28,min:20,max:40}]},
   {id:'CuCr',sym:'CuCr',name:'铜铬合金',spec:'99/1',type:'partial',elems:[{s:'Cu',n:'铜',v:99},{s:'Cr',n:'铬',v:0.8,min:0.3,max:1.5},{s:'Zr',n:'锆',v:0.2,min:0,max:0.5}]},
   {id:'AgPd',sym:'AgPd',name:'银钯合金',spec:'70/30',type:'locked',elems:[{s:'Ag',n:'银',v:70},{s:'Pd',n:'钯',v:30}]},
-  {id:'AuAg',sym:'AuAg',name:'金银合金',spec:'75/25',type:'locked',elems:[{s:'Au',n:'金',v:75},{s:'Ag',n:'银',v:25}]},
 ];
-
-const procs = [
-  {id:'p1',name:'冲压成型',cat:'成型',time:'2h'},
-  {id:'p2',name:'粉末冶金烧结',cat:'烧结',time:'6h'},
-  {id:'p3',name:'表面镀银',cat:'表面处理',time:'1.5h'},
-  {id:'p4',name:'激光切割',cat:'加工',time:'1h'},
-  {id:'p5',name:'超声波焊接',cat:'连接',time:'0.5h'},
-  {id:'p6',name:'热处理退火',cat:'热处理',time:'3h'},
-  {id:'p7',name:'精密研磨',cat:'精加工',time:'2h'},
-  {id:'p8',name:'质量检测',cat:'检验',time:'1h'},
+const allProcs=[
+  {id:'p1',name:'冲压成型',cat:'成型',time:'2h'},{id:'p2',name:'粉末冶金烧结',cat:'烧结',time:'6h'},
+  {id:'p3',name:'表面镀银',cat:'表面处理',time:'1.5h'},{id:'p4',name:'激光切割',cat:'加工',time:'1h'},
+  {id:'p5',name:'超声波焊接',cat:'连接',time:'0.5h'},{id:'p6',name:'热处理退火',cat:'热处理',time:'3h'},
+  {id:'p7',name:'精密研磨',cat:'精加工',time:'2h'},{id:'p8',name:'质量检测',cat:'检验',time:'1h'},
   {id:'p9',name:'包装入库',cat:'包装',time:'0.5h'},
 ];
-
-let step = 1;
-let selMat = null;
-let elemVals = {};
-let addedProcs = [];
-
-const typeInfo = {
-  locked:  {label:'标准锁定', bg:'#fce4ec', color:'#c62828', note:'该材质为标准配方，元素含量已锁定'},
-  editable:{label:'含量可调', bg:'#e8f5e9', color:'#2e7d32', note:'所有元素含量均可在范围内调整'},
-  partial: {label:'部分可调', bg:'#fff8e1', color:'#f57f17', note:'绿色字段可调，灰色字段已锁定'},
+// 组合工艺库 — 需要两个或多个配件参与
+const comboProcs=[
+  {id:'cp1',name:'铆接',icon:'🔩',desc:'将两个配件通过铆钉压接固定',params:[{id:'pressure',label:'铆接压力 (kN)',type:'number',placeholder:'如 5.0'},{id:'height',label:'铆钉高度 (mm)',type:'number',placeholder:'如 3.2'}]},
+  {id:'cp2',name:'电阻焊',icon:'⚡',desc:'通过电阻加热实现配件熔合',params:[{id:'current',label:'焊接电流 (kA)',type:'number',placeholder:'如 8.0'},{id:'time',label:'焊接时间 (ms)',type:'number',placeholder:'如 80'}]},
+  {id:'cp3',name:'激光焊',icon:'🔆',desc:'使用激光束对配件进行精密焊接',params:[{id:'power',label:'激光功率 (W)',type:'number',placeholder:'如 200'},{id:'speed',label:'焊接速度 (mm/s)',type:'number',placeholder:'如 50'}]},
+  {id:'cp4',name:'钎焊',icon:'🔥',desc:'使用钎料在低于母材熔点下连接配件',params:[{id:'temp',label:'钎焊温度 (°C)',type:'number',placeholder:'如 650'},{id:'material',label:'钎料材质',type:'text',placeholder:'如 银基钎料'}]},
+  {id:'cp5',name:'超声波焊接',icon:'〰️',desc:'利用超声波振动将配件熔合',params:[{id:'amplitude',label:'振幅 (μm)',type:'number',placeholder:'如 30'},{id:'weld_time',label:'焊接时间 (ms)',type:'number',placeholder:'如 500'}]},
+  {id:'cp6',name:'压配合',icon:'🗜️',desc:'通过过盈配合将配件压入固定',params:[{id:'force',label:'压入力 (kN)',type:'number',placeholder:'如 12'},{id:'fit',label:'配合公差',type:'text',placeholder:'如 H7/r6'}]},
+];
+const typeInfo={
+  locked:{label:'标准锁定',bg:'#fce4ec',color:'#c62828',note:'标准配方，元素含量已锁定'},
+  editable:{label:'含量可调',bg:'#e8f5e9',color:'#2e7d32',note:'所有元素含量均可在范围内调整'},
+  partial:{label:'部分可调',bg:'#fff8e1',color:'#f57f17',note:'绿色字段可调，灰色字段锁定'},
 };
 
-function hi(str, q){
-  if(!q) return str;
-  const re = new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
-  return str.replace(re,'<span class="highlight">$1</span>');
-}
+// ── STATE ──
+let productType='single';
+let initPartCount=2;
+let parts=[];   // [{name,pn,useNone,mat,elemVals,matLocked,procs:[]}]
+let ci=0;       // current part index
+let globalStep=0; // 0=type,1=partConfig,2=comboProc(combo only),3=done
+let subStep=0;    // 0=pn,1=mat,2=proc (within partConfig)
+// combo processes added
+let addedCProcs=[]; // [{cprocId, parts:[0,1], params:{}}]
+// working per-part state
+let wMat=null,wElem={},wMatLocked=false,wProcs=[];
 
-function filterMat(q){
-  const kw = q.trim().toLowerCase();
-  const filtered = mats.filter(m=>
-    !kw ||
-    m.sym.toLowerCase().includes(kw) ||
-    m.name.includes(kw) ||
-    m.spec.includes(kw)
-  );
-  document.getElementById('matCountNum').textContent = filtered.length;
-  renderMatList(filtered, kw);
-}
+function newPart(name){return {name,pn:null,useNone:false,mat:null,elemVals:{},matLocked:false,procs:[]};}
 
-function renderMatList(list, q=''){
-  const el = document.getElementById('matList');
-  if(!list.length){
-    el.innerHTML = `<div class="empty-hint"><i class="ti ti-mood-empty" style="font-size:24px;display:block;margin-bottom:6px;" aria-hidden="true"></i>未找到匹配材质</div>`;
-    return;
-  }
-  el.innerHTML = list.map(m=>{
-    const ti = typeInfo[m.type];
-    const isSel = selMat && selMat.id===m.id;
-    return `<div class="mat-row ${isSel?'selected':''}" onclick="selectMat('${m.id}')">
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:12px;font-weight:500;color:#222;margin-bottom:1px;">${hi(m.sym,q)} <span style="font-weight:400;color:#888;font-size:11px;">${hi(m.name,q)}</span></div>
-        <div style="font-size:11px;color:#aaa;">${hi(m.spec,q)}</div>
-      </div>
-      <span class="type-badge" style="background:${ti.bg};color:${ti.color};">${ti.label}</span>
-    </div>`;
-  }).join('');
-}
+// ── HELPERS ──
+function hi(str,q){if(!q||!str)return String(str||'');return String(str).replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<span class="hi">$1</span>');}
+function showPanel(id){['p0','p1','p2','p3','p4','p5'].forEach(p=>{document.getElementById(p).classList.toggle('active',p===id);});}
 
-function selectMat(id){
-  selMat = mats.find(m=>m.id===id);
-  elemVals = {};
-  selMat.elems.forEach(e=>{ elemVals[e.s]=e.v; });
-  const kw = document.getElementById('matSearch').value.trim().toLowerCase();
-  const filtered = mats.filter(m=>!kw||m.sym.toLowerCase().includes(kw)||m.name.includes(kw)||m.spec.includes(kw));
-  renderMatList(filtered, kw);
-  renderElemDetail();
-}
+function saveWS(){const p=parts[ci];p.mat=wMat;p.elemVals=Object.assign({},wElem);p.matLocked=wMatLocked;p.procs=wProcs.slice();}
+function loadWS(){const p=parts[ci];wMat=p.mat;wElem=Object.assign({},p.elemVals);wMatLocked=p.matLocked;wProcs=p.procs.slice();if(wMat&&!Object.keys(wElem).length)wMat.elems.forEach(e=>{wElem[e.s]=e.v;});}
 
-function renderElemDetail(){
-  if(!selMat){ document.getElementById('noSelHint').style.display='flex'; document.getElementById('elemDetail').style.display='none'; return; }
-  document.getElementById('noSelHint').style.display='none';
-  const d = document.getElementById('elemDetail');
-  d.style.display='flex';
-  const ti = typeInfo[selMat.type];
-  document.getElementById('elemTitle').textContent = selMat.sym + ' ' + selMat.name;
-  document.getElementById('elemSubtitle').textContent = '配比 ' + selMat.spec;
-  const badge = document.getElementById('elemBadge');
-  badge.textContent = ti.label;
-  badge.style.background = ti.bg;
-  badge.style.color = ti.color;
-  document.getElementById('elemNote').innerHTML = `<i class="ti ti-info-circle" style="font-size:12px;vertical-align:-1px;margin-right:3px;" aria-hidden="true"></i>${ti.note}`;
-  renderElemRows();
+// ── TYPE ──
+function selectType(t){
+  productType=t;
+  document.getElementById('tc_single').classList.toggle('selected',t==='single');
+  document.getElementById('tc_combo').classList.toggle('selected',t==='combo');
+  document.getElementById('comboCountWrap').style.display=t==='combo'?'block':'none';
 }
+function changePartCount(d){initPartCount=Math.max(2,Math.min(8,initPartCount+d));document.getElementById('partCountDisplay').textContent=initPartCount;}
 
-function renderElemRows(){
-  const rows = selMat.elems.map(e=>{
-    const canEdit = (selMat.type==='editable')||(selMat.type==='partial'&&e.min!==undefined);
-    const valDisp = elemVals[e.s]??e.v;
-    const input = canEdit
-      ? `<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;">
-           <input class="editable-input" type="number" min="${e.min}" max="${e.max}" step="0.1" value="${valDisp}" 
-             onchange="setElem('${e.s}',this.value)" />
-           <span style="font-size:11px;color:#888;width:12px;">%</span>
-         </div>`
-      : `<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;font-size:12px;color:#999;">
-           ${valDisp}%&nbsp;<i class="ti ti-lock" style="font-size:11px;" aria-hidden="true"></i>
-         </div>`;
-    const rangeHint = canEdit ? `<span style="font-size:10px;color:#bbb;margin-left:4px;">${e.min}–${e.max}</span>` : '';
-    return `<div class="elem-row">
-      <span style="display:inline-flex;align-items:center;gap:3px;background:#e8eaf6;color:#5c6bc0;font-size:11px;padding:2px 7px;border-radius:4px;font-weight:600;">${e.s}</span>
-      <span style="color:#555;font-size:12px;">${e.n}${rangeHint}</span>
-      ${input}
-    </div>`;
-  }).join('');
-  document.getElementById('elemRows').innerHTML = rows;
-  checkSum();
-}
-
-function setElem(sym, val){
-  elemVals[sym] = parseFloat(val)||0;
-  checkSum();
-}
-
-function checkSum(){
-  if(!selMat) return;
-  const editableElems = selMat.elems.filter(e=>(selMat.type==='editable')||(selMat.type==='partial'&&e.min!==undefined));
-  if(!editableElems.length){ document.getElementById('sumWrap').style.display='none'; return; }
-  const total = selMat.elems.reduce((a,e)=>a+(parseFloat(elemVals[e.s])||0),0);
-  const wrap = document.getElementById('sumWrap');
-  const tip = document.getElementById('sumTip');
-  const diff = Math.abs(total-100);
-  if(diff>0.01){
-    wrap.style.display='block';
-    wrap.style.background= diff>5?'#fce4ec':'#fff8e1';
-    wrap.style.color= diff>5?'#c62828':'#f57f17';
-    tip.textContent = `当前各元素含量之和为 ${total.toFixed(1)}%，建议调整至 100%`;
+// ── GLOBAL BAR ──
+function renderGlobalBar(){
+  const labels=productType==='combo'
+    ?['产品类型',`配件选配 ×${parts.length}`,'组合工艺','完成选配']
+    :['产品类型','料号匹配','材质选配','工序选择','完成选配'];
+  let activeIdx;
+  if(productType==='combo'){
+    activeIdx=globalStep===0?0:globalStep===1?1:globalStep===2?2:3;
   } else {
-    wrap.style.background='#e8f5e9'; wrap.style.color='#2e7d32';
-    tip.textContent='✓ 各元素含量之和为 100%，配比正确';
-    wrap.style.display='block';
+    // single: 0→0, subStep maps to 1/2/3, done→4
+    activeIdx=globalStep===0?0:globalStep===3?4:subStep+1;
   }
+  document.getElementById('globalBar').innerHTML=labels.map((s,i)=>{
+    const done=i<activeIdx,active=i===activeIdx;
+    const bg=done||active?'#5c6bc0':'#e0e0e0',fc=done||active?'#fff':'#999';
+    const tc=active?'#5c6bc0':done?'#888':'#bbb',fw=active?'500':'400';
+    return `<span style="width:20px;height:20px;border-radius:50%;background:${bg};color:${fc};display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;flex-shrink:0;">${done?'✓':i+1}</span>
+      <span style="margin-left:4px;color:${tc};font-weight:${fw};white-space:nowrap;">${s}</span>
+      ${i<labels.length-1?`<div style="flex:1;height:1px;background:${done?'#5c6bc0':'#e0e0e0'};margin:0 5px;min-width:4px;"></div>`:''}`;
+  }).join('');
 }
 
-function filterProc(q){
-  const kw = q.trim();
-  const list = procs.filter(p=>!kw||p.name.includes(kw)||p.cat.includes(kw));
-  renderProcLib(list, kw);
-}
-
-function renderProcLib(list, q=''){
-  const el = document.getElementById('procList');
-  el.innerHTML = list.map(p=>{
-    const isAdded = addedProcs.find(a=>a.id===p.id);
-    return `<div class="process-item ${isAdded?'added':''}" id="plib_${p.id}">
-      <div>
-        <div style="font-weight:500;margin-bottom:2px;">${hi(p.name,q)}</div>
-        <span style="font-size:11px;background:${isAdded?'#e8eaf6':'#f0f0f0'};color:${isAdded?'#5c6bc0':'#888'};padding:2px 6px;border-radius:4px;">${p.cat}</span>
-        <span style="font-size:11px;color:#bbb;margin-left:5px;">${p.time}</span>
-      </div>
-      <button class="btn-sm" onclick="toggleProc('${p.id}')">${isAdded?'已添加':'+ 添加'}</button>
+// ── PART PROGRESS ──
+function renderPartProgress(){
+  if(productType!=='combo'){document.getElementById('partProgressWrap').style.display='none';return;}
+  document.getElementById('partProgressWrap').style.display='block';
+  let html='';
+  parts.forEach((p,i)=>{
+    const allDone=p.pn!==null||p.useNone;
+    const done=i<ci||(i===ci&&subStep===3);
+    const active=i===ci&&subStep<3;
+    const cls=done?'done':active?'active':'';
+    if(i>0)html+=`<div style="flex:1;height:1px;background:${i<=ci?'#5c6bc0':'#e0e0e0'};margin:0 4px;margin-top:-14px;"></div>`;
+    html+=`<div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
+      <div class="part-node ${cls}" title="${p.name}">${done?'✓':(i+1)}</div>
+      <div style="font-size:10px;color:${active?'#5c6bc0':'#aaa'};font-weight:${active?500:400};white-space:nowrap;max-width:56px;overflow:hidden;text-overflow:ellipsis;text-align:center;">${p.name}</div>
     </div>`;
-  }).join('') || `<div class="empty-hint">无匹配工序</div>`;
+  });
+  document.getElementById('partProgressBar').innerHTML=html;
+  // sub steps
+  const subs=['料号','材质','工序'];
+  let sub=`<span style="color:#aaa;margin-right:6px;white-space:nowrap;">「${parts[ci].name}」：</span>`;
+  subs.forEach((s,i)=>{
+    if(i>0)sub+=`<div style="width:16px;height:1px;background:${i<=subStep?'#5c6bc0':'#e0e0e0'};"></div>`;
+    sub+=`<div class="sub-dot ${i<subStep?'done':i===subStep?'active':''}"></div><span style="margin-left:3px;color:${i===subStep?'#5c6bc0':'#aaa'};font-weight:${i===subStep?500:400};">${i<subStep?'✓ ':''}${s}</span>`;
+  });
+  document.getElementById('subStepBar').innerHTML=sub;
 }
 
+// ── SEARCH ──
+function doSearch(q){
+  const p=parts[ci];const kw=q.trim().toLowerCase();
+  if(!kw){document.getElementById('matchCnt').textContent='—';document.getElementById('pnResults').innerHTML='<div class="empty"><i class="ti ti-search" style="font-size:26px;display:block;margin-bottom:8px;" aria-hidden="true"></i>输入关键词开始搜索</div>';updateNextBtn();return;}
+  const res=allPNs.filter(r=>r.pn.toLowerCase().includes(kw)||r.mat.toLowerCase().includes(kw)||r.matName.includes(kw)||r.spec.includes(kw)||r.dim.includes(kw));
+  document.getElementById('matchCnt').textContent=res.length||'0';
+  let html=res.map(r=>{
+    const isSel=!p.useNone&&p.pn&&p.pn.pn===r.pn;
+    const sc=r.stock>0?'#2e7d32':'#c62828';
+    return `<div class="pn-row ${isSel?'selected':''}" onclick="selectPN('${r.pn}')">
+      <div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:500;color:#222;margin-bottom:2px;">${hi(r.pn,kw)}</div>
+      <div style="font-size:11px;color:#888;">${hi(r.mat,kw)} ${hi(r.matName,kw)} · ${hi(r.spec,kw)} · ${hi(r.dim,kw)}</div></div>
+      <div style="text-align:right;flex-shrink:0;margin-left:8px;">
+        <span style="font-size:10px;background:${r.status==='在产'?'#e8f5e9':'#fce4ec'};color:${r.status==='在产'?'#2e7d32':'#c62828'};padding:1px 6px;border-radius:4px;display:block;margin-bottom:2px;">${r.status}</span>
+        <span style="font-size:11px;color:${sc};">库存 ${r.stock}</span>
+      </div></div>`;
+  }).join('')||'<div class="empty"><i class="ti ti-mood-empty" style="font-size:24px;display:block;margin-bottom:6px;" aria-hidden="true"></i>未找到匹配料号</div>';
+  html+=`<div class="pn-none ${p.useNone?'selected':''}" onclick="selectNone()"><i class="ti ti-plus-circle" style="font-size:15px;" aria-hidden="true"></i><span>无匹配料号，进入自定义材质选配</span></div>`;
+  document.getElementById('pnResults').innerHTML=html;updateNextBtn();
+}
+function selectPN(pn){const p=parts[ci];p.pn=allPNs.find(r=>r.pn===pn);p.useNone=false;doSearch(document.getElementById('mainSearch').value);updateNextBtn();}
+function selectNone(){const p=parts[ci];p.useNone=true;p.pn=null;doSearch(document.getElementById('mainSearch').value);updateNextBtn();}
+
+// ── MAT ──
+function initMatStep(){
+  const p=parts[ci];
+  wMatLocked=!!p.pn;wMat=p.pn?mats.find(m=>m.id===p.pn.matId)||null:(p.mat||null);
+  wElem=Object.assign({},p.elemVals);
+  if(wMat&&!Object.keys(wElem).length)wMat.elems.forEach(e=>{wElem[e.s]=e.v;});
+  document.getElementById('matSearchWrap').style.display=wMatLocked?'none':'block';
+  if(document.getElementById('matSearch'))document.getElementById('matSearch').value='';
+  filterMat('');
+  if(wMat)renderElemDetail();else{document.getElementById('noMatSel').style.display='flex';document.getElementById('elemDetail').style.display='none';}
+}
+function filterMat(q){
+  const kw=q.trim().toLowerCase();
+  const list=wMatLocked?[wMat]:mats.filter(m=>m&&(!kw||m.sym.toLowerCase().includes(kw)||m.name.includes(kw)||m.spec.includes(kw)));
+  document.getElementById('matList').innerHTML=list.filter(Boolean).map(m=>{
+    const ti=typeInfo[m.type],isSel=wMat&&wMat.id===m.id;
+    return `<div class="mat-row ${isSel?'selected':''}" onclick="${wMatLocked?'':'selectMat(\''+m.id+'\')'}">
+      <div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:500;color:#222;">${hi(m.sym,kw)} <span style="font-weight:400;color:#888;font-size:11px;">${hi(m.name,kw)}</span></div><div style="font-size:11px;color:#aaa;">${hi(m.spec,kw)}</div></div>
+      <span class="badge" style="background:${ti.bg};color:${ti.color};">${ti.label}</span></div>`;
+  }).join('')||'<div class="empty">无匹配材质</div>';
+}
+function selectMat(id){if(wMatLocked)return;wMat=mats.find(m=>m.id===id);wElem={};wMat.elems.forEach(e=>{wElem[e.s]=e.v;});filterMat(document.getElementById('matSearch').value||'');renderElemDetail();saveWS();}
+function renderElemDetail(){
+  if(!wMat){document.getElementById('noMatSel').style.display='flex';document.getElementById('elemDetail').style.display='none';return;}
+  document.getElementById('noMatSel').style.display='none';document.getElementById('elemDetail').style.display='flex';
+  const ti=typeInfo[wMat.type];
+  document.getElementById('eTitle').textContent=wMat.sym+' '+wMat.name;
+  document.getElementById('eSub').textContent='配比 '+wMat.spec;
+  const b=document.getElementById('eBadge');b.textContent=ti.label;b.style.background=ti.bg;b.style.color=ti.color;
+  document.getElementById('eLockBanner').style.display=wMatLocked?'flex':'none';
+  document.getElementById('eNote').innerHTML=wMatLocked?'':`<i class="ti ti-info-circle" style="font-size:12px;vertical-align:-1px;margin-right:3px;" aria-hidden="true"></i>${ti.note}`;
+  document.getElementById('eRows').innerHTML=wMat.elems.map(e=>{
+    const ce=!wMatLocked&&((wMat.type==='editable')||(wMat.type==='partial'&&e.min!==undefined));
+    const v=wElem[e.s]??e.v;
+    const inp=ce?`<div style="display:flex;align-items:center;gap:3px;justify-content:flex-end;"><input class="ei" type="number" min="${e.min}" max="${e.max}" step="0.1" value="${v}" onchange="setElem('${e.s}',this.value)"/><span style="font-size:11px;color:#888;">%</span></div>`
+      :`<div style="font-size:12px;color:#999;text-align:right;">${v}%&nbsp;<i class="ti ti-lock" style="font-size:11px;" aria-hidden="true"></i></div>`;
+    const rng=ce?`<span style="font-size:10px;color:#bbb;margin-left:3px;">${e.min}–${e.max}</span>`:'';
+    return `<div class="elem-row"><span style="background:#e8eaf6;color:#5c6bc0;font-size:11px;padding:2px 6px;border-radius:4px;font-weight:600;">${e.s}</span><span style="color:#555;">${e.n}${rng}</span>${inp}</div>`;
+  }).join('');checkSum();
+}
+function setElem(s,v){wElem[s]=parseFloat(v)||0;saveWS();checkSum();}
+function checkSum(){
+  if(!wMat||wMatLocked){document.getElementById('sumWrap').style.display='none';return;}
+  const editable=wMat.elems.filter(e=>(wMat.type==='editable')||(wMat.type==='partial'&&e.min!==undefined));
+  if(!editable.length){document.getElementById('sumWrap').style.display='none';return;}
+  const tot=wMat.elems.reduce((a,e)=>a+(parseFloat(wElem[e.s])||0),0);
+  const w=document.getElementById('sumWrap'),d=Math.abs(tot-100);w.style.display='block';
+  if(d>0.01){w.style.background=d>5?'#fce4ec':'#fff8e1';w.style.color=d>5?'#c62828':'#f57f17';w.innerHTML=`<i class="ti ti-alert-triangle" style="font-size:12px;vertical-align:-1px;margin-right:3px;" aria-hidden="true"></i>含量之和 ${tot.toFixed(1)}%，建议调整至100%`;}
+  else{w.style.background='#e8f5e9';w.style.color='#2e7d32';w.innerHTML=`<i class="ti ti-circle-check" style="font-size:12px;vertical-align:-1px;margin-right:3px;" aria-hidden="true"></i>含量之和100%，配比正确`;}
+}
+
+// ── PROC ──
+function renderProcStep(){wProcs=parts[ci].procs.slice();renderProcLib(allProcs);renderAddedProcs();}
+function renderProcLib(list,q=''){
+  document.getElementById('procList').innerHTML=list.map(p=>{
+    const ia=wProcs.find(a=>a.id===p.id);
+    return `<div class="proc-item ${ia?'added':''}"><div><div style="font-weight:500;margin-bottom:2px;">${hi(p.name,q)}</div>
+      <span style="font-size:11px;background:${ia?'#e8eaf6':'#f0f0f0'};color:${ia?'#5c6bc0':'#888'};padding:2px 6px;border-radius:4px;">${p.cat}</span>
+      <span style="font-size:11px;color:#bbb;margin-left:5px;">${p.time}</span></div>
+      <button class="btn-sm" onclick="toggleProc('${p.id}')">${ia?'已添加':'+ 添加'}</button></div>`;
+  }).join('')||'<div class="empty">无匹配工序</div>';
+}
+function filterProc(q){renderProcLib(allProcs.filter(p=>!q||p.name.includes(q)||p.cat.includes(q)),q);}
 function toggleProc(id){
-  const idx = addedProcs.findIndex(a=>a.id===id);
-  if(idx>-1) addedProcs.splice(idx,1);
-  else addedProcs.push(procs.find(p=>p.id===id));
-  renderProcLib(procs, '');
-  renderAddedProcs();
+  const idx=wProcs.findIndex(a=>a.id===id);
+  if(idx>-1)wProcs.splice(idx,1);else wProcs.push(allProcs.find(p=>p.id===id));
+  parts[ci].procs=wProcs.slice();renderProcLib(allProcs);renderAddedProcs();
+}
+function renderAddedProcs(){
+  document.getElementById('procCnt').textContent=wProcs.length;
+  document.getElementById('addedProcs').innerHTML=wProcs.length
+    ?wProcs.map((p,i)=>`<div class="added-row">
+        <span style="width:20px;height:20px;border-radius:50%;background:#e8eaf6;color:#5c6bc0;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</span>
+        <span style="flex:1;font-weight:500;">${p.name}</span>
+        <span style="font-size:11px;background:#e8eaf6;color:#5c6bc0;padding:2px 6px;border-radius:4px;">${p.cat}</span>
+        <button class="btn-del" onclick="toggleProc('${p.id}')" aria-label="移除">✕</button></div>`).join('')
+    :`<div class="empty"><i class="ti ti-plus-circle" style="font-size:24px;display:block;margin-bottom:6px;" aria-hidden="true"></i>从左侧添加工序</div>`;
 }
 
-function renderAddedProcs(){
-  const el = document.getElementById('addedProcs');
-  document.getElementById('procCount').textContent = addedProcs.length;
-  if(!addedProcs.length){
-    el.innerHTML=`<div class="empty-hint"><i class="ti ti-plus-circle" style="font-size:26px;display:block;margin-bottom:6px;" aria-hidden="true"></i>从左侧添加工序</div>`;
+// ── COMBO PROC ──
+function initComboProcStep(){renderCProcLib(comboProcs);renderAddedCProcs();}
+function filterCProc(q){renderCProcLib(comboProcs.filter(p=>!q||p.name.includes(q)||p.desc.includes(q)),q);}
+function renderCProcLib(list,q=''){
+  document.getElementById('cprocList').innerHTML=list.map(cp=>{
+    const ia=addedCProcs.find(a=>a.cprocId===cp.id);
+    return `<div class="cproc-card ${ia?'selected':''}">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;">
+        <span style="font-size:18px;line-height:1;">${cp.icon}</span>
+        <span style="font-size:12px;font-weight:500;color:#222;">${hi(cp.name,q)}</span>
+        ${ia?'<span style="font-size:10px;background:#e8f5e9;color:#2e7d32;padding:1px 5px;border-radius:3px;margin-left:auto;">已添加</span>':''}
+      </div>
+      <div style="font-size:11px;color:#888;margin-bottom:8px;">${cp.desc}</div>
+      ${ia?`<button class="btn-sm" style="background:#fce4ec;color:#c62828;border-color:#f48fb1;" onclick="removeCProc('${cp.id}')">移除</button>`
+          :`<button class="btn-sm" onclick="addCProc('${cp.id}')">+ 添加</button>`}
+    </div>`;
+  }).join('')||'<div class="empty">无匹配工艺</div>';
+}
+function addCProc(id){
+  if(addedCProcs.find(a=>a.cprocId===id))return;
+  // default: all parts selected
+  const defaultParts=parts.map((_,i)=>i);
+  addedCProcs.push({cprocId:id,selectedParts:defaultParts,params:{}});
+  renderCProcLib(comboProcs);renderAddedCProcs();
+  document.getElementById('cprocCnt').textContent=addedCProcs.length;
+}
+function removeCProc(id){
+  const idx=addedCProcs.findIndex(a=>a.cprocId===id);
+  if(idx>-1)addedCProcs.splice(idx,1);
+  renderCProcLib(comboProcs);renderAddedCProcs();
+  document.getElementById('cprocCnt').textContent=addedCProcs.length;
+}
+function renderAddedCProcs(){
+  document.getElementById('cprocCnt').textContent=addedCProcs.length;
+  const el=document.getElementById('addedCProcs');
+  if(!addedCProcs.length){
+    el.innerHTML=`<div class="empty"><i class="ti ti-tool" style="font-size:24px;display:block;margin-bottom:6px;" aria-hidden="true"></i>从左侧选择组合工艺<br/><span style="font-size:11px;">可选择铆接、焊接等跨配件工艺</span></div>`;
     return;
   }
-  el.innerHTML = addedProcs.map((p,i)=>`
-    <div class="added-row">
-      <span style="width:20px;height:20px;border-radius:50%;background:#e8eaf6;color:#5c6bc0;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</span>
-      <span style="flex:1;font-weight:500;">${p.name}</span>
-      <span style="font-size:11px;background:#e8eaf6;color:#5c6bc0;padding:2px 6px;border-radius:4px;">${p.cat}</span>
-      <button class="btn-del" onclick="toggleProc('${p.id}')" aria-label="移除">✕</button>
-    </div>`).join('');
-}
-
-function renderSummary(){
-  const m = selMat;
-  const elemRows = m ? m.elems.map(e=>`
-    <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:0.5px solid #f5f5f5;">
-      <span style="color:#888;">${e.s}（${e.n}）</span>
-      <span style="font-weight:500;color:#333;">${elemVals[e.s]??e.v} %</span>
-    </div>`).join('') : '<span style="font-size:12px;color:#ccc;">未选择材质</span>';
-  document.getElementById('sum1').innerHTML = m
-    ? `<div style="font-size:13px;font-weight:500;color:#333;margin-bottom:8px;">${m.sym} ${m.name} · ${m.spec}</div>${elemRows}`
-    : '<span style="font-size:12px;color:#ccc;">未选择材质</span>';
-  document.getElementById('sum2').innerHTML = addedProcs.length
-    ? addedProcs.map((p,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px;border-bottom:0.5px solid #f5f5f5;">
-        <span style="width:18px;height:18px;border-radius:50%;background:#e8eaf6;color:#5c6bc0;font-size:11px;display:inline-flex;align-items:center;justify-content:center;">${i+1}</span>
-        <span style="flex:1;">${p.name}</span>
-        <span style="font-size:11px;color:#888;">${p.cat} · ${p.time}</span>
-      </div>`).join('')
-    : '<div style="font-size:12px;color:#bbb;text-align:center;padding:10px 0;">暂未添加工序</div>';
-}
-
-function renderStepBar(){
-  const labels = ['材质选择','工序选择','完成选配'];
-  document.getElementById('stepBar').innerHTML = labels.map((s,i)=>{
-    const n=i+1, done=n<step, active=n===step;
-    const bg=done||active?'#5c6bc0':'#e0e0e0', fc=done||active?'#fff':'#999', tc=active?'#5c6bc0':done?'#5c6bc0':'#aaa', fw=active?'500':'400';
-    return `<span class="step-dot" style="background:${bg};color:${fc};">${done?'✓':n}</span>
-      <span style="margin-left:5px;color:${tc};font-weight:${fw};">${s}</span>
-      ${i<2?`<div style="flex:1;height:1px;background:${done?'#5c6bc0':'#e0e0e0'};margin:0 10px;"></div>`:''}`;
+  el.innerHTML=addedCProcs.map((a,ai)=>{
+    const cp=comboProcs.find(c=>c.id===a.cprocId);
+    if(!cp)return'';
+    // part chips selection
+    const partChips=parts.map((p,pi)=>{
+      const sel=a.selectedParts.includes(pi);
+      return `<span class="part-chip" style="cursor:pointer;${sel?'':'opacity:0.4;'}" onclick="toggleCProcPart(${ai},${pi})">${sel?'✓ ':''}${p.name}</span>`;
+    }).join('');
+    // param inputs
+    const paramInputs=cp.params.map(pm=>`
+      <div class="param-field" style="flex:1;min-width:100px;">
+        <label>${pm.label}</label>
+        <input type="${pm.type}" placeholder="${pm.placeholder}" value="${a.params[pm.id]||''}" 
+          onchange="setCProcParam(${ai},'${pm.id}',this.value)" />
+      </div>`).join('');
+    return `<div class="added-cproc">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:16px;">${cp.icon}</span>
+          <span style="font-size:12px;font-weight:500;color:#333;">${cp.name}</span>
+        </div>
+        <button class="btn-del" onclick="removeCProc('${cp.id}')" aria-label="移除">✕</button>
+      </div>
+      <div style="margin-bottom:8px;">
+        <div style="font-size:11px;color:#888;margin-bottom:5px;">参与配件（点击切换）</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;">${partChips}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">${paramInputs}</div>
+    </div>`;
   }).join('');
+}
+function toggleCProcPart(ai,pi){
+  const a=addedCProcs[ai];
+  const idx=a.selectedParts.indexOf(pi);
+  if(idx>-1){if(a.selectedParts.length<=2)return;a.selectedParts.splice(idx,1);}
+  else a.selectedParts.push(pi);
+  renderAddedCProcs();
+}
+function setCProcParam(ai,key,val){addedCProcs[ai].params[key]=val;}
+
+// ── SUMMARY ──
+function renderSummary(){
+  document.getElementById('s0').innerHTML=`<div style="display:flex;align-items:center;gap:8px;font-size:13px;"><span style="font-size:20px;">${productType==='combo'?'🔧':'🔩'}</span><span style="font-weight:500;color:#333;">${productType==='combo'?'组合产品':'独立产品'}</span><span style="font-size:11px;color:#888;">${productType==='combo'?`共 ${parts.length} 个配件`:'单一零件'}</span></div>`;
+  let html='';
+  parts.forEach((p,i)=>{
+    const pnTxt=p.pn?`<span style="color:#5c6bc0;font-weight:500;">${p.pn.pn}</span> · ${p.pn.spec} ${p.pn.dim}`:`<span style="color:#888;font-style:italic;">自定义选配</span>`;
+    const matTxt=p.mat?`${p.mat.sym} ${p.mat.name} · ${p.mat.spec}`:'—';
+    const procTxt=p.procs.length?p.procs.map(pr=>pr.name).join(' → '):'—';
+    html+=`<div style="border:0.5px solid #e8e8e8;border-radius:8px;padding:10px 14px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:#333;margin-bottom:7px;">
+        <span style="width:20px;height:20px;border-radius:50%;background:#5c6bc0;color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</span>${p.name}</div>
+      <div style="display:grid;grid-template-columns:48px 1fr;gap:4px 8px;font-size:12px;">
+        <span style="color:#888;">料号</span><span>${pnTxt}</span>
+        <span style="color:#888;">材质</span><span style="color:#555;">${matTxt}</span>
+        <span style="color:#888;">工序</span><span style="color:#555;">${procTxt}</span>
+      </div></div>`;
+  });
+  document.getElementById('s1').innerHTML=html;
+  if(productType==='combo'){
+    document.getElementById('s_combo_wrap').style.display='block';
+    if(addedCProcs.length){
+      document.getElementById('s2').innerHTML=addedCProcs.map(a=>{
+        const cp=comboProcs.find(c=>c.id===a.cprocId);
+        const partNames=a.selectedParts.map(i=>parts[i]?.name||'').join(' + ');
+        const paramStr=Object.entries(a.params).map(([k,v])=>{const pm=cp.params.find(p=>p.id===k);return pm?`${pm.label}: ${v}`:''}).filter(Boolean).join('；');
+        return `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:0.5px solid #f0f0f0;">
+          <span style="font-size:16px;flex-shrink:0;">${cp.icon}</span>
+          <div><div style="font-size:12px;font-weight:500;color:#333;margin-bottom:2px;">${cp.name}</div>
+          <div style="font-size:11px;color:#888;">${partNames}</div>
+          ${paramStr?`<div style="font-size:11px;color:#aaa;margin-top:2px;">${paramStr}</div>`:''}
+          </div></div>`;
+      }).join('');
+    } else {
+      document.getElementById('s2').innerHTML='<div style="font-size:12px;color:#bbb;">未选择组合工艺</div>';
+    }
+  } else {
+    document.getElementById('s_combo_wrap').style.display='none';
+  }
+}
+
+// ── NAV ──
+function updateNextBtn(){
+  const p=parts[ci];
+  let ok=true;
+  if(globalStep===1&&subStep===0)ok=!!(p.pn||p.useNone);
+  const btn=document.getElementById('btnNext');
+  btn.style.opacity=ok?'1':'0.45';btn.style.pointerEvents=ok?'auto':'none';
 }
 
 function goNext(){
-  if(step===1){ step=2; renderProcLib(procs); renderAddedProcs(); }
-  else if(step===2){ step=3; renderSummary(); }
-  else { document.getElementById('drawer').style.display='none'; return; }
+  if(globalStep===0){
+    const count=productType==='combo'?initPartCount:1;
+    parts=Array.from({length:count},(_,i)=>newPart(productType==='combo'?`配件 ${i+1}`:'产品'));
+    ci=0;subStep=0;globalStep=1;loadWS();
+    document.getElementById('mainSearch').value='';
+    document.getElementById('pnResults').innerHTML='<div class="empty"><i class="ti ti-search" style="font-size:26px;display:block;margin-bottom:8px;" aria-hidden="true"></i>输入关键词开始搜索</div>';
+    document.getElementById('matchCnt').textContent='—';
+    renderPartProgress();showPanel('p1');
+  } else if(globalStep===1){
+    if(subStep===0){saveWS();subStep=1;initMatStep();renderPartProgress();showPanel('p2');}
+    else if(subStep===1){saveWS();subStep=2;renderPartProgress();renderProcStep();showPanel('p3');}
+    else if(subStep===2){
+      saveWS();
+      if(ci<parts.length-1){
+        ci++;subStep=0;loadWS();
+        document.getElementById('mainSearch').value='';
+        document.getElementById('pnResults').innerHTML='<div class="empty"><i class="ti ti-search" style="font-size:26px;display:block;margin-bottom:8px;" aria-hidden="true"></i>输入关键词开始搜索</div>';
+        document.getElementById('matchCnt').textContent='—';
+        renderPartProgress();showPanel('p1');
+      } else {
+        if(productType==='combo'){
+          globalStep=2;document.getElementById('partProgressWrap').style.display='none';
+          initComboProcStep();showPanel('p4');
+        } else {
+          globalStep=3;renderSummary();showPanel('p5');
+        }
+      }
+    }
+  } else if(globalStep===2){globalStep=3;renderSummary();showPanel('p5');}
+  else{document.getElementById('drw').style.display='none';return;}
   updateUI();
 }
-function goBack(){ if(step>1){ step--; updateUI(); } }
 
-function updateUI(){
-  [1,2,3].forEach(n=>{ document.getElementById('panel'+n).classList.toggle('active',n===step); });
-  document.getElementById('btnBack').style.display = step>1?'':'none';
-  document.getElementById('btnNext').textContent = step===3?'确认添加':'下一步';
-  const hints=['请从左侧选择材质，并确认元素成分','从工序库中选择所需工序','核对选配信息后确认添加'];
-  document.getElementById('footHint').textContent = hints[step-1];
-  renderStepBar();
+function goBack(){
+  if(globalStep===1){
+    if(subStep===2){subStep=1;initMatStep();renderPartProgress();showPanel('p2');}
+    else if(subStep===1){subStep=0;document.getElementById('mainSearch').value='';document.getElementById('pnResults').innerHTML='<div class="empty"><i class="ti ti-search" style="font-size:26px;display:block;margin-bottom:8px;" aria-hidden="true"></i>输入关键词开始搜索</div>';document.getElementById('matchCnt').textContent='—';renderPartProgress();showPanel('p1');}
+    else if(subStep===0&&ci>0){ci--;subStep=2;loadWS();renderPartProgress();renderProcStep();showPanel('p3');}
+    else{globalStep=0;document.getElementById('partProgressWrap').style.display='none';showPanel('p0');}
+  } else if(globalStep===2){
+    globalStep=1;ci=parts.length-1;subStep=2;loadWS();
+    renderPartProgress();document.getElementById('partProgressWrap').style.display='block';
+    renderProcStep();showPanel('p3');
+  } else if(globalStep===3){
+    if(productType==='combo'){globalStep=2;initComboProcStep();showPanel('p4');}
+    else{globalStep=1;subStep=2;ci=0;loadWS();renderPartProgress();renderProcStep();showPanel('p3');}
+  }
+  updateUI();
 }
 
-renderMatList(mats);
-updateUI();
+function updateUI(){
+  document.getElementById('btnBack').style.display=globalStep>0?'':'none';
+  let nextLabel='下一步';
+  if(globalStep===1&&subStep===2){nextLabel=ci<parts.length-1?`下一配件（${parts[ci+1].name}）`:(productType==='combo'?'进入组合工艺':'查看汇总');}
+  if(globalStep===2)nextLabel='完成选配';
+  if(globalStep===3)nextLabel='确认添加';
+  document.getElementById('btnNext').textContent=nextLabel;
+  const partName=parts[ci]?parts[ci].name:'';
+  const hints={
+    '0':'选择独立产品或组合产品，组合产品可设置配件数量',
+    '1_0':productType==='combo'?`正在配置「${partName}」（${ci+1}/${parts.length}）· 搜索料号`:'搜索并选择料号',
+    '1_1':`「${partName}」· 确认材质成分`,
+    '1_2':`「${partName}」· 选择工序（各配件独立）`,
+    '2':'选择组合工艺，指定参与配件并填写工艺参数（如压力、电流等）',
+    '3':'核对全部配件与组合工艺信息后确认添加',
+  };
+  const key=globalStep===0?'0':globalStep===1?`1_${subStep}`:String(globalStep);
+  document.getElementById('footHint').textContent=hints[key]||'';
+  renderGlobalBar();updateNextBtn();
+}
+
+updateUI();showPanel('p0');
 </script>

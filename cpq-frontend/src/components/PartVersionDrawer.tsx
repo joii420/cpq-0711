@@ -177,7 +177,7 @@ const PartVersionDrawer: React.FC<Props> = ({
 
           {!isSelectMode && (
             <>
-              <Divider orientation="left">
+              <Divider>
                 <Space>
                   <ArrowUpOutlined />
                   <span>三路判定</span>
@@ -213,7 +213,7 @@ const PartVersionDrawer: React.FC<Props> = ({
                 </div>
               )}
 
-              <Divider orientation="left">
+              <Divider>
                 <Space>
                   <SwapOutlined />
                   <span>切换激活版本</span>
@@ -239,7 +239,7 @@ const PartVersionDrawer: React.FC<Props> = ({
             </>
           )}
 
-          <Divider orientation="left">
+          <Divider>
             {isSelectMode ? '选择本行使用的版本' : '历史版本'}
           </Divider>
           {history.length === 0 ? (

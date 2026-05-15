@@ -44,14 +44,26 @@ export function buildEvalKey(
 }
 
 /**
- * 批量公式求值，自动按 200 拆分 chunk。
- * 一次 HTTP 请求替代 N 个并发单请求，用于报价单运行时路径公式批量加载。
+ * 批量公式求值 — 设计目标:**一次 HTTP 请求覆盖整个报价单的全部路径求值**。
+ *
+ * 历史问题:CHUNK 设置过小(原 200)导致 N=2000 个 task 拆成 10 个 HTTP,违背"一次查询"目标。
+ * 后端 PathBatchEvaluator 已经按 (path, customerId) 聚合到 unique-path 数条 IN SQL,
+ * 单批携带数千 task 对 DB 压力可控;前端没必要再切。
+ *
+ * 现策略:CHUNK = 5000(实质"一次性"),正常报价单 1 个 HTTP 搞定。
+ * 后端 BATCH_MAX 同步从 200 提到 5000。
  */
+const BATCH_EVALUATE_CHUNK = 5000;
 export async function batchEvaluate(tasks: BatchEvaluateTask[]): Promise<BatchEvaluateResultItem[]> {
   if (tasks.length === 0) return [];
+  if (tasks.length <= BATCH_EVALUATE_CHUNK) {
+    const resp = await api.post('/formulas/batch-evaluate', { tasks });
+    return (resp?.data?.results || []) as BatchEvaluateResultItem[];
+  }
+  // 兜底:极端大批量分片(>5000),正常路径走不到
   const chunks: BatchEvaluateTask[][] = [];
-  for (let i = 0; i < tasks.length; i += 200) {
-    chunks.push(tasks.slice(i, i + 200));
+  for (let i = 0; i < tasks.length; i += BATCH_EVALUATE_CHUNK) {
+    chunks.push(tasks.slice(i, i + BATCH_EVALUATE_CHUNK));
   }
   const all: BatchEvaluateResultItem[] = [];
   for (const chunk of chunks) {
