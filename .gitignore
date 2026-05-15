@@ -45,9 +45,9 @@ cpq-frontend/e2e/.auth/
 # Playwright 测试运行结果
 cpq-frontend/test-results/
 # 数据库 dump / 备份压缩包
-data/*.sql
+#data/*.sql
 data/*.rar
-data/template/
+#data/template/
 # 调试 log (滚动)
 *.log.*
 # 本地 Claude 状态
