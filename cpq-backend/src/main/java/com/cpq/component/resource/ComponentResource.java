@@ -97,7 +97,8 @@ public class ComponentResource {
      *
      * <p>每个 task 独立 try-catch，单个失败不影响其他结果。
      * 自动复用进程级缓存（{@link ComponentDriverService#expand} 内部处理）。
-     * 单次 batch 上限 100 个 task，防止滥用。
+     * 单次 batch 上限 5000 个 task — 与前端 BATCH chunk 对齐，让一张报价单（≤200 行 × 10 组件）
+     * 一次 HTTP 完成，减少前后端交互轮次（2026-05-15 从 100 提到 5000）。
      *
      * <p>Response key 格式：componentId:customerId:partNo（null 用 "_" 占位），
      * 与前端 expand-driver 缓存 key 格式一致。
@@ -110,8 +111,8 @@ public class ComponentResource {
         if (req == null || req.tasks == null) {
             return ApiResponse.success(resp);
         }
-        if (req.tasks.size() > 100) {
-            throw new BusinessException(400, "batch tasks 上限 100，当前 " + req.tasks.size());
+        if (req.tasks.size() > 5000) {
+            throw new BusinessException(400, "batch tasks 上限 5000，当前 " + req.tasks.size());
         }
         for (Task t : req.tasks) {
             Result r = new Result();

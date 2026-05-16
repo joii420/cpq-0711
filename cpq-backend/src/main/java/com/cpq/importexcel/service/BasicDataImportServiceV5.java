@@ -1251,14 +1251,17 @@ public class BasicDataImportServiceV5 {
             }
         }
 
-        // BV-06: 客户料号映射唯一（customer_id, customer_product_no）（阻塞）
-        // 在 Excel 内检查重复
+        // BV-06: 客户料号映射唯一（customer_id, hf_part_no）（阻塞）
+        // 在 Excel 内检查重复。业务规则: 同一客户料号可映射多个 HF 料号(变体/版本场景),
+        // 唯一键是 (客户, 宏丰料号), 与 DB 索引 uq_mat_cust_part_per_hf 对齐。
         Set<String> mappingKeys = new HashSet<>();
         for (ParsedBasicData.MappingRow m : data.mappings) {
-            String key = m.customerId + ":" + m.customerProductNo;
+            if (m.hfPartNo == null || m.hfPartNo.isBlank()) continue;
+            String key = m.customerId + ":" + m.hfPartNo;
             if (!mappingKeys.add(key)) {
                 vr.addError("BV-06", m.rowNum, "mat_customer_part_mapping",
-                        "客户料号 " + m.customerProductNo + " 在 Excel 中重复，映射必须唯一");
+                        "宏丰料号 " + m.hfPartNo + "（客户料号 " + m.customerProductNo
+                                + "）在 Excel 中重复，同一客户下宏丰料号必须唯一");
             }
         }
 
@@ -1801,10 +1804,12 @@ public class BasicDataImportServiceV5 {
             }
         }
 
-        // 4. mat_customer_part_mapping（UPSERT by customer_id + customer_product_no）
+        // 4. mat_customer_part_mapping（UPSERT by customer_id + hf_part_no）
         for (ParsedBasicData.MappingRow r : data.mappings) {
-            // rowKey = customer_id:customer_product_no（与 BV-06 及 validateOldValuesOrThrow409 一致）
-            String mapRowKey = r.customerId + ":" + r.customerProductNo;
+            // rowKey = customer_id:hf_part_no（与 BV-06 及 validateOldValuesOrThrow409 一致；
+            // 与 DB 唯一索引 uq_mat_cust_part_per_hf(customer_id, hf_part_no) 对齐）
+            if (r.hfPartNo == null || r.hfPartNo.isBlank()) continue;
+            String mapRowKey = r.customerId + ":" + r.hfPartNo;
             if (data.shouldSkipRow("mat_customer_part_mapping", mapRowKey)) continue;
             String effCpName    = data.shouldSkipField("mat_customer_part_mapping", mapRowKey, "customer_part_name")  ? null : r.customerPartName;
             String effCdNo      = data.shouldSkipField("mat_customer_part_mapping", mapRowKey, "customer_drawing_no") ? null : r.customerDrawingNo;
@@ -1815,12 +1820,12 @@ public class BasicDataImportServiceV5 {
                     "UPDATE mat_customer_part_mapping SET " +
                     "  customer_part_name = COALESCE(:cpn, customer_part_name), " +
                     "  customer_drawing_no = COALESCE(:cdn, customer_drawing_no), " +
-                    "  hf_part_no = :hfpn, " +
+                    "  customer_product_no = :cpno, " +
                     "  payment_method = COALESCE(:pm, payment_method), " +
                     "  base_currency = COALESCE(:bc, base_currency), " +
                     "  quote_currency = COALESCE(:qc, quote_currency), " +
                     "  updated_at = :now, updated_by = :uid " +
-                    "WHERE customer_id = :cid AND customer_product_no = :cpno")
+                    "WHERE customer_id = :cid AND hf_part_no = :hfpn")
                     .setParameter("cpn", effCpName)
                     .setParameter("cdn", effCdNo)
                     .setParameter("hfpn", r.hfPartNo)
@@ -3019,17 +3024,18 @@ public class BasicDataImportServiceV5 {
                         .getSingleResult();
                 return val == null ? null : val.toString();
             }
-            // mat_customer_part_mapping rowKey = customer_id:customer_product_no
+            // mat_customer_part_mapping rowKey = customer_id:hf_part_no
+            // (与 BV-06 / step 4 写库 / DB 索引 uq_mat_cust_part_per_hf 对齐)
             if ("mat_customer_part_mapping".equals(tableName)) {
                 int sep = rowKey.indexOf(':');
                 if (sep < 0) return null;
                 UUID cid = UUID.fromString(rowKey.substring(0, sep));
-                String cpno = rowKey.substring(sep + 1);
+                String hfpn = rowKey.substring(sep + 1);
                 Object val = em.createNativeQuery(
                         "SELECT CAST(" + fieldName + " AS TEXT) FROM mat_customer_part_mapping " +
-                        "WHERE customer_id = :cid AND customer_product_no = :cpno LIMIT 1")
+                        "WHERE customer_id = :cid AND hf_part_no = :hfpn LIMIT 1")
                         .setParameter("cid", cid)
-                        .setParameter("cpno", cpno)
+                        .setParameter("hfpn", hfpn)
                         .getSingleResult();
                 return val == null ? null : val.toString();
             }

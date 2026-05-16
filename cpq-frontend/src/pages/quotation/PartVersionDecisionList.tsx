@@ -35,6 +35,11 @@ const PartVersionDecisionList: React.FC<Props> = ({ items, onChange }) => {
   // 展开的 key 集合（展示 row-level diff）
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
+  // (2026-05-15) 后端返回所有 (cpn, hf) 让 commit 能完整构建 hfPairs / 报价单候选,
+  // 但 UI 只把"需要用户决策的"展示给用户 — NO_BUMP (无差异) 隐藏, 减少视觉噪声.
+  // 父组件提交时所有料号的 decision 都会回传 (NO_BUMP 走默认值).
+  const visibleItems = items.filter((item) => item.action !== 'NO_BUMP');
+
   function toggleExpand(key: string) {
     setExpandedKeys((prev) => {
       const next = new Set(prev);
@@ -44,27 +49,30 @@ const PartVersionDecisionList: React.FC<Props> = ({ items, onChange }) => {
     });
   }
 
-  // 全部升版（不影响 isNew 条目，它们强制 NEW）
+  // 全部升版/不升版只影响"可见的"+ 非新料号
   function handleBumpAll() {
-    items.forEach((item) => {
+    visibleItems.forEach((item) => {
       if (!item.isNew) onChange(item.key, 'BUMP');
     });
   }
 
-  // 全部不升版（不影响 isNew 条目）
   function handleNoBumpAll() {
-    items.forEach((item) => {
+    visibleItems.forEach((item) => {
       if (!item.isNew) onChange(item.key, 'NO_BUMP');
     });
   }
 
-  if (items.length === 0) {
+  if (visibleItems.length === 0) {
     return (
       <Alert
         type="success"
         showIcon
         message="本次 Excel 无料号版本变更"
-        description="所有料号数据与当前 DB 版本一致，无需处理。"
+        description={
+          items.length > 0
+            ? `${items.length} 个料号数据与当前 DB 版本一致，无需处理。`
+            : "所有料号数据与当前 DB 版本一致，无需处理。"
+        }
       />
     );
   }
@@ -100,9 +108,9 @@ const PartVersionDecisionList: React.FC<Props> = ({ items, onChange }) => {
         </Space>
       </div>
 
-      {/* 每个料号一张卡 */}
+      {/* 每个料号一张卡 — 只渲染有差异的 (BUMP/NEW), NO_BUMP 在后端 decisions 已隐式默认 */}
       <Space direction="vertical" style={{ width: '100%' }} size={10}>
-        {items.map((item) => {
+        {visibleItems.map((item) => {
           const isExpanded = expandedKeys.has(item.key);
           const totalDiffRows = Object.values(item.sheetDiffs).reduce((a, b) => a + b, 0);
           const hasRowDiff = Object.values(item.rowLevelDiff).some((rows) => rows.length > 0);

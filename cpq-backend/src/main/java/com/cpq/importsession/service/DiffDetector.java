@@ -130,19 +130,27 @@ public class DiffDetector {
                 String stagingFp = partVersionService.computeStagingFingerprint(sessionId, cpn, hf);
                 String matFp     = partVersionService.computeMatFingerprintForStagingCompare(
                         cpn, hf, currentVersion);
-                boolean hasChange = !stagingFp.equals(matFp);
-                LOG.infof("V6 fingerprint compare (%s|%s, v=%d): staging=%s mat=%s → %s",
+                boolean fpDiffers = !stagingFp.equals(matFp);
+
+                // 指纹"有差"可能源于历史脏数据 (stale is_current=false 重复行 / V5 时存的低精度遗留),
+                // 不一定是业务字段真变. 用 sheetDiffs + rowLevelDiff 复核, 全 0 → 降级 NO_BUMP.
+                sheetDiffs = computeSheetDiffs(data, hf, currentVersion);
+                rowLevelDiff = computeRowLevelDiff(data, hf, currentVersion);
+                boolean realChange = sheetDiffs.values().stream().anyMatch(v -> v > 0)
+                        || rowLevelDiff.values().stream().anyMatch(rows -> !rows.isEmpty());
+                action = realChange ? "BUMP" : "NO_BUMP";
+
+                LOG.infof("V6 fingerprint+fielddiff (%s|%s, v=%d): fp=%s/%s sheetDiffs=%s realChange=%s → %s",
                         cpn, hf, currentVersion,
                         stagingFp.substring(0, Math.min(8, stagingFp.length())),
                         matFp.substring(0, Math.min(8, matFp.length())),
-                        hasChange ? "BUMP" : "NO_BUMP");
-                action = hasChange ? "BUMP" : "NO_BUMP";
-                sheetDiffs = hasChange
-                        ? computeSheetDiffs(data, hf, currentVersion)
-                        : Map.of("bom", 0, "process", 0, "fee", 0, "plating_fee", 0);
-                rowLevelDiff = hasChange
-                        ? computeRowLevelDiff(data, hf, currentVersion)
-                        : Collections.emptyMap();
+                        sheetDiffs, realChange, action);
+
+                // realChange=false 时 sheetDiffs/rowLevelDiff 必然为零, UI 不会显示;
+                // 但保留 fpDiffers 信息到日志, 便于后续排查"应该升版却被压成 NO_BUMP"的反例.
+                if (fpDiffers && !realChange) {
+                    LOG.debugf("V6: %s|%s fingerprint 报差但 fielddiff 全 0 — 降级 NO_BUMP", cpn, hf);
+                }
             } else {
                 // 旧行级字段对比路径（向后兼容，sessionId=null 时）
                 sheetDiffs = computeSheetDiffs(data, hf, currentVersion);
@@ -151,6 +159,13 @@ public class DiffDetector {
                 rowLevelDiff = hasChange
                         ? computeRowLevelDiff(data, hf, currentVersion)
                         : Collections.emptyMap();
+            }
+
+            // (2026-05-15) 只把"需要用户决策"的料号返给前端 — NO_BUMP 跳过.
+            // commit 阶段的 hfPairs 改从 staging mapping 表独立查 (不依赖 decisions),
+            // 因此过滤 NO_BUMP 不会影响报价单候选拉取.
+            if ("NO_BUMP".equals(action)) {
+                continue;
             }
 
             PartVersionDecisionItem item = new PartVersionDecisionItem();
@@ -189,10 +204,10 @@ public class DiffDetector {
                 .filter(r -> hf.equals(r.hfPartNo)).collect(Collectors.toList());
         diffs.put("process", computeCountDiff(excelProcs.size(), "mat_process", hf, currentVersion, true));
 
-        // fee sheet
+        // fee sheet — 字段级对比 (业务高频改动的费用值)
         List<ParsedBasicData.MatFeeRow> excelFees = data.matFees.stream()
                 .filter(r -> hf.equals(r.hfPartNo)).collect(Collectors.toList());
-        diffs.put("fee", computeCountDiff(excelFees.size(), "mat_fee", hf, currentVersion, true));
+        diffs.put("fee", computeFeeDiff(excelFees, hf, currentVersion));
 
         // plating_fee sheet
         List<ParsedBasicData.PlatingFeeRow> excelPf = data.platingFees.stream()
@@ -203,7 +218,13 @@ public class DiffDetector {
         return diffs;
     }
 
-    /** BOM diff：行数 delta + 关键字段变更数 */
+    /** BOM diff：行数 delta + 关键字段变更数
+     *
+     *  匹配 key 必须包含 (bom_type, seq_no, input_material_no, element_name) —— 与 DB 唯一约束
+     *  uq_mat_bom_row(bom_type, hf_part_no, seq_no, COALESCE(input_material_no,''), COALESCE(element_name,''), part_version)
+     *  对齐。否则同 seq_no 下多元素 (如 ELEMENT:seq1 既有 AgNi10 又有 CuZn36) 时,
+     *  HashMap 会被覆盖, 导致 Excel 行错配 DB 行 → 误报"未改也升版" (2026-05-15 修).
+     */
     @SuppressWarnings("unchecked")
     private int computeBomDiff(List<ParsedBasicData.MatBomRow> excelBoms, String hf,
                                 Integer currentVersion) {
@@ -211,16 +232,17 @@ public class DiffDetector {
         if (currentVersion == null) return excelBoms.size();  // 全新行
 
         List<Object[]> dbBoms = em.createNativeQuery(
-                "SELECT bom_type, seq_no, gross_qty, net_qty, loss_rate FROM mat_bom " +
+                "SELECT bom_type, seq_no, gross_qty, net_qty, loss_rate, " +
+                "  input_material_no, element_name FROM mat_bom " +
                 "WHERE hf_part_no = :hf AND part_version = :v")
                 .setParameter("hf", hf).setParameter("v", currentVersion).getResultList();
 
         int diff = Math.abs(excelBoms.size() - dbBoms.size());
         if (diff == 0 && !dbBoms.isEmpty()) {
             Map<String, Object[]> dbMap = new HashMap<>();
-            for (Object[] r : dbBoms) dbMap.put(str(r[0]) + ":" + str(r[1]), r);
+            for (Object[] r : dbBoms) dbMap.put(bomCompoundKey(str(r[0]), str(r[1]), str(r[5]), str(r[6])), r);
             for (ParsedBasicData.MatBomRow r : excelBoms) {
-                Object[] db = dbMap.get(r.bomType + ":" + r.seqNo);
+                Object[] db = dbMap.get(bomCompoundKey(r.bomType, str(r.seqNo), r.inputMaterialNo, r.elementName));
                 if (db == null) { diff++; continue; }
                 if (!eqDec(str(db[2]), r.grossQty)) diff++;
                 else if (!eqDec(str(db[3]), r.netQty)) diff++;
@@ -228,6 +250,68 @@ public class DiffDetector {
             }
         }
         return diff;
+    }
+
+    /**
+     * 与 DB 唯一索引 uq_mat_bom_row 对齐的复合 key:
+     * (bom_type, seq_no, COALESCE(input_material_no,''), COALESCE(element_name,''))
+     */
+    private static String bomCompoundKey(String bomType, Object seqNo, String inputMaterialNo, String elementName) {
+        return (bomType == null ? "" : bomType) + ":" +
+                (seqNo == null ? "" : seqNo.toString()) + ":" +
+                (inputMaterialNo == null ? "" : inputMaterialNo) + ":" +
+                (elementName == null ? "" : elementName);
+    }
+
+    /** mat_fee 复合 key: (fee_type, seq_no, dim_input_material_no, dim_element_name, dim_assembly_process) —
+     *  覆盖 INCOMING_*, FINISHED_*, ASSEMBLY_PROCESS, COMPONENT_OTHER 等 fee_type 的多元素/多工序场景. */
+    private static String feeCompoundKey(String feeType, Object seqNo, String inputMatNo,
+                                          String elementName, String assemblyProcess) {
+        return (feeType == null ? "" : feeType) + ":" +
+                (seqNo == null ? "" : seqNo.toString()) + ":" +
+                (inputMatNo == null ? "" : inputMatNo) + ":" +
+                (elementName == null ? "" : elementName) + ":" +
+                (assemblyProcess == null ? "" : assemblyProcess);
+    }
+
+    /** mat_fee 字段级 diff：行数 delta + 关键金额/比例字段变更数 (is_current=true 过滤) */
+    @SuppressWarnings("unchecked")
+    private int computeFeeDiff(List<ParsedBasicData.MatFeeRow> excelFees, String hf,
+                                Integer currentVersion) {
+        if (excelFees.isEmpty()) return 0;
+        if (currentVersion == null) return excelFees.size();
+
+        List<Object[]> dbFees = em.createNativeQuery(
+                "SELECT fee_type, seq_no, fee_value, fee_ratio, currency, price_unit, " +
+                "  dim_input_material_no, dim_element_name, dim_assembly_process, " +
+                "  settlement_rise_ratio, fixed_rise_value, reject_rate " +
+                "FROM mat_fee WHERE hf_part_no = :hf AND part_version = :v AND is_current = true")
+                .setParameter("hf", hf).setParameter("v", currentVersion).getResultList();
+
+        int diff = Math.abs(excelFees.size() - dbFees.size());
+        if (diff == 0 && !dbFees.isEmpty()) {
+            Map<String, Object[]> dbMap = new HashMap<>();
+            for (Object[] r : dbFees) {
+                dbMap.put(feeCompoundKey(str(r[0]), r[1], str(r[6]), str(r[7]), str(r[8])), r);
+            }
+            for (ParsedBasicData.MatFeeRow r : excelFees) {
+                Object[] db = dbMap.get(feeCompoundKey(r.feeType, r.seqNo,
+                        r.dimInputMaterialNo, r.dimElementName, r.dimAssemblyProcess));
+                if (db == null) { diff++; continue; }
+                if      (!eqDec(str(db[2]), r.feeValue))            diff++;
+                else if (!eqDec(str(db[3]), r.feeRatio))            diff++;
+                else if (!Objects.equals(emptyToNull(str(db[4])), emptyToNull(r.currency)))   diff++;
+                else if (!Objects.equals(emptyToNull(str(db[5])), emptyToNull(r.priceUnit)))  diff++;
+                else if (!eqDec(str(db[9]), r.settlementRiseRatio)) diff++;
+                else if (!eqDec(str(db[10]), r.fixedRiseValue))     diff++;
+                else if (!eqDec(str(db[11]), r.rejectRate))         diff++;
+            }
+        }
+        return diff;
+    }
+
+    private static String emptyToNull(String s) {
+        return s == null || s.isBlank() ? null : s;
     }
 
     /** 通用行数 delta diff（is_current 过滤可选） */
@@ -263,27 +347,68 @@ public class DiffDetector {
                 .filter(r -> hf.equals(r.hfPartNo)).collect(Collectors.toList());
         if (excelBoms.isEmpty()) return result;
 
+        // (2026-05-15) 加 element_name 列 + 改用复合 key, 与 DB 唯一索引 uq_mat_bom_row 对齐;
+        // 修复同 seq_no 多元素时 HashMap 覆盖 → Excel 行错配 DB 行误报差异.
         List<Object[]> dbBoms = em.createNativeQuery(
                 "SELECT bom_type, seq_no, gross_qty, net_qty, loss_rate, " +
-                "  input_material_no, input_material_name FROM mat_bom " +
+                "  input_material_no, input_material_name, element_name FROM mat_bom " +
                 "WHERE hf_part_no = :hf AND part_version = :v")
                 .setParameter("hf", hf).setParameter("v", currentVersion).getResultList();
         Map<String, Object[]> dbMap = new HashMap<>();
-        for (Object[] r : dbBoms) dbMap.put(str(r[0]) + ":" + str(r[1]), r);
+        for (Object[] r : dbBoms) dbMap.put(bomCompoundKey(str(r[0]), str(r[1]), str(r[5]), str(r[7])), r);
 
         List<PartVersionDecisionItem.RowDiff> bomDiffs = new ArrayList<>();
         for (ParsedBasicData.MatBomRow r : excelBoms) {
-            String rowKey = r.bomType + ":seq" + r.seqNo;
-            Object[] db = dbMap.get(r.bomType + ":" + r.seqNo);
+            // rowKey 显示给用户的标签，包含元素让用户区分同 seq_no 多元素
+            String rowLabel = r.elementName != null && !r.elementName.isBlank()
+                    ? r.bomType + ":seq" + r.seqNo + ":" + r.elementName
+                    : r.bomType + ":seq" + r.seqNo;
+            Object[] db = dbMap.get(bomCompoundKey(r.bomType, str(r.seqNo), r.inputMaterialNo, r.elementName));
             if (db == null) {
-                bomDiffs.add(new PartVersionDecisionItem.RowDiff(rowKey, "row", null, "新增行"));
+                bomDiffs.add(new PartVersionDecisionItem.RowDiff(rowLabel, "row", null, "新增行"));
                 continue;
             }
-            addIfChanged(bomDiffs, rowKey, "gross_qty",   str(db[2]), r.grossQty);
-            addIfChanged(bomDiffs, rowKey, "net_qty",     str(db[3]), r.netQty);
-            addIfChanged(bomDiffs, rowKey, "loss_rate",   str(db[4]), r.lossRate);
+            addIfChanged(bomDiffs, rowLabel, "gross_qty",   str(db[2]), r.grossQty);
+            addIfChanged(bomDiffs, rowLabel, "net_qty",     str(db[3]), r.netQty);
+            addIfChanged(bomDiffs, rowLabel, "loss_rate",   str(db[4]), r.lossRate);
         }
         if (!bomDiffs.isEmpty()) result.put("bom", bomDiffs);
+
+        // (2026-05-15) 同样为 mat_fee 加字段级 diff 展示, 让用户能看到"来料/装配费"等变更明细
+        List<ParsedBasicData.MatFeeRow> excelFees = data.matFees.stream()
+                .filter(r -> hf.equals(r.hfPartNo)).collect(Collectors.toList());
+        if (!excelFees.isEmpty()) {
+            List<Object[]> dbFees = em.createNativeQuery(
+                    "SELECT fee_type, seq_no, fee_value, fee_ratio, currency, price_unit, " +
+                    "  dim_input_material_no, dim_element_name, dim_assembly_process, " +
+                    "  settlement_rise_ratio, fixed_rise_value, reject_rate " +
+                    "FROM mat_fee WHERE hf_part_no = :hf AND part_version = :v AND is_current = true")
+                    .setParameter("hf", hf).setParameter("v", currentVersion).getResultList();
+            Map<String, Object[]> feeDbMap = new HashMap<>();
+            for (Object[] r : dbFees) {
+                feeDbMap.put(feeCompoundKey(str(r[0]), r[1], str(r[6]), str(r[7]), str(r[8])), r);
+            }
+            List<PartVersionDecisionItem.RowDiff> feeDiffs = new ArrayList<>();
+            for (ParsedBasicData.MatFeeRow r : excelFees) {
+                String dimLabel = "";
+                if (r.dimAssemblyProcess != null && !r.dimAssemblyProcess.isBlank()) dimLabel = ":" + r.dimAssemblyProcess;
+                else if (r.dimElementName != null && !r.dimElementName.isBlank())    dimLabel = ":" + r.dimElementName;
+                else if (r.dimInputMaterialNo != null && !r.dimInputMaterialNo.isBlank()) dimLabel = ":" + r.dimInputMaterialNo;
+                String rowLabel = r.feeType + ":seq" + r.seqNo + dimLabel;
+                Object[] db = feeDbMap.get(feeCompoundKey(r.feeType, r.seqNo,
+                        r.dimInputMaterialNo, r.dimElementName, r.dimAssemblyProcess));
+                if (db == null) {
+                    feeDiffs.add(new PartVersionDecisionItem.RowDiff(rowLabel, "row", null, "新增行"));
+                    continue;
+                }
+                addIfChanged(feeDiffs, rowLabel, "fee_value",             str(db[2]), r.feeValue);
+                addIfChanged(feeDiffs, rowLabel, "fee_ratio",             str(db[3]), r.feeRatio);
+                addIfChanged(feeDiffs, rowLabel, "settlement_rise_ratio", str(db[9]), r.settlementRiseRatio);
+                addIfChanged(feeDiffs, rowLabel, "fixed_rise_value",      str(db[10]), r.fixedRiseValue);
+                addIfChanged(feeDiffs, rowLabel, "reject_rate",           str(db[11]), r.rejectRate);
+            }
+            if (!feeDiffs.isEmpty()) result.put("fee", feeDiffs);
+        }
         return result;
     }
 
@@ -408,12 +533,17 @@ public class DiffDetector {
         }
     }
 
-    /** 当 DB 值与 Excel 值不相等时，向 diffs 添加一条 RowDiff */
+    /** 当 DB 值与 Excel 值不相等时，向 diffs 添加一条 RowDiff
+     *
+     *  (2026-05-15) 必须用 BigDecimal.compareTo 做数值比较, 而不是文本 Objects.equals:
+     *  V178 后 mat_bom.net_qty 是 numeric(20,10), 0.03 存为 0.0300000000;
+     *  Excel 输入 0.03 转 BigDecimal 后 toPlainString="0.03".
+     *  文本比较会把它们标为不等 → "0.0300000000 → 0.03" 假差异 → 误报升版.
+     */
     private void addIfChanged(List<PartVersionDecisionItem.RowDiff> diffs, String rowKey,
                                String field, String dbVal, BigDecimal excelVal) {
         String excelStr = excelVal == null ? null : excelVal.toPlainString();
-        if (!Objects.equals(dbVal, excelStr)) {
-            diffs.add(new PartVersionDecisionItem.RowDiff(rowKey, field, dbVal, excelStr));
-        }
+        if (eqDec(dbVal, excelVal)) return; // 数值等 → 不算差异
+        diffs.add(new PartVersionDecisionItem.RowDiff(rowKey, field, dbVal, excelStr));
     }
 }

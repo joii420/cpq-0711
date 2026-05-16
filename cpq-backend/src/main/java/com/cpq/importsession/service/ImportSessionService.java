@@ -225,22 +225,26 @@ public class ImportSessionService {
         LOG.infof("V6 commit: session=%s → quotation=%s", sessionId, quotationId);
 
         // 把 quotation_id 回写到 import_record 建立双向追溯
-        // V6 修复"全 NO_BUMP 时 listCandidates 找不到料号":
-        //   把本次涉及的 (cpn, hf) 集合写入 import_record.metadata JSONB,
-        //   CustomerPartCandidateService 优先从 metadata 拿 hf 集合,
-        //   这样 NO_BUMP (不写 mat_process/fee/plating_fee 的 import_record_id) 也能找到候选
+        // (2026-05-15) hfPairs 改从 staging mapping 表独立查 — 之前从 appliedVersions.keySet()
+        // 构造, 仅包含 BUMP/NEW 决策的对, 漏掉 NO_BUMP → listCandidates 拉不到 NO_BUMP 料号 → 报价单产品为空.
+        // staging mapping 含本次 Excel 全部涉及的 (cpn, hf), 与"是否升版"无关, 是最完整的 source of truth.
         importRecord.quotationId = quotationId;
         importRecord.matchedRows = appliedVersions.size();
         try {
+            @SuppressWarnings("unchecked")
+            java.util.List<Object[]> stagingPairs = em.createNativeQuery(
+                    "SELECT DISTINCT customer_product_no, hf_part_no " +
+                    "FROM mat_customer_part_mapping_staging " +
+                    "WHERE import_session_id = :sid " +
+                    "  AND customer_product_no IS NOT NULL AND hf_part_no IS NOT NULL")
+                    .setParameter("sid", sessionId)
+                    .getResultList();
             java.util.List<java.util.Map<String, String>> hfPairs = new java.util.ArrayList<>();
-            for (String key : appliedVersions.keySet()) {
-                String[] parts = key.split("\\|", 2);
-                if (parts.length == 2) {
-                    java.util.Map<String, String> pair = new java.util.LinkedHashMap<>();
-                    pair.put("cpn", parts[0]);
-                    pair.put("hf", parts[1]);
-                    hfPairs.add(pair);
-                }
+            for (Object[] row : stagingPairs) {
+                java.util.Map<String, String> pair = new java.util.LinkedHashMap<>();
+                pair.put("cpn", row[0] == null ? "" : row[0].toString());
+                pair.put("hf",  row[1] == null ? "" : row[1].toString());
+                hfPairs.add(pair);
             }
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             java.util.Map<String, Object> metadata = new java.util.LinkedHashMap<>();
@@ -248,6 +252,8 @@ public class ImportSessionService {
             metadata.put("sessionId", sessionId.toString());
             metadata.put("hfPairs", hfPairs);
             importRecord.metadata = mapper.writeValueAsString(metadata);
+            LOG.infof("V6 commit: hfPairs (来自 staging mapping) = %d 个, applied (BUMP/NEW) = %d",
+                    hfPairs.size(), appliedVersions.size());
         } catch (Exception jsonEx) {
             LOG.warnf("V6 commit: serialize metadata failed (非致命): %s", jsonEx.getMessage());
         }

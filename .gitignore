@@ -29,6 +29,12 @@ cpq-frontend/.tsbuildinfo
 Thumbs.db
 Desktop.ini
 
+# Office 临时锁文件 (Excel/Word 打开时生成的 ~$xxx 文件)
+~$*.xlsx
+~$*.xls
+~$*.docx
+~$*.doc
+
 # Environment
 .env
 .env.local

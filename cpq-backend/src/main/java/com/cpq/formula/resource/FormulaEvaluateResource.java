@@ -50,7 +50,9 @@ import java.util.Collections;
 public class FormulaEvaluateResource {
 
     private static final Logger LOG = Logger.getLogger(FormulaEvaluateResource.class);
-    private static final int BATCH_MAX = 200;
+    // 2026-05-15 从 200 提到 5000 — 与前端 BATCH_EVALUATE_CHUNK 对齐, 让一张报价单
+    // 一次 batch-evaluate 搞定 (88 partNo × ~10 path ≈ 700~5000), 不再拆 N 次 HTTP
+    private static final int BATCH_MAX = 5000;
 
     @Inject
     FormulaEngine formulaEngine;
@@ -77,9 +79,22 @@ public class FormulaEvaluateResource {
 
     @POST
     @Path("/evaluate")
-    public ApiResponse<EvaluateResponse> evaluate(EvaluateRequest req) {
+    public ApiResponse<EvaluateResponse> evaluate(EvaluateRequest req,
+                                                   @jakarta.ws.rs.core.Context io.vertx.core.http.HttpServerRequest httpReq) {
         if (req == null || req.expression == null || req.expression.isBlank()) {
             return ApiResponse.success(EvaluateResponse.error("PARSE_ERROR", "expression 不能为空"));
+        }
+        // (debug 2026-05-15) 死循环排查 — httpReq 非空说明是真 HTTP 入口（batch 内部调用 evaluate() 不传 httpReq）
+        if (httpReq != null) {
+            String referer = httpReq.getHeader("Referer");
+            String ua = httpReq.getHeader("User-Agent");
+            // 把请求 body 完整内容 + 头打印出来,推断前端调用方
+            LOG.infof("[single-evaluate-http] referer=%s ua-len=%d expr=%s partNo=%s customerId=%s bindings-keys=%s driverRow-keys=%s",
+                    referer,
+                    ua == null ? 0 : ua.length(),
+                    req.expression, req.partNo, req.customerId,
+                    req.bindings == null ? "null" : req.bindings.keySet(),
+                    req.driverRow == null ? "null" : req.driverRow.keySet());
         }
 
         // 缓存命中检查（仅对无动态行数据的请求）
@@ -128,8 +143,8 @@ public class FormulaEvaluateResource {
                     + ":" + (t != null && t.customerId != null ? t.customerId.toString() : "_")
                     + ":" + (t != null && t.partNo != null && !t.partNo.isBlank() ? t.partNo : "_");
             try {
-                // 通过 evaluate() 复用缓存逻辑
-                ApiResponse<EvaluateResponse> single = evaluate(t);
+                // 通过 evaluate() 复用缓存逻辑（不传 HTTP context，避免 debug 日志混入 batch 内部调用）
+                ApiResponse<EvaluateResponse> single = evaluate(t, null);
                 r.data = single.getData();
                 r.status = "OK";
             } catch (Exception e) {

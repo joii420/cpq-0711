@@ -6488,3 +6488,127 @@ versioned mat_fee bk={fee_type=INCOMING_OTHER, seq_no=2} v169→v170 (包装费)
 **自检声明**：V145 column ready ✅；GET/POST/PUT/DELETE/evaluate/validate 6 端点 200 ✅；4 类拒绝路径 400 + 中文错误信息 ✅；JSONB 结构 round-trip OK ✅；FormulaEngine 现有 BNF path / SUBTOTAL / 组件 formula 不破坏（未改 FormulaEngine.java，仅在 Service 层做表达式 pre-rewrite 后调用 evaluate）。
 
 `[2026-05-08] V145 模板公式层基础设施 | 5 个新文件 + 1 个 Entity 改 | 6 端点 + 4 拒绝路径 + 1 整图校验 | Stage 2 接入 SUM_OVER / GlobalVariableService / ExcelView col_key fallback`
+
+---
+
+### [2026-05-15] V178 数值精度 + V6 导入链路全栈修复 | DiffDetector / StagingMerger / PartVersionService / DiffDetector | AP-13 同源 + AP-24 新增
+
+**背景**：用户从基础数据导入 rockwell.xlsx 后碰到一系列连锁问题：报价单产品重复、BV-06 校验错键、净用量精度被截断、导入失败 409、报价编辑页死循环 9k+ 单点请求、未改 Excel 也触发料号升版、commit 后报价单无产品。本次一次性把 V6 导入 + 报价单详情链路的多重 bug 修复并对齐。
+
+#### 1. 报价单 lineItem 重复（88×2=176）
+
+**现象**：QT-20260514-1429 每个料号显示两条相同记录。
+**根因**：`QuotationWizard` 和 `QuotationStep2` 各自有一个 autoPopulate effect，URL 含 `?autoPopulate=1` 时两个 effect 都会 fetch + `setLineItems(prev => [...prev, ...88])` → 前端 state 变成 176 → autoSave 把 176 落库。
+**修复**：commit `068f140` 已删除 Step2 的重复 effect（保留 Wizard 单点入口）。历史脏数据通过 SQL 去重清理：
+```sql
+WITH ranked AS (SELECT id, ROW_NUMBER() OVER (
+  PARTITION BY quotation_id, product_part_no_snapshot, customer_part_no
+  ORDER BY sort_order) AS rn FROM quotation_line_item WHERE quotation_id='...')
+DELETE FROM quotation_line_item li USING ranked WHERE li.id=ranked.id AND ranked.rn>1;
+```
+ON DELETE CASCADE 自动连带清理 quotation_line_component_data。
+
+#### 2. BV-06 客户料号唯一键错（AP-13 同源）
+
+**现象**：BV-06 报"客户料号 PN-509100 在 Excel 中重复"，但同一客户料号映射到多个 HF 是合法业务。
+**根因**：代码 3 处用 `(customer_id, customer_product_no)` 作唯一键，DB 实际索引是 `uq_mat_cust_part_per_hf(customer_id, hf_part_no)`。
+**修复** `BasicDataImportServiceV5.java`：
+- BV-06 校验 key → `(customer_id, hf_part_no)`，错误信息改为"宏丰料号 X（客户料号 Y）在 Excel 中重复"
+- step 4 mat_customer_part_mapping UPSERT 的 `mapRowKey` + UPDATE WHERE 同步改
+- `validateOldValuesOrThrow409` 反查 SQL 同步改
+
+#### 3. V178 数值精度扩展
+
+**现象**：UI-2 「基础数据差异确认」窗口显示 53 条 `净用量 0.4210 ← 0.4209744` 假差异。
+**根因**：`mat_bom.net_qty` 是 `numeric(18,4)`，Excel 上传的 10 位精度被四舍五入到 4 位。
+**方案**：48 列（mat_* 主表 + staging × 19 列 + costing_part_* × 10 列）升精度：
+- scalar 数量类 → `numeric(20,10)` （单价/费用/重量/面积/厚度）
+- rate 类 → `numeric(12,8)` （损耗率/含量%/不良率）
+**视图依赖处理**：V178 用 CTE 捕获 16 个依赖视图的 definition 到临时表 → DROP CASCADE → ALTER COLUMN → "重试循环"重建（最多 20 轮处理视图间依赖顺序）。自检 DO 块对照 information_schema 验证 48 列全部达成目标精度。
+
+#### 4. V6 staging ON CONFLICT 错键（AP-13 同源）
+
+**现象**：导入 confirm 报"没有匹配 ON CONFLICT 说明的唯一或者排除约束"。
+**根因**：`StagingMerger.mergeMapping` 用 `ON CONFLICT (customer_product_no, hf_part_no) WHERE ...` 但 DB 该部分索引不存在，实际只有 `(customer_id, hf_part_no)`。
+**修复**：改 ON CONFLICT key 为 `(customer_id, hf_part_no)`，DO UPDATE 重新覆盖 customer_product_no/name 等非键字段。
+
+#### 5. mat_part_version_log customer_id NOT NULL
+
+**现象**：commit 报 `null value in column "customer_id" of relation "mat_part_version_log"`。
+**根因**：`PartVersionService.applyVersionBump` INSERT 没填 customer_id（表是 V158 新加的 NOT NULL 列）。
+**修复**：方法内部从 `mat_customer_part_mapping` 按 (cpn, hf) 反查 customer_id 后插入；UPDATE 同步用 `(customer_id, hf_part_no)` 真键。
+
+#### 6. batch endpoint 上限太小
+
+**现象**：报价单编辑页报 `batch tasks 上限 100, 当前 704` 和 `上限 200, 当前 N`。
+**修复**：
+- `ComponentResource.batchExpand` 100 → 5000
+- `FormulaEvaluateResource.BATCH_MAX` 200 → 5000
+两者与前端 `BATCH_EVALUATE_CHUNK=5000` 对齐，一张报价单一次 HTTP 完成。
+
+#### 7. 登录 500 Redis 不可达
+
+**现象**：login 返回 500 `CONNECTION_CLOSED`。
+**根因**：`application-dtz.properties` 中 Redis 指向 `${REDIS_HOST:10.177.152.12}`，远端拒绝当前客户端 IP。
+**修复**：Redis URL 改为 `redis://127.0.0.1:6379/0`（本机 C:\Apps\redis 无密码）。后端 `AuthResource.login` 写 session 到 Redis 不再失败。
+
+#### 8. 报价单详情页 9578 次单点 /formulas/evaluate 死循环（部分定位）
+
+**现象**：进入 `/quotations/:id/edit` 转 10 秒，access log 显示 9578 次 POST `/formulas/evaluate`（单点 endpoint，非 batch）。
+**诊断步骤**：
+- Quarkus 启用 `quarkus.http.access-log` 抓 referer/expression 模式 → 每个 partNo × view path 一次
+- axios 拦截器加 `console.warn` 栈追踪 — 但 Vite 缓存顽固，HMR 不更新 → 重启 Vite + `rm node_modules/.vite`
+- 重启后发现 cpq-frontend/node_modules 缺失 → `npm install` 重建
+- 重装后 Vite 启动报 `QuotationStep3.tsx 不存在` —— 远端 master 含 V162 的前端代码未推 → 建 stub 让 Vite 编译通过
+- 用户当前未复现，留 stack trace 工具备后用
+**根因（未最终定位）**：源代码只有 `PathPickerDrawer` 一处调用 `formulaService.evaluate`，理论上不应在报价编辑页触发；待用户复现再分析
+
+#### 9. DiffDetector 多重不一致 → 误报升版（核心修复 → 新 AP-24）
+
+**现象**：未改 Excel 重导，88 个料号全部出现在「版本确认」列表中（卡片显示「无 sheet 差异」）。
+**根因（4 个独立 bug 叠加）**：
+| # | bug | 修复 |
+|---|---|---|
+| 1 | `computeBomDiff`/`computeRowLevelDiff` HashMap key 只用 `bom_type:seq_no`，同 seq 多元素被覆盖 → Excel CuZn36 行错配 DB AgNi10 行 → 误报 net_qty 差异 | 改 `bomCompoundKey(bom_type, seq_no, input_material_no, element_name)` 与 DB 唯一索引 `uq_mat_bom_row` 对齐 |
+| 2 | `addIfChanged` 用 `Objects.equals(dbVal, excelVal.toPlainString())` 文本比较 → V178 后 DB 存 `0.0300000000`、Excel 解析 `0.03` 文本不等 → 假差异 | 改 `eqDec(BigDecimal.compareTo)` 数值比较 |
+| 3 | fingerprint 列不对称：`mat_bom` 有 `child_part_no` 而 `mat_bom_staging` 没有 → `concat_ws` 列数不同 → md5 永远不同 → 永远 BUMP | `PartVersionService.commonDataColumns()` 取 staging ∩ mat 交集，两侧用相同列集合 |
+| 4 | fingerprint WHERE `customer_product_no = :cpn` 排掉 mat_fee NULL cpn 行 → 两侧都"EMPTY" → 假相等 NO_BUMP | filter 改 `(customer_product_no = :cpn OR customer_product_no IS NULL)` 容忍 NULL |
+
+**架构优化**：fingerprint 仅作日志参考，action 改由 `sheetDiffs + rowLevelDiff` 决定。这样**fingerprint 误报或漏报都不影响最终判定**，字段级精确对比是权威。
+
+**新增字段级 diff 覆盖**：
+- `computeFeeDiff`：用 `(fee_type, seq_no, dim_input_material_no, dim_element_name, dim_assembly_process)` 复合 key 匹配 mat_fee，字段级 BigDecimal 比较 `fee_value/fee_ratio/currency/price_unit/settlement_rise_ratio/fixed_rise_value/reject_rate`
+- `computeRowLevelDiff` 扩展也展示 fee 字段变更（UI 「查看详情」能看到 `fee_value: 0.0584 → 15`）
+- `computeCountDiff` 旧的"只比行数"路径保留作 mat_process / mat_plating_fee 兜底，**未来若用户高频改这两类的字段值，应同样扩展**
+
+#### 10. 「版本确认 NO_BUMP 隐藏」+ commit hfPairs 解耦
+
+**现象**：（一开始的目标）想让无差异料号不出现在版本确认列表。最早尝试在 DiffDetector 过滤 NO_BUMP，但报价单 commit 后无产品。
+**根因**：`hfPairs`（驱动 `listCustomerPartCandidates` 报价单候选）原从 `appliedVersions.keySet()` 构造，仅含 BUMP/NEW 决策的 (cpn, hf)。过滤 NO_BUMP 后 hfPairs 缺失 NO_BUMP 部分 → 报价单 lineItem 空。
+**修复（架构层）**：把 "用户决策" 与 "数据范围" 解耦
+- `DiffDetector.detectPartVersions` 过滤 NO_BUMP（前端只看到 BUMP/NEW）
+- `ImportSessionService.commit` 的 hfPairs **改从 `mat_customer_part_mapping_staging`  独立查 distinct (cpn, hf)** — 与"是否升版"完全无关，是本次 Excel 涉及料号的 source of truth
+- 前端 `PartVersionDecisionList.visibleItems` 保留 `action !== 'NO_BUMP'` filter 作 safety net
+
+#### 11. QuotationStep3.tsx 本地 stub
+
+**现象**：Vite 启动 `Failed to resolve import "./QuotationStep3"`。
+**根因**：master 含 V162 (Step3 行级折扣 + 9 列) 的 SQL，但前端 `QuotationStep3.tsx` 没推上 master（在某个未合并分支）。
+**修复**：建最小 stub 让 Wizard 编译通过；待对应分支合并后替换。
+
+---
+
+**涉及文件**：
+- 后端：`DiffDetector.java`、`StagingMerger.java`、`PartVersionService.java`、`ImportSessionService.java`、`BasicDataImportServiceV5.java`、`FormulaEvaluateResource.java`、`ComponentResource.java`
+- DB migration：`V178__expand_numeric_precision.sql`（新增）
+- 前端：`PartVersionDecisionList.tsx`、`BasicDataImportV5Wizard.tsx`、`QuotationStep3.tsx`（stub）、`api.ts`（debug interceptor）
+- 配置：`application-dtz.properties`（Redis 改本机）
+
+**核心经验**：
+1. **DB 唯一索引 = 业务键 = 代码 WHERE/ON CONFLICT 键** 必须三方一致，任何一处错配就是 AP-13 的变种
+2. **fingerprint 适合粗筛快速过滤，字段级 diff 才是权威判定** — 用前者作过滤、后者作 ground truth
+3. **commit 阶段的"数据范围"应从 staging 直接拿，不依赖用户决策** — 决策只控"动作"，不控"作用域"
+4. **列不对称的两表做 fingerprint 比对** 必须用交集列集合，否则永远不等
+5. **JPA / 原生 SQL 字段对比** 必须 BigDecimal.compareTo，不能 toPlainString() + Objects.equals
+
+`[2026-05-15] V178 + V6 导入链路全栈修复 | 8 个后端 .java + 1 个 V_xx.sql + 4 个前端 .tsx + 1 个 properties | AP-13 同源 + AP-24 (DiffDetector 多重不一致) 新增`

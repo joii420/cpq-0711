@@ -132,33 +132,38 @@ public class StagingMerger {
     /**
      * 将 staging 表中属于 (sessionId, cpn, hf) 的数据合并到 mat_* 正式表。
      *
-     * <p>写入顺序：
-     *   1. mat_customer_part_mapping（UPSERT，仅新料号 NEW 动作才写 mapping；BUMP 时 mapping 已存在）
-     *   2. mat_part（UPSERT by part_no）
-     *   3. mat_bom（先 DELETE 旧版本行，再 INSERT）
-     *   4. mat_process（先 DELETE 旧版本行，再 INSERT，并标记 is_current=true）
-     *   5. mat_fee（先 DELETE 旧版本行，再 INSERT，并标记 is_current=true）
-     *   6. mat_plating_fee（先 DELETE 旧版本行，再 INSERT，并标记 is_current=true）
-     *   7. mat_plating_plan（先 DELETE 旧版本行，再 INSERT）
+     * <p>写入顺序（2026-05-15 修：mat_part 必须先于 mat_customer_part_mapping，
+     * 因后者 FK 引用 mat_part(part_no)；旧顺序在"Excel 只含 mapping、未提供料号主档"场景会触发 FK 失败）：
+     *   1. mat_part（UPSERT by part_no；用 mat_part_staging 数据写，缺失时由 ensureMatPartStub 兜底插 stub）
+     *   2. ensureMatPartStub — 若 mat_part_staging 没有该 hf，但 mapping_staging 引用了它，
+     *      插入一行 stub (part_no, status_code='Y')，避免 mapping FK 失败
+     *   3. mat_customer_part_mapping（UPSERT；FK 此时已满足）
+     *   4. mat_bom（先 DELETE 旧版本行，再 INSERT）
+     *   5. mat_process（先 DELETE 旧版本行，再 INSERT，并标记 is_current=true）
+     *   6. mat_fee（先 DELETE 旧版本行，再 INSERT，并标记 is_current=true）
+     *   7. mat_plating_fee（先 DELETE 旧版本行，再 INSERT，并标记 is_current=true）
+     *   8. mat_plating_plan（先 DELETE 旧版本行，再 INSERT）
      *
      * <p>版本号注入：staging 中的 part_version=2000 基线值在此处替换为 targetVersion。
      */
     private void mergeStagingToMat(UUID sessionId, String cpn, String hf, int targetVersion,
                                      UUID importRecordId) {
         try (Connection conn = dataSource.getConnection()) {
-            // 1. mat_customer_part_mapping（UPSERT：若不存在则插入，存在则不覆盖 mapping 主数据）
-            mergeMapping(conn, sessionId, cpn, hf, targetVersion);
-            // 2. mat_part（UPSERT by part_no）
+            // 1. mat_part（先于 mapping — FK 依赖）：用 staging 数据覆盖
             mergePart(conn, sessionId, hf);
-            // 3. mat_bom
+            // 2. stub 兜底：仅 mapping 引用、但 mat_part 仍无主档时，建最小 stub 行
+            ensureMatPartStub(conn, hf);
+            // 3. mat_customer_part_mapping（FK 引用 mat_part(part_no)，必须在 mat_part 之后）
+            mergeMapping(conn, sessionId, cpn, hf, targetVersion);
+            // 4. mat_bom
             mergeBom(conn, sessionId, hf, targetVersion);
-            // 4. mat_process — 带 import_record_id（CustomerPartCandidateService 据此过滤本次料号）
+            // 5. mat_process — 带 import_record_id（CustomerPartCandidateService 据此过滤本次料号）
             mergeProcess(conn, sessionId, cpn, hf, targetVersion, importRecordId);
-            // 5. mat_fee
+            // 6. mat_fee
             mergeFee(conn, sessionId, cpn, hf, targetVersion, importRecordId);
-            // 6. mat_plating_fee
+            // 7. mat_plating_fee
             mergePlatingFee(conn, sessionId, cpn, hf, targetVersion, importRecordId);
-            // 7. mat_plating_plan（plating_plan_code 来自 staging，按 hf 关联）
+            // 8. mat_plating_plan（plating_plan_code 来自 staging，按 hf 关联）
             mergePlatingPlan(conn, sessionId, hf, targetVersion);
         } catch (BusinessException be) {
             throw be;
@@ -166,6 +171,25 @@ public class StagingMerger {
             LOG.errorf(e, "StagingMerger: mergeStagingToMat 失败 session=%s cpn=%s hf=%s v=%d",
                     sessionId, cpn, hf, targetVersion);
             throw new BusinessException(500, "合并 staging 到正式表失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 若 mat_part 没有该 hf 主档（mat_part_staging 也没提供数据），插一行 stub。
+     * 保证 mat_customer_part_mapping FK 满足。
+     *
+     * <p>场景：用户 Excel 只含「客户料号映射」sheet，料号主档/单重 sheet 留空 → mergePart 无数据可写 →
+     * 不加 stub 则 mergeMapping FK 失败（hf_part_no_fkey）。
+     */
+    private void ensureMatPartStub(Connection conn, String hf) throws Exception {
+        String sql = "INSERT INTO mat_part (part_no, status_code) VALUES (?, 'Y') " +
+                     "ON CONFLICT (part_no) DO NOTHING";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, hf);
+            int rows = ps.executeUpdate();
+            if (rows > 0) {
+                LOG.infof("StagingMerger: mat_part stub created for hf=%s (Excel 未提供料号主档/单重数据)", hf);
+            }
         }
     }
 
@@ -178,8 +202,10 @@ public class StagingMerger {
         //   → SaveDraft 拷贝 mapping=2002 到 line_item.partVersionLocked
         //   → 卡片版本号错乱 + expand-driver 用 partVersion=2002 查不到任何数据
         //   修复: ON CONFLICT 时不动 current_version, 让 applyVersionBump 独立 bump（N → N+1）
-        // V151 创建的 uq_mat_cust_part_global 是部分唯一索引（WHERE 谓词限定 NOT NULL），
-        // ON CONFLICT 必须显式匹配相同 WHERE 谓词，否则 PG 报 "no unique constraint matching"
+        // ON CONFLICT 键: 必须与 DB 实际唯一索引匹配。
+        //   实际索引 uq_mat_cust_part_per_hf = (customer_id, hf_part_no)
+        //   (业务: 同一客户料号可映射多个 HF 料号 — 变体/版本场景, AP-13 同款规则)
+        //   (2026-05-15 修: 原代码用 (customer_product_no, hf_part_no) 找不到匹配索引, V6 commit 失败)
         String sql =
             "INSERT INTO mat_customer_part_mapping " +
             "  (id, customer_id, customer_product_no, customer_part_name, customer_drawing_no, " +
@@ -190,9 +216,14 @@ public class StagingMerger {
             "FROM mat_customer_part_mapping_staging s " +
             "WHERE s.import_session_id = ? " +
             "  AND s.hf_part_no = ? AND s.customer_product_no = ? " +
-            "ON CONFLICT (customer_product_no, hf_part_no) " +
-            "  WHERE customer_product_no IS NOT NULL AND hf_part_no IS NOT NULL " +
-            "DO UPDATE SET updated_at = now()";
+            "ON CONFLICT (customer_id, hf_part_no) " +
+            "DO UPDATE SET customer_product_no = EXCLUDED.customer_product_no, " +
+            "              customer_part_name   = COALESCE(EXCLUDED.customer_part_name,   mat_customer_part_mapping.customer_part_name), " +
+            "              customer_drawing_no  = COALESCE(EXCLUDED.customer_drawing_no,  mat_customer_part_mapping.customer_drawing_no), " +
+            "              payment_method       = COALESCE(EXCLUDED.payment_method,       mat_customer_part_mapping.payment_method), " +
+            "              base_currency        = COALESCE(EXCLUDED.base_currency,        mat_customer_part_mapping.base_currency), " +
+            "              quote_currency       = COALESCE(EXCLUDED.quote_currency,       mat_customer_part_mapping.quote_currency), " +
+            "              updated_at = now()";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, targetVersion);
             ps.setObject(2, sessionId);
@@ -267,6 +298,11 @@ public class StagingMerger {
             upd.setInt(2, targetVersion);
             upd.executeUpdate();
         }
+        // 2026-05-15: staging 去重防 uq_mat_process_current 冲突。
+        // 触发场景: basic_data_config 把"组成件BOM" + "组成件BOM及单价"两个 sheet 都注册到 mat_process,
+        // 用户 Excel 同时含这两个 sheet → mat_process_staging 出现完全相同的 N 行 →
+        // INSERT 命中 (customer_id, hf, part_version, seq_no, sub_seq_no) partial unique 冲突。
+        // DISTINCT ON (cust, hf, seq, sub_seq) 按 created_at DESC 取最新一条; staging_id 作 tie-breaker.
         String sql =
             "INSERT INTO mat_process " +
             "  (id, customer_id, hf_part_no, seq_no, sub_seq_no, process_code, assembly_process, " +
@@ -278,8 +314,15 @@ public class StagingMerger {
             "       s.supplier_code, s.supplier_name, s.quantity, s.quantity_unit, " +
             "       s.unit_price, s.freight, s.currency, s.price_unit, " +
             "       ?, true, 1, ? " +
-            "FROM mat_process_staging s " +
-            "WHERE s.import_session_id = ? AND s.hf_part_no = ?";
+            "FROM (" +
+            "  SELECT DISTINCT ON (customer_id, hf_part_no, seq_no, sub_seq_no) " +
+            "         customer_id, hf_part_no, seq_no, sub_seq_no, process_code, assembly_process, " +
+            "         component_part_no, component_name, supplier_code, supplier_name, quantity, " +
+            "         quantity_unit, unit_price, freight, currency, price_unit " +
+            "  FROM mat_process_staging " +
+            "  WHERE import_session_id = ? AND hf_part_no = ? " +
+            "  ORDER BY customer_id, hf_part_no, seq_no, sub_seq_no, created_at DESC, staging_id" +
+            ") s";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, targetVersion);
             ps.setObject(2, importRecordId);

@@ -181,7 +181,10 @@ public class PartVersionService {
         for (int i = 0; i < STAGING_TABLES_FOR_FP.size(); i++) {
             String stagingTable = STAGING_TABLES_FOR_FP.get(i);
             String matTable     = MAT_TABLES_FOR_FP.get(i);
-            String tableHash = computeStagingTableFingerprint(stagingTable, sessionId,
+            // 关键: 用 staging∩mat 共同列, 否则 mat_bom 有 child_part_no 而 mat_bom_staging 没有
+            // 会让两侧 concat_ws 列数不同 → md5 永远不同 → 永远 BUMP 误报 (2026-05-15 修)
+            List<String> commonCols = commonDataColumns(stagingTable, matTable);
+            String tableHash = computeStagingTableFingerprint(stagingTable, commonCols, sessionId,
                     customerProductNo, hfPartNo);
             combined.append(matTable).append('=').append(tableHash).append(';');
         }
@@ -191,29 +194,38 @@ public class PartVersionService {
     /**
      * V6: 计算正式表 (cpn, hf, version) 的指纹，只跨与 STAGING_TABLES_FOR_FP 对齐的 5 张 mat_* 表
      * （不含 costing_part_*），让 staging vs mat_* 双方指纹按相同表集合算出，可直接比较。
+     * 列集合也用 staging∩mat 交集, 避免单边列(如 mat_bom.child_part_no)拉偏指纹.
      */
     public String computeMatFingerprintForStagingCompare(String customerProductNo, String hfPartNo,
                                                           int version) {
         StringBuilder combined = new StringBuilder();
-        for (String table : MAT_TABLES_FOR_FP) {
-            String tableHash = computeTableFingerprint(table, customerProductNo, hfPartNo, version);
-            combined.append(table).append('=').append(tableHash).append(';');
+        for (int i = 0; i < MAT_TABLES_FOR_FP.size(); i++) {
+            String matTable     = MAT_TABLES_FOR_FP.get(i);
+            String stagingTable = STAGING_TABLES_FOR_FP.get(i);
+            List<String> commonCols = commonDataColumns(stagingTable, matTable);
+            String tableHash = computeTableFingerprint(matTable, commonCols,
+                    customerProductNo, hfPartNo, version);
+            combined.append(matTable).append('=').append(tableHash).append(';');
         }
         return md5Hex(combined.toString());
     }
 
-    /** 单张 staging 表的指纹：按 import_session_id + hf_part_no (+ cpn 如有) 过滤 */
-    private String computeStagingTableFingerprint(String stagingTable, UUID sessionId,
-                                                   String cpn, String hf) {
-        List<String> dataCols = listDataColumns(stagingTable);
-        if (dataCols.isEmpty()) return "EMPTY";
+    /** 单张 staging 表的指纹：按 import_session_id + hf_part_no (+ cpn 如有) 过滤
+     *  使用调用方传入的 commonCols（保证两侧用相同列集合算指纹）.
+     */
+    private String computeStagingTableFingerprint(String stagingTable, List<String> commonCols,
+                                                   UUID sessionId, String cpn, String hf) {
+        if (commonCols.isEmpty()) return "EMPTY";
 
         StringBuilder filterSb = new StringBuilder();
-        if (dataCols.contains("customer_product_no")) filterSb.append(" AND customer_product_no = :cpn");
-        if (dataCols.contains("hf_part_no"))          filterSb.append(" AND hf_part_no = :hf");
+        // (2026-05-15) customer_product_no = :cpn 时容忍 NULL — 与 buildFilterClause (mat 侧) 对齐
+        if (commonCols.contains("customer_product_no")) {
+            filterSb.append(" AND (customer_product_no = :cpn OR customer_product_no IS NULL)");
+        }
+        if (commonCols.contains("hf_part_no"))          filterSb.append(" AND hf_part_no = :hf");
 
         String colsExpr = String.join(", ",
-                dataCols.stream().map(c -> "COALESCE(" + c + "::text, '')").toList());
+                commonCols.stream().map(c -> "COALESCE(" + c + "::text, '')").toList());
         String sql = "SELECT COALESCE(md5(string_agg(row_text, ',' ORDER BY row_text)), 'EMPTY') FROM (" +
                 " SELECT concat_ws('|', " + colsExpr + ") AS row_text" +
                 " FROM " + stagingTable +
@@ -221,14 +233,22 @@ public class PartVersionService {
                 ") t";
         try {
             jakarta.persistence.Query q = em.createNativeQuery(sql).setParameter("sid", sessionId);
-            if (dataCols.contains("customer_product_no")) q.setParameter("cpn", cpn);
-            if (dataCols.contains("hf_part_no"))          q.setParameter("hf", hf);
+            if (commonCols.contains("customer_product_no")) q.setParameter("cpn", cpn);
+            if (commonCols.contains("hf_part_no"))          q.setParameter("hf", hf);
             Object r = q.getSingleResult();
             return r == null ? "EMPTY" : r.toString();
         } catch (Exception e) {
             Log.warnf(e, "PartVersion: staging 表 %s 指纹计算失败, 视为 EMPTY", stagingTable);
             return "EMPTY";
         }
+    }
+
+    /** staging ∩ mat 共同数据列(去除 METADATA_COLS), 保持 mat 表的 ordinal_position 顺序 */
+    @SuppressWarnings("unchecked")
+    private List<String> commonDataColumns(String stagingTable, String matTable) {
+        List<String> matCols = listDataColumns(matTable);
+        java.util.Set<String> stgCols = new java.util.HashSet<>(listDataColumns(stagingTable));
+        return matCols.stream().filter(stgCols::contains).toList();
     }
 
     // ============================================================
@@ -278,15 +298,32 @@ public class PartVersionService {
                         " — mat_customer_part_mapping 表无对应行"));
         int newVer = currentVer + 1;
 
+        // 反查 customer_id —— mat_part_version_log 的 PK 是 (customer_id, hf_part_no, version),
+        // customer_id NOT NULL; 同时 mat_customer_part_mapping 的真键也是 (customer_id, hf_part_no)
+        // (2026-05-15 修: 原 INSERT 漏 customer_id 列 → 23502 NOT NULL 违反)
+        @SuppressWarnings("unchecked")
+        List<Object> cidRows = em.createNativeQuery(
+                "SELECT customer_id FROM mat_customer_part_mapping " +
+                "WHERE customer_product_no = :cpn AND hf_part_no = :hf LIMIT 1")
+                .setParameter("cpn", customerProductNo)
+                .setParameter("hf", hfPartNo)
+                .getResultList();
+        if (cidRows.isEmpty() || cidRows.get(0) == null) {
+            throw new IllegalArgumentException(
+                    "无法解析 customer_id: (cpn, hf)=(" + customerProductNo + ", " + hfPartNo + ")");
+        }
+        UUID customerId = (UUID) cidRows.get(0);
+
         String diffJson = diffByTable == null || diffByTable.isEmpty()
                 ? null
                 : serializeDiff(diffByTable);
 
         em.createNativeQuery(
                 "INSERT INTO mat_part_version_log " +
-                "(customer_product_no, hf_part_no, version, content_hash, diff_summary, " +
+                "(customer_id, customer_product_no, hf_part_no, version, content_hash, diff_summary, " +
                 " source_excel, source_import_id, created_at, created_by) " +
-                "VALUES (:cpn, :hf, :v, :hash, CAST(:diff AS jsonb), :src, NULL::uuid, now(), :uid)")
+                "VALUES (:cid, :cpn, :hf, :v, :hash, CAST(:diff AS jsonb), :src, NULL::uuid, now(), :uid)")
+                .setParameter("cid", customerId)
                 .setParameter("cpn", customerProductNo)
                 .setParameter("hf", hfPartNo)
                 .setParameter("v", newVer)
@@ -296,11 +333,12 @@ public class PartVersionService {
                 .setParameter("uid", userId)
                 .executeUpdate();
 
+        // UPDATE 按真键 (customer_id, hf_part_no) 走, 与 uq_mat_cust_part_per_hf 对齐
         em.createNativeQuery(
                 "UPDATE mat_customer_part_mapping SET current_version = :v, updated_at = now() " +
-                "WHERE customer_product_no = :cpn AND hf_part_no = :hf")
+                "WHERE customer_id = :cid AND hf_part_no = :hf")
                 .setParameter("v", newVer)
-                .setParameter("cpn", customerProductNo)
+                .setParameter("cid", customerId)
                 .setParameter("hf", hfPartNo)
                 .executeUpdate();
 
@@ -407,7 +445,12 @@ public class PartVersionService {
     // ============================================================
 
     private String computeTableFingerprint(String table, String cpn, String hfPart, int version) {
-        List<String> dataCols = listDataColumns(table);
+        return computeTableFingerprint(table, listDataColumns(table), cpn, hfPart, version);
+    }
+
+    /** 重载: 调用方传入要参与指纹的列集合（用于 staging vs mat 取交集场景）. */
+    private String computeTableFingerprint(String table, List<String> dataCols,
+                                            String cpn, String hfPart, int version) {
         if (dataCols.isEmpty()) return "EMPTY";
 
         String filter = buildFilterClause(dataCols);
@@ -435,9 +478,12 @@ public class PartVersionService {
     }
 
     private String buildFilterClause(List<String> dataCols) {
+        // (2026-05-15) customer_product_no 在 mat_fee 等表是 NULL (新列, 历史 V5 导入未填),
+        // 用作 WHERE 过滤会排除全部行 → fingerprint 永远 "EMPTY" → 误报 NO_BUMP.
+        // 改为 customer_product_no = :cpn 时容忍 NULL, 保证历史行也参与指纹比对.
         StringBuilder sb = new StringBuilder();
         if (dataCols.contains("customer_product_no")) {
-            sb.append(" AND customer_product_no = :cpn");
+            sb.append(" AND (customer_product_no = :cpn OR customer_product_no IS NULL)");
         }
         if (dataCols.contains("hf_part_no")) {
             sb.append(" AND hf_part_no = :hf");

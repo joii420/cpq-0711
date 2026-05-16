@@ -5,9 +5,11 @@ import com.cpq.basicdata.entity.BasicDataAttribute;
 import com.cpq.basicdata.entity.BasicDataConfig;
 import com.cpq.basicdata.entity.DerivedAttribute;
 import com.cpq.common.exception.BusinessException;
+import com.cpq.importexcel.service.BasicDataImportServiceV5;
 import com.cpq.masterdata.registry.TableRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.apache.poi.ss.usermodel.*;
@@ -26,6 +28,25 @@ public class BasicDataConfigService {
 
     @Inject
     TableRegistry tableRegistry;
+
+    /**
+     * 写操作后通知 BasicDataImportServiceV5 重载进程内的 sheetConfigCache / sheetAttributeCache。
+     * 用 Instance<> 避免 Quarkus CDI 早期初始化时形成强依赖（importexcel 包 → basicdata 包 entity 已经依赖一次）。
+     */
+    @Inject
+    Instance<BasicDataImportServiceV5> importServiceInstance;
+
+    /**
+     * 任何 sheet / attribute / derived 写操作后调用，确保 Excel 导入校验读到最新的 is_required / column_letter / data_type 等元数据。
+     * 失败不抛异常 — cache 重载失败只影响下一次导入校验（用户重启 Quarkus 也能恢复），不应阻塞写操作本身的事务提交。
+     */
+    private void invalidateImportCache() {
+        try {
+            importServiceInstance.get().reloadConfigCache();
+        } catch (Exception e) {
+            LOG.warnf("Failed to reload BasicDataImportServiceV5 cache after metadata write: %s", e.getMessage());
+        }
+    }
 
     // ========== Sheet 配置 ==========
 
@@ -86,6 +107,7 @@ public class BasicDataConfigService {
         c.persist();
 
         LOG.infof("Created basic data sheet config: %s id=%s", c.sheetName, c.id);
+        invalidateImportCache();
         return BasicDataConfigDTO.from(c);
     }
 
@@ -116,6 +138,7 @@ public class BasicDataConfigService {
         // V79: template_kind
         if (req.templateKind != null && !req.templateKind.isBlank()) c.templateKind = req.templateKind;
 
+        invalidateImportCache();
         return BasicDataConfigDTO.from(c);
     }
 
@@ -130,6 +153,7 @@ public class BasicDataConfigService {
         // Cascade: attribute & derived attribute deletion via FK ON DELETE CASCADE
         c.delete();
         LOG.infof("Deleted basic data sheet id=%s", id);
+        invalidateImportCache();
     }
 
     // ========== Attributes ==========
@@ -173,6 +197,7 @@ public class BasicDataConfigService {
         // V58: is_required
         if (req.isRequired != null) a.isRequired = req.isRequired;
         a.persist();
+        invalidateImportCache();
         return BasicDataAttributeDTO.from(a);
     }
 
@@ -203,6 +228,7 @@ public class BasicDataConfigService {
         // V58: is_required
         if (req.isRequired != null) a.isRequired = req.isRequired;
 
+        invalidateImportCache();
         return BasicDataAttributeDTO.from(a);
     }
 
@@ -211,6 +237,7 @@ public class BasicDataConfigService {
         BasicDataAttribute a = BasicDataAttribute.findById(id);
         if (a == null) throw new BusinessException(404, "Attribute not found: " + id);
         a.status = "DISABLED";  // 禁用替代删除
+        invalidateImportCache();
     }
 
     /**
@@ -236,6 +263,7 @@ public class BasicDataConfigService {
 
         LOG.infof("Updated importance for attribute id=%s importanceLevel=%s affectsCalculation=%s",
                 id, a.importanceLevel, a.affectsCalculation);
+        invalidateImportCache();
         return BasicDataAttributeDTO.from(a);
     }
 
@@ -287,6 +315,7 @@ public class BasicDataConfigService {
         if (req.status != null) d.status = req.status;
         if (req.sortOrder != null) d.sortOrder = req.sortOrder;
         d.persist();
+        invalidateImportCache();
         return DerivedAttributeDTO.from(d);
     }
 
@@ -313,6 +342,7 @@ public class BasicDataConfigService {
         if (req.status != null) d.status = req.status;
         if (req.sortOrder != null) d.sortOrder = req.sortOrder;
 
+        invalidateImportCache();
         return DerivedAttributeDTO.from(d);
     }
 
@@ -373,6 +403,7 @@ public class BasicDataConfigService {
         DerivedAttribute d = DerivedAttribute.findById(id);
         if (d == null) throw new BusinessException(404, "Derived attribute not found: " + id);
         d.status = "DISABLED";
+        invalidateImportCache();
     }
 
     // ========== Excel 解析 ==========

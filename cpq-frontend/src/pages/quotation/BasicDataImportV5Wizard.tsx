@@ -408,9 +408,11 @@ const BasicDataImportV5Wizard: React.FC<BasicDataImportV5WizardProps> = ({
             <Space>
               <Text strong>料号版本变更</Text>
               <Text type="secondary" style={{ fontSize: 12 }}>
-                {partVersions.length > 0
-                  ? `${partVersions.length} 个料号`
-                  : '无'}
+                {(() => {
+                  // 仅"需要用户决策"的料号计入显示 (NO_BUMP 不展示卡片, 但 decisions 后端完整持有)
+                  const needAction = partVersions.filter((p) => p.action !== 'NO_BUMP').length;
+                  return needAction > 0 ? `${needAction} 个料号待确认` : '无';
+                })()}
               </Text>
             </Space>
           }
