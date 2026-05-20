@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>v4 · 模板配置（+ 版本比对 / 业务标签 / 绑定产品 按钮）</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#f0f2f5; font-size:13px; color:#303133; height:100vh; overflow:hidden; }
+.layout { display:flex; height:100vh; }
+.sider { width:200px; background:#001529; color:#fff; padding:12px 0; flex-shrink:0; overflow-y:auto; }
+.sider .logo { padding:0 16px 16px; font-size:14px; font-weight:600; border-bottom:1px solid #1f2d3d; }
+.menu { padding-top:8px; }
+.m-item { padding:9px 16px; color:#a6adb4; cursor:pointer; font-size:13px; display:flex; align-items:center; gap:8px; }
+.m-item:hover { color:#fff; background:#1f2d3d; }
+.m-item.active { background:#1f2d3d; color:#fff; }
+.m-sub { padding:6px 16px 6px 32px; font-size:12.5px; color:#a6adb4; cursor:pointer; }
+.m-sub:hover { color:#fff; background:#1f2d3d; }
+.m-sub.active { color:#1890ff; background:#000c17; border-left:3px solid #1890ff; padding-left:29px; }
+.m-item .ico { width:14px; text-align:center; }
+
+.main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.crumb { padding:10px 20px; background:#fff; border-bottom:1px solid #e4e7ed; font-size:12.5px; color:#909399; }
+.crumb b { color:#303133; font-weight:500; }
+.content { flex:1; padding:16px 20px; overflow-y:auto; }
+
+.diff-banner { background:linear-gradient(90deg,#fff7e6,#fffbe6); border:1px dashed #faad14; padding:10px 14px; border-radius:6px; font-size:12.5px; color:#876800; margin-bottom:12px; }
+.diff-banner .badge { background:#faad14; color:#fff; padding:2px 8px; border-radius:3px; font-size:11px; font-weight:600; margin-right:6px; }
+.diff-banner ul { margin:6px 0 0 28px; }
+
+.page-card { background:#fff; border-radius:8px; padding:16px; }
+.page-title { font-size:18px; font-weight:600; margin-bottom:14px; }
+
+.toolbar { display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap:wrap; }
+.btn { padding:5px 14px; border:1px solid #dcdfe6; background:#fff; border-radius:4px; cursor:pointer; font-size:12.5px; color:#606266; }
+.btn:hover { color:#409eff; border-color:#c6e2ff; background:#ecf5ff; }
+.btn.primary { background:#409eff; color:#fff; border-color:#409eff; }
+.btn[disabled] { opacity:.5; cursor:not-allowed; }
+.btn.danger { color:#f56c6c; border-color:#fbc4c4; }
+.btn-highlight { border-color:#faad14; color:#faad14; }
+.btn-divider { width:1px; height:18px; background:#e4e7ed; margin:0 4px; }
+.search { margin-left:auto; padding:5px 10px; border:1px solid #dcdfe6; border-radius:4px; font-size:12.5px; width:240px; }
+
+table { width:100%; border-collapse:collapse; font-size:12.5px; }
+thead th { background:#fafafa; padding:10px 8px; text-align:left; font-weight:500; color:#606266; border-bottom:1px solid #ebeef5; font-size:12px; }
+tbody td { padding:10px 8px; border-bottom:1px solid #f5f5f5; }
+tbody tr:hover { background:#fafbfc; }
+.link { color:#409eff; cursor:pointer; }
+.tag { display:inline-block; font-size:11px; padding:1px 6px; border-radius:3px; margin-right:2px; }
+.tag.green { background:#f0f9eb; color:#67c23a; }
+.tag.blue  { background:#ecf5ff; color:#409eff; }
+.tag.purple{ background:#f9f0ff; color:#722ed1; }
+.tag.gray  { background:#f4f4f5; color:#909399; }
+.tag.orange{ background:#fdf6ec; color:#e6a23c; }
+
+/* button-explainer */
+.btn-cards { display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-top:18px; }
+.btn-card { border:1px solid #ebeef5; border-radius:6px; padding:14px; background:#fafbfc; }
+.btn-card h4 { font-size:13.5px; font-weight:600; color:#303133; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
+.btn-card .from { font-size:11.5px; color:#909399; padding:2px 6px; background:#fef0f0; color:#f56c6c; border-radius:3px; font-weight:500; }
+.btn-card p { font-size:12px; color:#606266; line-height:1.6; }
+.btn-card .demo { margin-top:8px; padding:8px; background:#fff; border:1px dashed #d9d9d9; border-radius:4px; font-size:11.5px; color:#606266; font-family:monospace; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="sider">
+    <div class="logo">📦 CPQ 报价系统</div>
+    <div class="menu">
+      <div class="m-item"><span class="ico">🏠</span>工作台</div>
+      <div class="m-item"><span class="ico">👥</span>客户管理</div>
+      <div class="m-item"><span class="ico">📦</span>产品管理</div>
+      <div class="m-item"><span class="ico">📄</span>报价中心</div>
+      <div class="m-item"><span class="ico">💰</span>定价管理</div>
+      <div class="m-item active"><span class="ico">⚙️</span>配置中心</div>
+      <div class="m-sub">组件管理</div>
+      <div class="m-sub active">模板配置</div>
+      <div class="m-sub">BOM 管理</div>
+      <div class="m-sub">数据源管理</div>
+      <div class="m-sub">料号级核价数据</div>
+      <div class="m-item"><span class="ico">🗂️</span>数据管理</div>
+      <div class="m-item"><span class="ico">📜</span>变更日志</div>
+      <div class="m-item"><span class="ico">🔧</span>系统管理</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="crumb">配置中心 / <b>模板配置</b></div>
+    <div class="content">
+      <div class="diff-banner">
+        <span class="badge">改动 6 · 8 · 9</span>
+        <strong>「模板配置」吸收 3 个原独立菜单功能为顶部按钮：</strong>
+        <ul>
+          <li>「模板版本比对」菜单取消 → 「📊 版本比对」按钮（选 2 行 → 抽屉对比）</li>
+          <li>「产品模板绑定」菜单取消 → 「🔗 绑定产品」按钮（单选行 → 抽屉管理绑定关系）</li>
+          <li>「业务标签字典」菜单取消 → 「🏷️ 业务标签」按钮（全局字典管理）</li>
+        </ul>
+      </div>
+
+      <div class="page-card">
+        <div class="page-title">模板配置</div>
+
+        <div class="toolbar">
+          <button class="btn primary">+ 新建模板</button>
+          <button class="btn">📋 克隆模板</button>
+          <button class="btn">📥 导入</button>
+          <button class="btn">📤 导出</button>
+          <div class="btn-divider"></div>
+          <!-- 3 个新增的"按钮替代菜单"按钮 -->
+          <button class="btn btn-highlight">📊 版本比对</button>
+          <button class="btn btn-highlight">🔗 绑定产品</button>
+          <button class="btn btn-highlight">🏷️ 业务标签</button>
+          <div class="btn-divider"></div>
+          <button class="btn" disabled>批量发布</button>
+          <button class="btn danger" disabled>删除</button>
+          <input class="search" placeholder="搜索模板名称 / 业务标签" />
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width:30px;"><input type="checkbox"/></th>
+              <th>模板名称</th>
+              <th>类别</th>
+              <th>业务标签</th>
+              <th>组件数</th>
+              <th>绑定产品数</th>
+              <th>当前版本</th>
+              <th>状态</th>
+              <th>更新时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><input type="checkbox" checked/></td>
+              <td><span class="link">阀门体标准模板</span></td>
+              <td>阀门</td>
+              <td>
+                <span class="tag purple">铸造</span><span class="tag blue">机加工</span>
+              </td>
+              <td>5</td>
+              <td>23</td>
+              <td>v1.4</td>
+              <td><span class="tag green">已发布</span></td>
+              <td>2026-05-15 14:32</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox" checked/></td>
+              <td><span class="link">阀门体标准模板</span></td>
+              <td>阀门</td>
+              <td>
+                <span class="tag purple">铸造</span><span class="tag blue">机加工</span>
+              </td>
+              <td>5</td>
+              <td>23</td>
+              <td>v1.3</td>
+              <td><span class="tag gray">历史版本</span></td>
+              <td>2026-04-22 10:08</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td><span class="link">管件标准模板</span></td>
+              <td>管件</td>
+              <td>
+                <span class="tag purple">铸造</span><span class="tag orange">焊接</span>
+              </td>
+              <td>4</td>
+              <td>11</td>
+              <td>v2.0</td>
+              <td><span class="tag green">已发布</span></td>
+              <td>2026-05-14 09:21</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td><span class="link">通用三通模板</span></td>
+              <td>管件</td>
+              <td>
+                <span class="tag blue">机加工</span>
+              </td>
+              <td>3</td>
+              <td>34</td>
+              <td>v1.2</td>
+              <td><span class="tag green">已发布</span></td>
+              <td>2026-05-12 11:45</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td><span class="link">法兰盘模板</span></td>
+              <td>法兰</td>
+              <td>
+                <span class="tag purple">铸造</span>
+              </td>
+              <td>2</td>
+              <td>18</td>
+              <td>v1.1</td>
+              <td><span class="tag green">已发布</span></td>
+              <td>2026-05-10 10:00</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- 3 个按钮的说明卡片 -->
+        <div class="btn-cards">
+          <div class="btn-card">
+            <h4>📊 版本比对 <span class="from">取代菜单</span></h4>
+            <p>选 2 行（同模板的两个版本 / 不同模板）→ 点按钮 → 右侧抽屉以左右对比展示字段、公式、组件、绑定差异；红 = 删除，绿 = 新增，黄 = 修改。</p>
+            <div class="demo">enabledWhen: selectedRows.length === 2</div>
+          </div>
+          <div class="btn-card">
+            <h4>🔗 绑定产品 <span class="from">取代菜单</span></h4>
+            <p>选 1 行 → 抽屉展示当前模板已绑定的产品 + 待绑定候选；支持批量勾选、按分类/标签筛选、保存即生效（写入 template_product 关联表）。</p>
+            <div class="demo">enabledWhen: selectedRows.length === 1</div>
+          </div>
+          <div class="btn-card">
+            <h4>🏷️ 业务标签 <span class="from">取代菜单</span></h4>
+            <p>无需选行（全局字典）→ 抽屉以表格管理标签 key / 中文标签 / 颜色 / 排序 / 启用；保存后立即在本页"业务标签"列显示。</p>
+            <div class="demo">enabledWhen: true（始终可用）</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -49,6 +49,7 @@ import DdlExtensionPage from '../pages/system-monitor/DdlExtensionPage';
 import PartVersionPage from '../pages/partversion/PartVersionPage';
 import MaterialRecipeManagement from '../pages/config/MaterialRecipeManagement';
 import ProcessManagement from '../pages/config/ProcessManagement';
+import ConfigTemplateManagement from '../pages/configtemplate/ConfigTemplateManagement';
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -105,6 +106,7 @@ const router = createBrowserRouter([
       { path: 'part-versions', element: <PartVersionPage /> },
       { path: 'config/material-recipes', element: <MaterialRecipeManagement /> },
       { path: 'config/processes', element: <ProcessManagement /> },
+      { path: 'config/config-templates', element: <ConfigTemplateManagement /> },
     ],
   },
 ]);

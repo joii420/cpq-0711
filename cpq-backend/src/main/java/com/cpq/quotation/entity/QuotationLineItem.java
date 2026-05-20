@@ -69,6 +69,17 @@ public class QuotationLineItem extends PanacheEntityBase {
     @Column(name = "excel_view_snapshot", columnDefinition = "jsonb")
     public String excelViewSnapshot;
 
+    /**
+     * V169 加的列, 标识选配组合产品的父子关系 (SIMPLE / COMPOSITE / PART).
+     * SIMPLE: 普通产品 (默认); COMPOSITE: 选配组合产品父级; PART: COMPOSITE 的子件
+     */
+    @Column(name = "composite_type", length = 16)
+    public String compositeType = "SIMPLE";
+
+    /** V169 加的列, PART 行指向父级 line_item.id, 其他类型为 null */
+    @Column(name = "parent_line_item_id")
+    public UUID parentLineItemId;
+
     @Column(name = "created_at", nullable = false)
     public OffsetDateTime createdAt;
 

@@ -78,7 +78,7 @@ function parseJsonSafe<T>(v: T | string | null | undefined, fallback: T): T {
 }
 
 function normalizeFieldType(raw: string):
-  'FIXED_VALUE' | 'DATA_SOURCE' | 'INPUT' | 'INPUT_TEXT' | 'INPUT_NUMBER' | 'FORMULA' | 'BASIC_DATA' {
+  'FIXED_VALUE' | 'DATA_SOURCE' | 'INPUT' | 'INPUT_TEXT' | 'INPUT_NUMBER' | 'FORMULA' | 'BASIC_DATA' | 'LIST_FORMULA' {
   const t = (raw || '').toUpperCase();
   if (t === 'FORMULA') return 'FORMULA';
   if (t === 'FIXED_VALUE' || t === 'FIXED') return 'FIXED_VALUE';
@@ -86,6 +86,7 @@ function normalizeFieldType(raw: string):
   if (t === 'BASIC_DATA') return 'BASIC_DATA';
   if (t === 'INPUT_TEXT') return 'INPUT_TEXT';
   if (t === 'INPUT_NUMBER') return 'INPUT_NUMBER';
+  if (t === 'LIST_FORMULA') return 'LIST_FORMULA';  // V203/Phase B
   return 'INPUT_TEXT';
 }
 
@@ -104,33 +105,17 @@ function buildEmptyRow(fields: ComponentField[]): Record<string, any> {
 }
 
 /** 把 customer-quote 模板 + 单个料号信息 → LineItem(导出供 QuotationStep2 自动展开复用) */
-export function buildLineItemFromTemplate(tmpl: any, part: CustomerPartCandidate): LineItem {
+/**
+ * 从模板的 componentsSnapshot 构建初始 componentData(每组件 1 行空 / preset_rows).
+ *
+ * <p>抽出此函数让"选配创建的 lineItem"(QuotationWizard.enrichComponentData) 在
+ * savedCompData=[] 时复用,而不是返回空数组 → 卡片渲染无组件结构的 bug.
+ *
+ * @param tmpl 完整模板对象(GET /templates/{id} 返回的 data)
+ */
+export function buildComponentDataFromTemplate(tmpl: any): ComponentDataItem[] {
   const componentsSnapshot: any[] = parseJsonSafe(tmpl.componentsSnapshot, []);
-  const productAttrs: any[] = parseJsonSafe(tmpl.productAttributes, []);
-
-  const productAttributes: LineItem['productAttributes'] = productAttrs.map((attr: any) => ({
-    name: attr.name || attr.key || attr.fieldKey || '',
-    field_type: attr.field_type || attr.fieldType || 'TEXT',
-    required: attr.required ?? false,
-    default_value: attr.default_value ?? attr.defaultValue,
-    source: attr.source,
-  }));
-
-  const productAttributeValues: Record<string, any> = {};
-  for (const attr of productAttributes) {
-    if (!attr.name) continue;
-    productAttributeValues[attr.name] = attr.default_value ?? '';
-  }
-  // PRD：产品图号属性绑定客户料号映射的 customer_drawing_no——
-  // 命名约定上模板里有"图号"字段时自动用 customerDrawingNo 兜底，避免新建报价单还要用户手填一遍。
-  // 用户后续若手工修改也会被 productAttributeValues 持久化覆盖。
-  if (part.customerDrawingNo
-      && Object.prototype.hasOwnProperty.call(productAttributeValues, '图号')
-      && !productAttributeValues['图号']) {
-    productAttributeValues['图号'] = part.customerDrawingNo;
-  }
-
-  const componentData: ComponentDataItem[] = componentsSnapshot.map((comp: any) => {
+  return componentsSnapshot.map((comp: any) => {
     const fields: ComponentField[] = (comp.fields || []).map((f: any) => ({
       name: f.name || f.key || f.fieldKey || '',
       field_type: normalizeFieldType(f.field_type || f.type || f.fieldType || ''),
@@ -140,6 +125,11 @@ export function buildLineItemFromTemplate(tmpl: any, part: CustomerPartCandidate
       formula_name: f.formula_name,
       datasource_binding: f.datasource_binding,
       basic_data_path: f.basic_data_path,
+      // V109: 全局变量徽章; V190 default_source 统一默认值来源
+      global_variable_code: f.global_variable_code,
+      default_source: f.default_source,
+      // V203/Phase B: LIST_FORMULA 字段的配置
+      list_formula_config: f.list_formula_config,
       sort_order: f.sort_order,
       label: f.label || f.fieldLabel || f.name || '',
       key: f.name || f.key || f.fieldKey || '',
@@ -170,12 +160,39 @@ export function buildLineItemFromTemplate(tmpl: any, part: CustomerPartCandidate
       fields,
       formulas,
       formulaAssignments,
-      // Y1.5: 行驱动路径(可空) — Step2 渲染时按此展开 N 行
       dataDriverPath: comp.data_driver_path || comp.dataDriverPath || undefined,
       rows: compType === 'SUBTOTAL' ? [] : initialRows,
       subtotal: 0,
     };
   });
+}
+
+export function buildLineItemFromTemplate(tmpl: any, part: CustomerPartCandidate): LineItem {
+  const productAttrs: any[] = parseJsonSafe(tmpl.productAttributes, []);
+
+  const productAttributes: LineItem['productAttributes'] = productAttrs.map((attr: any) => ({
+    name: attr.name || attr.key || attr.fieldKey || '',
+    field_type: attr.field_type || attr.fieldType || 'TEXT',
+    required: attr.required ?? false,
+    default_value: attr.default_value ?? attr.defaultValue,
+    source: attr.source,
+  }));
+
+  const productAttributeValues: Record<string, any> = {};
+  for (const attr of productAttributes) {
+    if (!attr.name) continue;
+    productAttributeValues[attr.name] = attr.default_value ?? '';
+  }
+  // PRD：产品图号属性绑定客户料号映射的 customer_drawing_no——
+  // 命名约定上模板里有"图号"字段时自动用 customerDrawingNo 兜底，避免新建报价单还要用户手填一遍。
+  // 用户后续若手工修改也会被 productAttributeValues 持久化覆盖。
+  if (part.customerDrawingNo
+      && Object.prototype.hasOwnProperty.call(productAttributeValues, '图号')
+      && !productAttributeValues['图号']) {
+    productAttributeValues['图号'] = part.customerDrawingNo;
+  }
+
+  const componentData: ComponentDataItem[] = buildComponentDataFromTemplate(tmpl);
 
   const subtotalFormula: any[] = parseJsonSafe(tmpl.subtotalFormula || tmpl.subtotal_formula, []);
 

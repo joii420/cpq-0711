@@ -28,6 +28,11 @@ public class SaveDraftRequest {
     public BigDecimal finalDiscountRate;
     public String discountAdjustmentReason;
 
+    // 2026-05-18: 报价模板 / 核价模板 绑定 — 之前漏在 SaveDraft 透传, 导致 Step1 选模板后
+    // 永远写不到 quotation.customer_template_id / costing_card_template_id, 刷新页面拿不到值.
+    public UUID customerTemplateId;
+    public UUID costingCardTemplateId;
+
     // Line items
     public List<LineItemDraft> lineItems;
 
@@ -52,6 +57,14 @@ public class SaveDraftRequest {
         public Integer sortOrder;
         public List<UUID> processIds;
         public List<ComponentDataDraft> componentData;
+        /** V169 选配组合产品关系标识 SIMPLE / COMPOSITE / PART (saveDraft 全量重建时必须透传保留) */
+        public String compositeType;
+        /**
+         * 父级在前端 lineItems list 中的索引 (PART 子件用).
+         * saveDraft 全量重建时旧 parent_line_item_id 已被 CASCADE 删除 → 不能直接传旧 UUID,
+         * 改传索引让后端按 newIds[tempParentIndex] 二阶段 UPDATE.
+         */
+        public Integer tempParentIndex;
     }
 
     public static class ComponentDataDraft {

@@ -82,6 +82,7 @@ public class ConfigureProductService {
             List<ElementInput> elems = req.elements.stream()
                 .map(e -> new ElementInput(e.elementCode, e.pct))
                 .collect(Collectors.toList());
+            // lookup 端点不关心 processIds 维度, 仍按 2-arg 老形态查询 (兼容老 fingerprint)
             fp = fingerprintCalc.simpleFingerprint(req.recipeCode, elems);
         } else if ("COMPOSITE".equals(req.productType)) {
             if (req.childHfPartNos == null || req.childHfPartNos.size() < 2) {
@@ -177,13 +178,41 @@ public class ConfigureProductService {
             if (pr.existingHfPartNo == null || pr.existingHfPartNo.isBlank()) {
                 throw new IllegalArgumentException("existing 模式 existingHfPartNo 必填");
             }
-            Object exists = em.createNativeQuery(
-                    "SELECT 1 FROM mat_part WHERE part_no = :p")
+            // 读老料号物理状态: recipe_id + 当前 unit_weight, 验证存在
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = em.createNativeQuery(
+                    "SELECT material_recipe_id, unit_weight FROM mat_part WHERE part_no = :p")
                 .setParameter("p", pr.existingHfPartNo)
-                .getResultStream().findFirst().orElse(null);
-            if (exists == null) {
+                .getResultList();
+            if (rows.isEmpty()) {
                 throw new IllegalArgumentException("料号不存在: " + pr.existingHfPartNo);
             }
+            // existing 模式无 processIds: 老行为, 直接复用物理对象
+            if (pr.processIds == null || pr.processIds.isEmpty()) {
+                // hotfix: mat_process 按 customer_id 隔离, 新客户复用老料号时本客户 mat_process 0 行
+                // → ImplicitJoinRewriter 注入 customer_id 谓词查不到 → 工序 Tab 加载中.
+                // 如果当前客户尚无该料号的 mat_process 数据, 从任意已有客户复制一份给当前 customerId.
+                if (customerId != null) {
+                    backfillProcessesForNewCustomer(pr.existingHfPartNo, customerId);
+                }
+                return pr.existingHfPartNo;
+            }
+            // 用户拍板修法: existing 模式始终保留老 hfPartNo. processIds 非空时, 用用户选的工序
+            // 覆盖**当前客户的** mat_process (按 customer_id 隔离, 其他客户不受影响).
+            // 这符合用户期望「子件料号是我选的那个」, 不再生成新 CFG-xxx 料号.
+            if (customerId == null) {
+                throw new IllegalArgumentException(
+                    "existing+processIds 需 quotation.customer_id 写 mat_process");
+            }
+            // 1. 删当前 customer 的老 mat_process 行 (避免新老叠加)
+            em.createNativeQuery(
+                    "DELETE FROM mat_process WHERE hf_part_no = :p AND customer_id = :c")
+                .setParameter("p", pr.existingHfPartNo)
+                .setParameter("c", customerId)
+                .executeUpdate();
+            // 2. 按用户选的 processIds 顺序写入当前客户的 mat_process
+            insertProcesses(pr.existingHfPartNo, pr.processIds, customerId);
+            // 3. 仍返老 hfPartNo, 卡片显示用户选的料号
             return pr.existingHfPartNo;
         }
 
@@ -197,7 +226,8 @@ public class ConfigureProductService {
         List<ElementInput> elems = pr.elements.stream()
             .map(e -> new ElementInput(e.elementCode, e.pct))
             .collect(Collectors.toList());
-        String fp = fingerprintCalc.simpleFingerprint(pr.recipeCode, elems);
+        // hotfix: fingerprint 加入 processIds — 同物质不同工序 = 不同商品
+        String fp = fingerprintCalc.simpleFingerprint(pr.recipeCode, elems, pr.processIds);
 
         String existing = lookupHfByFingerprint(fp);
         if (existing != null) {
@@ -297,6 +327,73 @@ public class ConfigureProductService {
             .executeUpdate();
     }
 
+    /**
+     * hotfix: existing 路径新客户复用老料号时, 把任意已有客户的 mat_process 数据复制一份给当前客户.
+     *
+     * <p>mat_process 按 customer_id NOT NULL 隔离, 新客户首次复用 → ImplicitJoinRewriter
+     * 注入当前 customer_id 查询 0 行 → 工序 Tab "加载中" 卡死.
+     *
+     * <p>幂等: 如果当前客户已有该料号的 mat_process 行, 跳过.
+     * 取最新 updated_at 的客户作源, INSERT 时让 PK / 唯一约束自动去重 (ON CONFLICT DO NOTHING).
+     */
+    void backfillProcessesForNewCustomer(String hfPartNo, java.util.UUID currentCustomerId) {
+        // 已有数据 → 跳过
+        Object existsObj = em.createNativeQuery(
+                "SELECT 1 FROM mat_process WHERE hf_part_no = :p AND customer_id = :c AND is_current = true LIMIT 1")
+            .setParameter("p", hfPartNo)
+            .setParameter("c", currentCustomerId)
+            .getResultStream().findFirst().orElse(null);
+        if (existsObj != null) return;
+
+        // 复制最新一个客户的所有 mat_process 行 (按 seq_no 顺序), 改成当前 customer_id
+        int copied = em.createNativeQuery(
+                "INSERT INTO mat_process " +
+                "(customer_id, hf_part_no, version, is_current, seq_no, " +
+                "process_code, assembly_process, part_version, status, created_at, updated_at) " +
+                "SELECT :newCust, hf_part_no, 1, true, seq_no, " +
+                "       process_code, assembly_process, part_version, 'ACTIVE', NOW(), NOW() " +
+                "FROM mat_process " +
+                "WHERE hf_part_no = :p AND is_current = true " +
+                "  AND customer_id = (" +
+                "    SELECT customer_id FROM mat_process WHERE hf_part_no = :p AND is_current = true " +
+                "    ORDER BY updated_at DESC LIMIT 1)")
+            .setParameter("newCust", currentCustomerId)
+            .setParameter("p", hfPartNo)
+            .executeUpdate();
+        // 不引 Logger 依赖, 改用 System.out (configure 流程少, 噪音可忽略)
+        System.out.printf("[configure backfill] customerId=%s hfPartNo=%s copied %d mat_process rows%n",
+                currentCustomerId, hfPartNo, copied);
+    }
+
+    /** hotfix: 从老料号 mat_bom 读 ELEMENT 行, 用于 existing+processIds 的 fingerprint 计算 */
+    @SuppressWarnings("unchecked")
+    List<ElementInput> readElementsFromMatBom(String hfPartNo) {
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT element_name, composition_pct FROM mat_bom " +
+                "WHERE hf_part_no = :p AND bom_type = 'ELEMENT' " +
+                "ORDER BY seq_no")
+            .setParameter("p", hfPartNo)
+            .getResultList();
+        List<ElementInput> out = new ArrayList<>();
+        for (Object[] r : rows) {
+            if (r[0] == null || r[1] == null) continue;
+            out.add(new ElementInput(r[0].toString(), new java.math.BigDecimal(r[1].toString())));
+        }
+        return out;
+    }
+
+    /** hotfix: 复制老料号 mat_bom ELEMENT 行到新 hfPartNo (existing+processIds 路径) */
+    void copyElementBom(String fromHfPartNo, String toHfPartNo) {
+        em.createNativeQuery(
+                "INSERT INTO mat_bom (hf_part_no, bom_type, seq_no, element_name, " +
+                "composition_pct, part_version, created_at) " +
+                "SELECT :to, bom_type, seq_no, element_name, composition_pct, 2000, NOW() " +
+                "FROM mat_bom WHERE hf_part_no = :from AND bom_type = 'ELEMENT'")
+            .setParameter("to", toHfPartNo)
+            .setParameter("from", fromHfPartNo)
+            .executeUpdate();
+    }
+
     void insertElementBom(String hfPartNo, List<ElementOverride> elements) {
         // mat_bom: has part_version (V153) but NO is_current column (not in V44 or V153)
         // element_name stores the elementCode; composition_pct stores the percentage
@@ -330,29 +427,34 @@ public class ConfigureProductService {
     void insertProcesses(String hfPartNo, List<UUID> processIds, UUID customerId) {
         int seq = 1;
         for (UUID processId : processIds) {
-            List<Object> rows = em.createNativeQuery(
-                    "SELECT code FROM process WHERE id = :id")
+            // hotfix: 同时读 code + name, 写进 mat_process.process_code + assembly_process,
+            // 让选配工序在报价单工序 Tab 的「工序」列能正确显示工序中文名 (焊接装配/淬火等)
+            List<Object[]> rows = em.createNativeQuery(
+                    "SELECT code, name FROM process WHERE id = :id")
                 .setParameter("id", processId)
                 .getResultList();
             if (rows.isEmpty()) {
                 throw new IllegalArgumentException("工艺不存在: " + processId);
             }
-            String code = (String) rows.get(0);
+            Object[] r = rows.get(0);
+            String code = (String) r[0];
+            String name = (String) r[1];
 
             // mat_process required columns (from V44 + V153):
             //   customer_id NOT NULL, hf_part_no NOT NULL, version INT DEFAULT 1,
             //   is_current BOOLEAN NOT NULL DEFAULT true, seq_no NOT NULL,
             //   status NOT NULL DEFAULT 'ACTIVE', part_version INT NOT NULL DEFAULT 2000
-            // process_code is VARCHAR nullable but we fill it from the process dict
+            // process_code + assembly_process 都从 process 字典填
             em.createNativeQuery(
                     "INSERT INTO mat_process " +
                     "(customer_id, hf_part_no, version, is_current, seq_no, " +
-                    "process_code, part_version, status, created_at, updated_at) " +
-                    "VALUES (:cid, :p, 1, true, :sq, :code, 2000, 'ACTIVE', NOW(), NOW())")
+                    "process_code, assembly_process, part_version, status, created_at, updated_at) " +
+                    "VALUES (:cid, :p, 1, true, :sq, :code, :name, 2000, 'ACTIVE', NOW(), NOW())")
                 .setParameter("cid", customerId)
                 .setParameter("p", hfPartNo)
                 .setParameter("sq", seq++)
                 .setParameter("code", code)
+                .setParameter("name", name)
                 .executeUpdate();
         }
     }

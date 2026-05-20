@@ -298,15 +298,18 @@ class TemplateResourceTest {
     }
 
     /**
-     * Phase 1 客户报价模板匹配 — 客户专属优先 → 通用兜底
-     * 对应 docs/API.md L100/L643
+     * Phase 1 客户报价模板匹配 — 客户专属 + 通用同时存在 → MIXED
+     * 对应 docs/API.md L100/L643 + 2026-05-15 修复(报价模板不显示通用模板 bug)
+     *
+     * <p>修复前:客户专属命中即 short-circuit,通用模板永远不显示在下拉。
+     * 修复后:同时返回两类,客户专属在前,前端 MIXED 分支按 Tag 区分来源。
      */
     @Test
     @Order(9)
-    void matchCustomerQuote_specificFound_returnsSpecific() {
+    void matchCustomerQuote_specificAndGeneralBoth_returnsMixed() {
         java.util.UUID catId = createProductCategory("CAT_MATCH_SPEC");
         java.util.UUID customerId = createTestCustomer("MATCH-SPEC-CUST");
-        // 通用模板(应被客户专属屏蔽)
+        // 通用模板(修复后仍可见,与客户专属并列)
         publishTestTemplate("Test Template GeneralBackup", catId, null, "[{\"type\":\"subtotal\"}]");
         // 客户专属
         publishTestTemplate("Test Template CustomerSpec", catId, customerId, "[{\"type\":\"subtotal\"}]");
@@ -317,9 +320,11 @@ class TemplateResourceTest {
             .get("/api/cpq/templates/match-customer-quote")
             .then()
                 .statusCode(200)
-                .body("data.matchType", equalTo("CUSTOMER_SPECIFIC"))
-                .body("data.templates.size()", equalTo(1))
-                .body("data.templates[0].name", equalTo("Test Template CustomerSpec"));
+                .body("data.matchType", equalTo("MIXED"))
+                .body("data.templates.size()", equalTo(2))
+                // 客户专属在前(由 service 层 specific + general 顺序拼接保证)
+                .body("data.templates[0].name", equalTo("Test Template CustomerSpec"))
+                .body("data.templates[1].name", equalTo("Test Template GeneralBackup"));
     }
 
     @Test

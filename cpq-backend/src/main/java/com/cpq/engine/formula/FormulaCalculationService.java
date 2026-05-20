@@ -200,6 +200,14 @@ public class FormulaCalculationService {
                     BigDecimal gvVal = resolveGlobalVariable(token, rowData);
                     expr.append(gvVal != null ? gvVal.toPlainString() : "0");
                     break;
+                case "datasource_field":
+                    // K1: 引用同行 DATA_SOURCE 字段的解析结果. token.name = 字段名,
+                    // 求值期 rowData[name] 应已含 DATA_SOURCE 解析后的值 (前端 ProductCard
+                    // 在公式求值前先解 DATA_SOURCE 写入 row, 与 INPUT_NUMBER/FIXED_VALUE 同处理).
+                    String dsName = (String) token.get("name");
+                    Object dsVal = (dsName != null && rowData != null) ? rowData.get(dsName) : null;
+                    expr.append(toNumericString(dsVal));
+                    break;
                 default:
                     LOG.warn("Unknown token type: " + type);
                     break;

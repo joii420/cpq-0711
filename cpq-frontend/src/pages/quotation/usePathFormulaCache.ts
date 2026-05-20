@@ -36,16 +36,58 @@ export function usePathFormulaCache(
   const cacheRef = useRef<PathCache>({});
 
   // ── 内容指纹替代引用依赖 ──────────────────────────────────────────────────
-  // 仅含影响路径求值的字段: productPartNo + 各 componentId（排序后）
-  // lineItems 引用变化但内容不变 → fingerprint 字符串相等 → tasks useMemo 不重建 → effect 不重跑
+  // 仅含影响路径求值的字段: productPartNo + 各 componentId + 每组件的 path 列表(排序后).
+  //
+  // 2026-05-17 修复(QT-1377 "加载中" bug):必须把 fields 的 basic_data_path 纳入指纹.
+  // 原因: applyQuotationData 先 setLineItems(basicItems) (componentData 来自 DB 无 fields),
+  // 然后 enrichComponentData 异步把 fields 补上后再 setLineItems. 旧指纹只看 componentId 集合,
+  // enrich 前后字符串相同 → tasks useMemo 不重建 → batchEvaluate 永远不发请求 → cache 空 → 加载中.
   const fingerprint = useMemo(() => {
     return JSON.stringify(
       (lineItems || []).map((li) => ({
         pn: li.productPartNo,
-        cids: (li.componentData || [])
+        comps: (li.componentData || [])
           .filter((cd: any) => cd.componentId)
-          .map((cd: any) => cd.componentId)
-          .sort(),
+          .map((cd: any) => {
+            // 收集本组件内所有 BASIC_DATA 字段的 basic_data_path + 公式 token 中的 path,
+            // 排序去重后参与指纹 — 让 enrich 把 fields 从空填到 N 个时指纹变化.
+            const paths: string[] = [];
+            for (const f of (cd.fields || []) as any[]) {
+              if (f.field_type === 'BASIC_DATA' && f.basic_data_path) {
+                paths.push(f.basic_data_path);
+              }
+              // V184: INPUT_NUMBER 字段的默认值路径(全局变量回退)也要计入指纹,
+              // 这样 enrich 把 default_basic_data_path 补上后 tasks useMemo 才会重建.
+              if (f.default_basic_data_path) {
+                paths.push(f.default_basic_data_path);
+              }
+              // V190+ default_source.BNF_PATH (INPUT_NUMBER 走 BNF 兜底)
+              if (f.default_source?.type === 'BNF_PATH' && f.default_source?.path) {
+                paths.push(f.default_source.path);
+              }
+              // Phase J: DATA_SOURCE.BNF_PATH 子类型 — 没扫这里 → tasks 不预热 →
+              // 渲染 fallback 链最终落"加载中"(AP-31 协议传播补)
+              if (
+                f.field_type === 'DATA_SOURCE'
+                && f.datasource_binding?.type === 'BNF_PATH'
+                && f.datasource_binding?.bnf_path
+              ) {
+                paths.push(f.datasource_binding.bnf_path);
+              }
+            }
+            for (const fr of (cd.formulas || []) as any[]) {
+              for (const tok of (fr.expression || []) as any[]) {
+                if ((tok.type === 'path' || tok.type === 'global_variable') && tok.path) {
+                  paths.push(tok.path);
+                }
+              }
+            }
+            return {
+              id: cd.componentId,
+              ps: Array.from(new Set(paths)).sort(),
+            };
+          })
+          .sort((a: any, b: any) => (a.id > b.id ? 1 : a.id < b.id ? -1 : 0)),
       })),
     );
   }, [lineItems]);
@@ -71,6 +113,23 @@ export function usePathFormulaCache(
         for (const f of comp.fields || []) {
           if (f.field_type === 'BASIC_DATA' && f.basic_data_path) {
             addTask(partNo, f.basic_data_path);
+          }
+          // V184: INPUT_NUMBER (或任意字段)的默认值来源路径 — 让 batchEvaluate 预热,
+          // 保证用户行值为空时 formulaEngine / 渲染层能取到全局变量默认值.
+          if (f.default_basic_data_path) {
+            addTask(partNo, f.default_basic_data_path);
+          }
+          // V190+ default_source.BNF_PATH
+          if (f.default_source?.type === 'BNF_PATH' && f.default_source?.path) {
+            addTask(partNo, f.default_source.path);
+          }
+          // Phase J: DATA_SOURCE.BNF_PATH 子类型 — 不预热 → fallback 链查空 → "加载中"
+          if (
+            f.field_type === 'DATA_SOURCE'
+            && f.datasource_binding?.type === 'BNF_PATH'
+            && f.datasource_binding?.bnf_path
+          ) {
+            addTask(partNo, f.datasource_binding.bnf_path);
           }
         }
         // 公式 token 内的 path / global_variable

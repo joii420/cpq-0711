@@ -244,6 +244,12 @@ public class QuotationService {
         if (request.expiryDate != null) q.expiryDate = request.expiryDate;
         if (request.remarks != null) q.remarks = request.remarks;
 
+        // 2026-05-18: 报价模板 / 核价模板 — 透传到 quotation header, 让刷新页面后 Step1 能带出.
+        // 仅在 quotation 未已生成态下允许写入(对应前端 readOnly 锁定逻辑); DRAFT 阶段允许覆盖以兼容
+        // "用户先选 → next 触发 saveDraft → 后续再调整"链路.
+        if (request.customerTemplateId != null) q.customerTemplateId = request.customerTemplateId;
+        if (request.costingCardTemplateId != null) q.costingCardTemplateId = request.costingCardTemplateId;
+
         // Pricing overrides
         if (request.finalDiscountRate != null) {
             q.finalDiscountRate = request.finalDiscountRate;
@@ -256,6 +262,8 @@ public class QuotationService {
             deleteLineItems(id);
             BigDecimal total = BigDecimal.ZERO;
             Set<String> collectedPartNos = new LinkedHashSet<>();
+            // V169 二阶段 parent_line_item_id 重建用: index → 新 UUID 的映射
+            java.util.UUID[] newIdsByIndex = new java.util.UUID[request.lineItems.size()];
 
             for (int i = 0; i < request.lineItems.size(); i++) {
                 SaveDraftRequest.LineItemDraft liDraft = request.lineItems.get(i);
@@ -283,7 +291,14 @@ public class QuotationService {
                 if (effectiveCpn != null) {
                     li.customerPartNo = effectiveCpn;
                 }
+                // V169 选配组合关系 — saveDraft 全量重建后所有 line_items 是新 UUID,
+                // 不能直接写 liDraft.parentLineItemId (旧 UUID 已被 CASCADE 删除会触发 FK 违反 409).
+                // compositeType 直接写; parentLineItemId 留 null, 循环结束后按 tempParentIndex 二阶段 UPDATE.
+                if (liDraft.compositeType != null && !liDraft.compositeType.isBlank()) {
+                    li.compositeType = liDraft.compositeType;
+                }
                 li.persist();
+                newIdsByIndex[i] = li.id;  // V169 二阶段父子关系重建用
 
                 // 料号版本管理 (S5): 拷贝 mat_customer_part_mapping.current_version → part_version_locked
                 // 业务功能不变 — 仅写入 line_item 的版本快照, 读路径仍按旧方式工作
@@ -370,6 +385,22 @@ public class QuotationService {
 
             q.originalAmount = total;
             q.totalAmount = total.multiply(q.finalDiscountRate).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+
+            // V169 二阶段父子关系重建: 按 tempParentIndex 把 PART 子件 UPDATE 指向新父 UUID
+            for (int i = 0; i < request.lineItems.size(); i++) {
+                SaveDraftRequest.LineItemDraft draft = request.lineItems.get(i);
+                if (draft.tempParentIndex == null) continue;
+                int parentIdx = draft.tempParentIndex;
+                if (parentIdx < 0 || parentIdx >= newIdsByIndex.length) continue;
+                java.util.UUID childId = newIdsByIndex[i];
+                java.util.UUID parentId = newIdsByIndex[parentIdx];
+                if (childId == null || parentId == null) continue;
+                em.createNativeQuery(
+                        "UPDATE quotation_line_item SET parent_line_item_id = :pid WHERE id = :cid")
+                    .setParameter("pid", parentId)
+                    .setParameter("cid", childId)
+                    .executeUpdate();
+            }
 
             // v5.1 §6.6 收集版本快照
             if (!collectedPartNos.isEmpty()) {
@@ -1378,6 +1409,24 @@ public class QuotationService {
                 }
             }
         }
+        // 批量查 mat_part.product_type — 供前端 ProductCard 按产品类型条件渲染 Tab
+        // (COMPOSITE 专属 Tab 在 SIMPLE 产品下隐藏). 不依赖 li.compositeType (该列在 saveDraft
+        // 全量重建时会被前端 payload 覆盖回 'SIMPLE',不可靠);mat_part.product_type 在选配
+        // 落库时正确写入且不被报价单层修改.
+        Map<String, String> productTypeByHfPartNo = new HashMap<>();
+        if (!hfPartNos.isEmpty()) {
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = em.createNativeQuery(
+                    "SELECT part_no, product_type FROM mat_part WHERE part_no IN (:pns)")
+                    .setParameter("pns", hfPartNos)
+                    .getResultList();
+            for (Object[] r : rows) {
+                if (r != null && r[0] != null && r[1] != null) {
+                    productTypeByHfPartNo.put(r[0].toString(), r[1].toString());
+                }
+            }
+        }
+
         // 同时一次性拉「生产料号管理」(internal_material) 数据；前端卡片右侧 popover 用。
         // 用 internal_material 而不是 mat_part：生产料号管理是用户在产品-生产料号管理页维护的，
         // 包含 name / specification / size / status_code，与 popover 字段一一对应。
@@ -1422,6 +1471,10 @@ public class QuotationService {
                 dto.customerPartName = mapping[1] != null ? mapping[1].toString() : null;
                 dto.customerProductNo = mapping[2] != null ? mapping[2].toString() : null;
                 dto.customerDrawingNo = mapping[3] != null ? mapping[3].toString() : null;
+            }
+            // 注入 productType (用于前端 ProductCard 条件渲染 COMPOSITE 专属 Tab)
+            if (hfpn != null) {
+                dto.productType = productTypeByHfPartNo.get(hfpn);
             }
             // 注入生产料号详情
             Object[] mp = hfpn != null ? matPartByHfPartNo.get(hfpn) : null;
@@ -1506,5 +1559,135 @@ public class QuotationService {
         // 重读切换的 line_item 拿最新 snapshot 返给前端立即渲染
         QuotationLineItem refreshed = QuotationLineItem.findById(lineItemId);
         return refreshed != null ? refreshed.excelViewSnapshot : null;
+    }
+
+    /**
+     * Admin heal: 把所有 quotation_line_component_data 的 tab_name 重写为模板 snapshot 权威值,
+     * 一次性洗历史 AP-37 根因 5 污染的脏数据 (saved-driven enrich 误用 cid 反查塌缩,
+     * 把同 cid 多 Tab 的标准 Tab 名错写成"选配-*"等情况).
+     *
+     * <p>对每个 line_item: 拉模板 components_snapshot → 按 cid 分组成队列 →
+     * 同 cid 多条按 (cid, tabName) 精确匹配优先, 否则同 cid 第一条 → 重写 tab_name + sort_order
+     * 与 snapshot 对齐. SUBTOTAL 行同样处理.
+     *
+     * <p>dryRun=true 只统计不写库; apply=true 才持久化.
+     *
+     * @return Map with keys: scannedLineItems, scannedRows, plannedUpdates, applied
+     */
+    @Transactional
+    public Map<String, Object> healComponentDataTabNames(boolean apply) {
+        int scannedLineItems = 0;
+        int scannedRows = 0;
+        int plannedUpdates = 0;
+        int applied = 0;
+        List<Map<String, Object>> samples = new ArrayList<>();
+
+        List<QuotationLineItem> allLineItems = QuotationLineItem.listAll();
+        // 模板 snapshot 缓存避免重复反序列化
+        Map<UUID, List<Map<String, Object>>> snapshotByTemplateId = new HashMap<>();
+
+        for (QuotationLineItem li : allLineItems) {
+            scannedLineItems++;
+            if (li.templateId == null) continue;
+
+            List<Map<String, Object>> snapshot = snapshotByTemplateId.computeIfAbsent(li.templateId, tid -> {
+                com.cpq.template.entity.Template tpl = com.cpq.template.entity.Template.findById(tid);
+                if (tpl == null || tpl.componentsSnapshot == null) return Collections.emptyList();
+                try {
+                    return MAPPER.readValue(tpl.componentsSnapshot, new TypeReference<List<Map<String, Object>>>() {});
+                } catch (Exception e) {
+                    LOG.warnf("healComponentDataTabNames: failed to parse template %s snapshot: %s", tid, e.getMessage());
+                    return Collections.emptyList();
+                }
+            });
+            if (snapshot.isEmpty()) continue;
+
+            List<QuotationLineComponentData> savedList = QuotationLineComponentData.list(
+                    "lineItemId = ?1 ORDER BY sortOrder ASC", li.id);
+            scannedRows += savedList.size();
+
+            // 按 cid 分组队列
+            Map<UUID, Deque<QuotationLineComponentData>> queueByCid = new HashMap<>();
+            for (QuotationLineComponentData s : savedList) {
+                if (s.componentId == null) continue;
+                queueByCid.computeIfAbsent(s.componentId, k -> new ArrayDeque<>()).add(s);
+            }
+
+            // 按 snapshot 顺序遍历, 给每个 snapshot entry 配一个 saved
+            for (int i = 0; i < snapshot.size(); i++) {
+                Map<String, Object> sc = snapshot.get(i);
+                Object cidObj = sc.get("componentId");
+                if (cidObj == null) cidObj = sc.get("component_id");
+                if (cidObj == null) continue;
+                UUID cid;
+                try { cid = UUID.fromString(cidObj.toString()); } catch (Exception e) { continue; }
+                String snapTab = strVal(sc.get("tabName"), sc.get("tab_name"));
+
+                Deque<QuotationLineComponentData> q = queueByCid.get(cid);
+                if (q == null || q.isEmpty()) continue;
+
+                // (cid, tabName) 精确匹配优先
+                QuotationLineComponentData picked = null;
+                Iterator<QuotationLineComponentData> it = q.iterator();
+                while (it.hasNext()) {
+                    QuotationLineComponentData s = it.next();
+                    if (snapTab != null && snapTab.equals(s.tabName)) {
+                        it.remove();
+                        picked = s;
+                        break;
+                    }
+                }
+                if (picked == null) picked = q.pollFirst();
+                if (picked == null) continue;
+
+                boolean needsUpdate = false;
+                String oldTab = picked.tabName;
+                Integer oldOrder = picked.sortOrder;
+                if (snapTab != null && !snapTab.equals(picked.tabName)) {
+                    needsUpdate = true;
+                }
+                if (picked.sortOrder == null || picked.sortOrder != i) {
+                    needsUpdate = true;
+                }
+                if (needsUpdate) {
+                    plannedUpdates++;
+                    if (samples.size() < 20) {
+                        Map<String, Object> sample = new LinkedHashMap<>();
+                        sample.put("lineItemId", li.id);
+                        sample.put("componentId", cid);
+                        sample.put("oldTabName", oldTab);
+                        sample.put("newTabName", snapTab);
+                        sample.put("oldSortOrder", oldOrder);
+                        sample.put("newSortOrder", i);
+                        samples.add(sample);
+                    }
+                    if (apply) {
+                        picked.tabName = snapTab;
+                        picked.sortOrder = i;
+                        picked.persist();
+                        applied++;
+                    }
+                }
+            }
+        }
+
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("apply", apply);
+        report.put("scannedLineItems", scannedLineItems);
+        report.put("scannedRows", scannedRows);
+        report.put("plannedUpdates", plannedUpdates);
+        report.put("applied", applied);
+        report.put("samples", samples);
+        return report;
+    }
+
+    private static String strVal(Object... candidates) {
+        for (Object c : candidates) {
+            if (c != null) {
+                String s = c.toString();
+                if (!s.isEmpty()) return s;
+            }
+        }
+        return null;
     }
 }

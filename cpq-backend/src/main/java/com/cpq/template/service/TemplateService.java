@@ -198,6 +198,12 @@ public class TemplateService {
         }
 
         // Build components_snapshot
+        //
+        // V200 (2026-05-19): 模板级覆盖 — 同 component 在 SIMPLE / COMPOSITE 模板需要不同
+        // driver_path / fields. 引入 template_component.data_driver_path_override 和
+        // fields_override 两列; 非 NULL 时盖掉 component 表对应字段, 否则走 component 默认.
+        //
+        // 没用 override 时与 V199 之前完全等价 → 历史模板行为不变.
         List<TemplateComponent> tcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", id);
         List<Map<String, Object>> snapshot = new ArrayList<>();
         for (TemplateComponent tc : tcs) {
@@ -211,11 +217,16 @@ public class TemplateService {
                 entry.put("componentType", comp.componentType);
                 entry.put("tabName", tc.tabName);
                 entry.put("sortOrder", tc.sortOrder);
-                entry.put("fields", parseJsonArray(comp.fields));
+                // V200: fields 走 override 优先
+                String effectiveFields = (tc.fieldsOverride != null && !tc.fieldsOverride.isBlank())
+                        ? tc.fieldsOverride : comp.fields;
+                entry.put("fields", parseJsonArray(effectiveFields));
                 entry.put("formulas", parseJsonArray(comp.formulas));
                 entry.put("preset_rows", parseJsonArray(tc.presetRows));
-                // Y1.5 行驱动路径(可空) — 让前端在不发额外请求的情况下识别"驱动组件"
-                entry.put("data_driver_path", comp.dataDriverPath);
+                // V200: data_driver_path 走 override 优先
+                String effectiveDriverPath = (tc.dataDriverPathOverride != null && !tc.dataDriverPathOverride.isBlank())
+                        ? tc.dataDriverPathOverride : comp.dataDriverPath;
+                entry.put("data_driver_path", effectiveDriverPath);
                 entry.put("formula_assignments", parseJsonObject(tc.formulaAssignments));
                 snapshot.add(entry);
             }
@@ -232,6 +243,87 @@ public class TemplateService {
 
         LOG.infof("Published template id=%s version=%s", id, template.version);
         return TemplateDTO.from(template, tcs);
+    }
+
+    /**
+     * H1: 同步所有引用该组件的模板 components_snapshot.
+     *
+     * <p>当组件配置 (fields / formulas / dataDriverPath) 发生平台级变化时, 已发布模板
+     * 的 snapshot 会陈旧 — 报价单按旧 snapshot 渲染会丢失新字段 / 旧路径报错.
+     * 本方法找到所有 components_snapshot 含 componentId 的 template, 用组件最新内容
+     * 覆盖 snapshot 对应数组项的 fields / formulas / data_driver_path / componentType.
+     *
+     * <p>语义说明: 这刻意破坏 PUBLISHED 模板的 "版本快照不可变" 约定, 因为配置层变更
+     * 必须对所有视图同步生效 (用户原则: 所有渲染从配置中心走). version 不变保持版本号语义.
+     *
+     * @param componentId 组件 id
+     * @return 受影响的 template id 列表
+     */
+    @Transactional
+    public List<UUID> refreshSnapshotsByComponent(UUID componentId) {
+        Component comp = Component.findById(componentId);
+        if (comp == null) {
+            throw new BusinessException(404, "Component not found: " + componentId);
+        }
+        // 找所有 components_snapshot 含该 componentId 的 template
+        @SuppressWarnings("unchecked")
+        List<Object> templateIds = em.createNativeQuery(
+                "SELECT id FROM template WHERE components_snapshot::text LIKE :pattern")
+                .setParameter("pattern", "%" + componentId.toString() + "%")
+                .getResultList();
+        List<UUID> affected = new ArrayList<>();
+        List<?> compFields = parseJsonArray(comp.fields);
+        List<?> compFormulas = parseJsonArray(comp.formulas);
+        for (Object obj : templateIds) {
+            UUID tplId = obj instanceof UUID u ? u : UUID.fromString(obj.toString());
+            Template tpl = Template.findById(tplId);
+            if (tpl == null || tpl.componentsSnapshot == null) continue;
+            List<?> snapList = parseJsonArray(tpl.componentsSnapshot);
+            if (snapList == null) continue;
+            // V200/V206 (2026-05-19 H1 bug fix): 同 cid 在模板里出现多次时, 必须按
+            // (templateId, componentId, sortOrder) 精确匹配 tc; firstResult() 只拿第一个
+            // tc 会让所有同 cid snapshot entry 错误共用同一份 fields_override → 后到的
+            // Tab (如"选配-工序列表") 的差异化配置 (LIST_FORMULA 成材率等) 被"工序" Tab 的
+            // fields_override 反向覆盖.
+            boolean touched = false;
+            for (Object entryObj : snapList) {
+                if (!(entryObj instanceof Map)) continue;
+                @SuppressWarnings("unchecked")
+                Map<String, Object> entry = (Map<String, Object>) entryObj;
+                Object cidObj = entry.get("componentId");
+                if (cidObj == null) cidObj = entry.get("component_id");
+                if (cidObj == null || !componentId.toString().equals(cidObj.toString())) continue;
+                // V206: 按 sortOrder 精确匹配 tc
+                Object sortObj = entry.get("sortOrder");
+                if (sortObj == null) sortObj = entry.get("sort_order");
+                Integer sortOrder = (sortObj instanceof Number) ? ((Number) sortObj).intValue() : null;
+                TemplateComponent tc = (sortOrder != null)
+                        ? TemplateComponent.find(
+                                "templateId = ?1 AND componentId = ?2 AND sortOrder = ?3",
+                                tplId, componentId, sortOrder).firstResult()
+                        : TemplateComponent.find(
+                                "templateId = ?1 AND componentId = ?2",
+                                tplId, componentId).firstResult();
+                List<?> effectiveFields = (tc != null && tc.fieldsOverride != null && !tc.fieldsOverride.isBlank())
+                        ? parseJsonArray(tc.fieldsOverride) : compFields;
+                String effectiveDriverPath = (tc != null && tc.dataDriverPathOverride != null && !tc.dataDriverPathOverride.isBlank())
+                        ? tc.dataDriverPathOverride : comp.dataDriverPath;
+                // V200: fields / data_driver_path 走 override 优先, 其余 (formulas / componentType / name / code) 走 component
+                entry.put("fields", effectiveFields);
+                entry.put("formulas", compFormulas);
+                entry.put("data_driver_path", effectiveDriverPath);
+                entry.put("componentType", comp.componentType);
+                entry.put("componentName", comp.name);
+                entry.put("componentCode", comp.code);
+                touched = true;
+            }
+            if (touched) {
+                tpl.componentsSnapshot = toJson(snapList);
+                affected.add(tplId);
+            }
+        }
+        LOG.infof("[H1 snapshot sync] componentId=%s affected %d templates", componentId, affected.size());
+        return affected;
     }
 
     @Transactional
@@ -293,7 +385,7 @@ public class TemplateService {
         draft.status = "DRAFT";
         draft.persist();
 
-        // Copy TemplateComponent associations (含 preset_rows / formula_assignments)
+        // Copy TemplateComponent associations (含 preset_rows / formula_assignments / V200 overrides)
         List<TemplateComponent> sourceTcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", sourceId);
         for (TemplateComponent stc : sourceTcs) {
             TemplateComponent newTc = new TemplateComponent();
@@ -303,6 +395,9 @@ public class TemplateService {
             newTc.sortOrder = stc.sortOrder;
             newTc.presetRows = stc.presetRows != null ? stc.presetRows : "[]";
             newTc.formulaAssignments = stc.formulaAssignments != null ? stc.formulaAssignments : "{}";
+            // V200: 复制覆盖列 - 否则派生新版本会丢 COMPOSITE 模板的 v_composite_child_* 覆盖
+            newTc.dataDriverPathOverride = stc.dataDriverPathOverride;
+            newTc.fieldsOverride = stc.fieldsOverride;
             newTc.persist();
         }
 
@@ -312,16 +407,27 @@ public class TemplateService {
     }
 
     /**
-     * 客户报价模板匹配:客户专属优先,无则回退到通用模板。
+     * 客户报价模板匹配:同时返回客户专属 + 通用模板(让用户在两类间自由选择)。
      *
-     * <p>对应 docs/API.md L100/L643 设计:
+     * <p>对应 docs/API.md L100/L643 + 2026-05-15 修复(报价模板不显示通用模板 bug)设计:
      * <pre>
-     * 1. customer_id = customerId AND category_id = categoryId AND status = 'PUBLISHED'
-     *    → 命中即返回(可能多个版本,由前端选择)
-     * 2. 上一步为空 → customer_id IS NULL AND category_id = categoryId AND status = 'PUBLISHED'
-     *    → 通用模板兜底
-     * 3. 都为空 → matchType=NONE,前端应引导用户配置
+     * 1. 同时查询两个集合(都过滤 templateKind='QUOTATION' AND status='PUBLISHED'):
+     *    a. 客户专属:customer_id = customerId AND category_id = categoryId
+     *    b. 通用:     customer_id IS NULL AND category_id = categoryId
+     * 2. 根据命中情况返回:
+     *    - 两边都有 → MIXED, templates = [客户专属... 在前 + 通用... 在后]
+     *    - 仅客户专属 → CUSTOMER_SPECIFIC
+     *    - 仅通用     → GENERAL_FALLBACK
+     *    - 都无       → NONE
      * </pre>
+     *
+     * <p>修复内容:
+     * <ul>
+     *   <li>不再 short-circuit;客户有专属时通用模板仍可见,与前端 QuotationCreateForm
+     *       的 MIXED 处理逻辑(2026-05-14 加)契约对齐</li>
+     *   <li>两条查询都加 templateKind='QUOTATION' 过滤,避免 COSTING 客户专属
+     *       模板被误算入 CUSTOMER_SPECIFIC</li>
+     * </ul>
      *
      * @param customerId 报价单关联的客户 ID(必填)
      * @param categoryId 产品分类 ID(必填)
@@ -330,27 +436,43 @@ public class TemplateService {
         if (customerId == null || categoryId == null) {
             throw new BusinessException("customerId 和 categoryId 不能为空");
         }
-        // 客户专属
         List<Template> specific = Template.list(
-                "customerId = ?1 AND categoryId = ?2 AND status = 'PUBLISHED' ORDER BY publishedAt DESC NULLS LAST",
+                "customerId = ?1 AND categoryId = ?2 AND templateKind = 'QUOTATION' AND status = 'PUBLISHED' "
+                        + "ORDER BY publishedAt DESC NULLS LAST",
                 customerId, categoryId);
-        if (!specific.isEmpty()) {
-            return new com.cpq.template.dto.TemplateMatchResult(
-                    com.cpq.template.dto.TemplateMatchResult.MatchType.CUSTOMER_SPECIFIC,
-                    specific.stream().map(t -> TemplateDTO.from(t, Collections.emptyList())).collect(Collectors.toList()));
-        }
-        // 通用兜底
         List<Template> general = Template.list(
-                "customerId IS NULL AND categoryId = ?1 AND status = 'PUBLISHED' ORDER BY publishedAt DESC NULLS LAST",
+                "customerId IS NULL AND categoryId = ?1 AND templateKind = 'QUOTATION' AND status = 'PUBLISHED' "
+                        + "ORDER BY publishedAt DESC NULLS LAST",
                 categoryId);
-        if (!general.isEmpty()) {
+
+        boolean hasSpecific = !specific.isEmpty();
+        boolean hasGeneral = !general.isEmpty();
+
+        if (!hasSpecific && !hasGeneral) {
             return new com.cpq.template.dto.TemplateMatchResult(
-                    com.cpq.template.dto.TemplateMatchResult.MatchType.GENERAL_FALLBACK,
-                    general.stream().map(t -> TemplateDTO.from(t, Collections.emptyList())).collect(Collectors.toList()));
+                    com.cpq.template.dto.TemplateMatchResult.MatchType.NONE,
+                    Collections.emptyList());
         }
+
+        com.cpq.template.dto.TemplateMatchResult.MatchType matchType;
+        List<Template> combined = new java.util.ArrayList<>(specific.size() + general.size());
+        if (hasSpecific && hasGeneral) {
+            matchType = com.cpq.template.dto.TemplateMatchResult.MatchType.MIXED;
+            combined.addAll(specific);
+            combined.addAll(general);
+        } else if (hasSpecific) {
+            matchType = com.cpq.template.dto.TemplateMatchResult.MatchType.CUSTOMER_SPECIFIC;
+            combined.addAll(specific);
+        } else {
+            matchType = com.cpq.template.dto.TemplateMatchResult.MatchType.GENERAL_FALLBACK;
+            combined.addAll(general);
+        }
+
         return new com.cpq.template.dto.TemplateMatchResult(
-                com.cpq.template.dto.TemplateMatchResult.MatchType.NONE,
-                Collections.emptyList());
+                matchType,
+                combined.stream()
+                        .map(t -> TemplateDTO.from(t, Collections.emptyList()))
+                        .collect(Collectors.toList()));
     }
 
     public List<TemplateDTO> getVersionHistory(UUID templateSeriesId) {

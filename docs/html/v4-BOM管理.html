@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>v4 · BOM 管理（3 Tab 聚合）</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#f0f2f5; font-size:13px; color:#303133; height:100vh; overflow:hidden; }
+.layout { display:flex; height:100vh; }
+.sider { width:200px; background:#001529; color:#fff; padding:12px 0; flex-shrink:0; overflow-y:auto; }
+.sider .logo { padding:0 16px 16px; font-size:14px; font-weight:600; border-bottom:1px solid #1f2d3d; }
+.menu { padding-top:8px; }
+.m-item { padding:9px 16px; color:#a6adb4; cursor:pointer; font-size:13px; display:flex; align-items:center; gap:8px; }
+.m-item:hover { color:#fff; background:#1f2d3d; }
+.m-item.active { background:#1f2d3d; color:#fff; }
+.m-sub { padding-left:32px; font-size:12.5px; padding-top:6px; padding-bottom:6px; }
+.m-sub.active { color:#1890ff; background:#000c17; border-left:3px solid #1890ff; padding-left:29px; }
+.m-item .ico { width:14px; text-align:center; }
+
+.main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.crumb { padding:10px 20px; background:#fff; border-bottom:1px solid #e4e7ed; font-size:12.5px; color:#909399; }
+.crumb b { color:#303133; font-weight:500; }
+.content { flex:1; padding:16px 20px; overflow-y:auto; }
+
+.diff-banner { background:linear-gradient(90deg,#f6ffed,#f0f9eb); border:1px dashed #67c23a; padding:10px 14px; border-radius:6px; font-size:12.5px; color:#389e0d; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+.diff-banner .badge { background:#67c23a; color:#fff; padding:2px 8px; border-radius:3px; font-size:11px; font-weight:600; }
+
+.page-card { background:#fff; border-radius:8px; padding:16px; }
+.page-title { font-size:18px; font-weight:600; margin-bottom:6px; }
+.page-sub { color:#909399; font-size:12.5px; margin-bottom:14px; }
+
+.tabs { border-bottom:1px solid #e4e7ed; display:flex; gap:0; margin-bottom:14px; }
+.tab { padding:10px 18px; cursor:pointer; font-size:13px; border-bottom:2px solid transparent; color:#606266; }
+.tab .count { display:inline-block; margin-left:6px; background:#f0f2f5; color:#909399; padding:0 6px; border-radius:8px; font-size:11px; }
+.tab:hover { color:#409eff; }
+.tab.active { color:#409eff; border-bottom-color:#409eff; font-weight:600; }
+.tab.active .count { background:#ecf5ff; color:#409eff; }
+
+.toolbar { display:flex; gap:8px; margin-bottom:12px; align-items:center; }
+.btn { padding:5px 14px; border:1px solid #dcdfe6; background:#fff; border-radius:4px; cursor:pointer; font-size:12.5px; color:#606266; }
+.btn:hover { color:#409eff; border-color:#c6e2ff; background:#ecf5ff; }
+.btn.primary { background:#409eff; color:#fff; border-color:#409eff; }
+.btn.danger { color:#f56c6c; border-color:#fbc4c4; }
+.btn[disabled] { opacity:.5; cursor:not-allowed; }
+.search { margin-left:auto; padding:5px 10px; border:1px solid #dcdfe6; border-radius:4px; font-size:12.5px; width:240px; }
+
+table { width:100%; border-collapse:collapse; font-size:12.5px; }
+thead th { background:#fafafa; padding:10px 8px; text-align:left; font-weight:500; color:#606266; border-bottom:1px solid #ebeef5; font-size:12px; }
+tbody td { padding:10px 8px; border-bottom:1px solid #f5f5f5; }
+tbody tr:hover { background:#fafbfc; }
+.link { color:#409eff; cursor:pointer; }
+.tag { display:inline-block; font-size:11px; padding:1px 6px; border-radius:3px; }
+.tag.green { background:#f0f9eb; color:#67c23a; }
+.tag.blue  { background:#ecf5ff; color:#409eff; }
+.tag.orange{ background:#fdf6ec; color:#e6a23c; }
+.tag.gray  { background:#f4f4f5; color:#909399; }
+
+.help-tip { margin-top:18px; padding:10px 14px; background:#f6ffed; border:1px solid #b7eb8f; border-radius:4px; font-size:12.5px; color:#389e0d; line-height:1.6; }
+
+.summary-bar {
+  display:grid; grid-template-columns: repeat(4, 1fr); gap:12px;
+  margin-bottom: 12px;
+}
+.metric { background:#fafbfc; border:1px solid #ebeef5; border-radius:6px; padding:10px 14px; }
+.metric .label { font-size:11.5px; color:#909399; margin-bottom:4px; }
+.metric .value { font-size:18px; font-weight:600; color:#303133; }
+.metric .delta { font-size:11px; color:#67c23a; margin-left:6px; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="sider">
+    <div class="logo">📦 CPQ 报价系统</div>
+    <div class="menu">
+      <div class="m-item"><span class="ico">🏠</span>工作台</div>
+      <div class="m-item"><span class="ico">👥</span>客户管理</div>
+      <div class="m-item"><span class="ico">📦</span>产品管理</div>
+      <div class="m-item"><span class="ico">📄</span>报价中心</div>
+      <div class="m-item"><span class="ico">💰</span>定价管理</div>
+      <div class="m-item active"><span class="ico">⚙️</span>配置中心</div>
+      <div class="m-sub">组件管理</div>
+      <div class="m-sub">模板配置</div>
+      <div class="m-sub active">BOM 管理</div>
+      <div class="m-sub">数据源管理</div>
+      <div class="m-sub">料号级核价数据</div>
+      <div class="m-item"><span class="ico">🗂️</span>数据管理</div>
+      <div class="m-item"><span class="ico">📜</span>变更日志</div>
+      <div class="m-item"><span class="ico">🔧</span>系统管理</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="crumb">配置中心 / <b>BOM 管理</b></div>
+    <div class="content">
+      <div class="diff-banner">
+        <span class="badge">改动 2</span>
+        新增「BOM 管理」页面：组成件 BOM / 元素 BOM / 来料 BOM 三类原本散落的数据，统一在一页内 3 个 Tab 切换。
+      </div>
+
+      <div class="page-card">
+        <div class="page-title">BOM 管理</div>
+        <div class="page-sub">产品/料号关联的多层 BOM 视图。组成件 → 元素拆解 → 来料采购，三层数据均在此页查看与维护。</div>
+
+        <div class="tabs">
+          <div class="tab active">🧱 组成件 BOM <span class="count">1,284</span></div>
+          <div class="tab">⚛️ 元素 BOM <span class="count">3,521</span></div>
+          <div class="tab">📥 来料 BOM <span class="count">2,108</span></div>
+        </div>
+
+        <div class="summary-bar">
+          <div class="metric"><div class="label">当前 Tab 行数</div><div class="value">1,284</div></div>
+          <div class="metric"><div class="label">关联料号</div><div class="value">512</div></div>
+          <div class="metric"><div class="label">本月新增</div><div class="value">38 <span class="delta">+12%</span></div></div>
+          <div class="metric"><div class="label">异常待复核</div><div class="value" style="color:#f56c6c;">5</div></div>
+        </div>
+
+        <div class="toolbar">
+          <button class="btn primary">+ 新建 BOM 行</button>
+          <button class="btn">📥 批量导入</button>
+          <button class="btn">📤 导出</button>
+          <button class="btn">🔄 重算成本</button>
+          <button class="btn" disabled>批量编辑</button>
+          <button class="btn danger" disabled>删除</button>
+          <input class="search" placeholder="搜索父料号 / 子料号" />
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width:30px;"><input type="checkbox"/></th>
+              <th>父料号</th>
+              <th>子料号</th>
+              <th>子料号名称</th>
+              <th>规格</th>
+              <th>用量 (kg/件)</th>
+              <th>损耗率</th>
+              <th>状态</th>
+              <th>更新时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td>HF-2026-0001</td>
+              <td><span class="link">SC-LJ-001</span></td>
+              <td>不锈钢法兰盘 304</td>
+              <td>DN50×PN16</td>
+              <td>1.85</td>
+              <td>2.5%</td>
+              <td><span class="tag green">已生效</span></td>
+              <td>2026-05-15 14:32</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td>HF-2026-0001</td>
+              <td><span class="link">SC-LT-008</span></td>
+              <td>螺栓 M16×60 不锈钢</td>
+              <td>—</td>
+              <td>0.32</td>
+              <td>1.0%</td>
+              <td><span class="tag green">已生效</span></td>
+              <td>2026-05-15 14:32</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td>HF-2026-0001</td>
+              <td><span class="link">SC-DP-012</span></td>
+              <td>O 型密封圈 EPDM</td>
+              <td>50×3.5</td>
+              <td>0.05</td>
+              <td>5.0%</td>
+              <td><span class="tag orange">待复核</span></td>
+              <td>2026-05-14 11:08</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td>HF-2026-0002</td>
+              <td><span class="link">SC-GJ-101</span></td>
+              <td>钢管 304L Sch40</td>
+              <td>DN80 L=120mm</td>
+              <td>3.20</td>
+              <td>3.0%</td>
+              <td><span class="tag green">已生效</span></td>
+              <td>2026-05-13 09:21</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td>HF-2026-0002</td>
+              <td><span class="link">SC-LJ-022</span></td>
+              <td>对接法兰 WN 304L</td>
+              <td>DN80×PN25</td>
+              <td>4.50</td>
+              <td>2.0%</td>
+              <td><span class="tag green">已生效</span></td>
+              <td>2026-05-13 09:21</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="help-tip">
+          <strong>📍 设计说明：</strong>
+          <br>• <strong>三类 BOM 同页</strong>：业务在编辑/复核 BOM 时常需要在「组成件 → 元素 → 来料」三层之间穿梭对照，独立成 3 个菜单需要反复跳转。聚合在一页通过 Tab 切换，同时保留切换时的筛选/搜索条件。
+          <br>• <strong>列结构差异化</strong>：每个 Tab 的字段不同（组成件含"损耗率"，元素 BOM 含"工艺路径"，来料 BOM 含"供应商/采购单价"），各 Tab 内部独立列定义，互不影响。
+          <br>• <strong>路由</strong>：<code>/bom?type=component | element | material</code>，3 个 Tab 共享主搜索框（搜父料号时自动同步过滤）。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

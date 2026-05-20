@@ -36,11 +36,27 @@ Templates and components use JSONB storage for flexible field/formula configurat
 - `docs/PRD.md` - 已废弃的历史 PRD (v1.0~v2.8),仅作变更决策回溯用途,**不再维护**
 - `docs/RECORD.md` - Development record for multi-agent shared memory（开始工作前必须先阅读此文件了解历史上下文）
 - `docs/反模式.md` - 反模式速查（PR 自检用，新增功能前必读）
+- `docs/组件管理字段配置指南.md` - 字段类型矩阵 / default_source / DATA_SOURCE 4 类型 / 公式 token / 自检 checklist / 避坑速查（**组件字段配置改动前必读**, 2026-05-18 Phase K 后版本）
+- `docs/配置中心架构.md` - 三层模型 + snapshot 同步 + 管理端点 + datasource_field token（架构基线）
+- `docs/全局变量使用指南.md` - 单表 schema + 新建/维护/引用 SOP
+- `docs/数据源类型扩展指南.md` - 加 Resolver SPI（DATABASE_QUERY / GLOBAL_VARIABLE / BNF_PATH / HTTP_API）
+- `docs/HTTP_API_安全配置.md` - HTTP_API 启用步骤 + 安全不变量
 - `docs/列表操作规范.md` - 列表页面的工具栏动作规范（**所有列表页面必须按此规范实现**，详见下方"UI 交互规范"）
 - `docs/报价单核价单功能总结.md` - 报价单与核价单两条主线的功能、流程、视图、状态机、模板体系、数据库主表的整合视图（PRD 没回写核价系统，以本文 + RECORD.md 为准）
 - `docs/Excel模板配置指南.md` - Excel 模板（核价单/报价单 Excel 视图）列配置 + VARIABLE/FORMULA 来源 + 公式语法 + 23 列实操对照
 - `docs/配置方法论.md` - **组件 / Excel 模板 / 公式 三层配置决策树 + 模式模板 + 16 个常见坑速查**（V96~V118 实战沉淀，新增任何"指标/公式/字段"前必读；含**多行数据展示问题专题**）
 - `docs/反模式.md` AP-22 - **多行数据 "X (共N项)" 显示族**（4 类共因：SQL 隐式 JOIN 失效 / 渲染层漏读 row / 视图 COALESCE 遮蔽 NULL / comparison_tag 未注册）
+- `docs/反模式.md` AP-31 - **"加载中…" 永久占位族**（修 `useDriverExpansions.ts` / `QuotationStep2.tsx` / `QuotationWizard.tsx` / `ConfigureProductService` 等写后端 `mat_*` 流程**必读**；4 类共因：fingerprint 漏维度 / pre-enrich 缓存 EMPTY_EXPANSION / invalidate 漏调 / DATA_SOURCE 渲染缺 fallback；含 PR 专项自检清单 + F12 Network 验证步骤）
+- `docs/反模式.md` AP-37 - **新字段类型 / 同 componentId 多实例 cache 冲突**（AP-31 续集；加新 `field_type` (如 LIST_FORMULA) 必须同步改 **9 处协议传播点** — enrich mapper / normalize / cache key / 渲染 case / 后端白名单 / computeAllFormulas 字段值循环 / parseBasicDataPaths+usePathFormulaCache 路径采集 / **driverExpansionKey 含 fields hash 维度**；模板里同 componentId 多次出现时 cache key 必须含 `dataDriverPath + fieldsHash`；batchExpand 结果配对必须用 task index 而非 backend r.key；含 6 个独立根因诊断 + PR 协议清单 + DATA_SOURCE 4 子类型解析协议对照表）
+- `docs/反模式.md` AP-38 - **"0 行 driver 鬼魂行加载中"**（2026-05-19 E2E 暴露；driver=mat_xx 等返 0 行 + autoSave 留空 row + BASIC_DATA cell 走 globalPathCache miss → "加载中…"；BASIC_DATA 渲染分支必须 `activeDriverExpansion?.rowCount === 0 → "—"` 兜底, 不能盲目降级 globalPathCache）
+- `docs/反模式.md` AP-39 - **PUBLISHED 模板 snapshot 残留 V109 老散字段**（follow-up；V190~V193 数据迁移只动 component.fields 没动所有引用方 jsonb 列；含 3 个候选修法对比）
+- `docs/反模式.md` AP-40~43 - **B3 4 个连锁 bug 沉淀**（2026-05-19 LIST_FORMULA 渲染调试串联事故）：
+  - AP-40 H1 `refreshSnapshotsByComponent` 同 cid 多 tc 实例 `firstResult()` 反向污染（V206 后端修；必须按 sortOrder 精确匹配）
+  - AP-41 prop drilling 漏传（报价单 vs 核价单 ProductCard 不对齐 → 一个视图功能正常另一个失效）
+  - AP-42 `{...lfItem, ...rawRow}` 用 null 字段反向覆盖 lfItem 自动映射（V207 前端修；用 `rawRowNonEmpty` filter）
+  - AP-43 Vite ESM 项目残留 `require()` 抛 ReferenceError → catch 吞错误 → 渲染 "—"
+- `docs/反模式.md` AP-44 - **字段类型变动 / 新增 = 组件管理 + 报价渲染 强联动协议（核心规范）**：任何 `field_type` 改动跨 **15 个检查点 (约 12 个独立文件，部分文件含多子项)** 协议变换 — 写代码前 grep 全工程 / 写代码中按矩阵勾掉 / 写完跑 E2E `quotation-flow.spec.ts` 三步走；详见 `docs/组件管理字段配置指南.md §十一 字段类型联动性矩阵`
+- `docs/E2E测试方法.md` - **Playwright E2E 测试标杆 SOP**（2026-05-19 立项；前端协议级改动 / 模板 schema 变更 / driver expand 链路改动 / **字段类型变动**强制 E2E；含选择器约定 / 中文 UTF-8 编码踩坑 / 复测协议 / 复杂多 Tab 矩阵 / Bug 分类清单 / 自检 checklist / **§4.6 console.warn 三段式调试 (LF-FIND/DEBUG/EVAL)**；UI 改动 PR 必读）
 - `docs/html/*.html` - 10 interactive HTML prototypes (Chinese language UI)
 
 ## Language
@@ -87,6 +103,34 @@ All UI, prototypes, and PRD are in Chinese. Code artifacts (variables, APIs, com
 2. **对每个改动的 `.tsx` 文件**跑 `curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5174/src/<相对路径>` → 必须 HTTP 200
 3. 如果是新加的列表页/Drawer/抽屉，再 `curl http://localhost:5174/` 看主入口 200
 4. 如果用户描述的故障路径含具体页面，必须**真的把那个 url 透过 curl 拿到 200**才能宣布修复
+5. **协议级改动必须跑 Playwright E2E**（不是可选）—— 改动以下任一文件时:
+   - `useDriverExpansions.ts` / `usePathFormulaCache.ts` / `QuotationStep2.tsx` / `QuotationWizard.tsx` / `ReadonlyProductCard.tsx` / `BulkImportPartsDrawer.tsx` / `component/types.ts` / `component/FieldConfigTable.tsx`
+   - 后端 `ComponentDriverService.java` / `FormulaCalculationService.java` / `ComponentService.java` / **`TemplateService.java#refreshSnapshotsByComponent`**
+   - 模板 snapshot 数据迁移（Flyway V*）
+   - 详细规范见 `docs/E2E测试方法.md`
+   - 执行命令:
+     ```powershell
+     cd cpq-frontend
+     Remove-Item e2e\screenshots\qf-*.png -ErrorAction SilentlyContinue
+     npx playwright test --config=e2e/playwright.config.ts e2e/quotation-flow.spec.ts --reporter=list
+     ```
+   - **必须看到** 所有 test `passed` (当前 `quotation-flow.spec.ts` 含 1 个 test, 后续可能加), `'加载中' final count = 0`, 全部 8 Tab `'加载中'=0`
+   - PR 必须附 qf-19 (确认添加后) + qf-21~28 (8 Tab) 9 张截图作为渲染证据
+   - 跳过 E2E 等于跳过自检 — AP-37 / AP-38 / AP-40~43 类协议 bug 只在 E2E 暴露, API/TS check 看不到
+
+6. **字段类型变动 / 新增** 是**特殊场景**（AP-44 核心规范，2026-05-19 立项）：
+   - 触发: 在「组件管理」改 `field_type`（如 INPUT_NUMBER → LIST_FORMULA）/ 加新枚举 / 给现有类型加 sub-type / 加新 config JSON 键 / 改 `VALID_FIELD_TYPES`
+   - 影响: **15 个协议检查点跨约 12 个独立文件** — 前端 enrich / normalizeFieldType / cache key / 渲染分支 / computeAllFormulas 字段值循环 / 所有 ProductCard callsite prop / 详情页 ReadonlyProductCard 同步 + 后端 校验 / 路径采集 / 公式 token / refreshSnapshotsByComponent
+   - 漏一处必有静默失败（不报编译错也没运行时错，只是 UI 渲染不对）
+   - **强制 SOP**:
+     - 写代码前 grep 全工程列清单（详见 `docs/组件管理字段配置指南.md §十一 字段类型联动性矩阵`）
+     - 写代码中对照 15 项 checklist 勾掉每格
+     - 写完**跑 E2E + 复测报价单 + 核价单 + 详情页三个视图** + admin 端点验证 snapshot 各 Tab fields_override 独立保留
+   - **PR 必含**:
+     - 矩阵 15 处 grep 命中输出
+     - E2E `1 passed` + `'加载中' final count = 0`
+     - 报价单视图 + 核价单视图 + 详情页三处的关键 Tab 截图（修复前 vs 后）
+     - `POST /api/cpq/components/{id}/refresh-template-snapshots` 跑过后所有 Tab snapshot.fields 列表打印
 
 **后端改动**（含 `.java` `.sql` 修改）：
 1. `touch` 一个 java 文件强制 Quarkus 重启 → 等 5-7 秒

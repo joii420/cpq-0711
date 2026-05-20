@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Tag, Button, message } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Card, Tag, Button, Space, message } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import SelectableTable, { runBatch } from '../../components/SelectableTable';
 import type { ToolbarAction } from '../../components/SelectableTable';
 import {
@@ -9,6 +9,7 @@ import {
   type MaterialRecipeDetail,
 } from '../../services/materialRecipeService';
 import MaterialRecipeEditDrawer from './MaterialRecipeEditDrawer';
+import MaterialRecipeSuggestDrawer from './MaterialRecipeSuggestDrawer';
 
 const recipeTypeTag: Record<string, { label: string; color: string }> = {
   locked:   { label: '标准锁定', color: 'red' },
@@ -21,11 +22,12 @@ const MaterialRecipeManagement: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingDetail, setEditingDetail] = useState<MaterialRecipeDetail | null>(null);
+  const [suggestOpen, setSuggestOpen] = useState(false);
 
   const refresh = async () => {
     setLoading(true);
     try {
-      const data = await materialRecipeService.list();
+      const data = await materialRecipeService.list({ withCount: true });
       setList(data);
     } catch (e: any) {
       message.error(e?.message ?? '加载失败');
@@ -82,6 +84,20 @@ const MaterialRecipeManagement: React.FC = () => {
         <Tag color={s === 'ACTIVE' ? 'green' : 'default'}>{s === 'ACTIVE' ? '启用' : '停用'}</Tag>
       ),
     },
+    {
+      title: '绑定料号数',
+      dataIndex: 'boundPartsCount',
+      key: 'boundPartsCount',
+      width: 110,
+      render: (n: number | undefined, r: MaterialRecipeLite) => {
+        const v = n ?? 0;
+        return (
+          <a onClick={(e) => { e.stopPropagation(); openEdit(r.id); }}>
+            <Tag color={v > 0 ? 'blue' : 'default'}>{v} 个</Tag>
+          </a>
+        );
+      },
+    },
     { title: '排序', dataIndex: 'sortOrder', key: 'sortOrder', width: 80 },
   ];
 
@@ -121,9 +137,14 @@ const MaterialRecipeManagement: React.FC = () => {
     <Card
       title="材质管理"
       extra={
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          新建材质
-        </Button>
+        <Space>
+          <Button icon={<ThunderboltOutlined />} onClick={() => setSuggestOpen(true)}>
+            未绑料号 - 智能建议
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+            新建材质
+          </Button>
+        </Space>
       }
     >
       <SelectableTable<MaterialRecipeLite>
@@ -140,6 +161,12 @@ const MaterialRecipeManagement: React.FC = () => {
         editingDetail={editingDetail}
         onClose={() => setDrawerOpen(false)}
         onSaved={() => { setDrawerOpen(false); refresh(); }}
+        onPartsChanged={refresh}
+      />
+      <MaterialRecipeSuggestDrawer
+        open={suggestOpen}
+        onClose={() => setSuggestOpen(false)}
+        onConfirmed={() => { setSuggestOpen(false); refresh(); }}
       />
     </Card>
   );

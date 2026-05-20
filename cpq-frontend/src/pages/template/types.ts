@@ -18,6 +18,10 @@ export interface TemplateComponentItem {
   tabName: string;
   sortOrder: number;
   fields?: any[];
+  /** V204: 模板级覆盖 — 非空时 publish 用此值覆盖 component.dataDriverPath */
+  dataDriverPathOverride?: string | null;
+  /** V204: 模板级覆盖 — 非空 JSON 字符串时 publish 用此值覆盖 component.fields */
+  fieldsOverride?: string | null;
 }
 
 export interface TemplateData {

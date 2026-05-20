@@ -32,6 +32,29 @@ const Step3Process: React.FC<Props> = ({ part, onUpdate }) => {
       .catch(() => setAllProcs([]));
   }, []);
 
+  /**
+   * 2026-05-19: 复用料号场景下用现有工序作为预填起点.
+   *
+   * 触发条件: allProcs 加载完 + reusedFromExisting 有 snapshot.processes + 当前 processIds 为空.
+   * 把 snapshot 里的 processCode 映射成 processId 写回 part.processIds — 用户可在 UI 直接改/删/加,
+   * 提交时后端 resolvePart `existing+processIds` 分支会用这些 processIds 覆盖当前客户的 mat_process.
+   *
+   * 仅当 processIds 真为空时预填 — 否则用户已经手动改过,不要被预填覆盖.
+   */
+  useEffect(() => {
+    if (allProcs.length === 0) return;
+    if (part.processIds.length > 0) return;
+    const snapshotProcs = part.reusedFromExisting?.snapshot?.processes;
+    if (!snapshotProcs || snapshotProcs.length === 0) return;
+    const mapped = snapshotProcs
+      .map(sp => allProcs.find(p => p.code === sp.processCode)?.id)
+      .filter((x): x is string => !!x);
+    if (mapped.length > 0) {
+      onUpdate({ processIds: mapped });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allProcs, part.reusedFromExisting]);
+
   const filtered = allProcs.filter(p =>
     !q.trim() || p.name.includes(q) || (p.categoryName ?? '').includes(q),
   );

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>v4 · 产品管理（3 Tab 聚合）</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#f0f2f5; font-size:13px; color:#303133; height:100vh; overflow:hidden; }
+.layout { display:flex; height:100vh; }
+.sider { width:200px; background:#001529; color:#fff; padding:12px 0; flex-shrink:0; overflow-y:auto; }
+.sider .logo { padding:0 16px 16px; font-size:14px; font-weight:600; border-bottom:1px solid #1f2d3d; }
+.menu { padding-top:8px; }
+.m-item { padding:9px 16px; color:#a6adb4; cursor:pointer; font-size:13px; display:flex; align-items:center; gap:8px; }
+.m-item:hover { color:#fff; background:#1f2d3d; }
+.m-item.active { background:#1890ff; color:#fff; }
+.m-item .ico { width:14px; text-align:center; }
+.m-sub { padding-left:32px; font-size:12.5px; }
+
+.main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.crumb { padding:10px 20px; background:#fff; border-bottom:1px solid #e4e7ed; font-size:12.5px; color:#909399; }
+.crumb b { color:#303133; font-weight:500; }
+.content { flex:1; padding:16px 20px; overflow-y:auto; }
+
+/* 改动标注 */
+.diff-banner {
+  background: linear-gradient(90deg, #fff7e6, #fffbe6);
+  border: 1px dashed #faad14;
+  padding: 10px 14px; border-radius: 6px; font-size: 12.5px;
+  color: #876800; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 8px;
+}
+.diff-banner .badge { background:#faad14; color:#fff; padding:2px 8px; border-radius:3px; font-size:11px; font-weight:600; }
+
+.page-card { background:#fff; border-radius:8px; padding:16px; }
+.page-title { font-size:18px; font-weight:600; margin-bottom:14px; }
+
+/* Tabs */
+.tabs { border-bottom:1px solid #e4e7ed; display:flex; gap:0; margin-bottom:14px; }
+.tab { padding:10px 18px; cursor:pointer; font-size:13px; border-bottom:2px solid transparent; color:#606266; position:relative; }
+.tab .count { display:inline-block; margin-left:6px; background:#f0f2f5; color:#909399; padding:0 6px; border-radius:8px; font-size:11px; font-weight:500; }
+.tab:hover { color:#409eff; }
+.tab.active { color:#409eff; border-bottom-color:#409eff; font-weight:600; }
+.tab.active .count { background:#ecf5ff; color:#409eff; }
+
+/* Toolbar */
+.toolbar { display:flex; gap:8px; margin-bottom:12px; align-items:center; }
+.btn { padding:5px 14px; border:1px solid #dcdfe6; background:#fff; border-radius:4px; cursor:pointer; font-size:12.5px; color:#606266; }
+.btn:hover { color:#409eff; border-color:#c6e2ff; background:#ecf5ff; }
+.btn.primary { background:#409eff; color:#fff; border-color:#409eff; }
+.btn.primary:hover { background:#66b1ff; }
+.btn.danger { color:#f56c6c; border-color:#fbc4c4; }
+.btn[disabled] { opacity:.5; cursor:not-allowed; }
+.search { margin-left:auto; padding:5px 10px; border:1px solid #dcdfe6; border-radius:4px; font-size:12.5px; width:240px; }
+
+/* Table */
+table { width:100%; border-collapse:collapse; font-size:12.5px; }
+thead th { background:#fafafa; padding:10px 8px; text-align:left; font-weight:500; color:#606266; border-bottom:1px solid #ebeef5; font-size:12px; }
+tbody td { padding:10px 8px; border-bottom:1px solid #f5f5f5; color:#303133; }
+tbody tr:hover { background:#fafbfc; }
+tbody td input[type=checkbox] { cursor:pointer; }
+.link { color:#409eff; cursor:pointer; }
+.link:hover { text-decoration:underline; }
+.tag { display:inline-block; font-size:11px; padding:1px 6px; border-radius:3px; }
+.tag.green { background:#f0f9eb; color:#67c23a; }
+.tag.blue  { background:#ecf5ff; color:#409eff; }
+.tag.orange{ background:#fdf6ec; color:#e6a23c; }
+.tag.gray  { background:#f4f4f5; color:#909399; }
+
+.help-tip {
+  margin-top: 18px; padding: 10px 14px; background:#f6ffed; border:1px solid #b7eb8f;
+  border-radius: 4px; font-size: 12.5px; color: #389e0d; line-height: 1.6;
+}
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="sider">
+    <div class="logo">📦 CPQ 报价系统</div>
+    <div class="menu">
+      <div class="m-item"><span class="ico">🏠</span>工作台</div>
+      <div class="m-item"><span class="ico">👥</span>客户管理</div>
+      <div class="m-item active"><span class="ico">📦</span>产品管理</div>
+      <div class="m-item"><span class="ico">📄</span>报价中心</div>
+      <div class="m-item"><span class="ico">💰</span>定价管理</div>
+      <div class="m-item"><span class="ico">⚙️</span>配置中心</div>
+      <div class="m-item"><span class="ico">🗂️</span>数据管理</div>
+      <div class="m-item"><span class="ico">📜</span>变更日志</div>
+      <div class="m-item"><span class="ico">🔧</span>系统管理</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="crumb">产品管理 / <b>产品列表</b></div>
+    <div class="content">
+      <div class="diff-banner">
+        <span class="badge">改动 3 + 8</span>
+        合并「产品管理」「生产料号管理」为一个页面（3 个 Tab）；取消「产品模板绑定」菜单，绑定操作下沉到产品行操作。
+      </div>
+
+      <div class="page-card">
+        <div class="page-title">产品管理</div>
+
+        <div class="tabs">
+          <div class="tab active">📋 产品列表 <span class="count">128</span></div>
+          <div class="tab">🔢 生产料号 <span class="count">2,431</span></div>
+          <div class="tab">🏷️ 产品分类 <span class="count">16</span></div>
+        </div>
+
+        <div class="toolbar">
+          <button class="btn primary">+ 新建产品</button>
+          <button class="btn">📥 导入产品</button>
+          <button class="btn">📤 导出</button>
+          <button class="btn" disabled>批量启用</button>
+          <button class="btn" disabled>批量停用</button>
+          <button class="btn" disabled>🔗 绑定模板</button>
+          <button class="btn danger" disabled>删除</button>
+          <input class="search" placeholder="搜索产品名称 / 编码 / 客户" />
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width:30px;"><input type="checkbox"/></th>
+              <th>产品编码</th>
+              <th>产品名称</th>
+              <th>分类</th>
+              <th>关联料号数</th>
+              <th>绑定模板</th>
+              <th>状态</th>
+              <th>更新时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td>P-2026-0001</td>
+              <td><span class="link">不锈钢法兰阀门体 DN50</span></td>
+              <td>阀门-法兰类</td>
+              <td>23</td>
+              <td><span class="tag blue">阀门体标准模板 v1.4</span></td>
+              <td><span class="tag green">启用</span></td>
+              <td>2026-05-15 14:32</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td>P-2026-0002</td>
+              <td><span class="link">高压管件 304 DN80</span></td>
+              <td>管件</td>
+              <td>11</td>
+              <td><span class="tag blue">管件标准模板 v2.0</span></td>
+              <td><span class="tag green">启用</span></td>
+              <td>2026-05-14 09:21</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td>P-2026-0003</td>
+              <td><span class="link">铸钢蝶阀 DN200</span></td>
+              <td>阀门-蝶阀类</td>
+              <td>5</td>
+              <td><span class="tag gray">未绑定</span></td>
+              <td><span class="tag orange">待激活</span></td>
+              <td>2026-05-13 16:08</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td>P-2025-0892</td>
+              <td><span class="link">球墨铸铁三通件</span></td>
+              <td>管件</td>
+              <td>34</td>
+              <td><span class="tag blue">通用三通模板 v1.2</span></td>
+              <td><span class="tag green">启用</span></td>
+              <td>2026-05-12 11:45</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td>P-2025-0850</td>
+              <td><span class="link">不锈钢法兰盘 DN150</span></td>
+              <td>法兰</td>
+              <td>18</td>
+              <td><span class="tag blue">法兰盘模板 v1.1</span></td>
+              <td><span class="tag gray">停用</span></td>
+              <td>2026-05-10 10:00</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="help-tip">
+          <strong>📍 设计说明：</strong>
+          <br>• <strong>Tab 切换</strong>：产品列表 / 生产料号 / 产品分类 三个 Tab 在同一路由内切换（如 <code>/products?tab=parts</code>），便于业务在"产品 ↔ 料号"上下文之间快速回看。
+          <br>• <strong>绑定模板下沉</strong>：原"产品模板绑定"独立菜单取消，绑定关系直接显示在产品行的"绑定模板"列；工具栏提供"🔗 绑定模板"批量操作。
+          <br>• <strong>料号 Tab 内容</strong>：保留原"生产料号管理"页全部能力（料号清单、版本、价格、属性），并新增"按产品快速筛选"。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

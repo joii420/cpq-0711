@@ -17,6 +17,7 @@ import {
   Input,
   Tabs,
   Popconfirm,
+  Switch,
 } from 'antd';
 import {
   ReloadOutlined,
@@ -60,6 +61,72 @@ const GlobalVariablePage: React.FC = () => {
   const [defs, setDefs] = useState<GlobalVariableDefinition[]>([]);
   const [loading, setLoading] = useState(false);
   const [keyCounts, setKeyCounts] = useState<Record<string, number>>({});
+  /** V190: 默认隐藏 visibility=COSTING_INTERNAL 的变量 (核价 3 张); toggle on 可查看 */
+  const [showCostingInternal, setShowCostingInternal] = useState(false);
+
+  // G2: 新建变量 Modal
+  const [createDefOpen, setCreateDefOpen] = useState(false);
+  const [createDefForm] = Form.useForm();
+
+  const openCreateDef = () => {
+    createDefForm.resetFields();
+    createDefForm.setFieldsValue({ varType: 'LOOKUP_TABLE', keyColumnsStr: 'process_code' });
+    setCreateDefOpen(true);
+  };
+
+  const submitCreateDef = async () => {
+    try {
+      const values = await createDefForm.validateFields();
+      const keyColumns = String(values.varType === 'SCALAR'
+          ? '' : (values.keyColumnsStr ?? ''))
+        .split(',').map((s: string) => s.trim()).filter(Boolean);
+      if (values.varType === 'LOOKUP_TABLE' && keyColumns.length === 0) {
+        message.error('LOOKUP_TABLE 必须填至少一个 key 列名');
+        return;
+      }
+      await globalVariableService.create({
+        code: values.code,
+        name: values.name,
+        varType: values.varType,
+        keyColumns,
+        valueColumn: 'value_number',
+        unit: values.unit,
+        description: values.description,
+        sortOrder: 100,
+      });
+      message.success('新建成功');
+      setCreateDefOpen(false);
+      await loadDefs();
+    } catch (e: any) {
+      if (e?.errorFields) return;  // form validation
+      message.error(e?.response?.data?.message || e?.message || '新建失败');
+    }
+  };
+
+  const handleDeleteDef = (def: GlobalVariableDefinition) => {
+    Modal.confirm({
+      title: `确认删除变量 ${def.code}?`,
+      content: (
+        <Alert
+          type="error"
+          showIcon
+          message="级联清除该变量的所有值; 公式 / 字段引用立即失效"
+        />
+      ),
+      okText: '确认删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await globalVariableService.remove(def.code);
+          message.success('已删除');
+          await loadDefs();
+        } catch (e: any) {
+          message.error(e?.response?.data?.message || e?.message || '删除失败');
+        }
+      },
+    });
+  };
 
   // 维护抽屉
   const [maintainDef, setMaintainDef] = useState<GlobalVariableDefinition | null>(null);
@@ -289,19 +356,50 @@ const GlobalVariablePage: React.FC = () => {
     },
     { title: '单位', dataIndex: 'unit', key: 'unit', width: 80 },
     {
-      title: '操作', key: 'actions', width: 240,
-      render: (_, r) => (
-        <Space>
-          <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => openMaintain(r)}>
-            维护数据
-          </Button>
-          <Button size="small" icon={<HistoryOutlined />} onClick={() => openLog(r.code)}>
-            变更历史
-          </Button>
-        </Space>
-      ),
+      title: '形态', key: 'shape', width: 110,
+      render: (_, r) => {
+        if (r.valueSourceType === 'COSTING_VIEW') {
+          return <Tag color="purple">核价</Tag>;
+        }
+        return <Tag color="green">KV 单表</Tag>;
+      },
     },
-  ], [keyCounts]);
+    {
+      title: '操作', key: 'actions', width: 320,
+      render: (_, r) => {
+        const isCosting = r.valueSourceType === 'COSTING_VIEW';
+        return (
+          <Space>
+            <Tooltip title={isCosting ? '核价价格表请到核价模块页面维护，此处只读' : undefined}>
+              <Button
+                size="small"
+                type="primary"
+                icon={<EditOutlined />}
+                disabled={isCosting}
+                onClick={() => !isCosting && openMaintain(r)}
+              >
+                维护数据
+              </Button>
+            </Tooltip>
+            <Button size="small" icon={<HistoryOutlined />} onClick={() => openLog(r.code)}>
+              变更历史
+            </Button>
+            {canEdit && !isCosting && (
+              <Button size="small" danger icon={<DeleteOutlined />} onClick={() => handleDeleteDef(r)}>
+                删除
+              </Button>
+            )}
+          </Space>
+        );
+      },
+    },
+  ], [keyCounts, canEdit]);
+
+  /** V190: 过滤显示 — visibility=COSTING_INTERNAL 默认隐藏 */
+  const visibleDefs = useMemo(
+    () => showCostingInternal ? defs : defs.filter(d => d.visibility !== 'COSTING_INTERNAL'),
+    [defs, showCostingInternal],
+  );
 
   // ─── 维护抽屉表格 ─────────────────────────────────────────
   const detailColumns: ColumnsType<any> = useMemo(() => {
@@ -374,6 +472,11 @@ const GlobalVariablePage: React.FC = () => {
           </Text>
         </div>
         <Space>
+          {canEdit && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateDef}>
+              新建变量
+            </Button>
+          )}
           <Button icon={<HistoryOutlined />} onClick={() => openLog()}>全局变更历史</Button>
           <Button icon={<ReloadOutlined />} onClick={loadDefs} loading={loading}>刷新</Button>
         </Space>
@@ -394,9 +497,19 @@ const GlobalVariablePage: React.FC = () => {
       />
 
       <Card>
+        <Space style={{ marginBottom: 12 }}>
+          <Switch
+            checked={showCostingInternal}
+            onChange={setShowCostingInternal}
+            size="small"
+          />
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            显示核价价格变量（ELEM_PRICE / MAT_PRICE / EXCHANGE_RATE — 仅查看, 维护去核价模块）
+          </Text>
+        </Space>
         <Table
           rowKey="code"
-          dataSource={defs}
+          dataSource={visibleDefs}
           columns={columns}
           loading={loading}
           pagination={false}
@@ -510,6 +623,59 @@ const GlobalVariablePage: React.FC = () => {
           locale={{ emptyText: <Empty description="暂无变更记录" /> }}
         />
       </Drawer>
+
+      {/* G2: 新建变量 Modal — KV_TABLE + PUBLIC 形态, 后端自动设值 */}
+      <Modal
+        title="新建全局变量"
+        open={createDefOpen}
+        onCancel={() => setCreateDefOpen(false)}
+        onOk={submitCreateDef}
+        okText="创建"
+        cancelText="取消"
+        width={520}
+      >
+        <Form form={createDefForm} layout="vertical" preserve={false}>
+          <Form.Item
+            label="变量代号"
+            name="code"
+            rules={[
+              { required: true, message: 'code 必填' },
+              { pattern: /^[A-Z][A-Z0-9_]{2,63}$/, message: '大写字母开头, 仅含 A-Z 0-9 _, 3~64 长度' },
+            ]}
+            extra="公式 / 字段引用按此 code 识别, 创建后不可改"
+          >
+            <Input placeholder="如 SYSTEM_DEFAULT_MARGIN" />
+          </Form.Item>
+          <Form.Item label="变量名称" name="name" rules={[{ required: true, message: '名称必填' }]}>
+            <Input placeholder="如 系统默认毛利率" />
+          </Form.Item>
+          <Form.Item label="变量类型" name="varType" rules={[{ required: true }]} initialValue="LOOKUP_TABLE">
+            <Input.Group compact>
+              <Form.Item name="varType" noStyle>
+                <select
+                  style={{ width: '100%', height: 32, padding: '4px 8px', border: '1px solid #d9d9d9', borderRadius: 4 }}
+                >
+                  <option value="LOOKUP_TABLE">查表型 (按 key 查)</option>
+                  <option value="SCALAR">标量 (单一值)</option>
+                </select>
+              </Form.Item>
+            </Input.Group>
+          </Form.Item>
+          <Form.Item
+            label="key 列名 (LOOKUP 必填; SCALAR 留空)"
+            name="keyColumnsStr"
+            extra="多个 key 列用逗号分隔, 如 from_currency,to_currency. 命名建议与 driver 行物理列名一致 (默认同名映射)"
+          >
+            <Input placeholder="如 process_code" />
+          </Form.Item>
+          <Form.Item label="单位" name="unit">
+            <Input placeholder="如 % / CNY/KG / 元/件" />
+          </Form.Item>
+          <Form.Item label="说明" name="description">
+            <Input.TextArea rows={2} placeholder="变量用途 / 业务场景" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

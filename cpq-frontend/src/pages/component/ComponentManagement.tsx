@@ -641,6 +641,7 @@ const ComponentManagement: React.FC = () => {
                   <HeaderPreview fields={fields} />
                   <FieldConfigTable
                 fields={fields}
+                formulas={formulas}
                 onChange={(newFields) => {
                   // Detect field renames and sync formula expressions
                   const renames: Record<string, string> = {};

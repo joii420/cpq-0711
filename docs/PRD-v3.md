@@ -2132,6 +2132,17 @@ v_costing_exchange_rate[from_currency='CNY' AND to_currency='USD'].costing_rate
 | **明确单实例约束** | 进程内缓存 + KieBase / Drools 字样移除,改为公式引擎缓存 |
 | **旧 PRD 归档** | `docs/PRD.md` 保留为历史档案,不再维护 |
 
+### 9.10 v3.3(2026-05-19)— 模板级覆盖 UI 化 + 选配 Tab LIST_FORMULA 支持
+
+| 决策 | 内容 |
+|---|---|
+| **§5.x 模板级覆盖 (V200/V204)** | `template_component.fields_override` / `data_driver_path_override` 从 V200 起在 DB 存在但**前端无 UI** → 用户无法管理"同 component 在不同 Tab 字段集不同"的场景, 唯一可用路径是新建组件或写 SQL. V204 起加 PATCH endpoint + `OverridesDrawer` UI(模板编辑 Tab 内顶部「⚙ 编辑字段/Driver 覆盖」), 字段定义复用组件管理同款 `FieldConfigTable`(支持 LIST_FORMULA / FORMULA / BNF_PATH / GLOBAL_VARIABLE / FIXED_VALUE / INPUT). DATABASE_QUERY 类数据源仍需去组件管理配 |
+| **TemplateDTO 暴露 override 字段** | `GET /templates/{id}` 和 `GET /templates/{tid}/components` 返回的 components[i] 现在含 `fieldsOverride` / `dataDriverPathOverride`, 前端能区分"使用默认 vs 已覆盖" |
+| **Tab 头视觉反馈** | 有 override 的 Tab 自动显示橙色「覆盖」徽章; Tab 内顶部显示当前 effective driver path + 「已覆盖」标签 |
+| **DRAFT-only** | 覆盖仅 DRAFT 模板可改, PUBLISHED 返 400. clone 升版本时 override **原样复制**(`TemplateService:387`), 这意味着改 component.fields 不会影响已 publish 模板的"已 override Tab", 必须先编辑 v2.0 草稿的 override 才能让组件变更生效 |
+| **配置中心 seed: 3 个 config_template** | 为 "选配-材质 / 选配-元素含量 / 选配-组合工艺" 落地 LIST_FORMULA 字段提供 items 库: 材质(4 items) / 元素(5 items) / 组合工艺(4 items). 之前仅"工序"(5 items) 一个 config_template, 这一批补齐 |
+| **AP-37 根因 6 续 — 详情/编辑 Tab 一致性** | ReadonlyProductCard / QuotationStep2 撤销 componentHasData 自动隐藏空 Tab 的逻辑, 改为按模板 snapshot 1:1 渲染 Tab + 空数据内部显示"暂无数据"占位. 解决"详情页 5 Tab vs 编辑页 6 Tab vs 模板 8 Tab" 不一致问题 |
+
 ### 9.9 v3.2(2026-05-14)— 模板客户绑定规则回填 + 选配产品呈现链路修复
 
 | 决策 | 内容 |

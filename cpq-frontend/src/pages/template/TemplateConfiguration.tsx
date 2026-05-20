@@ -473,6 +473,8 @@ const TemplateConfiguration: React.FC = () => {
                         isDraft={isDraft || false}
                         presetRowsMap={presetRowsMap}
                         onPresetRowsChange={handlePresetRowsChange}
+                        templateId={id || ''}
+                        onOverridesSaved={loadTemplate}
                       />
                     ) : (
                       renderSimpleSummary()

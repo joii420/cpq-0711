@@ -160,6 +160,10 @@ const GlobalVariablePickerDrawer: React.FC<GlobalVariablePickerDrawerProps> = ({
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontSize: 14, color: '#d46b08' }}>🌐</span>
                       <Typography.Text strong>{d.name}</Typography.Text>
+                      {/* V190: 核价 3 张表加 tag, 让公式编辑者一眼区分 */}
+                      {(d as any).valueSourceType === 'COSTING_VIEW' && (
+                        <Tag color="purple" style={{ marginLeft: 4, fontSize: 10 }}>核价</Tag>
+                      )}
                     </div>
                     <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 2 }}>
                       {d.code}{d.unit ? ` · ${d.unit}` : ''}

@@ -100,4 +100,50 @@ public class TemplateComponentResource {
         List<UUID> uuids = ids.stream().map(UUID::fromString).collect(java.util.stream.Collectors.toList());
         return ApiResponse.success(templateComponentService.reorder(templateId, uuids));
     }
+
+    /**
+     * V204: 编辑模板组件 override (fields / dataDriverPath). body 内任一键缺省 = 不动该字段;
+     * 显式 null = 清空 override (走 component 默认); 非空 = 设置 override.
+     * 仅 DRAFT 可改.
+     *
+     * <p>示例:
+     * <pre>
+     *   PATCH .../components/{tcId}/overrides
+     *   { "fieldsOverride": "[...JSON 数组...]", "dataDriverPathOverride": "mat_process" }
+     *   PATCH ... { "fieldsOverride": null }                            // 仅清空 fields override
+     *   PATCH ... { "dataDriverPathOverride": "v_composite_child_*" }   // 仅设 driver override
+     * </pre>
+     */
+    @PATCH
+    @Path("/{tcId}/overrides")
+    public ApiResponse<TemplateComponentDTO> updateOverrides(
+            @PathParam("templateId") UUID templateId,
+            @PathParam("tcId") UUID tcId,
+            Map<String, Object> body) {
+        boolean fieldsProvided = body != null && body.containsKey("fieldsOverride");
+        boolean driverProvided = body != null && body.containsKey("dataDriverPathOverride");
+        String fieldsJson = null;
+        if (fieldsProvided) {
+            Object v = body.get("fieldsOverride");
+            if (v == null) {
+                fieldsJson = null;
+            } else if (v instanceof String) {
+                fieldsJson = (String) v;
+            } else {
+                // List/Map: 序列化成 JSON
+                try {
+                    fieldsJson = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(v);
+                } catch (Exception e) {
+                    throw new jakarta.ws.rs.BadRequestException("fieldsOverride 不是合法的 JSON 数组: " + e.getMessage());
+                }
+            }
+        }
+        String driverPath = null;
+        if (driverProvided) {
+            Object v = body.get("dataDriverPathOverride");
+            driverPath = v == null ? null : v.toString();
+        }
+        return ApiResponse.success(templateComponentService.updateOverrides(
+                templateId, tcId, fieldsJson, fieldsProvided, driverPath, driverProvided));
+    }
 }

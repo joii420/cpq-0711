@@ -17,13 +17,13 @@ import QuotationStep2, { computeProductSubtotal, computeAllFormulas } from './Qu
 import QuotationStep3 from './QuotationStep3';
 import type { DriftDetectionResult } from '../../types/quotation-drift';
 import type { LineItem, ComponentDataItem, ComponentField, ComponentFormula } from './QuotationStep2';
-import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey } from './useDriverExpansions';
+import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
 import AddProductModal from './AddProductModal';
 import ConfigureProductDrawer from './ConfigureProductDrawer';
 import QuotationCreateForm from './QuotationCreateForm';
 import type { QuotationFormValue } from './QuotationCreateForm';
 import { templateService } from '../../services/templateService';
-import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
+import { buildLineItemFromTemplate, buildComponentDataFromTemplate } from './BulkImportPartsDrawer';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
@@ -45,7 +45,7 @@ function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
 }
 
 function normalizeFieldType(raw: string):
-  'FIXED_VALUE' | 'DATA_SOURCE' | 'INPUT' | 'INPUT_TEXT' | 'INPUT_NUMBER' | 'FORMULA' | 'BASIC_DATA' {
+  'FIXED_VALUE' | 'DATA_SOURCE' | 'INPUT' | 'INPUT_TEXT' | 'INPUT_NUMBER' | 'FORMULA' | 'BASIC_DATA' | 'LIST_FORMULA' {
   const t = (raw || '').toUpperCase();
   if (t === 'FORMULA') return 'FORMULA';
   if (t === 'FIXED_VALUE' || t === 'FIXED') return 'FIXED_VALUE';
@@ -56,6 +56,7 @@ function normalizeFieldType(raw: string):
   if (t === 'BASIC_DATA') return 'BASIC_DATA';
   if (t === 'INPUT_TEXT') return 'INPUT_TEXT';
   if (t === 'INPUT_NUMBER') return 'INPUT_NUMBER';
+  if (t === 'LIST_FORMULA') return 'LIST_FORMULA';  // V203/Phase B
   return 'INPUT';
 }
 
@@ -67,12 +68,27 @@ function fetchTemplateOnce(templateId: string): Promise<any> {
   return templateService.getByIdCached(templateId);
 }
 
-/** Enrich saved componentData with fields/formulas from template snapshot */
+/** Enrich saved componentData with fields/formulas from template snapshot.
+ *
+ * <p>2026-05-17 修复:savedCompData=[] 时不再直接 return [],而是从模板 snapshot
+ * 构建初始 componentData(类似 BulkImport 的 buildLineItemFromTemplate)。这避免
+ * 选配创建的 lineItem(后端不写 component_data → 前端 componentData=[])在卡片渲染时
+ * 拿不到模板组件结构,导致"卡片中没有显示模板的内容"。
+ */
 async function enrichComponentData(
   templateId: string,
   savedCompData: any[],
 ): Promise<ComponentDataItem[]> {
-  if (!templateId || savedCompData.length === 0) return savedCompData;
+  if (!templateId) return savedCompData;
+  if (savedCompData.length === 0) {
+    // 选配创建分支:从模板 snapshot 构建初始 componentData
+    try {
+      const res = await fetchTemplateOnce(templateId);
+      return buildComponentDataFromTemplate(res.data);
+    } catch {
+      return [];
+    }
+  }
   // 先把 rowData 字符串解析成 rows，作为最低保障——即使后面 templateSnapshot
   // 拉取失败 / 匹配不到，至少 input 单元格能从 row[key] 拿到值，不会出现
   // "列表行数在但所有单元格空白" 的情况（Bug E）。
@@ -86,15 +102,40 @@ async function enrichComponentData(
     const tmpl = res.data;
     const snapshot: any[] = parseJson(tmpl.componentsSnapshot, []);
 
-    return withRows.map((saved: any) => {
-      // Match saved comp to snapshot by componentId or tabName
-      const snapshotComp = snapshot.find(
-        (sc: any) => (sc.componentId || sc.component_id) === saved.componentId
-      ) || snapshot.find(
-        (sc: any) => (sc.tabName || sc.tab_name) === saved.tabName
-      );
+    // 2026-05-19 改: 以 snapshot 为权威, 用 savedCompData 仅回填 row 数据.
+    //   原实现按 savedCompData.map 遍历, 模板新增了组件(如组合产品 v1.0→v1.2 补齐
+    //   CHILD-PARTS+WEIGHT)时旧报价单不会显现新 Tab — 因 saved 没这两条行.
+    //   现在按 snapshot 遍历, 让模板变更后已有报价单自动获得新 Tab(空数据).
+    // AP-37 续: 模板允许同 componentId 实例化多次(同组件挂不同 dataDriverPath
+    // 形成两个 Tab, 例 v_composite_child_processes 与 mat_process), 此时按 componentId
+    // 反查 saved 会让 4 个 snapshot entry 都对到同一条 saved → tabName 被覆盖成相同名
+    // (典型现象: 标准/选配-* 两组 Tab 全变成"选配-*"), 进而行数据也彼此污染.
+    //   修法: 把 saved 按 componentId 分组成队列, 同 cid 多条按 (cid, tabName) 优先
+    //   精确匹配; 匹配后从队列剔除, 保证不重复使用同一条.
+    const savedQueueByCid: Map<string, any[]> = new Map();
+    const savedByTab: Record<string, any> = {};
+    for (const s of withRows) {
+      if (s.componentId) {
+        if (!savedQueueByCid.has(s.componentId)) savedQueueByCid.set(s.componentId, []);
+        savedQueueByCid.get(s.componentId)!.push(s);
+      }
+      if (s.tabName) savedByTab[s.tabName] = s;
+    }
 
-      if (!snapshotComp) return saved; // Can't enrich, return with rows already filled
+    return snapshot.map((snapshotComp: any) => {
+      const snapId = snapshotComp.componentId || snapshotComp.component_id || '';
+      const snapTab = snapshotComp.tabName || snapshotComp.tab_name || '';
+      let saved: any = {};
+      const queue = savedQueueByCid.get(snapId);
+      if (queue && queue.length > 0) {
+        // 1) (cid, tab) 精确匹配优先
+        let idx = queue.findIndex(s => (s.tabName || '') === snapTab);
+        // 2) 退回到同 cid 第一条还没被领走的
+        if (idx < 0) idx = 0;
+        saved = queue.splice(idx, 1)[0] || {};
+      } else if (savedByTab[snapTab]) {
+        saved = savedByTab[snapTab];
+      }
 
       const fields: ComponentField[] = (snapshotComp.fields || []).map((f: any) => ({
         name: f.name || f.key || '',
@@ -108,6 +149,12 @@ async function enrichComponentData(
         // BASIC_DATA 字段必须带上 basic_data_path —— 渲染分支 / driver 展开 lookup
         // 都靠它，缺了 BASIC_DATA 直接显示"未配置路径"。
         basic_data_path: f.basic_data_path,
+        // V109: 全局变量徽章; V190 default_source 统一默认值来源
+        // (V184 散字段 default_basic_data_path / default_global_variable_code 已 V193 清理)
+        global_variable_code: f.global_variable_code,
+        default_source: f.default_source,
+        // V203/Phase B: LIST_FORMULA 字段的配置 — 缺了 useConfigTemplates 看不到 → 模板永不加载 → 永久"加载中"
+        list_formula_config: f.list_formula_config,
         sort_order: f.sort_order,
         label: f.label || f.name || '',
         key: f.name || f.key || '',
@@ -127,20 +174,24 @@ async function enrichComponentData(
 
       // 从模板快照补回 componentType 和 dataDriverPath —— 后端 ComponentDataDTO 不保存它们，
       // 不补的话刷新后小计组件会被当成普通 tab 渲染、driver 展开也无法触发（AP-2 续）。
-      const componentType = saved.componentType
-        || snapshotComp.component_type
+      // AP-37: 同 cid 多实例时 dataDriverPath 区分各 Tab; 历史 saved 可能错配,
+      //   一律以 snapshot 为准（snapshot 是 publish 时定格的结构权威）。
+      const componentType = snapshotComp.component_type
         || snapshotComp.componentType
+        || saved.componentType
         || 'NORMAL';
-      const dataDriverPath = saved.dataDriverPath
-        || snapshotComp.data_driver_path
+      const dataDriverPath = snapshotComp.data_driver_path
         || snapshotComp.dataDriverPath
+        || saved.dataDriverPath
         || undefined;
 
+      // 结构性字段一律以 snapshot 为权威, saved 只贡献"行数据/小计".
+      // 历史报价单可能因前次 bug 把 tabName 写成同名重复(AP-37), 这里强制以模板修复.
       return {
-        componentId: saved.componentId || snapshotComp.componentId || '',
-        componentCode: saved.componentCode || snapshotComp.componentCode || '',
+        componentId: snapshotComp.componentId || saved.componentId || '',
+        componentCode: snapshotComp.componentCode || saved.componentCode || '',
         componentType,
-        tabName: saved.tabName || snapshotComp.tabName || '',
+        tabName: snapshotComp.tabName || snapshotComp.tab_name || saved.tabName || '',
         fields,
         formulas,
         rows,
@@ -232,7 +283,10 @@ const QuotationWizard: React.FC = () => {
   // Driver 展开结果上提到 wizard 层，便于 buildDraftPayload 在保存前
   // 把 BASIC_DATA / FORMULA 计算结果快照写入 rowData（WYSIWYG）。
   const customerIdValue = (selectedCustomer?.id) || form.getFieldValue('customerId') || undefined;
-  const driverExpansions = useDriverExpansions(lineItems, customerIdValue);
+  // V202+ (2026-05-19): useDriverExpansions 返回 { cache, invalidate } 解决"配置前缓存 0 行/旧值, 配置后不重拉"问题.
+  // invalidate(partNos) 清掉指定料号相关 key, 下一轮 fingerprint 改变时自动 re-fetch.
+  const { cache: driverExpansions, invalidate: invalidateDriverExpansions } =
+    useDriverExpansions(lineItems, customerIdValue);
 
   // Auto-save timer
   const autoSaveRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -343,6 +397,11 @@ const QuotationWizard: React.FC = () => {
         subtotal: li.subtotal || 0,
         // 料号版本锁定 (后端 DTO 已带, 用于产品卡片版本 Tag 显示)
         partVersionLocked: li.partVersionLocked,
+        // productType (mat_part.product_type 反查) — 用于 ProductCard 按类型条件渲染 Tab
+        productType: li.productType,
+        // V169 选配组合关系 — A 修复: filter PART 子卡片需要这两个字段
+        compositeType: li.compositeType,
+        parentLineItemId: li.parentLineItemId,
         // Step3 新增 9 字段回读（AP-2：round-trip 不丢字段）
         annualVolume: li.annualVolume ?? undefined,
         discountSource: li.discountSource ?? undefined,
@@ -367,14 +426,15 @@ const QuotationWizard: React.FC = () => {
       Promise.all(
         basicItems.map(async (li) => {
           if (!li.templateId) return li;
-          const needComponentEnrich = li.componentData.length > 0
-              && !li.componentData.every((cd: any) => cd.fields && cd.fields.length > 0);
+          // 2026-05-17: componentData=[] 也要 enrich(选配创建的 lineItem 后端不落 component_data
+          //   → 前端必须从模板 snapshot 构建结构, 否则卡片空白).
+          // 2026-05-19(AP-37 续): 即便 saved.fields 已落, 仍可能因历史 bug (同 cid 多实例
+          //   反查塌缩 / saved.tabName 覆盖 snapshot.tabName 等) 出现 tabName 重复污染.
+          //   把 enrich 改为"始终跑", 由 enrichComponentData 内部以 snapshot 为权威修复结构.
+          //   性能上 fetchTemplateOnce 已 SWR 缓存, 同模板复用不会重复请求.
           const needProductAttrs = !li.productAttributes || li.productAttributes.length === 0;
-          if (!needComponentEnrich && !needProductAttrs) return li;
           const [enrichedCompData, productAttributes] = await Promise.all([
-            needComponentEnrich
-              ? enrichComponentData(li.templateId, li.componentData)
-              : Promise.resolve(li.componentData),
+            enrichComponentData(li.templateId, li.componentData),
             needProductAttrs
               ? loadProductAttributes(li.templateId)
               : Promise.resolve(li.productAttributes!),
@@ -382,6 +442,15 @@ const QuotationWizard: React.FC = () => {
           return { ...li, componentData: enrichedCompData, productAttributes };
         })
       ).then(enrichedItems => {
+        // 2026-05-19 修: 初次 fetch 时 comp.fields 还没 enrich, useDriverExpansions 没发 overrideFieldsJson,
+        // 后端按 component 默认 fields 返 mat_process.* keys + 缺 @gvar — 缓存"错的"数据.
+        // 现在 enrich 完成 comp.fields 有 v_composite_child_* 路径 + datasource_binding,
+        // 但 fingerprint 只看 cids 没变 → 不重 fetch → cache 卡在错的数据 → UI 永久"加载中".
+        // 解决: enrich 完毕显式 invalidate 涉及料号的 cache, 下一轮自动 refetch with 新 overrideFieldsJson.
+        const partNos = enrichedItems
+          .map((li: any) => li?.productPartNo)
+          .filter((x: any): x is string => typeof x === 'string' && x.length > 0);
+        if (partNos.length > 0) invalidateDriverExpansions(partNos);
         setLineItems(prev => {
           // 取与当前 state 相同长度（用户可能已经增删过 lineItem，这种情况下放弃 enrich）
           if (prev.length !== enrichedItems.length) return prev;
@@ -609,7 +678,7 @@ const QuotationWizard: React.FC = () => {
       for (const comp of li.componentData || []) {
         if (!comp.componentId) continue;
         if (!(comp as any).dataDriverPath) continue;
-        expectedKeys.push(driverExpansionKey(li.productPartNo, comp.componentId, customerIdValue));
+        expectedKeys.push(driverExpansionKey(li.productPartNo, comp.componentId, customerIdValue, (comp as any).dataDriverPath, fieldsOverrideHash((comp as any).fields)));
       }
     }
     // 只要有期待 key，就必须等 driverExpansions 全部到位再保存
@@ -686,6 +755,11 @@ const QuotationWizard: React.FC = () => {
       remarks: values.remarks,
       finalDiscountRate: values.finalDiscountRate,
       discountAdjustmentReason: values.discountAdjustmentReason,
+      // 2026-05-18: 报价模板 / 核价模板 — 之前漏传, 导致 quotation 表 customer_template_id 永远 NULL,
+      // 刷新报价单详情时 Step1 拿不到模板. 这两个字段优先取 wizard 层 state (Step1 用户当前选择),
+      // 否则回退 form values (与 onChange setFieldsValue 双轨保险).
+      customerTemplateId: customerTemplateId ?? values.customerTemplateId ?? null,
+      costingCardTemplateId: costingCardTemplateId ?? values.costingCardTemplateId ?? null,
       lineItems: lineItems.map((li, idx) => ({
         // 后端 SaveDraftRequest.LineItemDraft.productId 是 UUID，Jackson 无法把
         // 空字符串反序列化成 UUID（整次保存直接 400）。批量导入分支会把
@@ -706,6 +780,14 @@ const QuotationWizard: React.FC = () => {
         subtotal: computeProductSubtotalSafe(li, driverExpansions, customerIdValue),
         sortOrder: idx,
         processIds: [],
+        // V169 选配组合产品父子关系 — saveDraft 全量重建时必须透传:
+        //   compositeType 直接透传 (SIMPLE/COMPOSITE/PART)
+        //   parentLineItemId 旧 UUID 已被 CASCADE 删, 不能传; 改传 tempParentIndex (父在 list 的位置)
+        //   后端 saveDraft 二阶段 UPDATE: newIds[tempParentIndex] 作新 parent_line_item_id
+        compositeType: li.compositeType ?? null,
+        tempParentIndex: li.parentLineItemId
+          ? lineItems.findIndex(p => p.id === li.parentLineItemId)
+          : null,
         // Step3 新增 9 字段透传（AP-2：round-trip 不丢字段，字段名严格对齐 spec §5.3）
         annualVolume: li.annualVolume ?? null,
         discountSource: li.discountSource ?? null,
@@ -736,7 +818,7 @@ const QuotationWizard: React.FC = () => {
     const fields = cd.fields || [];
     const componentId = cd.componentId || '';
     const expansionKey = (partNo && componentId)
-      ? driverExpansionKey(partNo, componentId, customerIdValue)
+      ? driverExpansionKey(partNo, componentId, customerIdValue, cd.dataDriverPath, fieldsOverrideHash(fields as any[]))
       : '';
     const expansion = expansionKey ? driverExpansions[expansionKey] : undefined;
 
@@ -753,6 +835,10 @@ const QuotationWizard: React.FC = () => {
       : baseRows.length;
 
     const out: Record<string, any>[] = [];
+    // 2026-05-17: 累加公式支持. 按 row_index 顺序遍历, 把上一行的 is_subtotal 字段值
+    // 作为 previousRowSubtotal 传给下一行的 computeAllFormulas, 同 ProductCard 渲染逻辑一致.
+    const subtotalFieldName = fields.find((f: any) => f.is_subtotal)?.name;
+    let prevRowSubtotal: number | undefined = undefined;
     for (let i = 0; i < rowCount; i++) {
       const baseRow = baseRows[i] || {};
       const expansionRow = expansion?.rows?.[i];
@@ -791,7 +877,7 @@ const QuotationWizard: React.FC = () => {
       try {
         const formulaCache = computeAllFormulas(
           cd, enriched, componentSubtotals,
-          undefined, undefined, partNo, basicDataValues
+          undefined, undefined, partNo, basicDataValues, prevRowSubtotal
         );
         for (const f of fields) {
           if (f.field_type !== 'FORMULA') continue;
@@ -800,6 +886,10 @@ const QuotationWizard: React.FC = () => {
           if (formulaCache[fieldKey] != null) {
             enriched[fieldKey] = formulaCache[fieldKey];
           }
+        }
+        // 把本行 is_subtotal 字段值留给下一行作为 previous_row_subtotal token 的输入
+        if (subtotalFieldName && typeof formulaCache[subtotalFieldName] === 'number') {
+          prevRowSubtotal = formulaCache[subtotalFieldName] as number;
         }
       } catch {
         // 公式计算失败不阻塞保存（沿用原值）
@@ -927,6 +1017,15 @@ const QuotationWizard: React.FC = () => {
   const onConfigureConfirm = async (rawItems: any[]) => {
     setConfigureDrawerOpen(false);
     if (!rawItems || rawItems.length === 0) return;
+    // V202+ (2026-05-19): 配置流程在后端写过 mat_process / mat_bom, 但 cache 里可能有
+    // 配置前的"0 行/旧值"陈旧 expansion → componentHasData 误判隐藏 Tab.
+    // 先把涉及的 partNos 从 cache 清掉, fingerprint 下一轮重 fetch.
+    const affectedPartNos = rawItems
+      .map((li: any) => li.productPartNo)
+      .filter((x: any): x is string => typeof x === 'string' && x.length > 0);
+    if (affectedPartNos.length > 0) {
+      invalidateDriverExpansions(affectedPartNos);
+    }
     const basicItems: LineItem[] = rawItems.map((li: any) => {
       const rawAttrs = li.productAttributeValues
         ? (typeof li.productAttributeValues === 'string'
@@ -949,6 +1048,15 @@ const QuotationWizard: React.FC = () => {
         componentData: li.componentData || [],
         subtotal: li.subtotal || 0,
         partVersionLocked: li.partVersionLocked,
+        // 后端 buildLineItemDTO 已经透传 compositeType('SIMPLE'/'COMPOSITE'/'PART'),
+        // 选配场景下父级=COMPOSITE,子配件=PART,SIMPLE 产品=SIMPLE.
+        // ProductCard 按 productType 渲染 Tab 时, 把 compositeType 折算到 productType:
+        //   COMPOSITE 父级 → productType=COMPOSITE
+        //   其余(PART / SIMPLE)→ productType=SIMPLE
+        productType: li.compositeType === 'COMPOSITE' ? 'COMPOSITE' : 'SIMPLE',
+        // 保留 compositeType + parentLineItemId 让渲染层 filter PART 子卡片 (A 修复)
+        compositeType: li.compositeType,
+        parentLineItemId: li.parentLineItemId,
       }) as LineItem;
     });
     // 1. 立即追加新行 (函数式, 防 race)
@@ -962,6 +1070,12 @@ const QuotationWizard: React.FC = () => {
       ]);
       return { ...li, componentData: enrichedCompData, productAttributes };
     }));
+    // 2.5 同 loadQuotation: enrich 完成后 invalidate driver expansion cache.
+    // 初次 fetch 时 comp.fields 没 enrich → 缓存了"错的"数据 (mat_process.* keys + 缺 @gvar).
+    // 不 invalidate, fingerprint 仅基于 cids 不变化, 不会重 fetch, UI 永久"加载中"
+    if (affectedPartNos.length > 0) {
+      invalidateDriverExpansions(affectedPartNos);
+    }
     // 3. 按 id 匹配回灌 (用户已开始编辑的不动 — 但选配新行 id 唯一不冲突, 简单 replace 即可)
     setLineItems(prev => prev.map(cur => {
       const updated = enriched.find(e => e.id && e.id === cur.id);
@@ -1010,8 +1124,9 @@ const QuotationWizard: React.FC = () => {
                 onSearch={searchCustomers}
                 onChange={handleCustomerSelect}
                 options={customers.map(c => ({ label: `${c.name} (${c.code || ''})`, value: c.id }))}
-                // 基础数据导入流程：客户已经在导入抽屉里选定，编辑页不允许更换，避免 lineItems 与客户错位
-                disabled={isImportFlow}
+                // 2026-05-18: 报价单一旦生成 (quotationId 非空), 客户绑定不可改 — 与 lineItems / 模板锁定一致, 避免客户错位.
+                // 基础数据导入流程同样不允许换客户 (导入抽屉已选定).
+                disabled={isImportFlow || !!quotationId}
               />
             </Form.Item>
             {/* 未选客户时显示基础名称输入框；选客户后由 QuotationCreateForm 接管名称字段 */}
@@ -1172,6 +1287,9 @@ const QuotationWizard: React.FC = () => {
               if (v.costingTemplateId !== undefined) setCostingCardTemplateId(v.costingTemplateId);
             }}
             onValidityChange={setStep1Valid}
+            // 2026-05-18: 报价单已生成 (quotationId 非空) 后, 产品分类 / 报价模板 / 核价模板 不可改.
+            // 联系人由父组件 (本 Wizard) 管理, 仍可改.
+            readOnly={!!quotationId}
           />
         </Card>
       )}
@@ -1220,6 +1338,7 @@ const QuotationWizard: React.FC = () => {
 
   const renderStep3 = () => (
     <QuotationStep3
+      quotationId={quotationId || undefined}
       lineItems={lineItems}
       baseCurrency={quotation?.baseCurrency || 'CNY'}
       onUpdate={(updater) => setLineItems(prev => updater(prev))}

@@ -369,23 +369,26 @@ const QuotationDetail: React.FC = () => {
             </Descriptions>
           </Card>
 
-          {/* Line Items */}
+          {/* Line Items — 隐藏组合产品 PART 子件 (与 QuotationStep2 一致, 父卡片内 Tab 通过聚合视图展示子件数据) */}
           <Card title="产品明细" style={{ marginBottom: 16 }}>
-            {(quotation.lineItems || []).length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 32, color: '#999' }}>暂无产品</div>
-            ) : (
-              <div className="qt-products-list">
-                {(quotation.lineItems || []).map((li: any, idx: number) => (
-                  <ReadonlyProductCard
-                    key={li.id || idx}
-                    lineItem={li}
-                    index={idx}
-                    quotationId={quotation.id}
-                    quotationStatus={quotation.status}
-                  />
-                ))}
-              </div>
-            )}
+            {(() => {
+              const visible = (quotation.lineItems || []).filter((li: any) => li.compositeType !== 'PART');
+              return visible.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 32, color: '#999' }}>暂无产品</div>
+              ) : (
+                <div className="qt-products-list">
+                  {visible.map((li: any, idx: number) => (
+                    <ReadonlyProductCard
+                      key={li.id || idx}
+                      lineItem={li}
+                      index={idx}
+                      quotationId={quotation.id}
+                      quotationStatus={quotation.status}
+                    />
+                  ))}
+                </div>
+              );
+            })()}
             <Row justify="end" style={{ marginTop: 16 }}>
               <Col>
                 <Space direction="vertical" align="end">

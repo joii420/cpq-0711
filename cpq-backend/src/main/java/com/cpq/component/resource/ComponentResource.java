@@ -13,6 +13,7 @@ import com.cpq.component.dto.ExpandDriverRequest;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.component.service.ComponentService;
+import com.cpq.template.service.TemplateService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -35,6 +36,9 @@ public class ComponentResource {
 
     @Inject
     ComponentDriverService componentDriverService;
+
+    @Inject
+    TemplateService templateService;
 
     @GET
     public ApiResponse<List<ComponentDTO>> list(
@@ -73,6 +77,21 @@ public class ComponentResource {
     public ApiResponse<Void> delete(@PathParam("id") UUID id) {
         componentService.delete(id);
         return ApiResponse.success();
+    }
+
+    /**
+     * H1: 手工触发: 同步所有引用该组件的模板 snapshot.
+     * 组件 update 已自动调用本同款逻辑; 此端点用于:
+     *  - 历史模板 (V184 之前发布) 修复
+     *  - 数据迁移补偿
+     *  - 管理工具脚本
+     * 返回受影响的 template id 列表.
+     */
+    @POST
+    @Path("/{id}/refresh-template-snapshots")
+    @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
+    public ApiResponse<List<UUID>> refreshTemplateSnapshots(@PathParam("id") UUID id) {
+        return ApiResponse.success(templateService.refreshSnapshotsByComponent(id));
     }
 
     /**
@@ -118,7 +137,15 @@ public class ComponentResource {
             Result r = new Result();
             r.key = ComponentDriverService.cacheKey(t.componentId, t.customerId, t.partNo, t.partVersion);
             try {
-                r.data = componentDriverService.expand(t.componentId, t.customerId, t.partNo, t.partVersion);
+                // V195 hotfix: 有 override 时调新签名让 expand 用 snapshot driver/fields 而不是 component 表
+                if ((t.overrideDataDriverPath != null && !t.overrideDataDriverPath.isBlank())
+                        || (t.overrideFieldsJson != null && !t.overrideFieldsJson.isBlank())) {
+                    r.data = componentDriverService.expand(
+                        t.componentId, t.customerId, t.partNo, t.partVersion,
+                        t.overrideDataDriverPath, t.overrideFieldsJson);
+                } else {
+                    r.data = componentDriverService.expand(t.componentId, t.customerId, t.partNo, t.partVersion);
+                }
                 r.status = "OK";
             } catch (Exception e) {
                 r.status = "ERROR";

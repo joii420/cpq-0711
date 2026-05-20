@@ -37,12 +37,26 @@ public class FingerprintCalculator {
     }
 
     /**
-     * 计算独立产品指纹.
-     * @param recipeCode material_recipe.code (如 "AgNi90")
-     * @param elements 元素覆盖列表(顺序无关,内部排序)
-     * @return sha256 hex (64 字符)
+     * 计算独立产品指纹 (2-arg 兼容老调用 — processIds=空).
      */
     public String simpleFingerprint(String recipeCode, List<ElementInput> elements) {
+        return simpleFingerprint(recipeCode, elements, null);
+    }
+
+    /**
+     * 计算独立产品指纹.
+     *
+     * <p>2026-05-18 hotfix: 加入 processIds 维度. 物质相同但工序不同的选配是不同商品,
+     * 应分配不同 hfPartNo. 老逻辑 fingerprint 只看 recipe+elements → 复用老 hfPartNo →
+     * 用户选的新工序被丢弃 (mat_process 仍是历史导入数据).
+     *
+     * @param recipeCode material_recipe.code (如 "AgNi90")
+     * @param elements 元素覆盖列表(顺序无关,内部排序)
+     * @param processIds 用户选的 process.id 列表(顺序无关,按 UUID 字符串排序). null/空 时 fingerprint 与老 2-arg 形态完全相同, 保证已有 hfPartNo 仍可命中.
+     * @return sha256 hex (64 字符)
+     */
+    public String simpleFingerprint(String recipeCode, List<ElementInput> elements,
+                                    List<java.util.UUID> processIds) {
         if (recipeCode == null || recipeCode.isBlank()) {
             throw new IllegalArgumentException("recipeCode required");
         }
@@ -54,6 +68,14 @@ public class FingerprintCalculator {
             .map(e -> e.elementCode + "=" + normalize(e.pct))
             .collect(Collectors.joining(","));
         String input = VERSION + "|SIMPLE|" + recipeCode + "|" + sortedElems;
+        // 兼容: processIds 空时 input 与老 2-arg 形态完全相同, 已有 fingerprint 不变
+        if (processIds != null && !processIds.isEmpty()) {
+            String sortedProcs = processIds.stream()
+                .map(java.util.UUID::toString)
+                .sorted()
+                .collect(Collectors.joining(","));
+            input = input + "|procs=" + sortedProcs;
+        }
         return sha256(input);
     }
 

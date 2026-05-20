@@ -16,7 +16,9 @@ export const configureProductService = {
   },
 
   async lookupFingerprint(req: LookupFingerprintRequest): Promise<LookupFingerprintResponse> {
-    const res = await api.post('/quotations/configure/lookup-fingerprint', req);
+    // hotfix: 后端 ConfigureProductResource @Path 从 /api/cpq/quotations 改成
+    // /api/cpq/configure-product 避开和 QuotationResource 同父路径 RestEasy 匹配冲突
+    const res = await api.post('/configure-product/lookup-fingerprint', req);
     return res as unknown as LookupFingerprintResponse;
   },
 
@@ -24,7 +26,7 @@ export const configureProductService = {
     quotationId: string,
     req: ConfigureProductRequest,
   ): Promise<ConfigureProductResponse> {
-    const res = await api.post(`/quotations/${quotationId}/configure-product`, req);
+    const res = await api.post(`/configure-product/quotations/${quotationId}`, req);
     return res as unknown as ConfigureProductResponse;
   },
 };

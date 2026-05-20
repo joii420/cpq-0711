@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>v4 · 数据管理目录（新目录承接主数据/材质/工序/料号版本）</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#f0f2f5; font-size:13px; color:#303133; height:100vh; overflow:hidden; }
+.layout { display:flex; height:100vh; }
+.sider { width:200px; background:#001529; color:#fff; padding:12px 0; flex-shrink:0; overflow-y:auto; }
+.sider .logo { padding:0 16px 16px; font-size:14px; font-weight:600; border-bottom:1px solid #1f2d3d; }
+.menu { padding-top:8px; }
+.m-item { padding:9px 16px; color:#a6adb4; cursor:pointer; font-size:13px; display:flex; align-items:center; gap:8px; }
+.m-item:hover { color:#fff; background:#1f2d3d; }
+.m-item.active { background:#1f2d3d; color:#fff; }
+.m-sub { padding:6px 16px 6px 32px; font-size:12.5px; color:#a6adb4; cursor:pointer; }
+.m-sub:hover { color:#fff; background:#1f2d3d; }
+.m-sub.active { color:#1890ff; background:#000c17; border-left:3px solid #1890ff; padding-left:29px; }
+.m-item .ico { width:14px; text-align:center; }
+
+.main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.crumb { padding:10px 20px; background:#fff; border-bottom:1px solid #e4e7ed; font-size:12.5px; color:#909399; }
+.crumb b { color:#303133; font-weight:500; }
+.content { flex:1; padding:16px 20px; overflow-y:auto; }
+
+.diff-banner { background:linear-gradient(90deg,#f6ffed,#f0f9eb); border:1px dashed #67c23a; padding:10px 14px; border-radius:6px; font-size:12.5px; color:#389e0d; margin-bottom:12px; }
+.diff-banner .badge { background:#67c23a; color:#fff; padding:2px 8px; border-radius:3px; font-size:11px; font-weight:600; margin-right:6px; }
+.diff-banner ul { margin:6px 0 0 28px; }
+
+.section-title { font-size:14px; font-weight:600; margin:18px 0 10px; color:#303133; display:flex; align-items:center; gap:6px; }
+
+.cards {
+  display:grid; grid-template-columns: repeat(4, 1fr); gap:14px;
+}
+.dcard {
+  background:#fff; border-radius:8px; padding:18px 16px; cursor:pointer;
+  border:1px solid #ebeef5;
+  transition: all .2s;
+  position: relative;
+}
+.dcard:hover { box-shadow:0 4px 12px rgba(64,158,255,.18); border-color:#c6e2ff; transform:translateY(-1px); }
+.dcard .ico { font-size:22px; margin-bottom:8px; }
+.dcard h3 { font-size:14.5px; font-weight:600; margin-bottom:4px; }
+.dcard .desc { font-size:12px; color:#909399; line-height:1.55; }
+.dcard .count { position:absolute; top:14px; right:14px; font-size:11px; color:#606266; background:#f4f4f5; padding:2px 8px; border-radius:10px; }
+.dcard .move-tag {
+  display:inline-block; margin-bottom:6px;
+  font-size:10.5px; background:#fdf6ec; color:#e6a23c;
+  padding:1px 5px; border-radius:3px;
+}
+.dcard.new .move-tag { background:#f0f9eb; color:#67c23a; }
+
+/* 旧 vs 新 对比 */
+.compare-card {
+  background:#fff; border-radius:8px; padding:16px; margin-top:18px;
+}
+.compare-card h3 { font-size:14px; font-weight:600; margin-bottom:12px; }
+.compare-grid { display:grid; grid-template-columns: 1fr 60px 1fr; gap:14px; align-items:center; }
+.compare-col { padding:12px 14px; border-radius:6px; font-size:12.5px; line-height:1.7; }
+.compare-col.old { background:#fef0f0; border:1px solid #fbc4c4; color:#a8071a; }
+.compare-col.new { background:#f6ffed; border:1px solid #b7eb8f; color:#389e0d; }
+.compare-col ul { list-style:none; padding-left:8px; }
+.compare-col li { padding:2px 0; }
+.compare-col li::before { content:'·'; margin-right:6px; }
+.compare-arrow { text-align:center; font-size:24px; color:#909399; }
+.compare-col strong { display:block; margin-bottom:6px; font-size:12.5px; }
+.compare-col.old strong { color:#a8071a; }
+.compare-col.new strong { color:#389e0d; }
+
+.tip-row { display:grid; grid-template-columns: 130px 1fr; gap:12px; padding:8px 0; border-bottom:1px solid #f5f5f5; font-size:12.5px; }
+.tip-row:last-child { border-bottom:none; }
+.tip-row .k { color:#606266; font-weight:500; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="sider">
+    <div class="logo">📦 CPQ 报价系统</div>
+    <div class="menu">
+      <div class="m-item"><span class="ico">🏠</span>工作台</div>
+      <div class="m-item"><span class="ico">👥</span>客户管理</div>
+      <div class="m-item"><span class="ico">📦</span>产品管理</div>
+      <div class="m-item"><span class="ico">📄</span>报价中心</div>
+      <div class="m-item"><span class="ico">💰</span>定价管理</div>
+      <div class="m-item"><span class="ico">⚙️</span>配置中心</div>
+      <div class="m-item active"><span class="ico">🗂️</span>数据管理 <span style="color:#67c23a; font-size:10px;">·新</span></div>
+      <div class="m-sub active">📊 总览</div>
+      <div class="m-sub">主数据管理</div>
+      <div class="m-sub">材质管理</div>
+      <div class="m-sub">工序管理</div>
+      <div class="m-sub">料号版本管理</div>
+      <div class="m-item"><span class="ico">📜</span>变更日志</div>
+      <div class="m-item"><span class="ico">🔧</span>系统管理</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="crumb"><b>数据管理</b> · 目录总览</div>
+    <div class="content">
+      <div class="diff-banner">
+        <span class="badge">改动 5 + 10</span>
+        <strong>新增「数据管理」顶级目录，承接所有基础数据维护功能：</strong>
+        <ul>
+          <li>「材质管理」「工序管理」从配置中心移入</li>
+          <li>「基础数据管理」改名「主数据管理」并移入</li>
+          <li>「料号版本管理」从原「主数据维护」目录移入</li>
+          <li>原顶级目录「主数据维护」及其下「数据总览/历史版本/字段重要性」取消（部分能力合并进"主数据管理"详情）</li>
+        </ul>
+      </div>
+
+      <div class="section-title">📂 子菜单卡片入口</div>
+      <div class="cards">
+        <div class="dcard">
+          <span class="move-tag">改名 + 移入</span>
+          <div class="ico">🗃️</div>
+          <h3>主数据管理</h3>
+          <div class="desc">客户主档 / 料号主档 / 供应商主档 / 字段重要性等核心主数据。原"基础数据配置"改名升级。</div>
+          <span class="count">6 个数据集</span>
+        </div>
+        <div class="dcard">
+          <span class="move-tag">从配置中心移入</span>
+          <div class="ico">🧪</div>
+          <h3>材质管理</h3>
+          <div class="desc">材质字典、材质单价、材质损耗系数；与料号 BOM、组件公式联动。</div>
+          <span class="count">312 项</span>
+        </div>
+        <div class="dcard">
+          <span class="move-tag">从配置中心移入</span>
+          <div class="ico">⚙️</div>
+          <h3>工序管理</h3>
+          <div class="desc">工序字典、工时单价、工序顺序模板；为加工组件提供工序枚举与计费。</div>
+          <span class="count">128 项</span>
+        </div>
+        <div class="dcard">
+          <span class="move-tag">从主数据维护移入</span>
+          <div class="ico">🧬</div>
+          <h3>料号版本管理</h3>
+          <div class="desc">料号字段的版本演进、差异比对、版本回滚、版本审批。</div>
+          <span class="count">2,431 料号</span>
+        </div>
+      </div>
+
+      <div class="section-title">🔄 旧目录拆解前后</div>
+      <div class="compare-card">
+        <div class="compare-grid">
+          <div class="compare-col old">
+            <strong>旧版（拆散在 2 个目录）</strong>
+            <ul>
+              <li><s>配置中心 → 材质管理</s></li>
+              <li><s>配置中心 → 工序管理</s></li>
+              <li><s>配置中心 → 基础数据配置</s></li>
+              <li><s>主数据维护 → 数据总览</s>（用 Dashboard 替代）</li>
+              <li><s>主数据维护 → 历史版本</s>（并入主数据管理详情）</li>
+              <li><s>主数据维护 → 字段重要性</s>（并入主数据管理详情）</li>
+              <li><s>主数据维护 → 料号版本管理</s></li>
+            </ul>
+          </div>
+          <div class="compare-arrow">→</div>
+          <div class="compare-col new">
+            <strong>新版（统一在「数据管理」目录）</strong>
+            <ul>
+              <li><b>数据管理</b> → 主数据管理</li>
+              <li><b>数据管理</b> → 材质管理</li>
+              <li><b>数据管理</b> → 工序管理</li>
+              <li><b>数据管理</b> → 料号版本管理</li>
+              <li style="color:#606266; font-style:italic;">（历史版本 / 字段重要性 / 数据总览：均下沉为子页 Tab 或合并入 Dashboard）</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title">📝 设计要点</div>
+      <div class="compare-card">
+        <div class="tip-row">
+          <div class="k">命名空间分离</div>
+          <div>「配置中心」放业务建模/计算类配置（组件、模板、数据源、BOM、公式）；「数据管理」放维护类基础数据（材质、工序、客户、料号、供应商）。角色清晰，权限矩阵不会两边重叠。</div>
+        </div>
+        <div class="tip-row">
+          <div class="k">为何"基础数据配置"改名"主数据管理"</div>
+          <div>原名包含"配置"二字易与"配置中心"混淆；行业通用术语是 Master Data Management（MDM = 主数据管理），更准确地描述其"权威数据源"职能。</div>
+        </div>
+        <div class="tip-row">
+          <div class="k">历史版本 / 字段重要性 去哪了</div>
+          <div>这两项不再独立菜单：「历史版本」放在"主数据管理 → 某个数据集 → 详情页 → Tab：历史版本"；「字段重要性」放在"主数据管理 → 数据集设置 → 字段配置"。下沉至详情后用户在做主数据维护时随手能用，不必跨菜单跳转。</div>
+        </div>
+        <div class="tip-row">
+          <div class="k">权限</div>
+          <div>「数据管理」目录默认对 SALES_MANAGER / SYSTEM_ADMIN 可见；销售代表 / 定价经理仅在需要时通过具体子菜单获取权限。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

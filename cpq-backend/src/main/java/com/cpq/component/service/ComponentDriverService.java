@@ -8,6 +8,8 @@ import com.cpq.formula.FormulaEngine;
 import com.cpq.formula.FormulaError;
 import com.cpq.formula.dataloader.DataLoader;
 import com.cpq.formula.dataloader.PartVersionContext;
+import com.cpq.globalvariable.GlobalVariableDefinition;
+import com.cpq.globalvariable.GlobalVariableService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -62,6 +64,16 @@ public class ComponentDriverService {
     @Inject
     DataLoader dataLoader;
 
+    @Inject
+    GlobalVariableService globalVariableService;
+
+    /** V190+: 合成 key 前缀, 标识 basicDataValues 中"全局变量行级值"条目 (避免与 BNF path key 冲突) */
+    public static final String GVAR_KEY_PREFIX = "@gvar:";
+
+    public static String gvarKey(String code) {
+        return GVAR_KEY_PREFIX + code;
+    }
+
     /**
      * 构建缓存 key（4-arg，含 partVersion 维度）。
      * key 格式: "componentId:customerId:partNo:partVersion"（null 用 "_" 占位）
@@ -104,8 +116,21 @@ public class ComponentDriverService {
      * @param partVersion 料号版本号；null = 不注入版本过滤（行为等同旧版）
      */
     public ExpandDriverResponse expand(UUID componentId, UUID customerId, String partNo, Integer partVersion) {
-        // 进程级缓存：先查 cache，hit 直接返回（key 含 partVersion 维度）
-        String key = cacheKey(componentId, customerId, partNo, partVersion);
+        return expand(componentId, customerId, partNo, partVersion, null, null);
+    }
+
+    /**
+     * V195 hotfix: 带 snapshot override 的 expand. 让 template snapshot 作为 driver_path/fields 真理源,
+     * 不再依赖 component 表 (避免同 component 被多模板共用导致 driver 不一致).
+     */
+    public ExpandDriverResponse expand(UUID componentId, UUID customerId, String partNo, Integer partVersion,
+                                       String overrideDataDriverPath, String overrideFieldsJson) {
+        // cache key 加 override 哈希避免不同 snapshot 共享 cache 串号
+        String overrideTag = "";
+        if (overrideDataDriverPath != null || overrideFieldsJson != null) {
+            overrideTag = ":ov" + Integer.toHexString(java.util.Objects.hash(overrideDataDriverPath, overrideFieldsJson));
+        }
+        String key = cacheKey(componentId, customerId, partNo, partVersion) + overrideTag;
         ExpandDriverResponse cached = expandCache.getIfPresent(key);
         if (cached != null) {
             LOG.debugf("[expand-driver cache] HIT key=%s", key);
@@ -116,17 +141,58 @@ public class ComponentDriverService {
             throw new BusinessException(404, "Component not found: " + componentId);
         }
 
-        // [Y1.5 DEBUG] 排查日志 — 确认 dataDriverPath 落库 + 入参
-        LOG.infof("[Y1.5 expand-driver] componentId=%s code=%s dataDriverPath=%s partNo=%s customerId=%s partVersion=%s",
-                componentId, component.code, component.dataDriverPath, partNo, customerId, partVersion);
+        // V195 override: 优先用 snapshot 提供的 driver_path / fields
+        String effectiveDriverPath = (overrideDataDriverPath != null && !overrideDataDriverPath.isBlank())
+                ? overrideDataDriverPath : component.dataDriverPath;
+        String effectiveFieldsJson = (overrideFieldsJson != null && !overrideFieldsJson.isBlank())
+                ? overrideFieldsJson : component.fields;
+
+        LOG.infof("[Y1.5 expand-driver] componentId=%s code=%s dataDriverPath=%s (override=%s) partNo=%s customerId=%s partVersion=%s",
+                componentId, component.code, effectiveDriverPath,
+                (overrideDataDriverPath != null), partNo, customerId, partVersion);
 
         ExpandDriverResponse resp = new ExpandDriverResponse();
-        resp.driverPath = component.dataDriverPath;
+        resp.driverPath = effectiveDriverPath;
         resp.rows = new ArrayList<>();
 
-        if (component.dataDriverPath == null || component.dataDriverPath.isBlank()) {
-            resp.rowCount = 0;
-            LOG.infof("[Y1.5 expand-driver] dataDriverPath EMPTY, skip expansion (component=%s)", component.code);
+        if (effectiveDriverPath == null || effectiveDriverPath.isBlank()) {
+            // hotfix: 没有 dataDriverPath 的组件视为「产品级单行」 — 用 (partNo, customerId) 作虚拟
+            // driver row, 解所有 BASIC_DATA 字段路径塞 basicDataValues. 前端按 driver 分支取值,
+            // 绕开 usePathFormulaCache → globalPathCache 路径 (后者偶有 cache key 不一致问题).
+            //
+            // 这样 COMP-CFG-MATERIAL-RECIPE 等产品级组件 (v_part_material_recipe.code 等) 直接通过
+            // 行级 basicDataValues 拿到值, 不再永远"加载中".
+            List<String> basicDataPaths = parseBasicDataPaths(effectiveFieldsJson);
+            List<GvarDefaultTask> gvarTasks = parseGvarDefaultTasks(effectiveFieldsJson);
+            if (basicDataPaths.isEmpty() && gvarTasks.isEmpty()) {
+                resp.rowCount = 0;
+                LOG.infof("[Y1.5 expand-driver] dataDriverPath EMPTY + no BASIC_DATA, skip (component=%s)", component.code);
+                expandCache.put(key, resp);
+                return resp;
+            }
+            // 虚拟 driver row: 仅含 partNo / customerId, 让 ImplicitJoinRewriter 能注入谓词
+            Map<String, Object> virtualRow = new LinkedHashMap<>();
+            if (partNo != null && !partNo.isBlank()) {
+                virtualRow.put("hf_part_no", partNo);
+                virtualRow.put("part_no", partNo);
+            }
+            if (customerId != null) {
+                virtualRow.put("customer_id", customerId);
+            }
+            ExpandDriverResponse.Row row = new ExpandDriverResponse.Row();
+            row.driverRow = virtualRow;
+            row.basicDataValues = new LinkedHashMap<>();
+            for (String fieldPath : basicDataPaths) {
+                Object value = evaluatePath(fieldPath, virtualRow, customerId, partNo);
+                row.basicDataValues.put(fieldPath, value);
+            }
+            for (GvarDefaultTask task : gvarTasks) {
+                row.basicDataValues.put(gvarKey(task.code), resolveGvarForRow(task, virtualRow));
+            }
+            resp.rows.add(row);
+            resp.rowCount = 1;
+            LOG.infof("[Y1.5 expand-driver] no-driver virtual single row (component=%s, basicDataPaths=%d)",
+                    component.code, basicDataPaths.size());
             expandCache.put(key, resp);
             return resp;
         }
@@ -137,19 +203,20 @@ public class ComponentDriverService {
             // 1. 查 driver 行 — 用 (partNo, customerId) 作为基础上下文隐式 JOIN
             List<Map<String, Object>> driverRows;
             try {
-                driverRows = dataLoader.loadByPath(component.dataDriverPath, null, partNo, customerId).get();
+                driverRows = dataLoader.loadByPath(effectiveDriverPath, null, partNo, customerId).get();
             } catch (InterruptedException | ExecutionException e) {
                 LOG.warnf("Driver path resolve failed: path=%s, err=%s",
-                        component.dataDriverPath, e.getMessage());
+                        effectiveDriverPath, e.getMessage());
                 throw new BusinessException("driver 路径查询失败: " + e.getMessage());
             }
             if (driverRows == null) driverRows = List.of();
             resp.rowCount = driverRows.size();
 
-            // 2. 拿 BASIC_DATA 字段路径列表
-            List<String> basicDataPaths = parseBasicDataPaths(component.fields);
+            // 2. 拿 BASIC_DATA 字段路径列表 + V190 default_source GLOBAL_VARIABLE 解析任务
+            List<String> basicDataPaths = parseBasicDataPaths(effectiveFieldsJson);
+            List<GvarDefaultTask> gvarTasks = parseGvarDefaultTasks(effectiveFieldsJson);
 
-            // 3. 对每一行,逐路径求值
+            // 3. 对每一行,逐路径求值 + 逐全局变量求值
             for (Map<String, Object> driverRow : driverRows) {
                 ExpandDriverResponse.Row row = new ExpandDriverResponse.Row();
                 row.driverRow = driverRow;
@@ -157,6 +224,11 @@ public class ComponentDriverService {
                 for (String fieldPath : basicDataPaths) {
                     Object value = evaluatePath(fieldPath, driverRow, customerId, partNo);
                     row.basicDataValues.put(fieldPath, value);
+                }
+                // V190: 把字段 default_source 按本 driver 行解出的 GLOBAL_VARIABLE 值塞入合成 key
+                for (GvarDefaultTask task : gvarTasks) {
+                    Object value = resolveGvarForRow(task, driverRow);
+                    row.basicDataValues.put(gvarKey(task.code), value);
                 }
                 resp.rows.add(row);
             }
@@ -173,6 +245,85 @@ public class ComponentDriverService {
 
     // ── 内部 ─────────────────────────────────────────────────────────────
 
+    /** V190: default_source GLOBAL_VARIABLE 任务 — code + 动态 key 映射 */
+    private static class GvarDefaultTask {
+        final String code;
+        final Map<String, String> keyFieldRefs;  // key 列名 → driver 行字段名
+        GvarDefaultTask(String code, Map<String, String> keyFieldRefs) {
+            this.code = code; this.keyFieldRefs = keyFieldRefs;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<GvarDefaultTask> parseGvarDefaultTasks(String fieldsJson) {
+        List<GvarDefaultTask> out = new ArrayList<>();
+        if (fieldsJson == null || fieldsJson.isBlank()) return out;
+        try {
+            List<Map<String, Object>> fields = MAPPER.readValue(fieldsJson,
+                    new TypeReference<List<Map<String, Object>>>() {});
+            for (Map<String, Object> f : fields) {
+                // 路径 A: INPUT_NUMBER/TEXT 的 default_source.GLOBAL_VARIABLE
+                collectGvarTask(f.get("default_source"), out, "code", "key_field_refs");
+                // 路径 B (hotfix): DATA_SOURCE 的 datasource_binding.GLOBAL_VARIABLE
+                collectGvarTask(f.get("datasource_binding"), out, "global_variable_code", "key_field_refs");
+            }
+        } catch (Exception e) {
+            LOG.warnf("parse default_source from fields failed: %s", e.getMessage());
+        }
+        return out;
+    }
+
+    /** 从 default_source / datasource_binding map 中抽取 GLOBAL_VARIABLE 任务. dedupe by code. */
+    @SuppressWarnings("unchecked")
+    private static void collectGvarTask(Object configObj, List<GvarDefaultTask> out,
+                                        String codeField, String refsField) {
+        if (!(configObj instanceof Map)) return;
+        Map<String, Object> m = (Map<String, Object>) configObj;
+        if (!"GLOBAL_VARIABLE".equals(String.valueOf(m.get("type")))) return;
+        Object codeObj = m.get(codeField);
+        if (codeObj == null) return;
+        String code = codeObj.toString();
+        if (code.isBlank() || "null".equals(code)) return;
+        Map<String, String> refs = new LinkedHashMap<>();
+        Object refsObj = m.get(refsField);
+        if (refsObj instanceof Map) {
+            for (Map.Entry<String, Object> e : ((Map<String, Object>) refsObj).entrySet()) {
+                refs.put(e.getKey(), String.valueOf(e.getValue()));
+            }
+        }
+        if (out.stream().noneMatch(t -> t.code.equals(code))) {
+            out.add(new GvarDefaultTask(code, refs));
+        }
+    }
+
+    /** V190: 按 driver row 解 GLOBAL_VARIABLE 值; key_field_refs 名映射 def.keyColumns → driver row 字段 */
+    private Object resolveGvarForRow(GvarDefaultTask task, Map<String, Object> driverRow) {
+        try {
+            GlobalVariableDefinition def = globalVariableService.getByCode(task.code).orElse(null);
+            if (def == null || !def.isLookup()) return null;
+            Map<String, Object> keyValues = new LinkedHashMap<>();
+            for (String col : def.keyColumns) {
+                // 优先按 key_field_refs[col] 取 driver 行字段; 默认同名映射 col → driverRow[col]
+                String driverField = task.keyFieldRefs.getOrDefault(col, col);
+                Object v = driverRow.get(driverField);
+                if (v == null) return null;  // 缺 key → 不解
+                keyValues.put(col, v);
+            }
+            return globalVariableService.resolveValue(task.code, keyValues);
+        } catch (Exception e) {
+            LOG.warnf("resolveGvarForRow failed for code=%s: %s", task.code, e.getMessage());
+            return null;
+        }
+    }
+
+    private static void addPathIfPresent(List<String> out, Object pathObj) {
+        if (pathObj == null) return;
+        String path = String.valueOf(pathObj).trim();
+        if (path.isEmpty()) return;
+        if (!path.startsWith("{")) path = "{" + path + "}";
+        if (!out.contains(path)) out.add(path);
+    }
+
     @SuppressWarnings("unchecked")
     private static List<String> parseBasicDataPaths(String fieldsJson) {
         List<String> out = new ArrayList<>();
@@ -181,14 +332,31 @@ public class ComponentDriverService {
             List<Map<String, Object>> fields = MAPPER.readValue(fieldsJson,
                     new TypeReference<List<Map<String, Object>>>() {});
             for (Map<String, Object> f : fields) {
-                if (!"BASIC_DATA".equals(String.valueOf(f.get("field_type")))) continue;
-                Object pathObj = f.get("basic_data_path");
-                if (pathObj == null) continue;
-                String path = String.valueOf(pathObj).trim();
-                if (path.isEmpty()) continue;
-                // 统一加上花括号(与前端 cache key 一致)
-                if (!path.startsWith("{")) path = "{" + path + "}";
-                if (!out.contains(path)) out.add(path);
+                // BASIC_DATA 字段: 主 basic_data_path
+                if ("BASIC_DATA".equals(String.valueOf(f.get("field_type")))) {
+                    addPathIfPresent(out, f.get("basic_data_path"));
+                }
+                // V184: 任意字段(典型 INPUT_NUMBER)的 default_basic_data_path —
+                // 用户行值为空时回退到该路径取全局变量默认值
+                addPathIfPresent(out, f.get("default_basic_data_path"));
+                // V190 default_source.BNF_PATH (典型 INPUT_NUMBER 兜底走 BNF 路径)
+                Object ds = f.get("default_source");
+                if (ds instanceof Map<?, ?> dsMap) {
+                    if ("BNF_PATH".equals(String.valueOf(dsMap.get("type")))) {
+                        addPathIfPresent(out, dsMap.get("path"));
+                    }
+                }
+                // Phase J: DATA_SOURCE.BNF_PATH 子类型 — datasource_binding.bnf_path
+                // 没在这里采集会导致 batch-expand 返的 basicDataValues 不含该路径键,
+                // 前端 DATA_SOURCE 渲染分支永久 "加载中" (AP-31 协议传播补)
+                if ("DATA_SOURCE".equals(String.valueOf(f.get("field_type")))) {
+                    Object binding = f.get("datasource_binding");
+                    if (binding instanceof Map<?, ?> bMap) {
+                        if ("BNF_PATH".equals(String.valueOf(bMap.get("type")))) {
+                            addPathIfPresent(out, bMap.get("bnf_path"));
+                        }
+                    }
+                }
             }
         } catch (Exception e) {
             LOG.warnf("parse component.fields failed: %s", e.getMessage());

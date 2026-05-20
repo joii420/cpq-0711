@@ -1,20 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import {
   Drawer, Form, Input, Select, InputNumber, Switch, Button,
-  Space, Table, message,
+  Space, Table, Tabs, Empty, Alert, message,
 } from 'antd';
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, AppstoreOutlined, LinkOutlined, HistoryOutlined } from '@ant-design/icons';
 import {
   materialRecipeService,
   type MaterialRecipeDetail,
   type MaterialRecipeUpsertRequest,
 } from '../../services/materialRecipeService';
+import MaterialRecipePartsTab from './MaterialRecipePartsTab';
 
 interface Props {
   open: boolean;
   editingDetail: MaterialRecipeDetail | null;
   onClose: () => void;
   onSaved: () => void;
+  /** 父页(MaterialRecipeManagement)的刷新回调,绑定/解绑料号后联动刷新外层 boundPartsCount 列 */
+  onPartsChanged?: () => void;
 }
 
 interface ElementRow {
@@ -27,11 +30,18 @@ interface ElementRow {
   sortOrder: number;
 }
 
-const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClose, onSaved }) => {
+const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClose, onSaved, onPartsChanged }) => {
   const [form] = Form.useForm();
   const [recipeType, setRecipeType] = useState<'locked' | 'editable' | 'partial'>('editable');
   const [elements, setElements] = useState<ElementRow[]>([]);
   const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState<'detail' | 'parts' | 'log'>('detail');
+
+  const isCreating = !editingDetail;
+
+  useEffect(() => {
+    if (open) setActiveTab('detail');
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -246,26 +256,8 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
     },
   ];
 
-  return (
-    <Drawer
-      title={editingDetail ? `编辑材质: ${editingDetail.code}` : '新建材质'}
-      open={open}
-      onClose={onClose}
-      width={960}
-      placement="right"
-      maskClosable={false}
-      destroyOnClose
-      footer={
-        <div style={{ textAlign: 'right' }}>
-          <Space>
-            <Button onClick={onClose}>取消</Button>
-            <Button type="primary" loading={saving} onClick={handleSubmit}>
-              保存
-            </Button>
-          </Space>
-        </div>
-      }
-    >
+  const detailTab = (
+    <div>
       <Form form={form} layout="vertical">
         <Space size="large" wrap>
           <Form.Item name="code" label="代号" rules={[{ required: true, message: '请填写代号' }]}>
@@ -324,6 +316,75 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
           默认含量之和: <b>{sumPct.toFixed(2)}%</b> {sumOk ? '✓' : '(需 = 100)'}
         </div>
       </div>
+    </div>
+  );
+
+  const tabs = [
+    {
+      key: 'detail',
+      label: <><AppstoreOutlined /> 材质详情</>,
+      children: detailTab,
+    },
+    ...(isCreating ? [] : [
+      {
+        key: 'parts',
+        label: <><LinkOutlined /> 关联料号</>,
+        children: (
+          <MaterialRecipePartsTab
+            recipeId={editingDetail!.id}
+            recipeCode={editingDetail!.code}
+            recipeName={editingDetail!.name}
+            onCountChanged={onPartsChanged}
+          />
+        ),
+      },
+      {
+        key: 'log',
+        label: <><HistoryOutlined /> 变更日志</>,
+        children: (
+          <Empty
+            description={
+              <Alert
+                type="info"
+                showIcon
+                message="变更日志接入待开发"
+                description="未来接入 change_log 表展示该材质的字段级变更历史(谁、何时、改了什么)。"
+                style={{ maxWidth: 480, margin: '0 auto' }}
+              />
+            }
+          />
+        ),
+      },
+    ]),
+  ];
+
+  return (
+    <Drawer
+      title={editingDetail ? `编辑材质: ${editingDetail.code}` : '新建材质'}
+      open={open}
+      onClose={onClose}
+      width={1080}
+      placement="right"
+      maskClosable={false}
+      destroyOnClose
+      footer={
+        activeTab === 'detail' ? (
+          <div style={{ textAlign: 'right' }}>
+            <Space>
+              <Button onClick={onClose}>取消</Button>
+              <Button type="primary" loading={saving} onClick={handleSubmit}>
+                保存
+              </Button>
+            </Space>
+          </div>
+        ) : null
+      }
+    >
+      <Tabs
+        activeKey={activeTab}
+        onChange={(k) => setActiveTab(k as 'detail' | 'parts' | 'log')}
+        items={tabs}
+      />
     </Drawer>
   );
 };

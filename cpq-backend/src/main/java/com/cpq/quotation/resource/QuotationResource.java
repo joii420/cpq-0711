@@ -239,6 +239,19 @@ public class QuotationResource {
         return ApiResponse.success();
     }
 
+    /**
+     * Admin: 一次性洗 quotation_line_component_data.tab_name —— 把 AP-37 根因 5 的脏数据
+     * (saved-driven enrich 误把标准 Tab 写成"选配-*") 修回模板权威值. dry-run 默认.
+     * 必须传 ?apply=true 才真改库.
+     */
+    @POST
+    @Path("/admin/heal-componentdata-tabnames")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<Map<String, Object>> healComponentDataTabNames(
+            @QueryParam("apply") @DefaultValue("false") boolean apply) {
+        return ApiResponse.success(quotationService.healComponentDataTabNames(apply));
+    }
+
     // ---- M5: Quotation Output ----
 
     @POST

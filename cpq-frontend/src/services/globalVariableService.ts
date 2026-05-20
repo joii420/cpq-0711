@@ -12,6 +12,10 @@ export interface GlobalVariableDefinition {
   description?: string;
   sortOrder?: number;
   isActive?: boolean;
+  /** V190: KV_TABLE = 查 global_variable_value 单表 (轻量配置); COSTING_VIEW = 查源视图 (核价 3 张) */
+  valueSourceType?: 'KV_TABLE' | 'COSTING_VIEW';
+  /** V190: PUBLIC = 全局变量页可见可编辑; COSTING_INTERNAL = Picker 可选但 UI 列表隐藏 */
+  visibility?: 'PUBLIC' | 'COSTING_INTERNAL';
 }
 
 export interface GlobalVariableKeyOption {
@@ -35,6 +39,12 @@ export interface ChangeLogEntry {
 
 export const globalVariableService = {
   list: () => api.get('/global-variables') as Promise<any>,
+  /** G1: 新建变量定义 (PRICING_MANAGER+); 形态强制 KV_TABLE + PUBLIC */
+  create: (body: Partial<GlobalVariableDefinition>) =>
+    api.post('/global-variables', body) as Promise<any>,
+  /** G1: 删除变量定义 (核价变量拒删, 普通变量级联清值) */
+  remove: (code: string) =>
+    api.delete(`/global-variables/${code}`) as Promise<any>,
   getOne: (code: string) => api.get(`/global-variables/${code}`) as Promise<any>,
   listKeys: (code: string, limit = 1000) =>
     api.get(`/global-variables/${code}/keys`, { params: { limit } }) as Promise<any>,

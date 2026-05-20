@@ -1,5 +1,5 @@
-import React, { useCallback, useState } from 'react';
-import { Drawer, Button, Steps, Modal, message } from 'antd';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Drawer, Button, Steps, message, notification } from 'antd';
 import { configureProductService } from '../../services/configureProductService';
 import type {
   ProductType, PartMode, PartRequest, CompositeProcessRequest,
@@ -83,6 +83,16 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
     return null;
   };
 
+  /**
+   * 指纹检查 — 仅提示, 不阻塞流程.
+   *
+   * 2026-05-19 设计调整 (用户选择 "默认不跳, 只提示发现重复料号, 已可继续选工序"):
+   *   - 命中匹配时弹 notification.info (非阻塞), 默认 wizard 继续走 subStep=2 选工序
+   *   - notification 里给一个 "复用此料号 (跳过工序)" 的快捷按钮 — 用户主动点击才走老分支
+   *   - 与之前 Modal.confirm 比: 不再 "默认跳过工序" — 工序选择是默认路径
+   *
+   * 函数总返回 false (= 不打断 goNext, 让外层继续 setSubStep(2)).
+   */
   const checkFingerprintAndAdvance = useCallback(async (): Promise<boolean> => {
     const cur = parts[ci];
     if (!cur || cur.partMode !== 'custom' || !cur.selectedRecipeCode) return false;
@@ -97,45 +107,73 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
         elements,
       });
       if (resp.matched && resp.hfPartNo) {
-        return new Promise<boolean>((resolve) => {
-          Modal.confirm({
-            title: '已找到匹配料号',
-            width: 500,
-            content: (
-              <div>
-                <p>系统已存在配置完全相同的料号: <code>{resp.hfPartNo}</code></p>
-                <p>将沿用以下属性:</p>
-                <ul>
-                  <li>工序: {resp.snapshot?.processes?.map(p => p.processCode).join(' → ') || '无'}</li>
-                  <li>单重: {resp.snapshot?.unitWeightGrams ?? '—'} g/件</li>
-                </ul>
-              </div>
-            ),
-            okText: '沿用 → 直接确认',
-            cancelText: '返回修改材质',
-            onOk: () => {
-              updateCurrentPart({
-                reusedFromExisting: { hfPartNo: resp.hfPartNo!, snapshot: resp.snapshot },
-              });
-              if (productType === 'COMPOSITE' && ci < parts.length - 1) {
-                setCi(ci + 1);
-                setSubStep(0);
-              } else if (productType === 'COMPOSITE') {
-                setGlobalStep(2);
-              } else {
-                setGlobalStep(3);
-              }
-              resolve(true);
-            },
-            onCancel: () => resolve(false),
+        const key = `fingerprint-match-${ci}`;
+        /**
+         * 复用现有料号 — 仅锁定料号身份(hfPartNo + 材质 + 元素), 工序仍走 subStep=2 让用户选.
+         *
+         * 2026-05-19 设计调整: 工序是"报价单层选择", 不是料号身份的一部分.
+         *   点击此按钮 ≠ 跳过工序; 而是:
+         *     - partMode 切到 'existing' (告诉后端用老 hfPartNo)
+         *     - selectedHfPartNo 设到匹配的料号
+         *     - reusedFromExisting 留作 UI 展示标记 + Step3Process 预填工序的种子
+         *     - 继续 subStep=2 (工序选择, 预填该料号现有工序作为起点)
+         *     - 提交时后端走 resolvePart `existing+processIds` 分支:
+         *       保留老 hfPartNo, 用用户选的工序覆盖**当前客户**的 mat_process
+         */
+        const reuseExistingPart = () => {
+          updateCurrentPart({
+            partMode: 'existing',
+            selectedHfPartNo: resp.hfPartNo!,
+            matLocked: true,
+            reusedFromExisting: { hfPartNo: resp.hfPartNo!, snapshot: resp.snapshot },
           });
+          // 继续 subStep=2 工序选择 — 不跳!
+          setSubStep(2);
+          notification.destroy(key);
+        };
+        notification.info({
+          key,
+          message: '发现重复料号',
+          description: (
+            <div>
+              <p style={{ marginBottom: 4 }}>
+                系统已存在材质+元素完全相同的料号: <code>{resp.hfPartNo}</code>
+              </p>
+              <p style={{ marginBottom: 4, fontSize: 12, color: '#666' }}>
+                参考工序: {resp.snapshot?.processes?.map(p => p.processCode).join(' → ') || '无'}
+                {resp.snapshot?.unitWeightGrams != null && ` · 单重: ${resp.snapshot.unitWeightGrams} g/件`}
+              </p>
+              <p style={{ margin: 0, fontSize: 12, color: '#666' }}>
+                工序为本报价单的工艺路径,与料号身份分离 — 复用料号后您仍可在下一步选/改工序.
+              </p>
+            </div>
+          ),
+          btn: (
+            <Button type="primary" size="small" onClick={reuseExistingPart}>
+              复用此料号 → 继续选工序
+            </Button>
+          ),
+          duration: 0,
+          placement: 'topRight',
         });
       }
     } catch (e: any) {
-      message.warning('指纹查询失败，继续走未命中流程');
+      message.warning('指纹查询失败,继续走未命中流程');
     }
+    // 总返 false — 让 goNext 继续 setSubStep(2) 进工序选择
     return false;
   }, [parts, ci, productType, updateCurrentPart]);
+
+  // 清理残留的指纹 notification.
+  // ⚠ 故意不依赖 subStep — notification 恰好在 goNext() 把 subStep 1→2 的同一 tick 里弹出,
+  // 若把 subStep 放进 deps, 上一轮 effect 的 cleanup 会在 subStep 切换时立即销毁刚弹出的 notification
+  // (用户看到的"一闪即灭"). 只在 ci 切换 / globalStep 跳转 / 组件卸载 时清.
+  useEffect(() => {
+    const key = `fingerprint-match-${ci}`;
+    return () => {
+      notification.destroy(key);
+    };
+  }, [ci, globalStep]);
 
   const goNext = useCallback(async () => {
     if (globalStep === 0) {
@@ -204,7 +242,12 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
         elements: p.partMode === 'custom'
           ? Object.entries(p.elementOverrides).map(([elementCode, pct]) => ({ elementCode, pct: Number(pct) }))
           : undefined,
-        processIds: (p.partMode === 'custom' && !p.reusedFromExisting) ? p.processIds : undefined,
+        // hotfix: existing 模式 + processIds 非空时也要传给后端 — 物质相同但工序不同 = 不同商品,
+        // 后端 ConfigureProductService.resolvePart 在 existing+processIds 分支会生成新 hfPartNo
+        processIds: (
+          (p.partMode === 'custom' && !p.reusedFromExisting) ||
+          (p.partMode === 'existing' && p.processIds && p.processIds.length > 0)
+        ) ? p.processIds : undefined,
         unitWeightGrams: (p.partMode === 'custom' && !p.reusedFromExisting && p.unitWeightGrams !== null)
           ? p.unitWeightGrams
           : undefined,

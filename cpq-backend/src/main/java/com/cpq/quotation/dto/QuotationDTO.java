@@ -158,6 +158,21 @@ public class QuotationDTO {
         public SnapshotDTO snapshot;
         /** 料号版本锁定 (S5): 该行报价使用的 (customer_product_no, hf_part_no) 版本号 */
         public Integer partVersionLocked;
+        /**
+         * 产品类型 — 反查自 mat_part.product_type ('SIMPLE' / 'COMPOSITE').
+         *
+         * <p>用途: 前端 ProductCard 按产品类型条件渲染 Tab(COMPOSITE 专属 Tab
+         * 如"组合工艺/子配件"在 SIMPLE 产品下隐藏).
+         *
+         * <p>注: 不读 quotation_line_item.composite_type — 该列在 saveDraft 全量
+         * 重建时被前端 payload 覆盖回 'SIMPLE' (前端 buildDraftPayload 未透传),
+         * 不可靠. mat_part.product_type 在选配落库时正确写入, 且不被报价单层修改.
+         */
+        public String productType;
+        /** V169: 选配组合产品父子关系标识 - SIMPLE / COMPOSITE / PART */
+        public String compositeType;
+        /** V169: PART 行指向父级 line_item.id, 其他类型为 null */
+        public java.util.UUID parentLineItemId;
 
         public static LineItemDTO from(QuotationLineItem li) {
             LineItemDTO dto = new LineItemDTO();
@@ -183,6 +198,11 @@ public class QuotationDTO {
             }
             if (dto.productPartNo == null) dto.productPartNo = li.productPartNoSnapshot;
             if (dto.productName == null) dto.productName = li.productNameSnapshot;
+            // productType 由 QuotationService 在 from() 之后通过批量 SQL 反查 mat_part 后填充
+            // (避免 N+1 + LineItemDTO 解耦 EntityManager)
+            // V169 选配组合关系直接透传 — saveDraft 不写这两列, 仅初次配置时写入
+            dto.compositeType = li.compositeType;
+            dto.parentLineItemId = li.parentLineItemId;
             return dto;
         }
     }

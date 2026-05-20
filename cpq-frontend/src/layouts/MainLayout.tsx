@@ -94,6 +94,7 @@ const allMenuItems: MenuItem[] = [
       { key: '/comparison-tags', label: '业务标签字典', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
       { key: '/config/material-recipes', label: '材质管理', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
       { key: '/config/processes', label: '工序管理', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
+      { key: '/config/config-templates', label: '配置模板', roles: ['PRICING_MANAGER', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
     ],
   },
   {

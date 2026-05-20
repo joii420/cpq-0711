@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>v4 · 报价单管理（+ 导入历史按钮）</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#f0f2f5; font-size:13px; color:#303133; height:100vh; overflow:hidden; }
+.layout { display:flex; height:100vh; }
+.sider { width:200px; background:#001529; color:#fff; padding:12px 0; flex-shrink:0; overflow-y:auto; }
+.sider .logo { padding:0 16px 16px; font-size:14px; font-weight:600; border-bottom:1px solid #1f2d3d; }
+.menu { padding-top:8px; }
+.m-item { padding:9px 16px; color:#a6adb4; cursor:pointer; font-size:13px; display:flex; align-items:center; gap:8px; }
+.m-item:hover { color:#fff; background:#1f2d3d; }
+.m-item.active { background:#1f2d3d; color:#fff; }
+.m-sub { padding:6px 16px 6px 32px; font-size:12.5px; color:#a6adb4; cursor:pointer; }
+.m-sub:hover { color:#fff; background:#1f2d3d; }
+.m-sub.active { color:#1890ff; background:#000c17; border-left:3px solid #1890ff; padding-left:29px; }
+.m-item .ico { width:14px; text-align:center; }
+
+.main { flex:1; display:flex; flex-direction:column; overflow:hidden; position:relative; }
+.crumb { padding:10px 20px; background:#fff; border-bottom:1px solid #e4e7ed; font-size:12.5px; color:#909399; }
+.crumb b { color:#303133; font-weight:500; }
+.content { flex:1; padding:16px 20px; overflow-y:auto; }
+
+.diff-banner { background:linear-gradient(90deg,#fff7e6,#fffbe6); border:1px dashed #faad14; padding:10px 14px; border-radius:6px; font-size:12.5px; color:#876800; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+.diff-banner .badge { background:#faad14; color:#fff; padding:2px 8px; border-radius:3px; font-size:11px; font-weight:600; }
+
+.page-card { background:#fff; border-radius:8px; padding:16px; }
+.page-title { font-size:18px; font-weight:600; margin-bottom:14px; }
+
+.toolbar { display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap:wrap; }
+.btn { padding:5px 14px; border:1px solid #dcdfe6; background:#fff; border-radius:4px; cursor:pointer; font-size:12.5px; color:#606266; display:inline-flex; align-items:center; gap:4px; }
+.btn:hover { color:#409eff; border-color:#c6e2ff; background:#ecf5ff; }
+.btn.primary { background:#409eff; color:#fff; border-color:#409eff; }
+.btn.primary:hover { background:#66b1ff; color:#fff; }
+.btn.danger { color:#f56c6c; border-color:#fbc4c4; }
+.btn[disabled] { opacity:.5; cursor:not-allowed; }
+.btn-highlight { animation: pulse 2s ease-in-out infinite; box-shadow:0 0 0 0 rgba(250, 173, 20, .5); }
+@keyframes pulse {
+  0%, 100% { box-shadow:0 0 0 0 rgba(250, 173, 20, .5); }
+  50% { box-shadow:0 0 0 6px rgba(250, 173, 20, 0); }
+}
+.search { margin-left:auto; padding:5px 10px; border:1px solid #dcdfe6; border-radius:4px; font-size:12.5px; width:240px; }
+
+table { width:100%; border-collapse:collapse; font-size:12.5px; }
+thead th { background:#fafafa; padding:10px 8px; text-align:left; font-weight:500; color:#606266; border-bottom:1px solid #ebeef5; font-size:12px; }
+tbody td { padding:10px 8px; border-bottom:1px solid #f5f5f5; }
+tbody tr:hover { background:#fafbfc; }
+.link { color:#409eff; cursor:pointer; }
+.tag { display:inline-block; font-size:11px; padding:1px 6px; border-radius:3px; }
+.tag.green { background:#f0f9eb; color:#67c23a; }
+.tag.blue  { background:#ecf5ff; color:#409eff; }
+.tag.orange{ background:#fdf6ec; color:#e6a23c; }
+.tag.gray  { background:#f4f4f5; color:#909399; }
+.tag.red   { background:#fef0f0; color:#f56c6c; }
+
+/* Drawer (导入历史) */
+.drawer-mask {
+  position:absolute; top:0; left:0; right:0; bottom:0;
+  background:rgba(0,0,0,.45);
+  display:flex; justify-content:flex-end;
+}
+.drawer {
+  width:720px; background:#fff; height:100%; overflow-y:auto;
+  box-shadow:-2px 0 8px rgba(0,0,0,.15);
+}
+.drawer-head { padding:14px 18px; border-bottom:1px solid #ebeef5; display:flex; justify-content:space-between; align-items:center; }
+.drawer-head h3 { font-size:15px; font-weight:600; }
+.drawer-close { font-size:18px; cursor:pointer; color:#909399; background:none; border:none; }
+.drawer-body { padding:14px 18px; }
+.drawer-toolbar { display:flex; gap:8px; margin-bottom:10px; align-items:center; }
+.drawer-toolbar .search { width:200px; margin-left:0; }
+.drawer-tip { padding:8px 12px; background:#ecf5ff; border-left:3px solid #409eff; font-size:12px; color:#606266; margin-bottom:10px; border-radius:0 4px 4px 0; }
+
+.help-tip { margin-top:18px; padding:10px 14px; background:#f6ffed; border:1px solid #b7eb8f; border-radius:4px; font-size:12.5px; color:#389e0d; line-height:1.6; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="sider">
+    <div class="logo">📦 CPQ 报价系统</div>
+    <div class="menu">
+      <div class="m-item"><span class="ico">🏠</span>工作台</div>
+      <div class="m-item"><span class="ico">👥</span>客户管理</div>
+      <div class="m-item"><span class="ico">📦</span>产品管理</div>
+      <div class="m-item active"><span class="ico">📄</span>报价中心</div>
+      <div class="m-sub active">报价单管理</div>
+      <div class="m-sub">核价单管理</div>
+      <!-- 旧：导入历史菜单已移除 -->
+      <div class="m-item"><span class="ico">💰</span>定价管理</div>
+      <div class="m-item"><span class="ico">⚙️</span>配置中心</div>
+      <div class="m-item"><span class="ico">🗂️</span>数据管理</div>
+      <div class="m-item"><span class="ico">📜</span>变更日志</div>
+      <div class="m-item"><span class="ico">🔧</span>系统管理</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="crumb">报价中心 / <b>报价单管理</b></div>
+    <div class="content">
+      <div class="diff-banner">
+        <span class="badge">改动 4</span>
+        取消「导入历史」独立菜单 → 改为报价单管理页顶部工具栏的「📜 导入历史」按钮（点击右侧抽屉展示）。
+      </div>
+
+      <div class="page-card">
+        <div class="page-title">报价单管理</div>
+
+        <div class="toolbar">
+          <button class="btn primary">+ 新建报价单</button>
+          <button class="btn">📥 批量导入报价单</button>
+          <button class="btn btn-highlight" style="border-color:#faad14; color:#faad14;">📜 导入历史</button>
+          <button class="btn">📤 导出列表</button>
+          <button class="btn" disabled>批量提交审批</button>
+          <button class="btn" disabled>批量归档</button>
+          <button class="btn danger" disabled>作废</button>
+          <input class="search" placeholder="搜索报价单号 / 客户 / 销售" />
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width:30px;"><input type="checkbox"/></th>
+              <th>报价单号</th>
+              <th>客户</th>
+              <th>销售</th>
+              <th>金额 (CNY)</th>
+              <th>状态</th>
+              <th>核价单</th>
+              <th>创建时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td>Q-2026-0512</td>
+              <td><span class="link">上海某化工厂</span></td>
+              <td>张销售</td>
+              <td>286,420</td>
+              <td><span class="tag green">已发送</span></td>
+              <td><span class="link">HJ-0512</span></td>
+              <td>2026-05-15 14:32</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td>Q-2026-0511</td>
+              <td><span class="link">江苏某工程公司</span></td>
+              <td>李销售</td>
+              <td>148,200</td>
+              <td><span class="tag orange">定价审批中</span></td>
+              <td><span class="link">HJ-0511</span></td>
+              <td>2026-05-15 11:08</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td>Q-2026-0510</td>
+              <td><span class="link">浙江某机械厂</span></td>
+              <td>张销售</td>
+              <td>52,600</td>
+              <td><span class="tag blue">草稿</span></td>
+              <td><span class="tag gray">未生成</span></td>
+              <td>2026-05-14 16:42</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td>Q-2026-0509</td>
+              <td><span class="link">山东某能源公司</span></td>
+              <td>王销售</td>
+              <td>1,028,500</td>
+              <td><span class="tag green">已成交</span></td>
+              <td><span class="link">HJ-0509</span></td>
+              <td>2026-05-14 09:15</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"/></td>
+              <td>Q-2026-0508</td>
+              <td><span class="link">广东某管道工程</span></td>
+              <td>赵销售</td>
+              <td>—</td>
+              <td><span class="tag red">已作废</span></td>
+              <td><span class="tag gray">—</span></td>
+              <td>2026-05-13 17:21</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="help-tip">
+          <strong>📍 设计说明：</strong>
+          <br>• <strong>导入历史按钮</strong>：用户的需求多半是"我刚刚导入的那批报价单里第 N 条出错了"，紧贴报价单列表比独立菜单更贴近场景。点击按钮右侧弹出抽屉（如右图所示）。
+          <br>• <strong>抽屉内容</strong>：导入批次列表（含成功/失败行数、上传文件名、时间），单击批次可下钻看具体每行的解析结果与错误码。
+          <br>• <strong>权限</strong>：维持原"导入历史"菜单的角色（销售经理、系统管理员可见全部；普通销售仅见本人）。
+        </div>
+      </div>
+    </div>
+
+    <!-- 抽屉示例（导入历史） -->
+    <div class="drawer-mask">
+      <div class="drawer">
+        <div class="drawer-head">
+          <h3>📜 导入历史</h3>
+          <button class="drawer-close">✕</button>
+        </div>
+        <div class="drawer-body">
+          <div class="drawer-tip">展示当前用户（或全部用户，看权限）的报价单/料号 Excel 导入记录。点击批次可查看明细。</div>
+          <div class="drawer-toolbar">
+            <input class="search" placeholder="搜索文件名" />
+            <select class="btn" style="padding:5px 10px;">
+              <option>全部状态</option><option>成功</option><option>部分失败</option><option>失败</option>
+            </select>
+            <select class="btn" style="padding:5px 10px;">
+              <option>最近 7 天</option><option>最近 30 天</option><option>全部</option>
+            </select>
+            <button class="btn">🔄 刷新</button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>批次号</th>
+                <th>文件名</th>
+                <th>导入人</th>
+                <th>结果</th>
+                <th>时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="link">IMP-2026-0123</span></td>
+                <td>报价单批量_5月.xlsx</td>
+                <td>张销售</td>
+                <td><span class="tag green">成功 48 / 0</span></td>
+                <td>05-15 14:30</td>
+              </tr>
+              <tr>
+                <td><span class="link">IMP-2026-0122</span></td>
+                <td>料号-清单-202605.xlsx</td>
+                <td>李销售</td>
+                <td><span class="tag orange">部分 31 / 4</span></td>
+                <td>05-15 10:12</td>
+              </tr>
+              <tr>
+                <td><span class="link">IMP-2026-0121</span></td>
+                <td>新报价批次_v2.xlsx</td>
+                <td>王销售</td>
+                <td><span class="tag red">失败 0 / 12</span></td>
+                <td>05-14 17:08</td>
+              </tr>
+              <tr>
+                <td><span class="link">IMP-2026-0120</span></td>
+                <td>报价补充.xlsx</td>
+                <td>张销售</td>
+                <td><span class="tag green">成功 6 / 0</span></td>
+                <td>05-14 09:42</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -7,8 +7,9 @@ import java.util.List;
  *
  * <p>语义(对应 docs/API.md L100/L643):
  * <ul>
- *   <li>{@code CUSTOMER_SPECIFIC} — 找到 customer_id=X AND category_id=Y 的客户专属模板</li>
- *   <li>{@code GENERAL_FALLBACK} — 客户专属为空,回退到 customer_id IS NULL AND category_id=Y 的通用模板</li>
+ *   <li>{@code CUSTOMER_SPECIFIC} — 仅找到 customer_id=X AND category_id=Y 的客户专属模板</li>
+ *   <li>{@code GENERAL_FALLBACK} — 仅找到 customer_id IS NULL AND category_id=Y 的通用模板</li>
+ *   <li>{@code MIXED} — 客户专属 + 通用同时存在,templates 已按 "客户专属优先" 排序合并</li>
  *   <li>{@code NONE} — 都没找到,前端应阻止或引导管理员配置</li>
  * </ul>
  *
@@ -20,6 +21,7 @@ public class TemplateMatchResult {
     public enum MatchType {
         CUSTOMER_SPECIFIC,
         GENERAL_FALLBACK,
+        MIXED,
         NONE
     }
 

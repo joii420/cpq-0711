@@ -254,6 +254,26 @@ const LinkedExcelView: React.FC<Props> = ({ linkedTemplateId, lineItems, quotati
       return v.length === 1 ? formatPathValue(v[0]) : `${formatPathValue(v[0])}（共${v.length}项）`;
     }
     if (typeof v === 'object') {
+      // V197 hotfix: PG JDBC jsonb 列读成 PGobject {type:'jsonb', value:'<json>'}.
+      // 单 cell 内 JSONB 数组/对象应完整展开 (而不是 driver-expand 通用 "首值+共N项")
+      if (v.type === 'jsonb' && typeof v.value === 'string') {
+        try {
+          const parsed = JSON.parse(v.value);
+          if (Array.isArray(parsed)) {
+            if (parsed.length === 0) return null;
+            return parsed.map((it: any) => formatPathValue(it) ?? '').filter(Boolean).join(', ');
+          }
+          if (parsed && typeof parsed === 'object') {
+            const keys = Object.keys(parsed);
+            if (keys.length === 0) return null;
+            return keys.map(k => {
+              const sub = formatPathValue(parsed[k]);
+              return sub != null ? `${k}=${sub}` : null;
+            }).filter(Boolean).join(', ');
+          }
+          return formatPathValue(parsed);
+        } catch { return v.value; }
+      }
       for (const k of Object.keys(v)) {
         if (v[k] != null && v[k] !== '') return formatPathValue(v[k]);
       }

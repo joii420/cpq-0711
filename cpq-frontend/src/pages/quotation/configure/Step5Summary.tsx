@@ -66,11 +66,14 @@ const Step5Summary: React.FC<Props> = ({ productType, parts, addedCProcs, onUpda
               <Descriptions.Item label="材质">{p.selectedRecipeCode ?? '—'}</Descriptions.Item>
 
               <Descriptions.Item label="工序">
-                {reused
-                  ? (reused.snapshot?.processes?.length
-                      ? reused.snapshot.processes.map(x => x.processCode).join(' → ')
-                      : '无')
-                  : (p.processIds.length ? `${p.processIds.length} 项工序` : '无')}
+                {/* 2026-05-19: 复用料号后用户可在 subStep=2 改工序, 应显示用户当前选择, 不是 snapshot 旧值 */}
+                {p.processIds.length > 0
+                  ? `${p.processIds.length} 项工序${reused ? '（基于 ' + reused.hfPartNo + ' 现有工序调整）' : ''}`
+                  : (reused
+                      ? (reused.snapshot?.processes?.length
+                          ? reused.snapshot.processes.map(x => x.processCode).join(' → ') + ' (沿用)'
+                          : '无')
+                      : '无')}
               </Descriptions.Item>
 
               <Descriptions.Item label="单重">

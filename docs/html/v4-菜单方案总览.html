@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>CPQ v4 菜单聚合方案 - 总览</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #f0f2f5;
+  font-size: 13px; color: #303133;
+  padding: 24px;
+}
+.page-title { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+.page-sub { color: #909399; font-size: 13px; margin-bottom: 18px; }
+
+.grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+}
+
+.card {
+  background: #fff; border: 1px solid #e4e7ed; border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.03);
+}
+.card h2 {
+  font-size: 14px; font-weight: 600; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 6px;
+}
+.badge { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 3px; font-weight: 500; }
+.badge-new   { background: #f0f9eb; color: #67c23a; }
+.badge-keep  { background: #ecf5ff; color: #409eff; }
+.badge-del   { background: #fef0f0; color: #f56c6c; }
+.badge-move  { background: #fdf6ec; color: #e6a23c; }
+.badge-merge { background: #f4f4f5; color: #909399; }
+
+/* 菜单树 */
+.tree { font-size: 13px; }
+.tree-item {
+  padding: 6px 8px; display: flex; align-items: center; gap: 6px;
+  border-radius: 4px;
+}
+.tree-item.l1 { font-weight: 600; color: #303133; margin-top: 4px; }
+.tree-item.l2 { padding-left: 26px; color: #606266; }
+.tree-item.l2:hover { background: #f5f7fa; cursor: pointer; }
+.tree-item .ico { width: 16px; text-align: center; font-size: 14px; }
+.tree-item .tag {
+  margin-left: auto; font-size: 10px; padding: 1px 5px; border-radius: 3px;
+}
+.tree-item .tag.btn { background: #ecf5ff; color: #409eff; }
+.tree-item .tag.tabs { background: #f0f9eb; color: #67c23a; }
+.tree-divider { height: 1px; background: #e4e7ed; margin: 8px 0; }
+
+/* 改动表 */
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #ebeef5; font-size: 12.5px; vertical-align: top; }
+th { background: #fafafa; color: #606266; font-weight: 500; font-size: 12px; }
+td.no { width: 32px; color: #909399; text-align: center; }
+td.act { width: 60px; }
+td.from, td.to { width: 22%; }
+a.proto-link {
+  color: #409eff; text-decoration: none; font-size: 12px;
+  padding: 2px 8px; border: 1px solid #c6e2ff; border-radius: 3px;
+  display: inline-block; background: #ecf5ff;
+}
+a.proto-link:hover { background: #409eff; color: #fff; }
+td.proto { width: 130px; }
+
+/* 旧 vs 新对比 */
+.compare {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+}
+.compare-col h3 { font-size: 13px; margin-bottom: 8px; color: #909399; font-weight: 500; }
+.compare-col.old h3::before { content: '✕ '; color: #f56c6c; }
+.compare-col.new h3::before { content: '✓ '; color: #67c23a; }
+.compare-block {
+  border: 1px solid #ebeef5; border-radius: 6px; padding: 10px 12px;
+  font-size: 12.5px; color: #606266;
+  background: #fafbfc;
+}
+.compare-col.new .compare-block { background: #f6ffed; border-color: #b7eb8f; }
+.compare-block ul { list-style: none; }
+.compare-block li { padding: 3px 0; }
+.compare-block li.del { color: #f56c6c; text-decoration: line-through; }
+.compare-block li.new { color: #67c23a; font-weight: 500; }
+.compare-block li.indent { padding-left: 16px; color: #909399; }
+
+/* legend */
+.legend { display: flex; gap: 12px; font-size: 12px; color: #606266; margin-top: 8px; flex-wrap: wrap; }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+</style>
+</head>
+<body>
+
+<div class="page-title">CPQ v4 菜单聚合方案 · 总览</div>
+<div class="page-sub">
+  根据「12 条菜单整改要求」重新组织导航与页面结构，目标：减少导航层级、按业务场景聚合、用「按钮 + 抽屉/Tab」替代独立菜单。
+  本页是索引页，右侧每条改动可点击跳转对应页面原型。
+</div>
+
+<div class="legend">
+  <span><i class="badge badge-new">新增</i> 全新菜单/页面</span>
+  <span><i class="badge badge-merge">合并</i> 多菜单聚合为 Tab</span>
+  <span><i class="badge badge-move">移动</i> 仅位置变化</span>
+  <span><i class="badge badge-del">取消</i> 菜单删除（功能保留为按钮）</span>
+  <span><i class="badge badge-keep">保持</i> 原样</span>
+</div>
+
+<div style="height: 16px;"></div>
+
+<div class="grid">
+  <!-- 左：新菜单树 -->
+  <div class="card">
+    <h2>📋 新菜单树（v4）</h2>
+    <div class="tree">
+      <div class="tree-item l1"><span class="ico">🏠</span>工作台</div>
+      <div class="tree-item l1"><span class="ico">👥</span>客户管理</div>
+
+      <div class="tree-divider"></div>
+      <div class="tree-item l1"><span class="ico">📦</span>产品管理 <span class="tag tabs">3 Tab</span></div>
+      <div class="tree-item l2">└ 产品列表</div>
+      <div class="tree-item l2">└ 生产料号 <span class="badge badge-merge">合并</span></div>
+      <div class="tree-item l2">└ 产品分类</div>
+
+      <div class="tree-divider"></div>
+      <div class="tree-item l1"><span class="ico">📄</span>报价中心</div>
+      <div class="tree-item l2">└ 报价单管理 <span class="tag btn">+导入历史</span></div>
+      <div class="tree-item l2">└ 核价单管理 <span class="badge badge-move">移入</span></div>
+
+      <div class="tree-divider"></div>
+      <div class="tree-item l1"><span class="ico">💰</span>定价管理</div>
+      <div class="tree-item l2">└ 定价策略</div>
+
+      <div class="tree-divider"></div>
+      <div class="tree-item l1"><span class="ico">⚙️</span>配置中心</div>
+      <div class="tree-item l2">└ 组件管理 <span class="tag btn">+全局变量</span></div>
+      <div class="tree-item l2">└ 模板配置 <span class="tag btn">+比对/标签</span></div>
+      <div class="tree-item l2">└ BOM 管理 <span class="badge badge-new">新</span> <span class="tag tabs">3 Tab</span></div>
+      <div class="tree-item l2">└ 数据源管理 <span class="badge badge-move">移入</span></div>
+      <div class="tree-item l2">└ 料号级核价数据</div>
+
+      <div class="tree-divider"></div>
+      <div class="tree-item l1"><span class="ico">🗂️</span>数据管理 <span class="badge badge-new">新目录</span></div>
+      <div class="tree-item l2">└ 主数据管理 <span class="badge badge-merge">原"基础数据配置"改名</span></div>
+      <div class="tree-item l2">└ 材质管理 <span class="badge badge-move">移入</span></div>
+      <div class="tree-item l2">└ 工序管理 <span class="badge badge-move">移入</span></div>
+      <div class="tree-item l2">└ 料号版本管理 <span class="badge badge-move">移入</span></div>
+
+      <div class="tree-divider"></div>
+      <div class="tree-item l1"><span class="ico">📜</span>变更日志</div>
+
+      <div class="tree-divider"></div>
+      <div class="tree-item l1"><span class="ico">🔧</span>系统管理</div>
+      <div class="tree-item l2">└ 用户/部门/区域</div>
+      <div class="tree-item l2">└ 审批规则</div>
+      <div class="tree-item l2">└ 通知列表</div>
+      <div class="tree-item l2">└ 操作日志</div>
+      <div class="tree-item l2">└ 元素价格中心</div>
+      <div class="tree-item l2">└ 系统配置中心</div>
+      <div class="tree-item l2">└ 锁监控 / DDL 扩列</div>
+    </div>
+
+    <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed #e4e7ed; font-size: 12px; color: #909399;">
+      <strong style="color: #606266;">层级统计：</strong>
+      旧版顶级 9 个 + 二级 30+ →
+      <span style="color: #67c23a; font-weight: 600;">新版顶级 9 个 + 二级 22 个</span>
+      （-8 项独立菜单，全部下沉为 Tab / 按钮）
+    </div>
+  </div>
+
+  <!-- 右：改动对照表 -->
+  <div class="card">
+    <h2>📊 12 条改动对照</h2>
+    <table>
+      <thead>
+        <tr>
+          <th class="no">#</th>
+          <th class="act">类型</th>
+          <th>改动内容</th>
+          <th class="proto">原型</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="no">1</td>
+          <td><span class="badge badge-merge">聚合</span></td>
+          <td>整体菜单按业务场景聚合，减少分散感（见左侧菜单树）</td>
+          <td class="proto">— 见菜单树 —</td>
+        </tr>
+        <tr>
+          <td class="no">2</td>
+          <td><span class="badge badge-new">新增</span></td>
+          <td>组成件 BOM / 元素 BOM / 来料 BOM 统一收到「BOM 管理」一页，3 个 Tab 切换</td>
+          <td class="proto"><a class="proto-link" href="v4-BOM管理.html">v4-BOM管理</a></td>
+        </tr>
+        <tr>
+          <td class="no">3</td>
+          <td><span class="badge badge-merge">合并</span></td>
+          <td>「生产料号管理」+「产品管理」合并为一个页面，顶部 Tab：产品列表 / 生产料号 / 产品分类</td>
+          <td class="proto"><a class="proto-link" href="v4-产品管理.html">v4-产品管理</a></td>
+        </tr>
+        <tr>
+          <td class="no">4</td>
+          <td><span class="badge badge-del">取消</span></td>
+          <td>「导入历史」不再独立菜单，改为「报价单管理」顶部工具栏按钮（弹抽屉）</td>
+          <td class="proto"><a class="proto-link" href="v4-报价单管理.html">v4-报价单管理</a></td>
+        </tr>
+        <tr>
+          <td class="no">5</td>
+          <td><span class="badge badge-move">移动</span></td>
+          <td>材质管理 / 工序管理 / 基础数据管理（改名「主数据管理」）→ 移入新「数据管理」目录</td>
+          <td class="proto"><a class="proto-link" href="v4-数据管理.html">v4-数据管理</a></td>
+        </tr>
+        <tr>
+          <td class="no">6</td>
+          <td><span class="badge badge-del">取消</span></td>
+          <td>「模板版本比对」菜单取消，改为「模板配置」页内按钮 → 选两个版本对比</td>
+          <td class="proto"><a class="proto-link" href="v4-模板配置.html">v4-模板配置</a></td>
+        </tr>
+        <tr>
+          <td class="no">7</td>
+          <td><span class="badge badge-move">移动</span></td>
+          <td>配置中心「核价单」移到「报价中心 → 核价单管理」，展示用户报价单关联的核价单列表</td>
+          <td class="proto"><a class="proto-link" href="v4-核价单管理.html">v4-核价单管理</a></td>
+        </tr>
+        <tr>
+          <td class="no">8</td>
+          <td><span class="badge badge-del">取消</span></td>
+          <td>「产品模板绑定」菜单取消（绑定关系入「模板配置」内的"绑定产品"按钮，避免双向维护）</td>
+          <td class="proto"><a class="proto-link" href="v4-模板配置.html">v4-模板配置</a></td>
+        </tr>
+        <tr>
+          <td class="no">9</td>
+          <td><span class="badge badge-del">取消</span></td>
+          <td>「业务标签」菜单取消，改为「模板配置」页内按钮 → 弹抽屉管理标签字典</td>
+          <td class="proto"><a class="proto-link" href="v4-模板配置.html">v4-模板配置</a></td>
+        </tr>
+        <tr>
+          <td class="no">10</td>
+          <td><span class="badge badge-del">取消</span></td>
+          <td>「主数据维护」目录及其下功能取消（保留功能均迁入「数据管理」目录）</td>
+          <td class="proto"><a class="proto-link" href="v4-数据管理.html">v4-数据管理</a></td>
+        </tr>
+        <tr>
+          <td class="no">11</td>
+          <td><span class="badge badge-move">移动</span></td>
+          <td>「数据源管理」移入「配置中心」目录</td>
+          <td class="proto">— 见菜单树 —</td>
+        </tr>
+        <tr>
+          <td class="no">12</td>
+          <td><span class="badge badge-del">取消</span></td>
+          <td>「全局变量配置」菜单取消，改为「组件管理」页内按钮 → 弹抽屉配置全局变量</td>
+          <td class="proto"><a class="proto-link" href="v4-组件管理.html">v4-组件管理</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div style="height: 16px;"></div>
+
+<!-- 旧 vs 新 配置中心对比 -->
+<div class="card">
+  <h2>🔄 重点对比：「配置中心」目录精简前后</h2>
+  <div class="compare">
+    <div class="compare-col old">
+      <h3>旧版（11 项）</h3>
+      <div class="compare-block">
+        <ul>
+          <li>组件管理</li>
+          <li>模板配置</li>
+          <li>料号级核价数据</li>
+          <li class="del">核价单 → ⑦ 移至「报价中心」</li>
+          <li class="del">全局变量配置 → ⑫ 改按钮（组件管理）</li>
+          <li class="del">产品模板绑定 → ⑧ 取消</li>
+          <li class="del">模板版本对比 → ⑥ 改按钮（模板配置）</li>
+          <li class="del">基础数据配置 → ⑤ 改名「主数据管理」移至「数据管理」</li>
+          <li class="del">业务标签字典 → ⑨ 改按钮（模板配置）</li>
+          <li class="del">材质管理 → ⑤ 移至「数据管理」</li>
+          <li class="del">工序管理 → ⑤ 移至「数据管理」</li>
+        </ul>
+      </div>
+    </div>
+    <div class="compare-col new">
+      <h3>新版（5 项）</h3>
+      <div class="compare-block">
+        <ul>
+          <li>组件管理 <span style="color:#67c23a;">＋ 全局变量按钮（抽屉）</span></li>
+          <li>模板配置 <span style="color:#67c23a;">＋ 版本比对 / 业务标签 / 绑定产品 按钮</span></li>
+          <li class="new">BOM 管理（新增 · 3 Tab）</li>
+          <li class="new">数据源管理（从顶级移入）</li>
+          <li>料号级核价数据</li>
+        </ul>
+        <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #b7eb8f; color: #606266; font-size: 12px;">
+          <strong style="color:#67c23a;">效果：</strong>菜单项 11 → 5（-6），同时所有功能 0 损失；用户在「单页面 + 顶部按钮」内完成原本要跳 3-4 个菜单才能完成的事。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="height: 16px;"></div>
+
+<!-- 旧 vs 新 主数据维护对比 -->
+<div class="card">
+  <h2>🔄 重点对比：「主数据维护」目录拆解前后</h2>
+  <div class="compare">
+    <div class="compare-col old">
+      <h3>旧版（顶级目录「主数据维护」）</h3>
+      <div class="compare-block">
+        <ul>
+          <li class="del">数据总览 → 取消（用 Dashboard 替代）</li>
+          <li class="del">历史版本 → 合并入「主数据管理」详情页</li>
+          <li class="del">字段重要性 → 合并入「主数据管理」配置 Tab</li>
+          <li class="del">料号版本管理 → 移至「数据管理」目录</li>
+        </ul>
+      </div>
+    </div>
+    <div class="compare-col new">
+      <h3>新版（新目录「数据管理」）</h3>
+      <div class="compare-block">
+        <ul>
+          <li class="new">主数据管理（原"基础数据配置"改名升级）</li>
+          <li class="new">材质管理（从配置中心移入）</li>
+          <li class="new">工序管理（从配置中心移入）</li>
+          <li class="new">料号版本管理（从旧主数据维护移入）</li>
+        </ul>
+        <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #b7eb8f; color: #606266; font-size: 12px;">
+          <strong style="color:#67c23a;">设计思路：</strong>「数据管理」承接所有"基础数据维护类"功能（命名空间清晰）；「配置中心」只放"业务建模 / 计算配置类"功能（角色区分清晰）。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="height: 16px;"></div>
+
+<!-- 设计原则 -->
+<div class="card">
+  <h2>🎯 本次改版的 4 条设计原则</h2>
+  <table>
+    <tr>
+      <td style="width:140px; color:#606266; font-weight:600;">① 场景聚合</td>
+      <td>把"做同一件事要跳的菜单"折叠到同一页面。例：组件配置时随手开全局变量；模板配置时随手对比版本 / 改标签 / 绑产品。</td>
+    </tr>
+    <tr>
+      <td style="color:#606266; font-weight:600;">② Tab 替代独立菜单</td>
+      <td>当 N 个菜单的字段结构相近、用户在工作时会来回切换时，合并为 Tab：产品管理（3 Tab）、BOM 管理（3 Tab）、数据管理子页。</td>
+    </tr>
+    <tr>
+      <td style="color:#606266; font-weight:600;">③ 按钮 + 抽屉替代独立菜单</td>
+      <td>当某功能是"主页面的附属配置"时，下沉为按钮 + Drawer（不离开主页面上下文）。例：全局变量、业务标签、版本比对、产品绑定、导入历史。</td>
+    </tr>
+    <tr>
+      <td style="color:#606266; font-weight:600;">④ 目录按角色分层</td>
+      <td>报价中心（销售看）、定价管理（定价经理看）、配置中心（业务建模角色）、数据管理（数据维护角色）、系统管理（管理员）。每个目录的常驻用户角色清晰。</td>
+    </tr>
+  </table>
+</div>
+
+</body>
+</html>

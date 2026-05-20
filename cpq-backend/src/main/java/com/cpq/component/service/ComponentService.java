@@ -4,6 +4,7 @@ import com.cpq.common.exception.BusinessException;
 import com.cpq.component.dto.ComponentDTO;
 import com.cpq.component.dto.CreateComponentRequest;
 import com.cpq.component.entity.Component;
+import com.cpq.template.service.TemplateService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -23,11 +24,15 @@ public class ComponentService {
 
     private static final Set<String> VALID_FIELD_TYPES = Set.of(
         "FIXED_VALUE", "DATA_SOURCE", "INPUT", "INPUT_TEXT", "INPUT_NUMBER", "FORMULA",
-        "BASIC_DATA"  // V5: BNF 路径绑定基础数据物理表(对应前端 PathPickerDrawer)
+        "BASIC_DATA",  // V5: BNF 路径绑定基础数据物理表(对应前端 PathPickerDrawer)
+        "LIST_FORMULA" // V203/Phase B: 配置模板驱动 + IF-ELSE-IF 条件分支公式
     );
 
     @Inject
     EntityManager em;
+
+    @Inject
+    TemplateService templateService;
 
     public List<ComponentDTO> list(UUID directoryId, String keyword) {
         StringBuilder query = new StringBuilder("1=1");
@@ -154,6 +159,20 @@ public class ComponentService {
         }
 
         LOG.infof("Updated component id=%s code=%s", id, component.code);
+
+        // H1: 自动同步引用该组件的所有模板 snapshot — 配置中心原则:
+        // 组件配置是真理源, snapshot 是缓存视图. 配置变更必须对所有引用方立即生效,
+        // 避免 V184/V185/V187 那种手工 DO $$ 循环刷 snapshot 的反复工作.
+        try {
+            List<UUID> affected = templateService.refreshSnapshotsByComponent(id);
+            if (!affected.isEmpty()) {
+                LOG.infof("[H1 auto-sync] componentId=%s synced %d template snapshots", id, affected.size());
+            }
+        } catch (Exception e) {
+            // snapshot 同步失败不阻断组件保存; 仅记录警告 (用户可手工调 refresh 端点重试)
+            LOG.warnf("[H1 auto-sync] failed for componentId=%s: %s", id, e.getMessage());
+        }
+
         return ComponentDTO.from(component);
     }
 
@@ -204,16 +223,44 @@ public class ComponentService {
                 throw new BusinessException("Invalid field_type: " + fieldType +
                     ". Must be one of: " + VALID_FIELD_TYPES);
             }
-            // DATA_SOURCE requires datasource_binding with datasource_id
+            // DATA_SOURCE requires datasource_binding (H2: 4 种 type 各自校验关键配置)
             if ("DATA_SOURCE".equals(fieldType.toString())) {
                 Object binding = field.get("datasource_binding");
                 if (binding == null) {
                     throw new BusinessException("DATA_SOURCE field requires datasource_binding");
                 }
                 if (binding instanceof Map) {
-                    Object dsId = ((Map<?, ?>) binding).get("datasource_id");
-                    if (dsId == null) {
-                        throw new BusinessException("datasource_binding must include datasource_id");
+                    Map<?, ?> b = (Map<?, ?>) binding;
+                    // type 缺省 = DATABASE_QUERY (兼容 H2 前的老配置)
+                    String dsType = b.get("type") != null ? b.get("type").toString() : "DATABASE_QUERY";
+                    switch (dsType) {
+                        case "DATABASE_QUERY":
+                            if (b.get("datasource_id") == null) {
+                                throw new BusinessException(
+                                    "DATA_SOURCE/DATABASE_QUERY 缺 datasource_id");
+                            }
+                            break;
+                        case "GLOBAL_VARIABLE":
+                            if (b.get("global_variable_code") == null) {
+                                throw new BusinessException(
+                                    "DATA_SOURCE/GLOBAL_VARIABLE 缺 global_variable_code");
+                            }
+                            break;
+                        case "BNF_PATH":
+                            Object p = b.get("bnf_path");
+                            if (p == null || p.toString().isBlank()) {
+                                throw new BusinessException("DATA_SOURCE/BNF_PATH 缺 bnf_path");
+                            }
+                            break;
+                        case "HTTP_API":
+                            Object ac = b.get("api_config");
+                            if (!(ac instanceof Map) || ((Map<?, ?>) ac).get("url_template") == null) {
+                                throw new BusinessException(
+                                    "DATA_SOURCE/HTTP_API 缺 api_config.url_template");
+                            }
+                            break;
+                        default:
+                            throw new BusinessException("DATA_SOURCE 不支持的 type: " + dsType);
                     }
                 }
             }

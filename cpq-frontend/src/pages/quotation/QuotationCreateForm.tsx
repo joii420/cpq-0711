@@ -55,6 +55,11 @@ interface Props {
   onChange: (v: QuotationFormValue) => void;
   /** 当表单是否可提交状态变化时通知父组件 */
   onValidityChange?: (isValid: boolean) => void;
+  /**
+   * 报价单已生成态: 锁定产品分类 / 报价模板 / 核价模板 字段不可改.
+   * 父组件按 !!quotationId 传入. 名称字段允许改, 联系人在父组件管理.
+   */
+  readOnly?: boolean;
 }
 
 const QuotationCreateForm: React.FC<Props> = ({
@@ -63,6 +68,7 @@ const QuotationCreateForm: React.FC<Props> = ({
   value,
   onChange,
   onValidityChange,
+  readOnly = false,
 }) => {
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
@@ -109,6 +115,12 @@ const QuotationCreateForm: React.FC<Props> = ({
       .then((res: any) => {
         const data: MatchResult = res.data ?? res;
         setMatchResult(data);
+        // hotfix: loadQuotation 已带 customerTemplateId 时, 若 ID 在匹配结果里就保留,
+        // 不要被 useEffect 覆盖成 undefined (MIXED 多模板场景刷新页面后报价模板丢失)
+        const currentId = value.customerTemplateId;
+        if (currentId && data.templates.some((t) => t.id === currentId)) {
+          return;  // 保留已选, 不调 onChange 覆盖
+        }
         if (data.templates.length === 1) {
           onChange({ ...value, customerTemplateId: data.templates[0].id });
         } else {
@@ -117,7 +129,10 @@ const QuotationCreateForm: React.FC<Props> = ({
       })
       .catch(() => {
         setMatchResult({ matchType: 'NONE', templates: [] });
-        onChange({ ...value, customerTemplateId: undefined });
+        // catch 也保留已有选择 (网络失败时不该清空)
+        if (!value.customerTemplateId) {
+          onChange({ ...value, customerTemplateId: undefined });
+        }
       })
       .finally(() => setMatching(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -143,11 +158,19 @@ const QuotationCreateForm: React.FC<Props> = ({
           return aSpec - bSpec;
         });
         setCostingTemplates(filtered);
+        // hotfix: loadQuotation 已带 costingTemplateId 时, 若 ID 在筛选结果里就保留,
+        // 否则才默认选第一个 (同 customerTemplateId 修法对称)
+        const currentId = value.costingTemplateId;
+        if (currentId && filtered.some((t) => t.id === currentId)) {
+          return;  // 保留已选
+        }
         onChange({ ...value, costingTemplateId: filtered[0]?.id });
       })
       .catch(() => {
         setCostingTemplates([]);
-        onChange({ ...value, costingTemplateId: undefined });
+        if (!value.costingTemplateId) {
+          onChange({ ...value, costingTemplateId: undefined });
+        }
       })
       .finally(() => setLoadingCosting(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -228,6 +251,17 @@ const QuotationCreateForm: React.FC<Props> = ({
         />
       </Form.Item>
 
+      {/* 报价单已生成提示 (readOnly=true 时) */}
+      {readOnly && (
+        <Alert
+          type="info"
+          showIcon
+          message="报价单已生成 — 客户、产品分类、报价模板、核价模板 已锁定,不可修改"
+          description="如需更换,请新建报价单。联系人、报价单名称等仍可编辑。"
+          style={{ marginBottom: 12 }}
+        />
+      )}
+
       {/* 产品分类 */}
       <Form.Item
         label="产品分类"
@@ -244,6 +278,7 @@ const QuotationCreateForm: React.FC<Props> = ({
           allowClear
           showSearch
           optionFilterProp="label"
+          disabled={readOnly}
         />
       </Form.Item>
 
@@ -284,6 +319,7 @@ const QuotationCreateForm: React.FC<Props> = ({
             })}
             placeholder="请选择模板"
             optionLabelProp="label"
+            disabled={readOnly}
           />
         </Form.Item>
       )}
@@ -327,6 +363,7 @@ const QuotationCreateForm: React.FC<Props> = ({
                 }`,
               }))}
               placeholder="请选择核价模板"
+              disabled={readOnly}
             />
           )}
         </Form.Item>

@@ -78,6 +78,19 @@ export const templateService = {
     api.patch(`/templates/${templateId}/components/${tcId}/preset-rows`, { presetRows }) as Promise<any>,
   updateFormulaAssignments: (templateId: string, tcId: string, formulaAssignments: Record<string, string>) =>
     api.patch(`/templates/${templateId}/components/${tcId}/formula-assignments`, { formulaAssignments }) as Promise<any>,
+  /**
+   * V204: 编辑模板组件 override.
+   *   - 仅传 fieldsOverride: 只改字段集 (null = 清空走 component 默认)
+   *   - 仅传 dataDriverPathOverride: 只改 driver
+   *   - 同时传: 两者一起改
+   *   - 键缺省: 不动该字段
+   * 仅 DRAFT 模板可改, PUBLISHED 后端拒绝 400.
+   */
+  updateOverrides: (
+    templateId: string,
+    tcId: string,
+    body: { fieldsOverride?: any[] | string | null; dataDriverPathOverride?: string | null }
+  ) => api.patch(`/templates/${templateId}/components/${tcId}/overrides`, body) as Promise<any>,
   // Excel view config
   getExcelViewConfig: (id: string) => api.get(`/templates/${id}/excel-view-config`) as Promise<any>,
   updateExcelViewConfig: (id: string, config: any) => api.put(`/templates/${id}/excel-view-config`, config) as Promise<any>,

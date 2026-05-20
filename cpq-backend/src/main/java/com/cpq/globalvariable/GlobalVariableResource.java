@@ -40,6 +40,27 @@ public class GlobalVariableResource {
         return ApiResponse.success(service.listAll());
     }
 
+    /**
+     * G1: 新建全局变量定义. 仅 PRICING_MANAGER+ 可写, 形态强制 KV_TABLE + PUBLIC.
+     * 核价类 (COSTING_VIEW) 仅 Flyway 初始化, 不接受 UI 新建.
+     */
+    @POST
+    @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN", "SALES_MANAGER"})
+    public ApiResponse<GlobalVariableDefinition> createDefinition(GlobalVariableDefinition req) {
+        return ApiResponse.success(service.createDefinition(req));
+    }
+
+    /**
+     * G1: 删除全局变量定义. 核价变量不可删. 级联清 global_variable_value (FK CASCADE).
+     */
+    @DELETE
+    @Path("/{code}")
+    @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN", "SALES_MANAGER"})
+    public ApiResponse<String> deleteDefinition(@PathParam("code") String code) {
+        service.deleteDefinition(code);
+        return ApiResponse.success("ok");
+    }
+
     @GET
     @Path("/{code}")
     public ApiResponse<GlobalVariableDefinition> getOne(@PathParam("code") String code) {

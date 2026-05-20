@@ -55,6 +55,7 @@ function normalizeFieldType(raw: string): ComponentField['field_type'] {
   if (t === 'BASIC_DATA') return 'BASIC_DATA';
   if (t === 'INPUT_TEXT') return 'INPUT_TEXT';
   if (t === 'INPUT_NUMBER') return 'INPUT_NUMBER';
+  if (t === 'LIST_FORMULA') return 'LIST_FORMULA';  // V203/Phase B
   return 'INPUT';
 }
 
@@ -65,10 +66,23 @@ function computeFormula(
 ): number | null {
   if (!comp?.fields || !comp?.formulas) return null;
 
-  // 1. Explicit binding via field.formula_name
+  // 与 QuotationStep2.resolveFormula 同源 (AP-37 协议: 详情页/编辑页 resolveFormula 必须同源)
   const field = comp.fields.find(f => f.name === formulaFieldName && f.field_type === 'FORMULA');
   const boundName = field?.formula_name;
-  let formula = boundName ? comp.formulas.find(f => f.name === boundName) : undefined;
+
+  // 0. (2026-05-20) field.formula_name 显式绑定 — 找不到不 fallback (配置漂移时显示 "—" 避免误导)
+  let formula: typeof comp.formulas[number] | undefined;
+  if (boundName) {
+    formula = comp.formulas.find(f => f.name === boundName);
+    if (!formula) return null;  // 显式绑定但漂移 → 不 fallback
+  }
+
+  // 1. Template-level binding (formulaAssignments)
+  if (!formula && (comp as any).formulaAssignments && field) {
+    const fieldIndex = comp.fields.indexOf(field);
+    const assignedName = (comp as any).formulaAssignments[String(fieldIndex)];
+    if (assignedName) formula = comp.formulas.find(f => f.name === assignedName);
+  }
 
   // 2. Fallback: exact name match
   if (!formula) formula = comp.formulas.find(f => f.name === formulaFieldName);
@@ -106,9 +120,41 @@ function computeFormula(
 const formatCurrency = (val: number) =>
   `¥ ${(val || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-/** 单元格值格式化: boolean → 是/否, 其他 → String(v) */
+/** 单元格值格式化 — V197 同 QuotationStep2.formatPathValue 同款逻辑, 支持 JSONB 包装对象 */
 const formatCellValue = (v: any): string => {
+  if (v == null || v === '') return '—';
   if (typeof v === 'boolean') return v ? '是' : '否';
+  if (typeof v === 'number' || typeof v === 'string') return String(v);
+  // V197: PG JDBC jsonb 列读成 PGobject {type:'jsonb', value:'<json>'}, 单 cell 完整展开
+  if (typeof v === 'object') {
+    if (v.type === 'jsonb' && typeof v.value === 'string') {
+      try {
+        const parsed = JSON.parse(v.value);
+        if (Array.isArray(parsed)) {
+          if (parsed.length === 0) return '—';
+          return parsed.map(it => formatCellValue(it)).filter(s => s && s !== '—').join(', ') || '—';
+        }
+        if (parsed && typeof parsed === 'object') {
+          const keys = Object.keys(parsed);
+          if (keys.length === 0) return '—';
+          return keys.map(k => {
+            const sub = formatCellValue(parsed[k]);
+            return sub && sub !== '—' ? `${k}=${sub}` : null;
+          }).filter(Boolean).join(', ') || '—';
+        }
+        return String(parsed);
+      } catch { return v.value; }
+    }
+    if (Array.isArray(v)) {
+      if (v.length === 0) return '—';
+      return v.map(it => formatCellValue(it)).filter(s => s && s !== '—').join(', ') || '—';
+    }
+    // 普通 object 取首个非空字段
+    for (const k of Object.keys(v)) {
+      if (v[k] != null && v[k] !== '') return formatCellValue(v[k]);
+    }
+    return '—';
+  }
   return String(v);
 };
 
@@ -132,68 +178,92 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   const canSeeVersionTag = quotationStatus !== 'DRAFT'
       && (user?.role === 'SALES_MANAGER' || user?.role === 'SYSTEM_ADMIN');
 
-  // Enrich componentData with fields/formulas from template snapshot
+  // Enrich componentData with fields/formulas from template snapshot.
+  // 2026-05-19 AP-37 续: 按 snapshot 遍历 (而非 saved), 用 Map<cid, Queue<saved>> 配对,
+  //   保证同 cid 多实例 (典型: 标准 Tab + 选配-* Tab 同 componentId) 不会被反查塌缩.
+  //   tabName / componentType / dataDriverPath / componentId 全部 snapshot 优先 (snapshot
+  //   是 publish 定格的结构权威), saved 只贡献行/小计. 与 QuotationWizard.enrichComponentData
+  //   保持完全一致——任何一方走老逻辑都会让详情/编辑页 Tab 列表对不上.
   useEffect(() => {
     const enrich = async () => {
       const rawCompData: any[] = lineItem.componentData || [];
-      if (rawCompData.length === 0 || !lineItem.templateId) {
+      if (!lineItem.templateId) {
         setComponents([]);
         setLoading(false);
         return;
       }
-      // Check if already enriched
-      if (rawCompData[0]?.fields?.length > 0) {
-        setComponents(rawCompData.map((cd: any) => ({
-          ...cd,
-          rows: Array.isArray(cd.rows) ? cd.rows : parseJson(cd.rowData, [{}]),
-        })));
-        setLoading(false);
-        return;
-      }
       try {
-        // 用 cached 版本: N 个 ReadonlyProductCard 共享 1 个 in-flight Promise → 1 次 HTTP
         const res = await templateService.getByIdCached(lineItem.templateId);
         const snapshot: any[] = parseJson(res.data.componentsSnapshot, []);
 
-        const enriched: ComponentDataItem[] = rawCompData.map((saved: any) => {
-          const sc = snapshot.find((s: any) => (s.componentId || s.component_id) === saved.componentId)
-            || snapshot.find((s: any) => (s.tabName || s.tab_name) === saved.tabName);
+        // saved 预处理: 把 rowData 解析成 rows
+        const withRows = rawCompData.map((s: any) => ({
+          ...s,
+          rows: Array.isArray(s.rows) ? s.rows : parseJson(s.rowData, [{}]),
+        }));
 
-          const fields: ComponentField[] = (sc?.fields || []).map((f: any) => ({
+        const savedQueueByCid: Map<string, any[]> = new Map();
+        const savedByTab: Record<string, any> = {};
+        for (const s of withRows) {
+          if (s.componentId) {
+            if (!savedQueueByCid.has(s.componentId)) savedQueueByCid.set(s.componentId, []);
+            savedQueueByCid.get(s.componentId)!.push(s);
+          }
+          if (s.tabName) savedByTab[s.tabName] = s;
+        }
+
+        const enriched: ComponentDataItem[] = snapshot.map((snapshotComp: any) => {
+          const snapId = snapshotComp.componentId || snapshotComp.component_id || '';
+          const snapTab = snapshotComp.tabName || snapshotComp.tab_name || '';
+          let saved: any = {};
+          const queue = savedQueueByCid.get(snapId);
+          if (queue && queue.length > 0) {
+            let idx = queue.findIndex(s => (s.tabName || '') === snapTab);
+            if (idx < 0) idx = 0;
+            saved = queue.splice(idx, 1)[0] || {};
+          } else if (savedByTab[snapTab]) {
+            saved = savedByTab[snapTab];
+          }
+
+          const fields: ComponentField[] = (snapshotComp.fields || []).map((f: any) => ({
             name: f.name || f.key || '',
             field_type: normalizeFieldType(f.field_type || f.type || ''),
             content: f.content,
             is_amount: f.is_amount,
             is_subtotal: f.is_subtotal,
             formula_name: f.formula_name,
-            // BASIC_DATA 字段需要 path 才能渲染值；之前漏掉导致明细页出现"未配置路径"
             basic_data_path: f.basic_data_path,
+            list_formula_config: f.list_formula_config,
             label: f.label || f.name || '',
             key: f.name || f.key || '',
           }));
-          const formulas: ComponentFormula[] = (sc?.formulas || []).map((fm: any) => ({
+          const formulas: ComponentFormula[] = (snapshotComp.formulas || []).map((fm: any) => ({
             name: fm.name || '',
             expression: Array.isArray(fm.expression) ? fm.expression : [],
           }));
           const rows = Array.isArray(saved.rows) && saved.rows.length > 0
             ? saved.rows
-            : parseJson(saved.rowData, [{}]);
+            : [];
 
-          // 从模板快照取 componentType / dataDriverPath；保证小计组件不会被当成普通 tab
-          const componentType = saved.componentType
-            || sc?.component_type
-            || sc?.componentType
+          const componentType = snapshotComp.component_type
+            || snapshotComp.componentType
+            || saved.componentType
             || 'NORMAL';
+          const dataDriverPath = snapshotComp.data_driver_path
+            || snapshotComp.dataDriverPath
+            || saved.dataDriverPath
+            || undefined;
 
           return {
-            componentId: saved.componentId || sc?.componentId || '',
-            componentCode: saved.componentCode || sc?.componentCode || '',
+            componentId: snapshotComp.componentId || saved.componentId || '',
+            componentCode: snapshotComp.componentCode || saved.componentCode || '',
             componentType,
-            tabName: saved.tabName || sc?.tabName || '',
+            tabName: snapshotComp.tabName || snapshotComp.tab_name || saved.tabName || '',
             fields,
             formulas,
             rows,
             subtotal: saved.subtotal || 0,
+            dataDriverPath,
           } as ComponentDataItem;
         });
         setComponents(enriched);
@@ -206,9 +276,20 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
     enrich();
   }, [lineItem]);
 
-  // 与编辑页 ProductCard 对齐：SUBTOTAL 组件不进 tab 列表，单独走底部"产品小计"展示
-  const normalComponents = components.filter(c => (c as any)?.componentType !== 'SUBTOTAL');
+  // 2026-05-19 用户决议 (方案 A): 严格按模板, 不再隐藏空数据 Tab.
+  //   模板 publish 时配置的全部 NORMAL 组件都展示, SUBTOTAL 仍单独走"产品小计".
+  //   空 Tab 内部表格显示"暂无数据"占位 (走 Ant Design Table 默认 emptyText).
+  //   这一改动同时修复 ReadonlyProductCard 与 QuotationStep2 Tab 数量不一致的问题.
+  const normalComponents = components
+    .filter(c => (c as any)?.componentType !== 'SUBTOTAL');
   const activeComp = normalComponents[activeTab];
+
+  // activeTab 越界钳位
+  useEffect(() => {
+    if (normalComponents.length > 0 && activeTab >= normalComponents.length) {
+      setActiveTab(0);
+    }
+  }, [normalComponents.length, activeTab]);
 
   // Compute subtotals
   const compSubtotals: Record<string, number> = {};
@@ -314,6 +395,17 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                   </tr>
                 </thead>
                 <tbody>
+                  {/* 2026-05-19 (方案 A): 模板配了组件但当前料号未匹配数据 → 显示 "暂无数据" 占位行, 列数 = fields.length */}
+                  {activeComp.rows.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={activeComp.fields.length || 1}
+                        style={{ textAlign: 'center', color: '#999', padding: '16px 0' }}
+                      >
+                        暂无数据
+                      </td>
+                    </tr>
+                  )}
                   {activeComp.rows.map((rawRow, ri) => {
                     // FIXED_VALUE 默认值回填（与 QuotationStep2 一致）：
                     // 报价单/核价单切换或 driver 展开生成的行，row[key] 可能为空，
