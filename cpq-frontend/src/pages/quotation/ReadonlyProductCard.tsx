@@ -1,9 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { evaluateExpression } from '../../utils/formulaEngine';
-import { templateService } from '../../services/templateService';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuthStore } from '../../stores/authStore';
-import type { ComponentDataItem, ComponentField, ComponentFormula } from './QuotationStep2';
+import type { ComponentDataItem, ComponentField } from './QuotationStep2';
+import { computeAllFormulas } from './QuotationStep2';
+import { enrichComponentData } from './enrichComponentData';
+import { useDriverExpansions, driverExpansionKey, fieldsOverrideHash } from './useDriverExpansions';
+import { useConfigTemplates } from './useConfigTemplates';
+import { usePathFormulaCache } from './usePathFormulaCache';
 import FieldTraceIcon from './components/FieldTraceIcon';
+import ComponentCell from './components/ComponentCell';
+import type { CellContext } from './components/ComponentCell';
+import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 import './quotation.css';
 
 /** Readonly product card for quotation detail page */
@@ -35,6 +41,10 @@ interface ReadonlyProductCardProps {
   quotationId?: string;
   /** 报价单状态（用于 FieldTraceIcon isDraft 判断） */
   quotationStatus?: string;
+  /** 报价单客户 ID（用于 driver 展开 cache key；缺省时 driver 不区分客户） */
+  customerId?: string;
+  /** B-GV-2 修复: 动态 key 全局变量定义字典, 供 FORMULA 字段 evaluateExpression 使用 */
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>;
 }
 
 function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
@@ -45,76 +55,33 @@ function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
   return value;
 }
 
-function normalizeFieldType(raw: string): ComponentField['field_type'] {
-  const t = (raw || '').toUpperCase();
-  if (t === 'FORMULA') return 'FORMULA';
-  if (t === 'FIXED_VALUE' || t === 'FIXED') return 'FIXED_VALUE';
-  if (t === 'DATA_SOURCE') return 'DATA_SOURCE';
-  // 与 BulkImportPartsDrawer / QuotationWizard 完全对齐——少一个就会让 BASIC_DATA 字段
-  // 在明细页落到 input 默认分支显示空白。
-  if (t === 'BASIC_DATA') return 'BASIC_DATA';
-  if (t === 'INPUT_TEXT') return 'INPUT_TEXT';
-  if (t === 'INPUT_NUMBER') return 'INPUT_NUMBER';
-  if (t === 'LIST_FORMULA') return 'LIST_FORMULA';  // V203/Phase B
-  return 'INPUT';
-}
-
-function computeFormula(
+/**
+ * 按行预计算所有 FORMULA 字段值，支持 prev_row_subtotal 累加（与 QuotationStep2 同源）。
+ * 返回 { row: 0, 1, ... } → formulaCache Map（按 rowIndex 索引）。
+ */
+function buildFormulaCache(
   comp: ComponentDataItem,
-  formulaFieldName: string,
-  row: Record<string, any>,
-): number | null {
-  if (!comp?.fields || !comp?.formulas) return null;
-
-  // 与 QuotationStep2.resolveFormula 同源 (AP-37 协议: 详情页/编辑页 resolveFormula 必须同源)
-  const field = comp.fields.find(f => f.name === formulaFieldName && f.field_type === 'FORMULA');
-  const boundName = field?.formula_name;
-
-  // 0. (2026-05-20) field.formula_name 显式绑定 — 找不到不 fallback (配置漂移时显示 "—" 避免误导)
-  let formula: typeof comp.formulas[number] | undefined;
-  if (boundName) {
-    formula = comp.formulas.find(f => f.name === boundName);
-    if (!formula) return null;  // 显式绑定但漂移 → 不 fallback
-  }
-
-  // 1. Template-level binding (formulaAssignments)
-  if (!formula && (comp as any).formulaAssignments && field) {
-    const fieldIndex = comp.fields.indexOf(field);
-    const assignedName = (comp as any).formulaAssignments[String(fieldIndex)];
-    if (assignedName) formula = comp.formulas.find(f => f.name === assignedName);
-  }
-
-  // 2. Fallback: exact name match
-  if (!formula) formula = comp.formulas.find(f => f.name === formulaFieldName);
-
-  // 3. Fallback: positional
-  if (!formula) {
-    const formulaFields = comp.fields.filter(f => f.field_type === 'FORMULA');
-    const idx = formulaFields.findIndex(f => f.name === formulaFieldName);
-    if (idx >= 0 && idx < comp.formulas.length) formula = comp.formulas[idx];
-  }
-  if (!formula?.expression?.length) return null;
-
-  const fieldValues: Record<string, number> = {};
-  for (const f of comp.fields) {
-    if (f.field_type !== 'FORMULA') {
-      // FIXED_VALUE 字段如果当前行没存值（driver 展开行 / 旧报价单回读），
-      // 用 field.content 兜底——和编辑态/单元格渲染保持一致，避免公式按 0 算。
-      let raw: any = row[f.name];
-      if ((raw === undefined || raw === null || raw === '')
-          && f.field_type === 'FIXED_VALUE'
-          && f.content != null && f.content !== '') {
-        raw = f.content;
-      }
-      const val = parseFloat(raw);
-      if (!isNaN(val)) fieldValues[f.name] = val;
+  rows: Record<string, any>[],
+  compSubtotals: Record<string, number>,
+  partNo?: string,
+  basicDataValues?: Record<string, any>,
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+): Array<Record<string, number | null>> {
+  const subtotalFieldName = comp.fields?.find((f: any) => f.is_subtotal)?.name;
+  const caches: Array<Record<string, number | null>> = [];
+  let prevRowSubtotal: number | undefined = undefined;
+  for (const row of rows) {
+    const cache = computeAllFormulas(
+      comp, row, compSubtotals,
+      undefined, undefined, partNo, basicDataValues,
+      prevRowSubtotal, globalVariableDefs,
+    );
+    caches.push(cache);
+    if (subtotalFieldName && typeof cache[subtotalFieldName] === 'number') {
+      prevRowSubtotal = cache[subtotalFieldName] as number;
     }
   }
-  try {
-    return evaluateExpression(formula.expression, fieldValues, {});
-  } catch {
-    return null;
-  }
+  return caches;
 }
 
 const formatCurrency = (val: number) =>
@@ -163,6 +130,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   index,
   quotationId,
   quotationStatus,
+  customerId,
+  globalVariableDefs,
 }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [components, setComponents] = useState<ComponentDataItem[]>([]);
@@ -179,11 +148,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
       && (user?.role === 'SALES_MANAGER' || user?.role === 'SYSTEM_ADMIN');
 
   // Enrich componentData with fields/formulas from template snapshot.
-  // 2026-05-19 AP-37 续: 按 snapshot 遍历 (而非 saved), 用 Map<cid, Queue<saved>> 配对,
-  //   保证同 cid 多实例 (典型: 标准 Tab + 选配-* Tab 同 componentId) 不会被反查塌缩.
-  //   tabName / componentType / dataDriverPath / componentId 全部 snapshot 优先 (snapshot
-  //   是 publish 定格的结构权威), saved 只贡献行/小计. 与 QuotationWizard.enrichComponentData
-  //   保持完全一致——任何一方走老逻辑都会让详情/编辑页 Tab 列表对不上.
+  // Bug C (2026-05-20): 改调共享的 enrichComponentData，与 QuotationWizard 完全同源。
+  // 保证详情页 = 编辑页只读版，4 个关键字段 (datasource_binding / global_variable_code /
+  // default_source / sort_order) 在详情页也被透传，Tab 列表与编辑页对齐。
   useEffect(() => {
     const enrich = async () => {
       const rawCompData: any[] = lineItem.componentData || [];
@@ -193,79 +160,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
         return;
       }
       try {
-        const res = await templateService.getByIdCached(lineItem.templateId);
-        const snapshot: any[] = parseJson(res.data.componentsSnapshot, []);
-
-        // saved 预处理: 把 rowData 解析成 rows
-        const withRows = rawCompData.map((s: any) => ({
-          ...s,
-          rows: Array.isArray(s.rows) ? s.rows : parseJson(s.rowData, [{}]),
-        }));
-
-        const savedQueueByCid: Map<string, any[]> = new Map();
-        const savedByTab: Record<string, any> = {};
-        for (const s of withRows) {
-          if (s.componentId) {
-            if (!savedQueueByCid.has(s.componentId)) savedQueueByCid.set(s.componentId, []);
-            savedQueueByCid.get(s.componentId)!.push(s);
-          }
-          if (s.tabName) savedByTab[s.tabName] = s;
-        }
-
-        const enriched: ComponentDataItem[] = snapshot.map((snapshotComp: any) => {
-          const snapId = snapshotComp.componentId || snapshotComp.component_id || '';
-          const snapTab = snapshotComp.tabName || snapshotComp.tab_name || '';
-          let saved: any = {};
-          const queue = savedQueueByCid.get(snapId);
-          if (queue && queue.length > 0) {
-            let idx = queue.findIndex(s => (s.tabName || '') === snapTab);
-            if (idx < 0) idx = 0;
-            saved = queue.splice(idx, 1)[0] || {};
-          } else if (savedByTab[snapTab]) {
-            saved = savedByTab[snapTab];
-          }
-
-          const fields: ComponentField[] = (snapshotComp.fields || []).map((f: any) => ({
-            name: f.name || f.key || '',
-            field_type: normalizeFieldType(f.field_type || f.type || ''),
-            content: f.content,
-            is_amount: f.is_amount,
-            is_subtotal: f.is_subtotal,
-            formula_name: f.formula_name,
-            basic_data_path: f.basic_data_path,
-            list_formula_config: f.list_formula_config,
-            label: f.label || f.name || '',
-            key: f.name || f.key || '',
-          }));
-          const formulas: ComponentFormula[] = (snapshotComp.formulas || []).map((fm: any) => ({
-            name: fm.name || '',
-            expression: Array.isArray(fm.expression) ? fm.expression : [],
-          }));
-          const rows = Array.isArray(saved.rows) && saved.rows.length > 0
-            ? saved.rows
-            : [];
-
-          const componentType = snapshotComp.component_type
-            || snapshotComp.componentType
-            || saved.componentType
-            || 'NORMAL';
-          const dataDriverPath = snapshotComp.data_driver_path
-            || snapshotComp.dataDriverPath
-            || saved.dataDriverPath
-            || undefined;
-
-          return {
-            componentId: snapshotComp.componentId || saved.componentId || '',
-            componentCode: snapshotComp.componentCode || saved.componentCode || '',
-            componentType,
-            tabName: snapshotComp.tabName || snapshotComp.tab_name || saved.tabName || '',
-            fields,
-            formulas,
-            rows,
-            subtotal: saved.subtotal || 0,
-            dataDriverPath,
-          } as ComponentDataItem;
-        });
+        const enriched = await enrichComponentData(lineItem.templateId, rawCompData);
         setComponents(enriched);
       } catch {
         setComponents([]);
@@ -275,6 +170,21 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
     };
     enrich();
   }, [lineItem]);
+
+  // Bug C 续 (2026-05-20): 引入 useDriverExpansions，与编辑页渲染行数对齐。
+  // 问题根因：enrichComponentData 直接返回 saved.rows（DB 持久化行数，历史上可能含多余行），
+  // 编辑页 ProductCard 用 driverCount 屏蔽超出 driver 的尾行，而详情页直接渲染全部 rows
+  // → 相同料号详情页比编辑页多 1 行（已被 driver 过滤的陈旧持久化行）。
+  // 修法：把 lineItem 包成 LineItem[] 传入 useDriverExpansions，取得 driverExpansions cache，
+  // 渲染时按 driverCount 限制行数（与编辑页 ProductCard 第 1339-1361 行逻辑完全对齐）。
+  const lineItemsForDriver = useMemo(() => [lineItem], [lineItem]);
+  const { cache: driverExpansions } = useDriverExpansions(lineItemsForDriver as any, customerId);
+
+  // 详情页 LIST_FORMULA 模板加载（与编辑页 useConfigTemplates 同款）
+  const configTemplates = useConfigTemplates(lineItemsForDriver as any);
+
+  // 详情页 path/formula cache 预热（让 BASIC_DATA + FORMULA 字段能正确查到全局路径值）
+  const pathCacheState = usePathFormulaCache(lineItemsForDriver as any, customerId, globalVariableDefs);
 
   // 2026-05-19 用户决议 (方案 A): 严格按模板, 不再隐藏空数据 Tab.
   //   模板 publish 时配置的全部 NORMAL 组件都展示, SUBTOTAL 仍单独走"产品小计".
@@ -291,14 +201,23 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
     }
   }, [normalComponents.length, activeTab]);
 
-  // Compute subtotals
+  // Compute subtotals using buildFormulaCache（支持 prev_row_subtotal 累加公式）
+  // compSubtotals 先用空 map 初始化，按 component 顺序逐步填入，供后续组件引用前组件小计。
   const compSubtotals: Record<string, number> = {};
   for (const comp of components) {
     if (!comp.fields) continue;
-    const stField = comp.fields.find(f => f.is_subtotal);
-    const st = stField
-      ? comp.rows.reduce((s, row) => s + (computeFormula(comp, stField.name, row) ?? 0), 0)
-      : 0;
+    const stField = comp.fields.find((f: any) => f.is_subtotal);
+    if (!stField) {
+      compSubtotals[comp.tabName] = 0;
+      if (comp.componentCode) compSubtotals[comp.componentCode] = 0;
+      continue;
+    }
+    // 使用 buildFormulaCache 支持 prev_row_subtotal 累加
+    const formulaCaches = buildFormulaCache(
+      comp, comp.rows, compSubtotals,
+      lineItem.productPartNo, undefined, globalVariableDefs,
+    );
+    const st = formulaCaches.reduce((s, fc) => s + ((fc[stField.name] as number) ?? 0), 0);
     compSubtotals[comp.tabName] = st;
     if (comp.componentCode) compSubtotals[comp.componentCode] = st;
   }
@@ -395,78 +314,115 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {/* 2026-05-19 (方案 A): 模板配了组件但当前料号未匹配数据 → 显示 "暂无数据" 占位行, 列数 = fields.length */}
-                  {activeComp.rows.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={activeComp.fields.length || 1}
-                        style={{ textAlign: 'center', color: '#999', padding: '16px 0' }}
-                      >
-                        暂无数据
-                      </td>
-                    </tr>
-                  )}
-                  {activeComp.rows.map((rawRow, ri) => {
-                    // FIXED_VALUE 默认值回填（与 QuotationStep2 一致）：
-                    // 报价单/核价单切换或 driver 展开生成的行，row[key] 可能为空，
-                    // 此时显示 field.content 而不是"—"，与编辑态一致。
-                    let row: Record<string, any> = rawRow;
-                    let cloned: Record<string, any> | null = null;
-                    for (const f of activeComp.fields) {
-                      if (f.field_type !== 'FIXED_VALUE') continue;
-                      if (f.content == null || f.content === '') continue;
-                      const k = f.name || '';
-                      if (rawRow[k] !== undefined && rawRow[k] !== null && rawRow[k] !== '') continue;
-                      if (!cloned) cloned = { ...rawRow };
-                      cloned[k] = f.content;
-                    }
-                    if (cloned) row = cloned;
-                    return (
-                    <tr key={ri}>
-                      {activeComp.fields.map((field, fi) => {
-                        const key = field.name || '';
-                        const showTrace = !!(quotationId && isTraceField(field));
-                        const isDraft = !quotationStatus || quotationStatus === 'DRAFT';
-                        // lineItemIndex derived from `index` prop (product card index)
-                        const compIndex = components.indexOf(activeComp);
-                        const fieldPath = `lineItems[${index}].componentData[${compIndex}].rowData.${key}`;
-                        return (
-                          <td
-                            key={key}
-                            className={field.field_type === 'FORMULA' ? 'qt-formula-cell' : ''}
-                          >
-                            {field.field_type === 'FORMULA' ? (
-                              <span className="qt-formula-cell-value" style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                                {(() => {
-                                  const val = computeFormula(activeComp, field.name, row);
-                                  return val != null ? val : '—';
-                                })()}
-                                {showTrace && (
-                                  <FieldTraceIcon
-                                    quotationId={quotationId!}
-                                    fieldPath={fieldPath}
-                                    isDraft={isDraft}
-                                  />
-                                )}
-                              </span>
-                            ) : (
-                              <span style={showTrace ? { display: 'inline-flex', alignItems: 'center', gap: 2 } : undefined}>
-                                {row[key] != null ? formatCellValue(row[key]) : '—'}
-                                {showTrace && (
-                                  <FieldTraceIcon
-                                    quotationId={quotationId!}
-                                    fieldPath={fieldPath}
-                                    isDraft={isDraft}
-                                  />
-                                )}
-                              </span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
+                  {(() => {
+                    // Bug C 续 (2026-05-20): 与编辑页 ProductCard 对齐 —— 用 driver 行数限制渲染。
+                    const lineItemId = (lineItem as any).id || (lineItem as any).tempId || '';
+                    const activeDriverKey = driverExpansionKey(
+                      lineItemId,
+                      lineItem.productPartNo || '',
+                      activeComp.componentId,
+                      customerId,
+                      activeComp.dataDriverPath,
+                      fieldsOverrideHash(activeComp.fields as any[]),
                     );
-                  })}
+                    const activeDriverExpansion = driverExpansions[activeDriverKey];
+                    const useDriver = !!(activeDriverExpansion && activeDriverExpansion.rowCount > 0);
+                    const driverCount = useDriver ? activeDriverExpansion!.rowCount : 0;
+                    const effectiveCount = useDriver ? driverCount : activeComp.rows.length;
+
+                    // 风险 1 缓解（架构师决议）：详情页也按行预计算 formulaCache，
+                    // 支持 prev_row_subtotal 累加公式（与编辑页 preComputedCaches 同款逻辑）。
+                    // 每行的 basicDataValues 取 driver expansion 对应行的数据（如有）。
+                    const preComputedCaches: Array<Record<string, number | null>> = [];
+                    {
+                      const subtotalFieldName = activeComp.fields?.find((f: any) => f.is_subtotal)?.name;
+                      let prevRowSubtotal: number | undefined = undefined;
+                      for (let ri = 0; ri < effectiveCount; ri++) {
+                        const rawRow = activeComp.rows[ri] ?? {};
+                        const rowBdv = useDriver ? activeDriverExpansion!.rows[ri]?.basicDataValues : undefined;
+                        const cache = computeAllFormulas(
+                          activeComp, rawRow, compSubtotals,
+                          undefined, undefined, lineItem.productPartNo,
+                          rowBdv, prevRowSubtotal, globalVariableDefs,
+                        );
+                        preComputedCaches.push(cache);
+                        if (subtotalFieldName && typeof cache[subtotalFieldName] === 'number') {
+                          prevRowSubtotal = cache[subtotalFieldName] as number;
+                        }
+                      }
+                    }
+
+                    return (
+                      <>
+                        {/* 2026-05-19 (方案 A): 模板配了组件但当前料号未匹配数据 → 显示 "暂无数据" 占位行 */}
+                        {effectiveCount === 0 && (
+                          <tr>
+                            <td
+                              colSpan={activeComp.fields.length || 1}
+                              style={{ textAlign: 'center', color: '#999', padding: '16px 0' }}
+                            >
+                              暂无数据
+                            </td>
+                          </tr>
+                        )}
+                        {Array.from({ length: effectiveCount }, (_, ri) => {
+                          const rawRow = activeComp.rows[ri] ?? {};
+                          const rowBdv = useDriver ? activeDriverExpansion!.rows[ri]?.basicDataValues : undefined;
+                          const formulaCache = preComputedCaches[ri] ?? {};
+                          return (
+                          <tr key={ri}>
+                            {activeComp.fields.map((field) => {
+                              const key = field.name || '';
+                              const showTrace = !!(quotationId && isTraceField(field));
+                              const isDraft = !quotationStatus || quotationStatus === 'DRAFT';
+                              const compIndex = components.indexOf(activeComp);
+                              const fieldPath = `lineItems[${index}].componentData[${compIndex}].rowData.${key}`;
+                              const cellCtx: CellContext = {
+                                basicDataValues: rowBdv,
+                                pathCacheState: pathCacheState,
+                                formulaCache,
+                                partNo: lineItem.productPartNo,
+                                activeComponent: activeComp,
+                                activeDriverExpansion,
+                                isListFormulaBound: false,
+                                isDriverBound: useDriver && ri < driverCount,
+                                configTemplates,
+                                globalVariableDefs,
+                              };
+                              return (
+                                <td
+                                  key={key}
+                                  className={[
+                                    field.field_type === 'FORMULA' ? 'qt-formula-cell' : '',
+                                    field.field_type === 'LIST_FORMULA' ? 'qt-formula-cell' : '',
+                                  ].filter(Boolean).join(' ') || undefined}
+                                >
+                                  <span style={showTrace ? { display: 'inline-flex', alignItems: 'center', gap: 2 } : undefined}>
+                                    <ComponentCell
+                                      field={field}
+                                      row={rawRow}
+                                      rowIndex={ri}
+                                      fieldKey={key}
+                                      readonly={true}
+                                      context={cellCtx}
+                                    />
+                                    {showTrace && (
+                                      <FieldTraceIcon
+                                        quotationId={quotationId!}
+                                        fieldPath={fieldPath}
+                                        isDraft={isDraft}
+                                      />
+                                    )}
+                                  </span>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                          );
+                        })}
+                      </>
+                    );
+                  })()}
                 </tbody>
                 {activeComp.fields.some(f => f.is_subtotal) && (
                   <tfoot>

@@ -341,12 +341,26 @@ const GlobalVariablePage: React.FC = () => {
     },
     {
       title: '物理来源', key: 'source',
-      render: (_, r) => (
-        <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
-          {r.sourceView}
-          <span style={{ color: '#999' }}>[{r.keyColumns.join(', ')}].{r.valueColumn}</span>
-        </span>
-      ),
+      render: (_, r) => {
+        // V190+: KV_TABLE 类型数据统一存 global_variable_value 单表,
+        // 老 source_view / value_column 字段已不再代表真实物理来源 (新建时 source_view=NULL,
+        // V184 注册的 PROCESS_DEFAULT_* 仍带老物理表名), 此处按 valueSourceType 分支渲染.
+        if (r.valueSourceType === 'KV_TABLE') {
+          return (
+            <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
+              <span style={{ color: '#666' }}>global_variable_value</span>
+              <span style={{ color: '#999' }}>[{r.keyColumns.join(', ')}].value_number</span>
+            </span>
+          );
+        }
+        // COSTING_VIEW: 保留视图路径展示, 有助核价对账
+        return (
+          <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
+            {r.sourceView}
+            <span style={{ color: '#999' }}>[{r.keyColumns.join(', ')}].{r.valueColumn}</span>
+          </span>
+        );
+      },
     },
     {
       title: '当前行数', key: 'count', width: 90,
@@ -536,10 +550,12 @@ const GlobalVariablePage: React.FC = () => {
         {maintainDef && (
           <>
             <div style={{ marginBottom: 12 }}>
-              <Text type="secondary">物理表:</Text>&nbsp;<Text code>{maintainDef.sourceView}</Text>
+              {/* V190+: 维护数据 Drawer 仅对 KV_TABLE 开放 (COSTING_VIEW 走核价模块),
+                  此处物理表统一显示 global_variable_value, 取值列统一 value_number. */}
+              <Text type="secondary">物理表:</Text>&nbsp;<Text code>global_variable_value</Text>
               &nbsp;&nbsp;<Text type="secondary">key 列:</Text>&nbsp;
               {maintainDef.keyColumns.map((c) => <Tag key={c}>{c}</Tag>)}
-              &nbsp;<Text type="secondary">取值列:</Text>&nbsp;<Tag color="green">{maintainDef.valueColumn}</Tag>
+              &nbsp;<Text type="secondary">取值列:</Text>&nbsp;<Tag color="green">value_number</Tag>
               {maintainDef.description && (
                 <div style={{ marginTop: 6, color: '#8c8c8c', fontSize: 12 }}>{maintainDef.description}</div>
               )}

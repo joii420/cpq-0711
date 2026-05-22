@@ -305,8 +305,10 @@ const QuotationCreateForm: React.FC<Props> = ({
             onChange={(v) => onChange({ ...value, customerTemplateId: v })}
             options={matchResult.templates.map((t) => {
               const isSpecific = !!t.customerId && t.customerId === customerId;
+              const searchText = `${t.name}${t.version ? ' ' + t.version : ''}`;
               return {
                 value: t.id,
+                searchText,
                 label: (
                   <span>
                     {t.name}{t.version ? ' ' + t.version : ''}{' '}
@@ -320,6 +322,11 @@ const QuotationCreateForm: React.FC<Props> = ({
             placeholder="请选择模板"
             optionLabelProp="label"
             disabled={readOnly}
+            showSearch
+            filterOption={(input, option) => {
+              const txt = (option as { searchText?: string } | null)?.searchText ?? '';
+              return txt.toLowerCase().includes(input.toLowerCase());
+            }}
           />
         </Form.Item>
       )}

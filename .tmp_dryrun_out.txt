@@ -1,0 +1,47 @@
+﻿BEGIN
+DO
+psql : psql:cpq-backend/src/main/resources/db/migration/V216__quotation_std_excel_v1_7.sql:358: 注意:  V216 OK: v1.7 DRAFT id=1f36d2bc-b830-476b-a5bc-ed3c735ea9db, series=66eb97f0-ec24-4455-933b-c8c26a3190f6, customer=8de8f8b0-041c-4af1-aeb5-139fbb5484ca, snapshot_tabs=9
+At line:1 char:131
++ ... | Out-Null; psql -h localhost -U postgres -d cpq_db -f .tmp_dryrun.sq ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (psql:cpq-backen...snapshot_tabs=9:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+psql:cpq-backend/src/main/resources/db/migration/V216__quotation_std_excel_v1_7.sql:435: 注意:  V216 verify OK: v1.7 DRAFT id=1f36d2bc-b830-476b-a5bc-ed3c735ea9db, tabs=9, INPUT_NUMBER=15, is_subtotal=5, legacy_draft_status=ARCHIVED
+DO
+---- 最终核对 (在 ROLLBACK 前) ----
+                  id                  |              name               | version | status | tabs | subtotal_n | evc_n 
+--------------------------------------+---------------------------------+---------+--------+------+------------+-------
+ 1f36d2bc-b830-476b-a5bc-ed3c735ea9db | 报价标准模板-Excel基础结构 v1.0 | v1.7    | DRAFT  |    9 |          1 |    22
+(1 row)
+
+      metric      | v  
+------------------+----
+ INPUT_NUMBER cnt | 15
+(1 row)
+
+        metric        | v 
+----------------------+---
+ is_subtotal=true cnt | 5
+(1 row)
+
+    metric     |    tab_name    | field_cnt 
+---------------+----------------+-----------
+ tabs per name | 料件           |        10
+ tabs per name | 来料           |        23
+ tabs per name | 元素           |        13
+ tabs per name | 成品           |         8
+ tabs per name | 组成件BOM      |         9
+ tabs per name | 组装加工       |         7
+ tabs per name | 电镀           |        14
+ tabs per name | 小计1          |         0
+ tabs per name | 组成件其他费用 |        10
+(9 rows)
+
+         metric         |  status  
+------------------------+----------
+ legacy bc0a5dc6 status | ARCHIVED
+(1 row)
+
+ROLLBACK
+---- Dry-run done, all changes rolled back ----

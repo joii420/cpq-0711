@@ -234,6 +234,8 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
     }
     setSubmitting(true);
     try {
+      // 生成顶层 tempId（主 lineItem.id UUID），SIMPLE/COMPOSITE 共用
+      const tempId = crypto.randomUUID();
       const partsReq: PartRequest[] = parts.map(p => ({
         name: p.name,
         partMode: p.partMode!,
@@ -251,6 +253,8 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
         unitWeightGrams: (p.partMode === 'custom' && !p.reusedFromExisting && p.unitWeightGrams !== null)
           ? p.unitWeightGrams
           : undefined,
+        // SIMPLE: 与顶层 tempId 同值；COMPOSITE: 每个子件独立 UUID（工序隔离键）
+        quotationLineItemId: productType === 'SIMPLE' ? tempId : crypto.randomUUID(),
       }));
       const compProcs: CompositeProcessRequest[] = addedCProcs.map(a => ({
         defCode: a.defCode,
@@ -259,6 +263,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
       }));
       const resp = await configureProductService.configureProduct(quotationId, {
         productType,
+        tempId,
         parts: partsReq,
         compositeProcesses: productType === 'COMPOSITE' ? compProcs : undefined,
       });

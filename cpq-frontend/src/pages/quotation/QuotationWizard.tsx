@@ -16,14 +16,17 @@ import { customerService } from '../../services/customerService';
 import QuotationStep2, { computeProductSubtotal, computeAllFormulas } from './QuotationStep2';
 import QuotationStep3 from './QuotationStep3';
 import type { DriftDetectionResult } from '../../types/quotation-drift';
-import type { LineItem, ComponentDataItem, ComponentField, ComponentFormula } from './QuotationStep2';
+import type { LineItem, ComponentDataItem } from './QuotationStep2';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
 import AddProductModal from './AddProductModal';
 import ConfigureProductDrawer from './ConfigureProductDrawer';
 import QuotationCreateForm from './QuotationCreateForm';
 import type { QuotationFormValue } from './QuotationCreateForm';
 import { templateService } from '../../services/templateService';
-import { buildLineItemFromTemplate, buildComponentDataFromTemplate } from './BulkImportPartsDrawer';
+import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
+import { enrichComponentData, loadProductAttributes } from './enrichComponentData';
+import { globalVariableService } from '../../services/globalVariableService';
+import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
@@ -35,198 +38,6 @@ const statusMap: Record<string, { label: string; color: string }> = {
   APPROVED: { label: '已批准', color: 'success' },
   REJECTED: { label: '已驳回', color: 'error' },
 };
-
-function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
-  if (value == null) return fallback;
-  if (typeof value === 'string') {
-    try { return JSON.parse(value) as T; } catch { return fallback; }
-  }
-  return value;
-}
-
-function normalizeFieldType(raw: string):
-  'FIXED_VALUE' | 'DATA_SOURCE' | 'INPUT' | 'INPUT_TEXT' | 'INPUT_NUMBER' | 'FORMULA' | 'BASIC_DATA' | 'LIST_FORMULA' {
-  const t = (raw || '').toUpperCase();
-  if (t === 'FORMULA') return 'FORMULA';
-  if (t === 'FIXED_VALUE' || t === 'FIXED') return 'FIXED_VALUE';
-  if (t === 'DATA_SOURCE') return 'DATA_SOURCE';
-  // BASIC_DATA / INPUT_TEXT / INPUT_NUMBER 漏一个都会让对应字段被误归为 INPUT，
-  // 触发渲染分支用 <input> 而不是 BASIC_DATA 的只读 span（典型表现：物料/元素/含量/
-  // 材料损耗 4 列空白输入框）。务必跟 BulkImportPartsDrawer.normalizeFieldType 完全对齐。
-  if (t === 'BASIC_DATA') return 'BASIC_DATA';
-  if (t === 'INPUT_TEXT') return 'INPUT_TEXT';
-  if (t === 'INPUT_NUMBER') return 'INPUT_NUMBER';
-  if (t === 'LIST_FORMULA') return 'LIST_FORMULA';  // V203/Phase B
-  return 'INPUT';
-}
-
-/**
- * Template fetch dedupe — 走 service-level Promise-cache(`templateService.getByIdCached`),
- * 与其他报价单组件(ReadonlyProductCard、Step2 等)共享同一个 in-flight Promise → 同 templateId 全局 1 次 HTTP。
- */
-function fetchTemplateOnce(templateId: string): Promise<any> {
-  return templateService.getByIdCached(templateId);
-}
-
-/** Enrich saved componentData with fields/formulas from template snapshot.
- *
- * <p>2026-05-17 修复:savedCompData=[] 时不再直接 return [],而是从模板 snapshot
- * 构建初始 componentData(类似 BulkImport 的 buildLineItemFromTemplate)。这避免
- * 选配创建的 lineItem(后端不写 component_data → 前端 componentData=[])在卡片渲染时
- * 拿不到模板组件结构,导致"卡片中没有显示模板的内容"。
- */
-async function enrichComponentData(
-  templateId: string,
-  savedCompData: any[],
-): Promise<ComponentDataItem[]> {
-  if (!templateId) return savedCompData;
-  if (savedCompData.length === 0) {
-    // 选配创建分支:从模板 snapshot 构建初始 componentData
-    try {
-      const res = await fetchTemplateOnce(templateId);
-      return buildComponentDataFromTemplate(res.data);
-    } catch {
-      return [];
-    }
-  }
-  // 先把 rowData 字符串解析成 rows，作为最低保障——即使后面 templateSnapshot
-  // 拉取失败 / 匹配不到，至少 input 单元格能从 row[key] 拿到值，不会出现
-  // "列表行数在但所有单元格空白" 的情况（Bug E）。
-  const withRows = savedCompData.map((saved: any) => {
-    if (Array.isArray(saved.rows)) return saved;
-    const parsed = parseJson<any[]>(saved.rowData, []);
-    return { ...saved, rows: Array.isArray(parsed) ? parsed : [] };
-  });
-  try {
-    const res = await fetchTemplateOnce(templateId);
-    const tmpl = res.data;
-    const snapshot: any[] = parseJson(tmpl.componentsSnapshot, []);
-
-    // 2026-05-19 改: 以 snapshot 为权威, 用 savedCompData 仅回填 row 数据.
-    //   原实现按 savedCompData.map 遍历, 模板新增了组件(如组合产品 v1.0→v1.2 补齐
-    //   CHILD-PARTS+WEIGHT)时旧报价单不会显现新 Tab — 因 saved 没这两条行.
-    //   现在按 snapshot 遍历, 让模板变更后已有报价单自动获得新 Tab(空数据).
-    // AP-37 续: 模板允许同 componentId 实例化多次(同组件挂不同 dataDriverPath
-    // 形成两个 Tab, 例 v_composite_child_processes 与 mat_process), 此时按 componentId
-    // 反查 saved 会让 4 个 snapshot entry 都对到同一条 saved → tabName 被覆盖成相同名
-    // (典型现象: 标准/选配-* 两组 Tab 全变成"选配-*"), 进而行数据也彼此污染.
-    //   修法: 把 saved 按 componentId 分组成队列, 同 cid 多条按 (cid, tabName) 优先
-    //   精确匹配; 匹配后从队列剔除, 保证不重复使用同一条.
-    const savedQueueByCid: Map<string, any[]> = new Map();
-    const savedByTab: Record<string, any> = {};
-    for (const s of withRows) {
-      if (s.componentId) {
-        if (!savedQueueByCid.has(s.componentId)) savedQueueByCid.set(s.componentId, []);
-        savedQueueByCid.get(s.componentId)!.push(s);
-      }
-      if (s.tabName) savedByTab[s.tabName] = s;
-    }
-
-    return snapshot.map((snapshotComp: any) => {
-      const snapId = snapshotComp.componentId || snapshotComp.component_id || '';
-      const snapTab = snapshotComp.tabName || snapshotComp.tab_name || '';
-      let saved: any = {};
-      const queue = savedQueueByCid.get(snapId);
-      if (queue && queue.length > 0) {
-        // 1) (cid, tab) 精确匹配优先
-        let idx = queue.findIndex(s => (s.tabName || '') === snapTab);
-        // 2) 退回到同 cid 第一条还没被领走的
-        if (idx < 0) idx = 0;
-        saved = queue.splice(idx, 1)[0] || {};
-      } else if (savedByTab[snapTab]) {
-        saved = savedByTab[snapTab];
-      }
-
-      const fields: ComponentField[] = (snapshotComp.fields || []).map((f: any) => ({
-        name: f.name || f.key || '',
-        field_type: normalizeFieldType(f.field_type || f.type || ''),
-        content: f.content,
-        is_amount: f.is_amount,
-        is_subtotal: f.is_subtotal,
-        is_required: f.is_required,
-        formula_name: f.formula_name,
-        datasource_binding: f.datasource_binding,
-        // BASIC_DATA 字段必须带上 basic_data_path —— 渲染分支 / driver 展开 lookup
-        // 都靠它，缺了 BASIC_DATA 直接显示"未配置路径"。
-        basic_data_path: f.basic_data_path,
-        // V109: 全局变量徽章; V190 default_source 统一默认值来源
-        // (V184 散字段 default_basic_data_path / default_global_variable_code 已 V193 清理)
-        global_variable_code: f.global_variable_code,
-        default_source: f.default_source,
-        // V203/Phase B: LIST_FORMULA 字段的配置 — 缺了 useConfigTemplates 看不到 → 模板永不加载 → 永久"加载中"
-        list_formula_config: f.list_formula_config,
-        sort_order: f.sort_order,
-        label: f.label || f.name || '',
-        key: f.name || f.key || '',
-      }));
-
-      const formulas: ComponentFormula[] = (snapshotComp.formulas || []).map((fm: any) => ({
-        name: fm.name || '',
-        expression: Array.isArray(fm.expression) ? fm.expression : [],
-        result_type: fm.result_type,
-      }));
-
-      // Merge: keep saved row data, enrich with fields/formulas from snapshot
-      // rowData from backend is a JSON string; rows from fresh add is an array
-      // withRows 已保证 saved.rows 存在；空数组时退回 [{}] 至少给一行让 UI 不空白
-      const savedRows = Array.isArray(saved.rows) ? saved.rows : [];
-      const rows: Record<string, any>[] = savedRows.length > 0 ? savedRows : [{}];
-
-      // 从模板快照补回 componentType 和 dataDriverPath —— 后端 ComponentDataDTO 不保存它们，
-      // 不补的话刷新后小计组件会被当成普通 tab 渲染、driver 展开也无法触发（AP-2 续）。
-      // AP-37: 同 cid 多实例时 dataDriverPath 区分各 Tab; 历史 saved 可能错配,
-      //   一律以 snapshot 为准（snapshot 是 publish 时定格的结构权威）。
-      const componentType = snapshotComp.component_type
-        || snapshotComp.componentType
-        || saved.componentType
-        || 'NORMAL';
-      const dataDriverPath = snapshotComp.data_driver_path
-        || snapshotComp.dataDriverPath
-        || saved.dataDriverPath
-        || undefined;
-
-      // 结构性字段一律以 snapshot 为权威, saved 只贡献"行数据/小计".
-      // 历史报价单可能因前次 bug 把 tabName 写成同名重复(AP-37), 这里强制以模板修复.
-      return {
-        componentId: snapshotComp.componentId || saved.componentId || '',
-        componentCode: snapshotComp.componentCode || saved.componentCode || '',
-        componentType,
-        tabName: snapshotComp.tabName || snapshotComp.tab_name || saved.tabName || '',
-        fields,
-        formulas,
-        rows,
-        subtotal: saved.subtotal || 0,
-        dataDriverPath,
-      } as ComponentDataItem;
-    });
-  } catch {
-    // 模板拉取失败时也至少返回 withRows，保证 input 不会因为 rows=undefined 全空
-    return withRows;
-  }
-}
-
-/**
- * 从模板拉取 productAttributes schema（字段定义列表）。
- * LineItem.productAttributes 是 schema 而非值——后端 SaveDraftRequest 没有这个维度，
- * 刷新后必须从模板再拉一次回填，否则产品卡片"产品属性"区域整块空白（AP-2 续）。
- */
-async function loadProductAttributes(templateId: string): Promise<NonNullable<LineItem['productAttributes']>> {
-  if (!templateId) return [];
-  try {
-    const res = await fetchTemplateOnce(templateId);
-    const tmpl = res.data;
-    const productAttrs: any[] = parseJson(tmpl.productAttributes, []);
-    return productAttrs.map((attr: any) => ({
-      name: attr.name || attr.key || attr.fieldKey || '',
-      field_type: attr.field_type || attr.fieldType || 'TEXT',
-      required: !!attr.required,
-      default_value: attr.default_value ?? attr.defaultValue ?? '',
-      source: attr.source ?? '',
-    }));
-  } catch {
-    return [];
-  }
-}
 
 // Re-export for draft payload — uses the real formula engine
 function computeProductSubtotalSafe(
@@ -287,6 +98,22 @@ const QuotationWizard: React.FC = () => {
   // invalidate(partNos) 清掉指定料号相关 key, 下一轮 fingerprint 改变时自动 re-fetch.
   const { cache: driverExpansions, invalidate: invalidateDriverExpansions } =
     useDriverExpansions(lineItems, customerIdValue);
+
+  // 动态 key 全局变量定义字典 — 供 computeAllFormulas 在 buildDraftPayload 中正确求值动态 key 公式
+  // 空 map = 动态 key token 兜底 0 (旧行为); list() 失败时同样兜底 0 不影响静态 key 场景
+  const [gvDefs, setGvDefs] = useState<Record<string, GlobalVariableDefinition>>({});
+  useEffect(() => {
+    globalVariableService.list()
+      .then((res: any) => {
+        const arr: GlobalVariableDefinition[] = Array.isArray(res) ? res
+          : Array.isArray(res?.data) ? res.data
+          : [];
+        const map: Record<string, GlobalVariableDefinition> = {};
+        for (const d of arr) { if (d?.code) map[d.code] = d; }
+        setGvDefs(map);
+      })
+      .catch(() => setGvDefs({}));
+  }, []);
 
   // Auto-save timer
   const autoSaveRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -678,7 +505,9 @@ const QuotationWizard: React.FC = () => {
       for (const comp of li.componentData || []) {
         if (!comp.componentId) continue;
         if (!(comp as any).dataDriverPath) continue;
-        expectedKeys.push(driverExpansionKey(li.productPartNo, comp.componentId, customerIdValue, (comp as any).dataDriverPath, fieldsOverrideHash((comp as any).fields)));
+        // Bug B: lineItemId = li.id || li.tempId || ''
+        const lineItemIdExpected = (li as any).id || (li as any).tempId || '';
+        expectedKeys.push(driverExpansionKey(lineItemIdExpected, li.productPartNo, comp.componentId, customerIdValue, (comp as any).dataDriverPath, fieldsOverrideHash((comp as any).fields)));
       }
     }
     // 只要有期待 key，就必须等 driverExpansions 全部到位再保存
@@ -817,8 +646,10 @@ const QuotationWizard: React.FC = () => {
     const partNo = li.productPartNo || '';
     const fields = cd.fields || [];
     const componentId = cd.componentId || '';
+    // Bug B: lineItemId = li.id || li.tempId || ''
+    const lineItemIdSnap = (li as any).id || (li as any).tempId || '';
     const expansionKey = (partNo && componentId)
-      ? driverExpansionKey(partNo, componentId, customerIdValue, cd.dataDriverPath, fieldsOverrideHash(fields as any[]))
+      ? driverExpansionKey(lineItemIdSnap, partNo, componentId, customerIdValue, cd.dataDriverPath, fieldsOverrideHash(fields as any[]))
       : '';
     const expansion = expansionKey ? driverExpansions[expansionKey] : undefined;
 
@@ -829,9 +660,14 @@ const QuotationWizard: React.FC = () => {
     });
 
     const baseRows = Array.isArray(cd.rows) ? cd.rows : [];
-    // driver 展开模式：UI 行数 = expansion.rowCount，可能 > baseRows.length
+    // driver 展开模式：UI 行数严格等于 expansion.rowCount（driver 权威，不取 max）。
+    // AP-51 修复：旧代码用 Math.max(expansion.rowCount, baseRows.length)，当 expansion 因
+    // childLineItemIds 未传而返回了历史全量 N 行（如 COMPOSITE 工序 28 行），snapshotRows 会
+    // 把 28 行写进 DB，下次刷新 baseRows.length=28，Math.max 仍 28，形成持久化死锁。
+    // 修法：与 computeTabSubtotal 的"driver 行迭代严格按 rowCount，不与 comp.rows.length 取 max"
+    // 原则保持一致（RECORD.md 第 5193 行已有同等规范）。
     const rowCount = expansion && expansion.rowCount > 0
-      ? Math.max(expansion.rowCount, baseRows.length)
+      ? expansion.rowCount
       : baseRows.length;
 
     const out: Record<string, any>[] = [];
@@ -877,7 +713,8 @@ const QuotationWizard: React.FC = () => {
       try {
         const formulaCache = computeAllFormulas(
           cd, enriched, componentSubtotals,
-          undefined, undefined, partNo, basicDataValues, prevRowSubtotal
+          undefined, undefined, partNo, basicDataValues, prevRowSubtotal,
+          gvDefs   // B-GV-1 修复: 透传 globalVariableDefs，动态 key 公式不再兜底 0
         );
         for (const f of fields) {
           if (f.field_type !== 'FORMULA') continue;

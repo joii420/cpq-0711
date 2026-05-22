@@ -12,4 +12,11 @@ public class PartRequest {
     public List<ElementOverride> elements; // custom 时必填
     public List<UUID> processIds;          // 工序 id 顺序数组(命中复用时忽略)
     public BigDecimal unitWeightGrams;     // 仅未命中指纹时填(命中复用时忽略)
+    /**
+     * Bug B 修复: 前端在创建 lineItem 时生成的 tempId (crypto.randomUUID)。
+     * existing + processIds 路径写 mat_process 时作 quotation_line_item_id，
+     * 使同 hf_part_no 不同 lineItem 的工序互不干扰。
+     * null = 老路径（无 lineItemId 维度），行为与 V205 之前一致。
+     */
+    public String quotationLineItemId;     // 前端 tempId (UUID 字符串，optional)
 }

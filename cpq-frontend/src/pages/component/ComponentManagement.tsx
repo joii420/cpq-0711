@@ -502,19 +502,24 @@ const ComponentManagement: React.FC = () => {
   // Pending token: FormulaBuilder consumes this via useEffect
   const [pendingToken, setPendingToken] = useState<FormulaToken | null>(null);
 
-  // Other components' subtotals
+  // Other components' subtotals — 2026-05-20: 限制为"同目录下其他组件"的小计字段.
+  // 避免跨目录引用导致模板组装时漏配 (不同业务目录的组件常常没在同一模板里出现).
+  // 当 selectedComponent 还没选中或没目录归属时, 返空 (避免初始化阶段误显示全量).
   const allComponents = flattenComponents(directories);
-  const otherCompSubtotals = allComponents
-    .filter((c) => c.id !== selectedComponent?.id)
-    .flatMap((c) =>
-      (c.fields || [])
-        .filter((f: FieldItem) => f.is_subtotal)
-        .map((f: FieldItem) => ({
-          name: f.name,
-          componentCode: c.code,
-          componentName: c.name,
-        }))
-    );
+  const currentDirId = selectedComponent?.directoryId;
+  const otherCompSubtotals = currentDirId
+    ? allComponents
+        .filter((c) => c.directoryId === currentDirId && c.id !== selectedComponent?.id)
+        .flatMap((c) =>
+          (c.fields || [])
+            .filter((f: FieldItem) => f.is_subtotal)
+            .map((f: FieldItem) => ({
+              name: f.name,
+              componentCode: c.code,
+              componentName: c.name,
+            }))
+        )
+    : [];
 
   const availableFields = fields.map((f) => ({ name: f.name, type: f.field_type }));
 

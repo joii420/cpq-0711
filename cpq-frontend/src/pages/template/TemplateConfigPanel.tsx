@@ -22,6 +22,7 @@ import {
 import type { TemplateData, VersionHistoryItem } from './types';
 import { STATUS_COLORS, STATUS_LABELS } from './types';
 import { productCategoryService, type ProductCategory } from '../../services/productCategoryService';
+import GvBindingPanel from './GvBindingPanel';
 import './styles.css';
 
 const { Text } = Typography;
@@ -117,6 +118,17 @@ const TemplateConfigPanel: React.FC<TemplateConfigPanelProps> = ({
       </div>
 
       <Divider style={{ margin: '12px 0' }} />
+
+      {/* B4：EXCEL 类型模板不显示「关联全局变量」区块（PRD §3.7.2.1） */}
+      {template.templateKind !== 'EXCEL' && (
+        <>
+          <div className="tm-config-section">
+            <GvBindingPanel templateId={currentId} isDraft={isDraft} />
+          </div>
+
+          <Divider style={{ margin: '12px 0' }} />
+        </>
+      )}
 
       {/* Action buttons */}
       <div className="tm-config-section">

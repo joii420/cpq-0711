@@ -17,6 +17,8 @@ export interface PartRequest {
   elements?: ElementOverride[];
   processIds?: string[];
   unitWeightGrams?: number;
+  /** 工序隔离键：SIMPLE 场景与顶层 tempId 同值，COMPOSITE 场景每个子件独立 UUID */
+  quotationLineItemId?: string;
 }
 
 export interface CompositeProcessRequest {
@@ -29,6 +31,8 @@ export interface ConfigureProductRequest {
   productType: ProductType;
   parts: PartRequest[];
   compositeProcesses?: CompositeProcessRequest[];
+  /** 主 lineItem.id UUID：后端用此 UUID insert，响应 lineItem.id === tempId，前后端 id 对齐 */
+  tempId?: string;
 }
 
 export interface ConfigureProductResponse {

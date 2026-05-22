@@ -455,7 +455,236 @@ ApprovalRule {
 - `status=SUBMITTED AND created_at < NOW()-48h AND 未发过催办`
 - 发送站内消息 + 邮件给 `assigned_approver_id`
 
-### 3.7 报价单输出
+### 3.7 模板绑定全局变量 + 报价单引用数据 Tab
+
+#### 3.7.1 业务目标
+
+报价单依赖若干**全系统共享的基础数据**（元素单价、材料单价、汇率等），这些数据已注册于 `global_variable_definition` 表（§5.6）。本功能打通"模板配置端"与"报价单详情端"的直通通道：
+
+- **配置端**：模板管理员在编辑模板时，选择与该产品相关的全局变量并排序，记录绑定关系。
+- **消费端**：销售/审批人在报价单详情页，通过「引用数据」Tab 实时或快照地查看绑定全局变量的完整数据行，无需切回配置中心。
+- **审计端**：报价单提交后，引用数据以快照形式保存，确保事后可追溯当时使用的基础数据版本。
+
+#### 3.7.2 全局变量绑定（模板编辑端）
+
+##### 3.7.2.1 UI 入口
+
+在模板配置页 (`/templates/:id`) 的编辑抽屉内，现有「组件区」和「基础信息」区之间，新增**「关联全局变量」**区块（Ant Design `Card`）。
+
+**入口约束**：
+
+- 仅 DRAFT 状态的模板显示可编辑的绑定区块；PUBLISHED / ARCHIVED 模板显示只读列表。
+- `template_kind ∈ {QUOTATION, COSTING}` 时显示该区块；`template_kind = EXCEL` 时隐藏（Excel 模板不展示报价详情 Tab）。
+
+##### 3.7.2.2 绑定交互
+
+| 步骤 | 操作 | 说明 |
+|---|---|---|
+| 1 | 点击「+ 添加全局变量」 | 打开候选列表 |
+| 2 | 候选列表 | 多选 Checkbox 列表，来自 `global_variable_definition` 表 `is_active = true` 的记录；已绑定的条目显示已绑定标记，不可重复添加 |
+| 3 | 确认 | 选中条目追加到绑定列表尾部 |
+| 4 | 排序 | 绑定列表支持拖拽排序（`display_order` 字段），决定「引用数据」Tab 中卡片的展示顺序 |
+| 5 | 移除 | 行尾「删除」图标；DRAFT 状态下可删除，PUBLISHED 后只读 |
+
+候选列表展示字段：`code`、`name`（中文名）、`var_type`（LOOKUP_TABLE / SCALAR）、`source_view`（物理视图/表名）、`unit`（单位）、`is_active`。
+
+**历史绑定可见规则**：若某已绑定 GV 在 `global_variable_definition` 中被设为 `is_active = false`，该条目在模板编辑时**仍显示在绑定列表中**（带灰色「已停用」徽章），允许管理员手动决定是否移除；候选列表中过滤掉 `is_active = false` 条目，不允许新增绑定到已停用 GV。
+
+##### 3.7.2.3 DB 数据模型
+
+新增关联表：
+
+```
+template_global_variable_binding {
+  id                       UUID         PK
+  template_id              UUID         NOT NULL  FK → template.id
+  global_variable_code     VARCHAR(64)  NOT NULL  FK → global_variable_definition.code
+  display_order            INT          NOT NULL DEFAULT 0
+  created_at               TIMESTAMPTZ  NOT NULL DEFAULT now()
+
+  UNIQUE (template_id, global_variable_code)
+}
+```
+
+> **字段类型说明**：`global_variable_definition` 表的主键是 `code VARCHAR(64)`（业务编码，非 UUID），见 V104 真实 schema。本表 FK 直接引用 `code`，方便 JSONB 快照内可读、便于 admin 跨环境对账。
+
+**约束**：
+
+- 删除模板时级联删除绑定行（`ON DELETE CASCADE`）。
+- 删除 `global_variable_definition` 行时拒绝（`ON DELETE RESTRICT`），需先解除绑定。
+- 单模板绑定上限：软上限 20 个（超出 UI 警告，不硬拒）。
+
+##### 3.7.2.4 API 端点摘要
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/cpq/templates/{tid}/global-variable-bindings` | 返回该模板已绑定 GV 列表，按 `display_order` 升序 |
+| `PUT` | `/api/cpq/templates/{tid}/global-variable-bindings` | 全量替换绑定列表（body: `{ bindings: [{globalVariableCode, displayOrder}] }`），DRAFT-only，非 DRAFT 返 403 |
+| `GET` | `/api/cpq/global-variable-definitions?activeOnly=true` | 候选 GV 列表（复用现有 `GlobalVariableService.listAll()`，已自带 `is_active = true` 过滤） |
+
+**createNewDraft 拷贝规则**：`TemplateService.createNewDraft()` 在拷贝模板时，将原模板的 `template_global_variable_binding` 行原样复制（`display_order` 保持不变），新 `template_id` 指向新草稿。
+
+#### 3.7.3 引用数据 Tab（报价单详情端）
+
+##### 3.7.3.1 Tab 位置
+
+报价单详情页 (`/quotations/:id`) 的 Tab 条顺序调整为：
+
+```
+报价单信息 (info)  →  引用数据 (ref-data)  →  数据来源 (snapshot)  →  核价单  →  审批记录
+```
+
+**「引用数据」Tab 仅在报价单关联模板且该模板存在 ≥1 条 GV 绑定时显示**，无绑定时 Tab 自动隐藏。
+
+##### 3.7.3.2 懒加载策略
+
+- 用户**切换到「引用数据」Tab** 时触发数据加载（懒加载），不在页面初始化时预拉取。
+- **DRAFT 状态**：每次切到该 Tab 时实时调用 API，从 `source_view` 抓取最新全量行（保证草稿阶段始终看到最新数据）。
+- **非 DRAFT 状态**（SUBMITTED / APPROVED / REJECTED 等）：从 `quotation_submission_snapshot.bound_global_variables_snapshot` 读取提交时快照，不再实时抓取。
+
+##### 3.7.3.3 展示格式
+
+每个绑定 GV 渲染为一个独立**卡片（Card）**，卡片标题 = `${gv.name}（${gv.code}）`。
+
+| GV 类型 | 渲染方式 |
+|---|---|
+| **SCALAR**（`var_type = 'SCALAR'`，单值） | Ant Design `Descriptions column={3} bordered size="small"`（v3.5.1 column 从 2 调整为 3），参考报价单信息 Tab 内「基本信息」卡片的同款样式；**value 拼接 unit**（如 `8500 CNY`）|
+| **LOOKUP_TABLE**（`var_type = 'LOOKUP_TABLE'`，多行查找表） | **Ant Design `Descriptions column={3} bordered size="small"`（v3.5.1 修订）**：每行一个 `Descriptions.Item`，label = key 列值（如 `Ag` / `Cu` / `Sn`，灰底）, value = `value_column` 列值 + 空格 + `unit`（如 `400 CNY` / `100 CNY` / `255 CNY`，白底）。**列头名称**（如 `key` / `value_number`）**不显示**。容器 `max-height: 600px + overflow: auto` 保护大表（如 MAT_PRICE 上千行场景）。**列头/分页规则已废除**（v3.5 之前为 Table 渲染 + > 10 行分页，现统一为 form 形式与「基本信息」对齐）|
+
+> **v3.5.1 微调依据**（用户反馈）：① `column={2}` 一行 2 个 K:V 过宽，调整为 `column={3}` 一行 3 个 K:V 更紧凑；② 单位（如 `CNY`）从 Card 右上角 `extra` 标识改为在每个 `value` 后空格拼接，方便每行直接对照看出"X 是多少单位"，无需返回卡片头核对单位。
+
+> **分支判定依据**：以 `global_variable_definition.var_type` 字段为唯一判别标识（V104 实际 schema），不依赖 `source_kind`（PRD 早期草稿用语，已废）。`source_view` 是物理视图/表名（如 `v_costing_element_price`），由后端 `GlobalVariableDataLoader` 直接 `SELECT ... FROM source_view` 全量读取。
+
+加载中：展示 `Skeleton` 占位（与现有卡片一致）。  
+无数据：展示「暂无数据」占位文字。  
+加载失败：展示 `Alert type="error"` 提示"数据加载失败，请刷新重试"。
+
+##### 3.7.3.4 API 端点摘要
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/cpq/quotations/{qid}/ref-data` | 返回该报价单所有绑定 GV 的实时数据（DRAFT 专用），按 `display_order` 升序，每条含 `code / name / varType / unit / displayOrder / rows[]` |
+| `GET` | `/api/cpq/quotations/{qid}/ref-data/snapshot` | 返回提交时快照（非 DRAFT 专用），数据来自 `quotation.bound_global_variables_snapshot` |
+
+后端实现路径（隔离边界约束下）：
+
+- 新增 `GlobalVariableDataLoader` 服务，按 GV 的 `var_type` / `source_view` / `value_column` / `key_columns` 直接执行原生 SQL `SELECT * FROM source_view` 全量行（视图名/列名走 V104 已校验过的标识符白名单 `isIdent()`，防注入），**不复用** `useDriverExpansions` / `enrichComponentData` / `ComponentDriverService.expand`。
+- `SnapshotCollectorService.collect()` 末尾追加段：查询 `template_global_variable_binding`（按 `display_order` 升序），逐 GV 调用 `GlobalVariableDataLoader`，序列化为 JSONB 写入 `quotation.bound_global_variables_snapshot` 列。
+
+#### 3.7.4 数据快照机制
+
+##### 3.7.4.1 快照存储
+
+扩展现有 `quotation` 表（`submission_snapshot JSONB` 已存在于 V54；本功能新增独立 JSONB 列以保持列粒度可索引、不污染既有快照结构），新增列：
+
+```
+ALTER TABLE quotation
+  ADD COLUMN bound_global_variables_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb;
+```
+
+> **表名说明**：PRD 早期草稿提及的 `quotation_submission_snapshot` 表实际不存在。当前 V54 已把"快照"作为 `quotation.submission_snapshot` JSONB 列实现；本功能采用相同模式，在 `quotation` 表上加一列独立 JSONB（避免改 V54 既有快照内容、便于回滚）。
+
+JSONB 结构（`bound_global_variables_snapshot`）：
+
+```json
+[
+  {
+    "code": "ELEM_PRICE",
+    "name": "元素核价价格",
+    "varType": "LOOKUP_TABLE",
+    "unit": "CNY/KG",
+    "displayOrder": 0,
+    "snapshotAt": "2026-05-21T10:30:00Z",
+    "rows": [
+      { "element_code": "Cu", "costing_price": 75000 },
+      { "element_code": "Ag", "costing_price": 8500 }
+    ]
+  }
+]
+```
+
+> **JSONB 数组元素以 `code` 作为业务主键**（与 V104 一致），不再使用 PRD 早期草稿中的 `gvId`。`code` 全局唯一且人类可读，便于审计回溯。
+
+##### 3.7.4.2 快照触发时机
+
+- **触发点**：报价单从 DRAFT → SUBMITTED（`SnapshotCollectorService.collect()` 末尾）。
+- **快照内容**：逐 GV 调用 `GlobalVariableDataLoader.loadAll(code)` 拉取 `source_view` 全量行，写入 `quotation.bound_global_variables_snapshot` JSONB 列。
+- **历史报价兼容**：提交前创建的报价单 `bound_global_variables_snapshot` 列默认为 `[]`（V212 迁移时所有存量行回填空数组），前端展示时若数组为空且状态非 DRAFT，提示「提交时未生成引用数据快照」。
+
+##### 3.7.4.3 快照不可变
+
+快照一旦写入（SUBMITTED 时刻），后续审批流程中不再更新；APPROVED / REJECTED 阶段只读。
+
+#### 3.7.5 状态机与编辑约束
+
+| 模板状态 | 绑定 GV 操作 | 说明 |
+|---|---|---|
+| DRAFT | 可增 / 删 / 排序 | 完全可编辑 |
+| PUBLISHED | 只读 | 返回 403，前端工具栏禁用 |
+| ARCHIVED | 只读 | 同 PUBLISHED |
+
+| 报价单状态 | 「引用数据」Tab 数据来源 | 说明 |
+|---|---|---|
+| DRAFT | 实时抓取（切 Tab 懒加载） | 每次切 Tab 重新拉取 |
+| SUBMITTED | 快照（提交时固化） | 审批中只读 |
+| APPROVED | 快照 | 只读 |
+| REJECTED | 快照 | 退回草稿修改后下次提交时重新生成快照 |
+
+**注意**：报价单 REJECTED 后回到 DRAFT 可再次编辑，再次提交时 `SnapshotCollectorService` 会覆盖写入新快照（覆盖旧 snapshot 行）。
+
+#### 3.7.6 验收标准摘要
+
+**AC1：DRAFT 模板新增绑定 GV**
+
+- Given：模板状态 = DRAFT，访问模板编辑抽屉
+- When：在「关联全局变量」区块添加 GV（如 ELEM_PRICE、MAT_PRICE），保存
+- Then：`GET /templates/{tid}/global-variable-bindings` 返回 2 条按 `display_order` 升序排列的记录；模板编辑抽屉「关联全局变量」列表显示 2 行
+
+**AC2：PUBLISHED 模板禁止修改绑定**
+
+- Given：模板状态 = PUBLISHED
+- When：调用 `PUT /api/cpq/templates/{tid}/global-variable-bindings`
+- Then：后端返回 HTTP 403；前端「关联全局变量」区块所有编辑操作（添加 / 删除 / 排序）置灰不可交互
+
+**AC3：createNewDraft 绑定关系原样复制**
+
+- Given：PUBLISHED 模板已绑定 3 个 GV（display_order 0/1/2）
+- When：触发「派生新草稿」操作（`POST /templates/{tid}/create-new-draft`）
+- Then：新草稿的 `template_global_variable_binding` 表中存在 3 条对应记录，`global_variable_code` 与原模板一致，`display_order` 保持 0/1/2
+
+**AC4：报价单 DRAFT 打开「引用数据」Tab 实时数据**
+
+- Given：报价单状态 = DRAFT，关联模板绑定了 ELEM_PRICE（source_view = `v_costing_element_price`，含 4 行）
+- When：用户切换到「引用数据」Tab
+- Then：Tab 内出现 ELEM_PRICE 卡片，Table 展示 4 行数据；行数 ≤ 10，不分页；网络请求命中 `GET /quotations/{qid}/ref-data`
+
+**AC5：报价单 SUBMITTED 后显示快照**
+
+- Given：报价单从 DRAFT 提交为 SUBMITTED，提交时 ELEM_PRICE 快照已写入
+- When：用户（或审批人）查看「引用数据」Tab
+- Then：数据来自 `quotation.bound_global_variables_snapshot`；网络请求命中 `GET /quotations/{qid}/ref-data/snapshot`；页面不再发起实时 `ref-data` 请求
+
+**AC6（v3.5.1 修订）：SCALAR 与 LOOKUP_TABLE 统一用 Descriptions form 渲染（column=3 + value 拼接 unit）**
+
+- Given：绑定了 EXCHANGE_RATE（SCALAR，单行单值）和 ELEM_PRICE（LOOKUP_TABLE，多行，含 Ag/Cu/Sn 等 key，unit=CNY）
+- When：打开「引用数据」Tab
+- Then：两个卡片均展示 Ant Design `Descriptions column={3} bordered size="small"`；ELEM_PRICE 卡片内**每行一个 `Descriptions.Item`**：label = `Ag` / `Cu` / `Sn`（灰底），value = `400 CNY` / `100 CNY` / `255 CNY`（白底，数字 + 空格 + unit）；**列头名称**（`key` / `value_number`）**不显示**；**每行 3 个 K:V 并排**（column=3），与「报价单信息→基本信息」卡片视觉对齐。
+
+**AC7（v3.5 修订）：LOOKUP_TABLE 大表展示边界**
+
+- Given：绑定某 GV，其 `source_view` 返回 300 行
+- When：打开「引用数据」Tab 对应卡片
+- Then：卡片内 Descriptions 在 `max-height: 600px` 容器内展示，超出高度时容器内滚动；**不再启用分页**（v3.5 前为 Table > 10 行分页规则，已废除）
+
+**AC8：已停用 GV 历史可见，候选列表过滤**
+
+- Given：模板已绑定 GV_X，随后 GV_X 在 `global_variable_definition` 中被设为 `is_active = false`
+- When：管理员打开该 DRAFT 模板编辑抽屉
+- Then：「关联全局变量」列表仍显示 GV_X（带「已停用」徽章）；点击「+ 添加全局变量」弹出的候选列表中 GV_X 不出现
+
+---
+
+### 3.8 报价单输出
 
 **V1 实装**:
 
@@ -470,7 +699,7 @@ ApprovalRule {
 - 延期管理(到期前 N 天提醒)
 - 客户回执标记(ACCEPTED / REJECTED)
 
-### 3.8 报价单管理(列表页 `/quotations`)
+### 3.9 报价单管理(列表页 `/quotations`)
 
 **列表呈现**:
 
@@ -496,7 +725,7 @@ ApprovalRule {
 - 数据源字段值清空(下次进入步骤二时重新触发查询)
 - 模板若为 ARCHIVED 状态,新草稿步骤二标记 "⚠ 模板已归档,请重新选择",允许保留数据但禁止提交
 
-### 3.9 非功能需求
+### 3.10 非功能需求
 
 | 指标 | 要求 |
 |---|---|
@@ -2154,6 +2383,38 @@ v_costing_exchange_rate[from_currency='CNY' AND to_currency='USD'].costing_rate
 | **`ConfigureProductResponse` DTO 扩展** | 返回完整 LineItem 形态(templateId + productAttributeValues + componentData=[] + customer 三字段 null),前端直接拼入 state 不需要再 getById |
 | **报价单 Step1 视觉分卡** | 「选择模板」独立 Card 标题(从「产品分类 + 模板选择」改名);基础数据导入流程入口加 `<Alert success>` 提示"模板已在导入时选定" |
 | **Step1 受控组件 Bug 修复** | `QuotationCreateForm` 的 value 从 `form.getFieldValue` 改为 React state `step1FormValue`,修复"用户输入报价单名称无反应"问题(预先存在的受控组件未触发重渲染) |
+
+### 9.11 v3.4(2026-05-21)— 模板绑定全局变量 + 报价单引用数据 Tab
+
+| 决策 | 内容 |
+|---|---|
+| **新增 §3.7** | 模板编辑端「关联全局变量」区块（多选 + 拖拽排序）；报价单详情端「引用数据」Tab（位于 info 之后、snapshot 之前） |
+| **新增 `template_global_variable_binding` 表** | 存储模板 → GV 的 N:M 绑定关系，含 `display_order`；UNIQUE(template_id, gv_id)；`ON DELETE RESTRICT` 保护 GV 定义不被随意删除 |
+| **扩展 `quotation_submission_snapshot`** | 新增 `bound_global_variables_snapshot JSONB` 列，在报价单提交时（`SnapshotCollectorService.collect()` 末尾）写入所有绑定 GV 全量行快照 |
+| **DRAFT 实时 / 非 DRAFT 快照双路由** | DRAFT 报价单切 Tab 时调用 `/ref-data`（实时）；SUBMITTED+ 读 `/ref-data/snapshot`（不可变快照），防止审批中看到基础数据变更 |
+| **隔离边界确认** | 不引入新 field_type；不复用 useDriverExpansions / ProductCard / enrichComponentData；不修改 component 表 / template.componentsSnapshot；GV 数据读取由独立 `GlobalVariableDataLoader` 服务承载 |
+| **createNewDraft 绑定复制** | `TemplateService.createNewDraft()` 拷贝时原样复制 `template_global_variable_binding` 行，新草稿继承绑定关系，管理员可在 DRAFT 态调整 |
+| **INACTIVE GV 策略** | 历史绑定保留（带「已停用」徽章），候选列表过滤 INACTIVE；防止管理员"意外失察"删除历史绑定数据 |
+| **大表分页** | LOOKUP_TABLE 类 GV 行数 > 10 自动分页 pageSize=10；SCALAR 类 GV 用 Descriptions 渲染（v3.5 修订废除，统一 form 形式） |
+| **PDF/Excel 导出本阶段不做** | 列入未来增量（§3.8 V2 规划），本次范围仅 web 端 Tab 展示 |
+
+### 9.13 v3.5.1(2026-05-21)— 引用数据 Tab Descriptions 微调（column 3 + value 拼 unit）
+
+| 决策 | 内容 |
+|---|---|
+| **column 从 2 调整为 3** | 用户反馈 column=2 一行 2 个 K:V 过宽，改为 column=3 一行 3 个 K:V 更紧凑 |
+| **value 拼接 unit** | 单位（如 `CNY`）原显示在 Card 右上角 `extra`，现改为在每个 `Descriptions.Item` 的 value 后空格拼接（如 `400 CNY`），方便每行直接对照看出单位，无需返回卡片头核对 |
+| **Card extra 移除** | 同步删除 Card 的 `extra={unit}` props（避免重复显示） |
+
+### 9.12 v3.5(2026-05-21)— 引用数据 Tab 渲染统一为 Descriptions form 形式
+
+| 决策 | 内容 |
+|---|---|
+| **LOOKUP_TABLE 渲染从 Table 切换为 Descriptions** | 用户反馈 v3.4 Table+表头形式与"报价单信息→基本信息"视觉风格不一致，改为 `Descriptions column={2} bordered size="small"`（后 v3.5.1 改为 column=3），每行一个 `Descriptions.Item`：label = key 列值（如 Ag/Cu/Sn，灰底），value = value_column 列值（400/100/255，白底）。**列头名称（key/value_number）不再显示**，整体视觉与「基本信息」卡片对齐 |
+| **分页规则废除** | v3.4 的"LOOKUP_TABLE 行数 > 10 自动 pageSize=10 分页"规则**完全删除**；统一用 `max-height: 600px + overflow: auto` 滚动容器保护大表（如 MAT_PRICE 上千行场景） |
+| **SCALAR 渲染不变** | 仍是 `Descriptions column={2} bordered size="small"`，与 LOOKUP_TABLE 用同一套组件路径，代码上 SCALAR/LOOKUP_TABLE 分支保留（语义不同：SCALAR 每个 Item 的 label 来自 columns[i]，LOOKUP_TABLE 每个 Item 的 label 来自 rows[i][keyCol]） |
+| **AC6/AC7 同步更新** | AC6 改为"两类 GV 统一 Descriptions 渲染"+ 详细字段对应；AC7 改为"大表 max-height 滚动而非分页"|
+| **核心基线 §5.5 / 反模式 AP-49 不受影响** | 本次仅前端渲染层修订，不动 `GlobalVariableDataLoader` / 公式引擎 / 透传链路；引用数据 Tab 仍走 `_globalPathCache` 之外的独立请求路径（`/ref-data` `/ref-data/snapshot`），与产品卡片求值无耦合 |
 
 ### 9.8 关键设计决策追溯
 

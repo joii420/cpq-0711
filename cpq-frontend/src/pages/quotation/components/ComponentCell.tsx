@@ -1,0 +1,638 @@
+/**
+ * ComponentCell.tsx — 共享单元格渲染组件
+ *
+ * 把 QuotationStep2 (编辑态) 与 ReadonlyProductCard (只读态) 中重复的 6 类字段渲染逻辑
+ * 收敛到一处，消除二者之间的渲染分支不一致（AP-45 / 双轨问题）。
+ *
+ * 6 类字段渲染策略：
+ *   FORMULA      → formulaCache[name] ?? '—'
+ *   LIST_FORMULA → evaluateListFormulaString（含 configTemplates 解析）
+ *   BASIC_DATA   → 统一 fallback 链（@gvar:CODE → BNF → pathCache → content → row[key]）
+ *   DATA_SOURCE  → binding.type 分发；DATABASE_QUERY 退化 row[key] ?? '—'
+ *   FIXED_VALUE  → row[key] ?? field.content ?? '—'
+ *   INPUT_*      → readonly=true: 只读文本; readonly=false: <input>（含 V190 default_source placeholder）
+ *
+ * 统一 fallback 链（BASIC_DATA / DATA_SOURCE.GLOBAL_VARIABLE / INPUT_*.default_source.GLOBAL_VARIABLE 共用）：
+ *   1. basicDataValues['@gvar:CODE']           非空 → 显示（badge: 🌐 CODE）
+ *   2. basicDataValues[bnfDriverLookupKey(path)] 非空 → 显示（badge: BNF）
+ *   3. pathCacheState[`${partNo}::${path}`]    非空 → 显示
+ *   4. field.content                           非空 → 显示（badge: 默认）
+ *   5. row[key]                                非空 → 显示（兼容历史持久化，readonly=true 加 title="历史值"）
+ *   6. '—'
+ */
+import React from 'react';
+import { evaluateListFormulaString } from '../../../utils/formulaEngine';
+import { bnfDriverLookupKey } from '../useDriverExpansions';
+import { evaluateCondition } from '../../../utils/conditionEngine';
+import type { ComponentField, ComponentDataItem } from '../QuotationStep2';
+import type { PathCache } from '../usePathFormulaCache';
+import type { GlobalVariableDefinition } from '../../../services/globalVariableService';
+import type { ConfigTemplateMap } from '../useConfigTemplates';
+
+// ─── ENUM 标签（与 QuotationStep2 同源） ────────────────────────────────────
+const ENUM_LABEL: Record<string, string> = {
+  INCOMING_FIXED: '来料固定加工费',
+  INCOMING_OTHER: '来料其他费用',
+  FINISHED_FIXED: '成品固定加工费',
+  FINISHED_OTHER: '成品其他费用',
+  INCOMING_ANNUAL_DOWN: '来料年降',
+  ASSEMBLY_PROCESS: '组装加工费',
+  ASSEMBLY_ANNUAL_DOWN: '组装加工费年降',
+  ANNUAL_REDUCTION_FACTOR: '年降系数',
+  ELEMENT: '元素 BOM',
+  INCOMING: '来料 BOM',
+  ASSEMBLY: '组装 BOM',
+};
+
+/**
+ * 把后端 path 求值结果投影成显示字符串。
+ * 与 QuotationStep2.formatPathValue 完全同源。
+ */
+export function formatPathValue(v: any): string | null {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (typeof v === 'string') return ENUM_LABEL[v] ?? v;
+  if (Array.isArray(v)) {
+    if (v.length === 0) return null;
+    const first = formatPathValue(v[0]);
+    if (v.length === 1) return first;
+    return first ? `${first} (共 ${v.length} 项)` : `共 ${v.length} 项`;
+  }
+  if (typeof v === 'object') {
+    if (v.type === 'jsonb' && typeof v.value === 'string') {
+      try {
+        const parsed = JSON.parse(v.value);
+        if (Array.isArray(parsed)) {
+          if (parsed.length === 0) return null;
+          const items = parsed.map((it: any) => formatPathValue(it) ?? '').filter(Boolean);
+          return items.length > 0 ? items.join(', ') : null;
+        }
+        if (parsed && typeof parsed === 'object') {
+          const keys = Object.keys(parsed);
+          if (keys.length === 0) return null;
+          const pairs = keys.map((k: string) => {
+            const sub = formatPathValue(parsed[k]);
+            return sub != null ? `${k}=${sub}` : null;
+          }).filter(Boolean);
+          return pairs.length > 0 ? pairs.join(', ') : null;
+        }
+        return formatPathValue(parsed);
+      } catch {
+        return v.value;
+      }
+    }
+    for (const k of Object.keys(v)) {
+      if (v[k] != null && v[k] !== '') {
+        const sub = formatPathValue(v[k]);
+        if (sub) return sub;
+      }
+    }
+    return null;
+  }
+  return String(v);
+}
+
+// ─── 上下文接口 ──────────────────────────────────────────────────────────────
+
+export interface CellContext {
+  /** driver 展开后的行级 basicDataValues — key=`{path}` 或 `@gvar:CODE` */
+  basicDataValues?: Record<string, any>;
+  /** 模块级 globalPathCache 引用 (`pathCacheKey(partNo, path)` 格式) */
+  pathCacheState: PathCache;
+  /** 按行预计算的 FORMULA 值 map（computeAllFormulas 输出） */
+  formulaCache: Record<string, number | null>;
+  /** 当前行所属产品的料号 */
+  partNo: string | undefined;
+  /** 当前激活的组件 */
+  activeComponent: ComponentDataItem;
+  /** driver 展开结果摘要（rowCount 用于 AP-38 鬼魂行判断） */
+  activeDriverExpansion?: { rowCount: number };
+  /** 当前行是否由 LIST_FORMULA 驱动（用于跳过 globalPathCache 回退） */
+  isListFormulaBound?: boolean;
+  /** 当前行是否由 dataDriver 展开（BASIC_DATA 行级 lookup 已准备好） */
+  isDriverBound?: boolean;
+  /** LIST_FORMULA 模式下本行对应的 config_item（包含 code / name / defaultValue 等） */
+  listFormulaItem?: {
+    code: string;
+    name: string;
+    sortOrder?: number;
+    defaultValue?: string | number | null;
+  };
+  /** 当前组件内的 LIST_FORMULA 字段（用于共存模式判断） */
+  listFormulaField?: ComponentField;
+  /** 全局变量定义字典（CODE → def），供 FORMULA/INPUT_*.default_source.GLOBAL_VARIABLE 使用 */
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>;
+  /** config 模板数据（key = config_template_id） */
+  configTemplates?: ConfigTemplateMap;
+
+  // ── 仅 readonly=false 使用 ──
+  /** DATABASE_QUERY 类型字段的 loading 状态 map（key = `${tabIndex}-${rowIndex}-${fieldName}`） */
+  dsLoading?: Record<string, boolean>;
+  /** DATABASE_QUERY 类型字段的错误信息 map */
+  dsErrors?: Record<string, string>;
+  /** 编辑态：cell 值变化回调 */
+  onCellChange?: (rowIndex: number, key: string, value: any) => void;
+  /** 编辑态：cell 失焦回调（触发 autoSave） */
+  onCellBlur?: (rowIndex: number, key: string) => void;
+  /** 编辑态：dsLoading/dsErrors 的 key 前缀（`${tabIndex}-${rowIndex}`） */
+  dsStateKey?: string;
+}
+
+export interface ComponentCellProps {
+  field: ComponentField;
+  row: Record<string, any>;
+  rowIndex: number;
+  fieldKey: string;
+  /** true = 详情/只读页；false = 编辑页（渲染 <input>） */
+  readonly: boolean;
+  context: CellContext;
+}
+
+// ─── 内部辅助 ────────────────────────────────────────────────────────────────
+
+/** 统一 fallback 链（架构师决议第 1~6 步） */
+function resolveGvarFallback(
+  code: string,
+  path: string | undefined,
+  field: ComponentField,
+  key: string,
+  row: Record<string, any>,
+  ctx: CellContext,
+  isReadonly: boolean,
+): React.ReactElement {
+  const { basicDataValues, pathCacheState, partNo } = ctx;
+
+  // Step 1: basicDataValues['@gvar:CODE'] （全局变量直查）
+  if (basicDataValues && code) {
+    const gvKey = `@gvar:${code}`;
+    if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
+      const v = basicDataValues[gvKey];
+      const formatted = formatPathValue(v);
+      if (formatted != null) {
+        return <span className="qt-ds-value" title={`🌐 ${code}`}>{formatted}</span>;
+      }
+      // value null/empty → 继续下沉
+    }
+  }
+
+  // Step 2: basicDataValues[bnfDriverLookupKey(path)]（BNF driver 行级）
+  if (basicDataValues && path) {
+    const lk = bnfDriverLookupKey(path);
+    if (Object.prototype.hasOwnProperty.call(basicDataValues, lk)) {
+      const v = (basicDataValues as Record<string, any>)[lk];
+      const formatted = formatPathValue(v);
+      if (formatted != null) {
+        return <span className="qt-ds-value">{formatted}</span>;
+      }
+    }
+  }
+
+  // Step 3: pathCacheState[`${partNo}::${path}`]（全局 path cache 兜底）
+  if (path && partNo) {
+    const cacheKey = `${partNo}::${path}`;
+    if (Object.prototype.hasOwnProperty.call(pathCacheState, cacheKey)) {
+      const v = (pathCacheState as Record<string, any>)[cacheKey];
+      const formatted = formatPathValue(v);
+      if (formatted != null) {
+        return <span className="qt-ds-value">{formatted}</span>;
+      }
+    }
+  }
+
+  // Step 4: field.content（静态配置默认值）
+  if (field.content != null && field.content !== '') {
+    return <span className="qt-ds-value" title="默认值">{String(field.content)}</span>;
+  }
+
+  // Step 5: row[key]（历史持久化兜底，兼容 QT-20260522-1590）
+  if (row[key] != null && row[key] !== '') {
+    const formatted = formatPathValue(row[key]);
+    if (formatted != null) {
+      return (
+        <span
+          className="qt-ds-value"
+          title={isReadonly ? '历史值' : '历史值（将在下次保存时更新）'}
+        >
+          {formatted}
+        </span>
+      );
+    }
+  }
+
+  // Step 6: '—'
+  return <span className="qt-ds-placeholder">—</span>;
+}
+
+// ─── 主组件 ──────────────────────────────────────────────────────────────────
+
+export const ComponentCell: React.FC<ComponentCellProps> = ({
+  field,
+  row,
+  rowIndex,
+  fieldKey: key,
+  readonly,
+  context: ctx,
+}) => {
+  const {
+    basicDataValues,
+    pathCacheState,
+    formulaCache,
+    partNo,
+    activeComponent,
+    activeDriverExpansion,
+    isListFormulaBound,
+    isDriverBound,
+    listFormulaItem,
+    listFormulaField,
+    configTemplates,
+    dsLoading,
+    dsErrors,
+    onCellChange,
+    onCellBlur,
+    dsStateKey,
+  } = ctx;
+
+  // ── 1. FORMULA ──────────────────────────────────────────────────────────────
+  if (field.field_type === 'FORMULA') {
+    const val = formulaCache[field.name];
+    return (
+      <span className="qt-formula-cell-value">
+        {val != null ? val : '—'}
+      </span>
+    );
+  }
+
+  // ── 2. LIST_FORMULA ─────────────────────────────────────────────────────────
+  if (field.field_type === 'LIST_FORMULA') {
+    const cfg = field.list_formula_config;
+    if (!cfg || !listFormulaItem) {
+      return <span className="qt-ds-placeholder">—</span>;
+    }
+
+    // configTemplates 是否已加载
+    const tplState = configTemplates?.[cfg.config_template_id];
+    if (!tplState) {
+      return <span className="qt-ds-loading">加载中...</span>;
+    }
+    if (tplState.loading) {
+      return <span className="qt-ds-loading">加载中...</span>;
+    }
+
+    const rule = cfg.per_item_rules[listFormulaItem.code];
+    // 收集本行字段值给 condition & formula 求值
+    const rowFieldValues: Record<string, any> = {};
+    for (const f of activeComponent.fields) {
+      if (f.field_type === 'LIST_FORMULA') continue;
+      const k = f.name || (f as any).key || '';
+      if (k) rowFieldValues[k] = row[k];
+    }
+
+    // branches 按顺序求 condition，第一个 true 取 formula
+    let chosenFormula: string | null = null;
+    if (rule) {
+      for (const b of rule.branches) {
+        if (evaluateCondition(b.condition, rowFieldValues)) {
+          chosenFormula = b.formula;
+          break;
+        }
+      }
+      if (chosenFormula == null && rule.default_formula) {
+        chosenFormula = rule.default_formula;
+      }
+    }
+    // 仍无 → item.defaultValue
+    if (chosenFormula == null) {
+      chosenFormula = listFormulaItem.defaultValue != null ? String(listFormulaItem.defaultValue) : null;
+    }
+
+    if (!chosenFormula || !chosenFormula.trim()) {
+      return <span className="qt-ds-placeholder">—</span>;
+    }
+
+    try {
+      const v = evaluateListFormulaString(
+        chosenFormula,
+        rowFieldValues,
+        {},
+        '',
+        {},
+        basicDataValues,
+        partNo,
+        pathCacheState as any,
+      );
+      if (v == null) return <span className="qt-ds-placeholder">—</span>;
+      return (
+        <span
+          className="qt-formula-cell-value"
+          title={`📋 [${listFormulaItem.code}] ${chosenFormula}`}
+        >
+          {v}
+        </span>
+      );
+    } catch {
+      return <span className="qt-ds-placeholder">—</span>;
+    }
+  }
+
+  // ── 3. BASIC_DATA ───────────────────────────────────────────────────────────
+  if (field.field_type === 'BASIC_DATA') {
+    const path = field.basic_data_path ?? '';
+
+    // 优先识别 global_variable_code → 走统一 fallback 链 Step1
+    if (field.global_variable_code) {
+      return resolveGvarFallback(
+        field.global_variable_code,
+        path || undefined,
+        field,
+        key,
+        row,
+        ctx,
+        readonly,
+      );
+    }
+
+    if (!path) return <span className="qt-ds-placeholder">未配置路径</span>;
+
+    // 优先从 driver 展开结果取（已隐式 JOIN driver 行）
+    if (basicDataValues) {
+      const lookupKey = bnfDriverLookupKey(path);
+      if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
+        const v = (basicDataValues as Record<string, any>)[lookupKey];
+        const formatted = formatPathValue(v);
+        if (formatted === null) return <span className="qt-ds-placeholder">—</span>;
+        const isMulti = Array.isArray(v) && v.length > 1;
+        if (isMulti) {
+          const tooltip = v.map((it: any) => formatPathValue(it) ?? '—').join(' / ');
+          return <span className="qt-ds-value" title={tooltip}>{formatted}</span>;
+        }
+        return <span className="qt-ds-value">{formatted}</span>;
+      }
+      // basicDataValues 到位但缺 key → 回退到 row[key]（Step 5 兜底，不走 "加载中"）
+    }
+
+    // AP-38: driver=0 行鬼魂行 → 直接显示 "—"
+    if (
+      activeComponent.dataDriverPath &&
+      activeDriverExpansion &&
+      activeDriverExpansion.rowCount === 0
+    ) {
+      return <span className="qt-ds-placeholder">—</span>;
+    }
+
+    // 第二优先级：row[key] 持久化值（AP-38 修正，不再直接走 globalPathCache）
+    if (!isListFormulaBound) {
+      const fieldKey = key;
+      if (fieldKey) {
+        const rowVal = (row as Record<string, any>)[fieldKey];
+        if (rowVal !== undefined && rowVal !== null && rowVal !== '') {
+          const formatted = formatPathValue(rowVal);
+          if (formatted !== null) {
+            const isMulti = Array.isArray(rowVal) && rowVal.length > 1;
+            if (isMulti) {
+              const tooltip = rowVal.map((it: any) => formatPathValue(it) ?? '—').join(' / ');
+              return <span className="qt-ds-value" title={tooltip}>{formatted}</span>;
+            }
+            return <span className="qt-ds-value">{formatted}</span>;
+          }
+        }
+      }
+    }
+
+    // LIST_FORMULA 驱动行：不走 globalPathCache
+    if (isListFormulaBound) {
+      return <span className="qt-ds-placeholder">—</span>;
+    }
+
+    // 第三优先级：globalPathCache（新建未保存或 row_data 缺字段时兜底）
+    // AP-38/AP-31: readonly=true（详情页）不依赖 pathCache 是否到位来显示"加载中…"
+    // 详情页 pathCache 可能根本没发请求，永远缺 key → 应直接走"—"兜底
+    const cacheKey = `${partNo ?? ''}::${path}`;
+    if (!Object.prototype.hasOwnProperty.call(pathCacheState, cacheKey)) {
+      if (readonly) return <span className="qt-ds-placeholder">—</span>;
+      return <span className="qt-ds-loading">加载中…</span>;
+    }
+    const v = (pathCacheState as Record<string, any>)[cacheKey];
+    const formatted = formatPathValue(v);
+    if (formatted === null) return <span className="qt-ds-placeholder">—</span>;
+    const isMulti = Array.isArray(v) && v.length > 1;
+    if (isMulti) {
+      const tooltip = v.map((it: any) => formatPathValue(it) ?? '—').join(' / ');
+      return <span className="qt-ds-value" title={tooltip}>{formatted}</span>;
+    }
+    return <span className="qt-ds-value">{formatted}</span>;
+  }
+
+  // ── 4. DATA_SOURCE ──────────────────────────────────────────────────────────
+  if (field.field_type === 'DATA_SOURCE') {
+    const dsBindingType = (field.datasource_binding as any)?.type;
+
+    // GLOBAL_VARIABLE 子类型
+    if (dsBindingType === 'GLOBAL_VARIABLE') {
+      const code = (field.datasource_binding as any)?.global_variable_code ?? '';
+      if (basicDataValues && code) {
+        const gvKey = `@gvar:${code}`;
+        if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
+          const v = basicDataValues[gvKey];
+          const formatted = formatPathValue(v);
+          if (formatted != null) {
+            return <span className="qt-ds-value" title={`🌐 ${code}`}>{formatted}</span>;
+          }
+          // value null → 下沉到兜底链
+        }
+        // 回退链: field.content → row[key] → '—'
+        if (field.content != null && field.content !== '') {
+          return <span className="qt-ds-value" title={`🌐 ${code} (默认)`}>{field.content}</span>;
+        }
+        if (row[key] != null && row[key] !== '') {
+          return <span className="qt-ds-value">{String(row[key])}</span>;
+        }
+        return <span className="qt-ds-placeholder">—</span>;
+      }
+      // LIST_FORMULA 驱动行没有 driver expansion：content/row 兜底
+      if (isListFormulaBound) {
+        if (field.content != null && field.content !== '') {
+          return <span className="qt-ds-value" title={`🌐 ${code} (默认)`}>{field.content}</span>;
+        }
+        if (row[key] != null && row[key] !== '') {
+          return <span className="qt-ds-value">{String(row[key])}</span>;
+        }
+        return <span className="qt-ds-placeholder">—</span>;
+      }
+      // basicDataValues 未到位 → 真 loading（详情页不发请求，直接显示 —）
+      if (readonly) return <span className="qt-ds-placeholder">—</span>;
+      return <span className="qt-ds-loading">加载中…</span>;
+    }
+
+    // BNF_PATH 子类型
+    if (dsBindingType === 'BNF_PATH') {
+      const bnfPath = (field.datasource_binding as any)?.bnf_path;
+      if (basicDataValues && bnfPath) {
+        const lk = bnfDriverLookupKey(bnfPath);
+        if (Object.prototype.hasOwnProperty.call(basicDataValues, lk)) {
+          const v = (basicDataValues as Record<string, any>)[lk];
+          const formatted = formatPathValue(v);
+          if (formatted == null) return <span className="qt-ds-placeholder">—</span>;
+          return <span className="qt-ds-value">{formatted}</span>;
+        }
+        // 已加载但缺键 → 回退 row[key]
+        if (row[key] != null && row[key] !== '') {
+          return <span className="qt-ds-value">{String(row[key])}</span>;
+        }
+        return <span className="qt-ds-placeholder">—</span>;
+      }
+      // basicDataValues 未到位（详情页不发请求，直接显示 —）
+      if (readonly) return <span className="qt-ds-placeholder">—</span>;
+      return <span className="qt-ds-loading">加载中…</span>;
+    }
+
+    // HTTP_API 子类型
+    if (dsBindingType === 'HTTP_API') {
+      return row[key] != null
+        ? <span className="qt-ds-value">{String(row[key])}</span>
+        : <span className="qt-ds-placeholder">— (待解析)</span>;
+    }
+
+    // DATABASE_QUERY（默认/老逻辑）
+    if (!readonly) {
+      // 编辑态：走 dsLoading 状态机
+      const loadingKey = dsStateKey ? `${dsStateKey}-${field.name}` : undefined;
+      if (loadingKey && dsLoading?.[loadingKey]) {
+        return <span className="qt-ds-loading">查询中...</span>;
+      }
+      if (loadingKey && dsErrors?.[loadingKey]) {
+        return <span className="qt-ds-error" title={dsErrors[loadingKey]}>查询失败</span>;
+      }
+    }
+    if (row[key] != null) {
+      return (
+        <span className="qt-ds-value">
+          {typeof row[key] === 'object' ? JSON.stringify(row[key]) : row[key]}
+        </span>
+      );
+    }
+    return <span className="qt-ds-placeholder">—</span>;
+  }
+
+  // ── 5. FIXED_VALUE ──────────────────────────────────────────────────────────
+  if (field.field_type === 'FIXED_VALUE') {
+    const val = row[key] ?? field.content;
+    if (val != null && val !== '') {
+      const formatted = formatPathValue(val);
+      return <span>{formatted ?? String(val)}</span>;
+    }
+    return <span className="qt-ds-placeholder">—</span>;
+  }
+
+  // ── 6. INPUT_TEXT / INPUT_NUMBER / INPUT（fallback） ──────────────────────
+  const isNumber = field.field_type === 'INPUT_NUMBER' || (field as any).is_amount;
+  const rawCell = row[key];
+  const isEmpty = rawCell === undefined || rawCell === null || rawCell === '';
+
+  // readonly=true: 只读文本渲染
+  if (readonly) {
+    if (!isEmpty) {
+      const formatted = formatPathValue(rawCell);
+      return <span>{formatted ?? String(rawCell)}</span>;
+    }
+
+    // default_source 解析（V190 兜底链）
+    if (isNumber || field.field_type === 'INPUT_TEXT') {
+      const ds = field.default_source;
+      if (ds && basicDataValues) {
+        if (ds.type === 'GLOBAL_VARIABLE' && ds.code) {
+          const gvKey = `@gvar:${ds.code}`;
+          if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
+            const v = (basicDataValues as Record<string, any>)[gvKey];
+            const formatted = formatPathValue(v);
+            if (formatted != null) {
+              return <span title={`默认 ${formatted} · ${ds.code}`}>{formatted}</span>;
+            }
+          }
+        } else if (ds.type === 'BNF_PATH' && ds.path) {
+          const lk = bnfDriverLookupKey(ds.path);
+          if (Object.prototype.hasOwnProperty.call(basicDataValues, lk)) {
+            const v = (basicDataValues as Record<string, any>)[lk];
+            if (v != null && !(Array.isArray(v) && v.length === 0)) {
+              const formatted = formatPathValue(v);
+              if (formatted != null) return <span>{formatted}</span>;
+            }
+          }
+          // pathCache 兜底
+          if (partNo) {
+            const cacheKey = `${partNo}::${ds.path}`;
+            const v = (pathCacheState as Record<string, any>)[cacheKey];
+            if (v != null && !(Array.isArray(v) && v.length === 0)) {
+              const formatted = formatPathValue(v);
+              if (formatted != null) return <span>{formatted}</span>;
+            }
+          }
+        }
+      }
+      if (field.content != null && field.content !== '') {
+        return <span title="默认值">{String(field.content)}</span>;
+      }
+    }
+
+    return <span className="qt-ds-placeholder">—</span>;
+  }
+
+  // readonly=false: 渲染 <input>
+  // V190 default_source placeholder 链
+  let defaultLabel: string | undefined;
+  let defaultVarCode: string | undefined;
+  if (isEmpty && (isNumber || field.field_type === 'INPUT_NUMBER')) {
+    let defVal: any = undefined;
+    const ds = field.default_source;
+    if (ds && basicDataValues) {
+      if (ds.type === 'GLOBAL_VARIABLE' && ds.code) {
+        const gvKey = `@gvar:${ds.code}`;
+        if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
+          const v = (basicDataValues as Record<string, any>)[gvKey];
+          if (v != null && !(Array.isArray(v) && v.length === 0)) {
+            defVal = v;
+            defaultVarCode = ds.code;
+          }
+        }
+      } else if (ds.type === 'BNF_PATH' && ds.path) {
+        const lk = bnfDriverLookupKey(ds.path);
+        if (Object.prototype.hasOwnProperty.call(basicDataValues, lk)) {
+          const v = (basicDataValues as Record<string, any>)[lk];
+          if (v != null && !(Array.isArray(v) && v.length === 0)) defVal = v;
+        }
+        if (defVal === undefined && partNo) {
+          const cacheKey = `${partNo}::${ds.path}`;
+          const v = (pathCacheState as Record<string, any>)[cacheKey];
+          if (v != null && !(Array.isArray(v) && v.length === 0)) defVal = v;
+        }
+      }
+    }
+    if (defVal != null) {
+      const formatted = formatPathValue(defVal);
+      if (formatted != null) defaultLabel = formatted;
+    } else if (field.content != null && field.content !== '') {
+      defaultLabel = String(field.content);
+    }
+  }
+
+  const placeholder = defaultLabel
+    ? (defaultVarCode ? `默认 ${defaultLabel} · ${defaultVarCode}` : `默认 ${defaultLabel}`)
+    : undefined;
+
+  return (
+    <input
+      type={isNumber ? 'number' : 'text'}
+      step={isNumber ? 'any' : undefined}
+      value={rawCell ?? ''}
+      placeholder={placeholder}
+      title={placeholder}
+      onChange={e => {
+        const val = e.target.value;
+        if (isNumber && val !== '' && !/^-?\d*\.?\d*$/.test(val)) return;
+        onCellChange?.(rowIndex, key, val);
+      }}
+      onBlur={() => onCellBlur?.(rowIndex, key)}
+    />
+  );
+};
+
+export default ComponentCell;

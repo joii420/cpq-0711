@@ -137,12 +137,19 @@ public class ComponentResource {
             Result r = new Result();
             r.key = ComponentDriverService.cacheKey(t.componentId, t.customerId, t.partNo, t.partVersion);
             try {
-                // V195 hotfix: 有 override 时调新签名让 expand 用 snapshot driver/fields 而不是 component 表
+                // 透传 lineItemId + compositeType + childLineItemIds 让 expand 按产品类型选择注入策略：
+                //   SIMPLE (或 null): 注入 lineItemId 限定专属工序行，防止累积所有历史行
+                //   COMPOSITE 父级 + childLineItemIds 已知: 注入 IN 谓词限定子件专属工序行 (消除累积)
+                //   COMPOSITE 父级 + childLineItemIds 未知: 回退到全量聚合 (兼容旧前端)
                 if ((t.overrideDataDriverPath != null && !t.overrideDataDriverPath.isBlank())
-                        || (t.overrideFieldsJson != null && !t.overrideFieldsJson.isBlank())) {
+                        || (t.overrideFieldsJson != null && !t.overrideFieldsJson.isBlank())
+                        || t.lineItemId != null
+                        || t.compositeType != null
+                        || (t.childLineItemIds != null && !t.childLineItemIds.isEmpty())) {
                     r.data = componentDriverService.expand(
                         t.componentId, t.customerId, t.partNo, t.partVersion,
-                        t.overrideDataDriverPath, t.overrideFieldsJson);
+                        t.overrideDataDriverPath, t.overrideFieldsJson, t.lineItemId, t.compositeType,
+                        t.childLineItemIds);
                 } else {
                     r.data = componentDriverService.expand(t.componentId, t.customerId, t.partNo, t.partVersion);
                 }

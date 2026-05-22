@@ -197,22 +197,37 @@ public class ConfigureProductService {
                 }
                 return pr.existingHfPartNo;
             }
-            // 用户拍板修法: existing 模式始终保留老 hfPartNo. processIds 非空时, 用用户选的工序
-            // 覆盖**当前客户的** mat_process (按 customer_id 隔离, 其他客户不受影响).
-            // 这符合用户期望「子件料号是我选的那个」, 不再生成新 CFG-xxx 料号.
+            // Bug B 修复: existing+processIds 路径按 quotation_line_item_id 隔离工序。
+            // 若前端传了 quotationLineItemId，则仅删/写该 lineItem 专属行，不影响其他 lineItem
+            // 或主数据（quotation_line_item_id IS NULL）的工序。
+            // 老路径兼容：quotationLineItemId = null → 仅删/写当前 customer 的主数据行（原有行为）。
             if (customerId == null) {
                 throw new IllegalArgumentException(
                     "existing+processIds 需 quotation.customer_id 写 mat_process");
             }
-            // 1. 删当前 customer 的老 mat_process 行 (避免新老叠加)
-            em.createNativeQuery(
-                    "DELETE FROM mat_process WHERE hf_part_no = :p AND customer_id = :c")
-                .setParameter("p", pr.existingHfPartNo)
-                .setParameter("c", customerId)
-                .executeUpdate();
-            // 2. 按用户选的 processIds 顺序写入当前客户的 mat_process
-            insertProcesses(pr.existingHfPartNo, pr.processIds, customerId);
-            // 3. 仍返老 hfPartNo, 卡片显示用户选的料号
+            UUID lineItemId = parseUuidOrNull(pr.quotationLineItemId);
+            if (lineItemId != null) {
+                // Bug B 新路径: 仅删除该 lineItem 专属的工序行，不碰主数据
+                em.createNativeQuery(
+                        "DELETE FROM mat_process " +
+                        "WHERE hf_part_no = :p AND customer_id = :c AND quotation_line_item_id = :lid")
+                    .setParameter("p", pr.existingHfPartNo)
+                    .setParameter("c", customerId)
+                    .setParameter("lid", lineItemId)
+                    .executeUpdate();
+                // 按用户选的 processIds 写入，绑定到该 lineItemId
+                insertProcessesWithLineItemId(pr.existingHfPartNo, pr.processIds, customerId, lineItemId);
+            } else {
+                // 老路径兼容: 删当前 customer 的所有主数据工序行（无 lineItem 维度）
+                em.createNativeQuery(
+                        "DELETE FROM mat_process " +
+                        "WHERE hf_part_no = :p AND customer_id = :c AND quotation_line_item_id IS NULL")
+                    .setParameter("p", pr.existingHfPartNo)
+                    .setParameter("c", customerId)
+                    .executeUpdate();
+                insertProcesses(pr.existingHfPartNo, pr.processIds, customerId);
+            }
+            // 仍返老 hfPartNo, 卡片显示用户选的料号
             return pr.existingHfPartNo;
         }
 
@@ -459,6 +474,58 @@ public class ConfigureProductService {
         }
     }
 
+    /**
+     * Bug B 修复: 带 quotation_line_item_id 的工序写入。
+     * 与 insertProcesses 逻辑相同，区别在于 INSERT 时额外写入 quotation_line_item_id 列，
+     * 使同 (customer_id, hf_part_no) 的多套工序通过 line_item_id 互相隔离。
+     */
+    @SuppressWarnings("unchecked")
+    void insertProcessesWithLineItemId(String hfPartNo, List<UUID> processIds,
+                                       UUID customerId, UUID lineItemId) {
+        // uq_mat_process_current: (customer_id, hf_part_no, seq_no, sub_seq_no) WHERE is_current=true
+        // 加了 quotation_line_item_id 后，不同 lineItemId 的行互不冲突（V206 unique index 未加此列）
+        // 此处不依赖 UNIQUE index 幂等，调用前已按 lineItemId 精确 DELETE 老行
+        int seq = 1;
+        for (UUID processId : processIds) {
+            List<Object[]> rows = em.createNativeQuery(
+                    "SELECT code, name FROM process WHERE id = :id")
+                .setParameter("id", processId)
+                .getResultList();
+            if (rows.isEmpty()) {
+                throw new IllegalArgumentException("工艺不存在: " + processId);
+            }
+            Object[] r = rows.get(0);
+            String code = (String) r[0];
+            String name = (String) r[1];
+
+            em.createNativeQuery(
+                    "INSERT INTO mat_process " +
+                    "(customer_id, hf_part_no, version, is_current, seq_no, " +
+                    "process_code, assembly_process, part_version, status, " +
+                    "quotation_line_item_id, created_at, updated_at) " +
+                    "VALUES (:cid, :p, 1, true, :sq, :code, :name, 2000, 'ACTIVE', :lid, NOW(), NOW())")
+                .setParameter("cid", customerId)
+                .setParameter("p", hfPartNo)
+                .setParameter("sq", seq++)
+                .setParameter("code", code)
+                .setParameter("name", name)
+                .setParameter("lid", lineItemId)
+                .executeUpdate();
+        }
+    }
+
+    /**
+     * 工具方法: 安全解析 UUID 字符串, 非法或 null 返回 null.
+     */
+    private static UUID parseUuidOrNull(String s) {
+        if (s == null || s.isBlank()) return null;
+        try {
+            return UUID.fromString(s.trim());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     // T20: resolvePart + validateCustomPart + 落库辅助 — 完成
 
     // ───────────────────────────────────────────────────────────────────────
@@ -502,9 +569,10 @@ public class ConfigureProductService {
             }
         }
 
-        // PASS 3: line_items
+        // PASS 3: line_items (解法 B: 传 req.tempId 给 buildLineItems 作 parent line item id)
+        UUID tempId = parseUuidOrNull(req.tempId);
         List<Map<String, Object>> lineItems =
-            buildLineItems(quotationId, req, parentHfPartNo, childHfPartNos);
+            buildLineItems(quotationId, req, parentHfPartNo, childHfPartNos, tempId);
 
         ConfigureProductResponse resp = new ConfigureProductResponse();
         resp.lineItems = lineItems;
@@ -613,21 +681,40 @@ public class ConfigureProductService {
                                              ConfigureProductRequest req,
                                              String parentHfPartNo,
                                              List<String> childHfPartNos) {
+        return buildLineItems(quotationId, req, parentHfPartNo, childHfPartNos, null);
+    }
+
+    /**
+     * 解法 B: 重载版本，支持前端传入 tempId 作为主 line item UUID。
+     * SIMPLE: tempId = 该唯一 line item 的 id；
+     * COMPOSITE: tempId = 父 line item 的 id，子 line item 仍自动生成。
+     */
+    @SuppressWarnings("unchecked")
+    List<Map<String, Object>> buildLineItems(UUID quotationId,
+                                             ConfigureProductRequest req,
+                                             String parentHfPartNo,
+                                             List<String> childHfPartNos,
+                                             UUID tempId) {
         List<Map<String, Object>> out = new ArrayList<>();
 
         if ("SIMPLE".equals(req.productType)) {
             String pn = childHfPartNos.get(0);
-            UUID id = insertLineItem(quotationId, pn, null, "SIMPLE");
+            UUID id = insertLineItem(quotationId, pn, null, "SIMPLE", tempId);
             out.add(buildLineItemDTO(id, pn, "SIMPLE", null));
             return out;
         }
 
-        // COMPOSITE: 父 + N 子
-        UUID parentId = insertLineItem(quotationId, parentHfPartNo, null, "COMPOSITE");
+        // COMPOSITE: 父 + N 子 (父用 tempId; 子 line item 自动生成，
+        // 各子件的 quotationLineItemId 通过 PartRequest.quotationLineItemId 传入)
+        UUID parentId = insertLineItem(quotationId, parentHfPartNo, null, "COMPOSITE", tempId);
         out.add(buildLineItemDTO(parentId, parentHfPartNo, "COMPOSITE", null));
 
-        for (String childPn : childHfPartNos) {
-            UUID childId = insertLineItem(quotationId, childPn, parentId, "PART");
+        for (int i = 0; i < childHfPartNos.size(); i++) {
+            String childPn = childHfPartNos.get(i);
+            // 子件 line item: 优先用对应 PartRequest.quotationLineItemId 作子 id（前端可选传）
+            PartRequest childPr = (req.parts != null && i < req.parts.size()) ? req.parts.get(i) : null;
+            UUID childTempId = (childPr != null) ? parseUuidOrNull(childPr.quotationLineItemId) : null;
+            UUID childId = insertLineItem(quotationId, childPn, parentId, "PART", childTempId);
             out.add(buildLineItemDTO(childId, childPn, "PART", parentId));
         }
         return out;
@@ -635,15 +722,27 @@ public class ConfigureProductService {
 
     UUID insertLineItem(UUID quotationId, String hfPartNo,
                         UUID parentLineItemId, String compositeType) {
-        // quotation_line_item columns confirmed from migrations:
-        //   product_id, template_id: nullable since V30
-        //   product_part_no_snapshot: VARCHAR(200) added V30
-        //   composite_type: VARCHAR(16) NOT NULL DEFAULT 'SIMPLE' added V169
-        //   parent_line_item_id: UUID NULL added V169
-        //   part_version_locked: INT NOT NULL DEFAULT 2000 added V155
-        //   sort_order: INT DEFAULT 0 (original V11)
-        //   quantity: NOT present in any migration — omitted
-        UUID id = UUID.randomUUID();
+        return insertLineItem(quotationId, hfPartNo, parentLineItemId, compositeType, null);
+    }
+
+    /**
+     * 解法 B: 支持前端传入 tempId 作为 line_item.id，使前端提交前即知道 id 值，
+     * 无需二次 id 映射。若 tempId 为 null，退回 UUID.randomUUID() 生成行为（向后兼容）。
+     *
+     * <p>quotation_line_item columns confirmed from migrations:
+     * <ul>
+     *   <li>product_id, template_id: nullable since V30</li>
+     *   <li>product_part_no_snapshot: VARCHAR(200) added V30</li>
+     *   <li>composite_type: VARCHAR(16) NOT NULL DEFAULT 'SIMPLE' added V169</li>
+     *   <li>parent_line_item_id: UUID NULL added V169</li>
+     *   <li>part_version_locked: INT NOT NULL DEFAULT 2000 added V155</li>
+     *   <li>sort_order: INT DEFAULT 0 (original V11)</li>
+     *   <li>quantity: NOT present in any migration — omitted</li>
+     * </ul>
+     */
+    UUID insertLineItem(UUID quotationId, String hfPartNo,
+                        UUID parentLineItemId, String compositeType, UUID tempId) {
+        UUID id = (tempId != null) ? tempId : UUID.randomUUID();
         em.createNativeQuery(
                 "INSERT INTO quotation_line_item " +
                 "(id, quotation_id, product_part_no_snapshot, " +

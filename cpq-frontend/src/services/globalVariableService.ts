@@ -89,5 +89,48 @@ export function compileGlobalVariableToPath(
       : `'${String(v).replace(/'/g, "''")}'`;
     parts.push(`${col}=${lit}`);
   }
+
+  // V190+ KV_TABLE: 数据存 global_variable_value 单表 (轻量配置)
+  // 单键场景: key_id = key 值; 复合键: key_id = val1:val2:val3
+  if (def.valueSourceType === 'KV_TABLE') {
+    const keyId = def.keyColumns.map(col => {
+      const v = keyValues[col];
+      return String(v).replace(/'/g, "''");
+    }).join(':');
+    const codeEscaped = (def.code || '').replace(/'/g, "''");
+    return `global_variable_value[var_code='${codeEscaped}' AND key_id='${keyId}'].value_number`;
+  }
+
+  // COSTING_VIEW 类型(及兜底): 保持原行为 (查源视图)
   return `${def.sourceView}[${parts.join(' AND ')}].${def.valueColumn}`;
+}
+
+/**
+ * 动态 key 场景: 把 token + GV def + 当前行字段值组装成具体 path.
+ * 静态 key 场景请直接用 compileGlobalVariableToPath.
+ *
+ * @param token 公式 token (含 code + key_field_refs)
+ * @param def   GV 定义 (含 keyColumns + valueSourceType + sourceView + valueColumn)
+ * @param row   当前行字段值映射 (字段名 → 值)
+ * @returns     具体 BNF path, 失败返 '' (上层走 0 兜底)
+ */
+export function compileGlobalVariableTokenForRow(
+  token: { code?: string; key_field_refs?: Record<string, string> },
+  def: GlobalVariableDefinition,
+  row: Record<string, any>,
+): string {
+  if (!token.key_field_refs || !def) return '';
+  const keyValues: Record<string, any> = {};
+  for (const col of def.keyColumns) {
+    // key_field_refs[col] 存的是同行字段名; 留空时 = 同名映射
+    const fieldName = token.key_field_refs[col] ?? col;
+    const v = row[fieldName];
+    if (v === undefined || v === null || v === '') return ''; // 行字段缺值 → 兜底 0
+    keyValues[col] = v;
+  }
+  try {
+    return compileGlobalVariableToPath(def, keyValues);
+  } catch {
+    return '';
+  }
 }

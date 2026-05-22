@@ -20,6 +20,8 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { batchEvaluate, buildEvalKey } from '../../services/formulaService';
 import { setGlobalPathCache } from '../../utils/formulaEngine';
 import type { LineItem } from './QuotationStep2';
+import type { GlobalVariableDefinition } from '../../services/globalVariableService';
+import { compileGlobalVariableTokenForRow } from '../../services/globalVariableService';
 
 /** path 求值结果可以是 number / string / boolean / null,UI 直接显示;公式引用按 number 解析 */
 export type PathCache = Record<string, number | string | boolean | null>;
@@ -27,9 +29,42 @@ export type PathCache = Record<string, number | string | boolean | null>;
 /** 计算 cache key */
 export const pathCacheKey = (partNo: string, path: string) => `${partNo}::${path}`;
 
+/**
+ * 2026-05-20: 扫 LIST_FORMULA 字段 list_formula_config 内的 BNF path 引用 (公式形如 "{mat_bom.col} * 5").
+ * 含 `.` 的 {...} 视为 BNF path; 不含 `.` 视为全局变量 code (不在此采集).
+ */
+function collectListFormulaBnfPaths(field: any): string[] {
+  if (field?.field_type !== 'LIST_FORMULA') return [];
+  const cfg = field?.list_formula_config;
+  const rules = cfg?.per_item_rules;
+  if (!rules || typeof rules !== 'object') return [];
+  const out: string[] = [];
+  const scan = (formula: any) => {
+    if (typeof formula !== 'string' || !formula) return;
+    const re = /\{([^}]+)\}/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(formula)) !== null) {
+      const token = m[1].trim();
+      if (token.includes('.')) out.push(token);
+    }
+  };
+  for (const rule of Object.values(rules)) {
+    const r = rule as any;
+    if (Array.isArray(r?.branches)) {
+      for (const b of r.branches) {
+        scan(b?.formula);
+      }
+    }
+    scan(r?.default_formula);
+  }
+  return out;
+}
+
 export function usePathFormulaCache(
   lineItems: LineItem[],
   customerId?: string,
+  /** 动态 key 全局变量定义字典 (code → def), 用于预热动态 key token 的 path 缓存. 向后兼容: 老调用不传则跳过动态 key 预热 */
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
 ): PathCache {
   const [cache, setCache] = useState<PathCache>({});
   // cacheRef 与 cache state 保持同步，effect 内读 ref 避免闭包过期引发二次触发
@@ -74,11 +109,23 @@ export function usePathFormulaCache(
               ) {
                 paths.push(f.datasource_binding.bnf_path);
               }
+              // 2026-05-20: LIST_FORMULA list_formula_config 内的 {table.col} BNF path 引用
+              for (const p of collectListFormulaBnfPaths(f)) paths.push(p);
             }
             for (const fr of (cd.formulas || []) as any[]) {
               for (const tok of (fr.expression || []) as any[]) {
                 if ((tok.type === 'path' || tok.type === 'global_variable') && tok.path) {
                   paths.push(tok.path);
+                }
+                // 动态 key global_variable token: 按已有行数据展开具体 path 纳入指纹
+                if (tok.type === 'global_variable' && !tok.path && tok.key_field_refs && tok.code) {
+                  const def = globalVariableDefs?.[tok.code];
+                  if (def && cd.rows) {
+                    for (const row of cd.rows) {
+                      const p = compileGlobalVariableTokenForRow(tok, def, row);
+                      if (p) paths.push(p);
+                    }
+                  }
                 }
               }
             }
@@ -90,7 +137,7 @@ export function usePathFormulaCache(
           .sort((a: any, b: any) => (a.id > b.id ? 1 : a.id < b.id ? -1 : 0)),
       })),
     );
-  }, [lineItems]);
+  }, [lineItems, globalVariableDefs]);
 
   // 收集所有需要求值的 (partNo, path) 对
   // - BASIC_DATA 字段的 basic_data_path
@@ -123,6 +170,8 @@ export function usePathFormulaCache(
           if (f.default_source?.type === 'BNF_PATH' && f.default_source?.path) {
             addTask(partNo, f.default_source.path);
           }
+          // 2026-05-20: LIST_FORMULA list_formula_config 内的 BNF path 预热
+          for (const p of collectListFormulaBnfPaths(f)) addTask(partNo, p);
           // Phase J: DATA_SOURCE.BNF_PATH 子类型 — 不预热 → fallback 链查空 → "加载中"
           if (
             f.field_type === 'DATA_SOURCE'
@@ -135,8 +184,19 @@ export function usePathFormulaCache(
         // 公式 token 内的 path / global_variable
         for (const fr of comp.formulas || []) {
           for (const tok of fr.expression || []) {
+            // 静态 key (现有逻辑)
             if ((tok.type === 'path' || tok.type === 'global_variable') && tok.path) {
               addTask(partNo, tok.path);
+            }
+            // 动态 key global_variable token: 按已有行数据展开具体 path 进行预热
+            else if (tok.type === 'global_variable' && !tok.path && tok.key_field_refs && tok.code) {
+              const def = globalVariableDefs?.[tok.code];
+              if (def && comp.rows) {
+                for (const row of comp.rows) {
+                  const path = compileGlobalVariableTokenForRow(tok, def, row);
+                  if (path) addTask(partNo, path);
+                }
+              }
             }
           }
         }

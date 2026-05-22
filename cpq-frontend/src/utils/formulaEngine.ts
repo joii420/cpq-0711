@@ -1,4 +1,6 @@
 import Decimal from 'decimal.js';
+import type { GlobalVariableDefinition } from '../services/globalVariableService';
+import { compileGlobalVariableTokenForRow } from '../services/globalVariableService';
 
 export interface ExpressionToken {
   type: 'field' | 'operator' | 'bracket_open' | 'bracket_close' | 'number' | 'component_subtotal' | 'product_attribute' | 'quotation_field' | 'path' | 'global_variable' | 'previous_row_subtotal' | 'datasource_field';
@@ -126,6 +128,16 @@ export function evaluateExpression(
    * 行 0 时未传入: token 走 fallback_component_code 取跨组件 subtotal, 或 0.
    */
   previousRowSubtotal?: number,
+  /**
+   * 动态 key 全局变量运行时 path 重写所需的 GV 定义字典 (code → def).
+   * 向后兼容: 老调用点不传时动态 key token 兜底返 0 (旧行为).
+   */
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+  /**
+   * 动态 key 全局变量运行时 path 重写所需的当前行字段值.
+   * 向后兼容: 老调用点不传时动态 key token 兜底返 0 (旧行为).
+   */
+  currentRow?: Record<string, any>,
 ): number {
   // Build expression string from tokens
   let expr = '';
@@ -215,9 +227,54 @@ export function evaluateExpression(
       case 'global_variable': {
         // V104: 编译期已经写入 token.path (前端解析全局变量时即用 globalVarService 拼路径),
         // 求值期沿 path 流水线: basicDataValues → pathCache → 0.
-        // 静态 key 直接固化到 path; 动态 key (key_field_refs) 在编辑器侧根据当前行字段重写 path。
-        const pathStr = token.path ?? '';
-        if (!pathStr) { expr += '0'; break; }
+        // 静态 key 直接固化到 path; 动态 key (key_field_refs) 运行时按当前行字段重写 path.
+
+        // ★ AP-49 方向 A：优先查 @gvar:CODE (与后端 ComponentDriverService.basicDataValues 契约对齐)
+        // 后端 batchExpand 对 GLOBAL_VARIABLE 类型 driver 注入 basicDataValues['@gvar:CODE'] = 当前行对应值
+        // 这一路径比 BNF path 动态重写更直接，避免 key_field_refs 运行时 lookup 失败导致单价=0
+        {
+          const gvCode = (token as any).code ?? (token as any).value ?? '';
+          const gvKey = `@gvar:${gvCode}`;
+          if (gvCode && basicDataValues && Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
+            const gvRaw = basicDataValues[gvKey];
+            if (gvRaw != null && !(Array.isArray(gvRaw) && gvRaw.length === 0)) {
+              const gvNum = Number(Array.isArray(gvRaw) ? gvRaw[0] : gvRaw);
+              if (!isNaN(gvNum)) {
+                expr += String(gvNum);
+                break;
+              }
+            }
+          }
+        }
+
+        let pathStr = token.path ?? '';
+
+        // 动态 key 运行时重写 path (key_field_refs 存在且 token.path 为空时触发)
+        if (!pathStr && token.key_field_refs && globalVariableDefs && currentRow) {
+          const code = token.code;
+          const def = code ? globalVariableDefs[code] : undefined;
+          if (def) {
+            pathStr = compileGlobalVariableTokenForRow(token, def, currentRow);
+          } else {
+            // 诊断: gvDefs 不含 code (race condition 或 list 失败)
+            if (typeof window !== 'undefined' && (window as any).__GV_DEBUG__) {
+              console.warn('[gv-debug] def miss', { code, defsKeys: Object.keys(globalVariableDefs || {}) });
+            }
+          }
+        }
+
+        if (!pathStr) {
+          // 诊断: 重写失败 — 可能 currentRow 缺字段 or token 缺 code
+          if (typeof window !== 'undefined' && (window as any).__GV_DEBUG__ && token.key_field_refs) {
+            console.warn('[gv-debug] pathStr empty', {
+              token_code: token.code,
+              token_key_field_refs: token.key_field_refs,
+              currentRow_keys: currentRow ? Object.keys(currentRow) : 'undefined',
+              hasGvDefs: !!globalVariableDefs,
+            });
+          }
+          expr += '0'; break;
+        }
         let resolved: number | undefined;
         if (basicDataValues) {
           const lookup = pathStr.startsWith('{') && pathStr.endsWith('}') ? pathStr : `{${pathStr}}`;
@@ -232,8 +289,21 @@ export function evaluateExpression(
         if (resolved === undefined) {
           const usedPartNo = partNo ?? _globalPartNo ?? '';
           const cache = pathCache ?? _globalPathCache;
-          const cached = cache?.[`${usedPartNo}::${pathStr}`];
-          if (typeof cached === 'number') resolved = cached;
+          const cacheKey = `${usedPartNo}::${pathStr}`;
+          const cached = cache?.[cacheKey];
+          if (typeof cached === 'number') {
+            resolved = cached;
+          } else {
+            // 诊断: cache miss — 检查 key 格式是否正确、cache 是否已预热
+            if (typeof window !== 'undefined' && (window as any).__GV_DEBUG__) {
+              console.warn('[gv-debug] cache miss', {
+                lookupKey: cacheKey,
+                cacheSize: Object.keys(cache || {}).length,
+                hasExactKey: cache ? cacheKey in cache : false,
+                sampleKeys: cache ? Object.keys(cache).filter(k => k.includes('COST_ELEMENT')).slice(0, 5) : [],
+              });
+            }
+          }
         }
         expr += (resolved ?? 0).toString();
         break;
@@ -263,17 +333,26 @@ export function isWithinTolerance(frontendValue: number, backendValue: number, t
  * <ul>
  *   <li>`[字段名]` — 当前行其他字段值 (从 rowFieldValues 取)</li>
  *   <li>`[表名.列名]` — 列表项原生列值 (从 listItemColumns 取, 表名前缀必须等于 source_table)</li>
- *   <li>`{GV_CODE}` — 全局变量 (从 globalVarValues 取)</li>
+ *   <li>`{GV_CODE}` — 全局变量 (无 `.` 时, 从 globalVarValues 取)</li>
+ *   <li><b>`{表名.列名}` / `{表名[谓词].列名}` — BNF 数据库路径 (含 `.` 时, 从 basicDataValues 取, 2026-05-20 新增)</b></li>
  *   <li>数字 / 运算符 + - * / ( ) . — 标准算术</li>
  * </ul>
  *
- * <p>典型公式: `[基础工时] * 1.2`, `[v_process_list.unit_price] * 1.5`, `{PROCESS_DEFAULT_PRICE}`, `0.8`.
+ * <p>典型公式:
+ * <ul>
+ *   <li>`[基础工时] * 1.2` — 引用本行字段</li>
+ *   <li>`[v_process_list.unit_price] * 1.5` — 引用列表项列</li>
+ *   <li>`{PROCESS_DEFAULT_PRICE}` — 引用全局变量</li>
+ *   <li>`{mat_bom.composition_pct} * 5` — 引用 BNF 数据库路径 (2026-05-20)</li>
+ *   <li>`{mat_part.unit_weight} / 1000 * [单价]` — 混合 BNF path + 本行字段</li>
+ * </ul>
  *
  * @param formula 公式字符串 (空字符串 → 返 null)
  * @param rowFieldValues 当前行其他字段 name → 值
  * @param listItemColumns 当前行对应的列表项 col → 值 (key 不带前缀, 求值时按 token 拆 "<table>.<col>" → col)
  * @param sourceTable 列表项绑定的源表名 (token 前缀必须匹配, 否则视为本行字段)
  * @param globalVarValues 全局变量 code → 值
+ * @param basicDataValues 2026-05-20 新增 — driver expand 返的 `{path}` → 值 (来自 batch-expand basicDataValues, key 含花括号 `{table.col}`)
  * @returns 求值结果数值. 公式空/解析失败 → null
  */
 export function evaluateListFormulaString(
@@ -282,13 +361,44 @@ export function evaluateListFormulaString(
   listItemColumns: Record<string, any>,
   sourceTable: string,
   globalVarValues?: Record<string, number>,
+  basicDataValues?: Record<string, any>,
+  // 2026-05-20: LIST_FORMULA BNF path fallback partNo.
+  // 含条件谓词的 BNF path (如 mat_bom[element_name='Sn'].net_qty) 在 driver expand 上下文
+  // 被 ImplicitJoinRewriter 注入 seq_no 等驱动列谓词后可能查空 (mat_bom 中 Sn 行 seq_no=2
+  // 与 driver mat_process 行 seq_no=1 不匹配). 缺值时回退到 globalPathCache (partNo 维度,
+  // 不带 driver 行注入) — 与 batch-evaluate 行为对齐.
+  partNo?: string,
+  // 2026-05-20: React state cache (来自 usePathFormulaCache 返值), 优先用于 fallback
+  // 避免模块级 _globalPathCache 在 hook 还没 setGlobalPathCache 之前为空导致首渲染失败.
+  pathCacheState?: Record<string, any>,
 ): number | null {
   if (!formula || !formula.trim()) return null;
   let expr = formula.trim();
 
-  // 1. {GV_CODE} → 数字字面量
+  // 1. {...} 区分 BNF path vs 全局变量 (2026-05-20):
+  //    - 含 `.` → BNF 数据库路径, 从 basicDataValues 取 (key = "{path}" 带花括号)
+  //    - 不含 `.` → 全局变量 code, 从 globalVarValues 取
   expr = expr.replace(/\{([^}]+)\}/g, (_, code) => {
     const trimmed = (code as string).trim();
+    if (trimmed.includes('.')) {
+      // BNF path — basicDataValues 的 key 形态是 "{table.col}" 含花括号
+      const lookupKey = '{' + trimmed + '}';
+      let v = basicDataValues?.[lookupKey];
+      const fromBdv = v;
+      // 缺值 fallback: partNo 维度的 globalPathCache (driver-free 解析)
+      let partKey = '';
+      let fromCache: any = undefined;
+      if (v == null && partNo) {
+        partKey = `${partNo}::${trimmed}`;
+        // 优先 React state cache (调用方传入), 再退到模块级
+        const cache = pathCacheState ?? (getGlobalPathCache() as Record<string, any>);
+        fromCache = cache?.[partKey];
+        v = fromCache;
+      }
+      if (v == null) return '0';
+      return numericToStr(v);
+    }
+    // 全局变量 (老行为)
     const v = globalVarValues?.[trimmed];
     return typeof v === 'number' ? String(v) : '0';
   });

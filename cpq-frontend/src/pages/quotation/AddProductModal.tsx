@@ -525,6 +525,8 @@ const AddProductModal: React.FC<AddProductModalProps> = ({ open, onCancel, onCon
       );
 
       const lineItem: LineItem = {
+        // Bug B (2026-05-20): 新建 lineItem 时生成 tempId，用于 driverExpansionKey lineItemId 维度
+        tempId: typeof crypto !== 'undefined' ? crypto.randomUUID() : `tmp-${Date.now()}`,
         productId: selectedProduct.id,
         productName: selectedProduct.name || '',
         productPartNo: selectedProduct.partNo || '',

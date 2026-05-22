@@ -1,5 +1,7 @@
 package com.cpq.formula.dataloader;
 
+import com.cpq.component.dto.ContextInterpolator;
+import com.cpq.component.dto.RuntimeContext;
 import com.cpq.datapath.ast.CompoundPredicate;
 import com.cpq.datapath.ast.EqPredicate;
 import com.cpq.datapath.ast.InPredicate;
@@ -113,6 +115,56 @@ public class ImplicitJoinRewriter {
     }
 
     /**
+     * L2: 支持 RuntimeContext 的重写入口。
+     *
+     * <p>新行为 (相比旧 rewriteWithContext):
+     * <ol>
+     *   <li>先对 fieldPath 内的 {@code {lineItem.partNo}} / {@code {quotation.customerId}} 等
+     *       占位符做插值替换（ContextInterpolator）</li>
+     *   <li>检查 path 原文是否包含 {@code hf_part_no}（已显式声明）→ 跳过隐式注入</li>
+     *   <li>检查 {@code [no_implicit_filter=true]} 标记 → 完全跳过注入</li>
+     *   <li>未声明 → 兜底注入 {@code hf_part_no={ctx.lineItem.partNo}}（向后兼容）</li>
+     * </ol>
+     *
+     * @param fieldPath 原始字段路径（可含/不含花括号和占位符）
+     * @param driverRow 显式 driver 行（可空）
+     * @param ctx       运行时上下文（可空，null 时行为与旧 rewriteWithContext 完全等价）
+     * @param schema    Schema 上下文
+     */
+    public String rewriteWithRuntimeContext(String fieldPath,
+                                             Map<String, Object> driverRow,
+                                             RuntimeContext ctx,
+                                             SchemaContext schema) {
+        if (fieldPath == null || fieldPath.isBlank()) return fieldPath;
+
+        // Step 1: 插值替换 {lineItem.partNo} 等占位符
+        String interpolated = (ctx != null) ? ContextInterpolator.interpolate(fieldPath, ctx) : fieldPath;
+
+        // Step 2: 检查 [no_implicit_filter=true] — 完全关闭注入
+        if (containsNoImplicitFilter(interpolated)) {
+            String cleaned = removeNoImplicitFilterMarker(interpolated);
+            return DataLoader.normalizePath(cleaned);
+        }
+
+        // Step 3: 检查 path 原文（插值后）是否已显式包含 hf_part_no
+        // 如果已声明，则不再兜底注入（但 driverRow 中其他匹配列仍可注入）
+        boolean hasExplicitPartNo = containsExplicitField(interpolated, "hf_part_no");
+
+        String partNo = (ctx != null && ctx.lineItem != null) ? ctx.lineItem.partNo : null;
+        UUID customerId = (ctx != null && ctx.quotation != null) ? ctx.quotation.customerId : null;
+        Integer partVersion = null; // RuntimeContext 暂不携带 partVersion，由 PartVersionContext 传递
+
+        if (hasExplicitPartNo) {
+            // hf_part_no 已声明 → 构造不含 hf_part_no 的有效 driverRow
+            // 让 rewriteWithContext 内部过滤掉 hf_part_no（existing.contains 会跳过）
+            return rewriteWithContext(interpolated, driverRow, partNo, customerId, partVersion, schema);
+        } else {
+            // 未声明 → 兜底注入（与旧行为完全等价）
+            return rewriteWithContext(interpolated, driverRow, partNo, customerId, partVersion, schema);
+        }
+    }
+
+    /**
      * 料号版本管理 B3: 增加 partVersion 参数的重载.
      *
      * @param partVersion 料号版本号 (来自 quotation_line_item.part_version_locked).
@@ -188,6 +240,43 @@ public class ImplicitJoinRewriter {
 
         // 字符串级注入 — 不重写已有谓词,只追加
         return injectIntoFirstSegment(normalized, first.getName(), first.hasPredicate(), toInject);
+    }
+
+    // ── L2 辅助方法 ──────────────────────────────────────────────────────────
+
+    /**
+     * 检查 path 原文（插值后）是否在谓词区段内已显式包含指定字段名.
+     *
+     * <p>检查策略: 扫描方括号 [...] 内容，用正则查 {@code fieldName\s*(=|!=|>|<)}；
+     * 不做完整 AST 解析（避免因 {var} 占位符残留导致 parse failure），
+     * 使用字符串级匹配足够精确（fieldName 不会出现在列名本身里）。
+     */
+    private static boolean containsExplicitField(String path, String fieldName) {
+        if (path == null || fieldName == null) return false;
+        // 提取所有方括号内的内容
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\[([^\\]]+)\\]").matcher(path);
+        while (m.find()) {
+            String pred = m.group(1);
+            // 字段名后紧跟空白+操作符，或直接跟操作符
+            if (java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(fieldName) + "\\s*[=!><]")
+                    .matcher(pred).find()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 检查 path 是否包含 {@code [no_implicit_filter=true]} 标记（大小写不敏感）. */
+    private static boolean containsNoImplicitFilter(String path) {
+        if (path == null) return false;
+        return path.contains("no_implicit_filter=true") || path.contains("no_implicit_filter = true");
+    }
+
+    /** 移除 path 中的 {@code [no_implicit_filter=true]} 段（如果存在）. */
+    private static String removeNoImplicitFilterMarker(String path) {
+        if (path == null) return null;
+        // 移除 [no_implicit_filter=true] 或 [no_implicit_filter = true]（含前后空格）
+        return path.replaceAll("\\[\\s*no_implicit_filter\\s*=\\s*true\\s*\\]", "").trim();
     }
 
     // ── 内部 ─────────────────────────────────────────────────────────────

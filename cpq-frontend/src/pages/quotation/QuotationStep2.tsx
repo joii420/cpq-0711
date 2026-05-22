@@ -3,6 +3,7 @@ import { Popover, Button, Segmented, Alert, Space, message, Dropdown } from 'ant
 import { DatabaseOutlined, SettingOutlined, PlusOutlined, DownOutlined } from '@ant-design/icons';
 import { evaluateExpression, getGlobalPathCache, evaluateListFormulaString } from '../../utils/formulaEngine';
 import { usePathFormulaCache } from './usePathFormulaCache';
+import { globalVariableService, type GlobalVariableDefinition } from '../../services/globalVariableService';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
 import { useConfigTemplates, type ConfigTemplateMap } from './useConfigTemplates';
 import { evaluateCondition } from '../../utils/conditionEngine';
@@ -14,6 +15,8 @@ import ComparisonView from './ComparisonView';
 import { datasourceService } from '../../services/datasourceService';
 import { materialMappingService } from '../../services/materialMappingService';
 import ElementPriceHint from './components/ElementPriceHint';
+import ComponentCell from './components/ComponentCell';
+import type { CellContext } from './components/ComponentCell';
 import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
 import { quotationService } from '../../services/quotationService';
 import { partVersionService } from '../../services/partVersionService';
@@ -135,6 +138,13 @@ export interface LineItem {
   partVersionLocked?: number;
   /** line_item id (后端 PATCH 需要; 新创建未持久化的 line_item 无 id) */
   id?: string;
+  /**
+   * Bug B (2026-05-20): 前端临时 id，用于 driverExpansionKey lineItemId 维度。
+   * 新建 lineItem 时生成 (crypto.randomUUID())，后端持久化后 id 接管。
+   * 保证同 productPartNo / componentId / customerId / driverPath / fieldsHash 组合
+   * 在同一报价单内被多个 lineItem 共用时各自独立缓存，不相互污染。
+   */
+  tempId?: string;
   /**
    * 产品类型 — 后端反查 mat_part.product_type ('SIMPLE' / 'COMPOSITE').
    * 用途: ProductCard 按类型条件渲染 Tab(COMPOSITE 专属 Tab 在 SIMPLE 下隐藏).
@@ -342,6 +352,8 @@ function computeAllFormulas(
   // 2026-05-17 累加公式: 上一行的 is_subtotal 字段值, 让 previous_row_subtotal token 求值.
   // 调用方按 row_index 顺序遍历, 行 0 不传或传 undefined 走 token 的 fallback_component_code.
   previousRowSubtotal?: number,
+  // 动态 key 全局变量运行时 path 重写 (AP-bug 修复): 向后兼容, 老调用不传时动态 key 兜底 0
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
 ): Record<string, number | null> {
   if (!comp.fields || !comp.formulas) return {};
 
@@ -401,15 +413,16 @@ function computeAllFormulas(
       // 否则回退到 partNo 级 path cache。后者是聚合多行结果，对于 driver
       // 展开（如 mat_bom 元素行）会让所有行算出同一个值——必须用前者。
       if (f.field_type === 'BASIC_DATA' && f.basic_data_path && partNo) {
+        const effPath = f.basic_data_path;
         let cached: any = undefined;
         if (basicDataValues) {
-          const lookupKey = bnfDriverLookupKey(f.basic_data_path);
+          const lookupKey = bnfDriverLookupKey(effPath);
           if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
             cached = basicDataValues[lookupKey];
           }
         }
         if (cached === undefined) {
-          const cacheKey = `${partNo}::${f.basic_data_path}`;
+          const cacheKey = `${partNo}::${effPath}`;
           const cache = pathCache ?? (getGlobalPathCache() as Record<string, any>);
           cached = cache[cacheKey];
         }
@@ -532,7 +545,8 @@ function computeAllFormulas(
       const val = evaluateExpression(
         ff.formula.expression, fieldValues,
         allComponentSubtotals || {}, undefined, quotationFields,
-        pathCache, partNo, basicDataValues, previousRowSubtotal
+        pathCache, partNo, basicDataValues, previousRowSubtotal,
+        globalVariableDefs, row,
       );
       results[name] = val;
       fieldValues[name] = val; // feed result for downstream formulas
@@ -589,6 +603,8 @@ function computeTabSubtotal(
   // Y1.5：driver 行展开。提供后按 rowCount 迭代，每行用各自的 basicDataValues
   // —— 与 ProductCard 渲染层 effectiveRows 一致；不传则退化为按 comp.rows 迭代（旧行为）。
   driverExpansion?: import('./useDriverExpansions').DriverExpansion,
+  // 动态 key 全局变量运行时 path 重写: 向后兼容, 老调用不传时动态 key 兜底 0
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
 ): number {
   if (!comp?.fields || !comp?.rows) return 0;
   const subtotalField = comp.fields.find(f => f.is_subtotal);
@@ -608,11 +624,13 @@ function computeTabSubtotal(
     const basicDataValues = (useDriver && i < driverCount) ? driverExpansion!.rows[i]?.basicDataValues : undefined;
     const cache = computeAllFormulas(
       comp, row, allComponentSubtotals, quotationFields, pathCache, partNo, basicDataValues,
+      undefined, globalVariableDefs,
     );
     sum += cache[subtotalField.name] ?? 0;
   }
   return sum;
 }
+
 
 function computeProductSubtotal(
   item: LineItem,
@@ -625,9 +643,11 @@ function computeProductSubtotal(
   const partNo = item.productPartNo;
   // V203/Phase B: 必须传 comp.dataDriverPath 才能区分同 componentId 不同 driver 的两个组件实例
   // V196 (2026-05-19): 加 fieldsHash 维度区分同 cid 同 driver 不同 fields_override 的两个 Tab
-  const lookupExpansion = (componentId?: string, dataDriverPath?: string, fields?: any[]) => {
-    if (!driverExpansions || !partNo || !componentId) return undefined;
-    const k = driverExpansionKey(partNo, componentId, customerId, dataDriverPath, fieldsOverrideHash(fields));
+  const lookupExpansion = (comp: ComponentDataItem) => {
+    if (!driverExpansions || !partNo || !comp.componentId) return undefined;
+    // Bug B: lineItemId = item.id || item.tempId || ''
+    const lineItemId = (item as any).id || (item as any).tempId || '';
+    const k = driverExpansionKey(lineItemId, partNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
     return driverExpansions[k];
   };
 
@@ -638,7 +658,7 @@ function computeProductSubtotal(
     // partNo + driverExpansion 一起传 —— BASIC_DATA 字段才能按行取值，
     // 不然落到全局 path cache 第一项 / 当 0 算（产品小计 156.80 vs 列小计 750.80 的根因）
     const subtotal = computeTabSubtotal(
-      comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp.componentId, comp.dataDriverPath, comp.fields),
+      comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp),
     );
     if (comp.componentId) componentSubtotals[comp.componentId] = subtotal;
     if (comp.componentCode) componentSubtotals[comp.componentCode] = subtotal;
@@ -700,9 +720,13 @@ interface ProductCardProps {
   configTemplates?: ConfigTemplateMap;
   /** 报价单 ID (用于料号版本切换 PATCH 调用); 未传则版本 Tag 仅显示不可点击 */
   quotationId?: string;
+  /** 2026-05-20: usePathFormulaCache 返的 React state cache, 给 LIST_FORMULA BNF fallback 用 */
+  pathCacheState?: Record<string, any>;
+  /** 动态 key 全局变量定义字典 (code → def), 用于运行时 path 重写 */
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>;
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId }) => {
+const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [versionDrawerOpen, setVersionDrawerOpen] = useState(false);
   const [dsLoading, setDsLoading] = useState<Record<string, boolean>>({});
@@ -749,7 +773,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     const newComponentData = item.componentData.map(comp => {
       // SUBTOTAL 组件 / 未 enrich 完成的组件 comp.rows 可能 undefined; 缺 componentId 也跳过
       if (!comp || !comp.componentId || !Array.isArray(comp.rows)) return comp;
-      const key = driverExpansionKey(item.productPartNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
+      // Bug B: lineItemId = item.id || item.tempId || ''
+      const lineItemIdPrune = (item as any).id || (item as any).tempId || '';
+      const key = driverExpansionKey(lineItemIdPrune, item.productPartNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
       const exp = driverExpansions[key];
       if (!exp || exp.rowCount === 0) return comp;
       if (comp.rows.length > exp.rowCount) {
@@ -1021,7 +1047,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   const activeDriverExpansion = (() => {
     if (!activeComponent || !item.productPartNo) return undefined;
     if (!activeComponent.componentId) return undefined;
-    const key = driverExpansionKey(item.productPartNo, activeComponent.componentId, customerId, activeComponent.dataDriverPath, fieldsOverrideHash(activeComponent.fields as any[]));
+    // Bug B: lineItemId = item.id || item.tempId || ''
+    const lineItemIdActive = (item as any).id || (item as any).tempId || '';
+    const key = driverExpansionKey(lineItemIdActive, item.productPartNo, activeComponent.componentId, customerId, activeComponent.dataDriverPath, fieldsOverrideHash(activeComponent.fields as any[]));
     return driverExpansions?.[key];
   })();
 
@@ -1033,11 +1061,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     // 按 rowCount 迭代 driver 展开行，每行用各自的 basicDataValues。
     // 不传 driverExpansion 时会退化为按 comp.rows 迭代 + 全局 path cache（旧行为，含量取首值），
     // 列小计与产品小计因此曾经各算各的（见反模式 AP-18）。
+    // Bug B: lineItemId = item.id || item.tempId || ''
+    const lineItemIdSub = (item as any).id || (item as any).tempId || '';
     const expansion = (item.productPartNo && comp.componentId)
-      ? driverExpansions?.[driverExpansionKey(item.productPartNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]))]
+      ? driverExpansions?.[driverExpansionKey(lineItemIdSub, item.productPartNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]))]
       : undefined;
     const subtotal = computeTabSubtotal(
       comp, allComponentSubtotals, undefined, undefined, item.productPartNo, expansion,
+      globalVariableDefs,
     );
     if (comp.componentId) allComponentSubtotals[comp.componentId] = subtotal;
     if (comp.componentCode) allComponentSubtotals[comp.componentCode] = subtotal;
@@ -1385,7 +1416,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       const cache = computeAllFormulas(
                         activeComponent, r.row, allComponentSubtotals,
                         undefined, undefined, item.productPartNo, r.basicDataValues,
-                        prevRowSubtotal,
+                        prevRowSubtotal, globalVariableDefs,
                       );
                       preComputedCaches.push(cache);
                       if (subtotalFieldName && typeof cache[subtotalFieldName] === 'number') {
@@ -1399,11 +1430,38 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       {activeComponent.fields.map(field => {
                         const key = field.name || field.key || '';
                         const loadingKey = `${activeTab}-${rowIndex}-${field.name}`;
-                        const errorKey = loadingKey;
                         const isRequiredEmpty =
                           field.field_type === 'DATA_SOURCE' &&
                           field.is_required &&
                           row[key] == null;
+                        // ElementPriceHint: INPUT_NUMBER 类型元素单价字段的特殊提示（编辑页专属）
+                        const elementName: string | undefined = row.element_name || undefined;
+                        const isUnitPriceField =
+                          field.is_amount === true ||
+                          key === 'unit_price' ||
+                          key === 'element_actual_unit_price';
+                        const showElementHint = !!(elementName && isUnitPriceField
+                          && (field.field_type === 'INPUT_NUMBER' || field.field_type === 'INPUT'));
+
+                        const cellCtx: CellContext = {
+                          basicDataValues,
+                          pathCacheState,
+                          formulaCache,
+                          partNo: item.productPartNo,
+                          activeComponent,
+                          activeDriverExpansion,
+                          isListFormulaBound,
+                          isDriverBound,
+                          listFormulaItem,
+                          listFormulaField,
+                          configTemplates,
+                          globalVariableDefs,
+                          dsLoading,
+                          dsErrors,
+                          dsStateKey: `${activeTab}-${rowIndex}`,
+                          onCellChange: (ri, k, val) => handleRowChange(activeTab, ri, k, val),
+                          onCellBlur: (ri, k) => handleInputBlur(activeTab, ri, k),
+                        };
                         return (
                           <td
                             key={key}
@@ -1413,285 +1471,28 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                               isRequiredEmpty ? 'qt-ds-required-empty' : '',
                             ].filter(Boolean).join(' ') || undefined}
                           >
-                            {field.field_type === 'LIST_FORMULA' && field.list_formula_config && listFormulaItem ? (
-                              (() => {
-                                const cfg = field.list_formula_config!;
-                                const rule = cfg.per_item_rules[listFormulaItem.code];
-                                // 收集本行字段值给 condition & formula 求值用
-                                const rowFieldValues: Record<string, any> = {};
-                                for (const f of activeComponent.fields) {
-                                  if (f.field_type === 'LIST_FORMULA') continue;
-                                  const k = f.name || f.key || '';
-                                  if (k) rowFieldValues[k] = row[k];
-                                }
-                                // 1) branches 按顺序求 condition, 第一个 true 取 formula
-                                let chosenFormula: string | null = null;
-                                if (rule) {
-                                  for (const b of rule.branches) {
-                                    if (evaluateCondition(b.condition, rowFieldValues)) {
-                                      chosenFormula = b.formula;
-                                      break;
-                                    }
-                                  }
-                                  // 2) 全不命中 → default_formula
-                                  if (chosenFormula == null && rule.default_formula) {
-                                    chosenFormula = rule.default_formula;
-                                  }
-                                }
-                                // 3) 仍无 → item.default_value (config_item)
-                                if (chosenFormula == null) {
-                                  chosenFormula = listFormulaItem.defaultValue || null;
-                                }
-                                if (!chosenFormula || !chosenFormula.trim()) {
-                                  return <span className="qt-ds-placeholder">—</span>;
-                                }
-                                // V207 (2026-05-19): 改 require() → 顶部 ESM import.
-                                // Vite ESM bundle 里 require 不可用, 老代码会一直抛 ReferenceError → catch → "—".
-                                try {
-                                  const v = evaluateListFormulaString(
-                                    chosenFormula,
-                                    rowFieldValues,
-                                    {},  // 列表项原生列 Phase B 不参与公式 (条件用 [字段] 引用本行)
-                                    '',
-                                    {},  // global_vars - Phase C 接入
-                                  );
-                                  if (v == null) return <span className="qt-ds-placeholder">—</span>;
-                                  return <span className="qt-formula-cell-value" title={`📋 [${listFormulaItem.code}] ${chosenFormula}`}>{v}</span>;
-                                } catch {
-                                  return <span className="qt-ds-placeholder">—</span>;
-                                }
-                              })()
-                            ) : field.field_type === 'FORMULA' ? (
-                              <span className="qt-formula-cell-value">
-                                {formulaCache[field.name] != null ? formulaCache[field.name] : '—'}
-                              </span>
-                            ) : field.field_type === 'BASIC_DATA' ? (
-                              (() => {
-                                const path = field.basic_data_path ?? '';
-                                if (!path) return <span className="qt-ds-placeholder">未配置路径</span>;
-                                // Y1.5: 优先从 driver 展开结果取(已隐式 JOIN driver 行)
-                                if (basicDataValues) {
-                                  const lookupKey = bnfDriverLookupKey(path);
-                                  if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
-                                    const v = (basicDataValues as Record<string, any>)[lookupKey];
-                                    const formatted = formatPathValue(v);
-                                    if (formatted === null) return <span className="qt-ds-placeholder">—</span>;
-                                    const isMulti = Array.isArray(v) && v.length > 1;
-                                    if (isMulti) {
-                                      const tooltip = v.map((it: any) => formatPathValue(it) ?? '—').join(' / ');
-                                      return <span className="qt-ds-value" title={tooltip}>{formatted}</span>;
-                                    }
-                                    return <span className="qt-ds-value">{formatted}</span>;
-                                  }
-                                  return <span className="qt-ds-loading">加载中…</span>;
-                                }
-                                // V118: 第二优先级 — 直接从 row 数据取. row_data 已经按 driver 行展开存了
-                                // 标量值 (snapshotRows 写入), 不该再去 globalPathCache 取 N 行 array
-                                // 显示成 "(共N项)" — 那是新建未保存态才用的最终兜底.
-                                const fieldKey = field.name || field.key || '';
-                                if (fieldKey) {
-                                  const rowVal = (row as Record<string, any>)[fieldKey];
-                                  if (rowVal !== undefined && rowVal !== null && rowVal !== '') {
-                                    // 标量值 / 单元素 array 都直接展示
-                                    const formatted = formatPathValue(rowVal);
-                                    if (formatted !== null) {
-                                      const isMulti = Array.isArray(rowVal) && rowVal.length > 1;
-                                      if (isMulti) {
-                                        const tooltip = rowVal.map((it: any) => formatPathValue(it) ?? '—').join(' / ');
-                                        return <span className="qt-ds-value" title={tooltip}>{formatted}</span>;
-                                      }
-                                      return <span className="qt-ds-value">{formatted}</span>;
-                                    }
-                                  }
-                                }
-                                // LIST_FORMULA 驱动的行 — 第二优先级 row[key] 已查过, 不再走 globalPathCache
-                                // (那是按 partNo 查物理表的兜底, LIST_FORMULA 行不属于物理料号上下文, 必然 cache miss → 永久"加载中")
-                                if (isListFormulaBound) {
-                                  return <span className="qt-ds-placeholder">—</span>;
-                                }
-                                // V196 (B4 fix 2026-05-19): driver 已 fetch 但返 0 行 → 该 Tab 没数据,
-                                // 不该再去 globalPathCache 兜底 (cache miss 必然永久"加载中").
-                                // autoSave 留的空 row + driver=0 行的"鬼魂"行场景: 直接显示 "—".
-                                if (
-                                  activeComponent.dataDriverPath
-                                  && activeDriverExpansion
-                                  && activeDriverExpansion.rowCount === 0
-                                ) {
-                                  return <span className="qt-ds-placeholder">—</span>;
-                                }
-                                // 第三优先级 — globalPathCache (新建未保存或 row_data 缺字段时的兜底)
-                                const cacheKey = `${item.productPartNo ?? ''}::${path}`;
-                                const cache = getGlobalPathCache() as Record<string, any>;
-                                if (!Object.prototype.hasOwnProperty.call(cache, cacheKey)) {
-                                  return <span className="qt-ds-loading">加载中…</span>;
-                                }
-                                const v = cache[cacheKey];
-                                const formatted = formatPathValue(v);
-                                if (formatted === null) return <span className="qt-ds-placeholder">—</span>;
-                                // 多值时加 tooltip 显示完整列表
-                                const isMulti = Array.isArray(v) && v.length > 1;
-                                if (isMulti) {
-                                  const tooltip = v.map((it: any) => formatPathValue(it) ?? '—').join(' / ');
-                                  return <span className="qt-ds-value" title={tooltip}>{formatted}</span>;
-                                }
-                                return <span className="qt-ds-value">{formatted}</span>;
-                              })()
-                            ) : field.field_type === 'DATA_SOURCE' ? (
-                              (() => {
-                                // H2/K hotfix: DATA_SOURCE 多 type 分发
-                                const dsBindingType = field.datasource_binding?.type;
-                                // GLOBAL_VARIABLE / BNF_PATH 直接走 driver expand 合成 key, 不走老 dsLoading 状态机
-                                if (dsBindingType === 'GLOBAL_VARIABLE') {
-                                  const code = field.datasource_binding?.global_variable_code;
-                                  if (basicDataValues && code) {
-                                    // 2026-05-19 修: 统一处理"@gvar key 缺失" vs "key 存在但 value null"
-                                    // — 两者都视为未解析, 都走 content/row 兜底链. (例: 成材率 content=100,
-                                    // GV 后端解析返 null 时也该显示 100, 不该显示 '—'.)
-                                    const gvKey = `@gvar:${code}`;
-                                    if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
-                                      const v = basicDataValues[gvKey];
-                                      const formatted = formatPathValue(v);
-                                      if (formatted != null) {
-                                        return <span className="qt-ds-value" title={`🌐 ${code}`}>{formatted}</span>;
-                                      }
-                                      // value null/empty → 下沉到兜底链
-                                    }
-                                    // 回退链: field.content 兜底 → row[key] 用户输入 → '—'
-                                    if (field.content != null && field.content !== '') {
-                                      return <span className="qt-ds-value" title={`🌐 ${code} (默认)`}>{field.content}</span>;
-                                    }
-                                    if (row[key] != null && row[key] !== '') {
-                                      return <span className="qt-ds-value">{String(row[key])}</span>;
-                                    }
-                                    return <span className="qt-ds-placeholder">—</span>;
-                                  }
-                                  // LIST_FORMULA 驱动行 — 没有 driver expansion, 也不算"加载中": content/row 兜底
-                                  if (isListFormulaBound) {
-                                    if (field.content != null && field.content !== '') {
-                                      return <span className="qt-ds-value" title={`🌐 ${code} (默认)`}>{field.content}</span>;
-                                    }
-                                    if (row[key] != null && row[key] !== '') {
-                                      return <span className="qt-ds-value">{String(row[key])}</span>;
-                                    }
-                                    return <span className="qt-ds-placeholder">—</span>;
-                                  }
-                                  // basicDataValues 未到位 (expansion 仍在 fetch) → 真 loading
-                                  return <span className="qt-ds-loading">加载中…</span>;
-                                }
-                                if (dsBindingType === 'BNF_PATH') {
-                                  const path = field.datasource_binding?.bnf_path;
-                                  if (basicDataValues && path) {
-                                    const lk = bnfDriverLookupKey(path);
-                                    if (Object.prototype.hasOwnProperty.call(basicDataValues, lk)) {
-                                      const v = (basicDataValues as Record<string, any>)[lk];
-                                      const formatted = formatPathValue(v);
-                                      if (formatted == null) return <span className="qt-ds-placeholder">—</span>;
-                                      return <span className="qt-ds-value">{formatted}</span>;
-                                    }
-                                    // 同 GLOBAL_VARIABLE 分支: 已加载但缺键 → 回退到 row[key] 而非"加载中"
-                                    if (row[key] != null && row[key] !== '') {
-                                      return <span className="qt-ds-value">{String(row[key])}</span>;
-                                    }
-                                    return <span className="qt-ds-placeholder">—</span>;
-                                  }
-                                  return <span className="qt-ds-loading">加载中…</span>;
-                                }
-                                if (dsBindingType === 'HTTP_API') {
-                                  // HTTP_API 走 onResolve 端点, 暂用 row 缓存; 否则提示需调用解析
-                                  return row[key] != null
-                                    ? <span className="qt-ds-value">{String(row[key])}</span>
-                                    : <span className="qt-ds-placeholder">— (待解析)</span>;
-                                }
-                                // 缺省 DATABASE_QUERY (老逻辑): 走 dsLoading 状态机 + row[key]
-                                if (dsLoading[loadingKey]) {
-                                  return <span className="qt-ds-loading">查询中...</span>;
-                                }
-                                if (dsErrors[errorKey]) {
-                                  return <span className="qt-ds-error" title={dsErrors[errorKey]}>查询失败</span>;
-                                }
-                                if (row[key] != null) {
-                                  return <span className="qt-ds-value">{typeof row[key] === 'object' ? JSON.stringify(row[key]) : row[key]}</span>;
-                                }
-                                return <span className="qt-ds-placeholder">—</span>;
-                              })()
-                            ) : (() => {
-                              const isNumber = field.field_type === 'INPUT_NUMBER' || field.is_amount;
-                              // 元素行：row.element_name 有值，且当前字段是单价字段
-                              const elementName: string | undefined = row.element_name || undefined;
-                              const isUnitPriceField =
-                                field.is_amount === true ||
-                                key === 'unit_price' ||
-                                key === 'element_actual_unit_price';
-                              const showElementHint = !!(elementName && isUnitPriceField);
-                              // V190 默认值兜底链 (与 computeAllFormulas 同款):
-                              //   default_source.GLOBAL_VARIABLE → '@gvar:CODE'
-                              //   default_source.BNF_PATH        → bnfDriverLookupKey / pathCache
-                              //   field.content                  → 静态
-                              const rawCell = row[key];
-                              const isEmpty = rawCell === undefined || rawCell === null || rawCell === '';
-                              let defaultLabel: string | undefined;
-                              let defaultVarCode: string | undefined;
-                              if (isEmpty && field.field_type === 'INPUT_NUMBER') {
-                                let defVal: any = undefined;
-                                const ds = field.default_source;
-                                if (ds && basicDataValues) {
-                                  if (ds.type === 'GLOBAL_VARIABLE' && ds.code) {
-                                    const gvKey = `@gvar:${ds.code}`;
-                                    if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
-                                      const v = (basicDataValues as Record<string, any>)[gvKey];
-                                      if (v != null && !(Array.isArray(v) && v.length === 0)) {
-                                        defVal = v;
-                                        defaultVarCode = ds.code;
-                                      }
-                                    }
-                                  } else if (ds.type === 'BNF_PATH' && ds.path) {
-                                    const lk = bnfDriverLookupKey(ds.path);
-                                    if (Object.prototype.hasOwnProperty.call(basicDataValues, lk)) {
-                                      const v = (basicDataValues as Record<string, any>)[lk];
-                                      if (v != null && !(Array.isArray(v) && v.length === 0)) defVal = v;
-                                    }
-                                    if (defVal === undefined) {
-                                      const cache = getGlobalPathCache() as Record<string, any>;
-                                      const v = cache[`${item.productPartNo ?? ''}::${ds.path}`];
-                                      if (v != null && !(Array.isArray(v) && v.length === 0)) defVal = v;
-                                    }
-                                  }
-                                }
-                                if (defVal != null) {
-                                  const formatted = formatPathValue(defVal);
-                                  if (formatted != null) defaultLabel = formatted;
-                                } else if (field.content != null && field.content !== '') {
-                                  defaultLabel = String(field.content);
-                                }
-                              }
-                              const placeholder = defaultLabel
-                                ? (defaultVarCode
-                                    ? `默认 ${defaultLabel} · ${defaultVarCode}`
-                                    : `默认 ${defaultLabel}`)
-                                : undefined;
-                              const input = (
-                                <input
-                                  type={isNumber ? 'number' : 'text'}
-                                  step={isNumber ? 'any' : undefined}
-                                  value={rawCell ?? ''}
-                                  placeholder={placeholder}
-                                  title={placeholder}
-                                  onChange={e => {
-                                    const val = e.target.value;
-                                    if (isNumber && val !== '' && !/^-?\d*\.?\d*$/.test(val)) return;
-                                    handleRowChange(activeTab, rowIndex, key, val);
-                                  }}
-                                  onBlur={() => handleInputBlur(activeTab, rowIndex, key)}
+                            {showElementHint ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'nowrap' }}>
+                                <ComponentCell
+                                  field={field}
+                                  row={row}
+                                  rowIndex={rowIndex}
+                                  fieldKey={key}
+                                  readonly={false}
+                                  context={cellCtx}
                                 />
-                              );
-                              if (!showElementHint) return input;
-                              return (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'nowrap' }}>
-                                  {input}
-                                  <ElementPriceHint elementName={elementName!} />
-                                </div>
-                              );
-                            })()}
+                                <ElementPriceHint elementName={elementName!} />
+                              </div>
+                            ) : (
+                              <ComponentCell
+                                field={field}
+                                row={row}
+                                rowIndex={rowIndex}
+                                fieldKey={key}
+                                readonly={false}
+                                context={cellCtx}
+                              />
+                            )}
                           </td>
                         );
                       })}
@@ -1811,10 +1612,27 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   const { user } = useAuthStore();
   const isSalesRep = user?.role === 'SALES_REP';
 
+  // 动态 key 全局变量定义字典 — 供 formulaEngine 运行时 path 重写使用
+  // 空 map = 动态 key token 兜底 0 (旧行为); list() 失败时同样兜底 0 不影响静态 key 场景
+  const [gvDefs, setGvDefs] = useState<Record<string, GlobalVariableDefinition>>({});
+  useEffect(() => {
+    globalVariableService.list()
+      .then((res: any) => {
+        const arr: GlobalVariableDefinition[] = Array.isArray(res) ? res
+          : Array.isArray(res?.data) ? res.data
+          : [];
+        const map: Record<string, GlobalVariableDefinition> = {};
+        for (const d of arr) { if (d?.code) map[d.code] = d; }
+        setGvDefs(map);
+      })
+      .catch(() => setGvDefs({}));
+  }, []);
+
   // BNF 路径异步求值缓存(Phase A4)— 公式含 path token 时,后端按 (partNo, path) 求值后写入模块级 cache
   // ProductCard 子组件中的 evaluateExpression 在不传 pathCache 时回退到模块级(setGlobalPathCache),
   // 此处保留 hook 调用以触发后台求值 + 组件 re-render
-  usePathFormulaCache(lineItems, customerId);
+  // 2026-05-20: 接收返值供 LIST_FORMULA cell BNF path fallback 使用 (driver expand 注入驱动列谓词查空时)
+  const quotationPathCache = usePathFormulaCache(lineItems, customerId, gvDefs);
   // 核价单视图同样需要按 costing 模板下的 path token 求值；hook 内部基于 (partNo, path) 缓存，
   // 与 quote 侧调用结果合并到同一全局 cache，互不冲突
   // 调用位置在 costingLineItems 声明之后
@@ -2042,7 +1860,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   }, [quoteLineItems, onUpdateLineItem]);
 
   // 核价单视图的 path token 求值缓存（与上方 quote 侧 hook 调用合并到同一 globalPathCache）
-  usePathFormulaCache(costingLineItems, customerId);
+  usePathFormulaCache(costingLineItems, customerId, gvDefs);
 
   // Y1.5: 行驱动展开 — 含 dataDriverPath 的组件按后端返回的 N 行渲染,BASIC_DATA 值直接来自此 hook
   // 报价单卡片所需的展开（按 customerTemplate 视图下的 componentData 收集）
@@ -2245,6 +2063,8 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
                 quotationId={quotationId}
                 driverExpansions={driverExpansions}
                 configTemplates={configTemplates}
+                pathCacheState={quotationPathCache}
+                globalVariableDefs={gvDefs}
               />
             ))}
           </div>
@@ -2283,6 +2103,8 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
               quotationId={quotationId}
               driverExpansions={driverExpansions}
               configTemplates={configTemplates}
+              pathCacheState={quotationPathCache}
+              globalVariableDefs={gvDefs}
             />
           ))}
         </div>

@@ -37,6 +37,7 @@ public class TableRegistry {
             new TableMeta("mat_plating_plan",               "电镀方案 (报价)",      "GLOBAL",   false, true,  "id",             "plan_code"),
             new TableMeta("mat_customer_part_mapping",      "客户料号映射",         "CUSTOMER", true,  true,  "id",             "hf_part_no"),
             new TableMeta("mat_process",                    "工艺基础",             "CUSTOMER", true,  true,  "id",             "hf_part_no"),
+            new TableMeta("mat_composite_process",          "组合工艺 (跨子件)",    "GLOBAL",   false, true,  "id",             "hf_part_no"),
             new TableMeta("mat_fee",                        "料号费用",             "CUSTOMER", true,  true,  "id",             "hf_part_no"),
             new TableMeta("plating_fee",                    "电镀费用 (V125 弃用)", "CUSTOMER", true,  true,  "id",             "hf_part_no"),
             new TableMeta("mat_plating_fee",                "电镀费用 (报价)",      "CUSTOMER", true,  true,  "id",             "hf_part_no"),

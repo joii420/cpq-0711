@@ -49,7 +49,12 @@ function shortHash(s: string): string {
   return Math.abs(h).toString(36);
 }
 
-/** 把 fields 数组中影响 expand 解析结果的元数据(name + field_type + 路径绑定)序列化成 hash. */
+/** 把 fields 数组中影响 expand 解析结果的元数据(name + field_type + 路径绑定)序列化成 hash.
+ *
+ * 2026-05-22: 加入 BASIC_DATA 字段的 global_variable_code (AP-45 双轨修复)。
+ * BASIC_DATA + global_variable_code 复合配置下，后端需要在 batchExpand 时同时返回
+ * @gvar:CODE key，fieldsHash 加入此维度避免缓存命中错误（同 cid 不同 gvar_code 场景）。
+ */
 export function fieldsOverrideHash(fields: any[] | undefined): string {
   if (!fields || fields.length === 0) return '';
   const parts = fields.map((f: any) => {
@@ -59,6 +64,8 @@ export function fieldsOverrideHash(fields: any[] | undefined): string {
       f.name || '',
       f.field_type || '',
       f.basic_data_path || '',
+      // BASIC_DATA 字段的全局变量 code（AP-45 新增维度，避免同 cid 不同 gvar_code 缓存冲突）
+      (f.field_type === 'BASIC_DATA' ? (f.global_variable_code || '') : ''),
       ds.type || '',
       ds.bnf_path || '',
       ds.global_variable_code || '',
@@ -78,14 +85,28 @@ export function fieldsOverrideHash(fields: any[] | undefined): string {
  * cache slot, batchExpand 返不同 basicDataValues → 后写覆盖先写, 渲染层永久"加载中".
  *
  * 修法: 加 fieldsHash 维度 (基于 name + field_type + 各 path/code 绑定).
+ *
+ * Bug B (2026-05-20): 6 维 cache key (加 lineItemId).
+ *
+ * 背景: 同一报价单内两条相同 productPartNo 的 lineItem (例：同产品报两个数量),
+ * 5 维 key 完全相同 → 共用同一 cache slot → 其中一条的 driver 展开结果被另一条覆盖
+ * → 报价单修改后展开数据错乱。
+ *
+ * 修法: 加 lineItemId 作第一维 (item.id || item.tempId || '')。
+ * - item.id: 后端持久化后的稳定 UUID
+ * - item.tempId: 新建未保存时由前端 crypto.randomUUID() 生成的临时 id
+ * - 两者均无时退化为空串 (SIMPLE 单产品常见，此时退化为旧 5 维行为)
+ *
+ * invalidate(partNos) 改为按 key 的第 2 维 (partNo) 匹配，保持业务语义不变。
  */
 export const driverExpansionKey = (
+  lineItemId: string,
   partNo: string,
   componentId: string,
   customerId?: string,
   dataDriverPath?: string,
   fieldsHash?: string,
-) => `${partNo}::${componentId}::${customerId ?? ''}::${dataDriverPath ?? ''}::${fieldsHash ?? ''}`;
+) => `${lineItemId}::${partNo}::${componentId}::${customerId ?? ''}::${dataDriverPath ?? ''}::${fieldsHash ?? ''}`;
 
 /** 空展开兜底值（避免反复重试同一失败 key） */
 const EMPTY_EXPANSION: DriverExpansion = { rowCount: 0, rows: [] };
@@ -121,7 +142,8 @@ export function useDriverExpansions(
       const setOfPartNos = new Set(partNos);
       const next: DriverExpansionMap = {};
       for (const [k, v] of Object.entries(prev)) {
-        const partNoOfKey = k.split('::')[0];
+        // Bug B: key 结构变为 lineItemId::partNo::componentId::..., partNo 在第 2 维 (index 1)
+        const partNoOfKey = k.split('::')[1];
         if (!setOfPartNos.has(partNoOfKey)) next[k] = v;
       }
       cacheRef.current = next;
@@ -137,15 +159,39 @@ export function useDriverExpansions(
   // useEffect 不重跑 → 不重 fetch → 缓存卡在 enrich 前的"错"数据 (mat_process keys + 缺 @gvar).
   // 现把 driver_path + fields 数 也进 fingerprint, 任一变化都触发 tasks 重算.
   const fingerprint = useMemo(() => {
+    // 预建 parentId -> childIds 映射用于 fingerprint（确保子件 ID 集变化时父级也重 fetch）
+    const childIdMap: Record<string, string[]> = {};
+    for (const li of lineItems || []) {
+      const parentId = (li as any).parentLineItemId as string | undefined;
+      const itemId = (li as any).id as string | undefined;
+      if (parentId && itemId) {
+        if (!childIdMap[parentId]) childIdMap[parentId] = [];
+        childIdMap[parentId].push(itemId);
+      }
+    }
     return JSON.stringify(
-      (lineItems || []).map((li) => ({
-        pn: li.productPartNo,
-        pv: li.partVersionLocked ?? null,
-        comps: (li.componentData || [])
-          .filter((cd) => cd.componentId && cd.componentType !== 'SUBTOTAL')
-          .map((cd) => `${cd.componentId}::${cd.dataDriverPath || ''}::${fieldsOverrideHash((cd.fields || []) as any[])}`)
-          .sort(),
-      })),
+      (lineItems || []).map((li) => {
+        const liId = (li as any).id || (li as any).tempId || '';
+        const compositeType = (li as any).compositeType as string | undefined;
+        // COMPOSITE 父级: 把子件 ID 列表也纳入 fingerprint，子件 ID 变化 → 父级 tasks 重建 → 重 fetch
+        const childIds = (compositeType === 'COMPOSITE' && liId)
+          ? (childIdMap[liId] || []).sort().join(',')
+          : '';
+        return {
+          // Bug B: 加 lineItemId 维度，使同 partNo 的两条行产生不同 fingerprint → 各自独立 fetch
+          lid: liId,
+          pn: li.productPartNo,
+          pv: li.partVersionLocked ?? null,
+          // COMPOSITE 父级子件 ID 集变化时 fingerprint 变 → tasks 重建 → 重 fetch (消除缓存旧子件集)
+          cids: childIds,
+          comps: (li.componentData || [])
+            .filter((cd) => cd.componentId && cd.componentType !== 'SUBTOTAL')
+            .map((cd: any) => {
+              return `${cd.componentId}::${cd.dataDriverPath || ''}::${fieldsOverrideHash(cd.fields || [])}`;
+            })
+            .sort(),
+        };
+      }),
     );
   }, [lineItems]);
 
@@ -164,8 +210,29 @@ export function useDriverExpansions(
   // "加载中…"占位 ~100-500ms (enrich 期间). enrich 完成 → fingerprint 变 → tasks 重算 →
   // batch fire with override → 正确数据.
   const tasks = useMemo(() => {
+    // 预建 parentLineItemId → [child lineItemId] 映射，用于 COMPOSITE 父级传子件 ID 列表
+    const childIdsByParent: Record<string, string[]> = {};
+    for (const item of lineItems || []) {
+      const parentId = (item as any).parentLineItemId as string | undefined;
+      const itemId = (item as any).id as string | undefined;
+      if (parentId && itemId) {
+        if (!childIdsByParent[parentId]) childIdsByParent[parentId] = [];
+        childIdsByParent[parentId].push(itemId);
+      }
+    }
+
     const out: Array<{
       key: string; componentId: string; partNo: string; partVersion: number | null;
+      /** Bug B: lineItemId 传入 batchExpand HTTP body，后端按此隔离同 partNo 多行展开结果 */
+      lineItemId: string;
+      /** compositeType 传入后端：COMPOSITE 父级跳过 lineItemId 注入，SIMPLE/null 必须注入 */
+      compositeType?: string;
+      /**
+       * COMPOSITE 父级的子件 lineItemId 列表。
+       * 后端用于向 v_composite_child_* 路径注入 quotation_line_item_id IN (...) 谓词，
+       * 只返回当前报价单子件自己的工序行，消除历史累积（236 行 bug 根因）。
+       */
+      childLineItemIds?: string[];
       overrideDataDriverPath?: string;
       overrideFieldsJson?: string;
     }> = [];
@@ -176,18 +243,31 @@ export function useDriverExpansions(
       for (const comp of item.componentData || []) {
         if (!comp.componentId) continue;
         if (comp.componentType === 'SUBTOTAL') continue;
+        const effectiveDriver = comp.dataDriverPath || undefined;
+        const effectiveFields = comp.fields;
         // 跳过 enrich 前的 raw 数据: fields/driverPath 都没 → 没法做有意义的 expand
-        const hasDriver = !!(comp.dataDriverPath && comp.dataDriverPath.length > 0);
-        const hasFields = !!(comp.fields && comp.fields.length > 0);
+        const hasDriver = !!(effectiveDriver && effectiveDriver.length > 0);
+        const hasFields = !!(effectiveFields && (effectiveFields as any[]).length > 0);
         if (!hasDriver && !hasFields) continue;
-        const fieldsHash = fieldsOverrideHash(comp.fields as any[]);
-        const key = driverExpansionKey(item.productPartNo, comp.componentId, customerId, comp.dataDriverPath, fieldsHash);
+        const fieldsHash = fieldsOverrideHash(effectiveFields as any[]);
+        // Bug B: lineItemId = item.id (持久化后) || item.tempId (新建时) || '' (退化为旧行为)
+        const lineItemId = (item as any).id || (item as any).tempId || '';
+        // compositeType: COMPOSITE 父级跳过 lineItemId 注入 (聚合子件工序); SIMPLE/undefined 必须注入
+        const compositeType = (item as any).compositeType as string | undefined;
+        // COMPOSITE 父级: 计算子件 lineItemId 列表，传给后端注入 IN 谓词（消除历史累积）
+        const childLineItemIds = (compositeType === 'COMPOSITE' && lineItemId)
+          ? (childIdsByParent[lineItemId] || [])
+          : undefined;
+        const key = driverExpansionKey(lineItemId, item.productPartNo, comp.componentId, customerId, effectiveDriver, fieldsHash);
         if (seen.has(key)) continue;
         seen.add(key);
         out.push({
           key, componentId: comp.componentId, partNo: item.productPartNo, partVersion,
-          overrideDataDriverPath: comp.dataDriverPath || undefined,
-          overrideFieldsJson: hasFields ? JSON.stringify(comp.fields) : undefined,
+          lineItemId,
+          compositeType,
+          childLineItemIds: childLineItemIds && childLineItemIds.length > 0 ? childLineItemIds : undefined,
+          overrideDataDriverPath: effectiveDriver,
+          overrideFieldsJson: hasFields ? JSON.stringify(effectiveFields) : undefined,
         });
       }
     }
@@ -214,6 +294,15 @@ export function useDriverExpansions(
       partNo: t.partNo,
       // 传入版本号，后端注入 AND part_version=N 谓词，避免历史版本数据叠加重复
       partVersion: t.partVersion,
+      // Bug B: 传入 lineItemId，后端 BatchExpandRequest 收到后可按此隔离同 partNo 多行
+      // 老后端 Jackson @JsonIgnoreProperties 默认忽略未知字段，不会报 400
+      lineItemId: t.lineItemId || null,
+      // compositeType 修复: COMPOSITE 父级 + v_composite_child_* 路径时跳过 lineItemId 注入
+      // SIMPLE/undefined 则注入 lineItemId 防止累积全量历史工序行 (171 行 bug 根因)
+      compositeType: t.compositeType || null,
+      // COMPOSITE 父级子件 lineItemId IN 谓词: 限定只返回当前报价单子件自己的工序行 (消除历史累积)
+      // 无 childLineItemIds (SIMPLE/PART/新建未持久化) → 后端忽略，走原有逻辑
+      childLineItemIds: t.childLineItemIds || null,
       // V195 hotfix: 让 snapshot driver_path / fields 作为 backend expand 真理源
       overrideDataDriverPath: t.overrideDataDriverPath,
       overrideFieldsJson: t.overrideFieldsJson,

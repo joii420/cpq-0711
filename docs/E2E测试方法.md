@@ -186,7 +186,16 @@ async function countLoading(page, tag) {
 
 **断言**：业务流程任何 happy-path 截图，`'加载中'` 计数应该 = 0。出现非 0 = 走到了"加载中…"永久占位（AP-31/37/38 任一根因）。
 
-### 4.4 报价单完整流程模板
+### 4.4 报价单完整流程模板（**SIMPLE / COMPOSITE 双 spec**）
+
+CPQ 报价单两套 E2E 标杆 spec, 双形态测试矩阵:
+
+| spec | 产品形态 | 关键流程 |
+|---|---|---|
+| `cpq-frontend/e2e/quotation-flow.spec.ts` | SIMPLE 独立产品 | 1 配件 existing 3120012574 + 3 工序 |
+| `cpq-frontend/e2e/composite-product-flow.spec.ts` | COMPOSITE 组合产品 | 2 配件 (1 existing + 1 custom AgCu90) + 3 工序 × 2 + 组合工艺 RIVET |
+
+**字段类型变动 / 双轨字段改动必须跑两个 spec** (详见 [同模板双轨支持组合产品.md](./同模板双轨支持组合产品.md))。
 
 复用 `cpq-frontend/e2e/quotation-flow.spec.ts`（已验证版），按业务流程剪裁/扩展：
 
@@ -368,18 +377,20 @@ lfDebug.forEach(e => console.log('  🟡 ' + e.slice(0, 350)));
 
 PR 涉及以下文件 / 主题时，**必须跑 E2E 并附截图证据**：
 
-- [ ] `cpq-frontend/src/pages/quotation/useDriverExpansions.ts`（cache key / fingerprint / **fieldsOverrideHash**）
+- [ ] `cpq-frontend/src/pages/quotation/useDriverExpansions.ts`（cache key / fingerprint / **fieldsOverrideHash** / **双轨 compositeType 切换 2026-05-20**）
 - [ ] `cpq-frontend/src/pages/quotation/usePathFormulaCache.ts`（路径采集）
-- [ ] `cpq-frontend/src/pages/quotation/QuotationStep2.tsx`（渲染分支 / computeAllFormulas / normalizeFieldType / **报价单+核价单两个 ProductCard prop 必须同步**）
-- [ ] `cpq-frontend/src/pages/quotation/QuotationWizard.tsx`（enrich / loadQuotation / onConfigureConfirm）
-- [ ] `cpq-frontend/src/pages/quotation/ReadonlyProductCard.tsx`（详情页 enrich 同源）
-- [ ] `cpq-frontend/src/pages/quotation/BulkImportPartsDrawer.tsx`（builder mapper）
-- [ ] `cpq-frontend/src/pages/component/types.ts`（FieldItem 联合类型 / FormulaToken）
+- [ ] `cpq-frontend/src/pages/quotation/QuotationStep2.tsx`（渲染分支 / computeAllFormulas / normalizeFieldType / **报价单+核价单两个 ProductCard prop 必须同步** / **双轨 isCompositeItem 参数 2026-05-20**）
+- [ ] `cpq-frontend/src/pages/quotation/QuotationWizard.tsx`（enrich / loadQuotation / onConfigureConfirm / **双轨字段透传**）
+- [ ] `cpq-frontend/src/pages/quotation/ReadonlyProductCard.tsx`（详情页 enrich 同源 / **双轨字段透传**）
+- [ ] `cpq-frontend/src/pages/quotation/BulkImportPartsDrawer.tsx`（builder mapper / **双轨字段透传**）
+- [ ] `cpq-frontend/src/pages/component/types.ts`（FieldItem 联合类型 / FormulaToken / **basic_data_path_composite + dataDriverPathComposite**）
+- [ ] `cpq-frontend/src/pages/template/OverridesDrawer.tsx`（**双轨字段透传 toFieldItems + cleanFields**）
 - [ ] `cpq-backend/src/main/java/com/cpq/component/service/ComponentDriverService.java`（expand / parseBasicDataPaths / parseGvarDefaultTasks）
-- [ ] `cpq-backend/src/main/java/com/cpq/template/service/TemplateService.java`（**refreshSnapshotsByComponent 按 sortOrder 精确匹配 tc，AP-40**）
+- [ ] `cpq-backend/src/main/java/com/cpq/template/service/TemplateService.java`（**refreshSnapshotsByComponent 按 sortOrder 精确匹配 tc，AP-40** / **deleteTemplateComponentsBySortOrder + patchTemplateComponentCompositeOverrides admin endpoints**）
 - [ ] `cpq-backend/src/main/java/com/cpq/engine/formula/FormulaCalculationService.java`（token case 分支）
 - [ ] 模板 snapshot 数据迁移（Flyway V*）— 必须复测 multi-Tab 模板渲染
-- [ ] **任何字段类型变动 / 新增** — 详见 `docs/组件管理字段配置指南.md §十一 字段类型联动性矩阵` 15 处 + `docs/反模式.md AP-44`
+- [ ] **任何字段类型变动 / 新增** — 详见 `docs/组件管理字段配置指南.md §十一 字段类型联动性矩阵` 17 处 + `docs/反模式.md AP-44`
+- [ ] **同模板双轨改动 (SIMPLE/COMPOSITE 共用)** — 详见 [`docs/同模板双轨支持组合产品.md`](./同模板双轨支持组合产品.md) + `docs/反模式.md AP-45`
 
 **PR 描述必须含**：
 1. 修复前截图（至少 qf-19 确认添加后 + 出问题的 Tab）
@@ -436,6 +447,61 @@ npx playwright show-report cpq-frontend/e2e/report
 | 2026-05-19 | 报价单视图 `ProductCard` 漏传 `configTemplates` prop (AP-41) | 核价单视图正常 → 必须**两个视图都跑** E2E |
 | 2026-05-19 | effectiveRow `{...lfItem, ...rawRow}` 中 rawRow null 字段反向覆盖 lfItem (AP-42) | LF-DEBUG log row['工序代码']=null 才暴露; 截图只看到空白 |
 | 2026-05-19 | LIST_FORMULA 渲染分支 `require()` 在 Vite ESM 抛错 → catch → "—" (AP-43) | LF-EVAL log chosenFormula='50' 算对了但渲染 "—" — catch 静默吞错误 |
+| 2026-05-20 | LIST_FORMULA BNF lookup 拿不到 React state cache → 渲染 0 (AP-46) | API 看 expand-driver basicDataValues 字段有 key 但 value=null (driver 注入 seq_no 不匹配 Sn 行); 前端 pathCacheState 必须显式入参才能首渲染对 |
+| 2026-05-20 | LIST_FORMULA 单轨 formula 在 COMPOSITE 视角下查不到 mat_bom → 渲染 0 (AP-47) | API 直接 batch-evaluate 单值正确; cell render 时 partNo=CFG-COMBO-XXX 才暴露; 加 formula_composite 双轨解决 |
+| 2026-05-20 | `data_driver_path_composite` 只存 snapshot entry, publish/refresh 抹掉 (AP-48) | admin patch-composite 设值正确, 用户触发 refresh 才丢; 加 V205 tc 列 + 4 处协议传播解决 |
+
+---
+
+## 十二、2026-05-20 新增 E2E spec 速览
+
+### `yield-rate-bnf-formula.spec.ts` — LIST_FORMULA BNF 路径 + 双轨验证
+
+**场景**: 罗克韦尔 + v1.14 模板 + 独立产品 3120012574 + MRO-AS-0001, 验证成材率公式 `{mat_bom[element_name='Sn'].net_qty}*15` 渲染 = 19.3203。
+
+**触发跑 spec 的代码变动**:
+- 改 `formulaEngine.ts:evaluateListFormulaString` (入参 / fallback 链)
+- 改 `usePathFormulaCache.collectListFormulaBnfPaths`
+- 改 LIST_FORMULA 字段配置 (含 BNF path)
+
+**强断言**: `expect(numValue).toBeCloseTo(19.32, 1)`
+
+### `multi-product-flow.spec.ts` — 同模板 SIMPLE + COMPOSITE 多产品
+
+**场景**: 罗克韦尔 + v1.10 模板 + 产品1(独立 3120012574 + 总装配/部件装配) + 产品2(组合 3120012574+AgCu90 + 总装配/部件装配/电镀 + 铆接), 切到产品 1/产品 2 各 8 Tab 截图 + 统计渲染。
+
+**触发跑 spec 的代码变动**:
+- LIST_FORMULA formula_composite 改动 (AP-47)
+- driver_path_composite 改动 (AP-48 / V205)
+- createNewDraft 合并机制
+- v1.10 模板双轨字段补全
+
+**软断言** (expect.soft 收集所有问题再一起报): 每个产品所有 Tab 无 "加载中" / "#ERROR" / "(共 N 项)" 兜底显示。
+
+**自检截图**: `mpf-XX-pN-tab-{name}.png` 共 16+ 张, PR 必含。
+
+### `master-data-viewer.spec.ts` — 主数据查看页
+
+**场景**: 登录 → `/master-data/viewer` → 下拉切 4 张核心表 (mat_part/mat_bom/mat_process/mat_composite_process) + 系统字段开关验证。
+
+**触发跑 spec 的代码变动**:
+- `MasterDataTableViewerPage.tsx` 改动
+- `TableRegistry.java` 新增 / 删除注册表
+- master-data API 列发现逻辑
+
+**强断言**:
+- 4 表切换都能渲染表头
+- mat_part 隐藏系统字段时列数 < 显示时列数 (确保黑名单过滤生效)
+
+### 协议改动到 E2E 触发对照表
+
+| 协议改动 | 强制跑的 spec |
+|---------|-------------|
+| LIST_FORMULA 公式 / BNF path / formula_composite | `yield-rate-bnf-formula.spec.ts` + `multi-product-flow.spec.ts` |
+| `basic_data_path_composite` / `data_driver_path_composite` | `composite-product-flow.spec.ts` + `multi-product-flow.spec.ts` |
+| `template_component` schema 变动 (V205 等) | 全部 quotation-* spec |
+| `mat_part` 列变动 / TableRegistry 注册 | `master-data-viewer.spec.ts` |
+| `createNewDraft` 合并机制 | `multi-product-flow.spec.ts` + 手工建新版本 + 渲染 |
 
 ---
 

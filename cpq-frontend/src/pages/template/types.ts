@@ -37,6 +37,8 @@ export interface TemplateData {
   description?: string;
   usageNote?: string;
   status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+  /** 模板类型：QUOTATION(报价模板) / COSTING(核价模板) / EXCEL(Excel视图) */
+  templateKind?: 'QUOTATION' | 'COSTING' | 'EXCEL';
   version?: string;
   templateSeriesId?: string;
   productAttributes?: ProductAttribute[];

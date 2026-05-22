@@ -5,7 +5,9 @@ import com.cpq.globalvariable.GlobalVariableDefinition;
 import com.cpq.globalvariable.GlobalVariableService;
 import com.cpq.quotation.entity.QuotationLineComponentData;
 import com.cpq.quotation.entity.QuotationLineItem;
+import com.cpq.quotation.refdata.GlobalVariableDataLoader;
 import com.cpq.quotation.service.DriftDetectionService;
+import com.cpq.template.entity.TemplateGlobalVariableBinding;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -49,6 +51,13 @@ public class SnapshotCollectorService {
      */
     @Inject
     Instance<GlobalVariableService> globalVariableServiceRef;
+
+    /**
+     * V212: 全局变量全表数据加载器 (ADR-002 §3.4 引用数据快照).
+     * 用 Instance 包装避免循环依赖风险; collect() 末尾调用.
+     */
+    @Inject
+    Instance<GlobalVariableDataLoader> globalVariableDataLoaderRef;
 
     /**
      * 提交快照 DTO — 对应 submission_snapshot JSONB 的完整结构。
@@ -110,6 +119,10 @@ public class SnapshotCollectorService {
 
         // 8. snapshotAt
         String snapshotAt = OffsetDateTime.now().toString();
+
+        // 9. V212: bound_global_variables_snapshot — 冻结引用数据全表到独立列
+        //    只在末尾追加, 不改上方 1-8 步逻辑, 不写入 submission_snapshot (ADR-002 决策点 3).
+        writeBoundGlobalVariablesSnapshot(quotationId, snapshotAt);
 
         return new SubmissionSnapshot(
                 referencedVersions,
@@ -487,5 +500,118 @@ public class SnapshotCollectorService {
             LOG.warnf("collectGlobalVariables failed: %s", e.getMessage());
         }
         return out;
+    }
+
+    // ── V212: 引用数据快照 (ADR-002 §3.4) ────────────────────────────────────
+
+    /**
+     * 将报价单引用的模板所有绑定全局变量数据快照写入 quotation.bound_global_variables_snapshot 列.
+     *
+     * <p>仅在末尾追加, 不改 submission_snapshot (ADR-002 决策点 3).
+     * 写入失败只记录警告, 不阻断整体提交流程 (降级语义: 快照为空 → 前端显示"提交时未生成快照").
+     *
+     * @param quotationId 报价单 ID
+     * @param snapshotAt  ISO 8601 快照时间 (与 SubmissionSnapshot.snapshotAt 对齐)
+     */
+    private void writeBoundGlobalVariablesSnapshot(UUID quotationId, String snapshotAt) {
+        if (!globalVariableDataLoaderRef.isResolvable()) {
+            LOG.warnf("[V212 snapshot] GlobalVariableDataLoader not resolvable, skip for qid=%s", quotationId);
+            return;
+        }
+        try {
+            String snapshotJson = collectBoundGlobalVariablesSnapshot(quotationId, snapshotAt);
+            em.createNativeQuery(
+                    "UPDATE quotation SET bound_global_variables_snapshot = CAST(:snap AS jsonb) WHERE id = :qid")
+                    .setParameter("snap", snapshotJson)
+                    .setParameter("qid", quotationId)
+                    .executeUpdate();
+            LOG.infof("[V212 snapshot] wrote bound_global_variables_snapshot for qid=%s, json-len=%d",
+                    quotationId, snapshotJson.length());
+        } catch (Exception e) {
+            LOG.warnf("[V212 snapshot] writeBoundGlobalVariablesSnapshot failed for qid=%s: %s",
+                    quotationId, e.getMessage());
+        }
+    }
+
+    /**
+     * 构建 bound_global_variables_snapshot JSONB 字符串.
+     *
+     * <p>流程:
+     * <ol>
+     *   <li>查报价单关联模板 (customer_template_id)</li>
+     *   <li>查该模板的绑定列表 (template_global_variable_binding)</li>
+     *   <li>对每个绑定调 GlobalVariableDataLoader.loadAllRows</li>
+     *   <li>组装 ADR-002 §3.2 JSONB 结构并序列化</li>
+     * </ol>
+     *
+     * @param quotationId 报价单 ID
+     * @param snapshotAt  ISO 8601 时间字符串
+     * @return JSONB 字符串 (永不返 null, 失败时返 '[]')
+     */
+    private String collectBoundGlobalVariablesSnapshot(UUID quotationId, String snapshotAt) {
+        GlobalVariableDataLoader loader = globalVariableDataLoaderRef.get();
+        GlobalVariableService gvSvc = globalVariableServiceRef.isResolvable()
+                ? globalVariableServiceRef.get() : null;
+
+        try {
+            // 1. 查报价单关联模板 ID
+            @SuppressWarnings("unchecked")
+            List<Object> templateIdRows = em.createNativeQuery(
+                    "SELECT customer_template_id FROM quotation WHERE id = :qid")
+                    .setParameter("qid", quotationId)
+                    .getResultList();
+
+            if (templateIdRows.isEmpty() || templateIdRows.get(0) == null) {
+                return "[]";
+            }
+            UUID templateId = templateIdRows.get(0) instanceof UUID u
+                    ? u : UUID.fromString(templateIdRows.get(0).toString());
+
+            // 2. 查绑定列表
+            List<TemplateGlobalVariableBinding> bindings = TemplateGlobalVariableBinding.list(
+                    "templateId = ?1 ORDER BY displayOrder ASC", templateId);
+
+            if (bindings.isEmpty()) {
+                return "[]";
+            }
+
+            // 3. 遍历绑定, 构建快照元素
+            List<Map<String, Object>> snapshotItems = new ArrayList<>(bindings.size());
+            for (TemplateGlobalVariableBinding binding : bindings) {
+                try {
+                    // 加载 GV 定义 (用于 name / varType / unit / columns)
+                    com.cpq.globalvariable.GlobalVariableDefinition def = gvSvc != null
+                            ? gvSvc.getByCode(binding.globalVariableCode).orElse(null)
+                            : null;
+
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("code", binding.globalVariableCode);
+                    item.put("name", def != null ? def.name : binding.globalVariableCode);
+                    item.put("varType", def != null ? def.varType : null);
+                    item.put("unit", def != null ? def.unit : null);
+                    item.put("displayOrder", binding.displayOrder);
+                    item.put("snapshotAt", snapshotAt);
+
+                    // columns
+                    List<String> columns = def != null ? loader.buildColumns(def) : List.of();
+                    item.put("columns", columns);
+
+                    // rows
+                    List<Map<String, Object>> rows = loader.loadAllRows(binding.globalVariableCode);
+                    item.put("rows", rows);
+
+                    snapshotItems.add(item);
+                } catch (Exception e) {
+                    LOG.warnf("[V212 snapshot] failed to load GV code=%s for qid=%s: %s",
+                            binding.globalVariableCode, quotationId, e.getMessage());
+                }
+            }
+
+            return MAPPER.writeValueAsString(snapshotItems);
+        } catch (Exception e) {
+            LOG.warnf("[V212 snapshot] collectBoundGlobalVariablesSnapshot failed for qid=%s: %s",
+                    quotationId, e.getMessage());
+            return "[]";
+        }
     }
 }

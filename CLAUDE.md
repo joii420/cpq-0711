@@ -35,6 +35,8 @@ Templates and components use JSONB storage for flexible field/formula configurat
 - `docs/PRD-v3.md` - Full product requirements with data models, user scenarios, and project plan（功能交付的唯一标准,2026-05-13 起活跃版本）
 - `docs/PRD.md` - 已废弃的历史 PRD (v1.0~v2.8),仅作变更决策回溯用途,**不再维护**
 - `docs/RECORD.md` - Development record for multi-agent shared memory（开始工作前必须先阅读此文件了解历史上下文）
+- 🔒 **`docs/三大核心模块基线.md` - 组件管理 / 模板管理 / 报价单渲染 三大核心架构基线（2026-05-21 终态锁定，后续不轻易修改；任何破坏性改动前必读 + 评估 + 走 architect）**
+- `docs/统一智能视图路径方案.md` - 配置驱动方案 §13 终态设计（含 RuntimeContext 上下文字典 + 显式谓词 path + Tab visibleWhen 表达式）
 - `docs/反模式.md` - 反模式速查（PR 自检用，新增功能前必读）
 - `docs/组件管理字段配置指南.md` - 字段类型矩阵 / default_source / DATA_SOURCE 4 类型 / 公式 token / 自检 checklist / 避坑速查（**组件字段配置改动前必读**, 2026-05-18 Phase K 后版本）
 - `docs/配置中心架构.md` - 三层模型 + snapshot 同步 + 管理端点 + datasource_field token（架构基线）
@@ -55,7 +57,9 @@ Templates and components use JSONB storage for flexible field/formula configurat
   - AP-41 prop drilling 漏传（报价单 vs 核价单 ProductCard 不对齐 → 一个视图功能正常另一个失效）
   - AP-42 `{...lfItem, ...rawRow}` 用 null 字段反向覆盖 lfItem 自动映射（V207 前端修；用 `rawRowNonEmpty` filter）
   - AP-43 Vite ESM 项目残留 `require()` 抛 ReferenceError → catch 吞错误 → 渲染 "—"
-- `docs/反模式.md` AP-44 - **字段类型变动 / 新增 = 组件管理 + 报价渲染 强联动协议（核心规范）**：任何 `field_type` 改动跨 **15 个检查点 (约 12 个独立文件，部分文件含多子项)** 协议变换 — 写代码前 grep 全工程 / 写代码中按矩阵勾掉 / 写完跑 E2E `quotation-flow.spec.ts` 三步走；详见 `docs/组件管理字段配置指南.md §十一 字段类型联动性矩阵`
+- `docs/反模式.md` AP-44 - **字段类型变动 / 新增 = 组件管理 + 报价渲染 强联动协议（核心规范）**：任何 `field_type` 改动跨 **17 个检查点 (约 13 个独立文件，部分文件含多子项, 2026-05-20 双轨方案后从 15 处扩到 17 处)** 协议变换 — 写代码前 grep 全工程 / 写代码中按矩阵勾掉 / 写完跑 E2E `quotation-flow.spec.ts` + `composite-product-flow.spec.ts` 双 spec 三步走；详见 `docs/组件管理字段配置指南.md §十一 字段类型联动性矩阵`
+- `docs/反模式.md` AP-45 - **组合产品模板用单子件 driver 渲染错** (2026-05-20 提出 → **2026-05-21 终态修复**)：~~双轨字段方案~~ **已被统一智能视图方案替代**；新解法 = V202 `v_composite_child_*` 视图自适应 SIMPLE/COMPOSITE + ComponentDriverService 按 compositeType 三分支注入；详见 `docs/三大核心模块基线.md` §5.1 + §7.B 场景
+- ~~`docs/同模板双轨支持组合产品.md`~~ - ⚠️ **已废弃** (2026-05-21 由 `docs/统一智能视图路径方案.md` + `docs/三大核心模块基线.md` 取代)；保留作历史追溯
 - `docs/E2E测试方法.md` - **Playwright E2E 测试标杆 SOP**（2026-05-19 立项；前端协议级改动 / 模板 schema 变更 / driver expand 链路改动 / **字段类型变动**强制 E2E；含选择器约定 / 中文 UTF-8 编码踩坑 / 复测协议 / 复杂多 Tab 矩阵 / Bug 分类清单 / 自检 checklist / **§4.6 console.warn 三段式调试 (LF-FIND/DEBUG/EVAL)**；UI 改动 PR 必读）
 - `docs/html/*.html` - 10 interactive HTML prototypes (Chinese language UI)
 
@@ -118,17 +122,25 @@ All UI, prototypes, and PRD are in Chinese. Code artifacts (variables, APIs, com
    - PR 必须附 qf-19 (确认添加后) + qf-21~28 (8 Tab) 9 张截图作为渲染证据
    - 跳过 E2E 等于跳过自检 — AP-37 / AP-38 / AP-40~43 类协议 bug 只在 E2E 暴露, API/TS check 看不到
 
-6. **字段类型变动 / 新增** 是**特殊场景**（AP-44 核心规范，2026-05-19 立项）：
+5.5 **driver expansion 行数纪律**（AP-51，2026-05-22）：
+   - 触发场景：改动 `snapshotRows` / `computeTabSubtotal` / 任何涉及 `expansion.rowCount` 的行迭代逻辑
+   - **禁止**：`Math.max(expansion.rowCount, baseRows.length)` — driver 权威优先，baseRows 仅在 rowCount=0 时使用
+   - **正确**：`const rowCount = expansion?.rowCount > 0 ? expansion.rowCount : baseRows.length`
+   - 原因：baseRows.length 是历史持久化值，可能含脏数据（前一次错误写入的 28 行）；driver expansion 才是当前正确行数的唯一来源
+   - 自检：E2E 刷新 3 次后行数稳定 = 未累加 ✅
+
+6. **字段类型变动 / 新增** 是**特殊场景**（AP-44 核心规范，2026-05-19 立项, 2026-05-20 扩到 17 处）：
    - 触发: 在「组件管理」改 `field_type`（如 INPUT_NUMBER → LIST_FORMULA）/ 加新枚举 / 给现有类型加 sub-type / 加新 config JSON 键 / 改 `VALID_FIELD_TYPES`
-   - 影响: **15 个协议检查点跨约 12 个独立文件** — 前端 enrich / normalizeFieldType / cache key / 渲染分支 / computeAllFormulas 字段值循环 / 所有 ProductCard callsite prop / 详情页 ReadonlyProductCard 同步 + 后端 校验 / 路径采集 / 公式 token / refreshSnapshotsByComponent
+   - **双轨场景** (2026-05-20 新增): 同模板双轨字段 (`basic_data_path` + `basic_data_path_composite` / `data_driver_path` + `data_driver_path_composite`) — 详见 `docs/同模板双轨支持组合产品.md`
+   - 影响: **17 个协议检查点跨约 13 个独立文件** — 前端 enrich / normalizeFieldType / cache key / 渲染分支 / computeAllFormulas 字段值循环 / 所有 ProductCard callsite prop / 详情页 ReadonlyProductCard 同步 + 后端 校验 / 路径采集 / 公式 token / refreshSnapshotsByComponent + (新增) useDriverExpansions tasks 切换 + QuotationStep2 渲染层 isCompositeItem 参数
    - 漏一处必有静默失败（不报编译错也没运行时错，只是 UI 渲染不对）
    - **强制 SOP**:
      - 写代码前 grep 全工程列清单（详见 `docs/组件管理字段配置指南.md §十一 字段类型联动性矩阵`）
      - 写代码中对照 15 项 checklist 勾掉每格
      - 写完**跑 E2E + 复测报价单 + 核价单 + 详情页三个视图** + admin 端点验证 snapshot 各 Tab fields_override 独立保留
    - **PR 必含**:
-     - 矩阵 15 处 grep 命中输出
-     - E2E `1 passed` + `'加载中' final count = 0`
+     - 矩阵 17 处 grep 命中输出
+     - E2E `1 passed` + `'加载中' final count = 0` — **双轨场景必须跑两个 spec** (`quotation-flow.spec.ts` SIMPLE + `composite-product-flow.spec.ts` COMPOSITE)
      - 报价单视图 + 核价单视图 + 详情页三处的关键 Tab 截图（修复前 vs 后）
      - `POST /api/cpq/components/{id}/refresh-template-snapshots` 跑过后所有 Tab snapshot.fields 列表打印
 

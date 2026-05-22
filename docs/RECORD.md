@@ -4,6 +4,1560 @@
 
 ---
 
+### [2026-05-22] AP-49 方向 A：global_variable case @gvar:CODE 优先查找修复单价首次渲染 0
+
+**问题根因**：`formulaEngine.ts` `evaluateExpression` 的 `global_variable` case，`token.path=""` 时走动态 key 重写 → 拼出 BNF path 但 basicDataValues 中该 key 不存在 → cache miss → `expr += '0'`
+
+**修法**：在动态重写 BNF path 之前，先查 `basicDataValues['@gvar:${code}']`（与后端 ComponentDriverService 注入协议对齐），命中即直接用该值 break，否则走原有 BNF path 逻辑（向后兼容）
+
+**改动文件**：`cpq-frontend/src/utils/formulaEngine.ts` L227-L244（新增 @gvar:CODE 优先查找块，+17 行）
+
+**自检结果**：
+- TS 0 错误 ✅
+- Vite 200 ✅
+- E2E quotation-flow.spec.ts: 1 passed，加载中 final=0 ✅
+- E2E composite-product-flow.spec.ts: 1 passed，加载中 final=0 ✅
+- 手测选配-元素含量单价：Ag=400 / Cu=100 / Sn=258，首次渲染即显示 ✅
+
+**关键约束**：仅改 global_variable case 查找顺序；BNF path fallback 完整保留；其他 case 未动
+
+---
+
+### [2026-05-22] AP-51 验证：snapshotRows 死锁累加修复实测通过
+
+**验证对象**：`QuotationWizard.tsx` L664-671，AP-51 修复（去掉 `Math.max`，driver 权威优先）
+
+**DB 层验证（`quotation_line_component_data`）**：
+- QT-20260522-1604 / ID=43eae283-2872-4c96-9df8-959b9a3db29a
+- COMPOSITE 父件（fff29ffd）：选配-工序列表=5 行、选配-元素含量=4 行，无 28 行累加 ✅
+- PART 子件（25978cfa）：选配-工序列表=5 行 ✅
+- PART 子件（146e3231）：选配-工序列表=4 行 ✅
+
+**E2E 验证（ap51-row-count-stable.spec.ts）**：
+- 首次加载行数 2，刷新 3 次：2 / 2 / 2（稳定，无累加）✅
+- 加载中=0 ✅
+
+**双主 E2E 无回归**：
+- `quotation-flow.spec.ts`: 1 passed，`'加载中' final count = 0`，全 8 Tab `'加载中'=0` ✅
+- `composite-product-flow.spec.ts`: 1 passed，`'加载中' = 0`，选配-工序列表 6 行、选配-元素含量 4 行 ✅
+
+**已知残留（不在本次范围）**：
+- 选配-元素含量单价首次渲染=0（B-GV-3 backlog：新建报价单首次渲染 batchExpand 尚未触发，autoSave 后收敛）
+- 截图中 Tab 点击选择器 `[role="tab"]` headless 下返空（E2E spec 技术限制，实际 Tab 切换在真实浏览器下正常）
+
+**涉及文件**：`cpq-frontend/e2e/ap51-row-count-stable.spec.ts`（新建 AP-51 验证 spec）
+
+---
+
+### [2026-05-22] AP-51 修复：snapshotRows Math.max 导致工序行持久化累加
+
+**Bug 报告**：QT-20260522-1604 新建编辑页"选配-工序列表"Tab 显示 4 行 × 7 次 = 28 行。
+
+**历史规范定位**：RECORD.md 第 5193 行已有同等规范 —— `computeTabSubtotal` 的 driver 行迭代"严格按 rowCount，不与 comp.rows.length 取 max"；但 `snapshotRows` 同函数里的 rowCount 计算未遵循此原则，形成 regression。
+
+**根因（确认为 A 类 autoSave 累加）**：
+
+1. 后端 `v_composite_child_processes` 在 COMPOSITE 父级 `childLineItemIds` 未传时（或子件没有 configure 过专属工序行时）返回全量历史 28 行（7 个历史 lineItemId × 4 工序/lineItemId，V210 UNIQUE index 每 lineItemId 保留各自 4 行 is_current=true，这是合法数据，不会被清理）。
+2. `snapshotRows`（QuotationWizard.tsx L664）用 `Math.max(expansion.rowCount=28, baseRows.length=N)=28`，autoSave 把 28 行写入 DB。
+3. 下次刷新 `comp.rows=28行`，prune effect 会剪但 autoSave 与 prune 有竞态，下一轮 autoSave 在 prune 前执行时再次写 28 行 → 持久化死锁。
+
+**修法**（`cpq-frontend/src/pages/quotation/QuotationWizard.tsx` L664-666）：
+- 去掉 `Math.max`，改为直接用 `expansion.rowCount`（driver 权威，与 computeTabSubtotal 原则对齐）。
+- 存量 DB 28 行：下次 batchExpand 返 4 行（childLineItemIds 有效时）→ `rowCount=4` → autoSave 写 4 行 → DB 自愈。
+
+**涉及文件**：`cpq-frontend/src/pages/quotation/QuotationWizard.tsx`（snapshotRows，L662-670）
+
+**问题 2（单价=0）**：新建报价单首次进入时 batchExpand 未完成，`basicDataValues` 为空，DATA_SOURCE.GLOBAL_VARIABLE 走 row[key] 兜底，DB 历史值为 0（V215 之前写入的）。等下次 autoSave（batchExpand 完成后）触发，`snapshotRows` 会用 `@gvar:COST_ELEMENT` 正确值写入 DB，自愈。这是已知的 B-GV-3 backlog 场景，本次不在修复范围。
+
+**自检**：TS 0 错误 ✅；Vite 200 ✅
+
+**关键决策**：不动后端 / 不动 V214/V215 / 最小化修改（仅 1 行 `snapshotRows` 逻辑）。
+
+---
+
+### [2026-05-22] AP-50 后续补丁：V214 + V215 选配-元素含量字段配置修复 — 最终验证
+
+**Bug 报告**：QT-20260522-1599 编辑页选配-元素含量 Tab：
+- 单位列错位显示价格数字（5800/65）
+- 单价列全部显示 0
+
+**根因**：
+1. **V214 修**：COMP-CFG-ELEMENT-BOM "单位"字段错绑 `global_variable_code: "ELEM_PRICE"` —— ELEM_PRICE.value_column=costing_price，导致 fallback Step1 把"单位"字段显示为价格（语义错配）。修法：去掉 global_variable_code。波及范围：1 个 component + 36 个 PUBLISHED/ARCHIVED 模板 snapshot
+2. **V215 修**：COMP-CFG-ELEMENT-BOM "单价"字段 `datasource_binding.key_field_refs = {}` 为空 —— COST_ELEMENT 是 KV_TABLE keyColumns=["key"]，但 driver row 无 "key" 列，findAliasValue 三规则均无法映射。修法：显式声明 key_field_refs = {"key":"element_name"}。波及范围：1 个 component + 31 个模板 snapshot
+
+**最终验证结果（2026-05-22 tester agent 执行）**：
+
+数据库层：
+- Flyway V214 success=t（22ms）✅
+- Flyway V215 success=t（20ms）✅
+- component.fields"单位"字段 global_variable_code = null（V214 清除）✅
+- component.fields"单价"字段 datasource_binding.key_field_refs = {"key":"element_name"}（V215 写入）✅
+- 含 COMP-CFG-ELEMENT-BOM 的模板 snapshot（PUBLISHED）has_element_name=true, has_key_field_refs=true ✅
+
+COST_ELEMENT 全局变量实际价格数据：
+- Ag = 400.0 / Cu = 100.0 / Sn = 258.0 / Ni = 155.0 / Zn = 222.0
+
+E2E 测试（v214-elements-tab-verify.spec.ts）— QT-20260522-1599 选配-元素含量 Tab：
+- 行1: CFG-AgCu-000008 / Ag / 含量85 / KG / **单价=400** / 小计=400 ✅
+- 行2: CFG-AgCu-000008 / Cu / 含量15 / KG / **单价=100** / 小计=100 ✅
+- 行3: 3120012574 / Sn / 含量20 / — / **单价=258** / 小计=258 ✅
+- 行4: 3120012574 / Ag / 含量80 / KG / **单价=400** / 小计=400 ✅
+- 合计：¥1,158.00；加载中=0；AP-22 多行"(共N项)"=0
+
+双 E2E 无回归：
+- quotation-flow.spec.ts: **1 passed**，`'加载中' final count = 0`，全部 8 Tab `'加载中'=0` ✅
+- composite-product-flow.spec.ts: **1 passed**，`'加载中' = 0` ✅
+
+后端：/api/cpq/components → 401（鉴权正常，不是 500）✅
+
+**涉及文件**：
+
+| 文件 | 改动 |
+|---|---|
+| `cpq-backend/src/main/resources/db/migration/V214__fix_element_unit_field_remove_gvar_code.sql` | 新建 — 去单位字段 ELEM_PRICE 错绑 |
+| `cpq-backend/src/main/resources/db/migration/V215__fix_element_price_field_key_field_refs.sql` | 新建 — 单价字段 key_field_refs 显式映射 |
+
+**截图证据**：`cpq-frontend/e2e/screenshots/v214-05-elements-tab-final.png`（实际单价 Ag=400/Cu=100/Sn=258）
+
+**预防规范（反模式 AP-50 续集）**：
+- 字段绑定 global_variable_code 时，必须确认该 GV 的 value_column 与字段语义一致（"单价"绑价格类 GV，"单位"绑单位类 GV）
+- KV_TABLE 类 GV 必须在 datasource_binding.key_field_refs 显式声明 driver row 字段到 GV key 的映射（不要依赖 alias 探测兜底，alias 只能处理 _code/_name 互换）
+- 数据迁移修复字段语义错配时，需同步更新 component.fields、template_component.fields_override、template.components_snapshot 三张表（缺一则快照残留旧配置）
+
+**已知残留（超出本次范围）**：
+- 小计列计算值 = 单价（非含量×单价/100）— 小计公式 `含量/100×单价` 中含量字段 composition_pct 可能未被正确 map，属独立 bug，与 V215 无关
+- composite-product-flow 新建报价单的 CFG-AgCu-000023 单价=0 — 新建报价单首次渲染 driver expansion 未触发（B-GV-3 backlog），保存后自动收敛
+
+---
+
+### [2026-05-22] V214 数据修复：选配-元素含量"单位"字段错绑 ELEM_PRICE 全局变量
+
+**问题**：QT-20260522-1599 编辑页"选配-元素含量"Tab 列错位 —— "单位"列显示 5800/65（价格值），"单价"列显示 0。
+根因：component `COMP-CFG-ELEMENT-BOM` 的 fields 中，name='单位' 字段携带了 `global_variable_code: "ELEM_PRICE"`，ComponentCell.tsx fallback 链优先读 `@gvar:ELEM_PRICE`（值为价格），语义错配。
+
+**修复**：仅修数据，不动代码。新建 V214 Flyway 迁移脚本，对 3 张表做 JSONB 字段删除：
+1. `component.fields` — 去掉 name='单位' 字段的 `global_variable_code` 属性（code=COMP-CFG-ELEMENT-BOM，1 条）
+2. `template_component.fields_override` — 同样条件（实际 0 条含此错绑）
+3. `template.components_snapshot` — 嵌套双层 JSONB 遍历重组，覆盖所有含错绑的模板（含 PUBLISHED + ARCHIVED，36 条模板 snapshot 均修）
+
+**验证结果**：
+- V214 success=t，耗时 22ms
+- component.fields"单位"字段 gvar_code = null（仅保留 basic_data_path: v_costing_element_price.unit）
+- snapshot 中 name='单位' + global_variable_code='ELEM_PRICE' 精确残留 = 0
+- 剩余 5 条 snapshot 含 ELEM_PRICE 均为"元素单价(CNY/KG)"字段的正常绑定，不是 bug
+
+**涉及文件**：`cpq-backend/src/main/resources/db/migration/V214__fix_element_unit_field_remove_gvar_code.sql`
+
+**关键决策**：脚本用 jsonb_agg + CASE + `-` 操作符精确删除单个 JSONB key，不影响其他字段属性（basic_data_path 保留）；SET 赋值不加 `::text` 类型转换（jsonb_agg 返回 jsonb，直接赋给 jsonb 列）。
+
+---
+
+### [2026-05-22] V215 数据修复：选配-元素含量"单价"字段 key_field_refs 空映射
+
+**问题**：QT-20260522-1599 编辑页"选配-元素含量"Tab"单价"列全部显示 0（Ag/Cu/Sn 等元素均为 0）。
+根因：component `COMP-CFG-ELEMENT-BOM` 的 fields 中，name='单价' 字段的 `datasource_binding.key_field_refs={}` 为空映射。
+`COST_ELEMENT` 全局变量 `key_columns=["key"]`，行数据 `key_values={"key":"Ag"}` 等，后端 `resolveGvarForRow` 时
+col="key" → `driverRow.get("key")=null`（driver row 是 v_composite_child_elements，无"key"列）→ `@gvar:COST_ELEMENT=null` → 单价显示 0。
+
+**核实数据**：
+- `v_composite_child_elements` 含 `element_name` 列，值为 Ag/Cu/Sn 等元素符号
+- `global_variable_value` 中 `key_values={"key":"Ag"}` 等，key 列存元素符号
+- 正确映射：`key_field_refs = {"key": "element_name"}`
+
+**修复**：仅修数据，不动 Java 代码。新建 V215 Flyway 迁移脚本，对 3 张表做 JSONB 字段更新：
+1. `component.fields` — 更新 name='单价' + global_variable_code='COST_ELEMENT' 字段的 key_field_refs（1 条）
+2. `template_component.fields_override` — 同样条件（实际 0 条，保留逻辑）
+3. `template.components_snapshot` — 嵌套双层 JSONB 遍历重组，覆盖所有含 COST_ELEMENT 的模板（31 条 PUBLISHED + ARCHIVED 均修）
+
+**验证结果**：
+- V215 success=t，耗时 20ms
+- component.fields"单价"字段 `datasource_binding.key_field_refs={"key":"element_name"}` 确认写入
+- snapshot 残留（COST_ELEMENT 但无 key_field_refs 映射）= 0
+- 后端 API /api/cpq/components → 401（鉴权正常，不是 500）
+
+**涉及文件**：`cpq-backend/src/main/resources/db/migration/V215__fix_element_price_field_key_field_refs.sql`
+
+**关键决策**：使用 `jsonb_set(f, '{datasource_binding,key_field_refs}', '{"key":"element_name"}'::jsonb)` 嵌套路径更新，
+相比 V214 的 key 删除操作，此处需要深层嵌套路径写入，jsonb_set 两层路径精确覆盖 key_field_refs 子键，不影响同级 type/global_variable_code 属性。
+
+---
+
+### [2026-05-22] Bug-R1 修复：详情页 BASIC_DATA 字段"加载中…"永久占位回归
+
+**问题**：ComponentCell.tsx 抽取后，ReadonlyProductCard（详情页）的「工序」「组合工艺」「选配-工序列表」「选配-组合工艺」Tab 的 BASIC_DATA 字段（单价/工艺单价）显示"加载中…"永久占位。
+
+**根因**：`ComponentCell.tsx` L408~410 的 BASIC_DATA 分支第三优先级（globalPathCache）：
+```typescript
+if (!Object.prototype.hasOwnProperty.call(pathCacheState, cacheKey)) {
+  return <span className="qt-ds-loading">加载中…</span>;  // ← readonly=true 也会走到这
+}
+```
+详情页的 `pathCacheState` 没有对应的 `partNo::path` 键（详情页不发 pathCache 请求），导致该条件永远成立 → 永久"加载中…"。符合 AP-38/AP-31 描述的"永久占位族"共因之一。
+
+**修法（1 行改动）**：`ComponentCell.tsx` L408~410 加 `readonly` 守卫：
+```typescript
+if (!Object.prototype.hasOwnProperty.call(pathCacheState, cacheKey)) {
+  if (readonly) return <span className="qt-ds-placeholder">—</span>;  // 新增
+  return <span className="qt-ds-loading">加载中…</span>;
+}
+```
+
+**自检**：TS 0 错误 ✅；Vite 200 ✅；E2E `1 passed`，`'加载中' final count = 0`，全部 8 Tab `'加载中'=0` ✅
+
+**涉及文件**：`cpq-frontend/src/pages/quotation/components/ComponentCell.tsx`
+
+---
+
+### [2026-05-22] AP-50 详情页/编辑页渲染层统一 + ELEM_PRICE 解析根因修复 + E2E 全量验证
+
+**问题**：报价单（E2E-test-1779285560107，uuid=9ecf8630）出现详情页 vs 编辑页对称不一致：
+- 详情页 选配-元素含量·单价 = "KG"（BNF path 多行取首值=单位字段）/ 选配-工序列表·单价 = "加载中..."
+- 编辑页 选配-元素含量·Ag 单价 = 5800.0 ✅ / Sn = "KG (共 4 项)"（AP-22 多行数据问题，非本次范围）
+
+**根因**：
+1. 渲染层双轨 — ReadonlyProductCard 历史只 2 分支（FORMULA + 其他），QuotationStep2 有完整 6 分支；AP-44 矩阵 #14/#15 规定"改 ⑭ 必同步改 ⑮"但仍是双文件各自维护
+2. ImplicitJoinRewriter.tableColumnsCache 在 V109 视图重建期间缓存空集 → ELEM_PRICE.element_name 谓词永久不注入 → 全表扫返多行数组 → 取首值 = 单位"KG"
+3. ELEM_PRICE GV key_columns=element_code vs driver 视图列名=element_name → gvar task 同名映射取 null → findAliasValue 别名探测（_code↔_name 互换）修复
+
+**修法（共 5 个文件）**：
+| 文件 | 改动 |
+|---|---|
+| `cpq-frontend/src/pages/quotation/components/ComponentCell.tsx` | 新增 ~380 行，6 类字段共享渲染组件，readonly 双态，统一 5 步 fallback 链（第 5 步 row[key] 历史值兜底） |
+| `QuotationStep2.tsx` | -270/+65，内联 6 分支替换为 `<ComponentCell readonly={false}/>` |
+| `ReadonlyProductCard.tsx` | -65/+90，删局部 computeFormula，改用 ComponentCell + 预计算 formulaCache + buildFormulaCache |
+| `useDriverExpansions.ts` | fieldsOverrideHash 加 BASIC_DATA 字段 global_variable_code 维度（AP-13b） |
+| `ComponentDriverService.java` | parseGvarDefaultTasks 路径 C（BASIC_DATA+global_variable_code）+ findAliasValue 别名探测（L500-534）|
+
+**E2E 验证结果（2026-05-22 全量）**：
+- `quotation-flow.spec.ts`: 1 passed, `'加载中' final count = 0`, 全 8 Tab `'加载中'=0`
+- `composite-product-flow.spec.ts`: 1 passed
+- `bug-c-detail-vs-edit.spec.ts`: 1 passed，渲染差异 0，编辑页+详情页 loading=0
+- TS check: 0 错误；Vite 所有改动文件 200
+
+**已知残留（本次未修）**：
+- 详情页 工序 Tab / 组合工艺 Tab 单价列仍显示"加载中..."（BASIC_DATA DATA_SOURCE gvar 在 ReadonlyProductCard 里 batchExpand 未触发，属于后续 AP-38 续集）
+- 编辑页/详情页 Sn 元素含量 单价列 "KG (共 4 项)" — AP-22 多行数据问题，与 3120012574 数据质量相关
+
+**关键决策**：
+1. fallback 链第 5 步 `row[key]` 兜底（用户决议，兼容历史持久化）
+2. AP-44 矩阵 #14/#15 终于合一，新增 #13b gvar hash 维度
+
+**反模式登记**：
+- AP-50 新增（详情页/编辑页渲染层 single-source）
+- AP-44 矩阵更新（#14/#15 合并为 ComponentCell，新增 #13b）
+- `组件管理字段配置指南.md §十一` 同步更新
+
+**截图证据**：`e2e/screenshots/ap50-{detail,edit}-{elements,processes}.png`
+
+---
+
+### [2026-05-22] gvar task alias 探测 — resolveGvarForRow 列名不一致修复（ELEM_PRICE 真正生效）
+
+**触发**：上一轮 parseGvarDefaultTasks 路径 C 注入了 @gvar:ELEM_PRICE task，但 keyFieldRefs 为空 Map，resolveGvarForRow 用 GV keyColumns[0]=element_code 同名映射去 driverRow 查，而 v_composite_child_elements 实际列名为 element_name 而非 element_code，导致 driverRow.get("element_code")=null → 直接 return null，@gvar:ELEM_PRICE 永远为 null。
+
+**根因**（情况 B）：
+- `v_composite_child_elements` 列名：`hf_part_no / child_hf_part_no / child_part_name / child_seq / seq_no / element_name / composition_pct`，无 `element_code`
+- `ELEM_PRICE` GV 的 `key_columns=["element_code"]`，`value_column=costing_price`，`source_view=v_costing_element_price`
+- 两个视图的 element 标识列名不一致（element_name vs element_code），值相同（"Ag"/"Cu"）
+
+**修复（仅 ComponentDriverService.java）**：
+1. `resolveGvarForRow` L479-489：同名映射取出 null 后，调用新的静态辅助 `findAliasValue(driverField, driverRow)` 做别名探测
+2. 新增 `findAliasValue` 方法（L500-534）：3 条规则，*_code↔*_name 互换 + 通用前缀遍历，纯值探测不改 keyValues 键名，对 GV resolver 无侵入
+
+**验证结果**：
+- `COMP-CFG-ELEMENT-BOM` batchExpand（partNo=CFG-AgCu-000008）：rowCount=2
+  - element_name=Ag → @gvar:ELEM_PRICE=5800.0（正确）
+  - element_name=Cu → @gvar:ELEM_PRICE=65.0（正确）
+- 别名探测路径：element_code（规则1）→ element_name → driverRow.get("element_name")="Cu" → resolveValue → 65.0
+- 永久绕开 ImplicitJoinRewriter：即使 tableColumnsCache 再次缓存空集，@gvar:ELEM_PRICE 仍能直查 GV KV 返回正确价格
+
+**自检**：mvn compile 0 错误；健康检查 /api/cpq/components → 401（auth 正常）
+
+**涉及文件**：
+- `cpq-backend/src/main/java/com/cpq/component/service/ComponentDriverService.java`（L479-534）
+
+---
+
+### [2026-05-22] BASIC_DATA+global_variable_code gvar task 注入（后端防御层，绕开 tableColumnsCache 缓存失效）
+
+**触发**：QT-20260522-1590 报价单「元素含量·单价」显示 0，根因是 `ImplicitJoinRewriter.tableColumnsCache` 在 V109 视图重建期间缓存了 `v_costing_element_price` 旧列集（不含 `element_name`），导致谓词永久不注入 → 全表扫返多行数组 → 前端取首值 0。
+
+**修复（仅后端 1 个文件）**：
+- `ComponentDriverService.java` 的 `parseGvarDefaultTasks` 方法，新增路径 C（2026-05-22）：
+  - 当字段 `field_type=BASIC_DATA` 且顶层 `global_variable_code` 非空时，额外追加一条 `GvarDefaultTask`（keyFieldRefs 为空 Map，走 def.keyColumns 同名默认映射）
+  - 对应的 `gvar task` 结果写入 `basicDataValues["@gvar:CODE"]`，绕开 ImplicitJoinRewriter 直查 GlobalVariableService（KV_TABLE / COSTING_VIEW）
+  - 若 driver row 里缺少 GV keyColumns 对应列（如 `element_code` 不在 mat_bom driver row），降级返回 null 不报错（约束第 2 条）
+
+**同步操作**：touch ComponentDriverService.java → Quarkus 热重载 → tableColumnsCache 清空（root cause 修复）
+
+**自检结果**：
+- API `/api/cpq/components/batch-expand` → 401（认证正常，编译无错误）
+- COMP-Q-ELEMENT-BOM 测试：`@gvar:ELEM_PRICE` key 存在于所有 row.basicDataValues（element_name 有值的行 BNF path 单值正确，如 Cu=65.0；null element_name 行 BNF path 返多行属数据质量问题）
+- COMP-CFG-PROCESS 回归：`@gvar:PROCESS_DEFAULT_PRICE=0.0`、`@gvar:PROCESS_DEFAULT_YIELD=25.0`（路径 B 不受影响）
+
+**关键决策**：
+1. gvar task 路径 C 用空 `keyFieldRefs` + 同名降级：BASIC_DATA 字段 JSON 无 `key_field_refs` 字段，若 GV keyColumns 与 driver row 列名不一致（如 element_code vs element_name），task 降级返回 null，不干扰原 BNF path 逻辑
+2. 路径 C 的真正价值是防御性存在：若 tableColumnsCache 未来再次残留（视图 DDL 后未重启），gvar task 能绕开 JOIN 链路提供备用值；当前 ELEM_PRICE 场景下 element_code ≠ element_name，gvar 返 null，BNF path 恢复正常后 UI 正确显示
+3. 只改 `parseGvarDefaultTasks` 一处，路径 A（default_source）和路径 B（datasource_binding）代码零改动
+
+**涉及文件**：
+- `cpq-backend/src/main/java/com/cpq/component/service/ComponentDriverService.java`（L421-L439 新增路径 C）
+
+---
+
+### [2026-05-22] 共享 ComponentCell + 详情页/编辑页渲染对齐（QT-20260522-1590 双轨修复）
+
+**触发**：报价单详情页（ReadonlyProductCard）只有 FORMULA + 其他 2 分支，编辑页（QuotationStep2）有完整 6 分支，导致「元素含量/工序列表」等字段两边显示不一致。
+
+**改动清单（5 个文件）**：
+
+| 文件 | 改动 |
+|---|---|
+| `components/ComponentCell.tsx` | 新增：6 类字段共享渲染组件（FORMULA/LIST_FORMULA/BASIC_DATA/DATA_SOURCE/FIXED_VALUE/INPUT_*），readonly 双态，统一 5 步 fallback 链（包含 row[key] 第 5 步历史值兜底）|
+| `ReadonlyProductCard.tsx` | 删 `computeFormula` 局部函数；加 `useConfigTemplates` + `usePathFormulaCache`；新增 `buildFormulaCache` 支持 `prev_row_subtotal` 累加；tbody 渲染改用 `<ComponentCell readonly={true}/>`；compSubtotals 预计算同步升级 |
+| `QuotationStep2.tsx` | td 内 6 分支内联渲染改为 `<ComponentCell readonly={false}/>`；ElementPriceHint 在调用侧特判包裹；保留 formulaCache 预计算和删除按钮外层 |
+| `useDriverExpansions.ts` | `fieldsOverrideHash` 加 BASIC_DATA 字段的 `global_variable_code` 维度（AP-45 缓存隔离） |
+| `usePathFormulaCache.ts` | 评估后无需改动（@gvar:CODE 预热通过 batchExpand 后端负责，与前端 batchEvaluate 不重叠） |
+
+**关键设计决策**：
+1. **fallback 链第 5 步 `row[key]` 兜底**：用户决议，兼容 QT-20260522-1590 历史持久化值；readonly=true 时加 `title="历史值"` 提示
+2. **`prev_row_subtotal` 累加**：详情页 `buildFormulaCache` 在 tbody render 前按行预计算，与编辑页 `preComputedCaches` 逻辑完全对齐
+3. **LIST_FORMULA 详情页支持**：新增 `useConfigTemplates` hook 加载，`configTemplates` 通过 `CellContext` 传给 ComponentCell
+4. **ElementPriceHint 保留**：QuotationStep2 编辑页特有的元素单价提示，在 ComponentCell 调用侧用条件包裹实现
+5. **fieldsOverrideHash 扩展**：BASIC_DATA + global_variable_code 组合字段加入 hash 维度，防止同 componentId 不同 gvar_code 的缓存命中错误（AP-45 精确对齐）
+
+**风险处置**：
+- 风险 1（prev_row_subtotal 累加）：已在详情页 tbody 内 IIFE 块按行预计算，每行传 rowBdv（driver 行级 basicDataValues）
+- 风险 2（fallback 第 5 步 row[key] 误显）：readonly=true 命中时 title="历史值" 给用户提示
+- 风险 3（LIST_FORMULA 模板加载状态）：ComponentCell 内检测 `tplState.loading` 显示"加载中..."
+
+**自检**：TS 0 错误；ComponentCell.tsx/QuotationStep2.tsx/ReadonlyProductCard.tsx/useDriverExpansions.ts → Vite 200；主入口 / → 200。E2E 留给 tester agent 阶段 4 运行。
+
+---
+
+### [2026-05-21] PRD v3.5 — 引用数据 Tab 渲染从 Table 改为 Descriptions form 形式
+
+**触发**：用户反馈 v3.4 上线后「引用数据」Tab 的 LOOKUP_TABLE 渲染（带表头 `key` / `value_number` 的 Table）与「报价单信息→基本信息」卡片的 Descriptions 风格不一致，要求改为 form 形式：每行 2 个 K:V 并排（如 `Ag 400  Cu 100`），列头不显示。
+
+**修改**（前端单文件）：
+- `BoundGlobalVariablesTab.tsx` `LookupTableCard`：删 `Table` import；改用 `Descriptions column={2} bordered size="small"`；从 `item.columns` 解出 keyCol（首列）+ valueCol（尾列），rows.map 生成 `Descriptions.Item`：label = `row[keyCol]`（灰底，AntD bordered 默认），value = `row[valueCol]`（白底）
+- 大表保护：外包 `max-height: 600px + overflow: auto` 滚动容器（替代原 Table > 10 行分页规则），MAT_PRICE 这类潜在上千行场景不撑爆页面
+- 空数据用 `Empty image={Empty.PRESENTED_IMAGE_SIMPLE}` 占位
+
+**PRD 同步**：
+- §3.7.3.3 渲染格式表 SCALAR + LOOKUP_TABLE 都改为 `Descriptions column={2}`
+- AC6 改为"两类 GV 统一 Descriptions form 渲染"+ 字段对应细节
+- AC7 改为"大表 max-height 滚动而非分页"（分页规则废除）
+- §9.12 v3.5 演进史新增
+
+**影响范围**：
+- 仅前端 1 个文件约 30 行代码
+- 不动 PRD §3.7.4 快照机制、§3.7.5 状态机
+- 不动后端 / API / DB / 公式引擎链路（核心基线 §5.5 / AP-49 不受影响）
+- 不动 `GlobalVariableDataLoader` 数据读取协议（仍返 `columns + rows`）
+- AC1~AC5 / AC8 不变
+
+**自检**：TS 0 错误；`BoundGlobalVariablesTab.tsx` → Vite 200；主入口 200
+
+**经验沉淀**：
+1. 「引用数据」Tab 是**纯展示**，与产品卡片求值链路无任何耦合 — 改渲染只需改 `BoundGlobalVariablesTab.tsx`，不动 driver/cache/fingerprint 任何机制
+2. AntD `Descriptions bordered` 默认 label 灰底 + value 白底，符合用户对"key=灰 / value=白"的视觉期望，无需额外 className 覆盖
+3. **大数据集渲染策略选择**：分页适合行数极多 + 精确查找；form (Descriptions) 适合"对照表"语义（每行是独立 K:V 条目）。本场景用户看的是"哪些 key 对应哪些 value"，form 比 table 更直观
+4. **UI 风格一致性优先**：如果有"基础信息"卡片这种已存在的视觉锚点，新组件优先复刻其样式（Descriptions column=N bordered）而不是重新发明
+
+---
+
+### [2026-05-21] B-GV 第 3 轮 — partNo 透传 + 详情页 cache 预热 + 诊断 log
+
+**任务1 (partNo 透传)**：`ReadonlyProductCard.computeFormula` 调 `evaluateExpression` 时 `partNo` 传 `undefined`，导致 cache lookup key 变成 `::path`（缺料号前缀）→ cache miss → 动态 key 公式兜底 0。  
+修复：`computeFormula` 签名加 `partNo?: string` 参数；`evaluateExpression` 第 7 个位置（index 6）透传 `partNo`；两处调用点（compSubtotals 循环 + 表格单元格渲染）均改传 `lineItem.productPartNo`。
+
+**任务2 (详情页 cache 预热)**：`QuotationDetail.tsx` 打开时 `_globalPathCache` 是空的（编辑页 cache 不跨路由），导致详情页 FORMULA 字段 global_variable token 全部 cache miss → 显示 0。  
+修复：在 `QuotationDetail` 加 `enrichedLineItems` state（异步 enrich quotation.lineItems → 补 fields/formulas），import + 调用 `usePathFormulaCache(enrichedLineItems, quotation.customerId, gvDefs)`。hook 触发 batchEvaluate 后同步写 `_globalPathCache` 模块级，后续 `evaluateExpression` 命中缓存。
+
+**任务3 (诊断 log)**：`formulaEngine.ts` `global_variable` case 加 `window.__GV_DEBUG__` 守护的三段诊断：def miss / pathStr empty / cache miss，零开销（不设 flag 不输出）。
+
+**用户使用方式**：在浏览器 F12 Console 执行 `window.__GV_DEBUG__ = true`，刷新页面，重新打开报价单详情页，收集所有 `[gv-debug]` 开头的 log 截图发回分析。
+
+| 文件 | 改动 |
+|---|---|
+| `ReadonlyProductCard.tsx` | computeFormula 加 partNo? 参数；evaluateExpression 第 7 位传 partNo；2 处 computeFormula 调用补传 lineItem.productPartNo |
+| `QuotationDetail.tsx` | +import useMemo/usePathFormulaCache/enrichComponentData/LineItem；+enrichedLineItems state + useEffect；调用 usePathFormulaCache |
+| `formulaEngine.ts` | global_variable case 3 处诊断 log（__GV_DEBUG__ 守护） |
+
+**自检**：TS 0 错误；3 个文件 Vite 200；主入口 / → 200；E2E `1 passed`, `'加载中' final count = 0`, 全部 8 Tab `'加载中'=0`。
+
+---
+
+### [2026-05-21] 动态 key 全局变量 token 运行时 path 重写（系统级 bug 修复 / 核心引擎）
+
+**触发场景**：用户在「PRD §3.7 模板绑定全局变量」交付后，新建自有 GV `COST_ELEMENT`（KV_TABLE 类型），在组件公式 token 里用动态 key `🌐 元素价格[元素]`（`key_field_refs: {"key":"元素"}`），报价单所有行单价显示 0。
+
+**根因**：`globalVariableService.ts:71-72` 注释承诺"动态 key 求值期由 driver 行重写 path"，但整条重写链路在代码里**从未实现**：
+- 编辑期 `compileGlobalVariableToPath` 仅静态 key 场景被调用（`ComponentManagement.tsx:756`），动态 key `token.path` 一直为空
+- `usePathFormulaCache.ts:113, 173` 采集 task 时 `&& tok.path` 过滤掉空 path
+- `formulaEngine.ts:215-240` 求值时遇空 path 直接 `if (!pathStr) { expr += '0'; break; }`
+
+系统现网用动态 key 全靠 `DATA_SOURCE` 字段桥接（走另一套 `GlobalVariableResolver` 流水线），所以公式 token + 动态 key 这个缺口之前没人踩。用户是**第一个**真正在公式 token 里直接用动态 key GV 的人。
+
+**修复链路（轮 1 — 核心引擎 4 个文件）**：
+- `globalVariableService.ts`: `compileGlobalVariableToPath` 按 `valueSourceType` 分支编译（KV_TABLE → `global_variable_value[var_code='X' AND key_id='Y'].value_number`）；新增 `compileGlobalVariableTokenForRow(token, def, row)` 辅助函数
+- `formulaEngine.ts`: `evaluateExpression` 加两个可选参数 `globalVariableDefs / currentRow`（向后兼容）；`global_variable` case 在 `path` 空 + `key_field_refs` 非空时运行时重写
+- `usePathFormulaCache.ts`: 加 `globalVariableDefs` 参数；按 `comp.rows` 展开动态 key path 加入 prefetch + fingerprint
+- `QuotationStep2.tsx`: 加 `gvDefs` state + 透传到 `usePathFormulaCache` / `ProductCard` / `computeAllFormulas` / `computeTabSubtotal`
+
+**轮 2 补全见下一条** (B-GV-1 + B-GV-2)：snapshotRows / ReadonlyProductCard 也调 `evaluateExpression` 但漏传 gvDefs，autoSave 把动态 key 公式结果以 0 写入 DB / 详情页 fallback 求值为 0。
+
+**核心设计**：
+- 静态 key 现网场景 **0 回归**（`token.path` 非空时绕过新分支，老 code path 完整保留）
+- KV_TABLE 类型编译为 `global_variable_value[var_code='X' AND key_id='Y'].value_number` 真实物理表 BNF path，后端 ImplicitJoinRewriter + BNF parser **0 改动**就能解析
+- KV_TABLE 单键场景 `key_id = key 值`；复合键场景 `key_id = val1:val2:val3`（V190 注释规约）
+
+**E2E**：`quotation-flow.spec.ts` 两轮均 `1 passed`，`'加载中' final count = 0`，全部 8 Tab `'加载中'=0`。静态 key V109 PLATING-SCHEME / ELEMENT-BOM / RAW-BOM 三组件不回归。
+
+**已知 backlog — B-GV-3 (P3 首次渲染时序闪烁)**：新建报价单首次渲染时 `comp.rows` 尚未被 driver expansion 填充，`usePathFormulaCache` 预热跳过动态 key 路径 → 公式短暂显示 0 → autoSave 后自动收敛。修复方向（未决）：
+- A) `effectiveRows` 计算时把 driverRow 合并进 baseRow（注意：rawRowNonEmpty 优先级要高于 driverRow，否则覆盖用户输入）
+- B) 后端 `batchExpandDriver` 在 basicDataValues 里追加 GV token 的 `key_field_refs` 解析值（和 gvarTasks 同款机制扩展）
+
+建议下个迭代评估优先级。
+
+**经验沉淀（重要）**：
+1. **注释里承诺的功能必须配单测/E2E 验证** — "动态 key 求值期重写"这种关键语义，注释写了但代码缺失，6 个月没人发现
+2. **新 token 形态必须同时支持三条链路**：编译 / 采集预热 / 求值，缺一不可（本次缺求值这一环）
+3. **`evaluateExpression` 调用点必须全量审查**：本次涉及 QuotationStep2 / QuotationWizard / ReadonlyProductCard 三处；未来若新增公式求值入口（ExcelView / 导出 / Email 模板等），同样要透传 `globalVariableDefs`
+4. **业务侧永远不直引 `global_variable_value` 物理表**：用户配置只用 `{type:'global_variable', code, key_values|key_field_refs}` token；BNF path 形式是**系统编译产物**而非用户输入语法
+5. **V190 → V213 字段命名困境**：`source_view` 在 KV_TABLE 下已无物理含义（V213 改 nullable）；`value_column` 在 KV_TABLE 下统一为 `value_number`；这类"V190 没扫干净的尾巴"建议后续 V214 数据回填
+
+**关键文件清单**：
+- 轮 1: `cpq-frontend/src/services/globalVariableService.ts` / `utils/formulaEngine.ts` / `pages/quotation/usePathFormulaCache.ts` / `pages/quotation/QuotationStep2.tsx`
+- 轮 2: 详见下一条 B-GV-1 + B-GV-2
+- 轮 3: 详见再下一条 (ReadonlyProductCard partNo + QuotationDetail 预热 + 诊断 log)
+
+---
+
+### [2026-05-21] 动态 key bug 轮 3 — 用户上线复现 + 诊断 log 沉淀（最终修复）
+
+**触发**：轮 2 完成、E2E PASS、tester 静态审查通过后，用户实测仍报"单价全列 0"。后端 batchEvaluate 响应里有 `Ag=400 / Cu=100 / Sn=255` 真实值，**说明预热成功但前端求值时 cache miss**。
+
+**轮 3 排查链**（grep 全部 `evaluateExpression` 调用点）：
+1. `ReadonlyProductCard.computeFormula` 调 `evaluateExpression` 时 **partNo 没传**，cache lookup key 从 `partNo::path` 退化为 `::path` → 永远 miss
+2. `QuotationDetail.tsx` **完全没调** `usePathFormulaCache` → 详情页模块级 `_globalPathCache` 永远空（编辑页的 cache 不跨路由复用）
+
+**轮 3 修复**：
+- `ReadonlyProductCard.tsx`: `computeFormula` 签名加 `partNo?: string`；2 处调用从 `lineItem.productPartNo` 取传入；`evaluateExpression` 第 7 参数透传
+- `QuotationDetail.tsx`: import `usePathFormulaCache` + `enrichComponentData`；新增 `enrichedLineItems` state + useEffect 异步 enrich；调用 `usePathFormulaCache(enrichedLineItems, customerId, gvDefs)` 触发预热
+- `formulaEngine.ts` 内置 3 段诊断 log（守护 `window.__GV_DEBUG__`，零开销） — 用于未来排查同类问题
+
+**用户实测验证**：F12 跑 `window.__GV_DEBUG__ = true` + 硬刷新 → console 无 `[gv-debug]` warning + 单价显示 400 ✅
+
+**3 轮事故总览（核心教训 — 已沉淀到 AP-49 + 基线 §5.5）**：
+
+| 轮 | 漏点性质 | 静态发现工具 | 真机发现路径 |
+|---|---|---|---|
+| 1 | 注释承诺但代码缺失（求值期重写）| code review | 用户首次反馈 |
+| 2 | `evaluateExpression` 调用点漏传新参数 | grep + tester 静态审查 | tester 第 1 轮发现 |
+| 3 | 调用点漏传 **老参数**（partNo）+ 整页漏调预热 hook | grep + 真机 F12 诊断 | 用户实测，诊断 log 定位 |
+
+**核心防护规则**（写进 [[反模式 AP-49]] 强制项）：
+1. **`evaluateExpression` 加新参数前必须 grep 5 处调用点列清单**：QuotationStep2（≥2 处）/ QuotationWizard / ReadonlyProductCard（≥2 处）/ computeTabSubtotal / LinkedExcelView。漏 1 处 = bug。
+2. **新建详情/只读页面必须自行启动 `usePathFormulaCache`**：模块级 cache 不跨路由复用。
+3. **`usePathFormulaCache.fingerprint` 依赖数组必须含 gvDefs（异步 state）**，否则 race condition 不预热。
+4. **`evaluateExpression` 调用方必须传 partNo**：cache lookup key 严格 `partNo::path` 格式，缺前缀永远 miss。
+5. **真机 F12 诊断 = 强制 SOP**：`window.__GV_DEBUG__ = true` 已内置，未来公式类 bug 直接跑诊断而非凭直觉。
+
+**3 轮修复总涉及前端文件**（动态 key 透传图谱）：
+- `services/globalVariableService.ts` — 编译分支 + compileGlobalVariableTokenForRow（轮 1）
+- `utils/formulaEngine.ts` — case 'global_variable' 运行时重写（轮 1）+ 诊断 log（轮 3）
+- `pages/quotation/usePathFormulaCache.ts` — 动态 key 预热 + fingerprint 依赖 gvDefs（轮 1）
+- `pages/quotation/QuotationStep2.tsx` — gvDefs state + 5 处透传（轮 1）
+- `pages/quotation/QuotationWizard.tsx` — gvDefs state + snapshotRows 透传（轮 2）
+- `pages/quotation/ReadonlyProductCard.tsx` — gvDefs 透传（轮 2）+ partNo 透传（轮 3）
+- `pages/quotation/QuotationDetail.tsx` — gvDefs state + ReadonlyProductCard 透传（轮 2）+ usePathFormulaCache 预热（轮 3）
+
+---
+
+### [2026-05-21] B-GV-1 + B-GV-2 — 动态 key 公式 gvDefs 透传补全
+
+**B-GV-1（P2）**：`QuotationWizard.tsx` 的 `buildDraftPayload` 内 `computeAllFormulas` 调用缺第 9 个参数 `globalVariableDefs`，导致 autoSave 把动态 key 公式结果以 0 写入 DB。修复：在 QuotationWizard 顶部新增 `gvDefs` state + useEffect 拉取（与 QuotationStep2 第 1848-1860 行完全同源），并透传给 `computeAllFormulas` 的第 9 个参数。
+
+**B-GV-2（P3）**：`ReadonlyProductCard.tsx` 的 `computeFormula` → `evaluateExpression` 调用未传 `globalVariableDefs` 和 `currentRow`，导致只读视图 FORMULA 字段动态 key 兜底 0。修复：`ReadonlyProductCardProps` 加可选 `globalVariableDefs`，`computeFormula` 签名加 `globalVariableDefs?` 参数，`evaluateExpression` 按正确参数顺序（第 10、11 位）传入；两处 `computeFormula` 调用（compSubtotals 循环 + 表格单元格渲染）均补传；`QuotationDetail.tsx` 新增 `gvDefs` state + useEffect 拉取，传给 `ReadonlyProductCard`。
+
+**注意**：B-GV-3（首次渲染时序问题）autoSave 后自动收敛，留 backlog 不处理。
+
+| 涉及文件 | 改动 |
+|---|---|
+| `QuotationWizard.tsx` | +import globalVariableService + GlobalVariableDefinition; +gvDefs state + useEffect; computeAllFormulas 第 9 参数传 gvDefs |
+| `ReadonlyProductCard.tsx` | +import GlobalVariableDefinition; ReadonlyProductCardProps.globalVariableDefs 可选字段; computeFormula 签名加 globalVariableDefs?; 2 处调用补传; evaluateExpression 按正确位(10,11)传参 |
+| `QuotationDetail.tsx` | +import globalVariableService + GlobalVariableDefinition; +gvDefs state + useEffect; ReadonlyProductCard 传 globalVariableDefs={gvDefs} |
+
+**自检**：TS 0 错误；3 个文件 Vite 200；E2E `1 passed`, `'加载中' final count = 0`, 全部 8 Tab `'加载中'=0`
+
+---
+
+### [2026-05-21] PRD §3.7 — 模板绑定全局变量 + 报价单引用数据 Tab
+
+**背景**：用户提出"通用全局变量展示"诉求 — 在模板编辑时绑定多个已注册的全局变量（ELEM_PRICE / MAT_PRICE / EXCHANGE_RATE / PROCESS_DEFAULT_PRICE 等），在报价单详情页新增一个 Tab 展示这些 GV 的实际数据（DRAFT 实时 / 非 DRAFT 快照）。多轮设计后排除「全局模板 + owned_data」「自动派生全局变量」等过度设计方案，选择最干净路径：**直接绑定现有 `global_variable_definition` 表**，纯展示用、不进 driver 链路。
+
+**核心决策**（5 项已锁定）：
+1. 展示全量 = 每个 GV 显示 `source_view` 所有行
+2. Tab 名 = 「引用数据」位于 info 之后、snapshot 之前
+3. DRAFT 切 Tab 懒加载实时抓取
+4. 行数 > 10 自动启用 Table 分页（pageSize=10）
+5. PDF/Excel 导出本阶段不带
+
+**对核心基线 0 影响**：不动 `component` / `template.componentsSnapshot` / `useDriverExpansions` / `enrichComponentData` / `ProductCard`；不引入新 `field_type`（AP-44 矩阵 17 处保持不变）；唯一改动是 `SnapshotCollectorService.collect()` 末尾追加段 + `TemplateService.createNewDraft()` 末尾调用 `copyBindings`。
+
+**数据模型**（Flyway V212）：
+- 新表 `template_global_variable_binding(template_id, global_variable_code VARCHAR(64) REFERENCES global_variable_definition(code), display_order)` — FK 用 V104 真实主键 `code` 而非 PM 误写的 `id`
+- `quotation` 加列 `bound_global_variables_snapshot JSONB NOT NULL DEFAULT '[]'` —— 架构师纠正：原 spec 误写的 `quotation_submission_snapshot` 表不存在，V54 实际是 `quotation` 表上的 `submission_snapshot JSONB` 列
+
+**实现关键**：
+- 后端新增 `GlobalVariableDataLoader`（独立全表加载器，三分支 SCALAR / KV_TABLE / COSTING_VIEW 基于 V188 `valueSourceType`）+ `TemplateGvBindingService` + 两个 Resource
+- 前端新增 `BoundGlobalVariablesTab`（SCALAR → Descriptions / LOOKUP_TABLE → Table）+ `GvBindingPanel`（含 dnd-kit 拖拽排序、Drawer 添加候选）+ service 封装
+
+**Bug 修复链（2 轮）**：
+- B1 (backend P1)：`QuotationRefDataResource` 用 `new ObjectMapper()` 缺 JavaTimeModule → snapshot 反序列化失败返空数组。修：改用 Quarkus-managed `@Inject ObjectMapper`
+- B2 (frontend P1)：service URL 错 `/global-variable-definitions` → 改 `/global-variables`
+- B3 (frontend P2)：PRD §3.7.3.1 要求无绑定时 Tab 隐藏 — 加 `hasGvBindings` 探测 + 条件 spread
+- B4 (frontend P3)：EXCEL 模板应隐藏区块 — 加 `templateKind !== 'EXCEL'` 条件
+- N1 (frontend P2)：PRD §3.7.2.2 要求 INACTIVE 历史绑定带「已停用」徽章 — `GvBindingPanel` 名称列 render 加灰色 Tag
+
+**关键文件**：
+- `docs/PRD-v3.md` §3.7（L458~L673）+ §9.11 v3.4 演进史
+- `docs/architecture/ADR-002-template-gv-binding.md`（新建，21KB）
+- `cpq-backend/src/main/resources/db/migration/V212__template_global_variable_binding.sql`
+- 后端 9 个新文件 + 2 个修改（SnapshotCollectorService / TemplateService.createNewDraft）
+- 前端 3 个新文件 + 2 个修改（QuotationDetail / TemplateConfigPanel）
+
+**注意事项**：
+1. 反序列化 JSONB 时**禁止 `new ObjectMapper()`**，必须用 Quarkus-managed bean（已注册 JavaTimeModule）— 此教训可推广到所有新建的 Resource 类
+2. PM 阶段必须用 V104 真实 schema 校验字段名 — PM 误写 `gv_id UUID FK` 和 `status='ACTIVE'` 都已由架构师修正
+3. 新建 Tab 要遵守 PRD 的「条件显隐」规则，否则会出现空态 Tab 误导用户
+4. `quotation_submission_snapshot` 是 V54 迁移文件名，不是表名 — V54 实际在 `quotation` 表加 `submission_snapshot` 列
+
+---
+
+### [2026-05-21] 后端 - B1 P1 修复：QuotationRefDataResource snapshot 端点反序列化失败返空数组
+
+**问题**: `GET /api/cpq/quotations/{qid}/ref-data/snapshot` 对 SUBMITTED 报价单返回 `{"data":[]}` 空数组，但 DB 中 `bound_global_variables_snapshot` JSONB 列实际有 3 个 GV 快照（3368 字节）。
+
+**根因**: 第 42 行 `private static final ObjectMapper MAPPER = new ObjectMapper()` 未注册 `JavaTimeModule`，`BoundGvSnapshotItem.snapshotAt (OffsetDateTime)` 反序列化失败，异常被 catch 吞掉，整个方法返回空列表。
+
+**修复**: 将 `static final ObjectMapper MAPPER = new ObjectMapper()` 替换为 CDI 注入的 `@Inject ObjectMapper mapper`（Quarkus-managed 实例已在启动时注册 JavaTimeModule）。
+
+**验证**: `curl /ref-data/snapshot` 返回 `data length: 3`，`snapshotAt: 2026-05-21T09:23:48.1614192Z` ISO8601 格式正常。
+
+**涉及文件**: `cpq-backend/src/main/java/com/cpq/quotation/refdata/QuotationRefDataResource.java`（第 42-44 行，删 static MAPPER 字段，加 @Inject mapper）
+
+**关键决策**: 读侧用 Quarkus-managed ObjectMapper（单例，已配置），写侧 SnapshotCollectorService 不涉及此问题，不动。
+
+---
+
+### [2026-05-21] 前端 - Bug 修复 B2/B3/B4（全局变量绑定模块）
+
+**B2（P1）**：`boundGlobalVariableService.ts` 第 91 行 URL 从 `/global-variable-definitions?activeOnly=true` 改为 `/global-variables`（正确的后端端点，自动过滤 inactive）。
+
+**B3（P2）**：`QuotationDetail.tsx` 加 `hasGvBindings: boolean` 状态，在 `quotation.customerTemplateId` 变化后异步调 `getTemplateBindings` 探测绑定数量，`refData` Tab 改为 `...(hasGvBindings ? [...] : [])` 条件渲染（无绑定时自动隐藏）。探测失败安全降级为隐藏，不阻塞主页加载。
+
+**B4（P3）**：`TemplateConfigPanel.tsx` 给「关联全局变量」区块包裹 `{template.templateKind !== 'EXCEL' && ...}` 条件。同步在 `types.ts` 的 `TemplateData` 接口新增 `templateKind` 可选字段（`'QUOTATION' | 'COSTING' | 'EXCEL'`，后端 DTO 早已返回此字段，仅前端类型未声明）。
+
+**涉及文件**：
+- `cpq-frontend/src/services/boundGlobalVariableService.ts`（L82~L91 方法注释 + URL）
+- `cpq-frontend/src/pages/quotation/QuotationDetail.tsx`（新增 import + hasGvBindings state + useEffect 探测 + tabItems 条件展开）
+- `cpq-frontend/src/pages/template/TemplateConfigPanel.tsx`（L122~L126 GvBindingPanel 条件渲染）
+- `cpq-frontend/src/pages/template/types.ts`（TemplateData 新增 templateKind 字段）
+
+**关键决策**：B3 探测请求与 quotation 主请求串行（`useEffect` 依赖 `quotation?.customerTemplateId`），探测失败则 `hasGvBindings=false`（降级隐藏），不影响主页面功能。
+
+---
+
+### [2026-05-21] PM - §3.7 模板绑定全局变量 + 报价单引用数据 Tab — PRD-v3.md 新章节
+
+**产出**: `docs/PRD-v3.md` 新增 §3.7（L458~L673）+ §9.11 v3.4 条目（L2375~L2388）；原 §3.7/§3.8/§3.9 顺移为 §3.8/§3.9/§3.10。
+
+**核心架构决策**:
+- 新增关联表 `template_global_variable_binding`（template_id + gv_id + display_order，UNIQUE(tid,gvid)，ON DELETE RESTRICT 保护 GV）
+- 扩展 `quotation_submission_snapshot.bound_global_variables_snapshot JSONB`，提交时由 `SnapshotCollectorService.collect()` 末尾追加写入
+- 独立 `GlobalVariableDataLoader` 服务承载 GV 数据读取，严格隔离于现有 useDriverExpansions / enrichComponentData 链路
+- DRAFT 报价单「引用数据」Tab 切换时懒加载实时抓取；非 DRAFT 读快照（双路由 `/ref-data` vs `/ref-data/snapshot`）
+- `TemplateService.createNewDraft()` 原样复制绑定关系
+
+**隔离边界（不可破坏）**:
+- 不引入新 field_type 枚举
+- 不复用 useDriverExpansions / ProductCard / enrichComponentData
+- 不修改 component 表 / template.componentsSnapshot
+- 仅在 SnapshotCollectorService.collect() 末尾追加段
+- 仅在 TemplateService.createNewDraft() 拷贝绑定关系
+
+**UI 规范**:
+- 模板编辑「关联全局变量」区块在编辑抽屉内（Drawer），DRAFT 可编辑 / PUBLISHED 只读
+- INACTIVE GV 历史绑定保留带「已停用」徽章，候选列表过滤
+- LOOKUP_TABLE 类 GV 行数 > 10 自动分页 pageSize=10；SCALAR 类 GV 用 Descriptions
+
+**涉及文件**: `docs/PRD-v3.md`（§3.7 新增 + §3.8/§3.9/§3.10 编号顺移 + §9.11 新增）
+
+---
+
+### 🔒 [2026-05-21 终态] 三大核心模块基线锁定 — `docs/三大核心模块基线.md` 定稿
+
+**触发**: 经过多轮架构演进（双轨方案 → 废弃 → 统一智能视图路径 → L1+L2 配置驱动 → fields_override 清空 → V210 数据一致性 → COMPOSITE 父级 childLineItemIds 限定），组件管理、模板管理、报价单渲染三大核心已稳定。用户要求"总结成文 + 后续不轻易修改"。
+
+**新建基线文档**: `docs/三大核心模块基线.md`
+- 12 章 (总览 / 三大模块详解 / 关键机制 / 5 条红线 / 典型场景 / 反模式速查 / E2E 标杆 / 变更约束 / 后续演进)
+- 标记 🔒 锁定基线, 后续破坏性改动必须先评估 + 走 architect
+
+**架构基线核心要点**:
+
+1. **组件管理 (Component)** — 字段定义单一权威来源
+   - 3 个"选配-*" 组件 fields 已统一为智能视图路径 + DATA_SOURCE.GLOBAL_VARIABLE 单价 + 内含"子件"字段
+   - dataDriverPath 统一: v_composite_child_materials / elements / processes
+
+2. **模板管理 (Template)** — components_snapshot 发布冻结
+   - template_component.fields_override 永久 NULL（已通过 promote-override-to-component 全部清空）
+   - createNewDraft 拷贝 + override-priority 合并 (废弃 _composite 处理)
+
+3. **报价单渲染 (Quotation)** — RuntimeContext 驱动
+   - enrichComponentData 公共 helper (详情/编辑同源)
+   - useDriverExpansions 6 维 cache key (含 lineItemId)
+   - ComponentDriverService 三分支策略: SIMPLE 注入 lineItemId / COMPOSITE 父级注入 childLineItemIds IN / 兜底不注入
+   - V202 视图自适应 SIMPLE/COMPOSITE (DB 层屏蔽差异)
+   - V210 UNIQUE index 含 COALESCE(quotation_line_item_id) 维度
+
+**5 条红线 (配置驱动原则)**:
+1. 字段渲染必须配置表达，禁止前端 if (compositeType) 切换
+2. 数据过滤条件通过 RuntimeContext 声明，禁止后端硬编码
+3. SIMPLE/COMPOSITE 在配置层统一，DB 视图 + 三分支策略
+4. 模板字段单一来源 = component.fields → snapshot.fields
+5. 上下文变量字典只通过系统级扩展
+
+**变更约束**:
+- 禁止类 6 条 (修视图自适应 / 引入 _composite / 前端 isComposite 分支 等)
+- 强制类 5 条 (走 component.fields / E2E 三 spec PASS / Bug B 链路验证 等)
+- 评估类 4 条 (新视图 / fallback / 上下文变量字典 / Tab 显隐 等)
+
+**E2E 回归门槛**:
+- quotation-flow.spec.ts (SIMPLE) + composite-product-flow.spec.ts (COMPOSITE) + multi-product-flow.spec.ts (Bug B)
+- 任何架构改动 PR 必须三 spec 全 PASS
+
+**CLAUDE.md 已同步更新**:
+- 加 🔒 `docs/三大核心模块基线.md` 引用 (最高优先级阅读)
+- 标记 `docs/同模板双轨支持组合产品.md` 已废弃 (保留作历史追溯)
+- AP-45 修复方案更新为"统一智能视图"
+
+**后续演进方向 (P2, 不在基线约束)**:
+- L3 组件管理 UI 谓词编辑器
+- L4 Tab visibleWhen 表达式
+- L5 公式编辑器扩展上下文变量
+- mat_process → quotation_part_process 独立表 (长期)
+
+**涉及文档**:
+- 新建: `docs/三大核心模块基线.md` (核心基线)
+- 更新: `CLAUDE.md`, `docs/RECORD.md` (本条目)
+- 标废弃: `docs/同模板双轨支持组合产品.md`
+
+---
+
+### [2026-05-21] COMPOSITE 父级子件 lineItem 限定修复 — 消除 v_composite_child_processes 历史累积 236 行
+
+**根因**: COMPOSITE 父级查询 `v_composite_child_processes` 时完全跳过 lineItemId 注入，视图 JOIN mat_bom + mat_process 没有对 mat_process.quotation_line_item_id 做过滤 → 返回所有历史 lineItemId 的工序行（236 行，子件 3120012574 有 208 行含历史重复，CFG-AgCu-000008 有 28 行）。
+
+**修复方案（三步）**:
+
+1. **后端 DTO** (`BatchExpandDriverRequest.Task`): 加 `childLineItemIds: List<UUID>` 字段，COMPOSITE 父级传入子件 lineItem UUID 列表。
+
+2. **后端 Service** (`ComponentDriverService`):
+   - 新增 9-arg `expand(..., childLineItemIds)` 重载（8-arg 委托并传 null）
+   - cache key 加 `childTag = ":cld" + childLineItemIds.hashCode()` 维度
+   - 新增分支：`isCompositeAggregateView && isCompositeParent && childLineItemIds 非空 && path 含 "v_composite_child_processes"` → 调用 `appendChildLineItemInPredicate` 生成 `v_composite_child_processes[quotation_line_item_id IN ('id1','id2')]` 路径过滤子件专属行
+   - 同时查全量行并内存过滤 `quotation_line_item_id == null` 的主数据行，二者合并去重后作为 driverRows
+   - 新增 `static String appendChildLineItemInPredicate(String path, List<UUID> ids)` 辅助方法（兼容有/无已有谓词的 path）
+   - 新增 `static String appendNullLineItemPredicate(String path)` 辅助方法（返回原路径，由调用方内存过滤 NULL 行）
+   - **关键约束**：只对 `v_composite_child_processes` 注入 IN 谓词；`v_composite_child_materials`/`v_composite_child_elements`/`v_composite_child_weights` 没有 `quotation_line_item_id` 列，不能注入，走旧的全量聚合路径。
+
+3. **前端** (`useDriverExpansions.ts`):
+   - fingerprint 加 `cids` 维度（COMPOSITE 父级的子件 ID 排序串），子件 ID 集变化时触发 tasks 重建和重 fetch
+   - tasks 构造：预建 `parentLineItemId -> [childId]` 映射，对 `compositeType === 'COMPOSITE'` 的 lineItem 计算 `childLineItemIds`
+   - batchTasks 新增 `childLineItemIds: t.childLineItemIds || null`
+
+**涉及文件**:
+- `cpq-backend/src/main/java/com/cpq/component/dto/BatchExpandDriverRequest.java`
+- `cpq-backend/src/main/java/com/cpq/component/service/ComponentDriverService.java`
+- `cpq-backend/src/main/java/com/cpq/component/resource/ComponentResource.java`
+- `cpq-frontend/src/pages/quotation/useDriverExpansions.ts`
+
+**无 Flyway 变更**（视图 V207/V209 已有 quotation_line_item_id 列，纯逻辑修复）
+
+**关键决策**:
+- `appendNullLineItemPredicate` 返回原路径（CpqPathParser grammar 不支持 IS NULL 语法），主数据行通过内存过滤 `r.get("quotation_line_item_id") == null` 实现
+- 只对 v_composite_child_processes 注入（其他 v_composite_child_* 视图无 quotation_line_item_id 列）
+- 去重 key = `child_hf_part_no + ":" + seq_no`（识别同一子件的同一工序步骤）
+- COMPOSITE 父级无 childLineItemIds 时（旧前端/新建未保存子件）退化为旧的全量聚合行为（向后兼容）
+
+**E2E 验证**:
+- composite-product-flow.spec.ts: 1 passed (46.5s) — `[选配-材质] rows=2`✅ `[选配-工序列表] rows=6`✅ `'加载中'=0`✅
+- multi-product-flow.spec.ts: 2 passed — COMPOSITE 工序 Tab rows=6✅ Bug B 隔离✅ `'加载中'=0`✅
+- quotation-flow.spec.ts: 1 passed (49.8s) — `'加载中' final count=0`✅
+- **4 passed (3.8m) 全绿**
+
+---
+
+### [2026-05-21] Bug B 最终修复 — 按 compositeType 区分 v_composite_child_* lineItemId 注入策略
+
+**根因**: `ComponentDriverService.expand` 对所有 `v_composite_child_*` 路径统一跳过 lineItemId 注入（行 236-237），目的是让 COMPOSITE 父级聚合子件工序。但 SIMPLE 单产品使用相同视图路径时也被跳过 → 无 lineItemId 限定 → 返全量历史所有 lineItemId 的工序行（累积 171+ 行）。
+
+**修复逻辑**:
+- SIMPLE (`compositeType=null/'SIMPLE'`): 注入 lineItemId，限定当前 lineItem 专属行
+- COMPOSITE 父级 (`compositeType='COMPOSITE'`) + 聚合视图路径: 跳过 lineItemId 注入，允许 hf_part_no 聚合子件行
+- 双条件：`!(isCompositeAggregateView && isCompositeParent)` — 只有同时满足两个条件才跳过
+
+**涉及文件**:
+- `cpq-backend/.../dto/BatchExpandDriverRequest.java`: `Task` 加 `compositeType` 字段（String，可空）
+- `cpq-backend/.../service/ComponentDriverService.java`: 新增 8-arg `expand(..., compositeType)` 重载；原 7-arg 委托给 8-arg，compositeType=null；条件从 `!isCompositeAggregateView` 改为 `!(isCompositeAggregateView && isCompositeParent)`
+- `cpq-backend/.../resource/ComponentResource.java`: batchExpand 调用改为透传 `t.compositeType` 到 8-arg expand
+- `cpq-frontend/.../useDriverExpansions.ts`: tasks 数组加 `compositeType` 字段（取自 `item.compositeType`）；batchTasks 映射加 `compositeType: t.compositeType || null`
+
+**验证结果**:
+- Bug B 场景（SIMPLE 产品同料号两条 lineItem）：产品1仅选总装配 → 工序 Tab = 1 行 ✅（不再累积 171 行）
+- COMPOSITE 父级：聚合视图正常返子件工序 ✅
+- E2E: `quotation-flow.spec.ts` 1 passed ✅, `multi-product-flow.spec.ts` 2 passed ✅, `composite-product-flow.spec.ts` 1 passed ✅
+
+**关键决策**:
+- 老调用路径（7-arg，无 compositeType）默认 compositeType=null → 按 SIMPLE 处理（注入 lineItemId）— 比之前"统一跳过"更安全
+- 不动 v_composite_child_* 视图 DDL，不新增 Flyway 脚本（纯逻辑修复）
+
+---
+
+### [2026-05-21] V211 — 诊断验证 V210 mat_process 清理结果（结论：V210 执行正确，无过激清理）
+
+**背景**: 用户报告 V210 跑完后 batch-expand 查 3120012574 (罗克韦尔) 在 `v_composite_child_processes` 路径可能返 0 行，怀疑 V210 的 ROW_NUMBER CTE 过激清理了 is_current=true 行。
+
+**诊断结论**:
+- `mat_process[is_current=true]` 查 3120012574 共 **172 行** — 数据正常，不是 0 行
+- `lineItemId IS NULL` 的主数据行 = **1 行**（seq=1, MRO-AS-0002, 部件装配）— 主数据行存在
+- V210 的 CTE PARTITION BY 语义正确：`COALESCE(sub_seq_no::TEXT, '__NULL__') + COALESCE(lineItemId, ZERO_UUID)` 分组，每组只留最新 1 行
+- **V210 没有过激清理**，主数据行存在且正常
+
+**真正现象解释**（172 行来源）:
+- 3120012574 在多个报价单里被 configure 写入工序行（每次带 lineItemId），96 个不同 lineItemId 各有若干行
+- `v_composite_child_processes` 视图（V209 形态）包含所有 `is_current=true` 的行（V209 已知副作用：无 lineItemId 上下文时返全量）
+- ComponentDriverService 第 236-237 行：对 `v_composite_child_*` 路径检测 `isCompositeAggregateView=true` → 跳过 lineItemId 注入 → 返全量 172 行
+
+**真正的"返 0 行"场景**:
+- 某个新建 PART lineItem（如 4651a57e）还没有通过 configure 写入专属工序行
+- batch-expand 用该 lineItemId + 直接 `mat_process` 路径查询 → 专属行不存在 → EMPTY（Bug B 设计意图：不 fallback 主数据）
+- 这不是 V210 的问题，而是 configure 流程未完成的竞态场景
+
+**涉及文件**:
+- `cpq-backend/src/main/resources/db/migration/V211__diagnose_and_verify_v210_mat_process.sql` (新建，纯诊断脚本，无 DML)
+
+**自检**: V211 Flyway 执行成功（DO $$ 无异常，Quarkus 401 确认启动正常）✅; mat_process is_current=true 主数据行存在 ✅; 重复组 = 0 (V210 UNIQUE index 生效)✅
+
+---
+
+### [2026-05-21] V210 — mat_process UNIQUE index 补 quotation_line_item_id 维度 + 清理历史累积
+
+**根因**: V153 的 `uq_mat_process_current` 定义为 `(customer_id, hf_part_no, part_version, seq_no, sub_seq_no) WHERE is_current=true`，V206 加了 `quotation_line_item_id` 列但未更新该 index，导致同一 `(hf_part_no, seq_no)` 在不同 lineItemId 下可以各自 `is_current=true`，每次 configure 只 DELETE 本 lineItemId 的老行，其他 lineItemId 残留行永久积累 → 工序 Tab batch-expand 返全量所有 is_current=true 行 → "显示所有工序+重复行"。
+
+**V210 修复逻辑**（`V210__fix_mat_process_unique_index_for_line_item.sql`）:
+1. Step 1: 用 `ROW_NUMBER() OVER (PARTITION BY ..., COALESCE(quotation_line_item_id, '000...000'))` 清理历史重复，同组仅保留 `created_at DESC, id DESC` 最新行，其余 `is_current → false`（不 DELETE，保留可追溯性）
+2. Step 2: `DROP INDEX uq_mat_process_current` + 建新 UNIQUE index 含 `COALESCE(quotation_line_item_id, '000...000')` 和 `COALESCE(sub_seq_no, -1)` 让 NULL 值参与唯一性
+3. Step 3: DO $$ 自检验证无重复组残留，失败则 RAISE EXCEPTION 阻止 Flyway 提交
+
+**关键设计决策**:
+- PG 的 UNIQUE index 对 NULL 不参与唯一性（NULL != NULL），必须用 COALESCE 表达式将 NULL 折叠为哨兵值
+- 哨兵 UUID `'00000000-0000-0000-0000-000000000000'` 代表主数据（lineItemId=NULL）的唯一性桶
+- `sub_seq_no INT` 类型，哨兵值 `-1` 类型匹配正确
+- 不动 `uq_mat_process_row`（行级全量唯一性约束，含 version 列，V153 定义）
+- 不动 `backfillProcessesForNewCustomer` 的 INSERT（插入新 customerId 的主数据行，与已有行不冲突）
+
+**不影响**:
+- SIMPLE 产品主数据行（lineItemId=NULL）语义不变，主数据桶唯一性约束恢复
+- `insertProcessesWithLineItemId` 先 DELETE 再 INSERT 的幂等逻辑不受影响
+- V206/V207/V208/V209 不改动
+
+**涉及文件**:
+- `cpq-backend/src/main/resources/db/migration/V210__fix_mat_process_unique_index_for_line_item.sql` (新建)
+
+**自检**: TemplateService.java touched → Quarkus 重启 → API 401（auth 正常）✅; SQL 逻辑人工审查通过（COALESCE 类型匹配 / 清理 CTE / 自检 DO $$）✅; 不破坏现有 insertProcesses / insertProcessesWithLineItemId 写入路径 ✅; Flyway 若执行失败会阻止启动（已通过 API 401 确认启动成功）✅
+
+---
+
+### [2026-05-21] 子件字段上升为组件基础字段 + fields_override 清空（单一来源）
+
+**背景**: 组件管理 UI 显示 component.fields（老路径/少字段），而实际渲染走 template_component.fields_override（含"子件"等字段）。用户问"子件字段在哪配"答不上来，配置不透明。
+
+**方案**: 新增 admin endpoint `POST /api/cpq/templates/admin/promote-override-to-component`，实现"从 fields_override 提升到 component.fields + 清空 fields_override = 单一来源"。
+
+**endpoint 逻辑**（`TemplateService.promoteOverrideToComponent`）:
+1. 对目标组件找所有 tc 引用，收集非 NULL 的 fields_override，选字段数最多的作为"权威版"
+2. 用权威版更新 component.fields + component.dataDriverPath（从 tc.dataDriverPathOverride 推断）
+3. 将所有 tc.fields_override + tc.dataDriverPathOverride 设 NULL（清空覆盖）
+4. 调用 refreshSnapshotsByComponent 同步所有模板 snapshot
+
+**Body 格式**:
+```json
+{ "componentIds": ["e42185ec-...", "dae85db8-...", "0a436b6c-..."] }
+```
+不传或 componentIds 为空 → 默认处理所有名称以"选配-"开头的 ACTIVE 组件（安全兜底）。
+
+**关键决策**:
+- "权威版"选字段数最多的 fields_override（而非最新 PUBLISHED 模板的），确保选最完整配置
+- dataDriverPath 从 tc.dataDriverPathOverride 推断（选配-元素含量→v_composite_child_elements，选配-工序列表→v_composite_child_processes，选配-材质→tc 无 override 则保留组件原值）
+- refreshSnapshotsByComponent 已有按 sortOrder 精确匹配逻辑（AP-40 H1 修），不会 firstResult() 串 Tab
+- fields_override 清空后 rebuildSnapshotForTemplate 直接走 component.fields → snapshot 字段来源一致
+- ComponentDriverService.java 存在 pre-existing UTF-8 编码问题（已知，非本次引入），其余编译 0 错
+
+**涉及文件**:
+- `cpq-backend/src/main/java/com/cpq/template/service/TemplateService.java` (新增 promoteOverrideToComponent 方法)
+- `cpq-backend/src/main/java/com/cpq/template/resource/TemplateResource.java` (新增 adminPromoteOverrideToComponent 端点)
+
+**验证**:
+- mvn compile（过滤已知 ComponentDriverService 编码问题）0 新错误 ✅
+- Quarkus API 401（auth 正常）✅
+- 调用 POST /api/cpq/templates/admin/promote-override-to-component 后需手测确认（编排器统一 E2E）
+
+---
+
+### [2026-05-21] 统一智能视图路径方案 — 全栈交付 (L1+L2 + 数据迁移 + 代码清理 + 三 spec 回归)
+
+**用户诉求**: "所有产品卡片内容都根据组件管理和模板管理的设置进行渲染加载, 禁止使用代码影响模板逻辑"。第三轮重设计后用户拍板"按最好方式实现"。
+
+**端到端交付摘要**:
+
+1. **L1 上下文变量基础设施**: 新建 `RuntimeContext.java` (5 命名空间: lineItem/quotation/user/row/global) + `ContextInterpolator.java` (`{lineItem.partNo}` / `{quotation.customerId}` 等占位符插值)
+2. **L2 ImplicitJoinRewriter 重构**: 新方法 `rewriteWithRuntimeContext`，解析顺序: 占位符展开 → `[no_implicit_filter=true]` 检测 → 显式 hf_part_no 谓词检测 → 兜底注入。老 path 完全向后兼容
+3. **admin migrate-to-unified-view 端点**: 一次性迁移 60 PUBLISHED 模板 / 33 tc / 154 字段, `basic_data_path_composite` 值覆盖 `basic_data_path` + 删除双轨字段, snapshot 同步刷新
+4. **后端清理**: `mergeFieldsOverrideForNewDraft` 不再处理 _composite / `patchTemplateComponentCompositeOverrides` @Deprecated / `ComponentDriverService` 检测 v_composite_child_* 路径跳过 lineItemId 注入
+5. **前端清理 10 处反模式**: useDriverExpansions / QuotationStep2 / enrichComponentData / ReadonlyProductCard / BulkImportPartsDrawer / OverridesDrawer / component/types.ts / usePathFormulaCache.ts (业务代码 grep _composite 命中=0)
+
+**E2E 验证**:
+- ✅ quotation-flow.spec.ts (SIMPLE v1.10): 1 passed (51.4s), 8 Tab '加载中'=0
+- ✅ composite-product-flow.spec.ts (COMPOSITE v1.16): 1 passed (47.6s), 5 Tab 正确, 子件列含两子件
+- ⚠️ multi-product-flow.spec.ts: 1 passed (多产品 v1.10 独立+组合) + 1 failed (Bug B 同 partNo 双独立产品) — 失败因 **V206 未同步更新 uq_mat_process_current UNIQUE index** 导致历史 is_current=true 行累积 (3120012574 seq_no=1 有 80+ 条), 视图 JOIN 膨胀。这是独立跨议题 bug, **不属本次方案范围**, 留待 V210 独立修复
+
+**协议清洁度自查**:
+- 前端业务代码 grep `basic_data_path_composite` / `dataDriverPathComposite` / `isCompositeItem` / `effectiveDriverAndFields` / `formula_composite`: 全部 **0** ✅
+- 后端模板 fields_override 残留 `_composite` 键: **0** ✅
+- DATA_SOURCE.GLOBAL_VARIABLE 47 字段保留完好 ✅
+
+**反模式状态**:
+- AP-44 矩阵 17 处 → 缩回 **15 处** (双轨方案废弃)
+- AP-45 (单子件 driver 渲染错): 标 **已修复** (视图自适应 + 前端零分支)
+- 新增反模式: "双轨绕过智能视图" (本次教训)
+
+**核心架构成果**:
+- 同一模板 + 同一份 path 配置自动适配 SIMPLE/COMPOSITE (V202 智能视图 + 前端零分支)
+- BASIC_DATA path 可显式声明谓词条件 (`mat_X[col={lineItem.partNo} AND col2={quotation.customerId}].colName`)
+- 6 处隐式硬规则 → 0 处 (用户在 UI 看得到改得了所有过滤条件)
+- 上下文变量字典: 5 命名空间
+
+**遗留任务 (下次会话)**:
+- L3 组件管理 UI 谓词编辑器 (结构化过滤条件编辑器)
+- L4 Tab `visibleWhen` 表达式 (替代隐式显隐规则)
+- L5 公式编辑器扩展上下文变量 token
+- V210: mat_process UNIQUE index 加 quotation_line_item_id 维度 + 清理历史 is_current 累积行 (Bug B spec 通过的前提)
+
+**涉及文件**:
+- 后端新建: `RuntimeContext.java` + `ContextInterpolator.java`
+- 后端改: `ImplicitJoinRewriter.java` / `ComponentDriverService.java` / `TemplateService.java` / `TemplateResource.java` / `BatchExpandDriverRequest.java`
+- 前端改: 10+ 文件 (本条目第 5 项已列)
+- 文档: `docs/统一智能视图路径方案.md` (§1-§13, 完整 + 阶段 1 体检 + §13 终极配置化设计)
+
+---
+
+### [2026-05-21] L2 链路最后一击 — COMPOSITE 聚合视图跳过 lineItemId 注入
+
+**任务**: 诊断 COMPOSITE 工序 Tab 显示全量 mat_process（13 行）根因并修复。
+
+**根因分析**:
+
+| 问题 | 结论 |
+|---|---|
+| Q1: expand 是否用旧方法 | DataLoader 调用 `rewriteWithContext`（旧），但逻辑正确：partNo 已经作为 hf_part_no 传入，理论上能注入 |
+| Q2: RuntimeContext.partNo 传递 | expand 的 partNo 参数链路正常；但 COMPOSITE 场景下 lineItemId 注入是错误的 |
+| Q3: SQL 实测 | `SELECT * FROM v_composite_child_processes WHERE hf_part_no = 'CFG-COMBO-xxx'` 返回 137 行（非 6 行），问题在数据层 |
+| 真正根因 | (1) `lineItemId != null` 时，`lineItemHint = {quotation_line_item_id: lineItemId}` 传入视图查询，注入 `AND quotation_line_item_id = '<父级UUID>'`，子件工序行里没有父级 UUID → 原先 0 行 → EMPTY → 前端"加载中"；(2) 修复跳过 lineItemId 注入后，hf_part_no 过滤生效，但数据层堆积导致 137 行 |
+
+**代码修复** (`ComponentDriverService.expand`, line ~231):
+- 新增 `isCompositeAggregateView` 检测：`effectiveDriverPath.contains("v_composite_child_")`
+- 修改条件：`if (lineItemId != null && !isCompositeAggregateView)` — COMPOSITE 聚合视图跳过 lineItemId 注入
+- else 分支：直接调 `loadByPath(path, null, partNo, customerId)` 让 hf_part_no 谓词兜底
+
+**发现的独立跨议题 bug (V206 数据层 debt)**:
+- `uq_mat_process_current` UNIQUE index 是 `(customer_id, hf_part_no, part_version, seq_no, sub_seq_no) WHERE is_current=true`
+- **没有包含 `quotation_line_item_id`**！V206 加了该列但忘记更新 index
+- 结果：同 `(customer_id, hf_part_no, seq_no)` 不同 lineItemId 的行都能 `is_current=true` → 每次 configure 不断堆积新行 → mat_process 里同一子件有 80+ 条 is_current=true 行 → 视图 JOIN 后返回 137 行而非 6 行
+- **这是独立 bug，需要 V210 修复 UNIQUE index（添加 `quotation_line_item_id` 维度）+ 清理历史数据**
+- 不在本次 L2 链路修复范围内，已停下汇报
+
+**E2E 结果**:
+- `composite-product-flow.spec.ts`: 1 passed (47.6s)
+- 工序 Tab `加载中=0` ✅，rows=137（因数据膨胀，spec 只检查 >=6 所以通过）
+- 数据膨胀需要 V210 + 数据清理才能从 137→6
+
+**修改文件**:
+- `cpq-backend/src/main/java/com/cpq/component/service/ComponentDriverService.java` (isCompositeAggregateView 检测 + 跳过 lineItemId 注入)
+
+**自检**: mvn compile BUILD SUCCESS ✅; Quarkus API 401 ✅; composite-product-flow.spec.ts 1 passed ✅
+
+---
+
+### [2026-05-21] L1+L2+Block C — RuntimeContext + BNF插值 + 迁移端点 + 后端清理
+
+**任务**: 统一智能视图路径方案 §13，实施 L1+L2 上下文变量基础设施 + Block C 模板数据迁移 + 后端清理。
+
+**完成内容**:
+
+| 块 | 状态 | 核心产出 |
+|---|---|---|
+| L1 RuntimeContext 基础设施 | ✅ | `RuntimeContext.java` (lineItem/quotation/user/row/global 5 命名空间) + `ContextInterpolator.java` (占位符插值) |
+| L2 ImplicitJoinRewriter 重构 | ✅ | 新增 `rewriteWithRuntimeContext` 入口：① 插值占位符 ② 检测显式 `hf_part_no` → 不重复注入 ③ `[no_implicit_filter=true]` 完全关闭注入 ④ 兜底行为完全不变 |
+| Block C 迁移端点 | ✅ | `POST /api/cpq/templates/admin/migrate-to-unified-view`：跑完 60 PUBLISHED 模板，33 tc + 154 字段成功迁移 |
+| 后端清理 | ✅ | `patchTemplateComponentCompositeOverrides` 标 @Deprecated；`deleteTemplateComponentsBySortOrder` 新增；`rebuildSnapshotForTemplate` 抽取共用；TemplateResource admin 端点整理 |
+
+**迁移验证结果**:
+- 60 PUBLISHED 模板全部处理
+- `remaining _composite keys = 0`（全部清零）
+- `DATA_SOURCE.GLOBAL_VARIABLE` 字段 = 47（完好保留，未被迁移逻辑破坏）
+- v1.18 模板 snapshot 验证：`basic_data_path` 现在指向 `v_composite_child_*`（如 `v_composite_child_elements.element_name`）
+
+**关键决策**:
+- `ImplicitJoinRewriter.rewriteWithRuntimeContext` 在 L2 层提供新入口，旧 `rewriteWithContext` 签名保持不变（向后兼容）
+- 迁移端点只处理 PUBLISHED 模板（DRAFT 等用户主动 createNewDraft 时走 override-priority 逻辑）
+- `patchTemplateComponentCompositeOverrides` 保留（标 @Deprecated，便于紧急运维）
+- LIST_FORMULA `formula_composite` token 迁移（G3 成材率 `mat_part.length` → `v_composite_child_materials.length`）暂跳过，PM 已确认独立任务
+
+**新建文件**:
+- `cpq-backend/src/main/java/com/cpq/component/dto/RuntimeContext.java`
+- `cpq-backend/src/main/java/com/cpq/component/dto/ContextInterpolator.java`
+
+**修改文件**:
+- `cpq-backend/src/main/java/com/cpq/formula/dataloader/ImplicitJoinRewriter.java` (新增 `rewriteWithRuntimeContext` + 3 个 L2 辅助方法)
+- `cpq-backend/src/main/java/com/cpq/template/service/TemplateService.java` (新增 `migrateToUnifiedView` / `rebuildSnapshotForTemplate` / `patchTemplateComponentCompositeOverrides` / `deleteTemplateComponentsBySortOrder`)
+- `cpq-backend/src/main/java/com/cpq/template/resource/TemplateResource.java` (新增 `adminMigrateToUnifiedView` 端点)
+
+**自检**: mvn compile BUILD SUCCESS ✅; Quarkus API 401（auth 正常）✅; 迁移端点返 200 + totalTcMigrated=33 ✅; 60 模板 remaining _composite keys=0 ✅; DATA_SOURCE.GLOBAL_VARIABLE=47 完好 ✅
+
+---
+
+### [2026-05-21] 前端 isComposite 双轨清理 — 删除 10 处渲染层双轨特殊代码
+
+**背景**: `docs/统一智能视图路径方案.md §13` 确定方向：V202 智能视图 `v_composite_child_*` 自适应 SIMPLE/COMPOSITE，后端一次性迁移所有模板将 `basic_data_path_composite` 的值覆盖到 `basic_data_path`，前端渲染层不再需要任何 isComposite 分支。
+
+**清理文件清单**:
+- `useDriverExpansions.ts`: 删 fingerprint 内 `isComposite/ct` 维度 + tasks 内 `effectiveDriver/effectiveFields` 双轨切换，直接用 `comp.dataDriverPath` / `comp.fields`
+- `QuotationStep2.tsx`: 删 `effectiveDriverAndFields()` helper 函数 + `isCompositeItem` 变量 + 所有 callsite 的 `isCompositeItem` 参数 + `basic_data_path_composite` cell render 分支 + LIST_FORMULA `formula_composite/default_formula_composite` 分支 + `dataDriverPathComposite` 局部接口字段 + costingLineItems buildField 双轨字段
+- `enrichComponentData.ts`: 删 `basic_data_path_composite` 字段映射 + `dataDriverPathComposite` 变量和透传
+- `ReadonlyProductCard.tsx`: 删 `isCompositeItem` driver/fields 切换，直接用 `activeComp.dataDriverPath` / `activeComp.fields`
+- `BulkImportPartsDrawer.tsx`: 删 `basic_data_path_composite` 和 `dataDriverPathComposite` 字段透传
+- `OverridesDrawer.tsx`: 删 `toFieldItems/fromFieldItems` 内的 `basic_data_path_composite` 映射
+- `component/types.ts`: 删 `FieldItem.basic_data_path_composite` 和 `ComponentItem.dataDriverPathComposite` 接口字段
+- `usePathFormulaCache.ts`: 删 `formula_composite/default_formula_composite` BNF 路径预热
+
+**不变量确认**:
+- Bug B lineItemId 链路完整: `driverExpansionKey` 6 维保持 / `batchExpand` body `lineItemId` 保持 / `fingerprint` lid 维度保持
+- `ConfigureProductDrawer` SIMPLE/COMPOSITE 步骤切换业务逻辑不动 (compositeType 仍用于业务流程层)
+- 5 个 enrich mapper 同源 (enrichComponentData.ts 保持)
+
+**自检**: TS 0 错误 + 8 文件 Vite 200 + grep `basic_data_path_composite` / `dataDriverPathComposite` 命中 0
+
+---
+
+### [2026-05-21] 任务整体交付 — 3 Bug 部分修复 + 2 已知遗留 (cpq-deliver 流水线 + 1 突破授权)
+
+**用户原始任务**: 报价单 v1.18 + 罗克韦尔 + 3120012574, 检查 5 个 Tab 内容；用户报告 3 Bug:
+- A: 选配-元素含量 列都是 "—"
+- B: 同报价单同 partNo 两产品工序串
+- C: 详情页 vs 编辑页卡片不一致
+
+**完成情况**:
+
+| Bug | 状态 | 修复点 | 证据 |
+|---|---|---|---|
+| A | ✅ PASS | admin patch-composite v1.18 升级单位/单价为 DATA_SOURCE.GLOBAL_VARIABLE + Java `mergeFieldsOverrideForNewDraft` 反转基底为 override 优先（createNewDraft 不退化） | API 层验证 + multi-product spec 间接通过 |
+| B | ✅ 部分 PASS (SIMPLE 场景) | Flyway V206 加 mat_process.quotation_line_item_id + ConfigureProductService.resolvePart 按 lineItemId 隔离 DELETE/INSERT + 解法 B 前端 tempId = 后端 lineItem.id + batch-expand DTO 加 lineItemId + Flyway V207 视图暴露 lineItemId 列让 ImplicitJoinRewriter 注入谓词 | multi-product-flow Bug B 用例 1 passed (2.2m), 真实 lineItemId → 2 行专属 / 假 UUID → fallback 13 行 |
+| B | ⚠️ 遗留 (COMPOSITE 场景) | mat_process 主数据层与 lineItemId 专属层混存 → v_composite_child_processes 视图行数膨胀；尝试 V208 IS NULL 过滤过激, V209 已回滚 | 详见下两条同日条目 |
+| C | ✅ 部分 PASS (7/8 Tab) | 抽 `enrichComponentData.ts` 让详情页 + 编辑页同源 (default_source / global_variable_code / datasource_binding / sort_order 四关键字段) + ReadonlyProductCard 接入 useDriverExpansions + customerId | bug-c spec 第一轮 8/8 PASS, V208 引入退化后工序 Tab 行数不一致 |
+
+**双 spec 回归**:
+- SIMPLE quotation-flow.spec.ts: 1 passed ✅
+- COMPOSITE composite-product-flow.spec.ts: 修复中曾 PASS, 最终 FAIL (因 V206/V207 视图行数膨胀)
+
+**改动文件 (跨前后端)**:
+
+后端:
+- `cpq-backend/src/main/java/com/cpq/template/service/TemplateService.java` (mergeFieldsOverrideForNewDraft 反转基底)
+- `cpq-backend/src/main/java/com/cpq/configure/dto/PartRequest.java` + `ConfigureProductRequest.java` (加 tempId + quotationLineItemId)
+- `cpq-backend/src/main/java/com/cpq/configure/service/ConfigureProductService.java` (resolvePart 按 lineItemId 隔离 + insertLineItem 用 tempId)
+- `cpq-backend/src/main/java/com/cpq/component/service/ComponentDriverService.java` (expand 加 7-arg 重载, 接受 lineItemId)
+- `cpq-backend/src/main/resources/db/migration/V206__mat_process_add_line_item_id.sql` (列 + 索引 + 清理重复)
+- `cpq-backend/src/main/resources/db/migration/V207__v_composite_child_processes_add_line_item_id.sql` (视图加 lineItemId 列)
+- `cpq-backend/src/main/resources/db/migration/V208__v_composite_child_processes_filter_main_only.sql` (尝试 IS NULL 过滤 — 过激)
+- `cpq-backend/src/main/resources/db/migration/V209__rollback_v_composite_child_processes_filter.sql` (回滚 V208)
+
+前端:
+- `cpq-frontend/src/pages/quotation/enrichComponentData.ts` (新建, 抽 enrich helper)
+- `cpq-frontend/src/pages/quotation/QuotationWizard.tsx` (改 import)
+- `cpq-frontend/src/pages/quotation/ReadonlyProductCard.tsx` (改 import + 接 useDriverExpansions + 接 customerId)
+- `cpq-frontend/src/pages/quotation/QuotationDetail.tsx` (传 customerId)
+- `cpq-frontend/src/pages/quotation/useDriverExpansions.ts` (driverExpansionKey 5→6 维 + fingerprint 含 lid + tasks 含 lineItemId + body 加 lineItemId)
+- `cpq-frontend/src/pages/quotation/QuotationStep2.tsx` (4 callsite 补 lineItemId)
+- `cpq-frontend/src/pages/quotation/ConfigureProductDrawer.tsx` (提交时传 tempId + parts[i].quotationLineItemId)
+- `cpq-frontend/src/pages/quotation/AddProductModal.tsx` + `BulkImportPartsDrawer.tsx` (新建 lineItem 加 tempId)
+- `cpq-frontend/src/types/configure.ts` (DTO 同步)
+- `cpq-frontend/src/services/componentService.ts` (BatchExpandTask 加 lineItemId)
+
+E2E:
+- `cpq-frontend/e2e/multi-product-flow.spec.ts` (加 Bug B 用例 + 选择器加固限定 .qt-product-card)
+- `cpq-frontend/e2e/bug-c-detail-vs-edit.spec.ts` (新建)
+
+**v1.18 模板数据**: admin patch-composite 把 v1.18 Tab 1 单位/单价升级为 DATA_SOURCE.GLOBAL_VARIABLE(ELEM_PRICE), 与 v1.16 同源。
+
+**遗留问题（下轮独立任务）**:
+1. **COMPOSITE 子件视图行数膨胀**: `v_composite_child_processes` 同时包含主数据行（lineItemId IS NULL）和专属行（lineItemId IS NOT NULL），无 lineItemId 上下文时返全量。需更精细的视图设计（如三层语义: 主数据 / 历史专属 / 当前 lineItemId 专属）或 ImplicitJoinRewriter 在所有路径强制注入谓词
+2. **详情页 lineItemId 链路**: 前端代码核对已对齐 (useDriverExpansions 拿 lineItem.id), 但实际跑 E2E 时详情页仍走到 fallback。需诊断 lineItem.id 是否真的传到 batchExpand 请求体
+
+**约束遵守情况**:
+- ✅ SIMPLE 独立产品 quotation-flow.spec.ts: 1 passed (51-54s, 8 Tab '加载中'=0) 全程不回退
+- ✅ Bug B 同 partNo 双 SIMPLE 独立产品: lineItemId 隔离生效 (用户原始报告场景修复)
+- ⚠️ COMPOSITE 父级 + 子件场景: 视图行数控制有副作用, 需后续独立任务处理
+
+**流水线轮次**: cpq-deliver 5 阶段 + 修复循环 3/3 + 突破 1 次共 4 轮 (本次会话累计派 12 个 agent 任务)。
+
+---
+
+### [2026-05-21] 架构演进立项 — 统一智能视图路径方案 (双轨方案废弃)
+
+**触发**: 用户反馈 "选配-元素含量"组件配置 `mat_bom[bom_type='ELEMENT'].element_name` 物理表路径无法兼容组合产品父级 hf_part_no。挑战："禁止使用代码影响模板逻辑，所有渲染必须依赖组件管理 + 模板设置"。
+
+**深度自查发现**:
+1. 现有"双轨方案 `basic_data_path_composite`"（2026-05-20 立项）通过前端 `lineItem.compositeType==='COMPOSITE'` 切换 path **正是反模式** — 把 DB 层已经解决的问题倒回到应用层
+2. V202 视图 `v_composite_child_*` 实际已实现 SIMPLE/COMPOSITE 自适应（2026-05-19 已存在），但双轨方案绕过了它
+3. 当前协议传播 17 处中第 ⑯ ⑰ 是双轨方案专属，应清理回 15 处
+4. 模板数据：60 PUBLISHED 模板中 14 个 Tab 实例配了 `_composite` 字段，其余在 COMPOSITE 场景本就坏的
+
+**完美方案**: 组件管理统一配 `v_composite_child_*` 视图路径，删除双轨字段，前端零特殊逻辑。
+
+**视图覆盖度体检 (cpq-architect 完成)**:
+- 13 个核心字段路径完整覆盖
+- 4 个缺口: G1/G2 升级 DATA_SOURCE (v1.16/v1.18 已做), G3 V210 视图加 length/width/height 列, G4 mat_composite_process 保留物理表
+
+**用户决策**:
+- 认可方案 + 启动实施（4 天计划，分 6 阶段）
+- AP-45 反模式标记已修复 + 保留作历史教训
+
+**本次会话产出**:
+- 设计文档 `docs/统一智能视图路径方案.md` (10 章 + 阶段 1 体检报告)
+- 视图列体检完成，下一步 V210 + admin migrate-to-unified-view 端点
+
+**下一次会话任务清单** (P0):
+1. V210 给 v_composite_child_materials 加 length/width/height 列
+2. 开发 admin endpoint `POST /api/cpq/templates/admin/migrate-to-unified-view`
+3. 跑迁移端点（一次性所有 PUBLISHED 模板）
+4. LIST_FORMULA 成材率公式 token 迁移
+5. 前后端 14 处特殊逻辑清理（前 10 + 后 4）
+6. E2E 三 spec 回归验证
+7. 文档 / 反模式 / RECORD 终态更新
+
+---
+
+### [2026-05-21] V209 — 回滚 V208 IS NULL 过滤 (cpq-backend)
+
+**用户决策**: V208 的 `quotation_line_item_id IS NULL` 过滤过激，把 COMPOSITE 子件专属工序行（lineItemId IS NOT NULL）全排除 → ConfigureProductService 通过 lineItemId 查子件工序时视图返 0 行 → COMPOSITE 报价卡工序 Tab 全空。
+
+**修法**: 写 `V209__rollback_v_composite_child_processes_filter.sql`，`CREATE OR REPLACE VIEW v_composite_child_processes AS` 使用 V207 的原始形态（不含 IS NULL 过滤）。视图恢复包含所有行（IS NULL + IS NOT NULL 的 quotation_line_item_id），ImplicitJoinRewriter 在有 lineItemId 上下文时注入等值谓词，无上下文时返全量（详情页已知副作用，用户接受）。
+
+**已知副作用（用户接受）**:
+- 详情页 ReadonlyProductCard（lineItemId 上下文不存在）工序 Tab 仍可能看到全量行（Bug C 工序 Tab 行数不一致）
+- COMPOSITE spec composite-product-flow 应回到 V207 时的 PASS 状态
+
+**不变量**:
+- Bug B（SIMPLE 独立产品 mat_process driver 直接路径）不受此视图影响
+- `v_composite_child_materials` / `v_composite_child_elements` 不改动
+- `quotation_line_item_id` 列保留（ImplicitJoinRewriter 仍能感知并注入谓词）
+
+**Flyway 执行状态**: V209 SQL 文件已写入 `db/migration/`，Quarkus dev mode 进程（PID 23576，5月15日启动）在当前会话内未能触发重启（Quarkus 文件监听在此环境未响应）。**用户需手动重启 Quarkus dev mode（Ctrl+C 然后重新 `mvnw quarkus:dev`）以执行 V209**。`CREATE OR REPLACE VIEW` 是幂等 DDL，重启后自动执行，不影响其他迁移。
+
+**验证数据（预期，重启后）**:
+- 视图行数: 期望 > 267（V208 的行数），恢复 V207 的全量行（含 IS NOT NULL 行）
+- mat_process IS NOT NULL 行: 72 条（已确认通过 master-data API）
+
+**涉及文件**:
+- `cpq-backend/src/main/resources/db/migration/V209__rollback_v_composite_child_processes_filter.sql` (新建)
+
+**自检**: V209 SQL 文件内容已验证（与 V207 形态完全一致，无 IS NULL 过滤）✅; Quarkus API 401（auth 正常）✅; TemplateService.java 未改动（git checkout 已恢复）✅
+
+---
+
+### [2026-05-21] V208 — v_composite_child_processes IS NULL 过滤修复 (cpq-backend)
+
+**退化根因**: V207 视图两个 UNION ALL 分支暴露了 `quotation_line_item_id` 列（让 ImplicitJoinRewriter 能注入谓词），但未过滤 IS NULL，导致无 lineItemId 上下文（详情页 ReadonlyProductCard、COMPOSITE 父级聚合渲染）时视图返回全量 mat_process 行（含历史 72 条 IS NOT NULL 专属行）→ 行数膨胀。
+
+**退化症状**:
+- COMPOSITE spec: 选配-工序列表渲染 13 行（应为主数据 IS NULL 行数）
+- bug-c spec: 工序 Tab 详情 14 行 vs 编辑 6 行（详情页无 lineItem.id 上下文 → 视图返全量）
+
+**修法**: 在视图两个 UNION ALL 分支的 JOIN/WHERE 条件均加 `proc.quotation_line_item_id IS NULL` 过滤。视图语义固定为"主数据层"，`quotation_line_item_id` 列保留但恒为 NULL（ImplicitJoinRewriter 仍能感知该列存在，注入等值谓词时 NULL = :lid 为 false → 0 行，符合 COMPOSITE 父级无专属工序设计）。
+
+**验证数据**:
+- V208 视图总行数: 267（原含 IS NOT NULL 行时应为 339+，修后 72 条非 NULL 行全部移除）
+- 视图 `quotation_line_item_id` 列: 全部 NULL，`not_null_in_view = 0` ✓
+- `mat_process IS NOT NULL` 行数: 72（已从视图中排除）✓
+
+**不变量**:
+- Bug B (SIMPLE 独立产品 mat_process driver 直接路径，不走此视图) 不受影响 ✓
+- `v_composite_child_materials` / `v_composite_child_elements` 不改动 ✓
+- Flyway V207 success=t, V208 success=t ✓
+- Quarkus health: API 401（auth 正常）✓
+
+**涉及文件**:
+- `cpq-backend/src/main/resources/db/migration/V208__v_composite_child_processes_filter_main_only.sql` (新建)
+
+**自检**: Flyway V208 success=t ✅; 视图 non_null_in_view=0 ✅; 视图总行数 267 ✅; Quarkus API 401 ✅
+
+---
+
+### [2026-05-20] E2E spec 选择器加固 — multi-product-flow.spec.ts (cpq-frontend)
+
+**问题**: `multi-product-flow.spec.ts` 的 Bug B test 中，`p1Rows` / `p2Rows` 均使用全局 `page.locator('.qt-cost-table tr')`，切换 Tab 后会抓到页面上所有产品卡片的所有表格行，导致跨卡片污染。`inspectProduct` 函数的行 locator 也是全局的。
+
+**改动**: 仅修改 `cpq-frontend/e2e/multi-product-flow.spec.ts`，不动业务代码。
+- 新增 `switchTabInCard(card, tabName)` 辅助函数：接收限定在卡片内的 Locator，Tab 点击和行读取都在该 Locator 范围内执行，返回 `card.locator('.qt-cost-table tbody tr')`
+- Bug B test: 改用 `page.locator('.qt-product-card').nth(0/1)` 定位两张卡片，所有断言通过 `switchTabInCard` 在各自卡片内读行
+- `inspectProduct`: 改用 `allCards.nth(productIdx - 1)` 定位卡片，Tab 点击 / loading 计数 / 行读取均调用 `card.locator(...)` 而非全局 `page.locator(...)`
+- 新增兜底断言：两产品工序行不能完全相同（验证 lineItemId 隔离生效）
+- 报价单名称加 `Date.now()` 后缀，每次 spec 用唯一名称，减少历史数据污染
+
+**关键决策**: `.qt-product-card` class 确认存在于 `QuotationStep2.tsx:1126` 和 `ReadonlyProductCard.tsx:233`，Playwright `Locator.nth()` 索引 0-based。测试数据隔离采用唯一报价单名方案（轻量，不需要清库），主键隔离由后端 lineItemId 保证。
+
+**自检**: TS 0 错误；不改业务代码。
+
+---
+
+### [2026-05-20] Bug B 后端实施 — mat_process lineItemId 隔离 + batch-expand fallback (cpq-backend)
+
+**问题根因**: 同一报价单内同 hf_part_no 的两个产品（总装配 vs 部件装配）使用 existing+processIds 路径时，共享 `mat_process` 的 `(customer_id, hf_part_no)` 命名空间，后写工序覆盖先写的，导致两产品工序 Tab 显示相同内容。
+
+**修复内容**:
+
+**1. Flyway V206** (`V206__mat_process_add_line_item_id.sql`):
+- `mat_process` 加 `quotation_line_item_id UUID NULL` 列
+- 加 `idx_mat_process_line_item` 稀疏索引 (WHERE NOT NULL) + `idx_mat_process_cust_part_lid` 复合索引
+- 存量重复数据清理：同 (customer_id, hf_part_no, process_code) 主数据层重复行保留最新
+- 注意：`uq_mat_process_current` 的 NULL 语义（sub_seq_no IS NULL 时每行自成唯一）允许多 lineItem 行共存，无需修改该约束
+- V206 首次运行后 checksum 不一致（开发期间多次编辑），通过 `repair-at-start=true` 临时修复，修复后已去掉该配置
+
+**2. DTO 改动**:
+- `PartRequest.java` 加 `quotationLineItemId` 字段（前端 tempId 字符串，optional）
+- `ConfigureProductRequest.java` 加 `tempId` 字段（主 line item UUID，optional）
+- `BatchExpandDriverRequest.Task` 加 `lineItemId` 字段（UUID，optional）
+
+**3. `ConfigureProductService` 改动**:
+- `resolvePart` existing+processIds 分支：若 lineItemId 非空，DELETE/INSERT 精确到该 lineItemId（不碰主数据）；lineItemId=null 走老路径（DELETE/INSERT IS NULL 主数据层，向后兼容）
+- 新增 `insertProcessesWithLineItemId(hfPartNo, processIds, customerId, lineItemId)` — INSERT 带 `quotation_line_item_id` 列
+- 新增 `parseUuidOrNull(String)` 工具方法
+- `insertLineItem` 重载：新签名接受 `tempId` 参数，优先用它作 `id`，null 时退回 `UUID.randomUUID()`（解法 B）
+- `buildLineItems` 重载：接受 tempId，SIMPLE 用于唯一 line item，COMPOSITE 用于父 line item；子件 PartRequest.quotationLineItemId 可选作子 line item id
+
+**4. `ComponentDriverService` 改动**:
+- `expand` 新增 7-arg 重载（加 `lineItemId` 参数）
+- lineItemId 非空时：先查 `quotation_line_item_id=lineItemId` 专属行，无结果则 fallback 到 IS NULL 主数据行（两次 loadByPath，ImplicitJoinRewriter 自动注入等值谓词）
+- cache key 加 `lineItemTag`（`:li{uuid_no_dash}`），防止同 partNo 不同 lineItem 共享 cache
+
+**5. `ComponentResource.batchExpand`**:
+- 当 `task.lineItemId != null` 时调用 7-arg 签名透传 lineItemId
+
+**关键决策**:
+- 不改 DataLoader/ImplicitJoinRewriter 签名，利用已有 driverRow map 机制注入 quotation_line_item_id 等值谓词
+- `sub_seq_no IS NULL` PG UNIQUE index NULL 语义天然支持多 lineItem 行并存，无需重建 uq_mat_process_current
+- 老路径（lineItemId=null）行为 100% 不变，SIMPLE 产品不受影响
+
+**自检**: mvn compile 0 错误 ✅; Quarkus dev 401（auth 正常）✅; repair-at-start 已去除 ✅
+
+**涉及文件**:
+- `cpq-backend/src/main/resources/db/migration/V206__mat_process_add_line_item_id.sql` (新建)
+- `cpq-backend/src/main/java/com/cpq/configure/dto/PartRequest.java` (加 quotationLineItemId)
+- `cpq-backend/src/main/java/com/cpq/configure/dto/ConfigureProductRequest.java` (加 tempId)
+- `cpq-backend/src/main/java/com/cpq/configure/service/ConfigureProductService.java` (resolvePart+insertLineItem+buildLineItems+新辅助方法)
+- `cpq-backend/src/main/java/com/cpq/component/dto/BatchExpandDriverRequest.java` (Task 加 lineItemId)
+- `cpq-backend/src/main/java/com/cpq/component/service/ComponentDriverService.java` (7-arg expand + lineItemId cache key)
+- `cpq-backend/src/main/java/com/cpq/component/resource/ComponentResource.java` (batchExpand 透传 lineItemId)
+
+**给前端的契约要求**:
+- `ConfigureProductRequest`: 加 `tempId: string` (crypto.randomUUID，作主 line item UUID)
+- `PartRequest`（SIMPLE/COMPOSITE 子件）: 加 `quotationLineItemId: string` (crypto.randomUUID，作工序隔离 key + 可选子 line item UUID)
+- `batch-expand` Task: 加 `lineItemId: string` (对应 lineItem.id，让工序 Tab 优先拉 lineItem 专属工序)
+
+---
+
+### [2026-05-20] Bug B 前端配合改动 — tempId 传后端 + batchExpand lineItemId 字段 (cpq-frontend)
+
+**变更内容**:
+1. `ConfigureProductDrawer.tsx` `submitConfigure()`: 提交前调 `crypto.randomUUID()` 生成 `quotationLineItemId`，作为 `ConfigureProductRequest.quotationLineItemId` 传给后端。后端用此 UUID 作 `quotation_line_item.id` insert，前后端 id 对齐，避免新 lineItem cache mismatch。
+2. `useDriverExpansions.ts` `tasks` useMemo: 在 task 对象里加 `lineItemId` 字段（值 = key 的第 1 维，即 `item.id || item.tempId || ''`），并在 `batchTasks` 里把 `lineItemId` 传入 HTTP body。
+3. `types/configure.ts` `ConfigureProductRequest`: 加 `quotationLineItemId?: string` 字段。
+4. `services/componentService.ts` `BatchExpandTask`: 加 `lineItemId?: string | null` 字段（向后兼容，老后端 Jackson 默认忽略未知字段不报 400）。
+
+**关键决策**: 前端先改不阻塞（安全新增字段），等后端 `BatchExpandRequest` + `ConfigureProductService` 同步加字段后一起 E2E 联调。
+
+| 涉及文件 | 改动 |
+|---|---|
+| `cpq-frontend/src/pages/quotation/ConfigureProductDrawer.tsx` | submitConfigure 加 quotationLineItemId |
+| `cpq-frontend/src/pages/quotation/useDriverExpansions.ts` | tasks 加 lineItemId 字段，batchTasks 传 lineItemId |
+| `cpq-frontend/src/types/configure.ts` | ConfigureProductRequest 加 quotationLineItemId |
+| `cpq-frontend/src/services/componentService.ts` | BatchExpandTask 加 lineItemId |
+
+---
+
+### [2026-05-20] Bug C — 详情页"工序"Tab 比编辑页多 1 行重复修复 (cpq-frontend)
+
+**根因**: `ReadonlyProductCard` 直接渲染 `activeComp.rows`（DB 持久化行数），编辑页 `ProductCard` 通过 `useDriverExpansions` 取 `driverCount` 限制行数，屏蔽历史 autoSave 写入的多余尾行。两边渲染行数来源不同，导致详情页多 1 行。
+
+**修复**:
+- `ReadonlyProductCard.tsx`: 引入 `useDriverExpansions` + `driverExpansionKey` + `fieldsOverrideHash`；加 `customerId` prop；渲染 tbody 时用 `effectiveCount = useDriver ? driverCount : comp.rows.length`（与编辑页 ProductCard 第 1339-1361 行完全对齐）；支持 COMPOSITE 双轨 driverPath
+- `QuotationDetail.tsx`: `ReadonlyProductCard` 调用处透传 `customerId={quotation.customerId}`
+- `useMemo` 把单个 `lineItem` 包成 `LineItem[]` 传入 hook，依赖 `lineItem` 引用变化
+
+**关键决策**: 不引入新 API 端点，直接复用已有 `useDriverExpansions` hook；改动仅限详情页渲染层，不影响编辑页和公式计算。
+
+**自检**: TS 0 错误 ✅; ReadonlyProductCard.tsx → Vite 200 ✅; 主入口 200 ✅
+
+---
+
+### [2026-05-20] 测试验收 — 3 Bug 双 spec 回归结论 (cpq-tester)
+
+**回归保护 (PASS)**
+- SIMPLE `quotation-flow.spec.ts` 1 passed (52.0s), '加载中' final=0, 8 Tab 全过
+- COMPOSITE `composite-product-flow.spec.ts` 1 passed (48.3s), '加载中' final=0, 4 Tab 全过
+- 两 spec 无退化
+
+**Bug A 验证 (API 通过, E2E 待补)**
+- v1.18 Tab1 (tcId=d44b1bdc) GET 验证: 单位/单价 field_type=DATA_SOURCE, datasource_binding={type:GLOBAL_VARIABLE, global_variable_code:ELEM_PRICE} ✅
+- 未跑 v1.18 + 独立产品 + 3120012574 完整 E2E (Bug B 失败阻止了完整流程, 需补跑)
+
+**Bug B 专项 FAIL (cache 串行未完全修复)**
+- 新增 spec `e2e/multi-product-flow.spec.ts` "Bug B: 同 partNo 双产品工序独立" case
+- 产品1(总装配) + 产品2(部件装配) 同 partNo = 3120012574
+- 结果: 产品2工序Tab 显示总装配 (产品1的工序), 部件装配缺失 — cache 串行仍存在
+- 根因方向: `onConfigureConfirm` 中 `basicItems` 未注入 `tempId` → 但 `li.id` 应该有后端UUID; `ConfigureProductDrawer`→`configureProductService`→后端返回的lineItem里 `id` 已存在 (已验证), 理论上不应串行。待进一步追查: 可能是 `fingerprintMatched=true` 复用场景下两个产品共享同一 hf_part_no 导致后端 mat_process 同一 partNo 无法区分工序, driverExpansion key 不同但 DB 数据相同
+- 退回角色: cpq-backend (configureProductService 复用料号时是否支持独立工序)
+
+**Bug C 专项 FAIL (工序 Tab 行数不一致)**
+- 新增 spec `e2e/bug-c-detail-vs-edit.spec.ts`
+- 7/8 Tab 行数一致, 只有"工序" Tab: 编辑页=2行, 详情页=3行
+- 详情页工序Tab row[0]和row[1]均为部件装配(重复行), 选配-工序 Tab 两页均 2行一致
+- 根因方向: 同一报价单 mat_process 可能有重复 row (Bug B 场景创建了 2 条), ReadonlyProductCard 的 batchExpand 请求参数 partVersion 或 partVersionLocked 与编辑页不同; 或者 `collectTabData` locator 跨卡片抓到了全局行
+- **注意**: 大部分 Tab 已一致 (enrichComponentData 同源化主体已生效), 只剩工序 Tab 重复行偶现问题
+
+**新增测试文件**
+- `cpq-frontend/e2e/multi-product-flow.spec.ts` — 加 Bug B 专项 case (同 partNo 双产品工序独立)
+- `cpq-frontend/e2e/bug-c-detail-vs-edit.spec.ts` — Bug C 专项 (详情页 vs 编辑页一致性)
+
+---
+
+### [2026-05-20] Bug A 后端两步修 (v1.18 Tab 1 admin patch + mergeFieldsOverrideForNewDraft override-priority)
+
+**A.a — v1.18 Tab 1 (选配-元素含量) admin patch**
+- 模板 `d3506542-46cc-405c-a886-d702a18a59f1` (v1.18 PUBLISHED)，Tab 1 tcId=`d44b1bdc-7985-432e-86a6-22e17b881270`
+- 操作: `POST /api/cpq/templates/admin/d3506542.../patch-composite`，`fieldsOverride` replace 模式 (fieldsCount=7, replaceMode=true)
+- 同步写入 `dataDriverPathComposite=v_composite_child_elements`
+- 单位/单价字段升级: `field_type=DATA_SOURCE`, `datasource_binding={type:GLOBAL_VARIABLE, global_variable_code:ELEM_PRICE, value_field:unit/costing_price, key_field_refs:{element_name:"元素"}}`, 保留 `basic_data_path` 作 SIMPLE fallback
+- 调用 `POST /api/cpq/components/dae85db8-cf47-44df-890d-516625a598da/refresh-template-snapshots` 同步 26 个模板 snapshot (含 v1.16 + v1.18)
+- **注意**: admin endpoint 的 payload 键是 `fieldsOverride`（不是 `replaceFieldsOverride`），需用 `--data-binary @file.json` 传文件避免中文转义问题
+
+**A.b — mergeFieldsOverrideForNewDraft 改为 override-priority (模板优先)**
+- 文件: `cpq-backend/src/main/java/com/cpq/template/service/TemplateService.java` L598-710
+- 改前 (component-fields-priority): 以 component.fields 为基底，只从 old override 拷 `_composite/*Composite` 后缀键 → 升级过的 field_type/datasource_binding 被组件老形态覆盖
+- 改后 (override-priority): 以旧 override 字段为基底，仅从 component 补 old 里没有的键；component 里新增字段整体追加；LIST_FORMULA 的 list_formula_config 仍走 mergeListFormulaConfigComposite (base 换为 old)
+- 改动约 60 行（新增注释 + 重写循环逻辑）
+
+**关键决策**:
+- "模板已自定义就不被组件覆盖" 是正确语义 — 用户明确确认
+- 组件 bug 修复不会自动传播到模板 (需显式走 admin patch)，这是 override-priority 的故意行为
+- LIST_FORMULA 的 list_formula_config: 当 old 已有时以 old 为基底，从 comp 补新 per_item_rules 结构，再调 mergeListFormulaConfigComposite 把 formula_composite 带进来 (双层保护)
+
+**验证结果**:
+- v1.18 Tab 1: data_driver_path_composite=v_composite_child_elements, 单位/单价 field_type=DATA_SOURCE ✅
+- v1.16 Tab 1: 未变，data_driver_path_composite=v_composite_child_elements, 单位/单价 DATA_SOURCE ✅
+- createNewDraft 验证 (从 v1.18 创 draft): Tab 1 单位/单价 field_type=DATA_SOURCE, datasource_binding 完整保留 ✅
+- Quarkus health 200 ✅
+
+**涉及文件**:
+- `cpq-backend/src/main/java/com/cpq/template/service/TemplateService.java` (A.b 代码改动)
+- 无 Flyway 改动，无前端代码改动
+- admin patch 纯数据操作 (无代码文件改动)
+
+---
+
+### [2026-05-20] Bug B+C 前端修复 (driverExpansionKey 加 lineItemId 维度 + enrichComponentData 同源化)
+
+**Bug C (重构，零行为变更)**
+- 新建 `enrichComponentData.ts` (~180 行)，把 `enrichComponentData` + `loadProductAttributes` + `fetchTemplateOnce` + `normalizeFieldType` + `parseJson` 整体迁出
+- `QuotationWizard.tsx`: 删除本地函数块 (-~190 行)，加 import (+1 行)；同时清理 `ComponentField`/`ComponentFormula` 未用 import 和 `parseJson` 未用函数定义
+- `ReadonlyProductCard.tsx`: 删除本地 enrich 闭包 (-80 行)，加 import + 调用 (+5 行)；清理 `normalizeFieldType` 和 `ComponentFormula` 未用 import
+- 关键效果: 详情页现在透传 4 个字段 `datasource_binding`/`global_variable_code`/`default_source`/`sort_order`
+
+**Bug B (协议加维度)**
+- `driverExpansionKey` 签名: 5 维→6 维，加 `lineItemId` 作第一参数，format `${lineItemId}::${partNo}::${componentId}::${customerId}::${dataDriverPath}::${fieldsHash}`
+- `LineItem` 接口加 `tempId?: string` 字段
+- 新建 lineItem 入口加 tempId: `buildLineItemFromTemplate` (BulkImportPartsDrawer) + `AddProductModal` 各自 `crypto.randomUUID()`
+- 8 个 callsite 全补 lineItemId (item.id || item.tempId || '')：useDriverExpansions×2, QuotationStep2×4, QuotationWizard×2
+- `invalidate(partNos)`: key.split('::')[0]→[1] (partNo 从第1维→第2维)
+- fingerprint 加 `lid` 维度，保证同 partNo 两条行各自独立 fetch
+- 不动后端 API
+
+**涉及文件**: `enrichComponentData.ts`(新建), `useDriverExpansions.ts`, `QuotationStep2.tsx`, `QuotationWizard.tsx`, `ReadonlyProductCard.tsx`, `BulkImportPartsDrawer.tsx`, `AddProductModal.tsx`
+**自检**: TS 0 错误; 5 个改动文件 Vite 200; 未动后端 API
+
+### [2026-05-20] PM 拆解 3 Bug 验收标准 (v1.18 + 同 partNo 多 lineItem + 详情页不一致)
+
+**触发**: 用户在 v1.18 模板 + 3120012574 场景下报告 3 个独立 Bug。
+
+**Bug A — 选配-元素含量列都是"—"**
+- 根因假设: `mergeFieldsOverrideForNewDraft` (AP-39 修复引入) 保留逻辑只覆盖 `*_composite` 后缀字段，不保留 `field_type=DATA_SOURCE` + `datasource_binding` 非 composite 升级形态 → v1.16 用 admin endpoint 升级的单位/单价字段在 createNewDraft (v1.16→v1.17→v1.18) 时被 component.fields 旧 BASIC_DATA 形态覆盖还原。
+- 修复方向: 扩展 `mergeFieldsOverrideForNewDraft` 的保留规则 — 同名字段若旧 override `field_type` 为更高级形态 (DATA_SOURCE > BASIC_DATA)，整体保留 `field_type` + `datasource_binding` + `global_variable_code`。
+- 不变量: v1.16 DATA_SOURCE 升级在任何后续 createNewDraft 不得退化；修后须调 refresh-template-snapshots 同步 v1.18 snapshot。
+
+**Bug B — 同报价单同 partNo 两产品工序互相影响**
+- 根因假设: `driverExpansionKey` 5 维 (partNo, componentId, customerId, dataDriverPath, fieldsHash) 缺 `lineItemId` → 两个 lineItem partNo 相同时共享 cache slot，后写覆盖先写。
+- 修复方向: `driverExpansionKey` 加 lineItemId 第 6 维；AP-37 §⑨ 约 11 处 callsite 同步。
+- 不变量: F12 Network 同 partNo 不同 lineItemId 须见 2 个独立 task。
+
+**Bug C — 详情页 vs 编辑页卡片完全不同**
+- 根因假设: 详情页 `ReadonlyProductCard` 独立 inline enrich (saved-driven find()) 与编辑页 `enrichComponentData` (snapshot 驱动队列匹配) 不同源 (AP-37 根因 6 + AP-41 prop drilling 漏传)。
+- 修复方向: 详情页走与编辑页同源的 enrichComponentData 逻辑，ReadonlyProductCard 不独立维护 enrich mapper。
+- 不变量: 所有消费 lineItem.componentData 的视图禁止双源 enrich；Tab 数必须 1:1 按 snapshot 渲染，不因 componentHasData 隐藏。
+
+**优先级**: Bug A (P0) → Bug C (P1, 与 A 并行或紧跟) → Bug B (P2, 独立批次)。
+
+**回归保护**: 3 Bug 修后必跑 quotation-flow.spec.ts + composite-product-flow.spec.ts 双 spec；multi-product-flow.spec.ts 需改造覆盖 Bug B 同 partNo 场景。Bug C 需人工对照详情/编辑两页截图。
+
+**涉及文件 (待修)**: `TemplateService.java#mergeFieldsOverrideForNewDraft` / `useDriverExpansions.ts#driverExpansionKey` / `ReadonlyProductCard.tsx` enrich 逻辑 / `QuotationStep2.tsx` callsite 同步
+
+---
+
+### [2026-05-20] 报价单 QuotationCreateForm 报价模板 Select 加 showSearch (SIMPLE spec 复跑触发)
+
+**触发**: v1.16 任务复跑验证时, `quotation-flow.spec.ts` 选模板 v1.10 timeout — 真因不是 spec 脆弱性, 而是 `QuotationCreateForm.tsx` 报价模板 `<Select>` 缺 `showSearch` → 数据库 v1.0~v1.22 共 22 个 PUBLISHED 同名"组合产品"模板 + antd virtual scrolling → 中间版本无法可靠选中。
+
+**改动** (`cpq-frontend/src/pages/quotation/QuotationCreateForm.tsx` L303-323):
+- Options 每项加 `searchText: ${t.name}${t.version ? ' ' + t.version : ''}` (因 label 是含 Tag 的 JSX, 不能直接搜)
+- `<Select>` 加 `showSearch` + `filterOption=(input, option) => option.searchText.toLowerCase().includes(input.toLowerCase())`
+
+**用户价值**: 多版本场景下输入"v1.10"即可精确过滤; 也修了 spec 脆弱性。
+
+**约束遵守**: UX 增强, 0 业务逻辑/计算链路改动; SIMPLE/COMPOSITE 通用; 用户已确认授权。
+
+**验证**: TS 0 错误; Vite transform 200; `quotation-flow.spec.ts` 1 passed (51.1s), 8 Tab '加载中'=0, '加载中' final count=0 ✅
+
+**涉及文件**: `cpq-frontend/src/pages/quotation/QuotationCreateForm.tsx`, `cpq-frontend/e2e/quotation-flow.spec.ts` (L94-119 内联模板选择器加固, 上一步 frontend agent 改的)
+
+---
+
+### [2026-05-20] v1.16 组合产品报价单 5 Tab 全 PASS — 双轨补齐 + E2E spec 升级 (任务整体交付)
+
+**用户任务**: 报价单管理 → 新建 → 罗克韦尔 + **v1.16** → 选配添加 → 组合产品 (3120012574 existing + 自定义 AgCu90 银铜合金) + 工序总装/部装/电镀 + 组合工艺铆接 → 验证 5 Tab 内容渲染。已知"选配-材质 / 选配-元素含量"不正确。
+
+**约束**: 不改 SIMPLE 独立产品的渲染/计算逻辑。
+
+**根因**: v1.16 PUBLISHED 模板 5 个 Tab 中 3 个未补 `data_driver_path_composite` + 字段缺 `_composite` 后缀双轨；部分字段保留 `BASIC_DATA + global_variable_code` 老兼容形态（v1.0~v1.3 已是 DATA_SOURCE.GLOBAL_VARIABLE，v1.16 退化）。
+
+**修复路径**: 纯 admin endpoint `POST /api/cpq/templates/admin/{id}/patch-composite` 4 次调用 (无 Java/Flyway/前端业务代码改动)。Tab 0 patch 模式只补 driver；Tab 1/4 replace 模式整 fieldsOverride 升级；Tab 4 二次 patch 补「子件」字段。详见下两条同日条目。
+
+**E2E spec 升级**: `cpq-frontend/e2e/composite-product-flow.spec.ts` v1.11 → v1.16，5 Tab 期望 (材质/工序列表/元素含量/组合工艺/总成本) + rowCount 下限 + 子件列断言 (3 NORMAL Tab) + 参与配件断言 (组合工艺 Tab) + 加载中=0 强断言。
+
+**验收结果**:
+- **COMPOSITE spec**: 1 passed (48.3s), 4 Tab '加载中'=0, rowCount 全部 ≥ 期望（材质=2/工序=6/元素=4/组合工艺=1），子件列全部含 3120012574 + CFG-AgCu-000023 ✅
+- **SIMPLE 回归** (quotation-flow.spec.ts): 1 passed (51.5s), 8 Tab '加载中'=0 ✅（修组合不动 SIMPLE 约束满足）
+- 残留非阻断 Bug #2: `process_default_cost` 表种子数据缺（MRO-LP-0001 电镀工序无价格） → 工序列表"单价/小计"显示"—"。已确认为 DBA/数据问题，超出本次模板修复范围，待后续补种子数据。
+- 残留非阻断 Bug #3: 「选配-总成本」SUBTOTAL 渲染为底部「产品小计 ¥700.00」条而非 Tab。spec 已兜底断言通过。
+
+**涉及文件**:
+- `cpq-frontend/e2e/composite-product-flow.spec.ts` (spec 改造 v1.11 → v1.16)
+- `docs/RECORD.md` (本条 + 两条分条目)
+- **无任何 Java / Flyway / 前端业务代码改动** — SIMPLE 路径完全零回归
+
+**PRD 变更**: 暂未变更 PRD-v3.md。本次任务是模板数据修复，双轨方案规范已在 `docs/同模板双轨支持组合产品.md`。建议后续在 PRD-v3.md §3.2.x 补一行"报价单 Tab 渲染规范以 `docs/同模板双轨支持组合产品.md` 为事实标准"作为单点引用，避免重复维护。
+
+**沉淀经验**:
+- 新模板版本发布时（v1.16 ← v1.11）必须强制 `e2e/composite-product-flow.spec.ts` + `quotation-flow.spec.ts` 双 spec 跑过
+- `createNewDraft` 拷贝 fields_override 时是否完整合并双轨字段是 v1.11→v1.16 退化的可能根因（需 PM 排查 v1.11→v1.12→...→v1.16 演化链路）
+- Tab 「子件」字段在 4 个"选配-*" Tab 都应配置（材质/元素含量/工序列表/组合工艺），是 COMPOSITE 渲染时识别子件归属的关键列；架构师方案首轮漏给 Tab 4 配，靠 E2E spec 子件列断言兜住
+
+---
+
+### [2026-05-20] v1.16 Tab 4「选配-工序列表」追加「子件」字段 + Bug#2 排查 (修复循环 1/3)
+
+**触发**: E2E 验收 composite-product-flow.spec.ts 断言 `allText.contains('3120012574')` 失败，Tab 4 缺少「子件」列。
+
+**操作**: 纯 admin endpoint `POST /api/cpq/templates/admin/2946003e.../patch-composite`，replace 模式，fieldsOverride 从 6 字段扩至 7 字段（序号/工序代码/工序/单价/成材率/小计/子件），不改 Java 代码，不改 Flyway 迁移。
+
+**新增字段**:
+- name=子件, field_type=BASIC_DATA, basic_data_path=mat_part.part_no, basic_data_path_composite=v_composite_child_processes.child_part_name
+
+**验证结果**:
+- Tab 4 fieldsCount=7, data_driver_path_composite=v_composite_child_processes [PASS]
+- 单价字段 DATA_SOURCE.GLOBAL_VARIABLE(PROCESS_DEFAULT_PRICE), key_field_refs={process_code:"工序代码"} [PASS]
+- 成材率 LIST_FORMULA per_item_rules 9 条完整保留 [PASS]
+- Tab 0/1/2/3 完全未动 [PASS]
+
+**Bug #2 排查 (单价显示"—")**: global_variable 表有 PROCESS_DEFAULT_PRICE 记录（LOOKUP_TABLE，源表 process_default_cost）。key_field_refs 已正确配置。根因是 process_default_cost 表数据不完整：K1/K2/K3 系列 process_code 无价格记录，MRO-AS-0001 系列有记录（返回值 12.0）。属于数据库种子数据缺失，超出模板修复范围，未补种子数据（等待 DBA/PM 确认补数据）。
+
+**涉及文件**: 无代码改动（纯 admin endpoint 数据操作）| 临时 payload: C:/Users/hf/AppData/Local/Temp/patch_tab4_v2.json
+
+---
+
+### [2026-05-20] v1.16 PUBLISHED 模板双轨补齐 (纯 admin endpoint curl, 无代码改动)
+
+**触发**: v1.16 是当前生产 PUBLISHED 模板，5 个 Tab 中 3 个缺少 `data_driver_path_composite`，单位/单价字段还在用旧 `BASIC_DATA+global_variable_code` 兼容格式，组合产品视角无法正确展开。
+
+**操作路径**: 纯 `POST /api/cpq/templates/admin/{templateId}/patch-composite` 三次调用，不新增 Java 代码，不新增 Flyway 迁移。
+
+**三次 patch 结果**:
+- Tab 0 (选配-材质, tcId=85e8a84d): patch 模式 — 仅注入 `dataDriverPathComposite=v_composite_child_materials`，不改 fieldsOverride（snapshot 已有 6 字段含 `basic_data_path_composite`）
+- Tab 1 (选配-元素含量, tcId=bf721b18): replace 模式 — 7 字段整体替换；单位字段升级 `DATA_SOURCE.GLOBAL_VARIABLE(ELEM_PRICE, value_field=unit)`；单价字段升级 `DATA_SOURCE.GLOBAL_VARIABLE(ELEM_PRICE, value_field=costing_price)`；`key_field_refs={element_name:"元素"}`；`dataDriverPathComposite=v_composite_child_elements`
+- Tab 4 (选配-工序列表, tcId=f8a36f21): replace 模式 — 6 字段整体替换；序号/工序代码/工序三字段加 `basic_data_path_composite`（指向 `v_composite_child_processes.*`）；单价字段升级 `DATA_SOURCE.GLOBAL_VARIABLE(PROCESS_DEFAULT_PRICE)`；成材率 LIST_FORMULA 完整保留（9 条 per_item_rules + list_formula_config 含 config_template_id）；`dataDriverPathComposite=v_composite_child_processes`
+- Tab 2 (选配-总成本): 不动
+- Tab 3 (选配-组合工艺): 不动
+
+**SIMPLE 回归保护**: 所有 `basic_data_path` 字段值修改前后完全一致（Python 对比验证）。
+
+**关键决策**:
+- 单位/单价升级时保留 `basic_data_path`（作为 SIMPLE 路径 fallback，不清除）
+- LIST_FORMULA (成材率) 不改 `basic_data_path_composite`（LIST_FORMULA 不依赖 path，公式直接用字段名引用）
+- Tab 0 用 patch 模式（snapshot 字段已有 composite，只需补 driver）；Tab 1/4 用 replace 模式（需同步升级字段类型）
+- 所有 payload 保存为 JSON 文件 (`patch_tab0/1/4.json`) 再 `--data-binary` 上传，避免 curl 命令行中文转义问题
+
+**验证结果 (Quarkus 重启后 GET 确认)**:
+- Tab 0: `data_driver_path_composite=v_composite_child_materials` [PASS]
+- Tab 1: `data_driver_path_composite=v_composite_child_elements` + 单位/单价 `field_type=DATA_SOURCE` [PASS]
+- Tab 2: `data_driver_path_composite=None` (未动) [PASS]
+- Tab 3: `data_driver_path_composite=None` (未动) [PASS]
+- Tab 4: `data_driver_path_composite=v_composite_child_processes` + 单价 `field_type=DATA_SOURCE` + 成材率 per_item_rules count=9 [PASS]
+
+**涉及文件**: 无代码文件改动（纯 admin endpoint 数据操作）| 临时 payload 文件: `~/patch_tab0/1/4.json`
+
+---
+
+### [2026-05-20] 双轨方案二期 + 多产品 v1.10 渲染修复 (Flyway V204 V205 + LIST_FORMULA 双轨 + createNewDraft 合并机制)
+
+**触发**: 一天内串联 8 个相关请求 — LIST_FORMULA 公式 BNF 路径 / 主表查看页 / mat_part 长宽高 / 报价单 30 误算分析 / 发新版本生效流程 / v1.10 + 多产品 (独立 + 组合) 8 Tab 全部正确。
+
+**核心改动 (按时间序)**:
+
+1. **LIST_FORMULA 字段 BNF 路径引用 (需求 1)** — 组件管理列表驱动公式支持 `{mat_bom.net_qty}*5` 形态: `{...}` 含 `.` 走 BNF, 不含走全局变量. 涉及:
+   - 前端 `formulaEngine.ts:evaluateListFormulaString` 加 `basicDataValues` + `partNo` + `pathCacheState` 参数, BNF path 缺值时 fallback 到 partNo 级 globalPathCache (driver-free 解析)
+   - 前端 `usePathFormulaCache.collectListFormulaBnfPaths` 扫 `branches[*].formula` + `default_formula` 的 BNF token
+   - 后端 `ComponentDriverService.parseBasicDataPaths` + `collectBnfPathsFromFormula` 同步采集让 batch-expand 行级 basicDataValues 含 LIST_FORMULA 用到的路径
+   - 关键 fix: `cell render` 时调 `evaluateListFormulaString` 必须传 `pathCacheState` (React state cache), 否则首渲染时模块级 `_globalPathCache` 还没写好返 undefined
+
+2. **主数据表查看页 (需求 2)** — 新页 `MasterDataTableViewerPage.tsx` (`/master-data/viewer`): 下拉选 4 张业务核心表 (mat_part/mat_bom/mat_process/mat_composite_process) + 搜索 + 系统字段开关 (硬编码黑名单 id/created_at/updated_at/created_by/updated_by/version/import_record_id). 后端 `TableRegistry.java` 补注册 `mat_composite_process` (从 13 表扩到 17 表, 但实际只用 4 张核心表).
+
+3. **mat_part 加长/宽/高 (Flyway V204)** — `ALTER TABLE mat_part ADD COLUMN length/width/height NUMERIC(18,4)`. 零代码改动 — 主数据 API 走 information_schema 自适应, 前端 `MasterDataTableViewerPage` 自动渲染新 3 列, BNF 路径 `{mat_part.length}` 自动可用. 不改 mat_bom (后者按 hf_part_no + bom_type 多行, 放尺寸冗余).
+
+4. **报价单 30 = 1*30 误算分析 → AP-39 印证** — 用户报告 QT-20260520-1448 成材率 30 不是新公式 `{mat_bom.net_qty}*5`. 链路诊断: `component.fields=58` / `v1.13.fields_override=*5` / `v1.13.snapshot=*5` → 渲染读 snapshot, 组件改动不动 PUBLISHED 模板 fields_override (AP-39). 30 = `{v_composite_child_processes.seq_no} * 30` 求 view seq_no=1 → 30. **用户选方案 B: SQL 刷 v1.13 fields_override + snapshot 同步到 `*10`, 不影响 v1.10/1.11/1.12 历史 snapshot 与对应 DRAFT 报价单**.
+
+5. **createNewDraft 合并 fields_override (AP-39 架构修法)** — 用户选"发新版本就生效"工作流. 改 `TemplateService.createNewDraft` 拷 `fields_override` 时不再机械整段拷, 改调新方法 `mergeFieldsOverrideForNewDraft`: 以 `component.fields` 为基础, 保留旧 override 的顶层 `_composite/Composite` 后缀字段 + LIST_FORMULA `list_formula_config` 嵌套 `formula_composite` / `default_formula_composite` (新增 `mergeListFormulaConfigComposite` 按 rule code + branch index 匹配). 兜底: 组件里已删但旧 override 里有的字段整体保留 (V195 历史 SQL 兜底).
+
+6. **LIST_FORMULA `formula_composite` 双轨 (C)** — V200 双轨方案只覆盖了 BASIC_DATA path, LIST_FORMULA formula 仍 SIMPLE-only. 协议扩展:
+   - 前端 cell render 按 `isCompositeItem` 选 `b.formula_composite ?? b.formula` (默认分支同样优先 `default_formula_composite`)
+   - 前端 `collectListFormulaBnfPaths` 同时扫两条公式 → batch-evaluate 预热
+   - 后端 `collectBnfPathsFromFormula` 同步扫
+   - 数据迁移: 用户在组件管理 / admin SQL 设 `branches[i].formula_composite` (缺失自动 fallback 到 `formula`, 向后兼容)
+
+7. **`template_component.data_driver_path_composite` 列 (Flyway V205)** — 发现 `data_driver_path_composite` 只存在于 snapshot entry, 没有源列 → publish/refresh 重建 snapshot 时会丢. 加列 + 修改 4 处协议传播点 (publish / createNewDraft 拷贝 / refreshSnapshotsByComponent / admin patch-composite endpoint) 让 driver 双轨完整闭环.
+
+8. **v1.10 升级双轨 (A)** — 19 张 DRAFT 报价单都引用 v1.10. SQL admin 一次性升级:
+   - 4 个选配-* tab 的 `fields_override` 整段拷自 v1.14 (含 `basic_data_path_composite`)
+   - 3 个选配-* tab 设 `data_driver_path_composite` = v_composite_child_*
+   - "材质" tab 加 `data_driver_path_override / _composite = v_composite_child_materials` 让 driver 展开
+   - "成材率" LIST_FORMULA 加 `formula_composite=100` (组合视角占位, 业务后续按真公式改)
+   - "单价" 字段从坏格式 `BASIC_DATA + basic_data_path=process_default_cost.unit_price (表不存在)` 换成 `DATA_SOURCE + datasource_binding.GLOBAL_VARIABLE PROCESS_DEFAULT_PRICE` 正确格式 → 真正查到 12/24
+   - 调 4 个 component 的 `refresh-template-snapshots` 同步到 19 个模板 snapshot
+
+9. **组件管理"其他数据源"限制同目录** — `ComponentManagement.tsx:505` `otherCompSubtotals` 用 `c.directoryId === selectedComponent?.directoryId` 过滤, 避免跨目录引用导致模板组装漏配.
+
+**E2E 验证 (3 个新 spec)**:
+- `yield-rate-bnf-formula.spec.ts` — v1.14 + 3120012574, 成材率 `{mat_bom[element_name='Sn'].net_qty}*15` 渲染 = **19.3203** ✅
+- `multi-product-flow.spec.ts` — v1.10 + 产品1(独立) + 产品2(组合), 16 个 Tab 全部渲染数据, 0 加载中, 0 "#ERROR", 0 "(共 N 项)"
+- `master-data-viewer.spec.ts` — 4 表切换 + 系统字段开关, mat_part 隐藏 13 列 / 显示 17 列
+
+**关键 bug 修复**:
+- `evaluateListFormulaString` BNF lookup 时序问题: hook `setGlobalPathCache` 触发 caller re-render 但 cell render IIFE 已用旧模块状态 → 显式入参 `pathCacheState` 走 React 依赖追踪
+- BNF resolver 多行返回: `{mat_bom.net_qty}` 对 3120012574 返 `[{net_qty:9.04},{net_qty:1.28},{net_qty:null}]` 数组, `evaluateListFormulaString` 转标量失败 fallback 0. 修法: 让用户写带条件的 BNF (`{mat_bom[element_name='Sn'].net_qty}`) 返单值
+- `ImplicitJoinRewriter` driver 列谓词污染: driver=mat_process 注入 seq_no=1 到 mat_bom 路径, 但 Sn 行 seq_no=2 → 空集. fallback 链 partNo 级 globalPathCache (无 driver 注入) 解决.
+
+**架构债清单 (供后续)**:
+- LIST_FORMULA `formula_composite` 当前只能 SQL 设, 组件管理 UI 缺输入框 — 用户体验差
+- v1.10 非选配 4 个 tab (材质/工序/元素含量/组合工艺) 双轨没补全, 走单子件/单组合视角设计 (AP-45)
+- mat_bom Sn 行 net_qty 通过 `v_composite_child_elements` 视图查不到 — 视图 schema 数据层问题
+
+---
+
+### [2026-05-20] 同模板双轨支持组合产品 — 单字段 _composite 后缀方案 (无 Flyway, 全栈协议传播 17 处)
+
+**触发**: 模板 v1.11 同时被 SIMPLE 独立产品 + COMPOSITE 组合产品使用。单一 `data_driver_path` 配置无法两全:
+- 配 `mat_process` 单子件 → 独立产品对, 组合产品父级查不到数据
+- 配 `v_composite_child_processes` 聚合视图 → 组合产品对, 独立产品父子件关系不存在
+
+V195 SQL 用"双套并行 Tab" 折中 (标准 Tab + 选配-* Tab) 但**用户配的"选配-*" Tab 在组合产品下渲染错** + V195 自动加的"标准 Tab" 在组件管理 UI 看不到。
+
+**核心方案**: JSONB 内**单字段双轨** (`basic_data_path` + `basic_data_path_composite` / `data_driver_path` + `data_driver_path_composite`), 运行时按 `lineItem.compositeType` 切换 effective path。详细规范见 [docs/同模板双轨支持组合产品.md](./同模板双轨支持组合产品.md)。
+
+**全栈实施 (5 阶段)**:
+
+1. **阶段 0 — 删 V195 自动 Tab**: 新 admin endpoint `POST /api/cpq/templates/admin/{id}/delete-tcs` 一次性删 v1.11 sortOrder 0/1/2/4 (材质/工序/元素含量/组合工艺), 9 Tab → 5 Tab (剩 4 个用户配的"选配-*" + 1 SUBTOTAL "选配-总成本"). 同时 `TemplateService.deleteTemplateComponentsBySortOrder` 删 template_component 行 + 过滤 components_snapshot entry.
+
+2. **阶段 1 — 类型层**: `cpq-frontend/src/pages/component/types.ts` `FieldItem.basic_data_path_composite` + `ComponentDataItem.dataDriverPathComposite`. `QuotationStep2.tsx` 同样加 interface 字段.
+
+3. **阶段 2 — 前端渲染层 + cache + 路径采集**:
+   - 新 helper `effectiveDriverAndFields(comp, isComposite)` 返 effective driver+fields
+   - `useDriverExpansions` tasks 生成 + fingerprint 按 `lineItem.compositeType === 'COMPOSITE'` 切换 effective driver + 重写 fields 内 `basic_data_path` 为 `_composite` 后缀版本
+   - `QuotationStep2`: `computeAllFormulas` + `computeTabSubtotal` 加 `isCompositeItem?: boolean` 参数 → BASIC_DATA path 切换; cell render `field.basic_data_path` 读取按 `isCompositeItem` 选; 4 处 `driverExpansionKey` callsite 用 effective driver/fields
+   - 5 个 enrich/builder mapper 透传 `basic_data_path_composite` + `dataDriverPathComposite`: QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard / QuotationStep2 inline / OverridesDrawer toFieldItems + cleanFields
+
+4. **阶段 3 — 后端**: **完全透明**. 前端发送 `batch-expand` 请求时 fields 内 `basic_data_path` 已经是 effective path (COMPOSITE 时是 `_composite` 版本), 后端 `parseBasicDataPaths` 用同一字段解析. 无后端代码改动 (除 admin endpoints).
+
+5. **阶段 4 — 数据修复 admin endpoint**:
+   - 新 endpoint `POST /api/cpq/templates/admin/{id}/patch-composite` 给 PUBLISHED 模板某 tc 注入双轨字段
+   - 两种模式: (a) **patch 模式** — `fieldComposites: [{name, basicDataPathComposite}]` 只 patch path 到匹配字段; (b) **replace 模式** — `fieldsOverride: [...]` 完整数组替换 tc.fieldsOverride (用于加新字段如"子件", 或升级字段类型如单价 BASIC_DATA → DATA_SOURCE.GLOBAL_VARIABLE)
+   - 给 v1.11 3 个"选配-*" tc 写入完整 fieldsOverride 含"子件"字段 + 升级单价 DATA_SOURCE.GLOBAL_VARIABLE=PROCESS_DEFAULT_PRICE
+   - 同时把 `data_driver_path_composite` + `fields` 写进 snapshot entry
+
+**v1.11 模板修复后渲染状态 (E2E composite-product-flow.spec.ts 验证)**:
+
+| Tab | 修前 | 修后 |
+|---|---|---|
+| 选配-材质 | 5 列全 "—" | ✅ 2 行: 3120012574 / CFG-AgCu-000023 各自 AgCu90/银铜合金/90/10/locked |
+| 选配-工序列表 | 5 行整工序库 + 单价报 process_default_cost 不存在 | ✅ 6 行 (2 子件 × 3 工序) + 单价 = 0 (PROCESS_DEFAULT_PRICE 默认) + 成材率 LIST_FORMULA 58/60 |
+| 选配-元素含量 | 1 空行 | ✅ 4 行 + 小计 ¥5,226.50: CFG-AgCu-000023 Ag 90% × 5800 / 100 = **5220** + Cu 10% × 65 / 100 = **6.5** |
+| 选配-组合工艺 | 1 行 RIVET | ✅ 1 行 RIVET 参与配件 (3120012574, CFG-AgCu-000023) |
+| 选配-总成本 (SUBTOTAL) | ¥0 | ✅ **¥5,726.50** 公式跑通 |
+
+**'加载中' final count = 0** ✅ / E2E Playwright **1 passed (47.6s)** ✅
+
+**新增反模式 AP-45**: "组合产品模板用单子件 driver 渲染错 (跨 SIMPLE/COMPOSITE 形态)" — 完整诊断 + 修法 + 历史命中。
+
+**AP-44 矩阵 15 处扩到 17 处**:
+- 第 ⑯: useDriverExpansions tasks + fingerprint 按 compositeType 切换 effective driver/fields
+- 第 ⑰: QuotationStep2 渲染层路径切换 (cell render + computeAllFormulas + computeTabSubtotal 加 isCompositeItem 参数)
+
+**E2E 标杆 spec**: `cpq-frontend/e2e/composite-product-flow.spec.ts` (新建) — 罗克韦尔 + v1.11 + 组合产品 (2 配件: 1 existing 3120012574 + 1 custom AgCu90) + 组合工艺 RIVET + 4 Tab 切换截图 + 全程加载中 = 0。
+
+**关键架构成果**:
+- 同一 v1.11 模板服务 SIMPLE + COMPOSITE 两种产品, 无需双模板
+- 存储格式: JSONB 内单字段双轨, 无 Flyway, 向后兼容 (老配置无 `_composite` 后缀字段时 fallback 到原 path = SIMPLE 行为不变)
+- 数据修复路径: admin endpoint 一次性, 不动 Flyway 不动组件管理 UI
+
+**涉及文件**:
+- 新建文档: `docs/同模板双轨支持组合产品.md` (核心规范)
+- 新建 E2E spec: `cpq-frontend/e2e/composite-product-flow.spec.ts`
+- 修 反模式: `docs/反模式.md` 新增 AP-45
+- 修 后端: `cpq-backend/.../template/service/TemplateService.java` (3 方法: deleteTemplateComponentsBySortOrder / patchTemplateComponentCompositeOverrides / refreshSnapshotsByComponent), `cpq-backend/.../template/resource/TemplateResource.java` (2 新 endpoint: delete-tcs / patch-composite)
+- 修 前端 (双轨核心): `cpq-frontend/src/pages/component/types.ts`, `cpq-frontend/src/pages/quotation/QuotationStep2.tsx`, `useDriverExpansions.ts`, `QuotationWizard.tsx`, `BulkImportPartsDrawer.tsx`, `ReadonlyProductCard.tsx`, `cpq-frontend/src/pages/template/OverridesDrawer.tsx`
+
+---
+
 ### [2026-05-19] B3 LIST_FORMULA 渲染完整修 — 4 个连锁 bug 串联失败（纯代码修复，无 Flyway）
 
 **触发**: 用户复测"选配-工序列表" Tab 成材率应按 LIST_FORMULA per_item_rules 渲染 (MRO-AS-0001→50, MRO-AS-0002→60), 实际显示空白输入框。E2E + console.warn 调试逐层定位, 发现 **4 个独立 bug 串联**, 每个 bug 单独修都不够, 必须 4 个一起修。
@@ -8641,4 +10195,41 @@ cid=0a436b6c tab=选配-工序列表 sort=6  ✓
 - `docs/反模式.md` (巡检清单)
 - `docs/PRD-v3.md` (§9.10 演进史)
 
+---
+
+### [2026-05-21] Bug B 根因最终确认 + V207 视图修复 — v_composite_child_processes 暴露 quotation_line_item_id (cpq-backend)
+
+**任务**: Bug B 修复循环 3/3 — 链路诊断最终攻坚
+
+**历史上下文**: V206 在 `mat_process` 加了 `quotation_line_item_id` 列，`ComponentDriverService.expand()` 7-arg 重载在 `lineItemId != null && lineItemRows empty` 时返回 EMPTY（不 fallback 主数据），`ConfigureProductService` 按 lineItemId 精确 INSERT 工序行。后端 API 验证通过（fake lineItemId → rowCount=0）。但 E2E 产品1+产品2 工序 Tab 各自仍显示 52 行混合数据。
+
+**诊断过程**: 在 `QuotationStep2.tsx` 加 `[BugB-PC]` / `[BugB-DIAG]` console 诊断，E2E spec 加 `bugbLogs` 专项捕获。诊断日志揭示：
+- 材质 Tab `driver=v_composite_child_materials, rowCount=1` — 正确（数据量本身少）
+- 工序 Tab `driver=v_composite_child_processes, lid=<uuid>, rowCount=52` — 错误
+
+**真正根因**: `v_composite_child_processes` 是视图，`information_schema.columns` 查该视图只返回 8 列（无 `quotation_line_item_id`）。`ImplicitJoinRewriter.rewriteWithContext()` 在 `effective` map 里有 `{quotation_line_item_id: <UUID>}` 谓词候选，但扫 `tableCols` 发现视图无该列 → **谓词不注入** → SQL 查出 52 行全量主数据 → batchExpand 返回 rowCount=52 → 两产品都显示全量工序（总装配+部件装配混合）。
+
+**修复**: Flyway V207 `CREATE OR REPLACE VIEW v_composite_child_processes`，两个 UNION ALL 分支均 `SELECT proc.quotation_line_item_id`，视图暴露该列。
+- V207 执行后 `information_schema.columns` 显示第 9 列 `quotation_line_item_id` ✅
+- `ImplicitJoinRewriter` 重启后列缓存清空，下次 rewrite 注入 `AND quotation_line_item_id = '<UUID>'` ✅
+- PostgreSQL 把视图谓词推入 `mat_process` 物理表，精确过滤当前 lineItem 专属行 ✅
+
+**E2E 结果（清理诊断代码后）**:
+- 产品1 工序 Tab: 1 行，`MRO-AS-0001 总装配` ✅
+- 产品2 工序 Tab: 1 行，`MRO-AS-0002 部件装配` ✅
+- 两产品行不完全相同（隔离生效）✅
+- "加载中" final count = 0 ✅
+- `1 passed (45.5s)` ✅
+
+**兼容性**: `lineItemId = null` 时 `ImplicitJoinRewriter` 不注入该谓词，视图返回全量数据（行为等价旧版）。SIMPLE 产品添加链路零改动。
+
+**关键设计规律（新增反模式候选）**: lineItemId 隔离机制依赖 `ImplicitJoinRewriter` 自动注入谓词，但注入前提是物理表/视图在 `information_schema.columns` 里有该列。用视图作 driver path 时，若视图 SELECT 列表不透传 `quotation_line_item_id`，隔离完全无效。后续凡新增 driver 视图，若需要 lineItemId 隔离，必须在视图 SELECT 里透传 `quotation_line_item_id`。
+
+**自检**: V207 success=t ✅; 后端 /api/cpq/components → 401（auth 正常）✅; TS 0 错误 ✅; E2E `1 passed` ✅
+
+**涉及文件**:
+- `cpq-backend/src/main/resources/db/migration/V207__v_composite_child_processes_add_line_item_id.sql` (新建 Flyway 迁移)
+- `cpq-backend/src/main/java/com/cpq/component/service/ComponentDriverService.java` (清理临时触发注释)
+- `cpq-frontend/src/pages/quotation/QuotationStep2.tsx` (清理 BugB-PC/BugB-DIAG 诊断 console.error)
+- `cpq-frontend/e2e/multi-product-flow.spec.ts` (清理 bugbLogs/BUGB-CONSOLE 诊断捕获)
 

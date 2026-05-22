@@ -45,6 +45,15 @@ public class TemplateComponent extends PanacheEntityBase {
     public String dataDriverPathOverride;
 
     /**
+     * V205 (2026-05-20): 模板级 COMPOSITE 视角 driver_path. 非 null 时 publish/refresh 把它
+     * 写入 components_snapshot.entry.data_driver_path_composite, 前端按 lineItem.compositeType
+     * 选用. 用途: 同一组件在 SIMPLE 视角下用 mat_process driver, 在 COMPOSITE 视角下用
+     * v_composite_child_processes driver.
+     */
+    @Column(name = "data_driver_path_composite", columnDefinition = "text")
+    public String dataDriverPathComposite;
+
+    /**
      * V200: 模板级 fields 覆盖 (JSON 数组字符串). 非 null 时 publish() 时盖 component.fields.
      * 与 dataDriverPathOverride 一起用 — fields 引用的 basic_data_path 也要跟着改成
      * 视图列 (如 v_composite_child_materials.material_code).

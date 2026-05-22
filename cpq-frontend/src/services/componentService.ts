@@ -7,6 +7,12 @@ export interface BatchExpandTask {
   partNo?: string | null;
   /** 料号版本号（可选）。传入后后端注入 AND part_version=N 过滤，避免历史版本叠加重复。 */
   partVersion?: number | null;
+  /**
+   * Bug B: lineItemId (item.id || item.tempId || null)。
+   * 后端 BatchExpandRequest 同步加此字段；Jackson 默认忽略未知字段，老后端兼容。
+   * 用于后端按 lineItemId 隔离同 partNo 多行的展开结果，防止 cache 互相覆盖。
+   */
+  lineItemId?: string | null;
 }
 
 export interface BatchExpandResultItem {

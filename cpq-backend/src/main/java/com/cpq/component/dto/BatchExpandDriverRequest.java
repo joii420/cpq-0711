@@ -41,5 +41,27 @@ public class BatchExpandDriverRequest {
          *   null → 沿用 component 表
          */
         public String overrideFieldsJson;
+        /**
+         * Bug B: 报价单 line item UUID（可选）。
+         * 非空时 batch-expand 在查 mat_process 等版本化表时优先返回 quotation_line_item_id=lineItemId
+         * 的行，fallback 到 quotation_line_item_id IS NULL 的主数据行。
+         * null = 老行为（不区分 lineItem，使用主数据）。
+         */
+        public UUID lineItemId;
+        /**
+         * lineItem 类型（可选）。用于 v_composite_child_* 聚合视图的 lineItemId 注入策略：
+         * - "COMPOSITE": 父级聚合视图，跳过 lineItemId 注入（让 hf_part_no 聚合子件工序）
+         * - "SIMPLE" 或 null: 普通单产品，必须注入 lineItemId 限定专属工序行
+         * null = 老调用路径，默认按 SIMPLE 处理（注入 lineItemId，比之前统一跳过更安全）
+         */
+        public String compositeType;
+        /**
+         * COMPOSITE 父级的子件 lineItem UUID 列表（可选）。
+         * compositeType="COMPOSITE" 时，后端向 v_composite_child_* 路径注入
+         * quotation_line_item_id IN (childLineItemIds) OR quotation_line_item_id IS NULL
+         * 谓词，只返回当前报价单子件自己的工序行，消除历史累积行。
+         * null 或空 = 不注入 IN 谓词（fallback：返回 hf_part_no 的全量历史行）。
+         */
+        public java.util.List<java.util.UUID> childLineItemIds;
     }
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   Button, Card, Col, Collapse, Descriptions, Drawer, Form, Input,
   Popconfirm, Row, Space, Spin, Table, Tabs, Tag, DatePicker,
@@ -12,10 +12,17 @@ import {
 import { useNavigate, useParams } from 'react-router-dom';
 import { quotationService } from '../../services/quotationService';
 import { quotationSnapshotService } from '../../services/quotationSnapshotService';
+import { boundGlobalVariableService } from '../../services/boundGlobalVariableService';
+import { globalVariableService } from '../../services/globalVariableService';
+import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 import { useAuthStore } from '../../stores/authStore';
 import ReadonlyProductCard from './ReadonlyProductCard';
+import { usePathFormulaCache } from './usePathFormulaCache';
+import { enrichComponentData } from './enrichComponentData';
+import type { LineItem } from './QuotationStep2';
 import WithdrawSection from './WithdrawSection';
 import SnapshotTab from './components/SnapshotTab';
+import BoundGlobalVariablesTab from './components/BoundGlobalVariablesTab';
 import type { SubmissionSnapshot } from '../../types/quotation-snapshot';
 import dayjs from 'dayjs';
 
@@ -75,6 +82,59 @@ const QuotationDetail: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('info');
   const [snapshot, setSnapshot] = useState<SubmissionSnapshot | null>(null);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
+
+  // ----------------------------------------------------------------
+  // B3：引用数据 Tab 可见性（无 GV 绑定时自动隐藏）
+  // ----------------------------------------------------------------
+  const [hasGvBindings, setHasGvBindings] = useState(false);
+
+  // ----------------------------------------------------------------
+  // B-GV-2 修复: 动态 key 全局变量定义字典，传给 ReadonlyProductCard 供 FORMULA 字段求值
+  // ----------------------------------------------------------------
+  const [gvDefs, setGvDefs] = useState<Record<string, GlobalVariableDefinition>>({});
+  useEffect(() => {
+    globalVariableService.list()
+      .then((res: any) => {
+        const arr: GlobalVariableDefinition[] = Array.isArray(res) ? res
+          : Array.isArray(res?.data) ? res.data
+          : [];
+        const map: Record<string, GlobalVariableDefinition> = {};
+        for (const d of arr) { if (d?.code) map[d.code] = d; }
+        setGvDefs(map);
+      })
+      .catch(() => setGvDefs({}));
+  }, []);
+
+  // ----------------------------------------------------------------
+  // 任务2: enriched lineItems —— 供 usePathFormulaCache 预热 _globalPathCache。
+  // 详情页打开时 _globalPathCache 是空的（编辑页的 cache 不跨路由），
+  // 需要先把 lineItems enrich（补 fields/formulas），hook 才能扫到 path token 并预热。
+  // ----------------------------------------------------------------
+  const [enrichedLineItems, setEnrichedLineItems] = useState<LineItem[]>([]);
+  useEffect(() => {
+    if (!quotation?.lineItems?.length) {
+      setEnrichedLineItems([]);
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      (quotation.lineItems as any[]).map(async (li: any) => {
+        if (!li.templateId) return li as LineItem;
+        const enrichedComps = await enrichComponentData(li.templateId, li.componentData || []);
+        return { ...li, componentData: enrichedComps } as LineItem;
+      }),
+    ).then((result) => {
+      if (!cancelled) setEnrichedLineItems(result);
+    }).catch(() => {
+      if (!cancelled) setEnrichedLineItems([]);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quotation?.id, quotation?.lineItems?.length]);
+
+  // 触发 path 公式缓存预热（写 _globalPathCache 模块级，ReadonlyProductCard 的
+  // evaluateExpression 调用会在 path/global_variable case 里直接命中缓存）
+  usePathFormulaCache(enrichedLineItems, quotation?.customerId, gvDefs);
 
   // ----------------------------------------------------------------
   // Phase 4 #21：提交按钮
@@ -160,6 +220,18 @@ const QuotationDetail: React.FC = () => {
   useEffect(() => {
     loadQuotation();
   }, [id]);
+
+  // B3：quotation 加载完毕后探测模板是否有 GV 绑定，不阻塞主页加载
+  useEffect(() => {
+    if (!quotation?.customerTemplateId) {
+      setHasGvBindings(false);
+      return;
+    }
+    boundGlobalVariableService
+      .getTemplateBindings(quotation.customerTemplateId)
+      .then((arr) => setHasGvBindings((arr || []).length > 0))
+      .catch(() => setHasGvBindings(false));
+  }, [quotation?.customerTemplateId]);
 
   // 切换到"数据来源" Tab 时懒加载快照
   const handleTabChange = (key: string) => {
@@ -384,6 +456,8 @@ const QuotationDetail: React.FC = () => {
                       index={idx}
                       quotationId={quotation.id}
                       quotationStatus={quotation.status}
+                      customerId={quotation.customerId}
+                      globalVariableDefs={gvDefs}
                     />
                   ))}
                 </div>
@@ -419,6 +493,22 @@ const QuotationDetail: React.FC = () => {
         </>
       ),
     },
+    // ADR-002：引用数据 Tab（DRAFT 实时 / 非 DRAFT 读快照）
+    // B3：仅模板有 GV 绑定时才显示（探测结果来自 hasGvBindings）
+    ...(hasGvBindings
+      ? [
+          {
+            key: 'refData',
+            label: '引用数据',
+            children: (
+              <BoundGlobalVariablesTab
+                quotationId={quotation.id}
+                status={quotation.status}
+              />
+            ),
+          },
+        ]
+      : []),
     // UI-8：仅 SUBMITTED+ 显示"数据来源"Tab
     ...(isSubmittedOrLater
       ? [
