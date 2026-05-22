@@ -16,6 +16,9 @@ import ProcessSelectionWrapper from '../pages/product/ProcessSelectionWrapper';
 import DataSourceList from '../pages/datasource/DataSourceList';
 import DataSourceEdit from '../pages/datasource/DataSourceEdit';
 import ComponentManagement from '../pages/component/ComponentManagement';
+import ComponentManagementHub from '../pages/component/ComponentManagementHub';
+import ProductHubPage from '../pages/product/ProductHubPage';
+import MasterDataHubPage from '../pages/master-data/MasterDataHubPage';
 import TemplateList from '../pages/template/TemplateList';
 import TemplateConfiguration from '../pages/template/TemplateConfiguration';
 import ProductTemplateBinding from '../pages/template/ProductTemplateBinding';
@@ -38,6 +41,7 @@ import CostingPartDataPage from '../pages/costingpart/CostingPartDataPage';
 import CostingSummaryListPage from '../pages/costingsummary/CostingSummaryListPage';
 import CostingSummaryDetailPage from '../pages/costingsummary/CostingSummaryDetailPage';
 import MasterDataPage from '../pages/master-data/MasterDataPage';
+import MasterDataTableViewerPage from '../pages/master-data/MasterDataTableViewerPage';
 import VersionHistoryPage from '../pages/master-data/VersionHistoryPage';
 import ChangeLogCenterPage from '../pages/change-log/ChangeLogCenterPage';
 import ElementPriceCenterPage from '../pages/element-price/ElementPriceCenterPage';
@@ -74,7 +78,10 @@ const router = createBrowserRouter([
       { path: 'datasources', element: <DataSourceList /> },
       { path: 'datasources/new', element: <DataSourceEdit /> },
       { path: 'datasources/:id/edit', element: <DataSourceEdit /> },
-      { path: 'components', element: <ComponentManagement /> },
+      { path: 'components', element: <ComponentManagementHub /> },
+      { path: 'components-raw', element: <ComponentManagement /> },
+      { path: 'products-hub', element: <ProductHubPage /> },
+      { path: 'master-data-hub', element: <MasterDataHubPage /> },
       { path: 'templates', element: <TemplateList /> },
       { path: 'templates/:id', element: <TemplateConfiguration /> },
       { path: 'template-bindings', element: <ProductTemplateBinding /> },
@@ -96,6 +103,7 @@ const router = createBrowserRouter([
       { path: 'costing-summary/:id', element: <CostingSummaryDetailPage /> },
       { path: 'master-data', element: <MasterDataPage /> },
       { path: 'master-data/history', element: <VersionHistoryPage /> },
+      { path: 'master-data/viewer', element: <MasterDataTableViewerPage /> },
       { path: 'change-log', element: <ChangeLogCenterPage /> },
       { path: 'element-price-center', element: <ElementPriceCenterPage /> },
       { path: 'global-variables', element: <GlobalVariablePage /> },

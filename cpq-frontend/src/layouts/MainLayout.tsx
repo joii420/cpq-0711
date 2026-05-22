@@ -15,10 +15,6 @@ import {
   CheckOutlined,
   SunOutlined,
   MoonOutlined,
-  ImportOutlined,
-  BarcodeOutlined,
-  AuditOutlined,
-  HistoryOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
@@ -41,20 +37,22 @@ interface MenuItem {
   children?: MenuItem[];
 }
 
+// 2026-05-21 菜单聚合压缩: 详见菜单调整方案 PR
+// - 产品管理 = 壳页 /products-hub (Tab1 产品主数据 = InternalMaterialManagement / Tab2 客户对应主数据 = ProductManagement)
+// - 报价中心 = 报价单管理 + 核价管理 (核价单从配置中心搬到这里)
+// - 定价管理 = 定价策略 + 审批流 (审批规则从系统管理搬到这里, 路由不变)
+// - 配置中心 = 组件管理 (内嵌数据源 Tab + 全局变量按钮) + 模板管理
+// - 主数据维护 = 壳页 /master-data-hub (工序/料号/材质/数据模板 4 Tab + 基础数据配置按钮 + 产品分类按钮)
+// - 已移除菜单 (路由全保留以保证书签/直链/E2E 不挂):
+//   料号级核价数据 / 产品模板绑定 / 模板版本对比 / 基础数据配置 / 业务标签字典 /
+//   材质管理 / 工序管理 / 配置模板 / 数据总览 / 主表查看 / 历史版本 / 料号版本管理 /
+//   字段重要性 / 变更日志 / 元素价格中心 / 系统配置中心 / 锁监控 / DDL扩列管理 /
+//   导入历史 / 数据源管理 (并入组件管理) / 全局变量配置 (并入组件管理) /
+//   产品分类管理 (并入产品管理按钮)
 const allMenuItems: MenuItem[] = [
   { key: '/dashboard', icon: <DashboardOutlined />, label: '工作台', roles: ALL_ROLES },
   { key: '/customers', icon: <TeamOutlined />, label: '客户管理', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
-  {
-    key: '/product-mgmt',
-    icon: <ShoppingOutlined />,
-    label: '产品管理',
-    roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'],
-    children: [
-      { key: '/products', label: '产品列表', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/materials', label: '生产料号管理', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN', 'SALES_REP', 'PRICING_MANAGER'] },
-      { key: '/product-categories', label: '产品分类管理', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN', 'SALES_REP', 'PRICING_MANAGER'] },
-    ],
-  },
+  { key: '/products-hub', icon: <ShoppingOutlined />, label: '产品管理', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
   {
     key: '/quotation-center',
     icon: <FileTextOutlined />,
@@ -62,7 +60,7 @@ const allMenuItems: MenuItem[] = [
     roles: ALL_ROLES,
     children: [
       { key: '/quotations', label: '报价单管理', roles: ALL_ROLES },
-      { key: '/import-history', label: '导入历史', roles: ALL_ROLES },
+      { key: '/costing-summary', label: '核价管理', roles: ['PRICING_MANAGER', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
     ],
   },
   {
@@ -72,9 +70,9 @@ const allMenuItems: MenuItem[] = [
     roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'],
     children: [
       { key: '/pricing', label: '定价策略', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
+      { key: '/system/approval-rules', label: '审批流', roles: ['SYSTEM_ADMIN'] },
     ],
   },
-  { key: '/datasources', icon: <DatabaseOutlined />, label: '数据源管理', roles: ['SYSTEM_ADMIN'] },
   {
     key: '/config',
     icon: <AppstoreOutlined />,
@@ -82,34 +80,10 @@ const allMenuItems: MenuItem[] = [
     roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'],
     children: [
       { key: '/components', label: '组件管理', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/templates', label: '模板配置', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
-      // V149 Stage 3: "Excel 模板配置" 菜单已合并到 "模板配置" 内的 Excel 视图 Tab.
-      // 路由 /costing-templates 保留 (向后兼容书签/直链), 但不再在导航中暴露.
-      { key: '/costing-part-data', label: '料号级核价数据', roles: ['PRICING_MANAGER', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/costing-summary', label: '核价单', roles: ['PRICING_MANAGER', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/global-variables', label: '全局变量配置', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/template-bindings', label: '产品模板绑定', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/template-comparison', label: '模板版本对比', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/basic-data-config', label: '基础数据配置', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/comparison-tags', label: '业务标签字典', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/config/material-recipes', label: '材质管理', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/config/processes', label: '工序管理', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/config/config-templates', label: '配置模板', roles: ['PRICING_MANAGER', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
+      { key: '/templates', label: '模板管理', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
     ],
   },
-  {
-    key: '/master-data-mgmt',
-    icon: <DatabaseOutlined />,
-    label: '主数据维护',
-    roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'],
-    children: [
-      { key: '/master-data', label: '数据总览', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/master-data/history', icon: <HistoryOutlined />, label: '历史版本', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/part-versions', label: '料号版本管理', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/master-data/field-importance', label: '字段重要性', roles: ['SYSTEM_ADMIN'] },
-    ],
-  },
-  { key: '/change-log', icon: <AuditOutlined />, label: '变更日志', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
+  { key: '/master-data-hub', icon: <DatabaseOutlined />, label: '主数据维护', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
   {
     key: '/system',
     icon: <SettingOutlined />,
@@ -119,13 +93,8 @@ const allMenuItems: MenuItem[] = [
       { key: '/system/users', label: '用户管理', roles: ['SYSTEM_ADMIN'] },
       { key: '/system/regions', label: '区域管理', roles: ['SYSTEM_ADMIN'] },
       { key: '/system/departments', label: '部门管理', roles: ['SYSTEM_ADMIN'] },
-      { key: '/system/approval-rules', label: '审批规则', roles: ['SYSTEM_ADMIN'] },
       { key: '/system/notifications', label: '通知列表', roles: ALL_ROLES },
       { key: '/system/operation-logs', label: '操作日志', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/element-price-center', label: '元素价格中心', roles: ['SYSTEM_ADMIN'] },
-      { key: '/system-config', label: '系统配置中心', roles: ['SYSTEM_ADMIN'] },
-      { key: '/system-monitor/locks', label: '锁监控', roles: ['SYSTEM_ADMIN'] },
-      { key: '/system-monitor/ddl-extension', label: 'DDL 扩列管理', roles: ['SYSTEM_ADMIN'] },
     ],
   },
 ];
