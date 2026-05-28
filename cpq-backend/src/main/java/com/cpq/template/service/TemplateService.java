@@ -2,11 +2,13 @@ package com.cpq.template.service;
 
 import com.cpq.common.exception.BusinessException;
 import com.cpq.component.entity.Component;
+import com.cpq.component.service.ComponentSqlViewService;
 import com.cpq.template.dto.CreateTemplateRequest;
 import com.cpq.template.dto.PublishRequest;
 import com.cpq.template.dto.TemplateDTO;
 import com.cpq.template.entity.Template;
 import com.cpq.template.entity.TemplateComponent;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -30,6 +32,14 @@ public class TemplateService {
     /** V212: 全局变量绑定服务, 供 createNewDraft 末尾调用复制绑定 */
     @Inject
     TemplateGvBindingService templateGvBindingService;
+
+    /** 阶段 2: 组件 SQL 视图冻结服务（模板 PUBLISHED 时调 snapshotForComponents 写 sql_views_snapshot） */
+    @Inject
+    ComponentSqlViewService componentSqlViewService;
+
+    /** V250: 模板自有 SQL 视图冻结服务（模板 PUBLISHED 时写 template_sql_views_snapshot） */
+    @Inject
+    TemplateSqlViewService templateSqlViewService;
 
     public List<TemplateDTO> list(int page, int size, String category, String status, String keyword) {
         return list(page, size, category, null, null, status, keyword, null);
@@ -237,6 +247,34 @@ public class TemplateService {
         }
         template.componentsSnapshot = toJson(snapshot);
 
+        // 阶段 2: 冻结 component_sql_view 闭包到 template.sql_views_snapshot
+        //   - 扫该模板挂载的所有组件 → 序列化其 SQL 视图（含 GLOBAL scope 闭包）
+        //   - 与 components_snapshot 同事务（@Transactional 已覆盖整个 publish）
+        List<UUID> componentIds = tcs.stream()
+                .map(tc -> tc.componentId)
+                .collect(Collectors.toList());
+        Map<String, Map<String, Object>> sqlViewsSnapshot =
+                componentSqlViewService.snapshotForComponents(componentIds);
+        template.sqlViewsSnapshot = toJson(sqlViewsSnapshot);
+        LOG.infof("[TemplateService.publish] frozen %d sql_views for template=%s",
+                sqlViewsSnapshot.size(), id);
+
+        // V250: 校验 excel_view_config 中不含 $$ 跨组件引用（模板隔离规则）
+        validateNoDoubleDollarRefsInExcelView(template);
+
+        // V250: 冻结 template_sql_view 到 template.template_sql_views_snapshot
+        try {
+            Map<String, Map<String, Object>> tsvSnapshot =
+                    templateSqlViewService.snapshotForTemplate(id);
+            template.templateSqlViewsSnapshot = toJson(tsvSnapshot);
+            LOG.infof("[TemplateService.publish] frozen %d template_sql_views for template=%s",
+                    tsvSnapshot.size(), id);
+        } catch (Exception e) {
+            LOG.warnf("[TemplateService.publish] failed to build template_sql_views_snapshot: %s",
+                    e.getMessage());
+            template.templateSqlViewsSnapshot = "{}";
+        }
+
         // PRD 多版本语义:同 series 升级时,旧 PUBLISHED 保持原状态,由用户后续主动归档。
         // V62 已撤销 V28 partial unique index,同 (customer_id, category_id) 允许多个 PUBLISHED 共存。
 
@@ -409,6 +447,10 @@ public class TemplateService {
 
         // V212: 复制全局变量绑定到新草稿 (display_order 原样保留, ADR-002 §5.2)
         templateGvBindingService.copyBindings(sourceId, draft.id);
+
+        // V250: deep-copy template_sql_view 行（source → draft）
+        // 新草稿拥有独立的 SQL 视图列表，与源模板完全解耦
+        templateSqlViewService.deepCopySqlViews(sourceId, draft.id);
 
         LOG.infof("Created new draft id=%s from source=%s", draft.id, sourceId);
         return TemplateDTO.from(draft, tcs);
@@ -942,6 +984,55 @@ public class TemplateService {
     }
 
     // ---- Private helpers ----
+
+    /**
+     * V250: 校验 excel_view_config 中的 variable_path 不含 $$ 跨组件引用（模板隔离规则）。
+     *
+     * @throws BusinessException 400 若发现 variable_path 含 $$
+     */
+    private void validateNoDoubleDollarRefsInExcelView(Template t) {
+        if (t.excelViewConfig == null || t.excelViewConfig.isBlank()
+                || "[]".equals(t.excelViewConfig.trim())
+                || "{}".equals(t.excelViewConfig.trim())) {
+            return;
+        }
+        try {
+            // excel_view_config 可能是数组或对象（含 columns 数组）
+            List<Map<String, Object>> columns = parseColumnsFromExcelViewConfig(t.excelViewConfig);
+            for (Map<String, Object> col : columns) {
+                Object vpObj = col.get("variable_path");
+                if (vpObj == null) continue;
+                String vp = vpObj.toString().trim();
+                if (vp.startsWith("$$")) {
+                    String colKey = col.get("col_key") != null ? col.get("col_key").toString() : "?";
+                    throw new BusinessException(400,
+                            "模板 Excel 视图列 " + colKey + " 含跨组件引用 $$，发布前请改为本模板自有视图 $<view>.<col>。"
+                            + "当前路径：" + vp);
+                }
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            LOG.warnf("[validateNoDoubleDollarRefsInExcelView] parse failed templateId=%s: %s",
+                    t.id, e.getMessage());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> parseColumnsFromExcelViewConfig(String raw) throws Exception {
+        Object parsed = MAPPER.readValue(raw, Object.class);
+        if (parsed instanceof List) {
+            return (List<Map<String, Object>>) parsed;
+        }
+        if (parsed instanceof Map) {
+            Map<String, Object> obj = (Map<String, Object>) parsed;
+            Object cols = obj.get("columns");
+            if (cols instanceof List) {
+                return (List<Map<String, Object>>) cols;
+            }
+        }
+        return List.of();
+    }
 
     private String calculateNextVersion(UUID seriesId, PublishRequest request) {
         // 查找同 series 任何已发布过的版本(PUBLISHED 或 ARCHIVED)以推算下一版本号

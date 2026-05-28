@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>3D 源文件上传与转换原型 v0.4 — UG NX 工作流</title>
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#f0f2f5; font-size:13px; color:#303133; height:100vh; overflow:hidden; }
+
+.layout { display:flex; height:100vh; }
+.sider { width:200px; background:#001529; color:#fff; padding:12px 0; flex-shrink:0; overflow-y:auto; }
+.sider .logo { padding:0 16px 16px; font-size:14px; font-weight:600; border-bottom:1px solid #1f2d3d; }
+.sider .ver { font-size:11px; color:#a6adb4; padding:8px 16px 0; }
+.menu { padding-top:8px; }
+.m-item { padding:9px 16px; color:#a6adb4; cursor:pointer; font-size:13px; display:flex; align-items:center; gap:8px; }
+.m-item:hover { color:#fff; background:#1f2d3d; }
+.m-item.active { background:#1f2d3d; color:#fff; }
+.m-sub { padding:6px 16px 6px 32px; font-size:12.5px; color:#a6adb4; cursor:pointer; }
+.m-sub.active { color:#1890ff; background:#000c17; border-left:3px solid #1890ff; padding-left:29px; }
+
+.main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.crumb { padding:10px 20px; background:#fff; border-bottom:1px solid #e4e7ed; font-size:12.5px; color:#909399; }
+.crumb b { color:#303133; font-weight:500; }
+.content { flex:1; overflow-y:auto; padding:16px 24px; }
+
+.exp-banner { background:linear-gradient(90deg,#e6f7ff,#f0f5ff); border:1px dashed #1890ff; padding:12px 16px; border-radius:6px; font-size:12.5px; color:#0050b3; margin-bottom:14px; display:flex; align-items:center; gap:12px; }
+.exp-banner b { color:#003a8c; }
+.exp-banner .help-btn { margin-left:auto; padding:6px 14px; background:#1890ff; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:12px; }
+.exp-banner .help-btn:hover { background:#40a9ff; }
+
+.page-card { background:#fff; border-radius:8px; padding:20px 24px; margin-bottom:14px; }
+.page-title { font-size:18px; font-weight:600; margin-bottom:6px; display:flex; align-items:center; gap:10px; }
+.page-subtitle { font-size:12.5px; color:#909399; margin-bottom:16px; }
+
+/* 步骤指示器 */
+.steps { display:flex; align-items:center; margin:20px 0; padding:14px; background:#fafbfc; border-radius:8px; border:1px solid #e4e7ed; }
+.step { display:flex; align-items:center; gap:8px; }
+.step-num { width:30px; height:30px; border-radius:50%; background:#e4e7ed; color:#909399; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:13.5px; transition:all .3s; }
+.step.active .step-num { background:#1890ff; color:#fff; box-shadow:0 0 0 4px rgba(24,144,255,.15); }
+.step.done .step-num { background:#52c41a; color:#fff; }
+.step-name { font-size:13px; color:#909399; }
+.step.active .step-name { color:#1890ff; font-weight:600; }
+.step.done .step-name { color:#52c41a; }
+.step-line { flex:1; height:2px; background:#e4e7ed; margin:0 14px; min-width:30px; }
+.step-line.done { background:#52c41a; }
+
+.step-content { display:none; }
+.step-content.active { display:block; }
+
+/* 模式切换器 */
+.mode-switcher { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:18px; }
+.mode-card { border:2px solid #e4e7ed; border-radius:8px; padding:14px 16px; cursor:pointer; transition:all .2s; background:#fff; }
+.mode-card:hover { border-color:#91caff; background:#fafdff; transform:translateY(-1px); }
+.mode-card.selected { border-color:#1890ff; background:linear-gradient(135deg,#e6f4ff,#fff); box-shadow:0 0 0 3px rgba(24,144,255,.15); }
+.mode-card .mode-icon { font-size:22px; margin-bottom:6px; }
+.mode-card .mode-name { font-size:14px; font-weight:600; color:#303133; margin-bottom:4px; display:flex; align-items:center; gap:6px; }
+.mode-card .mode-name .recommended { font-size:10px; background:#52c41a; color:#fff; padding:1px 6px; border-radius:3px; font-weight:normal; }
+.mode-card .mode-desc { font-size:12px; color:#606266; line-height:1.5; }
+.mode-card .mode-flow { font-size:11px; color:#909399; margin-top:6px; font-family:Consolas,Monaco,monospace; }
+
+/* GLB 直传区 */
+.single-upload-zone { border:2px dashed #dcdfe6; border-radius:8px; padding:50px 30px; text-align:center; cursor:pointer; background:#fafbfc; transition:all .2s; }
+.single-upload-zone:hover { border-color:#1890ff; background:#e6f4ff; }
+.single-upload-zone.uploading { border-color:#1890ff; background:#e6f4ff; border-style:solid; }
+.single-upload-zone.done { border-color:#52c41a; background:#f6ffed; border-style:solid; cursor:default; }
+.single-upload-zone .file-type { font-size:36px; margin-bottom:10px; }
+.single-upload-zone .file-label { font-size:16px; font-weight:600; color:#303133; margin-bottom:6px; }
+.single-upload-zone .file-hint { font-size:12px; color:#909399; margin-bottom:12px; }
+.single-upload-zone .file-status { font-size:13px; color:#1890ff; margin-top:10px; }
+.single-upload-zone.done .file-status { color:#389e0d; }
+.single-upload-zone .progress-bar { width:60%; height:6px; background:#e4e7ed; border-radius:3px; margin:14px auto 0; overflow:hidden; }
+.single-upload-zone .progress-fill { height:100%; background:#1890ff; transition:width .2s; width:0%; }
+
+/* 双文件上传区 */
+.dual-upload { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+.upload-zone { border:2px dashed #dcdfe6; border-radius:8px; padding:30px 20px; text-align:center; cursor:pointer; background:#fafbfc; transition:all .2s; min-height:200px; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.upload-zone:hover { border-color:#1890ff; background:#e6f4ff; }
+.upload-zone.uploading { border-color:#1890ff; background:#e6f4ff; border-style:solid; }
+.upload-zone.done { border-color:#52c41a; background:#f6ffed; border-style:solid; cursor:default; }
+.upload-zone .file-type { font-size:24px; margin-bottom:8px; }
+.upload-zone .file-label { font-size:14px; font-weight:600; color:#303133; margin-bottom:4px; }
+.upload-zone .file-hint { font-size:11.5px; color:#909399; margin-bottom:8px; }
+.upload-zone .file-status { font-size:12px; color:#1890ff; margin-top:8px; }
+.upload-zone.done .file-status { color:#389e0d; }
+.upload-zone .progress-bar { width:80%; height:5px; background:#e4e7ed; border-radius:3px; margin-top:10px; overflow:hidden; }
+.upload-zone .progress-fill { height:100%; background:#1890ff; transition:width .2s; width:0%; }
+
+.upload-meta { background:#fff; border:1px solid #f0f0f0; border-radius:4px; padding:8px 10px; margin-top:8px; font-size:11px; color:#606266; font-family:Consolas,Monaco,monospace; word-break:break-all; }
+.upload-meta .label { color:#909399; }
+
+/* MD5 校验区 */
+.match-section { background:#f6ffed; border:1px solid #b7eb8f; border-radius:6px; padding:12px 14px; margin-top:14px; display:none; }
+.match-section.show { display:block; }
+.match-section.warn { background:#fff7e6; border-color:#ffd591; }
+.match-title { font-size:13px; font-weight:600; color:#389e0d; margin-bottom:8px; }
+.match-section.warn .match-title { color:#d48806; }
+.match-row { display:flex; justify-content:space-between; padding:3px 0; font-size:11.5px; color:#606266; font-family:Consolas,Monaco,monospace; }
+.match-row b { color:#303133; }
+
+/* Step 2: 转换 5 阶段动画 */
+.conversion-pipeline { display:flex; flex-direction:column; gap:8px; margin:14px 0; }
+.pipeline-stage { display:flex; align-items:center; gap:12px; padding:12px 14px; background:#fafbfc; border:1px solid #e4e7ed; border-radius:6px; transition:all .3s; }
+.pipeline-stage.running { background:#e6f4ff; border-color:#1890ff; }
+.pipeline-stage.done { background:#f6ffed; border-color:#b7eb8f; }
+.pipeline-stage.error { background:#fff1f0; border-color:#ffa39e; }
+.stage-icon { width:36px; height:36px; border-radius:50%; background:#e4e7ed; color:#909399; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
+.pipeline-stage.running .stage-icon { background:#1890ff; color:#fff; animation:spin 1.5s linear infinite; }
+.pipeline-stage.done .stage-icon { background:#52c41a; color:#fff; }
+@keyframes spin { 0% { transform:rotate(0deg); } 100% { transform:rotate(360deg); } }
+.stage-info { flex:1; }
+.stage-name { font-size:13px; font-weight:500; color:#303133; margin-bottom:3px; }
+.stage-desc { font-size:11.5px; color:#909399; }
+.stage-time { font-size:11.5px; color:#606266; font-family:Consolas,Monaco,monospace; }
+.stage-progress { width:200px; height:6px; background:#e4e7ed; border-radius:3px; overflow:hidden; }
+.stage-progress-fill { height:100%; background:#1890ff; transition:width .3s; }
+.pipeline-stage.done .stage-progress-fill { background:#52c41a; }
+
+.conversion-summary { background:linear-gradient(90deg,#f6ffed,#fff); border:1px solid #b7eb8f; border-radius:6px; padding:14px 18px; margin-top:14px; }
+.conversion-summary.show { display:block; }
+.summary-row { display:flex; justify-content:space-between; padding:3px 0; font-size:12.5px; color:#606266; }
+.summary-row b { color:#389e0d; font-weight:600; }
+
+/* Step 3: 特征识别审核 */
+.features-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.features-table th, .features-table td { padding:10px 12px; text-align:left; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+.features-table th { background:#fafafa; color:#606266; font-weight:500; }
+.features-table tr:hover { background:#fafdff; }
+.features-table tr.selected { background:#e6f4ff; }
+.feature-type-tag { display:inline-block; padding:1px 8px; border-radius:3px; font-size:11px; }
+.feature-type-tag.HOLE { background:#e6f4ff; color:#0958d9; border:1px solid #91caff; }
+.feature-type-tag.THREAD { background:#f9f0ff; color:#722ed1; border:1px solid #d3adf7; }
+.feature-type-tag.SURFACE { background:#fff7e6; color:#d48806; border:1px solid #ffd591; }
+.feature-type-tag.WELD { background:#fff1f0; color:#cf1322; border:1px solid #ffa39e; }
+.feature-type-tag.GENERAL { background:#fafafa; color:#606266; border:1px solid #d9d9d9; }
+
+/* Step 4: 预览 */
+.preview-wrap { background:#f5f5f5; border:1px solid #e4e7ed; border-radius:8px; height:420px; position:relative; overflow:hidden; }
+#previewCanvas { width:100%; height:100%; display:block; outline:none; touch-action:none; }
+.preview-toolbar { position:absolute; top:14px; right:14px; background:rgba(0,21,41,.85); border-radius:8px; padding:6px; display:flex; gap:4px; }
+.preview-toolbar button { padding:6px 10px; border:none; background:transparent; color:#fff; cursor:pointer; font-size:13px; border-radius:4px; }
+.preview-toolbar button:hover { background:rgba(255,255,255,.15); }
+
+.action-area { background:#fafbfc; border:1px solid #e4e7ed; border-radius:6px; padding:14px 18px; margin-top:14px; display:flex; align-items:center; gap:14px; }
+.action-info { flex:1; font-size:13px; color:#303133; }
+.action-info b { color:#1890ff; }
+
+/* 通用按钮 / 工具栏 */
+.btn { padding:6px 14px; border:1px solid #dcdfe6; background:#fff; border-radius:4px; cursor:pointer; font-size:12.5px; color:#606266; display:inline-flex; align-items:center; gap:4px; transition:all .2s; }
+.btn:hover { color:#409eff; border-color:#c6e2ff; background:#ecf5ff; }
+.btn-primary { background:#1890ff; color:#fff; border-color:#1890ff; }
+.btn-primary:hover { background:#40a9ff; color:#fff; border-color:#40a9ff; }
+.btn-success { background:linear-gradient(135deg,#52c41a,#13c2c2); color:#fff; border-color:transparent; padding:8px 18px; font-weight:500; }
+.btn-success:hover { box-shadow:0 4px 8px rgba(82,196,26,.3); transform:translateY(-1px); }
+.btn[disabled] { opacity:.4; cursor:not-allowed; }
+
+.actions-bar { padding:12px 0 0; border-top:1px solid #f0f0f0; margin-top:18px; display:flex; justify-content:flex-end; gap:8px; }
+
+/* UG 教程抽屉 */
+.tutorial-mask { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.45); z-index:1000; opacity:0; pointer-events:none; transition:opacity .3s; }
+.tutorial-mask.open { opacity:1; pointer-events:auto; }
+.tutorial-drawer { position:fixed; top:0; right:0; width:720px; max-width:100vw; height:100vh; background:#fff; z-index:1001; transform:translateX(100%); transition:transform .3s ease; box-shadow:-2px 0 12px rgba(0,0,0,.15); display:flex; flex-direction:column; }
+.tutorial-drawer.open { transform:translateX(0); }
+.tutorial-header { padding:14px 22px; border-bottom:1px solid #e4e7ed; display:flex; justify-content:space-between; align-items:center; background:#fafbfc; }
+.tutorial-title { font-size:15px; font-weight:600; }
+.tutorial-close { width:28px; height:28px; border:none; background:transparent; cursor:pointer; font-size:18px; color:#909399; border-radius:4px; }
+.tutorial-close:hover { background:#f0f0f0; color:#303133; }
+.tutorial-body { flex:1; padding:20px 24px; overflow-y:auto; }
+.tutorial-section { margin-bottom:22px; }
+.tutorial-section h3 { font-size:14px; font-weight:600; color:#303133; margin-bottom:10px; padding-bottom:6px; border-bottom:1px solid #f0f0f0; }
+.tutorial-step { background:#fafbfc; border:1px solid #e4e7ed; border-radius:6px; padding:12px 14px; margin-bottom:8px; }
+.tutorial-step b { color:#1890ff; }
+.tutorial-screenshot { background:linear-gradient(135deg,#e8eef5,#f0f5fa); border:1px dashed #91caff; border-radius:6px; height:140px; display:flex; align-items:center; justify-content:center; color:#0958d9; font-size:12.5px; margin-top:8px; font-style:italic; }
+
+/* Toast */
+.toast-stack { position:fixed; top:20px; right:20px; z-index:2000; display:flex; flex-direction:column; gap:8px; }
+.toast { background:#fff; border:1px solid #b7eb8f; border-left:4px solid #52c41a; padding:10px 14px; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,.1); font-size:12.5px; min-width:280px; max-width:420px; animation:slideIn .3s ease; }
+.toast.info { border-color:#91caff; border-left-color:#1890ff; }
+.toast.warning { border-color:#ffd591; border-left-color:#faad14; }
+.toast.error { border-color:#fbc4c4; border-left-color:#f56c6c; }
+@keyframes slideIn { from { transform:translateX(120%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+
+.code-inline { padding:1px 6px; background:#f0f0f0; border-radius:3px; font-family:Consolas,Monaco,monospace; font-size:11.5px; color:#606266; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <aside class="sider">
+    <div class="logo">CPQ 系统 v3</div>
+    <div class="ver">v0.4 · 3D 源文件管理</div>
+    <div class="menu">
+      <div class="m-item">📊 仪表板</div>
+      <div class="m-item">📂 组件管理</div>
+      <div class="m-item">📋 模板管理</div>
+      <div class="m-item">📝 报价单</div>
+      <div class="m-item">💰 核价单</div>
+      <div class="m-item">👥 客户管理</div>
+      <div class="m-item">🛒 3D 选配</div>
+      <div class="m-sub">📋 选配实例列表</div>
+      <div class="m-sub">🎯 开始选配</div>
+      <div class="m-sub">🔗 我分享的链接</div>
+      <div class="m-item active">⚙️ 系统设置</div>
+      <div class="m-sub">用户管理</div>
+      <div class="m-sub active">📦 3D 源文件管理</div>
+      <div class="m-sub">🛒 选配模板管理</div>
+      <div class="m-sub">📚 特征库管理</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="crumb">系统设置 / 3D 源文件管理 / <b>上传 UG 源文件 + STEP → GLB 转换</b></div>
+
+    <div class="content">
+      <!-- 实验性 banner + UG 教程入口 -->
+      <div class="exp-banner">
+        <span style="font-size:20px;">📦</span>
+        <span>
+          <b>🧪 UG NX 完整工作流 · v0.4</b> — 上传 <code class="code-inline">.prt</code> 源文件 + <code class="code-inline">.stp</code> 中性格式 → 后端 5 阶段自动转换 GLB + 特征识别 → 关联到产品 / 配置模板
+        </span>
+        <button class="help-btn" onclick="openTutorial()">📖 如何从 UG NX 导出 STEP?</button>
+      </div>
+
+      <div class="page-card">
+        <div class="page-title">📦 UG → STEP → GLB 转换流水线</div>
+        <div class="page-subtitle">3 个对象存储桶分别保存源 .prt / 中性 .stp / 渲染 .glb 三类文件（全部永久保留）</div>
+
+        <!-- 步骤指示器 -->
+        <div class="steps">
+          <div class="step active" id="step-1-ind">
+            <div class="step-num">1</div>
+            <div class="step-name">双文件上传</div>
+          </div>
+          <div class="step-line" id="line-1-2"></div>
+          <div class="step" id="step-2-ind">
+            <div class="step-num">2</div>
+            <div class="step-name">后端转换</div>
+          </div>
+          <div class="step-line" id="line-2-3"></div>
+          <div class="step" id="step-3-ind">
+            <div class="step-num">3</div>
+            <div class="step-name">特征识别审核</div>
+          </div>
+          <div class="step-line" id="line-3-4"></div>
+          <div class="step" id="step-4-ind">
+            <div class="step-num">4</div>
+            <div class="step-name">预览与关联</div>
+          </div>
+        </div>
+
+        <!-- ============= Step 1: 上传文件（含模式选择） ============= -->
+        <div class="step-content active" id="step-1">
+          <!-- 模式切换器 -->
+          <div style="font-size:13px;color:#303133;margin-bottom:10px;font-weight:500;">📋 选择上传模式</div>
+          <div class="mode-switcher">
+            <div class="mode-card selected" id="modeAUG" onclick="switchMode('UG')">
+              <div class="mode-icon">🔧</div>
+              <div class="mode-name">A. UG NX 工作流 <span class="recommended">推荐</span></div>
+              <div class="mode-desc">上传 UG 源 (.prt) + STEP 中性格式 (.stp)，后端自动转换 GLB + 特征识别</div>
+              <div class="mode-flow">.prt + .stp → FreeCAD → Blender → .glb</div>
+            </div>
+            <div class="mode-card" id="modeBGLB" onclick="switchMode('GLB')">
+              <div class="mode-icon">📦</div>
+              <div class="mode-name">B. 直接上传 .glb</div>
+              <div class="mode-desc">已经在外部转好的 GLB 文件，直接入库（跳过后端转换 + 特征识别）</div>
+              <div class="mode-flow">.glb → 入库</div>
+            </div>
+          </div>
+
+          <!-- 模式 A: UG 双文件上传 -->
+          <div id="modeAContent">
+          <div style="font-size:13px;color:#303133;margin-bottom:10px;font-weight:500;">
+            🔧 上传 UG NX 源文件 (.prt) + STEP 中性格式 (.stp) — <b>必须配对上传，单独 .stp 也接受但不推荐</b>
+          </div>
+
+          <div class="dual-upload">
+            <!-- .prt 上传区 -->
+            <div class="upload-zone" id="prtZone" onclick="simulateUpload('prt')">
+              <div class="file-type">📐</div>
+              <div class="file-label">UG NX 源文件 (.prt)</div>
+              <div class="file-hint">永久保存 · 含完整设计树 · 仅 UG 可解析</div>
+              <div class="file-status">点击上传 .prt 文件</div>
+              <div class="progress-bar" style="display:none;"><div class="progress-fill"></div></div>
+            </div>
+
+            <!-- .stp 上传区 -->
+            <div class="upload-zone" id="stpZone" onclick="simulateUpload('stp')">
+              <div class="file-type">📄</div>
+              <div class="file-label">STEP 中性格式 (.stp / .step)</div>
+              <div class="file-hint">永久保存 · 跨 CAD 通用 · 服务端转 GLB 源</div>
+              <div class="file-status">点击上传 .stp 文件</div>
+              <div class="progress-bar" style="display:none;"><div class="progress-fill"></div></div>
+            </div>
+          </div>
+
+          <!-- 文件元数据 -->
+          <div id="uploadMetas"></div>
+
+          <!-- MD5 校验 -->
+          <div class="match-section" id="matchSection">
+            <div class="match-title">✓ 配对校验通过 — 两文件来源一致</div>
+            <div class="match-row"><span class="label">.prt MD5:</span> <b>e8a7f2b9c4d1e6f3a2b8c9d4e5f6a7b8</b></div>
+            <div class="match-row"><span class="label">.stp MD5:</span> <b>9c2d4f7e1a8b6c5d3e2f1a9b8c7d6e5f</b></div>
+            <div class="match-row"><span class="label">.prt 修改时间:</span> <b>2026-05-26 14:08:32</b></div>
+            <div class="match-row"><span class="label">.stp 导出时间:</span> <b>2026-05-26 14:09:15</b></div>
+            <div class="match-row"><span class="label">时间差:</span> <b>43 秒（导出延迟正常）</b></div>
+          </div>
+
+          <!-- 表单元信息 -->
+          <div id="formMetaSection" style="margin-top:14px; display:none;">
+            <div style="font-size:13px;color:#303133;margin-bottom:8px;font-weight:500;">📋 关联到料号</div>
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+              <label style="width:80px;font-size:12px;color:#606266;">料号 *</label>
+              <input style="flex:1;padding:5px 10px;border:1px solid #dcdfe6;border-radius:4px;font-size:12.5px;font-family:Consolas,Monaco,monospace;" value="CFG-COMBO-000018" />
+              <label style="font-size:12px;color:#606266;">版本</label>
+              <input style="width:80px;padding:5px 10px;border:1px solid #dcdfe6;border-radius:4px;font-size:12.5px;" value="v1" />
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+              <label style="width:80px;font-size:12px;color:#606266;">设计师</label>
+              <input style="flex:1;padding:5px 10px;border:1px solid #dcdfe6;border-radius:4px;font-size:12.5px;" placeholder="如：张工 (UGNX 12.0)" value="张工 (UG NX 2206)" />
+            </div>
+          </div>
+          </div><!-- /modeAContent -->
+
+          <!-- 模式 B: GLB 直传 -->
+          <div id="modeBContent" style="display:none;">
+            <div style="font-size:13px;color:#303133;margin-bottom:10px;font-weight:500;">
+              📦 直接上传 .glb 文件 — <b>已经在外部转换好的 GLB 直接入库</b>
+            </div>
+            <div style="background:#fff7e6;border:1px solid #ffd591;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:11.5px;color:#876800;">
+              ⚠ <b>使用此模式前请注意</b>：
+              <ul style="margin:6px 0 0 18px;line-height:1.7;">
+                <li>系统不保留 UG NX 源文件 (.prt)，<b>未来设计变更追溯不便</b></li>
+                <li>系统不保留 STEP 中性格式 (.stp)，<b>未来重新转换需要外部资源</b></li>
+                <li>STEP 特征自动识别功能跳过，<b>需要手动配置特征</b></li>
+                <li>建议: 若有 UG 源，优先用模式 A，让系统保留完整三层文件</li>
+              </ul>
+            </div>
+
+            <div class="single-upload-zone" id="glbZone" onclick="simulateGlbUpload()">
+              <div class="file-type">📦</div>
+              <div class="file-label">GLB 文件 (.glb / .gltf)</div>
+              <div class="file-hint">推荐 Draco 压缩 · 大小 &lt; 10MB · Babylon 可直接加载</div>
+              <div class="file-status">点击上传 .glb 文件</div>
+              <div class="progress-bar" style="display:none;"><div class="progress-fill"></div></div>
+            </div>
+
+            <div id="glbUploadMeta" style="display:none;background:#f6ffed;border:1px solid #b7eb8f;border-radius:6px;padding:12px 14px;margin-top:14px;">
+              <div style="font-weight:600;color:#389e0d;margin-bottom:6px;">✓ GLB 上传成功</div>
+              <div style="font-size:11.5px;color:#606266;line-height:1.6;font-family:Consolas,Monaco,monospace;">
+                <div><span style="color:#909399;">路径:</span> s3://cpq-3d-glb/CFG-COMBO-000018/v1/model.glb</div>
+                <div><span style="color:#909399;">大小:</span> 1,432,856 bytes (1.4 MB)</div>
+                <div><span style="color:#909399;">MD5:</span> 7a8b9c2d3e4f5a6b7c8d9e0f1a2b3c4d</div>
+                <div><span style="color:#909399;">解析 Mesh:</span> 4 个 (mesh_main_body, mesh_child_a, mesh_child_b, mesh_weld_01)</div>
+                <div><span style="color:#909399;">总顶点:</span> 12,840</div>
+                <div><span style="color:#909399;">Draco 压缩:</span> 已启用</div>
+              </div>
+            </div>
+
+            <div id="glbFormMeta" style="margin-top:14px;display:none;">
+              <div style="font-size:13px;color:#303133;margin-bottom:8px;font-weight:500;">📋 关联到料号</div>
+              <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+                <label style="width:80px;font-size:12px;color:#606266;">料号 *</label>
+                <input style="flex:1;padding:5px 10px;border:1px solid #dcdfe6;border-radius:4px;font-size:12.5px;font-family:Consolas,Monaco,monospace;" value="CFG-COMBO-000018" />
+                <label style="font-size:12px;color:#606266;">版本</label>
+                <input style="width:80px;padding:5px 10px;border:1px solid #dcdfe6;border-radius:4px;font-size:12.5px;" value="v1" />
+              </div>
+            </div>
+          </div><!-- /modeBContent -->
+
+          <div class="actions-bar">
+            <button class="btn" onclick="resetWizard()">重置</button>
+            <button class="btn-primary btn" id="nextStep1Btn" onclick="goToStep(2)" disabled>下一步：开始转换 →</button>
+            <button class="btn-primary btn" id="nextStep1BtnB" onclick="goToStep(4)" disabled style="display:none;background:linear-gradient(135deg,#52c41a,#13c2c2);">下一步：预览入库 →</button>
+          </div>
+        </div>
+
+        <!-- ============= Step 2: 后端转换 5 阶段动画 ============= -->
+        <div class="step-content" id="step-2">
+          <div style="font-size:13px;color:#303133;margin-bottom:14px;font-weight:500;">
+            ⚙️ 后端转换流水线 — <span style="color:#909399;">5 个阶段自动执行，预计 30-90 秒</span>
+          </div>
+
+          <div class="conversion-pipeline">
+            <div class="pipeline-stage" data-stage="1">
+              <div class="stage-icon">📥</div>
+              <div class="stage-info">
+                <div class="stage-name">阶段 1: 入队 (PG NOTIFY)</div>
+                <div class="stage-desc">推送转换任务到队列 · Worker 监听拉取</div>
+              </div>
+              <div class="stage-progress"><div class="stage-progress-fill"></div></div>
+              <div class="stage-time" style="min-width:60px;text-align:right;">— ms</div>
+            </div>
+
+            <div class="pipeline-stage" data-stage="2">
+              <div class="stage-icon">🔧</div>
+              <div class="stage-info">
+                <div class="stage-name">阶段 2: FreeCAD STEP → STL</div>
+                <div class="stage-desc">解析 STEP 几何 · tessellation=1.5 · 生成中间 STL</div>
+              </div>
+              <div class="stage-progress"><div class="stage-progress-fill"></div></div>
+              <div class="stage-time" style="min-width:60px;text-align:right;">— s</div>
+            </div>
+
+            <div class="pipeline-stage" data-stage="3">
+              <div class="stage-icon">🎨</div>
+              <div class="stage-info">
+                <div class="stage-name">阶段 3: Blender STL → GLB + Draco 压缩</div>
+                <div class="stage-desc">应用 PBR 材质 · 减面优化 · Draco 压缩 7 级</div>
+              </div>
+              <div class="stage-progress"><div class="stage-progress-fill"></div></div>
+              <div class="stage-time" style="min-width:60px;text-align:right;">— s</div>
+            </div>
+
+            <div class="pipeline-stage" data-stage="4">
+              <div class="stage-icon">📷</div>
+              <div class="stage-info">
+                <div class="stage-name">阶段 4: 缩略图渲染</div>
+                <div class="stage-desc">Blender headless · 45° 等距视角 · 256×256 PNG</div>
+              </div>
+              <div class="stage-progress"><div class="stage-progress-fill"></div></div>
+              <div class="stage-time" style="min-width:60px;text-align:right;">— s</div>
+            </div>
+
+            <div class="pipeline-stage" data-stage="5">
+              <div class="stage-icon">🔍</div>
+              <div class="stage-info">
+                <div class="stage-name">阶段 5: 几何特征自动识别</div>
+                <div class="stage-desc">FreeCAD Part API · 识别孔/螺纹/槽/焊缝 · 建议入库</div>
+              </div>
+              <div class="stage-progress"><div class="stage-progress-fill"></div></div>
+              <div class="stage-time" style="min-width:60px;text-align:right;">— s</div>
+            </div>
+          </div>
+
+          <div class="conversion-summary" id="conversionSummary" style="display:none;">
+            <div style="font-size:14px;font-weight:600;color:#389e0d;margin-bottom:8px;">✅ 转换完成</div>
+            <div class="summary-row"><span>总耗时:</span><b id="totalTime">38.5 s</b></div>
+            <div class="summary-row"><span>原 STEP 文件:</span><b>3.2 MB</b></div>
+            <div class="summary-row"><span>生成 GLB 文件:</span><b>1.4 MB (Draco 压缩后 -56%)</b></div>
+            <div class="summary-row"><span>顶点数:</span><b>12,840</b></div>
+            <div class="summary-row"><span>Mesh 数量:</span><b>4 个</b></div>
+            <div class="summary-row"><span>缩略图:</span><b>cpq-3d-glb/CFG-COMBO-000018/v1/thumb.png (256×256)</b></div>
+            <div class="summary-row"><span>识别特征:</span><b id="featuresCount">8 个（待审核）</b></div>
+          </div>
+
+          <div class="actions-bar">
+            <button class="btn" onclick="goToStep(1)" id="convBackBtn">← 上一步</button>
+            <button class="btn-primary btn" id="nextStep2Btn" onclick="goToStep(3)" disabled>下一步：审核特征 →</button>
+          </div>
+        </div>
+
+        <!-- ============= Step 3: 特征识别结果审核 ============= -->
+        <div class="step-content" id="step-3">
+          <div style="font-size:13px;color:#303133;margin-bottom:6px;font-weight:500;">
+            🔍 自动识别 8 个几何特征 — 请审核后批量入库
+          </div>
+          <div style="font-size:11.5px;color:#909399;margin-bottom:14px;">
+            ℹ <b>特征不自动入库</b>，必须管理员勾选 + 确认 feature_type 后入库（避免特征字典污染）
+          </div>
+
+          <table class="features-table">
+            <thead>
+              <tr>
+                <th style="width:30px;"><input type="checkbox" id="selectAll" onchange="toggleAllFeatures(this.checked)" checked /></th>
+                <th>建议类型</th>
+                <th>建议代码</th>
+                <th>属性 (从 STEP 提取)</th>
+                <th>包围盒</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="featuresTbody">
+              <tr class="selected">
+                <td><input type="checkbox" checked class="feature-check" /></td>
+                <td><span class="feature-type-tag HOLE">HOLE</span></td>
+                <td><code class="code-inline">FEAT-HOLE-D8</code></td>
+                <td style="font-family:Consolas,Monaco,monospace;font-size:11px;">{"diameter_mm":8.0, "depth_mm":15.2, "through":true}</td>
+                <td style="font-family:Consolas,Monaco,monospace;font-size:11px;">[-15,-5,-15] → [-7,5,0]</td>
+                <td><button class="btn" style="padding:2px 8px;">编辑</button></td>
+              </tr>
+              <tr class="selected">
+                <td><input type="checkbox" checked class="feature-check" /></td>
+                <td>
+                  <select style="padding:3px 6px;border:1px solid #dcdfe6;border-radius:3px;font-size:11.5px;">
+                    <option selected>THREAD</option>
+                    <option>HOLE</option>
+                  </select>
+                </td>
+                <td><code class="code-inline">FEAT-THREAD-M8</code></td>
+                <td style="font-family:Consolas,Monaco,monospace;font-size:11px;">{"thread_spec":"M8","pitch":1.25, "depth_mm":15}</td>
+                <td style="font-family:Consolas,Monaco,monospace;font-size:11px;">[5,-5,-15] → [13,5,0]</td>
+                <td><button class="btn" style="padding:2px 8px;">编辑</button></td>
+              </tr>
+              <tr class="selected">
+                <td><input type="checkbox" checked class="feature-check" /></td>
+                <td><span class="feature-type-tag SURFACE">SURFACE</span></td>
+                <td><code class="code-inline">FEAT-SURFACE-TOP</code></td>
+                <td style="font-family:Consolas,Monaco,monospace;font-size:11px;">{"area_mm2":2580.5, "roughness_ra":1.6}</td>
+                <td style="font-family:Consolas,Monaco,monospace;font-size:11px;">[-30,-15,5] → [30,15,5]</td>
+                <td><button class="btn" style="padding:2px 8px;">编辑</button></td>
+              </tr>
+              <tr class="selected">
+                <td><input type="checkbox" checked class="feature-check" /></td>
+                <td><span class="feature-type-tag WELD">WELD</span></td>
+                <td><code class="code-inline">FEAT-WELD-A1</code></td>
+                <td style="font-family:Consolas,Monaco,monospace;font-size:11px;">{"length_mm":25, "form":"straight", "layers":1}</td>
+                <td style="font-family:Consolas,Monaco,monospace;font-size:11px;">[-12,-2,0] → [13,2,1]</td>
+                <td><button class="btn" style="padding:2px 8px;">编辑</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" class="feature-check" /></td>
+                <td><span class="feature-type-tag GENERAL">GENERAL</span></td>
+                <td><code class="code-inline">FEAT-MISC-001</code></td>
+                <td style="font-family:Consolas,Monaco,monospace;font-size:11px;">{"area_mm2":45.2}</td>
+                <td style="font-family:Consolas,Monaco,monospace;font-size:11px;">[20,8,3] → [22,10,4]</td>
+                <td><button class="btn" style="padding:2px 8px;">编辑</button> <button class="btn" style="padding:2px 8px;color:#f56c6c;">忽略</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" class="feature-check" /></td>
+                <td><span class="feature-type-tag HOLE">HOLE</span></td>
+                <td><code class="code-inline">FEAT-HOLE-D3</code></td>
+                <td style="font-family:Consolas,Monaco,monospace;font-size:11px;">{"diameter_mm":3.0, "depth_mm":4.5, "through":false}</td>
+                <td style="font-family:Consolas,Monaco,monospace;font-size:11px;">[-2,-8,0] → [1,-5,5]</td>
+                <td><button class="btn" style="padding:2px 8px;color:#909399;">小孔，建议忽略</button></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div style="background:#f6ffed;border:1px solid #b7eb8f;border-radius:6px;padding:10px 14px;margin-top:12px;font-size:12px;color:#389e0d;">
+            ✓ 已勾选 <b id="selectedFeatureCount">4</b> 个特征待入库 · 将作为 <code>product_config_option_value</code> 的特征语义（feature_type / attributes / geometry_ref）使用
+          </div>
+
+          <div class="actions-bar">
+            <button class="btn" onclick="goToStep(2)">← 上一步</button>
+            <button class="btn-primary btn" onclick="goToStep(4)">下一步：预览与关联 →</button>
+          </div>
+        </div>
+
+        <!-- ============= Step 4: Babylon 预览 + 关联 ============= -->
+        <div class="step-content" id="step-4">
+          <div style="font-size:13px;color:#303133;margin-bottom:12px;font-weight:500;">
+            🎬 转换完成的 GLB 预览 — 验证视觉无误后关联到产品 / 配置模板
+          </div>
+
+          <div class="preview-wrap">
+            <canvas id="previewCanvas"></canvas>
+            <div class="preview-toolbar">
+              <button onclick="resetCamera()" title="重置">🔄</button>
+              <button onclick="cycleViewAngle()" title="切换视角">👁</button>
+              <button onclick="toggleWireframe()" title="线框">📐</button>
+            </div>
+          </div>
+
+          <div class="action-area">
+            <div class="action-info">
+              <div style="margin-bottom:4px;">📦 模型已就绪：<b>CFG-COMBO-000018 v1</b> · 已写入 <code>mat_part_model</code> 表</div>
+              <div style="font-size:12px;color:#909399;">下一步：把此模型关联到现有选配模板 (作 base.glb) / 新建选配模板</div>
+            </div>
+            <button class="btn" onclick="showToast('info','演示：关联到 mat_part 主表（独立功能）')">关联到料号</button>
+            <button class="btn-success" onclick="openLinkToTemplateDialog()">🎯 关联到选配模板 →</button>
+            <button class="btn-primary" onclick="openCreateTemplateFromModel()">＋ 新建选配模板</button>
+          </div>
+
+          <!-- 关联到现有模板对话框 -->
+          <div id="linkToTemplateOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2500;align-items:center;justify-content:center;">
+            <div style="background:#fff;border-radius:12px;padding:24px 28px;max-width:680px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 12px 32px rgba(0,0,0,.2);">
+              <div style="display:flex;align-items:center;margin-bottom:6px;">
+                <div style="font-size:16px;font-weight:600;flex:1;">🎯 选择要关联的选配模板</div>
+                <button onclick="closeLinkToTemplateDialog()" style="background:transparent;border:none;font-size:18px;cursor:pointer;color:#909399;">✕</button>
+              </div>
+              <div style="font-size:12px;color:#606266;margin-bottom:14px;">
+                将本模型 <b>CFG-COMBO-000018 v1</b> 写入选中模板的 <code>base_model_id</code> 字段。已有 base 模型的模板会显示"将覆盖"警告（PM 主动确认）。
+              </div>
+
+              <input class="search-input" placeholder="🔎 搜索模板..." style="width:100%;margin-bottom:10px;padding:6px 10px;border:1px solid #dcdfe6;border-radius:4px;font-size:12.5px;" />
+
+              <div id="tplCandidateList" style="max-height:340px;overflow-y:auto;border:1px solid #e4e7ed;border-radius:6px;">
+                <div class="tpl-candidate-row selected" data-code="CFG-TPL-CONTACT-STRIP" onclick="selectCandidate('CFG-TPL-CONTACT-STRIP')" style="padding:11px 14px;border-bottom:1px solid #f0f0f0;cursor:pointer;display:flex;gap:10px;align-items:center;background:#e6f7ff;border-left:3px solid #1890ff;">
+                  <div style="flex:1;">
+                    <div style="font-size:13px;font-weight:500;">接触片产品选配 <code style="font-size:10.5px;background:#f0f0f0;padding:1px 5px;border-radius:2px;">CFG-TPL-CONTACT-STRIP</code></div>
+                    <div style="font-size:11px;color:#909399;margin-top:3px;">5 选项 · 16 取值 · 已绑定 base 模型 <code>CFG-CONTACT-STRIP v3</code> ⚠ 将覆盖</div>
+                  </div>
+                  <span style="font-size:11px;padding:2px 8px;background:#fff7e6;color:#d48806;border:1px solid #ffd591;border-radius:8px;">PUBLISHED</span>
+                </div>
+                <div class="tpl-candidate-row" data-code="CFG-TPL-SPRING-CONTACT" onclick="selectCandidate('CFG-TPL-SPRING-CONTACT')" style="padding:11px 14px;border-bottom:1px solid #f0f0f0;cursor:pointer;display:flex;gap:10px;align-items:center;">
+                  <div style="flex:1;">
+                    <div style="font-size:13px;font-weight:500;">接触簧片产品选配 <code style="font-size:10.5px;background:#f0f0f0;padding:1px 5px;border-radius:2px;">CFG-TPL-SPRING-CONTACT</code></div>
+                    <div style="font-size:11px;color:#909399;margin-top:3px;">3 选项 · 8 取值 · 未绑定 base 模型 ✓ 可直接关联</div>
+                  </div>
+                  <span style="font-size:11px;padding:2px 8px;background:#fafafa;color:#909399;border:1px solid #d9d9d9;border-radius:8px;">DRAFT</span>
+                </div>
+                <div class="tpl-candidate-row" data-code="CFG-TPL-TERM" onclick="selectCandidate('CFG-TPL-TERM')" style="padding:11px 14px;cursor:pointer;display:flex;gap:10px;align-items:center;">
+                  <div style="flex:1;">
+                    <div style="font-size:13px;font-weight:500;">端子产品选配 <code style="font-size:10.5px;background:#f0f0f0;padding:1px 5px;border-radius:2px;">CFG-TPL-TERM</code></div>
+                    <div style="font-size:11px;color:#909399;margin-top:3px;">无选项配置（待 PM 完善） · 未绑定 base 模型</div>
+                  </div>
+                  <span style="font-size:11px;padding:2px 8px;background:#fafafa;color:#909399;border:1px solid #d9d9d9;border-radius:8px;">DRAFT</span>
+                </div>
+              </div>
+
+              <div style="margin-top:14px;padding:8px 12px;background:#fffbe6;border:1px solid #ffd591;border-radius:4px;font-size:11.5px;color:#876800;">
+                ⓘ 关联后写入 <code>product_config_template SET base_model_id=mpm-XXX, base_model_version=1, base_model_snapshot_at=NOW()</code>。如该模板已 PUBLISHED 且生成过实例，建议先在模板编辑器里新建草稿版本（§13）。
+              </div>
+
+              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+                <button class="btn" onclick="closeLinkToTemplateDialog()">取消</button>
+                <button class="btn-success btn" onclick="confirmLinkToTemplate()">✓ 关联到选中模板</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="actions-bar">
+            <button class="btn" onclick="goToStep(3)">← 上一步</button>
+            <button class="btn-primary btn" onclick="completeAll()">✅ 完成并归档</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- UG 导出教程抽屉 -->
+<div class="tutorial-mask" id="tutorialMask" onclick="closeTutorial()"></div>
+<div class="tutorial-drawer" id="tutorialDrawer">
+  <div class="tutorial-header">
+    <div class="tutorial-title">📖 从 UG NX 导出 STEP 文件 — 操作指南</div>
+    <button class="tutorial-close" onclick="closeTutorial()">✕</button>
+  </div>
+  <div class="tutorial-body">
+    <div class="tutorial-section">
+      <h3>🎯 操作目标</h3>
+      <p style="font-size:12.5px;color:#606266;line-height:1.7;">
+        在 UG NX 内打开你的产品 .prt 设计文件 → 通过 <b>File → Export → STEP</b> 导出标准 STEP 格式（推荐 AP214 或 AP242 版本） → 同时保存原 .prt + 新生成 .stp → 上传到 CPQ。
+      </p>
+    </div>
+
+    <div class="tutorial-section">
+      <h3>📋 详细步骤</h3>
+
+      <div class="tutorial-step">
+        <b>Step 1.</b> 打开 UG NX，确保已加载你要导出的 <code class="code-inline">.prt</code> 装配体或单件
+        <div class="tutorial-screenshot">📷 UG NX 主界面截图占位</div>
+      </div>
+
+      <div class="tutorial-step">
+        <b>Step 2.</b> 主菜单选 <code class="code-inline">File → Export → STEP203 / STEP214 / STEP242</code>
+        <div style="font-size:11.5px;color:#909399;margin-top:6px;">💡 推荐用 <b>STEP214</b>（兼容性最好），新版 UG 用 <b>STEP242</b>（含 PMI 信息）</div>
+      </div>
+
+      <div class="tutorial-step">
+        <b>Step 3.</b> 弹出导出对话框，设置：
+        <ul style="margin:6px 0 0 18px;font-size:12px;color:#606266;">
+          <li>勾选 <b>Save Solid Models</b> / <b>Save Surface Models</b></li>
+          <li>勾选 <b>Single File Mode</b>（单文件输出，便于上传）</li>
+          <li>单位选 <b>Millimeters</b>（毫米，与 CPQ 标准一致）</li>
+          <li>路径建议：<code class="code-inline">{partNo}-v{N}.stp</code></li>
+        </ul>
+      </div>
+
+      <div class="tutorial-step">
+        <b>Step 4.</b> 点 OK 等待导出（小件 5s / 大装配 60s+）→ 生成 <code class="code-inline">.stp</code> 文件
+      </div>
+
+      <div class="tutorial-step">
+        <b>Step 5.</b> 同时保留原 <code class="code-inline">.prt</code> 文件（CPQ 永久保存用于后续设计变更追溯）
+      </div>
+    </div>
+
+    <div class="tutorial-section">
+      <h3>⚠️ 常见问题</h3>
+      <div class="tutorial-step">
+        <b>Q: 导出后 STEP 文件太大（&gt;10MB）？</b><br/>
+        <span style="font-size:12px;color:#606266;">A: ① 在 UG 内 Simplify Geometry 删除冗余特征 → 再导出；② 装配体太大可拆分上传</span>
+      </div>
+      <div class="tutorial-step">
+        <b>Q: 我用的是 Solidworks / CATIA / Pro-E?</b><br/>
+        <span style="font-size:12px;color:#606266;">A: 同样可导出 .stp，但 CPQ 暂不保存原 .sldprt / .CATPart / .prt.* 文件，只保存导出的 .stp + 生成的 .glb。详见 <code class="code-inline">docs/CAD导出GLB操作手册.md</code></span>
+      </div>
+      <div class="tutorial-step">
+        <b>Q: 导出 STEP 后还要不要先在 Blender 转一次？</b><br/>
+        <span style="font-size:12px;color:#606266;">A: 不需要！CPQ 后端自动用 FreeCAD + Blender 转换。**不要**在 UG 外手工转 GLB（会丢精度，且失去重新转换的能力）</span>
+      </div>
+    </div>
+
+    <div style="background:#fff7e6;border:1px solid #ffd591;border-radius:6px;padding:10px 14px;font-size:11.5px;color:#876800;">
+      💡 完整 CAD 软件导出对照参考：<a href="#" onclick="showToast('info','跳转 docs/CAD导出GLB操作手册.md');return false;" style="color:#1890ff;">CAD导出GLB操作手册.md</a>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+let currentMode = 'UG';  // 'UG' (默认双文件) 或 'GLB' (直传)
+let prtUploaded = false;
+let stpUploaded = false;
+let glbUploaded = false;
+let currentStep = 1;
+let previewEngine = null;
+let previewScene = null;
+let previewCam = null;
+let viewIdx = 0;
+let isWireframe = false;
+const viewAngles = [
+  { alpha: Math.PI/4, beta: Math.PI/3, r: 7 },
+  { alpha: -Math.PI/2, beta: Math.PI/2, r: 7 },
+  { alpha: -Math.PI/2, beta: 0.01, r: 7 },
+];
+
+// ============================================================
+// 模式切换（A: UG 双文件 / B: GLB 直传）
+// ============================================================
+function switchMode(mode) {
+  currentMode = mode;
+  document.getElementById('modeAUG').classList.toggle('selected', mode === 'UG');
+  document.getElementById('modeBGLB').classList.toggle('selected', mode === 'GLB');
+  document.getElementById('modeAContent').style.display = mode === 'UG' ? 'block' : 'none';
+  document.getElementById('modeBContent').style.display = mode === 'GLB' ? 'block' : 'none';
+
+  // 切换 next 按钮
+  document.getElementById('nextStep1Btn').style.display = mode === 'UG' ? 'inline-flex' : 'none';
+  document.getElementById('nextStep1BtnB').style.display = mode === 'GLB' ? 'inline-flex' : 'none';
+
+  // 切换步骤指示器（GLB 模式跳过 Step 2 / Step 3）
+  const step2Ind = document.getElementById('step-2-ind');
+  const step3Ind = document.getElementById('step-3-ind');
+  if (mode === 'GLB') {
+    step2Ind.style.opacity = '0.35';
+    step2Ind.querySelector('.step-name').textContent = '后端转换 (跳过)';
+    step3Ind.style.opacity = '0.35';
+    step3Ind.querySelector('.step-name').textContent = '特征识别 (跳过)';
+  } else {
+    step2Ind.style.opacity = '1';
+    step2Ind.querySelector('.step-name').textContent = '后端转换';
+    step3Ind.style.opacity = '1';
+    step3Ind.querySelector('.step-name').textContent = '特征识别审核';
+  }
+
+  resetWizard();
+  showToast('info', '切换到模式 <b>' + (mode === 'UG' ? 'A · UG NX 工作流' : 'B · 直接上传 GLB') + '</b>');
+}
+
+// 模式 B: GLB 直传
+function simulateGlbUpload() {
+  const zone = document.getElementById('glbZone');
+  if (zone.classList.contains('done')) return;
+  zone.classList.add('uploading');
+  zone.querySelector('.file-status').textContent = '正在上传 composite_v1.glb ...';
+  zone.querySelector('.progress-bar').style.display = 'block';
+  const fill = zone.querySelector('.progress-fill');
+  let pct = 0;
+  const timer = setInterval(() => {
+    pct += Math.random() * 18 + 8;
+    if (pct >= 100) {
+      pct = 100;
+      clearInterval(timer);
+      setTimeout(() => {
+        zone.classList.remove('uploading');
+        zone.classList.add('done');
+        zone.querySelector('.file-type').textContent = '✅';
+        zone.querySelector('.file-label').textContent = 'composite_v1.glb · 已上传';
+        zone.querySelector('.file-hint').textContent = '永久保存到 cpq-3d-glb/CFG-COMBO-000018/v1/model.glb';
+        zone.querySelector('.file-status').textContent = '1.4 MB · Draco 压缩 · 4 个 mesh';
+        document.getElementById('glbUploadMeta').style.display = 'block';
+        document.getElementById('glbFormMeta').style.display = 'block';
+        document.getElementById('nextStep1BtnB').disabled = false;
+        glbUploaded = true;
+        showToast('info', '✓ GLB 已上传，可直接进入预览');
+      }, 200);
+    }
+    fill.style.width = pct + '%';
+  }, 150);
+}
+
+// ============================================================
+// Step 1: 模拟双文件上传 (模式 A)
+// ============================================================
+function simulateUpload(type) {
+  const zone = document.getElementById(type + 'Zone');
+  if (zone.classList.contains('done')) return;
+  zone.classList.add('uploading');
+  zone.querySelector('.file-status').textContent = '正在上传 ' + (type === 'prt' ? 'composite_v1.prt' : 'composite_v1.stp') + ' ...';
+  zone.querySelector('.progress-bar').style.display = 'block';
+
+  let pct = 0;
+  const fill = zone.querySelector('.progress-fill');
+  const timer = setInterval(() => {
+    pct += Math.random() * 18 + 8;
+    if (pct >= 100) {
+      pct = 100;
+      clearInterval(timer);
+      setTimeout(() => onFileUploaded(type), 200);
+    }
+    fill.style.width = pct + '%';
+  }, 150);
+}
+
+function onFileUploaded(type) {
+  const zone = document.getElementById(type + 'Zone');
+  zone.classList.remove('uploading');
+  zone.classList.add('done');
+  zone.querySelector('.file-type').textContent = '✅';
+  const fileName = type === 'prt' ? 'composite_v1.prt' : 'composite_v1.stp';
+  zone.querySelector('.file-label').textContent = fileName + ' · 已上传';
+  zone.querySelector('.file-hint').textContent = type === 'prt'
+    ? '永久保存到 cpq-ugnx-source/CFG-COMBO-000018/v1/model.prt'
+    : '永久保存到 cpq-stp-source/CFG-COMBO-000018/v1/model.stp';
+  zone.querySelector('.file-status').textContent = type === 'prt' ? '5.6 MB · MD5 e8a7f2...' : '3.2 MB · MD5 9c2d4f...';
+
+  if (type === 'prt') prtUploaded = true;
+  else stpUploaded = true;
+
+  // 添加文件元信息行
+  updateUploadMetas();
+
+  // 两个都上传后启用 next + 显示匹配区
+  if (prtUploaded && stpUploaded) {
+    document.getElementById('matchSection').classList.add('show');
+    document.getElementById('formMetaSection').style.display = 'block';
+    document.getElementById('nextStep1Btn').disabled = false;
+    showToast('info', '✓ 两文件 MD5/时间戳校验通过，可进入下一步');
+  } else {
+    showToast('info', `已上传 ${type === 'prt' ? '.prt' : '.stp'} · 请上传另一个文件`);
+  }
+}
+
+function updateUploadMetas() {
+  const container = document.getElementById('uploadMetas');
+  let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px;">';
+  if (prtUploaded) {
+    html += `<div class="upload-meta">
+      <span class="label">[.prt] 路径:</span> s3://cpq-ugnx-source/CFG-COMBO-000018/v1/model.prt<br/>
+      <span class="label">大小:</span> 5,872,432 bytes (5.6 MB) · <span class="label">UG 版本:</span> 2206
+    </div>`;
+  }
+  if (stpUploaded) {
+    html += `<div class="upload-meta">
+      <span class="label">[.stp] 路径:</span> s3://cpq-stp-source/CFG-COMBO-000018/v1/model.stp<br/>
+      <span class="label">大小:</span> 3,354,128 bytes (3.2 MB) · <span class="label">AP 版本:</span> AP214
+    </div>`;
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function resetWizard() {
+  prtUploaded = false;
+  stpUploaded = false;
+  glbUploaded = false;
+  ['prt','stp'].forEach(type => {
+    const zone = document.getElementById(type + 'Zone');
+    if (!zone) return;
+    zone.classList.remove('done','uploading');
+    zone.querySelector('.file-type').textContent = type === 'prt' ? '📐' : '📄';
+    zone.querySelector('.file-label').textContent = type === 'prt' ? 'UG NX 源文件 (.prt)' : 'STEP 中性格式 (.stp / .step)';
+    zone.querySelector('.file-hint').textContent = type === 'prt' ? '永久保存 · 含完整设计树 · 仅 UG 可解析' : '永久保存 · 跨 CAD 通用 · 服务端转 GLB 源';
+    zone.querySelector('.file-status').textContent = '点击上传 ' + (type === 'prt' ? '.prt' : '.stp') + ' 文件';
+    zone.querySelector('.progress-bar').style.display = 'none';
+    zone.querySelector('.progress-fill').style.width = '0%';
+  });
+  // 重置 GLB 区
+  const glbZone = document.getElementById('glbZone');
+  if (glbZone) {
+    glbZone.classList.remove('done','uploading');
+    glbZone.querySelector('.file-type').textContent = '📦';
+    glbZone.querySelector('.file-label').textContent = 'GLB 文件 (.glb / .gltf)';
+    glbZone.querySelector('.file-hint').textContent = '推荐 Draco 压缩 · 大小 < 10MB · Babylon 可直接加载';
+    glbZone.querySelector('.file-status').textContent = '点击上传 .glb 文件';
+    glbZone.querySelector('.progress-bar').style.display = 'none';
+    glbZone.querySelector('.progress-fill').style.width = '0%';
+  }
+  document.getElementById('matchSection').classList.remove('show');
+  document.getElementById('formMetaSection').style.display = 'none';
+  document.getElementById('uploadMetas').innerHTML = '';
+  const glbMeta = document.getElementById('glbUploadMeta');
+  const glbForm = document.getElementById('glbFormMeta');
+  if (glbMeta) glbMeta.style.display = 'none';
+  if (glbForm) glbForm.style.display = 'none';
+  document.getElementById('nextStep1Btn').disabled = true;
+  document.getElementById('nextStep1BtnB').disabled = true;
+}
+
+// ============================================================
+// 步骤切换
+// ============================================================
+function goToStep(n) {
+  // 模式 A 检查
+  if (currentMode === 'UG' && n === 2 && !(prtUploaded && stpUploaded)) {
+    showToast('warning', '请先完成双文件上传');
+    return;
+  }
+  // 模式 B 检查
+  if (currentMode === 'GLB' && n === 4 && !glbUploaded) {
+    showToast('warning', '请先上传 GLB 文件');
+    return;
+  }
+  for (let i = 1; i <= 4; i++) {
+    const indicator = document.getElementById('step-' + i + '-ind');
+    const content = document.getElementById('step-' + i);
+    if (content) content.classList.toggle('active', i === n);
+    if (indicator) {
+      indicator.classList.remove('active','done');
+      if (i < n) indicator.classList.add('done');
+      else if (i === n) indicator.classList.add('active');
+    }
+  }
+  for (let i = 1; i <= 3; i++) {
+    const line = document.getElementById('line-' + i + '-' + (i+1));
+    if (line) line.classList.toggle('done', i < n);
+  }
+  currentStep = n;
+
+  // 模式 A 进入 Step 2 自动开始转换动画
+  if (n === 2 && currentMode === 'UG') startConversion();
+  // 进入 Step 4 自动初始化 Babylon（两种模式都需要）
+  if (n === 4) initPreview();
+}
+
+// ============================================================
+// Step 2: 5 阶段转换动画
+// ============================================================
+const stages = [
+  { id: 1, duration: 4500, label: '入队', timeLabel: 'ms' },
+  { id: 2, duration: 18000, label: 'STEP→STL', timeLabel: 's' },
+  { id: 3, duration: 9000, label: 'STL→GLB', timeLabel: 's' },
+  { id: 4, duration: 4500, label: '缩略图', timeLabel: 's' },
+  { id: 5, duration: 6500, label: '特征识别', timeLabel: 's' },
+];
+
+function startConversion() {
+  // 重置所有阶段
+  stages.forEach(s => {
+    const el = document.querySelector(`.pipeline-stage[data-stage="${s.id}"]`);
+    if (el) {
+      el.classList.remove('running','done');
+      el.querySelector('.stage-progress-fill').style.width = '0%';
+      el.querySelector('.stage-time').textContent = '— ' + s.timeLabel;
+    }
+  });
+  document.getElementById('conversionSummary').style.display = 'none';
+  document.getElementById('nextStep2Btn').disabled = true;
+  // 加速演示（实际时间缩短到 1/15）
+  const speedup = 15;
+  let stageIdx = 0;
+  function runNextStage() {
+    if (stageIdx >= stages.length) {
+      // 全部完成
+      document.getElementById('conversionSummary').style.display = 'block';
+      document.getElementById('nextStep2Btn').disabled = false;
+      showToast('info', '✅ 转换完成，请审核识别的特征');
+      return;
+    }
+    const s = stages[stageIdx];
+    const el = document.querySelector(`.pipeline-stage[data-stage="${s.id}"]`);
+    el.classList.add('running');
+    const startTime = Date.now();
+    const animDuration = s.duration / speedup;
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const pct = Math.min(100, (elapsed / animDuration) * 100);
+      el.querySelector('.stage-progress-fill').style.width = pct + '%';
+      const showTime = s.timeLabel === 'ms' ? Math.round(elapsed * speedup) : (elapsed * speedup / 1000).toFixed(1);
+      el.querySelector('.stage-time').textContent = showTime + ' ' + s.timeLabel;
+      if (pct >= 100) {
+        clearInterval(timer);
+        el.classList.remove('running');
+        el.classList.add('done');
+        el.querySelector('.stage-time').textContent = (s.duration / 1000).toFixed(1) + ' s';
+        stageIdx++;
+        setTimeout(runNextStage, 300);
+      }
+    }, 50);
+  }
+  runNextStage();
+}
+
+// ============================================================
+// Step 3: 特征审核
+// ============================================================
+function toggleAllFeatures(checked) {
+  document.querySelectorAll('.feature-check').forEach(cb => cb.checked = checked);
+  document.querySelectorAll('.features-table tbody tr').forEach(tr => tr.classList.toggle('selected', checked));
+  updateSelectedCount();
+}
+
+document.addEventListener('change', (e) => {
+  if (e.target.classList && e.target.classList.contains('feature-check')) {
+    e.target.closest('tr').classList.toggle('selected', e.target.checked);
+    updateSelectedCount();
+  }
+});
+
+function updateSelectedCount() {
+  const count = document.querySelectorAll('.feature-check:checked').length;
+  const elt = document.getElementById('selectedFeatureCount');
+  if (elt) elt.textContent = count;
+}
+
+// ============================================================
+// Step 4: Babylon 预览
+// ============================================================
+function initPreview() {
+  if (previewEngine) { resetCamera(); return; }
+  const canvas = document.getElementById('previewCanvas');
+  previewEngine = new BABYLON.Engine(canvas, true, { antialias: true });
+  previewScene = new BABYLON.Scene(previewEngine);
+  previewScene.clearColor = new BABYLON.Color4(0.95, 0.96, 0.98, 1);
+
+  previewCam = new BABYLON.ArcRotateCamera('cam', Math.PI/4, Math.PI/3, 7, BABYLON.Vector3.Zero(), previewScene);
+  previewCam.attachControl(canvas, true);
+  previewCam.lowerRadiusLimit = 3;
+  previewCam.upperRadiusLimit = 16;
+
+  new BABYLON.HemisphericLight('hl', new BABYLON.Vector3(0,1,0), previewScene).intensity = 0.85;
+  new BABYLON.DirectionalLight('dl', new BABYLON.Vector3(-1,-2,-1), previewScene).intensity = 0.5;
+
+  // 模拟转换后的 GLB（用基础几何体演示）
+  buildDemoModel(previewScene);
+
+  previewEngine.runRenderLoop(() => previewScene.render());
+  window.addEventListener('resize', () => previewEngine.resize());
+}
+
+function buildDemoModel(scene) {
+  const base = BABYLON.MeshBuilder.CreateBox('base', { width:3, height:0.25, depth:1.4 }, scene);
+  const matBase = new BABYLON.StandardMaterial('matBase', scene);
+  matBase.diffuseColor = new BABYLON.Color3(0.6, 0.6, 0.65);
+  matBase.specularPower = 64;
+  base.material = matBase;
+
+  const ca = BABYLON.MeshBuilder.CreateBox('childA', { width:1.5, height:1.6, depth:1.15 }, scene);
+  ca.position = new BABYLON.Vector3(-0.8, 0.9, 0);
+  const matCa = new BABYLON.StandardMaterial('matCa', scene);
+  matCa.diffuseColor = new BABYLON.Color3(0.85, 0.88, 0.92);
+  matCa.specularPower = 64;
+  ca.material = matCa;
+
+  const cb = BABYLON.MeshBuilder.CreateCylinder('childB', { diameter:1.3, height:1.6, tessellation:32 }, scene);
+  cb.position = new BABYLON.Vector3(0.9, 0.9, 0);
+  const matCb = new BABYLON.StandardMaterial('matCb', scene);
+  matCb.diffuseColor = new BABYLON.Color3(0.85, 0.55, 0.30);
+  matCb.specularPower = 64;
+  cb.material = matCb;
+
+  const torus = BABYLON.MeshBuilder.CreateTorus('weld', { diameter:1.8, thickness:0.12, tessellation:32 }, scene);
+  torus.position = new BABYLON.Vector3(0, 0.15, 0);
+  torus.rotation.x = Math.PI/2;
+  const matTorus = new BABYLON.StandardMaterial('matTorus', scene);
+  matTorus.diffuseColor = new BABYLON.Color3(1, 0.65, 0.25);
+  matTorus.emissiveColor = new BABYLON.Color3(0.18, 0.12, 0.04);
+  torus.material = matTorus;
+
+  const ground = BABYLON.MeshBuilder.CreateGround('ground', { width:10, height:10 }, scene);
+  ground.position.y = -0.5;
+  const matG = new BABYLON.StandardMaterial('matG', scene);
+  matG.diffuseColor = new BABYLON.Color3(0.92, 0.93, 0.95);
+  matG.alpha = 0.55;
+  ground.material = matG;
+}
+
+function resetCamera() {
+  if (!previewCam) return;
+  viewIdx = 0;
+  const a = viewAngles[0];
+  BABYLON.Animation.CreateAndStartAnimation('a', previewCam, 'alpha', 30, 15, previewCam.alpha, a.alpha, 0);
+  BABYLON.Animation.CreateAndStartAnimation('b', previewCam, 'beta', 30, 15, previewCam.beta, a.beta, 0);
+  BABYLON.Animation.CreateAndStartAnimation('r', previewCam, 'radius', 30, 15, previewCam.radius, a.r, 0);
+}
+
+function cycleViewAngle() {
+  if (!previewCam) return;
+  viewIdx = (viewIdx + 1) % viewAngles.length;
+  const a = viewAngles[viewIdx];
+  BABYLON.Animation.CreateAndStartAnimation('a', previewCam, 'alpha', 30, 15, previewCam.alpha, a.alpha, 0);
+  BABYLON.Animation.CreateAndStartAnimation('b', previewCam, 'beta', 30, 15, previewCam.beta, a.beta, 0);
+}
+
+function toggleWireframe() {
+  if (!previewScene) return;
+  isWireframe = !isWireframe;
+  previewScene.meshes.forEach(m => { if (m.material) m.material.wireframe = isWireframe; });
+}
+
+function completeAll() {
+  showToast('info', '✅ 流程完成 · 3 个源文件永久归档 + GLB 入库 + 特征待管理员后续审核');
+  setTimeout(() => showToast('info', '模拟: 跳转 /admin/3d-models 模型列表页'), 800);
+}
+
+// v0.4 P0 修复: 关联到模板 / 新建模板
+let selectedTplCandidateCode = 'CFG-TPL-CONTACT-STRIP';
+
+function openLinkToTemplateDialog() {
+  document.getElementById('linkToTemplateOverlay').style.display = 'flex';
+}
+
+function closeLinkToTemplateDialog() {
+  document.getElementById('linkToTemplateOverlay').style.display = 'none';
+}
+
+function selectCandidate(code) {
+  selectedTplCandidateCode = code;
+  document.querySelectorAll('.tpl-candidate-row').forEach(r => {
+    if (r.dataset.code === code) {
+      r.style.background = '#e6f7ff';
+      r.style.borderLeft = '3px solid #1890ff';
+      r.classList.add('selected');
+    } else {
+      r.style.background = '';
+      r.style.borderLeft = '';
+      r.classList.remove('selected');
+    }
+  });
+}
+
+function confirmLinkToTemplate() {
+  closeLinkToTemplateDialog();
+  showToast('info', `✓ 已关联到模板 <b>${selectedTplCandidateCode}</b><br/>POST /api/cpq/config-templates/${selectedTplCandidateCode}/base-model<br/>Body: { model_id: 'mpm-new', version: 1 }`);
+  setTimeout(() => showToast('info', '模拟: 跳转 v0.4-3D选配模板管理端原型.html?tpl=' + selectedTplCandidateCode), 800);
+}
+
+function openCreateTemplateFromModel() {
+  showToast('info', '✨ 新建选配模板向导（mock）<br/>1. 自动复制模型料号作 base_part_no<br/>2. 模型自动设为 base_model_id<br/>3. PM 接下来在编辑器添加选项配置');
+  setTimeout(() => showToast('info', '模拟: 跳转 v0.4-3D选配模板管理端原型.html?new=true&base_model=mpm-new'), 800);
+}
+
+// ============================================================
+// UG 教程抽屉
+// ============================================================
+function openTutorial() {
+  document.getElementById('tutorialMask').classList.add('open');
+  document.getElementById('tutorialDrawer').classList.add('open');
+}
+function closeTutorial() {
+  document.getElementById('tutorialMask').classList.remove('open');
+  document.getElementById('tutorialDrawer').classList.remove('open');
+}
+
+// ============================================================
+// Toast
+// ============================================================
+function showToast(level, html) {
+  const stack = document.getElementById('toastStack');
+  const t = document.createElement('div');
+  t.className = 'toast ' + level;
+  t.innerHTML = html;
+  stack.appendChild(t);
+  setTimeout(() => {
+    t.style.transition = 'opacity .3s, transform .3s';
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(120%)';
+    setTimeout(() => t.remove(), 350);
+  }, 3500);
+}
+</script>
+</body>
+</html>

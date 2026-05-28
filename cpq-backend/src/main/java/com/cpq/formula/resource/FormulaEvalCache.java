@@ -31,7 +31,7 @@ public final class FormulaEvalCache {
     private FormulaEvalCache() {}
 
     /**
-     * 构建缓存 key。
+     * 构建缓存 key（3-参数版，向后兼容入口；costingTemplateId 默认 "_"）。
      *
      * @param expression  公式表达式（非空）
      * @param customerId  客户 UUID（可 null）
@@ -39,9 +39,27 @@ public final class FormulaEvalCache {
      * @return key 字符串
      */
     public static String buildKey(String expression, UUID customerId, String partNo) {
+        return buildKey(expression, customerId, partNo, null);
+    }
+
+    /**
+     * 构建缓存 key（4-参数版，含 templateId 维度；V249 改名 costingTemplateId → templateId）。
+     *
+     * <p>两个模板引用同名 {@code $view} 会产生不同的 SQL 模板，
+     * 缓存 key 必须含 {@code templateId} 才能避免串混。
+     *
+     * @param expression 公式表达式（非空）
+     * @param customerId 客户 UUID（可 null）
+     * @param partNo     料号（可 null / 空）
+     * @param templateId 产品卡片模板 UUID（可 null — 组件上下文时传 null）
+     * @return key 字符串
+     */
+    public static String buildKey(String expression, UUID customerId, String partNo,
+                                   UUID templateId) {
         return expression
                 + ":" + (customerId != null ? customerId.toString() : "_")
-                + ":" + (partNo != null && !partNo.isBlank() ? partNo : "_");
+                + ":" + (partNo != null && !partNo.isBlank() ? partNo : "_")
+                + ":" + (templateId != null ? templateId.toString() : "_");
     }
 
     /** 按 key 查缓存，未命中返回 null。 */

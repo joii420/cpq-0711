@@ -33,6 +33,19 @@ interface Props {
   viewLabel?: string;
   /** 当前报价单的客户 ID —— 求 BNF 路径（含 customer_id 谓词的客户级表）时透传 */
   customerId?: string;
+  /** 当前报价单 ID —— 后端 SqlViewRuntimeContext 注入，供 $view.col 路径解析使用 */
+  quotationId?: string | null;
+  /** 当前报价单状态 —— 后端决定是否使用冻结 snapshot */
+  quotationStatus?: string | null;
+  /**
+   * template 实体 ID —— 供后端 SqlViewRuntimeContext 定位模板 SQL 视图（template_sql_view 表）。
+   * 即 linkedTemplateId 的真实值，由调用方透传以便后端解析 $view.col 路径。
+   */
+  templateId?: string | null;
+  /**
+   * @deprecated 旧字段，已由 templateId 替代。保留用于向后兼容，不再读取。
+   */
+  costingTemplateId?: string | null;
 }
 
 /**
@@ -128,7 +141,17 @@ function evaluateFormula(
   }
 }
 
-const LinkedExcelView: React.FC<Props> = ({ linkedTemplateId, lineItems, quotationContext, viewLabel, customerId }) => {
+const LinkedExcelView: React.FC<Props> = ({
+  linkedTemplateId,
+  lineItems,
+  quotationContext,
+  viewLabel,
+  customerId,
+  quotationId,
+  quotationStatus,
+  templateId,
+  costingTemplateId: _costingTemplateId, // deprecated, ignored
+}) => {
   const [excelTemplate, setExcelTemplate] = useState<CostingTemplate | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -206,6 +229,9 @@ const LinkedExcelView: React.FC<Props> = ({ linkedTemplateId, lineItems, quotati
       expression: `{${t.path}}`,
       customerId: customerId || null,
       partNo: t.partNo,
+      templateId: templateId ?? linkedTemplateId ?? null,   // template 实体 ID，供后端定位模板 SQL 视图
+      quotationId: quotationId || null,
+      quotationStatus: quotationStatus || null,
     }));
 
     batchEvaluate(tasks)
@@ -218,7 +244,7 @@ const LinkedExcelView: React.FC<Props> = ({ linkedTemplateId, lineItems, quotati
           const next = { ...prev };
           for (const t of missing) {
             const expr = `{${t.path}}`;
-            const reqKey = buildEvalKey(expr, customerId || null, t.partNo);
+            const reqKey = buildEvalKey(expr, customerId || null, t.partNo, templateId ?? linkedTemplateId ?? null);
             const item = itemByKey[reqKey];
             const cacheK = pathCacheKey(t.partNo, t.path);
             if (item && item.status === 'OK' && item.data?.success) {
@@ -243,7 +269,7 @@ const LinkedExcelView: React.FC<Props> = ({ linkedTemplateId, lineItems, quotati
         });
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathTasks, customerId]);
+  }, [pathTasks, customerId, templateId, linkedTemplateId, quotationId, quotationStatus]);
 
   /** 取 BNF 路径求值结果 —— 数组取首值，对象取首字段，字符串/数字直接返回 */
   const formatPathValue = (v: any): any => {

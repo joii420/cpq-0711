@@ -1,0 +1,2074 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>3D 选配模板管理端原型 v0.4 — 配置树编辑器</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#f0f2f5; font-size:13px; color:#303133; height:100vh; overflow:hidden; }
+
+.layout { display:flex; height:100vh; }
+.sider { width:200px; background:#001529; color:#fff; padding:12px 0; flex-shrink:0; overflow-y:auto; }
+.sider .logo { padding:0 16px 16px; font-size:14px; font-weight:600; border-bottom:1px solid #1f2d3d; }
+.sider .ver { font-size:11px; color:#a6adb4; padding:8px 16px 0; }
+.menu { padding-top:8px; }
+.m-item { padding:9px 16px; color:#a6adb4; cursor:pointer; font-size:13px; display:flex; align-items:center; gap:8px; }
+.m-item:hover { color:#fff; background:#1f2d3d; }
+.m-item.active { background:#1f2d3d; color:#fff; }
+.m-sub { padding:6px 16px 6px 32px; font-size:12.5px; color:#a6adb4; cursor:pointer; }
+.m-sub.active { color:#1890ff; background:#000c17; border-left:3px solid #1890ff; padding-left:29px; }
+
+.main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.crumb { padding:10px 20px; background:#fff; border-bottom:1px solid #e4e7ed; font-size:12.5px; color:#909399; }
+.crumb b { color:#303133; font-weight:500; }
+.content { flex:1; overflow:hidden; display:flex; }
+
+/* Banner */
+.exp-banner { background:linear-gradient(90deg,#e6f7ff,#f0f5ff); border:1px dashed #1890ff; padding:10px 14px; border-radius:6px; font-size:12.5px; color:#0050b3; margin:16px 20px 12px; }
+.exp-banner b { color:#003a8c; }
+
+/* 列表页 */
+.list-view { flex:1; padding:0 20px 16px; overflow-y:auto; }
+.page-card { background:#fff; border-radius:8px; padding:18px 20px; margin-bottom:12px; }
+.page-title { font-size:18px; font-weight:600; margin-bottom:14px; }
+
+.toolbar { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+.btn { padding:5px 12px; border:1px solid #dcdfe6; background:#fff; border-radius:4px; cursor:pointer; font-size:12.5px; color:#606266; display:inline-flex; align-items:center; gap:4px; transition:all .2s; }
+.btn:hover { color:#409eff; border-color:#c6e2ff; background:#ecf5ff; }
+.btn-primary { background:#1890ff; color:#fff; border-color:#1890ff; }
+.btn-primary:hover { background:#40a9ff; color:#fff; border-color:#40a9ff; }
+.btn-success { background:#52c41a; color:#fff; border-color:#52c41a; }
+.btn-success:hover { background:#73d13d; }
+.btn-danger { color:#f56c6c; border-color:#fbc4c4; }
+.btn-danger:hover { background:#f56c6c; color:#fff; border-color:#f56c6c; }
+.btn[disabled] { opacity:.45; cursor:not-allowed; }
+
+.search-input { padding:5px 10px; border:1px solid #dcdfe6; border-radius:4px; font-size:12.5px; min-width:200px; }
+
+.tpl-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.tpl-table th, .tpl-table td { padding:10px 12px; text-align:left; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+.tpl-table th { background:#fafafa; color:#606266; font-weight:500; }
+.tpl-table tr:hover { background:#fafdff; cursor:pointer; }
+.tpl-table tr.selected { background:#e6f4ff; }
+
+/* Switch 开关（展示价格列用） */
+.switch { position:relative; display:inline-block; width:34px; height:18px; vertical-align:middle; }
+.switch input { opacity:0; width:0; height:0; }
+.switch .slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:#dcdfe6; transition:.2s; border-radius:18px; }
+.switch .slider:before { position:absolute; content:""; height:14px; width:14px; left:2px; bottom:2px; background:#fff; transition:.2s; border-radius:50%; box-shadow:0 1px 3px rgba(0,0,0,.2); }
+.switch input:checked + .slider { background:#52c41a; }
+.switch input:checked + .slider:before { transform:translateX(16px); }
+.switch input:disabled + .slider { opacity:.5; cursor:not-allowed; }
+.status-tag { display:inline-block; padding:1px 8px; border-radius:3px; font-size:11px; }
+.status-tag.draft { background:#fff7e6; color:#d48806; border:1px solid #ffd591; }
+.status-tag.published { background:#f6ffed; color:#389e0d; border:1px solid #b7eb8f; }
+.status-tag.archived { background:#fafafa; color:#909399; border:1px solid #d9d9d9; }
+
+/* 编辑器视图 */
+.editor-view { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.editor-header { padding:14px 24px; background:#fff; border-bottom:1px solid #e4e7ed; display:flex; align-items:center; gap:14px; }
+.editor-header h2 { font-size:16px; font-weight:600; margin:0; flex:1; }
+.editor-body-area { flex:1; overflow-y:auto; background:#fafbfc; }
+
+/* 编辑页：4 个统计卡 */
+.editor-stats { padding:14px 24px; background:#fff; border-bottom:1px solid #f0f0f0; display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+.editor-stat-card { background:linear-gradient(135deg,#fafbfc,#fff); border:1px solid #e4e7ed; border-radius:8px; padding:12px 16px; display:flex; align-items:center; gap:12px; transition:all .2s; }
+.editor-stat-card:hover { border-color:#91caff; box-shadow:0 4px 12px rgba(24,144,255,.08); }
+.editor-stat-card.opts { border-left:3px solid #1890ff; }
+.editor-stat-card.vals { border-left:3px solid #722ed1; }
+.editor-stat-card.rules { border-left:3px solid #fa8c16; }
+.editor-stat-card.insts { border-left:3px solid #52c41a; }
+.stat-icon { font-size:28px; flex-shrink:0; }
+.stat-info { flex:1; min-width:0; }
+.stat-label { font-size:11.5px; color:#909399; margin-bottom:2px; }
+.stat-value { font-size:22px; font-weight:600; color:#303133; line-height:1.1; }
+.stat-sub { font-size:10.5px; color:#909399; margin-top:2px; }
+
+/* Tab 导航栏 */
+.editor-tabs { display:flex; padding:0 24px; background:#fff; border-bottom:1px solid #e4e7ed; gap:0; }
+.editor-tab { padding:11px 16px; cursor:pointer; font-size:13px; color:#606266; border-bottom:2px solid transparent; transition:all .2s; display:flex; align-items:center; gap:6px; }
+.editor-tab:hover { color:#1890ff; }
+.editor-tab.active { color:#1890ff; border-bottom-color:#1890ff; font-weight:600; background:#fafdff; }
+.editor-tab-badge { display:inline-block; padding:1px 6px; background:#f0f0f0; border-radius:8px; font-size:10.5px; color:#606266; }
+.editor-tab.active .editor-tab-badge { background:#1890ff; color:#fff; }
+
+/* Tab 内容容器 */
+.editor-tab-area { display:flex; gap:14px; padding:16px 24px; min-height:calc(100vh - 280px); }
+.editor-tab-main { flex:1; min-width:0; }
+.editor-tab-side { width:280px; flex-shrink:0; }
+.editor-tab-content { display:none; }
+.editor-tab-content.active { display:block; }
+
+/* 右侧浮动面板 */
+.side-card { background:#fff; border:1px solid #e4e7ed; border-radius:8px; padding:14px 16px; margin-bottom:12px; }
+.side-card-title { font-size:13px; font-weight:600; color:#303133; margin-bottom:10px; padding-bottom:6px; border-bottom:1px solid #f0f0f0; display:flex; align-items:center; gap:6px; justify-content:space-between; }
+.side-card-action { font-size:11px; color:#1890ff; cursor:pointer; font-weight:normal; }
+.side-card-action:hover { text-decoration:underline; }
+
+/* 迷你 3D 预览 */
+.mini-preview { background:linear-gradient(135deg,#e8eef5,#f5f7fa); height:200px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:48px; color:rgba(0,80,179,.3); position:relative; }
+.mini-preview .preview-label { position:absolute; bottom:8px; left:8px; background:rgba(0,21,41,.85); color:#fff; padding:3px 8px; border-radius:3px; font-size:10.5px; }
+.mini-preview .expand-btn { position:absolute; top:8px; right:8px; background:rgba(0,21,41,.85); color:#fff; padding:4px 10px; border-radius:3px; font-size:10.5px; cursor:pointer; }
+
+/* 配置摘要 */
+.summary-row { display:flex; justify-content:space-between; padding:4px 0; font-size:12px; }
+.summary-row .label { color:#909399; }
+.summary-row .value { color:#303133; font-weight:500; }
+.summary-progress { height:5px; background:#e4e7ed; border-radius:3px; overflow:hidden; margin-top:4px; }
+.summary-progress-fill { height:100%; background:linear-gradient(90deg,#1890ff,#13c2c2); }
+
+/* 引用关系 */
+.ref-item { padding:6px 8px; font-size:11.5px; color:#606266; border-radius:4px; margin-bottom:3px; }
+.ref-item:hover { background:#fafdff; }
+.ref-item code { padding:0 4px; background:#f0f0f0; border-radius:2px; font-family:Consolas,Monaco,monospace; font-size:10.5px; }
+
+/* 客户覆盖表格 / 审批表格 */
+.config-table { width:100%; border-collapse:collapse; font-size:12.5px; background:#fff; border:1px solid #e4e7ed; border-radius:6px; overflow:hidden; }
+.config-table th, .config-table td { padding:9px 12px; text-align:left; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+.config-table th { background:#fafafa; color:#606266; font-weight:500; }
+.config-table tr:last-child td { border-bottom:none; }
+.config-table tr:hover { background:#fafdff; }
+
+/* 版本历史时间线 */
+.timeline { position:relative; padding-left:24px; }
+.timeline::before { content:''; position:absolute; left:8px; top:8px; bottom:8px; width:2px; background:#e4e7ed; }
+.timeline-item { position:relative; padding:10px 14px 10px 12px; margin-bottom:10px; background:#fff; border:1px solid #e4e7ed; border-radius:6px; }
+.timeline-item::before { content:''; position:absolute; left:-22px; top:14px; width:12px; height:12px; border-radius:50%; background:#1890ff; border:2px solid #fff; box-shadow:0 0 0 1px #91caff; }
+.timeline-item.current::before { background:#52c41a; box-shadow:0 0 0 1px #b7eb8f; }
+.timeline-item.archived::before { background:#909399; box-shadow:0 0 0 1px #d9d9d9; }
+.timeline-title { font-size:13px; font-weight:500; color:#303133; margin-bottom:3px; display:flex; align-items:center; gap:8px; }
+.timeline-meta { font-size:11.5px; color:#909399; margin-bottom:5px; }
+.timeline-changes { font-size:11.5px; color:#606266; line-height:1.6; }
+
+/* §18A 选项配置 Tab — 嵌套表格化 */
+.opt-table { width:100%; border-collapse:collapse; background:#fff; border:1px solid #e4e7ed; border-radius:6px; overflow:hidden; }
+.opt-table th { background:#fafafa; color:#606266; font-weight:500; padding:9px 10px; font-size:12px; text-align:left; border-bottom:1px solid #f0f0f0; white-space:nowrap; }
+.opt-table td { padding:8px 10px; font-size:12.5px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+.opt-table tr.opt-row { cursor:pointer; transition:background .15s; }
+.opt-table tr.opt-row:hover td { background:#fafdff; }
+.opt-table tr.opt-row.expanded td { background:#e6f7ff; }
+.opt-table tr.opt-row .toggle-icon { display:inline-block; width:16px; text-align:center; color:#606266; font-size:11px; transition:transform .2s; }
+.opt-table tr.opt-row.expanded .toggle-icon { transform:rotate(90deg); color:#1890ff; }
+.opt-table tr.value-nest-row > td { padding:0; background:#fafbfc; border-bottom:1px solid #f0f0f0; }
+.value-nest-container { padding:10px 14px 14px 38px; }
+.value-nest-table { width:100%; border-collapse:collapse; background:#fff; border:1px solid #e4e7ed; border-radius:4px; }
+.value-nest-table th { background:#fcfcfc; color:#909399; padding:7px 10px; font-size:11.5px; font-weight:500; text-align:left; border-bottom:1px solid #f0f0f0; }
+.value-nest-table td { padding:7px 10px; font-size:12px; border-bottom:1px solid #f5f5f5; vertical-align:middle; }
+.value-nest-table tr:last-child td { border-bottom:none; }
+.value-nest-table tr:hover td { background:#fafdff; }
+
+.source-tag { display:inline-block; padding:1px 7px; border-radius:3px; font-size:10.5px; font-weight:500; white-space:nowrap; }
+.source-tag.from-lib { background:#e6f7ff; color:#0050b3; border:1px solid #91d5ff; }
+.source-tag.manual { background:#f9f9f9; color:#606266; border:1px solid #d9d9d9; }
+
+.value-tag-pill { display:inline-block; padding:1px 7px; border-radius:3px; font-size:10.5px; margin-right:3px; }
+.value-tag-pill.price-pos { background:#fff7e6; color:#d48806; border:1px solid #ffd591; }
+.value-tag-pill.feature { background:#f6ffed; color:#389e0d; border:1px solid #b7eb8f; }
+.value-tag-pill.submodel { background:#f0f5ff; color:#1d39c4; border:1px solid #adc6ff; }
+.value-tag-pill.rules { background:#fafafa; color:#606266; border:1px solid #d9d9d9; }
+.value-tag-pill.from-lib { background:#e6f7ff; color:#0050b3; border:1px solid #91d5ff; }
+
+.req-pill { display:inline-block; padding:1px 7px; border-radius:3px; font-size:10.5px; font-weight:500; }
+.req-pill.yes { background:#fff1f0; color:#cf1322; border:1px solid #ffa39e; }
+.req-pill.no { background:#fafafa; color:#909399; border:1px solid #d9d9d9; }
+
+.add-value-btn { display:inline-flex; align-items:center; gap:4px; padding:5px 10px; background:#fff; border:1px dashed #91caff; color:#1890ff; border-radius:4px; cursor:pointer; font-size:11.5px; margin-top:6px; }
+.add-value-btn:hover { background:#e6f4ff; }
+.add-value-btn.locked { color:#909399; border-color:#d9d9d9; cursor:help; }
+.add-value-btn.locked:hover { background:#fafafa; }
+
+.expand-collapse-bar { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+.expand-collapse-bar .mini-btn { padding:3px 8px; font-size:11.5px; color:#606266; background:transparent; border:1px solid #dcdfe6; border-radius:3px; cursor:pointer; }
+.expand-collapse-bar .mini-btn:hover { color:#1890ff; border-color:#91caff; }
+
+/* 树形列表（保留原有，调整外间距） */
+
+/* 树形列表行（替代左侧树） */
+.list-row { background:#fff; border:1px solid #e4e7ed; border-radius:6px; padding:10px 14px; margin-bottom:6px; display:flex; align-items:center; gap:10px; transition:all .2s; }
+.list-row:hover { border-color:#91caff; background:#fafdff; box-shadow:0 2px 6px rgba(24,144,255,.08); }
+.list-row.template-row { background:linear-gradient(135deg,#e6f4ff,#fff); border-color:#91caff; padding:14px 18px; margin-bottom:14px; }
+.list-row.option-row { padding-left:18px; }
+.list-row.value-row { padding-left:50px; background:#fafbfc; }
+.list-row.value-row:hover { background:#fff; }
+.list-row.constraint-row { padding-left:18px; background:#fff7e6; border-color:#ffd591; }
+.list-row.section-header { padding:8px 14px; background:transparent; border:none; margin-top:14px; margin-bottom:4px; }
+.section-header-text { font-size:11.5px; color:#909399; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+
+.list-row-icon { font-size:16px; flex-shrink:0; }
+.list-row-name { font-weight:500; color:#303133; flex-shrink:0; }
+.list-row.value-row .list-row-name { font-weight:normal; font-size:12.5px; color:#606266; }
+.list-row-meta { font-size:11.5px; color:#909399; }
+.list-row-tags { display:flex; gap:5px; flex-wrap:wrap; }
+.list-row-tag { display:inline-block; padding:1px 7px; border-radius:3px; font-size:10.5px; }
+.list-row-tag.required { background:#fff1f0; color:#cf1322; border:1px solid #ffa39e; }
+.list-row-tag.optional { background:#fafafa; color:#909399; border:1px solid #d9d9d9; }
+.list-row-tag.type { background:#e6f4ff; color:#0958d9; border:1px solid #91caff; }
+.list-row-tag.price-pos { background:#fff7e6; color:#d48806; border:1px solid #ffd591; }
+.list-row-tag.feature { background:#f9f0ff; color:#722ed1; border:1px solid #d3adf7; }
+.list-row-tag.submodel { background:#fff0f6; color:#c41d7f; border:1px solid #ffadd2; }
+.list-row-spacer { flex:1; }
+.list-row-actions { display:flex; gap:4px; }
+.list-row-actions .icon-btn { width:28px; height:28px; border:1px solid #dcdfe6; background:#fff; border-radius:3px; cursor:pointer; font-size:13px; color:#606266; display:inline-flex; align-items:center; justify-content:center; }
+.list-row-actions .icon-btn:hover { color:#1890ff; border-color:#91caff; background:#e6f4ff; }
+.list-row-actions .icon-btn.danger:hover { color:#fff; background:#f56c6c; border-color:#f56c6c; }
+
+.tree-add-btn { padding:6px 14px; font-size:12px; color:#1890ff; cursor:pointer; border:1px dashed #91caff; border-radius:6px; background:#fafdff; margin:4px 0 12px 18px; display:inline-flex; align-items:center; gap:4px; }
+.tree-add-btn:hover { background:#e6f4ff; border-color:#1890ff; }
+.tree-add-btn.value-add { margin-left:50px; }
+
+/* 编辑抽屉 */
+.edit-drawer-mask { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.45); z-index:1000; opacity:0; pointer-events:none; transition:opacity .3s; }
+.edit-drawer-mask.open { opacity:1; pointer-events:auto; }
+.edit-drawer { position:fixed; top:0; right:0; width:820px; max-width:100vw; height:100vh; background:#fff; z-index:1001; transform:translateX(100%); transition:transform .3s ease; box-shadow:-2px 0 12px rgba(0,0,0,.15); display:flex; flex-direction:column; }
+.edit-drawer.open { transform:translateX(0); }
+.edit-drawer-header { padding:14px 22px; border-bottom:1px solid #e4e7ed; display:flex; justify-content:space-between; align-items:center; background:#fafbfc; }
+.edit-drawer-title { font-size:15px; font-weight:600; }
+.edit-drawer-close { width:28px; height:28px; border:none; background:transparent; cursor:pointer; font-size:18px; color:#909399; border-radius:4px; }
+.edit-drawer-close:hover { background:#f0f0f0; color:#303133; }
+.edit-drawer-body { flex:1; padding:20px 24px; overflow-y:auto; }
+.edit-drawer-footer { padding:12px 22px; border-top:1px solid #e4e7ed; background:#fafafa; display:flex; justify-content:flex-end; gap:8px; }
+
+.tree-node { padding:8px 16px; cursor:pointer; font-size:13px; transition:all .15s; display:flex; align-items:center; gap:6px; border-left:3px solid transparent; }
+.tree-node:hover { background:#fafbfc; }
+.tree-node.selected { background:#e6f4ff; border-left-color:#1890ff; color:#1890ff; font-weight:500; }
+.tree-node .ico { font-size:14px; }
+.tree-node .name { flex:1; }
+.tree-node .meta { font-size:11px; color:#909399; }
+.tree-node.value-node { padding-left:36px; font-size:12px; color:#606266; }
+.tree-node.value-node .name { color:#606266; }
+.tree-node-add { padding:6px 16px; font-size:12px; color:#1890ff; cursor:pointer; }
+.tree-node-add:hover { background:#e6f4ff; }
+.tree-section { padding:10px 16px 4px; font-size:11px; color:#909399; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+
+.editor-detail { flex:1; background:#fff; overflow-y:auto; padding:20px 24px; }
+.detail-header { margin-bottom:18px; padding-bottom:12px; border-bottom:1px solid #f0f0f0; }
+.detail-title { font-size:16px; font-weight:600; margin-bottom:4px; }
+.detail-sub { font-size:12px; color:#909399; }
+
+.form-section { background:#fafbfc; border:1px solid #e4e7ed; border-radius:6px; padding:14px 16px; margin-bottom:14px; }
+.form-section-title { font-size:13px; font-weight:600; margin-bottom:12px; padding-bottom:6px; border-bottom:1px solid #f0f0f0; color:#303133; display:flex; align-items:center; gap:8px; }
+
+.form-row { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+.form-row label { width:120px; font-size:12px; color:#606266; text-align:right; }
+.form-input, .form-select { flex:1; padding:5px 10px; border:1px solid #dcdfe6; border-radius:4px; font-size:12.5px; }
+.form-input:focus, .form-select:focus { border-color:#1890ff; outline:none; box-shadow:0 0 0 2px rgba(24,144,255,.1); }
+.form-input[readonly] { background:#f5f5f5; color:#606266; }
+.form-input.code-input { font-family:Consolas,Monaco,monospace; font-size:12px; }
+.form-checkbox { display:flex; gap:6px; align-items:center; cursor:pointer; }
+
+/* Schema 编辑器 */
+.schema-editor { background:#fff; border:1px solid #e4e7ed; border-radius:4px; padding:8px; font-family:Consolas,Monaco,monospace; font-size:11.5px; min-height:120px; white-space:pre; color:#606266; }
+
+/* 规则编辑器 */
+.rule-list { display:flex; flex-direction:column; gap:6px; }
+.rule-item { background:#fff; border:1px solid #e4e7ed; border-radius:6px; padding:10px 12px; display:flex; align-items:center; gap:8px; }
+.rule-tag { display:inline-block; padding:1px 8px; border-radius:3px; font-size:11px; font-weight:500; }
+.rule-tag.SHOW_MESH { background:#f6ffed; color:#389e0d; border:1px solid #b7eb8f; }
+.rule-tag.HIDE_MESH { background:#fff1f0; color:#cf1322; border:1px solid #ffa39e; }
+.rule-tag.REPLACE_MATERIAL { background:#f9f0ff; color:#722ed1; border:1px solid #d3adf7; }
+.rule-tag.SWAP_MESH { background:#fff7e6; color:#d48806; border:1px solid #ffd591; }
+.rule-tag.TRANSFORM_MESH { background:#e6f4ff; color:#0958d9; border:1px solid #91caff; }
+.rule-target { font-family:Consolas,Monaco,monospace; font-size:11.5px; color:#606266; }
+.rule-actions { margin-left:auto; display:flex; gap:4px; }
+.icon-btn { width:24px; height:24px; padding:0; border:1px solid #dcdfe6; background:#fff; border-radius:3px; cursor:pointer; font-size:12px; color:#606266; display:inline-flex; align-items:center; justify-content:center; }
+.icon-btn:hover { color:#1890ff; border-color:#91caff; background:#e6f4ff; }
+.icon-btn.danger:hover { color:#fff; background:#f56c6c; border-color:#f56c6c; }
+
+/* 约束编辑器 */
+.constraint-item { background:#fff; border:1px solid #e4e7ed; border-radius:6px; padding:10px 12px; margin-bottom:6px; font-size:12px; }
+.constraint-formula { font-family:Consolas,Monaco,monospace; font-size:11.5px; color:#606266; padding:4px 8px; background:#fafafa; border-radius:3px; }
+
+.price-tag { display:inline-block; padding:2px 8px; background:#fff1f0; color:#cf1322; border:1px solid #ffa39e; border-radius:3px; font-size:11px; font-weight:500; }
+.price-tag.delta-positive { background:#fff7e6; color:#d48806; border-color:#ffd591; }
+.price-tag.delta-zero { background:#fafafa; color:#909399; border-color:#d9d9d9; }
+
+.tab-nav { display:flex; gap:0; border-bottom:1px solid #e4e7ed; margin-bottom:14px; padding:0 0; }
+.tab-nav-item { padding:9px 14px; cursor:pointer; font-size:13px; color:#606266; border-bottom:2px solid transparent; transition:all .2s; }
+.tab-nav-item:hover { color:#1890ff; }
+.tab-nav-item.active { color:#1890ff; border-bottom-color:#1890ff; font-weight:500; }
+
+.tab-content { display:none; }
+.tab-content.active { display:block; }
+
+/* Toast */
+.toast-stack { position:fixed; top:20px; right:20px; z-index:2000; display:flex; flex-direction:column; gap:8px; }
+.toast { background:#fff; border:1px solid #b7eb8f; border-left:4px solid #52c41a; padding:10px 14px; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,.1); font-size:12.5px; min-width:280px; max-width:420px; animation:slideIn .3s ease; }
+.toast.info { border-color:#91caff; border-left-color:#1890ff; }
+.toast.warning { border-color:#ffd591; border-left-color:#faad14; }
+@keyframes slideIn { from { transform:translateX(120%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <aside class="sider">
+    <div class="logo">CPQ 系统 v3</div>
+    <div class="ver">v0.4 · 选配模板管理端</div>
+    <div class="menu">
+      <div class="m-item">📊 仪表板</div>
+      <div class="m-item">📂 组件管理</div>
+      <div class="m-item">📋 模板管理</div>
+      <div class="m-item">📝 报价单</div>
+      <div class="m-item">💰 核价单</div>
+      <div class="m-item">👥 客户管理</div>
+      <div class="m-item">🛒 3D 选配</div>
+      <div class="m-sub">📋 选配实例列表</div>
+      <div class="m-sub">🎯 开始选配</div>
+      <div class="m-sub">🔗 我分享的链接</div>
+      <div class="m-item active">⚙️ 系统设置</div>
+      <div class="m-sub">用户管理</div>
+      <div class="m-sub">📦 3D 源文件管理</div>
+      <div class="m-sub active">🛒 选配模板管理</div>
+      <div class="m-sub">📚 特征库管理</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="crumb">系统设置 / <b>选配模板管理</b></div>
+
+    <!-- 列表视图 -->
+    <div id="listView" class="content">
+      <div class="list-view">
+        <div class="exp-banner">
+          <b>🧪 实验性 v0.4</b> — 配置模板维护：左侧选项树 + 右侧详情编辑（选项配置/取值/约束/3D 规则/价格规则）。点击模板行进入编辑器。
+        </div>
+
+        <div class="page-card">
+          <div class="page-title">选配模板列表</div>
+          <div class="toolbar">
+            <button class="btn-primary btn" onclick="newTemplate()">＋ 新建模板</button>
+            <button class="btn" onclick="showToast('info','从已有模板复制')">📋 复制模板</button>
+            <button class="btn" onclick="showToast('info','导入 JSON / Excel 配置')">📥 导入</button>
+            <div style="flex:1"></div>
+            <input class="search-input" placeholder="🔍 搜索模板代码/名称..." />
+            <select class="search-input" style="min-width:120px;">
+              <option>全部状态</option>
+              <option>DRAFT</option>
+              <option>PUBLISHED</option>
+            </select>
+          </div>
+
+          <table class="tpl-table">
+            <thead>
+              <tr>
+                <th>模板代码</th>
+                <th>名称</th>
+                <th>基础料号</th>
+                <th>选项数</th>
+                <th title="选配页是否展示价格 — false 时底部价格栏整体隐藏">展示价格</th>
+                <th>状态</th>
+                <th>更新时间</th>
+                <th style="width:160px;">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr onclick="openEditor('CFG-TPL-CONTACT-STRIP')">
+                <td><code>CFG-TPL-CONTACT-STRIP</code></td>
+                <td>接触片产品选配</td>
+                <td>CFG-CONTACT-STRIP-BASE</td>
+                <td>5</td>
+                <td onclick="event.stopPropagation();">
+                  <label class="switch" title="切换是否在选配页展示价格">
+                    <input type="checkbox" checked onchange="togglePriceVisible(this,'CFG-TPL-CONTACT-STRIP')" />
+                    <span class="slider"></span>
+                  </label>
+                </td>
+                <td><span class="status-tag published">● PUBLISHED</span></td>
+                <td>2026-05-26 09:30</td>
+                <td>
+                  <button class="btn" onclick="event.stopPropagation();openEditor('CFG-TPL-CONTACT-STRIP')">编辑</button>
+                  <button class="btn" onclick="event.stopPropagation();showToast('info','预览选配页')">预览</button>
+                </td>
+              </tr>
+              <tr onclick="showToast('info','编辑 CFG-TPL-MOTOR')">
+                <td><code>CFG-TPL-MOTOR</code></td>
+                <td>电机产品选配</td>
+                <td>CFG-MOTOR-BASE</td>
+                <td>8</td>
+                <td onclick="event.stopPropagation();">
+                  <label class="switch" title="切换是否在选配页展示价格">
+                    <input type="checkbox" checked onchange="togglePriceVisible(this,'CFG-TPL-MOTOR')" />
+                    <span class="slider"></span>
+                  </label>
+                </td>
+                <td><span class="status-tag published">● PUBLISHED</span></td>
+                <td>2026-05-25 16:42</td>
+                <td><button class="btn" onclick="event.stopPropagation();showToast('info','编辑电机模板')">编辑</button> <button class="btn" onclick="event.stopPropagation();showToast('info','预览')">预览</button></td>
+              </tr>
+              <tr onclick="showToast('info','编辑 CFG-TPL-VALVE')">
+                <td><code>CFG-TPL-VALVE</code></td>
+                <td>阀门产品选配</td>
+                <td>CFG-VALVE-BASE</td>
+                <td>6</td>
+                <td onclick="event.stopPropagation();">
+                  <label class="switch" title="切换是否在选配页展示价格">
+                    <input type="checkbox" onchange="togglePriceVisible(this,'CFG-TPL-VALVE')" />
+                    <span class="slider"></span>
+                  </label>
+                </td>
+                <td><span class="status-tag draft">○ DRAFT</span></td>
+                <td>2026-05-26 11:15</td>
+                <td><button class="btn" onclick="event.stopPropagation();showToast('info','编辑阀门模板')">编辑</button> <button class="btn-primary btn" onclick="event.stopPropagation();showToast('info','已发布')">发布</button></td>
+              </tr>
+              <tr style="opacity:.6;">
+                <td><code>CFG-TPL-LEGACY</code></td>
+                <td>旧产品（已归档）</td>
+                <td>—</td>
+                <td>3</td>
+                <td onclick="event.stopPropagation();">
+                  <label class="switch">
+                    <input type="checkbox" disabled />
+                    <span class="slider"></span>
+                  </label>
+                </td>
+                <td><span class="status-tag archived">● ARCHIVED</span></td>
+                <td>2026-03-12 14:08</td>
+                <td><button class="btn" onclick="event.stopPropagation();">恢复</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 编辑器视图 -->
+    <div id="editorView" class="editor-view" style="display:none;">
+      <!-- 编辑器顶部 -->
+      <div class="editor-header">
+        <button class="btn" onclick="backToList()">← 返回列表</button>
+        <h2 id="editorTitle">📦 接触片产品选配 · CFG-TPL-CONTACT-STRIP</h2>
+        <span style="font-size:12px;color:#909399;">状态: <span class="status-tag published" style="margin-left:4px;">● PUBLISHED v1.2</span></span>
+        <button class="btn" onclick="showToast('info','预览选配页')">👁 预览</button>
+        <button class="btn-primary btn" onclick="showToast('info','已保存')">💾 保存草稿</button>
+        <button class="btn-success btn" onclick="showToast('info','已发布新版本')">🚀 发布</button>
+      </div>
+
+      <!-- 4 个统计卡 -->
+      <div class="editor-stats">
+        <div class="editor-stat-card opts">
+          <div class="stat-icon">⚙️</div>
+          <div class="stat-info">
+            <div class="stat-label">配置选项</div>
+            <div class="stat-value">5</div>
+            <div class="stat-sub">必选 3 · 可选 2</div>
+          </div>
+        </div>
+        <div class="editor-stat-card vals">
+          <div class="stat-icon">📊</div>
+          <div class="stat-info">
+            <div class="stat-label">取值总数</div>
+            <div class="stat-value">16</div>
+            <div class="stat-sub">含 1 个高端款子模型</div>
+          </div>
+        </div>
+        <div class="editor-stat-card rules">
+          <div class="stat-icon">🎬</div>
+          <div class="stat-info">
+            <div class="stat-label">3D 渲染规则</div>
+            <div class="stat-value">28</div>
+            <div class="stat-sub">维度 1: 25 / 维度 2: 3</div>
+          </div>
+        </div>
+        <div class="editor-stat-card insts">
+          <div class="stat-icon">📋</div>
+          <div class="stat-info">
+            <div class="stat-label">已生成选配实例</div>
+            <div class="stat-value">12</div>
+            <div class="stat-sub">本月新增 7</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 导航 -->
+      <div class="editor-tabs">
+        <div class="editor-tab" data-tab="basic" onclick="switchEditorTab('basic')">📋 基本信息</div>
+        <div class="editor-tab active" data-tab="options" onclick="switchEditorTab('options')">⚙️ 选项配置 <span class="editor-tab-badge">5</span></div>
+        <div class="editor-tab" data-tab="versions" onclick="switchEditorTab('versions')">📜 版本历史 <span class="editor-tab-badge">4</span></div>
+      </div>
+
+      <!-- Tab 主区 + 右侧浮动面板 -->
+      <div class="editor-body-area">
+        <div class="editor-tab-area">
+          <!-- 主内容区 -->
+          <div class="editor-tab-main">
+            <div class="editor-tab-content" id="tab-basic"></div>
+            <div class="editor-tab-content active" id="tab-options"></div>
+            <div class="editor-tab-content" id="tab-versions"></div>
+          </div>
+
+          <!-- 右侧浮动面板 -->
+          <div class="editor-tab-side">
+            <div class="side-card">
+              <div class="side-card-title">
+                🎬 base.glb 预览
+                <span class="side-card-action" onclick="showToast('info','打开 v0.4-3D源文件上传与转换原型.html')">管理</span>
+              </div>
+              <div class="mini-preview">
+                🎲
+                <span class="preview-label">CFG-CONTACT-STRIP v1</span>
+                <span class="expand-btn" onclick="showToast('info','全屏 3D 预览')">⛶ 放大</span>
+              </div>
+              <div style="font-size:11px;color:#909399;margin-top:8px;text-align:center;">
+                4 mesh · 12,840 顶点 · 1.4 MB
+              </div>
+            </div>
+
+            <div class="side-card">
+              <div class="side-card-title">📊 模板健康度</div>
+              <div class="summary-row"><span class="label">必选项配置完成</span><span class="value" style="color:#52c41a;">100%</span></div>
+              <div class="summary-progress"><div class="summary-progress-fill" style="width:100%;"></div></div>
+              <div class="summary-row" style="margin-top:8px;"><span class="label">3D 规则覆盖率</span><span class="value">92%</span></div>
+              <div class="summary-progress"><div class="summary-progress-fill" style="width:92%;"></div></div>
+              <div class="summary-row" style="margin-top:8px;"><span class="label">价格规则配置率</span><span class="value">87%</span></div>
+              <div class="summary-progress"><div class="summary-progress-fill" style="width:87%;"></div></div>
+              <div class="summary-row" style="margin-top:8px;"><span class="label">特征语义填充</span><span class="value" style="color:#d48806;">62%</span></div>
+              <div class="summary-progress"><div class="summary-progress-fill" style="width:62%;background:linear-gradient(90deg,#faad14,#fa8c16);"></div></div>
+            </div>
+
+            <div class="side-card">
+              <div class="side-card-title">🔗 引用此模板的</div>
+              <div class="ref-item">📋 <b>12</b> 个选配实例 <a onclick="showToast('info','跳转 v0.4-选配实例列表原型.html?template='+'${template.code}'+'<br>自动应用筛选: template_code=${template.code}, 排序按创建时间倒序');" style="color:#1890ff;cursor:pointer;float:right;font-size:10.5px;">查看 →</a></div>
+              <div class="ref-item">📝 <b>8</b> 个报价单 line_item <a onclick="showToast('info','跳转 /quotations?source_template='+'${template.code}'+' 自动筛选含本模板生成的 line_item 的报价单');" style="color:#1890ff;cursor:pointer;float:right;font-size:10.5px;">查看 →</a></div>
+              <div class="ref-item">📦 <b>3</b> 个产品族基础料号 <a onclick="showToast('info','跳转 /master-data/mat-parts?related_to_template='+'${template.code}');" style="color:#1890ff;cursor:pointer;float:right;font-size:10.5px;">查看 →</a></div>
+              <div class="ref-item">🎬 <b>1</b> 个 base.glb 共享 <a onclick="showToast('info','跳转 v0.4-3D源文件上传与转换原型.html?mat_part='+'CFG-CONTACT-STRIP-BASE');" style="color:#1890ff;cursor:pointer;float:right;font-size:10.5px;">查看 →</a></div>
+            </div>
+
+            <div class="side-card">
+              <div class="side-card-title">⚡ 快捷操作</div>
+              <button class="btn" style="width:100%;margin-bottom:6px;justify-content:center;" onclick="showToast('info','配置模拟器：选不同组合看实时 3D + 价格')">🎮 配置模拟器</button>
+              <button class="btn" style="width:100%;margin-bottom:6px;justify-content:center;" onclick="showToast('info','导出整个模板 JSON')">📥 导出 JSON</button>
+              <button class="btn" style="width:100%;margin-bottom:6px;justify-content:center;" onclick="showToast('info','复制为新模板')">📋 复制模板</button>
+              <button class="btn" style="width:100%;justify-content:center;color:#f56c6c;" onclick="showToast('warning','归档模板')">🗄 归档</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- v0.4 优化 3: 编辑抽屉（替代右侧详情面板） -->
+<div class="edit-drawer-mask" id="editDrawerMask" onclick="closeEditDrawer()"></div>
+<div class="edit-drawer" id="editDrawer">
+  <div class="edit-drawer-header">
+    <div class="edit-drawer-title" id="editDrawerTitle">编辑</div>
+    <button class="edit-drawer-close" onclick="closeEditDrawer()">✕</button>
+  </div>
+  <div class="edit-drawer-body" id="editDrawerBody">
+    <!-- 动态填充：模板属性 / 选项 / 取值 / 约束 详情 -->
+  </div>
+  <div class="edit-drawer-footer">
+    <button class="btn" onclick="closeEditDrawer()">取消</button>
+    <button class="btn-primary btn" onclick="saveAndCloseDrawer()">保存</button>
+  </div>
+</div>
+
+<!-- v0.4 §18A: 从特征库选择 抽屉 -->
+<div class="edit-drawer-mask" id="featurePickerMask" onclick="closeFeaturePicker()"></div>
+<div class="edit-drawer" id="featurePicker" style="width:960px;">
+  <div class="edit-drawer-header">
+    <div class="edit-drawer-title">📥 从特征库选择 — 方案 B 快照复制</div>
+    <button class="edit-drawer-close" onclick="closeFeaturePicker()">✕</button>
+  </div>
+  <div class="edit-drawer-body" id="featurePickerBody" style="padding:0;display:flex;flex-direction:row;overflow:hidden;">
+    <!-- 由 JS 渲染：左 30% 筛选 + 右 70% 字段列表 -->
+  </div>
+  <div class="edit-drawer-footer">
+    <span id="featurePickerSummary" style="flex:1;font-size:12px;color:#606266;">已选 0 个字段</span>
+    <button class="btn" onclick="closeFeaturePicker()">取消</button>
+    <button class="btn-success btn" onclick="importSelectedFeatures()">✓ 导入选中并写入模板</button>
+  </div>
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+// ============================================================
+// 模拟配置模板数据（管理员视角）
+// ============================================================
+const template = {
+  code: 'CFG-TPL-CONTACT-STRIP',
+  name: '接触片产品选配',
+  basePartNo: 'CFG-CONTACT-STRIP-BASE',
+  basePrice: 1000,
+  status: 'PUBLISHED',
+  description: '银铜接触片系列产品的可选配置模板，含型号/材质/表面处理/接口规格/附加部件 5 个维度',
+  options: [
+    {
+      code: 'OPT-MODEL', label: '型号', type: 'EXCLUSIVE', required: true,
+      sourceFeatureFieldId: 11, sourceFeatureGroup: 'FG-CTC-01', sourceFeatureSnapshotAt: '2026-05-20 10:30',
+      defaultValue: 'STD', partnoPrefix: '', partnoSuffix: '',
+      values: [
+        { code: 'STD', label: '标准款', priceDelta: 0, sourceFeatureValueId: 111, rules: [{action:'REPLACE_MATERIAL', target:'mesh_main_body'}] },
+        { code: 'ENH', label: '增强款', priceDelta: 500, sourceFeatureValueId: 112, rules: [{action:'REPLACE_MATERIAL', target:'mesh_main_body'}] },
+        { code: 'PRM', label: '高端款', priceDelta: 1200, sourceFeatureValueId: 113, rules: [{action:'REPLACE_MATERIAL', target:'mesh_main_body'},{action:'SHOW_MESH', target:'mesh_premium_badge'}] },
+      ]
+    },
+    {
+      code: 'OPT-MATERIAL', label: '材质', type: 'EXCLUSIVE', required: true,
+      defaultValue: 'CU', partnoPrefix: '-M', partnoSuffix: '',
+      values: [
+        { code: 'CU', label: '纯 Cu', priceDelta: 0 },
+        { code: 'AGCU85', label: 'Ag85Cu15', priceDelta: 580 },
+        { code: 'CU90AG10', label: 'Cu90Ag10', priceDelta: 200 },
+      ]
+    },
+    {
+      code: 'OPT-COATING', label: '表面处理', type: 'EXCLUSIVE', required: false,
+      sourceFeatureFieldId: 14, sourceFeatureGroup: 'FG-CTC-01', sourceFeatureSnapshotAt: '2026-05-20 10:30',
+      defaultValue: 'NI', partnoPrefix: '-', partnoSuffix: '',
+      values: [
+        { code: 'NONE', label: '无处理', priceDelta: 0, sourceFeatureValueId: 145 },
+        { code: 'NICKEL_05', label: '镍镀 0.5μ', priceDelta: 140, sourceFeatureValueId: 141 },
+        { code: 'SILVER_1', label: '银镀 1μ', priceDelta: 320, sourceFeatureValueId: 142 },
+        { code: 'PASSIVATE', label: '钝化处理', priceDelta: 80, localOnly: true },
+      ]
+    },
+    {
+      code: 'OPT-INTERFACE', label: '接口规格', type: 'EXCLUSIVE', required: true,
+      sourceFeatureFieldId: 15, sourceFeatureGroup: 'FG-CTC-01', sourceFeatureSnapshotAt: '2026-05-20 10:30',
+      defaultValue: 'M6', partnoPrefix: '-', partnoSuffix: '',
+      values: [
+        { code: 'M6', label: 'M6 螺纹', priceDelta: 0, sourceFeatureValueId: 152 },
+        { code: 'M8', label: 'M8 螺纹', priceDelta: 0, sourceFeatureValueId: 153 },
+        { code: 'M10', label: 'M10 螺纹', priceDelta: 50, localOnly: true },
+        { code: 'WELD', label: '焊接连接', priceDelta: 80, localOnly: true },
+      ]
+    },
+    {
+      code: 'OPT-ACCESSORIES', label: '附加部件', type: 'MULTI_SELECT', required: false,
+      defaultValue: '', partnoPrefix: '+', partnoSuffix: '',
+      values: [
+        { code: 'CLIP', label: '加固卡扣', priceDelta: 80 },
+        { code: 'DUST_COVER', label: '防尘罩', priceDelta: 45 },
+        { code: 'GROUND_WIRE', label: '接地线', priceDelta: 30 },
+      ]
+    },
+  ],
+  constraints: [
+    { type: 'EXCLUDES', message: '高端款型号不允许无表面处理', trigger: 'OPT-MODEL=PRM', affected: 'OPT-COATING=NONE' },
+    { type: 'IMPLIES', message: '焊接连接自动配接地线', trigger: 'OPT-INTERFACE=WELD', affected: 'OPT-ACCESSORIES=GROUND_WIRE' },
+  ]
+};
+
+// ============================================================
+// 特征库 mock 数据（与 v0.4-特征库管理原型.html 同源）
+// ============================================================
+const featureLibrary = [
+  {
+    id: 1, code: 'FG-CTC-01', name: '接触片特征群组', category: '接触片', status: 'ACTIVE',
+    fields: [
+      { id: 11, code: 'MODEL',     name: '型号',     dataType: 'STRING', assignMode: 'SELECT', isRequired: true,
+        defaultValue: 'STD', partnoPrefix: '', partnoSuffix: '', refTemplates: 3,
+        values: [{code:'STD',label:'标准款 STD'},{code:'ENH',label:'加强款 ENH'},{code:'PRM',label:'高端款 PRM'}] },
+      { id: 12, code: 'THICKNESS', name: '厚度',     dataType: 'NUMBER', assignMode: 'SELECT', isRequired: true,
+        defaultValue: '0.5', minValue:'0.3', maxValue:'1.0', partnoPrefix: '-T', partnoSuffix: 'mm', refTemplates: 2,
+        values: [{code:'0.3',label:'0.3mm'},{code:'0.5',label:'0.5mm'},{code:'0.8',label:'0.8mm'},{code:'1.0',label:'1.0mm'}] },
+      { id: 13, code: 'LENGTH',    name: '长度',     dataType: 'NUMBER', assignMode: 'MANUAL', isRequired: true,
+        defaultValue: '50', minValue:'20', maxValue:'500', partnoPrefix:'-L', partnoSuffix:'mm', refTemplates: 1, values: [] },
+      { id: 14, code: 'SURFACE',   name: '表面处理', dataType: 'STRING', assignMode: 'SELECT', isRequired: false,
+        defaultValue: 'NI', partnoPrefix:'-', partnoSuffix:'', refTemplates: 3,
+        values: [{code:'NI',label:'镍 Ni'},{code:'AG',label:'银 Ag'},{code:'AU',label:'金 Au'},{code:'SN',label:'锡 Sn'},{code:'NONE',label:'无处理'}] },
+      { id: 15, code: 'INTERFACE', name: '接口规格', dataType: 'STRING', assignMode: 'SELECT', isRequired: false,
+        defaultValue: 'STD-CONN', partnoPrefix:'-', partnoSuffix:'', refTemplates: 1,
+        values: [{code:'STD-CONN',label:'标准接口'},{code:'M6-CONN',label:'M6 接口'},{code:'M8-CONN',label:'M8 接口'}] },
+    ]
+  },
+  {
+    id: 2, code: 'FG-CTC-02', name: '接触簧片特征群组', category: '接触簧片', status: 'ACTIVE',
+    fields: [
+      { id: 21, code: 'SPRING_LOAD', name: '弹簧压力', dataType: 'NUMBER', assignMode: 'MANUAL', isRequired: true,
+        defaultValue: '5', minValue:'1', maxValue:'20', partnoPrefix:'-S', partnoSuffix:'N', refTemplates: 1, values: [] },
+      { id: 22, code: 'COIL_TURNS',  name: '线圈匝数', dataType: 'NUMBER', assignMode: 'SELECT', isRequired: false,
+        defaultValue: '3', partnoPrefix:'-', partnoSuffix:'T', refTemplates: 0,
+        values: [{code:'2',label:'2 匝'},{code:'3',label:'3 匝'},{code:'5',label:'5 匝'}] },
+    ]
+  },
+  {
+    id: 3, code: 'FG-TERM-01', name: '端子特征群组', category: '端子', status: 'DRAFT',
+    fields: [
+      { id: 31, code: 'TERM_TYPE', name: '端子类型', dataType: 'STRING', assignMode: 'SELECT', isRequired: true,
+        defaultValue: 'STD', refTemplates: 0,
+        values: [{code:'STD',label:'标准端子'},{code:'RING',label:'环形端子'},{code:'FORK',label:'叉形端子'}] },
+    ]
+  },
+];
+
+let pickerSelectedFieldIds = new Set();
+let pickerFilterGroupId = 'ALL';
+let pickerFilterType = 'ALL';
+let pickerSearch = '';
+
+let currentSelection = { type: 'template', code: null };
+
+// ============================================================
+// 视图切换
+// ============================================================
+let currentEditorTab = 'options';
+
+function openEditor(code) {
+  document.getElementById('listView').style.display = 'none';
+  document.getElementById('editorView').style.display = 'flex';
+  document.querySelector('.crumb').innerHTML = `系统设置 / 选配模板管理 / <b>${code}</b> 编辑器`;
+  document.getElementById('editorTitle').innerHTML = `📦 ${template.name} · ${template.code}`;
+  switchEditorTab('options');
+}
+
+function backToList() {
+  document.getElementById('listView').style.display = 'flex';
+  document.getElementById('editorView').style.display = 'none';
+  document.querySelector('.crumb').innerHTML = '系统设置 / <b>选配模板管理</b>';
+}
+
+function switchEditorTab(tab) {
+  currentEditorTab = tab;
+  document.querySelectorAll('.editor-tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.tab === tab);
+  });
+  document.querySelectorAll('.editor-tab-content').forEach(el => {
+    el.classList.toggle('active', el.id === 'tab-' + tab);
+  });
+  const renderer = {
+    basic: renderTabBasic,
+    options: renderTabOptions,
+    versions: renderTabVersions,
+  }[tab];
+  if (renderer) renderer();
+}
+
+function newTemplate() {
+  showToast('info', '弹出新建模板向导（选品类 / 基础料号 / 复制现有模板）');
+}
+
+// ============================================================
+// Tab: 选项配置（v0.4 表格化 — Master 选项表 + 嵌套 Detail 取值子表）
+// ============================================================
+let expandedOptionCodes = new Set(['OPT-MODEL', 'OPT-MATERIAL']); // 默认展开前 2 项
+
+function toggleOptionExpand(code) {
+  if (expandedOptionCodes.has(code)) expandedOptionCodes.delete(code);
+  else expandedOptionCodes.add(code);
+  renderTabOptions();
+}
+
+function expandAllOptions() {
+  template.options.forEach(o => expandedOptionCodes.add(o.code));
+  renderTabOptions();
+}
+
+function collapseAllOptions() {
+  expandedOptionCodes.clear();
+  renderTabOptions();
+}
+
+function tryAddLocalValue(optCode, fromLib) {
+  if (fromLib) {
+    showToast('warning', `⚠ 该选项快照自特征库。\n推荐操作：回特征库新增取值 → 在模板编辑器点「📋 重新拉取」走差异 UI 合并。\n如确需仅在本模板加，可继续作为 <b>local-only</b> 取值（不会回写特征库，重新拉取时保留）。`);
+  } else {
+    showToast('info', `为「${optCode}」添加取值（手工选项，自由编辑）`);
+  }
+}
+
+function renderTabOptions() {
+  const area = document.getElementById('tab-options');
+  let html = '';
+
+  // 工具栏
+  html += `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+      <input class="search-input" placeholder="🔎 搜索选项 / 取值" style="flex:1;max-width:280px;">
+      <button class="btn-success btn" onclick="openFeatureLibraryPicker()" title="从特征库批量导入字段（方案 B 快照复制，详见 §18A）">📥 从特征库选择</button>
+      <button class="btn" onclick="openRefreshDiffDrawer()" title="重新拉取特征库更新（§18A.5）">📋 重新拉取</button>
+      <button class="btn">📋 复制自其他模板</button>
+      <button class="btn">🔍 仅看必选</button>
+      <button class="btn-primary btn" onclick="showToast('info','新增手工选项（不来自特征库）')">+ 新增选项</button>
+    </div>
+
+    <div class="expand-collapse-bar">
+      <span style="font-size:12.5px;color:#606266;font-weight:600;">📋 配置选项 <span style="color:#909399;font-weight:normal;">(${template.options.length})</span></span>
+      <span style="color:#909399;font-size:11.5px;">· 来自特征库 <b style="color:#1890ff;">${template.options.filter(o=>o.sourceFeatureFieldId).length}</b> · 手工 <b>${template.options.filter(o=>!o.sourceFeatureFieldId).length}</b></span>
+      <div style="flex:1"></div>
+      <button class="mini-btn" onclick="expandAllOptions()">▼ 全部展开</button>
+      <button class="mini-btn" onclick="collapseAllOptions()">▶ 全部收起</button>
+    </div>
+  `;
+
+  html += `
+    <table class="opt-table">
+      <thead>
+        <tr>
+          <th style="width:32px;"></th>
+          <th style="width:40px;">序</th>
+          <th style="width:140px;">选项编号</th>
+          <th>选项名</th>
+          <th style="width:70px;text-align:center;">必选</th>
+          <th style="width:120px;">类型</th>
+          <th style="width:70px;text-align:center;">取值数</th>
+          <th style="width:160px;">来源</th>
+          <th style="width:130px;">默认 / 拼接</th>
+          <th style="width:100px;">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  template.options.forEach((opt, idx) => {
+    const expanded = expandedOptionCodes.has(opt.code);
+    const fromLib = !!opt.sourceFeatureFieldId;
+    const sourceGroup = opt.sourceFeatureGroup || '';
+    const partno = (opt.partnoPrefix || opt.partnoSuffix) ? `<code style="font-size:10.5px;">${opt.partnoPrefix||''}[值]${opt.partnoSuffix||''}</code>` : '<span style="color:#bfbfbf;">—</span>';
+
+    html += `
+      <tr class="opt-row ${expanded?'expanded':''}" onclick="toggleOptionExpand('${opt.code}')">
+        <td style="text-align:center;"><span class="toggle-icon">▶</span></td>
+        <td>${idx+1}</td>
+        <td><code>${opt.code}</code></td>
+        <td><b>${opt.label}</b></td>
+        <td style="text-align:center;"><span class="req-pill ${opt.required?'yes':'no'}">${opt.required?'必选':'可选'}</span></td>
+        <td><span class="value-tag-pill rules">${opt.type}</span></td>
+        <td style="text-align:center;color:#1890ff;font-weight:500;">${opt.values.length}</td>
+        <td>
+          ${fromLib
+            ? `<span class="source-tag from-lib" title="快照自特征库 ${sourceGroup}, 时间 ${opt.sourceFeatureSnapshotAt||''}">📚 ${sourceGroup||'特征库'}</span>`
+            : `<span class="source-tag manual">✋ 手工创建</span>`}
+        </td>
+        <td>${opt.defaultValue ? `默认 <code style="font-size:10.5px;">${opt.defaultValue}</code><br>` : ''}${partno}</td>
+        <td onclick="event.stopPropagation();">
+          <button class="icon-btn" onclick="openEditDrawer('option','${opt.code}')" title="编辑选项属性">✏️</button>
+          <button class="icon-btn danger" title="${fromLib?'删除会同时丢弃来自特征库的关联':'删除手工选项'}" onclick="showToast('warning','删除选项 ${opt.code}')">🗑</button>
+        </td>
+      </tr>
+    `;
+
+    if (expanded) {
+      html += `
+        <tr class="value-nest-row">
+          <td colspan="10">
+            <div class="value-nest-container">
+              <div style="display:flex;align-items:center;margin-bottom:6px;">
+                <span style="font-size:12px;color:#909399;">🎯 「${opt.label}」的取值列表 (${opt.values.length})</span>
+                <div style="flex:1"></div>
+                ${fromLib ? `
+                  <button class="mini-btn" title="跳转特征库管理页修改源字段" onclick="showToast('info','跳转 v0.4-特征库管理原型.html 编辑字段 ${opt.code}')">📚 在特征库中编辑</button>
+                ` : ''}
+              </div>
+              ${opt.values.length === 0 ? `
+                <div style="padding:20px;text-align:center;color:#909399;font-size:12px;background:#fff;border:1px dashed #e4e7ed;border-radius:4px;">
+                  暂无取值${opt.assignMode==='MANUAL'?' — 此选项由用户在选配时手工输入':''}
+                </div>
+              ` : `
+              <table class="value-nest-table">
+                <thead>
+                  <tr>
+                    <th style="width:50px;">项序</th>
+                    <th style="width:110px;">取值编号</th>
+                    <th>显示名称</th>
+                    <th style="width:90px;">差价</th>
+                    <th>标签</th>
+                    <th style="width:100px;">来源</th>
+                    <th style="width:100px;text-align:right;">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${opt.values.map((val, vi) => {
+                    const isFeature = val.code === 'AGCU85' || (opt.code === 'OPT-MODEL' && val.code === 'PRM');
+                    const hasSubModel = opt.code === 'OPT-MODEL' && val.code === 'PRM';
+                    const ruleCnt = (val.rules || []).length;
+                    const valFromLib = !!val.sourceFeatureValueId || (fromLib && !val.localOnly);
+                    return `
+                      <tr>
+                        <td>${vi + 1}</td>
+                        <td><code>${val.code}</code></td>
+                        <td><b>${val.label}</b></td>
+                        <td>${val.priceDelta > 0 ? `<span class="value-tag-pill price-pos">+¥${val.priceDelta}</span>` : '<span style="color:#909399;">¥0</span>'}</td>
+                        <td>
+                          ${isFeature ? '<span class="value-tag-pill feature">📝 含特征</span>' : ''}
+                          ${hasSubModel ? '<span class="value-tag-pill submodel">📦 子模型</span>' : ''}
+                          ${ruleCnt > 0 ? `<span class="value-tag-pill rules">🎬 ${ruleCnt} 规则</span>` : ''}
+                        </td>
+                        <td>${valFromLib ? '<span class="source-tag from-lib" style="font-size:10px;">📚 特征库</span>' : '<span class="source-tag manual" style="font-size:10px;">✋ 本地</span>'}</td>
+                        <td style="text-align:right;">
+                          <button class="icon-btn" onclick="openEditDrawer('value','${opt.code}','${val.code}')" title="编辑取值">✏️</button>
+                          <button class="icon-btn danger" title="${valFromLib?'删除会脱离特征库（本地覆盖）':'删除本地取值'}">🗑</button>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>`}
+              ${fromLib
+                ? `<div class="add-value-btn locked" onclick="tryAddLocalValue('${opt.code}', true)" title="该选项快照自特征库。推荐回特征库新增取值后用「📋 重新拉取」同步。如仍需仅本模板加，可作为 local-only 取值。">＋ 本地新增取值 <span style="color:#bfbfbf;font-size:10.5px;">(ⓘ 推荐去特征库新增)</span></div>`
+                : `<div class="add-value-btn" onclick="tryAddLocalValue('${opt.code}', false)">＋ 添加取值</div>`}
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+  });
+
+  html += `
+      </tbody>
+    </table>
+
+    <div style="margin-top:10px;display:flex;gap:8px;">
+      <button class="add-value-btn" style="font-size:12px;padding:7px 14px;" onclick="showToast('info','新增手工选项 — 不关联特征库')">＋ 添加手工选项</button>
+      <button class="add-value-btn" style="font-size:12px;padding:7px 14px;border-color:#b7eb8f;color:#52c41a;" onclick="openFeatureLibraryPicker()">📥 从特征库批量导入</button>
+    </div>
+  `;
+
+  area.innerHTML = html;
+}
+
+// ============================================================
+// Tab: 基本信息
+// ============================================================
+function renderTabBasic() {
+  const area = document.getElementById('tab-basic');
+  const baseModel = template.baseModel || { partNo: 'CFG-CONTACT-STRIP-BASE', version: 3, label: 'CFG-CONTACT-STRIP v3 (current)', meshCount: 11, vertices: 12840, sizeKB: 1432, snapshotAt: '2026-05-20 11:22' };
+  area.innerHTML = `
+    <div class="side-card" style="margin-bottom:14px;">
+      <div class="side-card-title">📦 模板基础信息 <span class="side-card-action" onclick="openEditDrawer('template')">编辑</span></div>
+      <div class="summary-row"><span class="label">模板名称</span><span class="value">${template.name}</span></div>
+      <div class="summary-row"><span class="label">模板代码</span><span class="value"><code>${template.code}</code></span></div>
+      <div class="summary-row"><span class="label">基础料号</span><span class="value"><code>${template.basePartNo}</code></span></div>
+      <div class="summary-row"><span class="label">基础价</span><span class="value">¥${template.basePrice}</span></div>
+      <div class="summary-row"><span class="label">状态</span><span class="value"><span class="status-tag published">${template.status}</span></span></div>
+      <div class="summary-row"><span class="label">货币</span><span class="value">CNY</span></div>
+      <div class="summary-row"><span class="label">税率</span><span class="value">13%</span></div>
+      <div class="summary-row"><span class="label">默认有效期</span><span class="value">30 天</span></div>
+    </div>
+
+    <!-- v0.4 P0 修复: base.glb 模型选择 -->
+    <div class="side-card" style="margin-bottom:14px;">
+      <div class="side-card-title">🎬 base 模型选择
+        <span class="side-card-action" onclick="openBaseModelPicker()">切换模型 →</span>
+      </div>
+      <div style="display:flex;gap:14px;align-items:center;">
+        <div style="width:140px;height:100px;background:linear-gradient(135deg,#e8eef5,#f5f7fa);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:40px;color:rgba(0,80,179,.3);flex-shrink:0;">🎲</div>
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:600;color:#303133;margin-bottom:4px;">${baseModel.label}</div>
+          <div class="summary-row"><span class="label">关联料号</span><span class="value"><code>${baseModel.partNo}</code></span></div>
+          <div class="summary-row"><span class="label">规格</span><span class="value">${baseModel.meshCount} mesh · ${baseModel.vertices.toLocaleString()} 顶点 · ${(baseModel.sizeKB/1024).toFixed(2)} MB</span></div>
+          <div class="summary-row"><span class="label">snapshot 时间</span><span class="value" style="color:#909399;font-size:11px;">${baseModel.snapshotAt}</span></div>
+        </div>
+      </div>
+      <div style="margin-top:10px;padding:8px 10px;background:#f6ffed;border:1px solid #b7eb8f;border-radius:4px;font-size:11.5px;color:#389e0d;">
+        ⓘ 选定后会写入 <code>product_config_template.base_model_id + version + snapshot_at</code> 三字段。<b>上游模型升级不会自动影响本模板</b>，PM 需主动切换到新版本（§13 等同新草稿版本）。
+      </div>
+    </div>
+
+    <div class="side-card" style="margin-bottom:14px;">
+      <div class="side-card-title">🎯 适用品类与受众</div>
+      <div class="summary-row"><span class="label">产品品类</span><span class="value">接触片 / 接触簧片</span></div>
+      <div class="summary-row"><span class="label">应用领域</span><span class="value">汽车 · 工业控制</span></div>
+      <div class="summary-row"><span class="label">销售渠道</span><span class="value">直销 · 经销</span></div>
+      <div class="summary-row"><span class="label">默认审批人</span><span class="value">王经理（销售总监）</span></div>
+      <div class="summary-row"><span class="label">默认折扣权限</span><span class="value">≤ 8 折自动通过 · ＞8 折走审批</span></div>
+    </div>
+
+    <div class="side-card">
+      <div class="side-card-title">📝 模板说明 / 备注</div>
+      <div style="font-size:12.5px;color:#606266;line-height:1.7;">
+        本模板用于<b>接触片产品族</b>的销售选配，覆盖 5 个核心配置维度（型号 / 厚度 / 长度 / 表面处理 / 接口规格），
+        约束规则保证物理可制造性与库存可用性。<br>
+        高端款 (PRM) 通过<b>独立子模型 (sub_model)</b> 替换 base.glb，其他取值通过<b>维度 1 mesh 操作</b>实现。<br>
+        <span style="color:#909399;">最后更新：2026-05-20 16:42 by 张工 · 版本 v1.2</span>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// Tab: 版本历史
+// ============================================================
+function renderTabVersions() {
+  const area = document.getElementById('tab-versions');
+  area.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button class="btn-primary btn" onclick="showToast('info','基于当前版本新建草稿')">📝 新建草稿版本</button>
+      <button class="btn" onclick="showToast('info','对比 v1.1 与 v1.2 差异')">🔀 对比版本</button>
+      <button class="btn">📥 导出快照</button>
+    </div>
+
+    <div class="timeline">
+      <div class="timeline-item current">
+        <div class="timeline-title">
+          <span class="status-tag published">● PUBLISHED</span>
+          v1.2
+          <span style="color:#909399;font-size:11.5px;font-weight:normal;">— 当前版本</span>
+        </div>
+        <div class="timeline-meta">2026-05-20 16:42 · 张工 · 引用 12 实例 · 8 报价单</div>
+        <div class="timeline-changes">
+          ✅ 新增高端款 PRM 子模型支持 (维度 2)<br>
+          ✅ 接口规格新增「ROHS 加严」取值<br>
+          ⚠ 修复 0.3mm + PRM 误允许的约束遗漏<br>
+          ➕ 新增大额订单审批规则
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-title">
+          <span class="status-tag draft">● DRAFT</span>
+          v1.3-rc1
+          <span style="color:#909399;font-size:11.5px;font-weight:normal;">— 草稿，未发布</span>
+        </div>
+        <div class="timeline-meta">2026-05-25 11:08 · 李工 · 预计发布 2026-05-30</div>
+        <div class="timeline-changes">
+          🚧 新增「定制色喷涂」取值（草稿中）<br>
+          🚧 表面处理价格规则重构（待评审）
+        </div>
+      </div>
+      <div class="timeline-item archived">
+        <div class="timeline-title">
+          <span class="status-tag archived" style="background:#f0f0f0;color:#909399;">● ARCHIVED</span>
+          v1.1
+        </div>
+        <div class="timeline-meta">2026-04-15 14:20 · 张工 · 引用 27 实例 · 19 报价单</div>
+        <div class="timeline-changes">
+          ✅ 新增厚度 1.0mm 选项<br>
+          ✅ 增加表面处理 Au 取值<br>
+          ⚠ 修复价格公式 token PCT 误算 bug
+        </div>
+      </div>
+      <div class="timeline-item archived">
+        <div class="timeline-title">
+          <span class="status-tag archived" style="background:#f0f0f0;color:#909399;">● ARCHIVED</span>
+          v1.0
+        </div>
+        <div class="timeline-meta">2026-03-01 09:00 · 王经理 · 引用 8 实例 · 5 报价单</div>
+        <div class="timeline-changes">
+          🎉 模板首次发布<br>
+          初始 4 个选项 / 12 个取值 / 1 条约束
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// 编辑抽屉控制
+// ============================================================
+function openEditDrawer(type, code, valCode) {
+  const drawer = document.getElementById('editDrawer');
+  const mask = document.getElementById('editDrawerMask');
+  const title = document.getElementById('editDrawerTitle');
+  const body = document.getElementById('editDrawerBody');
+
+  if (type === 'template') {
+    title.innerHTML = '✏️ 编辑模板属性';
+    body.innerHTML = renderTemplateDetail();
+  } else if (type === 'option') {
+    const opt = template.options.find(o => o.code === code);
+    title.innerHTML = `✏️ 编辑选项: ${opt.label}`;
+    body.innerHTML = renderOptionDetail(opt);
+  } else if (type === 'value') {
+    const opt = template.options.find(o => o.code === code);
+    const val = opt.values.find(v => v.code === valCode);
+    title.innerHTML = `✏️ 编辑取值: ${val.label}`;
+    body.innerHTML = renderValueDetail(opt, val);
+  } else if (type === 'constraint') {
+    title.innerHTML = `✏️ 编辑约束规则 ${code + 1}`;
+    body.innerHTML = renderConstraintDetail(template.constraints[code], code);
+  }
+  mask.classList.add('open');
+  drawer.classList.add('open');
+}
+
+function closeEditDrawer() {
+  document.getElementById('editDrawerMask').classList.remove('open');
+  document.getElementById('editDrawer').classList.remove('open');
+}
+
+function saveAndCloseDrawer() {
+  showToast('info', '✓ 已保存编辑');
+  closeEditDrawer();
+  switchEditorTab(currentEditorTab);
+}
+
+function renderTemplateDetail() {
+  return `
+    <div class="detail-header">
+      <div class="detail-title">📦 ${template.name}</div>
+      <div class="detail-sub">模板代码: <code>${template.code}</code> · 状态: <span class="status-tag published">${template.status}</span></div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">📋 基本信息</div>
+      <div class="form-row"><label>代码 *</label><input class="form-input code-input" value="${template.code}" readonly /></div>
+      <div class="form-row"><label>名称 *</label><input class="form-input" value="${template.name}" /></div>
+      <div class="form-row"><label>基础料号 *</label><input class="form-input code-input" value="${template.basePartNo}" /></div>
+      <div class="form-row"><label>基础价</label><input class="form-input" value="${template.basePrice}" /> 元</div>
+      <div class="form-row">
+        <label>选配页价格展示</label>
+        <label class="switch" style="margin-right:8px;">
+          <input type="checkbox" checked onchange="togglePriceVisible(this,'${template.code}')" />
+          <span class="slider"></span>
+        </label>
+        <span style="font-size:11.5px;color:#909399;">关闭后选配页底部价格栏整体隐藏（适用客户初期沟通 / 不允许底层销售看价 等场景）</span>
+      </div>
+      <div class="form-row"><label>描述</label><textarea class="form-input" rows="3">${template.description}</textarea></div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">🎬 关联 3D 模型</div>
+      <div class="form-row">
+        <label>基础 GLB</label>
+        <input class="form-input" value="s3://cpq-3d-glb/CFG-CONTACT-STRIP-BASE/v1/model.glb" readonly />
+        <button class="btn">查看模型</button>
+      </div>
+      <div class="form-row">
+        <label>Mesh 列表</label>
+        <span style="font-size:11.5px;color:#909399;">从 GLB 自动解析: 11 个 mesh（mesh_main_body, mesh_contact_layer, mesh_coating_layer, ...）</span>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">👥 客户专属配置 (v0.4 §十四)</div>
+      <div style="font-size:12px;color:#606266;margin-bottom:8px;">已配置 3 个客户/类别覆盖：</div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse;">
+        <thead><tr style="background:#fafafa;"><th style="padding:6px 10px;text-align:left;">客户/类别</th><th>可见限制</th><th>价格倍率</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr><td style="padding:6px 10px;">罗克韦尔 (VIP)</td><td>全部可见</td><td><span class="price-tag delta-positive">×0.85 (折扣)</span></td><td><button class="btn" style="padding:2px 8px;">编辑</button></td></tr>
+          <tr><td style="padding:6px 10px;">类别: STANDARD</td><td>隐藏 PRM 型号</td><td><span class="price-tag delta-zero">×1.0</span></td><td><button class="btn" style="padding:2px 8px;">编辑</button></td></tr>
+          <tr><td style="padding:6px 10px;">类别: TRIAL</td><td>仅基础选项</td><td><span class="price-tag">×1.1 (加价)</span></td><td><button class="btn" style="padding:2px 8px;">编辑</button></td></tr>
+        </tbody>
+      </table>
+      <button class="btn" style="margin-top:8px;" onclick="showToast('info','新增客户覆盖配置')">＋ 添加客户覆盖</button>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">✅ 审批规则 (v0.4 §十六)</div>
+      <div style="font-size:12px;color:#606266;margin-bottom:8px;">配置触发审批的规则：</div>
+      <div class="constraint-item">总金额 > ¥100,000 → 销售经理审批</div>
+      <div class="constraint-item">选了 "高端款" 型号 → 产品经理审批</div>
+      <button class="btn" style="margin-top:8px;" onclick="showToast('info','新增审批规则')">＋ 添加审批规则</button>
+    </div>
+
+    <div class="form-section">
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn">保存草稿</button>
+        <button class="btn-primary btn" onclick="showToast('info','已发布。原版本归档')">🚀 发布新版本</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderOptionDetail(opt) {
+  return `
+    <div class="detail-header">
+      <div class="detail-title">${opt.required?'⭐':'○'} ${opt.label}</div>
+      <div class="detail-sub">选项代码: <code>${opt.code}</code> · 类型: ${opt.type} · 必选: ${opt.required?'是':'否'}</div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">📝 选项配置</div>
+      <div class="form-row"><label>代码 *</label><input class="form-input code-input" value="${opt.code}" /></div>
+      <div class="form-row"><label>显示名 *</label><input class="form-input" value="${opt.label}" /></div>
+      <div class="form-row"><label>选项类型</label>
+        <select class="form-select">
+          <option ${opt.type==='EXCLUSIVE'?'selected':''}>EXCLUSIVE (互斥单选)</option>
+          <option ${opt.type==='MULTI_SELECT'?'selected':''}>MULTI_SELECT (多选)</option>
+          <option>NUMERIC (数值)</option>
+          <option>TEXT (文本)</option>
+          <option>COLOR (色卡)</option>
+        </select>
+      </div>
+      <div class="form-row"><label>必选</label>
+        <input type="checkbox" ${opt.required?'checked':''} /> <span style="font-size:11.5px;color:#909399;">用户必须选才能提交</span>
+      </div>
+      <div class="form-row"><label>默认值</label>
+        <select class="form-select">
+          <option value="">无默认</option>
+          ${opt.values.map(v => `<option value="${v.code}">${v.label}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">📊 取值列表 (${opt.values.length})</div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse;">
+        <thead><tr style="background:#fafafa;"><th style="padding:6px 10px;text-align:left;">代码</th><th>显示名</th><th>价格 delta</th><th>3D 规则</th><th>操作</th></tr></thead>
+        <tbody>
+          ${opt.values.map(v => `
+            <tr>
+              <td style="padding:6px 10px;"><code>${v.code}</code></td>
+              <td>${v.label}</td>
+              <td><span class="price-tag ${v.priceDelta>0?'delta-positive':'delta-zero'}">${v.priceDelta>0?'+¥'+v.priceDelta:'¥0'}</span></td>
+              <td style="font-size:11px;color:#909399;">${(v.rules||[]).length} 条</td>
+              <td><button class="btn" style="padding:2px 8px;" onclick="openEditDrawer('value','${opt.code}','${v.code}')">详情</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      <button class="btn" style="margin-top:8px;" onclick="showToast('info','新增取值')">＋ 添加取值</button>
+    </div>
+  `;
+}
+
+function renderValueDetail(opt, val) {
+  const rules = val.rules || [];
+  return `
+    <div class="detail-header">
+      <div class="detail-title">· ${val.label}</div>
+      <div class="detail-sub">隶属选项: <code>${opt.code}</code> / 取值代码: <code>${val.code}</code></div>
+    </div>
+
+    <div class="tab-nav">
+      <div class="tab-nav-item active" onclick="switchValueTab('basic')">📝 基本</div>
+      <div class="tab-nav-item" onclick="switchValueTab('3drule')">🎬 3D 规则</div>
+      <div class="tab-nav-item" onclick="switchValueTab('price')">💰 价格规则</div>
+      <div class="tab-nav-item" onclick="switchValueTab('feature')">🔧 特征关联</div>
+    </div>
+
+    <div class="tab-content active" id="tab-basic">
+      <div class="form-section">
+        <div class="form-section-title">📝 基本信息</div>
+        <div class="form-row"><label>代码 *</label><input class="form-input code-input" value="${val.code}" /></div>
+        <div class="form-row"><label>显示名 *</label><input class="form-input" value="${val.label}" /></div>
+        <div class="form-row"><label>描述</label><input class="form-input" value="" placeholder="选项卡片上显示的说明文字" /></div>
+        <div class="form-row"><label>缩略图 URL</label><input class="form-input" value="" placeholder="可选 · 卡片缩略图（如颜色样品）" /></div>
+        <div class="form-row"><label>默认选中</label><input type="checkbox" /> 该值是默认值</div>
+      </div>
+
+      <!-- v0.4 收敛：特征语义直接吸收到选项值（不再独立 mat_feature 表） -->
+      <div class="form-section" style="background:linear-gradient(135deg,#f9f0ff,#fff);border-color:#d3adf7;">
+        <div class="form-section-title" style="color:#722ed1;">🔧 特征语义 (v0.4 收敛 — 选项值即特征)</div>
+        <div style="font-size:11.5px;color:#722ed1;background:#fff;padding:6px 10px;border-radius:4px;margin-bottom:12px;border:1px solid #efdbff;">
+          ℹ <b>2026-05-26 v0.4 重构</b>：原独立的 mat_feature 系列表已废弃，特征语义直接在选项值上配置（feature_type / attributes / tags）。
+        </div>
+        <div class="form-row">
+          <label>特征类型</label>
+          <select class="form-select">
+            <option value="">— 无（仅作选项）</option>
+            <option ${val.code==='AGCU85'?'selected':''}>MATERIAL · 材质</option>
+            <option>THREAD · 螺纹</option>
+            <option>WELD · 焊缝</option>
+            <option>COATING · 镀层</option>
+            <option>INTERFACE · 装配接口</option>
+            <option>SLOT · 槽</option>
+            <option>HOLE · 通孔/盲孔</option>
+            <option>SURFACE · 表面区</option>
+            <option>MODEL_VARIANT · 型号变体</option>
+            <option>GENERAL · 通用</option>
+            <option style="color:#1890ff;">＋ 自定义类型...</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>属性 (JSON)</label>
+          <textarea class="form-input code-input" rows="4" placeholder='按类型填规格参数'>${val.code==='AGCU85'?`{
+  "composition": {"Ag":85, "Cu":15},
+  "density_kg_m3": 10500,
+  "conductivity_%IACS": 88
+}`:'{}'}</textarea>
+        </div>
+        <div class="form-row">
+          <label>标签 (逗号分隔)</label>
+          <input class="form-input" value="${val.code==='AGCU85'?'high-conductivity, custom-spec':''}" placeholder="如：critical, high-precision" />
+        </div>
+        <div class="form-row">
+          <label>几何信息</label>
+          <span style="font-size:11.5px;color:#909399;">📐 从 STEP 自动提取，无需手填（包围盒/位置/体积）</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-3drule">
+      <!-- 维度 1: base 模型 mesh 操作（5 种 Action） -->
+      <div class="form-section">
+        <div class="form-section-title">🎬 维度 1: base 模型 mesh 操作 (${rules.length} 条)</div>
+        <div style="font-size:12px;color:#909399;margin-bottom:10px;">选中此值时按顺序在 <b>base.glb</b> 内执行以下操作（适用同形态变体：颜色/显隐/变换）：</div>
+        <div class="rule-list">
+          ${rules.map(r => `
+            <div class="rule-item">
+              <span class="rule-tag ${r.action}">${r.action}</span>
+              <span class="rule-target">→ <code>${r.target||'-'}</code></span>
+              ${r.action === 'REPLACE_MATERIAL' ? `<span style="background:#999;width:14px;height:14px;border-radius:3px;display:inline-block;"></span>` : ''}
+              <div class="rule-actions">
+                <button class="icon-btn">✏️</button>
+                <button class="icon-btn danger">🗑</button>
+              </div>
+            </div>
+          `).join('')}
+          ${rules.length===0?'<div style="font-size:12px;color:#909399;text-align:center;padding:20px;">暂无 3D 规则</div>':''}
+        </div>
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn" onclick="showToast('info','新增 SHOW_MESH 规则')">＋ SHOW_MESH</button>
+          <button class="btn" onclick="showToast('info','新增 HIDE_MESH 规则')">＋ HIDE_MESH</button>
+          <button class="btn" onclick="showToast('info','新增 REPLACE_MATERIAL 规则')">＋ REPLACE_MATERIAL</button>
+          <button class="btn" onclick="showToast('info','新增 TRANSFORM_MESH 规则')">＋ TRANSFORM</button>
+        </div>
+      </div>
+
+      <!-- 维度 2: 关联独立子模型（OptionValue 扩展字段） -->
+      <div class="form-section" style="background:linear-gradient(135deg,#fff7e6,#fffbe6);border-color:#ffd591;">
+        <div class="form-section-title" style="color:#d48806;">📦 维度 2: 关联独立子模型（可选扩展）</div>
+
+        <!-- 业务化总述 -->
+        <div style="background:#fff;border:1px solid #ffe58f;border-radius:6px;padding:10px 12px;margin-bottom:14px;">
+          <div style="font-weight:600;color:#d48806;margin-bottom:6px;font-size:12.5px;">🤔 什么时候用子模型？</div>
+          <div style="font-size:12px;color:#876800;line-height:1.7;">
+            如果本取值的<b>几何形态跟主模型一样</b>（只是颜色/部件显隐变化）→ <b style="color:#52c41a;">不需要！</b> 仅配置维度 1 即可。<br/>
+            如果本取值的<b>几何形态跟主模型完全不同</b>（如不同型号的电机壳体）→ <b style="color:#d48806;">配置维度 2 关联独立 GLB 文件</b>。<br/>
+            <b style="color:#1890ff;">两个维度可任意组合</b>（例如材质换色 + 加散热器子模型 = 维度 1 REPLACE_MATERIAL + 维度 2 OVERLAY）<br/>
+            <span style="color:#909399;font-size:11px;">⚙️ 两个维度本质都是配置数据，<b>后端 evaluate 和前端渲染引擎不区分维度</b>，统一处理</span>
+          </div>
+        </div>
+
+        <!-- 关联子模型 -->
+        <div class="form-row">
+          <label>关联子模型</label>
+          <select class="form-select" id="subModelSelect" onchange="onSubModelChange()">
+            <option value="">— 不关联（本取值不需要切换 3D 模型）</option>
+            <option ${val.code==='PRM'?'selected':''} value="CFG-CONTACT-PREMIUM">CFG-CONTACT-PREMIUM · 高端款独立模型 (v1, 2.8MB)</option>
+            <option value="CFG-MOTOR-EXPL">CFG-MOTOR-EXPL · 防爆电机壳 (v2, 4.2MB)</option>
+            <option value="CFG-VALVE-DN50">CFG-VALVE-DN50 · 50mm 阀门 (v1, 1.9MB)</option>
+            <option style="color:#1890ff;">＋ 上传新 3D 模型...</option>
+          </select>
+        </div>
+        <div style="font-size:11px;color:#909399;padding-left:132px;margin-top:-4px;margin-bottom:14px;">
+          ℹ 这里下拉的是<b>预先在"3D 模型管理"页上传过的独立模型 partNo</b>，每个独立模型对应一个 .glb 文件
+        </div>
+
+        <!-- 挂载模式（业务化对比表） -->
+        <div style="margin-bottom:8px;font-size:12.5px;font-weight:600;color:#303133;">挂载模式 — 子模型怎么放进场景</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+          <label style="cursor:pointer;border:2px solid #91caff;border-radius:6px;padding:10px 12px;background:#e6f4ff;display:block;">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+              <input type="radio" name="attach_mode" value="OVERLAY" checked onchange="handleAttachModeChange('OVERLAY')" />
+              <b style="color:#0958d9;">📍 OVERLAY 叠加</b>
+            </div>
+            <div style="font-size:11px;color:#0050b3;line-height:1.5;">
+              主模型<b>完整保留</b>，子模型加在上面<br/>
+              <span style="color:#0958d9;">🚗 比喻：给车装行李架</span><br/>
+              <span style="color:#606266;">场景：附件 / 卡扣 / 防尘罩</span>
+            </div>
+          </label>
+          <label style="cursor:pointer;border:2px solid #d3adf7;border-radius:6px;padding:10px 12px;background:#f9f0ff;display:block;">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+              <input type="radio" name="attach_mode" value="SWAP" onchange="handleAttachModeChange('SWAP')" />
+              <b style="color:#722ed1;">🔄 SWAP 替换部件</b>
+            </div>
+            <div style="font-size:11px;color:#531dab;line-height:1.5;">
+              主模型某部件<b>消失</b>，子模型<b>填到同位置</b><br/>
+              <span style="color:#722ed1;">🚗 比喻：换轮毂</span><br/>
+              <span style="color:#606266;">场景：同位置不同规格部件</span>
+            </div>
+          </label>
+          <label style="cursor:pointer;border:2px solid #ffa39e;border-radius:6px;padding:10px 12px;background:#fff1f0;display:block;">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+              <input type="radio" name="attach_mode" value="REPLACE_BASE" onchange="handleAttachModeChange('REPLACE_BASE')" />
+              <b style="color:#cf1322;">♻️ REPLACE_BASE 整个替换</b>
+            </div>
+            <div style="font-size:11px;color:#a8071a;line-height:1.5;">
+              主模型<b>整个消失</b>，子模型<b>完全顶替</b><br/>
+              <span style="color:#cf1322;">🚗 比喻：换整辆车</span><br/>
+              <span style="color:#606266;">场景：完全不同型号</span>
+            </div>
+          </label>
+        </div>
+
+        <!-- SWAP 模式条件字段 -->
+        <div class="form-row" id="swapMeshRow" style="display:none;">
+          <label>替换的 base mesh</label>
+          <input class="form-input code-input" placeholder="如 mesh_main_body" value="" />
+          <span style="font-size:11px;color:#909399;">SWAP 模式下，主模型里要被替换掉的部件名</span>
+        </div>
+
+        <!-- 子模型位置（仅 OVERLAY/SWAP 用） -->
+        <div id="positionFields">
+          <div style="font-size:12px;color:#606266;font-weight:500;margin:10px 0 6px;">子模型在场景中的位置（默认放原点）</div>
+          <div class="form-row">
+            <label>位置 (xyz)</label>
+            <input class="form-input code-input" placeholder='[0, 0, 0]' value="" style="max-width:140px;" />
+            <label style="width:auto;">旋转</label>
+            <input class="form-input code-input" placeholder='[0, 0, 0]' value="" style="max-width:140px;" />
+            <label style="width:auto;">缩放</label>
+            <input class="form-input code-input" placeholder='[1, 1, 1]' value="" style="max-width:140px;" />
+          </div>
+          <div style="font-size:11px;color:#909399;padding-left:132px;">
+            ℹ 单位毫米 (mm) · 旋转单位弧度 · REPLACE_BASE 模式下这些值忽略
+          </div>
+        </div>
+
+        <!-- 性能提示 -->
+        <div style="font-size:11.5px;color:#876800;background:#fff;padding:8px 12px;border-radius:4px;border:1px solid #ffe58f;margin-top:14px;">
+          💡 <b>性能提示</b>：子模型走 LRU 缓存 + CDN，首次加载 < 2s。建议子模型 GLB 控制在 <b>3MB 以内</b> + Draco 压缩。
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-price">
+      <div class="form-section">
+        <div class="form-section-title">💰 价格规则</div>
+        <div class="form-row"><label>规则类型 *</label>
+          <select class="form-select">
+            <option selected>DELTA_FIXED (固定加价)</option>
+            <option>DELTA_PERCENT (按比例加价)</option>
+            <option>SET_FIXED (固定价格)</option>
+            <option>FORMULA (公式)</option>
+          </select>
+        </div>
+        <div class="form-row"><label>加价金额</label><input class="form-input" value="${val.priceDelta}" /> <span style="font-size:11.5px;">元</span></div>
+        <div class="form-row"><label>币种</label><select class="form-select" style="max-width:160px;"><option>CNY</option><option>USD</option></select></div>
+      </div>
+      <div class="form-section">
+        <div class="form-section-title">💡 公式价格 (高级)</div>
+        <div style="font-size:11.5px;color:#909399;margin-bottom:6px;">FORMULA 类型可引用公式引擎 token（含 global_variable）</div>
+        <div class="schema-editor">
+{
+  "expression": [
+    { "type": "field", "value": "表面积" },
+    { "type": "operator", "value": "*" },
+    { "type": "global_variable", "code": "ELEM_PRICE" },
+    { "type": "operator", "value": "*" },
+    { "type": "literal", "value": 1.2 }
+  ]
+}
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-feature">
+      <div class="form-section">
+        <div class="form-section-title">🔗 业务实体引用 (product_config_value_reference)</div>
+        <div style="font-size:11.5px;color:#0050b3;background:#e6f4ff;padding:6px 10px;border-radius:4px;margin-bottom:12px;border:1px solid #91caff;">
+          ℹ <b>v0.4 收敛后</b>：直接关联工序 / 材质 / 子件 等业务实体，不再走 mat_feature 中间层。提交报价单时自动写入对应 line_item。
+        </div>
+        <table style="width:100%;font-size:12px;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#fafafa;">
+              <th style="padding:6px 10px;text-align:left;">引用类型</th>
+              <th>业务实体编码</th>
+              <th>数量/单位</th>
+              <th>备注</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${val.code==='AGCU85'?`
+              <tr>
+                <td style="padding:6px 10px;"><span class="rule-tag REPLACE_MATERIAL">MATERIAL</span></td>
+                <td><code>MAT-AGCU-85-15</code></td>
+                <td>—</td>
+                <td>原料供应配方</td>
+                <td><button class="btn" style="padding:2px 8px;">编辑</button> <button class="icon-btn danger">🗑</button></td>
+              </tr>
+              <tr>
+                <td style="padding:6px 10px;"><span class="rule-tag SHOW_MESH">PROCESS</span></td>
+                <td><code>MRO-AS-0010</code></td>
+                <td>—</td>
+                <td>镀银工序</td>
+                <td><button class="btn" style="padding:2px 8px;">编辑</button> <button class="icon-btn danger">🗑</button></td>
+              </tr>
+            `:''}
+            ${rules.length===0 && val.code!=='AGCU85'?'<tr><td colspan="5" style="padding:20px;text-align:center;color:#909399;font-size:11.5px;">暂无业务关联</td></tr>':''}
+          </tbody>
+        </table>
+        <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn" onclick="showToast('info','新增 PROCESS 引用')">＋ 关联工序</button>
+          <button class="btn" onclick="showToast('info','新增 MATERIAL 引用')">＋ 关联材质</button>
+          <button class="btn" onclick="showToast('info','新增 PART 引用')">＋ 关联子件</button>
+          <button class="btn" onclick="showToast('info','新增自定义引用类型')">＋ 其他类型</button>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">📈 反向追溯（被哪些引用）</div>
+        <div style="font-size:11.5px;color:#606266;line-height:1.6;">
+          通过 <code>v_business_entity_3d_refs</code> 视图可反查（替代 v0.2 复杂 JOIN）：<br/>
+          • <code>SELECT * FROM v_business_entity_3d_refs WHERE reference_type='PROCESS' AND reference_code='MRO-AS-0003'</code><br/>
+          • 工序管理页可显示"该工序被 X 个选配模板的 Y 个取值引用"
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderConstraintDetail(c, idx) {
+  return `
+    <div class="detail-header">
+      <div class="detail-title">⚠ 约束规则 ${idx+1}</div>
+      <div class="detail-sub">类型: ${c.type}</div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">⚙️ 约束配置</div>
+      <div class="form-row"><label>约束类型 *</label>
+        <select class="form-select">
+          <option ${c.type==='REQUIRES'?'selected':''}>REQUIRES (选 A 必须先选 B)</option>
+          <option ${c.type==='EXCLUDES'?'selected':''}>EXCLUDES (选 A 不能选 B)</option>
+          <option ${c.type==='IMPLIES'?'selected':''}>IMPLIES (选 A 自动选 B)</option>
+          <option ${c.type==='HIDES'?'selected':''}>HIDES (选 A 时隐藏 B)</option>
+          <option ${c.type==='NUMERIC_RANGE'?'selected':''}>NUMERIC_RANGE (数值范围)</option>
+        </select>
+      </div>
+      <div class="form-row"><label>触发条件 *</label><input class="form-input code-input" value="${c.trigger}" /> <span style="font-size:11.5px;color:#909399;">格式: 选项=取值</span></div>
+      <div class="form-row"><label>受影响项 *</label><input class="form-input code-input" value="${c.affected}" /></div>
+      <div class="form-row"><label>冲突提示</label><input class="form-input" value="${c.message}" /></div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">📝 当前约束公式预览</div>
+      <div class="constraint-formula">
+WHEN (${c.trigger}) THEN ${c.type} (${c.affected})<br/>
+MESSAGE: "${c.message}"
+      </div>
+    </div>
+  `;
+}
+
+function switchValueTab(tab) {
+  document.querySelectorAll('.tab-nav-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+}
+
+// v0.4 优化 1: 切换选配模板"是否展示价格"
+function togglePriceVisible(checkbox, templateCode) {
+  const isShown = checkbox.checked;
+  const status = isShown ? '<b style="color:#52c41a;">已开启</b>' : '<b style="color:#f56c6c;">已关闭</b>';
+  showToast('info', `模板 <b>${templateCode}</b> 的选配页价格展示: ${status}`);
+  if (!isShown) {
+    showToast('warning', '关闭后选配页底部价格栏整体隐藏（不仅是数字隐藏）');
+  }
+  showToast('info', '模拟: PUT /admin/config-templates/' + templateCode + ' { show_price: ' + isShown + ' }');
+}
+
+// 子模型选中时的反馈（顶层函数，给 inline onchange 调用）
+function onSubModelChange() {
+  const sel = document.getElementById('subModelSelect');
+  if (sel && sel.value && sel.value !== '') {
+    showToast('info', '已关联子模型: <b>' + sel.value + '</b>');
+  } else if (sel) {
+    showToast('info', '已取消子模型关联');
+  }
+}
+
+// 挂载模式切换（顶层函数，给 inline onchange 调用）
+function handleAttachModeChange(mode) {
+  const swapRow = document.getElementById('swapMeshRow');
+  if (swapRow) swapRow.style.display = mode === 'SWAP' ? 'flex' : 'none';
+  const posFields = document.getElementById('positionFields');
+  if (posFields) posFields.style.opacity = mode === 'REPLACE_BASE' ? '0.45' : '1';
+  const labels = { OVERLAY: '叠加', SWAP: '替换部件', REPLACE_BASE: '整个替换' };
+  showToast('info', '挂载模式: <b>' + mode + ' (' + labels[mode] + ')</b>');
+}
+
+// ============================================================
+// v0.4 P0 §7.2: base 模型选择抽屉（mat_part_model 列表）
+// ============================================================
+const availableBaseModels = [
+  { id: 'mpm-001', partNo: 'CFG-CONTACT-STRIP-BASE', version: 3, label: 'CFG-CONTACT-STRIP v3 (current)', isCurrent: true, meshCount: 11, vertices: 12840, sizeKB: 1432, uploadedAt: '2026-05-20 11:22', uploadedBy: '张工' },
+  { id: 'mpm-002', partNo: 'CFG-CONTACT-STRIP-BASE', version: 2, label: 'CFG-CONTACT-STRIP v2', isCurrent: false, meshCount: 9, vertices: 10560, sizeKB: 1228, uploadedAt: '2026-04-12 16:08', uploadedBy: '张工' },
+  { id: 'mpm-003', partNo: 'CFG-SPRING-BASE', version: 1, label: 'CFG-SPRING-BASE v1', isCurrent: true, meshCount: 7, vertices: 8420, sizeKB: 982, uploadedAt: '2026-05-15 09:33', uploadedBy: '李工' },
+  { id: 'mpm-004', partNo: 'CFG-TERM-BASE', version: 1, label: 'CFG-TERM-BASE v1', isCurrent: true, meshCount: 5, vertices: 4280, sizeKB: 540, uploadedAt: '2026-05-22 10:15', uploadedBy: '王工' },
+];
+
+let baseModelPickerSelectedId = null;
+let baseModelPickerShowAllVersions = false;
+
+function openBaseModelPicker() {
+  baseModelPickerSelectedId = template.baseModel?.modelId || 'mpm-001';
+  renderBaseModelPicker();
+  document.getElementById('editDrawerMask').classList.add('open');
+  document.getElementById('editDrawer').classList.add('open');
+  document.getElementById('editDrawerTitle').innerText = '🎬 选择 base 模型 (mat_part_model)';
+}
+
+function renderBaseModelPicker() {
+  const body = document.getElementById('editDrawerBody');
+  const visible = baseModelPickerShowAllVersions ? availableBaseModels : availableBaseModels.filter(m => m.isCurrent);
+  body.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;">
+      <input class="search-input" placeholder="🔎 料号 / 上传者..." style="flex:1;" />
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#606266;">
+        <input type="checkbox" ${baseModelPickerShowAllVersions?'checked':''} onchange="baseModelPickerShowAllVersions=this.checked;renderBaseModelPicker();" />
+        显示历史版本
+      </label>
+      <button class="btn" onclick="showToast('info','跳转 v0.4-3D源文件上传与转换原型.html 上传新模型')">📥 上传新 .glb</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      ${visible.map(m => `
+        <div class="model-card ${m.id===baseModelPickerSelectedId?'selected':''}" style="border:2px solid ${m.id===baseModelPickerSelectedId?'#1890ff':'#e4e7ed'};border-radius:8px;padding:12px;cursor:pointer;background:${m.id===baseModelPickerSelectedId?'#e6f7ff':'#fff'};transition:all .2s;" onclick="baseModelPickerSelectedId='${m.id}';renderBaseModelPicker();">
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+            <div style="width:80px;height:60px;background:linear-gradient(135deg,#e8eef5,#f5f7fa);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:32px;color:rgba(0,80,179,.3);flex-shrink:0;">🎲</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:12.5px;font-weight:600;color:#303133;margin-bottom:3px;">${m.label}</div>
+              <div style="font-size:11px;color:#909399;">v${m.version} ${m.isCurrent?'<span style="color:#52c41a;">● current</span>':'<span style="color:#909399;">○ archived</span>'}</div>
+            </div>
+            ${m.id===baseModelPickerSelectedId ? '<span style="color:#1890ff;font-size:18px;">✓</span>' : ''}
+          </div>
+          <div style="font-size:11.5px;color:#606266;line-height:1.7;">
+            料号: <code style="font-size:10.5px;">${m.partNo}</code><br>
+            ${m.meshCount} mesh · ${m.vertices.toLocaleString()} 顶点<br>
+            大小: ${(m.sizeKB/1024).toFixed(2)} MB<br>
+            <span style="color:#909399;">${m.uploadedAt} · ${m.uploadedBy}</span>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+
+    <div style="margin-top:14px;padding:10px 12px;background:#fffbe6;border:1px solid #ffd591;border-radius:4px;font-size:11.5px;color:#876800;">
+      ⓘ <b>版本快照纪律</b>：选定后会记录 version snapshot。上游 mat_part_model 升级后<b>不会自动同步</b>到本模板 — PM 想升级 → 再开此抽屉选「最新版本」+ 保存 → 等同 §13 新草稿版本。
+    </div>
+  `;
+}
+
+// 接管原 saveAndCloseDrawer 用于 base 模型确认（按 title 判断 mode）
+const _originalSaveAndCloseDrawer = saveAndCloseDrawer;
+saveAndCloseDrawer = function() {
+  const title = document.getElementById('editDrawerTitle').innerText;
+  if (title.includes('选择 base 模型')) {
+    const m = availableBaseModels.find(x => x.id === baseModelPickerSelectedId);
+    if (m) {
+      template.baseModel = { modelId: m.id, partNo: m.partNo, version: m.version, label: m.label, meshCount: m.meshCount, vertices: m.vertices, sizeKB: m.sizeKB, snapshotAt: new Date().toISOString().slice(0,16).replace('T',' ') };
+      showToast('info', `✓ base 模型已切换为 <b>${m.label}</b><br/>写入 template.base_model_id=${m.id}, version=${m.version}, snapshot_at=NOW()`);
+    }
+    closeEditDrawer();
+    switchEditorTab(currentEditorTab);
+    return;
+  }
+  _originalSaveAndCloseDrawer();
+};
+
+// ============================================================
+// §18A.5 重新拉取差异 UI（v0.4 P2 修复）
+// ============================================================
+
+// mock 特征库当前版本 vs 模板当前 snapshot 的差异
+const refreshDiffMock = [
+  {
+    optCode: 'OPT-MODEL', optLabel: '型号', sourceField: 'FG-CTC-01 · MODEL',
+    fieldDiffs: [
+      // 字段属性变化
+      { attr: 'isRequired', tplValue: true, srcValue: true, changed: false },
+      { attr: 'partnoPrefix', tplValue: '', srcValue: '-MDL', changed: true },
+    ],
+    valueDiffs: [
+      // 取值层面
+      { type: 'CHANGED_LABEL', valueCode: 'STD', tplLabel: '标准款', srcLabel: '标准款 STD-v2' },
+      { type: 'NEW_IN_SOURCE', valueCode: 'ULT', srcLabel: '至尊款 Ultra（新增）' },
+    ],
+  },
+  {
+    optCode: 'OPT-COATING', optLabel: '表面处理', sourceField: 'FG-CTC-01 · SURFACE',
+    fieldDiffs: [
+      { attr: 'defaultValue', tplValue: 'NI', srcValue: 'AG', changed: true },
+    ],
+    valueDiffs: [
+      { type: 'NEW_IN_SOURCE', valueCode: 'RH', srcLabel: '铑镀 Rh（新增）' },
+      { type: 'DELETED_FROM_SOURCE', valueCode: 'NONE', tplLabel: '无处理' },
+      { type: 'LOCAL_ONLY', valueCode: 'PASSIVATE', tplLabel: '钝化处理（本地）', note: '本地新增，将保留' },
+    ],
+  },
+  {
+    optCode: 'OPT-INTERFACE', optLabel: '接口规格', sourceField: 'FG-CTC-01 · INTERFACE',
+    fieldDiffs: [],
+    valueDiffs: [
+      { type: 'LOCAL_ONLY', valueCode: 'M10', tplLabel: 'M10 螺纹（本地）', note: '本地新增，将保留' },
+      { type: 'LOCAL_ONLY', valueCode: 'WELD', tplLabel: '焊接连接（本地）', note: '本地新增，将保留' },
+    ],
+  },
+];
+
+// 决策状态：每个 diff 项的选择
+let refreshDecisions = {};
+
+function openRefreshDiffDrawer() {
+  // 初始化决策：默认全部"采用源"
+  refreshDecisions = {};
+  refreshDiffMock.forEach(opt => {
+    opt.fieldDiffs.filter(f=>f.changed).forEach(f => {
+      refreshDecisions[`${opt.optCode}.field.${f.attr}`] = 'TAKE_SOURCE';
+    });
+    opt.valueDiffs.forEach(v => {
+      const key = `${opt.optCode}.value.${v.valueCode}.${v.type}`;
+      if (v.type === 'LOCAL_ONLY') refreshDecisions[key] = 'KEEP_TEMPLATE'; // 本地强制保留
+      else refreshDecisions[key] = 'TAKE_SOURCE';
+    });
+  });
+  document.getElementById('editDrawerTitle').innerText = '📋 重新拉取特征库 — 差异审核';
+  renderRefreshDiffBody();
+  document.getElementById('editDrawerMask').classList.add('open');
+  document.getElementById('editDrawer').classList.add('open');
+}
+
+function renderRefreshDiffBody() {
+  const body = document.getElementById('editDrawerBody');
+  const totalChanges = refreshDiffMock.reduce((s, opt) =>
+    s + opt.fieldDiffs.filter(f=>f.changed).length +
+    opt.valueDiffs.filter(v => v.type !== 'LOCAL_ONLY').length, 0);
+
+  body.innerHTML = `
+    <div style="background:linear-gradient(90deg,#fff7e6,#fffbe6);border:1px solid #ffd591;border-radius:6px;padding:12px 14px;margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:600;color:#876800;margin-bottom:4px;">⚠ 检测到 ${totalChanges} 处来自特征库的变化</div>
+      <div style="font-size:11.5px;color:#876800;line-height:1.6;">
+        本模板上次快照时间：<b>2026-05-20 10:30</b><br>
+        特征库 FG-CTC-01 当前版本：<b>v3 (2026-05-25 16:42 by 张工)</b><br>
+        逐项选择 <b>保留模板版本</b>（不动）/ <b>采用特征库版本</b>（覆盖本模板）。本地新增取值 (local-only) 会强制保留不可改。
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button class="btn" onclick="setAllDecisions('TAKE_SOURCE')">全选「采用源」</button>
+      <button class="btn" onclick="setAllDecisions('KEEP_TEMPLATE')">全选「保留模板」</button>
+      <div style="flex:1"></div>
+      <span style="font-size:11.5px;color:#909399;">提交后会自动创建模板新草稿版本 v1.3-rc1（不污染当前 PUBLISHED）</span>
+    </div>
+
+    ${refreshDiffMock.map(opt => `
+      <div style="background:#fff;border:1px solid #e4e7ed;border-radius:6px;margin-bottom:12px;overflow:hidden;">
+        <div style="padding:10px 14px;background:#fafbfc;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:13px;font-weight:600;">${opt.optLabel}</span>
+          <code style="font-size:10.5px;background:#f0f0f0;padding:1px 5px;border-radius:2px;">${opt.optCode}</code>
+          <span style="font-size:11px;color:#909399;">← 源 ${opt.sourceField}</span>
+        </div>
+
+        ${opt.fieldDiffs.filter(f=>f.changed).length > 0 ? `
+          <div style="padding:10px 14px;border-bottom:1px solid #f0f0f0;">
+            <div style="font-size:12px;font-weight:500;color:#606266;margin-bottom:6px;">🔧 字段属性差异</div>
+            ${opt.fieldDiffs.filter(f=>f.changed).map(f => {
+              const key = `${opt.optCode}.field.${f.attr}`;
+              const decision = refreshDecisions[key];
+              return `
+                <div style="padding:8px;background:#fafbfc;border-radius:4px;margin-bottom:6px;font-size:12px;">
+                  <div style="margin-bottom:6px;">
+                    <code style="font-size:10.5px;">${f.attr}</code>: 模板=<code>${f.tplValue||'<空>'}</code> → 源=<code>${f.srcValue||'<空>'}</code>
+                  </div>
+                  <div style="display:flex;gap:6px;">
+                    <label style="font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:4px;padding:3px 8px;border-radius:3px;${decision==='KEEP_TEMPLATE'?'background:#fff7e6;border:1px solid #ffd591;':''}">
+                      <input type="radio" name="${key}" ${decision==='KEEP_TEMPLATE'?'checked':''} onchange="refreshDecisions['${key}']='KEEP_TEMPLATE';renderRefreshDiffBody();" />
+                      保留模板 (${f.tplValue||'<空>'})
+                    </label>
+                    <label style="font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:4px;padding:3px 8px;border-radius:3px;${decision==='TAKE_SOURCE'?'background:#e6f7ff;border:1px solid #91d5ff;':''}">
+                      <input type="radio" name="${key}" ${decision==='TAKE_SOURCE'?'checked':''} onchange="refreshDecisions['${key}']='TAKE_SOURCE';renderRefreshDiffBody();" />
+                      采用源 (${f.srcValue||'<空>'})
+                    </label>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : ''}
+
+        ${opt.valueDiffs.length > 0 ? `
+          <div style="padding:10px 14px;">
+            <div style="font-size:12px;font-weight:500;color:#606266;margin-bottom:6px;">📋 取值差异</div>
+            ${opt.valueDiffs.map(v => {
+              const key = `${opt.optCode}.value.${v.valueCode}.${v.type}`;
+              const decision = refreshDecisions[key];
+              const typeLabel = {
+                'CHANGED_LABEL': '🏷 显示名变更',
+                'NEW_IN_SOURCE': '➕ 源新增',
+                'DELETED_FROM_SOURCE': '➖ 源已删除',
+                'LOCAL_ONLY': '🔒 本地独有',
+              }[v.type];
+              const typeColor = {
+                'CHANGED_LABEL': '#1890ff',
+                'NEW_IN_SOURCE': '#52c41a',
+                'DELETED_FROM_SOURCE': '#f56c6c',
+                'LOCAL_ONLY': '#909399',
+              }[v.type];
+              return `
+                <div style="padding:8px;background:#fafbfc;border-left:3px solid ${typeColor};border-radius:0 4px 4px 0;margin-bottom:6px;font-size:12px;">
+                  <div style="margin-bottom:5px;">
+                    <span style="color:${typeColor};font-weight:500;">${typeLabel}</span>
+                    <code style="font-size:10.5px;margin-left:6px;">${v.valueCode}</code>
+                  </div>
+                  <div style="font-size:11.5px;color:#606266;margin-bottom:6px;">
+                    ${v.type === 'CHANGED_LABEL' ? `模板="${v.tplLabel}" → 源="${v.srcLabel}"` :
+                      v.type === 'NEW_IN_SOURCE' ? `源新增 "${v.srcLabel}"` :
+                      v.type === 'DELETED_FROM_SOURCE' ? `模板有 "${v.tplLabel}"，源已删除` :
+                      `模板本地新增 "${v.tplLabel}" — ${v.note}`}
+                  </div>
+                  ${v.type === 'LOCAL_ONLY' ? `
+                    <div style="font-size:11px;color:#876800;padding:4px 8px;background:#fffbe6;border:1px solid #ffd591;border-radius:3px;">
+                      🔒 强制保留（本地新增不会被覆盖）
+                    </div>
+                  ` : `
+                    <div style="display:flex;gap:6px;">
+                      <label style="font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:4px;padding:3px 8px;border-radius:3px;${decision==='KEEP_TEMPLATE'?'background:#fff7e6;border:1px solid #ffd591;':''}">
+                        <input type="radio" name="${key}" ${decision==='KEEP_TEMPLATE'?'checked':''} onchange="refreshDecisions['${key}']='KEEP_TEMPLATE';renderRefreshDiffBody();" />
+                        保留模板版本
+                      </label>
+                      <label style="font-size:11.5px;cursor:pointer;display:flex;align-items:center;gap:4px;padding:3px 8px;border-radius:3px;${decision==='TAKE_SOURCE'?'background:#e6f7ff;border:1px solid #91d5ff;':''}">
+                        <input type="radio" name="${key}" ${decision==='TAKE_SOURCE'?'checked':''} onchange="refreshDecisions['${key}']='TAKE_SOURCE';renderRefreshDiffBody();" />
+                        采用源版本
+                      </label>
+                    </div>
+                  `}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `).join('')}
+
+    <div style="padding:10px 12px;background:#f6ffed;border:1px solid #b7eb8f;border-radius:4px;font-size:11.5px;color:#389e0d;">
+      ⓘ 提交后：<br>
+      ① 创建模板新草稿版本 v1.3-rc1（继承当前所有选项）<br>
+      ② 按你的决策合并差异 → 写入 v1.3-rc1<br>
+      ③ 当前 PUBLISHED 版本不动 — 已发布的报价单 / 已生成的实例不受影响<br>
+      ④ 待你审核 v1.3-rc1 满意后，主动「发布」覆盖当前
+    </div>
+  `;
+}
+
+function setAllDecisions(decision) {
+  refreshDiffMock.forEach(opt => {
+    opt.fieldDiffs.filter(f=>f.changed).forEach(f => {
+      const key = `${opt.optCode}.field.${f.attr}`;
+      refreshDecisions[key] = decision;
+    });
+    opt.valueDiffs.forEach(v => {
+      if (v.type === 'LOCAL_ONLY') return; // 不动
+      const key = `${opt.optCode}.value.${v.valueCode}.${v.type}`;
+      refreshDecisions[key] = decision;
+    });
+  });
+  renderRefreshDiffBody();
+}
+
+// 重写 saveAndCloseDrawer 以处理拉取差异提交
+const _prevSaveAndCloseDrawer = saveAndCloseDrawer;
+saveAndCloseDrawer = function() {
+  const title = document.getElementById('editDrawerTitle').innerText;
+  if (title.includes('重新拉取特征库')) {
+    const takeSource = Object.values(refreshDecisions).filter(d => d === 'TAKE_SOURCE').length;
+    const keepTpl = Object.values(refreshDecisions).filter(d => d === 'KEEP_TEMPLATE').length;
+    showToast('info', `✓ 已创建模板新草稿版本 v1.3-rc1<br>
+      采用源 <b>${takeSource}</b> 项 · 保留模板 <b>${keepTpl}</b> 项<br>
+      POST /api/cpq/config-templates/${template.code}/feature-refresh-apply<br>
+      Body: { decisions: { ... } }<br>
+      → 跳转 v1.3-rc1 草稿编辑（PUBLISHED 不动）`);
+    closeEditDrawer();
+    return;
+  }
+  _prevSaveAndCloseDrawer();
+};
+
+// ============================================================
+// §18A 特征库选择抽屉
+// ============================================================
+function openFeatureLibraryPicker() {
+  pickerSelectedFieldIds = new Set();
+  pickerFilterGroupId = 'ALL';
+  pickerFilterType = 'ALL';
+  pickerSearch = '';
+  renderFeaturePicker();
+  document.getElementById('featurePickerMask').classList.add('open');
+  document.getElementById('featurePicker').classList.add('open');
+}
+
+function closeFeaturePicker() {
+  document.getElementById('featurePickerMask').classList.remove('open');
+  document.getElementById('featurePicker').classList.remove('open');
+}
+
+function renderFeaturePicker() {
+  const body = document.getElementById('featurePickerBody');
+  const allFields = featureLibrary.flatMap(g => g.fields.map(f => ({...f, groupId: g.id, groupCode: g.code, groupName: g.name, groupCategory: g.category, groupStatus: g.status})));
+  const existingOptionCodes = new Set(template.options.map(o => o.code));
+
+  const visibleFields = allFields.filter(f => {
+    if (pickerFilterGroupId !== 'ALL' && f.groupId !== parseInt(pickerFilterGroupId)) return false;
+    if (pickerFilterType !== 'ALL' && f.dataType !== pickerFilterType) return false;
+    if (pickerSearch && !(f.code.toLowerCase().includes(pickerSearch.toLowerCase()) || f.name.includes(pickerSearch))) return false;
+    return true;
+  });
+
+  body.innerHTML = `
+    <!-- 左 30% 筛选区 -->
+    <div style="width:30%;border-right:1px solid #f0f0f0;padding:16px 16px 16px 20px;overflow-y:auto;background:#fafbfc;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px;">🔍 筛选条件</div>
+
+      <div style="margin-bottom:14px;">
+        <label style="font-size:12px;color:#606266;display:block;margin-bottom:4px;">特征群组</label>
+        <select class="search-input" style="width:100%;" onchange="pickerFilterGroupId=this.value;renderFeaturePicker();">
+          <option value="ALL">全部群组</option>
+          ${featureLibrary.map(g => `<option value="${g.id}" ${pickerFilterGroupId==g.id?'selected':''}>${g.code} · ${g.name}${g.status==='DRAFT'?' (草稿)':''}</option>`).join('')}
+        </select>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <label style="font-size:12px;color:#606266;display:block;margin-bottom:4px;">数据类型</label>
+        <select class="search-input" style="width:100%;" onchange="pickerFilterType=this.value;renderFeaturePicker();">
+          <option value="ALL">全部类型</option>
+          <option value="STRING"  ${pickerFilterType==='STRING'?'selected':''}>STRING 字符</option>
+          <option value="NUMBER"  ${pickerFilterType==='NUMBER'?'selected':''}>NUMBER 数值</option>
+          <option value="DATE"    ${pickerFilterType==='DATE'?'selected':''}>DATE 日期</option>
+          <option value="BOOLEAN" ${pickerFilterType==='BOOLEAN'?'selected':''}>BOOLEAN 布尔</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <label style="font-size:12px;color:#606266;display:block;margin-bottom:4px;">关键词</label>
+        <input class="search-input" placeholder="编号/名称..." style="width:100%;" oninput="pickerSearch=this.value;renderFeaturePicker();" value="${pickerSearch}" />
+      </div>
+
+      <div style="border-top:1px solid #f0f0f0;padding-top:12px;font-size:12px;color:#606266;">
+        <div style="margin-bottom:6px;"><b>当前模板已有 ${template.options.length} 个选项</b></div>
+        <div style="color:#909399;">已存在的字段（编号重复）会被自动跳过，避免覆盖你已经定制的内容。</div>
+      </div>
+
+      <div style="margin-top:14px;padding:10px 12px;background:#fff;border:1px solid #ffd591;border-radius:4px;font-size:11.5px;color:#876800;">
+        ⓘ <b>方案 B 快照复制</b>：导入后字段是模板独立副本，特征库后续改动不会自动影响。如需同步可使用「📋 重新拉取」（建新草稿版本）。
+      </div>
+    </div>
+
+    <!-- 右 70% 字段列表 -->
+    <div style="width:70%;display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:10px 16px;border-bottom:1px solid #f0f0f0;background:#fcfcfc;display:flex;align-items:center;gap:10px;">
+        <div style="font-size:12.5px;color:#606266;">共 <b style="color:#1890ff;">${visibleFields.length}</b> 个字段符合筛选 · 已选 <b style="color:#52c41a;" id="pkSelectedCount">${pickerSelectedFieldIds.size}</b> 个</div>
+        <div style="flex:1"></div>
+        <button class="btn" onclick="pickerSelectAll(${JSON.stringify(visibleFields.map(f=>f.id)).replace(/"/g,'&quot;')})">☑ 全选可见</button>
+        <button class="btn" onclick="pickerClearAll()">☐ 清空选择</button>
+      </div>
+      <div style="flex:1;overflow-y:auto;">
+        <table class="tpl-table" style="font-size:12px;">
+          <thead>
+            <tr>
+              <th style="width:30px;"></th>
+              <th>群组 / 字段</th>
+              <th style="width:70px;">类型</th>
+              <th style="width:80px;">赋值方式</th>
+              <th style="width:60px;text-align:center;">必填</th>
+              <th style="width:60px;text-align:center;">取值数</th>
+              <th style="width:120px;">子料号拼接</th>
+              <th style="width:80px;text-align:center;" title="已被多少模板引用">引用</th>
+              <th style="width:80px;">状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${visibleFields.length === 0 ? `
+              <tr><td colspan="9" style="text-align:center;color:#909399;padding:40px;">没有符合筛选条件的字段</td></tr>
+            ` : visibleFields.map(f => {
+              const dup = existingOptionCodes.has(f.code);
+              const checked = pickerSelectedFieldIds.has(f.id);
+              return `
+                <tr style="${dup?'opacity:.5;background:#fafafa;':''}" title="${dup?'当前模板已有同编号选项，会被跳过':''}">
+                  <td>
+                    <input type="checkbox" class="checkbox" ${checked?'checked':''} ${dup?'disabled':''}
+                      onchange="togglePickerField(${f.id},this.checked)" />
+                  </td>
+                  <td>
+                    <div style="font-size:11px;color:#909399;">${f.groupCode} · ${f.groupName}</div>
+                    <div style="font-weight:500;"><code>${f.code}</code> ${f.name}</div>
+                  </td>
+                  <td><span class="dt-tag-mini" style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10.5px;background:#e6f7ff;color:#0050b3;">${f.dataType}</span></td>
+                  <td><span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10.5px;background:#fafafa;color:#606266;border:1px solid #e0e0e0;">${f.assignMode}</span></td>
+                  <td style="text-align:center;">${f.isRequired ? '<span style="color:#cf1322;">✓</span>' : '<span style="color:#909399;">—</span>'}</td>
+                  <td style="text-align:center;color:#1890ff;font-weight:500;">${f.values.length || (f.assignMode==='MANUAL'?'∞':'—')}</td>
+                  <td>${(f.partnoPrefix||f.partnoSuffix) ? `<code style="font-size:10.5px;">${f.partnoPrefix||''}[值]${f.partnoSuffix||''}</code>` : '<span style="color:#bfbfbf;font-size:11px;">不参与</span>'}</td>
+                  <td style="text-align:center;color:#1890ff;">${f.refTemplates}</td>
+                  <td>${dup ? '<span class="status-tag draft" style="background:#fff1f0;color:#cf1322;border-color:#ffa39e;">已存在</span>' : `<span class="status-tag ${f.groupStatus==='ACTIVE'?'published':'draft'}">${f.groupStatus}</span>`}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  updatePickerSummary();
+}
+
+function togglePickerField(fieldId, checked) {
+  if (checked) pickerSelectedFieldIds.add(fieldId);
+  else pickerSelectedFieldIds.delete(fieldId);
+  updatePickerSummary();
+  const el = document.getElementById('pkSelectedCount');
+  if (el) el.innerText = pickerSelectedFieldIds.size;
+}
+
+function pickerSelectAll(visibleIds) {
+  const existingOptionCodes = new Set(template.options.map(o => o.code));
+  const allFields = featureLibrary.flatMap(g => g.fields);
+  visibleIds.forEach(fid => {
+    const f = allFields.find(x => x.id === fid);
+    if (f && !existingOptionCodes.has(f.code)) pickerSelectedFieldIds.add(fid);
+  });
+  renderFeaturePicker();
+}
+
+function pickerClearAll() {
+  pickerSelectedFieldIds.clear();
+  renderFeaturePicker();
+}
+
+function updatePickerSummary() {
+  const el = document.getElementById('featurePickerSummary');
+  if (!el) return;
+  if (pickerSelectedFieldIds.size === 0) {
+    el.innerHTML = `已选 <b>0</b> 个字段 — 至少选 1 个才能导入`;
+  } else {
+    const allFields = featureLibrary.flatMap(g => g.fields);
+    const selectedFields = [...pickerSelectedFieldIds].map(id => allFields.find(f => f.id === id)).filter(Boolean);
+    const totalValues = selectedFields.reduce((s,f)=>s+f.values.length, 0);
+    el.innerHTML = `已选 <b style="color:#52c41a;">${selectedFields.size}</b> 个字段（含 <b>${totalValues}</b> 个取值）将快照复制到模板`;
+  }
+}
+
+function importSelectedFeatures() {
+  if (pickerSelectedFieldIds.size === 0) {
+    showToast('warning', '⚠ 请至少选择 1 个字段');
+    return;
+  }
+  const allFields = featureLibrary.flatMap(g => g.fields.map(f => ({...f, groupCode: g.code})));
+  const existingOptionCodes = new Set(template.options.map(o => o.code));
+  let imported = 0, skipped = 0;
+  const snapshotTs = new Date().toISOString().slice(0,16).replace('T',' ');
+
+  [...pickerSelectedFieldIds].forEach(fid => {
+    const f = allFields.find(x => x.id === fid);
+    if (!f) return;
+    if (existingOptionCodes.has(f.code)) { skipped++; return; }
+    // 快照复制：写入 template.options（模拟方案 B）
+    template.options.push({
+      code: f.code,
+      label: f.name,
+      type: f.assignMode === 'SELECT' ? 'EXCLUSIVE' : (f.assignMode === 'MANUAL' ? 'INPUT' : 'COMPUTED'),
+      required: f.isRequired,
+      dataType: f.dataType,
+      assignMode: f.assignMode,
+      defaultValue: f.defaultValue,
+      partnoPrefix: f.partnoPrefix,
+      partnoSuffix: f.partnoSuffix,
+      sourceFeatureFieldId: f.id,           // §18A.4 追溯外键
+      sourceFeatureGroup: f.groupCode,
+      sourceFeatureSnapshotAt: snapshotTs,
+      values: (f.values||[]).map(v => ({
+        code: v.code, label: v.label, priceDelta: 0,
+        sourceFeatureValueId: v.id,
+        sourceFeatureSnapshotAt: snapshotTs,
+      }))
+    });
+    imported++;
+  });
+
+  showToast('info', `✓ 已导入 <b>${imported}</b> 个字段（${skipped>0?`跳过 ${skipped} 个重复, `:''}快照时间 ${snapshotTs}）<br/>各 option 已标记 <code>sourceFeatureFieldId</code> 用于后续「📋 重新拉取」追溯`);
+  closeFeaturePicker();
+  switchEditorTab('options');
+}
+
+// ============================================================
+// Toast
+// ============================================================
+function showToast(level, html) {
+  const stack = document.getElementById('toastStack');
+  const t = document.createElement('div');
+  t.className = 'toast ' + level;
+  t.innerHTML = html;
+  stack.appendChild(t);
+  setTimeout(() => {
+    t.style.transition = 'opacity .3s, transform .3s';
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(120%)';
+    setTimeout(() => t.remove(), 350);
+  }, 3500);
+}
+</script>
+</body>
+</html>

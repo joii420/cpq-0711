@@ -202,7 +202,7 @@ const OverridesDrawer: React.FC<OverridesDrawerProps> = ({
       />
 
       {/* ---- Driver Path Override ---- */}
-      <Divider orientation="left" plain style={{ marginTop: 8 }}>
+      <Divider titlePlacement="left" plain style={{ marginTop: 8 }}>
         <Space>
           <Text strong>Driver Path 覆盖</Text>
           <Switch
@@ -238,7 +238,7 @@ const OverridesDrawer: React.FC<OverridesDrawerProps> = ({
       )}
 
       {/* ---- Fields Override ---- */}
-      <Divider orientation="left" plain style={{ marginTop: 24 }}>
+      <Divider titlePlacement="left" plain style={{ marginTop: 24 }}>
         <Space>
           <Text strong>字段定义覆盖</Text>
           <Switch

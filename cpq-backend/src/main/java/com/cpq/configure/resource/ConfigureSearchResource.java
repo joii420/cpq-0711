@@ -47,21 +47,44 @@ public class ConfigureSearchResource {
         int safeSize = Math.min(Math.max(size, 1), 200);
         String pattern = "%" + q.trim() + "%";
 
-        // 选配 Step1 搜索"已有配件" — 只允许 SIMPLE 类型料号作为子配件,
-        // 防止 COMPOSITE 父级料号(如 CFG-COMBO-xxx)被误选,导致嵌套组合(语义混乱 + 核价递归).
+        // 选配 Step1 搜索"已有配件" — V6 数据源（AP-53 老表禁用 + 续 5 字典绑定迁 V6）：
+        //   - 表：mat_part → material_master
+        //   - 材质（recipe）：material_master.material_recipe_id LEFT JOIN material_recipe（V265 绑定迁 V6）
+        //     · 绑定时 recipeCode/Symbol/Name/Type 取字典值（Step2 字典派一致；Step1 展示如 "AgCu 银铜合金"）
+        //     · 未绑定回退 material_type（粗分类，如 "1.银点类"）
+        //   - 独立产品过滤（语义校正 2026-05-27）：返回「可作为顶层报价的料号」
+        //     · 父件 (出现在 material_bom_item.material_no 且 characteristic='ASSEMBLY')：保留 — 本身是要报价的产品
+        //     · 子件 (出现在 material_bom_item.component_no 且 characteristic='ASSEMBLY')：排除 — 中间装配料号不能单独报价
+        //     · 普通独立料号 (不在 ASSEMBLY 表)：保留
+        //     ⚠️ 之前写成 asy.material_no = mm.material_no 是错的 — 那会把父件 (顶层报价产品) 排掉
+        //   - status_code：V6 无停产维度，固定 'Y'
+        //   - size_info → dimension：V6 字段重命名
+        //   - 跨客户搜索（与 V44 行为一致，不限定当前报价单客户）
         List<Object[]> rows = em.createNativeQuery(
-                "SELECT mp.part_no, mp.part_name, mp.specification, mp.size_info, mp.status_code, " +
-                "       mr.id, mr.code, mr.symbol, mr.name, mr.spec_label, mr.recipe_type " +
-                "FROM mat_part mp " +
-                "LEFT JOIN material_recipe mr ON mr.id = mp.material_recipe_id " +
-                "WHERE COALESCE(mp.status_code, 'Y') = 'Y' " +
-                "  AND COALESCE(mp.product_type, 'SIMPLE') = 'SIMPLE' " +
-                "  AND ( mp.part_no ILIKE :p OR mp.part_name ILIKE :p OR " +
-                "        COALESCE(mp.specification,'') ILIKE :p OR " +
-                "        COALESCE(mp.size_info,'') ILIKE :p OR " +
+                "SELECT mm.material_no, mm.material_name, mm.specification, mm.dimension, " +
+                "       'Y' AS status_code, " +
+                "       mm.material_recipe_id AS recipe_id, " +
+                "       mr.code AS recipe_code, " +
+                "       COALESCE(mr.symbol, mm.material_type) AS recipe_symbol, " +
+                "       COALESCE(mr.name, mm.material_type) AS recipe_name, " +
+                "       COALESCE(mr.spec_label, mm.specification) AS recipe_spec, " +
+                "       COALESCE(mr.recipe_type, mm.material_type) AS recipe_type " +
+                "FROM material_master mm " +
+                "LEFT JOIN material_recipe mr ON mr.id = mm.material_recipe_id " +
+                "WHERE NOT EXISTS ( " +
+                "    SELECT 1 FROM material_bom_item asy " +
+                "    WHERE asy.system_type='QUOTE' " +
+                "      AND asy.characteristic='ASSEMBLY' " +
+                "      AND asy.component_no = mm.material_no " +   // 排除子件,保留父件 + 独立料号
+                ") " +
+                "  AND ( mm.material_no ILIKE :p OR " +
+                "        COALESCE(mm.material_name,'') ILIKE :p OR " +
+                "        COALESCE(mm.specification,'') ILIKE :p OR " +
+                "        COALESCE(mm.dimension,'') ILIKE :p OR " +
+                "        COALESCE(mm.material_type,'') ILIKE :p OR " +
                 "        COALESCE(mr.symbol,'') ILIKE :p OR " +
-                "        COALESCE(mr.name,'') ILIKE :p ) " +
-                "ORDER BY mp.part_no " +
+                "        COALESCE(mr.code,'') ILIKE :p ) " +
+                "ORDER BY mm.material_no " +
                 "LIMIT :s")
             .setParameter("p", pattern)
             .setParameter("s", safeSize)

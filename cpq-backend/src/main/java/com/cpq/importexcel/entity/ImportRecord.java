@@ -19,8 +19,12 @@ public class ImportRecord extends PanacheEntityBase {
     @Column(name = "quotation_id")
     public UUID quotationId;
 
-    @Column(name = "customer_id", nullable = false)
+    @Column(name = "customer_id")
     public UUID customerId;
+
+    /** V6 系统区分：QUOTE / PRICING / OTHER */
+    @Column(name = "system_type", length = 20)
+    public String systemType;
 
     @Column(name = "template_id")
     public UUID templateId;

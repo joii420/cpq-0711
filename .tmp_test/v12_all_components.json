@@ -1,0 +1,1222 @@
+[
+  {
+    "id": "fb38af66-2811-4256-840a-edc24ed37627",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-客户料号对应关系 (v1.2)",
+    "code": "COMP-V5-PART-MAPPING-V12",
+    "columnCount": 7,
+    "fields": [
+      {
+        "name": "客户料号名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_part_mapping.customer_part_name"
+      },
+      {
+        "name": "客户产品编号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_part_mapping.customer_product_no"
+      },
+      {
+        "name": "客户图号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_part_mapping.customer_drawing_no"
+      },
+      {
+        "name": "宏丰料号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_part_mapping.hf_part_no"
+      },
+      {
+        "name": "付款方式",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_part_mapping.payment_method"
+      },
+      {
+        "name": "基础货币",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_part_mapping.base_currency"
+      },
+      {
+        "name": "报价货币",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_part_mapping.quote_currency"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_part_mapping",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "c60c7e60-246d-4405-b829-6e30d2fa9108",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-来料BOM (v1.2)",
+    "code": "COMP-V5-RAW-BOM-V12",
+    "columnCount": 9,
+    "fields": [
+      {
+        "name": "序号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_raw_bom.seq_no"
+      },
+      {
+        "name": "来料料号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_raw_bom.input_material_no"
+      },
+      {
+        "name": "工序号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_raw_bom.process_no"
+      },
+      {
+        "name": "工序名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_raw_bom.process_name"
+      },
+      {
+        "name": "输入数量",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_raw_bom.input_qty"
+      },
+      {
+        "name": "输入单位",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_raw_bom.input_unit"
+      },
+      {
+        "name": "产出数量",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_raw_bom.output_qty"
+      },
+      {
+        "name": "产出损耗率(%)",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_raw_bom.output_loss_rate"
+      },
+      {
+        "name": "损耗率(%)",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_raw_bom.loss_rate"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_raw_bom",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "9e90c8b7-b93e-4d25-800c-aeb03fc92081",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-来料与元素BOM (v1.2)",
+    "code": "COMP-V5-RAW-ELEMENT-BOM-V12",
+    "columnCount": 5,
+    "fields": [
+      {
+        "name": "来料料号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_raw_element_bom.input_material_no"
+      },
+      {
+        "name": "项次",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_raw_element_bom.element_seq_no"
+      },
+      {
+        "name": "元素代码",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_raw_element_bom.element_code"
+      },
+      {
+        "name": "组成含量(%)",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_raw_element_bom.composition_pct"
+      },
+      {
+        "name": "损耗率(%)",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_raw_element_bom.loss_rate"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_raw_element_bom",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "d0d83638-8fe3-4612-a654-2e4a2d1ebb40",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-人工成本(单价) (v1.2)",
+    "code": "COMP-V5-LABOR-COST-V12",
+    "columnCount": 5,
+    "fields": [
+      {
+        "name": "工序号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_labor_cost.process_no"
+      },
+      {
+        "name": "工序名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_labor_cost.process_name"
+      },
+      {
+        "name": "人工标准单价",
+        "content": "",
+        "is_amount": true,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_labor_cost.unit_price"
+      },
+      {
+        "name": "币种",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_labor_cost.currency"
+      },
+      {
+        "name": "单位",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_labor_cost.unit"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_labor_cost",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "869ac796-c388-4259-8dfc-25cddf650484",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-设备折旧成本 (v1.2)",
+    "code": "COMP-V5-DEPRECIATION-V12",
+    "columnCount": 5,
+    "fields": [
+      {
+        "name": "工序号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_depreciation_cost.process_no"
+      },
+      {
+        "name": "工序名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_depreciation_cost.process_name"
+      },
+      {
+        "name": "折旧单价",
+        "content": "",
+        "is_amount": true,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_depreciation_cost.unit_price"
+      },
+      {
+        "name": "币种",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_depreciation_cost.currency"
+      },
+      {
+        "name": "单位",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_depreciation_cost.unit"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_depreciation_cost",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "b2168064-da27-4e6d-8d8f-739b286f4cf9",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-生产设备能耗 (v1.2)",
+    "code": "COMP-V5-ENERGY-PROD-V12",
+    "columnCount": 5,
+    "fields": [
+      {
+        "name": "工序号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_energy_prod_cost.process_no"
+      },
+      {
+        "name": "工序名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_energy_prod_cost.process_name"
+      },
+      {
+        "name": "能耗单价",
+        "content": "",
+        "is_amount": true,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_energy_prod_cost.unit_price"
+      },
+      {
+        "name": "币种",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_energy_prod_cost.currency"
+      },
+      {
+        "name": "单位",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_energy_prod_cost.unit"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_energy_prod_cost",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "50989ab6-2b6b-4d26-a5bd-00d197454aa5",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-辅助设备能耗 (v1.2)",
+    "code": "COMP-V5-ENERGY-AUX-V12",
+    "columnCount": 5,
+    "fields": [
+      {
+        "name": "工序号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_energy_aux_cost.process_no"
+      },
+      {
+        "name": "工序名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_energy_aux_cost.process_name"
+      },
+      {
+        "name": "能耗单价",
+        "content": "",
+        "is_amount": true,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_energy_aux_cost.unit_price"
+      },
+      {
+        "name": "币种",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_energy_aux_cost.currency"
+      },
+      {
+        "name": "单位",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_energy_aux_cost.unit"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_energy_aux_cost",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "bdd08e37-8116-4359-9a24-79377791a05c",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-模具工装成本 (v1.2)",
+    "code": "COMP-V5-TOOLING-V12",
+    "columnCount": 9,
+    "fields": [
+      {
+        "name": "工序号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_tooling_cost.process_no"
+      },
+      {
+        "name": "工序名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_tooling_cost.process_name"
+      },
+      {
+        "name": "序号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_tooling_cost.seq_no"
+      },
+      {
+        "name": "模具编号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_tooling_cost.tooling_no"
+      },
+      {
+        "name": "单套成本",
+        "content": "",
+        "is_amount": true,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_tooling_cost.tooling_unit_cost"
+      },
+      {
+        "name": "工艺次数",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_tooling_cost.process_count"
+      },
+      {
+        "name": "可循环次数",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_tooling_cost.cycle_count"
+      },
+      {
+        "name": "模具单价",
+        "content": "",
+        "is_amount": true,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_tooling_cost.unit_price"
+      },
+      {
+        "name": "币种",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_tooling_cost.currency"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_tooling_cost",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "1f958691-a5d7-483c-9e2b-0fe42872ccb2",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-生产耗材 (v1.2)",
+    "code": "COMP-V5-CONSUMABLE-PROD-V12",
+    "columnCount": 5,
+    "fields": [
+      {
+        "name": "工序号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_consumable_prod.process_no"
+      },
+      {
+        "name": "工序名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_consumable_prod.process_name"
+      },
+      {
+        "name": "耗材成本单价",
+        "content": "",
+        "is_amount": true,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_consumable_prod.unit_price"
+      },
+      {
+        "name": "币种",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_consumable_prod.currency"
+      },
+      {
+        "name": "单位",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_consumable_prod.unit"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_consumable_prod",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "5787dd8e-3b6c-44b7-acef-3d85d7e11bdf",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-包装材料 (v1.2)",
+    "code": "COMP-V5-PACKAGING-V12",
+    "columnCount": 5,
+    "fields": [
+      {
+        "name": "工序号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_packaging.process_no"
+      },
+      {
+        "name": "工序名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_packaging.process_name"
+      },
+      {
+        "name": "包装材料单价",
+        "content": "",
+        "is_amount": true,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_packaging.unit_price"
+      },
+      {
+        "name": "币种",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_packaging.currency"
+      },
+      {
+        "name": "单位",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_packaging.unit"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_packaging",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "30059d94-5d7b-4e17-bc91-6624828bfba7",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-来料加工费 (v1.2)",
+    "code": "COMP-V5-INCOMING-PROC-V12",
+    "columnCount": 5,
+    "fields": [
+      {
+        "name": "工序号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_proc.process_no"
+      },
+      {
+        "name": "工序名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_proc.process_name"
+      },
+      {
+        "name": "加工费",
+        "content": "",
+        "is_amount": true,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_incoming_proc.unit_price"
+      },
+      {
+        "name": "币种",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_proc.currency"
+      },
+      {
+        "name": "单位",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_proc.unit"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_incoming_proc",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "07255431-010c-4b69-ae89-0f4c2707696f",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-来料其他费用(比例) (v1.2)",
+    "code": "COMP-V5-INCOMING-OTHER-V12",
+    "columnCount": 7,
+    "fields": [
+      {
+        "name": "一级项次",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_other.seq_no"
+      },
+      {
+        "name": "来料料号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_other.dim_input_material_no"
+      },
+      {
+        "name": "二级项次",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_other.dim_sub_seq_no"
+      },
+      {
+        "name": "要素名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_other.dim_element_name"
+      },
+      {
+        "name": "比例(%)",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_incoming_other.fee_ratio"
+      },
+      {
+        "name": "币种",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_other.currency"
+      },
+      {
+        "name": "价格单位",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_other.price_unit"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_incoming_other",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "e0c94056-0a70-46eb-b1da-0b4412dff91a",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-来料其他固定费用 (v1.2)",
+    "code": "COMP-V5-INCOMING-FIXED-FEE-V12",
+    "columnCount": 8,
+    "fields": [
+      {
+        "name": "一级项次",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_fixed_fee.seq_no"
+      },
+      {
+        "name": "来料料号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_fixed_fee.dim_input_material_no"
+      },
+      {
+        "name": "二级项次",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_fixed_fee.dim_sub_seq_no"
+      },
+      {
+        "name": "要素名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_fixed_fee.dim_element_name"
+      },
+      {
+        "name": "费用值",
+        "content": "",
+        "is_amount": true,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_incoming_fixed_fee.fee_value"
+      },
+      {
+        "name": "币种",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_fixed_fee.currency"
+      },
+      {
+        "name": "价格单位",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_fixed_fee.price_unit"
+      },
+      {
+        "name": "价格浮动",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_incoming_fixed_fee.price_floating"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_incoming_fixed_fee",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "59461313-6c0a-4e47-a1c6-5cc45b04cccc",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-成品加工费&组装费 (v1.2)",
+    "code": "COMP-V5-FINISHED-PROC-V12",
+    "columnCount": 5,
+    "fields": [
+      {
+        "name": "工序号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_finished_proc.process_no"
+      },
+      {
+        "name": "工序名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_finished_proc.process_name"
+      },
+      {
+        "name": "加工费",
+        "content": "",
+        "is_amount": true,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_finished_proc.unit_price"
+      },
+      {
+        "name": "币种",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_finished_proc.currency"
+      },
+      {
+        "name": "单位",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_finished_proc.unit"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_finished_proc",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "beb1ae89-3d47-4e20-a22f-f1120b8fd3a5",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-成品其他比例费用 (v1.2)",
+    "code": "COMP-V5-FINISHED-OTHER-V12",
+    "columnCount": 5,
+    "fields": [
+      {
+        "name": "项次",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_finished_other.seq_no"
+      },
+      {
+        "name": "要素名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_finished_other.dim_element_name"
+      },
+      {
+        "name": "比例(%)",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_finished_other.fee_ratio"
+      },
+      {
+        "name": "币种",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_finished_other.currency"
+      },
+      {
+        "name": "价格单位",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_finished_other.price_unit"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_finished_other",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "efd7bc2e-3b7c-47ba-a26c-052b608feb90",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-成品其他固定费用 (v1.2)",
+    "code": "COMP-V5-FINISHED-FIXED-FEE-V12",
+    "columnCount": 5,
+    "fields": [
+      {
+        "name": "项次",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_finished_fixed_fee.seq_no"
+      },
+      {
+        "name": "要素名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_finished_fixed_fee.dim_element_name"
+      },
+      {
+        "name": "费用值",
+        "content": "",
+        "is_amount": true,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_finished_fixed_fee.fee_value"
+      },
+      {
+        "name": "币种",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_finished_fixed_fee.currency"
+      },
+      {
+        "name": "价格单位",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_finished_fixed_fee.price_unit"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_finished_fixed_fee",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "72deefbb-8d81-487e-aba3-a67ed41c55a3",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-电镀方案 (v1.2)",
+    "code": "COMP-V5-PLATING-SCHEME-V12",
+    "columnCount": 7,
+    "fields": [
+      {
+        "name": "方案编号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_plating_scheme.plan_code"
+      },
+      {
+        "name": "版本",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_plating_scheme.plan_version"
+      },
+      {
+        "name": "项次",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_plating_scheme.seq_no"
+      },
+      {
+        "name": "电镀元素",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_plating_scheme.plating_element"
+      },
+      {
+        "name": "电镀面积(cm²)",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_plating_scheme.plating_area"
+      },
+      {
+        "name": "镀层厚度(μm)",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_plating_scheme.coating_thickness"
+      },
+      {
+        "name": "镀层要求",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_plating_scheme.plating_requirement"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_plating_scheme",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "d664f000-e418-497f-836e-62baa5e747a5",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-电镀成本 (v1.2)",
+    "code": "COMP-V5-PLATING-COST-V12",
+    "columnCount": 7,
+    "fields": [
+      {
+        "name": "方案编号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_plating_cost.plan_code"
+      },
+      {
+        "name": "版本",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_plating_cost.plan_version"
+      },
+      {
+        "name": "电镀加工费",
+        "content": "",
+        "is_amount": true,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_plating_cost.plating_process_fee"
+      },
+      {
+        "name": "电镀材料费",
+        "content": "",
+        "is_amount": true,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_plating_cost.plating_material_fee"
+      },
+      {
+        "name": "币种",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_plating_cost.currency"
+      },
+      {
+        "name": "价格单位",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_plating_cost.price_unit"
+      },
+      {
+        "name": "不良率(%)",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_plating_cost.defect_rate"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_plating_cost",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "31e1cc9f-c731-4b07-afa9-9d3ace91c564",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-其他外加工成本 (v1.2)",
+    "code": "COMP-V5-OUTSOURCE-V12",
+    "columnCount": 5,
+    "fields": [
+      {
+        "name": "工序号",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_outsource_cost.process_no"
+      },
+      {
+        "name": "工序名称",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_outsource_cost.process_name"
+      },
+      {
+        "name": "外加工费用",
+        "content": "",
+        "is_amount": true,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_outsource_cost.unit_price"
+      },
+      {
+        "name": "币种",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_outsource_cost.currency"
+      },
+      {
+        "name": "单位",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": false,
+        "basic_data_path": "$v12_outsource_cost.unit"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_outsource_cost",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  },
+  {
+    "id": "d8e4487b-50f8-4154-ac2a-5ad747369070",
+    "directoryId": "d5e1f2a3-0005-4005-8005-000000000005",
+    "name": "核价V5-单重 (v1.2)",
+    "code": "COMP-V5-WEIGHT-V12",
+    "columnCount": 1,
+    "fields": [
+      {
+        "name": "单重(g/pcs)",
+        "content": "",
+        "is_amount": false,
+        "field_type": "BASIC_DATA",
+        "is_subtotal": true,
+        "basic_data_path": "$v12_weight.weight_g_per_pcs"
+      }
+    ],
+    "formulas": [],
+    "componentType": "NORMAL",
+    "dataDriverPath": "$v12_weight",
+    "status": "ACTIVE",
+    "createdAt": "2026-05-27T02:33:45.663605Z",
+    "updatedAt": "2026-05-27T02:33:45.663605Z"
+  }
+]

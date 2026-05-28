@@ -1,11 +1,13 @@
 package com.cpq.formula.dataloader;
 
+import com.cpq.component.dto.RuntimeContext;
 import com.cpq.datapath.CpqPathParser;
 import com.cpq.datapath.ast.PathExpression;
 import com.cpq.datapath.cache.CachedPathParser;
 import com.cpq.datapath.cache.CachedSqlCompiler;
 import com.cpq.datapath.sql.SchemaContext;
 import com.cpq.datapath.sql.SqlAndParams;
+import com.cpq.datasource.sqlview.SqlViewExecutor;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
@@ -66,6 +68,10 @@ public class DataLoader {
     @Inject
     ImplicitJoinRewriter implicitJoinRewriter;
 
+    /** 阶段 2: 组件级数据源 SQL 视图执行通路（path 以 $ 开头时旁路 CachedPathParser/SqlCompiler 走此通路） */
+    @Inject
+    SqlViewExecutor sqlViewExecutor;
+
     /**
      * 按路径查询，同请求内相同 path 只执行一次 SQL。
      *
@@ -78,6 +84,22 @@ public class DataLoader {
         }
         // 规范化 path（剥去花括号）
         String normalizedPath = normalizePath(path);
+
+        // 阶段 2: $ 前缀走 SqlViewExecutor 旁路（无上下文版本）
+        if (sqlViewExecutor.isSqlViewPath(normalizedPath)) {
+            return resultCache.computeIfAbsent(normalizedPath, p -> {
+                try {
+                    RuntimeContext emptyCtx = new RuntimeContext();
+                    return CompletableFuture.completedFuture(
+                            sqlViewExecutor.execute(p, emptyCtx, null));
+                } catch (Exception e) {
+                    LOG.warnf("DataLoader sql-view failed for path='%s': %s", p, e.getMessage());
+                    CompletableFuture<List<Map<String, Object>>> failed = new CompletableFuture<>();
+                    failed.completeExceptionally(e);
+                    return failed;
+                }
+            });
+        }
 
         return resultCache.computeIfAbsent(normalizedPath, this::executeQuery);
     }
@@ -135,6 +157,38 @@ public class DataLoader {
         if (path == null || path.isBlank()) {
             return CompletableFuture.completedFuture(List.of());
         }
+
+        // 阶段 2: $ 前缀走 SqlViewExecutor 旁路 — 在 ImplicitJoinRewriter 之前拦截，
+        // 用完整 RuntimeContext + partNo batch 执行
+        String normalizedPath = normalizePath(path);
+        if (sqlViewExecutor.isSqlViewPath(normalizedPath)) {
+            return resultCache.computeIfAbsent(normalizedPath + "::" + partNo + "::" + customerId, key -> {
+                try {
+                    RuntimeContext ctx = new RuntimeContext();
+                    if (customerId != null) {
+                        ctx.quotation = new RuntimeContext.QuotationContext(null, customerId);
+                    }
+                    List<String> partNos = (partNo != null && !partNo.isBlank())
+                            ? List.of(partNo) : null;
+                    // 区分两种 $ 路径形态:
+                    //   $view[pred]?            → driver path 返整行 (component data_driver_path 用)
+                    //   $view[pred]?.column     → 字段 BNF 返单列 (component fields[].basic_data_path 用)
+                    List<Map<String, Object>> rows;
+                    if (sqlViewExecutor.isDriverViewPath(normalizedPath)) {
+                        rows = sqlViewExecutor.executeAllRows(normalizedPath, ctx, partNos);
+                    } else {
+                        rows = sqlViewExecutor.execute(normalizedPath, ctx, partNos);
+                    }
+                    return CompletableFuture.completedFuture(rows);
+                } catch (Exception e) {
+                    LOG.warnf("DataLoader sql-view-ctx failed for path='%s': %s", normalizedPath, e.getMessage());
+                    CompletableFuture<List<Map<String, Object>>> failed = new CompletableFuture<>();
+                    failed.completeExceptionally(e);
+                    return failed;
+                }
+            });
+        }
+
         boolean noDriver = (driverRow == null || driverRow.isEmpty());
         boolean noPartNo = (partNo == null || partNo.isBlank());
         boolean noCustomer = (customerId == null);

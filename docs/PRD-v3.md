@@ -2239,6 +2239,63 @@ v_costing_exchange_rate[from_currency='CNY' AND to_currency='USD'].costing_rate
 | 多行 List | "首值(共N项)" — **此即反模式预警**,见附录 10.4 |
 | null | 显示 "—" |
 
+### 8.3.5 模板 SQL 视图（独立配置）
+
+**背景**：Excel 模板（`template_kind=EXCEL`）的列取数路径（`variable_path`）原依赖物理 PG 视图或组件 SQL 视图（`component_sql_view`）。V249/V250 为 `template` 层引入独立的 `template_sql_view` 表，使模板可以维护专属 SQL 视图，与组件层完全隔离。
+
+#### 引用语法
+
+模板 Excel 视图列的 `variable_path` 支持三种写法（按优先级推荐顺序）：
+
+| 写法 | 示例 | 解析目标 |
+|---|---|---|
+| `$<sql_view_name>.<col>` | `$summary_full.material_cost` | 本模板 `template_sql_view` 表中 `name=summary_full` 的视图 |
+| `{code}` 简写 | `{hf_part_no}` | lineItem 内存字段（不查 DB） |
+| `<pg_view>.<col>` | `v_costing_summary_full.material_cost` | 物理 PG 视图直引（遗留，不推荐新配） |
+
+> **禁止**在 Excel 视图列路径里使用 `$$<componentCode>.<sql_view_name>` 跨组件引用语法。该语法仅在**组件上下文**（ownerType=COMPONENT）下有效；模板上下文（ownerType=TEMPLATE）的 `SqlViewExecutor` 会强抛 `BusinessException` 拒绝请求。
+
+#### 与组件 SQL 视图的隔离边界
+
+| 维度 | 组件 SQL 视图（component_sql_view） | 模板 SQL 视图（template_sql_view） |
+|---|---|---|
+| **物理表** | `component_sql_view`，FK → `component.id` | `template_sql_view`，FK → `template.id` |
+| **引用路径前缀** | `$<name>` 在组件上下文 | `$<name>` 在模板上下文 |
+| **跨引用** | `$$code.name` 可引用 GLOBAL scope 的组件视图 | 禁止 `$$` 前缀（强阻断） |
+| **scope** | COMPONENT / GLOBAL | LOCAL（仅本模板） |
+| **执行器路由** | `SqlViewExecutor` ownerType=COMPONENT | `SqlViewExecutor` ownerType=TEMPLATE |
+| **发布快照** | 冻结到 `template.components_snapshot` JSONB | 冻结到 `template.template_sql_views_snapshot` JSONB |
+
+#### 模板发布时 snapshot 冻结语义
+
+`TemplateService.publish` 在状态机切换 DRAFT→PUBLISHED 时同事务执行两件事：
+
+1. **跨引用校验**：扫 `excel_view_config` 所有列的 `variable_path`，若发现含 `$$` 前缀的跨引用路径，立即抛 `BusinessException` 阻断发布。
+2. **snapshot 冻结**：拉取本模板所有 `status=ACTIVE` 的 `template_sql_view` 行，序列化写入 `template.template_sql_views_snapshot` JSONB（与 `components_snapshot` 同事务）。
+
+报价单提交（DRAFT→SUBMITTED）后，`SqlViewExecutor` 查询优先级：**报价单 snapshot > 模板 template_sql_views_snapshot > 实时 template_sql_view**，确保历史报价可复现。
+
+`TemplateService.createNewDraft` 派生新草稿时，`TemplateSqlViewService.deepCopySqlViews` 把所有 `template_sql_view` 行 deep-copy 到新草稿，新草稿独立维护，修改不影响原版本。
+
+#### 路径校验规则（强制）
+
+1. **`$$` 禁用**：模板 Excel 视图列 `variable_path` 不得包含 `$$` 前缀（会在 `PathPickerDrawer ownerContext=TEMPLATE` 层拦截 + 后端 publish 时再次校验）。
+2. **V44 老表禁用**（AP-53 延伸）：`template_sql_view.sql_template` 内部禁止 `FROM mat_part / mat_bom / mat_process / mat_fee / plating_plan / mat_customer_part_mapping / element_price*` 等 V44 已废弃表；过渡期可包一层 PG 视图，Phase 4 完成后必须改查 V6 表。
+3. **dry-run 保存前验证**：新建 / 编辑 `template_sql_view` 保存时后端自动执行 EXPLAIN dry-run，拒绝 DDL/DML 语句 + 拒绝 `:hfPartNo` 标量占位符。
+
+#### 配置入口（UI）
+
+1. 进入「模板配置」→「TemplateConfiguration」编辑页。
+2. 顶部 Tabs 切换到第三个 Tab「SQL 视图」（`TemplateSqlViewsTab`）。
+3. 在 Tab 内新建 / 编辑 / 删除 / dry-run 视图（PUBLISHED 模板只读，需先派生草稿）。
+4. 切换到第一个 Tab「列配置」→「ExcelViewConfigTab」，编辑某列的 `variable_path` 时点击「SQL 视图」按钮，弹出 `PathPickerDrawer`（`ownerContext=TEMPLATE`），可在"SQL 视图" Tab 选择本模板的视图字段，自动写回 `$<name>.<col>` 格式。
+
+**验收标准**
+
+- Given 管理员在 TemplateSqlViewsTab 新建名为 `summary_full` 的 SQL 视图并保存；When 在列配置里通过 PathPickerDrawer 选择该视图字段；Then `variable_path` 写回为 `$summary_full.<col>` 格式。
+- Given 模板包含 `$$comp.view.col` 路径的列；When 管理员执行「发布」；Then 系统抛出业务异常，阻断发布，提示需先修正路径。
+- Given 模板 PUBLISHED 后用户以该模板创建报价单并提交；When 后续 `template_sql_view` 被修改；Then 已提交报价单的 Excel 视图仍使用发布时的 snapshot 数据，不受影响。
+
 ### 8.4 视图层与缓存策略
 
 #### 8.4.1 关键视图
@@ -2397,6 +2454,70 @@ v_costing_exchange_rate[from_currency='CNY' AND to_currency='USD'].costing_rate
 | **INACTIVE GV 策略** | 历史绑定保留（带「已停用」徽章），候选列表过滤 INACTIVE；防止管理员"意外失察"删除历史绑定数据 |
 | **大表分页** | LOOKUP_TABLE 类 GV 行数 > 10 自动分页 pageSize=10；SCALAR 类 GV 用 Descriptions 渲染（v3.5 修订废除，统一 form 形式） |
 | **PDF/Excel 导出本阶段不做** | 列入未来增量（§3.8 V2 规划），本次范围仅 web 端 Tab 展示 |
+
+### 9.18 v4.0(2026-05-27)— 主数据维护 Hub 工序 Tab V6 化 + BOM Tab 新建 + V44 ProcessManagement 退出
+
+| 改动 | 内容 |
+|---|---|
+| **工序 Tab** | 改为只读查看 V6 `process_master`；CRUD 完全退出 UI 入口（删除 ProcessManagement/RegularProcessTab/CompositeProcessTab + EditDrawer 共 5 个旧 .tsx + router `/config/processes` 路由）；后端 V44 ProcessResource/Service 暂保留观察一轮，避免连锁影响 |
+| **BOM Tab** | 新建只读查询页（原 Tab 空 placeholder）：客户编号下拉（必选）+ 料号下拉（可搜索 + 客户切换清空 + ≤500 截断提示）+ 系统类型 Radio（全部/报价/核价/共用）+ 查询按钮；列表 11 主列 + 详情 Drawer 5 组（维度键/项次工序/用量损耗/选项追溯/审计）展示完整 49 字段 |
+| **systemType 宽松语义** | `QUOTE → system_type IN ('QUOTE','BOTH')`、`PRICING → IN ('PRICING','BOTH')`、`BOTH` 精确匹配；BOTH 行同时归属报价和核价视图 |
+| **材质 / 料号 / 数据模板 Tab** | 不动；材质沿用 V44 `material_recipe`（用户明确「使用之前的」），通过 `material_recipe.part_no` 与 V6 `material_master` 关联 |
+| **新增 API** | `GET /api/cpq/v6/process-master?page&size&keyword` + `GET /api/cpq/v6/material-bom-items` + `/customer-nos` + `/material-nos`；权限 SALES_REP/SALES_MANAGER/PRICING_MANAGER/SYSTEM_ADMIN |
+| **错误码** | `MISSING_CUSTOMER_NO`（400 BOM 查询/material-nos 漏传 customerNo）/ `INVALID_SYSTEM_TYPE`（400）/ `INVALID_PAGE_SIZE`（400 size>200）|
+| **缓存** | `findDistinctCustomerNos` 用 ConcurrentHashMap + volatile lastFetchedAt 5min TTL（项目未引入 quarkus-cache 扩展） |
+| **AP-53 纪律** | 全部 FROM V6 表（material_bom_item / process_master / material_master）；零 V44 老表引用 |
+| **测试** | Playwright E2E `cpq-frontend/e2e/master-data-v6-tabs.spec.ts` 7 passed 覆盖工序 Tab 5 AC + BOM Tab 10 AC + 老路由 404 + 材质/料号 Tab 回归 |
+| **路径迁移过程踩 3 个 bug** | B3（前端 ApiResponse 未解包导致整页崩溃；查项目其他 service 引入 `unwrap` 函数标准化）、B1（前端 systemType 枚举 `QUOTATION/COSTING/COMMON` ≠ 后端 `QUOTE/PRICING/BOTH`）、B2（同 B1 字典键不匹配致 Tag 不显色）。教训：前端 service 必须 grep 项目惯用 unwrap 模式；枚举值必须从后端实际 entity/DTO 拷贝，禁脑补 |
+| **关联文档** | `docs/列表操作规范.md` / `docs/方案制定前必读.md` §V6 / `docs/RECORD.md` 当日 4 条记录 |
+
+### 9.17 v3.9(2026-05-27)— buildEvalKey 4 段协议对齐 + v1.30 process_info 视图聚合修复
+
+修复 v3.7 (V249/V250) 引入 template_sql_view 后遗留的两个 bug：
+
+| 修复 | 内容 |
+|---|---|
+| **buildEvalKey 4 段协议对齐**（前端） | 后端 `FormulaEvaluateResource.batchEvaluate` 在 V249 时把 `r.key` 升级为 4 段 `expr:customerId:partNo:templateId`，但前端 `formulaService.ts:buildEvalKey` 仍是 3 段；导致 `LinkedExcelView.tsx` 用 3 段 reqKey 反查 4 段 itemByKey 永远 miss，pathCache 强制写 null，V111 noCostingData=true → 整行 13 列全 `—`。修复：buildEvalKey 加可选第 4 参数 templateId（默认 "_"），LinkedExcelView 透传 templateId（向后兼容老调用方）|
+| **v1.30 process_info 视图聚合修复**（V260+V261） | "选配产品标准报价模板-组合产品 v1.30" Excel 视图 [H]工序数 列显示 "1（共372项）"。原 SQL `UNION ALL ... FROM mat_process` 返多行；改为 `COUNT(DISTINCT seq_no) GROUP BY hf_part_no` 单值聚合。V260 改源表 `template_sql_view.sql_template`，V261 用 `jsonb_set` 同步更新 `template.template_sql_views_snapshot.process_info`（PUBLISHED 模板渲染走 snapshot fallback 源表）|
+| **PUBLISHED 模板 SQL 视图改动纪律** | 已发布模板的 SQL 视图改动必须双更新：`template_sql_view` 源表 + `template.template_sql_views_snapshot` JSONB。只改源表渲染不生效。立项加入「方案制定前必读」改动决策树 |
+| **AP-53 负债保留** | process_info 视图仍 FROM V44 `mat_process`（V6 `material_bom_item.operation_no` 数据未到位）。BasicDataImportServiceV5 V6 backfill PR 落地后此视图应改 `FROM material_bom_item GROUP BY material_no` |
+| **E2E 验证** | `cpq-frontend/e2e/quot-excel-view-key-protocol.spec.ts` 1 passed in 13.8s；partNo 3120012574/5 报价单 Excel 视图 28 单元中 22 个有数据 / 6 个 `—`（仅 product_type / specification / config_fingerprint 等字段语义 NULL）；[H]工序数 = 5 / 3（int 标量，断言拒 "共N项" + 要求纯整数） |
+
+### 9.16 v3.8(2026-05-27)— 核价标准模板 v5.0 v1.2 全量 V6 迁移（V253~V259，未发布）
+
+- 2026-05-27 V253~V259（v1.2 DRAFT 创建，未发布）— 核价标准模板 v5.0 v1.2 全量 V6 迁移 schema-only PR：v1.2 复制 20 -V12 组件 + 20 component_sql_view + 7 template_sql_view 替代 v_costing_summary_full / v_c_summary_agg；excel_view_config 36 列 path 全部 $<view>.<col> 化；V76 costing_part_* 关键词进 BnfPathLinter / SqlViewValidator 黑名单。fee_config / plating_scheme / unit_price 加 6 列待 import PR backfill；数值标杆暂不验收。
+
+### 9.15 v3.7(2026-05-26)— 模板独立 SQL 视图（template_sql_view + template.template_sql_views_snapshot）
+
+2026-05-26 V249 / V250 — 模板独立 SQL 视图。模板的 Excel 视图列可引用本模板 SQL 视图 `$view.col`，与组件视图完全隔离；发布时 snapshot 冻结。
+
+| 决策 | 内容 |
+|---|---|
+| **新表 template_sql_view** | FK → `template.id`，与 `component_sql_view` 同构（name / description / sql_template / status / declared_columns JSONB），scope 只允许 LOCAL |
+| **新字段 template.template_sql_views_snapshot** | JSONB，模板发布时冻结本模板所有 ACTIVE 视图定义；保证历史报价可复现 |
+| **OwnerType.TEMPLATE** | `SqlViewRuntimeContext.OwnerType` 加 TEMPLATE 枚举，与 COMPONENT 互斥；Snapshot 统一复用 `templateId` 字段，不再引入 `costingTemplateId` 平行字段 |
+| **SqlViewExecutor owner-aware 路由** | `$view.col` 按 ownerType 路由：COMPONENT → component_sql_view，TEMPLATE → template_sql_view；`$$code.view.col` 仅 COMPONENT 上下文允许，TEMPLATE 上下文强抛 BusinessException |
+| **发布时双校验** | `TemplateService.publish` 先扫 excel_view_config 中的 `$$` 跨引用（强阻断），再拉 ACTIVE template_sql_view 构造 snapshot 写入 |
+| **createNewDraft deep-copy** | 派生新草稿时 `TemplateSqlViewService.deepCopySqlViews` 把所有 template_sql_view 行复制到新草稿，版本间独立 |
+| **前端 TemplateConfiguration 第三 Tab** | TemplateSqlViewsTab 提供 CRUD + dry-run；ExcelViewConfigTab VARIABLE 列编辑加「SQL 视图」按钮弹 PathPickerDrawer（ownerContext=TEMPLATE） |
+| **PathPickerDrawer ownerContext=TEMPLATE** | 只显示本模板 SQL 视图（不显示 GLOBAL 区域）；`$$` 路径强校验阻断；旧调用方无 ownerContext 参数时行为不变 |
+| **EvaluateRequest 携带 templateId** | LinkedExcelView batchEvaluate 透传 templateId；FormulaEvaluateResource 注入 SqlViewRuntimeContext.setNestedTemplate；缓存 key 含 templateId 维度 |
+| **路径形态隔离规则** | 组件上下文：`$view.col` 查 component_sql_view；模板上下文：`$view.col` 查 template_sql_view；跨 owner 引用一律拒绝 |
+| **关联文档** | `docs/方案-Excel模板BNF迁移至组件SQL视图.md` v2（权威设计文档）；`docs/反模式.md` AP-53（V44 老表禁用延伸）；`docs/Excel模板配置指南.md` §四 C |
+
+### 9.14 v3.6(2026-05-25)— 组件级数据源 SQL 方案立项
+
+| 决策 | 内容 |
+|---|---|
+| **基础数据配置职责拆分** | 「基础数据配置」回归最初职责（仅 Excel sheet → 物理表导入路由）；BNF 元数据改由 `bnf_table_meta` 启动时自动同步 `information_schema.tables/views`；PathPicker 新增"information_schema 视觉模式" Tab，DBA Flyway 加视图后自动可见，不再要业务侧补登记 |
+| **新增 component_sql_view 表** | 组件管理新增"SQL 视图"配置 Tab —— 用户自写 SELECT（含 UNION / JOIN / 命名占位符），给视图取名 `<sql_view_name>`，scope=COMPONENT(本组件) / GLOBAL(可跨组件 BNF 引用)；保存时 EXPLAIN dry-run 拒绝 DDL/DML + 拒绝 `:hfPartNo` 标量占位符 + 自动提取 declared_columns |
+| **BNF path 新增 `$` / `$$` 前缀引用语法** | BNF 解析层（BnfPathResolver.resolveSheetExpression）识别两种前缀：① `$<sql_view_name>` → 本组件 SQL 视图；② `$$<componentCode>.<sql_view_name>` → 跨组件 GLOBAL 引用。**纯解析层扩展，渲染层 / cache key / ComponentDriverService 三分支 / ComponentCell / useDriverExpansions 全部不动** |
+| **双层冻结策略** | 模板 DRAFT→PUBLISHED 时冻结至 `template.sql_views_snapshot` JSONB（与 components_snapshot 同事务）；报价单 DRAFT→SUBMITTED 时冻结至 `quotation_component_sql_snapshot` 表（与 *_snapshot 列同事务）。lookupSqlView 优先级：报价单 snapshot > 模板 snapshot > 实时 component_sql_view |
+| **N+1 与 BNF 现有 batch 机制自动融合** | inline subquery 包装后仍受外层 `WHERE inner_q.hf_part_no = ANY(:hfPartNos)` batch filter，一次 batch query 拿全部 partNo 数据；用户 SQL 内自己写 UNION 处理 SIMPLE/COMPOSITE 双场景，与 §3.6 红线"SIMPLE/COMPOSITE 配置层统一"一致 |
+| **§10.1.2 禁双轨红线不撞** | 组件 SQL 模式定位为"BNF path 数据源的层级扩展"（不是新渲染通路）；字段渲染单通路仍是 BNF path；三个核心选配组件（e42185ec/dae85db8/0a436b6c）继续走 v_composite_child_* 物理视图，**不回溯改造** |
+| **AP-44 矩阵 17 → 18 处** | 新增 #16 BnfPathResolver 解析层检查点，**不影响 #1~#15 字段类型/缓存/渲染矩阵**（纯解析层扩展） |
+| **关联文档** | `docs/组件级数据源SQL方案.md`（完整方案）/ `docs/三大核心模块基线.md §2.3 / §3.2`（增量段落）/ `docs/组件管理字段配置指南.md §2.3 / §11`（$ 引用语法）/ `docs/反模式.md AP-44`（矩阵 18 处）|
+| **阶段迁移** | 阶段 1 功能加法 0 破坏；阶段 2 基础数据配置职责回归；阶段 3 已发布模板 BNF path snapshot 永久稳定 |
 
 ### 9.13 v3.5.1(2026-05-21)— 引用数据 Tab Descriptions 微调（column 3 + value 拼 unit）
 
@@ -2620,6 +2741,8 @@ number_literal := -?\d+(\.\d+)?
 | V149 | variable_label;excel_view_snapshot |
 | V150 | template 与 costing_template 合并 |
 | V160/V161 | merged 视图加 part_version |
+| V249 | DROP costing_template_sql_view CASCADE；新建 template_sql_view（FK → template.id） |
+| V250 | DROP costing_template.sql_views_snapshot；template 加 template_sql_views_snapshot JSONB |
 
 完整迁移记录见 `cpq-backend/src/main/resources/db/migration/`。
 

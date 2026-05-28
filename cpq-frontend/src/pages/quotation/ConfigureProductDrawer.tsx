@@ -11,6 +11,7 @@ import Step2Material from './configure/Step2Material';
 import Step3Process from './configure/Step3Process';
 import Step4CompositeProcess from './configure/Step4CompositeProcess';
 import Step5Summary from './configure/Step5Summary';
+import { genUUID } from '../../utils/uuid';
 
 export interface PartState {
   name: string;
@@ -235,7 +236,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
     setSubmitting(true);
     try {
       // 生成顶层 tempId（主 lineItem.id UUID），SIMPLE/COMPOSITE 共用
-      const tempId = crypto.randomUUID();
+      const tempId = genUUID();
       const partsReq: PartRequest[] = parts.map(p => ({
         name: p.name,
         partMode: p.partMode!,
@@ -254,7 +255,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
           ? p.unitWeightGrams
           : undefined,
         // SIMPLE: 与顶层 tempId 同值；COMPOSITE: 每个子件独立 UUID（工序隔离键）
-        quotationLineItemId: productType === 'SIMPLE' ? tempId : crypto.randomUUID(),
+        quotationLineItemId: productType === 'SIMPLE' ? tempId : genUUID(),
       }));
       const compProcs: CompositeProcessRequest[] = addedCProcs.map(a => ({
         defCode: a.defCode,

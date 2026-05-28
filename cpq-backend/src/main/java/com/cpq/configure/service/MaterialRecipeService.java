@@ -30,6 +30,24 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+/**
+ * 材质字典服务（V6，AP-53 续 5 全迁完成）。
+ *
+ * <p><b>2026-05-28 迁移状态（AP-53 续 5：材质字典绑定彻底迁 V6）</b>：
+ * <ul>
+ *   <li>字典本体 material_recipe / material_recipe_element <b>保留</b>（非 AP-53 废弃表）。</li>
+ *   <li>"料号 → 配方"绑定关系从 V44 {@code mat_part.material_recipe_id} 迁到
+ *       V6 {@code material_master.material_recipe_id}（V265 加列 + 回填）。</li>
+ *   <li>以下方法全部改读写 V6 {@code material_master}（+ element_bom_item），不再触 V44 mat_part / mat_bom：
+ *       {@link #getForExistingPart(String)}（选配 Step2，字典派/BOM 派双分支）、
+ *       {@code listActive} / {@code listParts} / {@code bindParts} / {@code unbindParts} /
+ *       {@code searchPartsForBinding} / {@code suggestBindings} / {@code confirmBindings}；
+ *       {@code create / update / deleteSoft / getDetail} 操作字典本体不变。</li>
+ * </ul>
+ * <p><b>已知约束</b>：material_master 当前仅 V6 已导入料号（远少于 V44 mat_part），
+ * 管理页可绑定料号集合受限于 V6 导入进度；suggestBindings 因 element_bom_item.component_no
+ * 是纯元素符号而退化（详见该方法注释 + docs/反模式.md AP-53 续 5）。
+ */
 @ApplicationScoped
 public class MaterialRecipeService {
 
@@ -57,9 +75,9 @@ public class MaterialRecipeService {
             return dtos;
         }
 
-        // 一次性聚合 count
+        // 一次性聚合 count（V265: 绑定迁 material_master）
         List<Object[]> rows = em.createNativeQuery(
-                "SELECT material_recipe_id, COUNT(*) AS cnt FROM mat_part " +
+                "SELECT material_recipe_id, COUNT(*) AS cnt FROM material_master " +
                 "WHERE material_recipe_id IS NOT NULL " +
                 "GROUP BY material_recipe_id")
             .getResultList();
@@ -92,28 +110,30 @@ public class MaterialRecipeService {
         page = Pagination.clampPage(page);
         size = Pagination.clampSize(size);
 
-        StringBuilder where = new StringBuilder("mp.material_recipe_id = :rid");
+        // V265: 绑定迁 material_master（料号字段从 V44 mat_part 列名映射到 V6）
+        StringBuilder where = new StringBuilder("mm.material_recipe_id = :rid");
         boolean hasKeyword = keyword != null && !keyword.isBlank();
         if (hasKeyword) {
-            where.append(" AND (mp.part_no ILIKE :kw OR mp.part_name ILIKE :kw " +
-                    "OR COALESCE(mp.specification,'') ILIKE :kw)");
+            where.append(" AND (mm.material_no ILIKE :kw OR mm.material_name ILIKE :kw " +
+                    "OR COALESCE(mm.specification,'') ILIKE :kw)");
         }
         String pattern = hasKeyword ? "%" + keyword.trim() + "%" : null;
 
-        var countQ = em.createNativeQuery("SELECT COUNT(*) FROM mat_part mp WHERE " + where)
+        var countQ = em.createNativeQuery("SELECT COUNT(*) FROM material_master mm WHERE " + where)
                 .setParameter("rid", recipeId);
         if (hasKeyword) countQ.setParameter("kw", pattern);
         Long total = ((Number) countQ.getSingleResult()).longValue();
 
+        // V6 material_master 无 product_type / status_code 维度：productType→NULL、status→'Y'、size_info→dimension
         var listQ = em.createNativeQuery(
-                "SELECT mp.part_no, mp.part_name, mp.specification, mp.size_info, " +
-                "       mp.product_type, mp.status_code, mp.unit_weight, " +
-                "       mp.material_recipe_id, mr.code, mr.symbol, " +
-                "       mp.created_at, mp.updated_at " +
-                "FROM mat_part mp " +
-                "LEFT JOIN material_recipe mr ON mr.id = mp.material_recipe_id " +
+                "SELECT mm.material_no, mm.material_name, mm.specification, mm.dimension, " +
+                "       NULL AS product_type, 'Y' AS status_code, mm.unit_weight, " +
+                "       mm.material_recipe_id, mr.code, mr.symbol, " +
+                "       mm.created_at, mm.updated_at " +
+                "FROM material_master mm " +
+                "LEFT JOIN material_recipe mr ON mr.id = mm.material_recipe_id " +
                 "WHERE " + where + " " +
-                "ORDER BY mp.part_no " +
+                "ORDER BY mm.material_no " +
                 "LIMIT :sz OFFSET :off")
             .setParameter("rid", recipeId)
             .setParameter("sz", size)
@@ -156,11 +176,11 @@ public class MaterialRecipeService {
         if (MaterialRecipe.findById(recipeId) == null) {
             throw new NotFoundException("material_recipe 不存在: " + recipeId);
         }
-        // 去重 + 校验存在性
+        // 去重 + 校验存在性（V265: 绑定迁 material_master）
         Set<String> distinct = new HashSet<>(partNos);
         return em.createNativeQuery(
-                "UPDATE mat_part SET material_recipe_id = :rid, updated_at = NOW() " +
-                "WHERE part_no IN (:pns)")
+                "UPDATE material_master SET material_recipe_id = :rid, updated_at = NOW() " +
+                "WHERE material_no IN (:pns)")
             .setParameter("rid", recipeId)
             .setParameter("pns", distinct)
             .executeUpdate();
@@ -177,8 +197,8 @@ public class MaterialRecipeService {
         }
         Set<String> distinct = new HashSet<>(partNos);
         return em.createNativeQuery(
-                "UPDATE mat_part SET material_recipe_id = NULL, updated_at = NOW() " +
-                "WHERE part_no IN (:pns)")
+                "UPDATE material_master SET material_recipe_id = NULL, updated_at = NOW() " +
+                "WHERE material_no IN (:pns)")
             .setParameter("pns", distinct)
             .executeUpdate();
     }
@@ -198,22 +218,23 @@ public class MaterialRecipeService {
         int safeSize = Math.min(Math.max(size, 1), 200);
         String pattern = "%" + keyword.trim() + "%";
 
+        // V265: 绑定迁 material_master（料号字段映射同 listParts）
         StringBuilder where = new StringBuilder(
-                "(mp.part_no ILIKE :kw OR mp.part_name ILIKE :kw " +
-                "OR COALESCE(mp.specification,'') ILIKE :kw " +
-                "OR COALESCE(mp.size_info,'') ILIKE :kw)");
+                "(mm.material_no ILIKE :kw OR mm.material_name ILIKE :kw " +
+                "OR COALESCE(mm.specification,'') ILIKE :kw " +
+                "OR COALESCE(mm.dimension,'') ILIKE :kw)");
         if (onlyUnbound) {
-            where.append(" AND mp.material_recipe_id IS NULL");
+            where.append(" AND mm.material_recipe_id IS NULL");
         }
 
         List<Object[]> rows = em.createNativeQuery(
-                "SELECT mp.part_no, mp.part_name, mp.specification, mp.size_info, " +
-                "       mp.product_type, mp.status_code, mp.unit_weight, " +
-                "       mp.material_recipe_id, mr.code, mr.symbol " +
-                "FROM mat_part mp " +
-                "LEFT JOIN material_recipe mr ON mr.id = mp.material_recipe_id " +
+                "SELECT mm.material_no, mm.material_name, mm.specification, mm.dimension, " +
+                "       NULL AS product_type, 'Y' AS status_code, mm.unit_weight, " +
+                "       mm.material_recipe_id, mr.code, mr.symbol " +
+                "FROM material_master mm " +
+                "LEFT JOIN material_recipe mr ON mr.id = mm.material_recipe_id " +
                 "WHERE " + where + " " +
-                "ORDER BY mp.part_no " +
+                "ORDER BY mm.material_no " +
                 "LIMIT :sz")
             .setParameter("kw", pattern)
             .setParameter("sz", safeSize)
@@ -254,13 +275,15 @@ public class MaterialRecipeService {
      * GET /quotations/configure/existing-part/{hfPartNo}/material —
      * 选配 Step2 锁定路径取数(用户在 Step1 选了已存在料号后展示元素配比).
      *
-     * <p>策略(详见 docs/选配与基础数据料号材质关系.md 第五节决策树):
+     * <p>V6 数据源（AP-53 老表禁用，2026-05-26 重写；2026-05-28 续 5 恢复字典派）：
      * <ul>
-     *   <li>mat_part.material_recipe_id 非 NULL → 字典派,JOIN material_recipe +
-     *       material_recipe_element 取数,recipeBound=true</li>
-     *   <li>mat_part.material_recipe_id IS NULL → BOM 派,查
-     *       mat_bom (bom_type='ELEMENT', latest part_version) 取数,
-     *       recipeBound=false,elements 的 min/max=null,isLocked=true(只读)</li>
+     *   <li>料号验证：material_master 替代 mat_part</li>
+     *   <li><b>字典派（recipeBound=true）</b>：material_master.material_recipe_id 非空时，
+     *       从 material_recipe + material_recipe_element 取（V265 把绑定从 V44 mat_part 迁来）。
+     *       这让管理员在「材质管理」给料号绑的配方（如 AgCu90 = Ag90/Cu10 locked）在选配 Step2 正确展示。</li>
+     *   <li><b>BOM 派（recipeBound=false）</b>：未绑定字典时回退 element_bom_item.hf_part_no 主件维度
+     *       （V245 加列 + V246 characteristic=MAX 过滤），recipeType="locked" 只读，
+     *       element code/name 取自 element_bom_item.component_no，min/max 留 null（Q04 Excel 不导入限值）。</li>
      * </ul>
      *
      * @throws NotFoundException 料号不存在
@@ -271,89 +294,72 @@ public class MaterialRecipeService {
             throw new IllegalArgumentException("hfPartNo 必填");
         }
 
-        // 1. 查 mat_part 拿 material_recipe_id (单列 native query 返 List<Object>)
-        List<?> partRows = em.createNativeQuery(
-                "SELECT material_recipe_id FROM mat_part WHERE part_no = :p")
+        // 1. 验证料号在 V6 material_master 存在 + 取其绑定的字典 id
+        //    单列 native query → getResultList() 返回 List<原始值>（不是 List<Object[]>）。
+        List<?> mmRows = em.createNativeQuery(
+                "SELECT material_recipe_id FROM material_master WHERE material_no = :p")
             .setParameter("p", hfPartNo)
             .getResultList();
-        if (partRows.isEmpty()) {
+        if (mmRows.isEmpty()) {
             throw new NotFoundException("料号不存在: " + hfPartNo);
         }
-        Object recipeIdObj = partRows.get(0);
-        UUID recipeId = recipeIdObj == null ? null : (UUID) recipeIdObj;
+        Object ridObj = mmRows.get(0);
+        UUID recipeId = (ridObj instanceof UUID u) ? u
+                : (ridObj != null ? UUID.fromString(ridObj.toString()) : null);
 
         ExistingPartMaterialDTO dto = new ExistingPartMaterialDTO();
         dto.hfPartNo = hfPartNo;
 
+        // 2A. 字典派：料号绑定了 material_recipe → 取字典配方 + 元素（含 min/max/isLocked）
         if (recipeId != null) {
-            // 字典派
-            MaterialRecipe r = MaterialRecipe.findById(recipeId);
-            if (r == null) {
-                // 字典被硬删了 — 降级走 BOM 派(material_recipe_id FK 是 SET NULL,
-                // 理论不该出现这种情况,但兜底保护)
-                fillFromBom(dto, hfPartNo);
-            } else {
+            MaterialRecipe mr = MaterialRecipe.findById(recipeId);
+            if (mr != null) {
                 dto.recipeBound = true;
-                dto.recipeCode = r.code;
-                dto.recipeSymbol = r.symbol;
-                dto.recipeName = r.name;
-                dto.recipeSpec = r.specLabel;
-                dto.recipeType = r.recipeType;
-                List<MaterialRecipeElement> elems = MaterialRecipeElement.<MaterialRecipeElement>find(
-                        "recipeId = ?1 ORDER BY sortOrder", recipeId).list();
-                for (MaterialRecipeElement e : elems) {
+                dto.recipeCode = mr.code;
+                dto.recipeSymbol = mr.symbol;
+                dto.recipeName = mr.name;
+                dto.recipeSpec = mr.specLabel;
+                dto.recipeType = mr.recipeType;  // locked / editable / partial
+                List<MaterialRecipeElement> els = MaterialRecipeElement
+                    .<MaterialRecipeElement>find("recipeId = ?1 ORDER BY sortOrder", recipeId).list();
+                for (MaterialRecipeElement e : els) {
                     dto.elements.add(new ExistingPartMaterialDTO.Element(
-                        e.elementCode, e.elementName, e.defaultPct,
-                        e.minPct, e.maxPct, e.isLocked));
+                        e.elementCode, e.elementName, e.defaultPct, e.minPct, e.maxPct, e.isLocked));
                 }
+                return dto;
             }
-        } else {
-            // BOM 派
-            fillFromBom(dto, hfPartNo);
+            // 绑定 id 指向的字典已被硬删（FK SET NULL 之前的脏数据）→ 下沉 BOM 派
         }
-        return dto;
-    }
 
-    /**
-     * BOM 派填充:从 mat_bom (bom_type='ELEMENT', 最新 part_version) 拉元素配比.
-     *
-     * <p>字段映射:
-     * <ul>
-     *   <li>elementCode = elementName = mat_bom.element_name 原值
-     *       (导入数据通常存的是元素代码 "Cu/Zn/Ag",无中文名映射)</li>
-     *   <li>pct = mat_bom.composition_pct</li>
-     *   <li>minPct/maxPct = null (BOM 派不存约束)</li>
-     *   <li>isLocked = true (只读)</li>
-     * </ul>
-     *
-     * <p>已知数据质量问题(Bug #3,见文档第七节):导入流程当前可能把
-     * "元素百分比"错写到 element_name 列,composition_pct 留空。本方法
-     * 按规范取数,**不做兜底解析** — 待导入流程修干净。
-     */
-    @SuppressWarnings("unchecked")
-    private void fillFromBom(ExistingPartMaterialDTO dto, String hfPartNo) {
+        // 2B. BOM 派：未绑字典 → 从 element_bom_item 取最新 characteristic 的元素配比
         dto.recipeBound = false;
-        dto.recipeType = "locked"; // BOM 派统一只读,recipeType=locked 让前端不渲染输入框
-
+        dto.recipeType = "locked";     // 统一只读
+        //    （与 V246 composite_child_elements_mirror SQL 同口径，
+        //     按 (customer_no, material_no=投入料号) 分组取 MAX(characteristic)）
         List<Object[]> rows = em.createNativeQuery(
-                "SELECT element_name, composition_pct, seq_no " +
-                "FROM mat_bom " +
-                "WHERE hf_part_no = :p " +
-                "  AND bom_type = 'ELEMENT' " +
-                "  AND part_version = (" +
-                "      SELECT MAX(part_version) FROM mat_bom " +
-                "      WHERE hf_part_no = :p AND bom_type = 'ELEMENT')" +
-                "ORDER BY seq_no")
+                "SELECT ebi.component_no, ebi.content, ebi.seq_no, ebi.material_no " +
+                "FROM element_bom_item ebi " +
+                "WHERE ebi.system_type='QUOTE' " +
+                "  AND ebi.hf_part_no = :p " +
+                "  AND ebi.characteristic = ( " +
+                "      SELECT MAX(ebi2.characteristic) FROM element_bom_item ebi2 " +
+                "      WHERE ebi2.system_type='QUOTE' " +
+                "        AND ebi2.customer_no = ebi.customer_no " +
+                "        AND ebi2.material_no = ebi.material_no " +
+                "  ) " +
+                "ORDER BY ebi.material_no, ebi.seq_no")
             .setParameter("p", hfPartNo)
             .getResultList();
 
         for (Object[] r : rows) {
-            String elemName = r[0] == null ? null : r[0].toString();
-            if (elemName == null || elemName.isBlank()) continue;
+            String elemCode = r[0] == null ? null : r[0].toString();
+            if (elemCode == null || elemCode.isBlank()) continue;
             BigDecimal pct = r[1] == null ? null : new BigDecimal(r[1].toString());
+            // element_bom_item 没独立的"元素中文名"列；code 和 name 都用 component_no（Cu/Zn/Ag/Ni）
             dto.elements.add(new ExistingPartMaterialDTO.Element(
-                elemName, elemName, pct, null, null, true));
+                elemCode, elemCode, pct, null, null, true));
         }
+        return dto;
     }
 
     // ── 智能推断(Phase 3 新增)──
@@ -402,15 +408,18 @@ public class MaterialRecipeService {
         Map<String, List<MaterialRecipe>> bySymbol = dictAll.stream()
             .collect(Collectors.groupingBy(r -> r.symbol));
 
-        // 2. 一次性拉所有"未绑料号 + 该料号的 mat_bom ELEMENT 行 element_name 集合"
+        // 2. 一次性拉所有"未绑料号 + 该料号的 element_bom_item 元素集合"（V265: 迁 V6）
+        //    ⚠️ AP-53 续 5 已知退化：V6 element_bom_item.component_no 是纯元素符号(Cu/Ag/Ni)，
+        //    会被下方 isPureElementSymbol 全部跳过 → 候选基本为空。手动绑定仍可用；
+        //    更优的 V6 线索源（material_type/material_name → 配方映射）另立 ticket。
         List<Object[]> rows = em.createNativeQuery(
-                "SELECT mp.part_no, mp.part_name, mp.specification, " +
-                "       array_agg(DISTINCT mb.element_name) FILTER (WHERE mb.element_name IS NOT NULL) " +
-                "FROM mat_part mp " +
-                "LEFT JOIN mat_bom mb ON mb.hf_part_no = mp.part_no AND mb.bom_type = 'ELEMENT' " +
-                "WHERE mp.material_recipe_id IS NULL " +
-                "GROUP BY mp.part_no, mp.part_name, mp.specification " +
-                "ORDER BY mp.part_no")
+                "SELECT mm.material_no, mm.material_name, mm.specification, " +
+                "       array_agg(DISTINCT ebi.component_no) FILTER (WHERE ebi.component_no IS NOT NULL) " +
+                "FROM material_master mm " +
+                "LEFT JOIN element_bom_item ebi ON ebi.hf_part_no = mm.material_no AND ebi.system_type = 'QUOTE' " +
+                "WHERE mm.material_recipe_id IS NULL " +
+                "GROUP BY mm.material_no, mm.material_name, mm.specification " +
+                "ORDER BY mm.material_no")
             .getResultList();
 
         List<BindingSuggestionDTO> suggestions = new ArrayList<>();
@@ -537,8 +546,8 @@ public class MaterialRecipeService {
                 throw new NotFoundException("material_recipe 不存在: " + entry.getKey());
             }
             total += em.createNativeQuery(
-                    "UPDATE mat_part SET material_recipe_id = :rid, updated_at = NOW() " +
-                    "WHERE part_no IN (:pns)")
+                    "UPDATE material_master SET material_recipe_id = :rid, updated_at = NOW() " +
+                    "WHERE material_no IN (:pns)")
                 .setParameter("rid", entry.getKey())
                 .setParameter("pns", new HashSet<>(entry.getValue()))
                 .executeUpdate();

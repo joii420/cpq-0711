@@ -1,0 +1,91 @@
+version: '3.8'
+
+# CPQ UG NX 转换 — 完整服务栈（RabbitMQ + MinIO + Worker + Postgres）
+# 启动：docker-compose up -d
+# 提交任务：见 README.md「生产部署」章节
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: cpq-rabbitmq
+    ports:
+      - "5672:5672"      # AMQP
+      - "15672:15672"    # 管理面板
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: cpq-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"     # S3 API
+      - "9001:9001"     # 管理面板
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # 初始化 buckets
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: |
+      /bin/sh -c '
+      mc alias set cpq http://minio:9000 minioadmin minioadmin;
+      mc mb --ignore-existing cpq/cpq-ugnx-source;
+      mc mb --ignore-existing cpq/cpq-stp-source;
+      mc mb --ignore-existing cpq/cpq-3d-glb;
+      mc anonymous set download cpq/cpq-3d-glb;
+      echo "MinIO buckets initialized";
+      '
+
+  # 3 个 worker 副本（生产建议按 CPU 调整）
+  cpq-converter:
+    image: cpq-ug-converter:0.1
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      QUEUE_NAME: cpq.conversion.jobs
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET_STP: cpq-stp-source
+      S3_BUCKET_GLB: cpq-3d-glb
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-cpq_db}
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+
+volumes:
+  rabbitmq_data:
+  minio_data:

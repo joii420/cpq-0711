@@ -76,6 +76,8 @@ export interface SelectableTableProps<T extends object> {
   /** 自定义 row 选项（如禁用某些行选择） */
   getCheckboxProps?: (record: T) => { disabled?: boolean; name?: string };
   scroll?: TableProps<T>['scroll'];
+  /** Antd Table locale 透传（如 emptyText 自定义） */
+  locale?: TableProps<T>['locale'];
 }
 
 function getRowKey<T>(r: T, rowKey: SelectableTableProps<T extends object ? T : never>['rowKey']): React.Key {
@@ -96,6 +98,7 @@ function SelectableTable<T extends object>(props: SelectableTableProps<T>) {
     disablePreserveSelected,
     getCheckboxProps,
     scroll,
+    locale,
   } = props;
 
   const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
@@ -103,9 +106,11 @@ function SelectableTable<T extends object>(props: SelectableTableProps<T>) {
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
   // 已选行 = 当前 dataSource 里 key 命中 selectedKeys 的子集（跨页保留时上一页已选行不在 dataSource，会被遗漏，因此用 keys 做权威源）
+  // 防御:dataSource 可能在首次渲染时(fetch 未回)是 undefined,fallback 到 []
+  const safeDataSource = dataSource ?? [];
   const selectedRows = useMemo(() => {
-    return dataSource.filter((r) => selectedKeys.includes(getRowKey(r, rowKey)));
-  }, [selectedKeys, dataSource, rowKey]);
+    return safeDataSource.filter((r) => selectedKeys.includes(getRowKey(r, rowKey)));
+  }, [selectedKeys, safeDataSource, rowKey]);
 
   // 检查动作启用状态：返回 { enabled, reason }
   const checkActionState = useCallback((action: ToolbarAction<T>) => {
@@ -221,11 +226,12 @@ function SelectableTable<T extends object>(props: SelectableTableProps<T>) {
       <Table<T>
         rowKey={typeof rowKey === 'function' ? (rowKey as any) : (rowKey as string)}
         columns={columns}
-        dataSource={dataSource}
+        dataSource={safeDataSource}
         loading={loading}
         pagination={pagination}
         size={size}
         scroll={scroll}
+        locale={locale}
         rowSelection={{
           selectedRowKeys: selectedKeys,
           onChange: (keys) => setSelectedKeys(keys),

@@ -34,7 +34,6 @@ import InternalMaterialManagement from '../pages/material/InternalMaterialManage
 import ImportHistoryList from '../pages/importconfig/ImportHistoryList';
 import ProductCategoryManagement from '../pages/basicdata/ProductCategoryManagement';
 import ComparisonTagManagement from '../pages/basicdata/ComparisonTagManagement';
-import BasicDataConfig from '../pages/basicdata/BasicDataConfig';
 import CostingTemplateList from '../pages/costing/CostingTemplateList';
 import CostingTemplateConfig from '../pages/costing/CostingTemplateConfig';
 import CostingPartDataPage from '../pages/costingpart/CostingPartDataPage';
@@ -47,16 +46,30 @@ import ChangeLogCenterPage from '../pages/change-log/ChangeLogCenterPage';
 import ElementPriceCenterPage from '../pages/element-price/ElementPriceCenterPage';
 import GlobalVariablePage from '../pages/global-variable/GlobalVariablePage';
 import SystemConfigPage from '../pages/system-config/SystemConfigPage';
-import FieldImportancePage from '../pages/master-data/FieldImportancePage';
 import LockMonitorPage from '../pages/system-monitor/LockMonitorPage';
 import DdlExtensionPage from '../pages/system-monitor/DdlExtensionPage';
 import PartVersionPage from '../pages/partversion/PartVersionPage';
 import MaterialRecipeManagement from '../pages/config/MaterialRecipeManagement';
-import ProcessManagement from '../pages/config/ProcessManagement';
 import ConfigTemplateManagement from '../pages/configtemplate/ConfigTemplateManagement';
+
+// v0.4 3D 选配 — P0+P1+P2 端到端骨架
+import FeatureLibraryList from '../pages/feature-library/FeatureLibraryList';
+import FeatureGroupDetail from '../pages/feature-library/FeatureGroupDetail';
+import ConfiguratorTemplateList from '../pages/configurator/ConfiguratorTemplateList';
+import ConfiguratorTemplateEditor from '../pages/configurator/ConfiguratorTemplateEditor';
+import ConfiguratorInstanceList from '../pages/configurator/ConfiguratorInstanceList';
+import ConfiguratorInstanceDetail from '../pages/configurator/ConfiguratorInstanceDetail';
+import PublicConfigurator from '../pages/public/PublicConfigurator';
+import ConfiguratorStartPage from '../pages/configurator/ConfiguratorStartPage';
+import ConfiguratorPage from '../pages/configurator/ConfiguratorPage';
+import ConfiguratorSharesPage from '../pages/configurator/ConfiguratorSharesPage';
+import CustomerLeadList from '../pages/customer-lead/CustomerLeadList';
+import PartModelList from '../pages/part-model/PartModelList';
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
+  // 公网客户自助选配（无 AuthGuard）
+  { path: '/share/configurator/:token', element: <PublicConfigurator /> },
   { path: '/forgot-password', element: <ForgotPassword /> },
   { path: '/reset-password', element: <ResetPassword /> },
   {
@@ -95,7 +108,6 @@ const router = createBrowserRouter([
       { path: 'import-history', element: <ImportHistoryList /> },
       { path: 'product-categories', element: <ProductCategoryManagement /> },
       { path: 'comparison-tags', element: <ComparisonTagManagement /> },
-      { path: 'basic-data-config', element: <BasicDataConfig /> },
       { path: 'costing-templates', element: <CostingTemplateList /> },
       { path: 'costing-templates/:id', element: <CostingTemplateConfig /> },
       { path: 'costing-part-data', element: <CostingPartDataPage /> },
@@ -108,13 +120,26 @@ const router = createBrowserRouter([
       { path: 'element-price-center', element: <ElementPriceCenterPage /> },
       { path: 'global-variables', element: <GlobalVariablePage /> },
       { path: 'system-config', element: <SystemConfigPage /> },
-      { path: 'master-data/field-importance', element: <FieldImportancePage /> },
       { path: 'system-monitor/locks', element: <LockMonitorPage /> },
       { path: 'system-monitor/ddl-extension', element: <DdlExtensionPage /> },
       { path: 'part-versions', element: <PartVersionPage /> },
       { path: 'config/material-recipes', element: <MaterialRecipeManagement /> },
-      { path: 'config/processes', element: <ProcessManagement /> },
       { path: 'config/config-templates', element: <ConfigTemplateManagement /> },
+
+      // v0.4 3D 选配 — 销售路径
+      { path: 'configurator/start', element: <ConfiguratorStartPage /> },
+      { path: 'configurator/instances', element: <ConfiguratorInstanceList /> },
+      { path: 'configurator/instances/:id', element: <ConfiguratorInstanceDetail /> },
+      { path: 'configurator/shares', element: <ConfiguratorSharesPage /> },
+      { path: 'configurator/run/:templateId', element: <ConfiguratorPage /> },
+
+      // v0.4 3D 选配 — 管理路径（系统设置下）
+      { path: 'system/configurator-templates', element: <ConfiguratorTemplateList /> },
+      { path: 'system/configurator-templates/:id', element: <ConfiguratorTemplateEditor /> },
+      { path: 'system/feature-library', element: <FeatureLibraryList /> },
+      { path: 'system/feature-library/:groupId', element: <FeatureGroupDetail /> },
+      { path: 'system/customer-leads', element: <CustomerLeadList /> },
+      { path: 'system/part-models', element: <PartModelList /> },
     ],
   },
 ]);

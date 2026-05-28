@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Button, Table, Form, Input, Select, Space, Tag, Popconfirm, message, Spin, Drawer, Switch } from 'antd';
-import { PlusOutlined, ArrowLeftOutlined, SaveOutlined, EditOutlined } from '@ant-design/icons';
+import { Card, Button, Table, Form, Input, Select, Space, Tag, Popconfirm, message, Spin, Drawer, Switch, Tooltip } from 'antd';
+import { PlusOutlined, ArrowLeftOutlined, SaveOutlined, EditOutlined, WarningOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import { costingTemplateService } from '../../services/costingTemplateService';
 import type { CostingTemplateColumn } from '../../services/costingTemplateService';
@@ -11,9 +11,49 @@ import PathPickerDrawer from '../component/PathPickerDrawer';
 import GlobalVariablePickerDrawer from '../../components/GlobalVariablePickerDrawer';
 import VariableLabelPickerDrawer from '../../components/VariableLabelPickerDrawer';
 import { variableLabelService, type VariableLabel } from '../../services/variableLabelService';
-
 const KIND_LABEL: Record<string, string> = { QUOTATION: '报价模板', COSTING: '核价模板' };
 const KIND_COLOR: Record<string, string> = { QUOTATION: 'blue', COSTING: 'purple' };
+
+/**
+ * 路径源标签：根据 variable_path 形态识别来源并返回对应 Tag。
+ * 用纯正则判断，不需要调后端。
+ *
+ * 形态规则：
+ *   {code}          → lineItem 字段（灰）
+ *   $view.col       → 本模板视图（绿，推荐）
+ *   $$code.view.col → 跨引用（违反隔离，红色警告）
+ *   v_xxx / mat_xxx / element_price / plating_plan → 老 PG 直引（黄色警告）
+ *   其他            → 不显示 Tag
+ */
+function PathSourceTag({ path }: { path?: string }) {
+  if (!path) return null;
+  const p = path.trim();
+  if (/^\{[^}]+\}$/.test(p)) {
+    return <Tag color="default" style={{ fontSize: 11 }}>lineItem 字段</Tag>;
+  }
+  if (p.startsWith('$$')) {
+    return (
+      <Tooltip title="Excel 模板不允许跨组件引用（隔离规则）">
+        <Tag color="error" icon={<WarningOutlined />} style={{ fontSize: 11 }}>
+          跨引用（违反隔离）
+        </Tag>
+      </Tooltip>
+    );
+  }
+  if (p.startsWith('$')) {
+    return <Tag color="success" style={{ fontSize: 11 }}>本模板视图</Tag>;
+  }
+  if (/^(v_|mat_|element_price|plating_plan)/.test(p)) {
+    return (
+      <Tooltip title="老 PG 视图直引，建议迁移到本模板 SQL 视图（AP-53）">
+        <Tag color="warning" icon={<WarningOutlined />} style={{ fontSize: 11 }}>
+          老 PG 直引
+        </Tag>
+      </Tooltip>
+    );
+  }
+  return null;
+}
 
 const CostingTemplateConfig: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -322,9 +362,14 @@ const CostingTemplateConfig: React.FC = () => {
                 </Tag>
               )}
               {isVar && r.variable_path && (
-                <span style={{ color: '#bbb', fontFamily: 'Consolas, Monaco, monospace', fontSize: 10 }}>
-                  {r.variable_path}
-                </span>
+                <>
+                  <span style={{ color: '#bbb', fontFamily: 'Consolas, Monaco, monospace', fontSize: 10 }}>
+                    {r.variable_path}
+                  </span>
+                  <span style={{ marginLeft: 6 }}>
+                    <PathSourceTag path={r.variable_path} />
+                  </span>
+                </>
               )}
               {evalText && (
                 <span style={{ color: '#52c41a', fontFamily: 'Consolas, Monaco, monospace', marginLeft: 8 }}>
@@ -499,7 +544,7 @@ const CostingTemplateConfig: React.FC = () => {
         />
       </Card>
 
-      {/* 变量路径选择 —— 直接复用「组件管理」的 PathPickerDrawer，与组件 BASIC_DATA 字段共用同一份 BNF 路径配置体验 */}
+      {/* 变量路径选择 —— 复用 PathPickerDrawer，BNF 路径选择器 */}
       <PathPickerDrawer
         open={pathPickerOpen}
         onClose={() => { setPathPickerOpen(false); setPathPickerColIdx(null); }}

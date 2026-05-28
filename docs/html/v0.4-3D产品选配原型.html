@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>3D 产品选配原型 v0.3 — 接触片配置器</title>
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#f0f2f5; font-size:13px; color:#303133; height:100vh; overflow:hidden; }
+
+/* ============= 全屏布局 ============= */
+.app { display:flex; flex-direction:column; height:100vh; }
+
+/* 顶部条 60px */
+.top-bar { height:60px; background:#fff; border-bottom:1px solid #e4e7ed; display:flex; align-items:center; padding:0 24px; gap:20px; box-shadow:0 2px 4px rgba(0,0,0,.04); z-index:10; }
+.top-back { color:#606266; cursor:pointer; font-size:14px; display:inline-flex; align-items:center; gap:4px; }
+.top-back:hover { color:#1890ff; }
+.top-title { font-size:16px; font-weight:600; color:#303133; flex:1; }
+.top-title .subtitle { font-size:12px; color:#909399; font-weight:normal; margin-left:8px; }
+.top-actions { display:flex; gap:8px; }
+
+/* 客户切换器 */
+.customer-selector { display:flex; gap:6px; align-items:center; padding:0 10px; background:#fafbfc; border:1px solid #e4e7ed; border-radius:20px; }
+.customer-selector .cs-label { font-size:11px; color:#909399; padding:6px 0; }
+.cs-option { padding:5px 12px; font-size:12px; color:#606266; cursor:pointer; border-radius:14px; transition:all .2s; }
+.cs-option:hover { background:#e6f4ff; color:#1890ff; }
+.cs-option.active { background:#1890ff; color:#fff; font-weight:500; box-shadow:0 2px 4px rgba(24,144,255,.3); }
+.cs-option.active.vip { background:linear-gradient(135deg,#faad14,#fa8c16); box-shadow:0 2px 6px rgba(250,173,20,.4); }
+.cs-option.active.trial { background:#909399; }
+.cs-tag { display:inline-block; padding:1px 5px; background:rgba(255,255,255,.25); border-radius:3px; font-size:9px; margin-left:4px; }
+
+/* 分享对话框 */
+.share-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,.5); display:none; align-items:center; justify-content:center; z-index:2500; }
+.share-overlay.open { display:flex; }
+.share-dialog { background:#fff; border-radius:12px; padding:24px 28px; max-width:560px; width:90%; box-shadow:0 12px 32px rgba(0,0,0,.2); }
+.share-title { font-size:16px; font-weight:600; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+.share-section { margin-top:14px; }
+.share-section-label { font-size:12px; color:#606266; margin-bottom:6px; font-weight:500; }
+.share-type-cards { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:12px; }
+.share-type-card { padding:10px 12px; border:1px solid #e4e7ed; border-radius:6px; cursor:pointer; text-align:center; transition:all .2s; }
+.share-type-card:hover { border-color:#91caff; background:#fafdff; }
+.share-type-card.selected { border-color:#1890ff; background:#e6f4ff; box-shadow:0 0 0 2px rgba(24,144,255,.15); }
+.share-type-card .icon { font-size:22px; margin-bottom:4px; }
+.share-type-card .name { font-size:12.5px; font-weight:500; color:#303133; margin-bottom:2px; }
+.share-type-card .desc { font-size:10.5px; color:#909399; line-height:1.4; }
+.share-url-box { background:#f5f5f5; border:1px solid #e4e7ed; border-radius:6px; padding:10px 12px; font-family:Consolas,Monaco,monospace; font-size:11.5px; color:#606266; word-break:break-all; margin-bottom:10px; }
+.share-form-row { margin-bottom:10px; }
+.share-form-row label { font-size:12px; color:#606266; display:block; margin-bottom:4px; }
+.share-form-row input { width:100%; padding:6px 10px; border:1px solid #dcdfe6; border-radius:4px; font-size:12.5px; }
+.share-form-row input:focus { border-color:#1890ff; outline:none; box-shadow:0 0 0 2px rgba(24,144,255,.1); }
+.share-form-row .row-flex { display:flex; gap:8px; align-items:center; }
+.share-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
+
+/* 价格倍率标签（VIP 折扣等） */
+.price-multiplier-tag { display:inline-block; padding:2px 8px; background:linear-gradient(135deg,#faad14,#fa8c16); color:#fff; border-radius:3px; font-size:11px; font-weight:500; margin-left:6px; }
+.price-multiplier-tag.trial { background:#909399; }
+
+.btn { padding:6px 14px; border:1px solid #dcdfe6; background:#fff; border-radius:4px; cursor:pointer; font-size:12.5px; color:#606266; display:inline-flex; align-items:center; gap:4px; transition:all .2s; }
+.btn:hover { color:#409eff; border-color:#c6e2ff; background:#ecf5ff; }
+.btn-primary { background:#1890ff; color:#fff; border-color:#1890ff; }
+.btn-primary:hover { background:#40a9ff; color:#fff; border-color:#40a9ff; }
+.btn-success { background:linear-gradient(135deg,#52c41a,#13c2c2); color:#fff; border-color:transparent; box-shadow:0 2px 8px rgba(82,196,26,.3); padding:8px 18px; font-size:13px; font-weight:500; }
+.btn-success:hover { box-shadow:0 4px 12px rgba(82,196,26,.4); transform:translateY(-1px); }
+.btn-success:disabled, .btn-success.disabled { background:#e4e7ed; box-shadow:none; cursor:not-allowed; transform:none; }
+
+/* 主内容（中间区域） */
+.main { flex:1; display:flex; overflow:hidden; }
+
+/* 左侧 3D 画布区 */
+.canvas-section { flex:1; background:linear-gradient(135deg,#f5f7fa,#e4e7ed); position:relative; overflow:hidden; min-width:0; }
+#configCanvas { width:100%; height:100%; display:block; outline:none; touch-action:none; }
+
+.canvas-toolbar { position:absolute; bottom:16px; left:50%; transform:translateX(-50%); background:rgba(0,21,41,.85); border-radius:8px; padding:6px 8px; display:flex; gap:4px; z-index:5; backdrop-filter:blur(8px); }
+.canvas-toolbar button { padding:6px 10px; border:none; background:transparent; color:#fff; cursor:pointer; font-size:13px; border-radius:4px; transition:all .2s; }
+.canvas-toolbar button:hover { background:rgba(255,255,255,.1); }
+.canvas-toolbar button.active { background:#1890ff; }
+
+.canvas-tip { position:absolute; top:16px; left:16px; background:rgba(0,21,41,.85); color:#fff; padding:6px 12px; border-radius:4px; font-size:11.5px; z-index:5; backdrop-filter:blur(8px); }
+
+/* 进度浮层 */
+.progress-overlay { position:absolute; top:16px; right:16px; background:rgba(255,255,255,.92); border-radius:8px; padding:10px 14px; box-shadow:0 2px 8px rgba(0,0,0,.08); backdrop-filter:blur(8px); z-index:5; min-width:200px; }
+.progress-label { font-size:11.5px; color:#909399; margin-bottom:4px; }
+.progress-label b { color:#1890ff; font-size:14px; }
+.progress-bar { height:6px; background:#e4e7ed; border-radius:3px; overflow:hidden; }
+.progress-fill { height:100%; background:linear-gradient(90deg,#1890ff,#13c2c2); transition:width .3s; }
+
+/* 右侧选项面板 */
+.option-panel { width:400px; background:#fff; border-left:1px solid #e4e7ed; overflow-y:auto; flex-shrink:0; }
+.option-header { padding:16px 20px; border-bottom:1px solid #f0f0f0; }
+.option-header h2 { font-size:15px; font-weight:600; color:#303133; }
+.option-header .hint { font-size:11.5px; color:#909399; margin-top:3px; }
+
+/* Accordion */
+.option-group { border-bottom:1px solid #f0f0f0; }
+.option-group-header { padding:14px 20px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none; transition:background .2s; }
+.option-group-header:hover { background:#fafbfc; }
+.option-group-header.completed { background:linear-gradient(90deg,#f6ffed,#fff); }
+.option-group-title { font-size:13.5px; font-weight:600; color:#303133; display:flex; align-items:center; gap:8px; }
+.option-group-required { color:#f56c6c; font-size:11px; margin-left:2px; }
+.option-group-check { width:18px; height:18px; border-radius:50%; background:#52c41a; color:#fff; font-size:11px; display:none; align-items:center; justify-content:center; }
+.option-group-header.completed .option-group-check { display:flex; }
+.option-group-arrow { font-size:10px; color:#909399; transition:transform .2s; }
+.option-group.collapsed .option-group-arrow { transform:rotate(-90deg); }
+.option-group-body { padding:8px 20px 16px; }
+.option-group.collapsed .option-group-body { display:none; }
+
+/* 选项卡片网格 */
+.option-cards { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.option-cards.single-col { grid-template-columns:1fr; }
+.option-card { border:1px solid #e4e7ed; border-radius:6px; padding:10px 12px; cursor:pointer; transition:all .2s; position:relative; background:#fff; }
+.option-card:hover { border-color:#91caff; background:#fafdff; box-shadow:0 2px 6px rgba(24,144,255,.1); transform:translateY(-1px); }
+.option-card.selected { border-color:#1890ff; background:#e6f4ff; box-shadow:0 0 0 2px rgba(24,144,255,.15); }
+.option-card.selected::after { content:'✓'; position:absolute; top:6px; right:8px; color:#52c41a; font-weight:bold; font-size:14px; }
+.option-card.disabled { opacity:.45; cursor:not-allowed; }
+.option-card.disabled:hover { transform:none; box-shadow:none; border-color:#e4e7ed; background:#fff; }
+.option-card-title { font-size:12.5px; font-weight:500; color:#303133; margin-bottom:4px; }
+.option-card-desc { font-size:11px; color:#909399; margin-bottom:6px; line-height:1.4; }
+.option-card-price { font-size:11.5px; color:#1890ff; font-weight:500; }
+.option-card-price.neutral { color:#909399; }
+.option-card-price.delta-positive::before { content:'+'; }
+
+/* 色卡（颜色选项） */
+.color-card { display:flex; align-items:center; gap:8px; padding:8px 10px; }
+.color-swatch { width:24px; height:24px; border-radius:4px; border:1px solid rgba(0,0,0,.1); flex-shrink:0; }
+
+/* 多选 checkbox 卡片 */
+.option-card.multi-select { padding-right:32px; }
+.option-card.multi-select.selected::after { content:''; }
+.option-card.multi-select .check-box { position:absolute; top:50%; right:10px; transform:translateY(-50%); width:18px; height:18px; border:1px solid #dcdfe6; border-radius:3px; display:flex; align-items:center; justify-content:center; }
+.option-card.multi-select.selected .check-box { background:#1890ff; border-color:#1890ff; color:#fff; font-size:12px; }
+.option-card.multi-select.selected .check-box::after { content:'✓'; }
+
+/* 底部价格条 */
+.footer-bar { height:90px; background:#fff; border-top:1px solid #e4e7ed; padding:14px 24px; box-shadow:0 -2px 8px rgba(0,0,0,.04); z-index:10; display:flex; align-items:center; gap:24px; }
+
+.config-summary { flex:1; min-width:0; }
+.config-summary-label { font-size:11.5px; color:#909399; margin-bottom:3px; }
+.config-summary-text { font-size:13px; color:#303133; font-weight:500; }
+.config-summary-text .tag { display:inline-block; padding:1px 8px; background:#e6f4ff; color:#0958d9; border:1px solid #91caff; border-radius:3px; font-size:11px; margin-right:4px; }
+
+.price-display { text-align:right; min-width:240px; }
+.price-breakdown { font-size:11.5px; color:#909399; line-height:1.4; max-height:32px; overflow:hidden; }
+.price-total { font-size:22px; font-weight:600; color:#c41d7f; margin-top:2px; }
+.price-total .currency { font-size:14px; color:#909399; font-weight:normal; }
+
+.footer-actions { display:flex; gap:8px; align-items:center; }
+
+/* Toast */
+.toast-stack { position:fixed; top:80px; right:20px; z-index:2000; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+.toast { background:#fff; border:1px solid #b7eb8f; border-left:4px solid #52c41a; padding:10px 14px; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,.1); font-size:12.5px; min-width:280px; max-width:380px; animation:slideIn .3s ease; pointer-events:auto; }
+.toast.info { border-color:#91caff; border-left-color:#1890ff; }
+.toast.warning { border-color:#ffd591; border-left-color:#faad14; }
+.toast.error { border-color:#fbc4c4; border-left-color:#f56c6c; }
+@keyframes slideIn { from { transform:translateX(120%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+
+/* 演示快捷面板 */
+.demo-presets { position:fixed; bottom:100px; left:24px; background:rgba(0,21,41,.92); color:#fff; padding:12px 14px; border-radius:6px; font-size:11.5px; z-index:500; box-shadow:0 4px 12px rgba(0,0,0,.3); }
+.demo-presets h4 { font-size:12px; margin-bottom:8px; color:#69c0ff; }
+.demo-presets button { padding:5px 10px; border:1px solid #1f2d3d; background:#000c17; color:#a6adb4; border-radius:3px; cursor:pointer; font-size:11px; margin:2px; }
+.demo-presets button:hover { background:#1f2d3d; color:#fff; }
+
+/* 提交对话框 — v0.4 P0 改造：两步式（建实例 + 三选一动作） */
+.submit-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,.5); display:none; align-items:center; justify-content:center; z-index:2500; }
+.submit-overlay.open { display:flex; }
+.submit-dialog { background:#fff; border-radius:12px; padding:24px 30px; max-width:600px; width:90%; box-shadow:0 12px 32px rgba(0,0,0,.2); max-height:90vh; overflow-y:auto; }
+.submit-icon { width:56px; height:56px; margin:0 auto 12px; background:linear-gradient(135deg,#52c41a,#13c2c2); border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:28px; }
+.submit-title { text-align:center; font-size:18px; font-weight:600; margin-bottom:6px; }
+.submit-desc { text-align:center; font-size:12.5px; color:#606266; margin-bottom:14px; line-height:1.6; }
+.submit-detail { background:#f6ffed; border:1px solid #b7eb8f; border-radius:6px; padding:10px 14px; font-size:12px; color:#389e0d; margin-bottom:14px; font-family:Consolas,Monaco,monospace; line-height:1.7; }
+
+/* 三选一动作卡片 */
+.action-cards { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
+.action-card { border:1.5px solid #e4e7ed; border-radius:8px; padding:12px 14px; cursor:pointer; transition:all .2s; display:flex; align-items:center; gap:12px; }
+.action-card:hover { border-color:#1890ff; background:#fafdff; transform:translateX(2px); }
+.action-card.primary { border-color:#52c41a; background:linear-gradient(135deg,#f6ffed,#fff); }
+.action-card.primary:hover { border-color:#389e0d; box-shadow:0 4px 12px rgba(82,196,26,.15); }
+.action-icon-large { font-size:28px; width:42px; text-align:center; flex-shrink:0; }
+.action-info { flex:1; }
+.action-card-title { font-size:13.5px; font-weight:600; color:#303133; margin-bottom:3px; }
+.action-card-desc { font-size:11.5px; color:#606266; line-height:1.5; }
+.action-card-arrow { color:#bfbfbf; font-size:16px; }
+.action-card:hover .action-card-arrow { color:#1890ff; }
+.action-card.primary .action-card-arrow { color:#52c41a; }
+
+/* 已有报价单列表 - 步骤 2.3 弹出 */
+.existing-quote-list { max-height:240px; overflow-y:auto; border:1px solid #e4e7ed; border-radius:6px; margin-bottom:14px; }
+.existing-quote-row { padding:10px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer; display:flex; gap:10px; align-items:center; }
+.existing-quote-row:last-child { border-bottom:none; }
+.existing-quote-row:hover { background:#fafdff; }
+.existing-quote-row.selected { background:#e6f7ff; border-left:3px solid #1890ff; padding-left:9px; }
+.existing-quote-info { flex:1; }
+.eq-no { font-family:Consolas,Monaco,monospace; font-size:12px; color:#1890ff; font-weight:500; }
+.eq-meta { font-size:11px; color:#909399; margin-top:2px; }
+.eq-amt { font-weight:600; color:#cf1322; font-size:13px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- 顶部条 -->
+  <div class="top-bar">
+    <span class="top-back" onclick="showToast('info','演示版：返回 /products 列表页')">← 返回</span>
+    <div class="top-title">
+      接触片产品选配
+      <span class="subtitle">CFG-TPL-CONTACT-STRIP · v0.4 实验性</span>
+    </div>
+
+    <!-- 多租户客户切换器 (v0.4 §十四) -->
+    <div class="customer-selector">
+      <span class="cs-label">客户视角:</span>
+      <span class="cs-option active vip" data-customer="rockwell" onclick="switchCustomer('rockwell')">罗克韦尔 <span class="cs-tag">VIP</span></span>
+      <span class="cs-option" data-customer="siemens" onclick="switchCustomer('siemens')">西门子 <span class="cs-tag">STD</span></span>
+      <span class="cs-option" data-customer="trial" onclick="switchCustomer('trial')">新客户 <span class="cs-tag">TRIAL</span></span>
+    </div>
+
+    <div class="top-actions">
+      <label style="display:inline-flex;align-items:center;gap:6px;padding:0 10px;font-size:12px;color:#606266;cursor:pointer;border:1px dashed #faad14;border-radius:4px;background:#fffbe6;" title="模拟 product_config_template.show_price 配置">
+        <input type="checkbox" id="hidePriceToggle" onchange="togglePriceDisplay(this.checked)" />
+        <span>🎭 隐藏价格 (演示)</span>
+      </label>
+      <button class="btn" onclick="saveDraft()">💾 保存草稿</button>
+      <button class="btn" onclick="openShareDialog()">🔗 分享配置</button>
+    </div>
+  </div>
+
+  <!-- 主内容 -->
+  <div class="main">
+    <!-- 左侧：3D 画布 -->
+    <div class="canvas-section">
+      <canvas id="configCanvas"></canvas>
+
+      <div class="canvas-tip">
+        💡 拖拽旋转 · 滚轮缩放 · 选项变化即时联动
+      </div>
+
+      <div class="progress-overlay">
+        <div class="progress-label">配置进度: <b id="progressPct">0%</b> · <span id="progressLabel">0 / 4 必选项</span></div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+      </div>
+
+      <div class="canvas-toolbar">
+        <button onclick="resetCamera()" title="重置视角">🔄</button>
+        <button onclick="cycleViewAngle()" title="切换视角">👁</button>
+        <button onclick="toggleWireframe()" id="btnWire" title="线框模式">📐</button>
+        <button onclick="takeScreenshot()" title="截图">💾</button>
+      </div>
+    </div>
+
+    <!-- 右侧：选项面板 -->
+    <div class="option-panel" id="optionPanel">
+      <div class="option-header">
+        <h2>📋 配置选项</h2>
+        <div class="hint">选项变化时左侧 3D 自动联动，价格实时更新</div>
+      </div>
+
+      <!-- Accordion 由 JS 动态渲染 -->
+      <div id="optionGroups"></div>
+    </div>
+  </div>
+
+  <!-- 底部价格条 -->
+  <div class="footer-bar">
+    <div class="config-summary">
+      <div class="config-summary-label">当前配置</div>
+      <div class="config-summary-text" id="summaryText">请先完成必选项 ↑</div>
+    </div>
+    <div class="price-display">
+      <div class="price-breakdown" id="priceBreakdown">基础价 ¥0</div>
+      <div class="price-total"><span class="currency">¥</span><span id="totalPrice">0</span></div>
+    </div>
+    <div class="footer-actions">
+      <button class="btn" onclick="quickEstimate()">💰 估价对照</button>
+      <button class="btn-success disabled" id="submitBtn" onclick="submitConfig()" disabled>🎯 生成报价单 →</button>
+    </div>
+  </div>
+</div>
+
+<!-- 演示快捷预设 -->
+<div class="demo-presets">
+  <h4>🧪 演示预设</h4>
+  <button onclick="applyPreset('standard')">标准款套装</button>
+  <button onclick="applyPreset('enhanced')">增强款套装</button>
+  <button onclick="applyPreset('premium')">高端款套装</button>
+  <br/>
+  <button onclick="resetConfig()" style="margin-top:6px;">重置配置</button>
+</div>
+
+<!-- Toast -->
+<div class="toast-stack" id="toastStack"></div>
+
+<!-- 分享对话框 (v0.4 §十七) -->
+<div class="share-overlay" id="shareOverlay">
+  <div class="share-dialog">
+    <div class="share-title">🔗 分享配置</div>
+    <div style="font-size:12.5px;color:#909399;margin-bottom:14px;">将当前配置分享给他人 — 选择分享类型：</div>
+
+    <div class="share-type-cards">
+      <div class="share-type-card selected" data-share-type="CUSTOMER_SELF" onclick="selectShareType('CUSTOMER_SELF')">
+        <div class="icon">👥</div>
+        <div class="name">客户自助</div>
+        <div class="desc">发链接给客户自己查看修改</div>
+      </div>
+      <div class="share-type-card" data-share-type="INTERNAL" onclick="selectShareType('INTERNAL')">
+        <div class="icon">🏢</div>
+        <div class="name">内部分享</div>
+        <div class="desc">销售之间分享方案参考</div>
+      </div>
+      <div class="share-type-card" data-share-type="PUBLIC_PRESET" onclick="selectShareType('PUBLIC_PRESET')">
+        <div class="icon">📚</div>
+        <div class="name">存为模板</div>
+        <div class="desc">公共模板库供他人复用</div>
+      </div>
+    </div>
+
+    <div class="share-section">
+      <div class="share-section-label">分享 URL（点击复制）：</div>
+      <div class="share-url-box" id="shareUrlBox" onclick="copyShareUrl()" title="点击复制"></div>
+    </div>
+
+    <div class="share-section" id="customerFormSection">
+      <div class="share-form-row">
+        <label>客户邮箱（发送给）</label>
+        <input type="email" id="customerEmail" placeholder="example@customer.com" />
+      </div>
+      <div class="share-form-row row-flex">
+        <input type="checkbox" id="canModify" checked /> <label for="canModify" style="margin:0;cursor:pointer;">允许客户修改配置</label>
+      </div>
+      <div class="share-form-row">
+        <label>有效期</label>
+        <select id="expiresIn">
+          <option value="7">7 天（默认）</option>
+          <option value="14">14 天</option>
+          <option value="30">30 天</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="share-actions">
+      <button class="btn" onclick="closeShareDialog()">取消</button>
+      <button class="btn-primary" onclick="confirmShare()">发送分享</button>
+    </div>
+  </div>
+</div>
+
+<!-- 提交对话框 — v0.4 P0 两步式 -->
+<div class="submit-overlay" id="submitOverlay">
+  <div class="submit-dialog" id="submitDialog">
+    <!-- 由 JS 渲染 step 1 / step 2 -->
+  </div>
+</div>
+
+<script>
+// ============================================================
+// 配置模板数据（模拟 product_config_template + 关联表）
+// ============================================================
+const configTemplate = {
+  code: 'CFG-TPL-CONTACT-STRIP',
+  name: '接触片产品选配',
+  basePartNo: 'CFG-CONTACT-STRIP-BASE',
+  basePrice: 1000,
+  options: [
+    {
+      code: 'OPT-MODEL',
+      label: '1. 型号',
+      type: 'EXCLUSIVE',
+      required: true,
+      values: [
+        { code: 'STD', label: '标准款', desc: '基础规格 / 国标', priceDelta: 0, default: true,
+          rules: [
+            { action: 'REPLACE_MATERIAL', target: 'mesh_main_body', params: { diffuse: '#999999' } },
+          ]
+        },
+        { code: 'ENH', label: '增强款', desc: '加强结构 / 高强度', priceDelta: 500,
+          rules: [
+            { action: 'REPLACE_MATERIAL', target: 'mesh_main_body', params: { diffuse: '#8090a8' } },
+          ]
+        },
+        { code: 'PRM', label: '高端款', desc: '航空级 / 客户定制', priceDelta: 1200,
+          rules: [
+            { action: 'REPLACE_MATERIAL', target: 'mesh_main_body', params: { diffuse: '#404858' } },
+            { action: 'SHOW_MESH', target: 'mesh_premium_badge' },
+          ]
+        },
+      ]
+    },
+    {
+      code: 'OPT-MATERIAL',
+      label: '2. 材质',
+      type: 'EXCLUSIVE',
+      required: true,
+      values: [
+        { code: 'CU', label: '纯 Cu', desc: '基础铜', priceDelta: 0,
+          rules: [
+            { action: 'REPLACE_MATERIAL', target: 'mesh_contact_layer', params: { diffuse: '#cd7f32' } },
+          ]
+        },
+        { code: 'AGCU85', label: 'Ag85Cu15', desc: '银 85% 铜 15%', priceDelta: 580,
+          rules: [
+            { action: 'REPLACE_MATERIAL', target: 'mesh_contact_layer', params: { diffuse: '#e8e8ec' } },
+            { action: 'SHOW_MESH', target: 'mesh_silver_badge' },
+          ]
+        },
+        { code: 'CU90AG10', label: 'Cu90Ag10', desc: '铜 90% 银 10%', priceDelta: 200,
+          rules: [
+            { action: 'REPLACE_MATERIAL', target: 'mesh_contact_layer', params: { diffuse: '#d4a574' } },
+          ]
+        },
+      ]
+    },
+    {
+      code: 'OPT-COATING',
+      label: '3. 表面处理',
+      type: 'EXCLUSIVE',
+      required: false,
+      values: [
+        { code: 'NONE', label: '无处理', desc: '原色表面', priceDelta: 0, default: true,
+          rules: [{ action: 'HIDE_MESH', target: 'mesh_coating_layer' }]
+        },
+        { code: 'NICKEL_05', label: '镍镀 0.5μ', desc: '基础防腐', priceDelta: 140,
+          rules: [
+            { action: 'SHOW_MESH', target: 'mesh_coating_layer' },
+            { action: 'REPLACE_MATERIAL', target: 'mesh_coating_layer', params: { diffuse: '#a0a0a8' } },
+          ]
+        },
+        { code: 'SILVER_1', label: '银镀 1μ', desc: '高导电 + 美观', priceDelta: 320,
+          rules: [
+            { action: 'SHOW_MESH', target: 'mesh_coating_layer' },
+            { action: 'REPLACE_MATERIAL', target: 'mesh_coating_layer', params: { diffuse: '#f5f5fa' } },
+          ]
+        },
+        { code: 'PASSIVATE', label: '钝化处理', desc: '低成本防腐', priceDelta: 80,
+          rules: [
+            { action: 'SHOW_MESH', target: 'mesh_coating_layer' },
+            { action: 'REPLACE_MATERIAL', target: 'mesh_coating_layer', params: { diffuse: '#5c6378' } },
+          ]
+        },
+      ]
+    },
+    {
+      code: 'OPT-INTERFACE',
+      label: '4. 接口规格',
+      type: 'EXCLUSIVE',
+      required: true,
+      values: [
+        { code: 'M6', label: 'M6 螺纹', desc: '小型紧固', priceDelta: 0,
+          rules: [
+            { action: 'SHOW_MESH', target: 'mesh_thread_m6' },
+            { action: 'HIDE_MESH', target: 'mesh_thread_m8' },
+            { action: 'HIDE_MESH', target: 'mesh_thread_m10' },
+            { action: 'HIDE_MESH', target: 'mesh_weld_pad' },
+          ]
+        },
+        { code: 'M8', label: 'M8 螺纹', desc: '标准 (推荐)', priceDelta: 0, default: true,
+          rules: [
+            { action: 'HIDE_MESH', target: 'mesh_thread_m6' },
+            { action: 'SHOW_MESH', target: 'mesh_thread_m8' },
+            { action: 'HIDE_MESH', target: 'mesh_thread_m10' },
+            { action: 'HIDE_MESH', target: 'mesh_weld_pad' },
+          ]
+        },
+        { code: 'M10', label: 'M10 螺纹', desc: '大型紧固', priceDelta: 50,
+          rules: [
+            { action: 'HIDE_MESH', target: 'mesh_thread_m6' },
+            { action: 'HIDE_MESH', target: 'mesh_thread_m8' },
+            { action: 'SHOW_MESH', target: 'mesh_thread_m10' },
+            { action: 'HIDE_MESH', target: 'mesh_weld_pad' },
+          ]
+        },
+        { code: 'WELD', label: '焊接连接', desc: '免螺栓 / 焊接', priceDelta: 80,
+          rules: [
+            { action: 'HIDE_MESH', target: 'mesh_thread_m6' },
+            { action: 'HIDE_MESH', target: 'mesh_thread_m8' },
+            { action: 'HIDE_MESH', target: 'mesh_thread_m10' },
+            { action: 'SHOW_MESH', target: 'mesh_weld_pad' },
+          ]
+        },
+      ]
+    },
+    {
+      code: 'OPT-ACCESSORIES',
+      label: '5. 附加部件',
+      type: 'MULTI_SELECT',
+      required: false,
+      values: [
+        { code: 'CLIP', label: '加固卡扣', desc: '防松动', priceDelta: 80,
+          rules: [{ action: 'SHOW_MESH', target: 'mesh_clip' }],
+          inverseRules: [{ action: 'HIDE_MESH', target: 'mesh_clip' }]
+        },
+        { code: 'DUST_COVER', label: '防尘罩', desc: '户外用', priceDelta: 45,
+          rules: [{ action: 'SHOW_MESH', target: 'mesh_dust_cover' }],
+          inverseRules: [{ action: 'HIDE_MESH', target: 'mesh_dust_cover' }]
+        },
+        { code: 'GROUND_WIRE', label: '接地线', desc: '安全接地', priceDelta: 30,
+          rules: [{ action: 'SHOW_MESH', target: 'mesh_ground_wire' }],
+          inverseRules: [{ action: 'HIDE_MESH', target: 'mesh_ground_wire' }]
+        },
+      ]
+    },
+  ],
+  // 约束规则
+  constraints: [
+    { type: 'EXCLUDES', trigger: { OPT_MODEL: 'PRM' }, affected: { OPT_COATING: 'NONE' }, message: '高端款型号不允许无表面处理' },
+    { type: 'IMPLIES', trigger: { OPT_INTERFACE: 'WELD' }, affected: { OPT_ACCESSORIES: 'GROUND_WIRE' }, message: '焊接连接建议同时配接地线 (已自动勾选)' },
+  ]
+};
+
+// 演示预设套装
+const PRESETS = {
+  standard: { 'OPT-MODEL': 'STD', 'OPT-MATERIAL': 'CU', 'OPT-COATING': 'NONE', 'OPT-INTERFACE': 'M8', 'OPT-ACCESSORIES': [] },
+  enhanced: { 'OPT-MODEL': 'ENH', 'OPT-MATERIAL': 'AGCU85', 'OPT-COATING': 'NICKEL_05', 'OPT-INTERFACE': 'M8', 'OPT-ACCESSORIES': ['CLIP'] },
+  premium:  { 'OPT-MODEL': 'PRM', 'OPT-MATERIAL': 'AGCU85', 'OPT-COATING': 'SILVER_1', 'OPT-INTERFACE': 'M10', 'OPT-ACCESSORIES': ['CLIP','DUST_COVER','GROUND_WIRE'] },
+};
+
+// ============================================================
+// 应用状态
+// ============================================================
+let selectedValues = {};      // { optionCode: valueCode | [valueCodes] }
+let hoverValueCode = null;    // 当前 hover 的选项值 (3D 临时预览)
+let engine = null, scene = null, camera = null;
+let meshRefs = {};            // mesh name -> BABYLON.Mesh
+let isWireframe = false;
+let viewAngleIdx = 0;
+
+const viewAngles = [
+  { name: '默认', alpha: Math.PI/4, beta: Math.PI/3, radius: 7 },
+  { name: '正视', alpha: -Math.PI/2, beta: Math.PI/2, radius: 7 },
+  { name: '俯视', alpha: -Math.PI/2, beta: 0.01, radius: 7 },
+  { name: '侧视', alpha: 0, beta: Math.PI/2, radius: 7 },
+];
+
+// ============================================================
+// 选项面板渲染
+// ============================================================
+function renderOptionPanel() {
+  const container = document.getElementById('optionGroups');
+  container.innerHTML = configTemplate.options.map(opt => {
+    const isCompleted = isOptionCompleted(opt);
+    return `
+      <div class="option-group ${isCompleted ? '' : 'collapsed-default'}" data-opt-code="${opt.code}">
+        <div class="option-group-header ${isCompleted ? 'completed' : ''}" onclick="toggleGroup('${opt.code}')">
+          <div class="option-group-title">
+            ${opt.label}${opt.required ? '<span class="option-group-required">*</span>' : ''}
+            <span class="option-group-check">✓</span>
+          </div>
+          <span class="option-group-arrow">▼</span>
+        </div>
+        <div class="option-group-body">
+          <div class="option-cards ${opt.type === 'MULTI_SELECT' ? 'single-col' : ''}">
+            ${opt.values.map(val => renderValueCard(opt, val)).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderValueCard(opt, val) {
+  const isSelected = isValueSelected(opt.code, val.code);
+  const cardClass = `option-card ${isSelected ? 'selected' : ''} ${opt.type === 'MULTI_SELECT' ? 'multi-select' : ''}`;
+  const priceText = val.priceDelta === 0
+    ? (opt.required ? '<span class="option-card-price neutral">标配</span>' : '<span class="option-card-price neutral">¥0</span>')
+    : `<span class="option-card-price delta-positive">¥${val.priceDelta}</span>`;
+  return `
+    <div class="${cardClass}"
+         data-value-code="${val.code}"
+         onclick="selectValue('${opt.code}','${val.code}', '${opt.type}')"
+         onmouseenter="previewValue('${opt.code}','${val.code}')"
+         onmouseleave="endPreview()">
+      ${opt.type === 'MULTI_SELECT' ? '<div class="check-box"></div>' : ''}
+      <div class="option-card-title">${val.label}</div>
+      <div class="option-card-desc">${val.desc}</div>
+      ${priceText}
+    </div>
+  `;
+}
+
+function toggleGroup(optCode) {
+  const grp = document.querySelector(`.option-group[data-opt-code="${optCode}"]`);
+  if (grp) grp.classList.toggle('collapsed');
+}
+
+function isValueSelected(optCode, valCode) {
+  const v = selectedValues[optCode];
+  if (Array.isArray(v)) return v.includes(valCode);
+  return v === valCode;
+}
+
+function isOptionCompleted(opt) {
+  const v = selectedValues[opt.code];
+  if (opt.required) {
+    if (Array.isArray(v)) return v.length > 0;
+    return v != null && v !== '';
+  }
+  return true;
+}
+
+// ============================================================
+// 选项交互
+// ============================================================
+function selectValue(optCode, valCode, optType) {
+  if (optType === 'MULTI_SELECT') {
+    if (!selectedValues[optCode]) selectedValues[optCode] = [];
+    const idx = selectedValues[optCode].indexOf(valCode);
+    if (idx >= 0) selectedValues[optCode].splice(idx, 1);
+    else selectedValues[optCode].push(valCode);
+  } else {
+    selectedValues[optCode] = valCode;
+  }
+  evaluate();
+  renderOptionPanel();
+}
+
+let previewSnapshot = null;
+function previewValue(optCode, valCode) {
+  if (!engine) return;
+  // 临时应用该值的 3D 规则，鼠标离开恢复
+  const opt = configTemplate.options.find(o => o.code === optCode);
+  const val = opt && opt.values.find(v => v.code === valCode);
+  if (!val || !val.rules) return;
+  hoverValueCode = valCode;
+  // 保存当前状态
+  if (!previewSnapshot) previewSnapshot = captureMeshState();
+  val.rules.forEach(applyRule);
+}
+
+function endPreview() {
+  if (previewSnapshot) {
+    restoreMeshState(previewSnapshot);
+    previewSnapshot = null;
+  }
+  hoverValueCode = null;
+  // 恢复正式 selectedValues 的 3D 状态
+  apply3DCommands(computeRender3DCommands());
+}
+
+// ============================================================
+// 核心 evaluate：选项变化时执行
+// ============================================================
+function evaluate() {
+  // 1. 计算价格
+  let total = configTemplate.basePrice;
+  const breakdown = [`基础 ¥${configTemplate.basePrice}`];
+  const summaryParts = [];
+
+  configTemplate.options.forEach(opt => {
+    const v = selectedValues[opt.code];
+    if (!v) return;
+    if (Array.isArray(v)) {
+      v.forEach(vc => {
+        const val = opt.values.find(x => x.code === vc);
+        if (val) {
+          total += val.priceDelta;
+          if (val.priceDelta > 0) breakdown.push(`${val.label} +¥${val.priceDelta}`);
+          summaryParts.push(val.label);
+        }
+      });
+    } else {
+      const val = opt.values.find(x => x.code === v);
+      if (val) {
+        total += val.priceDelta;
+        if (val.priceDelta > 0) breakdown.push(`${val.label} +¥${val.priceDelta}`);
+        summaryParts.push(val.label);
+      }
+    }
+  });
+
+  // 2. 检查约束
+  let conflictMsg = null;
+  for (const c of configTemplate.constraints) {
+    const triggerMatch = Object.entries(c.trigger).every(([k,v]) =>
+      selectedValues[k.replace(/_/g,'-')] === v ||
+      (Array.isArray(selectedValues[k.replace(/_/g,'-')]) && selectedValues[k.replace(/_/g,'-')].includes(v))
+    );
+    if (triggerMatch) {
+      if (c.type === 'EXCLUDES') {
+        const affectedKey = Object.keys(c.affected)[0].replace(/_/g,'-');
+        const affectedVal = c.affected[Object.keys(c.affected)[0]];
+        if (selectedValues[affectedKey] === affectedVal) {
+          conflictMsg = c.message;
+          showToast('warning', `⚠️ ${c.message}`);
+        }
+      } else if (c.type === 'IMPLIES') {
+        const affectedKey = Object.keys(c.affected)[0].replace(/_/g,'-');
+        const affectedVal = c.affected[Object.keys(c.affected)[0]];
+        if (!selectedValues[affectedKey] || (Array.isArray(selectedValues[affectedKey]) && !selectedValues[affectedKey].includes(affectedVal))) {
+          if (Array.isArray(selectedValues[affectedKey])) {
+            selectedValues[affectedKey].push(affectedVal);
+          } else if (!selectedValues[affectedKey]) {
+            selectedValues[affectedKey] = [affectedVal];
+          }
+          showToast('info', `ℹ ${c.message}`);
+        }
+      }
+    }
+  }
+
+  // 3. 应用 3D 渲染
+  apply3DCommands(computeRender3DCommands());
+
+  // 4. 更新底部 UI
+  document.getElementById('priceBreakdown').textContent = breakdown.join(' + ');
+  document.getElementById('totalPrice').textContent = total.toLocaleString();
+  const summaryEl = document.getElementById('summaryText');
+  if (summaryParts.length === 0) {
+    summaryEl.textContent = '请先完成必选项 ↑';
+  } else {
+    summaryEl.innerHTML = summaryParts.map(s => `<span class="tag">${s}</span>`).join('');
+  }
+
+  // 5. 更新进度
+  const required = configTemplate.options.filter(o => o.required);
+  const filled = required.filter(isOptionCompleted).length;
+  const pct = required.length === 0 ? 100 : Math.round((filled / required.length) * 100);
+  document.getElementById('progressPct').textContent = pct + '%';
+  document.getElementById('progressLabel').textContent = `${filled} / ${required.length} 必选项`;
+  document.getElementById('progressFill').style.width = pct + '%';
+
+  // 6. 提交按钮状态
+  const submitBtn = document.getElementById('submitBtn');
+  if (pct === 100) {
+    submitBtn.classList.remove('disabled');
+    submitBtn.disabled = false;
+  } else {
+    submitBtn.classList.add('disabled');
+    submitBtn.disabled = true;
+  }
+}
+
+function computeRender3DCommands() {
+  const commands = [];
+  configTemplate.options.forEach(opt => {
+    const v = selectedValues[opt.code];
+    if (!v) return;
+    if (Array.isArray(v)) {
+      // 多选：选中的 push rules / 未选的 push inverseRules
+      opt.values.forEach(val => {
+        if (v.includes(val.code)) {
+          (val.rules || []).forEach(r => commands.push(r));
+        } else {
+          (val.inverseRules || []).forEach(r => commands.push(r));
+        }
+      });
+    } else {
+      const val = opt.values.find(x => x.code === v);
+      if (val && val.rules) val.rules.forEach(r => commands.push(r));
+    }
+  });
+  return commands;
+}
+
+function apply3DCommands(commands) {
+  if (!scene) return;
+  commands.forEach(applyRule);
+}
+
+function applyRule(rule) {
+  if (!scene) return;
+  const mesh = meshRefs[rule.target];
+  if (!mesh) return;
+  switch (rule.action) {
+    case 'SHOW_MESH':
+      mesh.isVisible = true;
+      mesh.setEnabled(true);
+      break;
+    case 'HIDE_MESH':
+      mesh.isVisible = false;
+      mesh.setEnabled(false);
+      break;
+    case 'REPLACE_MATERIAL':
+      if (mesh.material && rule.params && rule.params.diffuse) {
+        const c = hexToColor3(rule.params.diffuse);
+        mesh.material.diffuseColor = c;
+      }
+      break;
+    case 'TRANSFORM_MESH':
+      if (rule.params) {
+        if (rule.params.position) mesh.position = new BABYLON.Vector3(...rule.params.position);
+        if (rule.params.rotation) mesh.rotation = new BABYLON.Vector3(...rule.params.rotation);
+        if (rule.params.scaling)  mesh.scaling  = new BABYLON.Vector3(...rule.params.scaling);
+      }
+      break;
+    // SWAP_MESH 略：演示版不实现
+  }
+}
+
+function captureMeshState() {
+  const snap = {};
+  Object.entries(meshRefs).forEach(([name, mesh]) => {
+    snap[name] = {
+      visible: mesh.isVisible,
+      enabled: mesh.isEnabled(),
+      diffuse: mesh.material && mesh.material.diffuseColor ? mesh.material.diffuseColor.clone() : null,
+    };
+  });
+  return snap;
+}
+
+function restoreMeshState(snap) {
+  Object.entries(snap).forEach(([name, s]) => {
+    const mesh = meshRefs[name];
+    if (!mesh) return;
+    mesh.isVisible = s.visible;
+    mesh.setEnabled(s.enabled);
+    if (s.diffuse && mesh.material) mesh.material.diffuseColor = s.diffuse;
+  });
+}
+
+function hexToColor3(hex) {
+  const r = parseInt(hex.substr(1,2),16) / 255;
+  const g = parseInt(hex.substr(3,2),16) / 255;
+  const b = parseInt(hex.substr(5,2),16) / 255;
+  return new BABYLON.Color3(r, g, b);
+}
+
+// ============================================================
+// Babylon 3D 场景
+// ============================================================
+function initBabylon() {
+  const canvas = document.getElementById('configCanvas');
+  engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, antialias: true });
+  scene = new BABYLON.Scene(engine);
+  scene.clearColor = new BABYLON.Color4(0.96, 0.97, 0.98, 1);
+
+  camera = new BABYLON.ArcRotateCamera('cam', Math.PI/4, Math.PI/3, 7, BABYLON.Vector3.Zero(), scene);
+  camera.attachControl(canvas, true);
+  camera.lowerRadiusLimit = 3;
+  camera.upperRadiusLimit = 15;
+  camera.wheelDeltaPercentage = 0.02;
+
+  new BABYLON.HemisphericLight('hl', new BABYLON.Vector3(0,1,0), scene).intensity = 0.85;
+  const dl = new BABYLON.DirectionalLight('dl', new BABYLON.Vector3(-1,-2,-1), scene);
+  dl.intensity = 0.5;
+
+  buildContactStrip(scene);
+
+  engine.runRenderLoop(() => scene.render());
+  window.addEventListener('resize', () => engine.resize());
+}
+
+function buildContactStrip(scene) {
+  // 主体 (始终显示) — 长方形片
+  const main = BABYLON.MeshBuilder.CreateBox('mesh_main_body', { width: 3, height: 0.25, depth: 1.4 }, scene);
+  main.position.y = 0;
+  const matMain = new BABYLON.StandardMaterial('matMain', scene);
+  matMain.diffuseColor = new BABYLON.Color3(0.6, 0.6, 0.65);
+  matMain.specularPower = 32;
+  main.material = matMain;
+  meshRefs.mesh_main_body = main;
+
+  // 接触层（材质显示）
+  const contact = BABYLON.MeshBuilder.CreateBox('mesh_contact_layer', { width: 2.7, height: 0.06, depth: 1.15 }, scene);
+  contact.position.y = 0.155;
+  const matContact = new BABYLON.StandardMaterial('matContact', scene);
+  matContact.diffuseColor = new BABYLON.Color3(0.8, 0.5, 0.2);
+  matContact.specularPower = 64;
+  contact.material = matContact;
+  meshRefs.mesh_contact_layer = contact;
+
+  // 镀层（默认隐藏）
+  const coating = BABYLON.MeshBuilder.CreateBox('mesh_coating_layer', { width: 2.7, height: 0.03, depth: 1.15 }, scene);
+  coating.position.y = 0.2;
+  const matCoating = new BABYLON.StandardMaterial('matCoating', scene);
+  matCoating.diffuseColor = new BABYLON.Color3(0.62, 0.62, 0.66);
+  coating.material = matCoating;
+  meshRefs.mesh_coating_layer = coating;
+  coating.isVisible = false;
+  coating.setEnabled(false);
+
+  // 三种螺纹孔（互斥显示）
+  const createThread = (name, diameter, posX) => {
+    const t = BABYLON.MeshBuilder.CreateCylinder(name, { diameter, height: 0.5, tessellation: 16 }, scene);
+    t.position = new BABYLON.Vector3(posX, 0, 0);
+    const m = new BABYLON.StandardMaterial(name + '_mat', scene);
+    m.diffuseColor = new BABYLON.Color3(0.3, 0.3, 0.35);
+    t.material = m;
+    meshRefs[name] = t;
+    return t;
+  };
+  const m6 = createThread('mesh_thread_m6', 0.25, -1.2);
+  const m8 = createThread('mesh_thread_m8', 0.35, -1.2);
+  const m10 = createThread('mesh_thread_m10', 0.45, -1.2);
+  const m6_r = createThread('mesh_thread_m6_r', 0.25, 1.2);  // 右侧第二孔
+  meshRefs.mesh_thread_m6_r = m6_r;
+  // 默认仅 M8 可见
+  m6.isVisible = false; m6.setEnabled(false);
+  m10.isVisible = false; m10.setEnabled(false);
+  m6_r.isVisible = false; m6_r.setEnabled(false);
+
+  // 焊接连接片（焊接连接时显示）
+  const weld = BABYLON.MeshBuilder.CreateBox('mesh_weld_pad', { width: 0.6, height: 0.08, depth: 0.6 }, scene);
+  weld.position = new BABYLON.Vector3(-1.2, 0.165, 0);
+  const matWeld = new BABYLON.StandardMaterial('matWeld', scene);
+  matWeld.diffuseColor = new BABYLON.Color3(1, 0.6, 0.2);
+  matWeld.emissiveColor = new BABYLON.Color3(0.15, 0.1, 0.04);
+  weld.material = matWeld;
+  meshRefs.mesh_weld_pad = weld;
+  weld.isVisible = false;
+  weld.setEnabled(false);
+
+  // 银徽标（材质=Ag 时显示）
+  const silverBadge = BABYLON.MeshBuilder.CreateBox('mesh_silver_badge', { width: 0.4, height: 0.05, depth: 0.15 }, scene);
+  silverBadge.position = new BABYLON.Vector3(0, 0.21, -0.5);
+  const matSilver = new BABYLON.StandardMaterial('matSilver', scene);
+  matSilver.diffuseColor = new BABYLON.Color3(0.95, 0.95, 0.95);
+  matSilver.emissiveColor = new BABYLON.Color3(0.15, 0.15, 0.15);
+  silverBadge.material = matSilver;
+  meshRefs.mesh_silver_badge = silverBadge;
+  silverBadge.isVisible = false;
+  silverBadge.setEnabled(false);
+
+  // 高端徽标（型号=高端款 时显示）
+  const prmBadge = BABYLON.MeshBuilder.CreateBox('mesh_premium_badge', { width: 0.6, height: 0.03, depth: 0.18 }, scene);
+  prmBadge.position = new BABYLON.Vector3(0, 0.22, 0.55);
+  const matPrm = new BABYLON.StandardMaterial('matPrm', scene);
+  matPrm.diffuseColor = new BABYLON.Color3(1, 0.8, 0.2);
+  matPrm.emissiveColor = new BABYLON.Color3(0.25, 0.18, 0.04);
+  prmBadge.material = matPrm;
+  meshRefs.mesh_premium_badge = prmBadge;
+  prmBadge.isVisible = false;
+  prmBadge.setEnabled(false);
+
+  // 加固卡扣
+  const clip = BABYLON.MeshBuilder.CreateTorus('mesh_clip', { diameter: 0.45, thickness: 0.05, tessellation: 16 }, scene);
+  clip.position = new BABYLON.Vector3(1.2, 0.3, 0);
+  clip.rotation.x = Math.PI/2;
+  const matClip = new BABYLON.StandardMaterial('matClip', scene);
+  matClip.diffuseColor = new BABYLON.Color3(0.2, 0.5, 0.85);
+  clip.material = matClip;
+  meshRefs.mesh_clip = clip;
+  clip.isVisible = false; clip.setEnabled(false);
+
+  // 防尘罩
+  const cover = BABYLON.MeshBuilder.CreateBox('mesh_dust_cover', { width: 3.1, height: 0.05, depth: 1.5 }, scene);
+  cover.position.y = 0.32;
+  const matCover = new BABYLON.StandardMaterial('matCover', scene);
+  matCover.diffuseColor = new BABYLON.Color3(0.15, 0.15, 0.2);
+  matCover.alpha = 0.5;
+  cover.material = matCover;
+  meshRefs.mesh_dust_cover = cover;
+  cover.isVisible = false; cover.setEnabled(false);
+
+  // 接地线
+  const ground = BABYLON.MeshBuilder.CreateCylinder('mesh_ground_wire', { diameter: 0.08, height: 1.2, tessellation: 12 }, scene);
+  ground.position = new BABYLON.Vector3(0.5, -0.3, 0.7);
+  ground.rotation.x = Math.PI/3;
+  const matGround = new BABYLON.StandardMaterial('matGround', scene);
+  matGround.diffuseColor = new BABYLON.Color3(0.15, 0.7, 0.2);
+  ground.material = matGround;
+  meshRefs.mesh_ground_wire = ground;
+  ground.isVisible = false; ground.setEnabled(false);
+
+  // 地面（视觉锚点）
+  const groundPlane = BABYLON.MeshBuilder.CreateGround('groundplane', { width: 10, height: 10 }, scene);
+  groundPlane.position.y = -0.5;
+  const matGp = new BABYLON.StandardMaterial('matGp', scene);
+  matGp.diffuseColor = new BABYLON.Color3(0.93, 0.94, 0.96);
+  matGp.alpha = 0.5;
+  groundPlane.material = matGp;
+}
+
+// ============================================================
+// 工具栏功能
+// ============================================================
+function resetCamera() {
+  if (!camera) return;
+  viewAngleIdx = 0;
+  const a = viewAngles[0];
+  BABYLON.Animation.CreateAndStartAnimation('a', camera, 'alpha', 30, 15, camera.alpha, a.alpha, 0);
+  BABYLON.Animation.CreateAndStartAnimation('b', camera, 'beta', 30, 15, camera.beta, a.beta, 0);
+  BABYLON.Animation.CreateAndStartAnimation('r', camera, 'radius', 30, 15, camera.radius, a.radius, 0);
+}
+
+function cycleViewAngle() {
+  if (!camera) return;
+  viewAngleIdx = (viewAngleIdx + 1) % viewAngles.length;
+  const a = viewAngles[viewAngleIdx];
+  BABYLON.Animation.CreateAndStartAnimation('a', camera, 'alpha', 30, 15, camera.alpha, a.alpha, 0);
+  BABYLON.Animation.CreateAndStartAnimation('b', camera, 'beta', 30, 15, camera.beta, a.beta, 0);
+  showToast('info', `视角: <b>${a.name}</b>`);
+}
+
+function toggleWireframe() {
+  if (!scene) return;
+  isWireframe = !isWireframe;
+  scene.meshes.forEach(m => { if (m.material) m.material.wireframe = isWireframe; });
+  document.getElementById('btnWire').classList.toggle('active', isWireframe);
+}
+
+function takeScreenshot() {
+  if (!engine) return;
+  BABYLON.Tools.CreateScreenshot(engine, camera, { width: 1280, height: 720 });
+  showToast('info', '📸 截图已下载');
+}
+
+// ============================================================
+// 演示预设 / 操作
+// ============================================================
+function applyPreset(presetName) {
+  selectedValues = JSON.parse(JSON.stringify(PRESETS[presetName]));
+  evaluate();
+  renderOptionPanel();
+  showToast('info', `已应用预设: <b>${{standard:'标准款套装',enhanced:'增强款套装',premium:'高端款套装'}[presetName]}</b>`);
+}
+
+function resetConfig() {
+  selectedValues = {};
+  // 默认值
+  configTemplate.options.forEach(opt => {
+    opt.values.forEach(val => {
+      if (val.default) {
+        if (opt.type === 'MULTI_SELECT') {
+          if (!selectedValues[opt.code]) selectedValues[opt.code] = [];
+          selectedValues[opt.code].push(val.code);
+        } else {
+          selectedValues[opt.code] = val.code;
+        }
+      }
+    });
+  });
+  evaluate();
+  renderOptionPanel();
+  showToast('info', '配置已重置为默认');
+}
+
+function saveDraft() {
+  const fingerprint = btoa(JSON.stringify(selectedValues)).substring(0, 12);
+  showToast('info', `💾 草稿已保存: <code>config-${fingerprint}</code>`);
+  showToast('info', '模拟: POST /configurator/instances/{id}/save-draft');
+}
+
+// v0.4 §十七 完整分享流程
+let currentShareType = 'CUSTOMER_SELF';
+function openShareDialog() {
+  selectShareType('CUSTOMER_SELF');
+  document.getElementById('shareOverlay').classList.add('open');
+}
+function closeShareDialog() {
+  document.getElementById('shareOverlay').classList.remove('open');
+}
+function selectShareType(type) {
+  currentShareType = type;
+  document.querySelectorAll('.share-type-card').forEach(c => c.classList.toggle('selected', c.dataset.shareType === type));
+  const token = Math.random().toString(36).substring(2, 18);
+  const base = window.location.origin;
+  const urlMap = {
+    CUSTOMER_SELF: `${base}/share/configurator/${token}`,
+    INTERNAL:      `${base}/internal/config-share/${token}`,
+    PUBLIC_PRESET: `${base}/admin/config-templates/presets/${token}`,
+  };
+  document.getElementById('shareUrlBox').textContent = urlMap[type];
+  document.getElementById('customerFormSection').style.display = type === 'CUSTOMER_SELF' ? 'block' : 'none';
+}
+function copyShareUrl() {
+  const url = document.getElementById('shareUrlBox').textContent;
+  navigator.clipboard.writeText(url).then(() => showToast('info', '✓ 已复制到剪贴板'));
+}
+function confirmShare() {
+  if (currentShareType === 'CUSTOMER_SELF') {
+    const email = document.getElementById('customerEmail').value;
+    if (!email) { showToast('warning', '请填写客户邮箱'); return; }
+    const days = document.getElementById('expiresIn').value;
+    showToast('info', `📧 已发送邮件至 ${email}`);
+    showToast('warning', `链接 ${days} 天有效 · 模拟 POST /configurator/instances/{id}/share`);
+  } else if (currentShareType === 'INTERNAL') {
+    showToast('info', '🏢 内部分享链接已生成（角色权限校验生效）');
+  } else if (currentShareType === 'PUBLIC_PRESET') {
+    showToast('info', '📚 已存为公共模板，模板库其他用户可一键应用');
+  }
+  closeShareDialog();
+}
+function shareConfig() { openShareDialog(); }  // 向后兼容
+
+// v0.4 §十四 多租户客户切换
+const customerProfiles = {
+  rockwell: {
+    name: '罗克韦尔自动化', category: 'VIP',
+    priceMultiplier: 0.85,        // 85 折
+    visibleValueCodes: null,       // null = 全部可见
+    forbiddenValueCodes: [],
+    lockedValueCodes: [],
+    note: 'VIP 客户 · 全部选项可见 · 85 折优惠 · 优先推荐高端款',
+  },
+  siemens: {
+    name: '西门子', category: 'STANDARD',
+    priceMultiplier: 1.0,
+    visibleValueCodes: ['STD','ENH','CU','AGCU85','CU90AG10','NONE','NICKEL_05','SILVER_1','M6','M8','M10','CLIP','DUST_COVER','GROUND_WIRE'],  // 隐藏 PRM 高端款
+    forbiddenValueCodes: [],
+    lockedValueCodes: [],
+    note: '标准客户 · 仅可见标准款/增强款 · 标准价 · 隐藏高端款',
+  },
+  trial: {
+    name: '新客户（试用）', category: 'TRIAL',
+    priceMultiplier: 1.1,           // 试用客户加价 10%
+    visibleValueCodes: ['STD','CU','NONE','M8'],  // 仅标准款 + 纯Cu + 无处理 + M8
+    forbiddenValueCodes: [],
+    lockedValueCodes: [],
+    note: '试用客户 · 仅可见基础选项 · 加价 10% · 鼓励转正后享 VIP',
+  },
+};
+let currentCustomer = 'rockwell';
+
+function switchCustomer(customerKey) {
+  currentCustomer = customerKey;
+  // 更新切换器 UI
+  document.querySelectorAll('.customer-selector .cs-option').forEach(el => {
+    el.classList.remove('active','vip','trial');
+    if (el.dataset.customer === customerKey) {
+      el.classList.add('active');
+      if (customerKey === 'rockwell') el.classList.add('vip');
+      if (customerKey === 'trial') el.classList.add('trial');
+    }
+  });
+  const profile = customerProfiles[customerKey];
+  showToast('info', `🔄 切换到 <b>${profile.name}</b> 视角`);
+  showToast('warning', profile.note);
+  showToast('info', '模拟: GET /configurator/instances/{id}/evaluate?customerId=...');
+  // 触发重算（应用价格倍率 + 可见性过滤）
+  evaluate();
+  renderOptionPanel();
+}
+
+// 修改 evaluate 应用价格倍率（v0.4 §十四）
+const origEvaluate = evaluate;
+evaluate = function() {
+  origEvaluate.apply(this, arguments);
+  const profile = customerProfiles[currentCustomer];
+  if (profile && profile.priceMultiplier !== 1.0) {
+    const totalEl = document.getElementById('totalPrice');
+    const baseTotal = parseFloat(totalEl.textContent.replace(/,/g,''));
+    const adjusted = Math.round(baseTotal * profile.priceMultiplier);
+    totalEl.textContent = adjusted.toLocaleString();
+    // 在底部显示倍率标签
+    const bd = document.getElementById('priceBreakdown');
+    const ratioPct = Math.round((profile.priceMultiplier - 1) * 100);
+    const ratioLabel = ratioPct < 0 ? `${ratioPct}% (VIP 优惠)` : (ratioPct > 0 ? `+${ratioPct}% (试用加价)` : '');
+    if (ratioLabel) {
+      bd.innerHTML += ` <span class="price-multiplier-tag ${currentCustomer==='trial'?'trial':''}">${ratioLabel}</span>`;
+    }
+  }
+};
+
+// 修改 renderValueCard 实现可见性过滤（v0.4 §十四）
+const origRender = renderOptionPanel;
+renderOptionPanel = function() {
+  origRender.apply(this, arguments);
+  const profile = customerProfiles[currentCustomer];
+  if (profile && profile.visibleValueCodes) {
+    document.querySelectorAll('.option-card').forEach(card => {
+      const valueCode = card.dataset.valueCode;
+      if (valueCode && !profile.visibleValueCodes.includes(valueCode)) {
+        card.style.display = 'none';
+      }
+    });
+  }
+};
+
+function quickEstimate() {
+  const total = document.getElementById('totalPrice').textContent;
+  showToast('info', `💰 估价: ¥${total} (不生成报价单)`);
+  showToast('info', '模拟: POST /configurator/instances/{id}/estimate');
+}
+
+// v0.4 P0 修复：两步式提交（先建实例 → 再三选一动作）
+let currentInstance = null;
+
+function submitConfig() {
+  if (document.getElementById('submitBtn').disabled) return;
+
+  // ===== 步骤 1：模拟 POST /configurator/instances → 生成 instance =====
+  const fingerprint = btoa(JSON.stringify(selectedValues)).substring(0, 12);
+  const now = new Date();
+  const yyyymm = now.getFullYear() + String(now.getMonth()+1).padStart(2,'0');
+  // mock seq：使用 sessionStorage 持久递增
+  let seq = parseInt(sessionStorage.getItem('cpqInstSeq')||'0') + 1;
+  sessionStorage.setItem('cpqInstSeq', String(seq));
+  const instanceCode = `CI-${yyyymm}-${String(seq).padStart(4,'0')}`;
+  const totalPrice = document.getElementById('totalPrice').textContent;
+
+  currentInstance = {
+    instance_code: instanceCode,
+    instance_id: 'uuid-' + Math.random().toString(36).substring(2,10),
+    template_id: 'CFG-TPL-CONTACT-STRIP',
+    customer_id: currentCustomer === 'rockwell' ? 'cus-rockwell-001' : (currentCustomer === 'siemens' ? 'cus-siemens-002' : 'cus-trial-099'),
+    customer_label: currentCustomer === 'rockwell' ? '罗克韦尔自动化 (VIP)' : (currentCustomer === 'siemens' ? '西门子 (STD)' : '新客户 (TRIAL)'),
+    fingerprint,
+    selected_values: { ...selectedValues },
+    total_price: totalPrice,
+    status: 'SUBMITTED',
+    created_at: now.toISOString().slice(0,16).replace('T',' '),
+  };
+
+  renderStep1();
+  document.getElementById('submitOverlay').classList.add('open');
+}
+
+function renderStep1() {
+  const inst = currentInstance;
+  const summary = Object.entries(inst.selected_values)
+    .map(([k,v]) => Array.isArray(v) ? `${k}: ${v.join(', ')}` : `${k}: ${v}`)
+    .join(' · ');
+
+  document.getElementById('submitDialog').innerHTML = `
+    <div class="submit-icon">✓</div>
+    <div class="submit-title">配置已保存为选配实例</div>
+    <div class="submit-desc">系统已生成 <b>${inst.instance_code}</b>，状态 <b style="color:#1890ff;">SUBMITTED</b>。<br>请选择下一步：</div>
+
+    <div class="submit-detail">
+      实例编号: <b style="color:#0050b3;">${inst.instance_code}</b><br/>
+      客户: ${inst.customer_label}<br/>
+      配置摘要: ${summary}<br/>
+      config_fingerprint: sha256(...${inst.fingerprint})<br/>
+      总价: <b style="color:#cf1322;">¥${inst.total_price}</b><br/>
+      创建时间: ${inst.created_at}
+    </div>
+
+    <div class="action-cards">
+      <div class="action-card primary" onclick="chooseAction('NEW_QUOTATION')">
+        <div class="action-icon-large">🎯</div>
+        <div class="action-info">
+          <div class="action-card-title">直接生成新报价单 <span style="font-size:11px;color:#52c41a;font-weight:normal;">（推荐）</span></div>
+          <div class="action-card-desc">立即生成 mat_part 子料号 + quotation + line_item → 跳报价单编辑页继续完善商务条款</div>
+        </div>
+        <div class="action-card-arrow">→</div>
+      </div>
+
+      <div class="action-card" onclick="chooseAction('SAVE_DRAFT')">
+        <div class="action-icon-large">💾</div>
+        <div class="action-info">
+          <div class="action-card-title">保存为草稿（稍后处理）</div>
+          <div class="action-card-desc">实例保留为 SUBMITTED 状态，可在「选配实例列表」中查找；30 天内未操作自动 EXPIRED</div>
+        </div>
+        <div class="action-card-arrow">→</div>
+      </div>
+
+      <div class="action-card" onclick="chooseAction('LINK_EXISTING')">
+        <div class="action-icon-large">🔗</div>
+        <div class="action-info">
+          <div class="action-card-title">绑到已有报价单</div>
+          <div class="action-card-desc">添加 line_item 到当前客户的 DRAFT 报价单（仅同客户的可选）</div>
+        </div>
+        <div class="action-card-arrow">→</div>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn" onclick="closeSubmitDialog()">取消</button>
+    </div>
+  `;
+}
+
+function chooseAction(action) {
+  if (action === 'NEW_QUOTATION') {
+    const inst = currentInstance;
+    const partNo = `CFG-CONTACT-${inst.fingerprint.substring(0,5).toUpperCase()}`;
+    const now = new Date();
+    const qDate = now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0');
+    const qSeq = 1632 + Math.floor(Math.random()*100);
+    const quotationCode = `QT-${qDate}-${qSeq}`;
+
+    document.getElementById('submitDialog').innerHTML = `
+      <div class="submit-icon">✓</div>
+      <div class="submit-title">已生成报价单 · 实例已 LINKED</div>
+      <div class="submit-desc">实例 <b>${inst.instance_code}</b> 现已关联到新报价单 <b>${quotationCode}</b>，即将跳转编辑页。</div>
+      <div class="submit-detail">
+        POST /api/cpq/configurator/instances/${inst.instance_id}/link-action<br/>
+        Body: { action: "NEW_QUOTATION" }<br/>
+        ─────────────────────────────────<br/>
+        ✓ 生成 mat_part: <b>${partNo}</b><br/>
+        ✓ 生成 quotation: <b>${quotationCode}</b><br/>
+        ✓ 生成 line_item with subtotal ¥${inst.total_price}<br/>
+        ✓ UPDATE instance SET status='LINKED', linked_quotation_id, generated_part_no, generated_quotation_id, linked_at=NOW()
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn" onclick="closeSubmitDialog()">关闭</button>
+        <button class="btn-primary" onclick="closeSubmitDialog();showToast('info','跳转 /quotations/'+'${quotationCode}'+'/edit')">查看报价单 →</button>
+      </div>
+    `;
+  } else if (action === 'SAVE_DRAFT') {
+    const inst = currentInstance;
+    document.getElementById('submitDialog').innerHTML = `
+      <div class="submit-icon">💾</div>
+      <div class="submit-title">已保存为草稿</div>
+      <div class="submit-desc">实例 <b>${inst.instance_code}</b> 保留 SUBMITTED 状态，30 天内可继续操作。</div>
+      <div class="submit-detail">
+        无后端调用 — 实例已在步骤 1 入库（status=SUBMITTED）<br/>
+        前端跳转「选配实例列表」并 highlight <b>${inst.instance_code}</b>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn" onclick="closeSubmitDialog()">继续配置</button>
+        <button class="btn-primary" onclick="closeSubmitDialog();showToast('info','跳转 v0.4-选配实例列表原型.html?highlight=${inst.instance_code}')">查看实例列表 →</button>
+      </div>
+    `;
+  } else if (action === 'LINK_EXISTING') {
+    renderStep2LinkExisting();
+  }
+}
+
+function renderStep2LinkExisting() {
+  const inst = currentInstance;
+  // mock 同客户的 DRAFT 报价单
+  const mockQuotes = [
+    { code: 'QT-20260524-1599', name: '罗克韦尔Q3常规备货', amount: '12,450', items: 5, updated: '2026-05-24' },
+    { code: 'QT-20260523-1587', name: '罗克韦尔Q3新项目询价', amount: '8,200', items: 3, updated: '2026-05-23' },
+    { code: 'QT-20260520-1571', name: '罗克韦尔补单', amount: '2,100', items: 1, updated: '2026-05-20' },
+  ];
+
+  document.getElementById('submitDialog').innerHTML = `
+    <div class="submit-icon" style="background:linear-gradient(135deg,#1890ff,#13c2c2);">🔗</div>
+    <div class="submit-title">选择要绑定的报价单</div>
+    <div class="submit-desc">仅显示 <b>${inst.customer_label}</b> 的 DRAFT 状态报价单</div>
+
+    <div class="existing-quote-list" id="existingQuoteList">
+      ${mockQuotes.map((q,i) => `
+        <div class="existing-quote-row ${i===0?'selected':''}" data-code="${q.code}" onclick="selectExistingQuote('${q.code}')">
+          <div class="existing-quote-info">
+            <div class="eq-no">${q.code}</div>
+            <div>${q.name}</div>
+            <div class="eq-meta">${q.items} 行项目 · 更新 ${q.updated}</div>
+          </div>
+          <div class="eq-amt">¥${q.amount}</div>
+        </div>
+      `).join('')}
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:space-between;">
+      <button class="btn" onclick="renderStep1()">← 返回</button>
+      <div>
+        <button class="btn" onclick="closeSubmitDialog()">取消</button>
+        <button class="btn-primary" onclick="confirmLinkExisting()">✓ 确认绑定</button>
+      </div>
+    </div>
+  `;
+}
+
+let selectedExistingQuote = 'QT-20260524-1599';
+function selectExistingQuote(code) {
+  selectedExistingQuote = code;
+  document.querySelectorAll('.existing-quote-row').forEach(r => {
+    r.classList.toggle('selected', r.dataset.code === code);
+  });
+}
+
+function confirmLinkExisting() {
+  const inst = currentInstance;
+  document.getElementById('submitDialog').innerHTML = `
+    <div class="submit-icon">✓</div>
+    <div class="submit-title">已绑定到报价单 · 实例 LINKED</div>
+    <div class="submit-desc">实例 <b>${inst.instance_code}</b> 已附加 line_item 到 <b>${selectedExistingQuote}</b>。</div>
+    <div class="submit-detail">
+      POST /api/cpq/configurator/instances/${inst.instance_id}/link-action<br/>
+      Body: { action: "LINK_EXISTING", quotation_id: "${selectedExistingQuote}" }<br/>
+      ─────────────────────────────────<br/>
+      ✓ 校验 quotation.customer_id == instance.customer_id<br/>
+      ✓ 校验 quotation.status IN ('DRAFT','EDITING')<br/>
+      ✓ INSERT line_item to ${selectedExistingQuote}<br/>
+      ✓ UPDATE instance SET status='LINKED', linked_quotation_id, linked_at=NOW()
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn" onclick="closeSubmitDialog()">关闭</button>
+      <button class="btn-primary" onclick="closeSubmitDialog();showToast('info','跳转 /quotations/${selectedExistingQuote}/edit')">查看报价单 →</button>
+    </div>
+  `;
+}
+
+function closeSubmitDialog() {
+  document.getElementById('submitOverlay').classList.remove('open');
+}
+
+// ============================================================
+// Toast
+// ============================================================
+// v0.4 优化 1: 切换隐藏价格（模拟 product_config_template.show_price=false）
+function togglePriceDisplay(hide) {
+  const footer = document.querySelector('.footer-bar');
+  if (footer) footer.style.display = hide ? 'none' : 'flex';
+  if (hide) {
+    showToast('warning', '🎭 价格栏整体隐藏（模拟 show_price=false）');
+    showToast('info', '场景：客户初期沟通 / 内部演示 / 限制底层销售看价');
+  } else {
+    showToast('info', '✓ 价格栏已恢复显示');
+  }
+}
+
+function showToast(level, html) {
+  const stack = document.getElementById('toastStack');
+  const t = document.createElement('div');
+  t.className = 'toast ' + level;
+  t.innerHTML = html;
+  stack.appendChild(t);
+  setTimeout(() => {
+    t.style.transition = 'opacity .3s, transform .3s';
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(120%)';
+    setTimeout(() => t.remove(), 350);
+  }, 3500);
+}
+
+// ============================================================
+// 初始化
+// ============================================================
+window.addEventListener('DOMContentLoaded', () => {
+  initBabylon();
+  // 应用默认值
+  resetConfig();
+});
+</script>
+</body>
+</html>

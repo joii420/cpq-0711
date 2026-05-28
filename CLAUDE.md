@@ -32,6 +32,7 @@ Templates and components use JSONB storage for flexible field/formula configurat
 
 ## Key Documents
 
+- 🚨 **`docs/方案制定前必读.md` — 历史教训速查 + 决策清单（任何编码/架构/迁移方案制定前必读，不读 = 高概率撞已知坑；含症状→反模式速查表 + 7 类改动决策树 + 连环 bug 案例 + 7 步自检清单）**
 - `docs/PRD-v3.md` - Full product requirements with data models, user scenarios, and project plan（功能交付的唯一标准,2026-05-13 起活跃版本）
 - `docs/PRD.md` - 已废弃的历史 PRD (v1.0~v2.8),仅作变更决策回溯用途,**不再维护**
 - `docs/RECORD.md` - Development record for multi-agent shared memory（开始工作前必须先阅读此文件了解历史上下文）
@@ -58,10 +59,18 @@ Templates and components use JSONB storage for flexible field/formula configurat
   - AP-42 `{...lfItem, ...rawRow}` 用 null 字段反向覆盖 lfItem 自动映射（V207 前端修；用 `rawRowNonEmpty` filter）
   - AP-43 Vite ESM 项目残留 `require()` 抛 ReferenceError → catch 吞错误 → 渲染 "—"
 - `docs/反模式.md` AP-44 - **字段类型变动 / 新增 = 组件管理 + 报价渲染 强联动协议（核心规范）**：任何 `field_type` 改动跨 **17 个检查点 (约 13 个独立文件，部分文件含多子项, 2026-05-20 双轨方案后从 15 处扩到 17 处)** 协议变换 — 写代码前 grep 全工程 / 写代码中按矩阵勾掉 / 写完跑 E2E `quotation-flow.spec.ts` + `composite-product-flow.spec.ts` 双 spec 三步走；详见 `docs/组件管理字段配置指南.md §十一 字段类型联动性矩阵`
+- `docs/反模式.md` AP-50 - **详情页/编辑页渲染层 single-source 反模式**（2026-05-22；ReadonlyProductCard 缺 DATA_SOURCE/LIST_FORMULA 分支致僵尸数据掩盖；抽 ComponentCell 共享解决；AP-44 矩阵 #14/#15 合一）
+- `docs/反模式.md` AP-51 - **`snapshotRows` Math.max 持久化累加死锁**（2026-05-22；driver 行数权威纪律；写 snapshotRows / computeTabSubtotal 必读）
+- `docs/反模式.md` AP-52 - **全局变量绑定的"语义错配 + 契约不对齐"双重隐患**（2026-05-22；QT-1590~1604 连环 bug 综合教训；含 4 类独立根因 + 4 条强制规范）
+- 🚨 `docs/反模式.md` AP-53 - **V44 老表禁用 + SQL 视图模板查老表导致的渲染数据断链**（2026-05-26 立项）：V218~V222 落 23 张 V6 表后 V44 `mat_part / mat_bom / mat_process / mat_fee / plating_plan / mat_customer_part_mapping / element_price*` 等**已废弃**。强制规则：组件 `data_driver_path` + 字段 `basic_data_path` 禁用直接 PG 视图名/表名，必须 `$<sql_view_name>` 引用；component_sql_view.sql_template 必须 FROM V6 表；V6 无 `quotation_line_item_id` 维度（customer × material 共享）；详见 `docs/方案制定前必读.md` §V6 基础资料表使用规则
+- `docs/反模式.md` AP-54 - **过滤后下标当原数组下标 → 编辑写错位 Tab，受控 input 假死**（2026-05-27；QT-1656 复现）：`QuotationStep2.tsx` ProductCard 渲染用 `normalComponents`（过滤 SUBTOTAL 后子集）下标，写路径 `handleRowChange/handleInputBlur/handleDeleteRow/handleAddRow + dsStateKey` 却用同一 `activeTab` 索引未过滤的 `item.componentData`；SUBTOTAL 排第 0 位 → 偏移 +1 → 文本/数字输入框 value 回退假死。修法：`activeComponentDataIndex = item.componentData.indexOf(activeComponent)` 映射回真实下标。通用规范：**渲染用过滤子集、写回用原集合时，写路径下标必须按对象引用/稳定 ID 映射回原下标**（改 QuotationStep2.tsx 必读）
 - `docs/反模式.md` AP-45 - **组合产品模板用单子件 driver 渲染错** (2026-05-20 提出 → **2026-05-21 终态修复**)：~~双轨字段方案~~ **已被统一智能视图方案替代**；新解法 = V202 `v_composite_child_*` 视图自适应 SIMPLE/COMPOSITE + ComponentDriverService 按 compositeType 三分支注入；详见 `docs/三大核心模块基线.md` §5.1 + §7.B 场景
 - ~~`docs/同模板双轨支持组合产品.md`~~ - ⚠️ **已废弃** (2026-05-21 由 `docs/统一智能视图路径方案.md` + `docs/三大核心模块基线.md` 取代)；保留作历史追溯
 - `docs/E2E测试方法.md` - **Playwright E2E 测试标杆 SOP**（2026-05-19 立项；前端协议级改动 / 模板 schema 变更 / driver expand 链路改动 / **字段类型变动**强制 E2E；含选择器约定 / 中文 UTF-8 编码踩坑 / 复测协议 / 复杂多 Tab 矩阵 / Bug 分类清单 / 自检 checklist / **§4.6 console.warn 三段式调试 (LF-FIND/DEBUG/EVAL)**；UI 改动 PR 必读）
 - `docs/html/*.html` - 10 interactive HTML prototypes (Chinese language UI)
+- 🧪 **`docs/3D-集成总览-索引.md`** — **3D 集成入口导航**（2026-05-26 v0.4 收敛后）：单一主线决策树 + 5 个 HTML 原型导航 + v0.4 数据模型清单 + 已废弃表清单。**任何 3D 相关改动前先读这个**
+- 🧪 `docs/3D产品选配方案.md` — **实验性 v0.4 · 选配模式（唯一主线）**（19 章）：全屏配置器；UG NX 双文件工作流；**选项值即特征（feature_type / attributes / tags 字段下沉）**；**option_value 可绑独立子模型 (sub_model_part_no)**；多租户/版本/审批/分享 5 章节
+- 🧪 `docs/CAD转换POC-技术验证.md` — **CAD POC**（2026-05-26 立）：Dockerfile + 4 个 Python 脚本草案 + 性能基准 + 5 步落地路径
 
 ## Language
 

@@ -5,6 +5,12 @@ export interface EvaluateRequest {
   customerId?: string;
   partNo?: string;
   bindings?: Record<string, any>;
+  /** template 实体 ID（新字段，供后端 SqlViewRuntimeContext 定位 template_sql_view） */
+  templateId?: string | null;
+  /** @deprecated 旧字段，保留向后兼容；新代码请用 templateId */
+  costingTemplateId?: string | null;
+  quotationId?: string | null;
+  quotationStatus?: string | null;
 }
 
 export interface EvaluateResponse {
@@ -22,6 +28,12 @@ export interface BatchEvaluateTask {
   partNo?: string | null;
   bindings?: Record<string, unknown> | null;
   driverRow?: Record<string, unknown> | null;
+  /** template 实体 ID（新字段，供后端 SqlViewRuntimeContext 定位 template_sql_view） */
+  templateId?: string | null;
+  /** @deprecated 旧字段，保留向后兼容；新代码请用 templateId */
+  costingTemplateId?: string | null;
+  quotationId?: string | null;
+  quotationStatus?: string | null;
 }
 
 export interface BatchEvaluateResultItem {
@@ -33,14 +45,18 @@ export interface BatchEvaluateResultItem {
 
 /**
  * 构造与后端 batch-evaluate 接口约定的 key。
- * 格式: `expression:customerId:partNo`，null/undefined 用 "_" 占位。
+ * 格式: `expression:customerId:partNo:templateId`，null/undefined 用 "_" 占位。
+ *
+ * V249/V250 起后端 r.key 升级为 4 段（含 templateId 维度，用于隔离 template_sql_view 上下文）。
+ * 不传 templateId 的老调用方自动得到末段 "_"，与后端 batchTemplateId=null 时的 "_" 对齐。
  */
 export function buildEvalKey(
   expression: string,
   customerId?: string | null,
   partNo?: string | null,
+  templateId?: string | null,
 ): string {
-  return `${expression || '_'}:${customerId || '_'}:${partNo || '_'}`;
+  return `${expression || '_'}:${customerId || '_'}:${partNo || '_'}:${templateId || '_'}`;
 }
 
 /**

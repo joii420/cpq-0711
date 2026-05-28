@@ -136,6 +136,48 @@ mat_bom[hf_part_no AND bom_type='INCOMING'].input_qty   # 多条谓词
 
 ---
 
+### C. SQL 视图引用（推荐新配方式）
+
+**背景**：V249/V250 起，Excel 模板层拥有独立的 `template_sql_view` 表，可在模板内维护专属 SQL 视图，再用 `$<name>.<col>` 路径引用。此方式相比直引物理 PG 视图有以下优势：
+
+| 对比维度 | `$<name>.<col>` SQL 视图引用 | `v_xxx.col` 物理视图直引 |
+|---|---|---|
+| **快照冻结** | 发布时冻结到 `template_sql_views_snapshot`，历史报价可复现 | 物理视图改动会影响旧报价 |
+| **隔离性** | 本模板私有，不影响其他模板/组件 | 全局共享，修改有副作用 |
+| **V44 安全** | 干运行（dry-run）校验时检测并拒绝老表引用（AP-53） | 无校验，可能悄悄查废弃表 |
+| **可维护性** | 在模板配置页直接维护，UI 可 dry-run 预览结果 | 需 Flyway 迁移 + DBA 操作 |
+
+#### 操作入口
+
+1. 进入「模板配置」→ 找到目标 Excel 模板 → 派生草稿（如已发布）。
+2. 编辑页顶部 Tabs 切换到「**SQL 视图**」Tab（`TemplateSqlViewsTab`）。
+3. 点「新建视图」→ 填写视图名称（如 `summary_full`）、描述、SQL 语句 → 「dry-run 预览」校验 → 保存。
+4. 切换到「**列配置**」Tab → 编辑某 VARIABLE 列 → 点「**🗄 SQL 视图**」按钮 → 弹出 `PathPickerDrawer`（ownerContext=TEMPLATE）→ 在"SQL 视图" Tab 选视图名和字段列 → 确认 → `variable_path` 自动写回为 `$summary_full.<col>` 格式。
+
+#### 引用路径格式
+
+```
+$<sql_view_name>.<column_name>
+
+示例：
+$summary_full.material_cost        # 引用本模板 summary_full 视图的 material_cost 列
+$costing_index.processing_cost     # 引用本模板 costing_index 视图的 processing_cost 列
+```
+
+#### 与基础数据直引（A/B 类）的区别
+
+- **`$name.col`**（本文 C 类）：从 `template_sql_view` 执行，逻辑由模板管理员自己维护，发布时冻结，隔离性最强。
+- **`v_xxx.col`**（A-1 类 BNF）：查物理 PG 视图，需 DBA 管理，历史报价可能受视图修改影响。
+- **`{code}` 简写**（A-3 类）：不查 DB，直接取 lineItem 内存字段，性能最好但限制于 lineItem 已有字段。
+
+#### 注意事项
+
+- `template_sql_view.sql_template` 内部禁止查 V44 废弃表（`mat_part` / `mat_bom` / `mat_process` 等），详见 AP-53。
+- 禁止使用 `$$comp.view.col` 跨组件引用语法（模板上下文强阻断）。
+- PUBLISHED 模板的 SQL 视图只读；需修改时先「派生草稿」。
+
+---
+
 ### B. FORMULA — 公式列
 
 点「编辑」按钮打开公式抽屉，含两个区：
@@ -210,15 +252,15 @@ mat_bom[hf_part_no AND bom_type='INCOMING'].input_qty   # 多条谓词
 | I | 材料价格版本 | VARIABLE | `v_costing_summary_full.material_version_number` | costing_price_version (MATERIAL) |
 | J | 汇率价格版本 | VARIABLE | `v_costing_summary_full.exchange_version_number` | costing_price_version (EXCHANGE) |
 | K | 是否生效 | VARIABLE | `v_costing_summary_full.is_published_label` | CASE status WHEN PUBLISHED THEN '是' ELSE '否' END |
-| L | 材料成本 | VARIABLE | `v_costing_summary_full.material_cost` | costing_summary_result[MATERIAL_COST] |
-| M | 材料损耗成本 | VARIABLE | `v_costing_summary_full.material_loss_cost` | NULL 占位（compute 未实现）|
-| N | 加工费 | VARIABLE | `v_costing_summary_full.processing_cost` | costing_summary_result[PROCESS_FEE] |
-| O | 管理费 | VARIABLE | `v_costing_summary_full.management_cost` | NULL 占位 |
-| P | 财务费 | VARIABLE | `v_costing_summary_full.finance_cost` | NULL 占位 |
-| Q | 利润 | VARIABLE | `v_costing_summary_full.profit` | NULL 占位 |
-| R | 税费 | VARIABLE | `v_costing_summary_full.tax` | NULL 占位 |
-| S | 电镀成本 | VARIABLE | `v_costing_summary_full.plating_cost` | NULL 占位 |
-| T | 其他外加工成本 | VARIABLE | `v_costing_summary_full.other_outsource_cost` | NULL 占位 |
+| L | 材料成本 | VARIABLE | `v_costing_summary_full.material_cost` | costing_summary_result[MATERIAL_COST]。**建议新形态**：改用模板 SQL 视图，`variable_path=$summary_full.material_cost`（需先建视图 `summary_full`） |
+| M | 材料损耗成本 | VARIABLE | `v_costing_summary_full.material_loss_cost` | NULL 占位（compute 未实现）。**建议新形态**：`$summary_full.material_loss_cost` |
+| N | 加工费 | VARIABLE | `v_costing_summary_full.processing_cost` | costing_summary_result[PROCESS_FEE]。**建议新形态**：`$summary_full.processing_cost` |
+| O | 管理费 | VARIABLE | `v_costing_summary_full.management_cost` | NULL 占位。**建议新形态**：`$summary_full.management_cost` |
+| P | 财务费 | VARIABLE | `v_costing_summary_full.finance_cost` | NULL 占位。**建议新形态**：`$summary_full.finance_cost` |
+| Q | 利润 | VARIABLE | `v_costing_summary_full.profit` | NULL 占位。**建议新形态**：`$summary_full.profit` |
+| R | 税费 | VARIABLE | `v_costing_summary_full.tax` | NULL 占位。**建议新形态**：`$summary_full.tax` |
+| S | 电镀成本 | VARIABLE | `v_costing_summary_full.plating_cost` | NULL 占位。**建议新形态**：`$summary_full.plating_cost` |
+| T | 其他外加工成本 | VARIABLE | `v_costing_summary_full.other_outsource_cost` | NULL 占位。**建议新形态**：`$summary_full.other_outsource_cost` |
 | **U** | **总成本** | **FORMULA** | `=[L]+[M]+[N]+[O]+[P]+[Q]+[R]+[S]+[T]` | 9 列求和 |
 | V | 币种 | VARIABLE | `v_costing_summary_full.quote_currency` | costing_summary.quote_currency |
 | W | 计量单位 | VARIABLE | `v_costing_summary_full.weight_unit` | 视图硬编码 `'KG'::varchar` |
@@ -331,6 +373,8 @@ curl -s -X POST http://localhost:8081/api/cpq/formulas/evaluate \
 | V79 | 2026-05-05 | `basic_data_config.template_kind`（QUOTATION/COSTING/BOTH）；PathPickerDrawer 加 Segmented 切换 |
 | V80 | 2026-05-05 | 创建 `v_costing_summary_full` 视图；注册「核价汇总」sheet（22 attribute）；写入 23 列「核价-汇总演示模板」 |
 | V81 | 2026-05-05 | 修复 Excel 模板 `linked_template_id` 关联到错误模板的问题；补 3 个 demo 料号 summary |
+| V249 | 2026-05-26 | DROP `costing_template_sql_view` CASCADE；新建 `template_sql_view`（FK → `template.id`，与组件 SQL 视图同构） |
+| V250 | 2026-05-26 | `template` 加 `template_sql_views_snapshot JSONB`；模板发布时冻结所有 ACTIVE 视图定义；Excel 视图列支持 `$name.col` 引用语法（`ownerContext=TEMPLATE`） |
 
 ---
 

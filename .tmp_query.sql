@@ -1,51 +1,35 @@
--- v1.7 DRAFT 总览
-SELECT t.id, t.name, t.version, t.status,
-       jsonb_array_length(t.components_snapshot) AS tabs,
-       jsonb_array_length(t.subtotal_formula)    AS subtotal_n,
-       jsonb_array_length(t.excel_view_config)   AS evc_n,
-       t.is_default
-  FROM template t
- WHERE t.version = 'v1.7' AND t.template_series_id = '66eb97f0-ec24-4455-933b-c8c26a3190f6';
+\set ON_ERROR_STOP on
+\encoding UTF8
 
-\echo '---- INPUT_NUMBER 15 字段 ----'
-SELECT arr.tab->>'tabName' AS tab_name,
-       f->>'name' AS field_name,
-       f->>'field_type' AS ft,
-       f->>'content' AS content,
-       f->'default_source'->>'type' AS ds_type,
-       f->'default_source'->>'bnf_path' AS ds_path
-  FROM template t,
-       jsonb_array_elements(t.components_snapshot) AS arr(tab),
-       jsonb_array_elements(arr.tab->'fields') AS f
- WHERE t.version='v1.7' AND t.template_series_id='66eb97f0-ec24-4455-933b-c8c26a3190f6'
-   AND f->>'field_type' = 'INPUT_NUMBER'
- ORDER BY (arr.tab->>'sortOrder')::int, f->>'name';
+\echo '==== 1. component 表 CHILD-PARTS 子料号名称 字段当前配置 ===='
+SELECT f->>'name' AS field, f->>'field_type' AS ftype, f->>'basic_data_path' AS path,
+       f->>'default_source' AS default_source, f->>'content' AS content
+FROM component c, LATERAL jsonb_array_elements(c.fields) f
+WHERE c.code='COMP-CFG-CHILD-PARTS';
 
-\echo '---- is_subtotal=true 5 字段 ----'
-SELECT arr.tab->>'tabName' AS tab_name, f->>'name', f->>'field_type', f->>'is_amount'
-  FROM template t,
-       jsonb_array_elements(t.components_snapshot) AS arr(tab),
-       jsonb_array_elements(arr.tab->'fields') AS f
- WHERE t.version='v1.7' AND t.template_series_id='66eb97f0-ec24-4455-933b-c8c26a3190f6'
-   AND (f->>'is_subtotal')::boolean = true
- ORDER BY (arr.tab->>'sortOrder')::int;
+\echo '==== 2. 各 PUBLISHED 模板 snapshot 里 CHILD-PARTS 子料号名称 字段 ===='
+SELECT t.version,
+       f->>'field_type' AS ftype, f->>'basic_data_path' AS path
+FROM template t,
+  LATERAL jsonb_array_elements(t.components_snapshot) comp,
+  LATERAL jsonb_array_elements(comp->'fields') f
+WHERE t.status='PUBLISHED'
+  AND comp->>'componentCode'='COMP-CFG-CHILD-PARTS'
+  AND f->>'name'='子料号名称'
+ORDER BY t.version;
 
-\echo '---- 模板 subtotal_formula ----'
-SELECT jsonb_pretty(t.subtotal_formula)
-  FROM template t
- WHERE t.version='v1.7' AND t.template_series_id='66eb97f0-ec24-4455-933b-c8c26a3190f6';
+\echo '==== 3. QT-1651 用 v1.31, 该字段在 snapshot 中 ===='
+SELECT f->>'field_type' AS ftype, f->>'basic_data_path' AS path
+FROM template t,
+  LATERAL jsonb_array_elements(t.components_snapshot) comp,
+  LATERAL jsonb_array_elements(comp->'fields') f
+WHERE t.id='2ee8cd64-6606-445b-b6c2-c25efc35ca7e'
+  AND comp->>'componentCode'='COMP-CFG-CHILD-PARTS'
+  AND f->>'name'='子料号名称';
 
-\echo '---- excel_view_config 22 列 ----'
-SELECT col->>'col_key' AS col_key, col->>'col_name' AS col_name,
-       col->>'source_type' AS src, col->>'variable_path' AS vpath, col->>'formula' AS formula,
-       col->>'visible' AS visible
-  FROM template t,
-       jsonb_array_elements(t.excel_view_config) WITH ORDINALITY AS arr(col, idx)
- WHERE t.version='v1.7' AND t.template_series_id='66eb97f0-ec24-4455-933b-c8c26a3190f6'
- ORDER BY idx;
-
-\echo '---- 遗留 DRAFT bc0a5dc6 状态 ----'
-SELECT id, version, status FROM template WHERE id = 'bc0a5dc6-8da6-4a90-8c72-333a389fb890';
-
-\echo '---- 同 series 全清单 ----'
-SELECT id, version, status, created_at FROM template WHERE template_series_id='66eb97f0-ec24-4455-933b-c8c26a3190f6' ORDER BY created_at DESC;
+\echo '==== 4. QT-1651 CHILD-PARTS 持久化 rowData ===='
+SELECT li.product_part_no_snapshot, cd.row_data
+FROM quotation_line_component_data cd
+JOIN component c ON c.id=cd.component_id
+JOIN quotation_line_item li ON li.id=cd.line_item_id
+WHERE li.quotation_id='2ab989bb-2a91-43b0-832a-81e2de48433a' AND c.code='COMP-CFG-CHILD-PARTS';

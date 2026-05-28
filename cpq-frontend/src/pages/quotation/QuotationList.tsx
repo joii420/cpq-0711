@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import { quotationService } from '../../services/quotationService';
 import { quotationSnapshotService } from '../../services/quotationSnapshotService';
 import { useAuthStore } from '../../stores/authStore';
-import BasicDataImportV5ToQuotation from './BasicDataImportV5ToQuotation';
+import QuoteBasicDataImportV6Drawer from './QuoteBasicDataImportV6Drawer';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
 
 const { Search } = Input;
@@ -401,7 +401,7 @@ const QuotationList: React.FC = () => {
       >
         <Input.TextArea rows={3} placeholder="请填写退回原因（必填）" value={rejectComment} onChange={e => setRejectComment(e.target.value)} />
       </Modal>
-      <BasicDataImportV5ToQuotation open={basicImportOpen} onClose={() => { setBasicImportOpen(false); loadData(); }} />
+      <QuoteBasicDataImportV6Drawer open={basicImportOpen} onClose={() => { setBasicImportOpen(false); loadData(); }} />
     </Card>
   );
 };

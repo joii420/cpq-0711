@@ -1,5 +1,6 @@
 package com.cpq.component.dto;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -67,6 +68,10 @@ public class RuntimeContext {
         /** 客户 UUID。对应 customer_id 谓词注入。 */
         public UUID customerId;
 
+        /** 客户编码 (customer.code, 如 CUST-1269)。V6 基础资料表 customer_no 列存的是 code，
+         *  SQL 视图用 :customerCode 占位符按客户过滤（SqlViewExecutor 由 customerId 自动解析填充）。 */
+        public String customerCode;
+
         /** 客户分类（可选，L4 visibleWhen 表达式用） */
         public String customerCategory;
 
@@ -113,5 +118,52 @@ public class RuntimeContext {
         RuntimeContext ctx = of(partNo, customerId);
         ctx.lineItem.id = lineItemId;
         return ctx;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 阶段 2: 命名占位符绑定层（组件级数据源 SQL 方案 §4.1）
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * 把当前 RuntimeContext 暴露为 {@code Map<String,Object>}，
+     * 供 SqlViewExecutor 把 SQL 模板里的 {@code :xxx} 命名占位符绑定到实际值。
+     *
+     * <p>对照方案文档 §4.1 占位符白名单：
+     * <ul>
+     *   <li>{@code :customerId} ← quotation.customerId</li>
+     *   <li>{@code :customerCategory} ← quotation.customerCategory</li>
+     *   <li>{@code :productCategoryId} ← quotation.productCategoryId</li>
+     *   <li>{@code :quotationId} ← quotation.id</li>
+     *   <li>{@code :userId} ← user.id</li>
+     *   <li>{@code :userRole} ← user.role</li>
+     *   <li>{@code :lineItemId} ← lineItem.id</li>
+     *   <li>{@code :compositeType} ← lineItem.compositeType</li>
+     *   <li>{@code :partVersion} ← {@link com.cpq.formula.dataloader.PartVersionContext#get()}（ThreadLocal）</li>
+     * </ul>
+     *
+     * <p>⚠️ <b>禁用</b>：{@code :hfPartNo} 标量占位符不映射 —— 由外层 batch 注入 {@code :hfPartNos} 数组形式。
+     * 方案文档 §4.2 安全约束。
+     */
+    public Map<String, Object> toNamedParams() {
+        Map<String, Object> params = new HashMap<>();
+        if (lineItem != null) {
+            if (lineItem.id != null) params.put("lineItemId", lineItem.id);
+            if (lineItem.compositeType != null) params.put("compositeType", lineItem.compositeType);
+        }
+        if (quotation != null) {
+            if (quotation.id != null) params.put("quotationId", quotation.id);
+            if (quotation.customerId != null) params.put("customerId", quotation.customerId);
+            if (quotation.customerCode != null) params.put("customerCode", quotation.customerCode);
+            if (quotation.customerCategory != null) params.put("customerCategory", quotation.customerCategory);
+            if (quotation.productCategoryId != null) params.put("productCategoryId", quotation.productCategoryId);
+        }
+        if (user != null) {
+            if (user.id != null) params.put("userId", user.id);
+            if (user.role != null) params.put("userRole", user.role);
+        }
+        // partVersion 从 ThreadLocal 取（与 DataLoader.loadByPath 同源）
+        Integer pv = com.cpq.formula.dataloader.PartVersionContext.get();
+        if (pv != null) params.put("partVersion", pv);
+        return params;
     }
 }

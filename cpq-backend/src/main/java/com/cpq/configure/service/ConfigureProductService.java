@@ -107,6 +107,10 @@ public class ConfigureProductService {
 
     @SuppressWarnings("unchecked")
     String lookupHfByFingerprint(String fp) {
+        // 指纹复用判定 — Phase 1 过渡期仍以 V44 mat_part 为权威（持有历史 + 本期双写的全部选配料号）。
+        // 不可改读 material_master：历史选配料号 fp 只在 mat_part，改读会漏判 → 重复新建 →
+        // insertMatPart ON CONFLICT(fp) DO NOTHING 跳过插入 → 后续 mat_bom FK 断裂 (409)。
+        // V266 已给 material_master 加 config_fingerprint 列（本期双写填充），待 Phase 3 移除 V44 写入后再切此查询到 V6。
         List<Object> rows = em.createNativeQuery(
                 "SELECT part_no FROM mat_part WHERE config_fingerprint = :fp")
             .setParameter("fp", fp)
@@ -173,15 +177,16 @@ public class ConfigureProductService {
      * <p>注意: mat_part_version_log 基线行需要 customer_product_no (NOT NULL PK 成员),
      * configure 阶段不存在此信息，基线由 per-customer 数据导入流程 (V156/PartVersionService) 写入.
      */
-    String resolvePart(PartRequest pr, UUID operatorId, UUID customerId, List<String> reused) {
+    String resolvePart(PartRequest pr, UUID operatorId, UUID customerId, String customerCode, List<String> reused) {
         if ("existing".equals(pr.partMode)) {
             if (pr.existingHfPartNo == null || pr.existingHfPartNo.isBlank()) {
                 throw new IllegalArgumentException("existing 模式 existingHfPartNo 必填");
             }
-            // 读老料号物理状态: recipe_id + 当前 unit_weight, 验证存在
+            // V6 (AP-53 续 6 Phase 1, 修 B-2): 存在性校验迁 material_master。
+            // 此前查 V44 mat_part → 选了 V6-only 料号（material_master 有、mat_part 没有）提交报"料号不存在"。
             @SuppressWarnings("unchecked")
             List<Object[]> rows = em.createNativeQuery(
-                    "SELECT material_recipe_id, unit_weight FROM mat_part WHERE part_no = :p")
+                    "SELECT material_recipe_id, unit_weight FROM material_master WHERE material_no = :p")
                 .setParameter("p", pr.existingHfPartNo)
                 .getResultList();
             if (rows.isEmpty()) {
@@ -244,30 +249,37 @@ public class ConfigureProductService {
         // hotfix: fingerprint 加入 processIds — 同物质不同工序 = 不同商品
         String fp = fingerprintCalc.simpleFingerprint(pr.recipeCode, elems, pr.processIds);
 
-        String existing = lookupHfByFingerprint(fp);
-        if (existing != null) {
-            reused.add(existing);
-            return existing;
-        }
-
-        // 未命中指纹 → 新建
+        // 指纹复用判定：过渡期以 V44 mat_part 为权威（含历史 + 本期双写的全部选配料号）。
+        // 不能改读 material_master —— 历史选配料号 fp 只在 mat_part，改读 V6 会漏判→重复新建→
+        // insertMatPart ON CONFLICT(fp) 跳过→mat_bom FK 断裂。Phase 3 移除 V44 写入后再切 V6。
         com.cpq.configure.entity.MaterialRecipe recipe =
             com.cpq.configure.entity.MaterialRecipe.findByCodeOrThrow(pr.recipeCode);
-
-        String hfPartNo = partNoProvider.apply(
-            new PartNoContext(recipe.symbol, "SIMPLE", operatorId));
-
-        insertMatPart(hfPartNo, "SIMPLE", fp, pr.unitWeightGrams, recipe.id);
-        insertElementBom(hfPartNo, pr.elements);
-
-        // 写 mat_process — 需要 customerId (NOT NULL)
-        if (pr.processIds != null && !pr.processIds.isEmpty()) {
-            if (customerId == null) {
-                throw new IllegalArgumentException(
-                    "选配 custom 配件含 processIds 但 quotation 无 customer_id");
+        String existing = lookupHfByFingerprint(fp);
+        String hfPartNo;
+        if (existing != null) {
+            reused.add(existing);
+            hfPartNo = existing;
+        } else {
+            // 未命中指纹 → 新建（V44）
+            hfPartNo = partNoProvider.apply(
+                new PartNoContext(recipe.symbol, "SIMPLE", operatorId));
+            insertMatPart(hfPartNo, "SIMPLE", fp, pr.unitWeightGrams, recipe.id);
+            insertElementBom(hfPartNo, pr.elements);
+            // 写 mat_process — 需要 customerId (NOT NULL)
+            if (pr.processIds != null && !pr.processIds.isEmpty()) {
+                if (customerId == null) {
+                    throw new IllegalArgumentException(
+                        "选配 custom 配件含 processIds 但 quotation 无 customer_id");
+                }
+                insertProcesses(hfPartNo, pr.processIds, customerId);
             }
-            insertProcesses(hfPartNo, pr.processIds, customerId);
         }
+
+        // V6 双写（AP-53 续 6 Phase 1）：无论新建/复用都确保 material_master + element_bom_item 有本料号，
+        // 让 composite_child_elements_mirror 视图渲染元素含量（渲染基线零改）。幂等 ON CONFLICT DO NOTHING —
+        // 复用的历史料号（V44-only）借此补齐 V6，否则渲染仍空。
+        insertMaterialMasterV6(hfPartNo, recipe.symbol, pr.unitWeightGrams, recipe.id, fp);
+        insertElementBomV6(hfPartNo, customerCode, pr.elements);
 
         // mat_part_version_log 基线行: PK (customer_product_no NOT NULL, hf_part_no, version)
         // configure 阶段无 customer_product_no (客户产品号在数据导入后才存在)
@@ -426,6 +438,72 @@ public class ConfigureProductService {
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // V6 落库（AP-53 续 6 Phase 1）— 复刻 import 行形状，让现有 mirror 视图零改渲染。
+    // id/created_at/updated_at 由 DB 默认 (gen_random_uuid / now)；用 ON CONFLICT DO NOTHING 幂等。
+    // customer_no 用 customer.code（mirror 视图按此过滤）。工序/组合工艺承载 = Phase 2。
+    // ─────────────────────────────────────────────────────────────────────
+
+    /** V6: 料号身份 → material_master（config_fingerprint 供选配复用，与 V44 同语义）。 */
+    void insertMaterialMasterV6(String partNo, String materialType, BigDecimal unitWeight,
+                                UUID materialRecipeId, String fingerprint) {
+        em.createNativeQuery(
+                "INSERT INTO material_master (material_no, material_type, unit_weight, " +
+                "material_recipe_id, config_fingerprint) " +
+                "VALUES (:mn, :mt, :uw, :mri, :fp) " +
+                "ON CONFLICT DO NOTHING")
+            .setParameter("mn", partNo)
+            .setParameter("mt", materialType)
+            .setParameter("uw", unitWeight)
+            .setParameter("mri", materialRecipeId)
+            .setParameter("fp", fingerprint)
+            .executeUpdate();
+    }
+
+    /**
+     * V6: 元素配比 → element_bom_item。
+     * hf_part_no = material_no = 料号本身；characteristic 固定 '2000'（单版本），
+     * 让 composite_child_elements_mirror 的 MAX(characteristic) per (customer_no, material_no) 命中本料号。
+     */
+    void insertElementBomV6(String partNo, String customerCode, List<ElementOverride> elements) {
+        if (customerCode == null || customerCode.isBlank()) return; // 无客户无法满足 customer_no NOT NULL / 渲染过滤
+        int seq = 1;
+        for (ElementOverride eo : elements) {
+            em.createNativeQuery(
+                    "INSERT INTO element_bom_item (system_type, customer_no, hf_part_no, material_no, " +
+                    "characteristic, seq_no, component_no, content) " +
+                    "VALUES ('QUOTE', :cn, :p, :p, '2000', :sq, :code, :pct) " +
+                    "ON CONFLICT DO NOTHING")
+                .setParameter("cn", customerCode)
+                .setParameter("p", partNo)
+                .setParameter("sq", seq++)
+                .setParameter("code", eo.elementCode)
+                .setParameter("pct", eo.pct)
+                .executeUpdate();
+        }
+    }
+
+    /**
+     * V6: 组合子件 → material_bom_item（characteristic='ASSEMBLY'，component_no=子料号）。
+     * 让 zcj_bom / composite_child_materials_mirror 渲染子配件清单。工序(operation_no) = Phase 2。
+     */
+    void insertMaterialBomAssemblyV6(String parentPartNo, String customerCode, List<String> childPartNos) {
+        if (customerCode == null || customerCode.isBlank()) return;
+        int seq = 1;
+        for (String childPn : childPartNos) {
+            em.createNativeQuery(
+                    "INSERT INTO material_bom_item (system_type, customer_no, material_no, " +
+                    "characteristic, seq_no, component_no, composition_qty) " +
+                    "VALUES ('QUOTE', :cn, :p, 'ASSEMBLY', :sq, :c, 1) " +
+                    "ON CONFLICT DO NOTHING")
+                .setParameter("cn", customerCode)
+                .setParameter("p", parentPartNo)
+                .setParameter("sq", seq++)
+                .setParameter("c", childPn)
+                .executeUpdate();
+        }
+    }
+
     /**
      * 写 mat_process 工艺行 — P4 批2 补丁实现.
      *
@@ -540,13 +618,15 @@ public class ConfigureProductService {
 
         // P4 批2 补丁: 从 quotation 拉 customer_id，传给 resolvePart → insertProcesses
         UUID customerId = getCustomerIdFromQuotation(quotationId);
+        // V6 (AP-53 续 6 Phase 1): V6 BOM 表 customer_no 用 customer.code（非 UUID），派生一次贯穿落库
+        String customerCode = getCustomerCodeFromCustomerId(customerId);
 
         List<String> childHfPartNos = new ArrayList<>();
         List<String> reused = new ArrayList<>();
 
         // PASS 1: 解析每个配件
         for (PartRequest pr : req.parts) {
-            childHfPartNos.add(resolvePart(pr, operatorId, customerId, reused));
+            childHfPartNos.add(resolvePart(pr, operatorId, customerId, customerCode, reused));
         }
 
         // PASS 2: 组合产品父级
@@ -567,6 +647,10 @@ public class ConfigureProductService {
             } else {
                 reused.add(parentHfPartNo);
             }
+            // V6 双写（AP-53 续 6 Phase 1）：无论新建/复用都确保父料号 + 子件 ASSEMBLY → material_master / material_bom_item，
+            // 让 zcj_bom / composite_child_materials_mirror 视图渲染子配件清单（渲染基线零改）。幂等 ON CONFLICT DO NOTHING。
+            insertMaterialMasterV6(parentHfPartNo, "COMPOSITE", null, null, fp);
+            insertMaterialBomAssemblyV6(parentHfPartNo, customerCode, childHfPartNos);
         }
 
         // PASS 3: line_items (解法 B: 传 req.tempId 给 buildLineItems 作 parent line item id)
@@ -596,6 +680,21 @@ public class ConfigureProductService {
         }
         Object cid = rows.get(0);
         return cid == null ? null : UUID.fromString(cid.toString());
+    }
+
+    /**
+     * V6 (AP-53 续 6 Phase 1): 由 customer_id(UUID) 取 customer.code。
+     * V6 BOM 表（material_bom_item / element_bom_item）的 customer_no 用 code 而非 UUID，
+     * 且渲染 mirror 视图按 customer_no = :customerCode 过滤。
+     */
+    @SuppressWarnings("unchecked")
+    private String getCustomerCodeFromCustomerId(UUID customerId) {
+        if (customerId == null) return null;
+        List<Object> rows = em.createNativeQuery(
+                "SELECT code FROM customer WHERE id = :c")
+            .setParameter("c", customerId)
+            .getResultList();
+        return rows.isEmpty() || rows.get(0) == null ? null : rows.get(0).toString();
     }
 
     void validateRequest(ConfigureProductRequest req) {

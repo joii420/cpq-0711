@@ -7,10 +7,12 @@ import com.cpq.costing.entity.CostingTemplate;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -146,6 +148,13 @@ public class CostingTemplateService {
         return CostingTemplateDTO.from(t);
     }
 
+    /**
+     * 发布 Excel 模板。
+     *
+     * <p>V249 起：SQL 视图归宿从 costing_template 迁移到 template，
+     * CostingTemplateService.publish 回退为简单状态机转换，
+     * 不再持有 SQL 视图相关逻辑。
+     */
     @Transactional
     public CostingTemplateDTO publish(UUID id) {
         CostingTemplate t = CostingTemplate.findById(id);
@@ -169,9 +178,9 @@ public class CostingTemplateService {
 
     /**
      * 已归档/已发布 → 派生新草稿（同 series；与 template.createNewDraft 语义一致）。
-     * 复制 name / columns / referenced_variables / linked_template_id / description；
-     * status=DRAFT；is_default=false（避免多份默认）；version 不变（用户 publish 时再升版本）。
-     * 同 series 仅允许同时存在一份 DRAFT。
+     *
+     * <p>V249 起：SQL 视图已迁移到 template，costing_template 不再持有 SQL 视图，
+     * createNewDraft 不再 deep-copy SQL 视图。
      */
     @Transactional
     public CostingTemplateDTO createNewDraft(UUID sourceId) {
@@ -194,7 +203,7 @@ public class CostingTemplateService {
         draft.columns = source.columns;
         draft.referencedVariables = source.referencedVariables;
         draft.linkedTemplateId = source.linkedTemplateId;
-        // 默认标记不传递 —— 多份"分类默认"会冲突，保持 false 由用户显式重设
+        // 默认标记不传递
         draft.isDefault = false;
         draft.persist();
 
@@ -210,6 +219,8 @@ public class CostingTemplateService {
             throw new BusinessException(400, "Only DRAFT templates can be deleted");
         t.delete();
     }
+
+    // ──────────────── 私有：原有辅助方法 ─────────────────────────────────────
 
     /** V74 起：默认 Excel 模板的唯一性维度从 categoryId 改为 linkedTemplateId */
     private void clearOtherDefaults(UUID linkedTemplateId, UUID excludeId) {

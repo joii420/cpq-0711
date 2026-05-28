@@ -169,6 +169,12 @@ public class ComponentDriverService {
     public ExpandDriverResponse expand(UUID componentId, UUID customerId, String partNo, Integer partVersion,
                                        String overrideDataDriverPath, String overrideFieldsJson,
                                        UUID lineItemId, String compositeType, List<UUID> childLineItemIds) {
+        // 阶段 3: 设 SqlViewRuntimeContext ThreadLocal，让 BNF path $xxx 引用能拿到 currentComponentId
+        // （quotation/template 上下文留 null，本入口只知道 componentId 维度；
+        // QuotationService.submit / 渲染期上层可进一步 setNested 补 quotationId+status）
+        com.cpq.datasource.sqlview.SqlViewRuntimeContext.Snapshot _prevSqlViewCtx =
+                com.cpq.datasource.sqlview.SqlViewRuntimeContext.setNested(componentId, null, null, null);
+        try {
         // cache key �?override 哈希避免不同 snapshot 共享 cache 串号
         // Bug B: �?lineItemId 维度，防止同 partNo 不同 lineItem 的工�?cache 串行
         String overrideTag = "";
@@ -265,7 +271,8 @@ public class ComponentDriverService {
                 // 关联子件工序，quotation_line_item_id 谓词对聚合视图无意义（子件工序行绑定
                 // 的是子件自身 lineItemId，不是父级 lineItemId），不应注入。
                 boolean isCompositeAggregateView = effectiveDriverPath != null
-                        && effectiveDriverPath.contains("v_composite_child_");
+                        && (effectiveDriverPath.contains("v_composite_child_")
+                            || effectiveDriverPath.contains("composite_child_"));   // 兼容 $<mirror> 形式
                 // Fix: only skip lineItemId injection when BOTH conditions hold:
                 //   1) path is a composite aggregate view (v_composite_child_*)
                 //   2) caller explicitly says this is a COMPOSITE parent lineItem
@@ -296,7 +303,9 @@ public class ComponentDriverService {
                     }
                 } else if (isCompositeAggregateView && isCompositeParent
                         && childLineItemIds != null && !childLineItemIds.isEmpty()
-                        && effectiveDriverPath != null && effectiveDriverPath.contains("v_composite_child_processes")) {
+                        && effectiveDriverPath != null
+                        && (effectiveDriverPath.contains("v_composite_child_processes")
+                            || effectiveDriverPath.contains("composite_child_processes"))) {
                     // COMPOSITE 父级 + 工序聚合视图 + 子件 lineItemId 列表已知:
                     // 向 effectiveDriverPath 追加 quotation_line_item_id IN (cld1, cld2, ...) 谓词,
                     // 让视图只返回当前报价单子件自己的工序行，消除历史累积 (236 -> ≤N 行).
@@ -393,6 +402,9 @@ public class ComponentDriverService {
         // miss 路径成功计算后写入缓存（异常会在上方抛出，不会执行到此处，确保错误不缓存�?
         expandCache.put(key, resp);
         return resp;
+        } finally {
+            com.cpq.datasource.sqlview.SqlViewRuntimeContext.restore(_prevSqlViewCtx);
+        }
     }
 
     // ── 内部 ─────────────────────────────────────────────────────────────
@@ -637,6 +649,10 @@ public class ComponentDriverService {
         // 整行列条件、最终被自己 = 自己 收窄到无意义、又�?IN 多类型时夹击错配�?SQL�?
         // 风险面：如果 driver �?target 是不同表但恰好同名列，会"早走"读到 driver
         // 的字段而不�?target 的。CPQ 内列命名按语义统一，这种冲突极少；遇到再加白名单�?
+        // 业务规则 (2026-05-26 AP-53)：BNF path 查询只能用组件配置的 SQL 视图。
+        // 实现路径: data_driver_path 也改为 $<mirror> 引用 (DataLoader 内部转 SqlViewExecutor.executeAllRows)。
+        // driverRow 来源就是 mirror SQL 执行结果 — 字段层从 driverRow 短路取列等价于从 mirror 取列。
+        // 短路保留是性能优化（避免每字段重跑 N 次 SQL），不破坏 mirror-only 数据真相源约束。
         String leafField = extractLeafField(fieldPath);
         if (leafField != null && driverRow != null && driverRow.containsKey(leafField)) {
             return driverRow.get(leafField);

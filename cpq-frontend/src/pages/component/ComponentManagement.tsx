@@ -12,6 +12,7 @@ import {
   Select,
   Table,
   Spin,
+  Tabs,
 } from 'antd';
 import { FileOutlined, PlusOutlined, QuestionCircleOutlined, BulbOutlined } from '@ant-design/icons';
 import { componentService } from '../../services/componentService';
@@ -26,6 +27,7 @@ import FormulaBuilder from './FormulaBuilder';
 import FieldPanel from './FieldPanel';
 import ConfigGuideDrawer from './ConfigGuideDrawer';
 import PathPickerDrawer from './PathPickerDrawer';
+import SqlViewListPanel from './SqlViewListPanel';
 import './styles.css';
 
 // ---- DataSource binding modal (two-step) ----
@@ -42,7 +44,8 @@ type DsModalStep = 'config' | 'select' | 'bind';
 const DataSourceModal: React.FC<{
   visible: boolean;
   fieldName: string;
-  binding?: { datasource_id: string; datasource_code?: string; datasource_name?: string; param_bindings?: any[] };
+  // 接受 FieldItem.datasource_binding 同形态(datasource_id 可选 — BNF_PATH / GLOBAL_VARIABLE 类型字段没有)
+  binding?: { datasource_id?: string; datasource_code?: string; datasource_name?: string; param_bindings?: any[] };
   componentFields: FieldItem[];
   onOk: (binding: { datasource_id: string; datasource_code: string; datasource_name: string; param_bindings: any[] }) => void;
   onCancel: () => void;
@@ -638,41 +641,75 @@ const ComponentManagement: React.FC = () => {
                     open={driverPickerOpen}
                     onClose={() => setDriverPickerOpen(false)}
                     initialPath={dataDriverPath}
+                    componentId={selectedComponent?.id}
                     onConfirm={(path) => {
                       setDataDriverPath(path);
                       setDriverPickerOpen(false);
                     }}
                   />
                   <HeaderPreview fields={fields} />
-                  <FieldConfigTable
-                fields={fields}
-                formulas={formulas}
-                onChange={(newFields) => {
-                  // Detect field renames and sync formula expressions
-                  const renames: Record<string, string> = {};
-                  for (const nf of newFields) {
-                    const old = fields.find(f => f.key === nf.key);
-                    if (old && old.name && nf.name && old.name !== nf.name) {
-                      renames[old.name] = nf.name;
-                    }
-                  }
-                  setFields(newFields);
-                  if (Object.keys(renames).length > 0) {
-                    setFormulas(prev => prev.map(f => ({
-                      ...f,
-                      // Sync formula name if it matches a renamed field
-                      name: renames[f.name] ?? f.name,
-                      expression: f.expression.map(token => {
-                        if (token.type === 'field' && token.value && renames[token.value]) {
-                          return { ...token, value: renames[token.value], label: renames[token.value] };
-                        }
-                        return token;
-                      }),
-                    })));
-                  }
-                }}
-                onConfigDatasource={handleOpenDsModal}
-              />
+                  <Tabs
+                    size="small"
+                    style={{ marginTop: 8 }}
+                    items={[
+                      {
+                        key: 'fields',
+                        label: '字段配置',
+                        children: (
+                          <FieldConfigTable
+                            fields={fields}
+                            formulas={formulas}
+                            componentId={selectedComponent?.id}
+                            onChange={(newFields) => {
+                              // Detect field renames and sync formula expressions
+                              const renames: Record<string, string> = {};
+                              for (const nf of newFields) {
+                                const old = fields.find(f => f.key === nf.key);
+                                if (old && old.name && nf.name && old.name !== nf.name) {
+                                  renames[old.name] = nf.name;
+                                }
+                              }
+                              setFields(newFields);
+                              if (Object.keys(renames).length > 0) {
+                                setFormulas(prev => prev.map(f => ({
+                                  ...f,
+                                  name: renames[f.name] ?? f.name,
+                                  expression: f.expression.map(token => {
+                                    if (token.type === 'field' && token.value && renames[token.value]) {
+                                      return { ...token, value: renames[token.value], label: renames[token.value] };
+                                    }
+                                    return token;
+                                  }),
+                                })));
+                              }
+                            }}
+                            onConfigDatasource={handleOpenDsModal}
+                          />
+                        ),
+                      },
+                      {
+                        key: 'formulas',
+                        label: '公式',
+                        children: (
+                          <FormulaBuilder
+                            formulas={formulas}
+                            onChange={setFormulas}
+                            availableFields={availableFields}
+                            activeFormulaKey={activeFormulaKey}
+                            onActiveFormulaKeyChange={setActiveFormulaKey}
+                            availableSubtotals={otherCompSubtotals}
+                          />
+                        ),
+                      },
+                      {
+                        key: 'sql-views',
+                        label: 'SQL 视图',
+                        children: (
+                          <SqlViewListPanel componentId={selectedComponent.id} />
+                        ),
+                      },
+                    ]}
+                  />
                 </>
               )}
 
@@ -683,15 +720,17 @@ const ComponentManagement: React.FC = () => {
                 </div>
               )}
 
-              {/* Formula builder card section */}
-              <FormulaBuilder
-                formulas={formulas}
-                onChange={setFormulas}
-                availableFields={availableFields}
-                activeFormulaKey={activeFormulaKey}
-                onActiveFormulaKeyChange={setActiveFormulaKey}
-                availableSubtotals={otherCompSubtotals}
-              />
+              {/* Formula builder (SUBTOTAL component only — NORMAL uses Tabs above) */}
+              {selectedComponent.componentType === 'SUBTOTAL' && (
+                <FormulaBuilder
+                  formulas={formulas}
+                  onChange={setFormulas}
+                  availableFields={availableFields}
+                  activeFormulaKey={activeFormulaKey}
+                  onActiveFormulaKeyChange={setActiveFormulaKey}
+                  availableSubtotals={otherCompSubtotals}
+                />
+              )}
             </>
           ) : (
             <div className="cm-empty-state">

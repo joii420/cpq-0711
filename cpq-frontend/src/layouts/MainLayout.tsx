@@ -85,6 +85,23 @@ const allMenuItems: MenuItem[] = [
   },
   { key: '/master-data-hub', icon: <DatabaseOutlined />, label: '主数据维护', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
   {
+    key: '/configurator-hub',
+    icon: <ShoppingOutlined />,
+    label: '🛒 3D 选配',
+    roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'],
+    children: [
+      // 销售路径
+      { key: '/configurator/instances', label: '📋 选配实例列表', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
+      { key: '/configurator/start', label: '🎯 开始选配', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
+      { key: '/configurator/shares', label: '🔗 我分享的链接', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
+      { key: '/system/customer-leads', label: '📩 客户线索', roles: ['SALES_REP', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
+      // 管理资源
+      { key: '/system/configurator-templates', label: '🛒 选配模板管理', roles: ['SYSTEM_ADMIN', 'PRICING_MANAGER'] },
+      { key: '/system/feature-library', label: '📚 特征库管理', roles: ['SYSTEM_ADMIN', 'PRICING_MANAGER'] },
+      { key: '/system/part-models', label: '📦 3D 源文件管理', roles: ['SYSTEM_ADMIN', 'PRICING_MANAGER'] },
+    ],
+  },
+  {
     key: '/system',
     icon: <SettingOutlined />,
     label: '系统管理',

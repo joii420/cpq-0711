@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>开始选配原型 v0.4 — 销售模板挑选页</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#f0f2f5; font-size:13px; color:#303133; height:100vh; overflow:hidden; }
+
+.layout { display:flex; height:100vh; }
+.sider { width:200px; background:#001529; color:#fff; padding:12px 0; flex-shrink:0; overflow-y:auto; }
+.sider .logo { padding:0 16px 16px; font-size:14px; font-weight:600; border-bottom:1px solid #1f2d3d; }
+.sider .ver { font-size:11px; color:#a6adb4; padding:8px 16px 0; }
+.menu { padding-top:8px; }
+.m-item { padding:9px 16px; color:#a6adb4; cursor:pointer; font-size:13px; display:flex; align-items:center; gap:8px; }
+.m-item:hover { color:#fff; background:#1f2d3d; }
+.m-item.active { background:#1f2d3d; color:#fff; }
+.m-sub { padding:6px 16px 6px 32px; font-size:12.5px; color:#a6adb4; cursor:pointer; }
+.m-sub:hover { color:#fff; }
+.m-sub.active { color:#1890ff; background:#000c17; border-left:3px solid #1890ff; padding-left:29px; }
+
+.main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.crumb { padding:10px 20px; background:#fff; border-bottom:1px solid #e4e7ed; font-size:12.5px; color:#909399; }
+.crumb b { color:#303133; font-weight:500; }
+.content { flex:1; overflow-y:auto; padding:0 20px 16px; }
+
+.exp-banner { background:linear-gradient(90deg,#e6f7ff,#f0f5ff); border:1px dashed #1890ff; padding:10px 14px; border-radius:6px; font-size:12.5px; color:#0050b3; margin:16px 0 12px; }
+.exp-banner b { color:#003a8c; }
+
+.page-card { background:#fff; border-radius:8px; padding:18px 20px; margin-bottom:12px; }
+.page-title { font-size:18px; font-weight:600; margin-bottom:4px; }
+.page-subtitle { font-size:12.5px; color:#909399; margin-bottom:14px; }
+
+.toolbar { display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap; padding:12px 14px; background:#fafbfc; border-radius:6px; border:1px solid #f0f0f0; }
+.btn { padding:5px 12px; border:1px solid #dcdfe6; background:#fff; border-radius:4px; cursor:pointer; font-size:12.5px; color:#606266; display:inline-flex; align-items:center; gap:4px; transition:all .2s; }
+.btn:hover { color:#409eff; border-color:#c6e2ff; background:#ecf5ff; }
+.btn-primary { background:#1890ff; color:#fff; border-color:#1890ff; }
+.btn-primary:hover { background:#40a9ff; }
+.btn-success { background:#52c41a; color:#fff; border-color:#52c41a; }
+.btn-success:hover { background:#73d13d; }
+
+.search-input, .form-select { padding:5px 10px; border:1px solid #dcdfe6; border-radius:4px; font-size:12.5px; min-width:140px; background:#fff; }
+
+/* 客户选择器 */
+.cust-selector { display:flex; gap:8px; align-items:center; padding:10px 14px; background:linear-gradient(90deg,#fffbe6,#fff7e6); border:1px solid #ffd591; border-radius:6px; margin-bottom:14px; }
+.cust-label { font-size:12.5px; color:#876800; font-weight:500; }
+.cust-current { background:#fff; padding:5px 12px; border-radius:4px; border:1px solid #ffd591; font-size:12.5px; color:#303133; }
+.cust-current b { color:#0050b3; }
+.cust-change { color:#1890ff; cursor:pointer; font-size:11.5px; }
+.cust-change:hover { text-decoration:underline; }
+
+/* 模板卡片网格 */
+.tpl-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px; }
+.tpl-card { background:#fff; border:1px solid #e4e7ed; border-radius:8px; overflow:hidden; cursor:pointer; transition:all .2s; }
+.tpl-card:hover { box-shadow:0 8px 20px rgba(24,144,255,.12); border-color:#91caff; transform:translateY(-2px); }
+
+.tpl-thumb { height:140px; background:linear-gradient(135deg,#e8eef5,#f5f7fa); display:flex; align-items:center; justify-content:center; font-size:54px; color:rgba(0,80,179,.3); position:relative; }
+.tpl-thumb-badge { position:absolute; top:8px; right:8px; padding:2px 8px; background:rgba(0,21,41,.85); color:#fff; border-radius:3px; font-size:10.5px; }
+.tpl-thumb-popular { position:absolute; top:8px; left:8px; padding:2px 8px; background:linear-gradient(90deg,#f5222d,#ff7a45); color:#fff; border-radius:3px; font-size:10.5px; }
+
+.tpl-body { padding:14px; }
+.tpl-name { font-size:14px; font-weight:600; color:#303133; margin-bottom:4px; }
+.tpl-code { font-family:Consolas,Monaco,monospace; font-size:11px; color:#909399; margin-bottom:8px; }
+.tpl-desc { font-size:11.5px; color:#606266; line-height:1.5; margin-bottom:10px; min-height:34px; }
+
+.tpl-meta { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+.tpl-meta .chip { padding:2px 7px; background:#f0f5ff; color:#0050b3; border-radius:3px; font-size:10.5px; }
+.tpl-meta .chip.cat { background:#f6ffed; color:#389e0d; }
+.tpl-meta .chip.price { background:#fff7e6; color:#d48806; }
+
+.tpl-stats { display:flex; gap:14px; font-size:11px; color:#909399; padding-top:10px; border-top:1px solid #f0f0f0; }
+.tpl-stats b { color:#1890ff; font-weight:600; }
+
+.tpl-foot { padding:10px 14px; background:#fafbfc; border-top:1px solid #f0f0f0; display:flex; gap:6px; }
+.tpl-foot button { flex:1; }
+
+/* Drawer */
+.drawer-mask { position:fixed; inset:0; background:rgba(0,0,0,.45); opacity:0; pointer-events:none; transition:opacity .2s; z-index:998; }
+.drawer-mask.open { opacity:1; pointer-events:auto; }
+.drawer { position:fixed; right:-560px; top:0; bottom:0; width:560px; background:#fff; box-shadow:-4px 0 16px rgba(0,0,0,.15); transition:right .3s; z-index:999; display:flex; flex-direction:column; }
+.drawer.open { right:0; }
+.drawer-header { padding:14px 20px; border-bottom:1px solid #e4e7ed; display:flex; align-items:center; gap:10px; }
+.drawer-title { font-size:15px; font-weight:600; flex:1; }
+.drawer-body { flex:1; overflow-y:auto; padding:16px 20px; }
+.drawer-footer { padding:12px 20px; border-top:1px solid #e4e7ed; display:flex; gap:8px; justify-content:flex-end; }
+.close-btn { background:transparent; border:none; font-size:18px; cursor:pointer; color:#909399; padding:0 4px; }
+
+.cust-row { display:flex; gap:10px; padding:10px 12px; border:1.5px solid #e4e7ed; border-radius:6px; margin-bottom:8px; cursor:pointer; }
+.cust-row:hover { background:#fafdff; border-color:#91caff; }
+.cust-row.selected { background:#e6f7ff; border-color:#1890ff; }
+.cust-info { flex:1; }
+.cust-name { font-size:13px; font-weight:600; }
+.cust-meta { font-size:11px; color:#909399; margin-top:2px; }
+.cust-tag { padding:1px 7px; border-radius:3px; font-size:10.5px; font-weight:500; }
+.cust-tag.vip { background:#fff7e6; color:#d48806; border:1px solid #ffd591; }
+.cust-tag.std { background:#fafafa; color:#606266; border:1px solid #d9d9d9; }
+.cust-tag.trial { background:#fff1f0; color:#cf1322; border:1px solid #ffa39e; }
+
+/* Toast */
+.toast-stack { position:fixed; top:20px; right:20px; z-index:2000; display:flex; flex-direction:column; gap:8px; }
+.toast { background:#fff; border:1px solid #b7eb8f; border-left:4px solid #52c41a; padding:10px 14px; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,.1); font-size:12.5px; min-width:280px; max-width:420px; animation:slideIn .3s ease; }
+.toast.info { border-color:#91caff; border-left-color:#1890ff; }
+.toast.warning { border-color:#ffd591; border-left-color:#faad14; }
+@keyframes slideIn { from { transform:translateX(120%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <aside class="sider">
+    <div class="logo">CPQ 系统 v3</div>
+    <div class="ver">v0.4 · 开始选配</div>
+    <div class="menu">
+      <div class="m-item">📊 仪表板</div>
+      <div class="m-item">📂 组件管理</div>
+      <div class="m-item">📋 模板管理</div>
+      <div class="m-item">📝 报价单</div>
+      <div class="m-item">💰 核价单</div>
+      <div class="m-item">👥 客户管理</div>
+      <div class="m-item active">🛒 3D 选配</div>
+      <div class="m-sub">📋 选配实例列表</div>
+      <div class="m-sub active">🎯 开始选配</div>
+      <div class="m-sub">🔗 我分享的链接</div>
+      <div class="m-item">⚙️ 系统设置</div>
+      <div class="m-sub">用户管理</div>
+      <div class="m-sub">📦 3D 源文件管理</div>
+      <div class="m-sub">🛒 选配模板管理</div>
+      <div class="m-sub">📚 特征库管理</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="crumb">3D 选配 / <b>开始选配</b></div>
+
+    <div class="content">
+      <div class="exp-banner">
+        <b>🧪 v0.4 销售路径起点</b> — 挑选合适的选配模板 + 客户上下文 → 进入全屏 3D 选配页生成实例。无可用模板时联系 PM 在「🛒 选配模板管理」中创建。
+      </div>
+
+      <div class="page-card">
+        <div class="page-title">🎯 开始选配</div>
+        <div class="page-subtitle">为客户挑选选配模板，进入 3D 配置页 → 生成报价单</div>
+
+        <!-- 客户选择器 -->
+        <div class="cust-selector">
+          <span class="cust-label">📋 当前客户：</span>
+          <span class="cust-current" id="custCurrent"><b>罗克韦尔自动化</b> · VIP · cus-rockwell-001</span>
+          <span class="cust-change" onclick="openCustPicker()">切换客户 →</span>
+          <div style="flex:1"></div>
+          <span style="font-size:11.5px;color:#876800;">⚠ 不同客户可能看到不同的覆盖配置 (§14 多租户)</span>
+        </div>
+
+        <!-- 工具栏 -->
+        <div class="toolbar">
+          <input class="search-input" placeholder="🔎 搜索模板名/代码..." style="flex:1;max-width:280px;" />
+          <select class="form-select">
+            <option>全部品类</option>
+            <option>接触片</option>
+            <option>接触簧片</option>
+            <option>端子</option>
+            <option>电机</option>
+          </select>
+          <select class="form-select">
+            <option>全部状态</option>
+            <option>PUBLISHED</option>
+            <option>DRAFT (内部预览)</option>
+          </select>
+          <select class="form-select">
+            <option>排序: 最热门</option>
+            <option>排序: 最近发布</option>
+            <option>排序: 基础价 ↑</option>
+            <option>排序: 基础价 ↓</option>
+          </select>
+          <div style="flex:1"></div>
+          <button class="btn" onclick="showToast('info','收藏模板：标星收藏后置顶 — 销售个人偏好')">⭐ 我的收藏</button>
+        </div>
+
+        <!-- 模板卡片网格 -->
+        <div class="tpl-grid" id="tplGrid">
+          <!-- 由 JS 渲染 -->
+        </div>
+
+        <div style="margin-top:18px;padding:14px;background:#fafbfc;border:1px dashed #d9d9d9;border-radius:6px;text-align:center;color:#909399;font-size:12px;">
+          没找到合适的模板？联系 PM 在「⚙️ 系统设置 / 🛒 选配模板管理」中创建新模板
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 客户选择 Drawer -->
+<div class="drawer-mask" id="drawerMask" onclick="closeCustPicker()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-header">
+    <div class="drawer-title">切换客户上下文</div>
+    <button class="close-btn" onclick="closeCustPicker()">✕</button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+  <div class="drawer-footer">
+    <button class="btn" onclick="closeCustPicker()">取消</button>
+    <button class="btn-primary btn" onclick="confirmCust()">✓ 确认切换</button>
+  </div>
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+// ============================================================
+// Mock 数据
+// ============================================================
+const templates = [
+  {
+    code: 'CFG-TPL-CONTACT-STRIP', name: '接触片产品选配', category: '接触片',
+    desc: '银铜接触片系列，覆盖型号 / 厚度 / 长度 / 表面处理 / 接口规格 5 个维度',
+    basePartNo: 'CFG-CONTACT-STRIP-BASE', basePrice: 1000, status: 'PUBLISHED',
+    optionCount: 5, valueCount: 16, popularity: 'HOT', instances30d: 12,
+    showPrice: true,
+  },
+  {
+    code: 'CFG-TPL-SPRING-CONTACT', name: '接触簧片产品选配', category: '接触簧片',
+    desc: '弹簧加压式接触片，含弹簧压力 / 线圈匝数自定义',
+    basePartNo: 'CFG-SPRING-BASE', basePrice: 1200, status: 'PUBLISHED',
+    optionCount: 3, valueCount: 8, popularity: 'WARM', instances30d: 5,
+    showPrice: true,
+  },
+  {
+    code: 'CFG-TPL-MOTOR', name: '电机产品选配', category: '电机',
+    desc: '工业电机产品族，含功率 / 防护等级 / 法兰类型',
+    basePartNo: 'CFG-MOTOR-BASE', basePrice: 5800, status: 'PUBLISHED',
+    optionCount: 6, valueCount: 22, popularity: 'HOT', instances30d: 8,
+    showPrice: true,
+  },
+  {
+    code: 'CFG-TPL-TERM', name: '端子产品选配', category: '端子',
+    desc: '汽车端子产品（标准 / 环形 / 叉形）',
+    basePartNo: 'CFG-TERM-BASE', basePrice: 80, status: 'DRAFT',
+    optionCount: 2, valueCount: 6, popularity: 'NEW', instances30d: 0,
+    showPrice: true,
+  },
+  {
+    code: 'CFG-TPL-RELAY', name: '继电器产品选配', category: '继电器',
+    desc: '通用继电器产品族（电压 / 触点形式 / 封装）',
+    basePartNo: 'CFG-RELAY-BASE', basePrice: 450, status: 'PUBLISHED',
+    optionCount: 4, valueCount: 14, popularity: 'WARM', instances30d: 3,
+    showPrice: true,
+  },
+  {
+    code: 'CFG-TPL-CONFIDENTIAL', name: '高端航空连接器（内部）', category: '连接器',
+    desc: '航空级定制产品，仅内部演示，不展示价格',
+    basePartNo: 'CFG-AEROSPACE-BASE', basePrice: 0, status: 'PUBLISHED',
+    optionCount: 8, valueCount: 28, popularity: 'WARM', instances30d: 2,
+    showPrice: false,
+  },
+];
+
+const customers = [
+  { id: 'cus-rockwell-001', name: '罗克韦尔自动化', tier: 'VIP', label: 'VIP', industry: '汽车零部件', code: 'BYD-001' },
+  { id: 'cus-siemens-002',  name: '西门子', tier: 'STD', label: '标准', industry: '工业控制', code: 'SMS-002' },
+  { id: 'cus-trial-099',    name: '某试用客户', tier: 'TRIAL', label: '试用期', industry: '电子', code: 'TRIAL-099' },
+  { id: 'cus-mb-003',       name: '奔驰中国', tier: 'VIP', label: 'VIP', industry: '汽车', code: 'MB-002' },
+];
+
+let currentCustId = 'cus-rockwell-001';
+let pendingCustId = null;
+
+function getCurrentCust() { return customers.find(c => c.id === currentCustId); }
+
+// ============================================================
+// 渲染
+// ============================================================
+function render() {
+  const cust = getCurrentCust();
+  document.getElementById('custCurrent').innerHTML = `<b>${cust.name}</b> · ${cust.label} · ${cust.id}`;
+
+  const grid = document.getElementById('tplGrid');
+  grid.innerHTML = templates.map(t => {
+    const popularBadge = t.popularity === 'HOT' ? '<div class="tpl-thumb-popular">🔥 热门</div>' :
+                        t.popularity === 'NEW' ? '<div class="tpl-thumb-popular" style="background:linear-gradient(90deg,#13c2c2,#1890ff);">✨ 新增</div>' : '';
+    return `
+      <div class="tpl-card" onclick="openTemplate('${t.code}')">
+        <div class="tpl-thumb">
+          🎲
+          ${popularBadge}
+          <div class="tpl-thumb-badge">${t.status}</div>
+        </div>
+        <div class="tpl-body">
+          <div class="tpl-name">${t.name}</div>
+          <div class="tpl-code">${t.code}</div>
+          <div class="tpl-desc">${t.desc}</div>
+
+          <div class="tpl-meta">
+            <span class="chip cat">${t.category}</span>
+            ${t.showPrice ? `<span class="chip price">基础价 ¥${t.basePrice.toLocaleString()}</span>` : '<span class="chip" style="background:#f5f5f5;color:#909399;">💰 价格隐藏</span>'}
+            <span class="chip">${t.optionCount} 选项</span>
+          </div>
+
+          <div class="tpl-stats">
+            <span><b>${t.optionCount}</b> 选项</span>
+            <span><b>${t.valueCount}</b> 取值</span>
+            <span>近 30 天 <b>${t.instances30d}</b> 次使用</span>
+          </div>
+        </div>
+        <div class="tpl-foot">
+          <button class="btn-success btn" onclick="event.stopPropagation();openTemplate('${t.code}')">🎯 进入选配 →</button>
+          <button class="btn" onclick="event.stopPropagation();previewTemplate('${t.code}')" title="预览模板配置">👁 预览</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openTemplate(code) {
+  const t = templates.find(x => x.code === code);
+  const cust = getCurrentCust();
+  if (t.status === 'DRAFT') {
+    showToast('warning', `⚠ 模板 ${t.code} 状态为 DRAFT，仅供内部预览，无法生成正式报价单`);
+  }
+  showToast('info', `🚀 进入选配器: 客户=${cust.name} (${cust.id}), 模板=${t.code}<br/>跳转 v0.4-3D产品选配原型.html?cust=${cust.id}&tpl=${t.code}`);
+}
+
+function previewTemplate(code) {
+  showToast('info', `👁 预览模板 ${code}（只看选项配置 / 不生成实例 / 不计入统计）`);
+}
+
+// ============================================================
+// 客户切换 Drawer
+// ============================================================
+function openCustPicker() {
+  pendingCustId = currentCustId;
+  renderCustPicker();
+  document.getElementById('drawerMask').classList.add('open');
+  document.getElementById('drawer').classList.add('open');
+}
+
+function closeCustPicker() {
+  document.getElementById('drawerMask').classList.remove('open');
+  document.getElementById('drawer').classList.remove('open');
+}
+
+function renderCustPicker() {
+  const body = document.getElementById('drawerBody');
+  body.innerHTML = `
+    <div style="margin-bottom:14px;">
+      <input class="search-input" placeholder="🔎 客户名 / 编号 / 行业..." style="width:100%;" />
+    </div>
+    ${customers.map(c => `
+      <div class="cust-row ${c.id===pendingCustId?'selected':''}" onclick="selectCust('${c.id}')">
+        <div class="cust-info">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div class="cust-name">${c.name}</div>
+            <span class="cust-tag ${c.tier.toLowerCase()}">${c.label}</span>
+          </div>
+          <div class="cust-meta">${c.industry} · 客户编号 <code>${c.code}</code> · ID ${c.id}</div>
+        </div>
+        ${c.id===pendingCustId ? '<span style="color:#1890ff;font-size:18px;">✓</span>' : ''}
+      </div>
+    `).join('')}
+
+    <div style="margin-top:14px;padding:10px 12px;background:#fffbe6;border:1px solid #ffd591;border-radius:4px;font-size:11.5px;color:#876800;">
+      ⓘ 客户上下文影响：模板加载时套用 <code>customer_override</code> 配置（§14 多租户）+ 实例自动 customer_id=&lt;选定&gt; + 提交时绑定的报价单必须同客户
+    </div>
+  `;
+}
+
+function selectCust(id) {
+  pendingCustId = id;
+  renderCustPicker();
+}
+
+function confirmCust() {
+  currentCustId = pendingCustId;
+  closeCustPicker();
+  showToast('info', `✓ 已切换到 <b>${getCurrentCust().name}</b>`);
+  render();
+}
+
+// ============================================================
+// Toast
+// ============================================================
+function showToast(level, html) {
+  const stack = document.getElementById('toastStack');
+  const t = document.createElement('div');
+  t.className = 'toast ' + level;
+  t.innerHTML = html;
+  stack.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+render();
+</script>
+</body>
+</html>

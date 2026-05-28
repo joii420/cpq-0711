@@ -4,6 +4,7 @@ import { productService } from '../../services/productService';
 import { processService } from '../../services/processService';
 import { bindingService } from '../../services/bindingService';
 import { templateService } from '../../services/templateService';
+import { genUUID } from '../../utils/uuid';
 import './quotation.css';
 
 export interface AddProductModalProps {
@@ -526,7 +527,7 @@ const AddProductModal: React.FC<AddProductModalProps> = ({ open, onCancel, onCon
 
       const lineItem: LineItem = {
         // Bug B (2026-05-20): 新建 lineItem 时生成 tempId，用于 driverExpansionKey lineItemId 维度
-        tempId: typeof crypto !== 'undefined' ? crypto.randomUUID() : `tmp-${Date.now()}`,
+        tempId: genUUID(),
         productId: selectedProduct.id,
         productName: selectedProduct.name || '',
         productPartNo: selectedProduct.partNo || '',

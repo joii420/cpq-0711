@@ -3,6 +3,8 @@ package com.cpq.quotation.service;
 import com.cpq.common.dto.PageResult;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.customer.entity.Customer;
+import com.cpq.component.entity.Component;
+import com.cpq.component.service.ComponentSqlViewService;
 import com.cpq.engine.approval.ApprovalRoutingService;
 import com.cpq.engine.discount.DiscountCalculationService;
 import com.cpq.engine.discount.DiscountResult;
@@ -66,6 +68,10 @@ public class QuotationService {
 
     @Inject
     BasicDataImportServiceV5 basicDataImportServiceV5;
+
+    /** 阶段 2: 组件 SQL 视图冻结服务（SUBMITTED 时调 snapshotForComponents 写 quotation_component_sql_snapshot） */
+    @Inject
+    ComponentSqlViewService componentSqlViewService;
 
     @Inject
     EntityManager em;
@@ -600,11 +606,97 @@ public class QuotationService {
             // 快照失败不阻塞提交流程
         }
 
+        // 阶段 2: 冻结组件 SQL 视图闭包到 quotation_component_sql_snapshot
+        //   - 找该报价单 line_items 关联的所有 componentId（从模板 snapshot 反推 / 或从 line_item_component_data）
+        //   - 调 snapshotForComponents 拿闭包 map
+        //   - 逐 entry 落库
+        try {
+            freezeSqlViewsForQuotation(id, lineItems);
+        } catch (Exception e) {
+            LOG.warnf("[QuotationService] freezeSqlViewsForQuotation failed (non-blocking): %s", e.getMessage());
+        }
+
         q.status = "SUBMITTED";
         LOG.infof("Submitted quotation id=%s number=%s approver=%s", id, q.quotationNumber, q.assignedApproverId);
         QuotationDTO dto = QuotationDTO.from(q);
         dto.lineItems = loadLineItems(id);
         return dto;
+    }
+
+    /**
+     * 阶段 2: 报价单 SUBMITTED 时冻结组件 SQL 视图闭包。
+     *
+     * <p>策略：
+     * <ol>
+     *   <li>从 quotation_line_component_data 反推 line_items 引用的 componentId 集合
+     *       （兜底：直接扫所有 GLOBAL scope 视图保证跨组件回放）</li>
+     *   <li>调 {@link ComponentSqlViewService#snapshotForComponents}</li>
+     *   <li>序列化为 quotation_component_sql_snapshot 行（key = componentId::sql_view_name）</li>
+     * </ol>
+     */
+    private void freezeSqlViewsForQuotation(UUID quotationId, List<QuotationLineItem> lineItems) {
+        // 1. 收集 componentId（从 quotation_line_component_data 表 JSONB componentData 推不便，
+        //    退而求其次：从 line_items.templateId → template.components_snapshot 提取所有 componentId）
+        java.util.Set<UUID> componentIds = new java.util.HashSet<>();
+        for (QuotationLineItem li : lineItems) {
+            if (li.templateId != null) {
+                com.cpq.template.entity.Template t = com.cpq.template.entity.Template.findById(li.templateId);
+                if (t != null && t.componentsSnapshot != null) {
+                    try {
+                        com.fasterxml.jackson.databind.JsonNode arr = MAPPER.readTree(t.componentsSnapshot);
+                        if (arr.isArray()) {
+                            for (com.fasterxml.jackson.databind.JsonNode entry : arr) {
+                                com.fasterxml.jackson.databind.JsonNode cid = entry.get("componentId");
+                                if (cid != null && !cid.isNull()) {
+                                    try { componentIds.add(UUID.fromString(cid.asText())); } catch (Exception ignored) {}
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        LOG.debugf("[freezeSqlViews] parse components_snapshot failed: %s", e.getMessage());
+                    }
+                }
+            }
+        }
+
+        Map<String, Map<String, Object>> closure =
+                componentSqlViewService.snapshotForComponents(new ArrayList<>(componentIds));
+        if (closure.isEmpty()) {
+            LOG.debugf("[freezeSqlViews] no sql views to freeze for quotation=%s", quotationId);
+            return;
+        }
+
+        // 2. 清旧 + 写新（重复提交允许覆盖）
+        em.createNativeQuery("DELETE FROM quotation_component_sql_snapshot WHERE quotation_id = ?")
+                .setParameter(1, quotationId).executeUpdate();
+
+        int inserted = 0;
+        for (Map.Entry<String, Map<String, Object>> e : closure.entrySet()) {
+            String key = e.getKey();
+            Map<String, Object> v = e.getValue();
+            String declaredCols = jsonOrEmpty(v.get("declared_columns"));
+            String requiredVarsJson = jsonOrEmpty(v.get("required_variables"));
+            em.createNativeQuery(
+                    "INSERT INTO quotation_component_sql_snapshot " +
+                    "(quotation_id, sql_view_key, sql_template, declared_columns, required_variables, frozen_at) " +
+                    "VALUES (?, ?, ?, ?::jsonb, " +
+                    "  (SELECT array_agg(jsonb_array_elements_text(?::jsonb))::text[]), " +
+                    "  now())")
+                    .setParameter(1, quotationId)
+                    .setParameter(2, key)
+                    .setParameter(3, String.valueOf(v.get("sql_template")))
+                    .setParameter(4, declaredCols)
+                    .setParameter(5, requiredVarsJson)
+                    .executeUpdate();
+            inserted++;
+        }
+        LOG.infof("[freezeSqlViews] frozen %d sql_view entries for quotation=%s", inserted, quotationId);
+    }
+
+    private String jsonOrEmpty(Object o) {
+        if (o == null) return "[]";
+        if (o instanceof String s) return s.isBlank() ? "[]" : s;
+        try { return MAPPER.writeValueAsString(o); } catch (Exception e) { return "[]"; }
     }
 
     /**

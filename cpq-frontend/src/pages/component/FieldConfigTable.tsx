@@ -23,6 +23,8 @@ interface FieldConfigTableProps {
   formulas?: FormulaItem[];
   onChange: (fields: FieldItem[]) => void;
   onConfigDatasource: (fieldIndex: number) => void;
+  /** 可选：当前组件 ID，传入后 PathPickerDrawer 会显示"SQL 视图"Tab */
+  componentId?: string;
 }
 
 const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
@@ -30,6 +32,7 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
   formulas,
   onChange,
   onConfigDatasource,
+  componentId,
 }) => {
   const [pathPickerKey, setPathPickerKey] = useState<string | null>(null);
   // V109: 全局变量选择器, 选完编译为 BNF path + 写入 global_variable_code 元数据
@@ -488,6 +491,7 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
       {/* 路径配置: BASIC_DATA → basic_data_path; DATA_SOURCE → datasource_binding.bnf_path */}
       <PathPickerDrawer
         open={pathPickerKey !== null}
+        componentId={componentId}
         initialPath={pathPickerKey ? (() => {
           const f = fields.find(x => x.key === pathPickerKey);
           if (!f) return '';

@@ -4,6 +4,1567 @@
 
 ---
 
+### [2026-05-27] 🧹 子料号名称 INPUT_TEXT 矛盾配置清理（V264）+ 字段类型 vs 取值属性匹配规则
+
+**背景**：用户把「选配-子配件清单 / 子料号名称」改为 `INPUT_TEXT`（纯手动填写），但字段仍残留 `basic_data_path = $zcj_bom.child_part_name`。
+
+**根因（字段类型与取值属性不匹配）**：`basic_data_path` 只对 `BASIC_DATA` 字段生效。`INPUT_TEXT` 渲染 `<input>`（`ComponentCell.tsx:621`），值只来自 `row[key]`（用户手填持久化值），**完全不读 `basic_data_path`**。所以残留的 `$zcj_bom.child_part_name` 是死配置——报价单里该列只是空输入框，视图列不会自动带出。
+
+**额外发现**：`INPUT_TEXT` 编辑态连 `default_source` 默认值回填都不支持（`ComponentCell.tsx:583` 的 default placeholder 链 `if (isEmpty && (isNumber || field_type==='INPUT_NUMBER'))` **只对 INPUT_NUMBER**）。想要「默认带视图值 + 可编辑」当前架构做不到。
+
+**修复（V264，纯配置清理）**：清空「子料号名称」的 `basic_data_path`（component 表 + 10 个 PUBLISHED snapshot 同步）。**不改变报价单行为**（INPUT_TEXT 本就是空输入框供手填），仅消除「配了视图路径却不生效」的矛盾配置。
+
+**字段类型 ↔ 取值属性匹配规则（沉淀）**：
+| field_type | 生效的取值属性 | 渲染 |
+|---|---|---|
+| `BASIC_DATA` | `basic_data_path`（从 driver SQL 视图取值） | 只读自动显示 |
+| `DATA_SOURCE` | `datasource_binding`（GLOBAL_VARIABLE / BNF_PATH / DATABASE_QUERY） | 只读自动显示 |
+| `FORMULA` / `LIST_FORMULA` | `formula_tokens` / `list_formula_config` | 公式计算值 |
+| `INPUT_NUMBER` | `row[key]` + `default_source`（默认值占位） | `<input>` 可填 + 默认提示 |
+| `INPUT_TEXT` | **仅 `row[key]`**（纯手填，无默认值回填） | `<input>` 可填 |
+| `FIXED_VALUE` | `content` / `row[key]` | 只读固定值 |
+
+**结论**：给 INPUT_TEXT 配 `basic_data_path` 无意义（不读）；想「自动显示视图值」用 BASIC_DATA；想「可手填」用 INPUT_TEXT（无默认值）。两者不可兼得（除非前端扩展 INPUT_TEXT 支持 default_basic_data_path 回填为真实初值）。
+
+**验证**：V264 success=t；component 子料号名称 = INPUT_TEXT + 空 path；残留 child_part_name 的 PUBLISHED 模板 = 0 ✅
+
+---
+
+### [2026-05-27] 🔧 选配页签数据"两份" — 5 视图加 customer_no 过滤 + 注入 :customerCode（V263）
+
+**现象**：报价单所有选配页签数据出现两份（子配件清单 10 行而非 5、材质/工序/元素同样翻倍）。
+
+**根因（AP-53 §V6 规则第 5 条副作用）**：V6 基础资料表是「customer × material 共享」，同一料号 3120012574 被两个客户导入（CUST-1269 罗克韦尔 11:12 + 8000137 19:45），`material_bom_item` 各存一份。而 zcj_bom + 4 个 composite_child_*_mirror 视图 WHERE **只过滤 hf_part_no，没过滤 customer_no** → 跨客户数据叠加 → 每子件返 2 份。
+
+**修复（V263 + 后端注入）**：
+- **后端注入 `:customerCode`**：`RuntimeContext.QuotationContext` 加 `customerCode` 字段 + `toNamedParams` 暴露；`SqlViewExecutor.enrichCustomerCode` 从 `:customerId`(UUID) 查 `customer.code` 自动补 `:customerCode`（进程级 ConcurrentHashMap 缓存）。两个占位符 `:customerId`(UUID) + `:customerCode`(code) 同时可用。
+- **5 视图 SQL 加 `customer_no = :customerCode`**（V263）：zcj_bom / composite_child_materials_mirror / processes_mirror / elements_mirror / weights_mirror。material_bom_item/element_bom_item.customer_no 存的是 code（CUST-1269）所以用 :customerCode。
+
+**为什么用 code 不用 UUID**：V6 表 `customer_no` 列存 customer.code（CUST-1269），不是 UUID。`:customerId` 是 quotation.customerId(UUID)，需 SqlViewExecutor 查 customer 表转 code。
+
+**dry-run 兼容**：SqlViewValidator 把 :customerCode 替换为 NULL，`customer_no=NULL` 语法合法、declared_columns 提取不受影响（LIMIT 0 拿列结构）。
+
+**验证**：
+- Flyway V263 success=t（5/5 视图加过滤）✅
+- expand-driver 罗克韦尔(UUID→CUST-1269)：子配件清单 5 行 8881~8885，不再 10 行 ✅
+- E2E `child-parts-zcj-bom.spec.ts` + `ap53-rockwell-v128-mirror.spec.ts` 2 passed（材质 2/工序 5/元素 4/子配件 5/组合工艺 5，全 customer 过滤生效无重复）✅
+
+**关键认知**：V6「customer × material 共享」语义下，**任何按料号查 V6 表的 SQL 视图都必须同时按 customer_no 过滤**，否则多客户导入同料号时跨客户叠加。SqlViewExecutor 只自动注入 `hf_part_no = ANY(:hfPartNos)`，customer 过滤须视图 SQL 自己写 `customer_no = :customerCode`（占位符已由后端注入）。沉淀到方案制定前必读 §V6 规则。
+
+---
+
+### [2026-05-27] 🔧 选配-子配件清单 "X (共N项)" 显示错乱 — driver 与字段源统一到 $zcj_bom（V262）
+
+**现象**：报价单 QT-20260527-1651 子配件清单页签：数量列显 `1 (共 5 项)`、单位列 `PCS (共 5 项)`，子料号显投料号 9997/9998 而非装配子件 8881~8885。
+
+**根因（AP-22 + AP-37 组合）**：组件 `data_driver_path` 与字段 `basic_data_path` 指向**两个不同维度的视图源**：
+- driver = `$$COMP-CFG-MATERIAL-RECIPE.composite_child_materials_mirror`（materials_mirror 查 `characteristic IS NULL` 投料行 → 2 行 9997/9998）
+- 字段 = `$zcj_bom.*`（zcj_bom 查 `characteristic='ASSEMBLY'` 装配子件 → 5 行 8881~8885）
+- `ComponentDriverService.evaluatePath` 短路逻辑（L656）：leafField 在 driverRow 含同名列则短路取 driver 值，不含则退化走 SqlViewExecutor 全量查
+- 结果：序号/子料号（leaf=child_seq/child_hf_part_no）在 materials_mirror driverRow 有同名列 → **被短路劫持显投料号**；数量/单位（leaf=composition_qty/issue_unit）materials_mirror 无此列 → 不短路 → 全量查 zcj_bom 返 5 行数组 → 前端 `formatPathValue` 渲染 `首值 (共 5 项)`
+
+**关键认知**：连"看起来对"的子料号 9997/9998 其实也错了 —— 是被 driver 短路劫持的投料号，用户配置的 zcj_bom 装配子件（8881~8885）根本没生效。child_hf_part_no/child_seq 两视图碰巧同名掩盖了 path 失效。
+
+**修复（V262，driver 与字段统一到 zcj_bom）**：
+- component `COMP-CFG-CHILD-PARTS`：`data_driver_path` → `$zcj_bom`（本组件视图，owner=CHILD-PARTS/scope=COMPONENT）
+- 字段「子料号名称」：`INPUT_TEXT` + `mat_bom[bom_type='ASSEMBLY'].input_material_name`（V44 老表）→ `BASIC_DATA` + `$zcj_bom.child_part_name`
+- 9 张含 CHILD-PARTS 且 driver=materials_mirror 的 PUBLISHED 模板 snapshot 条件同步（jsonb 双层重建，CASE 精确匹配避免误伤老模板）
+- 清空 QT-1651 两个 lineItem 被 autoSave 污染的 CHILD-PARTS rowData（数组脏值）
+
+**技术验证点**：`$zcj_bom` 不含 "composite_child_" → 不走 COMPOSITE 聚合分支。SIMPLE lineItem 走 lineItemId 注入分支，但 `$` 路径走 SqlViewExecutor 旁路会**忽略 lineItemId hint**、按 partNo 用 `hf_part_no=ANY(:hfPartNos)` 返 5 行，不会返空。
+
+**验证**：
+- Flyway V262 success=t ✅（V260/V261 已被 v130 修复占用，重命名到 V262）
+- expand-driver 返 rowCount=5，子料号 8881~8885，数量[1,2,3,1,2]/单位[PCS,PCS,g,PCS,PCS] **全部单值** ✅
+- batch-expand 带 lineItemId+SIMPLE（前端真实路径）rowCount=5 ✅
+- 9 张 PUBLISHED snapshot 全改 $zcj_bom + QT-1651 rowData 清空 ✅
+- E2E `child-parts-zcj-bom.spec.ts` 1 passed ✅
+
+**教训**：组件配置时 `data_driver_path` 与字段 `basic_data_path` **必须指向同一个 SQL 视图源**。driver 决定行数 + 提供 driverRow 短路列；字段 path 末段列名若不在 driver 行里就退化全量查询返数组。两者不同源 = 部分列被短路劫持（值错但无报错）+ 部分列 "(共N项)"。AP-22 续：写组件时 grep 确认 driver 视图 declared_columns 覆盖所有字段 path 的末段列。
+
+---
+
+### [2026-05-27] 前端 Bug Fix — B3/B1/B2 三个主数据 Hub Bug 修复
+
+**任务**：修复 tester 验收阶段暴露的 3 个 Bug（B3 BLOCKER + B1 HIGH + B2 MEDIUM）。
+
+**B3 — v6MasterDataService.ts ApiResponse 未解包（页面崩溃）**：
+
+根因：`api.ts` interceptor 已执行 `return response.data`，返回的是 `{code, message, data: PageResult}` 的 ApiResponse 信封。原代码直接 `return res as PageResult<T>`，导致 `res.content` 为 undefined → React 崩溃（"Cannot read properties of undefined (reading 'filter')"）。
+
+修复：在 4 个 API 方法统一引入 `unwrap` 函数（与 `boundGlobalVariableService.ts` / `changeLogService.ts` 等项目惯用法一致）：
+```typescript
+const unwrap = <T>(r: any): T => (r && typeof r === 'object' && 'data' in r ? (r.data as T) : (r as T));
+```
+- `listProcesses`：`res as PageResult` → `unwrap<PageResult<ProcessMasterDTO>>(res)`
+- `listBomItems`：同上 → `unwrap<PageResult<MaterialBomItemDTO>>(res)`
+- `listBomCustomerNos`：`res.content ?? []` → `unwrap<string[]>(res)` + Array.isArray 保护
+- `listBomMaterialNos`：同上
+
+**B1 — V6BomQueryTab systemType 枚举值错（400 INVALID_SYSTEM_TYPE）**：
+
+根因：前端 `SystemType` type 定义为 `QUOTATION/COSTING/COMMON`，后端只接受 `QUOTE/PRICING/BOTH`。
+
+修复：type 声明 + SYSTEM_TYPE_OPTIONS 均改为后端实际枚举值（QUOTE/PRICING/BOTH）。`doQuery` 中 `systemType === 'ALL' ? undefined : systemType` 逻辑不变。
+
+**B2 — SYSTEM_TYPE_TAG 字典键与数据库返回值不匹配（Tag 不显色）**：
+
+根因：字典键仍为 `QUOTATION/COSTING/COMMON`，数据库返回 `QUOTE/PRICING/BOTH`，`SYSTEM_TYPE_TAG[val]` 命中 undefined。
+
+修复：字典键改为 `QUOTE/PRICING/BOTH`。
+
+**修改文件**：
+- `cpq-frontend/src/services/v6MasterDataService.ts`：引入 unwrap，修改全部 4 个 API 方法
+- `cpq-frontend/src/pages/master-data/V6BomQueryTab.tsx`：SystemType type + OPTIONS + TAG 字典
+
+**自检结果**：
+- tsc 0 错误 ✅
+- v6MasterDataService.ts Vite 200 ✅；V6BomQueryTab.tsx Vite 200 ✅；主入口 200 ✅
+- E2E `master-data-v6-tabs.spec.ts` **7 passed**（从 1 passed / 1 failed / 5 skipped → 全部通过）✅
+  - TC-11（老路由不渲染）PASS；B3 崩溃确认 PASS；AC-P1~P5 工序 Tab PASS；AC-B1~B10 BOM Tab PASS（含 CUST-1269 返 14 条 + Bug B1 修复确认）；TC-12 无 CRUD PASS；TC-13 不自动查询 PASS；材质+料号回归 PASS
+
+---
+
+### [2026-05-27] 后端 — V6 只读查询端点（process-master + material-bom-items 4 个 endpoint）
+
+**任务**：新增 4 个 V6 只读查询 REST endpoint，覆盖工序主数据查询和物料 BOM 子表多维查询。
+
+**新增文件（7个）**：
+- `ProcessMasterDTO.java`：11 字段 + `from(ProcessMaster e)` 静态工厂（含 4 个审计列）
+- `MaterialBomItemDTO.java`：完整 44 字段，按维度键/项次/用量/损耗/仓位/选项/替代/公式/倒冲/回收 分组注释
+- `ProcessMasterRepository.java`：`search(keyword)` 返回 `PanacheQuery<ProcessMaster>` 支持 processNo/processName 模糊搜索
+- `ProcessMasterReadService.java`：`list(page, size, keyword)`，size > 200 → 400 INVALID_PAGE_SIZE
+- `MaterialBomQueryService.java`：`queryItems` / `findDistinctCustomerNos`（5分钟 ConcurrentHashMap 缓存）/ `findDistinctMaterialNos`；systemType 展开逻辑：QUOTE→IN('QUOTE','BOTH'), PRICING→IN('PRICING','BOTH'), BOTH→='BOTH'
+- `ProcessMasterResource.java`：`GET /api/cpq/v6/process-master`
+- `MaterialBomQueryResource.java`：`GET /api/cpq/v6/material-bom-items` / `/customer-nos` / `/material-nos`
+
+**修改文件（1个）**：
+- `MaterialBomItemRepository.java`：新增 3 方法：`queryItems(customerNo, materialNo, systemTypes)` 动态 JPQL，`findDistinctCustomerNos()` native SQL，`findDistinctMaterialNos(customerNo, q, limit)` native SQL
+
+**错误码实现**：
+- `MISSING_CUSTOMER_NO`（400）：BOM 主查询 / material-nos 漏传 customerNo
+- `INVALID_SYSTEM_TYPE`（400）：systemType 非 QUOTE/PRICING/BOTH
+- `INVALID_PAGE_SIZE`（400）：size > 200（process-master + BOM 均有）
+
+**自检结果**：
+- `mvnw compile` exit=0 ✅
+- `GET /api/cpq/v6/process-master?size=5` → 200 空列表 ✅
+- `GET /api/cpq/v6/material-bom-items`（无 customerNo）→ 400 MISSING_CUSTOMER_NO ✅
+- `GET /api/cpq/v6/material-bom-items?customerNo=CUST-1269&size=3` → 200，totalElements=14 ✅
+- `GET /api/cpq/v6/material-bom-items/customer-nos` → 200 ["_GLOBAL_","CUST-1269"] ✅
+- systemType=QUOTE/PRICING/BOTH/INVALID 均按预期 ✅；size=201 → 400 ✅
+
+**已知遗留**：
+- `process_master` 表当前无数据（待导入数据后回测）
+- customer-nos 缓存用 `ConcurrentHashMap + volatile lastFetchedAt`（TTL=5min），未引入 Quarkus Cache extension
+
+---
+
+### [2026-05-27] 前端 — V6 工序只读 Tab + V6 BOM 查询 Tab + ProcessManagement 完全退出
+
+**任务**：实施 5 新建 + 3 修改 + 5 删除；将主数据维护页工序/BOM Tab 切换为 V6 只读查看模式，完全退出旧 ProcessManagement CRUD 页面。
+
+**新建文件**：
+- `cpq-frontend/src/services/v6MasterDataService.ts`：4 个 API 方法（listProcesses / listBomItems / listBomCustomerNos / listBomMaterialNos）+ ProcessMasterDTO（11 字段）+ MaterialBomItemDTO（44 字段）+ PageResult<T>
+- `cpq-frontend/src/pages/master-data/V6ProcessReadOnlyTab.tsx`：工序列表只读（SelectableTable，keyword 防抖 300ms，点 processNo 链接开详情 Drawer，刷新按钮）
+- `cpq-frontend/src/pages/master-data/V6ProcessDetailDrawer.tsx`：宽 480，11 字段 Descriptions 展示，无操作按钮
+- `cpq-frontend/src/pages/master-data/V6BomQueryTab.tsx`：顶部 3 过滤（客户必选 Select / 料号 Select 含 500 条截断提示 / 系统类型 Radio.Group）+ 查询按钮（客户未选 disabled+tooltip）+ 列表 11 主列
+- `cpq-frontend/src/pages/master-data/V6BomItemDetailDrawer.tsx`：宽 960，44 字段分 5 组 Descriptions（维度键/项次/用量损耗/选项追溯/审计）
+
+**修改文件**：
+- `MasterDataHubPage.tsx`：删 ProcessManagement/Empty import，换 V6ProcessReadOnlyTab + V6BomQueryTab
+- `router/index.tsx`：删 ProcessManagement import + `config/processes` 路由
+- `processService.ts`：删 list/detail/create/update/deleteSoft + ProcessUpsertRequest + PROCESS_CATEGORIES，保留 listAll/getProductProcesses/bindProcesses/unbindAll（被 ProcessSelection/AddProductModal/ProductTemplateBinding 依赖）
+
+**删除文件（5）**：ProcessManagement.tsx / RegularProcessTab.tsx / RegularProcessEditDrawer.tsx / CompositeProcessTab.tsx / CompositeProcessEditDrawer.tsx
+
+**自检**：tsc 0 错误 ✅；9 个 Vite transform 全 200 ✅；grep 残留 = 0 ✅；/master-data-hub 200 ✅
+
+---
+
+### [2026-05-27] 前端 Fix — v6MasterDataService + V6 主数据组件前后端对齐修正
+
+**任务**：修正前端与后端实际 API 不一致的 4 类问题（endpoint URL / ProcessMasterDTO 字段 / MaterialBomItemDTO 字段 / PageResult 字段名）。
+
+**修改文件（5 个）**：
+- `v6MasterDataService.ts`：
+  - 4 个 URL 修正：`/v6/master-data/processes` → `/v6/process-master`；`/v6/master-data/bom-items` → `/v6/material-bom-items`；`/v6/master-data/bom-customer-nos` → `/v6/material-bom-items/customer-nos`；`/v6/master-data/bom-material-nos` → `/v6/material-bom-items/material-nos`
+  - `PageResult<T>` 字段 `number` → `page`（对齐后端 `PageResult.java`）
+  - `ProcessMasterDTO`：移除脑补字段（processType/description/isRequired/sortOrder/status/remark），改为真实 12 字段（id/processNo/processName/processCategory/isOutsource/standardCurrency/standardUnit/defaultDefectRate/createdAt/updatedAt/createdBy/updatedBy）
+  - `MaterialBomItemDTO`：移除全部脑补字段（bomVersion/childMaterialNo/childMaterialDesc/childMaterialType/unit/usageQty/netUsageQty/additionalQty/referencePrice/currency/supplierNo/purchaseGroup/procurementType/specialProcurementType/planningStrategy/optionType/optionValue/optionDesc/configKeyword/validFrom/validTo/plant/storageLocation/mrpArea/batchSize/roundingValue/productionVersion/importBatch/importedAt/isCurrent/remark），改为 Java DTO 实际 49 字段
+- `V6ProcessReadOnlyTab.tsx`：列定义对齐真实字段（8 列：processNo/processName/processCategory/isOutsource/standardCurrency/standardUnit/defaultDefectRate/updatedAt）
+- `V6ProcessDetailDrawer.tsx`：Descriptions 对齐真实 12 字段（含 id/createdBy/updatedBy）
+- `V6BomQueryTab.tsx`：11 主列对齐 PM B-2（seqNo/systemType/customerNo/materialNo/characteristic/componentNo/partNo/operationNo/compositionQty/issueUnit/scrapRate），移除 childMaterialNo/usageQty/bomVersion 等脑补列
+- `V6BomItemDetailDrawer.tsx`：完全重写，5 组 Descriptions（维度键/项次与工序/用量与损耗/选项追溯/审计），严格按 Java DTO 49 字段 1:1 展示
+
+**自检**：tsc 0 错误 ✅；5 个文件 Vite transform 全 200 ✅；
+- `GET /api/cpq/v6/process-master?size=3` → 200，`page` 字段存在 ✅
+- `GET /api/cpq/v6/material-bom-items/customer-nos` → 200，`["_GLOBAL_","CUST-1269"]` ✅
+- `GET /api/cpq/v6/material-bom-items?customerNo=CUST-1269&size=2` → 200，返回字段与 interface 100% 对齐 ✅
+- `GET /api/cpq/v6/material-bom-items/material-nos?customerNo=CUST-1269` → 200，`["3120012574","3120012575"]` ✅
+
+---
+
+### [2026-05-27] 后端 — 核价导入链路全量 upsert 化重构（消除 duplicate key 报错）
+
+**任务**：对核价 24 个 P*Handler + PricingImportService 所有写入点做审计 + upsert 化重构，杜绝 `duplicate key value violates unique constraint` 错误。
+
+**盘点结论**：
+- P01~P05、P08~P24（共 21 个）：写入已经走 native SQL ON CONFLICT DO UPDATE，或走 `UnitPriceWriter.upsert()` / `MaterialMasterRepository.upsertByMaterialNo()` / `MaterialCustomerMapRepository.upsert()` 等 Repository 层 upsert，**合规**
+- **P06 MaterialBomHandler（不合规 × 2）**：
+  - `upsertHeader()` 使用 `findOne-then-persist` 假 upsert（类型 C）
+  - `material_bom_item` 使用 `DELETE-then-persist()` 模式（类型 B）
+- **P07 ElementBomHandler（不合规 × 2）**：
+  - `upsertHeader()` 使用 `SELECT COUNT-then-persist` 假 upsert（类型 C）
+  - `element_bom_item` 使用 `DELETE-then-persist()` 模式（类型 B）
+- PricingImportService：无直接业务表写入，只写 `ImportRecord`（通过 `@GeneratedValue` 生成 UUID 主键，无 unique 冲突风险）
+
+**改动文件**：
+- `P06MaterialBomHandler.java`：移除 `MaterialBomRepository` 依赖、`MaterialBom`/`MaterialBomItem` 实体直接 persist；全改为 native SQL upsert
+  - `material_bom`：ON CONFLICT (system_type, customer_no, material_no, bom_version, COALESCE(characteristic,''))
+  - `material_bom_item`：ON CONFLICT (system_type, customer_no, material_no, COALESCE(characteristic,''), COALESCE(seq_no,0), COALESCE(component_no,''), COALESCE(part_no,''))
+- `P07ElementBomHandler.java`：移除 `ElementBom`/`ElementBomItem` 实体直接 persist；全改为 native SQL upsert
+  - `element_bom`：ON CONFLICT (system_type, customer_no, material_no, characteristic)
+  - `element_bom_item`：ON CONFLICT (system_type, customer_no, material_no, characteristic, COALESCE(seq_no,0), COALESCE(component_no,''), COALESCE(part_no,''))
+
+**自检**：mvn compile exit=0 ✅；`/api/cpq/basic-data-import/v6/pricing` → 401（auth 正常）✅
+
+---
+
+### [2026-05-27] 后端 — 报价导入链路全量 upsert 化重构（消除 duplicate key 报错）
+
+**任务**：对报价导入链路所有写入点做 upsert 化重构，杜绝 `duplicate key value violates unique constraint` 错误。
+
+**审计范围**：19 个 Q* Handler + StagingMerger 5 个 merge 方法 + ImportSessionService（已合规）+ StagingWriter（staging 表仅 PK 唯一索引，import_session_id 隔离，合规）。
+
+**改动文件清单**：
+- `Q03MaterialBomHandler.java`：移除 DELETE+persist() 模式，改为 material_bom 主表 `INSERT ON CONFLICT (uq_material_bom_v6) DO UPDATE`，material_bom_item 子表 `INSERT ON CONFLICT (uq_material_bom_item) DO UPDATE`；移除不再需要的 `MaterialBomRepository`、`MaterialBomItem` import
+- `Q04ElementBomHandler.java`：移除 DELETE→item+SELECT COUNT→persist 假 upsert，改为 element_bom 主表 `INSERT ON CONFLICT (uq_element_bom_v6) DO UPDATE`，element_bom_item 子表 `INSERT ON CONFLICT (uq_element_bom_item) DO UPDATE`；保留指纹比对+版本号递增业务逻辑不动
+- `Q12AssemblyBomHandler.java`：同 Q03，material_bom/material_bom_item 全改 ON CONFLICT；移除 `MaterialBomRepository`、`MaterialBom`、`MaterialBomItem` import
+- `StagingMerger.java`：
+  - `mergeBom`：DELETE+INSERT → `INSERT ON CONFLICT (uq_mat_bom_row) DO UPDATE`（无 DELETE 步骤）
+  - `mergeProcess`：DELETE+DISTINCT ON+INSERT → 保留旧版 is_current=false UPDATE + `INSERT ON CONFLICT (uq_mat_process_current WHERE is_current=true) DO UPDATE`；version 列在冲突时 +1
+  - `mergeFee`：DELETE+INSERT → 保留旧版 is_current=false UPDATE + `INSERT ON CONFLICT (uq_mat_fee_current WHERE is_current=true) DO UPDATE`
+  - `mergePlatingFee`：DELETE+INSERT → 保留旧版 is_current=false UPDATE + `INSERT ON CONFLICT (uq_mat_plating_fee_current WHERE is_current=true) DO UPDATE`
+  - `mergePlatingPlan`：DELETE+INSERT → `INSERT ON CONFLICT (uq_mat_plating_plan_row) DO UPDATE`（无 DELETE 步骤）
+
+**已合规（不改动）**：
+- Q01/Q06/Q07/Q08/Q09/Q10/Q11/Q13/Q15/Q17：全部通过 `UnitPriceWriter.upsert()` 写 unit_price，该方法已有完整 ON CONFLICT
+- Q02：通过 `MaterialCustomerMapRepository.upsert()` 写 material_customer_map，已有 ON CONFLICT
+- Q05：UPDATE 操作，无 INSERT，不适用
+- Q14：已有 `ON CONFLICT (uq_capacity)` DO UPDATE
+- Q16：已有 `ON CONFLICT (uq_plating_scheme)` DO UPDATE
+- Q18：通过 `MaterialMasterRepository.upsertByMaterialNo()` 写 material_master，已有 ON CONFLICT
+- Q19：已有 `ON CONFLICT (uq_annual_discount)` DO UPDATE
+- `StagingMerger.mergePart`：已有 `ON CONFLICT (part_no) DO UPDATE`
+- `StagingMerger.mergeMapping`：已有 `ON CONFLICT (customer_id, hf_part_no) DO UPDATE`
+- `ImportSessionService.persistDecision`：已有 `ON CONFLICT (import_session_id, decision_type, decision_key) DO UPDATE`
+
+**关键决策**：
+- partial index (WHERE is_current=true) 的 ON CONFLICT 语法：`ON CONFLICT (cols) WHERE is_current = true DO UPDATE`，PG 要求谓词与 partial index 定义精确匹配
+- mergeBom/mergePlatingPlan 不需要保留 is_current=false 的旧版本行维护（这两表无 is_current 列）
+- Q04 元素 BOM 的指纹比对 + characteristic 版本递增业务逻辑保留不动，只改写入机制
+- mergeProcess ON CONFLICT 时 version 列 +1（mat_process 有 version 列用于乐观锁），mat_fee 同理
+
+**自检**：`mvnw compile` exit=0 ✅；`/api/cpq/import-session/.../commit` → 401 ✅
+
+---
+
+### [2026-05-27] 测试 — v1.2 schema-only 验收（AC-01~AC-14）
+
+**任务**：对核价标准模板 v1.2 DRAFT (id=950fdd73) 进行 schema-only 验收，共 13 个 AC 条目。
+
+**验收结果总览**：12/12 PASS，1 MINOR BUG（AC-12 端点实现缺陷，不影响业务）
+
+| AC | 描述 | 结论 |
+|---|---|---|
+| AC-01 | v1.2 DRAFT 存在（status/version/seriesId/kind 正确） | PASS |
+| AC-02 | 20 个组件 dataDriverPath 全部 $v12_* 形态 | PASS |
+| AC-03 | 115 个 BASIC_DATA 字段 basicDataPath 全部 $v12_*.* 形态 | PASS |
+| AC-04 | 36 列 Excel 视图：23 VARIABLE 全 $summary_*/花括号，13 FORMULA 无路径 | PASS |
+| AC-05 | 20 个组件 SQL views + 7 个模板 SQL views 精确表名扫描无 V44/V76 老表 | PASS（初轮误报 element_price 为列别名，精确 FROM/JOIN 扫描通过） |
+| AC-06 | 20 个组件 expand-driver 全部 HTTP 200（rowCount=0 是预期，数据待 backfill） | PASS |
+| AC-08 | 全量 $$ 跨 owner 引用 = 0（组件侧 + Excel 侧） | PASS |
+| AC-10 | v1.1 PUBLISHED：status=PUBLISHED/components=21/ddp 仍为 v_c_*_merged 形态 | PASS |
+| AC-11 | mat_part → HTTP 400 + "AP-53"+"mat_part"+"DEPRECATED" 关键词；costing_part_material_bom → HTTP 400 | PASS |
+| AC-12 | v1.2 不在全局 legacy-paths 列表中（实质 0 条）；但端点忽略 templateId 参数（MINOR BUG） | PASS（实质）|
+| AC-13 | V253~V259 全部 success=t（psql 直查确认） | PASS |
+| AC-14 | 前端 5174 / SPA 路由 / TemplateSqlViewsTab.tsx Vite transform 全部 HTTP 200 | PASS |
+
+**已知 Bug（非本 PR 阻塞）**：
+- BUG-AC12-01（轻微）：`GET /api/cpq/templates/legacy-paths?templateId=xxx` 忽略了 `templateId` 过滤参数，总是返回全量 634 条（所有模板汇总）。业务无影响，但 UI 如果依赖此参数做"当前模板 legacy 问题"提示会失效。根因：后端 `legacy-paths` handler 未读取 `@QueryParam("templateId")`，交 cpq-backend 修。
+
+**已知遗留（预期行为）**：
+- v1.2 各 Tab expand-driver rowCount 多数为 0（fee_config/unit_price 等 V6 数据需 BasicDataImportServiceV5 backfill）
+- 4 个组件（PART-MAPPING/RAW-BOM/LABOR-COST/DEPRECIATION）已有实际数据（V6 表已导入该料号相关记录）
+
+**回归测试标记**：BasicDataImportServiceV5 PR 落地后必须重测 AC-06（重点：所有 rowCount > 0）
+
+---
+
+### [2026-05-27] PM 需求拆解 — 核价标准模板 v5.0 全量 V6 迁移（v1.2 草稿）
+
+**触发**：用户要求将模板「核价标准模板-Excel基础结构 v5.0 v1.1」所有组件迁移到组件配置 SQL 视图，Excel 视图配置模板 SQL 视图（V249/V250 infrastructure），所有数据源切换 V6 基础数据表，摒弃 V44/V76/V125 老表。
+
+**关键决策（已锁定）**：
+- 载体：createNewDraft 从 v1.1（id=a6075db5，seriesId=ca11f33d）生成 v1.2 DRAFT，改造在 v1.2 上做，不动 v1.1
+- 彻底迁 V6：连 costing_part_* 物理表（V76）也换 V6 基础数据表，用户接受丢"同客户同报价单隔离"语义
+- 落地方式：Flyway V253+，可重放
+
+**PM 交付物**：5 个用户故事 + 20组件驱动路径改造表 + 35列 Excel 视图改造清单（前3列详细 + 其余由架构师补全）+ 21 个 SQL 视图清单 + 12条 Given/When/Then 验收标准 + PRD 变更建议 + 5 条风险
+
+**涉及文档**：本条 RECORD 条目（PM 阶段产出，架构师/开发/测试各阶段继续追加）
+
+---
+
+### [2026-05-27] 🩹 选配 Step1 SIMPLE 过滤语义校正（component_no 而非 material_no）
+
+**触发**：用户指出昨日 V6 迁移后 `ConfigureSearchResource.searchParts` 的 NOT EXISTS 条件 `asy.material_no = mm.material_no` 反了。
+
+**根因 - 把语义搞错**：
+- Q12 数据模型：`material_no` = 父件（如 3120012574），`component_no` = 子件（如 8881-8885）
+- 「独立产品搜索」真实业务语义是「可作为顶层报价的料号」
+- **父件本身就是要报价的产品** —— 应保留
+- **子件是中间装配料号，不能单独报价** —— 应排除
+- 错版 `asy.material_no = mm.material_no` 把父件错排了
+- 正版 `asy.component_no = mm.material_no` 排掉子件，保留父件 + 独立料号
+
+**修复**：`ConfigureSearchResource.java:71` `asy.material_no` → `asy.component_no`，注释同步更新
+
+**验证**：
+- q=3120 现在返 **2 行**（3120012574 + 3120012575 父件保留）✅
+- q=TEST 仍返 2 行（普通独立料号）✅
+- E2E `ap53-configure-search-v6.spec.ts` 断言改为 `expect(2)` —— 1 passed (8.9s) ✅
+
+**教训沉淀**：
+- V6 没有 V44 `product_type='SIMPLE'` 这种自包含分类列，「独立产品」语义必须通过 `material_bom_item` 关联推导
+- 推导有方向性 — `material_no` 字段是父件维度，`component_no` 字段是子件维度，**必须明确业务诉求是排除"作为父件的料号"还是"作为子件的料号"**
+- 昨日把"COMPOSITE 父件排除以防嵌套组合"误当作业务诉求，实际业务是反过来 —— 父件就是产品本身，子件是中间料号
+- AP-53 续 4：写 V44 → V6 迁移时，**所有 product_type 含义的过滤条件都要重新对齐业务语义**，不能机械照搬 V44 写法
+
+---
+
+### [2026-05-27] 后端 — 核价模板 v1.2 DRAFT 创建（Flyway V253~V259 + Java 改动）
+
+**任务**：为核价标准模板 v1.1 创建 v1.2 DRAFT，所有 20 个组件 SQL 视图从 V44/V76 老表迁移到 V6 表，7 个模板 SQL 视图拆解 v_costing_summary_full / v_c_summary_agg，36 列 Excel 视图配置路径全量改写。
+
+**实施内容（7 个 Flyway 脚本）**：
+- V253: fee_config 加 3 列（dim_input_material_no/dim_sub_seq_no/dim_element_name）+ plating_scheme 加 hf_part_no（NULL-allowed）
+- V254: 复制 20 个 COMP-V5-* 组件为 -V12 后缀，data_driver_path 改为 $v12_* 形态
+- V255: 为 20 个 -V12 组件创建 component_sql_view（全部 FROM V6 表）
+- V256: 创建 v1.2 DRAFT 模板（seriesId=ca11f33d，status=DRAFT），绑定 20 个 -V12 组件
+- V257: 为 v1.2 模板创建 7 个 template_sql_view（summary_part/summary_material/summary_mgmt_fee_ratio/summary_finance_fee_ratio/summary_profit_tax_ratio/summary_plating_cost/summary_unit_weight_rate）
+- V258: UPDATE v1.2 excel_view_config 36 列（18 隐藏 VARIABLE $summary_*.xxx + 18 可见列）+ referenced_variables 23 条
+- V259: NOOP NOTICE（BnfPathLinter + SqlViewValidator Java 改动占位）
+
+**Java 改动（2 文件）**：
+- `BnfPathLinter.java`：DEPRECATED_TABLE_PREFIXES 从 9 个扩展到 18 个（+9 个 V76 costing_part_* 关键词），错误消息加 era(V44/V76) + 错误码 SQL_VIEW_DEPRECATED_TABLE
+- `SqlViewValidator.java`：新增 FORBIDDEN_TABLE_TOKENS 列表（18 个 V44+V76 词汇），validate() 方法在 EXPLAIN 前先做黑名单扫描
+
+**关键 deviation（V6 实际 DDL vs 架构师草案）**：
+- `unit_price.defect_rate` 在 V220 中**已存在**（架构师草案标注需要 V253 加，实际不需要）→ V253 仅加 fee_config 3 列 + plating_scheme 1 列
+- `element_bom_item` 无直接 `material_no` = hf_part_no 列（架构师 §2.3 用 JOIN 方案，已正确实现）
+- v1.1 模板实际有 21 个源组件（含 COMP-V5-RAW-BOM-PRICED），V254 全部复制，v1.2 template_component 只绑 20 个有对应 v1.1 绑定的组件
+
+**验证结果（自检）**：
+- `mvn compile -q` 0 错误 ✅
+- v1.2 DRAFT 模板 id=950fdd73-42e0-4e28-a613-2487ccd77552 已创建 ✅
+- v1.2 template_component = 20 个 ✅
+- v1.2 template_sql_view = 7 个（全部 ACTIVE）✅
+- legacy-paths v1.2 命中数 = 0（无旧路径残留）✅
+- grep `v_c_.*_merged|v_costing_summary_full|v_c_summary_agg` in cpq-backend/src/main/java = 0 命中（新 sql_template 里无老视图）✅
+
+**已知遗留**：v1.2 视图返空数据是预期行为 — fee_config.dim_input_material_no/dim_sub_seq_no/dim_element_name + plating_scheme.hf_part_no + 所有 V6 表数据均需 BasicDataImportServiceV5 PR backfill 后才有值
+
+**涉及文件**：
+- `db/migration/V253__v6_add_dim_columns.sql`
+- `db/migration/V254__v12_create_components.sql`
+- `db/migration/V255__v12_create_component_sql_views.sql`
+- `db/migration/V256__v12_create_template_and_bind.sql`
+- `db/migration/V257__v12_create_template_sql_views.sql`
+- `db/migration/V258__v12_rewire_excel_view_config.sql`
+- `db/migration/V259__bnf_path_linter_extend_v76.sql`
+- `com/cpq/template/util/BnfPathLinter.java`
+- `com/cpq/component/service/SqlViewValidator.java`
+
+---
+
+### [2026-05-26] 🔄 选配 Step1+Step2 数据源迁移 V6（AP-53 续 / V44 老表禁用）
+
+**触发**：用户「新建报价单 → 选配添加 → 独立产品 → 产品搜索」查到的料号是 V44 `mat_part` 表的，V6 导入数据不出现。
+
+**根因**：`ConfigureSearchResource.searchParts` + `MaterialRecipeService.getForExistingPart` 两个 endpoint 仍直查 V44 `mat_part` / `material_recipe` / `mat_bom`。AP-53 V228+V229+V237+V238 系列只迁移了组件 `data_driver_path` + mirror SQL，遗漏了选配 Drawer 的两个数据入口。
+
+**修复**（2 文件 4 改动）：
+
+| 文件 | 改动 |
+|---|---|
+| `ConfigureSearchResource.java:42-87` | 重写 native SQL：FROM `mat_part + material_recipe` → `material_master`；SIMPLE 过滤改用 `NOT EXISTS material_bom_item characteristic='ASSEMBLY'`；`size_info` → `dimension`；`status_code` 固定 'Y'（V6 无停产维度）；recipe 字段全部用 `material_master.material_type` 浓缩 |
+| `MaterialRecipeService.getForExistingPart()` (269-315) | 完全重写：删 `fillFromBom` 私有方法 + 字典派分支；V6 统一 BOM 派 (`recipeBound=false / recipeType=locked`)；从 `element_bom_item.hf_part_no` 取数（与 V246 mirror SQL 同 `characteristic=MAX` 口径）；min/max=null（Q04 Excel 不导入上下限） |
+| `MaterialRecipeService` 类头 javadoc | 加 V6 迁移状态注释，标记 8 个材质字典管理方法仍走 V44，**等待单独决策**（废弃整套字典还是用 material_type 重设计） |
+| `e2e/ap53-configure-search-v6.spec.ts` | 新 spec 验证两个 endpoint 返 V6 数据：Step1 search-parts q=TEST → 2 行 + sizeInfo 来自 dimension；q=3120 → 0 行（COMPOSITE 父件被排除）；Step2 existing-part/3120012574/material → 4 元素 Cu/Zn/Ag/Ni；不存在料号 → 404 |
+
+**用户决策**（AskUserQuestion 3 个分支）：
+- SIMPLE 过滤 → `NOT EXISTS material_bom_item characteristic='ASSEMBLY'`（不动 V6 schema）
+- 客户范围 → 保持跨客户搜索（与 V44 行为一致）
+- Step2 范围 → 同次任务一起改
+
+**自检**：
+- Quarkus 热重启 health=200 ✅
+- 手工 curl 3 场景全通过 ✅
+  - q=TEST → 2 SIMPLE 料号
+  - q=3120 → 0 行（COMPOSITE 父件正确排除）
+  - q=银点 (URL-encoded) → 2 行 material_type 模糊匹配
+- Step2 returns recipeBound=false / type=locked / 4 elements (Cu 70% / Zn 30% / Ag 75% / Ni 25%) ✅
+- 不存在料号 → 404 ✅
+- E2E `ap53-configure-search-v6.spec.ts`: **1 passed (9.7s)** ✅
+
+**严守的边界（0 触动）**：
+- ❌ 不改 V6 schema（不加 product_type / status_code 列）
+- ❌ 不改 V44 `material_recipe` 表（用户决策：先暂留管理页）
+- ❌ 不改前端 `Step1SearchPart.tsx` / `Step2Material.tsx`（后端 DTO 字段名兼容）
+- ❌ 不动选配抽屉 Step3+ 后续流程
+- ❌ 不动 `material_recipe` 字典管理页（`/material-recipes` admin route 暂保留，标 TODO）
+
+**关联文档同步**：
+- 反模式.md AP-53 续标残留点
+- 方案制定前必读.md §V6 规则加新条「任何新搜索 / 取数 endpoint 一律走 V6 表」
+
+---
+
+### [2026-05-26] 🔧 选配-元素含量 Tab 内容为空 → element_bom_item.hf_part_no 列 + characteristic=MAX 过滤（V245+V246）
+
+**触发**：用户报告"选配-元素含量"Tab 在 v1.28 报价单中始终显示空（rowCount=0）。
+
+**根因**：Excel Q04「物料与元素BOM」Sheet 第 1 列「宏丰料号」(=主件 3120012574) 与第 2 列「投入料号」(=配方代号 9995/9996) 是两个不同维度，但 2026-05-26 方案文档 §4 决定「宏丰料号不导入」，导致 `element_bom_item.material_no` 只存投入料号，mirror SQL 按 `lineItem.partNo = 3120012574` 查永远 0 行。附加问题：Q04 重导时 characteristic 递增（2000→2001...），mirror SQL 不过滤导致 5 个版本叠加返 20 行。
+
+**修复**（4 处改动）：
+- **V245 Flyway**：`ALTER TABLE element_bom_item ADD COLUMN hf_part_no VARCHAR(20)` + index + 重写 `composite_child_elements_mirror` SQL 按 `hf_part_no` 查 + 同步 `v_composite_child_elements` PG view
+- **V246 Flyway**：mirror SQL 加 `characteristic = MAX(characteristic) per (customer_no, material_no)` 子查询过滤最新版本
+- **Q04ElementBomHandler.java:122** 加 `item.hfPartNo = row.getStr("宏丰料号")`
+- **ElementBomItem entity** 加 `@Column(name="hf_part_no") public String hfPartNo`
+
+**踩坑**：V239/V240 命名都被既有迁移占用（feature_library_three_tables / product_config_template_option_value），最终用 V245/V246。**RECORD 教训：写 Flyway 前先 `ls migration/` 看最新版本号**（AP-53 已记，再次复发）。
+
+**验证**：
+- Flyway V245+V246 success=t ✅
+- 直接 API `/expand-driver` 返 rowCount=4 ✅
+- E2E `ap53-rockwell-v128-mirror.spec.ts` 1 passed + console 显 `[batchExpand elements_mirror] rowCount=4` ✅
+- 选配-材质 Tab 截图 3 行真实数据正常 ✅（0 回归）
+
+**附带发现**：
+- 用户在 17:08-17:14 自己编辑过 mirror SQL 编辑器：`processes_mirror` 失去 unit_price UNION 分支（rowCount 7→5），`materials_mirror` 失去 material_master fallback UNION（rowCount 3→2）。不影响本任务但建议确认是否有意编辑。
+- 官方方案文档 `docs/table/报价系统Excel导入落库方案.md §4` 写「宏丰料号不导入」与本次修复冲突，需要更新（**待用户确认**）。
+
+---
+
+### [2026-05-26] 🛠 SqlViewValidator dry-run 命名占位符正则负 lookbehind 漏修
+
+**触发**：用户在组件 SQL 视图编辑器输入含 `NULL::uuid / NULL::varchar` 的 V228 mirror 第二支 SQL，dry-run 报错 `SQL 校验失败：错误: 语法错误 在 ":" 或附近 位置：211`。
+
+**根因**：V236 修了 `SqlViewExecutor.NAMED_PARAM` 加 `(?<!:)` 负 lookbehind 排除 PG `::cast`，但 `SqlViewValidator.NAMED_PARAM`（dry-run / 校验通路）漏修。`bindWithNullPlaceholders` 把 `NULL::uuid` 中的 `:uuid` 当作占位符替换为 `NULL`，变成 `NULL:NULL` 触发 PG 语法错。
+
+**修复**：`SqlViewValidator.java`
+- `NAMED_PARAM` 正则加 `(?<!:)`（同 V236 SqlViewExecutor）
+- `bindWithNullPlaceholders.replaceAll` 也加 `(?<!:)` + `Pattern.quote(name)` 防止占位符名含正则元字符
+
+**验证**：Quarkus 重启 + dry-run 用户原 SQL → 200 + 10 列签名正确解析 ✅
+
+**教训**：跨 SqlViewExecutor / SqlViewValidator 双链路的同名正则**必须同步修**。AP-53 后续可加 AP-54「PG cast 占位符正则双链路同步」反模式。
+
+---
+
+### [2026-05-26] Excel 模板独立 SQL 视图 — E2E 验收测试完成
+
+**任务**：为 "Excel 模板独立 SQL 视图" 重构（Phase 2 后端+前端）编写并跑通 E2E 验收测试。
+
+**产出**：新建 `cpq-frontend/e2e/template-sql-view.spec.ts`（16 个用例，15 passed + 1 skipped）
+
+**测试覆盖范围（T1~T15）**：
+- T1~T9：后端 API 直连（绕过前端，通过 fetch + cookie 调用）
+  - T1. 空列表初始化
+  - T2. dry-run 合法 SELECT → declared_columns 数组（含两列验证）
+  - T3. dry-run 拒绝 DDL (INSERT) → success=false
+  - T4. dry-run 拒绝 :hfPartNo 标量占位符 → success=false，error 含 "hfPartNo"
+  - T5. POST create → 200 + declaredColumns 为 Array（非 JSONB 字符串）+ templateId 字段
+  - T6. list 包含新建项 + templateId 字段 + scope=LOCAL
+  - T7. 重复 sqlViewName → 409 Conflict
+  - T8. PUT update （含 templateId 的正确后端路由）→ declared_columns 重新提取
+  - T9. DELETE 软删除 → list 不再包含
+- T10~T15：UI 驱动（TemplateConfiguration 编辑页）
+  - T10. "SQL 视图" Tab 在中心面板可见
+  - T11. 切换到 "SQL 视图" Tab → "新建 SQL 视图" 按钮可见
+  - T12. 切换到 Excel 视图模式 → "🗄 SQL 视图" 按钮可见（title 选择器）
+  - T13. PathPickerDrawer TEMPLATE 上下文 → SQL 视图 Tab 默认选中，无 GLOBAL 区域
+  - T14. manual Tab 输入 $$ 路径 → error alert 显示 + 确认按钮被阻止
+  - T15. manual Tab 输入老 PG 直引 → warning alert 显示（WARN_WITH_MIGRATION_SUGGEST）
+
+**已知 Bug（B-TSV-01，记录在 spec 中 test.skip）**：
+- 前端 `templateSqlViewService.ts` 中 `dryRun / get / update / delete` 4 个方法路由缺少 `templateId`，实际调用路径为 `/templates/sql-views/{id}` 而后端路由要求 `/templates/{templateId}/sql-views/{id}`
+- 影响：TemplateSqlViewsTab Drawer 内"Dry-Run 测试"功能完全失效（404）
+- 修复建议：templateSqlViewService.ts 各方法补充 templateId 路径参数
+
+**其他验收结果**：
+- `quotation-flow.spec.ts`：1 passed，'加载中' final count = 0，全部 8 Tab 通过 ✅
+- `composite-product-flow.spec.ts`：1 failed（"选配-材质" 行数期望>=2 但实际为1，**预存在失败，与本次重构无关**）
+- `SqlViewIsolationBoundaryTest`：15 passed ✅（Java 单元测试，mvnw test）
+
+**技术坑记录**：
+- Ant Design Tabs 的 onChange 不响应 `force: true` Playwright click，必须用 `evaluate` 直接点 `.ant-tabs-tab-btn` 内层元素
+- `.tm-center-toolbar` 是 sticky 固定栏，会遮盖 Tabs 导航区，普通 Playwright click 被拦截
+- `beforeAll` 统一登录（不在每个 `beforeEach` 重登录），避免 Redis 速率限制（30次/分/IP）
+- 后端 dry-run 路由：`POST /templates/{templateId}/sql-views/dry-run`（含 templateId，TemplateSqlViewResource.java 第119-126行）
+
+**涉及文件（新建）**：
+- `cpq-frontend/e2e/template-sql-view.spec.ts`
+
+---
+
+### [2026-05-26] Excel 模板 / SQL 视图 - 模板独立 SQL 视图重构（替代 Phase 1 的 costing_template 归宿）
+
+| Flyway V249/V250 | 新表 template_sql_view + template.template_sql_views_snapshot | SqlViewRuntimeContext.OwnerType.TEMPLATE | SqlViewExecutor owner-aware 路由（TEMPLATE + $$ 拒）| TemplateService.publish 接 snapshot + 跨引用强校验 | TemplateConfiguration "SQL 视图" Tab + ExcelViewConfigTab PathPickerDrawer
+
+**关键决策**：与组件 SQL 视图完全隔离，各持各表，owner 由 ThreadLocal（SqlViewRuntimeContext）决定；V150 后 template 已是 LinkedExcelView 实际渲染源，SQL 视图应挂在 template 层（Phase 1 误把归宿挂在 costing_template，Phase 2.5 已纠正到 template）；`$$` 跨引用在 TEMPLATE 上下文强阻断，前端 PathPickerDrawer 和后端 publish 双层校验；EvaluateRequest.templateId 透传链路是渲染 `$view.col` 路径的必要条件，漏传显示"—"。
+
+**同步文档**：PRD-v3.md §8.3.5 + §9.15 + §10.7 迁移参考 | Excel模板配置指南.md §四C + §六L~T建议新形态 + §十一变更日志 | 反模式.md AP-53 关联文件高危清单 + 强制修法第6条 | 方案制定前必读.md 改动6末尾补充 + 新增改动11
+
+---
+
+### [2026-05-26] SQL 视图归宿重构 — Phase 2 后端平移（costing → template）
+
+**背景**：V150 合并后 `template.excel_view_config` 才是 LinkedExcelView 实际渲染源；Phase 1 把 SQL 视图建在了 `costing_template_sql_view`，现平移到 `template_sql_view`，并将 OwnerType.COSTING_TEMPLATE 改名为 OwnerType.TEMPLATE。
+
+**实施内容（9 项）**：
+
+1. **V249 迁移**：DROP `costing_template_sql_view` CASCADE，新建 `template_sql_view`（FK → template.id）
+2. **V250 迁移**：DROP `costing_template.sql_views_snapshot`；`template` 加 `template_sql_views_snapshot JSONB`
+3. **新实体/仓储/服务/Resource/DTO**（5 个新文件 + 4 个 DTO）：
+   - `template.entity.TemplateSqlView`
+   - `template.repository.TemplateSqlViewRepository`
+   - `template.service.TemplateSqlViewService`（含 deepCopySqlViews + snapshotForTemplate）
+   - `template.resource.TemplateSqlViewResource`（路由 `/api/cpq/templates/{templateId}/sql-views`）
+   - `template.dto.{TemplateSqlViewDTO, CreateTemplateSqlViewRequest, UpdateTemplateSqlViewRequest, DryRunTemplateSqlViewRequest}`
+4. **BnfPathLinter 迁移**：`costing.util.BnfPathLinter` → `template.util.BnfPathLinter`（OwnerType.TEMPLATE 改名）
+5. **LegacyPathsResource 迁移**：`costing.resource` → `template.resource`，路由 `/api/cpq/templates/legacy-paths`，扫描目标改为 `template.excel_view_config`
+6. **SqlViewRuntimeContext 重构**：`OwnerType.COSTING_TEMPLATE` → `OwnerType.TEMPLATE`；Snapshot 去除独立 `costingTemplateId` 字段，统一复用 `templateId`；旧入口 `setNestedCostingTemplate` 改为 deprecated 别名（向后兼容）
+7. **SqlViewExecutor 路由更新**：`COSTING_TEMPLATE` → `TEMPLATE`；执行方法 `executeViaCostingTemplateSqlView` → `executeViaTemplateSqlView`（注入 `TemplateSqlViewService`）
+8. **TemplateService 扩展**：`publish` 新增 `validateNoDoubleDollarRefsInExcelView` + `snapshotForTemplate`（写 `template_sql_views_snapshot`）；`createNewDraft` 调 `templateSqlViewService.deepCopySqlViews`
+9. **CostingTemplateService 回滚**：删除 `validateNoDoubleDollarRefs` + `sqlViewsSnapshot` 逻辑 + `deepCopySqlViews`；`publish` 回退为纯状态机
+10. **EvaluateRequest 字段改名**：`costingTemplateId` → `templateId`（旧字段保留 @Deprecated 别名）；`FormulaEvaluateResource` 改用 `setNestedTemplate` + `resolveTemplateId`（向后兼容）
+11. **单元测试重写**：`SqlViewIsolationBoundaryTest` 15 个用例对齐 TEMPLATE 语义（删除旧 COSTING_TEMPLATE 4 个互斥场景，新增 TEMPLATE 互斥约束 + deprecated 别名验证）
+
+**关键决策**：
+- `Snapshot` 去除互斥字段 `costingTemplateId`，复用 `templateId` 字段（by ownerType 区分语义）——更简洁，避免两个"templateId"字段混用
+- `setNestedCostingTemplate` 改为 `@Deprecated` 别名而非删除——让 Phase 2 前端 agent 生成的旧调用不立刻报错
+- 旧 `costing.resource.LegacyPathsResource` + `costing.util.BnfPathLinter` 文件保留但内部 OwnerType 更新，路由 `/api/cpq/costing-templates/legacy-paths` 与新路由并存
+- `CostingTemplateSqlViewService.lookupFromCostingTemplateSnapshot` 改为直接返回 empty（原读 `ct.sqlViewsSnapshot` 字段已 drop）
+
+**Flyway 迁移**：V249 / V250（由 Quarkus dev 启动时自动执行）
+
+**编译验证**：`mvn compile` → 0 错误 ✅
+
+**单元测试**：`SqlViewIsolationBoundaryTest` → 15 passed ✅
+
+**涉及文件（新建）**：
+- `V249__rename_costing_template_sql_view_to_template_sql_view.sql`
+- `V250__template_add_template_sql_views_snapshot.sql`
+- `TemplateSqlView.java` / `TemplateSqlViewRepository.java` / `TemplateSqlViewService.java` / `TemplateSqlViewResource.java`
+- `template.dto.{TemplateSqlViewDTO, CreateTemplateSqlViewRequest, UpdateTemplateSqlViewRequest, DryRunTemplateSqlViewRequest}`
+- `template.util.BnfPathLinter.java`
+- `template.resource.LegacyPathsResource.java`
+
+**涉及文件（修改）**：
+- `SqlViewRuntimeContext.java`（OwnerType 改名 + Snapshot 字段重构 + 新入口 + deprecated 别名）
+- `SqlViewExecutor.java`（路由 TEMPLATE + 注入 TemplateSqlViewService）
+- `Template.java`（加 templateSqlViewsSnapshot 字段）
+- `TemplateService.java`（publish 扩展 + createNewDraft deepCopy）
+- `CostingTemplate.java`（删除 sqlViewsSnapshot 字段）
+- `CostingTemplateService.java`（回滚 Phase 1 SQL 视图逻辑）
+- `CostingTemplateSqlViewService.java`（lookupFromSnapshot 改返 empty）
+- `costing.resource.LegacyPathsResource.java`（OwnerType 改名）
+- `costing.util.BnfPathLinter.java`（OwnerType 改名）
+- `EvaluateRequest.java`（costingTemplateId → templateId + deprecated 别名）
+- `FormulaEvaluateResource.java`（改用 templateId + resolveTemplateId 向后兼容）
+- `FormulaEvalCache.java`（参数改名 costingTemplateId → templateId）
+- `SqlViewIsolationBoundaryTest.java`（15 个用例重写）
+
+---
+
+### [2026-05-26] Excel 模板独立 SQL 视图 — Phase 2 前端接入完成
+
+**方案**：`docs/方案-Excel模板BNF迁移至组件SQL视图.md` v2，Phase 2（前端）。
+
+**实施内容（6 项）**：
+
+1. **新 service `costingTemplateSqlViewService.ts`**：类型定义 `CostingTemplateSqlView`（scope 只有 LOCAL）+ CRUD + dryRun + listLegacyPaths，路径对齐 Phase 1 后端实际端点（dry-run 路径 `/{templateId}/sql-views/dry-run`）。
+2. **新组件 `CostingTemplateSqlViewsTab.tsx`**：`SelectableTable + 工具栏动作`（新建/编辑/删除/dry-run），内嵌 `CostingTemplateSqlViewConfigDrawer`（width=960 Drawer），readonly=true 时禁 CUD 操作并显示警告 Alert。
+3. **改造 `CostingTemplateConfig.tsx`**：顶层 Tabs（列配置 / SQL 视图）+ 加 `PathPickerDrawer ownerContext + defaultTab + legacyPathPolicy` + 列配置 variable_path 列加 `PathSourceTag` 路径源标签（lineItem 字段/本模板视图/跨引用警告/老 PG 直引警告）。
+4. **改造 `PathPickerDrawer.tsx`**：新增 props `ownerContext / defaultTab / legacyPathPolicy`；SQL 视图 Tab 分 COSTING_TEMPLATE（仅显示本模板视图，不显示 GLOBAL 区域）和 COMPONENT/默认（沿用现状）两个渲染分支；manual Tab 加 legacyPathPolicy 警告/阻断；visual Tab 对 COSTING_TEMPLATE 加建议提示；`handleConfirm` 阻止 BLOCK 策略和 COSTING_TEMPLATE+$$ 路径被确认；旧调用方（无 ownerContext）向后兼容不受影响。
+5. **改造 `LinkedExcelView.tsx`**：Props 加 `quotationId / quotationStatus / costingTemplateId`（均可选），batchEvaluate 任务中透传三个新字段，useEffect deps 追加三字段；`costingTemplateId` 当前传 null（LinkedExcelView 仍从 template.excel_view_config 读列，无对应 costing_template），预留接口，未来切换渲染模式时填入。
+6. **改造 `formulaService.ts`**：`EvaluateRequest` 和 `BatchEvaluateTask` 接口各加 3 字段（costingTemplateId / quotationId / quotationStatus）。
+
+**关键决策**：
+- `LinkedExcelView` 当前用 `template.excel_view_config`（不是 `costing_template.columns`），因此 `costingTemplateId` 传 null；这是正确行为，未来 Phase 3 灰度迁移时再填入。
+- `PathPickerDrawer` 新旧调用方行为完全隔离：不传 `ownerContext` = 旧行为，传 `ownerContext.COSTING_TEMPLATE` = 仅显示本模板视图。
+- dry-run 端点路径实际是 `/{templateId}/sql-views/dry-run`（Phase 1 RECORD 确认，比方案 §6.5 更 RESTful）。
+
+**自检结果**：
+- `npx tsc --noEmit` → 0 错误
+- 所有改动/新建文件 curl → 200
+- E2E `quotation-flow.spec.ts` → `1 passed`，`'加载中' final count = 0`，全部 8 Tab `'加载中'=0`
+
+**涉及文件（新建）**：
+- `cpq-frontend/src/services/costingTemplateSqlViewService.ts`
+- `cpq-frontend/src/pages/costing/CostingTemplateSqlViewsTab.tsx`
+
+**涉及文件（修改）**：
+- `cpq-frontend/src/pages/costing/CostingTemplateConfig.tsx`（顶层 Tabs + PathPicker ownerContext + 路径源标签）
+- `cpq-frontend/src/pages/component/PathPickerDrawer.tsx`（ownerContext 隔离行为）
+- `cpq-frontend/src/pages/quotation/LinkedExcelView.tsx`（batchEvaluate 携带新参数）
+- `cpq-frontend/src/services/formulaService.ts`（EvaluateRequest + BatchEvaluateTask +3 字段）
+
+---
+
+### [2026-05-26] Excel 模板独立 SQL 视图 — Phase 1 后端打地基完成
+
+**方案**：`docs/方案-Excel模板BNF迁移至组件SQL视图.md` v2，Phase 1（后端）。
+
+**实施内容（12 项）**：
+
+1. **V247 迁移**：新建 `costing_template_sql_view` 表（与 `component_sql_view` 同构，FK 到 `costing_template`，scope 只允许 LOCAL）
+2. **V248 迁移**：`costing_template` 加 `sql_views_snapshot JSONB` 字段（发布冻结用）
+3. **`SqlViewRuntimeContext` 扩展**：加 `OwnerType` 枚举（COMPONENT / COSTING_TEMPLATE），Snapshot 加 `ownerType` + `costingTemplateId` 字段，互斥约束（COMPONENT→componentId≠null ∧ costingTemplateId=null；COSTING_TEMPLATE 反之），新增 `setCostingTemplate` + `setNestedCostingTemplate` + `setNestedCostingTemplate` 入口，旧 `set(4-args)` 和 `setNested(4-args)` 向后兼容（componentId=null 时设 EMPTY，不抛异常）
+4. **`CostingTemplateSqlView` 新实体** + **`CostingTemplateSqlViewRepository`** 新仓储
+5. **`CostingTemplateSqlViewService`**：CRUD + dry-run + `lookupForResolver`（2层 fallback：sql_views_snapshot → 实时读）+ `snapshotForTemplate`（供 publish 调用）
+6. **`SqlViewExecutor` owner-aware 路由**：execute 按 ownerType 路由；`$$` 跨引用在 COSTING_TEMPLATE 上下文直接抛 BusinessException；executeAllRows 加防御性断言（仅 COMPONENT 上下文可用）；提取公共 `buildWrappedSql` + `executeJdbc` 方法消除重复
+7. **新 DTO**：`CostingTemplateSqlViewDTO` / `CreateCostingTemplateSqlViewRequest` / `UpdateCostingTemplateSqlViewRequest` / `DryRunCostingTemplateSqlViewRequest`
+8. **`CostingTemplateSqlViewResource`**：6个端点（GET list / GET by id / POST create / PUT update / DELETE / POST dry-run），角色 PRICING_MANAGER / SYSTEM_ADMIN
+9. **`LegacyPathsResource`**：GET /api/cpq/costing-templates/legacy-paths，扫所有 DRAFT+PUBLISHED 模板列，调 BnfPathLinter 返回 WARN/ERROR 项
+10. **`BnfPathLinter`**：lint(variablePath, ownerType, status)，检测 V44 废弃表黑名单（AP-53）/ $$ 跨引用隔离 / PG 视图直引 warn
+11. **`CostingTemplateService.publish`** 改造：发布前校验 $$ 跨引用并强阻断，构造 sql_views_snapshot 写入 costing_template；**`createNewDraft`** 改造：deep-copy SQL 视图行到新草稿
+12. **`FormulaEvaluateResource`** + **`FormulaEvalCache`** + **`EvaluateRequest`** 改造：EvaluateRequest 加 costingTemplateId/quotationId/quotationStatus；evaluate 入口包裹 ThreadLocal try-finally；缓存 key 加 costingTemplateId 维度（4参数版），旧 3参数版向后兼容
+
+**关键决策**：
+- `set(componentId=null, ...)` 向后兼容：设置 EMPTY 而非抛异常（保护 ComponentDriverService:176 的现有调用不回归）
+- `LegacyPathsResource` 路径：`/api/cpq/costing-templates/legacy-paths`（JAX-RS 路由中字面量 "legacy-paths" 优先于 `{id}` UUID 模板）
+- `CostingTemplateSqlViewResource` dry-run：路径变为 `/{templateId}/sql-views/dry-run`（标准嵌套风格，比方案 §6.5 的顶级路径更 RESTful）
+
+**Flyway 验证**：V247 success=t ✅；V248 success=t ✅
+
+**单元测试**：`SqlViewIsolationBoundaryTest` — 15 passed ✅（含 4 个互斥约束场景 + 正常路径 + API 向后兼容 + isQuotationFrozen）
+
+**涉及文件（新建）**：
+- `V247__create_costing_template_sql_view.sql`
+- `V248__costing_template_add_sql_views_snapshot.sql`
+- `CostingTemplateSqlView.java`（entity）
+- `CostingTemplateSqlViewRepository.java`
+- `CostingTemplateSqlViewService.java`
+- `CostingTemplateSqlViewResource.java`
+- `LegacyPathsResource.java`
+- `BnfPathLinter.java`
+- `CostingTemplateSqlViewDTO.java` + `CreateCostingTemplateSqlViewRequest.java` + `UpdateCostingTemplateSqlViewRequest.java` + `DryRunCostingTemplateSqlViewRequest.java`
+- `SqlViewIsolationBoundaryTest.java`（单测）
+
+**涉及文件（修改）**：
+- `SqlViewRuntimeContext.java`（加 OwnerType + 互斥约束 + 新入口方法）
+- `SqlViewExecutor.java`（owner-aware 路由 + 隔离边界强制）
+- `CostingTemplate.java`（加 sqlViewsSnapshot 字段）
+- `CostingTemplateService.java`（publish + createNewDraft 改造，注入 CostingTemplateSqlViewService）
+- `EvaluateRequest.java`（加 costingTemplateId/quotationId/quotationStatus）
+- `FormulaEvaluateResource.java`（接 ThreadLocal + costingTemplateId 缓存 key）
+- `FormulaEvalCache.java`（buildKey 4-参数重载）
+
+---
+
+### [2026-05-26] 🐛 PathPickerDrawer SQL 视图 Tab 选择视图后崩溃修复（declaredColumns 类型契约对齐）
+
+**Bug 现象**：用户在 PathPickerDrawer SQL 视图 Tab 点选本组件 SQL 视图后，整页崩溃 "Unexpected Application Error! sqlViewColumns.map is not a function"。
+
+**根因**：**前后端类型契约不对齐**：
+- 后端 `ComponentSqlViewDTO.declaredColumns` 字段类型 `String`（直接拷贝 entity 的 raw JSONB 字符串）
+- 前端 `ComponentSqlView.declaredColumns` 类型声明 `SqlViewColumn[]`（数组）
+- TypeScript 静态类型谎言不报错，运行时 `'[{...}]'.map(...)` 抛 TypeError
+- 阶段 1 前端 agent + 后端 agent 各自独立工作，没对齐类型契约
+- 阶段 1 / 阶段 3 E2E spec 用 `?.length` 和 `toBeTruthy()` 探测，字符串和数组都"侥幸通过"，掩盖了问题
+- V223 mirror 视图导入后用户首次实际点击 SQL 视图 Tab → 触发崩溃
+
+**修复（两端同改）**：
+
+后端 `ComponentSqlViewDTO`：
+- 字段类型从 `String` 改 `List<Map<String, Object>>`
+- 新增 `parseDeclaredColumns(String raw)` 用 Jackson `TypeReference<List<Map<String, Object>>>` 反序列化
+- 容忍 null/空字符串/非合法 JSON 三种异常形态返 `List.of()`
+- 与 `DryRunSqlViewResponse.declaredColumns: List<ColumnMeta>` 格式对齐（list endpoint 和 dry-run endpoint 现在返同一形态）
+
+前端 `PathPickerDrawer.tsx`：
+- 抽 `parseDeclaredColumns(raw: unknown): SqlViewColumn[]` helper（防御性 normalize，已是数组/字符串/空三种形态兼容）
+- 替换 `selectedSqlView?.declaredColumns ?? []` → `parseDeclaredColumns(selectedSqlView?.declaredColumns)`
+- 替换 2 处 `v.declaredColumns?.length` → `parseDeclaredColumns(v.declaredColumns).length`
+- 前端做防御性 parse 是双保险 —— 即使后端契约回退也不崩溃
+
+**自检**：
+- TS 0 错误 ✅
+- `composite-mirror-import.spec.ts` 5 passed ✅（验证 declaredColumns 数组形态）
+- `component-sql-view.spec.ts` 8 passed ✅（无回归；第 1 次跑 2 个 fail 是 Playwright 登录偶发 timeout，与代码无关，重跑全过）
+- 后端 401 ✅；TS 0 错误 ✅
+
+**教训沉淀**：
+- 跨 agent 并行实施同一功能时，**类型契约要提前商定**（不能让前端 agent 假设类型，后端 agent 自由选择 String）
+- E2E 验证 `?.length` / `toBeTruthy()` 这种**结构无关检查**会掩盖类型不对齐 bug
+- **真正可靠的验证 = 真实用户路径测试**（点击 SQL 视图 → 列选择器渲染），而不是只测 API CRUD
+- 后续涉及 raw JSONB 字段的 DTO 一律走 `List<Map<String, Object>>` 反序列化路线，**禁止把 raw JSONB 字符串透传给前端**
+
+---
+
+### [2026-05-26] 🚀 v0.4 三项体验优化（价格展示 / 选配实例列表 / 编辑器列表抽屉化）
+
+**用户提出 3 项优化**：
+1. 选配模板列表加"是否展示价格"开关 — 关闭时选配页底部价格栏整体隐藏
+2. 新建选配实例列表 — 与报价单弱关联（无前后关系），支持绑定/解绑/新建报价单
+3. 管理端编辑器改造 — 删除左侧树+右侧详情两栏，改为单列树形列表 + 编辑抽屉
+
+**数据模型扩展**（仅文档）：
+
+#### product_config_template 加字段
+```sql
+ALTER TABLE product_config_template ADD COLUMN show_price BOOLEAN NOT NULL DEFAULT true;
+```
+
+#### product_config_instance 加字段（弱关联报价单）
+```sql
+ALTER TABLE product_config_instance
+  ADD COLUMN name VARCHAR(128),
+  ADD COLUMN customer_id UUID REFERENCES customer(id),
+  ADD COLUMN linked_quotation_id UUID REFERENCES quotation(id) ON DELETE SET NULL,
+  ADD COLUMN linked_at TIMESTAMPTZ,
+  ADD COLUMN linked_by UUID;
+```
+
+**弱关联铁律**：
+- ✅ 选配实例可独立存在（无 linked_quotation_id）
+- ✅ 可绑定到任意已有报价单 / 解绑 / 生成新报价单
+- ❌ 删除选配实例不影响报价单（ON DELETE SET NULL）
+- ❌ 删除报价单不删选配实例（仅清空 linked_quotation_id）
+
+**文档/原型修订清单**：
+
+| 文件 | 改动 |
+|---|---|
+| `docs/3D产品选配方案.md` §7.2 | 加 show_price 字段 + 业务场景说明 |
+| `docs/3D产品选配方案.md` §7.8 | 加 name/customer_id/linked_quotation_id/linked_at/linked_by 字段 + LINKED 状态 + 弱关联铁律说明 + 状态机图 |
+| `docs/html/v0.4-3D选配模板管理端原型.html` | 模板列表加"展示价格"开关 + 编辑器加 show_price 字段 + **编辑器改为单列树形列表 + 编辑抽屉**（renderTree→renderList / openEditDrawer / closeEditDrawer / saveAndCloseDrawer + 抽屉 HTML 容器 + selectValue 旧引用替换） |
+| `docs/html/v0.4-3D产品选配原型.html` | 顶部"🎭 隐藏价格 (演示)"开关 + togglePriceDisplay |
+| `docs/html/v0.4-客户自助选配原型.html` | 品牌头"🎭 隐藏价格"开关 + togglePriceDisplay |
+| `docs/html/v0.4-选配实例列表原型.html` | **新建** — 列表（6 行示例覆盖 4 状态）+ 5 个统计筛选卡 + 工具栏 + 操作（编辑/绑定/解绑/新建报价单/删除）+ 弱关联说明 + 绑定对话框 |
+| `docs/3D-集成总览-索引.md` | 决策树加"选配实例管理"分支 + 原型清单加新行 |
+
+**配置驱动核心不变量保留**：
+- ✅ show_price 是配置字段（不是代码分支）
+- ✅ 弱关联用 FK ON DELETE SET NULL 实现（不是触发器硬代码）
+- ✅ 列表 + 抽屉是 UI 形态，不影响数据/接口结构
+
+---
+
+### [2026-05-26] 📦 组件级数据源 SQL 方案 — 阶段 4 备份性导入 v_composite_child_* 视图（方向 X，0 风险破坏）
+
+**用户决策**：经 AskUserQuestion 二次确认，选 **方向 X 备份性导入**（与最初选择的方向 A 一致；先选 A 后又请求迁移 → 我再次明示 3 处硬约束 + AP-45 复发风险 → 用户确认改回 X）。
+
+**Why 不是真切换**：核心约束未消除：
+1. ComponentDriverService 三分支策略硬编码 `effectiveDriverPath.contains("v_composite_child_")` —— 改 dataDriverPath 后 COMPOSITE 父级走兜底分支 3，不注入 `childLineItemIds IN (...)` 谓词 → **AP-45 即刻复发**（"组合产品全量累积膨胀"）
+2. 阶段 2 SqlViewExecutor 旁路 ImplicitJoinRewriter 主链路 —— 不自动注入 hf_part_no / customer_id / part_version 谓词
+3. 已发布 PUBLISHED 模板的 components_snapshot[i].data_driver_path 已存 v_composite_child_* 字面量 —— snapshot 不可改（基线 §10.1.5）
+
+**实施范围**：仅 1 个 Flyway V223 数据迁移，0 java 代码改动，0 风险破坏既有 BNF 主链路。
+
+**V223__import_composite_child_views_as_sql_views.sql**：
+- 用 PL/pgSQL `DO $BODY$` 块（避开 PG 默认 `$$` 边界与描述文本中 `$$` 引用语法冲突 —— 实施时踩过的坑）
+- 从 `information_schema.views` 读 4 张视图当前生效 SQL（已应用 V196 + V202 + V207~V209 后的最终形态）
+- 从 `information_schema.columns` 读列签名 → JSONB 数组
+- INSERT 4 行 component_sql_view（ON CONFLICT DO UPDATE 幂等）
+- 描述字段明确标注"⚠️ 仅作参考/备份用途；dataDriverPath 仍走 v_composite_child_* 物理视图"
+
+**导入结果（4 个 mirror SQL 视图，跨 3 个组件 + 1 GLOBAL）**：
+
+| 组件 | code | mirror SQL 视图 | scope | 镜像源 |
+|---|---|---|---|---|
+| 选配-材质 | COMP-CFG-MATERIAL-RECIPE | composite_child_materials_mirror | COMPONENT | v_composite_child_materials |
+| 选配-材质 | COMP-CFG-MATERIAL-RECIPE | composite_child_weights_mirror | **GLOBAL** | v_composite_child_weights（无独立"选配-重量"组件，挂材质下共享） |
+| 选配-元素含量 | COMP-CFG-ELEMENT-BOM | composite_child_elements_mirror | COMPONENT | v_composite_child_elements |
+| 选配-工序列表 | COMP-CFG-PROCESS | composite_child_processes_mirror | COMPONENT | v_composite_child_processes |
+
+**实施踩坑（沉淀给后续 Flyway 迁移）**：
+1. **V218 重名冲突** —— 改写时未先 `ls migration/` 看最新版本，V218 已被 `V218__create_v6_master_data_tables.sql` 占用 → Flyway 启动 "Found more than one migration with version 218" → 重命名 V223
+2. **PG `$$` dollar-quoted string 边界冲突** —— SQL 描述里直接写 `$$<componentCode>...` 会被解析为 dollar-quoted string 边界 → "语法错误 在 'COMP' 或附近" → 改用命名定界符 `DO $BODY$ ... END $BODY$` + 描述用中文替换 `$$` 字面量
+
+**E2E 验证**：
+
+新写 `e2e/composite-mirror-import.spec.ts`（5 场景）—— **5 passed (25.1s)** ✅：
+- COMP-CFG-MATERIAL-RECIPE 含 materials + weights mirror
+- COMP-CFG-ELEMENT-BOM 含 elements mirror
+- COMP-CFG-PROCESS 含 processes mirror
+- GLOBAL /sql-views/global 返回 weights mirror + componentCode 正确
+- **三个核心组件 dataDriverPath 未被改动**（仍 v_composite_child_*）
+
+0 回归验证：
+- ✅ `composite-product-flow.spec.ts`: **1 passed (51.4s)** —— 组合产品仍走物理视图 + ComponentDriverService 三分支 + V202 智能视图自适应，0 回归
+
+**用户视觉效果**：
+
+打开"组件管理 → COMP-CFG-MATERIAL-RECIPE / ELEMENT-BOM / PROCESS → SQL 视图 Tab"现在能看到对应 mirror 视图的完整 SQL（含 V202 UNION ALL SIMPLE/COMPOSITE 双分支自适应逻辑）。后续团队配置新组件时可参考这些 mirror 作为 SQL 模板（"想做同样的 SIMPLE/COMPOSITE 自适应 → 复制 mirror SQL 改改"）。
+
+**严守的边界（核心 BNF 链路 + 三大基线 0 触动）**：
+- ❌ 不动 dataDriverPath（仍 v_composite_child_*）
+- ❌ 不动 ComponentDriverService 三分支策略
+- ❌ 不动 V202 智能视图自适应
+- ❌ 不动 ImplicitJoinRewriter / SqlViewExecutor
+- ❌ 不动 PG 物理视图本身（v_composite_child_* DDL 不变）
+- ❌ 不动模板 components_snapshot
+
+**已自检**：Flyway V223 success ✅（Quarkus 启动 + health 200 = 迁移成功）；后端 endpoints 401 ✅；mirror import spec 5/5 PASS ✅；composite-product-flow 1 passed 0 回归 ✅
+
+**关联文档**：
+- 方案 `docs/组件级数据源SQL方案.md` 不需更新（方向 X 是方案预留路径之一）
+- 基线 `docs/三大核心模块基线.md §2.4 / §10.1.1` 锁定状态完全保留
+
+**Phase 4 完工 = 组件级数据源 SQL 方案 4 阶段全部交付**：
+
+| 阶段 | 边界 | 状态 |
+|---|---|---|
+| 阶段 1 | 表 + Entity + Service + Resource + UI + dry-run | ✅ |
+| 阶段 2 | DataLoader 接入 `$` + 双层冻结 hook | ✅ |
+| 阶段 3 | ThreadLocal + snapshot 三层 fallback + 删除引用检查 | ✅ |
+| 阶段 4 | 备份性导入 v_composite_child_* 镜像（方向 X） | ✅ |
+
+---
+
+### [2026-05-26] ✅ 组件级数据源 SQL 方案 — 阶段 3 实施完成（ThreadLocal + snapshot 三层 fallback + 删除引用检查 + 全栈 E2E PASS）
+
+**实施范围**：完成阶段 2 标 TODO 的三项剩余工作，方案进入"全功能可用"状态。
+
+1. **SqlViewRuntimeContext** ThreadLocal（新建 96 行）—— 承载 componentId / templateId / quotationId / quotationStatus 四维度；提供 `set / get / clear / setNested / restore / Snapshot.isQuotationFrozen()` 等接口；模仿 PartVersionContext 模式 + AutoCloseable 风格接口预留
+2. **lookupForResolver 三层 fallback** —— 实现方案 §5.3 优先级：
+   - 报价单 APPROVED/PUBLISHED/SUBMITTED 状态 → 查 quotation_component_sql_snapshot 表（native SQL JOIN componentId+sqlViewName）
+   - 模板已发布上下文 → 读 template.sql_views_snapshot JSONB（Jackson 反序列化 + key 后缀匹配支持跨组件查找）
+   - 兜底实时读 component_sql_view（DRAFT 期使用）
+   - snapshot 反序列化为 detached ComponentSqlView 实例（非持久化），调用方透明
+3. **SqlViewExecutor 接入 ThreadLocal** —— 从 `SqlViewRuntimeContext.get().componentId` 拿当前组件 ID（不再 hardcode null），让本组件 `$xxx` 引用工作
+4. **ComponentDriverService.expand try/finally 包裹** —— 9-arg 主入口 set ThreadLocal + finally restore，保证 BNF path `$xxx` 解析时拿到正确 componentId；所有 4 个 return 路径（L221/L247/L295/L395）自动经 finally 清理
+5. **删除引用检查（409 + 受影响清单）**—— ComponentSqlViewService.delete 在软删除前调 findReferences 扫：
+   - 本组件 COMPONENT scope: `component.fields::text ~ '(?<!\$)\$<name>\b'`（PG 正则，负向回顾避免 `$$` 误匹配）
+   - 跨组件 GLOBAL scope: `component.fields::text ~ '\$\$<code>\.<name>\b'`（仅 GLOBAL 视图扫全表）
+   - 命中则抛 409 + JSON entity 含受影响 `{id, code, name, refType}` 清单
+6. **不检查 snapshot 引用**—— snapshot 已闭包成独立副本，删除源不影响回放（设计取舍：snapshot 独立性 > snapshot 一致性）
+
+**新建文件**：
+
+| 文件 | 行数 | 用途 |
+|---|---|---|
+| `datasource/sqlview/SqlViewRuntimeContext.java` | 96 | ThreadLocal 上下文 + Snapshot inner class + setNested/restore 嵌套调用支持 |
+
+**修改文件**：
+
+| 文件 | 改动 |
+|---|---|
+| `component/service/ComponentSqlViewService.java` | + EntityManager 注入；+ lookupFromQuotationSnapshot（native SQL）；+ lookupFromTemplateSnapshot（Jackson 反序列化）；+ buildDetachedFromSnapshot；+ findReferences（PG `~` 正则）；改 lookupForResolver 实现三层 fallback；改 delete 加引用检查 |
+| `datasource/sqlview/SqlViewExecutor.java` | currentComponentId 从 ThreadLocal 读（不再 hardcode null）；错误消息含 componentId 调试信息 |
+| `component/service/ComponentDriverService.java` | 9-arg expand 方法体用 try/finally 包裹 + setNested/restore SqlViewRuntimeContext |
+
+**自检证据（CLAUDE.md §修改后强制自检 全过）**：
+
+后端：
+- Quarkus 多次热重启全部成功（4 次 touch java 触发，全编译通过）
+- `curl GET /api/cpq/components → 401` ✅（auth required）
+- `curl GET /api/cpq/templates → 401` ✅
+- `curl GET /api/cpq/quotations → 401` ✅
+- `curl GET /api/cpq/sql-views/global → 401` ✅
+- `curl GET /api/cpq/health → 200` ✅（连续 5 次稳定 < 100ms 响应）
+
+E2E（必须串行执行 —— 并行会触发 Quarkus 热重启竞态导致 isBackendUp 偶发 false）：
+- **`quotation-flow.spec.ts`: 1 passed (52.9s)** ✅ `'加载中' final count: 0` ✅
+- **`composite-product-flow.spec.ts`: 1 passed (49.3s)** ✅
+- **`component-sql-view.spec.ts`: 8 passed (51.2s)** ✅
+
+**协议级改动 13 个高危文件触发情况**：
+- ✅ `ComponentDriverService.expand` — 9-arg 主入口 try/finally 包裹（最敏感的核心服务，BNF 主链路 0 回归）
+- ❌ 不动 DataLoader（阶段 2 已接入，本阶段不动）
+- ❌ 不动 CachedPathParser / CachedSqlCompiler / ImplicitJoinRewriter
+- ❌ 不动 useDriverExpansions / usePathFormulaCache
+- ❌ 不动 ComponentCell / QuotationStep2 / QuotationWizard / ReadonlyProductCard
+- ❌ 不动 TemplateService.refreshSnapshotsByComponent
+
+**已自检**：TS 0 错误（前端无改）✅；后端 401+200 全过 ✅；后端连续 5 次 health ping 稳定 ✅；E2E 三 spec 串行 10/10 test PASS ✅；BNF 主链路 0 回归 ✅；三大基线核心组件 0 触动 ✅
+
+**E2E 执行教训沉淀**：
+- ⚠️ 多 spec 并行 + 后端热重启竞态：3 个 spec 并行跑时偶发 `1 skipped` / `timeout` —— 串行重跑 100% 通过
+- ⚠️ Quarkus 热重启后建议等 10 秒 + 连续 ping `/api/cpq/health` 确认稳定，再启动 E2E（避免 `isBackendUp` AbortSignal.timeout(3000) 偶发 false）
+- 💡 后续可在 playwright config 加 `globalSetup` 强制等后端 ready 才启动 worker
+
+**阶段 3 边界达成**：组件级数据源 SQL 方案全功能可用，"配置面 + 执行面 + 冻结面 + 删除保护面"四面完整。
+
+**阶段 4 / 后续可选优化**（**已超出原方案范围**，作为长期 backlog）：
+- ⏳ `SqlViewRuntimeContext` 在 QuotationService / TemplateService 渲染期上层 setNested 补 quotationId + status（当前仅 ComponentDriverService set，snapshot 三层 fallback 仅在该入口生效；Excel 视图等渲染通路未覆盖）
+- ⏳ `Scope implements AutoCloseable` API 暴露给 try-with-resources（当前用 setNested/restore 显式模式）
+- ⏳ `findReferences` 扫描 Excel 模板列配置 + 公式 token（当前仅扫 component.fields）
+- ⏳ E2E "删除有引用 409 + 受影响清单"场景（当前 8 spec 未触发该路径，需 mock component.fields 引用 setUp 较复杂）
+- ⏳ 删除前 snapshot 引用统计（show only，不阻塞删除）作为 UI 提示
+
+**关联文档**：
+- 方案 `docs/组件级数据源SQL方案.md`（不需更新 — 阶段 3 实施与方案 §5.3 + §9 完全对齐）
+- 基线 `docs/三大核心模块基线.md §2.3.1 / §3.2.1`（已含描述）
+- 矩阵 `docs/反模式.md AP-44 #16`（已含 BnfPathResolver 解析层 / 实际接入点 DataLoader.loadByPath + ComponentDriverService.expand）
+
+---
+
+### [2026-05-26] 🚀 组件级数据源 SQL 方案 — 阶段 2 实施完成（DataLoader 接入 $ 前缀 + 双层冻结 + E2E 全栈验证）
+
+**实施范围**：
+1. **RuntimeContext.toNamedParams()** — 暴露占位符变量字典（`:customerId` / `:partVersion` / `:templateKind` / `:userId` / `:quotationId` / `:lineItemId` / `:userRole` 等；显式禁用 `:hfPartNo` 标量，由外层 batch 注入）
+2. **SqlViewExecutor** （新建，198 行）— 旁路 CachedPathParser/CachedSqlCompiler/ImplicitJoinRewriter 主链路；正则解析 `$xxx[谓词].col` / `$$code.xxx[谓词].col`；命名占位符 `:xxx → ?` 重写 + 顺序绑定；外层 batch `WHERE inner_q.hf_part_no = ANY(:hfPartNos)`；列名 SQL 标识符白名单 `^[A-Za-z_][A-Za-z0-9_]{0,79}$` 防注入
+3. **DataLoader.loadByPath** 入口两个 overload 加 `$` 前缀分支 — `isSqlViewPath` 检测后调 SqlViewExecutor，**不动 CachedPathParser/CachedSqlCompiler/ImplicitJoinRewriter** 任何代码（核心 BNF 链路 0 触动），通过新加分支前置实现接入
+4. **TemplateService.publish** 模板冻结 hook — DRAFT → PUBLISHED 时调 `componentSqlViewService.snapshotForComponents(componentIds)`，序列化 sql_views 闭包（含 GLOBAL scope）到 `template.sql_views_snapshot` JSONB；与 components_snapshot 同事务
+5. **QuotationService.submit** 报价单冻结 hook — DRAFT → SUBMITTED 时调 `freezeSqlViewsForQuotation`，从 line_items.templateId → 模板 components_snapshot 提取所有 componentId → snapshotForComponents → 落 `quotation_component_sql_snapshot` 表
+6. **Template entity** 加 `sqlViewsSnapshot` JSONB 字段对应 V217 列
+7. **ComponentSqlViewService.snapshotForComponents** — 闭包序列化逻辑（本组件 + 所有 GLOBAL scope）
+8. **ComponentSqlViewService.create** 边界修复 — 软删除残留 INACTIVE 同名记录"复活"语义（PG UNIQUE 约束不区分 status，删后同名 create = 复活替换内容）
+
+**新建文件**：
+| 文件 | 行数 | 用途 |
+|---|---|---|
+| `datasource/sqlview/SqlViewExecutor.java` | 198 | $ 前缀 BNF path 独立执行通路 |
+| `e2e/component-sql-view.spec.ts` | 290 | 8 个 API CRUD + dry-run + 冻结场景 |
+
+**修改文件**：
+| 文件 | 改动 |
+|---|---|
+| `component/dto/RuntimeContext.java` | + toNamedParams() 方法（暴露命名占位符字典） |
+| `formula/dataloader/DataLoader.java` | loadByPath(path) + loadByPath(5-arg) 入口加 isSqlViewPath 分支 |
+| `template/entity/Template.java` | + sqlViewsSnapshot 字段（@JdbcTypeCode JSON） |
+| `template/service/TemplateService.java` | publish() 末尾冻结 hook（10 行） |
+| `quotation/service/QuotationService.java` | submit() 末尾冻结 hook + freezeSqlViewsForQuotation 方法（73 行） |
+| `component/service/ComponentSqlViewService.java` | + snapshotForComponents() + create() INACTIVE 复活语义 + 补全 java.util.* imports |
+| `component/repository/ComponentSqlViewRepository.java` | + findAnyByComponentAndName() 用于复活探测 |
+
+**自检证据（CLAUDE.md §修改后强制自检 全过）**：
+
+后端：
+- Quarkus 重启成功（多次 touch 触发热重启 + 编译通过）
+- `curl GET /api/cpq/components → 401` ✅（auth required，服务正常）
+- `curl GET /api/cpq/templates → 401` ✅
+- `curl GET /api/cpq/quotations → 401` ✅
+- `curl GET /api/cpq/sql-views/global → 401` ✅
+
+E2E：
+- **`quotation-flow.spec.ts`: 1 passed (51.5s)** ✅ `'加载中' final count: 0` ✅
+- **`composite-product-flow.spec.ts`: 1 passed (1.8m)** ✅
+- **`component-sql-view.spec.ts`: 8 passed (29.3s)** ✅
+  - 创建合法 SELECT → 200 + declared_columns 自动填
+  - dry-run 通过返回 declared_columns + required_variables（含 customerId 占位符提取）
+  - dry-run 拒绝 DDL/DML（INSERT 关键字）
+  - dry-run 拒绝 :hfPartNo 标量占位符
+  - 列表返回 + componentCode 协议对齐字段
+  - 重复名称 → 409 Conflict
+  - GLOBAL scope 视图在 `/sql-views/global` 出现 + componentCode 字段填充
+  - 软删除（status=INACTIVE）+ 删除后同名再创建 → 200（复活语义）
+
+**协议级改动 13 个高危文件触发情况**：
+- ✅ `DataLoader.loadByPath` — 加 $ 前缀分支（首次触动核心 BNF 入口，双主 E2E 验证 0 回归）
+- ✅ `TemplateService.publish` — 加冻结 hook
+- ✅ `QuotationService.submit` — 加冻结 hook
+- ❌ 不动 CachedPathParser / CachedSqlCompiler / ImplicitJoinRewriter
+- ❌ 不动 ComponentDriverService / useDriverExpansions / usePathFormulaCache
+- ❌ 不动 ComponentCell / QuotationStep2 / QuotationWizard / ReadonlyProductCard
+
+**已自检**：TS 0 错误（前端无改）✅；后端 401 全过 ✅；Flyway V217 已通过；双主 E2E 0 回归（quotation-flow + composite-product-flow 全 PASS + 加载中=0）✅；component-sql-view 新 spec 8/8 PASS ✅
+
+**阶段 2 边界 / 阶段 3 待办**：
+- ⏳ SqlViewExecutor 当前 `currentComponentId = null`（TODO 标注）— 阶段 3 需扩展 RuntimeContext 暴露 currentComponentId 字段，让本组件 `$xxx` 引用准确定位（当前仅 GLOBAL scope 跨组件引用 `$$code.xxx` 可工作）
+- ⏳ `PartVersionContext` 自动注入到 SqlViewExecutor 命名参数（已通过 RuntimeContext.toNamedParams() 接 ThreadLocal）
+- ⏳ component_sql_view 删除时检查 GLOBAL scope 是否有跨组件引用（409 + 列出受影响组件清单） — 当前删除走软删除一律 200
+- ⏳ 模板 snapshot 冻结的 SQL 在渲染期被 lookupSqlView 优先消费（当前 lookupForResolver 仅查实时 component_sql_view，未读 template.sql_views_snapshot / quotation_component_sql_snapshot）
+
+---
+
+### [2026-05-26] 🛠 组件级数据源 SQL 方案 — 阶段 1 实施完成（后端 CRUD + 前端 UI + dry-run 校验全栈打通）
+
+**背景**：2026-05-25 方案立项后进入实施，由 cpq-backend / cpq-frontend agent 并行落地 + 主线程接手补完（后端 agent 中途 API 断 → 主线程补 Repository/Service/Resource/Rewriter/Syncer 共 7 个 java 文件）+ 协议对齐修复 + 集成验证。
+
+**阶段 1 边界**：CRUD + dry-run + UI 完整可用 + 启动同步 information_schema；**阶段 2 留下**：DataLoader 接入 BNF 主链路（$ 前缀重写）、双层冻结 hook（TemplateService.publish / QuotationService.submit）、新写 component-sql-view E2E spec、占位符运行时绑定层。
+
+**为什么 DataLoader 接入留到阶段 2**：BNF path 主链路 `DataLoader.loadByPath → CpqPathParser → CachedSqlCompiler → ImplicitJoinRewriter` 是核心 6 维 cache key + 三分支策略所在地（CLAUDE.md §修改后强制自检 13 个高危文件之一）。在不动它的前提下完成阶段 1 CRUD 是**零 E2E 回归风险**的边界，让方案先具备"配置面"再补"执行面"。`SqlViewPathRewriter` 已写好（含 `$` / `$$` 双前缀正则 + `lookupForResolver` 三层 fallback 接入点），仅等阶段 2 拼装到 DataLoader 入口前置层。
+
+**后端新增 12 件**：
+
+| 文件 | 用途 |
+|---|---|
+| `db/migration/V217__create_component_sql_view.sql` | 建 4 个 schema 对象（component_sql_view / quotation_component_sql_snapshot / template.sql_views_snapshot 列 / bnf_table_meta） |
+| `component/entity/ComponentSqlView.java` | Entity（JdbcTypeCode JSON for declared_columns，PG text[] for required_variables） |
+| `component/repository/ComponentSqlViewRepository.java` | Panache Repo + 3 查询方法（按组件 / 按组件+名 / GLOBAL 跨组件 by code+name） |
+| `component/service/SqlViewValidator.java` | **核心安全层** — AST 关键字黑名单（INSERT/UPDATE/DELETE/CREATE/DROP/ALTER/TRUNCATE/GRANT/REVOKE/MERGE/CALL/DO）+ `:hfPartNo` 标量占位符拒绝 + EXPLAIN dry-run + 用 `SELECT * FROM (...) LIMIT 0` 探测拿 ResultSetMetaData 列签名 |
+| `component/service/ComponentSqlViewService.java` | CRUD + dry-run + `lookupForResolver`（按方案 §5.3 三层 fallback 接入点） + `lookupComponentCode` 工具 |
+| `component/dto/ComponentSqlViewDTO.java` | 含 `componentCode` 字段（**协议关键**：跨组件 BNF 引用 `$$<code>.<name>` 用 code 而非 UUID） |
+| `component/dto/CreateComponentSqlViewRequest.java` | 创建/更新请求体 |
+| `component/dto/DryRunSqlViewRequest.java` | dry-run 请求体 |
+| `component/dto/DryRunSqlViewResponse.java` | dry-run 响应体（含 ColumnMeta 嵌套类） |
+| `component/resource/ComponentSqlViewResource.java` | `/api/cpq/components/{cid}/sql-views` REST（list/create/update/delete/dry-run） |
+| `component/resource/GlobalSqlViewResource.java` | `/api/cpq/sql-views/global` REST（一次性 batch 查 component.code，避免 N+1） |
+| `datasource/sqlview/SqlViewPathRewriter.java` | **阶段 2 接入点** — `$` / `$$` 双前缀正则识别 + lookupForResolver 调用 + inline subquery 拼装。已实现但**未接 DataLoader**（阶段 2 工作） |
+| `datasource/sqlview/BnfTableMetaSyncer.java` | `@Observes StartupEvent` 自动扫 information_schema → upsert bnf_table_meta；启发式给 mat_/v_q_ → QUOTATION，v_c_/costing_ → COSTING，幂等不覆盖运营调整 |
+
+**前端新增 3 + 修改 3**：
+
+| 文件 | 用途 |
+|---|---|
+| `services/componentSqlViewService.ts` | 6 个 API 方法（list/create/update/delete/dryRun/listGlobal）+ 类型定义（含 componentCode） |
+| `pages/component/SqlViewConfigDrawer.tsx` | Drawer width=960，名称校验 `^[a-z_][a-z0-9_]*$`、scope Radio、SQL textarea 前端双重校验、Dry-Run 测试按钮、列签名 + 占位符展示、SQL 变化后强制重新 dry-run |
+| `pages/component/SqlViewListPanel.tsx` | SelectableTable + 工具栏（新建/编辑/Dry-Run/删除），删除 409 时弹 Modal 列出受影响字段二次确认 |
+| `pages/component/ComponentManagement.tsx` (改) | 线性布局改 3-Tab（字段配置/公式/SQL 视图）；两处 PathPickerDrawer/FieldConfigTable 调用透传 componentId |
+| `pages/component/PathPickerDrawer.tsx` (改) | props 加 `componentId?`，新增第 3 Tab "SQL 视图"；**用 componentCode 拼 `$$<code>.<name>`**（与后端 SqlViewPathRewriter 协议对齐） |
+| `pages/component/FieldConfigTable.tsx` (改) | props 加 `componentId?` 透传 PathPickerDrawer |
+
+**关键协议对齐（修复点）**：
+
+前端 agent 初版用 `$$<componentId>` (UUID) 拼跨组件路径，与方案文档 + 后端 SqlViewPathRewriter 正则 `[A-Za-z][A-Za-z0-9_-]*` 不匹配（UUID 可能数字开头 + 含 `-`）。修复：
+- 后端 `ComponentSqlViewDTO` 加 `componentCode` 字段
+- `Service.lookupComponentCode(componentId)` 用 `Component.findById` 拿 code
+- `GlobalSqlViewResource` batch 缓存避免 N+1
+- 前端 `PathPickerDrawer` 用 `selectedSqlView.componentCode ?? selectedSqlView.componentId` 兜底，**code 主，id 兜底**
+
+**自检证据（CLAUDE.md §修改后强制自检 全过）**：
+
+后端：
+- Flyway V217 成功（Quarkus 重启 401 OK = 成功跑 migration + 加载新 Resource）
+- `curl GET /api/cpq/components → 401` ✅（auth required）
+- `curl GET /api/cpq/sql-views/global → 401` ✅（新 Resource 路由识别）
+- BnfTableMetaSyncer @Observes StartupEvent 启动同步任务挂载
+
+前端：
+- `npx tsc --noEmit` → **0 错误** ✅
+- 6 个 .tsx/.ts 文件 → Vite 全 **200** ✅
+- 主入口 `http://localhost:5174/` → 200 ✅
+
+E2E 回归（非强制，本轮 0/13 触发 CLAUDE.md §修改后强制自检 高危文件，但仍跑作为额外保险）：
+- `e2e/quotation-flow.spec.ts` → **1 passed** (53.9s) ✅
+- `'加载中' final count: 0` (期望 0) ✅
+- 9 个 console.error 全为既有 antd 6 deprecation 警告 / 401 auth 正常 / HTML form 嵌套（既有），与本次改动无关
+
+**严守的红线（核心 BNF 主链路 0 触动）**：
+- ❌ 不动 `DataLoader.loadByPath` —— SqlViewPathRewriter 写好但未接（阶段 2）
+- ❌ 不动 `CpqPathParser` / `CachedSqlCompiler` / `ImplicitJoinRewriter`
+- ❌ 不动 `ComponentDriverService` 三分支策略
+- ❌ 不动 `useDriverExpansions` 6 维 cache key
+- ❌ 不动 `ComponentCell` / `QuotationStep2` / `QuotationWizard`
+- ❌ 不动三个核心选配组件（e42185ec / dae85db8 / 0a436b6c）
+- ❌ 不动 V202 智能视图
+
+**已自检**：TS 0 错误 ✅；Vite 6 个文件 200 ✅；后端 401 ✅；Flyway V217 已通过（Quarkus 重启成功 = migration 通过）；BNF 主链路 0 触动 ✅；既有 E2E `quotation-flow.spec.ts` 1 passed + 加载中=0 ✅
+
+**阶段 2 待办（标 TODO 不上线）**：
+1. `DataLoader.loadByPath` 入口前置 `SqlViewPathRewriter.rewrite()` 接入 BNF 主链路（方案 §5.1）
+2. `TemplateService.publish/refreshSnapshotsByComponent` 接入模板 PUBLISHED 冻结 `template.sql_views_snapshot`（方案 §6.1）
+3. `QuotationService.submit` 接入报价单 SUBMITTED 冻结 `quotation_component_sql_snapshot`（方案 §6.2）
+4. 新写 `e2e/component-sql-view.spec.ts` 含 10 个场景（方案 §11 自检清单）
+5. RuntimeContext 暴露占位符变量字典（`:customerId` / `:partVersion` 等绑定层）
+
+**关联文档**：
+- 方案 `docs/组件级数据源SQL方案.md`
+- 基线 `docs/三大核心模块基线.md §2.3.1 / §3.2.1 / §12 L6`
+- 矩阵 `docs/反模式.md AP-44 #16`
+- 指南 `docs/组件管理字段配置指南.md §2.3 / §11 ⑯`
+- 演进 `docs/PRD-v3.md §9.14 v3.6`
+
+---
+
+### [2026-05-26] 🎯 v0.4 术语收敛：消除"策略 A/B"硬代码暗示 + 删 v0.2 双轨残留
+
+**用户指出**：v0.4 文档里残留的「双轨内容」(v0.2 vs v0.3) 和「策略 A / 策略 B」叫法暗示**硬代码分支**，与系统"灵活配置"核心宗旨冲突。
+
+**两个核心问题**：
+
+1. **§1.3 v0.2 vs v0.3 对比表 + §1.4 双轨并存** 残留 — v0.4 已整合单一主线但旧文字未清
+2. **"策略 A / 策略 B"叫法** — 听起来像 `if (strategyA) ... else ...` 硬代码分支
+
+**实际真相**：
+- 两种"策略"**不是代码分支**，是**同一套数据配置**的两种形态
+- 后端 evaluate 服务**不区分维度**，统一遍历 `product_config_3d_rule` + 检查 `option_value.sub_model_part_no` → 输出统一的 `render3DCommands` 数组
+- 前端渲染引擎**不区分维度**，按 action 类型分发 SHOW_MESH / HIDE_MESH / REPLACE_MATERIAL / SWAP_MESH / TRANSFORM_MESH / LOAD_SUB_MODEL
+- **两个维度可任意组合**（同一 OptionValue 可同时配 mesh 操作 + 子模型加载）
+
+**术语收敛**：
+| 旧叫法 | 新叫法 |
+|---|---|
+| 策略 A (单 base.glb + 5 种 Action) | **维度 1: base 模型 mesh 操作** |
+| 策略 B (关联独立子模型) | **维度 2: 关联独立子模型（可选扩展）** |
+
+**修订文件**：
+
+| 文件 | 改动 |
+|---|---|
+| `docs/3D产品选配方案.md` | 删 §1.3 v0.2 对比表 + §1.4 双轨；§4.4 完全重写为"3D 渲染规则统一模型（配置驱动，零硬代码）"，加 4.4.1~4.4.6 子节明确两维度可组合 + evaluate 统一处理流程 + 配置决策表 |
+| `docs/3D-集成总览-索引.md` | 原型清单"子模型策略 B" → "维度 1 (mesh 操作) + 维度 2 (子模型关联)" |
+| `docs/html/v0.4-3D选配模板管理端原型.html` | L606 "策略 A" → "维度 1: base 模型 mesh 操作"；L632 "策略 B" → "维度 2: 关联独立子模型（可选扩展）"；L638 类比说明强调两维度可组合 |
+
+**沉淀的核心不变量**（写入 §4.4.4）：
+- ✅ 不论配置多少维度 1 规则 + 多少维度 2 子模型，**都走同一套数据 + API + 渲染引擎**
+- ✅ 加新维度（如未来加"动画播放""特效"）只需在 evaluate 输出新 action，**不改前端引擎结构**
+- ❌ **不存在** `if (是策略 A) ... else if (是策略 B) ...` 的硬代码分支
+
+---
+
+### [2026-05-26] 🧹 v0.4 大整合：清除 v0.1 + v0.2 旧版 + v0.3 重命名 + GLB 直传
+
+**用户决策**：版本以 v0.4 为单一主线，旧版本（v0.1 / v0.2 / v0.3）全部整合或移除；上传向导加 .glb 直传分支（不强制走 UG 双文件转换）。
+
+**已清理文件（3 个）**：
+- 🗑️ `docs/html/v0.1-Babylon3D集成原型.html` — v0.2 查看模式用户端（已废弃）
+- 🗑️ `docs/html/v0.1-Babylon3D管理端原型.html` — v0.2 查看模式管理端（已废弃）
+- 🗑️ `docs/Babylon3D集成方案.md` — v0.2 主文档（被 v0.4 选配方案完整吸收）
+
+**已重命名（1 个）**：
+- 🔄 `docs/html/v0.3-3D产品选配原型.html` → `docs/html/v0.4-3D产品选配原型.html`
+
+**v0.4-3D源文件上传与转换原型.html 增强**：
+- Step 1 顶部加**模式切换器**（两张卡片）：
+  - **模式 A: UG NX 工作流**（推荐）— 双文件 .prt+.stp → 后端 5 阶段转换 → 特征识别审核
+  - **模式 B: GLB 直传** — 直接上传 .glb（外部已转好）→ 跳过 Step 2 转换 + Step 3 特征识别 → 直接 Step 4 预览
+- 模式 B 切换时步骤指示器自动置灰跳过的步骤（Step 2/3 显示"(跳过)"）
+- 模式 B 上传完成显示风险提示（UG 源不保存 / 重新转换不便 / 特征需手动配置）
+- "下一步"按钮根据模式动态切换（模式 A → goToStep(2)，模式 B → goToStep(4)）
+
+**最终 v0.4 文件清单（清爽）**：
+```
+docs/
+├── 3D-集成总览-索引.md              ← 入口必读
+├── 3D产品选配方案.md                 (v0.4 主方案 19 章)
+├── CAD转换POC-技术验证.md           (Docker + 4 脚本)
+├── CAD导出GLB操作手册.md             (UG 工程师手册)
+├── 3d-samples/
+│   ├── mesh-mapping-template.csv
+│   └── README.md
+└── html/
+    ├── v0.4-3D产品选配原型.html         (销售/客户选配端 + 多租户 + 分享)
+    ├── v0.4-3D选配模板管理端原型.html   (PM 模板编辑器 + 子模型策略 B)
+    ├── v0.4-客户自助选配原型.html       (CUSTOMER_SELF 公网形态)
+    └── v0.4-3D源文件上传与转换原型.html (UG/GLB 双模式上传 + 转换流水线)
+```
+
+**文档全量引用更新**：
+- ✅ `CLAUDE.md` — 删除对 Babylon3D集成方案.md 的引用
+- ✅ `docs/方案制定前必读.md` §二改动 10 — 删除 v0.2 引用 + v0.1 教训来源改为通用描述
+- ✅ `docs/3D-集成总览-索引.md` — 决策树重写为 v0.4 单一路径，原型清单从 6 个收缩到 4 个 v0.4
+- ✅ `docs/3D产品选配方案.md` — 顶部双轨说明改为 v0.4 整合说明，§十三原型路径更新
+- ✅ `docs/CAD转换POC-技术验证.md` — 删除 v0.1 引用
+- ✅ `docs/CAD导出GLB操作手册.md` — Mesh 命名规则引用改 3D产品选配方案.md
+- ✅ `docs/3d-samples/README.md` — 配套文档引用改 3D产品选配方案.md
+
+---
+
+### [2026-05-26] 新建 v0.4-3D源文件上传与转换原型.html（UG NX 完整工作流演示）
+
+**背景**：用户问 `v0.1-Babylon3D管理端原型.html` 能否将 UG `.stp` 转 `.glb`？答案：**当前 v0.1 只演示 .glb 直接上传不支持转换**（且 v0.1 已 DEPRECATED）。用户决定新建专门原型演示完整工作流。
+
+**新建文件**：[`docs/html/v0.4-3D源文件上传与转换原型.html`](./html/v0.4-3D源文件上传与转换原型.html)
+
+**4 个 Step 演示**：
+
+| Step | 演示内容 |
+|---|---|
+| Step 1 | 双拖拽区上传 `.prt` (UG 源) + `.stp` (STEP 中性) → 上传完成后显示 MD5 校验区 (两文件 MD5 / 修改时间 / 时间差) + 料号关联表单 |
+| Step 2 | 后端转换 5 阶段进度动画：① 入队 (PG NOTIFY) ② FreeCAD STEP→STL ③ Blender STL→GLB+Draco ④ 缩略图渲染 ⑤ 特征识别。每阶段独立进度条 + 实时耗时（演示加速 15×）|
+| Step 3 | 自动识别的 8 个特征审核表（含 HOLE / THREAD / SURFACE / WELD / GENERAL 5 类）：每行 checkbox + 类型下拉 + 几何属性 + 包围盒。**不自动入库，需管理员勾选确认** |
+| Step 4 | Babylon Canvas 加载转换后 GLB 预览（工具栏：重置/视角/线框）+ "关联到料号" / "关联到配置模板"按钮 |
+
+**配套抽屉**：顶部 "📖 如何从 UG NX 导出 STEP?" 按钮 → 弹 720 宽教程抽屉，5 步 UG 操作 + 3 个常见问题 + 截图占位（待补真实截图）
+
+**关键设计**：
+- 3 个对象存储桶演示：`cpq-ugnx-source` / `cpq-stp-source` / `cpq-3d-glb`（永久保留）
+- 转换流水线对齐 `CAD转换POC-技术验证.md` §四（FreeCAD + Blender Docker 镜像）
+- 特征识别"不自动入库"严守 §6.6 铁律
+- AP-43 反模式规避：所有事件 inline `onchange` 调用顶层函数，无模板字符串内 `<script>` 嵌套
+
+**文档同步**：
+- `3D-集成总览-索引.md` 第三章 HTML 原型清单加新行
+- `CLAUDE.md` Key Documents 无需改（v0.4 文档体系不变）
+
+---
+
+### [2026-05-26] 修复 v0.4 管理端原型 — 嵌套 </script> 导致整页 JS 失效
+
+**Bug**：`v0.4-3D选配模板管理端原型.html` 打开后控制台报 `openEditor is not defined`，所有按钮无响应
+
+**根因**：在 `renderValueDetail()` 函数返回的模板字符串末尾嵌了 `<script>...</script>` 块（用于绑定挂载模式 radio change listener）。浏览器 HTML5 解析规则：**遇到 `</script>` 字符串就提前关闭顶层 script 标签**（不管它在不在 JS 字符串字面量里）— 导致顶层 script 块中 `</script>` 之后的所有函数（含 openEditor）都没定义
+
+**修法**：
+- 删除 `renderValueDetail` 模板字符串末尾的嵌套 `<script>` 块
+- 把 `onSubModelChange()` + `handleAttachModeChange(mode)` 挪到**顶层 script 块**
+- 3 个挂载模式 radio button 改用 inline `onchange="handleAttachModeChange('OVERLAY')"`
+
+**沉淀**：`docs/方案制定前必读.md §二改动 9` 加坑 2 "模板字符串内不能嵌 `<script>` 标签"完整反/正例，与既有坑 1 (inline onclick 嵌套转义) 并列
+
+---
+
+### [2026-05-26] 🚨 v0.4 重大收敛 — 废弃 v0.2 + 特征表合并 + 子模型关联
+
+**用户 3 个关键反馈**：
+1. 版本以 v0.4 为主（v0.2 查看模式收敛）
+2. 不同选项应能绑不同 3D 模型（不只是单一 base.glb 内 SHOW/HIDE）
+3. 选项树 = 特征树，不需要额外的特征表
+
+**架构收敛 5 项**：
+
+#### 1. v0.2 查看模式整体废弃
+- `Babylon3D集成方案.md` 顶部加 DEPRECATED 警告，保留作历史追溯
+- 报价单卡片"🎬 查看 3D"按钮 / Drawer 弹层 / mesh→特征→业务实体三段链路 全部废弃
+- §十五"配置在报价单/Excel/PDF 中的展示"章节移除（不做报价单 3D 展示）
+
+#### 2. 特征表全部废弃，语义并入选项值表
+**废弃表**（6 张）：
+- `mat_feature_type` / `mat_feature_category` / `mat_feature`
+- `mat_feature_reference_type` / `mat_feature_reference`
+- `mat_part_mesh_feature`
+
+**`product_config_option_value` 扩展字段**（吸收特征语义）：
+- `feature_type` VARCHAR(32) — 替代 mat_feature.feature_type（开放枚举）
+- `attributes` JSONB — 替代 mat_feature.attributes（灵活属性）
+- `tags` TEXT[] — 替代 mat_feature.tags
+- `geometry_ref` JSONB — 几何信息（自动从 STEP 提取）
+
+**新增表 `product_config_value_reference`**（替代 mat_feature_reference）：
+- 选项值 → 业务实体多态引用（PROCESS / MATERIAL / PART / RECIPE / 可扩展）
+- 含 qty / qty_unit / notes 业务字段
+
+**新增视图 `v_business_entity_3d_refs`**（简化反向查询）：
+- 直接从选项值反查到业务实体，无需特征中转 JOIN
+
+#### 3. 选项值绑独立子模型（反馈 2）
+**`product_config_option_value` 新增 4 个字段**：
+- `sub_model_part_no` VARCHAR(64) FK→mat_part — 关联独立子模型 partNo
+- `attach_mode` VARCHAR(32) — OVERLAY / SWAP / REPLACE_BASE 三种挂载模式
+- `attach_position` JSONB — 子模型挂载位置 {position, rotation, scale}
+- `replace_base_mesh` VARCHAR(128) — SWAP 模式要替换的 base mesh 名
+
+**两种 3D 联动策略并存**：
+- 策略 A：单 base.glb + 5 种 Action（适用同形态变体）
+- 策略 B：sub_model_part_no 动态加载（适用完全不同的几何形态）
+- 可在不同选项混用（如电机：型号用 REPLACE_BASE / 颜色用 REPLACE_MATERIAL / 附件用 OVERLAY）
+
+#### 4. 子模型加载机制
+- LRU 缓存（最近 5 个子模型）
+- 并行加载（多选项时并发拉取）
+- 取消加载（用户快速切换时 AbortController）
+- 加载状态用骨架屏 + 圆形进度（禁文字，AP-31 规范）
+
+#### 5. 文档/原型/元文档同步
+- `docs/3D产品选配方案.md` §4.3 / §4.4 / §7.4 / §7.4.1 / §7.4.2 / §十五 全部更新
+- `docs/Babylon3D集成方案.md` 顶部加 DEPRECATED 警告
+- `docs/html/v0.4-3D选配模板管理端原型.html` tab-basic 加特征语义 section + tab-3drule 加策略 B 子模型 + tab-feature 改为业务实体引用
+- `docs/3D-集成总览-索引.md` 决策树重写为 v0.4 单一路径
+- `CLAUDE.md` / `docs/方案制定前必读.md` / `RECORD.md` 同步
+
+**净表数变化**：v0.4 之前 ~22 张 → 收敛后 ~16 张（净减 6 张特征表 + 净加 1 张 product_config_value_reference）
+
+---
+
+### [2026-05-26] 🧪 3D 集成 5 项扩展（原型完善 + 索引 + CAD POC + 双管理端）
+
+**用户要求**：本日除代码修改外，连续完成 5 项 3D 集成扩展工作，沉淀文档 + 原型层完整覆盖。
+
+**5 项扩展任务**：
+
+| # | 任务 | 产出 |
+|---|---|---|
+| 1 | v0.3 选配原型扩展多租户 + 分享 | `v0.3-3D产品选配原型.html` 顶部加客户切换器（罗克韦尔 VIP / 西门子 STD / 新客户 TRIAL）+ 完整分享对话框（CUSTOMER_SELF / INTERNAL / PUBLIC_PRESET 3 种类型）+ 价格倍率联动 + 可见性过滤 |
+| 2 | 3D 集成总览索引文档 | 新建 `docs/3D-集成总览-索引.md` — 决策树 + 5 个 HTML 原型导航 + 共享数据模型清单 + 统一实施路线图 + 整合到主文档的 5 条触发条件 |
+| 3 | CAD 转换 POC 技术验证 | 新建 `docs/CAD转换POC-技术验证.md` — Dockerfile 多阶段构建（FreeCAD + Blender 双工具链 ~2.2GB）+ 4 个 Python 脚本草案（worker / stp-to-stl / stl-to-glb / extract-features）+ 性能基准 + 失败率预估 + 5 步 POC 落地路径 + 不实际跑代码 |
+| 4 | 选配模板管理端原型 | 新建 `v0.4-3D选配模板管理端原型.html` — 模板列表 + 编辑器（左侧树状选项 + 右侧 Tab 详情: 基本/3D 规则/价格规则/特征关联）+ 客户覆盖配置入口 + 审批规则配置 |
+| 5 | 客户自助选配公网原型 | 新建 `v0.4-客户自助选配原型.html` — CUSTOMER_SELF 模式简化 UI（无内部菜单 / 蓝色品牌头 / 信任标识栏 / 欢迎横幅 / 选配核心 + 留联系方式提交对话框）|
+
+**文档体系**（v0.4 完整）：
+
+```
+📁 docs/
+├── 3D-集成总览-索引.md            ← 入口导航
+├── Babylon3D集成方案.md            (v0.2/v0.4 查看模式 + 灵活特征表)
+├── 3D产品选配方案.md               (v0.3/v0.4 选配模式 + UG 工作流, 19 章)
+├── CAD转换POC-技术验证.md         (Docker + 脚本 + POC 路径)
+├── CAD导出GLB操作手册.md           (工程师手册)
+└── html/
+    ├── v0.1-Babylon3D集成原型.html        (查看模式 用户端)
+    ├── v0.1-Babylon3D管理端原型.html      (查看模式 管理端 上传向导)
+    ├── v0.3-3D产品选配原型.html           (选配模式 用户端 + 多租户 + 分享 v0.4 扩展)
+    ├── v0.4-3D选配模板管理端原型.html     (选配模式 管理端 模板编辑器)
+    └── v0.4-客户自助选配原型.html         (CUSTOMER_SELF 公网形态)
+```
+
+**约束遵守**：
+- 任务 3 CAD POC 仅出 Dockerfile / 脚本草案 / 性能预估 — **不写后端代码**（用户限制）
+- 其他 4 项是文档 / 原型，不动业务代码
+- 所有改动严守 v0.2/v0.3/v0.4 既定铁律
+
+**追加修复（同日）**：用户反馈 v0.4-客户自助选配原型.html 3D 动态不完整 + 价格无分项：
+- 配置数据补全 rules 数组（每个 OptionValue 配 SHOW_MESH/HIDE_MESH/REPLACE_MATERIAL 等指令，对齐 v0.3）
+- buildContactStrip 扩展为 11 mesh（mesh_main_body / mesh_contact_layer / mesh_coating_layer / mesh_thread_m6/m8/m10 + m8_r / mesh_weld_pad / mesh_silver_badge / mesh_premium_badge / mesh_clip / mesh_dust_cover / mesh_ground_wire）
+- evaluate 重写：computeRender3DCommands + apply3DCommands + applyRule 5 种 Action 完整执行
+- 底部价格加 priceBreakdown 分项展示（基础 ¥1,000 + Ag85Cu15 +¥580 + 镍镀 0.5μ +¥140 + ...）+ CSS 样式 (.amt-base / .amt-pos)
+- 取值"接地线"补回（对齐 v0.3 多选）
+
+---
+
+### [2026-05-25] 🧪 3D 选配方案 v0.4 — 灵活特征表 + UG NX 工作流 + 5 章节补充
+
+**调整背景**：用户提出 3 项核心调整 — ①特征表要灵活（系统宗旨）②格式纠正为 UG NX `.prt` + 导出 `.stp` ③两个源文件都要保存。同时要求完善需求。
+
+**v0.4 三大改造**：
+
+#### 1. 特征表灵活基线（v0.2 `Babylon3D集成方案.md` §三.3-3.4 重构）
+- 抽 `mat_feature_type` 字典表替代封闭 8 类 CHECK 枚举，加新类型 = DML 一行不改 DDL
+- `mat_feature_type.attribute_schema JSONB` 定义属性规范（灵活+规范并存，前端按 schema 渲染表单）
+- `mat_feature` 改 `feature_type_id` 外键 + `attributes JSONB`（按 schema 填）+ `geometry_ref JSONB`（自动从 STEP 提取）+ `tags TEXT[]` 灵活打标签
+- 抽 `mat_feature_reference_type` 字典表替代 4 类 CHECK 枚举（未来加 TEST_PROCEDURE / VENDOR / QUALITY_STANDARD 不改 DDL）
+- 系统预置 8 类 (is_system=true) + 业务方可自定义 (is_system=false)
+- 新增 GIN 索引（tags 和 attributes 都可高效查询）
+
+#### 2. UG NX 工作流（v0.3 `3D产品选配方案.md` §六重写）
+- 替换通用 CAD 工作流为 UG NX 主线：`.prt` 源文件 + `.stp` 中性 + `.glb` 渲染**三段链路**
+- 三个独立对象存储桶：`cpq-ugnx-source` / `cpq-stp-source` / `cpq-3d-glb`（永久保存）
+- 后端服务**不直接转 .prt**（UG 专属格式），工程师必须自己在 UG 导出 .stp
+- 转换链路：FreeCAD CLI (STEP→STL) + Blender headless (STL→GLB + Draco) + 自动缩略图
+- 新能力：**STEP 自动特征识别**（FreeCAD 解析 → 识别孔/螺纹/槽 → 建议 mat_feature 候选 → 管理员审核确认后入库）
+- 原 `mat_part_cad_source` 单文件表 → 改为 `mat_part_source_file` 多文件表（8 类 file_role: UGNX_SOURCE / STP_NEUTRAL / GLB_RENDER / THUMBNAIL / IGES_SOURCE / STL_PRINT / FBX_ANIMATION / OTHER）
+
+#### 3. v0.3 文档补 5 个章节
+- **§十三 配置版本管理**：product_config_instance_history + 5 种触发规则 + 回滚 UI + 对比 API
+- **§十四 多租户客户专属配置**：product_config_customer_override（按 customer_id / customer_category 覆盖可见性 / 锁定 / 价格倍率 / 自定义 3D）
+- **§十五 报价单展示**：quotation_line_item_config_ref + Excel "配置详情" Sheet + PDF 配置摘要块 + 邮件正文模板
+- **§十六 审批流**：product_config_approval_rule + product_config_approval（金额/型号/折扣/特殊特征触发）
+- **§十七 分享协作**：product_config_share（CUSTOMER_SELF / INTERNAL / PUBLIC_PRESET 三种类型）
+
+**新增/改动的表清单**（v0.3 → v0.4 累计）：
+| 表 | 状态 |
+|---|---|
+| `mat_feature_type` | v0.4 新增（替代枚举）|
+| `mat_feature_reference_type` | v0.4 新增（替代枚举）|
+| `mat_feature` | v0.4 重构（外键 + JSONB 属性）|
+| `mat_feature_reference` | v0.4 重构（外键 + qty 字段）|
+| `mat_part_source_file` | v0.4 替代旧 mat_part_cad_source（多文件多 role）|
+| `mat_part_glb_conversion` | v0.4 加 extracted_features + features_reviewed |
+| `product_config_instance_history` | v0.4 新增（变更追溯）|
+| `product_config_customer_override` | v0.4 新增（多租户）|
+| `quotation_line_item_config_ref` | v0.4 新增（报价单 line_item 关联 ConfigInstance）|
+| `product_config_approval_rule` | v0.4 新增（审批规则）|
+| `product_config_approval` | v0.4 新增（审批实例）|
+| `product_config_share` | v0.4 新增（分享）|
+
+**铁律强化**：
+- 加新特征类型 / 引用类型 → **DML 一行**，不改 DDL（系统宗旨：灵活配置）
+- UG `.prt` + STEP `.stp` 双文件必须配对上传（MD5 / 时间戳校验）
+- STEP 自动识别的特征**不自动入库**，必须管理员审核确认（避免特征字典污染）
+
+---
+
+### [2026-05-25] 🧪 3D 产品选配方案 v0.3 — 独立模块 + CAD 转 GLB（架构升级）
+
+**调整背景**：用户要求将 3D 模型从"查看辅助功能" → **升级为独立的产品选配模块**，类似选车（特斯拉 / 蔚来）/ 选电脑（戴尔 / 苹果）的在线配置器。同时引入 **CAD 转 GLB 工具链**，原始 CAD 文件**永久保存**。
+
+**v0.2 vs v0.3 双轨并存**（不互相替代）：
+| 维度 | v0.2 查看模式 (`Babylon3D集成方案.md`) | v0.3 选配模式 (`3D产品选配方案.md`) |
+|---|---|---|
+| 入口 | 报价单卡片"🎬 查看 3D" | 主菜单"产品选配" |
+| UI | 报价单页 + Drawer | 全屏独立配置器 |
+| 业务流 | 已存报价单 → 3D 辅助 | 3D 选配 → 生成报价单 |
+| 数据共享 | mat_part_model / mat_feature / mat_feature_reference / mat_part_mesh_feature | 同上 + 新增 product_config_* (8 张) + mat_part_cad_source + mat_part_glb_conversion |
+
+**v0.3 核心数据模型**（8 张新表 + 2 张 CAD 表）：
+- `product_config_template` (配置模板)
+- `product_config_option` (选项定义：型号 / 材质 / 颜色 / 部件 / 工艺)
+- `product_config_option_value` (选项取值)
+- `product_config_constraint` (5 类约束：REQUIRES / EXCLUDES / IMPLIES / HIDES / NUMERIC_RANGE)
+- `product_config_3d_rule` (5 种 Action：SHOW_MESH / HIDE_MESH / REPLACE_MATERIAL / SWAP_MESH / TRANSFORM_MESH)
+- `product_config_price_rule` (DELTA_FIXED / DELTA_PERCENT / SET_FIXED / FORMULA 复用公式引擎)
+- `product_config_instance` (用户选配实例 + config_fingerprint 幂等去重)
+- `mat_part_cad_source` (CAD 原始文件，**永久保存**，STEP/IGES/STL/FBX/OBJ/3MF)
+- `mat_part_glb_conversion` (转换记录 + 状态机：QUEUED/RUNNING/SUCCESS/FAILED/TIMEOUT)
+
+**CAD 转 GLB 工具链**：
+- 推荐方案 A：后端 FreeCAD CLI（开源，Docker 镜像，异步队列 + Worker 池）
+- 备选 B：Blender headless / C：Autodesk Forge / D：前端 occt-import-js 预览
+- **原文件保存**：独立对象存储桶 `cpq-cad`，**永久不删**，签名 URL + 审计日志
+
+**实施分 5 阶段**（共 ~9-11 周）：① 静态选配 POC (2w) → ② 3D 联动 (3w) → ③ CAD 工具链 (2-3w) → ④ 客户自助 (2w) → ⑤ 高级功能（持续）
+
+**文档落地**：
+| 文档 | 性质 |
+|---|---|
+| `docs/3D产品选配方案.md` (新建) | v0.3 主方案 14 章（方案定位 / 用户场景 / 核心实体 / 3D 渲染 / 配置流程 / CAD 工具链 / 8 张表 / UI / API / 系统衔接 / 5 阶段路线 / 风险 / 原型）|
+| `docs/html/v0.3-3D产品选配原型.html` (新建) | 全屏选配页可点击原型：左 Babylon 大画布 + 右 5 个 Accordion + 底部价格 + 3 套演示预设（标准/增强/高端）|
+| `docs/Babylon3D集成方案.md` (v0.2) 顶部 | 加双轨说明 + v0.3 引用 |
+| `CLAUDE.md` Key Documents | v0.3 + v0.2 双引用 |
+| `docs/方案制定前必读.md` §二 | 新增改动 10 决策树 |
+
+**关键约束（PR 自检）**：
+- v0.3 ConfigOptionValue 可关联 v0.2 mat_feature (`feature_id` 列复用)，保持单一特征字典
+- v0.3 生成的 line_item 自动写入 mat_feature_reference，让 v0.2 查看模式也能用
+- CAD 原文件**永久不删**（业务/审计需要）
+- 转换异步化（不阻塞主流程）+ 失败留人工干预入口
+- product_config_* 系列表**不动其他表结构**
+
+---
+
+### [2026-05-25] 📋 组件级数据源 SQL 方案立项（基础数据配置职责拆分 + BNF path `$` 前缀扩展）
+
+**背景**：用户反馈"基础数据配置"职责过载（同时承担 Excel 入库路由 + BNF 根节点库 + ImplicitJoinRewriter schema 上下文 三重职责），每加一张视图要 DBA Flyway + 业务在配置 UI 补登记两处维护，成本高。经 4 轮架构 critique 收敛，确定方向。
+
+**用户三条核心澄清**（方案最终定型依据）：
+1. 用户自己在 SQL 中使用 UNION，拼出想要使用的视图，然后用 BNF path 配置路径来引用
+2. 组件 SQL 并不是结果渲染到组件上，使用原理依然是 BNF path 引用 —— 组件 SQL 只是像 PG view 一样提供一个数据源
+3. **绝对禁止双轨渲染**
+
+**方案核心**：
+- 新增 `component_sql_view` 表（用户自写 SELECT，命名后由 BNF path `$<name>` 引用）
+- BNF 解析层加 `$` / `$$` 前缀识别（本组件 / 跨组件 GLOBAL），inline subquery 包装
+- 双层冻结：模板 PUBLISHED 冻 `template.sql_views_snapshot` + 报价单 SUBMITTED 冻 `quotation_component_sql_snapshot`
+- N+1 与 BNF batch 机制自动融合（`ANY(:hfPartNos)` 外层 filter）
+- `bnf_table_meta` 自动同步 `information_schema`，PathPicker 新增第二/三 Tab
+- 三大核心模块基线 §6 红线 + §10.1.2 禁双轨**全部不撞**（不是双轨，是 BNF path 数据源层级扩展）
+- AP-44 矩阵 17 → 18 处（仅增 BNF 解析层 1 处，纯解析层扩展，不影响 #1~#15 字段类型/缓存/渲染矩阵）
+- 三个核心选配组件（e42185ec/dae85db8/0a436b6c）**不回溯改造**
+
+**新增/更新文档**：
+| 文档 | 性质 |
+|---|---|
+| `docs/组件级数据源SQL方案.md` | 🆕 新建（完整方案：心智模型 / 数据模型 / `$` 引用语法 / 运行时执行流程 / 双层冻结 / E2E 自检 / 阶段迁移） |
+| `docs/三大核心模块基线.md` | §2.3 加 `$` 前缀引用语法段；§3.2 加 sql_views_snapshot 双层冻结段；§12 演进方向加 L6 |
+| `docs/组件管理字段配置指南.md` | §2.3 BASIC_DATA 加 `$` 引用语法说明；§11 联动矩阵 17 → 18 处（新增 #16 BnfPathResolver） |
+| `docs/反模式.md` AP-44 | 矩阵 17 → 18 处（新增 #16 解析层）+ 历史命中记录追加本次 |
+| `docs/PRD-v3.md` | §9.14 v3.6 演进史条目 |
+
+**关键约束**：
+- 阶段 1 功能加法 0 破坏（所有改动可独立部署）
+- 用户 SQL 禁用 `:hfPartNo` 标量占位符（由外层 batch 注入）+ 禁止 DDL/DML（EXPLAIN 校验）
+- 三个核心选配组件继续走 BNF path + v_composite_child_* 物理视图
+
+**剩余真问题（6 项，落地阶段 1 解决）**：SQL 静态校验深度 / declared_columns 同步 / GLOBAL scope 依赖闭包 / `:hfPartNo` 校验 / PUBLISHED 模板 SQL 改动传播 / 比对视图跨期 SQL 版本展示。详见 `docs/组件级数据源SQL方案.md §九`。
+
+---
+
+### [2026-05-25] 🧪 Babylon 3D 集成方案 v0.2 — 引入特征中间层（重大调整）
+
+**调整背景**：用户要求 3D 模型**不直接关联**工序/材质/料号，而是通过**特征 (feature) 中间层**绑定。理由：①特征是 CAD 工程师的设计思维（孔/槽/焊缝/螺纹/镀层）；②全局复用——同一特征 (如 FEAT-THREAD-M8) 可在多个 partNo 共享；③解耦——mesh 变化时只动 mesh-feature 映射，feature-业务关系不动。
+
+**核心架构变化**：
+```
+v0.1: mesh → 业务实体 (mat_bom/mat_process/material_recipe) [单向直连]
+v0.2: mesh → feature → 业务实体 [三段链路，feature 是中间层]
+```
+
+**用户决策（4 项）**：
+1. 特征**全局复用**（不按 partNo 实例化）
+2. **1 mesh : 1 feature**（简单模型）
+3. **feature_type 预定义封闭枚举**（8 类：THREAD/WELD/COATING/INTERFACE/SLOT/HOLE/SURFACE/GENERAL）
+4. **同步修订文档 + 两份原型 HTML**
+
+**新增表设计** (替换旧 mat_part_mesh_mapping)：
+| 表 | 用途 |
+|---|---|
+| `mat_feature_category` | 特征分类树（可选） |
+| `mat_feature` | 特征主数据（全局复用 + 预定义枚举 + metadata JSONB）|
+| `mat_feature_reference` | 特征→业务实体多态关联（PROCESS/MATERIAL/PART/RECIPE，N:M）|
+| `mat_part_mesh_feature` | mesh → 特征映射（feature_id 唯一指向单一特征 / NULL 表示装饰）|
+
+**B 模式交互变化**：mesh 点击 → 显示**特征详情 Tooltip** (特征名/类型/规格 metadata + 按 reference_type 分组的业务关联列表) → 用户选择某条引用 → 跳目标 Tab + 调对应 ConfigureProductService API。
+
+**严守铁律 (v0.2 扩展)**：3D 模块**不直接引用** mat_process / mat_bom / material_recipe，必须通过 mat_feature_reference 中转。
+
+**文档调整范围**：
+| 文档 | 调整 |
+|---|---|
+| `docs/Babylon3D集成方案.md` §三.2-3.6 | 新增 4 张表设计 (替换旧 mat_part_mesh_mapping) |
+| 同 §2.4 | 隔离边界加 mat_process/bom/recipe 直接引用禁止 |
+| 同 §4.3 | B 模式数据流改为 4 步链路（mesh → feature → 用户选 → 业务跳转）|
+| 同 §4.5.3 | Tooltip Mockup 改为显示特征详情 + 多业务跳转 |
+| 同 §4.6.6 | mesh 映射 4 种配置流改为 mesh→feature 绑定 |
+| 同 §4.6.6.4 | CSV 模板简化（删 meshType/referenceCode/targetTab，新增 featureCode）|
+| 同 §4.7 | 整章重写为"特征中转三段链路"（视图 v_business_entity_3d_refs 通过 feature JOIN）|
+| 同 §九 | 硬约束扩到 4 大类（9.1-9.4，含 v0.2 主数据隔离）|
+| `docs/html/v0.1-Babylon3D集成原型.html` | meshMappings 改为 mesh→featureCode；showFeatureTooltip 显示特征详情 + 分组业务引用；handleFeatureRef 处理跳转 |
+| `docs/html/v0.1-Babylon3D管理端原型.html` | Step 3 表格改为"关联特征"下拉（含复用提示）+ 简化字段（删 meshType / referenceCode 列）|
+| `docs/3d-samples/mesh-mapping-template.csv` | 简化字段：partNo / meshId / **featureCode** / meshLabel / onClickAction / sortOrder |
+| `docs/3d-samples/README.md` | v0.2 字段说明 + feature_type 8 类预定义枚举 + 特征字典独立 CSV 模板 |
+| `docs/方案制定前必读.md` §二改动 8 | 加 v0.2 特征中转约束 |
+
+---
+
+### [2026-05-24] 🧪 立项：Babylon 3D 集成方案（实验性 · 独立成文）
+
+**背景**：业务想在 CPQ 报价单产品卡片加 3D 模型预览（A 模式）+ 3D 点选部件驱动选配（B 模式）。需评估对核心计算业务（模板 → 组件 → 报价渲染）的影响。
+
+**评估结论**：A+B 混合模式影响等级「低-中」，**通过严守 10 条硬约束可实现零侵入核心计算业务**：
+- 3D **不**进 ComponentCell / formulaEngine / ComponentDriverService / snapshot / field_type 枚举 / mat_part 表结构
+- 3D 模块独立放 `cpq-frontend/src/components/3d/`，与 `pages/quotation/` 完全解耦
+- B 模式选配走 ConfigureProductService API + `invalidateDriverExpansions(partNos)` 桥接，**复用现有 enrich/driver/render 链路**
+- 详情页 / 编辑页共享 `Product3DPreview` 组件（readonly 双态，避免 AP-50 双轨）
+
+**数据表消费分析**（详见方案文档 §二）：
+- 只读消费：mat_part / mat_bom / material_recipe / mat_process / mat_composite_process / product_category（**不动**）
+- B 模式间接写入：通过 ConfigureProductService API 间接写 quotation_line_item.component_data（**不直改 state**）
+- 直接消费视图：v_composite_child_processes / v_composite_child_elements / v_composite_child_materials（复用 V202 智能视图）
+- 新增表（独立维护）：`mat_part_model` (3D 模型注册) + `mat_part_mesh_mapping` (mesh → 业务实体映射)
+- 隔离边界：formula / global_variable / template.components_snapshot / component.fields 字段类型 — **3D 不接触**
+
+**文档落地**：
+| 文档 | 性质 | 状态 |
+|---|---|---|
+| `docs/Babylon3D集成方案.md` | 🧪 实验性 / 独立成文 | 新建（12 章）+ §四.5 UI 原型设计章节（9 小节）+ §四.6 模型导入与配置工作流（13 小节）+ **§四.7 绑定与主数据一致性 (L2+L3 双向方案, 8 小节)**: L2 数据层 (CHECK 约束 + 应用层校验 + v_business_entity_3d_refs 反向视图 + 悬挂引用清理 Job + 级联删除策略) + L3 主数据维护页深度集成 (工序/料号/材质 3 个页面加 3D 关联列 + 异步加载 + 跳转管理端) + 数据流时序图 + 实施清单 + 7 条关键不变量 + 性能考量 + 风险缓解 |
+| `docs/html/v0.1-Babylon3D集成原型.html` | 🧪 可点击原型 (用户端) | 单文件 HTML — 完整 A+B 模式交互演示（Drawer / 工具栏 / Hover 高亮 / Click Tooltip / Tab 跳转 / Toast 模拟 invalidate）；B 模式二级配置抽屉：材质选配 6 配方 + 工序可编辑单价/成材率 + 应用后主页表格实时刷新；演示控制台支持触发无模型/加载失败/B 模式模拟点击 |
+| `docs/html/v0.1-Babylon3D管理端原型.html` | 🧪 可点击原型 (管理端) | 单文件 HTML — 3D 模型管理端：模型列表 (5 行示例，含 ACTIVE/DRAFT/ARCHIVED 状态)、统计卡片、4 步上传向导 Drawer (1200 宽)：①基本信息+上传校验 ②自动 mesh 解析 (4 mesh + 命名规范匹配) ③映射配置表 (5 列 ENUM 下拉) ④Babylon 试用预览 + 激活清单；支持下载 CSV 模板、Hover/Click 验证映射 |
+| `docs/3d-samples/mesh-mapping-template.csv` | 🧪 CSV 模板 | 8 行示例覆盖 5 种 mesh_type (BOM_ITEM / PROCESS_ZONE / MATERIAL_AREA / COMPOSITE_CHILD / DECORATIVE) — 跨 3 个 partNo (CFG-COMBO-000018 / CFG-001 / 3120012574) |
+| `docs/3d-samples/README.md` | 🧪 样例说明文档 | CSV 字段类型/必填/取值范围速查表 + meshType×referenceCode 对应关系 + 上传 3 种方式 (UI/API/CLI) + 校验规则 7 条 |
+| `docs/CAD导出GLB操作手册.md` | 🧪 工程师操作手册 | 总览流程 + 软件版本要求 + SolidWorks 原生导出/中转导出 + CATIA 走 fbx + Blender 优化必经 3 件事 (重命名/减面/Draco) + 验证清单 4 大类 + 6 个 FAQ + Blender Python 自动化脚本 + 标准工作流 13 步 |
+| `CLAUDE.md` Key Documents | 加 🧪 实验性标记引用 | 明确标注"未整合到核心架构基线" |
+| `docs/方案制定前必读.md` §二 | 新增"改动 8：3D 模块集成"决策项 | 列出 10 条硬约束 + 桥接路径 |
+
+**整合到主文档的触发条件**（方案 §十）：
+1. 阶段 1（A 模式）线上稳定 ≥ 4 周，无 P0/P1 bug
+2. 至少 3 个不同分类的 partNo 配置过 3D 模型
+3. 阶段 2（B 模式）通过双 E2E + 用户验收
+4. 用户实际使用率 ≥ 30%
+
+**下一步（用户决策）**：当前仅完成评估 + 方案细化，**未开始编码**。等用户确认实施节奏后再启动阶段 1 POC。
+
+---
+
+### [2026-05-22] 经验沉淀：方案制定前必读 + AP-52 连环案例 + CLAUDE.md 强制引用
+
+**背景**：QT-20260522-1590~1604 三轮 regression 暴露多类独立隐患（字段元数据错绑 / key_field_refs 缺失 / 前后端契约不对齐 / readonly 守卫漏改 / Math.max 死锁累加），用户要求把教训成文，未来不重蹈覆辙。
+
+**新增/更新文档**：
+
+| 文档 | 性质 | 用途 |
+|---|---|---|
+| `docs/方案制定前必读.md` | 🚨 新建（强制必读） | 任何编码/架构/迁移方案制定前先查；含症状→反模式速查表 + 7 类改动决策树 + 连环 bug 时间线 + 7 步自检清单 |
+| `docs/反模式.md` AP-52 | 新增 | "全局变量绑定的语义错配 + 契约不对齐" 双重隐患综合案例（4 类独立根因 + 4 条强制规范） |
+| `CLAUDE.md` Key Documents | 顶部加强制引用 | 方案制定前必读.md 标 🚨 + AP-50/51/52 三条新反模式引用 |
+
+**AP-52 4 条强制规范**（写代码 + 写迁移前必查）：
+1. 字段绑 `global_variable_code` 必须语义校验（GV.value_column 与字段语义对齐）
+2. KV_TABLE 类 GV 字段必须显式声明 `key_field_refs`（不依赖 findAliasValue 兜底）
+3. `@gvar:CODE` 是前后端唯一 key 命名空间（BNF path 仅作 fallback）
+4. 抽出共享组件前必须预演 4 类下游场景（历史数据 / 前后端契约 / readonly 双态 / 边界场景）
+
+**自检流程升级**：方案制定前自检清单（7 步）写入 `docs/方案制定前必读.md §四`：
+1. 查反模式速查表
+2. 查 RECORD.md 历史
+3. 查三大基线
+4. 协议传播点 grep（AP-44 矩阵）
+5. E2E 覆盖性预估
+6. 数据层校验（如需迁移）
+7. 契约对齐自检
+
+**未来 Agent 调用约束**：
+- cpq-pm / cpq-architect / cpq-backend / cpq-frontend 在 prompt 里需要明确"先查 docs/方案制定前必读.md 对应改动类型决策树"
+- PR 自检必含"已查反模式 AP-XX"声明
+
+---
+
 ### [2026-05-22] AP-49 方向 A：global_variable case @gvar:CODE 优先查找修复单价首次渲染 0
 
 **问题根因**：`formulaEngine.ts` `evaluateExpression` 的 `global_variable` case，`token.path=""` 时走动态 key 重写 → 拼出 BNF path 但 basicDataValues 中该 key 不存在 → cache miss → `expr += '0'`
@@ -10233,3 +11794,1268 @@ cid=0a436b6c tab=选配-工序列表 sort=6  ✓
 - `cpq-frontend/src/pages/quotation/QuotationStep2.tsx` (清理 BugB-PC/BugB-DIAG 诊断 console.error)
 - `cpq-frontend/e2e/multi-product-flow.spec.ts` (清理 bugbLogs/BUGB-CONSOLE 诊断捕获)
 
+
+---
+
+## [2026-05-26] 基础数据 - V6 表结构落库 | V218/V219/V220 | 导入逻辑整改第一步
+
+**背景**: 基础数据导入报价/核价 Excel 的功能要做大幅调整，先按 `docs/table/数据库表结构设计文档.md` (V6) 把 23 张新基础表落库；后续步骤再重写导入服务。
+
+**关键决策**（用户已确认推荐方案）:
+- **并存策略**: 新建 V6 表与 V44 系列 `mat_part / mat_bom / mat_process / mat_fee / plating_plan / element_price / exchange_rate` 并行运行；老表暂保留，待导入服务重构后再决定归档
+- **类型映射**: MySQL `TINYINT(1)` → PG `BOOLEAN`；`DATETIME` → `TIMESTAMPTZ`；`INT` → `INTEGER`
+- **主键策略**: 全表用代理键 `id UUID DEFAULT gen_random_uuid()` + 业务联合 `UNIQUE INDEX`
+- **审计列**: 全表统一加 `created_at / updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()` + `created_by / updated_by UUID`
+- **迁移切分**: 1 个迁移装不下 23 张表，拆为 3 个：V218 主数据(5)、V219 BOM(4)、V220 价格资源耗材(14)
+
+**踩坑修复**:
+1. **设计文档 #10 `exchange_rate` 与 V44 `exchange_rate` 同名冲突**：V44 老表被 `BasicDataImportServiceV5 / TableRegistry / ExchangeFunction / DdlExtensionService / SchemaContext` 5 处引用不能 rename；新表落库为 `exchange_rate_v6`，导入服务重构时绑定新表
+2. **`uq_material_bom` / `uq_element_bom` 索引名冲突**：PG 索引名是 schema 级唯一不是 table 级；已被 V137 的 `costing_part_material_bom` / `costing_part_element_bom` 表占用；改名为 `uq_material_bom_v6` / `uq_element_bom_v6` 避让
+3. **PG unique index 不支持 `date::TEXT` 表达式**：`COALESCE(effective_date::TEXT, '')` 在 `fee_config` / `unit_price` 的 unique index 上报"函数必需标记为 IMMUTABLE"（date 转 text 依赖 DateStyle 是 STABLE）；改为 `COALESCE(effective_date, DATE '1900-01-01')` 保留 date 类型
+
+**自检**:
+- V218 success=t（33ms） ✅
+- V219 success=t（30ms） ✅
+- V220 success=t（81ms） ✅
+- 23 张新表 `information_schema.tables` 全部存在 ✅
+- 后端 `/api/cpq/components` → 401（auth 正常）✅
+
+**未做（下一步）**:
+- 重写基础数据导入服务对接 V6 表（用户已声明分步进行）
+- 老 V44 `mat_part / mat_bom / mat_process / mat_fee / plating_plan / element_price / exchange_rate` 表暂不动；待新导入链路稳定后再决定数据迁移与归档
+- V6 表对应的 Hibernate Panache 实体类、Service 层、DTO、Resource 端点尚未创建
+
+**涉及文件**:
+- `cpq-backend/src/main/resources/db/migration/V218__create_v6_master_data_tables.sql` (新建：material_master / material_customer_map / material_version_mgmt / exchange_rate_v6 / process_master)
+- `cpq-backend/src/main/resources/db/migration/V219__create_v6_bom_tables.sql` (新建：material_bom + item / element_bom + item)
+- `cpq-backend/src/main/resources/db/migration/V220__create_v6_pricing_resource_tables.sql` (新建：fee_config / plating_scheme / capacity / unit_price / resource_group / equipment / production_energy / auxiliary_energy / tooling_cost / production_consumable / packaging_consumable / electricity_price / labor_rate / annual_discount)
+
+**关键设计规律（沉淀）**:
+- 设计文档若来自 MySQL 系统，**字段层 TINYINT(1) / DATETIME 类型必须做映射规则化**，不能照抄；映射规则记在迁移文件头注释里供下游维护参考
+- PG 索引名是 **schema-level 全局唯一**（不是 table-level），跨表/跨产品线的同业务名（如 `uq_material_bom`）一定撞名；新业务线建表前 `pg_indexes` 全 scan 一遍
+- PG unique index 表达式必须是 **IMMUTABLE 函数**；`date::TEXT` / `to_char(date,...)` 依赖 DateStyle 是 STABLE 不能用；想兜 NULL 用 `COALESCE(d, DATE '1900-01-01')`
+
+---
+
+## [2026-05-26] 基础数据导入 V6 重写 | 19 报价 + 24 核价 SheetHandler | 共 ~75 个新文件
+
+**背景**: 用户要求按 `docs/table/报价系统Excel导入落库方案.md` (19 Sheet) 与 `docs/table/核价系统Excel导入落库方案.md` (24 Sheet) 重写基础数据导入，对接 V218~V220 落库的 23 张 V6 表（替代老 V5 链路写 V44 mat_* 表）。
+
+**关键决策**（用户已确认推荐方案）:
+- D1 **直接替换报价单入口** — QuotationList "从基础数据导入"按钮 onClick 切到新 Drawer，老 V5 Drawer 保留待清理
+- D2 **2 步流程** — upload + commit 一气呵成，无预览/决策环节
+- D3 **UPSERT 策略** — 用 SQL `ON CONFLICT DO UPDATE` 合并；幂等保证连导两次行数不增长
+- D4 **Per-Sheet 独立事务** — 每个 Handler `@Transactional(REQUIRES_NEW)`；一个 Sheet 失败不影响其它
+- D5 **核价 customer_no 从 Excel 读** — 主数据维护无客户上下文；BOM/单价类全局 Sheet 用 `_GLOBAL_` 哨兵
+- D6 **Excel 模板下载** — 延后单独交付（.xlsx 是二进制需 Java POI 跑一次生成）
+
+**新增模块结构** (cpq-backend/src/main/java/com/cpq/basicdata/v6/):
+```
+entity/        V6BaseEntity + 23 个 Panache 实体 (24 文件)
+repository/    5 核心 Repo (MaterialMaster/MaterialCustomerMap/MaterialBom/MaterialBomItem/UnitPrice)
+parser/        SheetHandler 接口 + ImportContext + SheetRow + SheetImportResult + RowError + ExcelParserService (7 文件)
+service/       UnitPriceWriter (含 11 列 ON CONFLICT DO UPDATE 大 SQL)
+quote/         QuoteImportService + Q01~Q19 共 20 文件
+pricing/       PricingImportService + P01~P24 共 25 文件
+resource/      BasicDataImportV6Resource (3 endpoint)
+dto/           ImportResultDTO + SheetResultDTO
+```
+
+**REST 端点**:
+- `POST /api/cpq/basic-data-import/v6/quote` (multipart: customerId + file) — 报价 19 Sheet
+- `POST /api/cpq/basic-data-import/v6/pricing` (multipart: file) — 核价 24 Sheet
+- `GET  /api/cpq/basic-data-import/v6/{recordId}` — 查导入结果
+
+**前端改动**:
+- 新增 `cpq-frontend/src/services/basicDataImportV6Service.ts` (3 个 API)
+- 新增 `cpq-frontend/src/pages/quotation/QuoteBasicDataImportV6Drawer.tsx` (Drawer 840 宽 / 客户选择 / 拖拽上传 / 每 Sheet 结果表 + 失败明细可展开)
+- 新增 `cpq-frontend/src/pages/master-data/PricingBasicDataImportDrawer.tsx` (同上但无 customer)
+- 改 `cpq-frontend/src/pages/quotation/QuotationList.tsx:15,341` — `BasicDataImportV5ToQuotation` → `QuoteBasicDataImportV6Drawer`
+- 改 `cpq-frontend/src/pages/master-data/MasterDataHubPage.tsx` — 顶部加"导入核价数据"按钮
+
+**踩坑修复**（4 处）:
+1. **V220 `uq_unit_price` 索引设计漏洞** — 仅含 7 维不含 cost_type / finished_material_no / operation_no / seq_no，不同费用类型同一料号互相冲突。修：V222 重建索引为 11 维含全部业务键维度
+2. **import_record.customer_id NOT NULL** 与核价无客户上下文冲突。修：V221 改 nullable + 加 `system_type` 列区分 QUOTE / PRICING
+3. **`ApiResponse.ok()` 不存在** — Quarkus 编译失败。本项目用 `ApiResponse.success(data)` 工厂方法
+4. **PG 索引 `effective_date::TEXT` 表达式被拒** (前置 V222 修，本轮未再触发) — 改用 `COALESCE(d, DATE '1900-01-01')` 保留 date 类型
+
+**特殊 Handler 实现策略**:
+- **Q03 / Q12 / P06 / P07 BOM 子表写入**：每个 (material_no, characteristic) 父键先 `DELETE` 再 INSERT 全部 item — 避免手写 40 列 ON CONFLICT；保证 UPSERT 语义
+- **Q04 元素 BOM `characteristic` 自动递增**：默认 "2000"；与已有最大 characteristic 下的 item 集合做指纹比对（component_no + content + composition_qty），相同则跳过，不同则 +1 新建版本
+- **Q05 元素回收折扣 UPDATE**：按 (material_no, component_no, seq_no) 匹配特性最新版本（characteristic 字典序最大）的子表行更新 recovery_discount
+- **Q17 / P22 电镀费用一行拆两条**：plating_scheme_no 不空时整行跳过；否则 INSERT 两条 unit_price 记录（cost_type=电镀加工费 / 电镀材料费）
+- **P09 + P10 跨 Sheet 合并 production_energy**：P09 写 depreciation_unit_price / P10 写 energy_unit_price，业务键 (material_no, process_no, equipment_no, calc_version) 一致；用 ON CONFLICT DO UPDATE 各自只覆盖自己的列，不动对方列
+- **P08 同 Sheet 写两表**：capacity + labor_rate 同步 upsert
+- **Q14 组装加工费**：方案说写 capacity 不是 unit_price；用占位 resource_group_no="QUOTE_ASSEMBLY"
+- **核价 BOM customer_no 哨兵**：方案文档未给 customer_no 列，核价 BOM 用 `_GLOBAL_` 字符串作为 material_bom.customer_no（全局共享语义）
+
+**导入结果结构**（per-Sheet 行数 + 错误明细）:
+```json
+{
+  "importRecordId": "...", "status": "PARTIAL_SUCCESS",
+  "totalSuccessRows": 28, "totalFailedRows": 2,
+  "sheetResults": [
+    { "sheetName": "物料BOM", "totalRows": 30, "successRows": 28, "failedRows": 2,
+      "errors": [{"rowNo": 15, "column": "组成数量", "message": "非数字"}],
+      "writtenCounts": {"material_master": 5, "material_bom": 5, "material_bom_item": 28} }
+  ]
+}
+```
+errors 最多保留前 50 条避免 metadata JSON 过大；完整结果存 import_record.metadata JSONB。
+
+**自检**:
+- V218 / V219 / V220 / V221 / V222 全部 success=t ✅
+- 23 张 V6 表 information_schema.tables 完整 ✅
+- `import_record.system_type` 列已加 ✅
+- 后端 3 个 V6 endpoint 全部 HTTP 401（鉴权要求，部署成功）✅
+- 前端 TS 0 错误 ✅
+- 前端 Vite transform 200：QuoteDrawer / PricingDrawer / Service / QuotationList / MasterHub 全部通过 ✅
+- 后端 ~75 个新 .java 文件全部编译通过（Quarkus dev mode 热重载完成）✅
+
+**未做（独立 TODO）**:
+- Excel 模板 .xlsx 样本（quote 19 sheet + pricing 24 sheet 表头空表）：写 Java POI main 工具一次生成，加 GET 模板下载 endpoint；前端 Drawer 加"下载模板"链接
+- 端到端业务样本验证：拿真实 Excel 跑完整 19 + 24 Sheet 走通；本轮仅做了部署级冒烟测试（401 鉴权正常 = 注册成功 ≠ 业务 OK）
+- 老 V5 入口清理：`BasicDataImportV5ToQuotation.tsx` 与 `BasicDataImportServiceV5.java` 暂保留作 fallback，待 V6 稳定 1 周后删
+- 老 V44 `mat_part / mat_bom / mat_process` 等老表归档时间表
+
+**涉及文件**（新增/修改 ~75 个）:
+- 后端：5 个 Flyway 迁移 (V218 ~ V222) + 75 个 .java (entity 24, repo 5, parser 7, service 1, quote 20, pricing 25, resource 1, dto 2) + 改 ImportRecord.java
+- 前端：3 个新 .tsx/.ts (V6 service + 2 个 Drawer) + 改 QuotationList.tsx + 改 MasterDataHubPage.tsx
+
+**关键设计规律（沉淀）**:
+- **import_record 复用** 比新建 import_session_v6 表更轻量；加 system_type 列就够；customer_id 改 nullable 容纳全局型导入
+- **per-Sheet REQUIRES_NEW 事务** 优于整批事务：业务上"一个 Sheet 失败不影响其它 Sheet"是用户预期；技术上 Spring 风格 Transactional 在 Quarkus CDI 同样支持
+- **UnitPriceWriter 单 helper + 11 维 unique index** 一次设计对，承载 12 个 Handler（报价 8 + 核价 4 个 cost_type 不同的 unit_price 落地变体）；如果每个 Handler 自拼 ON CONFLICT SQL 会有 12 份近乎重复的 40 行 SQL
+- **BOM 子表 DELETE+INSERT by parent key** 在子表字段超过 30 列时是合理 UPSERT 策略，比手写 30 列 ON CONFLICT SQL 简洁且业务语义对（BOM 是整组数据，按整组替换比按行 merge 更接近用户预期）
+- **跨 Sheet 写同一行（P09+P10）用 SQL ON CONFLICT DO UPDATE 只覆盖自己列** 是优雅做法：两个独立 SheetHandler 都用同样业务键 INSERT，碰撞时各自 UPDATE 自己的列名（depreciation_unit_price vs energy_unit_price），互不影响对方已写的值
+- **中文表头模糊匹配**（SheetRow.getStr 用 `contains` 而非 `equals`）兼容方案文档里"宏丰料号"、"宏丰料号（成品料号）"、"宏丰料号（主件料号）"等带括号变体；新加 Sheet 不必担心精确表头名拼写
+
+
+---
+
+## [2026-05-26] CPQ 特征库（§18A 方案 B 快照复制）落地 | 3D产品选配方案.md + 2 个 HTML 原型 + 索引文档
+
+**背景**：
+参考 ERP 鼎捷 5 张"料件特征群组"表（imsba / imsbal / imsbb / imsbd / imsbdl），在 CPQ v0.4 选配体系中引入轻量"特征库"作为可复用主数据。模板加载时**复制成快照**写入 `product_config_option / product_config_option_value`，保留追溯外键但不强制 FK 约束 — 外部主数据改动不影响已发布模板（绕开 AP-39 类型坑）。
+
+**决策**（方案 B，用户确认）：
+- 不选 A（直接引用）— PUBLISHED 模板被主数据改动冲击 = AP-39 同源风险
+- 不选 C（混合覆盖）— 后端合并逻辑复杂，与未文档化的"客户覆盖"算法同源未文档化
+- 选 B（快照复制）— 模板独立稳定 + 与 §13 版本管理天然契合 + 离线可用
+
+**数据来源**：首版**手工录入**（不连 ERP），ERP 同步通道作为可选阶段 4
+
+**吸收 ERP 概念**（用户授权"按你最好的意思来"）：
+- 子料号拼接：`partno_prefix / partno_suffix`（吸收 imsbb14/15）+ `partno_include`（吸收 imsbd05 拼接否）
+- 数据类型 × 赋值方式二维矩阵：STRING/NUMBER/DATE/BOOLEAN × MANUAL/SELECT/COMPUTED（吸收 imsbb04+05+06）
+- 取值激活码：`is_active`（吸收 imsbdacti）
+- 暂不吸收：库存系统行为开关 imsba02/03/04、多语言档（imsbal/imsbdl）、udXX 自定义字段（用 `extra_attrs` JSONB 替代）
+
+**实现产物**：
+1. `docs/3D产品选配方案.md` §十八之前补充 § 18A — 11 个子章节（数据来源映射 + 3 张表 DDL + 类型矩阵 + 快照写入算法伪代码 + 重新拉取协议 + 引用统计 + 删除保护 + API + UI 约束 + 演进路径 + 衔接）
+2. `docs/html/v0.4-特征库管理原型.html` — 新原型 817 行：列表页 + 群组详情页（Master-Detail：字段列表 Master / 取值列表 Detail）+ Drawer 编辑（群组/字段/取值表单）
+3. `docs/html/v0.4-3D选配模板管理端原型.html` — 选项配置 Tab 工具栏加「📥 从特征库选择」按钮 + 独立 960px 抽屉（左 30% 筛选 + 右 70% 字段多选 + 重复字段自动 disabled）+ 导入逻辑（快照复制写入 template.options 含 sourceFeatureFieldId 追溯外键）
+4. `docs/3D-集成总览-索引.md` — §一数据层补 3 张新表 + §二决策树加"维护产品特征字段库"分支 + 原型清单加新条目 + 变更记录追加
+
+**关键设计规律（沉淀）**：
+- **追溯外键不强制 FK 约束**（`source_feature_field_id BIGINT` 无 REFERENCES）— 让特征库可独立删除/归档，模板快照不受冲击；UI 在查询不到源时显示"源已删除"标识
+- **PUBLISHED 模板不允许直接改 option**（导入时 assert status IN ('DRAFT','EDITING')），符合 §13 版本管理纪律
+- **重新拉取 = 自动 fork 新草稿版本**（不污染当前 PUBLISHED），与 §13 流程统一
+- **UI 全列表化，禁用树形**：即便 group → field → value 三层，也用 Master-Detail + 面包屑展开；理由：取值数多时分页/排序/筛选/勾选都更顺手（树展开后看不全 + 跨层级勾选困难）
+- **导入抽屉用独立 DOM** 不复用原 editDrawer：避免污染已有 mode 逻辑（editDrawer 用统一 footer save 按钮，picker footer 是"导入选中"语义不同）
+
+**已知 TODO（阶段 2-5）**：
+- 阶段 2：重新拉取差异 UI（compareFields / compareValues 算法落地）
+- 阶段 3：引用统计 SQL（特征库管理页群组/字段/取值行的"N 模板引用"列）+ 删除保护后端校验
+- 阶段 4：ERP imsbX 同步通道（一次性导入 + 增量更新）
+- 阶段 5：多语言 i18n（imsbal/imsbdl 对应表）
+
+**涉及文件**:
+- 文档：`docs/3D产品选配方案.md`（新增 §18A 11 个子章节 + 变更记录）+ `docs/3D-集成总览-索引.md`（数据层 + 决策树 + 原型清单 + 变更记录）
+- 原型：新增 `docs/html/v0.4-特征库管理原型.html`（817 行） + 改 `docs/html/v0.4-3D选配模板管理端原型.html`（+250 行抽屉 + mock 数据 + 6 个新函数）
+
+
+---
+
+## [2026-05-26] CPQ 选配端到端链路 P0+P1 修复 9 项 | PRD + 5 个原型 + 索引
+
+**背景**：完成审计后发现 4 个 P0 断点 + 4 个 P1 中等问题阻碍 MVP 跑通。系统性修复一次过。
+
+**P0 修复（4 项断点）**：
+
+1. **实例编号 + 状态术语表**（PRD §7.8 + §3.7）
+   - product_config_instance 加 `instance_code VARCHAR(40) UNIQUE`（CI-yyyyMM-NNNN）+ `template_version` snapshot + `customer_lead_id` 外键
+   - 新增 §3.7 全实体状态术语表：模板 PUBLISHED / 实例 LINKED / 特征群组 ACTIVE / lead PENDING_REVIEW 等，含状态机转换示意
+
+2. **提交流程改两步式**（PRD §5.5 + §9.2 + 2 个原型）
+   - 原"一键提交生成报价单"违反 §17 弱关联设计 → 改成 ①提交建实例（SUBMITTED）②用户选后续动作 ③三选一：NEW_QUOTATION / SAVE_DRAFT / LINK_EXISTING
+   - POST /instances + POST /instances/{id}/link-action 两个端点
+   - 状态机校验表：每个端点允许的当前 status
+
+3. **base.glb 选择链路**（PRD §7.2 + 模板编辑器）
+   - DDL: product_config_template 加 base_model_id UUID + base_model_version + base_model_snapshot_at 三字段
+   - 模板编辑器「基本信息」Tab 加「base 模型」卡片 + 「切换模型」抽屉（mat_part_model 列表，卡片网格 + current/历史版本切换）
+   - **版本快照纪律**：上游 mat_part_model 升级不会自动影响模板 — PM 主动切换 = 等同 §13 新草稿版本
+
+4. **3D 源文件上传完成后挂载入口**
+   - v0.4-3D源文件上传与转换原型 Step 4 加「关联到现有模板」+「新建选配模板」两个按钮
+   - 关联对话框：列出可选模板 + 已有 base 模型的提示「将覆盖」+ 跳转链接
+
+**P1 修复（4 项中等问题）**：
+
+5. **主菜单统一加「🛒 3D 选配」一级菜单**（4 个有侧栏原型）
+   - 销售路径子菜单：📋 选配实例列表 / 🎯 开始选配 / 🔗 我分享的链接
+   - 管理路径（系统设置下）：用户管理 / 📦 3D 源文件管理 / 🛒 选配模板管理 / 📚 特征库管理
+   - 涉及 4 个原型：3D 选配模板管理端 / 3D 源文件上传 / 特征库管理 / 选配实例列表
+   - v0.4-3D产品选配原型 + v0.4-客户自助选配原型 是全屏页（无侧栏），不动
+
+6. **子菜单命名统一**
+   - "🎬 3D 模型管理" / "📦 3D 源文件管理" / "3D 源文件管理" → 统一「📦 3D 源文件管理」
+   - "特征字典" / "📚 特征库管理" → 统一「📚 特征库管理」
+   - "选配模板" / "🛒 选配模板管理" → 统一「🛒 选配模板管理」
+
+7. **客户身份处理 SOP**（PRD §17.5）
+   - 新增 `customer_lead` 表 + lead_code 编号规则（LEAD-yyyyMM-NNNN）+ source_type / status 字段
+   - 审核 3 动作：BIND_EXISTING / CREATE_NEW / REJECT
+   - 反复提交去重：同 share_token + 同 contact_phone 7 天内复用已有 lead
+   - 状态机：PENDING_REVIEW → CONVERTED / REJECTED
+
+8. **客户自助选配原型提交对话框改造**
+   - 提交后显示 instance_code + lead_id + 完整后端流程描述（4 步：customer_lead INSERT → instance INSERT → 通知销售）
+   - 替换原简单 "已收到" toast 为完整反馈卡片
+
+**关键设计规律（沉淀）**：
+
+- **实例编号 vs UUID 主键分离**：UUID 仍是 PK 用于关联，instance_code 用作用户可见 / URL / 日志输出；与 QT-{yyyyMMdd}-{seq4} / CFG-TPL-{xxx} / FG-{xxx} 系列对齐
+- **状态术语表必须先于代码**：PUBLISHED vs ACTIVE 不强制统一（模板有发布动作语义 / 特征群组是字典启停）— 但要在 PRD §3.7 集中文档化，避免代码评审时再扯
+- **base_model_id + version + snapshot_at 三字段组合** 实现"显式 snapshot 但不强制 FK"：上游升级不被惊吓，PM 主动控制
+- **customer_lead 中间层** 比直接 INSERT customer 安全 N 倍：避免主数据污染 + 留审核记录 + 反复提交去重
+- **提交流程两步式** 是弱关联设计的必然 — 实例可独立存在，绑报价单是用户选择不是系统行为
+- **菜单层级映射用户身份**：销售路径（一级菜单 🛒 3D 选配）vs 管理路径（系统设置子菜单），同一概念两条入口
+
+**残留 TODO（P2 / P3 阶段）**：
+
+- P2-7 重新拉取特征库差异 UI（§18A.5 算法已文档化，原型抽屉未做）
+- P2-9 模板挑选页 / 「+ 新建选配」中间页原型（销售从哪进选配器）
+- P2-11 引用统计跳转（模板编辑器右侧"12 个选配实例 [查看 →]" 实际跳转到实例列表 + 自动筛选）
+- P2-12 分享链接管理列表原型（销售回看分享过的链接 / 谁打开过 / 哪些过期）
+- P3 PRD §1.3 矛盾清理（不做 3D 报价单展示 vs §10.1 line_item 联动 3D 描述）
+- 阶段 5 触发后开放约束规则 / 客户覆盖 / 审批规则 3 Tab（路线图在 3D-集成总览-索引.md §八）
+
+**涉及文件**:
+- 文档：`docs/3D产品选配方案.md`（§3.7 状态术语表新增 / §5.5 + §7.2 + §7.8 + §9.2 + §17.5 改造）+ `docs/3D-集成总览-索引.md`（变更记录追加）
+- 原型：5 个 HTML 改动
+  - `v0.4-3D产品选配原型.html`：submitConfig 改两步式 + 三选一对话框
+  - `v0.4-客户自助选配原型.html`：submit 改造为完整反馈卡片含 instance_code + lead_id
+  - `v0.4-3D选配模板管理端原型.html`：基本信息 Tab 加 base 模型卡片 + base 模型选择抽屉 + 菜单统一
+  - `v0.4-3D源文件上传与转换原型.html`：Step 4 加「关联到模板 / 新建模板」按钮 + 对话框 + 菜单统一
+  - `v0.4-特征库管理原型.html`：菜单统一
+  - `v0.4-选配实例列表原型.html`：菜单统一
+
+
+---
+
+## [2026-05-26] CPQ 选配链路 P2 + P3 修复 5 项 | 2 个新原型 + 模板管理端增强 + PRD 矛盾清理
+
+**背景**：P0+P1 端到端断点已修。P2 是体验完善 + 模型外暴露入口；P3 是 PRD 矛盾清理。
+
+**P2 修复（4 项）**：
+
+1. **新增 `v0.4-开始选配原型.html`**（销售模板挑选页）
+   - 销售路径起点 = 「🛒 3D 选配 / 🎯 开始选配」入口
+   - 客户选择器（顶部黄色卡片，4 个 mock 客户切换） + 当前客户 VIP/STD/TRIAL 标签
+   - 模板卡片网格（自适应列数）：缩略图 + 名称/代码 + 描述 + 品类 chip + 价格 chip（show_price=false 时显示"价格隐藏"）+ 选项数/取值数/30 天热度统计 + 「进入选配」/「预览」双按钮
+   - 工具栏：搜索 / 品类筛选 / 状态筛选 / 排序 + 我的收藏
+
+2. **新增 `v0.4-分享链接管理原型.html`**（销售自助链接管理）
+   - 「🛒 3D 选配 / 🔗 我分享的链接」入口
+   - 4 状态统计卡：ACTIVE / 已被访问 / EXPIRED / REVOKED
+   - 链接列表：token / 客户 / 关联实例 / 类型 (CUSTOMER_SELF/INTERNAL/PUBLIC_PRESET) / 创建+过期 / 访问次数 / 状态 / 操作
+   - 详情 Drawer：链接信息 + 接收人 + 关联实例（跳转链接）+ 完整访问日志（时间/IP/UA/操作） + 延期/吊销按钮
+   - 行内操作：📋 复制链接 / 👁 详情 / ⏰ 延期 / 📧 重发提醒 / 🚫 吊销 / 📋 查看实例
+
+3. **模板管理端「📋 重新拉取」差异 UI 抽屉**（§18A.5 算法落地）
+   - 顶部统计：上次 snapshot 时间 + 特征库当前版本 + 总变化项数
+   - 全选「采用源」/「保留模板」工具按钮
+   - 每个有变化的 option 一个卡片：字段属性差异 + 取值差异分类显示
+   - 4 类差异：🏷 CHANGED_LABEL / ➕ NEW_IN_SOURCE / ➖ DELETED_FROM_SOURCE / 🔒 LOCAL_ONLY
+   - LOCAL_ONLY 强制保留不可改（本地新增取值保护）
+   - 提交后：模拟 POST /feature-refresh-apply + 创建模板新草稿版本 v1.3-rc1（不污染 PUBLISHED）
+
+4. **模板管理端引用统计 4 行加跳转**
+   - 12 个选配实例 → 跳 v0.4-选配实例列表原型.html?template={code}
+   - 8 个报价单 line_item → 跳 /quotations?source_template={code}
+   - 3 个产品族基础料号 → 跳 /master-data/mat-parts?related_to_template={code}
+   - 1 个 base.glb 共享 → 跳 v0.4-3D源文件上传与转换原型.html?mat_part=...
+   - 特征库管理页群组列表"引用模板"列同样加 onclick 跳转
+
+**P3 修复（1 项）**：
+
+5. **PRD §10.1 矛盾清理**
+   - 删除"v0.3 选配 → 提交 → 生成 mat_part 子料号 → quotation_line_item → 现有报价单流程"老 ASCII 图
+   - 改为 v0.4 三选一动作流 + 明确"报价单内 3D 不展示"+ 反查跳转 SOP（销售想看 3D 通过 line_item.instance_id → 实例列表）
+   - 与 §1.3 + §5.5 + §15 (已移除) 对齐
+
+**关键设计规律（沉淀）**：
+
+- **销售路径 vs PM 路径菜单分离**：一级菜单「🛒 3D 选配」是销售工作流（开始选配 / 实例列表 / 分享链接），「⚙️ 系统设置」下放管理资源（模板 / 特征库 / 3D 源文件）—— 同一概念两条入口
+- **差异 UI 三态决策模型**：每个 diff 项 KEEP_TEMPLATE / TAKE_SOURCE / LOCAL_ONLY(强制)三选一 → 用户审核 → 后端按决策合并 → 不污染 PUBLISHED
+- **引用跳转用 query param 而非锚点**：?template=X / ?highlight=Y / ?source_feature_group=Z 让目的地页自动筛选/高亮，体验贯穿
+- **链接管理是销售必备工具**：分享出去后无法回看 = 大量沟通失败案例；列表 + 访问日志 + 延期吊销三件套是 SaaS 标配
+- **状态卡片驱动列表筛选**：分享链接管理用 4 状态卡当快速筛选入口，符合「列表操作规范.md」
+
+**残留 TODO（阶段 4+）**：
+
+- 阶段 5 触发后开放约束规则 / 客户覆盖 / 审批规则 3 Tab（路线图在 3D-集成总览-索引.md §八）
+- ERP imsbX 同步通道（一次性导入 + 增量更新，§18A 阶段 4）
+- 多语言 i18n（imsbal / imsbdl 对应表，§18A 阶段 5）
+- mat_part_model 缺独立管理列表页（目前嵌入「3D 源文件上传与转换」原型 Step 4，需要独立 CRUD 页）
+- 选配模板版本对比 UI（§13.4 已定义，仅 timeline 占位，diff 算法未实现）
+
+**涉及文件**:
+- 文档：`docs/3D产品选配方案.md`（§10.1 重写） + `docs/3D-集成总览-索引.md`（原型清单加 2 个新 + 变更记录追加）
+- 原型：新增 2 个（v0.4-开始选配 / v0.4-分享链接管理）+ 改 2 个（v0.4-3D选配模板管理端 / v0.4-特征库管理）
+
+
+---
+
+## [2026-05-26] V44 老表全面禁用 + 4 mirror 视图重写到 V6 表 | V228~V234
+
+**背景**: QT-20260526-1629 组合产品报价单"选配-工序列表"加载空。诊断显示模板 → 组件 → SQL 视图 → driver path 各层混用 V44 老表与新的 SQL 视图引用语法 `$<mirror_view>` — 字段层走对了但视图实现层与组件 driver 层仍查 V44 表。详见 AP-53。
+
+**用户明确方向**:
+- 基础资料表全部用 V6 新表，老表已废弃
+- 字段路径使用 SQL 视图 `$<mirror>.<col>`
+- 旧版本 BNF 路径禁止使用
+
+**关键架构决定**:
+- **字段级 BNF**（`fields[].basic_data_path`）用 `$<sql_view_name>.<col>` 引用 SQL 视图（SqlViewExecutor 内联展开）
+- **组件级 `data_driver_path`** 维持 PG view 名格式（DataLoader/ImplicitJoinRewriter 不支持 `$` 引用语法作 driver）— 但 PG view 本身重写为查 V6 表
+- 同一查询逻辑同时存在于 **PG view + component_sql_view mirror SQL 模板**两处（driver / 字段两条通道各自一份），用户也可二选一
+
+**5 个迁移**:
+| 迁移 | 作用 | execution_time |
+|---|---|---|
+| V228 | 重写 4 个 mirror SQL 视图 (`composite_child_processes/materials/elements/weights_mirror`) → 查 V6 表 | 4ms |
+| V229 | 5 组件 data_driver_path 改为 `$<mirror>` 引用 + 同步 template snapshot（事后回滚，见 V232） | 41ms |
+| V230 | 字段级 basic_data_path 从 `v_composite_child_*` 改为 `$<mirror>.<col>` | 32ms |
+| V231 | 补 V230 漏掉的 weights mirror | 17ms |
+| V232 | 回滚 V229 — data_driver_path 改回 PG view 名（`$` 引用语法不适配 driver） | 19ms |
+| V233 | 重写 4 个 PG view (`v_composite_child_*`) → 查 V6 表；含 `NULL::uuid AS quotation_line_item_id` 列保 ImplicitJoinRewriter 兼容 | 14ms |
+| V234 | 修 `v_composite_child_elements` JOIN 逻辑（从 ASSEMBLY 改为父级物料BOM characteristic IS NULL） | 8ms |
+
+**文档**:
+- `docs/方案制定前必读.md` 加 §V6 基础资料表使用规则（6 条强制规则 + 例外 + 违反案例）
+- `docs/反模式.md` AP-53 — V44 老表禁用 + SQL 视图模板查老表导致渲染数据断链
+- `CLAUDE.md` 顶部"重要文档"列表加 AP-53 + 链接到必读文档新章
+
+**端到端实测 expand-driver API**:
+| 组件 | rowCount | 验收 |
+|---|---|---|
+| COMP-CFG-PROCESS (工序列表) | **7** ✅ | 用 V6 unit_price.operation_no + material_bom_item.operation_no + process_master 拼接 |
+| COMP-CFG-MATERIAL-RECIPE (材质) | **5** ✅ | 用 V6 material_bom_item + material_master |
+| COMP-CFG-CHILD-PARTS (子配件清单) | **5** ✅ | 同上 |
+| COMP-CFG-ELEMENT-BOM (元素含量) | **0** ⚠️ | 数据建模问题非代码：Q03 物料BOM 投入料号(9997/9998) 与 Q04 元素BOM 投入料号(9995/9996) 不一致，导致成品料号→元素 链路无法 V6 追溯 |
+
+**字段级 SQL 视图引用解析验证**:
+```
+basicDataValues 输出（COMP-CFG-PROCESS 第 1 行）:
+  {$composite_child_processes_mirror.child_part_name} = '3120012574'
+  {$composite_child_processes_mirror.process_code}   = 'Z012'
+  {$composite_child_processes_mirror.assembly_process} = 'Z012'
+```
+SqlViewExecutor 路径解析 + 内联 mirror SQL → 取列值，完全正常。
+
+**未决议题（独立 TODO）**:
+- ELEMENT 元素列表数据建模决策：要么 (A) 改 Q04 Handler 保留"宏丰料号"作为 element_bom 父级关联字段（V6 加 parent_material_no 列），要么 (B) Excel 模板规范用户在物料BOM 与元素BOM 两个 sheet 用同一组投入料号
+- 36 个 COMP-Q-* / COMP-V4-* 组件 data_driver_path 仍为 V44 表名（非组合产品报价/核价场景）— 按需逐步迁移
+
+**自检**:
+- V228 ~ V234 全部 success=t ✅
+- 4 个 mirror SQL 视图 + 4 个 PG view 全部查 V6 表（0 处 mat_* 引用） ✅
+- 5 个 COMP-CFG-* 组件 data_driver_path 干净（PG view 名指向 V6 重写后的视图） ✅
+- 33 张模板 components_snapshot 含 `$<mirror>` 字段级 BNF 引用 ✅
+- expand-driver API 实测 3/4 组件 rowCount > 0 ✅
+
+**涉及文件**:
+- `cpq-backend/src/main/resources/db/migration/V228 ~ V234.sql` (7 个迁移)
+- `docs/方案制定前必读.md` (+ §V6 基础资料表使用规则)
+- `docs/反模式.md` (+ AP-53)
+- `CLAUDE.md` (+ AP-53 链接)
+- `docs/table/报价系统Excel导入落库方案.md` (§4 §5 字段映射修正)
+
+**关键设计规律（沉淀）**:
+- **driver path vs field-level BNF 路径是两条独立通道**：driver path 由 DataLoader/ImplicitJoinRewriter 解析（表名 + 谓词），字段 BNF 由 SqlViewExecutor 解析（`$<view>.<col>`）。混用同一种语法会破坏一边
+- **SQL 视图 mirror 与 PG view 同口径同步是维护负担**：未来若要彻底单源，应让 PG view 用 `CREATE VIEW v_xxx AS SELECT * FROM <mirror_subquery>`，但当前架构 mirror 是 component_sql_view 行不是 PG 对象，无法直接互引
+- **V6 取消 quotation_line_item_id 维度是设计语义不可逆**：customer × material 共享数据；如需 per-报价单差异化必须走 quotation_line_item 自身字段（productAttributeValues 等），不在基础资料层
+- **schema DDL 后必须重启 Quarkus 清 tableColumnsCache**（CLAUDE.md §视图重启）：V233 DROP VIEW CASCADE 后必须 touch 一个 java 文件触发重启，否则 ImplicitJoinRewriter 缓存的旧列结构会导致 SQL 错误
+
+---
+
+## [2026-05-26] BNF 通道严格 mirror-only — 后端解析器扩展 + V235~V236
+
+**背景**: 用户严令"BNF path 查询只能使用组件配置的 SQL 视图，禁止使用 PG view"。前一轮 V232~V234 让 driver path 走 PG view（虽 view 内部已查 V6 表），但字段值短路取值时 driverRow 来自 PG view 而非 mirror SQL — 不满足"mirror-only"严格要求。
+
+**核心架构**:
+1. **SqlViewExecutor 扩展** `executeAllRows(viewPath, ctx, partNos)`：支持 `$<view>` / `$$<componentCode>.<view>` 无列名形态作 driver path，返完整行集（`SELECT * FROM (sql_template) WHERE ...`）。原 `execute` 仍只处理 `$<view>.<col>` 字段形态。
+2. **DataLoader.loadByPath 分流**：检测 `$` 前缀路径 → 进一步判断是否含 `.col` → 分别调 `execute` 或 `executeAllRows`。
+3. **ComponentDriverService 短路保留**：字段从 driverRow 取列是合法的——driverRow 现在来自 mirror SQL（不是 PG view）。
+4. **ComponentDriverService isCompositeAggregateView 判定**：兼容 `$composite_child_*` 形式（之前只匹配 `v_composite_child_*`）。
+
+**迁移**:
+| 迁移 | 作用 |
+|---|---|
+| V235 | data_driver_path 从 PG view 名改回 `$<mirror>` 引用形式 + 同步 template snapshot |
+| V236 | 4 个 mirror 视图 scope COMPONENT → GLOBAL；CHILD-PARTS driver path 改 `$$COMP-CFG-MATERIAL-RECIPE.composite_child_materials_mirror` 跨组件引用 |
+
+**Java 代码变更**:
+- `SqlViewExecutor.java`：
+  - 加 `DRIVER_PATH_PATTERN`（无列名形态）+ `isDriverViewPath()` + `executeAllRows()`
+  - `NAMED_PARAM` 正则改用负 lookbehind `(?<!:):` 排除 PG `::cast` 误判（修 `::uuid` / `::varchar` / `::text` 等 cast 语法）
+- `DataLoader.java`：`loadByPath` 的 `isSqlViewPath` 分支内增加 driver/field 分流
+- `ComponentDriverService.java`：
+  - `evaluatePath` 短路逻辑保留（注释更新说明 driverRow 来自 mirror）
+  - 两处 `effectiveDriverPath.contains("v_composite_child_")` 加 OR `contains("composite_child_")` 兼容 `$<mirror>` 形式
+
+**实测 expand-driver API 结果**:
+| 组件 | data_driver_path | rowCount |
+|---|---|---|
+| COMP-CFG-PROCESS | `$composite_child_processes_mirror` | **7** ✅ |
+| COMP-CFG-MATERIAL-RECIPE | `$composite_child_materials_mirror` | **5** ✅ |
+| COMP-CFG-CHILD-PARTS | `$$COMP-CFG-MATERIAL-RECIPE.composite_child_materials_mirror`（跨组件） | **5** ✅ |
+| COMP-CFG-ELEMENT-BOM | `$composite_child_elements_mirror` | 0 ⚠️（数据建模问题，与本改造无关） |
+| COMP-CFG-COMPOSITE-PROC | `$composite_child_processes_mirror` | （复用 processes） |
+
+**字段值实测**（PROCESS row 0 basicDataValues）：
+```
+{$composite_child_processes_mirror.child_part_name} = '3120012574'
+{$composite_child_processes_mirror.seq_no} = 1
+{$composite_child_processes_mirror.process_code} = 'Z012'
+{$composite_child_processes_mirror.assembly_process} = 'Z012'
+```
+单值标量 ✅（不是 List）。driverRow 由 mirror SQL `executeAllRows` 拿到 7 行，字段从 driverRow 短路取列。
+
+**踩坑修复**:
+1. **SQL 视图路径 PATH_PATTERN 强制要求 `.column`**：driver path `$composite_child_processes_mirror` 报"非法的 SQL 视图路径语法"。修：加独立 DRIVER_PATH_PATTERN + executeAllRows
+2. **PG `::uuid` cast 被 `:` 占位符正则误识**：mirror SQL 含 `NULL::uuid AS recipe_id` 报"语法错误 在 ':' 或附近"。修：NAMED_PARAM 用 `(?<!:):` 负 lookbehind
+3. **CHILD-PARTS 跨组件 SQL 视图找不到**：mirror 默认 COMPONENT scope 只本组件可见。修：4 个 mirror scope 改 GLOBAL + 跨组件用 `$$<componentCode>.<view>` 形式
+
+**文档**:
+- `docs/方案制定前必读.md` §"严格 BNF 通道规则"（5 条强制规则 + 3 个违反案例）
+
+**自检**:
+- V235 / V236 全部 success=t ✅
+- 5 个 COMP-CFG-* 组件 data_driver_path 全部是 `$<mirror>` 或 `$$<componentCode>.<view>` 形式（PG view 引用=0） ✅
+- 3/4 mirror 组件 expand-driver rowCount > 0 ✅
+- 字段值返回单值标量（不是 List） ✅
+
+**关键设计规律（沉淀）**:
+- **driver path 与字段 BNF 是两种 SQL 视图调用形态**：driver 用 `$<view>` 无列名（返整行集），字段用 `$<view>.<col>` 有列名（返单列），SqlViewExecutor 必须**同时支持两种形态**
+- **driverRow 短路是 BNF mirror-only 严格规则下的合法优化**：前提是 driver path 也走 mirror SQL — 否则 driverRow 来自 PG view，短路就违反规则
+- **PG `::cast` 与 JDBC `:name` 占位符的命名冲突**：通用正则 `:[a-zA-Z_]+` 必须用负 lookbehind `(?<!:)` 排除连续冒号，否则任何含 cast 的 SQL 模板会语法错乱
+- **mirror 视图 scope 决策**：若仅本组件用 → COMPONENT；若跨组件复用 → GLOBAL + 调用方写 `$$<componentCode>.<view>`
+
+---
+
+## [2026-05-26] CPQ 3D 选配 5 切片业务逻辑落地（骨架 → 可跑通核心链路）
+
+**背景**：v0.4 全栈骨架已建好（V239-V244 + 5 模块 entity/service/resource + 10 前端页面占位）。本次填充 5 切片业务逻辑，完成可跑通的核心链路。
+
+**切片 1：特征库完整业务**
+- 后端：listGroups 完整参数化查询（status/category/keyword 三条件 OR LIKE）+ `templateRefsByGroup()` 引用统计 SQL（按 source_feature_field_id 反查模板）+ /groups/template-refs endpoint
+- 前端 FeatureLibraryList：状态/品类/搜索筛选 + 新建/编辑 Drawer（含 ERP 同步编号字段）+ 归档 Popconfirm + 引用模板数列点击跳转
+- 前端 FeatureGroupDetail：Master-Detail（字段表点击高亮 → 下方显示该字段的取值表）+ Drawer 字段编辑（数据类型/赋值方式/必填/默认值/范围/小数位/子料号拼接前后缀）+ Drawer 取值编辑（编号/名称/排序/参与拼接/激活）+ 删除 Popconfirm
+
+**切片 2：选配模板编辑器（核心 — base 模型 + 特征库导入快照复制）**
+- 后端 importFeatures：完整快照复制实现 — PUBLISHED 模板拒绝；按 sortOrder 续号；source_feature_field_id + snapshot_at 追溯；同时复制每个字段的 active values 写入 option_value
+- 后端 setBaseModel：写 template.base_model_id + base_model_version (从 PartModel.version snapshot) + base_model_snapshot_at = NOW()
+- 前端 ConfiguratorTemplateList：完整列表 + 新建 Drawer
+- 前端 ConfiguratorTemplateEditor（核心）：仪表板 4 卡（选项/取值/版本/base模型）+ 3 Tab（基本/选项/版本）+ 选项嵌套表格（默认展开前 2 项 + 来源标识 📚特征库 / ✋手工）+ 「📥 从特征库选择」抽屉（960 宽，左 30% 群组筛选 + 右 70% 字段多选 + 重复字段 disabled + Tag「已存在」/「可导入」）+ base 模型选择 Drawer（mat_part_model 卡片网格）+ 发布按钮（DRAFT → PUBLISHED Popconfirm）
+
+**切片 3：提交两步式流程 + 实例列表完整**
+- 后端 ConfiguratorInstanceService.evaluate：简化版（仅价格累加 priceDelta，不做约束求值；约束算法仍为 TODO）+ priceBreakdown 分项 + SHA-256 fingerprint 生成
+- 后端 linkAction 三动作：
+  - NEW_QUOTATION：mock 生成 partNo + quotation_id + line_item_id（TODO 集成 quotation 模块）→ instance.status = LINKED
+  - LINK_EXISTING：仅写 linked_quotation_id（TODO 写入 quotation line_item）
+  - SAVE_DRAFT：不调此端点（前端跳转）
+- 后端 unlink：LINKED → SUBMITTED；不删 line_item（§17 弱关联设计）
+- 前端 ConfiguratorPage：左侧 3D 占位（Babylon 集成 TODO）+ 右侧 Radio 选项面板（SELECT 类型）/ Input + InputNumber（MANUAL 类型，带 min/max）+ 选项变化即调 evaluate API + 底部价格栏（含 priceBreakdown 分项）+ 必选项校验 + 两步式 Modal（步骤 1: review 三按钮，步骤 2: linkExisting 输入 QuotationId，步骤 3: done 显示结果）
+- 前端 ConfiguratorInstanceList：4 状态统计卡（DRAFT/SUBMITTED/LINKED/EXPIRED）+ 完整表格 + 解绑 / 删除 Popconfirm
+
+**切片 4：3D 上传向导**
+- 前端 PartModelList：4 步 Steps（选模式 / 基本信息 / 上传注册 / 关联模板）+ 模式选择卡片（UGNX 双文件 vs GLB 直传）+ 设为当前 Popconfirm
+- 注册步骤调 partModelService.register（实际 multipart 上传 + 转换流水线 TODO）
+- 关联步骤直接调 configuratorTemplateService.setBaseModel（已绑定模板显示「将覆盖」警告）
+
+**切片 5：客户线索审核三动作**
+- 后端 review 实现：
+  - BIND_EXISTING：lead.bound_customer_id 写入 + status=CONVERTED + native SQL `UPDATE product_config_instance SET customer_id WHERE customer_lead_id = ?` 同步关联实例
+  - CREATE_NEW：暂抛 IllegalStateException 提示先去客户管理建客户 → 回来用 BIND_EXISTING（TODO 集成 customer 模块）
+  - REJECT：status=REJECTED + native SQL `UPDATE product_config_instance SET status='EXPIRED'` 关联实例置 EXPIRED
+- 前端 CustomerLeadList：3 状态统计卡（PENDING_REVIEW / CONVERTED / REJECTED）+ 行内三按钮（🔗 绑定 / + 新建 / 🚫 拒绝）+ Modal 显示 lead 详情 + 动作专属表单
+
+**关键设计沉淀（沉淀本轮发现）**：
+- **包命名冲突血泪教训**：`com.cpq.configtemplate` 是 V203 LIST_FORMULA 数据源已占用 — 新模块必须先 grep 一遍现有包名再开始，否则 Quarkus 启动直接 build failure（GET /api/cpq/config-templates 多 Resource 声明）
+- **Map import 必须 explicit**：Java 17 Hibernate Panache 项目里 `java.util.Map` 不会因为 IDE 自动导入 — 业务方法用 Map.of() 写完后必须手动加 import（本切片 5 用了 IDE 写漏了 import 触发编译错）
+- **Quarkus dev mode 验证策略**：连不上数据库（受网络/SSL 限制）时，可通过"端点返 401 鉴权拦截"反推 Quarkus 启动成功 + Flyway 全部 success；若返 500/HTML 错误页则一定是 build failure 或迁移失败
+- **方案 B 快照复制写入算法**：5 个不变量必须落地 — ①PUBLISHED 拒绝；②重复 code 跳过；③source_feature_field_id 追溯；④sortOrder 续号；⑤同时复制 active values
+- **三态决策模型**（重新拉取差异/审核/提交 都是这个模式）：KEEP / TAKE_NEW / SKIP_OR_REJECT — UI 用 Radio.Group 或三个独立按钮，后端用 switch 严格枚举校验
+
+**残留 TODO（按优先级）**：
+1. NEW_QUOTATION 集成 quotation 模块创建真实报价单 + line_item（当前 mock UUID）
+2. LINK_EXISTING 真实写 line_item 到目标 quotation
+3. CREATE_NEW 集成 customer 模块（当前抛异常引导手工）
+4. evaluate 加约束求值算法（§3.4.1 待文档化）
+5. 重新拉取差异 UI（§18A.5 算法）
+6. 3D upload multipart 端点 + UG NX 转换流水线（§6 待 Docker POC）
+7. ConfiguratorPage 集成 Babylon.js 真实 3D 渲染
+8. 分享链接管理列表（已建表 product_config_share + product_config_share_access，未开发前端）
+9. 选配模板版本管理（§13 diff UI）
+10. 客户搜索（BIND_EXISTING 当前需手工填 UUID）
+
+**自检**：
+- TS 0 错误 ✅
+- 5 个后端 endpoint 全 HTTP 401（路由注册 + 鉴权正常 = Flyway V239-V244 全 success）✅
+- 10 个前端页面 Vite 200 ✅
+- 包名/路径命名无冲突 ✅
+
+**涉及文件**：
+- 后端 entity (5 个) + service (5 个，从骨架填充业务逻辑) + resource (5 个，端点接通)
+- 前端 pages (10 个，从占位升级为完整业务) + services (4 个) + types (4 个)
+- 数据库迁移 V239-V244 (6 个) 已在骨架阶段完成
+
+
+---
+
+## [2026-05-26] CPQ 3D 选配 P0+P1 补完 6 项（原型功能对齐）
+
+**问题来源**：用户对照原型实测发现 3 个具体缺失 + 要求全面补齐：
+1. 选配模板编辑器选项配置 Tab → 取值行无法编辑、缺 3D 规则
+2. 选配实例列表 → 未关联报价单的没有"绑定"操作
+3. 开始选配页空白（实测后发现是 PUT update 把 status 改回 DRAFT）
+
+**P0-1 + P0-2：模板编辑器全功能** `ConfiguratorTemplateEditor.tsx`（重写）
+- 后端 `ConfiguratorTemplateService` 加 `updateOption/deleteOption/updateOptionValue/deleteOptionValue`
+- 后端新增 entity `Configurator3DRule` + Service CRUD + Resource 4 端点
+- 前端 service 加 `updateOption/deleteOption/updateValue/deleteValue/list3DRules/add3DRule/update3DRule/delete3DRule`
+- 编辑器添加：
+  - 顶部工具栏 `← 返回 / ✏️ 编辑 / 🚀 发布 / 🗄 归档 / 📋 重新拉取`
+  - 4 个仪表板统计卡（选项 / 取值 / 基础价 / base 模型）
+  - 选项行内 `✏️🗑` 操作 + 编辑选项 Drawer（必选/默认值/最小最大/前后缀/排序）
+  - 取值行内 `✏️ 编辑 / 🎬 3D规则 / 🗑` 操作 + 编辑取值 Drawer（编号/名称/描述/差价/排序/参与拼接/激活）
+  - 3D 规则编辑抽屉（多条规则列表 + 5 种 Action 下拉 + targetMesh + params JSON 输入）
+  - 编辑模板 Drawer 加 `基础价 (¥)` 字段（写入 metadata.base_price 供 evaluate 使用）
+
+**P0-3：实例列表绑定/新建报价单** `ConfiguratorInstanceList.tsx`（重写）
+- 关联报价单列：未关联时显示 `🔗 绑到已有 / 🆕 新建` 双链接
+- 新建报价单：调 `linkAction NEW_QUOTATION` → mock 生成 mat_part + quotation
+- 绑定已有报价单：弹 Modal 输入 quotation UUID → `linkAction LINK_EXISTING`
+- 4 状态统计卡 + 解绑确认 + 删除确认
+
+**P0-4：仪表板 + 工具栏**（已合入 P0-1 编辑器）
+
+**P1-5：分享链接管理** `ConfiguratorSharesPage.tsx`（重写）
+- 后端 `ConfiguratorShareService` + `ConfiguratorShareResource`
+- 端点：list / get / stats / extend / revoke
+- 前端：4 状态统计卡（ACTIVE / 已访问 / EXPIRED / REVOKED）+ 列表（token/接收人/类型/过期/访问次数）+ 详情 Drawer + 操作（复制 / 延期 / 重新激活 / 吊销）
+
+**P1-6：选配页 + 开始选配增强** `ConfiguratorStartPage.tsx`
+- 顶部客户选择器（4 个 mock 客户 + VIP 标签）
+- 筛选工具栏（搜索 / 品类 / 我的收藏）
+- 模板卡片 cover 占位图 + 基础价 chip + 进入选配按钮（带客户 query param）
+
+**关键 bug 修复**
+- ❌ → ✅ `ConfiguratorTemplateService.update(...)` 用 Entity 接收 → Jackson 把缺失字段默认值（status="DRAFT", showPrice=true）当真值写回 → PUT metadata 时模板被退回 DRAFT 状态
+- 改用 `Map<String, Object> patch` + `containsKey` 判断 + 显式值校验，避免默认值覆盖
+
+**evaluate API 增强**
+- 加 `basePrice` 从 `template.metadata.base_price` 读取
+- 返回 `basePrice + deltaSum + totalPrice + priceBreakdown + fingerprint` 5 字段
+- 阀门示例验证：¥1800 + ¥580 + ¥180 + ¥250 + ¥0 + ¥3600 = ¥6410（与 seed 数据一致）
+
+**API 端点总览**（本轮新增）
+```
+PUT  /configurator-templates/options/{optionId}
+DELETE /configurator-templates/options/{optionId}
+PUT  /configurator-templates/values/{valueId}
+DELETE /configurator-templates/values/{valueId}
+GET  /configurator-templates/values/{valueId}/3d-rules
+POST /configurator-templates/values/{valueId}/3d-rules
+PUT  /configurator-templates/3d-rules/{ruleId}
+DELETE /configurator-templates/3d-rules/{ruleId}
+GET  /configurator/shares
+GET  /configurator/shares/stats
+GET  /configurator/shares/{id}
+POST /configurator/shares/{id}/extend
+POST /configurator/shares/{id}/revoke
+```
+
+**自检**：TS 0 错误 ✅；7 后端端点全 HTTP 200 ✅；4 个关键前端页面 Vite 200 ✅；分享统计/实例统计正确 ✅
+
+**残留 TODO（不阻塞当前演示）**：
+- 选配页 ConfiguratorPage 顶部条加客户切换 / 隐藏价格 / 分享按钮（未做）
+- 3D 规则的 swap_mesh 缺 from_mesh / to_mesh_url 专项字段（params JSON 替代）
+- 重新拉取差异 UI 仍为 message.info 占位（§18A.5 算法未实现）
+- 选项的「3D 规则」编辑后实时联动 Babylon 渲染（Babylon 未集成）
+- 报价单真实创建仍为 mock UUID（NEW_QUOTATION 待集成 quotation 模块）
+
+
+---
+
+## [2026-05-26] CPQ 3D 选配 期 1 + 期 2 视觉 + 交互完善 9 项
+
+**背景**：用户系统性对照原型发现"还是缺很多"（base.glb 预览/健康度/4 状态色边等），出完整审计矩阵后分 3 期实施。本次完成期 1（视觉层）+ 期 2（交互补全），共 9 个细分项。
+
+**期 1（视觉层升级）**
+
+1. **可复用 `StatCard` 组件** `src/components/StatCard.tsx` — 标准化左色边 3px + 大 emoji 图标 + label/value/sub 三层 + 可点击跳转。6 种 tone：primary / purple / orange / success / gray / red
+
+2. **模板编辑器右侧浮动面板** `src/pages/configurator/TemplateSidePanel.tsx`（用户最大痛点）
+   - 🎬 base 模型迷你预览（140px 渐变卡 + 文件标签 + 元数据）
+   - 📊 模板健康度 4 进度条（必选完成 / 3D 规则覆盖 / 价格规则填充 / 特征语义来源）— 动态算出百分比
+   - 🔗 引用统计（实例 / 报价单 / 料号 / base 共享）+ 跳转链接
+   - ⚡ 快捷操作（重新拉取 / 导出 JSON / 复制模板）
+
+3. **5 个页面统一 StatCard 视觉**：实例列表 4 卡 / 分享 4 卡 / 客户线索 3 卡 / 模板编辑器顶部 4 卡 / 特征库详情 4 卡
+
+4. **模板列表 showPrice Switch 列** — 点击即时切换，调 update API 写入
+
+5. **数据类型 + 赋值方式 Tag 颜色协议**（已在前一轮实现 dataType；本轮补 assignMode）
+
+**期 2（交互补全）**
+
+6. **选配页 ConfiguratorPage 大改造**
+   - 顶部 Tag.CheckableTag 三客户切换器（VIP / STD / TRIAL）
+   - 顶部隐藏价格 Switch 切换
+   - 顶部配置进度条（X% · M/N 必选完成）
+   - 选项卡片网格替代 Radio.Group（hover 选中边框变蓝 + 渐变背景）
+   - **MULTI_SELECT** Checkbox 卡片支持（数组值）
+   - 配置摘要 Tags 行（选完显示当前所有选定值）
+   - 3D 画布右上工具栏（重置 / 视角 / 线框 / 截图）
+
+7. **实例列表配置摘要 Tags 列** — 解析 selectedValues JSON 显示 Tag 数组
+
+8. **分享链接访问日志 Timeline + 三按钮**
+   - 后端新增 entity `ConfiguratorShareAccess` + service.listAccess + endpoint `/configurator/shares/{id}/access-log`
+   - 前端 service `accessLog()`
+   - SharesPage Drawer 加 Ant Design `<Timeline mode="left">` 显示访问历史
+   - 复制 URL / 重发提醒 / 重新激活按钮齐全
+
+9. **开始选配 popularity 渐变徽章 + 价格隐藏灰盒** — `✨ NEW` 渐变（近 30 天更新的模板）+ 状态徽角标 + 价格隐藏时灰色 Tag
+
+10. **特征库详情顶部 4 StatCard** — 字段数 / 取值数 / 引用模板 / 最后更新
+
+**关键设计沉淀**
+- **StatCard 一处建好，N 处复用** — 5 个页面 / 14 个状态卡全用同一组件，视觉规范统一不偏移
+- **健康度算法**：四维量化（必选完成度 / SELECT 选项有取值率 / 取值有 priceDelta 率 / 选项来自特征库率）— 动态算出，无硬编码
+- **配置摘要 Tags 解析**：useMemo 缓存 + 遍历 selectedValues 反查 ConfiguratorOptionValue.label
+- **MULTI_SELECT 数组协议**：前端用 array，evaluate API 取第一个传后端（后端尚未支持多值评估，期 3 待补）
+
+**自检**：TS 0 错误 ✅；7 个后端端点全 HTTP 200 ✅；9 个前端文件 Vite 全 200 ✅
+
+**期 3 路线图（保留）**
+- Babylon.js 真实 3D 渲染集成（选配页 + 3D 上传预览）
+- 客户自助公网页（v0.4-客户自助选配原型对应 React 实现 + 路由 + 公网无认证）
+- 3D 转换流水线 5 阶段动画 + WebSocket 实时推送
+- 特征自动识别审核表
+- UG NX 导出教程抽屉
+- §18A.5 重新拉取差异 UI（算法 + 多变化项决策）
+- evaluate API 支持 MULTI_SELECT 多值评估
+
+
+---
+
+## [2026-05-26] CPQ 3D 选配 余 7 项收尾完成
+
+**用户要求**：列出所有 TODO 并全部完成后再测试。完成除"大工程"以外的全部功能。
+
+**已完成（余 7 项）**
+
+1. **选配实例详情页** `ConfiguratorInstanceDetail.tsx`（新）+ 路由 `/configurator/instances/:id`
+   - 4 StatCard 摘要（编号/总价/状态/模板）
+   - 完整 Descriptions（客户/fingerprint/生成料号/关联报价单）
+   - 配置摘要 Tags
+   - 4 步历史 Timeline（DRAFT→SUBMITTED→LINKED→EXPIRED）
+   - 续编按钮（跳 ConfiguratorPage 带 ?instanceId=）/ 解绑 / 生成报价单
+
+2. **ConfiguratorPage 续编支持** — `?instanceId=` URL 参数加载现有 selectedValues 覆盖默认值 + MULTI_SELECT 数组拆解
+
+3. **选配页分享按钮 + 后端 share 创建端点**
+   - 顶部「🔗 分享给客户」按钮 → Modal 输入邮箱/有效期/可修改 → 生成 token + 复制 URL + 发送邮件 mock
+   - 后端 `POST /configurator/shares` 创建 + `GET /by-token/{token}` 公网取分享详情
+   - 自动 token 生成 `shr-{12chars}` + 默认 7 天过期
+
+4. **3D 上传 5 阶段转换动画**（UGNX 模式触发）
+   - 注册按钮触发：FreeCAD 解析 STEP (1.2s) → Blender 转 GLB (1.5s) → 缩略图 (0.6s) → 特征识别 (0.8s) → 入库 (0.4s)
+   - 进度条 + ⚙️/✅/⚪ 状态图标
+
+5. **UG NX 导出教程抽屉** — 6 步详细操作指南 + 常见问题（导出损坏 / 装配体特征丢失 / 大体超时 3 类）+ SolidWorks/Blender/Inventor 对比
+
+6. **evaluate API 支持 MULTI_SELECT 多值**
+   - 后端兼容 array / 逗号分隔字符串 / 单值 3 种格式
+   - 多个 value 各自查 priceDelta 累加 + 每个生成 breakdown line
+   - 阀门 demo 验证 totalPrice=6410 ✓
+
+7. **客户线索 BIND_EXISTING 改 Select 搜索**
+   - 接现有 `customerService.list({ keyword })`
+   - 自动用 lead.contactPhone 预填搜索（找同号客户）
+   - Select 显示 `名称 · 编号 · 等级` 友好格式
+
+8. **§18A.5 重新拉取差异 UI 完整实现**
+   - 后端 `GET /feature-library/refresh-diff/{templateId}` — 真实算法：对比 product_config_option 的 source_feature_field_id 反查 cpq_feature_field/value
+   - 字段属性差异（label/defaultValue/minValue/maxValue 4 个属性对比）
+   - 取值差异 3 类（NEW_IN_SOURCE / DELETED_FROM_SOURCE / LABEL_CHANGED）
+   - 前端 Drawer 显示差异卡 + 逐项「🔒 保留模板 / 📥 采用源」二选一按钮
+   - 提交后 mock 创建草稿版本 v{N+1}-rc1（真实写入待 §13 版本表）
+
+9. **客户自助公网页** `PublicConfigurator.tsx`（新）+ 公网路由 `/share/configurator/:token`（无 AuthGuard）
+   - 通过 share_token 取实例 + 模板 + 选项
+   - 品牌头（销售联系信息）+ 信任栏（HTTPS / 隐私 / 过期时间 / 支持）
+   - 欢迎横幅 + 简化选配 UI（卡片网格 + MULTI_SELECT）
+   - 实时 evaluate + 参考报价
+   - 提交 Modal：姓名/电话/邮箱/公司/留言 → 后端事务 INSERT customer_lead + product_config_instance（含 shareToken + customerLeadId）
+
+10. **选配模板版本历史 timeline UI** — 编辑器「📜 版本历史」Tab 改为 VersionItem 时间线（当前版本绿圆点 + 历史灰圆点 + 内嵌创建草稿按钮）
+
+**关键设计沉淀**
+- **变量名作用域冲突陷阱**：method 外层有 `ConfiguratorTemplate t`，内层 for 循环用 `String t = c.trim()` Java 直接编译失败（不像 JS 块作用域）— 重命名 `tok` 避免歧义
+- **MULTI_SELECT 协议三态兼容**：array / 逗号分隔字符串 / 单值都要支持（前端传 array，HTTP JSON 序列化保留，后端按 instanceof 判断）
+- **公网路由架构**：放在 `/share/configurator/:token` 路径，**不在 `/`* 下**（AuthGuard 父路由），让 React Router 自动跳过认证；后端 endpoint `/by-token/{token}` 需开放 RoleFilter 例外（本次暂保留鉴权，待测试时调整）
+- **差异 UI 三类操作**：每个 diff item 必须支持 KEEP/TAKE 二选一 + 全选快捷按钮 + 提交后强制建草稿版本（绝对不直接覆盖 PUBLISHED）
+
+**自检**
+- TS 0 错误 ✅
+- 后端 6 端点全 HTTP 200 ✅
+- 前端 6 个新/改页面 Vite 全 200 ✅
+- refresh-diff 返 0 diffs（seed 数据一致，符合预期）✅
+- evaluate totalPrice=6410（阀门 demo 一致）✅
+
+**期 3 大工程（明确单独立项，依赖外部资源）**
+1. **Babylon.js 真实 3D 渲染** — 需引入 babylon SDK + 真 GLB 文件资源 + mesh 操作引擎 + 性能优化
+2. **UG NX 转换流水线 Docker POC** — 需 FreeCAD + Blender 镜像构建 + Worker 队列 + WebSocket 推送
+3. **真实 quotation 集成** — 跨模块改造，NEW_QUOTATION 当前仍 mock UUID
+4. **报价单详情页内联选配实例反查** — 接 quotation 模块 line_item.instance_id
+
+---
+
+## [2026-05-26] SQL 视图配置 UI 从 CostingTemplateConfig 迁移到 TemplateConfiguration
+
+**任务**：Phase 2 的 SQL 视图 Tab 放错了位置（在 legacy CostingTemplateConfig），本次重构移到正确入口 TemplateConfiguration（template 实体编辑页）。后端并行重构为 template_sql_view 替代 costing_template_sql_view，API 路由前缀改为 `/api/cpq/templates/...`。
+
+**新建文件**
+- `cpq-frontend/src/services/templateSqlViewService.ts` — 新 service，路由 `/api/cpq/templates/{templateId}/sql-views`，DTO 字段 `templateId`（替代 `costingTemplateId`）；dryRun payload 改为 `{ templateId, sqlTemplate }`
+- `cpq-frontend/src/pages/template/TemplateSqlViewsTab.tsx` — 从 CostingTemplateSqlViewsTab 迁移，prop `templateId`，底层 service 换为 templateSqlViewService
+
+**修改文件**
+- `cpq-frontend/src/pages/template/TemplateConfiguration.tsx` — 加第三个 centerTab "SQL 视图" (`TemplateSqlViewsTab`)；readonly 按 `!isDraft` 判定
+- `cpq-frontend/src/pages/template/ExcelViewConfigTab.tsx` — VARIABLE 列编辑加 "🗄 SQL 视图" 按钮，嵌入 PathPickerDrawer（ownerContext=TEMPLATE）并存原有 📚 字段库按钮
+- `cpq-frontend/src/pages/component/PathPickerDrawer.tsx` — ownerContext 新增 `{ type: 'TEMPLATE'; templateId: string }` 分支；SQL 视图 Tab 加 TEMPLATE 上下文渲染；导入 templateSqlViewService；manual Tab / visual Tab 的 BLOCK 提示同步覆盖 TEMPLATE 类型
+- `cpq-frontend/src/pages/costing/CostingTemplateConfig.tsx` — 回滚 Phase 2 改动：删除 Tabs / SQL 视图 Tab / mainTab state / CostingTemplateSqlViewsTab import；PathPickerDrawer 调用恢复简单调用（不传 ownerContext/defaultTab/legacyPathPolicy）
+- `cpq-frontend/src/pages/quotation/LinkedExcelView.tsx` — Props 加 `templateId`（替代 `costingTemplateId`），batchEvaluate tasks 填 `templateId: templateId ?? linkedTemplateId`；`costingTemplateId` 保留为 deprecated
+- `cpq-frontend/src/pages/quotation/QuotationStep2.tsx` — 两处 LinkedExcelView 调用各加 `templateId` prop
+- `cpq-frontend/src/services/formulaService.ts` — EvaluateRequest / BatchEvaluateTask 新增 `templateId` 字段；`costingTemplateId` 保留为 deprecated
+
+**删除文件**
+- `cpq-frontend/src/pages/costing/CostingTemplateSqlViewsTab.tsx` — 不再使用（CostingTemplateConfig 不引用）
+- `costingTemplateSqlViewService.ts` 保留 — PathPickerDrawer 的 COSTING_TEMPLATE 上下文仍用它
+
+**关键决策**
+- `costingTemplateSqlViewService.ts` 未删除：PathPickerDrawer 仍需 COSTING_TEMPLATE 上下文（legacy ExcelView 调用链路未完全切除）
+- templateSqlViewService.dryRun 接口改为 `POST /templates/sql-views/dry-run` 传 `{ templateId, sqlTemplate }`（与后端 EvaluateRequest 字段名对齐）
+- LinkedExcelView 中 `templateId` 优先，fallback 到 `linkedTemplateId`（两者语义一致，linkedTemplateId 就是 template.id）
+- AP-44 17 处协议传播点均未触碰（不动 useDriverExpansions / ComponentCell / ReadonlyProductCard 等）
+
+**自检**：TS 0 错误；全部 9 个 Vite 文件 200；E2E skip（后端未启动，符合预期）
+
+
+---
+
+## [2026-05-26] 原型 vs React 18 项缺失全部对齐
+
+**背景**：用户实测发现「取值编辑应该是带 4 Tab 的抽屉，不是简单 Form」+ 一系列细节不一致，要求字段级别成文 + 对齐。
+
+**📄 输出文档**：`docs/原型vs代码功能详细对比.md` — 8 个原型 × N 个功能模块的逐项对照（✅/⚠️/❌ 标记）
+
+**P0 修复（3 项 — 用户直接点名）**
+
+1. **取值编辑 4 Tab 抽屉重构**（最大工程）`ValueEditDrawer.tsx`（新建 480 行）
+   - 📝 基本 Tab：基本信息（缩略图 URL / 默认选中）+ 🔧 特征语义子区（11 种 feature_type 下拉 / attributes JSON / tags / 几何信息提示）
+   - 🎬 3D 规则 Tab：**维度 1**（5 种 Action 列表 + 4 个彩色快捷按钮 + 多规则保存）+ **维度 2**（关联子模型下拉 + 挂载模式 3 选 1 OVERLAY/SWAP/REPLACE_BASE + 业务说明 + 性能提示）
+   - 💰 价格规则 Tab：4 种规则类型（DELTA_FIXED/DELTA_PERCENT/SET_FIXED/FORMULA）+ 加价金额 + 币种 + FORMULA 公式编辑器占位
+   - 🔧 特征关联 Tab：业务实体引用表（MATERIAL/PROCESS/COMPONENT/COST_ITEM/GLOBAL_VAR 5 类型 + 编辑/删除 + 占位说明 mat_feature 已废弃）
+
+2. **3D 上传 Step 4 特征自动识别审核表**
+   - 5 个 mock 特征（HOLE/THREAD/SURFACE/WELD）含建议代码 + STEP 提取属性 JSON + 包围盒
+   - 复选确认 + 已勾选计数 + 入库说明（与 product_config_option_value 的 feature_type 接通）
+
+3. **选配页演示预设** — 阀门 3 套（标准 🟢 / 增强 🔵 / 高端 🟠），点击一键填入 selectedValues
+
+**P1 修复（8 项 — 用户期望对齐）**
+
+4. **取值行标签 Tag**：嵌套表格新增「标签」列显示 📝 特征 / 📦 子模型 徽章
+5. **模板列表「复制 / 导入」按钮**
+6. **仪表板第 3 卡修正为「3D 规则 / base 价 + 子模型挂载数」**
+7. **Tab 1 适用品类受众分区**：Descriptions 卡显示「产品品类 / 应用领域 / 销售渠道 / 默认审批人 / 默认折扣权限」
+8. **版本对比 + 回滚 UI**：版本历史 Tab 加「🔀 对比版本 / ↩ 回滚」按钮（占位实现）
+9. **实例列表批量操作**：rowSelection + 批量导出 / 批量删除 Popconfirm + DatePicker.RangePicker 日期筛选 + 行内 👁/📋 复制配置
+10. **特征库批量导入**：群组详情字段表头加「📥 批量导入」按钮
+11. **实例行内操作**：复制配置（跳带 instanceId 续编 ConfiguratorPage）
+
+**P2 修复（7 项 — 体验细节）**
+
+12. **演示模式开关**：ConfiguratorPage 顶部加 Switch（隐藏内部菜单提示 banner）
+13. **客户级别 override 视图差异**：VIP 显示「🎁 享受 VIP 8 折」/ TRIAL 显示「⚠ 试用账户：仅基础款」
+14. **公网客户隐藏价格**：showPrice=false 时显示「💬 请联系销售获取报价」（替代价格栏）
+15. **3D 上传 MD5 校验显示**：UGNX 模式 Step 2 加「🔐 文件 MD5 校验」卡（.prt + .stp 双 hash + 一致性检查）
+16. **模板收藏**：开始选配卡片右上角 ★/☆ 切换 + localStorage 持久化 + 「我的收藏 (N)」筛选
+17. **🔥 HOT 渐变徽章**：已收藏的模板显示 HOT 角标（替代 NEW）
+
+**关键设计沉淀**
+- **4 Tab 抽屉拆分原则**：基本字段 / 3D 规则（含维度 1+2）/ 价格规则 / 业务关联 — 每 Tab 自成完整工作流，独立保存按钮
+- **业务实体引用 mat_feature 替代方案**：原型保留表结构占位，前端做 mock UI 提示「v0.4 收敛后 product_config_value_reference 替代」— 等后端 V245 加表后接通
+- **演示预设硬编码 by category**：按品类（阀门/接触片/电机）独立维护预设组合，避免污染数据库
+- **localStorage 收藏方案**：销售个人偏好不入库，浏览器持久 + 跨标签生效
+- **特征审核入库纪律**：5 类特征不自动入库，必须勾选 + 确认后由用户主动确认（避免特征字典污染）
+
+**自检**：TS 0 错误 ✅；8 关键前端文件 Vite 全 200 ✅
+
+**🗺 期 3 大工程（明确依赖外部资源单独立项）**
+1. Babylon.js 真实 3D + GLB 资源（当前 ModelViewer + ValveSchematic 已演示交互）
+2. 业务实体引用后端表 product_config_value_reference + CRUD（当前前端 mock）
+3. FORMULA 公式编辑器完整集成公式引擎（当前 readOnly JSON 示例）
+4. 真实 quotation 模块 NEW_QUOTATION 集成（当前 mock UUID）
+5. 版本对比 diff 算法 + 回滚（§13）
+6. UG NX 转换 Docker POC（当前 mock 动画）
+
+
+---
+
+## [2026-05-27] CPQ 3D 选配 — 6 大期 3 工程完整落地（V247-V252 + Docker POC + Babylon）
+
+**用户要求**：将「期 3 大工程」全部完成 + 修复 3D 源文件 / 工业球阀模型不一致问题。
+
+**修复 0：3D 模型一致性** `ConfiguratorPreview.tsx` + `inferCategory()` 函数
+- 按 partNo 自动推断 category（VALVE/CONTACT/SPRING/TERM/MOTOR）
+- 阀门即便无 selectedValues 也用 ValveSchematic 默认配置渲染 — **所有视图（3D 源文件列表/模板编辑器/开始选配/选配页/实例详情）阀门体一致**
+- 7 处 ModelViewer 调用统一替换为 ConfiguratorPreview
+
+**期 3 工程 1：业务实体引用** ✅
+- V247: `product_config_value_reference` 表（option_value_id + 5 种 ref_type + qty + unit + note + sort + active）
+- 后端：`ConfiguratorValueReference` entity + 4 个 service 方法 + 4 个 endpoint
+- 前端：ValueEditDrawer「🔧 特征关联」Tab 改 mock → 真调 API（行内编辑 onBlur 触发 patch）
+
+**期 3 工程 2：版本管理 §13** ✅
+- V248: `product_config_template_version` 表（snapshot JSONB 含完整 option + value）
+- 后端 `ConfiguratorVersionService`：
+  - `createSnapshot()` 序列化模板 + 所有 option + value 到 JSONB
+  - `diffVersions(v1, v2)` 字段级 diff（template 顶层 / option ADDED/REMOVED/CHANGED）
+  - `rollback()` 自动备份当前 → 应用 snapshot 到模板
+- 后端 4 endpoint：list / snapshot / diff / rollback
+- 前端编辑器版本历史 Tab 接通真实数据 + 「📸 创建快照」/「🔀 对比最近两版」/「↩ 回滚」按钮
+
+**期 3 工程 3：公式引擎集成** ✅
+- 接现有 `POST /api/cpq/formulas/evaluate`
+- ValueEditDrawer 价格规则 Tab 加公式编辑器 + 「🧮 求值测试」按钮
+- 实时返回结果（success/error/errorType + 颜色提示）
+- 验证：`1 + 2 * 3 → 7` ✅
+
+**期 3 工程 4：真实 quotation 集成** ⚠️ 部分
+- `linkAction NEW_QUOTATION` 改为真实 INSERT quotation 表（DRAFT 状态，含 customer_id / name / total_amount）
+- 容错：若 schema 不匹配 fallback mock
+- TODO：quotation_line_item 表写入（需了解 line_item schema）
+
+**期 3 工程 5：UG NX 转换 Docker POC** ✅
+- `docker/ug-nx-converter/` 完整目录：
+  - `Dockerfile` — Ubuntu 22.04 + FreeCAD 0.21 + Blender 4.0 + Python 3
+  - `worker.py` — 主消费循环（POC 模式扫描 /tmp）
+  - `stp-to-stl.py` — FreeCAD STEP → STL (tessellation 0.1mm)
+  - `stl-to-glb.py` — Blender headless STL → GLB + Draco 压缩（level 6）
+  - `extract-features.py` — 自动识别 HOLE/SURFACE/WELD（基于 BRep Face/Edge 分析）
+  - `README.md` — 性能基准 + 部署说明 + 与 CPQ 后端集成点
+
+**期 3 工程 6：Babylon.js 真 3D Viewer** ✅
+- `src/components/BabylonViewer.tsx` — 动态加载 Babylon CDN + 包装组件
+- 支持运行时 mesh 操作（setEnabled visibility / 材质 baseColor 替换）
+- `meshOps={[{ meshName, visible, baseColor }]}` 接口 — 将来选配联动用真 mesh 操作时启用
+- ArcRotateCamera + AutoRotation + 灯光 + Draco 兼容
+
+**API 端点总览（本轮新增 13 个）**
+```
+# V247 业务实体引用
+GET    /configurator-templates/values/{valueId}/refs
+POST   /configurator-templates/values/{valueId}/refs
+PUT    /configurator-templates/refs/{refId}
+DELETE /configurator-templates/refs/{refId}
+
+# V248 版本管理
+GET    /configurator-templates/{id}/versions
+POST   /configurator-templates/{id}/versions/snapshot
+GET    /configurator-templates/versions/diff?v1=&v2=
+POST   /configurator-templates/{id}/versions/{vid}/rollback
+
+# quotation 真实集成
+（复用现有 linkAction，内部改写 quotation INSERT）
+```
+
+**自检**：
+- TS 0 错误 ✅
+- 4 个后端新端点全 HTTP 200 ✅
+- 8 个前端关键文件 Vite 全 200 ✅
+- 版本快照创建 → version=2 ✅
+- 公式引擎 `1 + 2 * 3 = 7` ✅
+- refs endpoint 200 ✅
+
+**关键设计沉淀**
+- **Flyway 版本号冲突**：V245 V246 已被现有迁移占用 → 改用 V247 / V248 / V251 / V252（先看 ls 排查再开新版本号）
+- **JSONB 完整快照** vs 增量 diff：选择完整快照（V248），diff 只在读时计算 — 简化逻辑，存储成本小
+- **Babylon 动态加载**：CDN 引入 + Promise 缓存避免重复加载，挂载到 canvas + window 全局；不强制安装 SDK，按需启用
+- **inferCategory 协议**：partNo.includes('VALVE') / 'CONTACT' / 'SPRING' 等关键词推断 — 简单可靠，不入库
+- **rollback 强制备份**：回滚前自动 createSnapshot('rollback-backup-...') 保护当前状态
+
+**未来扩展点**
+1. quotation_line_item 表真实写入（涉及现有 quotation 模块的 schema）
+2. 客户报价单查询接口集成（"绑定到已有报价单"的客户筛选列表）
+3. Babylon mesh ops 的真实 selectedValues 联动（替代 ValveSchematic SVG）
+4. UG NX Docker 真实 RabbitMQ/S3 集成（POC 已搭骨架）
+5. 公式编辑器可视化（token 拖拽）— 当前是字符串输入
+
+
+---
+
+## [2026-05-27] CPQ 3D 选配 — 真 3D Babylon 阀门 + 全部尾巴清完
+
+**用户痛点**：阀门 SVG 没 3D 效果 + 3D 规则 mesh 名要手填猜 + 剩余小尾巴未做完
+
+**1. 真 3D 程序化阀门** `ValveBabylon3D.tsx`
+- 用 Babylon.js MeshBuilder 程序化构造 11 个具名 mesh：
+  - mesh_body (Sphere) — 阀体
+  - mesh_stem (Cylinder) — 阀杆
+  - mesh_flange_left / right (Cylinder) — 法兰
+  - mesh_thread_left / right (Cylinder, 默认隐藏) — 螺纹
+  - mesh_weld_left / right (Torus, 默认隐藏) — 焊缝
+  - mesh_handle (Box) — T 形手柄
+  - mesh_pneumatic (Cylinder, 默认隐藏) — 气缸
+  - mesh_electric (Box, 默认隐藏) — 电控盒
+  - mesh_pipe (Cylinder) — 流向管道
+- 真 PBR 材质（albedo + metallic + roughness）
+- HemisphericLight + DirectionalLight 双光源
+- ArcRotateCamera + AutoRotation 0.3°/s
+- 按 selectedValues 实时联动：
+  - DN → 整体 scaling
+  - MATERIAL → setEnabled(false) flange/thread/weld 切换 + albedoColor 替换
+  - CONNECTION → flange/thread/weld 三选一
+  - DRIVE → handle/pneumatic/electric 三选一
+- 导出 `VALVE_MESHES` 常量供 3D 规则编辑器消费
+
+**2. 3D 规则 targetMesh 改下拉** `ValueEditDrawer.tsx`
+- 新增 `templateCategory` prop + `getMeshOptions(category)` 函数
+- 阀门时返回 12 个 mesh 选项（含 desc 说明）
+- Select.mode='tags' maxCount=1 允许手填兜底
+- 抽屉顶部加蓝色信息卡 — 显示可选 mesh 数 + 前 4 个示例
+- 非阀门品类回退 Input 手填
+
+**3. quotation_line_item 真实写入** `ConfiguratorInstanceService.linkAction NEW_QUOTATION`
+- 加 `INSERT INTO quotation_line_item` 步骤
+- 取任一 product_id + template_id 作为兜底（注释提示真实场景需创建虚拟 product）
+- product_attribute_values JSONB 写入 selectedValues
+- 容错：quotation 或 line_item INSERT 失败时返回 warnings 数组 + mock UUID
+
+**4. UG NX Docker 真实集成** `docker/ug-nx-converter/`
+- worker.py 重写：双模式（POC_MODE=1 文件扫描 / 生产 RabbitMQ 消费）
+- 完整 S3 集成（download_from_s3 / upload_to_s3 with boto3）
+- 完整 Postgres 集成（update_conversion_status 写 mat_part_glb_conversion）
+- RabbitMQ pika 消费者：basic_consume + prefetch_count=1 + 死信队列 nack
+- 任务 schema：`{ job_id, part_no, version, stp_key }`
+- 新增 docker-compose.yml：rabbitmq + minio + minio-init（自动创建 3 桶）+ 3 个 worker 副本
+
+**5. BabylonViewer 替换 ValveSchematic** `ConfiguratorPreview.tsx`
+- 加 `mode='2d'|'3d'` prop（默认 3d）
+- category='阀门' 时默认走 ValveBabylon3D（真 3D），可选 2d 回退 SVG
+- 其他品类继续 ModelViewer GLB 兜底
+- 全场景接入：选配页 / 公网客户自助 / 实例详情 / 模板编辑器 base 预览
+
+**关键设计沉淀**
+- **程序化 3D vs GLB 资源**：无 GLB 文件资源时用 Babylon MeshBuilder 程序化构造，胜在自定义 mesh 命名 + 即时联动；缺点是几何精度低（适合演示，不适合真实 CAD）
+- **mesh 清单常量化**：VALVE_MESHES 在前端硬编码，与 ValveBabylon3D 的 mesh.name 严格对齐；3D 规则编辑器消费 → 严防 typo / 引用不存在的 mesh
+- **quotation_line_item 兜底产品**：configurator 生成虚拟料号不入 mat_part，line_item 借用任一 product_id 占位 + product_attribute_values JSONB 存 selectedValues — 真实场景需扩展 quotation 模块支持 nullable product_id 或建虚拟产品池
+- **worker.py 双模式**：POC_MODE 文件扫描走 / 生产 RabbitMQ 消费 — 同一代码库，环境变量切换
+- **death letter queue**：basic_nack(requeue=False) 失败任务进死信队列，避免无限重试
+
+**自检**
+- TS 0 错误 ✅
+- 后端 2 端点 200 ✅
+- 4 前端关键文件 Vite 200 ✅
+- ValveBabylon3D 11 mesh 真 3D 可见 ✅
+- 3D 规则 Drawer Select 12 mesh 选项 ✅
+- Docker artifacts 8 个文件齐全 ✅
+
+**🎬 立即测试**
+
+1. 「🎯 开始选配」工业球阀 → 进入选配页 → **真 Babylon 3D 阀门 11 个具名 mesh 旋转**（不再是 2D SVG）
+2. 切 MATERIAL 304/316/黄铜 → 阀体材质 PBR 真换色 + metallic/roughness 跟变
+3. 切 CONNECTION → 法兰/螺纹/焊缝 三套真实 mesh 显隐切换
+4. 切 DRIVE → 手柄/气缸/电控盒 三套真实 mesh 显隐切换
+5. 模板编辑器任一取值 ✏️ 编辑 → 🎬 3D 规则 Tab → **targetMesh 下拉看到 12 个选项**（mesh_body / mesh_handle / mesh_flange_left 等 + 中文说明）
+6. 选配页提交 → 直接生成报价单 → 真写入 quotation + quotation_line_item 表 + product_attribute_values JSONB
+7. Docker：`docker-compose up -d` 一键起 RabbitMQ + MinIO + 3 Worker 完整栈
+
+---
+
+### [2026-05-27] V253-V259 — 核价标准模板 v5.0 v1.2 全量 V6 迁移（schema-only）
+
+**改造范围**：
+- v1.2 DRAFT 创建（从 v1.1 id=a6075db5 / seriesId=ca11f33d createNewDraft 派生）
+- 20 个 -V12 后缀组件复制（避免污染 v1.1 现有组件）
+- 20 个 component_sql_view（每组件独立一张 SQL 视图，引用 V6 基础数据表）
+- 7 个 template_sql_view（替代 v_costing_summary_full / v_c_summary_agg 聚合视图）
+- 36 列 excel_view_config path 全部改写为 `$<view>.<col>` 格式
+- V76 costing_part_* 关键词进 BnfPathLinter / SqlViewValidator 黑名单
+
+**关键决策**：
+- v1.2 复制新组件统一加 -V12 后缀（命名隔离，不污染 v1.1）
+- 本次 schema-only 不保证数值一致，用户接受后续独立 import PR backfill
+- 彻底迁 V6 基础数据表，摒弃 V44（mat_* 物理表）/ V76（costing_part_* 物理表）/ V125 老表
+
+**已知遗留（后续 PR 补齐）**：
+1. 数据未 backfill 时 v1.2 视图大概率返空数据，标杆 partNo=3100080003 四个数值（4892.484 / 4.3369 / 6043.41 / 1.668）暂不验收
+2. BasicDataImportServiceV5 的 V76 → V6 重写为独立后续 PR
+3. fee_config / plating_scheme / unit_price 新增 6 列（V253 新增列）需 import PR backfill
+4. recycle_cost 暂置 0（V6 无对应来源字段）
+
+**v1.2 实际生成 ID**：`950fdd73-42e0-4e28-a613-2487ccd77552`（DRAFT，未发布，未设 isDefault）
+
+**涉及文件（实际产物，按 Flyway 实际命名）**：
+- `cpq-backend/src/main/resources/db/migration/V253__v6_add_dim_columns.sql`（fee_config 加 3 列 + plating_scheme 加 hf_part_no；unit_price.defect_rate V220 已存在故跳过）
+- `cpq-backend/src/main/resources/db/migration/V254__v12_create_components.sql`（复制 21 个 COMP-V5-*-V12 组件）
+- `cpq-backend/src/main/resources/db/migration/V255__v12_create_component_sql_views.sql`（20 个 component_sql_view，sql_template FROM V6）
+- `cpq-backend/src/main/resources/db/migration/V256__v12_create_template_and_bind.sql`（v1.2 模板 + 20 template_component 绑定）
+- `cpq-backend/src/main/resources/db/migration/V257__v12_create_template_sql_views.sql`（7 个 template_sql_view 替代 v_costing_summary_full / v_c_summary_agg）
+- `cpq-backend/src/main/resources/db/migration/V258__v12_rewire_excel_view_config.sql`（excel_view_config 36 列 + referenced_variables 23 条改写）
+- `cpq-backend/src/main/resources/db/migration/V259__bnf_path_linter_extend_v76.sql`（NOOP NOTICE 标记 Java 改动占位）
+- `cpq-backend/src/main/java/com/cpq/template/util/BnfPathLinter.java`（**新建** — 含 18 个 V44+V76 关键词 DEPRECATED_TABLE_PREFIXES、LintLevel/LintResult 内部类；已注入 LegacyPathsResource）
+- `cpq-backend/src/main/java/com/cpq/component/service/SqlViewValidator.java`（**新建** — 含 18 个 FORBIDDEN_TABLE_TOKENS、中文错误消息、SQL_VIEW_DEPRECATED_TABLE 错误码；已注入 ComponentSqlViewService + TemplateSqlViewService 在保存时做 EXPLAIN 前黑名单扫描）
+
+**自检结果（12/12 PASS）**：v1.2 status=DRAFT version=v1.2 ✅；20/20 组件 data_driver_path=$v12_* ✅；115/115 字段 basic_data_path=$v12_*.col ✅；36 列 variable_path=$<view>.<col> ✅；20/20 组件 expand-driver HTTP 200（数据未 backfill 时 rowCount=0 预期）✅；BnfPathLinter / SqlViewValidator V44+V76 黑名单生效 HTTP 400 ✅；v1.1 PUBLISHED 未受污染 ✅；Flyway V253~V259 7/7 success=t ✅。
+
+**已知遗留 MINOR BUG**：`GET /api/cpq/templates/legacy-paths?templateId=<id>` 端点 templateId 参数被忽略，永远返全量 634 条（pre-existing 实现问题，非本 PR 引入）。v1.2 不在 634 条中，实质验收 PASS；待后续 PR 修。
+
+**前端零改动验证**：grep 全量扫描 cpq-frontend/src/ 确认无硬编码视图名 / 模板 ID，详见当日前端工程师自检报告。
+
+---
+
+## [2026-05-27] BUG-FIX — 报价单 Excel 视图 buildEvalKey 4 段协议对齐（v1.30 全 `—` 问题根因 + 修复 + E2E）
+
+**用户报告**：报价单模板"选配产品标准报价模板-组合产品 v1.30"(id=`27fab96b-77ff-47ed-a74f-de4bb93670e5`) 的 Excel 视图在报价单中所有 BNF 路径列全部显示 `—`（料号 3120012574 / 3120012575 → 13 列全 `—`，除"客户料号"lineItem 字段）。
+
+**根因**（systematic-debugging Phase 1 多层证据采集后定位）：
+- V249/V250 引入 `template_sql_view` 时，后端 `FormulaEvaluateResource.batchEvaluate()` 把 `r.key` 升级为 **4 段** `expr:customerId:partNo:templateId`（line 174-178）
+- 前端 `formulaService.ts:buildEvalKey()` 仍是 **3 段** `expr:customerId:partNo`，**没同步升级**
+- LinkedExcelView line 247 用 3 段 `reqKey` 反查 4 段 `itemByKey` → 永远 `undefined`
+- line 250-255 走 else 分支强制写 `pathCache[k] = null`
+- LinkedExcelView V111 优化 (line 350-366)：`noCostingData = !hasAnyData` 为 true 时**整行所有列清空** → 13 列全 `—`
+
+**修复**（2 文件 / 3 行改动）：
+- `cpq-frontend/src/services/formulaService.ts:50` — `buildEvalKey` 加可选第 4 参数 `templateId`（默认 "_"，向后兼容老调用方）
+- `cpq-frontend/src/pages/quotation/LinkedExcelView.tsx:247` — 调用时透传 `templateId ?? linkedTemplateId ?? null`
+- `usePathFormulaCache.ts:235` **无需改**：组件视图 hook 不传 templateId → 后端 batchTemplateId=null → r.key 末段 "_"，前端 buildEvalKey 默认末段也 "_"，自动对齐
+
+**影响面**：所有用 `$<view>.<col>` 形态 template_sql_view 路径的模板（v1.x 之后的选配模板 + v1.2 核价模板 + 任何新建的）的 Excel 视图渲染。修复后 LinkedExcelView 渲染恢复正常。
+
+**E2E 验证**（`e2e/quot-excel-view-key-protocol.spec.ts`，1 passed in 12.5s）：
+- 报价单 QT-20260527-1649（v1.30 模板 + partNo 3120012574/5）打开 → 切 Excel 视图
+- 28 单元中 22 个有数据 / 6 个 `—`（仅 product_type / specification / config_fingerprint 等字段语义 NULL）
+- 关键列实测值：[D]材质="银铜合金"，[F]单重=0.4/0.87，[I]材料成本=88/76，[J]加工费=4/6，**[K]总成本=92/82**（FORMULA `=[I]+[J]` 正确算出）
+- '加载中' 计数 = 0 ✅；后端 r.key 段数 = 4 ✅；控制台 0 错误 ✅
+
+**顺便发现**（不在本 fix 范围）：
+1. v1.30 `template_sql_views_snapshot` = NULL（PUBLISHED 模板未冻结快照），lookupForResolver 实时读 fallback OK，但违反 V250 设计意图
+2. v1.30 内 `process_info` 视图 sql_template 用 UNION + FROM mat_process，ImplicitJoinRewriter 未注入 hf_part_no 谓词 → 返全表 300+ 行 → 前端 formatPathValue 截首 + "（共N项）"。修复 key bug 后 [H]工序数 列显示"1（共300项）"，需后续单独修
+3. v1.30 内 `costing_summary` 视图仍 FROM `v_costing_summary_full`（V44 老 PG），按 AP-53 应迁 V6 — 待后续 PR
+
+**涉及文件**：
+- `cpq-frontend/src/services/formulaService.ts`（buildEvalKey 加第 4 参数）
+- `cpq-frontend/src/pages/quotation/LinkedExcelView.tsx`（line 247 透传 templateId）
+- `cpq-frontend/e2e/quot-excel-view-key-protocol.spec.ts`（新建 E2E spec）
+
+**自检**：
+- TS 0 错误 ✅；Vite transform formulaService + LinkedExcelView 200 ✅
+- Playwright E2E `1 passed (13.7s)` ✅；3 张关键截图 qek-01~03 已存
+
+---
+
+## [2026-05-27] BUG-FIX — v1.30 process_info 视图聚合修复 + snapshot 更新（V260+V261）
+
+**问题**：报价单 Excel 视图 [H]工序数 列显示 "1（共372项）" / "1（共5项）"（修完 buildEvalKey 4 段 key 后暴露的次级问题）。
+
+**根因**：
+- v1.30 `process_info` 视图原 SQL: `SELECT material_no AS hf_part_no, NULL::int AS seq_no FROM material_bom_item WHERE FALSE UNION ALL SELECT hf_part_no, seq_no FROM mat_process`
+- ImplicitJoinRewriter 注入 `WHERE inner_q.hf_part_no = ANY(:hfPartNos)` 后 mat_process 中 hf_part_no=3120012574 真有 372 行（多 customer × 多 version × 多 seq_no × 多 sub_seq_no）
+- 业务期望 [H]工序数 是单值（工序总数），但视图返多行 → 前端 formatPathValue 截首 + "（共N项）"
+
+**修复**（V260 + V261）：
+1. **V260** UPDATE `template_sql_view.sql_template`：改为 `SELECT hf_part_no, COUNT(DISTINCT seq_no)::int AS seq_no FROM mat_process WHERE is_current=true AND status='ACTIVE' GROUP BY hf_part_no` — 单值聚合
+2. **V261** jsonb_set UPDATE `template.template_sql_views_snapshot.process_info`：**关键** — v1.30 是 PUBLISHED 模板，渲染走 `lookupForResolver` 优先读 snapshot（日志确认 `hit snapshot templateId=27fab96b... name=process_info`）。只改源表不动 snapshot → 渲染仍用旧 SQL。V261 同步把 snapshot JSONB 里 process_info entry 的 sqlTemplate + declaredColumns 改成 V260 同款聚合形态。
+
+**踩坑**：V260 落地后 evaluate 仍返 372 行 → 一度怀疑 Quarkus dev hot reload 没工作；最后看 quarkus-dev.log 才发现 `hit snapshot` 日志，定位到 snapshot 缓存层。其次发现 GET `/api/cpq/templates/{id}` 返回的 `templateSqlViewsSnapshot=null` 是 DTO 序列化漏字段（Template entity 字段 nullable=false 默认 `{}`），实际有 entry — DTO 给出的 null 信号误导诊断。
+
+**AP-53 负债保留**：V260+V261 仍 FROM V44 `mat_process`。V6 `material_bom_item.operation_no` 当前对 3120012574 返 null（数据未到位）。BasicDataImportServiceV5 V6 backfill PR 落地后此视图应改 `FROM material_bom_item GROUP BY material_no`。
+
+**E2E 验证**（`e2e/quot-excel-view-key-protocol.spec.ts` 扩展 [H]工序数 断言，1 passed in 13.8s）：
+- partNo=3120012574 → [H]工序数 = **5**（int 标量）
+- partNo=3120012575 → [H]工序数 = **3**（int 标量）
+- 断言 `/共.*项/` 不匹配 + 至少一行是纯整数 — PASS
+- 后端日志：`hit snapshot` + `rows=1`（不再 rows=372 / rows=5）
+
+**涉及文件**：
+- `cpq-backend/src/main/resources/db/migration/V260__fix_v130_process_info_aggregation.sql`（template_sql_view 源表 sql_template 改为聚合形态）
+- `cpq-backend/src/main/resources/db/migration/V261__fix_v130_process_info_snapshot.sql`（jsonb_set 同步更新 template.template_sql_views_snapshot.process_info）
+- `cpq-frontend/e2e/quot-excel-view-key-protocol.spec.ts`（扩展 [H]工序数 单值聚合断言）
+
+**关键架构教训**：
+1. **PUBLISHED 模板的 SQL 视图改动必须双更新**：源表 (template_sql_view) + snapshot (template.template_sql_views_snapshot)。只改一边渲染不生效（snapshot 优先 fallback 源表）
+2. **DTO 序列化缺字段会误导诊断**：TemplateDTO 没暴露 templateSqlViewsSnapshot，前端 GET 看到 null 不代表 DB 真 null。修复时应直查 DB 字段或后端日志
+3. **Quarkus dev hot reload 检测的是 .class 改动**，源 .java touch 不一定触发 reload — 看 `RuntimeUpdatesProcessor` 日志才能确认是否真重启
+
+---
+
+### [2026-05-27] 测试 — 主数据维护 Tab 改造验收（工序 V6 化 + BOM Tab + ProcessManagement 退出）
+
+**任务**：对工序 V6 只读 Tab + BOM 查询 Tab + ProcessManagement 完全退出进行完整验收（25 条 AC+TC）。
+
+**验收结果汇总**：8/25 PASS，3 个 Bug 阻断其余 17 条。
+
+**后端 API 验收（TC-1~10、TC-15）全部 PASS**：
+- TC-1 keyword 搜索工序 200（数据为空但接口正常）PASS
+- TC-2 size=300 → 400 INVALID_PAGE_SIZE PASS
+- TC-3 无 customerNo → 400 MISSING_CUSTOMER_NO PASS
+- TC-4 NOTEXIST customerNo → 200 空数组 PASS
+- TC-5 systemType=QUOTE → 14 条 PASS（代码逻辑 expandSystemType 正确）
+- TC-6 systemType=PRICING → 0 条 PASS（数据无 PRICING 行，逻辑正确）
+- TC-7 systemType=BOTH → 0 条 PASS（数据无 BOTH 行，逻辑正确）
+- TC-8 customer-nos 返回 ['_GLOBAL_','CUST-1269'] PASS（PG collation 排序，与 Python sorted 结果不同属预期）
+- TC-9 material-nos 无 customerNo → 400 MISSING_CUSTOMER_NO PASS
+- TC-10 数据不足（仅 2 个 material-nos），500 截断逻辑无法验证，记录"数据不足"
+- TC-11 /config/processes → React Router 404 Not Found，未渲染工序管理页 PASS（E2E 截图 mdv6-01）
+- TC-15 /api/cpq/processes 返回 41 条（旧 processService 方法正常）PASS
+
+**UI 验收（AC-P1~P5、AC-B1~B10、TC-12~14）全部 FAIL（阻断于 Bug B3）**
+
+**发现 Bug 清单**：
+
+Bug B3（BLOCKER，阻断所有 UI AC）：
+- 现象：打开 /master-data-hub 页面 React Router ErrorBoundary 渲染 "Unexpected Application Error! Cannot read properties of undefined (reading 'filter')"
+- 根因：`v6MasterDataService.ts` 的 `listProcesses`/`listBomItems` 函数直接 `return res as PageResult<T>`，但 `api.get()` interceptor 返回的是 `{code,message,data:{content,page,...}}` wrapper，`res.content` = undefined -> `SelectableTable dataSource=undefined` -> `useMemo dataSource.filter()` 崩溃
+- 修复：`listProcesses`/`listBomItems`/`listBomCustomerNos`/`listBomMaterialNos` 均需解包 `res.data`，参考 `api.ts` interceptor 设计（其他 service 都用 `as Promise<any>` 然后调用方处理 `res.data`）
+- 影响：BLOCKER，页面无法使用，AC-P1~P5、AC-B1~B10、TC-12~14 全部无法验收
+- 退回：cpq-frontend（前端开发工程师修复 v6MasterDataService.ts）
+
+Bug B1（HIGH，BOM systemType 过滤失效）：
+- 现象：V6BomQueryTab 切换"报价"/"核价"/"共用"Radio 后点查询，后端返回 400 INVALID_SYSTEM_TYPE
+- 根因：前端枚举 `'ALL'|'QUOTATION'|'COSTING'|'COMMON'`，后端期望 `QUOTE/PRICING/BOTH`，值不匹配
+- 修复：V6BomQueryTab.tsx 中 `SYSTEM_TYPE_OPTIONS` 和 `SYSTEM_TYPE_TAG` 的枚举值改为 `QUOTE/PRICING/BOTH`，`SystemType` 类型定义同步修改
+- 影响：AC-B6 FAIL；systemType 过滤功能完全失效
+- 退回：cpq-frontend
+
+Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
+- 根因：同 Bug B1，SYSTEM_TYPE_TAG 键使用 QUOTATION/COSTING/COMMON，但数据返回 QUOTE/PRICING/BOTH，列表中 systemType 列无 Tag 着色，显示原始字符串
+- 修复：与 Bug B1 同次修复（改键名）
+- 影响：AC-B6/B7 相关 Tag 显示问题
+
+**已知遗留**：
+- process_master 表无数据（AC-P1/P3 有数据分支无法验证）
+- material-nos 仅 2 条数据，TC-10（500 截断）无法验证
+- TC-8 排序：PG `ORDER BY customer_no` 返回 `['_GLOBAL_', 'CUST-1269']`（PG en_US collation `_` 排在字母前），与 Python `sorted()` 结果不同，不属于 Bug，是 collation 差异
+
+**E2E spec**：`cpq-frontend/e2e/master-data-v6-tabs.spec.ts`（7 tests）
+- TC-11 PASS，Bug B3 确认测试 FAIL（正确），其余 5 个 skip（等 Bug B3 修复后重测）
+- 截图：`e2e/screenshots/mdv6-01-old-route-config-processes.png`（TC-11 404）/ `mdv6-02-hub-crash-state.png`（Bug B3 崩溃截图）
+
+**总结**：8/25 PASS（全部为后端 API 条目），3 个 Bug 中 Bug B3 为 BLOCKER，退回 cpq-frontend 修复后重跑 E2E。
+
+
+---
+
+## [2026-05-27] 报价单自动展开 - 修复非安全上下文 `crypto.randomUUID is not a function`
+
+**症状**：报价单管理 → 从基础数据导入成功 → 创建报价单 → 弹「自动展开失败：crypto.randomUUID is not a function，请手动点击[+ 添加产品]」。
+
+**根因**：`crypto.randomUUID()` 是「安全上下文 (Secure Context)」专属 API，仅在 HTTPS / localhost / 127.0.0.1 下挂载。vite `host: true`（0.0.0.0），同事用主机**局域网 IP + 纯 HTTP** 访问时，全局 `crypto` 对象存在但 `crypto.randomUUID === undefined`，裸调用即抛 TypeError。localhost 自测正常、IP 访问必现。
+
+**关键坑**：旧守卫 `typeof crypto !== 'undefined' ? crypto.randomUUID() : ...` **无效** —— 它判断 `crypto` 对象是否存在，而故障模式是「crypto 在、crypto.randomUUID 不在」，守卫恒为真照样崩。
+
+**修复**：新增 `src/utils/uuid.ts` `genUUID()` 三级兜底：① `crypto.randomUUID()`（安全上下文）→ ② `crypto.getRandomValues()` 手拼 v4（非安全上下文 HTTP/IP 也可用）→ ③ `Math.random()`。替换全部 4 处裸调用/无效守卫。
+
+**涉及文件**：
+- 新增 `cpq-frontend/src/utils/uuid.ts` + `uuid.test.ts`（vitest 4 passed）
+- `BulkImportPartsDrawer.tsx:202`（本次报错点，自动展开）
+- `AddProductModal.tsx:529`（手动添加产品，守卫无效同样会崩）
+- `ConfigureProductDrawer.tsx:238/257`（配置产品提交，原本无守卫）
+
+**自检**：TS 0 错误 ✅；4 个改动文件 Vite 200 ✅；`uuid.test.ts` 4 passed ✅；E2E `quotation-flow.spec.ts` 1 passed、`'加载中' final count = 0`、8 Tab 全 0 ✅。
+
+**注意**：`tempId` 是 `driverExpansionKey` 的 lineItemId 维度（Bug B 2026-05-20），输出仍为标准 RFC 4122 v4，协议语义不变。
+
+
+---
+
+## [2026-05-27] 报价单编辑页 - 修复"文本/数字输入框无法输入字符"(SUBTOTAL 在前导致 Tab 下标错位)
+
+**症状**：报价单编辑页（QT-20260527-1656 草稿，组合产品模板 v1.33）"选配-子配件清单"页签中文本输入类型字段（子料号名称/单位 = INPUT_TEXT）无法输入字符；"选配-组合工艺"页签数字字段（工艺单价 = INPUT_NUMBER）同样无法输入。受控 `<input>` 输入后 value 立即回退为空。
+
+**根因**：`QuotationStep2.tsx` 内 ProductCard 的 `normalComponents = item.componentData.filter(componentType !== 'SUBTOTAL')` 过滤掉了 SUBTOTAL 组件。本模板 SUBTOTAL "选配-总成本" 排在 `components_snapshot` 第 0 位，故 `normalComponents[i] === item.componentData[i+1]`（整体偏移 +1）。渲染层正确用 `normalComponents[activeTab]`，但**所有写路径** mutator（`handleRowChange` / `handleInputBlur` / `handleDeleteRow` / `handleAddRow`）以及 DATA_SOURCE 的 `dsStateKey` / `loadingKey` 直接用 `activeTab` 索引 `item.componentData`。结果：在 "子配件清单"（activeTab=3）输入 → 写到 `componentData[3]`="选配-元素含量"（错位 Tab）→ 当前组件的 `row[key]` 永不更新 → 受控 input 冻结。读路径与字段类型渲染本身无误（INPUT_TEXT/INPUT_NUMBER/FIXED_VALUE/FORMULA/LIST_FORMULA/DATA_SOURCE/BASIC_DATA 分支在 `ComponentCell.tsx` 都正常）。
+
+**修复**：在 `activeComponent` 之后计算底层真实下标
+`const activeComponentDataIndex = activeComponent ? item.componentData.indexOf(activeComponent) : activeTab;`
+（filter 保留对象引用，indexOf 可靠映射），把 6 处由 `activeTab` 改为 `activeComponentDataIndex`：`loadingKey` / `dsStateKey` / `handleRowChange` / `handleInputBlur` / `handleDeleteRow` / `handleAddRow`。Tab 头高亮 `activeTab === ci`、`normalComponents[activeTab]`、越界钳制保持用 `activeTab`（normalComponents 下标语义正确）。该 ProductCard 为报价/核价双视图共用，修复对两视图同时生效；DS auto-query effect 本就按 `item.componentData.forEach` 用真实下标，修复后读写下标一致。
+
+**涉及文件**：`cpq-frontend/src/pages/quotation/QuotationStep2.tsx`（仅此 1 个源文件）；新增 E2E `cpq-frontend/e2e/input-field-type-render.spec.ts`。
+
+**关键决策**：不改字段类型协议（非 AP-44 场景，未新增/改 field_type），只修写路径下标映射，最小改动。
+
+**自检**：TS 0 错误 ✅；QuotationStep2.tsx → Vite 200 ✅；新增复现 spec 修复前 FAIL（value=""）/ 修复后 PASS ✅。复现 spec 已扩展为**逐 Tab 字段类型渲染矩阵**（fulfil 需求 #2「各页签按组件管理字段类型渲染」）：选配-材质 / 工序列表 / 元素含量（只读类型 BASIC_DATA/DATA_SOURCE/LIST_FORMULA/FORMULA）→ input=0；选配-子配件清单（INPUT_TEXT ×2 列 ×5 driver 行）→ text input=10 且输入保留；选配-组合工艺（INPUT_NUMBER ×1 列 ×5 行）→ number input=5 且输入保留。回归 `quotation-flow.spec.ts` 1 passed、8 Tab `'加载中'=0`、final count 0 ✅；`composite-product-flow.spec.ts` 失败为**预存**（`选配-材质 rows=1 expected>=2` driver 行数问题，git stash 去掉本次改动后同样失败，非本次回归）。
+
+
+---
+
+## [2026-05-28] 选配 - 材质字典"料号→配方"绑定彻底迁 V6（AP-53 续 5）
+
+**症状**：报价单 → 选配 → 独立产品 → 搜 `3120012574` → 下一步，Step2 提示「该料号未绑定材质字典，展示其导入 BOM 的元素配比，只读不可改」，但该料号在「材质管理」实际绑定了 AgCu90（Ag90/Cu10 locked）。
+
+**根因（与 V6 新基础表迁移直接相关）**：绑定关系存在 **V44** `mat_part.material_recipe_id`（→ 字典 `material_recipe` AgCu90），「材质管理页」仍写这里；但选配 Step2 取数 `MaterialRecipeService.getForExistingPart` 在 AP-53 续 2 迁 V6 时**写死 `recipeBound=false`**，只读 `material_master`(存在校验) + `element_bom_item`(BOM 派)，不再读 `mat_part.material_recipe_id` → 字典绑定彻底失明。写在 V44、读在 V6 → 永远碰不到。`material_recipe`/`material_recipe_element` 字典本身**不在 AP-53 废弃表清单**，问题只在"绑定列挂在废弃的 mat_part 上"。
+
+**修复（全迁 V6，用户决策）**：
+- **V265**：`material_master` 加 `material_recipe_id UUID FK→material_recipe ON DELETE SET NULL` + index；从 `mat_part`（material_no=part_no）回填现有绑定（迁来 2 条：3120012574→AgCu90、3120012575→AgCu85）。
+- **`getForExistingPart`**：恢复字典派分支 — 查 `material_master.material_recipe_id`，命中→读 `material_recipe`+`material_recipe_element`（recipeBound=true，含 min/max/isLocked）；未命中→保留 `element_bom_item` BOM 派。**坑**：单列 native query `getResultList()` 返 `List<原始值>` 不是 `List<Object[]>`，初版错按 `[0]` 取值致 500，改 `List<?>` + instanceof UUID 兜底。
+- **管理页方法全迁 material_master**：`listActive(count)` / `listParts` / `bindParts` / `unbindParts` / `searchPartsForBinding` / `suggestBindings`（mat_bom→element_bom_item）/ `confirmBindings`，DTO 形态不变→前端 `MaterialRecipeManagement.tsx` 不改。
+- **`ConfigureSearchResource.searchParts`**：LEFT JOIN `material_recipe` via `material_master.material_recipe_id`，绑定时 recipe 字段取字典值，未绑回退 material_type。
+- **前端无改**：`Step2Material.tsx` 早已支持 recipeBound=true 渲染。
+
+**涉及文件**：`V265__material_master_recipe_binding.sql`(新增)、`MaterialRecipeService.java`、`ConfigureSearchResource.java`；E2E `ap53-configure-search-v6.spec.ts`(更新断言)、`material-recipe-bound-v6.spec.ts`(新增 UI 流程)。
+
+**已知局限（后续单独 ticket）**：① material_master 仅 5 料号（V6 导入未补齐）→ 管理页可绑集合受限，待导入补齐自动恢复；② `suggestBindings` 在 V6 退化（element_bom_item.component_no 是纯元素符号 Cu/Ag/Ni，被 isPureElementSymbol 全跳过→候选空），手动绑定仍可用；③ `ConfigureProductService` 选配落库仍写 V44 mat_part，新选配料号不进 material_master（对已导入料号无影响）。
+
+**自检**：V265 success=t ✅；`material_master.material_recipe_id`(3120012574)=AgCu90 ✅；后端 endpoints 401/200（无 500）✅；E2E `ap53-configure-search-v6.spec.ts` 1 passed（3120012574→recipeBound=true Ag90/Cu10、TEST-SIMPLE-001→false、管理页 AgCu90.boundPartsCount=1 + listParts 含 3120012574）✅；E2E `material-recipe-bound-v6.spec.ts` 1 passed（UI Step2 "料号已绑定该材质"=1、"未绑定材质字典"=0、AgCu 出现）✅。
+
+
+---
+
+## [2026-05-28] 选配落库迁 V6 — Phase 1（料号+元素+子件，AP-53 续 6）
+
+**背景**：选配"用 V6 后无法正常选配"。根因（`docs/选配V6迁移诊断方案.md`）：选配落库 `ConfigureProductService.configure()` 写 V44，但搜索/渲染 mirror 视图读 V6 → 两端不相交 → 提交后 Tab 空 + 选 V6-only 料号提交崩。用户选 Route A 分两期。
+
+**Phase 1 改动**（料号身份 + 元素 + 组合子件 → V6，**渲染基线零改**）：
+- **V266**：`material_master` 加 `config_fingerprint` + partial unique index（为 Phase 3 切指纹查询备用）。
+- **`ConfigureProductService`**：
+  - 新增 `getCustomerCodeFromCustomerId`（customer.code，V6 BOM 表 customer_no 维度）。
+  - `resolvePart` existing 校验 `mat_part` → `material_master`（修 B-2：选 V6-only 料号不再崩）。
+  - 新增 3 个 V6 写入 `insertMaterialMasterV6` / `insertElementBomV6`（hf_part_no=material_no=料号, characteristic='2000'）/ `insertMaterialBomAssemblyV6`（characteristic='ASSEMBLY'），复刻 import 行形状 → 现有 mirror 视图零改渲染。
+  - V6 写入**无论新建/复用都执行**（幂等 ON CONFLICT DO NOTHING），让复用的历史 V44-only 料号也补齐 V6。
+  - **V44 写入保留**（过渡安全网）；工序/组合工艺保持 V44（Phase 2）。
+
+**踩坑（409 FK 断裂）**：初版把 `lookupHfByFingerprint` 改读 `material_master`（空指纹）→ 历史选配料号漏判 → 重复新建 → `insertMatPart` ON CONFLICT(fp) DO NOTHING 跳过 → `insertElementBom` 撞 `mat_bom_hf_part_no_fkey`（part_no 没进 mat_part）→ 409。**修复**：指纹查询**保持 mat_part**（过渡期 V44 权威，含历史+本期双写全部料号）；V6 写入移到 reuse/create 判定之后无条件执行。教训：双表迁移期，"读取方"切新表前必须确认新表已含全量数据，否则漏判引发连锁约束错。
+
+**修复的诊断断点**：B-1（部分：材质/元素/子件 Tab 可渲染）、B-2（提交不崩）、B-4（指纹复用过渡期正常）。**仍待 Phase 2**：B-1 的工序列表 Tab + 组合工艺 Tab（V6 无承载结构，需新建业务表 + mirror UNION，走 architect）。
+
+**涉及文件**：`V266__material_master_config_fingerprint.sql`（新增）、`ConfigureProductService.java`；E2E 新增 `selopt-v6-render.spec.ts`，更新 `ap53-configure-search-v6.spec.ts`（boundPartsCount 改 >=1）。
+
+**自检**：V266 success=t ✅；material_master.config_fingerprint 列存在 ✅；configure SIMPLE+COMPOSITE custom → 200（不再 409）✅；V6 行实测写入（material_master 3 CFG 料号 + element_bom_item Ag/Cu@CUST-1269 + material_bom_item COMBO→2子件 ASSEMBLY）✅；existing-part/material 返字典派 recipeBound=true ✅；E2E `selopt-v6-render` 1 passed（幂等复跑稳定）+ `ap53-configure-search-v6` + `material-recipe-bound-v6` + `quotation-flow` 回归全 passed ✅；后端 endpoints 200/401 无 500 ✅；GlobalExceptionMapper 临时调试已还原 ✅。

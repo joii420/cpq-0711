@@ -49,10 +49,19 @@ export interface ComponentField {
   is_required?: boolean;
   formula_name?: string;  // FORMULA fields: which formula definition to use
   datasource_binding?: {
-    datasource_id: string;
+    /** V190+: 数据源类型枚举; 缺省值 = DATABASE_QUERY 兼容历史配置 */
+    type?: 'DATABASE_QUERY' | 'GLOBAL_VARIABLE' | 'BNF_PATH' | 'HTTP_API';
+    datasource_id?: string;
     datasource_code?: string;
     datasource_name?: string;
     param_bindings?: { param_code: string; param_name: string; bound_field_name: string }[];
+    /** GLOBAL_VARIABLE 配置 */
+    global_variable_code?: string;
+    key_field_refs?: Record<string, string>;
+    /** BNF_PATH 配置 */
+    bnf_path?: string;
+    /** HTTP_API 配置(Phase D follow-up) */
+    api_config?: Record<string, any>;
   };
   /**
    * LIST_FORMULA 字段配置 (Phase B - 配置模板驱动).
@@ -896,6 +905,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     dsField: ComponentField,
   ) => {
     const binding = dsField.datasource_binding!;
+    // executeDsQuery 仅服务于 DATABASE_QUERY 子类型(GLOBAL_VARIABLE / BNF_PATH 走 computeAllFormulas 内的 enrich)
+    if (!binding.datasource_id) return;
     const paramBindings = binding.param_bindings || [];
     const comp = item.componentData[tabIndex];
     if (!comp) return;
@@ -1034,6 +1045,17 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   const normalComponents = (item.componentData ?? [])
     .filter(c => c?.componentType !== 'SUBTOTAL');
   const activeComponent = normalComponents[activeTab];
+
+  // normalComponents 过滤掉了 SUBTOTAL 组件，其下标 (activeTab) 与底层 item.componentData
+  // 下标不对齐（典型：SUBTOTAL "总成本" 排在第 0 位 → 整体偏移 +1）。
+  // 所有按 Tab 改 row 数据的 mutator（handleRowChange / handleInputBlur / handleDeleteRow /
+  // handleAddRow）以及 DATA_SOURCE loading/state key 都直接用下标索引 item.componentData，
+  // 因此必须把 normalComponents 下标映射回底层真实下标，否则编辑会写到错位的 Tab，
+  // 受控 <input> 的 value 永远回退 → 表现为"文本/数字输入框无法输入字符"。
+  // 用引用相等定位（filter 保留同一对象引用），activeComponent 不存在时退回 activeTab。
+  const activeComponentDataIndex = activeComponent
+    ? item.componentData.indexOf(activeComponent)
+    : activeTab;
 
   // 当过滤后 activeTab 越界 → 钳到首个有效 tab,避免 Tab 列消失后头部空白
   useEffect(() => {
@@ -1429,7 +1451,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     <tr key={rowIndex} style={(row._preset || isDriverBound) ? { background: '#fafafa' } : undefined}>
                       {activeComponent.fields.map(field => {
                         const key = field.name || field.key || '';
-                        const loadingKey = `${activeTab}-${rowIndex}-${field.name}`;
+                        const loadingKey = `${activeComponentDataIndex}-${rowIndex}-${field.name}`;
                         const isRequiredEmpty =
                           field.field_type === 'DATA_SOURCE' &&
                           field.is_required &&
@@ -1445,7 +1467,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
 
                         const cellCtx: CellContext = {
                           basicDataValues,
-                          pathCacheState,
+                          pathCacheState: pathCacheState ?? {},
                           formulaCache,
                           partNo: item.productPartNo,
                           activeComponent,
@@ -1458,9 +1480,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           globalVariableDefs,
                           dsLoading,
                           dsErrors,
-                          dsStateKey: `${activeTab}-${rowIndex}`,
-                          onCellChange: (ri, k, val) => handleRowChange(activeTab, ri, k, val),
-                          onCellBlur: (ri, k) => handleInputBlur(activeTab, ri, k),
+                          dsStateKey: `${activeComponentDataIndex}-${rowIndex}`,
+                          onCellChange: (ri, k, val) => handleRowChange(activeComponentDataIndex, ri, k, val),
+                          onCellBlur: (ri, k) => handleInputBlur(activeComponentDataIndex, ri, k),
                         };
                         return (
                           <td
@@ -1504,7 +1526,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         ) : (
                           <button
                             type="button"
-                            onClick={() => handleDeleteRow(activeTab, rowIndex)}
+                            onClick={() => handleDeleteRow(activeComponentDataIndex, rowIndex)}
                             style={{
                               background: 'none',
                               border: 'none',
@@ -1551,7 +1573,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
               <button
                 className="qt-add-row-btn"
                 type="button"
-                onClick={() => handleAddRow(activeTab)}
+                onClick={() => handleAddRow(activeComponentDataIndex)}
               >
                 + 添加行
               </button>
@@ -2021,6 +2043,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
           lineItems={costingLineItems}
           customerId={customerId}
           viewLabel="核价单 Excel 视图"
+          templateId={costingCardTemplateId || null}
         />
       ) : mainTab === 'costing' && viewType === 'card' && quotationId ? (
         // 核价单 — 产品卡片视图(V72)：与"报价单卡片视图"产品数量/排序一致，
@@ -2077,6 +2100,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
           lineItems={quoteLineItems}
           customerId={customerId}
           viewLabel="报价单 Excel 视图"
+          templateId={customerTemplateId || null}
         />
       ) : lineItems.length === 0 ? (
         <div className="qt-empty-state">

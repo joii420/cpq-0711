@@ -52,9 +52,38 @@ public class Template extends PanacheEntityBase {
     @Column(name = "components_snapshot", columnDefinition = "jsonb")
     public String componentsSnapshot;
 
+    /**
+     * 阶段 2: 组件级数据源 SQL 视图 snapshot —— 模板 DRAFT → PUBLISHED 时由
+     * {@code TemplateService.publish} 调 {@code ComponentSqlViewService.snapshotForComponents}
+     * 序列化，冻结该模板挂载组件引用的所有 SQL 视图（含 GLOBAL scope 闭包）。
+     *
+     * <p>结构: {@code { "componentId::sql_view_name": { sql_template, declared_columns,
+     * required_variables, scope } }}
+     *
+     * <p>渲染期 lookupSqlView 优先级：报价单 snapshot &gt; 模板 snapshot &gt; 实时 component_sql_view。
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "sql_views_snapshot", columnDefinition = "jsonb")
+    public String sqlViewsSnapshot;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "excel_view_config", columnDefinition = "jsonb")
     public String excelViewConfig;
+
+    /**
+     * V250：发布时把本模板拥有的所有 template_sql_view 快照到此 JSONB，实现发布冻结。
+     *
+     * <p>结构: {@code {"<sql_view_name>": {"sqlTemplate": "...", "declaredColumns": [...], "requiredVariables": [...]}}}
+     *
+     * <p>注意：不要与 {@link #sqlViewsSnapshot} 混淆：
+     * <ul>
+     *   <li>{@code sql_views_snapshot} — 组件 SQL 视图（component_sql_view）的冻结快照</li>
+     *   <li>{@code template_sql_views_snapshot}（本字段）— 模板自有 SQL 视图（template_sql_view）的冻结快照</li>
+     * </ul>
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "template_sql_views_snapshot", columnDefinition = "jsonb", nullable = false)
+    public String templateSqlViewsSnapshot = "{}";
 
     /**
      * V145 (Stage 1) — 模板公式数组 JSONB.

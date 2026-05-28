@@ -7,7 +7,7 @@ import {
 import {
   SaveOutlined, SendOutlined,
 } from '@ant-design/icons';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { quotationService } from '../../services/quotationService';
 import { quotationDriftService } from '../../services/quotationDriftService';
@@ -51,6 +51,7 @@ function computeProductSubtotalSafe(
 const QuotationWizard: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -130,10 +131,19 @@ const QuotationWizard: React.FC = () => {
   useEffect(() => {
     if (id) {
       loadQuotation(id);
+    } else {
+      // 新建模式：从 ?customerId=xxx URL 参数自动预填客户（从 V6 导入 Drawer 跳转过来时用）
+      const presetCustomerId = searchParams.get('customerId');
+      if (presetCustomerId) {
+        form.setFieldsValue({ customerId: presetCustomerId });
+        loadCustomerDetail(presetCustomerId);
+        loadContacts(presetCustomerId);
+      }
     }
     return () => {
       if (autoSaveRef.current) clearInterval(autoSaveRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   // Setup auto-save every 10 seconds

@@ -71,6 +71,12 @@ export interface FieldItem {
    *   type='HTTP_API'        → 调外部 API (Phase D 引入)
    */
   default_source?: DefaultSource;
+  /** 模板字段覆写元数据（仅 template_component.fields_override / template.components_snapshot 使用） */
+  is_required?: boolean;
+  /** 排序索引（模板 snapshot 持久化时使用，默认按数组下标） */
+  sort_order?: number;
+  /** V149 字段库 label 中文显示名（snapshot 透传，UI 渲染不依赖） */
+  label?: string;
 }
 
 export interface DefaultSource {

@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>客户自助选配 · HF Engineering — 接触片产品</title>
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#fafbfc; font-size:14px; color:#303133; height:100vh; overflow:hidden; }
+
+.app { display:flex; flex-direction:column; height:100vh; }
+
+/* 顶部品牌头（公网形态，无内部菜单）*/
+.brand-bar { height:70px; background:linear-gradient(135deg,#0050b3,#1890ff); color:#fff; padding:0 36px; display:flex; align-items:center; gap:20px; box-shadow:0 2px 8px rgba(0,80,179,.15); }
+.brand-logo { font-size:22px; font-weight:700; letter-spacing:1px; display:flex; align-items:center; gap:10px; }
+.brand-logo .icon { background:rgba(255,255,255,.2); width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:18px; }
+.brand-title { flex:1; font-size:14px; color:rgba(255,255,255,.85); }
+.brand-title b { color:#fff; font-size:15px; }
+.brand-actions { display:flex; gap:12px; align-items:center; font-size:13px; }
+.brand-share-id { background:rgba(255,255,255,.15); padding:5px 12px; border-radius:18px; font-size:11.5px; font-family:Consolas,Monaco,monospace; }
+.brand-help { color:rgba(255,255,255,.85); cursor:pointer; }
+.brand-help:hover { color:#fff; }
+
+/* 欢迎提示横幅 */
+.welcome { background:linear-gradient(90deg,#e6f4ff,#f0f5ff); padding:14px 36px; border-bottom:1px solid #91caff; font-size:13px; color:#0050b3; display:flex; align-items:center; gap:12px; }
+.welcome b { color:#003a8c; }
+.welcome .badge { background:#1890ff; color:#fff; padding:2px 10px; border-radius:12px; font-size:11px; }
+
+/* 主内容 */
+.main { flex:1; display:flex; overflow:hidden; background:#fff; }
+
+/* 左侧 3D */
+.canvas-section { flex:1; background:linear-gradient(135deg,#f5f7fa,#e8eef5); position:relative; overflow:hidden; min-width:0; }
+#configCanvas { width:100%; height:100%; display:block; outline:none; touch-action:none; }
+.canvas-tip { position:absolute; top:20px; left:20px; background:rgba(0,80,179,.85); color:#fff; padding:8px 14px; border-radius:6px; font-size:12px; backdrop-filter:blur(8px); }
+.canvas-toolbar { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); background:rgba(0,21,41,.85); border-radius:10px; padding:8px 10px; display:flex; gap:6px; }
+.canvas-toolbar button { padding:7px 14px; border:none; background:transparent; color:#fff; cursor:pointer; font-size:13px; border-radius:6px; }
+.canvas-toolbar button:hover { background:rgba(255,255,255,.15); }
+.progress-overlay { position:absolute; top:20px; right:20px; background:#fff; border-radius:10px; padding:14px 18px; box-shadow:0 4px 14px rgba(0,0,0,.1); min-width:240px; }
+.progress-label { font-size:12px; color:#909399; margin-bottom:6px; }
+.progress-label b { color:#1890ff; font-size:16px; }
+.progress-bar { height:8px; background:#e4e7ed; border-radius:4px; overflow:hidden; }
+.progress-fill { height:100%; background:linear-gradient(90deg,#1890ff,#13c2c2); transition:width .3s; }
+
+/* 右侧选配面板（公网版） */
+.option-panel { width:440px; background:#fff; border-left:1px solid #e4e7ed; overflow-y:auto; flex-shrink:0; }
+.option-header { padding:20px 24px 14px; border-bottom:1px solid #f0f0f0; }
+.option-header h2 { font-size:17px; font-weight:600; color:#303133; margin-bottom:4px; }
+.option-header .hint { font-size:12.5px; color:#909399; }
+
+.option-group { border-bottom:1px solid #f0f0f0; padding:16px 24px; }
+.option-group-title { font-size:14px; font-weight:600; color:#303133; margin-bottom:10px; display:flex; align-items:center; gap:8px; }
+.option-group-required { color:#f56c6c; font-size:12px; }
+.option-group-check { width:20px; height:20px; border-radius:50%; background:#52c41a; color:#fff; font-size:12px; display:none; align-items:center; justify-content:center; }
+.option-group.completed .option-group-check { display:flex; }
+.option-cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.option-cards.single-col { grid-template-columns:1fr; }
+.option-card { border:1.5px solid #e4e7ed; border-radius:8px; padding:12px 14px; cursor:pointer; transition:all .2s; position:relative; background:#fff; }
+.option-card:hover { border-color:#91caff; background:#fafdff; transform:translateY(-2px); box-shadow:0 4px 12px rgba(24,144,255,.12); }
+.option-card.selected { border-color:#1890ff; background:linear-gradient(135deg,#e6f4ff,#fff); box-shadow:0 0 0 3px rgba(24,144,255,.15); }
+.option-card.selected::after { content:'✓'; position:absolute; top:8px; right:10px; color:#fff; font-weight:bold; font-size:11px; background:#52c41a; border-radius:50%; width:18px; height:18px; display:flex; align-items:center; justify-content:center; }
+.option-card-title { font-size:13.5px; font-weight:600; color:#303133; margin-bottom:4px; }
+.option-card-desc { font-size:12px; color:#909399; margin-bottom:6px; line-height:1.4; }
+.option-card-price { font-size:12.5px; color:#1890ff; font-weight:600; }
+.option-card-price.delta-positive::before { content:'+'; }
+.option-card-price.neutral { color:#909399; font-weight:normal; }
+
+.option-card.multi-select { padding-right:36px; }
+.option-card.multi-select.selected::after { content:''; }
+.option-card.multi-select .check-box { position:absolute; top:50%; right:14px; transform:translateY(-50%); width:20px; height:20px; border:1.5px solid #dcdfe6; border-radius:4px; display:flex; align-items:center; justify-content:center; }
+.option-card.multi-select.selected .check-box { background:#1890ff; border-color:#1890ff; color:#fff; font-size:12px; }
+.option-card.multi-select.selected .check-box::after { content:'✓'; }
+
+/* 底部价格 + 联系方式 */
+.footer-bar { height:100px; background:#fff; border-top:2px solid #f0f0f0; padding:16px 36px; display:flex; align-items:center; gap:24px; box-shadow:0 -4px 12px rgba(0,0,0,.04); }
+.config-summary { flex:1; }
+.config-summary-label { font-size:12px; color:#909399; margin-bottom:4px; }
+.config-summary-text { font-size:13.5px; color:#303133; font-weight:500; }
+.config-summary-text .tag { display:inline-block; padding:2px 10px; background:#e6f4ff; color:#0958d9; border:1px solid #91caff; border-radius:4px; font-size:11.5px; margin-right:4px; }
+
+.price-display { text-align:right; min-width:280px; }
+.price-label { font-size:12px; color:#909399; margin-bottom:2px; }
+.price-breakdown { font-size:11.5px; color:#909399; line-height:1.5; max-height:34px; overflow:hidden; margin-bottom:2px; }
+.price-breakdown b.amt-base { color:#606266; }
+.price-breakdown b.amt-pos { color:#d48806; }
+.price-total { font-size:26px; font-weight:700; color:#c41d7f; }
+.price-total .currency { font-size:15px; color:#909399; font-weight:normal; }
+.price-est { font-size:11px; color:#909399; margin-top:2px; }
+
+.footer-actions { display:flex; gap:10px; align-items:center; }
+.btn { padding:8px 16px; border:1.5px solid #dcdfe6; background:#fff; border-radius:6px; cursor:pointer; font-size:13px; color:#606266; transition:all .2s; }
+.btn:hover { color:#1890ff; border-color:#91caff; background:#ecf5ff; }
+.btn-primary { background:#1890ff; color:#fff; border-color:#1890ff; padding:10px 24px; font-size:14px; font-weight:500; }
+.btn-primary:hover { background:#40a9ff; color:#fff; border-color:#40a9ff; box-shadow:0 4px 12px rgba(24,144,255,.3); }
+.btn-success { background:linear-gradient(135deg,#52c41a,#13c2c2); color:#fff; border-color:transparent; padding:10px 28px; font-size:14px; font-weight:600; box-shadow:0 4px 12px rgba(82,196,26,.25); }
+.btn-success:hover { box-shadow:0 6px 16px rgba(82,196,26,.4); transform:translateY(-2px); }
+.btn-success:disabled { background:#e4e7ed; box-shadow:none; cursor:not-allowed; transform:none; color:#a8abb2; }
+
+/* 提交对话框（留联系方式） */
+.submit-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:2000; }
+.submit-overlay.open { display:flex; }
+.submit-dialog { background:#fff; border-radius:14px; padding:32px 36px; max-width:540px; width:90%; box-shadow:0 16px 40px rgba(0,0,0,.2); }
+.submit-icon { width:70px; height:70px; margin:0 auto 16px; background:linear-gradient(135deg,#1890ff,#13c2c2); border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:34px; }
+.submit-title { text-align:center; font-size:20px; font-weight:600; margin-bottom:6px; color:#303133; }
+.submit-desc { text-align:center; font-size:13px; color:#606266; margin-bottom:20px; line-height:1.6; }
+.submit-detail { background:#f6ffed; border:1px solid #b7eb8f; border-radius:8px; padding:14px 18px; font-size:12.5px; color:#389e0d; margin-bottom:20px; font-family:Consolas,Monaco,monospace; }
+.form-row { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+.form-row label { width:90px; font-size:13px; color:#606266; }
+.form-row input, .form-row textarea { flex:1; padding:8px 12px; border:1.5px solid #dcdfe6; border-radius:6px; font-size:13px; font-family:inherit; }
+.form-row input:focus, .form-row textarea:focus { border-color:#1890ff; outline:none; box-shadow:0 0 0 3px rgba(24,144,255,.1); }
+.submit-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:16px; }
+
+/* Toast */
+.toast-stack { position:fixed; top:90px; right:30px; z-index:1500; display:flex; flex-direction:column; gap:10px; }
+.toast { background:#fff; border:1px solid #b7eb8f; border-left:4px solid #52c41a; padding:12px 16px; border-radius:6px; box-shadow:0 6px 16px rgba(0,0,0,.1); font-size:13px; min-width:300px; max-width:420px; animation:slideIn .3s ease; }
+.toast.info { border-color:#91caff; border-left-color:#1890ff; }
+.toast.warning { border-color:#ffd591; border-left-color:#faad14; }
+@keyframes slideIn { from { transform:translateX(120%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+
+/* 公网信任标识 */
+.trust-bar { background:#fafafa; padding:8px 36px; border-bottom:1px solid #f0f0f0; display:flex; gap:24px; font-size:11.5px; color:#909399; }
+.trust-bar .item { display:flex; align-items:center; gap:5px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- 品牌头 -->
+  <div class="brand-bar">
+    <div class="brand-logo"><span class="icon">⚡</span> HF Engineering</div>
+    <div class="brand-title">
+      <b>接触片产品在线选配</b><br/>
+      <span style="font-size:11.5px;">您的销售顾问 张工 已为您准备好产品配置 · 您可自由调整后联系</span>
+    </div>
+    <div class="brand-actions">
+      <label style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;font-size:11.5px;cursor:pointer;background:rgba(255,255,255,.15);border-radius:18px;color:#fff;" title="模拟 product_config_template.show_price 配置">
+        <input type="checkbox" id="hidePriceToggle" onchange="togglePriceDisplay(this.checked)" style="accent-color:#fff;" />
+        <span>🎭 隐藏价格 (演示)</span>
+      </label>
+      <span class="brand-share-id">分享 ID: a3x5kp8m</span>
+      <span class="brand-help" onclick="showToast('info','客服热线 400-888-XXXX')">❓ 帮助</span>
+    </div>
+  </div>
+
+  <!-- 信任标识 -->
+  <div class="trust-bar">
+    <div class="item">🔒 数据加密传输</div>
+    <div class="item">🛡️ 永不公开您的配置</div>
+    <div class="item">⏰ 链接 6 天后过期</div>
+    <div class="item">📞 销售 24 小时内回复</div>
+    <div style="flex:1"></div>
+    <div class="item">© HF Engineering 2026</div>
+  </div>
+
+  <!-- 欢迎横幅 -->
+  <div class="welcome">
+    <span class="badge">客户自助</span>
+    <span>欢迎，<b>张总</b>。您可自由调整产品配置，左侧 3D 模型即时联动。完成后留下联系方式，我们会在 24 小时内联系您。</span>
+  </div>
+
+  <!-- 主内容 -->
+  <div class="main">
+    <!-- 3D 画布 -->
+    <div class="canvas-section">
+      <canvas id="configCanvas"></canvas>
+      <div class="canvas-tip">💡 拖拽旋转 · 滚轮缩放 · 不会丢失您的配置</div>
+      <div class="progress-overlay">
+        <div class="progress-label">配置完成度: <b id="progressPct">0%</b></div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+      </div>
+      <div class="canvas-toolbar">
+        <button onclick="resetCamera()">🔄 重置视角</button>
+        <button onclick="cycleViewAngle()">👁 切换视角</button>
+        <button onclick="takeScreenshot()">📷 保存截图</button>
+      </div>
+    </div>
+
+    <!-- 选项面板 -->
+    <div class="option-panel">
+      <div class="option-header">
+        <h2>📋 选择您的配置</h2>
+        <div class="hint">所有选项可任意调整，3D 模型实时更新</div>
+      </div>
+      <div id="optionGroups"></div>
+    </div>
+  </div>
+
+  <!-- 底部 -->
+  <div class="footer-bar">
+    <div class="config-summary">
+      <div class="config-summary-label">您的配置</div>
+      <div class="config-summary-text" id="summaryText">请先完成选项 ↑</div>
+    </div>
+    <div class="price-display">
+      <div class="price-label">参考报价</div>
+      <div class="price-breakdown" id="priceBreakdown" title="完整价格分项">基础 ¥1,000</div>
+      <div class="price-total"><span class="currency">¥</span><span id="totalPrice">0</span></div>
+      <div class="price-est">最终价格以销售合同为准</div>
+    </div>
+    <div class="footer-actions">
+      <button class="btn" onclick="resetConfig()">↺ 重置</button>
+      <button class="btn-success" id="submitBtn" onclick="openSubmitDialog()" disabled>📨 提交并联系我</button>
+    </div>
+  </div>
+</div>
+
+<!-- 提交对话框（留联系方式） -->
+<div class="submit-overlay" id="submitOverlay">
+  <div class="submit-dialog">
+    <div class="submit-icon">📨</div>
+    <div class="submit-title">提交您的配置</div>
+    <div class="submit-desc">填写联系方式后，您的销售顾问将在 <b>24 小时内</b> 主动联系您，确认配置详情并提供正式报价。</div>
+
+    <div class="submit-detail" id="configRecap">配置摘要将在此显示</div>
+
+    <div class="form-row"><label>姓名 *</label><input type="text" id="contactName" placeholder="如：张三" value="张总" /></div>
+    <div class="form-row"><label>电话 *</label><input type="tel" id="contactPhone" placeholder="如：138 8888 8888" /></div>
+    <div class="form-row"><label>邮箱</label><input type="email" id="contactEmail" placeholder="可选" /></div>
+    <div class="form-row"><label>留言</label><textarea id="contactNote" rows="3" placeholder="备注需求（如交期 / 数量 / 其他要求）"></textarea></div>
+
+    <div class="submit-actions">
+      <button class="btn" onclick="closeSubmitDialog()">取消</button>
+      <button class="btn-primary" onclick="submitToSales()">提交</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+// ============================================================
+// 配置数据（同 v0.3 + 简化版）
+// ============================================================
+const configTemplate = {
+  basePrice: 1000,
+  options: [
+    { code:'型号', label:'1. 型号', type:'EXCLUSIVE', required:true, values:[
+      { code:'标准款', desc:'基础规格', priceDelta:0, default:true,
+        rules:[{action:'REPLACE_MATERIAL', target:'mesh_main_body', params:{diffuse:'#999999'}}]},
+      { code:'增强款', desc:'高强度结构', priceDelta:500,
+        rules:[{action:'REPLACE_MATERIAL', target:'mesh_main_body', params:{diffuse:'#8090a8'}}]},
+      { code:'高端款', desc:'航空级 · 客户定制', priceDelta:1200,
+        rules:[
+          {action:'REPLACE_MATERIAL', target:'mesh_main_body', params:{diffuse:'#404858'}},
+          {action:'SHOW_MESH', target:'mesh_premium_badge'},
+        ]},
+    ]},
+    { code:'材质', label:'2. 材质', type:'EXCLUSIVE', required:true, values:[
+      { code:'纯Cu', desc:'基础铜材', priceDelta:0, default:true,
+        rules:[{action:'REPLACE_MATERIAL', target:'mesh_contact_layer', params:{diffuse:'#cd7f32'}}]},
+      { code:'Ag85Cu15', desc:'银 85% 铜 15% · 高导电', priceDelta:580,
+        rules:[
+          {action:'REPLACE_MATERIAL', target:'mesh_contact_layer', params:{diffuse:'#e8e8ec'}},
+          {action:'SHOW_MESH', target:'mesh_silver_badge'},
+        ]},
+      { code:'Cu90Ag10', desc:'铜 90% 银 10%', priceDelta:200,
+        rules:[{action:'REPLACE_MATERIAL', target:'mesh_contact_layer', params:{diffuse:'#d4a574'}}]},
+    ]},
+    { code:'表面处理', label:'3. 表面处理', type:'EXCLUSIVE', required:false, values:[
+      { code:'无处理', desc:'原色表面', priceDelta:0, default:true,
+        rules:[{action:'HIDE_MESH', target:'mesh_coating_layer'}]},
+      { code:'镍镀 0.5μ', desc:'基础防腐', priceDelta:140,
+        rules:[
+          {action:'SHOW_MESH', target:'mesh_coating_layer'},
+          {action:'REPLACE_MATERIAL', target:'mesh_coating_layer', params:{diffuse:'#a0a0a8'}},
+        ]},
+      { code:'银镀 1μ', desc:'高导电 + 美观', priceDelta:320,
+        rules:[
+          {action:'SHOW_MESH', target:'mesh_coating_layer'},
+          {action:'REPLACE_MATERIAL', target:'mesh_coating_layer', params:{diffuse:'#f5f5fa'}},
+        ]},
+    ]},
+    { code:'接口规格', label:'4. 接口规格', type:'EXCLUSIVE', required:true, values:[
+      { code:'M6', desc:'小型紧固', priceDelta:0,
+        rules:[
+          {action:'SHOW_MESH', target:'mesh_thread_m6'},
+          {action:'HIDE_MESH', target:'mesh_thread_m8'},
+          {action:'HIDE_MESH', target:'mesh_thread_m10'},
+          {action:'HIDE_MESH', target:'mesh_weld_pad'},
+        ]},
+      { code:'M8', desc:'标准（推荐）', priceDelta:0, default:true,
+        rules:[
+          {action:'HIDE_MESH', target:'mesh_thread_m6'},
+          {action:'SHOW_MESH', target:'mesh_thread_m8'},
+          {action:'HIDE_MESH', target:'mesh_thread_m10'},
+          {action:'HIDE_MESH', target:'mesh_weld_pad'},
+        ]},
+      { code:'M10', desc:'大型紧固', priceDelta:50,
+        rules:[
+          {action:'HIDE_MESH', target:'mesh_thread_m6'},
+          {action:'HIDE_MESH', target:'mesh_thread_m8'},
+          {action:'SHOW_MESH', target:'mesh_thread_m10'},
+          {action:'HIDE_MESH', target:'mesh_weld_pad'},
+        ]},
+    ]},
+    { code:'附加部件', label:'5. 附加部件', type:'MULTI_SELECT', required:false, values:[
+      { code:'加固卡扣', desc:'防松动', priceDelta:80,
+        rules:[{action:'SHOW_MESH', target:'mesh_clip'}],
+        inverseRules:[{action:'HIDE_MESH', target:'mesh_clip'}]},
+      { code:'防尘罩', desc:'户外用', priceDelta:45,
+        rules:[{action:'SHOW_MESH', target:'mesh_dust_cover'}],
+        inverseRules:[{action:'HIDE_MESH', target:'mesh_dust_cover'}]},
+      { code:'接地线', desc:'安全接地', priceDelta:30,
+        rules:[{action:'SHOW_MESH', target:'mesh_ground_wire'}],
+        inverseRules:[{action:'HIDE_MESH', target:'mesh_ground_wire'}]},
+    ]},
+  ]
+};
+
+let selectedValues = {};
+let engine, scene, camera;
+const meshRefs = {};     // mesh name → BABYLON.Mesh，给 rules 引用
+let viewIdx = 0;
+const views = [
+  {alpha:Math.PI/4, beta:Math.PI/3, r:7},
+  {alpha:-Math.PI/2, beta:Math.PI/2, r:7},
+  {alpha:-Math.PI/2, beta:0.01, r:7},
+];
+
+// ============================================================
+// 选项渲染
+// ============================================================
+function renderOptions() {
+  const groups = document.getElementById('optionGroups');
+  groups.innerHTML = configTemplate.options.map(opt => {
+    const completed = isCompleted(opt);
+    return `
+      <div class="option-group ${completed?'completed':''}">
+        <div class="option-group-title">
+          ${opt.label}${opt.required?'<span class="option-group-required">*</span>':''}
+          <span class="option-group-check">✓</span>
+        </div>
+        <div class="option-cards ${opt.type==='MULTI_SELECT'?'single-col':''}">
+          ${opt.values.map(v => renderCard(opt, v)).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderCard(opt, v) {
+  const selected = isSelected(opt.code, v.code);
+  return `
+    <div class="option-card ${selected?'selected':''} ${opt.type==='MULTI_SELECT'?'multi-select':''}"
+         onclick="selectValue('${opt.code}','${v.code}','${opt.type}')">
+      ${opt.type==='MULTI_SELECT'?'<div class="check-box"></div>':''}
+      <div class="option-card-title">${v.code}</div>
+      <div class="option-card-desc">${v.desc}</div>
+      <div class="option-card-price ${v.priceDelta>0?'delta-positive':'neutral'}">${v.priceDelta>0?'¥'+v.priceDelta:(opt.required?'标配':'¥0')}</div>
+    </div>
+  `;
+}
+
+function isSelected(optCode, valCode) {
+  const v = selectedValues[optCode];
+  if (Array.isArray(v)) return v.includes(valCode);
+  return v === valCode;
+}
+
+function isCompleted(opt) {
+  const v = selectedValues[opt.code];
+  if (!opt.required) return true;
+  return Array.isArray(v) ? v.length > 0 : v != null;
+}
+
+function selectValue(optCode, valCode, optType) {
+  if (optType === 'MULTI_SELECT') {
+    if (!selectedValues[optCode]) selectedValues[optCode] = [];
+    const idx = selectedValues[optCode].indexOf(valCode);
+    if (idx >= 0) selectedValues[optCode].splice(idx, 1);
+    else selectedValues[optCode].push(valCode);
+  } else {
+    selectedValues[optCode] = valCode;
+  }
+  evaluate();
+  renderOptions();
+}
+
+// ============================================================
+// 计算 + 3D 联动
+// ============================================================
+function evaluate() {
+  let total = configTemplate.basePrice;
+  const summary = [];
+  const breakdownParts = [`基础 <b class="amt-base">¥${configTemplate.basePrice.toLocaleString()}</b>`];
+
+  configTemplate.options.forEach(opt => {
+    const v = selectedValues[opt.code];
+    if (!v) return;
+    if (Array.isArray(v)) {
+      v.forEach(vc => {
+        const val = opt.values.find(x => x.code === vc);
+        if (val) {
+          total += val.priceDelta;
+          summary.push(val.code);
+          if (val.priceDelta > 0) breakdownParts.push(`${val.code} <b class="amt-pos">+¥${val.priceDelta}</b>`);
+        }
+      });
+    } else {
+      const val = opt.values.find(x => x.code === v);
+      if (val) {
+        total += val.priceDelta;
+        summary.push(val.code);
+        if (val.priceDelta > 0) breakdownParts.push(`${val.code} <b class="amt-pos">+¥${val.priceDelta}</b>`);
+      }
+    }
+  });
+
+  // 3D 联动：执行所有当前 selectedValues 的 rules
+  apply3DCommands(computeRender3DCommands());
+
+  document.getElementById('totalPrice').textContent = total.toLocaleString();
+  document.getElementById('priceBreakdown').innerHTML = breakdownParts.join(' + ');
+  document.getElementById('summaryText').innerHTML = summary.length
+    ? summary.map(s => `<span class="tag">${s}</span>`).join('')
+    : '请先完成选项 ↑';
+
+  const required = configTemplate.options.filter(o => o.required);
+  const filled = required.filter(isCompleted).length;
+  const pct = required.length === 0 ? 100 : Math.round(filled / required.length * 100);
+  document.getElementById('progressPct').textContent = pct + '%';
+  document.getElementById('progressFill').style.width = pct + '%';
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = pct < 100;
+}
+
+// 收集当前 selectedValues 对应的所有 3D 渲染指令
+function computeRender3DCommands() {
+  const commands = [];
+  configTemplate.options.forEach(opt => {
+    const v = selectedValues[opt.code];
+    if (!v) return;
+    if (Array.isArray(v)) {
+      // 多选：选中的 push rules，未选的 push inverseRules
+      opt.values.forEach(val => {
+        if (v.includes(val.code)) {
+          (val.rules || []).forEach(r => commands.push(r));
+        } else {
+          (val.inverseRules || []).forEach(r => commands.push(r));
+        }
+      });
+    } else {
+      const val = opt.values.find(x => x.code === v);
+      if (val && val.rules) val.rules.forEach(r => commands.push(r));
+    }
+  });
+  return commands;
+}
+
+function apply3DCommands(commands) {
+  if (!scene) return;
+  commands.forEach(applyRule);
+}
+
+function applyRule(rule) {
+  const mesh = meshRefs[rule.target];
+  if (!mesh) return;
+  switch (rule.action) {
+    case 'SHOW_MESH':
+      mesh.isVisible = true;
+      mesh.setEnabled(true);
+      break;
+    case 'HIDE_MESH':
+      mesh.isVisible = false;
+      mesh.setEnabled(false);
+      break;
+    case 'REPLACE_MATERIAL':
+      if (mesh.material && rule.params && rule.params.diffuse) {
+        mesh.material.diffuseColor = hexToColor3(rule.params.diffuse);
+      }
+      break;
+  }
+}
+
+function hexToColor3(hex) {
+  const r = parseInt(hex.substr(1,2),16)/255;
+  const g = parseInt(hex.substr(3,2),16)/255;
+  const b = parseInt(hex.substr(5,2),16)/255;
+  return new BABYLON.Color3(r, g, b);
+}
+
+// ============================================================
+// Babylon 3D
+// ============================================================
+function initBabylon() {
+  const canvas = document.getElementById('configCanvas');
+  engine = new BABYLON.Engine(canvas, true, {antialias:true});
+  scene = new BABYLON.Scene(engine);
+  scene.clearColor = new BABYLON.Color4(0.96, 0.97, 0.98, 1);
+
+  camera = new BABYLON.ArcRotateCamera('cam', Math.PI/4, Math.PI/3, 7, BABYLON.Vector3.Zero(), scene);
+  camera.attachControl(canvas, true);
+  camera.lowerRadiusLimit = 3;
+  camera.upperRadiusLimit = 14;
+
+  new BABYLON.HemisphericLight('hl', new BABYLON.Vector3(0,1,0), scene).intensity = 0.85;
+  new BABYLON.DirectionalLight('dl', new BABYLON.Vector3(-1,-2,-1), scene).intensity = 0.45;
+
+  buildContactStrip(scene);
+
+  engine.runRenderLoop(() => scene.render());
+  window.addEventListener('resize', () => engine.resize());
+}
+
+// 完整版接触片模型（11 mesh，对齐 v0.3）
+function buildContactStrip(scene) {
+  // 主体（始终显示）
+  const mb = BABYLON.MeshBuilder.CreateBox('mesh_main_body', {width:3, height:0.25, depth:1.4}, scene);
+  const matMb = new BABYLON.StandardMaterial('matMb', scene);
+  matMb.diffuseColor = new BABYLON.Color3(0.6,0.6,0.65);
+  matMb.specularPower = 32;
+  mb.material = matMb;
+  meshRefs.mesh_main_body = mb;
+
+  // 接触层（材质显示）
+  const cl = BABYLON.MeshBuilder.CreateBox('mesh_contact_layer', {width:2.7, height:0.06, depth:1.15}, scene);
+  cl.position.y = 0.155;
+  const matCl = new BABYLON.StandardMaterial('matCl', scene);
+  matCl.diffuseColor = new BABYLON.Color3(0.8,0.5,0.2);
+  matCl.specularPower = 64;
+  cl.material = matCl;
+  meshRefs.mesh_contact_layer = cl;
+
+  // 镀层（默认隐藏）
+  const co = BABYLON.MeshBuilder.CreateBox('mesh_coating_layer', {width:2.7, height:0.03, depth:1.15}, scene);
+  co.position.y = 0.2;
+  const matCo = new BABYLON.StandardMaterial('matCo', scene);
+  matCo.diffuseColor = new BABYLON.Color3(0.62, 0.62, 0.66);
+  co.material = matCo;
+  meshRefs.mesh_coating_layer = co;
+  co.isVisible = false; co.setEnabled(false);
+
+  // 三种螺纹孔互斥
+  const matThread = new BABYLON.StandardMaterial('matThread', scene);
+  matThread.diffuseColor = new BABYLON.Color3(0.3, 0.3, 0.35);
+  const createThread = (name, diameter) => {
+    const t = BABYLON.MeshBuilder.CreateCylinder(name, {diameter, height:0.5, tessellation:16}, scene);
+    t.position = new BABYLON.Vector3(-1.2, 0, 0);
+    t.material = matThread;
+    meshRefs[name] = t;
+    return t;
+  };
+  const m6 = createThread('mesh_thread_m6', 0.25);
+  const m8 = createThread('mesh_thread_m8', 0.35);
+  const m10 = createThread('mesh_thread_m10', 0.45);
+  // 第二个孔（右侧 M8 默认）
+  const m8_r = BABYLON.MeshBuilder.CreateCylinder('mesh_thread_m8_r', {diameter:0.35, height:0.5, tessellation:16}, scene);
+  m8_r.position = new BABYLON.Vector3(1.2, 0, 0);
+  m8_r.material = matThread;
+  meshRefs.mesh_thread_m8_r = m8_r;
+  // 默认只 M8 可见
+  m6.isVisible = false; m6.setEnabled(false);
+  m10.isVisible = false; m10.setEnabled(false);
+
+  // 焊接连接片（焊接连接时显示，本简化版未配置 WELD 选项）
+  const wp = BABYLON.MeshBuilder.CreateBox('mesh_weld_pad', {width:0.6, height:0.08, depth:0.6}, scene);
+  wp.position = new BABYLON.Vector3(-1.2, 0.165, 0);
+  const matWp = new BABYLON.StandardMaterial('matWp', scene);
+  matWp.diffuseColor = new BABYLON.Color3(1, 0.6, 0.2);
+  matWp.emissiveColor = new BABYLON.Color3(0.15, 0.1, 0.04);
+  wp.material = matWp;
+  meshRefs.mesh_weld_pad = wp;
+  wp.isVisible = false; wp.setEnabled(false);
+
+  // 银徽标
+  const sb = BABYLON.MeshBuilder.CreateBox('mesh_silver_badge', {width:0.4, height:0.05, depth:0.15}, scene);
+  sb.position = new BABYLON.Vector3(0, 0.21, -0.5);
+  const matSb = new BABYLON.StandardMaterial('matSb', scene);
+  matSb.diffuseColor = new BABYLON.Color3(0.95, 0.95, 0.95);
+  matSb.emissiveColor = new BABYLON.Color3(0.15, 0.15, 0.15);
+  sb.material = matSb;
+  meshRefs.mesh_silver_badge = sb;
+  sb.isVisible = false; sb.setEnabled(false);
+
+  // 高端徽标
+  const pb = BABYLON.MeshBuilder.CreateBox('mesh_premium_badge', {width:0.6, height:0.03, depth:0.18}, scene);
+  pb.position = new BABYLON.Vector3(0, 0.22, 0.55);
+  const matPb = new BABYLON.StandardMaterial('matPb', scene);
+  matPb.diffuseColor = new BABYLON.Color3(1, 0.8, 0.2);
+  matPb.emissiveColor = new BABYLON.Color3(0.25, 0.18, 0.04);
+  pb.material = matPb;
+  meshRefs.mesh_premium_badge = pb;
+  pb.isVisible = false; pb.setEnabled(false);
+
+  // 加固卡扣（环形）
+  const clip = BABYLON.MeshBuilder.CreateTorus('mesh_clip', {diameter:0.45, thickness:0.05, tessellation:16}, scene);
+  clip.position = new BABYLON.Vector3(1.2, 0.3, 0);
+  clip.rotation.x = Math.PI/2;
+  const matClip = new BABYLON.StandardMaterial('matClip', scene);
+  matClip.diffuseColor = new BABYLON.Color3(0.2, 0.5, 0.85);
+  clip.material = matClip;
+  meshRefs.mesh_clip = clip;
+  clip.isVisible = false; clip.setEnabled(false);
+
+  // 防尘罩（半透明遮盖）
+  const dc = BABYLON.MeshBuilder.CreateBox('mesh_dust_cover', {width:3.1, height:0.05, depth:1.5}, scene);
+  dc.position.y = 0.32;
+  const matDc = new BABYLON.StandardMaterial('matDc', scene);
+  matDc.diffuseColor = new BABYLON.Color3(0.15, 0.15, 0.2);
+  matDc.alpha = 0.5;
+  dc.material = matDc;
+  meshRefs.mesh_dust_cover = dc;
+  dc.isVisible = false; dc.setEnabled(false);
+
+  // 接地线（绿色斜线）
+  const gw = BABYLON.MeshBuilder.CreateCylinder('mesh_ground_wire', {diameter:0.08, height:1.2, tessellation:12}, scene);
+  gw.position = new BABYLON.Vector3(0.5, -0.3, 0.7);
+  gw.rotation.x = Math.PI/3;
+  const matGw = new BABYLON.StandardMaterial('matGw', scene);
+  matGw.diffuseColor = new BABYLON.Color3(0.15, 0.7, 0.2);
+  gw.material = matGw;
+  meshRefs.mesh_ground_wire = gw;
+  gw.isVisible = false; gw.setEnabled(false);
+
+  // 地面
+  const gp = BABYLON.MeshBuilder.CreateGround('ground', {width:10, height:10}, scene);
+  gp.position.y = -0.5;
+  const matGp = new BABYLON.StandardMaterial('matGp', scene);
+  matGp.diffuseColor = new BABYLON.Color3(0.93, 0.94, 0.96);
+  matGp.alpha = 0.5;
+  gp.material = matGp;
+}
+
+function resetCamera() {
+  viewIdx = 0;
+  const v = views[0];
+  BABYLON.Animation.CreateAndStartAnimation('a', camera, 'alpha', 30, 15, camera.alpha, v.alpha, 0);
+  BABYLON.Animation.CreateAndStartAnimation('b', camera, 'beta', 30, 15, camera.beta, v.beta, 0);
+  BABYLON.Animation.CreateAndStartAnimation('r', camera, 'radius', 30, 15, camera.radius, v.r, 0);
+}
+function cycleViewAngle() {
+  viewIdx = (viewIdx + 1) % views.length;
+  const v = views[viewIdx];
+  BABYLON.Animation.CreateAndStartAnimation('a', camera, 'alpha', 30, 15, camera.alpha, v.alpha, 0);
+  BABYLON.Animation.CreateAndStartAnimation('b', camera, 'beta', 30, 15, camera.beta, v.beta, 0);
+  showToast('info','已切换视角');
+}
+function takeScreenshot() {
+  BABYLON.Tools.CreateScreenshot(engine, camera, {width:1280, height:720});
+  showToast('info','📷 截图已保存');
+}
+
+// ============================================================
+// 操作
+// ============================================================
+function resetConfig() {
+  selectedValues = {};
+  configTemplate.options.forEach(opt => {
+    opt.values.forEach(v => {
+      if (v.default) {
+        if (opt.type === 'MULTI_SELECT') {
+          if (!selectedValues[opt.code]) selectedValues[opt.code] = [];
+          selectedValues[opt.code].push(v.code);
+        } else selectedValues[opt.code] = v.code;
+      }
+    });
+  });
+  evaluate();
+  renderOptions();
+  showToast('info','已恢复默认配置');
+}
+
+function openSubmitDialog() {
+  // 渲染配置摘要
+  const total = document.getElementById('totalPrice').textContent;
+  let recap = '【您的配置】\n';
+  configTemplate.options.forEach(opt => {
+    const v = selectedValues[opt.code];
+    if (!v) return;
+    recap += `  ${opt.code}: ${Array.isArray(v)?v.join(' + '):v}\n`;
+  });
+  recap += `\n【参考报价】 ¥${total}`;
+  document.getElementById('configRecap').textContent = recap;
+  document.getElementById('submitOverlay').classList.add('open');
+}
+
+function closeSubmitDialog() {
+  document.getElementById('submitOverlay').classList.remove('open');
+}
+
+function submitToSales() {
+  const name = document.getElementById('contactName').value;
+  const phone = document.getElementById('contactPhone').value;
+  const email = document.getElementById('contactEmail').value;
+  const note = document.getElementById('contactNote').value;
+  if (!phone) { showToast('warning','请填写联系电话'); return; }
+
+  // v0.4 P0 修复：生成 instance_code + customer_lead
+  const total = document.getElementById('totalPrice').textContent;
+  const now = new Date();
+  const yyyymm = now.getFullYear() + String(now.getMonth()+1).padStart(2,'0');
+  let seq = parseInt(sessionStorage.getItem('cpqInstSeq')||'0') + 1;
+  sessionStorage.setItem('cpqInstSeq', String(seq));
+  const instanceCode = `CI-${yyyymm}-${String(seq).padStart(4,'0')}`;
+  const leadId = `LEAD-${yyyymm}-${String(seq).padStart(4,'0')}`;
+  const fingerprint = btoa(JSON.stringify(selectedValues)).substring(0, 12);
+
+  // 替换对话框为"已收到 + 提示信息"视图
+  document.getElementById('submitOverlay').querySelector('.submit-dialog').innerHTML = `
+    <div class="submit-icon" style="background:linear-gradient(135deg,#52c41a,#13c2c2);">✓</div>
+    <div class="submit-title">已收到您的配置请求</div>
+    <div class="submit-desc">${name} 您好！我们已为您生成选配实例 <b style="color:#0050b3;">${instanceCode}</b>，销售顾问会在 <b>24 小时内</b> 与您联系。</div>
+
+    <div class="submit-detail" style="text-align:left;font-family:Consolas,Monaco,monospace;font-size:12px;line-height:1.7;">
+      <b>已记录信息</b><br/>
+      ─────────────────────────────────<br/>
+      实例编号: <b>${instanceCode}</b><br/>
+      状态: <b style="color:#1890ff;">SUBMITTED</b> (待销售对接)<br/>
+      客户线索: <b>${leadId}</b> (待审核转 customer)<br/>
+      ─────────────────────────────────<br/>
+      姓名: ${name}<br/>
+      电话: ${phone}<br/>
+      ${email ? `邮箱: ${email}<br/>` : ''}
+      ${note ? `留言: ${note}<br/>` : ''}
+      参考报价: ¥${total}<br/>
+      config_fingerprint: ...${fingerprint}<br/>
+      ─────────────────────────────────<br/>
+      后端流程:<br/>
+      ① POST /share/configurator/{token}/submit (CUSTOMER_SELF)<br/>
+      ② INSERT customer_lead (PENDING_REVIEW)<br/>
+      ③ INSERT product_config_instance (SUBMITTED, share_token, customer_lead_id)<br/>
+      ④ 通知销售: instance ${instanceCode} 待对接
+    </div>
+
+    <div style="background:#fffbe6;border:1px solid #ffd591;padding:10px 12px;border-radius:4px;font-size:11.5px;color:#876800;margin-bottom:14px;">
+      ⓘ <b>下一步</b>：销售在「<b>客户线索 / 实例列表</b>」审核您的提交 → 确认信息后转为正式客户 → 生成正式报价单。期间您可保存本页链接随时查看进度。
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn-primary" onclick="closeSubmitDialog()">关闭</button>
+    </div>
+  `;
+}
+
+// v0.4 优化 1: 切换隐藏价格（模拟 product_config_template.show_price=false）
+function togglePriceDisplay(hide) {
+  const footer = document.querySelector('.footer-bar');
+  if (footer) footer.style.display = hide ? 'none' : 'flex';
+  if (hide) {
+    showToast('warning', '🎭 价格栏整体隐藏（模拟 show_price=false）');
+  } else {
+    showToast('info', '✓ 价格栏已恢复');
+  }
+}
+
+function showToast(level, html) {
+  const stack = document.getElementById('toastStack');
+  const t = document.createElement('div');
+  t.className = 'toast ' + level;
+  t.innerHTML = html;
+  stack.appendChild(t);
+  setTimeout(() => {
+    t.style.transition = 'opacity .3s, transform .3s';
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(120%)';
+    setTimeout(() => t.remove(), 350);
+  }, 3500);
+}
+
+// 初始化
+window.addEventListener('DOMContentLoaded', () => {
+  initBabylon();
+  resetConfig();
+  setTimeout(() => showToast('info', '👋 销售已为您准备好默认配置，您可调整或保持'), 800);
+});
+</script>
+</body>
+</html>

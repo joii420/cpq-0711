@@ -1,0 +1,166 @@
+Sheets: ['imsba file 料件特征群组单头档', 'imsbal file 料件特征群组单头档多语言档', 'imsbb file 料件特征群组单身档', 'imsbd file 料件特征群组特征值档', 'imsbdl file 料件特征群组特征值多语言档']
+
+========== imsba file 料件特征群组单头档 (36r x 8c) ==========
+序号 | 字段编号 | 简称 | 资料型态 | 字段长度 | 是否为主键 |  | 
+001 | imsbaent | 企业编号 | varchar2 | 10 | True |  | 
+002 | imsbaownid | 资料所有者 | varchar2 | 20 | False |  | 
+003 | imsbaowndp | 资料所属部门 | varchar2 | 10 | False |  | 
+004 | imsbacrtid | 资料建立者 | varchar2 | 20 | False |  | 
+005 | imsbacrtdp | 资料建立部门 | varchar2 | 10 | False |  | 
+006 | imsbacrtdt | 资料创建日 | timestamp | 6 | False |  | 
+007 | imsbamodid | 资料修改者 | varchar2 | 20 | False |  | 
+008 | imsbamoddt | 最近修改日 | timestamp | 6 | False |  | 
+009 | imsbastus | 状态码 | varchar2 | 10 | False |  | 
+010 | imsba01 | 特征群组编号 | varchar2 | 40 | True |  | 
+011 | imsba02 | 库存系统记录产品特征值 | varchar2 | 1 | False |  | 
+012 | imsba03 | 需求单据是否需指定产品特征 | varchar2 | 1 | False |  | 
+013 | imsba04 | 单据录入产品特征自动开窗 | varchar2 | 1 | False |  | 
+014 | imsba05 | no use | varchar2 | 80 | False |  | 
+015 | imsba06 | no use | varchar2 | 80 | False |  | 
+016 | imsba07 | no use | varchar2 | 80 | False |  | 
+017 | imsba08 | no use | varchar2 | 80 | False |  | 
+018 | imsba09 | no use | varchar2 | 80 | False |  | 
+019 | imsba10 | no use | varchar2 | 80 | False |  | 
+020 | imsbaud01 | 自定义字段01 | varchar2 | 255 | False |  | 
+021 | imsbaud02 | 自定义字段02 | varchar2 | 80 | False |  | 
+022 | imsbaud03 | 自定义字段03 | varchar2 | 80 | False |  | 
+023 | imsbaud04 | 自定义字段04 | varchar2 | 80 | False |  | 
+024 | imsbaud05 | 自定义字段06 | varchar2 | 80 | False |  | 
+025 | imsbaud06 | 自定义字段06 | varchar2 | 80 | False |  | 
+026 | imsbaud07 | 自定义字段07 | number | 20,8 | False |  | 
+027 | imsbaud08 | 自定义字段08 | number | 20,8 | False |  | 
+028 | imsbaud09 | 自定义字段09 | number | 20,8 | False |  | 
+029 | imsbaud10 | 自定义字段10 | number | 10 | False |  | 
+030 | imsbaud11 | 自定义字段11 | number | 10 | False |  | 
+031 | imsbaud12 | 自定义字段12 | number | 10 | False |  | 
+032 | imsbaud13 | 自定义字段13 | timestamp | 6 | False |  | 
+033 | imsbaud14 | 自定义字段14 | timestamp | 6 | False |  | 
+034 | imsbaud15 | 自定义字段15 | timestamp | 6 | False |  | 
+035 | imsbaremarks | 备注 | varchar2 | 255 | False |  | 
+
+========== imsbal file 料件特征群组单头档多语言档 (6r x 6c) ==========
+序号 | 字段编号 | 简称 | 资料型态 | 字段长度 | 是否为主键
+001 | imsbalent | 企业编号 | varchar2 | 10 | True
+002 | imsbal01 | 特征群组编号	 | varchar2 | 40 | True
+003 | imsbal02 | 语言别 | varchar2 | 10 | False
+004 | imsbal03 | 简称 | varchar2 | 255 | False
+005 | imsbal04 | 全称 | varchar2 | 500 | False
+
+========== imsbb file 料件特征群组单身档 (38r x 6c) ==========
+序号 | 字段编号 | 简称 | 资料型态 | 字段长度 | 是否为主键
+001 | imsbbent | 企业编号 | varchar2 | 10 | True
+002 | imsbb01 | 特征群组编号 | varchar2 | 80 | True
+003 | imsbb02 | 项次 | number | 10 | True
+004 | imsbb03 | 归属层级 | varchar2 | 10 | False
+005 | imsbb04 | 类型 | varchar2 | 10 | False
+006 | imsbb05 | 赋值方式 | varchar2 | 10 | False
+007 | imsbb06 | 属性类型 | varchar2 | 10 | False
+008 | imsbb07 | 码长 | number | 5 | False
+009 | imsbb08 | 小数字数 | number | 5 | False
+010 | imsbb09 | 默认值 | varchar2 | 40 | False
+011 | imsbb10 | 最小限制 | varchar2 | 40 | False
+012 | imsbb11 | 最大限制 | varchar2 | 40 | False
+013 | imsbb12 | 必填否 | varchar2 | 1 | False
+014 | imsbb13 | 限定数据源 | varchar2 | 40 | False
+015 | imsbb14 | 前缀连接符 | varchar2 | 80 | False
+016 | imsbb15 | 后缀连接符 | varchar2 | 80 | False
+017 | imsbb16 | no use | varchar2 | 80 | False
+018 | imsbb17 | no use | varchar2 | 80 | False
+019 | imsbb18 | no use | varchar2 | 80 | False
+020 | imsbb19 | no use | varchar2 | 80 | False
+021 | imsbb20 | no use | varchar2 | 80 | False
+022 | imsbbud01 | 自定义字段01 | varchar2 | 255 | False
+023 | imsbbud02 | 自定义字段02 | varchar2 | 80 | False
+024 | imsbbud03 | 自定义字段03 | varchar2 | 80 | False
+025 | imsbbud04 | 自定义字段04 | varchar2 | 80 | False
+026 | imsbbud05 | 自定义字段06 | varchar2 | 80 | False
+027 | imsbbud06 | 自定义字段06 | varchar2 | 80 | False
+028 | imsbbud07 | 自定义字段07 | number | 20,8 | False
+029 | imsbbud08 | 自定义字段08 | number | 20,8 | False
+030 | imsbbud09 | 自定义字段09 | number | 20,8 | False
+031 | imsbbud10 | 自定义字段10 | number | 10 | False
+032 | imsbbud11 | 自定义字段11 | number | 10 | False
+033 | imsbbud12 | 自定义字段12 | number | 10 | False
+034 | imsbbud13 | 自定义字段13 | timestamp | 6 | False
+035 | imsbbud14 | 自定义字段14 | timestamp | 6 | False
+036 | imsbbud15 | 自定义字段15 | timestamp | 6 | False
+037 | imsbbremarks | 备注 | varchar2 | 255 | False
+
+========== imsbd file 料件特征群组特征值档 (39r x 6c) ==========
+序号 | 字段编号 | 简称 | 资料型态 | 字段长度 | 是否为主键
+001 | imsbdent | 企业编号 | varchar2 | 10 | True
+002 | imsbd01 | 特征群组编号 | varchar2 | 40 | True
+003 | imsbd02 | 单身项次 | number | 5 | True
+004 | imsbd03 | 单身项序 | number | 5 | True
+005 | imsbd04 | 特征值 | varchar2 | 40 | True
+006 | imsbd05 | 拼接否 | varchar2 | 1 | False
+007 | imsbd06 | no use | varchar2 | 80 | False
+008 | imsbd07 | no use | varchar2 | 80 | False
+009 | imsbd08 | no use | varchar2 | 80 | False
+010 | imsbd09 | no use | varchar2 | 80 | False
+011 | imsbd10 | no use | varchar2 | 80 | False
+012 | imsbd11 | no use | varchar2 | 80 | False
+013 | imsbd12 | no use | varchar2 | 80 | False
+014 | imsbd13 | no use | varchar2 | 80 | False
+015 | imsbd14 | no use | varchar2 | 80 | False
+016 | imsbd15 | no use | varchar2 | 80 | False
+017 | imsbd16 | no use | varchar2 | 80 | False
+018 | imsbd17 | no use | varchar2 | 80 | False
+019 | imsbd18 | no use | varchar2 | 80 | False
+020 | imsbd19 | no use | varchar2 | 80 | False
+021 | imsbd20 | no use | varchar2 | 80 | False
+022 | imsbdud01 | 自定义字段01 | varchar2 | 255 | False
+023 | imsbdud02 | 自定义字段02 | varchar2 | 80 | False
+024 | imsbdud03 | 自定义字段03 | varchar2 | 80 | False
+025 | imsbdud04 | 自定义字段04 | varchar2 | 80 | False
+026 | imsbdud05 | 自定义字段06 | varchar2 | 80 | False
+027 | imsbdud06 | 自定义字段06 | varchar2 | 80 | False
+028 | imsbdud07 | 自定义字段07 | number | 20,8 | False
+029 | imsbdud08 | 自定义字段08 | number | 20,8 | False
+030 | imsbdud09 | 自定义字段09 | number | 20,8 | False
+031 | imsbdud10 | 自定义字段10 | number | 10 | False
+032 | imsbdud11 | 自定义字段11 | number | 10 | False
+033 | imsbdud12 | 自定义字段12 | number | 10 | False
+034 | imsbdud13 | 自定义字段13 | timestamp | 6 | False
+035 | imsbdud14 | 自定义字段14 | timestamp | 6 | False
+036 | imsbdud15 | 自定义字段15 | timestamp | 6 | False
+037 | imsbdremarks | 备注 | varchar2 | 255 | False
+038 | imsbdacti | 资料有效码 | varchar2 | 1 | False
+
+========== imsbdl file 料件特征群组特征值多语言档 (36r x 12c) ==========
+序号 | 字段编号 | 简称 | 资料型态 | 字段长度 | 是否为主键 |  |  |  |  |  | 
+001 | imsbdlent | 企业编号 | varchar2 | 10 | True |  |  |  |  |  | 
+002 | imsbdl01 | 特征群组编号 | varchar2 | 40 | True |  |  |  |  |  | 
+003 | imsbdl02 | 单身项次 | number | 5 | True |  |  |  |  |  | 
+004 | imsbdl03 | 单身项序 | varchar2 | 40 | True |  |  |  |  |  | 
+005 | imsbdl04 | 特征值 | varchar2 | 40 | True |  |  |  |  |  | 
+006 | imsbdl05 | 语言别 | varchar2 | 10 | True |  |  |  |  |  | 
+007 | imsbdl06 | 简称 | varchar2 | 255 | False |  |  |  |  |  | 
+008 | imsbdl07 | 全称 | varchar2 | 500 | False |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 
+ |  |  |  |  |  |  |  |  |  |  | 

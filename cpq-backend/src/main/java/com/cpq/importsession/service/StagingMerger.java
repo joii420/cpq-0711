@@ -138,11 +138,11 @@ public class StagingMerger {
      *   2. ensureMatPartStub — 若 mat_part_staging 没有该 hf，但 mapping_staging 引用了它，
      *      插入一行 stub (part_no, status_code='Y')，避免 mapping FK 失败
      *   3. mat_customer_part_mapping（UPSERT；FK 此时已满足）
-     *   4. mat_bom（先 DELETE 旧版本行，再 INSERT）
-     *   5. mat_process（先 DELETE 旧版本行，再 INSERT，并标记 is_current=true）
-     *   6. mat_fee（先 DELETE 旧版本行，再 INSERT，并标记 is_current=true）
-     *   7. mat_plating_fee（先 DELETE 旧版本行，再 INSERT，并标记 is_current=true）
-     *   8. mat_plating_plan（先 DELETE 旧版本行，再 INSERT）
+     *   4. mat_bom（INSERT ON CONFLICT uq_mat_bom_row DO UPDATE — 幂等，无 DELETE 步骤）
+     *   5. mat_process（先 UPDATE 旧版本 is_current=false，再 INSERT ON CONFLICT uq_mat_process_current DO UPDATE）
+     *   6. mat_fee（先 UPDATE 旧版本 is_current=false，再 INSERT ON CONFLICT uq_mat_fee_current DO UPDATE）
+     *   7. mat_plating_fee（先 UPDATE 旧版本 is_current=false，再 INSERT ON CONFLICT uq_mat_plating_fee_current DO UPDATE）
+     *   8. mat_plating_plan（INSERT ON CONFLICT uq_mat_plating_plan_row DO UPDATE — 幂等，无 DELETE 步骤）
      *
      * <p>版本号注入：staging 中的 part_version=2000 基线值在此处替换为 targetVersion。
      */
@@ -255,13 +255,9 @@ public class StagingMerger {
     }
 
     private void mergeBom(Connection conn, UUID sessionId, String hf, int targetVersion) throws Exception {
-        // 先删旧版本行（同 hf + part_version），再从 staging 插入
-        try (PreparedStatement del = conn.prepareStatement(
-                "DELETE FROM mat_bom WHERE hf_part_no = ? AND part_version = ?")) {
-            del.setString(1, hf);
-            del.setInt(2, targetVersion);
-            del.executeUpdate();
-        }
+        // INSERT ON CONFLICT (uq_mat_bom_row) DO UPDATE — 替代旧的 DELETE + INSERT 模式
+        // uq_mat_bom_row = (bom_type, hf_part_no, seq_no,
+        //   COALESCE(input_material_no,''), COALESCE(element_name,''), part_version)
         String sql =
             "INSERT INTO mat_bom " +
             "  (id, bom_type, hf_part_no, seq_no, input_material_no, input_material_name, " +
@@ -272,7 +268,19 @@ public class StagingMerger {
             "       s.net_unit, s.output_material_type, s.defect_rate, s.element_name, " +
             "       s.composition_pct, ? " +
             "FROM mat_bom_staging s " +
-            "WHERE s.import_session_id = ? AND s.hf_part_no = ?";
+            "WHERE s.import_session_id = ? AND s.hf_part_no = ? " +
+            "ON CONFLICT (bom_type, hf_part_no, seq_no, " +
+            "             COALESCE(input_material_no,''), COALESCE(element_name,''), part_version) " +
+            "DO UPDATE SET " +
+            "  input_material_name  = EXCLUDED.input_material_name, " +
+            "  loss_rate            = EXCLUDED.loss_rate, " +
+            "  gross_qty            = EXCLUDED.gross_qty, " +
+            "  net_qty              = EXCLUDED.net_qty, " +
+            "  gross_unit           = EXCLUDED.gross_unit, " +
+            "  net_unit             = EXCLUDED.net_unit, " +
+            "  output_material_type = EXCLUDED.output_material_type, " +
+            "  defect_rate          = EXCLUDED.defect_rate, " +
+            "  composition_pct      = EXCLUDED.composition_pct";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, targetVersion);
             ps.setObject(2, sessionId);
@@ -283,14 +291,7 @@ public class StagingMerger {
 
     private void mergeProcess(Connection conn, UUID sessionId, String cpn, String hf,
                                int targetVersion, UUID importRecordId) throws Exception {
-        // 先把同 hf + targetVersion 的旧行物理 DELETE（避免同版本号下叠加重复行；旧版本号行不动）
-        try (PreparedStatement del = conn.prepareStatement(
-                "DELETE FROM mat_process WHERE hf_part_no = ? AND part_version = ?")) {
-            del.setString(1, hf);
-            del.setInt(2, targetVersion);
-            del.executeUpdate();
-        }
-        // 同时把同 hf 其它版本 is_current 置 false（保持只有 targetVersion 是 current）
+        // 先把同 hf 其它版本 is_current 置 false（保持只有 targetVersion 是 current）
         try (PreparedStatement upd = conn.prepareStatement(
                 "UPDATE mat_process SET is_current = false " +
                 "WHERE hf_part_no = ? AND part_version <> ?")) {
@@ -298,11 +299,14 @@ public class StagingMerger {
             upd.setInt(2, targetVersion);
             upd.executeUpdate();
         }
-        // 2026-05-15: staging 去重防 uq_mat_process_current 冲突。
-        // 触发场景: basic_data_config 把"组成件BOM" + "组成件BOM及单价"两个 sheet 都注册到 mat_process,
-        // 用户 Excel 同时含这两个 sheet → mat_process_staging 出现完全相同的 N 行 →
-        // INSERT 命中 (customer_id, hf, part_version, seq_no, sub_seq_no) partial unique 冲突。
-        // DISTINCT ON (cust, hf, seq, sub_seq) 按 created_at DESC 取最新一条; staging_id 作 tie-breaker.
+        // INSERT ON CONFLICT — 同时解决两个问题：
+        //   1. 重复导入（ON CONFLICT DO UPDATE 幂等）
+        //   2. 同 session 多 sheet 导入相同行（staging 内重复行命中同一 unique → 覆盖而非报错）
+        // uq_mat_process_current = (customer_id, hf_part_no, part_version, seq_no,
+        //   COALESCE(sub_seq_no,-1), COALESCE(quotation_line_item_id,'00000000-...'))
+        //   WHERE is_current = true（partial index）
+        // 使用 DISTINCT ON 先对 staging 去重（保留 created_at DESC 最新行），
+        // 再用 ON CONFLICT DO UPDATE，确保幂等性。
         String sql =
             "INSERT INTO mat_process " +
             "  (id, customer_id, hf_part_no, seq_no, sub_seq_no, process_code, assembly_process, " +
@@ -322,7 +326,26 @@ public class StagingMerger {
             "  FROM mat_process_staging " +
             "  WHERE import_session_id = ? AND hf_part_no = ? " +
             "  ORDER BY customer_id, hf_part_no, seq_no, sub_seq_no, created_at DESC, staging_id" +
-            ") s";
+            ") s " +
+            "ON CONFLICT (customer_id, hf_part_no, part_version, seq_no, " +
+            "             COALESCE(sub_seq_no, -1), " +
+            "             COALESCE(quotation_line_item_id, '00000000-0000-0000-0000-000000000000'::uuid)) " +
+            "WHERE is_current = true " +
+            "DO UPDATE SET " +
+            "  process_code       = EXCLUDED.process_code, " +
+            "  assembly_process   = EXCLUDED.assembly_process, " +
+            "  component_part_no  = EXCLUDED.component_part_no, " +
+            "  component_name     = EXCLUDED.component_name, " +
+            "  supplier_code      = EXCLUDED.supplier_code, " +
+            "  supplier_name      = EXCLUDED.supplier_name, " +
+            "  quantity           = EXCLUDED.quantity, " +
+            "  quantity_unit      = EXCLUDED.quantity_unit, " +
+            "  unit_price         = EXCLUDED.unit_price, " +
+            "  freight            = EXCLUDED.freight, " +
+            "  currency           = EXCLUDED.currency, " +
+            "  price_unit         = EXCLUDED.price_unit, " +
+            "  import_record_id   = EXCLUDED.import_record_id, " +
+            "  version            = mat_process.version + 1";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, targetVersion);
             ps.setObject(2, importRecordId);
@@ -334,12 +357,7 @@ public class StagingMerger {
 
     private void mergeFee(Connection conn, UUID sessionId, String cpn, String hf,
                            int targetVersion, UUID importRecordId) throws Exception {
-        try (PreparedStatement del = conn.prepareStatement(
-                "DELETE FROM mat_fee WHERE hf_part_no = ? AND part_version = ?")) {
-            del.setString(1, hf);
-            del.setInt(2, targetVersion);
-            del.executeUpdate();
-        }
+        // 先把同 hf 其它版本 is_current 置 false（保持只有 targetVersion 是 current）
         try (PreparedStatement upd = conn.prepareStatement(
                 "UPDATE mat_fee SET is_current = false " +
                 "WHERE hf_part_no = ? AND part_version <> ?")) {
@@ -347,6 +365,11 @@ public class StagingMerger {
             upd.setInt(2, targetVersion);
             upd.executeUpdate();
         }
+        // INSERT ON CONFLICT — 替代旧的 DELETE + INSERT 模式
+        // uq_mat_fee_current = (customer_id, hf_part_no, part_version, fee_type, seq_no,
+        //   COALESCE(dim_input_material_no,''), COALESCE(dim_input_material_name,''),
+        //   COALESCE(dim_element_name,''), COALESCE(dim_assembly_process,''),
+        //   COALESCE(dim_sub_seq_no,-1)) WHERE is_current = true（partial index）
         String sql =
             "INSERT INTO mat_fee " +
             "  (id, customer_id, hf_part_no, fee_type, seq_no, fee_value, fee_ratio, currency, price_unit, " +
@@ -361,7 +384,27 @@ public class StagingMerger {
             "       s.settlement_rise_ratio, s.fixed_rise_value, s.rise_currency, s.rise_unit, " +
             "       s.reject_rate, ?, true, 1, ? " +
             "FROM mat_fee_staging s " +
-            "WHERE s.import_session_id = ? AND s.hf_part_no = ?";
+            "WHERE s.import_session_id = ? AND s.hf_part_no = ? " +
+            "ON CONFLICT (customer_id, hf_part_no, part_version, fee_type, seq_no, " +
+            "             COALESCE(dim_input_material_no, ''), " +
+            "             COALESCE(dim_input_material_name, ''), " +
+            "             COALESCE(dim_element_name, ''), " +
+            "             COALESCE(dim_assembly_process, ''), " +
+            "             COALESCE(dim_sub_seq_no, -1)) " +
+            "WHERE is_current = true " +
+            "DO UPDATE SET " +
+            "  fee_value             = EXCLUDED.fee_value, " +
+            "  fee_ratio             = EXCLUDED.fee_ratio, " +
+            "  currency              = EXCLUDED.currency, " +
+            "  price_unit            = EXCLUDED.price_unit, " +
+            "  price_floating        = EXCLUDED.price_floating, " +
+            "  settlement_rise_ratio = EXCLUDED.settlement_rise_ratio, " +
+            "  fixed_rise_value      = EXCLUDED.fixed_rise_value, " +
+            "  rise_currency         = EXCLUDED.rise_currency, " +
+            "  rise_unit             = EXCLUDED.rise_unit, " +
+            "  reject_rate           = EXCLUDED.reject_rate, " +
+            "  import_record_id      = EXCLUDED.import_record_id, " +
+            "  version               = mat_fee.version + 1";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, targetVersion);
             ps.setObject(2, importRecordId);
@@ -373,12 +416,7 @@ public class StagingMerger {
 
     private void mergePlatingFee(Connection conn, UUID sessionId, String cpn, String hf,
                                   int targetVersion, UUID importRecordId) throws Exception {
-        try (PreparedStatement del = conn.prepareStatement(
-                "DELETE FROM mat_plating_fee WHERE hf_part_no = ? AND part_version = ?")) {
-            del.setString(1, hf);
-            del.setInt(2, targetVersion);
-            del.executeUpdate();
-        }
+        // 先把同 hf 其它版本 is_current 置 false（保持只有 targetVersion 是 current）
         try (PreparedStatement upd = conn.prepareStatement(
                 "UPDATE mat_plating_fee SET is_current = false " +
                 "WHERE hf_part_no = ? AND part_version <> ?")) {
@@ -386,6 +424,9 @@ public class StagingMerger {
             upd.setInt(2, targetVersion);
             upd.executeUpdate();
         }
+        // INSERT ON CONFLICT — 替代旧的 DELETE + INSERT 模式
+        // uq_mat_plating_fee_current = (customer_id, hf_part_no, part_version,
+        //   COALESCE(plating_plan_code,''), COALESCE(plan_version,'')) WHERE is_current = true（partial index）
         String sql =
             "INSERT INTO mat_plating_fee " +
             "  (id, customer_id, hf_part_no, plating_plan_code, plan_version, " +
@@ -395,7 +436,18 @@ public class StagingMerger {
             "       s.plating_process_fee, s.plating_material_fee, s.currency, s.price_unit, " +
             "       s.defect_rate, ?, true, 1, ? " +
             "FROM mat_plating_fee_staging s " +
-            "WHERE s.import_session_id = ? AND s.hf_part_no = ?";
+            "WHERE s.import_session_id = ? AND s.hf_part_no = ? " +
+            "ON CONFLICT (customer_id, hf_part_no, part_version, " +
+            "             COALESCE(plating_plan_code, ''), COALESCE(plan_version, '')) " +
+            "WHERE is_current = true " +
+            "DO UPDATE SET " +
+            "  plating_process_fee  = EXCLUDED.plating_process_fee, " +
+            "  plating_material_fee = EXCLUDED.plating_material_fee, " +
+            "  currency             = EXCLUDED.currency, " +
+            "  price_unit           = EXCLUDED.price_unit, " +
+            "  defect_rate          = EXCLUDED.defect_rate, " +
+            "  import_record_id     = EXCLUDED.import_record_id, " +
+            "  version              = mat_plating_fee.version + 1";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, targetVersion);
             ps.setObject(2, importRecordId);
@@ -409,18 +461,9 @@ public class StagingMerger {
                                    int targetVersion) throws Exception {
         // plating_plan 通过 plating_plan_code 关联 hf（间接）
         // staging 写入时 hf_part_no 未存储在 mat_plating_plan_staging（原表无此列），
-        // 需通过 mat_plating_fee_staging 中的 plating_plan_code 关联找出对应 plan_code
-        // 再按 plan_code 合并 mat_plating_plan
-        try (PreparedStatement del = conn.prepareStatement(
-                "DELETE FROM mat_plating_plan WHERE plan_code IN (" +
-                "  SELECT DISTINCT plating_plan_code FROM mat_plating_fee_staging " +
-                "  WHERE import_session_id = ? AND hf_part_no = ?) " +
-                "AND part_version = ?")) {
-            del.setObject(1, sessionId);
-            del.setString(2, hf);
-            del.setInt(3, targetVersion);
-            del.executeUpdate();
-        }
+        // 需通过 mat_plating_fee_staging 中的 plating_plan_code 关联找出对应 plan_code。
+        // INSERT ON CONFLICT — 替代旧的 DELETE + INSERT 模式
+        // uq_mat_plating_plan_row = (plan_code, version, seq_no, part_version)
         String sql =
             "INSERT INTO mat_plating_plan " +
             "  (id, plan_code, version, seq_no, plating_element, plating_area, " +
@@ -431,7 +474,13 @@ public class StagingMerger {
             "WHERE s.import_session_id = ? " +
             "  AND s.plan_code IN (" +
             "    SELECT DISTINCT plating_plan_code FROM mat_plating_fee_staging " +
-            "    WHERE import_session_id = ? AND hf_part_no = ?)";
+            "    WHERE import_session_id = ? AND hf_part_no = ?) " +
+            "ON CONFLICT (plan_code, version, seq_no, part_version) " +
+            "DO UPDATE SET " +
+            "  plating_element     = EXCLUDED.plating_element, " +
+            "  plating_area        = EXCLUDED.plating_area, " +
+            "  coating_thickness   = EXCLUDED.coating_thickness, " +
+            "  plating_requirement = EXCLUDED.plating_requirement";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, targetVersion);
             ps.setObject(2, sessionId);

@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>分享链接管理原型 v0.4 — 销售自助管理</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#f0f2f5; font-size:13px; color:#303133; height:100vh; overflow:hidden; }
+
+.layout { display:flex; height:100vh; }
+.sider { width:200px; background:#001529; color:#fff; padding:12px 0; flex-shrink:0; overflow-y:auto; }
+.sider .logo { padding:0 16px 16px; font-size:14px; font-weight:600; border-bottom:1px solid #1f2d3d; }
+.sider .ver { font-size:11px; color:#a6adb4; padding:8px 16px 0; }
+.menu { padding-top:8px; }
+.m-item { padding:9px 16px; color:#a6adb4; cursor:pointer; font-size:13px; }
+.m-item:hover { color:#fff; background:#1f2d3d; }
+.m-item.active { background:#1f2d3d; color:#fff; }
+.m-sub { padding:6px 16px 6px 32px; font-size:12.5px; color:#a6adb4; cursor:pointer; }
+.m-sub:hover { color:#fff; }
+.m-sub.active { color:#1890ff; background:#000c17; border-left:3px solid #1890ff; padding-left:29px; }
+
+.main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.crumb { padding:10px 20px; background:#fff; border-bottom:1px solid #e4e7ed; font-size:12.5px; color:#909399; }
+.crumb b { color:#303133; font-weight:500; }
+.content { flex:1; overflow-y:auto; padding:0 20px 16px; }
+
+.exp-banner { background:linear-gradient(90deg,#e6f7ff,#f0f5ff); border:1px dashed #1890ff; padding:10px 14px; border-radius:6px; font-size:12.5px; color:#0050b3; margin:16px 0 12px; }
+.exp-banner b { color:#003a8c; }
+
+.page-card { background:#fff; border-radius:8px; padding:18px 20px; margin-bottom:12px; }
+.page-title { font-size:18px; font-weight:600; margin-bottom:4px; }
+.page-subtitle { font-size:12.5px; color:#909399; margin-bottom:14px; }
+
+.stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; }
+.stat-card { background:#fff; border:1px solid #e4e7ed; border-radius:8px; padding:11px 14px; }
+.stat-card.active { border-left:3px solid #52c41a; }
+.stat-card.expired { border-left:3px solid #909399; }
+.stat-card.accessed { border-left:3px solid #1890ff; }
+.stat-card.revoked { border-left:3px solid #f56c6c; }
+.stat-label { font-size:11.5px; color:#909399; }
+.stat-value { font-size:22px; font-weight:600; color:#303133; margin-top:2px; }
+.stat-sub { font-size:10.5px; color:#909399; margin-top:1px; }
+
+.toolbar { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+.btn { padding:5px 12px; border:1px solid #dcdfe6; background:#fff; border-radius:4px; cursor:pointer; font-size:12.5px; color:#606266; display:inline-flex; align-items:center; gap:4px; }
+.btn:hover { color:#409eff; border-color:#c6e2ff; background:#ecf5ff; }
+.btn-primary { background:#1890ff; color:#fff; border-color:#1890ff; }
+.btn-primary:hover { background:#40a9ff; }
+.btn-danger { color:#f56c6c; border-color:#fbc4c4; }
+.btn-danger:hover { background:#f56c6c; color:#fff; }
+.icon-btn { width:26px; height:26px; padding:0; border:1px solid #dcdfe6; background:#fff; border-radius:3px; cursor:pointer; font-size:13px; color:#606266; display:inline-flex; align-items:center; justify-content:center; margin:0 2px; }
+.icon-btn:hover { color:#1890ff; border-color:#91caff; background:#e6f4ff; }
+.icon-btn.danger:hover { color:#fff; background:#f56c6c; border-color:#f56c6c; }
+
+.search-input, .form-select { padding:5px 10px; border:1px solid #dcdfe6; border-radius:4px; font-size:12.5px; min-width:140px; background:#fff; }
+
+.share-table { width:100%; border-collapse:collapse; font-size:12.5px; background:#fff; }
+.share-table th, .share-table td { padding:9px 10px; text-align:left; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+.share-table th { background:#fafafa; color:#606266; font-weight:500; }
+.share-table tr:hover td { background:#fafdff; }
+.share-table code { padding:2px 5px; background:#f0f0f0; border-radius:2px; font-family:Consolas,Monaco,monospace; font-size:11px; }
+
+.share-type { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; font-weight:500; }
+.share-type.CUSTOMER_SELF { background:#fff7e6; color:#d48806; border:1px solid #ffd591; }
+.share-type.INTERNAL { background:#e6f7ff; color:#0050b3; border:1px solid #91d5ff; }
+.share-type.PUBLIC_PRESET { background:#f9f0ff; color:#531dab; border:1px solid #d3adf7; }
+
+.status-tag { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; font-weight:500; }
+.status-tag.ACTIVE { background:#f6ffed; color:#52c41a; border:1px solid #b7eb8f; }
+.status-tag.EXPIRED { background:#fafafa; color:#909399; border:1px solid #d9d9d9; }
+.status-tag.REVOKED { background:#fff1f0; color:#cf1322; border:1px solid #ffa39e; }
+
+.access-badge { display:inline-flex; gap:4px; align-items:center; padding:1px 8px; background:#e6f7ff; color:#0050b3; border-radius:10px; font-size:11px; font-weight:500; border:1px solid #91d5ff; }
+.access-badge.zero { background:#fafafa; color:#909399; border-color:#d9d9d9; }
+
+.token-cell { font-family:Consolas,Monaco,monospace; font-size:10.5px; color:#606266; }
+
+.copy-btn { padding:1px 6px; font-size:10.5px; background:#fafafa; border:1px solid #d9d9d9; border-radius:3px; cursor:pointer; color:#606266; }
+.copy-btn:hover { color:#1890ff; border-color:#91caff; background:#e6f4ff; }
+
+/* Drawer */
+.drawer-mask { position:fixed; inset:0; background:rgba(0,0,0,.45); opacity:0; pointer-events:none; transition:opacity .2s; z-index:998; }
+.drawer-mask.open { opacity:1; pointer-events:auto; }
+.drawer { position:fixed; right:-680px; top:0; bottom:0; width:680px; background:#fff; box-shadow:-4px 0 16px rgba(0,0,0,.15); transition:right .3s; z-index:999; display:flex; flex-direction:column; }
+.drawer.open { right:0; }
+.drawer-header { padding:14px 20px; border-bottom:1px solid #e4e7ed; display:flex; align-items:center; gap:10px; }
+.drawer-title { font-size:15px; font-weight:600; flex:1; }
+.drawer-body { flex:1; overflow-y:auto; padding:16px 20px; }
+.close-btn { background:transparent; border:none; font-size:18px; cursor:pointer; color:#909399; padding:0 4px; }
+
+.section-card { background:#fafbfc; border:1px solid #f0f0f0; border-radius:6px; padding:12px 14px; margin-bottom:12px; }
+.section-card-title { font-size:13px; font-weight:600; margin-bottom:8px; color:#303133; }
+.summary-row { display:flex; justify-content:space-between; padding:4px 0; font-size:12px; }
+.summary-row .label { color:#909399; }
+.summary-row .value { color:#303133; font-weight:500; }
+
+.access-log { padding:8px 12px; background:#fff; border:1px solid #f0f0f0; border-radius:4px; margin-bottom:6px; }
+.access-log-time { font-size:11.5px; color:#1890ff; font-family:Consolas,Monaco,monospace; }
+.access-log-meta { font-size:11px; color:#909399; margin-top:2px; }
+
+/* Toast */
+.toast-stack { position:fixed; top:20px; right:20px; z-index:2000; display:flex; flex-direction:column; gap:8px; }
+.toast { background:#fff; border:1px solid #b7eb8f; border-left:4px solid #52c41a; padding:10px 14px; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,.1); font-size:12.5px; min-width:280px; max-width:420px; animation:slideIn .3s ease; }
+.toast.info { border-color:#91caff; border-left-color:#1890ff; }
+.toast.warning { border-color:#ffd591; border-left-color:#faad14; }
+@keyframes slideIn { from { transform:translateX(120%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <aside class="sider">
+    <div class="logo">CPQ 系统 v3</div>
+    <div class="ver">v0.4 · 分享链接管理</div>
+    <div class="menu">
+      <div class="m-item">📊 仪表板</div>
+      <div class="m-item">📂 组件管理</div>
+      <div class="m-item">📋 模板管理</div>
+      <div class="m-item">📝 报价单</div>
+      <div class="m-item">💰 核价单</div>
+      <div class="m-item">👥 客户管理</div>
+      <div class="m-item active">🛒 3D 选配</div>
+      <div class="m-sub">📋 选配实例列表</div>
+      <div class="m-sub">🎯 开始选配</div>
+      <div class="m-sub active">🔗 我分享的链接</div>
+      <div class="m-item">⚙️ 系统设置</div>
+      <div class="m-sub">用户管理</div>
+      <div class="m-sub">📦 3D 源文件管理</div>
+      <div class="m-sub">🛒 选配模板管理</div>
+      <div class="m-sub">📚 特征库管理</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="crumb">3D 选配 / <b>我分享的链接</b></div>
+
+    <div class="content">
+      <div class="exp-banner">
+        <b>🧪 v0.4 销售协作工具</b> — 管理我发出的所有选配分享链接（客户自助 / 内部协作 / 公共预设 3 种类型）。查看访问记录、延期 / 吊销链接。详见 <code>3D产品选配方案.md §十七</code>。
+      </div>
+
+      <div class="page-card">
+        <div class="page-title">🔗 我分享的链接</div>
+        <div class="page-subtitle">共 12 条分享 · 其中 8 条 ACTIVE / 3 条 EXPIRED / 1 条 REVOKED</div>
+
+        <!-- 4 个状态统计卡 -->
+        <div class="stat-grid">
+          <div class="stat-card active">
+            <div class="stat-label">ACTIVE 活跃</div>
+            <div class="stat-value">8</div>
+            <div class="stat-sub">未过期，可继续访问</div>
+          </div>
+          <div class="stat-card accessed">
+            <div class="stat-label">已被访问</div>
+            <div class="stat-value">6</div>
+            <div class="stat-sub">客户至少打开 1 次</div>
+          </div>
+          <div class="stat-card expired">
+            <div class="stat-label">EXPIRED 过期</div>
+            <div class="stat-value">3</div>
+            <div class="stat-sub">超过有效期（默认 7 天）</div>
+          </div>
+          <div class="stat-card revoked">
+            <div class="stat-label">REVOKED 已吊销</div>
+            <div class="stat-value">1</div>
+            <div class="stat-sub">主动作废</div>
+          </div>
+        </div>
+
+        <!-- 工具栏 -->
+        <div class="toolbar">
+          <input class="search-input" placeholder="🔎 搜索 token / 客户邮箱 / 实例编号..." style="flex:1;max-width:280px;" />
+          <select class="form-select">
+            <option>全部类型</option>
+            <option>CUSTOMER_SELF</option>
+            <option>INTERNAL</option>
+            <option>PUBLIC_PRESET</option>
+          </select>
+          <select class="form-select">
+            <option>全部状态</option>
+            <option>ACTIVE</option>
+            <option>EXPIRED</option>
+            <option>REVOKED</option>
+          </select>
+          <select class="form-select">
+            <option>排序: 创建时间 ↓</option>
+            <option>排序: 访问次数 ↓</option>
+            <option>排序: 过期时间 ↑</option>
+          </select>
+          <div style="flex:1"></div>
+          <button class="btn" onclick="showToast('info','清理 30 天前的 EXPIRED / REVOKED 链接')">🧹 清理过期</button>
+          <button class="btn-primary btn" onclick="showToast('info','跳转 v0.4-3D产品选配原型.html 选模板后通过分享按钮创建')">＋ 新建分享</button>
+        </div>
+
+        <!-- 分享链接列表 -->
+        <table class="share-table">
+          <thead>
+            <tr>
+              <th style="width:36px;"><input type="checkbox" /></th>
+              <th style="width:130px;">share_token</th>
+              <th>客户 / 接收人</th>
+              <th style="width:180px;">关联实例</th>
+              <th style="width:110px;">类型</th>
+              <th style="width:130px;">创建 / 过期</th>
+              <th style="width:90px;text-align:center;">访问</th>
+              <th style="width:90px;">状态</th>
+              <th style="width:160px;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="shareTbody">
+            <!-- 由 JS 渲染 -->
+          </tbody>
+        </table>
+
+        <div style="margin-top:14px;padding:10px 12px;background:#fffbe6;border:1px solid #ffd591;border-radius:4px;font-size:11.5px;color:#876800;">
+          ⓘ <b>分享链接生命周期</b>：创建时默认有效期 7 天 → 客户访问递增 access_count → 到期自动 EXPIRED（不影响实例本身）→ 销售可手动延期 / 吊销。客户从 EXPIRED 链接打开会跳过期提示页。
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 详情 Drawer -->
+<div class="drawer-mask" id="drawerMask" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-header">
+    <div class="drawer-title" id="drawerTitle">链接详情</div>
+    <button class="close-btn" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+const shares = [
+  {
+    token: 'shr-AK48LP7Q', type: 'CUSTOMER_SELF',
+    customer: '张总（罗克韦尔自动化）', email: 'zhang@rockwell.cn',
+    instance: 'CI-202605-003', instanceLabel: '客户自助_张总_接触片',
+    createdAt: '2026-05-25 14:22', expiresAt: '2026-06-01 14:22',
+    accessCount: 3, lastAccess: '2026-05-26 09:14',
+    status: 'ACTIVE', canModify: true,
+    accessLog: [
+      { time: '2026-05-26 09:14', ip: '218.84.xx.xx (上海)', ua: 'Chrome 122 / Mac', action: '修改了 OPT-COATING' },
+      { time: '2026-05-25 22:08', ip: '218.84.xx.xx (上海)', ua: 'Chrome 122 / Mac', action: '查看 + 修改 OPT-MATERIAL' },
+      { time: '2026-05-25 14:30', ip: '218.84.xx.xx (上海)', ua: 'Safari iOS / iPhone', action: '首次打开（默认配置）' },
+    ],
+  },
+  {
+    token: 'shr-J92MK8DR', type: 'CUSTOMER_SELF',
+    customer: '李总（奔驰中国）', email: 'li@mercedes.cn',
+    instance: 'CI-202605-004', instanceLabel: '奔驰Q3新项目',
+    createdAt: '2026-05-24 10:30', expiresAt: '2026-05-31 10:30',
+    accessCount: 0, lastAccess: null,
+    status: 'ACTIVE', canModify: true,
+    accessLog: [],
+  },
+  {
+    token: 'shr-T57XR4FW', type: 'INTERNAL',
+    customer: '王经理（内部）', email: 'wang@cpq.local',
+    instance: 'CI-202605-002', instanceLabel: '西门子电机选型试算',
+    createdAt: '2026-05-25 16:08', expiresAt: '2026-06-08 16:08',
+    accessCount: 2, lastAccess: '2026-05-26 10:20',
+    status: 'ACTIVE', canModify: true,
+    accessLog: [
+      { time: '2026-05-26 10:20', ip: '内网 10.0.x.x', ua: 'Edge / Win11', action: '审核确认' },
+      { time: '2026-05-25 17:00', ip: '内网 10.0.x.x', ua: 'Edge / Win11', action: '首次查看' },
+    ],
+  },
+  {
+    token: 'shr-PSET-HiE', type: 'PUBLIC_PRESET',
+    customer: '— (公共预设链接)', email: '—',
+    instance: 'CI-202604-088', instanceLabel: '标准电力配置（预设）',
+    createdAt: '2026-04-15 10:00', expiresAt: '2027-04-15 10:00',
+    accessCount: 47, lastAccess: '2026-05-25 18:33',
+    status: 'ACTIVE', canModify: false,
+    accessLog: [{ time: '2026-05-25 18:33', ip: '匿名', ua: '多种', action: '47 次累计访问' }],
+  },
+  {
+    token: 'shr-XK29P4WL', type: 'CUSTOMER_SELF',
+    customer: '陈总（试用客户）', email: 'chen@trial.com',
+    instance: 'CI-202604-099', instanceLabel: '陈总测试单',
+    createdAt: '2026-04-25 09:00', expiresAt: '2026-05-02 09:00',
+    accessCount: 1, lastAccess: '2026-04-25 14:00',
+    status: 'EXPIRED', canModify: true,
+    accessLog: [{ time: '2026-04-25 14:00', ip: '120.xx.xx.xx', ua: 'Chrome / Win', action: '查看后无操作' }],
+  },
+  {
+    token: 'shr-OLDOL999', type: 'CUSTOMER_SELF',
+    customer: '某客户（已拒绝合作）', email: 'spam@example.com',
+    instance: 'CI-202604-077', instanceLabel: '废弃测试单',
+    createdAt: '2026-04-10 11:30', expiresAt: '2026-04-17 11:30',
+    accessCount: 0, lastAccess: null,
+    status: 'REVOKED', canModify: false,
+    accessLog: [], revokedAt: '2026-04-11 09:00', revokedBy: '张工', revokeReason: '客户重复申请，疑似恶意',
+  },
+];
+
+let currentShareToken = null;
+
+function render() {
+  document.getElementById('shareTbody').innerHTML = shares.map(s => {
+    const daysLeft = Math.ceil((new Date(s.expiresAt) - new Date()) / (1000*60*60*24));
+    return `
+      <tr>
+        <td><input type="checkbox" /></td>
+        <td>
+          <div class="token-cell">${s.token}</div>
+          <button class="copy-btn" onclick="copyToken('${s.token}')">📋 复制链接</button>
+        </td>
+        <td>
+          <div style="font-weight:500;">${s.customer}</div>
+          <div style="font-size:11px;color:#909399;margin-top:2px;">${s.email}</div>
+        </td>
+        <td>
+          <div style="font-size:11.5px;"><code>${s.instance}</code></div>
+          <div style="font-size:11px;color:#606266;margin-top:2px;">${s.instanceLabel}</div>
+        </td>
+        <td><span class="share-type ${s.type}">${s.type}</span></td>
+        <td style="font-size:11px;">
+          创建 ${s.createdAt}<br>
+          ${s.status==='ACTIVE' && daysLeft<=3 ? `<span style="color:#d48806;">⚠ ${daysLeft} 天后过期</span>` : `过期 ${s.expiresAt}`}
+        </td>
+        <td style="text-align:center;">
+          <span class="access-badge ${s.accessCount===0?'zero':''}">${s.accessCount} 次</span>
+          ${s.lastAccess ? `<div style="font-size:10.5px;color:#909399;margin-top:2px;">${s.lastAccess.slice(5,10)}</div>` : ''}
+        </td>
+        <td><span class="status-tag ${s.status}">● ${s.status}</span></td>
+        <td>
+          <button class="icon-btn" title="查看详情" onclick="openDetail('${s.token}')">👁</button>
+          ${s.status==='ACTIVE' ? `
+            <button class="icon-btn" title="延期 7 天" onclick="extendShare('${s.token}')">⏰</button>
+            <button class="icon-btn" title="发送提醒" onclick="remindShare('${s.token}')">📧</button>
+            <button class="icon-btn danger" title="吊销链接" onclick="revokeShare('${s.token}')">🚫</button>
+          ` : s.status==='EXPIRED' ? `
+            <button class="icon-btn" title="重新激活（延期 7 天）" onclick="extendShare('${s.token}')">♻</button>
+          ` : ''}
+          <button class="icon-btn" title="查看实例" onclick="showToast('info','跳转 v0.4-选配实例列表原型.html?highlight=${s.instance}')">📋</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function openDetail(token) {
+  currentShareToken = token;
+  const s = shares.find(x => x.token === token);
+  const body = document.getElementById('drawerBody');
+  document.getElementById('drawerTitle').innerText = `链接详情 · ${s.token}`;
+  body.innerHTML = `
+    <div class="section-card">
+      <div class="section-card-title">🔗 链接信息</div>
+      <div class="summary-row"><span class="label">token</span><span class="value"><code>${s.token}</code></span></div>
+      <div class="summary-row"><span class="label">完整 URL</span><span class="value"><code style="font-size:10.5px;">https://cpq.example.com/share/configurator/${s.token}</code></span></div>
+      <div class="summary-row"><span class="label">类型</span><span class="value"><span class="share-type ${s.type}">${s.type}</span></span></div>
+      <div class="summary-row"><span class="label">允许修改</span><span class="value">${s.canModify ? '✓ 可修改' : '✗ 仅查看'}</span></div>
+      <div class="summary-row"><span class="label">创建时间</span><span class="value">${s.createdAt}</span></div>
+      <div class="summary-row"><span class="label">过期时间</span><span class="value">${s.expiresAt}</span></div>
+      <div class="summary-row"><span class="label">状态</span><span class="value"><span class="status-tag ${s.status}">● ${s.status}</span></span></div>
+      ${s.revokedAt ? `
+        <div class="summary-row"><span class="label">吊销时间</span><span class="value" style="color:#cf1322;">${s.revokedAt} by ${s.revokedBy}</span></div>
+        <div class="summary-row"><span class="label">吊销原因</span><span class="value">${s.revokeReason}</span></div>
+      ` : ''}
+    </div>
+
+    <div class="section-card">
+      <div class="section-card-title">👤 接收人</div>
+      <div class="summary-row"><span class="label">客户 / 接收人</span><span class="value">${s.customer}</span></div>
+      <div class="summary-row"><span class="label">邮箱</span><span class="value">${s.email}</span></div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-card-title">📋 关联实例</div>
+      <div class="summary-row"><span class="label">实例编号</span><span class="value"><code>${s.instance}</code></span></div>
+      <div class="summary-row"><span class="label">实例名</span><span class="value">${s.instanceLabel}</span></div>
+      <button class="btn" style="margin-top:8px;width:100%;justify-content:center;" onclick="showToast('info','跳转 v0.4-选配实例列表原型.html?highlight=${s.instance}')">→ 查看实例详情</button>
+    </div>
+
+    <div class="section-card">
+      <div class="section-card-title">📊 访问记录 (${s.accessLog.length})</div>
+      ${s.accessLog.length === 0 ? `
+        <div style="padding:14px;text-align:center;color:#909399;font-size:12px;">客户尚未打开链接</div>
+      ` : s.accessLog.map(a => `
+        <div class="access-log">
+          <div class="access-log-time">${a.time}</div>
+          <div class="access-log-meta">${a.ip} · ${a.ua}</div>
+          <div style="font-size:11.5px;color:#303133;margin-top:3px;">${a.action}</div>
+        </div>
+      `).join('')}
+    </div>
+
+    ${s.status === 'ACTIVE' ? `
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button class="btn" style="flex:1;justify-content:center;" onclick="extendShare('${s.token}');closeDrawer();">⏰ 延期 7 天</button>
+        <button class="btn-danger btn" style="flex:1;justify-content:center;" onclick="revokeShare('${s.token}');closeDrawer();">🚫 吊销链接</button>
+      </div>
+    ` : ''}
+  `;
+  document.getElementById('drawerMask').classList.add('open');
+  document.getElementById('drawer').classList.add('open');
+}
+
+function closeDrawer() {
+  document.getElementById('drawerMask').classList.remove('open');
+  document.getElementById('drawer').classList.remove('open');
+}
+
+function copyToken(token) {
+  const url = `https://cpq.example.com/share/configurator/${token}`;
+  showToast('info', `📋 已复制：<code style="font-size:10.5px;">${url}</code><br>可直接发给客户`);
+}
+
+function extendShare(token) {
+  showToast('info', `⏰ 已延期 7 天 · POST /api/cpq/configurator/shares/${token}/extend Body: { days: 7 }`);
+}
+
+function remindShare(token) {
+  showToast('info', `📧 已重发提醒邮件 · 模板：「您的配置仍在等待您完善」`);
+}
+
+function revokeShare(token) {
+  if (!confirm(`确认吊销链接 ${token}？\n吊销后客户访问会跳转到「链接已失效」页面。`)) return;
+  showToast('warning', `🚫 已吊销 · POST /api/cpq/configurator/shares/${token}/revoke<br>UPDATE share SET status='REVOKED', revoked_at=NOW(), revoked_by=&lt;user&gt;`);
+}
+
+function showToast(level, html) {
+  const stack = document.getElementById('toastStack');
+  const t = document.createElement('div');
+  t.className = 'toast ' + level;
+  t.innerHTML = html;
+  stack.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+render();
+</script>
+</body>
+</html>

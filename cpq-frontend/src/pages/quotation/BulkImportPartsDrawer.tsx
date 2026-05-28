@@ -30,6 +30,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { quotationService } from '../../services/quotationService';
 import { templateService } from '../../services/templateService';
 import type { LineItem, ComponentDataItem, ComponentField, ComponentFormula } from './QuotationStep2';
+import { genUUID } from '../../utils/uuid';
 
 const { Text } = Typography;
 
@@ -199,7 +200,7 @@ export function buildLineItemFromTemplate(tmpl: any, part: CustomerPartCandidate
   return {
     // Bug B (2026-05-20): 新建 lineItem 时生成 tempId，用于 driverExpansionKey lineItemId 维度。
     // 保证同报价单内两条相同料号的行各自独立缓存 driver 展开结果，不相互污染。
-    tempId: typeof crypto !== 'undefined' ? crypto.randomUUID() : `tmp-${Date.now()}`,
+    tempId: genUUID(),
     productId: '',  // V5 流程不依赖 v3 product 表
     productName: part.partName || part.customerPartName || part.partNo,
     productPartNo: part.partNo,

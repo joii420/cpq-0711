@@ -30,6 +30,7 @@ import TemplateConfigPanel from './TemplateConfigPanel';
 import ViewToggle from './ViewToggle';
 import ExcelViewConfigTab from './ExcelViewConfigTab';
 import TemplateFormulasPanel from './TemplateFormulasPanel';
+import TemplateSqlViewsTab from './TemplateSqlViewsTab';
 import './styles.css';
 
 const { Text } = Typography;
@@ -45,7 +46,7 @@ const TemplateConfiguration: React.FC = () => {
   const [productAttrs, setProductAttrs] = useState<ProductAttribute[]>([]);
   const [activeTabKey, setActiveTabKey] = useState('');
   const [viewMode, setViewMode] = useState<'detail' | 'simple' | 'excel'>('detail');
-  const [centerTab, setCenterTab] = useState<'components' | 'formulas'>('components');
+  const [centerTab, setCenterTab] = useState<'components' | 'formulas' | 'sql-views'>('components');
   const [excelViewConfig, setExcelViewConfig] = useState<any>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -432,7 +433,7 @@ const TemplateConfiguration: React.FC = () => {
         {/* Center tabs: 组件配置 / 公式 */}
         <Tabs
           activeKey={centerTab}
-          onChange={k => setCenterTab(k as 'components' | 'formulas')}
+          onChange={k => setCenterTab(k as 'components' | 'formulas' | 'sql-views')}
           style={{ padding: '0 16px' }}
           items={[
             {
@@ -498,6 +499,16 @@ const TemplateConfiguration: React.FC = () => {
                   templateId={id}
                   templateStatus={template.status}
                   onChange={() => {/* 公式变更不影响主模板 dirty 状态 */}}
+                />
+              ) : null,
+            },
+            {
+              key: 'sql-views',
+              label: 'SQL 视图',
+              children: id ? (
+                <TemplateSqlViewsTab
+                  templateId={id}
+                  readonly={!isDraft}
                 />
               ) : null,
             },
