@@ -53,7 +53,10 @@ class ComparisonExportServiceTest {
             Sheet sheet = wb.getSheetAt(0);
             Cell quoteCell = sheet.getRow(1).getCell(2);
             assertEquals(FillPatternType.SOLID_FOREGROUND, quoteCell.getCellStyle().getFillPattern(),
-                    "差异格应有实心填充");
+                    "报价行差异格应有实心填充");
+            Cell costingCell = sheet.getRow(2).getCell(2);
+            assertEquals(FillPatternType.SOLID_FOREGROUND, costingCell.getCellStyle().getFillPattern(),
+                    "核价行差异格也应有实心填充");
         }
     }
 }

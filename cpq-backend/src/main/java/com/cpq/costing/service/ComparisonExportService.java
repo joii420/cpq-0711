@@ -48,9 +48,12 @@ public class ComparisonExportService {
                 Row costingRow = sheet.createRow(r + 1);
 
                 String partLabel = row.partNo != null ? row.partNo : "";
-                if (!"BOTH".equals(row.presence)) {
-                    partLabel += "QUOTE_ONLY".equals(row.presence) ? " (仅报价)" : " (仅核价)";
+                if ("QUOTE_ONLY".equals(row.presence)) {
+                    partLabel += " (仅报价)";
+                } else if ("COSTING_ONLY".equals(row.presence)) {
+                    partLabel += " (仅核价)";
                 }
+                // BOTH / null / 未知 presence: 不加后缀
                 reportRow.createCell(0).setCellValue(partLabel);
                 sheet.addMergedRegion(new CellRangeAddress(r, r + 1, 0, 0));
 
