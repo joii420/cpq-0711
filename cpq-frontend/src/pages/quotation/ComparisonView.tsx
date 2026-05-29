@@ -54,9 +54,10 @@ const ComparisonView: React.FC<Props> = ({
     [quote.parsedColumns, quote.rows, costing.parsedColumns, costing.rows, tagMetas],
   );
 
+  // 「仅看有差异的料号」：单边料号(仅报价/仅核价)本身即最大差异，过滤时也保留
   const visibleRows = useMemo(
     () => onlyDiff
-      ? model.rows.filter((r) => Object.values(r.cells).some((c) => c.highlighted))
+      ? model.rows.filter((r) => r.presence !== 'BOTH' || Object.values(r.cells).some((c) => c.highlighted))
       : model.rows,
     [model.rows, onlyDiff],
   );

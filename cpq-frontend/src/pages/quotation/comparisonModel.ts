@@ -127,6 +127,7 @@ export function buildComparisonModel(
     cColKey[t] = tagToColKey(costingColumns, t);
   }
 
+  // 按料号建索引：同料号多行时取首次出现（料号是比对的连接键；重复料号只对比第一行）
   const quoteByPart: Record<string, ExcelRowLike> = {};
   for (const r of quoteRows) {
     const p = r.__hfPartNo;
