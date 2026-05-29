@@ -42,9 +42,12 @@ const ComparisonView: React.FC<Props> = ({
       .catch(() => setTagMetas([]));
   }, []);
 
-  const resolving =
-    quote.rows.some((r) => Object.values(r).includes('__loading__')) ||
-    costing.rows.some((r) => Object.values(r).includes('__loading__'));
+  const resolving = useMemo(
+    () =>
+      quote.rows.some((r) => Object.values(r).includes('__loading__')) ||
+      costing.rows.some((r) => Object.values(r).includes('__loading__')),
+    [quote.rows, costing.rows],
+  );
 
   const model = useMemo(
     () => buildComparisonModel(quote.parsedColumns, quote.rows, costing.parsedColumns, costing.rows, tagMetas),
@@ -130,6 +133,9 @@ const ComparisonView: React.FC<Props> = ({
 
   if (quote.error || costing.error) {
     return <Alert type="error" showIcon message={quote.error || costing.error || '加载失败'} style={{ margin: 16 }} />;
+  }
+  if (quote.loading || costing.loading) {
+    return <div style={{ textAlign: 'center', padding: 48 }}><Spin tip="加载模板配置…" /></div>;
   }
   if (resolving) return <div style={{ textAlign: 'center', padding: 48 }}><Spin tip="正在求值…" /></div>;
 
