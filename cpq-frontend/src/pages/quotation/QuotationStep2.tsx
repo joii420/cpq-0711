@@ -143,6 +143,8 @@ export interface LineItem {
   componentData: ComponentDataItem[];
   subtotal: number;
   subtotalFormula?: any[];  // Token array from template.subtotal_formula
+  /** 导入来源标记:从基础数据导入加入报价单的行设 true,后端 saveDraft 据此从基础工序 seed 本行 quotation_line_process */
+  seedProcessesFromBase?: boolean;
   /** 料号版本锁定: 本行报价使用的 (customer_product_no, hf_part_no) 版本号 */
   partVersionLocked?: number;
   /** line_item id (后端 PATCH 需要; 新创建未持久化的 line_item 无 id) */
@@ -2034,7 +2036,14 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       </div>
 
       {mainTab === 'comparison' && quotationId ? (
-        <ComparisonView quotationId={quotationId} />
+        <ComparisonView
+          quotationId={quotationId}
+          customerId={customerId}
+          quoteTemplateId={customerTemplateId}
+          costingTemplateId={costingCardTemplateId}
+          quoteLineItems={quoteLineItems}
+          costingLineItems={costingLineItems}
+        />
       ) : mainTab === 'costing' && viewType === 'excel' && quotationId ? (
         // 核价单 — Excel 视图（V73/V74 起按 linkedTemplateId 反查 costing_template 渲染）：
         // 入口 = 报价单的 costingCardTemplateId（核价模板）→ 反查 linked_template_id 命中的 Excel 模板
