@@ -182,16 +182,36 @@ public class ConfigureProductService {
             if (pr.existingHfPartNo == null || pr.existingHfPartNo.isBlank()) {
                 throw new IllegalArgumentException("existing 模式 existingHfPartNo 必填");
             }
-            // V6 (AP-53 续 6 Phase 1, 修 B-2): 存在性校验迁 material_master。
-            // 此前查 V44 mat_part → 选了 V6-only 料号（material_master 有、mat_part 没有）提交报"料号不存在"。
+            // 存在性校验：V6 material_master 优先，V44 mat_part 兜底（修 B-2）。
+            // 指纹复用(lookupHfByFingerprint 查 V44 mat_part)命中的历史选配料号可能只在 V44、
+            // 尚未回填 V6 → 此前只查 material_master 会误报"料号不存在"。
             @SuppressWarnings("unchecked")
-            List<Object[]> rows = em.createNativeQuery(
+            List<Object[]> v6rows = em.createNativeQuery(
                     "SELECT material_recipe_id, unit_weight FROM material_master WHERE material_no = :p")
                 .setParameter("p", pr.existingHfPartNo)
                 .getResultList();
-            if (rows.isEmpty()) {
-                throw new IllegalArgumentException("料号不存在: " + pr.existingHfPartNo);
+            if (v6rows.isEmpty()) {
+                @SuppressWarnings("unchecked")
+                List<Object> v44rows = em.createNativeQuery(
+                        "SELECT 1 FROM mat_part WHERE part_no = :p")
+                    .setParameter("p", pr.existingHfPartNo)
+                    .getResultList();
+                if (v44rows.isEmpty()) {
+                    throw new IllegalArgumentException("料号不存在: " + pr.existingHfPartNo);
+                }
+                // 仅 V44 有 → targeted 回填该料号的 V6 身份+元素，使复用后材质/元素 Tab 能渲染
+                backfillV6FromV44(pr.existingHfPartNo, customerCode);
+            } else {
+                // V6 有但 V44 mat_part 可能缺(V6 原生导入料号)。
+                // 下游 insertProcesses 受 mat_process.hf_part_no→mat_part.part_no FK 约束,
+                // 反向 backfill 一行 mat_part 占位(unit_weight/recipe 从 material_master 取)。
+                backfillV44FromV6(pr.existingHfPartNo, v6rows.get(0));
             }
+            // 跨客户复用: V6 材质/元素按 customer_no 存。指纹命中已有料号(前端自动切 partMode=existing)
+            // 复用到新客户的报价单时,当前客户名下可能无 element_bom_item/material_bom_item → 材质/元素 Tab 空。
+            // (上面的 backfillV6FromV44 仅在 material_master 缺失且 V44 有时才跑,对 V6 原生自定义料号不补。)
+            // 这里无条件为当前客户补齐:复制元素行 + 自定义材质料号补自指物料行。幂等。
+            backfillV6MaterialsForCustomer(pr.existingHfPartNo, customerCode);
             // existing 模式无 processIds: 老行为, 直接复用物理对象
             if (pr.processIds == null || pr.processIds.isEmpty()) {
                 // hotfix: mat_process 按 customer_id 隔离, 新客户复用老料号时本客户 mat_process 0 行
@@ -246,8 +266,9 @@ public class ConfigureProductService {
         List<ElementInput> elems = pr.elements.stream()
             .map(e -> new ElementInput(e.elementCode, e.pct))
             .collect(Collectors.toList());
-        // hotfix: fingerprint 加入 processIds — 同物质不同工序 = 不同商品
-        String fp = fingerprintCalc.simpleFingerprint(pr.recipeCode, elems, pr.processIds);
+        // 料号身份 = 材质 + 元素（不含工序）：工序已改 per-quote(quotation_line_process)，
+        // 同材质+元素不同工序 = 同一料号。与 lookup-fingerprint(2参)一致，避免 P2 命中、提交却不复用。
+        String fp = fingerprintCalc.simpleFingerprint(pr.recipeCode, elems);
 
         // 指纹复用判定：过渡期以 V44 mat_part 为权威（含历史 + 本期双写的全部选配料号）。
         // 不能改读 material_master —— 历史选配料号 fp 只在 mat_part，改读 V6 会漏判→重复新建→
@@ -280,6 +301,11 @@ public class ConfigureProductService {
         // 复用的历史料号（V44-only）借此补齐 V6，否则渲染仍空。
         insertMaterialMasterV6(hfPartNo, recipe.symbol, pr.unitWeightGrams, recipe.id, fp);
         insertElementBomV6(hfPartNo, customerCode, pr.elements);
+        // [选配-材质] mirror(composite_child_materials_mirror)读 material_bom_item
+        // (characteristic IS NULL + customer_no + 父料号)。自定义材质料号无 BOM 物料行 → 材质 Tab 空。
+        // 补一行"自指物料行",让 mirror 返 1 行 =「选中的材质本身」(material_name 列=component_usage_type
+        // =recipe.symbol,如 AgSnO₂),与有料号产品同一组件/同一视图 SQL/同一按行快照存储 → 渲染一致。
+        insertMaterialBomItemV6(hfPartNo, customerCode, recipe.symbol);
 
         // mat_part_version_log 基线行: PK (customer_product_no NOT NULL, hf_part_no, version)
         // configure 阶段无 customer_product_no (客户产品号在数据导入后才存在)
@@ -484,6 +510,125 @@ public class ConfigureProductService {
     }
 
     /**
+     * 自定义材质料号补一行 material_bom_item「自指物料行」,使 composite_child_materials_mirror
+     * 返回 1 行 =「选中的材质本身」。
+     *
+     * <p>背景: [选配-材质] mirror 从 material_bom_item(characteristic IS NULL + customer_no + 父料号)
+     * 取物料行 join material_master;mirror 的 material_name 列 = COALESCE(component_usage_type,
+     * mm.material_type, mm.material_name)。自定义材质料号只写了 material_master + element_bom_item,
+     * 无 material_bom_item → 材质 Tab 空(元素含量正常,因其读 element_bom_item)。
+     *
+     * <p>补的行: material_no=component_no=料号(自指),characteristic=NULL(匹配 mirror),
+     * customer_no=客户,component_usage_type=materialType(recipe.symbol,如 AgSnO₂)→ 材质名称列显示该材质。
+     * 与有料号产品同一组件 / 同一视图 SQL / 同一按行快照存储 → 渲染一致。
+     * 幂等(WHERE NOT EXISTS),复用历史料号也安全。
+     */
+    void insertMaterialBomItemV6(String partNo, String customerCode, String materialType) {
+        if (customerCode == null || customerCode.isBlank()) return; // customer_no NOT NULL + mirror 按 customer 过滤
+        em.createNativeQuery(
+                "INSERT INTO material_bom_item (id, system_type, customer_no, material_no, characteristic, " +
+                "seq_no, component_no, component_usage_type, created_at, updated_at) " +
+                "SELECT gen_random_uuid(), 'QUOTE', :cn, :p, NULL, 1, :p, :mt, NOW(), NOW() " +
+                "WHERE NOT EXISTS (SELECT 1 FROM material_bom_item " +
+                "  WHERE material_no = :p AND customer_no = :cn AND system_type = 'QUOTE' AND characteristic IS NULL)")
+            .setParameter("cn", customerCode)
+            .setParameter("p", partNo)
+            .setParameter("mt", materialType)
+            .executeUpdate();
+    }
+
+    /**
+     * 跨客户复用料号时,为当前报价单客户补齐 V6 材质/元素数据(element_bom_item + material_bom_item)。
+     *
+     * <p>背景: V6 这两表按 customer_no 存。自定义材质配置走指纹复用时,前端把 partMode 切成 'existing'
+     * (ConfigureProductDrawer.reuseExistingPart),后端走 existing 分支;若该料号 material_master 已存在,
+     * existing 分支会跳过所有 V6 回填 → 当前客户名下无 element_bom_item/material_bom_item →
+     * [选配-材质]/[选配-元素含量] 空(刷新也空)。
+     *
+     * <p>修法(幂等,当前客户已有则跳过):
+     * <ol>
+     *   <li>元素: 从任一来源客户复制该料号的 QUOTE 元素行 → 当前客户;</li>
+     *   <li>材质: 自定义材质料号(material_master.material_recipe_id 非空)补「自指物料行」,
+     *       component_usage_type 取 recipe.symbol(而非可能为脏值 'SIMPLE' 的 material_type)→
+     *       mirror 的 material_name 列显示该材质(如 AgNi)一行。</li>
+     * </ol>
+     */
+    void backfillV6MaterialsForCustomer(String partNo, String customerCode) {
+        if (customerCode == null || customerCode.isBlank()) return;
+        // 1) 元素: 从任一来源客户复制 → 当前客户(当前客户无该料号元素行时整体复制)
+        em.createNativeQuery(
+                "INSERT INTO element_bom_item (system_type, customer_no, hf_part_no, material_no, characteristic, seq_no, component_no, content) " +
+                "SELECT 'QUOTE', :cn, src.hf_part_no, src.material_no, src.characteristic, src.seq_no, src.component_no, src.content " +
+                "FROM element_bom_item src " +
+                "WHERE src.material_no = :p AND src.system_type = 'QUOTE' " +
+                "  AND src.customer_no = (SELECT customer_no FROM element_bom_item WHERE material_no = :p AND system_type = 'QUOTE' ORDER BY created_at LIMIT 1) " +
+                "  AND NOT EXISTS (SELECT 1 FROM element_bom_item t WHERE t.material_no = :p AND t.customer_no = :cn AND t.system_type = 'QUOTE')")
+            .setParameter("cn", customerCode)
+            .setParameter("p", partNo)
+            .executeUpdate();
+        // 2) 材质: 自定义材质料号补自指物料行(取 recipe.symbol 作 material_name)
+        em.createNativeQuery(
+                "INSERT INTO material_bom_item (id, system_type, customer_no, material_no, characteristic, seq_no, component_no, component_usage_type, created_at, updated_at) " +
+                "SELECT gen_random_uuid(), 'QUOTE', :cn, mm.material_no, NULL, 1, mm.material_no, COALESCE(mr.symbol, mm.material_type), NOW(), NOW() " +
+                "FROM material_master mm LEFT JOIN material_recipe mr ON mr.id = mm.material_recipe_id " +
+                "WHERE mm.material_no = :p AND mm.material_recipe_id IS NOT NULL " +
+                "  AND NOT EXISTS (SELECT 1 FROM material_bom_item t WHERE t.material_no = :p AND t.customer_no = :cn AND t.system_type = 'QUOTE' AND t.characteristic IS NULL)")
+            .setParameter("cn", customerCode)
+            .setParameter("p", partNo)
+            .executeUpdate();
+    }
+
+    /**
+     * 反向 backfill: V6 material_master 有此料号但 V44 mat_part 缺时,补一行 mat_part 占位。
+     * <p>下游 {@code insertProcesses} 写 mat_process 受 FK {@code mat_process.hf_part_no→mat_part.part_no}
+     * 约束;V6 原生导入料号(如 10110002/3)首次出现在 composite 子件时 mat_part 无对应行 → FK 违反 409。
+     * <p>幂等 ON CONFLICT(part_no) DO NOTHING。
+     */
+    void backfillV44FromV6(String partNo, Object[] v6row) {
+        UUID materialRecipeId = (v6row != null && v6row.length > 0 && v6row[0] != null)
+            ? UUID.fromString(v6row[0].toString()) : null;
+        BigDecimal unitWeight = (v6row != null && v6row.length > 1 && v6row[1] != null)
+            ? new BigDecimal(v6row[1].toString()) : null;
+        em.createNativeQuery(
+                "INSERT INTO mat_part (part_no, material_recipe_id, unit_weight, " +
+                "product_type, status_code, created_at, updated_at) " +
+                "VALUES (:pn, :mri, :uw, 'SIMPLE', 'Y', NOW(), NOW()) " +
+                "ON CONFLICT (part_no) DO NOTHING")
+            .setParameter("pn", partNo)
+            .setParameter("mri", materialRecipeId)
+            .setParameter("uw", unitWeight)
+            .executeUpdate();
+    }
+
+    /**
+     * targeted 回填：把仅存在于 V44(mat_part/mat_bom)的历史选配料号补到 V6
+     * (material_master 身份 + element_bom_item 元素),使指纹复用该料号时材质/元素 Tab 能渲染。
+     * 仅补传入的这一个料号(非批量),幂等 ON CONFLICT DO NOTHING。
+     */
+    void backfillV6FromV44(String partNo, String customerCode) {
+        // 身份 → material_master(从 mat_part 取 product_type/unit_weight/recipe/fingerprint)
+        em.createNativeQuery(
+                "INSERT INTO material_master (material_no, material_type, unit_weight, material_recipe_id, config_fingerprint) " +
+                "SELECT part_no, product_type, unit_weight, material_recipe_id, config_fingerprint " +
+                "FROM mat_part WHERE part_no = :p " +
+                "ON CONFLICT DO NOTHING")
+            .setParameter("p", partNo)
+            .executeUpdate();
+        // 元素 → element_bom_item(从 mat_bom ELEMENT 行取;customer_no=code,characteristic='2000' 与 insertElementBomV6 一致)
+        if (customerCode != null && !customerCode.isBlank()) {
+            em.createNativeQuery(
+                    "INSERT INTO element_bom_item (system_type, customer_no, hf_part_no, material_no, " +
+                    "characteristic, seq_no, component_no, content) " +
+                    "SELECT 'QUOTE', :cn, hf_part_no, hf_part_no, '2000', seq_no, element_name, composition_pct " +
+                    "FROM mat_bom WHERE hf_part_no = :p AND bom_type = 'ELEMENT' " +
+                    "ON CONFLICT DO NOTHING")
+                .setParameter("cn", customerCode)
+                .setParameter("p", partNo)
+                .executeUpdate();
+        }
+    }
+
+    /**
      * V6: 组合子件 → material_bom_item（characteristic='ASSEMBLY'，component_no=子料号）。
      * 让 zcj_bom / composite_child_materials_mirror 渲染子配件清单。工序(operation_no) = Phase 2。
      */
@@ -500,6 +645,36 @@ public class ConfigureProductService {
                 .setParameter("p", parentPartNo)
                 .setParameter("sq", seq++)
                 .setParameter("c", childPn)
+                .executeUpdate();
+        }
+    }
+
+    /**
+     * per-quote 工序落库（替代共享 material_bom_item 写法）— 把用户选的工序写进报价行专属的
+     * {@code quotation_line_process}（line_item_id × process_id），由
+     * {@code selopt_line_processes} 视图按 {@code :lineItemId} 过滤渲染到"选配-工序列表"Tab。
+     *
+     * <p>per-quote 隔离：只影响当前报价行,不混入导入工序,也不影响别的报价单/基础数据。
+     * <ul>
+     *   <li>每次按 lineItemId 重建（先删后插），支持重新配置覆盖。</li>
+     *   <li>process_id 直接用 process 字典 UUID（满足 FK quotation_line_process→process）；
+     *       视图侧再 JOIN process_master 取工序中文名。</li>
+     *   <li>必须在 line_item 已创建后调用（FK quotation_line_process→quotation_line_item）。</li>
+     * </ul>
+     * lineItemId 为空（前端未传报价行 id）时跳过：无行维度无法 per-quote 落库。
+     */
+    void insertQuotationLineProcesses(UUID lineItemId, List<UUID> processIds) {
+        if (lineItemId == null) return;
+        em.createNativeQuery("DELETE FROM quotation_line_process WHERE line_item_id = :lid")
+            .setParameter("lid", lineItemId)
+            .executeUpdate();
+        if (processIds == null || processIds.isEmpty()) return;
+        for (UUID processId : processIds) {
+            em.createNativeQuery(
+                    "INSERT INTO quotation_line_process (id, line_item_id, process_id) " +
+                    "VALUES (gen_random_uuid(), :lid, :pid)")
+                .setParameter("lid", lineItemId)
+                .setParameter("pid", processId)
                 .executeUpdate();
         }
     }
@@ -775,6 +950,52 @@ public class ConfigureProductService {
         }
     }
 
+    /**
+     * per-quote 组合工艺写入(取代 mat_composite_process 作渲染源)。
+     * 把 configure 请求里"参与配件下标"解析成子件料号,写进 quotation_line_composite_process
+     * (按 line_item_id 隔离),并返回解析后的步骤列表 —— 供配置响应带回前端,使 saveDraft
+     * 全量重建(换 line id)后能从 draft payload 重写,跨保存存活(同 quotation_line_process 机制)。
+     */
+    List<Map<String, Object>> insertCompositeProcessesPerQuote(
+            UUID lineItemId,
+            List<com.cpq.configure.dto.CompositeProcessRequest> cps,
+            List<String> childHfPartNos) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (lineItemId == null || cps == null || cps.isEmpty()) return out;
+        com.fasterxml.jackson.databind.ObjectMapper om =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+        int seq = 1;
+        for (com.cpq.configure.dto.CompositeProcessRequest cp : cps) {
+            com.cpq.configure.entity.CompositeProcessDef.findByCodeOrThrow(cp.defCode);
+            List<String> partsInvolved = cp.participatingPartIndexes.stream()
+                .map(childHfPartNos::get)
+                .collect(Collectors.toList());
+            Map<String, Object> params = cp.params == null ? new HashMap<>() : cp.params;
+            int thisSeq = seq++;
+            try {
+                em.createNativeQuery(
+                        "INSERT INTO quotation_line_composite_process " +
+                        "(line_item_id, def_code, seq_no, participating_parts, param_values) " +
+                        "VALUES (:lid, :d, :sq, CAST(:pp AS jsonb), CAST(:pv AS jsonb))")
+                    .setParameter("lid", lineItemId)
+                    .setParameter("d", cp.defCode)
+                    .setParameter("sq", thisSeq)
+                    .setParameter("pp", om.writeValueAsString(partsInvolved))
+                    .setParameter("pv", om.writeValueAsString(params))
+                    .executeUpdate();
+            } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+                throw new RuntimeException("JSON 序列化失败", ex);
+            }
+            Map<String, Object> dto = new HashMap<>();
+            dto.put("defCode", cp.defCode);
+            dto.put("seqNo", thisSeq);
+            dto.put("participatingParts", partsInvolved);
+            dto.put("paramValues", params);
+            out.add(dto);
+        }
+        return out;
+    }
+
     @SuppressWarnings("unchecked")
     List<Map<String, Object>> buildLineItems(UUID quotationId,
                                              ConfigureProductRequest req,
@@ -799,14 +1020,23 @@ public class ConfigureProductService {
         if ("SIMPLE".equals(req.productType)) {
             String pn = childHfPartNos.get(0);
             UUID id = insertLineItem(quotationId, pn, null, "SIMPLE", tempId);
-            out.add(buildLineItemDTO(id, pn, "SIMPLE", null));
+            // per-quote 工序：选配工序写报价行专属 quotation_line_process（行已建，满足 FK）
+            PartRequest simplePr = (req.parts != null && !req.parts.isEmpty()) ? req.parts.get(0) : null;
+            insertQuotationLineProcesses(id, simplePr != null ? simplePr.processIds : null);
+            out.add(buildLineItemDTO(id, pn, "SIMPLE", null, simplePr != null ? simplePr.processIds : null));
             return out;
         }
 
         // COMPOSITE: 父 + N 子 (父用 tempId; 子 line item 自动生成，
         // 各子件的 quotationLineItemId 通过 PartRequest.quotationLineItemId 传入)
         UUID parentId = insertLineItem(quotationId, parentHfPartNo, null, "COMPOSITE", tempId);
-        out.add(buildLineItemDTO(parentId, parentHfPartNo, "COMPOSITE", null));
+        // per-quote 组合工艺:写本报价行专属表(取代 mat_composite_process 作渲染源),并把解析后的
+        // 工艺步骤带回父行 DTO,供前端透传到 saveDraft 跨保存存活(全量重建换 line id 后重写)。
+        Map<String, Object> parentDto = buildLineItemDTO(parentId, parentHfPartNo, "COMPOSITE", null);
+        List<Map<String, Object>> cprocs =
+            insertCompositeProcessesPerQuote(parentId, req.compositeProcesses, childHfPartNos);
+        parentDto.put("compositeProcesses", cprocs);
+        out.add(parentDto);
 
         for (int i = 0; i < childHfPartNos.size(); i++) {
             String childPn = childHfPartNos.get(i);
@@ -814,7 +1044,9 @@ public class ConfigureProductService {
             PartRequest childPr = (req.parts != null && i < req.parts.size()) ? req.parts.get(i) : null;
             UUID childTempId = (childPr != null) ? parseUuidOrNull(childPr.quotationLineItemId) : null;
             UUID childId = insertLineItem(quotationId, childPn, parentId, "PART", childTempId);
-            out.add(buildLineItemDTO(childId, childPn, "PART", parentId));
+            // per-quote 工序：子件行的选配工序写 quotation_line_process
+            insertQuotationLineProcesses(childId, childPr != null ? childPr.processIds : null);
+            out.add(buildLineItemDTO(childId, childPn, "PART", parentId, childPr != null ? childPr.processIds : null));
         }
         return out;
     }
@@ -858,11 +1090,18 @@ public class ConfigureProductService {
 
     Map<String, Object> buildLineItemDTO(UUID id, String hfPartNo,
                                           String compositeType, UUID parentId) {
+        return buildLineItemDTO(id, hfPartNo, compositeType, parentId, null);
+    }
+
+    Map<String, Object> buildLineItemDTO(UUID id, String hfPartNo,
+                                          String compositeType, UUID parentId, List<UUID> processIds) {
         Map<String, Object> m = new HashMap<>();
         m.put("id", id);
         m.put("productPartNo", hfPartNo);
         m.put("compositeType", compositeType);
         m.put("parentLineItemId", parentId);
+        // 选配工序回传前端,使其能在 saveDraft 回写 quotation_line_process(工序跨保存存活)
+        m.put("processIds", processIds != null ? processIds : java.util.List.of());
         return m;
     }
     // T21: configure 主入口 + 组合产品 + buildLineItems — 完成

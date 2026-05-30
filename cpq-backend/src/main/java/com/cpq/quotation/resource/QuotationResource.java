@@ -60,6 +60,10 @@ public class QuotationResource {
     @Inject
     CustomerPartCandidateService candidateService;
 
+    // 加产品整份快照 Phase 2:saveDraft 全量重建后按新行重快照(UPSERT 保留编辑层 row_data)
+    @Inject
+    com.cpq.configure.service.ConfigureSnapshotService snapshotService;
+
     @GET
     public ApiResponse<PageResult<QuotationDTO>> list(
             @QueryParam("page") @DefaultValue("0") int page,
@@ -101,7 +105,14 @@ public class QuotationResource {
     @PUT
     @Path("/{id}/draft")
     public ApiResponse<QuotationDTO> saveDraft(@PathParam("id") UUID id, SaveDraftRequest request) {
-        return ApiResponse.success(quotationService.saveDraft(id, request));
+        QuotationDTO dto = quotationService.saveDraft(id, request);
+        // saveDraft 已提交,按新行重快照(降级:失败不影响保存)
+        try {
+            snapshotService.snapshotQuotation(id);
+        } catch (Exception ignore) {
+            // 快照尽力而为
+        }
+        return ApiResponse.success(dto);
     }
 
     /**

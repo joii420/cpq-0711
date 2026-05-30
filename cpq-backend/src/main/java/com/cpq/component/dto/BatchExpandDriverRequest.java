@@ -63,5 +63,14 @@ public class BatchExpandDriverRequest {
          * null 或空 = 不注入 IN 谓词（fallback：返回 hf_part_no 的全量历史行）。
          */
         public java.util.List<java.util.UUID> childLineItemIds;
+
+        /**
+         * 报价单 id。统一渲染协议(2026-05-30):前端 useDriverExpansions 每个 task 透传
+         * 当前报价单 id;后端 batchExpand 入口绑到 ThreadLocal QuotationIdContext,
+         * DataLoader 自动注入到 RuntimeContext.quotation.id → 视图通过 {@code :quotationId}
+         * 占位符使用。配合 :customerCode + :hfPartNos 三参数,所有 mirror 同协议跑,
+         * 不再需要 :lineItemId 标量。空可兼容旧前端(老协议路径继续工作)。
+         */
+        public UUID quotationId;
     }
 }

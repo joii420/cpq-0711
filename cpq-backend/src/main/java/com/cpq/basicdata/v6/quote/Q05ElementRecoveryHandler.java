@@ -41,18 +41,18 @@ public class Q05ElementRecoveryHandler implements SheetHandler {
             try {
                 String materialNo = row.getStr("投入料号");
                 String componentNo = row.getStr("元素");
-                Integer seqNo = row.getInt("项次");
                 java.math.BigDecimal recoveryDiscount = row.getDecimal("回收折扣");
 
-                if (materialNo == null || componentNo == null || seqNo == null) {
-                    result.recordError(row.rowNo, "投入料号/元素/项次", "匹配键不全");
+                // §5 字段表：项次 ❌ 不导入。匹配键仅 (material_no=投入料号, component_no=元素)，取最新 characteristic。
+                if (materialNo == null || componentNo == null) {
+                    result.recordError(row.rowNo, "投入料号/元素", "匹配键不全");
                     continue;
                 }
 
                 int updated = em.createNativeQuery(
                         "UPDATE element_bom_item SET recovery_discount = :rd, updated_at = NOW(), updated_by = :u " +
                         "WHERE system_type='QUOTE' AND customer_no=:c AND material_no=:m " +
-                        "  AND component_no=:cn AND seq_no=:s " +
+                        "  AND component_no=:cn " +
                         "  AND characteristic = (SELECT characteristic FROM element_bom " +
                         "    WHERE system_type='QUOTE' AND customer_no=:c AND material_no=:m " +
                         "    ORDER BY characteristic DESC LIMIT 1)")
@@ -61,13 +61,12 @@ public class Q05ElementRecoveryHandler implements SheetHandler {
                     .setParameter("c", ctx.customerNo)
                     .setParameter("m", materialNo)
                     .setParameter("cn", componentNo)
-                    .setParameter("s", seqNo)
                     .executeUpdate();
 
                 if (updated == 0) {
                     result.recordError(row.rowNo, "_lookup_",
-                        String.format("未匹配 element_bom_item (material_no=%s, component_no=%s, seq_no=%d) - 请先导入物料与元素BOM",
-                            materialNo, componentNo, seqNo));
+                        String.format("未匹配 element_bom_item (material_no=%s, component_no=%s) - 请先导入物料与元素BOM",
+                            materialNo, componentNo));
                 } else {
                     result.successRows++;
                     result.recordWrite("element_bom_item", updated);

@@ -1,0 +1,74 @@
+-- ============================================================================
+-- table-update.sql  —  内网 CPQ 从 flyway V266 → V269 补丁
+-- ============================================================================
+-- 适用前提:内网 flyway_schema_history 最高版本 = V266。
+-- 本文件汇总 V267 / V268 / V269 三条迁移,覆盖"选配-工序按报价单存 + 工序名主数据 +
+-- 加产品整份快照列"特性。三条均幂等(可重复执行)。
+--
+-- 表结构(DDL)改动只有 1 处:V269 给 quotation_line_component_data 加 2 列。
+-- V267 = 数据回填(process_master),V268 = 清理脏数据 + 重写视图定义行(component_sql_view),
+-- 二者不改表结构,但本特性渲染依赖,一并执行。
+--
+-- 执行后请重启后端(Quarkus dev: touch 一个 .java;生产:重启服务),
+-- 让 ImplicitJoinRewriter / CachedSqlCompiler 等进程级缓存重建(V268 改了视图定义)。
+--
+-- Flyway 提示:本文件为手工补丁。若内网仍走 migrate-at-start,请同时把
+-- V267__*.sql / V268__*.sql / V269__*.sql 三个迁移文件放进 db/migration/,
+-- 启动时 Flyway 会重跑(幂等无害)并记入 flyway_schema_history,保持版本账一致。
+-- ============================================================================
+
+BEGIN;
+
+-- ----------------------------------------------------------------------------
+-- V267: 回填 process_master(工序名主数据)
+--   composite_child_processes_mirror 用 LEFT JOIN process_master 取工序中文名;
+--   process_master 为空时工序名回退成工序代码。把工序字典 process 回填进来。
+-- ----------------------------------------------------------------------------
+INSERT INTO process_master (process_no, process_name, process_category)
+SELECT code, name, category
+FROM process
+ON CONFLICT (process_no) DO NOTHING;
+
+-- ----------------------------------------------------------------------------
+-- V268: 选配-工序列表 改为 per-quote(按报价行隔离)
+--   1) 清理上阶段写进 material_bom_item 的"选配工序污染行"
+--   2) 重写 composite_child_processes_mirror 视图定义 → 读 quotation_line_process
+-- ----------------------------------------------------------------------------
+-- 1) 清理污染行(导入行 component_no 必非空,故只删选配写的 component_no IS NULL 行)
+DELETE FROM material_bom_item
+WHERE system_type = 'QUOTE'
+  AND characteristic = 'ASSEMBLY'
+  AND operation_no IS NOT NULL
+  AND component_no IS NULL;
+
+-- 2) 重写 mirror 视图定义(存于 component_sql_view.sql_template)
+UPDATE component_sql_view
+SET sql_template = $V6$SELECT
+    qli.product_part_no_snapshot AS hf_part_no,
+    NULL::varchar AS child_hf_part_no,
+    NULL::varchar AS child_part_name,
+    0 AS child_seq,
+    ROW_NUMBER() OVER (ORDER BY COALESCE(pr.sort_order, 999999), pr.code) AS seq_no,
+    pr.code AS process_code,
+    COALESCE(pm.process_name, pr.name, pr.code) AS assembly_process,
+    q.customer_id AS customer_id
+FROM quotation_line_process qlp
+JOIN quotation_line_item qli ON qli.id = qlp.line_item_id
+JOIN quotation q ON q.id = qli.quotation_id
+JOIN process pr ON pr.id = qlp.process_id
+LEFT JOIN process_master pm ON pm.process_no = pr.code
+WHERE qlp.line_item_id = :lineItemId$V6$,
+    updated_at = NOW()
+WHERE sql_view_name = 'composite_child_processes_mirror';
+
+-- ----------------------------------------------------------------------------
+-- V269: 加产品整份快照 — quotation_line_component_data 增基础冻结层(唯一表结构改动)
+-- ----------------------------------------------------------------------------
+ALTER TABLE quotation_line_component_data
+    ADD COLUMN IF NOT EXISTS snapshot_rows JSONB,
+    ADD COLUMN IF NOT EXISTS snapshot_at   TIMESTAMPTZ;
+
+COMMENT ON COLUMN quotation_line_component_data.snapshot_rows IS
+    '加产品整份快照-基础冻结层:整组行 [{driverRow, basicDataValues}]，加产品/从基础刷新时写;渲染读副本';
+
+COMMIT;

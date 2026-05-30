@@ -42,12 +42,13 @@ public class Q14AssemblyProcessFeeHandler implements SheetHandler {
 
                 // 用 native upsert (ON CONFLICT (uq_capacity 索引列))
                 em.createNativeQuery(
-                        "INSERT INTO capacity (material_no, process_no, resource_group_no, " +
+                        "INSERT INTO capacity (material_no, process_no, resource_group_no, seq_no, " +
                         "  production_type, fixed_cost, currency, capacity_unit, default_defect_rate, " +
                         "  calc_version, is_effective, created_at, updated_at, updated_by) " +
-                        "VALUES (:m, :p, :r, 'BATCH_FIXED', :fc, :cur, :u, :dr, :cv, true, NOW(), NOW(), :ub) " +
+                        "VALUES (:m, :p, :r, :seq, 'BATCH_FIXED', :fc, :cur, :u, :dr, :cv, true, NOW(), NOW(), :ub) " +
                         "ON CONFLICT (material_no, process_no, resource_group_no, COALESCE(calc_version,'')) " +
                         "DO UPDATE SET fixed_cost = EXCLUDED.fixed_cost, " +
+                        "  seq_no = COALESCE(EXCLUDED.seq_no, capacity.seq_no), " +
                         "  currency = COALESCE(EXCLUDED.currency, capacity.currency), " +
                         "  capacity_unit = COALESCE(EXCLUDED.capacity_unit, capacity.capacity_unit), " +
                         "  default_defect_rate = COALESCE(EXCLUDED.default_defect_rate, capacity.default_defect_rate), " +
@@ -55,6 +56,7 @@ public class Q14AssemblyProcessFeeHandler implements SheetHandler {
                     .setParameter("m", materialNo)
                     .setParameter("p", processNo)
                     .setParameter("r", resourceGroupNo)
+                    .setParameter("seq", row.getInt("项次"))
                     .setParameter("fc", row.getDecimal("组装加工费"))
                     .setParameter("cur", row.getStr("货币"))
                     .setParameter("u", row.getStr("计价单位"))

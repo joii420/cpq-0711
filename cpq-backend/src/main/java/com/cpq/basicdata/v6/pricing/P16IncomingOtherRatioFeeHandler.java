@@ -38,6 +38,7 @@ public class P16IncomingOtherRatioFeeHandler implements SheetHandler {
                 p.finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
                 p.seqNo = row.getInt("二级项次", "项次");
                 p.costRatio = row.getDecimal("比例");
+                p.pricingPrice = java.math.BigDecimal.ZERO;  // 核价比例费用保持原行为（pricing_price=0），不受报价 D1 改动影响
                 writer.upsert(p);
                 result.successRows++;
                 result.recordWrite("unit_price", 1);

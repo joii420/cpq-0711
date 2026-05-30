@@ -115,6 +115,14 @@
 
 > 📌 客户编号由系统自动提供，不从 Excel 读取。每行生成一条 `material_customer_map` 记录。
 
+#### → 料号表（material_master）同步
+
+| Excel 列名 | 目标表字段    | 是否导入 | 备注说明             |
+| ---------- | ------------- | :------: | -------------------- |
+| 投入料号   | `material_no` |    ✅     | 按 upsert 写入料号表 |
+|            |               |          |                      |
+|            |               |          |                      |
+
 ---
 
 ### 3. 物料BOM
@@ -154,10 +162,11 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号（主件料号） | `material_no` | ✅ | 按 upsert 写入料号表 |
-| 产出料号类型 | `material_type` | ✅ | 1.银点类 / 2.非银点类 / 组成件 / 边角料 |
+| 投入料号 | `material_no` | ✅ | 按 upsert 写入料号表 |
+| 产出料号类型 | `material_type` | ✅ | 1.银点类 / 2.非银点类 / 组成件 / 边角料  ,只写入数字 |
+| 投入料号名称 | material_name | ✅ | 料件名称 |
 
-> 📌 `system_type=QUOTE`，`bom_type=MATERIAL` 固定写入主表；客户编号由系统自动提供。主件料号同步 upsert 至料号表，写入 `material_type`。
+> 📌 `system_type=QUOTE`，`bom_type=MATERIAL` 固定写入主表；客户编号由系统自动提供。投入料号同步 upsert 至料号表，写入 `material_type` ,只写入数字。
 
 ---
 
@@ -213,12 +222,12 @@
 | 宏丰料号 | — | ❌ | 不导入（不在元素 BOM 维度） |
 | 投入料号 | `material_no` | ✅ | **主件料号**（匹配键） |
 | 投入料号名称 | — | ❌ | 不导入 |
-| 项次 | `seq_no` | ✅ | 匹配键 |
+| 项次 | — | ❌ | 不导入 |
 | 元素 | `component_no` | ✅ | **组件料号**（匹配键，元素代码） |
 | 回收折扣（%） | `recovery_discount` | ✅ | 元素回收折扣(%) |
 
-> 📌 本 Sheet 为**更新操作**，按 `(material_no=投入料号, component_no=元素, seq_no=项次)` 匹配 element_bom_item 中**最新 characteristic** 的记录，更新其 `recovery_discount` 字段。
-> 📌 Excel 行示例：`宏丰料号=3120012574, 投入料号=9996, 项次=1, 元素=Ag, 回收折扣=70%` → UPDATE element_bom_item SET recovery_discount=70 WHERE material_no='9996' AND component_no='Ag' AND seq_no=1。
+> 📌 本 Sheet 为**更新操作**，按 `(material_no=投入料号, component_no=元素)` 匹配 element_bom_item 中**最新 characteristic** 的记录，更新其 `recovery_discount` 字段。
+> 📌 Excel 行示例：`宏丰料号=3120012574, 投入料号=9996, 元素=Ag, 回收折扣=70%` → UPDATE element_bom_item SET recovery_discount=70 WHERE material_no='9996' AND component_no='Ag' 。
 
 ---
 
@@ -323,7 +332,7 @@
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
 | 宏丰料号（成品料号） | `finished_material_no` | ✅ | 成品料号 |
-| 项次 | `seq_no` | ✅ | 序号 |
+| 项次 | `—` | ❌ | 不导入 |
 | 投入料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
 | 投入料号名称 | — | ❌ | 不导入 |
 | 回收折扣（%） | `cost_ratio` | ✅ | 比例 |

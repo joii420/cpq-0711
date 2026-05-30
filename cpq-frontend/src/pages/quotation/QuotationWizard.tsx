@@ -98,7 +98,7 @@ const QuotationWizard: React.FC = () => {
   // V202+ (2026-05-19): useDriverExpansions 返回 { cache, invalidate } 解决"配置前缓存 0 行/旧值, 配置后不重拉"问题.
   // invalidate(partNos) 清掉指定料号相关 key, 下一轮 fingerprint 改变时自动 re-fetch.
   const { cache: driverExpansions, invalidate: invalidateDriverExpansions } =
-    useDriverExpansions(lineItems, customerIdValue);
+    useDriverExpansions(lineItems, customerIdValue, quotationId);
 
   // 动态 key 全局变量定义字典 — 供 computeAllFormulas 在 buildDraftPayload 中正确求值动态 key 公式
   // 空 map = 动态 key token 兜底 0 (旧行为); list() 失败时同样兜底 0 不影响静态 key 场景
@@ -232,6 +232,11 @@ const QuotationWizard: React.FC = () => {
         productAttributeValues: rawAttrs,
         componentData: li.componentData || [],
         subtotal: li.subtotal || 0,
+        // 工序回读:从 GET 的 processes 填 processIds,使 saveDraft 能回写 quotation_line_process
+        // (选配/导入工序跨保存存活,刷新后不丢)。
+        processIds: Array.isArray(li.processes) ? li.processes.map((p: any) => p.processId).filter(Boolean) : [],
+        // 选配-组合工艺 per-quote:GET 回读步骤,带到本行供 saveDraft 透传(跨保存存活)
+        compositeProcesses: Array.isArray(li.compositeProcesses) ? li.compositeProcesses : [],
         // 料号版本锁定 (后端 DTO 已带, 用于产品卡片版本 Tag 显示)
         partVersionLocked: li.partVersionLocked,
         // productType (mat_part.product_type 反查) — 用于 ProductCard 按类型条件渲染 Tab
@@ -437,23 +442,29 @@ const QuotationWizard: React.FC = () => {
   // SaveDraft 成功后用响应回填 lineItem.partVersionLocked
   // 仅按 id 匹配后只更新版本字段，不动 productAttributeValues / componentData 等用户可能正在编辑的字段
   // 无变更时返回原 state 引用，跳过 re-render
-  const syncPartVersionLockedFromResponse = (resData: any) => {
-    if (!resData?.lineItems) return;
-    const pvMap = new Map<string, number>();
-    for (const li of resData.lineItems) {
-      if (li?.id != null && li?.partVersionLocked != null) {
-        pvMap.set(String(li.id), li.partVersionLocked);
-      }
-    }
-    if (pvMap.size === 0) return;
+  // 保存后回填:saveDraft 全量重建会把每行 id 换成新 UUID,响应按 sortOrder ASC 返回
+  // (buildDraftPayload 发送 sortOrder=数组下标)→ 按 index 对齐回填新 id + partVersionLocked。
+  // 关键:行 id 同步后 useDriverExpansions 的 fingerprint(含 li.id)变化 → 自动用新 id 重拉展开,
+  // 命中保存时刚写好的快照(snapshotQuotation 在响应返回前已落库)→ 工序等"按行(quotation_line_process)
+  // 存储"的快照数据无需手动刷新即出现(修:导入产品工序加入时空、刷新才有)。
+  // 不能按 id 匹配:新行 id 恰恰是变化的那一维,按 id 必匹配不上(旧实现对新行/导入行回填失效)。
+  // buildDraftPayload 不发送 line id → 回填 id 不改变下次 payload → 无再保存死循环。
+  const syncLineItemsFromResponse = (resData: any) => {
+    const respLines = resData?.lineItems;
+    if (!Array.isArray(respLines)) return;
     setLineItems(prev => {
+      // 数量不一致(理论不会)时不冒险按 index 错位回填,退化为依赖手动刷新。
+      if (respLines.length !== prev.length) return prev;
       let changed = false;
-      const next = prev.map(item => {
-        const pv = pvMap.get(String(item.id));
-        if (pv != null && pv !== item.partVersionLocked) {
-          changed = true;
-          return { ...item, partVersionLocked: pv };
+      const next = prev.map((item, i) => {
+        const r = respLines[i];
+        if (!r) return item;
+        const patch: any = {};
+        if (r.id != null && String(r.id) !== String((item as any).id)) patch.id = r.id;
+        if (r.partVersionLocked != null && r.partVersionLocked !== item.partVersionLocked) {
+          patch.partVersionLocked = r.partVersionLocked;
         }
+        if (Object.keys(patch).length > 0) { changed = true; return { ...item, ...patch }; }
         return item;
       });
       return changed ? next : prev;
@@ -470,8 +481,9 @@ const QuotationWizard: React.FC = () => {
       lastSaveRef.current = payloadStr;
       const res = await quotationService.saveDraft(quotationId, payload);
       // BUMP 后端把新 partVersionLocked 写入 DB，前端本地 state 需同步回填，
-      // 避免「卡片版本号停在旧值直到强刷」的 UX 漂移
-      syncPartVersionLockedFromResponse(res?.data);
+      // 避免「卡片版本号停在旧值直到强刷」的 UX 漂移；同时回填重建后的新行 id，
+      // 触发 driver 展开按新 id 重拉 → 导入工序等按行快照无需刷新即出现。
+      syncLineItemsFromResponse(res?.data);
       // P2-9: backup to localStorage on success
       localStorage.setItem(`cpq-draft-${quotationId}`, JSON.stringify(payload));
     } catch {
@@ -618,7 +630,13 @@ const QuotationWizard: React.FC = () => {
         productAttributeValues: JSON.stringify(li.productAttributeValues || {}),
         subtotal: computeProductSubtotalSafe(li, driverExpansions, customerIdValue),
         sortOrder: idx,
-        processIds: [],
+        // 选配/回读的工序回传:后端 saveDraft 据此回写 quotation_line_process(工序跨保存存活)。
+        // 导入行此处为空(不携带 processIds),改由 seedProcessesFromBase 让后端从基础工序 seed。
+        processIds: Array.isArray((li as any).processIds) ? (li as any).processIds : [],
+        // 选配-组合工艺 per-quote:透传步骤,后端 saveDraft 据此重写(换 line id 后存活)
+        compositeProcesses: Array.isArray((li as any).compositeProcesses) ? (li as any).compositeProcesses : [],
+        // 导入来源标记透传:后端 saveDraft 据此从基础工序 seed 本行 quotation_line_process
+        seedProcessesFromBase: (li as any).seedProcessesFromBase ?? undefined,
         // V169 选配组合产品父子关系 — saveDraft 全量重建时必须透传:
         //   compositeType 直接透传 (SIMPLE/COMPOSITE/PART)
         //   parentLineItemId 旧 UUID 已被 CASCADE 删, 不能传; 改传 tempParentIndex (父在 list 的位置)
@@ -778,8 +796,8 @@ const QuotationWizard: React.FC = () => {
       const payload = buildDraftPayload(values);
       const res = await quotationService.saveDraft(quotationId, payload);
       setQuotation(res.data);
-      // 同步回填 lineItem.partVersionLocked，避免 BUMP 后卡片版本号停在旧值直到强刷
-      syncPartVersionLockedFromResponse(res.data);
+      // 回填重建后的新行 id + partVersionLocked,避免卡片版本号停在旧值、并触发展开按新 id 重拉
+      syncLineItemsFromResponse(res.data);
       if (!silent) message.success('草稿已保存');
       localStorage.setItem(`cpq-draft-${quotationId}`, JSON.stringify(payload));
     } catch (e: any) {
@@ -904,6 +922,11 @@ const QuotationWizard: React.FC = () => {
         // 保留 compositeType + parentLineItemId 让渲染层 filter PART 子卡片 (A 修复)
         compositeType: li.compositeType,
         parentLineItemId: li.parentLineItemId,
+        // 选配工序回传:后端 buildLineItemDTO 透传 processIds,带到 lineItem 上,
+        // 使 saveDraft 能回写 quotation_line_process(选配工序跨保存存活)。
+        processIds: Array.isArray(li.processIds) ? li.processIds : [],
+        // 选配-组合工艺 per-quote:从 configure 响应带回步骤,供 saveDraft 透传存活
+        compositeProcesses: Array.isArray(li.compositeProcesses) ? li.compositeProcesses : [],
       }) as LineItem;
     });
     // 1. 立即追加新行 (函数式, 防 race)

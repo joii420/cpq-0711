@@ -154,6 +154,8 @@ public class QuotationDTO {
         public Boolean isManuallyAdjusted;
         public Integer sortOrder;
         public List<ProcessDTO> processes;
+        /** 选配-组合工艺 per-quote 步骤:[{defCode, seqNo, participatingParts[], paramValues{}}]。前端透传到 saveDraft 跨保存存活。 */
+        public List<Map<String, Object>> compositeProcesses;
         public List<ComponentDataDTO> componentData;
         public SnapshotDTO snapshot;
         /** 料号版本锁定 (S5): 该行报价使用的 (customer_product_no, hf_part_no) 版本号 */

@@ -33,12 +33,10 @@ public class Q15AssemblyAnnualDiscountHandler implements SheetHandler {
                 p.code = code;
                 p.finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
                 p.operationNo = row.getStr("组装工序");
-                Integer main = row.getInt("项次");
-                Integer order = row.getInt("年降顺序");
-                p.seqNo = (main == null ? 0 : main) * 100 + (order == null ? 0 : order);
+                p.seqNo = row.getInt("项次");               // §15: 项次 → seq_no
+                p.discountOrder = row.getInt("年降顺序");     // §15: 年降顺序 → discount_order（具名列）
                 p.costRatio = row.getDecimal("年降系数");
-                p.pricingPrice = row.getDecimal("单次固定年降值");
-                if (p.pricingPrice == null) p.pricingPrice = java.math.BigDecimal.ZERO;
+                p.pricingPrice = row.getDecimal("单次固定年降值");  // 比例/固定二选一，空值保留 NULL（D1）
                 p.currency = row.getStr("货币");
                 p.unit = row.getStr("计价单位");
                 writer.upsert(p);

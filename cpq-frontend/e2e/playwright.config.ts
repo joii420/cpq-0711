@@ -15,14 +15,16 @@ export default defineConfig({
     locale: 'zh-CN',
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
-    video: 'retain-on-failure',
+    // video 需 Playwright ffmpeg 二进制，Ubuntu 26.04 无构建可下；截图已够用，关闭 video
+    video: 'off',
     actionTimeout: 15_000,
     navigationTimeout: 30_000,
   },
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      // Ubuntu 26.04 无 Playwright 内置 chromium 构建，改用系统 google-chrome
+      use: { ...devices['Desktop Chrome'], channel: 'chrome' },
     },
   ],
 });

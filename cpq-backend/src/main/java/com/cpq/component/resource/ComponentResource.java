@@ -13,6 +13,7 @@ import com.cpq.component.dto.ExpandDriverRequest;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.component.service.ComponentService;
+import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.template.service.TemplateService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -20,7 +21,12 @@ import jakarta.ws.rs.core.MediaType;
 import org.jboss.logging.Logger;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Path("/api/cpq/components")
@@ -133,20 +139,162 @@ public class ComponentResource {
         if (req.tasks.size() > 5000) {
             throw new BusinessException(400, "batch tasks 上限 5000，当前 " + req.tasks.size());
         }
-        for (Task t : req.tasks) {
+        // 与 tasks 同序预置 results 占位,Phase 1/2 按 index 回填(保证按 index 配对的协议不变)
+        for (int i = 0; i < req.tasks.size(); i++) {
+            Task t = req.tasks.get(i);
             Result r = new Result();
             r.key = ComponentDriverService.cacheKey(t.componentId, t.customerId, t.partNo, t.partVersion);
+            resp.results.add(r);
+        }
+
+        // Feature flag — 默认关,生产行为不变;开启:
+        //   -Dcpq.batch-expand-bucket=true 或 export CPQ_BATCH_EXPAND_BUCKET=true
+        boolean bucketEnabled = "true".equalsIgnoreCase(
+                System.getProperty("cpq.batch-expand-bucket",
+                    System.getenv().getOrDefault("CPQ_BATCH_EXPAND_BUCKET", "false")));
+
+        // ── Phase 1:每个 task 先试 snapshot,命中直返;未命中收集进 Phase 2 候选 ──
+        List<Integer> phase2 = new ArrayList<>();
+        for (int i = 0; i < req.tasks.size(); i++) {
+            Task t = req.tasks.get(i);
+            Result r = resp.results.get(i);
             try {
-                // 透传 lineItemId + compositeType + childLineItemIds 让 expand 按产品类型选择注入策略：
-                //   SIMPLE (或 null): 注入 lineItemId 限定专属工序行，防止累积所有历史行
-                //   COMPOSITE 父级 + childLineItemIds 已知: 注入 IN 谓词限定子件专属工序行 (消除累积)
-                //   COMPOSITE 父级 + childLineItemIds 未知: 回退到全量聚合 (兼容旧前端)
-                if ((t.overrideDataDriverPath != null && !t.overrideDataDriverPath.isBlank())
+                QuotationIdContext.set(t.quotationId);
+                try {
+                    boolean hasContext = (t.overrideDataDriverPath != null && !t.overrideDataDriverPath.isBlank())
+                            || (t.overrideFieldsJson != null && !t.overrideFieldsJson.isBlank())
+                            || t.lineItemId != null
+                            || t.compositeType != null
+                            || (t.childLineItemIds != null && !t.childLineItemIds.isEmpty());
+                    if (!bucketEnabled) {
+                        // Flag 关 → 维持原逻辑(无 Phase 2)
+                        if (hasContext) {
+                            r.data = componentDriverService.expandWithSnapshot(
+                                t.componentId, t.customerId, t.partNo, t.partVersion,
+                                t.overrideDataDriverPath, t.overrideFieldsJson, t.lineItemId, t.compositeType,
+                                t.childLineItemIds);
+                        } else {
+                            r.data = componentDriverService.expand(t.componentId, t.customerId, t.partNo, t.partVersion);
+                        }
+                        r.status = "OK";
+                        continue;
+                    }
+                    // Flag 开 → Phase 1 仅试 snapshot;hasContext 才有 snapshot 命中机会
+                    if (hasContext) {
+                        ExpandDriverResponse snap = componentDriverService.expandWithSnapshot(
+                            t.componentId, t.customerId, t.partNo, t.partVersion,
+                            t.overrideDataDriverPath, t.overrideFieldsJson, t.lineItemId, t.compositeType,
+                            t.childLineItemIds);
+                        if (snap != null && "snapshot".equals(snap.driverPath)) {
+                            r.data = snap;
+                            r.status = "OK";
+                            continue;
+                        }
+                    }
+                    phase2.add(i);
+                } finally {
+                    QuotationIdContext.clear();
+                }
+            } catch (Exception e) {
+                r.status = "ERROR";
+                r.error = e.getMessage();
+                LOG.warnf("batch-expand[phase1] task %s failed: %s", r.key, e.getMessage());
+            }
+        }
+
+        if (phase2.isEmpty()) {
+            return ApiResponse.success(resp);
+        }
+
+        // ── Phase 2:按 bucket key 分组,可合的一次 expandMulti,不可合的逐 task expand ──
+        // bucketKey = componentId|customerId|partVersion|effectiveDriverPath|fieldsHash[|lineItemId 视图含 :lineItemId 时]
+        Map<String, List<Integer>> buckets = new LinkedHashMap<>();
+        Map<String, String> bucketDriverPath = new HashMap<>();
+        for (int idx : phase2) {
+            Task t = req.tasks.get(idx);
+            String dp = componentDriverService.resolveEffectiveDriverPath(t.componentId, t.overrideDataDriverPath);
+            String fieldsTag = t.overrideFieldsJson == null ? "" : Integer.toHexString(t.overrideFieldsJson.hashCode());
+            String key = t.componentId + "|" + t.customerId + "|" + t.partVersion + "|" + dp + "|" + fieldsTag;
+            if (componentDriverService.viewUsesLineItemId(t.componentId, dp)) {
+                key += "|li=" + (t.lineItemId == null ? "" : t.lineItemId);
+            }
+            buckets.computeIfAbsent(key, k -> new ArrayList<>()).add(idx);
+            bucketDriverPath.put(key, dp);
+        }
+
+        for (Map.Entry<String, List<Integer>> e : buckets.entrySet()) {
+            List<Integer> idxs = e.getValue();
+            String dp = bucketDriverPath.get(e.getKey());
+            Task pivot = req.tasks.get(idxs.get(0));
+            boolean canMerge = idxs.size() >= 2
+                    && !componentDriverService.viewUsesLineItemId(pivot.componentId, dp)
+                    && allUniquePartNos(idxs, req.tasks);
+            if (!canMerge) {
+                // 不能合 → 桶内逐 task 跑(同原逻辑)
+                for (int idx : idxs) {
+                    Task t = req.tasks.get(idx);
+                    Result r = resp.results.get(idx);
+                    runSingleTask(t, r);
+                }
+                continue;
+            }
+            // 合并跑一次 SQL 视图,按 hf_part_no 分发回各 task
+            try {
+                List<String> partNos = idxs.stream()
+                        .map(idx -> req.tasks.get(idx).partNo)
+                        .filter(java.util.Objects::nonNull)
+                        .distinct()
+                        .toList();
+                // 桶内同一 quotationId(同一 batch-expand 请求里所有 task 同单)→ 设到 ThreadLocal
+                // 让 mirror 视图能用 :quotationId(统一协议)
+                QuotationIdContext.set(pivot.quotationId);
+                Map<String, ExpandDriverResponse> merged;
+                try {
+                    merged = componentDriverService.expandMulti(
+                            pivot.componentId, pivot.customerId, partNos, pivot.partVersion,
+                            pivot.overrideDataDriverPath, pivot.overrideFieldsJson);
+                } finally {
+                    QuotationIdContext.clear();
+                }
+                for (int idx : idxs) {
+                    Task t = req.tasks.get(idx);
+                    Result r = resp.results.get(idx);
+                    ExpandDriverResponse part = merged.get(t.partNo);
+                    if (part == null) {
+                        part = new ExpandDriverResponse();
+                        part.rows = new ArrayList<>();
+                        part.rowCount = 0;
+                        part.driverPath = dp;
+                    }
+                    r.data = part;
+                    r.status = "OK";
+                }
+                LOG.infof("[batch-expand bucket-merge] componentId=%s partNos=%d → 1 SQL view exec (省 %d 次)",
+                        pivot.componentId, partNos.size(), partNos.size() - 1);
+            } catch (Exception ex) {
+                LOG.warnf("[batch-expand bucket-merge] bucket=%s 失败,fallback 逐 task: %s", e.getKey(), ex.getMessage());
+                for (int idx : idxs) {
+                    Task t = req.tasks.get(idx);
+                    Result r = resp.results.get(idx);
+                    runSingleTask(t, r);
+                }
+            }
+        }
+        return ApiResponse.success(resp);
+    }
+
+    /** Phase 2 桶不可合时的单 task 跑(同原 batchExpand 逻辑),包 QuotationIdContext 让视图能用 :quotationId。 */
+    private void runSingleTask(Task t, Result r) {
+        try {
+            QuotationIdContext.set(t.quotationId);
+            try {
+                boolean hasContext = (t.overrideDataDriverPath != null && !t.overrideDataDriverPath.isBlank())
                         || (t.overrideFieldsJson != null && !t.overrideFieldsJson.isBlank())
                         || t.lineItemId != null
                         || t.compositeType != null
-                        || (t.childLineItemIds != null && !t.childLineItemIds.isEmpty())) {
-                    r.data = componentDriverService.expand(
+                        || (t.childLineItemIds != null && !t.childLineItemIds.isEmpty());
+                if (hasContext) {
+                    r.data = componentDriverService.expandWithSnapshot(
                         t.componentId, t.customerId, t.partNo, t.partVersion,
                         t.overrideDataDriverPath, t.overrideFieldsJson, t.lineItemId, t.compositeType,
                         t.childLineItemIds);
@@ -154,13 +302,23 @@ public class ComponentResource {
                     r.data = componentDriverService.expand(t.componentId, t.customerId, t.partNo, t.partVersion);
                 }
                 r.status = "OK";
-            } catch (Exception e) {
-                r.status = "ERROR";
-                r.error = e.getMessage();
-                LOG.warnf("batch-expand: task %s failed: %s", r.key, e.getMessage());
+            } finally {
+                QuotationIdContext.clear();
             }
-            resp.results.add(r);
+        } catch (Exception e) {
+            r.status = "ERROR";
+            r.error = e.getMessage();
+            LOG.warnf("batch-expand[single] task %s failed: %s", r.key, e.getMessage());
         }
-        return ApiResponse.success(resp);
+    }
+
+    /** 桶内 partNos 互不重复(同料号多卡时按 hf_part_no 分发不出来 → 不能合) */
+    private static boolean allUniquePartNos(List<Integer> idxs, List<Task> tasks) {
+        Set<String> seen = new HashSet<>();
+        for (int idx : idxs) {
+            String p = tasks.get(idx).partNo;
+            if (p != null && !seen.add(p)) return false;
+        }
+        return true;
     }
 }

@@ -66,6 +66,12 @@ public class ComponentDriverService {
     @Inject
     GlobalVariableService globalVariableService;
 
+    // 加产品整份快照 Phase 2（docs/方案-加产品整份快照.md）：渲染读报价单快照(snapshot_rows)。
+    @Inject
+    jakarta.persistence.EntityManager em;
+
+    private static final ObjectMapper SNAPSHOT_MAPPER = new ObjectMapper();
+
     /** V190+: 合成 key 前缀, 标识 basicDataValues �?全局变量行级�?条目 (避免�?BNF path key 冲突) */
     public static final String GVAR_KEY_PREFIX = "@gvar:";
 
@@ -166,6 +172,43 @@ public class ComponentDriverService {
      *
      * <p>childLineItemIds 为 null/空时降级为旧行为（不注入 IN 谓词）。
      */
+    /**
+     * 加产品整份快照 Phase 2（docs/方案-加产品整份快照.md）：渲染入口。
+     * <p>命中报价单快照(quotation_line_component_data.snapshot_rows,按 lineItemId×componentId)→
+     * 反序列化冻结行直返(包括"空快照=空渲染",不再回退基础);snapshot_rows 为 NULL(无快照,
+     * 如存量老行)→ 回退实时 {@link #expand}。基础表变化不影响已快照的报价行。
+     * <p>注意:写快照的 {@code ConfigureSnapshotService} 仍调 live {@link #expand} 取基础,不走本方法,避免循环。
+     */
+    public ExpandDriverResponse expandWithSnapshot(UUID componentId, UUID customerId, String partNo, Integer partVersion,
+                                                   String overrideDataDriverPath, String overrideFieldsJson,
+                                                   UUID lineItemId, String compositeType, List<UUID> childLineItemIds) {
+        if (lineItemId != null && componentId != null) {
+            try {
+                @SuppressWarnings("unchecked")
+                List<Object> snap = em.createNativeQuery(
+                        "SELECT snapshot_rows FROM quotation_line_component_data " +
+                        "WHERE line_item_id = :lid AND component_id = :cid AND snapshot_rows IS NOT NULL LIMIT 1")
+                    .setParameter("lid", lineItemId).setParameter("cid", componentId)
+                    .getResultList();
+                if (!snap.isEmpty() && snap.get(0) != null) {
+                    String json = snap.get(0).toString();
+                    List<ExpandDriverResponse.Row> snapRows = (json == null || json.isBlank())
+                            ? new ArrayList<>()
+                            : SNAPSHOT_MAPPER.readValue(json, new TypeReference<List<ExpandDriverResponse.Row>>() {});
+                    ExpandDriverResponse resp = new ExpandDriverResponse();
+                    resp.rows = snapRows != null ? snapRows : new ArrayList<>();
+                    resp.rowCount = resp.rows.size();
+                    resp.driverPath = "snapshot";
+                    return resp;
+                }
+            } catch (Exception e) {
+                LOG.warnf("[snapshot-read] line=%s comp=%s 读快照失败,回退实时: %s", lineItemId, componentId, e.getMessage());
+            }
+        }
+        return expand(componentId, customerId, partNo, partVersion, overrideDataDriverPath, overrideFieldsJson,
+                lineItemId, compositeType, childLineItemIds);
+    }
+
     public ExpandDriverResponse expand(UUID componentId, UUID customerId, String partNo, Integer partVersion,
                                        String overrideDataDriverPath, String overrideFieldsJson,
                                        UUID lineItemId, String compositeType, List<UUID> childLineItemIds) {
@@ -405,6 +448,156 @@ public class ComponentDriverService {
         } finally {
             com.cpq.datasource.sqlview.SqlViewRuntimeContext.restore(_prevSqlViewCtx);
         }
+    }
+
+    /**
+     * 批量合桶专用 expand — 一次查多张产品卡片(`partNos`)的同一组件,返回 partNo → 响应。
+     *
+     * <p>由 `ComponentResource.batchExpand` 的 bucket-merge 调用,bucket 已保证:
+     * ① 同 bucket 内 partNos 互不重复;② 该 bucket 的 driver path 不含 `:lineItemId`
+     * (否则不能跨卡片合);③ snapshot 命中的 task 已直返,不进合桶。
+     *
+     * <p>不走 {@code expandCache}(批量结果按 partNo 拆分后写入各自 task 的响应,缓存复用语义复杂),
+     * 也不写 lineItemId-tagged cache key。批量场景由上层 batchExpand 一次性调用,缓存收益小。
+     *
+     * @return Map&lt;partNo, ExpandDriverResponse&gt;。即便某 partNo 视图返 0 行也会返回空响应,
+     *         保证调用方对每个 task 都有 result(空 rows / rowCount=0)。
+     */
+    public Map<String, ExpandDriverResponse> expandMulti(
+            UUID componentId, UUID customerId, List<String> partNos,
+            Integer partVersion, String overrideDataDriverPath, String overrideFieldsJson) {
+        com.cpq.datasource.sqlview.SqlViewRuntimeContext.Snapshot _prev =
+                com.cpq.datasource.sqlview.SqlViewRuntimeContext.setNested(componentId, null, null, null);
+        try {
+            Map<String, ExpandDriverResponse> resultByPart = new java.util.LinkedHashMap<>();
+            if (partNos == null || partNos.isEmpty()) return resultByPart;
+
+            Component component = Component.findById(componentId);
+            if (component == null) throw new BusinessException(404, "Component not found: " + componentId);
+
+            String effectiveDriverPath = (overrideDataDriverPath != null && !overrideDataDriverPath.isBlank())
+                    ? overrideDataDriverPath : component.dataDriverPath;
+            String effectiveFieldsJson = (overrideFieldsJson != null && !overrideFieldsJson.isBlank())
+                    ? overrideFieldsJson : component.fields;
+
+            // 预生成每个 partNo 的空响应 — 保证 caller 对每个 task 都拿得到 result(即便 0 行)
+            for (String pn : partNos) {
+                ExpandDriverResponse r = new ExpandDriverResponse();
+                r.driverPath = effectiveDriverPath;
+                r.rows = new ArrayList<>();
+                r.rowCount = 0;
+                resultByPart.put(pn, r);
+            }
+
+            if (effectiveDriverPath == null || effectiveDriverPath.isBlank()) {
+                // 无 driver 路径:走单值 expand 的"虚拟单行"语义,逐 partNo 兜底
+                for (String pn : partNos) {
+                    resultByPart.put(pn, expand(componentId, customerId, pn, partVersion,
+                            overrideDataDriverPath, overrideFieldsJson, null, null, null));
+                }
+                return resultByPart;
+            }
+
+            PartVersionContext.set(partVersion);
+            try {
+                List<Map<String, Object>> mergedRows;
+                try {
+                    mergedRows = dataLoader.loadByPath(effectiveDriverPath, null, partNos, customerId).get();
+                } catch (InterruptedException | ExecutionException e) {
+                    throw new BusinessException("driver 多值路径查询失败: " + e.getMessage());
+                }
+                if (mergedRows == null) mergedRows = List.of();
+
+                List<String> basicDataPaths = parseBasicDataPaths(effectiveFieldsJson);
+                List<GvarDefaultTask> gvarTasks = parseGvarDefaultTasks(effectiveFieldsJson);
+
+                // 按行 hf_part_no 分发回各 partNo 的响应
+                for (Map<String, Object> driverRow : mergedRows) {
+                    Object hf = driverRow.get("hf_part_no");
+                    String rowPart = hf == null ? null : hf.toString();
+                    ExpandDriverResponse target = rowPart == null ? null : resultByPart.get(rowPart);
+                    if (target == null) {
+                        // 视图返了一行 hf_part_no 不在 partNos 列表里(异常,跳过不报错)
+                        continue;
+                    }
+                    ExpandDriverResponse.Row row = new ExpandDriverResponse.Row();
+                    row.driverRow = driverRow;
+                    row.basicDataValues = new LinkedHashMap<>();
+                    for (String fieldPath : basicDataPaths) {
+                        Object value = evaluatePath(fieldPath, driverRow, customerId, rowPart);
+                        row.basicDataValues.put(fieldPath, value);
+                    }
+                    for (GvarDefaultTask task : gvarTasks) {
+                        row.basicDataValues.put(gvarKey(task.code), resolveGvarForRow(task, driverRow));
+                    }
+                    target.rows.add(row);
+                    target.rowCount++;
+                }
+            } finally {
+                PartVersionContext.clear();
+            }
+            return resultByPart;
+        } finally {
+            com.cpq.datasource.sqlview.SqlViewRuntimeContext.restore(_prev);
+        }
+    }
+
+    /** Bucket-merge 用:按 (componentId, driverPath) 缓存视图是否含 :lineItemId 占位符。 */
+    private final Map<String, Boolean> viewUsesLineItemIdCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** 返回 task 的实际生效 driver path(override 优先,否则取 component.dataDriverPath)。 */
+    public String resolveEffectiveDriverPath(UUID componentId, String overrideDataDriverPath) {
+        if (overrideDataDriverPath != null && !overrideDataDriverPath.isBlank()) {
+            return overrideDataDriverPath;
+        }
+        Component c = Component.findById(componentId);
+        return c == null ? null : c.dataDriverPath;
+    }
+
+    /**
+     * 该 driver 视图的 sql_template 是否包含 {@code :lineItemId} 占位符 —— 决定能否跨卡片合桶。
+     * 含 {@code :lineItemId}(per-quote 工序/组合工艺 mirror)→ 不能合,各 task 单独跑;
+     * 不含(纯按 customerCode + hf_part_no 过滤的 mirror)→ 可合。
+     * 结果按 (componentId, driverPath) 缓存避免每次反复查表。
+     */
+    public boolean viewUsesLineItemId(UUID componentId, String driverPath) {
+        if (driverPath == null || driverPath.isBlank()) return true;
+        String cacheKey = componentId + "::" + driverPath;
+        Boolean cached = viewUsesLineItemIdCache.get(cacheKey);
+        if (cached != null) return cached;
+        String viewName = extractSqlViewName(driverPath);
+        if (viewName == null) {
+            viewUsesLineItemIdCache.put(cacheKey, true);
+            return true; // 非 $view 路径,保守不合
+        }
+        try {
+            com.cpq.component.entity.ComponentSqlView v = com.cpq.component.entity.ComponentSqlView
+                    .find("sqlViewName", viewName).firstResult();
+            boolean uses = v != null && v.sqlTemplate != null && v.sqlTemplate.contains(":lineItemId");
+            viewUsesLineItemIdCache.put(cacheKey, uses);
+            return uses;
+        } catch (Exception e) {
+            return true; // 异常保守不合
+        }
+    }
+
+    /** 从 driver path 提取视图名(支持 $name 和 $$comp.name 两种形态,去掉尾部 [predicate])。 */
+    private static String extractSqlViewName(String driverPath) {
+        if (driverPath == null) return null;
+        String s = driverPath.trim();
+        if (s.startsWith("$$")) {
+            int dot = s.indexOf('.', 2);
+            if (dot < 0) return null;
+            String rest = s.substring(dot + 1);
+            int bracket = rest.indexOf('[');
+            return bracket >= 0 ? rest.substring(0, bracket) : rest;
+        }
+        if (s.startsWith("$")) {
+            String rest = s.substring(1);
+            int bracket = rest.indexOf('[');
+            return bracket >= 0 ? rest.substring(0, bracket) : rest;
+        }
+        return null;
     }
 
     // ── 内部 ─────────────────────────────────────────────────────────────

@@ -276,7 +276,10 @@ public class QuotationService {
                 QuotationLineItem li = new QuotationLineItem();
                 li.quotationId = id;
                 li.productId = liDraft.productId;
-                li.templateId = liDraft.templateId;
+                // 选配产品行的 templateId 偶发为空(前端 onConfigureConfirm 读 customerTemplateId 有竞态),
+                // 持久化成 NULL → 刷新时 enrichComponentData 在 if(!templateId) 处跳过 → 所有页签拿不到
+                // dataDriverPath → 全空。兜底为报价单模板,保证每行都有模板 id、刷新必能 enrich。
+                li.templateId = liDraft.templateId != null ? liDraft.templateId : q.customerTemplateId;
                 if (liDraft.productAttributeValues != null) li.productAttributeValues = liDraft.productAttributeValues;
                 if (liDraft.subtotal != null) li.subtotal = liDraft.subtotal;
                 li.sortOrder = liDraft.sortOrder != null ? liDraft.sortOrder : i;
@@ -370,6 +373,57 @@ public class QuotationService {
                         lp.lineItemId = li.id;
                         lp.processId = processId;
                         lp.persist();
+                    }
+                }
+
+                // 导入来源行:无用户工序时,从该料号基础工序(material_bom_item.operation_no)
+                // seed 本行 quotation_line_process(operation_no → process.id),使 [选配-工序列表]
+                // 与选配产品渲染一致。仅 seedProcessesFromBase=true 的导入行触发(选配路径不设,保持"没选=空")。
+                boolean noProcs = (liDraft.processIds == null || liDraft.processIds.isEmpty());
+                if (noProcs && Boolean.TRUE.equals(liDraft.seedProcessesFromBase)
+                        && li.productPartNoSnapshot != null && !li.productPartNoSnapshot.isBlank()) {
+                    try {
+                        Object ccObj = em.createNativeQuery("SELECT code FROM customer WHERE id = :cid")
+                                .setParameter("cid", q.customerId)
+                                .getResultStream().findFirst().orElse(null);
+                        if (ccObj != null) {
+                            em.createNativeQuery(
+                                    "INSERT INTO quotation_line_process (id, line_item_id, process_id) " +
+                                    "SELECT gen_random_uuid(), :lid, p.id FROM (" +
+                                    "  SELECT DISTINCT operation_no FROM material_bom_item " +
+                                    "  WHERE system_type='QUOTE' AND customer_no=:cc AND material_no=:part " +
+                                    "    AND characteristic='ASSEMBLY' AND operation_no IS NOT NULL" +
+                                    ") ops JOIN process p ON p.code = ops.operation_no")
+                                .setParameter("lid", li.id)
+                                .setParameter("cc", ccObj.toString())
+                                .setParameter("part", li.productPartNoSnapshot)
+                                .executeUpdate();
+                        }
+                    } catch (Exception e) {
+                        LOG.warnf("[seed-import-process] line=%s 从基础工序 seed 失败(降级): %s", li.id, e.getMessage());
+                    }
+                }
+
+                // 选配-组合工艺 per-quote:从 draft 重写本行(全量重建换 line id 后跨保存存活)。
+                // 上层 deleteLineItems 已级联删旧行的 quotation_line_composite_process,这里按新 li.id 重写。
+                if (liDraft.compositeProcesses != null && !liDraft.compositeProcesses.isEmpty()) {
+                    com.fasterxml.jackson.databind.ObjectMapper cpOm = new com.fasterxml.jackson.databind.ObjectMapper();
+                    for (SaveDraftRequest.CompositeProcessDraft cpd : liDraft.compositeProcesses) {
+                        if (cpd.defCode == null || cpd.defCode.isBlank()) continue;
+                        try {
+                            em.createNativeQuery(
+                                    "INSERT INTO quotation_line_composite_process " +
+                                    "(line_item_id, def_code, seq_no, participating_parts, param_values) " +
+                                    "VALUES (:lid, :d, :sq, CAST(:pp AS jsonb), CAST(:pv AS jsonb))")
+                                .setParameter("lid", li.id)
+                                .setParameter("d", cpd.defCode)
+                                .setParameter("sq", cpd.seqNo)
+                                .setParameter("pp", cpOm.writeValueAsString(cpd.participatingParts == null ? java.util.List.of() : cpd.participatingParts))
+                                .setParameter("pv", cpOm.writeValueAsString(cpd.paramValues == null ? java.util.Map.of() : cpd.paramValues))
+                                .executeUpdate();
+                        } catch (Exception e) {
+                            LOG.warnf("[composite-proc-save] line=%s 写组合工艺失败(降级): %s", li.id, e.getMessage());
+                        }
                     }
                 }
 
@@ -1582,6 +1636,28 @@ public class QuotationService {
 
             dto.processes = QuotationLineProcess.<QuotationLineProcess>list("lineItemId = ?1", li.id)
                     .stream().map(QuotationDTO.ProcessDTO::from).collect(Collectors.toList());
+
+            // 选配-组合工艺 per-quote:读本行步骤回传,使刷新/saveDraft 透传后跨保存存活
+            dto.compositeProcesses = new java.util.ArrayList<>();
+            @SuppressWarnings("unchecked")
+            List<Object[]> cprows = em.createNativeQuery(
+                    "SELECT def_code, seq_no, participating_parts::text, param_values::text " +
+                    "FROM quotation_line_composite_process WHERE line_item_id = :lid ORDER BY seq_no")
+                .setParameter("lid", li.id).getResultList();
+            com.fasterxml.jackson.databind.ObjectMapper cpOm = new com.fasterxml.jackson.databind.ObjectMapper();
+            for (Object[] r : cprows) {
+                java.util.Map<String, Object> m = new java.util.HashMap<>();
+                m.put("defCode", r[0]);
+                m.put("seqNo", r[1]);
+                try {
+                    m.put("participatingParts", r[2] == null ? java.util.List.of() : cpOm.readValue(r[2].toString(), java.util.List.class));
+                    m.put("paramValues", r[3] == null ? java.util.Map.of() : cpOm.readValue(r[3].toString(), java.util.Map.class));
+                } catch (Exception ex) {
+                    m.put("participatingParts", java.util.List.of());
+                    m.put("paramValues", java.util.Map.of());
+                }
+                dto.compositeProcesses.add(m);
+            }
 
             dto.componentData = QuotationLineComponentData.<QuotationLineComponentData>list("lineItemId = ?1 ORDER BY sortOrder ASC", li.id)
                     .stream().map(QuotationDTO.ComponentDataDTO::from).collect(Collectors.toList());

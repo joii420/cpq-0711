@@ -1,0 +1,17 @@
+node_modules
+target
+dist
+build
+.git
+.idea
+.vscode
+
+*.log
+*.tmp
+
+coverage
+.cache
+
+*.jar
+*.class
+

@@ -36,8 +36,7 @@ public class Q11FinishedOtherFeeHandler implements SheetHandler {
                 UnitPrice p = UnitPriceWriter.newRow("QUOTE", "MATERIAL", costType, null, ctx.customerNo, ctx.importedBy);
                 p.code = code;
                 p.seqNo = row.getInt("项次");
-                p.pricingPrice = row.getDecimal("值");
-                if (p.pricingPrice == null) p.pricingPrice = java.math.BigDecimal.ZERO;
+                p.pricingPrice = row.getDecimal("值");   // 固定金额写值；比例费用留 NULL（D1）
                 p.costRatio = row.getDecimal("比例");
                 p.currency = row.getStr("货币");
                 p.unit = row.getStr("计价单位");

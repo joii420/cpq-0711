@@ -115,7 +115,7 @@ public class DataLoader {
      */
     public CompletableFuture<List<Map<String, Object>>> loadByPath(String path,
                                                                     Map<String, Object> driverRow) {
-        return loadByPath(path, driverRow, null, null);
+        return loadByPath(path, driverRow, (String) null, (UUID) null);
     }
 
     /**
@@ -162,11 +162,24 @@ public class DataLoader {
         // 用完整 RuntimeContext + partNo batch 执行
         String normalizedPath = normalizePath(path);
         if (sqlViewExecutor.isSqlViewPath(normalizedPath)) {
-            return resultCache.computeIfAbsent(normalizedPath + "::" + partNo + "::" + customerId, key -> {
+            // per-quote 视图（如 selopt_line_processes 按报价行过滤）需要 :lineItemId。
+            // 从 driverRow hint 取 quotation_line_item_id 注入 ctx.lineItem.id，
+            // 并并入 cache key（否则同 partNo/customer 不同报价行会命中同一缓存 → 串数据）。
+            Object _lineIdObj = (driverRow != null) ? driverRow.get("quotation_line_item_id") : null;
+            final UUID viewLineItemId = (_lineIdObj instanceof UUID u) ? u
+                    : (_lineIdObj != null ? UUID.fromString(_lineIdObj.toString()) : null);
+            return resultCache.computeIfAbsent(
+                    normalizedPath + "::" + partNo + "::" + customerId + "::" + viewLineItemId, key -> {
                 try {
                     RuntimeContext ctx = new RuntimeContext();
-                    if (customerId != null) {
-                        ctx.quotation = new RuntimeContext.QuotationContext(null, customerId);
+                    // 统一协议:从 ThreadLocal 拿 quotationId,绑到 ctx.quotation.id
+                    // → RuntimeContext.toNamedParams() 自动暴露 :quotationId 给所有 mirror 视图使用
+                    UUID quotIdSv = QuotationIdContext.get();
+                    if (customerId != null || quotIdSv != null) {
+                        ctx.quotation = new RuntimeContext.QuotationContext(quotIdSv, customerId);
+                    }
+                    if (viewLineItemId != null) {
+                        ctx.lineItem = new RuntimeContext.LineItemContext(partNo, null, viewLineItemId);
                     }
                     List<String> partNos = (partNo != null && !partNo.isBlank())
                             ? List.of(partNo) : null;
@@ -199,6 +212,57 @@ public class DataLoader {
         String rewritten = implicitJoinRewriter.rewriteWithContext(path, driverRow, partNo, customerId, partVersion,
                 com.cpq.datapath.sql.SchemaContext.defaultContext());
         return loadByPath(rewritten);
+    }
+
+    /**
+     * 多值入口 — 批量合桶专用:一次执行 SQL 视图,返回 :hfPartNos = ANY(partNos) 命中的所有行。
+     *
+     * <p>用途:`ComponentResource.batchExpand` 的"产品卡片维度合桶"使用。多个 task(同 componentId/
+     * customerId/partVersion/driverPath/fields,且 driverPath 不含 :lineItemId)合成一次查询,
+     * 由调用方按返回行的 {@code hf_part_no} 分发回各 task 结果。
+     *
+     * <p>调用方需保证:① partNos 互不重复(同 partNo 多张卡片不能合,分不开);② driverPath 不含
+     * {@code :lineItemId}(否则视图按 lineItemId 过滤,合桶语义错乱);③ snapshot 命中的 task
+     * 已经在合桶前直返,不进本方法。
+     *
+     * <p>本方法不进 {@code resultCache}(批量合桶单次性,跨请求复用价值低,避免 cache key 设计复杂化);
+     * 不在 {@code ctx.lineItem.partNo} 上写单值(多值场景没有"当前 partNo"语义,视图只靠外层
+     * {@code hf_part_no = ANY(:hfPartNos)} 过滤)。
+     */
+    public CompletableFuture<List<Map<String, Object>>> loadByPath(String path,
+                                                                    Map<String, Object> driverRow,
+                                                                    List<String> partNos,
+                                                                    UUID customerId) {
+        if (path == null || path.isBlank()) return CompletableFuture.completedFuture(List.of());
+        String normalizedPath = normalizePath(path);
+        if (!sqlViewExecutor.isSqlViewPath(normalizedPath)) {
+            throw new IllegalArgumentException(
+                    "DataLoader 多值入口仅支持 $view 路径(批量合桶);非视图路径请用单值入口。path=" + path);
+        }
+        Object lineIdObj = driverRow != null ? driverRow.get("quotation_line_item_id") : null;
+        final UUID viewLineItemId = (lineIdObj instanceof UUID u) ? u
+                : (lineIdObj != null ? UUID.fromString(lineIdObj.toString()) : null);
+        try {
+            RuntimeContext ctx = new RuntimeContext();
+            if (customerId != null) {
+                ctx.quotation = new RuntimeContext.QuotationContext(null, customerId);
+            }
+            if (viewLineItemId != null) {
+                // 防御性:正常 bucket-merge 不会带 lineItemId(否则视图按 lineItemId 过滤合不了桶),
+                // 此处保留以兼容调用方主动传 hint 的边缘情形。
+                ctx.lineItem = new RuntimeContext.LineItemContext(null, null, viewLineItemId);
+            }
+            List<Map<String, Object>> rows = sqlViewExecutor.isDriverViewPath(normalizedPath)
+                    ? sqlViewExecutor.executeAllRows(normalizedPath, ctx, partNos)
+                    : sqlViewExecutor.execute(normalizedPath, ctx, partNos);
+            return CompletableFuture.completedFuture(rows);
+        } catch (Exception e) {
+            LOG.warnf("DataLoader multi-value sql-view failed path='%s' partNosSize=%d: %s",
+                    normalizedPath, partNos == null ? 0 : partNos.size(), e.getMessage());
+            CompletableFuture<List<Map<String, Object>>> failed = new CompletableFuture<>();
+            failed.completeExceptionally(e);
+            return failed;
+        }
     }
 
     /**

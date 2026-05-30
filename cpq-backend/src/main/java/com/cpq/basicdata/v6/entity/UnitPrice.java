@@ -48,10 +48,19 @@ public class UnitPrice extends V6BaseEntity {
     @Column(name = "seq_no")
     public Integer seqNo;
 
+    /** 年降顺序（§8 来料年降 / §15 组装年降）。 */
+    @Column(name = "discount_order")
+    public Integer discountOrder;
+
+    /** 要素项次（§13 组成件其他费用 项次(要素)）。 */
+    @Column(name = "item_seq")
+    public Integer itemSeq;
+
     @Column(name = "plating_scheme_no", length = 20)
     public String platingSchemeNo;
 
-    @Column(name = "pricing_price", nullable = false, precision = 18, scale = 6)
+    /** D1：固定金额费用写值、比例费用留 NULL（以是否为空区分费用类型）。 */
+    @Column(name = "pricing_price", precision = 18, scale = 6)
     public BigDecimal pricingPrice;
 
     @Column(name = "cost_ratio", precision = 10, scale = 4)

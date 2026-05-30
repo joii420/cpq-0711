@@ -44,6 +44,8 @@ export interface ComparisonData {
 export const costingSheetService = {
   get: (quotationId: string) =>
     api.get(`/quotations/${quotationId}/costing-sheet`) as Promise<{ data: CostingSheetData }>,
+  // 注：旧的 tag 分组比对端点。新「料号双行比对视图」(ComparisonView) 已改用前端 buildComparisonModel,
+  // 不再调用此方法；但后端 GET /comparison + buildComparison 仍被 CostingComparisonResourceTest 覆盖, 故保留。
   getComparison: (quotationId: string) =>
     api.get(`/quotations/${quotationId}/comparison`) as Promise<{ data: ComparisonData }>,
 };

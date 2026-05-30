@@ -4,6 +4,29 @@
 
 ---
 
+### [2026-05-29] 🆕 新增组件目录「报价单模板」+ 3 个组件（组成件/元素/成本费用）| 纯运行期数据，无代码改动
+
+**需求**：在组件管理新建目录「报价单模板」，画 3 个页签组件（组成件 8 列 / 元素 4 列 / 成本费用 4 列）。
+
+**创建方式**：API 直接建（`admin`/`Admin@2026` 登录拿 session cookie → `POST /api/cpq/component-directories` + `POST /api/cpq/components`）。**未改任何 .java/.tsx/.sql，纯运行期数据。**
+
+**关键决策（与用户确认）**：
+- 用户给的列**无法 1:1 绑现有 V6 视图**——纯文本/数量列能绑，单价/加工费/总金额/整张「成本费用」表无现成视图。强行跨视图绑（不同 driver 隐式 JOIN）按 AP-22/52 易静默失败 → 采用**混合策略**。
+- 严格遵守 AP-53：driver/path 全用 V6 视图 `v_q_element_merged`，**不碰废弃 mat_bom/element_price**。
+
+**最终结构**（目录 id=`e8d2443e-8f2e-4cc3-8779-31ca2ec90267`）：
+| 组件 | code | driver | 字段 |
+|---|---|---|---|
+| 组成件 | COMP-QTPL-COMPONENT | `v_q_element_merged` | 原材料组成→input_material_name / 元件组成→element_name / 组成含量%或用量PCS→composition_pct / 组成用量(g)→gross_qty / 单位→gross_unit（均 BASIC_DATA）；单价/加工费 INPUT_NUMBER(amt)；元件总金额 FORMULA(amt) |
+| 元素 | COMP-QTPL-ELEMENT | `v_q_element_merged` | 元素→element_name / 单位→gross_unit（BASIC_DATA）；单价/加工费 INPUT_NUMBER(amt) |
+| 成本费用 | COMP-QTPL-COST-FEE | 无 | 板块/项目/单位 INPUT_TEXT；属性值 INPUT_NUMBER |
+
+**FORMULA 字段联动**：「元件总金额」同时设 `formula_name="元件总金额"` + 同名 formula（表达式 `组成含量%或用量PCS × 单价 + 加工费`），命中 QuotationStep2.tsx:309 显式绑定（最高优先级）+ :327 同名兜底，三重保险。
+
+**自检**：登录 200 ✅；目录+3 组件 POST 全 200，columnCount=8/4/4 ✅；目录树回读结构与字段类型/路径全部正确 ✅；组成件 expand-driver（料号 3120012580）rowCount=22，basicDataValues 解析出 原材料组成=`Ag 铆钉`/元件组成=`Ag`/含量%=`80.0`，**全单值标量无 AP-22 数组错乱** ✅（gross_qty/unit 为 null 是该料号 V6 源数据本身空，非绑定错误）。
+
+---
+
 ### [2026-05-27] 🧹 子料号名称 INPUT_TEXT 矛盾配置清理（V264）+ 字段类型 vs 取值属性匹配规则
 
 **背景**：用户把「选配-子配件清单 / 子料号名称」改为 `INPUT_TEXT`（纯手动填写），但字段仍残留 `basic_data_path = $zcj_bom.child_part_name`。
@@ -13059,3 +13082,142 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 **涉及文件**：`V266__material_master_config_fingerprint.sql`（新增）、`ConfigureProductService.java`；E2E 新增 `selopt-v6-render.spec.ts`，更新 `ap53-configure-search-v6.spec.ts`（boundPartsCount 改 >=1）。
 
 **自检**：V266 success=t ✅；material_master.config_fingerprint 列存在 ✅；configure SIMPLE+COMPOSITE custom → 200（不再 409）✅；V6 行实测写入（material_master 3 CFG 料号 + element_bom_item Ag/Cu@CUST-1269 + material_bom_item COMBO→2子件 ASSEMBLY）✅；existing-part/material 返字典派 recipeBound=true ✅；E2E `selopt-v6-render` 1 passed（幂等复跑稳定）+ `ap53-configure-search-v6` + `material-recipe-bound-v6` + `quotation-flow` 回归全 passed ✅；后端 endpoints 200/401 无 500 ✅；GlobalExceptionMapper 临时调试已还原 ✅。
+
+---
+
+## [2026-05-29] 选配/报价单渲染 - 加产品整份快照 Phase 1（写快照，加性，渲染不变）
+
+**背景**：业务设计「基础表只作初始来源，报价单展示报价单自己的数据（加产品时整份快照，之后展示/编辑读副本，基础表后续变化不影响本单）」。详见 `docs/方案-加产品整份快照.md`（含分阶段/影响面/改动清单/已确认决策）。本次只做 **Phase 1**：configure 加产品时把各组件整行展开值冻进 `quotation_line_component_data.snapshot_rows`；**渲染链路不读此列、保持实时展开**（零渲染改动）。Phase 2-4（渲染读快照/编辑/刷新/收口）待评审后开。
+
+**已确认决策**：所有组件 Tab 全量快照；driver 展开层冻结整行 basicDataValues（BASIC_DATA + DATA_SOURCE@gvar + 其它 BNF 三类全冻）；DATA_SOURCE（如工序单价）冻结；FORMULA 不存、渲染按冻结输入+编辑重算；两层存储（snapshot_rows 基础冻结层 + row_data 编辑层）；从基础刷新只换基础层、保编辑；只对新加/重配生效；重配=重建快照并清编辑。
+
+**关键踩坑（事务中止连环）**：初版把"枚举组件+expand+写快照"放进 `configure()` 的 `@Transactional` 大事务里 → expand 内部坏路径 `{mat_bom.length}`（列不存在）在 PG 端**中止整个事务**（25P02 current transaction is aborted）→ 后续 DELETE/INSERT 全失败，且会连累 configure 主写入回滚。渲染端 batch-expand 不崩是因为它**不在大事务里**（每查询自动提交，错误隔离）。**修复**：① 快照逻辑移出 configure 事务，放到新 `ConfigureSnapshotService`，由 Resource 在 `service.configure()` **提交之后**调用（REQUIRES_NEW 才读得到已提交的 line_item/基础/工序）；② 协调方法 `snapshotLines` **不带事务**——expand 与 batch-expand 一样无事务运行，坏路径只产 #ERROR 值、不污染；③ 写入用 `writeSnapshot`(REQUIRES_NEW) 逐组件独立小事务，单组件失败不影响其它；④ 自注入触发 REQUIRES_NEW 拦截器。另：组件枚举必须走 `template_component`（live component id）而非 `components_snapshot`（冻结 id，expand 报 Component not found）。
+
+**实测**：configure SIMPLE 3120012574+2工序 → 200、配置行未回滚；4 个 driver 组件全部写入 snapshot_rows（选配-材质 2 / 工序 2 / 元素含量 4 / 组合工艺 2，snapshot_at 已写）；快照首行整行三类值全冻结（process_code=MRO-AS-0001、assembly_process=总装配、**@gvar:PROCESS_DEFAULT_PRICE=12.0000 冻结**、{mat_bom.length} #ERROR 同渲染）。
+
+**涉及文件**：`V269__quotation_line_component_snapshot.sql`（新增 snapshot_rows/snapshot_at）、`ConfigureSnapshotService.java`（新增）、`ConfigureProductResource.java`（configure 提交后调快照，降级 try/catch）；`docs/方案-加产品整份快照.md`（立项）。`ConfigureProductService.java` 未保留快照逻辑（已移出事务）。
+
+**自检**：V267/268/269 success=t ✅；snapshot_rows/snapshot_at 列存在 ✅；configure 200 且未回滚、加产品不受快照失败影响 ✅；4 组件 snapshot_rows 实测写入 + DATA_SOURCE 单价冻结 ✅；渲染零改动，E2E `quotation-flow` 1 passed、加载中=0 无回归 ✅；后端 search/configure 200/401 无 500 ✅；测试行已清理 ✅。**注意**：snapshot_rows 目前在 saveDraft 全量重建时会被覆盖（saveDraft 暂不写 snapshot_rows）——属 Phase 2 范围（渲染读快照时同步让 saveDraft 维护）。
+
+## [2026-05-29] 选配/报价单渲染 - 加产品整份快照 Phase 2-4（渲染读快照 + 刷新 + 回退）
+
+**目标**：报价单展示报价单自己的数据——渲染读 per-quote 快照、基础变化不影响已快照行、编辑保留、可从基础刷新。承接 Phase 1（写快照）。
+
+**Phase 2（渲染读快照）**：`ComponentDriverService.expandWithSnapshot`——lineItemId+componentId 命中 `quotation_line_component_data.snapshot_rows` 则反序列化直返(**空快照=空渲染**,snapshot_rows NULL=回退实时 `expand`,兼容存量老行);`ComponentResource.batch-expand` 改调 expandWithSnapshot。写快照的 `ConfigureSnapshotService` 仍调 live `expand`(避免循环)。**saveDraft 跨保存存活**:saveDraft 全量重建行=新 UUID,故 `QuotationResource.saveDraft` 提交后调 `snapshotService.snapshotQuotation(id)` 按新行重快照;`writeSnapshot` 改 **UPSERT**(更新 snapshot_rows、**保留编辑层 row_data**)。
+
+**Phase 3（刷新/编辑）**：新增 `POST /api/cpq/configure-product/quotations/{id}/refresh-snapshot`——从当前基础重冻 snapshot_rows、保 row_data 编辑。`snapshotLines` 开头 `componentDriverService.evictAll()` 清 driver 缓存(30s TTL),否则刷新会读到缓存旧值。编辑层 row_data 叠加沿用 `QuotationStep2` 现合并逻辑(渲染未改)。`submission_snapshot`/`DriftDetectionService` 与本方案兼容并存,本期不改。
+
+**Phase 4**：实时展开保留为"无快照老行"回退(符合只新加生效),渲染主路径已走快照。
+
+**冻结语义取舍**：saveDraft 重建行换新 UUID + 前端不回传行 id → 采用"加产品冻结 + 每次保存/刷新从当前基础重冻、row_data 编辑始终保留",非严格"仅加产品一次冻结"(严格版需快照随行穿越保存,列后续可选)。
+
+**实测**：configure→batch-expand 返 `driverPath=snapshot`、工序名=总装配/部件装配;**改 process_master 名→报价行仍显旧值**(基础变化不影响已快照行）；refresh-snapshot 后→显新基础值且 row_data(KEEP_ME 标记)保留；saveDraft 后新行(DRAFT)8 组件有 snapshot_rows。E2E `quotation-flow`(SIMPLE)1 passed、加载中=0 无回归。`composite-product-flow` 仍 `选配-材质 rows=1`(B-1 预先存在,Phase 2 忠实快照 live 产出，未修复未恶化)。
+
+**涉及文件**：`V269`（Phase 1）；`ComponentDriverService.java`（+EntityManager/ObjectMapper/expandWithSnapshot）、`ConfigureSnapshotService.java`（snapshotQuotation/loadQuotationLines/writeSnapshot UPSERT/evictAll）、`ConfigureProductResource.java`（refresh-snapshot 端点）、`QuotationResource.java`（saveDraft 后重快照）、`ComponentResource.java`（batch-expand→expandWithSnapshot）；`docs/方案-加产品整份快照.md` §10。
+
+**自检**：编译通过(search/configure 200/401 无 500)；渲染读快照+基础变更不影响+刷新读新基础+编辑保留+saveDraft 重快照 API 实测 ✅；E2E quotation-flow 1 passed ✅；测试数据已清理 ✅。**已知后续**:严格冻结/前端缓存键加行维度/组合子件材质 B-1/submission 收口。
+
+## [2026-05-29] 选配/报价单渲染 - 导入产品 [选配-工序列表] 空白修复(导入也写 per-quote 工序)
+
+**现象**：从基础数据导入的产品,报价单 [选配-工序列表] 全是"—"(N 行空);选配产品正常。
+
+**根因**：[选配-工序列表] mirror 已改读 `quotation_line_process`(per-quote 工序)。**选配**在 configure 写该表 → 渲染正常;**导入**(`BulkImportPartsDrawer.buildLineItemFromTemplate` → saveDraft)**不写 quotation_line_process**(componentData 仅模板预设空行、无 processIds)→ mirror/快照返 0 行 → Step2 按 AP-51 行数纪律在 driver 行数=0 时回退用 row_data 预设空行数渲染 → N 行全"—"。即:导入与选配 **工序落库不一致**。
+
+**修法(用户确认:仅导入来源带出,选配没选仍空=Q3)**：导入加入报价单时,从该料号基础工序自动 seed 本行 `quotation_line_process`。
+- 后端 `SaveDraftRequest.LineItemDraft` 加 `seedProcessesFromBase`;`QuotationService.saveDraft` 对该标记且无 processIds 的行,从 `material_bom_item`(system_type='QUOTE', customer_no=客户code, material_no=料号, characteristic='ASSEMBLY', operation_no NOT NULL)distinct operation_no → `process.code` 映射 `process.id`,INSERT-SELECT 写 `quotation_line_process`。saveDraft 提交后(QuotationResource)`snapshotQuotation` 重快照即捕获(顺序保证)。
+- 前端 `BulkImportPartsDrawer.buildLineItemFromTemplate` 设 `seedProcessesFromBase=true`;`QuotationWizard.buildDraftPayload` 透传;`QuotationStep2.LineItem` 加字段类型。选配路径不设标记(保持 Q3)。
+
+**实测**：saveDraft 导入行(3120012574, seed 标记)→ 新行 quotation_line_process seed 出 Z350/Z029;batch-expand 选配-工序列表 `driverPath=snapshot` rowCount=2 工序名=[Z029,Z350](不再空白)。选配 E2E `quotation-flow` 1 passed 无回归。dry-run:3120012574 基础工序映射 2 条 process。
+
+**涉及文件**：`SaveDraftRequest.java`、`QuotationService.java`(saveDraft seed)、`BulkImportPartsDrawer.tsx`、`QuotationWizard.tsx`(buildDraftPayload 透传)、`QuotationStep2.tsx`(LineItem 类型)。
+
+**自检**：后端编译 401 无 500;前端 tsc 0 错、3 改动 .tsx Vite 200;saveDraft seed + batch-expand 渲染 API 实测 ✅;quotation-flow E2E 1 passed ✅;测试行已清理。**注**:operation_no 在 process 字典无匹配 code 则跳过该工序;配置工序跨保存(buildDraftPayload processIds 恒空)是独立预先存在话题,本次未涉及。
+
+## [2026-05-29] 选配/报价单渲染 - 选配工序跨保存存活(两来源落库+渲染最终一致)
+
+**背景**：修完"导入产品 seed 基础工序"后发现:`buildDraftPayload` 的 `processIds` 恒空 → **选配工序在 saveDraft 后也丢失**(configure 写的 quotation_line_process 被全量重建清掉、前端没回传)→ 保存后会"导入有工序、选配空"的反向不一致。用户目标:两来源同样落库(quotation_line_process)、同一组件按视图SQL+字段配置渲染,保存前后都一致。
+
+**修法(数据随行走)**:让 lineItem 携带 processIds 并在 saveDraft 回传。
+- 后端 `ConfigureProductService.buildLineItemDTO` 增 processIds 参数,configure 响应每行带 processIds(SIMPLE/PART 取对应 PartRequest.processIds)。
+- 前端 `QuotationWizard`:① `onConfigureConfirm` 从响应 li.processIds 设 lineItem.processIds(配置加产品即带,enrich 段 spread 保留);② `loadQuotation` 从 GET 的 li.processes 映射 processId 填 lineItem.processIds(刷新/编辑已存单回读);③ `buildDraftPayload` 由 `processIds: []` 改为回传 `li.processIds`。`QuotationStep2.LineItem` 加 processIds 字段。
+- 导入行仍走 seedProcessesFromBase(后端从基础工序 seed),与回传互不冲突(导入不带 processIds、configure 不带 seed 标记)。
+
+**实测**:configure 响应带 processIds ✓;saveDraft 回传 processIds → 保存后新行(新 UUID)quotation_line_process 存活(总装配/部件装配)、batch-expand `driverPath=snapshot` 渲染 ✓;**真实 E2E quotation-flow 选配行保存后 qlp_count=2(修复前=0)** ✓;前端改动 quotation-flow 1 passed 无回归、tsc 0 错。
+
+**最终一致性**:导入(seed)+ 选配(回传)→ 都落 quotation_line_process → 同组件(选配-工序列表)同视图 SQL/字段配置 → 保存前后渲染一致。
+
+**涉及文件**:`ConfigureProductService.java`(buildLineItemDTO processIds)、`QuotationWizard.tsx`(onConfigureConfirm/loadQuotation/buildDraftPayload)、`QuotationStep2.tsx`(LineItem 类型)。配合前序:`SaveDraftRequest.java`+`QuotationService.java`(导入 seed)、`BulkImportPartsDrawer.tsx`(seed 标记)。
+
+**自检**:后端编译 401 无 500;前端 tsc 0 错、Vite 200;configure 响应 processIds + saveDraft 存活 + 渲染 API 实测 ✅;E2E quotation-flow 1 passed、选配行 qlp_count=2 ✅;测试数据清理。
+
+---
+
+### [2026-05-29] 导入产品工序"刷新才出现"(保存后回填新行 id)+ 自定义材质 [选配-材质] 空(补 material_bom_item)
+
+**问题一(时序)**:基础数据导入加产品 → 前端先展开工序(此刻 quotation_line_process 未 seed → 0 行被缓存);随后 `autoSaveDraft` 才 seed qlp+写快照,且 saveDraft **全量重建行→行 id 换成新 UUID**;但前端旧实现 `syncPartVersionLockedFromResponse` **按 id 匹配回填**,而新行 id 恰是变化维 → 匹配不上 → 前端仍用旧 tempId 的 0 行 → 工序空,刷新(loadQuotation 取新 id+全新缓存)才有。材质/元素不受影响:其 mirror 从基础表按料号读(加产品当下即有),工序 mirror 按 lineItemId 读 qlp。
+**修复(前端)**:`QuotationWizard.tsx` 新增 `syncLineItemsFromResponse` **按 index 回填**(响应 `ORDER BY sortOrder ASC` = 前端数组序,与 V169 newIdsByIndex 一致)新行 id + partVersionLocked。id 一变 → `useDriverExpansions` fingerprint(含 li.id)变 → 自动用新 id 重拉 → 命中保存时已写好的快照(snapshotQuotation 在响应返回前落库,无竞态)→ 工序 <1s 自动出现。buildDraftPayload 不发 line id → 无再保存死循环;长度不一致时退化不冒险错位回填。替换 autoSaveDraft + handleSaveDraft 两处调用点。
+
+**问题二(自定义材质数据缺失)**:`[选配-材质]` mirror(composite_child_materials_mirror)读 `material_bom_item`(characteristic IS NULL + customer_no + 父料号);自定义材质创建流程(`ConfigureProductService.resolvePart` custom 分支)只写 material_master + element_bom_item(故元素含量有数据),**没写 material_bom_item** → 材质 mirror 返 0 → 刷新也空。
+**修复(后端)**:custom 分支 `insertElementBomV6` 后新增 `insertMaterialBomItemV6`,插一行"自指物料行"(material_no=component_no=料号、characteristic=NULL、system_type='QUOTE'、customer_no=客户、component_usage_type=recipe.symbol),mirror 的 `材质名称=COALESCE(component_usage_type,…)` → 显示选中材质(如 AgSnO₂)一行,与有料号产品同组件/同视图 SQL/同按行快照。幂等(WHERE NOT EXISTS)。**历史产品**需补插该行 + 调 `POST /api/cpq/configure-product/quotations/{id}/refresh-snapshot` 重算(已对 QT-20260529-1448 的 CFG-AgSnO₂-000002 执行,材质快照 0→1)。
+
+**涉及文件**:`QuotationWizard.tsx`(syncLineItemsFromResponse,问题一)、`ConfigureProductService.java`(insertMaterialBomItemV6,问题二)。
+**自检**:前端 tsc 0 错、Vite 200 ✅;后端 api/cpq/health 200 无编译错 ✅;问题二 E2E 实测 QT-1448 的 CFG 产品 [选配-材质] 渲染出「材质名称=AgSnO₂」一行 ✅;问题一 quotation-flow.spec.ts 回归 1 passed、8 Tab 在位、加载中=0(配置流渲染未破)✅,且上一会话已实测加载态工序渲染 Z029/Z350 正确;**问题一完整"导入→不刷新→工序出现"UI E2E 未跑**(该客户 autoPopulate 候选 116 条过重、无窄 importRecordId)— 建议手工 30s 复测。一次性诊断脚本已删除。
+
+---
+
+### [2026-05-29] 导入流报价单加选配产品:刷新后全空(行 template_id 兜底)+ 跨客户复用材质/元素空(existing 分支补 V6)
+
+**现象**:从基础数据导入生成的报价单里加选配产品(CFG-AgNi-000071),材质空、刷新后**所有页签全空**;新建报价单加同样选配产品(同模板)正常。**约定:只在业务流程(代码)修,不补 DB 数据,历史报价单重导即可。**
+
+**根因①(刷新后全空)**:选配行持久化 `template_id=NULL`(前端 `onConfigureConfirm` 读 `customerTemplateId` 有竞态,偶发为空)→ 刷新时 `applyQuotationData`/`enrichComponentData` 在 `if(!templateId)` 跳过 enrich → componentData 无 dataDriverPath → 全部不展开。证据:QT-1448 CFG 行 template_id 有值能渲染、QT-1450 为 NULL。
+**修复(后端)**:`QuotationService.saveDraft` —— `li.templateId = liDraft.templateId != null ? liDraft.templateId : q.customerTemplateId`,保证每行都有模板 id、刷新必能 enrich(低风险:两者皆空时维持 null,无回归)。
+
+**根因②(材质/元素加完就空)**:V6 的 `element_bom_item`/`material_bom_item` 按 `customer_no` 存。自定义材质指纹命中已有料号时,前端 `ConfigureProductDrawer.reuseExistingPart` 把 partMode 切成 `'existing'` → 后端走 existing 分支;该料号 `material_master` 已存在时,existing 分支**跳过全部 V6 回填**(`backfillV6FromV44` 仅 V6 缺失+V44 有 才跑,且不写 material_bom_item)→ 当前客户名下无材质/元素 → mirror 按报价单客户过滤 → 空。CFG-AgNi-000071 原为客户 CUST-1269 配(4 张老单),QT-1450 客户 8000137 跨客户复用 → V6 只在 CUST-1269 下。
+**修复(后端)**:`ConfigureProductService` 新增 `backfillV6MaterialsForCustomer(partNo, customerCode)`,在 existing 分支**无条件**调用(幂等):① 从任一来源客户复制该料号 QUOTE 元素行 → 当前客户;② 自定义材质料号(material_master.material_recipe_id 非空)补「自指物料行」,`component_usage_type` 取 `recipe.symbol`(规避脏 `material_type='SIMPLE'`)→ [选配-材质] 显示该材质(如 AgNi)一行。与有料号产品同组件/同视图 SQL/同按行快照。
+
+**涉及文件**:`QuotationService.java`(saveDraft template_id 兜底,根因①)、`ConfigureProductService.java`(backfillV6MaterialsForCustomer + existing 分支调用,根因②)。纯后端,无前端改动,无 DB 数据补丁。
+**自检**:后端 api/cpq/health 200、无编译错 ✅;根因② SQL **干跑(只 SELECT 不写库)**验证 (CFG-AgNi-000071, 8000137):元素源返 Ag 90%/Ni 10% 两行(将复制)、材质自指行 material_name 列=**AgNi**(用 recipe.symbol 非 SIMPLE)✅;`quotation-flow.spec.ts` 回归 **1 passed**、8 Tab 在位、加载中=0(配置流 + saveDraft 未破)✅。**端到端"导入→加选配→刷新"由用户重导验证**(约定);历史 QT-1450 未补数据。
+
+---
+
+### [2026-05-29] 比对视图重构:料号双行对比 + 单元格高亮 + 导出 Excel
+
+**需求**:编辑报价单「比对视图」改为按料号横向对比"报价单 Excel 视图 vs 核价单 Excel 视图"——相同 `comparison_tag` 字段成列、一个料号两行(报价/核价)、两侧值不同则两格高亮、支持导出 Excel。替换旧的按 tag 纵向分组的 ComparisonView。
+
+**方案 A(严格一致 + POI 只格式化)**:
+- 从 `LinkedExcelView.tsx` 抽出单元格计算为共享 hook `useLinkedExcelRows`(报价/核价两个 Excel 视图 + 新比对视图共用同一计算路径 → 比对值与 Excel 视图逐格一致)。
+- 前端纯函数 `comparisonModel.ts`:`comparison_tag` **交集**成列(同侧多列取第一个)、料号**并集**双行、`valuesDiffer` = **数值容差(ABS/REL=1e-6)+ 字符严格**、单边料号标「仅报价/仅核价」不判差异。
+- `ComparisonView.tsx` 调 hook 两次构建模型,双行 rowSpan 表格,差异格报价行+核价行**两格都高亮**(`onCell` 取 `cells[tag].highlighted`,不分 side),「仅看差异」过滤(导出始终全量)。
+- 导出:`POST /api/cpq/quotations/{id}/comparison/export` 收前端**已算好的模型**,后端 `ComparisonExportService`(POI)只写值+填色**不重算**。
+
+**涉及文件**:前端 `useLinkedExcelRows.ts`(新)、`LinkedExcelView.tsx`(改为消费 hook,零行为变化)、`comparisonModel.ts`+`.test.ts`(新)、`ComparisonView.tsx`(重写)、`QuotationStep2.tsx`(透传两侧模板/行/客户)、`comparisonExportService.ts`(新);后端 `ComparisonExportRequest.java`+`ComparisonExportService.java`+`ComparisonExportServiceTest.java`(新)、`CostingSheetResource.java`(新增 export 端点)、`costingSheetService.ts`(标注旧 getComparison 保留)。
+
+**关键决策**:① 比对值复用 Excel 视图同一 hook、且**与 QuotationStep2 中 Excel 视图 callsite 同样省略 quotationId**(否则 BNF 路径上下文不同会偏离所见值)。② 旧 `buildComparison`/`GET /comparison`/`ComparisonDTO` **保留**(仍被 `CostingComparisonResourceTest` 覆盖,删除会破坏 TDD 矩阵),新视图不再调用。
+
+**自检**:前端 tsc 0 错 ✅;`comparisonModel.test.ts` **10 passed** ✅;后端 `ComparisonExportServiceTest` **2 passed**(报价行+核价行高亮均断言)✅;`quotation-flow.spec.ts` 回归 **1 passed**、8 Tab 加载中=0(hook 抽取零回归)✅;导出端点鉴权 401(路由在位)+ **登录后真实导出 HTTP 200 返回合法 xlsx(3723B,含 xl/workbook.xml+sheet1.xml)** ✅。
+
+**遗留(非本需求)**:① master 的 `0528` 提交删除了 `BasicDataConfigResource.java` 但 `MiscEdgeTest` 仍引用它 → 后端**测试整体无法编译**(本次靠临时旁路 MiscEdgeTest 跑单测,未改动其代码);该 `MiscEdgeTest` 的 PATCH /importance 烟雾断言还会因 401 失败 —— 属用户既有破损,需用户决定恢复资源还是删/改测试。② 比对视图分组表头(按 groupName 合并)本期仅以列标题前缀体现,未做合并表头单元格。
+
+[2026-05-29] 组件管理(COMP-0019/zcj_view) - 修正「组成件」SQL 视图的基础数据引用取数 | cpq-backend/src/main/resources/db/migration/V270__fix_zcj_view_real_basic_data.sql
+- 背景:模板「西门子报价单模板V0529」下组件 COMP-0019(组成件)的 component_sql_view `zcj_view` 原模板 height(组成重量)/price(单价) 硬编码为 0,且 WHERE 缺 customer_no 过滤(违反 AP-53 §10 跨客户叠加)。
+- 字段→列映射(8 字段):原材料组成=$zcj_view.hf_part_no / 元件组成=child_hf_part_no / 组成含量%或用量=qty / 组成重量(g)=height / 单价=price / 加工费=jgf(INPUT_NUMBER 用户录入,保持 0) / 单位=unit / 元件总金额=FORMULA(xiaoj 无 path)。
+- 修法(全 FROM V6 表):height←material_master.unit_weight(子件单重);price←unit_price COMPONENT 口径(system_type='QUOTE' AND price_type='COMPONENT' AND code=子件 AND finished_material_no=父件 AND customer_no=:customerCode),用 LATERAL+LIMIT 1 取最新有效一行**杜绝多行 unit_price 翻倍**(AP-22);WHERE 增 asy.customer_no=:customerCode。
+- 关键决策:单价取 COMPONENT 口径(非 MATERIAL 现价)/ height 取 unit_weight / 以 Flyway 迁移 ON CONFLICT DO UPDATE 覆盖现网视图(均经用户确认)。
+- 自检:CUST-1269 实跑 14 行无翻倍(8851 原 3 行 unit_price→单行 price=0.007)✅;price 取真值(0.007/0.05/1.2/0.3)✅;height=unit_weight(AgC4触点 0.4)✅;Flyway V270 success=t ✅;落库 declared_columns height/price=numeric + required_variables={customerCode} ✅。
+
+[2026-05-29] 加产品整份快照 - 修复组合产品(COMPOSITE)报价单页签全空白(AP-45 续) | cpq-backend/src/main/java/com/cpq/configure/service/ConfigureSnapshotService.java
+- 症状:报价单选配添加组合产品(CFG-COMBO-*)后,产品卡片所有页签空白;独立/PART 子件行正常。
+- 根因(回归):本分支「加产品整份快照」把渲染改成 `ComponentDriverService.expandWithSnapshot`(命中 snapshot_rows 直返,**空 `[]` 也直返,只有 NULL 才回退实时**);而 `ConfigureSnapshotService.snapshotLines` 对每组件用 8 参 `expand(...partNo...)` 种子展开,**对 COMPOSITE 父级不聚合子件**。组合数据全挂在子件维度(工序绑子件 lineItemId;材质/元素绑子件 material_no),按父级 partNo 查 `composite_child_*_mirror` 恒为 0 行 → 冻成空快照 → 全页签空白。DB 实证:CFG-COMBO-000005 各组件 snapshot 全 0,而两 PART 子件各组件 2~4 行正常。
+- 修法(只改快照种子,最小):snapshotLines 对 COMPOSITE 父级,凡 driver_path 含 `composite_child_` 的组件,改为**逐子件展开后拼接**(每子件 = `expand(comp, customer, 子料号, 子行 lineItemId, "PART")`,与子件 PART 行自身快照同一调用);聚合为空时写 **NULL**(快照"未命中")让渲染回退实时,避免再被"空快照=空渲染"冻死。`$zcj_bom`(子配件清单)等父级语义组件仍走父级展开。子件解析:优先 `parent_line_item_id`,缺失(saveDraft 重建后 tempParentIndex 未接上,本单即此情况,parent 全 NULL)回退 BOM:本单内 partNo 命中父级 `material_bom_item[characteristic='ASSEMBLY'].component_no` 的 PART 行。
+- 自检:后端热编译通过(/api/cpq/auth/me=401 非 500)✅;admin 登录→POST refresh-snapshot=200→复查 CFG-COMBO-000005 新父级行 snapshot:材质4/工序4/元素8/子配件清单2(原全 0/NULL)✅;SIMPLE/PART 走原 else 分支行为不变 ✅。
+- 关键决策/遗留:① NULL-on-empty 仅作用于"组合子件聚合"分支,不动 SIMPLE/PART 合法空结果的冻结语义。② 「选配-组合工艺」组件 driver_path 已被**并行进程**改为 `$composite_process_mirror`(父级 per-quote 组合工艺,配套 `insertCompositeProcessesPerQuote`/`CompositeProcessRequest` 在建),不含 `composite_child_` → 正确走父级展开,当前 0 行是该 WIP 特性数据未落库所致,**非本次回归、不在本次范围**。③ `parent_line_item_id` 在 saveDraft 重建后丢失(全库 193 PART 中 6 个未关联)未修(按用户范围决定),本次靠 BOM 回退绕过。④ 排查期间发现**有并行进程同时编辑本仓库**(重命名 V270→V271、改组件 driver_path、加 composite 工序方法),曾致瞬态编译失败 + 中途整单重建(行换新 UUID)。
+
+[2026-05-30] 报价Excel导入(V6 QUOTE) - 全量核查 + 严格落库修复 | docs/table/报价系统Excel导入落库核查报告-2026-05-30.md, V276__strict_import_align_unit_price_capacity.sql, basicdata/v6/entity/UnitPrice.java, basicdata/v6/service/UnitPriceWriter.java, quote/Q03/Q04/Q05/Q08/Q09/Q13/Q14/Q15/Q07/Q10/Q11, pricing/P16/P19 | 关键:
+- 背景:核查"报价单管理→从基础数据导入→报价单Excel导入"(QuoteImportService, Q01~Q19)是否严格符合《报价系统Excel导入落库方案.md V3.0》。出全量逐字段对照报告:19 Sheet 中原 8 符合 11 偏差(1 🔴 + 一批因 V6 表缺列导致的折叠/丢弃)。
+- 用户决策:① §3 料号表同步基准=字段表(投入料号);② 允许改库(真严格);③ C1 §5 项次不入匹配键、C2 §9 项次不导入、C3 §1 price_type 保持 ELEMENT(列 NOT NULL+CHECK);④ O1 §4 hf_part_no 仍严格不导入(已告知会断渲染)。
+- schema(V276):unit_price 加 discount_order/item_seq、pricing_price 放开 NOT NULL、重建 uq_unit_price 为 13 维(纳入两列,否则同 seq_no 多年降顺序/多要素行互覆);capacity 加 seq_no。ON CONFLICT 表达式列表必须与 uq_unit_price 完全一致(已实测命中)。
+- 代码:UnitPriceWriter 去掉 pricing_price=0 兜底(newRow 默认 NULL,D1 以空值区分固定/比例费);Q03 同步投入料号+material_type 只写数字(digitsOnly "1.银点类"→"1")+material_name;Q08/Q15 年降顺序→discount_order;Q13 项次(要素)→item_seq;Q14 项次→capacity.seq_no;Q05 匹配键去 seq_no;Q09 不写 seq_no;Q04 移除 hf_part_no。
+- 共享 Writer 隔离:newRow 去默认 0 会波及核价(PRICING)比例费 P16/P19(原靠默认 0)→显式补 pricing_price=0,保持核价行为不变。P22 已显式赋值无需改。
+- ⚠️ 遗留风险(O1):element_bom_item.hf_part_no 是 elements_mirror 视图(V245加列/V246 IS NOT NULL/V275 join key)主连接键;严格不写 → 新导入元素 BOM 行被视图过滤 → 报价"元素"Tab 渲染空白。待办:重构 elements_mirror 改用 material_no(投入料号)作连接键,再做元素渲染 E2E 回归。本次仅改导入侧,视图侧未动。
+- 遗留:§2(O2)文档"→料号表同步"子表疑似模板残留(§2 sheet 无投入料号列),未动;§3 改字段表基准后主件料号(宏丰)不再经 §3 落 material_master。
+- 自检:Flyway V276 success=t;unit_price 新列+可空、capacity.seq_no、uq_unit_price 13维 均经 psql 实证;/api/cpq/basic-data-import/v6/quote=401(改动类全编译过,非500);ON CONFLICT 二次 upsert 触发 DO UPDATE + pricing_price 落 NULL 实测通过。

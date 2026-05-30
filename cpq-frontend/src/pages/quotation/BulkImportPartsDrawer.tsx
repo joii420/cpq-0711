@@ -223,6 +223,9 @@ export function buildLineItemFromTemplate(tmpl: any, part: CustomerPartCandidate
     componentData,
     subtotal: 0,
     subtotalFormula,
+    // 导入来源标记:saveDraft 据此从该料号基础工序 seed 本行 quotation_line_process,
+    // 使 [选配-工序列表] 与选配产品渲染一致(选配路径不设此标记,保持"没选工序=空")。
+    seedProcessesFromBase: true,
   };
 }
 

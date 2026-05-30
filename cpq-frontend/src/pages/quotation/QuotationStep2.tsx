@@ -143,6 +143,8 @@ export interface LineItem {
   componentData: ComponentDataItem[];
   subtotal: number;
   subtotalFormula?: any[];  // Token array from template.subtotal_formula
+  /** 导入来源标记:从基础数据导入加入报价单的行设 true,后端 saveDraft 据此从基础工序 seed 本行 quotation_line_process */
+  seedProcessesFromBase?: boolean;
   /** 料号版本锁定: 本行报价使用的 (customer_product_no, hf_part_no) 版本号 */
   partVersionLocked?: number;
   /** line_item id (后端 PATCH 需要; 新创建未持久化的 line_item 无 id) */
@@ -1887,10 +1889,10 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   // Y1.5: 行驱动展开 — 含 dataDriverPath 的组件按后端返回的 N 行渲染,BASIC_DATA 值直接来自此 hook
   // 报价单卡片所需的展开（按 customerTemplate 视图下的 componentData 收集）
   // 2026-05-19 修: useDriverExpansions 返 {cache, invalidate} 而非纯 Map; 必须解构 .cache
-  const { cache: driverExpansionsQuote } = useDriverExpansions(lineItems, customerId);
+  const { cache: driverExpansionsQuote } = useDriverExpansions(lineItems, customerId, quotationId);
   // 核价单卡片所需的展开（按 costingTemplate 视图下的 componentData 收集；
   // 与 quote 侧 key = `${partNo}::${componentId}::${customerId}` 自动去重）
-  const { cache: driverExpansionsCosting } = useDriverExpansions(costingLineItems, customerId);
+  const { cache: driverExpansionsCosting } = useDriverExpansions(costingLineItems, customerId, quotationId);
   // 合并两侧 → 报价/核价两个视图共用同一份 expansions map（同 key 后写入的 costing 不会覆盖 quote，反之亦然，因为 key 含 componentId）
   const driverExpansions = React.useMemo(() => ({
     ...driverExpansionsQuote,
@@ -2034,7 +2036,14 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       </div>
 
       {mainTab === 'comparison' && quotationId ? (
-        <ComparisonView quotationId={quotationId} />
+        <ComparisonView
+          quotationId={quotationId}
+          customerId={customerId}
+          quoteTemplateId={customerTemplateId}
+          costingTemplateId={costingCardTemplateId}
+          quoteLineItems={quoteLineItems}
+          costingLineItems={costingLineItems}
+        />
       ) : mainTab === 'costing' && viewType === 'excel' && quotationId ? (
         // 核价单 — Excel 视图（V73/V74 起按 linkedTemplateId 反查 costing_template 渲染）：
         // 入口 = 报价单的 costingCardTemplateId（核价模板）→ 反查 linked_template_id 命中的 Excel 模板
