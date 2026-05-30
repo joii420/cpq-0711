@@ -3,6 +3,7 @@ package com.cpq.quotation.dto;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public class SaveDraftRequest {
@@ -65,6 +66,28 @@ public class SaveDraftRequest {
          * 改传索引让后端按 newIds[tempParentIndex] 二阶段 UPDATE.
          */
         public Integer tempParentIndex;
+        /**
+         * 加产品整份快照 Phase 后续:导入来源标记。
+         * 前端 BulkImportPartsDrawer 对"从基础数据导入加入报价单"的行设 true →
+         * saveDraft 在该行无 processIds 时,从该料号基础工序(material_bom_item.operation_no)
+         * seed 本行 quotation_line_process,使 [选配-工序列表] 与选配产品渲染一致。
+         * 选配路径不设(保持"选配没选工序=空")。
+         */
+        public Boolean seedProcessesFromBase;
+
+        /**
+         * 选配-组合工艺 per-quote 步骤(已解析:participatingParts 为子件料号,非下标)。
+         * 前端从 configure 响应/GET 带到本行,saveDraft 全量重建换 line id 后据此重写
+         * quotation_line_composite_process,使组合工艺跨保存存活。
+         */
+        public List<CompositeProcessDraft> compositeProcesses;
+    }
+
+    public static class CompositeProcessDraft {
+        public String defCode;
+        public Integer seqNo;
+        public List<String> participatingParts;
+        public Map<String, Object> paramValues;
     }
 
     public static class ComponentDataDraft {

@@ -66,6 +66,12 @@ public class ComponentDriverService {
     @Inject
     GlobalVariableService globalVariableService;
 
+    // 加产品整份快照 Phase 2（docs/方案-加产品整份快照.md）：渲染读报价单快照(snapshot_rows)。
+    @Inject
+    jakarta.persistence.EntityManager em;
+
+    private static final ObjectMapper SNAPSHOT_MAPPER = new ObjectMapper();
+
     /** V190+: 合成 key 前缀, 标识 basicDataValues �?全局变量行级�?条目 (避免�?BNF path key 冲突) */
     public static final String GVAR_KEY_PREFIX = "@gvar:";
 
@@ -166,6 +172,43 @@ public class ComponentDriverService {
      *
      * <p>childLineItemIds 为 null/空时降级为旧行为（不注入 IN 谓词）。
      */
+    /**
+     * 加产品整份快照 Phase 2（docs/方案-加产品整份快照.md）：渲染入口。
+     * <p>命中报价单快照(quotation_line_component_data.snapshot_rows,按 lineItemId×componentId)→
+     * 反序列化冻结行直返(包括"空快照=空渲染",不再回退基础);snapshot_rows 为 NULL(无快照,
+     * 如存量老行)→ 回退实时 {@link #expand}。基础表变化不影响已快照的报价行。
+     * <p>注意:写快照的 {@code ConfigureSnapshotService} 仍调 live {@link #expand} 取基础,不走本方法,避免循环。
+     */
+    public ExpandDriverResponse expandWithSnapshot(UUID componentId, UUID customerId, String partNo, Integer partVersion,
+                                                   String overrideDataDriverPath, String overrideFieldsJson,
+                                                   UUID lineItemId, String compositeType, List<UUID> childLineItemIds) {
+        if (lineItemId != null && componentId != null) {
+            try {
+                @SuppressWarnings("unchecked")
+                List<Object> snap = em.createNativeQuery(
+                        "SELECT snapshot_rows FROM quotation_line_component_data " +
+                        "WHERE line_item_id = :lid AND component_id = :cid AND snapshot_rows IS NOT NULL LIMIT 1")
+                    .setParameter("lid", lineItemId).setParameter("cid", componentId)
+                    .getResultList();
+                if (!snap.isEmpty() && snap.get(0) != null) {
+                    String json = snap.get(0).toString();
+                    List<ExpandDriverResponse.Row> snapRows = (json == null || json.isBlank())
+                            ? new ArrayList<>()
+                            : SNAPSHOT_MAPPER.readValue(json, new TypeReference<List<ExpandDriverResponse.Row>>() {});
+                    ExpandDriverResponse resp = new ExpandDriverResponse();
+                    resp.rows = snapRows != null ? snapRows : new ArrayList<>();
+                    resp.rowCount = resp.rows.size();
+                    resp.driverPath = "snapshot";
+                    return resp;
+                }
+            } catch (Exception e) {
+                LOG.warnf("[snapshot-read] line=%s comp=%s 读快照失败,回退实时: %s", lineItemId, componentId, e.getMessage());
+            }
+        }
+        return expand(componentId, customerId, partNo, partVersion, overrideDataDriverPath, overrideFieldsJson,
+                lineItemId, compositeType, childLineItemIds);
+    }
+
     public ExpandDriverResponse expand(UUID componentId, UUID customerId, String partNo, Integer partVersion,
                                        String overrideDataDriverPath, String overrideFieldsJson,
                                        UUID lineItemId, String compositeType, List<UUID> childLineItemIds) {

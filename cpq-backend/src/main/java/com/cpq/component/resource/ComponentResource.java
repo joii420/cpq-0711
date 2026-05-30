@@ -146,7 +146,8 @@ public class ComponentResource {
                         || t.lineItemId != null
                         || t.compositeType != null
                         || (t.childLineItemIds != null && !t.childLineItemIds.isEmpty())) {
-                    r.data = componentDriverService.expand(
+                    // 加产品整份快照 Phase 2:命中报价单快照直返,否则回退实时展开
+                    r.data = componentDriverService.expandWithSnapshot(
                         t.componentId, t.customerId, t.partNo, t.partVersion,
                         t.overrideDataDriverPath, t.overrideFieldsJson, t.lineItemId, t.compositeType,
                         t.childLineItemIds);

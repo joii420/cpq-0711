@@ -38,6 +38,9 @@ public class ConfigureProductResource {
     ConfigureProductService service;
 
     @Inject
+    com.cpq.configure.service.ConfigureSnapshotService snapshotService;
+
+    @Inject
     SecurityIdentity identity;
 
     @POST
@@ -51,7 +54,29 @@ public class ConfigureProductResource {
     public ConfigureProductResponse configureProduct(@PathParam("quotationId") UUID quotationId,
                                                      ConfigureProductRequest req) {
         UUID operatorId = currentUserId();
-        return service.configure(quotationId, req, operatorId);
+        ConfigureProductResponse resp = service.configure(quotationId, req, operatorId);
+        // 加产品整份快照 Phase 1(加性、降级):configure 已提交,此处补整行快照,失败不影响响应。
+        try {
+            snapshotService.snapshotLines(quotationId, resp.lineItems);
+        } catch (Exception ignore) {
+            // 快照为尽力而为,异常已在 service 内降级;此处再兜底,绝不影响加产品。
+        }
+        return resp;
+    }
+
+    /**
+     * 从基础刷新(加产品整份快照 Phase 3):重跑该报价单各行快照(从当前基础数据重新冻结
+     * snapshot_rows),<b>保留用户编辑层 row_data</b>(writeSnapshot 为 UPSERT)。
+     * 用于"基础数据更新后,用户主动把报价单刷新到最新基础值"。
+     */
+    @POST
+    @Path("/quotations/{quotationId}/refresh-snapshot")
+    public ConfigureProductResponse refreshSnapshot(@PathParam("quotationId") UUID quotationId) {
+        snapshotService.snapshotQuotation(quotationId);
+        ConfigureProductResponse resp = new ConfigureProductResponse();
+        resp.lineItems = java.util.List.of();
+        resp.reusedHfPartNos = java.util.List.of();
+        return resp;
     }
 
     /** 从 SecurityIdentity 取当前用户 id; 容错 — 取不到时返 null. */

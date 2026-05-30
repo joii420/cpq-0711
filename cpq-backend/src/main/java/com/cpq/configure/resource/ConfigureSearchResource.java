@@ -55,6 +55,8 @@ public class ConfigureSearchResource {
         //   - 独立产品过滤（语义校正 2026-05-27）：返回「可作为顶层报价的料号」
         //     · 父件 (出现在 material_bom_item.material_no 且 characteristic='ASSEMBLY')：保留 — 本身是要报价的产品
         //     · 子件 (出现在 material_bom_item.component_no 且 characteristic='ASSEMBLY')：排除 — 中间装配料号不能单独报价
+        //       但仅限「真实/导入 BOM」的子件 (父件 config_fingerprint IS NULL)。选配组合产品 (CFG-*, 有指纹)
+        //       会把已有真实产品当子件写入 ASSEMBLY 行，若一并排除会导致该产品被某组合引用后从搜索永久消失。
         //     · 普通独立料号 (不在 ASSEMBLY 表)：保留
         //     ⚠️ 之前写成 asy.material_no = mm.material_no 是错的 — 那会把父件 (顶层报价产品) 排掉
         //   - status_code：V6 无停产维度，固定 'Y'
@@ -73,9 +75,11 @@ public class ConfigureSearchResource {
                 "LEFT JOIN material_recipe mr ON mr.id = mm.material_recipe_id " +
                 "WHERE NOT EXISTS ( " +
                 "    SELECT 1 FROM material_bom_item asy " +
+                "    LEFT JOIN material_master pmm ON pmm.material_no = asy.material_no " +
                 "    WHERE asy.system_type='QUOTE' " +
                 "      AND asy.characteristic='ASSEMBLY' " +
                 "      AND asy.component_no = mm.material_no " +   // 排除子件,保留父件 + 独立料号
+                "      AND pmm.config_fingerprint IS NULL " +   // 仅"真实/导入 BOM"的子件算中间料号;选配组合(父级有指纹)的子件不排除——避免真实产品被组合引用后从搜索消失
                 ") " +
                 "  AND ( mm.material_no ILIKE :p OR " +
                 "        COALESCE(mm.material_name,'') ILIKE :p OR " +

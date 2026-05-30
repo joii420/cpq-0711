@@ -162,11 +162,21 @@ public class DataLoader {
         // 用完整 RuntimeContext + partNo batch 执行
         String normalizedPath = normalizePath(path);
         if (sqlViewExecutor.isSqlViewPath(normalizedPath)) {
-            return resultCache.computeIfAbsent(normalizedPath + "::" + partNo + "::" + customerId, key -> {
+            // per-quote 视图（如 selopt_line_processes 按报价行过滤）需要 :lineItemId。
+            // 从 driverRow hint 取 quotation_line_item_id 注入 ctx.lineItem.id，
+            // 并并入 cache key（否则同 partNo/customer 不同报价行会命中同一缓存 → 串数据）。
+            Object _lineIdObj = (driverRow != null) ? driverRow.get("quotation_line_item_id") : null;
+            final UUID viewLineItemId = (_lineIdObj instanceof UUID u) ? u
+                    : (_lineIdObj != null ? UUID.fromString(_lineIdObj.toString()) : null);
+            return resultCache.computeIfAbsent(
+                    normalizedPath + "::" + partNo + "::" + customerId + "::" + viewLineItemId, key -> {
                 try {
                     RuntimeContext ctx = new RuntimeContext();
                     if (customerId != null) {
                         ctx.quotation = new RuntimeContext.QuotationContext(null, customerId);
+                    }
+                    if (viewLineItemId != null) {
+                        ctx.lineItem = new RuntimeContext.LineItemContext(partNo, null, viewLineItemId);
                     }
                     List<String> partNos = (partNo != null && !partNo.isBlank())
                             ? List.of(partNo) : null;
