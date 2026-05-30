@@ -1889,10 +1889,10 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   // Y1.5: 行驱动展开 — 含 dataDriverPath 的组件按后端返回的 N 行渲染,BASIC_DATA 值直接来自此 hook
   // 报价单卡片所需的展开（按 customerTemplate 视图下的 componentData 收集）
   // 2026-05-19 修: useDriverExpansions 返 {cache, invalidate} 而非纯 Map; 必须解构 .cache
-  const { cache: driverExpansionsQuote } = useDriverExpansions(lineItems, customerId);
+  const { cache: driverExpansionsQuote } = useDriverExpansions(lineItems, customerId, quotationId);
   // 核价单卡片所需的展开（按 costingTemplate 视图下的 componentData 收集；
   // 与 quote 侧 key = `${partNo}::${componentId}::${customerId}` 自动去重）
-  const { cache: driverExpansionsCosting } = useDriverExpansions(costingLineItems, customerId);
+  const { cache: driverExpansionsCosting } = useDriverExpansions(costingLineItems, customerId, quotationId);
   // 合并两侧 → 报价/核价两个视图共用同一份 expansions map（同 key 后写入的 costing 不会覆盖 quote，反之亦然，因为 key 含 componentId）
   const driverExpansions = React.useMemo(() => ({
     ...driverExpansionsQuote,

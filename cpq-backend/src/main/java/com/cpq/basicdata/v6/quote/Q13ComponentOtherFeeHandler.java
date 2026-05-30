@@ -37,12 +37,10 @@ public class Q13ComponentOtherFeeHandler implements SheetHandler {
                 p.code = code;
                 p.finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
                 p.operationNo = row.getStr("工序编号");
-                p.seqNo = row.getInt("项次（一级）", "项次");
+                p.seqNo = row.getInt("项次（一级）", "项次");   // §13: 项次(一级) → seq_no
                 p.supplierNo = row.getStr("供应商编号");
-                Integer itemSeq = row.getInt("项次（要素）");
-                if (itemSeq != null) p.seqNo = (p.seqNo == null ? 0 : p.seqNo) * 100 + itemSeq;
-                p.pricingPrice = row.getDecimal("值");
-                if (p.pricingPrice == null) p.pricingPrice = java.math.BigDecimal.ZERO;
+                p.itemSeq = row.getInt("项次（要素）");          // §13: 项次(要素) → item_seq（具名列）
+                p.pricingPrice = row.getDecimal("值");          // 固定金额写值，空值保留 NULL（D1）
                 p.currency = row.getStr("货币");
                 p.unit = row.getStr("计价单位");
                 writer.upsert(p);

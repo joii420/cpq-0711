@@ -40,13 +40,18 @@ public class Q03MaterialBomHandler implements SheetHandler {
                 String materialNo = row.getStr("宏丰料号");
                 if (materialNo == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
                 String componentUsageType = row.getStr("产出料号类型");
+                String componentNo = row.getStr("投入料号");
 
-                // 第一次见此料号：material_master upsert + material_bom 主表 upsert
-                if (!processedMains.contains(materialNo)) {
-                    materialMasterRepo.upsertByMaterialNo(materialNo, null, null, null, null,
-                        componentUsageType, null, null, null, ctx.importedBy);
+                // §3 料号表同步（字段表基准）：投入料号(component) → material_master
+                //   material_type 只写数字（如 "1.银点类" → "1"）；material_name = 投入料号名称
+                if (componentNo != null) {
+                    materialMasterRepo.upsertByMaterialNo(componentNo, row.getStr("投入料号名称"),
+                        null, null, null, digitsOnly(componentUsageType), null, null, null, ctx.importedBy);
                     result.recordWrite("material_master", 1);
+                }
 
+                // 第一次见此主件料号：material_bom 主表 upsert（主件 BOM 行）
+                if (!processedMains.contains(materialNo)) {
                     // 主表：INSERT ON CONFLICT (uq_material_bom_v6) DO UPDATE
                     // uq_material_bom_v6 = (system_type, customer_no, material_no, bom_version, COALESCE(characteristic,''))
                     em.createNativeQuery(
@@ -93,7 +98,7 @@ public class Q03MaterialBomHandler implements SheetHandler {
                   .setParameter("c", ctx.customerNo)
                   .setParameter("m", materialNo)
                   .setParameter("seq", row.getInt("项次"))
-                  .setParameter("comp", row.getStr("投入料号"))
+                  .setParameter("comp", componentNo)
                   .setParameter("usage", componentUsageType)
                   .setParameter("compQty", row.getDecimal("材料毛重", "毛重"))
                   .setParameter("baseQty", row.getDecimal("材料净重", "净重"))
@@ -109,5 +114,17 @@ public class Q03MaterialBomHandler implements SheetHandler {
             }
         }
         return result;
+    }
+
+    /** §3「material_type 只写数字」：从「1.银点类 / 2.非银点类 / 组成件 / 边角料」提取首段数字；无数字返 null。 */
+    private static String digitsOnly(String s) {
+        if (s == null) return null;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (ch >= '0' && ch <= '9') sb.append(ch);
+            else if (sb.length() > 0) break;   // 取首段连续数字即停（"1.银点类" → "1"）
+        }
+        return sb.length() == 0 ? null : sb.toString();
     }
 }

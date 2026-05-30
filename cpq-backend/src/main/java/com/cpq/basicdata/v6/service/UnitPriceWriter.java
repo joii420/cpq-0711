@@ -22,7 +22,7 @@ public class UnitPriceWriter {
     public int upsert(UnitPrice p) {
         String sql =
             "INSERT INTO unit_price (system_type, price_type, version_no, code, name, specification, " +
-            "  dimension, finished_material_no, operation_no, cost_type, seq_no, plating_scheme_no, " +
+            "  dimension, finished_material_no, operation_no, cost_type, seq_no, discount_order, item_seq, plating_scheme_no, " +
             "  pricing_price, cost_ratio, market_ref_price, currency, unit, conversion_rate, " +
             "  recovery_discount, life_qty, life_unit, supplier_no, supplier_name, customer_no, " +
             "  customer_name, data_type, source_url, source_name, fetch_rule, premium_fee, " +
@@ -30,7 +30,7 @@ public class UnitPriceWriter {
             "  is_fluctuate_with_material, material_increase_ratio, material_fixed_increase, " +
             "  defect_rate, created_at, updated_at, updated_by) " +
             "VALUES (:systemType, :priceType, :versionNo, :code, :name, :specification, " +
-            "  :dimension, :finishedMaterialNo, :operationNo, :costType, :seqNo, :platingSchemeNo, " +
+            "  :dimension, :finishedMaterialNo, :operationNo, :costType, :seqNo, :discountOrder, :itemSeq, :platingSchemeNo, " +
             "  :pricingPrice, :costRatio, :marketRefPrice, :currency, :unit, :conversionRate, " +
             "  :recoveryDiscount, :lifeQty, :lifeUnit, :supplierNo, :supplierName, :customerNo, " +
             "  :customerName, :dataType, :sourceUrl, :sourceName, :fetchRule, :premiumFee, " +
@@ -39,7 +39,8 @@ public class UnitPriceWriter {
             "  :defectRate, NOW(), NOW(), :updatedBy) " +
             "ON CONFLICT (system_type, price_type, COALESCE(cost_type,''), version_no, code, " +
             "  COALESCE(customer_no,''), COALESCE(supplier_no,''), COALESCE(finished_material_no,''), " +
-            "  COALESCE(operation_no,''), COALESCE(seq_no,0), COALESCE(effective_date, DATE '1900-01-01')) " +
+            "  COALESCE(operation_no,''), COALESCE(seq_no,0), COALESCE(discount_order,0), " +
+            "  COALESCE(item_seq,0), COALESCE(effective_date, DATE '1900-01-01')) " +
             "DO UPDATE SET " +
             "  name                       = COALESCE(EXCLUDED.name, unit_price.name), " +
             "  specification              = COALESCE(EXCLUDED.specification, unit_price.specification), " +
@@ -84,8 +85,10 @@ public class UnitPriceWriter {
             .setParameter("operationNo", p.operationNo)
             .setParameter("costType", p.costType)
             .setParameter("seqNo", p.seqNo)
+            .setParameter("discountOrder", p.discountOrder)
+            .setParameter("itemSeq", p.itemSeq)
             .setParameter("platingSchemeNo", p.platingSchemeNo)
-            .setParameter("pricingPrice", p.pricingPrice == null ? java.math.BigDecimal.ZERO : p.pricingPrice)
+            .setParameter("pricingPrice", p.pricingPrice)
             .setParameter("costRatio", p.costRatio)
             .setParameter("marketRefPrice", p.marketRefPrice)
             .setParameter("currency", p.currency)
@@ -131,7 +134,7 @@ public class UnitPriceWriter {
         p.versionNo = versionNo == null ? "V_DEFAULT" : versionNo;
         p.customerNo = customerNo;
         p.updatedBy = updatedBy;
-        p.pricingPrice = java.math.BigDecimal.ZERO;
+        // pricingPrice 默认 NULL：固定金额费用由 Handler 显式赋值，比例/无固定值费用保持 NULL（D1）。
         p.effectiveDate = LocalDate.now();
         return p;
     }

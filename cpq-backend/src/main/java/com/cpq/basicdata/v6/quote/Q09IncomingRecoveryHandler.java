@@ -32,7 +32,7 @@ public class Q09IncomingRecoveryHandler implements SheetHandler {
                 UnitPrice p = UnitPriceWriter.newRow("QUOTE", "MATERIAL", "回收折扣", null, ctx.customerNo, ctx.importedBy);
                 p.code = code;
                 p.finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
-                p.seqNo = row.getInt("项次");
+                // §9 字段表：项次 ❌ 不导入（seq_no 保留 NULL）
                 p.costRatio = row.getDecimal("回收折扣");
                 writer.upsert(p);
                 result.successRows++;

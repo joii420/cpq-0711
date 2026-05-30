@@ -178,7 +178,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   // 修法：把 lineItem 包成 LineItem[] 传入 useDriverExpansions，取得 driverExpansions cache，
   // 渲染时按 driverCount 限制行数（与编辑页 ProductCard 第 1339-1361 行逻辑完全对齐）。
   const lineItemsForDriver = useMemo(() => [lineItem], [lineItem]);
-  const { cache: driverExpansions } = useDriverExpansions(lineItemsForDriver as any, customerId);
+  const { cache: driverExpansions } = useDriverExpansions(lineItemsForDriver as any, customerId, quotationId);
 
   // 详情页 LIST_FORMULA 模板加载（与编辑页 useConfigTemplates 同款）
   const configTemplates = useConfigTemplates(lineItemsForDriver as any);

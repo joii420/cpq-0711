@@ -201,6 +201,11 @@ public class ConfigureProductService {
                 }
                 // 仅 V44 有 → targeted 回填该料号的 V6 身份+元素，使复用后材质/元素 Tab 能渲染
                 backfillV6FromV44(pr.existingHfPartNo, customerCode);
+            } else {
+                // V6 有但 V44 mat_part 可能缺(V6 原生导入料号)。
+                // 下游 insertProcesses 受 mat_process.hf_part_no→mat_part.part_no FK 约束,
+                // 反向 backfill 一行 mat_part 占位(unit_weight/recipe 从 material_master 取)。
+                backfillV44FromV6(pr.existingHfPartNo, v6rows.get(0));
             }
             // 跨客户复用: V6 材质/元素按 customer_no 存。指纹命中已有料号(前端自动切 partMode=existing)
             // 复用到新客户的报价单时,当前客户名下可能无 element_bom_item/material_bom_item → 材质/元素 Tab 空。
@@ -570,6 +575,28 @@ public class ConfigureProductService {
                 "  AND NOT EXISTS (SELECT 1 FROM material_bom_item t WHERE t.material_no = :p AND t.customer_no = :cn AND t.system_type = 'QUOTE' AND t.characteristic IS NULL)")
             .setParameter("cn", customerCode)
             .setParameter("p", partNo)
+            .executeUpdate();
+    }
+
+    /**
+     * 反向 backfill: V6 material_master 有此料号但 V44 mat_part 缺时,补一行 mat_part 占位。
+     * <p>下游 {@code insertProcesses} 写 mat_process 受 FK {@code mat_process.hf_part_no→mat_part.part_no}
+     * 约束;V6 原生导入料号(如 10110002/3)首次出现在 composite 子件时 mat_part 无对应行 → FK 违反 409。
+     * <p>幂等 ON CONFLICT(part_no) DO NOTHING。
+     */
+    void backfillV44FromV6(String partNo, Object[] v6row) {
+        UUID materialRecipeId = (v6row != null && v6row.length > 0 && v6row[0] != null)
+            ? UUID.fromString(v6row[0].toString()) : null;
+        BigDecimal unitWeight = (v6row != null && v6row.length > 1 && v6row[1] != null)
+            ? new BigDecimal(v6row[1].toString()) : null;
+        em.createNativeQuery(
+                "INSERT INTO mat_part (part_no, material_recipe_id, unit_weight, " +
+                "product_type, status_code, created_at, updated_at) " +
+                "VALUES (:pn, :mri, :uw, 'SIMPLE', 'Y', NOW(), NOW()) " +
+                "ON CONFLICT (part_no) DO NOTHING")
+            .setParameter("pn", partNo)
+            .setParameter("mri", materialRecipeId)
+            .setParameter("uw", unitWeight)
             .executeUpdate();
     }
 

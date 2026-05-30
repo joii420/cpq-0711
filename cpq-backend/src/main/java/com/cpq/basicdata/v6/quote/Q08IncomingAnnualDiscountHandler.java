@@ -32,13 +32,10 @@ public class Q08IncomingAnnualDiscountHandler implements SheetHandler {
                 UnitPrice p = UnitPriceWriter.newRow("QUOTE", "MATERIAL", "年降系数", null, ctx.customerNo, ctx.importedBy);
                 p.code = code;
                 p.finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
-                // seq_no 业务键含"年降顺序"维度，保证多顺序不冲突
-                Integer mainSeq = row.getInt("项次");
-                Integer order = row.getInt("年降顺序");
-                p.seqNo = (mainSeq == null ? 0 : mainSeq) * 100 + (order == null ? 0 : order);
+                p.seqNo = row.getInt("项次");               // §8: 项次 → seq_no
+                p.discountOrder = row.getInt("年降顺序");     // §8: 年降顺序 → discount_order（具名列）
                 p.costRatio = row.getDecimal("年降系数");
-                p.pricingPrice = row.getDecimal("单次固定年降值");
-                if (p.pricingPrice == null) p.pricingPrice = java.math.BigDecimal.ZERO;
+                p.pricingPrice = row.getDecimal("单次固定年降值");  // 比例/固定二选一，空值保留 NULL（D1）
                 p.currency = row.getStr("货币");
                 p.unit = row.getStr("计价单位");
                 writer.upsert(p);

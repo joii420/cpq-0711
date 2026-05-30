@@ -37,6 +37,7 @@ public class P19FinishedOtherRatioFeeHandler implements SheetHandler {
                 p.code = code;
                 p.seqNo = row.getInt("项次");
                 p.costRatio = row.getDecimal("比例");
+                p.pricingPrice = java.math.BigDecimal.ZERO;  // 核价比例费用保持原行为（pricing_price=0），不受报价 D1 改动影响
                 writer.upsert(p);
                 result.successRows++;
                 result.recordWrite("unit_price", 1);

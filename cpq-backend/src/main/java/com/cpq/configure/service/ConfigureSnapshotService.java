@@ -2,6 +2,7 @@ package com.cpq.configure.service;
 
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
+import com.cpq.formula.dataloader.QuotationIdContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -106,50 +107,30 @@ public class ConfigureSnapshotService {
             UUID customerId = self.loadCustomerId(quotationId);
             List<DriverComp> comps = self.loadDriverComponents(quotationId);
             if (comps.isEmpty()) return;
-            for (Map<String, Object> li : lineItems) {
-                UUID lineItemId = asUuid(li.get("id"));
-                String partNo = li.get("productPartNo") != null ? li.get("productPartNo").toString() : null;
-                String compositeType = li.get("compositeType") != null ? li.get("compositeType").toString() : null;
-                if (lineItemId == null || partNo == null || partNo.isBlank()) continue;
-                boolean isComposite = "COMPOSITE".equals(compositeType);
-                // 组合父级:解析子件行(优先 parent_line_item_id,缺失则回退 BOM ASSEMBLY 同单 PART 行)。
-                // 组合数据全挂在子件维度(工序绑子件 lineItemId / 材质·元素绑子件 material_no),
-                // 父级 partNo 查 composite_child_*_mirror 恒为 0 行,故按子件聚合展开。
-                List<ChildLine> children = isComposite
-                        ? self.resolveCompositeChildren(quotationId, lineItemId, partNo)
-                        : java.util.List.of();
-                for (DriverComp comp : comps) {
-                    try {
-                        // composite_child_*_mirror = "按子件 partNo 取叶子行"语义;$zcj_bom 等父级组件不在此列。
-                        boolean aggregateChildren = isComposite
-                                && comp.driverPath != null
-                                && comp.driverPath.contains("composite_child_");
-                        List<ExpandDriverResponse.Row> rows = new ArrayList<>();
-                        if (aggregateChildren) {
-                            // 逐子件展开(与子件 PART 行自身快照同一调用:partNo=子料号,lineItemId=子行,compositeType=PART)
-                            // 再拼接,得到组合父级该 Tab 的整组行。
-                            for (ChildLine ch : children) {
-                                ExpandDriverResponse cexp = componentDriverService.expand(
-                                        comp.id, customerId, ch.partNo, null, null, null, ch.lineItemId, "PART");
-                                if (cexp != null && cexp.rows != null) rows.addAll(cexp.rows);
-                            }
-                        } else {
-                            // 非组合,或组合父级语义组件($zcj_bom 子配件清单):按父级 partNo 原行为展开。
-                            // expand 在无事务上下文执行（同 batch-expand）→ 内部坏路径不中止事务
+            // 统一协议(2026-05-30):所有 (line × component) 走同一路径,SQL 视图自己用
+                //   :quotationId + :customerCode + 外层 :hfPartNos
+                // 自适应 SIMPLE / COMPOSITE 语义(视图内 UNION ALL),Java 不再按 driverPath 判定聚合。
+            QuotationIdContext.set(quotationId);
+            try {
+                for (Map<String, Object> li : lineItems) {
+                    UUID lineItemId = asUuid(li.get("id"));
+                    String partNo = li.get("productPartNo") != null ? li.get("productPartNo").toString() : null;
+                    String compositeType = li.get("compositeType") != null ? li.get("compositeType").toString() : null;
+                    if (lineItemId == null || partNo == null || partNo.isBlank()) continue;
+                    for (DriverComp comp : comps) {
+                        try {
                             ExpandDriverResponse exp = componentDriverService.expand(
                                     comp.id, customerId, partNo, null, null, null, lineItemId, compositeType);
-                            if (exp != null && exp.rows != null) rows.addAll(exp.rows);
+                            List<ExpandDriverResponse.Row> rows = (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
+                            String rowsJson = MAPPER.writeValueAsString(rows);
+                            self.writeSnapshot(lineItemId, comp.id, comp.name, rowsJson);
+                        } catch (Exception e) {
+                            LOG.warnf("[add-snapshot] line=%s comp=%s 跳过: %s", lineItemId, comp.id, e.getMessage());
                         }
-                        // 组合子件聚合为空 → 写 NULL(快照"未命中")让渲染回退实时,避免"空快照=空渲染"把页签冻死;
-                        // 其余情形(含 SIMPLE/PART 的合法空结果)保持"空数组冻结"原语义不变。
-                        String rowsJson = (rows.isEmpty() && aggregateChildren)
-                                ? null
-                                : MAPPER.writeValueAsString(rows);
-                        self.writeSnapshot(lineItemId, comp.id, comp.name, rowsJson);
-                    } catch (Exception e) {
-                        LOG.warnf("[add-snapshot] line=%s comp=%s 跳过: %s", lineItemId, comp.id, e.getMessage());
                     }
                 }
+            } finally {
+                QuotationIdContext.clear();
             }
         } catch (Exception e) {
             LOG.warnf("[add-snapshot] quotation=%s 快照整体失败(已降级): %s", quotationId, e.getMessage());

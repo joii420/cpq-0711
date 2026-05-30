@@ -128,6 +128,12 @@ export interface UseDriverExpansionsResult {
 export function useDriverExpansions(
   lineItems: LineItem[],
   customerId?: string,
+  /**
+   * 当前报价单 id(2026-05-30 统一渲染协议新增)。
+   * 透传到 batchExpand task,后端绑成 :quotationId 让所有 mirror 视图统一使用。
+   * 老调用者(详情页等)不传时,后端走老协议(:lineItemId 标量),向后兼容。
+   */
+  quotationId?: string,
 ): UseDriverExpansionsResult {
   const [cache, setCache] = useState<DriverExpansionMap>({});
   // cacheRef 与 cache state 保持同步，effect 内读 ref 避免闭包过期引发二次触发
@@ -306,6 +312,10 @@ export function useDriverExpansions(
       // V195 hotfix: 让 snapshot driver_path / fields 作为 backend expand 真理源
       overrideDataDriverPath: t.overrideDataDriverPath,
       overrideFieldsJson: t.overrideFieldsJson,
+      // V273 统一渲染协议(2026-05-30):透传报价单 id,后端绑成 :quotationId,
+      // 让所有 mirror 视图统一靠 (:quotationId + :customerCode + :hfPartNos) 三参数跑,
+      // 不再有视图单独用 :lineItemId 标量(空时后端走老兼容路径)
+      quotationId: quotationId || null,
     }));
 
     // 2026-05-19 fix: 用 task index 直接对应 result index, 不再用 batchKey map.
@@ -377,7 +387,7 @@ export function useDriverExpansions(
 
     // tasks 已 dedupe；cache 读 ref 不入依赖；customerId 是原始依赖
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, customerId]);
+  }, [tasks, customerId, quotationId]);
 
   return { cache, invalidate };
 }

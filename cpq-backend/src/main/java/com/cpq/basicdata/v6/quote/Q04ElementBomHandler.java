@@ -104,18 +104,18 @@ public class Q04ElementBomHandler implements SheetHandler {
                 // uq_element_bom_item = (system_type, customer_no, material_no, characteristic,
                 //   COALESCE(seq_no,0), COALESCE(component_no,''), COALESCE(part_no,''))
                 for (SheetRow row : groupRows) {
+                    // O1（§4）：宏丰料号 ❌ 不导入 —— 严格按方案不写 hf_part_no。
                     em.createNativeQuery(
                         "INSERT INTO element_bom_item " +
-                        "  (id, system_type, customer_no, material_no, hf_part_no, characteristic, " +
+                        "  (id, system_type, customer_no, material_no, characteristic, " +
                         "   seq_no, component_no, content, scrap_rate, composition_qty, " +
                         "   issue_unit, base_qty, updated_at, updated_by) " +
-                        "VALUES (gen_random_uuid(), 'QUOTE', :c, :m, :hf, :k, " +
+                        "VALUES (gen_random_uuid(), 'QUOTE', :c, :m, :k, " +
                         "        :seq, :cn, :cont, :scrap, :compQty, " +
                         "        :unit, :baseQty, NOW(), :u) " +
                         "ON CONFLICT (system_type, customer_no, material_no, characteristic, " +
                         "             COALESCE(seq_no,0), COALESCE(component_no,''), COALESCE(part_no,'')) " +
                         "DO UPDATE SET " +
-                        "  hf_part_no      = EXCLUDED.hf_part_no, " +
                         "  content         = EXCLUDED.content, " +
                         "  scrap_rate      = EXCLUDED.scrap_rate, " +
                         "  composition_qty = EXCLUDED.composition_qty, " +
@@ -125,7 +125,6 @@ public class Q04ElementBomHandler implements SheetHandler {
                         "  updated_by      = EXCLUDED.updated_by")
                       .setParameter("c", ctx.customerNo)
                       .setParameter("m", materialNo)
-                      .setParameter("hf", row.getStr("宏丰料号"))
                       .setParameter("k", characteristic)
                       .setParameter("seq", row.getInt("项次"))
                       .setParameter("cn", row.getStr("元素"))

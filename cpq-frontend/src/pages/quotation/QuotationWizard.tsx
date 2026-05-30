@@ -98,7 +98,7 @@ const QuotationWizard: React.FC = () => {
   // V202+ (2026-05-19): useDriverExpansions 返回 { cache, invalidate } 解决"配置前缓存 0 行/旧值, 配置后不重拉"问题.
   // invalidate(partNos) 清掉指定料号相关 key, 下一轮 fingerprint 改变时自动 re-fetch.
   const { cache: driverExpansions, invalidate: invalidateDriverExpansions } =
-    useDriverExpansions(lineItems, customerIdValue);
+    useDriverExpansions(lineItems, customerIdValue, quotationId);
 
   // 动态 key 全局变量定义字典 — 供 computeAllFormulas 在 buildDraftPayload 中正确求值动态 key 公式
   // 空 map = 动态 key token 兜底 0 (旧行为); list() 失败时同样兜底 0 不影响静态 key 场景

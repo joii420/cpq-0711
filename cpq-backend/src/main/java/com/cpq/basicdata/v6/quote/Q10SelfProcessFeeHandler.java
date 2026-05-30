@@ -34,8 +34,7 @@ public class Q10SelfProcessFeeHandler implements SheetHandler {
                 p.finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
                 p.seqNo = row.getInt("项次（一级）", "项次");
                 p.operationNo = row.getStr("工序编号");
-                p.pricingPrice = row.getDecimal("值");
-                if (p.pricingPrice == null) p.pricingPrice = java.math.BigDecimal.ZERO;
+                p.pricingPrice = row.getDecimal("值");   // 固定金额写值；比例费用留 NULL（D1）
                 p.costRatio = row.getDecimal("比例");
                 p.currency = row.getStr("货币");
                 p.unit = row.getStr("计价单位");
