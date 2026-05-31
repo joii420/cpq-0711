@@ -114,7 +114,15 @@ public class ComponentResource {
         UUID customerId = req != null ? req.customerId : null;
         String partNo = req != null ? req.partNo : null;
         Integer partVersion = req != null ? req.partVersion : null;
-        return ApiResponse.success(componentDriverService.expand(id, customerId, partNo, partVersion));
+        boolean debugSql = req != null && req.debugSql;
+        if (debugSql) com.cpq.datasource.sqlview.SqlDebugContext.begin();
+        try {
+            ExpandDriverResponse resp = componentDriverService.expand(id, customerId, partNo, partVersion);
+            if (debugSql && resp != null) resp.debugSql = com.cpq.datasource.sqlview.SqlDebugContext.drainJoined();
+            return ApiResponse.success(resp);
+        } finally {
+            if (debugSql) com.cpq.datasource.sqlview.SqlDebugContext.drain(); // 清理(若上面已 drain 则 no-op)
+        }
     }
 
     /**
@@ -139,6 +147,7 @@ public class ComponentResource {
         if (req.tasks.size() > 5000) {
             throw new BusinessException(400, "batch tasks 上限 5000，当前 " + req.tasks.size());
         }
+        final boolean debugSql = req.debugSql;
         // 与 tasks 同序预置 results 占位,Phase 1/2 按 index 回填(保证按 index 配对的协议不变)
         for (int i = 0; i < req.tasks.size(); i++) {
             Task t = req.tasks.get(i);
@@ -168,6 +177,7 @@ public class ComponentResource {
                             || (t.childLineItemIds != null && !t.childLineItemIds.isEmpty());
                     if (!bucketEnabled) {
                         // Flag 关 → 维持原逻辑(无 Phase 2)
+                        if (debugSql) com.cpq.datasource.sqlview.SqlDebugContext.begin();
                         if (hasContext) {
                             r.data = componentDriverService.expandWithSnapshot(
                                 t.componentId, t.customerId, t.partNo, t.partVersion,
@@ -176,6 +186,7 @@ public class ComponentResource {
                         } else {
                             r.data = componentDriverService.expand(t.componentId, t.customerId, t.partNo, t.partVersion);
                         }
+                        if (debugSql) r.debugSql = com.cpq.datasource.sqlview.SqlDebugContext.drainJoined();
                         r.status = "OK";
                         continue;
                     }
@@ -198,6 +209,8 @@ public class ComponentResource {
             } catch (Exception e) {
                 r.status = "ERROR";
                 r.error = e.getMessage();
+                // 即便报错也把已捕获的 SQL 带回(record 在 executeQuery 之前已记录),便于排查失败的那条 SQL
+                if (debugSql) r.debugSql = com.cpq.datasource.sqlview.SqlDebugContext.drainJoined();
                 LOG.warnf("batch-expand[phase1] task %s failed: %s", r.key, e.getMessage());
             }
         }

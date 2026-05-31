@@ -157,13 +157,33 @@ public class Q04ElementBomHandler implements SheetHandler {
             .setParameter("k", characteristic)
             .getResultList();
         StringBuilder sb = new StringBuilder();
-        for (Object[] r : data) sb.append(r[0]).append('|').append(r[1]).append('|').append(r[2]).append(';');
+        // 必须用 nv() 与 fingerprintRows 同口径归一化:
+        //   - content / composition_qty 是 NUMERIC, JDBC 返回 BigDecimal 带列精度尾零(如 70.000000),
+        //     而 Excel 侧 nv() 已 stripTrailingZeros → 70; 不归一化则相同数据指纹永远不等 → 每次导入 +1。
+        //   - null 也要走 nv() 统一成 ""(原 r[2].toString() 会把 null 拼成 "null", 与 Excel 侧 "" 不符)。
+        for (Object[] r : data) sb.append(nv(r[0])).append('|').append(nv(r[1])).append('|').append(nv(r[2])).append(';');
         return sb.toString();
     }
 
     private String fingerprintRows(List<SheetRow> rows) {
-        StringBuilder sb = new StringBuilder();
+        // 关键: 必须与落库口径一致再比指纹, 否则相同数据永远不等 → 每次导入升版。
+        //   element_bom_item 落库时 ON CONFLICT (seq_no, component_no, part_no) DO UPDATE,
+        //   会把 Excel 里同一 (项次, 元素) 的重复行合并成一行(后写覆盖); 而 fingerprintExisting
+        //   读的是已合并的 DB 行。所以这里也要按 (项次, 元素) 去重(后写覆盖) + 按项次排序,
+        //   才能和 fingerprintExisting 的"已去重、ORDER BY seq_no"行集对齐。
+        Map<String, SheetRow> dedup = new LinkedHashMap<>();
         for (SheetRow r : rows) {
+            Integer seq = r.getInt("项次");
+            String key = (seq == null ? "" : seq.toString()) + "|" + nv(r.getStr("元素"));
+            dedup.put(key, r); // 后写覆盖, 对应 DO UPDATE
+        }
+        List<SheetRow> sorted = new java.util.ArrayList<>(dedup.values());
+        sorted.sort(java.util.Comparator.comparingInt(x -> {
+            Integer s = x.getInt("项次");
+            return s == null ? 0 : s;
+        }));
+        StringBuilder sb = new StringBuilder();
+        for (SheetRow r : sorted) {
             sb.append(nv(r.getStr("元素"))).append('|')
               .append(nv(r.getDecimal("组成含量"))).append('|')
               .append(nv(r.getDecimal("毛用量"))).append(';');

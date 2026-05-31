@@ -1,0 +1,42 @@
+# 本地开发基础设施 — 配合 application-jh.properties 使用
+# 启动：docker compose -f docker-compose.jh.yml up -d
+# 停止：docker compose -f docker-compose.jh.yml down
+# 数据持久化在命名卷 cpq_jh_pgdata / cpq_jh_redisdata
+services:
+  postgres:
+    image: postgres:16
+    container_name: cpq-jh-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: joii5231
+      POSTGRES_DB: cpq_db
+      TZ: Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      - cpq_jh_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cpq_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:latest
+    container_name: cpq-jh-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "joii5231"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - cpq_jh_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "joii5231", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  cpq_jh_pgdata:
+  cpq_jh_redisdata:

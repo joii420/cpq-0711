@@ -325,7 +325,17 @@ export function useDriverExpansions(
     // backend 保证 results.length == tasks.length 且按 task 顺序返 (含 ERROR 兜底),
     // 直接按 index 配对最稳.
 
-    batchExpandDriver(batchTasks)
+    // 调试开关: URL ?debugSql=1 或 localStorage.cpqDebugSql='1' 时,
+    // 后端回传 driver 改写后的最终 SQL, 这里只对「第一个产品」的各 Tab 打到控制台。
+    const debugSqlOn = (() => {
+      try {
+        return new URLSearchParams(window.location.search).get('debugSql') === '1'
+          || window.localStorage.getItem('cpqDebugSql') === '1';
+      } catch { return false; }
+    })();
+    const firstPartNo = (lineItems && lineItems.length > 0) ? lineItems[0].productPartNo : undefined;
+
+    batchExpandDriver(batchTasks, debugSqlOn)
       .then((results) => {
         const updates: DriverExpansionMap = {};
 
@@ -355,6 +365,18 @@ export function useDriverExpansions(
             // eslint-disable-next-line no-console
             console.warn('[Y1.5 expand-driver] ERROR', { localKey: t.key, backendKey: r.key, error: r.error });
             updates[t.key] = EMPTY_EXPANSION;
+          }
+          // 调试: 仅第一个产品的各 Tab 打印 driver 实际执行 SQL(OK/ERROR 都打, 失败也能看到失败的那条 SQL)
+          if (debugSqlOn && t.partNo === firstPartNo && (r.debugSql || r.error)) {
+            // eslint-disable-next-line no-console
+            console.log(
+              `%c[报价单 driver SQL] 第一个产品 ${t.partNo} · 组件 ${t.componentId} · ${r.status}`,
+              'color:#0a7;font-weight:bold',
+            );
+            // eslint-disable-next-line no-console
+            if (r.debugSql) console.log(r.debugSql);
+            // eslint-disable-next-line no-console
+            if (r.error) console.warn('执行报错:', r.error);
           }
         }
 

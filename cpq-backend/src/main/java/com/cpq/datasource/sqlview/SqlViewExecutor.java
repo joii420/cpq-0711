@@ -285,6 +285,7 @@ public class SqlViewExecutor {
             namedParams.put("hfPartNos", partNos);
         }
         RewrittenSql rewritten = rewriteNamedParams(sql.toString(), namedParams);
+        SqlDebugContext.record(rewritten.sql, rewritten.params);
 
         List<Map<String, Object>> rows = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
@@ -351,6 +352,7 @@ public class SqlViewExecutor {
             namedParams.put("hfPartNos", partNos);
         }
         RewrittenSql rewritten = rewriteNamedParams(sql, namedParams);
+        SqlDebugContext.record(rewritten.sql, rewritten.params);
 
         List<Map<String, Object>> rows = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();

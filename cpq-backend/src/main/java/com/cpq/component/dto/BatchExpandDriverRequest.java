@@ -12,6 +12,9 @@ public class BatchExpandDriverRequest {
 
     public List<Task> tasks;
 
+    /** 调试: true 时每个 task 的响应回传 driver 改写后的最终 SQL (data.debugSql), 供前端 console 打印。默认 false。 */
+    public boolean debugSql;
+
     public static class Task {
         /** 组件 ID（必填） */
         public UUID componentId;

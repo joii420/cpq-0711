@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Tabs, Button, Space } from 'antd';
 import { ImportOutlined } from '@ant-design/icons';
-import V6ProcessReadOnlyTab from './V6ProcessReadOnlyTab';
+import V6ProcessCrudTab from './V6ProcessCrudTab';
 import V6BomQueryTab from './V6BomQueryTab';
 import PartVersionPage from '../partversion/PartVersionPage';
 import MaterialRecipeManagement from '../config/MaterialRecipeManagement';
@@ -27,7 +27,7 @@ const MasterDataHubPage: React.FC = () => {
         onChange={setActiveTab}
         destroyInactiveTabPane
         items={[
-          { key: 'process', label: '工序', children: <V6ProcessReadOnlyTab /> },
+          { key: 'process', label: '工序', children: <V6ProcessCrudTab /> },
           { key: 'part', label: '料号', children: <PartVersionPage /> },
           { key: 'bom', label: 'BOM', children: <V6BomQueryTab /> },
           { key: 'material', label: '材质', children: <MaterialRecipeManagement /> },

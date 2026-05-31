@@ -1332,6 +1332,51 @@ Component {
 - ARCHIVED:可读不可被新模板引用
 - 模板引用关系存储于 `template_component` 表
 
+#### 5.4.6 组件目录 导入 / 导出（v1.0 设计,2026-05-31 立项）
+
+**目标**:在组件管理目录树上,把某目录**直属**的全部组件及其完整配置导出为 JSON bundle;用户可在**任意目录**导入,组件**平铺**落到目标目录。**硬约束:不与其他业务冲突、不影响任何现有业务功能**。
+
+**导出/导入的数据边界(组件自包含配置)**:
+- `component`:code / name / component_type / column_count / status / `data_driver_path` / `fields`(JSONB) / `formulas`(JSONB)
+- `component_sql_view`:sql_view_name / sql_template / declared_columns / required_variables / scope / description(**组件内唯一**,随组件走)
+- **不进 bundle(刻意排除,杜绝耦合)**:`template_component` 绑定、模板 `components_snapshot`、报价单数据 → 导入的是"未绑定的干净组件",由用户后续在模板管理自行引用。
+- **本期不递归子目录**:只导当前目录直属组件;导入全部平铺到目标目录(bundle 不含目录子树)。
+
+**🔒 隔离 / 不冲突保证(核心,逐条对应硬约束)**:
+1. 导出纯只读(全 SELECT),零副作用。
+2. 导入**只 INSERT 新行 + 全新 UUID**,绝不 UPDATE/DELETE 任何现有 `component / component_sql_view / template / 快照`。
+3. `component.code` **全局唯一**:导入**永不覆盖**同 code 现有组件,靠冲突策略规避。
+4. 导入组件**不绑定任何模板**(`template_component` 按 component_id 关联,新 id 自然未被引用)→ `refreshSnapshotsByComponent` 命中 0 模板 = no-op → **现有模板/报价单完全不受影响**。
+5. `component_sql_view` 唯一键 = **(component_id, sql_view_name)**,sql_view_name **组件内唯一非全局** → `$cz_view` 等按组件上下文解析,导入无全局撞名、字段路径 `$view.col` **无需改写**。
+6. 整个 import 单 `@Transactional`,全有或全无。
+7. 依赖前置校验(见下),不静默产生悬空引用。
+8. **无 Flyway / 无 schema 变更**,复用 `ComponentService.create` / `ComponentDirectoryService` 既有校验。
+
+**导出**:`GET /api/cpq/components/directories/{dirId}/export` → 下载 bundle JSON(attachment)。扫描各字段的 `datasource_binding`(数据源 code)与 `global_variable_code` 汇总进 bundle.`dependencies`,供导入端校验。
+
+**Bundle 格式(带版本;tempId 仅 bundle 内引用,导入重映射为新 UUID;含 checksum 防损坏)**:
+```
+{ "bundleVersion":"1.0", "exportedAt":"...", "source":{"directoryId","directoryName"},
+  "components":[ { "code","name","componentType","columnCount","status","dataDriverPath",
+                   "fields":[...], "formulas":[...],
+                   "sqlViews":[{"sqlViewName","sqlTemplate","declaredColumns","requiredVariables","scope","description"}] } ],
+  "dependencies":{ "datasources":[{"code"}], "globalVariables":[{"code"}] }, "checksum":"sha256:..." }
+```
+
+**导入(两步:预览 → 提交)**:
+- 预览(dry-run):`POST /api/cpq/components/directories/{targetDirId}/import?dryRun=true` → 校验格式/checksum + 依赖校验 + 冲突计划,**不写库**,返回计划。
+- 提交:`POST .../import`(带 conflictPolicy)→ 单事务执行,返回结果(新建 id / 重命名映射 / 跳过项 / 依赖告警)。
+- **code 冲突策略(默认=重命名)**:重命名(冲突 code 加后缀 `__impN`,全量不丢,**推荐默认**)/ 跳过(幂等再导入)/ 中止(任一冲突即回滚)。**任何策略都不覆盖现有组件**。
+- **依赖(数据源/全局变量)校验**:预览阶段比对目标环境 `datasource` / `global_variable_definition`;缺失则**红色列出并默认阻止提交**,提供"仍然导入(相关字段运行时取数会失败)"显式确认。
+
+**UI(遵循规范)**:目录树节点增加「导出目录」(触发下载)、「导入到此目录」;导入走 **Drawer 向导**(上传 → 依赖/冲突预览 → 选策略 → 确认 → 结果报告),不用 Modal。
+
+**RBAC**:写操作限 SALES_MANAGER / SYSTEM_ADMIN。
+
+**分期**:P1 导出(只读)→ P2 导入预览+依赖校验 → P3 导入提交+冲突策略+结果报告。
+
+**边界/反模式**:① AP-53 sql_template 引用 V6 表/`$<view>`,跨环境时 bundle 记录引用表名作环境假设提示;② 重命名策略再导入会产生 `__imp1/__imp2`(要幂等用"跳过");③ 不导出模板/快照/报价数据,从根杜绝耦合。
+
 ---
 
 ### 5.5 模板体系
@@ -2486,6 +2531,17 @@ v_costing_exchange_rate[from_currency='CNY' AND to_currency='USD'].costing_rate
 ### 9.16 v3.8(2026-05-27)— 核价标准模板 v5.0 v1.2 全量 V6 迁移（V253~V259，未发布）
 
 - 2026-05-27 V253~V259（v1.2 DRAFT 创建，未发布）— 核价标准模板 v5.0 v1.2 全量 V6 迁移 schema-only PR：v1.2 复制 20 -V12 组件 + 20 component_sql_view + 7 template_sql_view 替代 v_costing_summary_full / v_c_summary_agg；excel_view_config 36 列 path 全部 $<view>.<col> 化；V76 costing_part_* 关键词进 BnfPathLinter / SqlViewValidator 黑名单。fee_config / plating_scheme / unit_price 加 6 列待 import PR backfill；数值标杆暂不验收。
+
+### 9.16 v3.8(2026-05-31)— 组件目录 导入/导出 立项（设计见 §5.4.6）
+
+| 决策 | 内容 |
+|---|---|
+| 导出范围 | 本期**只导当前目录直属组件**,不递归子目录;导入平铺到目标目录 |
+| code 冲突 | 默认**重命名(加后缀 `__impN`)**;另提供 跳过 / 中止;**任何策略都不覆盖现有组件** |
+| 依赖缺失 | 数据源/全局变量缺失 → 预览**红色报出 + 默认阻止提交**,可显式"仍然导入" |
+| 隔离保证 | 导出只读;导入只 INSERT 新 UUID;不绑模板(refreshSnapshots no-op);sql_view_name 组件内唯一无需改写;单事务;**无 Flyway/schema 变更** |
+| 不进 bundle | 模板绑定 / 快照 / 报价数据(杜绝跨业务耦合) |
+| 分期 | P1 导出 → P2 导入预览+依赖校验 → P3 导入提交+冲突策略+结果报告 |
 
 ### 9.15 v3.7(2026-05-26)— 模板独立 SQL 视图（template_sql_view + template.template_sql_views_snapshot）
 

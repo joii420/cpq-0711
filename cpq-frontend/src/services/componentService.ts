@@ -19,10 +19,14 @@ export interface BatchExpandResultItem {
   /** 与后端 cache key 一致: componentId:customerId:partNo，null 填 "_" */
   key: string;
   status: 'OK' | 'ERROR';
+  /** 调试: driver 改写后的最终执行 SQL(含 ? + 参数)。请求 debugSql=true 时填充; ERROR 时也带(失败的那条 SQL)。 */
+  debugSql?: string | null;
   data?: {
     rowCount: number;
     driverPath?: string;
     rows: Array<{ driverRow: Record<string, any>; basicDataValues: Record<string, any> }>;
+    /** 调试: 请求带 debugSql=true 时，driver 改写后的最终执行 SQL（含 ? 占位符 + 参数）。 */
+    debugSql?: string | null;
   } | null;
   error?: string | null;
 }
@@ -53,11 +57,14 @@ export function buildBatchKey(
  *
  * status=ERROR 的条目仍写入结果(data=null),避免调用方反复重试。
  */
-export async function batchExpandDriver(tasks: BatchExpandTask[]): Promise<BatchExpandResultItem[]> {
+export async function batchExpandDriver(
+  tasks: BatchExpandTask[],
+  debugSql?: boolean,
+): Promise<BatchExpandResultItem[]> {
   if (tasks.length === 0) return [];
   const CHUNK = 5000;
   if (tasks.length <= CHUNK) {
-    const resp: any = await api.post('/components/batch-expand', { tasks });
+    const resp: any = await api.post('/components/batch-expand', { tasks, debugSql: !!debugSql });
     return (resp?.data?.results ?? resp?.results ?? []) as BatchExpandResultItem[];
   }
   // 兜底:极端大批量分片(>5000),正常路径走不到
@@ -67,7 +74,7 @@ export async function batchExpandDriver(tasks: BatchExpandTask[]): Promise<Batch
   }
   const allResults: BatchExpandResultItem[] = [];
   for (const chunk of chunks) {
-    const resp: any = await api.post('/components/batch-expand', { tasks: chunk });
+    const resp: any = await api.post('/components/batch-expand', { tasks: chunk, debugSql: !!debugSql });
     const results: BatchExpandResultItem[] = resp?.data?.results ?? resp?.results ?? [];
     allResults.push(...results);
   }
@@ -80,6 +87,38 @@ export const componentService = {
   createDirectory: (data: any) => api.post('/component-directories', data) as Promise<any>,
   updateDirectory: (id: string, data: any) => api.put(`/component-directories/${id}`, data) as Promise<any>,
   deleteDirectory: (id: string) => api.delete(`/component-directories/${id}`) as Promise<any>,
+  /**
+   * P1: 导出目录直属组件为 JSON bundle 并触发浏览器下载(只读)。
+   * 注意: api 响应拦截器已 `return response.data`,故此处返回值**本身**即 Blob(responseType=blob),
+   * 不能再取 .data(否则得到 undefined → 文件内容变成字符串 "undefined")。
+   */
+  exportDirectory: async (id: string) => {
+    const data: any = await api.get(`/component-directories/${id}/export`, { responseType: 'blob' });
+    const blob = data instanceof Blob
+      ? data
+      : new Blob([typeof data === 'string' ? data : JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const filename = `components-${id}.json`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+  /** P2: 导入预览(dry-run,不写库)。bundle=导出的 JSON 对象。 */
+  importPreview: (dirId: string, bundle: any, conflictPolicy: string) =>
+    api.post(
+      `/component-directories/${dirId}/import?conflictPolicy=${encodeURIComponent(conflictPolicy)}`,
+      bundle,
+    ) as Promise<any>,
+  /** P3: 导入提交(单事务,只新增)。ignoreMissingDeps=true 时忽略缺失依赖。 */
+  importCommit: (dirId: string, bundle: any, conflictPolicy: string, ignoreMissingDeps: boolean) =>
+    api.post(
+      `/component-directories/${dirId}/import/commit?conflictPolicy=${encodeURIComponent(conflictPolicy)}&ignoreMissingDeps=${ignoreMissingDeps}`,
+      bundle,
+    ) as Promise<any>,
   list: (params: any) => api.get('/components', { params }) as Promise<any>,
   getById: (id: string) => api.get(`/components/${id}`) as Promise<any>,
   create: (data: any) => api.post('/components', data) as Promise<any>,

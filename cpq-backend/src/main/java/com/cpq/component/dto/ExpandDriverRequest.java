@@ -14,4 +14,6 @@ public class ExpandDriverRequest {
      * null = 不注入版本过滤（向后兼容旧调用方）。
      */
     public Integer partVersion;
+    /** 调试: true 时响应回传 driver 改写后的最终 SQL (debugSql 字段), 供前端 console 打印。默认 false。 */
+    public boolean debugSql;
 }

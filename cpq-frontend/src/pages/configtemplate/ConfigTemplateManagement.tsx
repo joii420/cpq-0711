@@ -10,7 +10,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import {
-  Drawer, Button, Form, Input, Modal, Tag, message, Space, Table, Empty, Popconfirm, Tooltip,
+  Drawer, Button, Form, Input, Tag, message, Space, Table, Empty, Popconfirm, Tooltip,
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, InboxOutlined } from '@ant-design/icons';
 import {
@@ -176,13 +176,20 @@ const ConfigTemplateManagement: React.FC = () => {
         pagination={{ pageSize: 20 }}
       />
 
-      {/* 新建 Modal */}
-      <Modal
+      {/* 新建 Drawer (统一抽屉风格) */}
+      <Drawer
         title="新建配置模板"
+        placement="right"
+        width={480}
         open={showCreate}
-        onCancel={() => setShowCreate(false)}
-        onOk={handleCreate}
-        okText="创建为 DRAFT"
+        onClose={() => setShowCreate(false)}
+        destroyOnClose
+        footer={
+          <Space style={{ float: 'right' }}>
+            <Button onClick={() => setShowCreate(false)}>取消</Button>
+            <Button type="primary" onClick={handleCreate}>创建为 DRAFT</Button>
+          </Space>
+        }
       >
         <Form form={tplForm} layout="vertical">
           <Form.Item label="Code" name="code" rules={[{ required: true, max: 50 }]}>
@@ -195,14 +202,22 @@ const ConfigTemplateManagement: React.FC = () => {
             <Input.TextArea rows={3} />
           </Form.Item>
         </Form>
-      </Modal>
+      </Drawer>
 
-      {/* 元信息 Edit Modal */}
-      <Modal
+      {/* 元信息 Edit Drawer (统一抽屉风格) */}
+      <Drawer
         title={`修改元信息: ${editingTemplate?.code}`}
+        placement="right"
+        width={480}
         open={!!editingTemplate}
-        onCancel={() => setEditingTemplate(null)}
-        onOk={handleUpdateMeta}
+        onClose={() => setEditingTemplate(null)}
+        destroyOnClose
+        footer={
+          <Space style={{ float: 'right' }}>
+            <Button onClick={() => setEditingTemplate(null)}>取消</Button>
+            <Button type="primary" onClick={handleUpdateMeta}>保存</Button>
+          </Space>
+        }
       >
         <Form form={tplForm} layout="vertical">
           <Form.Item label="Code" name="code" rules={[{ required: true, max: 50 }]}>
@@ -215,7 +230,7 @@ const ConfigTemplateManagement: React.FC = () => {
             <Input.TextArea rows={3} />
           </Form.Item>
         </Form>
-      </Modal>
+      </Drawer>
 
       {/* 编辑大类/明细项 Drawer */}
       <ConfigTemplateEditDrawer
@@ -446,9 +461,15 @@ const ConfigTemplateEditDrawer: React.FC<DrawerProps> = ({ template, onClose, on
         </div>
       </div>
 
-      {/* 新建大类 Modal */}
-      <Modal title="新建大类" open={showAddCat}
-        onCancel={() => setShowAddCat(false)} onOk={addCategory}>
+      {/* 新建大类 Drawer (统一抽屉风格, 嵌套于编辑抽屉之上) */}
+      <Drawer title="新建大类" placement="right" width={420} open={showAddCat}
+        onClose={() => setShowAddCat(false)} destroyOnClose
+        footer={
+          <Space style={{ float: 'right' }}>
+            <Button onClick={() => setShowAddCat(false)}>取消</Button>
+            <Button type="primary" onClick={addCategory}>确定</Button>
+          </Space>
+        }>
         <Form form={catForm} layout="vertical">
           <Form.Item label="Code" name="code" rules={[{ required: true, max: 50 }]}>
             <Input placeholder="如 PROCESS / MATERIAL" />
@@ -460,11 +481,17 @@ const ConfigTemplateEditDrawer: React.FC<DrawerProps> = ({ template, onClose, on
             <Input type="number" />
           </Form.Item>
         </Form>
-      </Modal>
+      </Drawer>
 
-      {/* 改名大类 Modal */}
-      <Modal title={`修改大类: ${editingCat?.code}`} open={!!editingCat}
-        onCancel={() => setEditingCat(null)} onOk={renameCategory}>
+      {/* 改名大类 Drawer (统一抽屉风格) */}
+      <Drawer title={`修改大类: ${editingCat?.code}`} placement="right" width={420} open={!!editingCat}
+        onClose={() => setEditingCat(null)} destroyOnClose
+        footer={
+          <Space style={{ float: 'right' }}>
+            <Button onClick={() => setEditingCat(null)}>取消</Button>
+            <Button type="primary" onClick={renameCategory}>保存</Button>
+          </Space>
+        }>
         <Form form={catForm} layout="vertical">
           <Form.Item label="Code" name="code" rules={[{ required: true, max: 50 }]}><Input /></Form.Item>
           <Form.Item label="名称" name="name" rules={[{ required: true, max: 200 }]}><Input /></Form.Item>
@@ -473,17 +500,29 @@ const ConfigTemplateEditDrawer: React.FC<DrawerProps> = ({ template, onClose, on
             <Input placeholder="ACTIVE / INACTIVE" />
           </Form.Item>
         </Form>
-      </Modal>
+      </Drawer>
 
-      {/* 明细项 Modal */}
-      <Modal title="新建明细项" open={showAddItem}
-        onCancel={() => setShowAddItem(false)} onOk={addItem}>
+      {/* 明细项 Drawer (统一抽屉风格) */}
+      <Drawer title="新建明细项" placement="right" width={420} open={showAddItem}
+        onClose={() => setShowAddItem(false)} destroyOnClose
+        footer={
+          <Space style={{ float: 'right' }}>
+            <Button onClick={() => setShowAddItem(false)}>取消</Button>
+            <Button type="primary" onClick={addItem}>确定</Button>
+          </Space>
+        }>
         <ItemFormFields form={itemForm} />
-      </Modal>
-      <Modal title={`修改明细项: ${editingItem?.code}`} open={!!editingItem}
-        onCancel={() => setEditingItem(null)} onOk={updateItem}>
+      </Drawer>
+      <Drawer title={`修改明细项: ${editingItem?.code}`} placement="right" width={420} open={!!editingItem}
+        onClose={() => setEditingItem(null)} destroyOnClose
+        footer={
+          <Space style={{ float: 'right' }}>
+            <Button onClick={() => setEditingItem(null)}>取消</Button>
+            <Button type="primary" onClick={updateItem}>保存</Button>
+          </Space>
+        }>
         <ItemFormFields form={itemForm} />
-      </Modal>
+      </Drawer>
     </Drawer>
   );
 };

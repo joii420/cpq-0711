@@ -50,46 +50,33 @@ public class CustomerPartCandidateService {
             List<CustomerPartCandidateDTO> v6Result = listCandidatesV6(customerId, importRecordId);
             if (v6Result != null) return v6Result;
         }
-        // V5 旧路径 (回退): 按 import_record_id 过滤 mat_process / mat_fee / plating_fee
-        // mat_customer_part_mapping 表本身没有 import_record_id 字段, 不能用作料号集合源
-        // (否则它会拉客户全部历史 mapping → 污染本次候选, 见 AP-23 / 2026-05 案例)
-        // mapping 仅作为 LEFT JOIN 装饰提供 customer_part_name / drawing_no 等信息.
-        String importFilter = importRecordId != null ? " AND import_record_id = :importRecordId " : "";
-
-        // 同步带上 internal_material 视角（生产料号管理页维护）；
-        // 让前端 buildLineItemFromTemplate 直接把 hfPartInfo 装进 LineItem，
-        // 这样从基础数据导入跳到编辑页第一时间就能展示 popover 详情，无需 save+refresh。
+        // V6 回退路径 (importRecordId 为空 = 手工「+ 添加产品」, 或非 V6 ImportRecord):
+        //   (AP-53) V44 表 mat_part / mat_customer_part_mapping / mat_process / mat_fee /
+        //   mat_plating_fee / plating_fee 已全面禁用, 一律改查 V6 表。
+        //   候选 = material_master 中"有客户映射的产品"(即出现在 material_customer_map),
+        //   以此自动排除 BOM 子件原料(原料无 customer_product_no 映射)。
+        //   customer_no 匹配本客户 → customer_specific=true; 其余产品作为全局候选(false)。
+        //   按批次过滤(importRecordId)已由上面的 listCandidatesV6 经 metadata.hfPairs 实现,
+        //   且 V6 表无 import_record_id 列, 故此回退路径不再按导入批次过滤。
+        //   internal_material 视角(生产料号管理)保留, 供前端 popover 详情直接展示。
         String sql =
-            "SELECT DISTINCT p.part_no, p.part_name, p.unit_weight, p.weight_unit, " +
-            "       m.customer_product_no, m.customer_part_name, m.customer_drawing_no, " +
+            "SELECT DISTINCT p.material_no, p.material_name, p.unit_weight, p.standard_unit, " +
+            "       m.customer_product_no, m.customer_material_name, m.customer_drawing_no, " +
             "       m.base_currency, m.quote_currency, " +
             "       (m.id IS NOT NULL) AS customer_specific, " +
             "       im.name AS im_name, im.specification AS im_spec, " +
             "       im.size AS im_size, im.status_code AS im_status, " +
-            "       m.current_version " +
-            "FROM mat_part p " +
-            "LEFT JOIN mat_customer_part_mapping m " +
-            "       ON m.hf_part_no = p.part_no AND m.customer_id = :customerId " +
+            "       NULL::int AS current_version " +
+            "FROM material_master p " +
+            "LEFT JOIN material_customer_map m " +
+            "       ON m.material_no = p.material_no " +
+            "      AND m.customer_no = (SELECT code FROM customer WHERE id = :customerId) " +
             "LEFT JOIN internal_material im " +
-            "       ON im.material_no = p.part_no " +
-            "WHERE p.status_code = 'Y' " +
-            "  AND p.part_no IN ( " +
-            "        SELECT hf_part_no FROM mat_process       WHERE customer_id = :customerId " + importFilter +
-            "        UNION " +
-            "        SELECT hf_part_no FROM mat_fee           WHERE customer_id = :customerId " + importFilter +
-            "        UNION " +
-            "        SELECT hf_part_no FROM mat_plating_fee   WHERE customer_id = :customerId " + importFilter +
-            "        UNION " +
-            // V125: plating_fee 已弃用; 保留 UNION 项兼容历史导入产生的料号候选,
-            //       直到 V128+ 旧表标 ARCHIVED 后可移除.
-            "        SELECT hf_part_no FROM plating_fee       WHERE customer_id = :customerId " + importFilter +
-            "      ) " +
-            "ORDER BY (m.id IS NOT NULL) DESC, p.part_no ASC";
+            "       ON im.material_no = p.material_no " +
+            "WHERE p.material_no IN (SELECT material_no FROM material_customer_map) " +
+            "ORDER BY (m.id IS NOT NULL) DESC, p.material_no ASC";
 
         var query = em.createNativeQuery(sql).setParameter("customerId", customerId);
-        if (importRecordId != null) {
-            query.setParameter("importRecordId", importRecordId);
-        }
         List<Object[]> rows = query.getResultList();
 
         List<CustomerPartCandidateDTO> result = new ArrayList<>(rows.size());
@@ -159,22 +146,29 @@ public class CustomerPartCandidateService {
             return java.util.Collections.emptyList();
         }
 
-        // 3. 按 hf 集合 JOIN mat_part + mat_customer_part_mapping + internal_material
+        // 3. 按 hf 集合 JOIN V6 表 material_master + material_customer_map + internal_material
+        //    (AP-53) V6「从基础数据导入」写入 material_master / material_customer_map(新表),
+        //    旧 V44 表 mat_part / mat_customer_part_mapping 已废弃且不会被 V6 导入写入。
+        //    此前查旧表 → 新导入料号查不到 → 候选返 0 → 报价单自动展开 0 个产品。
+        //    列名映射: part_no→material_no, part_name→material_name, weight_unit→standard_unit,
+        //    customer_part_name→customer_material_name; 客户维度用 customer_no(客户编码)而非 customer_id;
+        //    material_master 无 status_code(不过滤); material_customer_map 无 current_version(置 NULL)。
         String sql =
-            "SELECT DISTINCT p.part_no, p.part_name, p.unit_weight, p.weight_unit, " +
-            "       m.customer_product_no, m.customer_part_name, m.customer_drawing_no, " +
+            "SELECT DISTINCT p.material_no, p.material_name, p.unit_weight, p.standard_unit, " +
+            "       m.customer_product_no, m.customer_material_name, m.customer_drawing_no, " +
             "       m.base_currency, m.quote_currency, " +
             "       (m.id IS NOT NULL) AS customer_specific, " +
             "       im.name AS im_name, im.specification AS im_spec, " +
             "       im.size AS im_size, im.status_code AS im_status, " +
-            "       m.current_version " +
-            "FROM mat_part p " +
-            "LEFT JOIN mat_customer_part_mapping m " +
-            "       ON m.hf_part_no = p.part_no AND m.customer_id = :customerId " +
+            "       NULL::int AS current_version " +
+            "FROM material_master p " +
+            "LEFT JOIN material_customer_map m " +
+            "       ON m.material_no = p.material_no " +
+            "      AND m.customer_no = (SELECT code FROM customer WHERE id = :customerId) " +
             "LEFT JOIN internal_material im " +
-            "       ON im.material_no = p.part_no " +
-            "WHERE p.status_code = 'Y' AND p.part_no IN :hfs " +
-            "ORDER BY (m.id IS NOT NULL) DESC, p.part_no ASC";
+            "       ON im.material_no = p.material_no " +
+            "WHERE p.material_no IN :hfs " +
+            "ORDER BY (m.id IS NOT NULL) DESC, p.material_no ASC";
         List<Object[]> rows = em.createNativeQuery(sql)
                 .setParameter("customerId", customerId)
                 .setParameter("hfs", hfSet)

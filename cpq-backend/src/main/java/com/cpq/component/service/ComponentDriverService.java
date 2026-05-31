@@ -182,7 +182,9 @@ public class ComponentDriverService {
     public ExpandDriverResponse expandWithSnapshot(UUID componentId, UUID customerId, String partNo, Integer partVersion,
                                                    String overrideDataDriverPath, String overrideFieldsJson,
                                                    UUID lineItemId, String compositeType, List<UUID> childLineItemIds) {
-        if (lineItemId != null && componentId != null) {
+        // 调试捕获 SQL 时旁路报价单快照直返, 强制走实时 driver 以触发并记录最终 SQL。
+        if (lineItemId != null && componentId != null
+                && !com.cpq.datasource.sqlview.SqlDebugContext.isActive()) {
             try {
                 @SuppressWarnings("unchecked")
                 List<Object> snap = em.createNativeQuery(
@@ -230,7 +232,9 @@ public class ComponentDriverService {
                 ? ":cld" + Integer.toHexString(childLineItemIds.hashCode())
                 : "";
         String key = cacheKey(componentId, customerId, partNo, partVersion) + overrideTag + lineItemTag + childTag;
-        ExpandDriverResponse cached = expandCache.getIfPresent(key);
+        // 调试捕获 SQL 时旁路缓存读取, 强制重算以触发 SqlViewExecutor 记录最终 SQL。
+        ExpandDriverResponse cached = com.cpq.datasource.sqlview.SqlDebugContext.isActive()
+                ? null : expandCache.getIfPresent(key);
         if (cached != null) {
             LOG.debugf("[expand-driver cache] HIT key=%s", key);
             return cached;
@@ -266,7 +270,7 @@ public class ComponentDriverService {
             if (basicDataPaths.isEmpty() && gvarTasks.isEmpty()) {
                 resp.rowCount = 0;
                 LOG.infof("[Y1.5 expand-driver] dataDriverPath EMPTY + no BASIC_DATA, skip (component=%s)", component.code);
-                expandCache.put(key, resp);
+                if (!com.cpq.datasource.sqlview.SqlDebugContext.isActive()) expandCache.put(key, resp);
                 return resp;
             }
             // 虚拟 driver row: 仅含 partNo / customerId, �?ImplicitJoinRewriter 能注入谓�?
@@ -292,7 +296,7 @@ public class ComponentDriverService {
             resp.rowCount = 1;
             LOG.infof("[Y1.5 expand-driver] no-driver virtual single row (component=%s, basicDataPaths=%d)",
                     component.code, basicDataPaths.size());
-            expandCache.put(key, resp);
+            if (!com.cpq.datasource.sqlview.SqlDebugContext.isActive()) expandCache.put(key, resp);
             return resp;
         }
 
@@ -341,7 +345,7 @@ public class ComponentDriverService {
                         LOG.infof("[Bug B expand-driver] lineItemId=%s no specialized rows -> EMPTY (no fallback) for partNo=%s path=%s",
                                 lineItemId, partNo, effectiveDriverPath);
                         resp.rowCount = 0;
-                        expandCache.put(key, resp);
+                        if (!com.cpq.datasource.sqlview.SqlDebugContext.isActive()) expandCache.put(key, resp);
                         return resp;
                     }
                 } else if (isCompositeAggregateView && isCompositeParent
@@ -443,7 +447,7 @@ public class ComponentDriverService {
         LOG.infof("[Y1.5 expand-driver] expanded: id=%s code=%s rows=%d partVersion=%s",
                 componentId, component.code, resp.rowCount, partVersion);
         // miss 路径成功计算后写入缓存（异常会在上方抛出，不会执行到此处，确保错误不缓存�?
-        expandCache.put(key, resp);
+        if (!com.cpq.datasource.sqlview.SqlDebugContext.isActive()) expandCache.put(key, resp);
         return resp;
         } finally {
             com.cpq.datasource.sqlview.SqlViewRuntimeContext.restore(_prevSqlViewCtx);

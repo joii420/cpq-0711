@@ -4,6 +4,47 @@
 
 ---
 
+### [2026-05-31] 🐛 详情页 FORMULA 小计 Infinity/0 — ReadonlyProductCard 喂 raw lineItem 给 driver/path hook
+
+**现象**：报价单 QT-20260531-1373 详情页 C01(3120012004)：工序页签「小计」列显示 **Infinity**，元素页签「小计」列显示 **0**（应 0.225 等）；点编辑进编辑页两者均正确。
+
+**根因（详情页 ≠ 编辑页的真正机制）**：
+- 唯一能算出 Infinity 的公式是 **工序单价 = 单价 ÷ (成材率 ÷ 100)**（成材率=0 → 除零）；元素小计 = `含量×单价×单重×组成用量÷100` 纯乘法 → 缺值时归 0。
+- `computeAllFormulas` 的 BASIC_DATA 分支**只从 driver 展开值 / pathCache 取，从不回退持久化 `row[字段]`**，取不到即 `?? 0`。
+- `ReadonlyProductCard` 把 **raw `lineItem`** 传给 `useDriverExpansions` / `usePathFormulaCache`（L180-187），而后端 ComponentDataDTO **不持久化 `dataDriverPath`/`fields`**，raw componentData 只有 `{componentId,tabName,rowData,subtotal,sortOrder}` → hook 命中 `!hasDriver && !hasFields → continue` 跳过所有 tab → **driver 永不展开** → 成材率/含量/单重/组成用量 全取 0 → 元素小计=0、工序单价=单价÷0=Infinity。
+- 编辑页 `QuotationWizard` 传的是 **enrich 后**的 lineItems（componentData 带 dataDriverPath+fields，见其 2026-05-19 同类修复注释）→ driver 正常展开 → 正确。
+- 列单元格因 `ComponentCell` 会回退 `row[key]` 仍显示持久化值，唯独 FORMULA 输入不回退 → "列有值、小计却错" 的特征。
+
+**修复（同文件两处，均在 `ReadonlyProductCard.tsx`）**：
+1. **逐行单元格**：`lineItemsForDriver` 改为喂 enrich 后的 `components`（`[{ ...lineItem, componentData: components }]`），与编辑页同源 → driver/path hook 建 task → 展开 → 逐行 BASIC_DATA 公式输入恢复（工序小计 122.449 等、元素小计 0.225）。
+2. **合计行 + 产品小计（截图复现 ¥∞）**：`compSubtotals` 计算原用 `buildFormulaCache(..., basicDataValues=undefined)`，**完全不查 driver 展开** → 成材率=0 → 子小计求和爆 Infinity。改为：① `buildFormulaCache` 形参由单个 `basicDataValues` 改为按 driver 行级展开 `driverExpansion`（行数 + 行级 bdv，遵 AP-51 行数纪律）；② 子小计循环按 `driverExpansionKey`（与渲染层同 key）查该组件 driver 展开并传入。
+
+**链路验证**：后端 `$gx_view` 实测返成材率 95~99、`$ys_view` 返含量 75 等（batch-expand API）→ 逐行 工序单价=120÷0.98=122.449、元素小计=0.225（截图已确认逐行修复）；合计=Σ 子小计（finite），产品小计=Σ 各页签（finite）。
+
+**自检**：`tsc --noEmit` 0 错误 ✅；`/src/pages/quotation/ReadonlyProductCard.tsx` → Vite 200 ✅；主入口 200 ✅。⚠️ **E2E 未跑**：本机无 chrome/chromium（`playwright install chromium` 在 ubuntu26.04 不支持），协议级改动按 CLAUDE.md 应补 `quotation-flow.spec.ts`，待有浏览器环境补测。
+
+**续 3（同日）：产品小计金额翻倍（QT-20260531-1374 显示 ¥1032.83，应 ¥516.41）**
+- 现象：详情页逐行/页签合计已对（元素 ¥22.73），但底部「产品小计」¥1032.83 = **2× 正确值 516.41**。
+- 根因：详情页 `productSubtotal = Object.values(compSubtotals).reduce(+)` 把**所有 NORMAL 页签小计（=516.41）+「产品小计」SUBTOTAL 组件自身公式结果（=516.41）**一起相加 → 翻倍。权威定义（用户确认）= 「产品小计」SUBTOTAL 组件的公式结果（`产品单价 = 元素·小计 + 组合工艺·工艺单价 + 工序·小计`，按 component_code 解析）。
+- 修复：详情页改调编辑页同源的 `computeProductSubtotal({ ...lineItem, componentData: components }, driverExpansions, customerId)`——内部跳过 SUBTOTAL 组件算 NORMAL 小计（带 driver 行级展开）再求 SUBTOTAL 公式，与编辑页完全一致。
+- 验证：元素 22.725 + 工序 493.688 + 组合工艺 0 = **516.41**（= 编辑页）。tsc 0 / Vite 200 ✅。
+
+---
+
+### [2026-05-31] 🔧 选配料号搜索移除"子件排除"过滤（组合产品搜不到铆钉等基础配件）
+
+**现象**：报价单 QT-20260531-1365 → 添加产品 → 选配产品 → 组合产品 → 搜料号 `10110002`（Ag 铆钉）返 0 条，但料号确在 `material_master`。
+
+**根因**：`ConfigureSearchResource.searchParts`（SIMPLE/COMPOSITE 共用此接口）带 2026-05-27 加的 `NOT EXISTS` 子件排除——凡是真实/导入 BOM（父件 `config_fingerprint IS NULL`）的 ASSEMBLY 子件一律剔除。`10110002` 是装配 `3120012004/5/6` 的子件、父件指纹为 NULL → 被排除。但组合产品流程本意就是挑这类基础配件（铆钉/焊片）再组合，过滤与场景冲突；且 `searchParts` 不接 `productType` 无法按类型放宽。
+
+**决策（用户拍板）**：彻底移除该子件排除过滤（SIMPLE/COMPOSITE 都不再排除）。**接受副作用**：中间装配子件在独立产品(SIMPLE)搜索里也会重新出现——即 [2026-05-27] 语义校正被有意回退。
+
+**改动**：`ConfigureSearchResource.java` 删除整段 `WHERE NOT EXISTS (... material_bom_item ...)`，仅保留 ILIKE 条件，注释同步说明回退原由。**纯后端 native SQL，无前端/Flyway 改动。**
+
+**验证（已自检）**：Quarkus 热重载 → endpoint 401→admin 登录后 200；`q=10110002` 返 1 行「Ag 铆钉/AgNi75」✅；`q=3120` 仍返父件 3120012004/5（无回归）✅；DB 实测移除前后 q=3120 同为 3 行（过滤对该词本就无影响）。
+
+---
+
 ### [2026-05-29] 🆕 新增组件目录「报价单模板」+ 3 个组件（组成件/元素/成本费用）| 纯运行期数据，无代码改动
 
 **需求**：在组件管理新建目录「报价单模板」，画 3 个页签组件（组成件 8 列 / 元素 4 列 / 成本费用 4 列）。
@@ -13221,3 +13262,21 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - ⚠️ 遗留风险(O1):element_bom_item.hf_part_no 是 elements_mirror 视图(V245加列/V246 IS NOT NULL/V275 join key)主连接键;严格不写 → 新导入元素 BOM 行被视图过滤 → 报价"元素"Tab 渲染空白。待办:重构 elements_mirror 改用 material_no(投入料号)作连接键,再做元素渲染 E2E 回归。本次仅改导入侧,视图侧未动。
 - 遗留:§2(O2)文档"→料号表同步"子表疑似模板残留(§2 sheet 无投入料号列),未动;§3 改字段表基准后主件料号(宏丰)不再经 §3 落 material_master。
 - 自检:Flyway V276 success=t;unit_price 新列+可空、capacity.seq_no、uq_unit_price 13维 均经 psql 实证;/api/cpq/basic-data-import/v6/quote=401(改动类全编译过,非500);ON CONFLICT 二次 upsert 触发 DO UPDATE + pricing_price 落 NULL 实测通过。
+
+### [2026-05-31] 组件目录 导入/导出 — 设计立项(仅方案,未实现) | docs/PRD-v3.md §5.4.6 + §9.16
+
+- 需求:组件管理目录树支持导出某目录直属组件(含完整配置:fields/formulas/data_driver_path/component_sql_view)为 JSON bundle;任意目录可导入,组件平铺落到目标目录。硬约束:不与其他业务冲突、不影响现有功能。
+- 数据模型关键事实(决定方案):① `component.code` **全局唯一**(component_code_key)=冲突主战场;② `component_sql_view` 唯一键=(component_id, sql_view_name) → sql_view_name **组件内唯一非全局**,`$view.col` 字段路径导入无需改写;③ `component_directory` 是 parent_id 树;④ 字段可引用 datasource / global_variable_definition(跨环境依赖需校验);⑤ 新建组件触发 refreshSnapshotsByComponent,但新组件未被任何模板引用 → no-op(天然隔离)。
+- 用户决策:① 本期**只导当前目录直属组件**(不递归子目录),导入平铺;② code 冲突**默认重命名(加后缀 `__impN`)**,另备 跳过/中止,**任何策略不覆盖现有**;③ 依赖缺失 → 预览**红色报出 + 默认阻止提交**(可显式"仍然导入");④ 方案写入 PRD-v3 §5.4.6 + 演进史 §9.16。
+- 隔离保证:导出纯只读;导入只 INSERT 新 UUID、单事务、不动现有 component/sql_view/template/快照;不绑模板;不进 bundle=模板绑定/快照/报价数据;**无 Flyway/schema 变更**,复用 ComponentService.create / ComponentDirectoryService 校验。
+- API 草案:`GET /components/directories/{id}/export`;`POST /components/directories/{id}/import?dryRun=true`(预览)+ `POST .../import`(提交,带 conflictPolicy)。UI:目录树「导出/导入」+ 导入 Drawer 向导(上传→依赖/冲突预览→选策略→确认→结果)。RBAC:SALES_MANAGER/SYSTEM_ADMIN。
+- 分期:P1 导出 → P2 导入预览+依赖校验 → P3 导入提交+冲突策略+结果报告。
+- 注:本条仅设计立项,代码未实现。
+
+### [2026-05-31] 组件目录 导入/导出 — P1/P2/P3 实现 | cpq-backend: component/dto/{ComponentExportBundle,ImportPreviewResult,ImportCommitResult}.java, component/service/{ComponentExportService,ComponentImportService}.java, component/resource/ComponentDirectoryResource.java | cpq-frontend: services/componentService.ts, pages/component/{ComponentImportDrawer.tsx,ComponentTree.tsx}
+
+- P1 导出(只读):`GET /api/cpq/component-directories/{id}/export` → bundle JSON 附件下载;读目录直属组件 + 各自 component_sql_view + 递归扫描字段依赖(global_variable_code / GLOBAL_VARIABLE|DATABASE_QUERY|HTTP_API 绑定) + sha256 checksum。前端目录树右键「导出目录」。
+- P2 预览(只读 dry-run):`POST /{id}/import?conflictPolicy=` → checksum 重算校验 + 依赖存在性(查 global_variable_definition/datasource) + code 冲突计划(RENAME 自动 `__impN` 避让 reserved=existing∪bundleCodes∪已分配)。缺依赖默认 canCommit=false;ABORT+冲突 → false。前端「导入到此目录」Drawer 向导(上传→选策略→预览→依赖表/动作计划表/blockers)。
+- P3 提交:`POST /{id}/import/commit?conflictPolicy=&ignoreMissingDeps=` → 单 @Transactional,**仅 INSERT** 新组件(全新 UUID,落目标目录,不绑模板)+ component_sql_view;服务端重校验依赖/冲突;返回 created/skipped/sqlViewsCreated 报告。前端「确认导入」(缺依赖时勾选"仍然导入"才启用),成功后刷新目录树。
+- 隔离实测:提交到空目录因 `code` **全局唯一** → 6 个全 `__imp1`(预期);原「报价模板」目录仍 6 个、原 COMP-0019 未改名;SKIP 再提交 → 0 建 6 跳;sql_view_name 组件内唯一,材质副本 `cz_view` 与原 `cz_view` 共存。测试产物已清理。
+- 自检:后端 health=200、无编译错误;RENAME/SKIP/ABORT/缺依赖/checksum/commit/隔离 全经 API 实测;前端 tsc 0 错误,componentService.ts/ComponentImportDrawer.tsx/ComponentTree.tsx → Vite 200。无 Flyway/schema 变更。

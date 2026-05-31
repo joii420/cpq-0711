@@ -118,6 +118,35 @@ export async function listProcesses(params: {
   return unwrap<PageResult<ProcessMasterDTO>>(res);
 }
 
+// ─── 工序主数据 CRUD（新建/编辑/删除）────────────────────────────────────────
+/** 新建/编辑 工序请求体。processNo 新建必填且唯一; 编辑时后端锁定(忽略改动)。 */
+export interface ProcessMasterUpsert {
+  processNo: string;
+  processName: string;
+  processCategory?: string | null;
+  isOutsource?: boolean | null;
+  standardCurrency?: string | null;
+  standardUnit?: string | null;
+  defaultDefectRate?: number | null;
+}
+
+/** 新建工序 */
+export async function createProcess(req: ProcessMasterUpsert): Promise<ProcessMasterDTO> {
+  const res = await api.post('/v6/process-master', req);
+  return unwrap<ProcessMasterDTO>(res);
+}
+
+/** 编辑工序(processNo 锁定) */
+export async function updateProcess(id: string, req: ProcessMasterUpsert): Promise<ProcessMasterDTO> {
+  const res = await api.put(`/v6/process-master/${id}`, req);
+  return unwrap<ProcessMasterDTO>(res);
+}
+
+/** 硬删除工序 */
+export async function deleteProcess(id: string): Promise<void> {
+  await api.delete(`/v6/process-master/${id}`);
+}
+
 /** 分页查询 BOM 明细 */
 export async function listBomItems(params: {
   customerNo: string;

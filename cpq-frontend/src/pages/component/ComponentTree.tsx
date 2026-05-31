@@ -5,6 +5,7 @@ import type { DataNode } from 'antd/es/tree';
 import type { DirectoryNode, ComponentItem } from './types';
 import { componentService } from '../../services/componentService';
 import { message } from 'antd';
+import ComponentImportDrawer from './ComponentImportDrawer';
 import './styles.css';
 
 interface ComponentTreeProps {
@@ -182,6 +183,31 @@ const ComponentTree: React.FC<ComponentTreeProps> = ({
     });
   };
 
+  const handleExportDir = async (id: string) => {
+    try {
+      await componentService.exportDirectory(id);
+      message.success('已导出该目录的组件');
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      message.error(err.message ?? '导出失败');
+    }
+  };
+
+  const [importTarget, setImportTarget] = useState<{ id: string; name: string } | null>(null);
+  const findDirName = (nodes: DirectoryNode[], id: string): string => {
+    for (const n of nodes) {
+      if (n.id === id) return n.name;
+      if (n.children?.length) {
+        const sub = findDirName(n.children, id);
+        if (sub) return sub;
+      }
+    }
+    return '';
+  };
+  const openImportDir = (id: string) => {
+    setImportTarget({ id, name: findDirName(directories, id) });
+  };
+
   const openCreateComp = (dirId?: string) => {
     setNewCompDirId(dirId ?? null);
     compForm.resetFields();
@@ -270,12 +296,16 @@ const ComponentTree: React.FC<ComponentTreeProps> = ({
         items: [
           { key: 'new-dir', label: '新建子目录' },
           { key: 'new-comp', label: '新建组件' },
+          { key: 'export', label: '导出目录' },
+          { key: 'import', label: '导入到此目录' },
           { key: 'rename', label: '重命名' },
           { key: 'delete', label: '删除', danger: true },
         ],
         onClick: ({ key: action }: { key: string }) => {
           if (action === 'new-dir') openCreateDir(id);
           else if (action === 'new-comp') openCreateComp(id);
+          else if (action === 'export') handleExportDir(id);
+          else if (action === 'import') openImportDir(id);
           else if (action === 'rename') openRenameDir(id);
           else if (action === 'delete') handleDeleteDir(id);
         },
@@ -475,6 +505,14 @@ const ComponentTree: React.FC<ComponentTreeProps> = ({
           </Form.Item>
         </Form>
       </Modal>
+
+      <ComponentImportDrawer
+        open={!!importTarget}
+        targetDirId={importTarget?.id ?? null}
+        targetDirName={importTarget?.name}
+        onClose={() => setImportTarget(null)}
+        onImported={onRefresh}
+      />
     </div>
   );
 };

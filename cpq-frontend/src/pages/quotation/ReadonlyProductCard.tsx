@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import type { ComponentDataItem, ComponentField } from './QuotationStep2';
-import { computeAllFormulas } from './QuotationStep2';
+import { computeAllFormulas, computeProductSubtotal } from './QuotationStep2';
 import { enrichComponentData } from './enrichComponentData';
 import { useDriverExpansions, driverExpansionKey, fieldsOverrideHash } from './useDriverExpansions';
 import { useConfigTemplates } from './useConfigTemplates';
@@ -64,16 +64,24 @@ function buildFormulaCache(
   rows: Record<string, any>[],
   compSubtotals: Record<string, number>,
   partNo?: string,
-  basicDataValues?: Record<string, any>,
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+  // 2026-05-31 修复（小计合计/产品小计 ¥∞）：必须按行喂 driver 展开的 basicDataValues，
+  // 否则 BASIC_DATA 分母字段（如 成材率）取不到值 → ?? 0 → 工序单价=单价÷0=Infinity →
+  // 子小计求和 = ∞。与渲染层 preComputedCaches 同款（按 driver 行数 + 行级 bdv）。
+  driverExpansion?: { rowCount: number; rows: Array<{ basicDataValues?: Record<string, any> }> },
 ): Array<Record<string, number | null>> {
   const subtotalFieldName = comp.fields?.find((f: any) => f.is_subtotal)?.name;
+  const useDriver = !!(driverExpansion && driverExpansion.rowCount > 0);
+  // AP-51 行数纪律：driver 权威优先，仅 rowCount=0 时退回持久化行数。
+  const effectiveCount = useDriver ? driverExpansion!.rowCount : rows.length;
   const caches: Array<Record<string, number | null>> = [];
   let prevRowSubtotal: number | undefined = undefined;
-  for (const row of rows) {
+  for (let ri = 0; ri < effectiveCount; ri++) {
+    const row = rows[ri] ?? {};
+    const bdv = useDriver ? driverExpansion!.rows[ri]?.basicDataValues : undefined;
     const cache = computeAllFormulas(
       comp, row, compSubtotals,
-      undefined, undefined, partNo, basicDataValues,
+      undefined, undefined, partNo, bdv,
       prevRowSubtotal, globalVariableDefs,
     );
     caches.push(cache);
@@ -177,7 +185,19 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   // → 相同料号详情页比编辑页多 1 行（已被 driver 过滤的陈旧持久化行）。
   // 修法：把 lineItem 包成 LineItem[] 传入 useDriverExpansions，取得 driverExpansions cache，
   // 渲染时按 driverCount 限制行数（与编辑页 ProductCard 第 1339-1361 行逻辑完全对齐）。
-  const lineItemsForDriver = useMemo(() => [lineItem], [lineItem]);
+  //
+  // 2026-05-31 修复（详情页 BASIC_DATA 公式输入全取 0 → 元素小计=0 / 工序单价=单价÷(成材率÷100)=Infinity）：
+  //   必须喂 enrich 后的 `components`（含 dataDriverPath + fields），而不是 raw `lineItem`。
+  //   后端 ComponentDataDTO 不持久化 dataDriverPath/fields，raw lineItem.componentData 只有
+  //   {componentId, tabName, rowData, subtotal, sortOrder} → useDriverExpansions/usePathFormulaCache
+  //   走 `!hasDriver && !hasFields → continue` 跳过所有 tab → driver 永不展开 → computeAllFormulas
+  //   的 BASIC_DATA 字段（成材率/含量/单重/组成用量）取不到值 → ?? 0 → 乘法公式归 0、除法公式除零 Infinity。
+  //   编辑页（QuotationWizard）传的是 enrich 后的 lineItems（见其 2026-05-19 同类修复注释），故正常。
+  //   列单元格因 ComponentCell 会回退 row[key] 仍显示持久化值，唯独 FORMULA 输入不回退 → 本 bug。
+  const lineItemsForDriver = useMemo(
+    () => [{ ...lineItem, componentData: components.length > 0 ? components : (lineItem.componentData || []) }],
+    [lineItem, components],
+  );
   const { cache: driverExpansions } = useDriverExpansions(lineItemsForDriver as any, customerId, quotationId);
 
   // 详情页 LIST_FORMULA 模板加载（与编辑页 useConfigTemplates 同款）
@@ -203,6 +223,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
 
   // Compute subtotals using buildFormulaCache（支持 prev_row_subtotal 累加公式）
   // compSubtotals 先用空 map 初始化，按 component 顺序逐步填入，供后续组件引用前组件小计。
+  const subtotalLineItemId = (lineItem as any).id || (lineItem as any).tempId || '';
   const compSubtotals: Record<string, number> = {};
   for (const comp of components) {
     if (!comp.fields) continue;
@@ -212,16 +233,38 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
       if (comp.componentCode) compSubtotals[comp.componentCode] = 0;
       continue;
     }
-    // 使用 buildFormulaCache 支持 prev_row_subtotal 累加
+    // 2026-05-31 修复（合计/产品小计 ¥∞）：取该组件 driver 展开（与渲染层同 key），
+    // 让 BASIC_DATA 分母字段（成材率等）按行取 driver 值，避免子小计求和爆 Infinity。
+    const compDriverKey = driverExpansionKey(
+      subtotalLineItemId,
+      lineItem.productPartNo || '',
+      comp.componentId,
+      customerId,
+      comp.dataDriverPath,
+      fieldsOverrideHash(comp.fields as any[]),
+    );
+    const compDriverExpansion = driverExpansions[compDriverKey];
+    // 使用 buildFormulaCache 支持 prev_row_subtotal 累加 + 行级 driver bdv
     const formulaCaches = buildFormulaCache(
       comp, comp.rows, compSubtotals,
-      lineItem.productPartNo, undefined, globalVariableDefs,
+      lineItem.productPartNo, globalVariableDefs,
+      compDriverExpansion,
     );
     const st = formulaCaches.reduce((s, fc) => s + ((fc[stField.name] as number) ?? 0), 0);
     compSubtotals[comp.tabName] = st;
     if (comp.componentCode) compSubtotals[comp.componentCode] = st;
   }
-  const productSubtotal = Object.values(compSubtotals).reduce((a, b) => a + b, 0);
+  // 2026-05-31 修复（产品小计金额不对，¥1032.83）：原 `Object.values(compSubtotals).reduce(+)`
+  //   把每个组件按 tabName + componentCode 双键存的小计、以及「产品小计」SUBTOTAL 组件自身
+  //   全部无差别相加 → 重复累加、超额。权威定义（用户确认）= 「产品小计」页签 SUBTOTAL 组件的
+  //   公式结果（产品单价 = 元素小计 + 工艺单价）。直接复用编辑页同源的 computeProductSubtotal：
+  //   它内部只算 NORMAL 组件小计（带 driver 行级展开）再求 SUBTOTAL 组件公式，与编辑页完全一致。
+  //   注意喂 enrich 后的 components（含 fields/dataDriverPath），否则函数内 lookupExpansion 失效。
+  const productSubtotal = computeProductSubtotal(
+    { ...lineItem, componentData: components } as any,
+    driverExpansions,
+    customerId,
+  );
 
   return (
     <div className="qt-product-card">

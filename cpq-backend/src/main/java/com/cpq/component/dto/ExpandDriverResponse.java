@@ -28,6 +28,12 @@ public class ExpandDriverResponse {
     public String driverPath;
     public List<Row> rows;
 
+    /**
+     * 调试用: driver 路径改写后的最终执行 SQL (含 ? 占位符 + 参数注释)。
+     * 仅当请求带 debugSql=true 时填充, 供前端 console 打印; 默认 null。
+     */
+    public String debugSql;
+
     public static class Row {
         /** driver 路径返回的整行(用于客户端记 K-V) */
         public Map<String, Object> driverRow;
