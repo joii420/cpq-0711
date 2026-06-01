@@ -834,11 +834,11 @@ public class ConfigureProductService {
                 reused.add(parentHfPartNo);
             }
             // V6 双写（AP-53 续 6 Phase 1）：无论新建/复用都确保父料号 + 子件 ASSEMBLY → material_master / material_bom_item，
-            // 让 zcj_bom / composite_child_materials_mirror 视图渲染子配件清单（渲染基线零改）。幂等 ON CONFLICT DO NOTHING。
+            // 让 zcj_bom / composite_child_materials_mirror 视图渲染子配件清单（渲染基线零改）。幂等 ON CONFLICT（material_master DO NOTHING / material_bom_item DO UPDATE composition_qty）。
             insertMaterialMasterV6(parentHfPartNo, "COMPOSITE", null, null, fp);
             List<Integer> childQtys = req.parts.stream()
                 .map(pr -> (pr.quantity == null || pr.quantity < 1) ? 1 : pr.quantity)
-                .collect(java.util.stream.Collectors.toList());
+                .collect(Collectors.toList());
             insertMaterialBomAssemblyV6(parentHfPartNo, customerCode, childHfPartNos, childQtys);
         }
 
