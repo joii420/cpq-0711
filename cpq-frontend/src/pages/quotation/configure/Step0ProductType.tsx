@@ -43,7 +43,7 @@ const Step0ProductType: React.FC<Props> = ({
     {productType === 'COMPOSITE' && (
       <Card size="small" style={{ marginTop: 16, background: '#fafafe' }}>
         <Space>
-          <span>配件数量:</span>
+          <span>配件个数:</span>
           <InputNumber
             min={2}
             max={8}

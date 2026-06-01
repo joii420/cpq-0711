@@ -285,6 +285,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
         quotationLineItemId: productType === 'SIMPLE' ? tempId : genUUID(),
         quantity: p.quantity ?? 1,
       }));
+      // 需求#2: 组合工艺统一为「全部配件参与 + 空参数」，覆盖 addedCProcs 里的旧字段
       const allPartIdx = parts.map((_, i) => i);
       const compProcs: CompositeProcessRequest[] = addedCProcs.map(a => ({
         defCode: a.defCode,
