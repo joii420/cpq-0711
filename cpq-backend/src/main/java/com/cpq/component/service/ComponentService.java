@@ -279,12 +279,13 @@ public class ComponentService {
         // 哨兵 ["__seq_no__"] → 显式豁免
         if (keys.size() == 1 && "__seq_no__".equals(keys.get(0).asText())) return;
 
-        // 逐项检查字段名是否存在于 fields
+        // 方案 A: rowKeyFields 引用的是 driverRow 的底层列(运行期 expand 才有), 与 fields 中文展示名
+        // 属不同命名空间 → 配置期无法对 fields 校验存在性。仅校验每个 key 为非空字符串;
+        // driverRow 列名的正确性由配置者/迁移负责(详见 V279 + spec §5.1)。
         for (com.fasterxml.jackson.databind.JsonNode k : keys) {
             String keyName = k.asText(null);
-            if (keyName == null || !fieldNames.contains(keyName)) {
-                failRowKey(hard,
-                    "rowKeyFields 引用了不存在的字段: " + keyName + "（可用字段: " + fieldNames + "）");
+            if (keyName == null || keyName.isBlank()) {
+                failRowKey(hard, "rowKeyFields 含空 key（应为 driverRow 的底层列名，如 child_hf_part_no）");
                 return;
             }
         }

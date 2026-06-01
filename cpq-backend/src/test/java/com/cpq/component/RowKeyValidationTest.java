@@ -50,19 +50,32 @@ public class RowKeyValidationTest {
     }
 
     // -----------------------------------------------------------------------
-    // T3: rowKeyFields 引用了不存在的字段名 → hard=true 抛异常含字段名
+    // T3(方案A): rowKeyFields 引用 driverRow 底层列(不在 fields 中文名里)→ 接受
+    //   行键与 fields 展示名属不同命名空间(driverRow 是 expand 运行期 key), 配置期不校验存在性。
     // -----------------------------------------------------------------------
     @Test
-    @DisplayName("T3: rowKeyFields 引用不存在字段名 → hard=true 抛异常含字段名")
-    void rowKeyReferencingUnknownField_isRejected() {
+    @DisplayName("T3: rowKeyFields 引用 driverRow 底层列(非 fields 名)→ 接受")
+    void rowKeyWithDriverRowColumn_notInFields_isAccepted() {
+        assertDoesNotThrow(() ->
+                svc.validateRowKeyConfig(
+                        "$cz_view",
+                        "[{\"name\":\"jgf\",\"field_type\":\"INPUT_NUMBER\"}]",
+                        "[\"child_hf_part_no\",\"material_code\"]",
+                        true));
+    }
+
+    // T3b: rowKeyFields 含空字符串 key → hard=true 抛异常
+    @Test
+    @DisplayName("T3b: rowKeyFields 含空 key → hard=true 抛异常")
+    void rowKeyWithBlankKey_isRejected() {
         RuntimeException ex = assertThrows(RuntimeException.class, () ->
                 svc.validateRowKeyConfig(
                         "$cz_view",
                         "[{\"name\":\"jgf\",\"field_type\":\"INPUT_NUMBER\"}]",
-                        "[\"nonexistent\"]",
+                        "[\"\"]",
                         true));
-        assertTrue(ex.getMessage().contains("nonexistent"),
-                "异常消息应含 'nonexistent'，实际: " + ex.getMessage());
+        assertTrue(ex.getMessage().contains("空 key"),
+                "异常消息应提示空 key，实际: " + ex.getMessage());
     }
 
     // -----------------------------------------------------------------------
