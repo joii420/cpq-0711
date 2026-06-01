@@ -22,6 +22,13 @@ public class ComponentService {
     private static final Logger LOG = Logger.getLogger(ComponentService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /**
+     * 用户可录入的字段类型集合（含可编辑字段的多行 driver 组件须声明 rowKeyFields）。
+     * 对应 docs/组件管理字段配置指南.md §二 "用户输入" 类别。
+     */
+    private static final Set<String> EDITABLE_FIELD_TYPES =
+        Set.of("INPUT_NUMBER", "INPUT_TEXT", "LIST_FORMULA");
+
     private static final Set<String> VALID_FIELD_TYPES = Set.of(
         "FIXED_VALUE", "DATA_SOURCE", "INPUT", "INPUT_TEXT", "INPUT_NUMBER", "FORMULA",
         "BASIC_DATA",  // V5: BNF 路径绑定基础数据物理表(对应前端 PathPickerDrawer)
@@ -98,6 +105,15 @@ public class ComponentService {
         component.componentType = request.componentType != null ? request.componentType : "NORMAL";
         component.dataDriverPath = normalizeDriverPath(request.dataDriverPath);
         component.status = request.status != null ? request.status : "ACTIVE";
+
+        // rowKeyFields：直接透传 JSON 字符串（前端传 List，序列化为 JSON；null=未配置）
+        if (request.rowKeyFields != null) {
+            component.rowKeyFields = toJsonRaw(request.rowKeyFields);
+        }
+
+        // 行键校验（新建路径：硬拦）
+        validateRowKeyConfig(component.dataDriverPath, component.fields, component.rowKeyFields, true);
+
         component.persist();
 
         LOG.infof("Created component id=%s code=%s", component.id, component.code);
@@ -158,6 +174,14 @@ public class ComponentService {
             component.columnCount = fieldList.size();
         }
 
+        // rowKeyFields 更新（null=不变，传值=覆盖）
+        if (request.rowKeyFields != null) {
+            component.rowKeyFields = toJsonRaw(request.rowKeyFields);
+        }
+
+        // 行键校验（更新路径：软校验，违规只告警不阻断）
+        validateRowKeyConfig(component.dataDriverPath, component.fields, component.rowKeyFields, false);
+
         LOG.infof("Updated component id=%s code=%s", id, component.code);
 
         // H1: 自动同步引用该组件的所有模板 snapshot — 配置中心原则:
@@ -201,6 +225,87 @@ public class ComponentService {
         checkNotReferencedByTemplate(id);
         component.delete();
         LOG.infof("Deleted component id=%s code=%s", id, component.code);
+    }
+
+    // -----------------------------------------------------------------------
+    // 行键校验（报价单整份快照 Phase 1 §5.1）
+    // -----------------------------------------------------------------------
+
+    /**
+     * 校验组件的行键配置是否合法。
+     *
+     * <p>校验触发条件：{@code dataDriverPath} 非空（多行 driver）且 {@code fieldsJson}
+     * 含至少一个可录入字段（field_type ∈ EDITABLE_FIELD_TYPES）。
+     *
+     * <p>豁免：
+     * <ul>
+     *   <li>单行/固定组件（{@code dataDriverPath} 为空）→ 直接通过</li>
+     *   <li>纯只读 driver 组件（无可编辑字段）→ 直接通过</li>
+     *   <li>哨兵 {@code ["__seq_no__"]} → 显式豁免（按行号对齐），直接通过</li>
+     * </ul>
+     *
+     * @param dataDriverPath  组件 data_driver_path（BNF 路径或 $xxx_view 引用）
+     * @param fieldsJson      组件 fields JSON 字符串（数组）
+     * @param rowKeyFieldsJson 组件 row_key_fields JSON 字符串（数组或 null）
+     * @param hard            true=新建路径，违规抛 IllegalArgumentException；
+     *                        false=更新路径，违规仅 LOG.warn（不阻断存量组件保存）
+     */
+    public void validateRowKeyConfig(String dataDriverPath, String fieldsJson,
+                                     String rowKeyFieldsJson, boolean hard) {
+        // 豁免：单行/固定（无 driver）
+        if (dataDriverPath == null || dataDriverPath.isBlank()) return;
+
+        com.fasterxml.jackson.databind.JsonNode fields = readJsonNode(fieldsJson);
+        boolean hasEditable = false;
+        Set<String> fieldNames = new java.util.HashSet<>();
+        for (com.fasterxml.jackson.databind.JsonNode f : fields) {
+            String name = f.path("name").asText(null);
+            if (name != null) fieldNames.add(name);
+            String ft = f.path("field_type").asText(null);
+            if (ft != null && EDITABLE_FIELD_TYPES.contains(ft)) hasEditable = true;
+        }
+        // 豁免：纯只读 driver（无可编辑字段）
+        if (!hasEditable) return;
+
+        com.fasterxml.jackson.databind.JsonNode keys = (rowKeyFieldsJson == null || rowKeyFieldsJson.isBlank())
+            ? null : readJsonNode(rowKeyFieldsJson);
+
+        // rowKeyFields 为空数组或 null → 违规
+        if (keys == null || !keys.isArray() || keys.isEmpty()) {
+            failRowKey(hard,
+                "含可编辑字段的多行组件（dataDriverPath=" + dataDriverPath + "）必须声明 rowKeyFields");
+            return;
+        }
+        // 哨兵 ["__seq_no__"] → 显式豁免
+        if (keys.size() == 1 && "__seq_no__".equals(keys.get(0).asText())) return;
+
+        // 逐项检查字段名是否存在于 fields
+        for (com.fasterxml.jackson.databind.JsonNode k : keys) {
+            String keyName = k.asText(null);
+            if (keyName == null || !fieldNames.contains(keyName)) {
+                failRowKey(hard,
+                    "rowKeyFields 引用了不存在的字段: " + keyName + "（可用字段: " + fieldNames + "）");
+                return;
+            }
+        }
+    }
+
+    /** 违规处理：hard=true 抛，hard=false 仅告警。 */
+    private void failRowKey(boolean hard, String msg) {
+        if (hard) throw new IllegalArgumentException(msg);
+        LOG.warnf("[rowKeyFields soft-validation] %s", msg);
+    }
+
+    /** 解析 JSON 字符串为 JsonNode；null/空/异常时返回空数组节点。 */
+    private com.fasterxml.jackson.databind.JsonNode readJsonNode(String json) {
+        if (json == null || json.isBlank()) {
+            return MAPPER.createArrayNode();
+        }
+        try {
+            return MAPPER.readTree(json);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("invalid json: " + e.getMessage(), e);
+        }
     }
 
     // ---- Validation helpers ----
@@ -460,6 +565,16 @@ public class ComponentService {
             return MAPPER.writeValueAsString(list);
         } catch (Exception e) {
             return "[]";
+        }
+    }
+
+    /** 序列化任意 List 为 JSON（用于 rowKeyFields 等简单 List<String>）。 */
+    private String toJsonRaw(Object obj) {
+        if (obj == null) return null;
+        try {
+            return MAPPER.writeValueAsString(obj);
+        } catch (Exception e) {
+            return null;
         }
     }
 
