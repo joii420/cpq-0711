@@ -76,6 +76,12 @@ const Step5Summary: React.FC<Props> = ({ productType, parts, addedCProcs, onUpda
                       : '无')}
               </Descriptions.Item>
 
+              {productType === 'COMPOSITE' && (
+                <Descriptions.Item label="数量">
+                  <b>{p.quantity ?? 1}</b>
+                </Descriptions.Item>
+              )}
+
               <Descriptions.Item label="单重">
                 {(p.partMode === 'existing' || reused) ? (
                   <span>
@@ -103,14 +109,7 @@ const Step5Summary: React.FC<Props> = ({ productType, parts, addedCProcs, onUpda
         {addedCProcs.map((a, i) => (
           <div key={i} style={{ borderBottom: '0.5px solid #f0f0f0', padding: '8px 0' }}>
             <b>{defNameByCode(a.defCode)}</b>
-            <span style={{ marginLeft: 8, color: '#888' }}>
-              参与配件: {a.participatingPartIndexes.map(idx => parts[idx]?.name).join(' + ')}
-            </span>
-            <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
-              {Object.entries(a.params).length === 0
-                ? '(未填参数)'
-                : Object.entries(a.params).map(([k, v]) => `${k}: ${v}`).join('; ')}
-            </div>
+            <span style={{ marginLeft: 8, color: '#888' }}>全部配件参与</span>
           </div>
         ))}
       </Card>
