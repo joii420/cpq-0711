@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import type { ComponentDataItem, ComponentField } from './QuotationStep2';
-import { computeAllFormulas, computeProductSubtotal } from './QuotationStep2';
+import { computeAllFormulas, computeProductSubtotal, buildSnapshotExpansions, EMPTY_LINEITEMS } from './QuotationStep2';
 import { enrichComponentData } from './enrichComponentData';
 import { useDriverExpansions, driverExpansionKey, fieldsOverrideHash } from './useDriverExpansions';
+import { computeRowKey } from './useCardSnapshots';
+import type { CardStructure, CardValues } from '../../services/quotationService';
 import { useConfigTemplates } from './useConfigTemplates';
 import { usePathFormulaCache } from './usePathFormulaCache';
 import FieldTraceIcon from './components/FieldTraceIcon';
@@ -45,6 +47,8 @@ interface ReadonlyProductCardProps {
   customerId?: string;
   /** B-GV-2 修复: 动态 key 全局变量定义字典, 供 FORMULA 字段 evaluateExpression 使用 */
   globalVariableDefs?: Record<string, GlobalVariableDefinition>;
+  /** Phase4 Task4: 报价卡片结构快照(顶层, 提供 rowKeyFields) — 详情页读 formulaResults 对齐编辑页(AP-50) */
+  quoteCardStructure?: CardStructure | null;
 }
 
 function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
@@ -140,6 +144,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   quotationStatus,
   customerId,
   globalVariableDefs,
+  quoteCardStructure,
 }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [components, setComponents] = useState<ComponentDataItem[]>([]);
@@ -198,7 +203,43 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
     () => [{ ...lineItem, componentData: components.length > 0 ? components : (lineItem.componentData || []) }],
     [lineItem, components],
   );
-  const { cache: driverExpansions } = useDriverExpansions(lineItemsForDriver as any, customerId, quotationId);
+  // Phase4 Task4: 详情页读快照(AP-50 与编辑页 single-source)。
+  //   有 quoteCardValues 时: 不再 batch-expand(传 EMPTY_LINEITEMS), 改从行级值快照构造 driverExpansions
+  //   (BASIC_DATA + 行数来自快照 baseRows); FORMULA 优先读 formulaResults[rowKey](真零计算)。
+  //   只读页无受控 input, 故安全(不涉 AP-54)。无快照(存量单)回退实时 batch-expand。
+  const useSnap = !!lineItem.quoteCardValues && components.length > 0;
+  const { cache: liveExpansions } = useDriverExpansions(
+    useSnap ? EMPTY_LINEITEMS : (lineItemsForDriver as any), customerId, quotationId);
+  const snapExpansions = useMemo(
+    () => (useSnap ? buildSnapshotExpansions(lineItemsForDriver as any, 'QUOTE', customerId) : {}),
+    [useSnap, lineItemsForDriver, customerId],
+  );
+  const driverExpansions = useMemo(
+    () => (useSnap ? snapExpansions : liveExpansions),
+    [useSnap, snapExpansions, liveExpansions],
+  );
+  // 解析本侧值快照(formulaResults 真零计算) + rowKeyFields(对齐后端 rowKey)
+  const sideCardValues = useMemo<CardValues | null>(() => {
+    const json = lineItem.quoteCardValues as string | undefined;
+    if (!json) return null;
+    try { return typeof json === 'string' ? JSON.parse(json) as CardValues : (json as CardValues); } catch { return null; }
+  }, [lineItem.quoteCardValues]);
+  const rowKeyFieldsByComp = useMemo(() => {
+    const m = new Map<string, string[]>();
+    (quoteCardStructure?.tabs ?? []).forEach(t => { if (t.componentId) m.set(t.componentId, t.rowKeyFields ?? []); });
+    return m;
+  }, [quoteCardStructure]);
+  const snapFormulaByComp = useMemo(() => {
+    const m = new Map<string, { formula: Map<string, Record<string, any>>; driverRows: Record<string, any>[] }>();
+    (sideCardValues?.tabs ?? []).forEach(vt => {
+      if (!vt.componentId) return;
+      const formula = new Map<string, Record<string, any>>();
+      (vt.formulaResults ?? []).forEach(r => { if (r?.rowKey != null) formula.set(r.rowKey, r.values ?? {}); });
+      const driverRows = (vt.baseRows ?? []).map(b => b?.driverRow ?? {});
+      m.set(vt.componentId, { formula, driverRows });
+    });
+    return m;
+  }, [sideCardValues]);
 
   // 详情页 LIST_FORMULA 模板加载（与编辑页 useConfigTemplates 同款）
   const configTemplates = useConfigTemplates(lineItemsForDriver as any);
@@ -376,6 +417,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     // 风险 1 缓解（架构师决议）：详情页也按行预计算 formulaCache，
                     // 支持 prev_row_subtotal 累加公式（与编辑页 preComputedCaches 同款逻辑）。
                     // 每行的 basicDataValues 取 driver expansion 对应行的数据（如有）。
+                    // Phase4 Task4: 本组件快照 formula 映射 + rowKeyFields(报价侧 AP-50)
+                    const activeSnap = useSnap ? snapFormulaByComp.get(activeComp.componentId) : undefined;
+                    const activeRowKeyFields = rowKeyFieldsByComp.get(activeComp.componentId);
                     const preComputedCaches: Array<Record<string, number | null>> = [];
                     {
                       const subtotalFieldName = activeComp.fields?.find((f: any) => f.is_subtotal)?.name;
@@ -383,11 +427,17 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                       for (let ri = 0; ri < effectiveCount; ri++) {
                         const rawRow = activeComp.rows[ri] ?? {};
                         const rowBdv = useDriver ? activeDriverExpansion!.rows[ri]?.basicDataValues : undefined;
-                        const cache = computeAllFormulas(
-                          activeComp, rawRow, compSubtotals,
-                          undefined, undefined, lineItem.productPartNo,
-                          rowBdv, prevRowSubtotal, globalVariableDefs,
-                        );
+                        // Phase4 Task4: 优先读快照 formulaResults[rowKey](真零计算, 与编辑页 AP-50 同源), 缺时 computeAllFormulas 兜底。
+                        const driverRowForKey = (useDriver ? activeDriverExpansion!.rows[ri]?.driverRow : undefined) ?? activeSnap?.driverRows[ri] ?? rawRow;
+                        const rowKey = useSnap ? computeRowKey(activeRowKeyFields, driverRowForKey, ri) : String(ri);
+                        const snapFormula = useSnap ? activeSnap?.formula.get(rowKey) : undefined;
+                        const cache = (snapFormula && Object.keys(snapFormula).length > 0)
+                          ? (snapFormula as Record<string, number | null>)
+                          : computeAllFormulas(
+                              activeComp, rawRow, compSubtotals,
+                              undefined, undefined, lineItem.productPartNo,
+                              rowBdv, prevRowSubtotal, globalVariableDefs,
+                            );
                         preComputedCaches.push(cache);
                         if (subtotalFieldName && typeof cache[subtotalFieldName] === 'number') {
                           prevRowSubtotal = cache[subtotalFieldName] as number;

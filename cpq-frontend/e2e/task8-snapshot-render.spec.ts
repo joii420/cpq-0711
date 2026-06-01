@@ -262,3 +262,46 @@ test('Task8 组合产品: 打开组合报价单, 父卡片 Tab 渲染 + 加载�
   expect(tabCount, '组合产品父卡片至少渲染 1 个 Tab').toBeGreaterThan(0);
   expect(loadingFinal, "组合渲染后不得有 '加载中' 残留").toBe(0);
 });
+
+// Phase4 Task4: 详情页 ReadonlyProductCard 读快照(AP-50 与编辑页 single-source) — 渲染期无 batch-expand
+test('Task4 详情页: 打开 /quotations/{id} 详情, 各 Tab 渲染 + 加载中=0 + 渲染期 batch-expand=0', async ({ page }) => {
+  test.skip(!backendUp, '后端未启动');
+  let renderPhase = false;
+  let renderBatchExpand = 0;
+  const consoleErrors: string[] = [];
+  page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
+  page.on('request', (req) => { if (req.url().includes('/batch-expand') && renderPhase) renderBatchExpand++; });
+
+  await loginAsAdmin(page);
+  // Task4: 从加载即开始计数(详情页 batch-expand 在 load 期触发, 非编辑页那种 autosave 瞬态)
+  renderPhase = true;
+  // 详情页(只读)路由 = /quotations/:id (非 /edit)
+  await page.goto(`/quotations/${QUOTATION_ID}`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(3500);
+  await shot(page, 'detail-loaded');
+
+  // 滚到产品明细
+  await page.locator('text=产品明细').first().scrollIntoViewIfNeeded().catch(() => {});
+  await page.waitForTimeout(800);
+
+  const tabs = page.locator('button.qt-tab-btn');
+  const tabCount = await tabs.count();
+  console.log(`\n=== [详情] qt-tab-btn 数量: ${tabCount} ===`);
+  for (let i = 0; i < tabCount; i++) {
+    const t = await tabs.nth(i).innerText().catch(() => '?');
+    await tabs.nth(i).click().catch(() => {});
+    await page.waitForTimeout(1200);
+    const load = await page.locator('text=加载中').count();
+    const rows = await page.locator('.qt-cost-table tbody tr').count();
+    console.log(`  [详情 Tab '${t.replace(/\n/g,' ').trim().slice(0,16)}'] rows=${rows} 加载中=${load}`);
+    await shot(page, `detail-tab-${i}`);
+  }
+  const loadingFinal = await page.locator('text=加载中').count();
+  console.log(`=== [详情] 加载中 final=${loadingFinal}; 渲染期 batch-expand=${renderBatchExpand}; console.error=${consoleErrors.length} ===`);
+  consoleErrors.slice(0, 6).forEach(e => console.log('  🔴 ' + e.slice(0, 160)));
+
+  expect(tabCount, '详情页产品卡片至少渲染 1 个 Tab').toBeGreaterThan(0);
+  expect(loadingFinal, "详情页渲染后不得有 '加载中' 残留").toBe(0);
+  expect(renderBatchExpand, '详情页渲染期不得调 /batch-expand(Task4 读快照脱钩)').toBe(0);
+});

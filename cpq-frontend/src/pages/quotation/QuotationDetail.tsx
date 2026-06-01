@@ -458,6 +458,7 @@ const QuotationDetail: React.FC = () => {
                       quotationStatus={quotation.status}
                       customerId={quotation.customerId}
                       globalVariableDefs={gvDefs}
+                      quoteCardStructure={quotation.quoteCardStructure ?? null}
                     />
                   ))}
                 </div>
