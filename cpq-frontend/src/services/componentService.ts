@@ -121,7 +121,17 @@ export const componentService = {
     ) as Promise<any>,
   list: (params: any) => api.get('/components', { params }) as Promise<any>,
   getById: (id: string) => api.get(`/components/${id}`) as Promise<any>,
+  /**
+   * 创建组件。payload 透传所有字段，含 Phase1-Snapshot 新增的:
+   *   rowKeyFields?: string[]  — 与后端 Component.rowKeyFields 字段名对齐
+   * 后端 ComponentService.create() 会对多行可编辑组件做硬校验（rowKeyFields 必须声明）。
+   */
   create: (data: any) => api.post('/components', data) as Promise<any>,
+  /**
+   * 更新组件。payload 透传所有字段，含 Phase1-Snapshot 新增的:
+   *   rowKeyFields?: string[]  — 与后端 Component.rowKeyFields 字段名对齐
+   * 后端 ComponentService.update() 对存量组件走软校验（不满足仅告警，不阻断保存）。
+   */
   update: (id: string, data: any) => api.put(`/components/${id}`, data) as Promise<any>,
   delete: (id: string) => api.delete(`/components/${id}`) as Promise<any>,
   toggleStatus: (id: string) => api.patch(`/components/${id}/toggle-status`) as Promise<any>,
