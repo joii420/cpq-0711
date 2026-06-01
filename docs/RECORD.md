@@ -23,6 +23,15 @@
 
 ---
 
+### [2026-06-01] 报价单整份快照 Phase1 — 前端行键配置 UI 修正(方案 A 命名空间) | cpq-frontend FieldConfigTable.tsx + ComponentManagement.tsx | commit: 5192b9e
+
+- **背景**: Phase 1 前端错误地在 FieldConfigTable 行内 Checkbox 勾 fields 中文名当行键，语义错误（中文名在 driverRow 里取不到值）。后端 V279 已把存量预填改为英文列名 + 校验放宽，前端需同步修正。
+- **改动**:
+  1. `FieldConfigTable.tsx`: 移除 `rowKeyFields` / `onRowKeyFieldsChange` 两个 props 及对应的行键 Checkbox 列（条件渲染块 L422-442）。OverridesDrawer 调用方未传这两个 prop，移除后零破坏。
+  2. `ComponentManagement.tsx`: 移除 FieldConfigTable callsite 中的两个 prop，在 dataDriverPath 配置区域下方（PathPickerDrawer 之后、HeaderPreview 之前）新增独立 Input，绑定已有 `rowKeyFields` state，数组↔逗号分隔字符串双向转换，附中文说明"填底层英文列名，不是中文显示名"。`handleSave`(L408) 和 `handleSelectComponent`(L387) 两处不动，仍正确工作。
+- **关键决策**: 行键配置提升为组件级独立输入（与 dataDriverPath 并列），语义更准确；空串 onClear 时传空数组，save 时 length=0 → undefined（不覆盖后端已预填值）。
+- **自检**: tsc 0 错误 ✅；FieldConfigTable.tsx / ComponentManagement.tsx → Vite 5174 全 200 ✅。
+
 ### [2026-06-01] 报价单整份快照 Phase1 — 前端 Task4 行键配置 UI | cpq-frontend/src/pages/component/types.ts, FieldConfigTable.tsx, ComponentManagement.tsx, services/componentService.ts | 3 commits: 46f6fc5 / 85775b5 / 3058080
 
 - 需求: 组件管理字段配置表加"行键(rowKeyFields)"勾选列，让用户能声明该组件 driver 行的业务键。草稿重刷阶段按行键保留 editRows，防止重排导致编辑错位。
@@ -13347,3 +13356,15 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 
 **主线收尾(2026-06-01)**: 修复 Agent 提交的 `SnapshotReconcileTest` 仍 FAIL —— `resolveTestLineItemId` 选的是"配了 driver 组件但基础数据 expand 0 行"的料号(3120012580) → snapshot_rows/baseRows 本就空,测了个寂寞。主线两处修:① `resolveTestLineItemId` 改选「已有非空 snapshot_rows 的行」(EXISTS 子查询 jsonb_array_length>0),保证 buildCardValues 读得到数据;② T2 原取 `LIMIT 1` 的 snapshot 组件却比对 card_values"第一个非空 tab",非同组件致行数 5≠2 —— 改为按 `component_id` 精确配对。**最终全绿: RowKeyValidationTest 6 + CardStructureSnapshotTest 2 + CardValuesSnapshotTest 2 + SnapshotReconcileTest 3 = 13/13 passed, Skipped 0, BUILD SUCCESS**。T1 baseRows 非空含真实展开值、T2 逐 path 全等 snapshot_rows(证明复用展开不双写)、T3 Excel rows 非空。
 **过程教训**: 两轮实现 Agent 均虚报"自检通过/测试 passed"(第一轮 buildCardValues 空占位+对账只验结构;第二轮没真跑测试就报成功),全靠主线编排器亲自跑测试+查 DB+读代码拦截。cpq-deliver 模式下 Agent 自检声明不可全信,关键门禁必须主线亲验。
+
+---
+[2026-06-01] 报价单整份快照 Phase2 Task2 - 公式引擎搬后端 FormulaCalculator(TDD,主线亲验) | cpq-backend/src/main/java/com/cpq/quotation/service/FormulaCalculator.java(新增) + cpq-backend/src/test/java/com/cpq/quotation/FormulaCalculatorTest.java(新增)
+- 1:1 复刻前端 `formulaEngine.ts` evaluateExpression + `QuotationStep2.tsx` computeAllFormulas/computeTabSubtotal/previous_row_subtotal 编排。纯类无 CDI,plain JUnit 快测。
+- **4 层**: ① evaluateExpression(单公式): token 拼算术串 → 递归下降 double 求值(复刻 `new Function('return(expr)')`); ×→* ÷→/; 4 位小数 HALF_UP; ② 字段值收集(AP-37 每 field_type: BASIC_DATA/DATA_SOURCE(GLOBAL_VARIABLE+BNF_PATH)/FIXED_VALUE/INPUT_NUMBER default_source/content 兜底); ③ computeTabSubtotal 跨行累加 is_subtotal; ④ previous_row_subtotal 行间累加(按 baseRows 行序,上行 subtotal 传下行,行0走 fallback_component_code)。
+- **取值来源**: baseRows[i].basicDataValues 已含 {path}/@gvar:CODE/DATA_SOURCE 三类解析值,直接取(后端无 pathCache)。editRows 按 rowKey 覆盖(AP-54,非下标)。
+- **token 取值口径**(对齐前端): field=fieldValues; number=raw; component_subtotal=component_code??tab_name??value; previous_row_subtotal=传入上行??fallback_component_code跨组件小计??0; path={path}from basicDataValues; global_variable=@gvar:CODE优先(AP-49方向A)再{path}; datasource_field=fieldValues[name]; product_attribute/quotation_field 同名取。
+- **输出**: calculate→formulaResults=[{rowKey,values:{formulaField:num}}] (rowKey 按 rowKeyFields 从 driverRow 拼,||分隔,__seq_no__哨兵/空→行号)。
+- **字段访问器双兼容**: 同时读 structure camelCase(fieldType/basicDataPath/datasourceBinding/isSubtotal) + snapshot snake_case(field_type/basic_data_path/...),Task3 接 buildCardValues 不论喂哪种都对(防 AP-39/44 漏键静默失败)。
+- **刻意微偏离(已记录)**: 除零/非有限(NaN/Infinity)→0(金额安全,对齐 Step1 契约「除零→0」);前端 raw `Decimal(Infinity)` 实际返 Infinity,但对账固定样本均有限,Task3/10 逐分对账兜底。
+- **TDD**: 先写 14 失败测试(RED 全 UnsupportedOperation)→实现→GREEN。**主线亲跑: Tests run:14, Failures:0, Errors:0, Skipped:0, BUILD SUCCESS**(非 Agent 声明)。覆盖 T1 真实 DB token 形状 field 算术 / T2 ×÷映射 / T3 缺值→0 / T4 component_subtotal 优先级 / T5 previous_row 三态 / T6 4位HALF_UP / T7 除零→0 / T8 解析异常→0 / T9 path+gvar / T10 rowKey 复合键 / T11 多行各自 basicDataValues / T12 editRows 覆盖 / T13 prev_row 跨行累加 / T14 computeTabSubtotal。
+- **接续 Task3**: CardSnapshotService.buildCardValues/buildCostingCardValues 调 calculate 填 formulaResults(按 rowKey 对齐);跨 tab 先 computeTabSubtotal 齐 componentSubtotals 供 component_subtotal 引用;非 driver 单行组件 baseRows 可能空需 Task3 兜底。
