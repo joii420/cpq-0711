@@ -133,8 +133,11 @@ const QuotationWizard: React.FC = () => {
       .catch(() => setGvDefs({}));
   }, []);
 
-  // Auto-save timer
-  const autoSaveRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // 2026-06-01: 取消 10 秒定时自动保存（用户决议）。草稿持久化改为按需触发：
+  //   ① 基础数据导入流程创建后自动保存一次（下方 import-auto-save effect）；
+  //   ② 报价卡片单元格编辑走 editQuoteCardValue 端点即时回写（Task3）；
+  //   ③ 手动「保存草稿」按钮 / 步骤切换 / 提交。
+  // 保留 autoSaveDraft 函数 + ref 供 ①/手动复用；仅删除定时器。
   const lastSaveRef = useRef<string>('');
   // setInterval 注册时只依赖 quotationId，会捕获首次渲染时的 autoSaveDraft 闭包，
   // 其中 lineItems 仍为初始 []。改用最新值 ref，让定时器始终调用最新版本的 autoSaveDraft，
@@ -157,23 +160,32 @@ const QuotationWizard: React.FC = () => {
         loadContacts(presetCustomerId);
       }
     }
-    return () => {
-      if (autoSaveRef.current) clearInterval(autoSaveRef.current);
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // Setup auto-save every 10 seconds
-  useEffect(() => {
-    if (quotationId) {
-      autoSaveRef.current = setInterval(() => {
-        autoSaveDraftRef.current?.();
-      }, 10000);
-      return () => {
-        if (autoSaveRef.current) clearInterval(autoSaveRef.current);
-      };
-    }
+  // 2026-06-01: 事件驱动自动保存（替代 10s 轮询）。
+  //   草稿内容变化(lineItems / 表单字段)时, 防抖 ~1.5s 触发一次 autoSaveDraft;
+  //   autoSaveDraft 内部 lastSaveRef 去重 → payload 未变则不发请求(空闲零请求)。
+  //   作用: 保证编辑落库(row_data 重开存活 + Excel/提交读新), 而无 10s 空转轮询。
+  const autoSaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleAutoSave = useCallback(() => {
+    if (!quotationId) return;
+    if (autoSaveDebounceRef.current) clearTimeout(autoSaveDebounceRef.current);
+    autoSaveDebounceRef.current = setTimeout(() => {
+      autoSaveDraftRef.current?.();
+    }, 1500);
   }, [quotationId]);
+  // 卸载/换单时清理待触发的防抖保存
+  useEffect(() => () => {
+    if (autoSaveDebounceRef.current) clearTimeout(autoSaveDebounceRef.current);
+  }, []);
+  // lineItems 变化(单元格编辑/增删产品/选配)→ 调度防抖保存。
+  useEffect(() => {
+    if (!quotationId) return;
+    if (lineItems.length === 0) return;
+    scheduleAutoSave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineItems, quotationId]);
 
   // Step3 初始化逻辑已移入 QuotationStep3 组件内部（D6 强刷 lineUnitPrice = subtotal）
   // 旧的整单折扣自动计算 effect 已废弃（V1 行级折扣由 Step3 组件处理）
@@ -1429,6 +1441,7 @@ const QuotationWizard: React.FC = () => {
         <Form
           form={form}
           layout="vertical"
+          onValuesChange={() => scheduleAutoSave()}
           initialValues={{
             quoteType: 'STANDARD',
             priority: 'MEDIUM',
