@@ -13396,3 +13396,12 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - **主线亲跑**: `-Dtest='RefreshCardSnapshotTest,SnapshotReconcileTest,CardValuesSnapshotTest,CardStructureSnapshotTest,FormulaCalculatorTest,QuotationSnapshotExposureTest,RowKeyValidationTest'` → **32/32 passed Failures0 Errors0 Skipped0 BUILD SUCCESS**; auth/me=401 非500; costing_card_values 非空15行(修复有效)。
 - **已知边界**: 重刷只 expand driver 组件(与核价对称);非 driver 单行组件 baseRows 空(留观察)。LIST_FORMULA 未进 formulaResults(Task8)。
 - **接续 Task6**: POST /quotations/{id}/refresh-card-snapshot(仅DRAFT 遍历报价行) + 前端 Step2 加载触发(loading"重新计算中"避免 AP-31)。
+
+---
+[2026-06-01] 报价单整份快照 Phase2 Task6 - 草稿重刷端点 + 前端 DRAFT 触发(主线亲验) | cpq-backend CardSnapshotService.java(+refreshDraftQuoteCards) + QuotationResource.java(+端点) + RefreshCardSnapshotTest.java(+T2) ; cpq-frontend quotationService.ts(+refreshCardSnapshot) + QuotationWizard.tsx(loadQuotation 触发)
+- **后端 refreshDraftQuoteCards(quotationId)**: 仅 status='DRAFT' 执行(非 DRAFT/不存在 → no-op 返 0); 遍历该单全部 lineItems 逐行 self.refreshQuoteCardValues(本方法无外层 tx,每行 REQUIRED 独立新事务,单行失败不连坐); 返回重刷行数。
+- **端点 POST /api/cpq/quotations/{id}/refresh-card-snapshot**: 调 refreshDraftQuoteCards 返 {quotationId, refreshed}。
+- **测试 T2(门控)**: DRAFT(行数最少的单) → refreshed==行数>0; SUBMITTED → 0(status 门控); 不存在 UUID → 0(null 门控)。RefreshCardSnapshotTest 2/2。
+- **前端 loadQuotation**: getById → 若 data.status==='DRAFT' 则 message.loading('正在重新计算报价数据…',0) + await refreshCardSnapshot(qId) + 再 getById(拿重刷后快照) → applyQuotationData; 重刷失败 catch 降级用首次 getById 数据不阻断打开。注: 当前渲染仍走旧 batch-expand 路径(Task8 才切读快照),本次重刷为数据预备,Task8 起生效。
+- **自检**: 后端 ./mvnw compile 0 err; 端点 curl 401(路由已挂非 500/404); 全门禁 33/33 passed Skipped0 BUILD SUCCESS。前端 tsc 0; Vite QuotationWizard.tsx=200/quotationService.ts=200。
+- **接续 Task7**: 编辑回写端点 PUT /quotations/line-items/{id}/quote-card-edit + editCardValue(写 editRows+重算 formulaResults+quote_excel+核价不动+返回更新值) + 前端单元格编辑改调回写端点。

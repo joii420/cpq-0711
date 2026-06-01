@@ -739,6 +739,31 @@ public class CardSnapshotService {
         }
     }
 
+    /**
+     * 草稿态打开时重刷整单报价侧卡片值（设计 §5 触发点）。
+     * <ul>
+     *   <li>仅 {@code status="DRAFT"} 执行；非 DRAFT（已提交/冻结）→ no-op 返 0。</li>
+     *   <li>遍历该报价单全部 lineItems，逐行 {@link #refreshQuoteCardValues}（本方法无外层事务，每行 REQUIRED 即独立新事务，单行失败不连坐）。</li>
+     * </ul>
+     * @return 实际重刷的行数（非 DRAFT 返 0）。
+     */
+    public int refreshDraftQuoteCards(UUID quotationId) {
+        if (quotationId == null) return 0;
+        Quotation q = Quotation.findById(quotationId);
+        if (q == null || !"DRAFT".equals(q.status)) return 0; // 非 DRAFT no-op
+        List<QuotationLineItem> lines = QuotationLineItem.list("quotationId", quotationId);
+        int n = 0;
+        for (QuotationLineItem li : lines) {
+            try {
+                self.refreshQuoteCardValues(li); // self → 触发 @Transactional 代理（每行独立事务）
+                n++;
+            } catch (Exception e) {
+                LOG.warnf("[card-snapshot] refreshDraftQuoteCards line=%s failed: %s", li.id, e.getMessage());
+            }
+        }
+        return n;
+    }
+
     private JsonNode loadRowKeyFieldsNode(String componentId) {
         String json = loadRowKeyFields(componentId);
         if (json == null || json.isBlank()) return null;

@@ -185,4 +185,37 @@ public class RefreshCardSnapshotTest {
         String costingAfter = readCostingCardValues(lineId);
         assertEquals(costingBefore, costingAfter, "refresh 不得改动 costing_card_values");
     }
+
+    @Test
+    @Order(2)
+    @DisplayName("T2: refreshDraftQuoteCards — DRAFT 返回重刷行数>0；非 DRAFT/不存在 → no-op 返 0")
+    void refreshDraftQuoteCards_draftGate() {
+        // DRAFT(行数最少, 避免太慢) → refreshed = 行数 > 0
+        @SuppressWarnings("unchecked")
+        var draftRows = em.createNativeQuery(
+            "SELECT q.id, count(li.id) c FROM quotation q JOIN quotation_line_item li ON li.quotation_id=q.id " +
+            "WHERE q.status='DRAFT' GROUP BY q.id ORDER BY c ASC LIMIT 1").getResultList();
+        Assumptions.assumeFalse(draftRows.isEmpty(), "无 DRAFT 带行报价单");
+        Object[] dr = (Object[]) draftRows.get(0);
+        UUID draftId = UUID.fromString(dr[0].toString());
+        int expectedLines = Integer.parseInt(dr[1].toString());
+
+        int refreshed = svc.refreshDraftQuoteCards(draftId);
+        assertEquals(expectedLines, refreshed,
+            "DRAFT 应重刷全部报价行(行数=" + expectedLines + ")");
+        assertTrue(refreshed > 0, "DRAFT 重刷行数必须 > 0");
+
+        // 非 DRAFT(SUBMITTED/APPROVED) → no-op 返 0
+        @SuppressWarnings("unchecked")
+        var nonDraft = em.createNativeQuery(
+            "SELECT id FROM quotation WHERE status <> 'DRAFT' LIMIT 1").getResultList();
+        if (!nonDraft.isEmpty()) {
+            UUID nonDraftId = UUID.fromString(nonDraft.get(0).toString());
+            assertEquals(0, svc.refreshDraftQuoteCards(nonDraftId),
+                "非 DRAFT 报价单必须 no-op 返 0");
+        }
+
+        // 不存在 → 0
+        assertEquals(0, svc.refreshDraftQuoteCards(UUID.randomUUID()), "不存在报价单返 0");
+    }
 }

@@ -161,6 +161,21 @@ public class QuotationResource {
         return ApiResponse.success(resp);
     }
 
+    /**
+     * 草稿态重刷报价侧卡片值快照（报价单整份快照 Phase 2 §5）。
+     * 仅 DRAFT 执行（遍历报价行重 expand + 按行键保编辑 + 重算）；非 DRAFT no-op 返 refreshed=0。
+     * 前端 Step2 进入编辑态时调用，再 getById 拿最新快照渲染。
+     */
+    @POST
+    @Path("/{id}/refresh-card-snapshot")
+    public ApiResponse<Map<String, Object>> refreshCardSnapshot(@PathParam("id") UUID id) {
+        int refreshed = cardSnapshotService.refreshDraftQuoteCards(id);
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("quotationId", id);
+        resp.put("refreshed", refreshed);
+        return ApiResponse.success(resp);
+    }
+
     @POST
     @Path("/{id}/calculate-discount")
     public ApiResponse<QuotationDTO> calculateDiscount(@PathParam("id") UUID id, Map<String, Object> body) {

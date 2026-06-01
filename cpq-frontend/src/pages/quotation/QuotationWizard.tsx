@@ -336,12 +336,28 @@ const QuotationWizard: React.FC = () => {
 
   const loadQuotation = async (qId: string) => {
     setLoading(true);
+    let hideRecalc: undefined | (() => void);
     try {
-      const res = await quotationService.getById(qId);
+      let res = await quotationService.getById(qId);
+      // 报价单整份快照 Phase2 §5: 草稿态打开先重刷报价侧卡片值(重查最新基础数据 + 按行键保留编辑),
+      // 再拉一次最新快照渲染。仅 DRAFT 触发(后端非 DRAFT 亦 no-op)；失败降级用未重刷数据, 不阻断打开。
+      if (res?.data?.status === 'DRAFT') {
+        hideRecalc = message.loading('正在重新计算报价数据…', 0);
+        try {
+          await quotationService.refreshCardSnapshot(qId);
+          res = await quotationService.getById(qId);
+        } catch {
+          // 重刷失败 → 用首次 getById 的数据继续打开（降级）
+        } finally {
+          if (hideRecalc) hideRecalc();
+          hideRecalc = undefined;
+        }
+      }
       applyQuotationData(res.data);
       // Update localStorage backup on successful load
       localStorage.setItem(`cpq-draft-${qId}`, JSON.stringify(res.data));
     } catch (e: any) {
+      if (hideRecalc) hideRecalc();
       // P2-9: Try localStorage fallback on backend failure
       const local = localStorage.getItem(`cpq-draft-${qId}`);
       if (local) {
