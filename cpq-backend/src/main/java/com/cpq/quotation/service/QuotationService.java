@@ -142,7 +142,29 @@ public class QuotationService {
             populateDriftInfo(dto, q);
         }
 
+        // Phase 2 渲染脱钩: 报价单级 4 份结构快照(从 quotation_view_structure 读填充)
+        populateViewStructures(dto, id);
+
         return dto;
+    }
+
+    /** Phase 2: 把 quotation_view_structure 的四份结构填进 DTO(渲染脱钩, 创建即冻)。 */
+    private void populateViewStructures(QuotationDTO dto, UUID quotationId) {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (com.cpq.quotation.entity.QuotationViewStructure s :
+                com.cpq.quotation.entity.QuotationViewStructure
+                    .<com.cpq.quotation.entity.QuotationViewStructure>list("quotationId", quotationId)) {
+            if (s.structure == null) continue;
+            try {
+                var node = mapper.readTree(s.structure);
+                switch (s.viewKind) {
+                    case "QUOTE_CARD" -> dto.quoteCardStructure = node;
+                    case "QUOTE_EXCEL" -> dto.quoteExcelStructure = node;
+                    case "COSTING_CARD" -> dto.costingCardStructure = node;
+                    case "COSTING_EXCEL" -> dto.costingExcelStructure = node;
+                }
+            } catch (Exception ignore) { /* 结构缺失/损坏 → 该份为 null, 不阻断 */ }
+        }
     }
 
     /**

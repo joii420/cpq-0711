@@ -43,6 +43,11 @@ public class QuotationDTO {
     public UUID assignedApproverId;
     public String assignedApproverName;
     public String remarks;
+    /** Phase 2 渲染脱钩: 报价单级 4 份结构快照(创建即冻; getById 从 quotation_view_structure 读填充) */
+    public com.fasterxml.jackson.databind.JsonNode quoteCardStructure;
+    public com.fasterxml.jackson.databind.JsonNode quoteExcelStructure;
+    public com.fasterxml.jackson.databind.JsonNode costingCardStructure;
+    public com.fasterxml.jackson.databind.JsonNode costingExcelStructure;
 
     /**
      * 客户报价模板 ID(由 BasicDataImportV5ToQuotation 创建报价单时按
@@ -175,6 +180,11 @@ public class QuotationDTO {
         public String compositeType;
         /** V169: PART 行指向父级 line_item.id, 其他类型为 null */
         public java.util.UUID parentLineItemId;
+        /** Phase 2 渲染脱钩: 行级 4 份值快照(JSON 字符串原样透传前端读) */
+        public String quoteCardValues;
+        public String quoteExcelValues;
+        public String costingCardValues;
+        public String costingExcelValues;
 
         public static LineItemDTO from(QuotationLineItem li) {
             LineItemDTO dto = new LineItemDTO();
@@ -205,6 +215,10 @@ public class QuotationDTO {
             // V169 选配组合关系直接透传 — saveDraft 不写这两列, 仅初次配置时写入
             dto.compositeType = li.compositeType;
             dto.parentLineItemId = li.parentLineItemId;
+            dto.quoteCardValues = li.quoteCardValues;
+            dto.quoteExcelValues = li.quoteExcelValues;
+            dto.costingCardValues = li.costingCardValues;
+            dto.costingExcelValues = li.costingExcelValues;
             return dto;
         }
     }
