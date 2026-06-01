@@ -38,6 +38,12 @@ public class SaveDraftRequest {
     public List<LineItemDraft> lineItems;
 
     public static class LineItemDraft {
+        /**
+         * 2026-06-01: 已存在行的 line_item id。前端回传后, saveDraft 按 id 复用同一行(就地 UPDATE, 不换 UUID),
+         * 消除"全删全建换新 id"造成的 editQuoteCardValue 撞已删 id(400)+ driver 缓存 churn。
+         * 为空 = 新增行(后端生成新 id)。
+         */
+        public UUID id;
         public UUID productId;
         public UUID templateId;
         // V5 批量导入流程：productId 为空，但 partNo 来自 mat_part 主档。

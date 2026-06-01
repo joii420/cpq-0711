@@ -285,17 +285,31 @@ public class QuotationService {
             q.discountAdjustmentReason = request.discountAdjustmentReason;
         }
 
-        // Replace line items (last-write-wins)
+        // 2026-06-01: 按 id UPSERT 报价行(替代"全删全建 last-write-wins")。
+        //   draft.id 命中现有行 → 复用同一实体(就地 UPDATE, id 不变); 未命中 → 新建; 末尾删除本次未保留的旧行。
+        //   动机: 原"全删全建"每次换新 UUID, 导致 editQuoteCardValue 撞已删 id(400) + driver 缓存 churn。
+        //   子表(process/componentData/snapshot/composite_process)仍按 draft 全量重建(行为不变), 仅 line 实体 id 稳定。
         if (request.lineItems != null) {
-            deleteLineItems(id);
+            java.util.List<QuotationLineItem> existingLines = QuotationLineItem.list("quotationId = ?1", id);
+            java.util.Map<java.util.UUID, QuotationLineItem> existingById = new java.util.HashMap<>();
+            for (QuotationLineItem ex : existingLines) existingById.put(ex.id, ex);
+            java.util.Set<java.util.UUID> keptIds = new java.util.HashSet<>();
             BigDecimal total = BigDecimal.ZERO;
             Set<String> collectedPartNos = new LinkedHashSet<>();
-            // V169 二阶段 parent_line_item_id 重建用: index → 新 UUID 的映射
+            // V169 二阶段 parent_line_item_id 重建用: index → 行 UUID 的映射(复用行=原 id, 新行=新 id)
             java.util.UUID[] newIdsByIndex = new java.util.UUID[request.lineItems.size()];
 
             for (int i = 0; i < request.lineItems.size(); i++) {
                 SaveDraftRequest.LineItemDraft liDraft = request.lineItems.get(i);
-                QuotationLineItem li = new QuotationLineItem();
+                QuotationLineItem li;
+                if (liDraft.id != null && existingById.containsKey(liDraft.id)) {
+                    li = existingById.get(liDraft.id);   // 复用 → 就地 UPDATE, id 不变
+                    keptIds.add(li.id);
+                    clearLineItemChildren(li.id);        // 旧子表清掉, 下面按 draft 重建
+                    li.parentLineItemId = null;          // 父子关系清空, 待二阶段重链
+                } else {
+                    li = new QuotationLineItem();
+                }
                 li.quotationId = id;
                 li.productId = liDraft.productId;
                 // 选配产品行的 templateId 偶发为空(前端 onConfigureConfirm 读 customerTemplateId 有竞态),
@@ -463,6 +477,13 @@ public class QuotationService {
                         cd.persist();
                     }
                 }
+            }
+
+            // 删除本次 payload 未保留的旧行(用户删除的产品行) + 其子表
+            for (QuotationLineItem ex : existingLines) {
+                if (keptIds.contains(ex.id)) continue;
+                clearLineItemChildren(ex.id);
+                ex.delete();
             }
 
             q.originalAmount = total;
@@ -1469,6 +1490,19 @@ public class QuotationService {
         String dateStr = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         Long seq = (Long) em.createNativeQuery("SELECT nextval('quotation_number_seq')").getSingleResult();
         return String.format("QT-%s-%04d", dateStr, seq);
+    }
+
+    /**
+     * 2026-06-01: 清掉单个 line item 的全部子表(供 saveDraft UPSERT 复用行重建子表用)。
+     * 复用行(就地 UPDATE 不删 line 实体)不会触发 quotation_line_composite_process 的 FK CASCADE,
+     * 故 composite_process 需显式 native DELETE。
+     */
+    private void clearLineItemChildren(UUID lineItemId) {
+        QuotationLineProcess.delete("lineItemId = ?1", lineItemId);
+        QuotationLineComponentData.delete("lineItemId = ?1", lineItemId);
+        QuotationLineItemSnapshot.delete("lineItemId = ?1", lineItemId);
+        em.createNativeQuery("DELETE FROM quotation_line_composite_process WHERE line_item_id = :lid")
+            .setParameter("lid", lineItemId).executeUpdate();
     }
 
     private void deleteLineItems(UUID quotationId) {

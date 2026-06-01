@@ -689,6 +689,10 @@ const QuotationWizard: React.FC = () => {
       customerTemplateId: customerTemplateId ?? values.customerTemplateId ?? null,
       costingCardTemplateId: costingCardTemplateId ?? values.costingCardTemplateId ?? null,
       lineItems: lineItems.map((li, idx) => ({
+        // 2026-06-01: 回传已存在行的 line id → 后端按 id UPSERT(就地更新, 不换 UUID)。
+        //   id 稳定后 payload 含 id 也不会 churn(去重正常), 且 editQuoteCardValue 不再撞已删 id。
+        //   新增/未持久化行无 id → 送 null, 后端新建。
+        id: (li as any).id || null,
         // 后端 SaveDraftRequest.LineItemDraft.productId 是 UUID，Jackson 无法把
         // 空字符串反序列化成 UUID（整次保存直接 400）。批量导入分支会把
         // productId 置成 ''；这里统一空串归零为 null，避免静默保存失败。
