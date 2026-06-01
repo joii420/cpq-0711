@@ -8,6 +8,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -347,5 +349,46 @@ public class FormulaCalculatorTest {
         // 正确绑定: B=fB=x+1=11, C=fC=x*3=30（positional 会得 B=30,C=11）
         assertEquals(11.0, values.path("B").asDouble(), 1e-9);
         assertEquals(30.0, values.path("C").asDouble(), 1e-9);
+    }
+
+    // ======================================================================
+    // Phase4 Task6 — 防漂移红线: 与前端 formulaEngine 共享样本逐分对账
+    // ======================================================================
+
+    @Test
+    @DisplayName("Reconcile: 共享样本(formula-reconcile-cases.json) 后端 FormulaCalculator == 前端 formulaEngine 逐分一致")
+    void reconcileFixture_frontendBackendParity() throws Exception {
+        // 唯一权威样本由前端 vitest(formulaReconcile.test.ts) 与本测试同读；任一引擎漂移 → 一侧变红。
+        Path fixture = Path.of("..", "cpq-frontend", "src", "utils", "__fixtures__", "formula-reconcile-cases.json");
+        assertTrue(Files.exists(fixture), "共享对账样本缺失: " + fixture.toAbsolutePath());
+        JsonNode root = M.readTree(Files.readString(fixture));
+        JsonNode cases = root.path("cases");
+        assertTrue(cases.isArray() && cases.size() > 0, "样本非空");
+
+        for (JsonNode cse : cases) {
+            String name = cse.path("name").asText("");
+            RowContext ctx = new RowContext();
+            putDoubles(ctx.fieldValues, cse.path("fieldValues"));
+            putDoubles(ctx.componentSubtotals, cse.path("componentSubtotals"));
+            putDoubles(ctx.productAttributes, cse.path("productAttributes"));
+            putDoubles(ctx.quotationFields, cse.path("quotationFields"));
+            JsonNode bdv = cse.path("basicDataValues");
+            if (bdv.isObject()) bdv.fields().forEachRemaining(e ->
+                ctx.basicDataValues.put(e.getKey(),
+                    e.getValue().isNumber() ? e.getValue().numberValue() : e.getValue().asText()));
+            JsonNode prev = cse.path("previousRowSubtotal");
+            ctx.previousRowSubtotal = (prev.isNull() || prev.isMissingNode()) ? null : prev.asDouble();
+
+            double actual = calc.evaluateExpression(cse.path("tokens"), ctx).doubleValue();
+            double expected = cse.path("expected").asDouble();
+            // 后端 setScale(4, HALF_UP)；逐分一致 tolerance 1e-9
+            assertEquals(expected, actual, 1e-9, "reconcile 漂移: " + name);
+        }
+    }
+
+    private void putDoubles(Map<String, Double> target, JsonNode node) {
+        if (node != null && node.isObject()) {
+            node.fields().forEachRemaining(e -> target.put(e.getKey(), e.getValue().asDouble()));
+        }
     }
 }

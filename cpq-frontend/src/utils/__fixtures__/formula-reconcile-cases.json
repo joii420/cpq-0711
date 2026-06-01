@@ -1,0 +1,98 @@
+{
+  "_doc": "Phase4 Task6 防漂移红线: 前端 formulaEngine.evaluateExpression 与后端 FormulaCalculator.evaluateExpression 对同一组样本须逐分一致(4 位 HALF_UP)。本文件是唯一权威样本，前端 vitest(formulaReconcile.test.ts) 与 后端 SnapshotReconcileTest#reconcileFixture 同读此文件。expected 为 4 位 HALF_UP 结果。改公式引擎任一侧后两测必同绿。",
+  "cases": [
+    {
+      "name": "basic_mul 单价*数量",
+      "tokens": [{"type":"field","value":"单价"},{"type":"operator","label":"×","value":"*"},{"type":"field","value":"数量"}],
+      "fieldValues": {"单价":45,"数量":5},
+      "expected": 225.0000
+    },
+    {
+      "name": "material_cost 含量/100*单价*(1+损耗/100)*数量",
+      "tokens": [
+        {"type":"field","value":"含量"},{"type":"operator","label":"÷","value":"/"},{"type":"number","value":"100"},
+        {"type":"operator","label":"×","value":"*"},{"type":"field","value":"单价"},
+        {"type":"operator","label":"×","value":"*"},{"type":"bracket_open","value":"("},
+        {"type":"number","value":"1"},{"type":"operator","value":"+"},{"type":"field","value":"损耗"},
+        {"type":"operator","label":"÷","value":"/"},{"type":"number","value":"100"},{"type":"bracket_close","value":")"},
+        {"type":"operator","label":"×","value":"*"},{"type":"field","value":"数量"}
+      ],
+      "fieldValues": {"含量":70,"单价":0.5,"损耗":2,"数量":10},
+      "expected": 3.5700
+    },
+    {
+      "name": "component_subtotal 跨tab 元素小计+工艺小计",
+      "tokens": [
+        {"type":"component_subtotal","component_code":"ELEM","tab_name":"元素","value":"元素"},
+        {"type":"operator","value":"+"},
+        {"type":"component_subtotal","component_code":"PROC","tab_name":"工艺","value":"工艺"}
+      ],
+      "componentSubtotals": {"ELEM":12.5,"元素":12.5,"PROC":8.3,"工艺":8.3},
+      "expected": 20.8000
+    },
+    {
+      "name": "previous_row_subtotal 工序累加 prev+单价",
+      "tokens": [
+        {"type":"previous_row_subtotal","value":"上一行小计"},
+        {"type":"operator","value":"+"},
+        {"type":"field","value":"单价"}
+      ],
+      "fieldValues": {"单价":26.3158},
+      "previousRowSubtotal": 100,
+      "expected": 126.3158
+    },
+    {
+      "name": "div_zero 除零归0",
+      "tokens": [{"type":"field","value":"A"},{"type":"operator","label":"÷","value":"/"},{"type":"field","value":"B"}],
+      "fieldValues": {"A":10,"B":0},
+      "expected": 0.0000
+    },
+    {
+      "name": "missing_field 缺值归0",
+      "tokens": [{"type":"field","value":"X"},{"type":"operator","label":"×","value":"*"},{"type":"number","value":"5"}],
+      "fieldValues": {},
+      "expected": 0.0000
+    },
+    {
+      "name": "round_third 1/3 四位HALF_UP",
+      "tokens": [{"type":"number","value":"1"},{"type":"operator","label":"÷","value":"/"},{"type":"number","value":"3"}],
+      "fieldValues": {},
+      "expected": 0.3333
+    },
+    {
+      "name": "round_twothird 2/3 四位HALF_UP",
+      "tokens": [{"type":"number","value":"2"},{"type":"operator","label":"÷","value":"/"},{"type":"number","value":"3"}],
+      "fieldValues": {},
+      "expected": 0.6667
+    },
+    {
+      "name": "brackets (A+B)*C 优先级",
+      "tokens": [
+        {"type":"bracket_open","value":"("},{"type":"field","value":"A"},{"type":"operator","value":"+"},{"type":"field","value":"B"},{"type":"bracket_close","value":")"},
+        {"type":"operator","label":"×","value":"*"},{"type":"field","value":"C"}
+      ],
+      "fieldValues": {"A":2,"B":3,"C":4},
+      "expected": 20.0000
+    },
+    {
+      "name": "path BASIC_DATA 成材率 $cz_view.yield/100*单价",
+      "tokens": [
+        {"type":"path","path":"$cz_view.yield"},{"type":"operator","label":"÷","value":"/"},{"type":"number","value":"100"},
+        {"type":"operator","label":"×","value":"*"},{"type":"field","value":"单价"}
+      ],
+      "fieldValues": {"单价":0.5},
+      "basicDataValues": {"{$cz_view.yield}":95},
+      "expected": 0.4750
+    },
+    {
+      "name": "global_variable @gvar:PROCESS_DEFAULT_PRICE*数量",
+      "tokens": [
+        {"type":"global_variable","code":"PROCESS_DEFAULT_PRICE","value":"PROCESS_DEFAULT_PRICE"},
+        {"type":"operator","label":"×","value":"*"},{"type":"field","value":"数量"}
+      ],
+      "fieldValues": {"数量":2},
+      "basicDataValues": {"@gvar:PROCESS_DEFAULT_PRICE":88},
+      "expected": 176.0000
+    }
+  ]
+}
