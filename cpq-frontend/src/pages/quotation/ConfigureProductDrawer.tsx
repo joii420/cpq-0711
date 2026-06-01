@@ -10,6 +10,8 @@ import Step1SearchPart from './configure/Step1SearchPart';
 import Step2Material from './configure/Step2Material';
 import Step3Process from './configure/Step3Process';
 import Step4CompositeProcess from './configure/Step4CompositeProcess';
+import StepAccessoryQuantity from './configure/StepAccessoryQuantity';
+import AccessoryProgressBar from './configure/AccessoryProgressBar';
 import Step5Summary from './configure/Step5Summary';
 import { genUUID } from '../../utils/uuid';
 
@@ -41,12 +43,13 @@ interface Props {
 }
 
 const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, onConfirm }) => {
-  const [globalStep, setGlobalStep] = useState<0 | 1 | 2 | 3>(0);
+  const [globalStep, setGlobalStep] = useState<0 | 1 | 2 | 3 | 4>(0);
   const [subStep, setSubStep] = useState<0 | 1 | 2>(0);
   const [productType, setProductType] = useState<ProductType>('SIMPLE');
   const [initPartCount, setInitPartCount] = useState(2);
   const [parts, setParts] = useState<PartState[]>([]);
   const [ci, setCi] = useState(0);
+  const [furthestCi, setFurthestCi] = useState(0);
   const [addedCProcs, setAddedCProcs] = useState<CompositeProcessAdded[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
@@ -182,6 +185,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
     if (globalStep === 0) {
       setParts(initParts(productType, initPartCount));
       setCi(0);
+      setFurthestCi(0);
       setSubStep(0);
       setGlobalStep(1);
       return;
@@ -199,22 +203,36 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
         return;
       }
       if (subStep === 2) {
-        if (ci < parts.length - 1) { setCi(ci + 1); setSubStep(0); return; }
+        if (ci < parts.length - 1) {
+          const next = ci + 1;
+          setCi(next);
+          setFurthestCi(prev => Math.max(prev, next));
+          setSubStep(0);
+          return;
+        }
+        setFurthestCi(parts.length);
         if (productType === 'COMPOSITE') { setGlobalStep(2); return; }
-        setGlobalStep(3);
+        setGlobalStep(4);
         return;
       }
     }
-    if (globalStep === 2) { setGlobalStep(3); return; }
-    if (globalStep === 3) { await submitConfigure(); }
+    if (globalStep === 2) {
+      const bad = parts.findIndex(p => !p.quantity || p.quantity < 1);
+      if (bad >= 0) { message.warning(`${parts[bad].name}: 数量必须 ≥ 1`); return; }
+      setGlobalStep(3);
+      return;
+    }
+    if (globalStep === 3) { setGlobalStep(4); return; }
+    if (globalStep === 4) { await submitConfigure(); }
   }, [globalStep, subStep, productType, parts, ci, initPartCount, checkFingerprintAndAdvance, initParts]);
 
   const goPrev = useCallback(() => {
-    if (globalStep === 3) {
-      if (productType === 'COMPOSITE') setGlobalStep(2);
+    if (globalStep === 4) {
+      if (productType === 'COMPOSITE') setGlobalStep(3);
       else { setSubStep(2); setCi(0); setGlobalStep(1); }
       return;
     }
+    if (globalStep === 3) { setGlobalStep(2); return; }
     if (globalStep === 2) {
       setCi(parts.length - 1);
       setSubStep(2);
@@ -227,6 +245,13 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
       setGlobalStep(0);
     }
   }, [globalStep, subStep, ci, parts.length, productType]);
+
+  const jumpToPart = useCallback((idx: number) => {
+    if (idx === ci) return;
+    if (idx >= furthestCi) return;
+    setCi(idx);
+    setSubStep(0);
+  }, [ci, furthestCi]);
 
   const submitConfigure = async () => {
     // 提交前最后一道防线:全量配件逐个扫,任一不合规则列原因不发请求
@@ -258,11 +283,13 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
           : undefined,
         // SIMPLE: 与顶层 tempId 同值；COMPOSITE: 每个子件独立 UUID（工序隔离键）
         quotationLineItemId: productType === 'SIMPLE' ? tempId : genUUID(),
+        quantity: p.quantity ?? 1,
       }));
+      const allPartIdx = parts.map((_, i) => i);
       const compProcs: CompositeProcessRequest[] = addedCProcs.map(a => ({
         defCode: a.defCode,
-        participatingPartIndexes: a.participatingPartIndexes,
-        params: a.params,
+        participatingPartIndexes: allPartIdx,
+        params: {},
       }));
       const resp = await configureProductService.configureProduct(quotationId, {
         productType,
@@ -291,15 +318,16 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
     setInitPartCount(2);
     setParts([]);
     setCi(0);
+    setFurthestCi(0);
     setAddedCProcs([]);
   };
 
   const stepLabels = productType === 'COMPOSITE'
-    ? ['产品类型', `配件选配 ×${parts.length || initPartCount}`, '组合工艺', '完成选配']
+    ? ['产品类型', `配件选配 ×${parts.length || initPartCount}`, '配件数量', '组合工艺', '完成选配']
     : ['产品类型', '料号匹配', '材质选配', '工序选择', '完成选配'];
   const activeIdx = productType === 'COMPOSITE'
-    ? (globalStep === 0 ? 0 : globalStep === 1 ? 1 : globalStep === 2 ? 2 : 3)
-    : (globalStep === 0 ? 0 : globalStep === 3 ? 4 : subStep + 1);
+    ? globalStep
+    : (globalStep === 0 ? 0 : globalStep === 4 ? 4 : subStep + 1);
 
   return (
     <Drawer
@@ -321,7 +349,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
               </Button>
             )}
             <Button type="primary" onClick={goNext} loading={submitting}>
-              {globalStep === 3 ? '确认添加' : '下一步'}
+              {globalStep === 4 ? '确认添加' : '下一步'}
             </Button>
           </div>
         </div>
@@ -344,6 +372,12 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
 
       {globalStep === 1 && parts[ci] && (
         <>
+          <AccessoryProgressBar
+            parts={parts}
+            currentIndex={ci}
+            furthestIndex={furthestCi}
+            onJump={jumpToPart}
+          />
           {subStep === 0 && <Step1SearchPart part={parts[ci]} onUpdate={updateCurrentPart} />}
           {subStep === 1 && <Step2Material part={parts[ci]} onUpdate={updateCurrentPart} />}
           {subStep === 2 && <Step3Process part={parts[ci]} onUpdate={updateCurrentPart} />}
@@ -351,6 +385,10 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
       )}
 
       {globalStep === 2 && (
+        <StepAccessoryQuantity parts={parts} onUpdatePart={updatePart} />
+      )}
+
+      {globalStep === 3 && (
         <Step4CompositeProcess
           parts={parts}
           addedCProcs={addedCProcs}
@@ -358,7 +396,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
         />
       )}
 
-      {globalStep === 3 && (
+      {globalStep === 4 && (
         <Step5Summary
           productType={productType}
           parts={parts}
