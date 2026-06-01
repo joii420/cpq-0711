@@ -24,6 +24,7 @@ export interface PartState {
   processIds: string[];
   unitWeightGrams: number | null;
   reusedFromExisting: { hfPartNo: string; snapshot?: LookupFingerprintSnapshot } | null;
+  quantity: number;
 }
 
 export interface CompositeProcessAdded {
@@ -70,6 +71,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
       processIds: [],
       unitWeightGrams: null,
       reusedFromExisting: null,
+      quantity: 1,
     }));
   }, []);
 

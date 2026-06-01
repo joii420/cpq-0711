@@ -19,6 +19,8 @@ export interface PartRequest {
   unitWeightGrams?: number;
   /** 工序隔离键：SIMPLE 场景与顶层 tempId 同值，COMPOSITE 场景每个子件独立 UUID */
   quotationLineItemId?: string;
+  /** 配件组成用量（仅 COMPOSITE 子件用），写入 material_bom_item.composition_qty。正整数，默认 1。 */
+  quantity?: number;
 }
 
 export interface CompositeProcessRequest {
