@@ -82,4 +82,43 @@ class VersionedV6WriterTest {
             .setParameter("f", FMN).getSingleResult();
         assertEquals(2L, old.longValue(), "旧版本2行被下线");
     }
+
+    @Test @Transactional
+    void emptyNewRows_rejected() {
+        VersionedGroupSpec s = spec(rows()); // newRows 为空
+        assertThrows(IllegalArgumentException.class, () -> writer.writeVersionedGroup(s));
+    }
+
+    @Test @Transactional
+    void duplicateFirstContentCol_stillReused() {
+        // 两行 operation_no 相同(seq_no 不同 1/2):验证 multiset 比较在重复值下仍判"相同复用"
+        String v1 = writer.writeVersionedGroup(spec(rows("OP1", "OP1")));
+        assertEquals("2000", v1);
+        String v2 = writer.writeVersionedGroup(spec(rows("OP1", "OP1")));
+        assertEquals("2000", v2);
+        Number total = (Number) em.createNativeQuery(
+            "SELECT count(*) FROM unit_price WHERE finished_material_no=:f")
+            .setParameter("f", FMN).getSingleResult();
+        assertEquals(2L, total.longValue(), "内容相同(含重复首列)不应新增版本行");
+    }
+
+    @Test @Transactional
+    void ignoresNonNumericVersion() {
+        String v1 = writer.writeVersionedGroup(spec(rows("OP1")));
+        assertEquals("2000", v1);
+        em.createNativeQuery("INSERT INTO unit_price (system_type,price_type,version_no,code,cost_type,finished_material_no,operation_no,seq_no,is_current) "
+            + "VALUES ('QUOTE','MATERIAL','V_DEFAULT',:f,'自制加工费',:f,'OPX',9,false)")
+          .setParameter("f", FMN).executeUpdate();
+        String v2 = writer.writeVersionedGroup(spec(rows("OP1", "OP2")));
+        assertEquals("2001", v2, "忽略 V_DEFAULT,基于数字版本 max+1");
+    }
+
+    @Test @Transactional
+    void thirdSameContent_reusesLatest() {
+        writer.writeVersionedGroup(spec(rows("OP1")));
+        String v2 = writer.writeVersionedGroup(spec(rows("OP1", "OP2")));
+        assertEquals("2001", v2);
+        String v3 = writer.writeVersionedGroup(spec(rows("OP1", "OP2")));
+        assertEquals("2001", v3, "第三次内容同最新 current,复用 2001 而非回退 2000");
+    }
 }
