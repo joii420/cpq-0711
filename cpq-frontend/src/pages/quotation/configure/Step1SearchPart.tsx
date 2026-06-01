@@ -70,6 +70,24 @@ const Step1SearchPart: React.FC<Props> = ({ part, onUpdate }) => {
         匹配 <b style={{ color: '#5c6bc0' }}>{results.length}</b> 条结果
       </div>
 
+      {/* 跳回已配置配件时显示之前选的料号 — 不必重新搜索（问题#2） */}
+      {part.partMode === 'existing' && part.selectedHfPartNo && (
+        <Card
+          size="small"
+          style={{ marginTop: 12, border: '1.5px solid #5c6bc0', background: '#f0effe' }}
+        >
+          <div style={{ fontSize: 12, color: '#888' }}>当前已选料号（可重新搜索更换）</div>
+          <div style={{ marginTop: 4 }}>
+            <b style={{ color: '#5c6bc0' }}>{part.selectedHfPartNo}</b>
+            {(part.selectedRecipeSymbol ?? part.selectedRecipeCode) && (
+              <Tag color="blue" style={{ marginLeft: 8 }}>
+                {part.selectedRecipeSymbol ?? part.selectedRecipeCode}
+              </Tag>
+            )}
+          </div>
+        </Card>
+      )}
+
       <Spin spinning={loading}>
         <List
           style={{ marginTop: 12, maxHeight: 360, overflow: 'auto' }}
@@ -120,6 +138,11 @@ const Step1SearchPart: React.FC<Props> = ({ part, onUpdate }) => {
         }}
       >
         <PlusCircleOutlined /> &nbsp; 无匹配料号,进入自定义材质选配
+        {part.partMode === 'custom' && (part.selectedRecipeCode ?? part.selectedRecipeSymbol) && (
+          <Tag color="blue" style={{ marginLeft: 8 }}>
+            已选: {part.selectedRecipeSymbol ?? part.selectedRecipeCode}
+          </Tag>
+        )}
       </Card>
     </div>
   );

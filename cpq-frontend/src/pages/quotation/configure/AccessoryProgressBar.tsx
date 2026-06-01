@@ -12,6 +12,17 @@ interface Props {
 }
 
 /**
+ * chip 标签：已选 existing 料号 → 「料号 (配件N)」；自定义已选材质 → 「材质代码 (配件N)」；
+ * 未配置 → 「配件N」。让用户一眼区分每个配件配了什么。
+ */
+function partChipLabel(p: PartState): string {
+  if (p.selectedHfPartNo) return `${p.selectedHfPartNo} (${p.name})`;
+  const mat = p.selectedRecipeCode ?? p.selectedRecipeSymbol;
+  if (mat) return `${mat} (${p.name})`;
+  return p.name;
+}
+
+/**
  * 顶部配件进度框（需求 #4）。
  * - 当前配件：高亮、不可点。
  * - 已完成配件（index < furthestIndex）：绿色对勾、可点跳回修改。
@@ -44,7 +55,7 @@ const AccessoryProgressBar: React.FC<Props> = ({ parts, currentIndex, furthestIn
                 fontSize: 13,
               }}
             >
-              {p.name}
+              {partChipLabel(p)}
             </Tag>
           </Tooltip>
         );
