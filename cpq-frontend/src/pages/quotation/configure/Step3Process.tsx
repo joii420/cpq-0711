@@ -55,9 +55,13 @@ const Step3Process: React.FC<Props> = ({ part, onUpdate }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allProcs, part.reusedFromExisting]);
 
-  const filtered = allProcs.filter(p =>
-    !q.trim() || p.name.includes(q) || (p.categoryName ?? '').includes(q),
-  );
+  const filtered = allProcs.filter(p => {
+    const kw = q.trim().toLowerCase();
+    if (!kw) return true;
+    return p.name.toLowerCase().includes(kw)
+      || p.code.toLowerCase().includes(kw)
+      || (p.categoryName ?? '').toLowerCase().includes(kw);
+  });
 
   const isAdded = (id: string) => part.processIds.includes(id);
 
@@ -77,7 +81,7 @@ const Step3Process: React.FC<Props> = ({ part, onUpdate }) => {
       <div style={{ width: 280, borderRight: '0.5px solid #eee', paddingRight: 12, display: 'flex', flexDirection: 'column' }}>
         <Input
           prefix={<SearchOutlined />}
-          placeholder="搜索工序…"
+          placeholder="搜索工序（编码 / 名称）…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           style={{ marginBottom: 8 }}
@@ -97,7 +101,12 @@ const Step3Process: React.FC<Props> = ({ part, onUpdate }) => {
             >
               <List.Item.Meta
                 title={p.name}
-                description={<Tag>{p.categoryName ?? '—'}</Tag>}
+                description={
+                  <span>
+                    <Tag color="blue" style={{ marginRight: 4 }}>{p.code}</Tag>
+                    <Tag>{p.categoryName ?? '—'}</Tag>
+                  </span>
+                }
               />
               <Button
                 size="small"
@@ -130,7 +139,12 @@ const Step3Process: React.FC<Props> = ({ part, onUpdate }) => {
               <List.Item.Meta
                 avatar={<Tag color="purple">{i + 1}</Tag>}
                 title={p.name}
-                description={<Tag>{p.categoryName ?? '—'}</Tag>}
+                description={
+                  <span>
+                    <Tag color="blue" style={{ marginRight: 4 }}>{p.code}</Tag>
+                    <Tag>{p.categoryName ?? '—'}</Tag>
+                  </span>
+                }
               />
               <Button type="text" icon={<CloseOutlined />} onClick={() => toggle(p.id)} />
             </List.Item>
