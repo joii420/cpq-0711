@@ -13505,3 +13505,27 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - 方案 A(最小化可回退 upsert): SaveDraftRequest.LineItemDraft 加 id; 前端回传 li.id; saveDraft 按 id 命中复用实体就地 UPDATE(id 不变), 未命中新建, 末尾删未保留旧行; 子表仍全量重建(抽 clearLineItemChildren, 复用行显式 native DELETE composite_process 因不触发 FK CASCADE); V169 父子重链 newIdsByIndex 现含复用原 id, 逻辑不变。
 - 主线亲验: QT-1482 line ids 编辑+多次自动保存前后**完全一致**(原每次换新); editQuoteCardValue 不再撞已删 id; E2E 4 passed(编辑往返存活/渲染 batch-expand=0/报价模板 GET=0/加载中=0/组合 ids 稳定+渲染)。tsc 0 + dev 重编译通过。
 - 注: 组合父子重链(V169)逻辑结构未变; QT-1411 PART 行 parent_line_item_id 为 null 是既有状态(其 frontend parentLineItemId 即 null → tempParentIndex 不发 → relink no-op), 与本改动无关; 组合渲染经 v_composite_child 视图按 part_no 聚合, 不依赖 parent_line_item_id。real-parent 组合保存时 relink 用稳定 id 正确(代码审查)。
+
+---
+[2026-06-01] 报价单/快照 - 修复"编辑单价后小计全清0 + 下一次编辑接口报错" | cpq-backend/.../quotation/resource/QuotationResource.java(saveDraft 快照循环)
+- 问题(用户实测 QT-20260601-1490): 编辑元素页签单价后, 其余所有单价小计清0; 接下来编辑单价 PUT .../quote-card-edit 报错(400)。
+- 根因(已受控复现): saveDraft 保存后**无条件**对每行调 `snapshotLineValues`→`buildCardValues`→`assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null)`, 第3参 editRows 传 **null=恒空**(这是"加产品/首次入快照"语义)。配合 d157f60 事件驱动防抖保存: 编辑单价(editQuoteCardValue 写 editRows+重算)→onUpdate 改 lineItems→Wizard useEffect 防抖 1.5s→saveDraft→snapshotLineValues 把所有 tab 的 editRows(用户单价输入)连同重算小计全部抹掉→小计归0。400 同源: saveDraft 带 lineItems 时 clearLineItemChildren+UPSERT 重建行, 与 editQuoteCardValue 写路径并发重建同一行(前端持旧 id)→null→400。
+- 两条写 quote_card_values 路径语义冲突: editCardValue/refreshQuoteCardValues **保留** editRows(按 rowKey 对齐); snapshotLineValues/buildCardValues **强制清空** editRows(仅适用首次加产品)。saveDraft 错用了后者。
+- 方案 A(用户决议, 最小改动): saveDraft 快照循环按"行是否已有 quote_card_values"分流——已有→`refreshQuoteCardValues`(保留 editRows, 核价两列冻结不动); 新行(quoteCardValues 空)→`snapshotLineValues`(初始化4份值)。判据: `li.quoteCardValues != null && !isBlank()`。
+- 主线亲验(直接 API 复现真实单 QT-20260601-1490): 修复前 编辑单价=100→editRows=1/小计37.5, saveDraft 后→editRows=0/小计全0(复现 bug); 修复后 saveDraft 后→editRows=1/小计37.5 **完整保留**。跨 rowKey 方案验证: 元素(位置键 "0")+ 工序(业务键 "10110003||Z012")编辑均跨保存保留。Quarkus 热重载 3.969s 无错, save/edit/refresh 端点均 200。
+- 注: E2E quotation-flow.spec.ts 本次在 P1 选料号搜索即失败(硬编码料号 3120012574 对所选客户搜索 0 行=测试夹具数据漂移), 失败点远早于 saveDraft 快照逻辑, 本次后端改动那段代码未被执行到, 与本修复无关; 已用直接复现替代覆盖。测试数据已还原(editRows 清回空), 临时 redis session 已删。
+
+[2026-06-01] 报价单/快照 - 修正 saveDraft 502(上条 Fix A 过重的 follow-up) | QuotationResource.java(saveDraft 快照循环)
+- 问题: 上条 Fix A 把 saveDraft 已有行的快照从 snapshotLineValues(读 snapshot_rows, 廉价) 改为 refreshQuoteCardValues(driver 全量重 expand, 昂贵)。saveDraft 是事件驱动防抖**高频**路径, 每次保存对每行重 expand → worker 线程池耗尽 → Quarkus 返 503 → Vite 代理对外 502 Bad Gateway。日志实证: `Worker thread pool exhaustion ... 503 SERVICE UNAVAILABLE`。
+- 更正方案(最终): saveDraft 快照循环**只对没有 quote_card_values 的新行**调 snapshotLineValues 初始化; **已有快照的行一律跳过, 保存路径不重建**。依据: editQuoteCardValue(失焦)已把 editRows + 重算 formulaResults + quote_excel_values 增量落库, 已有行保存时无需任何重建; driver 全量重 expand 只在草稿**打开**的 refresh-card-snapshot 触发一次。该改法比原始代码(对所有行跑 snapshotLineValues)更省, 同时保留 editRows(原小计清零 bug 仍修复)。
+- 主线亲验(真实单 QT-20260601-1490): edit=200/0.23s; saveDraft(空body, 覆盖快照循环遍历全部3行的热路径)=200/1.38s 不再 502; 用户先前输入的元素 row1/2/3 单价(100/12/44)跨保存完整存活(反证原修复有效)。后端热重载无编译错, health 响应 ~3ms, 修复后无新 worker 耗尽。
+- 注意: worker 线程池耗尽在改动前(11:21/15:14/17:15/23:03)即零星出现, 属高频防抖保存 + 快速连编辑产生请求洪峰的既有隐患; Fix A 的重 expand 放大了它。本次更正消除了保存路径的 expand 负载。
+
+[2026-06-01] 基础数据导入/版本化 - 报价系统版本号统一升版规则 Phase 1-3 交付 | VersionedV6Writer.java + 16 个 Q*Handler + 19 个测试类 | 计划 docs/table/报价系统版本号统一升版规则-实现计划.md(V2.1)
+- 目标: 报价导入 5 张带版本表(unit_price/element_bom/material_bom/plating_scheme/capacity)统一"业务分组键+内容指纹比对+数字版本递增(起始2000)+is_current翻转", 复用选配 P1 共享工具 VersionedV6Writer。
+- Phase 1(共享工具): Task 1a 锁定 rowsEqual multiset 行为(回归测试); Task 1b 新增 writeVersionedMasterDetail(BOM 主从: 主/子分离 groupKey + masterFixedColumns 写 NOT NULL bom_type + childVersionColumn=null 走 upsert+deleteNonCurrent 仅当前版本 + whereClause 改 IS NOT DISTINCT FROM NULL 安全); Task 1c plating_scheme 入白名单。commit b2bde30/bd0dd58。
+- Phase 2(unit_price 10 handler): Task 2 执行期更正——**不改 UnitPriceWriter**(它被 10 个 Q* + 13 个 P* 核价共享, P15~P20/P23 也传 versionNo=null 靠 V_DEFAULT; 删则炸核价导入; Q* 改调 writeVersionedGroup 后绕开它, version 非空+effective_date=NULL 天然满足)。Task 3 改 Q01/06/07/08/09/10/11/13/15/17, 绕开 UnitPriceWriter 直调 writeVersionedGroup。commit 848f1c2/77e3e75/df4771a/4473d20+Q17。
+- Phase 3(BOM/plating/capacity/Q05): Q04 element_bom 主从(子表 uq 含 characteristic→多版本保留, 删原 fingerprint 逻辑); Q03/Q12 material_bom 主从(uq 不含 bom_type, 靠 characteristic 隔离 MATERIAL/ASSEMBLY, 子表仅当前版本); Q16 plating(忽略 Excel 版本列, scheme_version 系统生成); Q14 capacity(去硬编码 V_DEFAULT, uq 无 seq_no→每组一行后写覆盖, is_effective=true 纳 content 保全); Q05 回收折扣 UPDATE 改 2 键(material_no,component_no)+is_current=true(去最新 characteristic 子查询)。commit b91f097 + Q16/14/05。
+- 关键决策/踩坑: ① 设计 §四逐列校验出 12 项发现(4 FATAL)写入计划 §0; ② Q15 groupKey 漏 code(NOT NULL)已补(#6); ③ Q01/Q08/Q13 seq_no 丢列(用户确认无下游消费, 行集维度改用 discount_order/item_seq, 均在 uq 内); ④ writeVersionedGroup 裸 INSERT→组内多行必须靠 uq 维度区分否则撞键(#9, 测试踩坑实证); ⑤ 真实环境 env-1 无 /q/health(用 /api/cpq/components 期望 401 验存活)、env-2 DB=10.177.152.12/cpq_db/postgres/joii5231。
+- 自检: 47 测试全 passed(0 fail/error), dev /api/cpq/components 401, 6 个 feature commit + 3 个 doc commit。无关红: QuotationSnapshotTest/MiscEdgeTest 因 RestAssured HTTP 401 鉴权预存失败, 本会话未触碰, 与本任务正交。
+- **未完(拆为独立后续任务, 决议 C)**: Task 9(读这 5 表的 ~45 个 PG 视图 + component_sql_view/template_sql_view 配置 SQL 模板加 WHERE is_current=true) + Task 10(E2E)。范围爆炸+高风险(CLAUDE.md 视图 DROP CASCADE 重启纪律/AP-22)。is_current 缺失只在二次导入升版后才产生重复行, 不阻塞已交付的写入路径。详见计划 Phase 4 段。
