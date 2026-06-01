@@ -13498,3 +13498,10 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - 修法: 删 10s setInterval(+autoSaveRef/cleanup); 新增 scheduleAutoSave(防抖 ~1.5s) 由 ① useEffect[lineItems](单元格编辑/增删产品/选配) ② Form onValuesChange(表单字段) 触发; 复用 autoSaveDraft + lastSaveRef 去重(空闲零请求/payload 未变不发); 保留导入创建一次保存。
 - 效果: 空闲无定时 /draft; 编辑自动落库(重开存活 + Excel/提交读新)。E2E 4 passed(编辑往返存活/autosave 窗口 batch-expand=0/渲染 batch-expand=0/报价模板 GET=0/加载中=0/组合/详情无回归); tsc 0 + Vite 200。
 - 注: 报价卡片公式实时更新仍由 editQuoteCardValue(失焦)负责, 与本保存无关; saveDraft 重算公式是幂等落库(前后端引擎已逐分对账, 不改显示值)。
+
+[2026-06-01] 报价单 saveDraft 改"全删全建"为按 id UPSERT(line id 跨保存稳定) | cpq-backend QuotationService.java(saveDraft+clearLineItemChildren) + SaveDraftRequest.java + cpq-frontend QuotationWizard.tsx (commit 81d2a07)
+- 问题(用户实测): PUT .../quote-card-edit 报 400「数据缺失」。根因: saveDraft 原"全删全建 last-write-wins"(deleteLineItems + 每行 new QuotationLineItem, 基线 49913f2 起)→ 每次保存所有 line item 换新 UUID。editQuoteCardValue(失焦)用当前前端 id 与 saveDraft 重建竞态 → 撞到刚被删的旧 id → li=null → 400。事件驱动保存把"卡片编辑→saveDraft"耦合更紧, 放大竞态。
+- "全删全建"是图省事(免算 add/remove/reorder/update diff + 子表对账)的基线设计; 换新 UUID 是"重建"的副产品。任何需要"跨保存稳定 line id"的功能(driver 缓存 / editQuoteCardValue)都得对抗它。
+- 方案 A(最小化可回退 upsert): SaveDraftRequest.LineItemDraft 加 id; 前端回传 li.id; saveDraft 按 id 命中复用实体就地 UPDATE(id 不变), 未命中新建, 末尾删未保留旧行; 子表仍全量重建(抽 clearLineItemChildren, 复用行显式 native DELETE composite_process 因不触发 FK CASCADE); V169 父子重链 newIdsByIndex 现含复用原 id, 逻辑不变。
+- 主线亲验: QT-1482 line ids 编辑+多次自动保存前后**完全一致**(原每次换新); editQuoteCardValue 不再撞已删 id; E2E 4 passed(编辑往返存活/渲染 batch-expand=0/报价模板 GET=0/加载中=0/组合 ids 稳定+渲染)。tsc 0 + dev 重编译通过。
+- 注: 组合父子重链(V169)逻辑结构未变; QT-1411 PART 行 parent_line_item_id 为 null 是既有状态(其 frontend parentLineItemId 即 null → tempParentIndex 不发 → relink no-op), 与本改动无关; 组合渲染经 v_composite_child 视图按 part_no 聚合, 不依赖 parent_line_item_id。real-parent 组合保存时 relink 用稳定 id 正确(代码审查)。
