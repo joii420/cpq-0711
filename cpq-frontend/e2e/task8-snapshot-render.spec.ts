@@ -144,6 +144,8 @@ test('Task8 编辑往返: 元素.单价 编辑 → 自动保存 → 重开存活
   // Task1(Phase4): autosave 窗口内瞬态 batch-expand 监控(不重开)
   let autosaveWindow = false;
   let autosaveWindowExpand = 0;
+  // Task3(Phase4): 单元格编辑应调 quote-card-edit 回写端点(替代 autosave 写 row_data)
+  let quoteCardEditCalled = 0;
   page.on('request', (req) => {
     if (req.url().includes('/batch-expand')) {
       if (renderPhase) renderBatchExpand++;
@@ -151,6 +153,10 @@ test('Task8 编辑往返: 元素.单价 编辑 → 自动保存 → 重开存活
         autosaveWindowExpand++;
         console.log(`  [autosave-batch-expand #${autosaveWindowExpand}] ${(req.postData() || '').slice(0, 200)}`);
       }
+    }
+    if (req.url().includes('/quote-card-edit')) {
+      quoteCardEditCalled++;
+      console.log(`  [quote-card-edit #${quoteCardEditCalled}] ${(req.postData() || '').slice(0, 200)}`);
     }
   });
 
@@ -195,6 +201,9 @@ test('Task8 编辑往返: 元素.单价 编辑 → 自动保存 → 重开存活
   autosaveWindow = false;
   console.log(`[edit] autosave 窗口 batch-expand 增量 = ${autosaveWindowExpand} (期望 0)`);
   expect(autosaveWindowExpand, 'autosave 后不得有瞬态 batch-expand(Task1)').toBe(0);
+  // Task3: 编辑应已调 quote-card-edit 回写端点(快照 editRows), 而非仅靠 autosave 写 row_data
+  console.log(`[edit] quote-card-edit 调用次数 = ${quoteCardEditCalled} (期望 >0)`);
+  expect(quoteCardEditCalled, '单元格编辑应调 quote-card-edit 端点(Task3)').toBeGreaterThan(0);
 
   // 重开
   renderPhase = true;

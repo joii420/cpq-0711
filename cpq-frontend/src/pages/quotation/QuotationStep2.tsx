@@ -19,6 +19,8 @@ import ComponentCell from './components/ComponentCell';
 import type { CellContext } from './components/ComponentCell';
 import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
 import { quotationService } from '../../services/quotationService';
+import type { CardStructure, CardValues } from '../../services/quotationService';
+import { computeRowKey } from './useCardSnapshots';
 import { partVersionService } from '../../services/partVersionService';
 import PartVersionDrawer from '../../components/PartVersionDrawer';
 import { templateService } from '../../services/templateService';
@@ -220,6 +222,10 @@ export interface QuotationStep2Props {
   driftDetection?: DriftDetectionResult;
   /** 刷新报价单后的回调(用于横幅刷新按钮) */
   onRefreshQuotation?: () => void;
+  /** Phase4 Task3: 报价卡片结构快照(顶层, 提供 rowKeyFields) — 报价侧渲染读 editRows/formulaResults + 编辑回写需要 */
+  quoteCardStructure?: CardStructure | null;
+  /** Phase4 Task3: 核价卡片结构快照(暂仅占位, 核价侧本任务不切换) */
+  costingCardStructure?: CardStructure | null;
 }
 
 // ─── BASIC_DATA path 求值结果格式化 ─────────────────────────────────────────
@@ -789,9 +795,13 @@ interface ProductCardProps {
   pathCacheState?: Record<string, any>;
   /** 动态 key 全局变量定义字典 (code → def), 用于运行时 path 重写 */
   globalVariableDefs?: Record<string, GlobalVariableDefinition>;
+  /** Phase4 Task3: 本卡片所属视图侧 — 'QUOTE' 走快照 editRows/formulaResults 读 + editQuoteCardValue 写; 'COSTING' 维持旧路径 */
+  cardSide?: 'QUOTE' | 'COSTING';
+  /** Phase4 Task3: 本侧卡片结构快照(提供 rowKeyFields, 用于 rowKey 计算对齐后端) */
+  cardStructure?: CardStructure | null;
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs }) => {
+const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs, cardSide, cardStructure }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [versionDrawerOpen, setVersionDrawerOpen] = useState(false);
   const [dsLoading, setDsLoading] = useState<Record<string, boolean>>({});
@@ -1054,6 +1064,50 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       }
     }, 300);
   };
+
+  // ─── Phase4 Task3: 报价侧快照编辑（FORMULA 读 formulaResults + 编辑写 editQuoteCardValue）──
+  // 仅 QUOTE 侧 + 已持久化(有 line id)启用; 否则退回旧 comp.rows/computeAllFormulas 路径。
+  // INPUT 受控值仍读 comp.rows(ComponentCell value={row[key]} 全受控, 叠加 editRows 会丢按键 = AP-54),
+  // 故 Task3 不对 INPUT 叠加 editRows; editRows 由 editQuoteCardValue 服务端写入 + 重算 formulaResults,
+  // 渲染 FORMULA 改读 formulaResults(真零计算), 编辑值经 comp.rows 即时反馈 + autosave/row_data 兜底持久化。
+  // row_data 完整退役(改 INPUT 本地态)留 Task6。
+  const useSnapEdit = cardSide === 'QUOTE' && !!quotationId && !!(item as any).id;
+  const quoteValuesJson = (item as any).quoteCardValues as string | undefined;
+  const sideCardValues = React.useMemo<CardValues | null>(() => {
+    if (cardSide !== 'QUOTE' || !quoteValuesJson) return null;
+    try { return JSON.parse(quoteValuesJson) as CardValues; } catch { return null; }
+  }, [cardSide, quoteValuesJson]);
+  const rowKeyFieldsByComp = React.useMemo(() => {
+    const m = new Map<string, string[]>();
+    (cardStructure?.tabs ?? []).forEach(t => { if (t.componentId) m.set(t.componentId, t.rowKeyFields ?? []); });
+    return m;
+  }, [cardStructure]);
+  // componentId → { edit: rowKey→values, formula: rowKey→values, driverRows: i→driverRow }
+  const snapByComp = React.useMemo(() => {
+    const m = new Map<string, { edit: Map<string, Record<string, any>>; formula: Map<string, Record<string, any>>; driverRows: Record<string, any>[] }>();
+    (sideCardValues?.tabs ?? []).forEach(vt => {
+      if (!vt.componentId) return;
+      const edit = new Map<string, Record<string, any>>();
+      (vt.editRows ?? []).forEach(r => { if (r?.rowKey != null) edit.set(r.rowKey, r.values ?? {}); });
+      const formula = new Map<string, Record<string, any>>();
+      (vt.formulaResults ?? []).forEach(r => { if (r?.rowKey != null) formula.set(r.rowKey, r.values ?? {}); });
+      const driverRows = (vt.baseRows ?? []).map(b => b?.driverRow ?? {});
+      m.set(vt.componentId, { edit, formula, driverRows });
+    });
+    return m;
+  }, [sideCardValues]);
+  // 报价单元格编辑回写: onBlur → editQuoteCardValue → 用响应 quoteCardValues 就地回灌(AP-50)
+  const handleSnapshotCellEdit = useCallback(async (componentId: string, rowKey: string, fieldName: string, value: any) => {
+    const lineItemId = (item as any).id as string | undefined;
+    if (!lineItemId) return;
+    try {
+      const res = await quotationService.editQuoteCardValue(lineItemId, { componentId, rowKey, fieldName, value });
+      const qcv = res?.data?.quoteCardValues;
+      if (qcv) onUpdate(() => ({ quoteCardValues: qcv } as Partial<LineItem>));
+    } catch {
+      // 网络失败保持旧 autosave 兜底(comp.rows 已被 handleRowChange 更新), 不阻塞用户
+    }
+  }, [item, onUpdate]);
 
   // Auto-trigger parameterless DATA_SOURCE queries when rows exist
   // H2/K hotfix: 仅 DATABASE_QUERY type 走老 datasourceService.execute 路径;
@@ -1384,6 +1438,17 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                 </thead>
                 <tbody>
                   {(() => {
+                    // ── Phase4 Task3 S1 数据源现状(改造前) ────────────────────────────
+                    //   row 源       : activeComponent.rows[i] (=comp.rows ← row_data 旧链路) + LIST_FORMULA 映射 + fillFixedDefaults
+                    //   BASIC_DATA   : activeDriverExpansion.rows[i].basicDataValues (快照模式=buildSnapshotExpansions, 已脱钩)
+                    //   formulaCache : computeAllFormulas 实时算(读快照 basicDataValues; 与后端 FormulaCalculator 对齐)
+                    //   编辑写路径    : ComponentCell onCellChange/onCellBlur → handleRowChange/handleInputBlur → comp.rows → autosave → row_data
+                    // ── Task3 目标(QUOTE 侧) ──────────────────────────────────────────
+                    //   row 源       : 叠加 editRows[rowKey].values (快照, 优先于 comp.rows)
+                    //   formulaCache : 优先 formulaResults[rowKey].values, 缺时 computeAllFormulas 兜底
+                    //   编辑写路径    : onBlur → editQuoteCardValue(lineItemId,{componentId,rowKey,fieldName,value}) → 回灌 quoteCardValues
+                    //   rowKey       : computeRowKey(structure.rowKeyFields, baseRows[i].driverRow, i) (对齐后端)
+                    //   COSTING 侧不变(无编辑端点; 详情页 AP-50 归 Task4)。
                     // Y1.5: driver 展开存在且 rowCount > 0 → 仅渲染 driver 行 (V160/V161 修订).
                     // 历史 V126.1 取 max 是因当时考虑"用户追加行"场景, 但实际 driver-bound
                     // 组件不应让用户追加超过 driver 的额外行 — 这些行无 basicDataValues,
@@ -1411,6 +1476,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       : useListFormula
                       ? lfRowCount
                       : activeComponent.rows.length;
+                    // Phase4 Task3: 本组件的快照编辑/公式映射 + rowKeyFields(报价侧)。
+                    const activeSnap = useSnapEdit ? snapByComp.get(activeComponent.componentId) : undefined;
+                    const activeRowKeyFields = rowKeyFieldsByComp.get(activeComponent.componentId);
                     // FIXED_VALUE 默认值回填：driver 展开行 / 旧报价单回读的行都有可能没经过 handleAddRow，
                     // 导致 row[key] === undefined。回填后单元格 / 公式 / 列小计 / 产品小计 共享同一份数据视图。
                     const effectiveRows = Array.from({ length: effectiveCount }, (_, i) => {
@@ -1472,9 +1540,13 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         '默认值': lfItem.defaultValue,
                         ...rawRowNonEmpty,         // 用户真实输入覆盖, null/undefined/'' 不动
                       } : rawRow;
+                      // Phase4 Task3: rowKey 对齐后端(FormulaCalculator.computeRowKey) — 用于 formulaResults 查表 + 编辑回写。
+                      const driverRowForKey = (isDriverBound ? activeDriverExpansion!.rows[i]?.driverRow : undefined) ?? activeSnap?.driverRows[i] ?? rawRow;
+                      const rowKey = useSnapEdit ? computeRowKey(activeRowKeyFields, driverRowForKey, i) : String(i);
                       return {
                         row: fillFixedDefaults(activeComponent.fields, baseRow),
                         rowIndex: i,
+                        rowKey,
                         basicDataValues: isDriverBound ? activeDriverExpansion!.rows[i]?.basicDataValues : undefined,
                         driverRow: isDriverBound ? activeDriverExpansion!.rows[i]?.driverRow : undefined,
                         isDriverBound,
@@ -1491,18 +1563,23 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     const preComputedCaches: Array<Record<string, number | null>> = [];
                     let prevRowSubtotal: number | undefined = undefined;
                     for (const r of effectiveRows) {
-                      const cache = computeAllFormulas(
-                        activeComponent, r.row, allComponentSubtotals,
-                        undefined, undefined, item.productPartNo, r.basicDataValues,
-                        prevRowSubtotal, globalVariableDefs,
-                      );
+                      // Phase4 Task3: 报价侧优先读快照 formulaResults[rowKey](真零计算);
+                      // 缺(无快照/新行/LIST_FORMULA 字符串公式未进 formulaResults)时 computeAllFormulas 兜底(防漂移)。
+                      const snapFormula = useSnapEdit ? activeSnap?.formula.get(r.rowKey) : undefined;
+                      const cache = (snapFormula && Object.keys(snapFormula).length > 0)
+                        ? (snapFormula as Record<string, number | null>)
+                        : computeAllFormulas(
+                            activeComponent, r.row, allComponentSubtotals,
+                            undefined, undefined, item.productPartNo, r.basicDataValues,
+                            prevRowSubtotal, globalVariableDefs,
+                          );
                       preComputedCaches.push(cache);
                       if (subtotalFieldName && typeof cache[subtotalFieldName] === 'number') {
                         prevRowSubtotal = cache[subtotalFieldName] as number;
                       }
                     }
                     return effectiveRows.map((er, idx) => ({ ...er, formulaCache: preComputedCaches[idx] }));
-                  })().map(({ row, rowIndex, basicDataValues, isDriverBound, isListFormulaBound, formulaCache, listFormulaItem, listFormulaField }) => {
+                  })().map(({ row, rowIndex, rowKey, basicDataValues, isDriverBound, isListFormulaBound, formulaCache, listFormulaItem, listFormulaField }) => {
                     return (
                     <tr key={rowIndex} style={(row._preset || isDriverBound) ? { background: '#fafafa' } : undefined}>
                       {activeComponent.fields.map(field => {
@@ -1538,7 +1615,16 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           dsErrors,
                           dsStateKey: `${activeComponentDataIndex}-${rowIndex}`,
                           onCellChange: (ri, k, val) => handleRowChange(activeComponentDataIndex, ri, k, val),
-                          onCellBlur: (ri, k) => handleInputBlur(activeComponentDataIndex, ri, k),
+                          onCellBlur: (ri, k) => {
+                            handleInputBlur(activeComponentDataIndex, ri, k);
+                            // Phase4 Task3: 报价侧用户输入字段 onBlur → 写快照 editRows(替代仅靠 autosave 写 row_data)。
+                            // 仅 INPUT* 类型(FORMULA/BASIC_DATA/DATA_SOURCE/FIXED 不在此触发); row[k] 为最新受控值。
+                            const ft = field.field_type;
+                            const isUserInputField = ft === 'INPUT' || ft === 'INPUT_TEXT' || ft === 'INPUT_NUMBER';
+                            if (useSnapEdit && isUserInputField && activeComponent.componentId) {
+                              handleSnapshotCellEdit(activeComponent.componentId, rowKey, k, row[k]);
+                            }
+                          },
                         };
                         return (
                           <td
@@ -1673,6 +1759,8 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   quotationId,
   driftDetection,
   onRefreshQuotation,
+  quoteCardStructure,
+  costingCardStructure,
 }) => {
   // 两级 tab：左侧 mainTab（报价单 / 核价单 / 比对视图），右侧 viewType（产品卡片 / Excel视图）。
   // 比对视图为单一展示，无 viewType 切换。
@@ -2165,6 +2253,8 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
                 configTemplates={configTemplates}
                 pathCacheState={quotationPathCache}
                 globalVariableDefs={gvDefs}
+                cardSide="COSTING"
+                cardStructure={costingCardStructure}
               />
             ))}
           </div>
@@ -2206,6 +2296,8 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
               configTemplates={configTemplates}
               pathCacheState={quotationPathCache}
               globalVariableDefs={gvDefs}
+              cardSide="QUOTE"
+              cardStructure={quoteCardStructure}
             />
           ))}
         </div>
