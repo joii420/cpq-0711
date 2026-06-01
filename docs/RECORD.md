@@ -13461,3 +13461,11 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - **修法**: Wizard 加 `useSnapAll = lineItems.every(li => !!li.quoteCardValues)`; 快照模式 `useDriverExpansions(EMPTY_LINEITEMS)` 停 batch-expand, 改 `buildSnapshotExpansions(lineItems,'QUOTE')` 喂 buildDraftPayload/snapshotRows。关键: snapshotRows 的行编辑值取自 cd.rows(baseRow), expansion 仅供 rowCount+basicDataValues, 快照与 batch-expand 同源 → snapshotRows 输出不变、**编辑往返存活不受影响**(E2E toBe 守护)。新增产品无快照时 useSnapAll=false 自动回退实时 expand。
 - **主线亲跑 E2E 3 passed**: ① autosave 窗口 batch-expand 增量 0(RED 时=1→GREEN); ② 主渲染 /batch-expand 总调用=0 渲染期=0(原 5/2); ③ 编辑往返 toBe 存活(77.3177); ④ 组合 batch-expand=0; 全部 加载中 final=0。tsc 0 + Wizard/Step2 Vite 200。
 - **遗留(非 Task1 范畴)**: 编辑后整页重开渲染期仍 ~2~4 次 load 瞬态 batch-expand(mount 窗口 race, DB 各行 quote_card_values 非空非数据缺口; 主渲染 test renderPhase 在 load 后开→总调用=0 证 load 可清)。属既有基线, 与 Task5(结构读 quote_card_structure 旁路 enrich)重叠, 留后续。
+
+[2026-06-01] 报价单整份快照 Phase4 Task3(切片) - 报价卡片 FORMULA 读 formulaResults + 编辑写 editQuoteCardValue | cpq-frontend QuotationStep2.tsx/QuotationWizard.tsx/e2e task8-snapshot-render.spec.ts (commit feb287b)
+- 用户决议(本次会话): 编辑写模型选"每次 blur 调端点(计划原案)"。
+- 实现(QUOTE 侧 cardSide 门控, COSTING 维持旧路径): ① 线程化 quoteCardStructure(rowKeyFields) Wizard→Step2→ProductCard(+cardSide/cardStructure prop)。② 渲染 FORMULA 优先读快照 formulaResults[rowKey](真零计算), rowKey=computeRowKey(structure.rowKeyFields, baseRows[i].driverRow, i) 对齐后端(DB 实测 formulaResults rowKey="0" 命中, 非兜底), 缺时 computeAllFormulas 兜底。③ INPUT* onBlur → editQuoteCardValue(lineItemId,{componentId,rowKey,fieldName,value}) → 后端写 editRows+重算 formulaResults → 响应 quoteCardValues 就地回灌(AP-50)。
+- **关键约束(S1 发现)**: ComponentCell `<input value={row[key]}>` 全受控无本地态 → 对 INPUT 叠加 editRows 必丢按键(AP-54), 故 INPUT row 源仍读 comp.rows, 不叠加 editRows。
+- **主线亲跑 E2E 3 passed**: quote-card-edit=1(RED→GREEN)/编辑往返 toBe 存活(77.8763)/渲染期 batch-expand=0/组合 加载中=0。tsc 0 + Step2·Wizard Vite 200。
+- **部分达成 — "editRows 作行值唯一源" 未达, 强耦合 Task6**: ① autosave 全量重建报价行(换新 line id, payload 带 row_data 不带 editRows)→ 新行无 editRows 可继承, 端点写的 editRows 被 autosave snapshotLineValues(buildCardValues editRowsByComp=null)重建清空(DB 实测 editRows 空)。② 当前编辑经 row_data 持久 + autosave 重算 formulaResults 保正确显示。③ 退役 row_data 须先把 INPUT 改本地态 + 重设计 rebuild 让 editRows 跟随 = Task6 一起做。
+- **UX 行为变更**: FORMULA 由"输入即时算"→"blur 回端点后更新"。
