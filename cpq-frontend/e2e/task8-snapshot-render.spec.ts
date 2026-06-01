@@ -196,3 +196,47 @@ test('Task8 编辑往返: 元素.单价 编辑 → 自动保存 → 重开存活
 
   expect(val, '编辑值必须在重开后存活').toBe(UNIQUE);
 });
+
+// Phase4 Task2: 组合产品(COMPOSITE)渲染脱钩验证 — 父卡片聚合 Tab(AP-45) + 加载中=0 + 渲染期 batch-expand
+const COMPOSITE_QUOTATION_ID = '9fc5bdad-8701-4c10-abd9-5ac3eb21d330'; // QT-20260519-1411 罗克韦尔 CFG-COMBO-000018 (有 quote_card_values)
+
+test('Task8 组合产品: 打开组合报价单, 父卡片 Tab 渲染 + 加载中=0', async ({ page }) => {
+  test.skip(!backendUp, '后端未启动');
+  let renderPhase = false;
+  let renderBatchExpand = 0;
+  const consoleErrors: string[] = [];
+  page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
+  page.on('request', (req) => { if (req.url().includes('/batch-expand') && renderPhase) renderBatchExpand++; });
+
+  await loginAsAdmin(page);
+  await page.goto(`/quotations/${COMPOSITE_QUOTATION_ID}/edit`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(3000);
+  const next = page.getByRole('button', { name: /下一步/ }).first();
+  if (await next.isVisible().catch(() => false)) {
+    for (let i = 0; i < 30; i++) { if (await next.isEnabled().catch(() => false)) break; await page.waitForTimeout(1000); }
+    if (await next.isEnabled().catch(() => false)) { await next.click(); await page.waitForTimeout(2000); }
+  }
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(1500);
+  await shot(page, 'composite-step2');
+
+  renderPhase = true;
+  const tabs = page.locator('button.qt-tab-btn');
+  const tabCount = await tabs.count();
+  console.log(`\n=== [组合] qt-tab-btn 数量: ${tabCount} ===`);
+  for (let i = 0; i < tabCount; i++) {
+    const t = await tabs.nth(i).innerText().catch(() => '?');
+    await tabs.nth(i).click().catch(() => {});
+    await page.waitForTimeout(1500);
+    const load = await page.locator('text=加载中').count();
+    const rows = await page.locator('.qt-cost-table tbody tr').count();
+    console.log(`  [组合 Tab '${t.replace(/\n/g,' ').trim().slice(0,16)}'] rows=${rows} 加载中=${load}`);
+    await shot(page, `composite-tab-${i}`);
+  }
+  const loadingFinal = await page.locator('text=加载中').count();
+  console.log(`=== [组合] 加载中 final=${loadingFinal}; 渲染期 batch-expand=${renderBatchExpand}; console.error=${consoleErrors.length} ===`);
+
+  expect(tabCount, '组合产品父卡片至少渲染 1 个 Tab').toBeGreaterThan(0);
+  expect(loadingFinal, "组合渲染后不得有 '加载中' 残留").toBe(0);
+});

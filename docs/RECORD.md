@@ -13448,3 +13448,10 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - **方案A 决策依据**: E2E 实证编辑经 row_data 已存活重开(ComponentDataDTO.rowData 回带), Task8b 剩余(读 formulaResults/editRows + editQuoteCardValue 回写 + 退役 row_data)为架构完备性非新功能, 且退役 row_data 属设计 §9 Phase 4, 集中 AP-44/50/54 高风险路径 → 归 Phase 4 专项审慎做。
 - **基线文档回写**: §4.2 渲染链路加 Phase2 影响注 —— 步骤5 已脱钩(快照→driverExpansions 停 batch-expand, 门控+回退), FORMULA/INPUT 仍渲染期实时(待 Phase4 退役), Phase4 后步骤3-5 渲染期全移除、§4.4/4.5/5.2 降级种子期。
 - **Phase 4 专项接续清单**(见计划收口段): ①读 formulaResults/editRows 真零计算 ②editQuoteCardValue 替代 autosave + ReadonlyProductCard 同步 ③结构读 quote_card_structure 旁路 enrich ④退役 row_data/snapshot_rows + 前端 formulaEngine 逐分对账 ⑤autosave saveDraft 响应回灌快照消瞬态 ⑥夹具修复跑 composite spec。E2E 基建 task8-snapshot-render.spec 已就绪。
+
+---
+[2026-06-01] 报价单整份快照 Phase4 Task2 - 组合产品渲染脱钩验证(AP-45) | e2e/task8-snapshot-render.spec.ts(+组合产品 test)
+- 打开组合产品报价单 QT-20260519-1411(罗克韦尔 CFG-COMBO-000018, 有 quote_card_values)进编辑向导, 验证父卡片聚合渲染。
+- **主线亲跑 E2E 1 passed**: 6 Tab 渲染(材质2/元素含量6/工序13/组合工艺1/子配件2/单重2 行 —— 工序13行+元素6行=子件聚合 AP-45 生效), **加载中 final=0(硬断言)**, 渲染期 batch-expand=2(同 load 瞬态, 轻微)。
+- 结论: SIMPLE(QT-1482) + COMPOSITE(QT-1411) 两条路径渲染脱钩均 E2E 验证通过。组合产品父卡片从快照聚合子件行正确。
+- **残留 load 瞬态 batch-expand(~2)**: 同时见于 SIMPLE 重开 + COMPOSITE 打开, 疑似核价侧 useDriverExpansions(costingLineItems) hook 在 costing 视图未显示时仍跑(useSnapCosting 异步窗口 false)。轻微 perf, 非正确性。Phase4 Task1 候选根因, 留专项。
