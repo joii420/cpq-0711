@@ -223,7 +223,7 @@ public class FormulaCalculatorTest {
             + "]");
         JsonNode editRows = json("[]");
 
-        JsonNode fr = calc.calculate(fields, formulas, rkf, baseRows, editRows,
+        JsonNode fr = calc.calculate(fields, formulas, null, rkf, baseRows, editRows,
             new HashMap<>(), new HashMap<>(), new HashMap<>());
         assertTrue(fr.isArray());
         assertEquals(2, fr.size());
@@ -253,7 +253,7 @@ public class FormulaCalculatorTest {
         // 用户把数量改成 5 → 金额 = 10 * 5 = 50（非默认 2 的 20）
         JsonNode editRows = json("[{\"rowKey\":\"M1\",\"values\":{\"数量\":5}}]");
 
-        JsonNode fr = calc.calculate(fields, formulas, rkf, baseRows, editRows,
+        JsonNode fr = calc.calculate(fields, formulas, null, rkf, baseRows, editRows,
             new HashMap<>(), new HashMap<>(), new HashMap<>());
         assertEquals(1, fr.size());
         assertEquals(50.0, fr.get(0).path("values").path("金额").asDouble(), 1e-9);
@@ -284,7 +284,7 @@ public class FormulaCalculatorTest {
         Map<String, Double> compSub = new HashMap<>();
         compSub.put("ELE", 100.0);
 
-        JsonNode fr = calc.calculate(fields, formulas, rkf, baseRows, json("[]"),
+        JsonNode fr = calc.calculate(fields, formulas, null, rkf, baseRows, json("[]"),
             compSub, new HashMap<>(), new HashMap<>());
         Map<String, JsonNode> byKey = new HashMap<>();
         for (JsonNode r : fr) byKey.put(r.path("rowKey").asText(), r);
@@ -315,7 +315,37 @@ public class FormulaCalculatorTest {
         compSub.put("ELE", 100.0);
         // 60 + 50 = 110
         assertEquals(110.0,
-            calc.computeTabSubtotal(fields, formulas, rkf, baseRows, json("[]"), compSub).doubleValue(),
+            calc.computeTabSubtotal(fields, formulas, null, rkf, baseRows, json("[]"), compSub).doubleValue(),
             1e-9);
+    }
+
+    @Test
+    @DisplayName("T15: formula_assignments 按完整字段下标绑定（字段名≠公式名，positional 会错配）")
+    void t15_formulaAssignmentsBinding() {
+        // 完整 fields: [x(FIXED idx0), B(FORMULA idx1), C(FORMULA idx2)]
+        JsonNode fields = json("["
+            + "{\"name\":\"x\",\"fieldType\":\"FIXED_VALUE\",\"defaultValue\":\"10\"},"
+            + "{\"name\":\"B\",\"fieldType\":\"FORMULA\"},"
+            + "{\"name\":\"C\",\"fieldType\":\"FORMULA\"}"
+            + "]");
+        // 公式顺序与字段顺序故意错位：formulas[0]=fC(x*3), formulas[1]=fB(x+1)
+        JsonNode formulas = json("["
+            + "{\"name\":\"fC\",\"expression\":[{\"type\":\"field\",\"value\":\"x\"},"
+            + "{\"type\":\"operator\",\"value\":\"*\"},{\"type\":\"number\",\"value\":\"3\"}]},"
+            + "{\"name\":\"fB\",\"expression\":[{\"type\":\"field\",\"value\":\"x\"},"
+            + "{\"type\":\"operator\",\"value\":\"+\"},{\"type\":\"number\",\"value\":\"1\"}]}"
+            + "]");
+        // formula_assignments 键为完整字段下标：B(idx1)→fB, C(idx2)→fC
+        JsonNode assignments = json("{\"1\":\"fB\",\"2\":\"fC\"}");
+        JsonNode rkf = json("[\"k\"]");
+        JsonNode baseRows = json("[{\"driverRow\":{\"k\":\"r1\"},\"basicDataValues\":{}}]");
+
+        JsonNode fr = calc.calculate(fields, formulas, assignments, rkf, baseRows, json("[]"),
+            new HashMap<>(), new HashMap<>(), new HashMap<>());
+        assertEquals(1, fr.size());
+        JsonNode values = fr.get(0).path("values");
+        // 正确绑定: B=fB=x+1=11, C=fC=x*3=30（positional 会得 B=30,C=11）
+        assertEquals(11.0, values.path("B").asDouble(), 1e-9);
+        assertEquals(30.0, values.path("C").asDouble(), 1e-9);
     }
 }

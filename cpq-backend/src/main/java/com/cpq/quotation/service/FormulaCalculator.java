@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import jakarta.enterprise.context.ApplicationScoped;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -31,8 +32,9 @@ import java.util.Map;
  *
  * <p><b>纪律</b>：AP-51 行数权威 = baseRows（driver 展开结果）；AP-54 editRows 按 rowKey 对齐而非下标。
  *
- * <p>纯函数、无 CDI 依赖，便于快速单元测试。
+ * <p>无可变状态的纯计算 bean（{@code @ApplicationScoped} 便于注入；同时支持 {@code new} 直接单测）。
  */
+@ApplicationScoped
 public class FormulaCalculator {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -183,13 +185,14 @@ public class FormulaCalculator {
      *
      * @return ArrayNode of {@code [{ "rowKey": "...", "values": { "<formulaField>": <num> } }]}
      */
-    public ArrayNode calculate(JsonNode fields, JsonNode formulas, JsonNode rowKeyFields,
+    public ArrayNode calculate(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
+                               JsonNode rowKeyFields,
                                JsonNode baseRows, JsonNode editRows,
                                Map<String, Double> componentSubtotals,
                                Map<String, Double> quotationFields,
                                Map<String, Double> productAttributes) {
         ArrayNode out = MAPPER.createArrayNode();
-        List<RowResult> rows = computeRows(fields, formulas, rowKeyFields, baseRows, editRows,
+        List<RowResult> rows = computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
             componentSubtotals, quotationFields, productAttributes);
         for (RowResult rr : rows) {
             ObjectNode node = MAPPER.createObjectNode();
@@ -204,12 +207,13 @@ public class FormulaCalculator {
     }
 
     /** 跨行累加 is_subtotal 字段之和（layer 3）。 */
-    public BigDecimal computeTabSubtotal(JsonNode fields, JsonNode formulas, JsonNode rowKeyFields,
+    public BigDecimal computeTabSubtotal(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
+                                         JsonNode rowKeyFields,
                                          JsonNode baseRows, JsonNode editRows,
                                          Map<String, Double> componentSubtotals) {
         String subtotalField = findSubtotalFieldName(fields);
         if (subtotalField == null) return ZERO4;
-        List<RowResult> rows = computeRows(fields, formulas, rowKeyFields, baseRows, editRows,
+        List<RowResult> rows = computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
             componentSubtotals, new HashMap<>(), new HashMap<>());
         double sum = 0.0;
         for (RowResult rr : rows) {
@@ -228,7 +232,8 @@ public class FormulaCalculator {
     /**
      * 逐行求值核心（calculate + computeTabSubtotal 共用）。AP-51：行数权威 = baseRows（driver 展开结果）。
      */
-    private List<RowResult> computeRows(JsonNode fields, JsonNode formulas, JsonNode rowKeyFields,
+    private List<RowResult> computeRows(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
+                                        JsonNode rowKeyFields,
                                         JsonNode baseRows, JsonNode editRows,
                                         Map<String, Double> componentSubtotals,
                                         Map<String, Double> quotationFields,
@@ -241,7 +246,7 @@ public class FormulaCalculator {
 
         String subtotalField = findSubtotalFieldName(fields);
         // 公式字段拓扑序（依赖先算），与前端 computeAllFormulas 一致
-        List<FormulaField> formulaFields = collectFormulaFields(fields, formulas);
+        List<FormulaField> formulaFields = collectFormulaFields(fields, formulas, formulaAssignments);
         List<String> order = topoOrder(formulaFields);
 
         Double prevRowSubtotal = null;
@@ -410,20 +415,31 @@ public class FormulaCalculator {
         FormulaField(String name, JsonNode expression) { this.name = name; this.expression = expression; }
     }
 
-    private List<FormulaField> collectFormulaFields(JsonNode fields, JsonNode formulas) {
+    private List<FormulaField> collectFormulaFields(JsonNode fields, JsonNode formulas,
+                                                    JsonNode formulaAssignments) {
         List<FormulaField> out = new ArrayList<>();
         if (fields == null || !fields.isArray()) return out;
+        int fullIdx = 0;
         for (JsonNode f : fields) {
-            if (!"FORMULA".equals(fieldType(f))) continue;
-            String name = fieldName(f);
-            JsonNode expr = resolveFormulaExpression(f, name, fields, formulas);
-            if (expr != null) out.add(new FormulaField(name, expr));
+            if ("FORMULA".equals(fieldType(f))) {
+                String name = fieldName(f);
+                JsonNode expr = resolveFormulaExpression(f, name, fields, formulas, formulaAssignments, fullIdx);
+                if (expr != null) out.add(new FormulaField(name, expr));
+            }
+            fullIdx++;
         }
         return out;
     }
 
-    /** port resolveFormula: 0.formula_name 显式 1.formulaAssignments 2.exact name 3.positional。 */
-    private JsonNode resolveFormulaExpression(JsonNode field, String fieldName, JsonNode fields, JsonNode formulas) {
+    /**
+     * port resolveFormula: 0.field.formula_name 显式 1.formula_assignments[完整字段下标]
+     * 2.exact name 3.positional。
+     *
+     * <p><b>注意</b>：formula_assignments 的 key 是字段在<b>完整 fields 数组</b>中的下标
+     * （非 FORMULA-only 位置），与前端 {@code comp.fields.indexOf(field)} 一致。
+     */
+    private JsonNode resolveFormulaExpression(JsonNode field, String fieldName, JsonNode fields,
+                                              JsonNode formulas, JsonNode formulaAssignments, int fullFieldIndex) {
         if (formulas == null || !formulas.isArray()) return null;
 
         // 0. 显式 formula_name 绑定（最高优先；绑定了但找不到 → null 不 fallback）
@@ -432,6 +448,18 @@ public class FormulaCalculator {
         if (formulaName != null && !formulaName.isEmpty()) {
             JsonNode found = findFormulaByName(formulas, formulaName);
             return found != null ? found.path("expression") : null;
+        }
+
+        // 1. 模板级 formula_assignments[完整字段下标] → 公式名
+        if (formulaAssignments != null && formulaAssignments.isObject()) {
+            JsonNode assigned = formulaAssignments.path(String.valueOf(fullFieldIndex));
+            if (!assigned.isMissingNode() && !assigned.isNull()) {
+                String assignedName = assigned.asText("");
+                if (!assignedName.isEmpty()) {
+                    JsonNode found = findFormulaByName(formulas, assignedName);
+                    if (found != null) return found.path("expression");
+                }
+            }
         }
 
         // 2. 字段名 == 公式名

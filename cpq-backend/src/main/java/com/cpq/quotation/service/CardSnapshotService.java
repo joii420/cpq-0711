@@ -58,6 +58,9 @@ public class CardSnapshotService {
     @Inject
     ExcelViewService excelViewService;
 
+    @Inject
+    FormulaCalculator formulaCalculator;
+
     /** 自注入：触发 REQUIRES_NEW 代理拦截器 */
     @Inject
     CardSnapshotService self;
@@ -379,54 +382,15 @@ public class CardSnapshotService {
                 }
             }
 
-            // 3. 组装 tabs
-            ObjectNode root = MAPPER.createObjectNode();
-            ArrayNode tabs = root.putArray("tabs");
-
+            // 3. 预构建每个组件的 baseRows（按 componentId） + rowKeyFields
+            Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
             for (JsonNode tab : snapshot) {
-                ObjectNode tabNode = MAPPER.createObjectNode();
-                String componentId = tab.path("componentId").asText("");
-                tabNode.put("componentId", componentId);
-                tabNode.put("tabName", tab.path("tabName").asText(""));
-
-                // baseRows: 反序列化 snapshot_rows → List<ExpandDriverResponse.Row>
-                ArrayNode baseRows = tabNode.putArray("baseRows");
-                String rowsJson = snapByCompId.get(componentId);
-                if (rowsJson != null && !rowsJson.isBlank()) {
-                    try {
-                        List<ExpandDriverResponse.Row> rows = MAPPER.readValue(
-                            rowsJson, new TypeReference<List<ExpandDriverResponse.Row>>() {});
-                        if (rows != null) {
-                            for (ExpandDriverResponse.Row row : rows) {
-                                ObjectNode rowNode = MAPPER.createObjectNode();
-                                // driverRow
-                                if (row.driverRow != null) {
-                                    rowNode.set("driverRow", MAPPER.valueToTree(row.driverRow));
-                                } else {
-                                    rowNode.putObject("driverRow");
-                                }
-                                // basicDataValues（AP-39: 含 DATA_SOURCE 解析值不丢）
-                                if (row.basicDataValues != null) {
-                                    rowNode.set("basicDataValues", MAPPER.valueToTree(row.basicDataValues));
-                                } else {
-                                    rowNode.putObject("basicDataValues");
-                                }
-                                baseRows.add(rowNode);
-                            }
-                        }
-                    } catch (Exception e) {
-                        LOG.warnf("[card-snapshot] buildCardValues deserialize failed comp=%s: %s",
-                            componentId, e.getMessage());
-                    }
-                }
-
-                // editRows: Phase 1 留空
-                tabNode.putArray("editRows");
-                // formulaResults: Phase 2 补
-                tabNode.putArray("formulaResults");
-
-                tabs.add(tabNode);
+                String cid = tab.path("componentId").asText("");
+                baseRowsByComp.put(cid, buildBaseRowsFromSnapshotRows(snapByCompId.get(cid), cid));
             }
+
+            // 4. 组装 tabs（Task 3: 填 formulaResults，加产品时 editRows 恒空）
+            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp);
 
             return MAPPER.writeValueAsString(root);
 
@@ -500,31 +464,15 @@ public class CardSnapshotService {
                 }
             }
 
-            // 4. 组装 tabs
-            ObjectNode root = MAPPER.createObjectNode();
-            ArrayNode tabs = root.putArray("tabs");
-
+            // 4. 预构建每个组件的 baseRows（按 componentId，来自核价 expand 结果）
+            Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
             for (JsonNode tab : snapshot) {
-                ObjectNode tabNode = MAPPER.createObjectNode();
-                String componentId = tab.path("componentId").asText("");
-                tabNode.put("componentId", componentId);
-                tabNode.put("tabName", tab.path("tabName").asText(""));
-
-                ArrayNode baseRows = tabNode.putArray("baseRows");
-                List<ExpandDriverResponse.Row> rows = expandByComp.getOrDefault(componentId, new ArrayList<>());
-                for (ExpandDriverResponse.Row row : rows) {
-                    ObjectNode rowNode = MAPPER.createObjectNode();
-                    rowNode.set("driverRow",
-                        row.driverRow != null ? MAPPER.valueToTree(row.driverRow) : MAPPER.createObjectNode());
-                    rowNode.set("basicDataValues",
-                        row.basicDataValues != null ? MAPPER.valueToTree(row.basicDataValues) : MAPPER.createObjectNode());
-                    baseRows.add(rowNode);
-                }
-
-                tabNode.putArray("editRows");
-                tabNode.putArray("formulaResults");
-                tabs.add(tabNode);
+                String cid = tab.path("componentId").asText("");
+                baseRowsByComp.put(cid, buildBaseRowsFromRows(expandByComp.getOrDefault(cid, new ArrayList<>())));
             }
+
+            // 5. 组装 tabs（Task 3: 填 formulaResults；核价侧 editRows 恒空）
+            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp);
 
             return MAPPER.writeValueAsString(root);
 
@@ -568,6 +516,110 @@ public class CardSnapshotService {
     // =========================================================================
     // 工具方法
     // =========================================================================
+
+    // =========================================================================
+    // Task 3 — formulaResults 填充（2 遍：先齐跨 tab componentSubtotals，再逐 tab calculate）
+    // =========================================================================
+
+    /** 从 snapshot_rows JSON 反序列化为 baseRows ArrayNode（[{driverRow,basicDataValues}]）。 */
+    private ArrayNode buildBaseRowsFromSnapshotRows(String rowsJson, String componentId) {
+        ArrayNode baseRows = MAPPER.createArrayNode();
+        if (rowsJson == null || rowsJson.isBlank()) return baseRows;
+        try {
+            List<ExpandDriverResponse.Row> rows = MAPPER.readValue(
+                rowsJson, new TypeReference<List<ExpandDriverResponse.Row>>() {});
+            if (rows != null) {
+                for (ExpandDriverResponse.Row row : rows) baseRows.add(rowToNode(row));
+            }
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] buildBaseRows deserialize failed comp=%s: %s", componentId, e.getMessage());
+        }
+        return baseRows;
+    }
+
+    /** 把 expand 返回的 Row 列表转 baseRows ArrayNode。 */
+    private ArrayNode buildBaseRowsFromRows(List<ExpandDriverResponse.Row> rows) {
+        ArrayNode baseRows = MAPPER.createArrayNode();
+        for (ExpandDriverResponse.Row row : rows) baseRows.add(rowToNode(row));
+        return baseRows;
+    }
+
+    private ObjectNode rowToNode(ExpandDriverResponse.Row row) {
+        ObjectNode rowNode = MAPPER.createObjectNode();
+        rowNode.set("driverRow",
+            row.driverRow != null ? MAPPER.valueToTree(row.driverRow) : MAPPER.createObjectNode());
+        // basicDataValues（AP-39: 含 DATA_SOURCE 解析值不丢）
+        rowNode.set("basicDataValues",
+            row.basicDataValues != null ? MAPPER.valueToTree(row.basicDataValues) : MAPPER.createObjectNode());
+        return rowNode;
+    }
+
+    /**
+     * 按 snapshot tab 顺序组装 {tabs:[{componentId,tabName,baseRows,editRows,formulaResults}]}。
+     *
+     * <p><b>PASS 1</b>：跨 NORMAL tab（跳过 SUBTOTAL）按出现顺序算 componentSubtotals
+     * （keyed by componentId / componentCode / tabName），供 component_subtotal token 引用（tab 间顺序依赖）。
+     * <p><b>PASS 2</b>：逐 tab 调 {@link FormulaCalculator#calculate} 填 formulaResults；加产品/核价 editRows 恒空。
+     * <p>FORMULA 重算口径与前端 computeAllFormulas / computeTabSubtotal / previous_row_subtotal 一致（防漂移）。
+     */
+    private ObjectNode assembleTabsWithFormulaResults(JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp) {
+        ObjectNode root = MAPPER.createObjectNode();
+        ArrayNode tabs = root.putArray("tabs");
+
+        final ArrayNode emptyEdit = MAPPER.createArrayNode();
+        // rowKeyFields 缓存（每组件一次）
+        Map<String, JsonNode> rkfByComp = new LinkedHashMap<>();
+        for (JsonNode tab : snapshot) {
+            String cid = tab.path("componentId").asText("");
+            if (!rkfByComp.containsKey(cid)) rkfByComp.put(cid, loadRowKeyFieldsNode(cid));
+        }
+
+        // PASS 1: componentSubtotals（顺序累加，后 tab 可引用前 tab 小计）
+        Map<String, Double> componentSubtotals = new java.util.HashMap<>();
+        for (JsonNode tab : snapshot) {
+            if ("SUBTOTAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
+            String cid = tab.path("componentId").asText("");
+            ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, emptyEdit);
+            double sub = formulaCalculator.computeTabSubtotal(
+                tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
+                rkfByComp.get(cid), baseRows, emptyEdit, componentSubtotals).doubleValue();
+            if (!cid.isBlank()) componentSubtotals.put(cid, sub);
+            String code = tab.path("componentCode").asText(null);
+            if (code != null && !code.isBlank()) componentSubtotals.put(code, sub);
+            componentSubtotals.put(tab.path("tabName").asText(""), sub);
+        }
+
+        // PASS 2: 逐 tab 填 formulaResults
+        for (JsonNode tab : snapshot) {
+            String cid = tab.path("componentId").asText("");
+            ObjectNode tabNode = MAPPER.createObjectNode();
+            tabNode.put("componentId", cid);
+            tabNode.put("tabName", tab.path("tabName").asText(""));
+
+            ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, MAPPER.createArrayNode());
+            tabNode.set("baseRows", baseRows);
+            tabNode.putArray("editRows"); // 加产品/核价: 恒空
+
+            ArrayNode formulaResults = formulaCalculator.calculate(
+                tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
+                rkfByComp.get(cid), baseRows, emptyEdit,
+                componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>());
+            tabNode.set("formulaResults", formulaResults);
+
+            tabs.add(tabNode);
+        }
+        return root;
+    }
+
+    private JsonNode loadRowKeyFieldsNode(String componentId) {
+        String json = loadRowKeyFields(componentId);
+        if (json == null || json.isBlank()) return null;
+        try {
+            return MAPPER.readTree(json);
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     private String loadRowKeyFields(String componentId) {
         try {
