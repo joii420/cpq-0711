@@ -4,6 +4,20 @@
 
 ---
 
+### [2026-06-01] 报价单整份快照 Phase1 — 前端 Task4 行键配置 UI | cpq-frontend/src/pages/component/types.ts, FieldConfigTable.tsx, ComponentManagement.tsx, services/componentService.ts | 3 commits: 46f6fc5 / 85775b5 / 3058080
+
+- 需求: 组件管理字段配置表加"行键(rowKeyFields)"勾选列，让用户能声明该组件 driver 行的业务键。草稿重刷阶段按行键保留 editRows，防止重排导致编辑错位。
+- 3 处改动:
+  1. `types.ts` ComponentItem 加 `rowKeyFields?: string[]`（含 JSDoc 说明哨兵 `["__seq_no__"]`）。
+  2. `FieldConfigTable.tsx` 加 `rowKeyFields` + `onRowKeyFieldsChange` props；新增"行键"Checkbox 列，位于"小计"列之后、"备注"列之前；仅 `onRowKeyFieldsChange` 传入时渲染（`OverridesDrawer` 等老调用方不传，无感知，向后兼容）。字段名为空时 Checkbox 禁用。
+  3. `ComponentManagement.tsx` 加 `rowKeyFields` state（初始 `[]`），`handleSelectComponent` 时从后端加载（`loaded.rowKeyFields ?? []`），`handleSave` 时随 payload 提交（空数组不传 = 不覆盖后端已有值），FieldConfigTable callsite 传入 `rowKeyFields` + `onRowKeyFieldsChange={setRowKeyFields}`。
+  4. `componentService.ts` create/update JSDoc 注明 `rowKeyFields?: string[]` 透传字段名与后端对齐（`data: any` 天然透传，无结构变更）。
+- 关键决策: "行键"列条件渲染（`onRowKeyFieldsChange` prop 存在时才显示）= `OverridesDrawer` 调用方零改动；save payload 空数组传 undefined = 后端软校验告警而非覆盖已预填行键。
+- 非 field_type 变动，不触发 AP-44 17 点矩阵。渲染链路（QuotationStep2/ProductCard 等）未动。
+- 自检: tsc 0 错误；FieldConfigTable.tsx / types.ts / componentService.ts → Vite 5174 全 200。
+
+---
+
 ### [2026-05-31] 🐛 详情页 FORMULA 小计 Infinity/0 — ReadonlyProductCard 喂 raw lineItem 给 driver/path hook
 
 **现象**：报价单 QT-20260531-1373 详情页 C01(3120012004)：工序页签「小计」列显示 **Infinity**，元素页签「小计」列显示 **0**（应 0.225 等）；点编辑进编辑页两者均正确。
