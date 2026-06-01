@@ -48,20 +48,21 @@ public class SnapshotReconcileTest {
      * - 对应报价模板有 driver 组件（data_driver_path 非空）→ 确保 snapshot_rows 非空
      */
     private UUID resolveTestLineItemId() {
+        // 必须选「已有非空 snapshot_rows 的行」——「模板配了 driver 组件」不等于「该料号有真实展开数据」
+        // （例: 料号 3120012580 配了 driver 但基础数据 expand 0 行）。buildCardValues 读 snapshot_rows
+        // 组装 baseRows, 只有 snapshot_rows 非空才能真正验证组装逻辑。
         @SuppressWarnings("unchecked")
         var rows = em.createNativeQuery(
             "SELECT li.id FROM quotation_line_item li " +
             "JOIN quotation q ON q.id = li.quotation_id " +
             "JOIN template t1 ON t1.id = q.customer_template_id " +
-            "WHERE li.product_part_no_snapshot IS NOT NULL " +
-            "  AND q.customer_template_id IS NOT NULL " +
-            "  AND t1.components_snapshot IS NOT NULL " +
-            "  AND t1.status = 'PUBLISHED' " +
+            "WHERE t1.components_snapshot IS NOT NULL " +
             "  AND EXISTS (" +
-            "    SELECT 1 FROM template_component tc " +
-            "    JOIN component c ON c.id = tc.component_id " +
-            "    WHERE tc.template_id = q.customer_template_id " +
-            "      AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> '')" +
+            "    SELECT 1 FROM quotation_line_component_data d " +
+            "    WHERE d.line_item_id = li.id " +
+            "      AND d.snapshot_rows IS NOT NULL " +
+            "      AND jsonb_typeof(d.snapshot_rows) = 'array' " +
+            "      AND jsonb_array_length(d.snapshot_rows) > 0) " +
             "LIMIT 1").getResultList();
         return rows.isEmpty() ? null : UUID.fromString(rows.get(0).toString());
     }
@@ -141,54 +142,51 @@ public class SnapshotReconcileTest {
         QuotationLineItem li = QuotationLineItem.findById(lineId);
         svc.snapshotLineValues(li);
 
-        // 取 quote_card_values 和 snapshot_rows（取第一个 driver 组件）
+        // 取一个「有非空 snapshot_rows 的组件」的 component_id + snapshot_rows
+        // （必须按 component_id 精确配对——snapshot_rows 与 card_values tab 必须是同一组件）
         @SuppressWarnings("unchecked")
-        var cardRows = em.createNativeQuery(
-            "SELECT li.quote_card_values, " +
-            "       (SELECT snapshot_rows FROM quotation_line_component_data d " +
-            "        WHERE d.line_item_id = li.id AND d.snapshot_rows IS NOT NULL LIMIT 1) " +
-            "FROM quotation_line_item li WHERE li.id = :id")
+        var snapQ = em.createNativeQuery(
+            "SELECT component_id, snapshot_rows FROM quotation_line_component_data " +
+            "WHERE line_item_id = :id AND snapshot_rows IS NOT NULL " +
+            "  AND jsonb_typeof(snapshot_rows)='array' AND jsonb_array_length(snapshot_rows) > 0 " +
+            "LIMIT 1")
             .setParameter("id", lineId)
             .getResultList();
+        Assumptions.assumeTrue(!snapQ.isEmpty(), "未找到 snapshot_rows 非空的组件，跳过");
+        Object[] snapRow0 = (Object[]) snapQ.get(0);
+        String snapCompId = snapRow0[0].toString();
+        String snapRowsJson = snapRow0[1].toString();
 
+        // 单独取 quote_card_values
+        @SuppressWarnings("unchecked")
+        var cardRows = em.createNativeQuery(
+            "SELECT quote_card_values FROM quotation_line_item WHERE id = :id")
+            .setParameter("id", lineId)
+            .getResultList();
         assertFalse(cardRows.isEmpty());
-        Object[] row = (Object[]) cardRows.get(0);
-        String cardValJson = row[0] != null ? row[0].toString() : null;
-        String snapRowsJson = row[1] != null ? row[1].toString() : null;
-
-        // 若 snapshot_rows 为空则报告并 skip（可能是无 driver 的组件先被返回）
-        Assumptions.assumeTrue(snapRowsJson != null,
-            "未找到 snapshot_rows 非空的行（可能该产品无 driver 组件），跳过");
+        String cardValJson = cardRows.get(0) != null ? cardRows.get(0).toString() : null;
         assertNotNull(cardValJson, "quote_card_values 必须已写入");
 
         JsonNode snapRows = MAPPER.readTree(snapRowsJson);
         Assumptions.assumeTrue(snapRows.isArray() && snapRows.size() > 0,
             "snapshot_rows 为空数组，跳过值对账");
 
-        // 找 card_values 中与该 snapshot 对应 tab 的 baseRows
         JsonNode cardJson = MAPPER.readTree(cardValJson);
 
-        // 取 snapshot_rows 第一行 basicDataValues
-        JsonNode snapFirstRow = snapRows.get(0);
-        JsonNode snapBdv = snapFirstRow.path("basicDataValues");
-
-        // 在 tabs 里找到 baseRows 非空的第一个 tab
+        // 在 tabs 里按 component_id 精确找对应 tab 的 baseRows（不是"第一个非空"）
         JsonNode matchingBaseRows = null;
-        String matchingCompId = null;
         for (JsonNode tab : cardJson.path("tabs")) {
-            JsonNode baseRows = tab.path("baseRows");
-            if (baseRows.isArray() && baseRows.size() > 0) {
-                matchingBaseRows = baseRows;
-                matchingCompId = tab.path("componentId").asText("");
+            if (snapCompId.equals(tab.path("componentId").asText(""))) {
+                matchingBaseRows = tab.path("baseRows");
                 break;
             }
         }
         assertNotNull(matchingBaseRows,
-            "quote_card_values 中找不到 baseRows 非空的 tab，card_values=" + cardValJson);
+            "quote_card_values 中找不到 componentId=" + snapCompId + " 的 tab，card_values=" + cardValJson);
 
-        // 精确对账：snapshot_rows 与 card_values.baseRows 行数一致
+        // 精确对账：snapshot_rows 与同组件 card_values.baseRows 行数一致
         assertEquals(snapRows.size(), matchingBaseRows.size(),
-            "baseRows 行数必须与 snapshot_rows 行数完全一致 compId=" + matchingCompId);
+            "baseRows 行数必须与 snapshot_rows 行数完全一致 compId=" + snapCompId);
 
         // 逐行比 basicDataValues
         for (int i = 0; i < snapRows.size(); i++) {

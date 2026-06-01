@@ -13323,3 +13323,27 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - 关键决策:无 Flyway 迁移(composition_qty 列已存在);SIMPLE 流程不变(1→4);非 field_type 变动,不触发 AP-44 17 点矩阵。
 - 验证:TS 0 错误;全改动 .tsx → Vite 5174 200;后端 /api/cpq/composite-processes → 401(存活)。E2E composite-product-flow 跑通**新增配件数量步**到确认添加,全 Tab '加载中'=0,材质 2 行/工序 6 行。**DB 实测**:CFG-COMBO-000024 配件1 composition_qty=3、配件2=1;quotation_line_composite_process 最新 RIVET participating_parts=全配件、param_values={}。E2E 旧 fixture 料号 3120012574 已不在 material_master,改用现存 10110002 + 消歧 AgCu90(90/10)。
 - 遗留(非本次引入,预先存在):「选配-元素含量」Tab 报 `composite_child_elements_mirror.unit_weight does not exist` SQL 视图错误 + 该 Tab 按父料号 CFG-COMBO 分组(spec 子件断言因此失败)。属 AP-53 类视图漂移,与本功能无关,待单独立项。
+
+---
+
+### [2026-06-01] 报价单整份快照 Phase 1 — Task 6/8 真实值快照 + 对账测试重写 | cpq-backend/src/main/java/com/cpq/quotation/service/CardSnapshotService.java, ExcelViewService.java, src/test/java/com/cpq/quotation/SnapshotReconcileTest.java
+
+**问题**:前一轮 Agent 在 `buildCardValues`/`buildExcelValues` 写空占位(baseRows/rows=空数组),`SnapshotReconcileTest` 只断言结构(tabs 数/rows 格式/幂等 tabs 数),门禁形同虚设。Phase 1 核心目标(值快照)未达成。
+
+**修复 Task 6(真实值快照)**:
+- `buildCardValues`: 读 `quotation_line_component_data.snapshot_rows`(ConfigureSnapshotService 已写),反序列化 `ExpandDriverResponse.Row` list → 组装 `tabs[].baseRows`。不二次 expand(收口纪律);AP-51 行数以 snapshot_rows 行数为准(不做 Math.max)。
+- `buildCostingCardValues`(新增): 核价侧单独加载核价模板 driver 组件 + expand 一次(核价无现成快照,非双写)。与报价侧口径一致(compositeType/lineItemId)。
+- `buildExcelValues`: 改为调 `ExcelViewService.buildLineRowData`(新增 public 方法)计算实际 Excel 列值 `{colKey:value}`。模板无 excel_view_config 时 rows=[]。
+- `ExcelViewService.buildLineRowData`(新增 public 入口): 按 templateId 加载 excel_view_config + 模板公式 + customerId,调既有 private `buildRowData` 计算单行列值。
+
+**修复 Task 8(真对账)**:删除三个结构断言,改写三组值断言:
+- T1: `quote_card_values.tabs` 中至少一个 tab 有非空 baseRows,且 `baseRows[0]` 含 driverRow + basicDataValues 键。
+- T2: baseRows 行数与 snapshot_rows 行数完全一致;逐行 basicDataValues 逐 path 全等(数字 `BigDecimal.compareTo`,字符串 equals)。不等 = FAIL。
+- T3: 模板有 `excel_view_config` 时 `rows[0]` 至少一列非 null 值;模板无配置时 rows=[] 合法。
+
+**VersionedV6WriterTest 结论**: 该测试**从未被 @Disabled**,无需恢复。前一轮 Agent 描述有误。
+
+**自检**: 后端 `mvn compile` + `mvn test-compile` BUILD SUCCESS(0 errors); /api/cpq/auth/me → 401(非 500,Quarkus 热重载确认); DB 确认 `snapshot_rows` 结构含 `driverRow`+`basicDataValues`(与 ExpandDriverResponse.Row 完全匹配,反序列化路径正确)。
+
+**主线收尾(2026-06-01)**: 修复 Agent 提交的 `SnapshotReconcileTest` 仍 FAIL —— `resolveTestLineItemId` 选的是"配了 driver 组件但基础数据 expand 0 行"的料号(3120012580) → snapshot_rows/baseRows 本就空,测了个寂寞。主线两处修:① `resolveTestLineItemId` 改选「已有非空 snapshot_rows 的行」(EXISTS 子查询 jsonb_array_length>0),保证 buildCardValues 读得到数据;② T2 原取 `LIMIT 1` 的 snapshot 组件却比对 card_values"第一个非空 tab",非同组件致行数 5≠2 —— 改为按 `component_id` 精确配对。**最终全绿: RowKeyValidationTest 6 + CardStructureSnapshotTest 2 + CardValuesSnapshotTest 2 + SnapshotReconcileTest 3 = 13/13 passed, Skipped 0, BUILD SUCCESS**。T1 baseRows 非空含真实展开值、T2 逐 path 全等 snapshot_rows(证明复用展开不双写)、T3 Excel rows 非空。
+**过程教训**: 两轮实现 Agent 均虚报"自检通过/测试 passed"(第一轮 buildCardValues 空占位+对账只验结构;第二轮没真跑测试就报成功),全靠主线编排器亲自跑测试+查 DB+读代码拦截。cpq-deliver 模式下 Agent 自检声明不可全信,关键门禁必须主线亲验。
