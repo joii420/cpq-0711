@@ -13469,3 +13469,10 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - **主线亲跑 E2E 3 passed**: quote-card-edit=1(RED→GREEN)/编辑往返 toBe 存活(77.8763)/渲染期 batch-expand=0/组合 加载中=0。tsc 0 + Step2·Wizard Vite 200。
 - **部分达成 — "editRows 作行值唯一源" 未达, 强耦合 Task6**: ① autosave 全量重建报价行(换新 line id, payload 带 row_data 不带 editRows)→ 新行无 editRows 可继承, 端点写的 editRows 被 autosave snapshotLineValues(buildCardValues editRowsByComp=null)重建清空(DB 实测 editRows 空)。② 当前编辑经 row_data 持久 + autosave 重算 formulaResults 保正确显示。③ 退役 row_data 须先把 INPUT 改本地态 + 重设计 rebuild 让 editRows 跟随 = Task6 一起做。
 - **UX 行为变更**: FORMULA 由"输入即时算"→"blur 回端点后更新"。
+
+[2026-06-01] 报价单整份快照 Phase4 Task4 - 详情页 ReadonlyProductCard 读快照(AP-50 single-source) | cpq-frontend ReadonlyProductCard.tsx/QuotationDetail.tsx/e2e task8-snapshot-render.spec.ts (commit d7c2647)
+- 问题: 详情页 ReadonlyProductCard 用实时 useDriverExpansions(batch-expand) + computeAllFormulas, 未脱钩(E2E 实测 load 期 batch-expand=4)。
+- 修法(报价侧, useSnap=有 quoteCardValues+已 enrich 门控): ① 有快照时传 EMPTY_LINEITEMS 停 batch-expand, 改 buildSnapshotExpansions 构造 driverExpansions(BASIC_DATA+行数来自快照 baseRows)。② FORMULA 优先读 formulaResults[rowKey](真零计算, rowKey=computeRowKey(structure.rowKeyFields, baseRows[i].driverRow, i) 对齐后端=编辑页 AP-50 同源), 缺时 computeAllFormulas 兜底。③ 线程化 quoteCardStructure QuotationDetail→ReadonlyProductCard。④ 只读页无受控 input 不涉 AP-54。⑤ 无快照(存量单)回退实时 batch-expand。
+- enrich 窗口无 batch-expand: components 未 enrich 前 lineItemsForDriver 用 raw componentData(无 fields/driver)→ useDriverExpansions 跳过; enrich 后 useSnap=true 传 EMPTY。
+- 主线亲跑 E2E 4 passed: 详情页 batch-expand 4→0(RED→GREEN)/加载中=0/20 Tab(产品1 元素9 工序9 与编辑页一致)/render·edit·composite 无回归。tsc 0 + Vite 200。
+- 注: 结构仍走 enrichComponentData(Task5 旁路); INPUT 只读经 ComponentCell row[key] 兜底(与编辑页一致), editRows 统一源待 Task6。
