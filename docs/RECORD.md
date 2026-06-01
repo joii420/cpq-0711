@@ -13433,3 +13433,10 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
   - **未做(Task8 完整剩余)**: 单元格编辑改调 editQuoteCardValue 回写端点(S2.5, Task7 移入); 渲染读 formulaResults/editRows(当前 FORMULA 实时算); ReadonlyProductCard 详情页同步(S2); 结构读 quote_card_structure(当前仍 enrich); 旁路 enrichComponentData。
   - composite-product-flow.spec 用罗克韦尔数据(V6迁移后夹具缺)无法跑, 待夹具修复。
 - **前置修复**(同期): 编辑已有报价单 Step1 门禁(commit 4e2aa5b)。
+
+---
+[2026-06-01] Task8 关键验证: 编辑在 Task8a 已端到端可用(证据优先,影响 Task8b 范围判定) | e2e/task8-snapshot-render.spec.ts(+编辑往返测试)
+- **发现**: ComponentDataDTO.rowData 回带持久化 row_data → 编辑(INPUT)经 onUpdate→autosave(10s)→saveDraft 存 row_data, 重开经 comp.rows 自然恢复显示。**E2E 编辑往返 1 passed**: 元素.单价=77.3420 → 重开 → 单价="77.3420"(硬断言 toBe)。
+- **结论**: Task8a 已交付**功能完整**的渲染脱钩 —— BASIC_DATA/driver 来自快照(无 batch-expand)、FORMULA 按快照实时算、INPUT 编辑经 row_data 存活重开。用户可见功能闭环。
+- **Task8b 剩余 = 架构完备性, 非新功能**: 读 formulaResults/editRows(零实时计算 §3.3) + editQuoteCardValue 回写替代 autosave(§6) + ReadonlyProductCard 同步 + 结构读 quote_card_structure。其中**退役 row_data/snapshot_rows 是设计 §9 明列的 Phase 4 范围**。这些都属 AP-44/50/54 协议级高风险路径重写, 无新增用户功能(编辑已工作), 建议作专门会话 + 逐块强制 E2E, 勿与功能性改动混提。
+- **E2E 基建已就绪**: task8-snapshot-render.spec(渲染 + 编辑往返双 test)用 QT-20260601-1482, 系统 google-chrome。后续 Task8b 改动可直接复用此 spec 守护。

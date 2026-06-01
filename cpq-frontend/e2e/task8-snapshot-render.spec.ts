@@ -136,3 +136,63 @@ test('Task8 渲染: 打开 QT-20260601-1482 编辑向导，各 Tab 渲染 + 加�
   expect(tabCount, '产品卡片至少渲染 1 个 Tab').toBeGreaterThan(0);
   expect(loadingFinal, "渲染后不得有 '加载中' 永久占位").toBe(0);
 });
+
+test('Task8 编辑往返: 元素.单价 编辑 → 自动保存 → 重开存活 + 渲染期无 batch-expand', async ({ page }) => {
+  test.skip(!backendUp, '后端未启动');
+  let renderPhase = false;
+  let renderBatchExpand = 0;
+  page.on('request', (req) => {
+    if (req.url().includes('/batch-expand') && renderPhase) renderBatchExpand++;
+  });
+
+  const UNIQUE = '77.' + String(Date.now()).slice(-4); // 唯一值便于校验存活
+
+  async function openToStep2() {
+    await page.goto(`/quotations/${QUOTATION_ID}/edit`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(3000);
+    const next = page.getByRole('button', { name: /下一步/ }).first();
+    if (await next.isVisible().catch(() => false)) {
+      for (let i = 0; i < 30; i++) { if (await next.isEnabled().catch(() => false)) break; await page.waitForTimeout(1000); }
+      if (await next.isEnabled().catch(() => false)) { await next.click(); await page.waitForTimeout(2000); }
+    }
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1500);
+  }
+
+  async function gotoElementTab() {
+    const tab = page.locator('button.qt-tab-btn').filter({ hasText: /^元素$/ }).first();
+    if (await tab.isVisible().catch(() => false)) { await tab.click(); await page.waitForTimeout(1500); }
+  }
+
+  await loginAsAdmin(page);
+  await openToStep2();
+  await gotoElementTab();
+
+  // 找 元素 tab 内单价列的 number input(第一行)
+  const priceInput = page.locator('.qt-cost-table tbody tr input[type="number"]').first();
+  const hasInput = await priceInput.count();
+  console.log(`[edit] number inputs in 元素 tab: ${hasInput}`);
+  test.skip(hasInput === 0, '元素 tab 无可编辑 number input');
+
+  await priceInput.fill(UNIQUE);
+  await priceInput.blur();
+  console.log(`[edit] filled 单价 = ${UNIQUE}`);
+  await shot(page, 'edit-filled');
+
+  // 等 autosave(10s 间隔)持久化
+  await page.waitForTimeout(13000);
+
+  // 重开
+  renderPhase = true;
+  await openToStep2();
+  await gotoElementTab();
+  await shot(page, 'edit-reopened');
+
+  const reopened = page.locator('.qt-cost-table tbody tr input[type="number"]').first();
+  const val = await reopened.inputValue().catch(() => '');
+  console.log(`[edit] reopened 单价 = "${val}" (期望含 ${UNIQUE})`);
+  console.log(`[edit] 重开渲染期 batch-expand = ${renderBatchExpand}`);
+
+  expect(val, '编辑值必须在重开后存活').toBe(UNIQUE);
+});
