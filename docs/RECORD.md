@@ -13422,3 +13422,14 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - **次生风险**: 编辑态自动默认分类(默认分类)后重新匹配模板,若该模板不在默认分类匹配结果 → 误清空已加载的 customerTemplateId/costingTemplateId → Step2 拿不到模板。
 - **修法(仅影响 readOnly 编辑态,创建态字节不变)**: ① 校验 `name && customerTemplateId && (readOnly || categoryId)` —— 编辑态不强求 categoryId(模板已锁定); ② 报价模板匹配 .then 中 `if (readOnly) return` 在 setMatchResult 之后 —— 只更新显示,绝不改/清 customerTemplateId; ③ 核价模板 .then 同样 `if (readOnly) return` 不重选/不覆盖。
 - **验证**: tsc 0; Vite QuotationCreateForm.tsx=200; E2E task8-snapshot-render.spec(打开 QT-20260601-1482 苏州西门子 DRAFT)**1 passed** —— 成功进 Step2(t8-04-step2.png), 各 Tab(材质/子配件/元素/工序/组合工艺) rows=4~5 渲染, '加载中' final=0。基线 /batch-expand 渲染期=6(Task8 待消 0)。
+
+---
+[2026-06-01] 报价单整份快照 Phase2 Task8a - 渲染脱钩(快照→driverExpansions, 停 batch-expand) | cpq-frontend QuotationStep2.tsx(buildSnapshotExpansions+useSnap门控) + QuotationWizard.tsx(applyQuotationData 带 quoteCardValues/costingCardValues) + e2e/task8-snapshot-render.spec.ts
+- **最小风险切片**(不重写脆弱渲染循环/ComponentCell/编辑路径): 行有值快照时, 从 quoteCardValues/costingCardValues 的 baseRows 构造 `DriverExpansionMap`(键用相同 driverExpansionKey: lineItemId||tempId + partNo + componentId + customerId + dataDriverPath + fieldsOverrideHash), 喂给现有渲染循环; 同时给 useDriverExpansions 传 EMPTY_LINEITEMS 停掉 /batch-expand。BASIC_DATA/driver 行数直接来自快照; FORMULA 仍由 computeAllFormulas 按快照 basicDataValues 实时算(同引擎同输入, 防漂移)。
+- **门控**: useSnapQuote = 所有 lineItems 有 quoteCardValues; useSnapCosting 同理(costingCardValues)。任一行缺 → 回退实时 batch-expand(兼容尚未生成快照的存量单)。LineItem 接口加 quoteCardValues?/costingCardValues?; applyQuotationData + costingLineItems(...li 扩展)带过来。
+- **验证(主线亲跑 E2E, 用 QT-20260601-1482 苏州西门子 DRAFT)**: task8-snapshot-render.spec **1 passed**; 20 Tab 渲染; **'加载中' final=0(硬断言)**; T8-DEBUG 证实 useSnapQuote=true useSnapCosting=true 全程; **渲染期 /batch-expand 稳态=0**(useSnap=true 时); tsc0 + Vite200(QuotationStep2/Wizard/CreateForm)。
+- **已知残留(后续)**:
+  - autosave(10s)→saveDraft 会重建行项(新 tempId, 瞬态缺快照)→偶发 1~4 次 batch-expand 后自愈; 需 saveDraft 响应把 quoteCardValues 回灌前端行项(消除瞬态)。
+  - **未做(Task8 完整剩余)**: 单元格编辑改调 editQuoteCardValue 回写端点(S2.5, Task7 移入); 渲染读 formulaResults/editRows(当前 FORMULA 实时算); ReadonlyProductCard 详情页同步(S2); 结构读 quote_card_structure(当前仍 enrich); 旁路 enrichComponentData。
+  - composite-product-flow.spec 用罗克韦尔数据(V6迁移后夹具缺)无法跑, 待夹具修复。
+- **前置修复**(同期): 编辑已有报价单 Step1 门禁(commit 4e2aa5b)。

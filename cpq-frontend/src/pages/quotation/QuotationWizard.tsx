@@ -254,6 +254,9 @@ const QuotationWizard: React.FC = () => {
         lineFinalPrice: li.lineFinalPrice != null ? Number(li.lineFinalPrice) : undefined,
         lineTotalAmount: li.lineTotalAmount != null ? Number(li.lineTotalAmount) : undefined,
         discountRuleCode: li.discountRuleCode ?? undefined,
+        // 报价单整份快照 Phase2 Task8: 行级值快照(后端 JSON 字符串) → 渲染脱钩用
+        quoteCardValues: li.quoteCardValues ?? undefined,
+        costingCardValues: li.costingCardValues ?? undefined,
       }) as LineItem;
       });
       setLineItems(basicItems);

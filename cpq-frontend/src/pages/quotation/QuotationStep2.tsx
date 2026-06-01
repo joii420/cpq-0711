@@ -150,6 +150,12 @@ export interface LineItem {
   /** line_item id (后端 PATCH 需要; 新创建未持久化的 line_item 无 id) */
   id?: string;
   /**
+   * 报价单整份快照 Phase2: 行级值快照(后端 JSON 字符串, tabs[].{baseRows,editRows,formulaResults})。
+   * Task 8 渲染脱钩: 有值时从此构造 driverExpansions(BASIC_DATA/driver 行不再 batch-expand)。
+   */
+  quoteCardValues?: string;
+  costingCardValues?: string;
+  /**
    * Bug B (2026-05-20): 前端临时 id，用于 driverExpansionKey lineItemId 维度。
    * 新建 lineItem 时生成 (crypto.randomUUID())，后端持久化后 id 接管。
    * 保证同 productPartNo / componentId / customerId / driverPath / fieldsHash 组合
@@ -715,6 +721,54 @@ function computeProductSubtotal(
 
   // Final fallback: sum of all component subtotals
   return Object.values(componentSubtotals).reduce((s, v) => s + v, 0);
+}
+
+/** 稳定空数组引用 — 传给 useDriverExpansions 表示"无需 batch-expand"(快照模式), 避免每渲染新建 [] 触发 churn。 */
+const EMPTY_LINEITEMS: LineItem[] = [];
+
+/**
+ * Task 8 渲染脱钩: 从行级值快照(quoteCardValues/costingCardValues)构造 DriverExpansionMap,
+ * 键与 ProductCard 渲染查找完全一致(driverExpansionKey)。
+ *
+ * <p>有此 map 时, activeDriverExpansion 命中快照 baseRows → driver 行数 + BASIC_DATA 值直接来自快照,
+ * 渲染期不再调 /batch-expand。FORMULA 仍由 computeAllFormulas 按快照 basicDataValues 实时算(同引擎同输入, 防漂移)。
+ */
+function buildSnapshotExpansions(
+  items: LineItem[],
+  side: 'QUOTE' | 'COSTING',
+  customerId?: string,
+): import('./useDriverExpansions').DriverExpansionMap {
+  const map: import('./useDriverExpansions').DriverExpansionMap = {};
+  for (const item of items) {
+    const json = side === 'QUOTE' ? item.quoteCardValues : item.costingCardValues;
+    if (!json) continue;
+    let parsed: any;
+    try { parsed = JSON.parse(json); } catch { continue; }
+    const tabs = parsed?.tabs;
+    if (!Array.isArray(tabs)) continue;
+    const partNo = item.productPartNo;
+    if (!partNo) continue;
+    const lineItemId = (item as any).id || (item as any).tempId || '';
+    for (const vtab of tabs) {
+      const cid = vtab?.componentId;
+      if (!cid) continue;
+      const comp = item.componentData?.find(c => c.componentId === cid);
+      if (!comp) continue; // 结构来自 componentData(enrich), 快照值按 componentId 对齐
+      const baseRows: any[] = Array.isArray(vtab.baseRows) ? vtab.baseRows : [];
+      const key = driverExpansionKey(
+        lineItemId, partNo, cid, customerId,
+        comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]),
+      );
+      map[key] = {
+        rowCount: baseRows.length,
+        rows: baseRows.map((br: any) => ({
+          driverRow: br?.driverRow ?? {},
+          basicDataValues: br?.basicDataValues ?? {},
+        })),
+      };
+    }
+  }
+  return map;
 }
 
 // ─── ProductCard ─────────────────────────────────────────────────────────────
@@ -1888,16 +1942,30 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
 
   // Y1.5: 行驱动展开 — 含 dataDriverPath 的组件按后端返回的 N 行渲染,BASIC_DATA 值直接来自此 hook
   // 报价单卡片所需的展开（按 customerTemplate 视图下的 componentData 收集）
+  // Task 8 渲染脱钩: 当所有行已有值快照时, 从快照构造 expansions 并停掉 batch-expand(传 EMPTY_LINEITEMS);
+  // 否则回退实时 batch-expand(旧链路, 兼容尚未生成快照的存量报价单)。报价/核价两侧独立判定。
+  const useSnapQuote = lineItems.length > 0 && lineItems.every(li => !!li.quoteCardValues);
+  const useSnapCosting = costingLineItems.length > 0 && costingLineItems.every(li => !!li.costingCardValues);
   // 2026-05-19 修: useDriverExpansions 返 {cache, invalidate} 而非纯 Map; 必须解构 .cache
-  const { cache: driverExpansionsQuote } = useDriverExpansions(lineItems, customerId, quotationId);
-  // 核价单卡片所需的展开（按 costingTemplate 视图下的 componentData 收集；
-  // 与 quote 侧 key = `${partNo}::${componentId}::${customerId}` 自动去重）
-  const { cache: driverExpansionsCosting } = useDriverExpansions(costingLineItems, customerId, quotationId);
-  // 合并两侧 → 报价/核价两个视图共用同一份 expansions map（同 key 后写入的 costing 不会覆盖 quote，反之亦然，因为 key 含 componentId）
+  const { cache: driverExpansionsQuote } = useDriverExpansions(useSnapQuote ? EMPTY_LINEITEMS : lineItems, customerId, quotationId);
+  // 核价单卡片所需的展开（按 costingTemplate 视图下的 componentData 收集）
+  const { cache: driverExpansionsCosting } = useDriverExpansions(useSnapCosting ? EMPTY_LINEITEMS : costingLineItems, customerId, quotationId);
+  // 快照模式: 从行级值快照构造 expansions(键与渲染查找一致)
+  const snapExpansionsQuote = React.useMemo(
+    () => (useSnapQuote ? buildSnapshotExpansions(lineItems, 'QUOTE', customerId) : {}),
+    [lineItems, useSnapQuote, customerId],
+  );
+  const snapExpansionsCosting = React.useMemo(
+    () => (useSnapCosting ? buildSnapshotExpansions(costingLineItems, 'COSTING', customerId) : {}),
+    [costingLineItems, useSnapCosting, customerId],
+  );
+  // 合并：实时(回退) + 快照(优先, 后写入); 同 key 含 componentId, 两侧不互覆盖
   const driverExpansions = React.useMemo(() => ({
     ...driverExpansionsQuote,
     ...driverExpansionsCosting,
-  }), [driverExpansionsQuote, driverExpansionsCosting]);
+    ...snapExpansionsQuote,
+    ...snapExpansionsCosting,
+  }), [driverExpansionsQuote, driverExpansionsCosting, snapExpansionsQuote, snapExpansionsCosting]);
 
   // LIST_FORMULA (Phase B): 拉 config_template 详情 (含 categories + items)
   const configTemplatesQuote = useConfigTemplates(lineItems);
