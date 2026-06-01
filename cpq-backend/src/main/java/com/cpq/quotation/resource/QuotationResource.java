@@ -176,6 +176,30 @@ public class QuotationResource {
         return ApiResponse.success(resp);
     }
 
+    /**
+     * 编辑回写报价卡片单元格（报价单整份快照 Phase 2 §6，替代旧 autosave 写 row_data）。
+     * body: {componentId, rowKey, fieldName, value}。写 editRows + 重算 formulaResults/报价 Excel；核价不动。
+     * 仅 DRAFT 可编辑；非 DRAFT → 400。返回更新后的 quoteCardValues/quoteExcelValues 供前端就地刷新（AP-50）。
+     */
+    @PUT
+    @Path("/line-items/{lineItemId}/quote-card-edit")
+    public ApiResponse<Map<String, Object>> editQuoteCardValue(
+            @PathParam("lineItemId") UUID lineItemId, Map<String, Object> body) {
+        if (body == null) throw new com.cpq.common.exception.BusinessException(400, "请求体不能为空");
+        Object componentId = body.get("componentId");
+        Object rowKey = body.get("rowKey");
+        Object fieldName = body.get("fieldName");
+        if (componentId == null || rowKey == null || fieldName == null) {
+            throw new com.cpq.common.exception.BusinessException(400, "componentId/rowKey/fieldName 不能为空");
+        }
+        Map<String, Object> result = cardSnapshotService.editCardValue(
+            lineItemId, componentId.toString(), rowKey.toString(), fieldName.toString(), body.get("value"));
+        if (result == null) {
+            throw new com.cpq.common.exception.BusinessException(400, "编辑失败：非草稿态或数据缺失");
+        }
+        return ApiResponse.success(result);
+    }
+
     @POST
     @Path("/{id}/calculate-discount")
     public ApiResponse<QuotationDTO> calculateDiscount(@PathParam("id") UUID id, Map<String, Object> body) {

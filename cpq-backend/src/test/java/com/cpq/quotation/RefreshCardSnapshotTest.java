@@ -218,4 +218,88 @@ public class RefreshCardSnapshotTest {
         // 不存在 → 0
         assertEquals(0, svc.refreshDraftQuoteCards(UUID.randomUUID()), "不存在报价单返 0");
     }
+
+    /** DRAFT 态 + 报价模板含 driver 组件 + snapshot_rows 非空 的产品行（editCardValue 需 DRAFT）。 */
+    private UUID resolveDraftLineItemId() {
+        @SuppressWarnings("unchecked")
+        var rows = em.createNativeQuery(
+            "SELECT li.id FROM quotation_line_item li " +
+            "JOIN quotation q ON q.id = li.quotation_id " +
+            "JOIN template t1 ON t1.id = q.customer_template_id " +
+            "WHERE q.status='DRAFT' AND t1.components_snapshot IS NOT NULL " +
+            "  AND EXISTS (SELECT 1 FROM quotation_line_component_data d " +
+            "    WHERE d.line_item_id = li.id AND d.snapshot_rows IS NOT NULL " +
+            "      AND jsonb_typeof(d.snapshot_rows)='array' AND jsonb_array_length(d.snapshot_rows) > 0) " +
+            "LIMIT 1").getResultList();
+        return rows.isEmpty() ? null : UUID.fromString(rows.get(0).toString());
+    }
+
+    @Test
+    @Order(3)
+    @DisplayName("T3: editCardValue — 写 editRows + 重算 formulaResults/报价Excel + 持久化 + 核价不变")
+    void editCardValue_writesEdit_recomputes_costingUntouched() throws Exception {
+        UUID lineId = resolveDraftLineItemId();
+        Assumptions.assumeTrue(lineId != null, "需要 DRAFT 态含 driver 组件的产品行");
+
+        QuotationLineItem li = QuotationLineItem.findById(lineId);
+        svc.snapshotLineValues(li);
+        svc.refreshQuoteCardValues(li);
+
+        // 选 baseRows 非空的 driver tab + 其 baseRows[0] 的 rowKey
+        String qcv = readQuoteCardValues(lineId);
+        Assumptions.assumeTrue(qcv != null, "quote_card_values 应非空");
+        JsonNode card = MAPPER.readTree(qcv);
+        String comp = null, rk = null;
+        for (JsonNode tab : card.path("tabs")) {
+            JsonNode baseRows = tab.path("baseRows");
+            if (baseRows.isArray() && baseRows.size() > 0) {
+                comp = tab.path("componentId").asText("");
+                JsonNode rkf = rowKeyFieldsOf(comp);
+                String k = formulaCalculator.computeRowKey(rkf, baseRows.get(0).path("driverRow"));
+                rk = (k != null && !k.isEmpty()) ? k : "0";
+                break;
+            }
+        }
+        Assumptions.assumeTrue(comp != null, "无非空 baseRows 的 tab，跳过");
+
+        String costingBefore = readCostingCardValues(lineId);
+
+        // === 执行编辑回写 ===
+        var result = svc.editCardValue(lineId, comp, rk, "__edit_test__", 777);
+
+        assertNotNull(result, "DRAFT 编辑回写应返回结果");
+        assertTrue(result.containsKey("quoteCardValues"), "返回值应含 quoteCardValues");
+        assertTrue(result.containsKey("quoteExcelValues"), "返回值应含 quoteExcelValues");
+
+        // (a) 返回的 quoteCardValues 含写入的 editRow
+        JsonNode after = MAPPER.readTree(result.get("quoteCardValues").toString());
+        boolean editWritten = false;
+        boolean formulaResultsPresent = false;
+        for (JsonNode tab : after.path("tabs")) {
+            if (!comp.equals(tab.path("componentId").asText(""))) continue;
+            for (JsonNode er : tab.path("editRows")) {
+                if (rk.equals(er.path("rowKey").asText(""))
+                        && er.path("values").path("__edit_test__").asInt(-1) == 777) {
+                    editWritten = true;
+                }
+            }
+            formulaResultsPresent = tab.path("formulaResults").isArray();
+        }
+        assertTrue(editWritten, "editRows 必须写入编辑值(rowKey=" + rk + ", __edit_test__=777)");
+        assertTrue(formulaResultsPresent, "编辑后 formulaResults 必须存在(重算)");
+
+        // (b) 持久化：DB 重读应一致
+        String persisted = readQuoteCardValues(lineId);
+        assertTrue(persisted != null && persisted.contains("__edit_test__"),
+            "编辑值必须持久化到 DB quote_card_values");
+
+        // (c) quote_values_at 更新
+        @SuppressWarnings("unchecked")
+        var ts = em.createNativeQuery("SELECT quote_values_at FROM quotation_line_item WHERE id = :id")
+            .setParameter("id", lineId).getResultList();
+        assertFalse(ts.isEmpty() || ts.get(0) == null, "quote_values_at 必须已更新");
+
+        // (d) 核价两列不变
+        assertEquals(costingBefore, readCostingCardValues(lineId), "编辑不得改动 costing_card_values");
+    }
 }

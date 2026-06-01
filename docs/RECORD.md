@@ -13405,3 +13405,13 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - **前端 loadQuotation**: getById → 若 data.status==='DRAFT' 则 message.loading('正在重新计算报价数据…',0) + await refreshCardSnapshot(qId) + 再 getById(拿重刷后快照) → applyQuotationData; 重刷失败 catch 降级用首次 getById 数据不阻断打开。注: 当前渲染仍走旧 batch-expand 路径(Task8 才切读快照),本次重刷为数据预备,Task8 起生效。
 - **自检**: 后端 ./mvnw compile 0 err; 端点 curl 401(路由已挂非 500/404); 全门禁 33/33 passed Skipped0 BUILD SUCCESS。前端 tsc 0; Vite QuotationWizard.tsx=200/quotationService.ts=200。
 - **接续 Task7**: 编辑回写端点 PUT /quotations/line-items/{id}/quote-card-edit + editCardValue(写 editRows+重算 formulaResults+quote_excel+核价不动+返回更新值) + 前端单元格编辑改调回写端点。
+
+---
+[2026-06-01] 报价单整份快照 Phase2 Task7 - 编辑回写端点 editCardValue(后端,主线亲验;前端单元格改造经用户确认并入Task8) | cpq-backend CardSnapshotService.java(+editCardValue,+extractBaseRowsByComp) + QuotationResource.java(+端点) + RefreshCardSnapshotTest.java(+T3) ; cpq-frontend quotationService.ts(+editQuoteCardValue)
+- **editCardValue(lineItemId,componentId,rowKey,fieldName,value)**(设计§6): 从已存 quote_card_values 重建 baseRows+editRows(extractBaseRowsByComp/extractEditRowsByComp,**不重新 expand**) → 定位/新建 componentId 的 editRows[rowKey].values[fieldName]=value → 复用 assembleTabsWithFormulaResults 重算 formulaResults → 重算报价 Excel → 更新 quote_values_at。**仅 DRAFT(非DRAFT返null)**;**核价两列不参与UPDATE**。返回 {quoteCardValues,quoteExcelValues,quoteValuesAt} 供前端就地刷新(AP-50)。
+- **端点 PUT /api/cpq/quotations/line-items/{lineItemId}/quote-card-edit**: body{componentId,rowKey,fieldName,value};参数缺失400;editCardValue返null(非草稿/数据缺)→400。
+- **测试 T3**: DRAFT 行注入编辑(__edit_test__=777)→ 返回非null + quoteCardValues 含该 editRow + formulaResults 存在(重算) + 持久化DB + quote_values_at更新 + 核价不变。**toggle no-op 验 RED(返null→expected not null)**,恢复 GREEN。RefreshCardSnapshotTest 3/3。
+- **前端 quotationService.editQuoteCardValue(lineItemId,body)**: API surface,供 Task8 用。
+- **时序决策(用户确认)**: 前端单元格编辑改调回写端点(plan S4)**并入 Task8**——当前渲染仍读旧路径(batch-expand/row_data),编辑回写只有在 Task8 渲染切读快照后才可见/可验;且 AP-54 编辑路径(handleRowChange/handleInputBlur)脆弱,与渲染切换一起落地+强制E2E一次性守,避免破坏中间提交态。Task7 只交付已测后端端点+前端service方法。
+- **自检**: 后端全门禁 34/34 passed Skipped0 BUILD SUCCESS; 端点 curl 401(非500); 前端 tsc0 + Vite quotationService.ts=200。
+- **接续 Task8**: ProductCard/ComponentCell/ReadonlyProductCard 数据源切 useCardSnapshots(脱钩) + 单元格编辑改调 editQuoteCardValue + 旁路 enrich/useDriverExpansions; 强制 E2E 双 spec。

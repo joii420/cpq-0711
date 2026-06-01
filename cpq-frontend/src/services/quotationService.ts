@@ -112,6 +112,14 @@ export const quotationService = {
   saveDraft: (id: string, data: any) => api.put(`/quotations/${id}/draft`, data) as Promise<any>,
   /** 报价单整份快照 Phase2 §5: 草稿态重刷报价侧卡片值(按行键保编辑); 仅 DRAFT 生效, 非 DRAFT no-op 返 refreshed=0 */
   refreshCardSnapshot: (id: string) => api.post(`/quotations/${id}/refresh-card-snapshot`) as Promise<any>,
+  /**
+   * 报价单整份快照 Phase2 §6: 编辑回写报价卡片单元格(替代旧 autosave 写 row_data)。
+   * body: {componentId, rowKey, fieldName, value}; 写 editRows + 重算 formulaResults/报价Excel; 核价不动。
+   * 仅 DRAFT; 返回 {quoteCardValues, quoteExcelValues, quoteValuesAt} 供前端就地刷新(AP-50)。
+   * (前端单元格编辑改调此端点 + 渲染读快照在 Task 8 一起落地)
+   */
+  editQuoteCardValue: (lineItemId: string, body: { componentId: string; rowKey: string; fieldName: string; value: any }) =>
+    api.put(`/quotations/line-items/${lineItemId}/quote-card-edit`, body) as Promise<any>,
   calculateDiscount: (id: string, originalAmount: number) => api.post(`/quotations/${id}/calculate-discount`, { originalAmount }) as Promise<any>,
   // submit 已统一迁移至 quotationSnapshotService.submit（含快照写入逻辑）
   approve: (id: string, comment?: string) => api.post(`/quotations/${id}/approve`, { comment }) as Promise<any>,

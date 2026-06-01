@@ -654,6 +654,25 @@ public class CardSnapshotService {
         return baseRowsByComp;
     }
 
+    /** 从 quote_card_values JSON 提取各组件的 baseRows（componentId → baseRows 数组）。 */
+    private Map<String, ArrayNode> extractBaseRowsByComp(String cardValuesJson) {
+        Map<String, ArrayNode> map = new LinkedHashMap<>();
+        if (cardValuesJson == null || cardValuesJson.isBlank()) return map;
+        try {
+            JsonNode root = MAPPER.readTree(cardValuesJson);
+            for (JsonNode tab : root.path("tabs")) {
+                String cid = tab.path("componentId").asText("");
+                JsonNode base = tab.path("baseRows");
+                if (cid != null && !cid.isBlank()) {
+                    map.put(cid, base.isArray() ? (ArrayNode) base : MAPPER.createArrayNode());
+                }
+            }
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] extractBaseRowsByComp failed: %s", e.getMessage());
+        }
+        return map;
+    }
+
     /** 从 quote_card_values JSON 提取各组件的旧 editRows（componentId → editRows 数组）。 */
     private Map<String, ArrayNode> extractEditRowsByComp(String cardValuesJson) {
         Map<String, ArrayNode> map = new LinkedHashMap<>();
@@ -762,6 +781,84 @@ public class CardSnapshotService {
             }
         }
         return n;
+    }
+
+    // =========================================================================
+    // editCardValue — 用户编辑报价卡片单元格（写 editRows + 重算，核价不动）
+    // =========================================================================
+
+    /**
+     * 草稿态用户编辑报价卡片可编辑字段（设计 §6，替代旧 autosave 写 row_data）：
+     * <ol>
+     *   <li>把编辑值写入 {@code quote_card_values.tabs[componentId].editRows}（按 rowKey 索引）。</li>
+     *   <li>基于<b>已存 baseRows</b>（不重新 expand）+ 全部 editRows 重算 FORMULA → 更新 formulaResults。</li>
+     *   <li>重算报价 Excel → 回写 {@code quote_excel_values}。</li>
+     *   <li>更新 {@code quote_values_at}；<b>核价两列物理不参与本次 UPDATE</b>。</li>
+     * </ol>
+     * <p>仅 {@code DRAFT} 可编辑；非 DRAFT → 返回 null（端点据此拒绝）。
+     *
+     * @return {@code {quoteCardValues, quoteExcelValues, quoteValuesAt}}（供前端就地更新 formulaResults/excel，AP-50）；
+     *         非 DRAFT / 数据缺失 → null。
+     */
+    @Transactional
+    public Map<String, Object> editCardValue(UUID lineItemId, String componentId, String rowKey,
+                                             String fieldName, Object value) {
+        if (lineItemId == null || componentId == null || rowKey == null || fieldName == null) return null;
+        try {
+            QuotationLineItem li = QuotationLineItem.findById(lineItemId);
+            if (li == null) return null;
+            Quotation q = Quotation.findById(li.quotationId);
+            if (q == null || q.customerTemplateId == null) return null;
+            if (!"DRAFT".equals(q.status)) return null; // 仅草稿态可编辑
+
+            JsonNode snapshot = loadComponentsSnapshot(q.customerTemplateId);
+            if (snapshot == null) return null;
+
+            // 从已存快照重建 baseRows + editRows（不重新 expand，编辑只动 editRows）
+            Map<String, ArrayNode> baseRowsByComp = extractBaseRowsByComp(li.quoteCardValues);
+            Map<String, ArrayNode> editRowsByComp = extractEditRowsByComp(li.quoteCardValues);
+
+            // 应用本次编辑：定位/新建 componentId 的 editRows 中 rowKey 项，写 values[fieldName]=value
+            ArrayNode edits = editRowsByComp.get(componentId);
+            if (edits == null) {
+                edits = MAPPER.createArrayNode();
+                editRowsByComp.put(componentId, edits);
+            }
+            ObjectNode target = null;
+            for (JsonNode er : edits) {
+                if (rowKey.equals(er.path("rowKey").asText(""))) { target = (ObjectNode) er; break; }
+            }
+            if (target == null) {
+                target = MAPPER.createObjectNode();
+                target.put("rowKey", rowKey);
+                target.putObject("values");
+                edits.add(target);
+            }
+            JsonNode valuesNode = target.path("values");
+            if (!valuesNode.isObject()) valuesNode = target.putObject("values");
+            ((ObjectNode) valuesNode).set(fieldName, MAPPER.valueToTree(value));
+
+            // 重算（baseRows 不变 + 新 editRows）
+            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp);
+            li.quoteCardValues = MAPPER.writeValueAsString(root);
+
+            // 重算报价 Excel（核价不动）
+            String excel = safeCall(() -> buildExcelValues(li, q.customerTemplateId, q.customerId));
+            if (excel != null) li.quoteExcelValues = excel;
+
+            li.quoteValuesAt = OffsetDateTime.now();
+            // 核价两列：物理不参与本次 UPDATE
+
+            Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("quoteCardValues", li.quoteCardValues);
+            resp.put("quoteExcelValues", li.quoteExcelValues);
+            resp.put("quoteValuesAt", li.quoteValuesAt != null ? li.quoteValuesAt.toString() : null);
+            return resp;
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] editCardValue failed li=%s comp=%s rowKey=%s field=%s: %s",
+                lineItemId, componentId, rowKey, fieldName, e.getMessage());
+            return null;
+        }
     }
 
     private JsonNode loadRowKeyFieldsNode(String componentId) {
