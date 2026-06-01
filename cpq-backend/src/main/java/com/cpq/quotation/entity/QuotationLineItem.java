@@ -69,6 +69,38 @@ public class QuotationLineItem extends PanacheEntityBase {
     @Column(name = "excel_view_snapshot", columnDefinition = "jsonb")
     public String excelViewSnapshot;
 
+    // -------------------------------------------------------------------------
+    // 报价单整份快照 Phase 1 — 产品行级 4 份值快照（P2 物理分开）
+    // -------------------------------------------------------------------------
+
+    /** 报价卡片值：tabs[].{baseRows, editRows, formulaResults}，草稿重刷/编辑回写 */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "quote_card_values")
+    public String quoteCardValues;
+
+    /** 报价 Excel 值：rows[]（算好的最终列值），草稿重刷/编辑回写 */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "quote_excel_values")
+    public String quoteExcelValues;
+
+    /** 核价卡片值：tabs[].{baseRows, formulaResults}，加产品写、永久只读 */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "costing_card_values")
+    public String costingCardValues;
+
+    /** 核价 Excel 值：rows[]，加产品写、永久只读 */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "costing_excel_values")
+    public String costingExcelValues;
+
+    /** 加产品四份冻结时间（card + excel 一起冻） */
+    @Column(name = "card_snapshot_at")
+    public OffsetDateTime cardSnapshotAt;
+
+    /** 报价侧最近重刷/编辑回写时间 */
+    @Column(name = "quote_values_at")
+    public OffsetDateTime quoteValuesAt;
+
     /**
      * V169 加的列, 标识选配组合产品的父子关系 (SIMPLE / COMPOSITE / PART).
      * SIMPLE: 普通产品 (默认); COMPOSITE: 选配组合产品父级; PART: COMPOSITE 的子件

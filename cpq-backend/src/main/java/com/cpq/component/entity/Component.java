@@ -49,6 +49,15 @@ public class Component extends PanacheEntityBase {
     @Column(nullable = false, length = 20)
     public String status = "ACTIVE";
 
+    /**
+     * 行键配置（报价单整份快照 Phase 1）。
+     * JSON 数组，元素为 fields[].name 中存在的字段名，作为该组件 driver 行的业务标识。
+     * 例如 ["子件","元素"] 或哨兵 ["__seq_no__"]（显式豁免，按行号对齐）。
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "row_key_fields")
+    public String rowKeyFields;
+
     @Column(name = "created_at", nullable = false)
     public OffsetDateTime createdAt;
 
