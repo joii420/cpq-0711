@@ -25,14 +25,6 @@ interface FieldConfigTableProps {
   onConfigDatasource: (fieldIndex: number) => void;
   /** 可选：当前组件 ID，传入后 PathPickerDrawer 会显示"SQL 视图"Tab */
   componentId?: string;
-  /**
-   * Phase1-Snapshot: 组件级行键字段名列表。
-   * 父组件管理此状态，保存时随组件 payload 一并提交。
-   * 未传 = 兼容老调用方（OverridesDrawer 等不需要行键配置的场景）。
-   */
-  rowKeyFields?: string[];
-  /** 行键变更回调，父组件更新 rowKeyFields 状态 */
-  onRowKeyFieldsChange?: (rowKeyFields: string[]) => void;
 }
 
 const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
@@ -41,8 +33,6 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
   onChange,
   onConfigDatasource,
   componentId,
-  rowKeyFields,
-  onRowKeyFieldsChange,
 }) => {
   const [pathPickerKey, setPathPickerKey] = useState<string | null>(null);
   // V109: 全局变量选择器, 选完编译为 BNF path + 写入 global_variable_code 元数据
@@ -419,27 +409,6 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
         />
       ),
     },
-    ...(onRowKeyFieldsChange
-      ? [
-          {
-            title: '行键',
-            dataIndex: '__rowKey' as const,
-            width: 64,
-            render: (_: unknown, record: FieldItem) => (
-              <Checkbox
-                checked={(rowKeyFields ?? []).includes(record.name)}
-                disabled={!record.name}
-                onChange={(e) => {
-                  const next = new Set(rowKeyFields ?? []);
-                  if (e.target.checked) next.add(record.name);
-                  else next.delete(record.name);
-                  onRowKeyFieldsChange(Array.from(next));
-                }}
-              />
-            ),
-          },
-        ]
-      : []),
     {
       title: '备注',
       key: 'notes',

@@ -651,6 +651,50 @@ const ComponentManagement: React.FC = () => {
                       setDriverPickerOpen(false);
                     }}
                   />
+                  {/* Phase1-Snapshot: 行键配置 — 组件级文本输入，填底层 driverRow 列名，逗号分隔 */}
+                  <div
+                    style={{
+                      background: '#f6ffed',
+                      border: '1px solid #b7eb8f',
+                      borderRadius: 6,
+                      padding: '10px 12px',
+                      marginBottom: 12,
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 8,
+                    }}
+                  >
+                    <span
+                      style={{ fontSize: 13, color: '#389e0d', fontWeight: 500, whiteSpace: 'nowrap', paddingTop: 4 }}
+                      title="用于报价单草稿重刷时按行身份对齐，保留用户已编辑的值"
+                    >
+                      行键(rowKeyFields):
+                    </span>
+                    <div style={{ flex: 1 }}>
+                      <Input
+                        value={rowKeyFields.join(',')}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          setRowKeyFields(
+                            raw
+                              .split(',')
+                              .map((s) => s.trim())
+                              .filter((s) => s.length > 0)
+                          );
+                        }}
+                        placeholder="如 child_hf_part_no,material_code（逗号分隔 driverRow 底层列名）"
+                        size="small"
+                        style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: 12 }}
+                        allowClear
+                        onClear={() => setRowKeyFields([])}
+                      />
+                      <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 4, lineHeight: 1.5 }}>
+                        填 driverRow 底层英文列名（如 child_hf_part_no、material_code、element_name、process_code），逗号分隔。
+                        用于报价单草稿重刷时按行身份对齐、保留用户编辑值。留空 = 不参与对齐。
+                        注意：填底层英文列名，<strong>不是</strong>字段配置中的中文显示名。
+                      </div>
+                    </div>
+                  </div>
                   <HeaderPreview fields={fields} />
                   <Tabs
                     size="small"
@@ -664,8 +708,6 @@ const ComponentManagement: React.FC = () => {
                             fields={fields}
                             formulas={formulas}
                             componentId={selectedComponent?.id}
-                            rowKeyFields={rowKeyFields}
-                            onRowKeyFieldsChange={setRowKeyFields}
                             onChange={(newFields) => {
                               // Detect field renames and sync formula expressions
                               const renames: Record<string, string> = {};
