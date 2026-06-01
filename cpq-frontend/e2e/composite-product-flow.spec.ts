@@ -176,7 +176,16 @@ test('组合产品: 罗克韦尔 + v1.16 + 配件1(3120012574 existing) + 配件
   await pickProcess(page, '电镀');
   await shot(page, 'part2-processes-picked');
 
-  // 下一步 → Step 2 组合工艺
+  // 下一步 → 新增「配件数量」步骤（仅 COMPOSITE）
+  await drawerNext(page);
+  await shot(page, 'accessory-quantity-step');
+  // 把配件 1 的数量改为 3（验证 composition_qty 落库）
+  const qtyInput = page.locator('.ant-drawer .ant-card').first().locator('input.ant-input-number-input').first();
+  await qtyInput.fill('3');
+  await page.waitForTimeout(300);
+  await shot(page, 'accessory-quantity-set-3');
+
+  // 下一步 → 组合工艺
   await drawerNext(page);
   await shot(page, 'composite-step2-process-init');
 
