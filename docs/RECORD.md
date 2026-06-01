@@ -13280,3 +13280,13 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - P3 提交:`POST /{id}/import/commit?conflictPolicy=&ignoreMissingDeps=` → 单 @Transactional,**仅 INSERT** 新组件(全新 UUID,落目标目录,不绑模板)+ component_sql_view;服务端重校验依赖/冲突;返回 created/skipped/sqlViewsCreated 报告。前端「确认导入」(缺依赖时勾选"仍然导入"才启用),成功后刷新目录树。
 - 隔离实测:提交到空目录因 `code` **全局唯一** → 6 个全 `__imp1`(预期);原「报价模板」目录仍 6 个、原 COMP-0019 未改名;SKIP 再提交 → 0 建 6 跳;sql_view_name 组件内唯一,材质副本 `cz_view` 与原 `cz_view` 共存。测试产物已清理。
 - 自检:后端 health=200、无编译错误;RENAME/SKIP/ABORT/缺依赖/checksum/commit/隔离 全经 API 实测;前端 tsc 0 错误,componentService.ts/ComponentImportDrawer.tsx/ComponentTree.tsx → Vite 200。无 Flyway/schema 变更。
+
+### [2026-06-01] 选配-组合产品 优化 — 配件数量/组合工艺简化/工序&组合工艺编码搜索/配件进度导航 | cpq-backend: configure/dto/PartRequest.java, configure/service/ConfigureProductService.java | cpq-frontend: types/configure.ts, pages/quotation/ConfigureProductDrawer.tsx, pages/quotation/configure/{StepAccessoryQuantity.tsx(新),AccessoryProgressBar.tsx(新),Step3Process.tsx,Step4CompositeProcess.tsx,Step5Summary.tsx,Step0ProductType.tsx} | e2e/composite-product-flow.spec.ts
+
+- 需求#1 配件数量:COMPOSITE 在「工序」与「组合工艺」之间新增「配件数量」步骤(StepAccessoryQuantity),每配件一个 InputNumber(正整数,默认 1)。值经 PartRequest.quantity → `ConfigureProductService.insertMaterialBomAssemblyV6` 写入 `material_bom_item.composition_qty`(原硬编码 1)。**选配只入库,不做系统自动计算**,后续由组件公式引用。复用同父料号场景用 `ON CONFLICT (...) DO UPDATE SET composition_qty`(表达式列表逐字符匹配 V219 `uq_material_bom_item`)以更新数量。
+- 需求#2 组合工艺简化:Step4CompositeProcess 去掉「参与配件勾选」+「paramSchema 参数输入」;用户只选用哪些工艺。提交时 Drawer 统一覆盖 `participatingPartIndexes`=全部配件、`params`={}。
+- 需求#3 编码+模糊搜索:工序(Step3Process)/组合工艺(Step4CompositeProcess)名称下显示编码(蓝 Tag),搜索框按 code/name(组合工艺)、code/name/category(工序)不区分大小写模糊匹配;组合工艺原无搜索框,新增。
+- 需求#4 配件进度框:globalStep 由 0|1|2|3 扩为 0|1|2|3|4(0类型/1逐配件/2数量/3组合工艺/4汇总);逐配件阶段顶部 AccessoryProgressBar 三态(当前/已完成/未开始),只能点击跳回已完成配件(index<furthestCi)。Step0 文案「配件数量」改「配件个数」消歧义。
+- 关键决策:无 Flyway 迁移(composition_qty 列已存在);SIMPLE 流程不变(1→4);非 field_type 变动,不触发 AP-44 17 点矩阵。
+- 验证:TS 0 错误;全改动 .tsx → Vite 5174 200;后端 /api/cpq/composite-processes → 401(存活)。E2E composite-product-flow 跑通**新增配件数量步**到确认添加,全 Tab '加载中'=0,材质 2 行/工序 6 行。**DB 实测**:CFG-COMBO-000024 配件1 composition_qty=3、配件2=1;quotation_line_composite_process 最新 RIVET participating_parts=全配件、param_values={}。E2E 旧 fixture 料号 3120012574 已不在 material_master,改用现存 10110002 + 消歧 AgCu90(90/10)。
+- 遗留(非本次引入,预先存在):「选配-元素含量」Tab 报 `composite_child_elements_mirror.unit_weight does not exist` SQL 视图错误 + 该 Tab 按父料号 CFG-COMBO 分组(spec 子件断言因此失败)。属 AP-53 类视图漂移,与本功能无关,待单独立项。
