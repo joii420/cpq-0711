@@ -19,4 +19,9 @@ public class PartRequest {
      * null = 老路径（无 lineItemId 维度），行为与 V205 之前一致。
      */
     public String quotationLineItemId;     // 前端 tempId (UUID 字符串，optional)
+    /**
+     * 配件组成用量（仅 COMPOSITE 子件用）。写入 material_bom_item.composition_qty。
+     * 正整数，前端默认 1；null 时后端兜底为 1。SIMPLE 场景忽略。
+     */
+    public Integer quantity;
 }
