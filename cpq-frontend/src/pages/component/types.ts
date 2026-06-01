@@ -26,6 +26,12 @@ export interface ComponentItem {
    * 非空 → 报价单端按此路径返回的 N 行展开组件,字段路径自动隐式 JOIN driver 行字段。
    */
   dataDriverPath?: string;
+  /**
+   * Phase1-Snapshot: 组件级行键字段名列表。
+   * 含可编辑字段的多行 driver 组件须声明；草稿重刷时按此键保留 editRows。
+   * 特殊哨兵 ["__seq_no__"] = 按行号对齐（无稳定业务键时显式豁免）。
+   */
+  rowKeyFields?: string[];
 }
 
 export interface FieldItem {
