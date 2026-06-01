@@ -13376,3 +13376,13 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - **SnapshotReconcileTest T4**: snapshotLineValues 后,对每个「含 FORMULA 字段 + baseRows 非空」的 tab 断言: formulaResults 非空 + 每项含 rowKey/values + rowKey 集合==baseRows 按 rowKeyFields 算出的键集(AP-54 对齐) + 「公式不含 component_subtotal/previous_row_subtotal」的 tab 用 calculate 独立重算逐 rowKey 逐字段精确比值(1e-6)。RED 真命中真实 FORMULA tab(compId=d18ac7e4)。
 - **主线亲跑(非 Agent 声明)**: `./mvnw -o test -Dtest='SnapshotReconcileTest,CardValuesSnapshotTest,CardStructureSnapshotTest,FormulaCalculatorTest,QuotationSnapshotExposureTest,RowKeyValidationTest'` → **31/31 passed, Failures 0, Errors 0, Skipped 0, BUILD SUCCESS**。dev server auth/me=401(非500)。
 - **接续 Task4**: 前端 useCardSnapshots hook 读快照(editRows[rowKey][field] ?? baseRows[i].basicDataValues[path] ?? formulaResults[rowKey][field])。Task10 端到端对账后端==前端 formulaEngine(防漂移,固定样本)。
+
+---
+[2026-06-01] 报价单整份快照 Phase2 Task4 - 前端 useCardSnapshots hook(读快照,旁路) | cpq-frontend/src/services/quotationService.ts(补类型) + cpq-frontend/src/pages/quotation/useCardSnapshots.ts(新增)
+- **quotationService.ts 补类型**: CardStructure/CardStructureTab/CardStructureField + CardValues/CardValuesTab/CardValueBaseRow/CardValueKeyedRow + ExcelStructure/ExcelValues + QuotationSnapshotStructures(顶层4结构,JsonNode→对象) + LineItemSnapshotValues(4值,后端返 JSON **字符串**)。关键: 结构是已解析对象,值是字符串需 JSON.parse(对齐 QuotationDTO: quoteCardStructure JsonNode / quoteCardValues String)。
+- **useCardSnapshots(quotation, lineItem, side)**: React useMemo hook。解析该侧 structure(quote/costingCardStructure) + values(JSON.parse quote/costingCardValues)。返回 {structure, values, hasSnapshot, tabs, rowCount(cid), rowKey(cid,i), getCell(cid,i,field)}。
+- **getCell 取值优先级**(对齐 ComponentCell/computeAllFormulas): 1.editRows[rowKey].values[field](编辑覆盖) 2.FORMULA→formulaResults[rowKey].values[field] 3.BASIC_DATA→baseRows[i].basicDataValues[bnfDriverLookupKey(path)] 4.DATA_SOURCE→@gvar:CODE/{bnf_path} 5.FIXED_VALUE→defaultValue 6.其余(INPUT)→driverRow[field]??default。
+- **computeRowKey**(导出,对齐后端 FormulaCalculator): rowKeyFields 值 || 拼接;空/null/['__seq_no__']→行号。
+- **纪律**: 只读快照,不调 batch-expand/enrich(脱钩)。**已知边界**: LIST_FORMULA 字符串公式结果暂未进 formulaResults(后端只算 token 型 FORMULA),旁路落 driverRow/default,留 Task8 处理。
+- **自检**: tsc --noEmit 0 错误; Vite transform useCardSnapshots.ts=200 / quotationService.ts=200。真实 quote_card_values 验证形状: basicDataValues key 带花括号({$cz_view.x})✓ / formulaResults 含 rowKey(||复合键)+values✓ / computeRowKey || 一致✓。live console 比对(渲染值vs快照值)挪 Task8 渲染切换(当前旁路无渲染处可比;序列正确)。
+- **接续 Task5-8**: 草稿重刷端点/编辑回写端点/渲染切换 ProductCard 读 useCardSnapshots(Task8 触发强制 E2E)。

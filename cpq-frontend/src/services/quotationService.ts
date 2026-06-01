@@ -1,5 +1,105 @@
 import api from './api';
 
+// ─── 报价单整份快照类型（Phase 2）─────────────────────────────────────────────
+// 报价单级 4 份结构快照（getById 顶层，JsonNode → 已解析对象）；
+// 产品行级 4 份值快照（LineItem 上，后端以 JSON **字符串**返回，消费方需 JSON.parse）。
+
+/** 卡片结构 · 字段（spec §3.1，camelCase）。 */
+export interface CardStructureField {
+  name: string;
+  fieldType: string;
+  label?: string;
+  sortOrder?: number;
+  isAmount?: boolean;
+  isRequired?: boolean;
+  editable?: boolean;
+  defaultValue?: string | null;
+  basicDataPath?: string | null;
+  datasourceBinding?: any;
+}
+
+/** 卡片结构 · 页签。 */
+export interface CardStructureTab {
+  componentId: string;
+  tabName: string;
+  sortOrder?: number;
+  componentType?: string;
+  dataDriverPath?: string;
+  rowKeyFields?: string[];
+  fields: CardStructureField[];
+  formulas?: Array<{ name: string; expression: any[] }>;
+}
+
+export interface CardStructure {
+  version?: number;
+  templateId?: string;
+  templateKind?: string;
+  tabs: CardStructureTab[];
+}
+
+/** 卡片值 · 基础冻结行（driver 展开结果）。 */
+export interface CardValueBaseRow {
+  driverRow: Record<string, any>;
+  basicDataValues: Record<string, any>;
+}
+
+/** 卡片值 · 按 rowKey 索引的行（editRows / formulaResults 共用形状）。 */
+export interface CardValueKeyedRow {
+  rowKey: string;
+  values: Record<string, any>;
+}
+
+export interface CardValuesTab {
+  componentId: string;
+  tabName: string;
+  baseRows: CardValueBaseRow[];
+  editRows: CardValueKeyedRow[];
+  formulaResults: CardValueKeyedRow[];
+}
+
+export interface CardValues {
+  tabs: CardValuesTab[];
+}
+
+/** Excel 结构 · 列。 */
+export interface ExcelStructureColumn {
+  colKey: string;
+  title?: string;
+  sourceType?: string;
+  variablePath?: string;
+  formula?: string;
+  hidden?: boolean;
+  comparisonTag?: string;
+}
+
+export interface ExcelStructure {
+  version?: number;
+  templateId?: string;
+  templateKind?: string;
+  columns: ExcelStructureColumn[];
+}
+
+/** Excel 值（算好的列值）。 */
+export interface ExcelValues {
+  rows: Array<Record<string, any>>;
+}
+
+/** getById 顶层附带的 4 份结构快照（JsonNode → 已解析对象，可能为 null）。 */
+export interface QuotationSnapshotStructures {
+  quoteCardStructure?: CardStructure | null;
+  quoteExcelStructure?: ExcelStructure | null;
+  costingCardStructure?: CardStructure | null;
+  costingExcelStructure?: ExcelStructure | null;
+}
+
+/** LineItem 上的 4 份值快照（后端返 JSON **字符串**，消费方 JSON.parse）。 */
+export interface LineItemSnapshotValues {
+  quoteCardValues?: string | null;
+  quoteExcelValues?: string | null;
+  costingCardValues?: string | null;
+  costingExcelValues?: string | null;
+}
+
 export const quotationService = {
   list: (params: any) => api.get('/quotations', { params }) as Promise<any>,
   getById: (id: string) => api.get(`/quotations/${id}`) as Promise<any>,
