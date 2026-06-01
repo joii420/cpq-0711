@@ -1,7 +1,12 @@
 package com.cpq.quotation.service;
 
+import com.cpq.component.dto.ExpandDriverResponse;
+import com.cpq.component.service.ComponentDriverService;
+import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.quotation.entity.Quotation;
+import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.entity.QuotationViewStructure;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -13,6 +18,10 @@ import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -21,12 +30,17 @@ import java.util.UUID;
  * <p><b>核心职责</b>:
  * <ul>
  *   <li>{@link #ensureStructure(UUID)} — 首次加产品时固定 4 份视图结构（创建即冻，不覆盖）</li>
- *   <li>{@link #snapshotLineValues(com.cpq.quotation.entity.QuotationLineItem)} — 对每行算四份初始值</li>
+ *   <li>{@link #snapshotLineValues(QuotationLineItem)} — 对每行算四份初始值</li>
  * </ul>
  *
- * <p><b>设计 §1.4 收口纪律</b>: {@code buildCardValues} 必须复用 ConfigureSnapshotService
- * 的展开结果，不另跑 expand（Phase 1 写架构，Task 6/7 接入时实现）。
+ * <p><b>设计 §1.4 收口纪律</b>:
+ * <ul>
+ *   <li>报价侧 {@code buildCardValues} 复用 ConfigureSnapshotService 已写入的 snapshot_rows（不双写 expand）</li>
+ *   <li>核价侧 {@code buildCostingCardValues} 单独加载核价模板 driver 组件并一次 expand（核价侧无现成展开）</li>
+ *   <li>Excel 值通过 {@link ExcelViewService#buildLineRowData} 计算</li>
+ * </ul>
  *
+ * <p><b>AP-51</b>: rowCount 权威 = expansion.rowCount > 0 ? rowCount : baseRows.length（禁 Math.max）
  * <p><b>AP-39</b>: DATA_SOURCE 字段的 {@code datasource_binding} 必须完整搬运，不能丢。
  */
 @ApplicationScoped
@@ -37,6 +51,12 @@ public class CardSnapshotService {
 
     @Inject
     EntityManager em;
+
+    @Inject
+    ComponentDriverService componentDriverService;
+
+    @Inject
+    ExcelViewService excelViewService;
 
     /** 自注入：触发 REQUIRES_NEW 代理拦截器 */
     @Inject
@@ -274,28 +294,42 @@ public class CardSnapshotService {
 
     /**
      * 对一行产品算四份初始值并写入 4 个值列。
-     * Phase 1 占位实现：buildCardValues / buildExcelValues 复用 ConfigureSnapshotService
-     * 的展开结果（Task 6/7 接入时填充），当前仅写空结构。
+     * <ul>
+     *   <li>报价卡片值：复用 ConfigureSnapshotService 已写进 quotation_line_component_data.snapshot_rows（不二次 expand）</li>
+     *   <li>报价 Excel 值：调 ExcelViewService.buildLineRowData 算最终列值</li>
+     *   <li>核价卡片值：单独加载核价模板 driver 组件并 expand（核价侧无现成快照）</li>
+     *   <li>核价 Excel 值：调 ExcelViewService.buildLineRowData（核价模板）</li>
+     * </ul>
      * 各份 try/catch 降级，单份失败写 null 不连坐。
      */
     @Transactional
-    public void snapshotLineValues(com.cpq.quotation.entity.QuotationLineItem li) {
+    public void snapshotLineValues(QuotationLineItem li) {
         if (li == null || li.id == null) return;
         try {
             // 在当前事务内重新加载，避免 "Detached entity" 错误
-            com.cpq.quotation.entity.QuotationLineItem managed =
-                com.cpq.quotation.entity.QuotationLineItem.findById(li.id);
+            QuotationLineItem managed = QuotationLineItem.findById(li.id);
             if (managed == null) return;
 
             Quotation q = Quotation.findById(managed.quotationId);
             if (q == null) return;
 
-            managed.quoteCardValues  = safeCall(() -> buildCardValues(managed, q.customerTemplateId));
-            managed.quoteExcelValues = safeCall(() -> buildExcelValues(managed, q.customerTemplateId));
+            // 报价侧：卡片值复用 snapshot_rows（Task 6 真实填充，不二次 expand）
+            managed.quoteCardValues = safeCall(() ->
+                buildCardValues(managed, q.customerTemplateId));
+
+            // 报价侧：Excel 值由 ExcelViewService 计算
+            managed.quoteExcelValues = safeCall(() ->
+                buildExcelValues(managed, q.customerTemplateId, q.customerId));
+
+            // 核价侧：需单独 expand（核价模板组件，无现成快照）
             if (q.costingCardTemplateId != null) {
-                managed.costingCardValues  = safeCall(() -> buildCardValues(managed, q.costingCardTemplateId));
-                managed.costingExcelValues = safeCall(() -> buildExcelValues(managed, q.costingCardTemplateId));
+                managed.costingCardValues = safeCall(() ->
+                    buildCostingCardValues(managed, q.costingCardTemplateId,
+                        q.customerId, q.id));
+                managed.costingExcelValues = safeCall(() ->
+                    buildExcelValues(managed, q.costingCardTemplateId, q.customerId));
             }
+
             managed.cardSnapshotAt = OffsetDateTime.now();
             managed.quoteValuesAt  = managed.cardSnapshotAt;
             // Panache managed entity — no explicit persist needed in active transaction
@@ -304,56 +338,230 @@ public class CardSnapshotService {
         }
     }
 
+    // =========================================================================
+    // buildCardValues — 复用 snapshot_rows 组装报价卡片值（不双写 expand）
+    // =========================================================================
+
     /**
-     * 构建卡片值快照 JSON（spec §3.2 形状）。
-     * Phase 1 实现：组装空 tabs 结构（baseRows/editRows/formulaResults 在 Task 6 接入后填充）。
-     * Task 6 会重构此方法，复用 ConfigureSnapshotService 的展开结果（不双写 expand）。
+     * 报价侧卡片值：读 quotation_line_component_data.snapshot_rows（ConfigureSnapshotService 已写），
+     * 按 components_snapshot tab 顺序组装 tabs[].{baseRows, editRows, formulaResults}。
+     *
+     * <p>baseRows 每项 = {driverRow:{...}, basicDataValues:{...}}（直接来自 ExpandDriverResponse.Row）。
+     * editRows/formulaResults Phase 1 留空（Phase 2 渲染脱钩再补）。
+     * AP-51: rowCount 不做 Math.max，以 snapshot_rows 行数为准。
      */
-    String buildCardValues(com.cpq.quotation.entity.QuotationLineItem li, UUID templateId) {
+    String buildCardValues(QuotationLineItem li, UUID templateId) {
+        if (li == null || li.id == null || templateId == null) return null;
         try {
+            // 1. 取模板 components_snapshot（用于 tab 顺序 + componentId）
             @SuppressWarnings("unchecked")
-            var rows = em.createNativeQuery(
+            var tmplRows = em.createNativeQuery(
                 "SELECT components_snapshot FROM template WHERE id = :tid")
                 .setParameter("tid", templateId)
                 .getResultList();
-            if (rows.isEmpty() || rows.get(0) == null) return null;
+            if (tmplRows.isEmpty() || tmplRows.get(0) == null) return null;
 
-            JsonNode snapshot = MAPPER.readTree(rows.get(0).toString());
+            JsonNode snapshot = MAPPER.readTree(tmplRows.get(0).toString());
             if (!snapshot.isArray()) return null;
 
+            // 2. 取本行所有已有 snapshot_rows（key = componentId → rows JSON）
+            @SuppressWarnings("unchecked")
+            List<Object[]> snapData = em.createNativeQuery(
+                "SELECT component_id, snapshot_rows FROM quotation_line_component_data " +
+                "WHERE line_item_id = :lid AND snapshot_rows IS NOT NULL")
+                .setParameter("lid", li.id)
+                .getResultList();
+
+            Map<String, String> snapByCompId = new LinkedHashMap<>();
+            for (Object[] r : snapData) {
+                if (r[0] != null && r[1] != null) {
+                    snapByCompId.put(r[0].toString(), r[1].toString());
+                }
+            }
+
+            // 3. 组装 tabs
             ObjectNode root = MAPPER.createObjectNode();
             ArrayNode tabs = root.putArray("tabs");
 
             for (JsonNode tab : snapshot) {
                 ObjectNode tabNode = MAPPER.createObjectNode();
-                tabNode.put("componentId", tab.path("componentId").asText(""));
+                String componentId = tab.path("componentId").asText("");
+                tabNode.put("componentId", componentId);
                 tabNode.put("tabName", tab.path("tabName").asText(""));
-                // Phase 1: baseRows 空（Task 6 填充展开结果）
-                tabNode.putArray("baseRows");
+
+                // baseRows: 反序列化 snapshot_rows → List<ExpandDriverResponse.Row>
+                ArrayNode baseRows = tabNode.putArray("baseRows");
+                String rowsJson = snapByCompId.get(componentId);
+                if (rowsJson != null && !rowsJson.isBlank()) {
+                    try {
+                        List<ExpandDriverResponse.Row> rows = MAPPER.readValue(
+                            rowsJson, new TypeReference<List<ExpandDriverResponse.Row>>() {});
+                        if (rows != null) {
+                            for (ExpandDriverResponse.Row row : rows) {
+                                ObjectNode rowNode = MAPPER.createObjectNode();
+                                // driverRow
+                                if (row.driverRow != null) {
+                                    rowNode.set("driverRow", MAPPER.valueToTree(row.driverRow));
+                                } else {
+                                    rowNode.putObject("driverRow");
+                                }
+                                // basicDataValues（AP-39: 含 DATA_SOURCE 解析值不丢）
+                                if (row.basicDataValues != null) {
+                                    rowNode.set("basicDataValues", MAPPER.valueToTree(row.basicDataValues));
+                                } else {
+                                    rowNode.putObject("basicDataValues");
+                                }
+                                baseRows.add(rowNode);
+                            }
+                        }
+                    } catch (Exception e) {
+                        LOG.warnf("[card-snapshot] buildCardValues deserialize failed comp=%s: %s",
+                            componentId, e.getMessage());
+                    }
+                }
+
+                // editRows: Phase 1 留空
+                tabNode.putArray("editRows");
+                // formulaResults: Phase 2 补
+                tabNode.putArray("formulaResults");
+
+                tabs.add(tabNode);
+            }
+
+            return MAPPER.writeValueAsString(root);
+
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] buildCardValues failed li=%s tmpl=%s: %s",
+                li.id, templateId, e.getMessage());
+            return null;
+        }
+    }
+
+    // =========================================================================
+    // buildCostingCardValues — 核价侧单独 expand（无现成快照）
+    // =========================================================================
+
+    /**
+     * 核价侧卡片值：加载核价模板 driver 组件，按报价行 partNo/compositeType 展开一次，
+     * 组装 tabs[].{baseRows, editRows, formulaResults}。
+     * 与报价侧 buildCardValues 相比：这里 expand 是必要的（非双写），
+     * 因为 snapshotLines 只快照报价模板组件。
+     */
+    private String buildCostingCardValues(QuotationLineItem li, UUID costingTemplateId,
+                                           UUID customerId, UUID quotationId) {
+        if (li == null || li.id == null || costingTemplateId == null) return null;
+        try {
+            // 1. 取核价模板 components_snapshot
+            @SuppressWarnings("unchecked")
+            var tmplRows = em.createNativeQuery(
+                "SELECT components_snapshot FROM template WHERE id = :tid")
+                .setParameter("tid", costingTemplateId)
+                .getResultList();
+            if (tmplRows.isEmpty() || tmplRows.get(0) == null) return null;
+
+            JsonNode snapshot = MAPPER.readTree(tmplRows.get(0).toString());
+            if (!snapshot.isArray()) return null;
+
+            // 2. 加载核价模板 driver 组件（有 data_driver_path 的组件）
+            @SuppressWarnings("unchecked")
+            List<Object[]> driverComps = em.createNativeQuery(
+                "SELECT DISTINCT c.id, c.name, c.data_driver_path FROM template_component tc " +
+                "JOIN component c ON c.id = tc.component_id " +
+                "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL " +
+                "  AND c.data_driver_path <> ''")
+                .setParameter("tid", costingTemplateId)
+                .getResultList();
+
+            // 3. 按 componentId → expand 结果
+            Map<String, List<ExpandDriverResponse.Row>> expandByComp = new LinkedHashMap<>();
+            String partNo = li.productPartNoSnapshot;
+            String compositeType = li.compositeType;
+            if (partNo != null && !partNo.isBlank()) {
+                QuotationIdContext.set(quotationId);
+                try {
+                    for (Object[] dc : driverComps) {
+                        if (dc[0] == null) continue;
+                        UUID compId = UUID.fromString(dc[0].toString());
+                        try {
+                            ExpandDriverResponse exp = componentDriverService.expand(
+                                compId, customerId, partNo, null, null, null,
+                                li.id, compositeType);
+                            List<ExpandDriverResponse.Row> rows =
+                                (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
+                            expandByComp.put(dc[0].toString(), rows);
+                        } catch (Exception e) {
+                            LOG.warnf("[card-snapshot] costingExpand comp=%s li=%s: %s",
+                                compId, li.id, e.getMessage());
+                            expandByComp.put(dc[0].toString(), new ArrayList<>());
+                        }
+                    }
+                } finally {
+                    QuotationIdContext.clear();
+                }
+            }
+
+            // 4. 组装 tabs
+            ObjectNode root = MAPPER.createObjectNode();
+            ArrayNode tabs = root.putArray("tabs");
+
+            for (JsonNode tab : snapshot) {
+                ObjectNode tabNode = MAPPER.createObjectNode();
+                String componentId = tab.path("componentId").asText("");
+                tabNode.put("componentId", componentId);
+                tabNode.put("tabName", tab.path("tabName").asText(""));
+
+                ArrayNode baseRows = tabNode.putArray("baseRows");
+                List<ExpandDriverResponse.Row> rows = expandByComp.getOrDefault(componentId, new ArrayList<>());
+                for (ExpandDriverResponse.Row row : rows) {
+                    ObjectNode rowNode = MAPPER.createObjectNode();
+                    rowNode.set("driverRow",
+                        row.driverRow != null ? MAPPER.valueToTree(row.driverRow) : MAPPER.createObjectNode());
+                    rowNode.set("basicDataValues",
+                        row.basicDataValues != null ? MAPPER.valueToTree(row.basicDataValues) : MAPPER.createObjectNode());
+                    baseRows.add(rowNode);
+                }
+
                 tabNode.putArray("editRows");
                 tabNode.putArray("formulaResults");
                 tabs.add(tabNode);
             }
 
             return MAPPER.writeValueAsString(root);
+
         } catch (Exception e) {
-            LOG.warnf("[card-snapshot] buildCardValues failed templateId=%s: %s", templateId, e.getMessage());
+            LOG.warnf("[card-snapshot] buildCostingCardValues failed li=%s tmpl=%s: %s",
+                li.id, costingTemplateId, e.getMessage());
             return null;
         }
     }
 
+    // =========================================================================
+    // buildExcelValues — 调 ExcelViewService.buildLineRowData 算 Excel 行值
+    // =========================================================================
+
     /**
-     * 构建 Excel 值快照 JSON（spec §3.2 形状：{rows:[{colKey:value}]}）。
-     * Phase 1 实现：写空 rows（Task 6/7 接入后填充）。
+     * 构建 Excel 值快照 JSON（{rows:[{colKey:value}]}）。
+     * 调 {@link ExcelViewService#buildLineRowData} 计算本行各列值；模板无配置时 rows 为空数组。
      */
-    String buildExcelValues(com.cpq.quotation.entity.QuotationLineItem li, UUID templateId) {
+    String buildExcelValues(QuotationLineItem li, UUID templateId, UUID customerId) {
         try {
             ObjectNode root = MAPPER.createObjectNode();
-            root.putArray("rows");
+            ArrayNode rowsNode = root.putArray("rows");
+            if (li == null || templateId == null) return MAPPER.writeValueAsString(root);
+
+            Map<String, Object> rowData = excelViewService.buildLineRowData(li, templateId, customerId);
+            if (rowData != null && !rowData.isEmpty()) {
+                rowsNode.add(MAPPER.valueToTree(rowData));
+            }
             return MAPPER.writeValueAsString(root);
         } catch (Exception e) {
-            LOG.warnf("[card-snapshot] buildExcelValues failed templateId=%s: %s", templateId, e.getMessage());
-            return null;
+            LOG.warnf("[card-snapshot] buildExcelValues failed li=%s tmpl=%s: %s",
+                li != null ? li.id : "null", templateId, e.getMessage());
+            try {
+                ObjectNode root = MAPPER.createObjectNode();
+                root.putArray("rows");
+                return MAPPER.writeValueAsString(root);
+            } catch (Exception ex) { return null; }
         }
     }
 

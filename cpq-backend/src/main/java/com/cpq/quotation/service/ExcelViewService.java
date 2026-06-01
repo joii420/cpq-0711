@@ -122,6 +122,30 @@ public class ExcelViewService {
     }
 
     /**
+     * 公开入口：给外部 Service（如 CardSnapshotService）计算单行 Excel 列值。
+     * 按 templateId 加载 excel_view_config；customerId 用于模板公式 SUM_OVER 聚合。
+     * 返回 {colKey: value} 平铺 Map；模板无配置时返回空 Map。
+     */
+    public Map<String, Object> buildLineRowData(QuotationLineItem li, UUID templateId, UUID customerId) {
+        if (li == null || templateId == null) return new LinkedHashMap<>();
+        try {
+            Template template = Template.findById(templateId);
+            if (template == null || template.excelViewConfig == null || template.excelViewConfig.isBlank()) {
+                return new LinkedHashMap<>();
+            }
+            List<Map<String, Object>> columns = parseJsonArray(template.excelViewConfig);
+            if (columns.isEmpty()) return new LinkedHashMap<>();
+            List<TemplateFormulaDTO> templateFormulas = templateFormulaService.listByTemplate(templateId);
+            Map<String, TemplateFormulaDTO> formulaByName = new LinkedHashMap<>();
+            for (TemplateFormulaDTO f : templateFormulas) formulaByName.put(f.name, f);
+            return buildRowData(li, columns, templateId, formulaByName, customerId);
+        } catch (Exception e) {
+            LOG.warnf("[ExcelView] buildLineRowData failed li=%s tmpl=%s: %s", li.id, templateId, e.getMessage());
+            return new LinkedHashMap<>();
+        }
+    }
+
+    /**
      * Stage 2 重载：带模板 ID + 公式 Map + customerId 参数，支持 FORMULA 列的 [名称] 引用先查模板公式。
      */
     private Map<String, Object> buildRowData(QuotationLineItem li,
