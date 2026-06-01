@@ -630,21 +630,32 @@ public class ConfigureProductService {
 
     /**
      * V6: 组合子件 → material_bom_item（characteristic='ASSEMBLY'，component_no=子料号）。
-     * 让 zcj_bom / composite_child_materials_mirror 渲染子配件清单。工序(operation_no) = Phase 2。
+     * 让 zcj_bom / composite_child_materials_mirror 渲染子配件清单。
+     * composition_qty = 用户在选配「配件数量」步骤填的组成用量（正整数，默认 1）。
+     * 指纹复用同一父料号时也更新数量（ON CONFLICT DO UPDATE，匹配 uq_material_bom_item 表达式索引）。
      */
-    void insertMaterialBomAssemblyV6(String parentPartNo, String customerCode, List<String> childPartNos) {
+    void insertMaterialBomAssemblyV6(String parentPartNo, String customerCode,
+                                     List<String> childPartNos, List<Integer> quantities) {
         if (customerCode == null || customerCode.isBlank()) return;
         int seq = 1;
-        for (String childPn : childPartNos) {
+        for (int i = 0; i < childPartNos.size(); i++) {
+            String childPn = childPartNos.get(i);
+            int qty = (quantities != null && i < quantities.size() && quantities.get(i) != null
+                       && quantities.get(i) >= 1)
+                ? quantities.get(i) : 1;
             em.createNativeQuery(
                     "INSERT INTO material_bom_item (system_type, customer_no, material_no, " +
                     "characteristic, seq_no, component_no, composition_qty) " +
-                    "VALUES ('QUOTE', :cn, :p, 'ASSEMBLY', :sq, :c, 1) " +
-                    "ON CONFLICT DO NOTHING")
+                    "VALUES ('QUOTE', :cn, :p, 'ASSEMBLY', :sq, :c, :q) " +
+                    "ON CONFLICT (system_type, customer_no, material_no, " +
+                    "COALESCE(characteristic, ''), COALESCE(seq_no, 0), " +
+                    "COALESCE(component_no, ''), COALESCE(part_no, '')) " +
+                    "DO UPDATE SET composition_qty = EXCLUDED.composition_qty")
                 .setParameter("cn", customerCode)
                 .setParameter("p", parentPartNo)
                 .setParameter("sq", seq++)
                 .setParameter("c", childPn)
+                .setParameter("q", qty)
                 .executeUpdate();
         }
     }
@@ -825,7 +836,10 @@ public class ConfigureProductService {
             // V6 双写（AP-53 续 6 Phase 1）：无论新建/复用都确保父料号 + 子件 ASSEMBLY → material_master / material_bom_item，
             // 让 zcj_bom / composite_child_materials_mirror 视图渲染子配件清单（渲染基线零改）。幂等 ON CONFLICT DO NOTHING。
             insertMaterialMasterV6(parentHfPartNo, "COMPOSITE", null, null, fp);
-            insertMaterialBomAssemblyV6(parentHfPartNo, customerCode, childHfPartNos);
+            List<Integer> childQtys = req.parts.stream()
+                .map(pr -> (pr.quantity == null || pr.quantity < 1) ? 1 : pr.quantity)
+                .collect(java.util.stream.Collectors.toList());
+            insertMaterialBomAssemblyV6(parentHfPartNo, customerCode, childHfPartNos, childQtys);
         }
 
         // PASS 3: line_items (解法 B: 传 req.tempId 给 buildLineItems 作 parent line item id)
