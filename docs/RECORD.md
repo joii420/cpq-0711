@@ -13491,3 +13491,10 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - 主线亲跑: 前端 vitest 57 passed(formulaEngine+reconcile+computeFormula); 后端 FormulaCalculatorTest 16 + RowKeyValidationTest 7; tsc 0。Task6 无生产代码改动 → E2E task8-snapshot-render 4 passed(Task5)不回归。
 - **Phase 4 全部 6 Task 完成**: card 三视图(报价卡片/详情/组合)渲染计算·driver·结构全脱钩快照(batch-expand=0/无 enrich·模板请求/读 formulaResults); 编辑走 editQuoteCardValue; AP-50 single-source; AP-45 组合; 前后端公式逐分对账。row_data/snapshot_rows 按设计保留(Excel/导出/提交/copy/种子)。
 - 注: QuotationSnapshotTest(RestAssured)本地缺 token 全 401=预存在环境问题非本 Phase; composite-product-flow.spec(新建流程)仍待夹具(组合渲染脱钩已由 task8 组合 test 验证)。
+
+[2026-06-01] 报价单 取消 10s 定时自动保存 → 事件驱动防抖保存(用户决议) | cpq-frontend/src/pages/quotation/QuotationWizard.tsx (commit d157f60)
+- 背景: 编辑向导每 10s 轮询 PUT /draft, 用户要求取消定时轮询。
+- 实测关键: 10s autosave 是报价卡片单元格编辑"重开存活"的承重机制 —— INPUT 渲染读 comp.rows(来自 row_data), editQuoteCardValue 只写 editRows(INPUT 不读), row_data 靠 autosave 写。直接删定时器 → 编辑重开丢失(E2E 编辑往返失败, reopened 显示旧值)。且 row_data 还是 ExcelViewService/SnapshotCollectorService(提交)/QuotationExportService 的源。
+- 修法: 删 10s setInterval(+autoSaveRef/cleanup); 新增 scheduleAutoSave(防抖 ~1.5s) 由 ① useEffect[lineItems](单元格编辑/增删产品/选配) ② Form onValuesChange(表单字段) 触发; 复用 autoSaveDraft + lastSaveRef 去重(空闲零请求/payload 未变不发); 保留导入创建一次保存。
+- 效果: 空闲无定时 /draft; 编辑自动落库(重开存活 + Excel/提交读新)。E2E 4 passed(编辑往返存活/autosave 窗口 batch-expand=0/渲染 batch-expand=0/报价模板 GET=0/加载中=0/组合/详情无回归); tsc 0 + Vite 200。
+- 注: 报价卡片公式实时更新仍由 editQuoteCardValue(失焦)负责, 与本保存无关; saveDraft 重算公式是幂等落库(前后端引擎已逐分对账, 不改显示值)。
