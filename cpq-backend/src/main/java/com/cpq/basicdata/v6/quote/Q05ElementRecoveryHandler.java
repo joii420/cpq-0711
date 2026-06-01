@@ -18,12 +18,13 @@ import java.util.List;
  * <ul>
  *   <li>"投入料号" → `material_no`（匹配键，与 §4 主件料号对齐）</li>
  *   <li>"元素" → `component_no`（匹配键，与 §4 组件料号对齐）</li>
- *   <li>"项次" → `seq_no`（匹配键）</li>
+ *   <li>"项次" 不导入（§5 明细口径，**不作匹配键**）</li>
  *   <li>"宏丰料号" 不导入</li>
  *   <li>"回收折扣（%）" → `recovery_discount`（更新值）</li>
  * </ul>
  *
- * <p>characteristic 不在 Excel 列中，取该 (material_no) 下字典序最大的 characteristic（即最新版本）。
+ * <p>Task 8（决策⑤）：按 **2 键 (material_no, component_no) + is_current=true** 匹配当前生效版本组的
+ * element_bom_item 行批量 UPDATE recovery_discount；不新增版本、不翻转 is_current。
  */
 @ApplicationScoped
 public class Q05ElementRecoveryHandler implements SheetHandler {
@@ -49,13 +50,13 @@ public class Q05ElementRecoveryHandler implements SheetHandler {
                     continue;
                 }
 
+                // Task 8（决策⑤）：2 键 (material_no, component_no) + is_current=true 锁定当前生效版本组；
+                // 去掉原"取最新 characteristic 子查询"——is_current=true 已唯一确定当前版本。
                 int updated = em.createNativeQuery(
                         "UPDATE element_bom_item SET recovery_discount = :rd, updated_at = NOW(), updated_by = :u " +
                         "WHERE system_type='QUOTE' AND customer_no=:c AND material_no=:m " +
                         "  AND component_no=:cn " +
-                        "  AND characteristic = (SELECT characteristic FROM element_bom " +
-                        "    WHERE system_type='QUOTE' AND customer_no=:c AND material_no=:m " +
-                        "    ORDER BY characteristic DESC LIMIT 1)")
+                        "  AND is_current = TRUE")
                     .setParameter("rd", recoveryDiscount)
                     .setParameter("u", ctx.importedBy)
                     .setParameter("c", ctx.customerNo)
