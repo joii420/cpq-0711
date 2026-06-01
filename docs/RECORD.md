@@ -13386,3 +13386,13 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - **纪律**: 只读快照,不调 batch-expand/enrich(脱钩)。**已知边界**: LIST_FORMULA 字符串公式结果暂未进 formulaResults(后端只算 token 型 FORMULA),旁路落 driverRow/default,留 Task8 处理。
 - **自检**: tsc --noEmit 0 错误; Vite transform useCardSnapshots.ts=200 / quotationService.ts=200。真实 quote_card_values 验证形状: basicDataValues key 带花括号({$cz_view.x})✓ / formulaResults 含 rowKey(||复合键)+values✓ / computeRowKey || 一致✓。live console 比对(渲染值vs快照值)挪 Task8 渲染切换(当前旁路无渲染处可比;序列正确)。
 - **接续 Task5-8**: 草稿重刷端点/编辑回写端点/渲染切换 ProductCard 读 useCardSnapshots(Task8 触发强制 E2E)。
+
+---
+[2026-06-01] 报价单整份快照 Phase2 Task5 - refreshQuoteCardValues 草稿重刷(主线亲验,TDD) | cpq-backend CardSnapshotService.java(+refreshQuoteCardValues + 抽 expandTemplateDriverBaseRows/filterEditRowsToNewBaseRows/extractEditRowsByComp/loadComponentsSnapshot; assembleTabsWithFormulaResults 加 editRowsByComp 参数) + RefreshCardSnapshotTest.java(新增)
+- **refreshQuoteCardValues(li)**(设计§5,只刷报价侧): ① 重 expand 报价模板 driver 组件→新 baseRows(实时最新数据); ② 旧 quote_card_values.editRows 按 rowKey 叠加到新 baseRows(filterEditRowsToNewBaseRows,新数据无该 key→丢弃,AP-54 业务键对齐); ③ 重算 formulaResults(assembleTabs PASS1/2 用保留 editRows); ④ 重算报价 Excel; ⑤ 更新 quote_values_at。**核价两列物理不参与本次 UPDATE**(结构性隔离永久冻死)。全程 try/catch 降级不阻断打开。
+- **重构共享**: 抽 `expandTemplateDriverBaseRows(templateId,li,customerId,quotationId)` — 核价 buildCostingCardValues + 报价重刷共用(driver 组件 expand 种子)。`assembleTabsWithFormulaResults` 加第3参 editRowsByComp(null=加产品/核价 editRows 恒空; 非null=重刷保留)，内部 filterEditRowsToNewBaseRows 按新 baseRows rowKey 集过滤。
+- **判别性测试**(防 no-op 假绿): 注入两条 editRow — 有效 rowKey(命中新 baseRows,必须保留) + 幽灵 rowKey(__bogus_no_such_row__,新 baseRows 不存在,真 refresh 必须丢弃)。no-op 实现会留着幽灵→断言失败。**toggle no-op 验 RED**(幽灵未丢弃 expected true but false),恢复 GREEN。
+- **顺带修 bug(本任务 refactor 引入,RED 输出暴露)**: expandTemplateDriverBaseRows 把 SELECT 从多列(c.id,c.name,c.data_driver_path)改单列(c.id),单列原生查询返 `List<UUID>` 非 `List<Object[]>`,`for(Object[] dc...)` 转型抛 ClassCastException→buildCostingCardValues catch 吞错返 null→costing 退化。改 `List<Object>` 逐元素当 componentId。修后 costing_card_values 15 行非空验证。
+- **主线亲跑**: `-Dtest='RefreshCardSnapshotTest,SnapshotReconcileTest,CardValuesSnapshotTest,CardStructureSnapshotTest,FormulaCalculatorTest,QuotationSnapshotExposureTest,RowKeyValidationTest'` → **32/32 passed Failures0 Errors0 Skipped0 BUILD SUCCESS**; auth/me=401 非500; costing_card_values 非空15行(修复有效)。
+- **已知边界**: 重刷只 expand driver 组件(与核价对称);非 driver 单行组件 baseRows 空(留观察)。LIST_FORMULA 未进 formulaResults(Task8)。
+- **接续 Task6**: POST /quotations/{id}/refresh-card-snapshot(仅DRAFT 遍历报价行) + 前端 Step2 加载触发(loading"重新计算中"避免 AP-31)。

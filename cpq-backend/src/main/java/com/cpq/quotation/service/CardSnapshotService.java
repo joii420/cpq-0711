@@ -390,7 +390,7 @@ public class CardSnapshotService {
             }
 
             // 4. 组装 tabs（Task 3: 填 formulaResults，加产品时 editRows 恒空）
-            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp);
+            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null);
 
             return MAPPER.writeValueAsString(root);
 
@@ -426,53 +426,12 @@ public class CardSnapshotService {
             JsonNode snapshot = MAPPER.readTree(tmplRows.get(0).toString());
             if (!snapshot.isArray()) return null;
 
-            // 2. 加载核价模板 driver 组件（有 data_driver_path 的组件）
-            @SuppressWarnings("unchecked")
-            List<Object[]> driverComps = em.createNativeQuery(
-                "SELECT DISTINCT c.id, c.name, c.data_driver_path FROM template_component tc " +
-                "JOIN component c ON c.id = tc.component_id " +
-                "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL " +
-                "  AND c.data_driver_path <> ''")
-                .setParameter("tid", costingTemplateId)
-                .getResultList();
-
-            // 3. 按 componentId → expand 结果
-            Map<String, List<ExpandDriverResponse.Row>> expandByComp = new LinkedHashMap<>();
-            String partNo = li.productPartNoSnapshot;
-            String compositeType = li.compositeType;
-            if (partNo != null && !partNo.isBlank()) {
-                QuotationIdContext.set(quotationId);
-                try {
-                    for (Object[] dc : driverComps) {
-                        if (dc[0] == null) continue;
-                        UUID compId = UUID.fromString(dc[0].toString());
-                        try {
-                            ExpandDriverResponse exp = componentDriverService.expand(
-                                compId, customerId, partNo, null, null, null,
-                                li.id, compositeType);
-                            List<ExpandDriverResponse.Row> rows =
-                                (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
-                            expandByComp.put(dc[0].toString(), rows);
-                        } catch (Exception e) {
-                            LOG.warnf("[card-snapshot] costingExpand comp=%s li=%s: %s",
-                                compId, li.id, e.getMessage());
-                            expandByComp.put(dc[0].toString(), new ArrayList<>());
-                        }
-                    }
-                } finally {
-                    QuotationIdContext.clear();
-                }
-            }
-
-            // 4. 预构建每个组件的 baseRows（按 componentId，来自核价 expand 结果）
-            Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
-            for (JsonNode tab : snapshot) {
-                String cid = tab.path("componentId").asText("");
-                baseRowsByComp.put(cid, buildBaseRowsFromRows(expandByComp.getOrDefault(cid, new ArrayList<>())));
-            }
+            // 2-4. 加载核价模板 driver 组件并 expand → baseRows（按 componentId）
+            Map<String, ArrayNode> baseRowsByComp =
+                expandTemplateDriverBaseRows(costingTemplateId, li, customerId, quotationId);
 
             // 5. 组装 tabs（Task 3: 填 formulaResults；核价侧 editRows 恒空）
-            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp);
+            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null);
 
             return MAPPER.writeValueAsString(root);
 
@@ -562,7 +521,8 @@ public class CardSnapshotService {
      * <p><b>PASS 2</b>：逐 tab 调 {@link FormulaCalculator#calculate} 填 formulaResults；加产品/核价 editRows 恒空。
      * <p>FORMULA 重算口径与前端 computeAllFormulas / computeTabSubtotal / previous_row_subtotal 一致（防漂移）。
      */
-    private ObjectNode assembleTabsWithFormulaResults(JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp) {
+    private ObjectNode assembleTabsWithFormulaResults(JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
+                                                      Map<String, ArrayNode> editRowsByComp) {
         ObjectNode root = MAPPER.createObjectNode();
         ArrayNode tabs = root.putArray("tabs");
 
@@ -574,15 +534,20 @@ public class CardSnapshotService {
             if (!rkfByComp.containsKey(cid)) rkfByComp.put(cid, loadRowKeyFieldsNode(cid));
         }
 
-        // PASS 1: componentSubtotals（顺序累加，后 tab 可引用前 tab 小计）
+        // 草稿重刷：旧 editRows 按 rowKey 对齐到新 baseRows，丢弃新数据中不存在的 rowKey（AP-54 业务键对齐）
+        Map<String, ArrayNode> filteredEdit = filterEditRowsToNewBaseRows(
+            snapshot, baseRowsByComp, editRowsByComp, rkfByComp, emptyEdit);
+
+        // PASS 1: componentSubtotals（顺序累加，后 tab 可引用前 tab 小计；含保留的 editRows）
         Map<String, Double> componentSubtotals = new java.util.HashMap<>();
         for (JsonNode tab : snapshot) {
             if ("SUBTOTAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
             String cid = tab.path("componentId").asText("");
             ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, emptyEdit);
+            ArrayNode editRows = filteredEdit.getOrDefault(cid, emptyEdit);
             double sub = formulaCalculator.computeTabSubtotal(
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
-                rkfByComp.get(cid), baseRows, emptyEdit, componentSubtotals).doubleValue();
+                rkfByComp.get(cid), baseRows, editRows, componentSubtotals).doubleValue();
             if (!cid.isBlank()) componentSubtotals.put(cid, sub);
             String code = tab.path("componentCode").asText(null);
             if (code != null && !code.isBlank()) componentSubtotals.put(code, sub);
@@ -597,18 +562,181 @@ public class CardSnapshotService {
             tabNode.put("tabName", tab.path("tabName").asText(""));
 
             ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, MAPPER.createArrayNode());
+            ArrayNode editRows = filteredEdit.getOrDefault(cid, MAPPER.createArrayNode());
             tabNode.set("baseRows", baseRows);
-            tabNode.putArray("editRows"); // 加产品/核价: 恒空
+            tabNode.set("editRows", editRows); // 加产品/核价 → 空；草稿重刷 → 保留的编辑
 
             ArrayNode formulaResults = formulaCalculator.calculate(
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
-                rkfByComp.get(cid), baseRows, emptyEdit,
+                rkfByComp.get(cid), baseRows, editRows,
                 componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>());
             tabNode.set("formulaResults", formulaResults);
 
             tabs.add(tabNode);
         }
         return root;
+    }
+
+    /**
+     * 草稿重刷：把旧 editRows 按 rowKey 叠加到新 baseRows 行键集合上，丢弃新数据里不存在的 rowKey。
+     * editRowsByComp 为 null（加产品/核价）→ 返回空映射（editRows 恒空）。
+     */
+    private Map<String, ArrayNode> filterEditRowsToNewBaseRows(
+            JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
+            Map<String, ArrayNode> editRowsByComp, Map<String, JsonNode> rkfByComp, ArrayNode emptyEdit) {
+        Map<String, ArrayNode> filtered = new LinkedHashMap<>();
+        if (editRowsByComp == null || editRowsByComp.isEmpty()) return filtered;
+        for (JsonNode tab : snapshot) {
+            String cid = tab.path("componentId").asText("");
+            ArrayNode oldEdits = editRowsByComp.get(cid);
+            if (oldEdits == null || oldEdits.size() == 0) continue;
+
+            // 新 baseRows 的 rowKey 集合
+            ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, emptyEdit);
+            JsonNode rkf = rkfByComp.get(cid);
+            java.util.Set<String> newKeys = new java.util.HashSet<>();
+            int idx = 0;
+            for (JsonNode br : baseRows) {
+                String rk = formulaCalculator.computeRowKey(rkf, br.path("driverRow"));
+                newKeys.add(rk != null && !rk.isEmpty() ? rk : String.valueOf(idx));
+                idx++;
+            }
+
+            ArrayNode kept = MAPPER.createArrayNode();
+            for (JsonNode er : oldEdits) {
+                if (newKeys.contains(er.path("rowKey").asText(""))) kept.add(er);
+            }
+            if (kept.size() > 0) filtered.put(cid, kept);
+        }
+        return filtered;
+    }
+
+    /**
+     * 加载模板 driver 组件并按 partNo/compositeType expand 一次 → baseRows（按 componentId）。
+     * 核价侧（buildCostingCardValues）与报价侧草稿重刷（refreshQuoteCardValues）共用此种子展开。
+     */
+    private Map<String, ArrayNode> expandTemplateDriverBaseRows(UUID templateId, QuotationLineItem li,
+                                                                UUID customerId, UUID quotationId) {
+        Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
+        // 单列查询 → List<UUID>（非 Object[]）；逐元素当 componentId
+        @SuppressWarnings("unchecked")
+        List<Object> driverComps = em.createNativeQuery(
+            "SELECT DISTINCT c.id FROM template_component tc " +
+            "JOIN component c ON c.id = tc.component_id " +
+            "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
+            .setParameter("tid", templateId)
+            .getResultList();
+
+        String partNo = li.productPartNoSnapshot;
+        String compositeType = li.compositeType;
+        if (partNo != null && !partNo.isBlank()) {
+            QuotationIdContext.set(quotationId);
+            try {
+                for (Object dcObj : driverComps) {
+                    if (dcObj == null) continue;
+                    String cidStr = dcObj.toString();
+                    UUID compId = UUID.fromString(cidStr);
+                    try {
+                        ExpandDriverResponse exp = componentDriverService.expand(
+                            compId, customerId, partNo, null, null, null, li.id, compositeType);
+                        List<ExpandDriverResponse.Row> rows =
+                            (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
+                        baseRowsByComp.put(cidStr, buildBaseRowsFromRows(rows));
+                    } catch (Exception e) {
+                        LOG.warnf("[card-snapshot] expand comp=%s li=%s: %s", compId, li.id, e.getMessage());
+                        baseRowsByComp.put(cidStr, MAPPER.createArrayNode());
+                    }
+                }
+            } finally {
+                QuotationIdContext.clear();
+            }
+        }
+        return baseRowsByComp;
+    }
+
+    /** 从 quote_card_values JSON 提取各组件的旧 editRows（componentId → editRows 数组）。 */
+    private Map<String, ArrayNode> extractEditRowsByComp(String cardValuesJson) {
+        Map<String, ArrayNode> map = new LinkedHashMap<>();
+        if (cardValuesJson == null || cardValuesJson.isBlank()) return map;
+        try {
+            JsonNode root = MAPPER.readTree(cardValuesJson);
+            for (JsonNode tab : root.path("tabs")) {
+                String cid = tab.path("componentId").asText("");
+                JsonNode edits = tab.path("editRows");
+                if (cid != null && !cid.isBlank() && edits.isArray() && edits.size() > 0) {
+                    map.put(cid, (ArrayNode) edits);
+                }
+            }
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] extractEditRowsByComp failed: %s", e.getMessage());
+        }
+        return map;
+    }
+
+    private JsonNode loadComponentsSnapshot(UUID templateId) {
+        try {
+            @SuppressWarnings("unchecked")
+            var rows = em.createNativeQuery(
+                "SELECT components_snapshot FROM template WHERE id = :tid")
+                .setParameter("tid", templateId).getResultList();
+            if (rows.isEmpty() || rows.get(0) == null) return null;
+            JsonNode snapshot = MAPPER.readTree(rows.get(0).toString());
+            return snapshot.isArray() ? snapshot : null;
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] loadComponentsSnapshot failed tid=%s: %s", templateId, e.getMessage());
+            return null;
+        }
+    }
+
+    // =========================================================================
+    // refreshQuoteCardValues — 草稿重刷（只刷报价侧，按行键保编辑，核价不动）
+    // =========================================================================
+
+    /**
+     * 草稿态重刷报价侧两份值（设计 §5）：
+     * <ol>
+     *   <li>重查基础值：按报价模板 driver 组件 expand 种子 → 新 baseRows（实时最新数据）。</li>
+     *   <li>对齐保留编辑：旧 {@code quote_card_values} 的 editRows 按 rowKey 叠加到新 baseRows；新数据无该 key 丢弃。</li>
+     *   <li>重算公式：基于新 baseRows + 保留 editRows → 新 formulaResults。</li>
+     *   <li>重算报价 Excel → 回写 {@code quote_excel_values}。</li>
+     *   <li>更新 {@code quote_values_at}。</li>
+     * </ol>
+     * <p><b>核价两列物理不参与本次 UPDATE</b>（结构性隔离，核价永久冻死）。
+     * <p>降级：任一步失败 → 保留上一次报价值快照，不抛、不阻断打开（与加产品同等降级）。
+     */
+    @Transactional
+    public void refreshQuoteCardValues(QuotationLineItem li) {
+        if (li == null || li.id == null) return;
+        try {
+            QuotationLineItem managed = QuotationLineItem.findById(li.id);
+            if (managed == null) return;
+            Quotation q = Quotation.findById(managed.quotationId);
+            if (q == null || q.customerTemplateId == null) return;
+
+            JsonNode snapshot = loadComponentsSnapshot(q.customerTemplateId);
+            if (snapshot == null) return;
+
+            // 1. 重查基础值（报价模板 driver 组件 expand 种子）
+            Map<String, ArrayNode> baseRowsByComp =
+                expandTemplateDriverBaseRows(q.customerTemplateId, managed, q.customerId, q.id);
+
+            // 2. 旧 editRows（按 rowKey 对齐保留）
+            Map<String, ArrayNode> oldEdits = extractEditRowsByComp(managed.quoteCardValues);
+
+            // 3. 组装新 quote_card_values（保留编辑 + 重算 formulaResults）
+            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, oldEdits);
+            managed.quoteCardValues = MAPPER.writeValueAsString(root);
+
+            // 4. 重算报价 Excel（核价不动）
+            String excel = safeCall(() -> buildExcelValues(managed, q.customerTemplateId, q.customerId));
+            if (excel != null) managed.quoteExcelValues = excel;
+
+            // 5. 更新报价侧时间戳
+            managed.quoteValuesAt = OffsetDateTime.now();
+            // 核价两列：物理不参与本次 UPDATE
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] refreshQuoteCardValues failed li=%s: %s", li.id, e.getMessage());
+        }
     }
 
     private JsonNode loadRowKeyFieldsNode(String componentId) {
