@@ -2,7 +2,7 @@
  * 2026-05-20: 组合产品流程 E2E 测试 (v1.16)
  * 报价单管理 → 新建 → 罗克韦尔 + 模板 v1.16
  *   → 添加产品 → 选配添加 → 组合产品 (2 配件)
- *   → 配件1: existing 料号 3120012574 + 工序总装配/部件装配/电镀
+ *   → 配件1: existing 料号 10110002 + 工序总装配/部件装配/电镀
  *   → 配件2: custom 无匹配 + 选 AgCu90 银铜合金 + 工序总装配/部件装配/电镀
  *   → 组合工艺: 铆接 (用户原话"铆钉")
  *   → 确认添加
@@ -72,7 +72,7 @@ async function pickProcess(page: Page, name: string) {
 let backendUp = false;
 test.beforeAll(async () => { backendUp = await isBackendUp(); });
 
-test('组合产品: 罗克韦尔 + v1.16 + 配件1(3120012574 existing) + 配件2(custom AgCu90) + 组合工艺(铆接)', async ({ page }) => {
+test('组合产品: 罗克韦尔 + v1.16 + 配件1(10110002 existing) + 配件2(custom AgCu90) + 组合工艺(铆接)', async ({ page }) => {
   test.skip(!backendUp, '后端未启动');
 
   const consoleErrors: string[] = [];
@@ -119,13 +119,13 @@ test('组合产品: 罗克韦尔 + v1.16 + 配件1(3120012574 existing) + 配件
   await drawerNext(page);
   await shot(page, 'step1-part1-search');
 
-  // ── 5) 配件 1: P1 料号匹配 3120012574 ──
+  // ── 5) 配件 1: P1 料号匹配 10110002 ──
   const partInput = page.locator('.ant-drawer input[placeholder*="料号"]').first();
-  await partInput.fill('3120012574');
+  await partInput.fill('10110002');
   await page.waitForTimeout(1500);
   await shot(page, 'part1-search-result');
-  // 选第一个匹配的 ant-list-item (3120012574 行)
-  await page.locator('.ant-drawer .ant-list-item').filter({ hasText: '3120012574' }).first().click();
+  // 选第一个匹配的 ant-list-item (10110002 行)
+  await page.locator('.ant-drawer .ant-list-item').filter({ hasText: '10110002' }).first().click();
   await page.waitForTimeout(500);
   await shot(page, 'part1-selected-existing');
 
@@ -162,7 +162,7 @@ test('组合产品: 罗克韦尔 + v1.16 + 配件1(3120012574 existing) + 配件
 
   // ── 7) 配件 2 P2: 在材质列表选 AgCu90 ──
   // ant-list-item 含 'AgCu' + '90/10'
-  const agcuRow = page.locator('.ant-drawer .ant-list-item').filter({ hasText: '90/10' }).first();
+  const agcuRow = page.locator('.ant-drawer .ant-list-item').filter({ hasText: 'AgCu' }).filter({ hasText: '90/10' }).first();
   await agcuRow.click();
   await page.waitForTimeout(800);
   await shot(page, 'part2-agcu90-selected');
@@ -236,7 +236,7 @@ test('组合产品: 罗克韦尔 + v1.16 + 配件1(3120012574 existing) + 配件
 
   // expectedRowCount: 每个 Tab 期望的最少数据行数
   const expectedRowCount: Record<string, number> = {
-    '选配-材质':    2,  // 子件 3120012574 + CFG-AgCu-xxxxx
+    '选配-材质':    2,  // 子件 10110002 + CFG-AgCu-xxxxx
     '选配-工序列表': 6,  // 2 子件 × 3 工序
     '选配-元素含量': 2,  // AgCu90 的 Ag 90% + Cu 10%（至少）
     '选配-组合工艺': 1,  // 1 行 RIVET
@@ -302,16 +302,16 @@ test('组合产品: 罗克韦尔 + v1.16 + 配件1(3120012574 existing) + 配件
     // ── 子件列断言（3 个 NORMAL Tab 须含两个子件料号） ──
     if (['选配-材质', '选配-元素含量', '选配-工序列表'].includes(name)) {
       const allText = await page.locator('.qt-cost-table').first().innerText().catch(() => '');
-      console.log(`  [${name}] 检查子件列: 含 3120012574=${allText.includes('3120012574')}, 含 CFG-AgCu=${/CFG-AgCu/.test(allText)}`);
-      expect(allText).toContain('3120012574');
+      console.log(`  [${name}] 检查子件列: 含 10110002=${allText.includes('10110002')}, 含 CFG-AgCu=${/CFG-AgCu/.test(allText)}`);
+      expect(allText).toContain('10110002');
       expect(allText).toMatch(/CFG-AgCu/);
     }
 
     // ── 选配-组合工艺: 参与配件断言 ──
     if (name === '选配-组合工艺') {
       const allText = await page.locator('.qt-cost-table').first().innerText().catch(() => '');
-      console.log(`  [${name}] 检查参与配件: 含 3120012574=${allText.includes('3120012574')}, 含 CFG-AgCu=${/CFG-AgCu/.test(allText)}`);
-      expect(allText).toContain('3120012574');
+      console.log(`  [${name}] 检查参与配件: 含 10110002=${allText.includes('10110002')}, 含 CFG-AgCu=${/CFG-AgCu/.test(allText)}`);
+      expect(allText).toContain('10110002');
       expect(allText).toMatch(/CFG-AgCu/);
     }
   }
