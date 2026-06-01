@@ -280,20 +280,25 @@ public class CardSnapshotService {
      */
     @Transactional
     public void snapshotLineValues(com.cpq.quotation.entity.QuotationLineItem li) {
-        if (li == null) return;
+        if (li == null || li.id == null) return;
         try {
-            Quotation q = Quotation.findById(li.quotationId);
+            // 在当前事务内重新加载，避免 "Detached entity" 错误
+            com.cpq.quotation.entity.QuotationLineItem managed =
+                com.cpq.quotation.entity.QuotationLineItem.findById(li.id);
+            if (managed == null) return;
+
+            Quotation q = Quotation.findById(managed.quotationId);
             if (q == null) return;
 
-            li.quoteCardValues  = safeCall(() -> buildCardValues(li, q.customerTemplateId));
-            li.quoteExcelValues = safeCall(() -> buildExcelValues(li, q.customerTemplateId));
+            managed.quoteCardValues  = safeCall(() -> buildCardValues(managed, q.customerTemplateId));
+            managed.quoteExcelValues = safeCall(() -> buildExcelValues(managed, q.customerTemplateId));
             if (q.costingCardTemplateId != null) {
-                li.costingCardValues  = safeCall(() -> buildCardValues(li, q.costingCardTemplateId));
-                li.costingExcelValues = safeCall(() -> buildExcelValues(li, q.costingCardTemplateId));
+                managed.costingCardValues  = safeCall(() -> buildCardValues(managed, q.costingCardTemplateId));
+                managed.costingExcelValues = safeCall(() -> buildExcelValues(managed, q.costingCardTemplateId));
             }
-            li.cardSnapshotAt = OffsetDateTime.now();
-            li.quoteValuesAt  = li.cardSnapshotAt;
-            li.persist();
+            managed.cardSnapshotAt = OffsetDateTime.now();
+            managed.quoteValuesAt  = managed.cardSnapshotAt;
+            // Panache managed entity — no explicit persist needed in active transaction
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] snapshotLineValues failed lineItem=%s: %s", li.id, e.getMessage());
         }
