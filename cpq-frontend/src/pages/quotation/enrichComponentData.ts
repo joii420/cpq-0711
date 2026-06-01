@@ -183,6 +183,103 @@ export async function enrichComponentData(
 }
 
 /**
+ * Phase4 Task5 — 从「报价单整份快照结构」(quote_card_structure, structure v2) 同步组装 componentData，
+ * **不发任何网络请求**（旁路 enrichComponentData 的 GET /templates）。
+ *
+ * <p>结构 v2 已冻进全部 config keys（fieldType/basicDataPath/datasourceBinding/globalVariableCode/
+ * defaultSource/listFormulaConfig/formulaName/isSubtotal/isAmount/isRequired/sortOrder）+ rowKeyFields，
+ * 故组装结果与 enrichComponentData(读模板 componentsSnapshot) 等价。saved rows 按 componentId 队列回填（同 enrich）。
+ *
+ * <p>无结构 / templateId 不匹配时调用方应回退 enrichComponentData。
+ */
+export function buildComponentDataFromStructure(
+  structure: import('../../services/quotationService').CardStructure,
+  savedCompData: any[],
+): ComponentDataItem[] {
+  const withRows = (savedCompData || []).map((saved: any) => {
+    if (Array.isArray(saved.rows)) return saved;
+    const parsed = parseJson<any[]>(saved.rowData, []);
+    return { ...saved, rows: Array.isArray(parsed) ? parsed : [] };
+  });
+  // saved 按 componentId 分组队列 + tabName 索引（同 enrichComponentData，AP-37 同 cid 多实例不互污染）
+  const savedQueueByCid: Map<string, any[]> = new Map();
+  const savedByTab: Record<string, any> = {};
+  for (const s of withRows) {
+    if (s.componentId) {
+      if (!savedQueueByCid.has(s.componentId)) savedQueueByCid.set(s.componentId, []);
+      savedQueueByCid.get(s.componentId)!.push(s);
+    }
+    if (s.tabName) savedByTab[s.tabName] = s;
+  }
+
+  return (structure.tabs || []).map((tab) => {
+    const snapId = tab.componentId || '';
+    const snapTab = tab.tabName || '';
+    let saved: any = {};
+    const queue = savedQueueByCid.get(snapId);
+    if (queue && queue.length > 0) {
+      let idx = queue.findIndex(s => (s.tabName || '') === snapTab);
+      if (idx < 0) idx = 0;
+      saved = queue.splice(idx, 1)[0] || {};
+    } else if (savedByTab[snapTab]) {
+      saved = savedByTab[snapTab];
+    }
+
+    const fields: ComponentField[] = (tab.fields || []).map((f: any) => ({
+      name: f.name || '',
+      field_type: normalizeFieldType(f.fieldType || ''),
+      content: f.defaultValue,
+      is_amount: f.isAmount,
+      is_subtotal: f.isSubtotal,
+      is_required: f.isRequired,
+      formula_name: f.formulaName,
+      datasource_binding: f.datasourceBinding,
+      basic_data_path: f.basicDataPath,
+      global_variable_code: f.globalVariableCode,
+      default_source: f.defaultSource,
+      list_formula_config: f.listFormulaConfig,
+      sort_order: f.sortOrder,
+      label: f.label || f.name || '',
+      key: f.name || '',
+    }));
+
+    const formulas: ComponentFormula[] = (tab.formulas || []).map((fm: any) => ({
+      name: fm.name || '',
+      expression: Array.isArray(fm.expression) ? fm.expression : [],
+      result_type: fm.result_type,
+    }));
+
+    const savedRows = Array.isArray(saved.rows) ? saved.rows : [];
+    const rows: Record<string, any>[] = savedRows.length > 0 ? savedRows : [{}];
+
+    return {
+      componentId: snapId || saved.componentId || '',
+      componentCode: saved.componentCode || '',
+      componentType: tab.componentType || saved.componentType || 'NORMAL',
+      tabName: snapTab || saved.tabName || '',
+      fields,
+      formulas,
+      rows,
+      subtotal: saved.subtotal || 0,
+      dataDriverPath: tab.dataDriverPath || saved.dataDriverPath || undefined,
+    } as ComponentDataItem;
+  });
+}
+
+/** Phase4 Task5 — 从结构快照取 productAttributes schema（旁路 loadProductAttributes 的 GET /templates）。 */
+export function productAttributesFromStructure(
+  structure: import('../../services/quotationService').CardStructure,
+): NonNullable<import('./QuotationStep2').LineItem['productAttributes']> {
+  return (structure.productAttributes || []).map((attr: any) => ({
+    name: attr.name || (attr as any).key || '',
+    field_type: attr.field_type || (attr as any).fieldType || 'TEXT',
+    required: !!attr.required,
+    default_value: attr.default_value ?? (attr as any).defaultValue ?? '',
+    source: attr.source ?? '',
+  }));
+}
+
+/**
  * 从模板拉取 productAttributes schema（字段定义列表）。
  * LineItem.productAttributes 是 schema 而非值——后端 SaveDraftRequest 没有这个维度，
  * 刷新后必须从模板再拉一次回填，否则产品卡片"产品属性"区域整块空白（AP-2 续）。

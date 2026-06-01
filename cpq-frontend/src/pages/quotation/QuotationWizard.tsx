@@ -24,7 +24,7 @@ import QuotationCreateForm from './QuotationCreateForm';
 import type { QuotationFormValue } from './QuotationCreateForm';
 import { templateService } from '../../services/templateService';
 import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
-import { enrichComponentData, loadProductAttributes } from './enrichComponentData';
+import { enrichComponentData, loadProductAttributes, buildComponentDataFromStructure, productAttributesFromStructure } from './enrichComponentData';
 import { globalVariableService } from '../../services/globalVariableService';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 
@@ -285,9 +285,23 @@ const QuotationWizard: React.FC = () => {
       // 典型表现：先开始输入的产品卡数据全没，后输入的产品卡数据保住。
       // 同时：基础数据导入流程下，productAttributes schema 也是模板内的，
       // 后端 SaveDraftRequest 没有这维度——必须从模板再拉一次回填。
+      // Phase4 Task5: 报价侧结构脱钩 —— 有 quote_card_structure(且 templateId 对得上) 时, componentData
+      //   结构 + productAttributes 全部从结构快照同步组装, **不再 GET /templates**(旁路 enrich/loadProductAttributes)。
+      //   无结构 / templateId 不匹配(存量单 / 核价模板) → 回退原 enrich + loadProductAttributes(读模板)。
+      const quoteStruct = (q?.quoteCardStructure ?? null) as import('../../services/quotationService').CardStructure | null;
       Promise.all(
         basicItems.map(async (li) => {
           if (!li.templateId) return li;
+          const canUseStruct = !!quoteStruct
+            && Array.isArray(quoteStruct.tabs) && quoteStruct.tabs.length > 0
+            && (!quoteStruct.templateId || String(quoteStruct.templateId) === String(li.templateId));
+          if (canUseStruct) {
+            const compData = buildComponentDataFromStructure(quoteStruct!, li.componentData);
+            const productAttributes = (li.productAttributes && li.productAttributes.length > 0)
+              ? li.productAttributes
+              : productAttributesFromStructure(quoteStruct!);
+            return { ...li, componentData: compData, productAttributes };
+          }
           // 2026-05-17: componentData=[] 也要 enrich(选配创建的 lineItem 后端不落 component_data
           //   → 前端必须从模板 snapshot 构建结构, 否则卡片空白).
           // 2026-05-19(AP-37 续): 即便 saved.fields 已落, 仍可能因历史 bug (同 cid 多实例
@@ -485,6 +499,21 @@ const QuotationWizard: React.FC = () => {
   // 存储"的快照数据无需手动刷新即出现(修:导入产品工序加入时空、刷新才有)。
   // 不能按 id 匹配:新行 id 恰恰是变化的那一维,按 id 必匹配不上(旧实现对新行/导入行回填失效)。
   // buildDraftPayload 不发送 line id → 回填 id 不改变下次 payload → 无再保存死循环。
+  // Phase4 Task5: saveDraft/create 响应 DTO 不含 4 份结构快照(仅 getById 暴露)。
+  // 直接 setQuotation(res.data) 会把 quoteCardStructure 等抹成 undefined → Step2 结构脱钩逻辑
+  // (quoteTemplateComponentIds / componentData 组装)瞬时回退 enrich → 触发一次 GET /templates。
+  // 故保存后合并时保留上一份 quotation 的结构快照(响应缺失才回填)。
+  const setQuotationPreservingStructures = (resData: any) => {
+    if (!resData) return;
+    setQuotation((prev: any) => {
+      const merged: any = { ...resData };
+      for (const k of ['quoteCardStructure', 'costingCardStructure', 'quoteExcelStructure', 'costingExcelStructure']) {
+        if (merged[k] == null && prev?.[k] != null) merged[k] = prev[k];
+      }
+      return merged;
+    });
+  };
+
   const syncLineItemsFromResponse = (resData: any) => {
     const respLines = resData?.lineItems;
     if (!Array.isArray(respLines)) return;
@@ -815,7 +844,7 @@ const QuotationWizard: React.FC = () => {
       });
       const newId = res.data.id;
       setQuotationId(newId);
-      setQuotation(res.data);
+      setQuotationPreservingStructures(res.data);
       message.success('报价单已创建');
       // Update URL without full reload
       window.history.replaceState(null, '', `/quotations/${newId}/edit`);
@@ -831,7 +860,7 @@ const QuotationWizard: React.FC = () => {
       const values = form.getFieldsValue();
       const payload = buildDraftPayload(values);
       const res = await quotationService.saveDraft(quotationId, payload);
-      setQuotation(res.data);
+      setQuotationPreservingStructures(res.data);
       // 回填重建后的新行 id + partVersionLocked,避免卡片版本号停在旧值、并触发展开按新 id 重拉
       syncLineItemsFromResponse(res.data);
       if (!silent) message.success('草稿已保存');
@@ -882,7 +911,7 @@ const QuotationWizard: React.FC = () => {
     }
     try {
       const res = await quotationService.calculateDiscount(quotationId, originalAmount);
-      setQuotation(res.data);
+      setQuotationPreservingStructures(res.data);
       form.setFieldValue('finalDiscountRate', res.data.finalDiscountRate);
       message.success('折扣已计算');
     } catch (e: any) {

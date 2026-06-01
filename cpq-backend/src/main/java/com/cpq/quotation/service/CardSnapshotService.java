@@ -105,6 +105,21 @@ public class CardSnapshotService {
     }
 
     /**
+     * Task5(2026-06-01): DRAFT 重建 4 份结构 —— 删旧后 ensureStructure 重插。
+     * <p>草稿态结构应跟随当前模板（模板改了草稿即时反映）；旧报价单借此补全 v2 新增的
+     * config keys（formulaName/globalVariableCode/defaultSource/listFormulaConfig）+ 顶层 productAttributes。
+     * <p>仅 DRAFT 执行；提交后结构冻结（ensureStructure 的 upsert 不覆盖）不受影响。
+     */
+    @Transactional
+    public void rebuildStructureForDraft(UUID quotationId) {
+        if (quotationId == null) return;
+        Quotation q = Quotation.findById(quotationId);
+        if (q == null || !"DRAFT".equals(q.status)) return;
+        QuotationViewStructure.delete("quotationId", quotationId);
+        ensureStructure(quotationId);
+    }
+
+    /**
      * UPSERT 结构快照：已存在则跳过（创建即冻），不存在则插入。
      */
     private void upsertStructure(UUID quotationId, String viewKind, String structureJson) {
@@ -137,20 +152,33 @@ public class CardSnapshotService {
     private String buildCardStructure(UUID templateId, String templateKind) {
         try {
             @SuppressWarnings("unchecked")
-            var rows = em.createNativeQuery(
-                "SELECT components_snapshot FROM template WHERE id = :tid")
+            List<Object[]> rows = em.createNativeQuery(
+                "SELECT components_snapshot, product_attributes FROM template WHERE id = :tid")
                 .setParameter("tid", templateId)
                 .getResultList();
-            if (rows.isEmpty() || rows.get(0) == null) return null;
+            if (rows.isEmpty() || rows.get(0) == null || rows.get(0)[0] == null) return null;
 
-            String snapshotJson = rows.get(0).toString();
+            String snapshotJson = rows.get(0)[0].toString();
             JsonNode snapshot = MAPPER.readTree(snapshotJson);
             if (!snapshot.isArray()) return null;
 
             ObjectNode root = MAPPER.createObjectNode();
-            root.put("version", 1);
+            // version 2 (Task5 2026-06-01): 字段补全 config keys + 顶层 productAttributes（前端旁路 enrich/loadProductAttributes 全靠它）
+            root.put("version", 2);
             root.put("templateId", templateId.toString());
             root.put("templateKind", templateKind);
+
+            // Task5: productAttributes（产品属性 schema）冻进结构，前端不再 loadProductAttributes(GET /templates)
+            Object paObj = rows.get(0)[1];
+            if (paObj != null) {
+                try {
+                    JsonNode pa = MAPPER.readTree(paObj.toString());
+                    if (pa.isArray()) root.set("productAttributes", pa);
+                    else root.putArray("productAttributes");
+                } catch (Exception ignore) { root.putArray("productAttributes"); }
+            } else {
+                root.putArray("productAttributes");
+            }
 
             ArrayNode tabs = root.putArray("tabs");
 
@@ -187,6 +215,7 @@ public class CardSnapshotService {
                     fieldNode.put("sortOrder", f.path("sort_order").asInt(0));
                     fieldNode.put("isAmount", f.path("is_amount").asBoolean(false));
                     fieldNode.put("isRequired", f.path("is_required").asBoolean(false));
+                    fieldNode.put("isSubtotal", f.path("is_subtotal").asBoolean(false));
                     fieldNode.put("editable", isEditable(f.path("field_type").asText("")));
                     if (!f.path("content").isMissingNode()) {
                         fieldNode.put("defaultValue", f.path("content").asText(null));
@@ -194,12 +223,24 @@ public class CardSnapshotService {
                     if (!f.path("basic_data_path").isMissingNode()) {
                         fieldNode.put("basicDataPath", f.path("basic_data_path").asText(null));
                     }
-                    // AP-39: DATA_SOURCE 必须完整搬运 datasource_binding
-                    if ("DATA_SOURCE".equals(f.path("field_type").asText(""))) {
-                        JsonNode binding = f.path("datasource_binding");
-                        if (!binding.isMissingNode() && !binding.isNull()) {
-                            fieldNode.set("datasourceBinding", binding);
-                        }
+                    // Task5(AP-44 完备性): 前端旁路 enrich 后, componentData 结构全靠本结构 —— 必须搬运全部 config keys，
+                    // 否则 LIST_FORMULA(永久加载中)/default_source placeholder/global_variable_code/累加小计 等静默失效。
+                    if (!f.path("formula_name").isMissingNode() && !f.path("formula_name").isNull()) {
+                        fieldNode.put("formulaName", f.path("formula_name").asText(null));
+                    }
+                    if (!f.path("global_variable_code").isMissingNode() && !f.path("global_variable_code").isNull()) {
+                        fieldNode.put("globalVariableCode", f.path("global_variable_code").asText(null));
+                    }
+                    if (!f.path("default_source").isMissingNode() && !f.path("default_source").isNull()) {
+                        fieldNode.set("defaultSource", f.path("default_source"));
+                    }
+                    if (!f.path("list_formula_config").isMissingNode() && !f.path("list_formula_config").isNull()) {
+                        fieldNode.set("listFormulaConfig", f.path("list_formula_config"));
+                    }
+                    // datasource_binding：原仅 DATA_SOURCE 搬运；改为任意字段类型只要存在即搬（INPUT_*.default_source.* 之外的绑定亦保真）
+                    JsonNode binding = f.path("datasource_binding");
+                    if (!binding.isMissingNode() && !binding.isNull()) {
+                        fieldNode.set("datasourceBinding", binding);
                     }
                     fieldsNode.add(fieldNode);
                 }
@@ -770,6 +811,9 @@ public class CardSnapshotService {
         if (quotationId == null) return 0;
         Quotation q = Quotation.findById(quotationId);
         if (q == null || !"DRAFT".equals(q.status)) return 0; // 非 DRAFT no-op
+        // Task5(2026-06-01): DRAFT 打开重刷时一并重建结构（草稿跟随当前模板 + 旧单补全 v2 config keys/productAttributes；提交后冻结不动）。
+        try { self.rebuildStructureForDraft(quotationId); }
+        catch (Exception e) { LOG.warnf("[card-snapshot] rebuildStructureForDraft failed q=%s: %s", quotationId, e.getMessage()); }
         List<QuotationLineItem> lines = QuotationLineItem.list("quotationId", quotationId);
         int n = 0;
         for (QuotationLineItem li : lines) {

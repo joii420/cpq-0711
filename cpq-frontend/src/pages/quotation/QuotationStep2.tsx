@@ -1808,6 +1808,13 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   //  报价单视图直接读 componentData 会把核价模板的 tab 也漏出来 — AP-19）
   const [quoteTemplateComponentIds, setQuoteTemplateComponentIds] = useState<Set<string> | null>(null);
   useEffect(() => {
+    // Phase4 Task5: 有报价结构快照时直接取其 tabs 的 componentId 集合, 不再 GET 报价模板。
+    if (quoteCardStructure && Array.isArray(quoteCardStructure.tabs) && quoteCardStructure.tabs.length > 0) {
+      const ids = new Set<string>();
+      for (const t of quoteCardStructure.tabs) { if (t.componentId) ids.add(String(t.componentId)); }
+      setQuoteTemplateComponentIds(ids);
+      return;
+    }
     if (!customerTemplateId) {
       setQuoteTemplateComponentIds(null);
       return;
@@ -1833,7 +1840,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
         setQuoteTemplateComponentIds(ids);
       })
       .catch(() => setQuoteTemplateComponentIds(new Set()));
-  }, [customerTemplateId]);
+  }, [customerTemplateId, quoteCardStructure]);
 
   // 「报价单」视图过滤后的 lineItems：
   //   1. 隐藏 compositeType='PART' (组合产品子件) — 父卡片内 Tab 通过聚合视图展示子件数据

@@ -46,6 +46,9 @@ test('Task8 渲染: 打开 QT-20260601-1482 编辑向导，各 Tab 渲染 + 加�
   let batchExpandTotal = 0;
   let renderPhaseBatchExpand = 0;
   let renderPhase = false;
+  // Task5: 报价模板(QT-1482 customerTemplateId)结构脱钩后, 全程不应 GET /templates/{quoteTemplateId}
+  const QUOTE_TEMPLATE_ID = '98ebccb0-9de6-4ba3-ab87-c14099c8b605';
+  let quoteTemplateFetches = 0;
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
   page.on('pageerror', (e) => consoleErrors.push('PAGE-ERROR: ' + e.message));
   page.on('request', (req) => {
@@ -56,6 +59,10 @@ test('Task8 渲染: 打开 QT-20260601-1482 编辑向导，各 Tab 渲染 + 加�
         const body = (req.postData() || '').slice(0, 300);
         console.log(`  [render-batch-expand #${renderPhaseBatchExpand}] ${body}`);
       }
+    }
+    if (req.method() === 'GET' && req.url().includes(`/templates/${QUOTE_TEMPLATE_ID}`)) {
+      quoteTemplateFetches++;
+      console.log(`  [quote-template-fetch #${quoteTemplateFetches}] ${req.url()}`);
     }
   });
 
@@ -132,9 +139,13 @@ test('Task8 渲染: 打开 QT-20260601-1482 编辑向导，各 Tab 渲染 + 加�
   console.log(`=== /batch-expand 总调用: ${batchExpandTotal}, 渲染期调用: ${renderPhaseBatchExpand} (脱钩稳态=0; 偶发>0 为 autosave 重建行瞬态, 见 RECORD) ===`);
   console.log(`=== '加载中' final: ${loadingFinal} (期望 0) ===`);
 
+  console.log(`=== 报价模板 GET /templates/${QUOTE_TEMPLATE_ID} 次数: ${quoteTemplateFetches} (Task5 期望 0) ===`);
+
   // 硬断言: 用户可见门禁
   expect(tabCount, '产品卡片至少渲染 1 个 Tab').toBeGreaterThan(0);
   expect(loadingFinal, "渲染后不得有 '加载中' 永久占位").toBe(0);
+  // Task5: 报价侧结构读 quote_card_structure, 不再 GET 报价模板
+  expect(quoteTemplateFetches, 'Task5: 报价侧结构脱钩后不得 GET 报价模板').toBe(0);
 });
 
 test('Task8 编辑往返: 元素.单价 编辑 → 自动保存 → 重开存活 + 渲染期无 batch-expand', async ({ page }) => {

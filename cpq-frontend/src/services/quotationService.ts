@@ -16,6 +16,12 @@ export interface CardStructureField {
   defaultValue?: string | null;
   basicDataPath?: string | null;
   datasourceBinding?: any;
+  // Task5(structure v2): 补全 config keys, 供前端旁路 enrich 组装完整 componentData(AP-44)
+  isSubtotal?: boolean;
+  formulaName?: string | null;
+  globalVariableCode?: string | null;
+  defaultSource?: any;
+  listFormulaConfig?: any;
 }
 
 /** 卡片结构 · 页签。 */
@@ -35,6 +41,8 @@ export interface CardStructure {
   templateId?: string;
   templateKind?: string;
   tabs: CardStructureTab[];
+  /** Task5(structure v2): 产品属性 schema, 前端旁路 loadProductAttributes(GET /templates) */
+  productAttributes?: Array<{ name?: string; field_type?: string; required?: boolean; default_value?: any; source?: string }>;
 }
 
 /** 卡片值 · 基础冻结行（driver 展开结果）。 */
