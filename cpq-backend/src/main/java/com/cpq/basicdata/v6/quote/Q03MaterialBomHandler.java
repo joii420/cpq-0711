@@ -5,125 +5,105 @@ import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
 import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
+import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 /**
  * Q03 物料BOM → material_bom（主） + material_bom_item（子） + material_master（同步 upsert）。
- * <p>system_type=QUOTE, bom_type=MATERIAL, bom_version=V1 (默认), characteristic=空。
- * <p>子表写入策略：INSERT ON CONFLICT (uq_material_bom_item) DO UPDATE — 幂等，不依赖 DELETE 步骤。
- * <p>主表写入策略：INSERT ON CONFLICT (uq_material_bom_v6) DO UPDATE — 消除 findOne-then-persist 假 upsert。
+ *
+ * <p>版本化（Task 5）：按 material_no 分组调 {@link VersionedV6Writer#writeVersionedMasterDetail}。
+ * 主表 bom_version max+1（首版 2000，旧 'V1' 非数字被忽略）；子表 uq 不含版本 → upsert 覆盖 + 删残留，仅当前版本（§5.3）。
+ * <p>主/子用 bom_type=MATERIAL（主表 groupKey 维度）+ 子表 characteristic=NULL，与 Q12(ASSEMBLY) 物理隔离。
  */
 @ApplicationScoped
 public class Q03MaterialBomHandler implements SheetHandler {
 
-    @Inject EntityManager em;
+    @Inject VersionedV6Writer writer;
     @Inject MaterialMasterRepository materialMasterRepo;
 
     @Override public String sheetName() { return "物料BOM"; }
+
+    private static final List<String> CHILD_CONTENT = List.of(
+        "seq_no", "component_no", "component_usage_type", "composition_qty",
+        "base_qty", "issue_unit", "scrap_rate", "defect_rate");
 
     @Override
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
 
-        Set<String> processedMains = new HashSet<>();
+        Map<String, Map<List<Object>, Map<String, Object>>> childByMat = new LinkedHashMap<>();
         for (SheetRow row : rows) {
             result.totalRows++;
+            String materialNo = row.getStr("宏丰料号");
+            if (materialNo == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
+            String componentUsageType = row.getStr("产出料号类型");
+            String componentNo = row.getStr("投入料号");
+
+            // §3 料号表同步（保留原副作用）
+            if (componentNo != null) {
+                materialMasterRepo.upsertByMaterialNo(componentNo, row.getStr("投入料号名称"),
+                    null, null, null, digitsOnly(componentUsageType), null, null, null, ctx.importedBy);
+                result.recordWrite("material_master", 1);
+            }
+
+            Integer seq = row.getInt("项次");
+            Map<String, Object> c = new LinkedHashMap<>();
+            c.put("seq_no", seq);
+            c.put("component_no", componentNo);
+            c.put("component_usage_type", componentUsageType);
+            c.put("composition_qty", row.getDecimal("材料毛重", "毛重"));
+            c.put("base_qty", row.getDecimal("材料净重", "净重"));
+            c.put("issue_unit", row.getStr("重量单位"));
+            c.put("scrap_rate", row.getDecimal("损耗率"));
+            c.put("defect_rate", row.getDecimal("不良率"));
+            childByMat.computeIfAbsent(materialNo, k -> new LinkedHashMap<>())
+                      .put(Arrays.asList(seq, componentNo), c);   // 去重键 = (项次, 投入料号)
+            result.successRows++;
+        }
+
+        for (Map.Entry<String, Map<List<Object>, Map<String, Object>>> e : childByMat.entrySet()) {
+            String materialNo = e.getKey();
+            List<Map<String, Object>> childRows = new ArrayList<>(e.getValue().values());
             try {
-                String materialNo = row.getStr("宏丰料号");
-                if (materialNo == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
-                String componentUsageType = row.getStr("产出料号类型");
-                String componentNo = row.getStr("投入料号");
-
-                // §3 料号表同步（字段表基准）：投入料号(component) → material_master
-                //   material_type 只写数字（如 "1.银点类" → "1"）；material_name = 投入料号名称
-                if (componentNo != null) {
-                    materialMasterRepo.upsertByMaterialNo(componentNo, row.getStr("投入料号名称"),
-                        null, null, null, digitsOnly(componentUsageType), null, null, null, ctx.importedBy);
-                    result.recordWrite("material_master", 1);
-                }
-
-                // 第一次见此主件料号：material_bom 主表 upsert（主件 BOM 行）
-                if (!processedMains.contains(materialNo)) {
-                    // 主表：INSERT ON CONFLICT (uq_material_bom_v6) DO UPDATE
-                    // uq_material_bom_v6 = (system_type, customer_no, material_no, bom_version, COALESCE(characteristic,''))
-                    em.createNativeQuery(
-                        "INSERT INTO material_bom " +
-                        "  (id, system_type, customer_no, bom_type, bom_version, material_no, " +
-                        "   characteristic, updated_at, updated_by) " +
-                        "VALUES (gen_random_uuid(), 'QUOTE', :c, 'MATERIAL', 'V1', :m, " +
-                        "        NULL, NOW(), :u) " +
-                        "ON CONFLICT (system_type, customer_no, material_no, bom_version, " +
-                        "             COALESCE(characteristic,'')) " +
-                        "DO UPDATE SET updated_at = NOW(), updated_by = EXCLUDED.updated_by")
-                      .setParameter("c", ctx.customerNo)
-                      .setParameter("m", materialNo)
-                      .setParameter("u", ctx.importedBy)
-                      .executeUpdate();
-                    result.recordWrite("material_bom", 1);
-                    processedMains.add(materialNo);
-                }
-
-                // 子表：INSERT ON CONFLICT (uq_material_bom_item) DO UPDATE
-                // uq_material_bom_item = (system_type, customer_no, material_no,
-                //   COALESCE(characteristic,''), COALESCE(seq_no,0),
-                //   COALESCE(component_no,''), COALESCE(part_no,''))
-                em.createNativeQuery(
-                    "INSERT INTO material_bom_item " +
-                    "  (id, system_type, customer_no, material_no, characteristic, seq_no, " +
-                    "   component_no, component_usage_type, composition_qty, base_qty, " +
-                    "   issue_unit, scrap_rate, defect_rate, updated_at, updated_by) " +
-                    "VALUES (gen_random_uuid(), 'QUOTE', :c, :m, NULL, :seq, " +
-                    "        :comp, :usage, :compQty, :baseQty, " +
-                    "        :unit, :scrap, :defect, NOW(), :u) " +
-                    "ON CONFLICT (system_type, customer_no, material_no, " +
-                    "             COALESCE(characteristic,''), COALESCE(seq_no,0), " +
-                    "             COALESCE(component_no,''), COALESCE(part_no,'')) " +
-                    "DO UPDATE SET " +
-                    "  component_usage_type = EXCLUDED.component_usage_type, " +
-                    "  composition_qty      = EXCLUDED.composition_qty, " +
-                    "  base_qty             = EXCLUDED.base_qty, " +
-                    "  issue_unit           = EXCLUDED.issue_unit, " +
-                    "  scrap_rate           = EXCLUDED.scrap_rate, " +
-                    "  defect_rate          = EXCLUDED.defect_rate, " +
-                    "  updated_at           = NOW(), " +
-                    "  updated_by           = EXCLUDED.updated_by")
-                  .setParameter("c", ctx.customerNo)
-                  .setParameter("m", materialNo)
-                  .setParameter("seq", row.getInt("项次"))
-                  .setParameter("comp", componentNo)
-                  .setParameter("usage", componentUsageType)
-                  .setParameter("compQty", row.getDecimal("材料毛重", "毛重"))
-                  .setParameter("baseQty", row.getDecimal("材料净重", "净重"))
-                  .setParameter("unit", row.getStr("重量单位"))
-                  .setParameter("scrap", row.getDecimal("损耗率"))
-                  .setParameter("defect", row.getDecimal("不良率"))
-                  .setParameter("u", ctx.importedBy)
-                  .executeUpdate();
-                result.successRows++;
-                result.recordWrite("material_bom_item", 1);
-            } catch (Exception e) {
-                result.recordError(row.rowNo, "_row_", e.getMessage());
+                Map<String, Object> masterGk = new LinkedHashMap<>();
+                masterGk.put("system_type", "QUOTE");
+                masterGk.put("customer_no", ctx.customerNo);
+                masterGk.put("material_no", materialNo);
+                masterGk.put("bom_type", "MATERIAL");
+                Map<String, Object> childGk = new LinkedHashMap<>();
+                childGk.put("system_type", "QUOTE");
+                childGk.put("customer_no", ctx.customerNo);
+                childGk.put("material_no", materialNo);
+                childGk.put("characteristic", null);   // Q03 子表 characteristic=NULL
+                writer.writeVersionedMasterDetail(
+                    "material_bom", "bom_version", masterGk, Map.of(),
+                    "material_bom_item", null, childGk, CHILD_CONTENT, childRows);
+                result.recordWrite("material_bom", 1);
+                result.recordWrite("material_bom_item", childRows.size());
+            } catch (Exception ex) {
+                result.recordError(0, "_group_", "material_no=" + materialNo + ": " + ex.getMessage());
             }
         }
         return result;
     }
 
-    /** §3「material_type 只写数字」：从「1.银点类 / 2.非银点类 / 组成件 / 边角料」提取首段数字；无数字返 null。 */
+    /** §3「material_type 只写数字」：从「1.银点类」提取首段数字；无数字返 null。 */
     private static String digitsOnly(String s) {
         if (s == null) return null;
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < s.length(); i++) {
             char ch = s.charAt(i);
             if (ch >= '0' && ch <= '9') sb.append(ch);
-            else if (sb.length() > 0) break;   // 取首段连续数字即停（"1.银点类" → "1"）
+            else if (sb.length() > 0) break;
         }
         return sb.length() == 0 ? null : sb.toString();
     }
