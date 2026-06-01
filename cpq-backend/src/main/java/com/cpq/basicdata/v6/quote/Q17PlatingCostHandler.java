@@ -1,76 +1,104 @@
 package com.cpq.basicdata.v6.quote;
 
-import com.cpq.basicdata.v6.entity.UnitPrice;
 import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
-import com.cpq.basicdata.v6.service.UnitPriceWriter;
+import com.cpq.basicdata.v6.versioning.VersionedGroupSpec;
+import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Q17 电镀费用 → unit_price 一行拆两条 (cost_type=电镀加工费 + 电镀材料费)。
- * <p>规则：plating_scheme_no 不为空时整行跳过（由系统根据电镀方案计算）。
+ *
+ * <p>版本化（Task 3）：每个 cost_type 独立成组，groupKey=(QUOTE, customer_no, MATERIAL, cost_type, code)，
+ * content=[pricing_price, currency, unit, defect_rate]。
+ * <ul>
+ *   <li>规则：电镀方案编号不为空 → 整行跳过（由系统按电镀方案计算）。</li>
+ *   <li>决策⑨：**忽略 Excel「版本编号」列**，version_no 由 writeVersionedGroup 系统生成。</li>
+ *   <li>假设每个 code 一行（电镀费用单值）；同 code 多行会因无 seq 维度撞唯一键（数据质量问题）。</li>
+ * </ul>
  */
 @ApplicationScoped
 public class Q17PlatingCostHandler implements SheetHandler {
 
-    @Inject UnitPriceWriter writer;
+    @Inject VersionedV6Writer writer;
 
     @Override public String sheetName() { return "电镀费用"; }
+
+    private static final List<String> CONTENT = List.of("pricing_price", "currency", "unit", "defect_rate");
 
     @Override
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
+        // key=(cost_type, code) → (groupKey map, content rows)
+        Map<List<Object>, Map<String, Object>> groupKeyOf = new LinkedHashMap<>();
+        Map<List<Object>, List<Map<String, Object>>> contentOf = new LinkedHashMap<>();
+
         for (SheetRow row : rows) {
             result.totalRows++;
+            String code = row.getStr("宏丰料号");
+            if (code == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
+            String platingSchemeNo = row.getStr("电镀方案编号");
+            if (platingSchemeNo != null && !platingSchemeNo.isBlank()) {
+                result.successRows++;   // 整行跳过（成功跳过不算失败）
+                continue;
+            }
+            // 忽略 Excel「版本编号」列（决策⑨）
+            BigDecimal processFee = row.getDecimal("电镀加工费");
+            BigDecimal materialFee = row.getDecimal("电镀材料费");
+            String currency = row.getStr("货币");
+            String unit = row.getStr("计价单位");
+            BigDecimal defectRate = row.getDecimal("不良率");
+
+            accumulate(groupKeyOf, contentOf, ctx, "电镀加工费", code,
+                processFee != null ? processFee : BigDecimal.ZERO, currency, unit, defectRate);
+            accumulate(groupKeyOf, contentOf, ctx, "电镀材料费", code,
+                materialFee != null ? materialFee : BigDecimal.ZERO, currency, unit, defectRate);
+            result.successRows++;
+        }
+
+        for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet()) {
             try {
-                String code = row.getStr("宏丰料号");
-                if (code == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
-                String platingSchemeNo = row.getStr("电镀方案编号");
-                if (platingSchemeNo != null && !platingSchemeNo.isBlank()) {
-                    // 整行跳过（成功跳过不算失败）
-                    result.successRows++;
-                    continue;
-                }
-                String versionNo = row.getStr("版本编号");
-                BigDecimal processFee = row.getDecimal("电镀加工费");
-                BigDecimal materialFee = row.getDecimal("电镀材料费");
-                String currency = row.getStr("货币");
-                String unit = row.getStr("计价单位");
-                BigDecimal defectRate = row.getDecimal("不良率");
-
-                // 第一条：电镀加工费
-                UnitPrice p1 = UnitPriceWriter.newRow("QUOTE", "MATERIAL", "电镀加工费", versionNo, ctx.customerNo, ctx.importedBy);
-                p1.code = code;
-                p1.pricingPrice = processFee != null ? processFee : BigDecimal.ZERO;
-                p1.currency = currency;
-                p1.unit = unit;
-                p1.defectRate = defectRate;
-                writer.upsert(p1);
-                result.recordWrite("unit_price", 1);
-
-                // 第二条：电镀材料费
-                UnitPrice p2 = UnitPriceWriter.newRow("QUOTE", "MATERIAL", "电镀材料费", versionNo, ctx.customerNo, ctx.importedBy);
-                p2.code = code;
-                p2.pricingPrice = materialFee != null ? materialFee : BigDecimal.ZERO;
-                p2.currency = currency;
-                p2.unit = unit;
-                p2.defectRate = defectRate;
-                writer.upsert(p2);
-                result.recordWrite("unit_price", 1);
-
-                result.successRows++;
-            } catch (Exception e) {
-                result.recordError(row.rowNo, "_row_", e.getMessage());
+                writer.writeVersionedGroup(new VersionedGroupSpec(
+                    "unit_price", "version_no", groupKeyOf.get(e.getKey()), CONTENT, e.getValue()));
+                result.recordWrite("unit_price", e.getValue().size());
+            } catch (Exception ex) {
+                result.recordError(0, "_group_", ex.getMessage());
             }
         }
         return result;
+    }
+
+    private void accumulate(Map<List<Object>, Map<String, Object>> groupKeyOf,
+                            Map<List<Object>, List<Map<String, Object>>> contentOf,
+                            ImportContext ctx, String costType, String code,
+                            BigDecimal pricingPrice, String currency, String unit, BigDecimal defectRate) {
+        List<Object> key = Arrays.asList(costType, code);
+        groupKeyOf.computeIfAbsent(key, k -> {
+            Map<String, Object> g = new LinkedHashMap<>();
+            g.put("system_type", "QUOTE");
+            g.put("customer_no", ctx.customerNo);
+            g.put("price_type", "MATERIAL");
+            g.put("cost_type", costType);
+            g.put("code", code);
+            return g;
+        });
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("pricing_price", pricingPrice);
+        c.put("currency", currency);
+        c.put("unit", unit);
+        c.put("defect_rate", defectRate);
+        contentOf.computeIfAbsent(key, k -> new ArrayList<>()).add(c);
     }
 }
