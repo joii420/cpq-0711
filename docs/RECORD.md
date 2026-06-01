@@ -13440,3 +13440,11 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - **结论**: Task8a 已交付**功能完整**的渲染脱钩 —— BASIC_DATA/driver 来自快照(无 batch-expand)、FORMULA 按快照实时算、INPUT 编辑经 row_data 存活重开。用户可见功能闭环。
 - **Task8b 剩余 = 架构完备性, 非新功能**: 读 formulaResults/editRows(零实时计算 §3.3) + editQuoteCardValue 回写替代 autosave(§6) + ReadonlyProductCard 同步 + 结构读 quote_card_structure。其中**退役 row_data/snapshot_rows 是设计 §9 明列的 Phase 4 范围**。这些都属 AP-44/50/54 协议级高风险路径重写, 无新增用户功能(编辑已工作), 建议作专门会话 + 逐块强制 E2E, 勿与功能性改动混提。
 - **E2E 基建已就绪**: task8-snapshot-render.spec(渲染 + 编辑往返双 test)用 QT-20260601-1482, 系统 google-chrome。后续 Task8b 改动可直接复用此 spec 守护。
+
+---
+[2026-06-01] 报价单整份快照 Phase2 收口(用户确认方案A) | docs/superpowers/plans/2026-06-01-报价单整份快照-Phase2.md(收口段) + docs/三大核心模块基线.md(§4.2 Phase2 影响回写)
+- **Phase2 功能性目标达成**: 报价卡片渲染脱钩(渲染期不再 batch-expand, 稳态=0; BASIC_DATA/driver 行读快照) + 草稿态打开重刷(按行键保编辑) + 编辑端到端可用并存活重开。
+- **交付 Task 1-7 全完成主线亲验 + Task 8a 渲染脱钩 + 编辑往返 E2E**。commits: 32c5caa 7a74ebd 3e5bd08 4979b36 5e02401 c1bf896 4e2aa5b 681c769 28087dd。
+- **方案A 决策依据**: E2E 实证编辑经 row_data 已存活重开(ComponentDataDTO.rowData 回带), Task8b 剩余(读 formulaResults/editRows + editQuoteCardValue 回写 + 退役 row_data)为架构完备性非新功能, 且退役 row_data 属设计 §9 Phase 4, 集中 AP-44/50/54 高风险路径 → 归 Phase 4 专项审慎做。
+- **基线文档回写**: §4.2 渲染链路加 Phase2 影响注 —— 步骤5 已脱钩(快照→driverExpansions 停 batch-expand, 门控+回退), FORMULA/INPUT 仍渲染期实时(待 Phase4 退役), Phase4 后步骤3-5 渲染期全移除、§4.4/4.5/5.2 降级种子期。
+- **Phase 4 专项接续清单**(见计划收口段): ①读 formulaResults/editRows 真零计算 ②editQuoteCardValue 替代 autosave + ReadonlyProductCard 同步 ③结构读 quote_card_structure 旁路 enrich ④退役 row_data/snapshot_rows + 前端 formulaEngine 逐分对账 ⑤autosave saveDraft 响应回灌快照消瞬态 ⑥夹具修复跑 composite spec。E2E 基建 task8-snapshot-render.spec 已就绪。
