@@ -322,6 +322,7 @@ const ComponentManagement: React.FC = () => {
   const [fields, setFields] = useState<FieldItem[]>([]);
   const [formulas, setFormulas] = useState<import('./types').FormulaItem[]>([]);
   const [dataDriverPath, setDataDriverPath] = useState<string>('');
+  const [rowKeyFields, setRowKeyFields] = useState<string[]>([]);
   const [driverPickerOpen, setDriverPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingTree, setLoadingTree] = useState(false);
@@ -383,6 +384,7 @@ const ComponentManagement: React.FC = () => {
         }))
       );
       setDataDriverPath(loaded.dataDriverPath ?? '');
+      setRowKeyFields(loaded.rowKeyFields ?? []);
     } catch (e: unknown) {
       const err = e as { message?: string };
       message.error('加载组件失败: ' + (err.message ?? ''));
@@ -402,6 +404,8 @@ const ComponentManagement: React.FC = () => {
         formulas: cleanFormulas,
         // Y1.5: 显式传(空串=清空, 非空=设置)
         dataDriverPath: dataDriverPath ?? '',
+        // Phase1-Snapshot: 行键配置，空数组时传 undefined（不覆盖已有值）
+        rowKeyFields: rowKeyFields.length > 0 ? rowKeyFields : undefined,
       });
       message.success('保存成功');
       loadTree();
@@ -660,6 +664,8 @@ const ComponentManagement: React.FC = () => {
                             fields={fields}
                             formulas={formulas}
                             componentId={selectedComponent?.id}
+                            rowKeyFields={rowKeyFields}
+                            onRowKeyFieldsChange={setRowKeyFields}
                             onChange={(newFields) => {
                               // Detect field renames and sync formula expressions
                               const renames: Record<string, string> = {};
