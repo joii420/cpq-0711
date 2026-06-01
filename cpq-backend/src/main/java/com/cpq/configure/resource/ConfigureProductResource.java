@@ -41,6 +41,9 @@ public class ConfigureProductResource {
     com.cpq.configure.service.ConfigureSnapshotService snapshotService;
 
     @Inject
+    com.cpq.quotation.service.CardSnapshotService cardSnapshotService;
+
+    @Inject
     SecurityIdentity identity;
 
     @POST
@@ -60,6 +63,23 @@ public class ConfigureProductResource {
             snapshotService.snapshotLines(quotationId, resp.lineItems);
         } catch (Exception ignore) {
             // 快照为尽力而为,异常已在 service 内降级;此处再兜底,绝不影响加产品。
+        }
+        // 报价单整份快照 Phase 1: 固定 4 份结构 + 算行级 4 份值
+        try {
+            cardSnapshotService.ensureStructure(quotationId);
+            // resp.lineItems 中的 "id" 即本次新增/更新的行，直接触发值快照
+            if (resp.lineItems != null) {
+                for (java.util.Map<String, Object> liMap : resp.lineItems) {
+                    UUID lineItemId = asUuid(liMap.get("id"));
+                    if (lineItemId != null) {
+                        com.cpq.quotation.entity.QuotationLineItem lineItem =
+                            com.cpq.quotation.entity.QuotationLineItem.findById(lineItemId);
+                        if (lineItem != null) cardSnapshotService.snapshotLineValues(lineItem);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // 尽力而为，不影响加产品
         }
         return resp;
     }
@@ -88,5 +108,11 @@ public class ConfigureProductResource {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private static UUID asUuid(Object o) {
+        if (o == null) return null;
+        if (o instanceof UUID u) return u;
+        try { return UUID.fromString(o.toString()); } catch (Exception e) { return null; }
     }
 }

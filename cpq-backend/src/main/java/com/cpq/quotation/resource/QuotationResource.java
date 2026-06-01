@@ -64,6 +64,10 @@ public class QuotationResource {
     @Inject
     com.cpq.configure.service.ConfigureSnapshotService snapshotService;
 
+    // 报价单整份快照 Phase 1: 4 份结构 + 行级 4 份值
+    @Inject
+    com.cpq.quotation.service.CardSnapshotService cardSnapshotService;
+
     @GET
     public ApiResponse<PageResult<QuotationDTO>> list(
             @QueryParam("page") @DefaultValue("0") int page,
@@ -111,6 +115,21 @@ public class QuotationResource {
             snapshotService.snapshotQuotation(id);
         } catch (Exception ignore) {
             // 快照尽力而为
+        }
+        // 报价单整份快照 Phase 1: 固定 4 份结构 + 刷新行级 4 份值
+        try {
+            cardSnapshotService.ensureStructure(id);
+            var lines = snapshotService.loadQuotationLines(id);
+            for (var liMap : lines) {
+                UUID lineItemId = asUuid(liMap.get("id"));
+                if (lineItemId != null) {
+                    com.cpq.quotation.entity.QuotationLineItem li =
+                        com.cpq.quotation.entity.QuotationLineItem.findById(lineItemId);
+                    if (li != null) cardSnapshotService.snapshotLineValues(li);
+                }
+            }
+        } catch (Exception ignore) {
+            // 尽力而为
         }
         return ApiResponse.success(dto);
     }
@@ -440,5 +459,11 @@ public class QuotationResource {
         } catch (Exception e) {
             throw new BusinessException(400, "重新导入基础数据失败: " + e.getMessage());
         }
+    }
+
+    private static UUID asUuid(Object o) {
+        if (o == null) return null;
+        if (o instanceof UUID u) return u;
+        try { return UUID.fromString(o.toString()); } catch (Exception e) { return null; }
     }
 }

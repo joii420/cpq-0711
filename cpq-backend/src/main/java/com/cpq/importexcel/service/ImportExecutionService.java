@@ -43,6 +43,10 @@ public class ImportExecutionService {
     @Inject
     EntityManager em;
 
+    /** 报价单整份快照 Phase 1 — Excel 导入路径接入 */
+    @Inject
+    com.cpq.quotation.service.CardSnapshotService cardSnapshotService;
+
     @Transactional
     public ImportRecordDTO executeImport(
             UUID customerId,
@@ -194,6 +198,11 @@ public class ImportExecutionService {
                         li.sortOrder = rowNum - dataStartIdx;
                         li.customerPartNo = customerPartNo;
                         li.persist();
+                        // 报价单整份快照 Phase 1（降级）
+                        try {
+                            cardSnapshotService.ensureStructure(quotationId);
+                            cardSnapshotService.snapshotLineValues(li);
+                        } catch (Exception ignored) { /* 尽力而为 */ }
 
                         // Include material info + all excel row values in component data row
                         Map<String, Object> rowDataMap = new LinkedHashMap<>();
@@ -619,6 +628,11 @@ public class ImportExecutionService {
             li.sortOrder = i;
             li.customerPartNo = customerPartNo;
             li.persist();
+            // 报价单整份快照 Phase 1（降级）
+            try {
+                cardSnapshotService.ensureStructure(quotation.id);
+                cardSnapshotService.snapshotLineValues(li);
+            } catch (Exception ignored) { /* 尽力而为 */ }
 
             // Build component data row
             Map<String, Object> cdRowData = new LinkedHashMap<>();
