@@ -13476,3 +13476,11 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - enrich 窗口无 batch-expand: components 未 enrich 前 lineItemsForDriver 用 raw componentData(无 fields/driver)→ useDriverExpansions 跳过; enrich 后 useSnap=true 传 EMPTY。
 - 主线亲跑 E2E 4 passed: 详情页 batch-expand 4→0(RED→GREEN)/加载中=0/20 Tab(产品1 元素9 工序9 与编辑页一致)/render·edit·composite 无回归。tsc 0 + Vite 200。
 - 注: 结构仍走 enrichComponentData(Task5 旁路); INPUT 只读经 ComponentCell row[key] 兜底(与编辑页一致), editRows 统一源待 Task6。
+
+[2026-06-01] 报价单整份快照 Phase4 Task5 - 结构读 quote_card_structure 旁路 enrich(报价模板 GET 1→0, 后端+前端完整脱钩) | cpq-backend CardSnapshotService.java + cpq-frontend QuotationWizard/QuotationStep2/enrichComponentData/quotationService + e2e (commit 659cb09)
+- 用户决议: 后端+前端完整脱钩(productAttributes 不在快照里, 仅前端无法消除模板 fetch)。
+- 后端: ① buildCardStructure 升 version 2 —— 字段补全全部 config keys(isSubtotal/formulaName/globalVariableCode/defaultSource/listFormulaConfig + datasourceBinding 任意类型搬运), 顶层冻入 productAttributes(从 template.product_attributes 列; AP-44 完备性, 否则 LIST_FORMULA/default_source 静默失效)。② 新增 rebuildStructureForDraft(删旧 4 份结构 + ensureStructure 重建); refreshDraftQuoteCards 开头 self.调用 → DRAFT 打开重刷一并重建结构(草稿跟随当前模板 + 旧单补全 v2; 提交后 ensureStructure upsert 不覆盖, 冻结不动)。
+- 前端: ① enrichComponentData.ts 加 buildComponentDataFromStructure(同步从 quoteCardStructure.tabs 组装 componentData, 零网络, saved rows 按 cid 队列回填同 enrich) + productAttributesFromStructure。② applyQuotationData 有 quoteCardStructure(tabs>0 且 templateId 匹配)时旁路 enrich+loadProductAttributes。③ QuotationStep2 quoteTemplateComponentIds 改从结构 tabs 取(不再 GET 报价模板)。
+- **关键瞬态根因**: handleSaveDraft/handleCreateQuotation/handleCalculateDiscount 的 setQuotation(res.data) 用 saveDraft DTO(不含 4 份结构, 仅 getById 暴露)覆盖 → quoteCardStructure 抹成 undefined → Step2 结构脱钩逻辑瞬时回退 → 触发 1 次 GET 模板(实证 quoteTemplCids effect 第 3 次 hasStruct=false)。修法 setQuotationPreservingStructures(响应缺失才从 prev 回填 4 份结构)。
+- 主线亲跑: E2E 4 passed(报价模板 GET 1→0 RED→GREEN / batch-expand=0 / 加载中=0 / 编辑往返存活 / 组合 / 详情无回归); 后端 FormulaCalculatorTest 15 + RowKeyValidationTest 7 = 22/22; tsc 0 + Vite 200。
+- 注: ① 只脱钩报价侧(编辑页); 详情页 ReadonlyProductCard 仍自身 enrich(Task4 已脱 driver/formula); 核价侧仍 GET 核价模板。② QuotationSnapshotTest(RestAssured)本地缺 token 全 401 = 预存在环境问题, 非本改动(私有 buildCardStructure 不致 401)。
