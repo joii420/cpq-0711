@@ -724,7 +724,7 @@ function computeProductSubtotal(
 }
 
 /** 稳定空数组引用 — 传给 useDriverExpansions 表示"无需 batch-expand"(快照模式), 避免每渲染新建 [] 触发 churn。 */
-const EMPTY_LINEITEMS: LineItem[] = [];
+export const EMPTY_LINEITEMS: LineItem[] = [];
 
 /**
  * Task 8 渲染脱钩: 从行级值快照(quoteCardValues/costingCardValues)构造 DriverExpansionMap,
@@ -733,7 +733,7 @@ const EMPTY_LINEITEMS: LineItem[] = [];
  * <p>有此 map 时, activeDriverExpansion 命中快照 baseRows → driver 行数 + BASIC_DATA 值直接来自快照,
  * 渲染期不再调 /batch-expand。FORMULA 仍由 computeAllFormulas 按快照 basicDataValues 实时算(同引擎同输入, 防漂移)。
  */
-function buildSnapshotExpansions(
+export function buildSnapshotExpansions(
   items: LineItem[],
   side: 'QUOTE' | 'COSTING',
   customerId?: string,

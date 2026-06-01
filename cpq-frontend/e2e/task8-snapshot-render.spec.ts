@@ -141,8 +141,17 @@ test('Task8 编辑往返: 元素.单价 编辑 → 自动保存 → 重开存活
   test.skip(!backendUp, '后端未启动');
   let renderPhase = false;
   let renderBatchExpand = 0;
+  // Task1(Phase4): autosave 窗口内瞬态 batch-expand 监控(不重开)
+  let autosaveWindow = false;
+  let autosaveWindowExpand = 0;
   page.on('request', (req) => {
-    if (req.url().includes('/batch-expand') && renderPhase) renderBatchExpand++;
+    if (req.url().includes('/batch-expand')) {
+      if (renderPhase) renderBatchExpand++;
+      if (autosaveWindow) {
+        autosaveWindowExpand++;
+        console.log(`  [autosave-batch-expand #${autosaveWindowExpand}] ${(req.postData() || '').slice(0, 200)}`);
+      }
+    }
   });
 
   const UNIQUE = '77.' + String(Date.now()).slice(-4); // 唯一值便于校验存活
@@ -180,8 +189,12 @@ test('Task8 编辑往返: 元素.单价 编辑 → 自动保存 → 重开存活
   console.log(`[edit] filled 单价 = ${UNIQUE}`);
   await shot(page, 'edit-filled');
 
-  // 等 autosave(10s 间隔)持久化
+  // 等 autosave(10s 间隔)持久化 — Task1: 监控此窗口内瞬态 batch-expand 增量(不重开)
+  autosaveWindow = true;
   await page.waitForTimeout(13000);
+  autosaveWindow = false;
+  console.log(`[edit] autosave 窗口 batch-expand 增量 = ${autosaveWindowExpand} (期望 0)`);
+  expect(autosaveWindowExpand, 'autosave 后不得有瞬态 batch-expand(Task1)').toBe(0);
 
   // 重开
   renderPhase = true;

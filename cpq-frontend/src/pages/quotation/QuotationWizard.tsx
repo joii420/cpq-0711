@@ -13,7 +13,7 @@ import { quotationService } from '../../services/quotationService';
 import { quotationDriftService } from '../../services/quotationDriftService';
 import { quotationSnapshotService } from '../../services/quotationSnapshotService';
 import { customerService } from '../../services/customerService';
-import QuotationStep2, { computeProductSubtotal, computeAllFormulas } from './QuotationStep2';
+import QuotationStep2, { computeProductSubtotal, computeAllFormulas, buildSnapshotExpansions, EMPTY_LINEITEMS } from './QuotationStep2';
 import QuotationStep3 from './QuotationStep3';
 import type { DriftDetectionResult } from '../../types/quotation-drift';
 import type { LineItem, ComponentDataItem } from './QuotationStep2';
@@ -97,8 +97,25 @@ const QuotationWizard: React.FC = () => {
   const customerIdValue = (selectedCustomer?.id) || form.getFieldValue('customerId') || undefined;
   // V202+ (2026-05-19): useDriverExpansions 返回 { cache, invalidate } 解决"配置前缓存 0 行/旧值, 配置后不重拉"问题.
   // invalidate(partNos) 清掉指定料号相关 key, 下一轮 fingerprint 改变时自动 re-fetch.
-  const { cache: driverExpansions, invalidate: invalidateDriverExpansions } =
-    useDriverExpansions(lineItems, customerIdValue, quotationId);
+  //
+  // Phase4 Task1 (2026-06-01) — autosave 瞬态 batch-expand 自愈:
+  // 根因(E2E 实证): autosave 全量重建报价行换新 line id → 本 hook fingerprint(含 li.id)变化
+  // → tasks 重建 → 新 key miss cache → 旧链路重发 /batch-expand(渲染期瞬态 ~1~2 次)。
+  // 修法: 当所有报价行已有 quoteCardValues(快照模式) 时, 不再 batch-expand(传 EMPTY_LINEITEMS),
+  // 改从行级值快照构造 expansions 喂 buildDraftPayload/snapshotRows——rowCount + basicDataValues
+  // 与 batch-expand 完全同源(快照本就由它生成), 行编辑值仍取自 cd.rows, 故 snapshotRows 输出不变、
+  // 编辑往返存活不受影响(E2E 守护)。新增产品(无快照)时 useSnapAll=false 自动回退实时 batch-expand。
+  const useSnapAll = lineItems.length > 0 && lineItems.every(li => !!li.quoteCardValues);
+  const { cache: driverExpansionsLive, invalidate: invalidateDriverExpansions } =
+    useDriverExpansions(useSnapAll ? EMPTY_LINEITEMS : lineItems, customerIdValue, quotationId);
+  const driverExpansionsSnap = React.useMemo(
+    () => (useSnapAll ? buildSnapshotExpansions(lineItems, 'QUOTE', customerIdValue) : {}),
+    [useSnapAll, lineItems, customerIdValue],
+  );
+  const driverExpansions = React.useMemo(
+    () => (useSnapAll ? driverExpansionsSnap : driverExpansionsLive),
+    [useSnapAll, driverExpansionsSnap, driverExpansionsLive],
+  );
 
   // 动态 key 全局变量定义字典 — 供 computeAllFormulas 在 buildDraftPayload 中正确求值动态 key 公式
   // 空 map = 动态 key token 兜底 0 (旧行为); list() 失败时同样兜底 0 不影响静态 key 场景
