@@ -115,6 +115,9 @@ const QuotationCreateForm: React.FC<Props> = ({
       .then((res: any) => {
         const data: MatchResult = res.data ?? res;
         setMatchResult(data);
+        // 编辑态(已有报价单): 模板已锁定, 只更新 matchResult 供 Select 显示, 绝不改/清已加载的 customerTemplateId
+        // (否则自动默认分类的匹配结果若不含该模板 → 误清空 → Step1 校验失败/Step2 拿不到模板)
+        if (readOnly) return;
         // hotfix: loadQuotation 已带 customerTemplateId 时, 若 ID 在匹配结果里就保留,
         // 不要被 useEffect 覆盖成 undefined (MIXED 多模板场景刷新页面后报价模板丢失)
         const currentId = value.customerTemplateId;
@@ -158,6 +161,8 @@ const QuotationCreateForm: React.FC<Props> = ({
           return aSpec - bSpec;
         });
         setCostingTemplates(filtered);
+        // 编辑态: 核价模板已锁定, 不重选/不覆盖
+        if (readOnly) return;
         // hotfix: loadQuotation 已带 costingTemplateId 时, 若 ID 在筛选结果里就保留,
         // 否则才默认选第一个 (同 customerTemplateId 修法对称)
         const currentId = value.costingTemplateId;
@@ -178,9 +183,11 @@ const QuotationCreateForm: React.FC<Props> = ({
 
   // 通知父组件表单合法性
   useEffect(() => {
-    const isValid = !!(value.name?.trim() && value.categoryId && value.customerTemplateId);
+    // 编辑态(已有报价单): 产品分类不持久化(quotation 表无 category_id), 模板已锁定 →
+    // 校验只需 name + customerTemplateId, 不再强求 categoryId(否则编辑已有单 Step1 "下一步"永久禁用)。
+    const isValid = !!(value.name?.trim() && value.customerTemplateId && (readOnly || value.categoryId));
     onValidityChange?.(isValid);
-  }, [value.name, value.categoryId, value.customerTemplateId, onValidityChange]);
+  }, [value.name, value.categoryId, value.customerTemplateId, onValidityChange, readOnly]);
 
   // 渲染模板匹配状态提示
   const renderMatchHint = () => {

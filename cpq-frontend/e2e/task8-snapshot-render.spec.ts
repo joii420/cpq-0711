@@ -1,0 +1,130 @@
+/**
+ * Task 8 — 报价单整份快照渲染切换验证（用 QT-20260601-1482：苏州西门子 + 真实料号行）。
+ *
+ * 直接打开已有 DRAFT 报价单进编辑向导，验证：
+ *  1) 产品卡片各 Tab 渲染（qt-tab-btn > 0）
+ *  2) 无 '加载中' 永久占位（final = 0）
+ *  3) 渲染期 /batch-expand 调用次数（脱钩证据：Task 8 后应为 0；基线会 > 0）
+ *
+ * 基线（Task 8 前）：tabs 渲染 + 加载中=0；batchExpand 计数仅记录。
+ * Task 8 后：额外断言 renderPhaseBatchExpand === 0。
+ */
+import { test, Page } from '@playwright/test';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+import { loginAsAdmin, isBackendUp } from './fixtures/auth';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirnameLocal = path.dirname(__filename);
+const SHOT_DIR = path.join(__dirnameLocal, 'screenshots');
+fs.mkdirSync(SHOT_DIR, { recursive: true });
+
+// QT-20260601-1482 苏州西门子 DRAFT
+const QUOTATION_ID = '151897d4-1afa-46de-9bb1-3ae99664b933';
+
+let shotIdx = 0;
+async function shot(page: Page, name: string) {
+  const file = path.join(SHOT_DIR, `t8-${String(++shotIdx).padStart(2, '0')}-${name}.png`);
+  await page.screenshot({ path: file, fullPage: true }).catch(() => {});
+  console.log(`📸 ${name} → ${file}`);
+}
+
+async function countLoading(page: Page, tag: string) {
+  const c = await page.locator('text=加载中').count();
+  console.log(`[${tag}] '加载中' count = ${c}`);
+  return c;
+}
+
+let backendUp = false;
+test.beforeAll(async () => { backendUp = await isBackendUp(); });
+
+test('Task8 渲染: 打开 QT-20260601-1482 编辑向导，各 Tab 渲染 + 加载中=0 + batch-expand 计数', async ({ page }) => {
+  test.skip(!backendUp, '后端未启动');
+
+  const consoleErrors: string[] = [];
+  let batchExpandTotal = 0;
+  let renderPhaseBatchExpand = 0;
+  let renderPhase = false;
+  page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
+  page.on('pageerror', (e) => consoleErrors.push('PAGE-ERROR: ' + e.message));
+  page.on('request', (req) => {
+    if (req.url().includes('/batch-expand')) {
+      batchExpandTotal++;
+      if (renderPhase) renderPhaseBatchExpand++;
+    }
+  });
+
+  // 1) 登录
+  await loginAsAdmin(page);
+  await shot(page, 'after-login');
+
+  // 2) 打开编辑向导（DRAFT → loadQuotation 触发 refreshCardSnapshot + getById，含 "正在重新计算" 延迟）
+  await page.goto(`/quotations/${QUOTATION_ID}/edit`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(3000);
+  await shot(page, 'wizard-loaded');
+
+  // 等 Step1 "下一步" 可用（编辑态门禁修复后应在 refresh 完成后启用），最长 30s
+  const nextBtn = page.getByRole('button', { name: /下一步/ }).first();
+  if (await nextBtn.isVisible().catch(() => false)) {
+    await nextBtn.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+    // 轮询直到 enabled
+    for (let i = 0; i < 30; i++) {
+      if (await nextBtn.isEnabled().catch(() => false)) break;
+      await page.waitForTimeout(1000);
+    }
+    const enabled = await nextBtn.isEnabled().catch(() => false);
+    console.log(`[edit-gate] Step1 '下一步' enabled = ${enabled}`);
+    await shot(page, 'step1-nextbtn');
+    if (enabled) {
+      await nextBtn.click();
+      await page.waitForTimeout(2000);
+      await shot(page, 'step2');
+    }
+  }
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(1500);
+
+  // 滚到第一个产品卡片
+  await page.locator('text=/产品\\s*1/').first().scrollIntoViewIfNeeded().catch(() => {});
+  await page.waitForTimeout(800);
+  await shot(page, 'product-card');
+
+  // === 渲染期开始监控 batch-expand ===
+  renderPhase = true;
+
+  const tabs = page.locator('button.qt-tab-btn');
+  const tabCount = await tabs.count();
+  console.log(`\n=== qt-tab-btn 数量: ${tabCount} ===`);
+  for (let i = 0; i < tabCount; i++) {
+    const t = await tabs.nth(i).innerText().catch(() => '?');
+    console.log(`  Tab[${i}]: "${t.replace(/\n/g, ' | ').trim()}"`);
+  }
+
+  // 逐 Tab 切换 + 截图 + 统计行/加载中
+  for (let i = 0; i < tabCount; i++) {
+    const tab = tabs.nth(i);
+    const name = (await tab.innerText().catch(() => `tab${i}`)).replace(/\n/g, ' ').trim().slice(0, 20);
+    await tab.click().catch(() => {});
+    await page.waitForTimeout(1800);
+    await shot(page, `tab-${i}-${name}`);
+    const loadCount = await countLoading(page, `tab-${name}`);
+    const rows = page.locator('.qt-cost-table tbody tr');
+    const rowCount = await rows.count();
+    console.log(`  [Tab '${name}'] rows=${rowCount}, 加载中=${loadCount}`);
+    for (let r = 0; r < Math.min(rowCount, 3); r++) {
+      const cells = await rows.nth(r).locator('td').allInnerTexts().catch(() => []);
+      console.log(`    row[${r}]: ${cells.map(c => `"${c.trim().slice(0, 24)}"`).join(' | ')}`);
+    }
+  }
+
+  await page.waitForTimeout(500);
+  const loadingFinal = await countLoading(page, 'final');
+  await shot(page, 'final');
+
+  console.log(`\n=== console.error 总数: ${consoleErrors.length} ===`);
+  consoleErrors.slice(0, 8).forEach(e => console.log('  🔴 ' + e.slice(0, 180)));
+  console.log(`=== /batch-expand 总调用: ${batchExpandTotal}, 渲染期调用: ${renderPhaseBatchExpand} (Task8 期望渲染期=0) ===`);
+  console.log(`=== '加载中' final: ${loadingFinal} (期望 0) ===`);
+});

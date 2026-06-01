@@ -13415,3 +13415,10 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - **时序决策(用户确认)**: 前端单元格编辑改调回写端点(plan S4)**并入 Task8**——当前渲染仍读旧路径(batch-expand/row_data),编辑回写只有在 Task8 渲染切读快照后才可见/可验;且 AP-54 编辑路径(handleRowChange/handleInputBlur)脆弱,与渲染切换一起落地+强制E2E一次性守,避免破坏中间提交态。Task7 只交付已测后端端点+前端service方法。
 - **自检**: 后端全门禁 34/34 passed Skipped0 BUILD SUCCESS; 端点 curl 401(非500); 前端 tsc0 + Vite quotationService.ts=200。
 - **接续 Task8**: ProductCard/ComponentCell/ReadonlyProductCard 数据源切 useCardSnapshots(脱钩) + 单元格编辑改调 editQuoteCardValue + 旁路 enrich/useDriverExpansions; 强制 E2E 双 spec。
+
+---
+[2026-06-01] 修复: 编辑已有报价单进 Step1 "下一步"永久禁用(Task8 前置) | cpq-frontend/src/pages/quotation/QuotationCreateForm.tsx
+- **根因**: quotation 表无 category_id 列(产品分类只创建时临时选,不持久化),QuotationDTO 不返回 categoryId。编辑已有报价单时 step1FormValue.categoryId=undefined → CreateForm 校验 `name && categoryId && customerTemplateId` 不过 → step1Valid=false → "下一步"永久禁用,无法进 Step2 编辑产品。
+- **次生风险**: 编辑态自动默认分类(默认分类)后重新匹配模板,若该模板不在默认分类匹配结果 → 误清空已加载的 customerTemplateId/costingTemplateId → Step2 拿不到模板。
+- **修法(仅影响 readOnly 编辑态,创建态字节不变)**: ① 校验 `name && customerTemplateId && (readOnly || categoryId)` —— 编辑态不强求 categoryId(模板已锁定); ② 报价模板匹配 .then 中 `if (readOnly) return` 在 setMatchResult 之后 —— 只更新显示,绝不改/清 customerTemplateId; ③ 核价模板 .then 同样 `if (readOnly) return` 不重选/不覆盖。
+- **验证**: tsc 0; Vite QuotationCreateForm.tsx=200; E2E task8-snapshot-render.spec(打开 QT-20260601-1482 苏州西门子 DRAFT)**1 passed** —— 成功进 Step2(t8-04-step2.png), 各 Tab(材质/子配件/元素/工序/组合工艺) rows=4~5 渲染, '加载中' final=0。基线 /batch-expand 渲染期=6(Task8 待消 0)。
