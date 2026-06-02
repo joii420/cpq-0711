@@ -57,9 +57,10 @@ function psqlStdin(sql: string): string {
 
 function tabCount(): number {
   const out = psqlStdin(
-    `SELECT count(lcd.*) FROM quotation q JOIN quotation_line_item li ON li.quotation_id=q.id ` +
+    `SELECT count(*) FROM quotation q JOIN quotation_line_item li ON li.quotation_id=q.id ` +
     `JOIN quotation_line_component_data lcd ON lcd.line_item_id=li.id WHERE q.id='${QUOTATION_ID}';`);
-  return parseInt(out.trim() || '-1', 10);
+  const m = out.match(/\d+/);   // 鲁棒提取数字，避开 psql 可能的告警/空白行导致 NaN
+  return m ? parseInt(m[0], 10) : -1;
 }
 
 let shotIdx = 0;
