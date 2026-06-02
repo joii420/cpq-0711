@@ -14,7 +14,8 @@
 - **前端回填(Task6)**: `enrichComponentData` 加 `normalizeTreeConfig`(兼容 snake/camel),模板路径(snapshotComp)+ 整份快照路径(buildComponentDataFromStructure 的 tab)各回填一处。
 - **纯逻辑(Task1/2)**: `treeTable.ts` `buildTreeRows`(6规则:空父/父缺失/多根/环检测降级+warn/重复id第一条胜/同级保原序,order.length===n 永不丢行) + `isTreeRowHidden`(祖先链折叠判定) + `resolveTreeKey`/`layoutTreeRows`;`useTreeCollapse`(会话态,显式翻转集×defaultExpanded,不持久化)。vitest 16 passed。
 - **只读态渲染(Task9)**: `ReadonlyProductCard` 同 QuotationStep2 范式:描述符→layoutTreeRows→isTreeRowHidden过滤→首列缩进/折叠箭头;FieldTraceIcon/cellCtx/暂无数据分支全保留;ri 保持原始下标。确认报价/核价/详情三视图组件行渲染仅 QuotationStep2 + ReadonlyProductCard 两条路径(grep 无第三处 ComponentCell)。
-- ⚠️ **E2E 环境说明(Task10)**: `quotation-flow.spec.ts` 仍在 **P1 料号搜索 3120012574 返0行** 失败(夹具漂移,并发 selopt-v6 V6 数据模型所致,见本文件 13748/13771/13791 行),失败点远早于 Step2 组件渲染,**树表改动零碰料号搜索/添加产品流程**,与本次无关。本次验证靠:vitest 16 passed + 全工程 tsc 0 错误 + 两渲染文件 Vite 200 + step2-empty「加载中」=0 + diff 级证明(非树表分支 `...r` 保留全字段、仅追加未用的 _depth/_hasChildren/_nodeKey → 零行为变化)。**真实树表渲染的端到端浏览器验证因同一夹具漂移阻塞,待 selopt-v6 数据恢复后补跑**。
+- **E2E(Task10)**: `quotation-flow.spec.ts` 原硬编码料号 3120012574 已不在 V6 material_master(并发 selopt-v6 数据模型漂移,见本文件 13748/13771/13791),P1 料号搜索返0行 → **本次把 spec 夹具料号统一改为现存 10110002**(罗克韦尔下有效,与 composite-product-flow.spec 同夹具),**E2E 1 passed**:8 个 Tab(材质/工序/元素含量/组合工艺/选配-*)全 FOUND、`加载中` final=0、逐 Tab `加载中`=0。这条 spec 跑的是**非树表平铺路径**(这些组件无 treeConfig,正好走我改的非树表分支)→ 平铺渲染零回归确认。console.error 仅 antd 弃用警告 + form 嵌套 hydration(预先存在,无树表相关错误)。
+- 树表渲染本身覆盖:vitest 16 passed(buildTreeRows 6规则 + isTreeRowHidden + resolveTreeKey)+ diff 级证明(非树表分支 `...r` 保留全字段、仅追加未用三字段 → 零行为变化)。真实树形数据的浏览器级验证待有树表配置组件的报价单数据后补做。
 - commits: d93d49b/b412259/7627ed7/9dc5841/c45c8ac/cfd4180/157a52b/49a3d2d/14039e3(9个,各自只含自身文件;同分支有并发 Excel 会话提交穿插)。
 
 ---
