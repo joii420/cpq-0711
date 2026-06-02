@@ -125,40 +125,37 @@ public class ConfigureProductService {
     LookupFingerprintResponse.Snapshot buildSnapshot(String hfPartNo) {
         LookupFingerprintResponse.Snapshot s = new LookupFingerprintResponse.Snapshot();
 
-        // unit_weight from mat_part (PK = part_no)
+        // unit_weight from material_master (V6, material_no = hfPartNo)
         List<Object> w = em.createNativeQuery(
-                "SELECT unit_weight FROM mat_part WHERE part_no = :p")
+                "SELECT unit_weight FROM material_master WHERE material_no = :p")
             .setParameter("p", hfPartNo).getResultList();
         s.unitWeightGrams = (w.isEmpty() || w.get(0) == null)
             ? null
             : new BigDecimal(w.get(0).toString());
 
-        // mat_process has customer_id in its UNIQUE index; DISTINCT ON seq_no across customers
+        // 工序: V6 unit_price（自制加工费，is_current）；DISTINCT ON seq_no 跨客户取工序列表
         List<Object[]> procs = em.createNativeQuery(
-                "SELECT DISTINCT ON (seq_no) process_code, seq_no " +
-                "FROM mat_process " +
-                "WHERE hf_part_no = :p AND is_current = true " +
-                "ORDER BY seq_no")
+                "SELECT DISTINCT ON (seq_no) operation_no, seq_no FROM unit_price " +
+                "WHERE finished_material_no = :p AND cost_type = '自制加工费' AND is_current = true ORDER BY seq_no")
             .setParameter("p", hfPartNo).getResultList();
         s.processes = procs.stream().map(row -> {
             Map<String, Object> m = new HashMap<>();
-            m.put("processCode", row[0]);
+            m.put("processCode", row[0]); // operation_no → processCode
             m.put("seqNo", row[1]);
             return m;
         }).collect(Collectors.toList());
 
-        // mat_composite_process: column is hf_part_no (renamed V166 from parent_hf_part_no)
+        // 组合工艺: V6 capacity（QUOTE_ASSEMBLY，is_current）；V6 不存 participatingParts/paramValues → 降级 null
         List<Object[]> cprocs = em.createNativeQuery(
-                "SELECT def_code, seq_no, participating_parts, param_values " +
-                "FROM mat_composite_process " +
-                "WHERE hf_part_no = :p AND is_current = true ORDER BY seq_no")
+                "SELECT process_no, seq_no FROM capacity " +
+                "WHERE material_no = :p AND resource_group_no = 'QUOTE_ASSEMBLY' AND is_current = true ORDER BY seq_no")
             .setParameter("p", hfPartNo).getResultList();
         s.compositeProcesses = cprocs.stream().map(row -> {
             Map<String, Object> m = new HashMap<>();
-            m.put("defCode", row[0]);
+            m.put("defCode", row[0]); // process_no → defCode
             m.put("seqNo", row[1]);
-            m.put("participatingParts", row[2]);
-            m.put("paramValues", row[3]);
+            m.put("participatingParts", null); // V6 capacity 不存此字段，已知降级
+            m.put("paramValues", null);        // V6 capacity 不存此字段，已知降级
             return m;
         }).collect(Collectors.toList());
 
@@ -194,21 +191,8 @@ public class ConfigureProductService {
                 .setParameter("p", pr.existingHfPartNo)
                 .getResultList();
             if (v6rows.isEmpty()) {
-                @SuppressWarnings("unchecked")
-                List<Object> v44rows = em.createNativeQuery(
-                        "SELECT 1 FROM mat_part WHERE part_no = :p")
-                    .setParameter("p", pr.existingHfPartNo)
-                    .getResultList();
-                if (v44rows.isEmpty()) {
-                    throw new IllegalArgumentException("料号不存在: " + pr.existingHfPartNo);
-                }
-                // 仅 V44 有 → targeted 回填该料号的 V6 身份+元素，使复用后材质/元素 Tab 能渲染
-                backfillV6FromV44(pr.existingHfPartNo, customerCode);
-            } else {
-                // V6 有但 V44 mat_part 可能缺(V6 原生导入料号)。
-                // 下游 insertProcesses 受 mat_process.hf_part_no→mat_part.part_no FK 约束,
-                // 反向 backfill 一行 mat_part 占位(unit_weight/recipe 从 material_master 取)。
-                backfillV44FromV6(pr.existingHfPartNo, v6rows.get(0));
+                // V6 不存在 → 料号不存在（Phase 3 后 material_master 为权威，V44 mat_part 已停写）
+                throw new IllegalArgumentException("料号不存在: " + pr.existingHfPartNo);
             }
             // 跨客户复用: V6 材质/元素按 customer_no 存。指纹命中已有料号(前端自动切 partMode=existing)
             // 复用到新客户的报价单时,当前客户名下可能无 element_bom_item/material_bom_item → 材质/元素 Tab 空。
@@ -235,24 +219,10 @@ public class ConfigureProductService {
             }
             UUID lineItemId = parseUuidOrNull(pr.quotationLineItemId);
             if (lineItemId != null) {
-                // Bug B 新路径: 仅删除该 lineItem 专属的工序行，不碰主数据
-                em.createNativeQuery(
-                        "DELETE FROM mat_process " +
-                        "WHERE hf_part_no = :p AND customer_id = :c AND quotation_line_item_id = :lid")
-                    .setParameter("p", pr.existingHfPartNo)
-                    .setParameter("c", customerId)
-                    .setParameter("lid", lineItemId)
-                    .executeUpdate();
-                // 按用户选的 processIds 写入，绑定到该 lineItemId
+                // Bug B 新路径: 写 lineItem 专属工序行（V44 DELETE 已移除，unit_price 升版自带覆盖）
                 insertProcessesWithLineItemId(pr.existingHfPartNo, pr.processIds, customerId, lineItemId);
             } else {
-                // 老路径兼容: 删当前 customer 的所有主数据工序行（无 lineItem 维度）
-                em.createNativeQuery(
-                        "DELETE FROM mat_process " +
-                        "WHERE hf_part_no = :p AND customer_id = :c AND quotation_line_item_id IS NULL")
-                    .setParameter("p", pr.existingHfPartNo)
-                    .setParameter("c", customerId)
-                    .executeUpdate();
+                // 老路径兼容: V6 unit_price 版本化写入（覆盖当前 customer 工序）
                 insertProcessSimpleUnitPriceV6(pr.existingHfPartNo, pr.processIds, customerCode);
             }
             // 仍返老 hfPartNo, 卡片显示用户选的料号
@@ -273,9 +243,7 @@ public class ConfigureProductService {
         // 同材质+元素不同工序 = 同一料号。与 lookup-fingerprint(2参)一致，避免 P2 命中、提交却不复用。
         String fp = fingerprintCalc.simpleFingerprint(pr.recipeCode, elems);
 
-        // 指纹复用判定：过渡期以 V44 mat_part 为权威（含历史 + 本期双写的全部选配料号）。
-        // 不能改读 material_master —— 历史选配料号 fp 只在 mat_part，改读 V6 会漏判→重复新建→
-        // insertMatPart ON CONFLICT(fp) 跳过→mat_bom FK 断裂。Phase 3 移除 V44 写入后再切 V6。
+        // Phase 3 后：material_master 为指纹权威（V44 写入已停止，lookupHfByFingerprint 直接查 V6）
         com.cpq.configure.entity.MaterialRecipe recipe =
             com.cpq.configure.entity.MaterialRecipe.findByCodeOrThrow(pr.recipeCode);
         String existing = lookupHfByFingerprint(fp);
@@ -284,11 +252,9 @@ public class ConfigureProductService {
             reused.add(existing);
             hfPartNo = existing;
         } else {
-            // 未命中指纹 → 新建（V44）
+            // 未命中指纹 → 新建（V6 主写）
             hfPartNo = partNoProvider.apply(
                 new PartNoContext(recipe.symbol, "SIMPLE", operatorId));
-            insertMatPart(hfPartNo, "SIMPLE", fp, pr.unitWeightGrams, recipe.id);
-            insertElementBom(hfPartNo, pr.elements);
             // 写 V6 unit_price 工序 — 需要 customerCode (NOT NULL)
             if (pr.processIds != null && !pr.processIds.isEmpty()) {
                 if (customerCode == null || customerCode.isBlank()) {
@@ -360,112 +326,68 @@ public class ConfigureProductService {
         }
     }
 
-    /**
-     * 插入 mat_part 行.
-     *
-     * <p>使用 ON CONFLICT (config_fingerprint) WHERE config_fingerprint IS NOT NULL DO NOTHING
-     * — PG 16 支持对 partial unique index 使用 conflict target + predicate 语法.
-     * 对应 V167 创建的 uq_mat_part_fingerprint 索引.
-     * 若存在并发相同配置竞争，conflict 处理为幂等忽略.
-     */
-    void insertMatPart(String hfPartNo, String productType, String fingerprint,
-                       BigDecimal unitWeight, UUID materialRecipeId) {
-        em.createNativeQuery(
-                "INSERT INTO mat_part (part_no, product_type, config_fingerprint, " +
-                "unit_weight, material_recipe_id, created_at, updated_at) " +
-                "VALUES (:pn, :pt, :fp, :uw, :mri, NOW(), NOW()) " +
-                "ON CONFLICT (config_fingerprint) WHERE config_fingerprint IS NOT NULL DO NOTHING")
-            .setParameter("pn", hfPartNo)
-            .setParameter("pt", productType)
-            .setParameter("fp", fingerprint)
-            .setParameter("uw", unitWeight)
-            .setParameter("mri", materialRecipeId)
-            .executeUpdate();
-    }
+    // insertMatPart 已在 Phase 3 移除（V44 mat_part 写入停用）
 
     /**
-     * hotfix: existing 路径新客户复用老料号时, 把任意已有客户的 mat_process 数据复制一份给当前客户.
+     * Phase 3 切 V6：existing 路径新客户复用老料号时，确保当前客户在 unit_price 中有工序数据。
      *
-     * <p>mat_process 按 customer_id NOT NULL 隔离, 新客户首次复用 → ImplicitJoinRewriter
-     * 注入当前 customer_id 查询 0 行 → 工序 Tab "加载中" 卡死.
-     *
-     * <p>幂等: 如果当前客户已有该料号的 mat_process 行, 跳过.
-     * 取最新 updated_at 的客户作源, INSERT 时让 PK / 唯一约束自动去重 (ON CONFLICT DO NOTHING).
+     * <p>unit_price 按 customer_no（客户编码字符串）隔离，新客户首次复用 → 该客户名下无工序行
+     * → 工序 Tab 空。幂等：当前客户已有 is_current=true 行时跳过。
+     * 无数据时从该料号任一现有客户复制工序（operation_no/seq_no/currency/unit），
+     * 写成当前客户的新版本（writeVersionedGroup）。
      */
+    @SuppressWarnings("unchecked")
     void backfillProcessesForNewCustomer(String hfPartNo, java.util.UUID currentCustomerId) {
-        // 已有数据 → 跳过
+        // 把 currentCustomerId(UUID) 转成 customer_no（unit_price 用 code 字符串）
+        List<Object> cc = em.createNativeQuery(
+                "SELECT code FROM customer WHERE id = :id")
+            .setParameter("id", currentCustomerId).getResultList();
+        if (cc.isEmpty() || cc.get(0) == null) return;
+        String currentCustomerCode = cc.get(0).toString();
+
+        // 已有则跳过
         Object existsObj = em.createNativeQuery(
-                "SELECT 1 FROM mat_process WHERE hf_part_no = :p AND customer_id = :c AND is_current = true LIMIT 1")
-            .setParameter("p", hfPartNo)
-            .setParameter("c", currentCustomerId)
+                "SELECT 1 FROM unit_price WHERE finished_material_no = :p AND customer_no = :c " +
+                "AND cost_type = '自制加工费' AND is_current = true LIMIT 1")
+            .setParameter("p", hfPartNo).setParameter("c", currentCustomerCode)
             .getResultStream().findFirst().orElse(null);
         if (existsObj != null) return;
 
-        // 复制最新一个客户的所有 mat_process 行 (按 seq_no 顺序), 改成当前 customer_id
-        int copied = em.createNativeQuery(
-                "INSERT INTO mat_process " +
-                "(customer_id, hf_part_no, version, is_current, seq_no, " +
-                "process_code, assembly_process, part_version, status, created_at, updated_at) " +
-                "SELECT :newCust, hf_part_no, 1, true, seq_no, " +
-                "       process_code, assembly_process, part_version, 'ACTIVE', NOW(), NOW() " +
-                "FROM mat_process " +
-                "WHERE hf_part_no = :p AND is_current = true " +
-                "  AND customer_id = (" +
-                "    SELECT customer_id FROM mat_process WHERE hf_part_no = :p AND is_current = true " +
-                "    ORDER BY updated_at DESC LIMIT 1)")
-            .setParameter("newCust", currentCustomerId)
-            .setParameter("p", hfPartNo)
-            .executeUpdate();
-        // 不引 Logger 依赖, 改用 System.out (configure 流程少, 噪音可忽略)
-        System.out.printf("[configure backfill] customerId=%s hfPartNo=%s copied %d mat_process rows%n",
-                currentCustomerId, hfPartNo, copied);
-    }
+        // 取该料号任一已有客户的当前工序（按最新版本），复制成 currentCustomerCode
+        List<Object[]> src = em.createNativeQuery(
+                "SELECT operation_no, seq_no, currency, unit FROM unit_price " +
+                "WHERE finished_material_no = :p AND cost_type = '自制加工费' AND is_current = true " +
+                "  AND customer_no = (SELECT customer_no FROM unit_price WHERE finished_material_no = :p " +
+                "     AND cost_type = '自制加工费' AND is_current = true ORDER BY version_no DESC LIMIT 1) " +
+                "ORDER BY seq_no").setParameter("p", hfPartNo).getResultList();
+        if (src.isEmpty()) return;
 
-    /** hotfix: 从老料号 mat_bom 读 ELEMENT 行, 用于 existing+processIds 的 fingerprint 计算 */
-    @SuppressWarnings("unchecked")
-    List<ElementInput> readElementsFromMatBom(String hfPartNo) {
-        List<Object[]> rows = em.createNativeQuery(
-                "SELECT element_name, composition_pct FROM mat_bom " +
-                "WHERE hf_part_no = :p AND bom_type = 'ELEMENT' " +
-                "ORDER BY seq_no")
-            .setParameter("p", hfPartNo)
-            .getResultList();
-        List<ElementInput> out = new ArrayList<>();
-        for (Object[] r : rows) {
-            if (r[0] == null || r[1] == null) continue;
-            out.add(new ElementInput(r[0].toString(), new java.math.BigDecimal(r[1].toString())));
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Object[] r : src) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("operation_no", r[0]);
+            m.put("seq_no", r[1]);
+            m.put("currency", r[2] != null ? r[2] : "CNY");
+            m.put("unit", r[3] != null ? r[3] : "KG");
+            rows.add(m);
         }
-        return out;
+        Map<String, Object> gk = new LinkedHashMap<>();
+        gk.put("system_type", "QUOTE");
+        gk.put("price_type", "MATERIAL");
+        gk.put("cost_type", "自制加工费");
+        gk.put("customer_no", currentCustomerCode);
+        gk.put("code", hfPartNo);
+        gk.put("finished_material_no", hfPartNo);
+        versionedWriter.writeVersionedGroup(new VersionedGroupSpec(
+            "unit_price", "version_no", gk,
+            List.of("operation_no", "seq_no", "currency", "unit"), rows));
+        System.out.printf("[configure backfill] customerCode=%s hfPartNo=%s backfilled %d unit_price rows%n",
+                currentCustomerCode, hfPartNo, rows.size());
     }
 
-    /** hotfix: 复制老料号 mat_bom ELEMENT 行到新 hfPartNo (existing+processIds 路径) */
-    void copyElementBom(String fromHfPartNo, String toHfPartNo) {
-        em.createNativeQuery(
-                "INSERT INTO mat_bom (hf_part_no, bom_type, seq_no, element_name, " +
-                "composition_pct, part_version, created_at) " +
-                "SELECT :to, bom_type, seq_no, element_name, composition_pct, 2000, NOW() " +
-                "FROM mat_bom WHERE hf_part_no = :from AND bom_type = 'ELEMENT'")
-            .setParameter("to", toHfPartNo)
-            .setParameter("from", fromHfPartNo)
-            .executeUpdate();
-    }
+    // readElementsFromMatBom 和 copyElementBom 已在 Phase 3 移除（V44 mat_bom 死代码）
 
-    void insertElementBom(String hfPartNo, List<ElementOverride> elements) {
-        // mat_bom: has part_version (V153) but NO is_current column (not in V44 or V153)
-        // element_name stores the elementCode; composition_pct stores the percentage
-        int seq = 1;
-        for (ElementOverride eo : elements) {
-            em.createNativeQuery(
-                    "INSERT INTO mat_bom (hf_part_no, bom_type, seq_no, element_name, " +
-                    "composition_pct, part_version, created_at) " +
-                    "VALUES (:p, 'ELEMENT', :sq, :en, :pct, 2000, NOW())")
-                .setParameter("p", hfPartNo)
-                .setParameter("sq", seq++)
-                .setParameter("en", eo.elementCode)
-                .setParameter("pct", eo.pct)
-                .executeUpdate();
-        }
-    }
+    // insertElementBom 已在 Phase 3 移除（V44 mat_bom 写入停用）
 
     // ─────────────────────────────────────────────────────────────────────
     // V6 落库（AP-53 续 6 Phase 1）— 复刻 import 行形状，让现有 mirror 视图零改渲染。
@@ -581,55 +503,7 @@ public class ConfigureProductService {
             .executeUpdate();
     }
 
-    /**
-     * 反向 backfill: V6 material_master 有此料号但 V44 mat_part 缺时,补一行 mat_part 占位。
-     * <p>下游 {@code insertProcesses} 写 mat_process 受 FK {@code mat_process.hf_part_no→mat_part.part_no}
-     * 约束;V6 原生导入料号(如 10110002/3)首次出现在 composite 子件时 mat_part 无对应行 → FK 违反 409。
-     * <p>幂等 ON CONFLICT(part_no) DO NOTHING。
-     */
-    void backfillV44FromV6(String partNo, Object[] v6row) {
-        UUID materialRecipeId = (v6row != null && v6row.length > 0 && v6row[0] != null)
-            ? UUID.fromString(v6row[0].toString()) : null;
-        BigDecimal unitWeight = (v6row != null && v6row.length > 1 && v6row[1] != null)
-            ? new BigDecimal(v6row[1].toString()) : null;
-        em.createNativeQuery(
-                "INSERT INTO mat_part (part_no, material_recipe_id, unit_weight, " +
-                "product_type, status_code, created_at, updated_at) " +
-                "VALUES (:pn, :mri, :uw, 'SIMPLE', 'Y', NOW(), NOW()) " +
-                "ON CONFLICT (part_no) DO NOTHING")
-            .setParameter("pn", partNo)
-            .setParameter("mri", materialRecipeId)
-            .setParameter("uw", unitWeight)
-            .executeUpdate();
-    }
-
-    /**
-     * targeted 回填：把仅存在于 V44(mat_part/mat_bom)的历史选配料号补到 V6
-     * (material_master 身份 + element_bom_item 元素),使指纹复用该料号时材质/元素 Tab 能渲染。
-     * 仅补传入的这一个料号(非批量),幂等 ON CONFLICT DO NOTHING。
-     */
-    void backfillV6FromV44(String partNo, String customerCode) {
-        // 身份 → material_master(从 mat_part 取 product_type/unit_weight/recipe/fingerprint)
-        em.createNativeQuery(
-                "INSERT INTO material_master (material_no, material_type, unit_weight, material_recipe_id, config_fingerprint) " +
-                "SELECT part_no, product_type, unit_weight, material_recipe_id, config_fingerprint " +
-                "FROM mat_part WHERE part_no = :p " +
-                "ON CONFLICT DO NOTHING")
-            .setParameter("p", partNo)
-            .executeUpdate();
-        // 元素 → element_bom_item(从 mat_bom ELEMENT 行取;customer_no=code,characteristic='2000' 与 insertElementBomV6 一致)
-        if (customerCode != null && !customerCode.isBlank()) {
-            em.createNativeQuery(
-                    "INSERT INTO element_bom_item (system_type, customer_no, hf_part_no, material_no, " +
-                    "characteristic, seq_no, component_no, content) " +
-                    "SELECT 'QUOTE', :cn, hf_part_no, hf_part_no, '2000', seq_no, element_name, composition_pct " +
-                    "FROM mat_bom WHERE hf_part_no = :p AND bom_type = 'ELEMENT' " +
-                    "ON CONFLICT DO NOTHING")
-                .setParameter("cn", customerCode)
-                .setParameter("p", partNo)
-                .executeUpdate();
-        }
-    }
+    // backfillV44FromV6 和 backfillV6FromV44 已在 Phase 3 移除（V44 双写桥停用）
 
     /**
      * V6: 组合子件 → material_bom_item（characteristic='ASSEMBLY'，component_no=子料号）。
@@ -916,56 +790,12 @@ public class ConfigureProductService {
         }
     }
 
-    /**
-     * 写 mat_process 工艺行 — P4 批2 补丁实现.
-     *
-     * <p>从 quotation 获取的 customerId 满足 customer_id NOT NULL 约束.
-     * process 字典表的 code 列即对应 mat_process.process_code.
-     * mat_process UNIQUE INDEX uq_mat_process_current:
-     *   (customer_id, hf_part_no, part_version, seq_no, sub_seq_no) WHERE is_current=true
-     * sub_seq_no 为 NULL 时 UNIQUE index 使用 NULL 语义 (每行唯一,不冲突),
-     * 故重复调用（指纹命中复用路径）不会再走到这里.
-     *
-     * <p>注意: insertProcesses 仅在"未命中指纹 → 新建"路径调用，不存在重复写入风险.
-     */
-    @SuppressWarnings("unchecked")
-    void insertProcesses(String hfPartNo, List<UUID> processIds, UUID customerId) {
-        int seq = 1;
-        for (UUID processId : processIds) {
-            // hotfix: 同时读 code + name, 写进 mat_process.process_code + assembly_process,
-            // 让选配工序在报价单工序 Tab 的「工序」列能正确显示工序中文名 (焊接装配/淬火等)
-            List<Object[]> rows = em.createNativeQuery(
-                    "SELECT code, name FROM process WHERE id = :id")
-                .setParameter("id", processId)
-                .getResultList();
-            if (rows.isEmpty()) {
-                throw new IllegalArgumentException("工艺不存在: " + processId);
-            }
-            Object[] r = rows.get(0);
-            String code = (String) r[0];
-            String name = (String) r[1];
-
-            // mat_process required columns (from V44 + V153):
-            //   customer_id NOT NULL, hf_part_no NOT NULL, version INT DEFAULT 1,
-            //   is_current BOOLEAN NOT NULL DEFAULT true, seq_no NOT NULL,
-            //   status NOT NULL DEFAULT 'ACTIVE', part_version INT NOT NULL DEFAULT 2000
-            // process_code + assembly_process 都从 process 字典填
-            em.createNativeQuery(
-                    "INSERT INTO mat_process " +
-                    "(customer_id, hf_part_no, version, is_current, seq_no, " +
-                    "process_code, assembly_process, part_version, status, created_at, updated_at) " +
-                    "VALUES (:cid, :p, 1, true, :sq, :code, :name, 2000, 'ACTIVE', NOW(), NOW())")
-                .setParameter("cid", customerId)
-                .setParameter("p", hfPartNo)
-                .setParameter("sq", seq++)
-                .setParameter("code", code)
-                .setParameter("name", name)
-                .executeUpdate();
-        }
-    }
+    // insertProcesses 已在 Phase 3 移除（V44 mat_process 写入停用）
 
     /**
-     * Bug B 修复: 带 quotation_line_item_id 的工序写入。
+     * Bug B 修复: 带 quotation_line_item_id 的工序写入（V44 mat_process）。
+     * DONE_WITH_CONCERNS：insertProcessesWithLineItemId 尚写 V44 mat_process，
+     * existing+lineItemId 路径的 V6 替代方案待后续 Phase 完成。
      * 与 insertProcesses 逻辑相同，区别在于 INSERT 时额外写入 quotation_line_item_id 列，
      * 使同 (customer_id, hf_part_no) 的多套工序通过 line_item_id 互相隔离。
      */
@@ -1049,13 +879,7 @@ public class ConfigureProductService {
             if (parentHfPartNo == null) {
                 parentHfPartNo = partNoProvider.apply(
                     new PartNoContext("COMBO", "COMPOSITE", operatorId));
-                // COMPOSITE 父行: material_recipe_id = NULL, unit_weight = NULL
-                insertMatPart(parentHfPartNo, "COMPOSITE", fp, null, null);
-                insertAssemblyBom(parentHfPartNo, childHfPartNos);
-                if (req.compositeProcesses != null && !req.compositeProcesses.isEmpty()) {
-                    insertCompositeProcesses(parentHfPartNo, req.compositeProcesses,
-                        childHfPartNos, operatorId);
-                }
+                // COMPOSITE 父行: V6 主写，V44 insertMatPart/insertAssemblyBom/insertCompositeProcesses 已移除
             } else {
                 reused.add(parentHfPartNo);
             }
@@ -1143,56 +967,8 @@ public class ConfigureProductService {
         }
     }
 
-    void insertAssemblyBom(String parentHfPartNo, List<String> childHfPartNos) {
-        // mat_bom ASSEMBLY 行: child_part_no stores child part_no (V168 added column)
-        // no is_current column in mat_bom
-        int seq = 1;
-        for (String childPn : childHfPartNos) {
-            em.createNativeQuery(
-                    "INSERT INTO mat_bom (hf_part_no, bom_type, seq_no, child_part_no, " +
-                    "composition_pct, part_version, created_at) " +
-                    "VALUES (:p, 'ASSEMBLY', :sq, :c, 100.00, 2000, NOW())")
-                .setParameter("p", parentHfPartNo)
-                .setParameter("sq", seq++)
-                .setParameter("c", childPn)
-                .executeUpdate();
-        }
-    }
-
-    void insertCompositeProcesses(String parentHfPartNo,
-                                  List<com.cpq.configure.dto.CompositeProcessRequest> cps,
-                                  List<String> childHfPartNos,
-                                  UUID operatorId) {
-        int seq = 1;
-        com.fasterxml.jackson.databind.ObjectMapper om =
-            new com.fasterxml.jackson.databind.ObjectMapper();
-        for (com.cpq.configure.dto.CompositeProcessRequest cp : cps) {
-            // validate def exists and is ACTIVE
-            com.cpq.configure.entity.CompositeProcessDef.findByCodeOrThrow(cp.defCode);
-            List<String> partsInvolved = cp.participatingPartIndexes.stream()
-                .map(childHfPartNos::get)
-                .collect(Collectors.toList());
-            try {
-                // hf_part_no column (V166 renamed from parent_hf_part_no)
-                em.createNativeQuery(
-                        "INSERT INTO mat_composite_process " +
-                        "(hf_part_no, def_code, seq_no, participating_parts, " +
-                        "param_values, part_version, is_current, created_at, created_by) " +
-                        "VALUES (:p, :d, :sq, CAST(:pp AS jsonb), CAST(:pv AS jsonb), " +
-                        "2000, true, NOW(), :op)")
-                    .setParameter("p", parentHfPartNo)
-                    .setParameter("d", cp.defCode)
-                    .setParameter("sq", seq++)
-                    .setParameter("pp", om.writeValueAsString(partsInvolved))
-                    .setParameter("pv", om.writeValueAsString(
-                        cp.params == null ? new HashMap<String, Object>() : cp.params))
-                    .setParameter("op", operatorId)
-                    .executeUpdate();
-            } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
-                throw new RuntimeException("JSON 序列化失败", ex);
-            }
-        }
-    }
+    // insertAssemblyBom 已在 Phase 3 移除（V44 mat_bom ASSEMBLY 写入停用）
+    // insertCompositeProcesses 已在 Phase 3 移除（V44 mat_composite_process 写入停用）
 
     /**
      * per-quote 组合工艺写入(取代 mat_composite_process 作渲染源)。
