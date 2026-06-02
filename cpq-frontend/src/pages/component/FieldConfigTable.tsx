@@ -25,6 +25,12 @@ interface FieldConfigTableProps {
   onConfigDatasource: (fieldIndex: number) => void;
   /** 可选：当前组件 ID，传入后 PathPickerDrawer 会显示"SQL 视图"Tab */
   componentId?: string;
+  /** 当前 rowKeyFields（真实列名数组）。传入即渲染"行键"勾选列。 */
+  rowKeyFields?: string[];
+  /** 按字段名索引的行键候选（来自 row-key-candidates 端点）。 */
+  candidatesByField?: Record<string, import('./types').RowKeyCandidate>;
+  /** 勾选/取消某字段作行键：传该字段反查出的真实列名 + 选中态。 */
+  onToggleRowKey?: (resolvedColumn: string, checked: boolean) => void;
 }
 
 const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
@@ -33,6 +39,9 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
   onChange,
   onConfigDatasource,
   componentId,
+  rowKeyFields,
+  candidatesByField,
+  onToggleRowKey,
 }) => {
   const [pathPickerKey, setPathPickerKey] = useState<string | null>(null);
   // V109: 全局变量选择器, 选完编译为 BNF path + 写入 global_variable_code 元数据
@@ -409,6 +418,29 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
         />
       ),
     },
+    ...(onToggleRowKey ? [{
+      title: '行键',
+      key: 'is_row_key',
+      width: 64,
+      render: (_: unknown, record: FieldItem) => {
+        const cand = candidatesByField?.[record.name];
+        const eligible = !!cand?.eligible;
+        const col = cand?.resolvedColumn ?? null;
+        const checked = !!(col && (rowKeyFields ?? []).includes(col));
+        const tip = eligible
+          ? `行键列：${col}`
+          : (cand?.reason ?? '该字段无 driver 列，不能作行键');
+        return (
+          <Tooltip title={tip}>
+            <Checkbox
+              checked={checked}
+              disabled={!eligible}
+              onChange={(e) => { if (col) onToggleRowKey(col, e.target.checked); }}
+            />
+          </Tooltip>
+        );
+      },
+    }] : []),
     {
       title: '备注',
       key: 'notes',
