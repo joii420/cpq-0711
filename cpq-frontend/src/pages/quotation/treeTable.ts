@@ -92,3 +92,21 @@ export function buildTreeRows(nodes: TreeNodeInput[]): TreeLayout {
 
   return { order, depthByIndex, hasChildren, parentIndexByIndex };
 }
+
+/**
+ * 行是否因祖先折叠而隐藏:沿 parentIndex 链上溯,任一祖先的 nodeKey ∈ collapsed → 隐藏。
+ */
+export function isTreeRowHidden(
+  index: number,
+  parentIndexByIndex: Record<number, number | null>,
+  nodeKeyByIndex: Record<number, string>,
+  collapsed: Set<string>,
+): boolean {
+  let p = parentIndexByIndex[index];
+  while (p != null) {
+    const key = nodeKeyByIndex[p];
+    if (key != null && collapsed.has(key)) return true;
+    p = parentIndexByIndex[p];
+  }
+  return false;
+}

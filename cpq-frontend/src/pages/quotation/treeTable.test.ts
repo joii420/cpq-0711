@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildTreeRows } from './treeTable';
+import { buildTreeRows, isTreeRowHidden } from './treeTable';
 
 describe('buildTreeRows', () => {
   it('单根多层:子行紧跟父行 + depth 正确 + hasChildren 正确', () => {
@@ -73,5 +73,37 @@ describe('buildTreeRows', () => {
     const r = buildTreeRows([]);
     expect(r.order).toEqual([]);
     expect(r.hasChildren.size).toBe(0);
+  });
+});
+
+describe('isTreeRowHidden', () => {
+  const layout = buildTreeRows([
+    { id: 'A', parent: null },
+    { id: 'B', parent: 'A' },
+    { id: 'C', parent: 'B' },
+  ]);
+  const nodeKeyByIndex = { 0: 'k0', 1: 'k1', 2: 'k2' };
+
+  it('祖先折叠 → 后代隐藏', () => {
+    const collapsed = new Set(['k0']);
+    const hidden = (i: number) =>
+      isTreeRowHidden(i, layout.parentIndexByIndex, nodeKeyByIndex, collapsed);
+    expect(hidden(0)).toBe(false);
+    expect(hidden(1)).toBe(true);
+    expect(hidden(2)).toBe(true);
+  });
+
+  it('仅中间节点折叠 → 只隐藏其后代', () => {
+    const collapsed = new Set(['k1']);
+    const hidden = (i: number) =>
+      isTreeRowHidden(i, layout.parentIndexByIndex, nodeKeyByIndex, collapsed);
+    expect(hidden(0)).toBe(false);
+    expect(hidden(1)).toBe(false);
+    expect(hidden(2)).toBe(true);
+  });
+
+  it('无折叠 → 全可见', () => {
+    const collapsed = new Set<string>();
+    expect(isTreeRowHidden(2, layout.parentIndexByIndex, nodeKeyByIndex, collapsed)).toBe(false);
   });
 });
