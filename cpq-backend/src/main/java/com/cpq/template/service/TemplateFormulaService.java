@@ -685,28 +685,31 @@ public class TemplateFormulaService {
                 return BigDecimal.ZERO;
             }
 
-            // 解析 source → driver path
-            String driverPath = resolveDriverPath(parsed.source);
-            if (driverPath == null || driverPath.isBlank()) {
-                LOG.warnf("[Stage2] %s: cannot resolve driver path for source '%s'", funcName, parsed.source);
-                return BigDecimal.ZERO;
-            }
-
-            // 查 driver rows
-            LOG.infof("[Stage4] %s: source='%s' driverPath='%s' partNo='%s'",
-                      funcName, parsed.source, driverPath, partNo);
-            List<Map<String, Object>> rows;
-            try {
-                rows = dataLoader.loadByPath(driverPath, null, partNo, customerId).get();
-            } catch (InterruptedException | ExecutionException e) {
-                LOG.warnf("[Stage2] %s: driver query failed: %s | cause: %s",
-                          funcName, e.getMessage(),
-                          e.getCause() != null ? e.getCause().getMessage() : "null");
-                return BigDecimal.ZERO;
+            // 卡片源优先：Excel CARD_FORMULA 求值期，源 token 命中页签实例 → 用卡片行(已按别名重映射)
+            List<Map<String, Object>> rows = com.cpq.template.service.CardAggregateSource.rowsFor(parsed.source);
+            if (rows == null) {
+                String driverPath = resolveDriverPath(parsed.source);
+                if (driverPath == null || driverPath.isBlank()) {
+                    LOG.warnf("[Stage2] %s: cannot resolve driver path for source '%s'", funcName, parsed.source);
+                    return BigDecimal.ZERO;
+                }
+                LOG.infof("[Stage4] %s: source='%s' driverPath='%s' partNo='%s'",
+                          funcName, parsed.source, driverPath, partNo);
+                try {
+                    rows = dataLoader.loadByPath(driverPath, null, partNo, customerId).get();
+                } catch (InterruptedException | ExecutionException e) {
+                    LOG.warnf("[Stage2] %s: driver query failed: %s | cause: %s",
+                              funcName, e.getMessage(),
+                              e.getCause() != null ? e.getCause().getMessage() : "null");
+                    return BigDecimal.ZERO;
+                }
+                LOG.infof("[Stage4] %s: driverPath='%s' → %d rows loaded (partNo=%s)",
+                          funcName, driverPath, rows == null ? 0 : rows.size(), partNo);
+            } else {
+                LOG.infof("[Stage4] %s: source='%s' matched card source → %d rows (alias-remapped)",
+                          funcName, parsed.source, rows.size());
             }
             if (rows == null) rows = List.of();
-            LOG.infof("[Stage4] %s: driverPath='%s' → %d rows loaded (partNo=%s)",
-                      funcName, driverPath, rows.size(), partNo);
 
             // 对每行执行行内表达式 + WHERE 过滤 + 聚合
             List<BigDecimal> values = new ArrayList<>();
