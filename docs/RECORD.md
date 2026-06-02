@@ -4,6 +4,47 @@
 
 ---
 
+### [2026-06-02] 组件树表(纯展示)- 功能总览 + 后端/类型/传播/只读态 + E2E环境说明 | 多文件 | 设计=docs/superpowers/specs/2026-06-02-组件树表纯展示-design.md, 计划=docs/superpowers/plans/2026-06-02-组件树表纯展示.md
+
+- **需求**: 料号存在父子关系,组件可设为「树表」,指定两列(ID列=料号、父ID列=父料号)邻接表关系,报价/核价/详情三视图按父子重排成树+缩进+折叠。**纯展示**:不改 rowData/rowCount/行序/数值,折叠的子行仍计入小计。
+- **方案A(渲染边界重排)**: 不动数据权威层 → 规避 AP-37/40/51,且不破坏并发实施的 Excel 卡片公式 CardDataProvider(SUM_OVER/FIRST_ROW 依赖 rowData 原序)。详见 spec §9.5 跨设计不变量。
+- **存储(Task4)**: Flyway **V289** 加列 `component.tree_config jsonb`(独立列,类比 data_driver_path);`Component`/`ComponentDTO`(parseJsonObject)/`CreateComponentRequest` 加字段;`ComponentService` create/update 持久化 + `validateTreeConfig`(开启时两列必填+不同列+须在字段名集合,软校验抛 IllegalArgumentException)。V289 success=t 已验。
+- **传播(Task5)**: `TemplateService` componentsSnapshot 两处(初次构建~245 + refreshSnapshotsByComponent~361)`entry.put("tree_config", parseJsonObject(comp.treeConfig))`;`CardSnapshotService`(~200)读 snake `tree_config` → 写 camel `treeConfig`(仅 isObject)。
+- **类型(Task3)**: `ComponentItem.treeConfig`(types.ts 导出 `TreeConfig{idField,parentField,defaultExpanded?}`)+ `ComponentDataItem.treeConfig` + `CardStructureTab.treeConfig`。
+- **前端回填(Task6)**: `enrichComponentData` 加 `normalizeTreeConfig`(兼容 snake/camel),模板路径(snapshotComp)+ 整份快照路径(buildComponentDataFromStructure 的 tab)各回填一处。
+- **纯逻辑(Task1/2)**: `treeTable.ts` `buildTreeRows`(6规则:空父/父缺失/多根/环检测降级+warn/重复id第一条胜/同级保原序,order.length===n 永不丢行) + `isTreeRowHidden`(祖先链折叠判定) + `resolveTreeKey`/`layoutTreeRows`;`useTreeCollapse`(会话态,显式翻转集×defaultExpanded,不持久化)。vitest 16 passed。
+- **只读态渲染(Task9)**: `ReadonlyProductCard` 同 QuotationStep2 范式:描述符→layoutTreeRows→isTreeRowHidden过滤→首列缩进/折叠箭头;FieldTraceIcon/cellCtx/暂无数据分支全保留;ri 保持原始下标。确认报价/核价/详情三视图组件行渲染仅 QuotationStep2 + ReadonlyProductCard 两条路径(grep 无第三处 ComponentCell)。
+- ⚠️ **E2E 环境说明(Task10)**: `quotation-flow.spec.ts` 仍在 **P1 料号搜索 3120012574 返0行** 失败(夹具漂移,并发 selopt-v6 V6 数据模型所致,见本文件 13748/13771/13791 行),失败点远早于 Step2 组件渲染,**树表改动零碰料号搜索/添加产品流程**,与本次无关。本次验证靠:vitest 16 passed + 全工程 tsc 0 错误 + 两渲染文件 Vite 200 + step2-empty「加载中」=0 + diff 级证明(非树表分支 `...r` 保留全字段、仅追加未用的 _depth/_hasChildren/_nodeKey → 零行为变化)。**真实树表渲染的端到端浏览器验证因同一夹具漂移阻塞,待 selopt-v6 数据恢复后补跑**。
+- commits: d93d49b/b412259/7627ed7/9dc5841/c45c8ac/cfd4180/157a52b/49a3d2d/14039e3(9个,各自只含自身文件;同分支有并发 Excel 会话提交穿插)。
+
+---
+
+### [2026-06-02] quotation - 报价单编辑态树表渲染接线 | treeTable.ts / treeTable.test.ts / QuotationStep2.tsx | rowIndex 写路径不变铁律
+
+- Part A: `treeTable.ts` 追加 `resolveTreeKey`(优先 basicDataValues[lookupKey] → row[name]，数组取首元素，空返 null) + `layoutTreeRows<T>`(调 buildTreeRows 重排，返 `{rows, parentIndexByIndex, nodeKeyByIndex}`)。`TreeRenderRow<T>` / `TreeLayoutResult<T>` 接口同步导出。
+- TDD: 先在 `treeTable.test.ts` 追加 4 个 `resolveTreeKey` 测试(FAIL 验证后再实现)，全 16 用例通过。
+- Part B: `QuotationStep2.tsx` 顶部补 import `{layoutTreeRows, isTreeRowHidden, resolveTreeKey}` + `useTreeCollapse`；`ProductCard` 函数体顶层(与其他 useState 同层)无条件调用 `const treeCollapse = useTreeCollapse()`。
+- IIFE 末尾替换: `treeCfg` 有效时走 `layoutTreeRows` 重排 + `isTreeRowHidden` 过滤 + 追加 `_depth/_hasChildren/_nodeKey`；无 treeConfig 时原样平铺只追加零值三字段(非树表行为零变化)。
+- 首列 `cellInner` 抽提；`isFirstField && treeOn` 时包裹 padding span + 折叠箭头 button(▶/▼ 按 `treeCollapse.isCollapsed` 切换)。
+- 铁律遵守: rowIndex 来自 er.rowIndex 经 `...r.item` 透传，写路径(handleRowChange/handleInputBlur/handleSnapshotCellEdit/dsStateKey/handleDeleteRow)全用原始 rowIndex + activeComponentDataIndex，不受树序影响；LinkedExcelView(2214/2274 行)完全未动。
+- 自检: vitest 16 passed，tsc 0 错误，Vite 200，git diff 确认 LinkedExcelView 未动。
+- commit: 49a3d2d
+
+---
+
+### [2026-06-02] component - 树表配置 UI(开关+ID/父ID双下拉+防呆+存取) | ComponentManagement.tsx | 纯前端配置入口
+
+- 在「数据驱动路径」块之后、HeaderPreview 之前插入绿色背景的树表配置行。
+- 新增 state `treeConfig: TreeConfig | null`；handleSelectComponent 回填；handleSave 携带（关闭时传 `{}` 让后端清空）。
+- 防呆：开启但未选 ID/父ID 或两列相同时阻断保存并给出中文提示；行内实时错误红字。
+- 补充 antd import `Switch`；`Select` 已在 import 中。
+- treeConfig 接口已在 `types.ts` 预先定义，无需改动 types。
+- 端到端 DB 往返：写入 `{"idField":"物料","parentField":"元素","defaultExpanded":true}` 读回一致，测试值已清理。
+- 自检：tsc 0 错误，Vite 200，DB 写/读/清理均验证。
+- commit: 157a52b
+
+---
+
 ### [2026-06-02] quotation - 卡片引用值对象 CardRef | CardRef.java / CardRefTest.java | Task 2
 
 - 新建 `com.cpq.quotation.service.card.CardRef`，封装 Excel 列公式中对页签实例的引用：SUBTOTAL（小计）、FIRST_ROW（首行）、ROW_WHERE（按条件取行）、聚合源（无 field）四种模式。
