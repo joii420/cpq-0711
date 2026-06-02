@@ -126,6 +126,21 @@ public class ComponentResource {
     }
 
     /**
+     * 行键候选 — 根据 driver $视图的 declaredColumns 返回每个字段是否可作行键。
+     */
+    @POST
+    @Path("/{id}/row-key-candidates")
+    public ApiResponse<com.cpq.component.dto.RowKeyCandidatesResponse> rowKeyCandidates(
+            @PathParam("id") UUID id,
+            com.cpq.component.dto.RowKeyCandidatesRequest req) {
+        var candidates = componentDriverService.computeRowKeyCandidates(
+                id,
+                req == null ? null : req.dataDriverPath,
+                req == null ? null : req.fields);
+        return ApiResponse.success(new com.cpq.component.dto.RowKeyCandidatesResponse(candidates));
+    }
+
+    /**
      * 批量行驱动展开 — 一次 HTTP 请求服务多个 (componentId, customerId, partNo) 组合。
      *
      * <p>每个 task 独立 try-catch，单个失败不影响其他结果。

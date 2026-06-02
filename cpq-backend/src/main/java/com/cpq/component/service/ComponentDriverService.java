@@ -972,6 +972,44 @@ public class ComponentDriverService {
     }
 
     /**
+     * 行键候选（带 DB 取数）：从 dataDriverPath 解析 $视图名，查 ComponentSqlView.declaredColumns
+     * 得 driver 真实列名集合，再委托 {@link #resolveRowKeyCandidates}。
+     */
+    public List<com.cpq.component.dto.RowKeyCandidatesResponse.Candidate> computeRowKeyCandidates(
+            UUID componentId, String dataDriverPath, List<Map<String, Object>> fields) {
+        java.util.Set<String> cols = loadDriverColumnNames(componentId, dataDriverPath);
+        return resolveRowKeyCandidates(dataDriverPath, fields, cols);
+    }
+
+    /** 取 driver $视图的列名集合；非 $视图 / 未保存 / 无列 → 空集。 */
+    private java.util.Set<String> loadDriverColumnNames(UUID componentId, String dataDriverPath) {
+        String viewName = extractSqlViewName(dataDriverPath);
+        if (viewName == null) return java.util.Set.of();
+        com.cpq.component.entity.ComponentSqlView v =
+                com.cpq.component.entity.ComponentSqlView
+                    .find("componentId = ?1 and sqlViewName = ?2", componentId, viewName).firstResult();
+        if (v == null) {
+            v = com.cpq.component.entity.ComponentSqlView.find("sqlViewName", viewName).firstResult();
+        }
+        if (v == null || v.declaredColumns == null || v.declaredColumns.isBlank()) {
+            return java.util.Set.of();
+        }
+        java.util.Set<String> names = new java.util.HashSet<>();
+        try {
+            com.fasterxml.jackson.databind.JsonNode arr = MAPPER.readTree(v.declaredColumns);
+            if (arr.isArray()) {
+                for (com.fasterxml.jackson.databind.JsonNode n : arr) {
+                    String nm = n.path("name").asText(null);
+                    if (nm != null && !nm.isBlank()) names.add(nm);
+                }
+            }
+        } catch (Exception e) {
+            LOG.warnf("[row-key-candidates] declaredColumns 解析失败 view=%s: %s", viewName, e.getMessage());
+        }
+        return names;
+    }
+
+    /**
      * 为 COMPOSITE 父级聚合视图路径追加 quotation_line_item_id IN (...) 谓词。
      *
      * <p>输入: "v_composite_child_processes"
