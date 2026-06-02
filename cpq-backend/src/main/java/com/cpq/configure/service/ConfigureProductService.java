@@ -113,12 +113,9 @@ public class ConfigureProductService {
 
     @SuppressWarnings("unchecked")
     String lookupHfByFingerprint(String fp) {
-        // 指纹复用判定 — Phase 1 过渡期仍以 V44 mat_part 为权威（持有历史 + 本期双写的全部选配料号）。
-        // 不可改读 material_master：历史选配料号 fp 只在 mat_part，改读会漏判 → 重复新建 →
-        // insertMatPart ON CONFLICT(fp) DO NOTHING 跳过插入 → 后续 mat_bom FK 断裂 (409)。
-        // V266 已给 material_master 加 config_fingerprint 列（本期双写填充），待 Phase 3 移除 V44 写入后再切此查询到 V6。
+        // 2026-06-02 指纹权威切 V6：material_master.config_fingerprint 全局唯一（uq_material_master_fingerprint）
         List<Object> rows = em.createNativeQuery(
-                "SELECT part_no FROM mat_part WHERE config_fingerprint = :fp")
+                "SELECT material_no FROM material_master WHERE config_fingerprint = :fp")
             .setParameter("fp", fp)
             .getResultList();
         return rows.isEmpty() ? null : (String) rows.get(0);
