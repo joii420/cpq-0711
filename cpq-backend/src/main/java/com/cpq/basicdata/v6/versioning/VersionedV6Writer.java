@@ -83,24 +83,47 @@ public class VersionedV6Writer {
         // C1: 并发串行化（advisory lock，随事务提交/回滚释放）。
         advisoryLock(spec.tableName, spec.groupKeyColumns);
 
+        // 触发列：未指定时退化为 contentColumns（其余表保持现状：任何内容变化即升版）
+        List<String> triggerCols =
+            (spec.versionTriggerColumns == null) ? spec.contentColumns : spec.versionTriggerColumns;
+        // 触发列必须是写入列子集（否则无法从 existing/newRows 取到对应值比较）
+        if (!new HashSet<>(spec.contentColumns).containsAll(triggerCols)) {
+            throw new IllegalArgumentException(
+                "versionTriggerColumns 必须是 contentColumns 子集: " + triggerCols);
+        }
+
         // 1) 读当前生效组内容
         List<Map<String, Object>> existing = loadCurrentGroup(
             spec.tableName, spec.groupKeyColumns, spec.contentColumns);
 
-        // 2) 内容相同 → 复用现有版本，不写
-        if (multisetEqual(existing, spec.newRows, spec.contentColumns)) {
+        boolean triggerSame = multisetEqual(existing, spec.newRows, triggerCols);
+        boolean contentSame = multisetEqual(existing, spec.newRows, spec.contentColumns);
+
+        // 2) 触发列与全内容都未变 → 完全相同，复用版本，不写
+        if (triggerSame && contentSame) {
             return currentVersionOf(spec.tableName, spec.versionColumn, spec.groupKeyColumns);
         }
 
-        // 3) 计算新版本号
-        String newVersion = nextVersionOf(spec.tableName, spec.versionColumn, spec.groupKeyColumns);
+        // 3) 仅非触发列(金额/辅助字段)变化 → 原地更新当前组值，版本号不变、不升版
+        //    (existing 为空时 triggerSame 必为 false，不会进此分支)
+        if (triggerSame) {
+            String cur = currentVersionOf(spec.tableName, spec.versionColumn, spec.groupKeyColumns);
+            deleteCurrent(spec.tableName, spec.groupKeyColumns);   // 删当前组 current 行(避免同版本号 uq 冲突)
+            for (Map<String, Object> row : spec.newRows) {
+                Map<String, Object> all = new LinkedHashMap<>(spec.groupKeyColumns);
+                all.putAll(row);
+                all.put(spec.versionColumn, cur);                  // 复用旧版本号
+                all.put("is_current", true);
+                insertRowGeneric(spec.tableName, all);
+            }
+            return cur;
+        }
 
-        // 4) 旧组下线
+        // 4) 触发列变化(或首次写入) → 升版
+        String newVersion = nextVersionOf(spec.tableName, spec.versionColumn, spec.groupKeyColumns);
         if (!existing.isEmpty()) {
             flip(spec.tableName, spec.groupKeyColumns);
         }
-
-        // 5) 写新组
         for (Map<String, Object> row : spec.newRows) {
             Map<String, Object> all = new LinkedHashMap<>(spec.groupKeyColumns);
             all.putAll(row);
@@ -303,6 +326,15 @@ public class VersionedV6Writer {
         Query q = em.createNativeQuery(
             "DELETE FROM " + table + " WHERE "
                 + whereClause(groupKey) + " AND is_current = FALSE");
+        bindWhere(q, groupKey);
+        q.executeUpdate();
+    }
+
+    /** 删除该 groupKey 下当前生效(is_current=TRUE)的行（原地更新前清当前组，避免同版本号 uq 冲突）。 */
+    private void deleteCurrent(String table, Map<String, Object> groupKey) {
+        Query q = em.createNativeQuery(
+            "DELETE FROM " + table + " WHERE "
+                + whereClause(groupKey) + " AND is_current = TRUE");
         bindWhere(q, groupKey);
         q.executeUpdate();
     }

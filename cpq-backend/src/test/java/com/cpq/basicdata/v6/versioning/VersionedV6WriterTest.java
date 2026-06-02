@@ -18,11 +18,14 @@ class VersionedV6WriterTest {
     @Inject EntityManager em;
 
     static final String FMN = "TEST-VER-0001";
+    static final String CAP_MAT = "TEST-VER-CAP-01";
 
     @Transactional
     void cleanup() {
         em.createNativeQuery("DELETE FROM unit_price WHERE finished_material_no = :f")
           .setParameter("f", FMN).executeUpdate();
+        em.createNativeQuery("DELETE FROM capacity WHERE material_no = :m")
+          .setParameter("m", CAP_MAT).executeUpdate();
     }
 
     @BeforeEach void before() { cleanup(); }
@@ -120,5 +123,85 @@ class VersionedV6WriterTest {
         assertEquals("2001", v2);
         String v3 = writer.writeVersionedGroup(spec(rows("OP1", "OP2")));
         assertEquals("2001", v3, "第三次内容同最新 current,复用 2001 而非回退 2000");
+    }
+
+    // ===== capacity + versionTriggerColumns（仅 process_no/seq_no 触发升版） =====
+
+    /** capacity 料号级组：groupKey=(material_no, resource_group_no)，triggerCols=[process_no, seq_no]。 */
+    private VersionedGroupSpec capSpec(List<Map<String, Object>> rows) {
+        return new VersionedGroupSpec(
+            "capacity", "calc_version",
+            new java.util.LinkedHashMap<>(Map.of(
+                "material_no", CAP_MAT, "resource_group_no", "QUOTE_ASSEMBLY")),
+            List.of("process_no", "seq_no", "fixed_cost"),
+            rows,
+            List.of("process_no", "seq_no"));
+    }
+
+    /** 构造一组工序行：proc=工序编码，fee=金额。 */
+    private List<Map<String, Object>> capRows(String[] procs, String[] fees) {
+        java.util.ArrayList<Map<String, Object>> r = new java.util.ArrayList<>();
+        for (int i = 0; i < procs.length; i++) {
+            java.util.LinkedHashMap<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("process_no", procs[i]);
+            m.put("seq_no", i + 1);
+            m.put("fixed_cost", new java.math.BigDecimal(fees[i]));
+            m.put("production_type", "BATCH_FIXED");   // capacity.production_type NOT NULL + CHECK 约束
+            r.add(m);
+        }
+        return r;
+    }
+    private String capVersion() {
+        List<?> r = em.createNativeQuery(
+            "SELECT calc_version FROM capacity WHERE material_no=:m AND is_current=true LIMIT 1")
+            .setParameter("m", CAP_MAT).getResultList();
+        return r.isEmpty() ? null : String.valueOf(r.get(0));
+    }
+    private long capTotal() {
+        return ((Number) em.createNativeQuery("SELECT count(*) FROM capacity WHERE material_no=:m")
+            .setParameter("m", CAP_MAT).getSingleResult()).longValue();
+    }
+    private long capCurrent() {
+        return ((Number) em.createNativeQuery(
+            "SELECT count(*) FROM capacity WHERE material_no=:m AND is_current=true")
+            .setParameter("m", CAP_MAT).getSingleResult()).longValue();
+    }
+
+    @Test @Transactional
+    void cap_changeProcessCode_bumpsVersion() {
+        writer.writeVersionedGroup(capSpec(capRows(new String[]{"Z350", "Z029"}, new String[]{"20", "14"})));
+        String v2 = writer.writeVersionedGroup(capSpec(capRows(new String[]{"Z400", "Z029"}, new String[]{"20", "14"})));
+        assertEquals("2001", v2, "工序编码变 → 升版");
+        assertEquals(2L, capCurrent(), "新版当前 2 行");
+        assertEquals(4L, capTotal(), "旧版 2 行保留为历史(is_current=false)");
+    }
+
+    @Test @Transactional
+    void cap_changeProcessCount_bumpsVersion() {
+        writer.writeVersionedGroup(capSpec(capRows(new String[]{"Z350", "Z029"}, new String[]{"20", "14"})));
+        String v2 = writer.writeVersionedGroup(capSpec(capRows(new String[]{"Z350"}, new String[]{"20"})));
+        assertEquals("2001", v2, "工序减少 → 升版");
+        assertEquals(1L, capCurrent(), "新版当前仅 1 行(减掉的工序退出 current)");
+    }
+
+    @Test @Transactional
+    void cap_changeFeeOnly_inPlaceUpdate_noVersionBump() {
+        writer.writeVersionedGroup(capSpec(capRows(new String[]{"Z350", "Z029"}, new String[]{"20", "14"})));
+        String v2 = writer.writeVersionedGroup(capSpec(capRows(new String[]{"Z350", "Z029"}, new String[]{"25", "14"})));
+        assertEquals("2000", v2, "仅金额变 → 版本号不变");
+        assertEquals(2L, capCurrent(), "当前仍 2 行(原地更新,无新历史)");
+        assertEquals(2L, capTotal(), "总行数不变(无历史行堆积)");
+        java.math.BigDecimal fee = (java.math.BigDecimal) em.createNativeQuery(
+            "SELECT fixed_cost FROM capacity WHERE material_no=:m AND process_no='Z350' AND is_current=true")
+            .setParameter("m", CAP_MAT).getSingleResult();
+        assertEquals(0, fee.compareTo(new java.math.BigDecimal("25")), "金额已原地更新为 25");
+    }
+
+    @Test @Transactional
+    void cap_identical_reusesVersion() {
+        writer.writeVersionedGroup(capSpec(capRows(new String[]{"Z350", "Z029"}, new String[]{"20", "14"})));
+        String v2 = writer.writeVersionedGroup(capSpec(capRows(new String[]{"Z350", "Z029"}, new String[]{"20", "14"})));
+        assertEquals("2000", v2, "完全相同 → 复用版本");
+        assertEquals(2L, capTotal(), "无新写入");
     }
 }
