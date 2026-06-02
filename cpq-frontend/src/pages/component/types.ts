@@ -211,3 +211,15 @@ export function newFormulaRow(): FormulaItem {
     result_type: 'NUMBER',
   };
 }
+
+/** 行键候选（后端 row-key-candidates 端点返回）。 */
+export interface RowKeyCandidate {
+  fieldName: string;
+  displayName: string;
+  /** 反查出的 driver 真实列名；不可解析时 null。 */
+  resolvedColumn: string | null;
+  /** true 才允许勾选为行键。 */
+  eligible: boolean;
+  /** 不可勾选原因（eligible=false 时 hover 提示）。 */
+  reason: string | null;
+}
