@@ -4,6 +4,109 @@
 
 ---
 
+### [2026-06-02] 行键改回字段勾选 Task 1 — 后端 resolveRowKeyCandidates 纯逻辑 + 单测 | RowKeyCandidatesResponse.java / ComponentDriverService.java / RowKeyCandidatesTest.java | commit f03ff6f
+
+- **背景**: 行键(rowKeyFields)存 driverRow 真实列名，用于报价草稿重刷时按行身份对齐。Task 1 只做纯逻辑，不连 DB。
+- **新增 DTO**: `com.cpq.component.dto.RowKeyCandidatesResponse`（含 `Candidate` 内部类：fieldName / displayName / resolvedColumn / eligible / reason）。
+- **新增 public static 方法**: `ComponentDriverService.resolveRowKeyCandidates(dataDriverPath, fields, driverColumns)` —— 对每个字段用已有 `private static extractLeafField` 反查 basic_data_path 末段 leaf，与 driverColumns 交叉校验是否可作行键。三类 reason：① 无 basic_data_path/leaf 解析失败 → "无 driver 列"；② haveColumns=false → "SQL 视图"提示；③ leaf 不在 driverColumns → "不取自 driver 行"。
+- **补 import**: `java.util.Set` 加入 ComponentDriverService 顶部（原有 ArrayList/List/Map 已足够）。
+- **单测**: 4 个纯 JUnit 5 测试（不含 @QuarkusTest，无需 DB 上下文），`Tests run: 4, Failures: 0, Errors: 0`。
+- **关键决策**: `extractLeafField` 保持 private，resolveRowKeyCandidates 为 public static（可被测试和后续 Resource 调用）。
+
+---
+
+### [2026-06-02] 修复: 选配 COMBO existing+existing 提交 409 撞 uq_material_bom_v6（B1 follow-up） | cpq-backend ConfigureProductService.writeCombomaterialBomV6
+- **现象**: 选配添加 → 选两个已有配件 [10110002]+[10110003] 确认 → `409 Duplicate value for Key (system_type, customer_no, material_no, bom_version, COALESCE(characteristic,''))`。
+- **根因**: B1 `writeCombomaterialBomV6` 两次 `writeVersionedMasterDetail`（ASSEMBLY + MATERIAL 组）各写一行 material_bom 主表，二者 characteristic 都 = NULL、bom_version 都 = 2000、material_no 同 = COMBO。`uq_material_bom_v6 = (system_type, customer_no, material_no, bom_version, COALESCE(characteristic,''))` **不含 bom_type** → 两主表行撞唯一键。**首配（两组都新写）才触发；之前 E2E 因 ASSEMBLY 命中复用只写一行主表，侥幸没暴露。**
+- **修法（对齐 import 约定）**: import `Q12AssemblyBomHandler` 早有同款处理——masterGroupKey 显式 `characteristic='ASSEMBLY'`（注释原文"uq 隔离 Q03(NULL)/Q12(ASSEMBLY)"）。照搬：ASSEMBLY 组主键加 `characteristic='ASSEMBLY'`，MATERIAL 组主键 characteristic 留 NULL（对齐 Q03）→ 两主表行 COALESCE(characteristic,'') = 'ASSEMBLY' vs '' 互异。
+- **亲验（受控可逆）**: 临时 repro spec（loginAsAdmin + page.request.post configure）清空 CFG-COMBO-000023/8000137 的 material_bom* 后配 [10110002]+[10110003] → **STATUS 200**（修前 409）；DB 两主表行 `ASSEMBLY|2000|ASSEMBLY` + `MATERIAL|2000|(NULL)` 共存、material_bom_item 含 NULL 组(AgNi/CuZn)+ASSEMBLY 组(qty1/2)。spec 用后删、测试 line_item 已清。
+
+---
+
+### [2026-06-02] 统一 element_bom_item 取版本策略（选配「已有料号材质」对齐视图规范口径）| cpq-backend MaterialRecipeService.getForExistingPart
+
+- **背景排查**: 报价单选配「选择材质」的来源分两半 —— ① 材质列表(`GET /material-recipes`)/已有料号回显(`existing-part/{partNo}/material → getForExistingPart`) = **V6**(`material_recipe`/`material_master`/`element_bom_item`)；② 但选配的指纹复用/解析/落库(ConfigureProductService) = **仍 V44 `mat_part`/`mat_bom`/`mat_process`**(故意过渡期双写, Phase 3 才移除)。选配「工序」同理: 字典 `GET /processes`=`process` 表(规范), 落库 `mat_process`(V44)。
+- **取版本策略不一致(本次只统一 element_bom_item)**: 规范口径(`ys_view`/`composite_child_elements_mirror`/`v_composite_child_elements` 三视图)= `is_current=true AND characteristic=(SELECT MAX(characteristic) FROM element_bom_item WHERE is_current=true AND 同组 system_type+customer_no+material_no)`。不一致项: `v12_raw_element_bom`(缺 MAX)、`getForExistingPart`(缺 is_current 内外层)、`backfillV6MaterialsForCustomer`(整体复制所有版本→传播重复 is_current)。
+- **本次改动(用户决议: 先只改 getForExistingPart)**: 给 2B BOM 派查询的外层 + 内层 MAX 子查询各补 `is_current = true`，对齐三视图规范口径。原仅 `MAX(characteristic)` 不过滤 is_current → 重复 is_current 数据下可能取到非当前版本的最大 characteristic。
+- **主线亲验**: 后端 touch 重载 components=401（非 500）；修改后 SQL psql 直接执行(CFG-AgCu-000009)返回正确元素行 Ag 90/Cu 10 无语法错；端点 `existing-part/CFG-AgCu-000009/material` 200(该料号走字典派, 2B 分支由直查 SQL 覆盖验证)。
+- **遗留(未做, 用户选最小范围)**: ① `v12_raw_element_bom` 缺 MAX 兜底；② `backfillV6MaterialsForCustomer` 跨客户复制传播重复 is_current；③ 根因 = `VersionedV6Writer` 升版时未翻旧 is_current=false（重复 is_current=true 数据 bug，三视图靠 MAX 容忍）。④ 观察: `getForExistingPart` 按 `hf_part_no=:p` 匹配，但子件元素行(如 material_no=10110002)`hf_part_no` 为 NULL → 这类料号 getForExistingPart 返空(既有行为, 非本次引入)。
+
+---
+
+### [2026-06-02] 修复: 选配 COMBO「工序列表」Tab 渲染 13 行全空 "—"（既有 bug） | cpq-backend ComponentDriverService.java
+- **现象**: 选配组合产品后进报价编辑页，COMBO 父级「工序列表」Tab 渲染 13 行、每列全 "—"。数据无误（mirror 实测返 6 行 = 2 配件×3 工序；snapshot_rows/quoteCardValues 工序 baseRows 也都 = 6）。
+- **根因（系统化调试 + 前端埋点 + 后端日志定位）**: 渲染走 live `/batch-expand`（新配置未存草稿 → useSnapQuote=false）。COMBO 父级工序展开命中 `ComponentDriverService` 的 **childLineItemIds IN 谓词注入**分支——该分支给视图追加 `quotation_line_item_id IN (子件id...)`，是为**旧视图** `v_composite_child_processes`（有该列，V207/V209）写的；触发条件 `path.contains("composite_child_processes")` 把**新视图** `$composite_child_processes_mirror`（无该列、已用 :quotationId 自隔离）也误触发 → 注入引用不存在的列 → 父级工序展开返 **0 行** → 前端缓存 rowCount=0（落在渲染用的 enriched-fields key 上）→ 回退渲染残留占位行 → 13 空行。
+- **关键证据**: 后端日志同一料号两轮展开——override=true(enriched, 渲染用 key) 走 `[COMPOSITE-child expand] childIds=2 -> IN-filtered ...mirror[quotation_line_item_id IN(...)]`（错，0 行）；override=false 走 `full aggregate rows=6`（对，但 key 不被渲染用）。子件(PART)走 branch1 正常返 3 行，故只有父级空。
+- **修法**: 注入条件加 `&& !effectiveDriverPath.contains("mirror")` —— 新 `_mirror` 视图跳过注入，直接走 full aggregate（实测 6 行）。新 mirror 的 branch2 已按 `parent_qli.quotation_id=:quotationId` 自隔离，不存在旧视图的"历史累积"，故无需注入。
+- **验证**: `mvnw -o compile` OK + touch 重启 + configure 端点 401 ✅；E2E `composite-product-flow.spec.ts` 临时埋点确认父级工序展开 `rowCount 0→6`，工序 Tab `rows=6 / 加载中=0 / 含 10110002=true / 含 CFG-AgCu=true` ✅（埋点已撤）。
+- **同时暴露但本期不修**: 修好工序后 E2E 走到「元素含量」Tab 另挂——元素组件字段配置错（子件列绑 `$composite_child_elements_mirror.hf_part_no`(=父COMBO) 应为 `child_hf_part_no`；单重列绑不存在的 `unit_weight` 列 → #ERROR）。**用户确认该元素模板已停用，不修。**
+
+---
+
+### [2026-06-02] 修复: 草稿报价单打开刷不出后台改的基础数据（driver 展开缓存未失效） | cpq-backend ComponentDriverService（新 evictForLineItem）+ CardSnapshotService.refreshDraftQuoteCards
+
+- **现象（用户实测 QT-20260602-1498 / partNo 3120012004）**: 直接改库把元素含量 Ag 75→55、Ni 25→45，草稿报价单里仍显示旧值 75/25。用户预期：草稿态打开应触发 SQL 重查更新快照（非草稿才冻结）。
+- **排查（逐层证据）**: ① 前端 QuotationWizard:390 确认 DRAFT 打开**确实**调 `refreshCardSnapshot`；后端 `refreshDraftQuoteCards→refreshQuoteCardValues→expandTemplateDriverBaseRows` 重 expand driver。② 直查 `ys_view`（代入 customerCode）**返回新值 55/45（正确）** → 数据源没问题。③ 但快照 baseRows 仍 75/25。④ 手动触发 refresh（此时进程刚因别的修复重启、缓存已冷）→ baseRows **变 55/45**。⑤ 定位真凶 = `ComponentDriverService.expandCache`（Caffeine, **expireAfterWrite 30s**, ApplicationScoped 进程级）：用户**直接改库绕过 app 导入流程 → 未调既有 `evictAll()`**（该方法注释明确"基础数据导入事务提交后调用，让新数据立即可见"）→ 30s TTL 内缓存命中旧 expand → refresh 重 expand 仍拿陈旧 75。
+- **修法**: ① `ComponentDriverService` 新增 `evictForLineItem(UUID)` —— 按 cache key 的 `:li<lineItemId>` 维度定向清本行所有条目（不误伤其它单/用户）。② `refreshDraftQuoteCards` 每行重刷前 `componentDriverService.evictForLineItem(li.id)`，把"草稿打开"变成真正的"强制重查最新 SQL"。
+- **主线亲验（受控可逆测试）**: warm 缓存(55) → 直接改库 content 55→99 → 立即(30s 内)触发 refresh → 快照 baseRows Ag **=99**（缓存被绕过拿到新值）+ 日志 `evictForLineItem li=b41e8e83 evicted=5`（各行定向清除）→ 还原 99→55 → 再 refresh → 快照恢复 Ag=55/Ni=45（用户真实数据）。后端 touch 重载 components=401（非 500）。
+- **遗留风险（未修，建议关注，归 V6 版本化主线）**: `element_bom_item` 同 (material_no, component_no) 出现**多行 is_current=true**（Ag: content75 char2000 is_current=t **与** content55 char2001 is_current=t 并存）——版本化导入升版时**没把旧版本 is_current 翻 false**。`ys_view` 等 component_sql_view **无 `WHERE is_current=true` 过滤**（RECORD 既有 Task 9/10 明列"未完成"）。当前视图恰好返回新版本 55，但这依赖物理行序/join，**不稳定**：若 planner 返旧行则又拿到 75。根治需 (a) 版本化写入翻旧 is_current=false + (b) 视图加 is_current 过滤。本次只修缓存失效（让重查生效），未触碰 V6 版本化逻辑（属 ConfigureProductService V6 主线）。
+
+---
+
+### [2026-06-02] 修复: 提交审批 POST /quotations/{id}/submit 500（freeze SQL 视图 array_agg 空集返 NULL 违反 NOT NULL） | cpq-backend QuotationService.freezeSqlViewsForQuotation
+
+- **现象（用户实测 b0fec225）**: 提交审批 500 `{"code":500,"message":"Internal server error"}`。
+- **根因（后端日志栈定位）**: `submit`(QuotationService:717) → `freezeSqlViewsForQuotation`(:795) 冻结组件 SQL 视图闭包，INSERT `quotation_component_sql_snapshot` 用
+  `(SELECT array_agg(x)::text[] FROM jsonb_array_elements_text(?::jsonb) AS x)` 算 `required_variables`。当某视图 required_variables = 空数组 `[]`（无所需变量，如 composite_process_mirror/zh_view/zcj_bom）→ `jsonb_array_elements_text('[]')` 返 0 行 → **`array_agg` 对空集返 NULL** → 写 `required_variables`(NOT NULL) 约束违反 → **@Transactional 事务 abort** → freeze 的 try/catch 虽标"non-blocking"但救不回坏事务 → 后续 `loadLineItems`(:725→:1591) 在 aborted 事务里查 → `current transaction is aborted` → GlobalExceptionMapper 兜 500。
+- **修法（一行 SQL）**: `COALESCE((SELECT array_agg(x)::text[] ...), '{}'::text[])` —— 空集兜成空 text[]。
+- **主线亲验（真实单 b0fec225）**: 后端 touch 重载 components=401（非 500）；E2E 登录 + fetch POST submit（cookie 鉴权 withCredentials）**status 500→200**；DB status DRAFT→**SUBMITTED**；freeze **frozen 11 sql_view entries**，其中 4 条 `required_variables={}`（正是原崩溃的空数组场景，现成功写入）；日志旧错(09:26)→新成功(09:30)。
+- **与本会话其它修复无关**（componentCode / row_data 重算均在 CardSnapshotService）；是 freeze SQL 视图既有 bug，任一组件 SQL 视图无所需变量即触发。
+- **遗留观察（未做，建议后续）**: `freezeSqlViewsForQuotation` 的 try/catch "non-blocking" 名不副实 —— 失败的 INSERT 污染主事务后，submit 后续 loadLineItems 仍连坐 500。根因(COALESCE)已修则不触发；但防御性应让 freeze 走 `@Transactional(REQUIRES_NEW)` 独立事务（self 代理），使其失败真正不连坐主流程。本次保守只修根因。
+
+---
+
+### [2026-06-02] 选配 COMBO V6 落库补全 + 元素/材质 mirror 渲染修复 | cpq-backend ConfigureProductService.java(B1/B2/B3) + V282/V283 迁移
+- **背景**: 选配设计方案 §6（`docs/选配V6入库规范-设计方案.md`）。COMBO 选配此前只写 material_master + material_bom_item(ASSEMBLY) + per-quote 工序/组合工艺；material_bom 主表、unit_price(工序)、capacity(组合工艺) 三处 V6 缺口未补；元素 mirror 对导入子件漏渲染。
+- **改动（统一走 `VersionedV6Writer`：内容相同复用 / 不同 max+1 升版 / is_current 翻转，起始 2000）**:
+  - **B1 material_bom 主从版本化**（`writeCombomaterialBomV6`，仿 Q03/Q12）: ASSEMBLY 组(bom_type=ASSEMBLY / 子行 characteristic='ASSEMBLY' + composition_qty) + MATERIAL 组(bom_type=MATERIAL / 子行 characteristic=NULL + component_usage_type=子件材质名)。补齐 material_bom 主表两行（此前为 0 行）。
+  - **B2 工序 → unit_price**（`insertProcessUnitPriceV6`，对标导入 §10 自制加工费）: 按配件分组键 (QUOTE, MATERIAL, 自制加工费, customer_no, code=配件料号, finished_material_no=COMBO)，行集=各工序(operation_no=process.code)。pricing_price 留 NULL；currency=process_master.standard_currency(空→CNY)、unit=standard_unit(空→KG)。
+  - **B3 组合工艺 → capacity**（`insertCompositeProcessCapacityV6`，对标导入 §14）: 整组分组键 (material_no=COMBO, resource_group_no=QUOTE_ASSEMBLY)，行集=各 def_code(process_no=def_code, process_name=def.name, production_type=BATCH_FIXED, currency=CNY, fixed_cost=NULL)。versionColumn=calc_version。
+  - **V282 元素 mirror 修复**: `composite_child_elements_mirror` 下钻分支 JOIN `ebi.hf_part_no=parent.component_no AND ebi.hf_part_no IS NOT NULL` → `ebi.material_no=parent.component_no AND ebi.is_current=true`，并去掉 MAX(characteristic) 子查询里的 `ebi2.hf_part_no=ebi.hf_part_no`。**根因**: V6 原生导入子件（10110002 等）element_bom_item.hf_part_no=NULL，旧 JOIN + IS NOT NULL 恒排除 → COMBO 元素 Tab 对导入子件恒空。改 material_no（一定有值，对导入/自定义子件都鲁棒）。
+  - **V283 材质 mirror 修复**: `composite_child_materials_mirror` 启用被注释的 `AND asy.characteristic IS NULL`。配合 B1 的 MATERIAL(NULL) 组：材质 Tab 只看 NULL 行（COMBO=各子件材质名 / SIMPLE=自指行兼容）；否则 NULL+ASSEMBLY 双取 → 每子件重复 2N 行。子配件 Tab 走独立 `$zcj_bom`(characteristic=ASSEMBLY)，不受影响。
+- **决策（与用户确认）**: ① B1 选「加 NULL 组 + 改 materials mirror」（非仅补主表）；② driver **不切** V6（工序/组合工艺仍读 per-quote `quotation_line_process`/`quotation_line_composite_process` + mirror），本期 unit_price/capacity 仅承载 V6 数据，渲染零切换（设计 §7 的 driver 切换留后续）。
+- **B4 单重 / C 快照**: COMBO 无单一单重源字段（PartRequest 是逐配件级），子件单重已在 material_master(insertMaterialMasterV6) + weights mirror 读子件，故 COMBO unit_weight 维持 NULL，无需新代码。快照：configure 提交后由 `ConfigureSnapshotService`（已存在）/saveDraft 重算 + 重开 Step2 调 `refresh-card-snapshot`，新 COMBO 自然冻正确数据，**不在 configure 内额外 refresh**（避免 worker 池 502，CLAUDE.md 纪律）。
+- **自检**: TS/Java `mvnw -o compile` 0 错 ✅；V282/V283 Flyway success=t ✅；configure 端点 401(auth 正常) ✅。DB 实测 CFG-COMBO-000024(cust CUST-1269)：unit_price 2 配件×3 工序 version 2000 is_current ✅、capacity RIVET QUOTE_ASSEMBLY calc_version 2000 ✅、material_bom MATERIAL 主表行 ✅、material_bom_item NULL 组 ✅。**V282 元素 mirror 实测下钻返子件元素**：10110002→Ag75/Ni25、CFG-AgCu-000009→Ag90/Cu10 ✅（修复前导入子件 10110002 恒空）。E2E `composite-product-flow.spec.ts`：**材质 Tab rows=2（10110002+CFG-AgCu，无重复 4 行）通过** ✅。
+- **⚠️ 发现的既有缺陷（非本次回归，baseline 复现）**: COMBO **工序列表 Tab** E2E 渲染 13 行全 "—"（10110002=false），但后端 `composite_child_processes_mirror` 实测返 6 行正确数据、`snapshot_rows`=6 正确 → **纯前端快照渲染层 bug**（Task8 `buildSnapshotExpansions` 工序聚合，疑似 AP-51 复用 fixture 累加）。stash 掉本次改动跑 baseline **失败完全一致** → 与本次落库/mirror 改动无关，在本方案范围外（driver 仍 per-quote）。该 Tab 断言阻塞 E2E 全绿，待后续单独排查前端 COMBO 工序快照渲染。
+
+---
+
+### [2026-06-02] 修复: 报价编辑页"产品小计"恒显示 ¥0.00（Task5 结构脱钩回归） | cpq-backend CardSnapshotService.java + cpq-frontend quotationService.ts/enrichComponentData.ts/e2e task8-snapshot-render.spec.ts
+
+- **现象（用户实测 QT-20260601-1482 苏州西门子）**: 报价编辑向导底部"产品小计"栏恒显示 ¥0.00；各 Tab 内每行小计/单价显示正常。
+- **错误的先导诊断（已撤销）**: 上一会话误判为"非当前编辑 tab 的 comp.rows 残缺空行 → 工序公式 NaN 污染聚合"，写了"报价侧小计聚合改读权威快照 formulaResults 求和 + NaN 守卫"的前端改动（QuotationStep2.tsx）。本会话**先加 E2E 断言复现 → 仍 ¥0.00**，证伪该诊断后 `git checkout` 撤销；且实测快照 formulaResults 是**空/陈旧**的（材质 values={}、元素 小计=0.0），按它求和反而更不准（元素 snapSum=43.52 vs 正确 117.12）。
+- **真正根因（运行时 console.warn 插桩 + DB ground-truth 双证）**: SUBTOTAL 组件公式按 `component_code`（含 `__impN` 多实例后缀，如 `COMP-0020__imp1`）引用各 NORMAL tab 小计。`evaluateExpression` 的 `component_subtotal` token 解析顺序 = `componentSubtotals[component_code] ?? [tab_name] ?? [value] ?? 0`（token 的 tab_name/value 均为字段名"小计"，匹配不到任何组件，**唯一能命中的是 component_code**）。而 **`CardSnapshotService.buildCardStructure` 漏写 `componentCode`** —— Task5（2026-06-01 结构读 quote_card_structure 旁路 enrich）后前端 `buildComponentDataFromStructure` 从结构组装 componentData，`componentData.componentCode` 恒为 `''` → 公式按 code 查 `componentSubtotals['']` 全部落空 → 产品小计恒 0。各 tab 小计本身（computeTabSubtotal 走 driver expansion）算得正确，`oldProductSubtotal` 也为 0 印证与快照聚合无关。后端 buildCardValues 算 formulaResults 时从原始 components_snapshot 读 componentCode（line 593）故后端无感知。
+- **修法（单一根因 3 协同点）**: ① 后端 `buildCardStructure` 每个 tabNode 补 `tabNode.put("componentCode", tab.path("componentCode").asText(""))`（从 components_snapshot 搬运，含 __impN）。② 前端 `CardStructureTab` 加 `componentCode?: string`。③ `buildComponentDataFromStructure` line257 改 `componentCode: tab.componentCode || saved.componentCode || ''`。撤销上一会话错误的 QuotationStep2.tsx 聚合改动（回到原 computeProductSubtotal 路径，值正确）。
+- **结构刷新链路**: DRAFT 打开经 `refreshDraftQuoteCards → self.rebuildStructureForDraft`（删旧 4 份结构 + ensureStructure 重建）→ 草稿自动获得带 componentCode 的新结构，无需数据迁移。**注意**: 已提交（非 DRAFT）报价单的结构被 ensureStructure 冻结不覆盖，其详情页产品小计仍可能 0，需后续按需 rebuild（本次未做，超出现报范围）。
+- **主线亲验**: 后端 touch 重载 components=401（非 500）；tsc 0；Vite QuotationStep2/enrichComponentData/quotationService 三文件=200。E2E task8-snapshot-render.spec **5 passed (3.0m)**：新增"小计修复"断言（底部产品小计解析 = ¥601.62/¥601.42 > 0，原为 ¥0.00 RED→GREEN）+ 渲染加载中=0 + 编辑往返 77.1797 存活 + 组合加载中=0 + 详情 batch-expand=0，均无回归。
+- **方法论沉淀**: "代码写完 ≠ 修复"——上一会话改动 tsc 0 但 bug 未修；本次靠 E2E 断言先复现（证伪旧诊断）+ console.warn 运行时插桩 + DB ground-truth 定位真因。是 AP-37/AP-40 "同 cid 多实例 __impN" 协议族在结构脱钩场景的新变体（结构 schema 漏搬 componentCode）。
+- 注: 同期工作区另有 `QuotationResource.java` saveDraft 仅对新行初始化的修复（2026-06-01 502/小计清零修正，已独立验证），与本修复正交，一并保留待提交。
+
+---
+
+### [2026-06-02] 修复: 报价卡片 FORMULA 列（如元素·小计）部分行显示 0（草稿打开重算漏 row_data INPUT） | cpq-backend CardSnapshotService.java（refreshQuoteCardValues + 新 mergeRowDataInputsIntoEdits）
+
+- **现象（用户实测 QT b21cfe14 / partNo 3120012005 元素 tab）**: 进入编辑向导后，元素"小计"列只有第 1 行算对（41749.875），其余行显示 0；但**Tab 小计正确**（¥42,159.47 = 全 4 行实时和）。产品小计也正常（前面 componentCode 修复后）。
+- **用户决议（方案 B）**: 后端打开草稿时全量重算快照（保持前端"快照优先"渲染不变）。备选 A（前端单元格改实时优先）未采纳。
+- **根因（console.warn 运行时插桩 + DB ground-truth 双证）**: 渲染层 FORMULA 单元格（QuotationStep2.tsx:1568）**优先读后端快照 `formulaResults[rowKey]`，缺/空才实时 computeAllFormulas**（Phase4 Task3）。而快照 formulaResults **陈旧**：
+  - INPUT 值（单价）有两个持久化存储：`editQuoteCardValue`(失焦) 写 `quote_card_values.editRows`；`autosave→saveDraft` 写 `quotation_line_component_data.row_data`（前端渲染 comp.rows 同源）。
+  - `refreshDraftQuoteCards→refreshQuoteCardValues` 重算只用 driver 重查的 baseRows（无 INPUT）+ 旧 editRows，**完全不读 row_data**。某行单价只进了 row_data 没进 editRows（editQuoteCardValue 漏/rowKey 未对齐）→ 重算时该行单价缺失 → `formulaResults=0`；单元格读到 0。实证：元素 row3 单价=555 在 row_data，editRows 无 row3，`formulaResults["3"]=0`，而实时算应 133.2（被 Tab 小计正确纳入印证）。
+- **修法（CardSnapshotService）**: 新增 `mergeRowDataInputsIntoEdits(snapshot, baseRowsByComp, oldEdits, lineItemId)`，在 `refreshQuoteCardValues` 重算前把 `quotation_line_component_data.row_data`（当前权威输入）的 **INPUT_NUMBER/INPUT_TEXT** 字段按 rowKey 合并进 editRows（row_data[i] 与 baseRows[i] 同序；rowKey=computeRowKey(rkf, baseRows[i].driverRow, i)，空 rkf→位置下标；row_data 值覆盖同字段；只取用户输入，不碰 driver/FORMULA/LIST_FORMULA；失败降级返原 editRows）。这样草稿打开 formulaResults 用当前单价重算。
+- **主线亲验**: 后端 touch 重载 components=401（非 500）；E2E 打开 b21cfe14 触发 refresh → 元素 row3 单元格 **0→133.2**（DB `formulaResults["3"]` 0→133.2 持久化；无单价空行仍 0=正确）。后端单测 26 passed（FormulaCalculator 16 + RowKey 7 + **RefreshCardSnapshot 3** 保编辑语义不破）。E2E task8 4 passed + 1 flaky（编辑往返 autosave 时序竞态，单跑通过 77.7582 存活，与本改动正交：重开单价 INPUT 读 row_data，本改动只动 editRows 重算）。tsc 0。
+- **答用户问"产品小计是前端算的吗"**: 是。当前三层全前端浏览器算 —— 单元格(快照优先+实时兜底)/Tab 小计 computeTabSubtotal/产品小计 computeProductSubtotal。后端快照 formulaResults 仅作"快照优先"渲染源，本次修复让它打开时与 row_data 输入同步。
+- **遗留观察**: 元素 tab 单价 INPUT 列重开后显示空（""），但行数据 rowDanjia 有值——疑似受控 input 在快照模式下绑定源与 r.row 脱节（AP-54 邻域），未在本次范围；本次只修小计列读陈旧快照=0。autosave 防抖竞态导致整页跑时编辑往返偶发失败（既有 flaky）。
+
+---
+
 ### [2026-06-01] 报价单整份快照 Phase1 — 后端 Task1-8 | Flyway V278 + 5 个新实体/服务 + 13 测试 | 关键决策见下
 
 **涉及文件**：

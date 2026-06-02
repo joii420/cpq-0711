@@ -339,11 +339,16 @@ public class MaterialRecipeService {
         List<Object[]> rows = em.createNativeQuery(
                 "SELECT ebi.component_no, ebi.content, ebi.seq_no, ebi.material_no " +
                 "FROM element_bom_item ebi " +
+                // 2026-06-02 统一 element_bom_item 取版本策略: 对齐 ys_view/composite_child_elements_mirror
+                //   规范口径 —— is_current=true AND characteristic=MAX(is_current 子集)。原仅 MAX(characteristic)
+                //   不过滤 is_current，重复 is_current 数据下可能取到非当前版本的最大 characteristic。内外层均补 is_current。
                 "WHERE ebi.system_type='QUOTE' " +
+                "  AND ebi.is_current = true " +
                 "  AND ebi.hf_part_no = :p " +
                 "  AND ebi.characteristic = ( " +
                 "      SELECT MAX(ebi2.characteristic) FROM element_bom_item ebi2 " +
                 "      WHERE ebi2.system_type='QUOTE' " +
+                "        AND ebi2.is_current = true " +
                 "        AND ebi2.customer_no = ebi.customer_no " +
                 "        AND ebi2.material_no = ebi.material_no " +
                 "  ) " +

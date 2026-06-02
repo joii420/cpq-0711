@@ -671,6 +671,12 @@ public class QuotationService {
         for (QuotationLineItem li : lineItems) {
             // Delete existing snapshot if any
             QuotationLineItemSnapshot.delete("lineItemId = ?1", li.id);
+            // product_id 已废弃（V6：报价改用 material_master 料号，不再绑定 product 表客户料号）。
+            // 仅历史上绑定了 Product 的明细才建快照；productId 为 null 时直接跳过，
+            // 否则 Product.findById(null) 会抛 IllegalArgumentException("Identifier may not be null") → 400。
+            if (li.productId == null) {
+                continue;
+            }
             Product product = Product.findById(li.productId);
             if (product != null) {
                 QuotationLineItemSnapshot snapshot = new QuotationLineItemSnapshot();
@@ -777,7 +783,12 @@ public class QuotationService {
                     "INSERT INTO quotation_component_sql_snapshot " +
                     "(quotation_id, sql_view_key, sql_template, declared_columns, required_variables, frozen_at) " +
                     "VALUES (?, ?, ?, ?::jsonb, " +
-                    "  (SELECT array_agg(jsonb_array_elements_text(?::jsonb))::text[]), " +
+                    // 不能写 array_agg(jsonb_array_elements_text(...)) —— PostgreSQL 禁止聚合函数直接套
+                    // set-returning function。须把 SRF 放进 FROM 子句（PG 报错原文给的 LATERAL 提示）。
+                    // 2026-06-02 修复 submit 500: required_variables 为空数组 [] 时 jsonb_array_elements_text
+                    //   返 0 行 → array_agg 对空集返 NULL → 违反 required_variables NOT NULL → 事务 abort →
+                    //   后续 loadLineItems 在坏事务里炸 500。COALESCE 兜成空 text[] '{}'。
+                    "  COALESCE((SELECT array_agg(x)::text[] FROM jsonb_array_elements_text(?::jsonb) AS x), '{}'::text[]), " +
                     "  now())")
                     .setParameter(1, quotationId)
                     .setParameter(2, key)

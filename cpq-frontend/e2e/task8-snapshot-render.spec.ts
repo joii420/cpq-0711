@@ -230,6 +230,50 @@ test('Task8 编辑往返: 元素.单价 编辑 → 自动保存 → 重开存活
   expect(val, '编辑值必须在重开后存活').toBe(UNIQUE);
 });
 
+// 2026-06-02 产品小计=0 修复验证: 报价侧小计聚合改读权威快照 formulaResults(单一数据源 + NaN 守卫)。
+// 复现 bug: 旧码用 comp.rows 重算聚合, 非当前编辑 tab 的 comp.rows 为残缺空行 → 工序公式 NaN → ¥0.00。
+// RED(修复前): 底部"产品小计" = ¥ 0.00; GREEN(修复后): 有限正数 = 各 Tab 快照小计之和。
+test('小计修复: 打开 QT-20260601-1482 编辑向导, 底部"产品小计"非 ¥0.00 且为有限正数', async ({ page }) => {
+  test.skip(!backendUp, '后端未启动');
+  const consoleErrors: string[] = [];
+  page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
+  page.on('pageerror', (e) => consoleErrors.push('PAGE-ERROR: ' + e.message));
+
+  await loginAsAdmin(page);
+  await page.goto(`/quotations/${QUOTATION_ID}/edit`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(3000);
+  const next = page.getByRole('button', { name: /下一步/ }).first();
+  if (await next.isVisible().catch(() => false)) {
+    for (let i = 0; i < 30; i++) { if (await next.isEnabled().catch(() => false)) break; await page.waitForTimeout(1000); }
+    if (await next.isEnabled().catch(() => false)) { await next.click(); await page.waitForTimeout(2000); }
+  }
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(2000);
+
+  // 底部"产品小计"栏(qt-subtotal-bar / qt-subtotal-value) — 第一个产品卡片
+  const subtotalBar = page.locator('.qt-subtotal-bar').first();
+  await subtotalBar.scrollIntoViewIfNeeded().catch(() => {});
+  await page.waitForTimeout(500);
+  const subtotalText = (await subtotalBar.locator('.qt-subtotal-value').first().innerText().catch(() => '')).trim();
+  console.log(`\n=== 产品小计(底部栏) = "${subtotalText}" ===`);
+  await shot(page, 'product-subtotal');
+
+  // 各 Tab 小计(可读时)交叉打印, 便于核对聚合
+  const tabSubtotals = await page.locator('.qt-tab-subtotal, .qt-col-subtotal').allInnerTexts().catch(() => []);
+  if (tabSubtotals.length) console.log(`  各 Tab 小计: ${tabSubtotals.map(t => `"${t.trim()}"`).join(' | ')}`);
+
+  // 解析 "¥ 1,234.56" → 1234.56
+  const num = Number(subtotalText.replace(/[^0-9.\-]/g, ''));
+  console.log(`  解析数值 = ${num}; console.error=${consoleErrors.length}`);
+  consoleErrors.slice(0, 6).forEach(e => console.log('  🔴 ' + e.slice(0, 160)));
+
+  // 硬断言: 复现 bug 的症状 — 产品小计不得为 0 / NaN(空字符串)
+  expect(subtotalText.length, '产品小计栏必须有文本').toBeGreaterThan(0);
+  expect(Number.isFinite(num), '产品小计必须是有限数(非 NaN)').toBe(true);
+  expect(num, '产品小计不得为 ¥0.00(bug 复现值)').toBeGreaterThan(0);
+});
+
 // Phase4 Task2: 组合产品(COMPOSITE)渲染脱钩验证 — 父卡片聚合 Tab(AP-45) + 加载中=0 + 渲染期 batch-expand
 const COMPOSITE_QUOTATION_ID = '9fc5bdad-8701-4c10-abd9-5ac3eb21d330'; // QT-20260519-1411 罗克韦尔 CFG-COMBO-000018 (有 quote_card_values)
 

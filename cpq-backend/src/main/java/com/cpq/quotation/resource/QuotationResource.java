@@ -116,7 +116,16 @@ public class QuotationResource {
         } catch (Exception ignore) {
             // 快照尽力而为
         }
-        // 报价单整份快照 Phase 1: 固定 4 份结构 + 刷新行级 4 份值
+        // 报价单整份快照 Phase 1: 固定 4 份结构 + 仅对新行初始化 4 份值
+        // 2026-06-01 修复(单价小计清零 + 并发400 + 保存502): 保存时**只对没有 quote_card_values 的新行**
+        //   调 snapshotLineValues 初始化; **已有快照的行一律跳过, 不在保存路径重建**。原因:
+        //   1) 旧码无条件 snapshotLineValues → buildCardValues(editRows=null) 把用户单价编辑连同重算小计
+        //      全部抹掉(事件驱动防抖保存每次触发)→ 小计归0; 且与 editQuoteCardValue 并发重建同一行→400。
+        //   2) editQuoteCardValue(失焦)已把 editRows + 重算 formulaResults + quote_excel_values 增量落库,
+        //      保存时无需对已有行再做任何重建。
+        //   3) **严禁**在此高频防抖保存路径对已有行做 driver 全量重 expand(refreshQuoteCardValues)——
+        //      会占满 worker 线程池 → 503/502(代理层 502 Bad Gateway)。全量重 expand 只在草稿**打开**时
+        //      的 refresh-card-snapshot 触发一次。详见 docs/RECORD.md。
         try {
             cardSnapshotService.ensureStructure(id);
             var lines = snapshotService.loadQuotationLines(id);
@@ -125,7 +134,11 @@ public class QuotationResource {
                 if (lineItemId != null) {
                     com.cpq.quotation.entity.QuotationLineItem li =
                         com.cpq.quotation.entity.QuotationLineItem.findById(lineItemId);
-                    if (li != null) cardSnapshotService.snapshotLineValues(li);
+                    boolean hasSnapshot = li != null
+                        && li.quoteCardValues != null && !li.quoteCardValues.isBlank();
+                    if (li != null && !hasSnapshot) {
+                        cardSnapshotService.snapshotLineValues(li); // 仅新行首次初始化, 已有行保留 editQuoteCardValue 的增量
+                    }
                 }
             }
         } catch (Exception ignore) {

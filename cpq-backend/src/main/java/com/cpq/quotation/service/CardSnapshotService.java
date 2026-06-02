@@ -188,6 +188,12 @@ public class CardSnapshotService {
                 // 基础元数据
                 String componentId = tab.path("componentId").asText(null);
                 tabNode.put("componentId", componentId != null ? componentId : "");
+                // 2026-06-02 产品小计=0 修复: 必须搬运 componentCode（含 __impN 多实例后缀）。
+                //   SUBTOTAL 组件公式按 component_code 引用各 NORMAL tab 小计（如 COMP-0020__imp1）。
+                //   Task5 后前端旁路 enrich 改读本结构组装 componentData，结构若缺 componentCode →
+                //   componentData.componentCode='' → evaluateExpression 的 component_subtotal token
+                //   按 component_code 查 componentSubtotals 全部落空 → 产品小计恒 0。
+                tabNode.put("componentCode", tab.path("componentCode").asText(""));
                 tabNode.put("tabName", tab.path("tabName").asText(""));
                 tabNode.put("sortOrder", tab.path("sortOrder").asInt(0));
                 tabNode.put("componentType", tab.path("componentType").asText("NORMAL"));
@@ -783,8 +789,16 @@ public class CardSnapshotService {
             // 2. 旧 editRows（按 rowKey 对齐保留）
             Map<String, ArrayNode> oldEdits = extractEditRowsByComp(managed.quoteCardValues);
 
+            // 2.5 (2026-06-02 修复 报价卡片 FORMULA 单元格读陈旧 formulaResults=0): 把 row_data
+            //     (autosave 持久化的当前 INPUT 值, 与前端渲染 comp.rows 同源) 按 rowKey 合并进 editRows，
+            //     让重算的 formulaResults 用当前 单价 等输入。否则 INPUT 仅在 editQuoteCardValue 写过的行
+            //     进 editRows，autosave 写 row_data 但 editQuoteCardValue 漏的行 formulaResults 缺输入算 0，
+            //     单元格(快照优先)读 0 而列小计(前端实时)正确 → 不一致。详见 RECORD 2026-06-02。
+            Map<String, ArrayNode> mergedEdits =
+                mergeRowDataInputsIntoEdits(snapshot, baseRowsByComp, oldEdits, managed.id);
+
             // 3. 组装新 quote_card_values（保留编辑 + 重算 formulaResults）
-            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, oldEdits);
+            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits);
             managed.quoteCardValues = MAPPER.writeValueAsString(root);
 
             // 4. 重算报价 Excel（核价不动）
@@ -818,6 +832,10 @@ public class CardSnapshotService {
         int n = 0;
         for (QuotationLineItem li : lines) {
             try {
+                // 2026-06-02 修复(草稿打开刷不出后台改的基础数据): 草稿重刷是用户"重查最新 SQL"的显式动作，
+                //   先定向清掉本行 driver 展开缓存（30s TTL）。否则后台直接改库（未走 app 导入 → 未调 evictAll）
+                //   时缓存命中旧值，refreshQuoteCardValues 重 expand 仍拿陈旧数据 → baseRows/含量 刷不出新值。
+                if (li.id != null) componentDriverService.evictForLineItem(li.id);
                 self.refreshQuoteCardValues(li); // self → 触发 @Transactional 代理（每行独立事务）
                 n++;
             } catch (Exception e) {
@@ -926,6 +944,98 @@ public class CardSnapshotService {
             return rows.get(0).toString();
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    /**
+     * 2026-06-02 修复: 把 quotation_line_component_data.row_data（autosave 持久化的当前 INPUT 值，
+     * 与前端渲染 comp.rows 同源）按 rowKey 合并进 editRows，供草稿打开重刷 formulaResults 用当前输入重算。
+     * <ul>
+     *   <li>仅取 {@code INPUT_NUMBER/INPUT_TEXT} 用户输入字段；不取 driver/FORMULA/LIST_FORMULA（由 baseRows/重算提供）。</li>
+     *   <li>row_data[i] 与 baseRows[i] 同序（同 driver 展开）；rowKey 用 baseRows[i].driverRow 计算（与 filter 对齐），空 rkf → 位置下标。</li>
+     *   <li>row_data 是当前权威输入 → 覆盖 editRows 同字段；row_data 缺该字段则保留旧 editRows 值。</li>
+     *   <li>任一步失败 → 降级返回原 editRows，不阻断打开。</li>
+     * </ul>
+     */
+    private Map<String, ArrayNode> mergeRowDataInputsIntoEdits(
+            JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
+            Map<String, ArrayNode> oldEdits, UUID lineItemId) {
+        try {
+            // 基底：复制旧 editRows（不改原引用）
+            Map<String, ArrayNode> merged = new LinkedHashMap<>();
+            if (oldEdits != null) {
+                for (Map.Entry<String, ArrayNode> e : oldEdits.entrySet()) {
+                    merged.put(e.getKey(), e.getValue() != null ? e.getValue().deepCopy() : MAPPER.createArrayNode());
+                }
+            }
+            // 加载本行各组件 row_data
+            @SuppressWarnings("unchecked")
+            List<Object[]> rd = em.createNativeQuery(
+                "SELECT component_id, row_data FROM quotation_line_component_data " +
+                "WHERE line_item_id = :lid AND row_data IS NOT NULL")
+                .setParameter("lid", lineItemId)
+                .getResultList();
+            Map<String, JsonNode> rowDataByComp = new LinkedHashMap<>();
+            for (Object[] r : rd) {
+                if (r[0] != null && r[1] != null) {
+                    JsonNode arr = MAPPER.readTree(r[1].toString());
+                    if (arr.isArray()) rowDataByComp.put(r[0].toString(), arr);
+                }
+            }
+            if (rowDataByComp.isEmpty()) return oldEdits;
+
+            for (JsonNode tab : snapshot) {
+                String cid = tab.path("componentId").asText("");
+                if (cid.isBlank()) continue;
+                JsonNode rowData = rowDataByComp.get(cid);
+                if (rowData == null || !rowData.isArray() || rowData.size() == 0) continue;
+
+                // INPUT 字段名集合（仅用户输入，不含 FORMULA/LIST_FORMULA/driver）
+                List<String> inputFields = new ArrayList<>();
+                for (JsonNode f : tab.path("fields")) {
+                    String ft = f.path("field_type").asText("");
+                    if ("INPUT_NUMBER".equals(ft) || "INPUT_TEXT".equals(ft)) {
+                        String n = f.path("name").asText("");
+                        if (!n.isEmpty()) inputFields.add(n);
+                    }
+                }
+                if (inputFields.isEmpty()) continue;
+
+                ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, MAPPER.createArrayNode());
+                JsonNode rkf = loadRowKeyFieldsNode(cid);
+                ArrayNode edits = merged.computeIfAbsent(cid, k -> MAPPER.createArrayNode());
+                Map<String, ObjectNode> editByKey = new LinkedHashMap<>();
+                for (JsonNode er : edits) {
+                    if (er.isObject()) editByKey.put(er.path("rowKey").asText(""), (ObjectNode) er);
+                }
+
+                int n = Math.min(baseRows.size(), rowData.size());
+                for (int i = 0; i < n; i++) {
+                    JsonNode driverRow = baseRows.get(i).path("driverRow");
+                    String rk = formulaCalculator.computeRowKey(rkf, driverRow);
+                    String rowKey = (rk != null && !rk.isEmpty()) ? rk : String.valueOf(i);
+                    JsonNode rdRow = rowData.get(i);
+
+                    ObjectNode editRow = editByKey.get(rowKey);
+                    if (editRow == null) {
+                        editRow = MAPPER.createObjectNode();
+                        editRow.put("rowKey", rowKey);
+                        editRow.putObject("values");
+                        edits.add(editRow);
+                        editByKey.put(rowKey, editRow);
+                    }
+                    ObjectNode vals = editRow.path("values").isObject()
+                        ? (ObjectNode) editRow.path("values") : editRow.putObject("values");
+                    for (String fld : inputFields) {
+                        JsonNode v = rdRow.path(fld);
+                        if (!v.isMissingNode() && !v.isNull()) vals.set(fld, v); // 当前权威输入覆盖
+                    }
+                }
+            }
+            return merged;
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] mergeRowDataInputsIntoEdits 降级 li=%s: %s", lineItemId, e.getMessage());
+            return oldEdits; // 降级用原 editRows
         }
     }
 

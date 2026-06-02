@@ -254,7 +254,9 @@ export function buildComponentDataFromStructure(
 
     return {
       componentId: snapId || saved.componentId || '',
-      componentCode: saved.componentCode || '',
+      // 产品小计=0 修复(2026-06-02): 优先取结构 tab.componentCode(含 __impN 多实例后缀)，
+      // 它是 SUBTOTAL 公式 component_subtotal token 的引用键；saved.componentCode 多为空。
+      componentCode: tab.componentCode || saved.componentCode || '',
       componentType: tab.componentType || saved.componentType || 'NORMAL',
       tabName: snapTab || saved.tabName || '',
       fields,

@@ -27,6 +27,9 @@ export interface CardStructureField {
 /** 卡片结构 · 页签。 */
 export interface CardStructureTab {
   componentId: string;
+  // 产品小计=0 修复(2026-06-02): SUBTOTAL 公式按 component_code(含 __impN) 引用各 tab 小计，
+  // 前端旁路 enrich 组装 componentData 时必须从结构取回，否则公式解析全落空。
+  componentCode?: string;
   tabName: string;
   sortOrder?: number;
   componentType?: string;
