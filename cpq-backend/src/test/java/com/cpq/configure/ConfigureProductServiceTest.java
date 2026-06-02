@@ -23,8 +23,11 @@ import static org.junit.jupiter.api.Assertions.*;
  *       customer + quotation 行，rollback 后随事务消失。</li>
  *   <li>material_recipe / composite_process_def 由 V171/V172 提交，在事务外持久，
  *       测试只读；AgNi90(editable), AgCu85(locked), AgCu90(locked), RIVET(ACTIVE)。</li>
- *   <li>countConfiguredMatPart() 仅计数 config_fingerprint IS NOT NULL 的行，
- *       避免与历史导入料号(无 fingerprint)互相干扰。</li>
+ *   <li>countConfiguredMatPart() 仅计数 material_master.config_fingerprint IS NOT NULL 的行，
+ *       避免与历史导入料号(无 fingerprint)互相干扰。V6 单写后料号身份表从 mat_part 切为 material_master。</li>
+ *   <li>countMatBomAssembly() 查 material_bom_item(characteristic='ASSEMBLY')，替代原 mat_bom(bom_type='ASSEMBLY')。</li>
+ *   <li>countMatCompositeProcess() 查 capacity(resource_group_no='QUOTE_ASSEMBLY')，替代原 mat_composite_process。</li>
+ *   <li>seedExistingMatPart() 向 material_master 插入已知料号，满足 existing 路径存在性校验（读 material_master）。</li>
  * </ul>
  *
  * <p>前提: V164-V174 迁移已全部 success=t；V171 seed 了 12 个 material_recipe；
@@ -80,13 +83,15 @@ class ConfigureProductServiceTest {
     }
 
     /**
-     * 在当前事务内插入一个没有 config_fingerprint 的 mat_part (模拟历史导入料号)。
-     * 返回插入的 part_no。
+     * 在当前事务内插入一个 material_master 行 (模拟已有料号,无 config_fingerprint 表示历史导入,
+     * 有 config_fingerprint 也可用于模拟已完成选配的料号)。
+     * existing 路径存在性校验读 material_master.material_no，因此夹具改插此表。
+     * 返回插入的 material_no。
      */
     String seedExistingMatPart() {
         String partNo = "T24-EXIST-" + UUID.randomUUID().toString().substring(0, 8);
         em.createNativeQuery(
-                "INSERT INTO mat_part (part_no, product_type, created_at, updated_at) " +
+                "INSERT INTO material_master (material_no, material_type, created_at, updated_at) " +
                 "VALUES (:pn, 'SIMPLE', NOW(), NOW())")
             .setParameter("pn", partNo)
             .executeUpdate();
@@ -121,25 +126,39 @@ class ConfigureProductServiceTest {
         return req;
     }
 
-    /** 仅计数 config_fingerprint IS NOT NULL 的行，不受历史导入料号影响。 */
+    /**
+     * 仅计数 material_master 中 config_fingerprint IS NOT NULL 的行。
+     * V6 单写后，选配料号的身份表从 mat_part 切换为 material_master；
+     * config_fingerprint IS NOT NULL 仍是区分「选配自定义料号」与「历史导入料号」的标志。
+     */
     @SuppressWarnings("unchecked")
     long countConfiguredMatPart() {
         return ((Number) em.createNativeQuery(
-                "SELECT COUNT(*) FROM mat_part WHERE config_fingerprint IS NOT NULL")
+                "SELECT COUNT(*) FROM material_master WHERE config_fingerprint IS NOT NULL")
             .getSingleResult()).longValue();
     }
 
+    /**
+     * 计数 material_bom_item 中 characteristic = 'ASSEMBLY' 的行。
+     * V6 单写后，COMPOSITE 组合产品的子件 BOM 写到 material_bom_item(characteristic='ASSEMBLY')，
+     * 替代原 mat_bom(bom_type='ASSEMBLY')。
+     */
     @SuppressWarnings("unchecked")
     long countMatBomAssembly() {
         return ((Number) em.createNativeQuery(
-                "SELECT COUNT(*) FROM mat_bom WHERE bom_type = 'ASSEMBLY'")
+                "SELECT COUNT(*) FROM material_bom_item WHERE characteristic = 'ASSEMBLY'")
             .getSingleResult()).longValue();
     }
 
+    /**
+     * 计数 capacity 中 resource_group_no = 'QUOTE_ASSEMBLY' 的行。
+     * V6 单写后，组合工艺写到 capacity(resource_group_no='QUOTE_ASSEMBLY')，
+     * 替代原 mat_composite_process。
+     */
     @SuppressWarnings("unchecked")
     long countMatCompositeProcess() {
         return ((Number) em.createNativeQuery(
-                "SELECT COUNT(*) FROM mat_composite_process")
+                "SELECT COUNT(*) FROM capacity WHERE resource_group_no = 'QUOTE_ASSEMBLY'")
             .getSingleResult()).longValue();
     }
 
@@ -156,13 +175,15 @@ class ConfigureProductServiceTest {
 
     /**
      * case 1: 传 existing hf_part_no → service 直接返回该料号的 lineItem，不新建任何
-     * configured mat_part (countConfiguredMatPart 不变)。
+     * configured material_master 行 (countConfiguredMatPart 不变)。
+     * V6 单写后：存在性校验读 material_master.material_no，
+     * 夹具改为向 material_master 插入已知料号（无 config_fingerprint，模拟历史导入）。
      */
     @Test
     @TestTransaction
     void existing_returnsLineItem_noNewMatPart() {
         UUID quotationId = seedQuotationId();
-        String knownPn = seedExistingMatPart();
+        String knownPn = seedExistingMatPart(); // 向 material_master 插入已知料号
 
         ConfigureProductRequest req = new ConfigureProductRequest();
         req.productType = "SIMPLE";
@@ -177,14 +198,15 @@ class ConfigureProductServiceTest {
 
         assertEquals(1, resp.lineItems.size());
         assertEquals(before, countConfiguredMatPart(),
-            "existing 路径不应新增 configured mat_part");
+            "existing 路径不应新增 configured material_master 行");
         assertEquals(knownPn, resp.lineItems.get(0).get("productPartNo"));
     }
 
     // ── case 2: custom 未命中(新建) ──────────────────────────────────────────
 
     /**
-     * case 2: custom 全新配置 → 新建 mat_part (fingerprint 写入) + mat_bom ELEMENT 行。
+     * case 2: custom 全新配置 → 新建 material_master (config_fingerprint 写入) + element_bom_item 元素行。
+     * V6 单写后：料号身份写 material_master，元素配比写 element_bom_item，不再写 mat_part / mat_bom。
      * AgNi90 editable: Ag∈[85,95], Ni∈[5,15]。使用非默认比例确保指纹唯一。
      */
     @Test
@@ -201,7 +223,8 @@ class ConfigureProductServiceTest {
 
         assertEquals(1, resp.lineItems.size());
         assertFalse(resp.fingerprintMatched, "首次创建不应命中");
-        assertEquals(before + 1, countConfiguredMatPart(), "新增 1 行 configured mat_part");
+        assertEquals(before + 1, countConfiguredMatPart(),
+            "新增 1 行 configured material_master (config_fingerprint 非空)");
 
         String pn = (String) resp.lineItems.get(0).get("productPartNo");
         // AgNi90 的 symbol="AgNi"，前缀为 CFG-AgNi-
@@ -213,6 +236,7 @@ class ConfigureProductServiceTest {
     /**
      * case 3: 同一事务内先建，再以完全相同的元素配置再次请求 → 命中指纹复用，
      * countConfiguredMatPart 不再增加；unitWeightGrams 不参与指纹。
+     * V6 单写后：指纹复用读 material_master.config_fingerprint，复用时不新增 material_master 行。
      */
     @Test
     @TestTransaction
@@ -230,7 +254,8 @@ class ConfigureProductServiceTest {
         ), new BigDecimal("99.0"));
         ConfigureProductResponse r2 = service.configure(quotationId, req2, operatorId());
 
-        assertEquals(before, countConfiguredMatPart(), "命中不应新增 configured mat_part");
+        assertEquals(before, countConfiguredMatPart(),
+            "命中指纹不应新增 configured material_master 行");
         assertEquals(pn1, r2.lineItems.get(0).get("productPartNo"));
         assertTrue(r2.fingerprintMatched, "应标注 fingerprintMatched=true");
         assertTrue(r2.reusedHfPartNos.contains(pn1),
@@ -284,8 +309,14 @@ class ConfigureProductServiceTest {
 
     /**
      * case 6: COMPOSITE 两个全新配件 + 组合工艺 RIVET
-     * → 3 个新 configured mat_part (父+2子)、2 条 ASSEMBLY bom、1 条 composite_process。
-     * AgCu90: Ag=90(locked), Cu=10(locked)，必须传精确值。
+     * → 3 个新 configured material_master (父+2子)、2 条 material_bom_item(ASSEMBLY) 行、
+     *   1 条 capacity(QUOTE_ASSEMBLY) 行。
+     * V6 单写后：料号身份写 material_master；ASSEMBLY 子件 BOM 写 material_bom_item(characteristic='ASSEMBLY')；
+     * 组合工艺写 capacity(resource_group_no='QUOTE_ASSEMBLY')。
+     * 注意：必须选用两个在测试环境中均不存在 fingerprint 的 recipe+比例组合，确保两子件均全新创建。
+     *   p1 = AgNi90(Ag=93.7, Ni=6.3) — 可编辑，选非默认比例
+     *   p2 = AgNi95(Ag=96.0, Ni=4.0) — 可编辑(Ag∈[90,98], Ni∈[2,10])，DB 无 AgNi95 配置行
+     * 原 AgCu90 全元素锁定，指纹唯一且 DB 已有历史行，会命中复用导致 p2 不新建，故改用 AgNi95。
      */
     @Test
     @TestTransaction
@@ -296,8 +327,9 @@ class ConfigureProductServiceTest {
             elem("Ag", "93.7"), elem("Ni", "6.3")), new BigDecimal("10.0"));
         p1.name = "配件1";
 
-        PartRequest p2 = makeCustomPart("AgCu90", List.of(
-            elem("Ag", "90.0"), elem("Cu", "10.0")), new BigDecimal("11.0"));
+        // AgNi95: Ag∈[90,98], Ni∈[2,10]，全部可编辑，DB 无历史配置行，确保 p2 全新
+        PartRequest p2 = makeCustomPart("AgNi95", List.of(
+            elem("Ag", "96.0"), elem("Ni", "4.0")), new BigDecimal("11.0"));
         p2.name = "配件2";
 
         ConfigureProductRequest req = new ConfigureProductRequest();
@@ -317,16 +349,21 @@ class ConfigureProductServiceTest {
         ConfigureProductResponse resp = service.configure(quotationId, req, operatorId());
 
         assertEquals(3, resp.lineItems.size(), "1 父 + 2 子 line_items");
-        assertEquals(beforeMp  + 3, countConfiguredMatPart(), "3 个新 configured mat_part");
-        assertEquals(beforeAsm + 2, countMatBomAssembly(),    "2 ASSEMBLY bom 行");
-        assertEquals(beforeCp  + 1, countMatCompositeProcess(), "1 组合工艺行");
+        assertEquals(beforeMp  + 3, countConfiguredMatPart(),
+            "3 个新 configured material_master (父+2子, config_fingerprint 非空)");
+        assertEquals(beforeAsm + 2, countMatBomAssembly(),
+            "2 行 material_bom_item(characteristic='ASSEMBLY') 子件清单");
+        assertEquals(beforeCp  + 1, countMatCompositeProcess(),
+            "1 行 capacity(resource_group_no='QUOTE_ASSEMBLY') 组合工艺");
     }
 
     // ── case 7: 组合产品子复用 ───────────────────────────────────────────────
 
     /**
      * case 7: 同事务内先独立建两个配件，再以相同配置组合
-     * → 子配件命中指纹复用，仅新建父 mat_part；reusedHfPartNos 含两个子料号。
+     * → 子配件命中指纹复用，仅新建父 material_master；reusedHfPartNos 含两个子料号。
+     * V6 单写后：指纹复用读 material_master.config_fingerprint，子件复用时 material_master 不新增；
+     * 仅 COMPOSITE 父级新建 1 行 material_master(config_fingerprint 非空)。
      */
     @Test
     @TestTransaction
@@ -352,7 +389,7 @@ class ConfigureProductServiceTest {
         ConfigureProductResponse resp = service.configure(quotationId, req, operatorId());
 
         assertEquals(beforeMp + 1, countConfiguredMatPart(),
-            "子配件复用时仅 1 个新 configured mat_part(父级)");
+            "子配件复用时仅 1 个新 configured material_master (父级)");
         assertTrue(resp.reusedHfPartNos.contains(pn1),
             "pn1 应在 reusedHfPartNos: " + resp.reusedHfPartNos);
         assertTrue(resp.reusedHfPartNos.contains(pn2),
