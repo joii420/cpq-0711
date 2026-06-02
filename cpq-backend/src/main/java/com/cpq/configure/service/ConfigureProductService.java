@@ -253,7 +253,7 @@ public class ConfigureProductService {
                     .setParameter("p", pr.existingHfPartNo)
                     .setParameter("c", customerId)
                     .executeUpdate();
-                insertProcesses(pr.existingHfPartNo, pr.processIds, customerId);
+                insertProcessSimpleUnitPriceV6(pr.existingHfPartNo, pr.processIds, customerCode);
             }
             // 仍返老 hfPartNo, 卡片显示用户选的料号
             return pr.existingHfPartNo;
@@ -289,13 +289,13 @@ public class ConfigureProductService {
                 new PartNoContext(recipe.symbol, "SIMPLE", operatorId));
             insertMatPart(hfPartNo, "SIMPLE", fp, pr.unitWeightGrams, recipe.id);
             insertElementBom(hfPartNo, pr.elements);
-            // 写 mat_process — 需要 customerId (NOT NULL)
+            // 写 V6 unit_price 工序 — 需要 customerCode (NOT NULL)
             if (pr.processIds != null && !pr.processIds.isEmpty()) {
-                if (customerId == null) {
+                if (customerCode == null || customerCode.isBlank()) {
                     throw new IllegalArgumentException(
-                        "选配 custom 配件含 processIds 但 quotation 无 customer_id");
+                        "选配 custom 配件含 processIds 但 quotation 无 customerCode");
                 }
-                insertProcesses(hfPartNo, pr.processIds, customerId);
+                insertProcessSimpleUnitPriceV6(hfPartNo, pr.processIds, customerCode);
             }
         }
 
@@ -804,6 +804,53 @@ public class ConfigureProductService {
                 "unit_price", "version_no", gk,
                 List.of("operation_no", "seq_no", "currency", "unit"), rows));
         }
+    }
+
+    /**
+     * 2026-06-02 缺口 B：简单料号工序 → V6 unit_price（镜像组合版 insertProcessUnitPriceV6）。
+     * 简单料号无父子，group key 的 code = finished_material_no = hfPartNo。
+     */
+    @SuppressWarnings("unchecked")
+    void insertProcessSimpleUnitPriceV6(String hfPartNo, List<UUID> processIds, String customerCode) {
+        if (customerCode == null || customerCode.isBlank()) return;
+        if (processIds == null || processIds.isEmpty()) return;
+        List<Map<String, Object>> rows = new ArrayList<>();
+        int seq = 1;
+        for (UUID processId : processIds) {
+            List<Object> codes = em.createNativeQuery(
+                    "SELECT code FROM process WHERE id = :id")
+                .setParameter("id", processId).getResultList();
+            if (codes.isEmpty() || codes.get(0) == null) {
+                throw new IllegalArgumentException("工艺不存在: " + processId);
+            }
+            String opNo = codes.get(0).toString();
+            String currency = "CNY";
+            String unit = "KG";
+            List<Object[]> pm = em.createNativeQuery(
+                    "SELECT standard_currency, standard_unit FROM process_master WHERE process_no = :c")
+                .setParameter("c", opNo).getResultList();
+            if (!pm.isEmpty()) {
+                Object[] m = pm.get(0);
+                if (m[0] != null && !m[0].toString().isBlank()) currency = m[0].toString();
+                if (m[1] != null && !m[1].toString().isBlank()) unit = m[1].toString();
+            }
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("operation_no", opNo);
+            r.put("seq_no", seq++);
+            r.put("currency", currency);
+            r.put("unit", unit);
+            rows.add(r);
+        }
+        Map<String, Object> gk = new LinkedHashMap<>();
+        gk.put("system_type", "QUOTE");
+        gk.put("price_type", "MATERIAL");
+        gk.put("cost_type", "自制加工费");
+        gk.put("customer_no", customerCode);
+        gk.put("code", hfPartNo);
+        gk.put("finished_material_no", hfPartNo);
+        versionedWriter.writeVersionedGroup(new VersionedGroupSpec(
+            "unit_price", "version_no", gk,
+            List.of("operation_no", "seq_no", "currency", "unit"), rows));
     }
 
     /**
