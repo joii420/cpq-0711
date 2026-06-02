@@ -1622,15 +1622,17 @@ public class QuotationService {
                 }
             }
         }
-        // 批量查 mat_part.product_type — 供前端 ProductCard 按产品类型条件渲染 Tab
-        // (COMPOSITE 专属 Tab 在 SIMPLE 产品下隐藏). 不依赖 li.compositeType (该列在 saveDraft
-        // 全量重建时会被前端 payload 覆盖回 'SIMPLE',不可靠);mat_part.product_type 在选配
-        // 落库时正确写入且不被报价单层修改.
+        // 批量查 product_type — 供前端 ProductCard 按产品类型条件渲染 Tab
+        // (COMPOSITE 专属 Tab 在 SIMPLE 产品下隐藏). V6 替代 mat_part：
+        // COMPOSITE 判定：material_bom_item 含 component_usage_type='ASSEMBLY' 的当前行。
         Map<String, String> productTypeByHfPartNo = new HashMap<>();
         if (!hfPartNos.isEmpty()) {
             @SuppressWarnings("unchecked")
             List<Object[]> rows = em.createNativeQuery(
-                    "SELECT part_no, product_type FROM mat_part WHERE part_no IN (:pns)")
+                    "SELECT mm.material_no AS part_no, " +
+                    "  CASE WHEN EXISTS(SELECT 1 FROM material_bom_item mb WHERE mb.material_no=mm.material_no " +
+                    "     AND mb.component_usage_type='ASSEMBLY' AND mb.is_current=true) THEN 'COMPOSITE' ELSE 'SIMPLE' END AS product_type " +
+                    "FROM material_master mm WHERE mm.material_no IN (:pns)")
                     .setParameter("pns", hfPartNos)
                     .getResultList();
             for (Object[] r : rows) {
@@ -1656,14 +1658,14 @@ public class QuotationService {
                     matPartByHfPartNo.putIfAbsent(r[0].toString(), r);
                 }
             }
-            // 回退：internal_material 没维护到的，从 mat_part 主档兜底
+            // 回退：internal_material 没维护到的，从 material_master（V6 替代 mat_part）兜底
             List<String> missing = new ArrayList<>();
             for (String pn : hfPartNos) if (!matPartByHfPartNo.containsKey(pn)) missing.add(pn);
             if (!missing.isEmpty()) {
                 @SuppressWarnings("unchecked")
                 List<Object[]> fbRows = em.createNativeQuery(
-                        "SELECT part_no, part_name, specification, size_info, status_code " +
-                        "FROM mat_part WHERE part_no IN (:pns)")
+                        "SELECT material_no AS part_no, material_name AS part_name, specification, " +
+                        "  dimension AS size_info, NULL AS status_code FROM material_master WHERE material_no IN (:pns)")
                         .setParameter("pns", missing)
                         .getResultList();
                 for (Object[] r : fbRows) {

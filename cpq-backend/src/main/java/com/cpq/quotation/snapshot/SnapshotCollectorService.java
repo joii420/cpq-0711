@@ -245,11 +245,12 @@ public class SnapshotCollectorService {
             List<String> partNos = collectPartNos(quotationId);
             if (partNos.isEmpty()) return snapshot;
 
-            // mat_part — 按 hf_part_no 查询（非版本化表，直接取当前行）
+            // material_master — V6 替代 mat_part（按 material_no = hf_part_no 查询）
             Map<String, Object> matPartMap = new LinkedHashMap<>();
             List<Object[]> matPartRows = em.createNativeQuery(
-                    "SELECT hf_part_no, part_name, material, unit_weight, unit FROM mat_part" +
-                    " WHERE hf_part_no = ANY(:partNos)")
+                    "SELECT material_no AS hf_part_no, material_name AS part_name, material_type AS material, " +
+                    "unit_weight, standard_unit AS unit FROM material_master" +
+                    " WHERE material_no = ANY(:partNos)")
                     .setParameter("partNos", partNos.toArray(new String[0]))
                     .getResultList();
             for (Object[] row : matPartRows) {
@@ -263,11 +264,14 @@ public class SnapshotCollectorService {
             }
             if (!matPartMap.isEmpty()) snapshot.put("mat_part", matPartMap);
 
-            // mat_bom — 按 hf_part_no 查询（非版本化，取活跃行）
+            // element_bom_item — V6 替代 mat_bom，含 is_current + 最新 characteristic 过滤
             Map<String, Object> matBomMap = new LinkedHashMap<>();
             List<Object[]> matBomRows = em.createNativeQuery(
-                    "SELECT hf_part_no, bom_type, element_name, quantity FROM mat_bom" +
-                    " WHERE hf_part_no = ANY(:partNos)")
+                    "SELECT hf_part_no, 'ELEMENT' AS bom_type, component_no AS element_name, content AS quantity " +
+                    "FROM element_bom_item ebi WHERE ebi.system_type='QUOTE' AND ebi.is_current = true " +
+                    "  AND ebi.hf_part_no = ANY(:partNos) " +
+                    "  AND ebi.characteristic = (SELECT MAX(c.characteristic) FROM element_bom_item c " +
+                    "     WHERE c.is_current=true AND c.customer_no=ebi.customer_no AND c.material_no=ebi.material_no)")
                     .setParameter("partNos", partNos.toArray(new String[0]))
                     .getResultList();
             for (Object[] row : matBomRows) {

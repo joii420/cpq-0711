@@ -347,14 +347,14 @@ public class DriftDetectionService {
     }
 
     /**
-     * 通过 mat_bom ELEMENT 类型查询 hfPartNos 涉及的 element_name 列表。
+     * 通过 element_bom_item（V6 替代 mat_bom）查询 hfPartNos 涉及的 element_name 列表。
      */
     @SuppressWarnings("unchecked")
     private List<String> queryElementNamesByPartNos(List<String> hfPartNos) {
         if (hfPartNos.isEmpty()) return List.of();
-        String sql = "SELECT DISTINCT element_name FROM mat_bom"
-                + " WHERE bom_type = 'ELEMENT' AND hf_part_no = ANY(:partNos)"
-                + " AND element_name IS NOT NULL";
+        String sql = "SELECT DISTINCT component_no AS element_name FROM element_bom_item"
+                + " WHERE system_type='QUOTE' AND is_current = true AND hf_part_no = ANY(:partNos)"
+                + " AND component_no IS NOT NULL";
         return em.createNativeQuery(sql)
                 .setParameter("partNos", hfPartNos.toArray(new String[0]))
                 .getResultList();
