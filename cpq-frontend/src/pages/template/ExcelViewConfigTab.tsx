@@ -10,12 +10,15 @@ import { templateService } from '../../services/templateService';
 import VariableLabelPickerDrawer from '../../components/VariableLabelPickerDrawer';
 import { variableLabelService, type VariableLabel } from '../../services/variableLabelService';
 import PathPickerDrawer from '../component/PathPickerDrawer';
+import CardFormulaDrawer from './CardFormulaDrawer';
+import { validateCardFormula } from './cardFormula';
 
 const { Text } = Typography;
 
 // V149 Stage 3+D 清理: Excel 视图配置只做"配 Excel 列引用视图数据"一件事.
 // VARIABLE 取数(绑 $view.col 或 {code}); FORMULA 模板层公式(=[X]+[Y] 等); 老 4 种保留向后兼容.
-type SourceType = 'VARIABLE' | 'FORMULA' | 'PRODUCT_ATTRIBUTE' | 'COMPONENT_FIELD' | 'EXCEL_FORMULA' | 'FIXED_VALUE';
+// CARD_FORMULA: 卡片引用公式，引用报价单产品卡中的页签小计/字段值/聚合（Task3 新增）.
+type SourceType = 'VARIABLE' | 'FORMULA' | 'CARD_FORMULA' | 'PRODUCT_ATTRIBUTE' | 'COMPONENT_FIELD' | 'EXCEL_FORMULA' | 'FIXED_VALUE';
 
 interface ExcelViewColumn {
   col_key: string;
@@ -30,6 +33,9 @@ interface ExcelViewColumn {
   visible?: boolean;
   formula?: string;
   comparison_tag?: string;
+  // CARD_FORMULA 专属字段（Task3 新增）
+  refs?: Record<string, any>;
+  display_format?: { type?: 'PERCENT' | 'NUMBER'; decimals?: number };
 }
 
 interface Props {
@@ -94,6 +100,8 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
   // PathPickerDrawer 状态（SQL 视图路径选择）
   const [pathPickerOpen, setPathPickerOpen] = useState(false);
   const [pathPickerColIdx, setPathPickerColIdx] = useState<number | null>(null);
+  // CardFormulaDrawer 状态（CARD_FORMULA 列）
+  const [cardDrawerColIdx, setCardDrawerColIdx] = useState<number | null>(null);
   // 公式编辑 Drawer 状态（FORMULA 列）
   const [formulaDrawerOpen, setFormulaDrawerOpen] = useState(false);
   const [formulaDrawerColIdx, setFormulaDrawerColIdx] = useState<number | null>(null);
@@ -118,16 +126,22 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
     setColumns(prev => prev.map((c, i) => (i === index ? { ...c, ...patch } : c)));
   };
 
-  const addColumn = (sourceType: 'VARIABLE' | 'FORMULA' = 'VARIABLE') => {
+  const addColumn = (sourceType: 'VARIABLE' | 'FORMULA' | 'CARD_FORMULA' = 'VARIABLE') => {
     setColumns(prev => {
       const k = getNextColKey(prev);
       const base: ExcelViewColumn = {
         col_key: k,
-        title: '新列',
+        title: sourceType === 'CARD_FORMULA' ? '新卡片列' : '新列',
         source_type: sourceType,
       };
-      if (sourceType === 'VARIABLE') base.variable_path = '';
-      else base.formula = '';
+      if (sourceType === 'VARIABLE') {
+        base.variable_path = '';
+      } else if (sourceType === 'CARD_FORMULA') {
+        base.formula = '=';
+        base.refs = {};
+      } else {
+        base.formula = '';
+      }
       return [...prev, base];
     });
   };
@@ -205,6 +219,35 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
   };
 
   const handleSave = async () => {
+    // 保存前校验所有 CARD_FORMULA 列
+    const cardFormulaCols = columns.filter(c => c.source_type === 'CARD_FORMULA');
+    if (cardFormulaCols.length > 0) {
+      const allColKeys = columns.map(c => c.col_key);
+      const allFormulas = Object.fromEntries(
+        cardFormulaCols.map(c => [c.col_key, c.formula || '']),
+      );
+      const allErrors: string[] = [];
+      for (const col of cardFormulaCols) {
+        const errs = validateCardFormula(
+          { col_key: col.col_key, formula: col.formula, refs: col.refs },
+          allColKeys,
+          allFormulas,
+        );
+        if (errs.length > 0) {
+          allErrors.push(`列 ${col.col_key}（${col.title}）：${errs.join('；')}`);
+        }
+      }
+      if (allErrors.length > 0) {
+        message.error(
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {allErrors.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>,
+          8,
+        );
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       await templateService.updateExcelViewConfig(templateId, columns);
@@ -218,6 +261,45 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
   };
 
   const renderValueCell = (col: ExcelViewColumn, index: number) => {
+    if (col.source_type === 'CARD_FORMULA') {
+      const f = col.formula || '';
+      const displayFormula = f.length > 60 ? f.slice(0, 60) + '…' : f;
+      return (
+        <div style={{ width: '100%' }}>
+          <Space.Compact style={{ width: '100%' }}>
+            <Input
+              size="small"
+              readOnly
+              value={displayFormula}
+              placeholder="点击右侧按钮编辑卡片公式"
+              disabled={!isDraft}
+              onClick={() => isDraft && setCardDrawerColIdx(index)}
+              style={{
+                cursor: isDraft ? 'pointer' : 'not-allowed',
+                fontFamily: 'Consolas, Monaco, monospace',
+              }}
+            />
+            <Button
+              size="small"
+              disabled={!isDraft}
+              icon={<EditOutlined />}
+              onClick={() => setCardDrawerColIdx(index)}
+              title="编辑卡片引用公式（可引用报价单页签小计/字段/聚合）"
+            >
+              编辑
+            </Button>
+          </Space.Compact>
+          <div style={{ marginTop: 4, fontSize: 11, lineHeight: '18px' }}>
+            <Tag color="geekblue">CARD</Tag>
+            {col.refs && Object.keys(col.refs).length > 0 && (
+              <span style={{ color: '#888', fontSize: 10 }}>
+                {Object.keys(col.refs).length} 个引用已注册
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    }
     if (col.source_type === 'FORMULA') {
       const f = col.formula || '';
       return (
@@ -376,22 +458,25 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
                     />
                   </td>
                   <td style={tdStyle}>
-                    {(col.source_type === 'VARIABLE' || col.source_type === 'FORMULA') ? (
+                    {(col.source_type === 'VARIABLE' || col.source_type === 'FORMULA' || col.source_type === 'CARD_FORMULA') ? (
                       <Select
                         size="small"
-                        style={{ width: 110 }}
+                        style={{ width: 140 }}
                         value={col.source_type}
                         disabled={!isDraft}
                         onChange={v => {
                           if (v === 'FORMULA') {
-                            updateColumn(index, { source_type: 'FORMULA', variable_path: undefined, formula: col.formula || '' });
+                            updateColumn(index, { source_type: 'FORMULA', variable_path: undefined, formula: col.formula || '', refs: undefined, display_format: undefined });
+                          } else if (v === 'CARD_FORMULA') {
+                            updateColumn(index, { source_type: 'CARD_FORMULA', variable_path: undefined, formula: col.formula || '=', refs: col.refs || {} });
                           } else {
-                            updateColumn(index, { source_type: 'VARIABLE', formula: undefined, variable_path: col.variable_path || '' });
+                            updateColumn(index, { source_type: 'VARIABLE', formula: undefined, variable_path: col.variable_path || '', refs: undefined, display_format: undefined });
                           }
                         }}
                         options={[
                           { label: '变量 VARIABLE', value: 'VARIABLE' },
                           { label: '公式 FORMULA', value: 'FORMULA' },
+                          { label: '卡片公式 CARD', value: 'CARD_FORMULA' },
                         ]}
                       />
                     ) : (
@@ -450,6 +535,12 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
                 icon: <FunctionOutlined />,
                 onClick: () => addColumn('FORMULA'),
               },
+              {
+                key: 'CARD_FORMULA',
+                label: '卡片公式 CARD_FORMULA（引用报价单页签小计/字段/聚合）',
+                icon: <FunctionOutlined />,
+                onClick: () => addColumn('CARD_FORMULA'),
+              },
             ],
           }}
         >
@@ -461,6 +552,25 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
             </Space>
           </Button>
         </Dropdown>
+      )}
+
+      {cardDrawerColIdx !== null && (
+        <CardFormulaDrawer
+          open={cardDrawerColIdx !== null}
+          templateId={templateId}
+          allColKeys={columns.map(c => c.col_key)}
+          allFormulas={Object.fromEntries(
+            columns
+              .filter(c => c.source_type === 'CARD_FORMULA')
+              .map(c => [c.col_key, c.formula || '']),
+          )}
+          value={columns[cardDrawerColIdx]}
+          onSave={(patch) => {
+            updateColumn(cardDrawerColIdx, { ...patch, source_type: 'CARD_FORMULA' });
+            setCardDrawerColIdx(null);
+          }}
+          onClose={() => setCardDrawerColIdx(null)}
+        />
       )}
 
       <VariableLabelPickerDrawer
