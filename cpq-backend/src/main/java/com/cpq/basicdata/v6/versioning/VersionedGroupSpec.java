@@ -16,15 +16,32 @@ public class VersionedGroupSpec {
     public final List<String> contentColumns;
     /** 本次要写的整组行：每行 = 列名→值（含 contentColumns；不含 version/is_current/id）。 */
     public final List<Map<String, Object>> newRows;
+    /**
+     * 决定「是否升版」的触发列子集（必须 ⊆ contentColumns）。
+     * <p>null = 退化为用 contentColumns 作触发列（默认行为；其余表保持现状：任何内容变化即升版）。
+     * <p>非 null（如 capacity 传 [process_no, seq_no]）= 仅这些列变化才升版；其它写入列变化原地更新不升版。
+     */
+    public final List<String> versionTriggerColumns;
 
+    /** 旧构造器：versionTriggerColumns 默认 null（行为不变）。 */
     public VersionedGroupSpec(String tableName, String versionColumn,
                               Map<String, Object> groupKeyColumns,
                               List<String> contentColumns,
                               List<Map<String, Object>> newRows) {
+        this(tableName, versionColumn, groupKeyColumns, contentColumns, newRows, null);
+    }
+
+    /** 新构造器：显式指定升版触发列。 */
+    public VersionedGroupSpec(String tableName, String versionColumn,
+                              Map<String, Object> groupKeyColumns,
+                              List<String> contentColumns,
+                              List<Map<String, Object>> newRows,
+                              List<String> versionTriggerColumns) {
         this.tableName = tableName;
         this.versionColumn = versionColumn;
         this.groupKeyColumns = new LinkedHashMap<>(groupKeyColumns);
         this.contentColumns = List.copyOf(contentColumns);
         this.newRows = List.copyOf(newRows);
+        this.versionTriggerColumns = versionTriggerColumns == null ? null : List.copyOf(versionTriggerColumns);
     }
 }
