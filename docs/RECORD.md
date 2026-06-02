@@ -13722,3 +13722,11 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - **自检**: 编译无 `cannot find symbol` / `BUILD FAILURE` ✅；`/api/cpq/components` → 401 ✅；1 文件改动，3 行插入/56 行删除。
 
 ### [2026-06-02] 报价单Excel视图 - 第一列由客户料号(__label)改为料号(生产料号/__hfPartNo) | cpq-frontend/src/pages/quotation/LinkedExcelView.tsx | 纯前端行头列改动,与模板excel_view_config无关;__hfPartNo=productPartNo必有值不做兜底
+
+### [2026-06-02] 组件管理 - 行键(rowKeyFields)改回"字段后勾选"+ BNF反查真实列名 (Phase A, Task1-5) | cpq-backend: ComponentDriverService.java / ComponentResource.java / dto/RowKeyCandidates{Request,Response}.java / test/RowKeyCandidatesTest.java; cpq-frontend: FieldConfigTable.tsx / ComponentManagement.tsx / pages/component/types.ts / services/componentService.ts | 设计/计划见 docs/superpowers/specs(plans)/2026-06-02-行键勾选-BNF反查真实列名*
+
+- **背景**: 行键存的是 driverRow 真实列名(=SQL视图结果列名/别名,中英文取决于视图,**非数据库限制**)。V278 勾选版误用「字段中文显示名」当行键→`driverRow.get(中文名)`恒null→草稿重刷对齐失效(AP-54);5192b9e 改顶部手输框反人性且提示「填英文列名」对中文别名视图是误导。
+- **新方案**: 字段后勾选,但勾选后**不存显示名,存该字段 basic_data_path 经 extractLeafField 反查出的真实列名**;用 driver $视图的 declaredColumns 交叉校验决定可勾/置灰(置灰+原因Tooltip,不隐藏)。解析逻辑单一放后端(避 AP-37 前后端协议重复)。
+- **关键点**: 后端 `resolveRowKeyCandidates`(纯逻辑,4单测)+ `computeRowKeyCandidates`(查 ComponentSqlView.declaredColumns)+ `POST /api/cpq/components/{id}/row-key-candidates`(无状态,入参用编辑态fields支持未保存);前端 FieldConfigTable 加行键勾选列(小计后/备注前)、ComponentManagement 删手输框+候选拉取/400ms防抖重算;handleSave 存储逻辑不变(仍存真实列名数组,后端 driverRow.get(key) 对齐算法不动)。
+- **进度**: Task1-5 代码完成,隔离worktree开发后合回(merge 3168147)。静态自检: 后端单测4passed/mvn compile SUCCESS;前端tsc 0错误/4改动文件Vite 200 ✅。**待办**: ①E2E双spec(quotation-flow+composite)+手工三视图验收 — 阻塞于 DB-down;②Phase B 存量迁移(含child_hf_part_no等无字段锚定列的组件补字段)— 阻塞于 DB-down + FieldItem无is_hidden机制需先定(见plan Task7)。
+- **协议提示**: 本次未改 field_type,不触发 AP-44 矩阵;行键勾选列按 fieldName 索引 candidatesByField,后续字段改名需注意候选 map 同步。
