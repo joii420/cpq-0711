@@ -471,8 +471,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                           const treeCfg = activeComp.treeConfig;
                           let ordered = descriptors.map(d => ({ ...d, _depth: 0, _hasChildren: false, _nodeKey: '' }));
                           if (treeCfg?.idField && treeCfg?.parentField) {
-                            const idFieldDef = activeComp.fields.find(f => f.name === treeCfg.idField);
-                            const parentFieldDef = activeComp.fields.find(f => f.name === treeCfg.parentField);
+                            const idFieldDef = activeComp.fields.find(f => (f.name || (f as any).key) === treeCfg.idField);
+                            const parentFieldDef = activeComp.fields.find(f => (f.name || (f as any).key) === treeCfg.parentField);
                             const keyPrefix = activeComp.componentId || activeComp.tabName || 'tree';
                             const laid = layoutTreeRows(
                               descriptors,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
+import { buildTreeRows, isTreeRowHidden, resolveTreeKey, layoutTreeRows } from './treeTable';
 
 describe('buildTreeRows', () => {
   it('单根多层:子行紧跟父行 + depth 正确 + hasChildren 正确', () => {
@@ -127,5 +127,35 @@ describe('resolveTreeKey', () => {
   it('空 → null', () => {
     const field = { name: '料号', field_type: 'INPUT_TEXT' } as any;
     expect(resolveTreeKey(field, {}, undefined, (p: string) => p)).toBeNull();
+  });
+});
+
+describe('layoutTreeRows', () => {
+  it('order.length 不变 + nodeKey 含前缀 + depth/hasChildren 透传', () => {
+    const items = [
+      { id: 'A', p: null }, { id: 'B', p: 'A' }, { id: 'C', p: null },
+    ];
+    const res = layoutTreeRows(items, (it) => it.id, (it) => it.p, 'cid1');
+    expect(res.rows.length).toBe(3);                       // 不丢行
+    expect(res.rows.map(r => r.originalIndex).sort()).toEqual([0, 1, 2]);
+    expect(res.nodeKeyByIndex[0]).toBe('cid1::A');
+    const rowA = res.rows.find(r => r.originalIndex === 0)!;
+    expect(rowA.hasChildren).toBe(true);
+    const rowB = res.rows.find(r => r.originalIndex === 1)!;
+    expect(rowB.depth).toBe(1);
+    expect(rowB.parentIndex).toBe(0);
+  });
+  it('id 为 null 的行 nodeKey 用 #index 兜底', () => {
+    const items = [{ id: null, p: null }];
+    const res = layoutTreeRows(items, (it) => it.id, (it) => it.p, 'cid');
+    expect(res.nodeKeyByIndex[0]).toBe('cid::#0');
+  });
+});
+
+describe('resolveTreeKey DATA_SOURCE/BNF_PATH', () => {
+  it('DATA_SOURCE+BNF_PATH:取 basicDataValues[lookup(bnf_path)]', () => {
+    const field = { name: '父料号', field_type: 'DATA_SOURCE', datasource_binding: { type: 'BNF_PATH', bnf_path: 'mat_bom.parent_no' } } as any;
+    const v = resolveTreeKey(field, {}, { 'mat_bom.parent_no': 'P000' }, (p: string) => p);
+    expect(v).toBe('P000');
   });
 });

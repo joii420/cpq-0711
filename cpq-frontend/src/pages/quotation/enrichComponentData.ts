@@ -35,7 +35,7 @@ function normalizeFieldType(raw: string):
 
 /** snapshot/结构里的 tree_config(snake)或 treeConfig(camel)→ 前端 TreeConfig(无效→undefined) */
 function normalizeTreeConfig(raw: any): import('../component/types').TreeConfig | undefined {
-  const o = raw?.tree_config ?? raw?.treeConfig ?? raw;
+  const o = raw?.tree_config ?? raw?.treeConfig;
   if (!o || typeof o !== 'object') return undefined;
   const idField = o.idField ?? o.id_field;
   const parentField = o.parentField ?? o.parent_field;

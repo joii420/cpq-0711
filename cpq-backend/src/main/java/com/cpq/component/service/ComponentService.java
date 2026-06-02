@@ -315,7 +315,7 @@ public class ComponentService {
         boolean pEmpty = pF == null || pF.toString().isBlank();
         if (idEmpty && pEmpty) return; // 视为关闭树表
         if (idEmpty || pEmpty) {
-            throw new IllegalArgumentException("树表配置:ID 列与父 ID 列均必填");
+            throw new IllegalArgumentException("树表配置:ID 列与父 ID 列均必填(当前仅填了一个)");
         }
         if (idF.toString().equals(pF.toString())) {
             throw new IllegalArgumentException("树表配置:ID 列与父 ID 列不能为同一列");

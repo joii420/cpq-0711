@@ -78,17 +78,21 @@ export function buildTreeRows(nodes: TreeNodeInput[]): TreeLayout {
   const order: number[] = [];
   const depthByIndex: Record<number, number> = {};
   const hasChildren = new Set<number>();
-  const visit = (idx: number, depth: number): void => {
+  // 迭代 DFS(防深链递归栈溢出);栈元素 = [节点下标, 深度]
+  const roots = childrenByParent.get(null) ?? [];
+  const stack: Array<[number, number]> = [];
+  for (let i = roots.length - 1; i >= 0; i--) stack.push([roots[i], 0]);
+  while (stack.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const [idx, depth] = stack.pop()!;
     order.push(idx);
     depthByIndex[idx] = depth;
     const kids = childrenByParent.get(idx);
     if (kids && kids.length > 0) {
       hasChildren.add(idx);
-      for (const k of kids) visit(k, depth + 1);
+      for (let i = kids.length - 1; i >= 0; i--) stack.push([kids[i], depth + 1]);
     }
-  };
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  for (const r of childrenByParent.get(null) ?? []) visit(r, 0);
+  }
 
   return { order, depthByIndex, hasChildren, parentIndexByIndex };
 }
