@@ -162,17 +162,8 @@ class V5ChainEndToEndTest {
                 "system_config 应有至少 23 条 seed 记录，实际: " + cnt);
     }
 
-    @Test
-    @Order(3)
-    @DisplayName("T3: v4 归档表 _archived_product_data_pool_v4 存在")
-    void t3_v4ArchivedTable_exists() {
-        Long cnt = queryLong(
-                "SELECT COUNT(*) FROM information_schema.tables " +
-                "WHERE table_schema = 'public' " +
-                "AND table_name = '_archived_product_data_pool_v4'");
-        assertEquals(1L, cnt,
-                "v4 归档表 _archived_product_data_pool_v4 应存在（V49 已执行）");
-    }
+    // T3（v4 归档表 _archived_product_data_pool_v4 存在性断言）已移除：
+    // 该归档表 2026-06-02 经孤儿审计确认无引用，由 V286 删除。
 
     @Test
     @Order(4)
