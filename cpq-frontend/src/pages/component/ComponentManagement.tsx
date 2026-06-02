@@ -323,6 +323,9 @@ const ComponentManagement: React.FC = () => {
   const [formulas, setFormulas] = useState<import('./types').FormulaItem[]>([]);
   const [dataDriverPath, setDataDriverPath] = useState<string>('');
   const [rowKeyFields, setRowKeyFields] = useState<string[]>([]);
+  const [rowKeyCandidates, setRowKeyCandidates] = useState<
+    Record<string, import('./types').RowKeyCandidate>
+  >({});
   const [driverPickerOpen, setDriverPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingTree, setLoadingTree] = useState(false);
@@ -357,6 +360,27 @@ const ComponentManagement: React.FC = () => {
     loadTree();
   }, [loadTree]);
 
+  const refreshRowKeyCandidates = useCallback(async (
+    compId: string,
+    driverPath: string,
+    curFields: FieldItem[],
+  ) => {
+    if (!compId) return;
+    try {
+      const cleanFields = curFields.map(({ key: _k, ...rest }) => rest);
+      const res = await componentService.rowKeyCandidates(compId, {
+        dataDriverPath: driverPath ?? '',
+        fields: cleanFields,
+      });
+      const list = (res.data?.candidates ?? []) as import('./types').RowKeyCandidate[];
+      const map: Record<string, import('./types').RowKeyCandidate> = {};
+      for (const c of list) { if (c.fieldName) map[c.fieldName] = c; }
+      setRowKeyCandidates(map);
+    } catch {
+      setRowKeyCandidates({});
+    }
+  }, []);
+
   // Debounced search
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -364,6 +388,15 @@ const ComponentManagement: React.FC = () => {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchKeyword, loadTree]);
+
+  // Debounced row-key candidate refresh when fields/driverPath change
+  useEffect(() => {
+    if (!selectedComponent?.id) return;
+    const t = setTimeout(() => {
+      void refreshRowKeyCandidates(selectedComponent.id, dataDriverPath, fields);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [selectedComponent?.id, dataDriverPath, fields, refreshRowKeyCandidates]);
 
   // Load component when selected from tree
   const handleSelectComponent = async (comp: ComponentItem) => {
@@ -385,6 +418,11 @@ const ComponentManagement: React.FC = () => {
       );
       setDataDriverPath(loaded.dataDriverPath ?? '');
       setRowKeyFields(loaded.rowKeyFields ?? []);
+      void refreshRowKeyCandidates(
+        loaded.id,
+        loaded.dataDriverPath ?? '',
+        (loaded.fields || []).map((f: FieldItem, i: number) => ({ ...f, key: `field-${i}-${Date.now()}` })),
+      );
     } catch (e: unknown) {
       const err = e as { message?: string };
       message.error('加载组件失败: ' + (err.message ?? ''));
@@ -651,50 +689,6 @@ const ComponentManagement: React.FC = () => {
                       setDriverPickerOpen(false);
                     }}
                   />
-                  {/* Phase1-Snapshot: 行键配置 — 组件级文本输入，填底层 driverRow 列名，逗号分隔 */}
-                  <div
-                    style={{
-                      background: '#f6ffed',
-                      border: '1px solid #b7eb8f',
-                      borderRadius: 6,
-                      padding: '10px 12px',
-                      marginBottom: 12,
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: 8,
-                    }}
-                  >
-                    <span
-                      style={{ fontSize: 13, color: '#389e0d', fontWeight: 500, whiteSpace: 'nowrap', paddingTop: 4 }}
-                      title="用于报价单草稿重刷时按行身份对齐，保留用户已编辑的值"
-                    >
-                      行键(rowKeyFields):
-                    </span>
-                    <div style={{ flex: 1 }}>
-                      <Input
-                        value={rowKeyFields.join(',')}
-                        onChange={(e) => {
-                          const raw = e.target.value;
-                          setRowKeyFields(
-                            raw
-                              .split(',')
-                              .map((s) => s.trim())
-                              .filter((s) => s.length > 0)
-                          );
-                        }}
-                        placeholder="如 child_hf_part_no,material_code（逗号分隔 driverRow 底层列名）"
-                        size="small"
-                        style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: 12 }}
-                        allowClear
-                        onClear={() => setRowKeyFields([])}
-                      />
-                      <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 4, lineHeight: 1.5 }}>
-                        填 driverRow 底层英文列名（如 child_hf_part_no、material_code、element_name、process_code），逗号分隔。
-                        用于报价单草稿重刷时按行身份对齐、保留用户编辑值。留空 = 不参与对齐。
-                        注意：填底层英文列名，<strong>不是</strong>字段配置中的中文显示名。
-                      </div>
-                    </div>
-                  </div>
                   <HeaderPreview fields={fields} />
                   <Tabs
                     size="small"
@@ -732,6 +726,15 @@ const ComponentManagement: React.FC = () => {
                               }
                             }}
                             onConfigDatasource={handleOpenDsModal}
+                            rowKeyFields={rowKeyFields}
+                            candidatesByField={rowKeyCandidates}
+                            onToggleRowKey={(col, checked) => {
+                              setRowKeyFields((prev) => {
+                                const set = new Set(prev);
+                                if (checked) set.add(col); else set.delete(col);
+                                return Array.from(set);
+                              });
+                            }}
                           />
                         ),
                       },

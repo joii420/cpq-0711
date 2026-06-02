@@ -133,6 +133,12 @@ export const componentService = {
    * 后端 ComponentService.update() 对存量组件走软校验（不满足仅告警，不阻断保存）。
    */
   update: (id: string, data: any) => api.put(`/components/${id}`, data) as Promise<any>,
+  /**
+   * 行键候选：对每个字段用 basic_data_path 反查 driver 真实列名 + 校验是否可作行键。
+   * body.fields 传当前编辑态（支持未保存）。返回 { candidates: RowKeyCandidate[] }。
+   */
+  rowKeyCandidates: (id: string, body: { dataDriverPath: string; fields: any[] }) =>
+    api.post(`/components/${id}/row-key-candidates`, body) as Promise<any>,
   delete: (id: string) => api.delete(`/components/${id}`) as Promise<any>,
   toggleStatus: (id: string) => api.patch(`/components/${id}/toggle-status`) as Promise<any>,
   /**
