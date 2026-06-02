@@ -4,6 +4,67 @@
 
 ---
 
+### [2026-06-02] 选配 V44→V6 单写迁移 完成（Phase 1-6 总收口，subagent 驱动）
+
+- **目标/边界**（用户确认）：选配写路双写→**V6 单写**；干净大切换无开关；不迁历史；全局料号+全局指纹延续 V44 语义；**本次不删 V44 表**（导入侧仍用）。spec/plan 见 `docs/superpowers/{specs,plans}/2026-06-02-选配V44到V6单写迁移*`。
+- **交付**：Phase1 指纹权威切 material_master（V284 唯一索引 + lookupHfByFingerprint）｜Phase2 简单料号工序补 unit_price（insertProcessSimpleUnitPriceV6）｜Phase3+4 **ConfigureProductService V44 读写归零**（停写4表 + 删双写桥/死代码 + buildSnapshot/backfill 读切 V6 + 存在性校验切 material_master，净删~280行）｜Phase5 3下游读路切 V6（SnapshotCollector/DriftDetection/loadLineItems）。commits 55ba1e1 bebc98a 90a5aef 25bf590 a3538c9 bc45c6e 5f26809。
+- **验证**：ConfigureProductServiceTest 切 V6 断言/夹具 **8/8 通过**（并暴露+修正 AgCu90 locked 元素指纹复用，反证 V6 去重生效）；**V44 表 MAX created_at 与迁移前基线一致=零新增**；选配链路 V44 SQL 残留扫描空。
+- **已知降级/待续**：① 组合回显 participating_parts/param_values（V6 capacity 无）→null；② loadLineItems product_type 由 material_bom_item ASSEMBLY 派生、status_code→NULL；③ 保留 mat_part_version_log（版本日志子系统，范围外）；④ 前端 E2E composite-product-flow（V6 夹具缺）+ 提交快照/Tab渲染前端活验未做；⑤ 2处过时 DTO JavaDoc(mat_part) 可清；⑥ **删 V44 表属后续独立项**（导入 V5/Staging + PartVersion/ElementPrice/DiffDetector 仍用 V44）。
+- 基线：迁移前工作区混合态分 3 commit（A 报价bug修复 / B COMBO并行 / C 迁移文档）。
+
+---
+
+### [2026-06-02] 选配 V6 入库 Phase 5 — 3 下游读路改读 V6 | SnapshotCollectorService.java / DriftDetectionService.java / QuotationService.java | commit bc45c6e
+
+- **背景**: 选配已停写 V44，但提交快照/漂移检测/报价单 loadLineItems 仍读 V44，导致选配产品数据读不到。
+- **改动 1 — SnapshotCollectorService.collectMasterDataSnapshot**:
+  - mat_part 查询改为 `SELECT material_no AS hf_part_no, material_name AS part_name, material_type AS material, unit_weight, standard_unit AS unit FROM material_master`；row[0..4] 列序对齐，消费代码不改。
+  - mat_bom 查询改为 `element_bom_item`，含 `system_type='QUOTE' AND is_current=true` + 最新 characteristic 子查询过滤；row[0..3] 列序对齐，消费代码不改。
+- **改动 2 — DriftDetectionService.queryElementNamesByPartNos**:
+  - `SELECT DISTINCT element_name FROM mat_bom WHERE bom_type='ELEMENT'` 改为 `SELECT DISTINCT component_no AS element_name FROM element_bom_item WHERE system_type='QUOTE' AND is_current=true`；返回类型 `List<String>` 不变。
+- **改动 3 — QuotationService.loadLineItems**:
+  - product_type 查询：`SELECT part_no, product_type FROM mat_part` 改为从 `material_master` + `material_bom_item ASSEMBLY is_current` 派生 COMPOSITE/SIMPLE；row[0/1] 对齐。
+  - 兜底查询：`SELECT part_no, part_name, specification, size_info, status_code FROM mat_part` 改为 `SELECT material_no AS part_no, material_name AS part_name, specification, dimension AS size_info, NULL AS status_code FROM material_master`；row[0..4] 对齐（status_code 降级为 NULL，V6 无此列）。
+  - `mat_part_version_log` 查询（约:1779）未改，属版本日志子系统，按规范豁免。
+- **残留扫描**: 3 文件均无 mat_part/mat_bom 残留；QuotationService 仅剩 mat_part_version_log 豁免行。
+- **DONE_WITH_CONCERNS**: material_master 无 status_code 列，兜底查询以 `NULL AS status_code` 填充；前端 HfPartInfo.statusCode 对应字段若有显示需求，待确认 V6 替代列（可能为 material_status 或 purchase_type）后再适配。
+- **自检**: 编译 0 错误（无 BUILD FAILURE）；`/api/cpq/components` → 401
+
+---
+
+### [2026-06-02] 选配 V6 入库 Phase 3+4 — ConfigureProductService V44 读写归零 | ConfigureProductService.java | commit 25bf590
+
+- **背景**: Phase 1（lookupHfByFingerprint 切 material_master）、Phase 2（简单料号工序写 unit_price）已完成；本期把 ConfigureProductService 内所有 V44（mat_part/mat_bom/mat_process/mat_composite_process）读写清零。
+- **停写调用（Phase 3）**:
+  - `resolvePart` custom 新建路径：删 `insertMatPart` + `insertElementBom` 调用（V6 的 `insertMaterialMasterV6/insertElementBomV6` 保留）
+  - `configure` COMPOSITE 路径：删 `insertMatPart(parentHfPartNo,...)` + `insertAssemblyBom` + `insertCompositeProcesses` 调用（V6 方法已写）
+  - existing+processIds 路径：删两条 `DELETE FROM mat_process executeUpdate`（unit_price 版本化写入覆盖，无需手工删 V44 行）
+- **双写桥删除**: `backfillV44FromV6` + `backfillV6FromV44` 调用+方法体全删
+- **死代码删除**: `copyElementBom` + `readElementsFromMatBom` 方法体删除
+- **方法体删除**: `insertMatPart` / `insertElementBom` / `insertProcesses` / `insertAssemblyBom` / `insertCompositeProcesses` 方法体全删（各计数=1）
+- **读切 V6（Phase 4）**:
+  - 存在性校验：`SELECT 1 FROM mat_part` 改 `SELECT 1 FROM material_master`（V44 兜底路径整块删除）
+  - `buildSnapshot`：unit_weight 从 `material_master` 读，工序从 `unit_price WHERE cost_type='自制加工费'` 读（operation_no→processCode），组合工艺从 `capacity WHERE resource_group_no='QUOTE_ASSEMBLY'` 读（process_no→defCode，participatingParts/paramValues 降级 null）
+  - `backfillProcessesForNewCustomer`：切 V6，改查 `unit_price` 是否存在，从 `customer` 表取 `code` 列转换 customerId→customerCode，复制工序调 `versionedWriter.writeVersionedGroup`
+- **DONE_WITH_CONCERNS**:
+  - `insertProcessesWithLineItemId` 计数=2（仍有1次调用在 existing+lineItemId 路径），保留方法体，该方法仍写 V44 `mat_process`。终态 grep 残留 1 行（INSERT INTO mat_process）。待后续 Phase 完成 V6 per-lineItem 工序方案后再删。
+  - `customer` 表列名确认：实际为 `code`（非 `customer_code`），与 `getCustomerCodeFromCustomerId()` 已用的 `SELECT code FROM customer` 一致，无需适配。
+- **自检**: 编译 0 错误，`/api/cpq/components` → 401
+
+---
+
+### [2026-06-02] 选配 V6 入库 Phase 2 — 简单料号工序写 V6 unit_price | ConfigureProductService.java | commit 90a5aef
+
+- **背景**: 简单料号工序之前只写 V44 `mat_process`，组合料号已有 `insertProcessUnitPriceV6` 写 `unit_price`；简单料号缺口。
+- **Task 2.1 — 新增 `insertProcessSimpleUnitPriceV6`**: 镜像 `insertProcessUnitPriceV6` 逻辑，差异：简单料号无父子，`group key` 的 `code = finished_material_no = hfPartNo`（组合版 code=配件、finished_material_no=COMBO）。从 `process` 表取 code，从 `process_master` 取 standard_currency/standard_unit（空→CNY/KG），调 `versionedWriter.writeVersionedGroup` 写 `unit_price`。
+- **Task 2.2 — resolvePart 两处工序写入切 V6**:
+  - 行 256（existing+processIds 老路径兼容）：`insertProcesses` → `insertProcessSimpleUnitPriceV6(pr.existingHfPartNo, pr.processIds, customerCode)`
+  - 行 298（custom 新建路径）：`insertProcesses` → `insertProcessSimpleUnitPriceV6(hfPartNo, pr.processIds, customerCode)`；guard 条件同步改为检查 `customerCode`（原检 `customerId`）
+- **中间态说明**: 简单料号路径现在：停写 mat_process 工序 + 写 unit_price 工序；mat_part/element_bom 仍双写（Phase 3 才停）。DELETE mat_process 的两句和 insertProcesses 方法体均未动。
+- **自检**: 编译 0 错；/api/cpq/components → 401；unit_price 表字段结构（operation_no/finished_material_no/code/cost_type）确认可写。
+
+---
+
 ### [2026-06-02] 选配 V6 入库 Phase 1 — 指纹权威切 V6 | V284__material_master_fingerprint_unique.sql / ConfigureProductService.java | commit 55ba1e1 + bebc98a
 
 - **背景**: 选配产品判重复用料号靠 `config_fingerprint`，原权威在 V44 `mat_part.config_fingerprint`（唯一索引 `uq_mat_part_fingerprint`）。Phase 1 干净切到 V6 `material_master.config_fingerprint`（全局表，PK=material_no，无 customer_no）。
@@ -13651,5 +13712,13 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - Task 10 验收(部分): 迁移应用+视图可查+模板注入形态正确+后端无 ERROR 级模板/SQL 编译错+BnfTableMetaSyncer 同步 OK+后端 47 测试绿+BNF 渲染返单值无"(共N项)"。**未现场验**: "真实二次导入升版后视图只返当前版本"——活库无 is_current=false 数据(没跑过真实两遍导入), 无升版场景, 需真实 Excel 夹具。写入侧升版+翻转已 47 单测证明, 视图过滤 SQL 正确性迁移层已确认。
 - 注: E2E child-parts-zcj-bom.spec 失败=夹具漂移(料号 3120012574 的 material_bom_item=0 行, 期望 5 行不存在), 与本改动无关(zcj_bom 未改, 渲染路径正常返单值)。quotation-flow/task8 全流程 E2E 较重(>240s 超时), 未跑完。
 - ⚠️ 存量数据决策(2026-06-02 确认 A=维持设计): 本任务**不纠正库内已有版本号**(决策⑩ 空库/清档)。现存: unit_price V_DEFAULT×72 / material_bom V1×6 / capacity V_DEFAULT×10 + **2026060001×8(异常数字版本, 非本代码产生)** / element_bom·plating_scheme 2000。nextVersionOf 只忽略非数字(V_DEFAULT/V1)→新导入从2000起; 但 capacity 的 2026060001 是纯数字会被 MAX+1 带偏(新导→2026060002 非2000)。**运维前提: 用前 TRUNCATE 这5表重导才得干净2000序列**; 存量归一化是独立数据迁移(本期不做)。
+
+### [2026-06-02] 选配 V6 入库 — CONCERNS-1 收尾: insertProcessesWithLineItemId 删除，ConfigureProductService V44 写入彻底归零 | ConfigureProductService.java | commit a3538c9
+
+- **背景**: commit 25bf590 完成 Phase 3+4 时残留 CONCERNS-1：`existing+lineItemId` 路径仍调 `insertProcessesWithLineItemId` 写 V44 `mat_process`（带 `quotation_line_item_id`），方法体保留。
+- **改动**: ① :220-227 if/else 块折叠为单行 `insertProcessSimpleUnitPriceV6` 调用，`lineItemId` 局部变量及 `customerId` 在该分支的依赖一并移除（整块 if/else 删，不再需要 `lineItemId`）；② `insertProcessesWithLineItemId` 方法体（Javadoc + @SuppressWarnings + 43 行实现）完整删除。
+- **理由**: per-lineItem 工序渲染由 `insertQuotationLineProcesses` → `quotation_line_process` 表负责；加工费由 `unit_price` V6 视图提供；该方法写的 V44 `mat_process` 两端均无消费，属冗余 legacy。
+- **终态 grep**: `(FROM|JOIN|INTO|UPDATE|DELETE FROM)` + `(mat_part|mat_bom|mat_process|mat_composite_process)` → 空（非注释行零命中）；`insertProcessesWithLineItemId` 计数=0。
+- **自检**: 编译无 `cannot find symbol` / `BUILD FAILURE` ✅；`/api/cpq/components` → 401 ✅；1 文件改动，3 行插入/56 行删除。
 
 ### [2026-06-02] 报价单Excel视图 - 第一列由客户料号(__label)改为料号(生产料号/__hfPartNo) | cpq-frontend/src/pages/quotation/LinkedExcelView.tsx | 纯前端行头列改动,与模板excel_view_config无关;__hfPartNo=productPartNo必有值不做兜底
