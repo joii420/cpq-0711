@@ -55,14 +55,23 @@ public class ExcelParserService {
         Row headerRow = sheet.getRow(0);
         if (headerRow == null) return result;
 
-        // 收集表头：列号 -> 列名（中文）
+        // 收集表头：列号 -> 列名（中文）；检测同 Sheet 内重复表头 → 报错(防静默覆盖丢列)
         Map<Integer, String> headerMap = new LinkedHashMap<>();
+        Map<String, Integer> seenHeader = new LinkedHashMap<>();
         short last = headerRow.getLastCellNum();
         for (int c = 0; c < last; c++) {
             Cell cell = headerRow.getCell(c);
             String name = cellToString(cell);
             if (name != null && !name.isBlank()) {
-                headerMap.put(c, normalizeHeader(name));
+                String norm = normalizeHeader(name);
+                Integer prev = seenHeader.get(norm);
+                if (prev != null) {
+                    throw new IllegalArgumentException(
+                        "表头列名重复: " + norm + "（列 " + (prev + 1) + "、列 " + (c + 1)
+                        + "）。请改为不同列名（如编码列/名称列分别命名）后重新导入。");
+                }
+                seenHeader.put(norm, c);
+                headerMap.put(c, norm);
             }
         }
         if (headerMap.isEmpty()) return result;
