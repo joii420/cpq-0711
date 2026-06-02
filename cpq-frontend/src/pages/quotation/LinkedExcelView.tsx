@@ -3,6 +3,7 @@ import { Table, Card, Spin, Alert, Tag } from 'antd';
 import type { CostingTemplateColumn } from '../../services/costingTemplateService';
 import type { LineItem } from './QuotationStep2';
 import { useLinkedExcelRows } from './useLinkedExcelRows';
+import { useBackendExcelRows } from './useBackendExcelRows';
 
 interface Props {
   linkedTemplateId?: string;
@@ -17,6 +18,37 @@ interface Props {
   costingTemplateId?: string | null;
 }
 
+/**
+ * 判断是否为新模型：模板列配置中存在 source_type==='CARD_FORMULA' 的列。
+ * 新模型下使用 useBackendExcelRows（后端已算好所有列值）；旧模型继续用 useLinkedExcelRows。
+ */
+function isNewModel(parsedColumns: CostingTemplateColumn[]): boolean {
+  return parsedColumns.some((col) => col.source_type === 'CARD_FORMULA');
+}
+
+/**
+ * 格式化单元格值：
+ * - null/undefined/''/''—'' → 显示 "—"
+ * - PERCENT 格式：数值 × 100，按 decimals 保留小数，加 % 后缀
+ * - 其余数值原样显示（toLocaleString）
+ */
+function renderCellValue(val: any, col: CostingTemplateColumn): React.ReactNode {
+  if (val === null || val === undefined || val === '' || val === '—') {
+    return <span style={{ color: '#bbb' }}>—</span>;
+  }
+
+  const fmt = col.display_format;
+  if (fmt?.type === 'PERCENT') {
+    const n = typeof val === 'number' ? val : parseFloat(String(val));
+    if (isNaN(n)) return <span style={{ color: '#bbb' }}>—</span>;
+    const decimals = fmt.decimals ?? 2;
+    return `${(n * 100).toFixed(decimals)}%`;
+  }
+
+  if (typeof val === 'number') return val.toLocaleString();
+  return String(val);
+}
+
 const LinkedExcelView: React.FC<Props> = ({
   linkedTemplateId,
   lineItems,
@@ -28,10 +60,55 @@ const LinkedExcelView: React.FC<Props> = ({
   templateId,
   costingTemplateId: _costingTemplateId, // @deprecated 已由 templateId 替代, 接收但不使用
 }) => {
-  const { rows, parsedColumns, excelTemplate, loading, error } = useLinkedExcelRows({
-    linkedTemplateId, lineItems, customerId, templateId, quotationContext, quotationId, quotationStatus,
+  // ---- 旧模型 hook（始终调用，用 enabled 控制是否真正运行）----
+  // useLinkedExcelRows 内部用 linkedTemplateId 有无控制；直接传完整参数，
+  // 新模型下它拿到 excelTemplate 后 parsedColumns 会有值但 rows 不被 LinkedExcelView 消费。
+  const legacyResult = useLinkedExcelRows({
+    linkedTemplateId,
+    lineItems,
+    customerId,
+    templateId,
+    quotationContext,
+    quotationId,
+    quotationStatus,
   });
 
+  // ---- 新模型 hook：先用旧 hook 拿到 parsedColumns 判断模型，再决定 enabled ----
+  // 注：两个 hook 无条件调用（React rules of hooks）。
+  // 旧 hook 已加载好 parsedColumns → 用它判断模型；
+  // 新 hook 的 enabled 由判断结果控制。
+  const legacyColumns = legacyResult.parsedColumns;
+  const useBackend = isNewModel(legacyColumns);
+
+  const backendResult = useBackendExcelRows({
+    quotationId,
+    lineItems,
+    enabled: useBackend,
+  });
+
+  // ---- 按模型选用最终结果 ----
+  const {
+    rows,
+    parsedColumns,
+    loading: resolvedLoading,
+    error: resolvedError,
+  } = useBackend
+    ? {
+        rows: backendResult.rows,
+        parsedColumns: legacyColumns, // 列配置结构仍用旧 hook 已解析的（含 display_format 等）
+        loading: legacyResult.loading || backendResult.loading,
+        error: backendResult.error ?? legacyResult.error,
+      }
+    : {
+        rows: legacyResult.rows,
+        parsedColumns: legacyColumns,
+        loading: legacyResult.loading,
+        error: legacyResult.error,
+      };
+
+  const excelTemplate = legacyResult.excelTemplate;
+
+  // ---- 渲染 ----
   if (!linkedTemplateId) {
     return (
       <Alert type="info" showIcon
@@ -40,8 +117,8 @@ const LinkedExcelView: React.FC<Props> = ({
         style={{ margin: 16 }} />
     );
   }
-  if (loading) return <div style={{ textAlign: 'center', padding: 48 }}><Spin /></div>;
-  if (error) return <Alert type="error" showIcon message={error} style={{ margin: 16 }} />;
+  if (resolvedLoading) return <div style={{ textAlign: 'center', padding: 48 }}><Spin /></div>;
+  if (resolvedError) return <Alert type="error" showIcon message={resolvedError} style={{ margin: 16 }} />;
   if (!excelTemplate) {
     return (
       <Alert type="warning" showIcon
@@ -75,10 +152,9 @@ const LinkedExcelView: React.FC<Props> = ({
       ),
       dataIndex: col.col_key, key: col.col_key, width: 140,
       render: (val: any) => {
+        // 旧模型的 '__loading__' 哨兵
         if (val === '__loading__') return <span style={{ color: '#bbb' }}>加载中…</span>;
-        if (val === null || val === undefined || val === '') return <span style={{ color: '#bbb' }}>—</span>;
-        if (typeof val === 'number') return val.toLocaleString();
-        return String(val);
+        return renderCellValue(val, col);
       },
     })),
   ];
@@ -94,6 +170,7 @@ const LinkedExcelView: React.FC<Props> = ({
             <Tag color={excelTemplate.status === 'PUBLISHED' ? 'green' : 'default'}>
               {excelTemplate.status === 'PUBLISHED' ? '已发布' : excelTemplate.status}
             </Tag>
+            {useBackend && <Tag color="cyan">后端算值</Tag>}
           </span>
         }
         extra={<span style={{ fontSize: 12, color: '#999' }}>按本报价单产品行渲染，共 {rows.length} 行</span>}

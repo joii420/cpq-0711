@@ -3,12 +3,21 @@ import api from './api';
 export interface CostingTemplateColumn {
   col_key: string;
   title: string;
-  source_type: 'VARIABLE' | 'FORMULA';
+  source_type: 'VARIABLE' | 'FORMULA' | 'CARD_FORMULA' | 'PRODUCT_ATTRIBUTE' | 'COMPONENT_FIELD' | 'EXCEL_FORMULA' | 'FIXED_VALUE';
   variable_path?: string;
   formula?: string;
+  /** CARD_FORMULA / COMPONENT_FIELD / PRODUCT_ATTRIBUTE 列的字段 key */
+  field_key?: string;
+  /** FIXED_VALUE 列的固定值 */
+  fixed_value?: string;
   comparison_tag?: string;
   /** V86：隐藏列。仍参与 FORMULA 取值链路，但不在「核价单 Excel 视图」/「报价单 Excel 视图」展示。 */
   hidden?: boolean;
+  /** 显示格式配置（百分比等） */
+  display_format?: {
+    type?: 'PERCENT' | 'NUMBER' | 'TEXT';
+    decimals?: number;
+  };
 }
 
 export interface CostingTemplate {
