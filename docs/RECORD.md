@@ -4,6 +4,24 @@
 
 ---
 
+### [2026-06-02] quotation - 卡片引用值对象 CardRef | CardRef.java / CardRefTest.java | Task 2
+
+- 新建 `com.cpq.quotation.service.card.CardRef`，封装 Excel 列公式中对页签实例的引用：SUBTOTAL（小计）、FIRST_ROW（首行）、ROW_WHERE（按条件取行）、聚合源（无 field）四种模式。
+- `fromMap` 静态工厂解析 JSON/Map 结构，cols 别名→中文字段名映射，null 安全。
+- 4 个 JUnit 5 测试全部通过；`Tests run: 4, Failures: 0, Errors: 0, Skipped: 0`；BUILD SUCCESS。
+- commit: f9024db
+
+---
+
+### [2026-06-02] formula - PercentLiteral 百分比字面量预处理 | PercentLiteral.java / PercentLiteralTest.java | Task 1
+
+- 新建 `com.cpq.formula.PercentLiteral`，正则 `(\d+(?:\.\d+)?)%` 把百分比字面量重写为 `(N/100.0)`，null 安全。
+- 5 个 JUnit 5 测试全部通过（简单整数%、小数%、表达式内、普通数字不变、null）。
+- 测试输出：`Tests run: 5, Failures: 0, Errors: 0, Skipped: 0`；BUILD SUCCESS。
+- commit: 8a9e412
+
+---
+
 ### [2026-06-02] 选配V6入库 - 组装加工费料号级整组升版+解析器重名表头防呆 | Q14AssemblyProcessFeeHandler.java / VersionedV6Writer.java / VersionedGroupSpec.java / ExcelParserService.java | 仅Q14特殊:结构变升版价格原地更新;其余表零变化
 
 - **根因 A**：ExcelParserService.parseSheet 表头 headerMap 同名覆盖，导致两列"组装工序"中工序编码被名称静默覆盖。修法：`seenHeader` 检测重复表头抛 `IllegalArgumentException`，错误信息含重复列名和列号。
@@ -13747,3 +13765,7 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - **验收(2026-06-02 DB在线 10.177.152.12)**: live 端点实测 — 工序($gx_view): 子件/序号/工序代码/工序/成材率 eligible+正确反查列名, 单价/小计(无path) 正确置灰; 材质($cz_view): 子件→child_hf_part_no/材质代码→recipe_code 等 eligible, 规格标签/配方类型 置灰。E2E quotation-flow: step2 `加载中=0`(渲染回归通过), 但 P1 搜料号3120012574 返0行失败 = 并发 selopt-v6 V6 数据模型(material_master.material_no)所致, 与本改动无关。**Phase B 精确范围(live确认行键列无字段→保存会丢)**: 材质=material_code; 选配-元素含量/选配-工序列表=child_hf_part_no; **选配-组合工艺=process_code 且该列根本不在 $composite_process_mirror 视图列中=V279遗留坏行键, 需单独排查而非补字段**。
 - **补强**: code-review 后 62c2d23 把候选防抖依赖从整个 fields 数组改为稳定签名(name+basic_data_path), 避免无关字段编辑刷新 DB 端点。
 - **Phase B 完成(8b30c91, DB在线落地)**: 决策1(不丢锚定列)— handleSave 显式把"无候选列可代表"的存量行键列(material_code/child_hf_part_no)并回, 勾选只覆盖可代表部分, tsc 0/Vite 200。其实增量 toggle 设计本就不删无勾选框的列, 此为代码层显式保证。决策2(坏行键)— V287 清空 选配-组合工艺(3bbde78f) row_key_fields(process_code 不在 $composite_process_mirror 视图列, V279遗留误配), Flyway success=t, 该组件 row_key_fields 现为 NULL=按行号对齐。重启后 live 端点复验工序: 7候选/5 eligible 正常。**遗留**: 选配-组合工艺若需精确行身份, 后续依 mirror 真实列(def_code/seq_no)重配, 单独立项。
+
+---
+
+[2026-06-02] Excel卡片引用公式(后端) - 新增 CARD_FORMULA 列来源:引用产品卡片页签结果(行集+小计)+本表列+SUM_OVER条件聚合(别名层)+IF/ROUND/ABS/百分比,后端拓扑求值+环检测+空值规则一 | CardDataProvider/CardRef/CardFormulaEvaluator/CardAggregateSource/PercentLiteral + TemplateFormulaService(executeOverFunction卡片源分支/firstMatchIndex) + ExcelViewService.buildRowData分支 | 与旧$view.col并存(只做今后);AP-37按页签实例compId:sortOrder定位;字段中文名→ASCII别名(JEXL不可用中文标识符);前端选择器/渲染见计划二

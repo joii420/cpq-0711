@@ -37,6 +37,10 @@ public class ExcelViewService {
     @Inject
     TemplateFormulaService templateFormulaService;
 
+    /** CARD_FORMULA 列：批量拓扑求值（跨列依赖，不能逐列独立算）。 */
+    @Inject
+    CardFormulaEvaluator cardFormulaEvaluator;
+
     // ---- Template excel-view-config API ----
 
     public String getExcelViewConfig(UUID templateId) {
@@ -175,6 +179,16 @@ public class ExcelViewService {
         String partNo = extractPartNo(li, componentRowData);
         UUID customerId = quotationCustomerId;
 
+        // CARD_FORMULA：批量拓扑求值（不能逐列独立算，需跨列依赖）
+        Map<String, Object> cardFormulaValues = java.util.Collections.emptyMap();
+        List<Map<String, Object>> cardCols = new ArrayList<>();
+        for (Map<String, Object> col : columns)
+            if ("CARD_FORMULA".equals(col.get("source_type"))) cardCols.add(col);
+        if (!cardCols.isEmpty()) {
+            cardFormulaValues = cardFormulaEvaluator.evaluateColumns(
+                cardCols, componentDataList, customerId, partNo, null);
+        }
+
         // Stage 2: 逐列计算，VARIABLE 列先算好，FORMULA 列引用时可以直接用 cachedCells
         Map<String, Object> cachedCells = new LinkedHashMap<>();
 
@@ -211,6 +225,7 @@ public class ExcelViewService {
                     yield col.get("formula");
                 }
                 case "FIXED_VALUE" -> col.get("fixed_value");
+                case "CARD_FORMULA" -> cardFormulaValues.get(colKey);
                 default -> null;
             };
             row.put(colKey, value);
