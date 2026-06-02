@@ -33,6 +33,20 @@ function normalizeFieldType(raw: string):
   return 'INPUT';
 }
 
+/** snapshot/结构里的 tree_config(snake)或 treeConfig(camel)→ 前端 TreeConfig(无效→undefined) */
+function normalizeTreeConfig(raw: any): import('../component/types').TreeConfig | undefined {
+  const o = raw?.tree_config ?? raw?.treeConfig ?? raw;
+  if (!o || typeof o !== 'object') return undefined;
+  const idField = o.idField ?? o.id_field;
+  const parentField = o.parentField ?? o.parent_field;
+  if (!idField || !parentField) return undefined;
+  return {
+    idField: String(idField),
+    parentField: String(parentField),
+    defaultExpanded: o.defaultExpanded ?? o.default_expanded ?? true,
+  };
+}
+
 /**
  * Template fetch dedupe — 走 service-level Promise-cache(`templateService.getByIdCached`),
  * 与其他报价单组件(ReadonlyProductCard、Step2 等)共享同一个 in-flight Promise → 同 templateId 全局 1 次 HTTP。
@@ -174,6 +188,7 @@ export async function enrichComponentData(
         rows,
         subtotal: saved.subtotal || 0,
         dataDriverPath,
+        treeConfig: normalizeTreeConfig(snapshotComp),
       } as ComponentDataItem;
     });
   } catch {
@@ -264,6 +279,7 @@ export function buildComponentDataFromStructure(
       rows,
       subtotal: saved.subtotal || 0,
       dataDriverPath: tab.dataDriverPath || saved.dataDriverPath || undefined,
+      treeConfig: normalizeTreeConfig(tab),
     } as ComponentDataItem;
   });
 }
