@@ -35,6 +35,7 @@ export interface CardStructureTab {
   componentType?: string;
   dataDriverPath?: string;
   rowKeyFields?: string[];
+  treeConfig?: { idField: string; parentField: string; defaultExpanded?: boolean };
   fields: CardStructureField[];
   formulas?: Array<{ name: string; expression: any[] }>;
 }

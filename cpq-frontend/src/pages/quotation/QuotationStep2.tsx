@@ -119,6 +119,7 @@ export interface ComponentDataItem {
   subtotal: number;
   /** Y1.5 行驱动 BNF 路径(从模板快照透传)— 非空时 Step2 按 expand-driver 返回的 N 行渲染 */
   dataDriverPath?: string;
+  treeConfig?: import('../component/types').TreeConfig;
 }
 
 export interface LineItem {

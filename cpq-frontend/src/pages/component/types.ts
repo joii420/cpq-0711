@@ -11,6 +11,15 @@ export interface DirectoryNode {
 
 export type ComponentType = 'NORMAL' | 'SUBTOTAL';
 
+export interface TreeConfig {
+  /** 本行 ID 列字段 key(= 字段 name,如「料号」) */
+  idField: string;
+  /** 父 ID 列字段 key(如「父料号」) */
+  parentField: string;
+  /** 默认全展开(true,缺省)/全折叠(false) */
+  defaultExpanded?: boolean;
+}
+
 export interface ComponentItem {
   id: string;
   directoryId?: string;
@@ -32,6 +41,10 @@ export interface ComponentItem {
    * 特殊哨兵 ["__seq_no__"] = 按行号对齐（无稳定业务键时显式豁免）。
    */
   rowKeyFields?: string[];
+  /**
+   * 树表配置(可选)。非空 → 渲染时按邻接表(idField/parentField)重排成树。纯展示,不改 rowData/rowCount/行序。
+   */
+  treeConfig?: TreeConfig;
 }
 
 export interface FieldItem {
