@@ -213,18 +213,9 @@ public class ConfigureProductService {
             // 若前端传了 quotationLineItemId，则仅删/写该 lineItem 专属行，不影响其他 lineItem
             // 或主数据（quotation_line_item_id IS NULL）的工序。
             // 老路径兼容：quotationLineItemId = null → 仅删/写当前 customer 的主数据行（原有行为）。
-            if (customerId == null) {
-                throw new IllegalArgumentException(
-                    "existing+processIds 需 quotation.customer_id 写 mat_process");
-            }
-            UUID lineItemId = parseUuidOrNull(pr.quotationLineItemId);
-            if (lineItemId != null) {
-                // Bug B 新路径: 写 lineItem 专属工序行（V44 DELETE 已移除，unit_price 升版自带覆盖）
-                insertProcessesWithLineItemId(pr.existingHfPartNo, pr.processIds, customerId, lineItemId);
-            } else {
-                // 老路径兼容: V6 unit_price 版本化写入（覆盖当前 customer 工序）
-                insertProcessSimpleUnitPriceV6(pr.existingHfPartNo, pr.processIds, customerCode);
-            }
+            // V6 unit_price 版本化写入（覆盖当前 customer 工序）
+            // per-lineItem 工序渲染由 insertQuotationLineProcesses 负责，加工费由 unit_price 视图提供
+            insertProcessSimpleUnitPriceV6(pr.existingHfPartNo, pr.processIds, customerCode);
             // 仍返老 hfPartNo, 卡片显示用户选的料号
             return pr.existingHfPartNo;
         }
@@ -786,50 +777,6 @@ public class ConfigureProductService {
                     "VALUES (gen_random_uuid(), :lid, :pid)")
                 .setParameter("lid", lineItemId)
                 .setParameter("pid", processId)
-                .executeUpdate();
-        }
-    }
-
-    // insertProcesses 已在 Phase 3 移除（V44 mat_process 写入停用）
-
-    /**
-     * Bug B 修复: 带 quotation_line_item_id 的工序写入（V44 mat_process）。
-     * DONE_WITH_CONCERNS：insertProcessesWithLineItemId 尚写 V44 mat_process，
-     * existing+lineItemId 路径的 V6 替代方案待后续 Phase 完成。
-     * 与 insertProcesses 逻辑相同，区别在于 INSERT 时额外写入 quotation_line_item_id 列，
-     * 使同 (customer_id, hf_part_no) 的多套工序通过 line_item_id 互相隔离。
-     */
-    @SuppressWarnings("unchecked")
-    void insertProcessesWithLineItemId(String hfPartNo, List<UUID> processIds,
-                                       UUID customerId, UUID lineItemId) {
-        // uq_mat_process_current: (customer_id, hf_part_no, seq_no, sub_seq_no) WHERE is_current=true
-        // 加了 quotation_line_item_id 后，不同 lineItemId 的行互不冲突（V206 unique index 未加此列）
-        // 此处不依赖 UNIQUE index 幂等，调用前已按 lineItemId 精确 DELETE 老行
-        int seq = 1;
-        for (UUID processId : processIds) {
-            List<Object[]> rows = em.createNativeQuery(
-                    "SELECT code, name FROM process WHERE id = :id")
-                .setParameter("id", processId)
-                .getResultList();
-            if (rows.isEmpty()) {
-                throw new IllegalArgumentException("工艺不存在: " + processId);
-            }
-            Object[] r = rows.get(0);
-            String code = (String) r[0];
-            String name = (String) r[1];
-
-            em.createNativeQuery(
-                    "INSERT INTO mat_process " +
-                    "(customer_id, hf_part_no, version, is_current, seq_no, " +
-                    "process_code, assembly_process, part_version, status, " +
-                    "quotation_line_item_id, created_at, updated_at) " +
-                    "VALUES (:cid, :p, 1, true, :sq, :code, :name, 2000, 'ACTIVE', :lid, NOW(), NOW())")
-                .setParameter("cid", customerId)
-                .setParameter("p", hfPartNo)
-                .setParameter("sq", seq++)
-                .setParameter("code", code)
-                .setParameter("name", name)
-                .setParameter("lid", lineItemId)
                 .executeUpdate();
         }
     }
