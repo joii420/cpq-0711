@@ -241,6 +241,9 @@ public class TemplateService {
                 String effectiveDriverPath = (tc.dataDriverPathOverride != null && !tc.dataDriverPathOverride.isBlank())
                         ? tc.dataDriverPathOverride : comp.dataDriverPath;
                 entry.put("data_driver_path", effectiveDriverPath);
+                // 树表配置随组件冻进 snapshot(纯展示;无 template 级 override)
+                entry.put("tree_config", (comp.treeConfig != null && !comp.treeConfig.isBlank())
+                        ? parseJsonObject(comp.treeConfig) : null);
                 entry.put("formula_assignments", parseJsonObject(tc.formulaAssignments));
                 snapshot.add(entry);
             }
@@ -354,6 +357,9 @@ public class TemplateService {
                 entry.put("fields", effectiveFields);
                 entry.put("formulas", compFormulas);
                 entry.put("data_driver_path", effectiveDriverPath);
+                // 树表配置随组件平台级更新同步(纯展示;无 template 级 override)
+                entry.put("tree_config", (comp.treeConfig != null && !comp.treeConfig.isBlank())
+                        ? parseJsonObject(comp.treeConfig) : null);
                 entry.put("componentType", comp.componentType);
                 entry.put("componentName", comp.name);
                 entry.put("componentCode", comp.code);

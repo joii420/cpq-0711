@@ -145,7 +145,7 @@ public class CardSnapshotService {
      * 从模板 {@code components_snapshot} 组装卡片结构 JSON（spec §3.1 形状）。
      *
      * <p>结构 = { version:1, templateId, templateKind, tabs:[{ componentId, tabName,
-     * sortOrder, componentType, dataDriverPath, rowKeyFields, fields:[], formulas:[] }] }
+     * sortOrder, componentType, dataDriverPath, treeConfig?, rowKeyFields, fields:[], formulas:[] }] }
      *
      * <p><b>AP-39</b>: DATA_SOURCE 字段的 {@code datasource_binding} 完整搬运（不丢）。
      */
@@ -198,6 +198,11 @@ public class CardSnapshotService {
                 tabNode.put("sortOrder", tab.path("sortOrder").asInt(0));
                 tabNode.put("componentType", tab.path("componentType").asText("NORMAL"));
                 tabNode.put("dataDriverPath", tab.path("data_driver_path").asText(""));
+                // 树表配置透传(snapshot snake_case → 结构 camelCase;缺失/NULL 不写,前端按非树表处理)
+                JsonNode treeCfg = tab.path("tree_config");
+                if (treeCfg != null && treeCfg.isObject()) {
+                    tabNode.set("treeConfig", treeCfg.deepCopy());
+                }
 
                 // rowKeyFields：从 component 表读（AP-39 补充：行键冻进结构）
                 if (componentId != null && !componentId.isBlank()) {
