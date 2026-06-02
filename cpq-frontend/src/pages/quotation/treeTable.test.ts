@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildTreeRows, isTreeRowHidden } from './treeTable';
+import { buildTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 
 describe('buildTreeRows', () => {
   it('单根多层:子行紧跟父行 + depth 正确 + hasChildren 正确', () => {
@@ -105,5 +105,27 @@ describe('isTreeRowHidden', () => {
   it('无折叠 → 全可见', () => {
     const collapsed = new Set<string>();
     expect(isTreeRowHidden(2, layout.parentIndexByIndex, nodeKeyByIndex, collapsed)).toBe(false);
+  });
+});
+
+describe('resolveTreeKey', () => {
+  it('driver BASIC_DATA:优先取 basicDataValues[lookupKey]', () => {
+    const field = { name: '料号', field_type: 'BASIC_DATA', basic_data_path: 'mat_part.part_no' } as any;
+    const v = resolveTreeKey(field, { 料号: 'OLD' }, { 'mat_part.part_no': 'P001' }, (p: string) => p);
+    expect(v).toBe('P001');
+  });
+  it('basicDataValues 缺键 → 回退 row[name]', () => {
+    const field = { name: '料号', field_type: 'BASIC_DATA', basic_data_path: 'mat_part.part_no' } as any;
+    const v = resolveTreeKey(field, { 料号: 'P002' }, {}, (p: string) => p);
+    expect(v).toBe('P002');
+  });
+  it('数组值 → 取首元素', () => {
+    const field = { name: '料号', field_type: 'BASIC_DATA', basic_data_path: 'x' } as any;
+    const v = resolveTreeKey(field, {}, { x: ['A', 'B'] }, (p: string) => p);
+    expect(v).toBe('A');
+  });
+  it('空 → null', () => {
+    const field = { name: '料号', field_type: 'INPUT_TEXT' } as any;
+    expect(resolveTreeKey(field, {}, undefined, (p: string) => p)).toBeNull();
   });
 });

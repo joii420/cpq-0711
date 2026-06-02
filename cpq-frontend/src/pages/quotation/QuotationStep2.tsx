@@ -24,6 +24,8 @@ import { computeRowKey } from './useCardSnapshots';
 import { partVersionService } from '../../services/partVersionService';
 import PartVersionDrawer from '../../components/PartVersionDrawer';
 import { templateService } from '../../services/templateService';
+import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
+import { useTreeCollapse } from './useTreeCollapse';
 import './quotation.css';
 
 // 与 QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard 中的同名函数保持完全对齐。
@@ -810,6 +812,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   // Material match state for border coloring
   const [matchStatus, setMatchStatus] = useState<'MATCHED_Y' | 'MATCHED_N' | 'NO_MATCH' | null>(null);
   const [matchInfo, setMatchInfo] = useState<any>(null);
+  // 树表折叠态(仅 treeConfig 组件使用,非树表组件零开销)
+  const treeCollapse = useTreeCollapse();
 
   // Match customerPartNo when customerId is available
   useEffect(() => {
@@ -1579,8 +1583,27 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         prevRowSubtotal = cache[subtotalFieldName] as number;
                       }
                     }
-                    return effectiveRows.map((er, idx) => ({ ...er, formulaCache: preComputedCaches[idx] }));
-                  })().map(({ row, rowIndex, rowKey, basicDataValues, isDriverBound, isListFormulaBound, formulaCache, listFormulaItem, listFormulaField }) => {
+                    const withCache = effectiveRows.map((er, idx) => ({ ...er, formulaCache: preComputedCaches[idx] }));
+                    const treeCfg = activeComponent.treeConfig;
+                    if (!treeCfg?.idField || !treeCfg?.parentField) {
+                      // 非树表:原样平铺(行为零变化)
+                      return withCache.map((r) => ({ ...r, _depth: 0, _hasChildren: false, _nodeKey: '' }));
+                    }
+                    const idFieldDef = activeComponent.fields.find(f => (f.name || (f as any).key) === treeCfg.idField);
+                    const parentFieldDef = activeComponent.fields.find(f => (f.name || (f as any).key) === treeCfg.parentField);
+                    const keyPrefix = activeComponent.componentId || activeComponent.tabName || 'tree';
+                    const laid = layoutTreeRows(
+                      withCache,
+                      (it) => idFieldDef ? resolveTreeKey(idFieldDef, it.row, it.basicDataValues, bnfDriverLookupKey) : null,
+                      (it) => parentFieldDef ? resolveTreeKey(parentFieldDef, it.row, it.basicDataValues, bnfDriverLookupKey) : null,
+                      keyPrefix,
+                    );
+                    const defExp = treeCfg.defaultExpanded ?? true;
+                    const collapsed = treeCollapse.collapsedSet(Object.values(laid.nodeKeyByIndex), defExp);
+                    return laid.rows
+                      .filter(r => !isTreeRowHidden(r.originalIndex, laid.parentIndexByIndex, laid.nodeKeyByIndex, collapsed))
+                      .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
+                  })().map(({ row, rowIndex, rowKey, basicDataValues, isDriverBound, isListFormulaBound, formulaCache, listFormulaItem, listFormulaField, _depth, _hasChildren, _nodeKey }) => {
                     return (
                     <tr key={rowIndex} style={(row._preset || isDriverBound) ? { background: '#fafafa' } : undefined}>
                       {activeComponent.fields.map(field => {
@@ -1627,6 +1650,30 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                             }
                           },
                         };
+                        const cellInner = showElementHint ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'nowrap' }}>
+                            <ComponentCell
+                              field={field}
+                              row={row}
+                              rowIndex={rowIndex}
+                              fieldKey={key}
+                              readonly={false}
+                              context={cellCtx}
+                            />
+                            <ElementPriceHint elementName={elementName!} />
+                          </div>
+                        ) : (
+                          <ComponentCell
+                            field={field}
+                            row={row}
+                            rowIndex={rowIndex}
+                            fieldKey={key}
+                            readonly={false}
+                            context={cellCtx}
+                          />
+                        );
+                        const isFirstField = activeComponent.fields[0] === field;
+                        const treeOn = !!(activeComponent.treeConfig?.idField && activeComponent.treeConfig?.parentField);
                         return (
                           <td
                             key={key}
@@ -1636,28 +1683,18 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                               isRequiredEmpty ? 'qt-ds-required-empty' : '',
                             ].filter(Boolean).join(' ') || undefined}
                           >
-                            {showElementHint ? (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'nowrap' }}>
-                                <ComponentCell
-                                  field={field}
-                                  row={row}
-                                  rowIndex={rowIndex}
-                                  fieldKey={key}
-                                  readonly={false}
-                                  context={cellCtx}
-                                />
-                                <ElementPriceHint elementName={elementName!} />
-                              </div>
-                            ) : (
-                              <ComponentCell
-                                field={field}
-                                row={row}
-                                rowIndex={rowIndex}
-                                fieldKey={key}
-                                readonly={false}
-                                context={cellCtx}
-                              />
-                            )}
+                            {isFirstField && treeOn ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ display: 'inline-block', width: (_depth ?? 0) * 16 }} />
+                                {_hasChildren ? (
+                                  <button type="button" onClick={() => treeCollapse.toggle(_nodeKey)}
+                                    style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 10, width: 14, padding: 0, color: '#888' }} title="展开/折叠">
+                                    {treeCollapse.isCollapsed(_nodeKey, activeComponent.treeConfig!.defaultExpanded ?? true) ? '▶' : '▼'}
+                                  </button>
+                                ) : (<span style={{ display: 'inline-block', width: 14 }} />)}
+                                {cellInner}
+                              </span>
+                            ) : cellInner}
                           </td>
                         );
                       })}

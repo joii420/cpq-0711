@@ -110,3 +110,79 @@ export function isTreeRowHidden(
   }
   return false;
 }
+
+/**
+ * 解析某行某字段用于建树的归一化键(字符串)。
+ * 优先级对齐 ComponentCell 取值:driver 行级 basicDataValues[lookupKey] → row[name]。
+ * idField/parentField 据设计来自 driver/SQL 视图(BASIC_DATA / DATA_SOURCE.BNF_PATH)。
+ */
+export function resolveTreeKey(
+  field: { name?: string; field_type?: string; basic_data_path?: string; datasource_binding?: any },
+  row: Record<string, any>,
+  basicDataValues: Record<string, any> | undefined,
+  bnfLookup: (path: string) => string,
+): string | null {
+  const norm = (v: any): string | null => {
+    if (v == null || v === '') return null;
+    if (Array.isArray(v)) return v.length > 0 ? norm(v[0]) : null;
+    if (typeof v === 'object') return null;
+    const s = String(v).trim();
+    return s === '' ? null : s;
+  };
+  let path: string | undefined;
+  if (field.field_type === 'BASIC_DATA') path = field.basic_data_path;
+  else if (field.field_type === 'DATA_SOURCE' && field.datasource_binding?.type === 'BNF_PATH') {
+    path = field.datasource_binding.bnf_path;
+  }
+  if (path && basicDataValues) {
+    const lk = bnfLookup(path);
+    if (Object.prototype.hasOwnProperty.call(basicDataValues, lk)) {
+      const got = norm(basicDataValues[lk]);
+      if (got != null) return got;
+    }
+  }
+  return norm(field.name ? row[field.name] : null);
+}
+
+export interface TreeRenderRow<T> {
+  item: T;
+  originalIndex: number;
+  depth: number;
+  hasChildren: boolean;
+  nodeKey: string;
+  parentIndex: number | null;
+}
+
+export interface TreeLayoutResult<T> {
+  rows: TreeRenderRow<T>[];
+  parentIndexByIndex: Record<number, number | null>;
+  nodeKeyByIndex: Record<number, string>;
+}
+
+/**
+ * 把渲染描述符数组按 treeConfig 重排成树渲染行。
+ * @param keyPrefix nodeKey 前缀(用 componentId,保证全局唯一 + tab 切换稳定)
+ */
+export function layoutTreeRows<T>(
+  items: T[],
+  idOf: (item: T, index: number) => string | null,
+  parentOf: (item: T, index: number) => string | null,
+  keyPrefix: string,
+): TreeLayoutResult<T> {
+  const nodes: TreeNodeInput[] = items.map((it, i) => ({ id: idOf(it, i), parent: parentOf(it, i) }));
+  const layout = buildTreeRows(nodes);
+  const nodeKeyByIndex: Record<number, string> = {};
+  for (let i = 0; i < items.length; i++) {
+    const id = nodes[i].id;
+    nodeKeyByIndex[i] = `${keyPrefix}::${id != null ? id : `#${i}`}`;
+  }
+  const rows: TreeRenderRow<T>[] = layout.order.map((origIdx) => ({
+    item: items[origIdx],
+    originalIndex: origIdx,
+    depth: layout.depthByIndex[origIdx] ?? 0,
+    hasChildren: layout.hasChildren.has(origIdx),
+    nodeKey: nodeKeyByIndex[origIdx],
+    parentIndex: layout.parentIndexByIndex[origIdx] ?? null,
+  }));
+  return { rows, parentIndexByIndex: layout.parentIndexByIndex, nodeKeyByIndex };
+}
