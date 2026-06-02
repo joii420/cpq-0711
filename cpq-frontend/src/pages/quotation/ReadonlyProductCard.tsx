@@ -3,7 +3,9 @@ import { useAuthStore } from '../../stores/authStore';
 import type { ComponentDataItem, ComponentField } from './QuotationStep2';
 import { computeAllFormulas, computeProductSubtotal, buildSnapshotExpansions, EMPTY_LINEITEMS } from './QuotationStep2';
 import { enrichComponentData } from './enrichComponentData';
-import { useDriverExpansions, driverExpansionKey, fieldsOverrideHash } from './useDriverExpansions';
+import { useDriverExpansions, driverExpansionKey, fieldsOverrideHash, bnfDriverLookupKey } from './useDriverExpansions';
+import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
+import { useTreeCollapse } from './useTreeCollapse';
 import { computeRowKey } from './useCardSnapshots';
 import type { CardStructure, CardValues } from '../../services/quotationService';
 import { useConfigTemplates } from './useConfigTemplates';
@@ -150,6 +152,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   const [components, setComponents] = useState<ComponentDataItem[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuthStore();
+  const treeCollapse = useTreeCollapse();
 
   const attrValues: Record<string, any> = parseJson(lineItem.productAttributeValues, {});
 
@@ -458,11 +461,32 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                             </td>
                           </tr>
                         )}
-                        {Array.from({ length: effectiveCount }, (_, ri) => {
-                          const rawRow = activeComp.rows[ri] ?? {};
-                          const rowBdv = useDriver ? activeDriverExpansion!.rows[ri]?.basicDataValues : undefined;
-                          const formulaCache = preComputedCaches[ri] ?? {};
-                          return (
+                        {(() => {
+                          const descriptors = Array.from({ length: effectiveCount }, (_, ri) => ({
+                            ri,
+                            rawRow: activeComp.rows[ri] ?? {},
+                            rowBdv: useDriver ? activeDriverExpansion!.rows[ri]?.basicDataValues : undefined,
+                            formulaCache: preComputedCaches[ri] ?? {},
+                          }));
+                          const treeCfg = activeComp.treeConfig;
+                          let ordered = descriptors.map(d => ({ ...d, _depth: 0, _hasChildren: false, _nodeKey: '' }));
+                          if (treeCfg?.idField && treeCfg?.parentField) {
+                            const idFieldDef = activeComp.fields.find(f => f.name === treeCfg.idField);
+                            const parentFieldDef = activeComp.fields.find(f => f.name === treeCfg.parentField);
+                            const keyPrefix = activeComp.componentId || activeComp.tabName || 'tree';
+                            const laid = layoutTreeRows(
+                              descriptors,
+                              (it) => idFieldDef ? resolveTreeKey(idFieldDef, it.rawRow, it.rowBdv, bnfDriverLookupKey) : null,
+                              (it) => parentFieldDef ? resolveTreeKey(parentFieldDef, it.rawRow, it.rowBdv, bnfDriverLookupKey) : null,
+                              keyPrefix,
+                            );
+                            const defExp = treeCfg.defaultExpanded ?? true;
+                            const collapsed = treeCollapse.collapsedSet(Object.values(laid.nodeKeyByIndex), defExp);
+                            ordered = laid.rows
+                              .filter(r => !isTreeRowHidden(r.originalIndex, laid.parentIndexByIndex, laid.nodeKeyByIndex, collapsed))
+                              .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
+                          }
+                          return ordered.map(({ ri, rawRow, rowBdv, formulaCache, _depth, _hasChildren, _nodeKey }) => (
                           <tr key={ri}>
                             {activeComp.fields.map((field) => {
                               const key = field.name || '';
@@ -482,6 +506,27 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                                 configTemplates,
                                 globalVariableDefs,
                               };
+                              const isFirstField = activeComp.fields[0] === field;
+                              const treeOn = !!(activeComp.treeConfig?.idField && activeComp.treeConfig?.parentField);
+                              const cellInner = (
+                                <span style={showTrace ? { display: 'inline-flex', alignItems: 'center', gap: 2 } : undefined}>
+                                  <ComponentCell
+                                    field={field}
+                                    row={rawRow}
+                                    rowIndex={ri}
+                                    fieldKey={key}
+                                    readonly={true}
+                                    context={cellCtx}
+                                  />
+                                  {showTrace && (
+                                    <FieldTraceIcon
+                                      quotationId={quotationId!}
+                                      fieldPath={fieldPath}
+                                      isDraft={isDraft}
+                                    />
+                                  )}
+                                </span>
+                              );
                               return (
                                 <td
                                   key={key}
@@ -490,29 +535,30 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                                     field.field_type === 'LIST_FORMULA' ? 'qt-formula-cell' : '',
                                   ].filter(Boolean).join(' ') || undefined}
                                 >
-                                  <span style={showTrace ? { display: 'inline-flex', alignItems: 'center', gap: 2 } : undefined}>
-                                    <ComponentCell
-                                      field={field}
-                                      row={rawRow}
-                                      rowIndex={ri}
-                                      fieldKey={key}
-                                      readonly={true}
-                                      context={cellCtx}
-                                    />
-                                    {showTrace && (
-                                      <FieldTraceIcon
-                                        quotationId={quotationId!}
-                                        fieldPath={fieldPath}
-                                        isDraft={isDraft}
-                                      />
-                                    )}
-                                  </span>
+                                  {isFirstField && treeOn ? (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                      <span style={{ display: 'inline-block', width: (_depth ?? 0) * 16 }} />
+                                      {_hasChildren ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => treeCollapse.toggle(_nodeKey)}
+                                          style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 10, width: 14, padding: 0, color: '#888' }}
+                                          title="展开/折叠"
+                                        >
+                                          {treeCollapse.isCollapsed(_nodeKey, activeComp.treeConfig!.defaultExpanded ?? true) ? '▶' : '▼'}
+                                        </button>
+                                      ) : (
+                                        <span style={{ display: 'inline-block', width: 14 }} />
+                                      )}
+                                      {cellInner}
+                                    </span>
+                                  ) : cellInner}
                                 </td>
                               );
                             })}
                           </tr>
-                          );
-                        })}
+                          ));
+                        })()}
                       </>
                     );
                   })()}
