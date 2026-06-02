@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Button,
   Modal,
@@ -389,14 +389,22 @@ const ComponentManagement: React.FC = () => {
     return () => clearTimeout(timer);
   }, [searchKeyword, loadTree]);
 
-  // Debounced row-key candidate refresh when fields/driverPath change
+  // 行键候选只依赖字段名 + basic_data_path（反查列名的输入），与 notes/排序/数值等无关。
+  // 用稳定签名做依赖，避免无关字段编辑触发对 DB 端点的候选刷新（code-review Important）。
+  const rowKeySignature = useMemo(
+    () => fields.map((f) => `${f.name}|${f.basic_data_path ?? ''}`).join(','),
+    [fields]
+  );
+
+  // Debounced row-key candidate refresh when relevant field signature / driverPath change
   useEffect(() => {
     if (!selectedComponent?.id) return;
     const t = setTimeout(() => {
       void refreshRowKeyCandidates(selectedComponent.id, dataDriverPath, fields);
     }, 400);
     return () => clearTimeout(t);
-  }, [selectedComponent?.id, dataDriverPath, fields, refreshRowKeyCandidates]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 故意用 rowKeySignature 代替 fields 引用，避免无关编辑刷新
+  }, [selectedComponent?.id, dataDriverPath, rowKeySignature, refreshRowKeyCandidates]);
 
   // Load component when selected from tree
   const handleSelectComponent = async (comp: ComponentItem) => {
