@@ -10,6 +10,7 @@ import {
   message,
   Steps,
   Select,
+  Switch,
   Table,
   Spin,
   Tabs,
@@ -323,6 +324,7 @@ const ComponentManagement: React.FC = () => {
   const [formulas, setFormulas] = useState<import('./types').FormulaItem[]>([]);
   const [dataDriverPath, setDataDriverPath] = useState<string>('');
   const [rowKeyFields, setRowKeyFields] = useState<string[]>([]);
+  const [treeConfig, setTreeConfig] = useState<import('./types').TreeConfig | null>(null);
   const [rowKeyCandidates, setRowKeyCandidates] = useState<
     Record<string, import('./types').RowKeyCandidate>
   >({});
@@ -426,6 +428,13 @@ const ComponentManagement: React.FC = () => {
       );
       setDataDriverPath(loaded.dataDriverPath ?? '');
       setRowKeyFields(loaded.rowKeyFields ?? []);
+      setTreeConfig((loaded as any).treeConfig
+        ? {
+            idField: (loaded as any).treeConfig.idField,
+            parentField: (loaded as any).treeConfig.parentField,
+            defaultExpanded: (loaded as any).treeConfig.defaultExpanded ?? true,
+          }
+        : null);
       void refreshRowKeyCandidates(
         loaded.id,
         loaded.dataDriverPath ?? '',
@@ -440,6 +449,12 @@ const ComponentManagement: React.FC = () => {
   // Save component
   const handleSave = async () => {
     if (!selectedComponent) return;
+    if (treeConfig && (!treeConfig.idField || !treeConfig.parentField)) {
+      message.error('树表已开启:请选择 ID 列与父 ID 列'); return;
+    }
+    if (treeConfig && treeConfig.idField === treeConfig.parentField) {
+      message.error('树表:ID 列与父 ID 列不能相同'); return;
+    }
     setSaving(true);
     try {
       const cleanFields = fields.map(({ key: _k, ...rest }) => rest);
@@ -464,6 +479,10 @@ const ComponentManagement: React.FC = () => {
         dataDriverPath: dataDriverPath ?? '',
         // Phase1-Snapshot: 行键配置，空数组时传 undefined（不覆盖已有值）
         rowKeyFields: finalRowKeyFields.length > 0 ? finalRowKeyFields : undefined,
+        // 树表配置:开启传对象,关闭传空对象(后端按缺字段=清空)
+        treeConfig: treeConfig
+          ? { idField: treeConfig.idField, parentField: treeConfig.parentField, defaultExpanded: treeConfig.defaultExpanded ?? true }
+          : {},
       });
       message.success('保存成功');
       loadTree();
@@ -709,6 +728,52 @@ const ComponentManagement: React.FC = () => {
                       setDriverPickerOpen(false);
                     }}
                   />
+                  {/* 树表配置(纯展示):指定 ID 列/父 ID 列 → 渲染时按父子关系折叠 */}
+                  <div
+                    style={{
+                      background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 6,
+                      padding: '10px 12px', marginBottom: 12, display: 'flex',
+                      alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                    }}
+                  >
+                    <span style={{ fontSize: 13, color: '#237804', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      树表(纯展示):
+                    </span>
+                    <Switch
+                      size="small"
+                      checked={!!treeConfig}
+                      onChange={(on) =>
+                        setTreeConfig(on ? { idField: '', parentField: '', defaultExpanded: true } : null)
+                      }
+                    />
+                    {treeConfig && (
+                      <>
+                        <span style={{ fontSize: 12, color: '#555' }}>ID 列:</span>
+                        <Select
+                          size="small" style={{ minWidth: 140 }} placeholder="选 ID 列(料号)"
+                          value={treeConfig.idField || undefined}
+                          options={fields.filter(f => f.name).map(f => ({ label: f.name, value: f.name }))}
+                          onChange={(v) => setTreeConfig({ ...treeConfig, idField: v })}
+                        />
+                        <span style={{ fontSize: 12, color: '#555' }}>父 ID 列:</span>
+                        <Select
+                          size="small" style={{ minWidth: 140 }} placeholder="选父 ID 列(父料号)"
+                          value={treeConfig.parentField || undefined}
+                          options={fields.filter(f => f.name).map(f => ({ label: f.name, value: f.name }))}
+                          onChange={(v) => setTreeConfig({ ...treeConfig, parentField: v })}
+                        />
+                        <span style={{ fontSize: 12, color: '#555' }}>默认展开:</span>
+                        <Switch
+                          size="small"
+                          checked={treeConfig.defaultExpanded ?? true}
+                          onChange={(v) => setTreeConfig({ ...treeConfig, defaultExpanded: v })}
+                        />
+                        {treeConfig.idField && treeConfig.parentField && treeConfig.idField === treeConfig.parentField && (
+                          <span style={{ color: '#cf1322', fontSize: 12 }}>ID 列与父 ID 列不能相同</span>
+                        )}
+                      </>
+                    )}
+                  </div>
                   <HeaderPreview fields={fields} />
                   <Tabs
                     size="small"
