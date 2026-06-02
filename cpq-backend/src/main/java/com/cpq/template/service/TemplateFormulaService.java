@@ -1446,6 +1446,16 @@ public class TemplateFormulaService {
         return v;
     }
 
+    /** 按别名条件 cond 在 aliasedRows 中找首个命中行下标；无命中返回 -1；cond 为空返回 0(首行)。 */
+    public int firstMatchIndex(java.util.List<java.util.Map<String, Object>> aliasedRows, String cond) {
+        if (aliasedRows == null || aliasedRows.isEmpty()) return -1;
+        if (cond == null || cond.isBlank()) return 0;
+        for (int i = 0; i < aliasedRows.size(); i++) {
+            if (isTruthy(evalRowExpression(cond, aliasedRows.get(i)))) return i;
+        }
+        return -1;
+    }
+
     private boolean isTruthy(Object v) {
         if (v == null) return false;
         if (v instanceof Boolean b) return b;

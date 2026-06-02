@@ -172,11 +172,22 @@ public class CardFormulaEvaluator {
         return sb.toString();
     }
 
-    private static Object pickFieldValue(CardDataProvider provider, CardRef ref) {
+    private Object pickFieldValue(CardDataProvider provider, CardRef ref) {
         List<Map<String, Object>> rows = provider.rowsOf(ref.tab);
         if (rows.isEmpty()) return null;
-        // 注：ROW_WHERE 完整条件求值在 Task 7 接 evalRowExpression；此处先取首行(FIRST_ROW)
-        return rows.get(0).get(ref.field);
+        if (ref.mode == CardRef.Mode.ROW_WHERE
+                && ref.cond != null && !ref.cond.isBlank()) {
+            // 用 ref.cols 把每行重映射成别名行供条件求值
+            List<Map<String, Object>> aliased = new ArrayList<>(rows.size());
+            for (var row : rows) {
+                Map<String, Object> a = new HashMap<>();
+                for (var ce : ref.cols.entrySet()) a.put(ce.getKey(), row.get(ce.getValue()));
+                aliased.add(a);
+            }
+            int idx = templateFormulaService.firstMatchIndex(aliased, ref.cond);
+            return idx < 0 ? null : rows.get(idx).get(ref.field); // 原始行的中文字段值
+        }
+        return rows.get(0).get(ref.field); // FIRST_ROW
     }
 
     private static String toNum(Object v) {
