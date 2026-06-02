@@ -4,6 +4,18 @@
 
 ---
 
+### [2026-06-02] 选配V6入库 - 组装加工费料号级整组升版+解析器重名表头防呆 | Q14AssemblyProcessFeeHandler.java / VersionedV6Writer.java / VersionedGroupSpec.java / ExcelParserService.java | 仅Q14特殊:结构变升版价格原地更新;其余表零变化
+
+- **根因 A**：ExcelParserService.parseSheet 表头 headerMap 同名覆盖，导致两列"组装工序"中工序编码被名称静默覆盖。修法：`seenHeader` 检测重复表头抛 `IllegalArgumentException`，错误信息含重复列名和列号。
+- **根因 B**：Q14 groupKey 含 `process_no`，改编码=另起新组无法整组升版，旧组永不下线。修法：groupKey 改为 `(material_no, resource_group_no)`，process_no 下沉进 content，同料号多工序行聚合为一组。
+- **VersionedGroupSpec 新增字段** `versionTriggerColumns`（可选，默认 null=退化为 contentColumns，其余 13 个 Handler 行为零变化）。
+- **VersionedV6Writer.writeVersionedGroup** 新增三分支逻辑：(1) triggerSame && contentSame = no-op 复用版本；(2) triggerSame && !contentSame = 原地更新（deleteCurrent + 同版本号重插）不升版；(3) !triggerSame = 升版。新增私有方法 `deleteCurrent`。
+- **Q14 传入** `VERSION_TRIGGER=[process_no, seq_no]`，仅工序编码/项次变化才升版，金额/货币/计价单位/拒收率原地更新。
+- **测试结果**：全量 23 测试通过（WriterTest 11 / MasterDetailTest 5 / SortKeyTest 1 / Q14Test 4 / ExcelParserTest 2）。Commits: 31711b6 / 3dc5914 / 2d8a10e / 6088ba1。
+- **待续（Task 5/6，主线负责）**：Flyway V288 脏数据修正 + E2E 验证。
+
+---
+
 ### [2026-06-02] 选配 V44→V6 单写迁移 完成（Phase 1-6 总收口，subagent 驱动）
 
 - **目标/边界**（用户确认）：选配写路双写→**V6 单写**；干净大切换无开关；不迁历史；全局料号+全局指纹延续 V44 语义；**本次不删 V44 表**（导入侧仍用）。spec/plan 见 `docs/superpowers/{specs,plans}/2026-06-02-选配V44到V6单写迁移*`。
