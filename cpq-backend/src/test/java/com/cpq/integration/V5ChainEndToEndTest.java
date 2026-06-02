@@ -67,6 +67,9 @@ import static org.junit.jupiter.api.Assertions.*;
 @QuarkusTest
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("V5 Chain End-to-End Integration Test")
+@Disabled("2026-06-02 退役：V5 导入链路（BasicDataImportServiceV5）已被 V6 入库（Q*/P* handler）全面取代。"
+        + "本库 BOM清单 BasicDataConfig 缺 basic_data_attribute 列映射致 t5 写 mat_bom 失败；"
+        + "不再维护废弃路径的测试。如需重新启用，先补 BOM清单 属性映射 seed。")
 class V5ChainEndToEndTest {
 
     // ── 固定测试数据 ────────────────────────────────────────────────────────
