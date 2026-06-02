@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -105,6 +106,25 @@ public class ComponentDriverService {
         long sizeBefore = expandCache.estimatedSize();
         expandCache.invalidateAll();
         LOG.infof("[expand-driver cache] evictAll called, estimated entries before evict=%d", sizeBefore);
+    }
+
+    /**
+     * 定向清除某 lineItem 的所有 driver 展开缓存条目（key 含 ":li&lt;lineItemId&gt;" 维度）。
+     * <p>用于草稿态打开重刷（{@code refreshDraftQuoteCards}）前强制重查最新 SQL —— 后台基础数据被直接
+     * 改库（绕过 app 导入流程，未调 {@link #evictAll()}）时，30s TTL 内缓存仍命中旧值导致快照刷不出新数据。
+     * 只清本单行的条目，不误伤其它报价单/用户的缓存。
+     */
+    public void evictForLineItem(UUID lineItemId) {
+        if (lineItemId == null) return;
+        String tag = ":li" + lineItemId.toString().replace("-", "");
+        java.util.List<String> toEvict = new java.util.ArrayList<>();
+        for (String k : expandCache.asMap().keySet()) {
+            if (k.contains(tag)) toEvict.add(k);
+        }
+        if (!toEvict.isEmpty()) {
+            expandCache.invalidateAll(toEvict);
+            LOG.infof("[expand-driver cache] evictForLineItem li=%s evicted=%d", lineItemId, toEvict.size());
+        }
     }
 
     /**
@@ -352,7 +372,12 @@ public class ComponentDriverService {
                         && childLineItemIds != null && !childLineItemIds.isEmpty()
                         && effectiveDriverPath != null
                         && (effectiveDriverPath.contains("v_composite_child_processes")
-                            || effectiveDriverPath.contains("composite_child_processes"))) {
+                            || effectiveDriverPath.contains("composite_child_processes"))
+                        // 仅旧视图 v_composite_child_processes 有 quotation_line_item_id 列 (V207/V209)。
+                        // 新 mirror($composite_child_processes_mirror) 无该列 → 注入 IN 谓词 = 引用不存在的列
+                        // → COMBO 父级工序展开返 0 行（前端渲染 13 空行）。且新 mirror 已用 :quotationId 自我隔离
+                        // (branch2 仅聚合本报价单子件工序)，不存在旧视图的"历史累积"问题 → 直接走 full aggregate。
+                        && !effectiveDriverPath.contains("mirror")) {
                     // COMPOSITE 父级 + 工序聚合视图 + 子件 lineItemId 列表已知:
                     // 向 effectiveDriverPath 追加 quotation_line_item_id IN (cld1, cld2, ...) 谓词,
                     // 让视图只返回当前报价单子件自己的工序行，消除历史累积 (236 -> ≤N 行).
@@ -894,6 +919,56 @@ public class ComponentDriverService {
         // 排除带方括号的段（说明叶子也是表引用，不是简单字段）
         if (tail.contains("[") || tail.isEmpty()) return null;
         return tail;
+    }
+
+    /**
+     * 行键候选计算（纯逻辑，不连 DB，供单测直接调用）。
+     * 对每个字段用 basic_data_path 反查 driver 真实列名(leaf)，并用 driverColumns 交叉校验是否可作行键。
+     *
+     * @param dataDriverPath 组件 driver 路径（仅用于 reason 文案判断，可为 $视图 或其他）
+     * @param fields         前端编辑态字段列表（loose map：name / field_type / basic_data_path）
+     * @param driverColumns  driver 视图的真实列名集合（来自 ComponentSqlView.declaredColumns）；空集表示无列信息
+     */
+    public static List<com.cpq.component.dto.RowKeyCandidatesResponse.Candidate> resolveRowKeyCandidates(
+            String dataDriverPath,
+            List<Map<String, Object>> fields,
+            Set<String> driverColumns) {
+        List<com.cpq.component.dto.RowKeyCandidatesResponse.Candidate> out = new ArrayList<>();
+        boolean haveColumns = driverColumns != null && !driverColumns.isEmpty();
+        if (fields == null) return out;
+        for (Map<String, Object> f : fields) {
+            var c = new com.cpq.component.dto.RowKeyCandidatesResponse.Candidate();
+            c.fieldName = f.get("name") == null ? null : String.valueOf(f.get("name"));
+            c.displayName = c.fieldName;
+            Object pathObj = f.get("basic_data_path");
+            String basicPath = pathObj == null ? null : String.valueOf(pathObj);
+            if (basicPath == null || basicPath.isBlank()) {
+                c.eligible = false;
+                c.reason = "该字段无 driver 列，不能作行键";
+                out.add(c);
+                continue;
+            }
+            String leaf = extractLeafField(basicPath);
+            if (leaf == null) {
+                c.eligible = false;
+                c.reason = "该字段无 driver 列，不能作行键";
+                out.add(c);
+                continue;
+            }
+            c.resolvedColumn = leaf;
+            if (!haveColumns) {
+                c.eligible = false;
+                c.reason = "该 driver 无列信息，请先将 driver 配为 SQL 视图";
+            } else if (driverColumns.contains(leaf)) {
+                c.eligible = true;
+                c.reason = null;
+            } else {
+                c.eligible = false;
+                c.reason = "该字段不取自 driver 行，不能作行键";
+            }
+            out.add(c);
+        }
+        return out;
     }
 
     /**
