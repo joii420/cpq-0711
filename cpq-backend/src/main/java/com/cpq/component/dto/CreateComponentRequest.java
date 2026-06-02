@@ -22,4 +22,7 @@ public class CreateComponentRequest {
      * null = 未配置（新建时若需要则被硬拦，更新时仅告警）。
      */
     public List<String> rowKeyFields;
+
+    /** 树表配置(纯展示,可选):{idField, parentField, defaultExpanded} */
+    public Map<String, Object> treeConfig;
 }

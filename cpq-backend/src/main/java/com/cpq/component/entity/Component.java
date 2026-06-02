@@ -58,6 +58,14 @@ public class Component extends PanacheEntityBase {
     @Column(name = "row_key_fields")
     public String rowKeyFields;
 
+    /**
+     * 树表配置(纯展示,可选)。JSON 对象 {idField,parentField,defaultExpanded}。
+     * 非空 → 报价/核价/详情渲染时按邻接表重排成树;不改行集合/行序。
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "tree_config")
+    public String treeConfig;
+
     @Column(name = "created_at", nullable = false)
     public OffsetDateTime createdAt;
 

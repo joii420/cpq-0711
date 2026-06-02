@@ -111,6 +111,10 @@ public class ComponentService {
             component.rowKeyFields = toJsonRaw(request.rowKeyFields);
         }
 
+        // 树表配置:校验后存 JSON(null=非树表)
+        validateTreeConfig(request.treeConfig, request.fields);
+        component.treeConfig = request.treeConfig != null ? toJsonRaw(request.treeConfig) : null;
+
         // 行键校验（新建路径：硬拦）
         validateRowKeyConfig(component.dataDriverPath, component.fields, component.rowKeyFields, true);
 
@@ -177,6 +181,14 @@ public class ComponentService {
         // rowKeyFields 更新（null=不变，传值=覆盖）
         if (request.rowKeyFields != null) {
             component.rowKeyFields = toJsonRaw(request.rowKeyFields);
+        }
+
+        // 树表配置更新(null=不变;传值=覆盖,空对象/缺字段=清空)
+        if (request.treeConfig != null) {
+            validateTreeConfig(request.treeConfig, component.fields);
+            boolean hasBoth = request.treeConfig.get("idField") != null
+                    && request.treeConfig.get("parentField") != null;
+            component.treeConfig = hasBoth ? toJsonRaw(request.treeConfig) : null;
         }
 
         // 行键校验（更新路径：软校验，违规只告警不阻断）
@@ -289,6 +301,48 @@ public class ComponentService {
                 return;
             }
         }
+    }
+
+    /**
+     * 树表配置软校验:开启时 idField/parentField 均必填且不同列,且两列须存在于组件字段名集合。
+     * 不满足 → IllegalArgumentException(保存阻断)。传 null 或空对象(关闭树表)→ 直接通过。
+     */
+    public void validateTreeConfig(Map<String, Object> treeConfig, Object fieldsJsonOrList) {
+        if (treeConfig == null) return;
+        Object idF = treeConfig.get("idField");
+        Object pF = treeConfig.get("parentField");
+        boolean idEmpty = idF == null || idF.toString().isBlank();
+        boolean pEmpty = pF == null || pF.toString().isBlank();
+        if (idEmpty && pEmpty) return; // 视为关闭树表
+        if (idEmpty || pEmpty) {
+            throw new IllegalArgumentException("树表配置:ID 列与父 ID 列均必填");
+        }
+        if (idF.toString().equals(pF.toString())) {
+            throw new IllegalArgumentException("树表配置:ID 列与父 ID 列不能为同一列");
+        }
+        java.util.Set<String> names = extractFieldNames(fieldsJsonOrList);
+        if (!names.contains(idF.toString()) || !names.contains(pF.toString())) {
+            throw new IllegalArgumentException("树表配置:idField/parentField 必须是组件已配置字段名");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private java.util.Set<String> extractFieldNames(Object fieldsJsonOrList) {
+        java.util.Set<String> names = new java.util.HashSet<>();
+        try {
+            java.util.List<Map<String, Object>> list;
+            if (fieldsJsonOrList instanceof String s) {
+                if (s.isBlank()) return names;
+                list = MAPPER.readValue(s, new com.fasterxml.jackson.core.type.TypeReference<>() {});
+            } else if (fieldsJsonOrList instanceof java.util.List<?> l) {
+                list = (java.util.List<Map<String, Object>>) l;
+            } else return names;
+            for (Map<String, Object> f : list) {
+                Object nm = f.get("name");
+                if (nm != null) names.add(nm.toString());
+            }
+        } catch (Exception ignore) { }
+        return names;
     }
 
     /** 违规处理：hard=true 抛，hard=false 仅告警。 */

@@ -24,6 +24,8 @@ public class ComponentDTO {
     public String dataDriverPath;
     /** 行键字段(组件级,草稿重刷按此对齐编辑值);entity 存 JSON 字符串,DTO 解析为 List */
     public List<String> rowKeyFields;
+    /** 树表配置(纯展示);entity 存 JSON 字符串,DTO 透传为 Map(null=非树表) */
+    public Map<String, Object> treeConfig;
     public String status;
     public OffsetDateTime createdAt;
     public OffsetDateTime updatedAt;
@@ -45,6 +47,7 @@ public class ComponentDTO {
         dto.fields = parseJsonArray(component.fields);
         dto.formulas = parseJsonArray(component.formulas);
         dto.rowKeyFields = parseStringList(component.rowKeyFields);
+        dto.treeConfig = parseJsonObject(component.treeConfig);
         return dto;
     }
 
@@ -63,6 +66,17 @@ public class ComponentDTO {
         if (json == null || json.isBlank()) return null;
         try {
             return MAPPER.readValue(json, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 解析 tree_config JSON 对象为 Map;null/空/非法 → null。 */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> parseJsonObject(String json) {
+        if (json == null || json.isBlank()) return null;
+        try {
+            return MAPPER.readValue(json, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             return null;
         }
