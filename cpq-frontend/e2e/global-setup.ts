@@ -37,7 +37,7 @@ async function isBackendAvailable(): Promise<boolean> {
 async function unlockAccounts() {
   try {
     execSync(
-      `PGPASSWORD=joii5231 "/c/Program Files/PostgreSQL/16/bin/psql" -U postgres -h 127.0.0.1 -d cpq_db -c "UPDATE \\"user\\" SET locked_until=NULL, failed_login_attempts=0, is_first_login=false WHERE username IN ('admin','alice','bob');"`,
+      `PGPASSWORD=joii5231 psql -h 10.177.152.12 -p 5432 -U postgres -d cpq_db -c "UPDATE \\"user\\" SET locked_until=NULL, failed_login_attempts=0, is_first_login=false WHERE username IN ('admin','alice','bob');"`,
       { stdio: 'pipe', shell: '/bin/bash' }
     );
   } catch (e) {
@@ -57,7 +57,8 @@ async function flushRedisRateLimiter() {
 }
 
 async function saveStorageState(username: string, password: string, stateFile: string) {
-  const browser = await chromium.launch();
+  // 本环境无 Playwright 内置 chromium，用系统 google-chrome（与 playwright.config 的 channel:'chrome' 一致）
+  const browser = await chromium.launch({ channel: 'chrome' });
   const context = await browser.newContext({ baseURL: BASE_URL });
   const page = await context.newPage();
 
