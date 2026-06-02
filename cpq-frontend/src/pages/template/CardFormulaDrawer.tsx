@@ -18,9 +18,9 @@ import {
 import { PlusOutlined, DeleteOutlined, FunctionOutlined } from '@ant-design/icons';
 import { templateService } from '../../services/templateService';
 import { componentService } from '../../services/componentService';
-import {
-  genAlias, expandIn, validateCardFormula, CardRefSpec,
-} from './cardFormula';
+import { genAlias, expandIn, validateCardFormula } from './cardFormula';
+// CardRefSpec 是纯类型，必须 import type（否则 Vite/esbuild 运行时 ESM 链接报错 → 整个 SPA 白屏）
+import type { CardRefSpec } from './cardFormula';
 
 const { Text, Paragraph } = Typography;
 

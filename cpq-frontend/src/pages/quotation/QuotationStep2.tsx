@@ -2216,6 +2216,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
           customerId={customerId}
           viewLabel="核价单 Excel 视图"
           templateId={costingCardTemplateId || null}
+          quotationId={quotationId}
         />
       ) : mainTab === 'costing' && viewType === 'card' && quotationId ? (
         // 核价单 — 产品卡片视图(V72)：与"报价单卡片视图"产品数量/排序一致，
@@ -2275,6 +2276,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
           customerId={customerId}
           viewLabel="报价单 Excel 视图"
           templateId={customerTemplateId || null}
+          quotationId={quotationId}
         />
       ) : lineItems.length === 0 ? (
         <div className="qt-empty-state">
