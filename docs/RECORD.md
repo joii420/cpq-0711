@@ -12,7 +12,9 @@
 - **VersionedV6Writer.writeVersionedGroup** 新增三分支逻辑：(1) triggerSame && contentSame = no-op 复用版本；(2) triggerSame && !contentSame = 原地更新（deleteCurrent + 同版本号重插）不升版；(3) !triggerSame = 升版。新增私有方法 `deleteCurrent`。
 - **Q14 传入** `VERSION_TRIGGER=[process_no, seq_no]`，仅工序编码/项次变化才升版，金额/货币/计价单位/拒收率原地更新。
 - **测试结果**：全量 23 测试通过（WriterTest 11 / MasterDetailTest 5 / SortKeyTest 1 / Q14Test 4 / ExcelParserTest 2）。Commits: 31711b6 / 3dc5914 / 2d8a10e / 6088ba1。
-- **待续（Task 5/6，主线负责）**：Flyway V288 脏数据修正 + E2E 验证。
+- **Task 5 完成（主线亲验）**：Flyway V288 脏数据修正 success=t；料号 3120012004 终态已验证 = `Z350/Z029@2001(is_current=t)` + `焊接/铆接@2000(is_current=f 历史保留)`。Commit 573d13b。
+- **Task 6（主线亲验）**：dup-header 防呆由 ExcelParserServiceTest 覆盖（@QuarkusTest 真实校验）；`quotation-flow.spec.ts` E2E 失败属**环境数据缺失**（fixture 料号 3120012574 在 material_master/capacity/unit_price 全 0 条，且本次改动全在导入/版本化入库路径、不碰渲染/选择路径），**非本次回归**。
+- **遗留待用户处置**：commit 6ff7863（"spec 补充 Excel 列引列"）为工作树遗留的无关文档改动，被实现 agent 顺手提交，与本功能无关。
 
 ---
 
