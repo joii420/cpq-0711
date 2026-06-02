@@ -274,6 +274,9 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
   const [aggFunc, setAggFunc] = useState<AggFunc>('SUM');
   const [aggExpr, setAggExpr] = useState<string>('');
 
+  // ── 配置说明展开态 ───────────────────────────────────────────────
+  const [showHelp, setShowHelp] = useState(false);
+
   // ── TextArea ref (光标插入) ──────────────────────────────────────
   const textAreaRef = useRef<any>(null);
 
@@ -468,6 +471,64 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
             <code>SUM_OVER([页签名] WHERE 条件, 行内别名表达式)</code>（聚合）；
             裸 <code>[A]</code> 引用本表其他列。WHERE/cond 用 JEXL 算符（<code>==  !=  &gt;  &lt;  &amp;&amp;  ||</code>）。
           </Paragraph>
+
+          {/* ── 配置说明（可展开）── */}
+          <a
+            onClick={() => setShowHelp(v => !v)}
+            style={{ fontSize: 12, display: 'inline-block', marginTop: 6 }}
+          >
+            📖 公式配置说明与示例（{showHelp ? '收起' : '点击展开'}）
+          </a>
+          {showHelp && (
+            <div
+              style={{
+                marginTop: 8, padding: '12px 14px', background: '#f6f8fa',
+                border: '1px solid #e4e8ee', borderRadius: 6, fontSize: 12, lineHeight: 1.9,
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>① 引用产品卡片"页签"的值</div>
+              <div>· 页签小计：<code>[投料.小计]</code></div>
+              <div>· 字段（取该页签首行）：<code>[加工.加工费]</code></div>
+              <div>· 字段（按条件取某一行）：<code>[加工.加工费(工序=镀铜)]</code></div>
+              <div style={{ color: '#888' }}>　以上都用下方「插入卡片引用」面板点选生成，无需手写中文字段名。</div>
+
+              <div style={{ fontWeight: 600, margin: '8px 0 4px' }}>② 函数</div>
+              <div>· 条件分支：<code>IF([投料.小计] &gt; 100, [A]*0.9, [A])</code></div>
+              <div>· 四舍五入：<code>ROUND([A], 2)</code>（保留 2 位）</div>
+              <div>· 绝对值：<code>ABS([A] - [B])</code></div>
+              <div>· 百分比字面量：<code>[A] * 12%</code>（<code>12%</code> = 0.12）</div>
+
+              <div style={{ fontWeight: 600, margin: '8px 0 4px' }}>③ 聚合（对页签内所有行求和等）</div>
+              <div>· 语法：<code>SUM_OVER([页签] WHERE 条件, 行内表达式)</code></div>
+              <div>· 也支持 <code>AVG_OVER / COUNT_OVER / MIN_OVER / MAX_OVER</code></div>
+              <div>· 行内表达式可逐行计算：<code>SUM_OVER([加工] WHERE c0=='镀铜', c1*c2)</code></div>
+              <div style={{ color: '#888' }}>　选「聚合」类型后，条件与字段同样在下方面板点选，系统自动把中文字段转成别名 c0/c1…</div>
+
+              <div style={{ fontWeight: 600, margin: '8px 0 4px' }}>④ 过滤条件（WHERE / 按条件取行）</div>
+              <div>· 比较：等于 <code>==</code>、不等 <code>!=</code>、大于 <code>&gt;</code>、不大于 <code>&lt;=</code>、小于 <code>&lt;</code></div>
+              <div>· 多值包含（IN）：选「包含IN」，值用逗号分隔 <code>镀铜,镀镍</code> → 自动生成 <code>(c0=='镀铜' || c0=='镀镍')</code></div>
+              <div>· 多条件组合：行间用「且」<code>&amp;&amp;</code> / 「或」<code>||</code></div>
+              <div>· 示例：<code>工序=='镀铜' &amp;&amp; 数量&gt;0</code></div>
+
+              <div style={{ fontWeight: 600, margin: '8px 0 4px' }}>⑤ 引用本表其他列</div>
+              <div>· 用列号：<code>[A] * 1.13</code>（A 是同表其它列的列号；支持列间引用，系统自动按依赖顺序计算）</div>
+
+              <div style={{ fontWeight: 600, margin: '8px 0 4px' }}>⑥ 综合示例</div>
+              <div style={{ fontFamily: 'Consolas, Monaco, monospace', background: '#fff', padding: '6px 8px', border: '1px dashed #ccc', borderRadius: 4 }}>
+                =ROUND( ([投料.小计] + SUM_OVER([加工] WHERE (c0=='镀铜' || c0=='镀镍'), c1)) * 12%, 2 )
+              </div>
+              <div style={{ color: '#888', marginTop: 4 }}>
+                含义：投料页签小计 + 加工页签中工序∈{'{'}镀铜,镀镍{'}'}的行的加工费之和，乘 12%，结果保留 2 位小数。
+              </div>
+
+              <div style={{ fontWeight: 600, margin: '8px 0 4px' }}>⑦ 空值规则</div>
+              <div>· 单值引用为空 / 页签 0 行 → 显示「—」；聚合 0 行命中 → 按 0 计；公式中个别引用为空 → 当 0 继续算，全部为空才显示「—」。</div>
+
+              <div style={{ color: '#c41d7f', marginTop: 8 }}>
+                ⚠️ 小贴士：条件/聚合里**不要手写中文字段名**（公式引擎不识别中文标识符）。请用下方「插入卡片引用」面板点选字段，系统会自动生成稳定别名（c0/c1…）。改字段中文显示名不会影响已配公式。
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── 当前 refs 预览 ── */}
