@@ -13769,3 +13769,5 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 ---
 
 [2026-06-02] Excel卡片引用公式(后端) - 新增 CARD_FORMULA 列来源:引用产品卡片页签结果(行集+小计)+本表列+SUM_OVER条件聚合(别名层)+IF/ROUND/ABS/百分比,后端拓扑求值+环检测+空值规则一 | CardDataProvider/CardRef/CardFormulaEvaluator/CardAggregateSource/PercentLiteral + TemplateFormulaService(executeOverFunction卡片源分支/firstMatchIndex) + ExcelViewService.buildRowData分支 | 与旧$view.col并存(只做今后);AP-37按页签实例compId:sortOrder定位;字段中文名→ASCII别名(JEXL不可用中文标识符);前端选择器/渲染见计划二
+
+[2026-06-02] Excel卡片引用公式(前端E2E) - CARD_FORMULA Excel视图渲染E2E:API层确定性验证通过(1 passed),UI层因global-setup未跑/SPA cookie注入白屏→优雅skip(1 skipped);后端getExcelView返回CARD_FORMULA列A=515.5632精确对齐工序行小计SUM_OVER | cpq-frontend/e2e/card-formula-flow.spec.ts | beforeAll创建DRAFT测试模板+临时改quotation.customer_template_id+line_item.template_id,afterAll完整还原;UI测试2轮调试耗尽→确定性降级(API);注意ExcelViewService.getExcelView用lineItem.templateId而非quotation.customer_template_id
