@@ -8,6 +8,8 @@ import com.cpq.configure.dto.ElementOverride;
 import com.cpq.configure.dto.LookupFingerprintRequest;
 import com.cpq.configure.dto.LookupFingerprintResponse;
 import com.cpq.configure.dto.PartRequest;
+import com.cpq.basicdata.v6.versioning.VersionedGroupSpec;
+import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import com.cpq.partno.PartNoContext;
 import com.cpq.partno.PartNoProvider;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -17,6 +19,7 @@ import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -61,6 +64,9 @@ public class ConfigureProductService {
 
     @Inject
     PartNoProvider partNoProvider;
+
+    @Inject
+    VersionedV6Writer versionedWriter;
 
     // ───────────────────────────────────────────────────────────────────────
     // T19: lookup-fingerprint 端点
@@ -660,6 +666,182 @@ public class ConfigureProductService {
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // V6 落库 Phase 2（选配 COMBO 补全，设计方案 §6 / 用户方案 B1/B2/B3）
+    //   B1 material_bom 主从版本化（ASSEMBLY 子配件 + MATERIAL 各子件材质自指）
+    //   B2 工序 → unit_price（自制加工费，按配件分组版本化）
+    //   B3 组合工艺 → capacity（QUOTE_ASSEMBLY，按 COMBO 整组版本化）
+    // 统一走 VersionedV6Writer：内容相同复用、不同 max+1 升版、is_current 翻转。
+    // 渲染 driver 不切（仍读 per-quote / mirror）；本期仅承载 V6 数据。
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * B1: COMBO 的 material_bom 主从版本化写入（替代 raw insertMaterialBomAssemblyV6）。
+     * 两组主从：
+     *   - ASSEMBLY 组：bom_type=ASSEMBLY / 子行 characteristic='ASSEMBLY'，component_no=子料号 + composition_qty；
+     *   - MATERIAL 组：bom_type=MATERIAL / 子行 characteristic=NULL，component_no=子料号 + component_usage_type=子件材质名。
+     * 主表 material_bom 各补一行（bom_version 2000 起 + is_current）；子表 material_bom_item 升版翻转 + 清残留。
+     */
+    void writeCombomaterialBomV6(String parentHfPartNo, String customerCode,
+                                 List<String> childHfPartNos, List<Integer> childQtys) {
+        if (customerCode == null || customerCode.isBlank()
+                || childHfPartNos == null || childHfPartNos.isEmpty()) return;
+
+        // ── ASSEMBLY 组：子配件清单
+        List<Map<String, Object>> assemblyRows = new ArrayList<>();
+        for (int i = 0; i < childHfPartNos.size(); i++) {
+            int qty = (childQtys != null && i < childQtys.size() && childQtys.get(i) != null
+                       && childQtys.get(i) >= 1) ? childQtys.get(i) : 1;
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("seq_no", i + 1);
+            r.put("component_no", childHfPartNos.get(i));
+            r.put("composition_qty", new BigDecimal(qty));
+            assemblyRows.add(r);
+        }
+        // 主表分组键须含 characteristic='ASSEMBLY'：uq_material_bom_v6 = (system_type, customer_no,
+        // material_no, bom_version, COALESCE(characteristic,'')) 不含 bom_type → 仅靠 characteristic 隔离
+        // 同一 COMBO 的 MATERIAL(NULL) / ASSEMBLY 两个主表行（对齐 Q12 import 约定），否则两主表行撞唯一键 → 409。
+        Map<String, Object> asmMasterGk = bomGroupKey(customerCode, parentHfPartNo, "bom_type", "ASSEMBLY");
+        asmMasterGk.put("characteristic", "ASSEMBLY");
+        versionedWriter.writeVersionedMasterDetail(
+            "material_bom", "bom_version",
+            asmMasterGk, null,
+            "material_bom_item", null,
+            bomGroupKey(customerCode, parentHfPartNo, "characteristic", "ASSEMBLY"),
+            List.of("seq_no", "component_no", "composition_qty"), assemblyRows);
+
+        // ── MATERIAL 组：各子件材质自指（子行 characteristic=NULL，渲染走 materials mirror 的 IS NULL 分支）
+        List<Map<String, Object>> materialRows = new ArrayList<>();
+        for (int i = 0; i < childHfPartNos.size(); i++) {
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("seq_no", i + 1);
+            r.put("component_no", childHfPartNos.get(i));
+            r.put("component_usage_type", readChildMaterialUsageType(childHfPartNos.get(i), customerCode));
+            materialRows.add(r);
+        }
+        versionedWriter.writeVersionedMasterDetail(
+            "material_bom", "bom_version",
+            bomGroupKey(customerCode, parentHfPartNo, "bom_type", "MATERIAL"), null,
+            "material_bom_item", null,
+            bomGroupKey(customerCode, parentHfPartNo, "characteristic", null),
+            List.of("seq_no", "component_no", "component_usage_type"), materialRows);
+    }
+
+    /** material_bom / material_bom_item 分组键：QUOTE + customer + material_no + 一个区分列（值允许 null）。 */
+    private Map<String, Object> bomGroupKey(String customerCode, String materialNo,
+                                            String distinguishCol, Object distinguishVal) {
+        Map<String, Object> gk = new LinkedHashMap<>();
+        gk.put("system_type", "QUOTE");
+        gk.put("customer_no", customerCode);
+        gk.put("material_no", materialNo);
+        gk.put(distinguishCol, distinguishVal);   // characteristic=NULL 时 writer 用 IS NOT DISTINCT FROM 安全匹配
+        return gk;
+    }
+
+    /** 读子件自身 is_current 材质自指行 component_usage_type；缺则回退 recipe.symbol / material_type。 */
+    @SuppressWarnings("unchecked")
+    String readChildMaterialUsageType(String childPartNo, String customerCode) {
+        List<Object> r = em.createNativeQuery(
+                "SELECT component_usage_type FROM material_bom_item " +
+                "WHERE material_no = :p AND customer_no = :cn AND system_type = 'QUOTE' " +
+                "  AND characteristic IS NULL AND is_current = true LIMIT 1")
+            .setParameter("p", childPartNo).setParameter("cn", customerCode).getResultList();
+        if (!r.isEmpty() && r.get(0) != null && !r.get(0).toString().isBlank()) return r.get(0).toString();
+        List<Object> r2 = em.createNativeQuery(
+                "SELECT COALESCE(mr.symbol, mm.material_type) FROM material_master mm " +
+                "LEFT JOIN material_recipe mr ON mr.id = mm.material_recipe_id " +
+                "WHERE mm.material_no = :p LIMIT 1")
+            .setParameter("p", childPartNo).getResultList();
+        return (!r2.isEmpty() && r2.get(0) != null) ? r2.get(0).toString() : null;
+    }
+
+    /**
+     * B2: 工序 → unit_price（自制加工费）。每个配件一组版本化：
+     * 分组键 (system_type=QUOTE, price_type=MATERIAL, cost_type=自制加工费, customer_no, code=配件料号,
+     * finished_material_no=COMBO)，行集 = 各工序（operation_no=process.code）。pricing_price 留 NULL（子项3）。
+     * currency = process_master.standard_currency（空→CNY）；unit = standard_unit（空→KG，对齐导入存量）。
+     */
+    @SuppressWarnings("unchecked")
+    void insertProcessUnitPriceV6(String parentHfPartNo, String customerCode,
+                                  List<PartRequest> parts, List<String> childHfPartNos) {
+        if (customerCode == null || customerCode.isBlank()) return;
+        for (int i = 0; i < childHfPartNos.size(); i++) {
+            PartRequest pr = (parts != null && i < parts.size()) ? parts.get(i) : null;
+            if (pr == null || pr.processIds == null || pr.processIds.isEmpty()) continue;
+            String childPn = childHfPartNos.get(i);
+            List<Map<String, Object>> rows = new ArrayList<>();
+            int seq = 1;
+            for (UUID processId : pr.processIds) {
+                List<Object> codes = em.createNativeQuery(
+                        "SELECT code FROM process WHERE id = :id")
+                    .setParameter("id", processId).getResultList();
+                if (codes.isEmpty() || codes.get(0) == null) {
+                    throw new IllegalArgumentException("工艺不存在: " + processId);
+                }
+                String opNo = codes.get(0).toString();
+                String currency = "CNY";
+                String unit = "KG";
+                List<Object[]> pm = em.createNativeQuery(
+                        "SELECT standard_currency, standard_unit FROM process_master WHERE process_no = :c")
+                    .setParameter("c", opNo).getResultList();
+                if (!pm.isEmpty()) {
+                    Object[] m = pm.get(0);
+                    if (m[0] != null && !m[0].toString().isBlank()) currency = m[0].toString();
+                    if (m[1] != null && !m[1].toString().isBlank()) unit = m[1].toString();
+                }
+                Map<String, Object> r = new LinkedHashMap<>();
+                r.put("operation_no", opNo);
+                r.put("seq_no", seq++);
+                r.put("currency", currency);
+                r.put("unit", unit);
+                rows.add(r);
+            }
+            Map<String, Object> gk = new LinkedHashMap<>();
+            gk.put("system_type", "QUOTE");
+            gk.put("price_type", "MATERIAL");
+            gk.put("cost_type", "自制加工费");
+            gk.put("customer_no", customerCode);
+            gk.put("code", childPn);
+            gk.put("finished_material_no", parentHfPartNo);
+            versionedWriter.writeVersionedGroup(new VersionedGroupSpec(
+                "unit_price", "version_no", gk,
+                List.of("operation_no", "seq_no", "currency", "unit"), rows));
+        }
+    }
+
+    /**
+     * B3: 组合工艺 → capacity（对标导入 §14 组装加工费）。按 COMBO 整组版本化：
+     * 分组键 (material_no=COMBO, resource_group_no=QUOTE_ASSEMBLY)，行集 = 各 def_code。
+     * process_no=def_code、process_name=def.name（缺回退 def_code）、production_type=BATCH_FIXED、
+     * currency=CNY、fixed_cost 留 NULL（子项3，单价由 INPUT 层维护）。
+     */
+    @SuppressWarnings("unchecked")
+    void insertCompositeProcessCapacityV6(String parentHfPartNo,
+                                          List<com.cpq.configure.dto.CompositeProcessRequest> cps) {
+        if (parentHfPartNo == null || cps == null || cps.isEmpty()) return;
+        List<Map<String, Object>> rows = new ArrayList<>();
+        int seq = 1;
+        for (com.cpq.configure.dto.CompositeProcessRequest cp : cps) {
+            List<Object> nm = em.createNativeQuery(
+                    "SELECT name FROM composite_process_def WHERE code = :c")
+                .setParameter("c", cp.defCode).getResultList();
+            String procName = (!nm.isEmpty() && nm.get(0) != null) ? nm.get(0).toString() : cp.defCode;
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("process_no", cp.defCode);
+            r.put("process_name", procName);
+            r.put("production_type", "BATCH_FIXED");
+            r.put("currency", "CNY");
+            r.put("seq_no", seq++);
+            rows.add(r);
+        }
+        Map<String, Object> gk = new LinkedHashMap<>();
+        gk.put("material_no", parentHfPartNo);
+        gk.put("resource_group_no", "QUOTE_ASSEMBLY");
+        versionedWriter.writeVersionedGroup(new VersionedGroupSpec(
+            "capacity", "calc_version", gk,
+            List.of("process_no", "process_name", "production_type", "currency", "seq_no"), rows));
+    }
+
     /**
      * per-quote 工序落库（替代共享 material_bom_item 写法）— 把用户选的工序写进报价行专属的
      * {@code quotation_line_process}（line_item_id × process_id），由
@@ -839,7 +1021,11 @@ public class ConfigureProductService {
             List<Integer> childQtys = req.parts.stream()
                 .map(pr -> (pr.quantity == null || pr.quantity < 1) ? 1 : pr.quantity)
                 .collect(Collectors.toList());
-            insertMaterialBomAssemblyV6(parentHfPartNo, customerCode, childHfPartNos, childQtys);
+            // V6 落库 Phase 2（选配 COMBO 补全，设计 §6 / 用户方案 B1/B2/B3）：统一走 VersionedV6Writer
+            // (内容相同复用 / 不同 max+1 升版 / is_current 翻转)。替换 raw insertMaterialBomAssemblyV6。
+            writeCombomaterialBomV6(parentHfPartNo, customerCode, childHfPartNos, childQtys);
+            insertProcessUnitPriceV6(parentHfPartNo, customerCode, req.parts, childHfPartNos);
+            insertCompositeProcessCapacityV6(parentHfPartNo, req.compositeProcesses);
         }
 
         // PASS 3: line_items (解法 B: 传 req.tempId 给 buildLineItems 作 parent line item id)
