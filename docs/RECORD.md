@@ -4,6 +4,16 @@
 
 ---
 
+### [2026-06-02] 选配 V6 入库 Phase 1 — 指纹权威切 V6 | V284__material_master_fingerprint_unique.sql / ConfigureProductService.java | commit 55ba1e1 + bebc98a
+
+- **背景**: 选配产品判重复用料号靠 `config_fingerprint`，原权威在 V44 `mat_part.config_fingerprint`（唯一索引 `uq_mat_part_fingerprint`）。Phase 1 干净切到 V6 `material_master.config_fingerprint`（全局表，PK=material_no，无 customer_no）。
+- **Task 1.1 — V284 Flyway 迁移**: 在 `material_master(config_fingerprint)` 建 partial 唯一索引 `uq_material_master_fingerprint`（`WHERE config_fingerprint IS NOT NULL`），仅约束选配写入的料号，不影响 V6 导入的 NULL fingerprint 行。前置检查无重复数据，success=t。
+- **Task 1.2 — lookupHfByFingerprint 改查 V6**: `ConfigureProductService.lookupHfByFingerprint` 从 `SELECT part_no FROM mat_part WHERE config_fingerprint = :fp` 改为 `SELECT material_no FROM material_master WHERE config_fingerprint = :fp`，干净切换，无开关。
+- **关键决策**: 去掉了原方法内的过渡期警告注释（"不可改读 material_master：历史选配料号 fp 只在 mat_part"）——该顾虑的前提是双写期旧 fp 仍只在 mat_part，Phase 1 正式切换即意味着历史选配料号 fp 已通过双写同步至 material_master，可放心切查。
+- **自检**: Flyway V284 success=t；唯一索引 `uq_material_master_fingerprint` pg_indexes 确认存在；material_master 有 fingerprint 非 NULL 行（CFG-COMBO-000023 等）；后端 /api/cpq/components 返 401（无 500）。
+
+---
+
 ### [2026-06-02] 行键改回字段勾选 Task 1 — 后端 resolveRowKeyCandidates 纯逻辑 + 单测 | RowKeyCandidatesResponse.java / ComponentDriverService.java / RowKeyCandidatesTest.java | commit f03ff6f
 
 - **背景**: 行键(rowKeyFields)存 driverRow 真实列名，用于报价草稿重刷时按行身份对齐。Task 1 只做纯逻辑，不连 DB。
@@ -13641,3 +13651,5 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 - Task 10 验收(部分): 迁移应用+视图可查+模板注入形态正确+后端无 ERROR 级模板/SQL 编译错+BnfTableMetaSyncer 同步 OK+后端 47 测试绿+BNF 渲染返单值无"(共N项)"。**未现场验**: "真实二次导入升版后视图只返当前版本"——活库无 is_current=false 数据(没跑过真实两遍导入), 无升版场景, 需真实 Excel 夹具。写入侧升版+翻转已 47 单测证明, 视图过滤 SQL 正确性迁移层已确认。
 - 注: E2E child-parts-zcj-bom.spec 失败=夹具漂移(料号 3120012574 的 material_bom_item=0 行, 期望 5 行不存在), 与本改动无关(zcj_bom 未改, 渲染路径正常返单值)。quotation-flow/task8 全流程 E2E 较重(>240s 超时), 未跑完。
 - ⚠️ 存量数据决策(2026-06-02 确认 A=维持设计): 本任务**不纠正库内已有版本号**(决策⑩ 空库/清档)。现存: unit_price V_DEFAULT×72 / material_bom V1×6 / capacity V_DEFAULT×10 + **2026060001×8(异常数字版本, 非本代码产生)** / element_bom·plating_scheme 2000。nextVersionOf 只忽略非数字(V_DEFAULT/V1)→新导入从2000起; 但 capacity 的 2026060001 是纯数字会被 MAX+1 带偏(新导→2026060002 非2000)。**运维前提: 用前 TRUNCATE 这5表重导才得干净2000序列**; 存量归一化是独立数据迁移(本期不做)。
+
+### [2026-06-02] 报价单Excel视图 - 第一列由客户料号(__label)改为料号(生产料号/__hfPartNo) | cpq-frontend/src/pages/quotation/LinkedExcelView.tsx | 纯前端行头列改动,与模板excel_view_config无关;__hfPartNo=productPartNo必有值不做兜底

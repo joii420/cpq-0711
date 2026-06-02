@@ -62,7 +62,7 @@ const LinkedExcelView: React.FC<Props> = ({
   const visibleColumns = parsedColumns.filter((col: CostingTemplateColumn) => !col.hidden);
   const tableColumns = [
     {
-      title: '客户料号', dataIndex: '__label', key: '__label',
+      title: '料号', dataIndex: '__hfPartNo', key: '__hfPartNo',
       fixed: 'left' as const, width: 200,
       render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v}</span>,
     },
