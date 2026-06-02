@@ -444,6 +444,18 @@ const ComponentManagement: React.FC = () => {
     try {
       const cleanFields = fields.map(({ key: _k, ...rest }) => rest);
       const cleanFormulas = formulas.map(({ key: _k, ...rest }) => rest);
+      // Phase B 决策1（不丢锚定列）: 勾选只覆盖"有字段可代表"的行键列；存量行键里
+      // 那些"当前无任何候选列能代表"的锚定列（如 material_code / child_hf_part_no —
+      // 在 driver 视图里但没有对应字段、无勾选框）必须并回，避免保存时静默丢失。
+      const reachableCols = new Set(
+        (Object.values(rowKeyCandidates)
+          .map((c) => c.resolvedColumn)
+          .filter(Boolean) as string[])
+      );
+      const preservedAnchors = (selectedComponent.rowKeyFields ?? []).filter(
+        (c) => !reachableCols.has(c)
+      );
+      const finalRowKeyFields = Array.from(new Set([...rowKeyFields, ...preservedAnchors]));
       await componentService.update(selectedComponent.id, {
         name: selectedComponent.name,
         fields: cleanFields,
@@ -451,7 +463,7 @@ const ComponentManagement: React.FC = () => {
         // Y1.5: 显式传(空串=清空, 非空=设置)
         dataDriverPath: dataDriverPath ?? '',
         // Phase1-Snapshot: 行键配置，空数组时传 undefined（不覆盖已有值）
-        rowKeyFields: rowKeyFields.length > 0 ? rowKeyFields : undefined,
+        rowKeyFields: finalRowKeyFields.length > 0 ? finalRowKeyFields : undefined,
       });
       message.success('保存成功');
       loadTree();
