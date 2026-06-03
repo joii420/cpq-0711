@@ -381,8 +381,9 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
       message.warning('请补全引用信息（字段不能为空）');
       return;
     }
-    // 把占位文本写入公式
-    const token = `[${result.placeholder}]`;
+    // 把占位文本写入公式：聚合 placeholder 本身已是完整 SUM_OVER(...) 调用，不能再包 []；
+    // 其余(小计/字段首行/按条件)是裸引用 token，需要包 [] 成占位。
+    const token = refType === 'aggregate' ? result.placeholder : `[${result.placeholder}]`;
     insertAtCursor(token);
     // 把 ref 写入 refs 状态
     setRefs(prev => ({ ...prev, [result.refKey]: result.ref }));
