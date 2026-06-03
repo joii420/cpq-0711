@@ -86,7 +86,7 @@ public class Q03MaterialBomHandler implements SheetHandler {
                 childGk.put("characteristic", null);   // Q03 子表 characteristic=NULL
                 writer.writeVersionedMasterDetail(
                     "material_bom", "bom_version", masterGk, Map.of(),
-                    "material_bom_item", null, childGk, CHILD_CONTENT, childRows);
+                    "material_bom_item", "bom_version", childGk, CHILD_CONTENT, childRows);
                 result.recordWrite("material_bom", 1);
                 result.recordWrite("material_bom_item", childRows.size());
             } catch (Exception ex) {

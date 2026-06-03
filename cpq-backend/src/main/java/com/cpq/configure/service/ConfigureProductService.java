@@ -568,7 +568,7 @@ public class ConfigureProductService {
         versionedWriter.writeVersionedMasterDetail(
             "material_bom", "bom_version",
             asmMasterGk, null,
-            "material_bom_item", null,
+            "material_bom_item", "bom_version",
             bomGroupKey(customerCode, parentHfPartNo, "characteristic", "ASSEMBLY"),
             List.of("seq_no", "component_no", "composition_qty"), assemblyRows);
 
@@ -584,7 +584,7 @@ public class ConfigureProductService {
         versionedWriter.writeVersionedMasterDetail(
             "material_bom", "bom_version",
             bomGroupKey(customerCode, parentHfPartNo, "bom_type", "MATERIAL"), null,
-            "material_bom_item", null,
+            "material_bom_item", "bom_version",
             bomGroupKey(customerCode, parentHfPartNo, "characteristic", null),
             List.of("seq_no", "component_no", "component_usage_type"), materialRows);
     }

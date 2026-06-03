@@ -73,7 +73,7 @@ public class Q12AssemblyBomHandler implements SheetHandler {
                 childGk.put("characteristic", "ASSEMBLY");
                 writer.writeVersionedMasterDetail(
                     "material_bom", "bom_version", masterGk, Map.of(),
-                    "material_bom_item", null, childGk, CHILD_CONTENT, childRows);
+                    "material_bom_item", "bom_version", childGk, CHILD_CONTENT, childRows);
                 result.recordWrite("material_bom", 1);
                 result.recordWrite("material_bom_item", childRows.size());
             } catch (Exception ex) {
