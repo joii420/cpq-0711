@@ -62,19 +62,30 @@ public final class CardEffectiveRows {
             Map<String, JsonNode> formulaByKey = indexByRowKey(tab.path("formulaResults"));
 
             List<Map<String, Object>> rows = new ArrayList<>();
-            int i = 0;
-            if (baseRows.isArray()) {
-                for (JsonNode br : baseRows) {
-                    JsonNode driverRow = br.path("driverRow");
-                    String rowKey = computeRowKey(rkf, driverRow, i);
-
+            JsonNode resolved = tab.path("resolvedRows");
+            if (resolved.isArray() && resolved.size() > 0) {
+                // 优先：快照已存"按字段名标量行"，直接用（通用引擎解析好的，含类型等别名≠字段名的字段）
+                for (JsonNode rr : resolved) {
                     Map<String, Object> row = new LinkedHashMap<>();
-                    putAll(row, driverRow);
-                    putAll(row, br.path("basicDataValues"));
-                    putAll(row, valuesOf(formulaByKey.get(rowKey)));
-                    putAll(row, valuesOf(editByKey.get(rowKey)));
+                    putAll(row, rr);
                     rows.add(row);
-                    i++;
+                }
+            } else {
+                // 回退（旧快照无 resolvedRows）：driverRow∪basicDataValues∪formulaResults∪editRows 合并
+                int i = 0;
+                if (baseRows.isArray()) {
+                    for (JsonNode br : baseRows) {
+                        JsonNode driverRow = br.path("driverRow");
+                        String rowKey = computeRowKey(rkf, driverRow, i);
+
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        putAll(row, driverRow);
+                        putAll(row, br.path("basicDataValues"));
+                        putAll(row, valuesOf(formulaByKey.get(rowKey)));
+                        putAll(row, valuesOf(editByKey.get(rowKey)));
+                        rows.add(row);
+                        i++;
+                    }
                 }
             }
 
