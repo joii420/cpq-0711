@@ -60,6 +60,10 @@ interface Props {
    * 父组件按 !!quotationId 传入. 名称字段允许改, 联系人在父组件管理.
    */
   readOnly?: boolean;
+  /** 报价模板自动带出来源提示(如「上次使用 · 最新版 v3」);readOnly 时不显示 */
+  customerTemplateHint?: string;
+  /** 核价模板自动带出来源提示 */
+  costingTemplateHint?: string;
 }
 
 const QuotationCreateForm: React.FC<Props> = ({
@@ -69,6 +73,8 @@ const QuotationCreateForm: React.FC<Props> = ({
   onChange,
   onValidityChange,
   readOnly = false,
+  customerTemplateHint,
+  costingTemplateHint,
 }) => {
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
@@ -301,6 +307,11 @@ const QuotationCreateForm: React.FC<Props> = ({
               {matchResult.matchType === 'CUSTOMER_SPECIFIC' && <Tag color="purple">客户专属</Tag>}
               {matchResult.matchType === 'GENERAL_FALLBACK' && <Tag color="cyan">通用兜底</Tag>}
               {matchResult.matchType === 'MIXED' && <Tag color="blue">客户专属 + 通用 可选</Tag>}
+              {!readOnly && customerTemplateHint && (
+                <span style={{ marginLeft: 8, fontWeight: 400, fontSize: 12, color: '#999' }}>
+                  {customerTemplateHint}
+                </span>
+              )}
             </span>
           }
           validateStatus={!value.customerTemplateId ? 'error' : ''}
@@ -351,6 +362,11 @@ const QuotationCreateForm: React.FC<Props> = ({
                   ? <Tag color="purple">客户专属</Tag>
                   : <Tag color="cyan">通用兜底</Tag>;
               })()}
+              {!readOnly && costingTemplateHint && (
+                <span style={{ marginLeft: 8, fontWeight: 400, fontSize: 12, color: '#999' }}>
+                  {costingTemplateHint}
+                </span>
+              )}
             </span>
           }
           tooltip="模板配置中模板类型=核价模板、状态=已发布、分类匹配；customer_id 留空对所有客户可用"
