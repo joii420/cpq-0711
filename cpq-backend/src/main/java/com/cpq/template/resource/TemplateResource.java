@@ -60,6 +60,13 @@ public class TemplateResource {
         return ApiResponse.success(templateService.matchCustomerQuoteTemplate(customerId, categoryId));
     }
 
+    @GET
+    @Path("/auto-defaults")
+    public ApiResponse<com.cpq.template.dto.QuoteImportAutoDefaults> autoDefaults(
+            @QueryParam("customerId") UUID customerId) {
+        return ApiResponse.success(templateService.computeAutoDefaults(customerId));
+    }
+
     @POST
     @RoleAllowed({"SALES_MANAGER", "SYSTEM_ADMIN"})
     public ApiResponse<TemplateDTO> create(CreateTemplateRequest request) {
