@@ -55,23 +55,14 @@ public class ExcelParserService {
         Row headerRow = sheet.getRow(0);
         if (headerRow == null) return result;
 
-        // 收集表头：列号 -> 列名（中文）；检测同 Sheet 内重复表头 → 报错(防静默覆盖丢列)
+        // 收集表头：列号 -> 列名（中文）。允许同名重复列（由 SheetRow 按列序/第N个解析）。
         Map<Integer, String> headerMap = new LinkedHashMap<>();
-        Map<String, Integer> seenHeader = new LinkedHashMap<>();
         short last = headerRow.getLastCellNum();
         for (int c = 0; c < last; c++) {
             Cell cell = headerRow.getCell(c);
             String name = cellToString(cell);
             if (name != null && !name.isBlank()) {
-                String norm = normalizeHeader(name);
-                Integer prev = seenHeader.get(norm);
-                if (prev != null) {
-                    throw new IllegalArgumentException(
-                        "表头列名重复: " + norm + "（列 " + (prev + 1) + "、列 " + (c + 1)
-                        + "）。请改为不同列名（如编码列/名称列分别命名）后重新导入。");
-                }
-                seenHeader.put(norm, c);
-                headerMap.put(c, norm);
+                headerMap.put(c, normalizeHeader(name));
             }
         }
         if (headerMap.isEmpty()) return result;
@@ -79,16 +70,16 @@ public class ExcelParserService {
         for (int r = 1; r <= sheet.getLastRowNum(); r++) {
             Row row = sheet.getRow(r);
             if (row == null) continue;
-            Map<String, String> cells = new LinkedHashMap<>();
+            List<String[]> ordered = new ArrayList<>();   // 保留重复列(列序)
             boolean allBlank = true;
             for (Map.Entry<Integer, String> h : headerMap.entrySet()) {
                 Cell c = row.getCell(h.getKey());
                 String v = cellToString(c);
                 if (v != null && !v.isBlank()) allBlank = false;
-                cells.put(h.getValue(), v);
+                ordered.add(new String[]{h.getValue(), v});
             }
             if (allBlank) continue;
-            result.add(new SheetRow(r + 1, cells)); // +1 转为 1-based 行号
+            result.add(new SheetRow(r + 1, ordered)); // +1 转为 1-based 行号
         }
         return result;
     }
