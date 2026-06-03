@@ -3125,6 +3125,7 @@ E2E:
 - V290：capacity/plating_scheme 加 `system_type` 列 + 唯一键含 system_type；存量非数字版本洗到 2000；按 resource_group_no/版本数字性回填 system_type；护栏②回填后 `DROP DEFAULT`
 - 报价侧 Q14/Q16 groupKey 补 `system_type='QUOTE'`（被护栏倒逼）
 - V291：核价 `v12_plating_scheme` 视图补 `system_type='PRICING' AND is_current=true`（防升版重复行 AP-22）
+- V292：报价 `zh_view` 读 capacity 补 `system_type='QUOTE'`（capacity 加 system_type 后 zh_view 原只过滤 is_current 会混入 12 条 PRICING 产能行 → 报价组合工艺重复，终审发现并修复）
 
 **关键决策**:
 - PRICING 与 QUOTE 各自独立 2000 序列；capacity/plating_scheme 用户选择加 system_type 列做隔离而非全局共享
@@ -3134,8 +3135,9 @@ E2E:
 
 **遗留待用户确认/跟进**:
 1. **plating_scheme 存量全是 QUOTE(2 条数字版本)、0 条 PRICING** → `v12_plating_scheme` 核价视图按 PRICING 过滤会暂时空，需经「导入核价数据」(P21) 导入电镀方案后才有数据（系 system_type 隔离 + 回填启发式的预期结果）
-2. **zh_view 读 capacity 只过滤 is_current 无 system_type**（QUOTE 渲染族，本次范围外）→ capacity 现含混合 current 行，潜在 QUOTE 侧重复行风险，建议后续补 `system_type='QUOTE'`
+2. ~~zh_view 读 capacity 混入 PRICING 行~~ → **V292 已修**（补 system_type='QUOTE'，终审发现）
 3. V290 回填启发式为测试数据约定，生产数据迁移前需复核
+4. **V290 版本洗白潜在 uq 冲突**（终审提示）：本 DB 数据无碰撞已 success=t；但若其它库存在「同 uq 组多条非数字版本」(老 capacity.calc_version / plating_scheme.scheme_version 含 Excel 多版本)，洗到 '2000' 会撞唯一键 → 生产迁移前需先去重或走 spec 退路（清空 PRICING 重导）。V290 已应用不可改，新库部署前评估
 
 **涉及文件**: `pricing/{P06,P07,P08,P21}*.java` + `quote/{Q14,Q16}*.java` + `versioning/VersionedV6Writer.java` + `db/migration/V290__*.sql` + `V291__*.sql` + pricing/*Test.java
 
