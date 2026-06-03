@@ -4,6 +4,16 @@
 
 ---
 
+### [2026-06-03] 报价导入 - 选模板步骤自动带出(上次使用报价线最新版+核价最新+上次分类) | QuoteImportAutoDefaults.java / TemplateService.computeAutoDefaults / TemplateResource / AutoDefaultsServiceTest | 主规则=有历史跟随上次模板线,客户专属优先仅无历史兜底;核价不记忆
+
+- **新增 DTO**: `QuoteImportAutoDefaults`(纯数据) — categoryId/Name + customerTemplate*(Id/SeriesId/Name/Version/Source) + costingTemplate*(Id/Name/Version/Source)
+- **Service 方法 `computeAutoDefaults(UUID customerId)`**: 1)查最近报价单反推上次用的模板线 → 取该线最新 PUBLISHED 版本(LAST_USED) 2)线全归档则退 matchCustomerQuoteTemplate 兜底(CUSTOMER_SPECIFIC_FALLBACK / GENERAL_FALLBACK / NONE) 3)无历史则 find name='默认分类' 4)核价独立查 categoryId+COSTING+客户专属优先
+- **端点**: `GET /api/cpq/templates/auto-defaults?customerId=` → 401(鉴权正常)
+- **TDD**: AutoDefaultsServiceTest 6 分支(@TestTransaction)全 PASS; 桩→失败→实现→全通 流程严格执行
+- **commits**: 887f641(DTO) / f82dbac(Service+Test) / f9307ec(Resource)
+
+---
+
 ### [2026-06-03] 报价/核价导入 - 重复表头按列位置解析(撤销报错) | ExcelParserService.java / SheetRow.java / Q12AssemblyBomHandler.java / Q13ComponentOtherFeeHandler.java + 对应测试 | getStr首现+getXxxNth第N个;Q12 item_seq=项次#2,Q13=项次#3
 
 - **背景**: 真实模板普遍存在裸重复表头(如`项次`×2/×3、`组装工序`编码列+名称列)，之前"重复表头报错"会挡死这类 Sheet；last-wins 覆盖会静默丢列。
