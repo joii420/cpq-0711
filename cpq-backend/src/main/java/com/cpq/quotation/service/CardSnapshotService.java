@@ -128,13 +128,28 @@ public class CardSnapshotService {
             QuotationViewStructure.findByQuotationAndKind(quotationId, viewKind);
         if (existing != null) return; // 已冻，不覆盖
 
-        QuotationViewStructure s = new QuotationViewStructure();
-        s.quotationId = quotationId;
-        s.viewKind = viewKind;
-        s.structure = structureJson;
-        s.createdAt = OffsetDateTime.now();
-        s.persist();
+        // 幂等插入：并发下两线程可能都通过上面的存在性检查（TOCTOU），靠 DB 层
+        // ON CONFLICT DO NOTHING 兜底，撞 uq_quotation_view_structure 不抛 23505、
+        // 不污染事务（否则同事务后续核价值 UPDATE 会被 25P02 连坐失败 → costing_* 永久空）。
+        persistStructureIdempotent(quotationId, viewKind, structureJson);
         LOG.debugf("[card-snapshot] created structure quotation=%s kind=%s", quotationId, viewKind);
+    }
+
+    /**
+     * 幂等插入一份结构快照：撞唯一约束 (quotation_id, view_kind) 时 DO NOTHING。
+     * 用原生 SQL 而非 entity.persist()，避免重复键抛 PSQLException 把整个事务标记为
+     * aborted（PG 行为），从而保护同事务内后续的核价值写入不被连坐。
+     * public 供 CardStructureSnapshotTest 直接验证幂等性。
+     */
+    public void persistStructureIdempotent(UUID quotationId, String viewKind, String structureJson) {
+        em.createNativeQuery(
+            "INSERT INTO quotation_view_structure (id, quotation_id, view_kind, structure, created_at) " +
+            "VALUES (gen_random_uuid(), :qid, :kind, cast(:struct as jsonb), now()) " +
+            "ON CONFLICT (quotation_id, view_kind) DO NOTHING")
+            .setParameter("qid", quotationId)
+            .setParameter("kind", viewKind)
+            .setParameter("struct", structureJson)
+            .executeUpdate();
     }
 
     // =========================================================================

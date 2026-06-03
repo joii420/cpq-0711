@@ -140,6 +140,32 @@ public class CardStructureSnapshotTest {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // T3: 并发竞态防御 — 重复插入同 (quotation, view_kind) 必须幂等不抛、不污染事务
+    //   复现根因：并发两线程都通过 findByQuotationAndKind 检查后各自插入 → 第二个撞
+    //   uq_quotation_view_structure(23505) → PG 标记事务 aborted(25P02) → 同事务后续
+    //   核价值写入(buildCostingCardValues 的 UPDATE)全失败 → costing_* 永久空。
+    //   修复：插入走 ON CONFLICT (quotation_id, view_kind) DO NOTHING，撞键不抛错。
+    // -----------------------------------------------------------------------
+    @Test
+    @Order(3)
+    @Transactional
+    @DisplayName("T3: persistStructureIdempotent 重复插同 key 不抛错且只留 1 行（事务不被污染）")
+    void persistStructureIdempotent_duplicate_noThrow_singleRow() {
+        UUID qid = resolveTestQuotationId();
+        assumeNotNull(qid, "需要一个绑定了双模板的 DRAFT 报价单");
+
+        svc.persistStructureIdempotent(qid, "QUOTE_CARD", "{}");
+        // 模拟并发：第二个线程同样通过了存在性检查、来插同一 key
+        assertDoesNotThrow(
+            () -> svc.persistStructureIdempotent(qid, "QUOTE_CARD", "{}"),
+            "重复插入同一 (quotation,view_kind) 不应抛异常（应 ON CONFLICT DO NOTHING）");
+
+        long count = QuotationViewStructure.count(
+            "quotationId = ?1 and viewKind = ?2", qid, "QUOTE_CARD");
+        assertEquals(1, count, "重复插入后应只有 1 行（不重复、不丢）");
+    }
+
     /** 辅助：假设前提不满足时跳过测试 */
     private void assumeNotNull(Object val, String msg) {
         org.junit.jupiter.api.Assumptions.assumeTrue(val != null, msg);
