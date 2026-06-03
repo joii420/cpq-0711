@@ -51,5 +51,22 @@ export function validateCardFormula(
   const cyc = detectCycle(allFormulas);
   if (cyc.includes(col.col_key)) errs.push(`列公式存在循环引用: ${cyc.join(',')}`);
   if (!ALLOWED.test(f)) errs.push('公式含非法字符');
+  // 聚合被方括号包裹：[ ... SUM_OVER(...) ... ]
+  if (/\[[^\[\]]*\b(SUM|AVG|COUNT|MIN|MAX)_OVER\s*\(/.test(f)) {
+    errs.push('聚合函数不能包在 [] 里。正确写法：SUM_OVER([页签] WHERE 条件, 表达式)');
+  }
+  // 括号/方括号配平
+  const bal = (open: string, close: string) => {
+    let n = 0; for (const ch of f) { if (ch === open) n++; else if (ch === close) { n--; if (n < 0) return false; } } return n === 0;
+  };
+  if (!bal('(', ')')) errs.push('圆括号 ( ) 不配平');
+  if (!bal('[', ']')) errs.push('方括号 [ ] 不配平');
+  // 未知函数名（白名单外的 标识符( ）
+  const FN_WHITELIST = new Set(['IF','ROUND','ABS','SUM_OVER','AVG_OVER','COUNT_OVER','MIN_OVER','MAX_OVER']);
+  const fnCall = /([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
+  let fm: RegExpExecArray | null;
+  while ((fm = fnCall.exec(f)) !== null) {
+    if (!FN_WHITELIST.has(fm[1])) errs.push(`未知函数 ${fm[1]}（支持：IF/ROUND/ABS/SUM_OVER/AVG_OVER/COUNT_OVER/MIN_OVER/MAX_OVER）`);
+  }
   return errs;
 }

@@ -20,4 +20,18 @@ describe('cardFormula pure logic', () => {
       ['A','B'], { A:'=[B]+1', B:'=[A]+1' });
     expect(errs.some(e => e.includes('循环'))).toBe(true);
   });
+  it('拦截聚合被方括号包裹', () => {
+    const errs = validateCardFormula(
+      { col_key:'B', formula:"=[SUM_OVER([元素] WHERE c0=='x', c1)]", refs:{ '元素':{tab:'t:2', cols:{c0:'类',c1:'量'}} } } as any,
+      ['B'], {});
+    expect(errs.some(e => e.includes('聚合'))).toBe(true);
+  });
+  it('拦截括号不配平', () => {
+    const errs = validateCardFormula({ col_key:'A', formula:'=ROUND([投料.小计], 2', refs:{'投料.小计':{tab:'t:0',field:'__subtotal__'}} } as any, ['A'], {});
+    expect(errs.some(e => e.includes('括号'))).toBe(true);
+  });
+  it('拦截未知函数', () => {
+    const errs = validateCardFormula({ col_key:'A', formula:'=FOO([投料.小计])', refs:{'投料.小计':{tab:'t:0',field:'__subtotal__'}} } as any, ['A'], {});
+    expect(errs.some(e => e.includes('未知函数') || e.includes('FOO'))).toBe(true);
+  });
 });
