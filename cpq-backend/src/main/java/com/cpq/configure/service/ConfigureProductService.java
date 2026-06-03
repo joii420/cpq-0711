@@ -496,38 +496,6 @@ public class ConfigureProductService {
 
     // backfillV44FromV6 和 backfillV6FromV44 已在 Phase 3 移除（V44 双写桥停用）
 
-    /**
-     * V6: 组合子件 → material_bom_item（characteristic='ASSEMBLY'，component_no=子料号）。
-     * 让 zcj_bom / composite_child_materials_mirror 渲染子配件清单。
-     * composition_qty = 用户在选配「配件数量」步骤填的组成用量（正整数，默认 1）。
-     * 指纹复用同一父料号时也更新数量（ON CONFLICT DO UPDATE，匹配 uq_material_bom_item 表达式索引）。
-     */
-    void insertMaterialBomAssemblyV6(String parentPartNo, String customerCode,
-                                     List<String> childPartNos, List<Integer> quantities) {
-        if (customerCode == null || customerCode.isBlank()) return;
-        int seq = 1;
-        for (int i = 0; i < childPartNos.size(); i++) {
-            String childPn = childPartNos.get(i);
-            int qty = (quantities != null && i < quantities.size() && quantities.get(i) != null
-                       && quantities.get(i) >= 1)
-                ? quantities.get(i) : 1;
-            em.createNativeQuery(
-                    "INSERT INTO material_bom_item (system_type, customer_no, material_no, " +
-                    "characteristic, seq_no, component_no, composition_qty) " +
-                    "VALUES ('QUOTE', :cn, :p, 'ASSEMBLY', :sq, :c, :q) " +
-                    "ON CONFLICT (system_type, customer_no, material_no, " +
-                    "COALESCE(characteristic, ''), COALESCE(seq_no, 0), " +
-                    "COALESCE(component_no, ''), COALESCE(part_no, '')) " +
-                    "DO UPDATE SET composition_qty = EXCLUDED.composition_qty")
-                .setParameter("cn", customerCode)
-                .setParameter("p", parentPartNo)
-                .setParameter("sq", seq++)
-                .setParameter("c", childPn)
-                .setParameter("q", qty)
-                .executeUpdate();
-        }
-    }
-
     // ─────────────────────────────────────────────────────────────────────
     // V6 落库 Phase 2（选配 COMBO 补全，设计方案 §6 / 用户方案 B1/B2/B3）
     //   B1 material_bom 主从版本化（ASSEMBLY 子配件 + MATERIAL 各子件材质自指）
@@ -538,7 +506,7 @@ public class ConfigureProductService {
     // ─────────────────────────────────────────────────────────────────────
 
     /**
-     * B1: COMBO 的 material_bom 主从版本化写入（替代 raw insertMaterialBomAssemblyV6）。
+     * B1: COMBO 的 material_bom 主从版本化写入（替代早期 raw insert 写法）。
      * 两组主从：
      *   - ASSEMBLY 组：bom_type=ASSEMBLY / 子行 characteristic='ASSEMBLY'，component_no=子料号 + composition_qty；
      *   - MATERIAL 组：bom_type=MATERIAL / 子行 characteristic=NULL，component_no=子料号 + component_usage_type=子件材质名。
@@ -838,7 +806,7 @@ public class ConfigureProductService {
                 .map(pr -> (pr.quantity == null || pr.quantity < 1) ? 1 : pr.quantity)
                 .collect(Collectors.toList());
             // V6 落库 Phase 2（选配 COMBO 补全，设计 §6 / 用户方案 B1/B2/B3）：统一走 VersionedV6Writer
-            // (内容相同复用 / 不同 max+1 升版 / is_current 翻转)。替换 raw insertMaterialBomAssemblyV6。
+            // (内容相同复用 / 不同 max+1 升版 / is_current 翻转)。
             writeCombomaterialBomV6(parentHfPartNo, customerCode, childHfPartNos, childQtys);
             insertProcessUnitPriceV6(parentHfPartNo, customerCode, req.parts, childHfPartNos);
             insertCompositeProcessCapacityV6(parentHfPartNo, req.compositeProcesses);
