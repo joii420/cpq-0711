@@ -13,11 +13,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Drawer, Button, Form, Input, Select, Radio, Space, Switch, InputNumber,
-  Divider, Typography, Tag, message, Spin, Tooltip,
+  Divider, Typography, Tag, message, Spin, Tooltip, Alert,
 } from 'antd';
 import { PlusOutlined, DeleteOutlined, FunctionOutlined } from '@ant-design/icons';
 import { templateService } from '../../services/templateService';
 import { componentService } from '../../services/componentService';
+import { quotationService } from '../../services/quotationService';
 import { genAlias, expandIn, validateCardFormula } from './cardFormula';
 // CardRefSpec 是纯类型，必须 import type（否则 Vite/esbuild 运行时 ESM 链接报错 → 整个 SPA 白屏）
 import type { CardRefSpec } from './cardFormula';
@@ -47,6 +48,7 @@ export interface CardFormulaDrawerProps {
     display_format?: { type?: 'PERCENT' | 'NUMBER'; decimals?: number };
   }) => void;
   onClose: () => void;
+  dryRunQuotationId?: string;
 }
 
 // ─── 内部类型 ────────────────────────────────────────────────────────────────
@@ -254,6 +256,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
   value,
   onSave,
   onClose,
+  dryRunQuotationId,
 }) => {
   // ── 公式状态 ─────────────────────────────────────────────────────
   const [formula, setFormula] = useState<string>(value.formula || '');
@@ -277,6 +280,9 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
   // ── 配置说明展开态 ───────────────────────────────────────────────
   const [showHelp, setShowHelp] = useState(false);
 
+  // ── 试算状态 ─────────────────────────────────────────────────────
+  const [trial, setTrial] = useState<{ loading?: boolean; rows?: any[]; err?: string }>({});
+
   // ── TextArea ref (光标插入) ──────────────────────────────────────
   const textAreaRef = useRef<any>(null);
 
@@ -292,6 +298,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
     setConds([{ ...DEFAULT_COND_ROW }]);
     setAggFunc('SUM');
     setAggExpr('');
+    setTrial({});
     loadTabs();
   }, [open, templateId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -397,6 +404,29 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
   const updateCondRow = (i: number, patch: Partial<CondRow>) =>
     setConds(prev => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
 
+  // ── 试算 ─────────────────────────────────────────────────────────
+  const handleTrial = async () => {
+    const errs = validateCardFormula(
+      { col_key: value.col_key, formula, refs },
+      allColKeys,
+      { ...allFormulas, [value.col_key]: formula },
+    );
+    if (errs.length) { message.error('请先修正：' + errs.join('；')); return; }
+    if (!dryRunQuotationId) {
+      message.warning('当前入口无样例报价单，无法试算（可在报价单内编辑时使用）');
+      return;
+    }
+    setTrial({ loading: true });
+    try {
+      const col = { col_key: value.col_key, title: value.title, source_type: 'CARD_FORMULA', formula, refs };
+      const resp: any = await quotationService.dryRunExcelView(dryRunQuotationId, { templateId, columns: [col] });
+      const body = resp?.data ?? resp;
+      setTrial({ rows: Array.isArray(body?.rows) ? body.rows : [] });
+    } catch (e: any) {
+      setTrial({ err: e?.message || '试算失败' });
+    }
+  };
+
   // ── 保存 ─────────────────────────────────────────────────────────
   const handleSave = () => {
     const errs = validateCardFormula(
@@ -433,6 +463,15 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
       footer={
         <div style={{ textAlign: 'right' }}>
           <Button onClick={onClose} style={{ marginRight: 8 }}>取消</Button>
+          <Button
+            onClick={handleTrial}
+            loading={trial.loading}
+            disabled={!dryRunQuotationId}
+            title={!dryRunQuotationId ? '试算需在报价单内编辑公式时使用' : undefined}
+            style={{ marginRight: 8 }}
+          >
+            试算
+          </Button>
           <Button type="primary" onClick={handleSave}>保存</Button>
         </div>
       }
@@ -530,6 +569,26 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
             </div>
           )}
         </div>
+
+        {/* ── 试算结果 ── */}
+        {trial.err && (
+          <Alert type="error" showIcon style={{ marginTop: 8 }} message={'试算失败：' + trial.err} />
+        )}
+        {trial.rows && (
+          <div style={{ marginTop: 8, fontSize: 12 }}>
+            <Text strong>试算结果（{value.col_key} 列各行）：</Text>
+            {trial.rows.length === 0 && <span style={{ color: '#999' }}> 无数据行</span>}
+            {trial.rows.map((r, i) => {
+              const v = r[value.col_key];
+              const isErr = typeof v === 'string' && v.startsWith('#ERROR');
+              return (
+                <div key={i} style={{ fontFamily: 'monospace', color: isErr ? '#c41d7f' : '#1677ff' }}>
+                  行{i + 1}: {v === null || v === undefined || v === '' ? '—' : String(v)}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* ── 当前 refs 预览 ── */}
         {Object.keys(refs).length > 0 && (
