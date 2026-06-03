@@ -19,7 +19,7 @@ import java.util.Map;
  * P06 物料BOM (PRICING) → material_bom（主） + material_bom_item（子），主从版本化。
  *
  * <p>对齐报价 Q03：按 material_no 分组调 {@link VersionedV6Writer#writeVersionedMasterDetail}；
- * 主表 bom_version max+1（首版 2000）；子表 uq 不含版本 → upsert 覆盖当前 + 删残留（§5.3）。
+ * 主表 bom_version max+1（首版 2000）；子表按 bom_version 多版本保留（V293 起），历史版本行 is_current=false 留存。
  * <p>核价 BOM 全局共享，customer_no 用 "_GLOBAL_" 哨兵；system_type='PRICING'，与报价物理隔离。
  */
 @ApplicationScoped

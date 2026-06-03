@@ -46,14 +46,14 @@ public class VersionedV6Writer {
         }
     }
 
-    /** 子表无版本列时（material_bom_item）的 upsert 元数据：表达式冲突目标 + 唯一键列集。 */
+    /**
+     * 子表无版本列时的 upsert 元数据：表达式冲突目标 + 唯一键列集。
+     * V293 后 material_bom_item 已切换到 bom_version 多版本保留路径（childVersionColumn="bom_version"），
+     * null-path（upsert 覆盖当前 + 删残留）现已无任何调用方，故此 Map 保持空。
+     * 若未来新增无版本子表，在此登记冲突目标即可启用 null-path。
+     */
     private record ChildUq(String conflictTarget, Set<String> keyCols) {}
-    private static final Map<String, ChildUq> CHILD_UQ = Map.of(
-        "material_bom_item", new ChildUq(
-            "(system_type, customer_no, material_no, COALESCE(characteristic,''), "
-                + "COALESCE(seq_no,0), COALESCE(component_no,''), COALESCE(part_no,''))",
-            Set.of("system_type", "customer_no", "material_no",
-                   "characteristic", "seq_no", "component_no", "part_no")));
+    private static final Map<String, ChildUq> CHILD_UQ = Map.of();
 
     /** 列名白名单校验：只允许 [a-z_][a-z0-9_]* 标识符。 */
     private static String safeIdent(String id) {
@@ -154,8 +154,10 @@ public class VersionedV6Writer {
      * BOM 主从版本化（设计 §3.3 / §5.2 / §5.3）。
      * 子表行集决定是否升版；版本号取主表版本列 max+1；主/子 is_current 同步翻转。
      * <ul>
-     *   <li>childVersionColumn != null（element_bom_item，uq 含 characteristic）：子表写版本列 → 多版本子表保留。</li>
-     *   <li>childVersionColumn == null（material_bom_item，uq 不含版本）：子表走 upsert 覆盖当前 + 删除残留下线行 → 仅保留当前版本（§5.3）。</li>
+     *   <li>childVersionColumn != null（element_bom_item 用 "characteristic"，material_bom_item 用 "bom_version" V293 起）：
+     *       子表写版本列 → 多版本子表保留（历史行 is_current=false 留存）。</li>
+     *   <li>childVersionColumn == null：子表走 upsert 覆盖当前 + 删除残留下线行（§5.3），仅保留当前版本。
+     *       V293 后 material_bom_item 已切走此路径；该分支现无调用方，保留作通用机制备用。</li>
      *   <li>主/子 groupKey 独立（#5：material_bom_item 无 bom_type 列）。</li>
      *   <li>masterFixedColumns：主表 NOT NULL 固定列（#4：element_bom/material_bom 的 bom_type）。</li>
      *   <li>所有组匹配 NULL 安全（#8：material_bom 子表 characteristic=NULL）。</li>

@@ -18,9 +18,9 @@ import java.util.Map;
 /**
  * Q12 组成件BOM → material_bom (bom_type=ASSEMBLY) + material_bom_item。
  *
- * <p>版本化（Task 5）：按 material_no 分组调 {@link VersionedV6Writer#writeVersionedMasterDetail}。
+ * <p>版本化（Task 5 / V293）：按 material_no 分组调 {@link VersionedV6Writer#writeVersionedMasterDetail}。
  * 主表 masterGk 含 bom_type=ASSEMBLY + characteristic='ASSEMBLY'（material_bom uq 不含 bom_type，
- * 靠 characteristic 与 Q03 物理隔离）。子表 uq 不含版本 → upsert 覆盖 + 删残留，仅当前版本。
+ * 靠 characteristic 与 Q03 物理隔离）。子表按 bom_version 多版本保留（V293 起），历史版本行 is_current=false 留存。
  */
 @ApplicationScoped
 public class Q12AssemblyBomHandler implements SheetHandler {

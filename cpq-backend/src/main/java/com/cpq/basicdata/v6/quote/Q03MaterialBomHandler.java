@@ -19,8 +19,8 @@ import java.util.Map;
 /**
  * Q03 物料BOM → material_bom（主） + material_bom_item（子） + material_master（同步 upsert）。
  *
- * <p>版本化（Task 5）：按 material_no 分组调 {@link VersionedV6Writer#writeVersionedMasterDetail}。
- * 主表 bom_version max+1（首版 2000，旧 'V1' 非数字被忽略）；子表 uq 不含版本 → upsert 覆盖 + 删残留，仅当前版本（§5.3）。
+ * <p>版本化（Task 5 / V293）：按 material_no 分组调 {@link VersionedV6Writer#writeVersionedMasterDetail}。
+ * 主表 bom_version max+1（首版 2000，旧 'V1' 非数字被忽略）；子表按 bom_version 多版本保留（V293 起），历史版本行 is_current=false 留存。
  * <p>主/子用 bom_type=MATERIAL（主表 groupKey 维度）+ 子表 characteristic=NULL，与 Q12(ASSEMBLY) 物理隔离。
  */
 @ApplicationScoped

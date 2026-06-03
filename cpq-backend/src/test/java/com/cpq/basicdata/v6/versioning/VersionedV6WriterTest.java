@@ -238,4 +238,54 @@ class VersionedV6WriterTest {
         assertTrue(ex.getMessage().contains("system_type"),
             "缺 system_type 应在入口抛错，实际: " + ex.getMessage());
     }
+
+    // ===== material_bom_item 多版本保留（bom_version，V293 切走后）=====
+
+    static final String MBV_CUST = "TEST-MBV-CUST";
+    static final String MBV_MAT  = "TEST-MBV-0001";
+
+    @Test @Transactional
+    void materialBomItem_keepsHistory_onVersionBump() {
+        em.createNativeQuery("DELETE FROM material_bom_item WHERE material_no=:m").setParameter("m", MBV_MAT).executeUpdate();
+        em.createNativeQuery("DELETE FROM material_bom WHERE material_no=:m").setParameter("m", MBV_MAT).executeUpdate();
+
+        java.util.LinkedHashMap<String,Object> masterGk = new java.util.LinkedHashMap<>();
+        masterGk.put("system_type","QUOTE"); masterGk.put("customer_no",MBV_CUST);
+        masterGk.put("material_no",MBV_MAT); masterGk.put("bom_type","MATERIAL");
+        masterGk.put("characteristic", null);
+        java.util.LinkedHashMap<String,Object> childGk = new java.util.LinkedHashMap<>();
+        childGk.put("system_type","QUOTE"); childGk.put("customer_no",MBV_CUST);
+        childGk.put("material_no",MBV_MAT); childGk.put("characteristic", null);
+        List<String> content = List.of("seq_no","component_no","composition_qty");
+
+        String v1 = writer.writeVersionedMasterDetail("material_bom","bom_version",masterGk,Map.of(),
+            "material_bom_item","bom_version",childGk,content,
+            List.of(childRow(1,"C1","1")));
+        assertEquals("2000", v1);
+
+        String v2 = writer.writeVersionedMasterDetail("material_bom","bom_version",masterGk,Map.of(),
+            "material_bom_item","bom_version",childGk,content,
+            List.of(childRow(1,"C1","2")));   // 内容变 → 升版
+        assertEquals("2001", v2);
+
+        Number cur = (Number) em.createNativeQuery(
+            "SELECT count(*) FROM material_bom_item WHERE material_no=:m AND is_current=TRUE")
+            .setParameter("m", MBV_MAT).getSingleResult();
+        assertEquals(1L, cur.longValue(), "当前子行唯一");
+
+        Number old = (Number) em.createNativeQuery(
+            "SELECT count(*) FROM material_bom_item WHERE material_no=:m AND is_current=FALSE AND bom_version='2000'")
+            .setParameter("m", MBV_MAT).getSingleResult();
+        assertEquals(1L, old.longValue(), "2000 版历史子行保留为 is_current=false");
+
+        em.createNativeQuery("DELETE FROM material_bom_item WHERE material_no=:m").setParameter("m", MBV_MAT).executeUpdate();
+        em.createNativeQuery("DELETE FROM material_bom WHERE material_no=:m").setParameter("m", MBV_MAT).executeUpdate();
+    }
+
+    private java.util.LinkedHashMap<String,Object> childRow(int seq, String comp, String qty) {
+        java.util.LinkedHashMap<String,Object> r = new java.util.LinkedHashMap<>();
+        r.put("seq_no", seq); r.put("component_no", comp);
+        r.put("composition_qty", new java.math.BigDecimal(qty));
+        return r;
+    }
 }
