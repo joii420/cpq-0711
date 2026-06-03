@@ -134,6 +134,35 @@ public class ExcelViewService {
     }
 
     /**
+     * 试算：用传入 columns（临时配置，不读模板/不落库）按该报价单逐行算，返回 {columns, rows}。
+     * CARD_FORMULA 分支由 buildRowData 内部 cardFormulaEvaluator 处理，求值异常被吞为 null，不会 500。
+     */
+    public Map<String, Object> dryRun(UUID quotationId, List<Map<String, Object>> columns, UUID templateId) {
+        List<QuotationLineItem> lineItems = QuotationLineItem.list(
+                "quotationId = ?1 ORDER BY sortOrder ASC", quotationId);
+        if (lineItems.isEmpty() || columns == null || columns.isEmpty()) {
+            return Map.of("columns", columns == null ? List.of() : columns, "rows", List.of());
+        }
+
+        Quotation quotation = Quotation.findById(quotationId);
+        UUID customerId = quotation != null ? quotation.customerId : null;
+
+        List<TemplateFormulaDTO> tfs = templateId != null
+                ? templateFormulaService.listByTemplate(templateId)
+                : List.of();
+        Map<String, TemplateFormulaDTO> byName = new LinkedHashMap<>();
+        for (TemplateFormulaDTO t : tfs) byName.put(t.name, t);
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (QuotationLineItem li : lineItems) {
+            Map<String, Object> row = buildRowData(li, columns, templateId, byName, customerId);
+            row.put("_lineItemId", li.id.toString());
+            rows.add(row);
+        }
+        return Map.of("columns", columns, "rows", rows);
+    }
+
+    /**
      * 公开入口：给外部 Service（如 CardSnapshotService）计算单行 Excel 列值。
      * 按 templateId 加载 excel_view_config；customerId 用于模板公式 SUM_OVER 聚合。
      * 返回 {colKey: value} 平铺 Map；模板无配置时返回空 Map。

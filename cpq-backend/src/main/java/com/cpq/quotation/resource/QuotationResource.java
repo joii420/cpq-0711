@@ -7,6 +7,7 @@ import com.cpq.common.security.RoleAllowed;
 import com.cpq.common.security.SessionHelper;
 import com.cpq.importexcel.dto.ImportResultDTO;
 import com.cpq.quotation.dto.CreateQuotationRequest;
+import com.cpq.quotation.dto.ExcelDryRunRequest;
 import com.cpq.quotation.dto.QuotationDTO;
 import com.cpq.quotation.dto.SaveDraftRequest;
 import com.cpq.quotation.service.ExcelViewService;
@@ -400,6 +401,15 @@ public class QuotationResource {
     public ApiResponse<Map<String, Object>> getExcelView(@PathParam("id") UUID id,
                                                           @QueryParam("templateId") UUID templateId) {
         return ApiResponse.success(excelViewService.getExcelView(id, templateId));
+    }
+
+    @POST
+    @Path("/{id}/excel-view/dry-run")
+    public ApiResponse<Map<String, Object>> dryRunExcelView(@PathParam("id") UUID id,
+                                                             ExcelDryRunRequest req) {
+        return ApiResponse.success(excelViewService.dryRun(id,
+                req != null ? req.columns : null,
+                req != null ? req.templateId : null));
     }
 
     @PUT
