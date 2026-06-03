@@ -68,6 +68,8 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
   const [committing, setCommitting] = useState(false);
   const [autoHints, setAutoHints] = useState<{ customer?: string; costing?: string }>({});
   const [enteringStep2, setEnteringStep2] = useState(false);
+  // 自动带出每次打开抽屉只跑一次:返回上一步再进 Step 2 时不重新覆盖用户手改的模板/分类
+  const [autoFilled, setAutoFilled] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -78,6 +80,7 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
     setCreateForm({ name: '', categoryId: undefined, customerTemplateId: undefined, costingTemplateId: undefined });
     setFormValid(false);
     setAutoHints({});
+    setAutoFilled(false);
     setCustomersLoading(true);
     customerService
       .list({ page: 0, size: 200 })
@@ -144,6 +147,11 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
 
   const enterStep2 = async () => {
     if (!customerId) return;
+    // 已自动带出过(用户可能已手改)→ 直接回到 Step 2,不再覆盖
+    if (autoFilled) {
+      setStep(2);
+      return;
+    }
     setEnteringStep2(true);
     try {
       const resp: any = await api.get('/templates/auto-defaults', { params: { customerId } });
@@ -162,6 +170,7 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
       setAutoHints({}); // 静默降级:不预填, 走现状默认分类 + 手选
     } finally {
       setEnteringStep2(false);
+      setAutoFilled(true);
       setStep(2);
     }
   };
