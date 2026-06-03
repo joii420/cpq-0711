@@ -1,10 +1,13 @@
 package com.cpq.template.service;
 
+import com.cpq.basicdata.entity.ProductCategory;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.component.entity.Component;
 import com.cpq.component.service.ComponentSqlViewService;
+import com.cpq.quotation.entity.Quotation;
 import com.cpq.template.dto.CreateTemplateRequest;
 import com.cpq.template.dto.PublishRequest;
+import com.cpq.template.dto.QuoteImportAutoDefaults;
 import com.cpq.template.dto.TemplateDTO;
 import com.cpq.template.entity.Template;
 import com.cpq.template.entity.TemplateComponent;
@@ -1138,5 +1141,95 @@ public class TemplateService {
         } catch (Exception e) {
             return new LinkedHashMap<>();
         }
+    }
+
+    public QuoteImportAutoDefaults computeAutoDefaults(UUID customerId) {
+        if (customerId == null) {
+            throw new BusinessException("customerId 不能为空");
+        }
+        QuoteImportAutoDefaults out = new QuoteImportAutoDefaults();
+
+        // 1. 最近一张报价单(customerTemplateId 非空),其模板仍存在者优先,createdAt DESC
+        List<Quotation> quotes = Quotation.list(
+                "customerId = ?1 AND customerTemplateId IS NOT NULL ORDER BY createdAt DESC",
+                customerId);
+        Template lastTemplate = null;
+        for (Quotation q : quotes) {
+            Template t = Template.findById(q.customerTemplateId);
+            if (t != null) { lastTemplate = t; break; }
+        }
+
+        // 2. 分类:有历史从模板反推,无历史退「默认分类」
+        UUID categoryId;
+        if (lastTemplate != null) {
+            categoryId = lastTemplate.categoryId;
+        } else {
+            ProductCategory def = ProductCategory.find("name = '默认分类'").firstResult();
+            categoryId = def != null ? def.id : null;
+        }
+        out.categoryId = categoryId;
+        if (categoryId != null) {
+            ProductCategory cat = ProductCategory.findById(categoryId);
+            out.categoryName = cat != null ? cat.name : null;
+        }
+
+        // 3. 有历史 → 取上次使用线的最新 PUBLISHED 版本(LAST_USED)
+        if (lastTemplate != null) {
+            Template latest = Template.find(
+                    "templateSeriesId = ?1 AND status = 'PUBLISHED' ORDER BY publishedAt DESC NULLS LAST",
+                    lastTemplate.templateSeriesId).firstResult();
+            if (latest != null) {
+                out.customerTemplateId = latest.id;
+                out.customerTemplateSeriesId = latest.templateSeriesId;
+                out.customerTemplateName = latest.name;
+                out.customerTemplateVersion = latest.version;
+                out.customerTemplateSource = "LAST_USED";
+            }
+            // latest == null(整条归档)→ 落入第 4 步兜底
+        }
+
+        // 4. 兜底:无历史 / 线失效 → 复用现有匹配(客户专属优先 + publishedAt DESC)
+        if (out.customerTemplateId == null) {
+            if (categoryId != null) {
+                com.cpq.template.dto.TemplateMatchResult match =
+                        matchCustomerQuoteTemplate(customerId, categoryId);
+                if (match.matchType != com.cpq.template.dto.TemplateMatchResult.MatchType.NONE
+                        && match.templates != null && !match.templates.isEmpty()) {
+                    TemplateDTO first = match.templates.get(0); // specific 优先, 再 publishedAt DESC
+                    out.customerTemplateId = first.id;
+                    out.customerTemplateSeriesId = first.templateSeriesId;
+                    out.customerTemplateName = first.name;
+                    out.customerTemplateVersion = first.version;
+                    boolean specific = first.customerId != null && first.customerId.equals(customerId);
+                    out.customerTemplateSource = specific ? "CUSTOMER_SPECIFIC_FALLBACK" : "GENERAL_FALLBACK";
+                } else {
+                    out.customerTemplateSource = "NONE";
+                }
+            } else {
+                out.customerTemplateSource = "NONE";
+            }
+        }
+
+        // 5. 核价模板(独立,不记忆):客户专属优先 → publishedAt DESC
+        if (categoryId != null) {
+            Template costing = Template.find(
+                    "categoryId = ?1 AND templateKind = 'COSTING' AND status = 'PUBLISHED' "
+                            + "AND (customerId = ?2 OR customerId IS NULL) "
+                            + "ORDER BY CASE WHEN customerId = ?2 THEN 0 ELSE 1 END, publishedAt DESC NULLS LAST",
+                    categoryId, customerId).firstResult();
+            if (costing != null) {
+                out.costingTemplateId = costing.id;
+                out.costingTemplateName = costing.name;
+                out.costingTemplateVersion = costing.version;
+                boolean specific = costing.customerId != null && costing.customerId.equals(customerId);
+                out.costingTemplateSource = specific ? "CUSTOMER_SPECIFIC" : "GENERAL";
+            } else {
+                out.costingTemplateSource = "NONE";
+            }
+        } else {
+            out.costingTemplateSource = "NONE";
+        }
+
+        return out;
     }
 }
