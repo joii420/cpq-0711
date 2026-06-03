@@ -372,17 +372,18 @@ public class CardSnapshotService {
             managed.quoteCardValues = safeCall(() ->
                 buildCardValues(managed, q.customerTemplateId));
 
-            // 报价侧：Excel 值由 ExcelViewService 计算
+            // 报价侧：Excel 值由 ExcelViewService 计算，透传同侧卡片快照（CARD_FORMULA 用同侧有效行取数）
             managed.quoteExcelValues = safeCall(() ->
-                buildExcelValues(managed, q.customerTemplateId, q.customerId));
+                buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
 
             // 核价侧：需单独 expand（核价模板组件，无现成快照）
             if (q.costingCardTemplateId != null) {
                 managed.costingCardValues = safeCall(() ->
                     buildCostingCardValues(managed, q.costingCardTemplateId,
                         q.customerId, q.id));
+                // 核价 Excel 透传同侧核价卡片快照（核价只在加产品时算，草稿重刷/编辑不碰此两列）
                 managed.costingExcelValues = safeCall(() ->
-                    buildExcelValues(managed, q.costingCardTemplateId, q.customerId));
+                    buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues));
             }
 
             managed.cardSnapshotAt = OffsetDateTime.now();
@@ -500,15 +501,23 @@ public class CardSnapshotService {
 
     /**
      * 构建 Excel 值快照 JSON（{rows:[{colKey:value}]}）。
-     * 调 {@link ExcelViewService#buildLineRowData} 计算本行各列值；模板无配置时 rows 为空数组。
+     * 既有三参签名保留（无卡片快照 → 旧路径，cardValuesJson=null）。
      */
     String buildExcelValues(QuotationLineItem li, UUID templateId, UUID customerId) {
+        return buildExcelValues(li, templateId, customerId, null);
+    }
+
+    /**
+     * 新重载：把同侧卡片值快照透传给 {@link ExcelViewService#buildLineRowData}，
+     * CARD_FORMULA 用同侧有效行取数。{@code cardValuesJson} 为 null 时走旧路径。
+     */
+    String buildExcelValues(QuotationLineItem li, UUID templateId, UUID customerId, String cardValuesJson) {
         try {
             ObjectNode root = MAPPER.createObjectNode();
             ArrayNode rowsNode = root.putArray("rows");
             if (li == null || templateId == null) return MAPPER.writeValueAsString(root);
 
-            Map<String, Object> rowData = excelViewService.buildLineRowData(li, templateId, customerId);
+            Map<String, Object> rowData = excelViewService.buildLineRowData(li, templateId, customerId, cardValuesJson);
             if (rowData != null && !rowData.isEmpty()) {
                 rowsNode.add(MAPPER.valueToTree(rowData));
             }
@@ -821,8 +830,9 @@ public class CardSnapshotService {
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits);
             managed.quoteCardValues = MAPPER.writeValueAsString(root);
 
-            // 4. 重算报价 Excel（核价不动）
-            String excel = safeCall(() -> buildExcelValues(managed, q.customerTemplateId, q.customerId));
+            // 4. 重算报价 Excel（核价不动），透传刚算好的新 quoteCardValues（CARD_FORMULA 同侧取数）
+            String excel = safeCall(() ->
+                buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
             if (excel != null) managed.quoteExcelValues = excel;
 
             // 5. 更新报价侧时间戳
@@ -924,8 +934,9 @@ public class CardSnapshotService {
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp);
             li.quoteCardValues = MAPPER.writeValueAsString(root);
 
-            // 重算报价 Excel（核价不动）
-            String excel = safeCall(() -> buildExcelValues(li, q.customerTemplateId, q.customerId));
+            // 重算报价 Excel（核价不动），透传刚算好的新 quoteCardValues（CARD_FORMULA 同侧取数）
+            String excel = safeCall(() ->
+                buildExcelValues(li, q.customerTemplateId, q.customerId, li.quoteCardValues));
             if (excel != null) li.quoteExcelValues = excel;
 
             li.quoteValuesAt = OffsetDateTime.now();
