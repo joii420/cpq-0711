@@ -4,6 +4,28 @@
 
 ---
 
+### [2026-06-03] 报价/核价导入 - 重复表头按列位置解析(撤销报错) | ExcelParserService.java / SheetRow.java / Q12AssemblyBomHandler.java / Q13ComponentOtherFeeHandler.java + 对应测试 | getStr首现+getXxxNth第N个;Q12 item_seq=项次#2,Q13=项次#3
+
+- **背景**: 真实模板普遍存在裸重复表头(如`项次`×2/×3、`组装工序`编码列+名称列)，之前"重复表头报错"会挡死这类 Sheet；last-wins 覆盖会静默丢列。
+- **SheetRow 重构**: 内部从 `Map<String,String>` 改为有序列表 `List<String[]>` 为权威，保留重复列；`cells` Map 派生为首现优先(向后兼容)。新增 `getStrNth(name,n)` / `getIntNth(name,n)`——按 `contains(name)` 取第 N 个匹配列(1-based)。两个构造器：旧 Map 构造器兼容既有测试，新 List 构造器供解析器/裸重复表头测试用。
+- **ExcelParserService 改动**: 撤销 `seenHeader` 重复检测+抛 `IllegalArgumentException`；每行解析改为构建有序 `List<String[]>` 传入新 List 构造器，不再 `cells.put` 覆盖。
+- **Q12**: `item_seq = row.getIntNth("项次", 2)` —— 第2个含"项次"的列=二级项次；兼容裸"项次"和带括号"项次（二级）"两种模板（contains 匹配）。
+- **Q13**: `item_seq = row.getIntNth("项次", 3)` —— 第3个含"项次"的列=要素项次；Q13 测试 `row()` helper 同步改为 3列裸项次 List 构造器，反映真实模板结构。
+- **全量验证**: 27个测试全 PASS（ExcelParserServiceTest 3 + Q07 2 + Q10 2 + Q12 3 + Q13 2 + Q14 4 + VersionedV6Writer 11），BUILD SUCCESS。
+- **关键决策**: Q13 既有测试 Map 键"项次（要素）"改为 List 构造器3列裸项次，因为`getIntNth("项次",3)`对只有1列"项次（要素）"的旧 Map 返 null——测试需真实反映 3列模板结构才能验证正确性。
+
+---
+
+### [2026-06-02] 组件树表 code review 修复(C1/C2/I5/N1/I1+N2 补单测) | treeTable.ts / enrichComponentData.ts / ReadonlyProductCard.tsx / ComponentService.java / treeTable.test.ts | commit 238f7b8
+
+- **C1**: `buildTreeRows` 的 `visit` 递归改为显式栈迭代 DFS(防深链栈溢出);逆序压栈保证弹出顺序=原始顺序;已跑 19 个 vitest 全绿确认顺序不变。
+- **C2**: `normalizeTreeConfig` 去掉 `?? raw` 兜底——避免把整个 snapshot 对象误当 treeConfig,下方 `if (!o || typeof o !== 'object') return undefined` 已兜底无效情形。
+- **I5**: 后端 `validateTreeConfig` 报错消息由"均必填"→"均必填(当前仅填了一个)"，更精确指向"两个都填或两个都不填"约束。
+- **N1**: `ReadonlyProductCard` 的 `fields.find` 由 `f.name ===` 改为 `(f.name || f.key) ===`，与 QuotationStep2 对齐，兼容 key 字段存储格式。
+- **I1+N2**: `treeTable.test.ts` 追加 `layoutTreeRows`(2个)+ `resolveTreeKey DATA_SOURCE/BNF_PATH`(1个)共 3 个新测试，合计 19/19 全绿。`@testing-library/react` 未安装 → `useTreeCollapse.test.ts` 跳过 renderHook，不建此文件。
+
+---
+
 ### [2026-06-02] 组件树表(纯展示)- 功能总览 + 后端/类型/传播/只读态 + E2E环境说明 | 多文件 | 设计=docs/superpowers/specs/2026-06-02-组件树表纯展示-design.md, 计划=docs/superpowers/plans/2026-06-02-组件树表纯展示.md
 
 - **需求**: 料号存在父子关系,组件可设为「树表」,指定两列(ID列=料号、父ID列=父料号)邻接表关系,报价/核价/详情三视图按父子重排成树+缩进+折叠。**纯展示**:不改 rowData/rowCount/行序/数值,折叠的子行仍计入小计。
