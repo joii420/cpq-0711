@@ -18,6 +18,8 @@ export interface UseBackendExcelRowsParams {
   lineItems: LineItem[];
   /** 控制是否真正发请求（false 时立即返回初始空状态，不调 API） */
   enabled: boolean;
+  /** 按指定模板取数（报价视图传报价模板id，核价视图传核价模板id） */
+  templateId?: string | null;
 }
 
 export interface UseBackendExcelRowsResult {
@@ -37,7 +39,7 @@ function normalizeBackendValue(v: any): any {
 }
 
 export function useBackendExcelRows(params: UseBackendExcelRowsParams): UseBackendExcelRowsResult {
-  const { quotationId, lineItems, enabled } = params;
+  const { quotationId, lineItems, enabled, templateId } = params;
 
   const [rawColumns, setRawColumns] = useState<CostingTemplateColumn[]>([]);
   const [rawRows, setRawRows] = useState<Array<Record<string, any>>>([]);
@@ -57,7 +59,7 @@ export function useBackendExcelRows(params: UseBackendExcelRowsParams): UseBacke
     setError(null);
 
     quotationService
-      .getExcelView(quotationId)
+      .getExcelView(quotationId, templateId || undefined)
       .then((resp: any) => {
         // api 拦截器可能把数据包在 resp.data 或直接是对象
         const body = resp?.data ?? resp;
@@ -72,7 +74,7 @@ export function useBackendExcelRows(params: UseBackendExcelRowsParams): UseBacke
         setRawRows([]);
       })
       .finally(() => setLoading(false));
-  }, [enabled, quotationId]);
+  }, [enabled, quotationId, templateId]);
 
   // 按 lineItemId 建索引，用于 __hfPartNo 关联
   const lineItemById = useMemo(() => {

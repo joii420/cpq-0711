@@ -84,6 +84,7 @@ const LinkedExcelView: React.FC<Props> = ({
     quotationId,
     lineItems,
     enabled: useBackend,
+    templateId: templateId ?? linkedTemplateId ?? null,
   });
 
   // ---- 按模型选用最终结果 ----

@@ -161,7 +161,10 @@ export const quotationService = {
     api.post(`/quotations/${id}/export/excel`, options || {}, { responseType: 'blob' }) as Promise<any>,
 
   // Excel view (Import v2)
-  getExcelView: (id: string) => api.get(`/quotations/${id}/excel-view`) as Promise<any>,
+  getExcelView: (id: string, templateId?: string) =>
+    api.get(`/quotations/${id}/excel-view`, { params: templateId ? { templateId } : undefined }) as Promise<any>,
+  dryRunExcelView: (id: string, body: { templateId?: string; columns: any[] }) =>
+    api.post(`/quotations/${id}/excel-view/dry-run`, body) as Promise<any>,
   updateExcelViewCell: (id: string, data: any) => api.put(`/quotations/${id}/excel-view`, data) as Promise<any>,
   exportExcelView: (id: string) => api.get(`/quotations/${id}/export-excel-view`, { responseType: 'blob' }) as Promise<any>,
 
