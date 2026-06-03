@@ -3145,6 +3145,13 @@ E2E:
 
 ---
 
+### [2026-06-04] material_bom_item 版本化（子表多版本保留 + 主从版本对齐） | V293/V294 + Q03/Q12/P06/ConfigureProductService + VersionedV6Writer
+- **目标**: material_bom_item 原无版本列、升版即 deleteNonCurrent 只留当前版 → 主表(bom_version)有历史、子表无,无法回溯历史版 BOM 明细。本次加 bom_version 做到主从版本对齐 + going-forward 多版本保留(对齐 element_bom_item 机制)。
+- **改动**: ①V293 加 bom_version 列 + 重建 uq(并入 COALESCE(bom_version,'')) + 存量当前行一次性对齐(不补历史)。②写入器 material_bom_item 由 null-path(upsert+deleteNonCurrent)切到 childVersionColumn="bom_version" 多版本路径(报价 Q03/Q12、核价 P06、选配 ConfigureProductService 两处);writer 移除 material_bom_item 的 CHILD_UQ 死登记。③V294 给 9 个组件配置 SQL(v12_raw_bom/zcj_bom/zcj_view/v12_raw_element_bom/ys_view/composite_child_materials|processes|weights|elements_mirror)补 material_bom_item.is_current,防多版本后 AP-22 重复行。
+- **关键决策**: 版本作用域保持 per-(料号,characteristic)不动 → 选配 COMBO 双 current 行(NULL+ASSEMBLY)契约不破;读取侧仅改组件配置 SQL,不碰 PG CREATE VIEW;历史明细不 backfill;V3.2 去重合并第 4 步随之 DELETE→FLIP(保留历史)。
+- **相邻修复**: insertCompositeProcessCapacityV6 补 system_type='QUOTE'(V290 护栏遗漏,composite E2E 暴露的预存 bug)。
+- **验证**: writer 单测 14 passed(含多版本保留+复用断言);report E2E quotation-flow 1 passed 8 Tab(含选配 mirror 4 Tab)加载中=0;DB 核对无重复当前子行。composite-product-flow 残留失败为预存「元素含量」停用模板(RECORD 2026-06-02 已记,非本次引入)。
+- **设计/计划**: docs/superpowers/specs/2026-06-04-material_bom_item-版本化-design.md + docs/superpowers/plans/2026-06-04-material_bom_item-版本化.md
 
 ---
 
