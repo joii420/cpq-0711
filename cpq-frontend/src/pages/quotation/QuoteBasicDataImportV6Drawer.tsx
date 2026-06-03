@@ -66,6 +66,8 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
   });
   const [formValid, setFormValid] = useState(false);
   const [committing, setCommitting] = useState(false);
+  const [autoHints, setAutoHints] = useState<{ customer?: string; costing?: string }>({});
+  const [enteringStep2, setEnteringStep2] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -75,6 +77,7 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
     setFileList([]);
     setCreateForm({ name: '', categoryId: undefined, customerTemplateId: undefined, costingTemplateId: undefined });
     setFormValid(false);
+    setAutoHints({});
     setCustomersLoading(true);
     customerService
       .list({ page: 0, size: 200 })
@@ -103,6 +106,22 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
     onRemove: () => setFileList([]),
   };
 
+  const quoteHintOf = (source?: string, version?: string): string | undefined => {
+    switch (source) {
+      case 'LAST_USED': return `上次使用 · 最新版${version ? ' ' + version : ''}`;
+      case 'CUSTOMER_SPECIFIC_FALLBACK': return '无历史 · 客户专属最新';
+      case 'GENERAL_FALLBACK': return '无历史 · 通用最新';
+      default: return undefined;
+    }
+  };
+  const costingHintOf = (source?: string, version?: string): string | undefined => {
+    switch (source) {
+      case 'CUSTOMER_SPECIFIC': return `客户专属 · 最新${version ? ' ' + version : ''}`;
+      case 'GENERAL': return `通用 · 最新${version ? ' ' + version : ''}`;
+      default: return undefined;
+    }
+  };
+
   const handleUpload = async () => {
     if (!customerId) return message.warning('请先选择客户');
     if (fileList.length === 0) return message.warning('请先上传 Excel 文件');
@@ -120,6 +139,30 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
       message.error(e?.message ?? '导入异常');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const enterStep2 = async () => {
+    if (!customerId) return;
+    setEnteringStep2(true);
+    try {
+      const resp: any = await api.get('/templates/auto-defaults', { params: { customerId } });
+      const d = resp?.data ?? resp; // axios 拦截器已返回 ApiResponse body, payload 在 .data
+      setCreateForm({
+        name: createForm.name || `${customerName} 报价单`,
+        categoryId: d?.categoryId ?? undefined,
+        customerTemplateId: d?.customerTemplateId ?? undefined,
+        costingTemplateId: d?.costingTemplateId ?? undefined,
+      });
+      setAutoHints({
+        customer: quoteHintOf(d?.customerTemplateSource, d?.customerTemplateVersion),
+        costing: costingHintOf(d?.costingTemplateSource, d?.costingTemplateVersion),
+      });
+    } catch {
+      setAutoHints({}); // 静默降级:不预填, 走现状默认分类 + 手选
+    } finally {
+      setEnteringStep2(false);
+      setStep(2);
     }
   };
 
@@ -191,7 +234,8 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
               type="primary"
               icon={<ArrowRightOutlined />}
               disabled={!canEnterStep2}
-              onClick={() => setStep(2)}
+              loading={enteringStep2}
+              onClick={enterStep2}
             >
               下一步：选模板 + 建报价单
             </Button>
@@ -313,6 +357,8 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
             value={createForm}
             onChange={setCreateForm}
             onValidityChange={setFormValid}
+            customerTemplateHint={autoHints.customer}
+            costingTemplateHint={autoHints.costing}
           />
         </Space>
       )}
