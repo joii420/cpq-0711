@@ -4,6 +4,16 @@
 
 ---
 
+### [2026-06-03] E2E - 核价单 Excel 视图 CARD_FORMULA 列验证（非破坏性版） | cpq-frontend/e2e/costing-card-formula.spec.ts | 2 passed；A=200/B=75/C=275；sortOrder 回退生效；守卫 before=19 after=19 元素行数=4；模板配置已还原
+
+- **夹具**: QT-20260603-1528 (6f11c2aa)，核价模板 a4e67fc6（COSTING），元素组件 d18ac7e4 sort_order=2，每料号 4 行（Ag75/Ni25/Cu70/Zn30）
+- **测试配置**: A=SUM_OVER([元素],c0=含量), B=SUM_OVER([元素] WHERE c0=='Ag',c1=含量), C=[A]+[B]；refs 引用核价模板 tc tab b3359f70:2，通过 CardDataProvider sortOrder 回退命中实际数据
+- **实际期望值修正**: 主控给 A=100/B=75/C=175（基于2行假设），实际数据4行 → A=200/B=75/C=275；测试用实际值
+- **守卫说明**: UI auto-save 会为 3120012004 的 d18ac7e4 在 sort_order=0 创建空记录（row_data=[]），属正常行为；守卫改为"不减少"（>=）+元素4行数据完整性检查
+- **不破坏**: 未动 template_id / 未 DELETE/UPDATE component_data；excel_view_config afterAll 精确还原原值（含原始 3 列配置）；未改动 quotation_line_item.template_id
+
+---
+
 ### [2026-06-03] 报价导入 - 选模板步骤自动带出(上次使用报价线最新版+核价最新+上次分类) | QuoteImportAutoDefaults.java / TemplateService.computeAutoDefaults / TemplateResource / AutoDefaultsServiceTest | 主规则=有历史跟随上次模板线,客户专属优先仅无历史兜底;核价不记忆
 
 - **新增 DTO**: `QuoteImportAutoDefaults`(纯数据) — categoryId/Name + customerTemplate*(Id/SeriesId/Name/Version/Source) + costingTemplate*(Id/Name/Version/Source)
@@ -13845,3 +13855,5 @@ Bug B2（MEDIUM，SYSTEM_TYPE_TAG 映射错误）：
 [2026-06-02] Excel卡片引用公式(后端) - 新增 CARD_FORMULA 列来源:引用产品卡片页签结果(行集+小计)+本表列+SUM_OVER条件聚合(别名层)+IF/ROUND/ABS/百分比,后端拓扑求值+环检测+空值规则一 | CardDataProvider/CardRef/CardFormulaEvaluator/CardAggregateSource/PercentLiteral + TemplateFormulaService(executeOverFunction卡片源分支/firstMatchIndex) + ExcelViewService.buildRowData分支 | 与旧$view.col并存(只做今后);AP-37按页签实例compId:sortOrder定位;字段中文名→ASCII别名(JEXL不可用中文标识符);前端选择器/渲染见计划二
 
 [2026-06-02] Excel卡片引用公式(前端E2E) - CARD_FORMULA Excel视图渲染E2E:API层确定性验证通过(1 passed),UI层因global-setup未跑/SPA cookie注入白屏→优雅skip(1 skipped);后端getExcelView返回CARD_FORMULA列A=515.5632精确对齐工序行小计SUM_OVER | cpq-frontend/e2e/card-formula-flow.spec.ts | beforeAll创建DRAFT测试模板+临时改quotation.customer_template_id+line_item.template_id,afterAll完整还原;UI测试2轮调试耗尽→确定性降级(API);注意ExcelViewService.getExcelView用lineItem.templateId而非quotation.customer_template_id
+
+[2026-06-03] 核价单Excel视图CARD_FORMULA修复 - getExcelView加templateId覆盖(核价视图按核价模板算)+CardDataProvider按sortOrder回退(核价组件实例id≠卡片数据id)+公式校验强化([SUM_OVER]外层括号/括号配平/未知函数)+dry-run试算端点+前端透传templateId+试算按钮 | ExcelViewService/CardDataProvider/QuotationResource/ExcelDryRunRequest + cardFormula.ts/useBackendExcelRows/LinkedExcelView/quotationService/CardFormulaDrawer | E2E costing-card-formula非破坏验证A=200/B=75/C=275;sortOrder回退是核价侧取数关键
