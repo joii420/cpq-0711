@@ -226,7 +226,7 @@ public class VersionedV6Writer {
                 all.put(childVersionColumn, newVersion);   // element_bom_item：写版本列 → 多版本保留
                 insertRowGeneric(childTable, all);
             } else {
-                upsertChildRow(childTable, all);            // material_bom_item：uq 无版本 → upsert 覆盖当前
+                upsertChildRow(childTable, all);            // null-path 子表 upsert（保留备用；V293 后无实际调用方）
             }
         }
 
@@ -339,7 +339,7 @@ public class VersionedV6Writer {
         q.executeUpdate();
     }
 
-    /** 删除该 groupKey 下仍 is_current=FALSE 的行（仅 material_bom_item 这类无版本子表用，清残留）。 */
+    /** 删除该 groupKey 下仍 is_current=FALSE 的行（仅无版本列子表用，清残留；V293 后 material_bom_item 已版本化、暂无调用方）。 */
     private void deleteNonCurrent(String table, Map<String, Object> groupKey) {
         Query q = em.createNativeQuery(
             "DELETE FROM " + table + " WHERE "

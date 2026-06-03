@@ -26,6 +26,10 @@ class VersionedV6WriterTest {
           .setParameter("f", FMN).executeUpdate();
         em.createNativeQuery("DELETE FROM capacity WHERE material_no = :m")
           .setParameter("m", CAP_MAT).executeUpdate();
+        em.createNativeQuery("DELETE FROM material_bom_item WHERE material_no = :m2")
+          .setParameter("m2", MBV_MAT).executeUpdate();
+        em.createNativeQuery("DELETE FROM material_bom WHERE material_no = :m2")
+          .setParameter("m2", MBV_MAT).executeUpdate();
     }
 
     @BeforeEach void before() { cleanup(); }
@@ -246,9 +250,6 @@ class VersionedV6WriterTest {
 
     @Test @Transactional
     void materialBomItem_keepsHistory_onVersionBump() {
-        em.createNativeQuery("DELETE FROM material_bom_item WHERE material_no=:m").setParameter("m", MBV_MAT).executeUpdate();
-        em.createNativeQuery("DELETE FROM material_bom WHERE material_no=:m").setParameter("m", MBV_MAT).executeUpdate();
-
         java.util.LinkedHashMap<String,Object> masterGk = new java.util.LinkedHashMap<>();
         masterGk.put("system_type","QUOTE"); masterGk.put("customer_no",MBV_CUST);
         masterGk.put("material_no",MBV_MAT); masterGk.put("bom_type","MATERIAL");
@@ -278,8 +279,10 @@ class VersionedV6WriterTest {
             .setParameter("m", MBV_MAT).getSingleResult();
         assertEquals(1L, old.longValue(), "2000 版历史子行保留为 is_current=false");
 
-        em.createNativeQuery("DELETE FROM material_bom_item WHERE material_no=:m").setParameter("m", MBV_MAT).executeUpdate();
-        em.createNativeQuery("DELETE FROM material_bom WHERE material_no=:m").setParameter("m", MBV_MAT).executeUpdate();
+        String v3 = writer.writeVersionedMasterDetail("material_bom","bom_version",masterGk,Map.of(),
+            "material_bom_item","bom_version",childGk,content,
+            List.of(childRow(1,"C1","2")));   // 与 v2 内容相同 → 复用
+        assertEquals("2001", v3, "相同内容复用版本，不升版");
     }
 
     private java.util.LinkedHashMap<String,Object> childRow(int seq, String comp, String qty) {
