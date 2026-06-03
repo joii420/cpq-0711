@@ -129,10 +129,12 @@ class VersionedV6WriterTest {
 
     /** capacity 料号级组：groupKey=(material_no, resource_group_no)，triggerCols=[process_no, seq_no]。 */
     private VersionedGroupSpec capSpec(List<Map<String, Object>> rows) {
+        java.util.LinkedHashMap<String, Object> gk = new java.util.LinkedHashMap<>();
+        gk.put("system_type", "QUOTE");
+        gk.put("material_no", CAP_MAT);
+        gk.put("resource_group_no", "QUOTE_ASSEMBLY");
         return new VersionedGroupSpec(
-            "capacity", "calc_version",
-            new java.util.LinkedHashMap<>(Map.of(
-                "material_no", CAP_MAT, "resource_group_no", "QUOTE_ASSEMBLY")),
+            "capacity", "calc_version", gk,
             List.of("process_no", "seq_no", "fixed_cost"),
             rows,
             List.of("process_no", "seq_no"));
