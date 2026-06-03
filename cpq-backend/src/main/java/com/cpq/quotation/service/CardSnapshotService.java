@@ -640,6 +640,30 @@ public class CardSnapshotService {
             if (sub == null) sub = componentSubtotals.get(tab.path("tabName").asText(""));
             if (sub != null) tabNode.put("subtotal", sub);
 
+            // 逐行解析成"按字段名标量行"(resolvedRows)，供 Excel CARD_FORMULA 直接按字段名取数。
+            // 通用引擎 resolveRowByFieldName，配置驱动，零硬编码字段名。
+            JsonNode fieldsDef = tab.path("fields");
+            Map<String, JsonNode> frByKey = new LinkedHashMap<>();
+            for (JsonNode fr : formulaResults) frByKey.put(fr.path("rowKey").asText(""), fr.path("values"));
+            Map<String, JsonNode> edByKey = new LinkedHashMap<>();
+            for (JsonNode er : editRows) edByKey.put(er.path("rowKey").asText(""), er.path("values"));
+            JsonNode rkf = rkfByComp.get(cid);
+            ArrayNode resolvedRows = MAPPER.createArrayNode();
+            int ri = 0;
+            for (JsonNode br : baseRows) {
+                JsonNode driverRow = br.path("driverRow");
+                JsonNode basicDataValues = br.path("basicDataValues");
+                String rk = formulaCalculator.computeRowKey(rkf, driverRow);
+                String rowKey = (rk != null && !rk.isEmpty()) ? rk : String.valueOf(ri);
+                JsonNode editValues = edByKey.get(rowKey);
+                JsonNode formulaValues = frByKey.get(rowKey);
+                Map<String, Object> resolved = formulaCalculator.resolveRowByFieldName(
+                    fieldsDef, driverRow, basicDataValues, editValues, formulaValues);
+                resolvedRows.add(MAPPER.valueToTree(resolved));
+                ri++;
+            }
+            tabNode.set("resolvedRows", resolvedRows);
+
             tabs.add(tabNode);
         }
         return root;
