@@ -624,9 +624,24 @@ public class CardSnapshotService {
                 componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>());
             tabNode.set("formulaResults", formulaResults);
 
+            // 值快照带上本 tab 小计（供 Excel CARD_FORMULA 的 __subtotal__ 引用，见 CardEffectiveRows）
+            String code = tab.path("componentCode").asText(null);
+            Double sub = componentSubtotals.get(cid);
+            if (sub == null && code != null) sub = componentSubtotals.get(code);
+            if (sub == null) sub = componentSubtotals.get(tab.path("tabName").asText(""));
+            if (sub != null) tabNode.put("subtotal", sub);
+
             tabs.add(tabNode);
         }
         return root;
+    }
+
+    /** 仅供单测：暴露 assembleTabsWithFormulaResults 的 JSON 结果。 */
+    String assembleTabsWithFormulaResultsForTest(JsonNode snapshot,
+            java.util.Map<String, com.fasterxml.jackson.databind.node.ArrayNode> baseRowsByComp,
+            java.util.Map<String, com.fasterxml.jackson.databind.node.ArrayNode> editRowsByComp) throws Exception {
+        return MAPPER.writeValueAsString(
+            assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp));
     }
 
     /**
