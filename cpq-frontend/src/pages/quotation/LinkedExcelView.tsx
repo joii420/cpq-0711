@@ -3,7 +3,7 @@ import { Table, Card, Spin, Alert, Tag } from 'antd';
 import type { CostingTemplateColumn } from '../../services/costingTemplateService';
 import type { LineItem } from './QuotationStep2';
 import { useLinkedExcelRows } from './useLinkedExcelRows';
-import { useBackendExcelRows } from './useBackendExcelRows';
+import { useExcelSnapshotRows } from './useExcelSnapshotRows';
 
 interface Props {
   linkedTemplateId?: string;
@@ -16,6 +16,8 @@ interface Props {
   templateId?: string | null;
   /** @deprecated 旧字段，已由 templateId 替代。 */
   costingTemplateId?: string | null;
+  /** 本视图侧：QUOTE=报价 Excel、COSTING=核价 Excel；新模型下据此读对应 Excel 值快照 */
+  side?: 'QUOTE' | 'COSTING';
 }
 
 /**
@@ -59,6 +61,7 @@ const LinkedExcelView: React.FC<Props> = ({
   quotationStatus,
   templateId,
   costingTemplateId: _costingTemplateId, // @deprecated 已由 templateId 替代, 接收但不使用
+  side,
 }) => {
   // ---- 旧模型 hook（始终调用，用 enabled 控制是否真正运行）----
   // useLinkedExcelRows 内部用 linkedTemplateId 有无控制；直接传完整参数，
@@ -80,11 +83,10 @@ const LinkedExcelView: React.FC<Props> = ({
   const legacyColumns = legacyResult.parsedColumns;
   const useBackend = isNewModel(legacyColumns);
 
-  const backendResult = useBackendExcelRows({
-    quotationId,
+  const snapshotResult = useExcelSnapshotRows({
     lineItems,
-    enabled: useBackend,
-    templateId: templateId ?? linkedTemplateId ?? null,
+    side: side ?? 'QUOTE',
+    parsedColumns: legacyColumns,
   });
 
   // ---- 按模型选用最终结果 ----
@@ -95,10 +97,10 @@ const LinkedExcelView: React.FC<Props> = ({
     error: resolvedError,
   } = useBackend
     ? {
-        rows: backendResult.rows,
+        rows: snapshotResult.rows,
         parsedColumns: legacyColumns, // 列配置结构仍用旧 hook 已解析的（含 display_format 等）
-        loading: legacyResult.loading || backendResult.loading,
-        error: backendResult.error ?? legacyResult.error,
+        loading: legacyResult.loading,
+        error: legacyResult.error,
       }
     : {
         rows: legacyResult.rows,
