@@ -744,6 +744,7 @@ public class ConfigureProductService {
             rows.add(r);
         }
         Map<String, Object> gk = new LinkedHashMap<>();
+        gk.put("system_type", "QUOTE");   // V290 护栏：capacity 必须按 system_type 隔离
         gk.put("material_no", parentHfPartNo);
         gk.put("resource_group_no", "QUOTE_ASSEMBLY");
         versionedWriter.writeVersionedGroup(new VersionedGroupSpec(
