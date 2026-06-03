@@ -166,8 +166,17 @@ public class ExcelViewService {
      * 公开入口：给外部 Service（如 CardSnapshotService）计算单行 Excel 列值。
      * 按 templateId 加载 excel_view_config；customerId 用于模板公式 SUM_OVER 聚合。
      * 返回 {colKey: value} 平铺 Map；模板无配置时返回空 Map。
+     * （cardValues 缺省→旧路径）
      */
     public Map<String, Object> buildLineRowData(QuotationLineItem li, UUID templateId, UUID customerId) {
+        return buildLineRowData(li, templateId, customerId, (String) null);
+    }
+
+    /**
+     * 新重载：传同侧卡片值快照 JSON → 解析有效行 → CARD_FORMULA 用它取数；空/失败→降级旧路径。
+     */
+    public Map<String, Object> buildLineRowData(QuotationLineItem li, UUID templateId,
+                                                UUID customerId, String cardValuesJson) {
         if (li == null || templateId == null) return new LinkedHashMap<>();
         try {
             Template template = Template.findById(templateId);
@@ -179,7 +188,10 @@ public class ExcelViewService {
             List<TemplateFormulaDTO> templateFormulas = templateFormulaService.listByTemplate(templateId);
             Map<String, TemplateFormulaDTO> formulaByName = new LinkedHashMap<>();
             for (TemplateFormulaDTO f : templateFormulas) formulaByName.put(f.name, f);
-            return buildRowData(li, columns, templateId, formulaByName, customerId);
+
+            Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows> eff =
+                parseEffectiveRows(cardValuesJson, templateId);
+            return buildRowData(li, columns, templateId, formulaByName, customerId, eff);
         } catch (Exception e) {
             LOG.warnf("[ExcelView] buildLineRowData failed li=%s tmpl=%s: %s", li.id, templateId, e.getMessage());
             return new LinkedHashMap<>();
@@ -187,13 +199,47 @@ public class ExcelViewService {
     }
 
     /**
+     * 解析卡片值快照 → 有效行 Map；空/异常 → null（降级旧路径）。
+     */
+    private Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows>
+            parseEffectiveRows(String cardValuesJson, UUID templateId) {
+        if (cardValuesJson == null || cardValuesJson.isBlank()) return null;
+        try {
+            com.fasterxml.jackson.databind.JsonNode cardValues = MAPPER.readTree(cardValuesJson);
+            Template t = Template.findById(templateId);
+            com.fasterxml.jackson.databind.JsonNode componentsSnapshot =
+                (t != null && t.componentsSnapshot != null)
+                    ? MAPPER.readTree(t.componentsSnapshot) : null;
+            return com.cpq.quotation.service.card.CardEffectiveRows.parse(
+                cardValues, componentsSnapshot, (cid) -> null);
+        } catch (Exception e) {
+            LOG.debugf("[ExcelView] parseEffectiveRows failed tmpl=%s: %s", templateId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * Stage 2 重载：带模板 ID + 公式 Map + customerId 参数，支持 FORMULA 列的 [名称] 引用先查模板公式。
+     * effectiveRows 非空时 CARD_FORMULA 列走 CardDataProvider.fromEffectiveRows 精确命中；
+     * 为空时降级回旧路径（从持久化 componentData 构造 provider），保持向后兼容。
      */
     private Map<String, Object> buildRowData(QuotationLineItem li,
                                               List<Map<String, Object>> columns,
                                               UUID templateId,
                                               Map<String, TemplateFormulaDTO> formulaByName,
                                               UUID quotationCustomerId) {
+        return buildRowData(li, columns, templateId, formulaByName, quotationCustomerId, null);
+    }
+
+    /**
+     * 五参+effectiveRows 重载：CARD_FORMULA 有效行精确取数 vs 降级旧路径。
+     */
+    private Map<String, Object> buildRowData(QuotationLineItem li,
+                                              List<Map<String, Object>> columns,
+                                              UUID templateId,
+                                              Map<String, TemplateFormulaDTO> formulaByName,
+                                              UUID quotationCustomerId,
+                                              Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows> effectiveRows) {
         // V6: 把本行的 part_version_locked 推入 ThreadLocal，深层 DataLoader.loadByPath
         // 自动注入 AND part_version=N 谓词，避免拉取所有历史版本数据导致 BOM 等表"X 项 (共N项)" 重复显示。
         // partVersion=null 时行为与旧逻辑完全一致。
@@ -217,13 +263,21 @@ public class ExcelViewService {
         UUID customerId = quotationCustomerId;
 
         // CARD_FORMULA：批量拓扑求值（不能逐列独立算，需跨列依赖）
+        // effectiveRows 非空 → 用同侧卡片有效行精确命中；null → 降级旧路径（持久化 componentData）
         Map<String, Object> cardFormulaValues = java.util.Collections.emptyMap();
         List<Map<String, Object>> cardCols = new ArrayList<>();
         for (Map<String, Object> col : columns)
             if ("CARD_FORMULA".equals(col.get("source_type"))) cardCols.add(col);
         if (!cardCols.isEmpty()) {
-            cardFormulaValues = cardFormulaEvaluator.evaluateColumns(
-                cardCols, componentDataList, customerId, partNo, null);
+            if (effectiveRows != null) {
+                com.cpq.quotation.service.card.CardDataProvider provider =
+                    com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(effectiveRows);
+                cardFormulaValues = cardFormulaEvaluator.evaluateColumns(
+                    cardCols, provider, customerId, partNo, null);
+            } else {
+                cardFormulaValues = cardFormulaEvaluator.evaluateColumns(
+                    cardCols, componentDataList, customerId, partNo, null);
+            }
         }
 
         // Stage 2: 逐列计算，VARIABLE 列先算好，FORMULA 列引用时可以直接用 cachedCells
