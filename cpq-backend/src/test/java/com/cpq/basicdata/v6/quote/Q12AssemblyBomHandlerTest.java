@@ -85,4 +85,28 @@ class Q12AssemblyBomHandlerTest {
         assertEquals(1L, childAssembly);
         assertEquals(1L, childMaterial);
     }
+
+    /** 裸重复表头行：项次×2(列序: 项次=seq_no一级, 项次=item_seq二级)。用 List 构造器模拟真实模板。 */
+    private SheetRow bareRow(int seqOne, int seqTwo, String comp) {
+        List<String[]> o = new ArrayList<>();
+        o.add(new String[]{"宏丰料号", MAT});
+        o.add(new String[]{"项次", String.valueOf(seqOne)});   // 一级 -> seq_no
+        o.add(new String[]{"工序编号", "OP1"});
+        o.add(new String[]{"组装工序", "Z350"});               // 不导入
+        o.add(new String[]{"项次", String.valueOf(seqTwo)});   // 二级 -> item_seq
+        o.add(new String[]{"组成件料号", comp});
+        o.add(new String[]{"组成数量", "2"});
+        o.add(new String[]{"组成单位", "PCS"});
+        return new SheetRow(2, o);
+    }
+
+    @Test void bareDuplicateHeader_itemSeqFromSecond() {
+        handler.handle(List.of(bareRow(3, 7, "TEST-Q12-COMP-B")), ctx());
+        Object[] rec = (Object[]) em.createNativeQuery(
+            "SELECT seq_no, item_seq FROM material_bom_item " +
+            "WHERE material_no=:m AND characteristic='ASSEMBLY' AND is_current=true LIMIT 1")
+            .setParameter("m", MAT).getSingleResult();
+        assertEquals(3, ((Number) rec[0]).intValue(), "seq_no=第1个项次");
+        assertEquals(7, ((Number) rec[1]).intValue(), "item_seq=第2个项次");
+    }
 }

@@ -64,7 +64,7 @@ public class Q13ComponentOtherFeeHandler implements SheetHandler {
                 return g;
             });
             Map<String, Object> c = new LinkedHashMap<>();
-            c.put("item_seq", row.getInt("项次（要素）"));
+            c.put("item_seq", row.getIntNth("项次", 3));  // 第3个"项次"=要素项次(裸重复表头按列序)
             c.put("pricing_price", row.getDecimal("值"));   // 固定金额写值，空值留 NULL（D1）
             c.put("currency", row.getStr("货币"));
             c.put("unit", row.getStr("计价单位"));

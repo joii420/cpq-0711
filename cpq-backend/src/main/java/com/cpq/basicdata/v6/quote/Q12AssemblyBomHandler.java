@@ -47,7 +47,7 @@ public class Q12AssemblyBomHandler implements SheetHandler {
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("seq_no", seq);
             c.put("operation_no", row.getStr("工序编号"));
-            c.put("item_seq", row.getInt("项次（二级）"));
+            c.put("item_seq", row.getIntNth("项次", 2));  // 第2个"项次"=二级(裸重复表头按列序)
             c.put("component_no", componentNo);
             c.put("composition_qty", row.getDecimal("组成数量"));
             c.put("issue_unit", row.getStr("组成单位"));
