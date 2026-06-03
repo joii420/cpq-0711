@@ -1111,7 +1111,13 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     try {
       const res = await quotationService.editQuoteCardValue(lineItemId, { componentId, rowKey, fieldName, value });
       const qcv = res?.data?.quoteCardValues;
-      if (qcv) onUpdate(() => ({ quoteCardValues: qcv } as Partial<LineItem>));
+      const qev = res?.data?.quoteExcelValues;
+      if (qcv || qev) onUpdate(() => {
+        const patch: Partial<LineItem> = {};
+        if (qcv) patch.quoteCardValues = qcv;
+        if (qev) patch.quoteExcelValues = qev;
+        return patch;
+      });
     } catch {
       // 网络失败保持旧 autosave 兜底(comp.rows 已被 handleRowChange 更新), 不阻塞用户
     }
