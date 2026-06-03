@@ -204,4 +204,36 @@ class VersionedV6WriterTest {
         assertEquals("2000", v2, "完全相同 → 复用版本");
         assertEquals(2L, capTotal(), "无新写入");
     }
+
+    // ===== 护栏：system_type 维度表 groupKey 必含 system_type =====
+
+    @Test
+    void writeVersionedGroup_missingSystemType_throws() {
+        Map<String, Object> gk = new java.util.LinkedHashMap<>();
+        gk.put("scheme_no", "GUARD-TEST");          // 故意不放 system_type
+        VersionedGroupSpec spec = new VersionedGroupSpec(
+            "plating_scheme", "scheme_version", gk,
+            java.util.List.of("seq_no"),
+            java.util.List.of(java.util.Map.of("seq_no", 1)));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+            () -> writer.writeVersionedGroup(spec));
+        assertTrue(ex.getMessage().contains("system_type"),
+            "缺 system_type 应在入口抛错，实际: " + ex.getMessage());
+    }
+
+    @Test
+    void writeVersionedMasterDetail_missingSystemType_throws() {
+        Map<String, Object> gk = new java.util.LinkedHashMap<>();
+        gk.put("customer_no", "_GLOBAL_");
+        gk.put("material_no", "GUARD-TEST");
+        gk.put("bom_type", "MATERIAL");             // 故意不放 system_type
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+            () -> writer.writeVersionedMasterDetail(
+                "material_bom", "bom_version", gk, java.util.Map.of(),
+                "material_bom_item", null, gk,
+                java.util.List.of("seq_no"),
+                java.util.List.of(java.util.Map.of("seq_no", 1))));
+        assertTrue(ex.getMessage().contains("system_type"),
+            "缺 system_type 应在入口抛错，实际: " + ex.getMessage());
+    }
 }

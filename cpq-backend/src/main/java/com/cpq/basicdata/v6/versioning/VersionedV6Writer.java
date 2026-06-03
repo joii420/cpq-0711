@@ -33,6 +33,19 @@ public class VersionedV6Writer {
         "element_bom", "element_bom_item",
         "material_bom", "material_bom_item");
 
+    /** 必须按 system_type 维度隔离的表：groupKey 缺 system_type 会导致 flip/版本号跨 QUOTE/PRICING 污染。 */
+    private static final Set<String> SYSTEM_TYPE_SCOPED = Set.of(
+        "material_bom", "material_bom_item", "element_bom", "element_bom_item",
+        "capacity", "plating_scheme");
+
+    /** 护栏①：system_type 维度表的 groupKey 必须含 system_type，否则入口直接抛错（防静默跨域污染）。 */
+    private static void requireSystemType(String table, Map<String, Object> groupKey) {
+        if (SYSTEM_TYPE_SCOPED.contains(table) && !groupKey.containsKey("system_type")) {
+            throw new IllegalArgumentException(
+                "表 " + table + " 必须按 system_type 隔离，groupKey 缺 system_type: " + groupKey.keySet());
+        }
+    }
+
     /** 子表无版本列时（material_bom_item）的 upsert 元数据：表达式冲突目标 + 唯一键列集。 */
     private record ChildUq(String conflictTarget, Set<String> keyCols) {}
     private static final Map<String, ChildUq> CHILD_UQ = Map.of(
@@ -64,6 +77,7 @@ public class VersionedV6Writer {
         safeIdent(spec.versionColumn);
         spec.groupKeyColumns.keySet().forEach(VersionedV6Writer::safeIdent);
         spec.contentColumns.forEach(VersionedV6Writer::safeIdent);
+        requireSystemType(spec.tableName, spec.groupKeyColumns);
 
         // I1: newRows 为空会静默清空整组 → 拒绝
         if (spec.newRows.isEmpty()) {
@@ -165,6 +179,8 @@ public class VersionedV6Writer {
         childGroupKey.keySet().forEach(VersionedV6Writer::safeIdent);
         childContentColumns.forEach(VersionedV6Writer::safeIdent);
         if (masterFixedColumns != null) masterFixedColumns.keySet().forEach(VersionedV6Writer::safeIdent);
+        requireSystemType(masterTable, masterGroupKey);
+        requireSystemType(childTable, childGroupKey);
 
         if (childRows.isEmpty()) {
             throw new IllegalArgumentException("childRows 为空;整组下线请用专门 API");
