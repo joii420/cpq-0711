@@ -160,6 +160,9 @@ export interface LineItem {
    */
   quoteCardValues?: string;
   costingCardValues?: string;
+  /** Excel 值快照（后端已算好，形态 `{rows:[{colKey:value}]}`，每 lineItem 一行 rows[0]）。缺值→显示"—"，不降级实时拉数。 */
+  quoteExcelValues?: string;
+  costingExcelValues?: string;
   /**
    * Bug B (2026-05-20): 前端临时 id，用于 driverExpansionKey lineItemId 维度。
    * 新建 lineItem 时生成 (crypto.randomUUID())，后端持久化后 id 接管。

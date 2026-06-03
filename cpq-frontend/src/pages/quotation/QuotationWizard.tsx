@@ -139,6 +139,12 @@ const QuotationWizard: React.FC = () => {
   //   ③ 手动「保存草稿」按钮 / 步骤切换 / 提交。
   // 保留 autoSaveDraft 函数 + ref 供 ①/手动复用；仅删除定时器。
   const lastSaveRef = useRef<string>('');
+  // 自动保存死循环修复(方案 A):tempId → 后端持久化 DB id 的稳定映射。
+  //   导入建的行只有稳定 tempId、初始无 id;saveDraft 响应回填 DB id 后记入此表。
+  //   buildDraftPayload 以 li.id || 本表[tempId] 兜底发送,确保某次重建抹掉 li.id 时仍能凭
+  //   稳定 tempId 找回 DB id → payload 不再 null↔id 振荡 → lastSaveRef 去重命中 → 不再死循环。
+  //   tempId 为全局唯一 UUID,跨报价单不冲突,无需重置。
+  const dbIdByTempId = useRef<Map<string, string>>(new Map());
   // setInterval 注册时只依赖 quotationId，会捕获首次渲染时的 autoSaveDraft 闭包，
   // 其中 lineItems 仍为初始 []。改用最新值 ref，让定时器始终调用最新版本的 autoSaveDraft，
   // 避免每 10 秒自动保存的负载里 lineItems 永远是空数组（页面刷新后表格全空的根因）。
@@ -286,6 +292,9 @@ const QuotationWizard: React.FC = () => {
         // 报价单整份快照 Phase2 Task8: 行级值快照(后端 JSON 字符串) → 渲染脱钩用
         quoteCardValues: li.quoteCardValues ?? undefined,
         costingCardValues: li.costingCardValues ?? undefined,
+        // Excel 值快照（后端已算好）→ useExcelSnapshotRows 直接渲染，不回退实时拉数
+        quoteExcelValues: li.quoteExcelValues ?? undefined,
+        costingExcelValues: li.costingExcelValues ?? undefined,
       }) as LineItem;
       });
       setLineItems(basicItems);
@@ -536,6 +545,9 @@ const QuotationWizard: React.FC = () => {
       const next = prev.map((item, i) => {
         const r = respLines[i];
         if (!r) return item;
+        // 方案 A:按 index 对齐记下 tempId → DB id,供 buildDraftPayload 在 li.id 被重建抹掉时兜底回填
+        const tempId = (item as any).tempId;
+        if (r.id != null && tempId) dbIdByTempId.current.set(String(tempId), String(r.id));
         const patch: any = {};
         if (r.id != null && String(r.id) !== String((item as any).id)) patch.id = r.id;
         if (r.partVersionLocked != null && r.partVersionLocked !== item.partVersionLocked) {
@@ -692,7 +704,7 @@ const QuotationWizard: React.FC = () => {
         // 2026-06-01: 回传已存在行的 line id → 后端按 id UPSERT(就地更新, 不换 UUID)。
         //   id 稳定后 payload 含 id 也不会 churn(去重正常), 且 editQuoteCardValue 不再撞已删 id。
         //   新增/未持久化行无 id → 送 null, 后端新建。
-        id: (li as any).id || null,
+        id: (li as any).id || dbIdByTempId.current.get(String((li as any).tempId)) || null,
         // 后端 SaveDraftRequest.LineItemDraft.productId 是 UUID，Jackson 无法把
         // 空字符串反序列化成 UUID（整次保存直接 400）。批量导入分支会把
         // productId 置成 ''；这里统一空串归零为 null，避免静默保存失败。
