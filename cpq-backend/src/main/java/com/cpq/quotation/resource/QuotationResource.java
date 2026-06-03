@@ -397,8 +397,9 @@ public class QuotationResource {
 
     @GET
     @Path("/{id}/excel-view")
-    public ApiResponse<Map<String, Object>> getExcelView(@PathParam("id") UUID id) {
-        return ApiResponse.success(excelViewService.getExcelView(id));
+    public ApiResponse<Map<String, Object>> getExcelView(@PathParam("id") UUID id,
+                                                          @QueryParam("templateId") UUID templateId) {
+        return ApiResponse.success(excelViewService.getExcelView(id, templateId));
     }
 
     @PUT

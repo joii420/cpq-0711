@@ -87,13 +87,21 @@ public class ExcelViewService {
     // ---- Quotation excel-view GET ----
 
     public Map<String, Object> getExcelView(UUID quotationId) {
+        return getExcelView(quotationId, null);
+    }
+
+    /**
+     * templateIdOverride 非空时按该模板算（核价单视图传核价模板）；
+     * 否则用 lineItems[0].templateId（报价模板，向后兼容）。
+     */
+    public Map<String, Object> getExcelView(UUID quotationId, UUID templateIdOverride) {
         List<QuotationLineItem> lineItems = QuotationLineItem.list("quotationId = ?1 ORDER BY sortOrder ASC", quotationId);
         if (lineItems.isEmpty()) {
             return Map.of("columns", List.of(), "rows", List.of());
         }
 
-        // Use the template from the first line item
-        UUID templateId = lineItems.get(0).templateId;
+        // 优先使用调用方传入的模板 ID（如核价模板），否则 fallback 到 lineItems[0].templateId
+        UUID templateId = templateIdOverride != null ? templateIdOverride : lineItems.get(0).templateId;
         Template template = templateId != null ? (Template) Template.findById(templateId) : null;
         // 反 AP-12（懒资源硬 404）：模板被删 / 未配置时返回空视图，UI 走空态分支。
         if (template == null) {
