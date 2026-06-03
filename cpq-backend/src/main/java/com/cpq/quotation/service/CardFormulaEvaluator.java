@@ -65,13 +65,25 @@ public class CardFormulaEvaluator {
         return order;
     }
 
-    /** 算本料号一组 CARD_FORMULA 列。columns: 每项含 col_key/formula/refs。 */
+    /** 算本料号一组 CARD_FORMULA 列。columns: 每项含 col_key/formula/refs。既有签名：从持久化 componentData 构造 provider。 */
     public Map<String, Object> evaluateColumns(
             List<Map<String, Object>> columns,
             List<QuotationLineComponentData> tabs,
             UUID customerId, String partNo, UUID quotationId) {
+        return evaluateColumnsInternal(columns, new CardDataProvider(tabs), customerId, partNo, quotationId);
+    }
 
-        CardDataProvider provider = new CardDataProvider(tabs);
+    /** 新重载：直接吃已构造好的 provider（来自 CardEffectiveRows，精确命中）。 */
+    public Map<String, Object> evaluateColumns(
+            List<Map<String, Object>> columns,
+            CardDataProvider provider,
+            UUID customerId, String partNo, UUID quotationId) {
+        return evaluateColumnsInternal(columns, provider, customerId, partNo, quotationId);
+    }
+
+    private Map<String, Object> evaluateColumnsInternal(
+            List<Map<String, Object>> columns, CardDataProvider provider,
+            UUID customerId, String partNo, UUID quotationId) {
 
         Map<String, String> formulaByCol = new LinkedHashMap<>();
         Map<String, Map<String, Object>> refsByCol = new HashMap<>();
