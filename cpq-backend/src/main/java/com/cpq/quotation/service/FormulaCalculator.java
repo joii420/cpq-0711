@@ -406,6 +406,138 @@ public class FormulaCalculator {
     }
 
     // ======================================================================
+    // 通用逐行解析：resolveRowByFieldName（Object 版，保留字符串，按字段名输出）
+    // ======================================================================
+
+    /**
+     * 通用：把一行解析成"按字段名的标量值"(String/Number 都保留)。配置驱动，零硬编码字段名。
+     * 复用 collectFieldValues 同款字段定义驱动解析(bnfDriverLookupKey/lookupBdv/datasourceBinding/content...)，
+     * 但保留字符串、并合入 INPUT(editValues 覆盖)/FORMULA(formulaValues) 结果。
+     *
+     * <p>别名不泄漏：字段定义里 {@code basic_data_path="$ys_view.material_type"} 但字段名是"类型"，
+     * 输出 key 只用字段名"类型"，不会暴露 SQL 列别名 {@code material_type}。
+     *
+     * @param fields          组件字段定义数组
+     * @param driverRow       driver 展开行(SQL 别名键, 含简单 BASIC_DATA 标量)
+     * @param basicDataValues 行级 BNF/path 值({path}/@gvar:CODE 键), 可为 null
+     * @param editValues      本行 editRows.values(按字段名), 可为 null
+     * @param formulaValues   本行 formulaResults.values(按字段名), 可为 null
+     * @return 字段名 → 标量值(String/Number)；FORMULA 字段取 formulaValues；
+     *         字段名按 fields 顺序插入(LinkedHashMap 保序)
+     */
+    public Map<String, Object> resolveRowByFieldName(JsonNode fields, JsonNode driverRow,
+            JsonNode basicDataValues, JsonNode editValues, JsonNode formulaValues) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (fields == null || !fields.isArray()) return out;
+
+        for (JsonNode f : fields) {
+            String name = fieldName(f);
+            if (name.isEmpty()) continue;
+            String type = fieldType(f);
+
+            // ── FORMULA / LIST_FORMULA: 直接取已算好的 formulaResults ──
+            if ("FORMULA".equals(type) || "LIST_FORMULA".equals(type)) {
+                Object v = formulaValues != null ? unwrapNode(nodeToObject(formulaValues.path(name))) : null;
+                if (nonEmpty(v)) out.put(name, v);
+                continue;
+            }
+
+            // ── INPUT_NUMBER / INPUT_TEXT / INPUT: editValues 覆盖 → driverRow[name] → default_source → content ──
+            if ("INPUT_NUMBER".equals(type) || "INPUT_TEXT".equals(type) || "INPUT".equals(type)) {
+                Object v = (editValues != null) ? nodeToObject(editValues.path(name)) : null;
+                if (!nonEmpty(v) && driverRow != null) v = nodeToObject(driverRow.path(name));
+                if (!nonEmpty(v)) {
+                    JsonNode ds = defaultSource(f);
+                    if (ds != null && basicDataValues != null) {
+                        String dsType = ds.path("type").asText("");
+                        if ("GLOBAL_VARIABLE".equals(dsType)) {
+                            Object g = lookupBdv(basicDataValues, "@gvar:" + ds.path("code").asText(""));
+                            if (nonEmpty(g)) v = g;
+                        } else if ("BNF_PATH".equals(dsType)) {
+                            String p = ds.path("path").asText("");
+                            if (!p.isEmpty()) {
+                                Object g = lookupBdv(basicDataValues, bnfDriverLookupKey(p));
+                                if (nonEmpty(g)) v = g;
+                            }
+                        }
+                    }
+                }
+                if (!nonEmpty(v)) {
+                    String c = content(f);
+                    if (c != null && !c.isEmpty()) v = c;
+                }
+                if (nonEmpty(v)) out.put(name, unwrapNode(v));
+                continue;
+            }
+
+            // ── BASIC_DATA: basicDataValues[bnfDriverLookupKey(path)] → driverRow[name] → content ──
+            if ("BASIC_DATA".equals(type)) {
+                Object v = null;
+                String path = basicDataPath(f);
+                if (path != null && !path.isEmpty() && basicDataValues != null) {
+                    v = lookupBdv(basicDataValues, bnfDriverLookupKey(path));
+                }
+                // fallback: driverRow 中按字段名查（适用 bdv 未存该 path 但 driverRow 有 SQL 列的情形）
+                if (!nonEmpty(v) && driverRow != null) v = nodeToObject(driverRow.path(name));
+                if (!nonEmpty(v)) {
+                    String c = content(f);
+                    if (c != null && !c.isEmpty()) v = c;
+                }
+                if (nonEmpty(v)) out.put(name, unwrapNode(v));
+                continue;
+            }
+
+            // ── DATA_SOURCE: binding(GLOBAL_VARIABLE/BNF_PATH) 优先 → driverRow[name] → content ──
+            if ("DATA_SOURCE".equals(type)) {
+                Object v = (driverRow != null) ? nodeToObject(driverRow.path(name)) : null;
+                JsonNode binding = datasourceBinding(f);
+                if (binding != null && basicDataValues != null) {
+                    String dsType = binding.path("type").asText("DATABASE_QUERY");
+                    if ("GLOBAL_VARIABLE".equals(dsType)) {
+                        Object g = lookupBdv(basicDataValues, "@gvar:" + binding.path("global_variable_code").asText(""));
+                        if (nonEmpty(g)) v = g;
+                    } else if ("BNF_PATH".equals(dsType)) {
+                        String bnf = binding.path("bnf_path").asText("");
+                        if (!bnf.isEmpty()) {
+                            Object g = lookupBdv(basicDataValues, bnfDriverLookupKey(bnf));
+                            if (nonEmpty(g)) v = g;
+                        }
+                    }
+                }
+                if (!nonEmpty(v)) {
+                    String c = content(f);
+                    if (c != null && !c.isEmpty()) v = c;
+                }
+                if (nonEmpty(v)) out.put(name, unwrapNode(v));
+                continue;
+            }
+
+            // ── FIXED_VALUE / 其他: content 优先 → driverRow[name] ──
+            Object v = null;
+            String c = content(f);
+            if (c != null && !c.isEmpty()) v = c;
+            if (!nonEmpty(v) && driverRow != null) v = nodeToObject(driverRow.path(name));
+            if (nonEmpty(v)) out.put(name, unwrapNode(v));
+        }
+        return out;
+    }
+
+    /**
+     * 将 JsonNode 解包成 Java 原生 String/Number，便于调用方直接做字符串比较。
+     * 非 JsonNode 原样返回（String/Number 已是原生类型）。
+     */
+    private Object unwrapNode(Object o) {
+        if (!(o instanceof JsonNode)) return o;
+        JsonNode n = (JsonNode) o;
+        if (n.isNull() || n.isMissingNode()) return null;
+        if (n.isTextual()) return n.textValue();
+        if (n.isNumber()) return n.numberValue();
+        if (n.isBoolean()) return n.booleanValue();
+        // 数组/对象保持 JsonNode 以便上层自行处理
+        return n;
+    }
+
+    // ======================================================================
     // 公式解析 + 拓扑序（port resolveFormula / getFormulaDeps / computeAllFormulas 拓扑）
     // ======================================================================
 
