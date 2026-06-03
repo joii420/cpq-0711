@@ -67,6 +67,7 @@ public class Q16PlatingSchemeHandler implements SheetHandler {
         for (Map.Entry<String, List<Map<String, Object>>> e : contentOf.entrySet()) {
             try {
                 Map<String, Object> gk = new LinkedHashMap<>();
+                gk.put("system_type", "QUOTE");
                 gk.put("scheme_no", e.getKey());
                 writer.writeVersionedGroup(new VersionedGroupSpec(
                     "plating_scheme", "scheme_version", gk, CONTENT, e.getValue()));

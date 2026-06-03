@@ -56,6 +56,7 @@ public class Q14AssemblyProcessFeeHandler implements SheetHandler {
             List<Object> key = Arrays.asList(materialNo, resourceGroupNo);
             groupKeyOf.computeIfAbsent(key, k -> {
                 Map<String, Object> g = new LinkedHashMap<>();
+                g.put("system_type", "QUOTE");
                 g.put("material_no", materialNo);
                 g.put("resource_group_no", resourceGroupNo);
                 return g;
