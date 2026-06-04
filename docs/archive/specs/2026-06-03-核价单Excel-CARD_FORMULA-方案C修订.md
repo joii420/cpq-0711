@@ -1,7 +1,10 @@
 # 核价单 Excel CARD_FORMULA — 方案 C 修订设计（取数源更正）
 
+> 🚫 **本方案已作废（2026-06-03）**，由 `2026-06-03-报价核价Excel-CARD_FORMULA取数统一-design.md` 取代。
+> 作废原因：方案 C 的核心前提「合并行只能在前端算出」**不成立**——后端 `CardSnapshotService.buildCostingCardValues` 早已 expand 核价 driver 组件、产出带"类型"的核价 baseRows 并落库 `costing_card_values`。真因只是 `ExcelViewService.buildRowData` 算 CARD_FORMULA 时取数源取错（读了报价侧 `quotation_line_component_data` 而非同侧卡片快照有效行）。且这是**报价/核价共用渲染逻辑**，非核价专属。**勿按本文实现**（不要做"前端送行 + 新 evaluate 端点"）。
+
 - 日期：2026-06-03
-- 状态：已与用户确认走方案 C，待实现
+- 状态：**作废**（见上方）
 - 取代：`2026-06-03-核价单Excel视图CARD_FORMULA修复-design.md` 里"读持久化 componentData + sortOrder 回退"的取数方式（**作废**）
 
 ## 0. 为什么之前的方案错了（已逐条核实）

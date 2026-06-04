@@ -65,7 +65,7 @@ Templates and components use JSONB storage for flexible field/formula configurat
 - 🚨 `docs/反模式.md` AP-53 - **V44 老表禁用 + SQL 视图模板查老表导致的渲染数据断链**（2026-05-26 立项）：V218~V222 落 23 张 V6 表后 V44 `mat_part / mat_bom / mat_process / mat_fee / plating_plan / mat_customer_part_mapping / element_price*` 等**已废弃**。强制规则：组件 `data_driver_path` + 字段 `basic_data_path` 禁用直接 PG 视图名/表名，必须 `$<sql_view_name>` 引用；component_sql_view.sql_template 必须 FROM V6 表；V6 无 `quotation_line_item_id` 维度（customer × material 共享）；详见 `docs/方案制定前必读.md` §V6 基础资料表使用规则
 - `docs/反模式.md` AP-54 - **过滤后下标当原数组下标 → 编辑写错位 Tab，受控 input 假死**（2026-05-27；QT-1656 复现）：`QuotationStep2.tsx` ProductCard 渲染用 `normalComponents`（过滤 SUBTOTAL 后子集）下标，写路径 `handleRowChange/handleInputBlur/handleDeleteRow/handleAddRow + dsStateKey` 却用同一 `activeTab` 索引未过滤的 `item.componentData`；SUBTOTAL 排第 0 位 → 偏移 +1 → 文本/数字输入框 value 回退假死。修法：`activeComponentDataIndex = item.componentData.indexOf(activeComponent)` 映射回真实下标。通用规范：**渲染用过滤子集、写回用原集合时，写路径下标必须按对象引用/稳定 ID 映射回原下标**（改 QuotationStep2.tsx 必读）
 - `docs/反模式.md` AP-45 - **组合产品模板用单子件 driver 渲染错** (2026-05-20 提出 → **2026-05-21 终态修复**)：~~双轨字段方案~~ **已被统一智能视图方案替代**；新解法 = V202 `v_composite_child_*` 视图自适应 SIMPLE/COMPOSITE + ComponentDriverService 按 compositeType 三分支注入；详见 `docs/三大核心模块基线.md` §5.1 + §7.B 场景
-- ~~`docs/同模板双轨支持组合产品.md`~~ - ⚠️ **已废弃** (2026-05-21 由 `docs/统一智能视图路径方案.md` + `docs/三大核心模块基线.md` 取代)；保留作历史追溯
+- ~~`docs/archive/同模板双轨支持组合产品.md`~~ - ⚠️ **已废弃 + 已归档** (2026-05-21 由 `docs/统一智能视图路径方案.md` + `docs/三大核心模块基线.md` 取代；2026-06-03 移入 `docs/archive/`)；保留作历史追溯
 - `docs/E2E测试方法.md` - **Playwright E2E 测试标杆 SOP**（2026-05-19 立项；前端协议级改动 / 模板 schema 变更 / driver expand 链路改动 / **字段类型变动**强制 E2E；含选择器约定 / 中文 UTF-8 编码踩坑 / 复测协议 / 复杂多 Tab 矩阵 / Bug 分类清单 / 自检 checklist / **§4.6 console.warn 三段式调试 (LF-FIND/DEBUG/EVAL)**；UI 改动 PR 必读）
 - `docs/html/*.html` - 10 interactive HTML prototypes (Chinese language UI)
 - 🧪 **`docs/3D-集成总览-索引.md`** — **3D 集成入口导航**（2026-05-26 v0.4 收敛后）：单一主线决策树 + 5 个 HTML 原型导航 + v0.4 数据模型清单 + 已废弃表清单。**任何 3D 相关改动前先读这个**
@@ -140,7 +140,7 @@ All UI, prototypes, and PRD are in Chinese. Code artifacts (variables, APIs, com
 
 6. **字段类型变动 / 新增** 是**特殊场景**（AP-44 核心规范，2026-05-19 立项, 2026-05-20 扩到 17 处）：
    - 触发: 在「组件管理」改 `field_type`（如 INPUT_NUMBER → LIST_FORMULA）/ 加新枚举 / 给现有类型加 sub-type / 加新 config JSON 键 / 改 `VALID_FIELD_TYPES`
-   - **双轨场景** (2026-05-20 新增): 同模板双轨字段 (`basic_data_path` + `basic_data_path_composite` / `data_driver_path` + `data_driver_path_composite`) — 详见 `docs/同模板双轨支持组合产品.md`
+   - **双轨场景** (2026-05-20 新增): 同模板双轨字段 (`basic_data_path` + `basic_data_path_composite` / `data_driver_path` + `data_driver_path_composite`) — 详见 `docs/archive/同模板双轨支持组合产品.md`（已废弃归档，仅历史追溯）
    - 影响: **17 个协议检查点跨约 13 个独立文件** — 前端 enrich / normalizeFieldType / cache key / 渲染分支 / computeAllFormulas 字段值循环 / 所有 ProductCard callsite prop / 详情页 ReadonlyProductCard 同步 + 后端 校验 / 路径采集 / 公式 token / refreshSnapshotsByComponent + (新增) useDriverExpansions tasks 切换 + QuotationStep2 渲染层 isCompositeItem 参数
    - 漏一处必有静默失败（不报编译错也没运行时错，只是 UI 渲染不对）
    - **强制 SOP**:

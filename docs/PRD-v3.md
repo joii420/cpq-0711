@@ -36,9 +36,9 @@
 | `docs/配置方法论.md` | 配置手册 | 组件/模板/公式三层配置决策树 |
 | `docs/Excel模板配置指南.md` | 操作手册 | Excel 视图列字段配置 |
 | `docs/反模式.md` | 避坑速查 | AP-01~AP-22 反模式列表 |
-| `docs/操作说明.md` | 用户手册 | 销售/经理/管理员操作步骤 |
+| `docs/archive/操作说明.md` | 用户手册 | 销售/经理/管理员操作步骤 |
 | `docs/列表操作规范.md` | UI 规范 | SelectableTable + 工具栏动作模式 |
-| `docs/数据一致性方法论.md` | 工程约束 | 数据流约束、迁移策略 |
+| `docs/archive/数据一致性方法论.md` | 工程约束 | 数据流约束、迁移策略 |
 
 ### 0.4 阅读建议
 
@@ -2559,7 +2559,7 @@ v_costing_exchange_rate[from_currency='CNY' AND to_currency='USD'].costing_rate
 | **PathPickerDrawer ownerContext=TEMPLATE** | 只显示本模板 SQL 视图（不显示 GLOBAL 区域）；`$$` 路径强校验阻断；旧调用方无 ownerContext 参数时行为不变 |
 | **EvaluateRequest 携带 templateId** | LinkedExcelView batchEvaluate 透传 templateId；FormulaEvaluateResource 注入 SqlViewRuntimeContext.setNestedTemplate；缓存 key 含 templateId 维度 |
 | **路径形态隔离规则** | 组件上下文：`$view.col` 查 component_sql_view；模板上下文：`$view.col` 查 template_sql_view；跨 owner 引用一律拒绝 |
-| **关联文档** | `docs/方案-Excel模板BNF迁移至组件SQL视图.md` v2（权威设计文档）；`docs/反模式.md` AP-53（V44 老表禁用延伸）；`docs/Excel模板配置指南.md` §四 C |
+| **关联文档** | `docs/archive/方案-Excel模板BNF迁移至组件SQL视图.md` v2（权威设计文档）；`docs/反模式.md` AP-53（V44 老表禁用延伸）；`docs/Excel模板配置指南.md` §四 C |
 
 ### 9.14 v3.6(2026-05-25)— 组件级数据源 SQL 方案立项
 
@@ -2572,7 +2572,7 @@ v_costing_exchange_rate[from_currency='CNY' AND to_currency='USD'].costing_rate
 | **N+1 与 BNF 现有 batch 机制自动融合** | inline subquery 包装后仍受外层 `WHERE inner_q.hf_part_no = ANY(:hfPartNos)` batch filter，一次 batch query 拿全部 partNo 数据；用户 SQL 内自己写 UNION 处理 SIMPLE/COMPOSITE 双场景，与 §3.6 红线"SIMPLE/COMPOSITE 配置层统一"一致 |
 | **§10.1.2 禁双轨红线不撞** | 组件 SQL 模式定位为"BNF path 数据源的层级扩展"（不是新渲染通路）；字段渲染单通路仍是 BNF path；三个核心选配组件（e42185ec/dae85db8/0a436b6c）继续走 v_composite_child_* 物理视图，**不回溯改造** |
 | **AP-44 矩阵 17 → 18 处** | 新增 #16 BnfPathResolver 解析层检查点，**不影响 #1~#15 字段类型/缓存/渲染矩阵**（纯解析层扩展） |
-| **关联文档** | `docs/组件级数据源SQL方案.md`（完整方案）/ `docs/三大核心模块基线.md §2.3 / §3.2`（增量段落）/ `docs/组件管理字段配置指南.md §2.3 / §11`（$ 引用语法）/ `docs/反模式.md AP-44`（矩阵 18 处）|
+| **关联文档** | `docs/archive/组件级数据源SQL方案.md`（完整方案）/ `docs/三大核心模块基线.md §2.3 / §3.2`（增量段落）/ `docs/组件管理字段配置指南.md §2.3 / §11`（$ 引用语法）/ `docs/反模式.md AP-44`（矩阵 18 处）|
 | **阶段迁移** | 阶段 1 功能加法 0 破坏；阶段 2 基础数据配置职责回归；阶段 3 已发布模板 BNF path snapshot 永久稳定 |
 
 ### 9.13 v3.5.1(2026-05-21)— 引用数据 Tab Descriptions 微调（column 3 + value 拼 unit）

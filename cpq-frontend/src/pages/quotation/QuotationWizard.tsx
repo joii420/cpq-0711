@@ -297,7 +297,16 @@ const QuotationWizard: React.FC = () => {
         costingExcelValues: li.costingExcelValues ?? undefined,
       }) as LineItem;
       });
-      setLineItems(basicItems);
+      // 基础数据导入 autoPopulate 与慢速 loadQuotation 的竞态修复:
+      //   DRAFT 打开走 refreshCardSnapshot + 二次 getById, applyQuotationData 落得很慢;
+      //   dev StrictMode 下 loadQuotation 还会双跑。若这次"加载到的空单"(basicItems=[])
+      //   覆盖落在 autoPopulate 已把产品加进 state 之后, 就会把刚加的产品抹掉 → 随后防抖
+      //   autosave 把 0 行持久化 → DB 空 → 重开空白(QT-1554 实证: saveDraft 收到 lineItems=0)。
+      //   修法: 导入流下, 加载结果为空但 state 已有(autoPopulate 加的)产品时, 不用空结果清空。
+      //   (enrich 那条 setLineItems 已有长度护栏; 此处是唯一无护栏的硬覆盖。)
+      setLineItems(prev =>
+        (isImportFlow && basicItems.length === 0 && prev.length > 0) ? prev : basicItems
+      );
 
       // Async: enrich each lineItem's componentData with fields/formulas from template.
       // 关键：enrich 完成后必须用函数式 setState 合并到当前 state，而不是整体替换。
@@ -552,6 +561,14 @@ const QuotationWizard: React.FC = () => {
         if (r.id != null && String(r.id) !== String((item as any).id)) patch.id = r.id;
         if (r.partVersionLocked != null && r.partVersionLocked !== item.partVersionLocked) {
           patch.partVersionLocked = r.partVersionLocked;
+        }
+        // 回灌后端 saveDraft 时算好的 4 份值快照(报价/核价 × 卡片/Excel)。
+        // 基础数据导入流程：autoPopulate 加的产品 buildLineItemFromTemplate 不含这些快照,
+        // autoSave(saveDraft) 后端 snapshotLineValues 已算好并随响应返回, 但旧码只回灌 id/版本号
+        // → 前端 li.costingExcelValues 仍 undefined → 核价 Excel 视图首屏空白("—"), 要整页刷新
+        // (loadQuotation)才显示。这里就地回灌, 第一眼即正确(与刷新后一致)。
+        for (const k of ['quoteCardValues', 'costingCardValues', 'quoteExcelValues', 'costingExcelValues'] as const) {
+          if (r[k] != null && r[k] !== (item as any)[k]) patch[k] = r[k];
         }
         if (Object.keys(patch).length > 0) { changed = true; return { ...item, ...patch }; }
         return item;

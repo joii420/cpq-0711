@@ -390,7 +390,7 @@ PR 涉及以下文件 / 主题时，**必须跑 E2E 并附截图证据**：
 - [ ] `cpq-backend/src/main/java/com/cpq/engine/formula/FormulaCalculationService.java`（token case 分支）
 - [ ] 模板 snapshot 数据迁移（Flyway V*）— 必须复测 multi-Tab 模板渲染
 - [ ] **任何字段类型变动 / 新增** — 详见 `docs/组件管理字段配置指南.md §十一 字段类型联动性矩阵` 17 处 + `docs/反模式.md AP-44`
-- [ ] **同模板双轨改动 (SIMPLE/COMPOSITE 共用)** — 详见 [`docs/同模板双轨支持组合产品.md`](./同模板双轨支持组合产品.md) + `docs/反模式.md AP-45`
+- [ ] **同模板双轨改动 (SIMPLE/COMPOSITE 共用)** — 详见 [`docs/archive/同模板双轨支持组合产品.md`](./同模板双轨支持组合产品.md) + `docs/反模式.md AP-45`
 
 **PR 描述必须含**：
 1. 修复前截图（至少 qf-19 确认添加后 + 出问题的 Tab）

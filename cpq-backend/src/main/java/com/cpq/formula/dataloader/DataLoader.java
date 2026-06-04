@@ -168,8 +168,20 @@ public class DataLoader {
             Object _lineIdObj = (driverRow != null) ? driverRow.get("quotation_line_item_id") : null;
             final UUID viewLineItemId = (_lineIdObj instanceof UUID u) ? u
                     : (_lineIdObj != null ? UUID.fromString(_lineIdObj.toString()) : null);
+            // 同一 `$<view>` 视图名可被多个组件各自定义（如 COMP-0020 的导入副本 d18ac7e4=报价元素 /
+            // b3359f70=核价元素 都有名为 ys_view 的视图，但列不同：报价侧无单价/material_type）。
+            // SqlViewExecutor.executeAllRows/execute 都按 owner.componentId 经 lookupForResolver 解析到
+            // 各自的 ComponentSqlView，因此 resultCache key 必须含 owner.componentId，否则同一请求内
+            // 报价卡 + 核价卡对同一 (partNo,customerId,lineItem) 查 $ys_view 会串号：先跑的组件视图行
+            // 喂给后跑的 → 核价元素拿到报价侧旧视图行(无单价列) → 单价回退中文标量路径报错、material_type
+            // 跨行数组 → 核价 Excel [A]/[B] 算成 0（QT-1557 实证）。templateId 一并入 key（模板快照路径维度）。
+            com.cpq.datasource.sqlview.SqlViewRuntimeContext.Snapshot _own =
+                    com.cpq.datasource.sqlview.SqlViewRuntimeContext.get();
+            final String _ownerTag = (_own != null ? _own.componentId : null) + "/"
+                    + (_own != null ? _own.templateId : null);
             return resultCache.computeIfAbsent(
-                    normalizedPath + "::" + partNo + "::" + customerId + "::" + viewLineItemId, key -> {
+                    normalizedPath + "::" + partNo + "::" + customerId + "::" + viewLineItemId
+                            + "::" + _ownerTag, key -> {
                 try {
                     RuntimeContext ctx = new RuntimeContext();
                     // 统一协议:从 ThreadLocal 拿 quotationId,绑到 ctx.quotation.id
