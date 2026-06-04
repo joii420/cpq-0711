@@ -42,10 +42,9 @@ public class QuoteImportService {
     // 19 个 Handler 按写入顺序排列（料号 → 关系 → BOM主 → BOM子 → 单价 → 年降 → 其它）
     @Inject Q18UnitWeightHandler q18;            // 料号 unit_weight
     @Inject Q02CustomerMapHandler q02;           // 客户料号映射
-    @Inject Q03MaterialBomHandler q03;           // 物料BOM + material_master.material_type
+    @Inject MaterialBomMergeHandler bomMerge;    // 物料BOM⇄组成件BOM 去重合并(替代 Q03/Q12)
     @Inject Q04ElementBomHandler q04;            // 元素BOM
     @Inject Q05ElementRecoveryHandler q05;       // 元素回收折扣 UPDATE
-    @Inject Q12AssemblyBomHandler q12;           // 组成件BOM
     @Inject Q01ElementPriceHandler q01;          // 元素单价
     @Inject Q06FixedProcessFeeHandler q06;       // 来料固定加工费
     @Inject Q07IncomingOtherFeeHandler q07;      // 来料其他费用
@@ -61,7 +60,7 @@ public class QuoteImportService {
     @Inject Q19AnnualDiscountHandler q19;        // 年降系数
 
     private List<SheetHandler> orderedHandlers() {
-        return List.of(q18, q02, q03, q04, q05, q12,
+        return List.of(q18, q02, q04, q05,
                        q01, q06, q07, q08, q09, q10, q11, q13, q14, q15, q16, q17, q19);
     }
 
@@ -89,6 +88,24 @@ public class QuoteImportService {
         int totalSuccess = 0, totalFailed = 0;
 
         try (XSSFWorkbook wb = parser.open(stream)) {
+            // 物料BOM ⇄ 组成件BOM 去重合并（两 sheet 单一事务，组成件优先；替代 Q03/Q12 各写各的）
+            {
+                var matSheet = wb.getSheet("物料BOM");
+                var asmSheet = wb.getSheet("组成件BOM");
+                List<SheetRow> matRows = matSheet != null ? parser.parseSheet(matSheet) : List.of();
+                List<SheetRow> asmRows = asmSheet != null ? parser.parseSheet(asmSheet) : List.of();
+                SheetImportResult mr;
+                try {
+                    mr = bomMerge.merge(matRows, asmRows, ctx);
+                } catch (Exception ex) {
+                    Log.error("物料BOM/组成件BOM 合并导入异常", ex);
+                    mr = new SheetImportResult("物料BOM+组成件BOM(合并)");
+                    mr.recordError(0, "_sheet_", ex.getClass().getSimpleName() + ": " + ex.getMessage());
+                }
+                sheetDtos.add(SheetResultDTO.from(mr));
+                totalSuccess += mr.successRows;
+                totalFailed += mr.failedRows;
+            }
             for (SheetHandler h : orderedHandlers()) {
                 SheetImportResult r;
                 try {
