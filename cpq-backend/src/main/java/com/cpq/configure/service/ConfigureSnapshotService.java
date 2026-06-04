@@ -192,7 +192,7 @@ public class ConfigureSnapshotService {
                     "  AND child.product_part_no_snapshot IN (" +
                     "     SELECT mbi.component_no FROM material_bom_item mbi " +
                     "     WHERE mbi.system_type = 'QUOTE' AND mbi.material_no = :pp " +
-                    "       AND mbi.characteristic = 'ASSEMBLY' AND mbi.component_no IS NOT NULL)")
+                    "       AND mbi.characteristic = 'ASSEMBLY' AND mbi.component_no IS NOT NULL AND mbi.is_current = true)")
                     .setParameter("q", quotationId).setParameter("pp", parentPartNo).getResultList();
         }
         List<ChildLine> out = new ArrayList<>();

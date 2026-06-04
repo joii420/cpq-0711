@@ -60,7 +60,7 @@ public class MaterialBomItemRepository implements PanacheRepositoryBase<Material
     @SuppressWarnings("unchecked")
     public List<String> findDistinctCustomerNos() {
         return em.createNativeQuery(
-                "SELECT DISTINCT customer_no FROM material_bom_item ORDER BY customer_no")
+                "SELECT DISTINCT customer_no FROM material_bom_item WHERE is_current = true ORDER BY customer_no")
                 .getResultList();
     }
 
@@ -74,7 +74,7 @@ public class MaterialBomItemRepository implements PanacheRepositoryBase<Material
     @SuppressWarnings("unchecked")
     public List<String> findDistinctMaterialNos(String customerNo, String q, int limit) {
         StringBuilder sql = new StringBuilder(
-                "SELECT DISTINCT material_no FROM material_bom_item WHERE customer_no = :customerNo");
+                "SELECT DISTINCT material_no FROM material_bom_item WHERE customer_no = :customerNo AND is_current = true");
         if (q != null && !q.isBlank()) {
             sql.append(" AND LOWER(material_no) LIKE :q");
         }

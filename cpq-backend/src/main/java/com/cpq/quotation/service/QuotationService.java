@@ -289,6 +289,8 @@ public class QuotationService {
         //   draft.id 命中现有行 → 复用同一实体(就地 UPDATE, id 不变); 未命中 → 新建; 末尾删除本次未保留的旧行。
         //   动机: 原"全删全建"每次换新 UUID, 导致 editQuoteCardValue 撞已删 id(400) + driver 缓存 churn。
         //   子表(process/componentData/snapshot/composite_process)仍按 draft 全量重建(行为不变), 仅 line 实体 id 稳定。
+        LOG.infof("[saveDraft-diag] id=%s received lineItems=%s", id,
+            request.lineItems == null ? "null" : String.valueOf(request.lineItems.size()));
         if (request.lineItems != null) {
             java.util.List<QuotationLineItem> existingLines = QuotationLineItem.list("quotationId = ?1", id);
             java.util.Map<java.util.UUID, QuotationLineItem> existingById = new java.util.HashMap<>();
@@ -428,7 +430,7 @@ public class QuotationService {
                                     "SELECT gen_random_uuid(), :lid, p.id FROM (" +
                                     "  SELECT DISTINCT operation_no FROM material_bom_item " +
                                     "  WHERE system_type='QUOTE' AND customer_no=:cc AND material_no=:part " +
-                                    "    AND characteristic='ASSEMBLY' AND operation_no IS NOT NULL" +
+                                    "    AND characteristic='ASSEMBLY' AND operation_no IS NOT NULL AND is_current = true" +
                                     ") ops JOIN process p ON p.code = ops.operation_no")
                                 .setParameter("lid", li.id)
                                 .setParameter("cc", ccObj.toString())

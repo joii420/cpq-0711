@@ -446,7 +446,7 @@ public class ConfigureProductService {
                 "seq_no, component_no, component_usage_type, created_at, updated_at) " +
                 "SELECT gen_random_uuid(), 'QUOTE', :cn, :p, NULL, 1, :p, :mt, NOW(), NOW() " +
                 "WHERE NOT EXISTS (SELECT 1 FROM material_bom_item " +
-                "  WHERE material_no = :p AND customer_no = :cn AND system_type = 'QUOTE' AND characteristic IS NULL)")
+                "  WHERE material_no = :p AND customer_no = :cn AND system_type = 'QUOTE' AND characteristic IS NULL AND is_current = true)")
             .setParameter("cn", customerCode)
             .setParameter("p", partNo)
             .setParameter("mt", materialType)
@@ -488,7 +488,7 @@ public class ConfigureProductService {
                 "SELECT gen_random_uuid(), 'QUOTE', :cn, mm.material_no, NULL, 1, mm.material_no, COALESCE(mr.symbol, mm.material_type), NOW(), NOW() " +
                 "FROM material_master mm LEFT JOIN material_recipe mr ON mr.id = mm.material_recipe_id " +
                 "WHERE mm.material_no = :p AND mm.material_recipe_id IS NOT NULL " +
-                "  AND NOT EXISTS (SELECT 1 FROM material_bom_item t WHERE t.material_no = :p AND t.customer_no = :cn AND t.system_type = 'QUOTE' AND t.characteristic IS NULL)")
+                "  AND NOT EXISTS (SELECT 1 FROM material_bom_item t WHERE t.material_no = :p AND t.customer_no = :cn AND t.system_type = 'QUOTE' AND t.characteristic IS NULL AND t.is_current = true)")
             .setParameter("cn", customerCode)
             .setParameter("p", partNo)
             .executeUpdate();
