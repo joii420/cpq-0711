@@ -60,8 +60,8 @@ class MaterialBomMergeHandlerTest {
     @Test
     void sameMaterialInBothSheets_collapsesToOneAssemblyCurrentRow() {
         handler.merge(
-            List.of(matRow(1, 1, "C1", "0.5"), matRow(2, 2, "C2", "1.0")),
-            List.of(asmRow(1, 1, "C1", "1"),   asmRow(2, 2, "C3", "2")),
+            List.of(matRow(1, 1, "TEST-MBM-C1", "0.5"), matRow(2, 2, "TEST-MBM-C2", "1.0")),
+            List.of(asmRow(1, 1, "TEST-MBM-C1", "1"),   asmRow(2, 2, "TEST-MBM-C3", "2")),
             ctx());
 
         assertEquals(1L, count("SELECT count(*) FROM material_bom WHERE material_no=:m AND is_current=TRUE"));
@@ -74,10 +74,10 @@ class MaterialBomMergeHandlerTest {
 
     @Test
     void materialOnlyThenBoth_flipsNullToHistory() {
-        handler.merge(List.of(matRow(1, 1, "C1", "0.5")), List.of(), ctx());
+        handler.merge(List.of(matRow(1, 1, "TEST-MBM-C1", "0.5")), List.of(), ctx());
         assertEquals(1L, count("SELECT count(*) FROM material_bom WHERE material_no=:m AND is_current=TRUE AND characteristic IS NULL"));
 
-        handler.merge(List.of(matRow(1, 1, "C1", "0.5")), List.of(asmRow(1, 1, "C1", "1")), ctx());
+        handler.merge(List.of(matRow(1, 1, "TEST-MBM-C1", "0.5")), List.of(asmRow(1, 1, "TEST-MBM-C1", "1")), ctx());
 
         assertEquals(1L, count("SELECT count(*) FROM material_bom WHERE material_no=:m AND is_current=TRUE"));
         assertEquals("ASSEMBLY", em.createNativeQuery(
@@ -89,7 +89,7 @@ class MaterialBomMergeHandlerTest {
     @Test
     void cfgPrefixMaterial_rejected() {
         Map<String, String> m = new HashMap<>();
-        m.put("宏丰料号", CFG); m.put("项次", "1"); m.put("投入料号", "C1"); m.put("材料毛重", "1");
+        m.put("宏丰料号", CFG); m.put("项次", "1"); m.put("投入料号", "TEST-MBM-C1"); m.put("材料毛重", "1");
         SheetImportResult r = handler.merge(List.of(new SheetRow(1, m)), List.of(), ctx());
         assertTrue(r.failedRows >= 1);
         assertEquals(0L, ((Number) em.createNativeQuery(

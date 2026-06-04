@@ -21,7 +21,8 @@ import java.util.Set;
  * 物料BOM ⇄ 组成件BOM 同料号去重合并（V3.2）。
  *
  * <p>解析「物料BOM」(MATERIAL/characteristic=NULL) + 「组成件BOM」(ASSEMBLY) 两 sheet，
- * 按 material_no 在单一事务内汇总两表子行（合并键=component_no，去 characteristic/seq_no），
+ * 按 material_no 在单一事务内汇总两表子行（合并键=component_no；characteristic 与 seq_no 不作为合并键；
+ * seq_no 仍作为内容列写入，冲突取组成件值），
  * 组成件优先判类型/取冲突值；写入前 FLIP 反向 characteristic 旧当前行为 is_current=false（保留历史，
  * 依赖 V293 子表版本化）；每料号单次 {@link VersionedV6Writer#writeVersionedMasterDetail}。
  *
@@ -55,11 +56,10 @@ public class MaterialBomMergeHandler {
             if (isCfg(materialNo)) { result.recordError(row.rowNo, "宏丰料号", "禁止导入系统生成料号(CFG- 前缀): " + materialNo); continue; }
             String componentUsageType = row.getStr("产出料号类型");
             String componentNo = row.getStr("投入料号");
-            if (componentNo != null) {
-                materialMasterRepo.upsertByMaterialNo(componentNo, row.getStr("投入料号名称"),
-                    null, null, null, digitsOnly(componentUsageType), null, null, null, ctx.importedBy);
-                result.recordWrite("material_master", 1);
-            }
+            if (componentNo == null) { result.recordError(row.rowNo, "投入料号", "为空"); continue; }
+            materialMasterRepo.upsertByMaterialNo(componentNo, row.getStr("投入料号名称"),
+                null, null, null, digitsOnly(componentUsageType), null, null, null, ctx.importedBy);
+            result.recordWrite("material_master", 1);
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("seq_no", row.getInt("项次"));
             c.put("component_no", componentNo);
@@ -80,6 +80,7 @@ public class MaterialBomMergeHandler {
             if (materialNo == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
             if (isCfg(materialNo)) { result.recordError(row.rowNo, "宏丰料号", "禁止导入系统生成料号(CFG- 前缀): " + materialNo); continue; }
             String componentNo = row.getStr("组成件料号");
+            if (componentNo == null) { result.recordError(row.rowNo, "组成件料号", "为空"); continue; }
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("seq_no", row.getInt("项次（一级）", "项次"));
             c.put("operation_no", row.getStr("工序编号"));
