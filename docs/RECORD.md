@@ -3155,4 +3155,16 @@ E2E:
 
 ---
 
+---
+
+### [2026-06-04] MaterialBomMergeHandler 物料BOM⇄组成件BOM 去重合并 | MaterialBomMergeHandler + QuoteImportService(删Q03/Q12)
+- **问题**: 同料号两表都填 → Q03(NULL)/Q12(ASSEMBLY)各写各的 → material_bom 双 current 行(如 8000137/3120018220)。
+- **修法**: 新增 MaterialBomMergeHandler——两 sheet 单一事务解析,按 component_no 合并(去 characteristic/seq_no,冲突取组成件值),组成件优先判 ASSEMBLY,写入前 FLIP 反向 characteristic 旧当前行为 is_current=false(保留历史,依赖 V293 子表版本化),每料号单次 writeVersionedMasterDetail。Q03/Q12 删除并入;QuoteImportService 显式喂两 sheet;material_master upsert 保留;拒绝空 component_no;CFG- 前缀料号拒绝导入。
+- **关键**: FLIP 而非 DELETE(子表已版本化保留历史版);FLIP/合并仅按非 CFG 单料号,不碰选配 CFG 双行。
+- **存量**: 一次性清理旧双 current 行(组成件优先留 ASSEMBLY、NULL 翻历史)。
+- **验证**: MaterialBomMergeHandlerTest 3 passed;存量 3120018220 → 单 ASSEMBLY current;E2E quotation-flow 8 Tab 加载中=0。
+- **计划**: docs/superpowers/plans/2026-06-04-material-bom-merge-handler.md
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。

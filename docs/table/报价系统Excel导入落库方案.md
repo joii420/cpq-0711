@@ -98,6 +98,8 @@
 
 > 给实现同学的"照着做"清单，配合上方规则表一起看。所有动作都在**导入器层 + 单一事务**内完成，不碰 DB 约束 / 通用写入器 / 视图。
 
+> ✅ **已实现（2026-06-04）**：`MaterialBomMergeHandler` 已落地（解析两 sheet + 按 component_no 合并 + 组成件优先 + 第 4 步 FLIP 反向 characteristic 留历史 + 拒绝空 component_no + CFG- 守卫），`Q03/Q12` 已删除并入合并器，`QuoteImportService` 改为显式喂两 sheet。计划见 `docs/superpowers/plans/2026-06-04-material-bom-merge-handler.md`。
+
 #### 一句话原理
 
 把「物料BOM」和「组成件BOM」两张表，**先在内存里按料号拼成一张完整 BOM，再一次性写库**。谁也别单独写，避免后写的把先写的覆盖掉。
