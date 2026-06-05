@@ -1,6 +1,8 @@
 package com.cpq.quotation.service;
 
+import com.cpq.component.dto.BomClosureResult;
 import com.cpq.component.dto.ExpandDriverResponse;
+import com.cpq.component.service.BomClosureService;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.quotation.entity.Quotation;
@@ -22,6 +24,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -60,6 +63,10 @@ public class CardSnapshotService {
 
     @Inject
     FormulaCalculator formulaCalculator;
+
+    /** 核价 BOM 递归展开（P1）：算根料号闭包（partSet+spine+环清单）。 */
+    @Inject
+    BomClosureService bomClosureService;
 
     /** 自注入：触发 REQUIRES_NEW 代理拦截器 */
     @Inject
@@ -409,6 +416,36 @@ public class CardSnapshotService {
         }
     }
 
+    /**
+     * 核价 BOM 递归展开（P1）：重算<b>整单核价</b>卡片值 + 核价 Excel（仅 COSTING，不碰报价侧）。
+     *
+     * <p>用于 {@code refresh-snapshot} —— 让<b>存量核价单</b>在用户主动刷新时把核价卡片
+     * 重算成整棵 BOM 树（plan 灰度口径「存量核价单下次快照重算时变整棵树」）。
+     *
+     * <p>安全性：核价侧 {@code editRows} 恒空（无核价编辑端点），重算不丢用户编辑；
+     * 报价侧 {@code quoteCardValues}/{@code quoteExcelValues} <b>完全不动</b>（守隔离，防 AP-41）。
+     */
+    @Transactional
+    public void refreshCostingCardValues(UUID quotationId) {
+        if (quotationId == null) return;
+        Quotation q = Quotation.findById(quotationId);
+        if (q == null || q.costingCardTemplateId == null) return;
+        List<QuotationLineItem> lines = QuotationLineItem.list("quotationId", quotationId);
+        for (QuotationLineItem li : lines) {
+            try {
+                QuotationLineItem managed = QuotationLineItem.findById(li.id);
+                if (managed == null) continue;
+                managed.costingCardValues = safeCall(() ->
+                    buildCostingCardValues(managed, q.costingCardTemplateId, q.customerId, q.id));
+                managed.costingExcelValues = safeCall(() ->
+                    buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues));
+            } catch (Exception e) {
+                LOG.warnf("[card-snapshot] refreshCostingCardValues li=%s: %s", li.id, e.getMessage());
+            }
+        }
+        LOG.infof("[card-snapshot] refreshCostingCardValues done quotation=%s lines=%d", quotationId, lines.size());
+    }
+
     // =========================================================================
     // buildCardValues — 复用 snapshot_rows 组装报价卡片值（不双写 expand）
     // =========================================================================
@@ -494,12 +531,22 @@ public class CardSnapshotService {
             JsonNode snapshot = MAPPER.readTree(tmplRows.get(0).toString());
             if (!snapshot.isArray()) return null;
 
-            // 2-4. 加载核价模板 driver 组件并 expand → baseRows（按 componentId）
+            // 核价 BOM 递归展开（P1）：先算根料号闭包（整棵 PRICING BOM 树）。
+            // 闭包 partSet 喂各核价组件多值取数；spine 全节点作行主轴（缺数据补空行）。
+            BomClosureResult closure = bomClosureService.compute(li.productPartNoSnapshot, java.util.Map.of());
+
+            // 2-4. 加载核价模板 driver 组件并按 spine 全节点展开 → baseRows（按 componentId）
             Map<String, ArrayNode> baseRowsByComp =
-                expandTemplateDriverBaseRows(costingTemplateId, li, customerId, quotationId);
+                expandTemplateDriverBaseRows(costingTemplateId, li, customerId, quotationId, closure);
 
             // 5. 组装 tabs（Task 3: 填 formulaResults；核价侧 editRows 恒空）
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null);
+
+            // 6. 成环料号回传根节点（前端告警「已截断展开」）
+            if (closure != null && closure.cyclePartNos != null && !closure.cyclePartNos.isEmpty()) {
+                ArrayNode cyc = root.putArray("cyclePartNos");
+                for (String pn : closure.cyclePartNos) cyc.add(pn);
+            }
 
             return MAPPER.writeValueAsString(root);
 
@@ -630,58 +677,132 @@ public class CardSnapshotService {
             componentSubtotals.put(tab.path("tabName").asText(""), sub);
         }
 
-        // PASS 2: 逐 tab 填 formulaResults
-        for (JsonNode tab : snapshot) {
-            String cid = tab.path("componentId").asText("");
-            ObjectNode tabNode = MAPPER.createObjectNode();
-            tabNode.put("componentId", cid);
-            tabNode.put("tabName", tab.path("tabName").asText(""));
+        // PASS 2: 按组件 cross_tab_ref 依赖拓扑序逐 tab 算（A 必须先于引用它的 B），
+        //   每算完一个组件即把其"按字段名标量行"(resolvedRows) 存入 crossTabRows 供后续组件引用。
+        //   输出顺序仍按原 snapshot 顺序（拓扑序只决定计算次序，不改变 UI tab 顺序）。
 
+        // 1) 组件级拓扑序（仅 NORMAL tab；SUBTOTAL 不参与，单独在原序补算）
+        List<String> compIds = new ArrayList<>();
+        Map<String, Set<String>> compDeps = new LinkedHashMap<>();
+        for (JsonNode tab : snapshot) {
+            if ("SUBTOTAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
+            String cid = tab.path("componentId").asText("");
+            compIds.add(cid);
+            compDeps.put(cid, CrossTabComponentOrder.extractSourceRefs(tab.path("formulas")));
+        }
+        List<String> order = CrossTabComponentOrder.topoOrder(compIds, compDeps);
+
+        // componentId → snapshot tab（按 componentId 反查；SUBTOTAL 走原序补算时直接遍历 snapshot）
+        Map<String, JsonNode> tabById = new LinkedHashMap<>();
+        for (JsonNode tab : snapshot) {
+            if ("SUBTOTAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
+            tabById.put(tab.path("componentId").asText(""), tab);
+        }
+
+        // cross_tab_ref 已算行存储（组件标识 componentId/componentCode → resolvedRows）
+        Map<String, List<Map<String, Object>>> crossTabRows = new java.util.HashMap<>();
+        // componentId → 已组装 tabNode（最终按原 snapshot 顺序回灌）
+        Map<String, ObjectNode> tabNodeById = new LinkedHashMap<>();
+
+        // 2) 拓扑序计算 NORMAL tab
+        for (String cid : order) {
+            JsonNode tab = tabById.get(cid);
+            if (tab == null) continue;
             ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, MAPPER.createArrayNode());
             ArrayNode editRows = filteredEdit.getOrDefault(cid, MAPPER.createArrayNode());
-            tabNode.set("baseRows", baseRows);
-            tabNode.set("editRows", editRows); // 加产品/核价 → 空；草稿重刷 → 保留的编辑
-
             ArrayNode formulaResults = formulaCalculator.calculate(
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
                 rkfByComp.get(cid), baseRows, editRows,
-                componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>());
-            tabNode.set("formulaResults", formulaResults);
-
-            // 值快照带上本 tab 小计（供 Excel CARD_FORMULA 的 __subtotal__ 引用，见 CardEffectiveRows）
+                componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>(),
+                crossTabRows); // 10 参重载：透传已算兄弟组件行
+            List<Map<String, Object>> resolved = buildResolvedRows(
+                tab, baseRows, editRows, formulaResults, rkfByComp.get(cid));
+            // 存入 crossTabRows（componentId + componentCode 双键，供 token.source 任一形式命中）
+            crossTabRows.put(cid, resolved);
             String code = tab.path("componentCode").asText(null);
-            Double sub = componentSubtotals.get(cid);
-            if (sub == null && code != null) sub = componentSubtotals.get(code);
-            if (sub == null) sub = componentSubtotals.get(tab.path("tabName").asText(""));
-            if (sub != null) tabNode.put("subtotal", sub);
+            if (code != null && !code.isBlank()) crossTabRows.put(code, resolved);
+            tabNodeById.put(cid, buildTabNode(tab, cid, baseRows, editRows, formulaResults,
+                resolved, componentSubtotals));
+        }
 
-            // 逐行解析成"按字段名标量行"(resolvedRows)，供 Excel CARD_FORMULA 直接按字段名取数。
-            // 通用引擎 resolveRowByFieldName，配置驱动，零硬编码字段名。
-            JsonNode fieldsDef = tab.path("fields");
-            Map<String, JsonNode> frByKey = new LinkedHashMap<>();
-            for (JsonNode fr : formulaResults) frByKey.put(fr.path("rowKey").asText(""), fr.path("values"));
-            Map<String, JsonNode> edByKey = new LinkedHashMap<>();
-            for (JsonNode er : editRows) edByKey.put(er.path("rowKey").asText(""), er.path("values"));
-            JsonNode rkf = rkfByComp.get(cid);
-            ArrayNode resolvedRows = MAPPER.createArrayNode();
-            int ri = 0;
-            for (JsonNode br : baseRows) {
-                JsonNode driverRow = br.path("driverRow");
-                JsonNode basicDataValues = br.path("basicDataValues");
-                String rk = formulaCalculator.computeRowKey(rkf, driverRow);
-                String rowKey = (rk != null && !rk.isEmpty()) ? rk : String.valueOf(ri);
-                JsonNode editValues = edByKey.get(rowKey);
-                JsonNode formulaValues = frByKey.get(rowKey);
-                Map<String, Object> resolved = formulaCalculator.resolveRowByFieldName(
-                    fieldsDef, driverRow, basicDataValues, editValues, formulaValues);
-                resolvedRows.add(MAPPER.valueToTree(resolved));
-                ri++;
-            }
-            tabNode.set("resolvedRows", resolvedRows);
+        // 3) SUBTOTAL tab：不参与拓扑序，按需补算（crossTabRows 可用，但其行不并入 crossTabRows）
+        for (JsonNode tab : snapshot) {
+            String cid = tab.path("componentId").asText("");
+            if (tabNodeById.containsKey(cid)) continue; // 已在拓扑序里算过
+            ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, MAPPER.createArrayNode());
+            ArrayNode editRows = filteredEdit.getOrDefault(cid, MAPPER.createArrayNode());
+            ArrayNode formulaResults = formulaCalculator.calculate(
+                tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
+                rkfByComp.get(cid), baseRows, editRows,
+                componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>(),
+                crossTabRows);
+            List<Map<String, Object>> resolved = buildResolvedRows(
+                tab, baseRows, editRows, formulaResults, rkfByComp.get(cid));
+            // SUBTOTAL 行不并入 crossTabRows（不可被 cross_tab_ref 引用）
+            tabNodeById.put(cid, buildTabNode(tab, cid, baseRows, editRows, formulaResults,
+                resolved, componentSubtotals));
+        }
 
-            tabs.add(tabNode);
+        // 4) 按原 snapshot 顺序输出 tab（拓扑序不得改变 UI tab 顺序）
+        for (JsonNode tab : snapshot) {
+            ObjectNode tn = tabNodeById.get(tab.path("componentId").asText(""));
+            if (tn != null) tabs.add(tn);
         }
         return root;
+    }
+
+    /** 组装单个 tabNode（baseRows/editRows/formulaResults/subtotal/resolvedRows）。 */
+    private ObjectNode buildTabNode(JsonNode tab, String cid, ArrayNode baseRows, ArrayNode editRows,
+            ArrayNode formulaResults, List<Map<String, Object>> resolvedRows,
+            Map<String, Double> componentSubtotals) {
+        ObjectNode tabNode = MAPPER.createObjectNode();
+        tabNode.put("componentId", cid);
+        tabNode.put("tabName", tab.path("tabName").asText(""));
+        tabNode.set("baseRows", baseRows);
+        tabNode.set("editRows", editRows); // 加产品/核价 → 空；草稿重刷 → 保留的编辑
+        tabNode.set("formulaResults", formulaResults);
+
+        // 值快照带上本 tab 小计（供 Excel CARD_FORMULA 的 __subtotal__ 引用，见 CardEffectiveRows）
+        String code = tab.path("componentCode").asText(null);
+        Double sub = componentSubtotals.get(cid);
+        if (sub == null && code != null) sub = componentSubtotals.get(code);
+        if (sub == null) sub = componentSubtotals.get(tab.path("tabName").asText(""));
+        if (sub != null) tabNode.put("subtotal", sub);
+
+        // resolvedRows 输出（与 crossTabRows 同源，DRY）
+        ArrayNode resolvedRowsNode = MAPPER.createArrayNode();
+        for (Map<String, Object> r : resolvedRows) resolvedRowsNode.add(MAPPER.valueToTree(r));
+        tabNode.set("resolvedRows", resolvedRowsNode);
+        return tabNode;
+    }
+
+    /**
+     * 逐行解析成"按字段名标量行" — 供 Excel CARD_FORMULA 按字段名取数 + cross_tab_ref 兄弟组件行查询。
+     *
+     * <p>通用引擎 {@link FormulaCalculator#resolveRowByFieldName}，配置驱动，零硬编码字段名。
+     * 值 <b>RAW 类型</b>（文本保留文本、数字保留数字），故 cross_tab_ref 文本匹配键可命中。
+     */
+    private List<Map<String, Object>> buildResolvedRows(JsonNode tab, ArrayNode baseRows,
+            ArrayNode editRows, ArrayNode formulaResults, JsonNode rowKeyFields) {
+        JsonNode fieldsDef = tab.path("fields");
+        Map<String, JsonNode> frByKey = new LinkedHashMap<>();
+        for (JsonNode fr : formulaResults) frByKey.put(fr.path("rowKey").asText(""), fr.path("values"));
+        Map<String, JsonNode> edByKey = new LinkedHashMap<>();
+        for (JsonNode er : editRows) edByKey.put(er.path("rowKey").asText(""), er.path("values"));
+        List<Map<String, Object>> out = new ArrayList<>();
+        int ri = 0;
+        for (JsonNode br : baseRows) {
+            JsonNode driverRow = br.path("driverRow");
+            JsonNode basicDataValues = br.path("basicDataValues");
+            String rk = formulaCalculator.computeRowKey(rowKeyFields, driverRow);
+            String rowKey = (rk != null && !rk.isEmpty()) ? rk : String.valueOf(ri);
+            JsonNode editValues = edByKey.get(rowKey);
+            JsonNode formulaValues = frByKey.get(rowKey);
+            out.add(formulaCalculator.resolveRowByFieldName(
+                fieldsDef, driverRow, basicDataValues, editValues, formulaValues));
+            ri++;
+        }
+        return out;
     }
 
     /** 仅供单测：暴露 assembleTabsWithFormulaResults 的 JSON 结果。 */
@@ -769,6 +890,101 @@ public class CardSnapshotService {
         return baseRowsByComp;
     }
 
+    /**
+     * 核价 BOM 递归展开（P1）专用：以闭包 {@code spine} 全节点为<b>行主轴</b>展开各 driver 组件。
+     *
+     * <p>用户决策（2026-06-04）：每个核价组件都按 spine 的<b>全部节点</b>出行，即使该组件对某节点
+     * 无业务数据也补一空行（仅系统列），保证每个 Tab 树结构完整、行对齐、不产生孤儿节点。
+     *
+     * <p>流程：每个组件对 {@code closure.partSet} 一次多值展开（{@link ComponentDriverService#expandForPartSet}），
+     * 得到 {@code Map<partNo, 业务行>}；再按 spine 顺序逐节点左关联：
+     * <ul>
+     *   <li>节点 hf_part_no 有业务行 → 每条业务行各出一行（DAG 重复子件 → 同业务数据复制到各 occurrence）；</li>
+     *   <li>节点无业务行 → 补一空行（driverRow 仅 hf_part_no，业务列空）。</li>
+     * </ul>
+     * 每行并入系统列 {@code __nodeId/__parentId/__lvl/__hfPartNo/__parentNo/__bomVersion/__isCycle}
+     * （{@code __} 前缀命名空间，杜绝与业务字段碰撞；不进 component.fields，绕开 AP-44）。
+     *
+     * @param closure 根料号闭包；{@code null} → 委托给无闭包的原方法（报价侧/兜底）。
+     */
+    private Map<String, ArrayNode> expandTemplateDriverBaseRows(UUID templateId, QuotationLineItem li,
+                                                                UUID customerId, UUID quotationId,
+                                                                BomClosureResult closure) {
+        if (closure == null) {
+            return expandTemplateDriverBaseRows(templateId, li, customerId, quotationId);
+        }
+        Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
+        @SuppressWarnings("unchecked")
+        List<Object> driverComps = em.createNativeQuery(
+            "SELECT DISTINCT c.id FROM template_component tc " +
+            "JOIN component c ON c.id = tc.component_id " +
+            "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
+            .setParameter("tid", templateId)
+            .getResultList();
+
+        String compositeType = li.compositeType;
+        QuotationIdContext.set(quotationId);
+        try {
+            for (Object dcObj : driverComps) {
+                if (dcObj == null) continue;
+                String cidStr = dcObj.toString();
+                UUID compId = UUID.fromString(cidStr);
+                try {
+                    Map<String, ExpandDriverResponse> byPart = componentDriverService.expandForPartSet(
+                        compId, customerId, closure.partSet, li.id, compositeType);
+                    baseRowsByComp.put(cidStr, buildSpineBaseRows(closure, byPart));
+                } catch (Exception e) {
+                    LOG.warnf("[card-snapshot] spine expand comp=%s li=%s: %s", compId, li.id, e.getMessage());
+                    baseRowsByComp.put(cidStr, MAPPER.createArrayNode());
+                }
+            }
+        } finally {
+            QuotationIdContext.clear();
+        }
+        return baseRowsByComp;
+    }
+
+    /**
+     * 以 spine 全节点为行主轴构建 baseRows（缺数据补空行）。
+     * 行数 = Σ(每节点 max(1, 该节点业务行数))，确定性（满足 AP-51 刷新稳定）。
+     */
+    private ArrayNode buildSpineBaseRows(BomClosureResult closure, Map<String, ExpandDriverResponse> byPart) {
+        ArrayNode out = MAPPER.createArrayNode();
+        if (closure.spine == null) return out;
+        for (BomClosureResult.SpineNode node : closure.spine) {
+            ExpandDriverResponse resp = (node.hfPartNo == null) ? null : byPart.get(node.hfPartNo);
+            List<ExpandDriverResponse.Row> bizRows =
+                (resp != null && resp.rows != null) ? resp.rows : java.util.Collections.emptyList();
+            if (bizRows.isEmpty()) {
+                out.add(spineRowNode(node, null));                 // 缺数据补空行
+            } else {
+                for (ExpandDriverResponse.Row r : bizRows) out.add(spineRowNode(node, r));
+            }
+        }
+        return out;
+    }
+
+    /** 组装单行：业务行(或空行) + 注入系统列 {@code __*}（命名空间前缀防碰撞）。 */
+    private ObjectNode spineRowNode(BomClosureResult.SpineNode node, ExpandDriverResponse.Row bizRow) {
+        ObjectNode rowNode;
+        if (bizRow != null) {
+            rowNode = rowToNode(bizRow);
+        } else {
+            rowNode = MAPPER.createObjectNode();
+            ObjectNode dr = rowNode.putObject("driverRow");
+            if (node.hfPartNo != null) { dr.put("hf_part_no", node.hfPartNo); dr.put("part_no", node.hfPartNo); }
+            rowNode.putObject("basicDataValues");
+        }
+        rowNode.put("__nodeId", node.nodeId == null ? "" : node.nodeId);
+        if (node.parentId == null) rowNode.putNull("__parentId"); else rowNode.put("__parentId", node.parentId);
+        rowNode.put("__lvl", node.lvl);
+        if (node.hfPartNo == null) rowNode.putNull("__hfPartNo"); else rowNode.put("__hfPartNo", node.hfPartNo);
+        if (node.parentNo == null) rowNode.putNull("__parentNo"); else rowNode.put("__parentNo", node.parentNo);
+        if (node.bomVersion == null) rowNode.putNull("__bomVersion"); else rowNode.put("__bomVersion", node.bomVersion);
+        rowNode.put("__isCycle", node.isCycle);
+        return rowNode;
+    }
+
     /** 从 quote_card_values JSON 提取各组件的 baseRows（componentId → baseRows 数组）。 */
     private Map<String, ArrayNode> extractBaseRowsByComp(String cardValuesJson) {
         Map<String, ArrayNode> map = new LinkedHashMap<>();
@@ -852,7 +1068,7 @@ public class CardSnapshotService {
 
             // 1. 重查基础值（报价模板 driver 组件 expand 种子）
             Map<String, ArrayNode> baseRowsByComp =
-                expandTemplateDriverBaseRows(q.customerTemplateId, managed, q.customerId, q.id);
+                expandTemplateDriverBaseRows(q.customerTemplateId, managed, q.customerId, q.id);  // 报价侧:无闭包(closure=null)
 
             // 2. 旧 editRows（按 rowKey 对齐保留）
             Map<String, ArrayNode> oldEdits = extractEditRowsByComp(managed.quoteCardValues);
