@@ -243,6 +243,127 @@ describe('formulaEngine - edge cases', () => {
   });
 });
 
+// ─── cross_tab_ref ──────────────────────────────────────────────────────────
+
+describe('cross_tab_ref', () => {
+  /**
+   * Helper: calls evaluateExpression with the full positional param list.
+   * Param positions (0-indexed):
+   *   0  tokens
+   *   1  fieldValues
+   *   2  componentSubtotals?
+   *   3  productAttributes?
+   *   4  quotationFields?
+   *   5  pathCache?
+   *   6  partNo?
+   *   7  basicDataValues?
+   *   8  previousRowSubtotal?
+   *   9  globalVariableDefs?
+   *  10  currentRow?
+   *  11  crossTabRows?   ← NEW trailing param
+   */
+  function evalCrossTab(
+    tokens: ExpressionToken[],
+    currentRow: Record<string, any> | undefined,
+    crossTabRows: Record<string, Array<Record<string, any>>>,
+  ): number {
+    return evaluateExpression(
+      tokens,
+      {},        // fieldValues
+      undefined, // componentSubtotals
+      undefined, // productAttributes
+      undefined, // quotationFields
+      undefined, // pathCache
+      undefined, // partNo
+      undefined, // basicDataValues
+      undefined, // previousRowSubtotal
+      undefined, // globalVariableDefs
+      currentRow,
+      crossTabRows,
+    );
+  }
+
+  const aRows = [
+    { 子件: 'P1', 单重: 0.8 },
+    { 子件: 'P2', 单重: 0.3 },
+    { 子件: 'P1', 单重: 0.5 },
+  ];
+
+  const tokenNone: ExpressionToken = {
+    type: 'cross_tab_ref',
+    source: 'A',
+    target: '单重',
+    match: [{ a: '子件', b: '子件' }],
+    agg: 'NONE',
+  };
+
+  it('NONE — single match → returns 0.8', () => {
+    // Only the first row matches '子件'='P1' uniquely (use 2-row subset)
+    const rows2 = [{ 子件: 'P1', 单重: 0.8 }, { 子件: 'P2', 单重: 0.3 }];
+    expect(evalCrossTab([tokenNone], { 子件: 'P1' }, { A: rows2 })).toBe(0.8);
+  });
+
+  it('NONE — zero match → 0', () => {
+    expect(evalCrossTab([tokenNone], { 子件: 'P9' }, { A: aRows })).toBe(0);
+  });
+
+  it('NONE — multi match → 0 (error swallowed by outer try/catch)', () => {
+    // aRows has two P1 rows → multi match → throws → caught → 0
+    expect(evalCrossTab([tokenNone], { 子件: 'P1' }, { A: aRows })).toBe(0);
+  });
+
+  it('SUM — multi match sums values: 0.8 + 0.5 = 1.3', () => {
+    const token: ExpressionToken = { ...tokenNone, agg: 'SUM' };
+    expect(evalCrossTab([token], { 子件: 'P1' }, { A: aRows })).toBe(1.3);
+  });
+
+  it('COUNT — counts matching rows: 2', () => {
+    const token: ExpressionToken = { ...tokenNone, agg: 'COUNT' };
+    expect(evalCrossTab([token], { 子件: 'P1' }, { A: aRows })).toBe(2);
+  });
+
+  it('AVG — two matching values (0.8 + 0.5) / 2 = 0.65', () => {
+    const token: ExpressionToken = { ...tokenNone, agg: 'AVG' };
+    expect(evalCrossTab([token], { 子件: 'P1' }, { A: aRows })).toBe(0.65);
+  });
+
+  it('MAX — returns larger value 0.8', () => {
+    const token: ExpressionToken = { ...tokenNone, agg: 'MAX' };
+    expect(evalCrossTab([token], { 子件: 'P1' }, { A: aRows })).toBe(0.8);
+  });
+
+  it('MIN — returns smaller value 0.5', () => {
+    const token: ExpressionToken = { ...tokenNone, agg: 'MIN' };
+    expect(evalCrossTab([token], { 子件: 'P1' }, { A: aRows })).toBe(0.5);
+  });
+
+  it('null/blank match key on currentRow → no match → 0', () => {
+    expect(evalCrossTab([tokenNone], { 子件: '' }, { A: aRows })).toBe(0);
+  });
+
+  it('null match key on aRow → that row excluded', () => {
+    const rowsWithNull = [{ 子件: null, 单重: 0.8 }, { 子件: 'P2', 单重: 0.3 }];
+    expect(evalCrossTab([tokenNone], { 子件: 'P1' }, { A: rowsWithNull })).toBe(0);
+  });
+
+  it('multi-column AND match — only rows matching BOTH pairs', () => {
+    const rowsAnd = [
+      { 子件: 'P1', 类型: 'X', 单重: 1.0 },
+      { 子件: 'P1', 类型: 'Y', 单重: 2.0 },
+      { 子件: 'P2', 类型: 'X', 单重: 3.0 },
+    ];
+    const tokenAnd: ExpressionToken = {
+      type: 'cross_tab_ref',
+      source: 'A',
+      target: '单重',
+      match: [{ a: '子件', b: '子件' }, { a: '类型', b: '类型' }],
+      agg: 'NONE',
+    };
+    // currentRow 子件='P1', 类型='X' → only first row matches
+    expect(evalCrossTab([tokenAnd], { 子件: 'P1', 类型: 'X' }, { A: rowsAnd })).toBe(1.0);
+  });
+});
+
 // ─── isWithinTolerance ──────────────────────────────────────────────────────
 
 describe('isWithinTolerance', () => {

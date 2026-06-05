@@ -3,7 +3,7 @@ import type { GlobalVariableDefinition } from '../services/globalVariableService
 import { compileGlobalVariableTokenForRow } from '../services/globalVariableService';
 
 export interface ExpressionToken {
-  type: 'field' | 'operator' | 'bracket_open' | 'bracket_close' | 'number' | 'component_subtotal' | 'product_attribute' | 'quotation_field' | 'path' | 'global_variable' | 'previous_row_subtotal' | 'datasource_field';
+  type: 'field' | 'operator' | 'bracket_open' | 'bracket_close' | 'number' | 'component_subtotal' | 'product_attribute' | 'quotation_field' | 'path' | 'global_variable' | 'previous_row_subtotal' | 'datasource_field' | 'cross_tab_ref';
   value?: string;
   label?: string;
   component_code?: string;
@@ -28,6 +28,12 @@ export interface ExpressionToken {
    * 若未配置 fallback_component_code,则行 0 默认返 0.
    */
   fallback_component_code?: string;
+  /** cross_tab_ref 专用 */
+  source?: string;
+  sourceLabel?: string;
+  target?: string;
+  match?: Array<{ a: string; b: string }>;
+  agg?: 'NONE' | 'SUM' | 'AVG' | 'COUNT' | 'MAX' | 'MIN';
 }
 
 /** 检测公式 token 数组中是否含 path 类型(决定走前端本地求值还是后端 API) */
@@ -102,6 +108,11 @@ export function tokensToExpressionString(tokens: ExpressionToken[]): string {
         // 序列化沿用 path 形态; 后端 FormulaEngine 解 BNF path 已支持
         parts.push(`{${t.path ?? ''}}`);
         break;
+      case 'cross_tab_ref':
+        // cross_tab_ref 由前端卡片引擎本地求值，不经后端 evaluate 端点；
+        // 此处产出占位 '0' 仅防止向后端序列化时生成非法表达式字符串。
+        parts.push('0');
+        break;
     }
   }
   return parts.join(' ');
@@ -138,6 +149,12 @@ export function evaluateExpression(
    * 向后兼容: 老调用点不传时动态 key token 兜底返 0 (旧行为).
    */
   currentRow?: Record<string, any>,
+  /**
+   * cross_tab_ref：同卡片已算行存储（组件标识→行表）。
+   * key = source（组件标识/Tab 名），value = 该组件的已计算行数组。
+   * 向后兼容: 老调用点不传时 cross_tab_ref token 返 0.
+   */
+  crossTabRows?: Record<string, Array<Record<string, any>>>,
 ): number {
   // Build expression string from tokens
   let expr = '';
@@ -222,6 +239,42 @@ export function evaluateExpression(
         // 应已含 DATA_SOURCE 解析后的值 (computeAllFormulas 前置写入).
         const dsName = token.name ?? token.value ?? '';
         expr += (fieldValues[dsName] ?? 0).toString();
+        break;
+      }
+      case 'cross_tab_ref': {
+        const rows = crossTabRows?.[token.source ?? ''] ?? [];
+        const hits = rows.filter((ar) =>
+          (token.match ?? []).every((p) => {
+            const av = ar[p.a];
+            const bv = currentRow?.[p.b];
+            if (av == null || av === '' || bv == null || bv === '') return false;
+            const na = Number(av), nb = Number(bv);
+            if (!isNaN(na) && !isNaN(nb)) return na === nb;
+            return String(av).trim() === String(bv).trim();
+          }));
+        const agg = (token.agg ?? 'NONE').toUpperCase();
+        const num = (v: any) => { const n = Number(v); return isNaN(n) ? null : n; };
+        let out = 0;
+        let crossTabError = false;
+        if (agg === 'COUNT') out = hits.length;
+        else if (agg === 'NONE') {
+          if (hits.length === 0) out = 0;
+          else if (hits.length > 1) crossTabError = true; // multi match → error → 0
+          else { const n = num(hits[0][token.target ?? '']); out = n ?? 0; }
+        } else if (hits.length === 0) out = 0;
+        else {
+          const nums = hits.map((h) => num(h[token.target ?? '']));
+          if (nums.some((n) => n === null)) crossTabError = true; // non-numeric → error → 0
+          else {
+            const arr = nums as number[];
+            out = agg === 'SUM' ? arr.reduce((s, x) => s + x, 0)
+                : agg === 'AVG' ? arr.reduce((s, x) => s + x, 0) / arr.length
+                : agg === 'MAX' ? Math.max(...arr)
+                : agg === 'MIN' ? Math.min(...arr) : 0;
+          }
+        }
+        // 错误路径: 注入非法表达式让外层 try/catch 捕获并返回 0 (对齐后端 error→0 行为)
+        expr += crossTabError ? '(null.x)' : out.toString();
         break;
       }
       case 'global_variable': {
