@@ -226,5 +226,57 @@
       "agg": "NONE"
     },
     "expected": 7.5
+  },
+  {
+    "name": "targetExpr NONE A单价乘本数量",
+    "aRows": [{"子件": "P1", "单价": 2}],
+    "currentRow": {"子件": "P1", "数量": 3},
+    "token": {
+      "type": "cross_tab_ref",
+      "source": "A",
+      "agg": "NONE",
+      "match": [{"a": "子件", "b": "子件"}],
+      "targetExpr": [
+        {"type": "field", "value": "单价"},
+        {"type": "operator", "value": "*"},
+        {"type": "b_field", "value": "数量"}
+      ]
+    },
+    "expected": 6
+  },
+  {
+    "name": "targetExpr SUM 逐行先算再聚合",
+    "aRows": [{"子件": "P1", "单价": 2, "数量": 3}, {"子件": "P1", "单价": 4, "数量": 1}],
+    "currentRow": {"子件": "P1"},
+    "token": {
+      "type": "cross_tab_ref",
+      "source": "A",
+      "agg": "SUM",
+      "match": [{"a": "子件", "b": "子件"}],
+      "targetExpr": [
+        {"type": "field", "value": "单价"},
+        {"type": "operator", "value": "*"},
+        {"type": "field", "value": "数量"}
+      ]
+    },
+    "expected": 10
+  },
+  {
+    "name": "targetExpr 优先于 target",
+    "aRows": [{"子件": "P1", "单价": 2, "数量": 3}],
+    "currentRow": {"子件": "P1"},
+    "token": {
+      "type": "cross_tab_ref",
+      "source": "A",
+      "agg": "NONE",
+      "target": "单价",
+      "match": [{"a": "子件", "b": "子件"}],
+      "targetExpr": [
+        {"type": "field", "value": "单价"},
+        {"type": "operator", "value": "*"},
+        {"type": "field", "value": "数量"}
+      ]
+    },
+    "expected": 6
   }
 ]
