@@ -152,18 +152,19 @@ class ComponentServiceCrossTabValidateTest {
     }
 
     // ------------------------------------------------------------------
-    // T5: agg=NONE 时 target 为空 → 抛 BusinessException 含"target"
+    // T5: agg=NONE 时 target 为空（且无 targetExpr）→ 抛 BusinessException 含"目标列"
     // ------------------------------------------------------------------
     @Test
-    @DisplayName("T5: agg=NONE 且 target 为空 → 抛 BusinessException 含'target'")
+    @DisplayName("T5: agg=NONE 且 target 为空且无 targetExpr → 抛 BusinessException 含'目标列'")
     void none_agg_blank_target_throws() {
         Map<String, Object> token = validToken();
         token.put("agg", "NONE");
         token.remove("target");
+        // 无 targetExpr，应抛错
         BusinessException ex = assertThrows(BusinessException.class, () ->
                 svc.validateFormulas(emptyFields(), formulasWith(token)));
-        assertTrue(ex.getMessage().contains("target"),
-                "消息应含 'target'，实际: " + ex.getMessage());
+        assertTrue(ex.getMessage().contains("目标列"),
+                "消息应含 '目标列'，实际: " + ex.getMessage());
     }
 
     // ------------------------------------------------------------------
@@ -216,5 +217,40 @@ class ComponentServiceCrossTabValidateTest {
                     svc.validateFormulas(emptyFields(), formulasWith(token)),
                     "agg=" + agg + " 应通过");
         }
+    }
+
+    // ------------------------------------------------------------------
+    // T10: agg=NONE，无 target，但 targetExpr 非空 → 不抛（targetExpr 可替代 target）
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("T10: agg=NONE，无 target，有非空 targetExpr → 通过不抛")
+    void none_agg_no_target_but_targetExpr_passes() {
+        Map<String, Object> token = new HashMap<>();
+        token.put("type", "cross_tab_ref");
+        token.put("source", "comp_material");
+        token.put("agg", "NONE");
+        token.put("match", List.of(Map.of("a", "material_no", "b", "part_no")));
+        // 无 target；用 targetExpr 替代
+        token.put("targetExpr", List.of(Map.of("type", "field", "value", "单价")));
+        assertDoesNotThrow(() ->
+                svc.validateFormulas(emptyFields(), formulasWith(token)),
+                "targetExpr 非空时即使 target 缺失也应通过");
+    }
+
+    // ------------------------------------------------------------------
+    // T11: agg=SUM，无 target，无 targetExpr → 抛 BusinessException（两者均缺）
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("T11: agg=SUM，无 target，无 targetExpr → 抛 BusinessException")
+    void sum_agg_no_target_no_targetExpr_throws() {
+        Map<String, Object> token = new HashMap<>();
+        token.put("type", "cross_tab_ref");
+        token.put("source", "comp_material");
+        token.put("agg", "SUM");
+        token.put("match", List.of(Map.of("a", "material_no", "b", "part_no")));
+        // 既无 target 也无 targetExpr
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                svc.validateFormulas(emptyFields(), formulasWith(token)));
+        assertEquals(400, ex.getCode());
     }
 }

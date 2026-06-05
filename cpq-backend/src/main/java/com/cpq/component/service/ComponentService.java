@@ -489,8 +489,10 @@ public class ComponentService {
 
                 Object tgtObj = token.get("target");
                 String target = tgtObj == null ? null : tgtObj.toString();
-                if (!"COUNT".equalsIgnoreCase(agg) && (target == null || target.isBlank()))
-                    throw new BusinessException(400, "跨页签引用缺少目标列(target)");
+                Object targetExprObj = token.get("targetExpr");
+                boolean hasTargetExpr = targetExprObj instanceof java.util.List<?> tl && !tl.isEmpty();
+                if (!"COUNT".equalsIgnoreCase(agg) && (target == null || target.isBlank()) && !hasTargetExpr)
+                    throw new BusinessException(400, "跨页签引用缺少目标列或目标公式");
             }
         }
     }
