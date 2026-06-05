@@ -362,6 +362,20 @@ describe('cross_tab_ref', () => {
     // currentRow 子件='P1', 类型='X' → only first row matches
     expect(evalCrossTab([tokenAnd], { 子件: 'P1', 类型: 'X' }, { A: rowsAnd })).toBe(1.0);
   });
+
+  it('SUM — non-numeric target value → error path → returns 0', () => {
+    // 匹配行的 target 字段为字符串 'abc'(非数字)→ nums.some(n === null) → crossTabError → 0
+    const rowsNonNumeric = [{ 子件: 'P1', 单重: 'abc' }, { 子件: 'P2', 单重: 0.3 }];
+    const tokenSum: ExpressionToken = { ...tokenNone, agg: 'SUM' };
+    expect(evalCrossTab([tokenSum], { 子件: 'P1' }, { A: rowsNonNumeric })).toBe(0);
+  });
+
+  it('SUM — whitespace-only match key on aRow → row excluded → SUM returns 0 (Fix 1 验证)', () => {
+    // aRow.子件 = '   '(全空白)→ blank() = true → 该行被排除 → 无命中 → SUM = 0
+    const rowsWhitespace = [{ 子件: '   ', 单重: 5 }, { 子件: 'P2', 单重: 0.3 }];
+    const tokenSum: ExpressionToken = { ...tokenNone, agg: 'SUM' };
+    expect(evalCrossTab([tokenSum], { 子件: '   ' }, { A: rowsWhitespace })).toBe(0);
+  });
 });
 
 // ─── isWithinTolerance ──────────────────────────────────────────────────────

@@ -247,7 +247,8 @@ export function evaluateExpression(
           (token.match ?? []).every((p) => {
             const av = ar[p.a];
             const bv = currentRow?.[p.b];
-            if (av == null || av === '' || bv == null || bv === '') return false;
+            const blank = (x: any) => x == null || String(x).trim() === '';
+            if (blank(av) || blank(bv)) return false;
             const na = Number(av), nb = Number(bv);
             if (!isNaN(na) && !isNaN(nb)) return na === nb;
             return String(av).trim() === String(bv).trim();
