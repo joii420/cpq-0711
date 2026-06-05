@@ -9,6 +9,7 @@ export interface FormulaZoneProps {
 function getChipStyle(type: FormulaToken['type']): React.CSSProperties {
   switch (type) {
     case 'field':
+    case 'b_field':
       return {
         background: '#e1f0ff',
         border: '1px solid #c6e0ff',
@@ -73,7 +74,27 @@ function getChipStyle(type: FormulaToken['type']): React.CSSProperties {
   }
 }
 
+function exprTokenToText(tok: FormulaToken): string {
+  switch (tok.type) {
+    case 'field': return `A.${tok.label || tok.value}`;
+    case 'b_field': return `本.${tok.label || tok.value}`;
+    case 'operator': {
+      if (tok.value === '*') return '×';
+      if (tok.value === '/') return '÷';
+      return tok.value || '';
+    }
+    case 'bracket_open': return '(';
+    case 'bracket_close': return ')';
+    case 'number': return tok.value || '';
+    case 'global_variable': return tok.code || tok.label || '全局变量';
+    default: return tok.value || '';
+  }
+}
+
 function getTokenLabel(token: FormulaToken): string {
+  if (token.type === 'b_field') {
+    return `本.${token.label || token.value}`;
+  }
   if (token.type === 'component_subtotal') {
     // Show "组件名·字段名" format for cross-component references
     if (token.label && token.label.includes('·')) return token.label;
@@ -85,7 +106,13 @@ function getTokenLabel(token: FormulaToken): string {
   if (token.type === 'cross_tab_ref') {
     const aggLabel = token.agg && token.agg !== 'NONE' ? `${token.agg}.` : '';
     const cond = (token.match ?? []).map((p: { a: string; b: string }) => `${p.a}=本.${p.b}`).join(' 且 ');
-    const tgt = token.target || '行数';
+    // If targetExpr is present, render the expression instead of a single target name
+    let tgt: string;
+    if (token.targetExpr && token.targetExpr.length > 0) {
+      tgt = token.targetExpr.map(exprTokenToText).join(' ');
+    } else {
+      tgt = token.target || '行数';
+    }
     return `跨页签[${token.sourceLabel ?? token.source}].${aggLabel}${tgt} 当[${cond}]`;
   }
   if (token.type === 'quotation_field') {

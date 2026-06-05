@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Drawer, Select, Button, Space, message } from 'antd';
+import { Drawer, Select, Button, Space, Switch, InputNumber, Tag, message } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import type { FormulaToken } from './types';
 
 export interface SiblingComponent {
   id: string;
@@ -22,6 +23,7 @@ interface CrossTabToken {
   source: string;
   sourceLabel: string;
   target: string;
+  targetExpr?: FormulaToken[];
   match: Array<{ a: string; b: string }>;
   agg: string;
 }
@@ -45,6 +47,50 @@ const AGG_OPTIONS = [
   { value: 'MIN', label: '最小 (MIN)' },
 ];
 
+/** Map a targetExpr token to a short readable string for chip/preview display. */
+function tokenToText(tok: FormulaToken): string {
+  switch (tok.type) {
+    case 'field':
+      return `A.${tok.label || tok.value}`;
+    case 'b_field':
+      return `本.${tok.label || tok.value}`;
+    case 'operator':
+      if (tok.value === '*') return '×';
+      if (tok.value === '/') return '÷';
+      return tok.value || '';
+    case 'bracket_open':
+      return '(';
+    case 'bracket_close':
+      return ')';
+    case 'number':
+      return tok.value || '';
+    case 'global_variable':
+      return tok.code || tok.label || '全局变量';
+    default:
+      return tok.value || '';
+  }
+}
+
+/** Background/border/color for targetExpr chips inside the formula builder. */
+function exprChipStyle(type: FormulaToken['type']): React.CSSProperties {
+  switch (type) {
+    case 'field':
+      return { background: '#e1f0ff', border: '1px solid #c6e0ff', color: '#1677ff' };
+    case 'b_field':
+      return { background: '#e1f0ff', border: '1px solid #c6e0ff', color: '#1677ff' };
+    case 'operator':
+    case 'bracket_open':
+    case 'bracket_close':
+      return { background: '#f0f9eb', border: '1px solid #d5f0c2', color: '#52c41a' };
+    case 'number':
+      return { background: '#f5f5f5', border: '1px solid #d9d9d9', color: '#595959' };
+    case 'global_variable':
+      return { background: '#fff7e6', border: '1px solid #ffd591', color: '#d46b08' };
+    default:
+      return { background: '#f5f5f5', border: '1px solid #d9d9d9', color: '#595959' };
+  }
+}
+
 const CrossTabRefDrawer: React.FC<Props> = ({
   open,
   onClose,
@@ -57,6 +103,15 @@ const CrossTabRefDrawer: React.FC<Props> = ({
   const [target, setTarget] = useState<string>('');
   const [matchPairs, setMatchPairs] = useState<MatchPair[]>([{ a: '', b: '' }]);
 
+  // Formula mode state
+  const [useFormula, setUseFormula] = useState<boolean>(false);
+  const [targetExpr, setTargetExpr] = useState<FormulaToken[]>([]);
+  // For inserting a number
+  const [numInput, setNumInput] = useState<number | null>(null);
+  // Controlled select values (reset after appending)
+  const [aFieldSel, setAFieldSel] = useState<string | undefined>(undefined);
+  const [bFieldSel, setBFieldSel] = useState<string | undefined>(undefined);
+
   // Reset state when drawer opens or closes
   useEffect(() => {
     if (!open) {
@@ -64,6 +119,11 @@ const CrossTabRefDrawer: React.FC<Props> = ({
       setAgg('NONE');
       setTarget('');
       setMatchPairs([{ a: '', b: '' }]);
+      setUseFormula(false);
+      setTargetExpr([]);
+      setNumInput(null);
+      setAFieldSel(undefined);
+      setBFieldSel(undefined);
     }
   }, [open]);
 
@@ -74,6 +134,7 @@ const CrossTabRefDrawer: React.FC<Props> = ({
     setSourceId(id);
     // Reset target and match pairs when source changes
     setTarget('');
+    setTargetExpr([]);
     setMatchPairs([{ a: '', b: '' }]);
   };
 
@@ -91,6 +152,11 @@ const CrossTabRefDrawer: React.FC<Props> = ({
     );
   };
 
+  // ---- targetExpr formula builder helpers ----
+  const appendToken = (tok: FormulaToken) => setTargetExpr((prev) => [...prev, tok]);
+  const popToken = () => setTargetExpr((prev) => prev.slice(0, -1));
+  const clearExpr = () => setTargetExpr([]);
+
   const handleConfirm = () => {
     if (!sourceId) {
       message.warning('请选择源页签 (A)');
@@ -101,9 +167,18 @@ const CrossTabRefDrawer: React.FC<Props> = ({
       message.warning('请至少填写一组完整的匹配列对 (A.列 和 本.列 均需选择)');
       return;
     }
-    if (agg !== 'COUNT' && !target) {
-      message.warning('请选择目标列 (A.b)，或将聚合方式改为"计数"');
-      return;
+    if (agg !== 'COUNT') {
+      if (useFormula) {
+        if (targetExpr.length === 0) {
+          message.warning('请选择目标列或填写目标公式');
+          return;
+        }
+      } else {
+        if (!target) {
+          message.warning('请选择目标列 (A.b)，或将聚合方式改为"计数"');
+          return;
+        }
+      }
     }
 
     const comp = siblingComponents.find((c) => c.id === sourceId);
@@ -113,7 +188,8 @@ const CrossTabRefDrawer: React.FC<Props> = ({
       type: 'cross_tab_ref',
       source: sourceId,
       sourceLabel: comp.name,
-      target: agg === 'COUNT' ? '' : target,
+      target: (useFormula && agg !== 'COUNT') ? '' : (agg === 'COUNT' ? '' : target),
+      targetExpr: (useFormula && agg !== 'COUNT' && targetExpr.length > 0) ? targetExpr : undefined,
       match: completePairs,
       agg,
     };
@@ -124,6 +200,16 @@ const CrossTabRefDrawer: React.FC<Props> = ({
 
   const handleClose = () => {
     onClose();
+  };
+
+  // Preview text for the bottom preview box
+  const targetPreviewText = () => {
+    if (agg === 'COUNT') return '行数';
+    if (useFormula) {
+      if (targetExpr.length === 0) return '(未填写公式)';
+      return targetExpr.map(tokenToText).join(' ');
+    }
+    return target || '(未选目标列)';
   };
 
   return (
@@ -249,27 +335,197 @@ const CrossTabRefDrawer: React.FC<Props> = ({
           />
         </div>
 
-        {/* Target field */}
+        {/* Target field / formula — section 4 */}
         <div>
-          <div style={{ fontWeight: 500, marginBottom: 6, fontSize: 13 }}>
+          <div style={{ fontWeight: 500, marginBottom: 6, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
             4. 目标列 (A.字段)
-            {agg === 'COUNT' && (
-              <span style={{ fontWeight: 400, color: '#8c8c8c', marginLeft: 8, fontSize: 12 }}>
+            {agg === 'COUNT' ? (
+              <span style={{ fontWeight: 400, color: '#8c8c8c', fontSize: 12 }}>
                 聚合方式为"计数"时无需选择目标列
+              </span>
+            ) : (
+              <span style={{ fontWeight: 400, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: '#8c8c8c' }}>模式：</span>
+                <Switch
+                  checked={useFormula}
+                  onChange={setUseFormula}
+                  checkedChildren="公式"
+                  unCheckedChildren="单列"
+                  size="small"
+                />
               </span>
             )}
           </div>
-          <Select
-            style={{ width: '100%' }}
-            placeholder={agg === 'COUNT' ? '（计数模式，无需目标列）' : '选择要引用的 A 组件字段'}
-            value={target || undefined}
-            onChange={setTarget}
-            options={sourceFields.map((f) => ({ label: f.name, value: f.name }))}
-            disabled={!sourceId || agg === 'COUNT'}
-            showSearch
-            allowClear
-            onClear={() => setTarget('')}
-          />
+
+          {agg !== 'COUNT' && (
+            <>
+              {/* Single column mode */}
+              {!useFormula && (
+                <Select
+                  style={{ width: '100%' }}
+                  placeholder="选择要引用的 A 组件字段"
+                  value={target || undefined}
+                  onChange={setTarget}
+                  options={sourceFields.map((f) => ({ label: f.name, value: f.name }))}
+                  disabled={!sourceId}
+                  showSearch
+                  allowClear
+                  onClear={() => setTarget('')}
+                />
+              )}
+
+              {/* Formula mode */}
+              {useFormula && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {/* Chip display of current expression */}
+                  <div
+                    style={{
+                      border: '1px dashed #c0c4cc',
+                      borderRadius: 4,
+                      minHeight: 36,
+                      padding: '4px 6px',
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: 4,
+                      alignItems: 'center',
+                      background: '#f9f9f9',
+                    }}
+                  >
+                    {targetExpr.length === 0 ? (
+                      <span style={{ color: '#c0c4cc', fontSize: 12, userSelect: 'none' }}>
+                        使用下方控件构建目标公式
+                      </span>
+                    ) : (
+                      targetExpr.map((tok, idx) => {
+                        const cs = exprChipStyle(tok.type);
+                        return (
+                          <Tag
+                            key={idx}
+                            closable
+                            onClose={(e) => {
+                              e.preventDefault();
+                              setTargetExpr((prev) => prev.filter((_, i) => i !== idx));
+                            }}
+                            style={{
+                              ...cs,
+                              borderRadius: 3,
+                              fontSize: 12,
+                              margin: 0,
+                              padding: '1px 4px',
+                            }}
+                          >
+                            {tokenToText(tok)}
+                          </Tag>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Insert controls row 1: A 字段 / 本组件字段 */}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: '#595959', whiteSpace: 'nowrap' }}>A 字段：</span>
+                    <Select
+                      size="small"
+                      style={{ width: 160 }}
+                      placeholder="选择 A 字段"
+                      value={aFieldSel}
+                      disabled={!sourceId}
+                      options={sourceFields.map((f) => ({ label: fieldText(f), value: f.name }))}
+                      onChange={(v) => {
+                        const f = sourceFields.find((x) => x.name === v);
+                        if (f) {
+                          appendToken({ type: 'field', value: f.name, label: fieldText(f) });
+                        }
+                        setAFieldSel(undefined);
+                      }}
+                      showSearch
+                    />
+                    <span style={{ fontSize: 12, color: '#595959', whiteSpace: 'nowrap' }}>本组件字段：</span>
+                    <Select
+                      size="small"
+                      style={{ width: 160 }}
+                      placeholder="选择本组件字段"
+                      value={bFieldSel}
+                      options={currentFields.map((f) => ({ label: fieldText(f), value: f.name }))}
+                      onChange={(v) => {
+                        const f = currentFields.find((x) => x.name === v);
+                        if (f) {
+                          appendToken({ type: 'b_field', value: f.name, label: fieldText(f) });
+                        }
+                        setBFieldSel(undefined);
+                      }}
+                      showSearch
+                    />
+                  </div>
+
+                  {/* Insert controls row 2: 运算符 + 数字 */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: '#595959', whiteSpace: 'nowrap' }}>运算符：</span>
+                    {(['+', '-', '×', '÷', '(', ')'] as const).map((sym) => {
+                      const opValue = sym === '×' ? '*' : sym === '÷' ? '/' : sym;
+                      const isOp = sym === '+' || sym === '-' || sym === '×' || sym === '÷';
+                      return (
+                        <Button
+                          key={sym}
+                          size="small"
+                          style={{ minWidth: 32, padding: '0 6px' }}
+                          onClick={() => {
+                            if (isOp) {
+                              appendToken({ type: 'operator', value: opValue });
+                            } else if (sym === '(') {
+                              appendToken({ type: 'bracket_open', value: '(' });
+                            } else {
+                              appendToken({ type: 'bracket_close', value: ')' });
+                            }
+                          }}
+                        >
+                          {sym}
+                        </Button>
+                      );
+                    })}
+                    <span style={{ fontSize: 12, color: '#595959', whiteSpace: 'nowrap', marginLeft: 8 }}>数字：</span>
+                    <InputNumber
+                      size="small"
+                      style={{ width: 90 }}
+                      value={numInput}
+                      onChange={(v) => setNumInput(v)}
+                      placeholder="输入数字"
+                    />
+                    <Button
+                      size="small"
+                      disabled={numInput === null || numInput === undefined}
+                      onClick={() => {
+                        if (numInput !== null && numInput !== undefined) {
+                          appendToken({ type: 'number', value: String(numInput) });
+                          setNumInput(null);
+                        }
+                      }}
+                    >
+                      添加
+                    </Button>
+                    {/* TODO 第二期/后续: 全局变量插入 */}
+                  </div>
+
+                  {/* Delete last / clear */}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Button size="small" danger onClick={popToken} disabled={targetExpr.length === 0}>
+                      删末
+                    </Button>
+                    <Button size="small" danger onClick={clearExpr} disabled={targetExpr.length === 0}>
+                      清空
+                    </Button>
+                  </div>
+
+                  {/* Preview line */}
+                  {targetExpr.length > 0 && (
+                    <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+                      表达式预览：<span style={{ color: '#1677ff' }}>{targetExpr.map(tokenToText).join(' ')}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {/* Preview */}
@@ -288,7 +544,7 @@ const CrossTabRefDrawer: React.FC<Props> = ({
             <span>
               跨页签[{sourceComp?.name}].
               {agg !== 'NONE' ? `${agg}.` : ''}
-              {agg === 'COUNT' ? '行数' : (target || '(未选目标列)')}
+              {targetPreviewText()}
               {' '}当[
               {matchPairs
                 .filter((p) => p.a && p.b)

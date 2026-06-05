@@ -122,6 +122,7 @@ export interface FormulaItem {
 export interface FormulaToken {
   type:
     | 'field'
+    | 'b_field'           // 本组件 (B) 字段引用 — 用于 cross_tab_ref targetExpr 内
     | 'operator'
     | 'bracket_open'
     | 'bracket_close'
@@ -159,6 +160,11 @@ export interface FormulaToken {
   match?: Array<{ a: string; b: string }>;
   /** 聚合方式：NONE / SUM / AVG / COUNT / MAX / MIN */
   agg?: string;
+  /**
+   * 目标公式（可选）：非空时优先于 target 单列，用于计算派生指标。
+   * 支持 field(A列) / b_field(B本组件列) / operator / bracket / number / global_variable tokens。
+   */
+  targetExpr?: FormulaToken[];
 }
 
 export const FIELD_TYPE_OPTIONS = [
