@@ -693,7 +693,7 @@ function buildResolvedRow(
  * 每算完一个组件即把其 resolvedRows 存入 store (componentId + componentCode + ids[] 三键),
  * 拓扑序保证被引用组件 A 先于引用方 B 入 store。环 → 退回输入序 (模板保存层已硬拦环)。
  */
-function buildCrossTabRows(
+export function buildCrossTabRows(
   componentData: ComponentDataItem[],
   allComponentSubtotals: Record<string, number>,
   partNo: string | undefined,

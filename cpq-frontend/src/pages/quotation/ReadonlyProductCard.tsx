@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import type { ComponentDataItem, ComponentField } from './QuotationStep2';
-import { computeAllFormulas, computeProductSubtotal, buildSnapshotExpansions, EMPTY_LINEITEMS } from './QuotationStep2';
+import { computeAllFormulas, computeProductSubtotal, buildSnapshotExpansions, buildCrossTabRows, EMPTY_LINEITEMS } from './QuotationStep2';
 import { enrichComponentData } from './enrichComponentData';
 import { useDriverExpansions, driverExpansionKey, fieldsOverrideHash, bnfDriverLookupKey } from './useDriverExpansions';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
@@ -75,6 +75,9 @@ function buildFormulaCache(
   // 否则 BASIC_DATA 分母字段（如 成材率）取不到值 → ?? 0 → 工序单价=单价÷0=Infinity →
   // 子小计求和 = ∞。与渲染层 preComputedCaches 同款（按 driver 行数 + 行级 bdv）。
   driverExpansion?: { rowCount: number; rows: Array<{ basicDataValues?: Record<string, any> }> },
+  // cross_tab_ref 三视图对齐 (Task 4.3): PASS1 小计循环不传（undefined），
+  // 仅渲染层 PASS2 才传 crossTabRows，镜像后端两阶段。
+  crossTabRows?: Record<string, Array<Record<string, any>>>,
 ): Array<Record<string, number | null>> {
   const subtotalFieldName = comp.fields?.find((f: any) => f.is_subtotal)?.name;
   const useDriver = !!(driverExpansion && driverExpansion.rowCount > 0);
@@ -88,7 +91,7 @@ function buildFormulaCache(
     const cache = computeAllFormulas(
       comp, row, compSubtotals,
       undefined, undefined, partNo, bdv,
-      prevRowSubtotal, globalVariableDefs,
+      prevRowSubtotal, globalVariableDefs, crossTabRows,
     );
     caches.push(cache);
     if (subtotalFieldName && typeof cache[subtotalFieldName] === 'number') {
@@ -298,6 +301,26 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
     compSubtotals[comp.tabName] = st;
     if (comp.componentCode) compSubtotals[comp.componentCode] = st;
   }
+  // cross_tab_ref 三视图对齐 (Task 4.3): PASS1（compSubtotals 循环）完成后构建 crossTabRows，
+  // 镜像后端 CardSnapshotService PASS2。lookupExpansion 复用与 compSubtotals 循环相同的 key 构造。
+  const crossTabRows = buildCrossTabRows(
+    lineItem.componentData ?? [],
+    compSubtotals,
+    lineItem.productPartNo || undefined,
+    (comp) => {
+      const k = driverExpansionKey(
+        subtotalLineItemId,
+        lineItem.productPartNo || '',
+        comp.componentId,
+        customerId,
+        comp.dataDriverPath,
+        fieldsOverrideHash(comp.fields as any[]),
+      );
+      return driverExpansions[k];
+    },
+    globalVariableDefs,
+  );
+
   // 2026-05-31 修复（产品小计金额不对，¥1032.83）：原 `Object.values(compSubtotals).reduce(+)`
   //   把每个组件按 tabName + componentCode 双键存的小计、以及「产品小计」SUBTOTAL 组件自身
   //   全部无差别相加 → 重复累加、超额。权威定义（用户确认）= 「产品小计」页签 SUBTOTAL 组件的
@@ -439,7 +462,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                           : computeAllFormulas(
                               activeComp, rawRow, compSubtotals,
                               undefined, undefined, lineItem.productPartNo,
-                              rowBdv, prevRowSubtotal, globalVariableDefs,
+                              rowBdv, prevRowSubtotal, globalVariableDefs, crossTabRows,
                             );
                         preComputedCaches.push(cache);
                         if (subtotalFieldName && typeof cache[subtotalFieldName] === 'number') {
