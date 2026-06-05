@@ -4,6 +4,27 @@
 
 ---
 
+### [2026-06-04] 核价 BOM 递归展开 P1(默认最新+树+固定列) | BomClosureService/ComponentDriverService/CardSnapshotService/QuotationStep2.tsx/useDriverExpansions.ts/ConfigureProductResource | 核价卡片由 material_bom_item 算根料号整棵 PRICING BOM 闭包, 每个核价组件按 spine 全节点展开成树
+
+- **目标**: 核价渲染时不再只查根料号一层, 而是算整棵 BOM 子料号闭包灌 :hfPartNos, 各核价组件按整棵树取数 + 3 系统固定列(料号/父料号/版本占位) + parent_id→node_id 建树。报价侧零改动。无开关, 核价一律生效。
+- **闭包**: `BomClosureService.compute(rootPartNo)` 裸 JDBC `WITH RECURSIVE ... CYCLE`, 口径 `customer_no='_GLOBAL_'/system_type='PRICING'/is_current=true/不约束 characteristic`。产出 partSet(去环)+spine(node_id=边id路径,per-occurrence唯一)+cyclePartNos。Caffeine 30s 缓存, 基础数据导入后 evictAll。
+- **关键决策(用户拍板)**: 每个核价组件按 **spine 全节点为行主轴**展开 —— 该组件对某节点无业务数据也**补空行**(仅系统列), 保树结构完整、行对齐、不产生孤儿节点。实现 `CardSnapshotService.buildSpineBaseRows`: spine 顺序逐节点, 业务行(`expandForPartSet` 多值 loadByPath, :hfPartNos=ANY 外包)按 hf_part_no 左关联; DAG 重复子件→同业务数据复制到各 occurrence; 多业务行节点→多行。
+- **系统列**: `__nodeId/__parentId/__lvl/__hfPartNo/__parentNo/__bomVersion/__isCycle`(`__` 前缀命名空间), 渲染期注入 baseRows 行顶层, **不进 component.fields**(绕开 AP-44)。前端建树归一化: nodeId=''→'__bomroot__', parentId=''→根, null→真根; 复用既有 layoutTreeRows。
+- **隔离(AP-41)**: `expandTemplateDriverBaseRows` 核价/报价共用, 加 closure 参数区分(报价侧 closure=null 走原路径); 前端 3 固定列 + 建树仅 `cardSide==='COSTING'`。
+- **回归安全**: 全部 25 个核价 driver 视图确认 `uses_lineitem=false`(无 quotation_line_item_id 维度, V6 customer×material 共享 AP-53)→ 多值 expandMulti 替换单值 expand 零回归; 单值本就走同一 :hfPartNos=ANY 外包。
+- **存量灰度**: `refresh-snapshot` 端点新增重算核价卡片(`refreshCostingCardValues`, 仅 COSTING 不碰报价编辑)→ 存量核价单刷新即出整棵树。
+- **兜底**: 实时 batchExpand 兜底路径 P1 未走闭包(快照恒生成极少触发), 显式 console.warn 不静默(TODO P1.1)。
+- **验证**: BomClosureServiceTest 5/5(多层/DAG/环/单层/空); CostingBomTreeSnapshotTest 1/1(真实 3120018220 partSet=14/spine=17/5组件全展开+__系统列); E2E costing-bom-tree 2/2(料号/父料号/版本表头+17行+DAG 3110520789×2+加载中0+刷新稳定+报价隔离); quotation-flow 1/1 加载中=0。TS 0 ✅ Vite 200 ✅ 后端 401 ✅。
+- **后置(P2)**: 节点级版本切换重查(SqlViewExecutor (料号,版本)配对+业务视图带bom_version)+Excel树状+累乘。
+- **计划/设计**: docs/superpowers/plans/2026-06-04-核价BOM递归展开-P1.md + docs/superpowers/specs/2026-06-04-核价BOM递归展开-design.md
+
+### [2026-06-04] 核价 BOM 树 P1 联调 2 bug 修复(用户 QT-1580 反馈) | BomClosureService.java / ComponentCell.tsx | ①叶子料号版本没带出 ②类型/单价列永久"加载中"
+
+- **症状**(QT-20260604-1580 元素 tab): ①叶子料号 1630010773 版本列空(—), 兄弟装配件显 2000; ②类型/单价列"加载中"永久; ③元素/含量等列空(用户确认: 部分料号本就无元素数据, 空白正常)。
+- **#1 版本根因**: 闭包 SQL 取「节点自身 BOM 版本」(LATERAL material_no=node), 纯叶子料号从不是 material_no → null → "—"。**用户口径**: 应显示「被父件带入时的边版本」。**修**: 递归携带 `child.bom_version`(边版本=父BOM版本) → SELECT `COALESCE(t.edge_version, v.bom_version)`(非根用边版本, 根回退自身)。1630010773 → 2000。
+- **#2 加载中根因**: spine 空行 `basicDataValues={}`, ComponentCell BASIC_DATA 兜底链最后落 globalPathCache(按**根料号** `3120018220::path` 键); 元素/含量等路径被预热(null→"—"), 类型(material_type)/单价 未预热 → 永久"加载中"。**本质**: BOM 子料号行权威数据=本行 basicDataValues, 缺值即"—", 不该按根料号走 globalPathCache(语义错/会显示根值)。**修**: CellContext 加 `isBomTreeRow`(cardSide=COSTING 且有 __sys 时 true); BASIC_DATA 缺值 + isBomTreeRow → 直接"—"不走 globalPathCache。DATA_SOURCE 因 basicDataValues={} present 已落"—"无需改。
+- **验证**: BomClosureServiceTest 5/5(加边版本断言); refresh-snapshot 1580 → 1630010773 __bomVersion=2000; E2E costing-bom-tree 逐 5 内部 tab(含元素)加载中=0 + 叶子版本=2000; 1580 元素 tab 实拍确认全"—"无加载中 + 版本 2000; quotation-flow 1/1 报价零回归。TS 0 ✅ Vite 200 ✅。
+
 ### [2026-06-03] 导入首屏核价 Excel 空白(刷新后才对) — syncLineItemsFromResponse 漏回灌值快照 | cpq-frontend/src/pages/quotation/QuotationWizard.tsx | 根因=autoSave 后只回灌 id/版本号, 不回灌后端算好的 costingExcelValues; 修=回灌 4 份值快照
 
 - **症状**: 基础数据导入创建报价单(QT-20260603-1559)后, 核价单 Excel 视图首屏全"—"; **整页刷新后正确**(570.62/401.7/972.32)。DB 里值一直是对的(后端算对了)

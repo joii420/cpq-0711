@@ -111,6 +111,12 @@ export interface CellContext {
   isListFormulaBound?: boolean;
   /** 当前行是否由 dataDriver 展开（BASIC_DATA 行级 lookup 已准备好） */
   isDriverBound?: boolean;
+  /**
+   * 核价 BOM 递归展开（P1）：当前行是否为 BOM 树 spine 行。
+   * 为 true 时，BASIC_DATA/DATA_SOURCE 的权威数据 = 本行 basicDataValues（按本子料号取）；
+   * 缺值 → 直接 "—"，<b>不</b>回退到按根料号键的 globalPathCache（那是单料号/新行逻辑，对子料号行语义错误，会误显示根料号值或永久"加载中"）。
+   */
+  isBomTreeRow?: boolean;
   /** LIST_FORMULA 模式下本行对应的 config_item（包含 code / name / defaultValue 等） */
   listFormulaItem?: {
     code: string;
@@ -400,6 +406,13 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
 
     // LIST_FORMULA 驱动行：不走 globalPathCache
     if (isListFormulaBound) {
+      return <span className="qt-ds-placeholder">—</span>;
+    }
+
+    // 核价 BOM 树 spine 行：权威数据 = 本行 basicDataValues（按本子料号取）。
+    // 上面 basicDataValues 缺 key + row[key] 也缺 → 该子料号确无此项数据 → "—"。
+    // 不回退 globalPathCache（按根料号键，对子料号语义错误 → 会显示根值或永久"加载中"）。
+    if (ctx.isBomTreeRow) {
       return <span className="qt-ds-placeholder">—</span>;
     }
 
