@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { evaluateExpression, isWithinTolerance } from './formulaEngine';
 import type { ExpressionToken } from './formulaEngine';
+import crossTabCases from './__fixtures__/cross-tab-cases.json';
 
 // ─── Helper: shorthand token builders ────────────────────────────────────────
 
@@ -376,6 +377,44 @@ describe('cross_tab_ref', () => {
     const tokenSum: ExpressionToken = { ...tokenNone, agg: 'SUM' };
     expect(evalCrossTab([tokenSum], { 子件: '   ' }, { A: rowsWhitespace })).toBe(0);
   });
+});
+
+// ─── cross-tab fixture (shared with backend FormulaCalculatorCrossTabFixtureTest) ───────────
+
+/**
+ * Shared fixture parity test.
+ *
+ * Reads the same JSON consumed by the backend JUnit fixture test so that
+ * any future drift between the two engines surfaces here immediately.
+ * Source of truth: cpq-frontend/src/utils/__fixtures__/cross-tab-cases.json
+ * (identical copy at cpq-backend/src/test/resources/cross-tab-cases.json).
+ */
+describe('cross-tab fixture', () => {
+  for (const c of crossTabCases) {
+    const caseName = (c as any).name as string;
+    const token = (c as any).token as ExpressionToken;
+    const currentRow = (c as any).currentRow as Record<string, any>;
+    const aRows = (c as any).aRows as Array<Record<string, any>>;
+    const expected = (c as any).expected as number;
+
+    it(caseName, () => {
+      const result = evaluateExpression(
+        [token],
+        {},        // fieldValues
+        undefined, // componentSubtotals
+        undefined, // productAttributes
+        undefined, // quotationFields
+        undefined, // pathCache
+        undefined, // partNo
+        undefined, // basicDataValues
+        undefined, // previousRowSubtotal
+        undefined, // globalVariableDefs
+        currentRow,
+        { A: aRows },
+      );
+      expect(result).toBeCloseTo(expected, 4);
+    });
+  }
 });
 
 // ─── isWithinTolerance ──────────────────────────────────────────────────────
