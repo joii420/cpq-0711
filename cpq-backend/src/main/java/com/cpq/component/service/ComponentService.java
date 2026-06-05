@@ -435,7 +435,8 @@ public class ComponentService {
         }
     }
 
-    private void validateFormulas(List<Map<String, Object>> fields, List<Map<String, Object>> formulas) {
+    /** Package-private for unit testing (cross_tab_ref structural validation). */
+    void validateFormulas(List<Map<String, Object>> fields, List<Map<String, Object>> formulas) {
         // Validate formula names are not empty
         Set<String> formulaNames = new HashSet<>();
         for (Map<String, Object> formula : formulas) {
@@ -457,6 +458,39 @@ public class ComponentService {
                     throw new BusinessException(
                         "字段 '" + field.get("name") + "' 绑定的公式 '" + boundName + "' 不存在");
                 }
+            }
+        }
+
+        // Validate cross_tab_ref tokens in formula expressions
+        for (Map<String, Object> formula : formulas) {
+            Object expr = formula.get("expression");
+            if (!(expr instanceof List)) continue;
+            for (Object operand : (List<?>) expr) {
+                if (!(operand instanceof Map)) continue;
+                @SuppressWarnings("unchecked")
+                Map<String, Object> token = (Map<String, Object>) operand;
+                Object typeObj = token.get("type");
+                if (!"cross_tab_ref".equals(typeObj)) continue;
+
+                Object srcObj = token.get("source");
+                String src = srcObj == null ? null : srcObj.toString();
+                if (src == null || src.isBlank())
+                    throw new BusinessException(400, "跨页签引用缺少源组件(source)");
+
+                Object matchObj = token.get("match");
+                if (!(matchObj instanceof List<?> ml) || ml.isEmpty())
+                    throw new BusinessException(400, "跨页签引用缺少匹配列(match)");
+
+                Object aggObj = token.get("agg");
+                String agg = aggObj == null ? null : aggObj.toString();
+                Set<String> okAgg = Set.of("NONE", "SUM", "AVG", "COUNT", "MAX", "MIN");
+                if (agg == null || !okAgg.contains(agg.toUpperCase()))
+                    throw new BusinessException(400, "跨页签引用聚合方式非法: " + agg);
+
+                Object tgtObj = token.get("target");
+                String target = tgtObj == null ? null : tgtObj.toString();
+                if (!"COUNT".equalsIgnoreCase(agg) && (target == null || target.isBlank()))
+                    throw new BusinessException(400, "跨页签引用缺少目标列(target)");
             }
         }
     }
