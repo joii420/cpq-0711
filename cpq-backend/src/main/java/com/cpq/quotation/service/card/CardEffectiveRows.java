@@ -83,6 +83,9 @@ public final class CardEffectiveRows {
                         putAll(row, br.path("basicDataValues"));
                         putAll(row, valuesOf(formulaByKey.get(rowKey)));
                         putAll(row, valuesOf(editByKey.get(rowKey)));
+                        // P2-B 核价 Excel 树：保留 spine 节点身份(resolvedRows 路径已由 putAll(row,rr) 自带)
+                        JsonNode nodeId = br.path("__nodeId");
+                        if (!nodeId.isMissingNode() && !nodeId.isNull()) row.put("__nodeId", nodeId.asText());
                         rows.add(row);
                         i++;
                     }
@@ -106,6 +109,24 @@ public final class CardEffectiveRows {
 
     private static JsonNode valuesOf(JsonNode rowNode) {
         return rowNode == null ? null : rowNode.path("values");
+    }
+
+    /**
+     * P2-B 核价 Excel 树：把每个 tab 的有效行过滤到指定 spine 节点（按行内 {@code __nodeId}）。
+     * 返回新 Map（不改原 eff）；某 tab 无匹配行 → 该 tab 行列表为空（节点该组件无数据 → 列空白）。
+     */
+    public static Map<String, TabRows> filterByNodeId(Map<String, TabRows> eff, String nodeId) {
+        Map<String, TabRows> out = new LinkedHashMap<>();
+        if (eff == null) return out;
+        for (Map.Entry<String, TabRows> e : eff.entrySet()) {
+            List<Map<String, Object>> kept = new ArrayList<>();
+            for (Map<String, Object> r : e.getValue().rows) {
+                Object n = r.get("__nodeId");
+                if (n != null && n.toString().equals(nodeId)) kept.add(r);
+            }
+            out.put(e.getKey(), new TabRows(kept, e.getValue().subtotal));
+        }
+        return out;
     }
 
     private static void putAll(Map<String, Object> target, JsonNode obj) {

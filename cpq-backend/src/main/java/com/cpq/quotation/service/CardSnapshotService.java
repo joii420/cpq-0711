@@ -405,7 +405,7 @@ public class CardSnapshotService {
                         q.customerId, q.id));
                 // 核价 Excel 透传同侧核价卡片快照（核价只在加产品时算，草稿重刷/编辑不碰此两列）
                 managed.costingExcelValues = safeCall(() ->
-                    buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues));
+                    buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues, true));
             }
 
             managed.cardSnapshotAt = OffsetDateTime.now();
@@ -438,7 +438,7 @@ public class CardSnapshotService {
                 managed.costingCardValues = safeCall(() ->
                     buildCostingCardValues(managed, q.costingCardTemplateId, q.customerId, q.id));
                 managed.costingExcelValues = safeCall(() ->
-                    buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues));
+                    buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues, true));
             } catch (Exception e) {
                 LOG.warnf("[card-snapshot] refreshCostingCardValues li=%s: %s", li.id, e.getMessage());
             }
@@ -586,6 +586,33 @@ public class CardSnapshotService {
             return MAPPER.writeValueAsString(root);
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] buildExcelValues failed li=%s tmpl=%s: %s",
+                li != null ? li.id : "null", templateId, e.getMessage());
+            try {
+                ObjectNode root = MAPPER.createObjectNode();
+                root.putArray("rows");
+                return MAPPER.writeValueAsString(root);
+            } catch (Exception ex) { return null; }
+        }
+    }
+
+    /**
+     * P2-B 核价 Excel 树重载：{@code costingTree=true} 时按 BOM spine 逐节点出多行（{rows:[N], treeMode:true}）；
+     * 否则委托四参单行版本。仅核价侧传 true（报价 Excel 仍单行，守隔离）。
+     */
+    String buildExcelValues(QuotationLineItem li, UUID templateId, UUID customerId,
+                            String cardValuesJson, boolean costingTree) {
+        if (!costingTree) return buildExcelValues(li, templateId, customerId, cardValuesJson);
+        try {
+            ObjectNode root = MAPPER.createObjectNode();
+            ArrayNode rowsNode = root.putArray("rows");
+            if (li == null || templateId == null) return MAPPER.writeValueAsString(root);
+            List<Map<String, Object>> treeRows =
+                excelViewService.buildLineTreeRows(li, templateId, customerId, cardValuesJson);
+            for (Map<String, Object> r : treeRows) rowsNode.add(MAPPER.valueToTree(r));
+            root.put("treeMode", true);
+            return MAPPER.writeValueAsString(root);
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] buildExcelValues(tree) failed li=%s tmpl=%s: %s",
                 li != null ? li.id : "null", templateId, e.getMessage());
             try {
                 ObjectNode root = MAPPER.createObjectNode();
@@ -798,8 +825,16 @@ public class CardSnapshotService {
             String rowKey = (rk != null && !rk.isEmpty()) ? rk : String.valueOf(ri);
             JsonNode editValues = edByKey.get(rowKey);
             JsonNode formulaValues = frByKey.get(rowKey);
-            out.add(formulaCalculator.resolveRowByFieldName(
-                fieldsDef, driverRow, basicDataValues, editValues, formulaValues));
+            Map<String, Object> resolvedRow = formulaCalculator.resolveRowByFieldName(
+                fieldsDef, driverRow, basicDataValues, editValues, formulaValues);
+            // P2-B 核价 Excel 树：透传 spine 节点身份，供 Excel 按 __nodeId 过滤本节点有效行
+            JsonNode nodeId = br.path("__nodeId");
+            if (!nodeId.isMissingNode() && !nodeId.isNull()) {
+                if (!(resolvedRow instanceof java.util.LinkedHashMap))
+                    resolvedRow = new java.util.LinkedHashMap<>(resolvedRow);
+                resolvedRow.put("__nodeId", nodeId.asText());
+            }
+            out.add(resolvedRow);
             ri++;
         }
         return out;

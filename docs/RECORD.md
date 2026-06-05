@@ -18,6 +18,17 @@
 - **后置(P2)**: 节点级版本切换重查(SqlViewExecutor (料号,版本)配对+业务视图带bom_version)+Excel树状+累乘。
 - **计划/设计**: docs/superpowers/plans/2026-06-04-核价BOM递归展开-P1.md + docs/superpowers/specs/2026-06-04-核价BOM递归展开-design.md
 
+### [2026-06-05] 核价 Excel 视图树状 P2-B | ExcelViewService/CardEffectiveRows/CardSnapshotService/useExcelSnapshotRows.ts/LinkedExcelView.tsx | 核价 Excel 从1行/产品改每BOM节点1行+注入料号/父料号/版本+按节点聚合
+
+- **目标**: 核价 Excel(渲染/快照路径)按整棵 BOM spine 逐节点出行, 注入 料号/父料号/版本 三列 + lvl 缩进, CARD_FORMULA 列按本节点有效行聚合。仅核价侧, 报价 Excel 零改动。
+- **方案A(spine同源)**: ExcelViewService.buildLineTreeRows 复算 BomClosureService.compute 拿权威 spine(与卡片同源同序), 按 __nodeId 过滤卡片有效行到本节点(CardEffectiveRows.filterByNodeId), 复用 cardFormulaEvaluator 逐节点逐列求值。
+- **关键协议传播点**: CardSnapshotService.buildResolvedRows 给每行补 __nodeId(Excel 优先读 resolvedRows, 不补则 filterByNodeId 过滤不到→全空); CardEffectiveRows 回退路径也补 __nodeId + 新增 filterByNodeId。
+- **数据流**: snapshotLineValues/refreshCostingCardValues 核价侧调 buildExcelValues(...,costingTree=true) → buildLineTreeRows → {rows:[N],treeMode:true} 落 costingExcelValues; 报价侧仍单行(隔离 AP-41)。前端 useExcelSnapshotRows 核价 flatMap 多行; LinkedExcelView isCosting 前置 父料号/版本 + 料号按 __lvl 缩进。
+- **per-node scope 验证**: 子配件数据仅挂根节点, 人工注入 SUM_OVER([子配件],数量) → 根=7/其余全0(失效会全7), 端到端证实。⚠️ psql 改共享配置存还原坑(单引号转义+子查询拷贝)见 memory; 污染 70e9f2bd 后从 2680ec42 拷回。
+- **范围**: 不做 POI xlsx 导出树化(follow-up)/P2-A 版本切换/累乘/Excel折叠。
+- **验证**: CardEffectiveRowsTest 5/5; CostingExcelTreeTest 1/1(17行+treeMode+版本2000); E2E costing-excel-tree 2/2; quotation-flow 1/1 报价零回归; P1 测试仍绿。TS0✅ Vite200✅ 后端401✅。
+- **计划/设计**: docs/superpowers/plans/2026-06-05-核价Excel树状-P2B.md + docs/superpowers/specs/2026-06-05-核价Excel树状-P2B-design.md
+
 ### [2026-06-04] 核价 BOM 树 P1 联调 2 bug 修复(用户 QT-1580 反馈) | BomClosureService.java / ComponentCell.tsx | ①叶子料号版本没带出 ②类型/单价列永久"加载中"
 
 - **症状**(QT-20260604-1580 元素 tab): ①叶子料号 1630010773 版本列空(—), 兄弟装配件显 2000; ②类型/单价列"加载中"永久; ③元素/含量等列空(用户确认: 部分料号本就无元素数据, 空白正常)。
