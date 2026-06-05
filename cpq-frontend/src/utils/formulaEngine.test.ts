@@ -377,6 +377,25 @@ describe('cross_tab_ref', () => {
     const tokenSum: ExpressionToken = { ...tokenNone, agg: 'SUM' };
     expect(evalCrossTab([tokenSum], { 子件: '   ' }, { A: rowsWhitespace })).toBe(0);
   });
+
+  it('targetExpr NONE A.单价*本.数量', () => {
+    const aRows = [{ 子件: 'P1', 单价: 2 }];
+    const tok = [{ type: 'cross_tab_ref', source: 'A', agg: 'NONE',
+      match: [{ a: '子件', b: '子件' }],
+      targetExpr: [{ type: 'field', value: '单价' }, { type: 'operator', value: '*' }, { type: 'b_field', value: '数量' }] }];
+    const r = evaluateExpression(tok as any, {}, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, { 子件: 'P1', 数量: 3 }, { A: aRows });
+    expect(r).toBe(6);
+  });
+  it('targetExpr SUM per-row then aggregate', () => {
+    const aRows = [{ 子件: 'P1', 单价: 2, 数量: 3 }, { 子件: 'P1', 单价: 4, 数量: 1 }];
+    const tok = [{ type: 'cross_tab_ref', source: 'A', agg: 'SUM',
+      match: [{ a: '子件', b: '子件' }],
+      targetExpr: [{ type: 'field', value: '单价' }, { type: 'operator', value: '*' }, { type: 'field', value: '数量' }] }];
+    const r = evaluateExpression(tok as any, {}, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, { 子件: 'P1' }, { A: aRows });
+    expect(r).toBe(10);
+  });
 });
 
 // ─── cross-tab fixture (shared with backend FormulaCalculatorCrossTabFixtureTest) ───────────

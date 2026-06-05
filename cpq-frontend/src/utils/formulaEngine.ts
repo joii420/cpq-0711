@@ -3,7 +3,7 @@ import type { GlobalVariableDefinition } from '../services/globalVariableService
 import { compileGlobalVariableTokenForRow } from '../services/globalVariableService';
 
 export interface ExpressionToken {
-  type: 'field' | 'operator' | 'bracket_open' | 'bracket_close' | 'number' | 'component_subtotal' | 'product_attribute' | 'quotation_field' | 'path' | 'global_variable' | 'previous_row_subtotal' | 'datasource_field' | 'cross_tab_ref';
+  type: 'field' | 'operator' | 'bracket_open' | 'bracket_close' | 'number' | 'component_subtotal' | 'product_attribute' | 'quotation_field' | 'path' | 'global_variable' | 'previous_row_subtotal' | 'datasource_field' | 'cross_tab_ref' | 'b_field';
   value?: string;
   label?: string;
   component_code?: string;
@@ -34,6 +34,8 @@ export interface ExpressionToken {
   target?: string;
   match?: Array<{ a: string; b: string }>;
   agg?: 'NONE' | 'SUM' | 'AVG' | 'COUNT' | 'MAX' | 'MIN';
+  /** cross_tab_ref 目标公式（非空时优先于 target）；其内 field=A列, b_field=B列 */
+  targetExpr?: ExpressionToken[];
 }
 
 /** 检测公式 token 数组中是否含 path 类型(决定走前端本地求值还是后端 API) */
@@ -163,6 +165,11 @@ export function evaluateExpression(
       case 'field':
         expr += (fieldValues[token.value!] ?? 0).toString();
         break;
+      case 'b_field': {
+        const bv = Number(currentRow?.[token.value ?? '']);
+        expr += (isNaN(bv) ? 0 : bv).toString();
+        break;
+      }
       case 'operator': {
         const op = token.value === '\u00d7' ? '*' : token.value === '\u00f7' ? '/' : token.value!;
         expr += op;
@@ -255,16 +262,25 @@ export function evaluateExpression(
           }));
         const agg = (token.agg ?? 'NONE').toUpperCase();
         const num = (v: any) => { const n = Number(v); return isNaN(n) ? null : n; };
+        const hasTE = !!(token.targetExpr && token.targetExpr.length > 0);
+        const evalRow = (ar: Record<string, any>): number => {
+          const aFieldValues: Record<string, number> = {};
+          for (const k of Object.keys(ar)) { const n = Number(ar[k]); if (!isNaN(n)) aFieldValues[k] = n; }
+          return evaluateExpression(
+            token.targetExpr!, aFieldValues, componentSubtotals, productAttributes, quotationFields,
+            pathCache, partNo, basicDataValues, undefined, globalVariableDefs, currentRow, crossTabRows,
+          );
+        };
         let out = 0;
         let crossTabError = false;
         if (agg === 'COUNT') out = hits.length;
         else if (agg === 'NONE') {
           if (hits.length === 0) out = 0;
           else if (hits.length > 1) crossTabError = true; // multi match → error → 0
-          else { const n = num(hits[0][token.target ?? '']); out = n ?? 0; }
+          else { out = hasTE ? evalRow(hits[0]) : (num(hits[0][token.target ?? '']) ?? 0); }
         } else if (hits.length === 0) out = 0;
         else {
-          const nums = hits.map((h) => num(h[token.target ?? '']));
+          const nums = hasTE ? hits.map(evalRow) : hits.map((h) => num(h[token.target ?? '']));
           if (nums.some((n) => n === null)) crossTabError = true; // non-numeric → error → 0
           else {
             const arr = nums as number[];
