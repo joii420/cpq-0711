@@ -150,6 +150,15 @@ public class FormulaCalculator {
                 expr.append(numStr(v != null ? v : 0.0));
                 break;
             }
+            case "cross_tab_ref": {
+                Object v = evalCrossTab(token, ctx);
+                if (v instanceof FormulaErrorMarker) {
+                    throw new IllegalStateException("cross_tab_ref multi/non-numeric");
+                }
+                Double n = (v instanceof Number num) ? num.doubleValue() : toNumber(v);
+                expr.append(numStr(n != null ? n : 0.0));
+                break;
+            }
             default:
                 // 未知 token 忽略（对齐前端 switch 不命中分支）
                 break;
@@ -177,6 +186,70 @@ public class FormulaCalculator {
             return toNumber(ctx.basicDataValues.get(lookup));
         }
         return null;
+    }
+
+    // ======================================================================
+    // cross_tab_ref — 跨页签引用求值
+    // ======================================================================
+
+    /** 多匹配/非数字聚合错误哨兵。 */
+    private static final class FormulaErrorMarker {}
+    private static final FormulaErrorMarker ERR = new FormulaErrorMarker();
+
+    /** cross_tab_ref 求值。返回 Number / String（NONE 文本）/ ERR。 */
+    Object evalCrossTab(JsonNode token, RowContext ctx) {
+        String source = token.path("source").asText("");
+        String target = token.path("target").asText("");
+        String agg = token.path("agg").asText("NONE").toUpperCase();
+        List<Map<String, Object>> rows = ctx.crossTabRows.getOrDefault(source, List.of());
+
+        List<Map<String, Object>> hits = new ArrayList<>();
+        for (Map<String, Object> arow : rows) {
+            boolean ok = true;
+            for (JsonNode pair : token.path("match")) {
+                Object av = arow.get(pair.path("a").asText(""));
+                Object bv = ctx.currentRowRaw.get(pair.path("b").asText(""));
+                if (isBlank(av) || isBlank(bv) || !valEquals(av, bv)) { ok = false; break; }
+            }
+            if (ok) hits.add(arow);
+        }
+
+        if ("COUNT".equals(agg)) return java.math.BigDecimal.valueOf(hits.size());
+        if ("NONE".equals(agg)) {
+            if (hits.isEmpty()) return java.math.BigDecimal.ZERO;
+            if (hits.size() > 1) return ERR;
+            return hits.get(0).get(target);
+        }
+        if (hits.isEmpty()) return java.math.BigDecimal.ZERO;
+        List<Double> nums = new ArrayList<>(hits.size());
+        for (Map<String, Object> h : hits) {
+            Double n = toNumber(h.get(target));
+            if (n == null) return ERR;
+            nums.add(n);
+        }
+        double r;
+        switch (agg) {
+            case "SUM": r = nums.stream().mapToDouble(Double::doubleValue).sum(); break;
+            case "AVG": r = nums.stream().mapToDouble(Double::doubleValue).average().orElse(0); break;
+            case "MAX": r = nums.stream().mapToDouble(Double::doubleValue).max().orElse(0); break;
+            case "MIN": r = nums.stream().mapToDouble(Double::doubleValue).min().orElse(0); break;
+            default: return ERR;
+        }
+        return java.math.BigDecimal.valueOf(r);
+    }
+
+    private static boolean isBlank(Object o) {
+        return o == null || (o instanceof String s && s.isBlank());
+    }
+
+    /**
+     * 匹配键相等比较：数字按数值，否则按 trim 文本。
+     * 注意：依赖实例方法 toNumber，故声明为实例方法（非 static）。
+     */
+    private boolean valEquals(Object a, Object b) {
+        Double na = toNumber(a), nb = toNumber(b);
+        if (na != null && nb != null) return na.doubleValue() == nb.doubleValue();
+        return String.valueOf(a).trim().equals(String.valueOf(b).trim());
     }
 
     // ======================================================================
