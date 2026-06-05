@@ -3186,6 +3186,16 @@ E2E:
 - **验证**: MaterialBomMergeHandlerTest 3 passed;存量 3120018220 → 单 ASSEMBLY current;E2E quotation-flow 8 Tab 加载中=0。
 - **计划**: docs/superpowers/plans/2026-06-04-material-bom-merge-handler.md
 
+### [2026-06-05] 公式 - 新增 cross_tab_ref token(跨页签取值/聚合 VLOOKUP/SUMIF) | FormulaCalculator/CrossTabComponentOrder/CardSnapshotService/ComponentService/TemplateService/formulaEngine.ts/crossTabOrder.ts/QuotationStep2/ReadonlyProductCard/CrossTabRefDrawer/ComponentManagement/FieldPanel/FormulaZone | 双引擎对等(前后端token引擎各实现)+组件级拓扑排序+已算行存储;NONE取值(0匹配→0,多匹配→报错)/SUM/AVG/COUNT/MAX/MIN;多列AND匹配;同卡片(同目录)source=componentId;模板publish校验源存在+无环;三视图一致由共享夹具cross-tab-cases.json(前后端13用例逐例一致)+CardSnapshotCrossTabTest证明;配置走CrossTabRefDrawer抽屉
+
+- **目标**: B 页签公式可按"A.列 = B.列(多列 AND)"匹配同卡片(同目录)内 A 页签的已算行，取值(NONE)或聚合(SUM/AVG/COUNT/MAX/MIN)，对应 VLOOKUP / SUMIF 语义。
+- **token 结构**: `{type:'cross_tab_ref', source:<A组件componentId>, sourceLabel, target, match:[{a,b}], agg}`。COUNT 无需 target 列；NONE 匹配多行报错(整公式按 0)；0 匹配返 0；非数字目标聚合报错返 0；匹配键空/纯空白→不匹配。
+- **拓扑排序**: `CrossTabComponentOrder.topoOrder` 对组件有向依赖图做 Kahn BFS 拓扑排序，A 先于 B 计算，保证被引用组件行已算完再被 cross_tab_ref 引用；`extractSourceRefs` 从所有字段 formula_tokens 收集 cross_tab_ref.source 边集。环路在模板 publish 时由 `TemplateService` 校验拒绝。
+- **三视图一致**: 报价单编辑(QuotationStep2.tsx buildCrossTabRows/buildResolvedRow + computeAllFormulas crossTabRows 参数) / 核价/详情(ReadonlyProductCard.tsx buildFormulaCache) / 后端快照(CardSnapshotService 组件拓扑序+crossTabRows存储) 三路径实现等价语义，由共享夹具 `cross-tab-cases.json`(前后端 test resources 各一份，13 用例逐例一致) + CardSnapshotCrossTabTest 集成覆盖证明。
+- **组件管理 UI**: FieldPanel「跨页签引用」按钮 → CrossTabRefDrawer 抽屉(选源组件/配匹配列对/选目标列/选聚合方式)；FormulaZone 公式回显 getChipStyle + getTokenLabel 支持 cross_tab_ref chip。
+- **后端校验**: ComponentService.validateFields 校验 token 字段(source/match/agg 完整 + agg 枚举 + match 非空数组)；TemplateService.publish 校验源组件存在于模板 + 无环。
+- **验证**: 后端 62 tests(FormulaCalculatorTest 16/CrossTabComponentOrderTest 5/FormulaCalculatorCrossTabFixtureTest 13/FormulaCalculatorCrossTabTest 8/ComponentServiceCrossTabValidateTest 13/TemplateCrossTabValidateTest 4/CardSnapshotCrossTabTest 1/CardSnapshotResolvedRowsTest 1/CardSnapshotSubtotalTest 1) 全 passed；前端 vitest 70/70(formulaEngine.test.ts+crossTabOrder.test.ts)；tsc 0 错误。
+
 ---
 
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
