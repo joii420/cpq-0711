@@ -3196,6 +3196,8 @@ E2E:
 - **后端校验**: ComponentService.validateFields 校验 token 字段(source/match/agg 完整 + agg 枚举 + match 非空数组)；TemplateService.publish 校验源组件存在于模板 + 无环。
 - **验证**: 后端 62 tests(FormulaCalculatorTest 16/CrossTabComponentOrderTest 5/FormulaCalculatorCrossTabFixtureTest 13/FormulaCalculatorCrossTabTest 8/ComponentServiceCrossTabValidateTest 13/TemplateCrossTabValidateTest 4/CardSnapshotCrossTabTest 1/CardSnapshotResolvedRowsTest 1/CardSnapshotSubtotalTest 1) 全 passed；前端 vitest 70/70(formulaEngine.test.ts+crossTabOrder.test.ts)；tsc 0 错误。
 
+### [2026-06-05] 公式 - cross_tab_ref 目标公式(targetExpr + b_field token, 第一期无函数) | FormulaCalculator/formulaEngine.ts/CrossTabRefDrawer/types.ts/FormulaZone/ComponentService + cross-tab-cases.json | targetExpr 非空优先 target;逐行先算再聚合(SUMPRODUCT式);b_field 取 B 当前行;global_variable 按 B 行上下文;函数留第二期;前后端共享夹具锁一致
+
 ---
 
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
