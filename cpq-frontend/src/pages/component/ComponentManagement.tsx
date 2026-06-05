@@ -29,6 +29,7 @@ import FieldPanel from './FieldPanel';
 import ConfigGuideDrawer from './ConfigGuideDrawer';
 import PathPickerDrawer from './PathPickerDrawer';
 import SqlViewListPanel from './SqlViewListPanel';
+import CrossTabRefDrawer from './CrossTabRefDrawer';
 import './styles.css';
 
 // ---- DataSource binding modal (two-step) ----
@@ -332,6 +333,7 @@ const ComponentManagement: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [loadingTree, setLoadingTree] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [crossTabDrawerOpen, setCrossTabDrawerOpen] = useState(false);
 
   // Active formula key (shared with FormulaBuilder)
   const [activeFormulaKey, setActiveFormulaKey] = useState<string | null>(null);
@@ -603,6 +605,18 @@ const ComponentManagement: React.FC = () => {
               componentName: c.name,
             }))
         )
+    : [];
+
+  // Cross-tab sources: same-directory sibling components WITH their fields (AP-37: use stable componentId)
+  const crossTabSources = currentDirId
+    ? allComponents
+        .filter((c) => c.directoryId === currentDirId && c.id !== selectedComponent?.id)
+        .map((c) => ({
+          id: c.id,
+          code: c.code,
+          name: c.name,
+          fields: (c.fields || []).map((f: FieldItem) => ({ name: f.name })).filter((f) => f.name),
+        }))
     : [];
 
   const availableFields = fields.map((f) => ({ name: f.name, type: f.field_type }));
@@ -902,12 +916,28 @@ const ComponentManagement: React.FC = () => {
         </div>
       </div>
 
+      {/* Cross-tab reference drawer */}
+      <CrossTabRefDrawer
+        open={crossTabDrawerOpen}
+        onClose={() => setCrossTabDrawerOpen(false)}
+        siblingComponents={crossTabSources}
+        currentFields={availableFields}
+        onConfirm={(token) => setPendingToken(token as any)}
+      />
+
       {/* Right panel: Field/Reference panel */}
       <FieldPanel
         fields={fields}
         otherComponentSubtotals={otherCompSubtotals}
         onFieldClick={handleFieldClick}
         onSubtotalClick={handleSubtotalClick}
+        onCrossTabRefClick={() => {
+          if (formulas.length === 0) {
+            message.info('请先添加一个公式，再配置跨页签引用');
+            return;
+          }
+          setCrossTabDrawerOpen(true);
+        }}
         onQuotationFieldClick={(qf) => {
           if (formulas.length === 0) {
             message.info('请先添加一个公式，再点击字段');

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Button } from 'antd';
 import type { FieldItem } from './types';
 import { FIELD_TYPE_OPTIONS } from './types';
 import { globalVariableService, type GlobalVariableDefinition } from '../../services/globalVariableService';
@@ -21,6 +22,8 @@ interface FieldPanelProps {
   onQuotationFieldClick?: (field: { value: string; label: string }) => void;
   /** V104: 选中"全局变量+key" 后回调 */
   onGlobalVariableClick?: (pick: GlobalVariablePick) => void;
+  /** 跨页签引用配置按钮回调 */
+  onCrossTabRefClick?: () => void;
   hasSelection?: boolean;
 }
 
@@ -31,6 +34,7 @@ const FieldPanel: React.FC<FieldPanelProps> = ({
   onSubtotalClick,
   onQuotationFieldClick,
   onGlobalVariableClick,
+  onCrossTabRefClick,
   hasSelection,
 }) => {
   const [activeTab, setActiveTab] = useState<'fields' | 'subtotals' | 'globals'>('fields');
@@ -202,6 +206,28 @@ const FieldPanel: React.FC<FieldPanelProps> = ({
                 </div>
               </div>
             ))}
+
+            {/* Cross-tab reference */}
+            <div className="cm-section-divider">跨页签引用</div>
+            <div style={{ padding: '4px 2px' }}>
+              <Button
+                size="small"
+                style={{
+                  width: '100%',
+                  borderStyle: 'dashed',
+                  color: '#531dab',
+                  borderColor: '#d9b3ff',
+                  background: '#f6f0ff',
+                }}
+                onClick={() => onCrossTabRefClick?.()}
+                disabled={!hasSelection}
+              >
+                + 配置跨页签引用…
+              </Button>
+              <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 4, lineHeight: 1.4 }}>
+                引用同模板其他组件的字段值（可聚合）
+              </div>
+            </div>
 
             {/* Other component subtotals */}
             {otherComponentSubtotals.length > 0 && (

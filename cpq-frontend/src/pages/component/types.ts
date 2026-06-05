@@ -131,7 +131,8 @@ export interface FormulaToken {
     | 'number'
     | 'path'              // V5 BNF 物理表路径,直接引用基础数据(mat_part / mat_bom / mat_fee 等)
     | 'global_variable'   // V104 全局变量(元素核价/材料核价/汇率) — 编译期转 BNF path
-    | 'datasource_field'; // K1 引用同行 DATA_SOURCE 字段解析结果, token.name = 字段名
+    | 'datasource_field'  // K1 引用同行 DATA_SOURCE 字段解析结果, token.name = 字段名
+    | 'cross_tab_ref';    // 跨页签引用(聚合/条件匹配另一页签字段)
   value?: string;
   label?: string;
   component_code?: string;
@@ -147,6 +148,17 @@ export interface FormulaToken {
   key_field_refs?: Record<string, string>;
   /** datasource_field 专用 (K1): 引用的 DATA_SOURCE 字段名 */
   name?: string;
+  // ---- cross_tab_ref 专用字段 ----
+  /** 源组件 componentId (UUID, AP-37 稳定 ID) */
+  source?: string;
+  /** 源组件显示名（用于 chip 显示） */
+  sourceLabel?: string;
+  /** 源组件目标字段名；COUNT 聚合时为空字符串 */
+  target?: string;
+  /** 行匹配条件：a = 源 (A) 字段名，b = 本组件 (B) 字段名 */
+  match?: Array<{ a: string; b: string }>;
+  /** 聚合方式：NONE / SUM / AVG / COUNT / MAX / MIN */
+  agg?: string;
 }
 
 export const FIELD_TYPE_OPTIONS = [
