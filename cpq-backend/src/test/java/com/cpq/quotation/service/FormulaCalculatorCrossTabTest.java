@@ -74,4 +74,58 @@ class FormulaCalculatorCrossTabTest {
         assertEquals(0, java.math.BigDecimal.ZERO.compareTo(
             calc.evaluateExpression(tok("SUM", "单重"), ctx)));
     }
+
+    private JsonNode json(String s) {
+        try { return om.readTree(s); } catch (Exception e) { throw new RuntimeException(e); }
+    }
+
+    /**
+     * Task 1.3 端到端：currentRowRaw（本行原始 子件=P1，由 calculate 从 driverRow 合并自动注入）
+     * + crossTabRows（兄弟组件 A 已算行）经 10 参 calculate 透传到逐行 RowContext，
+     * cross_tab_ref(source=A,target=单重,match[子件=子件],NONE) 命中 P1 行 → FORMULA 结果 = 0.8。
+     */
+    @Test void calculate_threadsCurrentRowRawAndCrossTabRows() {
+        // fields: 子件(INPUT_TEXT, 提供 currentRowRaw 文本键) + 重量(FORMULA → cross_tab_ref)
+        JsonNode fields = json("["
+            + "{\"name\":\"子件\",\"fieldType\":\"INPUT_TEXT\"},"
+            + "{\"name\":\"重量\",\"fieldType\":\"FORMULA\"}"
+            + "]");
+        // FORMULA 字段名 == 公式名 → 走 resolveFormulaExpression 第 2 优先级（字段名==公式名）
+        JsonNode formulas = json("[{\"name\":\"重量\",\"expression\":["
+            + "{\"type\":\"cross_tab_ref\",\"source\":\"A\",\"target\":\"单重\","
+            + "\"match\":[{\"a\":\"子件\",\"b\":\"子件\"}],\"agg\":\"NONE\"}]}]");
+        JsonNode rkf = json("[\"子件\"]");
+        // baseRow.driverRow.子件 = P1 → calculate 合并进 currentRowRaw（原始文本，未数值化）
+        JsonNode baseRows = json("[{\"driverRow\":{\"子件\":\"P1\"},\"basicDataValues\":{}}]");
+
+        // 兄弟组件 A 已算行：P1→0.8, P2→0.3
+        Map<String, List<Map<String, Object>>> crossTabRows = Map.of("A", List.of(
+            Map.of("子件", "P1", "单重", new java.math.BigDecimal("0.8")),
+            Map.of("子件", "P2", "单重", new java.math.BigDecimal("0.3"))));
+
+        JsonNode fr = calc.calculate(fields, formulas, null, rkf, baseRows, json("[]"),
+            new HashMap<>(), new HashMap<>(), new HashMap<>(), crossTabRows);
+
+        assertEquals(1, fr.size());
+        assertEquals(0.8, fr.get(0).path("values").path("重量").asDouble(), 1e-9);
+    }
+
+    /** 9 参旧签名委派 → crossTabRows 为空 → cross_tab_ref 命中 0 行 → NONE 返 0（行为不变验证）。 */
+    @Test void calculate_legacyNineArg_noCrossTab_returnsZero() {
+        JsonNode fields = json("["
+            + "{\"name\":\"子件\",\"fieldType\":\"INPUT_TEXT\"},"
+            + "{\"name\":\"重量\",\"fieldType\":\"FORMULA\"}"
+            + "]");
+        JsonNode formulas = json("[{\"name\":\"重量\",\"expression\":["
+            + "{\"type\":\"cross_tab_ref\",\"source\":\"A\",\"target\":\"单重\","
+            + "\"match\":[{\"a\":\"子件\",\"b\":\"子件\"}],\"agg\":\"NONE\"}]}]");
+        JsonNode rkf = json("[\"子件\"]");
+        JsonNode baseRows = json("[{\"driverRow\":{\"子件\":\"P1\"},\"basicDataValues\":{}}]");
+
+        JsonNode fr = calc.calculate(fields, formulas, null, rkf, baseRows, json("[]"),
+            new HashMap<>(), new HashMap<>(), new HashMap<>());
+
+        assertEquals(1, fr.size());
+        assertEquals(0.0, fr.get(0).path("values").path("重量").asDouble(), 1e-9);
+    }
 }

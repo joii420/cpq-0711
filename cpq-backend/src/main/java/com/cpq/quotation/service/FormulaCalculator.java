@@ -268,9 +268,29 @@ public class FormulaCalculator {
                                Map<String, Double> componentSubtotals,
                                Map<String, Double> quotationFields,
                                Map<String, Double> productAttributes) {
+        return calculate(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
+            componentSubtotals, quotationFields, productAttributes, Map.of());
+    }
+
+    /**
+     * calculate 重载：额外透传 cross_tab_ref 兄弟组件已算行存储（Task 1.3/1.4）。
+     *
+     * <p>逐行 RowContext 注入 {@code crossTabRows}（同卡片兄弟组件已算行）+ {@code currentRowRaw}
+     * （本行原始合并值，<b>含文本</b>，供 cross_tab_ref 匹配键 b 取值）。
+     * 9 参旧签名委派此重载并传 {@code Map.of()}，行为不变。
+     *
+     * @param crossTabRows 组件标识 → 行表（行=字段名→已算值），cross_tab_ref source 维度查询；null 视作空。
+     */
+    public ArrayNode calculate(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
+                               JsonNode rowKeyFields,
+                               JsonNode baseRows, JsonNode editRows,
+                               Map<String, Double> componentSubtotals,
+                               Map<String, Double> quotationFields,
+                               Map<String, Double> productAttributes,
+                               Map<String, List<Map<String, Object>>> crossTabRows) {
         ArrayNode out = MAPPER.createArrayNode();
         List<RowResult> rows = computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
-            componentSubtotals, quotationFields, productAttributes);
+            componentSubtotals, quotationFields, productAttributes, crossTabRows);
         for (RowResult rr : rows) {
             ObjectNode node = MAPPER.createObjectNode();
             node.put("rowKey", rr.rowKey);
@@ -291,7 +311,7 @@ public class FormulaCalculator {
         String subtotalField = findSubtotalFieldName(fields);
         if (subtotalField == null) return ZERO4;
         List<RowResult> rows = computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
-            componentSubtotals, new HashMap<>(), new HashMap<>());
+            componentSubtotals, new HashMap<>(), new HashMap<>(), Map.of());
         double sum = 0.0;
         for (RowResult rr : rows) {
             Double v = rr.formulaValues.get(subtotalField);
@@ -314,7 +334,8 @@ public class FormulaCalculator {
                                         JsonNode baseRows, JsonNode editRows,
                                         Map<String, Double> componentSubtotals,
                                         Map<String, Double> quotationFields,
-                                        Map<String, Double> productAttributes) {
+                                        Map<String, Double> productAttributes,
+                                        Map<String, List<Map<String, Object>>> crossTabRows) {
         List<RowResult> out = new ArrayList<>();
         if (baseRows == null || !baseRows.isArray()) return out;
 
@@ -352,6 +373,9 @@ public class FormulaCalculator {
             ctx.productAttributes = productAttributes != null ? productAttributes : new HashMap<>();
             ctx.basicDataValues = toBasicDataMap(basicDataValues);
             ctx.previousRowSubtotal = prevRowSubtotal;
+            // cross_tab_ref（Task 1.3）：兄弟组件已算行 + 本行原始合并值（含文本，供匹配键 b 取值）
+            ctx.crossTabRows = crossTabRows != null ? crossTabRows : Map.of();
+            ctx.currentRowRaw = toRawRowMap(mergedRow);
 
             // 按拓扑序求值，结果回填 fieldValues 供下游公式引用
             Map<String, Double> results = new LinkedHashMap<>();
@@ -776,6 +800,21 @@ public class FormulaCalculator {
             editValues.fields().forEachRemaining(e -> merged.put(e.getKey(), e.getValue()));
         }
         return merged;
+    }
+
+    /**
+     * mergedRow（driverRow ⊕ editValues，值为 JsonNode）→ 原始标量映射（字段名→原始值）。
+     * 文本保留为 String、数字为 Number、布尔为 Boolean（复用 unwrapNode），供 cross_tab_ref
+     * 匹配键 b 取值——<b>不</b>做数值强转，故子件编号 "P1" 等文本匹配键能正确比较。
+     */
+    private Map<String, Object> toRawRowMap(Map<String, JsonNode> mergedRow) {
+        Map<String, Object> map = new HashMap<>();
+        if (mergedRow == null) return map;
+        for (Map.Entry<String, JsonNode> e : mergedRow.entrySet()) {
+            Object v = unwrapNode(e.getValue());
+            if (v != null) map.put(e.getKey(), v);
+        }
+        return map;
     }
 
     private Map<String, Object> toBasicDataMap(JsonNode basicDataValues) {
