@@ -128,4 +128,40 @@ class FormulaCalculatorCrossTabTest {
         assertEquals(1, fr.size());
         assertEquals(0.0, fr.get(0).path("values").path("重量").asDouble(), 1e-9);
     }
+
+    @Test void targetExpr_none_aTimesB() throws Exception {
+        var aRows = List.<Map<String, Object>>of(Map.of("子件", "P1", "单价", "2"));
+        FormulaCalculator.RowContext c = new FormulaCalculator.RowContext();
+        c.currentRowRaw.put("子件", "P1");
+        c.currentRowRaw.put("数量", 3);
+        c.crossTabRows.put("A", aRows);
+        var tok = om.readTree("[{\"type\":\"cross_tab_ref\",\"source\":\"A\",\"agg\":\"NONE\","
+            + "\"match\":[{\"a\":\"子件\",\"b\":\"子件\"}],"
+            + "\"targetExpr\":[{\"type\":\"field\",\"value\":\"单价\"},{\"type\":\"operator\",\"value\":\"*\"},{\"type\":\"b_field\",\"value\":\"数量\"}]}]");
+        assertEquals(0, new java.math.BigDecimal("6.0000").compareTo(calc.evaluateExpression(tok, c)));
+    }
+
+    @Test void targetExpr_sum_perRowThenAggregate() throws Exception {
+        var aRows = List.<Map<String, Object>>of(
+            Map.of("子件", "P1", "单价", "2", "数量", "3"),
+            Map.of("子件", "P1", "单价", "4", "数量", "1"));
+        FormulaCalculator.RowContext c = new FormulaCalculator.RowContext();
+        c.currentRowRaw.put("子件", "P1");
+        c.crossTabRows.put("A", aRows);
+        var tok = om.readTree("[{\"type\":\"cross_tab_ref\",\"source\":\"A\",\"agg\":\"SUM\","
+            + "\"match\":[{\"a\":\"子件\",\"b\":\"子件\"}],"
+            + "\"targetExpr\":[{\"type\":\"field\",\"value\":\"单价\"},{\"type\":\"operator\",\"value\":\"*\"},{\"type\":\"field\",\"value\":\"数量\"}]}]");
+        assertEquals(0, new java.math.BigDecimal("10.0000").compareTo(calc.evaluateExpression(tok, c)));
+    }
+
+    @Test void targetExpr_takesPriorityOverTarget() throws Exception {
+        var aRows = List.<Map<String, Object>>of(Map.of("子件", "P1", "单价", "2", "数量", "3"));
+        FormulaCalculator.RowContext c = new FormulaCalculator.RowContext();
+        c.currentRowRaw.put("子件", "P1");
+        c.crossTabRows.put("A", aRows);
+        var tok = om.readTree("[{\"type\":\"cross_tab_ref\",\"source\":\"A\",\"agg\":\"NONE\",\"target\":\"单价\","
+            + "\"match\":[{\"a\":\"子件\",\"b\":\"子件\"}],"
+            + "\"targetExpr\":[{\"type\":\"field\",\"value\":\"单价\"},{\"type\":\"operator\",\"value\":\"*\"},{\"type\":\"field\",\"value\":\"数量\"}]}]");
+        assertEquals(0, new java.math.BigDecimal("6.0000").compareTo(calc.evaluateExpression(tok, c)));
+    }
 }

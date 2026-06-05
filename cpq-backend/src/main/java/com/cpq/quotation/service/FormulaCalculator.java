@@ -145,6 +145,12 @@ public class FormulaCalculator {
                 expr.append(numStr(v != null ? v : 0.0));
                 break;
             }
+            case "b_field": {
+                String n = token.has("value") ? token.path("value").asText("") : token.path("name").asText("");
+                Double v = toNumber(ctx.currentRowRaw.get(n));
+                expr.append(numStr(v != null ? v : 0.0));
+                break;
+            }
             case "global_variable": {
                 Double v = resolveGvar(token, ctx);
                 expr.append(numStr(v != null ? v : 0.0));
@@ -218,12 +224,12 @@ public class FormulaCalculator {
         if ("NONE".equals(agg)) {
             if (hits.isEmpty()) return java.math.BigDecimal.ZERO;
             if (hits.size() > 1) return ERR;
-            return hits.get(0).get(target);
+            return targetRowValue(hits.get(0), token, ctx);
         }
         if (hits.isEmpty()) return java.math.BigDecimal.ZERO;
         List<Double> nums = new ArrayList<>(hits.size());
         for (Map<String, Object> h : hits) {
-            Double n = toNumber(h.get(target));
+            Double n = toNumber(targetRowValue(h, token, ctx));
             if (n == null) return ERR;
             nums.add(n);
         }
@@ -236,6 +242,23 @@ public class FormulaCalculator {
             default: return ERR;
         }
         return java.math.BigDecimal.valueOf(r);
+    }
+
+    /** 取匹配 A 行的目标值: 有 targetExpr → 在 (A行 field + B行 b_field + B 上下文 gvar) 求值; 否则 arow[target]。 */
+    private Object targetRowValue(Map<String, Object> arow, JsonNode token, RowContext ctx) {
+        JsonNode te = token.path("targetExpr");
+        if (te.isArray() && te.size() > 0) {
+            RowContext sub = new RowContext();
+            for (Map.Entry<String, Object> e : arow.entrySet()) {
+                Double n = toNumber(e.getValue());
+                if (n != null) sub.fieldValues.put(e.getKey(), n);
+            }
+            sub.currentRowRaw = ctx.currentRowRaw;
+            sub.basicDataValues = ctx.basicDataValues;
+            sub.crossTabRows = ctx.crossTabRows;
+            return evaluateExpression(te, sub);
+        }
+        return arow.get(token.path("target").asText(""));
     }
 
     private static boolean isBlank(Object o) {
