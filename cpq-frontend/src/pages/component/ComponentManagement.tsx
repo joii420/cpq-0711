@@ -615,11 +615,11 @@ const ComponentManagement: React.FC = () => {
           id: c.id,
           code: c.code,
           name: c.name,
-          fields: (c.fields || []).map((f: FieldItem) => ({ name: f.name })).filter((f) => f.name),
+          fields: (c.fields || []).map((f: FieldItem) => ({ name: f.name, label: f.label })).filter((f) => f.name),
         }))
     : [];
 
-  const availableFields = fields.map((f) => ({ name: f.name, type: f.field_type }));
+  const availableFields = fields.map((f) => ({ name: f.name, type: f.field_type, label: f.label }));
 
   // Consume pending token into the active formula
   useEffect(() => {

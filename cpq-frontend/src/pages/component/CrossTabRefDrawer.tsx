@@ -6,8 +6,11 @@ export interface SiblingComponent {
   id: string;
   code: string;
   name: string;
-  fields: Array<{ name: string }>;
+  fields: Array<{ name: string; label?: string }>;
 }
+
+/** 字段下拉显示文案：优先中文说明(label)，回退字段名；value 始终用 name（引擎按 name 匹配）。 */
+const fieldText = (f: { name: string; label?: string }) => f.label || f.name;
 
 interface MatchPair {
   a: string;
@@ -29,7 +32,7 @@ interface Props {
   /** Candidate source (A) components — same directory, excluding current component */
   siblingComponents: SiblingComponent[];
   /** Current (B) component fields, for B-side match column */
-  currentFields: Array<{ name: string }>;
+  currentFields: Array<{ name: string; label?: string }>;
   onConfirm: (token: CrossTabToken) => void;
 }
 
@@ -156,13 +159,15 @@ const CrossTabRefDrawer: React.FC<Props> = ({
             value={sourceId || undefined}
             onChange={handleSourceChange}
             options={siblingComponents.map((c) => ({
-              label: `${c.name}（${c.code}）`,
+              label: c.name,
               value: c.id,
             }))}
             showSearch
-            filterOption={(input, option) =>
-              String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-            }
+            filterOption={(input, option) => {
+              const c = siblingComponents.find((x) => x.id === option?.value);
+              const t = input.toLowerCase();
+              return !!c && (c.name.toLowerCase().includes(t) || c.code.toLowerCase().includes(t));
+            }}
             allowClear
             onClear={() => handleSourceChange('')}
           />
@@ -189,7 +194,7 @@ const CrossTabRefDrawer: React.FC<Props> = ({
                   placeholder="A.列"
                   value={pair.a || undefined}
                   onChange={(v) => handlePairChange(index, 'a', v)}
-                  options={sourceFields.map((f) => ({ label: f.name, value: f.name }))}
+                  options={sourceFields.map((f) => ({ label: fieldText(f), value: f.name }))}
                   disabled={!sourceId}
                   showSearch
                   allowClear
@@ -201,7 +206,7 @@ const CrossTabRefDrawer: React.FC<Props> = ({
                   placeholder="本.列 (B)"
                   value={pair.b || undefined}
                   onChange={(v) => handlePairChange(index, 'b', v)}
-                  options={currentFields.map((f) => ({ label: f.name, value: f.name }))}
+                  options={currentFields.map((f) => ({ label: fieldText(f), value: f.name }))}
                   showSearch
                   allowClear
                   onClear={() => handlePairChange(index, 'b', '')}
