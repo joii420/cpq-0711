@@ -54,6 +54,10 @@ public class FormulaCalculator {
         public Map<String, Object> basicDataValues = new HashMap<>();
         /** previous_row_subtotal token：上一行 is_subtotal 值；行 0 为 null → token 走 fallback。 */
         public Double previousRowSubtotal = null;
+        /** cross_tab_ref：B 当前行原始值（字段名→原始值，含文本），供匹配键 b 取值。 */
+        public Map<String, Object> currentRowRaw = new HashMap<>();
+        /** cross_tab_ref：同卡片已算行存储（组件标识→行表，行=字段名→已算值）。 */
+        public Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
     }
 
     // ======================================================================
