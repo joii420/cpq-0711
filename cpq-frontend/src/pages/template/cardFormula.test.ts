@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { genAlias, expandIn, extractColKeyDeps, validateCardFormula } from './cardFormula';
+import { genAlias, expandIn, extractColKeyDeps, validateCardFormula, buildCondRows, parseCondToRows } from './cardFormula';
 
 describe('cardFormula pure logic', () => {
   it('genAlias', () => { expect(genAlias(0)).toBe('c0'); expect(genAlias(3)).toBe('c3'); });
@@ -33,5 +33,30 @@ describe('cardFormula pure logic', () => {
   it('拦截未知函数', () => {
     const errs = validateCardFormula({ col_key:'A', formula:'=FOO([投料.小计])', refs:{'投料.小计':{tab:'t:0',field:'__subtotal__'}} } as any, ['A'], {});
     expect(errs.some(e => e.includes('未知函数') || e.includes('FOO'))).toBe(true);
+  });
+
+  it('buildCondRows 过滤空字段 + 透传 rhs', () => {
+    const rows = buildCondRows([
+      { field: '关联号', op: 'eq', value: '__partNo__', logic: 'and', rhsType: 'product' },
+      { field: '', op: 'eq', value: 'x', logic: 'and', rhsType: 'literal' },
+      { field: '类型', op: 'eq', value: '电镀', logic: 'and', rhsType: 'literal' },
+    ]);
+    expect(rows).toEqual([
+      { left: '关联号', op: 'eq', logic: 'and', rhs: { type: 'product', value: '__partNo__' } },
+      { left: '类型', op: 'eq', logic: 'and', rhs: { type: 'literal', value: '电镀' } },
+    ]);
+  });
+
+  it('parseCondToRows 反解析字面量 cond（含 && 与 IN）', () => {
+    const cols = { c0: '工序', c1: '数量' };
+    const rows = parseCondToRows("(c0=='镀铜' || c0=='镀镍') && c1>0", cols);
+    expect(rows).toEqual([
+      { left: '工序', op: 'in', logic: 'and', rhs: { type: 'literal', value: '镀铜,镀镍' } },
+      { left: '数量', op: 'gt', logic: 'and', rhs: { type: 'literal', value: '0' } },
+    ]);
+  });
+
+  it('parseCondToRows 空串 → []', () => {
+    expect(parseCondToRows('', {})).toEqual([]);
   });
 });

@@ -1,4 +1,21 @@
-export interface CardRefSpec { tab: string; field?: string; mode?: 'FIRST_ROW'|'ROW_WHERE'; cond?: string; cols?: Record<string,string>; }
+export type CondRhsType = 'literal' | 'product' | 'column';
+export type CondOp = 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'in';
+
+export interface CondRowSpec {
+  left: string;
+  op: CondOp;
+  logic: 'and' | 'or';
+  rhs: { type: CondRhsType; value: string };
+}
+
+export interface CardRefSpec {
+  tab: string;
+  field?: string;
+  mode?: 'FIRST_ROW' | 'ROW_WHERE';
+  cond?: string;
+  cols?: Record<string, string>;
+  condRows?: CondRowSpec[];
+}
 
 export const genAlias = (i: number): string => `c${i}`;
 
@@ -69,4 +86,75 @@ export function validateCardFormula(
     if (!FN_WHITELIST.has(fm[1])) errs.push(`未知函数 ${fm[1]}（支持：IF/ROUND/ABS/SUM_OVER/AVG_OVER/COUNT_OVER/MIN_OVER/MAX_OVER）`);
   }
   return errs;
+}
+
+const JEXL_TO_OP: Record<string, CondOp> = {
+  '==': 'eq', '!=': 'ne', '>=': 'gte', '<=': 'lte', '>': 'gt', '<': 'lt',
+};
+
+/** 把条件构建器行（含 rhsType）转成结构化 condRows，过滤空字段行。 */
+export function buildCondRows(
+  conds: { field: string; op: CondOp; value: string; logic: 'and' | 'or'; rhsType: CondRhsType }[],
+): CondRowSpec[] {
+  return conds
+    .filter(c => c.field)
+    .map(c => ({ left: c.field, op: c.op, logic: c.logic, rhs: { type: c.rhsType, value: c.value } }));
+}
+
+/**
+ * 反解析旧式字面量 cond（由 buildCondJexl 生成）→ condRows（rhs 全为 literal）。
+ * 支持：`alias op literal` 用 ` && ` / ` || ` 连接；IN 形如 `(alias=='v1' || alias=='v2')`。
+ * cols：别名→中文字段名。解析失败的段跳过；空串 → []。
+ */
+export function parseCondToRows(cond: string, cols: Record<string, string>): CondRowSpec[] {
+  const s = (cond || '').trim();
+  if (!s) return [];
+  // 1. 按顶层 && / || 切段，记录每段后面的连接符
+  const segs: { text: string; logicAfter: 'and' | 'or' }[] = [];
+  let depth = 0, buf = '';
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '(' || ch === '[') depth++;
+    else if (ch === ')' || ch === ']') depth--;
+    if (depth === 0 && (s.startsWith(' && ', i) || s.startsWith(' || ', i))) {
+      segs.push({ text: buf.trim(), logicAfter: s.startsWith(' && ', i) ? 'and' : 'or' });
+      buf = ''; i += 3; continue;
+    }
+    buf += ch;
+  }
+  if (buf.trim()) segs.push({ text: buf.trim(), logicAfter: 'and' });
+
+  const out: CondRowSpec[] = [];
+  for (const seg of segs) {
+    const t = seg.text.trim();
+    const inMatch = t.startsWith('(') && t.endsWith(')');
+    if (inMatch) {
+      // IN 组：(alias=='v1' || alias=='v2')
+      const inner = t.slice(1, -1);
+      const parts = inner.split('||').map(p => p.trim());
+      const eqRe = /^([A-Za-z_]\w*)\s*==\s*'(.*)'$/;
+      let alias = ''; const vals: string[] = [];
+      let ok = true;
+      for (const p of parts) {
+        const mm = p.match(eqRe);
+        if (!mm) { ok = false; break; }
+        alias = mm[1]; vals.push(mm[2]);
+      }
+      if (ok && alias) {
+        out.push({ left: cols[alias] ?? alias, op: 'in', logic: seg.logicAfter,
+                   rhs: { type: 'literal', value: vals.join(',') } });
+        continue;
+      }
+    }
+    // 标量段：alias op literal
+    const m = t.match(/^([A-Za-z_]\w*)\s*(==|!=|>=|<=|>|<)\s*(.+)$/);
+    if (!m) continue;
+    const alias = m[1]; const op = JEXL_TO_OP[m[2]] ?? 'eq';
+    let lit = m[3].trim();
+    if (lit.startsWith("'") && lit.endsWith("'")) lit = lit.slice(1, -1);
+    out.push({ left: cols[alias] ?? alias, op, logic: seg.logicAfter,
+               rhs: { type: 'literal', value: lit } });
+  }
+  // 末段 logicAfter 无意义，但保持 'and' 即可（构建时末条不用 logic）
+  return out;
 }
