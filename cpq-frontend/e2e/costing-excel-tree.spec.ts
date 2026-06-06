@@ -108,7 +108,10 @@ test('核价单 Excel 视图按 BOM 树逐节点出行 + 注入列 + 隔离（P2
   }
   console.log(`[CET] DAG ${DAG_CHILD} 出现 ${dagCount} 次; 叶子 ${LEAF_PART} 版本=${leafVer}`);
   expect(dagCount, 'DAG 重复子件应出现 ≥2 次').toBeGreaterThanOrEqual(2);
-  expect(leafVer, '叶子料号版本应=2000(边版本)').toBe('2000');
+  // 版本语义(2026-06-06)：版本=子件自身当前 BOM 版本(非边版本)。
+  // 1630010773 是叶子(无自身 BOM) → 版本为空。改前为边版本 2000，此断言作回归守卫。
+  expect(leafVer, '叶子料号(无自身BOM)版本不应再是边版本2000(子件自身版本语义)').not.toBe('2000');
+  expect(['', '—'].includes(leafVer), `叶子无自身BOM→版本应空白或—, 实得"${leafVer}"`).toBe(true);
 
   // ⑤ 加载中 = 0
   const loading = await page.locator('text=加载中').count();

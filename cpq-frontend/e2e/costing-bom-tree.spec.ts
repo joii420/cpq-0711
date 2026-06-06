@@ -121,7 +121,8 @@ test('核价单卡片按 BOM 树展开 + 3 固定列 + DAG + 加载中=0（P1）
   const caret = page.locator('.qt-cost-table tbody button', { hasText: /[▼▶]/ });
   expect(await caret.count(), '应有树展开/折叠箭头（根含子节点）').toBeGreaterThanOrEqual(1);
 
-  // ⑤ 版本下拉占位：disabled select 存在；叶子料号 1630010773 版本应为边版本 2000（非空）
+  // ⑤ 版本下拉占位：disabled select 存在；版本语义(2026-06-06)=子件自身当前 BOM 版本(非边版本)。
+  //    叶子料号 1630010773 无自身 BOM → 版本为空(改前为边版本 2000)。
   const verSelect = page.locator('.qt-cost-table tbody select[disabled]');
   expect(await verSelect.count(), '版本列应为 disabled 下拉占位').toBeGreaterThanOrEqual(1);
   // 叶子 1630010773 行的版本下拉值（第3列 select）
@@ -129,8 +130,9 @@ test('核价单卡片按 BOM 树展开 + 3 固定列 + DAG + 加载中=0（P1）
   if (await leafRow.count() > 0) {
     const leafVer = await leafRow.locator('select').first().inputValue().catch(() => '');
     console.log('[CBT] 叶子 1630010773 版本 =', leafVer);
-    expect(leafVer, '叶子料号版本应带出边版本(非空 —)').not.toBe('');
-    expect(leafVer, '叶子料号版本应带出边版本(非 —)').not.toBe('—');
+    // 子件自身版本语义：叶子无自身 BOM → 版本不再是边版本 2000(回归守卫)
+    expect(leafVer, '叶子料号(无自身BOM)版本不应再是边版本2000').not.toBe('2000');
+    expect(['', '—'].includes(leafVer), `叶子无自身BOM→版本应空白或—, 实得"${leafVer}"`).toBe(true);
   }
 
   // ⑥ 加载中 = 0 —— 逐个内部组件 tab（材质/子配件/元素/工序/组合工艺）都要 0
