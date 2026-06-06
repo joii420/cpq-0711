@@ -3209,6 +3209,19 @@ E2E:
 
 ### [2026-06-05] 公式 - cross_tab_ref 目标公式(targetExpr + b_field token, 第一期无函数) | FormulaCalculator/formulaEngine.ts/CrossTabRefDrawer/types.ts/FormulaZone/ComponentService + cross-tab-cases.json | targetExpr 非空优先 target;逐行先算再聚合(SUMPRODUCT式);b_field 取 B 当前行;global_variable 按 B 行上下文;函数留第二期;前后端共享夹具锁一致
 
+### [2026-06-06] Excel卡片公式 - WHERE 动态查找键(第一期·ROW_WHERE) | CardRef.condRows / CardFormulaEvaluator.buildDynamicCond / topoOrder(refs) / ExcelViewService 传 productRow / cardFormula.ts(buildCondRows+parseCondToRows) / CardFormulaDrawer RHS来源选择器+反解析回填 / ExcelViewConfigTab colSourceTypes
+
+让 Excel `CARD_FORMULA` 列「字段·按条件取行(ROW_WHERE)」的条件右侧"值"能引用本产品行可见的键，实现动态 VLOOKUP（如 `A.关联号 == 本行料号`）。
+
+- **数据模型**: `CardRef` 增结构化 `condRows[{left, op, logic, rhs:{type:literal|product|column, value}}]`；后端优先用 condRows，旧 `cond` 字符串走兼容老路径（无数据迁移）。
+- **后端求值**: `evaluateColumns` 加 6 参重载传 `productRow`(= componentRowData)；`buildDynamicCond` 按本产品行把 condRows 解析成带标量字面量的 JEXL 谓词（左值用 cols 别名反查），复用 `firstMatchIndex` 扫行。`resolveRhs`: literal→原值 / product→productRow.get(或 `__partNo__`→partNo) / column→cached.get(已算 CARD_FORMULA 列)。RHS 取空→`1==2`永假→不匹配→DASH。`toJexlLiteral` 数字裸写、字符串转义单引号(防撇号值静默错配)。
+- **拓扑(决策A)**: `topoOrder` 加 refs 重载 + `condRowColumnDeps`，把 `rhs.type=column` 也算列依赖边 → 求值顺序正确 + 成环 BusinessException。
+- **前端**: `cardFormula.ts` 增 condRows 类型 + `buildCondRows`/`parseCondToRows`(反解析旧 cond)；`CardFormulaDrawer` 条件行加"值来源选择器"(字面量/产品字段/本行列) + 产品字段候选(各页签 fields 并集 + `料号(__partNo__)`, 纯前端拼无新接口) + 本行列候选(colSourceTypes 过滤 CARD_FORMULA, fail-closed) + 插入非空校验 + ref 标签点击回填编辑(editingRefKey 替换语义, 避免占位重复/refKey 漂移孤儿)；`ExcelViewConfigTab` 传 colSourceTypes。
+- **决策**: 仅做 ROW_WHERE(聚合 WHERE 动态 RHS 谓词内嵌公式文本、机制更绕，另立小计划，condRows 复用不返工)；RHS 单值引用(不支持 RHS 写四则/函数)；不变量: RHS 只引用 productRow/partNo + 已算 CARD_FORMULA 列(VARIABLE/普通 FORMULA 列不可作 RHS)。
+- **验证(已自检)**: 后端全部 `Card*Test` 0 失败 0 错误(新增 `CardRowWhereDynamicTest` 8 含 product/column/literal/多条件AND·OR/空键DASH/撇号回归/旧cond兼容 + `CardFormulaTopoTest` 5 含 column 依赖+环 + `CardRefTest` 6)；前端 `cardFormula.test.ts` vitest 11/11；前端 `tsc --noEmit` 0 错误；`CardFormulaDrawer.tsx`/`ExcelViewConfigTab.tsx` → Vite 200。
+- **手验(配置态试算)**: ExcelView 配置页对 CARD_FORMULA 列配 `关联号 等于 [产品字段:料号(__partNo__)]` → 试算各行取"关联号==本行料号"行的字段值、无匹配料号→`—`(`POST /api/cpq/quotations/{id}/excel-view/dry-run`, F12 看 `rows[].{colKey}` 单值非"X(共N项)")。
+- **计划/设计**: `docs/superpowers/plans/2026-06-06-Excel条件动态查找键-rowwhere实施.md` + `docs/superpowers/specs/2026-06-06-Excel条件动态查找键-design.md`。
+
 ---
 
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
