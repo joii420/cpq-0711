@@ -960,6 +960,8 @@ public class CardSnapshotService {
         String compositeType = li.compositeType;
         String partNo = li.productPartNoSnapshot;   // 未勾选(false)分支：单料号普通 expand 用
         QuotationIdContext.set(quotationId);
+        com.cpq.datasource.sqlview.SpineKeysContext.set(
+            com.cpq.datasource.sqlview.SpineKeysContext.fromClosure(closure));
         try {
             for (Object[] dc : driverComps) {
                 if (dc == null || dc[0] == null) continue;
@@ -987,6 +989,7 @@ public class CardSnapshotService {
                 }
             }
         } finally {
+            com.cpq.datasource.sqlview.SpineKeysContext.clear();
             QuotationIdContext.clear();
         }
         return baseRowsByComp;
