@@ -564,6 +564,7 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
               .filter(c => c.source_type === 'CARD_FORMULA')
               .map(c => [c.col_key, c.formula || '']),
           )}
+          colSourceTypes={Object.fromEntries(columns.map(c => [c.col_key, c.source_type || '']))}
           value={columns[cardDrawerColIdx]}
           onSave={(patch) => {
             updateColumn(cardDrawerColIdx, { ...patch, source_type: 'CARD_FORMULA' });
