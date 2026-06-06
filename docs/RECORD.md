@@ -3222,6 +3222,22 @@ E2E:
 - **手验(配置态试算)**: ExcelView 配置页对 CARD_FORMULA 列配 `关联号 等于 [产品字段:料号(__partNo__)]` → 试算各行取"关联号==本行料号"行的字段值、无匹配料号→`—`(`POST /api/cpq/quotations/{id}/excel-view/dry-run`, F12 看 `rows[].{colKey}` 单值非"X(共N项)")。
 - **计划/设计**: `docs/superpowers/plans/2026-06-06-Excel条件动态查找键-rowwhere实施.md` + `docs/superpowers/specs/2026-06-06-Excel条件动态查找键-design.md`。
 
+### [2026-06-06] Excel卡片公式 - 聚合 WHERE 动态查找键(第二期) | CardAggregateSource.dynamicPredicate+predicateFor / CardFormulaEvaluator.resolveCardScalars(复用buildDynamicCond) / TemplateFormulaService.executeOverFunction / cardFormula.ts(ALLOWED加# + nextAggRefKey) / CardFormulaDrawer 聚合分支
+
+把第一期 ROW_WHERE 的动态查找键扩到聚合 `SUM_OVER([页签] WHERE 条件, 表达式)` 的 WHERE，实现动态 SUMIF，并支持同列同页签多个条件不同的聚合。
+
+- **机制(方案①Binding注入)**: 聚合 ref 带 `condRows`；`CardAggregateSource.Binding` 加 `dynamicPredicate` + `predicateFor`；`resolveCardScalars` 登记聚合 binding 时若 hasCondRows 复用 `buildDynamicCond`(按本产品行)算谓词存进 binding；`executeOverFunction` 取谓词 `predicateFor(source) ?? parsed.predicate`(动态优先)。**不改写公式文本**。
+- **唯一keying**: 新建聚合 refKey/token = `页签名#N`(`nextAggRefKey` 同页签递增)，支持同页签多聚合；顺带修复既有"同页签多静态聚合 cols 别名互覆盖"潜在缺陷。旧 `[页签]` token 兼容不迁移。
+- **动态时省略公式 WHERE**(与 ROW_WHERE cond='' 对称)，全字面量聚合仍 WHERE 烤入不变。
+- **零新增拓扑**: 第一期 `condRowColumnDeps` 已扫所有 refs condRows，聚合 ref 带 condRows 后其 column 依赖自动纳入。
+- **校验**: `cardFormula.ts` ALLOWED 加 `#`(否则 `[页签#N]` 报非法字符)；插入非空校验扩到 aggregate。
+- **范围**: 只做 WHERE 动态(aggExpr 不变)；RHS 复用 literal/product/column；聚合 ref 不做回填编辑(YAGNI)。
+- **验证(已自检)**: 后端 `Card*Test` 53 全绿(新增 `CardAggregateDynamicTest` 5 含 product/同页签多动态聚合互不串/静态collision修复/空键→0/旧token兼容 + `CardAggregateSourcePredicateTest` 2)；前端 `cardFormula.test.ts` vitest 13 全绿(+nextAggRefKey/#公式)；tsc 0；`CardFormulaDrawer.tsx` Vite 200。
+- **Playwright 完整闭环 E2E** (`e2e/card-aggregate-dynamic-flow.spec.ts`, 2 test 全绿): ① **UI 配置端**=自建 DRAFT 测试模板(克隆 d16dd592 结构+工序组件,afterAll 删)真实抽屉点配两同页签聚合(静态#1 工序代码==Z011 + 动态#2 子件==料号__partNo__)→「保存配置」→ DB `excel_view_config` 落库 `工序#1`(cols 工序代码)/`工序#2`(cols 子件+condRows+__partNo__) 两独立 ref(cols 不互覆盖); ② **渲染端**=注入同构配置到 PUBLISHED d16dd592(QT-1497 绑定有工序数据)→ `getExcelView` 真实链路 A=`SUM(工序代码==Z011)+SUM(子件==10110002)`=266.7984(互不串) + B=动态 子件==料号→0(空键)。
+  - **闭环形态说明(业务约束)**: 报价单只绑 PUBLISHED 模板、PUBLISHED 模板 excel_view_config 在 UI 只读(`disabled={!isDraft}`)，故"单模板配→渲染一条龙"不可达，采用同构桥接(DRAFT 配+落库 / PUBLISHED 渲染，两端共用同一工序组件 5c47fb41 结构同构)。数据纪律: 备份表 zz_evc_bak 存还原 + 自建测试模板 afterAll 删，绝不改 template_id/组件数据。
+  - **E2E 踩坑**: AntD 对恰 2 中文字按钮自动插空格("保存"→"保 存") → getByRole name 匹配失效，改用 `.ant-btn-primary`; excel_view_config 由 ExcelViewConfigTab「保存配置」端点持久化(非"保存模板"); 条件值 input 须 `getByPlaceholder('值')` 排除字段 Select 的 showSearch 内置 input。
+- **设计/计划**: `docs/superpowers/specs/2026-06-06-Excel聚合WHERE动态查找键-design.md` + `docs/superpowers/plans/2026-06-06-Excel聚合WHERE动态查找键实施.md`。
+
 ---
 
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
