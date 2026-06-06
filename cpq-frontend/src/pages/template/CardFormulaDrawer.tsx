@@ -19,7 +19,7 @@ import { PlusOutlined, DeleteOutlined, FunctionOutlined } from '@ant-design/icon
 import { templateService } from '../../services/templateService';
 import { componentService } from '../../services/componentService';
 import { quotationService } from '../../services/quotationService';
-import { genAlias, expandIn, validateCardFormula, buildCondRows, parseCondToRows } from './cardFormula';
+import { genAlias, expandIn, validateCardFormula, buildCondRows, parseCondToRows, nextAggRefKey } from './cardFormula';
 // CardRefSpec 是纯类型，必须 import type（否则 Vite/esbuild 运行时 ESM 链接报错 → 整个 SPA 白屏）
 import type { CardRefSpec, CondRhsType, CondRowSpec } from './cardFormula';
 
@@ -166,6 +166,7 @@ function buildInsertResult(
   conds: CondRow[],
   aggFunc: AggFunc,
   aggExpr: string,          // 用户填的行内别名表达式
+  aggRefKey: string,        // 聚合唯一 refKey（页签名#N，由 handleInsertRef 算好传入）
 ): InsertResult | null {
   const tabName = tab.tabName;
 
@@ -215,18 +216,23 @@ function buildInsertResult(
     const usedFieldsInExpr = tab.fields.filter(f => aggExpr.includes(f));
     const allUsedFields = [...usedFieldsInConds, ...usedFieldsInExpr].filter(Boolean);
     const aliasMap = buildAliasMap(allUsedFields);
-    const condJexl = buildCondJexl(conds, aliasMap);
     const aliasExpr = replaceFieldsWithAlias(aggExpr, aliasMap);
     const cols: Record<string, string> = {};
     for (const [f, a] of Object.entries(aliasMap)) cols[a] = f;
 
+    const refKey = aggRefKey || tabName; // 唯一 key（页签名#N）
+    const condRows = buildCondRows(conds);
+    const hasDynamic = condRows.length > 0 && condRows.some(c => c.rhs.type !== 'literal');
+    if (hasDynamic) {
+      // 动态：省略公式 WHERE（条件存 condRows，后端按本产品行算谓词）
+      const placeholder = `${aggFunc}_OVER([${refKey}], ${aliasExpr || '1'})`;
+      return { placeholder, refKey, ref: { tab: tab.tabKey, cols, condRows } };
+    }
+    // 全字面量：保持 WHERE 烤入公式（行为不变）
+    const condJexl = buildCondJexl(conds, aliasMap);
     const condPart = condJexl ? ` WHERE ${condJexl}` : '';
-    const placeholder = `${aggFunc}_OVER([${tabName}]${condPart}, ${aliasExpr || '1'})`;
-    return {
-      placeholder,
-      refKey: tabName,
-      ref: { tab: tab.tabKey, cols },
-    };
+    const placeholder = `${aggFunc}_OVER([${refKey}]${condPart}, ${aliasExpr || '1'})`;
+    return { placeholder, refKey, ref: { tab: tab.tabKey, cols } };
   }
 
   return null;
@@ -411,7 +417,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
       message.warning('请先选择页签');
       return;
     }
-    if (refType === 'row_where') {
+    if (refType === 'row_where' || refType === 'aggregate') {
       // spec §6：rhs.type=product 字段非空；op=in 值非空（column 已由下拉约束为 CARD_FORMULA 列）
       const bad = conds.filter(c => c.field).find(c =>
         (c.rhsType === 'product' && !c.value) ||
@@ -419,7 +425,11 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
         (c.rhsType === 'literal' && c.op === 'in' && !c.value.trim()));
       if (bad) { message.warning(`条件「${bad.field}」的值未填完整`); return; }
     }
-    const result = buildInsertResult(refType, selTab, selField, conds, aggFunc, aggExpr);
+    // 聚合用唯一 refKey 页签名#N（同页签多聚合不冲突；行内插入故 editingRefKey 恒为 null）
+    const aggRefKey = refType === 'aggregate'
+      ? nextAggRefKey(selTab.tabName, Object.keys(refs))
+      : '';
+    const result = buildInsertResult(refType, selTab, selField, conds, aggFunc, aggExpr, aggRefKey);
     if (!result) {
       message.warning('请补全引用信息（字段不能为空）');
       return;
