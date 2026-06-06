@@ -199,7 +199,10 @@ public class CardFormulaEvaluator {
         for (var e : refs.entrySet()) {
             CardRef r = CardRef.fromMap(asRefMap(e.getValue()));
             if (r != null && r.isAggregateSource()) {
-                aggBindings.put(e.getKey(), new CardAggregateSource.Binding(r.tab, r.cols));
+                String dynPred = r.hasCondRows()
+                        ? buildDynamicCond(r, productRow, cached, partNo)   // 动态 WHERE 谓词(按本产品行)
+                        : null;                                             // 静态 → 走公式文本谓词
+                aggBindings.put(e.getKey(), new CardAggregateSource.Binding(r.tab, r.cols, dynPred));
                 aggTokens.add(e.getKey());
             }
         }
