@@ -37,12 +37,39 @@ public class CardFormulaEvaluator {
         return deps;
     }
 
-    /** Kahn 拓扑排序；存在环抛 BusinessException。入参: col_key → formula。 */
+    /** 决策A：从某列 refs.condRows 收集 rhs.type=column 的列依赖边（WHERE 里引用的列）。 */
+    static Set<String> condRowColumnDeps(Map<String, Object> refs, Set<String> allCols) {
+        Set<String> out = new LinkedHashSet<>();
+        if (refs == null) return out;
+        for (Object refObj : refs.values()) {
+            CardRef r = CardRef.fromMap(asRefMap(refObj));
+            if (r == null || !r.hasCondRows()) continue;
+            for (CardRef.CondRow cr : r.condRows) {
+                if (cr.rhs != null && cr.rhs.type == CardRef.RhsType.COLUMN
+                        && cr.rhs.value != null && allCols.contains(cr.rhs.value)) {
+                    out.add(cr.rhs.value);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** 兼容旧签名（仅按公式文本建依赖）。 */
     public static List<String> topoOrder(Map<String, String> formulas) {
+        return topoOrder(formulas, Map.of());
+    }
+
+    /** Kahn 拓扑排序；存在环抛 BusinessException。依赖边 = 公式 [col] + condRows 的 rhs(column)。 */
+    public static List<String> topoOrder(Map<String, String> formulas,
+                                         Map<String, Map<String, Object>> refsByCol) {
         Set<String> cols = formulas.keySet();
         Map<String, Set<String>> deps = new LinkedHashMap<>();
         Map<String, Integer> indeg = new LinkedHashMap<>();
-        for (String c : cols) deps.put(c, columnDeps(formulas.get(c), cols));
+        for (String c : cols) {
+            Set<String> d = columnDeps(formulas.get(c), cols);
+            d.addAll(condRowColumnDeps(refsByCol == null ? null : refsByCol.get(c), cols));
+            deps.put(c, d);
+        }
         for (String c : cols) indeg.put(c, deps.get(c).size()); // 入度 = 本列依赖数
         Deque<String> q = new ArrayDeque<>();
         for (String c : cols) if (indeg.get(c) == 0) q.add(c);
@@ -93,7 +120,7 @@ public class CardFormulaEvaluator {
             refsByCol.put(key, asRefMap(c.get("refs")));
         }
 
-        List<String> order = topoOrder(formulaByCol);
+        List<String> order = topoOrder(formulaByCol, refsByCol);
         Map<String, Object> cached = new LinkedHashMap<>();
         Map<String, Object> out = new LinkedHashMap<>();
 
