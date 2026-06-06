@@ -14,6 +14,9 @@ package com.cpq.datasource.sqlview;
  *
  * <p>解析：配平括号定位宏的右括号；顶层逗号（括号深度 0）切分实参，必须恰好 3 个；
  * 实参原样透传并外裹一层 {@code ()} 防优先级问题。
+ *
+ * <p>限制：实参按列引用/表达式设计，<b>不支持含括号或逗号的 SQL 字符串字面量</b>
+ * （如 {@code coalesce(t.v, ')')} 或 {@code ','}）—— 配平/切分按字符级处理，不解析引号状态。
  */
 public final class SpineKeysMacro {
 
@@ -54,6 +57,12 @@ public final class SpineKeysMacro {
             if (args.length != 3) {
                 throw new IllegalArgumentException(
                         ":spineKeys 必须恰好 3 个顶层逗号分隔的实参（料号列, 父料号列, 版本列），实得 " + args.length);
+            }
+            for (int ai = 0; ai < 3; ai++) {
+                if (args[ai].trim().isEmpty()) {
+                    throw new IllegalArgumentException(
+                            ":spineKeys 第 " + (ai + 1) + " 个实参为空（需要列引用/表达式）");
+                }
             }
             out.append(render(args[0].trim(), args[1].trim(), args[2].trim(), arrP, arrPP, arrV));
             i = close + 1;

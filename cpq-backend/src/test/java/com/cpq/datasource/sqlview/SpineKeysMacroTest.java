@@ -71,6 +71,14 @@ class SpineKeysMacroTest {
                 () -> SpineKeysMacro.expandForExecution("WHERE :spineKeys"));
     }
 
+    @Test
+    void emptyArg_throws() {
+        assertThrows(IllegalArgumentException.class,
+                () -> SpineKeysMacro.expandForExecution("WHERE :spineKeys(a, , c)"));
+        assertThrows(IllegalArgumentException.class,
+                () -> SpineKeysMacro.expandForExecution("WHERE :spineKeys(, , )"));
+    }
+
     private static int countOccurrences(String s, String sub) {
         int n = 0, i = 0;
         while ((i = s.indexOf(sub, i)) >= 0) { n++; i += sub.length(); }
