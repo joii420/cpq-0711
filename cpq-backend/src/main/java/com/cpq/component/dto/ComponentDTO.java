@@ -26,6 +26,8 @@ public class ComponentDTO {
     public List<String> rowKeyFields;
     /** 树表配置(纯展示);entity 存 JSON 字符串,DTO 透传为 Map(null=非树表) */
     public Map<String, Object> treeConfig;
+    /** 核价 BOM 递归展开开关(默认 true,仅核价侧生效;与 treeConfig 正交) */
+    public Boolean bomRecursiveExpand;
     public String status;
     public OffsetDateTime createdAt;
     public OffsetDateTime updatedAt;
@@ -48,6 +50,7 @@ public class ComponentDTO {
         dto.formulas = parseJsonArray(component.formulas);
         dto.rowKeyFields = parseStringList(component.rowKeyFields);
         dto.treeConfig = parseJsonObject(component.treeConfig);
+        dto.bomRecursiveExpand = component.bomRecursiveExpand != null ? component.bomRecursiveExpand : Boolean.TRUE;
         return dto;
     }
 

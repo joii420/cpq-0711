@@ -114,6 +114,8 @@ public class ComponentService {
         // 树表配置:校验后存 JSON(null=非树表)
         validateTreeConfig(request.treeConfig, request.fields);
         component.treeConfig = request.treeConfig != null ? toJsonRaw(request.treeConfig) : null;
+        // 核价 BOM 递归展开开关(默认 true)
+        component.bomRecursiveExpand = request.bomRecursiveExpand != null ? request.bomRecursiveExpand : Boolean.TRUE;
 
         // 行键校验（新建路径：硬拦）
         validateRowKeyConfig(component.dataDriverPath, component.fields, component.rowKeyFields, true);
@@ -189,6 +191,10 @@ public class ComponentService {
             boolean hasBoth = request.treeConfig.get("idField") != null
                     && request.treeConfig.get("parentField") != null;
             component.treeConfig = hasBoth ? toJsonRaw(request.treeConfig) : null;
+        }
+        // 核价 BOM 递归展开开关更新(null=不变)
+        if (request.bomRecursiveExpand != null) {
+            component.bomRecursiveExpand = request.bomRecursiveExpand;
         }
 
         // 行键校验（更新路径：软校验，违规只告警不阻断）

@@ -25,4 +25,7 @@ public class CreateComponentRequest {
 
     /** 树表配置(纯展示,可选):{idField, parentField, defaultExpanded} */
     public Map<String, Object> treeConfig;
+
+    /** 核价 BOM 递归展开开关(可选,默认 true):勾选才按 material_bom_item 闭包递归展开 */
+    public Boolean bomRecursiveExpand;
 }
