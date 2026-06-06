@@ -323,10 +323,10 @@ public class ExcelViewService {
                 com.cpq.quotation.service.card.CardDataProvider provider =
                     com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(effectiveRows);
                 cardFormulaValues = cardFormulaEvaluator.evaluateColumns(
-                    cardCols, provider, customerId, partNo, null);
+                    cardCols, provider, customerId, partNo, null, componentRowData);
             } else {
                 cardFormulaValues = cardFormulaEvaluator.evaluateColumns(
-                    cardCols, componentDataList, customerId, partNo, null);
+                    cardCols, componentDataList, customerId, partNo, null, componentRowData);
             }
         }
 
