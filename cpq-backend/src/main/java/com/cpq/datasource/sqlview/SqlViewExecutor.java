@@ -284,7 +284,9 @@ public class SqlViewExecutor {
         if (partNos != null && !partNos.isEmpty()) {
             namedParams.put("hfPartNos", partNos);
         }
-        RewrittenSql rewritten = rewriteNamedParams(sql.toString(), namedParams);
+        injectSpineKeysParams(namedParams);
+        String expandedSql = SpineKeysMacro.expandForExecution(sql.toString());
+        RewrittenSql rewritten = rewriteNamedParams(expandedSql, namedParams);
         SqlDebugContext.record(rewritten.sql, rewritten.params);
 
         List<Map<String, Object>> rows = new ArrayList<>();
@@ -351,7 +353,9 @@ public class SqlViewExecutor {
         if (partNos != null && !partNos.isEmpty()) {
             namedParams.put("hfPartNos", partNos);
         }
-        RewrittenSql rewritten = rewriteNamedParams(sql, namedParams);
+        injectSpineKeysParams(namedParams);
+        String expandedSql = SpineKeysMacro.expandForExecution(sql);
+        RewrittenSql rewritten = rewriteNamedParams(expandedSql, namedParams);
         SqlDebugContext.record(rewritten.sql, rewritten.params);
 
         List<Map<String, Object>> rows = new ArrayList<>();
@@ -412,6 +416,15 @@ public class SqlViewExecutor {
                 namedParams.put("customerCode", code);
             }
         }
+    }
+
+    /** 若当前线程有 spineKeys 三元组上下文，注入 :__skP/:__skPP/:__skV 三个 text[] 命名参数。 */
+    private void injectSpineKeysParams(Map<String, Object> namedParams) {
+        SpineKeysContext.Triples t = SpineKeysContext.get();
+        if (t == null) return;
+        namedParams.put("__skP", t.partNos);
+        namedParams.put("__skPP", t.parentNos);
+        namedParams.put("__skV", t.versions);
     }
 
     /** 查 customer.code（按 UUID）。失败返 null（占位符降级为 NULL，视图过滤返 0 行）。 */
