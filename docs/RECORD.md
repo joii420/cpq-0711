@@ -3254,4 +3254,8 @@ E2E:
 
 ---
 
+### [2026-06-06] 核价SQL视图 - spineKeys 复合键跨页签过滤(最小版) + BOM spine 版本语义改子件自身版本 | SpineKeysMacro/SpineKeysContext(新建) + SqlViewExecutor/SqlViewValidator/BomClosureService/CardSnapshotService(改) + 单测SpineKeysMacroTest/SqlViewValidatorSpineKeysTest + CostingExcelTreeTest/BomClosureServiceTest(改断言) | 三元组从BOM闭包派生(环境注入,类比:hfPartNos);:spineKeys(料号列,父料号列,版本列)→EXISTS+unnest+IS NOT DISTINCT FROM(NULL-safe防超长IN);版本=子件自身当前BOM版本(显示+匹配统一,弃用边版本,叶子空);切换版本/实时联动/源页签实时行推迟
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
