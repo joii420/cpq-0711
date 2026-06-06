@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { genAlias, expandIn, extractColKeyDeps, validateCardFormula, buildCondRows, parseCondToRows } from './cardFormula';
+import { genAlias, expandIn, extractColKeyDeps, validateCardFormula, buildCondRows, parseCondToRows, nextAggRefKey } from './cardFormula';
 
 describe('cardFormula pure logic', () => {
   it('genAlias', () => { expect(genAlias(0)).toBe('c0'); expect(genAlias(3)).toBe('c3'); });
@@ -58,5 +58,21 @@ describe('cardFormula pure logic', () => {
 
   it('parseCondToRows 空串 → []', () => {
     expect(parseCondToRows('', {})).toEqual([]);
+  });
+
+  it('validateCardFormula 接受含 # 的聚合 token [页签#N]', () => {
+    const errs = validateCardFormula(
+      { col_key: 'A', formula: "=SUM_OVER([投料#1], c0)", refs: { '投料#1': { tab: 't:0', cols: { c0: '量' } } } } as any,
+      ['A'], {});
+    expect(errs.some(e => e.includes('非法字符'))).toBe(false);
+  });
+
+  it('nextAggRefKey 同页签递增、跨页签独立、含旧无后缀', () => {
+    expect(nextAggRefKey('投料', [])).toBe('投料#1');
+    expect(nextAggRefKey('投料', ['投料'])).toBe('投料#1');           // 旧无后缀 → 新从 #1
+    expect(nextAggRefKey('投料', ['投料#1'])).toBe('投料#2');
+    expect(nextAggRefKey('投料', ['投料#1', '投料#3'])).toBe('投料#4'); // max+1
+    expect(nextAggRefKey('投料', ['加工#5'])).toBe('投料#1');          // 跨页签独立
+    expect(nextAggRefKey('投料', ['投料.小计', '投料.量(条件)'])).toBe('投料#1'); // 非聚合 key 不计
   });
 });

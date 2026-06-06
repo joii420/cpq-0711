@@ -47,7 +47,7 @@ export function detectCycle(formulas: Record<string,string>): string[] {
   return order.length === cols.length ? [] : cols.filter(c => !order.includes(c));
 }
 
-const ALLOWED = /^[\sA-Za-z0-9_+\-*/().,%<>=!&|'一-龥\[\]]*$/; // 含中文(字符串字面量/占位内)
+const ALLOWED = /^[\sA-Za-z0-9_+\-*/().,%<>=!&|'#一-龥\[\]]*$/; // 含中文 + #(聚合唯一 token [页签#N])
 
 export function validateCardFormula(
   col: { col_key: string; formula?: string; refs?: Record<string, CardRefSpec> },
@@ -157,4 +157,19 @@ export function parseCondToRows(cond: string, cols: Record<string, string>): Con
   }
   // 末段 logicAfter 无意义，但保持 'and' 即可（构建时末条不用 logic）
   return out;
+}
+
+/**
+ * 为某页签生成下一个唯一聚合 refKey `页签名#N`（N 从 1 起，取该页签已有 `页签名#数字` 的最大值 +1）。
+ * 旧无后缀 `页签名` 视为占位但不计入序号（新建仍从 #1 起，与旧并存不冲突）。
+ * 非聚合 key（如 `页签名.字段(条件)`）不计入。
+ */
+export function nextAggRefKey(tabName: string, existingKeys: string[]): string {
+  const re = new RegExp(`^${tabName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}#(\\d+)$`);
+  let max = 0;
+  for (const k of existingKeys) {
+    const m = k.match(re);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `${tabName}#${max + 1}`;
 }
