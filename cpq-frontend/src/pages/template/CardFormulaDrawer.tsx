@@ -19,9 +19,9 @@ import { PlusOutlined, DeleteOutlined, FunctionOutlined } from '@ant-design/icon
 import { templateService } from '../../services/templateService';
 import { componentService } from '../../services/componentService';
 import { quotationService } from '../../services/quotationService';
-import { genAlias, expandIn, validateCardFormula, buildCondRows } from './cardFormula';
+import { genAlias, expandIn, validateCardFormula, buildCondRows, parseCondToRows } from './cardFormula';
 // CardRefSpec 是纯类型，必须 import type（否则 Vite/esbuild 运行时 ESM 链接报错 → 整个 SPA 白屏）
-import type { CardRefSpec, CondRhsType } from './cardFormula';
+import type { CardRefSpec, CondRhsType, CondRowSpec } from './cardFormula';
 
 const { Text, Paragraph } = Typography;
 
@@ -283,6 +283,8 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
   const [conds, setConds] = useState<CondRow[]>([{ ...DEFAULT_COND_ROW }]);
   const [aggFunc, setAggFunc] = useState<AggFunc>('SUM');
   const [aggExpr, setAggExpr] = useState<string>('');
+  // 正在编辑回填的 ref key（点标签回填时设置）；为 null 表示新建插入
+  const [editingRefKey, setEditingRefKey] = useState<string | null>(null);
 
   // ── 配置说明展开态 ───────────────────────────────────────────────
   const [showHelp, setShowHelp] = useState(false);
@@ -305,6 +307,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
     setConds([{ ...DEFAULT_COND_ROW }]);
     setAggFunc('SUM');
     setAggExpr('');
+    setEditingRefKey(null);
     setTrial({});
     loadTabs();
   }, [open, templateId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -377,6 +380,31 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
     });
   }, [formula]);
 
+  // 把已有 ROW_WHERE ref 回填到构建器（编辑）。condRows 优先；缺则反解析旧 cond。
+  const loadRefIntoBuilder = (refKey: string, ref: CardRefSpec) => {
+    if (ref.mode !== 'ROW_WHERE') {
+      message.info('仅「字段·按条件取行」引用可回填编辑；其它类型请删除后重建');
+      return;
+    }
+    setSelTabKey(ref.tab);
+    setRefType('row_where');
+    setSelField(ref.field || '');
+    const cols = ref.cols || {};
+    const rows: CondRowSpec[] = (ref.condRows && ref.condRows.length)
+      ? ref.condRows
+      : parseCondToRows(ref.cond || '', cols);
+    setConds(
+      rows.length
+        ? rows.map(r => ({
+            field: r.left, op: r.op as CondOperator, value: r.rhs?.value ?? '',
+            logic: r.logic as CondLogic, rhsType: r.rhs?.type ?? 'literal',
+          }))
+        : [{ ...DEFAULT_COND_ROW }],
+    );
+    setEditingRefKey(refKey);
+    message.success(`已载入引用「${refKey}」到下方构建器，可编辑后重新插入（同名覆盖）`);
+  };
+
   // ── 插入引用 ─────────────────────────────────────────────────────
   const handleInsertRef = () => {
     if (!selTab) {
@@ -399,10 +427,24 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
     // 把占位文本写入公式：聚合 placeholder 本身已是完整 SUM_OVER(...) 调用，不能再包 []；
     // 其余(小计/字段首行/按条件)是裸引用 token，需要包 [] 成占位。
     const token = refType === 'aggregate' ? result.placeholder : `[${result.placeholder}]`;
-    insertAtCursor(token);
-    // 把 ref 写入 refs 状态
-    setRefs(prev => ({ ...prev, [result.refKey]: result.ref }));
-    message.success(`已插入引用：${token}`);
+    if (editingRefKey) {
+      // 编辑模式：替换公式里旧占位 + 改写 refs（key 变了则删旧增新）
+      const oldToken = `[${editingRefKey}]`;
+      setFormula(prev => prev.includes(oldToken) ? prev.split(oldToken).join(token) : prev + token);
+      setRefs(prev => {
+        const n = { ...prev };
+        if (editingRefKey !== result.refKey) delete n[editingRefKey];
+        n[result.refKey] = result.ref;
+        return n;
+      });
+      setEditingRefKey(null);
+      message.success(`已更新引用：${token}`);
+    } else {
+      insertAtCursor(token);
+      // 把 ref 写入 refs 状态
+      setRefs(prev => ({ ...prev, [result.refKey]: result.ref }));
+      message.success(`已插入引用：${token}`);
+    }
   };
 
   // ── 插入函数字面量 ───────────────────────────────────────────────
@@ -624,7 +666,12 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
         {/* ── 当前 refs 预览 ── */}
         {Object.keys(refs).length > 0 && (
           <div>
-            <Text strong style={{ marginBottom: 8, display: 'block' }}>已定义引用 refs</Text>
+            <Text strong style={{ marginBottom: 8, display: 'block' }}>
+              已定义引用 refs
+              <Text type="secondary" style={{ fontSize: 12, fontWeight: 400, marginLeft: 8 }}>
+                （点标签可回填到下方构建器编辑；× 删除）
+              </Text>
+            </Text>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {Object.entries(refs).map(([key, ref]) => (
                 <Tooltip
@@ -642,6 +689,8 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
                   <Tag
                     closable
                     color="blue"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => loadRefIntoBuilder(key, ref)}
                     onClose={() => setRefs(prev => { const n = { ...prev }; delete n[key]; return n; })}
                   >
                     {key}
