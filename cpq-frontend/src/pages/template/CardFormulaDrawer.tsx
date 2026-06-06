@@ -19,9 +19,9 @@ import { PlusOutlined, DeleteOutlined, FunctionOutlined } from '@ant-design/icon
 import { templateService } from '../../services/templateService';
 import { componentService } from '../../services/componentService';
 import { quotationService } from '../../services/quotationService';
-import { genAlias, expandIn, validateCardFormula } from './cardFormula';
+import { genAlias, expandIn, validateCardFormula, buildCondRows } from './cardFormula';
 // CardRefSpec 是纯类型，必须 import type（否则 Vite/esbuild 运行时 ESM 链接报错 → 整个 SPA 白屏）
-import type { CardRefSpec } from './cardFormula';
+import type { CardRefSpec, CondRhsType } from './cardFormula';
 
 const { Text, Paragraph } = Typography;
 
@@ -49,6 +49,8 @@ export interface CardFormulaDrawerProps {
   }) => void;
   onClose: () => void;
   dryRunQuotationId?: string;
+  /** col_key → source_type，用于「本行卡片公式列」RHS 下拉只列 CARD_FORMULA 列。 */
+  colSourceTypes?: Record<string, string>;
 }
 
 // ─── 内部类型 ────────────────────────────────────────────────────────────────
@@ -65,8 +67,9 @@ type CondLogic = 'and' | 'or';
 interface CondRow {
   field: string;
   op: CondOperator;
-  value: string;      // 文本，IN 时是逗号分隔
+  value: string;      // 文本，IN 时是逗号分隔；product/column 时是字段名/列号
   logic: CondLogic;   // 与下一行的连接符（最后一行不用）
+  rhsType: CondRhsType; // 值来源：字面量 / 本行产品字段 / 本行卡片公式列
 }
 
 interface TabInfo {
@@ -187,18 +190,21 @@ function buildInsertResult(
 
   if (refType === 'row_where') {
     if (!field) return null;
-    // 收集 conds 里用到的字段
     const usedFields = conds.filter(c => c.field).map(c => c.field);
     const aliasMap = buildAliasMap(usedFields);
-    const cond = buildCondJexl(conds, aliasMap);
     const cols: Record<string, string> = {};
     for (const [f, a] of Object.entries(aliasMap)) cols[a] = f;
-    const condSummary = cond ? `条件` : '无条件';
+    const condRows = buildCondRows(conds);
+    // 仅当全部 RHS=字面量时才生成旧式 cond（向后兼容 + 占位展示）；含动态 RHS 时 cond 留空，后端用 condRows
+    const allLiteral = condRows.every(c => c.rhs.type === 'literal');
+    const cond = allLiteral ? buildCondJexl(conds, aliasMap) : '';
+    const hasDynamic = condRows.length > 0 && !allLiteral;
+    const condSummary = condRows.length ? (hasDynamic ? '动态条件' : '条件') : '无条件';
     const placeholder = `${tabName}.${field}(${condSummary})`;
     return {
       placeholder,
       refKey: placeholder,
-      ref: { tab: tab.tabKey, field, mode: 'ROW_WHERE', cond, cols },
+      ref: { tab: tab.tabKey, field, mode: 'ROW_WHERE', cond, cols, condRows },
     };
   }
 
@@ -246,7 +252,7 @@ const AGG_FUNC_OPTIONS: { label: string; value: AggFunc }[] = [
   { label: 'MAX（最大）', value: 'MAX' },
 ];
 
-const DEFAULT_COND_ROW: CondRow = { field: '', op: 'eq', value: '', logic: 'and' };
+const DEFAULT_COND_ROW: CondRow = { field: '', op: 'eq', value: '', logic: 'and', rhsType: 'literal' };
 
 const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
   open,
@@ -257,6 +263,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
   onSave,
   onClose,
   dryRunQuotationId,
+  colSourceTypes,
 }) => {
   // ── 公式状态 ─────────────────────────────────────────────────────
   const [formula, setFormula] = useState<string>(value.formula || '');
@@ -376,6 +383,14 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
       message.warning('请先选择页签');
       return;
     }
+    if (refType === 'row_where') {
+      // spec §6：rhs.type=product 字段非空；op=in 值非空（column 已由下拉约束为 CARD_FORMULA 列）
+      const bad = conds.filter(c => c.field).find(c =>
+        (c.rhsType === 'product' && !c.value) ||
+        (c.rhsType === 'column' && !c.value) ||
+        (c.rhsType === 'literal' && c.op === 'in' && !c.value.trim()));
+      if (bad) { message.warning(`条件「${bad.field}」的值未填完整`); return; }
+    }
     const result = buildInsertResult(refType, selTab, selField, conds, aggFunc, aggExpr);
     if (!result) {
       message.warning('请补全引用信息（字段不能为空）');
@@ -450,6 +465,21 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
 
   // ── 渲染 ─────────────────────────────────────────────────────────
   const fieldOptions = (selTab?.fields || []).map(f => ({ label: f, value: f }));
+
+  // RHS=产品字段 候选：所有页签 fields 并集 + 料号(__partNo__)（决策A：纯前端拼，不含组件外属性）
+  const productFieldOptions = (() => {
+    const seen = new Set<string>();
+    const opts: { label: string; value: string }[] = [{ label: '料号(__partNo__)', value: '__partNo__' }];
+    for (const t of tabs) for (const f of t.fields) {
+      if (f && !seen.has(f)) { seen.add(f); opts.push({ label: f, value: f }); }
+    }
+    return opts;
+  })();
+
+  // RHS=本行卡片公式列 候选：其它 CARD_FORMULA 列（按 colSourceTypes 判定）
+  const cardColumnOptions = allColKeys
+    .filter(k => k !== value.col_key && colSourceTypes?.[k] === 'CARD_FORMULA')
+    .map(k => ({ label: `[${k}]`, value: k }));
 
   const needCondBuilder = refType === 'row_where' || refType === 'aggregate';
 
@@ -740,14 +770,52 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
                           options={COND_OP_OPTIONS}
                         />
 
-                        {/* 值 */}
-                        <Input
+                        {/* 值来源 */}
+                        <Select
                           size="small"
-                          style={{ width: 160 }}
-                          placeholder={c.op === 'in' ? '值1,值2,值3' : '值'}
-                          value={c.value}
-                          onChange={e => updateCondRow(i, { value: e.target.value })}
+                          style={{ width: 104 }}
+                          value={c.rhsType}
+                          onChange={v => updateCondRow(i, { rhsType: v as CondRhsType, value: '' })}
+                          options={[
+                            { label: '字面量', value: 'literal' },
+                            { label: '产品字段', value: 'product' },
+                            { label: '本行列', value: 'column' },
+                          ]}
                         />
+
+                        {/* 值（按来源渲染） */}
+                        {c.rhsType === 'literal' && (
+                          <Input
+                            size="small"
+                            style={{ width: 160 }}
+                            placeholder={c.op === 'in' ? '值1,值2,值3' : '值'}
+                            value={c.value}
+                            onChange={e => updateCondRow(i, { value: e.target.value })}
+                          />
+                        )}
+                        {c.rhsType === 'product' && (
+                          <Select
+                            size="small"
+                            style={{ width: 200 }}
+                            placeholder="选产品字段"
+                            value={c.value || undefined}
+                            onChange={v => updateCondRow(i, { value: v })}
+                            options={productFieldOptions}
+                            showSearch
+                            optionFilterProp="label"
+                          />
+                        )}
+                        {c.rhsType === 'column' && (
+                          <Select
+                            size="small"
+                            style={{ width: 160 }}
+                            placeholder="选本行列"
+                            value={c.value || undefined}
+                            onChange={v => updateCondRow(i, { value: v })}
+                            options={cardColumnOptions}
+                            notFoundContent="无其它卡片公式列"
+                          />
+                        )}
 
                         {/* 删除行 */}
                         <Button
@@ -764,9 +832,32 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
                       添加条件
                     </Button>
 
-                    {/* 预览生成的 JEXL */}
+                    {/* 预览生成的条件 */}
                     {(() => {
-                      const usedFields = conds.filter(c => c.field).map(c => c.field);
+                      const valid = conds.filter(c => c.field);
+                      if (!valid.length) return null;
+                      const dynamic = valid.some(c => c.rhsType !== 'literal');
+                      const rhsLabel = (c: typeof valid[number]) =>
+                        c.rhsType === 'product' ? `本行产品字段[${c.value || '?'}]`
+                        : c.rhsType === 'column' ? `本行列[${c.value || '?'}]`
+                        : `'${c.value}'`;
+                      if (dynamic) {
+                        const text = valid
+                          .map((c, idx) => `${idx > 0 ? (valid[idx - 1].logic === 'or' ? '或 ' : '且 ') : ''}${c.field} ${opLabel(c.op)} ${rhsLabel(c)}`)
+                          .join('  ');
+                        return (
+                          <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
+                            <Text type="secondary" style={{ fontSize: 11 }}>动态条件预览：</Text>
+                            <code style={{ fontSize: 11, background: '#fff7e6', padding: '2px 6px', borderRadius: 3 }}>
+                              {text}
+                            </code>
+                            <div style={{ marginTop: 4, fontSize: 11, color: '#aaa' }}>
+                              动态 RHS 由后端按本产品行求值（料号/产品字段/已算列）
+                            </div>
+                          </div>
+                        );
+                      }
+                      const usedFields = valid.map(c => c.field);
                       const aliasMap = buildAliasMap(usedFields);
                       const preview = buildCondJexl(conds, aliasMap);
                       if (!preview) return null;
