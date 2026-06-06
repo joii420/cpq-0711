@@ -3249,6 +3249,7 @@ E2E:
 - **隔离**: 仅核价侧；报价侧零改动(AP-41)。存量默认 true 不惊扰；取消勾选后**下次快照重算**才变化(快照驱动)。
 - **范围**: 实时兜底路径(batchExpand)本期未改(核价默认走快照主路径已分流，兜底罕见，记 TODO)。
 - **验证(已自检)**: `ComponentDTOTest` 映射用例绿(5)；`ComponentDTOTest+Card*Test` 57 全绿无回归；V295 success=t + 153 行回填；前端 tsc 0 + QuotationStep2/ComponentManagement Vite 200；**E2E `costing-bom-toggle.spec.ts` 1 passed**——同核价单 材质(true)表头出`料号/父料号/版本`系统列三连、工序(false)表头`子件/序号/工序代码...`无系统列、加载中=0；DB 还原工序=true。
+- **默认值变更(同日)**: 默认 **开→关**(用户改主意,更贴合"勾选才递归"原始诉求)。新增 **V296**(`UPDATE component SET bom_recursive_expand=false` 存量153全置false + `ALTER COLUMN SET DEFAULT false`);后端实体/DTO/Service 兜底改 `false`;前端 state 初始/回填语义改 `=== true`;E2E 改为显式勾选材质(true)、工序默认 false。**影响**: 现有核价单下次快照重算从 BOM 树变回普通单料号渲染,需手动勾选要树展开的组件。验证: V296 success=t + 153全false + 列默认false;ComponentDTOTest 5绿;tsc 0;E2E `costing-bom-toggle` 1 passed(材质true树/工序false普通/加载中=0)。
 - **设计/计划**: `docs/superpowers/specs/2026-06-06-核价BOM递归展开-组件级开关-design.md` + `docs/superpowers/plans/2026-06-06-核价BOM递归展开-组件级开关实施.md`。
 
 ---

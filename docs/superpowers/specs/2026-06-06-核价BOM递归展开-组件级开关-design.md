@@ -19,7 +19,7 @@ P1 落地了核价侧 BOM 递归展开：`CardSnapshotService` 按 `material_bom
 ## 2. 范围（已与用户确认）
 
 - **配置粒度**：组件级全局——开关存 `Component` 实体；同一组件被多个核价模板复用时，开关对所有模板统一生效（不支持模板内 per-用法 差异化）。
-- **默认值**：默认**开**（`true`，保持现状）。存量核价组件下次重算快照仍按整棵 BOM 树展开；要普通渲染需手动取消勾选。
+- **默认值**：默认**关**（`false`，勾选才递归）（2026-06-06 需求变更，原为默认开；见 §10 演进）。存量组件由 V296 一并置 `false`——现有核价单下次重算快照会从 BOM 树变回普通单料号渲染，需手动勾选要树展开的组件。
 - **未勾选组件渲染口径**：**完全普通渲染**——按整单根产品料号（`li.productPartNoSnapshot`）单料号取该组件数据，不展开子料号、不加料号/父料号/版本系统列、不建树（核价卡片普通表，等同报价侧取数）。核价 Excel 里该组件值只落根料号行。
 - **仅核价侧**：报价侧本就不递归（`closure=null` 路径），不受本开关影响。
 - **不做**：模板内 per-用法 配置；`tree_config` 与 BOM 递归的合并；版本切换/累乘等 P2 后置项（沿用 P1/P2 现状）。
@@ -35,7 +35,7 @@ P1 落地了核价侧 BOM 递归展开：`CardSnapshotService` 按 `material_bom
 ## 4. 设计
 
 ### 4.1 数据模型
-- Flyway 迁移：`ALTER TABLE component ADD COLUMN bom_recursive_expand BOOLEAN NOT NULL DEFAULT true;`（默认 `true` = 保现状，存量行自动取 `true`）。
+- Flyway 迁移：V295 `ADD COLUMN bom_recursive_expand BOOLEAN NOT NULL DEFAULT true`；**V296（需求变更）** `UPDATE component SET bom_recursive_expand=false` + `ALTER COLUMN ... SET DEFAULT false`（默认改关、存量一并置 false）。
 - `Component` 实体加 `public Boolean bomRecursiveExpand = true;`（`@Column(name="bom_recursive_expand")`）。
 - DTO 透传：`ComponentDTO`（出参）、`CreateComponentRequest` / `UpdateComponentRequest`（入参），`ComponentService` 创建/更新时落值（null 入参兜底 `true`）。
 
@@ -95,7 +95,7 @@ P1 落地了核价侧 BOM 递归展开：`CardSnapshotService` 按 `material_bom
 - AP-44 字段类型联动：本期是**组件级配置字段**（非 `field_type`/`component.fields` 内字段），不触发 17 检查点矩阵；但 DTO 透传需前后端对齐（create/update/get 三处）。
 
 ## 8. 风险 / 注意点
-- **存量行为变更面**：默认 true 不惊扰存量；但若用户后续取消勾选某组件，对应核价单**下次重算快照**才变化（快照驱动，非即时）——需在 UI 文案或 RECORD 提示。
+- **存量行为变更面**：默认改关（V296 存量全 false）后，现有核价单**下次重算快照**会从 BOM 树变回普通单料号渲染（快照驱动，非即时）；需手动勾选要树展开的组件——需在 UI 文案/RECORD 提示。
 - **混合模板渲染**：前端务必按 per-component（数据驱动）分流，杜绝"核价侧一律 3 系统列"残留导致未勾选组件出现空系统列（本期核心改动点）。
 - **隔离纪律**：仅动核价侧分支，报价侧零改动（防 AP-41 双视图不对齐）。
 - **行数权威纪律**：勾选组件仍遵循 AP-51（driver/spine 行数权威，禁 `Math.max` 累加）。
@@ -105,3 +105,7 @@ P1 落地了核价侧 BOM 递归展开：`CardSnapshotService` 按 `material_bom
 - 模板内 per-用法 递归配置（若将来同组件需差异化）。
 - `tree_config` × BOM 递归的叠加渲染语义。
 - P2 版本切换 / 累乘 / 性能并发（沿用 P1/P2 既有后置清单）。
+
+## 10. 演进史
+- **2026-06-06 初版**：默认值定为**开**（`true`，保 P1 现状），存量不惊扰（V295 `DEFAULT true`）。
+- **2026-06-06 需求变更**：用户改为默认**关**（`false`，勾选才递归，更贴合"不勾选按正常渲染"的原始诉求），且存量一并置 false（彻底默认关）。新增 V296（`UPDATE ... false` + `ALTER ... SET DEFAULT false`），后端实体/DTO/Service 兜底改 `false`，前端 state 初始/回填语义改 `=== true`。E2E `costing-bom-toggle.spec.ts` 改为显式勾选材质(true)、工序保持默认 false。影响：现有核价单下次快照重算变回普通渲染，需手动勾选。

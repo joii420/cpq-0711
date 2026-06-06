@@ -50,7 +50,7 @@ public class ComponentDTO {
         dto.formulas = parseJsonArray(component.formulas);
         dto.rowKeyFields = parseStringList(component.rowKeyFields);
         dto.treeConfig = parseJsonObject(component.treeConfig);
-        dto.bomRecursiveExpand = component.bomRecursiveExpand != null ? component.bomRecursiveExpand : Boolean.TRUE;
+        dto.bomRecursiveExpand = component.bomRecursiveExpand != null ? component.bomRecursiveExpand : Boolean.FALSE;
         return dto;
     }
 

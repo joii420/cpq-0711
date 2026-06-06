@@ -326,7 +326,7 @@ const ComponentManagement: React.FC = () => {
   const [dataDriverPath, setDataDriverPath] = useState<string>('');
   const [rowKeyFields, setRowKeyFields] = useState<string[]>([]);
   const [treeConfig, setTreeConfig] = useState<import('./types').TreeConfig | null>(null);
-  const [bomRecursiveExpand, setBomRecursiveExpand] = useState<boolean>(true);
+  const [bomRecursiveExpand, setBomRecursiveExpand] = useState<boolean>(false);
   const [rowKeyCandidates, setRowKeyCandidates] = useState<
     Record<string, import('./types').RowKeyCandidate>
   >({});
@@ -438,7 +438,7 @@ const ComponentManagement: React.FC = () => {
             defaultExpanded: (loaded as any).treeConfig.defaultExpanded ?? true,
           }
         : null);
-      setBomRecursiveExpand((loaded as any).bomRecursiveExpand !== false); // 缺省/true → true
+      setBomRecursiveExpand((loaded as any).bomRecursiveExpand === true); // 默认关:仅显式 true 才勾
       void refreshRowKeyCandidates(
         loaded.id,
         loaded.dataDriverPath ?? '',

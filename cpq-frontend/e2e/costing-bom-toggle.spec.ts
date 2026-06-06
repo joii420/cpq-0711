@@ -19,8 +19,9 @@ import { execSync } from 'child_process';
 
 const QUOTATION_ID = '14c72d60-46c3-4eed-bdef-115ab98050b0';
 const BACKEND_URL = 'http://localhost:8081';
-const COMP_PLAIN = '54805dfa-ebcc-4de6-94f2-a8ef1cb7cf80'; // 工序：测试设 false
-const TAB_RECURSIVE = '材质';   // 保持 true → 树 + 系统列
+const COMP_RECURSIVE_ID = '1f2914e5-88d4-4630-96b7-febc3a499a0a'; // 材质：测试设 true
+const COMP_PLAIN = '54805dfa-ebcc-4de6-94f2-a8ef1cb7cf80'; // 工序：保持默认 false
+const TAB_RECURSIVE = '材质';   // true → 树 + 系统列
 const TAB_PLAIN = '工序';       // false → 普通表无系统列
 
 function psql(sql: string): string {
@@ -72,12 +73,15 @@ let backendUp = false;
 test.beforeAll(async () => {
   backendUp = await isBackendUp();
   if (!backendUp) return;
-  psql(`UPDATE component SET bom_recursive_expand=false WHERE id='${COMP_PLAIN}';`);
+  // 默认关后需显式勾选材质(true)；工序保持默认 false
+  psql(`UPDATE component SET bom_recursive_expand=true WHERE id='${COMP_RECURSIVE_ID}';
+        UPDATE component SET bom_recursive_expand=false WHERE id='${COMP_PLAIN}';`);
 });
 
 test.afterAll(async () => {
   if (!backendUp) return;
-  psql(`UPDATE component SET bom_recursive_expand=true WHERE id='${COMP_PLAIN}';`);
+  // 还原默认关(两者皆 false)
+  psql(`UPDATE component SET bom_recursive_expand=false WHERE id IN ('${COMP_RECURSIVE_ID}','${COMP_PLAIN}');`);
 });
 
 test('核价混合: 勾选(材质)出树系统列 + 未勾选(工序)普通表无系统列 + 加载中=0', async ({ page }) => {

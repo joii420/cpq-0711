@@ -66,9 +66,9 @@ public class Component extends PanacheEntityBase {
     @Column(name = "tree_config")
     public String treeConfig;
 
-    /** 核价 BOM 递归展开开关：true=按 material_bom_item 闭包递归展开子料号(树+系统列)；false=按根料号单料号普通渲染。默认 true(保 P1 现状)。仅核价侧生效。与 tree_config(组件数据自带树) 正交。 */
+    /** 核价 BOM 递归展开开关：true=按 material_bom_item 闭包递归展开子料号(树+系统列)；false=按根料号单料号普通渲染。默认 false(勾选才递归)。仅核价侧生效。与 tree_config(组件数据自带树) 正交。 */
     @Column(name = "bom_recursive_expand", nullable = false)
-    public Boolean bomRecursiveExpand = true;
+    public Boolean bomRecursiveExpand = false;
 
     @Column(name = "created_at", nullable = false)
     public OffsetDateTime createdAt;
