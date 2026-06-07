@@ -176,6 +176,58 @@ $costing_index.processing_cost     # 引用本模板 costing_index 视图的 pro
 - 禁止使用 `$$comp.view.col` 跨组件引用语法（模板上下文强阻断）。
 - PUBLISHED 模板的 SQL 视图只读；需修改时先「派生草稿」。
 
+#### :spineKeys 复合键跨页签过滤（核价）
+
+> **2026-06-06** 新增。仅适用于核价（COSTING）模板的 `template_sql_view.sql_template`。
+
+**用途**：让核价 SQL 视图按卡片 BOM 树的三元组 `(子件料号, 父件料号, 子件自身当前 BOM 版本)` 精确过滤，解决单列 `:hfPartNos` 无法区分同一料号在不同父件/版本下多 occurrence 的问题。
+
+**语法**：
+
+```sql
+WHERE :spineKeys(<子件料号列>, <父料号列>, <版本列>)
+```
+
+三个实参按位对应：第 1 → 子件料号列，第 2 → 父件料号列，第 3 → 子件自身当前版本列。实参可以是列名、表达式（`nullif(trim(t.x),'')` / `t.col::text` / `coalesce(...)` 等），框架原样透传并外裹 `()` 防优先级问题。
+
+**展开形式**（框架自动展开，作者无需手写）：
+
+```sql
+EXISTS (
+  SELECT 1
+  FROM unnest(:__skP::text[], :__skPP::text[], :__skV::text[]) AS k(p, pp, v)
+  WHERE (<子件料号列>) IS NOT DISTINCT FROM k.p
+    AND (<父料号列>)   IS NOT DISTINCT FROM k.pp
+    AND (<版本列>)     IS NOT DISTINCT FROM k.v
+)
+```
+
+**NULL-safe**：`IS NOT DISTINCT FROM` 使 NULL 值也能命中对应的 NULL 三元组行（根节点父料号为 NULL、叶子节点版本为 NULL 均能正确匹配）。
+
+**数据来源**：三元组由框架从卡片 BOM 闭包（`BomClosureService`）派生并环境注入，类似 `:hfPartNos`。仅在核价卡片展开上下文中有值；其他上下文（报价单渲染、standalone 视图 dry-run 等）三数组为空 → `EXISTS` 恒 false → 匹配 0 行。
+
+**完整示例**：
+
+```sql
+-- 核价模板 SQL 视图 sql_template 示例
+-- 目标：按 BOM 树三元组过滤核价物料清单，避免跨卡片串数据
+SELECT
+    t.material_no,
+    t.parent_no,
+    t.bom_version,
+    t.unit_cost,
+    t.quantity
+FROM v_costing_bom_items t
+WHERE :spineKeys(t.material_no, t.parent_no, t.bom_version)
+  AND t.customer_no = :customerCode
+```
+
+**限制与注意**：
+- `:__sk*` 前缀为框架保留，禁止在 sql_template 中自定义 `:__skP` / `:__skPP` / `:__skV` 等占位符。
+- 实参不支持含括号外层逗号的 SQL 字符串字面量（按列/表达式设计；`'a,b'` 这类字面量会误切）。
+- 同一 sql_template 可多次使用 `:spineKeys(...)`，共享同一组三数组参数（不重复绑定）。
+- 保存期 dry-run 时框架自动展开为校验形（`ARRAY[]::text[]` 字面量），`spineKeys` / `__sk*` 不会出现在 `required_variables`。
+
 ---
 
 ### B. FORMULA — 公式列

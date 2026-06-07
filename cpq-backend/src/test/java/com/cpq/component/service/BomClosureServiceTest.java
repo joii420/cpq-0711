@@ -36,14 +36,20 @@ class BomClosureServiceTest {
               .executeUpdate());
     }
 
-    /** 插一条 BOM 边（material_no=父, component_no=子），口径 _GLOBAL_/PRICING/is_current。 */
+    /** 插一条 BOM 边，bom_version 默认 'V1'。 */
     private void edge(String parentNo, String childNo) {
+        edge(parentNo, childNo, "V1");
+    }
+
+    /** 插一条 BOM 边，显式指定该父件 BOM 版本（material_no=父 的 bom_version）。 */
+    private void edge(String parentNo, String childNo, String bomVersion) {
         em.createNativeQuery(
             "INSERT INTO material_bom_item " +
             "(system_type, customer_no, material_no, component_no, is_current, bom_version) " +
-            "VALUES ('PRICING', '_GLOBAL_', :p, :c, true, 'V1')")
+            "VALUES ('PRICING', '_GLOBAL_', :p, :c, true, :v)")
           .setParameter("p", parentNo)
           .setParameter("c", childNo)
+          .setParameter("v", bomVersion)
           .executeUpdate();
     }
 
@@ -85,9 +91,11 @@ class BomClosureServiceTest {
         SpineNode c = nodeByPart(r, "TBCC");
         assertEquals(3, c.lvl);
         assertEquals(b.nodeId, c.parentId, "C 的 parentId 必须 = B 的 nodeId(按边路径连边)");
-        // 版本语义：叶子节点显示被父件带入时的边版本(child.bom_version='V1')，不为 null
-        assertEquals("V1", c.bomVersion, "叶子 C 应带边版本 V1(被父带入时的版本)");
-        assertEquals("V1", root.bomVersion, "根 P 回退自身版本 V1");
+        // 版本语义（改后）：节点 bomVersion = 子件自身当前 BOM 版本（material_no=本节点 的 bom_version）。
+        // C 是叶子（从不作为 material_no 出现）→ 自身无 BOM → null。
+        assertNull(c.bomVersion, "叶子 C 无自身 BOM → 版本应为 null");
+        // 根 P 是父件 → 自身 BOM 版本 V1。
+        assertEquals("V1", root.bomVersion, "根 P 自身 BOM 版本 V1");
     }
 
     // ---- 2) DAG 重复子件: P→A, P→B, B→A ----
@@ -157,5 +165,24 @@ class BomClosureServiceTest {
         assertEquals("", root.nodeId);
         assertNull(root.parentId);
         assertTrue(r.cyclePartNos.isEmpty());
+    }
+
+    // ---- own-version 语义：版本取子件自身 BOM 版本，非边版本 ----
+    @Test
+    void bomVersionIsOwnCurrentVersion_notEdgeVersion() {
+        // P 的 BOM 版本=VP（含子 B）；B 的 BOM 版本=VB（含子 C）
+        seed(() -> { edge("TBCOP", "TBCOB", "VP"); edge("TBCOB", "TBCOC", "VB"); });
+
+        BomClosureResult r = service.compute("TBCOP", Map.of());
+
+        SpineNode b = nodeByPart(r, "TBCOB");
+        // 边版本(旧语义)会是 VP(P 的 BOM 版本)；自身版本(新语义)是 VB(B 自己的 BOM 版本)
+        assertEquals("VB", b.bomVersion, "B 应取自身 BOM 版本 VB，不是被父带入的边版本 VP");
+
+        SpineNode c = nodeByPart(r, "TBCOC");
+        assertNull(c.bomVersion, "C 叶子无自身 BOM → null");
+
+        SpineNode root = nodeByPart(r, "TBCOP");
+        assertEquals("VP", root.bomVersion, "根 P 自身 BOM 版本 VP");
     }
 }

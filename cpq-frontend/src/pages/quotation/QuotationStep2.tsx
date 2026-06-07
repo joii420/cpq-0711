@@ -1354,6 +1354,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     return driverExpansions?.[key];
   })();
 
+  // 核价 BOM 递归展开 组件级开关：仅当该组件 baseRows 含 spine 系统列(__sys.nodeId) 才走树+系统列；
+  // 未勾选(bom_recursive_expand=false)组件后端不发系统列 → 此处 false → 普通表渲染。数据驱动，无需额外 flag。
+  const activeComponentBomTree = cardSide === 'COSTING'
+    && !!activeDriverExpansion?.rows?.some((r: any) => r?.__sys?.nodeId !== undefined);
+
   // Compute cross-component subtotals for formula evaluation in the active tab
   // Key by componentId (UUID), componentCode, and tabName for maximum compatibility
   const allComponentSubtotals: Record<string, number> = {};
@@ -1614,8 +1619,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
               <table className="qt-cost-table">
                 <thead>
                   <tr>
-                    {/* 核价 BOM 递归展开（P1）：3 系统固定列（料号/父料号/版本）排在业务列之前，仅 COSTING 侧 */}
-                    {cardSide === 'COSTING' && (
+                    {/* 核价 BOM 递归展开：3 系统固定列仅"勾选递归"组件出（数据驱动 activeComponentBomTree） */}
+                    {activeComponentBomTree && (
                       <>
                         <th style={{ minWidth: 120 }}>料号</th>
                         <th style={{ minWidth: 110 }}>父料号</th>
@@ -1776,7 +1781,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     // 核价 BOM 递归展开（P1）：COSTING 侧按 spine 系统列 __parentId→__nodeId 建树（不是料号）。
                     // 归一化：根 nodeId='' → '__bomroot__'；根直接子 parentId='' → '__bomroot__'；根自身 parentId=null → null。
                     // 其余为 uuid 边路径，原样。DAG 重复子件 nodeId 各不同 → 各自独立 occurrence，不塌成 DAG。
-                    const isBomTree = cardSide === 'COSTING'
+                    const isBomTree = activeComponentBomTree
                       && withCache.some(r => (r as any).__sys?.nodeId !== undefined);
                     if (isBomTree) {
                       const normId = (v: any) => (v === '' || v == null) ? '__bomroot__' : String(v);
@@ -1812,11 +1817,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       .filter(r => !isTreeRowHidden(r.originalIndex, laid.parentIndexByIndex, laid.nodeKeyByIndex, collapsed))
                       .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
                   })().map(({ row, rowIndex, rowKey, basicDataValues, isDriverBound, isListFormulaBound, formulaCache, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey }) => {
-                    const bomSys = cardSide === 'COSTING' ? (__sys as import('./useDriverExpansions').BomSysCols | undefined) : undefined;
+                    const bomSys = activeComponentBomTree ? (__sys as import('./useDriverExpansions').BomSysCols | undefined) : undefined;
                     return (
                     <tr key={rowIndex} style={(row._preset || isDriverBound) ? { background: '#fafafa' } : undefined}>
-                      {/* 核价 BOM 递归展开（P1）：3 系统固定列单元格（仅 COSTING），料号列承载树缩进/折叠箭头 */}
-                      {cardSide === 'COSTING' && (
+                      {/* 核价 BOM 递归展开：3 系统固定列单元格（仅"勾选递归"组件），料号列承载树缩进/折叠箭头 */}
+                      {activeComponentBomTree && (
                         <>
                           <td style={bomSys?.isCycle ? { color: '#cf1322' } : undefined}
                               title={bomSys?.isCycle ? '该料号存在 BOM 环，已截断展开' : undefined}>
@@ -1967,8 +1972,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                 {activeComponent.fields.some(f => f.is_subtotal) && (
                   <tfoot>
                     <tr className="qt-subtotal-row">
-                      {/* 核价 BOM 递归展开（P1）：与 3 系统固定列对齐的占位单元格 */}
-                      {cardSide === 'COSTING' && (<><td /><td /><td /></>)}
+                      {/* 核价 BOM 递归展开：与 3 系统固定列对齐的占位单元格（仅"勾选递归"组件） */}
+                      {activeComponentBomTree && (<><td /><td /><td /></>)}
                       {activeComponent.fields.map((field, fi) => {
                         if (field.is_subtotal) {
                           const tabSubtotal = allComponentSubtotals[activeComponent.componentCode]

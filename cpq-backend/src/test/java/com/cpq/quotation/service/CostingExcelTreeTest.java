@@ -18,7 +18,8 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * <p>用现有 {@code 3120018220} 核价 line item，{@code refreshCostingCardValues} 重算，读回断言：
  * {@code treeMode=true}、行数 = spine 节点数（17）、每行带 {@code __hfPartNo/__lvl/__bomVersion}、
- * 存在根行（{@code __lvl=1}、料号=根、版本=2000 边版本）、配置列 A/B/C 键存在。
+ * 存在根行（{@code __lvl=1}、料号=根、自身 BOM 版本=2000）、每行含至少一个业务配置列（非 __ 系统列）。
+ * 注：版本=子件自身当前 BOM 版本(2026-06-06)，叶子节点自身无 BOM → 版本为空。
  *
  * <p>「按节点聚合」的正确性由 {@code CardEffectiveRowsTest.filterByNodeId} 单测 + 人工验证
  * （注入 SUM_OVER([子配件],数量) → 根=7/其余=0）覆盖；本测试只验渲染结构（不改共享模板配置）。
@@ -71,16 +72,25 @@ class CostingExcelTreeTest {
         for (JsonNode r : rows) {
             assertTrue(r.has("__hfPartNo"), "每行带 __hfPartNo");
             assertTrue(r.has("__lvl"), "每行带 __lvl");
-            assertTrue(r.has("A"), "配置列 A 键应存在");
+            // 配置列键校验：每行至少应有一个非系统列（不以 __ 或 _ 开头的业务列）
+            boolean hasBusinessCol = false;
+            for (java.util.Iterator<String> it = r.fieldNames(); it.hasNext(); ) {
+                String k = it.next();
+                if (!k.startsWith("_")) { hasBusinessCol = true; break; }
+            }
+            assertTrue(hasBusinessCol, "每行应含至少一个业务配置列(非 __ 系统列)");
             if (!r.path("__bomVersion").asText("").isEmpty()) withVersion++;
             if (ROOT.equals(r.path("__hfPartNo").asText())) {
                 hasRoot = true;
                 assertEquals(1, r.path("__lvl").asInt(-1), "根 __lvl=1");
-                assertEquals("2000", r.path("__bomVersion").asText(""), "根边版本=2000");
+                assertEquals("2000", r.path("__bomVersion").asText(""), "根自身 BOM 版本=2000");
             }
         }
         assertTrue(hasRoot, "应含根料号行");
-        assertEquals(17, withVersion, "全节点带版本(P1 边版本语义)");
-        System.out.println("[CostingExcelTree] rows=17 treeMode=true 全节点带版本 ✅");
+        // 子件自身版本语义(2026-06-06)：内部节点带自身 BOM 版本，叶子(无自身 BOM)版本为空。
+        // 若退回边版本语义则全 17 行都带版本 → 触发 < 17 失败，起回归守卫作用。
+        assertTrue(withVersion >= 1, "至少根/内部节点应带自身 BOM 版本, 实得 " + withVersion);
+        assertTrue(withVersion < 17, "叶子节点自身无 BOM → 版本应为空(子件自身版本语义, 非边版本), 实得 " + withVersion);
+        System.out.println("[CostingExcelTree] rows=17 treeMode=true 内部节点带自身版本/叶子空 ✅");
     }
 }

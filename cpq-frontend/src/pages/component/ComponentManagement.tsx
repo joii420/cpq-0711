@@ -326,6 +326,7 @@ const ComponentManagement: React.FC = () => {
   const [dataDriverPath, setDataDriverPath] = useState<string>('');
   const [rowKeyFields, setRowKeyFields] = useState<string[]>([]);
   const [treeConfig, setTreeConfig] = useState<import('./types').TreeConfig | null>(null);
+  const [bomRecursiveExpand, setBomRecursiveExpand] = useState<boolean>(false);
   const [rowKeyCandidates, setRowKeyCandidates] = useState<
     Record<string, import('./types').RowKeyCandidate>
   >({});
@@ -437,6 +438,7 @@ const ComponentManagement: React.FC = () => {
             defaultExpanded: (loaded as any).treeConfig.defaultExpanded ?? true,
           }
         : null);
+      setBomRecursiveExpand((loaded as any).bomRecursiveExpand === true); // 默认关:仅显式 true 才勾
       void refreshRowKeyCandidates(
         loaded.id,
         loaded.dataDriverPath ?? '',
@@ -485,6 +487,8 @@ const ComponentManagement: React.FC = () => {
         treeConfig: treeConfig
           ? { idField: treeConfig.idField, parentField: treeConfig.parentField, defaultExpanded: treeConfig.defaultExpanded ?? true }
           : {},
+        // 核价 BOM 递归展开开关(默认开)
+        bomRecursiveExpand,
       });
       message.success('保存成功');
       loadTree();
@@ -787,6 +791,26 @@ const ComponentManagement: React.FC = () => {
                         )}
                       </>
                     )}
+                  </div>
+                  {/* 核价 BOM 递归展开开关：与上方"树表(数据自带父子)"是不同概念——此项按 material_bom_item 跨料号闭包递归 */}
+                  <div
+                    style={{
+                      background: '#e6f4ff', border: '1px solid #91caff', borderRadius: 6,
+                      padding: '10px 12px', marginBottom: 12, display: 'flex',
+                      alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                    }}
+                  >
+                    <span style={{ fontSize: 13, color: '#0958d9', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      核价 BOM 递归展开:
+                    </span>
+                    <Switch
+                      size="small"
+                      checked={bomRecursiveExpand}
+                      onChange={setBomRecursiveExpand}
+                    />
+                    <span style={{ fontSize: 12, color: '#888' }}>
+                      勾选=核价时按 material_bom_item 闭包递归展开子料号(树+料号列)；不勾=按根料号普通取数。仅核价侧生效。
+                    </span>
                   </div>
                   <HeaderPreview fields={fields} />
                   <Tabs

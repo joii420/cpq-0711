@@ -76,9 +76,10 @@ public class BomClosureService {
         "       t.parent_no AS parent_no," +
         "       array_to_string(t.edge_path, '/') AS node_id," +
         "       array_length(t.edge_path, 1)      AS depth," +
-        // 版本语义(用户口径)：非根节点显示「被父件带入时的边版本」(child.bom_version)；
-        // 根节点无入边 → 回退自身当前 BOM 版本(LATERAL)。
-        "       COALESCE(t.edge_version, v.bom_version) AS bom_version," +
+        // 版本语义(2026-06-06 改)：全节点统一取「子件自身当前 BOM 版本」(LATERAL v.bom_version)。
+        // material_no=本节点 且 is_current 的 bom_version；叶子(无自身 BOM)→ null。
+        // 边版本(t.edge_version)弃用，仅供调试不再输出。
+        "       v.bom_version AS bom_version," +
         "       t.is_cycle  AS is_cycle " +
         "FROM bom_tree t " +
         "LEFT JOIN LATERAL (" +

@@ -950,30 +950,46 @@ public class CardSnapshotService {
         }
         Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
         @SuppressWarnings("unchecked")
-        List<Object> driverComps = em.createNativeQuery(
-            "SELECT DISTINCT c.id FROM template_component tc " +
+        List<Object[]> driverComps = em.createNativeQuery(
+            "SELECT DISTINCT c.id, c.bom_recursive_expand FROM template_component tc " +
             "JOIN component c ON c.id = tc.component_id " +
             "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
             .setParameter("tid", templateId)
             .getResultList();
 
         String compositeType = li.compositeType;
+        String partNo = li.productPartNoSnapshot;   // 未勾选(false)分支：单料号普通 expand 用
         QuotationIdContext.set(quotationId);
+        com.cpq.datasource.sqlview.SpineKeysContext.set(
+            com.cpq.datasource.sqlview.SpineKeysContext.fromClosure(closure));
         try {
-            for (Object dcObj : driverComps) {
-                if (dcObj == null) continue;
-                String cidStr = dcObj.toString();
+            for (Object[] dc : driverComps) {
+                if (dc == null || dc[0] == null) continue;
+                String cidStr = dc[0].toString();
+                boolean recursive = !(dc[1] instanceof Boolean) || (Boolean) dc[1]; // 默认/非布尔 → true
                 UUID compId = UUID.fromString(cidStr);
                 try {
-                    Map<String, ExpandDriverResponse> byPart = componentDriverService.expandForPartSet(
-                        compId, customerId, closure.partSet, li.id, compositeType);
-                    baseRowsByComp.put(cidStr, buildSpineBaseRows(closure, byPart));
+                    if (recursive) {
+                        // 勾选：BOM 闭包递归 → spine 全节点行 + __* 系统列
+                        Map<String, ExpandDriverResponse> byPart = componentDriverService.expandForPartSet(
+                            compId, customerId, closure.partSet, li.id, compositeType);
+                        baseRowsByComp.put(cidStr, buildSpineBaseRows(closure, byPart));
+                    } else {
+                        // 未勾选：按根料号单料号普通展开(无系统列)，等同报价侧取数
+                        ExpandDriverResponse exp = componentDriverService.expand(
+                            compId, customerId, partNo, null, null, null, li.id, compositeType);
+                        List<ExpandDriverResponse.Row> rows =
+                            (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
+                        baseRowsByComp.put(cidStr, buildBaseRowsFromRows(rows));
+                    }
                 } catch (Exception e) {
-                    LOG.warnf("[card-snapshot] spine expand comp=%s li=%s: %s", compId, li.id, e.getMessage());
+                    LOG.warnf("[card-snapshot] expand(recursive=%b) comp=%s li=%s: %s",
+                              recursive, compId, li.id, e.getMessage());
                     baseRowsByComp.put(cidStr, MAPPER.createArrayNode());
                 }
             }
         } finally {
+            com.cpq.datasource.sqlview.SpineKeysContext.clear();
             QuotationIdContext.clear();
         }
         return baseRowsByComp;

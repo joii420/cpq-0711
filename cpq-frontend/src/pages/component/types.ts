@@ -45,6 +45,8 @@ export interface ComponentItem {
    * 树表配置(可选)。非空 → 渲染时按邻接表(idField/parentField)重排成树。纯展示,不改 rowData/rowCount/行序。
    */
   treeConfig?: TreeConfig;
+  /** 核价 BOM 递归展开开关(默认 true,仅核价侧生效;与 treeConfig 正交) */
+  bomRecursiveExpand?: boolean;
 }
 
 export interface FieldItem {

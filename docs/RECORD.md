@@ -3238,6 +3238,24 @@ E2E:
   - **E2E 踩坑**: AntD 对恰 2 中文字按钮自动插空格("保存"→"保 存") → getByRole name 匹配失效，改用 `.ant-btn-primary`; excel_view_config 由 ExcelViewConfigTab「保存配置」端点持久化(非"保存模板"); 条件值 input 须 `getByPlaceholder('值')` 排除字段 Select 的 showSearch 内置 input。
 - **设计/计划**: `docs/superpowers/specs/2026-06-06-Excel聚合WHERE动态查找键-design.md` + `docs/superpowers/plans/2026-06-06-Excel聚合WHERE动态查找键实施.md`。
 
+### [2026-06-06] 核价BOM递归展开 - 组件级开关(bom_recursive_expand) | V295 / Component+ComponentDTO+CreateComponentRequest+ComponentService / CardSnapshotService 闭包重载 per-component 分流 / QuotationStep2 activeComponentBomTree 数据驱动 / ComponentManagement Switch
+
+把 P1「核价侧一律 BOM 递归」改为组件级开关（默认开=保现状）。勾选→`expandForPartSet`+spine 树+系统列；未勾选→`expand` 单料号普通渲染(无系统列)。
+
+- **存储**: Component 新列 `bom_recursive_expand BOOLEAN NOT NULL DEFAULT true`(V295)，与语义不同的 `tree_config`(组件数据自带树) 正交独立。组件级全局(同组件跨核价模板统一)。
+- **后端分流**: `CardSnapshotService.expandTemplateDriverBaseRows(...,closure)` driver 查询带出 `bom_recursive_expand`，per-component: true→`expandForPartSet`+`buildSpineBaseRows`；false→`expand`+`buildBaseRowsFromRows`(复用报价侧普通逻辑)。
+- **前端数据驱动**: `QuotationStep2` 引入 `activeComponentBomTree = cardSide==='COSTING' && activeDriverExpansion.rows.some(__sys.nodeId!==undefined)`，替换裸 `cardSide==='COSTING'` 的系统列(表头/单元格/tfoot)/建树(isBomTree)/bomSys 共 5 处。未勾选组件无系统列→普通表。
+- **UI**: 组件管理加 Switch「核价 BOM 递归展开」(默认开)，与上方"树表(tree_config)"分列、说明区分。
+- **隔离**: 仅核价侧；报价侧零改动(AP-41)。存量默认 true 不惊扰；取消勾选后**下次快照重算**才变化(快照驱动)。
+- **范围**: 实时兜底路径(batchExpand)本期未改(核价默认走快照主路径已分流，兜底罕见，记 TODO)。
+- **验证(已自检)**: `ComponentDTOTest` 映射用例绿(5)；`ComponentDTOTest+Card*Test` 57 全绿无回归；V295 success=t + 153 行回填；前端 tsc 0 + QuotationStep2/ComponentManagement Vite 200；**E2E `costing-bom-toggle.spec.ts` 1 passed**——同核价单 材质(true)表头出`料号/父料号/版本`系统列三连、工序(false)表头`子件/序号/工序代码...`无系统列、加载中=0；DB 还原工序=true。
+- **默认值变更(同日)**: 默认 **开→关**(用户改主意,更贴合"勾选才递归"原始诉求)。新增 **V296**(`UPDATE component SET bom_recursive_expand=false` 存量153全置false + `ALTER COLUMN SET DEFAULT false`);后端实体/DTO/Service 兜底改 `false`;前端 state 初始/回填语义改 `=== true`;E2E 改为显式勾选材质(true)、工序默认 false。**影响**: 现有核价单下次快照重算从 BOM 树变回普通单料号渲染,需手动勾选要树展开的组件。验证: V296 success=t + 153全false + 列默认false;ComponentDTOTest 5绿;tsc 0;E2E `costing-bom-toggle` 1 passed(材质true树/工序false普通/加载中=0)。
+- **设计/计划**: `docs/superpowers/specs/2026-06-06-核价BOM递归展开-组件级开关-design.md` + `docs/superpowers/plans/2026-06-06-核价BOM递归展开-组件级开关实施.md`。
+
+---
+
+### [2026-06-06] 核价SQL视图 - spineKeys 复合键跨页签过滤(最小版) + BOM spine 版本语义改子件自身版本 | SpineKeysMacro/SpineKeysContext(新建) + SqlViewExecutor/SqlViewValidator/BomClosureService/CardSnapshotService(改) + 单测SpineKeysMacroTest/SqlViewValidatorSpineKeysTest + CostingExcelTreeTest/BomClosureServiceTest(改断言) | 三元组从BOM闭包派生(环境注入,类比:hfPartNos);:spineKeys(料号列,父料号列,版本列)→EXISTS+unnest+IS NOT DISTINCT FROM(NULL-safe防超长IN);版本=子件自身当前BOM版本(显示+匹配统一,弃用边版本,叶子空);切换版本/实时联动/源页签实时行推迟
+
 ---
 
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
