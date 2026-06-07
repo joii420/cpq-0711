@@ -711,16 +711,20 @@ public class TemplateFormulaService {
             }
             if (rows == null) rows = List.of();
 
+            // 卡片动态谓词优先：binding 有按本产品行算好的谓词 → 用它；否则用公式文本切出的谓词。
+            String dynPred = com.cpq.template.service.CardAggregateSource.predicateFor(parsed.source);
+            String predicate = (dynPred != null) ? dynPred : parsed.predicate;
+
             // 对每行执行行内表达式 + WHERE 过滤 + 聚合
             List<BigDecimal> values = new ArrayList<>();
             int rowIdx = 0;
             for (Map<String, Object> row : rows) {
                 rowIdx++;
                 // 应用 WHERE 谓词（可选）
-                if (parsed.predicate != null && !parsed.predicate.isBlank()) {
-                    Object pred = evalRowExpression(parsed.predicate, row);
+                if (predicate != null && !predicate.isBlank()) {
+                    Object pred = evalRowExpression(predicate, row);
                     LOG.infof("[Stage4] %s row#%d: predicate='%s' result=%s (truthy=%b) inputQty=%s",
-                              funcName, rowIdx, parsed.predicate, pred, isTruthy(pred),
+                              funcName, rowIdx, predicate, pred, isTruthy(pred),
                               row.get("input_qty"));
                     if (!isTruthy(pred)) continue;
                 }
@@ -733,7 +737,7 @@ public class TemplateFormulaService {
             }
 
             LOG.infof("[Stage4] %s: %d rows passed WHERE filter '%s', aggregating",
-                      funcName, values.size(), parsed.predicate);
+                      funcName, values.size(), predicate);
             return aggregate(funcName, values);
 
         } catch (Exception e) {

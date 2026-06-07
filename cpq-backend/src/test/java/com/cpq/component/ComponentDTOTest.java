@@ -40,4 +40,20 @@ class ComponentDTOTest {
         ComponentDTO dto = ComponentDTO.from(c);
         assertNull(dto.rowKeyFields);
     }
+
+    @Test
+    void from_maps_bomRecursiveExpand_true() {
+        Component c = new Component();
+        c.bomRecursiveExpand = true;
+        ComponentDTO dto = ComponentDTO.from(c);
+        assertEquals(Boolean.TRUE, dto.bomRecursiveExpand);
+    }
+
+    @Test
+    void from_maps_bomRecursiveExpand_false() {
+        Component c = new Component();
+        c.bomRecursiveExpand = false;
+        ComponentDTO dto = ComponentDTO.from(c);
+        assertEquals(Boolean.FALSE, dto.bomRecursiveExpand);
+    }
 }

@@ -4,6 +4,38 @@
 
 ---
 
+### [2026-06-04] 核价 BOM 递归展开 P1(默认最新+树+固定列) | BomClosureService/ComponentDriverService/CardSnapshotService/QuotationStep2.tsx/useDriverExpansions.ts/ConfigureProductResource | 核价卡片由 material_bom_item 算根料号整棵 PRICING BOM 闭包, 每个核价组件按 spine 全节点展开成树
+
+- **目标**: 核价渲染时不再只查根料号一层, 而是算整棵 BOM 子料号闭包灌 :hfPartNos, 各核价组件按整棵树取数 + 3 系统固定列(料号/父料号/版本占位) + parent_id→node_id 建树。报价侧零改动。无开关, 核价一律生效。
+- **闭包**: `BomClosureService.compute(rootPartNo)` 裸 JDBC `WITH RECURSIVE ... CYCLE`, 口径 `customer_no='_GLOBAL_'/system_type='PRICING'/is_current=true/不约束 characteristic`。产出 partSet(去环)+spine(node_id=边id路径,per-occurrence唯一)+cyclePartNos。Caffeine 30s 缓存, 基础数据导入后 evictAll。
+- **关键决策(用户拍板)**: 每个核价组件按 **spine 全节点为行主轴**展开 —— 该组件对某节点无业务数据也**补空行**(仅系统列), 保树结构完整、行对齐、不产生孤儿节点。实现 `CardSnapshotService.buildSpineBaseRows`: spine 顺序逐节点, 业务行(`expandForPartSet` 多值 loadByPath, :hfPartNos=ANY 外包)按 hf_part_no 左关联; DAG 重复子件→同业务数据复制到各 occurrence; 多业务行节点→多行。
+- **系统列**: `__nodeId/__parentId/__lvl/__hfPartNo/__parentNo/__bomVersion/__isCycle`(`__` 前缀命名空间), 渲染期注入 baseRows 行顶层, **不进 component.fields**(绕开 AP-44)。前端建树归一化: nodeId=''→'__bomroot__', parentId=''→根, null→真根; 复用既有 layoutTreeRows。
+- **隔离(AP-41)**: `expandTemplateDriverBaseRows` 核价/报价共用, 加 closure 参数区分(报价侧 closure=null 走原路径); 前端 3 固定列 + 建树仅 `cardSide==='COSTING'`。
+- **回归安全**: 全部 25 个核价 driver 视图确认 `uses_lineitem=false`(无 quotation_line_item_id 维度, V6 customer×material 共享 AP-53)→ 多值 expandMulti 替换单值 expand 零回归; 单值本就走同一 :hfPartNos=ANY 外包。
+- **存量灰度**: `refresh-snapshot` 端点新增重算核价卡片(`refreshCostingCardValues`, 仅 COSTING 不碰报价编辑)→ 存量核价单刷新即出整棵树。
+- **兜底**: 实时 batchExpand 兜底路径 P1 未走闭包(快照恒生成极少触发), 显式 console.warn 不静默(TODO P1.1)。
+- **验证**: BomClosureServiceTest 5/5(多层/DAG/环/单层/空); CostingBomTreeSnapshotTest 1/1(真实 3120018220 partSet=14/spine=17/5组件全展开+__系统列); E2E costing-bom-tree 2/2(料号/父料号/版本表头+17行+DAG 3110520789×2+加载中0+刷新稳定+报价隔离); quotation-flow 1/1 加载中=0。TS 0 ✅ Vite 200 ✅ 后端 401 ✅。
+- **后置(P2)**: 节点级版本切换重查(SqlViewExecutor (料号,版本)配对+业务视图带bom_version)+Excel树状+累乘。
+- **计划/设计**: docs/superpowers/plans/2026-06-04-核价BOM递归展开-P1.md + docs/superpowers/specs/2026-06-04-核价BOM递归展开-design.md
+
+### [2026-06-05] 核价 Excel 视图树状 P2-B | ExcelViewService/CardEffectiveRows/CardSnapshotService/useExcelSnapshotRows.ts/LinkedExcelView.tsx | 核价 Excel 从1行/产品改每BOM节点1行+注入料号/父料号/版本+按节点聚合
+
+- **目标**: 核价 Excel(渲染/快照路径)按整棵 BOM spine 逐节点出行, 注入 料号/父料号/版本 三列 + lvl 缩进, CARD_FORMULA 列按本节点有效行聚合。仅核价侧, 报价 Excel 零改动。
+- **方案A(spine同源)**: ExcelViewService.buildLineTreeRows 复算 BomClosureService.compute 拿权威 spine(与卡片同源同序), 按 __nodeId 过滤卡片有效行到本节点(CardEffectiveRows.filterByNodeId), 复用 cardFormulaEvaluator 逐节点逐列求值。
+- **关键协议传播点**: CardSnapshotService.buildResolvedRows 给每行补 __nodeId(Excel 优先读 resolvedRows, 不补则 filterByNodeId 过滤不到→全空); CardEffectiveRows 回退路径也补 __nodeId + 新增 filterByNodeId。
+- **数据流**: snapshotLineValues/refreshCostingCardValues 核价侧调 buildExcelValues(...,costingTree=true) → buildLineTreeRows → {rows:[N],treeMode:true} 落 costingExcelValues; 报价侧仍单行(隔离 AP-41)。前端 useExcelSnapshotRows 核价 flatMap 多行; LinkedExcelView isCosting 前置 父料号/版本 + 料号按 __lvl 缩进。
+- **per-node scope 验证**: 子配件数据仅挂根节点, 人工注入 SUM_OVER([子配件],数量) → 根=7/其余全0(失效会全7), 端到端证实。⚠️ psql 改共享配置存还原坑(单引号转义+子查询拷贝)见 memory; 污染 70e9f2bd 后从 2680ec42 拷回。
+- **范围**: 不做 POI xlsx 导出树化(follow-up)/P2-A 版本切换/累乘/Excel折叠。
+- **验证**: CardEffectiveRowsTest 5/5; CostingExcelTreeTest 1/1(17行+treeMode+版本2000); E2E costing-excel-tree 2/2; quotation-flow 1/1 报价零回归; P1 测试仍绿。TS0✅ Vite200✅ 后端401✅。
+- **计划/设计**: docs/superpowers/plans/2026-06-05-核价Excel树状-P2B.md + docs/superpowers/specs/2026-06-05-核价Excel树状-P2B-design.md
+
+### [2026-06-04] 核价 BOM 树 P1 联调 2 bug 修复(用户 QT-1580 反馈) | BomClosureService.java / ComponentCell.tsx | ①叶子料号版本没带出 ②类型/单价列永久"加载中"
+
+- **症状**(QT-20260604-1580 元素 tab): ①叶子料号 1630010773 版本列空(—), 兄弟装配件显 2000; ②类型/单价列"加载中"永久; ③元素/含量等列空(用户确认: 部分料号本就无元素数据, 空白正常)。
+- **#1 版本根因**: 闭包 SQL 取「节点自身 BOM 版本」(LATERAL material_no=node), 纯叶子料号从不是 material_no → null → "—"。**用户口径**: 应显示「被父件带入时的边版本」。**修**: 递归携带 `child.bom_version`(边版本=父BOM版本) → SELECT `COALESCE(t.edge_version, v.bom_version)`(非根用边版本, 根回退自身)。1630010773 → 2000。
+- **#2 加载中根因**: spine 空行 `basicDataValues={}`, ComponentCell BASIC_DATA 兜底链最后落 globalPathCache(按**根料号** `3120018220::path` 键); 元素/含量等路径被预热(null→"—"), 类型(material_type)/单价 未预热 → 永久"加载中"。**本质**: BOM 子料号行权威数据=本行 basicDataValues, 缺值即"—", 不该按根料号走 globalPathCache(语义错/会显示根值)。**修**: CellContext 加 `isBomTreeRow`(cardSide=COSTING 且有 __sys 时 true); BASIC_DATA 缺值 + isBomTreeRow → 直接"—"不走 globalPathCache。DATA_SOURCE 因 basicDataValues={} present 已落"—"无需改。
+- **验证**: BomClosureServiceTest 5/5(加边版本断言); refresh-snapshot 1580 → 1630010773 __bomVersion=2000; E2E costing-bom-tree 逐 5 内部 tab(含元素)加载中=0 + 叶子版本=2000; 1580 元素 tab 实拍确认全"—"无加载中 + 版本 2000; quotation-flow 1/1 报价零回归。TS 0 ✅ Vite 200 ✅。
+
 ### [2026-06-03] 导入首屏核价 Excel 空白(刷新后才对) — syncLineItemsFromResponse 漏回灌值快照 | cpq-frontend/src/pages/quotation/QuotationWizard.tsx | 根因=autoSave 后只回灌 id/版本号, 不回灌后端算好的 costingExcelValues; 修=回灌 4 份值快照
 
 - **症状**: 基础数据导入创建报价单(QT-20260603-1559)后, 核价单 Excel 视图首屏全"—"; **整页刷新后正确**(570.62/401.7/972.32)。DB 里值一直是对的(后端算对了)
@@ -3164,6 +3196,65 @@ E2E:
 - **存量**: 一次性清理旧双 current 行(组成件优先留 ASSEMBLY、NULL 翻历史)。
 - **验证**: MaterialBomMergeHandlerTest 3 passed;存量 3120018220 → 单 ASSEMBLY current;E2E quotation-flow 8 Tab 加载中=0。
 - **计划**: docs/superpowers/plans/2026-06-04-material-bom-merge-handler.md
+
+### [2026-06-05] 公式 - 新增 cross_tab_ref token(跨页签取值/聚合 VLOOKUP/SUMIF) | FormulaCalculator/CrossTabComponentOrder/CardSnapshotService/ComponentService/TemplateService/formulaEngine.ts/crossTabOrder.ts/QuotationStep2/ReadonlyProductCard/CrossTabRefDrawer/ComponentManagement/FieldPanel/FormulaZone | 双引擎对等(前后端token引擎各实现)+组件级拓扑排序+已算行存储;NONE取值(0匹配→0,多匹配→报错)/SUM/AVG/COUNT/MAX/MIN;多列AND匹配;同卡片(同目录)source=componentId;模板publish校验源存在+无环;三视图一致由共享夹具cross-tab-cases.json(前后端13用例逐例一致)+CardSnapshotCrossTabTest证明;配置走CrossTabRefDrawer抽屉
+
+- **目标**: B 页签公式可按"A.列 = B.列(多列 AND)"匹配同卡片(同目录)内 A 页签的已算行，取值(NONE)或聚合(SUM/AVG/COUNT/MAX/MIN)，对应 VLOOKUP / SUMIF 语义。
+- **token 结构**: `{type:'cross_tab_ref', source:<A组件componentId>, sourceLabel, target, match:[{a,b}], agg}`。COUNT 无需 target 列；NONE 匹配多行报错(整公式按 0)；0 匹配返 0；非数字目标聚合报错返 0；匹配键空/纯空白→不匹配。
+- **拓扑排序**: `CrossTabComponentOrder.topoOrder` 对组件有向依赖图做 Kahn BFS 拓扑排序，A 先于 B 计算，保证被引用组件行已算完再被 cross_tab_ref 引用；`extractSourceRefs` 从所有字段 formula_tokens 收集 cross_tab_ref.source 边集。环路在模板 publish 时由 `TemplateService` 校验拒绝。
+- **三视图一致**: 报价单编辑(QuotationStep2.tsx buildCrossTabRows/buildResolvedRow + computeAllFormulas crossTabRows 参数) / 核价/详情(ReadonlyProductCard.tsx buildFormulaCache) / 后端快照(CardSnapshotService 组件拓扑序+crossTabRows存储) 三路径实现等价语义，由共享夹具 `cross-tab-cases.json`(前后端 test resources 各一份，13 用例逐例一致) + CardSnapshotCrossTabTest 集成覆盖证明。
+- **组件管理 UI**: FieldPanel「跨页签引用」按钮 → CrossTabRefDrawer 抽屉(选源组件/配匹配列对/选目标列/选聚合方式)；FormulaZone 公式回显 getChipStyle + getTokenLabel 支持 cross_tab_ref chip。
+- **后端校验**: ComponentService.validateFields 校验 token 字段(source/match/agg 完整 + agg 枚举 + match 非空数组)；TemplateService.publish 校验源组件存在于模板 + 无环。
+- **验证**: 后端 62 tests(FormulaCalculatorTest 16/CrossTabComponentOrderTest 5/FormulaCalculatorCrossTabFixtureTest 13/FormulaCalculatorCrossTabTest 8/ComponentServiceCrossTabValidateTest 13/TemplateCrossTabValidateTest 4/CardSnapshotCrossTabTest 1/CardSnapshotResolvedRowsTest 1/CardSnapshotSubtotalTest 1) 全 passed；前端 vitest 70/70(formulaEngine.test.ts+crossTabOrder.test.ts)；tsc 0 错误。
+
+### [2026-06-05] 公式 - cross_tab_ref 目标公式(targetExpr + b_field token, 第一期无函数) | FormulaCalculator/formulaEngine.ts/CrossTabRefDrawer/types.ts/FormulaZone/ComponentService + cross-tab-cases.json | targetExpr 非空优先 target;逐行先算再聚合(SUMPRODUCT式);b_field 取 B 当前行;global_variable 按 B 行上下文;函数留第二期;前后端共享夹具锁一致
+
+### [2026-06-06] Excel卡片公式 - WHERE 动态查找键(第一期·ROW_WHERE) | CardRef.condRows / CardFormulaEvaluator.buildDynamicCond / topoOrder(refs) / ExcelViewService 传 productRow / cardFormula.ts(buildCondRows+parseCondToRows) / CardFormulaDrawer RHS来源选择器+反解析回填 / ExcelViewConfigTab colSourceTypes
+
+让 Excel `CARD_FORMULA` 列「字段·按条件取行(ROW_WHERE)」的条件右侧"值"能引用本产品行可见的键，实现动态 VLOOKUP（如 `A.关联号 == 本行料号`）。
+
+- **数据模型**: `CardRef` 增结构化 `condRows[{left, op, logic, rhs:{type:literal|product|column, value}}]`；后端优先用 condRows，旧 `cond` 字符串走兼容老路径（无数据迁移）。
+- **后端求值**: `evaluateColumns` 加 6 参重载传 `productRow`(= componentRowData)；`buildDynamicCond` 按本产品行把 condRows 解析成带标量字面量的 JEXL 谓词（左值用 cols 别名反查），复用 `firstMatchIndex` 扫行。`resolveRhs`: literal→原值 / product→productRow.get(或 `__partNo__`→partNo) / column→cached.get(已算 CARD_FORMULA 列)。RHS 取空→`1==2`永假→不匹配→DASH。`toJexlLiteral` 数字裸写、字符串转义单引号(防撇号值静默错配)。
+- **拓扑(决策A)**: `topoOrder` 加 refs 重载 + `condRowColumnDeps`，把 `rhs.type=column` 也算列依赖边 → 求值顺序正确 + 成环 BusinessException。
+- **前端**: `cardFormula.ts` 增 condRows 类型 + `buildCondRows`/`parseCondToRows`(反解析旧 cond)；`CardFormulaDrawer` 条件行加"值来源选择器"(字面量/产品字段/本行列) + 产品字段候选(各页签 fields 并集 + `料号(__partNo__)`, 纯前端拼无新接口) + 本行列候选(colSourceTypes 过滤 CARD_FORMULA, fail-closed) + 插入非空校验 + ref 标签点击回填编辑(editingRefKey 替换语义, 避免占位重复/refKey 漂移孤儿)；`ExcelViewConfigTab` 传 colSourceTypes。
+- **决策**: 仅做 ROW_WHERE(聚合 WHERE 动态 RHS 谓词内嵌公式文本、机制更绕，另立小计划，condRows 复用不返工)；RHS 单值引用(不支持 RHS 写四则/函数)；不变量: RHS 只引用 productRow/partNo + 已算 CARD_FORMULA 列(VARIABLE/普通 FORMULA 列不可作 RHS)。
+- **验证(已自检)**: 后端全部 `Card*Test` 0 失败 0 错误(新增 `CardRowWhereDynamicTest` 8 含 product/column/literal/多条件AND·OR/空键DASH/撇号回归/旧cond兼容 + `CardFormulaTopoTest` 5 含 column 依赖+环 + `CardRefTest` 6)；前端 `cardFormula.test.ts` vitest 11/11；前端 `tsc --noEmit` 0 错误；`CardFormulaDrawer.tsx`/`ExcelViewConfigTab.tsx` → Vite 200。
+- **手验(配置态试算)**: ExcelView 配置页对 CARD_FORMULA 列配 `关联号 等于 [产品字段:料号(__partNo__)]` → 试算各行取"关联号==本行料号"行的字段值、无匹配料号→`—`(`POST /api/cpq/quotations/{id}/excel-view/dry-run`, F12 看 `rows[].{colKey}` 单值非"X(共N项)")。
+- **计划/设计**: `docs/superpowers/plans/2026-06-06-Excel条件动态查找键-rowwhere实施.md` + `docs/superpowers/specs/2026-06-06-Excel条件动态查找键-design.md`。
+
+### [2026-06-06] Excel卡片公式 - 聚合 WHERE 动态查找键(第二期) | CardAggregateSource.dynamicPredicate+predicateFor / CardFormulaEvaluator.resolveCardScalars(复用buildDynamicCond) / TemplateFormulaService.executeOverFunction / cardFormula.ts(ALLOWED加# + nextAggRefKey) / CardFormulaDrawer 聚合分支
+
+把第一期 ROW_WHERE 的动态查找键扩到聚合 `SUM_OVER([页签] WHERE 条件, 表达式)` 的 WHERE，实现动态 SUMIF，并支持同列同页签多个条件不同的聚合。
+
+- **机制(方案①Binding注入)**: 聚合 ref 带 `condRows`；`CardAggregateSource.Binding` 加 `dynamicPredicate` + `predicateFor`；`resolveCardScalars` 登记聚合 binding 时若 hasCondRows 复用 `buildDynamicCond`(按本产品行)算谓词存进 binding；`executeOverFunction` 取谓词 `predicateFor(source) ?? parsed.predicate`(动态优先)。**不改写公式文本**。
+- **唯一keying**: 新建聚合 refKey/token = `页签名#N`(`nextAggRefKey` 同页签递增)，支持同页签多聚合；顺带修复既有"同页签多静态聚合 cols 别名互覆盖"潜在缺陷。旧 `[页签]` token 兼容不迁移。
+- **动态时省略公式 WHERE**(与 ROW_WHERE cond='' 对称)，全字面量聚合仍 WHERE 烤入不变。
+- **零新增拓扑**: 第一期 `condRowColumnDeps` 已扫所有 refs condRows，聚合 ref 带 condRows 后其 column 依赖自动纳入。
+- **校验**: `cardFormula.ts` ALLOWED 加 `#`(否则 `[页签#N]` 报非法字符)；插入非空校验扩到 aggregate。
+- **范围**: 只做 WHERE 动态(aggExpr 不变)；RHS 复用 literal/product/column；聚合 ref 不做回填编辑(YAGNI)。
+- **验证(已自检)**: 后端 `Card*Test` 53 全绿(新增 `CardAggregateDynamicTest` 5 含 product/同页签多动态聚合互不串/静态collision修复/空键→0/旧token兼容 + `CardAggregateSourcePredicateTest` 2)；前端 `cardFormula.test.ts` vitest 13 全绿(+nextAggRefKey/#公式)；tsc 0；`CardFormulaDrawer.tsx` Vite 200。
+- **Playwright 完整闭环 E2E** (`e2e/card-aggregate-dynamic-flow.spec.ts`, 2 test 全绿): ① **UI 配置端**=自建 DRAFT 测试模板(克隆 d16dd592 结构+工序组件,afterAll 删)真实抽屉点配两同页签聚合(静态#1 工序代码==Z011 + 动态#2 子件==料号__partNo__)→「保存配置」→ DB `excel_view_config` 落库 `工序#1`(cols 工序代码)/`工序#2`(cols 子件+condRows+__partNo__) 两独立 ref(cols 不互覆盖); ② **渲染端**=注入同构配置到 PUBLISHED d16dd592(QT-1497 绑定有工序数据)→ `getExcelView` 真实链路 A=`SUM(工序代码==Z011)+SUM(子件==10110002)`=266.7984(互不串) + B=动态 子件==料号→0(空键)。
+  - **闭环形态说明(业务约束)**: 报价单只绑 PUBLISHED 模板、PUBLISHED 模板 excel_view_config 在 UI 只读(`disabled={!isDraft}`)，故"单模板配→渲染一条龙"不可达，采用同构桥接(DRAFT 配+落库 / PUBLISHED 渲染，两端共用同一工序组件 5c47fb41 结构同构)。数据纪律: 备份表 zz_evc_bak 存还原 + 自建测试模板 afterAll 删，绝不改 template_id/组件数据。
+  - **E2E 踩坑**: AntD 对恰 2 中文字按钮自动插空格("保存"→"保 存") → getByRole name 匹配失效，改用 `.ant-btn-primary`; excel_view_config 由 ExcelViewConfigTab「保存配置」端点持久化(非"保存模板"); 条件值 input 须 `getByPlaceholder('值')` 排除字段 Select 的 showSearch 内置 input。
+- **设计/计划**: `docs/superpowers/specs/2026-06-06-Excel聚合WHERE动态查找键-design.md` + `docs/superpowers/plans/2026-06-06-Excel聚合WHERE动态查找键实施.md`。
+
+### [2026-06-06] 核价BOM递归展开 - 组件级开关(bom_recursive_expand) | V295 / Component+ComponentDTO+CreateComponentRequest+ComponentService / CardSnapshotService 闭包重载 per-component 分流 / QuotationStep2 activeComponentBomTree 数据驱动 / ComponentManagement Switch
+
+把 P1「核价侧一律 BOM 递归」改为组件级开关（默认开=保现状）。勾选→`expandForPartSet`+spine 树+系统列；未勾选→`expand` 单料号普通渲染(无系统列)。
+
+- **存储**: Component 新列 `bom_recursive_expand BOOLEAN NOT NULL DEFAULT true`(V295)，与语义不同的 `tree_config`(组件数据自带树) 正交独立。组件级全局(同组件跨核价模板统一)。
+- **后端分流**: `CardSnapshotService.expandTemplateDriverBaseRows(...,closure)` driver 查询带出 `bom_recursive_expand`，per-component: true→`expandForPartSet`+`buildSpineBaseRows`；false→`expand`+`buildBaseRowsFromRows`(复用报价侧普通逻辑)。
+- **前端数据驱动**: `QuotationStep2` 引入 `activeComponentBomTree = cardSide==='COSTING' && activeDriverExpansion.rows.some(__sys.nodeId!==undefined)`，替换裸 `cardSide==='COSTING'` 的系统列(表头/单元格/tfoot)/建树(isBomTree)/bomSys 共 5 处。未勾选组件无系统列→普通表。
+- **UI**: 组件管理加 Switch「核价 BOM 递归展开」(默认开)，与上方"树表(tree_config)"分列、说明区分。
+- **隔离**: 仅核价侧；报价侧零改动(AP-41)。存量默认 true 不惊扰；取消勾选后**下次快照重算**才变化(快照驱动)。
+- **范围**: 实时兜底路径(batchExpand)本期未改(核价默认走快照主路径已分流，兜底罕见，记 TODO)。
+- **验证(已自检)**: `ComponentDTOTest` 映射用例绿(5)；`ComponentDTOTest+Card*Test` 57 全绿无回归；V295 success=t + 153 行回填；前端 tsc 0 + QuotationStep2/ComponentManagement Vite 200；**E2E `costing-bom-toggle.spec.ts` 1 passed**——同核价单 材质(true)表头出`料号/父料号/版本`系统列三连、工序(false)表头`子件/序号/工序代码...`无系统列、加载中=0；DB 还原工序=true。
+- **默认值变更(同日)**: 默认 **开→关**(用户改主意,更贴合"勾选才递归"原始诉求)。新增 **V296**(`UPDATE component SET bom_recursive_expand=false` 存量153全置false + `ALTER COLUMN SET DEFAULT false`);后端实体/DTO/Service 兜底改 `false`;前端 state 初始/回填语义改 `=== true`;E2E 改为显式勾选材质(true)、工序默认 false。**影响**: 现有核价单下次快照重算从 BOM 树变回普通单料号渲染,需手动勾选要树展开的组件。验证: V296 success=t + 153全false + 列默认false;ComponentDTOTest 5绿;tsc 0;E2E `costing-bom-toggle` 1 passed(材质true树/工序false普通/加载中=0)。
+- **设计/计划**: `docs/superpowers/specs/2026-06-06-核价BOM递归展开-组件级开关-design.md` + `docs/superpowers/plans/2026-06-06-核价BOM递归展开-组件级开关实施.md`。
+
+---
+
+### [2026-06-06] 核价SQL视图 - spineKeys 复合键跨页签过滤(最小版) + BOM spine 版本语义改子件自身版本 | SpineKeysMacro/SpineKeysContext(新建) + SqlViewExecutor/SqlViewValidator/BomClosureService/CardSnapshotService(改) + 单测SpineKeysMacroTest/SqlViewValidatorSpineKeysTest + CostingExcelTreeTest/BomClosureServiceTest(改断言) | 三元组从BOM闭包派生(环境注入,类比:hfPartNos);:spineKeys(料号列,父料号列,版本列)→EXISTS+unnest+IS NOT DISTINCT FROM(NULL-safe防超长IN);版本=子件自身当前BOM版本(显示+匹配统一,弃用边版本,叶子空);切换版本/实时联动/源页签实时行推迟
 
 ---
 

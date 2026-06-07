@@ -41,6 +41,10 @@ public class ExcelViewService {
     @Inject
     CardFormulaEvaluator cardFormulaEvaluator;
 
+    /** P2-B 核价 Excel 树：算根料号 BOM 闭包 spine（按节点出行）。 */
+    @Inject
+    com.cpq.component.service.BomClosureService bomClosureService;
+
     // ---- Template excel-view-config API ----
 
     public String getExcelViewConfig(UUID templateId) {
@@ -199,6 +203,52 @@ public class ExcelViewService {
     }
 
     /**
+     * P2-B 核价 Excel 树：按根料号 BOM 闭包 spine 逐节点出行（每行注入 料号/父料号/版本 + 树元数据），
+     * 各列用「过滤到本节点 {@code __nodeId}」的有效行求值（CARD_FORMULA 按节点聚合；空节点列 → null）。
+     *
+     * <p>仅核价侧调用（{@code cardValuesJson} = costingCardValues，其 baseRows/resolvedRows 含 spine {@code __nodeId}）。
+     * 返回 N 行（= spine occurrence 数）；失败返回空列表（调用方降级，不抛）。
+     */
+    public List<Map<String, Object>> buildLineTreeRows(QuotationLineItem li, UUID templateId,
+                                                       UUID customerId, String cardValuesJson) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (li == null || templateId == null) return rows;
+        try {
+            Template template = Template.findById(templateId);
+            if (template == null || template.excelViewConfig == null || template.excelViewConfig.isBlank())
+                return rows;
+            List<Map<String, Object>> columns = parseJsonArray(template.excelViewConfig);
+            if (columns.isEmpty()) return rows;
+            List<TemplateFormulaDTO> templateFormulas = templateFormulaService.listByTemplate(templateId);
+            Map<String, TemplateFormulaDTO> formulaByName = new LinkedHashMap<>();
+            for (TemplateFormulaDTO f : templateFormulas) formulaByName.put(f.name, f);
+
+            Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows> eff =
+                parseEffectiveRows(cardValuesJson, templateId);
+            com.cpq.component.dto.BomClosureResult closure =
+                bomClosureService.compute(li.productPartNoSnapshot, java.util.Map.of());
+
+            for (com.cpq.component.dto.BomClosureResult.SpineNode node : closure.spine) {
+                Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows> effN =
+                    com.cpq.quotation.service.card.CardEffectiveRows.filterByNodeId(eff, node.nodeId);
+                Map<String, Object> row = buildRowData(li, columns, templateId, formulaByName, customerId, effN);
+                row.put("__hfPartNo", node.hfPartNo);
+                row.put("__parentNo", node.parentNo);
+                row.put("__bomVersion", node.bomVersion);
+                row.put("__nodeId", node.nodeId == null ? "" : node.nodeId);
+                row.put("__parentId", node.parentId);
+                row.put("__lvl", node.lvl);
+                row.put("_lineItemId", li.id != null ? li.id.toString() : null);
+                rows.add(row);
+            }
+        } catch (Exception e) {
+            LOG.warnf("[ExcelView] buildLineTreeRows failed li=%s tmpl=%s: %s",
+                li != null ? li.id : null, templateId, e.getMessage());
+        }
+        return rows;
+    }
+
+    /**
      * 解析卡片值快照 → 有效行 Map；空/异常 → null（降级旧路径）。
      */
     private Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows>
@@ -273,10 +323,10 @@ public class ExcelViewService {
                 com.cpq.quotation.service.card.CardDataProvider provider =
                     com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(effectiveRows);
                 cardFormulaValues = cardFormulaEvaluator.evaluateColumns(
-                    cardCols, provider, customerId, partNo, null);
+                    cardCols, provider, customerId, partNo, null, componentRowData);
             } else {
                 cardFormulaValues = cardFormulaEvaluator.evaluateColumns(
-                    cardCols, componentDataList, customerId, partNo, null);
+                    cardCols, componentDataList, customerId, partNo, null, componentRowData);
             }
         }
 

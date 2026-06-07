@@ -54,6 +54,10 @@ public class FormulaCalculator {
         public Map<String, Object> basicDataValues = new HashMap<>();
         /** previous_row_subtotal token：上一行 is_subtotal 值；行 0 为 null → token 走 fallback。 */
         public Double previousRowSubtotal = null;
+        /** cross_tab_ref：B 当前行原始值（字段名→原始值，含文本），供匹配键 b 取值。 */
+        public Map<String, Object> currentRowRaw = new HashMap<>();
+        /** cross_tab_ref：同卡片已算行存储（组件标识→行表，行=字段名→已算值）。 */
+        public Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
     }
 
     // ======================================================================
@@ -141,9 +145,24 @@ public class FormulaCalculator {
                 expr.append(numStr(v != null ? v : 0.0));
                 break;
             }
+            case "b_field": {
+                String n = token.has("value") ? token.path("value").asText("") : token.path("name").asText("");
+                Double v = toNumber(ctx.currentRowRaw.get(n));
+                expr.append(numStr(v != null ? v : 0.0));
+                break;
+            }
             case "global_variable": {
                 Double v = resolveGvar(token, ctx);
                 expr.append(numStr(v != null ? v : 0.0));
+                break;
+            }
+            case "cross_tab_ref": {
+                Object v = evalCrossTab(token, ctx);
+                if (v instanceof FormulaErrorMarker) {
+                    throw new IllegalStateException("cross_tab_ref multi/non-numeric");
+                }
+                Double n = (v instanceof Number num) ? num.doubleValue() : toNumber(v);
+                expr.append(numStr(n != null ? n : 0.0));
                 break;
             }
             default:
@@ -176,6 +195,87 @@ public class FormulaCalculator {
     }
 
     // ======================================================================
+    // cross_tab_ref — 跨页签引用求值
+    // ======================================================================
+
+    /** 多匹配/非数字聚合错误哨兵。 */
+    private static final class FormulaErrorMarker {}
+    private static final FormulaErrorMarker ERR = new FormulaErrorMarker();
+
+    /** cross_tab_ref 求值。返回 Number / String（NONE 文本）/ ERR。 */
+    Object evalCrossTab(JsonNode token, RowContext ctx) {
+        String source = token.path("source").asText("");
+        String target = token.path("target").asText("");
+        String agg = token.path("agg").asText("NONE").toUpperCase();
+        List<Map<String, Object>> rows = ctx.crossTabRows.getOrDefault(source, List.of());
+
+        List<Map<String, Object>> hits = new ArrayList<>();
+        for (Map<String, Object> arow : rows) {
+            boolean ok = true;
+            for (JsonNode pair : token.path("match")) {
+                Object av = arow.get(pair.path("a").asText(""));
+                Object bv = ctx.currentRowRaw.get(pair.path("b").asText(""));
+                if (isBlank(av) || isBlank(bv) || !valEquals(av, bv)) { ok = false; break; }
+            }
+            if (ok) hits.add(arow);
+        }
+
+        if ("COUNT".equals(agg)) return java.math.BigDecimal.valueOf(hits.size());
+        if ("NONE".equals(agg)) {
+            if (hits.isEmpty()) return java.math.BigDecimal.ZERO;
+            if (hits.size() > 1) return ERR;
+            return targetRowValue(hits.get(0), token, ctx);
+        }
+        if (hits.isEmpty()) return java.math.BigDecimal.ZERO;
+        List<Double> nums = new ArrayList<>(hits.size());
+        for (Map<String, Object> h : hits) {
+            Double n = toNumber(targetRowValue(h, token, ctx));
+            if (n == null) return ERR;
+            nums.add(n);
+        }
+        double r;
+        switch (agg) {
+            case "SUM": r = nums.stream().mapToDouble(Double::doubleValue).sum(); break;
+            case "AVG": r = nums.stream().mapToDouble(Double::doubleValue).average().orElse(0); break;
+            case "MAX": r = nums.stream().mapToDouble(Double::doubleValue).max().orElse(0); break;
+            case "MIN": r = nums.stream().mapToDouble(Double::doubleValue).min().orElse(0); break;
+            default: return ERR;
+        }
+        return java.math.BigDecimal.valueOf(r);
+    }
+
+    /** 取匹配 A 行的目标值: 有 targetExpr → 在 (A行 field + B行 b_field + B 上下文 gvar) 求值; 否则 arow[target]。 */
+    private Object targetRowValue(Map<String, Object> arow, JsonNode token, RowContext ctx) {
+        JsonNode te = token.path("targetExpr");
+        if (te.isArray() && te.size() > 0) {
+            RowContext sub = new RowContext();
+            for (Map.Entry<String, Object> e : arow.entrySet()) {
+                Double n = toNumber(e.getValue());
+                if (n != null) sub.fieldValues.put(e.getKey(), n);
+            }
+            sub.currentRowRaw = ctx.currentRowRaw;
+            sub.basicDataValues = ctx.basicDataValues;
+            sub.crossTabRows = ctx.crossTabRows;
+            return evaluateExpression(te, sub);
+        }
+        return arow.get(token.path("target").asText(""));
+    }
+
+    private static boolean isBlank(Object o) {
+        return o == null || (o instanceof String s && s.isBlank());
+    }
+
+    /**
+     * 匹配键相等比较：数字按数值，否则按 trim 文本。
+     * 注意：依赖实例方法 toNumber，故声明为实例方法（非 static）。
+     */
+    private boolean valEquals(Object a, Object b) {
+        Double na = toNumber(a), nb = toNumber(b);
+        if (na != null && nb != null) return na.doubleValue() == nb.doubleValue();
+        return String.valueOf(a).trim().equals(String.valueOf(b).trim());
+    }
+
+    // ======================================================================
     // Layer 2-4 — calculate / computeTabSubtotal（逐行 + previous_row_subtotal 累加）
     // ======================================================================
 
@@ -191,9 +291,29 @@ public class FormulaCalculator {
                                Map<String, Double> componentSubtotals,
                                Map<String, Double> quotationFields,
                                Map<String, Double> productAttributes) {
+        return calculate(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
+            componentSubtotals, quotationFields, productAttributes, Map.of());
+    }
+
+    /**
+     * calculate 重载：额外透传 cross_tab_ref 兄弟组件已算行存储（Task 1.3/1.4）。
+     *
+     * <p>逐行 RowContext 注入 {@code crossTabRows}（同卡片兄弟组件已算行）+ {@code currentRowRaw}
+     * （本行原始合并值，<b>含文本</b>，供 cross_tab_ref 匹配键 b 取值）。
+     * 9 参旧签名委派此重载并传 {@code Map.of()}，行为不变。
+     *
+     * @param crossTabRows 组件标识 → 行表（行=字段名→已算值），cross_tab_ref source 维度查询；null 视作空。
+     */
+    public ArrayNode calculate(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
+                               JsonNode rowKeyFields,
+                               JsonNode baseRows, JsonNode editRows,
+                               Map<String, Double> componentSubtotals,
+                               Map<String, Double> quotationFields,
+                               Map<String, Double> productAttributes,
+                               Map<String, List<Map<String, Object>>> crossTabRows) {
         ArrayNode out = MAPPER.createArrayNode();
         List<RowResult> rows = computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
-            componentSubtotals, quotationFields, productAttributes);
+            componentSubtotals, quotationFields, productAttributes, crossTabRows);
         for (RowResult rr : rows) {
             ObjectNode node = MAPPER.createObjectNode();
             node.put("rowKey", rr.rowKey);
@@ -214,7 +334,7 @@ public class FormulaCalculator {
         String subtotalField = findSubtotalFieldName(fields);
         if (subtotalField == null) return ZERO4;
         List<RowResult> rows = computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
-            componentSubtotals, new HashMap<>(), new HashMap<>());
+            componentSubtotals, new HashMap<>(), new HashMap<>(), Map.of());
         double sum = 0.0;
         for (RowResult rr : rows) {
             Double v = rr.formulaValues.get(subtotalField);
@@ -237,7 +357,8 @@ public class FormulaCalculator {
                                         JsonNode baseRows, JsonNode editRows,
                                         Map<String, Double> componentSubtotals,
                                         Map<String, Double> quotationFields,
-                                        Map<String, Double> productAttributes) {
+                                        Map<String, Double> productAttributes,
+                                        Map<String, List<Map<String, Object>>> crossTabRows) {
         List<RowResult> out = new ArrayList<>();
         if (baseRows == null || !baseRows.isArray()) return out;
 
@@ -275,6 +396,9 @@ public class FormulaCalculator {
             ctx.productAttributes = productAttributes != null ? productAttributes : new HashMap<>();
             ctx.basicDataValues = toBasicDataMap(basicDataValues);
             ctx.previousRowSubtotal = prevRowSubtotal;
+            // cross_tab_ref（Task 1.3）：兄弟组件已算行 + 本行原始合并值（含文本，供匹配键 b 取值）
+            ctx.crossTabRows = crossTabRows != null ? crossTabRows : Map.of();
+            ctx.currentRowRaw = toRawRowMap(mergedRow);
 
             // 按拓扑序求值，结果回填 fieldValues 供下游公式引用
             Map<String, Double> results = new LinkedHashMap<>();
@@ -699,6 +823,21 @@ public class FormulaCalculator {
             editValues.fields().forEachRemaining(e -> merged.put(e.getKey(), e.getValue()));
         }
         return merged;
+    }
+
+    /**
+     * mergedRow（driverRow ⊕ editValues，值为 JsonNode）→ 原始标量映射（字段名→原始值）。
+     * 文本保留为 String、数字为 Number、布尔为 Boolean（复用 unwrapNode），供 cross_tab_ref
+     * 匹配键 b 取值——<b>不</b>做数值强转，故子件编号 "P1" 等文本匹配键能正确比较。
+     */
+    private Map<String, Object> toRawRowMap(Map<String, JsonNode> mergedRow) {
+        Map<String, Object> map = new HashMap<>();
+        if (mergedRow == null) return map;
+        for (Map.Entry<String, JsonNode> e : mergedRow.entrySet()) {
+            Object v = unwrapNode(e.getValue());
+            if (v != null) map.put(e.getKey(), v);
+        }
+        return map;
     }
 
     private Map<String, Object> toBasicDataMap(JsonNode basicDataValues) {

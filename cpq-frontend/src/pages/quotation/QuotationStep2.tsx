@@ -5,6 +5,7 @@ import { evaluateExpression, getGlobalPathCache, evaluateListFormulaString } fro
 import { usePathFormulaCache } from './usePathFormulaCache';
 import { globalVariableService, type GlobalVariableDefinition } from '../../services/globalVariableService';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
+import { extractSourceRefs, topoOrderComponents } from './crossTabOrder';
 import { useConfigTemplates, type ConfigTemplateMap } from './useConfigTemplates';
 import { evaluateCondition } from '../../utils/conditionEngine';
 import type { DriftDetectionResult } from '../../types/quotation-drift';
@@ -383,6 +384,10 @@ function computeAllFormulas(
   previousRowSubtotal?: number,
   // 动态 key 全局变量运行时 path 重写 (AP-bug 修复): 向后兼容, 老调用不传时动态 key 兜底 0
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+  // cross_tab_ref: 兄弟组件已算行 (componentId/componentCode → resolvedRows[])。
+  // 由 buildCrossTabRows 按组件拓扑序构建后透传; cross_tab_ref token 据此跨 Tab 取数聚合。
+  // 不传则保持旧行为 (无跨 Tab 引用时 token 返 0/兜底)。
+  crossTabRows?: Record<string, Array<Record<string, any>>>,
 ): Record<string, number | null> {
   if (!comp.fields || !comp.formulas) return {};
 
@@ -575,7 +580,7 @@ function computeAllFormulas(
         ff.formula.expression, fieldValues,
         allComponentSubtotals || {}, undefined, quotationFields,
         pathCache, partNo, basicDataValues, previousRowSubtotal,
-        globalVariableDefs, row,
+        globalVariableDefs, row, crossTabRows,
       );
       results[name] = val;
       fieldValues[name] = val; // feed result for downstream formulas
@@ -584,6 +589,149 @@ function computeAllFormulas(
     }
   }
   return results;
+}
+
+/**
+ * BASIC_DATA 字段行级取值 (RAW, 文本保留文本) — 镜像 computeAllFormulas BASIC_DATA 分支 (见 ~444-470),
+ * 但 computeAllFormulas 会把结果 parseFloat 进 number-only 的 fieldValues; 此处 cross_tab_ref 需 RAW
+ * (匹配键常为驱动文本列), 故单独取值且不强转数字。
+ * 仅吃行级 basicDataValues (driver 展开行); 不回退 partNo 级 globalPathCache (那是聚合首值, 跨 Tab 行匹配会串号)。
+ */
+function resolveBasicDataForRow(
+  f: ComponentField,
+  basicDataValues: Record<string, any> | undefined,
+): any {
+  if (!f.basic_data_path || !basicDataValues) return undefined;
+  const lookupKey = bnfDriverLookupKey(f.basic_data_path);
+  if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
+    const cached = basicDataValues[lookupKey];
+    if (cached == null) return undefined;
+    if (typeof cached === 'number') return cached;
+    // 字符串/对象/数组: 取格式化首值 (与 computeAllFormulas 同款 formatPathValue),
+    // 文本保留为字符串 (不 parseFloat — cross_tab_ref 匹配键需原始文本)。
+    return formatPathValue(cached) ?? undefined;
+  }
+  return undefined;
+}
+
+/**
+ * DATA_SOURCE 字段行级取值 (RAW) — 镜像 computeAllFormulas DATA_SOURCE 分支 (见 ~475-516)。
+ * 仅处理可从行级 basicDataValues 解析的 GLOBAL_VARIABLE / BNF_PATH 子类型 + field.content 静态兜底;
+ * DATABASE_QUERY / HTTP_API 走 row 回写, 已在 buildResolvedRow 的 driverRow/row 展开中覆盖。
+ */
+function resolveDataSourceForRow(
+  f: ComponentField,
+  basicDataValues: Record<string, any> | undefined,
+): any {
+  const binding = f.datasource_binding;
+  if (!binding) return undefined;
+  const dsType = binding.type ?? 'DATABASE_QUERY';
+  let resolved: any = undefined;
+  if (basicDataValues) {
+    if (dsType === 'GLOBAL_VARIABLE' && binding.global_variable_code) {
+      const gvKey = `@gvar:${binding.global_variable_code}`;
+      if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
+        const v = basicDataValues[gvKey];
+        if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
+      }
+    } else if (dsType === 'BNF_PATH' && binding.bnf_path) {
+      const lookupKey = bnfDriverLookupKey(binding.bnf_path);
+      if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
+        const v = basicDataValues[lookupKey];
+        if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
+      }
+    }
+  }
+  if ((resolved === undefined || resolved === null || resolved === '')
+      && f.content != null && f.content !== '') {
+    resolved = f.content;
+  }
+  if (resolved == null) return undefined;
+  if (typeof resolved === 'number') return resolved;
+  return formatPathValue(resolved) ?? undefined;  // 文本保留
+}
+
+/**
+ * 把一行解析成 "字段名 → RAW 值" 映射 (镜像后端 CardSnapshotService.buildResolvedRows /
+ * FormulaCalculator.resolveRowByFieldName)。供 cross_tab_ref 兄弟组件按字段名取数:
+ * 既覆盖匹配键 (常为驱动/输入文本列), 又覆盖目标列 (FORMULA / BASIC_DATA / input)。
+ *
+ * 文本保留: 先铺 driverRow + row 原始值 (字符串不被强转); FORMULA 用 formulaCache 数值;
+ * BASIC_DATA/DATA_SOURCE 仅在原始值为空时按行级取值补 (resolve* 内对文本走 formatPathValue 不 parseFloat)。
+ */
+function buildResolvedRow(
+  fields: ComponentField[],
+  row: Record<string, any>,
+  driverRow: Record<string, any> | undefined,
+  basicDataValues: Record<string, any> | undefined,
+  formulaCache: Record<string, number | null>,
+): Record<string, any> {
+  const out: Record<string, any> = { ...(driverRow ?? {}), ...row };  // raw first (text preserved)
+  for (const f of fields) {
+    const key = f.name || f.key || '';
+    if (!key) continue;
+    if (f.field_type === 'FORMULA') {
+      if (key in formulaCache) out[key] = formulaCache[key];
+    } else if (f.field_type === 'BASIC_DATA' && f.basic_data_path) {
+      if (out[key] == null || out[key] === '') {
+        const v = resolveBasicDataForRow(f, basicDataValues);
+        if (v != null) out[key] = v;
+      }
+    } else if (f.field_type === 'DATA_SOURCE' && f.datasource_binding) {
+      if (out[key] == null || out[key] === '') {
+        const v = resolveDataSourceForRow(f, basicDataValues);
+        if (v != null) out[key] = v;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * 按组件 cross_tab_ref 依赖拓扑序构建 crossTabRows (镜像后端 CardSnapshotService PASS2)。
+ * 前置: allComponentSubtotals 必须已构建完 (PASS1)。
+ * 每算完一个组件即把其 resolvedRows 存入 store (componentId + componentCode + ids[] 三键),
+ * 拓扑序保证被引用组件 A 先于引用方 B 入 store。环 → 退回输入序 (模板保存层已硬拦环)。
+ */
+export function buildCrossTabRows(
+  componentData: ComponentDataItem[],
+  allComponentSubtotals: Record<string, number>,
+  partNo: string | undefined,
+  lookupExpansion: (comp: ComponentDataItem) => (import('./useDriverExpansions').DriverExpansion | undefined),
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+): Record<string, Array<Record<string, any>>> {
+  const normals = componentData.filter(c => c?.fields && c.componentType !== 'SUBTOTAL');
+  const ids = normals.map(c => c.componentId || c.componentCode || c.tabName);
+  const deps: Record<string, string[]> = {};
+  normals.forEach((c, i) => { deps[ids[i]] = extractSourceRefs(c.formulas as any); });
+  let order: string[];
+  try { order = topoOrderComponents(ids, deps); }
+  catch { order = ids; /* 环：退回原序，避免整卡渲染崩溃；模板保存层已拦截环 */ }
+
+  const store: Record<string, Array<Record<string, any>>> = {};
+  for (const cid of order) {
+    const comp = normals[ids.indexOf(cid)];
+    if (!comp) continue;
+    const exp = lookupExpansion(comp);
+    const useDriver = exp && exp.rowCount > 0;
+    const rowCount = useDriver ? exp!.rowCount : (comp.rows?.length ?? 0);
+    const rows: Array<Record<string, any>> = [];
+    for (let i = 0; i < rowCount; i++) {
+      const baseRow = comp.rows?.[i] ?? {};
+      const row = fillFixedDefaults(comp.fields!, baseRow);
+      const basicDataValues = (useDriver && i < exp!.rowCount) ? exp!.rows[i]?.basicDataValues : undefined;
+      const driverRow = (useDriver && i < exp!.rowCount) ? exp!.rows[i]?.driverRow : undefined;
+      const formulaCache = computeAllFormulas(
+        comp, row, allComponentSubtotals, undefined, undefined, partNo, basicDataValues,
+        undefined, globalVariableDefs, store,   // crossTabRows-so-far (topo order → A ready before B)
+      );
+      rows.push(buildResolvedRow(comp.fields!, row, driverRow, basicDataValues, formulaCache));
+    }
+    store[cid] = rows;
+    if (comp.componentCode) store[comp.componentCode] = rows;
+    if (comp.componentId) store[comp.componentId] = rows;
+  }
+  return store;
 }
 
 /** Compute a single formula field value (convenience wrapper using computeAllFormulas cache) */
@@ -776,6 +924,13 @@ export function buildSnapshotExpansions(
         rows: baseRows.map((br: any) => ({
           driverRow: br?.driverRow ?? {},
           basicDataValues: br?.basicDataValues ?? {},
+          // 核价 BOM 递归展开（P1）：透传 spine 系统列（__ 前缀），供 COSTING 卡片渲染固定列 + 建树。
+          // 报价侧快照无 __* 字段 → __sys 各项 undefined，渲染层据此不注入（守 AP-41 隔离）。
+          __sys: (br && br.__nodeId !== undefined) ? {
+            nodeId: br.__nodeId, parentId: br.__parentId, lvl: br.__lvl,
+            hfPartNo: br.__hfPartNo, parentNo: br.__parentNo,
+            bomVersion: br.__bomVersion, isCycle: br.__isCycle,
+          } : undefined,
         })),
       };
     }
@@ -1199,6 +1354,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     return driverExpansions?.[key];
   })();
 
+  // 核价 BOM 递归展开 组件级开关：仅当该组件 baseRows 含 spine 系统列(__sys.nodeId) 才走树+系统列；
+  // 未勾选(bom_recursive_expand=false)组件后端不发系统列 → 此处 false → 普通表渲染。数据驱动，无需额外 flag。
+  const activeComponentBomTree = cardSide === 'COSTING'
+    && !!activeDriverExpansion?.rows?.some((r: any) => r?.__sys?.nodeId !== undefined);
+
   // Compute cross-component subtotals for formula evaluation in the active tab
   // Key by componentId (UUID), componentCode, and tabName for maximum compatibility
   const allComponentSubtotals: Record<string, number> = {};
@@ -1220,6 +1380,21 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     if (comp.componentCode) allComponentSubtotals[comp.componentCode] = subtotal;
     allComponentSubtotals[comp.tabName] = subtotal;
   }
+
+  // cross_tab_ref (PASS2, 镜像后端 CardSnapshotService): 在 allComponentSubtotals (PASS1) 之后,
+  // 按组件拓扑序构建兄弟组件已算行, 供本卡 FORMULA cross_tab_ref token 跨 Tab 取数聚合。
+  const crossTabRows = buildCrossTabRows(
+    item.componentData,
+    allComponentSubtotals,
+    item.productPartNo,
+    (comp) => {
+      const lineItemIdCt = (item as any).id || (item as any).tempId || '';
+      return (item.productPartNo && comp.componentId)
+        ? driverExpansions?.[driverExpansionKey(lineItemIdCt, item.productPartNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]))]
+        : undefined;
+    },
+    globalVariableDefs,
+  );
 
   // Dynamic product attribute fields from template definition
   const attrFields = item.productAttributes || [];
@@ -1444,6 +1619,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
               <table className="qt-cost-table">
                 <thead>
                   <tr>
+                    {/* 核价 BOM 递归展开：3 系统固定列仅"勾选递归"组件出（数据驱动 activeComponentBomTree） */}
+                    {activeComponentBomTree && (
+                      <>
+                        <th style={{ minWidth: 120 }}>料号</th>
+                        <th style={{ minWidth: 110 }}>父料号</th>
+                        <th style={{ minWidth: 90 }}>版本</th>
+                      </>
+                    )}
                     {activeComponent.fields.map(field => (
                       <th key={field.name || field.key}>{field.label || field.name}</th>
                     ))}
@@ -1563,6 +1746,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         rowKey,
                         basicDataValues: isDriverBound ? activeDriverExpansion!.rows[i]?.basicDataValues : undefined,
                         driverRow: isDriverBound ? activeDriverExpansion!.rows[i]?.driverRow : undefined,
+                        // 核价 BOM 递归展开（P1）：spine 系统列（仅 COSTING 行有值）
+                        __sys: isDriverBound ? (activeDriverExpansion!.rows[i] as any)?.__sys : undefined,
                         isDriverBound,
                         isListFormulaBound,
                         // LIST_FORMULA 上下文
@@ -1585,7 +1770,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         : computeAllFormulas(
                             activeComponent, r.row, allComponentSubtotals,
                             undefined, undefined, item.productPartNo, r.basicDataValues,
-                            prevRowSubtotal, globalVariableDefs,
+                            prevRowSubtotal, globalVariableDefs, crossTabRows,
                           );
                       preComputedCaches.push(cache);
                       if (subtotalFieldName && typeof cache[subtotalFieldName] === 'number') {
@@ -1593,6 +1778,25 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       }
                     }
                     const withCache = effectiveRows.map((er, idx) => ({ ...er, formulaCache: preComputedCaches[idx] }));
+                    // 核价 BOM 递归展开（P1）：COSTING 侧按 spine 系统列 __parentId→__nodeId 建树（不是料号）。
+                    // 归一化：根 nodeId='' → '__bomroot__'；根直接子 parentId='' → '__bomroot__'；根自身 parentId=null → null。
+                    // 其余为 uuid 边路径，原样。DAG 重复子件 nodeId 各不同 → 各自独立 occurrence，不塌成 DAG。
+                    const isBomTree = activeComponentBomTree
+                      && withCache.some(r => (r as any).__sys?.nodeId !== undefined);
+                    if (isBomTree) {
+                      const normId = (v: any) => (v === '' || v == null) ? '__bomroot__' : String(v);
+                      const keyPrefixBom = activeComponent.componentId || activeComponent.tabName || 'bomtree';
+                      const laidBom = layoutTreeRows(
+                        withCache,
+                        (it) => { const s = (it as any).__sys; return s?.nodeId === undefined ? null : normId(s.nodeId); },
+                        (it) => { const s = (it as any).__sys; return (s?.parentId == null) ? null : (s.parentId === '' ? '__bomroot__' : String(s.parentId)); },
+                        keyPrefixBom,
+                      );
+                      const collapsedBom = treeCollapse.collapsedSet(Object.values(laidBom.nodeKeyByIndex), true);
+                      return laidBom.rows
+                        .filter(r => !isTreeRowHidden(r.originalIndex, laidBom.parentIndexByIndex, laidBom.nodeKeyByIndex, collapsedBom))
+                        .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
+                    }
                     const treeCfg = activeComponent.treeConfig;
                     if (!treeCfg?.idField || !treeCfg?.parentField) {
                       // 非树表:原样平铺(行为零变化)
@@ -1612,9 +1816,37 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     return laid.rows
                       .filter(r => !isTreeRowHidden(r.originalIndex, laid.parentIndexByIndex, laid.nodeKeyByIndex, collapsed))
                       .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
-                  })().map(({ row, rowIndex, rowKey, basicDataValues, isDriverBound, isListFormulaBound, formulaCache, listFormulaItem, listFormulaField, _depth, _hasChildren, _nodeKey }) => {
+                  })().map(({ row, rowIndex, rowKey, basicDataValues, isDriverBound, isListFormulaBound, formulaCache, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey }) => {
+                    const bomSys = activeComponentBomTree ? (__sys as import('./useDriverExpansions').BomSysCols | undefined) : undefined;
                     return (
                     <tr key={rowIndex} style={(row._preset || isDriverBound) ? { background: '#fafafa' } : undefined}>
+                      {/* 核价 BOM 递归展开：3 系统固定列单元格（仅"勾选递归"组件），料号列承载树缩进/折叠箭头 */}
+                      {activeComponentBomTree && (
+                        <>
+                          <td style={bomSys?.isCycle ? { color: '#cf1322' } : undefined}
+                              title={bomSys?.isCycle ? '该料号存在 BOM 环，已截断展开' : undefined}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ display: 'inline-block', width: (_depth ?? 0) * 16 }} />
+                              {_hasChildren ? (
+                                <button type="button" onClick={() => treeCollapse.toggle(_nodeKey)}
+                                  style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 10, width: 14, padding: 0, color: '#888' }} title="展开/折叠">
+                                  {treeCollapse.isCollapsed(_nodeKey, true) ? '▶' : '▼'}
+                                </button>
+                              ) : (<span style={{ display: 'inline-block', width: 14 }} />)}
+                              <span>{bomSys?.hfPartNo ?? '—'}</span>
+                            </span>
+                          </td>
+                          <td>{bomSys?.parentNo ?? '—'}</td>
+                          <td>
+                            {/* 版本下拉占位：P1 仅展示当前版本，不可切换（版本切换二期开放） */}
+                            <select value={bomSys?.bomVersion ?? ''} disabled
+                                    title="版本切换二期开放（P2）"
+                                    style={{ width: '100%', minWidth: 70, color: '#555', background: '#f5f5f5', cursor: 'not-allowed' }}>
+                              <option value={bomSys?.bomVersion ?? ''}>{bomSys?.bomVersion ?? '—'}</option>
+                            </select>
+                          </td>
+                        </>
+                      )}
                       {activeComponent.fields.map(field => {
                         const key = field.name || field.key || '';
                         const loadingKey = `${activeComponentDataIndex}-${rowIndex}-${field.name}`;
@@ -1640,6 +1872,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           activeDriverExpansion,
                           isListFormulaBound,
                           isDriverBound,
+                          // 核价 BOM 树行：BASIC_DATA 缺值直接 "—"，不按根料号走 globalPathCache（防子料号行永久"加载中"）
+                          isBomTreeRow: !!bomSys,
                           listFormulaItem,
                           listFormulaField,
                           configTemplates,
@@ -1738,6 +1972,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                 {activeComponent.fields.some(f => f.is_subtotal) && (
                   <tfoot>
                     <tr className="qt-subtotal-row">
+                      {/* 核价 BOM 递归展开：与 3 系统固定列对齐的占位单元格（仅"勾选递归"组件） */}
+                      {activeComponentBomTree && (<><td /><td /><td /></>)}
                       {activeComponent.fields.map((field, fi) => {
                         if (field.is_subtotal) {
                           const tabSubtotal = allComponentSubtotals[activeComponent.componentCode]
@@ -2006,6 +2242,26 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
     });
   }, [lineItems, costingTemplateSnapshot, costingTemplateProductAttrs]);
 
+  // 核价 BOM 递归展开（P1）：扫描核价快照根节点 cyclePartNos，成环 → 告警一次（避免重复弹窗）。
+  const warnedCyclesRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const allCycles = new Set<string>();
+    for (const li of costingLineItems) {
+      const json = (li as any).costingCardValues;
+      if (!json) continue;
+      try {
+        const parsed = JSON.parse(json);
+        const cyc = parsed?.cyclePartNos;
+        if (Array.isArray(cyc)) cyc.forEach((p: any) => { if (p) allCycles.add(String(p)); });
+      } catch { /* ignore */ }
+    }
+    const fresh = [...allCycles].filter(p => !warnedCyclesRef.current.has(p));
+    if (fresh.length > 0) {
+      fresh.forEach(p => warnedCyclesRef.current.add(p));
+      message.warning(`料号 ${fresh.join('、')} 存在 BOM 环，已截断展开`);
+    }
+  }, [costingLineItems]);
+
   // 核价单视图的产品卡片编辑回写：
   // 1. 收到的 update 是基于 costingLineItems[index] 的 partial（来自 ProductCard onUpdate）
   // 2. 如果改的是 componentData：把 costing 视图下的 componentData 按 componentId 合并回底层 lineItems[index].componentData（命中替换 / 缺失追加），未命中的 quote 视图组件保持不动 → 双视图共享同一份持久化数据
@@ -2088,6 +2344,16 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   // 否则回退实时 batch-expand(旧链路, 兼容尚未生成快照的存量报价单)。报价/核价两侧独立判定。
   const useSnapQuote = lineItems.length > 0 && lineItems.every(li => !!li.quoteCardValues);
   const useSnapCosting = costingLineItems.length > 0 && costingLineItems.every(li => !!li.costingCardValues);
+  // 核价 BOM 递归展开（P1）：实时兜底路径未走闭包展开（仅快照路径展开整棵树）。
+  // 快照对核价模板恒生成（CardSnapshotService.buildCostingCardValues），故兜底极少触发；
+  // 一旦触发（某核价行缺 costingCardValues）显式告警，不静默 —— BOM 树仅在快照重算后出现。
+  // TODO(P1.1)：如需兜底也出树，在 ComponentDriverService.batchExpand 注入闭包 partSet + 旁路合桶（AP-37）。
+  useEffect(() => {
+    if (costingLineItems.length > 0 && !useSnapCosting) {
+      // eslint-disable-next-line no-console
+      console.warn('[bom-closure] 核价走实时兜底（缺快照）→ BOM 闭包未展开，仅显示根料号层；保存/重算快照后将出整棵树');
+    }
+  }, [useSnapCosting, costingLineItems.length]);
   // 2026-05-19 修: useDriverExpansions 返 {cache, invalidate} 而非纯 Map; 必须解构 .cache
   const { cache: driverExpansionsQuote } = useDriverExpansions(useSnapQuote ? EMPTY_LINEITEMS : lineItems, customerId, quotationId);
   // 核价单卡片所需的展开（按 costingTemplate 视图下的 componentData 收集）

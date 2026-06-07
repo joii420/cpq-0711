@@ -571,6 +571,48 @@ public class ComponentDriverService {
         }
     }
 
+    /**
+     * 核价 BOM 递归展开（P1）专用：一次展开<b>单个组件</b>对整个料号闭包 partSet 的全部行，
+     * 返回 {@code Map<partNo, ExpandDriverResponse>}（按料号分组，供调用方按 spine 节点 hf_part_no 左关联）。
+     *
+     * <p>与 {@link #expandMulti}（批量合桶、跨卡片）区别：本入口是<b>单组件单卡</b>调用，<b>不进合桶</b>，
+     * 故不会因多卡共享子料号而按 {@code hf_part_no} 拆错（防 AP-37 串卡）。
+     *
+     * <p>普通 {@code $view}（已确认核价 5 视图均带 {@code hf_part_no} 且<b>无</b> {@code quotation_line_item_id}
+     * 维度，V6 customer×material 共享，AP-53）→ 走一次多值 {@code loadByPath}，
+     * {@code WHERE hf_part_no = ANY(:hfPartNos)} 外包过滤整棵树。
+     * 仅当 path 是 composite 聚合视图（{@code v_composite_child_*}）时回退逐料号单值 {@link #expand}，
+     * 保留聚合/IN 谓词语义。
+     *
+     * @param partSet 闭包料号集合（根 + 全部子孙，去环）
+     * @param lineItemId  报价行 id（仅 composite 回退路径透传；普通 V6 视图无此维度，多值入口忽略）
+     * @param compositeType 组合类型（仅 composite 回退路径透传）
+     */
+    public Map<String, ExpandDriverResponse> expandForPartSet(
+            UUID componentId, UUID customerId, List<String> partSet,
+            UUID lineItemId, String compositeType) {
+        Map<String, ExpandDriverResponse> byPart = new LinkedHashMap<>();
+        if (partSet == null || partSet.isEmpty()) return byPart;
+
+        Component component = Component.findById(componentId);
+        String path = component == null ? null : component.dataDriverPath;
+        boolean compositeAgg = path != null
+                && (path.contains("v_composite_child_") || path.contains("composite_child_"));
+
+        if (compositeAgg) {
+            // composite 聚合视图：逐料号单值 expand，保留 lineItemId / 聚合语义（不合并多值）。
+            for (String pn : partSet) {
+                byPart.put(pn, expand(componentId, customerId, pn, null, null, null, lineItemId, compositeType));
+            }
+            LOG.infof("[bom-closure expand] composite-agg per-part fallback comp=%s parts=%d", componentId, partSet.size());
+            return byPart;
+        }
+        // 普通 $view：一次多值 loadByPath，:hfPartNos = ANY(partSet) 外包过滤整棵树。
+        Map<String, ExpandDriverResponse> multi = expandMulti(componentId, customerId, partSet, null, null, null);
+        LOG.infof("[bom-closure expand] multi-value comp=%s parts=%d rowsBuckets=%d", componentId, partSet.size(), multi.size());
+        return multi;
+    }
+
     /** Bucket-merge 用:按 (componentId, driverPath) 缓存视图是否含 :lineItemId 占位符。 */
     private final Map<String, Boolean> viewUsesLineItemIdCache = new java.util.concurrent.ConcurrentHashMap<>();
 

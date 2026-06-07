@@ -5,6 +5,8 @@ import com.cpq.common.exception.BusinessException;
 import com.cpq.component.entity.Component;
 import com.cpq.component.service.ComponentSqlViewService;
 import com.cpq.quotation.entity.Quotation;
+import com.cpq.quotation.service.CrossTabComponentOrder;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.cpq.template.dto.CreateTemplateRequest;
 import com.cpq.template.dto.PublishRequest;
 import com.cpq.template.dto.QuoteImportAutoDefaults;
@@ -252,6 +254,22 @@ public class TemplateService {
             }
         }
         template.componentsSnapshot = toJson(snapshot);
+
+        // Task 2.2: 模板级 cross_tab_ref 校验 — 每个组件公式里的 cross_tab_ref.source 必须指向
+        // 本卡片内存在的组件(componentId), 且组件间 cross_tab_ref 依赖不得成环。
+        // 组件级 (Task 2.1) 只能校验 token 结构, 跨组件存在性 / 环检测必须在模板层做。
+        {
+            List<String> compIds = new ArrayList<>();
+            Map<String, JsonNode> formulasByCompId = new LinkedHashMap<>();
+            for (TemplateComponent tc : tcs) {
+                Component comp = Component.findById(tc.componentId);
+                if (comp == null) continue;
+                String cid = comp.id.toString();
+                compIds.add(cid);
+                formulasByCompId.put(cid, parseJsonNode(comp.formulas));
+            }
+            validateCrossTabRefs(compIds, formulasByCompId);
+        }
 
         // 阶段 2: 冻结 component_sql_view 闭包到 template.sql_views_snapshot
         //   - 扫该模板挂载的所有组件 → 序列化其 SQL 视图（含 GLOBAL scope 闭包）
@@ -993,6 +1011,44 @@ public class TemplateService {
     }
 
     // ---- Private helpers ----
+
+    /**
+     * Task 2.2: 模板级 cross_tab_ref 校验（package-private, 供单元测试直接驱动, 同时被 publish() 调用）。
+     *
+     * <p>规则:
+     * <ol>
+     *   <li>每个组件 formulas 中 cross_tab_ref 的 source 必须是本卡片内的某个组件标识(componentId)。
+     *       不在卡片内 → BusinessException(400, "...源组件不在本卡片: <id>")。</li>
+     *   <li>组件间 cross_tab_ref 依赖图不得成环（topoOrder 抛 BusinessException）。</li>
+     * </ol>
+     * 仅计入卡片内的依赖边（卡片外的 source 已先被规则 1 拦截）。
+     *
+     * @param compIds          本卡片所有成员组件标识（componentId 字符串, 按出现顺序）
+     * @param formulasByCompId componentId → 该组件 formulas JsonNode([{expression:[token...]}])
+     */
+    void validateCrossTabRefs(List<String> compIds, Map<String, JsonNode> formulasByCompId) {
+        Map<String, Set<String>> deps = new LinkedHashMap<>();
+        for (String cid : compIds) {
+            JsonNode formulas = formulasByCompId.get(cid);
+            Set<String> refs = CrossTabComponentOrder.extractSourceRefs(formulas);
+            for (String src : refs) {
+                if (!compIds.contains(src)) {
+                    throw new BusinessException(400, "跨页签引用的源组件不在本卡片: " + src);
+                }
+            }
+            deps.put(cid, refs);
+        }
+        CrossTabComponentOrder.topoOrder(compIds, deps); // 成环抛 BusinessException
+    }
+
+    private JsonNode parseJsonNode(String json) {
+        if (json == null || json.isBlank()) return MAPPER.createArrayNode();
+        try {
+            return MAPPER.readTree(json);
+        } catch (Exception e) {
+            return MAPPER.createArrayNode();
+        }
+    }
 
     /**
      * V250: 校验 excel_view_config 中的 variable_path 不含 $$ 跨组件引用（模板隔离规则）。

@@ -93,6 +93,12 @@ public class ConfigureProductResource {
     @Path("/quotations/{quotationId}/refresh-snapshot")
     public ConfigureProductResponse refreshSnapshot(@PathParam("quotationId") UUID quotationId) {
         snapshotService.snapshotQuotation(quotationId);
+        // 核价 BOM 递归展开（P1）：刷新时一并重算核价卡片 → 存量核价单刷出整棵 BOM 树（仅 COSTING，不碰报价侧）
+        try {
+            cardSnapshotService.refreshCostingCardValues(quotationId);
+        } catch (Exception ignore) {
+            // 尽力而为，不影响刷新主流程
+        }
         ConfigureProductResponse resp = new ConfigureProductResponse();
         resp.lineItems = java.util.List.of();
         resp.reusedHfPartNos = java.util.List.of();

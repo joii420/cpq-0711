@@ -45,6 +45,8 @@ export interface ComponentItem {
    * 树表配置(可选)。非空 → 渲染时按邻接表(idField/parentField)重排成树。纯展示,不改 rowData/rowCount/行序。
    */
   treeConfig?: TreeConfig;
+  /** 核价 BOM 递归展开开关(默认 true,仅核价侧生效;与 treeConfig 正交) */
+  bomRecursiveExpand?: boolean;
 }
 
 export interface FieldItem {
@@ -122,6 +124,7 @@ export interface FormulaItem {
 export interface FormulaToken {
   type:
     | 'field'
+    | 'b_field'           // 本组件 (B) 字段引用 — 用于 cross_tab_ref targetExpr 内
     | 'operator'
     | 'bracket_open'
     | 'bracket_close'
@@ -131,7 +134,8 @@ export interface FormulaToken {
     | 'number'
     | 'path'              // V5 BNF 物理表路径,直接引用基础数据(mat_part / mat_bom / mat_fee 等)
     | 'global_variable'   // V104 全局变量(元素核价/材料核价/汇率) — 编译期转 BNF path
-    | 'datasource_field'; // K1 引用同行 DATA_SOURCE 字段解析结果, token.name = 字段名
+    | 'datasource_field'  // K1 引用同行 DATA_SOURCE 字段解析结果, token.name = 字段名
+    | 'cross_tab_ref';    // 跨页签引用(聚合/条件匹配另一页签字段)
   value?: string;
   label?: string;
   component_code?: string;
@@ -147,6 +151,22 @@ export interface FormulaToken {
   key_field_refs?: Record<string, string>;
   /** datasource_field 专用 (K1): 引用的 DATA_SOURCE 字段名 */
   name?: string;
+  // ---- cross_tab_ref 专用字段 ----
+  /** 源组件 componentId (UUID, AP-37 稳定 ID) */
+  source?: string;
+  /** 源组件显示名（用于 chip 显示） */
+  sourceLabel?: string;
+  /** 源组件目标字段名；COUNT 聚合时为空字符串 */
+  target?: string;
+  /** 行匹配条件：a = 源 (A) 字段名，b = 本组件 (B) 字段名 */
+  match?: Array<{ a: string; b: string }>;
+  /** 聚合方式：NONE / SUM / AVG / COUNT / MAX / MIN */
+  agg?: string;
+  /**
+   * 目标公式（可选）：非空时优先于 target 单列，用于计算派生指标。
+   * 支持 field(A列) / b_field(B本组件列) / operator / bracket / number / global_variable tokens。
+   */
+  targetExpr?: FormulaToken[];
 }
 
 export const FIELD_TYPE_OPTIONS = [

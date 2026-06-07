@@ -125,11 +125,26 @@ public class SqlViewValidator {
             );
         }
 
+        // 3.5 保留 __sk* 前缀（spineKeys 宏内部占位符，禁止作者自定义）
+        if (Pattern.compile("(?<!:):__sk", Pattern.CASE_INSENSITIVE).matcher(sqlTemplate).find()) {
+            return DryRunSqlViewResponse.fail(
+                    "占位符前缀 :__sk 为 spineKeys 宏保留，请勿在 SQL 模板中自定义");
+        }
+
+        // 3.6 展开 :spineKeys(...) 宏为校验形（ARRAY[]::text[] 字面量，无命名占位符），
+        //     供后续占位符提取 + EXPLAIN dry-run；存储仍保留原始含宏 sql_template。
+        String forValidation;
+        try {
+            forValidation = com.cpq.datasource.sqlview.SpineKeysMacro.expandForValidation(sqlTemplate);
+        } catch (IllegalArgumentException e) {
+            return DryRunSqlViewResponse.fail("spineKeys 宏语法错误：" + e.getMessage());
+        }
+
         // 4. 提取占位符清单
-        List<String> requiredVariables = extractNamedParams(sqlTemplate);
+        List<String> requiredVariables = extractNamedParams(forValidation);
 
         // 5. EXPLAIN dry-run 拿列签名
-        String bound = bindWithNullPlaceholders(sqlTemplate, requiredVariables);
+        String bound = bindWithNullPlaceholders(forValidation, requiredVariables);
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(bound)) {
 

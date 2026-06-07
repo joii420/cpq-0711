@@ -20,9 +20,22 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { batchExpandDriver } from '../../services/componentService';
 import type { LineItem } from './QuotationStep2';
 
+/** 核价 BOM 递归展开（P1）spine 系统列；仅 COSTING 快照行携带，报价侧 undefined。 */
+export interface BomSysCols {
+  nodeId?: string;
+  parentId?: string | null;
+  lvl?: number;
+  hfPartNo?: string | null;
+  parentNo?: string | null;
+  bomVersion?: string | null;
+  isCycle?: boolean;
+}
+
 export interface DriverRow {
   driverRow: Record<string, any>;
   basicDataValues: Record<string, any>;
+  /** 核价 BOM spine 系统列（P1）；仅核价侧快照行有值。 */
+  __sys?: BomSysCols;
 }
 
 export interface DriverExpansion {

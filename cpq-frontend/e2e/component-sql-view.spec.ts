@@ -136,7 +136,7 @@ test('SQL 视图: dry-run 拒绝 :hfPartNo 标量占位符', async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
       body: JSON.stringify({
-        sqlTemplate: "SELECT * FROM mat_part WHERE hf_part_no = :hfPartNo",
+        sqlTemplate: "SELECT * FROM material_master WHERE hf_part_no = :hfPartNo",
       }),
     }
   );

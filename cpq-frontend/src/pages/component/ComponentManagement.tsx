@@ -29,6 +29,7 @@ import FieldPanel from './FieldPanel';
 import ConfigGuideDrawer from './ConfigGuideDrawer';
 import PathPickerDrawer from './PathPickerDrawer';
 import SqlViewListPanel from './SqlViewListPanel';
+import CrossTabRefDrawer from './CrossTabRefDrawer';
 import './styles.css';
 
 // ---- DataSource binding modal (two-step) ----
@@ -325,6 +326,7 @@ const ComponentManagement: React.FC = () => {
   const [dataDriverPath, setDataDriverPath] = useState<string>('');
   const [rowKeyFields, setRowKeyFields] = useState<string[]>([]);
   const [treeConfig, setTreeConfig] = useState<import('./types').TreeConfig | null>(null);
+  const [bomRecursiveExpand, setBomRecursiveExpand] = useState<boolean>(false);
   const [rowKeyCandidates, setRowKeyCandidates] = useState<
     Record<string, import('./types').RowKeyCandidate>
   >({});
@@ -332,6 +334,7 @@ const ComponentManagement: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [loadingTree, setLoadingTree] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [crossTabDrawerOpen, setCrossTabDrawerOpen] = useState(false);
 
   // Active formula key (shared with FormulaBuilder)
   const [activeFormulaKey, setActiveFormulaKey] = useState<string | null>(null);
@@ -435,6 +438,7 @@ const ComponentManagement: React.FC = () => {
             defaultExpanded: (loaded as any).treeConfig.defaultExpanded ?? true,
           }
         : null);
+      setBomRecursiveExpand((loaded as any).bomRecursiveExpand === true); // 默认关:仅显式 true 才勾
       void refreshRowKeyCandidates(
         loaded.id,
         loaded.dataDriverPath ?? '',
@@ -483,6 +487,8 @@ const ComponentManagement: React.FC = () => {
         treeConfig: treeConfig
           ? { idField: treeConfig.idField, parentField: treeConfig.parentField, defaultExpanded: treeConfig.defaultExpanded ?? true }
           : {},
+        // 核价 BOM 递归展开开关(默认开)
+        bomRecursiveExpand,
       });
       message.success('保存成功');
       loadTree();
@@ -605,7 +611,19 @@ const ComponentManagement: React.FC = () => {
         )
     : [];
 
-  const availableFields = fields.map((f) => ({ name: f.name, type: f.field_type }));
+  // Cross-tab sources: same-directory sibling components WITH their fields (AP-37: use stable componentId)
+  const crossTabSources = currentDirId
+    ? allComponents
+        .filter((c) => c.directoryId === currentDirId && c.id !== selectedComponent?.id)
+        .map((c) => ({
+          id: c.id,
+          code: c.code,
+          name: c.name,
+          fields: (c.fields || []).map((f: FieldItem) => ({ name: f.name, label: f.label })).filter((f) => f.name),
+        }))
+    : [];
+
+  const availableFields = fields.map((f) => ({ name: f.name, type: f.field_type, label: f.label }));
 
   // Consume pending token into the active formula
   useEffect(() => {
@@ -774,6 +792,26 @@ const ComponentManagement: React.FC = () => {
                       </>
                     )}
                   </div>
+                  {/* 核价 BOM 递归展开开关：与上方"树表(数据自带父子)"是不同概念——此项按 material_bom_item 跨料号闭包递归 */}
+                  <div
+                    style={{
+                      background: '#e6f4ff', border: '1px solid #91caff', borderRadius: 6,
+                      padding: '10px 12px', marginBottom: 12, display: 'flex',
+                      alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                    }}
+                  >
+                    <span style={{ fontSize: 13, color: '#0958d9', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      核价 BOM 递归展开:
+                    </span>
+                    <Switch
+                      size="small"
+                      checked={bomRecursiveExpand}
+                      onChange={setBomRecursiveExpand}
+                    />
+                    <span style={{ fontSize: 12, color: '#888' }}>
+                      勾选=核价时按 material_bom_item 闭包递归展开子料号(树+料号列)；不勾=按根料号普通取数。仅核价侧生效。
+                    </span>
+                  </div>
                   <HeaderPreview fields={fields} />
                   <Tabs
                     size="small"
@@ -902,12 +940,28 @@ const ComponentManagement: React.FC = () => {
         </div>
       </div>
 
+      {/* Cross-tab reference drawer */}
+      <CrossTabRefDrawer
+        open={crossTabDrawerOpen}
+        onClose={() => setCrossTabDrawerOpen(false)}
+        siblingComponents={crossTabSources}
+        currentFields={availableFields}
+        onConfirm={(token) => setPendingToken(token as any)}
+      />
+
       {/* Right panel: Field/Reference panel */}
       <FieldPanel
         fields={fields}
         otherComponentSubtotals={otherCompSubtotals}
         onFieldClick={handleFieldClick}
         onSubtotalClick={handleSubtotalClick}
+        onCrossTabRefClick={() => {
+          if (formulas.length === 0) {
+            message.info('请先添加一个公式，再配置跨页签引用');
+            return;
+          }
+          setCrossTabDrawerOpen(true);
+        }}
         onQuotationFieldClick={(qf) => {
           if (formulas.length === 0) {
             message.info('请先添加一个公式，再点击字段');
