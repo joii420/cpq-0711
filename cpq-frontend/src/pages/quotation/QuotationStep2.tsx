@@ -765,6 +765,7 @@ function fillFixedDefaults(
   fields: ComponentField[],
   raw: Record<string, any>,
 ): Record<string, any> {
+  if (raw && raw._origin === 'manual') return raw; // 手动行:FIXED_VALUE 不自动填,留空给用户手填
   let cloned: Record<string, any> | null = null;
   for (const f of fields) {
     if (f.field_type !== 'FIXED_VALUE') continue;
