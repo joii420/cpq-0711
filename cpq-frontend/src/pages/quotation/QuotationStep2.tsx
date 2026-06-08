@@ -1728,8 +1728,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     // 独立模式仅在无 driver 时启用
                     const useListFormula = !useDriver && !!listFormulaField && lfItems.length > 0;
                     const lfRowCount = useListFormula ? lfItems.length : 0;
+                    // splitRows: driver-bound 模式下拼接手动行(尾部 _origin==='manual')
+                    const renderSplit = splitRows(activeComponent, activeDriverExpansion as any);
                     const effectiveCount = useDriver
-                      ? driverCount
+                      ? renderSplit.totalRows        // driverCount + manualRows.length
                       : useListFormula
                       ? lfRowCount
                       : activeComponent.rows.length;
@@ -1739,13 +1741,15 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     // FIXED_VALUE 默认值回填：driver 展开行 / 旧报价单回读的行都有可能没经过 handleAddRow，
                     // 导致 row[key] === undefined。回填后单元格 / 公式 / 列小计 / 产品小计 共享同一份数据视图。
                     const effectiveRows = Array.from({ length: effectiveCount }, (_, i) => {
-                      const isDriverBound = useDriver && i < driverCount;
+                      // AP-54 + Phase1 手动行: 用 rowAt 取正确行对象及 expIndex
+                      const ra = rowAt(i, activeComponent, renderSplit);
+                      const isDriverBound = !ra.isManual && ra.expIndex >= 0;
                       const isListFormulaBound = !useDriver && useListFormula && i < lfRowCount;
                       // LIST_FORMULA 字段在两种模式下都需要"本行对应的 config_item":
                       //   - 独立模式: 直接 lfItems[i]
                       //   - 共存模式 (driver 驱动): 按本行 basicDataValues / row 任意值与 item.code 字符串匹配
-                      const rowBdv = isDriverBound ? activeDriverExpansion!.rows[i]?.basicDataValues : undefined;
-                      const rawRow = activeComponent.rows[i] ?? {};
+                      const rowBdv = ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
+                      const rawRow = ra.row;
                       let lfItem: typeof lfItems[number] | undefined;
                       if (isListFormulaBound) {
                         lfItem = lfItems[i];
@@ -1798,17 +1802,23 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         ...rawRowNonEmpty,         // 用户真实输入覆盖, null/undefined/'' 不动
                       } : rawRow;
                       // Phase4 Task3: rowKey 对齐后端(FormulaCalculator.computeRowKey) — 用于 formulaResults 查表 + 编辑回写。
-                      const driverRowForKey = (isDriverBound ? activeDriverExpansion!.rows[i]?.driverRow : undefined) ?? activeSnap?.driverRows[i] ?? rawRow;
+                      const driverRowForKey = (ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined) ?? activeSnap?.driverRows[i] ?? rawRow;
                       const rowKey = useSnapEdit ? computeRowKey(activeRowKeyFields, driverRowForKey, i) : String(i);
+                      // AP-54: realRowIndex = 对象引用映射回 comp.rows 真实下标，用于写路径(handleRowChange/handleDeleteRow 等)
+                      const realRowIndex = ra.isManual
+                        ? activeComponent.rows.indexOf(ra.row)
+                        : i; // driver 行: splitRows 下 driverEditRows[i] = rows.filter(!manual)[i] ≈ comp.rows[i](非手动行顺序一致)
                       return {
                         row: fillFixedDefaults(activeComponent.fields, baseRow),
                         rowIndex: i,
+                        realRowIndex,
                         rowKey,
-                        basicDataValues: isDriverBound ? activeDriverExpansion!.rows[i]?.basicDataValues : undefined,
-                        driverRow: isDriverBound ? activeDriverExpansion!.rows[i]?.driverRow : undefined,
+                        basicDataValues: ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined,
+                        driverRow: ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined,
                         // 核价 BOM 递归展开（P1）：spine 系统列（仅 COSTING 行有值）
-                        __sys: isDriverBound ? (activeDriverExpansion!.rows[i] as any)?.__sys : undefined,
+                        __sys: ra.expIndex >= 0 ? (activeDriverExpansion!.rows[ra.expIndex] as any)?.__sys : undefined,
                         isDriverBound,
+                        isManualRow: ra.isManual,
                         isListFormulaBound,
                         // LIST_FORMULA 上下文
                         listFormulaItem: lfItem,
@@ -1876,7 +1886,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     return laid.rows
                       .filter(r => !isTreeRowHidden(r.originalIndex, laid.parentIndexByIndex, laid.nodeKeyByIndex, collapsed))
                       .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
-                  })().map(({ row, rowIndex, rowKey, basicDataValues, isDriverBound, isListFormulaBound, formulaCache, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey }) => {
+                  })().map(({ row, rowIndex, realRowIndex, rowKey, basicDataValues, isDriverBound, isManualRow: isManualRowFlag, isListFormulaBound, formulaCache, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey }) => {
                     const bomSys = activeComponentBomTree ? (__sys as import('./useDriverExpansions').BomSysCols | undefined) : undefined;
                     return (
                     <tr key={rowIndex} style={(row._preset || isDriverBound) ? { background: '#fafafa' } : undefined}>
@@ -1940,10 +1950,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           globalVariableDefs,
                           dsLoading,
                           dsErrors,
-                          dsStateKey: `${activeComponentDataIndex}-${rowIndex}`,
-                          onCellChange: (ri, k, val) => handleRowChange(activeComponentDataIndex, ri, k, val),
+                          // AP-54: dsStateKey 用 realRowIndex 避免手动行偏移
+                          dsStateKey: `${activeComponentDataIndex}-${realRowIndex}`,
+                          // AP-54: 写路径用 realRowIndex(对象引用映射回 comp.rows 真实下标)
+                          onCellChange: (ri, k, val) => handleRowChange(activeComponentDataIndex, realRowIndex, k, val),
                           onCellBlur: (ri, k) => {
-                            handleInputBlur(activeComponentDataIndex, ri, k);
+                            handleInputBlur(activeComponentDataIndex, realRowIndex, k);
                             // Phase4 Task3: 报价侧用户输入字段 onBlur → 写快照 editRows(替代仅靠 autosave 写 row_data)。
                             // 仅 INPUT* 类型(FORMULA/BASIC_DATA/DATA_SOURCE/FIXED 不在此触发); row[k] 为最新受控值。
                             const ft = field.field_type;
@@ -1952,13 +1964,15 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                               handleSnapshotCellEdit(activeComponent.componentId, rowKey, k, row[k]);
                             }
                           },
+                          // Phase 1 手动行标记(供后续 Task 7 ComponentCell 消费)
+                          isManualRow: isManualRowFlag,
                         };
                         const cellInner = showElementHint ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'nowrap' }}>
                             <ComponentCell
                               field={field}
                               row={row}
-                              rowIndex={rowIndex}
+                              rowIndex={realRowIndex}
                               fieldKey={key}
                               readonly={false}
                               context={cellCtx}
@@ -1969,7 +1983,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           <ComponentCell
                             field={field}
                             row={row}
-                            rowIndex={rowIndex}
+                            rowIndex={realRowIndex}
                             fieldKey={key}
                             readonly={false}
                             context={cellCtx}
@@ -2009,7 +2023,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         ) : (
                           <button
                             type="button"
-                            onClick={() => handleDeleteRow(activeComponentDataIndex, rowIndex)}
+                            onClick={() => handleDeleteRow(activeComponentDataIndex, realRowIndex)}
                             style={{
                               background: 'none',
                               border: 'none',
