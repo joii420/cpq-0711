@@ -27,6 +27,7 @@ import PartVersionDrawer from '../../components/PartVersionDrawer';
 import { templateService } from '../../services/templateService';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { useTreeCollapse } from './useTreeCollapse';
+import { splitRows, rowAt } from './manualRows';
 import './quotation.css';
 
 // 与 QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard 中的同名函数保持完全对齐。
@@ -720,14 +721,13 @@ export function buildCrossTabRows(
     const comp = normals[ids.indexOf(cid)];
     if (!comp) continue;
     const exp = lookupExpansion(comp);
-    const useDriver = exp && exp.rowCount > 0;
-    const rowCount = useDriver ? exp!.rowCount : (comp.rows?.length ?? 0);
+    const s = splitRows(comp, exp);
     const rows: Array<Record<string, any>> = [];
-    for (let i = 0; i < rowCount; i++) {
-      const baseRow = comp.rows?.[i] ?? {};
-      const row = fillFixedDefaults(comp.fields!, baseRow);
-      const basicDataValues = (useDriver && i < exp!.rowCount) ? exp!.rows[i]?.basicDataValues : undefined;
-      const driverRow = (useDriver && i < exp!.rowCount) ? exp!.rows[i]?.driverRow : undefined;
+    for (let i = 0; i < s.totalRows; i++) {
+      const ra = rowAt(i, comp, s);
+      const row = fillFixedDefaults(comp.fields!, ra.row); // 手动行 fillFixedDefaults 已短路
+      const basicDataValues = ra.expIndex >= 0 ? exp!.rows[ra.expIndex]?.basicDataValues : undefined;
+      const driverRow = ra.expIndex >= 0 ? exp!.rows[ra.expIndex]?.driverRow : undefined;
       const formulaCache = computeAllFormulas(
         comp, row, allComponentSubtotals, undefined, undefined, partNo, basicDataValues,
         undefined, globalVariableDefs, store,   // crossTabRows-so-far (topo order → A ready before B)
