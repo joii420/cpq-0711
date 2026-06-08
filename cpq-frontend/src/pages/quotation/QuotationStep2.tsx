@@ -1136,6 +1136,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
 
   // ── 快照回填:default_source.type=BASIC_DATA 的空 INPUT 单元格,首次拿到 expansion 时
   //    把解析值写进 editRows(快照语义);写一次即非空 → 不再触发。bakedRef 防"清空后又回填"。
+  //    注:bakedRef 随 ProductCard 实例存活、不随 item 切换重置 —— 依赖父列表按 item.id/tempId 稳定 key
+  //    渲染(item 变 = 新实例 = 新 bakedRef)。若某调用点未用稳定 key 复用同卡片,同 index 单元格回填会被误抑制。
   const bakedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!customerId || !item.productPartNo || !item.componentData) return;
@@ -1170,7 +1172,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           const v = Object.prototype.hasOwnProperty.call(bdv, lk) ? bdv[lk] : undefined;
           if (v == null || (Array.isArray(v) && v.length === 0)) continue;
           bakedRef.current.add(guard);
-          patchRowField(ci, ri, key, typeof v === 'object' ? String(v) : v);
+          patchRowField(ci, ri, key, typeof v === 'object' ? (formatPathValue(v) ?? String(v)) : v);
         }
       }
     });
