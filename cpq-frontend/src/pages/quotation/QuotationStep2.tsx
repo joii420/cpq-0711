@@ -798,15 +798,13 @@ function computeTabSubtotal(
   // 早期 V126.1 取 max 让"用户追加行"也参与列小计, 但 V160/V161 之前 driver 因视图缺
   // part_version 列返多版本叠加, autoSave 会把过量行回写 quotation_line_component_data;
   // 修复后 driver 正确返 N 行 → max(N, M>N)=M → 多 M-N 行成"鬼魂"行 (BASIC_DATA 永远加载中).
-  // 用 driverCount 为准: driver-bound 模式下 comp.rows 多出的尾巴视为陈旧持久化, 不参与小计.
-  const useDriver = driverExpansion && driverExpansion.rowCount > 0;
-  const driverCount = useDriver ? driverExpansion!.rowCount : 0;
-  const rowCount = useDriver ? driverCount : comp.rows.length;
+  // 用 splitRows 为准: driver-bound 模式下手动行尾巴 (manualRows) 参与小计, 非手动陈旧行不参与.
+  const s = splitRows(comp, driverExpansion as any);
   let sum = 0;
-  for (let i = 0; i < rowCount; i++) {
-    const baseRow = comp.rows[i] ?? {};
-    const row = fillFixedDefaults(comp.fields, baseRow);
-    const basicDataValues = (useDriver && i < driverCount) ? driverExpansion!.rows[i]?.basicDataValues : undefined;
+  for (let i = 0; i < s.totalRows; i++) {
+    const ra = rowAt(i, comp, s);
+    const row = fillFixedDefaults(comp.fields, ra.row);
+    const basicDataValues = ra.expIndex >= 0 ? driverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
     const cache = computeAllFormulas(
       comp, row, allComponentSubtotals, quotationFields, pathCache, partNo, basicDataValues,
       undefined, globalVariableDefs,
