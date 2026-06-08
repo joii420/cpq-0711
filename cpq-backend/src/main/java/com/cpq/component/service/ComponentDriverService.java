@@ -309,9 +309,14 @@ public class ComponentDriverService {
                     List<Map<String, Object>> vrows = dataLoader.loadByPath(viewBase, null, partNo, customerId).get();
                     if (vrows != null && !vrows.isEmpty() && vrows.get(0) != null) {
                         for (Map.Entry<String, Object> e : vrows.get(0).entrySet()) {
+                            // putIfAbsent: 不覆盖已注入的 hf_part_no/part_no/customer_id; 多视图同名列时先列出的视图先赢(实际极少冲突)。
                             virtualRow.putIfAbsent(e.getKey(), e.getValue());
                         }
                     }
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    LOG.warnf("[default-source BASIC_DATA] merge view row interrupted base=%s partNo=%s: %s",
+                            viewBase, partNo, ex.getMessage());
                 } catch (Exception ex) {
                     LOG.warnf("[default-source BASIC_DATA] merge view row failed base=%s partNo=%s: %s",
                             viewBase, partNo, ex.getMessage());
