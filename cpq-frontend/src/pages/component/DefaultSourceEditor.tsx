@@ -194,7 +194,7 @@ const DefaultSourceEditor: React.FC<Props> = ({ open, value, fieldName, onClose,
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <Button danger onClick={clear} disabled={!value}>清除默认值</Button>
           <Space>
-            <Button icon={<ExperimentOutlined />} onClick={testResolve} loading={testing}>
+            <Button icon={<ExperimentOutlined />} onClick={testResolve} loading={testing} disabled={type === 'BASIC_DATA'}>
               测试解析
             </Button>
             <Button onClick={onClose}>取消</Button>
@@ -212,7 +212,7 @@ const DefaultSourceEditor: React.FC<Props> = ({ open, value, fieldName, onClose,
       />
 
       <Form.Item label="数据来源类型" style={{ marginBottom: 16 }}>
-        <Radio.Group value={type} onChange={(e) => setType(e.target.value)}>
+        <Radio.Group value={type} onChange={(e) => { setType(e.target.value); setBnfPath(''); }}>
           {availableTypes.map((t) => (
             <Radio key={t} value={t}>{RESOLVER_TYPE_LABEL[t] || t}</Radio>
           ))}
@@ -311,21 +311,23 @@ const DefaultSourceEditor: React.FC<Props> = ({ open, value, fieldName, onClose,
         </Form.Item>
       )}
 
-      {/* J3: 测试解析区 — driverRow 由用户手填, 不持久化 */}
-      <Form.Item
-        label={<Space><span>测试 driverRow (JSON)</span><Tag color="blue">仅本次测试用</Tag></Space>}
-        style={{ marginTop: 16, marginBottom: 8 }}
-        extra='点底部「测试解析」按钮验证当前配置. 例: {"process_code":"Z350"}'
-      >
-        <Input.TextArea
-          rows={2}
-          value={testDriverRowJson}
-          onChange={(e) => setTestDriverRowJson(e.target.value)}
-          placeholder='{"process_code":"Z350"}'
-          style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: 12 }}
-        />
-      </Form.Item>
-      {testResult !== undefined && (
+      {/* J3: 测试解析区 — driverRow 由用户手填, 不持久化; BASIC_DATA 在报价单展开时解析, 此处不支持测试 */}
+      {type !== 'BASIC_DATA' && (
+        <Form.Item
+          label={<Space><span>测试 driverRow (JSON)</span><Tag color="blue">仅本次测试用</Tag></Space>}
+          style={{ marginTop: 16, marginBottom: 8 }}
+          extra='点底部「测试解析」按钮验证当前配置. 例: {"process_code":"Z350"}'
+        >
+          <Input.TextArea
+            rows={2}
+            value={testDriverRowJson}
+            onChange={(e) => setTestDriverRowJson(e.target.value)}
+            placeholder='{"process_code":"Z350"}'
+            style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: 12 }}
+          />
+        </Form.Item>
+      )}
+      {type !== 'BASIC_DATA' && testResult !== undefined && (
         <Alert
           type="success"
           showIcon
@@ -334,7 +336,7 @@ const DefaultSourceEditor: React.FC<Props> = ({ open, value, fieldName, onClose,
           description={<code>{testResult}</code>}
         />
       )}
-      {testError !== undefined && (
+      {type !== 'BASIC_DATA' && testError !== undefined && (
         <Alert
           type="error"
           showIcon
