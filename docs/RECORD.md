@@ -3262,4 +3262,8 @@ E2E:
 
 ---
 
+### [2026-06-08] 默认值来源(driver 组件)- 回填写回被覆盖修复 + 严格冻结与 DRAFT 实时刷新的设计冲突结论 | QuotationStep2.tsx(快照回填 effect 改批量 onUpdate) | **场景**:产品/来料/元素组件配 `data_driver_path=$view` + 字段 INPUT_*+`default_source.BASIC_DATA`,期望 driver 展开多行并把视图值带出可编辑。**Bug1(已修)**:QT-1599 driver 展开 6 行但单元格全空。三段式调试证 Task7 回填 effect 正确触发/读值/调用,但 `handleUpdateQuoteLineItem` 每次更新**整段替换 comp.rows**,而原实现逐字段发 42 次同步 `patchRowField`,每次都从同一份 stale 闭包(`quoteLineItems[index]` rows 空)取基→互相覆盖只剩碎片。**修法**:收集本轮全部回填→**一次性 `onUpdate` 按 componentId 整段重建 rows**。E2E 实测 QT-1599 来料 42 格非空 37(原 0);quotation-flow 回归 1 passed 加载中=0。**Bug2(QT-1597 区分)**:报价单冻结结构陈旧——产品行结构在配 driver **之前**冻结(`quoteCardStructure.dataDriverPath=''`)→前端不展开。修法:`POST /quotations/{id}/refresh-card-snapshot`(refreshDraftQuoteCards)按当前模板重冻。规范:**先配好组件/模板 driver,再建/导入报价单**。**严格冻结结论(关键)**:用户要"首次回填即写死、之后基础资料变也不变"——经 sentinel 实测+读 CardSnapshotService 证实**不可在 DRAFT 态实现**:DRAFT 打开必走 `refreshQuoteCardValues` 重 expand driver + 按 row_data/driver 重算 editRows(2026-06-02 有意设计:草稿刷出后台改的基础数据),会把任何"冻结值"覆盖回当前 driver 值。系统既有冻结点 = **提交(非 DRAFT)后 refresh no-op、quoteCardValues 永久冻结**。如需"DRAFT 态也冻结"须改 refreshQuoteCardValues 语义(default_source.BASIC_DATA 回填值优先于 driver 重算)+ 引入"是否已首次冻结"标记,属架构级改动,待立项。
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
