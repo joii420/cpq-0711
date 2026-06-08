@@ -112,6 +112,12 @@ export interface CellContext {
   /** 当前行是否由 dataDriver 展开（BASIC_DATA 行级 lookup 已准备好） */
   isDriverBound?: boolean;
   /**
+   * 当前行是否为用户手动新增的空白行（Phase 1 手动新增行）。
+   * 为 true 时，FIXED_VALUE 渲染成可填文本框，DATA_SOURCE 渲染成可填文本框（Phase 1.1 接入下拉）。
+   * 只读态（readonly=true）不受影响。
+   */
+  isManualRow?: boolean;
+  /**
    * 核价 BOM 递归展开（P1）：当前行是否为 BOM 树 spine 行。
    * 为 true 时，BASIC_DATA/DATA_SOURCE 的权威数据 = 本行 basicDataValues（按本子料号取）；
    * 缺值 → 直接 "—"，<b>不</b>回退到按根料号键的 globalPathCache（那是单料号/新行逻辑，对子料号行语义错误，会误显示根料号值或永久"加载中"）。
@@ -257,6 +263,9 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
     onCellBlur,
     dsStateKey,
   } = ctx;
+
+  // 手动行可编辑标志：仅在非只读态 + isManualRow=true 时生效
+  const isManual = !!ctx.isManualRow && !readonly;
 
   // ── 1. FORMULA ──────────────────────────────────────────────────────────────
   if (field.field_type === 'FORMULA') {
@@ -437,6 +446,19 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
 
   // ── 4. DATA_SOURCE ──────────────────────────────────────────────────────────
   if (field.field_type === 'DATA_SOURCE') {
+    // 手动新增行：DATA_SOURCE 降级为可填文本框，默认空，用户自填。
+    // 注：DATA_SOURCE 手动行下拉选择器待 Phase 1.1 接入，暂用文本框。
+    if (isManual) {
+      return (
+        <input
+          type="text"
+          value={row[key] ?? ''}
+          onChange={(e) => onCellChange?.(rowIndex, key, e.target.value)}
+          onBlur={() => onCellBlur?.(rowIndex, key)}
+        />
+      );
+    }
+
     const dsBindingType = (field.datasource_binding as any)?.type;
 
     // GLOBAL_VARIABLE 子类型
@@ -528,6 +550,17 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
 
   // ── 5. FIXED_VALUE ──────────────────────────────────────────────────────────
   if (field.field_type === 'FIXED_VALUE') {
+    // 手动新增行：FIXED_VALUE 渲染为可填文本框（用户自填，忽略 field.content 模板值）
+    if (isManual) {
+      return (
+        <input
+          type="text"
+          value={row[key] ?? ''}
+          onChange={(e) => onCellChange?.(rowIndex, key, e.target.value)}
+          onBlur={() => onCellBlur?.(rowIndex, key)}
+        />
+      );
+    }
     const val = row[key] ?? field.content;
     if (val != null && val !== '') {
       const formatted = formatPathValue(val);
