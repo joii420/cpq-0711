@@ -101,14 +101,14 @@ export interface FieldItem {
 }
 
 export interface DefaultSource {
-  type: 'GLOBAL_VARIABLE' | 'BNF_PATH' | 'HTTP_API';
+  type: 'GLOBAL_VARIABLE' | 'BNF_PATH' | 'HTTP_API' | 'BASIC_DATA';
   /** GLOBAL_VARIABLE: 变量 code */
   code?: string;
   /** GLOBAL_VARIABLE: 静态 key (列名→字面值) */
   key_values?: Record<string, any>;
   /** GLOBAL_VARIABLE: 动态 key (列名→driver row 字段名; 空对象=同名映射) */
   key_field_refs?: Record<string, string>;
-  /** BNF_PATH: BNF 路径字符串 */
+  /** BNF_PATH / BASIC_DATA: 路径字符串。BASIC_DATA 时为 "$view.列" 形态(如 "$cp_view.品名"),支持中文列 */
   path?: string;
   /** HTTP_API: Phase D 引入, 暂占位 */
   api_config?: Record<string, any>;
