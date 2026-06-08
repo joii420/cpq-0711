@@ -554,6 +554,13 @@ function computeAllFormulas(
               const v = cache[`${partNo}::${ds.path}`];
               if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
             }
+          } else if (ds.type === 'BASIC_DATA' && ds.path) {
+            // BASIC_DATA 只吃行级 basicDataValues(整行通路, 中文安全), 不走 pathCache(单列 ASCII 会失败)
+            const lookupKey = bnfDriverLookupKey(ds.path);
+            if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
+              const v = basicDataValues[lookupKey];
+              if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
+            }
           }
         }
         if (resolved !== undefined) {
