@@ -27,7 +27,7 @@ import PartVersionDrawer from '../../components/PartVersionDrawer';
 import { templateService } from '../../services/templateService';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { useTreeCollapse } from './useTreeCollapse';
-import { splitRows, rowAt } from './manualRows';
+import { splitRows, rowAt, isManualRow } from './manualRows';
 import './quotation.css';
 
 // 与 QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard 中的同名函数保持完全对齐。
@@ -1021,10 +1021,13 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       const lineItemIdPrune = (item as any).id || (item as any).tempId || '';
       const key = driverExpansionKey(lineItemIdPrune, item.productPartNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
       const exp = driverExpansions[key];
+      const manual = comp.rows.filter(isManualRow);
+      const driverRows = comp.rows.filter((r: any) => !isManualRow(r));
       if (!exp || exp.rowCount === 0) return comp;
-      if (comp.rows.length > exp.rowCount) {
+      // AP-31 Phase1 fix: prune 只裁非手动行超出 exp.rowCount 的部分,手动行(_origin==='manual')全部保留在末尾
+      if (driverRows.length > exp.rowCount) {
         needPrune = true;
-        return { ...comp, rows: comp.rows.slice(0, exp.rowCount) };
+        return { ...comp, rows: [...driverRows.slice(0, exp.rowCount), ...manual] };
       }
       return comp;
     });
@@ -2350,17 +2353,24 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       const costingNew = partial.componentData;
       onUpdateLineItem(index, (prev: LineItem) => {
         const baseList = Array.isArray(prev.componentData) ? [...prev.componentData] : [];
-        const baseIdx = new Map<string, number>();
-        baseList.forEach((cd, i) => { if (cd.componentId) baseIdx.set(cd.componentId, i); });
+        // AP-37 续: 同 componentId 可多实例，按 (cid, tabName) 精确匹配避免重复 cid 互相覆盖（与 handleUpdateQuoteLineItem 同款修复）
+        const baseQueueByCid: Map<string, Array<{ idx: number; tabName: string }>> = new Map();
+        baseList.forEach((cd, i) => {
+          if (!cd.componentId) return;
+          if (!baseQueueByCid.has(cd.componentId)) baseQueueByCid.set(cd.componentId, []);
+          baseQueueByCid.get(cd.componentId)!.push({ idx: i, tabName: cd.tabName || '' });
+        });
         costingNew.forEach(cn => {
           if (!cn.componentId) return;
-          const at = baseIdx.get(cn.componentId);
-          if (at != null) {
-            baseList[at] = { ...baseList[at], ...cn };
+          const queue = baseQueueByCid.get(cn.componentId);
+          if (queue && queue.length > 0) {
+            let queuePos = queue.findIndex(e => e.tabName === (cn.tabName || ''));
+            if (queuePos < 0) queuePos = 0;
+            const { idx } = queue.splice(queuePos, 1)[0];
+            baseList[idx] = { ...baseList[idx], ...cn };
           } else {
             // costing 模板独有组件 → 追加到底层 componentData，让保存时一并持久化
             baseList.push(cn);
-            baseIdx.set(cn.componentId, baseList.length - 1);
           }
         });
         const rest = { ...partial };
@@ -2387,17 +2397,33 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       const quoteNew = partial.componentData;
       onUpdateLineItem(index, (prev: LineItem) => {
         const baseList = Array.isArray(prev.componentData) ? [...prev.componentData] : [];
-        const baseIdx = new Map<string, number>();
-        baseList.forEach((cd, i) => { if (cd.componentId) baseIdx.set(cd.componentId, i); });
+        // AP-37 续: 同 componentId 可多实例（如"材质"+"选配-材质"共享同一 cid）。
+        // 原先只按 cid 建单值索引 → 重复 cid 后者覆盖前者 →
+        // quoteNew 里序号靠前的实例（有手动行）被序号靠后的同 cid 实例（无手动行）覆盖，手动行丢失。
+        // 修法：先按 (cid, tabName) 精确匹配；精确未中再按 cid 队列（先进先出）匹配，与 enrichComponentData 策略一致。
+        const baseQueueByCid: Map<string, Array<{ idx: number; tabName: string }>> = new Map();
+        baseList.forEach((cd, i) => {
+          if (!cd.componentId) return;
+          if (!baseQueueByCid.has(cd.componentId)) baseQueueByCid.set(cd.componentId, []);
+          baseQueueByCid.get(cd.componentId)!.push({ idx: i, tabName: cd.tabName || '' });
+        });
         quoteNew.forEach(qn => {
           if (!qn.componentId) return;
-          const at = baseIdx.get(qn.componentId);
-          if (at != null) {
-            baseList[at] = { ...baseList[at], ...qn };
+          const queue = baseQueueByCid.get(qn.componentId);
+          if (queue && queue.length > 0) {
+            // 1) (cid, tabName) 精确匹配优先
+            let queuePos = queue.findIndex(e => e.tabName === (qn.tabName || ''));
+            // 2) 退回同 cid 队列第一条未被领走的
+            if (queuePos < 0) queuePos = 0;
+            const { idx } = queue.splice(queuePos, 1)[0];
+            baseList[idx] = { ...baseList[idx], ...qn };
           } else {
-            // 报价模板独有组件（罕见场景，通常报价模板组件已在 baseList 里）→ 追加
+            // 报价模板独有组件（罕见场景）→ 追加
             baseList.push(qn);
-            baseIdx.set(qn.componentId, baseList.length - 1);
+            if (qn.componentId) {
+              if (!baseQueueByCid.has(qn.componentId)) baseQueueByCid.set(qn.componentId, []);
+              // 已追加，不再放回队列（forEach 后续不会再遍历到它）
+            }
           }
         });
         const rest = { ...partial };

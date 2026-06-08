@@ -163,13 +163,10 @@ test.beforeAll(async () => { backendUp = await isBackendUp(); });
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 验收点 1: driver 页签点"+ 添加行" → 出现第 N+1 行
-// 已知 Phase 1 Bug: driver-bound Tab 的 prune useEffect (QuotationStep2.tsx ~L1025)
-// 会在 driverExpansions 更新时把 comp.rows.length > exp.rowCount 的行截掉,
-// 导致手动行立即被裁剪 → 行数仍为 N。
-// 本 test 记录该现象 + 验证"+ 添加行"按钮存在 + 加载中=0 (回归检查),
-// 使用 KNOWN_BUG 注释标记,不强断言行数变化,避免产生误导性 failed。
+// fix(quote-manual-row): prune useEffect 已修复, 手动行(_origin==='manual')不再被截断。
+// 本 test 改为真实断言: 添加后行数必须 = N+1。
 // ──────────────────────────────────────────────────────────────────────────────
-test('AC1: driver 页签点"+ 添加行" → 行数变化观测 (已知 prune bug 记录)', async ({ page }) => {
+test('AC1: driver 页签点"+ 添加行" → 行数必须变为 N+1', async ({ page }) => {
   test.skip(!backendUp, '后端未启动');
 
   const consoleErrors: string[] = [];
@@ -216,27 +213,23 @@ test('AC1: driver 页签点"+ 添加行" → 行数变化观测 (已知 prune bu
   await page.waitForTimeout(2000);
   await shot(page, 'ac1-after-add-row');
 
-  // 观测行数变化(不强断言, 记录实际值供诊断)
+  // 真实断言: 行数必须为 N+1 (prune 已修复, 手动行不再被截断)
   const rowsAfter = await tableRows.count();
-  console.log(`[AC1] 添加后行数 = ${rowsAfter} (添加前 = ${rowsBefore})`);
-  console.log(`[AC1] 行数是否增加: ${rowsAfter > rowsBefore ? '✅ YES' : '❌ NO — KNOWN_BUG: prune useEffect 截断手动行 (QuotationStep2.tsx ~L1025 comp.rows.slice(0, exp.rowCount))'}`);
+  console.log(`[AC1] 添加后行数 = ${rowsAfter} (添加前 = ${rowsBefore}, 期望 ${rowsBefore + 1})`);
+  expect(rowsAfter, `[AC1] 手动行被 prune 截断: 期望 ${rowsBefore + 1} 行, 实际 ${rowsAfter} 行`).toBe(rowsBefore + 1);
 
-  // 最后一行检查(不依赖行数变化)
+  // 最后一行(手动行)应有可编辑 input
   const lastRow = tableRows.last();
   const inputsInLastRow = await lastRow.locator('input').count();
   const cellsInLastRow = await lastRow.locator('td').count();
-  console.log(`[AC1] 最后一行: inputs=${inputsInLastRow}, cells=${cellsInLastRow}`);
+  console.log(`[AC1] 手动行: inputs=${inputsInLastRow}, cells=${cellsInLastRow}`);
 
   // 加载中 count 应为 0(回归关键断言)
   const loadingCount = await countLoading(page, 'ac1-after-add');
   expect(loadingCount).toBe(0);
 
   await shot(page, 'ac1-final');
-  console.log(`[AC1] 完成: 添加前 ${rowsBefore} 行 → 添加后 ${rowsAfter} 行`);
-  // 明确记录 bug 状态供后续修复跟踪
-  if (rowsAfter <= rowsBefore) {
-    console.warn('[AC1] KNOWN_BUG_CONFIRMED: 手动行被 prune useEffect 立即截断，Phase 1 prune 逻辑需跳过 _origin==="manual" 行');
-  }
+  console.log(`[AC1] ✅ PASS: 添加前 ${rowsBefore} 行 → 添加后 ${rowsAfter} 行`);
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -312,15 +305,16 @@ test('AC2: 手动行填入值 → 页签小计包含手动行贡献', async ({ p
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 验收点 3: autosave 后刷新 → 手动行持久化
-// 已知 Phase 1 Bug: 与 AC1 同根因——prune useEffect 在 driverExpansions 更新时
-// 截断手动行，autosave 保存的是截断后的状态，刷新后手动行不存在。
-// 本 test 观测实际行为并如实报告，不强断言持久化，以免 KNOWN_BUG 导致误报。
+// fix(quote-manual-row): prune 修复后手动行不被截断, autosave 能落库, 刷新后仍存在。
+// 本 test 改为真实断言: 刷新后行数必须 >= N+1。
 // ──────────────────────────────────────────────────────────────────────────────
-test('AC3: autosave 后刷新重进报价单 → 手动行持久化 (已知 prune bug 记录)', async ({ page }) => {
+test('AC3: autosave 后刷新重进报价单 → 手动行持久化', async ({ page }) => {
   test.skip(!backendUp, '后端未启动');
 
   const consoleErrors: string[] = [];
-  page.on('console', m => { if (m.type() === 'error') consoleErrors.push(m.text()); });
+  page.on('console', m => {
+    if (m.type() === 'error') consoleErrors.push(m.text());
+  });
 
   await loginAsAdmin(page);
   await createQuotationWithProduct(page);
@@ -349,22 +343,24 @@ test('AC3: autosave 后刷新重进报价单 → 手动行持久化 (已知 prun
   await page.waitForTimeout(2000); // 等 React 状态更新 + prune useEffect
 
   const rowsAfterAdd = await tableRows.count();
-  console.log(`[AC3] 添加后行数 (prune 前/后) = ${rowsAfterAdd}`);
+  console.log(`[AC3] 添加后行数 = ${rowsAfterAdd} (期望 ${rowsBefore + 1})`);
+  // 真实断言 AC3-pre: 添加后行数必须 = N+1 (prune 修复后手动行不被截断)
+  expect(rowsAfterAdd, `[AC3-pre] 手动行被 prune 截断: 期望 ${rowsBefore + 1} 行, 实际 ${rowsAfterAdd} 行`).toBe(rowsBefore + 1);
 
-  // 在最后一行填值(如果行确实出现且有 INPUT)
+  // 在最后一行(手动行)填值
   const lastRow = tableRows.last();
   const inputInLastRow = lastRow.locator('input').first();
   const hasInput = await inputInLastRow.count();
   let filledValue = '';
-  if (hasInput > 0 && rowsAfterAdd > rowsBefore) {
+  if (hasInput > 0) {
     filledValue = '999';
     await inputInLastRow.click();
     await inputInLastRow.fill(filledValue);
     await inputInLastRow.press('Tab');
     await page.waitForTimeout(500);
     console.log(`[AC3] 已填入值: ${filledValue}`);
-  } else if (rowsAfterAdd <= rowsBefore) {
-    console.warn('[AC3] KNOWN_BUG_CONFIRMED: 手动行被 prune 截断，跳过填值步骤');
+  } else {
+    console.log('[AC3] 手动行无 input 框 (可能是 DATA_SOURCE/FORMULA 列为主的 Tab)');
   }
 
   await shot(page, 'ac3-after-add-and-fill');
@@ -385,26 +381,54 @@ test('AC3: autosave 后刷新重进报价单 → 手动行持久化 (已知 prun
   await page.waitForTimeout(3000);
   await shot(page, 'ac3-after-reload');
 
-  // 重新切换到同一 Tab
+  // 重载后 currentStep=0 (Step1)，需要点"下一步"跳到 Step2 才能看到产品卡片
+  const nextBtn = page.getByRole('button', { name: /下一步/ }).first();
+  if (await nextBtn.isVisible().catch(() => false)) {
+    await nextBtn.click();
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+  }
+
+  // 等待产品卡片渲染完成(enrich + driver expansion 异步，等任意 Tab 出现)
+  try {
+    await page.locator('button.qt-tab-btn').first().waitFor({ state: 'visible', timeout: 15000 });
+  } catch {
+    console.log('[AC3] 15s 内产品 Tab 未出现');
+  }
+
+  // 重新切换到材质 Tab
   await page.locator('text=产品 1').first().scrollIntoViewIfNeeded().catch(() => {});
   await page.waitForTimeout(1000);
 
   const tabAfterReload = page.locator('button.qt-tab-btn').filter({ hasText: /^材质$/ }).first();
   if (await tabAfterReload.count() > 0) {
     await tabAfterReload.click();
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(3000);
   } else {
     const firstTab = page.locator('button.qt-tab-btn').first();
     if (await firstTab.count() > 0) await firstTab.click();
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(3000);
   }
 
   await shot(page, 'ac3-after-reload-tab-switch');
 
-  const rowsAfterReload = await tableRows.count();
-  console.log(`[AC3] 刷新后行数 = ${rowsAfterReload} (期望 ${rowsBefore + 1}，添加时实际 = ${rowsAfterAdd})`);
-  const persistOk = rowsAfterReload >= rowsBefore + 1;
-  console.log(`[AC3] 手动行持久化: ${persistOk ? '✅ PASS' : '❌ FAIL — KNOWN_BUG: prune 导致手动行未落库，刷新后不存在'}`);
+  // 等待行数稳定(driver expansion 异步加载)
+  let rowsAfterReload = await tableRows.count();
+  if (rowsAfterReload === 0) {
+    console.log('[AC3] 切 Tab 后 0 行，再等 driver expansion...');
+    try {
+      await page.waitForFunction(
+        () => document.querySelectorAll('.qt-cost-table tbody tr').length > 0,
+        { timeout: 8000 }
+      );
+    } catch {
+      console.log('[AC3] waitForFunction 超时，继续断言');
+    }
+    rowsAfterReload = await tableRows.count();
+  }
+  console.log(`[AC3] 刷新后行数 = ${rowsAfterReload} (期望 >= ${rowsBefore + 1})`);
+  // 真实断言 AC3: 刷新后行数 >= N+1 (手动行必须持久化)
+  expect(rowsAfterReload, `[AC3] 手动行未持久化: 刷新后期望 >= ${rowsBefore + 1} 行, 实际 ${rowsAfterReload} 行`).toBeGreaterThanOrEqual(rowsBefore + 1);
 
   // 检查填值(尽力)
   if (filledValue) {
@@ -424,7 +448,7 @@ test('AC3: autosave 后刷新重进报价单 → 手动行持久化 (已知 prun
   expect(loadingCount).toBe(0);
 
   await shot(page, 'ac3-final');
-  console.log(`[AC3] 完成: 添加前 ${rowsBefore} 行 → 添加时 ${rowsAfterAdd} 行 → 刷新后 ${rowsAfterReload} 行`);
+  console.log(`[AC3] ✅ PASS: 添加前 ${rowsBefore} 行 → 添加时 ${rowsAfterAdd} 行 → 刷新后 ${rowsAfterReload} 行`);
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
