@@ -364,7 +364,7 @@ public class ConfigureProductService {
         }
         Map<String, Object> gk = new LinkedHashMap<>();
         gk.put("system_type", "QUOTE");
-        gk.put("price_type", "MATERIAL");
+        gk.put("price_type", "PROCESS");
         gk.put("cost_type", "自制加工费");
         gk.put("customer_no", currentCustomerCode);
         gk.put("code", hfPartNo);
@@ -587,7 +587,7 @@ public class ConfigureProductService {
 
     /**
      * B2: 工序 → unit_price（自制加工费）。每个配件一组版本化：
-     * 分组键 (system_type=QUOTE, price_type=MATERIAL, cost_type=自制加工费, customer_no, code=配件料号,
+     * 分组键 (system_type=QUOTE, price_type=PROCESS, cost_type=自制加工费, customer_no, code=配件料号,
      * finished_material_no=COMBO)，行集 = 各工序（operation_no=process.code）。pricing_price 留 NULL（子项3）。
      * currency = process_master.standard_currency（空→CNY）；unit = standard_unit（空→KG，对齐导入存量）。
      */
@@ -628,7 +628,7 @@ public class ConfigureProductService {
             }
             Map<String, Object> gk = new LinkedHashMap<>();
             gk.put("system_type", "QUOTE");
-            gk.put("price_type", "MATERIAL");
+            gk.put("price_type", "PROCESS");
             gk.put("cost_type", "自制加工费");
             gk.put("customer_no", customerCode);
             gk.put("code", childPn);
@@ -676,7 +676,7 @@ public class ConfigureProductService {
         }
         Map<String, Object> gk = new LinkedHashMap<>();
         gk.put("system_type", "QUOTE");
-        gk.put("price_type", "MATERIAL");
+        gk.put("price_type", "PROCESS");
         gk.put("cost_type", "自制加工费");
         gk.put("customer_no", customerCode);
         gk.put("code", hfPartNo);

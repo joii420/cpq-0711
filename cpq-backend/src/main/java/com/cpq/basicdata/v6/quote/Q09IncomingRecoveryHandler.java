@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Q09 来料回收折扣 → unit_price (price=MATERIAL, cost=回收折扣)。
+ * Q09 来料回收折扣 → unit_price (price=INCOMING_MATERIAL_RECYCLE, cost=回收折扣)。
  *
  * <p>版本化（Task 3）：groupKey=(QUOTE, customer_no, MATERIAL, 回收折扣, code, finished_material_no)，
  * content=[cost_ratio]。无 seq_no（§9 项次不导入）。
@@ -47,7 +47,7 @@ public class Q09IncomingRecoveryHandler implements SheetHandler {
                 Map<String, Object> g = new LinkedHashMap<>();
                 g.put("system_type", "QUOTE");
                 g.put("customer_no", ctx.customerNo);
-                g.put("price_type", "MATERIAL");
+                g.put("price_type", "INCOMING_MATERIAL_RECYCLE");
                 g.put("cost_type", "回收折扣");
                 g.put("code", code);
                 g.put("finished_material_no", finishedMaterialNo);

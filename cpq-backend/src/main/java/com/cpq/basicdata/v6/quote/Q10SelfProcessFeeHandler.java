@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Q10 自制加工费 → unit_price (price=MATERIAL, cost=自制加工费)。
+ * Q10 自制加工费 → unit_price (price=PROCESS, cost=自制加工费)。
  *
  * <p>版本化（Task 3）：groupKey=(QUOTE, customer_no, MATERIAL, 自制加工费, code, finished_material_no, operation_no)，
  * content=[seq_no, pricing_price, cost_ratio, currency, unit]。
@@ -49,7 +49,7 @@ public class Q10SelfProcessFeeHandler implements SheetHandler {
                 Map<String, Object> g = new LinkedHashMap<>();
                 g.put("system_type", "QUOTE");
                 g.put("customer_no", ctx.customerNo);
-                g.put("price_type", "MATERIAL");
+                g.put("price_type", "PROCESS");
                 g.put("cost_type", "自制加工费");
                 g.put("code", code);
                 g.put("finished_material_no", finishedMaterialNo);

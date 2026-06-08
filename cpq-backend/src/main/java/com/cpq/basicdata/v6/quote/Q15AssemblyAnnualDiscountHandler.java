@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Q15 组装加工费年降 → unit_price (price=COMPONENT, cost=年降系数)。
+ * Q15 组装加工费年降 → unit_price (price=COMPONENT_REDUCTION, cost=年降系数)。
  *
  * <p>版本化（Task 3）：groupKey=(QUOTE, customer_no, COMPONENT, 年降系数, code, finished_material_no, operation_no)，
  * content=[discount_order, cost_ratio, pricing_price, currency, unit]。
@@ -51,7 +51,7 @@ public class Q15AssemblyAnnualDiscountHandler implements SheetHandler {
                 Map<String, Object> g = new LinkedHashMap<>();
                 g.put("system_type", "QUOTE");
                 g.put("customer_no", ctx.customerNo);
-                g.put("price_type", "COMPONENT");
+                g.put("price_type", "COMPONENT_REDUCTION");
                 g.put("cost_type", "年降系数");
                 g.put("code", code);                          // #6：code NOT NULL，必须进 groupKey
                 g.put("finished_material_no", finishedMaterialNo);

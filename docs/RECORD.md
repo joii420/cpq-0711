@@ -3266,4 +3266,8 @@ E2E:
 
 ---
 
+### [2026-06-08] 报价导入 - unit_price.price_type 大类改 9 个细分值(区分 Sheet 类型) | V297(列宽 VARCHAR20→40 + CHECK 扩 14 值) + Q06/Q07/Q08/Q09/Q10/Q11/Q13/Q15/Q17 Handler(各 1 处 price_type 常量+Javadoc) + ConfigureProductService(3 处自制加工费 MATERIAL→PROCESS) + 报价系统Excel导入落库方案.md(V3.3) + specs/2026-06-08-quote-price-type-subdivide-design.md | **映射**:来料固定加工费=INCOMING_MATERIAL_PROCESS / 来料其他费用=INCOMING_MATERIAL_OTHER / 来料年降=INCOMING_MATERIAL_REDUCTION / 来料回收折扣=INCOMING_MATERIAL_RECYCLE / 自制加工费=PROCESS / 成品其他费用=FINISHED_MATERIAL_OTHER / 组成件其他费用=COMPONENT_OTHER / 组装加工费年降=COMPONENT_REDUCTION / 电镀费用(2条)=PLATING;元素单价仍 ELEMENT 不动。**决策**:price_type 直接存细分值(不新增列)、大类废弃、cost_type 保持并存、只改写入端下游不动、存量清空重导。**影响面核查**:核价视图(V255/V257 price_type='COMPONENT')全是 system_type=PRICING 与报价靠 system_type 隔离→零影响;报价侧公式/UnitPriceRepository 不硬过滤 price_type;**报价侧唯一受影响下游=V270 zcj_view(QUOTE+COMPONENT)**,数据源 Q13/Q15,改细分后读不到→**按决策接受断链,后续单独处理**。**选配读端**(ConfigureProductService line139/350)按 cost_type='自制加工费' 取数,不靠 price_type→改 PROCESS 不影响选配工序渲染。**DDL 关键**:varchar(20)→(40) 是 binary coercible 加长,PG 放行,**无需 DROP 引用 unit_price 的真实视图**(已 BEGIN/ROLLBACK 实测)。验证:V297 success=t / 列宽=40 / 3 个新值(含27字符最长)写入OK / 非法值被CHECK拒(23514) / API 401。
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。

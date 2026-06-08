@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Q11 成品其他费用 → unit_price (price=MATERIAL, cost=要素名称动态)。
+ * Q11 成品其他费用 → unit_price (price=FINISHED_MATERIAL_OTHER, cost=要素名称动态)。
  *
  * <p>版本化（Task 3）：groupKey=(QUOTE, customer_no, MATERIAL, cost_type=要素名称, code)，
  * content=[seq_no, pricing_price, cost_ratio, currency, unit]。code=宏丰料号；无 finished_material_no。
@@ -51,7 +51,7 @@ public class Q11FinishedOtherFeeHandler implements SheetHandler {
                 Map<String, Object> g = new LinkedHashMap<>();
                 g.put("system_type", "QUOTE");
                 g.put("customer_no", ctx.customerNo);
-                g.put("price_type", "MATERIAL");
+                g.put("price_type", "FINISHED_MATERIAL_OTHER");
                 g.put("cost_type", costType);
                 g.put("code", code);
                 return g;

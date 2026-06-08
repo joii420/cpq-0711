@@ -17,9 +17,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Q06 来料固定加工费 → unit_price (price=MATERIAL, cost=来料加工费)。
+ * Q06 来料固定加工费 → unit_price (price=INCOMING_MATERIAL_PROCESS, cost=来料加工费)。
  *
- * <p>版本化（实现计划 Task 3）：按 groupKey = (system_type=QUOTE, customer_no, price_type=MATERIAL,
+ * <p>版本化（实现计划 Task 3）：按 groupKey = (system_type=QUOTE, customer_no, price_type=INCOMING_MATERIAL_PROCESS,
  * cost_type=来料加工费, code, finished_material_no) 分组，组内多行（按 seq_no 区分）整组走
  * {@link VersionedV6Writer#writeVersionedGroup}：指纹相同复用版本、不同则 version_no max+1 + is_current 翻转。
  * <p>列保全：本 sheet 写的列（code/finished_material_no + 8 个 content 列）全部落在 groupKey∪content 内，无丢列。
@@ -54,7 +54,7 @@ public class Q06FixedProcessFeeHandler implements SheetHandler {
                 Map<String, Object> g = new LinkedHashMap<>();
                 g.put("system_type", "QUOTE");
                 g.put("customer_no", ctx.customerNo);
-                g.put("price_type", "MATERIAL");
+                g.put("price_type", "INCOMING_MATERIAL_PROCESS");
                 g.put("cost_type", "来料加工费");
                 g.put("code", code);
                 g.put("finished_material_no", finishedMaterialNo);

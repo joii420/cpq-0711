@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Q13 组成件其他费用 → unit_price (price=COMPONENT, cost=要素名称动态)。
+ * Q13 组成件其他费用 → unit_price (price=COMPONENT_OTHER, cost=要素名称动态)。
  *
  * <p>版本化（Task 3）：groupKey=(QUOTE, customer_no, COMPONENT, cost_type=要素名称, code,
  * finished_material_no, operation_no, supplier_no)，content=[item_seq, pricing_price, currency, unit]。
@@ -55,7 +55,7 @@ public class Q13ComponentOtherFeeHandler implements SheetHandler {
                 Map<String, Object> g = new LinkedHashMap<>();
                 g.put("system_type", "QUOTE");
                 g.put("customer_no", ctx.customerNo);
-                g.put("price_type", "COMPONENT");
+                g.put("price_type", "COMPONENT_OTHER");
                 g.put("cost_type", costType);
                 g.put("code", code);
                 g.put("finished_material_no", finishedMaterialNo);

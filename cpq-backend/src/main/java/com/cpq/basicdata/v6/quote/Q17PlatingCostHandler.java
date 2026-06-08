@@ -89,7 +89,7 @@ public class Q17PlatingCostHandler implements SheetHandler {
             Map<String, Object> g = new LinkedHashMap<>();
             g.put("system_type", "QUOTE");
             g.put("customer_no", ctx.customerNo);
-            g.put("price_type", "MATERIAL");
+            g.put("price_type", "PLATING");
             g.put("cost_type", costType);
             g.put("code", code);
             return g;

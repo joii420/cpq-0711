@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Q08 来料年降 → unit_price (price=MATERIAL, cost=年降系数)。
+ * Q08 来料年降 → unit_price (price=INCOMING_MATERIAL_REDUCTION, cost=年降系数)。
  *
  * <p>版本化（Task 3）：groupKey=(QUOTE, customer_no, MATERIAL, 年降系数, code, finished_material_no)，
  * content=[discount_order, cost_ratio, pricing_price, currency, unit]。
@@ -49,7 +49,7 @@ public class Q08IncomingAnnualDiscountHandler implements SheetHandler {
                 Map<String, Object> g = new LinkedHashMap<>();
                 g.put("system_type", "QUOTE");
                 g.put("customer_no", ctx.customerNo);
-                g.put("price_type", "MATERIAL");
+                g.put("price_type", "INCOMING_MATERIAL_REDUCTION");
                 g.put("cost_type", "年降系数");
                 g.put("code", code);
                 g.put("finished_material_no", finishedMaterialNo);

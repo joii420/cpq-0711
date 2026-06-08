@@ -1,6 +1,8 @@
 # 报价系统基础数据 Excel 导入落库方案
 
-> 版本：V3.2 | 日期：2026-06-03
+> 版本：V3.3 | 日期：2026-06-08
+
+> **V3.3 变更（2026-06-08）**：报价导入 9 个费用 Sheet 的 `unit_price.price_type` 由大类 `MATERIAL`/`COMPONENT` 改为 **9 个细分值**以区分 Sheet 类型（大类彻底废弃；`cost_type` 保持不动并存）：来料固定加工费=`INCOMING_MATERIAL_PROCESS`、来料其他费用=`INCOMING_MATERIAL_OTHER`、来料年降=`INCOMING_MATERIAL_REDUCTION`、来料回收折扣=`INCOMING_MATERIAL_RECYCLE`、自制加工费=`PROCESS`、成品其他费用=`FINISHED_MATERIAL_OTHER`、组成件其他费用=`COMPONENT_OTHER`、组装加工费年降=`COMPONENT_REDUCTION`、电镀费用（2 条）=`PLATING`。元素单价（`ELEMENT`）不变。**已落代码**：9 个 `Q*Handler` + 选配运行时 `ConfigureProductService`（自制加工费 `MATERIAL`→`PROCESS`，读端按 cost_type 取数不受影响）+ Flyway `V297`（列宽 `VARCHAR(20)→(40)` + CHECK 扩 14 值）。范围只改写入端，下游 SQL 视图/公式不动；报价侧 `zcj_view`（QUOTE+COMPONENT）暂不动（接受断链，后续单独处理）；存量按"清空重导"处理。设计见 `docs/superpowers/specs/2026-06-08-quote-price-type-subdivide-design.md`。
 
 > **V3.2 变更（2026-06-03）**：补全去重合并的**实现细则（通俗版）**（见 §一 总览末尾【去重合并实现细则】），修正 V3.1 一处关键疏漏——"每料号只调一次 writeMasterDetail" **不足以**保证"唯一当前行"：当某料号上次写的是 `characteristic=NULL`、这次判成 `'ASSEMBLY'`（或反向）时，通用写入器 `VersionedV6Writer` 的 flip 只认相同 groupKey、**翻不到相反 characteristic 的旧当前行** → 双当前行复现（现网已存在该脏数据，如料号 `3120018220`）。新增**第 4 步「先下线相反 characteristic 旧行」**为强制步骤，并补 seq_no 合并口径、存量清洗、编排改造、material_master 副作用归属。**本次仍仅更新方案文档，未改代码。**
 >
@@ -48,19 +50,19 @@
 | 3 | 物料BOM | `material_bom` + `material_bom_item` + `material_master` | — | — |
 | 4 | 物料与元素BOM | `element_bom` + `element_bom_item` | — | — |
 | 5 | 元素回收折扣 | `element_bom_item` | — | — |
-| 6 | 来料固定加工费 | `unit_price` | `MATERIAL 材料` | `来料加工费` |
-| 7 | 来料其他费用 | `unit_price` | `MATERIAL 材料` | `要素名称（动态）` |
-| 8 | 来料年降 | `unit_price` | `MATERIAL 材料` | `年降系数` |
-| 9 | 来料回收折扣 | `unit_price` | `MATERIAL 材料` | `回收折扣` |
-| 10 | 自制加工费 | `unit_price` | `MATERIAL 材料` | `自制加工费` |
-| 11 | 成品其他费用 | `unit_price` | `MATERIAL 材料` | `要素名称（动态）` |
+| 6 | 来料固定加工费 | `unit_price` | `INCOMING_MATERIAL_PROCESS` | `来料加工费` |
+| 7 | 来料其他费用 | `unit_price` | `INCOMING_MATERIAL_OTHER` | `要素名称（动态）` |
+| 8 | 来料年降 | `unit_price` | `INCOMING_MATERIAL_REDUCTION` | `年降系数` |
+| 9 | 来料回收折扣 | `unit_price` | `INCOMING_MATERIAL_RECYCLE` | `回收折扣` |
+| 10 | 自制加工费 | `unit_price` | `PROCESS` | `自制加工费` |
+| 11 | 成品其他费用 | `unit_price` | `FINISHED_MATERIAL_OTHER` | `要素名称（动态）` |
 | 12 | 组成件BOM | `material_bom`（主表） + `material_bom_item`（子表） | — | — |
-| 13 | 组成件其他费用 | `unit_price` | `COMPONENT 组成件` | `要素名称（动态）` |
+| 13 | 组成件其他费用 | `unit_price` | `COMPONENT_OTHER` | `要素名称（动态）` |
 | 14 | 组装加工费 | `capacity` | — | — |
-| 15 | 组装加工费年降 | `unit_price` | `COMPONENT 组成件` | `年降系数` |
+| 15 | 组装加工费年降 | `unit_price` | `COMPONENT_REDUCTION` | `年降系数` |
 | 16 | 电镀方案 | `plating_scheme` | — | — |
-| 17 | 电镀费用（加工费） | `unit_price` | `MATERIAL 材料` | `电镀加工费` |
-| 17 | 电镀费用（材料费） | `unit_price` | `MATERIAL 材料` | `电镀材料费` |
+| 17 | 电镀费用（加工费） | `unit_price` | `PLATING` | `电镀加工费` |
+| 17 | 电镀费用（材料费） | `unit_price` | `PLATING` | `电镀材料费` |
 | 18 | 单重 | `material_master` | — | — |
 | 19 | 年降系数 | `annual_discount` | — | — |
 
@@ -363,7 +365,7 @@
 | 固定写入字段 | 固定值 / 来源 |
 |------------|--------------|
 | `system_type` | `QUOTE` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `INCOMING_MATERIAL_PROCESS` |
 | `cost_type` | `来料加工费` |
 | `customer_no` | **由系统导入时提供** |
 
@@ -394,7 +396,7 @@
 | 固定写入字段 | 固定值 / 来源 |
 |------------|--------------|
 | `system_type` | `QUOTE` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `INCOMING_MATERIAL_OTHER` |
 | `cost_type` | 取自 Excel「要素名称」列（动态写入） |
 | `customer_no` | **由系统导入时提供** |
 
@@ -422,7 +424,7 @@
 | 固定写入字段 | 固定值 / 来源 |
 |------------|--------------|
 | `system_type` | `QUOTE` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `INCOMING_MATERIAL_REDUCTION` |
 | `cost_type` | `年降系数` |
 | `customer_no` | **由系统导入时提供** |
 
@@ -450,7 +452,7 @@
 | 固定写入字段 | 固定值 / 来源 |
 |------------|--------------|
 | `system_type` | `QUOTE` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `INCOMING_MATERIAL_RECYCLE` |
 | `cost_type` | `回收折扣` |
 | `customer_no` | **由系统导入时提供** |
 
@@ -473,7 +475,7 @@
 | 固定写入字段 | 固定值 / 来源 |
 |------------|--------------|
 | `system_type` | `QUOTE` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `PROCESS` |
 | `cost_type` | `自制加工费` |
 | `customer_no` | **由系统导入时提供** |
 
@@ -502,7 +504,7 @@
 | 固定写入字段 | 固定值 / 来源 |
 |------------|--------------|
 | `system_type` | `QUOTE` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `FINISHED_MATERIAL_OTHER` |
 | `cost_type` | 取自 Excel「要素名称」列（动态写入） |
 | `customer_no` | **由系统导入时提供** |
 
@@ -564,7 +566,7 @@
 | 固定写入字段 | 固定值 / 来源 |
 |------------|--------------|
 | `system_type` | `QUOTE` |
-| `price_type` | `COMPONENT`（组成件） |
+| `price_type` | `COMPONENT_OTHER` |
 | `cost_type` | 取自 Excel「要素名称」列（动态写入） |
 | `customer_no` | **由系统导入时提供** |
 
@@ -615,7 +617,7 @@
 | 固定写入字段 | 固定值 / 来源 |
 |------------|--------------|
 | `system_type` | `QUOTE` |
-| `price_type` | `COMPONENT`（组成件） |
+| `price_type` | `COMPONENT_REDUCTION` |
 | `cost_type` | `年降系数` |
 | `customer_no` | **由系统导入时提供** |
 
@@ -667,7 +669,7 @@
 | 固定写入字段 | 固定值 / 来源 |
 |------------|--------------|
 | `system_type` | `QUOTE` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `PLATING` |
 | `cost_type` | `电镀加工费` |
 | `customer_no` | **由系统导入时提供** |
 
@@ -687,7 +689,7 @@
 | 固定写入字段 | 固定值 / 来源 |
 |------------|--------------|
 | `system_type` | `QUOTE` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `PLATING` |
 | `cost_type` | `电镀材料费` |
 | `customer_no` | **由系统导入时提供** |
 
@@ -743,7 +745,7 @@
 |--------|------|
 | **客户编号自动提供** | 凡目标表中存在 `customer_no` 字段的 Sheet，客户编号均由系统在导入时自动提供，Excel 文件中不维护此字段，程序不从 Excel 读取。 |
 | **system_type 固定值** | 所有报价系统导入数据的 `system_type` 固定写入 `QUOTE`。 |
-| **price_type 与 cost_type 区别** | `price_type` 标识价格来源分类（ELEMENT/MATERIAL/COMPONENT），`cost_type` 标识费用用途分类，两字段独立写入 `unit_price`。 |
+| **price_type 与 cost_type 区别** | `price_type` 标识 Sheet 来源细分类型，`cost_type` 标识费用用途分类，两字段独立写入 `unit_price`。**自 V3.3（2026-06-08）起** `price_type` 不再写大类 `MATERIAL`/`COMPONENT`，9 个费用 Sheet 改写各自细分值（见总览表 + 各 Sheet 固定字段表）；元素单价仍写 `ELEMENT`。CHECK `chk_unit_price_type` 白名单含旧 5 值（核价 PRICING 视图仍用）+ 新 9 值。 |
 | **动态 cost_type** | 来料其他费用、成品其他费用、组成件其他费用等 Sheet 中，`cost_type` 取自 Excel「要素名称」列动态写入，非固定值。 |
 | **固定金额与比例区分** | `pricing_price` 存储固定金额，`cost_ratio` 存储比例（%），同一条记录两者互斥填写，以对应字段是否为空判断费用类型。 |
 | **一行拆多条** | 「电镀费用」Sheet 每行拆分为两条 `unit_price` 记录（电镀加工费 + 电镀材料费）；其余 Sheet 一行对应一条记录（或主+子各一条）。 |

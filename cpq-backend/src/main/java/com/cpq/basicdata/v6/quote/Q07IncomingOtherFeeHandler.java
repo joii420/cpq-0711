@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Q07 来料其他费用 → unit_price (price=MATERIAL, cost=要素名称动态)。
+ * Q07 来料其他费用 → unit_price (price=INCOMING_MATERIAL_OTHER, cost=要素名称动态)。
  *
  * <p>版本化（Task 3）：groupKey=(QUOTE, customer_no, MATERIAL, cost_type=要素名称, code, finished_material_no)，
  * content=[seq_no, pricing_price, cost_ratio, currency, unit]。cost_type 随行动态。
@@ -52,7 +52,7 @@ public class Q07IncomingOtherFeeHandler implements SheetHandler {
                 Map<String, Object> g = new LinkedHashMap<>();
                 g.put("system_type", "QUOTE");
                 g.put("customer_no", ctx.customerNo);
-                g.put("price_type", "MATERIAL");
+                g.put("price_type", "INCOMING_MATERIAL_OTHER");
                 g.put("cost_type", costType);
                 g.put("code", code);
                 g.put("finished_material_no", finishedMaterialNo);
