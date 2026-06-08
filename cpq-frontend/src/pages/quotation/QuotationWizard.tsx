@@ -27,6 +27,7 @@ import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
 import { enrichComponentData, loadProductAttributes, buildComponentDataFromStructure, productAttributesFromStructure } from './enrichComponentData';
 import { globalVariableService } from '../../services/globalVariableService';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
+import { splitRows, rowAt } from './manualRows';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
@@ -107,7 +108,7 @@ const QuotationWizard: React.FC = () => {
   // 编辑往返存活不受影响(E2E 守护)。新增产品(无快照)时 useSnapAll=false 自动回退实时 batch-expand。
   const useSnapAll = lineItems.length > 0 && lineItems.every(li => !!li.quoteCardValues);
   const { cache: driverExpansionsLive, invalidate: invalidateDriverExpansions } =
-    useDriverExpansions(useSnapAll ? EMPTY_LINEITEMS : lineItems, customerIdValue, quotationId);
+    useDriverExpansions(useSnapAll ? EMPTY_LINEITEMS : lineItems, customerIdValue, quotationId ?? undefined);
   const driverExpansionsSnap = React.useMemo(
     () => (useSnapAll ? buildSnapshotExpansions(lineItems, 'QUOTE', customerIdValue) : {}),
     [useSnapAll, lineItems, customerIdValue],
@@ -797,26 +798,27 @@ const QuotationWizard: React.FC = () => {
       if (c.tabName) componentSubtotals[c.tabName] = c.subtotal || 0;
     });
 
-    const baseRows = Array.isArray(cd.rows) ? cd.rows : [];
-    // driver 展开模式：UI 行数严格等于 expansion.rowCount（driver 权威，不取 max）。
-    // AP-51 修复：旧代码用 Math.max(expansion.rowCount, baseRows.length)，当 expansion 因
-    // childLineItemIds 未传而返回了历史全量 N 行（如 COMPOSITE 工序 28 行），snapshotRows 会
-    // 把 28 行写进 DB，下次刷新 baseRows.length=28，Math.max 仍 28，形成持久化死锁。
-    // 修法：与 computeTabSubtotal 的"driver 行迭代严格按 rowCount，不与 comp.rows.length 取 max"
-    // 原则保持一致（RECORD.md 第 5193 行已有同等规范）。
-    const rowCount = expansion && expansion.rowCount > 0
-      ? expansion.rowCount
-      : baseRows.length;
+    // Phase 1 Task 8: 用 splitRows/rowAt 迭代 driver 行 + 手动新增行，
+    // 修复原先 rowCount 只迭代 driver 行、comp.rows 末尾手动行被跳过、保存后丢失的 bug。
+    // AP-51 不变：driver 权威，driverCount 严格等于 expansion.rowCount（不取 max）。
+    const s = splitRows(cd, expansion as any);
 
     const out: Record<string, any>[] = [];
     // 2026-05-17: 累加公式支持. 按 row_index 顺序遍历, 把上一行的 is_subtotal 字段值
     // 作为 previousRowSubtotal 传给下一行的 computeAllFormulas, 同 ProductCard 渲染逻辑一致.
     const subtotalFieldName = fields.find((f: any) => f.is_subtotal)?.name;
     let prevRowSubtotal: number | undefined = undefined;
-    for (let i = 0; i < rowCount; i++) {
-      const baseRow = baseRows[i] || {};
-      const expansionRow = expansion?.rows?.[i];
-      const basicDataValues = expansionRow?.basicDataValues;
+    for (let i = 0; i < s.totalRows; i++) {
+      const ra = rowAt(i, cd, s);
+
+      // 手动行：原样序列化（含 _origin:'manual' 与用户已填各列值），不做富化
+      if (ra.isManual) {
+        out.push({ ...ra.row });
+        continue;
+      }
+
+      const baseRow = ra.row;
+      const basicDataValues = ra.expIndex >= 0 ? (expansion as any)?.rows?.[ra.expIndex]?.basicDataValues : undefined;
 
       // 1. snapshot BASIC_DATA values from driver expansion → row[key]
       const enriched: Record<string, any> = { ...baseRow };
