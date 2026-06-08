@@ -1135,15 +1135,20 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   }, [onUpdate]);
 
   // ── 快照回填:default_source.type=BASIC_DATA 的空 INPUT 单元格,首次拿到 expansion 时
-  //    把解析值写进 editRows(快照语义);写一次即非空 → 不再触发。bakedRef 防"清空后又回填"。
+  //    把解析值写进行数据(快照语义);写一次即非空 → 不再触发。bakedRef 防"清空后又回填"。
   //    注:bakedRef 随 ProductCard 实例存活、不随 item 切换重置 —— 依赖父列表按 item.id/tempId 稳定 key
   //    渲染(item 变 = 新实例 = 新 bakedRef)。若某调用点未用稳定 key 复用同卡片,同 index 单元格回填会被误抑制。
+  //    ⚠️ 必须"收集全部回填 → 一次性 onUpdate":handleUpdateQuoteLineItem 对每次更新整段替换 comp.rows,
+  //       若逐字段单独 onUpdate,N 次同步调用都从同一份 stale 闭包(quoteLineItems[index],rows 空)取基,
+  //       互相覆盖只剩最后一次碎片 → 单元格几乎全空(2026-06-08 实测根因)。
   const bakedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!customerId || !item.productPartNo || !item.componentData) return;
     // 与 prune effect 同款 lineItemId 计算, 保证算出的 expansion key 与渲染侧一致
     const lineItemId = (item as any).id || (item as any).tempId || '';
-    item.componentData.forEach((comp, ci) => {
+    // 收集本轮全部待回填(按 componentId 归组, 不依赖下标), 最后一次性 onUpdate。
+    const writes: Array<{ componentId: string; ri: number; key: string; value: any }> = [];
+    item.componentData.forEach((comp) => {
       if (!comp.componentId || !Array.isArray(comp.fields)) return;
       const expKey = driverExpansionKey(
         lineItemId, item.productPartNo, comp.componentId, customerId,
@@ -1163,20 +1168,36 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         for (const f of inputFields) {
           const key = f.name || f.key || '';
           if (!key) continue;
-          const guard = `${ci}-${ri}-${key}`;
+          const guard = `${comp.componentId}-${ri}-${key}`;
           if (bakedRef.current.has(guard)) continue;
           const cur = curRow[key];
-          const isEmpty = cur === undefined || cur === null || cur === '';
-          if (!isEmpty) { bakedRef.current.add(guard); continue; }
+          if (!(cur === undefined || cur === null || cur === '')) { bakedRef.current.add(guard); continue; }
           const lk = bnfDriverLookupKey(f.default_source.path);
           const v = Object.prototype.hasOwnProperty.call(bdv, lk) ? bdv[lk] : undefined;
           if (v == null || (Array.isArray(v) && v.length === 0)) continue;
           bakedRef.current.add(guard);
-          patchRowField(ci, ri, key, typeof v === 'object' ? (formatPathValue(v) ?? String(v)) : v);
+          writes.push({
+            componentId: comp.componentId, ri, key,
+            value: typeof v === 'object' ? (formatPathValue(v) ?? String(v)) : v,
+          });
         }
       }
     });
-  }, [driverExpansions, item, customerId, patchRowField]);
+    if (writes.length === 0) return;
+    // 一次性把全部回填应用到最新 prev(按 componentId 匹配, 整段重建 rows)。
+    onUpdate((prevItem: LineItem) => {
+      const componentData = (prevItem.componentData || []).map((comp) => {
+        const cw = writes.filter(w => w.componentId === comp.componentId);
+        if (cw.length === 0) return comp;
+        const maxRi = cw.reduce((m, w) => Math.max(m, w.ri), -1);
+        const rows = Array.isArray(comp.rows) ? comp.rows.map(r => ({ ...r })) : [];
+        while (rows.length <= maxRi) rows.push({});
+        for (const w of cw) rows[w.ri][w.key] = w.value;
+        return { ...comp, rows };
+      });
+      return { componentData };
+    });
+  }, [driverExpansions, item, customerId, onUpdate]);
 
   // Execute a single DATA_SOURCE field query for a specific row
   const executeDsQuery = useCallback(async (
