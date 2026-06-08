@@ -96,6 +96,9 @@ export function usePathFormulaCache(
               if (f.default_basic_data_path) {
                 paths.push(f.default_basic_data_path);
               }
+              // 注意: 不收集 default_source.type==='BASIC_DATA' —— $view.中文列 作单列路径会撞
+              //   SqlViewExecutor ASCII 校验(PATH_PATTERN/SQL_IDENT)失败; BASIC_DATA 默认值只走
+              //   后端 expand 整行通路(ComponentDriverService 虚拟行 merge), 不进 batch-evaluate。
               // V190+ default_source.BNF_PATH (INPUT_NUMBER 走 BNF 兜底)
               if (f.default_source?.type === 'BNF_PATH' && f.default_source?.path) {
                 paths.push(f.default_source.path);
@@ -166,6 +169,9 @@ export function usePathFormulaCache(
           if (f.default_basic_data_path) {
             addTask(partNo, f.default_basic_data_path);
           }
+          // 注意: 不收集 default_source.type==='BASIC_DATA' —— $view.中文列 作单列路径会撞
+          //   SqlViewExecutor ASCII 校验(PATH_PATTERN/SQL_IDENT)失败; BASIC_DATA 默认值只走
+          //   后端 expand 整行通路(ComponentDriverService 虚拟行 merge), 不进 batch-evaluate。
           // V190+ default_source.BNF_PATH
           if (f.default_source?.type === 'BNF_PATH' && f.default_source?.path) {
             addTask(partNo, f.default_source.path);
