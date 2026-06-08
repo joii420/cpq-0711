@@ -90,7 +90,7 @@ const DefaultSourceEditor: React.FC<Props> = ({ open, value, fieldName, onClose,
     // K2: 拉 resolver type 列表 (DATABASE_QUERY 不作为 default_source 默认值场景, 过滤掉)
     dataSourceResolverService.listTypes()
       .then((types) => setAvailableTypes(
-        [...types.filter((t) => t !== 'DATABASE_QUERY'), 'BASIC_DATA']
+        [...new Set([...types.filter((t) => t !== 'DATABASE_QUERY'), 'BASIC_DATA'])]
       ))
       .catch(() => {/* 用默认 */});
   }, [open, value]);
