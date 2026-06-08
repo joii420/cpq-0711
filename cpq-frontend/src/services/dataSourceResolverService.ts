@@ -21,6 +21,7 @@ export const RESOLVER_TYPE_LABEL: Record<string, string> = {
   GLOBAL_VARIABLE: '全局变量',
   BNF_PATH: 'BNF 路径',
   HTTP_API: 'HTTP API',
+  BASIC_DATA: '基础数据',
 };
 
 /** 进程级缓存, 避免每次打开编辑器都拉一次 */

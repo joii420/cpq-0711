@@ -52,7 +52,7 @@ const DefaultSourceEditor: React.FC<Props> = ({ open, value, fieldName, onClose,
   const [loading, setLoading] = useState(false);
   // K2: 动态拉数据源类型, 不再硬编码 Radio 选项
   const [availableTypes, setAvailableTypes] = useState<string[]>(
-    ['GLOBAL_VARIABLE', 'BNF_PATH', 'HTTP_API']  // SSR/初始默认, 拉到后端列表后会更新
+    ['GLOBAL_VARIABLE', 'BNF_PATH', 'HTTP_API', 'BASIC_DATA']  // SSR/初始默认, 拉到后端列表后会更新
   );
   // J3: 测试解析
   const [testDriverRowJson, setTestDriverRowJson] = useState<string>('{}');
@@ -90,7 +90,7 @@ const DefaultSourceEditor: React.FC<Props> = ({ open, value, fieldName, onClose,
     // K2: 拉 resolver type 列表 (DATABASE_QUERY 不作为 default_source 默认值场景, 过滤掉)
     dataSourceResolverService.listTypes()
       .then((types) => setAvailableTypes(
-        types.filter((t) => t !== 'DATABASE_QUERY')
+        [...types.filter((t) => t !== 'DATABASE_QUERY'), 'BASIC_DATA']
       ))
       .catch(() => {/* 用默认 */});
   }, [open, value]);
@@ -116,6 +116,11 @@ const DefaultSourceEditor: React.FC<Props> = ({ open, value, fieldName, onClose,
     if (type === 'BNF_PATH') {
       if (!bnfPath.trim()) return;
       onConfirm({ type: 'BNF_PATH', path: bnfPath.trim() });
+      return;
+    }
+    if (type === 'BASIC_DATA') {
+      if (!bnfPath.trim()) return;
+      onConfirm({ type: 'BASIC_DATA', path: bnfPath.trim() });
       return;
     }
     if (type === 'HTTP_API') {
@@ -286,6 +291,21 @@ const DefaultSourceEditor: React.FC<Props> = ({ open, value, fieldName, onClose,
             value={bnfPath}
             onChange={(e) => setBnfPath(e.target.value)}
             placeholder="mat_part.unit_weight"
+            style={{ fontFamily: 'Consolas, Monaco, monospace' }}
+          />
+        </Form.Item>
+      )}
+
+      {type === 'BASIC_DATA' && (
+        <Form.Item
+          label="基础数据路径"
+          required
+          extra="同 BASIC_DATA 字段路径语法, 必须 $视图引用(支持中文列), 如 $cp_view.品名"
+        >
+          <Input
+            value={bnfPath}
+            onChange={(e) => setBnfPath(e.target.value)}
+            placeholder="$cp_view.品名"
             style={{ fontFamily: 'Consolas, Monaco, monospace' }}
           />
         </Form.Item>
