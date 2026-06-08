@@ -1092,19 +1092,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     onUpdate((prevItem: LineItem) => ({
       componentData: prevItem.componentData.map((comp, ci) => {
         if (ci !== tabIndex) return comp;
-        const emptyRow: Record<string, any> = { row_index: comp.rows.length };
-        comp.fields.forEach(f => {
-          const key = f.name || f.key || '';
-          if (f.field_type === 'FIXED_VALUE') {
-            emptyRow[key] = f.content ?? '';
-          } else if (f.field_type === 'FORMULA') {
-            // no stored value
-          } else if (f.field_type === 'DATA_SOURCE') {
-            emptyRow[key] = null;
-          } else {
-            emptyRow[key] = '';
-          }
-        });
+        // 手动新增行:除标记外不预填任何列。公式列由渲染层按用户手填值计算。
+        const emptyRow: Record<string, any> = { _origin: 'manual', row_index: comp.rows.length };
         return { ...comp, rows: [...comp.rows, emptyRow] };
       }),
     }));
