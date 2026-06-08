@@ -302,6 +302,21 @@ public class ComponentDriverService {
             if (customerId != null) {
                 virtualRow.put("customer_id", customerId);
             }
+            // default_source.BASIC_DATA: 先把引用的 $view 整行(中文 key 安全)merge 进 virtualRow,
+            // 使下方 evaluatePath 短路命中 driverRow.get(中文列), 绕开 $view 单列路径的 ASCII 校验。
+            for (String viewBase : parseBasicDataDefaultViewBases(effectiveFieldsJson)) {
+                try {
+                    List<Map<String, Object>> vrows = dataLoader.loadByPath(viewBase, null, partNo, customerId).get();
+                    if (vrows != null && !vrows.isEmpty() && vrows.get(0) != null) {
+                        for (Map.Entry<String, Object> e : vrows.get(0).entrySet()) {
+                            virtualRow.putIfAbsent(e.getKey(), e.getValue());
+                        }
+                    }
+                } catch (Exception ex) {
+                    LOG.warnf("[default-source BASIC_DATA] merge view row failed base=%s partNo=%s: %s",
+                            viewBase, partNo, ex.getMessage());
+                }
+            }
             ExpandDriverResponse.Row row = new ExpandDriverResponse.Row();
             row.driverRow = virtualRow;
             row.basicDataValues = new LinkedHashMap<>();
@@ -835,7 +850,10 @@ public class ComponentDriverService {
                 // V190 default_source.BNF_PATH (典型 INPUT_NUMBER 兜底�?BNF 路径)
                 Object ds = f.get("default_source");
                 if (ds instanceof Map<?, ?> dsMap) {
-                    if ("BNF_PATH".equals(String.valueOf(dsMap.get("type")))) {
+                    String dsType = String.valueOf(dsMap.get("type"));
+                    // BNF_PATH / BASIC_DATA 都把 path 纳入逐行求值。BASIC_DATA 的 $view 整行已在
+                    // 无-driver 虚拟行分支 merge 进 driverRow → evaluatePath 短路按中文列名取值。
+                    if ("BNF_PATH".equals(dsType) || "BASIC_DATA".equals(dsType)) {
                         addPathIfPresent(out, dsMap.get("path"));
                     }
                 }
@@ -882,6 +900,45 @@ public class ComponentDriverService {
             }
         } catch (Exception e) {
             LOG.warnf("parse component.fields failed: %s", e.getMessage());
+        }
+        return out;
+    }
+
+    /** 从 "$cp_view.品名" / "{$cp_view.品名}" 提取视图基路径 "$cp_view"(去花括号 + 去叶列, 保留谓词);非 $ 视图返 null。 */
+    private static String viewBasePath(String fullPath) {
+        if (fullPath == null) return null;
+        String s = fullPath.trim();
+        if (s.startsWith("{") && s.endsWith("}")) s = s.substring(1, s.length() - 1).trim();
+        if (!s.startsWith("$")) return null;
+        int depth = 0, lastDot = -1;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '[' || c == '(') depth++;
+            else if (c == ']' || c == ')') depth--;
+            else if (c == '.' && depth == 0) lastDot = i;
+        }
+        return lastDot < 0 ? s : s.substring(0, lastDot);
+    }
+
+    /** 收集 default_source.type=BASIC_DATA 字段引用的去重 $view 基路径(用于无-driver 虚拟行整行 merge)。 */
+    @SuppressWarnings("unchecked")
+    private static List<String> parseBasicDataDefaultViewBases(String fieldsJson) {
+        List<String> out = new ArrayList<>();
+        if (fieldsJson == null || fieldsJson.isBlank()) return out;
+        try {
+            List<Map<String, Object>> fields = MAPPER.readValue(fieldsJson,
+                    new TypeReference<List<Map<String, Object>>>() {});
+            for (Map<String, Object> f : fields) {
+                Object ds = f.get("default_source");
+                if (!(ds instanceof Map<?, ?> dsMap)) continue;
+                if (!"BASIC_DATA".equals(String.valueOf(dsMap.get("type")))) continue;
+                Object pathObj = dsMap.get("path");
+                if (pathObj == null) continue;
+                String base = viewBasePath(String.valueOf(pathObj));
+                if (base != null && !out.contains(base)) out.add(base);
+            }
+        } catch (Exception e) {
+            LOG.warnf("parse BASIC_DATA default view bases failed: %s", e.getMessage());
         }
         return out;
     }
