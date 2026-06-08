@@ -507,7 +507,7 @@ public class FormulaCalculator {
                         String code = ds.path("code").asText("");
                         Object v = lookupBdv(basicDataValues, "@gvar:" + code);
                         if (nonEmpty(v)) resolved = v;
-                    } else if ("BNF_PATH".equals(dsType)) {
+                    } else if ("BNF_PATH".equals(dsType) || "BASIC_DATA".equals(dsType)) {
                         String path = ds.path("path").asText("");
                         if (!path.isEmpty()) {
                             Object v = lookupBdv(basicDataValues, bnfDriverLookupKey(path));
@@ -577,7 +577,7 @@ public class FormulaCalculator {
                         if ("GLOBAL_VARIABLE".equals(dsType)) {
                             Object g = lookupBdv(basicDataValues, "@gvar:" + ds.path("code").asText(""));
                             if (nonEmpty(g)) v = g;
-                        } else if ("BNF_PATH".equals(dsType)) {
+                        } else if ("BNF_PATH".equals(dsType) || "BASIC_DATA".equals(dsType)) {
                             String p = ds.path("path").asText("");
                             if (!p.isEmpty()) {
                                 Object g = lookupBdv(basicDataValues, bnfDriverLookupKey(p));
