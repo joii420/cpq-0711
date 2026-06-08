@@ -1134,6 +1134,48 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     }));
   }, [onUpdate]);
 
+  // ── 快照回填:default_source.type=BASIC_DATA 的空 INPUT 单元格,首次拿到 expansion 时
+  //    把解析值写进 editRows(快照语义);写一次即非空 → 不再触发。bakedRef 防"清空后又回填"。
+  const bakedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!customerId || !item.productPartNo || !item.componentData) return;
+    // 与 prune effect 同款 lineItemId 计算, 保证算出的 expansion key 与渲染侧一致
+    const lineItemId = (item as any).id || (item as any).tempId || '';
+    item.componentData.forEach((comp, ci) => {
+      if (!comp.componentId || !Array.isArray(comp.fields)) return;
+      const expKey = driverExpansionKey(
+        lineItemId, item.productPartNo, comp.componentId, customerId,
+        comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]),
+      );
+      const exp = driverExpansions?.[expKey];
+      if (!exp || exp.rowCount <= 0) return;
+      const inputFields = (comp.fields as any[]).filter(
+        (f) => (f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT_NUMBER')
+          && f.default_source?.type === 'BASIC_DATA' && f.default_source?.path,
+      );
+      if (inputFields.length === 0) return;
+      for (let ri = 0; ri < exp.rowCount; ri++) {
+        const bdv = exp.rows[ri]?.basicDataValues;
+        if (!bdv) continue;
+        const curRow = comp.rows?.[ri] || {};
+        for (const f of inputFields) {
+          const key = f.name || f.key || '';
+          if (!key) continue;
+          const guard = `${ci}-${ri}-${key}`;
+          if (bakedRef.current.has(guard)) continue;
+          const cur = curRow[key];
+          const isEmpty = cur === undefined || cur === null || cur === '';
+          if (!isEmpty) { bakedRef.current.add(guard); continue; }
+          const lk = bnfDriverLookupKey(f.default_source.path);
+          const v = Object.prototype.hasOwnProperty.call(bdv, lk) ? bdv[lk] : undefined;
+          if (v == null || (Array.isArray(v) && v.length === 0)) continue;
+          bakedRef.current.add(guard);
+          patchRowField(ci, ri, key, typeof v === 'object' ? String(v) : v);
+        }
+      }
+    });
+  }, [driverExpansions, item, customerId, patchRowField]);
+
   // Execute a single DATA_SOURCE field query for a specific row
   const executeDsQuery = useCallback(async (
     tabIndex: number,
