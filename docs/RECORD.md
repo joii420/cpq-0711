@@ -3270,4 +3270,18 @@ E2E:
 
 ---
 
+### [2026-06-08] 报价单 - 手动新增行 Phase 1(除公式列全空白 / 持久化 / 计入小计 / 详情一致 / driver 行不受影响) | manualRows.ts+manualRows.test.ts(新) + QuotationStep2.tsx / QuotationWizard.tsx / ComponentCell.tsx / ReadonlyProductCard.tsx | `_origin='manual'` 标记 + `splitRows`/`rowAt` helper 统一 5 处"按 exp.rowCount 截断"的行迭代为"driver 行 + 手动行拼接";纯前端经 row_data JSONB 往返持久化,后端零改动
+
+- **目标**: 报价单页签"+ 添加行"新增的手动行——除公式列(渲染层按用户手填值即时计算)外全空白、用户自填、保存重开仍在、计入页签小计、详情只读态一致显示;driver 展开行/既有渲染零影响。两类页签均支持(有 driver: `totalRows=driverCount+手动行数`;无 driver: `totalRows=comp.rows.length` 手动行已在其中)。
+- **架构(纯前端)**: 手动行存于 `comp.rows` 末尾打 `_origin:'manual'`,经 `snapshotRows` 原样序列化进 `row_data`(不富化 BASIC_DATA/FIXED_VALUE/FORMULA)→ `SaveDraftRequest` → `row_data` 往返。后端 `refreshQuoteCardValues` 只写 `quoteCardValues` 不碰 `row_data`,故手动行安全,Phase 1 无需动后端。
+- **核心 helper(单一真相)**: `manualRows.ts` 暴露 `MANUAL_ORIGIN`/`isManualRow`/`splitRows(comp,exp)`/`rowAt(i,comp,s)`。`splitRows` 拆 driverEditRows(非手动) + manualRows;`rowAt` driver 段取 driverEditRows+exp.rows(expIndex>=0),手动段取 manualRows(expIndex=-1)。单测 4 例绿。
+- **改动点**: ①`handleAddRow` 改新增全空白手动行(仅 `_origin`+`row_index`,不预填);②`fillFixedDefaults` 开头短路手动行(FIXED_VALUE 不自动填,留空给用户);③`buildCrossTabRows`/④`computeTabSubtotal`/⑤编辑态 `<tbody>` 渲染/⑥`snapshotRows`/⑦`ReadonlyProductCard` 全改 `splitRows`+`rowAt` 拼接;⑧`ComponentCell` 加 `isManualRow`(gated `!readonly`):FIXED_VALUE 手动行渲文本框、DATA_SOURCE 手动行渲空下拉/文本框降级。**AP-54**: 渲染用拼接序、写回用 `comp.rows` 原集合,写路径下标按 `comp.rows.indexOf(ra.row)` 真实下标映射。
+- **T11 E2E 暴露并修复 2 个手动行丢失根因**(关键): ⓐ**prune useEffect**(AP-31 Phase1)——`comp.rows.length>exp.rowCount` 时整段 `slice(0,rowCount)` 会立即截掉末尾手动行 → 改为只在 `driverRows.length>exp.rowCount` 时裁、且只裁非手动 driver 行、手动行全保留(`[...driverRows.slice(0,rowCount),...manual]`)。ⓑ**同 componentId 多实例合并**(AP-37 续)——`handleUpdateQuoteLineItem`/costing 合并原按 cid 建**单值索引**,"材质"+"选配-材质"共享同一 cid 时后者(无手动行)覆盖前者(有手动行)→ 手动行丢失;改 `(cid,tabName)` 精确匹配 + 同 cid 队列 FIFO(与 enrichComponentData 一致)。
+- **验证(已自检)**: TS 0 ✅;Vite QuotationStep2.tsx 200 ✅;后端 401 ✅;`manualRows.test.ts` 4/4;**E2E `quote-manual-row.spec.ts` 5/5 passed**(AC1 添加后行数=N+1 / AC2 小计含手动行 / AC3 刷新后行数>=N+1 持久化 / AC4 详情页含手动行 / AC0 加载中=0);回归 **`quotation-flow.spec.ts` passed 加载中=0**(SIMPLE 路径无回归)。
+- **已知缺陷不修(非本次回归)**: `composite-product-flow.spec.ts` 唯一失败 = RECORD:296 记录的预存缺陷(COMBO 元素含量模板 子件列绑 `$composite_child_elements_mirror.hf_part_no`(应 child_hf_part_no)+ 单重列绑视图不存在的 `unit_weight` 列 → #ERROR),用户已确认该元素模板停用不修。该 sql_view 在共享 DB(V297)、与前端任何 commit 无关;composite 流程已跑到元素 Tab 渲染(CFG-COMBO-000026 行已出)证 driver 展开/组合渲染未被手动行破坏。
+- **Phase 2 边界(不含)**: driver 行删除 + `deleted_driver_keys` + driverRow 内容指纹匹配 + 重开不复活;后端 `mergeRowDataInputsIntoEdits` 让 `quoteCardValues` 也含手动行(仅当 Excel 视图/其它消费方需要时,Phase 1 详情态已从 comp.rows 取不需要)。
+- **计划/设计**: docs/superpowers/plans/2026-06-08-quote-manual-row.md + docs/superpowers/specs/2026-06-08-quote-manual-row-design.md
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。

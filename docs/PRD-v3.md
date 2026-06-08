@@ -255,6 +255,17 @@
 - 每组件有"小计"(`is_subtotal=true` 字段)
 - 卡片底部:产品小计 = `subtotal_formula` 汇总各组件
 
+**手动新增行(Phase 1,2026-06-08)**:
+
+- 每个组件 Tab 表格底部有"+ 添加行"入口,点击在该 Tab 末尾追加一行**手动行**(标记 `_origin='manual'`),用于补录 driver 未覆盖的临时/特殊条目。
+- **行内行为**:除公式列(`FORMULA`/`LIST_FORMULA`,由渲染层按用户手填值即时计算)外,所有列初始**全空白**——`FIXED_VALUE` 列渲染为可填文本框(不自动带模板默认值)、`DATA_SOURCE` 列渲染为空下拉/文本框(不自动解析 driver 值)、`INPUT_*` 列为空。
+- **仅手动行享受空白待填**:`_origin='manual'` 全程 gated,driver 展开行的既有渲染/取值/小计行为不受影响。
+- **计入小计**:手动行公式列结果计入该 Tab 小计 → 产品小计。
+- **持久化**:手动行经 `row_data` JSONB 往返保存,草稿保存 / 刷新重开 / 提交后均保留;driver 行数不受手动行影响(渲染时"driver 行 + 手动行"拼接,prune 只裁 driver 行)。
+- **详情只读态一致**:提交后详情页(`ReadonlyProductCard`)同样拼接显示手动行(只读展示用户填的值)。
+- **核价侧**:核价 Tab 只读,不提供"+ 添加行"入口。
+- **Phase 2(待立项)**:driver 行删除(`deleted_driver_keys` + driverRow 内容指纹匹配 + 重开不复活)。
+
 **Excel 视图**:
 
 - 按选定 Excel 模板(`costing_template`)的 `columns` JSON 渲染表格
@@ -2592,6 +2603,19 @@ v_costing_exchange_rate[from_currency='CNY' AND to_currency='USD'].costing_rate
 | **SCALAR 渲染不变** | 仍是 `Descriptions column={2} bordered size="small"`，与 LOOKUP_TABLE 用同一套组件路径，代码上 SCALAR/LOOKUP_TABLE 分支保留（语义不同：SCALAR 每个 Item 的 label 来自 columns[i]，LOOKUP_TABLE 每个 Item 的 label 来自 rows[i][keyCol]） |
 | **AC6/AC7 同步更新** | AC6 改为"两类 GV 统一 Descriptions 渲染"+ 详细字段对应；AC7 改为"大表 max-height 滚动而非分页"|
 | **核心基线 §5.5 / 反模式 AP-49 不受影响** | 本次仅前端渲染层修订，不动 `GlobalVariableDataLoader` / 公式引擎 / 透传链路；引用数据 Tab 仍走 `_globalPathCache` 之外的独立请求路径（`/ref-data` `/ref-data/snapshot`），与产品卡片求值无耦合 |
+
+### 9.19 v4.1(2026-06-08)— 报价单页签手动新增行 Phase 1
+
+| 决策 | 内容 |
+|---|---|
+| **§3.2.2 新增"手动新增行"** | 报价单产品卡片每个组件 Tab 底部"+ 添加行"追加手动行(`_origin='manual'`),除公式列外全空白由用户自填;计入小计、经 `row_data` 持久化、详情只读态一致显示;核价 Tab 不提供入口 |
+| **纯前端实现(后端零改动)** | 手动行存 `comp.rows` 末尾,经 `snapshotRows` 原样序列化进 `row_data` JSONB 往返;后端 `refreshQuoteCardValues` 只写 `quoteCardValues` 不碰 `row_data`,故手动行安全 |
+| **`splitRows`/`rowAt` helper 统一行迭代** | 新建 `manualRows.ts`,把 5 处"按 `exp.rowCount` 截断"的行迭代(buildCrossTabRows / computeTabSubtotal / 编辑态渲染 / snapshotRows / ReadonlyProductCard)统一改为"driver 行 + 手动行拼接";`fillFixedDefaults` 短路手动行不自动填 FIXED_VALUE 默认 |
+| **AP-54 写回下标映射** | 渲染用拼接序、写回用 `comp.rows` 原集合,写路径下标按 `comp.rows.indexOf(ra.row)` 真实下标映射,避免写错位 |
+| **AP-31 Phase1 — prune 保留手动行** | driver 页签 prune useEffect 原 `comp.rows.length>exp.rowCount` 整段 slice 会截掉手动行;改为只在 `driverRows.length>exp.rowCount` 时裁、且只裁非手动 driver 行 |
+| **AP-37 续 — 同 cid 多实例合并保手动行** | "材质"+"选配-材质"共享同一 componentId 时,合并原按 cid 单值索引致后者(无手动行)覆盖前者(有手动行);改 `(cid,tabName)` 精确匹配 + 同 cid 队列 FIFO |
+| **验证** | `manualRows.test.ts` 4/4;E2E `quote-manual-row.spec.ts` 5/5(添加 N+1 / 小计 / 持久化 / 详情 / 加载中=0);回归 `quotation-flow.spec.ts` passed。`composite-product-flow.spec.ts` 唯一失败为 RECORD:296 预存已知缺陷(元素模板 unit_weight 列不存在,用户确认停用不修),与本次无关 |
+| **Phase 2(待立项)** | driver 行删除 + `deleted_driver_keys` + driverRow 内容指纹匹配 + 重开不复活 |
 
 ### 9.8 关键设计决策追溯
 
