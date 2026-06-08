@@ -3258,4 +3258,8 @@ E2E:
 
 ---
 
+### [2026-06-08] 默认值来源 - default_source 新增 BASIC_DATA 类型(可编辑快照) | types.ts/DefaultSourceEditor.tsx/dataSourceResolverService.ts + ComponentDriverService.java(虚拟行 merge $view 整行 + viewBasePath/parseBasicDataDefaultViewBases helper)/FormulaCalculator.java(两处消费点)/QuotationStep2.tsx(公式链 + 快照回填 effect)/usePathFormulaCache.ts(guard 注释) + 单测 ComponentDriverServiceHelpersTest | 根因:`$view.中文列`作单列路径撞 SqlViewExecutor ASCII PATH_PATTERN/SQL_IDENT(IllegalArgumentException 被吞→null);两条取值通路本质不同——driver 整行展开后 evaluatePath 短路 `driverRow.get(中文列)`(Map 查,中文安全) vs 单列路径解析(只收 ASCII)。解法:无-driver 虚拟行分支按字段 default_source.BASIC_DATA 引用的 $view 取整行 merge 进 virtualRow→短路命中中文列;快照语义首次展开写入 editRows(可编辑)。usePathFormulaCache **不收集** BASIC_DATA(避免 batch-evaluate 撞 ASCII)。验证:COMP-0027 改前 BNF_PATH 全 `#ERROR 非法路径`→改后 BASIC_DATA 解出 品名=主料1/尺寸=3.5×3.5×0.6/汇率=7.12/单重=3.0(规格/材质因底层 null);E2E quotation-flow 1 passed 加载中=0;模板 d9437855 snapshot 已刷新带 BASIC_DATA。设计/计划见 specs+plans/2026-06-08。已知限制:merge 仅无-driver 虚拟行分支;快照回填一会话一次(bakedRef)
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
