@@ -5,6 +5,7 @@ import { computeAllFormulas, computeProductSubtotal, buildSnapshotExpansions, bu
 import { enrichComponentData } from './enrichComponentData';
 import { useDriverExpansions, driverExpansionKey, fieldsOverrideHash, bnfDriverLookupKey } from './useDriverExpansions';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
+import { splitRows, rowAt } from './manualRows';
 import { useTreeCollapse } from './useTreeCollapse';
 import { computeRowKey } from './useCardSnapshots';
 import type { CardStructure, CardValues } from '../../services/quotationService';
@@ -436,9 +437,10 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                       fieldsOverrideHash(activeComp.fields as any[]),
                     );
                     const activeDriverExpansion = driverExpansions[activeDriverKey];
-                    const useDriver = !!(activeDriverExpansion && activeDriverExpansion.rowCount > 0);
-                    const driverCount = useDriver ? activeDriverExpansion!.rowCount : 0;
-                    const effectiveCount = useDriver ? driverCount : activeComp.rows.length;
+                    const s = splitRows(activeComp, activeDriverExpansion as any);
+                    const useDriver = s.useDriver;
+                    const driverCount = s.driverCount;
+                    const effectiveCount = s.totalRows;
 
                     // 风险 1 缓解（架构师决议）：详情页也按行预计算 formulaCache，
                     // 支持 prev_row_subtotal 累加公式（与编辑页 preComputedCaches 同款逻辑）。
@@ -451,10 +453,11 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                       const subtotalFieldName = activeComp.fields?.find((f: any) => f.is_subtotal)?.name;
                       let prevRowSubtotal: number | undefined = undefined;
                       for (let ri = 0; ri < effectiveCount; ri++) {
-                        const rawRow = activeComp.rows[ri] ?? {};
-                        const rowBdv = useDriver ? activeDriverExpansion!.rows[ri]?.basicDataValues : undefined;
+                        const ra = rowAt(ri, activeComp, s);
+                        const rawRow = ra.row;
+                        const rowBdv = ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
                         // Phase4 Task4: 优先读快照 formulaResults[rowKey](真零计算, 与编辑页 AP-50 同源), 缺时 computeAllFormulas 兜底。
-                        const driverRowForKey = (useDriver ? activeDriverExpansion!.rows[ri]?.driverRow : undefined) ?? activeSnap?.driverRows[ri] ?? rawRow;
+                        const driverRowForKey = (ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined) ?? activeSnap?.driverRows[ri] ?? rawRow;
                         const rowKey = useSnap ? computeRowKey(activeRowKeyFields, driverRowForKey, ri) : String(ri);
                         const snapFormula = useSnap ? activeSnap?.formula.get(rowKey) : undefined;
                         const cache = (snapFormula && Object.keys(snapFormula).length > 0)
@@ -485,12 +488,15 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                           </tr>
                         )}
                         {(() => {
-                          const descriptors = Array.from({ length: effectiveCount }, (_, ri) => ({
-                            ri,
-                            rawRow: activeComp.rows[ri] ?? {},
-                            rowBdv: useDriver ? activeDriverExpansion!.rows[ri]?.basicDataValues : undefined,
-                            formulaCache: preComputedCaches[ri] ?? {},
-                          }));
+                          const descriptors = Array.from({ length: effectiveCount }, (_, ri) => {
+                            const ra = rowAt(ri, activeComp, s);
+                            return {
+                              ri,
+                              rawRow: ra.row,
+                              rowBdv: ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined,
+                              formulaCache: preComputedCaches[ri] ?? {},
+                            };
+                          });
                           const treeCfg = activeComp.treeConfig;
                           let ordered = descriptors.map(d => ({ ...d, _depth: 0, _hasChildren: false, _nodeKey: '' }));
                           if (treeCfg?.idField && treeCfg?.parentField) {
