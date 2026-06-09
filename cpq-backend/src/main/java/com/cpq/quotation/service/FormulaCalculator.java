@@ -331,16 +331,33 @@ public class FormulaCalculator {
                                          JsonNode rowKeyFields,
                                          JsonNode baseRows, JsonNode editRows,
                                          Map<String, Double> componentSubtotals) {
-        String subtotalField = findSubtotalFieldName(fields);
-        if (subtotalField == null) return ZERO4;
+        // Plan 2-核心：委托按列计算后求所有小计列之和（单小计列时 = 原行为）。
+        Map<String, BigDecimal> byCol = computeTabSubtotalsByColumn(
+            fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows, componentSubtotals);
+        BigDecimal sum = ZERO4;
+        for (BigDecimal v : byCol.values()) sum = sum.add(v);
+        return sum.setScale(4, RoundingMode.HALF_UP);
+    }
+
+    /** 逐列求和：每个 is_subtotal 列 → 该列各行结果之和。Plan 2-核心：多小计列。 */
+    public Map<String, BigDecimal> computeTabSubtotalsByColumn(
+            JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
+            JsonNode rowKeyFields, JsonNode baseRows, JsonNode editRows,
+            Map<String, Double> componentSubtotals) {
+        Map<String, BigDecimal> out = new LinkedHashMap<>();
+        List<String> subtotalFields = findSubtotalFieldNames(fields);
+        if (subtotalFields.isEmpty()) return out;
         List<RowResult> rows = computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
             componentSubtotals, new HashMap<>(), new HashMap<>(), Map.of());
-        double sum = 0.0;
-        for (RowResult rr : rows) {
-            Double v = rr.formulaValues.get(subtotalField);
-            if (v != null) sum += v;
+        for (String sf : subtotalFields) {
+            double sum = 0.0;
+            for (RowResult rr : rows) {
+                Double v = rr.formulaValues.get(sf);
+                if (v != null) sum += v;
+            }
+            out.put(sf, BigDecimal.valueOf(sum).setScale(4, RoundingMode.HALF_UP));
         }
-        return BigDecimal.valueOf(sum).setScale(4, RoundingMode.HALF_UP);
+        return out;
     }
 
     private static class RowResult {
@@ -801,6 +818,17 @@ public class FormulaCalculator {
             if (isSub) return fieldName(f);
         }
         return null;
+    }
+
+    /** 返回所有 is_subtotal 字段名（按字段顺序）。Plan 2-核心：多小计列。 */
+    public List<String> findSubtotalFieldNames(JsonNode fields) {
+        List<String> out = new ArrayList<>();
+        if (fields == null || !fields.isArray()) return out;
+        for (JsonNode f : fields) {
+            boolean isSub = f.path("isSubtotal").asBoolean(false) || f.path("is_subtotal").asBoolean(false);
+            if (isSub) out.add(fieldName(f));
+        }
+        return out;
     }
 
     private Map<String, JsonNode> indexEditRows(JsonNode editRows) {
