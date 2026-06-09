@@ -2077,7 +2077,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       {activeComponentBomTree && (<><td /><td /><td /></>)}
                       {activeComponent.fields.map((field, fi) => {
                         if (field.is_subtotal) {
-                          const tabSubtotal = allComponentSubtotals[activeComponent.componentCode]
+                          // Plan 2-核心：按列取本列总计，回退到组件级（单小计列）兼容。
+                          const tabSubtotal =
+                            allComponentSubtotals[`${activeComponent.componentCode}#${field.name}`]
+                            ?? allComponentSubtotals[`${activeComponent.tabName}#${field.name}`]
+                            ?? allComponentSubtotals[activeComponent.componentCode]
                             ?? allComponentSubtotals[activeComponent.tabName]
                             ?? 0;
                           return (
@@ -2113,16 +2117,36 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         </div>
       )}
 
-      {/* Subtotal Bar */}
-      <div className="qt-subtotal-bar">
-        <span className="qt-subtotal-label">产品小计</span>
-        <span className="qt-subtotal-value">
-          {formatCurrency(
-            item.componentData.length > 0
-              ? computeProductSubtotal(item, driverExpansions, customerId)
-              : item.subtotal
-          )}
-        </span>
+      {/* Subtotal Bar：多小计列 → 每条 (组件·小计列) 一行 + 最终总价（Plan 2-核心）。 */}
+      <div className="qt-subtotal-bar-multi">
+        {item.componentData.length > 0 && (() => {
+          const lines: { label: string; value: number }[] = [];
+          for (const comp of item.componentData) {
+            if (!comp?.fields || comp.componentType === 'SUBTOTAL') continue;
+            for (const f of comp.fields) {
+              if (!f.is_subtotal) continue;
+              const v = allComponentSubtotals[`${comp.componentCode}#${f.name}`]
+                ?? allComponentSubtotals[`${comp.tabName}#${f.name}`] ?? 0;
+              lines.push({ label: `${comp.tabName} · ${f.name}`, value: v });
+            }
+          }
+          return lines.map((ln, i) => (
+            <div className="qt-subtotal-line" key={i}>
+              <span className="qt-subtotal-label">{ln.label}</span>
+              <span className="qt-subtotal-value">{formatCurrency(ln.value)}</span>
+            </div>
+          ));
+        })()}
+        <div className="qt-subtotal-line qt-subtotal-total">
+          <span className="qt-subtotal-label">产品小计</span>
+          <span className="qt-subtotal-value">
+            {formatCurrency(
+              item.componentData.length > 0
+                ? computeProductSubtotal(item, driverExpansions, customerId)
+                : item.subtotal
+            )}
+          </span>
+        </div>
       </div>
     </div>
   );
