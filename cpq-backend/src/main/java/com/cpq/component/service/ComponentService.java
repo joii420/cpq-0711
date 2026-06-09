@@ -469,6 +469,32 @@ public class ComponentService {
                         "字段 '" + field.get("name") + "' 绑定的公式 '" + boundName + "' 不存在");
                 }
             }
+            // Plan 3c：条件公式引用校验 —— rules[].formula + default 必须存在。
+            Object cf = field.get("conditional_formula");
+            if (cf instanceof Map<?, ?> cfm) {
+                Object rules = cfm.get("rules");
+                if (rules instanceof java.util.List<?> rl) {
+                    for (Object r : rl) {
+                        if (r instanceof Map<?, ?> rm) {
+                            Object fn = rm.get("formula");
+                            if (fn != null && !fn.toString().isBlank() && !formulaNames.contains(fn.toString())) {
+                                throw new BusinessException("字段「" + field.get("name") + "」条件规则引用的公式 '" + fn + "' 不存在");
+                            }
+                        }
+                    }
+                }
+                Object def = cfm.get("default");
+                if (def != null && !def.toString().isBlank() && !formulaNames.contains(def.toString())) {
+                    throw new BusinessException("字段「" + field.get("name") + "」默认公式 '" + def + "' 不存在");
+                }
+            }
+        }
+        // Plan 3c：硬环检测（含条件依赖）。转 JsonNode 复用引擎依赖图(buildFormulaDeps)。
+        com.fasterxml.jackson.databind.ObjectMapper cycMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        List<String> cyclic = new com.cpq.quotation.service.FormulaCalculator()
+            .cyclicFormulaNodes(cycMapper.valueToTree(fields), cycMapper.valueToTree(formulas));
+        if (!cyclic.isEmpty()) {
+            throw new BusinessException("公式存在循环引用: " + String.join(", ", cyclic));
         }
 
         // Validate cross_tab_ref tokens in formula expressions

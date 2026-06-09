@@ -849,15 +849,12 @@ public class FormulaCalculator {
         }
     }
 
-    private List<String> topoOrder(List<FormulaField> formulaFields) {
-        // 依赖图：公式 field token 引用的其他公式字段
+    /** 构建公式字段依赖图（并集依赖：条件树列 ∪ 候选公式列）。Plan 3a/3c 共用。 */
+    private Map<String, List<String>> buildFormulaDeps(List<FormulaField> formulaFields, java.util.Set<String> nameSet) {
         Map<String, List<String>> deps = new LinkedHashMap<>();
-        java.util.Set<String> nameSet = new java.util.HashSet<>();
-        for (FormulaField ff : formulaFields) nameSet.add(ff.name);
         for (FormulaField ff : formulaFields) {
             List<String> d = new ArrayList<>();
             if (ff.isConditional()) {
-                // Plan 3a：并集依赖 = 条件树引用列 ∪ 所有候选公式(rules+default)引用列。
                 for (CondRule r : ff.rules) {
                     for (String c : com.cpq.formula.CondTreeEvaluator.columns(r.when))
                         if (nameSet.contains(c)) d.add(c);
@@ -869,6 +866,38 @@ public class FormulaCalculator {
             }
             deps.put(ff.name, d);
         }
+        return deps;
+    }
+
+    /** Plan 3c：返回构成环的公式字段名（空 = 无环）。复用并集依赖图（含条件依赖）。 */
+    public List<String> cyclicFormulaNodes(JsonNode fields, JsonNode formulas) {
+        List<FormulaField> ffs = collectFormulaFields(fields, formulas, null);
+        java.util.Set<String> nameSet = new java.util.HashSet<>();
+        for (FormulaField ff : ffs) nameSet.add(ff.name);
+        Map<String, List<String>> deps = buildFormulaDeps(ffs, nameSet);
+        Map<String, Integer> indeg = new LinkedHashMap<>();
+        for (FormulaField ff : ffs) indeg.put(ff.name, deps.get(ff.name).size());
+        List<String> queue = new ArrayList<>();
+        for (FormulaField ff : ffs) if (indeg.get(ff.name) == 0) queue.add(ff.name);
+        int emitted = 0;
+        while (!queue.isEmpty()) {
+            String cur = queue.remove(0); emitted++;
+            for (FormulaField ff : ffs) if (deps.get(ff.name).contains(cur)) {
+                indeg.put(ff.name, indeg.get(ff.name) - 1);
+                if (indeg.get(ff.name) == 0) queue.add(ff.name);
+            }
+        }
+        if (emitted == ffs.size()) return List.of();
+        List<String> cyclic = new ArrayList<>();
+        for (FormulaField ff : ffs) if (indeg.get(ff.name) > 0) cyclic.add(ff.name);
+        return cyclic;
+    }
+
+    private List<String> topoOrder(List<FormulaField> formulaFields) {
+        // 依赖图：公式 field token 引用的其他公式字段（并集，含条件依赖）
+        java.util.Set<String> nameSet = new java.util.HashSet<>();
+        for (FormulaField ff : formulaFields) nameSet.add(ff.name);
+        Map<String, List<String>> deps = buildFormulaDeps(formulaFields, nameSet);
         // Kahn：先算依赖数为 0 的
         Map<String, Integer> revIn = new LinkedHashMap<>();
         for (FormulaField ff : formulaFields) revIn.put(ff.name, deps.get(ff.name).size());
