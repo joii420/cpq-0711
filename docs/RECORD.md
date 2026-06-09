@@ -3288,4 +3288,8 @@ E2E:
 
 ---
 
+### [2026-06-09] 公式可视化构建器 P1.2 — CardFormulaDrawer 简单/高级 + 友好操作 + chip 构建器 | cardFormulaOps.ts(新)+test + CardFormulaDrawer.tsx | 纯前端 UX,{formula,refs} token 零变更;CARD_OPERATIONS 友好操作↔RefType/AggFunc 映射 + 简单/高级 Segmented(切简单时非简单聚合归 SUM);简单模式降术语(隐藏 JEXL/别名 token 预览+语法提示+aggExpr 别名 tooltip,隐藏高级聚合 AVG/COUNT/MAX/MIN,数字值不加引号摘要)+ aggExpr 自由文本换点选 chip 构建器(chips→aggExpr 单向同步,replaceFieldsWithAlias split/join 容忍空格);formula 文本画布两模式保留(模型差异:本就常驻非逃生口),条件构建器/试算/编辑回填/显示格式/帮助一律保留不动。单测 3 + E2E card-formula-builder 1 passed(标题/简单4选项/高级Radio/chip构建器,clone模板fixture只读)+ quotation-flow 加载中=0 回归。计划 plans/2026-06-09-公式可视化构建器-P1.2-CardFormulaDrawer.md
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
