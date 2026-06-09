@@ -389,6 +389,9 @@ function computeAllFormulas(
   // 由 buildCrossTabRows 按组件拓扑序构建后透传; cross_tab_ref token 据此跨 Tab 取数聚合。
   // 不传则保持旧行为 (无跨 Tab 引用时 token 返 0/兜底)。
   crossTabRows?: Record<string, Array<Record<string, any>>>,
+  // Plan 2b：上一行全量公式值（按字段名）。提供后 previous_row_subtotal 按"当前列"取上一行本列值；
+  // 不传则退回 previousRowSubtotal 标量（旧行为）。
+  previousRowValues?: Record<string, number | null>,
 ): Record<string, number | null> {
   if (!comp.fields || !comp.formulas) return {};
 
@@ -584,10 +587,14 @@ function computeAllFormulas(
   for (const name of order) {
     const ff = formulaFields.find(f => f.name === name)!;
     try {
+      // Plan 2b：previous_row_subtotal 按当前列取上一行本列值；无 map 时退回标量。
+      const prevForField = previousRowValues
+        ? (typeof previousRowValues[name] === 'number' ? (previousRowValues[name] as number) : undefined)
+        : previousRowSubtotal;
       const val = evaluateExpression(
         ff.formula.expression, fieldValues,
         allComponentSubtotals || {}, undefined, quotationFields,
-        pathCache, partNo, basicDataValues, previousRowSubtotal,
+        pathCache, partNo, basicDataValues, prevForField,
         globalVariableDefs, row, crossTabRows,
       );
       results[name] = val;
