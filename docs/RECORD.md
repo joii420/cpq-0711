@@ -3296,4 +3296,8 @@ E2E:
 
 ---
 
+### [2026-06-09] 多小计列 Plan2-核心 — 每列各算总计+独立成线+最终总价 | FieldConfigTable+ComponentService(放开校验) + FormulaCalculator(computeTabSubtotalsByColumn/findSubtotalFieldNames) + CardSnapshotService(PASS1 per-column 键) + QuotationStep2(前端按列+底座+footer+小计bar多行) + ReadonlyProductCard(详情 footer 按列) | 计划 plans/2026-06-09-plan2-core-multi-subtotal-columns.md (spec specs/2026-06-09-multi-subtotal-conditional-formula-design.md 设计D)。需求:一个组件支持多个小计列,每列各算总计,产品/报价单层每(组件,小计列)独立成线,最终总价=各线之和。**加法式全兼容**:新增 computeTabSubtotalsByColumn(前后端)→{列名:总计};原 computeTabSubtotal 改为各小计列之和(单列=原值);三处底座(前端 allComponentSubtotals/详情 compSubtotals/后端 CardSnapshotService PASS1)加 `${cid|code|tabName}#${列名}` per-column 键,保留 code=各列之和;两侧 footer 值源按列查找;产品小计 bar 改每条(组件·列)一行+最终总价。字段配置多选 is_subtotal,后端删"至多一个"校验。**明确边界(后续)**:2b previous_row_subtotal 累加 token 不动(4 前端+1 后端 find(is_subtotal) 单数点全是它,census 逐条确认保留),多列期间落第一个小计列;2c [页签#SUBTOTAL] 引用不动,多列时=各列之和(临时语义)。**已知 quirk(非本 Plan)**:computeProductSubtotal fallback 因 3 别名键 Object.values 求和会 3 倍计,真实单据走 SUBTOTAL 公式不触发,休眠未修。自检:后端 FormulaCalculatorMultiSubtotalTest 4 passed(按列40/22+求和62+单列兼容)+ FormulaCalculator/CardSnapshot 回归21绿;前端 computeMultiSubtotal.test.ts 3 passed(按列+单列兼容+SUBTOTAL聚合62);tsc 0 错误;Vite transform 200;E2E quotation-flow 1 passed+加载中=0(单小计列回归零破坏)。**未做**:真实2小计列组件的UI可视确认(需UI全链路构造,headless未做);Plan2b/2c;Plan3 条件公式。
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
