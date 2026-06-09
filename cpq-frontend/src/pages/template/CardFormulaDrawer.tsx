@@ -611,7 +611,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
             <code>[页签名.小计]</code>（小计）、
             <code>[页签名.字段名]</code>（首行/按条件单值）、
             <code>SUM_OVER([页签名] WHERE 条件, 行内别名表达式)</code>（聚合）；
-            裸 <code>[A]</code> 引用本表其他列。WHERE/cond 用 JEXL 算符（<code>==  !=  &gt;  &lt;  &amp;&amp;  ||</code>）。
+            裸 <code>[A]</code> 引用本表其他列。{mode === 'advanced' && <>WHERE/cond 用 JEXL 算符（<code>==  !=  &gt;  &lt;  &amp;&amp;  ||</code>）。</>}
           </Paragraph>
 
           {/* ── 配置说明（可展开）── */}
@@ -813,8 +813,8 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
                     </Form.Item>
                   )}
                   <Form.Item
-                    label="行内聚合表达式（用中文字段名，别名将自动替换）"
-                    tooltip="示例：单价*数量；系统会自动把中文字段名替换成别名（c0/c1...）再写入 cols"
+                    label={mode === 'advanced' ? '行内聚合表达式（用中文字段名，别名将自动替换）' : '行内聚合表达式'}
+                    tooltip={mode === 'advanced' ? '示例：单价*数量；系统会自动把中文字段名替换成别名（c0/c1...）再写入 cols' : '示例：单价*数量'}
                   >
                     <Input
                       style={{ width: 360, fontFamily: 'monospace' }}
@@ -957,6 +957,19 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
                       const aliasMap = buildAliasMap(usedFields);
                       const preview = buildCondJexl(conds, aliasMap);
                       if (!preview) return null;
+                      if (mode === 'simple') {
+                        const simpleText = valid
+                          .map((c, idx) => `${idx > 0 ? (valid[idx - 1].logic === 'or' ? '或 ' : '且 ') : ''}${c.field} ${opLabel(c.op)} '${c.value}'`)
+                          .join('  ');
+                        return (
+                          <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
+                            <Text type="secondary" style={{ fontSize: 11 }}>条件预览：</Text>
+                            <code style={{ fontSize: 11, background: '#f5f5f5', padding: '2px 6px', borderRadius: 3 }}>
+                              {simpleText}
+                            </code>
+                          </div>
+                        );
+                      }
                       return (
                         <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
                           <Text type="secondary" style={{ fontSize: 11 }}>生成条件预览：</Text>
