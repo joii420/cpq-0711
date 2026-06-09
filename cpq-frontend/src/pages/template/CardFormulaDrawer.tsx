@@ -959,7 +959,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
                       if (!preview) return null;
                       if (mode === 'simple') {
                         const simpleText = valid
-                          .map((c, idx) => `${idx > 0 ? (valid[idx - 1].logic === 'or' ? '或 ' : '且 ') : ''}${c.field} ${opLabel(c.op)} '${c.value}'`)
+                          .map((c, idx) => `${idx > 0 ? (valid[idx - 1].logic === 'or' ? '或 ' : '且 ') : ''}${c.field} ${opLabel(c.op)} ${isNaN(Number(c.value)) ? `'${c.value}'` : c.value}`)
                           .join('  ');
                         return (
                           <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
