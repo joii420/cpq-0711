@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeTabSubtotalsByColumn } from './QuotationStep2';
+import { computeTabSubtotalsByColumn, computeProductSubtotal } from './QuotationStep2';
 
 // 两个小计列：材料费 = 单价*数量；加工费 = 工时*费率。两行。
 const comp: any = {
@@ -38,5 +38,27 @@ describe('computeTabSubtotalsByColumn', () => {
     const byCol = computeTabSubtotalsByColumn(one);
     expect(Object.keys(byCol)).toEqual(['材料费']);
     expect(byCol['材料费']).toBe(40);
+  });
+});
+
+describe('computeProductSubtotal 多小计列', () => {
+  // 真实聚合路径：SUBTOTAL 组件公式引用 NORMAL 组件 code → 拿到该组件各小计列之和。
+  // （fallback 路径因既有 3 别名键求和会 3 倍计，是先于本 Plan 的休眠 quirk，真实单据不走，故不测它。）
+  it('SUBTOTAL 组件公式引用多小计列组件 = 各列之和', () => {
+    const item: any = {
+      productPartNo: 'P1',
+      componentData: [
+        { ...comp, componentType: 'NORMAL' },
+        {
+          componentType: 'SUBTOTAL', tabName: '产品小计', fields: [],
+          formulas: [{ name: '总价', expression: [
+            { type: 'component_subtotal', component_code: 'TOULIAO', tab_name: '投料', value: '投料' },
+          ] }],
+        },
+      ],
+      productAttributes: [], productAttributeValues: {},
+    };
+    // 组件级小计 = 40 + 22 = 62（各小计列之和），经 SUBTOTAL 公式透传。
+    expect(computeProductSubtotal(item)).toBe(62);
   });
 });
