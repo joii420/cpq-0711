@@ -261,6 +261,10 @@ public class CardSnapshotService {
                     if (!f.path("formula_name").isMissingNode() && !f.path("formula_name").isNull()) {
                         fieldNode.put("formulaName", f.path("formula_name").asText(null));
                     }
+                    // Plan 3a：条件公式整块搬运（AP-44 完备性，否则渲染期条件解析静默失效）
+                    if (f.path("conditional_formula").isObject()) {
+                        fieldNode.set("conditionalFormula", f.path("conditional_formula"));
+                    }
                     if (!f.path("global_variable_code").isMissingNode() && !f.path("global_variable_code").isNull()) {
                         fieldNode.put("globalVariableCode", f.path("global_variable_code").asText(null));
                     }

@@ -711,7 +711,8 @@ public class FormulaCalculator {
         for (JsonNode f : fields) {
             if ("FORMULA".equals(fieldType(f))) {
                 String name = fieldName(f);
-                JsonNode cf = f.path("conditional_formula");
+                // 兼容 snake_case(component.fields) 与 camelCase(快照 structure)。
+                JsonNode cf = f.has("conditional_formula") ? f.path("conditional_formula") : f.path("conditionalFormula");
                 if (cf.isObject() && cf.path("rules").isArray()) {
                     // Plan 3a 条件模式（优先级最高）
                     List<CondRule> rules = new ArrayList<>();
