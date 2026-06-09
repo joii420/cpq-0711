@@ -779,6 +779,38 @@ function fillFixedDefaults(
   return cloned ?? raw;
 }
 
+/**
+ * 按列求和：每个 is_subtotal 列 → 该列各行结果之和。Plan 2-核心多小计列。
+ * （driver 行迭代 / splitRows 口径与单列版完全一致。）
+ */
+export function computeTabSubtotalsByColumn(
+  comp: ComponentDataItem,
+  allComponentSubtotals?: Record<string, number>,
+  quotationFields?: Record<string, number>,
+  pathCache?: Record<string, number>,
+  partNo?: string,
+  driverExpansion?: import('./useDriverExpansions').DriverExpansion,
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!comp?.fields || !comp?.rows) return out;
+  const subtotalFields = comp.fields.filter(f => f.is_subtotal);
+  if (subtotalFields.length === 0) return out;
+  for (const sf of subtotalFields) out[sf.name] = 0;
+  const s = splitRows(comp, driverExpansion as any);
+  for (let i = 0; i < s.totalRows; i++) {
+    const ra = rowAt(i, comp, s);
+    const row = fillFixedDefaults(comp.fields, ra.row);
+    const basicDataValues = ra.expIndex >= 0 ? driverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
+    const cache = computeAllFormulas(
+      comp, row, allComponentSubtotals, quotationFields, pathCache, partNo, basicDataValues,
+      undefined, globalVariableDefs,
+    );
+    for (const sf of subtotalFields) out[sf.name] += cache[sf.name] ?? 0;
+  }
+  return out;
+}
+
 function computeTabSubtotal(
   comp: ComponentDataItem,
   allComponentSubtotals?: Record<string, number>,
@@ -791,26 +823,11 @@ function computeTabSubtotal(
   // 动态 key 全局变量运行时 path 重写: 向后兼容, 老调用不传时动态 key 兜底 0
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
 ): number {
-  if (!comp?.fields || !comp?.rows) return 0;
-  const subtotalField = comp.fields.find(f => f.is_subtotal);
-  if (!subtotalField) return 0;
-  // V160/V161 后修订: driver 是数据真相源 (mat_bom / mat_fee / costing_part_* 全部版本化).
-  // 早期 V126.1 取 max 让"用户追加行"也参与列小计, 但 V160/V161 之前 driver 因视图缺
-  // part_version 列返多版本叠加, autoSave 会把过量行回写 quotation_line_component_data;
-  // 修复后 driver 正确返 N 行 → max(N, M>N)=M → 多 M-N 行成"鬼魂"行 (BASIC_DATA 永远加载中).
-  // 用 splitRows 为准: driver-bound 模式下手动行尾巴 (manualRows) 参与小计, 非手动陈旧行不参与.
-  const s = splitRows(comp, driverExpansion as any);
+  // Plan 2-核心：委托按列求和后取所有小计列之和（单小计列时 = 原行为）。
+  const byCol = computeTabSubtotalsByColumn(
+    comp, allComponentSubtotals, quotationFields, pathCache, partNo, driverExpansion, globalVariableDefs);
   let sum = 0;
-  for (let i = 0; i < s.totalRows; i++) {
-    const ra = rowAt(i, comp, s);
-    const row = fillFixedDefaults(comp.fields, ra.row);
-    const basicDataValues = ra.expIndex >= 0 ? driverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
-    const cache = computeAllFormulas(
-      comp, row, allComponentSubtotals, quotationFields, pathCache, partNo, basicDataValues,
-      undefined, globalVariableDefs,
-    );
-    sum += cache[subtotalField.name] ?? 0;
-  }
+  for (const v of Object.values(byCol)) sum += v;
   return sum;
 }
 
@@ -1435,13 +1452,20 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     const expansion = (item.productPartNo && comp.componentId)
       ? driverExpansions?.[driverExpansionKey(lineItemIdSub, item.productPartNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]))]
       : undefined;
-    const subtotal = computeTabSubtotal(
+    const byCol = computeTabSubtotalsByColumn(
       comp, allComponentSubtotals, undefined, undefined, item.productPartNo, expansion,
       globalVariableDefs,
     );
+    const subtotal = Object.values(byCol).reduce((s, v) => s + v, 0);
     if (comp.componentId) allComponentSubtotals[comp.componentId] = subtotal;
     if (comp.componentCode) allComponentSubtotals[comp.componentCode] = subtotal;
     allComponentSubtotals[comp.tabName] = subtotal;
+    // Plan 2-核心：per-column 键，供 footer 按列显示 + 按列引用。
+    for (const [colName, colVal] of Object.entries(byCol)) {
+      if (comp.componentId) allComponentSubtotals[`${comp.componentId}#${colName}`] = colVal;
+      if (comp.componentCode) allComponentSubtotals[`${comp.componentCode}#${colName}`] = colVal;
+      allComponentSubtotals[`${comp.tabName}#${colName}`] = colVal;
+    }
   }
 
   // cross_tab_ref (PASS2, 镜像后端 CardSnapshotService): 在 allComponentSubtotals (PASS1) 之后,
