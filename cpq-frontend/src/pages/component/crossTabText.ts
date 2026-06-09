@@ -118,6 +118,7 @@ export function parseCrossTab(text: string, siblings: SourceCompLike[]): ParseRe
     target: '', targetExpr: undefined, match, agg: op.agg,
   };
   if (op.agg === 'COUNT') return { token: base };
+  if (!targetText) return { error: '目标不能为空（计数以外的操作需指定目标列或公式）' };
   // 单列（A.单名、无运算符/无空格）vs 公式
   if (/^A\.[^\s]+$/.test(targetText)) {
     return { token: { ...base, target: targetText.slice(2) } };

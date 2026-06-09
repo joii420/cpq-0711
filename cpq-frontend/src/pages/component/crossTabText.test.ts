@@ -73,4 +73,17 @@ describe('parseCrossTab', () => {
     const r = parseCrossTab('求和 源:COMP-0028', siblings);
     expect('error' in r).toBe(true);
   });
+  it('非 COUNT 操作空目标 → 报错', () => {
+    const r = parseCrossTab('求和 | 源:COMP-0028 | 关联:子料号=料件 | 目标:', siblings);
+    expect('error' in r).toBe(true);
+  });
+  it('COUNT round-trip(目标(计数)被忽略)', () => {
+    const r = parseCrossTab('计数 | 源:COMP-0028 | 关联:子料号=料件 | 目标:(计数)', siblings);
+    expect('token' in r).toBe(true);
+    if ('token' in r) {
+      expect(r.token.agg).toBe('COUNT');
+      expect(r.token.target).toBe('');
+      expect(r.token.targetExpr).toBeUndefined();
+    }
+  });
 });
