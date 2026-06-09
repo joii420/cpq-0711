@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Popover, Button, Segmented, Alert, Space, message, Dropdown } from 'antd';
 import { DatabaseOutlined, SettingOutlined, PlusOutlined, DownOutlined } from '@ant-design/icons';
 import { evaluateExpression, getGlobalPathCache, evaluateListFormulaString } from '../../utils/formulaEngine';
+import { evalCondTree, condTreeColumns, type CondTree } from '../../utils/condTree';
 import { usePathFormulaCache } from './usePathFormulaCache';
 import { globalVariableService, type GlobalVariableDefinition } from '../../services/globalVariableService';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
@@ -396,20 +397,41 @@ function computeAllFormulas(
   if (!comp.fields || !comp.formulas) return {};
 
   // Collect FORMULA fields and their resolved formulas
-  const formulaFields: { name: string; formula: ComponentFormula }[] = [];
+  // Plan 3a：FORMULA 字段可为单一模式(formula) 或条件模式(conditional)。
+  const formulaFields: { name: string; formula?: ComponentFormula;
+    conditional?: { rules: { when: CondTree; formula: ComponentFormula }[]; default?: ComponentFormula } }[] = [];
   for (const f of comp.fields) {
     if (f.field_type !== 'FORMULA') continue;
     const name = f.name || f.key || '';
-    const formula = resolveFormula(comp, name);
-    if (formula) formulaFields.push({ name, formula });
+    const cf = (f as any).conditional_formula;
+    if (cf && Array.isArray(cf.rules)) {
+      const rules = cf.rules
+        .map((r: any) => ({ when: r.when as CondTree, formula: comp.formulas!.find(x => x.name === r.formula)! }))
+        .filter((r: any) => r.formula);
+      const def = cf.default ? comp.formulas!.find(x => x.name === cf.default) : undefined;
+      formulaFields.push({ name, conditional: { rules, default: def } });
+    } else {
+      const formula = resolveFormula(comp, name);
+      if (formula) formulaFields.push({ name, formula });
+    }
   }
   if (formulaFields.length === 0) return {};
 
-  // Build dependency graph among formula fields
+  // Build dependency graph among formula fields（Plan 3a：条件字段取并集依赖）
   const formulaNameSet = new Set(formulaFields.map(ff => ff.name));
   const deps: Record<string, string[]> = {};
   for (const ff of formulaFields) {
-    deps[ff.name] = getFormulaDeps(ff.formula).filter(d => formulaNameSet.has(d));
+    const d = new Set<string>();
+    if (ff.conditional) {
+      for (const r of ff.conditional.rules) {
+        condTreeColumns(r.when).forEach(c => { if (formulaNameSet.has(c)) d.add(c); });
+        getFormulaDeps(r.formula).forEach(c => { if (formulaNameSet.has(c)) d.add(c); });
+      }
+      if (ff.conditional.default) getFormulaDeps(ff.conditional.default).forEach(c => { if (formulaNameSet.has(c)) d.add(c); });
+    } else if (ff.formula) {
+      getFormulaDeps(ff.formula).forEach(c => { if (formulaNameSet.has(c)) d.add(c); });
+    }
+    deps[ff.name] = [...d];
   }
 
   // Topological sort (Kahn's algorithm)
@@ -591,14 +613,32 @@ function computeAllFormulas(
       const prevForField = previousRowValues
         ? (typeof previousRowValues[name] === 'number' ? (previousRowValues[name] as number) : undefined)
         : previousRowSubtotal;
-      const val = evaluateExpression(
-        ff.formula.expression, fieldValues,
-        allComponentSubtotals || {}, undefined, quotationFields,
-        pathCache, partNo, basicDataValues, prevForField,
-        globalVariableDefs, row, crossTabRows,
-      );
+      // Plan 3a：条件字段按规则选表达式（lookup 原始行→BASIC_DATA按名→已算 fieldValues）。
+      let expr: any[] | undefined;
+      if (ff.conditional) {
+        const lookup = (col: string) => {
+          const rv = (row as any)?.[col];
+          if (rv != null) return rv;
+          const bf = comp.fields.find(f => (f.name || f.key) === col && f.field_type === 'BASIC_DATA');
+          if (bf && (bf as any).basic_data_path && basicDataValues) {
+            const v = (basicDataValues as any)[bnfDriverLookupKey((bf as any).basic_data_path)];
+            if (v != null) return Array.isArray(v) ? (v.length === 1 ? v[0] : v) : v;
+          }
+          return fieldValues[col];
+        };
+        const hit = ff.conditional.rules.find(r => evalCondTree(r.when, lookup));
+        expr = (hit ? hit.formula : ff.conditional.default)?.expression;
+      } else {
+        expr = ff.formula!.expression;
+      }
+      const val = expr
+        ? evaluateExpression(
+            expr, fieldValues, allComponentSubtotals || {}, undefined, quotationFields,
+            pathCache, partNo, basicDataValues, prevForField, globalVariableDefs, row, crossTabRows,
+          )
+        : null;
       results[name] = val;
-      fieldValues[name] = val; // feed result for downstream formulas
+      if (val != null) fieldValues[name] = val; // feed result for downstream formulas
     } catch {
       results[name] = null;
     }
