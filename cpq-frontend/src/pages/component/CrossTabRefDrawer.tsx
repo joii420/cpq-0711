@@ -216,7 +216,17 @@ const CrossTabRefDrawer: React.FC<Props> = ({
           <Segmented
             size="small"
             value={mode}
-            onChange={(v) => setMode(v as 'simple' | 'advanced')}
+            onChange={(v) => {
+              const next = v as 'simple' | 'advanced';
+              setMode(next);
+              if (next === 'simple') {
+                const currentOp = OPERATIONS.find((o) => o.key === operation);
+                if (!currentOp?.simple) {
+                  setOperation('single');
+                  setAgg('NONE');
+                }
+              }
+            }}
             options={[{ label: '简单', value: 'simple' }, { label: '高级', value: 'advanced' }]}
           />
         </div>
