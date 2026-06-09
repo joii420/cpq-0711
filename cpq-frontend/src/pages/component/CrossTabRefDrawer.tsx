@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Drawer, Select, Button, Space, Switch, InputNumber, Tag, message, Segmented } from 'antd';
+import { Drawer, Select, Button, Space, Switch, InputNumber, Tag, message, Segmented, Input } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { FormulaToken } from './types';
-import { OPERATIONS, operationToAgg } from './crossTabText';
+import { OPERATIONS, operationToAgg, serializeCrossTab, parseCrossTab, aggToOperation } from './crossTabText';
 
 export interface SiblingComponent {
   id: string;
@@ -105,6 +105,8 @@ const CrossTabRefDrawer: React.FC<Props> = ({
   const [bFieldSel, setBFieldSel] = useState<string | undefined>(undefined);
   const [mode, setMode] = useState<'simple' | 'advanced'>('simple');
   const [operation, setOperation] = useState<string>('single'); // OPERATIONS.key
+  const [rawText, setRawText] = useState<string>('');
+  const [rawError, setRawError] = useState<string>('');
 
   // Reset state when drawer opens or closes
   useEffect(() => {
@@ -120,11 +122,31 @@ const CrossTabRefDrawer: React.FC<Props> = ({
       setBFieldSel(undefined);
       setMode('simple');
       setOperation('single');
+      setRawText('');
+      setRawError('');
     }
   }, [open]);
 
   const sourceComp = siblingComponents.find((c) => c.id === sourceId) ?? null;
   const sourceFields = sourceComp?.fields ?? [];
+
+  // 可视化状态变化 → 实时序列化为规范原始文本（仅高级模式展示）
+  useEffect(() => {
+    if (mode !== 'advanced') return;
+    if (!sourceId) { setRawText(''); return; }
+    const completePairs = matchPairs.filter((p) => p.a && p.b);
+    const tokenLike = {
+      type: 'cross_tab_ref' as const,
+      source: sourceId,
+      sourceLabel: sourceComp?.name ?? '',
+      target: (useFormula && agg !== 'COUNT') ? '' : (agg === 'COUNT' ? '' : target),
+      targetExpr: (useFormula && agg !== 'COUNT' && targetExpr.length > 0) ? targetExpr : undefined,
+      match: completePairs,
+      agg,
+    };
+    setRawText(serializeCrossTab(tokenLike, sourceComp));
+    setRawError('');
+  }, [mode, sourceId, sourceComp, matchPairs, useFormula, agg, target, targetExpr]);
 
   const handleSourceChange = (id: string) => {
     setSourceId(id);
@@ -577,6 +599,50 @@ const CrossTabRefDrawer: React.FC<Props> = ({
                 .join(' 且 ')}
               ]
             </span>
+          </div>
+        )}
+
+        {mode === 'advanced' && (
+          <div>
+            <div style={{ fontWeight: 500, marginBottom: 6, fontSize: 13 }}>
+              原始公式文本
+              <span style={{ fontWeight: 400, color: '#8c8c8c', marginLeft: 8, fontSize: 12 }}>
+                可手改后点「应用文本」回填到上方构建器
+              </span>
+            </div>
+            <Input.TextArea
+              rows={2}
+              value={rawText}
+              onChange={(e) => setRawText(e.target.value)}
+              style={{ fontFamily: 'monospace', fontSize: 12 }}
+            />
+            {rawError && (
+              <div style={{ color: '#ff4d4f', fontSize: 12, marginTop: 4 }}>{rawError}</div>
+            )}
+            <Button
+              size="small"
+              style={{ marginTop: 6 }}
+              onClick={() => {
+                const r = parseCrossTab(rawText, siblingComponents);
+                if ('error' in r) { setRawError(r.error); return; }
+                setRawError('');
+                setSourceId(r.token.source);
+                setAgg(r.token.agg);
+                setOperation(aggToOperation(r.token.agg));
+                setMatchPairs(r.token.match.length ? r.token.match.map((p) => ({ a: p.a, b: p.b })) : [{ a: '', b: '' }]);
+                if (r.token.targetExpr && r.token.targetExpr.length > 0) {
+                  setUseFormula(true);
+                  setTargetExpr(r.token.targetExpr);
+                  setTarget('');
+                } else {
+                  setUseFormula(false);
+                  setTarget(r.token.target);
+                  setTargetExpr([]);
+                }
+              }}
+            >
+              应用文本
+            </Button>
           </div>
         )}
       </div>
