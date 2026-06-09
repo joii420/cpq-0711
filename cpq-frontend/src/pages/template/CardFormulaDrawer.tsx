@@ -22,6 +22,7 @@ import { quotationService } from '../../services/quotationService';
 import { genAlias, expandIn, validateCardFormula, buildCondRows, parseCondToRows, nextAggRefKey } from './cardFormula';
 // CardRefSpec 是纯类型，必须 import type（否则 Vite/esbuild 运行时 ESM 链接报错 → 整个 SPA 白屏）
 import type { CardRefSpec, CondRhsType, CondRowSpec } from './cardFormula';
+import { CARD_OPERATIONS, opToRefType, refTypeToOp } from './cardFormulaOps';
 
 const { Text, Paragraph } = Typography;
 
@@ -750,15 +751,30 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
 
               {/* 引用类型 */}
               <Form.Item label="引用类型">
-                <Radio.Group
-                  value={refType}
-                  onChange={e => { setRefType(e.target.value); setSelField(''); setConds([{ ...DEFAULT_COND_ROW }]); }}
-                >
-                  <Radio.Button value="subtotal">页签小计</Radio.Button>
-                  <Radio.Button value="first_row">字段·首行</Radio.Button>
-                  <Radio.Button value="row_where">字段·按条件取行</Radio.Button>
-                  <Radio.Button value="aggregate">聚合（SUM/AVG…）</Radio.Button>
-                </Radio.Group>
+                {mode === 'simple' ? (
+                  <Select
+                    style={{ width: 280 }}
+                    value={refTypeToOp(refType, aggFunc)}
+                    onChange={(opKey) => {
+                      const { refType: rt, aggFunc: af } = opToRefType(opKey);
+                      setRefType(rt as RefType);
+                      if (af) setAggFunc(af as AggFunc);
+                      setSelField('');
+                      setConds([{ ...DEFAULT_COND_ROW }]);
+                    }}
+                    options={CARD_OPERATIONS.filter((o) => o.simple).map((o) => ({ label: o.label, value: o.key }))}
+                  />
+                ) : (
+                  <Radio.Group
+                    value={refType}
+                    onChange={e => { setRefType(e.target.value); setSelField(''); setConds([{ ...DEFAULT_COND_ROW }]); }}
+                  >
+                    <Radio.Button value="subtotal">页签小计</Radio.Button>
+                    <Radio.Button value="first_row">字段·首行</Radio.Button>
+                    <Radio.Button value="row_where">字段·按条件取行</Radio.Button>
+                    <Radio.Button value="aggregate">聚合（SUM/AVG…）</Radio.Button>
+                  </Radio.Group>
+                )}
               </Form.Item>
 
               {/* 字段选择（非小计时显示） */}
@@ -780,14 +796,16 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
               {/* 聚合函数 + 行内表达式 */}
               {refType === 'aggregate' && (
                 <>
-                  <Form.Item label="聚合函数">
-                    <Select
-                      style={{ width: 200 }}
-                      value={aggFunc}
-                      onChange={setAggFunc}
-                      options={AGG_FUNC_OPTIONS}
-                    />
-                  </Form.Item>
+                  {mode === 'advanced' && (
+                    <Form.Item label="聚合函数">
+                      <Select
+                        style={{ width: 200 }}
+                        value={aggFunc}
+                        onChange={setAggFunc}
+                        options={AGG_FUNC_OPTIONS}
+                      />
+                    </Form.Item>
+                  )}
                   <Form.Item
                     label="行内聚合表达式（用中文字段名，别名将自动替换）"
                     tooltip="示例：单价*数量；系统会自动把中文字段名替换成别名（c0/c1...）再写入 cols"
