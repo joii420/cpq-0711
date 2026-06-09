@@ -72,3 +72,59 @@ export function serializeCrossTab(token: CrossTabTokenLike, sourceComp: SourceCo
   }
   return `${opLabel} | 源:${srcCode} | 关联:${pairs} | 目标:${targetText}`;
 }
+
+export type ParseResult =
+  | { token: CrossTabTokenLike }
+  | { error: string };
+
+/** 规范文本片段 → FormulaToken（A.x/B.x/运算符/括号/数字）。失败抛字符串。 */
+function canonicalToExprTokens(targetText: string): FormulaToken[] {
+  const parts = targetText.trim().split(/\s+/).filter(Boolean);
+  return parts.map((p): FormulaToken => {
+    if (p.startsWith('A.')) return { type: 'field', value: p.slice(2) };
+    if (p.startsWith('B.')) return { type: 'b_field', value: p.slice(2) };
+    if (p === '(') return { type: 'bracket_open', value: '(' };
+    if (p === ')') return { type: 'bracket_close', value: ')' };
+    if (['+', '-', '*', '/'].includes(p)) return { type: 'operator', value: p };
+    if (/^-?\d+(\.\d+)?$/.test(p)) return { type: 'number', value: p };
+    throw `无法识别的片段「${p}」`;
+  });
+}
+
+export function parseCrossTab(text: string, siblings: SourceCompLike[]): ParseResult {
+  const segs = text.split('|').map((s) => s.trim());
+  if (segs.length !== 4) return { error: '格式应为：操作 | 源:CODE | 关联:a=b[,c=d] | 目标:…' };
+  const [opSeg, srcSeg, matchSeg, targetSeg] = segs;
+  const op = OPERATIONS.find((o) => o.label === opSeg);
+  if (!op) return { error: `未知操作「${opSeg}」（应为 ${OPERATIONS.map((o) => o.label).join('/')}）` };
+  if (!srcSeg.startsWith('源:')) return { error: '第 2 段应以「源:」开头' };
+  const srcCode = srcSeg.slice(2).trim();
+  const sourceComp = siblings.find((c) => c.code === srcCode);
+  if (!sourceComp) return { error: `源组件 code「${srcCode}」不存在` };
+  if (!matchSeg.startsWith('关联:')) return { error: '第 3 段应以「关联:」开头' };
+  const pairText = matchSeg.slice(3).trim();
+  const match: Array<{ a: string; b: string }> = [];
+  for (const seg of pairText.split(',').map((s) => s.trim()).filter(Boolean)) {
+    const [a, b] = seg.split('=').map((s) => s.trim());
+    if (!a || !b) return { error: `关联对「${seg}」格式应为 a=b` };
+    match.push({ a, b });
+  }
+  if (match.length === 0) return { error: '至少需要一组关联对' };
+  if (!targetSeg.startsWith('目标:')) return { error: '第 4 段应以「目标:」开头' };
+  const targetText = targetSeg.slice(3).trim();
+
+  const base: CrossTabTokenLike = {
+    type: 'cross_tab_ref', source: sourceComp.id, sourceLabel: sourceComp.name,
+    target: '', targetExpr: undefined, match, agg: op.agg,
+  };
+  if (op.agg === 'COUNT') return { token: base };
+  // 单列（A.单名、无运算符/无空格）vs 公式
+  if (/^A\.[^\s]+$/.test(targetText)) {
+    return { token: { ...base, target: targetText.slice(2) } };
+  }
+  try {
+    return { token: { ...base, targetExpr: canonicalToExprTokens(targetText) } };
+  } catch (e) {
+    return { error: typeof e === 'string' ? e : '目标公式解析失败' };
+  }
+}

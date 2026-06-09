@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { OPERATIONS, operationToAgg, aggToOperation, serializeCrossTab } from './crossTabText';
+import { OPERATIONS, operationToAgg, aggToOperation, serializeCrossTab, parseCrossTab } from './crossTabText';
 import type { FormulaToken } from './types';
 
 describe('operation <-> agg 映射', () => {
@@ -38,5 +38,39 @@ describe('serializeCrossTab', () => {
   it('COUNT 无目标', () => {
     const token: any = { type: 'cross_tab_ref', source: 'id-ll', sourceLabel: '来料', target: '', match: [{ a: '子料号', b: '料件' }], agg: 'COUNT' };
     expect(serializeCrossTab(token, ll)).toBe('计数 | 源:COMP-0028 | 关联:子料号=料件 | 目标:(计数)');
+  });
+});
+
+const siblings = [ll];
+
+describe('parseCrossTab', () => {
+  it('单列 SUM round-trip', () => {
+    const text = '求和 | 源:COMP-0028 | 关联:子料号=料件 | 目标:A.组成用量';
+    const r = parseCrossTab(text, siblings);
+    expect('token' in r).toBe(true);
+    if ('token' in r) {
+      expect(r.token.agg).toBe('SUM');
+      expect(r.token.source).toBe('id-ll');
+      expect(r.token.target).toBe('组成用量');
+      expect(r.token.match).toEqual([{ a: '子料号', b: '料件' }]);
+    }
+  });
+  it('targetExpr 乘积式 round-trip', () => {
+    const text = '求和 | 源:COMP-0028 | 关联:子料号=料件 | 目标:A.组成用量 * B.含量 * B.单价';
+    const r = parseCrossTab(text, siblings);
+    expect('token' in r).toBe(true);
+    if ('token' in r) {
+      expect(r.token.target).toBe('');
+      expect(r.token.targetExpr?.map((t) => t.type)).toEqual(['field', 'operator', 'b_field', 'operator', 'b_field']);
+      expect(r.token.targetExpr?.[0].value).toBe('组成用量');
+    }
+  });
+  it('源 code 不存在 → 报错', () => {
+    const r = parseCrossTab('求和 | 源:NOPE | 关联:子料号=料件 | 目标:A.组成用量', siblings);
+    expect('error' in r).toBe(true);
+  });
+  it('缺少分段 → 报错', () => {
+    const r = parseCrossTab('求和 源:COMP-0028', siblings);
+    expect('error' in r).toBe(true);
   });
 });
