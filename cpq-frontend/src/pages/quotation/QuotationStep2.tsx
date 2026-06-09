@@ -913,6 +913,24 @@ function computeProductSubtotal(
   return Object.values(componentSubtotals).reduce((s, v) => s + v, 0);
 }
 
+/** 测试用：按行序逐行 computeAllFormulas，previous_row_subtotal 按本列累加（Plan 2b）。 */
+export function computeRowsCachesForTest(
+  comp: ComponentDataItem,
+  rows: Record<string, any>[],
+): Array<Record<string, number | null>> {
+  const caches: Array<Record<string, number | null>> = [];
+  let prevRowValues: Record<string, number | null> | undefined = undefined;
+  for (const row of rows) {
+    const cache = computeAllFormulas(
+      comp, row, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, prevRowValues,
+    );
+    caches.push(cache);
+    prevRowValues = cache;
+  }
+  return caches;
+}
+
 /** 稳定空数组引用 — 传给 useDriverExpansions 表示"无需 batch-expand"(快照模式), 避免每渲染新建 [] 触发 churn。 */
 export const EMPTY_LINEITEMS: LineItem[] = [];
 
