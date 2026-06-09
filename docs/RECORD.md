@@ -3316,4 +3316,8 @@ E2E:
 
 ---
 
+### [2026-06-09] 条件公式收尾 Plan3c — 引用校验+硬环检测+三视图一致 | ComponentService.validateFormulas + FormulaCalculator(buildFormulaDeps/cyclicFormulaNodes) + 2测试类 | 计划 plans/2026-06-09-plan3c-conditional-formula-finalize.md。承接 Plan3a引擎+3b UI,收尾 Plan3。**三视图一致性已由3a达成**(详情/核价 ReadonlyProductCard FORMULA 值优先读 snapshot formulaResults[后端3a条件感知冻结]+fallback computeAllFormulas[3a条件感知];无 resolveFormula 单一模式绕过,grep空),3c仅验证+补校验。实现:①validateFormulas 加条件公式引用校验(rules[].formula+default 必须存在)②FormulaCalculator 抽 buildFormulaDeps(topoOrder 运行期 与 cyclicFormulaNodes 保存期 共用同一并集依赖图,零漂移)+public cyclicFormulaNodes(Kahn 返环成员)③ComponentService.validateFormulas 末尾转 JsonNode 调 cyclicFormulaNodes 硬环检测(能检条件依赖环:A条件引用B列+B公式引用A)。验证:CardSnapshotConditionalTest 证明详情/核价视图源(快照 formulaResults)按条件正确冻结(车削*1.2=120)。自检:ComponentServiceConditionalValidationTest 5(引用缺失×2/有效/公式环/条件环,注:测试须同 com.cpq.component.service 包调 package-private validateFormulas)+CardSnapshotConditionalTest 1+FormulaCalculator*/CardSnapshot 回归58绿;ReadonlyProductCard 无绕过(grep空);tsc 0;E2E quotation-flow 1 passed+加载中=0(首跑因 touch 后端 dev 重编译未完成瞬时失败,401探针仅HTTP层起来≠重编译完成;稳定后端重跑即过——后端58单测已证逻辑正确)。**Plan3(3a引擎+3b UI+3c收尾)完成**:条件公式可配(3b)、可算(3a双引擎)、三视图一致(3a+3c)、保存校验完整(默认必填+引用存在+环检测)。**整批 multi-subtotal+conditional 工作(Plan1/2/2b/2c/3a/3b/3c)就绪**,约60 commit 在 feat/spinekeys-flat-ref。未做:真人交互式端到端可视验证(配组件→报价单看条件求值,headless无法)。
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
