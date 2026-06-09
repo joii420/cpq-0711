@@ -3292,4 +3292,8 @@ E2E:
 
 ---
 
+### [2026-06-09] 组合行键唯一性校验(后端权威) Plan1 — submit 期拦截 | rowkey/RowKeyConflict+RowKeyConflictDetector+RowKeyUniquenessService(新) + QuotationService.submit + 3 测试类(9 passed) | 设计 spec(多小计列+条件公式+组合行键 3 子系统拆 3 plan,本次只落 Plan1 行键) specs/2026-06-09-multi-subtotal-conditional-formula-design.md + plans/2026-06-09-plan1-composite-rowkey-uniqueness.md。需求:组件多列组合行键不可重复,提交时校验(含 driver 展开行),冲突列出拦截。实现:①纯函数 detector(按行序 rowKey 列表判重,空 key 跳过,返回组件名+key+重复行号)②装配 service 解析 quotation_view_structure 的 QUOTE_CARD 结构(AP-39 已冻 rowKeyFields)+各明细 quote_card_values 的 baseRows[].driverRow,复用 public FormulaCalculator.computeRowKey(组合键||拼接)③submit(id,userId)建 snapshot 前调用,冲突抛 BusinessException(422)+明细。关键决策:复用既有 computeRowKey 不重写;脏 JSON 降级跳过不误拦截;structure 在 DTO/QuotationViewStructure 非 Quotation 实体(计划里 q.quoteCardStructure 修正为查 view_structure)。偏离计划:Task3 测试用纯 JUnit(new FormulaCalculator() 注入)替 @QuarkusTest 避测试 DB 依赖;Task5 用 @QuarkusTest 端到端(播种重复键 DRAFT 取既有 customer/user 父行+@TestTransaction 回滚,断言真实 submit 抛 422)替 flaky live curl。**未做(后续)**:Plan1b 前端提交前 UX 预提示(需读 QuotationWizard);Plan2 多小计列;Plan3 条件公式绑定+AND/OR 条件树+双引擎。自检:RowKeyConflictDetectorTest 5 + RowKeyUniquenessServiceTest 3 + SubmitRowKeyUniquenessQuarkusTest 1 = 9 passed ✅;mvn compile ✅;RowKey* 全量 19 passed(含既有)✅
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
