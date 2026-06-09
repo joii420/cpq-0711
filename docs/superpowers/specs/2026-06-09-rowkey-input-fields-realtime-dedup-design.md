@@ -35,26 +35,28 @@
 |---|---|---|
 | `rowKeyFields` 条目语义 | 全是 driver 叶子列名 | 异构：driver 字段→叶子列名（不变）；输入字段→**字段名** |
 | 数据结构 | `string[]` | `string[]`（不变，**零迁移**） |
-| 取值源 | `driverRow[f]` | `driverRow[f]` 非空优先，否则 **位置化行值 `rowValues[f]`** |
-| 取值位置依据 | — | 按**行下标**取，不经 editRows-by-key（避开鸡生蛋） |
+| 判重取值源 | （旧无判重）`computeRowKey` 只读 `driverRow` | 新 `computeDedupKey`：`driverRow[f]` 非空优先，否则 **位置化行值 `rowValues[f]`** |
+| 取值位置依据 | — | 按**行下标**取，不经 editRows-by-key（避开鸡生蛋）；现有 `computeRowKey` 不动 |
 
-**撞名兜底**：保存行键配置时，若某输入字段名恰好等于另一 driver 列名 → 后端校验报错拒绝保存（方案 A 唯一风险点，显式拦）。
+**撞名兜底**：方案 A 唯一风险是"输入字段名 == 某 driver 列名"导致取值歧义。处理：在 `resolveRowKeyCandidates` 判定输入字段合格时，若字段名命中 driver 列集合 → `eligible=false`、`reason="字段名与 driver 列撞名，不能作行键"`，从源头不让勾（无需单独的保存期校验）。
 
 ## 4. 改动点清单
 
 ### 4.1 配置端（放开勾选）
 
-- **`ComponentDriverService.resolveRowKeyCandidates`**（`:1036`）：新增分支——字段 `field_type ∈ {INPUT_TEXT, INPUT_NUMBER}` 时 `eligible=true`、`resolvedColumn=字段名`、`reason=null`；无 `basic_data_path` 不再一律判 false。driver 字段判定逻辑不动。需把 `field_type` 透进该静态方法（当前入参 `fields: List<Map<String,Object>>` 已含 `field_type` 键，直接读）。
+- **`ComponentDriverService.resolveRowKeyCandidates`**（`:1036`）：新增分支——字段 `field_type ∈ {INPUT_TEXT, INPUT_NUMBER}` 时，若字段名**未**命中 driver 列集合 → `eligible=true`、`resolvedColumn=字段名`、`source="input"`、`reason=null`；若**命中** driver 列名（撞名）→ `eligible=false`、`reason="字段名与 driver 列撞名，不能作行键"`。无 `basic_data_path` 不再一律判 false。driver 字段判定逻辑不动（命中 driver 列 → `source="driver"`）。`field_type` 从入参 `fields: List<Map<String,Object>>` 的 `field_type` 键直接读。
 - **`RowKeyCandidatesResponse.Candidate`**：可加 `String source`（`"driver"` / `"input"`），给前端 tooltip 区分（非必须，但建议加便于文案）。
 - **`FieldConfigTable.tsx`**（`:432`）：勾选逻辑不变（仍用 `cand.eligible` + `cand.resolvedColumn`）；输入字段的 `resolvedColumn` = 字段名，`onToggleRowKey(字段名, checked)` 自然写入 `rowKeyFields`。tooltip 文案按 `source` 区分（「行键列（driver）」/「行键列（手填）」）。
 
-### 4.2 取值引擎（FE/BE 双镜像，AP-44 协议级）
+### 4.2 取值引擎 —— 新增 input-inclusive 的 `computeDedupKey`（FE/BE 双镜像）
 
-- **前端 `useCardSnapshots.ts#computeRowKey`**（`:52`）：签名加 `rowValues`，逐字段 `nonEmpty(driverRow[f]) ? driverRow[f] : rowValues[f]`。两个调用点（`:136` `rowKeyOf`、`:148` `getCell`）补传当前行的位置化值（driverRow 来自 `vt.baseRows[i].driverRow`，输入值来自对应行 row_data / rawRow）。
-- **`QuotationStep2.tsx`**（`:1900`）：`computeRowKey(activeRowKeyFields, driverRowForKey, rawRow, i)` —— driver 列走 driverRow，输入字段走 `rawRow`（`comp.rows[i]`，已含手填值，line 1380「INPUT 受控值仍读 comp.rows」）。
-- **后端 `FormulaCalculator#computeRowKey`**（`:446`）：签名加 `JsonNode rowValues`，逐字段 driverRow 非空优先否则 rowValues。
-  - 调用点 `:395`（computeRows）：rowKey 在 `mergeRow` **之前**算——`rowValues` 传 **baseRow 自身的位置化值**（手动行的 rowData 已并入 baseRow；driver 行的手填输入值同源）。**不传 editValues**（避免鸡生蛋）。
-  - 其余调用点（`CardSnapshotService.java:824`）：按签名补传位置化 rowValues（无则传 `MissingNode` / 空对象，退化为旧行为）。
+**关键决策（降风险）**：**不改**现有 `computeRowKey`。现有 `computeRowKey(rowKeyFields, driverRow)`（前端 `useCardSnapshots.ts:52` + 后端 `FormulaCalculator.java:446`）服务 **editRows / formulaResults 行对齐**（AP-54 业务键对齐），改其签名/口径会牵动公式编辑值对齐链路，风险大。改用**并行新增**一个判重专用函数：
+
+- **新增 `computeDedupKey(rowKeyFields, driverRow, rowValues)`**：逐字段 `nonEmpty(driverRow[f]) ? driverRow[f] : rowValues[f]`，`||` 拼接；空/null/`__seq_no__` 哨兵口径与 `computeRowKey` 一致（空 → 不可用，调用方按"跳过判重"处理）。
+  - 前端：放在 `useCardSnapshots.ts`（与 `computeRowKey` 并列导出）或新建 `rowDedupKey.ts`。
+  - 后端：`FormulaCalculator` 新增 public 方法（与 `computeRowKey` 并列）。
+- **唯二使用方**：① 前端实时判重 `findDuplicateRowKeys`（§4.4）；② 后端提交校验 `RowKeyUniquenessService`（§4.3）。**不接入任何 editRows / formula 路径**，故无 AP-54 对齐风险、不触发鸡生蛋（editRows-by-key 完全不参与）。
+- 现有 `computeRowKey` 两个前端调用点（`:136`/`:148`）、后端 `:395` / `CardSnapshotService:824` 一律**保持不变**。
 
 ### 4.3 提交校验（Plan 1 改取数源 —— 已核实定案）
 
@@ -67,20 +69,20 @@
 **定案改法 —— `RowKeyUniquenessService` 重构为两路位置化合并：**
 - 入参从 `LineItemRows(label, valuesJson)` 改为按**行明细 × 组件**提供：`componentId`、`snapshot_rows` JSON、`row_data` JSON。
 - 对组件每行下标 `i` 构造取值：`driverRow_i = snapshot_rows[i].driverRow`（`i ≥ driverCount` 的手动行 → 空对象）；`rowDataRow_i = row_data[i]`。
-- 逐字段 `f`：`nonEmpty(driverRow_i[f]) ? driverRow_i[f] : rowDataRow_i[f]`，组合得 rowKey → 交 `RowKeyConflictDetector.detect`。
+- 逐行调 `formulaCalculator.computeDedupKey(rowKeyFields, driverRow_i, rowDataRow_i)`（driver 行在 row_data 里取**非 manual 子序列**按下标对齐 `driverDataRows[i]`；超出部分的 `_origin='manual'` 行 driverRow 传空对象）→ 交 `RowKeyConflictDetector.detect`。
 - 该两路合并是**安全超集**：driver 列优先取展开值，输入字段/手动行从 row_data 取，与 rowData 是否也含 driver 列无关。
 - rowKeyFields（含 AP-39 冻入）仍从 `quotation_view_structure` 的 `QUOTE_CARD` 份取（`QuotationService.submit:680` 既有逻辑不变）。
 
 ### 4.4 录入实时判重（`QuotationStep2`）
 
-- 新增纯函数 `findDuplicateRowKeys(rows, rowKeyFields)`：对当前 active 组件全部渲染行算 `computeRowKey`，按 key 分组，返回**出现 ≥2 次且 key 非空**的行下标集合（空 key = 未填完 → 不判重，与 Plan 1 detector「blank key 跳过」一致）。
+- 新增纯函数 `findDuplicateRowKeys(rows, rowKeyFields)`：对当前 active 组件全部渲染行算 `computeDedupKey`（driver 列从该行 driverRow 取、输入字段从 rawRow 取），按 key 分组，返回**出现 ≥2 次且 key 非空**的行下标集合（空 key = 未填完 → 不判重，与 Plan 1 detector「blank key 跳过」一致）。
 - 渲染时（`:1899` 一带）：若当前行下标 ∈ 重复集合 → 行 / 行键单元格加红色边框 className + `Tooltip`「行键重复：与第 X 行冲突，提交前需修正」。
 - 触发时机：`handleRowChange` / `handleInputBlur` / `handleAddRow` / `handleDeleteRow` 改 row 后，渲染自然重算（`useMemo` 依赖 comp.rows）。**不回滚、不拦 autosave**。
 - 下标按 **AP-54** 用对象引用映射回真实 `comp.rows` 下标；行数按 **AP-51** 纪律（driver 权威 + 手动行，禁 `Math.max`）。
 
 ## 5. AP-44 / 协议影响与测试
 
-- `computeRowKey` 双镜像 + 改 `useCardSnapshots.ts` / `QuotationStep2.tsx` / `FormulaCalculator.java` / `RowKeyUniquenessService.java` —— 命中 CLAUDE.md「协议级改动必跑 E2E」清单。
+- 新增 `computeDedupKey` 双镜像（不改 `computeRowKey`）+ 改 `QuotationStep2.tsx`（渲染层标红）/ `FormulaCalculator.java`（加方法）/ `RowKeyUniquenessService.java`（重构取数）—— 改 `QuotationStep2.tsx` 命中 CLAUDE.md「协议级改动必跑 E2E」清单。
 - **强制 E2E**：`quotation-flow.spec.ts` + `composite-product-flow.spec.ts` 双 spec，`'加载中' final count = 0`，8 Tab 截图。
 - **新增专项 E2E**：
   1. 无 driver 组件加两条手填行键相同 → 实时标红 + 提交 422；
@@ -89,7 +91,7 @@
 - **单测**：
   - `RowKeyConflictDetectorTest`：不变（纯函数判重逻辑未变）；
   - `RowKeyUniquenessServiceTest`：补「输入字段键 / driver+输入混合键 / 撞名」用例；
-  - `FormulaCalculator#computeRowKey`：补 `rowValues` 取值单测（driver 优先、driver 空回退 rowValues、混合键）；
+  - `FormulaCalculator#computeDedupKey`：新方法单测（driver 优先、driver 空回退 rowValues、混合键、空哨兵）；现有 `computeRowKey` 单测不动；
   - 前端 `findDuplicateRowKeys`：vitest（无重复 / 单重复 / 多组重复 / 空 key 跳过）。
 
 ## 6. 不做（YAGNI）
@@ -102,8 +104,8 @@
 ## 7. 主要风险与验证点
 
 1. **行下标对齐**（§4.3 两路合并）——`snapshot_rows` 与 `row_data` 必须同序（driver 行在前、手动行追加末尾）。实施时用单测固定一份 driver+manual 混合样本验证对齐；若发现某 line item 两路长度不一致，以 `row_data` 长度为行数权威（AP-51 纪律），缺失 driverRow 按空对象处理。
-2. **撞名**（driver 列名 == 输入字段名）——保存行键配置期校验显式拒绝。
-3. **鸡生蛋**——已用"位置化取值（snapshot_rows + row_data）、不碰 editRows-by-key"规避；computeRows `:395` 处传位置化值而非 editValues。
+2. **撞名**（driver 列名 == 输入字段名）——`resolveRowKeyCandidates` 判定输入字段时命中 driver 列即 `eligible=false`，从源头不让勾。
+3. **鸡生蛋**——`computeDedupKey` 仅用位置化取值（snapshot_rows + row_data），完全不碰 editRows-by-key；现有 `computeRowKey`（editRows 对齐用）原样不动，故无循环依赖。
 4. **AP-51 行数纪律 / AP-54 下标映射**——实时判重用渲染行集合 + 对象引用映射，沿用既有纪律。
 
 ## 8. 验收标准
