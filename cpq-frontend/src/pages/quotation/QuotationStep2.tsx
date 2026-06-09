@@ -23,6 +23,7 @@ import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
 import { quotationService } from '../../services/quotationService';
 import type { CardStructure, CardValues } from '../../services/quotationService';
 import { computeRowKey } from './useCardSnapshots';
+import { findDuplicateRowKeys } from './rowDedup';
 import { partVersionService } from '../../services/partVersionService';
 import PartVersionDrawer from '../../components/PartVersionDrawer';
 import { templateService } from '../../services/templateService';
@@ -1939,7 +1940,13 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       preComputedCaches.push(cache);
                       prevRowValues = cache;
                     }
-                    const withCache = effectiveRows.map((er, idx) => ({ ...er, formulaCache: preComputedCaches[idx] }));
+                    // 行键实时判重：组合键重复的行下标集合（driver 列取 driverRow、输入字段取 row 上的手填值）。
+                    // 下标 = effectiveRows[i].rowIndex（与渲染 <tr key={rowIndex}> 同源，AP-54）。
+                    const dupRowIdx = findDuplicateRowKeys(
+                      effectiveRows.map((e) => ({ driverRow: e.driverRow, rowValues: e.row })),
+                      activeRowKeyFields,
+                    );
+                    const withCache = effectiveRows.map((er, idx) => ({ ...er, formulaCache: preComputedCaches[idx], _isDupKey: dupRowIdx.has(er.rowIndex) }));
                     // 核价 BOM 递归展开（P1）：COSTING 侧按 spine 系统列 __parentId→__nodeId 建树（不是料号）。
                     // 归一化：根 nodeId='' → '__bomroot__'；根直接子 parentId='' → '__bomroot__'；根自身 parentId=null → null。
                     // 其余为 uuid 边路径，原样。DAG 重复子件 nodeId 各不同 → 各自独立 occurrence，不塌成 DAG。
@@ -1978,10 +1985,16 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     return laid.rows
                       .filter(r => !isTreeRowHidden(r.originalIndex, laid.parentIndexByIndex, laid.nodeKeyByIndex, collapsed))
                       .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
-                  })().map(({ row, rowIndex, realRowIndex, rowKey, basicDataValues, isDriverBound, isManualRow: isManualRowFlag, isListFormulaBound, formulaCache, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey }) => {
+                  })().map(({ row, rowIndex, realRowIndex, rowKey, basicDataValues, isDriverBound, isManualRow: isManualRowFlag, isListFormulaBound, formulaCache, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey, _isDupKey }) => {
                     const bomSys = activeComponentBomTree ? (__sys as import('./useDriverExpansions').BomSysCols | undefined) : undefined;
                     return (
-                    <tr key={rowIndex} style={(row._preset || isDriverBound) ? { background: '#fafafa' } : undefined}>
+                    <tr key={rowIndex}
+                        data-rowkey-dup={_isDupKey ? '1' : undefined}
+                        title={_isDupKey ? '行键重复：与同组件其他行组合键冲突，提交前需修正' : undefined}
+                        style={{
+                          ...((row._preset || isDriverBound) ? { background: '#fafafa' } : {}),
+                          ...(_isDupKey ? { background: '#fff1f0', boxShadow: 'inset 3px 0 0 #ff4d4f' } : {}),
+                        }}>
                       {/* 核价 BOM 递归展开：3 系统固定列单元格（仅"勾选递归"组件），料号列承载树缩进/折叠箭头 */}
                       {activeComponentBomTree && (
                         <>
