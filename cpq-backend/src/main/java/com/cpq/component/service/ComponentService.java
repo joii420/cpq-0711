@@ -379,7 +379,6 @@ public class ComponentService {
     }
 
     private void validateFields(List<Map<String, Object>> fields) {
-        int subtotalCount = 0;
         for (Map<String, Object> field : fields) {
             Object fieldType = field.get("field_type");
             if (fieldType == null) {
@@ -430,15 +429,8 @@ public class ComponentService {
                     }
                 }
             }
-            // Count is_subtotal
-            Object isSubtotal = field.get("is_subtotal");
-            if (Boolean.TRUE.equals(isSubtotal) || "true".equals(String.valueOf(isSubtotal))) {
-                subtotalCount++;
-            }
         }
-        if (subtotalCount > 1) {
-            throw new BusinessException("At most one field can have is_subtotal=true");
-        }
+        // 多小计列（Plan 2-核心）：不再限制 is_subtotal 数量，每个被标记字段各算一列总计。
     }
 
     /** Package-private for unit testing (cross_tab_ref structural validation). */

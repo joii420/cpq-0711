@@ -66,11 +66,8 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
   };
 
   const handleSubtotalChange = (key: string, checked: boolean) => {
-    if (checked) {
-      onChange(fields.map((f) => ({ ...f, is_subtotal: f.key === key })));
-    } else {
-      updateField(key, { is_subtotal: false });
-    }
+    // 多小计列（Plan 2-核心）：每个字段独立勾选，不再互斥。
+    updateField(key, { is_subtotal: checked });
   };
 
   const moveField = (index: number, direction: 'up' | 'down') => {
