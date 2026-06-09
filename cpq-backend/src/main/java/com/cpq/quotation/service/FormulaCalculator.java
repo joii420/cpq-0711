@@ -422,7 +422,9 @@ public class FormulaCalculator {
                 if (ff == null) continue;
                 // Plan 2b：previous_row_subtotal = 上一行本列值；无则 null → token 走 fallback。
                 ctx.previousRowSubtotal = (prevRowValues == null) ? null : prevRowValues.get(name);
-                double val = evaluateExpression(ff.expression, ctx).doubleValue();
+                // Plan 3a：条件字段先按规则选表达式。
+                JsonNode expr = ff.isConditional() ? selectConditionalExpr(ff, ctx, fields, basicDataValues) : ff.expression;
+                double val = expr != null ? evaluateExpression(expr, ctx).doubleValue() : 0.0;
                 results.put(name, val);
                 ctx.fieldValues.put(name, val);
             }
@@ -682,8 +684,23 @@ public class FormulaCalculator {
 
     private static class FormulaField {
         final String name;
-        final JsonNode expression;
-        FormulaField(String name, JsonNode expression) { this.name = name; this.expression = expression; }
+        final JsonNode expression;          // 单一模式：表达式；条件模式：null
+        final List<CondRule> rules;         // 条件模式：有序规则；单一模式：null
+        final JsonNode defaultExpression;   // 条件模式：默认公式表达式
+        FormulaField(String name, JsonNode expression) {
+            this.name = name; this.expression = expression; this.rules = null; this.defaultExpression = null;
+        }
+        FormulaField(String name, List<CondRule> rules, JsonNode defaultExpression) {
+            this.name = name; this.expression = null; this.rules = rules; this.defaultExpression = defaultExpression;
+        }
+        boolean isConditional() { return rules != null; }
+    }
+
+    /** Plan 3a：条件公式单条规则（条件树 → 命中公式表达式）。 */
+    private static class CondRule {
+        final JsonNode when;        // CondTree
+        final JsonNode expression;  // 命中后执行的公式表达式
+        CondRule(JsonNode when, JsonNode expression) { this.when = when; this.expression = expression; }
     }
 
     private List<FormulaField> collectFormulaFields(JsonNode fields, JsonNode formulas,
@@ -694,12 +711,70 @@ public class FormulaCalculator {
         for (JsonNode f : fields) {
             if ("FORMULA".equals(fieldType(f))) {
                 String name = fieldName(f);
-                JsonNode expr = resolveFormulaExpression(f, name, fields, formulas, formulaAssignments, fullIdx);
-                if (expr != null) out.add(new FormulaField(name, expr));
+                JsonNode cf = f.path("conditional_formula");
+                if (cf.isObject() && cf.path("rules").isArray()) {
+                    // Plan 3a 条件模式（优先级最高）
+                    List<CondRule> rules = new ArrayList<>();
+                    for (JsonNode rule : cf.path("rules")) {
+                        JsonNode expr = exprOfFormula(formulas, rule.path("formula").asText(null));
+                        if (expr != null) rules.add(new CondRule(rule.path("when"), expr));
+                    }
+                    JsonNode defExpr = exprOfFormula(formulas, cf.path("default").asText(null));
+                    out.add(new FormulaField(name, rules, defExpr));
+                } else {
+                    JsonNode expr = resolveFormulaExpression(f, name, fields, formulas, formulaAssignments, fullIdx);
+                    if (expr != null) out.add(new FormulaField(name, expr));
+                }
             }
             fullIdx++;
         }
         return out;
+    }
+
+    /** 按公式名取 expression（null/找不到 → null）。Plan 3a。 */
+    private JsonNode exprOfFormula(JsonNode formulas, String name) {
+        if (name == null || name.isEmpty()) return null;
+        JsonNode found = findFormulaByName(formulas, name);
+        return found != null ? found.path("expression") : null;
+    }
+
+    /** Plan 3a：按行选条件公式表达式（首条命中即停，全不中走默认）。 */
+    private JsonNode selectConditionalExpr(FormulaField ff, RowContext ctx, JsonNode fields, JsonNode basicDataValues) {
+        // 列值查找：① 原始行（INPUT/编辑，保留正确类型，如字符串"车削"）
+        //   ② BASIC_DATA 列按字段名解析其原始值（path 在 basicDataValues 里）
+        //   ③ 回退已算 fieldValues（公式列计算结果，数字）。
+        java.util.function.Function<String, Object> lookup = col -> {
+            Object raw = ctx.currentRowRaw != null ? ctx.currentRowRaw.get(col) : null;
+            if (raw != null) return raw;
+            Object bd = basicDataRawByName(col, fields, basicDataValues);
+            if (bd != null) return bd;
+            return ctx.fieldValues.get(col);
+        };
+        for (CondRule r : ff.rules) {
+            if (com.cpq.formula.CondTreeEvaluator.eval(r.when, lookup)) return r.expression;
+        }
+        return ff.defaultExpression;
+    }
+
+    /** 按字段名解析 BASIC_DATA 列的原始值（保留字符串）；非 BASIC_DATA/未命中 → null。Plan 3a。 */
+    private Object basicDataRawByName(String col, JsonNode fields, JsonNode basicDataValues) {
+        if (fields == null || !fields.isArray()) return null;
+        for (JsonNode f : fields) {
+            if (!"BASIC_DATA".equals(fieldType(f))) continue;
+            if (!col.equals(fieldName(f))) continue;
+            String path = basicDataPath(f);
+            if (path == null || path.isEmpty()) return null;
+            Object v = lookupBdv(basicDataValues, bnfDriverLookupKey(path));
+            // 拆包 JsonNode → Java 原值（保留字符串，供条件字符串比较）。
+            if (v instanceof JsonNode jn) {
+                if (jn.isNull() || jn.isMissingNode()) return null;
+                if (jn.isNumber()) return jn.numberValue();
+                if (jn.isBoolean()) return jn.booleanValue();
+                return jn.asText();
+            }
+            return v;
+        }
+        return null;
     }
 
     /**
@@ -762,6 +837,17 @@ public class FormulaCalculator {
         return -1;
     }
 
+    /** 把表达式里 type==field 且属公式字段名的 token 加入依赖列表。Plan 3a。 */
+    private void addExprFieldDeps(JsonNode expr, java.util.Set<String> nameSet, List<String> acc) {
+        if (expr == null || !expr.isArray()) return;
+        for (JsonNode t : expr) {
+            if ("field".equals(t.path("type").asText(""))) {
+                String v = t.path("value").asText("");
+                if (nameSet.contains(v)) acc.add(v);
+            }
+        }
+    }
+
     private List<String> topoOrder(List<FormulaField> formulaFields) {
         // 依赖图：公式 field token 引用的其他公式字段
         Map<String, List<String>> deps = new LinkedHashMap<>();
@@ -769,13 +855,16 @@ public class FormulaCalculator {
         for (FormulaField ff : formulaFields) nameSet.add(ff.name);
         for (FormulaField ff : formulaFields) {
             List<String> d = new ArrayList<>();
-            if (ff.expression != null && ff.expression.isArray()) {
-                for (JsonNode t : ff.expression) {
-                    if ("field".equals(t.path("type").asText(""))) {
-                        String v = t.path("value").asText("");
-                        if (nameSet.contains(v)) d.add(v);
-                    }
+            if (ff.isConditional()) {
+                // Plan 3a：并集依赖 = 条件树引用列 ∪ 所有候选公式(rules+default)引用列。
+                for (CondRule r : ff.rules) {
+                    for (String c : com.cpq.formula.CondTreeEvaluator.columns(r.when))
+                        if (nameSet.contains(c)) d.add(c);
+                    addExprFieldDeps(r.expression, nameSet, d);
                 }
+                addExprFieldDeps(ff.defaultExpression, nameSet, d);
+            } else {
+                addExprFieldDeps(ff.expression, nameSet, d);
             }
             deps.put(ff.name, d);
         }
