@@ -3312,4 +3312,8 @@ E2E:
 
 ---
 
+### [2026-06-09] 条件公式构建器 UI Plan3b — 嵌套 AND/OR 编辑器 + 字段级抽屉 | CondTreeEditor+ConditionalFormulaDrawer(新) + FieldConfigTable 接入 + 1测试 | 计划 plans/2026-06-09-plan3b-condition-tree-builder-ui.md(spec 设计B)。承接 Plan3a 引擎(数据契约 conditional_formula)。需求:组件管理给 FORMULA 字段配置条件公式,选择式构建有序规则(嵌套 AND/OR 条件树+命中公式)+默认公式,产出 conditional_formula JSON 即被 3a 引擎求值,全程选择式(仅叶子右值字面量可键入)。实现:①CondTreeEditor 递归组件(分组 AND/OR Segmented 切换 + 加条件/加分组 + 叶子=列 Select·运算符 Select·右值 值/列 Segmented 切换+Input/Select; 导出 emptyLeaf/emptyGroup helper)②ConditionalFormulaDrawer 字段级抽屉(规则列表:每条 CondTreeEditor+命中公式 Select+上移/下移/删除; +加规则 +默认公式 Select; 确认校验 >=1规则/每条选公式/默认必填; 遵守 Drawer 规范)③FieldConfigTable FORMULA 分支加单一/条件 Segmented(条件模式显示规则数+配置按钮开抽屉,镜像 ListFormulaConfigDrawer 的 open/value/onConfirm 接线);切条件写空{rules:[],default:''}抽屉补全,切单一清空。无 @testing-library/react/jsdom → 渲染验证用 Vite 200+手工,测试只覆盖 helper。自检:condTreeEditor.test 2+conditionalFormula 1+condTree 12=15 passed;tsc 0;CondTreeEditor/ConditionalFormulaDrawer/FieldConfigTable/ComponentManagement Vite 200;E2E quotation-flow 1 passed+加载中=0。**UI→引擎契约由构造证明**(conditionalFormula.test 喂 UI 同形 JSON 引擎求值 120/150/100)。**未做(headless 无法)**:真人开抽屉建规则保存+报价单看求值的交互式点击验证;Plan3c 详情/核价三视图 AP-44 核对+硬环检测+条件公式完整 E2E。**至此 3a+3b 合体:条件公式经组件管理 UI 可配可用**。
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
