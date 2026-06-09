@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Drawer, Select, Button, Space, Switch, InputNumber, Tag, message, Segmented, Input } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { FormulaToken } from './types';
@@ -107,6 +107,7 @@ const CrossTabRefDrawer: React.FC<Props> = ({
   const [operation, setOperation] = useState<string>('single'); // OPERATIONS.key
   const [rawText, setRawText] = useState<string>('');
   const [rawError, setRawError] = useState<string>('');
+  const manualEditRef = useRef(false);
 
   // Reset state when drawer opens or closes
   useEffect(() => {
@@ -124,27 +125,29 @@ const CrossTabRefDrawer: React.FC<Props> = ({
       setOperation('single');
       setRawText('');
       setRawError('');
+      manualEditRef.current = false;
     }
   }, [open]);
 
   const sourceComp = siblingComponents.find((c) => c.id === sourceId) ?? null;
   const sourceFields = sourceComp?.fields ?? [];
 
+  const buildTokenLike = (): CrossTabToken => ({
+    type: 'cross_tab_ref',
+    source: sourceId,
+    sourceLabel: sourceComp?.name ?? '',
+    target: (useFormula && agg !== 'COUNT') ? '' : (agg === 'COUNT' ? '' : target),
+    targetExpr: (useFormula && agg !== 'COUNT' && targetExpr.length > 0) ? targetExpr : undefined,
+    match: matchPairs.filter((p) => p.a && p.b),
+    agg,
+  });
+
   // 可视化状态变化 → 实时序列化为规范原始文本（仅高级模式展示）
   useEffect(() => {
+    if (manualEditRef.current) return;
     if (mode !== 'advanced') return;
     if (!sourceId) { setRawText(''); return; }
-    const completePairs = matchPairs.filter((p) => p.a && p.b);
-    const tokenLike = {
-      type: 'cross_tab_ref' as const,
-      source: sourceId,
-      sourceLabel: sourceComp?.name ?? '',
-      target: (useFormula && agg !== 'COUNT') ? '' : (agg === 'COUNT' ? '' : target),
-      targetExpr: (useFormula && agg !== 'COUNT' && targetExpr.length > 0) ? targetExpr : undefined,
-      match: completePairs,
-      agg,
-    };
-    setRawText(serializeCrossTab(tokenLike, sourceComp));
+    setRawText(serializeCrossTab(buildTokenLike(), sourceComp));
     setRawError('');
   }, [mode, sourceId, sourceComp, matchPairs, useFormula, agg, target, targetExpr]);
 
@@ -202,15 +205,7 @@ const CrossTabRefDrawer: React.FC<Props> = ({
     const comp = siblingComponents.find((c) => c.id === sourceId);
     if (!comp) return;
 
-    const token: CrossTabToken = {
-      type: 'cross_tab_ref',
-      source: sourceId,
-      sourceLabel: comp.name,
-      target: (useFormula && agg !== 'COUNT') ? '' : (agg === 'COUNT' ? '' : target),
-      targetExpr: (useFormula && agg !== 'COUNT' && targetExpr.length > 0) ? targetExpr : undefined,
-      match: completePairs,
-      agg,
-    };
+    const token = buildTokenLike();
 
     onConfirm(token);
     onClose();
@@ -613,7 +608,7 @@ const CrossTabRefDrawer: React.FC<Props> = ({
             <Input.TextArea
               rows={2}
               value={rawText}
-              onChange={(e) => setRawText(e.target.value)}
+              onChange={(e) => { setRawText(e.target.value); manualEditRef.current = true; setRawError(''); }}
               style={{ fontFamily: 'monospace', fontSize: 12 }}
             />
             {rawError && (
@@ -622,6 +617,7 @@ const CrossTabRefDrawer: React.FC<Props> = ({
             <Button
               size="small"
               style={{ marginTop: 6 }}
+              disabled={!rawText.trim()}
               onClick={() => {
                 const r = parseCrossTab(rawText, siblingComponents);
                 if ('error' in r) { setRawError(r.error); return; }
@@ -639,6 +635,7 @@ const CrossTabRefDrawer: React.FC<Props> = ({
                   setTarget(r.token.target);
                   setTargetExpr([]);
                 }
+                manualEditRef.current = false;
               }}
             >
               应用文本
