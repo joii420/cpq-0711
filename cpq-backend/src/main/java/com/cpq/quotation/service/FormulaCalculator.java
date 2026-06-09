@@ -456,6 +456,36 @@ public class FormulaCalculator {
         return String.join("||", parts);
     }
 
+    /**
+     * 判重专用组合键（input-inclusive）：逐字段 driverRow 非空优先，否则取 rowValues。
+     * 与 computeRowKey 区别：额外读 rowValues（手填输入字段值），仅用于行键唯一性判重，
+     * 不接入 editRows / formula 路径（避开鸡生蛋）。全字段为空 → null（不参与判重）。
+     */
+    public static String computeDedupKey(JsonNode rowKeyFields, JsonNode driverRow, JsonNode rowValues) {
+        if (rowKeyFields == null || !rowKeyFields.isArray() || rowKeyFields.size() == 0) return null;
+        if (rowKeyFields.size() == 1 && "__seq_no__".equals(rowKeyFields.get(0).asText(""))) return null;
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        boolean any = false;
+        for (JsonNode k : rowKeyFields) {
+            String field = k.asText("");
+            String v = pickNonEmpty(driverRow, field);
+            if (v == null) v = pickNonEmpty(rowValues, field);
+            if (v != null) any = true;
+            parts.add(v == null ? "" : v);
+        }
+        if (!any) return null;
+        return String.join("||", parts);
+    }
+
+    /** 取 node[field] 文本，缺失/null/空串 → null。 */
+    private static String pickNonEmpty(JsonNode node, String field) {
+        if (node == null) return null;
+        JsonNode v = node.path(field);
+        if (v == null || v.isMissingNode() || v.isNull()) return null;
+        String s = v.asText("");
+        return s.isEmpty() ? null : s;
+    }
+
     // ======================================================================
     // Layer 2 — 字段值收集（AP-37 每 field_type，port computeAllFormulas:420-548）
     // ======================================================================
