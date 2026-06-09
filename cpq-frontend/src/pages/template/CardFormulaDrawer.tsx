@@ -547,7 +547,13 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
           <Segmented
             size="small"
             value={mode}
-            onChange={(v) => setMode(v as 'simple' | 'advanced')}
+            onChange={(v) => {
+              const next = v as 'simple' | 'advanced';
+              setMode(next);
+              if (next === 'simple' && refType === 'aggregate' && aggFunc !== 'SUM') {
+                setAggFunc('SUM');
+              }
+            }}
             options={[{ label: '简单', value: 'simple' }, { label: '高级', value: 'advanced' }]}
           />
         </div>
