@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Drawer, Select, Button, Space, Switch, InputNumber, Tag, message } from 'antd';
+import { Drawer, Select, Button, Space, Switch, InputNumber, Tag, message, Segmented } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { FormulaToken } from './types';
+import { OPERATIONS, operationToAgg } from './crossTabText';
 
 export interface SiblingComponent {
   id: string;
@@ -37,15 +38,6 @@ interface Props {
   currentFields: Array<{ name: string; label?: string }>;
   onConfirm: (token: CrossTabToken) => void;
 }
-
-const AGG_OPTIONS = [
-  { value: 'NONE', label: '无 (取单行值)' },
-  { value: 'SUM', label: '求和 (SUM)' },
-  { value: 'AVG', label: '平均 (AVG)' },
-  { value: 'COUNT', label: '计数 (COUNT)' },
-  { value: 'MAX', label: '最大 (MAX)' },
-  { value: 'MIN', label: '最小 (MIN)' },
-];
 
 /** Map a targetExpr token to a short readable string for chip/preview display. */
 function tokenToText(tok: FormulaToken): string {
@@ -111,6 +103,8 @@ const CrossTabRefDrawer: React.FC<Props> = ({
   // Controlled select values (reset after appending)
   const [aFieldSel, setAFieldSel] = useState<string | undefined>(undefined);
   const [bFieldSel, setBFieldSel] = useState<string | undefined>(undefined);
+  const [mode, setMode] = useState<'simple' | 'advanced'>('simple');
+  const [operation, setOperation] = useState<string>('single'); // OPERATIONS.key
 
   // Reset state when drawer opens or closes
   useEffect(() => {
@@ -124,6 +118,8 @@ const CrossTabRefDrawer: React.FC<Props> = ({
       setNumInput(null);
       setAFieldSel(undefined);
       setBFieldSel(undefined);
+      setMode('simple');
+      setOperation('single');
     }
   }, [open]);
 
@@ -214,7 +210,17 @@ const CrossTabRefDrawer: React.FC<Props> = ({
 
   return (
     <Drawer
-      title="插入跨页签引用"
+      title={
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>跨页签公式构建器</span>
+          <Segmented
+            size="small"
+            value={mode}
+            onChange={(v) => setMode(v as 'simple' | 'advanced')}
+            options={[{ label: '简单', value: 'simple' }, { label: '高级', value: 'advanced' }]}
+          />
+        </div>
+      }
       placement="right"
       width={720}
       open={open}
@@ -307,31 +313,40 @@ const CrossTabRefDrawer: React.FC<Props> = ({
                 />
               </div>
             ))}
-            <Button
-              size="small"
-              icon={<PlusOutlined />}
-              onClick={handleAddPair}
-              style={{ alignSelf: 'flex-start' }}
-              disabled={!sourceId}
-            >
-              添加匹配条件
-            </Button>
+            {mode === 'advanced' && (
+              <Button
+                size="small"
+                icon={<PlusOutlined />}
+                onClick={handleAddPair}
+                style={{ alignSelf: 'flex-start' }}
+                disabled={!sourceId}
+              >
+                添加匹配条件
+              </Button>
+            )}
           </div>
         </div>
 
-        {/* Aggregation */}
+        {/* 1.5 要算什么（操作选择器，驱动 agg） */}
         <div>
           <div style={{ fontWeight: 500, marginBottom: 6, fontSize: 13 }}>
-            3. 聚合方式
+            要算什么
+            <span style={{ fontWeight: 400, color: '#8c8c8c', marginLeft: 8, fontSize: 12 }}>
+              从源页签按匹配行取值或汇总
+            </span>
           </div>
           <Select
-            style={{ width: 240 }}
-            value={agg}
+            style={{ width: 280 }}
+            value={operation}
             onChange={(v) => {
-              setAgg(v);
-              if (v === 'COUNT') setTarget('');
+              setOperation(v);
+              const a = operationToAgg(v);
+              setAgg(a);
+              if (a === 'COUNT') setTarget('');
             }}
-            options={AGG_OPTIONS}
+            options={OPERATIONS.filter((o) => mode === 'advanced' || o.simple).map((o) => ({
+              label: o.label, value: o.key,
+            }))}
           />
         </div>
 
