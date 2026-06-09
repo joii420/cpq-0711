@@ -275,8 +275,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   const compSubtotals: Record<string, number> = {};
   for (const comp of components) {
     if (!comp.fields) continue;
-    const stField = comp.fields.find((f: any) => f.is_subtotal);
-    if (!stField) {
+    // Plan 2-核心：多小计列 —— 取所有 is_subtotal 字段。
+    const subtotalFields = comp.fields.filter((f: any) => f.is_subtotal);
+    if (subtotalFields.length === 0) {
       compSubtotals[comp.tabName] = 0;
       if (comp.componentCode) compSubtotals[comp.componentCode] = 0;
       continue;
@@ -298,7 +299,14 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
       lineItem.productPartNo, globalVariableDefs,
       compDriverExpansion,
     );
-    const st = formulaCaches.reduce((s, fc) => s + ((fc[stField.name] as number) ?? 0), 0);
+    // Plan 2-核心：逐列求和 + per-column 键 `${code|tabName}#${列名}`，组件级 = 各列之和。
+    let st = 0;
+    for (const sf of subtotalFields) {
+      const colSum = formulaCaches.reduce((s, fc) => s + ((fc[sf.name] as number) ?? 0), 0);
+      compSubtotals[`${comp.tabName}#${sf.name}`] = colSum;
+      if (comp.componentCode) compSubtotals[`${comp.componentCode}#${sf.name}`] = colSum;
+      st += colSum;
+    }
     compSubtotals[comp.tabName] = st;
     if (comp.componentCode) compSubtotals[comp.componentCode] = st;
   }
@@ -597,9 +605,13 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     <tr className="qt-subtotal-row">
                       {activeComp.fields.map((field, fi) => {
                         if (field.is_subtotal) {
+                          // Plan 2-核心：按列取本列总计，回退组件级兼容。
+                          const v = compSubtotals[`${activeComp.componentCode}#${field.name}`]
+                            ?? compSubtotals[`${activeComp.tabName}#${field.name}`]
+                            ?? compSubtotals[activeComp.tabName] ?? 0;
                           return (
                             <td key={fi} className="qt-subtotal-cell">
-                              {formatCurrency(compSubtotals[activeComp.tabName] || 0)}
+                              {formatCurrency(v)}
                             </td>
                           );
                         }
