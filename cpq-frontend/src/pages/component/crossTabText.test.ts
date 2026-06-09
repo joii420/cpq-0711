@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { OPERATIONS, operationToAgg, aggToOperation } from './crossTabText';
+import { OPERATIONS, operationToAgg, aggToOperation, serializeCrossTab } from './crossTabText';
+import type { FormulaToken } from './types';
 
 describe('operation <-> agg 映射', () => {
   it('OPERATIONS 含 6 个操作且 simple 标记正确', () => {
@@ -16,5 +17,26 @@ describe('operation <-> agg 映射', () => {
     expect(aggToOperation('NONE')).toBe('single');
     expect(aggToOperation('SUM')).toBe('sum');
     expect(aggToOperation('XYZ')).toBe('single');
+  });
+});
+
+const ll = { id: 'id-ll', code: 'COMP-0028', name: '来料', fields: [{ name: '组成用量' }, { name: '子料号' }] };
+
+describe('serializeCrossTab', () => {
+  it('单列 SUM 目标', () => {
+    const token: any = { type: 'cross_tab_ref', source: 'id-ll', sourceLabel: '来料', target: '组成用量', match: [{ a: '子料号', b: '料件' }], agg: 'SUM' };
+    expect(serializeCrossTab(token, ll)).toBe('求和 | 源:COMP-0028 | 关联:子料号=料件 | 目标:A.组成用量');
+  });
+  it('targetExpr 乘积式(A列×本列)', () => {
+    const expr: FormulaToken[] = [
+      { type: 'field', value: '组成用量' }, { type: 'operator', value: '*' },
+      { type: 'b_field', value: '含量' }, { type: 'operator', value: '*' }, { type: 'b_field', value: '单价' },
+    ];
+    const token: any = { type: 'cross_tab_ref', source: 'id-ll', sourceLabel: '来料', target: '', targetExpr: expr, match: [{ a: '子料号', b: '料件' }], agg: 'SUM' };
+    expect(serializeCrossTab(token, ll)).toBe('求和 | 源:COMP-0028 | 关联:子料号=料件 | 目标:A.组成用量 * B.含量 * B.单价');
+  });
+  it('COUNT 无目标', () => {
+    const token: any = { type: 'cross_tab_ref', source: 'id-ll', sourceLabel: '来料', target: '', match: [{ a: '子料号', b: '料件' }], agg: 'COUNT' };
+    expect(serializeCrossTab(token, ll)).toBe('计数 | 源:COMP-0028 | 关联:子料号=料件 | 目标:(计数)');
   });
 });
