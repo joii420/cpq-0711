@@ -67,6 +67,9 @@ public class QuotationService {
     SnapshotCollectorService snapshotCollectorService;
 
     @Inject
+    com.cpq.quotation.service.rowkey.RowKeyUniquenessService rowKeyUniquenessService;
+
+    @Inject
     BasicDataImportServiceV5 basicDataImportServiceV5;
 
     /** 阶段 2: 组件 SQL 视图冻结服务（SUBMITTED 时调 snapshotForComponents 写 quotation_component_sql_snapshot） */
@@ -670,6 +673,33 @@ public class QuotationService {
 
         // Create product snapshots for all line items
         List<QuotationLineItem> lineItems = QuotationLineItem.list("quotationId = ?1", id);
+
+        // 行键唯一性校验（设计 E）：组合行键不可重复，含 driver 展开行。冲突即拒绝提交。
+        // 结构快照（含 AP-39 冻入的 rowKeyFields）从 quotation_view_structure 的 QUOTE_CARD 份取。
+        String quoteCardStructureJson = null;
+        for (com.cpq.quotation.entity.QuotationViewStructure s :
+                com.cpq.quotation.entity.QuotationViewStructure
+                    .<com.cpq.quotation.entity.QuotationViewStructure>list("quotationId", id)) {
+            if ("QUOTE_CARD".equals(s.viewKind)) { quoteCardStructureJson = s.structure; break; }
+        }
+        java.util.List<com.cpq.quotation.service.rowkey.RowKeyUniquenessService.LineItemRows> rowsForCheck =
+            new java.util.ArrayList<>();
+        for (QuotationLineItem li : lineItems) {
+            String label = li.productNameSnapshot != null ? li.productNameSnapshot
+                         : (li.productPartNoSnapshot != null ? li.productPartNoSnapshot : "明细");
+            rowsForCheck.add(new com.cpq.quotation.service.rowkey.RowKeyUniquenessService.LineItemRows(
+                label, li.quoteCardValues));
+        }
+        java.util.List<com.cpq.quotation.service.rowkey.RowKeyConflict> conflicts =
+            rowKeyUniquenessService.collectConflicts(quoteCardStructureJson, rowsForCheck);
+        if (!conflicts.isEmpty()) {
+            StringBuilder sb = new StringBuilder("行键重复，无法提交：");
+            for (com.cpq.quotation.service.rowkey.RowKeyConflict c : conflicts) {
+                sb.append("\n· ").append(c.describe());
+            }
+            throw new BusinessException(422, sb.toString());
+        }
+
         for (QuotationLineItem li : lineItems) {
             // Delete existing snapshot if any
             QuotationLineItemSnapshot.delete("lineItemId = ?1", li.id);
