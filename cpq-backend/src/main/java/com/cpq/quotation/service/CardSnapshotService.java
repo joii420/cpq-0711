@@ -801,10 +801,26 @@ public class CardSnapshotService {
 
         // 值快照带上本 tab 小计（供 Excel CARD_FORMULA 的 __subtotal__ 引用，见 CardEffectiveRows）
         String code = tab.path("componentCode").asText(null);
+        String tabName = tab.path("tabName").asText("");
         Double sub = componentSubtotals.get(cid);
         if (sub == null && code != null) sub = componentSubtotals.get(code);
-        if (sub == null) sub = componentSubtotals.get(tab.path("tabName").asText(""));
+        if (sub == null) sub = componentSubtotals.get(tabName);
         if (sub != null) tabNode.put("subtotal", sub);
+
+        // Plan 2c：per-column 小计（供 [页签.列名] 引用）。从 componentSubtotals 的
+        // `${cid|code|tabName}#${列名}` 键提取（Plan 2 Task 3 已写入）。
+        ObjectNode byColNode = MAPPER.createObjectNode();
+        for (String prefix : new String[]{ cid, code, tabName }) {
+            if (prefix == null || prefix.isBlank()) continue;
+            String keyPrefix = prefix + "#";
+            for (Map.Entry<String, Double> en : componentSubtotals.entrySet()) {
+                if (en.getKey().startsWith(keyPrefix) && en.getValue() != null) {
+                    String col = en.getKey().substring(keyPrefix.length());
+                    if (!byColNode.has(col)) byColNode.put(col, en.getValue());
+                }
+            }
+        }
+        if (byColNode.size() > 0) tabNode.set("subtotalByColumn", byColNode);
 
         // resolvedRows 输出（与 crossTabRows 同源，DRY）
         ArrayNode resolvedRowsNode = MAPPER.createArrayNode();
