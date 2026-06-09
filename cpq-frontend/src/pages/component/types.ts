@@ -56,6 +56,8 @@ export interface FieldItem {
   content?: string;
   is_amount?: boolean;
   is_subtotal?: boolean;
+  /** Plan 3a：条件公式。存在即走条件模式（优先于 formula_name）。when 为 CondTree（见 utils/condTree）。 */
+  conditional_formula?: { rules: { when: any; formula: string }[]; default: string };
   notes?: string;
   /**
    * LIST_FORMULA 字段类型专用配置.

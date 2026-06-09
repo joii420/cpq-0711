@@ -53,6 +53,8 @@ export interface ComponentField {
   content?: string;
   is_amount?: boolean;
   is_subtotal?: boolean;
+  /** Plan 3a：条件公式。存在即走条件模式（优先于 formula_name）。 */
+  conditional_formula?: { rules: { when: CondTree; formula: string }[]; default: string };
   is_required?: boolean;
   formula_name?: string;  // FORMULA fields: which formula definition to use
   datasource_binding?: {

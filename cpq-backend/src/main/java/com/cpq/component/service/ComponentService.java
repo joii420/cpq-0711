@@ -388,6 +388,18 @@ public class ComponentService {
                 throw new BusinessException("Invalid field_type: " + fieldType +
                     ". Must be one of: " + VALID_FIELD_TYPES);
             }
+            // Plan 3a：条件公式校验 —— 默认必填 + 至少 1 条规则。
+            Object cf = field.get("conditional_formula");
+            if (cf instanceof Map<?, ?> cfm) {
+                Object def = cfm.get("default");
+                if (def == null || String.valueOf(def).isBlank()) {
+                    throw new BusinessException("字段「" + field.get("name") + "」条件公式缺少默认公式（default）");
+                }
+                Object rules = cfm.get("rules");
+                if (!(rules instanceof java.util.List<?> rl) || rl.isEmpty()) {
+                    throw new BusinessException("字段「" + field.get("name") + "」条件公式至少需 1 条规则");
+                }
+            }
             // DATA_SOURCE requires datasource_binding (H2: 4 种 type 各自校验关键配置)
             if ("DATA_SOURCE".equals(fieldType.toString())) {
                 Object binding = field.get("datasource_binding");
