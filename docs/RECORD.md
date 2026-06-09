@@ -3300,4 +3300,8 @@ E2E:
 
 ---
 
+### [2026-06-09] previous_row_subtotal 改"上一行本列" Plan2b — 任意公式列多列独立累加 | FormulaCalculator#computeRows + QuotationStep2#computeAllFormulas + 4 前端累加调用方(RPC×2/QS2/QWizard) + 2 测试类 | 计划 plans/2026-06-09-plan2b-previous-row-subtotal-per-column.md。承接 Plan2-核心边界(2b)。需求:previous_row_subtotal 累加 token 从"上一行(唯一)小计列值"改为"上一行**本列**值",对任意公式列生效,多小计列各自独立累加。**token handler/求值器不改**:把单标量 prevRowSubtotal(整行共用)换成上一行全量值映射 prevRowValues,逐字段循环里把 prevRowValues[当前字段名]喂给该字段的 previous_row_subtotal token。后端 computeRows(标量→Map,删 subtotalField,逐字段 ctx.previousRowSubtotal=prevRowValues.get(name),传 prevRowValues=results);前端 computeAllFormulas 加入参11 previousRowValues+循环 prevForField=previousRowValues[name]??标量;4 调用方 prevRowSubtotal=cache[subtotalFieldName] → prevRowValues=cache(全量),删 subtotalFieldName。**向后兼容**:单累加列(token 在小计列自身公式)=自列上一行=原"那个小计列上一行",T13/T14+E2E 不变。**迁移风险核对**:DB 查 component.formulas 含 previous_row_subtotal = **0 个组件**,存量零影响,纯前向。**边界**:computeTabSubtotal 两侧本就不喂 prev(累加列"列小计"准确性是先于2b的既有问题),2b 不碰。自检:后端 FormulaCalculatorPrevRowPerColumnTest 2 passed(累计A[10,30,60]/累计B[1,3,6]独立)+FormulaCalculatorTest 16+MultiSubtotal/CardSnapshot/RowKey 回归26绿;前端 prevRowPerColumn.test.ts 1+computeMultiSubtotal 3 passed;tsc 0 错误;3文件 Vite 200;E2E quotation-flow 1 passed+加载中=0。**未做**:Plan2c [页签#SUBTOTAL]按列名选;Plan3 条件公式。
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
