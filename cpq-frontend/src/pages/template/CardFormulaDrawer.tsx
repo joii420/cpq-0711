@@ -13,7 +13,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Drawer, Button, Form, Input, Select, Radio, Space, Switch, InputNumber,
-  Divider, Typography, Tag, message, Spin, Tooltip, Alert,
+  Divider, Typography, Tag, message, Spin, Tooltip, Alert, Segmented,
 } from 'antd';
 import { PlusOutlined, DeleteOutlined, FunctionOutlined } from '@ant-design/icons';
 import { templateService } from '../../services/templateService';
@@ -292,6 +292,9 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
   // 正在编辑回填的 ref key（点标签回填时设置）；为 null 表示新建插入
   const [editingRefKey, setEditingRefKey] = useState<string | null>(null);
 
+  // ── 简单/高级模式 ────────────────────────────────────────────────
+  const [mode, setMode] = useState<'simple' | 'advanced'>('simple');
+
   // ── 配置说明展开态 ───────────────────────────────────────────────
   const [showHelp, setShowHelp] = useState(false);
 
@@ -537,7 +540,17 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
 
   return (
     <Drawer
-      title={`编辑卡片公式 — 列 ${value.col_key}（${value.title}）`}
+      title={
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <span>{`编辑卡片公式 — 列 ${value.col_key}（${value.title}）`}</span>
+          <Segmented
+            size="small"
+            value={mode}
+            onChange={(v) => setMode(v as 'simple' | 'advanced')}
+            options={[{ label: '简单', value: 'simple' }, { label: '高级', value: 'advanced' }]}
+          />
+        </div>
+      }
       placement="right"
       width={960}
       open={open}
