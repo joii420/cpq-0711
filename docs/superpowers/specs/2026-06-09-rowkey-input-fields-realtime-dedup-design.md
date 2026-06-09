@@ -56,16 +56,20 @@
   - 调用点 `:395`（computeRows）：rowKey 在 `mergeRow` **之前**算——`rowValues` 传 **baseRow 自身的位置化值**（手动行的 rowData 已并入 baseRow；driver 行的手填输入值同源）。**不传 editValues**（避免鸡生蛋）。
   - 其余调用点（`CardSnapshotService.java:824`）：按签名补传位置化 rowValues（无则传 `MissingNode` / 空对象，退化为旧行为）。
 
-### 4.3 提交校验（Plan 1 补值源）
+### 4.3 提交校验（Plan 1 改取数源 —— 已核实定案）
 
-- **`RowKeyUniquenessService.collectConflicts`**（`:307`）：当前只喂 `baseRows[].driverRow`。改为对每行构造**位置化 rowValues**：
-  - driver 行：driverRow（展开值）+ 该行 row_data 输入字段；
-  - 手动行：row_data 即全部值。
-  - 调 `computeRowKey(rowKeyFields, driverRow, rowValues)`。
-- **数据来源核实（实施 Task 0，最高优先）**：用代码核实 submit 时手动行 / 输入值如何进入校验可见的数据：
-  - 若 `quoteCardValues.baseRows` 已含手动行 + 输入值 → 直接用；
-  - 若未含 → 改为 join `componentData[].rowData` 位置化对齐（driver 行在前、手动行追加末尾，与手动行 spec §4.1 排序一致）。
-  - **这是本方案最大不确定点，必须先核实再定取数路径，不得凭假设写代码。**
+**已核实事实**（`CardSnapshotService.buildCardValues:465-511` + `QuotationLineComponentData` 实体）：
+- `quoteCardValues.baseRows` 仅来自 `snapshot_rows`（driver 展开），**不含手动行、不含输入字段值** → Plan 1 现取数源对输入字段键不够。
+- 权威**位置化（按行下标）**源为两路：
+  - **驱动列** ← `quotation_line_component_data.snapshot_rows`（按行下标 → `driverRow`）；
+  - **输入值 + 手动行** ← `quotation_line_component_data.row_data`（JSONB 数组，按行下标；手动行 `_origin='manual'` 追加末尾，排序见手动行 spec §4.1）。
+
+**定案改法 —— `RowKeyUniquenessService` 重构为两路位置化合并：**
+- 入参从 `LineItemRows(label, valuesJson)` 改为按**行明细 × 组件**提供：`componentId`、`snapshot_rows` JSON、`row_data` JSON。
+- 对组件每行下标 `i` 构造取值：`driverRow_i = snapshot_rows[i].driverRow`（`i ≥ driverCount` 的手动行 → 空对象）；`rowDataRow_i = row_data[i]`。
+- 逐字段 `f`：`nonEmpty(driverRow_i[f]) ? driverRow_i[f] : rowDataRow_i[f]`，组合得 rowKey → 交 `RowKeyConflictDetector.detect`。
+- 该两路合并是**安全超集**：driver 列优先取展开值，输入字段/手动行从 row_data 取，与 rowData 是否也含 driver 列无关。
+- rowKeyFields（含 AP-39 冻入）仍从 `quotation_view_structure` 的 `QUOTE_CARD` 份取（`QuotationService.submit:680` 既有逻辑不变）。
 
 ### 4.4 录入实时判重（`QuotationStep2`）
 
@@ -97,9 +101,9 @@
 
 ## 7. 主要风险与验证点
 
-1. **submit 时输入值取数路径**（§4.3 核实点）——实施 Task 0 先核实，决定是否 join row_data。**最高风险**。
-2. **撞名**（driver 列名 == 输入字段名）——保存期校验显式拒绝。
-3. **鸡生蛋**——已用"位置化 rowValues、不碰 editRows-by-key"规避；需在 computeRows `:395` 处确保传的是位置化值而非 editValues。
+1. **行下标对齐**（§4.3 两路合并）——`snapshot_rows` 与 `row_data` 必须同序（driver 行在前、手动行追加末尾）。实施时用单测固定一份 driver+manual 混合样本验证对齐；若发现某 line item 两路长度不一致，以 `row_data` 长度为行数权威（AP-51 纪律），缺失 driverRow 按空对象处理。
+2. **撞名**（driver 列名 == 输入字段名）——保存行键配置期校验显式拒绝。
+3. **鸡生蛋**——已用"位置化取值（snapshot_rows + row_data）、不碰 editRows-by-key"规避；computeRows `:395` 处传位置化值而非 editValues。
 4. **AP-51 行数纪律 / AP-54 下标映射**——实时判重用渲染行集合 + 对象引用映射，沿用既有纪律。
 
 ## 8. 验收标准
