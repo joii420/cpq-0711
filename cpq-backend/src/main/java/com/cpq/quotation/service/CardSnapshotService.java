@@ -695,13 +695,23 @@ public class CardSnapshotService {
             String cid = tab.path("componentId").asText("");
             ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, emptyEdit);
             ArrayNode editRows = filteredEdit.getOrDefault(cid, emptyEdit);
-            double sub = formulaCalculator.computeTabSubtotal(
+            java.util.Map<String, java.math.BigDecimal> byCol = formulaCalculator.computeTabSubtotalsByColumn(
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
-                rkfByComp.get(cid), baseRows, editRows, componentSubtotals).doubleValue();
-            if (!cid.isBlank()) componentSubtotals.put(cid, sub);
+                rkfByComp.get(cid), baseRows, editRows, componentSubtotals);
+            double sub = 0.0;
+            for (java.math.BigDecimal v : byCol.values()) sub += v.doubleValue();
             String code = tab.path("componentCode").asText(null);
+            String tabName = tab.path("tabName").asText("");
+            if (!cid.isBlank()) componentSubtotals.put(cid, sub);
             if (code != null && !code.isBlank()) componentSubtotals.put(code, sub);
-            componentSubtotals.put(tab.path("tabName").asText(""), sub);
+            componentSubtotals.put(tabName, sub);
+            // Plan 2-核心：per-column 键 `${key}#${列名}`，供按列引用/显示。
+            for (java.util.Map.Entry<String, java.math.BigDecimal> e : byCol.entrySet()) {
+                double cv = e.getValue().doubleValue();
+                if (!cid.isBlank()) componentSubtotals.put(cid + "#" + e.getKey(), cv);
+                if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + e.getKey(), cv);
+                componentSubtotals.put(tabName + "#" + e.getKey(), cv);
+            }
         }
 
         // PASS 2: 按组件 cross_tab_ref 依赖拓扑序逐 tab 算（A 必须先于引用它的 B），
