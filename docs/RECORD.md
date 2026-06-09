@@ -3304,4 +3304,8 @@ E2E:
 
 ---
 
+### [2026-06-09] [页签#SUBTOTAL] 引用按列名显式选 Plan2c — Excel 卡片公式多小计列引用 | CardRef + CardSnapshotService + CardEffectiveRows + CardDataProvider + CardFormulaEvaluator + CardFormulaDrawer + 1测试类 | 计划 plans/2026-06-09-plan2c-subtotal-ref-by-column.md。承接 Plan2-核心边界(2c)。需求:Excel 模板卡片公式引用某页签小计时,多小计列则按名字列出供选,引用解析到具体列(如 [投料.材料费小计]);老 [页签.小计](__subtotal__)保持=各列之和。**复用 Plan2 已铺数据**:per-column 小计已在 componentSubtotals 的 ${cid|code|tabName}#${列名} 键(Plan2 Task3),2c 只贯穿 Excel 快照管线。实现:①CardRef field 用 __subtotal__:列名 编码,isSubtotal 改前缀匹配,subtotalColumn()取冒号后②CardSnapshotService 值快照写 tab.subtotalByColumn(从 componentSubtotals 的 #列名 键提取)③CardEffectiveRows.TabRows 加 subtotalByColumn(兼容旧2参构造)+读+filter保留④CardDataProvider effSubtotalByColumn+subtotalOfColumn(tab,col)⑤CardFormulaEvaluator 有列取该列、缺失回退 subtotalOf⑥CardFormulaDrawer:TabInfo 加 subtotalFields(三分支按 is_subtotal 收集,注意 selTab.fields 是字符串名数组需另存),refType=subtotal 且>1列显示"小计列"Select,buildInsertResult 加 subtotalCol 形参→__subtotal__:列名。**Excel 公式只后端求值(dry-run 服务端),前端只构建 ref,无评估器镜像**。**边界**:持久化路径(非 effective-rows 老报价)无 per-column 快照→subtotalOfColumn 返 null→evaluator 优雅回退各列之和;单小计列页签 UI 不显示子选择器。自检:CardRefSubtotalColumnTest 3 + Card*/FormulaCalculator*/RowKey* 回归(确定性重跑全绿;曾现1 flaky 失败=@QuarkusTest 与运行中 dev server 共享 DB 偶发竞争,非本改动);tsc 0 错误;CardFormulaDrawer Vite 200;E2E quotation-flow 1 passed+加载中=0。**未做**:多小计列 Excel 引用的真实 dry-run 可视确认(需2小计列模板,headless未做);Plan3 条件公式。
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
