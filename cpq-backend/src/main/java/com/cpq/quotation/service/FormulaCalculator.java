@@ -382,12 +382,11 @@ public class FormulaCalculator {
         // editRows 按 rowKey 索引（AP-54：业务键对齐，不用下标）
         Map<String, JsonNode> editByKey = indexEditRows(editRows);
 
-        String subtotalField = findSubtotalFieldName(fields);
         // 公式字段拓扑序（依赖先算），与前端 computeAllFormulas 一致
         List<FormulaField> formulaFields = collectFormulaFields(fields, formulas, formulaAssignments);
         List<String> order = topoOrder(formulaFields);
 
-        Double prevRowSubtotal = null;
+        Map<String, Double> prevRowValues = null;  // Plan 2b：上一行全量公式值（按字段名）
         int idx = 0;
         for (JsonNode baseRow : baseRows) {
             JsonNode driverRow = baseRow.path("driverRow");
@@ -412,7 +411,6 @@ public class FormulaCalculator {
             ctx.quotationFields = quotationFields != null ? quotationFields : new HashMap<>();
             ctx.productAttributes = productAttributes != null ? productAttributes : new HashMap<>();
             ctx.basicDataValues = toBasicDataMap(basicDataValues);
-            ctx.previousRowSubtotal = prevRowSubtotal;
             // cross_tab_ref（Task 1.3）：兄弟组件已算行 + 本行原始合并值（含文本，供匹配键 b 取值）
             ctx.crossTabRows = crossTabRows != null ? crossTabRows : Map.of();
             ctx.currentRowRaw = toRawRowMap(mergedRow);
@@ -422,6 +420,8 @@ public class FormulaCalculator {
             for (String name : order) {
                 FormulaField ff = findByName(formulaFields, name);
                 if (ff == null) continue;
+                // Plan 2b：previous_row_subtotal = 上一行本列值；无则 null → token 走 fallback。
+                ctx.previousRowSubtotal = (prevRowValues == null) ? null : prevRowValues.get(name);
                 double val = evaluateExpression(ff.expression, ctx).doubleValue();
                 results.put(name, val);
                 ctx.fieldValues.put(name, val);
@@ -429,10 +429,8 @@ public class FormulaCalculator {
 
             out.add(new RowResult(effKey, results));
 
-            // previous_row_subtotal: 本行 is_subtotal 传下行
-            if (subtotalField != null && results.containsKey(subtotalField)) {
-                prevRowSubtotal = results.get(subtotalField);
-            }
+            // Plan 2b：本行全量公式值传下行，各列下一行按本列取 prev。
+            prevRowValues = results;
             idx++;
         }
         return out;
