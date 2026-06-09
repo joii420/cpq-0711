@@ -51,6 +51,9 @@ function exprTokenToCanonical(tok: FormulaToken): string {
     case 'bracket_open': return '(';
     case 'bracket_close': return ')';
     case 'number': return tok.value || '';
+    // P1 targetExpr 仅含 field/b_field/operator/bracket/number。
+    // global_variable 等其他 token 类型 P1 不支持插入（抽屉 TODO），故走 default。
+    // 未来加全局变量插入时，必须在此 serializer 与 parseCrossTab 解析器两侧对称补齐。
     default: return tok.value || '';
   }
 }
