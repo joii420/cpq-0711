@@ -435,7 +435,7 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
         const col = cand?.resolvedColumn ?? null;
         const checked = !!(col && (rowKeyFields ?? []).includes(col));
         const tip = eligible
-          ? `行键列：${col}`
+          ? (cand?.source === 'input' ? `行键列（手填）：${col}` : `行键列（driver）：${col}`)
           : (cand?.reason ?? '该字段无 driver 列，不能作行键');
         return (
           <Tooltip title={tip}>

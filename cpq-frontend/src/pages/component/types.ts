@@ -257,4 +257,6 @@ export interface RowKeyCandidate {
   eligible: boolean;
   /** 不可勾选原因（eligible=false 时 hover 提示）。 */
   reason: string | null;
+  /** 行键来源："driver" | "input"；eligible=false 时可能为 undefined。 */
+  source?: 'driver' | 'input' | null;
 }
