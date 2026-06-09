@@ -219,7 +219,10 @@ public class CardFormulaEvaluator {
             anyRef[0] = true;
             String literal;
             if (ref.isSubtotal()) {
-                BigDecimal s = provider.subtotalOf(ref.tab);
+                // Plan 2c：指定列 → 取该列总计；无列名或 per-column 缺失 → 回退页签各列之和。
+                String col = ref.subtotalColumn();
+                BigDecimal s = col != null ? provider.subtotalOfColumn(ref.tab, col) : null;
+                if (s == null) s = provider.subtotalOf(ref.tab);
                 if (s != null) anyNonEmpty[0] = true;
                 literal = s != null ? s.toPlainString() : "0";
             } else {
