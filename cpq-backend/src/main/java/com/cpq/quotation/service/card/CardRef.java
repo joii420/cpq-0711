@@ -40,7 +40,15 @@ public final class CardRef {
         this.condRows = condRows != null ? condRows : List.of();
     }
 
-    public boolean isSubtotal() { return SUBTOTAL.equals(field); }
+    public boolean isSubtotal() { return field != null && field.startsWith(SUBTOTAL); }
+
+    /** 具体小计列名（`__subtotal__:列名`）；裸 `__subtotal__` 或非小计 → null。Plan 2c。 */
+    public String subtotalColumn() {
+        if (field == null || !field.startsWith(SUBTOTAL)) return null;
+        int i = field.indexOf(':');
+        return i >= 0 && i + 1 < field.length() ? field.substring(i + 1) : null;
+    }
+
     public boolean isAggregateSource() { return field == null || field.isBlank(); }
     public boolean hasCondRows() { return !condRows.isEmpty(); }
 
