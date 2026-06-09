@@ -1862,9 +1862,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     // 2026-05-17 累加公式: 预先按 row_index 顺序求值, 把上一行 is_subtotal 字段值
                     // 传给下一行作为 previous_row_subtotal token 的求值上下文.
                     // 单 row 场景(无累加 token)行为不变 — previousRowSubtotal 仅 token 命中时取.
-                    const subtotalFieldName = activeComponent.fields?.find((f: any) => f.is_subtotal)?.name;
                     const preComputedCaches: Array<Record<string, number | null>> = [];
-                    let prevRowSubtotal: number | undefined = undefined;
+                    // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
+                    let prevRowValues: Record<string, number | null> | undefined = undefined;
                     for (const r of effectiveRows) {
                       // Phase4 Task3: 报价侧优先读快照 formulaResults[rowKey](真零计算);
                       // 缺(无快照/新行/LIST_FORMULA 字符串公式未进 formulaResults)时 computeAllFormulas 兜底(防漂移)。
@@ -1874,12 +1874,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         : computeAllFormulas(
                             activeComponent, r.row, allComponentSubtotals,
                             undefined, undefined, item.productPartNo, r.basicDataValues,
-                            prevRowSubtotal, globalVariableDefs, crossTabRows,
+                            undefined, globalVariableDefs, crossTabRows, prevRowValues,
                           );
                       preComputedCaches.push(cache);
-                      if (subtotalFieldName && typeof cache[subtotalFieldName] === 'number') {
-                        prevRowSubtotal = cache[subtotalFieldName] as number;
-                      }
+                      prevRowValues = cache;
                     }
                     const withCache = effectiveRows.map((er, idx) => ({ ...er, formulaCache: preComputedCaches[idx] }));
                     // 核价 BOM 递归展开（P1）：COSTING 侧按 spine 系统列 __parentId→__nodeId 建树（不是料号）。

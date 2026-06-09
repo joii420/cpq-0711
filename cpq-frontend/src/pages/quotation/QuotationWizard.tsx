@@ -806,8 +806,8 @@ const QuotationWizard: React.FC = () => {
     const out: Record<string, any>[] = [];
     // 2026-05-17: 累加公式支持. 按 row_index 顺序遍历, 把上一行的 is_subtotal 字段值
     // 作为 previousRowSubtotal 传给下一行的 computeAllFormulas, 同 ProductCard 渲染逻辑一致.
-    const subtotalFieldName = fields.find((f: any) => f.is_subtotal)?.name;
-    let prevRowSubtotal: number | undefined = undefined;
+    // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
+    let prevRowValues: Record<string, number | null> | undefined = undefined;
     for (let i = 0; i < s.totalRows; i++) {
       const ra = rowAt(i, cd, s);
 
@@ -853,8 +853,8 @@ const QuotationWizard: React.FC = () => {
       try {
         const formulaCache = computeAllFormulas(
           cd, enriched, componentSubtotals,
-          undefined, undefined, partNo, basicDataValues, prevRowSubtotal,
-          gvDefs   // B-GV-1 修复: 透传 globalVariableDefs，动态 key 公式不再兜底 0
+          undefined, undefined, partNo, basicDataValues, undefined,
+          gvDefs, undefined, prevRowValues,   // B-GV-1: gvDefs; Plan 2b: 末位 prevRowValues(按本列)
         );
         for (const f of fields) {
           if (f.field_type !== 'FORMULA') continue;
@@ -864,10 +864,8 @@ const QuotationWizard: React.FC = () => {
             enriched[fieldKey] = formulaCache[fieldKey];
           }
         }
-        // 把本行 is_subtotal 字段值留给下一行作为 previous_row_subtotal token 的输入
-        if (subtotalFieldName && typeof formulaCache[subtotalFieldName] === 'number') {
-          prevRowSubtotal = formulaCache[subtotalFieldName] as number;
-        }
+        // Plan 2b：本行全量公式值留给下一行，各列下一行按本列取 prev。
+        prevRowValues = formulaCache;
       } catch {
         // 公式计算失败不阻塞保存（沿用原值）
       }

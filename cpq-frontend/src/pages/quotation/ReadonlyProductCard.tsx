@@ -80,24 +80,22 @@ function buildFormulaCache(
   // 仅渲染层 PASS2 才传 crossTabRows，镜像后端两阶段。
   crossTabRows?: Record<string, Array<Record<string, any>>>,
 ): Array<Record<string, number | null>> {
-  const subtotalFieldName = comp.fields?.find((f: any) => f.is_subtotal)?.name;
   const useDriver = !!(driverExpansion && driverExpansion.rowCount > 0);
   // AP-51 行数纪律：driver 权威优先，仅 rowCount=0 时退回持久化行数。
   const effectiveCount = useDriver ? driverExpansion!.rowCount : rows.length;
   const caches: Array<Record<string, number | null>> = [];
-  let prevRowSubtotal: number | undefined = undefined;
+  // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
+  let prevRowValues: Record<string, number | null> | undefined = undefined;
   for (let ri = 0; ri < effectiveCount; ri++) {
     const row = rows[ri] ?? {};
     const bdv = useDriver ? driverExpansion!.rows[ri]?.basicDataValues : undefined;
     const cache = computeAllFormulas(
       comp, row, compSubtotals,
       undefined, undefined, partNo, bdv,
-      prevRowSubtotal, globalVariableDefs, crossTabRows,
+      undefined, globalVariableDefs, crossTabRows, prevRowValues,
     );
     caches.push(cache);
-    if (subtotalFieldName && typeof cache[subtotalFieldName] === 'number') {
-      prevRowSubtotal = cache[subtotalFieldName] as number;
-    }
+    prevRowValues = cache;
   }
   return caches;
 }
@@ -458,8 +456,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     const activeRowKeyFields = rowKeyFieldsByComp.get(activeComp.componentId);
                     const preComputedCaches: Array<Record<string, number | null>> = [];
                     {
-                      const subtotalFieldName = activeComp.fields?.find((f: any) => f.is_subtotal)?.name;
-                      let prevRowSubtotal: number | undefined = undefined;
+                      // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
+                      let prevRowValues: Record<string, number | null> | undefined = undefined;
                       for (let ri = 0; ri < effectiveCount; ri++) {
                         const ra = rowAt(ri, activeComp, s);
                         const rawRow = ra.row;
@@ -473,12 +471,10 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                           : computeAllFormulas(
                               activeComp, rawRow, compSubtotals,
                               undefined, undefined, lineItem.productPartNo,
-                              rowBdv, prevRowSubtotal, globalVariableDefs, crossTabRows,
+                              rowBdv, undefined, globalVariableDefs, crossTabRows, prevRowValues,
                             );
                         preComputedCaches.push(cache);
-                        if (subtotalFieldName && typeof cache[subtotalFieldName] === 'number') {
-                          prevRowSubtotal = cache[subtotalFieldName] as number;
-                        }
+                        prevRowValues = cache;
                       }
                     }
 
