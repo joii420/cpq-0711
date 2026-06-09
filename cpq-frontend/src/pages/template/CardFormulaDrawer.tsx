@@ -290,6 +290,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
   const [conds, setConds] = useState<CondRow[]>([{ ...DEFAULT_COND_ROW }]);
   const [aggFunc, setAggFunc] = useState<AggFunc>('SUM');
   const [aggExpr, setAggExpr] = useState<string>('');
+  const [aggExprChips, setAggExprChips] = useState<string[]>([]);
   // 正在编辑回填的 ref key（点标签回填时设置）；为 null 表示新建插入
   const [editingRefKey, setEditingRefKey] = useState<string | null>(null);
 
@@ -305,6 +306,11 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
   // ── TextArea ref (光标插入) ──────────────────────────────────────
   const textAreaRef = useRef<any>(null);
 
+  // ── chips → aggExpr 同步（简单模式下 chip 构建器驱动 aggExpr 字符串） ─────────
+  useEffect(() => {
+    if (mode === 'simple') setAggExpr(aggExprChips.join(' '));
+  }, [aggExprChips, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Drawer 打开时，重置状态并加载页签 ───────────────────────────
   useEffect(() => {
     if (!open) return;
@@ -317,6 +323,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
     setConds([{ ...DEFAULT_COND_ROW }]);
     setAggFunc('SUM');
     setAggExpr('');
+    setAggExprChips([]);
     setEditingRefKey(null);
     setTrial({});
     loadTabs();
@@ -458,6 +465,11 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
       // 把 ref 写入 refs 状态
       setRefs(prev => ({ ...prev, [result.refKey]: result.ref }));
       message.success(`已插入引用：${token}`);
+    }
+    // 聚合插入成功后清空 chip 构建器
+    if (refType === 'aggregate') {
+      setAggExpr('');
+      setAggExprChips([]);
     }
   };
 
@@ -814,14 +826,35 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
                   )}
                   <Form.Item
                     label={mode === 'advanced' ? '行内聚合表达式（用中文字段名，别名将自动替换）' : '行内聚合表达式'}
-                    tooltip={mode === 'advanced' ? '示例：单价*数量；系统会自动把中文字段名替换成别名（c0/c1...）再写入 cols' : '示例：单价*数量'}
+                    tooltip={mode === 'advanced' ? '示例：单价*数量；系统会自动把中文字段名替换成别名（c0/c1...）再写入 cols' : '点选字段和运算符拼出每行的计算式，如 单价 × 数量'}
                   >
-                    <Input
-                      style={{ width: 360, fontFamily: 'monospace' }}
-                      placeholder="如：单价*数量  或  1（计数时填1）"
-                      value={aggExpr}
-                      onChange={e => setAggExpr(e.target.value)}
-                    />
+                    {mode === 'simple' ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ border: '1px dashed #c0c4cc', borderRadius: 4, minHeight: 34, padding: '4px 6px', display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', background: '#f9f9f9' }}>
+                          {aggExprChips.length === 0
+                            ? <span style={{ color: '#c0c4cc', fontSize: 12 }}>点选下方字段/运算符拼出要汇总的算式（如 单价 × 数量）</span>
+                            : aggExprChips.map((c, i) => (
+                                <Tag key={i} closable onClose={(e) => { e.preventDefault(); setAggExprChips((p) => p.filter((_, j) => j !== i)); }} style={{ margin: 0 }}>{c}</Tag>
+                              ))}
+                        </div>
+                        <Space wrap size={[6, 6]}>
+                          <Select size="small" style={{ width: 150 }} placeholder="字段" value={undefined as any}
+                            options={(selTab?.fields ?? []).map((f: any) => ({ label: f, value: f }))}
+                            onChange={(v) => setAggExprChips((p) => [...p, v])} showSearch />
+                          {(['+', '-', '×', '÷', '(', ')'] as const).map((sym) => (
+                            <Button key={sym} size="small" style={{ minWidth: 30 }} onClick={() => setAggExprChips((p) => [...p, sym === '×' ? '*' : sym === '÷' ? '/' : sym])}>{sym}</Button>
+                          ))}
+                          <Button size="small" danger disabled={aggExprChips.length === 0} onClick={() => setAggExprChips((p) => p.slice(0, -1))}>删末</Button>
+                        </Space>
+                      </div>
+                    ) : (
+                      <Input
+                        style={{ width: 360, fontFamily: 'monospace' }}
+                        placeholder="如：单价*数量  或  1（计数时填1）"
+                        value={aggExpr}
+                        onChange={e => setAggExpr(e.target.value)}
+                      />
+                    )}
                   </Form.Item>
                 </>
               )}
