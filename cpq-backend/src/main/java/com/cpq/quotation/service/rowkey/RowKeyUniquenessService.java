@@ -3,9 +3,9 @@ package com.cpq.quotation.service.rowkey;
 import com.cpq.quotation.service.FormulaCalculator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.MissingNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
 import java.util.ArrayList;
@@ -14,9 +14,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 提交时行键唯一性装配：解析结构快照（rowKeyFields）+ 各明细值快照（baseRows[].driverRow），
- * 复用 public {@link FormulaCalculator#computeRowKey} 算组合行键，交 {@link RowKeyConflictDetector} 判重。
- * 解析失败按"跳过该单元"降级，不阻断提交（不引入因脏 JSON 误拦截）。
+ * 提交时行键唯一性装配（两路位置化取数）：
+ *   - 驱动列 ← snapshot_rows（按行下标 driverRow）
+ *   - 输入值 / 手动行 ← row_data（按行下标；_origin='manual' 追加末尾）
+ * 用 {@link FormulaCalculator#computeDedupKey} 算 input-inclusive 组合键，交 {@link RowKeyConflictDetector} 判重。
+ * 解析失败按"跳过该单元"降级，不阻断提交。
  */
 @ApplicationScoped
 public class RowKeyUniquenessService {
@@ -24,34 +26,45 @@ public class RowKeyUniquenessService {
     private static final Logger LOG = Logger.getLogger(RowKeyUniquenessService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    @Inject FormulaCalculator formulaCalculator;
+    /** 单组件两路原始 JSON。 */
+    public record CompRows(String componentId, String snapshotRowsJson, String rowDataJson) {}
+    /** 单明细的全部组件行。 */
+    public record LineItemComps(String lineItemLabel, List<CompRows> comps) {}
 
-    /** 单个明细的值快照载体。 */
-    public record LineItemRows(String lineItemLabel, String valuesJson) {}
-
-    /** 结构 tab 的行键配置缓存项。 */
     private record TabKeyCfg(String componentName, JsonNode rowKeyFields) {}
 
-    public List<RowKeyConflict> collectConflicts(String structureJson, List<LineItemRows> items) {
+    public List<RowKeyConflict> collectConflicts(String structureJson, List<LineItemComps> items) {
         List<RowKeyConflict> out = new ArrayList<>();
         Map<String, TabKeyCfg> cfgByComp = parseStructure(structureJson);
         if (cfgByComp.isEmpty() || items == null) return out;
 
-        for (LineItemRows item : items) {
-            JsonNode tabs = readTabs(item.valuesJson());
-            for (JsonNode tab : tabs) {
-                String cid = tab.path("componentId").asText("");
-                TabKeyCfg cfg = cfgByComp.get(cid);
+        for (LineItemComps item : items) {
+            if (item == null || item.comps() == null) continue;
+            for (CompRows comp : item.comps()) {
+                TabKeyCfg cfg = cfgByComp.get(comp.componentId());
                 if (cfg == null || !cfg.rowKeyFields().isArray() || cfg.rowKeyFields().isEmpty()) continue;
 
-                JsonNode baseRows = tab.path("baseRows");
-                if (!baseRows.isArray() || baseRows.isEmpty()) continue;
+                ArrayNode snapshotRows = parseArray(comp.snapshotRowsJson());
+                ArrayNode rowData = parseArray(comp.rowDataJson());
+
+                List<JsonNode> driverDataRows = new ArrayList<>();
+                List<JsonNode> manualRows = new ArrayList<>();
+                for (JsonNode r : rowData) {
+                    if ("manual".equals(r.path("_origin").asText(""))) manualRows.add(r);
+                    else driverDataRows.add(r);
+                }
 
                 List<String> keys = new ArrayList<>();
-                for (JsonNode br : baseRows) {
-                    JsonNode driverRow = br.path("driverRow");
-                    keys.add(formulaCalculator.computeRowKey(cfg.rowKeyFields(), driverRow));
+                for (int i = 0; i < snapshotRows.size(); i++) {
+                    JsonNode driverRow = snapshotRows.get(i).path("driverRow");
+                    JsonNode overlay = i < driverDataRows.size() ? driverDataRows.get(i) : MAPPER.createObjectNode();
+                    keys.add(FormulaCalculator.computeDedupKey(cfg.rowKeyFields(), driverRow, overlay));
                 }
+                ObjectNode emptyDriver = MAPPER.createObjectNode();
+                for (JsonNode mr : manualRows) {
+                    keys.add(FormulaCalculator.computeDedupKey(cfg.rowKeyFields(), emptyDriver, mr));
+                }
+
                 String label = (item.lineItemLabel() == null ? "" : item.lineItemLabel() + " · ") + cfg.componentName();
                 out.addAll(RowKeyConflictDetector.detect(label, keys));
             }
@@ -75,13 +88,14 @@ public class RowKeyUniquenessService {
         return map;
     }
 
-    private JsonNode readTabs(String valuesJson) {
-        if (valuesJson == null || valuesJson.isBlank()) return MissingNode.getInstance();
+    private ArrayNode parseArray(String json) {
+        if (json == null || json.isBlank()) return MAPPER.createArrayNode();
         try {
-            return MAPPER.readTree(valuesJson).path("tabs");
+            JsonNode n = MAPPER.readTree(json);
+            return n.isArray() ? (ArrayNode) n : MAPPER.createArrayNode();
         } catch (Exception e) {
-            LOG.warnf("[rowkey] readTabs failed: %s", e.getMessage());
-            return MissingNode.getInstance();
+            LOG.warnf("[rowkey] parseArray failed: %s", e.getMessage());
+            return MAPPER.createArrayNode();
         }
     }
 }

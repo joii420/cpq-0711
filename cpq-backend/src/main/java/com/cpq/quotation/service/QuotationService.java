@@ -682,13 +682,21 @@ public class QuotationService {
                     .<com.cpq.quotation.entity.QuotationViewStructure>list("quotationId", id)) {
             if ("QUOTE_CARD".equals(s.viewKind)) { quoteCardStructureJson = s.structure; break; }
         }
-        java.util.List<com.cpq.quotation.service.rowkey.RowKeyUniquenessService.LineItemRows> rowsForCheck =
+        java.util.List<com.cpq.quotation.service.rowkey.RowKeyUniquenessService.LineItemComps> rowsForCheck =
             new java.util.ArrayList<>();
         for (QuotationLineItem li : lineItems) {
             String label = li.productNameSnapshot != null ? li.productNameSnapshot
                          : (li.productPartNoSnapshot != null ? li.productPartNoSnapshot : "明细");
-            rowsForCheck.add(new com.cpq.quotation.service.rowkey.RowKeyUniquenessService.LineItemRows(
-                label, li.quoteCardValues));
+            java.util.List<com.cpq.quotation.service.rowkey.RowKeyUniquenessService.CompRows> comps =
+                new java.util.ArrayList<>();
+            java.util.List<com.cpq.quotation.entity.QuotationLineComponentData> cds =
+                com.cpq.quotation.entity.QuotationLineComponentData.list("lineItemId", li.id);
+            for (com.cpq.quotation.entity.QuotationLineComponentData cd : cds) {
+                if (cd.componentId == null) continue;
+                comps.add(new com.cpq.quotation.service.rowkey.RowKeyUniquenessService.CompRows(
+                    cd.componentId.toString(), cd.snapshotRows, cd.rowData));
+            }
+            rowsForCheck.add(new com.cpq.quotation.service.rowkey.RowKeyUniquenessService.LineItemComps(label, comps));
         }
         java.util.List<com.cpq.quotation.service.rowkey.RowKeyConflict> conflicts =
             rowKeyUniquenessService.collectConflicts(quoteCardStructureJson, rowsForCheck);
