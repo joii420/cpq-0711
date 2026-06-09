@@ -1044,9 +1044,28 @@ public class ComponentDriverService {
             var c = new com.cpq.component.dto.RowKeyCandidatesResponse.Candidate();
             c.fieldName = f.get("name") == null ? null : String.valueOf(f.get("name"));
             c.displayName = c.fieldName;
+            String fieldType = f.get("field_type") == null ? "" : String.valueOf(f.get("field_type"));
+
             Object pathObj = f.get("basic_data_path");
             String basicPath = pathObj == null ? null : String.valueOf(pathObj);
-            if (basicPath == null || basicPath.isBlank()) {
+            boolean hasBasicPath = basicPath != null && !basicPath.isBlank();
+
+            // 输入字段分支（无 driver 列也可作行键，取手填值）
+            if (!hasBasicPath && ("INPUT_TEXT".equals(fieldType) || "INPUT_NUMBER".equals(fieldType))) {
+                if (haveColumns && c.fieldName != null && driverColumns.contains(c.fieldName)) {
+                    c.eligible = false;
+                    c.reason = "字段名与 driver 列撞名，不能作行键";
+                } else {
+                    c.eligible = true;
+                    c.resolvedColumn = c.fieldName;
+                    c.source = "input";
+                    c.reason = null;
+                }
+                out.add(c);
+                continue;
+            }
+
+            if (!hasBasicPath) {
                 c.eligible = false;
                 c.reason = "该字段无 driver 列，不能作行键";
                 out.add(c);
@@ -1065,6 +1084,7 @@ public class ComponentDriverService {
                 c.reason = "该 driver 无列信息，请先将 driver 配为 SQL 视图";
             } else if (driverColumns.contains(leaf)) {
                 c.eligible = true;
+                c.source = "driver";
                 c.reason = null;
             } else {
                 c.eligible = false;

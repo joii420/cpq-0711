@@ -24,5 +24,7 @@ public class RowKeyCandidatesResponse {
         public boolean eligible;
         /** 不可勾选原因（eligible=false 时给前端 hover 提示）；可勾选时为 null。 */
         public String reason;
+        /** 行键来源："driver"（取自 driver 列） / "input"（取自手填输入字段）；eligible=false 时为 null。 */
+        public String source;
     }
 }
