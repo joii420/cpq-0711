@@ -79,6 +79,7 @@ interface TabInfo {
   componentId: string;
   sortOrder: number;
   fields: string[];     // 中文字段名列表
+  subtotalFields: string[]; // Plan 2c：is_subtotal 列名（多于 1 列时供 [页签.列名] 选）
 }
 
 // ─── 工具函数 ────────────────────────────────────────────────────────────────
@@ -168,15 +169,18 @@ function buildInsertResult(
   aggFunc: AggFunc,
   aggExpr: string,          // 用户填的行内别名表达式
   aggRefKey: string,        // 聚合唯一 refKey（页签名#N，由 handleInsertRef 算好传入）
+  subtotalCol: string,      // Plan 2c：选中的具体小计列（空 = 各列之和）
 ): InsertResult | null {
   const tabName = tab.tabName;
 
   if (refType === 'subtotal') {
-    const placeholder = `${tabName}.小计`;
+    // Plan 2c：选了具体小计列 → __subtotal__:列名 + placeholder 用列名；否则裸 __subtotal__（各列之和）。
+    const col = subtotalCol && subtotalCol.trim() ? subtotalCol.trim() : '';
+    const placeholder = col ? `${tabName}.${col}` : `${tabName}.小计`;
     return {
       placeholder,
       refKey: placeholder,
-      ref: { tab: tab.tabKey, field: '__subtotal__' },
+      ref: { tab: tab.tabKey, field: col ? `__subtotal__:${col}` : '__subtotal__' },
     };
   }
 
@@ -293,6 +297,8 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
   const [aggExprChips, setAggExprChips] = useState<string[]>([]);
   // 正在编辑回填的 ref key（点标签回填时设置）；为 null 表示新建插入
   const [editingRefKey, setEditingRefKey] = useState<string | null>(null);
+  // Plan 2c：所选页签的具体小计列（多于 1 列时显示子选择器；空 = 各列之和）
+  const [selSubtotalCol, setSelSubtotalCol] = useState<string>('');
 
   // ── 简单/高级模式 ────────────────────────────────────────────────
   const [mode, setMode] = useState<'simple' | 'advanced'>('simple');
@@ -340,10 +346,18 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
       await Promise.all(
         tcList.map(async (tc: any) => {
           let fields: string[] = [];
+          // Plan 2c：同源收集 is_subtotal 列名。
+          let subtotalFields: string[] = [];
+          const collectSubtotal = (arr: any[]) => arr
+            .filter((f: any) => f.is_subtotal || f.isSubtotal)
+            .map((f: any) => f.field_name || f.name || '')
+            .filter(Boolean);
           if (Array.isArray(tc.fields) && tc.fields.length > 0) {
             fields = tc.fields.map((f: any) => f.field_name || f.name || '');
+            subtotalFields = collectSubtotal(tc.fields);
           } else if (Array.isArray(tc.fieldsOverride) && tc.fieldsOverride.length > 0) {
             fields = (tc.fieldsOverride as any[]).map((f: any) => f.field_name || f.name || '');
+            subtotalFields = collectSubtotal(tc.fieldsOverride);
           } else {
             // 从 component 详情获取
             try {
@@ -351,6 +365,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
               const comp = compRes.data;
               const rawFields: any[] = Array.isArray(comp?.fields) ? comp.fields : [];
               fields = rawFields.map((f: any) => f.field_name || f.name || '').filter(Boolean);
+              subtotalFields = collectSubtotal(rawFields);
             } catch {
               fields = [];
             }
@@ -361,6 +376,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
             componentId: tc.componentId,
             sortOrder: tc.sortOrder ?? 0,
             fields,
+            subtotalFields,
           });
         }),
       );
@@ -440,7 +456,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
     const aggRefKey = refType === 'aggregate'
       ? nextAggRefKey(selTab.tabName, Object.keys(refs))
       : '';
-    const result = buildInsertResult(refType, selTab, selField, conds, aggFunc, aggExpr, aggRefKey);
+    const result = buildInsertResult(refType, selTab, selField, conds, aggFunc, aggExpr, aggRefKey, selSubtotalCol);
     if (!result) {
       message.warning('请补全引用信息（字段不能为空）');
       return;
@@ -533,6 +549,8 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
 
   // ── 渲染 ─────────────────────────────────────────────────────────
   const fieldOptions = (selTab?.fields || []).map(f => ({ label: f, value: f }));
+  // Plan 2c：所选页签的小计列选项（多于 1 列时显示子选择器）。
+  const subtotalColOptions = (selTab?.subtotalFields || []).map(c => ({ label: c, value: c }));
 
   // RHS=产品字段 候选：所有页签 fields 并集 + 料号(__partNo__)（决策A：纯前端拼，不含组件外属性）
   const productFieldOptions = (() => {
@@ -758,7 +776,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
                   style={{ width: 280 }}
                   placeholder="请选择页签"
                   value={selTabKey || undefined}
-                  onChange={v => { setSelTabKey(v); setSelField(''); setConds([{ ...DEFAULT_COND_ROW }]); }}
+                  onChange={v => { setSelTabKey(v); setSelField(''); setSelSubtotalCol(''); setConds([{ ...DEFAULT_COND_ROW }]); }}
                   options={tabs.map(t => ({
                     label: `${t.tabName}（${t.fields.length} 个字段）`,
                     value: t.tabKey,
@@ -785,7 +803,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
                 ) : (
                   <Radio.Group
                     value={refType}
-                    onChange={e => { setRefType(e.target.value); setSelField(''); setConds([{ ...DEFAULT_COND_ROW }]); }}
+                    onChange={e => { setRefType(e.target.value); setSelField(''); setSelSubtotalCol(''); setConds([{ ...DEFAULT_COND_ROW }]); }}
                   >
                     <Radio.Button value="subtotal">页签小计</Radio.Button>
                     <Radio.Button value="first_row">字段·首行</Radio.Button>
@@ -807,6 +825,20 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
                     notFoundContent={selTab ? '该页签无字段' : '请先选择页签'}
                     showSearch
                     optionFilterProp="label"
+                  />
+                </Form.Item>
+              )}
+
+              {/* Plan 2c：页签小计 + 多小计列 → 选具体列 */}
+              {refType === 'subtotal' && subtotalColOptions.length > 1 && (
+                <Form.Item label="小计列">
+                  <Select
+                    style={{ width: 220 }}
+                    placeholder="选具体小计列（不选=各列之和）"
+                    allowClear
+                    value={selSubtotalCol || undefined}
+                    onChange={(v) => setSelSubtotalCol(v ?? '')}
+                    options={subtotalColOptions}
                   />
                 </Form.Item>
               )}
