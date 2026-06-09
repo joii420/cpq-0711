@@ -3284,4 +3284,8 @@ E2E:
 
 ---
 
+### [2026-06-09] 公式可视化构建器 P1 — CrossTabRefDrawer 引导式/分层/双模式 | crossTabText.ts(新)+crossTabText.test.ts + CrossTabRefDrawer.tsx | 纯前端 UX,cross_tab_ref token 零变更向后兼容;操作选择器(取值/求和…替裸 agg 术语)+简单/高级 Segmented 分层 + 原始文本双向同步(serialize/parseCrossTab,规范文法 A.x/B.x,解析失败行内报错,manualEditRef 守卫手写不被覆盖);单测 12 用例 + E2E cross-tab-builder 3 passed(标题/简单vs高级选项/读方向同步)只读验证 + cross-tab-ref(标题改名同步)/quotation-flow 加载中=0 回归。P0 备键(ll_view 子料号)与全量渲染验证另行。设计见 specs/2026-06-09-公式可视化构建器-design.md;路线图 P1.2(CardFormulaDrawer)/P2(条件 SUMIF)/P3(引擎函数化 IF)待续
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
