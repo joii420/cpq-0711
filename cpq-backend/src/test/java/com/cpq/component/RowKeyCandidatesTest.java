@@ -42,13 +42,25 @@ class RowKeyCandidatesTest {
     }
 
     @Test
-    void inputFieldNoPath_notEligible() {
+    void inputFieldNoPath_eligibleAsInputSource() {
+        // 2026-06-10 放开：INPUT_TEXT/INPUT_NUMBER 无 driver 列也可作行键（取手填值），source=input。
         var fields = List.of(field("人工工时", "INPUT_NUMBER", null));
-        var cols = Set.of("child_hf_part_no");
+        var cols = Set.of("child_hf_part_no");   // 字段名未撞 driver 列
+        List<Candidate> r = ComponentDriverService.resolveRowKeyCandidates("$x", fields, cols);
+        assertTrue(r.get(0).eligible);
+        assertEquals("人工工时", r.get(0).resolvedColumn);
+        assertEquals("input", r.get(0).source);
+        assertNull(r.get(0).reason);
+    }
+
+    @Test
+    void inputFieldCollidingDriverColumn_notEligible() {
+        // 撞名：输入字段名 == 某 driver 列名 → 取值歧义，从源头排除。
+        var fields = List.of(field("child_hf_part_no", "INPUT_TEXT", null));
+        var cols = Set.of("child_hf_part_no", "material_code");
         List<Candidate> r = ComponentDriverService.resolveRowKeyCandidates("$x", fields, cols);
         assertFalse(r.get(0).eligible);
-        assertNull(r.get(0).resolvedColumn);
-        assertTrue(r.get(0).reason.contains("无 driver 列"));
+        assertTrue(r.get(0).reason.contains("撞名"));
     }
 
     @Test
