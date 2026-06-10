@@ -50,9 +50,6 @@ public class TabJoinPlanEvaluator {
     private static final java.util.regex.Pattern AGG_CALL =
         java.util.regex.Pattern.compile("(?i)\\b(SUM|AVG|MIN|MAX|COUNT)\\s*\\(");
 
-    /** 中文组变量名识别正则：匹配 `组\d+`，捕获组 1 = 数字部分，用于映射到安全 ASCII 变量名 `_gN`。 */
-    private static final java.util.regex.Pattern GROUP_REF =
-        java.util.regex.Pattern.compile("组(\\d+)");
 
     private final org.apache.commons.jexl3.JexlEngine jexl =
         new org.apache.commons.jexl3.JexlBuilder()
@@ -209,79 +206,53 @@ public class TabJoinPlanEvaluator {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // Task 5: 整列求值入口 evaluateColumn
+    // Task 5 (v2): 整列求值入口 evaluateColumn
     // ─────────────────────────────────────────────────────────────────
 
-    public record Result(Map<String, java.math.BigDecimal> groupValues, java.math.BigDecimal finalValue) {}
-
-    /** 整列求值：每组算标量 → 绑 ref → 算 final_expression。provider 来自 CardEffectiveRows。 */
-    @SuppressWarnings("unchecked")
-    public Result evaluateColumn(Map<String, Object> col,
-                                 com.cpq.quotation.service.card.CardDataProvider provider) {
-        Map<String, java.math.BigDecimal> groupValues = new LinkedHashMap<>();
-        List<Map<String, Object>> groups = (List<Map<String, Object>>) col.getOrDefault("groups", List.of());
-        for (Map<String, Object> g : groups) {
-            String ref = (String) g.get("ref");
-            try {
-                groupValues.put(ref, evalOneGroup(g, provider));
-            } catch (Exception e) {
-                LOG.warnf("[TabJoin] 计算组 %s 求值失败,按0: %s", ref, e.getMessage());
-                groupValues.put(ref, java.math.BigDecimal.ZERO);
-            }
-        }
-        String finalExpr = (String) col.getOrDefault("final_expression", "");
-        java.math.BigDecimal finalVal = evalFinal(finalExpr, groupValues);
-        return new Result(groupValues, finalVal);
-    }
-
-    @SuppressWarnings("unchecked")
-    private java.math.BigDecimal evalOneGroup(Map<String, Object> g,
-                                              com.cpq.quotation.service.card.CardDataProvider provider) {
-        // Task 5 will rewrite this body; placeholder to keep evaluateColumn compilable.
-        return java.math.BigDecimal.ZERO;
-    }
-
     /**
-     * final 层：组N 当变量，只四则+常数；SafeArithmetic 处理缺值/除零。
-     * 因 JEXL 不支持中文+数字作变量名（如"组1"），先将表达式中所有"组\d+"
-     * 替换为安全 ASCII 变量名（_g1, _g2, ...），同步 set 进 ctx 后再求值。
+     * v2 整列求值：解析 expression 引用的页签 → 取明细页签行按 rowKeyFields 全外连对齐 →
+     * 收集总计令牌标量 → evalExpression。返回单值。
      */
-    private java.math.BigDecimal evalFinal(String expr, Map<String, java.math.BigDecimal> groupValues) {
-        if (expr == null || expr.isBlank()) return java.math.BigDecimal.ZERO;
-
-        // 建立 组N → _gN 映射表，对表达式与 ctx 同步替换
-        java.util.regex.Matcher m = GROUP_REF.matcher(expr);
-        Map<String, String> renameMap = new LinkedHashMap<>();
+    @SuppressWarnings("unchecked")
+    public java.math.BigDecimal evaluateColumn(Map<String, Object> col,
+                                               com.cpq.quotation.service.card.CardDataProvider provider) {
+        String expr = (String) col.getOrDefault("expression", "");
+        if (expr.isBlank()) return java.math.BigDecimal.ZERO;
+        List<Map<String, Object>> tabs = (List<Map<String, Object>>) col.getOrDefault("tabs", List.of());
+        Map<String, String> tabKeyOf = new LinkedHashMap<>();
+        Map<String, List<String>> rkfOf = new LinkedHashMap<>();
+        for (Map<String, Object> t : tabs) {
+            tabKeyOf.put((String) t.get("alias"), (String) t.get("tabKey"));
+            rkfOf.put((String) t.get("alias"), (List<String>) t.getOrDefault("rowKeyFields", List.of()));
+        }
+        java.util.regex.Matcher m = TOKEN.matcher(expr);
+        java.util.LinkedHashSet<String> detailAliases = new java.util.LinkedHashSet<>();
+        Map<String, java.math.BigDecimal> scalars = new LinkedHashMap<>();
         while (m.find()) {
-            String original = m.group(0);          // e.g. "组1"
-            String safeVar = "_g" + m.group(1);    // e.g. "_g1"
-            renameMap.put(original, safeVar);
-        }
-
-        // 把表达式中的中文变量名替换为安全 ASCII 名
-        String safeExpr = expr;
-        for (Map.Entry<String, String> e : renameMap.entrySet()) {
-            safeExpr = safeExpr.replace(e.getKey(), e.getValue());
-        }
-
-        // 构建 JEXL ctx：用替换后的 ASCII 名 set 值
-        org.apache.commons.jexl3.JexlContext ctx = new org.apache.commons.jexl3.MapContext();
-        for (Map.Entry<String, java.math.BigDecimal> e : groupValues.entrySet()) {
-            String safeVar = renameMap.get(e.getKey());
-            if (safeVar != null) {
-                ctx.set(safeVar, e.getValue());
+            String tok = m.group(1).trim();
+            if (tok.endsWith("(总计)")) {
+                String body = tok.substring(0, tok.length() - "(总计)".length());
+                if (body.contains(".")) {
+                    String alias = body.substring(0, body.indexOf('.'));
+                    String colName = body.substring(body.indexOf('.') + 1);
+                    java.math.BigDecimal s = provider.subtotalOfColumn(tabKeyOf.get(alias), colName);
+                    scalars.put(tok, s != null ? s : java.math.BigDecimal.ZERO);
+                } else {
+                    java.math.BigDecimal s = provider.subtotalOf(tabKeyOf.get(body));
+                    scalars.put(tok, s != null ? s : java.math.BigDecimal.ZERO);
+                }
             } else {
-                // 无中文前缀的 ref 直接放（兜底）
-                ctx.set(e.getKey(), e.getValue());
+                detailAliases.add(tok.contains(".") ? tok.substring(0, tok.indexOf('.')) : tok);
             }
         }
-
-        try {
-            Object r = jexl.createExpression(safeExpr).evaluate(ctx);
-            return toBig(r);
-        } catch (Exception e) {
-            LOG.warnf("[TabJoin] final 表达式求值失败,按0: expr=%s err=%s", safeExpr, e.getMessage());
-            return java.math.BigDecimal.ZERO;
+        List<Map<String, Object>> aligned = List.of();
+        if (!detailAliases.isEmpty()) {
+            String first = detailAliases.iterator().next();
+            List<String> rkf = rkfOf.getOrDefault(first, List.of());
+            Map<String, List<Map<String, Object>>> tabRows = new LinkedHashMap<>();
+            for (String alias : detailAliases) tabRows.put(alias, provider.rowsOf(tabKeyOf.get(alias)));
+            aligned = alignByRowKey(rkf, tabRows);
         }
+        return evalExpression(expr, aligned, scalars);
     }
 }
