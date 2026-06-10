@@ -81,6 +81,32 @@ All UI, prototypes, and PRD are in Chinese. Code artifacts (variables, APIs, com
 - 在 PRD-v3.md 末尾或第 9 章演进史中记录所有调整
 - 不要再修改 PRD.md（已废弃归档）
 
+## 开发流程规范（新功能必须用隔离 worktree 分支）🔒
+**强制**：开发任何新功能 / 较大改动，**必须**先用 `superpowers:using-git-worktrees` 技能创建**隔离 worktree 分支**，在该隔离工作区里开发，**不直接在主工作区或 master 上改**。
+
+**生命周期**：
+1. **起步**：调 `superpowers:using-git-worktrees` 建独立 worktree + 特性分支，后续所有编码/提交都在该 worktree 内进行。
+2. **开发**：按本文「质量保证规范」「修改后强制自检」完成功能 + 测试 + 自检；协议级改动跑 E2E。
+3. **确认**：完成后**由用户确认**功能达标（不得自行宣布"完成即合并"）。
+4. **收尾（用户确认后自动执行）**：走 `superpowers:finishing-a-development-branch` 的"合并并清理"路径 —— 切回 `master` → `git merge <特性分支>` → 跑一遍测试确认合并结果 → **`git worktree remove` 删除新建的 worktree 目录** + 删除该特性分支。
+
+**worktree 共享约束（勿踩）**：worktree 只隔离 **git 工作区 + 分支**；后端 dev server(8081) / 前端 dev server(5174) / 远程 DB / `node_modules` / `.codegraph/` 仍是**共享**的。**不要**在 worktree 里另起 dev server 或重装依赖，直接复用主工作区已运行的实例做 `curl` / E2E 自检（详见历史记忆 `cpq-concurrent-sessions-and-worktree`）。
+
+**并发纪律**：多会话各用自己的 worktree 分支并行，避免污染主工作区；提交只 `git add` 本次明确改动的文件，严禁 `git add -A`（同分支并发提交会交错，参见 RECORD 教训）。
+
+## 代码探索规范（codegraph 优先）
+本仓库已建好 `.codegraph/` 代码知识图谱（约 1000+ 文件 / 2 万+ 符号 / 4 万+ 调用边，含 Java + TSX + TS），**涉及代码结构、调用链、符号定位、改动影响面时优先用 codegraph，而非 grep/rg/find 或盲目派子代理探索**：
+- **找符号**（"X 在哪 / 叫什么"）→ `codegraph_search`
+- **理解某块**（"这个任务/功能/区域怎么回事"）→ `codegraph_context`（起手首选，一发返回入口+相关符号+代码）
+- **追调用链**（"X 怎么走到 Y / 这个流程"）→ `codegraph_trace`（一发返回整条路径，含 grep 跟不到的动态分发/回调/JSX/前端 fetch→后端 endpoint 跳转）
+- **谁调它 / 它调谁** → `codegraph_callers` / `codegraph_callees`
+- **改它会波及谁**（重构/字段类型联动评估前必跑）→ `codegraph_impact`
+- **看若干相关符号源码** → `codegraph_explore`（一发取多文件，胜过连环 Read）
+
+**边界**：codegraph 只索引**代码符号**，不索引 Markdown。业务为什么这么设计、进度、踩坑教训、决策仍须读 `docs/`（RECORD.md / PRD-v3.md / 反模式.md / 基线文档）。理想分工 = **codegraph 管代码骨架，docs 管业务血肉**。
+**特别地**：AP-44「字段类型改动跨 17 个协议检查点」这类影响面排查，`codegraph_impact` / `codegraph_callers` 比 grep 更准（按真实调用边遍历，不漏别名/间接引用），应作为 grep 全工程的补充而非替代。
+> 已配 PreToolUse hook（`.claude/settings.local.json`）：执行 grep/rg/find 或派 Explore/general-purpose 子代理前会自动提醒此规则。
+
 ## UI 交互规范
 - **统一使用抽屉（Drawer）替代弹窗（Modal）**：所有需要弹出式交互的场景（新建/编辑表单、详情查看、多步骤向导、批量导入、确认配置等）一律使用抽屉组件从屏幕右侧滑出，不再使用居中 Modal。
   - **例外**：仅保留轻量即时反馈类组件（Ant Design `message` / `notification` / `Popconfirm` 简单二次确认），这些不属于"弹窗功能"范畴
