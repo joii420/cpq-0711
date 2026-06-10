@@ -28,4 +28,7 @@ public class CreateComponentRequest {
 
     /** 核价 BOM 递归展开开关(可选,默认 true):勾选才按 material_bom_item 闭包递归展开 */
     public Boolean bomRecursiveExpand;
+
+    /** EXCEL 类型组件的列配置 JSON（数组），Task 1.1 新增字段 */
+    public String excelColumns;
 }

@@ -35,6 +35,17 @@ public class ComponentService {
         "LIST_FORMULA" // V203/Phase B: 配置模板驱动 + IF-ELSE-IF 条件分支公式
     );
 
+    public static final java.util.Set<String> VALID_COMPONENT_TYPES =
+        java.util.Set.of("NORMAL", "SUBTOTAL", "EXCEL");
+
+    public static void assertValidComponentType(String type) {
+        String t = type == null ? "NORMAL" : type;
+        if (!VALID_COMPONENT_TYPES.contains(t)) {
+            throw new BusinessException("Invalid component_type: " + t +
+                ". Must be one of: " + VALID_COMPONENT_TYPES);
+        }
+    }
+
     @Inject
     EntityManager em;
 
@@ -103,6 +114,7 @@ public class ComponentService {
         component.formulas = formulasJson;
         component.columnCount = fieldList.size();
         component.componentType = request.componentType != null ? request.componentType : "NORMAL";
+        component.excelColumns = request.excelColumns != null ? request.excelColumns : "[]";
         component.dataDriverPath = normalizeDriverPath(request.dataDriverPath);
         component.status = request.status != null ? request.status : "ACTIVE";
 
@@ -149,6 +161,9 @@ public class ComponentService {
         }
         if (request.componentType != null) {
             component.componentType = request.componentType;
+        }
+        if (request.excelColumns != null) {
+            component.excelColumns = request.excelColumns;
         }
         // dataDriverPath 单独按"显式空字符串=清空"处理:null 保持不变,空串=NULL 化
         // [Y1.5 DEBUG] 记录入参,排查保存丢失
@@ -376,6 +391,7 @@ public class ComponentService {
             throw new BusinessException("Component name is required");
         }
         // code is now auto-generated if not provided
+        assertValidComponentType(request.componentType);
     }
 
     private void validateFields(List<Map<String, Object>> fields) {

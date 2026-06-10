@@ -29,6 +29,8 @@ public class ComponentDTO {
     /** 核价 BOM 递归展开开关(默认 true,仅核价侧生效;与 treeConfig 正交) */
     public Boolean bomRecursiveExpand;
     public String status;
+    /** EXCEL 类型组件的列配置 JSON（数组），Task 1.1 新增字段 */
+    public String excelColumns;
     public OffsetDateTime createdAt;
     public OffsetDateTime updatedAt;
 
@@ -51,6 +53,7 @@ public class ComponentDTO {
         dto.rowKeyFields = parseStringList(component.rowKeyFields);
         dto.treeConfig = parseJsonObject(component.treeConfig);
         dto.bomRecursiveExpand = component.bomRecursiveExpand != null ? component.bomRecursiveExpand : Boolean.FALSE;
+        dto.excelColumns = component.excelColumns;
         return dto;
     }
 
