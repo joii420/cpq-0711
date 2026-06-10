@@ -45,4 +45,16 @@ class TabJoinPlanEvaluatorColumnV2Test {
         BigDecimal v = ev.evaluateColumn(col("[投料.金额(总计)]"), provider());
         assertEquals(0, new BigDecimal("160").compareTo(v));
     }
+
+    @Test void pure_totals_no_detail() {
+        // 纯页签总计令牌，无明细行参与对齐：投料页签总计160 + 回料页签总计39 = 199
+        BigDecimal v = ev.evaluateColumn(col("[投料(总计)] + [回料(总计)]"), provider());
+        assertEquals(0, new BigDecimal("199").compareTo(v), "got " + v);
+    }
+
+    @Test void column_total_miss_zero() {
+        // 加工页签没有 subtotalByColumn 数据 → 应退化为 0
+        BigDecimal v = ev.evaluateColumn(col("[加工.工时(总计)]"), provider());
+        assertEquals(0, new BigDecimal("0").compareTo(v), "got " + v);
+    }
 }

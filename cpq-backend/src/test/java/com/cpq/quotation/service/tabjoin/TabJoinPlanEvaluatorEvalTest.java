@@ -42,4 +42,25 @@ class TabJoinPlanEvaluatorEvalTest {
         var rows = List.of(w("a.x",10));
         bd("10", ev.evalExpression("SUM([a.x] / [a.y])", rows, Map.of()));
     }
+
+    @Test void sign_propagation() {
+        // 3 行: 投料.金额100/加工.工时4 ; 60/0 ; 0/5 → 逐行: 100*4=400, 60*0=0, 0*5=0 → sum=400
+        // 100 - sum([投料.金额]*[加工.工时]) = 100 - 400 = -300
+        var rows3 = List.of(
+            w("投料.金额", 100, "加工.工时", 4),
+            w("投料.金额",  60, "加工.工时", 0),
+            w("投料.金额",   0, "加工.工时", 5));
+        bd("-300", ev.evalExpression("100 - [投料.金额] * [加工.工时]", rows3, Map.of()));
+    }
+
+    @Test void leading_minus() {
+        // 表达式首项是负号：首项 sign=-1，text="[a.x]"，单行 160 → result = -160
+        bd("-160", ev.evalExpression("-[a.x]", List.of(w("a.x", 160)), Map.of()));
+    }
+
+    @Test void paren_not_split() {
+        // SUM([a.x]) * (1 + 2)：SUM=60，(1+2)=3，60*3=180
+        bd("180", ev.evalExpression("SUM([a.x]) * (1 + 2)",
+            List.of(w("a.x", 10), w("a.x", 50)), Map.of()));
+    }
 }

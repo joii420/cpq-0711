@@ -7,11 +7,33 @@ import java.util.*;
 @ApplicationScoped
 public class TabJoinPlanEvaluator {
 
-    private static final org.jboss.logging.Logger LOG =
-        org.jboss.logging.Logger.getLogger(TabJoinPlanEvaluator.class);
-
     /** 关联键等值用「去空白字符串」比较：页签行来自 JSONB,同一物料编码可能一侧是数字一侧是字符串,统一转字符串桥接。 */
     static String str(Object o) { return o == null ? null : o.toString().trim(); }
+
+    // ─────────────────────────────────────────────────────────────────
+    // 公共令牌解析（DRY）
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * 公式令牌解析结果。
+     * raw    = 原文（trim 后）
+     * total  = 是否以"(总计)"结尾
+     * alias  = "别名.列名" 的 别名 部分；无点时 alias=body
+     * column = "别名.列名" 的 列名 部分；无点时 column=null
+     *          total=true 且 column!=null → 列小计；total=true 且 column==null → 页签总计；
+     *          total=false → 明细行令牌，alias 即页签别名
+     */
+    record Tok(String raw, boolean total, String alias, String column) {}
+
+    static Tok parseTok(String raw) {
+        raw = raw.trim();
+        boolean total = raw.endsWith("(总计)");
+        String body = total ? raw.substring(0, raw.length() - "(总计)".length()) : raw;
+        int dot = body.indexOf('.');
+        String alias  = dot >= 0 ? body.substring(0, dot) : body;
+        String column = dot >= 0 ? body.substring(dot + 1) : null;
+        return new Tok(raw, total, alias, column);
+    }
 
     /**
      * 行键对齐（全外连）：把同一行键类的若干页签按 rowKeyFields 值对齐。
@@ -35,7 +57,7 @@ public class TabJoinPlanEvaluator {
 
     private String keyOf(List<String> rowKeyFields, Map<String, Object> row) {
         StringBuilder sb = new StringBuilder();
-        for (String k : rowKeyFields) sb.append(str(row.get(k))).append("");
+        for (String k : rowKeyFields) sb.append(str(row.get(k))).append("");
         return sb.toString();
     }
 
@@ -102,11 +124,11 @@ public class TabJoinPlanEvaluator {
         return out;
     }
 
-    /** 项内去掉聚合函数后仍有 detail 令牌(非 "(总计)" 结尾)？ */
+    /** 项内去掉聚合函数后仍有 detail 令牌(非 "(总计)" 结尾)？复用 parseTok 判断。 */
     private boolean hasBareDetail(String term) {
         String stripped = blankOutAggregates(term);
         java.util.regex.Matcher m = TOKEN.matcher(stripped);
-        while (m.find()) { if (!m.group(1).trim().endsWith("(总计)")) return true; }
+        while (m.find()) { if (!parseTok(m.group(1)).total) return true; }
         return false;
     }
 
@@ -156,16 +178,20 @@ public class TabJoinPlanEvaluator {
         };
     }
 
-    /** 单行求值：detail 令牌→该行值(缺0)；total 令牌("(总计)"结尾)→scalars(缺0)；JEXL(SafeArithmetic)。 */
+    /**
+     * 单行求值：detail 令牌→该行值(缺0)；total 令牌("(总计)"结尾)→scalars(缺0)；JEXL(SafeArithmetic)。
+     * 复用 parseTok 判断 total。使用 StringBuilder（JDK9+ Matcher 支持）。
+     */
     private java.math.BigDecimal evalRow(String expr, Map<String, Object> row,
                                          Map<String, java.math.BigDecimal> scalars) {
         java.util.regex.Matcher m = TOKEN.matcher(expr);
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         while (m.find()) {
-            String tok = m.group(1).trim(); String lit;
-            if (tok.endsWith("(总计)")) {
-                java.math.BigDecimal s = scalars.get(tok); lit = s != null ? s.toPlainString() : "0";
-            } else lit = numLit(row.get(tok));
+            Tok tok = parseTok(m.group(1));
+            String lit;
+            if (tok.total()) {
+                java.math.BigDecimal s = scalars.get(tok.raw()); lit = s != null ? s.toPlainString() : "0";
+            } else lit = numLit(row.get(tok.raw()));
             m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(lit));
         }
         m.appendTail(sb);
@@ -229,28 +255,37 @@ public class TabJoinPlanEvaluator {
         java.util.LinkedHashSet<String> detailAliases = new java.util.LinkedHashSet<>();
         Map<String, java.math.BigDecimal> scalars = new LinkedHashMap<>();
         while (m.find()) {
-            String tok = m.group(1).trim();
-            if (tok.endsWith("(总计)")) {
-                String body = tok.substring(0, tok.length() - "(总计)".length());
-                if (body.contains(".")) {
-                    String alias = body.substring(0, body.indexOf('.'));
-                    String colName = body.substring(body.indexOf('.') + 1);
-                    java.math.BigDecimal s = provider.subtotalOfColumn(tabKeyOf.get(alias), colName);
-                    scalars.put(tok, s != null ? s : java.math.BigDecimal.ZERO);
+            Tok tok = parseTok(m.group(1));
+            if (tok.total()) {
+                // 列小计（alias.column(总计)）或页签总计（alias(总计)）
+                java.math.BigDecimal s;
+                if (tok.column() != null) {
+                    s = provider.subtotalOfColumn(tabKeyOf.get(tok.alias()), tok.column());
                 } else {
-                    java.math.BigDecimal s = provider.subtotalOf(tabKeyOf.get(body));
-                    scalars.put(tok, s != null ? s : java.math.BigDecimal.ZERO);
+                    s = provider.subtotalOf(tabKeyOf.get(tok.alias()));
                 }
+                scalars.put(tok.raw(), s != null ? s : java.math.BigDecimal.ZERO);
             } else {
-                detailAliases.add(tok.contains(".") ? tok.substring(0, tok.indexOf('.')) : tok);
+                // 明细令牌：只有 alias 在 tabKeyOf 中声明的才加入对齐集
+                if (tabKeyOf.containsKey(tok.alias())) {
+                    detailAliases.add(tok.alias());
+                }
+                // 未声明的 alias 静默跳过，不参与对齐，也不抛 NPE
             }
         }
         List<Map<String, Object>> aligned = List.of();
         if (!detailAliases.isEmpty()) {
-            String first = detailAliases.iterator().next();
-            List<String> rkf = rkfOf.getOrDefault(first, List.of());
+            // 选第一个在 tabKeyOf 中有声明且 rkf 非空的明细 alias 作对齐基准
+            List<String> rkf = List.of();
+            for (String alias : detailAliases) {
+                List<String> candidate = rkfOf.getOrDefault(alias, List.of());
+                if (!candidate.isEmpty()) { rkf = candidate; break; }
+            }
             Map<String, List<Map<String, Object>>> tabRows = new LinkedHashMap<>();
-            for (String alias : detailAliases) tabRows.put(alias, provider.rowsOf(tabKeyOf.get(alias)));
+            for (String alias : detailAliases) {
+                String tabKey = tabKeyOf.get(alias);
+                if (tabKey != null) tabRows.put(alias, provider.rowsOf(tabKey));
+            }
             aligned = alignByRowKey(rkf, tabRows);
         }
         return evalExpression(expr, aligned, scalars);
