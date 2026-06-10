@@ -3354,4 +3354,15 @@ E2E:
 
 ---
 
+### [2026-06-10] 组件管理重构·公式能力统一 (7阶段 subagent-driven, 18 commit) | V298 + ExcelColumnResolver/ComponentTabDefService/ComponentSampleCardService/ComponentTabJoinResource/TokenMappabilityValidator(新) + 三态传播(CardSnapshotService/ComponentDriverService/SnapshotCollectorService/TemplateService/ComponentService/Component/DTO/ExportBundle/Import) + ExcelViewService/TemplateFormulaService/ImportExecutionService/ImportMappingTemplateService/LegacyPathsResource(读取源) + 前端 ComponentManagement(Master-Detail全重写)/formulaSerialize(新)/TabJoinFormulaDrawer/ComponentPalette/ExcelViewConfigTab/FieldConfigTable/PathPickerDrawer/TabFieldMatrix/SampleCardPicker/QuotationStep2/ReadonlyProductCard/useDriverExpansions/types.ts | 计划 plans/2026-06-10-组件管理公式统一.md + spec specs/2026-06-10-组件管理公式统一-design.md
+
+- **目标(4 点)**: ①Excel 视图列配置**归属迁移**到 `component_type='EXCEL'` 组件,模板侧改"引用 EXCEL 组件 + 稀疏列覆写";②三类组件(页签/EXCEL/小计)公式配置**统一复用编辑器** `TabJoinFormulaDrawer`;③组件管理改 **Master-Detail 双栏**(左手风琴三段卡片+右内嵌详情,移除 FieldPanel,树隐藏,数据驱动路径+核价BOM合一行,批量走 runBatch+Modal);④路径来源收敛(删 datasource_binding BNF_PATH UI + PathPicker manual Tab,**保留** default_source BNF_PATH/BnfPathResolver/$view 求值)。
+- **关键决策**: 决策 B(甲)——**抽屉只做共享编辑器 UI,存储不统一,产出按组件类型分流**:页签/小计→`component.formulas` token(复用**已锁定**求值器,渲染链一行不动)+保存前可映射校验;EXCEL 列→字符串落 `excel_columns`(复用 tab-join 求值器)。**不改终态锁定的 token 求值器与报价/核价/详情渲染读取链**。导入链定调:`import_settings` 留 template、仅列定义迁组件。Excel 迁移用中心化 `getEffectiveColumns(Template)`(excel_component_id 指针→component.excelColumns+稀疏 overrides;向后兼容旧数组格式)收敛 16 读取点,`SnapshotCollectorService` 冻结 MERGED 解析后列(防 EXCEL 组件删除丢列)。
+- **岔口修复(component_subtotal)**: Phase0 spike 用 `LIKE '%cross_tab_ref%'` 查询漏验了只含 `component_subtotal` 的 SUBTOTAL 主线公式。补 `formulaSerialize` 用 tabDefs.subtotalCols 消歧(`[alias.列]` 列∈subtotalCols→component_subtotal,否则→cross_tab_ref),`tokensToDrawerExpression` 用 token 自带 component_code/value 稳健显示,checkMappable 不把 component_subtotal 计入不可映射,TabFieldMatrix 小计列插入改 `[alias.列]`。**只扩编辑器序列化,不碰求值器**(求值器按 component_code 解析,本就消费该 token)。
+- **执行**: 隔离 worktree `component-formula-unify`,subagent-driven(每任务 implementer + 独立 spec/correctness 复审)。**环境约束**:worktree dev server 绑主目录,worktree 内只能静态检查(tsc/mvnw compile+test/vitest/DDL dry-run),运行时/E2E 合回主分支后跑。
+- **自检**: 前端 tsc 0;后端 mvnw compile 0;后端单测(TokenMappability 2/ComponentTypeValidation 2/ExportBundleExcel 1/TabDefService 2/SampleCardService 4/ExcelColumnResolver 5)绿;前端 vitest(formulaSerialize 59/tabFieldMatrix 25)绿;**合回主分支运行时**:V298 Flyway `298|t`、excel_columns 列+EXCEL 约束就位、15 改动 .tsx Vite 200、后端 401;**E2E `quotation-flow`(SIMPLE) 1 passed + 加载中 final=0 + 全 8 Tab 加载中=0 + LF-DEBUG/RENDER=0**,29 张 qf 截图。
+- **注意**: `composite-product-flow.spec.ts` 仍失败 = **同上条既有 bug**(`composite_child_elements_mirror.unit_weight` 缺列,2026-05-26 视图建时即缺,组件字段配置 2026-05-13);本次 18 commit 无任何 composite 视图/BNF 解析器/sql_view/视图迁移改动(V298 只改 component 表),与本重构无关(SIMPLE 同名 Tab 因无 composite 子件 rows=0 故通过)。用户确认旧视图/模板配置已废弃,不予理会。**未做**: composite 缺列 bug(另立);真人交互式可视验证(headless 无法)。
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
