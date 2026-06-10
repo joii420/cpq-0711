@@ -78,6 +78,7 @@ public class TabJoinPlanEvaluator {
         return true;
     }
 
+    /** 关联键等值用「去空白字符串」比较：页签行来自 JSONB,同一物料编码可能一侧是数字一侧是字符串,统一转字符串桥接。 */
     private static String str(Object o) { return o == null ? null : o.toString().trim(); }
 
     private Map<String, Object> prefix(String alias, Map<String, Object> row) {

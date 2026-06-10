@@ -47,4 +47,33 @@ class TabJoinPlanEvaluatorJoinTest {
         var join = new TabJoinPlanEvaluator.Join("加工", List.of("物料编码"), "投料", List.of("物料编码"));
         assertTrue(ev.buildWideRows("投料", tabs, List.of(join)).isEmpty());
     }
+
+    @Test
+    void numeric_vs_string_key_matches() {
+        // 关联键一侧是数字 1001、另一侧是字符串 "1001" → 应匹配（去空白字符串等值契约）
+        Map<String, List<Map<String, Object>>> tabs = Map.of(
+            "投料", List.of(row("物料编码", 1001, "金额", 100)),
+            "加工", List.of(row("物料编码", "1001", "工时", 5)));
+        var join = new TabJoinPlanEvaluator.Join("加工", List.of("物料编码"), "投料", List.of("物料编码"));
+        List<Map<String, Object>> wide = ev.buildWideRows("投料", tabs, List.of(join));
+        assertEquals(1, wide.size(), "数字键 1001 应与字符串键 '1001' 匹配");
+        assertEquals(5, wide.get(0).get("加工.工时"));
+    }
+
+    @Test
+    void three_tabs_two_joins_order_independent() {
+        // 三页签 投料(主)→加工→回料，joins 故意乱序(先给连回料的边)，验证连通树挑边顺序无关
+        Map<String, List<Map<String, Object>>> tabs = Map.of(
+            "投料", List.of(row("物料编码", "M1", "金额", 100)),
+            "加工", List.of(row("物料编码", "M1", "工时", 4)),
+            "回料", List.of(row("物料编码", "M1", "回料量", 7)));
+        var joinReclaim = new TabJoinPlanEvaluator.Join("回料", List.of("物料编码"), "加工", List.of("物料编码"));
+        var joinProcess = new TabJoinPlanEvaluator.Join("加工", List.of("物料编码"), "投料", List.of("物料编码"));
+        // 乱序：回料↔加工 这条边在前(此时加工还没并入)，应被自动延后到加工并入后再处理
+        List<Map<String, Object>> wide = ev.buildWideRows("投料", tabs, List.of(joinReclaim, joinProcess));
+        assertEquals(1, wide.size());
+        assertEquals(100, wide.get(0).get("投料.金额"));
+        assertEquals(4, wide.get(0).get("加工.工时"));
+        assertEquals(7, wide.get(0).get("回料.回料量"));
+    }
 }
