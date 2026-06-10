@@ -12,13 +12,15 @@ import { variableLabelService, type VariableLabel } from '../../services/variabl
 import PathPickerDrawer from '../component/PathPickerDrawer';
 import CardFormulaDrawer from './CardFormulaDrawer';
 import { validateCardFormula } from './cardFormula';
+import TabJoinFormulaDrawer from './TabJoinFormulaDrawer';
 
 const { Text } = Typography;
 
 // V149 Stage 3+D 清理: Excel 视图配置只做"配 Excel 列引用视图数据"一件事.
 // VARIABLE 取数(绑 $view.col 或 {code}); FORMULA 模板层公式(=[X]+[Y] 等); 老 4 种保留向后兼容.
 // CARD_FORMULA: 卡片引用公式，引用报价单产品卡中的页签小计/字段值/聚合（Task3 新增）.
-type SourceType = 'VARIABLE' | 'FORMULA' | 'CARD_FORMULA' | 'PRODUCT_ATTRIBUTE' | 'COMPONENT_FIELD' | 'EXCEL_FORMULA' | 'FIXED_VALUE';
+// TAB_JOIN_FORMULA: 页签连表公式，跨页签行键对齐后单值计算（Task10+11 新增）.
+type SourceType = 'VARIABLE' | 'FORMULA' | 'CARD_FORMULA' | 'TAB_JOIN_FORMULA' | 'PRODUCT_ATTRIBUTE' | 'COMPONENT_FIELD' | 'EXCEL_FORMULA' | 'FIXED_VALUE';
 
 interface ExcelViewColumn {
   col_key: string;
@@ -36,6 +38,9 @@ interface ExcelViewColumn {
   // CARD_FORMULA 专属字段（Task3 新增）
   refs?: Record<string, any>;
   display_format?: { type?: 'PERCENT' | 'NUMBER'; decimals?: number };
+  // TAB_JOIN_FORMULA 专属字段（Task10+11 新增）
+  expression?: string;
+  tabs?: { alias: string; tabKey: string; rowKeyFields: string[] }[];
 }
 
 interface Props {
@@ -102,6 +107,8 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
   const [pathPickerColIdx, setPathPickerColIdx] = useState<number | null>(null);
   // CardFormulaDrawer 状态（CARD_FORMULA 列）
   const [cardDrawerColIdx, setCardDrawerColIdx] = useState<number | null>(null);
+  // TabJoinFormulaDrawer 状态（TAB_JOIN_FORMULA 列）
+  const [tabJoinColIdx, setTabJoinColIdx] = useState<number | null>(null);
   // 公式编辑 Drawer 状态（FORMULA 列）
   const [formulaDrawerOpen, setFormulaDrawerOpen] = useState(false);
   const [formulaDrawerColIdx, setFormulaDrawerColIdx] = useState<number | null>(null);
@@ -126,12 +133,12 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
     setColumns(prev => prev.map((c, i) => (i === index ? { ...c, ...patch } : c)));
   };
 
-  const addColumn = (sourceType: 'VARIABLE' | 'FORMULA' | 'CARD_FORMULA' = 'VARIABLE') => {
+  const addColumn = (sourceType: 'VARIABLE' | 'FORMULA' | 'CARD_FORMULA' | 'TAB_JOIN_FORMULA' = 'VARIABLE') => {
     setColumns(prev => {
       const k = getNextColKey(prev);
       const base: ExcelViewColumn = {
         col_key: k,
-        title: sourceType === 'CARD_FORMULA' ? '新卡片列' : '新列',
+        title: sourceType === 'CARD_FORMULA' ? '新卡片列' : sourceType === 'TAB_JOIN_FORMULA' ? '新连表列' : '新列',
         source_type: sourceType,
       };
       if (sourceType === 'VARIABLE') {
@@ -139,6 +146,9 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
       } else if (sourceType === 'CARD_FORMULA') {
         base.formula = '=';
         base.refs = {};
+      } else if (sourceType === 'TAB_JOIN_FORMULA') {
+        base.expression = '';
+        base.tabs = [];
       } else {
         base.formula = '';
       }
@@ -261,6 +271,45 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
   };
 
   const renderValueCell = (col: ExcelViewColumn, index: number) => {
+    if (col.source_type === 'TAB_JOIN_FORMULA') {
+      const expr = col.expression || '';
+      const displayExpr = expr.length > 60 ? expr.slice(0, 60) + '…' : expr;
+      return (
+        <div style={{ width: '100%' }}>
+          <Space.Compact style={{ width: '100%' }}>
+            <Input
+              size="small"
+              readOnly
+              value={displayExpr}
+              placeholder="点击右侧按钮配置页签连表公式"
+              disabled={!isDraft}
+              onClick={() => isDraft && setTabJoinColIdx(index)}
+              style={{
+                cursor: isDraft ? 'pointer' : 'not-allowed',
+                fontFamily: 'Consolas, Monaco, monospace',
+              }}
+            />
+            <Button
+              size="small"
+              disabled={!isDraft}
+              icon={<EditOutlined />}
+              onClick={() => setTabJoinColIdx(index)}
+              title="配置页签连表公式（跨页签行键对齐后单值计算）"
+            >
+              配置公式
+            </Button>
+          </Space.Compact>
+          <div style={{ marginTop: 4, fontSize: 11, lineHeight: '18px' }}>
+            <Tag color="cyan">TAB_JOIN</Tag>
+            {col.tabs && col.tabs.length > 0 && (
+              <span style={{ color: '#888', fontSize: 10 }}>
+                引用 {col.tabs.length} 个页签
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    }
     if (col.source_type === 'CARD_FORMULA') {
       const f = col.formula || '';
       const displayFormula = f.length > 60 ? f.slice(0, 60) + '…' : f;
@@ -458,25 +507,28 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
                     />
                   </td>
                   <td style={tdStyle}>
-                    {(col.source_type === 'VARIABLE' || col.source_type === 'FORMULA' || col.source_type === 'CARD_FORMULA') ? (
+                    {(col.source_type === 'VARIABLE' || col.source_type === 'FORMULA' || col.source_type === 'CARD_FORMULA' || col.source_type === 'TAB_JOIN_FORMULA') ? (
                       <Select
                         size="small"
-                        style={{ width: 140 }}
+                        style={{ width: 160 }}
                         value={col.source_type}
                         disabled={!isDraft}
                         onChange={v => {
                           if (v === 'FORMULA') {
-                            updateColumn(index, { source_type: 'FORMULA', variable_path: undefined, formula: col.formula || '', refs: undefined, display_format: undefined });
+                            updateColumn(index, { source_type: 'FORMULA', variable_path: undefined, formula: col.formula || '', refs: undefined, display_format: undefined, expression: undefined, tabs: undefined });
                           } else if (v === 'CARD_FORMULA') {
-                            updateColumn(index, { source_type: 'CARD_FORMULA', variable_path: undefined, formula: col.formula || '=', refs: col.refs || {} });
+                            updateColumn(index, { source_type: 'CARD_FORMULA', variable_path: undefined, formula: col.formula || '=', refs: col.refs || {}, expression: undefined, tabs: undefined });
+                          } else if (v === 'TAB_JOIN_FORMULA') {
+                            updateColumn(index, { source_type: 'TAB_JOIN_FORMULA', variable_path: undefined, formula: undefined, refs: undefined, display_format: undefined, expression: col.expression || '', tabs: col.tabs || [] });
                           } else {
-                            updateColumn(index, { source_type: 'VARIABLE', formula: undefined, variable_path: col.variable_path || '', refs: undefined, display_format: undefined });
+                            updateColumn(index, { source_type: 'VARIABLE', formula: undefined, variable_path: col.variable_path || '', refs: undefined, display_format: undefined, expression: undefined, tabs: undefined });
                           }
                         }}
                         options={[
                           { label: '变量 VARIABLE', value: 'VARIABLE' },
                           { label: '公式 FORMULA', value: 'FORMULA' },
                           { label: '卡片公式 CARD', value: 'CARD_FORMULA' },
+                          { label: '页签连表公式', value: 'TAB_JOIN_FORMULA' },
                         ]}
                       />
                     ) : (
@@ -541,6 +593,12 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
                 icon: <FunctionOutlined />,
                 onClick: () => addColumn('CARD_FORMULA'),
               },
+              {
+                key: 'TAB_JOIN_FORMULA',
+                label: '页签连表公式（跨页签行键对齐后单值计算）',
+                icon: <FunctionOutlined />,
+                onClick: () => addColumn('TAB_JOIN_FORMULA'),
+              },
             ],
           }}
         >
@@ -571,6 +629,16 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
             setCardDrawerColIdx(null);
           }}
           onClose={() => setCardDrawerColIdx(null)}
+        />
+      )}
+
+      {tabJoinColIdx !== null && (
+        <TabJoinFormulaDrawer
+          open={tabJoinColIdx !== null}
+          templateId={templateId}
+          column={columns[tabJoinColIdx]}
+          onClose={() => setTabJoinColIdx(null)}
+          onSave={(patch) => { updateColumn(tabJoinColIdx, patch); setTabJoinColIdx(null); }}
         />
       )}
 
