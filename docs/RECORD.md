@@ -12,7 +12,8 @@
 - **后端**: `com.cpq.quotation.service.tabjoin.TabJoinPlanEvaluator`(alignByRowKey + evalExpression + evaluateColumn) 复用 `CardDataProvider`(rowsOf/subtotalOf/subtotalOfColumn) 取页签行；`ExcelViewService.buildRowData` switch 加 TAB_JOIN_FORMULA 分支(provider=effectiveRows优先/降级 componentDataList)；`saveExcelViewConfig` 加 `validateTabJoinConfig`(expression非空/alias须声明/裸明细须同一行键类)；三端点 `POST dry-run-tab-formula` + `GET tab-defs`(从 componentsSnapshot+Component.rowKeyFields 解析) + `GET sample-cards`。
 - **前端**: `TabJoinFormulaDrawer`(单表达式框+运算符/函数工具条) + `tabjoin/TabFieldMatrix`(全页签字段矩阵, **点明细锁定行键类、行键不同页签明细置灰、总计始终可点、无明细令牌自动解锁**, `parseActiveRowKeySig` 单一来源) + `tabjoin/SampleCardPicker`(样本试算)。`ExcelViewConfigTab` 列来源加选项+入口。
 - **测试**: 后端 31 测全绿（TabJoinPlanEvaluator Align4/Eval10/ColumnV2 4 + Validation4 + TabDefsParse4 + SafeArithmetic4 + 端到端 ExcelViewTabJoinFormulaIT 1，IT 验证 `[投料.金额]*[加工.工时]` 行键对齐求和=400）；前端 parseActiveRowKeySig 24 vitest 全绿 + tsc 0 错误。
-- **已知缺口/后续**: ① E2E 未真跑——所有 DRAFT 模板 componentsSnapshot=NULL 致 tab-defs 返空、无样本卡片；需补 fixture(给 DRAFT 模板写 componentsSnapshot + 一条引用它的 line_item)后跑 `e2e/tab-join-formula.spec.ts`。② cleanup 待办（非阻断）: tab-defs 的 Component 查询批量化、sample-cards SQL 层 limit、前端 TOKEN_RE 移入函数作用域、dryRun 不传 cardValuesJson 是预期(走持久化录入值)需补注释。
+- **修复(183a90f)**: 草稿模板配公式时构建器报"暂无页签定义数据"——根因 `componentsSnapshot` 发布时才冻结、草稿期为 NULL，而 Excel 列配置只在草稿做。`ExcelViewService.tabDefsOfTemplate` 改为 snapshot 为空时从实时 `template_component + component` 关联构建(fields 走 fieldsOverride 优先,与发布冻结口径一致)；回归 IT `TabDefsLiveDraftIT`。**这是 E2E 缺 fixture 一直没暴露、靠真机手测才发现的 bug**。
+- **已知缺口/后续**: ① E2E 未真跑——草稿 tab-defs 已修可用，但**试算**仍需"有引用该模板的报价/核价单 line_item"作样本(无则 sample-cards 空)；补该 fixture 后可跑 `e2e/tab-join-formula.spec.ts`。② cleanup 待办（非阻断）: tab-defs 的 Component 查询批量化、sample-cards SQL 层 limit、前端 TOKEN_RE 移入函数作用域、dryRun 不传 cardValuesJson 是预期(走持久化录入值)需补注释。
 
 ---
 
