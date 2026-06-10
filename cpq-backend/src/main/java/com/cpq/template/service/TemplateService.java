@@ -218,6 +218,8 @@ public class TemplateService {
                 entry.put("componentName", comp.name);
                 entry.put("componentCode", comp.code);
                 entry.put("componentType", comp.componentType);
+                // EXCEL 组件列定义随 snapshot 冻结(供 Phase 3 Excel 视图消费);NORMAL/SUBTOTAL 仅携带 "[]"
+                entry.put("excelColumns", parseJsonArray(comp.excelColumns));
                 entry.put("tabName", tc.tabName);
                 entry.put("sortOrder", tc.sortOrder);
                 // V200: fields 走 override 优先
@@ -366,6 +368,8 @@ public class TemplateService {
                 entry.put("tree_config", (comp.treeConfig != null && !comp.treeConfig.isBlank())
                         ? parseJsonObject(comp.treeConfig) : null);
                 entry.put("componentType", comp.componentType);
+                // EXCEL 组件列定义随 snapshot 平台级刷新同步(供 Phase 3);NORMAL/SUBTOTAL 仅携带 "[]"
+                entry.put("excelColumns", parseJsonArray(comp.excelColumns));
                 entry.put("componentName", comp.name);
                 entry.put("componentCode", comp.code);
                 touched = true;
@@ -693,6 +697,8 @@ public class TemplateService {
                 entry.put("componentName", comp.name);
                 entry.put("componentCode", comp.code);
                 entry.put("componentType", comp.componentType);
+                // EXCEL 组件列定义随 snapshot 重建冻结(供 Phase 3);NORMAL/SUBTOTAL 仅携带 "[]"
+                entry.put("excelColumns", parseJsonArray(comp.excelColumns));
                 entry.put("tabName", tc.tabName);
                 entry.put("sortOrder", tc.sortOrder);
                 String effectiveFields = (tc.fieldsOverride != null && !tc.fieldsOverride.isBlank())

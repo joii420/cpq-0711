@@ -63,6 +63,7 @@ public class ComponentExportService {
             item.dataDriverPath = c.dataDriverPath;
             item.fields = readJson(c.fields);
             item.formulas = readJson(c.formulas);
+            item.excelColumns = readJson(c.excelColumns);
 
             // 依赖扫描(只读): 从字段 JSON 收集全局变量 / 数据源引用
             scanDependencies(item.fields, gvars, datasources);

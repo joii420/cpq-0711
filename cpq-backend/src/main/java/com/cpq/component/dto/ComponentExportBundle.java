@@ -41,6 +41,8 @@ public class ComponentExportBundle {
         public JsonNode fields;
         /** 公式定义(原 JSONB)。 */
         public JsonNode formulas;
+        /** EXCEL 组件列定义(原 JSONB,内嵌为真实 JSON 节点)。 */
+        public JsonNode excelColumns;
         /** 组件 SQL 视图(component_sql_view,组件内唯一,随组件走)。 */
         public List<SqlView> sqlViews;
     }

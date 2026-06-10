@@ -695,7 +695,8 @@ public class CardSnapshotService {
         // PASS 1: componentSubtotals（顺序累加，后 tab 可引用前 tab 小计；含保留的 editRows）
         Map<String, Double> componentSubtotals = new java.util.HashMap<>();
         for (JsonNode tab : snapshot) {
-            if ("SUBTOTAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
+            // 仅处理 NORMAL tab（跳过 SUBTOTAL 及 EXCEL —— EXCEL 非普通公式 tab，不参与小计累加）
+            if (!"NORMAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
             String cid = tab.path("componentId").asText("");
             ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, emptyEdit);
             ArrayNode editRows = filteredEdit.getOrDefault(cid, emptyEdit);
@@ -726,7 +727,8 @@ public class CardSnapshotService {
         List<String> compIds = new ArrayList<>();
         Map<String, Set<String>> compDeps = new LinkedHashMap<>();
         for (JsonNode tab : snapshot) {
-            if ("SUBTOTAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
+            // 仅 NORMAL tab 进拓扑序（跳过 SUBTOTAL 及 EXCEL —— EXCEL 不参与公式计算/cross_tab_ref）
+            if (!"NORMAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
             String cid = tab.path("componentId").asText("");
             compIds.add(cid);
             compDeps.put(cid, CrossTabComponentOrder.extractSourceRefs(tab.path("formulas")));
@@ -736,7 +738,8 @@ public class CardSnapshotService {
         // componentId → snapshot tab（按 componentId 反查；SUBTOTAL 走原序补算时直接遍历 snapshot）
         Map<String, JsonNode> tabById = new LinkedHashMap<>();
         for (JsonNode tab : snapshot) {
-            if ("SUBTOTAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
+            // 仅 NORMAL tab 入反查表（跳过 SUBTOTAL 及 EXCEL）
+            if (!"NORMAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
             tabById.put(tab.path("componentId").asText(""), tab);
         }
 
@@ -767,8 +770,10 @@ public class CardSnapshotService {
         }
 
         // 3) SUBTOTAL tab：不参与拓扑序，按需补算（crossTabRows 可用，但其行不并入 crossTabRows）
+        //    EXCEL tab 不在此补算：EXCEL 非普通公式 tab，不参与卡片公式计算（Excel 视图渲染走独立通道，Phase 3）。
         for (JsonNode tab : snapshot) {
             String cid = tab.path("componentId").asText("");
+            if ("EXCEL".equals(tab.path("componentType").asText("NORMAL"))) continue;
             if (tabNodeById.containsKey(cid)) continue; // 已在拓扑序里算过
             ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, MAPPER.createArrayNode());
             ArrayNode editRows = filteredEdit.getOrDefault(cid, MAPPER.createArrayNode());

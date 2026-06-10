@@ -226,6 +226,8 @@ public class ComponentImportService {
             c.dataDriverPath = it.dataDriverPath;
             c.fields = nodeToJson(it.fields);
             c.formulas = nodeToJson(it.formulas);
+            // excel_columns 列 NOT NULL；nodeToJson 已把 null/缺失 → "[]"
+            c.excelColumns = nodeToJson(it.excelColumns);
             c.directoryId = targetDirId;
             c.persist();
 

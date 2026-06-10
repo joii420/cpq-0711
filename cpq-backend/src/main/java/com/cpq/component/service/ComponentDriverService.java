@@ -264,6 +264,17 @@ public class ComponentDriverService {
             throw new BusinessException(404, "Component not found: " + componentId);
         }
 
+        // EXCEL 组件不参与 driver expand：它无 dataDriverPath，但仍可能含 BASIC_DATA 字段，
+        // 若不显式拦截会落入下方「产品级单行虚拟 driver」分支被误展开。Excel 视图渲染走独立通道(Phase 3)。
+        if ("EXCEL".equals(component.componentType)) {
+            LOG.infof("[Y1.5 expand-driver] componentType=EXCEL, skip driver expand (component=%s)", component.code);
+            ExpandDriverResponse excelResp = new ExpandDriverResponse();
+            excelResp.driverPath = component.dataDriverPath;
+            excelResp.rows = new ArrayList<>();
+            excelResp.rowCount = 0;
+            return excelResp;
+        }
+
         // V195 override: 优先�?snapshot 提供�?driver_path / fields
         String effectiveDriverPath = (overrideDataDriverPath != null && !overrideDataDriverPath.isBlank())
                 ? overrideDataDriverPath : component.dataDriverPath;
