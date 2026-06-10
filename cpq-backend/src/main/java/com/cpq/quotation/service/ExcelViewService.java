@@ -87,6 +87,8 @@ public class ExcelViewService {
             }
         }
 
+        validateTabJoinConfig(columns);
+
         template.excelViewConfig = excelViewConfigJson;
         LOG.infof("Saved excel_view_config for template id=%s, %d columns", templateId, columns.size());
         return template.excelViewConfig;
@@ -694,6 +696,47 @@ public class ExcelViewService {
         style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
         style.setAlignment(HorizontalAlignment.CENTER);
         return style;
+    }
+
+    // ---- TAB_JOIN_FORMULA config validation ----
+
+    /**
+     * TAB_JOIN_FORMULA 列配置期校验：expression 非空；引用的页签 alias 须在 tabs 声明；
+     * 裸明细字段引用的页签 rowKeyFields 必须同一行键类(只有同行键页签的明细能一起逐行运算)。
+     */
+    @SuppressWarnings("unchecked")
+    public static void validateTabJoinConfig(List<Map<String, Object>> columns) {
+        java.util.regex.Pattern TOK = java.util.regex.Pattern.compile("\\[([^\\[\\]]+)]");
+        for (Map<String, Object> col : columns) {
+            if (!"TAB_JOIN_FORMULA".equals(col.get("source_type"))) continue;
+            String expr = (String) col.getOrDefault("expression", "");
+            if (expr == null || expr.isBlank())
+                throw new BusinessException(400, "页签连表公式列 " + col.get("col_key") + " 表达式不能为空");
+            List<Map<String, Object>> tabs = (List<Map<String, Object>>) col.getOrDefault("tabs", List.of());
+            Map<String, List<String>> rkfOf = new HashMap<>();
+            for (Map<String, Object> t : tabs)
+                rkfOf.put((String) t.get("alias"), (List<String>) t.getOrDefault("rowKeyFields", List.of()));
+            String detailClass = null;
+            java.util.regex.Matcher m = TOK.matcher(expr);
+            while (m.find()) {
+                String tok = m.group(1).trim();
+                boolean total = tok.endsWith("(总计)");
+                String body = total ? tok.substring(0, tok.length() - "(总计)".length()) : tok;
+                String alias = body.contains(".") ? body.substring(0, body.indexOf('.')) : body;
+                // 声明校验（明细/总计都要求 alias 已声明）
+                if (!rkfOf.containsKey(alias))
+                    throw new BusinessException(400, "页签连表公式列 " + col.get("col_key")
+                        + " 引用了未声明的页签: " + alias);
+                // 裸明细跨行键类校验
+                if (!total) {
+                    String sig = String.join("+", rkfOf.getOrDefault(alias, List.of()));
+                    if (detailClass == null) detailClass = sig;
+                    else if (!detailClass.equals(sig))
+                        throw new BusinessException(400, "页签连表公式列 " + col.get("col_key")
+                            + " 的明细字段跨了不同行键类(只能同行键页签的明细一起运算): " + detailClass + " ≠ " + sig);
+                }
+            }
+        }
     }
 
     // ---- JSON helpers ----
