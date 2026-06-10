@@ -58,7 +58,7 @@ const ConfigGuideDrawer: React.FC<Props> = ({ open, onClose }) => {
             可有多行,支持每行独立公式。
           </Paragraph>
           <Paragraph>
-            <Tag color="purple">SUBTOTAL</Tag>小计汇总组件 — 模板里只允许 1 个,放在产品卡片底部,
+            <Tag color="purple">SUBTOTAL</Tag>小计汇总组件(可选,不配走默认求和) — 每个模板最多 1 个,放在产品卡片底部,
             汇总各 NORMAL 组件的小计。无字段表格,只配公式。
           </Paragraph>
         </Panel>
@@ -95,7 +95,7 @@ const ConfigGuideDrawer: React.FC<Props> = ({ open, onClose }) => {
         <Panel header={<b>1.3 字段属性</b>} key="attrs">
           <Paragraph>
             <Text code>is_amount</Text> — 是否金额字段(影响报价表合计列汇总)<br/>
-            <Text code>is_subtotal</Text> — 是否参与产品小计(只 SUBTOTAL 组件用)<br/>
+            <Text code>is_subtotal</Text> — 是否参与产品小计(SUBTOTAL 组件及配了小计列的普通组件均可用)<br/>
             <Text code>sort_order</Text> — 显示顺序(从 1 开始)
           </Paragraph>
         </Panel>
@@ -263,7 +263,7 @@ A[k='v'].B[k='v'].C.field               — 嵌套(最多 3 层)
         ⚠️ <Text strong>DATA_SOURCE 不能绑 FORMULA 字段</Text>(循环引用,前端会过滤)。<br/>
         ⚠️ <Text strong>BNF 路径里中文 sheet 名要用真实 sheet 中文名</Text>(如「元素BOM」),
         英文物理表名是另一种写法(<Text code>mat_bom</Text>),两者等价但不能混用。<br/>
-        ⚠️ <Text strong>SUBTOTAL 组件每个模板只能 1 个</Text>,且必须有 formulas(否则发布校验阻塞)。<br/>
+        SUBTOTAL(小计汇总)组件可选:每个模板最多 1 个;不配则产品小计默认 = 各页签总计之和;若配置则其 formulas 决定产品小计。<br/>
         ⚠️ <Text strong>修改字段名时</Text>系统会自动同步 formulas 中的引用 token,但 BNF 路径里硬写的字段名不会同步,需手动改。
       </Paragraph>
     </Drawer>
