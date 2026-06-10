@@ -745,19 +745,24 @@ public class ExcelViewService {
      */
     public List<Map<String, Object>> tabDefsOfTemplate(UUID templateId) {
         Template t = Template.findById(templateId);
-        if (t == null || t.componentsSnapshot == null || t.componentsSnapshot.isBlank()) {
-            return List.of();
-        }
-        // 收集 componentId → rowKeyFields（从 Component 表）
+        if (t == null) return List.of();
+        // PUBLISHED 用冻结的 componentsSnapshot；DRAFT 期 snapshot 尚未冻结(发布时才生成)，
+        // 从实时 template_component 关联构建——否则草稿配公式时 tab-defs 永远返空。
         List<Map<String, Object>> snapshotList;
-        try {
-            snapshotList = MAPPER.readValue(t.componentsSnapshot,
-                new TypeReference<List<Map<String, Object>>>() {});
-        } catch (Exception e) {
-            LOG.warnf("[ExcelView] tabDefsOfTemplate failed to parse componentsSnapshot tmpl=%s: %s",
-                templateId, e.getMessage());
-            return List.of();
+        if (t.componentsSnapshot != null && !t.componentsSnapshot.isBlank()) {
+            try {
+                snapshotList = MAPPER.readValue(t.componentsSnapshot,
+                    new TypeReference<List<Map<String, Object>>>() {});
+            } catch (Exception e) {
+                LOG.warnf("[ExcelView] tabDefsOfTemplate failed to parse componentsSnapshot tmpl=%s: %s",
+                    templateId, e.getMessage());
+                return List.of();
+            }
+        } else {
+            snapshotList = buildLiveComponentsList(templateId);
         }
+        if (snapshotList.isEmpty()) return List.of();
+        // 收集 componentId → rowKeyFields（从 Component 表）
         Map<String, List<String>> rkfByCompId = new LinkedHashMap<>();
         for (Map<String, Object> entry : snapshotList) {
             String cid = (String) entry.get("componentId");
@@ -776,6 +781,32 @@ public class ExcelViewService {
             }
         }
         return parseTabDefs(snapshotList, rkfByCompId);
+    }
+
+    /**
+     * 草稿模板 componentsSnapshot 尚未冻结(发布时才生成)，从实时 template_component + component 关联
+     * 构建 parseTabDefs 所需的 List（componentId/componentName/componentType/tabName/sortOrder/fields）。
+     * fields 走 template_component.fieldsOverride 优先（与发布冻结口径一致）。
+     */
+    private List<Map<String, Object>> buildLiveComponentsList(UUID templateId) {
+        List<com.cpq.template.entity.TemplateComponent> tcs =
+            com.cpq.template.entity.TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", templateId);
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (com.cpq.template.entity.TemplateComponent tc : tcs) {
+            Component comp = Component.findById(tc.componentId);
+            if (comp == null) continue;
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("componentId", comp.id.toString());
+            entry.put("componentName", comp.name);
+            entry.put("componentType", comp.componentType);
+            entry.put("tabName", tc.tabName);
+            entry.put("sortOrder", tc.sortOrder);
+            String effectiveFields = (tc.fieldsOverride != null && !tc.fieldsOverride.isBlank())
+                ? tc.fieldsOverride : comp.fields;
+            entry.put("fields", parseJsonArray(effectiveFields));
+            list.add(entry);
+        }
+        return list;
     }
 
     /**
