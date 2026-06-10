@@ -330,6 +330,7 @@ interface ExcelColumn {
   source_type?: string;
   hidden?: boolean;
   formula?: string;
+  fixed_value?: string;
   [k: string]: any;
 }
 
@@ -413,7 +414,7 @@ const ExcelColumnPanel: React.FC<{
   };
   const remove = (idx: number) => onChange(columns.filter((_, i) => i !== idx));
   const add = () =>
-    onChange([...columns, { col_key: `col_${columns.length + 1}`, title: '', source_type: 'COMPONENT_FIELD', hidden: false }]);
+    onChange([...columns, { col_key: `col_${columns.length + 1}`, title: '', source_type: 'FIXED_VALUE', hidden: false }]);
 
   const tableColumns = [
     {
@@ -436,28 +437,32 @@ const ExcelColumnPanel: React.FC<{
       title: '来源 / 公式', key: 'source',
       render: (_: unknown, _r: ExcelColumn, idx: number) => {
         const col = columns[idx];
-        const isFormula = col.source_type === 'TAB_JOIN_FORMULA' || !!col.formula;
         return (
           <Space size={6} wrap>
             <Select
-              size="small" style={{ width: 150 }} value={col.source_type ?? 'COMPONENT_FIELD'}
-              onChange={(v) => update(idx, { source_type: v })}
+              size="small" style={{ width: 150 }} value={col.source_type ?? 'FIXED_VALUE'}
+              onChange={(v) => update(idx, {
+                source_type: v,
+                ...(v === 'FIXED_VALUE' ? { formula: undefined } : { fixed_value: undefined }),
+              })}
               options={[
-                { label: '组件字段', value: 'COMPONENT_FIELD' },
-                { label: '变量', value: 'VARIABLE' },
-                { label: '产品属性', value: 'PRODUCT_ATTRIBUTE' },
                 { label: '固定值', value: 'FIXED_VALUE' },
                 { label: '页签连表公式', value: 'TAB_JOIN_FORMULA' },
               ]}
             />
-            {isFormula ? (
+            {col.source_type === 'FIXED_VALUE' && (
+              <Input
+                size="small"
+                style={{ width: 180, marginLeft: 8 }}
+                placeholder="固定值(留空则空白)"
+                value={col.fixed_value ?? ''}
+                onChange={(e) => update(idx, { fixed_value: e.target.value })}
+              />
+            )}
+            {col.source_type === 'TAB_JOIN_FORMULA' && (
               <Button type="link" size="small" icon={<EditOutlined />} onClick={() => onEditFormula(idx)}
                 style={{ color: '#08979c', fontFamily: 'Consolas, Monaco, monospace', fontSize: 12 }}>
                 {col.formula ? `公式：${col.formula.slice(0, 40)}` : '配置公式'}
-              </Button>
-            ) : (
-              <Button type="link" size="small" onClick={() => onEditFormula(idx)} style={{ color: '#8c8c8c' }}>
-                + 配置公式
               </Button>
             )}
           </Space>
