@@ -71,6 +71,15 @@
   box-shadow: 0 4px 12px rgba(212, 136, 6, 0.4);
 }
 
+.tm-component-item.excel {
+  background: linear-gradient(135deg, #13c2c2 0%, #08979c 100%);
+  box-shadow: 0 2px 8px rgba(8, 151, 156, 0.28);
+}
+
+.tm-component-item.excel:hover {
+  box-shadow: 0 4px 12px rgba(8, 151, 156, 0.4);
+}
+
 .tm-component-item.formula {
   background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
   box-shadow: 0 2px 8px rgba(240, 147, 251, 0.3);

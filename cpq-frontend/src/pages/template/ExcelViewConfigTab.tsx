@@ -3,6 +3,7 @@ import {
   Button, Space, message, Typography, Tag, Select, Switch, Empty, Alert, InputNumber,
 } from 'antd';
 import { SaveOutlined } from '@ant-design/icons';
+import { useDroppable } from '@dnd-kit/core';
 import { templateService } from '../../services/templateService';
 import { componentService } from '../../services/componentService';
 import type { ComponentItem } from '../component/types';
@@ -46,6 +47,12 @@ interface Props {
   isDraft: boolean;
   excelViewConfig: any;
   onChange: (config: any) => void;
+  /**
+   * 父层 DndContext.onDragEnd 检测到 EXCEL 组件拖入 'excel-dropzone' 后设置此 prop。
+   * ExcelViewConfigTab 内部监听变化，等效于用户在 Select 中选中该组件。
+   * 置 null 表示无待处理 drop。
+   */
+  pendingDropComponentId?: string | null;
   // 老 props (Caller 仍传, 不再使用)
   productAttributes?: any[];
   componentsSnapshot?: any[];
@@ -100,12 +107,18 @@ function isLegacyBareArray(raw: any): boolean {
   return Array.isArray(parsed) && parsed.length > 0;
 }
 
-const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewConfig, onChange }) => {
+const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewConfig, onChange, pendingDropComponentId }) => {
   const [config, setConfig] = useState<ExcelViewConfigV2>(() => normalizeConfig(excelViewConfig));
   const [saving, setSaving] = useState(false);
   const [excelComponents, setExcelComponents] = useState<ComponentItem[]>([]);
   const [loadingComponents, setLoadingComponents] = useState(false);
   const legacyArray = useMemo(() => isLegacyBareArray(excelViewConfig), [excelViewConfig]);
+
+  // Drop zone：接受从调色板拖入的 EXCEL 组件（@dnd-kit/core，与 DndContext 在父层 TemplateConfiguration 共享）
+  const { isOver: isDropOver, setNodeRef: setDropRef } = useDroppable({
+    id: 'excel-dropzone',
+    disabled: !isDraft,
+  });
 
   // 父组件 excelViewConfig 变更时同步
   useEffect(() => {
@@ -150,6 +163,14 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
       column_overrides: componentId === prev.excel_component_id ? prev.column_overrides : [],
     }));
   };
+
+  // 响应从调色板拖入的 EXCEL 组件（父层 DndContext.onDragEnd 检测后写入 pendingDropComponentId）
+  useEffect(() => {
+    if (pendingDropComponentId && isDraft) {
+      handleSelectComponent(pendingDropComponentId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingDropComponentId]);
 
   /**
    * 写一个覆写键。值与组件基线相同则移除该键; 若该列再无任何覆写键则整条移除(保持稀疏)。
@@ -238,27 +259,51 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
         />
       )}
 
-      <div style={{ marginBottom: 16 }}>
-        <Text strong style={{ marginRight: 8 }}>引用 EXCEL 组件:</Text>
-        <Select
-          showSearch
-          allowClear
-          style={{ width: 360 }}
-          placeholder="选择一个 EXCEL 组件"
-          loading={loadingComponents}
-          disabled={!isDraft}
-          value={config.excel_component_id ?? undefined}
-          optionFilterProp="label"
-          onChange={handleSelectComponent}
-          options={excelComponents.map(c => ({
-            label: `${c.name}${c.code ? `（${c.code}）` : ''}`,
-            value: c.id,
-          }))}
-        />
-        {selectedComponent && (
-          <Text type="secondary" style={{ marginLeft: 12, fontSize: 12 }}>
-            共 {baseColumns.length} 列
-          </Text>
+      <div
+        ref={setDropRef}
+        style={{
+          marginBottom: 16,
+          padding: '10px 12px',
+          borderRadius: 8,
+          border: isDropOver
+            ? '2px dashed #13c2c2'
+            : isDraft ? '2px dashed transparent' : 'none',
+          background: isDropOver ? 'rgba(19, 194, 194, 0.06)' : 'transparent',
+          transition: 'border-color 0.15s, background 0.15s',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: isDropOver && !config.excel_component_id ? 8 : 0 }}>
+          <Text strong style={{ marginRight: 8 }}>引用 EXCEL 组件:</Text>
+          <Select
+            showSearch
+            allowClear
+            style={{ width: 360 }}
+            placeholder="选择或拖入一个 EXCEL 组件"
+            loading={loadingComponents}
+            disabled={!isDraft}
+            value={config.excel_component_id ?? undefined}
+            optionFilterProp="label"
+            onChange={handleSelectComponent}
+            options={excelComponents.map(c => ({
+              label: `${c.name}${c.code ? `（${c.code}）` : ''}`,
+              value: c.id,
+            }))}
+          />
+          {selectedComponent && (
+            <Text type="secondary" style={{ marginLeft: 12, fontSize: 12 }}>
+              共 {baseColumns.length} 列
+            </Text>
+          )}
+        </div>
+        {isDropOver && (
+          <div style={{ fontSize: 12, color: '#08979c', textAlign: 'center', paddingTop: 4 }}>
+            松开以设置 EXCEL 组件
+          </div>
+        )}
+        {isDraft && !isDropOver && (
+          <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
+            也可将左侧 EXCEL 组件拖入此区域
+          </div>
         )}
       </div>
 

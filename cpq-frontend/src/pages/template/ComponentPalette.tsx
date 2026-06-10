@@ -22,8 +22,8 @@ interface ComponentPaletteProps {
   onAddComponent: (componentId: string, componentName: string) => void;
 }
 
-const DraggableComponentCard = ({ comp, type }: { comp: CompItem; type: 'normal' | 'subtotal' }) => {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+const DraggableComponentCard = ({ comp, type }: { comp: CompItem; type: 'normal' | 'subtotal' | 'excel' }) => {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `component-${comp.id}`,
     data: { type: 'component', componentId: comp.id, componentName: comp.name, componentType: comp.componentType },
   });
@@ -34,7 +34,8 @@ const DraggableComponentCard = ({ comp, type }: { comp: CompItem; type: 'normal'
     cursor: isDragging ? 'grabbing' : 'grab',
   };
 
-  const isSubtotal = type === 'subtotal';
+  const typeClass = type === 'subtotal' ? ' subtotal' : type === 'excel' ? ' excel' : '';
+  const prefix = type === 'subtotal' ? '💰 ' : type === 'excel' ? '📊 ' : '';
 
   return (
     <div
@@ -42,10 +43,10 @@ const DraggableComponentCard = ({ comp, type }: { comp: CompItem; type: 'normal'
       style={style}
       {...listeners}
       {...attributes}
-      className={`tm-component-item${isSubtotal ? ' subtotal' : ''}`}
+      className={`tm-component-item${typeClass}`}
     >
       <div style={{ fontWeight: 600, fontSize: 12 }}>
-        {isSubtotal ? '💰 ' : ''}{comp.name}
+        {prefix}{comp.name}
       </div>
       <div className="tm-component-item-sub">{comp.code}</div>
     </div>
@@ -94,8 +95,8 @@ const ComponentPalette: React.FC<ComponentPaletteProps> = ({ onAddComponent: _on
   useEffect(() => { loadComponents(); }, [loadComponents]);
 
   const normalComps = components.filter(c => c.componentType === 'NORMAL');
+  const excelComps = components.filter(c => c.componentType === 'EXCEL');
   const subtotalComps = components.filter(c => c.componentType === 'SUBTOTAL');
-  // EXCEL 组件不在普通页签桶里（=== 'NORMAL' 过滤已排除）；EXCEL 调色板分组渲染见 Phase 5.2。
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -137,6 +138,18 @@ const ComponentPalette: React.FC<ComponentPaletteProps> = ({ onAddComponent: _on
               ) : (
                 normalComps.map(comp => (
                   <DraggableComponentCard key={comp.id} comp={comp} type="normal" />
+                ))
+              )}
+            </div>
+
+            {/* EXCEL components */}
+            <div className="tm-panel-section">
+              <div className="tm-panel-title" style={{ borderBottomColor: '#08979c' }}>EXCEL 组件</div>
+              {excelComps.length === 0 ? (
+                <div style={{ color: '#999', fontSize: 12 }}>暂无 EXCEL 组件</div>
+              ) : (
+                excelComps.map(comp => (
+                  <DraggableComponentCard key={comp.id} comp={comp} type="excel" />
                 ))
               )}
             </div>

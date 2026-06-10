@@ -213,17 +213,20 @@ const TemplateConfiguration: React.FC = () => {
   };
 
   // ---- Drag state for DragOverlay ----
-  const [activeDrag, setActiveDrag] = useState<{ id: string; type: string; label: string } | null>(null);
+  const [activeDrag, setActiveDrag] = useState<{ id: string; type: string; label: string; componentType?: string } | null>(null);
 
   const handleDragStart = (event: any) => {
     const { active } = event;
     const data = active.data.current;
     if (data?.type === 'component') {
-      setActiveDrag({ id: active.id, type: 'component', label: data.componentName });
+      setActiveDrag({ id: active.id, type: 'component', label: data.componentName, componentType: data.componentType });
     } else if (data?.type === 'formula') {
       setActiveDrag({ id: active.id, type: 'formula', label: data.formulaName });
     }
   };
+
+  // ---- Excel component drop handler (called from handleDragEnd + forwarded to ExcelViewConfigTab) ----
+  const [droppedExcelComponentId, setDroppedExcelComponentId] = useState<string | null>(null);
 
   // ---- Drag end handler ----
   const handleDragEnd = (event: any) => {
@@ -235,6 +238,7 @@ const TemplateConfiguration: React.FC = () => {
     if (over.id === 'canvas-dropzone' && active.data.current?.type === 'component') {
       const { componentId, componentName, componentType } = active.data.current;
       if (componentType === 'SUBTOTAL') return; // SUBTOTAL goes to subtotal-dropzone only
+      if (componentType === 'EXCEL') return; // EXCEL goes to excel-dropzone only
       handleAddComponent(componentId, componentName);
       return;
     }
@@ -254,6 +258,17 @@ const TemplateConfiguration: React.FC = () => {
         }
         handleAddComponent(componentId, componentName);
       })();
+      return;
+    }
+
+    // EXCEL component dropped on excel-dropzone — set excel_component_id via callback
+    if (over.id === 'excel-dropzone' && active.data.current?.type === 'component') {
+      const { componentId, componentType } = active.data.current;
+      if (componentType !== 'EXCEL') {
+        message.warning('Excel 视图仅接受 EXCEL 类型组件');
+        return;
+      }
+      setDroppedExcelComponentId(componentId);
       return;
     }
 
@@ -458,6 +473,7 @@ const TemplateConfiguration: React.FC = () => {
                           isDraft={isDraft || false}
                           excelViewConfig={excelViewConfig}
                           onChange={setExcelViewConfig}
+                          pendingDropComponentId={droppedExcelComponentId}
                           productAttributes={productAttrs}
                           componentsSnapshot={availableComponents}
                         />
@@ -538,15 +554,24 @@ const TemplateConfiguration: React.FC = () => {
         activeDrag.type === 'component' ? (
           <div style={{
             padding: '12px 16px',
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            background: activeDrag.componentType === 'EXCEL'
+              ? 'linear-gradient(135deg, #13c2c2 0%, #08979c 100%)'
+              : activeDrag.componentType === 'SUBTOTAL'
+              ? 'linear-gradient(135deg, #f5a623 0%, #d48806 100%)'
+              : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
             color: '#fff',
             borderRadius: 8,
             fontSize: 13,
             fontWeight: 600,
-            boxShadow: '0 8px 24px rgba(102,126,234,0.4)',
+            boxShadow: activeDrag.componentType === 'EXCEL'
+              ? '0 8px 24px rgba(8,151,156,0.4)'
+              : activeDrag.componentType === 'SUBTOTAL'
+              ? '0 8px 24px rgba(212,136,6,0.4)'
+              : '0 8px 24px rgba(102,126,234,0.4)',
             cursor: 'grabbing',
             width: 200,
           }}>
+            {activeDrag.componentType === 'EXCEL' ? '📊 ' : activeDrag.componentType === 'SUBTOTAL' ? '💰 ' : ''}
             {activeDrag.label}
           </div>
         ) : (
