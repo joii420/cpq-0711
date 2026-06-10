@@ -27,6 +27,7 @@ import PathPickerDrawer from './PathPickerDrawer';
 import SqlViewListPanel from './SqlViewListPanel';
 import TabJoinFormulaDrawer, { type TabJoinFormulaSavePayload } from '../template/TabJoinFormulaDrawer';
 import { tokensToDrawerExpression } from './formulaSerialize';
+import { SortableTable, DragHandle } from '../../components/SortableTable';
 import { runBatch } from '../../components/SelectableTable';
 import './styles.css';
 
@@ -417,6 +418,7 @@ const ExcelColumnPanel: React.FC<{
     onChange([...columns, { col_key: `col_${columns.length + 1}`, title: '', source_type: 'FIXED_VALUE', hidden: false }]);
 
   const tableColumns = [
+    { key: 'drag', width: 40, align: 'center' as const, render: () => <DragHandle /> },
     {
       title: '列名(title)', key: 'title',
       render: (_: unknown, _r: ExcelColumn, idx: number) => (
@@ -497,10 +499,11 @@ const ExcelColumnPanel: React.FC<{
           添加列
         </Button>
       </div>
-      <Table
-        dataSource={columns.map((c, i) => ({ ...c, _idx: i }))}
+      <SortableTable
+        rowKey="col_key"
+        dataSource={columns}
         columns={tableColumns}
-        rowKey={(_r: any) => String(_r._idx)}
+        onReorder={(next) => onChange(next)}
         pagination={false}
         size="small"
         locale={{ emptyText: '暂无列，点击"添加列"' }}
