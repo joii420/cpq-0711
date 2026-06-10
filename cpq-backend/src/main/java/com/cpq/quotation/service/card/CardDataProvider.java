@@ -27,6 +27,7 @@ public final class CardDataProvider {
     // 已解析有效行模式字段（fromEffectiveRows 专用）
     private Map<String, List<Map<String, Object>>> effRows;
     private Map<String, BigDecimal> effSubtotal;
+    private Map<String, Map<String, BigDecimal>> effSubtotalByColumn; // Plan 2c
 
     /** 供 fromEffectiveRows 使用的私有无参构造器。 */
     private CardDataProvider() {}
@@ -46,10 +47,13 @@ public final class CardDataProvider {
         CardDataProvider p = new CardDataProvider();
         p.effRows = new HashMap<>();
         p.effSubtotal = new HashMap<>();
+        p.effSubtotalByColumn = new HashMap<>();
         if (eff != null) {
             for (var e : eff.entrySet()) {
                 p.effRows.put(e.getKey(), e.getValue().rows != null ? e.getValue().rows : List.of());
                 p.effSubtotal.put(e.getKey(), e.getValue().subtotal);
+                p.effSubtotalByColumn.put(e.getKey(),
+                    e.getValue().subtotalByColumn != null ? e.getValue().subtotalByColumn : Map.of());
             }
         }
         return p;
@@ -94,6 +98,13 @@ public final class CardDataProvider {
         if (effSubtotal != null) return effSubtotal.get(tabKey);
         QuotationLineComponentData d = resolve(tabKey);
         return d == null ? null : d.subtotal;
+    }
+
+    /** Plan 2c：某页签某小计列的总计；无 per-column 数据（持久化路径/未命中）→ null。 */
+    public BigDecimal subtotalOfColumn(String tabKey, String column) {
+        if (effSubtotalByColumn == null) return null;
+        Map<String, BigDecimal> m = effSubtotalByColumn.get(tabKey);
+        return m == null ? null : m.get(column);
     }
 
     public boolean hasTab(String tabKey) {

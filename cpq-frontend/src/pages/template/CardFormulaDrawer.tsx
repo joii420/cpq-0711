@@ -13,7 +13,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Drawer, Button, Form, Input, Select, Radio, Space, Switch, InputNumber,
-  Divider, Typography, Tag, message, Spin, Tooltip, Alert,
+  Divider, Typography, Tag, message, Spin, Tooltip, Alert, Segmented,
 } from 'antd';
 import { PlusOutlined, DeleteOutlined, FunctionOutlined } from '@ant-design/icons';
 import { templateService } from '../../services/templateService';
@@ -22,6 +22,7 @@ import { quotationService } from '../../services/quotationService';
 import { genAlias, expandIn, validateCardFormula, buildCondRows, parseCondToRows, nextAggRefKey } from './cardFormula';
 // CardRefSpec 是纯类型，必须 import type（否则 Vite/esbuild 运行时 ESM 链接报错 → 整个 SPA 白屏）
 import type { CardRefSpec, CondRhsType, CondRowSpec } from './cardFormula';
+import { CARD_OPERATIONS, opToRefType, refTypeToOp } from './cardFormulaOps';
 
 const { Text, Paragraph } = Typography;
 
@@ -78,6 +79,7 @@ interface TabInfo {
   componentId: string;
   sortOrder: number;
   fields: string[];     // 中文字段名列表
+  subtotalFields: string[]; // Plan 2c：is_subtotal 列名（多于 1 列时供 [页签.列名] 选）
 }
 
 // ─── 工具函数 ────────────────────────────────────────────────────────────────
@@ -167,15 +169,18 @@ function buildInsertResult(
   aggFunc: AggFunc,
   aggExpr: string,          // 用户填的行内别名表达式
   aggRefKey: string,        // 聚合唯一 refKey（页签名#N，由 handleInsertRef 算好传入）
+  subtotalCol: string,      // Plan 2c：选中的具体小计列（空 = 各列之和）
 ): InsertResult | null {
   const tabName = tab.tabName;
 
   if (refType === 'subtotal') {
-    const placeholder = `${tabName}.小计`;
+    // Plan 2c：选了具体小计列 → __subtotal__:列名 + placeholder 用列名；否则裸 __subtotal__（各列之和）。
+    const col = subtotalCol && subtotalCol.trim() ? subtotalCol.trim() : '';
+    const placeholder = col ? `${tabName}.${col}` : `${tabName}.小计`;
     return {
       placeholder,
       refKey: placeholder,
-      ref: { tab: tab.tabKey, field: '__subtotal__' },
+      ref: { tab: tab.tabKey, field: col ? `__subtotal__:${col}` : '__subtotal__' },
     };
   }
 
@@ -289,8 +294,14 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
   const [conds, setConds] = useState<CondRow[]>([{ ...DEFAULT_COND_ROW }]);
   const [aggFunc, setAggFunc] = useState<AggFunc>('SUM');
   const [aggExpr, setAggExpr] = useState<string>('');
+  const [aggExprChips, setAggExprChips] = useState<string[]>([]);
   // 正在编辑回填的 ref key（点标签回填时设置）；为 null 表示新建插入
   const [editingRefKey, setEditingRefKey] = useState<string | null>(null);
+  // Plan 2c：所选页签的具体小计列（多于 1 列时显示子选择器；空 = 各列之和）
+  const [selSubtotalCol, setSelSubtotalCol] = useState<string>('');
+
+  // ── 简单/高级模式 ────────────────────────────────────────────────
+  const [mode, setMode] = useState<'simple' | 'advanced'>('simple');
 
   // ── 配置说明展开态 ───────────────────────────────────────────────
   const [showHelp, setShowHelp] = useState(false);
@@ -300,6 +311,11 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
 
   // ── TextArea ref (光标插入) ──────────────────────────────────────
   const textAreaRef = useRef<any>(null);
+
+  // ── chips → aggExpr 同步（简单模式下 chip 构建器驱动 aggExpr 字符串） ─────────
+  useEffect(() => {
+    if (mode === 'simple') setAggExpr(aggExprChips.join(' '));
+  }, [aggExprChips, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Drawer 打开时，重置状态并加载页签 ───────────────────────────
   useEffect(() => {
@@ -313,6 +329,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
     setConds([{ ...DEFAULT_COND_ROW }]);
     setAggFunc('SUM');
     setAggExpr('');
+    setAggExprChips([]);
     setEditingRefKey(null);
     setTrial({});
     loadTabs();
@@ -329,10 +346,18 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
       await Promise.all(
         tcList.map(async (tc: any) => {
           let fields: string[] = [];
+          // Plan 2c：同源收集 is_subtotal 列名。
+          let subtotalFields: string[] = [];
+          const collectSubtotal = (arr: any[]) => arr
+            .filter((f: any) => f.is_subtotal || f.isSubtotal)
+            .map((f: any) => f.field_name || f.name || '')
+            .filter(Boolean);
           if (Array.isArray(tc.fields) && tc.fields.length > 0) {
             fields = tc.fields.map((f: any) => f.field_name || f.name || '');
+            subtotalFields = collectSubtotal(tc.fields);
           } else if (Array.isArray(tc.fieldsOverride) && tc.fieldsOverride.length > 0) {
             fields = (tc.fieldsOverride as any[]).map((f: any) => f.field_name || f.name || '');
+            subtotalFields = collectSubtotal(tc.fieldsOverride);
           } else {
             // 从 component 详情获取
             try {
@@ -340,6 +365,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
               const comp = compRes.data;
               const rawFields: any[] = Array.isArray(comp?.fields) ? comp.fields : [];
               fields = rawFields.map((f: any) => f.field_name || f.name || '').filter(Boolean);
+              subtotalFields = collectSubtotal(rawFields);
             } catch {
               fields = [];
             }
@@ -350,6 +376,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
             componentId: tc.componentId,
             sortOrder: tc.sortOrder ?? 0,
             fields,
+            subtotalFields,
           });
         }),
       );
@@ -429,7 +456,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
     const aggRefKey = refType === 'aggregate'
       ? nextAggRefKey(selTab.tabName, Object.keys(refs))
       : '';
-    const result = buildInsertResult(refType, selTab, selField, conds, aggFunc, aggExpr, aggRefKey);
+    const result = buildInsertResult(refType, selTab, selField, conds, aggFunc, aggExpr, aggRefKey, selSubtotalCol);
     if (!result) {
       message.warning('请补全引用信息（字段不能为空）');
       return;
@@ -454,6 +481,11 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
       // 把 ref 写入 refs 状态
       setRefs(prev => ({ ...prev, [result.refKey]: result.ref }));
       message.success(`已插入引用：${token}`);
+    }
+    // 聚合插入成功后清空 chip 构建器
+    if (refType === 'aggregate') {
+      setAggExpr('');
+      setAggExprChips([]);
     }
   };
 
@@ -517,6 +549,8 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
 
   // ── 渲染 ─────────────────────────────────────────────────────────
   const fieldOptions = (selTab?.fields || []).map(f => ({ label: f, value: f }));
+  // Plan 2c：所选页签的小计列选项（多于 1 列时显示子选择器）。
+  const subtotalColOptions = (selTab?.subtotalFields || []).map(c => ({ label: c, value: c }));
 
   // RHS=产品字段 候选：所有页签 fields 并集 + 料号(__partNo__)（决策A：纯前端拼，不含组件外属性）
   const productFieldOptions = (() => {
@@ -537,7 +571,23 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
 
   return (
     <Drawer
-      title={`编辑卡片公式 — 列 ${value.col_key}（${value.title}）`}
+      title={
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <span>{`编辑卡片公式 — 列 ${value.col_key}（${value.title}）`}</span>
+          <Segmented
+            size="small"
+            value={mode}
+            onChange={(v) => {
+              const next = v as 'simple' | 'advanced';
+              setMode(next);
+              if (next === 'simple' && refType === 'aggregate' && aggFunc !== 'SUM') {
+                setAggFunc('SUM');
+              }
+            }}
+            options={[{ label: '简单', value: 'simple' }, { label: '高级', value: 'advanced' }]}
+          />
+        </div>
+      }
       placement="right"
       width={960}
       open={open}
@@ -591,7 +641,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
             <code>[页签名.小计]</code>（小计）、
             <code>[页签名.字段名]</code>（首行/按条件单值）、
             <code>SUM_OVER([页签名] WHERE 条件, 行内别名表达式)</code>（聚合）；
-            裸 <code>[A]</code> 引用本表其他列。WHERE/cond 用 JEXL 算符（<code>==  !=  &gt;  &lt;  &amp;&amp;  ||</code>）。
+            裸 <code>[A]</code> 引用本表其他列。{mode === 'advanced' && <>WHERE/cond 用 JEXL 算符（<code>==  !=  &gt;  &lt;  &amp;&amp;  ||</code>）。</>}
           </Paragraph>
 
           {/* ── 配置说明（可展开）── */}
@@ -726,7 +776,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
                   style={{ width: 280 }}
                   placeholder="请选择页签"
                   value={selTabKey || undefined}
-                  onChange={v => { setSelTabKey(v); setSelField(''); setConds([{ ...DEFAULT_COND_ROW }]); }}
+                  onChange={v => { setSelTabKey(v); setSelField(''); setSelSubtotalCol(''); setConds([{ ...DEFAULT_COND_ROW }]); }}
                   options={tabs.map(t => ({
                     label: `${t.tabName}（${t.fields.length} 个字段）`,
                     value: t.tabKey,
@@ -737,15 +787,30 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
 
               {/* 引用类型 */}
               <Form.Item label="引用类型">
-                <Radio.Group
-                  value={refType}
-                  onChange={e => { setRefType(e.target.value); setSelField(''); setConds([{ ...DEFAULT_COND_ROW }]); }}
-                >
-                  <Radio.Button value="subtotal">页签小计</Radio.Button>
-                  <Radio.Button value="first_row">字段·首行</Radio.Button>
-                  <Radio.Button value="row_where">字段·按条件取行</Radio.Button>
-                  <Radio.Button value="aggregate">聚合（SUM/AVG…）</Radio.Button>
-                </Radio.Group>
+                {mode === 'simple' ? (
+                  <Select
+                    style={{ width: 280 }}
+                    value={refTypeToOp(refType, aggFunc)}
+                    onChange={(opKey) => {
+                      const { refType: rt, aggFunc: af } = opToRefType(opKey);
+                      setRefType(rt as RefType);
+                      if (af) setAggFunc(af as AggFunc);
+                      setSelField('');
+                      setConds([{ ...DEFAULT_COND_ROW }]);
+                    }}
+                    options={CARD_OPERATIONS.filter((o) => o.simple).map((o) => ({ label: o.label, value: o.key }))}
+                  />
+                ) : (
+                  <Radio.Group
+                    value={refType}
+                    onChange={e => { setRefType(e.target.value); setSelField(''); setSelSubtotalCol(''); setConds([{ ...DEFAULT_COND_ROW }]); }}
+                  >
+                    <Radio.Button value="subtotal">页签小计</Radio.Button>
+                    <Radio.Button value="first_row">字段·首行</Radio.Button>
+                    <Radio.Button value="row_where">字段·按条件取行</Radio.Button>
+                    <Radio.Button value="aggregate">聚合（SUM/AVG…）</Radio.Button>
+                  </Radio.Group>
+                )}
               </Form.Item>
 
               {/* 字段选择（非小计时显示） */}
@@ -764,27 +829,64 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
                 </Form.Item>
               )}
 
+              {/* Plan 2c：页签小计 + 多小计列 → 选具体列 */}
+              {refType === 'subtotal' && subtotalColOptions.length > 1 && (
+                <Form.Item label="小计列">
+                  <Select
+                    style={{ width: 220 }}
+                    placeholder="选具体小计列（不选=各列之和）"
+                    allowClear
+                    value={selSubtotalCol || undefined}
+                    onChange={(v) => setSelSubtotalCol(v ?? '')}
+                    options={subtotalColOptions}
+                  />
+                </Form.Item>
+              )}
+
               {/* 聚合函数 + 行内表达式 */}
               {refType === 'aggregate' && (
                 <>
-                  <Form.Item label="聚合函数">
-                    <Select
-                      style={{ width: 200 }}
-                      value={aggFunc}
-                      onChange={setAggFunc}
-                      options={AGG_FUNC_OPTIONS}
-                    />
-                  </Form.Item>
+                  {mode === 'advanced' && (
+                    <Form.Item label="聚合函数">
+                      <Select
+                        style={{ width: 200 }}
+                        value={aggFunc}
+                        onChange={setAggFunc}
+                        options={AGG_FUNC_OPTIONS}
+                      />
+                    </Form.Item>
+                  )}
                   <Form.Item
-                    label="行内聚合表达式（用中文字段名，别名将自动替换）"
-                    tooltip="示例：单价*数量；系统会自动把中文字段名替换成别名（c0/c1...）再写入 cols"
+                    label={mode === 'advanced' ? '行内聚合表达式（用中文字段名，别名将自动替换）' : '行内聚合表达式'}
+                    tooltip={mode === 'advanced' ? '示例：单价*数量；系统会自动把中文字段名替换成别名（c0/c1...）再写入 cols' : '点选字段和运算符拼出每行的计算式，如 单价 × 数量'}
                   >
-                    <Input
-                      style={{ width: 360, fontFamily: 'monospace' }}
-                      placeholder="如：单价*数量  或  1（计数时填1）"
-                      value={aggExpr}
-                      onChange={e => setAggExpr(e.target.value)}
-                    />
+                    {mode === 'simple' ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ border: '1px dashed #c0c4cc', borderRadius: 4, minHeight: 34, padding: '4px 6px', display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', background: '#f9f9f9' }}>
+                          {aggExprChips.length === 0
+                            ? <span style={{ color: '#c0c4cc', fontSize: 12 }}>点选下方字段/运算符拼出要汇总的算式（如 单价 × 数量）</span>
+                            : aggExprChips.map((c, i) => (
+                                <Tag key={i} closable onClose={(e) => { e.preventDefault(); setAggExprChips((p) => p.filter((_, j) => j !== i)); }} style={{ margin: 0 }}>{c}</Tag>
+                              ))}
+                        </div>
+                        <Space wrap size={[6, 6]}>
+                          <Select size="small" style={{ width: 150 }} placeholder="字段" value={undefined as any}
+                            options={(selTab?.fields ?? []).map((f: any) => ({ label: f, value: f }))}
+                            onChange={(v) => setAggExprChips((p) => [...p, v])} showSearch />
+                          {(['+', '-', '×', '÷', '(', ')'] as const).map((sym) => (
+                            <Button key={sym} size="small" style={{ minWidth: 30 }} onClick={() => setAggExprChips((p) => [...p, sym === '×' ? '*' : sym === '÷' ? '/' : sym])}>{sym}</Button>
+                          ))}
+                          <Button size="small" danger disabled={aggExprChips.length === 0} onClick={() => setAggExprChips((p) => p.slice(0, -1))}>删末</Button>
+                        </Space>
+                      </div>
+                    ) : (
+                      <Input
+                        style={{ width: 360, fontFamily: 'monospace' }}
+                        placeholder="如：单价*数量  或  1（计数时填1）"
+                        value={aggExpr}
+                        onChange={e => setAggExpr(e.target.value)}
+                      />
+                    )}
                   </Form.Item>
                 </>
               )}
@@ -920,6 +1022,19 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
                       const aliasMap = buildAliasMap(usedFields);
                       const preview = buildCondJexl(conds, aliasMap);
                       if (!preview) return null;
+                      if (mode === 'simple') {
+                        const simpleText = valid
+                          .map((c, idx) => `${idx > 0 ? (valid[idx - 1].logic === 'or' ? '或 ' : '且 ') : ''}${c.field} ${opLabel(c.op)} ${isNaN(Number(c.value)) ? `'${c.value}'` : c.value}`)
+                          .join('  ');
+                        return (
+                          <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
+                            <Text type="secondary" style={{ fontSize: 11 }}>条件预览：</Text>
+                            <code style={{ fontSize: 11, background: '#f5f5f5', padding: '2px 6px', borderRadius: 3 }}>
+                              {simpleText}
+                            </code>
+                          </div>
+                        );
+                      }
                       return (
                         <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
                           <Text type="secondary" style={{ fontSize: 11 }}>生成条件预览：</Text>

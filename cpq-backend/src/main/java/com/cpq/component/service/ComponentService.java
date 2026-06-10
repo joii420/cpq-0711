@@ -379,7 +379,6 @@ public class ComponentService {
     }
 
     private void validateFields(List<Map<String, Object>> fields) {
-        int subtotalCount = 0;
         for (Map<String, Object> field : fields) {
             Object fieldType = field.get("field_type");
             if (fieldType == null) {
@@ -388,6 +387,18 @@ public class ComponentService {
             if (!VALID_FIELD_TYPES.contains(fieldType.toString())) {
                 throw new BusinessException("Invalid field_type: " + fieldType +
                     ". Must be one of: " + VALID_FIELD_TYPES);
+            }
+            // Plan 3a：条件公式校验 —— 默认必填 + 至少 1 条规则。
+            Object cf = field.get("conditional_formula");
+            if (cf instanceof Map<?, ?> cfm) {
+                Object def = cfm.get("default");
+                if (def == null || String.valueOf(def).isBlank()) {
+                    throw new BusinessException("字段「" + field.get("name") + "」条件公式缺少默认公式（default）");
+                }
+                Object rules = cfm.get("rules");
+                if (!(rules instanceof java.util.List<?> rl) || rl.isEmpty()) {
+                    throw new BusinessException("字段「" + field.get("name") + "」条件公式至少需 1 条规则");
+                }
             }
             // DATA_SOURCE requires datasource_binding (H2: 4 种 type 各自校验关键配置)
             if ("DATA_SOURCE".equals(fieldType.toString())) {
@@ -430,15 +441,8 @@ public class ComponentService {
                     }
                 }
             }
-            // Count is_subtotal
-            Object isSubtotal = field.get("is_subtotal");
-            if (Boolean.TRUE.equals(isSubtotal) || "true".equals(String.valueOf(isSubtotal))) {
-                subtotalCount++;
-            }
         }
-        if (subtotalCount > 1) {
-            throw new BusinessException("At most one field can have is_subtotal=true");
-        }
+        // 多小计列（Plan 2-核心）：不再限制 is_subtotal 数量，每个被标记字段各算一列总计。
     }
 
     /** Package-private for unit testing (cross_tab_ref structural validation). */
@@ -465,6 +469,32 @@ public class ComponentService {
                         "字段 '" + field.get("name") + "' 绑定的公式 '" + boundName + "' 不存在");
                 }
             }
+            // Plan 3c：条件公式引用校验 —— rules[].formula + default 必须存在。
+            Object cf = field.get("conditional_formula");
+            if (cf instanceof Map<?, ?> cfm) {
+                Object rules = cfm.get("rules");
+                if (rules instanceof java.util.List<?> rl) {
+                    for (Object r : rl) {
+                        if (r instanceof Map<?, ?> rm) {
+                            Object fn = rm.get("formula");
+                            if (fn != null && !fn.toString().isBlank() && !formulaNames.contains(fn.toString())) {
+                                throw new BusinessException("字段「" + field.get("name") + "」条件规则引用的公式 '" + fn + "' 不存在");
+                            }
+                        }
+                    }
+                }
+                Object def = cfm.get("default");
+                if (def != null && !def.toString().isBlank() && !formulaNames.contains(def.toString())) {
+                    throw new BusinessException("字段「" + field.get("name") + "」默认公式 '" + def + "' 不存在");
+                }
+            }
+        }
+        // Plan 3c：硬环检测（含条件依赖）。转 JsonNode 复用引擎依赖图(buildFormulaDeps)。
+        com.fasterxml.jackson.databind.ObjectMapper cycMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        List<String> cyclic = new com.cpq.quotation.service.FormulaCalculator()
+            .cyclicFormulaNodes(cycMapper.valueToTree(fields), cycMapper.valueToTree(formulas));
+        if (!cyclic.isEmpty()) {
+            throw new BusinessException("公式存在循环引用: " + String.join(", ", cyclic));
         }
 
         // Validate cross_tab_ref tokens in formula expressions

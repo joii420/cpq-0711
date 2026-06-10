@@ -1,0 +1,48 @@
+{
+  "cases": [
+    { "name": "leaf eq string true",
+      "tree": { "kind":"leaf","left":"类型","op":"eq","rhs":{"type":"literal","value":"车削"} },
+      "values": { "类型":"车削" }, "expected": true },
+    { "name": "leaf eq string false",
+      "tree": { "kind":"leaf","left":"类型","op":"eq","rhs":{"type":"literal","value":"车削"} },
+      "values": { "类型":"铣削" }, "expected": false },
+    { "name": "leaf gt numeric true",
+      "tree": { "kind":"leaf","left":"数量","op":"gt","rhs":{"type":"literal","value":"10"} },
+      "values": { "数量":15 }, "expected": true },
+    { "name": "leaf gt numeric false",
+      "tree": { "kind":"leaf","left":"数量","op":"gt","rhs":{"type":"literal","value":"10"} },
+      "values": { "数量":5 }, "expected": false },
+    { "name": "leaf in true",
+      "tree": { "kind":"leaf","left":"类型","op":"in","rhs":{"type":"literal","value":"车削,铣削"} },
+      "values": { "类型":"铣削" }, "expected": true },
+    { "name": "leaf column compare",
+      "tree": { "kind":"leaf","left":"投料量","op":"gt","rhs":{"type":"column","value":"回料量"} },
+      "values": { "投料量":8, "回料量":3 }, "expected": true },
+    { "name": "leaf ne true",
+      "tree": { "kind":"leaf","left":"类型","op":"ne","rhs":{"type":"literal","value":"车削"} },
+      "values": { "类型":"铣削" }, "expected": true },
+    { "name": "group and true",
+      "tree": { "kind":"group","logic":"and","children":[
+        { "kind":"leaf","left":"类型","op":"eq","rhs":{"type":"literal","value":"车削"} },
+        { "kind":"leaf","left":"数量","op":"gt","rhs":{"type":"literal","value":"10"} } ] },
+      "values": { "类型":"车削","数量":12 }, "expected": true },
+    { "name": "group and false",
+      "tree": { "kind":"group","logic":"and","children":[
+        { "kind":"leaf","left":"类型","op":"eq","rhs":{"type":"literal","value":"车削"} },
+        { "kind":"leaf","left":"数量","op":"gt","rhs":{"type":"literal","value":"10"} } ] },
+      "values": { "类型":"车削","数量":5 }, "expected": false },
+    { "name": "nested (A and B) or C",
+      "tree": { "kind":"group","logic":"or","children":[
+        { "kind":"group","logic":"and","children":[
+          { "kind":"leaf","left":"类型","op":"eq","rhs":{"type":"literal","value":"车削"} },
+          { "kind":"leaf","left":"数量","op":"gt","rhs":{"type":"literal","value":"10"} } ] },
+        { "kind":"leaf","left":"加急","op":"eq","rhs":{"type":"literal","value":"是"} } ] },
+      "values": { "类型":"铣削","数量":1,"加急":"是" }, "expected": true },
+    { "name": "empty and group true",
+      "tree": { "kind":"group","logic":"and","children":[] },
+      "values": {}, "expected": true },
+    { "name": "missing column false",
+      "tree": { "kind":"leaf","left":"缺失","op":"gt","rhs":{"type":"literal","value":"1"} },
+      "values": {}, "expected": false }
+  ]
+}

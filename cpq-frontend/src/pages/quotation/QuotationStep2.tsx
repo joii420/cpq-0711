@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Popover, Button, Segmented, Alert, Space, message, Dropdown } from 'antd';
 import { DatabaseOutlined, SettingOutlined, PlusOutlined, DownOutlined } from '@ant-design/icons';
 import { evaluateExpression, getGlobalPathCache, evaluateListFormulaString } from '../../utils/formulaEngine';
+import { evalCondTree, condTreeColumns, type CondTree } from '../../utils/condTree';
 import { usePathFormulaCache } from './usePathFormulaCache';
 import { globalVariableService, type GlobalVariableDefinition } from '../../services/globalVariableService';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
@@ -22,6 +23,7 @@ import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
 import { quotationService } from '../../services/quotationService';
 import type { CardStructure, CardValues } from '../../services/quotationService';
 import { computeRowKey } from './useCardSnapshots';
+import { findDuplicateRowKeys } from './rowDedup';
 import { partVersionService } from '../../services/partVersionService';
 import PartVersionDrawer from '../../components/PartVersionDrawer';
 import { templateService } from '../../services/templateService';
@@ -52,6 +54,8 @@ export interface ComponentField {
   content?: string;
   is_amount?: boolean;
   is_subtotal?: boolean;
+  /** Plan 3a：条件公式。存在即走条件模式（优先于 formula_name）。 */
+  conditional_formula?: { rules: { when: CondTree; formula: string }[]; default: string };
   is_required?: boolean;
   formula_name?: string;  // FORMULA fields: which formula definition to use
   datasource_binding?: {
@@ -389,24 +393,48 @@ function computeAllFormulas(
   // 由 buildCrossTabRows 按组件拓扑序构建后透传; cross_tab_ref token 据此跨 Tab 取数聚合。
   // 不传则保持旧行为 (无跨 Tab 引用时 token 返 0/兜底)。
   crossTabRows?: Record<string, Array<Record<string, any>>>,
+  // Plan 2b：上一行全量公式值（按字段名）。提供后 previous_row_subtotal 按"当前列"取上一行本列值；
+  // 不传则退回 previousRowSubtotal 标量（旧行为）。
+  previousRowValues?: Record<string, number | null>,
 ): Record<string, number | null> {
   if (!comp.fields || !comp.formulas) return {};
 
   // Collect FORMULA fields and their resolved formulas
-  const formulaFields: { name: string; formula: ComponentFormula }[] = [];
+  // Plan 3a：FORMULA 字段可为单一模式(formula) 或条件模式(conditional)。
+  const formulaFields: { name: string; formula?: ComponentFormula;
+    conditional?: { rules: { when: CondTree; formula: ComponentFormula }[]; default?: ComponentFormula } }[] = [];
   for (const f of comp.fields) {
     if (f.field_type !== 'FORMULA') continue;
     const name = f.name || f.key || '';
-    const formula = resolveFormula(comp, name);
-    if (formula) formulaFields.push({ name, formula });
+    const cf = (f as any).conditional_formula;
+    if (cf && Array.isArray(cf.rules)) {
+      const rules = cf.rules
+        .map((r: any) => ({ when: r.when as CondTree, formula: comp.formulas!.find(x => x.name === r.formula)! }))
+        .filter((r: any) => r.formula);
+      const def = cf.default ? comp.formulas!.find(x => x.name === cf.default) : undefined;
+      formulaFields.push({ name, conditional: { rules, default: def } });
+    } else {
+      const formula = resolveFormula(comp, name);
+      if (formula) formulaFields.push({ name, formula });
+    }
   }
   if (formulaFields.length === 0) return {};
 
-  // Build dependency graph among formula fields
+  // Build dependency graph among formula fields（Plan 3a：条件字段取并集依赖）
   const formulaNameSet = new Set(formulaFields.map(ff => ff.name));
   const deps: Record<string, string[]> = {};
   for (const ff of formulaFields) {
-    deps[ff.name] = getFormulaDeps(ff.formula).filter(d => formulaNameSet.has(d));
+    const d = new Set<string>();
+    if (ff.conditional) {
+      for (const r of ff.conditional.rules) {
+        condTreeColumns(r.when).forEach(c => { if (formulaNameSet.has(c)) d.add(c); });
+        getFormulaDeps(r.formula).forEach(c => { if (formulaNameSet.has(c)) d.add(c); });
+      }
+      if (ff.conditional.default) getFormulaDeps(ff.conditional.default).forEach(c => { if (formulaNameSet.has(c)) d.add(c); });
+    } else if (ff.formula) {
+      getFormulaDeps(ff.formula).forEach(c => { if (formulaNameSet.has(c)) d.add(c); });
+    }
+    deps[ff.name] = [...d];
   }
 
   // Topological sort (Kahn's algorithm)
@@ -584,14 +612,36 @@ function computeAllFormulas(
   for (const name of order) {
     const ff = formulaFields.find(f => f.name === name)!;
     try {
-      const val = evaluateExpression(
-        ff.formula.expression, fieldValues,
-        allComponentSubtotals || {}, undefined, quotationFields,
-        pathCache, partNo, basicDataValues, previousRowSubtotal,
-        globalVariableDefs, row, crossTabRows,
-      );
+      // Plan 2b：previous_row_subtotal 按当前列取上一行本列值；无 map 时退回标量。
+      const prevForField = previousRowValues
+        ? (typeof previousRowValues[name] === 'number' ? (previousRowValues[name] as number) : undefined)
+        : previousRowSubtotal;
+      // Plan 3a：条件字段按规则选表达式（lookup 原始行→BASIC_DATA按名→已算 fieldValues）。
+      let expr: any[] | undefined;
+      if (ff.conditional) {
+        const lookup = (col: string) => {
+          const rv = (row as any)?.[col];
+          if (rv != null) return rv;
+          const bf = comp.fields.find(f => (f.name || f.key) === col && f.field_type === 'BASIC_DATA');
+          if (bf && (bf as any).basic_data_path && basicDataValues) {
+            const v = (basicDataValues as any)[bnfDriverLookupKey((bf as any).basic_data_path)];
+            if (v != null) return Array.isArray(v) ? (v.length === 1 ? v[0] : v) : v;
+          }
+          return fieldValues[col];
+        };
+        const hit = ff.conditional.rules.find(r => evalCondTree(r.when, lookup));
+        expr = (hit ? hit.formula : ff.conditional.default)?.expression;
+      } else {
+        expr = ff.formula!.expression;
+      }
+      const val = expr
+        ? evaluateExpression(
+            expr, fieldValues, allComponentSubtotals || {}, undefined, quotationFields,
+            pathCache, partNo, basicDataValues, prevForField, globalVariableDefs, row, crossTabRows,
+          )
+        : null;
       results[name] = val;
-      fieldValues[name] = val; // feed result for downstream formulas
+      if (val != null) fieldValues[name] = val; // feed result for downstream formulas
     } catch {
       results[name] = null;
     }
@@ -779,6 +829,38 @@ function fillFixedDefaults(
   return cloned ?? raw;
 }
 
+/**
+ * 按列求和：每个 is_subtotal 列 → 该列各行结果之和。Plan 2-核心多小计列。
+ * （driver 行迭代 / splitRows 口径与单列版完全一致。）
+ */
+export function computeTabSubtotalsByColumn(
+  comp: ComponentDataItem,
+  allComponentSubtotals?: Record<string, number>,
+  quotationFields?: Record<string, number>,
+  pathCache?: Record<string, number>,
+  partNo?: string,
+  driverExpansion?: import('./useDriverExpansions').DriverExpansion,
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!comp?.fields || !comp?.rows) return out;
+  const subtotalFields = comp.fields.filter(f => f.is_subtotal);
+  if (subtotalFields.length === 0) return out;
+  for (const sf of subtotalFields) out[sf.name] = 0;
+  const s = splitRows(comp, driverExpansion as any);
+  for (let i = 0; i < s.totalRows; i++) {
+    const ra = rowAt(i, comp, s);
+    const row = fillFixedDefaults(comp.fields, ra.row);
+    const basicDataValues = ra.expIndex >= 0 ? driverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
+    const cache = computeAllFormulas(
+      comp, row, allComponentSubtotals, quotationFields, pathCache, partNo, basicDataValues,
+      undefined, globalVariableDefs,
+    );
+    for (const sf of subtotalFields) out[sf.name] += cache[sf.name] ?? 0;
+  }
+  return out;
+}
+
 function computeTabSubtotal(
   comp: ComponentDataItem,
   allComponentSubtotals?: Record<string, number>,
@@ -791,26 +873,11 @@ function computeTabSubtotal(
   // 动态 key 全局变量运行时 path 重写: 向后兼容, 老调用不传时动态 key 兜底 0
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
 ): number {
-  if (!comp?.fields || !comp?.rows) return 0;
-  const subtotalField = comp.fields.find(f => f.is_subtotal);
-  if (!subtotalField) return 0;
-  // V160/V161 后修订: driver 是数据真相源 (mat_bom / mat_fee / costing_part_* 全部版本化).
-  // 早期 V126.1 取 max 让"用户追加行"也参与列小计, 但 V160/V161 之前 driver 因视图缺
-  // part_version 列返多版本叠加, autoSave 会把过量行回写 quotation_line_component_data;
-  // 修复后 driver 正确返 N 行 → max(N, M>N)=M → 多 M-N 行成"鬼魂"行 (BASIC_DATA 永远加载中).
-  // 用 splitRows 为准: driver-bound 模式下手动行尾巴 (manualRows) 参与小计, 非手动陈旧行不参与.
-  const s = splitRows(comp, driverExpansion as any);
+  // Plan 2-核心：委托按列求和后取所有小计列之和（单小计列时 = 原行为）。
+  const byCol = computeTabSubtotalsByColumn(
+    comp, allComponentSubtotals, quotationFields, pathCache, partNo, driverExpansion, globalVariableDefs);
   let sum = 0;
-  for (let i = 0; i < s.totalRows; i++) {
-    const ra = rowAt(i, comp, s);
-    const row = fillFixedDefaults(comp.fields, ra.row);
-    const basicDataValues = ra.expIndex >= 0 ? driverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
-    const cache = computeAllFormulas(
-      comp, row, allComponentSubtotals, quotationFields, pathCache, partNo, basicDataValues,
-      undefined, globalVariableDefs,
-    );
-    sum += cache[subtotalField.name] ?? 0;
-  }
+  for (const v of Object.values(byCol)) sum += v;
   return sum;
 }
 
@@ -887,6 +954,24 @@ function computeProductSubtotal(
 
   // Final fallback: sum of all component subtotals
   return Object.values(componentSubtotals).reduce((s, v) => s + v, 0);
+}
+
+/** 测试用：按行序逐行 computeAllFormulas，previous_row_subtotal 按本列累加（Plan 2b）。 */
+export function computeRowsCachesForTest(
+  comp: ComponentDataItem,
+  rows: Record<string, any>[],
+): Array<Record<string, number | null>> {
+  const caches: Array<Record<string, number | null>> = [];
+  let prevRowValues: Record<string, number | null> | undefined = undefined;
+  for (const row of rows) {
+    const cache = computeAllFormulas(
+      comp, row, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, prevRowValues,
+    );
+    caches.push(cache);
+    prevRowValues = cache;
+  }
+  return caches;
 }
 
 /** 稳定空数组引用 — 传给 useDriverExpansions 表示"无需 batch-expand"(快照模式), 避免每渲染新建 [] 触发 churn。 */
@@ -1435,13 +1520,20 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     const expansion = (item.productPartNo && comp.componentId)
       ? driverExpansions?.[driverExpansionKey(lineItemIdSub, item.productPartNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]))]
       : undefined;
-    const subtotal = computeTabSubtotal(
+    const byCol = computeTabSubtotalsByColumn(
       comp, allComponentSubtotals, undefined, undefined, item.productPartNo, expansion,
       globalVariableDefs,
     );
+    const subtotal = Object.values(byCol).reduce((s, v) => s + v, 0);
     if (comp.componentId) allComponentSubtotals[comp.componentId] = subtotal;
     if (comp.componentCode) allComponentSubtotals[comp.componentCode] = subtotal;
     allComponentSubtotals[comp.tabName] = subtotal;
+    // Plan 2-核心：per-column 键，供 footer 按列显示 + 按列引用。
+    for (const [colName, colVal] of Object.entries(byCol)) {
+      if (comp.componentId) allComponentSubtotals[`${comp.componentId}#${colName}`] = colVal;
+      if (comp.componentCode) allComponentSubtotals[`${comp.componentCode}#${colName}`] = colVal;
+      allComponentSubtotals[`${comp.tabName}#${colName}`] = colVal;
+    }
   }
 
   // cross_tab_ref (PASS2, 镜像后端 CardSnapshotService): 在 allComponentSubtotals (PASS1) 之后,
@@ -1831,9 +1923,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     // 2026-05-17 累加公式: 预先按 row_index 顺序求值, 把上一行 is_subtotal 字段值
                     // 传给下一行作为 previous_row_subtotal token 的求值上下文.
                     // 单 row 场景(无累加 token)行为不变 — previousRowSubtotal 仅 token 命中时取.
-                    const subtotalFieldName = activeComponent.fields?.find((f: any) => f.is_subtotal)?.name;
                     const preComputedCaches: Array<Record<string, number | null>> = [];
-                    let prevRowSubtotal: number | undefined = undefined;
+                    // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
+                    let prevRowValues: Record<string, number | null> | undefined = undefined;
                     for (const r of effectiveRows) {
                       // Phase4 Task3: 报价侧优先读快照 formulaResults[rowKey](真零计算);
                       // 缺(无快照/新行/LIST_FORMULA 字符串公式未进 formulaResults)时 computeAllFormulas 兜底(防漂移)。
@@ -1843,14 +1935,18 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         : computeAllFormulas(
                             activeComponent, r.row, allComponentSubtotals,
                             undefined, undefined, item.productPartNo, r.basicDataValues,
-                            prevRowSubtotal, globalVariableDefs, crossTabRows,
+                            undefined, globalVariableDefs, crossTabRows, prevRowValues,
                           );
                       preComputedCaches.push(cache);
-                      if (subtotalFieldName && typeof cache[subtotalFieldName] === 'number') {
-                        prevRowSubtotal = cache[subtotalFieldName] as number;
-                      }
+                      prevRowValues = cache;
                     }
-                    const withCache = effectiveRows.map((er, idx) => ({ ...er, formulaCache: preComputedCaches[idx] }));
+                    // 行键实时判重：组合键重复的行下标集合（driver 列取 driverRow、输入字段取 row 上的手填值）。
+                    // 下标 = effectiveRows[i].rowIndex（与渲染 <tr key={rowIndex}> 同源，AP-54）。
+                    const dupRowIdx = findDuplicateRowKeys(
+                      effectiveRows.map((e) => ({ driverRow: e.driverRow, rowValues: e.row })),
+                      activeRowKeyFields,
+                    );
+                    const withCache = effectiveRows.map((er, idx) => ({ ...er, formulaCache: preComputedCaches[idx], _isDupKey: dupRowIdx.has(er.rowIndex) }));
                     // 核价 BOM 递归展开（P1）：COSTING 侧按 spine 系统列 __parentId→__nodeId 建树（不是料号）。
                     // 归一化：根 nodeId='' → '__bomroot__'；根直接子 parentId='' → '__bomroot__'；根自身 parentId=null → null。
                     // 其余为 uuid 边路径，原样。DAG 重复子件 nodeId 各不同 → 各自独立 occurrence，不塌成 DAG。
@@ -1889,10 +1985,16 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     return laid.rows
                       .filter(r => !isTreeRowHidden(r.originalIndex, laid.parentIndexByIndex, laid.nodeKeyByIndex, collapsed))
                       .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
-                  })().map(({ row, rowIndex, realRowIndex, rowKey, basicDataValues, isDriverBound, isManualRow: isManualRowFlag, isListFormulaBound, formulaCache, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey }) => {
+                  })().map(({ row, rowIndex, realRowIndex, rowKey, basicDataValues, isDriverBound, isManualRow: isManualRowFlag, isListFormulaBound, formulaCache, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey, _isDupKey }) => {
                     const bomSys = activeComponentBomTree ? (__sys as import('./useDriverExpansions').BomSysCols | undefined) : undefined;
                     return (
-                    <tr key={rowIndex} style={(row._preset || isDriverBound) ? { background: '#fafafa' } : undefined}>
+                    <tr key={rowIndex}
+                        data-rowkey-dup={_isDupKey ? '1' : undefined}
+                        title={_isDupKey ? '行键重复：与同组件其他行组合键冲突，提交前需修正' : undefined}
+                        style={{
+                          ...((row._preset || isDriverBound) ? { background: '#fafafa' } : {}),
+                          ...(_isDupKey ? { background: '#fff1f0', boxShadow: 'inset 3px 0 0 #ff4d4f' } : {}),
+                        }}>
                       {/* 核价 BOM 递归展开：3 系统固定列单元格（仅"勾选递归"组件），料号列承载树缩进/折叠箭头 */}
                       {activeComponentBomTree && (
                         <>
@@ -2053,7 +2155,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       {activeComponentBomTree && (<><td /><td /><td /></>)}
                       {activeComponent.fields.map((field, fi) => {
                         if (field.is_subtotal) {
-                          const tabSubtotal = allComponentSubtotals[activeComponent.componentCode]
+                          // Plan 2-核心：按列取本列总计，回退到组件级（单小计列）兼容。
+                          const tabSubtotal =
+                            allComponentSubtotals[`${activeComponent.componentCode}#${field.name}`]
+                            ?? allComponentSubtotals[`${activeComponent.tabName}#${field.name}`]
+                            ?? allComponentSubtotals[activeComponent.componentCode]
                             ?? allComponentSubtotals[activeComponent.tabName]
                             ?? 0;
                           return (
@@ -2089,16 +2195,36 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         </div>
       )}
 
-      {/* Subtotal Bar */}
-      <div className="qt-subtotal-bar">
-        <span className="qt-subtotal-label">产品小计</span>
-        <span className="qt-subtotal-value">
-          {formatCurrency(
-            item.componentData.length > 0
-              ? computeProductSubtotal(item, driverExpansions, customerId)
-              : item.subtotal
-          )}
-        </span>
+      {/* Subtotal Bar：多小计列 → 每条 (组件·小计列) 一行 + 最终总价（Plan 2-核心）。 */}
+      <div className="qt-subtotal-bar-multi">
+        {item.componentData.length > 0 && (() => {
+          const lines: { label: string; value: number }[] = [];
+          for (const comp of item.componentData) {
+            if (!comp?.fields || comp.componentType === 'SUBTOTAL') continue;
+            for (const f of comp.fields) {
+              if (!f.is_subtotal) continue;
+              const v = allComponentSubtotals[`${comp.componentCode}#${f.name}`]
+                ?? allComponentSubtotals[`${comp.tabName}#${f.name}`] ?? 0;
+              lines.push({ label: `${comp.tabName} · ${f.name}`, value: v });
+            }
+          }
+          return lines.map((ln, i) => (
+            <div className="qt-subtotal-line" key={i}>
+              <span className="qt-subtotal-label">{ln.label}</span>
+              <span className="qt-subtotal-value">{formatCurrency(ln.value)}</span>
+            </div>
+          ));
+        })()}
+        <div className="qt-subtotal-line qt-subtotal-total">
+          <span className="qt-subtotal-label">产品小计</span>
+          <span className="qt-subtotal-value">
+            {formatCurrency(
+              item.componentData.length > 0
+                ? computeProductSubtotal(item, driverExpansions, customerId)
+                : item.subtotal
+            )}
+          </span>
+        </div>
       </div>
     </div>
   );

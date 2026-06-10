@@ -261,6 +261,10 @@ public class CardSnapshotService {
                     if (!f.path("formula_name").isMissingNode() && !f.path("formula_name").isNull()) {
                         fieldNode.put("formulaName", f.path("formula_name").asText(null));
                     }
+                    // Plan 3a：条件公式整块搬运（AP-44 完备性，否则渲染期条件解析静默失效）
+                    if (f.path("conditional_formula").isObject()) {
+                        fieldNode.set("conditionalFormula", f.path("conditional_formula"));
+                    }
                     if (!f.path("global_variable_code").isMissingNode() && !f.path("global_variable_code").isNull()) {
                         fieldNode.put("globalVariableCode", f.path("global_variable_code").asText(null));
                     }
@@ -695,13 +699,23 @@ public class CardSnapshotService {
             String cid = tab.path("componentId").asText("");
             ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, emptyEdit);
             ArrayNode editRows = filteredEdit.getOrDefault(cid, emptyEdit);
-            double sub = formulaCalculator.computeTabSubtotal(
+            java.util.Map<String, java.math.BigDecimal> byCol = formulaCalculator.computeTabSubtotalsByColumn(
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
-                rkfByComp.get(cid), baseRows, editRows, componentSubtotals).doubleValue();
-            if (!cid.isBlank()) componentSubtotals.put(cid, sub);
+                rkfByComp.get(cid), baseRows, editRows, componentSubtotals);
+            double sub = 0.0;
+            for (java.math.BigDecimal v : byCol.values()) sub += v.doubleValue();
             String code = tab.path("componentCode").asText(null);
+            String tabName = tab.path("tabName").asText("");
+            if (!cid.isBlank()) componentSubtotals.put(cid, sub);
             if (code != null && !code.isBlank()) componentSubtotals.put(code, sub);
-            componentSubtotals.put(tab.path("tabName").asText(""), sub);
+            componentSubtotals.put(tabName, sub);
+            // Plan 2-核心：per-column 键 `${key}#${列名}`，供按列引用/显示。
+            for (java.util.Map.Entry<String, java.math.BigDecimal> e : byCol.entrySet()) {
+                double cv = e.getValue().doubleValue();
+                if (!cid.isBlank()) componentSubtotals.put(cid + "#" + e.getKey(), cv);
+                if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + e.getKey(), cv);
+                componentSubtotals.put(tabName + "#" + e.getKey(), cv);
+            }
         }
 
         // PASS 2: 按组件 cross_tab_ref 依赖拓扑序逐 tab 算（A 必须先于引用它的 B），
@@ -791,10 +805,26 @@ public class CardSnapshotService {
 
         // 值快照带上本 tab 小计（供 Excel CARD_FORMULA 的 __subtotal__ 引用，见 CardEffectiveRows）
         String code = tab.path("componentCode").asText(null);
+        String tabName = tab.path("tabName").asText("");
         Double sub = componentSubtotals.get(cid);
         if (sub == null && code != null) sub = componentSubtotals.get(code);
-        if (sub == null) sub = componentSubtotals.get(tab.path("tabName").asText(""));
+        if (sub == null) sub = componentSubtotals.get(tabName);
         if (sub != null) tabNode.put("subtotal", sub);
+
+        // Plan 2c：per-column 小计（供 [页签.列名] 引用）。从 componentSubtotals 的
+        // `${cid|code|tabName}#${列名}` 键提取（Plan 2 Task 3 已写入）。
+        ObjectNode byColNode = MAPPER.createObjectNode();
+        for (String prefix : new String[]{ cid, code, tabName }) {
+            if (prefix == null || prefix.isBlank()) continue;
+            String keyPrefix = prefix + "#";
+            for (Map.Entry<String, Double> en : componentSubtotals.entrySet()) {
+                if (en.getKey().startsWith(keyPrefix) && en.getValue() != null) {
+                    String col = en.getKey().substring(keyPrefix.length());
+                    if (!byColNode.has(col)) byColNode.put(col, en.getValue());
+                }
+            }
+        }
+        if (byColNode.size() > 0) tabNode.set("subtotalByColumn", byColNode);
 
         // resolvedRows 输出（与 crossTabRows 同源，DRY）
         ArrayNode resolvedRowsNode = MAPPER.createArrayNode();

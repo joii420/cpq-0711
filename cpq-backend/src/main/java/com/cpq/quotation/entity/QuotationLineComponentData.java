@@ -30,6 +30,10 @@ public class QuotationLineComponentData extends PanacheEntityBase {
     @Column(name = "row_data", columnDefinition = "jsonb")
     public String rowData = "[]";
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "snapshot_rows", columnDefinition = "jsonb")
+    public String snapshotRows;
+
     @Column(precision = 18, scale = 4)
     public BigDecimal subtotal = BigDecimal.ZERO;
 

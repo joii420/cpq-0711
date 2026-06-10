@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Input, Select, Checkbox, Button, Typography, Tooltip, Space, Modal, Form, Alert } from 'antd';
+import { Table, Input, Select, Checkbox, Button, Typography, Tooltip, Space, Modal, Form, Alert, Segmented } from 'antd';
 import { dataSourceResolverService, RESOLVER_TYPE_LABEL } from '../../services/dataSourceResolverService';
 
 const { Text } = Typography;
@@ -10,6 +10,7 @@ import PathPickerDrawer from './PathPickerDrawer';
 import GlobalVariablePickerDrawer from '../../components/GlobalVariablePickerDrawer';
 import DefaultSourceEditor from './DefaultSourceEditor';
 import ListFormulaConfigDrawer from './ListFormulaConfigDrawer';
+import ConditionalFormulaDrawer, { type ConditionalFormulaValue } from './ConditionalFormulaDrawer';
 import './styles.css';
 
 interface FieldConfigTableProps {
@@ -57,6 +58,8 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
   );
   // LIST_FORMULA 配置 Drawer
   const [listFormulaKey, setListFormulaKey] = useState<string | null>(null);
+  // Plan 3b：条件公式配置 Drawer 的目标字段 key
+  const [condFormulaKey, setCondFormulaKey] = useState<string | null>(null);
   useEffect(() => {
     dataSourceResolverService.listTypes().then(setResolverTypes).catch(() => {/* 用默认 */});
   }, []);
@@ -66,11 +69,8 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
   };
 
   const handleSubtotalChange = (key: string, checked: boolean) => {
-    if (checked) {
-      onChange(fields.map((f) => ({ ...f, is_subtotal: f.key === key })));
-    } else {
-      updateField(key, { is_subtotal: false });
-    }
+    // 多小计列（Plan 2-核心）：每个字段独立勾选，不再互斥。
+    updateField(key, { is_subtotal: checked });
   };
 
   const moveField = (index: number, direction: 'up' | 'down') => {
@@ -281,36 +281,43 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
           );
         }
         if (record.field_type === 'FORMULA') {
-          // 2026-05-20: FORMULA 字段从公式列表显式选一个绑定 (field.formula_name)
-          // 渲染层 resolveFormula 已加 by formula_name 第 0 优先级 (QuotationStep2)
-          // — 未选时按 "字段名 == 公式名" 兜底匹配 (兼容老配置)
+          // 2026-05-20: 单一模式从公式列表选一个绑定 (field.formula_name)
+          // Plan 3b: 条件模式 (field.conditional_formula) — 按规则逐行选公式，配置抽屉编辑。
           const options = (formulas || [])
             .map(f => ({
               value: f.name || '',
               label: `${f.name || '(未命名)'}${f.result_type ? ` · ${f.result_type}` : ''}`,
             }))
             .filter(o => o.value);
-          if (options.length === 0) {
-            return (
-              <Tooltip title="先去左侧「公式」Tab 添加公式定义, 再回此处绑定">
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  暂无公式可绑 →
-                </Text>
-              </Tooltip>
-            );
-          }
+          const isCond = !!record.conditional_formula;
           return (
-            <Select
-              size="small"
-              style={{ minWidth: 180, fontSize: 12 }}
-              placeholder="选择绑定公式"
-              allowClear
-              value={record.formula_name || undefined}
-              options={options}
-              onChange={(v) => updateField(record.key, { formula_name: v || undefined })}
-              showSearch
-              optionFilterProp="label"
-            />
+            <Space size={4} wrap>
+              <Segmented
+                size="small"
+                value={isCond ? 'cond' : 'single'}
+                options={[{ label: '单一', value: 'single' }, { label: '条件', value: 'cond' }]}
+                onChange={(m) => {
+                  if (m === 'cond') updateField(record.key, { conditional_formula: { rules: [], default: '' } });
+                  else updateField(record.key, { conditional_formula: undefined });
+                }}
+              />
+              {!isCond && (
+                options.length === 0
+                  ? <Tooltip title="先去左侧「公式」Tab 添加公式定义, 再回此处绑定">
+                      <Text type="secondary" style={{ fontSize: 12 }}>暂无公式可绑 →</Text>
+                    </Tooltip>
+                  : <Select
+                      size="small" style={{ minWidth: 160, fontSize: 12 }} placeholder="选择绑定公式" allowClear
+                      value={record.formula_name || undefined} options={options}
+                      onChange={(v) => updateField(record.key, { formula_name: v || undefined })}
+                      showSearch optionFilterProp="label" />
+              )}
+              {isCond && (
+                <Button size="small" type="link" onClick={() => setCondFormulaKey(record.key)}>
+                  条件公式（{record.conditional_formula?.rules?.length || 0} 规则）配置 →
+                </Button>
+              )}
+            </Space>
           );
         }
         if (record.field_type === 'LIST_FORMULA') {
@@ -428,7 +435,7 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
         const col = cand?.resolvedColumn ?? null;
         const checked = !!(col && (rowKeyFields ?? []).includes(col));
         const tip = eligible
-          ? `行键列：${col}`
+          ? (cand?.source === 'input' ? `行键列（手填）：${col}` : `行键列（driver）：${col}`)
           : (cand?.reason ?? '该字段无 driver 列，不能作行键');
         return (
           <Tooltip title={tip}>
@@ -653,6 +660,20 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
             updateField(listFormulaKey, { list_formula_config: next });
           }
           setListFormulaKey(null);
+        }}
+      />
+
+      {/* Plan 3b：条件公式配置 Drawer */}
+      <ConditionalFormulaDrawer
+        open={condFormulaKey !== null}
+        value={condFormulaKey ? fields.find(f => f.key === condFormulaKey)?.conditional_formula as ConditionalFormulaValue | undefined : undefined}
+        fieldName={condFormulaKey ? fields.find(f => f.key === condFormulaKey)?.name : undefined}
+        formulaOptions={(formulas || []).map(f => ({ label: f.name || '', value: f.name || '' })).filter(o => o.value)}
+        columnOptions={fields.map(f => ({ label: f.name, value: f.name })).filter(o => o.value)}
+        onClose={() => setCondFormulaKey(null)}
+        onConfirm={(next) => {
+          if (condFormulaKey) updateField(condFormulaKey, { conditional_formula: next });
+          setCondFormulaKey(null);
         }}
       />
     </div>

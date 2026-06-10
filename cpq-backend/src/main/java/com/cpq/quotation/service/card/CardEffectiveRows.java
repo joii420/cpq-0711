@@ -20,10 +20,16 @@ public final class CardEffectiveRows {
     public static final class TabRows {
         public final List<Map<String, Object>> rows;
         public final BigDecimal subtotal; // 值快照 tab.subtotal；缺失为 null
+        public final Map<String, BigDecimal> subtotalByColumn; // Plan 2c：列名→该列总计；缺失为空 Map
 
         public TabRows(List<Map<String, Object>> rows, BigDecimal subtotal) {
+            this(rows, subtotal, java.util.Map.of());
+        }
+
+        public TabRows(List<Map<String, Object>> rows, BigDecimal subtotal, Map<String, BigDecimal> subtotalByColumn) {
             this.rows = rows;
             this.subtotal = subtotal;
+            this.subtotalByColumn = subtotalByColumn != null ? subtotalByColumn : java.util.Map.of();
         }
     }
 
@@ -94,7 +100,16 @@ public final class CardEffectiveRows {
 
             BigDecimal subtotal = tab.has("subtotal") && !tab.path("subtotal").isNull()
                     ? tab.path("subtotal").decimalValue() : null;
-            out.put(tabKey, new TabRows(rows, subtotal));
+            // Plan 2c：读 per-column 小计（[页签.列名] 引用）。
+            Map<String, BigDecimal> byCol = new java.util.LinkedHashMap<>();
+            JsonNode byColNode = tab.path("subtotalByColumn");
+            if (byColNode.isObject()) {
+                byColNode.fields().forEachRemaining(en -> {
+                    if (en.getValue() != null && !en.getValue().isNull())
+                        byCol.put(en.getKey(), en.getValue().decimalValue());
+                });
+            }
+            out.put(tabKey, new TabRows(rows, subtotal, byCol));
         }
         return out;
     }
@@ -124,7 +139,7 @@ public final class CardEffectiveRows {
                 Object n = r.get("__nodeId");
                 if (n != null && n.toString().equals(nodeId)) kept.add(r);
             }
-            out.put(e.getKey(), new TabRows(kept, e.getValue().subtotal));
+            out.put(e.getKey(), new TabRows(kept, e.getValue().subtotal, e.getValue().subtotalByColumn));
         }
         return out;
     }

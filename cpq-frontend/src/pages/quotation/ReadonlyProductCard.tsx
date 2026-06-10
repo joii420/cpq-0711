@@ -80,24 +80,22 @@ function buildFormulaCache(
   // 仅渲染层 PASS2 才传 crossTabRows，镜像后端两阶段。
   crossTabRows?: Record<string, Array<Record<string, any>>>,
 ): Array<Record<string, number | null>> {
-  const subtotalFieldName = comp.fields?.find((f: any) => f.is_subtotal)?.name;
   const useDriver = !!(driverExpansion && driverExpansion.rowCount > 0);
   // AP-51 行数纪律：driver 权威优先，仅 rowCount=0 时退回持久化行数。
   const effectiveCount = useDriver ? driverExpansion!.rowCount : rows.length;
   const caches: Array<Record<string, number | null>> = [];
-  let prevRowSubtotal: number | undefined = undefined;
+  // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
+  let prevRowValues: Record<string, number | null> | undefined = undefined;
   for (let ri = 0; ri < effectiveCount; ri++) {
     const row = rows[ri] ?? {};
     const bdv = useDriver ? driverExpansion!.rows[ri]?.basicDataValues : undefined;
     const cache = computeAllFormulas(
       comp, row, compSubtotals,
       undefined, undefined, partNo, bdv,
-      prevRowSubtotal, globalVariableDefs, crossTabRows,
+      undefined, globalVariableDefs, crossTabRows, prevRowValues,
     );
     caches.push(cache);
-    if (subtotalFieldName && typeof cache[subtotalFieldName] === 'number') {
-      prevRowSubtotal = cache[subtotalFieldName] as number;
-    }
+    prevRowValues = cache;
   }
   return caches;
 }
@@ -275,8 +273,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   const compSubtotals: Record<string, number> = {};
   for (const comp of components) {
     if (!comp.fields) continue;
-    const stField = comp.fields.find((f: any) => f.is_subtotal);
-    if (!stField) {
+    // Plan 2-核心：多小计列 —— 取所有 is_subtotal 字段。
+    const subtotalFields = comp.fields.filter((f: any) => f.is_subtotal);
+    if (subtotalFields.length === 0) {
       compSubtotals[comp.tabName] = 0;
       if (comp.componentCode) compSubtotals[comp.componentCode] = 0;
       continue;
@@ -298,7 +297,14 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
       lineItem.productPartNo, globalVariableDefs,
       compDriverExpansion,
     );
-    const st = formulaCaches.reduce((s, fc) => s + ((fc[stField.name] as number) ?? 0), 0);
+    // Plan 2-核心：逐列求和 + per-column 键 `${code|tabName}#${列名}`，组件级 = 各列之和。
+    let st = 0;
+    for (const sf of subtotalFields) {
+      const colSum = formulaCaches.reduce((s, fc) => s + ((fc[sf.name] as number) ?? 0), 0);
+      compSubtotals[`${comp.tabName}#${sf.name}`] = colSum;
+      if (comp.componentCode) compSubtotals[`${comp.componentCode}#${sf.name}`] = colSum;
+      st += colSum;
+    }
     compSubtotals[comp.tabName] = st;
     if (comp.componentCode) compSubtotals[comp.componentCode] = st;
   }
@@ -450,8 +456,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     const activeRowKeyFields = rowKeyFieldsByComp.get(activeComp.componentId);
                     const preComputedCaches: Array<Record<string, number | null>> = [];
                     {
-                      const subtotalFieldName = activeComp.fields?.find((f: any) => f.is_subtotal)?.name;
-                      let prevRowSubtotal: number | undefined = undefined;
+                      // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
+                      let prevRowValues: Record<string, number | null> | undefined = undefined;
                       for (let ri = 0; ri < effectiveCount; ri++) {
                         const ra = rowAt(ri, activeComp, s);
                         const rawRow = ra.row;
@@ -465,12 +471,10 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                           : computeAllFormulas(
                               activeComp, rawRow, compSubtotals,
                               undefined, undefined, lineItem.productPartNo,
-                              rowBdv, prevRowSubtotal, globalVariableDefs, crossTabRows,
+                              rowBdv, undefined, globalVariableDefs, crossTabRows, prevRowValues,
                             );
                         preComputedCaches.push(cache);
-                        if (subtotalFieldName && typeof cache[subtotalFieldName] === 'number') {
-                          prevRowSubtotal = cache[subtotalFieldName] as number;
-                        }
+                        prevRowValues = cache;
                       }
                     }
 
@@ -597,9 +601,13 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     <tr className="qt-subtotal-row">
                       {activeComp.fields.map((field, fi) => {
                         if (field.is_subtotal) {
+                          // Plan 2-核心：按列取本列总计，回退组件级兼容。
+                          const v = compSubtotals[`${activeComp.componentCode}#${field.name}`]
+                            ?? compSubtotals[`${activeComp.tabName}#${field.name}`]
+                            ?? compSubtotals[activeComp.tabName] ?? 0;
                           return (
                             <td key={fi} className="qt-subtotal-cell">
-                              {formatCurrency(compSubtotals[activeComp.tabName] || 0)}
+                              {formatCurrency(v)}
                             </td>
                           );
                         }

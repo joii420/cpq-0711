@@ -212,6 +212,30 @@
   gap: 12px;
 }
 
+/* Plan 2-核心：多小计列 → 每条 (组件·列) 一行 + 最终总价 */
+.qt-subtotal-bar-multi {
+  margin-top: 20px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 8px;
+  color: white;
+}
+.qt-subtotal-line {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 14px;
+  opacity: 0.92;
+}
+.qt-subtotal-line.qt-subtotal-total {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.5);
+  font-size: 16px;
+  font-weight: 600;
+  opacity: 1;
+}
+
 .qt-subtotal-label {
   font-size: 16px;
   font-weight: 600;

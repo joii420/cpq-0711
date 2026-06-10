@@ -56,6 +56,8 @@ export interface FieldItem {
   content?: string;
   is_amount?: boolean;
   is_subtotal?: boolean;
+  /** Plan 3a：条件公式。存在即走条件模式（优先于 formula_name）。when 为 CondTree（见 utils/condTree）。 */
+  conditional_formula?: { rules: { when: any; formula: string }[]; default: string };
   notes?: string;
   /**
    * LIST_FORMULA 字段类型专用配置.
@@ -255,4 +257,6 @@ export interface RowKeyCandidate {
   eligible: boolean;
   /** 不可勾选原因（eligible=false 时 hover 提示）。 */
   reason: string | null;
+  /** 行键来源："driver" | "input"；eligible=false 时可能为 undefined。 */
+  source?: 'driver' | 'input' | null;
 }

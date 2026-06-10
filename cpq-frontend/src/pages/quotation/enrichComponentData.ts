@@ -136,6 +136,8 @@ export async function enrichComponentData(
         is_subtotal: f.is_subtotal,
         is_required: f.is_required,
         formula_name: f.formula_name,
+        // Plan 3a：条件公式必须透传（否则渲染期 computeAllFormulas 拿不到 → 退回单一解析）
+        conditional_formula: f.conditional_formula,
         // Bug C 关键字段透传: 详情页与编辑页同源
         datasource_binding: f.datasource_binding,
         // BASIC_DATA 字段必须带上 basic_data_path —— 渲染分支 / driver 展开 lookup
@@ -248,6 +250,8 @@ export function buildComponentDataFromStructure(
       is_subtotal: f.isSubtotal,
       is_required: f.isRequired,
       formula_name: f.formulaName,
+      // Plan 3a：条件公式透传（结构快照 camelCase；兼容 snake_case）
+      conditional_formula: f.conditionalFormula ?? f.conditional_formula,
       datasource_binding: f.datasourceBinding,
       basic_data_path: f.basicDataPath,
       global_variable_code: f.globalVariableCode,
