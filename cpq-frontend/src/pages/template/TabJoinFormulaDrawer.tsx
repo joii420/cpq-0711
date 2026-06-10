@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Drawer, Button, Input, Space, message, Typography } from 'antd';
 import { tabJoinFormulaService, type TabDef } from '../../services/tabJoinFormulaService';
+import TabFieldMatrix from './tabjoin/TabFieldMatrix';
 
 const { Text } = Typography;
 
@@ -34,7 +35,10 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({ open, templateId, column, onClo
         // api 拦截器返回 {code, message, data}，需手动解包 .data
         setTabDefs(Array.isArray(res?.data) ? res.data : []);
       })
-      .catch(() => setTabDefs([]));
+      .catch(() => {
+        message.error('页签定义加载失败，引用补全不可用');
+        setTabDefs([]);
+      });
   }, [open, templateId]);
 
   /** 在光标处插入文本，caretOffsetFromEnd 控制插入后光标左偏（用于 fn() 光标落在括号内） */
@@ -75,6 +79,12 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({ open, templateId, column, onClo
       .map((a) => tabDefs.find((d) => d.alias === a))
       .filter(Boolean)
       .map((d: any) => ({ alias: d.alias, tabKey: d.tabKey, rowKeyFields: d.rowKeyFields }));
+
+    // I-1：表达式中引用的 alias 都没匹配到已知页签时，拒绝保存
+    if (tabs.length === 0) {
+      message.error('表达式中未识别到有效页签引用，请检查别名拼写');
+      return;
+    }
 
     onSave({ source_type: 'TAB_JOIN_FORMULA', expression: expr, tabs });
   };
@@ -155,7 +165,19 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({ open, templateId, column, onClo
         <code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>[页签别名(总计)]</code>。
       </div>
 
-      {/* Task12: 页签字段矩阵 + 置灰锁定 在此渲染 */}
+      {/* 页签字段矩阵 + 置灰锁定 */}
+      <div style={{ marginTop: 14 }}>
+        <div style={{ fontSize: 12, color: '#8a909a', fontWeight: 600, marginBottom: 6 }}>
+          页签字段（全部展示 · 点明细锁定行键类 · 行键不同则该页签明细置灰，仅留总计可选）
+        </div>
+        <TabFieldMatrix
+          tabDefs={tabDefs}
+          expression={expression}
+          onInsert={(token) => insertAtCursor(token)}
+          onClearExpression={() => setExpression('')}
+        />
+      </div>
+
       {/* Task13: 样本卡片选择 + 试算 在此渲染 */}
     </Drawer>
   );
