@@ -3365,4 +3365,14 @@ E2E:
 
 ---
 
+### [2026-06-10] EXCEL列来源收敛(固定值+页签公式)+固定值文本输入+字段/列拖拽排序 | SortableTable(新) + ComponentManagement(ExcelColumnPanel) + FieldConfigTable | 计划 plans/2026-06-10-excel列配置与拖拽排序.md + spec specs/2026-06-10-excel列配置与拖拽排序-design.md
+
+- **诉求**: ①EXCEL 组件列配置「来源/公式」原有 5 选项里只有「页签连表公式」可配,其余(组件字段/变量/产品属性/固定值)选了无处配置;按用户决策**砍到「固定值 + 页签连表公式」两种**,固定值给纯文本框(整列同一常量,留空渲染空白、不拦截保存);②EXCEL 列行 + 字段配置表字段行支持**拖拽排序**(更方便)。
+- **方案(纯前端,后端不动)**: 砍掉的 3 种来源留在后端 switch 是无害死分支;固定值落 `col.fixed_value`,后端 `ExcelViewService:390 case "FIXED_VALUE" -> col.get("fixed_value")` 已能原样渲染;**后端 Excel 视图按 `excel_columns` 数组顺序出列**(ExcelColumnResolver 无 sort 重排,已核实)→拖拽重排数组即改渲染列序。
+- **实现(4 commit)**: ①新建可复用 `components/SortableTable.tsx`(AntD Table + `@dnd-kit/sortable` 垂直拖拽行 + `DragHandle` + `SortableRow` + RowContext 传 listeners;PointerSensor activationConstraint distance:5 避免点输入框误触发拖拽);②`ExcelColumnPanel` 来源 Select 收敛 2 项 + 新增列默认 FIXED_VALUE + 切换清互斥字段 + 固定值 Input(绑 fixed_value) + 保留页签公式按钮原样;③`ExcelColumnPanel` 接 SortableTable(rowKey=col_key, onReorder→setExcelColumns),顺手清掉旧 `_idx` dataSource hack;④`FieldConfigTable` 接 SortableTable(rowKey=key, onReorder 重排 fields 并同步 sort_order=下标),原 ↑↓ 按钮保留作备选,未动字段编辑逻辑(AP-44 合规)。
+- **自检**: 隔离 worktree `excel-col-dragsort` subagent-driven 执行(每任务 implementer + 控制器核验);全量 tsc 0;合回主分支(FF→539b528) Vite 200(SortableTable/ComponentManagement/FieldConfigTable);E2E `quotation-flow`(SIMPLE) **1 passed + 加载中 final=0**(拖拽/来源改动不退步报价渲染)。
+- **注意**: `composite-product-flow.spec.ts` 仍失败 = **同既有 bug**(`composite_child_elements_mirror.unit_weight` 缺列),与本次纯前端改动无关(错误逐字同改动前)。**E2E 双 spec 只覆盖报价渲染回归,不覆盖新增的拖拽/固定值 UI**(headless 难驱动 dnd-kit)→ 新功能交用户手工点测验收。**未做**: composite 缺列 bug(另立);拖拽/固定值的自动化 UI 测试。
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
