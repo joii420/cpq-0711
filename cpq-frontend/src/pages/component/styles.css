@@ -522,3 +522,106 @@
   padding: 3px 10px;
   font-size: 12px;
 }
+
+/* ===================================================================== */
+/* Task 5.1: Master-Detail 双栏重构（原型 组件管理-公式统一-原型.html 1:1） */
+/* ===================================================================== */
+
+/* 左：master 列表（手风琴 + 纵向渐变卡片） */
+.cmm-master {
+  width: 320px;
+  min-width: 320px;
+  background: #fff;
+  border-right: 1px solid #f0f0f0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.cmm-tools {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f5f5f5;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 2;
+  flex-shrink: 0;
+}
+.cmm-tools .cmm-row { display: flex; gap: 8px; align-items: center; }
+.cmm-tools .cmm-row + .cmm-row { margin-top: 8px; }
+
+.cmm-dir { border-bottom: 1px solid #f5f5f5; }
+.cmm-dir-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; cursor: pointer; user-select: none;
+}
+.cmm-dir-head:hover { background: #fafafa; }
+.cmm-dir-caret { transition: transform .2s; color: #8c8c8c; font-size: 11px; }
+.cmm-dir.open .cmm-dir-caret { transform: rotate(90deg); }
+.cmm-dir-name { font-weight: 600; font-size: 13px; flex: 1; }
+.cmm-dir-counts { display: flex; gap: 4px; }
+.cmm-pill { font-size: 10px; padding: 0 6px; border-radius: 8px; background: #f0f5ff; color: #1677ff; line-height: 16px; }
+.cmm-pill.excel { background: #e6fffb; color: #08979c; }
+.cmm-pill.sub { background: #fff7e6; color: #d48806; }
+.cmm-dir-body { display: none; padding: 4px 12px 12px; }
+.cmm-dir.open .cmm-dir-body { display: block; }
+
+.cmm-sec { margin-top: 8px; }
+.cmm-sec-title { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #8c8c8c; padding: 4px 0; }
+.cmm-sec-title .cmm-dot { width: 7px; height: 7px; border-radius: 2px; }
+.cmm-sec-title.tab .cmm-dot { background: #764ba2; }
+.cmm-sec-title.excel .cmm-dot { background: #08979c; }
+.cmm-sec-title.sub .cmm-dot { background: #d48806; }
+.cmm-sec-title .cmm-add { margin-left: auto; font-size: 11px; color: #1677ff; cursor: pointer; font-weight: 400; }
+
+/* 纵向渐变卡片（复用 tm-component-item 渐变） */
+.cmm-card {
+  position: relative; border-radius: 8px; padding: 9px 12px 9px 30px; margin-bottom: 7px; cursor: pointer;
+  color: #fff; box-shadow: 0 2px 6px rgba(102,126,234,.28); transition: all .15s; user-select: none;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+.cmm-card.excel { background: linear-gradient(135deg, #13c2c2 0%, #08979c 100%); box-shadow: 0 2px 6px rgba(8,151,156,.28); }
+.cmm-card.sub { background: linear-gradient(135deg, #f5a623 0%, #d48806 100%); box-shadow: 0 2px 6px rgba(212,136,6,.28); }
+.cmm-card:hover { transform: translateX(2px); }
+.cmm-card.active { outline: 2px solid #fff; box-shadow: 0 0 0 3px rgba(22,119,255,.5); }
+.cmm-card .cmm-c-name { font-weight: 600; font-size: 13px; }
+.cmm-card .cmm-c-code { font-size: 10px; opacity: .85; margin-top: 2px; }
+.cmm-card .cmm-chk {
+  position: absolute; top: 50%; left: 9px; transform: translateY(-50%);
+  width: 16px; height: 16px; border-radius: 4px;
+  background: rgba(255,255,255,.3); border: 1px solid rgba(255,255,255,.7);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: #1677ff; line-height: 1;
+}
+.cmm-card.checked .cmm-chk { background: #fff; }
+.cmm-card-add {
+  border: 1px dashed #d0d0d0; border-radius: 8px; padding: 7px; text-align: center;
+  color: #8c8c8c; cursor: pointer; background: #fafafa; font-size: 12px;
+}
+.cmm-card-add:hover { border-color: #1677ff; color: #1677ff; }
+
+/* 右：详情 */
+.cmm-detail { flex: 1; overflow: auto; background: #f7f9fb; }
+.cmm-detail-empty {
+  height: 100%; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; color: #bfbfbf; gap: 10px;
+}
+.cmm-detail-empty .cmm-ic { font-size: 46px; }
+.cmm-detail-wrap { padding: 18px 22px; }
+.cmm-detail-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.cmm-detail-head .cmm-t { font-size: 18px; font-weight: 600; }
+.cmm-detail-head .cmm-acts { margin-left: auto; display: flex; gap: 8px; }
+.cmm-panel { background: #fff; border: 1px solid #f0f0f0; border-radius: 10px; padding: 16px 18px; }
+
+/* 合并配置行（数据驱动路径 + 核价BOM递归 一行） */
+.cmm-cfg-row {
+  background: #f5faff; border: 1px solid #d4e4f7; border-radius: 8px; padding: 10px 12px;
+  display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap;
+}
+.cmm-cfg-row .cmm-lbl { font-size: 13px; color: #1f4e96; font-weight: 500; white-space: nowrap; }
+.cmm-divider-v { width: 1px; height: 24px; background: #e8e8e8; flex: none; }
+
+.cmm-removed-note {
+  background: #fffbe6; border: 1px solid #ffe58f; border-radius: 6px;
+  padding: 8px 12px; color: #ad6800; font-size: 12px; margin-top: 12px; line-height: 1.6;
+}
