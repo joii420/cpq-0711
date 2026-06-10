@@ -46,6 +46,10 @@ public class TemplateService {
     @Inject
     TemplateSqlViewService templateSqlViewService;
 
+    /** Task 3.1: 列定义统一从 EXCEL 组件解析（校验等迭代列定义站点用）。 */
+    @Inject
+    com.cpq.quotation.service.ExcelColumnResolver excelColumnResolver;
+
     public List<TemplateDTO> list(int page, int size, String category, String status, String keyword) {
         return list(page, size, category, null, null, status, keyword, null);
     }
@@ -1052,8 +1056,8 @@ public class TemplateService {
             return;
         }
         try {
-            // excel_view_config 可能是数组或对象（含 columns 数组）
-            List<Map<String, Object>> columns = parseColumnsFromExcelViewConfig(t.excelViewConfig);
+            // Task 3.1: 列定义统一从 EXCEL 组件解析（含旧裸数组向后兼容）
+            List<Map<String, Object>> columns = excelColumnResolver.getEffectiveColumns(t);
             for (Map<String, Object> col : columns) {
                 Object vpObj = col.get("variable_path");
                 if (vpObj == null) continue;
@@ -1071,22 +1075,6 @@ public class TemplateService {
             LOG.warnf("[validateNoDoubleDollarRefsInExcelView] parse failed templateId=%s: %s",
                     t.id, e.getMessage());
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> parseColumnsFromExcelViewConfig(String raw) throws Exception {
-        Object parsed = MAPPER.readValue(raw, Object.class);
-        if (parsed instanceof List) {
-            return (List<Map<String, Object>>) parsed;
-        }
-        if (parsed instanceof Map) {
-            Map<String, Object> obj = (Map<String, Object>) parsed;
-            Object cols = obj.get("columns");
-            if (cols instanceof List) {
-                return (List<Map<String, Object>>) cols;
-            }
-        }
-        return List.of();
     }
 
     private String calculateNextVersion(UUID seriesId, PublishRequest request) {

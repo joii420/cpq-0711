@@ -46,6 +46,13 @@ public class SnapshotCollectorService {
     DriftDetectionService driftDetectionService;
 
     /**
+     * Task 3.1: 模板配置快照冻结"解析后的合并列定义"（而非裸 excel_view_config 指针），
+     * 使快照自包含（EXCEL 组件后续被删/改不影响已提交报价）。
+     */
+    @Inject
+    com.cpq.quotation.service.ExcelColumnResolver excelColumnResolver;
+
+    /**
      * V104: 懒注入全局变量服务. 用 Instance 包装避免 quotation.snapshot 包硬依赖 globalvariable 包。
      * 报价提交时, 扫公式中的 global_variable token, 把当前生效值落到快照, 防止后续维护变动追溯改写已审核报价。
      */
@@ -351,7 +358,21 @@ public class SnapshotCollectorService {
                 Map<String, Object> tc = new LinkedHashMap<>();
                 tc.put("name", r[1]);
                 tc.put("version", r[2]);
-                tc.put("excelViewConfig", parseJsonOrRaw(r[3] != null ? r[3].toString() : null));
+                // Task 3.1: 冻结"解析后的合并列定义"——使快照自包含，
+                // 即使 EXCEL 组件后续被删/改也不影响已提交报价的列结构重渲染/导出。
+                // 历史上 excelViewConfig 即为 array-of-columns，故仍写入该键（保持下游期望的形状）。
+                List<Map<String, Object>> resolvedColumns = List.of();
+                try {
+                    com.cpq.template.entity.Template t =
+                        com.cpq.template.entity.Template.findById(UUID.fromString(r[0].toString()));
+                    resolvedColumns = excelColumnResolver.getEffectiveColumns(t);
+                } catch (Exception ex) {
+                    LOG.warnf("SnapshotCollectorService: resolve excel columns failed tmpl=%s: %s",
+                        r[0], ex.getMessage());
+                }
+                tc.put("excelViewConfig", resolvedColumns);
+                // 同时保留原始 excel_view_config 指针/import_settings 供追溯（不影响列定义读取）
+                tc.put("excelViewConfigRaw", parseJsonOrRaw(r[3] != null ? r[3].toString() : null));
                 tc.put("componentsSnapshot", parseJsonOrRaw(r[4] != null ? r[4].toString() : null));
                 tc.put("subtotalFormula", parseJsonOrRaw(r[5] != null ? r[5].toString() : null));
                 result.put(r[0].toString(), tc);

@@ -312,50 +312,44 @@ public class CardSnapshotService {
      */
     private String buildExcelStructure(UUID templateId) {
         try {
-            @SuppressWarnings("unchecked")
-            var rows = em.createNativeQuery(
-                "SELECT excel_view_config, template_kind FROM template WHERE id = :tid")
-                .setParameter("tid", templateId)
-                .getResultList();
-            if (rows.isEmpty()) return null;
-
-            Object[] row = (Object[]) rows.get(0);
-            String excelViewConfig = row[0] != null ? row[0].toString() : null;
-            String templateKind = row[1] != null ? row[1].toString() : "";
+            // Task 3.1: 列定义统一从 EXCEL 组件解析（不再直接读 template.excel_view_config 当列数组）
+            com.cpq.template.entity.Template template = com.cpq.template.entity.Template.findById(templateId);
+            if (template == null) return null;
+            String templateKind = template.templateKind != null ? template.templateKind : "";
 
             ObjectNode root = MAPPER.createObjectNode();
             root.put("version", 1);
             root.put("templateId", templateId.toString());
             root.put("templateKind", templateKind);
 
-            if (excelViewConfig == null || excelViewConfig.isBlank()
-                    || "[]".equals(excelViewConfig.trim())
-                    || "{}".equals(excelViewConfig.trim())) {
-                root.putArray("columns");
-                return MAPPER.writeValueAsString(root);
-            }
-
-            JsonNode cols = MAPPER.readTree(excelViewConfig);
-            if (!cols.isArray()) {
+            List<Map<String, Object>> cols = excelViewService.getEffectiveColumns(template);
+            if (cols == null || cols.isEmpty()) {
                 root.putArray("columns");
                 return MAPPER.writeValueAsString(root);
             }
 
             ArrayNode columns = root.putArray("columns");
-            for (JsonNode col : cols) {
+            for (Map<String, Object> col : cols) {
                 ObjectNode colNode = MAPPER.createObjectNode();
-                colNode.put("colKey", col.path("col_key").asText(col.path("colKey").asText("")));
-                colNode.put("title", col.path("title").asText(col.path("col_name").asText("")));
-                colNode.put("sourceType", col.path("source_type").asText("VARIABLE"));
-                if (!col.path("variable_path").isMissingNode()) {
-                    colNode.put("variablePath", col.path("variable_path").asText(null));
+                Object colKey = col.get("col_key") != null ? col.get("col_key") : col.get("colKey");
+                colNode.put("colKey", colKey != null ? colKey.toString() : "");
+                Object title = col.get("title") != null ? col.get("title") : col.get("col_name");
+                colNode.put("title", title != null ? title.toString() : "");
+                Object st = col.get("source_type");
+                colNode.put("sourceType", st != null ? st.toString() : "VARIABLE");
+                if (col.containsKey("variable_path")) {
+                    Object vp = col.get("variable_path");
+                    colNode.put("variablePath", vp != null ? vp.toString() : null);
                 }
-                if (!col.path("formula").isMissingNode()) {
-                    colNode.put("formula", col.path("formula").asText(null));
+                if (col.containsKey("formula")) {
+                    Object fm = col.get("formula");
+                    colNode.put("formula", fm != null ? fm.toString() : null);
                 }
-                colNode.put("hidden", col.path("hidden").asBoolean(false));
-                if (!col.path("comparison_tag").isMissingNode()) {
-                    colNode.put("comparisonTag", col.path("comparison_tag").asText(null));
+                Object hidden = col.get("hidden");
+                colNode.put("hidden", Boolean.TRUE.equals(hidden) || "true".equals(String.valueOf(hidden)));
+                if (col.containsKey("comparison_tag")) {
+                    Object ct = col.get("comparison_tag");
+                    colNode.put("comparisonTag", ct != null ? ct.toString() : null);
                 }
                 columns.add(colNode);
             }

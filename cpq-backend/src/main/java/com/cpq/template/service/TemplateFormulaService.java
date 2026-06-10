@@ -117,6 +117,10 @@ public class TemplateFormulaService {
     @Inject
     DataSource dataSource;
 
+    /** Task 3.1: 列定义统一从 EXCEL 组件解析（[col_key] fallback 用）。 */
+    @Inject
+    com.cpq.quotation.service.ExcelColumnResolver excelColumnResolver;
+
     // ─────────────────────────────────────────────────────────────────
     // CRUD
     // ─────────────────────────────────────────────────────────────────
@@ -365,9 +369,9 @@ public class TemplateFormulaService {
             throw new BusinessException(404, "Formula not found: " + formulaName);
         }
 
-        // 拿 excel_view_config 供 col_key fallback
+        // 拿有效列定义（Task 3.1: 从 EXCEL 组件解析）供 col_key fallback
         Template t = Template.findById(templateId);
-        List<Map<String, Object>> viewCols = parseJsonArray(t != null ? t.excelViewConfig : null);
+        List<Map<String, Object>> viewCols = excelColumnResolver.getEffectiveColumns(t);
 
         Set<String> needed = new LinkedHashSet<>();
         collectDependencies(formulaName, byName, needed, new HashSet<>());

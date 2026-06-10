@@ -47,6 +47,10 @@ public class ImportExecutionService {
     @Inject
     com.cpq.quotation.service.CardSnapshotService cardSnapshotService;
 
+    /** Task 3.1: 列定义统一从 EXCEL 组件解析（import_settings 仍读 excelViewConfig 不变）。 */
+    @Inject
+    com.cpq.quotation.service.ExcelColumnResolver excelColumnResolver;
+
     @Transactional
     public ImportRecordDTO executeImport(
             UUID customerId,
@@ -118,10 +122,9 @@ public class ImportExecutionService {
                 // Parse v2 column_mappings: [{ "excel_column": "...", "target_view_column": "A" }, ...]
                 List<Map<String, Object>> v2Mappings = parseJsonArray(mappingTemplate.columnMappings);
 
-                // Load template's excel_view_config to resolve source_type and field_key for each col_key
+                // Task 3.1: 列定义从 EXCEL 组件解析，得到 source_type/field_key
                 Template tmpl = Template.findById(mappingTemplate.templateId);
-                List<Map<String, Object>> viewColumns = tmpl != null && tmpl.excelViewConfig != null
-                    ? parseJsonArray(tmpl.excelViewConfig) : List.of();
+                List<Map<String, Object>> viewColumns = excelColumnResolver.getEffectiveColumns(tmpl);
 
                 // Build lookup: col_key -> column definition
                 Map<String, Map<String, Object>> viewColByKey = new LinkedHashMap<>();
@@ -377,11 +380,8 @@ public class ImportExecutionService {
 
         Map<String, Object> config = parseJsonObject(template.excelViewConfig);
         Map<String, Object> importSettings = getMap(config, "import_settings");
-        List<Map<String, Object>> viewColumns = getList(config, "columns");
-        if (viewColumns.isEmpty()) {
-            // Fallback: config is just an array of columns (old format)
-            viewColumns = parseJsonArray(template.excelViewConfig);
-        }
+        // Task 3.1: 列定义从 EXCEL 组件解析；import_settings 仍读 excelViewConfig（不变）
+        List<Map<String, Object>> viewColumns = excelColumnResolver.getEffectiveColumns(template);
 
         int sheetIndex = getInt(importSettings, "sheet_index", 1);
         int headerRowIndex = getInt(importSettings, "header_row_index", 2);
@@ -541,10 +541,8 @@ public class ImportExecutionService {
         if (customer == null) throw new BusinessException(404, "Customer not found: " + request.customerId);
 
         Map<String, Object> config = parseJsonObject(template.excelViewConfig != null ? template.excelViewConfig : "{}");
-        List<Map<String, Object>> viewColumns = getList(config, "columns");
-        if (viewColumns.isEmpty()) {
-            viewColumns = parseJsonArray(template.excelViewConfig != null ? template.excelViewConfig : "[]");
-        }
+        // Task 3.1: 列定义从 EXCEL 组件解析；import_settings 仍读 excelViewConfig（不变）
+        List<Map<String, Object>> viewColumns = excelColumnResolver.getEffectiveColumns(template);
         Map<String, Object> importSettings = getMap(config, "import_settings");
         String partNoColKey = getString(importSettings, "part_no_column_key", null);
 

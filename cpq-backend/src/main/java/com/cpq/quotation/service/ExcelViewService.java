@@ -50,6 +50,17 @@ public class ExcelViewService {
     @Inject
     com.cpq.quotation.service.tabjoin.TabJoinPlanEvaluator tabJoinPlanEvaluator;
 
+    // ---- Task 3.1: Excel column resolver (config 归属迁移到 EXCEL 组件) ----
+
+    /** 委托给 {@link ExcelColumnResolver}：所有"列定义读取"站点统一走 getEffectiveColumns。 */
+    @Inject
+    ExcelColumnResolver excelColumnResolver;
+
+    /** 统一列定义解析入口（委托 resolver）。 */
+    public List<Map<String, Object>> getEffectiveColumns(Template t) {
+        return excelColumnResolver.getEffectiveColumns(t);
+    }
+
     // ---- Template excel-view-config API ----
 
     public String getExcelViewConfig(UUID templateId) {
@@ -68,30 +79,28 @@ public class ExcelViewService {
             throw new BusinessException("Only DRAFT templates can have their excel_view_config updated");
         }
 
-        List<Map<String, Object>> columns = parseJsonArray(excelViewConfigJson);
-        // Validate: EXCEL_FORMULA column references must point to existing col_keys
-        Set<String> colKeys = new HashSet<>();
-        for (Map<String, Object> col : columns) {
-            Object ck = col.get("col_key");
-            if (ck != null) colKeys.add(ck.toString());
-        }
+        // Task 3.1: 先持久化（resolver 解析 EXCEL 组件需要读到最新 config），再用有效列做校验。
+        template.excelViewConfig = excelViewConfigJson;
+        template.persist();
+
+        // 校验对象：新形状 {excel_component_id, column_overrides, import_settings} 解析为合并列；
+        // 旧裸数组形状原样解析。两者都走 getEffectiveColumns 统一口径。
+        List<Map<String, Object>> columns = getEffectiveColumns(template);
+
+        // Validate: EXCEL_FORMULA columns must have a non-empty formula
         for (Map<String, Object> col : columns) {
             String sourceType = (String) col.get("source_type");
             if ("EXCEL_FORMULA".equals(sourceType)) {
                 Object formula = col.get("formula");
-                if (formula != null) {
-                    // Basic validation: formula is non-empty string
-                    if (formula.toString().isBlank()) {
-                        throw new BusinessException("EXCEL_FORMULA column must have a non-empty formula");
-                    }
+                if (formula != null && formula.toString().isBlank()) {
+                    throw new BusinessException("EXCEL_FORMULA column must have a non-empty formula");
                 }
             }
         }
 
         validateTabJoinConfig(columns);
 
-        template.excelViewConfig = excelViewConfigJson;
-        LOG.infof("Saved excel_view_config for template id=%s, %d columns", templateId, columns.size());
+        LOG.infof("Saved excel_view_config for template id=%s, %d effective columns", templateId, columns.size());
         return template.excelViewConfig;
     }
 
@@ -119,7 +128,7 @@ public class ExcelViewService {
             return Map.of("columns", List.of(), "rows", List.of());
         }
 
-        List<Map<String, Object>> columns = parseJsonArray(template.excelViewConfig);
+        List<Map<String, Object>> columns = getEffectiveColumns(template);
         // Stage 2: 预加载模板公式 Map（供 FORMULA 列 [名称] 引用时快速命中）
         List<TemplateFormulaDTO> templateFormulas = templateFormulaService.listByTemplate(templateId);
         Map<String, TemplateFormulaDTO> formulaByName = new LinkedHashMap<>();
@@ -194,7 +203,7 @@ public class ExcelViewService {
             if (template == null || template.excelViewConfig == null || template.excelViewConfig.isBlank()) {
                 return new LinkedHashMap<>();
             }
-            List<Map<String, Object>> columns = parseJsonArray(template.excelViewConfig);
+            List<Map<String, Object>> columns = getEffectiveColumns(template);
             if (columns.isEmpty()) return new LinkedHashMap<>();
             List<TemplateFormulaDTO> templateFormulas = templateFormulaService.listByTemplate(templateId);
             Map<String, TemplateFormulaDTO> formulaByName = new LinkedHashMap<>();
@@ -224,7 +233,7 @@ public class ExcelViewService {
             Template template = Template.findById(templateId);
             if (template == null || template.excelViewConfig == null || template.excelViewConfig.isBlank())
                 return rows;
-            List<Map<String, Object>> columns = parseJsonArray(template.excelViewConfig);
+            List<Map<String, Object>> columns = getEffectiveColumns(template);
             if (columns.isEmpty()) return rows;
             List<TemplateFormulaDTO> templateFormulas = templateFormulaService.listByTemplate(templateId);
             Map<String, TemplateFormulaDTO> formulaByName = new LinkedHashMap<>();
@@ -432,7 +441,7 @@ public class ExcelViewService {
             return;
         }
 
-        List<Map<String, Object>> columns = parseJsonArray(template.excelViewConfig);
+        List<Map<String, Object>> columns = getEffectiveColumns(template);
         List<TemplateFormulaDTO> templateFormulas = templateFormulaService.listByTemplate(templateId);
         Map<String, TemplateFormulaDTO> formulaByName = new LinkedHashMap<>();
         for (TemplateFormulaDTO f : templateFormulas) formulaByName.put(f.name, f);
@@ -562,7 +571,7 @@ public class ExcelViewService {
         Template template = Template.findById(li.templateId);
         if (template == null) throw new BusinessException(404, "Template not found: " + li.templateId);
 
-        List<Map<String, Object>> columns = parseJsonArray(template.excelViewConfig);
+        List<Map<String, Object>> columns = getEffectiveColumns(template);
         Map<String, Object> colDef = columns.stream()
             .filter(c -> colKey.equals(c.get("col_key")))
             .findFirst()
@@ -605,7 +614,7 @@ public class ExcelViewService {
         }
 
         // Rebuild excel_view_snapshot
-        List<Map<String, Object>> allColumns = parseJsonArray(template.excelViewConfig);
+        List<Map<String, Object>> allColumns = getEffectiveColumns(template);
         Map<String, Object> snapshot = buildRowData(li, allColumns);
         li.excelViewSnapshot = toJson(snapshot);
 

@@ -7,8 +7,6 @@ import com.cpq.template.entity.Template;
 import com.cpq.template.util.BnfPathLinter;
 import com.cpq.template.util.BnfPathLinter.LintLevel;
 import com.cpq.template.util.BnfPathLinter.LintResult;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -53,10 +51,13 @@ import java.util.Map;
 public class LegacyPathsResource {
 
     private static final Logger LOG = Logger.getLogger(LegacyPathsResource.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Inject
     BnfPathLinter linter;
+
+    /** Task 3.1: 列定义统一从 EXCEL 组件解析。 */
+    @Inject
+    com.cpq.quotation.service.ExcelColumnResolver excelColumnResolver;
 
     /**
      * 扫描所有非 ARCHIVED template 的 excel_view_config，返回 WARN/ERROR 项清单。
@@ -79,8 +80,8 @@ public class LegacyPathsResource {
                 continue;
             }
             try {
-                // excel_view_config 结构可能是数组（列配置）或对象（含 columns 数组）
-                List<Map<String, Object>> columns = parseColumnsFromExcelViewConfig(t.excelViewConfig);
+                // Task 3.1: 列定义统一从 EXCEL 组件解析（含旧裸数组向后兼容）
+                List<Map<String, Object>> columns = excelColumnResolver.getEffectiveColumns(t);
                 for (Map<String, Object> col : columns) {
                     String colKey = col.get("col_key") != null
                             ? col.get("col_key").toString() : "?";
@@ -113,27 +114,4 @@ public class LegacyPathsResource {
         return ApiResponse.success(findings);
     }
 
-    /**
-     * 解析 excel_view_config 中的列列表。
-     * excel_view_config 可能是：
-     * <ul>
-     *   <li>直接数组：[{col_key, variable_path, ...}, ...]</li>
-     *   <li>对象：{columns: [{...}, ...], ...}</li>
-     * </ul>
-     */
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> parseColumnsFromExcelViewConfig(String raw) throws Exception {
-        Object parsed = MAPPER.readValue(raw, Object.class);
-        if (parsed instanceof List) {
-            return (List<Map<String, Object>>) parsed;
-        }
-        if (parsed instanceof Map) {
-            Map<String, Object> obj = (Map<String, Object>) parsed;
-            Object cols = obj.get("columns");
-            if (cols instanceof List) {
-                return (List<Map<String, Object>>) cols;
-            }
-        }
-        return List.of();
-    }
 }

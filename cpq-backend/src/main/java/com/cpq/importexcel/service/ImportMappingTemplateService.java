@@ -25,6 +25,10 @@ public class ImportMappingTemplateService {
     private static final Logger LOG = Logger.getLogger(ImportMappingTemplateService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /** Task 3.1: 列定义统一从 EXCEL 组件解析。 */
+    @jakarta.inject.Inject
+    com.cpq.quotation.service.ExcelColumnResolver excelColumnResolver;
+
     public List<ImportMappingTemplateDTO> listByExcelTemplate(UUID excelTemplateId) {
         return ImportMappingTemplate.find("excelTemplateId = ?1 ORDER BY createdAt DESC", excelTemplateId)
                 .<ImportMappingTemplate>list()
@@ -107,11 +111,10 @@ public class ImportMappingTemplateService {
             return;
         }
 
-        List<Map<String, Object>> viewColumns;
-        try {
-            viewColumns = MAPPER.readValue(template.excelViewConfig, new TypeReference<List<Map<String, Object>>>() {});
-        } catch (Exception e) {
-            return; // invalid config, skip
+        // Task 3.1: 列定义从 EXCEL 组件解析（含旧裸数组向后兼容）
+        List<Map<String, Object>> viewColumns = excelColumnResolver.getEffectiveColumns(template);
+        if (viewColumns.isEmpty()) {
+            return; // no columns resolvable, skip
         }
 
         // Build map: col_key -> source_type
