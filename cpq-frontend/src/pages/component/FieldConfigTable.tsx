@@ -53,8 +53,9 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
   const [httpApiKey, setHttpApiKey] = useState<string | null>(null);
   const [httpApiForm] = Form.useForm();
   // K2: 动态 resolver type 列表, 加 type 时前端零改动
+  // BNF_PATH 已从 UI 创建入口移除（Task 6.1）；历史配置仍可读取，不再允许新建。
   const [resolverTypes, setResolverTypes] = useState<string[]>(
-    ['DATABASE_QUERY', 'GLOBAL_VARIABLE', 'BNF_PATH', 'HTTP_API']
+    ['DATABASE_QUERY', 'GLOBAL_VARIABLE', 'HTTP_API']
   );
   // LIST_FORMULA 配置 Drawer
   const [listFormulaKey, setListFormulaKey] = useState<string | null>(null);
@@ -175,19 +176,6 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
                     style={{ color: '#d46b08', fontFamily: 'Consolas, Monaco, monospace' }}
                   >
                     🌐 {binding?.global_variable_code || '选择变量'}
-                  </Button>
-                </Tooltip>
-              )}
-              {dsType === 'BNF_PATH' && (
-                <Tooltip title={binding?.bnf_path ? `点击修改: ${binding.bnf_path}` : '选择 BNF 路径'}>
-                  <Button
-                    size="small"
-                    type="link"
-                    icon={<EditOutlined />}
-                    onClick={() => setPathPickerKey(record.key)}
-                    style={{ color: '#08979c', fontFamily: 'Consolas, Monaco, monospace' }}
-                  >
-                    {binding?.bnf_path ? `{${binding.bnf_path}}` : '配置 BNF 路径'}
                   </Button>
                 </Tooltip>
               )}

@@ -14,9 +14,7 @@
  * 当前简版仅支持文本输入 + 后端语法校验。
  */
 import React, { useEffect, useState } from 'react';
-import { Drawer, Input, Button, Alert, Typography, Space, Tag, Tabs, Select, Form, Radio, Spin } from 'antd';
-import { CheckCircleOutlined, CloseCircleOutlined, EditOutlined, TableOutlined, WarningOutlined } from '@ant-design/icons';
-import { formulaService } from '../../services/formulaService';
+import { Drawer, Input, Button, Alert, Typography, Space, Tag, Select, Form, Radio, Spin } from 'antd';
 import { componentSqlViewService, type ComponentSqlView, type SqlViewColumn } from '../../services/componentSqlViewService';
 import { templateSqlViewService, type TemplateSqlView } from '../../services/templateSqlViewService';
 
@@ -68,8 +66,8 @@ const PathPickerDrawer: React.FC<Props> = ({
   onConfirm,
   componentId,
   ownerContext,
-  defaultTab,
-  legacyPathPolicy = 'WARN_WITH_MIGRATION_SUGGEST',
+  // defaultTab: Task 6.1 — 手动 Tab 已移除，prop 保留供调用方兼容但不再读取
+  // legacyPathPolicy: Task 6.1 — 手动 Tab 已移除，prop 保留供调用方兼容但不再读取
 }) => {
   // 解析 effectiveComponentId：ownerContext.COMPONENT 优先，否则回退 componentId prop
   const effectiveComponentId =
@@ -79,9 +77,6 @@ const PathPickerDrawer: React.FC<Props> = ({
       ? componentId
       : undefined; // TEMPLATE 上下文：不用 componentId
   const [pathExpr, setPathExpr] = useState('');
-  const [validateState, setValidateState] = useState<'idle' | 'validating' | 'ok' | 'error'>('idle');
-  const [validateMsg, setValidateMsg] = useState('');
-  const [activeTab, setActiveTab] = useState<'sql-view' | 'manual'>('sql-view');
 
   // SQL 视图 Tab 状态（组件上下文）
   const [sqlViews, setSqlViews] = useState<ComponentSqlView[]>([]);
@@ -97,15 +92,10 @@ const PathPickerDrawer: React.FC<Props> = ({
   const [selectedTmplSqlColumn, setSelectedTmplSqlColumn] = useState<string | undefined>();
   const [tmplSqlExtraPredicate, setTmplSqlExtraPredicate] = useState('');
 
-  // 抽屉打开时回填 initialPath
+  // 抽屉打开时回填 initialPath（Task 6.1: 手动 Tab 已移除，始终停在 sql-view）
   useEffect(() => {
     if (open) {
       setPathExpr(initialPath);
-      setValidateState('idle');
-      setValidateMsg('');
-      // defaultTab 优先；否则已有路径进 manual，否则进 sql-view Tab
-      const resolvedTab = defaultTab ?? (initialPath ? 'manual' : 'sql-view');
-      setActiveTab(resolvedTab);
       // 重置 SQL 视图选择状态（组件上下文）
       setSelectedSqlViewId(undefined);
       setSelectedSqlColumn(undefined);
@@ -115,11 +105,11 @@ const PathPickerDrawer: React.FC<Props> = ({
       setSelectedTmplSqlColumn(undefined);
       setTmplSqlExtraPredicate('');
     }
-  }, [open, initialPath, defaultTab]);
+  }, [open, initialPath]);
 
-  // SQL 视图 Tab：按 ownerContext 分两条路径加载
+  // SQL 视图：按 ownerContext 分两条路径加载（Task 6.1: 始终加载，无 Tab 切换守卫）
   useEffect(() => {
-    if (!open || activeTab !== 'sql-view') return;
+    if (!open) return;
     setSqlViewsLoading(true);
 
     if (ownerContext?.type === 'TEMPLATE') {
@@ -160,7 +150,7 @@ const PathPickerDrawer: React.FC<Props> = ({
 
       Promise.allSettled(promises).finally(() => setSqlViewsLoading(false));
     }
-  }, [open, activeTab, ownerContext, effectiveComponentId]);
+  }, [open, ownerContext, effectiveComponentId]);
 
   // 后端 declared_columns 是 JSONB —— Quarkus Hibernate 序列化时可能返字符串或已 parse 的数组
   // 防御性 normalize：已是数组 / JSON 字符串 / 空 三种形态兼容
@@ -201,23 +191,19 @@ const PathPickerDrawer: React.FC<Props> = ({
     return `$${selectedTmplSqlView.sqlViewName}${predStr}.${selectedTmplSqlColumn}`;
   })();
 
-  // 切换到 sql-view tab 时用生成的路径同步 pathExpr
+  // 生成的路径变化时同步 pathExpr（Task 6.1: 始终在 sql-view，无需 activeTab 守卫）
   useEffect(() => {
-    if (activeTab !== 'sql-view') return;
     const path =
       ownerContext?.type === 'TEMPLATE'
         ? generatedTmplSqlPath
         : generatedSqlPath;
     if (path) {
       setPathExpr(path);
-      setValidateState('idle');
     }
-  }, [generatedSqlPath, generatedTmplSqlPath, activeTab, ownerContext]);
+  }, [generatedSqlPath, generatedTmplSqlPath, ownerContext]);
 
   const reset = () => {
     setPathExpr('');
-    setValidateState('idle');
-    setValidateMsg('');
     setSelectedSqlViewId(undefined);
     setSelectedSqlColumn(undefined);
     setSqlExtraPredicate('');
@@ -231,45 +217,11 @@ const PathPickerDrawer: React.FC<Props> = ({
     onClose();
   };
 
-  // 失焦校验:用空数据上下文调后端,只验语法是否能解析
-  // 后端无 partNo + 无 customerId 时,带谓词的查询可能查不到行,但语法解析失败一定能识别
-  const handleValidate = async () => {
-    const expr = pathExpr.trim();
-    if (!expr) {
-      setValidateState('idle');
-      return;
-    }
-    setValidateState('validating');
-    try {
-      const res = await formulaService.evaluate({ expression: `{${expr}}` });
-      const data = res.data;
-      if (data.success) {
-        setValidateState('ok');
-        setValidateMsg('语法正确');
-      } else if (data.errorType === 'PARSE_ERROR') {
-        setValidateState('error');
-        setValidateMsg(`语法错误:${data.error ?? '未知'}`);
-      } else {
-        // EVAL_ERROR 通常是空上下文导致的查询失败,语法本身没错
-        setValidateState('ok');
-        setValidateMsg('语法正确(运行时根据当前料号/客户上下文查询数据)');
-      }
-    } catch (e: any) {
-      setValidateState('error');
-      setValidateMsg(`校验失败:${e?.message ?? '网络错误'}`);
-    }
-  };
-
   const handleConfirm = () => {
     const expr = pathExpr.trim();
     if (!expr) return;
-    if (validateState === 'error') return;
     // TEMPLATE 上下文：阻止 $$ 路径（隔离规则）
     if (ownerContext?.type === 'TEMPLATE' && expr.startsWith('$$')) return;
-    // BLOCK 策略：阻止老 PG 直引路径
-    if (legacyPathPolicy === 'BLOCK' && !expr.startsWith('$') && !expr.startsWith('{')) {
-      if (/^(v_|mat_|element_price|plating_plan)/.test(expr)) return;
-    }
     // 显示标签从路径末尾字段名提取
     const segments = expr.split('.');
     const last = segments[segments.length - 1] || expr;
@@ -291,7 +243,7 @@ const PathPickerDrawer: React.FC<Props> = ({
           <Button onClick={handleClose} style={{ marginRight: 8 }}>取消</Button>
           <Button
             type="primary"
-            disabled={!pathExpr.trim() || validateState === 'error' || validateState === 'validating'}
+            disabled={!pathExpr.trim()}
             onClick={handleConfirm}
           >
             插入
@@ -307,304 +259,201 @@ const PathPickerDrawer: React.FC<Props> = ({
         style={{ marginBottom: 12 }}
       />
 
-      <Tabs
-        activeKey={activeTab}
-        onChange={(k) => setActiveTab(k as 'sql-view' | 'manual')}
-        items={[
-          {
-            key: 'manual',
-            label: <span><EditOutlined /> 手动输入 BNF</span>,
-            children: (
+      {/* Task 6.1: 手动输入 Tab 已移除，直接显示 SQL 视图内容 */}
+      <Spin spinning={sqlViewsLoading}>
+        {ownerContext?.type === 'TEMPLATE' ? (
+          // ── TEMPLATE 上下文：仅显示 template 实体的 SQL 视图（隔离设计）──
+          <>
+            <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
+              选择本模板配置拥有的 SQL 视图，生成{' '}
+              <Text code>$视图名.列名</Text>{' '}
+              格式的 BNF path。模板视图与组件视图完全隔离。
+            </Paragraph>
+
+            <Text strong style={{ fontSize: 13 }}>本模板 SQL 视图</Text>
+            {tmplSqlViews.length === 0 ? (
+              <div style={{ color: '#999', fontSize: 12, margin: '6px 0 12px' }}>
+                （本模板尚无 SQL 视图，请在「SQL 视图」Tab 中新建）
+              </div>
+            ) : (
+              <Radio.Group
+                value={selectedTmplSqlViewId}
+                onChange={(e) => {
+                  setSelectedTmplSqlViewId(e.target.value);
+                  setSelectedTmplSqlColumn(undefined);
+                  setTmplSqlExtraPredicate('');
+                }}
+                style={{ display: 'block', margin: '6px 0 12px' }}
+              >
+                <Space direction="vertical" size={4}>
+                  {tmplSqlViews.map((v) => (
+                    <Radio key={v.id} value={v.id}>
+                      <Tag color="success" style={{ marginRight: 4 }}>模板视图</Tag>
+                      <Text code style={{ marginRight: 8 }}>${v.sqlViewName}</Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        ({parseDeclaredColumns(v.declaredColumns as unknown).length} 列)
+                      </Text>
+                    </Radio>
+                  ))}
+                </Space>
+              </Radio.Group>
+            )}
+
+            {/* 选中视图后：选列 + 额外谓词 */}
+            {selectedTmplSqlView && (
+              <Form layout="vertical" size="small" style={{ marginTop: 8 }}>
+                <Form.Item label="选择列">
+                  <Select
+                    placeholder="选择要引用的列"
+                    value={selectedTmplSqlColumn}
+                    onChange={(v) => setSelectedTmplSqlColumn(v)}
+                    options={tmplSqlViewColumns.map((c) => ({
+                      value: c.name,
+                      label: `${c.name} (${c.dataType})`,
+                    }))}
+                    showSearch
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+                <Form.Item
+                  label="额外谓词（可选）"
+                  tooltip="在 SQL 视图查询结果之外再加筛选"
+                >
+                  <Input
+                    placeholder="如 bom_type='ELEMENT' 或留空"
+                    value={tmplSqlExtraPredicate}
+                    onChange={(e) => setTmplSqlExtraPredicate(e.target.value)}
+                    style={{ fontFamily: 'Consolas, Monaco, monospace' }}
+                  />
+                </Form.Item>
+              </Form>
+            )}
+
+            {/* 生成的路径预览 */}
+            {generatedTmplSqlPath && (
+              <Alert
+                type="success"
+                message="生成的 BNF path（本模板视图）"
+                description={<Text code style={{ fontSize: 13 }}>{generatedTmplSqlPath}</Text>}
+                style={{ marginTop: 8 }}
+              />
+            )}
+          </>
+        ) : (
+          // ── COMPONENT / 默认 上下文：显示本组件 + 跨组件 GLOBAL 视图 ──
+          <>
+            <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
+              选择本组件或跨组件 GLOBAL 的 SQL 视图，生成 <Text code>$视图名[谓词].列名</Text> 格式的 BNF path。
+            </Paragraph>
+
+            {/* 本组件 SQL 视图 */}
+            {effectiveComponentId && (
               <>
-                <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
-                  熟悉 BNF 语法时直接输入路径,失焦自动校验。
-                </Paragraph>
-                <Title level={5}>路径表达式</Title>
-                <Input.TextArea
-                  rows={2}
-                  placeholder="例如: mat_part.unit_weight"
-                  value={pathExpr}
-                  onChange={(e) => { setPathExpr(e.target.value); setValidateState('idle'); }}
-                  onBlur={handleValidate}
-                  style={{ fontFamily: 'Consolas, Monaco, monospace' }}
-                />
-
-                {/* legacyPathPolicy 校验提示 */}
-                {(() => {
-                  const p = pathExpr.trim();
-                  if (!p) return null;
-                  // TEMPLATE 上下文：$$ 跨引用强拦截
-                  if (ownerContext?.type === 'TEMPLATE' && p.startsWith('$$')) {
-                    return (
-                      <Alert
-                        type="error"
-                        showIcon
-                        message="模板路径不允许 $$ 跨组件引用（隔离规则）"
-                        description="请改用本模板自有的 SQL 视图（切换到「SQL 视图」Tab 新建并引用 $视图名.列名）"
-                        style={{ marginTop: 8 }}
-                      />
-                    );
-                  }
-                  // 老 PG 直引检测（仅非 $ 前缀的路径才需要检测）
-                  if (!p.startsWith('$') && !p.startsWith('{') && legacyPathPolicy !== 'ALLOW') {
-                    if (/^(v_|mat_|element_price|plating_plan)/.test(p)) {
-                      if (legacyPathPolicy === 'BLOCK') {
-                        return (
-                          <Alert
-                            type="error"
-                            showIcon
-                            icon={<WarningOutlined />}
-                            message="老 PG 视图直引已被禁止"
-                            description="请改用本模板/组件 SQL 视图（$view.col 形态）"
-                            style={{ marginTop: 8 }}
-                          />
-                        );
-                      }
-                      return (
-                        <Alert
-                          type="warning"
-                          showIcon
-                          icon={<WarningOutlined />}
-                          message="老 PG 视图直引（建议迁移）"
-                          description="此路径直接引用 PG 视图（AP-53 治理目标）。建议在「SQL 视图」Tab 新建本模板/组件视图并改用 $view.col 引用。"
-                          style={{ marginTop: 8 }}
-                        />
-                      );
-                    }
-                  }
-                  return null;
-                })()}
-
-                <div style={{ marginTop: 8, minHeight: 24 }}>
-                  {validateState === 'validating' && <Text type="secondary">正在校验…</Text>}
-                  {validateState === 'ok' && (
-                    <Space>
-                      <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                      <Text type="success">{validateMsg}</Text>
-                    </Space>
-                  )}
-                  {validateState === 'error' && (
-                    <Space>
-                      <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
-                      <Text type="danger">{validateMsg}</Text>
-                    </Space>
-                  )}
-                </div>
-
-                <Title level={5} style={{ marginTop: 24 }}>语法</Title>
-                <Paragraph>
-                  <Text code>表名.字段</Text> — 简单引用<br/>
-                  <Text code>表名[字段=&apos;值&apos;].字段</Text> — 带谓词<br/>
-                  <Text code>表名[字段 IN (&apos;v1&apos;,&apos;v2&apos;)].字段</Text> — IN 谓词<br/>
-                  <Text code>表名[字段 LIKE &apos;%xx%&apos;].字段</Text> — LIKE 谓词<br/>
-                  <Text code>表名[a=&apos;x&apos; AND b=&apos;y&apos;].字段</Text> — AND 多条件<br/>
-                  最多 3 层嵌套:<Text code>A[k=&apos;v&apos;].B[k=&apos;v&apos;].C.field</Text>
-                </Paragraph>
-              </>
-            ),
-          },
-          {
-            key: 'sql-view',
-            label: <span><TableOutlined /> SQL 视图</span>,
-            children: (
-              <Spin spinning={sqlViewsLoading}>
-                {ownerContext?.type === 'TEMPLATE' ? (
-                  // ── TEMPLATE 上下文：仅显示 template 实体的 SQL 视图（隔离设计）──
-                  <>
-                    <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
-                      选择本模板配置拥有的 SQL 视图，生成{' '}
-                      <Text code>$视图名.列名</Text>{' '}
-                      格式的 BNF path。模板视图与组件视图完全隔离。
-                    </Paragraph>
-
-                    <Text strong style={{ fontSize: 13 }}>本模板 SQL 视图</Text>
-                    {tmplSqlViews.length === 0 ? (
-                      <div style={{ color: '#999', fontSize: 12, margin: '6px 0 12px' }}>
-                        （本模板尚无 SQL 视图，请切换到「SQL 视图」Tab 新建）
-                      </div>
-                    ) : (
-                      <Radio.Group
-                        value={selectedTmplSqlViewId}
-                        onChange={(e) => {
-                          setSelectedTmplSqlViewId(e.target.value);
-                          setSelectedTmplSqlColumn(undefined);
-                          setTmplSqlExtraPredicate('');
-                        }}
-                        style={{ display: 'block', margin: '6px 0 12px' }}
-                      >
-                        <Space direction="vertical" size={4}>
-                          {tmplSqlViews.map((v) => (
-                            <Radio key={v.id} value={v.id}>
-                              <Tag color="success" style={{ marginRight: 4 }}>模板视图</Tag>
-                              <Text code style={{ marginRight: 8 }}>${v.sqlViewName}</Text>
-                              <Text type="secondary" style={{ fontSize: 12 }}>
-                                ({parseDeclaredColumns(v.declaredColumns as unknown).length} 列)
-                              </Text>
-                            </Radio>
-                          ))}
-                        </Space>
-                      </Radio.Group>
-                    )}
-
-                    {/* 选中视图后：选列 + 额外谓词 */}
-                    {selectedTmplSqlView && (
-                      <Form layout="vertical" size="small" style={{ marginTop: 8 }}>
-                        <Form.Item label="选择列">
-                          <Select
-                            placeholder="选择要引用的列"
-                            value={selectedTmplSqlColumn}
-                            onChange={(v) => setSelectedTmplSqlColumn(v)}
-                            options={tmplSqlViewColumns.map((c) => ({
-                              value: c.name,
-                              label: `${c.name} (${c.dataType})`,
-                            }))}
-                            showSearch
-                            optionFilterProp="label"
-                          />
-                        </Form.Item>
-                        <Form.Item
-                          label="额外谓词（可选）"
-                          tooltip="在 SQL 视图查询结果之外再加筛选"
-                        >
-                          <Input
-                            placeholder="如 bom_type='ELEMENT' 或留空"
-                            value={tmplSqlExtraPredicate}
-                            onChange={(e) => setTmplSqlExtraPredicate(e.target.value)}
-                            style={{ fontFamily: 'Consolas, Monaco, monospace' }}
-                          />
-                        </Form.Item>
-                      </Form>
-                    )}
-
-                    {/* 生成的路径预览 */}
-                    {generatedTmplSqlPath && (
-                      <Alert
-                        type="success"
-                        message="生成的 BNF path（本模板视图）"
-                        description={<Text code style={{ fontSize: 13 }}>{generatedTmplSqlPath}</Text>}
-                        style={{ marginTop: 8 }}
-                      />
-                    )}
-                  </>
+                <Text strong style={{ fontSize: 13 }}>本组件 SQL 视图</Text>
+                {sqlViews.length === 0 ? (
+                  <div style={{ color: '#999', fontSize: 12, margin: '6px 0 12px' }}>
+                    （本组件尚无 SQL 视图，请在「SQL 视图」Tab 中新建）
+                  </div>
                 ) : (
-                  // ── COMPONENT / 默认 上下文：显示本组件 + 跨组件 GLOBAL 视图 ──
-                  <>
-                    <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
-                      选择本组件或跨组件 GLOBAL 的 SQL 视图，生成 <Text code>$视图名[谓词].列名</Text> 格式的 BNF path。
-                    </Paragraph>
-
-                    {/* 本组件 SQL 视图 */}
-                    {effectiveComponentId && (
-                      <>
-                        <Text strong style={{ fontSize: 13 }}>本组件 SQL 视图</Text>
-                        {sqlViews.length === 0 ? (
-                          <div style={{ color: '#999', fontSize: 12, margin: '6px 0 12px' }}>
-                            （本组件尚无 SQL 视图，请在「SQL 视图」Tab 中新建）
-                          </div>
-                        ) : (
-                          <Radio.Group
-                            value={selectedSqlViewId}
-                            onChange={(e) => {
-                              setSelectedSqlViewId(e.target.value);
-                              setSelectedSqlColumn(undefined);
-                              setSqlExtraPredicate('');
-                            }}
-                            style={{ display: 'block', margin: '6px 0 12px' }}
-                          >
-                            <Space direction="vertical" size={4}>
-                              {sqlViews.map((v) => (
-                                <Radio key={v.id} value={v.id}>
-                                  <Text code style={{ marginRight: 8 }}>${v.sqlViewName}</Text>
-                                  <Text type="secondary" style={{ fontSize: 12 }}>
-                                    ({parseDeclaredColumns(v.declaredColumns).length} 列)
-                                  </Text>
-                                </Radio>
-                              ))}
-                            </Space>
-                          </Radio.Group>
-                        )}
-                      </>
-                    )}
-
-                    {/* 跨组件 GLOBAL SQL 视图 */}
-                    <Text strong style={{ fontSize: 13 }}>跨组件 GLOBAL SQL 视图</Text>
-                    {globalSqlViews.filter((v) => !effectiveComponentId || v.componentId !== effectiveComponentId).length === 0 ? (
-                      <div style={{ color: '#999', fontSize: 12, margin: '6px 0 12px' }}>
-                        （暂无 scope=GLOBAL 的 SQL 视图）
-                      </div>
-                    ) : (
-                      <Radio.Group
-                        value={selectedSqlViewId}
-                        onChange={(e) => {
-                          setSelectedSqlViewId(e.target.value);
-                          setSelectedSqlColumn(undefined);
-                          setSqlExtraPredicate('');
-                        }}
-                        style={{ display: 'block', margin: '6px 0 12px' }}
-                      >
-                        <Space direction="vertical" size={4}>
-                          {globalSqlViews
-                            .filter((v) => !effectiveComponentId || v.componentId !== effectiveComponentId)
-                            .map((v) => (
-                              <Radio key={v.id} value={v.id}>
-                                <Text code style={{ marginRight: 8 }}>
-                                  $${v.componentCode ?? v.componentId}.{v.sqlViewName}
-                                </Text>
-                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                  ({parseDeclaredColumns(v.declaredColumns).length} 列)
-                                </Text>
-                              </Radio>
-                            ))}
-                        </Space>
-                      </Radio.Group>
-                    )}
-
-                    {/* 选中 SQL 视图后：选列 + 额外谓词 */}
-                    {selectedSqlView && (
-                      <Form layout="vertical" size="small" style={{ marginTop: 8 }}>
-                        <Form.Item label="选择列">
-                          <Select
-                            placeholder="选择要引用的列"
-                            value={selectedSqlColumn}
-                            onChange={(v) => setSelectedSqlColumn(v)}
-                            options={sqlViewColumns.map((c) => ({
-                              value: c.name,
-                              label: `${c.name} (${c.dataType})`,
-                            }))}
-                            showSearch
-                            optionFilterProp="label"
-                          />
-                        </Form.Item>
-                        <Form.Item
-                          label="额外谓词（可选）"
-                          tooltip="在 SQL 视图查询结果之外再加筛选，如 bom_type='ELEMENT'"
-                        >
-                          <Input
-                            placeholder="如 bom_type='ELEMENT' 或留空"
-                            value={sqlExtraPredicate}
-                            onChange={(e) => setSqlExtraPredicate(e.target.value)}
-                            style={{ fontFamily: 'Consolas, Monaco, monospace' }}
-                          />
-                        </Form.Item>
-                      </Form>
-                    )}
-
-                    {/* 生成的路径预览 */}
-                    {generatedSqlPath && (
-                      <Alert
-                        type="success"
-                        message="生成的 BNF path"
-                        description={<Text code style={{ fontSize: 13 }}>{generatedSqlPath}</Text>}
-                        style={{ marginTop: 8 }}
-                      />
-                    )}
-                  </>
+                  <Radio.Group
+                    value={selectedSqlViewId}
+                    onChange={(e) => {
+                      setSelectedSqlViewId(e.target.value);
+                      setSelectedSqlColumn(undefined);
+                      setSqlExtraPredicate('');
+                    }}
+                    style={{ display: 'block', margin: '6px 0 12px' }}
+                  >
+                    <Space direction="vertical" size={4}>
+                      {sqlViews.map((v) => (
+                        <Radio key={v.id} value={v.id}>
+                          <Text code style={{ marginRight: 8 }}>${v.sqlViewName}</Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            ({parseDeclaredColumns(v.declaredColumns).length} 列)
+                          </Text>
+                        </Radio>
+                      ))}
+                    </Space>
+                  </Radio.Group>
                 )}
-              </Spin>
-            ),
-          },
-        ]}
-      />
+              </>
+            )}
+
+            {/* 跨组件 GLOBAL SQL 视图 */}
+            <Text strong style={{ fontSize: 13 }}>跨组件 GLOBAL SQL 视图</Text>
+            {globalSqlViews.filter((v) => !effectiveComponentId || v.componentId !== effectiveComponentId).length === 0 ? (
+              <div style={{ color: '#999', fontSize: 12, margin: '6px 0 12px' }}>
+                （暂无 scope=GLOBAL 的 SQL 视图）
+              </div>
+            ) : (
+              <Radio.Group
+                value={selectedSqlViewId}
+                onChange={(e) => {
+                  setSelectedSqlViewId(e.target.value);
+                  setSelectedSqlColumn(undefined);
+                  setSqlExtraPredicate('');
+                }}
+                style={{ display: 'block', margin: '6px 0 12px' }}
+              >
+                <Space direction="vertical" size={4}>
+                  {globalSqlViews
+                    .filter((v) => !effectiveComponentId || v.componentId !== effectiveComponentId)
+                    .map((v) => (
+                      <Radio key={v.id} value={v.id}>
+                        <Text code style={{ marginRight: 8 }}>
+                          $${v.componentCode ?? v.componentId}.{v.sqlViewName}
+                        </Text>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          ({parseDeclaredColumns(v.declaredColumns).length} 列)
+                        </Text>
+                      </Radio>
+                    ))}
+                </Space>
+              </Radio.Group>
+            )}
+
+            {/* 选中 SQL 视图后：选列 + 额外谓词 */}
+            {selectedSqlView && (
+              <Form layout="vertical" size="small" style={{ marginTop: 8 }}>
+                <Form.Item label="选择列">
+                  <Select
+                    placeholder="选择要引用的列"
+                    value={selectedSqlColumn}
+                    onChange={(v) => setSelectedSqlColumn(v)}
+                    options={sqlViewColumns.map((c) => ({
+                      value: c.name,
+                      label: `${c.name} (${c.dataType})`,
+                    }))}
+                    showSearch
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+                <Form.Item
+                  label="额外谓词（可选）"
+                  tooltip="在 SQL 视图查询结果之外再加筛选，如 bom_type='ELEMENT'"
+                >
+                  <Input
+                    placeholder="如 bom_type='ELEMENT' 或留空"
+                    value={sqlExtraPredicate}
+                    onChange={(e) => setSqlExtraPredicate(e.target.value)}
+                    style={{ fontFamily: 'Consolas, Monaco, monospace' }}
+                  />
+                </Form.Item>
+              </Form>
+            )}
+
+            {/* 生成的路径预览 */}
+            {generatedSqlPath && (
+              <Alert
+                type="success"
+                message="生成的 BNF path"
+                description={<Text code style={{ fontSize: 13 }}>{generatedSqlPath}</Text>}
+                style={{ marginTop: 8 }}
+              />
+            )}
+          </>
+        )}
+      </Spin>
 
       {/* 通用底部:校验状态 + 上下文说明 */}
       <Title level={5} style={{ marginTop: 16 }}>上下文自动注入</Title>
