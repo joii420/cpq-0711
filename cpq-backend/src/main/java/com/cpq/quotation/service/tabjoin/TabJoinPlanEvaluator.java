@@ -86,4 +86,40 @@ public class TabJoinPlanEvaluator {
         for (Map.Entry<String, Object> e : row.entrySet()) m.put(alias + "." + e.getKey(), e.getValue());
         return m;
     }
+
+    /** 一条 WHERE 条件。op ∈ {=,>,<,包含,不包含}；logic ∈ {AND,OR}（用于与下一条的连接，首条 logic 忽略）。 */
+    public record Cond(String col, String op, String value, String logic) {}
+
+    /** 按 where 过滤宽表行。多条按 logic 左折叠（无优先级，从左到右）。空条件 → 原样返回。 */
+    public List<Map<String, Object>> applyWhere(List<Map<String, Object>> rows, List<Cond> where) {
+        if (where == null || where.isEmpty()) return rows;
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> r : rows) {
+            boolean acc = evalCond(r, where.get(0));
+            for (int i = 1; i < where.size(); i++) {
+                boolean cur = evalCond(r, where.get(i));
+                acc = "OR".equalsIgnoreCase(where.get(i).logic()) ? (acc || cur) : (acc && cur);
+            }
+            if (acc) out.add(r);
+        }
+        return out;
+    }
+
+    private boolean evalCond(Map<String, Object> row, Cond c) {
+        Object cell = row.get(c.col());
+        String cv = cell == null ? "" : cell.toString().trim();
+        String v = c.value() == null ? "" : c.value().trim();
+        return switch (c.op()) {
+            case "=" -> cv.equals(v);
+            case "包含" -> cv.contains(v);
+            case "不包含" -> !cv.contains(v);
+            case ">", "<" -> {
+                try {
+                    int cmp = new java.math.BigDecimal(cv).compareTo(new java.math.BigDecimal(v));
+                    yield ">".equals(c.op()) ? cmp > 0 : cmp < 0;
+                } catch (Exception e) { yield false; }
+            }
+            default -> false;
+        };
+    }
 }
