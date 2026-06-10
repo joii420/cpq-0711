@@ -66,6 +66,62 @@ public class TemplateExcelViewResource {
     }
 
     /**
+     * POST /api/cpq/templates/{id}/excel-view-config/dry-run-tab-formula
+     * 试算：给样本 lineItem + TAB_JOIN_FORMULA 列配置 → 返回单值。
+     * 请求体：{"lineItemId": "uuid", "column": {...col定义...}, "cardValuesJson": "可选"}
+     * 响应：{"value": BigDecimal|null, "errors": [...]}
+     */
+    @POST
+    @Path("/dry-run-tab-formula")
+    @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
+    @SuppressWarnings("unchecked")
+    public ApiResponse<Map<String, Object>> dryRunTabFormula(
+            @PathParam("id") UUID templateId,
+            Map<String, Object> body) {
+        if (body == null) throw new BusinessException(400, "请求体不能为空");
+        Object liIdObj = body.get("lineItemId");
+        if (liIdObj == null) throw new BusinessException(400, "lineItemId is required");
+        Object colObj = body.get("column");
+        if (colObj == null) throw new BusinessException(400, "column is required");
+        if (!(colObj instanceof Map)) throw new BusinessException(400, "column 必须是对象");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> column = (Map<String, Object>) colObj;
+        String cardValuesJson = body.get("cardValuesJson") != null
+            ? body.get("cardValuesJson").toString() : null;
+        UUID lineItemId;
+        try {
+            lineItemId = UUID.fromString(liIdObj.toString());
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(400, "lineItemId 格式非法: " + liIdObj);
+        }
+        return ApiResponse.success(excelViewService.dryRunTabFormula(lineItemId, column, cardValuesJson));
+    }
+
+    /**
+     * GET /api/cpq/templates/{id}/excel-view-config/tab-defs
+     * 模板页签定义：返回各组件的 alias/tabKey/rowKeyFields/detailFields/subtotalCols。
+     * 供前端 TAB_JOIN_FORMULA 构建器初始化页签选择列表。
+     */
+    @GET
+    @Path("/tab-defs")
+    @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
+    public ApiResponse<List<Map<String, Object>>> tabDefs(@PathParam("id") UUID templateId) {
+        return ApiResponse.success(excelViewService.tabDefsOfTemplate(templateId));
+    }
+
+    /**
+     * GET /api/cpq/templates/{id}/excel-view-config/sample-cards
+     * 样本卡片：引用该模板的报价行（最多 50 条），供前端选样本进行试算。
+     * 响应：[{quotationId, quotationNo, lineItemId, cardName}]
+     */
+    @GET
+    @Path("/sample-cards")
+    @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
+    public ApiResponse<List<Map<String, Object>>> sampleCards(@PathParam("id") UUID templateId) {
+        return ApiResponse.success(excelViewService.sampleCardsOfTemplate(templateId));
+    }
+
+    /**
      * POST /api/cpq/templates/{id}/excel-view-config/parse-header
      * Upload an Excel file and return its header row column names.
      * Used by the v3 import UI to map Excel columns to template columns.

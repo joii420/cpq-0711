@@ -1,6 +1,7 @@
 package com.cpq.quotation.service;
 
 import com.cpq.common.exception.BusinessException;
+import com.cpq.component.entity.Component;
 import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineComponentData;
 import com.cpq.quotation.entity.QuotationLineItem;
@@ -696,6 +697,178 @@ public class ExcelViewService {
         style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
         style.setAlignment(HorizontalAlignment.CENTER);
         return style;
+    }
+
+    // ---- TAB_JOIN_FORMULA builder support endpoints ----
+
+    /**
+     * 试算：给样本 lineItem + 列配置（TAB_JOIN_FORMULA col Map），返回单值。
+     * 走持久化 componentData 路径（cardValuesJson 可空，忽略）。
+     * 返回 {"value": BigDecimal|null, "errors": []}。
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> dryRunTabFormula(UUID lineItemId, Map<String, Object> column, String cardValuesJson) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        try {
+            QuotationLineItem li = QuotationLineItem.findById(lineItemId);
+            if (li == null) {
+                out.put("value", null);
+                out.put("errors", List.of("样本卡片不存在: " + lineItemId));
+                return out;
+            }
+            // 优先尝试 cardValuesJson 解析路径；失败或为空时降级持久化路径
+            com.cpq.quotation.service.card.CardDataProvider provider;
+            Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows> eff =
+                parseEffectiveRows(cardValuesJson, li.templateId);
+            if (eff != null && !eff.isEmpty()) {
+                provider = com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(eff);
+            } else {
+                List<QuotationLineComponentData> cdList =
+                    QuotationLineComponentData.list("lineItemId = ?1 ORDER BY sortOrder ASC", li.id);
+                provider = new com.cpq.quotation.service.card.CardDataProvider(cdList);
+            }
+            java.math.BigDecimal v = tabJoinPlanEvaluator.evaluateColumn(column, provider);
+            out.put("value", v);
+            out.put("errors", List.of());
+        } catch (Exception e) {
+            out.put("value", null);
+            out.put("errors", List.of(e.getMessage() == null ? "求值异常" : e.getMessage()));
+        }
+        return out;
+    }
+
+    /**
+     * 模板页签定义：从 componentsSnapshot 解析出构建器所需的页签元信息列表。
+     * 每个条目：alias(=tabName 或 componentName), tabKey(=componentId:sortOrder),
+     * rowKeyFields([...]), detailFields([字段名...]), subtotalCols([is_subtotal 字段名...])。
+     * rowKeyFields 从 Component.rowKeyFields JSONB 字段取，componentsSnapshot 不含此字段。
+     */
+    public List<Map<String, Object>> tabDefsOfTemplate(UUID templateId) {
+        Template t = Template.findById(templateId);
+        if (t == null || t.componentsSnapshot == null || t.componentsSnapshot.isBlank()) {
+            return List.of();
+        }
+        // 收集 componentId → rowKeyFields（从 Component 表）
+        List<Map<String, Object>> snapshotList;
+        try {
+            snapshotList = MAPPER.readValue(t.componentsSnapshot,
+                new TypeReference<List<Map<String, Object>>>() {});
+        } catch (Exception e) {
+            LOG.warnf("[ExcelView] tabDefsOfTemplate failed to parse componentsSnapshot tmpl=%s: %s",
+                templateId, e.getMessage());
+            return List.of();
+        }
+        Map<String, List<String>> rkfByCompId = new LinkedHashMap<>();
+        for (Map<String, Object> entry : snapshotList) {
+            String cid = (String) entry.get("componentId");
+            if (cid == null || rkfByCompId.containsKey(cid)) continue;
+            try {
+                Component comp = Component.findById(UUID.fromString(cid));
+                if (comp != null && comp.rowKeyFields != null && !comp.rowKeyFields.isBlank()) {
+                    List<String> rkf = MAPPER.readValue(comp.rowKeyFields,
+                        new TypeReference<List<String>>() {});
+                    rkfByCompId.put(cid, rkf);
+                } else {
+                    rkfByCompId.put(cid, List.of());
+                }
+            } catch (Exception ignore) {
+                rkfByCompId.put(cid, List.of());
+            }
+        }
+        return parseTabDefs(snapshotList, rkfByCompId);
+    }
+
+    /**
+     * 纯函数：把已解析好的 componentsSnapshot List + rowKeyFields 映射 → tabDefs List。
+     * 不依赖 DB，便于单测。
+     *
+     * @param snapshotList   componentsSnapshot 已解析的 List（每元素含 componentId/tabName/componentName/sortOrder/fields/componentType）
+     * @param rkfByCompId    componentId → rowKeyFields 字段名列表（由调用方从 DB 预查）
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static List<Map<String, Object>> parseTabDefs(
+            List<Map<String, Object>> snapshotList,
+            Map<String, List<String>> rkfByCompId) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> entry : snapshotList) {
+            String componentId = (String) entry.get("componentId");
+            String tabName     = (String) entry.get("tabName");
+            String componentName = (String) entry.get("componentName");
+            Object sortOrderObj = entry.get("sortOrder");
+            int sortOrder = sortOrderObj instanceof Number ? ((Number) sortOrderObj).intValue() : 0;
+
+            // alias: tabName 非空优先，否则用 componentName
+            String alias = (tabName != null && !tabName.isBlank()) ? tabName : componentName;
+            String tabKey = componentId + ":" + sortOrder;
+
+            List<String> rowKeyFields = rkfByCompId != null
+                ? rkfByCompId.getOrDefault(componentId, List.of())
+                : List.of();
+
+            // fields: 遍历取字段名列表 + 收集 is_subtotal 列
+            List<String> detailFields = new ArrayList<>();
+            List<String> subtotalCols = new ArrayList<>();
+            Object fieldsObj = entry.get("fields");
+            if (fieldsObj instanceof List) {
+                for (Object f : (List<?>) fieldsObj) {
+                    if (!(f instanceof Map)) continue;
+                    Map<?, ?> fm = (Map<?, ?>) f;
+                    Object nameObj = fm.get("name");
+                    if (nameObj == null) continue;
+                    String fieldName = nameObj.toString();
+                    detailFields.add(fieldName);
+                    Object isSubtotal = fm.get("is_subtotal");
+                    if (Boolean.TRUE.equals(isSubtotal) || "true".equals(String.valueOf(isSubtotal))) {
+                        subtotalCols.add(fieldName);
+                    }
+                }
+            }
+
+            Map<String, Object> def = new LinkedHashMap<>();
+            def.put("alias", alias);
+            def.put("tabKey", tabKey);
+            def.put("componentId", componentId);
+            def.put("componentName", componentName);
+            def.put("componentType", entry.get("componentType"));
+            def.put("sortOrder", sortOrder);
+            def.put("rowKeyFields", rowKeyFields);
+            def.put("detailFields", detailFields);
+            def.put("subtotalCols", subtotalCols);
+            result.add(def);
+        }
+        return result;
+    }
+
+    /**
+     * 样本卡片：引用该 templateId 的 QuotationLineItem 列表，供前端选样本做试算。
+     * 返回 [{quotationId, quotationNo, lineItemId, cardName}]，最多 50 条，按创建时间倒序。
+     */
+    public List<Map<String, Object>> sampleCardsOfTemplate(UUID templateId) {
+        // 按 templateId 查 line_item，最多 50 条（按 line_item.created_at 倒序）
+        List<QuotationLineItem> items = QuotationLineItem.list(
+            "templateId = ?1 ORDER BY createdAt DESC", templateId);
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        // 缓存已查过的 Quotation，避免重复查库
+        Map<UUID, Quotation> quotationCache = new LinkedHashMap<>();
+        int limit = 50;
+        for (QuotationLineItem li : items) {
+            if (result.size() >= limit) break;
+            Quotation q = quotationCache.computeIfAbsent(li.quotationId,
+                qid -> Quotation.findById(qid));
+            String quotationNo = q != null ? q.quotationNumber : null;
+            // 卡片名：productNameSnapshot 优先，否则 productPartNoSnapshot
+            String cardName = li.productNameSnapshot != null && !li.productNameSnapshot.isBlank()
+                ? li.productNameSnapshot
+                : li.productPartNoSnapshot;
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("quotationId", li.quotationId != null ? li.quotationId.toString() : null);
+            entry.put("quotationNo", quotationNo);
+            entry.put("lineItemId", li.id.toString());
+            entry.put("cardName", cardName);
+            result.add(entry);
+        }
+        return result;
     }
 
     // ---- TAB_JOIN_FORMULA config validation ----
