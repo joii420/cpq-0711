@@ -24,6 +24,7 @@ import { quotationService } from '../../services/quotationService';
 import type { CardStructure, CardValues } from '../../services/quotationService';
 import { computeRowKey } from './useCardSnapshots';
 import { findDuplicateRowKeys } from './rowDedup';
+import { buildTabTotalLines } from './tabTotalLines';
 import { partVersionService } from '../../services/partVersionService';
 import PartVersionDrawer from '../../components/PartVersionDrawer';
 import { templateService } from '../../services/templateService';
@@ -2197,24 +2198,13 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
 
       {/* Subtotal Bar：多小计列 → 每条 (组件·小计列) 一行 + 最终总价（Plan 2-核心）。 */}
       <div className="qt-subtotal-bar-multi">
-        {item.componentData.length > 0 && (() => {
-          const lines: { label: string; value: number }[] = [];
-          for (const comp of item.componentData) {
-            if (!comp?.fields || comp.componentType === 'SUBTOTAL') continue;
-            for (const f of comp.fields) {
-              if (!f.is_subtotal) continue;
-              const v = allComponentSubtotals[`${comp.componentCode}#${f.name}`]
-                ?? allComponentSubtotals[`${comp.tabName}#${f.name}`] ?? 0;
-              lines.push({ label: `${comp.tabName} · ${f.name}`, value: v });
-            }
-          }
-          return lines.map((ln, i) => (
+        {item.componentData.length > 0 &&
+          buildTabTotalLines(item.componentData as any, allComponentSubtotals).map((ln, i) => (
             <div className="qt-subtotal-line" key={i}>
               <span className="qt-subtotal-label">{ln.label}</span>
               <span className="qt-subtotal-value">{formatCurrency(ln.value)}</span>
             </div>
-          ));
-        })()}
+          ))}
         <div className="qt-subtotal-line qt-subtotal-total">
           <span className="qt-subtotal-label">产品小计</span>
           <span className="qt-subtotal-value">
