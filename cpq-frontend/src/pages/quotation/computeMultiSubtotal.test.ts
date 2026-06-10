@@ -62,3 +62,43 @@ describe('computeProductSubtotal 多小计列', () => {
     expect(computeProductSubtotal(item)).toBe(62);
   });
 });
+
+describe('computeProductSubtotal 无 SUBTOTAL 组件兜底', () => {
+  // 两个 NORMAL 组件、各有小计列；无 SUBTOTAL 组件、无 subtotalFormula → 默认 = 各页签总计之和（不重复累加）。
+  it('= 各组件小计之和，且不三倍计', () => {
+    const comp2: any = {
+      componentId: 'c2', componentCode: 'YUANSU', tabName: '元素',
+      fields: [
+        { name: '量', field_type: 'INPUT_NUMBER' },
+        { name: '价', field_type: 'INPUT_NUMBER' },
+        { name: '元素小计', field_type: 'FORMULA', is_subtotal: true, formula_name: '元素小计' },
+      ],
+      formulas: [{ name: '元素小计', expression: [
+        { type: 'field', value: '量' }, { type: 'operator', value: '*' }, { type: 'field', value: '价' },
+      ] }],
+      rows: [{ 量: 3, 价: 10 }],  // 30
+    };
+    const item: any = {
+      productPartNo: 'P1',
+      componentData: [
+        { ...comp, componentType: 'NORMAL' },   // 投料 = 40 + 22 = 62
+        { ...comp2, componentType: 'NORMAL' },  // 元素 = 30
+      ],
+      productAttributes: [], productAttributeValues: {},
+    };
+    // 期望 62 + 30 = 92（若三倍计会得 ~276）。
+    expect(computeProductSubtotal(item)).toBe(92);
+  });
+
+  it('无任何小计列组件 → 0', () => {
+    const item: any = {
+      productPartNo: 'P1',
+      componentData: [
+        { componentId: 'c9', componentCode: 'X', tabName: '杂', componentType: 'NORMAL',
+          fields: [{ name: '备注', field_type: 'INPUT_TEXT' }], formulas: [], rows: [{ 备注: 'a' }] },
+      ],
+      productAttributes: [], productAttributeValues: {},
+    };
+    expect(computeProductSubtotal(item)).toBe(0);
+  });
+});

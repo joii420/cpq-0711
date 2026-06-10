@@ -953,8 +953,16 @@ function computeProductSubtotal(
     }
   }
 
-  // Final fallback: sum of all component subtotals
-  return Object.values(componentSubtotals).reduce((s, v) => s + v, 0);
+  // Final fallback（无 SUBTOTAL 组件/公式）：各页签总计之和 —— 逐组件按 componentId 取一次，
+  // 避免 componentSubtotals 同值三键(componentId/componentCode/tabName)被 Object.values 重复累加。
+  let fallbackSum = 0;
+  for (const c of item.componentData) {
+    if (!c?.fields || c.componentType === 'SUBTOTAL') continue;
+    if (!c.fields.some((ff: any) => ff.is_subtotal)) continue;
+    const key = c.componentId ?? c.componentCode ?? c.tabName;
+    fallbackSum += componentSubtotals[key] ?? 0;
+  }
+  return fallbackSum;
 }
 
 /** 测试用：按行序逐行 computeAllFormulas，previous_row_subtotal 按本列累加（Plan 2b）。 */
