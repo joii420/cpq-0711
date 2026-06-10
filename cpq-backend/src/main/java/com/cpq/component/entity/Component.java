@@ -36,6 +36,11 @@ public class Component extends PanacheEntityBase {
     @Column(columnDefinition = "jsonb", nullable = false)
     public String formulas = "[]";
 
+    /** EXCEL 组件列定义（component_type=EXCEL 时有效）：{col_key,title,source_type,hidden,formula,sort} 数组。 */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "excel_columns", columnDefinition = "jsonb", nullable = false)
+    public String excelColumns = "[]";
+
     @Column(name = "component_type", nullable = false, length = 20)
     public String componentType = "NORMAL";
 
