@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Drawer, Button, Input, Space, message, Typography } from 'antd';
 import { tabJoinFormulaService, type TabDef } from '../../services/tabJoinFormulaService';
 import TabFieldMatrix from './tabjoin/TabFieldMatrix';
+import SampleCardPicker from './tabjoin/SampleCardPicker';
 
 const { Text } = Typography;
 
@@ -20,6 +21,12 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({ open, templateId, column, onClo
   const [expression, setExpression] = useState<string>(column?.expression ?? '');
   const [tabDefs, setTabDefs] = useState<TabDef[]>([]);
   const exprRef = useRef<any>(null);
+
+  // 试算相关状态
+  const [sampleLi, setSampleLi] = useState<string | undefined>(undefined);
+  const [dryRunValue, setDryRunValue] = useState<string | number | null>(null);
+  const [dryRunErrors, setDryRunErrors] = useState<string[]>([]);
+  const [dryRunLoading, setDryRunLoading] = useState(false);
 
   // 列切换时重置表达式
   useEffect(() => {
@@ -60,13 +67,8 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({ open, templateId, column, onClo
     });
   };
 
-  const save = () => {
-    const expr = expression.trim();
-    if (!expr) {
-      message.error('表达式不能为空');
-      return;
-    }
-    // 从表达式中解析出引用的页签 alias（形如 [alias.field] 或 [alias(总计)]）
+  /** 从当前表达式解析 tabs，组装 column payload（save 和 dryRun 共用） */
+  const buildColumn = (expr: string) => {
     const refAliases = Array.from(
       new Set(
         (expr.match(/\[([^\[\]]+)\]/g) || []).map((t) => {
@@ -79,14 +81,53 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({ open, templateId, column, onClo
       .map((a) => tabDefs.find((d) => d.alias === a))
       .filter(Boolean)
       .map((d: any) => ({ alias: d.alias, tabKey: d.tabKey, rowKeyFields: d.rowKeyFields }));
+    return { source_type: 'TAB_JOIN_FORMULA' as const, expression: expr, tabs };
+  };
+
+  const save = () => {
+    const expr = expression.trim();
+    if (!expr) {
+      message.error('表达式不能为空');
+      return;
+    }
+    const column = buildColumn(expr);
 
     // I-1：表达式中引用的 alias 都没匹配到已知页签时，拒绝保存
-    if (tabs.length === 0) {
+    if (column.tabs.length === 0) {
       message.error('表达式中未识别到有效页签引用，请检查别名拼写');
       return;
     }
 
-    onSave({ source_type: 'TAB_JOIN_FORMULA', expression: expr, tabs });
+    onSave(column);
+  };
+
+  const runDryRun = async () => {
+    const expr = expression.trim();
+    if (!expr) {
+      message.warning('请先填表达式');
+      return;
+    }
+    if (!sampleLi) {
+      message.warning('请先选样本卡片');
+      return;
+    }
+    const col = buildColumn(expr);
+    setDryRunLoading(true);
+    try {
+      const res: any = await tabJoinFormulaService.dryRun(templateId, sampleLi, col);
+      const data = res?.data ?? res;
+      setDryRunValue(data?.value ?? null);
+      setDryRunErrors(data?.errors ?? []);
+      if (data?.errors?.length) {
+        message.warning(data.errors.join('; '));
+      }
+    } catch (e: any) {
+      setDryRunValue(null);
+      setDryRunErrors([]);
+      message.error('试算失败: ' + (e?.message ?? String(e)));
+    } finally {
+      setDryRunLoading(false);
+    }
   };
 
   return (
@@ -106,6 +147,39 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({ open, templateId, column, onClo
         </Space>
       }
     >
+      {/* 试算条 */}
+      <div style={{ marginBottom: 16, padding: '10px 12px', background: '#f0f5ff', border: '1px solid #adc6ff', borderRadius: 6 }}>
+        <Space wrap align="center">
+          <Text style={{ fontSize: 13 }}>试算：</Text>
+          <SampleCardPicker
+            templateId={templateId}
+            value={sampleLi}
+            onChange={(li) => {
+              setSampleLi(li || undefined);
+              setDryRunValue(null);
+              setDryRunErrors([]);
+            }}
+          />
+          <Button
+            type="default"
+            loading={dryRunLoading}
+            onClick={runDryRun}
+          >
+            试算
+          </Button>
+          {dryRunValue !== null && dryRunErrors.length === 0 && (
+            <Text strong style={{ color: '#1677ff' }}>
+              试算结果：{String(dryRunValue)}
+            </Text>
+          )}
+          {dryRunErrors.length > 0 && (
+            <Text style={{ color: '#cf1322', fontSize: 12 }}>
+              错误：{dryRunErrors.join('; ')}
+            </Text>
+          )}
+        </Space>
+      </div>
+
       {/* 公式表达式 */}
       <Text strong>公式表达式</Text>
       <div style={{ color: '#8a909a', fontSize: 12, marginBottom: 6 }}>
@@ -178,7 +252,6 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({ open, templateId, column, onClo
         />
       </div>
 
-      {/* Task13: 样本卡片选择 + 试算 在此渲染 */}
     </Drawer>
   );
 };
