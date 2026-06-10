@@ -48,5 +48,16 @@ class TabJoinPlanEvaluatorAlignTest {
         assertEquals(2, wide.size(), "复合行键两行不合并");
     }
 
+    /** 行键值含空格时不能与相邻令牌拼出相同 key（分隔符为 \\u0001，业务值不含）。 */
+    @Test
+    void rowkey_value_with_space_no_collision() {
+        // "M 1" 与 "M1" 是两个不同物料，不应合并为一行
+        var tabs = Map.of("投料", List.of(
+                row("物料编码", "M 1", "金额", 10),
+                row("物料编码", "M1",  "金额", 20)));
+        var wide = ev.alignByRowKey(List.of("物料编码"), tabs);
+        assertEquals(2, wide.size(), "值含空格的行键不能与其他行键撞合并");
+    }
+
     private static String str(Object o){ return o==null?null:o.toString(); }
 }
