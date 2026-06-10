@@ -1,9 +1,4 @@
-/** 卡片底部"页签总计"汇总线：每个非 SUBTOTAL 组件 → 其所有 is_subtotal 列的列小计之和 → 一条。 */
-export interface TabTotalLine {
-  label: string;
-  value: number;
-}
-
+/** 单个组件"本页签总计" = 其所有 is_subtotal 列的列小计之和（显示在该页签表格底部）。 */
 interface CompLike {
   componentType?: string;
   tabName: string;
@@ -12,25 +7,20 @@ interface CompLike {
 }
 
 /**
- * @param componentData 卡片组件列表
- * @param subtotalMap   per-column 列小计字典，键 `${componentCode}#${列名}` / `${tabName}#${列名}`
+ * @param comp        当前页签组件
+ * @param subtotalMap per-column 列小计字典，键 `${componentCode}#${列名}` / `${tabName}#${列名}`
+ * @returns 该组件所有 is_subtotal 列的列小计之和（无小计列 / 空组件 → 0）
  */
-export function buildTabTotalLines(
-  componentData: CompLike[],
+export function sumTabColumns(
+  comp: CompLike | undefined,
   subtotalMap: Record<string, number>,
-): TabTotalLine[] {
-  const lines: TabTotalLine[] = [];
-  if (!Array.isArray(componentData)) return lines;
-  for (const comp of componentData) {
-    if (!comp?.fields || comp.componentType === 'SUBTOTAL') continue;
-    const subFields = comp.fields.filter((f) => f.is_subtotal);
-    if (subFields.length === 0) continue;
-    let total = 0;
-    for (const f of subFields) {
-      total += subtotalMap[`${comp.componentCode}#${f.name}`]
-            ?? subtotalMap[`${comp.tabName}#${f.name}`] ?? 0;
-    }
-    lines.push({ label: `${comp.tabName} · 总计`, value: total });
+): number {
+  if (!comp?.fields) return 0;
+  let total = 0;
+  for (const f of comp.fields) {
+    if (!f.is_subtotal) continue;
+    total += subtotalMap[`${comp.componentCode}#${f.name}`]
+          ?? subtotalMap[`${comp.tabName}#${f.name}`] ?? 0;
   }
-  return lines;
+  return total;
 }

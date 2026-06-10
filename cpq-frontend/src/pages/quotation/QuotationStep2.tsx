@@ -24,7 +24,7 @@ import { quotationService } from '../../services/quotationService';
 import type { CardStructure, CardValues } from '../../services/quotationService';
 import { computeRowKey } from './useCardSnapshots';
 import { findDuplicateRowKeys } from './rowDedup';
-import { buildTabTotalLines } from './tabTotalLines';
+import { sumTabColumns } from './tabTotalLines';
 import { partVersionService } from '../../services/partVersionService';
 import PartVersionDrawer from '../../components/PartVersionDrawer';
 import { templateService } from '../../services/templateService';
@@ -2184,6 +2184,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       })}
                       <td />
                     </tr>
+                    {/* 本页签总计 = 该页签多个小计列之和（页签内展示，不上提到卡片底部） */}
+                    <tr className="qt-subtotal-row qt-tab-total-row">
+                      {activeComponentBomTree && (<><td /><td /><td /></>)}
+                      <td className="qt-subtotal-label-cell">本页签总计</td>
+                      <td colSpan={activeComponent.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
+                        {formatCurrency(sumTabColumns(activeComponent as any, allComponentSubtotals))}
+                      </td>
+                    </tr>
                   </tfoot>
                 )}
               </table>
@@ -2204,15 +2212,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         </div>
       )}
 
-      {/* Subtotal Bar：多小计列 → 每条 (组件·小计列) 一行 + 最终总价（Plan 2-核心）。 */}
+      {/* Subtotal Bar：卡片底部只保留「产品小计」总计；各页签小计移入各自页签内（本页签总计行）。 */}
       <div className="qt-subtotal-bar-multi">
-        {item.componentData.length > 0 &&
-          buildTabTotalLines(item.componentData as any, allComponentSubtotals).map((ln, i) => (
-            <div className="qt-subtotal-line" key={i}>
-              <span className="qt-subtotal-label">{ln.label}</span>
-              <span className="qt-subtotal-value">{formatCurrency(ln.value)}</span>
-            </div>
-          ))}
         <div className="qt-subtotal-line qt-subtotal-total">
           <span className="qt-subtotal-label">产品小计</span>
           <span className="qt-subtotal-value">
