@@ -9,7 +9,7 @@ export interface DirectoryNode {
   components: ComponentItem[];
 }
 
-export type ComponentType = 'NORMAL' | 'SUBTOTAL';
+export type ComponentType = 'NORMAL' | 'SUBTOTAL' | 'EXCEL';
 
 export interface TreeConfig {
   /** 本行 ID 列字段 key(= 字段 name,如「料号」) */
