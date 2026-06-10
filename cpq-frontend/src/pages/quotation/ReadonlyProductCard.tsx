@@ -15,6 +15,7 @@ import FieldTraceIcon from './components/FieldTraceIcon';
 import ComponentCell from './components/ComponentCell';
 import type { CellContext } from './components/ComponentCell';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
+import { buildTabTotalLines } from './tabTotalLines';
 import './quotation.css';
 
 /** Readonly product card for quotation detail page */
@@ -626,11 +627,19 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
         <div className="qt-no-component-data">��无组件数据</div>
       )}
 
-      <div className="qt-subtotal-bar">
-        <span className="qt-subtotal-label">产品小计</span>
-        <span className="qt-subtotal-value">
-          {formatCurrency(productSubtotal || lineItem.subtotal || 0)}
-        </span>
+      <div className="qt-subtotal-bar-multi">
+        {buildTabTotalLines(components as any, compSubtotals).map((ln, i) => (
+          <div className="qt-subtotal-line" key={i}>
+            <span className="qt-subtotal-label">{ln.label}</span>
+            <span className="qt-subtotal-value">{formatCurrency(ln.value)}</span>
+          </div>
+        ))}
+        <div className="qt-subtotal-line qt-subtotal-total">
+          <span className="qt-subtotal-label">产品小计</span>
+          <span className="qt-subtotal-value">
+            {formatCurrency(productSubtotal || lineItem.subtotal || 0)}
+          </span>
+        </div>
       </div>
     </div>
   );
