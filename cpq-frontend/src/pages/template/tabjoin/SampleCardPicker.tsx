@@ -3,20 +3,20 @@ import { Select, message } from 'antd';
 import { tabJoinFormulaService, type SampleCard } from '../../../services/tabJoinFormulaService';
 
 interface Props {
-  templateId: string;
+  componentId: string;
   value?: string;
   onChange: (lineItemId: string, label: string) => void;
 }
 
-const SampleCardPicker: React.FC<Props> = ({ templateId, value, onChange }) => {
+const SampleCardPicker: React.FC<Props> = ({ componentId, value, onChange }) => {
   const [options, setOptions] = useState<{ value: string; label: string }[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!templateId) return;
+    if (!componentId) return;
     setLoading(true);
     tabJoinFormulaService
-      .sampleCards(templateId)
+      .sampleCardsByComponent(componentId)
       .then((res: any) => {
         const cards: SampleCard[] = Array.isArray(res?.data) ? res.data : [];
         setOptions(
@@ -31,7 +31,7 @@ const SampleCardPicker: React.FC<Props> = ({ templateId, value, onChange }) => {
         setOptions([]);
       })
       .finally(() => setLoading(false));
-  }, [templateId]);
+  }, [componentId]);
 
   return (
     <Select

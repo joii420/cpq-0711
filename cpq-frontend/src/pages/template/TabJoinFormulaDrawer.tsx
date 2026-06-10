@@ -3,21 +3,55 @@ import { Drawer, Button, Input, Space, message, Typography } from 'antd';
 import { tabJoinFormulaService, type TabDef } from '../../services/tabJoinFormulaService';
 import TabFieldMatrix from './tabjoin/TabFieldMatrix';
 import SampleCardPicker from './tabjoin/SampleCardPicker';
+import {
+  expressionToTokens,
+  checkMappable,
+} from '../component/formulaSerialize';
+import type { FormulaToken } from '../component/types';
 
 const { Text } = Typography;
 
+export type ComponentFormulaType = 'NORMAL' | 'SUBTOTAL' | 'EXCEL';
+
+/**
+ * onSave payload — discriminated union by the editing component's type.
+ *
+ *  - EXCEL 组件：保存为 Excel 视图列定义（TAB_JOIN_FORMULA string column），
+ *    {@code column} = buildColumn() 的产物 {source_type, expression, tabs}。
+ *  - NORMAL / SUBTOTAL 组件：保存为组件公式 token 数组（FormulaToken[]），
+ *    由 expressionToTokens() 从抽屉字符串表达式转换得到。
+ *
+ * 下游 caller（Task 5.1 ComponentManagement）按 kind 分流落库。
+ */
+export type TabJoinFormulaSavePayload =
+  | { kind: 'excel'; column: any }
+  | { kind: 'tokens'; tokens: FormulaToken[] };
+
 interface Props {
   open: boolean;
-  templateId: string;
+  /** 正在编辑公式的组件 id（页签集 / 样本卡 / 试算均以此组件为作用域） */
+  componentId: string;
+  /** 组件类型 — 决定保存形态：EXCEL → string column；NORMAL/SUBTOTAL → token[] */
+  componentType: ComponentFormulaType;
+  /** 本组件行键字段，供跨页签引用构建 match[] 对齐对（仅 token 形态需要） */
+  selfRowKeyFields?: string[];
   column: any;
   onClose: () => void;
-  onSave: (patch: any) => void;
+  onSave: (payload: TabJoinFormulaSavePayload) => void;
 }
 
 const FUNCS = ['SUM', 'AVG', 'MIN', 'MAX', 'COUNT'];
 const OPS = ['+', '-', '*', '/', '(', ')'];
 
-const TabJoinFormulaDrawer: React.FC<Props> = ({ open, templateId, column, onClose, onSave }) => {
+const TabJoinFormulaDrawer: React.FC<Props> = ({
+  open,
+  componentId,
+  componentType,
+  selfRowKeyFields,
+  column,
+  onClose,
+  onSave,
+}) => {
   const [expression, setExpression] = useState<string>(column?.expression ?? '');
   const [tabDefs, setTabDefs] = useState<TabDef[]>([]);
   const exprRef = useRef<any>(null);
@@ -33,11 +67,11 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({ open, templateId, column, onClo
     setExpression(column?.expression ?? '');
   }, [column]);
 
-  // Drawer 打开时拉页签定义
+  // Drawer 打开时拉页签定义（同目录组件集）
   useEffect(() => {
-    if (!open) return;
+    if (!open || !componentId) return;
     tabJoinFormulaService
-      .tabDefs(templateId)
+      .tabDefsByComponent(componentId)
       .then((res: any) => {
         // api 拦截器返回 {code, message, data}，需手动解包 .data
         setTabDefs(Array.isArray(res?.data) ? res.data : []);
@@ -46,7 +80,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({ open, templateId, column, onClo
         message.error('页签定义加载失败，引用补全不可用');
         setTabDefs([]);
       });
-  }, [open, templateId]);
+  }, [open, componentId]);
 
   /** 在光标处插入文本，caretOffsetFromEnd 控制插入后光标左偏（用于 fn() 光标落在括号内） */
   const insertAtCursor = (text: string, caretOffsetFromEnd = 0) => {
@@ -90,15 +124,36 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({ open, templateId, column, onClo
       message.error('表达式不能为空');
       return;
     }
-    const column = buildColumn(expr);
 
-    // I-1：表达式中引用的 alias 都没匹配到已知页签时，拒绝保存
-    if (column.tabs.length === 0) {
-      message.error('表达式中未识别到有效页签引用，请检查别名拼写');
+    // EXCEL 组件：沿用原行为 —— 保存为 TAB_JOIN_FORMULA string column。
+    if (componentType === 'EXCEL') {
+      const col = buildColumn(expr);
+      // I-1：表达式中引用的 alias 都没匹配到已知页签时，拒绝保存
+      if (col.tabs.length === 0) {
+        message.error('表达式中未识别到有效页签引用，请检查别名拼写');
+        return;
+      }
+      onSave({ kind: 'excel', column: col });
       return;
     }
 
-    onSave(column);
+    // NORMAL / SUBTOTAL 组件：转 FormulaToken[] 落组件公式。
+    let tokens: FormulaToken[];
+    try {
+      tokens = expressionToTokens(expr, tabDefs, selfRowKeyFields);
+    } catch (e: any) {
+      // 解析错误（未知别名 / 括号不匹配 / 非法字符等）→ 拦截保存
+      message.error(e?.message ?? '表达式解析失败，请检查语法');
+      return;
+    }
+
+    const mappable = checkMappable(tokens);
+    if (!mappable.mappable) {
+      message.error(`${mappable.reason ?? '该公式无法映射为组件公式'}，请改用 Excel 组件`);
+      return;
+    }
+
+    onSave({ kind: 'tokens', tokens });
   };
 
   const runDryRun = async () => {
@@ -114,7 +169,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({ open, templateId, column, onClo
     const col = buildColumn(expr);
     setDryRunLoading(true);
     try {
-      const res: any = await tabJoinFormulaService.dryRun(templateId, sampleLi, col);
+      const res: any = await tabJoinFormulaService.dryRunByComponent(componentId, sampleLi, col);
       const data = res?.data ?? res;
       setDryRunValue(data?.value ?? null);
       setDryRunErrors(data?.errors ?? []);
@@ -152,7 +207,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({ open, templateId, column, onClo
         <Space wrap align="center">
           <Text style={{ fontSize: 13 }}>试算：</Text>
           <SampleCardPicker
-            templateId={templateId}
+            componentId={componentId}
             value={sampleLi}
             onChange={(li) => {
               setSampleLi(li || undefined);
