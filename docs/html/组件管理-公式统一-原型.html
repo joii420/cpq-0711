@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>组件管理重构 · 公式统一 — 原型(终稿)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f0f2f5; color: rgba(0,0,0,.85); font-size: 14px;
+  }
+  /* ---------- 顶部页切换 ---------- */
+  .topnav {
+    height: 48px; background: #001529; display: flex; align-items: center;
+    padding: 0 20px; gap: 8px; color: #fff;
+  }
+  .topnav .logo { font-weight: 600; margin-right: 24px; letter-spacing: .5px; }
+  .topnav .navtab {
+    padding: 0 18px; height: 48px; line-height: 48px; cursor: pointer;
+    color: rgba(255,255,255,.65); font-size: 14px;
+  }
+  .topnav .navtab.active { color: #fff; background: #1677ff; }
+  .topnav .spacer { flex:1; }
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ---------- 通用 ---------- */
+  .toolbar {
+    background: #fff; padding: 10px 20px; display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .toolbar h2 { font-size: 16px; font-weight: 600; margin-right: 8px; }
+  .ipt {
+    height: 30px; border: 1px solid #d9d9d9; border-radius: 6px; padding: 0 10px;
+    font-size: 13px; outline: none; min-width: 180px;
+  }
+  .ipt:focus { border-color: #4096ff; box-shadow: 0 0 0 2px rgba(5,145,255,.1); }
+  .btn {
+    height: 30px; padding: 0 14px; border-radius: 6px; border: 1px solid #d9d9d9;
+    background: #fff; cursor: pointer; font-size: 13px; display: inline-flex;
+    align-items: center; gap: 4px;
+  }
+  .btn:hover { border-color: #4096ff; color: #1677ff; }
+  .btn.primary { background: #1677ff; border-color: #1677ff; color: #fff; }
+  .btn.primary:hover { background: #4096ff; color:#fff; }
+  .btn.danger { color: #cf1322; }
+  .btn:disabled { color: rgba(0,0,0,.25); background:#f5f5f5; border-color:#d9d9d9; cursor:not-allowed; }
+  .btn:disabled:hover { color: rgba(0,0,0,.25); border-color:#d9d9d9; }
+  .spacer { flex: 1; }
+  .hint { color:#8c8c8c; font-size:12px; }
+  .divider-v { width:1px; height:24px; background:#e8e8e8; flex:none; }
+
+  /* ================= 组件管理：左列表 + 右详情（双栏） ================= */
+  .cm-layout { display:flex; height: calc(100vh - 48px - 51px); }
+  .cm-master { width: 320px; min-width:320px; background:#fff; border-right:1px solid #f0f0f0; overflow:auto; }
+  .cm-detail { flex:1; overflow:auto; background:#f7f9fb; }
+
+  /* 左：手风琴 + 纵向卡片 */
+  .ml-tools { padding:10px 12px; border-bottom:1px solid #f5f5f5; position:sticky; top:0; background:#fff; z-index:2; }
+  .ml-tools .row { display:flex; gap:8px; align-items:center; }
+  .ml-tools .row + .row { margin-top:8px; }
+  .dir { border-bottom:1px solid #f5f5f5; }
+  .dir-head { display:flex; align-items:center; gap:8px; padding:10px 12px; cursor:pointer; user-select:none; }
+  .dir-head:hover { background:#fafafa; }
+  .dir-caret { transition:transform .2s; color:#8c8c8c; font-size:11px; }
+  .dir.open .dir-caret { transform:rotate(90deg); }
+  .dir-name { font-weight:600; font-size:13px; flex:1; }
+  .dir-counts { display:flex; gap:4px; }
+  .pill { font-size:10px; padding:0 6px; border-radius:8px; background:#f0f5ff; color:#1677ff; line-height:16px; }
+  .pill.excel { background:#e6fffb; color:#08979c; }
+  .pill.sub { background:#fff7e6; color:#d48806; }
+  .dir-body { display:none; padding:4px 12px 12px; }
+  .dir.open .dir-body { display:block; }
+
+  .sec { margin-top:8px; }
+  .sec-title { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:#8c8c8c; padding:4px 0; }
+  .sec-title .dot { width:7px; height:7px; border-radius:2px; }
+  .sec-title.tab .dot { background:#764ba2; }
+  .sec-title.excel .dot { background:#08979c; }
+  .sec-title.sub .dot { background:#d48806; }
+  .sec-title .add { margin-left:auto; font-size:11px; color:#1677ff; cursor:pointer; font-weight:400; }
+
+  /* 纵向卡片（左列表）*/
+  .lcard {
+    position:relative; border-radius:8px; padding:9px 12px 9px 30px; margin-bottom:7px; cursor:pointer;
+    color:#fff; box-shadow:0 2px 6px rgba(102,126,234,.28); transition:all .15s; user-select:none;
+    background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+  }
+  .lcard.excel { background:linear-gradient(135deg,#13c2c2 0%,#08979c 100%); box-shadow:0 2px 6px rgba(8,151,156,.28); }
+  .lcard.sub   { background:linear-gradient(135deg,#f5a623 0%,#d48806 100%); box-shadow:0 2px 6px rgba(212,136,6,.28); }
+  .lcard:hover { transform:translateX(2px); }
+  .lcard.active { outline:2px solid #fff; box-shadow:0 0 0 3px rgba(22,119,255,.5); }
+  .lcard .c-name { font-weight:600; font-size:13px; }
+  .lcard .c-code { font-size:10px; opacity:.85; margin-top:2px; }
+  .lcard .chk { position:absolute; top:50%; left:9px; transform:translateY(-50%); width:15px; height:15px; border-radius:4px; background:rgba(255,255,255,.3); border:1px solid rgba(255,255,255,.7); }
+  .lcard.checked .chk { background:#fff; }
+  .lcard.checked .chk::after { content:"✓"; color:#1677ff; font-size:11px; position:absolute; top:-3px; left:2px; }
+  .lcard-add { border:1px dashed #d0d0d0; border-radius:8px; padding:7px; text-align:center; color:#8c8c8c; cursor:pointer; background:#fafafa; font-size:12px; }
+  .lcard-add:hover { border-color:#1677ff; color:#1677ff; }
+
+  /* 右：详情 */
+  .detail-empty { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; color:#bfbfbf; gap:10px; }
+  .detail-empty .ic { font-size:46px; }
+  .detail-wrap { display:none; padding:18px 22px; }
+  .detail-wrap.show { display:block; }
+  .detail-head { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .detail-head .t { font-size:18px; font-weight:600; }
+  .detail-head .tag { font-size:11px; padding:1px 8px; border-radius:4px; background:#f0f5ff; color:#1677ff; }
+  .detail-head .acts { margin-left:auto; display:flex; gap:8px; }
+  .panel { background:#fff; border:1px solid #f0f0f0; border-radius:10px; padding:16px 18px; }
+
+  /* 合并配置行 */
+  .cfg-row {
+    background:#f5faff; border:1px solid #d4e4f7; border-radius:8px; padding:10px 12px;
+    display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap;
+  }
+  .cfg-row .lbl { font-size:13px; color:#1f4e96; font-weight:500; white-space:nowrap; }
+  .cfg-row .ipt { flex:1; min-width:220px; font-family:Consolas,Monaco,monospace; font-size:12px; }
+  .sw { display:inline-block; width:36px; height:20px; border-radius:10px; background:#bfbfbf; position:relative; cursor:pointer; transition:.2s; flex:none; vertical-align:middle; }
+  .sw.on { background:#1677ff; }
+  .sw::after { content:""; position:absolute; width:16px; height:16px; border-radius:50%; background:#fff; top:2px; left:2px; transition:.2s; }
+  .sw.on::after { left:18px; }
+
+  /* 内部 Tabs */
+  .tabs { display:flex; gap:2px; border-bottom:1px solid #f0f0f0; margin-bottom:14px; }
+  .tab { padding:8px 16px; cursor:pointer; font-size:14px; color:#595959; border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tab.active { color:#1677ff; border-bottom-color:#1677ff; font-weight:500; }
+  .tabpane { display:none; }
+  .tabpane.active { display:block; }
+
+  table.t { width:100%; border-collapse:collapse; font-size:13px; }
+  table.t th, table.t td { border:1px solid #f0f0f0; padding:8px 10px; text-align:left; }
+  table.t th { background:#fafafa; font-weight:500; color:#595959; }
+  table.t.fe td { padding:5px 8px; }
+  .ce { width:100%; height:28px; border:1px solid #e3e3e3; border-radius:5px; padding:0 8px; font-size:12px; outline:none; background:#fff; }
+  .ce:focus { border-color:#4096ff; box-shadow:0 0 0 2px rgba(5,145,255,.08); }
+  table.t input[type=checkbox] { width:15px; height:15px; cursor:pointer; }
+  .badge { font-size:11px; padding:1px 7px; border-radius:4px; }
+  .badge.view { background:#e6fffb; color:#08979c; }
+  .badge.gv { background:#f9f0ff; color:#722ed1; }
+  .badge.key { background:#fff7e6; color:#d48806; }
+  .link { color:#1677ff; cursor:pointer; }
+  .removed-note { background:#fffbe6; border:1px solid #ffe58f; border-radius:6px; padding:8px 12px; color:#ad6800; font-size:12px; margin-top:12px; }
+
+  /* ================= 抽屉：页签连表公式（编辑公式时弹出） ================= */
+  .mask { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; z-index:35; }
+  .mask.show { display:block; }
+  .drawer { position:fixed; top:0; right:0; height:100%; background:#fff; z-index:40; box-shadow:-6px 0 16px rgba(0,0,0,.12); transform:translateX(100%); transition:transform .26s; display:flex; flex-direction:column; }
+  .drawer.show { transform:translateX(0); }
+  .drawer.formula { width:1080px; max-width:96vw; }
+  .dh { padding:14px 20px; border-bottom:1px solid #f0f0f0; display:flex; align-items:center; gap:10px; }
+  .dh .t { font-size:16px; font-weight:600; }
+  .dh .tag { font-size:11px; padding:1px 8px; border-radius:4px; }
+  .dh .x { margin-left:auto; cursor:pointer; color:#8c8c8c; font-size:18px; }
+  .db { padding:16px 20px; overflow:auto; flex:1; }
+  .df { padding:10px 20px; border-top:1px solid #f0f0f0; display:flex; justify-content:flex-end; gap:10px; }
+  .fexpr { background:#f8fbff; border:1px solid #d6e4ff; border-radius:8px; min-height:54px; padding:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .token { padding:4px 10px; border-radius:6px; font-size:13px; color:#fff; }
+  .token.field { background:#667eea; }
+  .token.op { background:#8c8c8c; }
+  .src-grid { display:flex; gap:14px; margin-top:14px; }
+  .src-col { flex:1; border:1px solid #f0f0f0; border-radius:8px; padding:10px; }
+  .src-col h4 { font-size:13px; margin-bottom:8px; color:#595959; }
+  .chip { display:inline-block; padding:4px 10px; margin:3px; border-radius:6px; background:#f0f5ff; color:#1677ff; font-size:12px; cursor:pointer; }
+  .chip.cross { background:#e6fffb; color:#08979c; }
+  .sel { height:30px; border:1px solid #d9d9d9; border-radius:6px; padding:0 8px; font-size:13px; }
+  /* 页签字段矩阵（真实 TabJoinFormulaDrawer / TabFieldMatrix 1:1） */
+  .fbar-trial { padding:10px 12px; background:#f0f5ff; border:1px solid #adc6ff; border-radius:6px; display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+  .sub-grey { color:#8a909a; font-size:12px; margin:2px 0 6px; }
+  .ta { width:100%; min-height:54px; border:1px solid #d9d9d9; border-radius:6px; padding:8px 10px; font-family:Consolas,Monaco,monospace; font-size:13px; resize:vertical; outline:none; }
+  .ta:focus { border-color:#4096ff; box-shadow:0 0 0 2px rgba(5,145,255,.1); }
+  .opbtn { height:26px; min-width:26px; padding:0 8px; border:1px solid #d9d9d9; border-radius:6px; background:#fff; font-family:monospace; font-weight:600; cursor:pointer; }
+  .fnbtn { height:26px; padding:0 10px; border:1px solid #ffd591; color:#fa8c16; border-radius:6px; background:#fff; cursor:pointer; font-size:12px; }
+  .rule-hint { margin-top:10px; padding:8px 12px; background:#fffbe6; border:1px solid #ffe58f; border-radius:6px; font-size:12px; color:#874d00; line-height:1.7; }
+  .rule-hint code { background:#fff; border:1px solid #ffe58f; border-radius:3px; padding:0 4px; }
+  .lock-line { display:flex; align-items:center; gap:10px; margin:8px 0; font-size:12px; color:#595959; }
+  .fmx { border:1px solid #f0f0f0; border-radius:8px; overflow:hidden; }
+  .fmx-row { display:flex; gap:12px; padding:10px 12px; border-bottom:1px solid #f5f5f5; align-items:flex-start; }
+  .fmx-row:last-child { border-bottom:none; }
+  .fmx-name { width:150px; min-width:150px; }
+  .fmx-name .nm { font-weight:600; font-size:13px; }
+  .fmx-name .rk { display:inline-block; margin-top:4px; font-size:10px; padding:1px 6px; border-radius:4px; background:#f9f0ff; color:#722ed1; }
+  .fmx-fields { flex:1; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .mx-detail { font-size:12px; color:#8a909a; margin-right:2px; }
+  .ftok { font-size:12px; color:#1677ff; cursor:pointer; padding:2px 4px; border-radius:4px; }
+  .ftok:hover { background:#f0f5ff; }
+  .ftok.dim { color:#c8c8c8; cursor:not-allowed; }
+  .grp-lbl { font-size:11px; color:#bbb; margin:0 2px 0 6px; }
+  .ttok { font-size:12px; color:#52c41a; border:1px solid #b7eb8f; border-radius:4px; padding:2px 8px; cursor:pointer; background:#fcfff8; }
+  .ttok:hover { background:#f6ffed; }
+
+  /* ================= 模板配置 ================= */
+  .tc-wrap { display:flex; height:calc(100vh - 48px - 51px); }
+  .palette { width:240px; background:#fff; border-right:1px solid #f0f0f0; overflow:auto; padding:12px; }
+  .palette h4 { font-size:13px; color:#595959; margin:14px 0 8px; padding-bottom:4px; border-bottom:2px solid #764ba2; }
+  .palette h4.excel { border-bottom-color:#08979c; }
+  .palette h4.sub { border-bottom-color:#d48806; }
+  .pal-card { border-radius:8px; padding:10px 12px; margin-bottom:8px; color:#fff; cursor:move; font-size:13px; font-weight:500; box-shadow:0 2px 8px rgba(102,126,234,.3); background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); }
+  .pal-card.excel { background:linear-gradient(135deg,#13c2c2 0%,#08979c 100%); }
+  .pal-card.sub { background:linear-gradient(135deg,#f5a623 0%,#d48806 100%); }
+  .pal-card .s { font-size:11px; opacity:.85; margin-top:3px; }
+  .canvas { flex:1; overflow:auto; padding:16px 20px; }
+  .vt { display:inline-flex; border:1px solid #d9d9d9; border-radius:8px; overflow:hidden; margin-bottom:14px; }
+  .vt span { padding:6px 16px; cursor:pointer; font-size:13px; }
+  .vt span.active { background:#1677ff; color:#fff; }
+  .excel-drop { border:2px dashed #91d5ff; border-radius:10px; background:#f0f8ff; padding:18px; }
+  .excel-drop .ph { text-align:center; color:#1677ff; padding:18px; font-size:13px; }
+  .excel-block { background:#fff; border:1px solid #d6e4ff; border-radius:8px; margin-top:12px; box-shadow:0 1px 4px rgba(0,0,0,.04); }
+  .excel-block .ebh { padding:10px 14px; border-bottom:1px solid #f0f0f0; display:flex; align-items:center; gap:8px; }
+  .excel-block .ebh .nm { font-weight:600; }
+  .excel-block .ebh .tag { font-size:11px; padding:1px 8px; border-radius:4px; background:#e6fffb; color:#08979c; }
+  .excel-block .ebh .x { margin-left:auto; color:#8c8c8c; cursor:pointer; }
+  .excel-grid { width:100%; border-collapse:collapse; font-size:12px; }
+  .excel-grid th, .excel-grid td { border:1px solid #f0f0f0; padding:6px 8px; }
+  .excel-grid th { background:#fafafa; font-weight:500; }
+  .excel-grid td.f { color:#08979c; font-family:Consolas,monospace; }
+  .drag-tip { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:#000a; color:#fff; padding:8px 16px; border-radius:20px; font-size:12px; z-index:5; }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="logo">CPQ 配置中心</div>
+  <div class="navtab active" onclick="showPage('cm',this)">组件管理</div>
+  <div class="navtab" onclick="showPage('tc',this)">模板配置</div>
+  <div class="spacer"></div>
+  <div style="font-size:12px;opacity:.6">原型 · 终稿示意</div>
+</div>
+
+<!-- ============================ 页 1：组件管理（左列表 + 右详情） ============================ -->
+<div class="page active" id="page-cm">
+  <div class="cm-layout">
+
+    <!-- 左：列表（纵向卡片 + 手风琴目录） -->
+    <div class="cm-master">
+      <div class="ml-tools">
+        <div class="row">
+          <input class="ipt" style="flex:1;min-width:0" placeholder="🔍 搜索组件名 / 编码">
+          <button class="btn primary">＋ 新建</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="tbPublish" disabled style="flex:1">发布</button>
+          <button class="btn" id="tbDisable" disabled style="flex:1">停用</button>
+          <button class="btn danger" id="tbDelete" disabled style="flex:1">删除</button>
+        </div>
+        <div class="hint" id="selHint" style="margin-top:6px">勾选卡片左侧框可批量操作</div>
+      </div>
+
+      <!-- 目录 A -->
+      <div class="dir open">
+        <div class="dir-head" onclick="toggleDir(this)">
+          <span class="dir-caret">▶</span>
+          <span class="dir-name">📁 标准螺丝产品</span>
+          <span class="dir-counts"><span class="pill">页签4</span><span class="pill excel">XLS1</span><span class="pill sub">小计1</span></span>
+        </div>
+        <div class="dir-body">
+          <div class="sec">
+            <div class="sec-title tab"><span class="dot"></span>页签组件<span class="add">＋</span></div>
+            <div class="lcard active" onclick="openComp(this)"><span class="chk" onclick="toggleChk(event,this)"></span><div class="c-name">投料</div><div class="c-code">COMP-0027</div></div>
+            <div class="lcard" onclick="openComp(this)"><span class="chk" onclick="toggleChk(event,this)"></span><div class="c-name">回料</div><div class="c-code">COMP-0031</div></div>
+            <div class="lcard" onclick="openComp(this)"><span class="chk" onclick="toggleChk(event,this)"></span><div class="c-name">加工费</div><div class="c-code">COMP-0042</div></div>
+            <div class="lcard" onclick="openComp(this)"><span class="chk" onclick="toggleChk(event,this)"></span><div class="c-name">表面处理</div><div class="c-code">COMP-0055</div></div>
+            <div class="lcard-add">＋ 新建页签组件</div>
+          </div>
+          <div class="sec">
+            <div class="sec-title excel"><span class="dot"></span>EXCEL 组件<span class="add">＋</span></div>
+            <div class="lcard excel" onclick="openComp(this,'excel')"><span class="chk" onclick="toggleChk(event,this)"></span><div class="c-name">核价单 Excel</div><div class="c-code">XLS-0007</div></div>
+            <div class="lcard-add">＋ 新建 EXCEL 组件</div>
+          </div>
+          <div class="sec">
+            <div class="sec-title sub"><span class="dot"></span>小计组件<span class="add">＋</span></div>
+            <div class="lcard sub" onclick="openComp(this,'sub')"><span class="chk" onclick="toggleChk(event,this)"></span><div class="c-name">产品小计</div><div class="c-code">SUB-0003</div></div>
+            <div class="lcard-add">＋ 新建小计组件</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 目录 B（折叠） -->
+      <div class="dir">
+        <div class="dir-head" onclick="toggleDir(this)">
+          <span class="dir-caret">▶</span>
+          <span class="dir-name">📁 精密弹簧产品</span>
+          <span class="dir-counts"><span class="pill">页签3</span><span class="pill excel">XLS1</span></span>
+        </div>
+        <div class="dir-body">
+          <div class="sec"><div class="sec-title tab"><span class="dot"></span>页签组件<span class="add">＋</span></div>
+            <div class="lcard" onclick="openComp(this)"><span class="chk" onclick="toggleChk(event,this)"></span><div class="c-name">线材投料</div><div class="c-code">COMP-0061</div></div>
+            <div class="lcard-add">＋ 新建页签组件</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 目录 C（折叠） -->
+      <div class="dir">
+        <div class="dir-head" onclick="toggleDir(this)">
+          <span class="dir-caret">▶</span>
+          <span class="dir-name">📁 通用组件</span>
+          <span class="dir-counts"><span class="pill">页签2</span><span class="pill sub">小计1</span></span>
+        </div>
+        <div class="dir-body"></div>
+      </div>
+    </div>
+
+    <!-- 右：详情 -->
+    <div class="cm-detail">
+      <!-- 空态 -->
+      <div class="detail-empty" id="detailEmpty">
+        <div class="ic">🗂️</div>
+        <div>从左侧列表选择一个组件查看 / 编辑</div>
+        <div class="hint">组件 = 报价/核价中的一个页签或 Excel 表；定义列结构与公式</div>
+      </div>
+
+      <!-- 详情内容 -->
+      <div class="detail-wrap" id="detailWrap">
+        <div class="detail-head">
+          <span class="t" id="dcTitle">投料</span>
+          <span class="tag" id="dcTag">页签组件 · COMP-0027</span>
+          <div class="acts">
+            <button class="btn">复制</button>
+            <button class="btn primary" onclick="alert('已保存（原型）')">保存</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <!-- 点 5：数据驱动路径 + 核价BOM递归 合并一行；树表(纯展示)已隐藏 -->
+          <div class="cfg-row" id="rowDriver">
+            <span class="lbl">数据驱动路径(可选)：</span>
+            <input class="ipt" value="$v_incoming_material.*" placeholder="选 SQL 视图后自动生成 $view 路径">
+            <button class="btn" onclick="openFormula(true,'选择 SQL 视图')">选择 SQL 视图</button>
+            <span class="divider-v"></span>
+            <span class="lbl">核价 BOM 递归展开：</span>
+            <span class="sw" onclick="this.classList.toggle('on')"></span>
+          </div>
+
+          <div class="tabs" id="compTabs">
+            <div class="tab active" onclick="compTab('fields',this)">字段配置</div>
+            <div class="tab" onclick="compTab('formulas',this)">公式</div>
+            <div class="tab" onclick="compTab('sqlviews',this)">SQL 视图</div>
+          </div>
+
+          <!-- 字段配置：复用真实 FieldConfigTable，逐字段可编辑 -->
+          <div class="tabpane active" id="cp-fields">
+            <div style="display:flex;align-items:center;margin-bottom:10px">
+              <b>字段配置</b><span class="hint" style="margin-left:8px">复用现有 FieldConfigTable —— 字段名/类型/取值来源/金额/小计/行键/备注 均可编辑</span>
+              <button class="btn primary" style="margin-left:auto">＋ 添加字段</button>
+            </div>
+            <table class="t fe">
+              <thead><tr>
+                <th style="width:120px">字段名</th><th style="width:130px">字段类型</th><th>内容/配置（取值来源）</th>
+                <th style="width:48px;text-align:center">金额</th><th style="width:48px;text-align:center">小计</th><th style="width:48px;text-align:center">行键</th>
+                <th style="width:120px">备注</th><th style="width:44px"></th>
+              </tr></thead>
+              <tbody>
+                <tr>
+                  <td><input class="ce" value="料号"></td>
+                  <td><select class="ce"><option>BASIC_DATA</option></select></td>
+                  <td><span class="badge view">$v_incoming_material.part_no</span> <span class="link">改</span> · <span class="link">🌐</span></td>
+                  <td style="text-align:center"><input type="checkbox"></td><td style="text-align:center"><input type="checkbox"></td><td style="text-align:center"><input type="checkbox" checked></td>
+                  <td><input class="ce" placeholder="备注"></td><td><span class="link">✕</span></td>
+                </tr>
+                <tr>
+                  <td><input class="ce" value="单重"></td>
+                  <td><select class="ce"><option>BASIC_DATA</option></select></td>
+                  <td><span class="badge view">$v_incoming_material.unit_weight</span> <span class="link">改</span> · <span class="link">🌐</span></td>
+                  <td style="text-align:center"><input type="checkbox"></td><td style="text-align:center"><input type="checkbox"></td><td style="text-align:center"><input type="checkbox"></td>
+                  <td><input class="ce" placeholder="备注"></td><td><span class="link">✕</span></td>
+                </tr>
+                <tr>
+                  <td><input class="ce" value="单价"></td>
+                  <td><select class="ce"><option>DATA_SOURCE</option></select></td>
+                  <td><span class="badge gv">🌐 全局变量 ELEM_PRICE</span> <span class="link">改</span></td>
+                  <td style="text-align:center"><input type="checkbox"></td><td style="text-align:center"><input type="checkbox"></td><td style="text-align:center"><input type="checkbox"></td>
+                  <td><input class="ce" placeholder="备注"></td><td><span class="link">✕</span></td>
+                </tr>
+                <tr>
+                  <td><input class="ce" value="数量"></td>
+                  <td><select class="ce"><option>INPUT_NUMBER</option></select></td>
+                  <td><span class="hint">手工录入</span></td>
+                  <td style="text-align:center"><input type="checkbox"></td><td style="text-align:center"><input type="checkbox"></td><td style="text-align:center"><input type="checkbox"></td>
+                  <td><input class="ce" placeholder="备注"></td><td><span class="link">✕</span></td>
+                </tr>
+                <tr>
+                  <td><input class="ce" value="材料成本"></td>
+                  <td><select class="ce"><option>FORMULA</option></select></td>
+                  <td><span class="link" onclick="openFormula()">公式：[投料.单重] × [投料.单价] × [投料.数量] ✎</span></td>
+                  <td style="text-align:center"><input type="checkbox" checked></td><td style="text-align:center"><input type="checkbox" checked></td><td style="text-align:center"><input type="checkbox"></td>
+                  <td><input class="ce" placeholder="备注" value="不良率已含"></td><td><span class="link">✕</span></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="removed-note">
+              字段属性（<b>金额 / 小计 / 行键 / 备注 / 排序</b>）= 现有 FieldConfigTable 能力，原样保留可编辑。<br>
+              字段级「全局变量取值 🌐 / 数据源绑定」仍在行内（🌐 / 数据源弹窗），不受本次改动影响。取值路径来源统一为 <b>SQL 视图</b>（已移除手输原始表路径入口）。
+            </div>
+          </div>
+
+          <!-- 公式 -->
+          <div class="tabpane" id="cp-formulas">
+            <div style="display:flex; align-items:center; margin-bottom:10px">
+              <b>公式管理</b><span class="hint" style="margin-left:8px">（共 2 个）</span>
+              <button class="btn primary" style="margin-left:auto" onclick="openFormula(false,'新建公式')">＋ 添加公式</button>
+            </div>
+            <table class="t">
+              <thead><tr><th style="width:160px">公式名称</th><th>表达式</th><th style="width:60px">操作</th></tr></thead>
+              <tbody>
+                <tr><td>材料成本</td><td><span class="badge view">单重</span> × <span class="badge view">单价</span> × <span class="badge view">数量</span></td><td><span class="link" onclick="openFormula()">编辑</span></td></tr>
+                <tr><td>回料抵扣</td><td><span class="badge" style="background:#e6fffb;color:#08979c">求和(回料.重量 ⨝ 料号)</span> × 回料单价</td><td><span class="link" onclick="openFormula()">编辑</span></td></tr>
+              </tbody>
+            </table>
+            <div class="removed-note">
+              ✅ 已移除：右侧「字段列表 / 其他数据源 / 全局变量」面板、公式「结果类型」列（结果恒为数字）。<br>
+              ✅ 点「编辑/添加」弹出统一「页签连表公式配置抽屉」（本页签字段引用 + 跨页签引用，聚合可选）。全局变量插入暂不提供。
+            </div>
+          </div>
+
+          <!-- SQL 视图 -->
+          <div class="tabpane" id="cp-sqlviews">
+            <div style="display:flex; align-items:center; margin-bottom:10px">
+              <b>SQL 视图</b><span class="hint" style="margin-left:8px">字段 / 数据驱动路径的唯一取数来源</span>
+              <button class="btn primary" style="margin-left:auto">＋ 新建 SQL 视图</button>
+            </div>
+            <table class="t">
+              <thead><tr><th>视图名称</th><th>说明</th><th style="width:120px">操作</th></tr></thead>
+              <tbody><tr><td><span class="badge view">v_incoming_material</span></td><td>投料明细（客户×物料）</td><td><span class="link">编辑</span> · <span class="link">预览</span></td></tr></tbody>
+            </table>
+            <div class="removed-note">已移除：手输原始 PG 表路径 Tab、DATA_SOURCE 的 BNF_PATH 子类型、老表直引警告。路径统一形如 <code>$view.列</code>，用户不再手写裸路径。</div>
+          </div>
+
+          <!-- 小计组件态：公式配置与页签组件完全一致（同一抽屉） -->
+          <div class="tabpane" id="cp-subhint">
+            <div style="display:flex; align-items:center; margin-bottom:10px">
+              <b>公式管理</b><span class="hint" style="margin-left:8px">（共 1 个）· 汇总其他组件小计值</span>
+              <button class="btn primary" style="margin-left:auto" onclick="openFormula(false,'新建小计公式')">＋ 添加公式</button>
+            </div>
+            <table class="t"><thead><tr><th style="width:160px">公式名称</th><th>表达式</th><th style="width:60px">操作</th></tr></thead>
+              <tbody><tr><td>产品小计</td><td><span class="badge view">投料.材料成本</span> + <span class="badge view">加工费.小计</span> + <span class="badge view">表面处理.小计</span></td><td><span class="link" onclick="openFormula()">编辑</span></td></tr></tbody>
+            </table>
+            <div class="removed-note">小计组件的公式配置与<b>页签组件完全一致</b> —— 点「编辑/添加」弹出同一个「页签连表公式配置抽屉」（本页签字段引用 + 跨页签引用，聚合可选；无结果类型列、无全局变量）。</div>
+          </div>
+
+          <!-- EXCEL 组件态 -->
+          <div class="tabpane" id="cp-excelcols">
+            <div style="display:flex; align-items:center; margin-bottom:10px">
+              <b>Excel 列配置</b><span class="hint" style="margin-left:8px">EXCEL 组件 = 一整张 Excel 表，列 + 公式都在此配（原 Excel 模板已收编）</span>
+              <button class="btn primary" style="margin-left:auto">＋ 添加列</button>
+            </div>
+            <table class="t"><thead><tr><th>列名</th><th>来源 / 公式</th><th style="width:64px;text-align:center">显示</th><th style="width:60px">操作</th></tr></thead>
+              <tbody>
+                <tr><td>料号</td><td><span class="badge view">$v_costing.part_no</span></td><td style="text-align:center"><span class="sw on" onclick="this.classList.toggle('on')"></span></td><td><span class="link">编辑</span></td></tr>
+                <tr><td>材料成本</td><td><span class="link" onclick="openFormula()">公式：单重 × 单价 ✎</span></td><td style="text-align:center"><span class="sw on" onclick="this.classList.toggle('on')"></span></td><td><span class="link">编辑</span></td></tr>
+                <tr><td>内部成本系数</td><td><span class="badge view">$v_costing.cost_factor</span></td><td style="text-align:center"><span class="sw" onclick="this.classList.toggle('on')"></span></td><td><span class="link">编辑</span></td></tr>
+                <tr><td>合计</td><td><span class="link" onclick="openFormula()">公式：材料 + 加工 ✎</span></td><td style="text-align:center"><span class="sw on" onclick="this.classList.toggle('on')"></span></td><td><span class="link">编辑</span></td></tr>
+              </tbody>
+            </table>
+            <div class="removed-note">「显示」开关 = 该列是否在最终 Excel 视图 / 导出中呈现。关闭即<b>隐藏列</b>：仍参与公式计算，但不显示（如上例「内部成本系数」作中间量）。此即原 Excel 模板的「显示/隐藏」能力，已随 EXCEL 组件保留。</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================ 页 2：模板配置 ============================ -->
+<div class="page" id="page-tc">
+  <div class="toolbar">
+    <h2>模板配置 · 标准螺丝报价模板</h2>
+    <span class="badge view">报价模板</span>
+    <div class="spacer"></div>
+    <button class="btn">保存草稿</button>
+    <button class="btn primary">发布</button>
+  </div>
+  <div class="tc-wrap">
+    <div class="palette">
+      <div class="hint">从下方拖组件到右侧视图</div>
+      <h4>页签组件</h4>
+      <div class="pal-card">投料<div class="s">COMP-0027</div></div>
+      <div class="pal-card">回料<div class="s">COMP-0031</div></div>
+      <div class="pal-card">加工费<div class="s">COMP-0042</div></div>
+      <h4 class="excel">EXCEL 组件</h4>
+      <div class="pal-card excel" id="dragExcel" draggable="true">核价单 Excel<div class="s">XLS-0007 · 拖我到 Excel 视图 →</div></div>
+      <h4 class="sub">小计组件</h4>
+      <div class="pal-card sub">产品小计<div class="s">SUB-0003</div></div>
+    </div>
+    <div class="canvas">
+      <div class="vt">
+        <span onclick="setView('detail',this)">产品卡视图</span>
+        <span class="active" onclick="setView('excel',this)">Excel 视图</span>
+      </div>
+      <div id="excelView">
+        <div class="excel-drop" id="excelDrop" ondragover="event.preventDefault()" ondrop="dropExcel(event)">
+          <div class="ph" id="excelPh">⬇ 拖入 EXCEL 组件到此处<br><span class="hint">EXCEL 组件来自「组件管理」，此处只需拖入即用，列与公式都在组件里配好</span></div>
+          <div class="excel-block" id="excelBlock">
+            <div class="ebh">
+              <span class="nm">核价单 Excel</span><span class="tag">EXCEL 组件 · XLS-0007</span>
+              <span class="hint">列结构与公式在组件管理中维护，模板侧只读引用</span>
+              <span class="x" onclick="removeExcel()">✕ 移除</span>
+            </div>
+            <table class="excel-grid">
+              <thead><tr><th>料号</th><th>名称</th><th>数量</th><th>单重(g)</th><th class="f">材料成本</th><th class="f">加工成本</th><th class="f">合计</th></tr></thead>
+              <tbody>
+                <tr><td>HF-001</td><td>主体</td><td>100</td><td>12.5</td><td class="f">=单重×单价</td><td class="f">=Σ工序</td><td class="f">=材料+加工</td></tr>
+                <tr><td>HF-002</td><td>垫片</td><td>200</td><td>3.2</td><td class="f">=单重×单价</td><td class="f">=Σ工序</td><td class="f">=材料+加工</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:10px">Excel 视图为「单组件容器」，通常拖入 1 个 EXCEL 组件。公式能力已全部下沉到组件管理，模板侧不再配公式。</div>
+      </div>
+      <div id="detailView" style="display:none"><div class="hint">产品卡视图（页签组件拖拽组装区）— 本原型聚焦 Excel 视图与组件管理，产品卡视图沿用现状。</div></div>
+    </div>
+  </div>
+  <div class="drag-tip">提示：把左侧「核价单 Excel」拖到右侧虚线框，演示 EXCEL 组件拖入 Excel 视图</div>
+</div>
+
+<!-- ============================ 抽屉：页签连表公式配置 ============================ -->
+<div class="mask" id="maskFormula" onclick="closeFormula()"></div>
+<div class="drawer formula" id="drawerFormula">
+  <div class="dh">
+    <span class="t" id="dfTitle">配置页签连表公式</span>
+    <span class="tag" style="background:#e6fffb;color:#08979c">本页签 + 跨页签引用 · 聚合可选</span>
+    <span class="x" onclick="closeFormula()">✕</span>
+  </div>
+  <div class="db">
+    <!-- 试算条 -->
+    <div class="fbar-trial">
+      <span style="font-size:13px">试算：</span>
+      <select class="sel" style="min-width:240px"><option>选择本卡片试算</option></select>
+      <button class="btn">试 算</button>
+    </div>
+
+    <b>公式表达式</b>
+    <div class="sub-grey">列来源：页签连表公式 · 单卡片单值 · 行键自动对齐(全外连·缺补0) · 明细默认按对齐行求和</div>
+    <textarea class="ta" placeholder="例：[投料.金额] * [加工.工时] + [回料(总计)]">[投料.单重] * [投料.单价] * [投料.数量] - [回料(总计)]</textarea>
+
+    <div style="display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap">
+      <span class="hint">运算符</span>
+      <button class="opbtn">+</button><button class="opbtn">−</button><button class="opbtn">*</button><button class="opbtn">/</button><button class="opbtn">(</button><button class="opbtn">)</button>
+      <span class="hint" style="margin-left:8px">函数</span>
+      <button class="fnbtn">SUM</button><button class="fnbtn">AVG</button><button class="fnbtn">MIN</button><button class="fnbtn">MAX</button><button class="fnbtn">COUNT</button>
+    </div>
+
+    <div class="rule-hint">
+      明细字段默认按对齐行自动求和；套 <code>AVG/MIN/MAX/COUNT</code> 改聚合方式。按顶层 +/- 拆项：含裸明细的项逐行求和，纯标量/总计项算一次。引用格式：<code>[页签别名.字段名]</code> 或 <code>[页签别名(总计)]</code>。
+    </div>
+
+    <div class="sub-grey" style="font-weight:600;margin-top:14px">页签字段 —— <span style="color:#722ed1">可引用页签 = 当前目录「标准螺丝产品」下的其他组件</span>（全部展示 · 点明细锁定行键类 · 行键不同则该页签明细置灰，仅留总计可选）</div>
+    <div class="lock-line"><span>当前行键锁定：<b>未锁定</b>（任意页签明细可选）</span><button class="btn" style="height:26px">清空表达式</button></div>
+
+    <div class="fmx">
+      <div class="fmx-row" style="background:#f5f3ff"><div class="fmx-name"><div class="nm">投料 <span style="font-size:10px;color:#722ed1">本组件</span></div><span class="rk">行键: 料号</span></div>
+        <div class="fmx-fields"><span class="mx-detail">明细</span>
+          <span class="ftok">料号</span><span class="ftok">单重</span><span class="ftok">单价</span><span class="ftok">数量</span><span class="ftok">材料成本</span>
+          <span class="grp-lbl">页签总计</span><span class="ttok">投料(总计)</span></div></div>
+      <div class="fmx-row"><div class="fmx-name"><div class="nm">回料</div><span class="rk">行键: 料号</span></div>
+        <div class="fmx-fields"><span class="mx-detail">明细</span>
+          <span class="ftok">料号</span><span class="ftok">重量</span><span class="ftok">单价</span><span class="ftok">回收金额</span>
+          <span class="grp-lbl">页签总计</span><span class="ttok">回料(总计)</span></div></div>
+      <div class="fmx-row"><div class="fmx-name"><div class="nm">加工费</div><span class="rk">行键:</span></div>
+        <div class="fmx-fields"><span class="mx-detail">明细</span>
+          <span class="ftok">工序</span><span class="ftok">工时</span><span class="ftok">费率</span><span class="ftok">小计</span>
+          <span class="grp-lbl">页签总计</span><span class="ttok">加工费(总计)</span></div></div>
+      <div class="fmx-row"><div class="fmx-name"><div class="nm">表面处理</div><span class="rk">行键:</span></div>
+        <div class="fmx-fields"><span class="mx-detail">明细</span>
+          <span class="ftok">工艺</span><span class="ftok">面积</span><span class="ftok">单价</span><span class="ftok">不良率</span>
+          <span class="grp-lbl">页签总计</span><span class="ttok">表面处理(总计)</span></div></div>
+      <div class="fmx-row"><div class="fmx-name"><div class="nm">产品小计 <span style="font-size:10px;color:#d48806">小计组件</span></div><span class="rk">行键:</span></div>
+        <div class="fmx-fields"><span class="mx-detail">明细</span>
+          <span class="grp-lbl">页签总计</span><span class="ttok">产品小计(总计)</span></div></div>
+    </div>
+
+    <div class="removed-note">此抽屉 = 你现有的 <b>TabJoinFormulaDrawer</b>（页签连表公式），组件管理 / EXCEL 组件 / 小计组件配公式时复用同一个。<b>可引用页签集 = 当前目录下的其他组件</b>（决策 A）。已按方案去掉「结果类型」「全局变量插入」。</div>
+  </div>
+  <div class="df">
+    <button class="btn" onclick="closeFormula()">取消</button>
+    <button class="btn primary" onclick="closeFormula()">确定</button>
+  </div>
+</div>
+
+<script>
+  function showPage(id, el){
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.getElementById('page-'+id).classList.add('active');
+    document.querySelectorAll('.navtab').forEach(t=>t.classList.remove('active'));
+    el.classList.add('active');
+  }
+  function toggleDir(head){ head.parentElement.classList.toggle('open'); }
+
+  function refreshToolbar(){
+    const n = document.querySelectorAll('.lcard.checked').length;
+    ['tbPublish','tbDisable','tbDelete'].forEach(id=>document.getElementById(id).disabled = n===0);
+    document.getElementById('selHint').textContent = n? `已选 ${n} 项` : '勾选卡片左侧框可批量操作';
+  }
+  function toggleChk(e, el){ e.stopPropagation(); el.parentElement.classList.toggle('checked'); refreshToolbar(); }
+
+  // 选中组件 → 右侧详情（内嵌，非抽屉）
+  function openComp(card, type){
+    document.querySelectorAll('.lcard').forEach(c=>c.classList.remove('active'));
+    card.classList.add('active');
+    document.getElementById('detailEmpty').style.display='none';
+    document.getElementById('detailWrap').classList.add('show');
+
+    const name = card.querySelector('.c-name').textContent;
+    const code = card.querySelector('.c-code').textContent;
+    document.getElementById('dcTitle').textContent = name;
+
+    ['cp-fields','cp-formulas','cp-sqlviews','cp-subhint','cp-excelcols'].forEach(i=>document.getElementById(i).classList.remove('active'));
+    const tabs = document.getElementById('compTabs');
+    const row = document.getElementById('rowDriver');
+    const tag = document.getElementById('dcTag');
+    tabs.style.display='flex'; row.style.display='flex';
+
+    if(type==='sub'){
+      tag.textContent='小计组件 · '+code; tag.style.background='#fff7e6'; tag.style.color='#d48806';
+      row.style.display='none'; tabs.style.display='none';
+      document.getElementById('cp-subhint').classList.add('active');
+    } else if(type==='excel'){
+      tag.textContent='EXCEL 组件 · '+code; tag.style.background='#e6fffb'; tag.style.color='#08979c';
+      tabs.style.display='none'; row.style.display='none';
+      document.getElementById('cp-excelcols').classList.add('active');
+    } else {
+      tag.textContent='页签组件 · '+code; tag.style.background='#f0f5ff'; tag.style.color='#1677ff';
+      document.getElementById('cp-fields').classList.add('active');
+      document.querySelectorAll('#compTabs .tab').forEach((t,i)=>t.classList.toggle('active',i===0));
+    }
+  }
+  function compTab(id, el){
+    document.querySelectorAll('#compTabs .tab').forEach(t=>t.classList.remove('active'));
+    el.classList.add('active');
+    ['cp-fields','cp-formulas','cp-sqlviews'].forEach(i=>document.getElementById(i).classList.remove('active'));
+    document.getElementById('cp-'+id).classList.add('active');
+  }
+
+  function openFormula(isPath, title){
+    document.getElementById('dfTitle').textContent = title || '配置页签连表公式';
+    document.getElementById('maskFormula').classList.add('show');
+    document.getElementById('drawerFormula').classList.add('show');
+  }
+  function closeFormula(){
+    document.getElementById('maskFormula').classList.remove('show');
+    document.getElementById('drawerFormula').classList.remove('show');
+  }
+
+  function setView(v, el){
+    document.querySelectorAll('.vt span').forEach(s=>s.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('excelView').style.display = v==='excel'?'block':'none';
+    document.getElementById('detailView').style.display = v==='detail'?'block':'none';
+  }
+  function dropExcel(e){ e.preventDefault(); document.getElementById('excelPh').style.display='none'; document.getElementById('excelBlock').style.display='block'; }
+  function removeExcel(){ document.getElementById('excelBlock').style.display='none'; document.getElementById('excelPh').style.display='block'; }
+  document.getElementById('dragExcel').addEventListener('dragstart', e=>e.dataTransfer.setData('t','excel'));
+
+  refreshToolbar();
+</script>
+</body>
+</html>
