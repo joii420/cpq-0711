@@ -10,9 +10,11 @@
  *
  * Grammar of the drawer string (confirmed from TabJoinFormulaDrawer.buildColumn + TabFieldMatrix):
  *   [field]             — same-row field of THIS component  (no dot, no suffix)
- *   [alias.field]       — cross-tab detail ref (dot, no (总计)) → agg='NONE'
- *   [alias.field(总计)] — cross-tab aggregated column total   → agg='SUM'
- *   [alias(总计)]       — cross-tab whole-tab total (no dot, (总计) suffix) → agg='SUM', target=''
+ *   [alias.subtotalCol] — sibling's SUBTOTAL column (字段 ∈ tabDef.subtotalCols) → component_subtotal
+ *   [alias.field]       — cross-tab detail ref (dot, no (总计), detailField) → cross_tab_ref agg='NONE'
+ *   [alias.field(总计)] — cross-tab aggregated DETAIL column total           → cross_tab_ref agg='SUM'
+ *   [alias(总计)]       — sibling's SUBTOTAL (no dot, (总计) suffix) → component_subtotal
+ *                         (value = tab's first/primary subtotalCol, or '' if none)
  *   {path}              — BNF path token (minimal / out-of-scope for page-tab formulas)
  *   + - * / × ÷         — arithmetic operators (× → *, ÷ → /)
  *   ( )                 — bracket_open / bracket_close
@@ -201,14 +203,28 @@ export function expressionToTokens(
             );
           }
 
-          result.push({
-            type: 'cross_tab_ref',
-            source: tabDef.componentId,
-            sourceLabel: tabDef.componentName ?? alias,
-            target: fieldPart,
-            agg: isAgg ? 'SUM' : 'NONE',
-            match: buildMatch(tabDef.rowKeyFields ?? [], selfRowKeyFields),
-          });
+          // Disambiguate subtotal column vs detail field:
+          //   if 字段 ∈ tabDef.subtotalCols → component_subtotal (scalar sibling subtotal),
+          //   else (and NOT aggregated) → cross_tab_ref detail (row-aligned).
+          // Note: an explicit (总计) aggregate over a DETAIL field stays a cross_tab_ref SUM.
+          if (!isAgg && (tabDef.subtotalCols ?? []).includes(fieldPart)) {
+            result.push({
+              type: 'component_subtotal',
+              value: fieldPart,
+              tab_name: fieldPart,
+              component_code: alias,
+              label: `${tabDef.componentName ?? alias}·${fieldPart}`,
+            });
+          } else {
+            result.push({
+              type: 'cross_tab_ref',
+              source: tabDef.componentId,
+              sourceLabel: tabDef.componentName ?? alias,
+              target: fieldPart,
+              agg: isAgg ? 'SUM' : 'NONE',
+              match: buildMatch(tabDef.rowKeyFields ?? [], selfRowKeyFields),
+            });
+          }
         } else {
           // Check for whole-tab total: [alias(总计)] (no dot but ends in (总计))
           if (body.endsWith('(总计)')) {
@@ -224,13 +240,22 @@ export function expressionToTokens(
                 `页签 "${alias}" 缺少 componentId，无法构建跨页签引用 token`,
               );
             }
+            // FIX (2026-06-10): bare [alias(总计)] means "the SUBTOTAL of tab alias",
+            // which the evaluator consumes as a component_subtotal token (NOT cross_tab_ref).
+            // Convention for the column to use:
+            //   • if the tab has ≥1 subtotalCol → use the FIRST (primary) subtotalCol as value;
+            //   • if the tab has NO subtotalCol → emit empty value (component_code still set),
+            //     which renders back as [alias(总计)] and lets the evaluator resolve the
+            //     component's default subtotal.
+            const primarySubtotal = (tabDef.subtotalCols ?? [])[0] ?? '';
             result.push({
-              type: 'cross_tab_ref',
-              source: tabDef.componentId,
-              sourceLabel: tabDef.componentName ?? alias,
-              target: '',
-              agg: 'SUM',
-              match: buildMatch(tabDef.rowKeyFields ?? [], selfRowKeyFields),
+              type: 'component_subtotal',
+              value: primarySubtotal,
+              tab_name: primarySubtotal,
+              component_code: alias,
+              label: primarySubtotal
+                ? `${tabDef.componentName ?? alias}·${primarySubtotal}`
+                : (tabDef.componentName ?? alias),
             });
           } else {
             // Plain same-component field: [field]
@@ -292,6 +317,19 @@ export function tokensToDrawerExpression(
       case 'path':
         parts.push(`{${token.path ?? ''}}`);
         break;
+
+      case 'component_subtotal': {
+        // Render from the TOKEN'S OWN fields — robust even if the referenced
+        // sibling component is not present in tabDefs (display must not break).
+        const code = token.component_code ?? '';
+        const col = token.value ?? '';
+        if (col) {
+          parts.push(`[${code}.${col}]`);
+        } else {
+          parts.push(`[${code}(总计)]`);
+        }
+        break;
+      }
 
       case 'cross_tab_ref': {
         // Resolve componentId → alias

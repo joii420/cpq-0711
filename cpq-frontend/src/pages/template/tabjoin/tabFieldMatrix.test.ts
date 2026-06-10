@@ -81,9 +81,15 @@ describe('parseActiveRowKeySig', () => {
   });
 
   it('TC-06: 首个明细令牌 → 锁到该 tab 的 rowKeyFields 签名', () => {
-    const expr = '[投料.金额]';
+    // 重量 是投料的明细字段（非小计列），触发行键锁
+    const expr = '[投料.重量]';
     const sig = parseActiveRowKeySig(expr, ALL_TABS);
     expect(sig).toBe('child_hf_part_no+material_code');
+  });
+
+  it('TC-06b: 小计列引用 [alias.subtotalCol] 不触发行键锁（component_subtotal 标量）', () => {
+    // 金额 是投料的 subtotalCol → 组件小计标量引用，不锁行键
+    expect(parseActiveRowKeySig('[投料.金额]', ALL_TABS)).toBeNull();
   });
 
   it('TC-07: 多 rowKeyFields → 用 "+" 连接', () => {
@@ -93,14 +99,14 @@ describe('parseActiveRowKeySig', () => {
   });
 
   it('TC-08: 明细令牌 + 总计令牌 混合 → 取首个明细令牌签名', () => {
-    const expr = '[投料.金额] + [工序(总计)]';
+    const expr = '[投料.重量] + [工序(总计)]';
     const sig = parseActiveRowKeySig(expr, ALL_TABS);
     expect(sig).toBe('child_hf_part_no+material_code');
   });
 
   it('TC-09: 多个不同行键类明细令牌 → 锁到"首个"出现的明细 alias', () => {
     // 投料在前 → 锁投料行键类；工序是不同类
-    const expr = '[投料.金额] + [工序.工时]';
+    const expr = '[投料.重量] + [工序.工时]';
     const sig = parseActiveRowKeySig(expr, ALL_TABS);
     expect(sig).toBe('child_hf_part_no+material_code');
   });
@@ -120,9 +126,9 @@ describe('parseActiveRowKeySig', () => {
   });
 
   it('TC-13: 表达式含数学运算符 → 正确解析令牌', () => {
+    // 投料.金额 是小计列（跳过不锁），首个真正明细是 回料.回收额
     const expr = '[投料.金额] * 0.9 + [回料.回收额]';
     const sig = parseActiveRowKeySig(expr, ALL_TABS);
-    // 首个明细是投料
     expect(sig).toBe('child_hf_part_no+material_code');
   });
 
@@ -171,18 +177,18 @@ describe('置灰判定 isDetailDisabled', () => {
     }
   });
 
-  it('TC-22: 选投料.金额(行键 child_hf_part_no+material_code) → 投料本身不置灰', () => {
-    const expr = '[投料.金额]';
+  it('TC-22: 选投料.重量(行键 child_hf_part_no+material_code) → 投料本身不置灰', () => {
+    const expr = '[投料.重量]';
     expect(isDetailDisabled(TAB_INVEST, expr, ALL_TABS)).toBe(false);
   });
 
-  it('TC-23: 选投料.金额 → 工序(不同行键类)置灰', () => {
-    const expr = '[投料.金额]';
+  it('TC-23: 选投料.重量 → 工序(不同行键类)置灰', () => {
+    const expr = '[投料.重量]';
     expect(isDetailDisabled(TAB_PROCESS, expr, ALL_TABS)).toBe(true);
   });
 
-  it('TC-24: 选投料.金额 → 回料(同行键类 child_hf_part_no+material_code)不置灰', () => {
-    const expr = '[投料.金额]';
+  it('TC-24: 选投料.重量 → 回料(同行键类 child_hf_part_no+material_code)不置灰', () => {
+    const expr = '[投料.重量]';
     expect(isDetailDisabled(TAB_RECYCLE, expr, ALL_TABS)).toBe(false);
   });
 
@@ -202,7 +208,7 @@ describe('置灰判定 isDetailDisabled', () => {
   });
 
   it('TC-28: SUBTOTAL tab rowKeyFields=[] → 空签名; 任意明细表达式下 defSig="" 与 activeSig 不匹配 → 置灰', () => {
-    const expr = '[投料.金额]';
+    const expr = '[投料.重量]';
     // SUBTOTAL defSig = '' (join of empty), activeSig = 'child_hf_part_no+material_code'
     // '' !== 'child_hf_part_no+material_code' → disabled=true
     expect(isDetailDisabled(TAB_SUBTOTAL, expr, ALL_TABS)).toBe(true);

@@ -24,6 +24,11 @@ export function parseActiveRowKeySig(
     // 明细令牌：alias.field
     if (body.includes('.')) {
       const alias = body.slice(0, body.indexOf('.'));
+      const field = body.slice(body.indexOf('.') + 1);
+      // 跳过组件小计列引用 [alias.subtotalCol]：序列化为 component_subtotal（标量），
+      // 非逐行明细，不应触发行键锁（否则会误把后续其它页签明细置灰）。
+      const def = tabDefs.find((d) => d.alias === alias);
+      if (def && (def.subtotalCols ?? []).includes(field)) continue;
       detailAliases.push(alias);
     }
   }
@@ -191,7 +196,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                   })}
                 </Space>
 
-                {/* 小计列总计组（始终可点，虚线绿色样式） */}
+                {/* 小计列（组件小计，标量引用；插入 [alias.col]，序列化为 component_subtotal） */}
                 {def.subtotalCols.length > 0 && (
                   <Space
                     wrap
@@ -202,7 +207,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                       borderLeft: '1px dashed #e5e7eb',
                     }}
                   >
-                    <span style={{ fontSize: 11, color: '#8a909a' }}>小计列总计</span>
+                    <span style={{ fontSize: 11, color: '#8a909a' }}>小计列</span>
                     {def.subtotalCols.map((f) => (
                       <Tag
                         key={f}
@@ -217,9 +222,9 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                           padding: '3px 9px',
                           userSelect: 'none',
                         }}
-                        onClick={() => onInsert(`[${def.alias}.${f}(总计)]`)}
+                        onClick={() => onInsert(`[${def.alias}.${f}]`)}
                       >
-                        {f}(总计)
+                        {f}(小计)
                       </Tag>
                     ))}
                   </Space>

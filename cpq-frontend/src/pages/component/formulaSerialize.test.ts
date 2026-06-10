@@ -96,14 +96,14 @@ describe('expressionToTokens — basic', () => {
     expect(tokens[0]).toEqual({ type: 'field', value: '单重' });
   });
 
-  it('cross-tab detail ref [COMP_RL.金额] → agg NONE', () => {
-    const tokens = expressionToTokens('[COMP_RL.金额]', allTabs, selfRKF);
+  it('cross-tab detail ref [COMP_RL.用量] → agg NONE (用量 is a detailField, not subtotalCol)', () => {
+    const tokens = expressionToTokens('[COMP_RL.用量]', allTabs, selfRKF);
     expect(tokens).toHaveLength(1);
     expect(tokens[0]).toMatchObject({
       type: 'cross_tab_ref',
       source: 'uuid-rl',
       sourceLabel: '回料',
-      target: '金额',
+      target: '用量',
       agg: 'NONE',
     });
   });
@@ -119,14 +119,15 @@ describe('expressionToTokens — basic', () => {
     });
   });
 
-  it('whole-tab total [COMP_RL(总计)] → agg SUM, target empty', () => {
+  it('whole-tab total [COMP_RL(总计)] → component_subtotal (uses tab primary subtotalCol)', () => {
+    // FIX (2026-06-10): bare [alias(总计)] now maps to component_subtotal, not cross_tab_ref.
+    // COMP_RL has a single subtotalCol 金额, so the bare total resolves to that column.
     const tokens = expressionToTokens('[COMP_RL(总计)]', allTabs, selfRKF);
     expect(tokens).toHaveLength(1);
     expect(tokens[0]).toMatchObject({
-      type: 'cross_tab_ref',
-      source: 'uuid-rl',
-      target: '',
-      agg: 'SUM',
+      type: 'component_subtotal',
+      component_code: 'COMP_RL',
+      value: '金额',
     });
   });
 
@@ -223,7 +224,7 @@ describe('expressionToTokens — requirement example', () => {
 
 describe('match row-key alignment', () => {
   it('single key: [{a: tabKey, b: selfKey}]', () => {
-    const tokens = expressionToTokens('[COMP_RL.金额]', allTabs, ['料号']);
+    const tokens = expressionToTokens('[COMP_RL.用量]', allTabs, ['料号']);
     expect(tokens[0].match).toEqual([{ a: '料号', b: '料号' }]);
   });
 
@@ -246,7 +247,7 @@ describe('match row-key alignment', () => {
   });
 
   it('selfRowKeyFields undefined: match = []', () => {
-    const tokens = expressionToTokens('[COMP_RL.金额]', allTabs, undefined);
+    const tokens = expressionToTokens('[COMP_RL.用量]', allTabs, undefined);
     expect(tokens[0].match).toEqual([]);
   });
 });
@@ -390,11 +391,19 @@ describe('round-trip', () => {
     expect(normalise(back)).toBe(normalise(expr));
   });
 
-  it('[COMP_RL(总计)] whole-tab round-trips', () => {
+  it('[COMP_RL(总计)] whole-tab → component_subtotal → normalises to [COMP_RL.金额]', () => {
+    // FIX (2026-06-10): bare total now resolves to the tab's primary subtotalCol (金额),
+    // so the canonical round-trip form is [COMP_RL.金额] (the explicit subtotal column).
     const expr = '[COMP_RL(总计)]';
     const tokens = expressionToTokens(expr, allTabs, selfRKF);
     const back = tokensToDrawerExpression(tokens, allTabs);
-    expect(normalise(back)).toBe(normalise(expr));
+    expect(normalise(back)).toBe(normalise('[COMP_RL.金额]'));
+    // And re-parsing the canonical form is stable (idempotent)
+    const back2 = tokensToDrawerExpression(
+      expressionToTokens(back, allTabs, selfRKF),
+      allTabs,
+    );
+    expect(normalise(back2)).toBe(normalise('[COMP_RL.金额]'));
   });
 
   it('compound expression "[单重] * [单价] - [COMP_RL.金额(总计)]" round-trips', () => {
@@ -550,6 +559,174 @@ describe('checkMappable', () => {
 });
 
 // ─────────────────────────────────────────────
+// 9. component_subtotal (SUBTOTAL component formulas reference sibling subtotal cols)
+// ─────────────────────────────────────────────
+
+describe('component_subtotal — subtotal column references', () => {
+  it('[COMP_RL.金额] + [COMP_INV.金额] → TWO component_subtotal tokens (金额 is a subtotalCol of both)', () => {
+    const tokens = expressionToTokens(
+      '[COMP_RL.金额] + [COMP_INV.金额]',
+      allTabs,
+      selfRKF,
+    );
+    expect(tokens).toHaveLength(3);
+    expect(tokens[0]).toMatchObject({
+      type: 'component_subtotal',
+      component_code: 'COMP_RL',
+      value: '金额',
+      tab_name: '金额',
+      label: '回料·金额',
+    });
+    expect(tokens[1]).toEqual({ type: 'operator', value: '+' });
+    expect(tokens[2]).toMatchObject({
+      type: 'component_subtotal',
+      component_code: 'COMP_INV',
+      value: '金额',
+      tab_name: '金额',
+      label: '投料·金额',
+    });
+  });
+
+  it('mixed: [单重] * [COMP_RL.用量] — 用量 is a DETAIL field (not subtotalCol) → field + cross_tab_ref', () => {
+    const tokens = expressionToTokens('[单重] * [COMP_RL.用量]', allTabs, selfRKF);
+    expect(tokens).toHaveLength(3);
+    expect(tokens[0]).toEqual({ type: 'field', value: '单重' });
+    expect(tokens[1]).toEqual({ type: 'operator', value: '*' });
+    expect(tokens[2]).toMatchObject({
+      type: 'cross_tab_ref',
+      source: 'uuid-rl',
+      target: '用量',
+      agg: 'NONE',
+    });
+  });
+
+  it('tokensToDrawerExpression renders component_subtotal using token-own fields even with EMPTY tabDefs', () => {
+    const tokens: FormulaToken[] = [
+      {
+        type: 'component_subtotal',
+        value: '行小计',
+        tab_name: '行小计',
+        component_code: 'COMP-A',
+        label: '来料BOM·行小计',
+      },
+      { type: 'operator', value: '+' },
+      {
+        type: 'component_subtotal',
+        value: '工序加工费',
+        tab_name: '工序加工费',
+        component_code: 'COMP-B',
+        label: '工序成本·工序加工费',
+      },
+    ];
+    expect(tokensToDrawerExpression(tokens, [])).toBe(
+      '[COMP-A.行小计] + [COMP-B.工序加工费]',
+    );
+  });
+
+  it('component_subtotal with empty value renders [code(总计)]', () => {
+    const tokens: FormulaToken[] = [
+      {
+        type: 'component_subtotal',
+        value: '',
+        tab_name: '',
+        component_code: 'COMP-A',
+        label: '来料BOM',
+      },
+    ];
+    expect(tokensToDrawerExpression(tokens, [])).toBe('[COMP-A(总计)]');
+  });
+
+  it('[alias(总计)] bare-total maps to component_subtotal (single subtotalCol used)', () => {
+    // COMP_RL has subtotalCols ['金额'] → bare total uses that column
+    const tokens = expressionToTokens('[COMP_RL(总计)]', allTabs, selfRKF);
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0]).toMatchObject({
+      type: 'component_subtotal',
+      component_code: 'COMP_RL',
+      value: '金额',
+    });
+  });
+
+  it('round-trip: subtotal formula tokens → expr → tokens preserves component_code/value', () => {
+    const original: FormulaToken[] = [
+      {
+        type: 'component_subtotal',
+        value: '金额',
+        tab_name: '金额',
+        component_code: 'COMP_RL',
+        label: '回料·金额',
+      },
+      { type: 'operator', value: '+' },
+      {
+        type: 'component_subtotal',
+        value: '金额',
+        tab_name: '金额',
+        component_code: 'COMP_INV',
+        label: '投料·金额',
+      },
+    ];
+    const expr = tokensToDrawerExpression(original, allTabs);
+    const back = expressionToTokens(expr, allTabs, selfRKF);
+    expect(back).toHaveLength(3);
+    expect(back[0]).toMatchObject({
+      type: 'component_subtotal',
+      component_code: 'COMP_RL',
+      value: '金额',
+    });
+    expect(back[2]).toMatchObject({
+      type: 'component_subtotal',
+      component_code: 'COMP_INV',
+      value: '金额',
+    });
+  });
+
+  it('checkMappable: 8 component_subtotal tokens + operators → mappable:true', () => {
+    const tokens: FormulaToken[] = [];
+    for (let i = 0; i < 8; i++) {
+      if (i > 0) tokens.push({ type: 'operator', value: '+' });
+      tokens.push({
+        type: 'component_subtotal',
+        value: '金额',
+        tab_name: '金额',
+        component_code: `COMP-${i}`,
+        label: `组件${i}·金额`,
+      });
+    }
+    expect(checkMappable(tokens)).toEqual({ mappable: true });
+  });
+
+  it('checkMappable: component_subtotal does NOT count toward the 2+ cross_tab_ref rule', () => {
+    const tokens: FormulaToken[] = [
+      {
+        type: 'component_subtotal',
+        value: '金额',
+        tab_name: '金额',
+        component_code: 'COMP-A',
+        label: 'A·金额',
+      },
+      { type: 'operator', value: '+' },
+      {
+        type: 'component_subtotal',
+        value: '金额',
+        tab_name: '金额',
+        component_code: 'COMP-B',
+        label: 'B·金额',
+      },
+      { type: 'operator', value: '+' },
+      {
+        type: 'cross_tab_ref',
+        source: 'uuid-rl',
+        target: '用量',
+        agg: 'NONE',
+        match: [],
+      },
+    ];
+    // only 1 cross_tab_ref agg=NONE → still mappable
+    expect(checkMappable(tokens)).toEqual({ mappable: true });
+  });
+});
+
+// ─────────────────────────────────────────────
 // 8. Integration: expressionToTokens → checkMappable
 // ─────────────────────────────────────────────
 
@@ -565,8 +742,9 @@ describe('integration: expression → tokens → checkMappable', () => {
   });
 
   it('two detail refs → NOT mappable', () => {
+    // 用量 (COMP_RL) and 单价 (COMP_INV) are DETAIL fields, not subtotalCols
     const tokens = expressionToTokens(
-      '[COMP_RL.金额] + [COMP_INV.金额]',
+      '[COMP_RL.用量] + [COMP_INV.单价]',
       allTabs,
       selfRKF,
     );
