@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Input, Select, Checkbox, Button, Typography, Tooltip, Space, Modal, Form, Alert, Segmented } from 'antd';
+import { Input, Select, Checkbox, Button, Typography, Tooltip, Space, Modal, Form, Alert, Segmented } from 'antd';
 import { dataSourceResolverService, RESOLVER_TYPE_LABEL } from '../../services/dataSourceResolverService';
+import { SortableTable, DragHandle } from '../../components/SortableTable';
 
 const { Text } = Typography;
 import { DeleteOutlined, PlusOutlined, LinkOutlined, EditOutlined } from '@ant-design/icons';
@@ -89,8 +90,9 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
   const columns = [
     {
       key: 'drag',
-      width: 32,
-      render: () => <span className="cm-drag-handle">↕</span>,
+      width: 40,
+      align: 'center' as const,
+      render: () => <DragHandle />,
     },
     {
       title: '字段名',
@@ -505,14 +507,15 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
           添加字段
         </Button>
       </div>
-      <Table
+      <SortableTable
+        rowKey="key"
         dataSource={fields}
         columns={columns}
-        rowKey="key"
         pagination={false}
         size="small"
         rowClassName={(record) => (record.is_subtotal ? 'cm-subtotal-table-row' : '')}
         locale={{ emptyText: '暂无字段，点击"添加字段"' }}
+        onReorder={(next) => onChange(next.map((f, i) => ({ ...f, sort_order: i })))}
       />
 
       {/* 路径配置: BASIC_DATA → basic_data_path; DATA_SOURCE → datasource_binding.bnf_path */}
