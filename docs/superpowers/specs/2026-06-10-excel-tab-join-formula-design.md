@@ -1,196 +1,165 @@
-# Excel 页签连表公式构建器 — 设计文档
+# Excel 页签连表公式构建器 — 设计文档（v2 终版）
 
 - **日期**：2026-06-10
-- **状态**：设计已确认，待写实现计划
-- **原型**：`docs/html/excel-tab-join-formula-builder.html`（可点击）
+- **状态**：设计已确认（v2），待按 v2 重写实现计划继续
+- **原型**：`docs/html/excel-tab-join-formula-builder-v2.html`（可点击，点击事件全功能，即抽屉内容版）
 - **作用域**：Excel 模板视图列配置，新增一种列来源类型 `TAB_JOIN_FORMULA`
+
+> **修订记录**：v1（计算组 + 显式 JOIN 关联键 + 组级 WHERE）已于 2026-06-10 被 **v2** 取代。v2 核心简化：**取消计算组、取消 WHERE、用行键(rowKeyFields)自动对齐、单表达式 + 加减项分段自动求和**。旧原型 `excel-tab-join-formula-builder.html` 仅留作历史对照。
 
 ---
 
 ## 1. 目标与背景
 
-让客户在 Excel 模板配置页里，用**可视化构建器**为某一列配置一个"跨页签关联 + 条件过滤 + 聚合"的公式，最终在 Excel 单元格里得到**一个单值**。值取自**产品卡片中各页签的内容数据**。
+让客户在 Excel 模板配置页里，用**可视化构建器**为某一列配置一个"跨页签按行键自动对齐 + 聚合"的公式，最终在 Excel 单元格里得到**一个单值**。值取自**产品卡片中各页签的内容数据**。
 
 现状利好（已存在，复用）：
-- `ExcelViewService.buildRowData` 已能在单卡片内引用页签小计 + 对页签行 `SUM`（见 `ExcelViewCardFormulaIT.card_formula_column_evaluates_subtotal_plus_sum_over`）。
-- `CardEffectiveRows.TabRows` 已把每张卡片的页签内容**物化成行**（含明细行 + 小计/总计）。
-- `com.cpq.formula.FormulaEngine`（JEXL + `SUM/AVG/MIN/MAX/COUNT/ROUND/...`）现成，`SUM(collection, field)` 已支持对行集合聚合。
-
-本特性 = 在上述地基上叠加：**多页签 JOIN + 组级 WHERE + 计算组 + 可视化构建器 + 试算**。
+- `ExcelViewService.buildRowData` 已能在单卡片内引用页签小计 + 对页签行 `SUM`（见 `ExcelViewCardFormulaIT`）。
+- `CardEffectiveRows.TabRows` 已把每张卡片的页签内容**物化成行**（含明细行 + `subtotal` 页签小计 + `subtotalByColumn` 列小计）。
+- `com.cpq.quotation.service.card.CardDataProvider`：`rowsOf(tabKey)` / `subtotalOf(tabKey)` / `subtotalOfColumn(tabKey,col)`，tabKey=`componentId:sortOrder`。
+- 已完成的 `com.cpq.quotation.service.tabjoin.SafeArithmetic`（缺值=0/除数0或缺=1 的 JEXL 算术）。
 
 ---
 
-## 2. 关键决策（需求澄清结论）
+## 2. 关键决策（v2 需求澄清结论）
 
-| # | 决策 | 结论 |
+| # | 主题 | 结论 |
 |---|------|------|
-| 产物 | 公式的最终产物 | 扩展 Excel 模板的列取值能力：**新增一种列来源**，配出来的是某一列的值 |
-| 作用域 | join/聚合发生在哪一层 | **单张产品卡片内**（每张卡片各算各的，一列一卡一值） |
-| 结果粒度 | 一列结果 | **永远是单值**；正常用法套聚合函数；裸明细字段不写聚合时退化取**过滤后第一行**（不推荐） |
-| JOIN 语义 | 一对多放大 | **INNER JOIN**，笛卡尔放大由用户自负（像 SQL join） |
-| 条件作用域 | WHERE | **组内全局 WHERE**：过滤本组 JOIN 宽表的行，过滤后该组所有聚合在同一批剩余行上算 |
-| 多页签串联 | 第 3+ 页签关联谁 | **任意 join 图**：加新页签先选"关联到哪个已加入页签"，再选两边列；**默认**新页签与主页签同名列自动设为关联键，用户可改 |
-| 存储 | 文本 vs 结构化 | **文本聚合表达式 + 结构化元数据**（tabs/joins/where 分面板） |
-| 共存 | 与老 FORMULA 列 | **新增独立列来源类型** `TAB_JOIN_FORMULA`；老视图列 FORMULA 列原样不动（老的是开发测试数据） |
-| 试算 | 是否预览 | **要**，选已有报价单/核价单里的一张产品卡片作样本，调后端真实试算 |
-| 函数 | 一期范围 | `SUM AVG MIN MAX COUNT` + `+ - * / ( )`；其余函数后续补充 |
-| 多连表上下文 | 一个表达式多段独立连表 | **引入"计算组"**：每组 = 页签 JOIN + 组 WHERE + 组内聚合表达式 → 一个标量；最终表达式层用四则+常数组合各组结果 |
-| 组内表达式 | 丰富度 | 允许多聚合四则，如 `SUM(x)/SUM(y)` |
-| 最终表达式层 | 范围 | 只用 `+ - * / ( )` 和常数组合各组结果，不放函数 |
-| 缺值语义 | 取不到值 | 缺值默认 **0** 参与计算；**除数取不到/为 0 默认按 1**（本特性专属，覆盖引擎默认 DIV_ZERO） |
-| 插入交互 | 变量/运算符插哪 | **跟随焦点**：插入到当前聚焦的表达式框（组聚合框或最终框） |
-| 字段来源 | 页签/字段清单 | 来自**模板的页签定义**（不依赖样本卡片） |
-| 边界 | 是否替换页面 | **不替换**：现有 Excel 配置页保留，仅新增一种列来源 + 该列专属构建器抽屉；其它列来源以后可按需移除 |
+| 产物 | 公式产物 | 新增列来源 `TAB_JOIN_FORMULA`，配出来是某一列的值 |
+| 作用域 | 计算范围 | **单张产品卡片内**，结果**永远是单值**写入单元格 |
+| 计算组 | 是否分组 | **取消**。一个列 = **一个表达式**，无组、无 final/子表达式两层 |
+| 连表方式 | 页签如何关联 | **行键自动对齐**：所有页签全展示，不选主/副；按各页签 `rowKeyFields`（组件管理里配的行键字段）**完全相等**判定同一"行键类"，同类页签自动对齐。行键唯一→无笛卡尔积 |
+| 对齐语义 | 行全集 | 同类页签按行键**全外连**（行键并集，缺失行的字段→0）；对齐行集 = 表达式**实际引用到的明细页签**的行键并集 |
+| WHERE | 条件过滤 | **取消**。不再有行过滤，直接点选字段运算 |
+| 可选字段 | 每页签带出 | ① 明细字段（逐行）② 各"小计列的总计"（is_subtotal 列的列合计）③ 页签总计（整页签小计），三类按令牌名区分 |
+| 置灰 | 字段可选性 | 只有点"明细字段"**锁定行键类**；锁定后行键不同页签的**明细置灰**、其**总计字段仍可点**；表达式不再含该类明细时**自动解锁**；总计字段全程可点、不锁定 |
+| 坍缩 | 多行→单值 | 明细字段**默认按对齐行自动求和**；可显式套 `AVG/MIN/MAX/COUNT` 改聚合方式（C 选项） |
+| 求值规则 | 自动求和边界 | 表达式按顶层 `+ -` 拆"加减项"，逐项判定（见 §5 规则 + 示例表） |
+| 缺值/除零 | 兜底 | 缺值→0；除数 0 或缺→按 1 |
+| 函数集 | 一期 | `SUM/AVG/MIN/MAX/COUNT` + `+ - * / ( )`（SUM 因默认自动求和一般不用写） |
+| 试算 | 预览 | 保留：从已有报价单/核价单选一张产品卡片样本，调后端真实算出**单值** |
+| 共存/边界 | 与老列 | 新增独立列来源，老 FORMULA/CARD_FORMULA 列不动；不替换 Excel 配置页 |
+| 插入交互 | 变量/运算符 | 插入到光标处；页签/字段清单来自**模板页签定义**（非样本卡片） |
 
 ---
 
-## 3. 架构方案（方案 1：内存连表 + 复用 FormulaEngine）
+## 3. 架构方案（不变：内存对齐 + 复用 FormulaEngine/JEXL）
 
-运行态不下推 SQL，不在前端重写引擎。从已物化的卡片页签行出发，在 Java 内存里做 JOIN+WHERE，再把行集喂给现成 `FormulaEngine`。试算与正式渲染走**同一后端求值入口**，保证口径一致。
-
-被否方案：
-- **方案 2（翻译成动态 SQL 下推 PG）**：页签行是卡片运行态数据（含手动/输入行、snapshot_rows+row_data 两路），难干净映射回 SQL 表，且极易再踩 `$view` 串号 / 视图放大坑（AP-22 / AP-53）。否决。
-- **方案 3（纯前端 JS 求值）**：Excel 实际在后端渲染，会变成两套引擎双维护、口径漂移。否决。
+运行态从已物化的卡片页签行（`CardDataProvider`）出发，在 Java 内存里按行键对齐，再用 JEXL（+`SafeArithmetic`）求值。试算与正式渲染走**同一后端求值入口**，口径一致。不下推 SQL、不在前端重写引擎（理由同 v1：避免视图放大/串号坑、避免双引擎漂移）。
 
 ---
 
-## 4. 数据模型 — 列配置 JSON
-
-存进现有 Excel 视图列配置 JSON（`TemplateExcelViewResource` 的 `getConfig/saveConfig`），与老列同表，不动老结构。新列来源类型示例：
+## 4. 数据模型 — 列配置 JSON（v2，大幅简化）
 
 ```json
 {
-  "key": "col_12",
+  "col_key": "L",
   "title": "单件总成本",
-  "sourceType": "TAB_JOIN_FORMULA",
-  "finalExpression": "组1 + 组2 - 100",
-  "groups": [
-    {
-      "ref": "组1",
-      "mainTab": "投料",
-      "tabs": ["投料", "加工"],
-      "joins": [
-        { "leftTab": "加工", "leftCols": ["物料编码"],
-          "rightTab": "投料", "rightCols": ["物料编码"], "type": "INNER" }
-      ],
-      "where": [
-        { "col": "投料.类型", "op": "=", "value": "主料", "logic": "AND" }
-      ],
-      "aggExpression": "SUM([投料.金额])"
-    },
-    {
-      "ref": "组2",
-      "mainTab": "回料",
-      "tabs": ["回料"],
-      "joins": [],
-      "where": [],
-      "aggExpression": "SUM([回料.回料金额])"
-    }
+  "source_type": "TAB_JOIN_FORMULA",
+  "expression": "[投料.金额] * [加工.工时] + [回料(总计)]",
+  "tabs": [
+    { "alias": "投料", "tabKey": "<cid>:0", "rowKeyFields": ["物料编码"] },
+    { "alias": "加工", "tabKey": "<cid>:1", "rowKeyFields": ["物料编码"] },
+    { "alias": "回料", "tabKey": "<cid>:2", "rowKeyFields": ["物料编码","工序"] }
   ]
 }
 ```
 
-字段约定：
-- `ref`：组引用名（如 `组1`），最终表达式里用它引用本组标量结果。组内唯一。
-- `mainTab`：主页签（用户点的第一个页签）。`tabs[0] === mainTab`。
-- `joins[]`：关联边，每边 `leftTab/leftCols` 与 `rightTab/rightCols`（复合键，多列 = AND 等值），`type` 一期固定 `INNER`。
-- `where[]`：组级条件，`op ∈ {=, >, <, 包含, 不包含}`，`logic ∈ {AND, OR}`（首条 `logic` 为空）。
-- `aggExpression`：组内聚合表达式，变量以 `[页签.字段]` 形式引用；允许多聚合四则。
-- `finalExpression`：组结果（`组N`）+ 常数 + `+ - * / ( )`。
-
-变量令牌：`[页签名.字段名]`。字段含该页签组件定义的明细字段 + 小计/总计。
+- **没有** groups / main_tab / joins / where。只剩 `expression` + 引用到的页签元数据（`alias`→`tabKey` + `rowKeyFields`）。
+- 令牌三类：
+  - 明细：`[投料.金额]`
+  - 小计列总计：`[投料.金额(总计)]`（列名后 `(总计)` 后缀）
+  - 页签总计：`[投料(总计)]`（页签名后 `(总计)`，无列名）
 
 ---
 
-## 5. 求值流程（后端）
+## 5. 求值流程（后端，`TabJoinPlanEvaluator` v2 重写）
 
-新增 `TabJoinPlanEvaluator`（内存 join 求值器），由 `ExcelViewService` 在渲染该列时调用。渲染 Excel 每行（= 一张产品卡片）对 `TAB_JOIN_FORMULA` 列：
+渲染 Excel 每行（= 一张产品卡片）对 `TAB_JOIN_FORMULA` 列：
 
-1. 取卡片各页签行 `CardEffectiveRows.TabRows`（已物化，含小计/总计）。
-2. 逐 `group`：
-   1. **JOIN**：按 `joins` 在内存做 INNER JOIN 成宽表，列命名空间 `页签.字段`；复合键等值匹配；一对多笛卡尔放大保留（用户自负）。单页签组无 join，直接用该页签行。
-   2. **WHERE**：按 `where`（含 AND/OR）过滤宽表行。
-   3. **缺值归一**：明细字段缺列/缺值 → 按 `0` 参与。
-   4. **聚合（两层作用域求值）**：`aggExpression` 不是一次扁平求值，而是分两层（关键，勿实现成"SUM 只能填单列"）：
-      - **聚合函数内 = 逐行子表达式**：`SUM/AVG/MIN/MAX/COUNT` 的参数是一个**行级子表达式**（可含 `[页签.字段]`、四则、括号），对本组 JOIN 宽表**每一行**先求值得到一个数，再做聚合 reduce → 标量。等价 SQL `SUM(投料.单价 * 加工.工时)`。
-      - **聚合函数外 = 标量上下文**：聚合调用的结果是标量；裸 `[页签.字段]` 不在任何聚合内时按标量取**过滤后第一行**（缺则 0）；标量之间用 `+ - * / ( )` 和常数组合。
-      - 实现：`TabJoinPlanEvaluator` 解析 `aggExpression`，识别聚合调用 → 对其行级子表达式逐行用 `FormulaEngine` 求值收集成数组 → reduce 成标量回填；外层标量再用 `FormulaEngine` 算。**不能**直接把整条 `aggExpression` 当 `SUM(collection, field)` 调（现有引擎签名只支持单列，撑不住 `SUM(a*b)`）。
-      - 除数取不到/为 0 → 按 `1`。
-   5. 把标量绑到变量 `组N`。
-3. `FormulaEngine` 算 `finalExpression`（`组N` 当变量 + 四则 + 常数）→ 最终标量。
-4. 写入 Excel 单元格。
+1. 解析 `expression` 里的 `[别名....]` 令牌，得引用到的页签集合。
+2. **行键对齐**：取引用到的**明细页签**（被裸明细字段或聚合函数内明细引用的页签），按其 `rowKeyFields`（同类应完全相等）做**全外连**——行键并集，每个行键组合一行，缺失页签的字段在该行视为缺失（取值→0）。宽行键 `别名.字段`。
+3. **拆加减项**：把 `expression` 按顶层 `+ -`（尊重括号）拆成带符号的"加减项"。
+4. **逐项求值**（两条规则）：
+   - **项内有"裸明细字段"**（明细字段不在任何聚合函数内）→ 整项**按对齐行逐行算、再求和**；项内若有聚合函数 `FN(...)`，其值先在对齐行上算成标量、在每行当常量代入；`[别名.列(总计)]`/`[别名(总计)]` 取标量代入；缺明细→0。
+   - **明细全在聚合函数内 / 整项纯标量（总计/常数）** → 该项**只算一次**，不外层求和。
+5. 各项按符号累加 → 单值。缺值→0、除数 0/缺→1（由 `SafeArithmetic` 保证）。
 
-示例：组内 `SUM([投料.单价]*[加工.工时]) + SUM([投料.单价]*[投料.数量]) + [投料.金额]` →
-项1/项2 各逐行算积再求和（标量），项3 取第一行 `投料.金额`（标量），三者相加 = 组标量。
+### 求值规则示例（写入文档，作为口径基准）
 
-注意：
-- 小计/总计是页签级单值，在 JOIN 宽表里广播到每行；对其再 `SUM` 会被行数放大（AP-22 教训，UI 给提示，但语义按用户自负）。
-- **同理**：在一个已与从页签 JOIN 的组里，对**主页签明细列**做 `SUM`（如纯 `SUM(投料.单价*投料.数量)`）会因一对多放大被乘以匹配行数。规范建议：**纯单页签的聚合放进一个不连其它页签的独立组**。
+| 表达式 | 结果语义 |
+|---|---|
+| `[投料.金额] * [加工.工时]` | `Σ(每行 金额×工时)`（裸明细→整项逐行求和） |
+| `AVG([投料.工时])` | 工时均值（明细全在 AVG 内→算一次） |
+| `AVG([投料.工时]) * [投料.数量]` | `Σ(每行 均值×数量)` = 均值 × Σ数量（仍有裸明细"数量"） |
+| `MAX([投料.金额]) + [回料(总计)]` | 最大金额 + 回料总计（全聚合/标量→算一次） |
+| `[投料.金额] * [加工.工时] + [回料(总计)]` | `Σ(金额×工时) + 回料总计`（项1逐行求和 + 项2标量一次） |
+
+> 复用 v1 已实现的聚合归约机制：`FN(inner)` 括号配平 + 逐行求值内层子表达式 + reduce（SUM/AVG/MIN/MAX/COUNT）。新增的是"行键对齐"与"加减项分段 + 裸明细默认求和"。
+> 令牌 `[别名.小计]` 旧写法废弃，改 `[别名(总计)]`(页签总计) / `[别名.列(总计)]`(列总计)。
 
 ---
 
-## 6. 前端 — `TabJoinFormulaBuilderDrawer`
+## 6. 前端 — `TabJoinFormulaDrawer`（v2，对照 v2 原型）
 
-- 入口：`cpq-frontend/src/pages/template/ExcelViewConfigTab.tsx` 列来源下拉新增「页签连表公式」；选它打开本抽屉（右侧 `Drawer`，宽 1200，符合 UI 交互规范）。
-- 组件拆分（每个单一职责、可独立测试）：
-  - `FinalExpressionPanel`：最终表达式框 + 运算符工具条 + 整列试算回显。
-  - `GroupCard`：单个计算组容器，含：
-    - `TabPills`：参与页签（主页签紫色标记）+「+添加页签」。
-    - `JoinKeyModal`：添加页签时弹出；先选关联到哪个已加入页签 → 选两边列对应（复合键多对，默认 INNER）；**默认按同名列预填关联键**。
-    - `VariableMatrix`：每行一个页签 + 其全部字段 chip（明细/小计-总计）；点字段 → 菜单「插入到表达式 / 设置条件」。
-    - `WherePanel`：组级条件行（字段 / op / 值 / AND·OR）。
-    - `GroupExprPanel`：组内聚合表达式框 + 运算符 + 函数（SUM/AVG/MIN/MAX/COUNT）工具条 + 本组试算回显。
-  - `SampleCardPicker`：从已有报价单/核价单选一张产品卡片作样本。
-- 状态：`activeExprTarget`（跟随焦点决定插入到哪个框）。
-- 数据来源：页签/字段清单读**模板页签定义**接口（非样本卡片）。
+- 入口：`ExcelViewConfigTab.tsx` 列来源下拉新增「页签连表公式」；选它打开本抽屉（右侧 `Drawer`，宽 1100/1200，符合 UI 规范）。
+- 布局（自上而下，照 `excel-tab-join-formula-builder-v2.html`）：
+  1. **试算条**：样本卡片选择 + 试算按钮 + 结果回显（单值 + 拆项明细）。
+  2. **单表达式框** + **运算符工具条** + **函数工具条**（SUM/AVG/MIN/MAX/COUNT）。
+  3. **求值规则提示**（加减项分段 + 示例）。
+  4. **锁定状态条** + 清空表达式。
+  5. **页签字段矩阵**：每行一个页签（左侧页签名 + 行键徽标），右侧三组 chip：明细 / 小计列总计 / 页签总计。
+- 组件拆分：`FinalExpressionPanel`(表达式框+工具条) / `TabFieldMatrix`(矩阵+置灰) / `SampleCardPicker` / 顶层 Drawer 编排状态。
+- 关键交互：
+  - 点字段 chip → 按三类插入对应令牌到光标处；点函数 → 插 `FN()` 光标落括号内。
+  - **置灰**：解析表达式中"明细令牌"得当前锁定行键类（取第一个明细的 `rowKeyFields` 签名）；其它行键类页签的明细 chip 置灰（hover tooltip 说明），其总计 chip 仍可点；无明细令牌→全解锁。`onChange`/插入后实时重算。
+  - 页签/字段清单 + 各页签 `rowKeyFields` 读**模板页签定义**接口。
 
 ---
 
 ## 7. 试算接口
 
-- `POST /api/cpq/templates/{templateId}/excel-view/dry-run-tab-formula`
-- body：`{ groups, finalExpression, sampleQuotationId | sampleCostingId, lineItemId }`
-- resp：`{ groupValues: { "组1": 1820.00, "组2": 96.00 }, finalValue: 1816.00, errors: [] }`
-- 复用 `ExcelViewService` / `TabJoinPlanEvaluator` 同一求值路径（与正式渲染口径一致）。
-- 样本卡片 = 已有报价单/核价单里的一个 `lineItem`（产品卡片）。
+- `POST /api/cpq/templates/{templateId}/excel-view-config/dry-run-tab-formula`
+- body：`{ lineItemId, column: {expression, tabs}, cardValuesJson?(可选) }`
+- resp：`{ value: <单值>, terms: [{kind:'sum'|'scalar', value}], errors: [] }`（terms 供 UI 显示拆项，非必须）
+- 复用 `ExcelViewService` / `TabJoinPlanEvaluator` 同一求值路径；样本卡片 = 已有报价/核价单的一个 `lineItem`。
 
 ---
 
 ## 8. 错误处理
 
-- 缺值 → `0`；除数缺/0 → `1`（本特性专属，覆盖默认 `DIV_ZERO`）。
-- 配置期 `validate` 拦截：JOIN 关联列不存在 / 未知页签字段 / 未知组引用（`finalExpression` 引用了不存在的 `ref`）/ 表达式语法错。
-- 运行态兜底：连不通 / 求值异常 → 返回 `0` 并记 trace，不抛断渲染。
-- 错误以 `FormulaError` 风格回传，UI 标红显示。
+- 缺值→0；除数 0/缺→1（`SafeArithmetic`）。
+- 配置期 `validate`：表达式非空；引用的页签 `alias` 必须在 `tabs` 声明；裸明细字段引用的页签必须同一行键类（前端置灰已保证，后端兜底校验/告警）。
+- 运行态：求值异常 → 返回 0 + `LOG.warn` 记 trace，不抛断渲染。
 
 ---
 
 ## 9. 测试
 
-- **后端单测** `TabJoinPlanEvaluatorTest`：单表 / 双表 INNER / 复合键 / 一对多放大 / where 各算子(`= > < 包含 不包含`) + AND·OR / 缺值=0 / 除数=1 / 多组 + 最终四则 / 未知 ref 校验。
-- **集成测试**（仿 `ExcelViewCardFormulaIT`）：样本卡片端到端试算 = 期望值。
-- **前端**：Drawer 渲染 + token 插入跟随焦点 + 添加页签默认 join 预填 + 试算回显。
-- **E2E**：本特性属 Excel 视图渲染链路改动，按 `docs/E2E测试方法.md` 跑（改 `ExcelViewConfigTab.tsx` / `ExcelViewService.java` 触发强制 E2E）。
+- **后端单测** `TabJoinPlanEvaluator*Test`：
+  - 行键对齐（同类全外连/并集补0/缺行=0/不同类不对齐）。
+  - 加减项拆分（顶层 +/- 尊重括号）。
+  - 裸明细自动求和 / 聚合函数内不再外层求和 / 标量项算一次 / 混合（§5 示例表逐条）。
+  - 缺值=0、除数=1（复用 SafeArithmetic 测试）。
+  - `evaluateColumn` 整列：expression + tabs(含 rowKeyFields) → 单值（用 `CardDataProvider.fromEffectiveRows` 造数）。
+- **集成测试** `ExcelViewTabJoinFormulaIT`：样本卡片端到端 → 单值。
+- **E2E**：属 Excel 视图渲染链路改动，按 `docs/E2E测试方法.md` 跑。
 
 ---
 
-## 10. 影响面与风险
+## 10. 影响面 / 复用
 
-- 改动文件（预估）：
-  - 后端：`ExcelViewService.java`（列求值分支接入）、新增 `TabJoinPlanEvaluator.java`、`TemplateExcelViewResource.java`（试算端点 + validate）。
-  - 前端：`ExcelViewConfigTab.tsx`（新列来源 + 抽屉入口）、新增 `TabJoinFormulaBuilderDrawer` 及子组件、模板页签定义/样本卡片取数 service。
-- 风险点：
-  - JOIN 放大（AP-22）：一期按用户自负 + UI 提示，不自动去重。
-  - 列来源协议传播：`TAB_JOIN_FORMULA` 是新的列**来源**类型（非组件 `field_type`），不触发 AP-44 的 17 检查点矩阵，但需确认 Excel 列来源在前后端的枚举/渲染/校验各处同步。
-  - 缺值/除数兜底语义与引擎默认不同，须在求值器内显式实现，勿依赖 `FormulaEngine` 默认行为。
+- 改动文件：后端 `TabJoinPlanEvaluator.java`(重写求值)、`ExcelViewService.java`(列求值分支+试算)、`TemplateExcelViewResource.java`(试算端点+tab-defs/sample-cards 只读端点)；前端 `ExcelViewConfigTab.tsx`、新 `TabJoinFormulaDrawer` 及子组件、service。
+- **复用既有**：`SafeArithmetic`(T1 不动)、聚合归约机制(reduceAgg/matchParen/findAggCall/substituteRowTokens/numLit/toBig)、`CardDataProvider`/`CardEffectiveRows`、`ExcelViewService.buildRowData` switch 框架。
+- **废弃既有**（v1 残留）：`buildWideRows`/`Join`(INNER 笛卡尔) → 换行键对齐；`applyWhere`/`Cond` → 删除；`evaluateColumn` 的 groups/main_tab/joins/where/final/`组N` → 重写。
 
 ---
 
 ## 11. 一期不做（YAGNI）
 
-- LEFT/OUTER JOIN（一期只 INNER）。
-- 最终表达式层的函数（只四则+常数）。
-- `SUM/AVG/MIN/MAX/COUNT` 以外的函数（后续按需补充）。
-- 跨产品卡片 / 整单作用域（一期只单卡片）。
-- 页签数据与视图列变量（汇率等）混引（一期纯页签）。
-- JOIN 放大自动去重/防呆（一期用户自负 + 提示）。
+- 跨行键类的明细直接混算（只能经总计/聚合）。
+- 计算组 / 显式 JOIN 关联键 / WHERE（v1 概念，已删）。
+- `SUM/AVG/MIN/MAX/COUNT` 以外的函数。
+- 跨产品卡片 / 整单作用域（仅单卡片）。
+- 页签数据与视图列变量（汇率等）混引。
+- `[别名(总计)]` 的口径细分（一期：页签总计取 `CardDataProvider.subtotalOf`；小计列总计取 `subtotalOfColumn`）。

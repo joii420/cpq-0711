@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>页签连表公式构建器 v2 · 抽屉原型</title>
+<style>
+  :root{
+    --blue:#1677ff; --blue-bg:#e6f0ff; --green:#52c41a; --orange:#fa8c16;
+    --border:#e5e7eb; --bg:#f5f6f8; --text:#1f2329; --sub:#8a909a; --danger:#ff4d4f;
+    --key:#722ed1; --key-bg:#f9f0ff; --grey:#bfbfbf;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:#fff;color:var(--text);font-size:13px;}
+  /* 模拟抽屉外壳 */
+  .drawer{max-width:1100px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;}
+  .drawer-head{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);}
+  .drawer-head h2{margin:0;font-size:16px;}
+  .drawer-head .meta{color:var(--sub);font-size:12px;margin-top:3px;}
+  .drawer-body{flex:1;padding:18px 20px;overflow:auto;}
+  .drawer-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid var(--border);}
+  .btn{border:1px solid var(--border);background:#fff;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px;}
+  .btn:hover{border-color:var(--blue);color:var(--blue);}
+  .btn.primary{background:var(--blue);color:#fff;border-color:var(--blue);}
+  .btn.primary:hover{opacity:.9;color:#fff;}
+  .btn.sm{padding:3px 9px;font-size:12px;}
+  .sect-lbl{font-size:12px;color:var(--sub);font-weight:600;margin:0 0 6px;}
+  textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-family:"SF Mono",Consolas,monospace;font-size:14px;resize:vertical;line-height:1.7;}
+  textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-bg);}
+  .toolbar{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;align-items:center;}
+  .toolbar .lbl{color:var(--sub);font-size:12px;width:50px;flex:none;}
+  .chip{border:1px solid var(--border);background:#fff;border-radius:5px;padding:4px 10px;cursor:pointer;font-size:12px;user-select:none;}
+  .chip:hover{border-color:var(--blue);background:var(--blue-bg);color:var(--blue);}
+  .chip.op{font-family:monospace;font-weight:600;min-width:30px;text-align:center;}
+  .chip.fn{color:var(--orange);border-color:#ffd591;}
+  .chip.fn:hover{background:#fff7e6;}
+  /* 试算条 */
+  .runbar{display:flex;align-items:center;gap:10px;background:#f6ffed;border:1px solid #b7eb8f;border-radius:8px;padding:10px 14px;margin-bottom:16px;}
+  .runbar select{border:1px solid var(--border);border-radius:6px;padding:5px 9px;font-size:13px;}
+  .run-res{font-size:16px;font-weight:700;color:var(--green);}
+  .run-res.err{color:var(--danger);}
+  /* 规则提示 */
+  .rule{background:#fffbe6;border:1px solid #ffe58f;border-radius:6px;padding:8px 12px;font-size:12px;color:#874d00;margin:14px 0;line-height:1.7;}
+  .rule code{background:#fff;border:1px solid #ffe58f;border-radius:3px;padding:0 4px;font-family:monospace;}
+  /* 字段矩阵 */
+  .matrix{border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-top:6px;}
+  .mrow{display:flex;border-bottom:1px solid var(--border);align-items:stretch;}
+  .mrow:last-child{border-bottom:none;}
+  .mrow.greyed{background:#fafafa;}
+  .mtab{flex:none;width:150px;background:#f7f9fc;border-right:1px solid var(--border);padding:10px 12px;display:flex;flex-direction:column;gap:5px;justify-content:center;}
+  .mtab .tname{font-weight:600;}
+  .mtab .rk{font-size:11px;color:var(--key);background:var(--key-bg);border:1px solid #efdbff;border-radius:4px;padding:1px 6px;align-self:flex-start;}
+  .mtab .rk.active{background:var(--key);color:#fff;}
+  .mfields{flex:1;padding:9px 11px;display:flex;gap:7px;flex-wrap:wrap;align-items:flex-start;}
+  .fgrp{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+  .fgrp + .fgrp{margin-left:10px;padding-left:10px;border-left:1px dashed var(--border);}
+  .fgrp .gl{font-size:11px;color:var(--sub);align-self:center;}
+  .fchip{border:1px solid var(--border);background:#fff;border-radius:5px;padding:4px 10px;cursor:pointer;font-size:12px;white-space:nowrap;}
+  .fchip:hover{border-color:var(--blue);background:var(--blue-bg);color:var(--blue);}
+  .fchip.total{border-style:dashed;color:#389e0d;border-color:#b7eb8f;}
+  .fchip.total:hover{background:#f6ffed;color:#389e0d;}
+  .fchip.disabled{color:var(--grey);border-color:#f0f0f0;background:#fafafa;cursor:not-allowed;}
+  .fchip.disabled:hover{border-color:#f0f0f0;background:#fafafa;color:var(--grey);}
+  .lockinfo{font-size:12px;color:var(--sub);margin:10px 0 2px;display:flex;align-items:center;gap:8px;}
+  .lockinfo b{color:var(--key);}
+  .tip{position:fixed;background:#1f2329;color:#fff;font-size:12px;padding:4px 8px;border-radius:4px;pointer-events:none;z-index:99;display:none;max-width:240px;}
+</style>
+</head>
+<body>
+<div class="drawer">
+  <div class="drawer-head">
+    <div>
+      <h2>配置列公式 · <span style="color:var(--blue)">单件总成本</span></h2>
+      <div class="meta">列来源：页签连表公式 · 单卡片单值 · 行键自动对齐(全外连·缺补0) · 明细默认按对齐行求和</div>
+    </div>
+  </div>
+
+  <div class="drawer-body">
+
+    <!-- 试算条 -->
+    <div class="runbar">
+      <span class="sect-lbl" style="margin:0">试算样本</span>
+      <select id="sampleSel">
+        <option value="s1">报价单 SO-2026-018 / 主板A（投料2·加工2·回料2）</option>
+        <option value="s2">核价单 CO-2026-007 / 外壳B（投料1·加工1）</option>
+      </select>
+      <button class="btn primary sm" onclick="runDry()">▶ 试算</button>
+      <span>结果：</span><span class="run-res" id="runRes">—</span>
+      <span class="meta" id="runDetail" style="color:var(--sub)"></span>
+    </div>
+
+    <!-- 表达式 -->
+    <div class="sect-lbl">公式表达式（点下方字段/运算符/函数插入到光标处）</div>
+    <textarea id="expr" rows="2" oninput="onExprChange()" placeholder="例：[投料.金额] * [加工.工时] + [回料(总计)]"></textarea>
+    <div class="toolbar">
+      <span class="lbl">运算符</span>
+      <span class="chip op" onclick="ins('+')">+</span>
+      <span class="chip op" onclick="ins('-')">-</span>
+      <span class="chip op" onclick="ins('*')">*</span>
+      <span class="chip op" onclick="ins('/')">/</span>
+      <span class="chip op" onclick="ins('(')">(</span>
+      <span class="chip op" onclick="ins(')')">)</span>
+    </div>
+    <div class="toolbar">
+      <span class="lbl">函数</span>
+      <span class="chip fn" onclick="insFn('SUM')">SUM</span>
+      <span class="chip fn" onclick="insFn('AVG')">AVG</span>
+      <span class="chip fn" onclick="insFn('MIN')">MIN</span>
+      <span class="chip fn" onclick="insFn('MAX')">MAX</span>
+      <span class="chip fn" onclick="insFn('COUNT')">COUNT</span>
+      <span class="meta" style="margin-left:8px;color:var(--sub)">明细字段默认自动求和；套函数可改聚合方式</span>
+    </div>
+
+    <div class="rule">
+      <b>求值规则</b>（按顶层 <code>+ -</code> 拆"加减项"，逐项判定）：
+      项内有"裸明细字段"(未被函数圈住)→整项按对齐行逐行算再求和；明细全在函数内/整项纯标量→只算一次。<br>
+      例：<code>[投料.金额]*[加工.工时]</code>=Σ(每行 金额×工时)；
+      <code>AVG([投料.工时])</code>=均值(一次)；
+      <code>AVG([投料.工时])*[投料.数量]</code>=均值×Σ数量；
+      <code>MAX([投料.金额])+[回料(总计)]</code>=最大金额+回料总计(一次)。
+    </div>
+
+    <!-- 锁定状态 -->
+    <div class="lockinfo" id="lockInfo">
+      <span>当前行键锁定：<b id="lockState">未锁定（任意页签明细可选）</b></span>
+      <button class="btn sm" onclick="clearExpr()">清空表达式</button>
+    </div>
+
+    <!-- 字段矩阵 -->
+    <div class="sect-lbl" style="margin-top:6px">页签字段（全部展示 · 点明细锁定行键类 · 行键不同则该页签明细置灰，仅留总计可选）</div>
+    <div class="matrix" id="matrix"></div>
+  </div>
+
+  <div class="drawer-foot">
+    <button class="btn" onclick="alert('原型：取消')">取消</button>
+    <button class="btn primary" onclick="save()">保存</button>
+  </div>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+// ================== mock 模板页签定义 + 样本卡片数据 ==================
+// 每个页签: alias, rowKeyFields, detailFields(明细), subtotalCols(is_subtotal 列→有"列总计")
+const TAB_DEFS = [
+  { alias:'投料', rowKeyFields:['物料编码'],          detail:['物料编码','单价','数量','金额'], subtotalCols:['金额'] },
+  { alias:'加工', rowKeyFields:['物料编码'],          detail:['物料编码','工序','工时','工费'], subtotalCols:['工费'] },
+  { alias:'回料', rowKeyFields:['物料编码','工序'],   detail:['物料编码','工序','回料量','回料金额'], subtotalCols:['回料金额'] },
+];
+// 样本卡片数据（两套，演示切换试算）
+const SAMPLES = {
+  s1:{
+    投料:[ {物料编码:'M1',单价:50,数量:2,金额:100}, {物料编码:'M2',单价:20,数量:3,金额:60} ],
+    加工:[ {物料编码:'M1',工序:'电镀',工时:4,工费:8}, {物料编码:'M3',工序:'酸洗',工时:5,工费:10} ],
+    回料:[ {物料编码:'M1',工序:'电镀',回料量:7,回料金额:30}, {物料编码:'M1',工序:'酸洗',回料量:2,回料金额:9} ],
+  },
+  s2:{
+    投料:[ {物料编码:'M1',单价:80,数量:1,金额:80} ],
+    加工:[ {物料编码:'M1',工序:'喷涂',工时:3,工费:12} ],
+    回料:[],
+  },
+};
+function tabDef(alias){ return TAB_DEFS.find(t=>t.alias===alias); }
+function rkSig(alias){ return tabDef(alias).rowKeyFields.join('+'); }
+
+// ================== 表达式 token 解析 ==================
+const TOKEN_RE = /\[([^\[\]]+)\]/g;
+// 返回 {raw, kind:'detail'|'colTotal'|'tabTotal', alias, field}
+function parseTokens(expr){
+  const out=[]; let m;
+  TOKEN_RE.lastIndex=0;
+  while((m=TOKEN_RE.exec(expr))){
+    const c=m[1].trim();
+    if(c.endsWith('(总计)')){
+      const body=c.slice(0,-4); // 去掉 (总计)
+      if(body.includes('.')){ const [a,f]=body.split('.'); out.push({raw:c,kind:'colTotal',alias:a,field:f}); }
+      else out.push({raw:c,kind:'tabTotal',alias:body,field:null});
+    } else {
+      const [a,f]=c.split('.'); out.push({raw:c,kind:'detail',alias:a,field:f});
+    }
+  }
+  return out;
+}
+// 当前表达式里出现的"明细字段"引用到的行键类签名（取第一个明细的类）；无→null
+function activeRowKeySig(){
+  const dets=parseTokens(document.getElementById('expr').value).filter(t=>t.kind==='detail');
+  if(!dets.length) return null;
+  return rkSig(dets[0].alias);
+}
+
+// ================== 插入 ==================
+const ta = ()=>document.getElementById('expr');
+function ins(token){
+  const t=ta(); const s=t.selectionStart??t.value.length, e=t.selectionEnd??s;
+  t.value=t.value.slice(0,s)+token+t.value.slice(e); const p=s+token.length;
+  t.focus(); t.setSelectionRange(p,p); onExprChange();
+}
+function insFn(fn){
+  const t=ta(); const s=t.selectionStart??t.value.length, e=t.selectionEnd??s;
+  const piece=fn+'()'; t.value=t.value.slice(0,s)+piece+t.value.slice(e);
+  const p=s+fn.length+1; // 光标落到括号内
+  t.focus(); t.setSelectionRange(p,p); onExprChange();
+}
+function insField(alias, field, kind){
+  let token;
+  if(kind==='detail') token='['+alias+'.'+field+']';
+  else if(kind==='colTotal') token='['+alias+'.'+field+'(总计)]';
+  else token='['+alias+'(总计)]';
+  ins(token);
+}
+function clearExpr(){ ta().value=''; onExprChange(); ta().focus(); }
+
+// ================== 置灰渲染 ==================
+function renderMatrix(){
+  const active=activeRowKeySig();
+  const host=document.getElementById('matrix'); host.innerHTML='';
+  TAB_DEFS.forEach(def=>{
+    const sameClass = active===null || rkSig(def.alias)===active;
+    const row=document.createElement('div'); row.className='mrow'+(sameClass?'':' greyed');
+    // 左列：页签名 + 行键
+    const rkActive = active!==null && rkSig(def.alias)===active;
+    const left=`<div class="mtab"><span class="tname">${def.alias}</span>
+      <span class="rk ${rkActive?'active':''}">行键: ${def.rowKeyFields.join(' + ')}</span></div>`;
+    // 明细 chips（不同类置灰）
+    const detChips=def.detail.map(f=>{
+      const dis=!sameClass;
+      return `<span class="fchip ${dis?'disabled':''}"
+        ${dis?`onmouseenter="showTip(event,'行键与已锁定类不同(${def.rowKeyFields.join('+')} ≠ ${active}),明细不可与之逐行对齐;可改用其总计字段')" onmouseleave="hideTip()"`
+              :`onclick="insField('${def.alias}','${f}','detail')"`}>${f}</span>`;
+    }).join('');
+    // 列总计 chips（始终可点）
+    const colTotChips=def.subtotalCols.map(f=>
+      `<span class="fchip total" onclick="insField('${def.alias}','${f}','colTotal')">${f}(总计)</span>`).join('');
+    // 页签总计（始终可点）
+    const tabTot=`<span class="fchip total" onclick="insField('${def.alias}',null,'tabTotal')">${def.alias}(总计)</span>`;
+    const fields=`<div class="mfields">
+        <div class="fgrp"><span class="gl">明细</span>${detChips}</div>
+        <div class="fgrp"><span class="gl">小计列总计</span>${colTotChips}</div>
+        <div class="fgrp"><span class="gl">页签总计</span>${tabTot}</div>
+      </div>`;
+    row.innerHTML=left+fields;
+    host.appendChild(row);
+  });
+  // 锁定状态文案
+  document.getElementById('lockState').textContent =
+    active===null ? '未锁定（任意页签明细可选）' : `已锁定行键类 [${active}]（仅同类页签明细可选；其它页签仅总计可用）`;
+}
+function onExprChange(){ renderMatrix(); }
+
+// ================== 试算（在样本数据上真实算，演示求值语义）==================
+function getSampleData(){ return SAMPLES[document.getElementById('sampleSel').value]; }
+
+// 对齐行：表达式引用到的明细页签，按行键并集全外连，缺→缺键(取值时→0)
+function buildAlignedRows(detailAliases, data){
+  if(!detailAliases.length) return [{}];
+  const keyFields = tabDef(detailAliases[0]).rowKeyFields; // 同类，取其一
+  // 收集所有行键组合
+  const keyMap = new Map(); // keyStr -> {alias.field: val}
+  detailAliases.forEach(alias=>{
+    (data[alias]||[]).forEach(r=>{
+      const keyStr = keyFields.map(k=>r[k]).join('||');
+      if(!keyMap.has(keyStr)) keyMap.set(keyStr,{});
+      const merged=keyMap.get(keyStr);
+      Object.keys(r).forEach(f=> merged[alias+'.'+f]=r[f]);
+    });
+  });
+  return [...keyMap.values()];
+}
+// 标量：列总计 / 页签总计
+function scalarValue(tok, data){
+  if(tok.kind==='colTotal'){
+    return (data[tok.alias]||[]).reduce((s,r)=>s+num(r[tok.field]),0);
+  }
+  if(tok.kind==='tabTotal'){
+    const def=tabDef(tok.alias);
+    // 页签总计 = 各 is_subtotal 列之和(原型口径：用 subtotalCols 之和；真实系统取页签 subtotal)
+    return (data[tok.alias]||[]).reduce((s,r)=> s+def.subtotalCols.reduce((a,c)=>a+num(r[c]),0),0);
+  }
+  return 0;
+}
+const num=v=> (v===undefined||v===null||v==='')?0:(isNaN(+v)?0:+v);
+
+// 把表达式里的聚合函数 FN(inner) 先在对齐行上算成标量字面量
+function replaceAggregates(expr, rows, data){
+  const FN=/\b(SUM|AVG|MIN|MAX|COUNT)\s*\(/i;
+  let out='', i=0;
+  while(i<expr.length){
+    const sub=expr.slice(i); const m=sub.match(FN);
+    if(!m){ out+=expr.slice(i); break; }
+    const fnStart=i+m.index, parenOpen=expr.indexOf('(',fnStart);
+    const fn=expr.slice(fnStart,parenOpen).trim().toUpperCase();
+    const parenClose=matchParen(expr,parenOpen);
+    const inner=expr.slice(parenOpen+1,parenClose);
+    out+=expr.slice(i,fnStart);
+    out+=reduceAgg(fn,inner,rows,data);
+    i=parenClose+1;
+  }
+  return out;
+}
+function matchParen(s,open){ let d=0; for(let k=open;k<s.length;k++){ if(s[k]==='(')d++; else if(s[k]===')'){d--; if(!d)return k;} } return s.length-1; }
+function reduceAgg(fn,inner,rows,data){
+  const vals=rows.map(r=>evalRow(inner,r,data)).filter(v=>v!==null);
+  if(fn==='SUM') return vals.reduce((a,b)=>a+b,0);
+  if(fn==='COUNT') return vals.length;
+  if(fn==='AVG') return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:0;
+  if(fn==='MIN') return vals.length?Math.min(...vals):0;
+  if(fn==='MAX') return vals.length?Math.max(...vals):0;
+  return 0;
+}
+// 单行求值：[detail]→行值, [colTotal]/[tabTotal]→标量, 缺→0, /0→/1
+function evalRow(expr, row, data){
+  let s=expr.replace(TOKEN_RE,(_,c)=>{
+    const tok=parseTokens('['+c+']')[0];
+    if(tok.kind==='detail') return num(row[tok.alias+'.'+tok.field]);
+    return scalarValue(tok,data);
+  });
+  return safeEval(s);
+}
+function safeEval(s){
+  // 除零→除1：把 /0 近似处理（原型：捕获非有限值兜0；真实后端 SafeArithmetic 按除数1）
+  try{ const v=Function('"use strict";return ('+s+')')(); return isFinite(v)?v:0; }catch(e){ return 0; }
+}
+// 顶层 +/- 拆项（尊重括号）
+function splitTerms(expr){
+  const terms=[]; let d=0, cur='', sign=1;
+  for(let i=0;i<expr.length;i++){
+    const ch=expr[i];
+    if(ch==='(')d++; if(ch===')')d--;
+    if(d===0 && (ch==='+'||ch==='-') && cur.trim()!==''){
+      terms.push({sign,text:cur}); cur=''; sign=(ch==='+'?1:-1);
+    } else cur+=ch;
+  }
+  if(cur.trim()!=='') terms.push({sign,text:cur});
+  return terms;
+}
+function hasBareDetail(termText){
+  // 去掉聚合函数内部后，还有 detail token 吗
+  const stripped=replaceAggregatesMark(termText);
+  return parseTokens(stripped).some(t=>t.kind==='detail');
+}
+// 把聚合函数整体替换成占位(不含 token)，用于判断是否还有"裸"明细
+function replaceAggregatesMark(expr){
+  const FN=/\b(SUM|AVG|MIN|MAX|COUNT)\s*\(/i;
+  let out='',i=0;
+  while(i<expr.length){
+    const sub=expr.slice(i); const m=sub.match(FN);
+    if(!m){ out+=expr.slice(i); break; }
+    const fnStart=i+m.index, parenOpen=expr.indexOf('(',fnStart);
+    const parenClose=matchParen(expr,parenOpen);
+    out+=expr.slice(i,fnStart)+'0'; i=parenClose+1;
+  }
+  return out;
+}
+function runDry(){
+  const expr=ta().value.trim();
+  const resEl=document.getElementById('runRes'), detEl=document.getElementById('runDetail');
+  if(!expr){ resEl.textContent='—'; resEl.className='run-res'; detEl.textContent='(表达式为空)'; return; }
+  const data=getSampleData();
+  try{
+    const detailAliases=[...new Set(parseTokens(expr).filter(t=>t.kind==='detail').map(t=>t.alias))];
+    const rows=buildAlignedRows(detailAliases,data);
+    const terms=splitTerms(expr);
+    let total=0; const parts=[];
+    terms.forEach(t=>{
+      // 先把项内聚合函数算成标量
+      const aggResolved=replaceAggregates(t.text,rows,data);
+      let termVal;
+      if(hasBareDetail(t.text)){
+        // 含裸明细 → 逐对齐行算再求和
+        termVal=rows.reduce((s,r)=>s+evalRow(aggResolved,r,data),0);
+        parts.push(`Σ项(${rows.length}行)=${fmt(termVal)}`);
+      }else{
+        // 纯标量/聚合 → 算一次
+        termVal=evalRow(aggResolved,{},data);
+        parts.push(`标量项=${fmt(termVal)}`);
+      }
+      total+=t.sign*termVal;
+    });
+    resEl.textContent=fmt(total); resEl.className='run-res';
+    detEl.textContent='= '+parts.join('  +/-  ')+`（对齐行${rows.length}行，行键并集补0）`;
+  }catch(e){
+    resEl.textContent='#ERR'; resEl.className='run-res err'; detEl.textContent=String(e.message||e);
+  }
+}
+function fmt(n){ return (Math.round(n*1000)/1000).toString(); }
+
+function save(){
+  const expr=ta().value.trim();
+  if(!expr){ alert('表达式为空'); return; }
+  const refTabs=[...new Set(parseTokens(expr).map(t=>t.alias))].map(a=>({
+    alias:a, tabKey:'<'+a+'-componentId>:'+TAB_DEFS.findIndex(d=>d.alias===a), rowKeyFields:tabDef(a).rowKeyFields
+  }));
+  alert('原型：保存的列配置 JSON =\n\n'+JSON.stringify({
+    source_type:'TAB_JOIN_FORMULA', expression:expr, tabs:refTabs
+  },null,2));
+}
+
+// tooltip
+function showTip(e,txt){ const t=document.getElementById('tip'); t.textContent=txt; t.style.display='block';
+  t.style.left=(e.pageX+12)+'px'; t.style.top=(e.pageY+12)+'px'; }
+function hideTip(){ document.getElementById('tip').style.display='none'; }
+
+// init
+renderMatrix();
+</script>
+</body>
+</html>
