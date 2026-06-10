@@ -430,6 +430,42 @@ curl -s -X POST http://localhost:8081/api/cpq/formulas/evaluate \
 
 ---
 
+## 列来源：页签连表公式（TAB_JOIN_FORMULA，2026-06-10）
+
+一种新的 Excel 视图列来源，让一列的值由**单张产品卡片内多个页签的内容数据**按行键自动对齐后算出**一个单值**。在列来源下拉选「页签连表公式」，点"配置公式"打开构建器抽屉（`TabJoinFormulaDrawer`）。
+
+**列配置 JSON**：
+```json
+{ "col_key":"L", "source_type":"TAB_JOIN_FORMULA",
+  "expression":"[投料.金额] * [加工.工时] + [回料(总计)]",
+  "tabs":[ {"alias":"投料","tabKey":"<componentId>:0","rowKeyFields":["物料编码"]},
+           {"alias":"加工","tabKey":"<componentId>:1","rowKeyFields":["物料编码"]},
+           {"alias":"回料","tabKey":"<componentId>:2","rowKeyFields":["物料编码","工序"]} ] }
+```
+
+**令牌三类**：明细 `[别名.字段]`；小计列总计 `[别名.列名(总计)]`；页签总计 `[别名(总计)]`。
+
+**行键自动对齐**：页签按各自 `rowKeyFields`（组件管理里配的行键字段）**完全相等**分"行键类"；同一类的页签按行键**全外连**（行键并集，缺失行的字段按 0）对齐——行键唯一，不会笛卡尔放大。**只有同一行键类的页签明细才能在一个表达式里一起逐行运算**（构建器里：点明细字段会锁定行键类，行键不同的页签明细被置灰，只能用其总计字段）。
+
+**求值规则**（按顶层 `+ -` 拆"加减项"，逐项判定）：
+- 项内有**裸明细字段**（未被聚合函数圈住）→ 整项**按对齐行逐行算、再求和**（明细默认自动求和，无需写 SUM）。
+- 明细**全在聚合函数内** / 整项**纯标量（总计/常数）** → 该项**只算一次**。
+
+| 表达式 | 结果 |
+|---|---|
+| `[投料.金额] * [加工.工时]` | `Σ(每行 金额×工时)` |
+| `AVG([投料.工时])` | 工时均值（算一次） |
+| `AVG([投料.工时]) * [投料.数量]` | `均值 × Σ数量` |
+| `MAX([投料.金额]) + [回料(总计)]` | 最大金额 + 回料总计（算一次） |
+
+函数：`SUM/AVG/MIN/MAX/COUNT`（SUM 因默认自动求和一般不用写）。缺值→0、除数 0 或缺→按 1。
+
+**试算**：构建器里选一张已有报价/核价单的产品卡片作样本 → 点试算，后端按真实录入数据算出单值（端点 `POST /api/cpq/templates/{id}/excel-view-config/dry-run-tab-formula`；页签/字段清单 `GET .../tab-defs`；样本卡片 `GET .../sample-cards`）。
+
+**后端实现**：求值器 `com.cpq.quotation.service.tabjoin.TabJoinPlanEvaluator`（`alignByRowKey` + `evalExpression` + `evaluateColumn`），接入 `ExcelViewService.buildRowData` 的列 switch；保存时 `validateTabJoinConfig` 校验（表达式非空 / 引用页签须声明 / 裸明细须同一行键类）。设计与演进见 `docs/superpowers/specs/2026-06-10-excel-tab-join-formula-design.md`，原型 `docs/html/excel-tab-join-formula-builder-v2.html`。
+
+---
+
 **维护说明**：本文档与代码同源，修改 `LinkedExcelView.tsx` / `CostingTemplateConfig.tsx` 的字段映射或公式语法时同步更新本文。
 
 ---

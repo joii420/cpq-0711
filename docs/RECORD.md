@@ -4,6 +4,18 @@
 
 ---
 
+### [2026-06-10] Excel 页签连表公式列 TAB_JOIN_FORMULA（v2 行键自动对齐方案）| TabJoinPlanEvaluator.java / SafeArithmetic.java / ExcelViewService.java / TemplateExcelViewResource.java / TabJoinFormulaDrawer.tsx + tabjoin/* / ExcelViewConfigTab.tsx / tabJoinFormulaService.ts | spec+plan: docs/superpowers/{specs,plans}/2026-06-10-excel-tab-join-formula*; 原型 docs/html/excel-tab-join-formula-builder-v2.html
+
+- **目标**: Excel 模板视图列新增来源 `TAB_JOIN_FORMULA`，单卡片内多页签按行键自动对齐算出一个单值写入单元格 + 可视化构建器 + 样本试算。
+- **方案演进**: v1（计算组+显式JOIN关联键+组级WHERE）→ **v2（取消组/WHERE，按 rowKeyFields 行键全外连自动对齐 + 单表达式 + 加减项分段自动求和）**。v1 的 SafeArithmetic 保留，buildWideRows/applyWhere 删除重写。
+- **求值语义（核心，见 spec §5）**: 页签按 `rowKeyFields` 完全相等分行键类；同类页签全外连(行键并集,缺补0)对齐。表达式按顶层 `+ -` 拆"加减项"：**项内有裸明细字段(未被聚合函数圈住)→对齐行逐行算再求和；明细全在聚合内/纯标量→算一次**。令牌：明细 `[别名.字段]`/列总计 `[别名.列(总计)]`/页签总计 `[别名(总计)]`。缺值→0、除数0或缺→1（SafeArithmetic 自定义 JexlArithmetic）。
+- **后端**: `com.cpq.quotation.service.tabjoin.TabJoinPlanEvaluator`(alignByRowKey + evalExpression + evaluateColumn) 复用 `CardDataProvider`(rowsOf/subtotalOf/subtotalOfColumn) 取页签行；`ExcelViewService.buildRowData` switch 加 TAB_JOIN_FORMULA 分支(provider=effectiveRows优先/降级 componentDataList)；`saveExcelViewConfig` 加 `validateTabJoinConfig`(expression非空/alias须声明/裸明细须同一行键类)；三端点 `POST dry-run-tab-formula` + `GET tab-defs`(从 componentsSnapshot+Component.rowKeyFields 解析) + `GET sample-cards`。
+- **前端**: `TabJoinFormulaDrawer`(单表达式框+运算符/函数工具条) + `tabjoin/TabFieldMatrix`(全页签字段矩阵, **点明细锁定行键类、行键不同页签明细置灰、总计始终可点、无明细令牌自动解锁**, `parseActiveRowKeySig` 单一来源) + `tabjoin/SampleCardPicker`(样本试算)。`ExcelViewConfigTab` 列来源加选项+入口。
+- **测试**: 后端 31 测全绿（TabJoinPlanEvaluator Align4/Eval10/ColumnV2 4 + Validation4 + TabDefsParse4 + SafeArithmetic4 + 端到端 ExcelViewTabJoinFormulaIT 1，IT 验证 `[投料.金额]*[加工.工时]` 行键对齐求和=400）；前端 parseActiveRowKeySig 24 vitest 全绿 + tsc 0 错误。
+- **已知缺口/后续**: ① E2E 未真跑——所有 DRAFT 模板 componentsSnapshot=NULL 致 tab-defs 返空、无样本卡片；需补 fixture(给 DRAFT 模板写 componentsSnapshot + 一条引用它的 line_item)后跑 `e2e/tab-join-formula.spec.ts`。② cleanup 待办（非阻断）: tab-defs 的 Component 查询批量化、sample-cards SQL 层 limit、前端 TOKEN_RE 移入函数作用域、dryRun 不传 cardValuesJson 是预期(走持久化录入值)需补注释。
+
+---
+
 ### [2026-06-10] 报价小计体系调整 — 底部按页签总计 + 产品小计默认求和 + 解除小计组件强制 | tabTotalLines.ts / QuotationStep2.tsx(footer+computeProductSubtotal) / ReadonlyProductCard.tsx(footer) / TemplateService.java(删发布throw) / ConfigGuideDrawer.tsx / PublishWithoutSubtotalTest.java | 计划 plans/2026-06-10-subtotal-tab-total-footer.md + spec specs/2026-06-10-subtotal-tab-total-footer-design.md
 
 - **背景**: 用户在报价 Step2 底部看到「元素·小计」冒到产品小计上方 → 排查为 Plan2「多小计列向上汇总」(commit a8e6475)有意设计:每个非SUBTOTAL组件的每个 is_subtotal 列各出一条 `组件·列名`。非本会话行键工作。
