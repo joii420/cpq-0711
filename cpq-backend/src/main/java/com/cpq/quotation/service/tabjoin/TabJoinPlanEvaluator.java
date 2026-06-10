@@ -7,6 +7,9 @@ import java.util.*;
 @ApplicationScoped
 public class TabJoinPlanEvaluator {
 
+    private static final org.jboss.logging.Logger LOG =
+        org.jboss.logging.Logger.getLogger(TabJoinPlanEvaluator.class);
+
     /** 一条 INNER JOIN 边：new 侧(leftTab/leftCols) 与已包含侧(rightTab/rightCols) 等值。 */
     public record Join(String leftTab, List<String> leftCols, String rightTab, List<String> rightCols) {}
 
@@ -88,6 +91,14 @@ public class TabJoinPlanEvaluator {
     private static final java.util.regex.Pattern TOKEN =
         java.util.regex.Pattern.compile("\\[([^\\[\\]]+)]");
 
+    /** 聚合函数调用识别正则：匹配 SUM/AVG/MIN/MAX/COUNT 后紧跟 `(`；捕获组 1 = 函数名（用于 m.start(1) 定位）。 */
+    private static final java.util.regex.Pattern AGG_CALL =
+        java.util.regex.Pattern.compile("(?i)\\b(SUM|AVG|MIN|MAX|COUNT)\\s*\\(");
+
+    /** 中文组变量名识别正则：匹配 `组\d+`，捕获组 1 = 数字部分，用于映射到安全 ASCII 变量名 `_gN`。 */
+    private static final java.util.regex.Pattern GROUP_REF =
+        java.util.regex.Pattern.compile("组(\\d+)");
+
     private final org.apache.commons.jexl3.JexlEngine jexl =
         new org.apache.commons.jexl3.JexlBuilder()
             .arithmetic(new SafeArithmetic()).strict(false).silent(true).create();
@@ -97,6 +108,8 @@ public class TabJoinPlanEvaluator {
      * 1. 先把每个聚合调用 FN(子表达式) 替换为标量字面量（子表达式逐行求值后 reduce）。
      * 2. 再把聚合外裸 [别名.字段] 替换为第一行值；[别名.小计]/[别名.总计] 用 subtotals。
      * 3. JEXL（SafeArithmetic）算最终标量。
+     * <p>
+     * 聚合函数不可嵌套（不支持 SUM(SUM(...))）；内层聚合文本会进入 JEXL 报错被静默兜成 0。
      */
     public java.math.BigDecimal evalGroupExpression(
             String aggExpr, List<Map<String, Object>> rows, Map<String, java.math.BigDecimal> subtotals) {
@@ -128,8 +141,7 @@ public class TabJoinPlanEvaluator {
 
     /** 返回下一个聚合函数名起始下标（其后紧跟 `(`）；无则 -1。 */
     private int findAggCall(String expr, int from) {
-        java.util.regex.Matcher m =
-            java.util.regex.Pattern.compile("(?i)\\b(SUM|AVG|MIN|MAX|COUNT)\\s*\\(").matcher(expr);
+        java.util.regex.Matcher m = AGG_CALL.matcher(expr);
         return m.find(from) ? m.start(1) : -1;
     }
 
@@ -199,7 +211,7 @@ public class TabJoinPlanEvaluator {
         catch (Exception e) { return "0"; }
     }
 
-    java.math.BigDecimal toBig(Object v) {
+    private java.math.BigDecimal toBig(Object v) {
         if (v == null) return java.math.BigDecimal.ZERO;
         if (v instanceof java.math.BigDecimal b) return b;
         try { return new java.math.BigDecimal(v.toString()); }
@@ -265,6 +277,7 @@ public class TabJoinPlanEvaluator {
             try {
                 groupValues.put(ref, evalOneGroup(g, provider));
             } catch (Exception e) {
+                LOG.warnf("[TabJoin] 计算组 %s 求值失败,按0: %s", ref, e.getMessage());
                 groupValues.put(ref, java.math.BigDecimal.ZERO);
             }
         }
@@ -325,8 +338,7 @@ public class TabJoinPlanEvaluator {
         if (expr == null || expr.isBlank()) return java.math.BigDecimal.ZERO;
 
         // 建立 组N → _gN 映射表，对表达式与 ctx 同步替换
-        java.util.regex.Pattern groupPat = java.util.regex.Pattern.compile("组(\\d+)");
-        java.util.regex.Matcher m = groupPat.matcher(expr);
+        java.util.regex.Matcher m = GROUP_REF.matcher(expr);
         Map<String, String> renameMap = new LinkedHashMap<>();
         while (m.find()) {
             String original = m.group(0);          // e.g. "组1"
@@ -355,6 +367,9 @@ public class TabJoinPlanEvaluator {
         try {
             Object r = jexl.createExpression(safeExpr).evaluate(ctx);
             return toBig(r);
-        } catch (Exception e) { return java.math.BigDecimal.ZERO; }
+        } catch (Exception e) {
+            LOG.warnf("[TabJoin] final 表达式求值失败,按0: expr=%s err=%s", safeExpr, e.getMessage());
+            return java.math.BigDecimal.ZERO;
+        }
     }
 }
