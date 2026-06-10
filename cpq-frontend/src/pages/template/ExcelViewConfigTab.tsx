@@ -1,46 +1,44 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Button, Input, Space, message, Typography, Tag, Tooltip, Switch, Select, Drawer, Form, Dropdown,
+  Button, Space, message, Typography, Tag, Select, Switch, Empty, Alert, InputNumber,
 } from 'antd';
-import {
-  PlusOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, SaveOutlined,
-  EditOutlined, FunctionOutlined, DownOutlined,
-} from '@ant-design/icons';
+import { SaveOutlined } from '@ant-design/icons';
 import { templateService } from '../../services/templateService';
-import VariableLabelPickerDrawer from '../../components/VariableLabelPickerDrawer';
-import { variableLabelService, type VariableLabel } from '../../services/variableLabelService';
-import PathPickerDrawer from '../component/PathPickerDrawer';
-import CardFormulaDrawer from './CardFormulaDrawer';
-import { validateCardFormula } from './cardFormula';
-import TabJoinFormulaDrawer from './TabJoinFormulaDrawer';
+import { componentService } from '../../services/componentService';
+import type { ComponentItem } from '../component/types';
 
 const { Text } = Typography;
 
-// V149 Stage 3+D 清理: Excel 视图配置只做"配 Excel 列引用视图数据"一件事.
-// VARIABLE 取数(绑 $view.col 或 {code}); FORMULA 模板层公式(=[X]+[Y] 等); 老 4 种保留向后兼容.
-// CARD_FORMULA: 卡片引用公式，引用报价单产品卡中的页签小计/字段值/聚合（Task3 新增）.
-// TAB_JOIN_FORMULA: 页签连表公式，跨页签行键对齐后单值计算（Task10+11 新增）.
+// Task 3.1 Excel 配置归属迁移:
+// 模板的 Excel 视图不再内联编辑列定义, 而是 *引用* 一个 componentType==='EXCEL' 组件.
+// 真正的列定义存在该 EXCEL 组件的 excelColumns 字段(JSON 数组); 本视图只持有:
+//   { version:2, import_settings, excel_component_id, column_overrides:[{col_key, hidden?, display_format?}] }
+// column_overrides 是稀疏的 —— 只在某列覆写值与组件基线不同时才有条目, 重置即移除条目.
+// 后端 getEffectiveColumns 负责合并 component.excelColumns + column_overrides.
+
 type SourceType = 'VARIABLE' | 'FORMULA' | 'CARD_FORMULA' | 'TAB_JOIN_FORMULA' | 'PRODUCT_ATTRIBUTE' | 'COMPONENT_FIELD' | 'EXCEL_FORMULA' | 'FIXED_VALUE';
 
-interface ExcelViewColumn {
+interface ExcelBaseColumn {
   col_key: string;
   title: string;
   source_type: SourceType;
-  variable_path?: string;
   hidden?: boolean;
-  // 老字段, 仅做透传保存, UI 不编辑
-  source_name?: string;
-  value?: string | { component_code: string; field_name: string; row_index: number };
-  col_name?: string;
-  visible?: boolean;
-  formula?: string;
-  comparison_tag?: string;
-  // CARD_FORMULA 专属字段（Task3 新增）
-  refs?: Record<string, any>;
   display_format?: { type?: 'PERCENT' | 'NUMBER'; decimals?: number };
-  // TAB_JOIN_FORMULA 专属字段（Task10+11 新增）
-  expression?: string;
-  tabs?: { alias: string; tabKey: string; rowKeyFields: string[] }[];
+  [k: string]: any;
+}
+
+/** 模板侧对单列的稀疏覆写。只携带与组件基线不同的键。 */
+interface ColumnOverride {
+  col_key: string;
+  hidden?: boolean;
+  display_format?: { type?: 'PERCENT' | 'NUMBER'; decimals?: number };
+}
+
+interface ExcelViewConfigV2 {
+  version: 2;
+  import_settings?: any;
+  excel_component_id?: string | null;
+  column_overrides: ColumnOverride[];
 }
 
 interface Props {
@@ -53,403 +51,165 @@ interface Props {
   componentsSnapshot?: any[];
 }
 
-const COL_KEYS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-
-function indexToColKey(i: number): string {
-  let result = '';
-  let n = i;
-  while (n >= 0) {
-    result = String.fromCharCode(65 + (n % 26)) + result;
-    n = Math.floor(n / 26) - 1;
-  }
-  return result;
-}
-
-function getNextColKey(columns: ExcelViewColumn[]): string {
-  const used = new Set(columns.map(c => c.col_key));
-  let i = 0;
-  while (true) {
-    const k = indexToColKey(i);
-    if (!used.has(k)) return k;
-    i++;
-    if (i > 700) return 'ZZ';
-  }
-}
-
-/** 兼容 V150 前后的数据格式 — string / array / object 三种 */
-function parseColumns(raw: any): ExcelViewColumn[] {
-  if (!raw) return [];
-  let parsed: any = raw;
-  if (typeof raw === 'string') {
-    try { parsed = JSON.parse(raw); } catch { return []; }
-  }
-  if (!parsed) return [];
-  if (Array.isArray(parsed)) return parsed;
-  if (Array.isArray(parsed.columns)) return parsed.columns;
-  return [];
-}
-
-const LEGACY_TYPE_LABEL: Record<string, string> = {
+const SOURCE_TYPE_LABEL: Record<string, string> = {
+  VARIABLE: '变量',
+  FORMULA: '公式',
+  CARD_FORMULA: '卡片公式',
+  TAB_JOIN_FORMULA: '页签连表公式',
   PRODUCT_ATTRIBUTE: '产品属性',
   COMPONENT_FIELD: '组件字段',
   EXCEL_FORMULA: 'Excel公式',
   FIXED_VALUE: '固定值',
 };
 
+/** 把传入的任意格式 config 规整为 v2 对象。兼容老 bare-array / string。 */
+function normalizeConfig(raw: any): ExcelViewConfigV2 {
+  let parsed: any = raw;
+  if (typeof raw === 'string') {
+    try { parsed = JSON.parse(raw); } catch { parsed = null; }
+  }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    return {
+      version: 2,
+      import_settings: parsed.import_settings ?? undefined,
+      excel_component_id: parsed.excel_component_id ?? null,
+      column_overrides: Array.isArray(parsed.column_overrides) ? parsed.column_overrides : [],
+    };
+  }
+  // 老格式(bare array / null) → 尚未迁移, 无引用组件
+  return { version: 2, import_settings: undefined, excel_component_id: null, column_overrides: [] };
+}
+
+/** 解析 EXCEL 组件的 excelColumns(JSON 字符串)为基线列数组。 */
+function parseExcelColumns(raw: any): ExcelBaseColumn[] {
+  if (!raw) return [];
+  let parsed: any = raw;
+  if (typeof raw === 'string') {
+    try { parsed = JSON.parse(raw); } catch { return []; }
+  }
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed && Array.isArray(parsed.columns)) return parsed.columns;
+  return [];
+}
+
+function isLegacyBareArray(raw: any): boolean {
+  let parsed: any = raw;
+  if (typeof raw === 'string') {
+    try { parsed = JSON.parse(raw); } catch { return false; }
+  }
+  return Array.isArray(parsed) && parsed.length > 0;
+}
+
 const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewConfig, onChange }) => {
-  const [columns, setColumns] = useState<ExcelViewColumn[]>(() => parseColumns(excelViewConfig));
+  const [config, setConfig] = useState<ExcelViewConfigV2>(() => normalizeConfig(excelViewConfig));
   const [saving, setSaving] = useState(false);
-  const [labelMap, setLabelMap] = useState<Record<string, VariableLabel>>({});
-  const [labelPickerOpen, setLabelPickerOpen] = useState(false);
-  const [labelPickerColIdx, setLabelPickerColIdx] = useState<number | null>(null);
-  // PathPickerDrawer 状态（SQL 视图路径选择）
-  const [pathPickerOpen, setPathPickerOpen] = useState(false);
-  const [pathPickerColIdx, setPathPickerColIdx] = useState<number | null>(null);
-  // CardFormulaDrawer 状态（CARD_FORMULA 列）
-  const [cardDrawerColIdx, setCardDrawerColIdx] = useState<number | null>(null);
-  // TabJoinFormulaDrawer 状态（TAB_JOIN_FORMULA 列）
-  const [tabJoinColIdx, setTabJoinColIdx] = useState<number | null>(null);
-  // 公式编辑 Drawer 状态（FORMULA 列）
-  const [formulaDrawerOpen, setFormulaDrawerOpen] = useState(false);
-  const [formulaDrawerColIdx, setFormulaDrawerColIdx] = useState<number | null>(null);
-  const [formulaDraft, setFormulaDraft] = useState<string>('');
-  const formulaTextAreaRef = useRef<any>(null);
+  const [excelComponents, setExcelComponents] = useState<ComponentItem[]>([]);
+  const [loadingComponents, setLoadingComponents] = useState(false);
+  const legacyArray = useMemo(() => isLegacyBareArray(excelViewConfig), [excelViewConfig]);
 
   // 父组件 excelViewConfig 变更时同步
   useEffect(() => {
-    setColumns(parseColumns(excelViewConfig));
+    setConfig(normalizeConfig(excelViewConfig));
   }, [excelViewConfig]);
 
-  // 拉 V149 字段库, 用于显示已注册中文名
+  // 拉取所有 EXCEL 组件供选择
   useEffect(() => {
-    variableLabelService.list().then(list => {
-      const m: Record<string, VariableLabel> = {};
-      for (const v of list) m[v.variablePath] = v;
-      setLabelMap(m);
-    });
+    setLoadingComponents(true);
+    componentService.list({})
+      .then((resp: any) => {
+        const list: ComponentItem[] = resp?.data ?? resp ?? [];
+        const arr = Array.isArray(list) ? list : [];
+        setExcelComponents(arr.filter(c => c.componentType === 'EXCEL' && c.status === 'ACTIVE'));
+      })
+      .catch(() => setExcelComponents([]))
+      .finally(() => setLoadingComponents(false));
   }, []);
 
-  const updateColumn = (index: number, patch: Partial<ExcelViewColumn>) => {
-    setColumns(prev => prev.map((c, i) => (i === index ? { ...c, ...patch } : c)));
+  const selectedComponent = useMemo(
+    () => excelComponents.find(c => c.id === config.excel_component_id) || null,
+    [excelComponents, config.excel_component_id],
+  );
+
+  const baseColumns = useMemo(
+    () => parseExcelColumns(selectedComponent?.excelColumns),
+    [selectedComponent],
+  );
+
+  // col_key → 覆写条目, 便于读取
+  const overrideMap = useMemo(() => {
+    const m: Record<string, ColumnOverride> = {};
+    for (const o of config.column_overrides) m[o.col_key] = o;
+    return m;
+  }, [config.column_overrides]);
+
+  const handleSelectComponent = (componentId: string | undefined) => {
+    setConfig(prev => ({
+      ...prev,
+      excel_component_id: componentId ?? null,
+      // 换组件时清空旧覆写(col_key 体系可能不同)
+      column_overrides: componentId === prev.excel_component_id ? prev.column_overrides : [],
+    }));
   };
 
-  const addColumn = (sourceType: 'VARIABLE' | 'FORMULA' | 'CARD_FORMULA' | 'TAB_JOIN_FORMULA' = 'VARIABLE') => {
-    setColumns(prev => {
-      const k = getNextColKey(prev);
-      const base: ExcelViewColumn = {
-        col_key: k,
-        title: sourceType === 'CARD_FORMULA' ? '新卡片列' : sourceType === 'TAB_JOIN_FORMULA' ? '新连表列' : '新列',
-        source_type: sourceType,
-      };
-      if (sourceType === 'VARIABLE') {
-        base.variable_path = '';
-      } else if (sourceType === 'CARD_FORMULA') {
-        base.formula = '=';
-        base.refs = {};
-      } else if (sourceType === 'TAB_JOIN_FORMULA') {
-        base.expression = '';
-        base.tabs = [];
+  /**
+   * 写一个覆写键。值与组件基线相同则移除该键; 若该列再无任何覆写键则整条移除(保持稀疏)。
+   */
+  const setOverride = (col: ExcelBaseColumn, key: 'hidden' | 'display_format', value: any) => {
+    setConfig(prev => {
+      const existing = prev.column_overrides.find(o => o.col_key === col.col_key);
+      const baseVal = (col as any)[key];
+      const next: ColumnOverride = existing
+        ? { ...existing }
+        : { col_key: col.col_key };
+
+      const sameAsBase =
+        key === 'hidden'
+          ? (!!value === !!baseVal)
+          : JSON.stringify(value ?? null) === JSON.stringify(baseVal ?? null);
+
+      if (sameAsBase || value === undefined || value === null) {
+        delete (next as any)[key];
       } else {
-        base.formula = '';
+        (next as any)[key] = value;
       }
-      return [...prev, base];
+
+      // 重新组装 column_overrides; 移除空条目(只剩 col_key)
+      const hasAnyOverride = Object.keys(next).some(k => k !== 'col_key');
+      const others = prev.column_overrides.filter(o => o.col_key !== col.col_key);
+      return {
+        ...prev,
+        column_overrides: hasAnyOverride ? [...others, next] : others,
+      };
     });
   };
 
-  const removeColumn = (index: number) => {
-    setColumns(prev => prev.filter((_, i) => i !== index));
+  // 列的有效值(基线 + 覆写)
+  const effectiveHidden = (col: ExcelBaseColumn): boolean => {
+    const ov = overrideMap[col.col_key];
+    return ov && 'hidden' in ov ? !!ov.hidden : !!col.hidden;
   };
-
-  const moveColumn = (index: number, dir: 'up' | 'down') => {
-    setColumns(prev => {
-      const next = [...prev];
-      const target = dir === 'up' ? index - 1 : index + 1;
-      if (target < 0 || target >= next.length) return prev;
-      [next[index], next[target]] = [next[target], next[index]];
-      return next;
-    });
-  };
-
-  const openLabelPicker = (idx: number) => {
-    setLabelPickerColIdx(idx);
-    setLabelPickerOpen(true);
-  };
-
-  const handleLabelPick = (path: string, label: VariableLabel) => {
-    if (labelPickerColIdx != null) {
-      const c = columns[labelPickerColIdx];
-      const newTitle = !c.title || c.title === '新列' ? label.displayName : c.title;
-      updateColumn(labelPickerColIdx, { variable_path: path, title: newTitle, source_type: 'VARIABLE' });
-    }
-    setLabelPickerOpen(false);
-    setLabelPickerColIdx(null);
-  };
-
-  const openPathPicker = (idx: number) => {
-    setPathPickerColIdx(idx);
-    setPathPickerOpen(true);
-  };
-
-  const handlePathPickerConfirm = (path: string) => {
-    if (pathPickerColIdx != null) {
-      updateColumn(pathPickerColIdx, { variable_path: path, source_type: 'VARIABLE' });
-    }
-    setPathPickerOpen(false);
-    setPathPickerColIdx(null);
-  };
-
-  // 公式编辑 Drawer
-  const openFormulaDrawer = (idx: number) => {
-    setFormulaDrawerColIdx(idx);
-    setFormulaDraft(columns[idx]?.formula || '');
-    setFormulaDrawerOpen(true);
-  };
-  const saveFormulaDrawer = () => {
-    if (formulaDrawerColIdx == null) return;
-    updateColumn(formulaDrawerColIdx, { formula: formulaDraft, source_type: 'FORMULA' });
-    setFormulaDrawerOpen(false);
-    setFormulaDrawerColIdx(null);
-  };
-  const insertFormulaToken = (token: string) => {
-    const el = formulaTextAreaRef.current?.resizableTextArea?.textArea as HTMLTextAreaElement | undefined;
-    if (!el) {
-      setFormulaDraft(prev => (prev || '') + token);
-      return;
-    }
-    const start = el.selectionStart ?? formulaDraft.length;
-    const end = el.selectionEnd ?? formulaDraft.length;
-    const next = formulaDraft.slice(0, start) + token + formulaDraft.slice(end);
-    setFormulaDraft(next);
-    // 光标移到插入之后
-    requestAnimationFrame(() => {
-      el.focus();
-      const pos = start + token.length;
-      el.setSelectionRange(pos, pos);
-    });
+  const effectiveFormat = (col: ExcelBaseColumn): { type?: 'PERCENT' | 'NUMBER'; decimals?: number } | undefined => {
+    const ov = overrideMap[col.col_key];
+    return ov && 'display_format' in ov ? ov.display_format : col.display_format;
   };
 
   const handleSave = async () => {
-    // 保存前校验所有 CARD_FORMULA 列
-    const cardFormulaCols = columns.filter(c => c.source_type === 'CARD_FORMULA');
-    if (cardFormulaCols.length > 0) {
-      const allColKeys = columns.map(c => c.col_key);
-      const allFormulas = Object.fromEntries(
-        cardFormulaCols.map(c => [c.col_key, c.formula || '']),
-      );
-      const allErrors: string[] = [];
-      for (const col of cardFormulaCols) {
-        const errs = validateCardFormula(
-          { col_key: col.col_key, formula: col.formula, refs: col.refs },
-          allColKeys,
-          allFormulas,
-        );
-        if (errs.length > 0) {
-          allErrors.push(`列 ${col.col_key}（${col.title}）：${errs.join('；')}`);
-        }
-      }
-      if (allErrors.length > 0) {
-        message.error(
-          <ul style={{ margin: 0, paddingLeft: 20 }}>
-            {allErrors.map((e, i) => <li key={i}>{e}</li>)}
-          </ul>,
-          8,
-        );
-        return;
-      }
-    }
-
     setSaving(true);
     try {
-      await templateService.updateExcelViewConfig(templateId, columns);
-      onChange(columns);
+      const payload: ExcelViewConfigV2 = {
+        version: 2,
+        import_settings: config.import_settings,
+        excel_component_id: config.excel_component_id ?? null,
+        column_overrides: config.column_overrides,
+      };
+      await templateService.updateExcelViewConfig(templateId, payload);
+      onChange(payload);
       message.success('Excel 视图配置已保存');
     } catch (e: any) {
-      message.error(e.message || '保存失败');
+      message.error(e?.message || '保存失败');
     } finally {
       setSaving(false);
     }
-  };
-
-  const renderValueCell = (col: ExcelViewColumn, index: number) => {
-    if (col.source_type === 'TAB_JOIN_FORMULA') {
-      const expr = col.expression || '';
-      const displayExpr = expr.length > 60 ? expr.slice(0, 60) + '…' : expr;
-      return (
-        <div style={{ width: '100%' }}>
-          <Space.Compact style={{ width: '100%' }}>
-            <Input
-              size="small"
-              readOnly
-              value={displayExpr}
-              placeholder="点击右侧按钮配置页签连表公式"
-              disabled={!isDraft}
-              onClick={() => isDraft && setTabJoinColIdx(index)}
-              style={{
-                cursor: isDraft ? 'pointer' : 'not-allowed',
-                fontFamily: 'Consolas, Monaco, monospace',
-              }}
-            />
-            <Button
-              size="small"
-              disabled={!isDraft}
-              icon={<EditOutlined />}
-              onClick={() => setTabJoinColIdx(index)}
-              title="配置页签连表公式（跨页签行键对齐后单值计算）"
-            >
-              配置公式
-            </Button>
-          </Space.Compact>
-          <div style={{ marginTop: 4, fontSize: 11, lineHeight: '18px' }}>
-            <Tag color="cyan">TAB_JOIN</Tag>
-            {col.tabs && col.tabs.length > 0 && (
-              <span style={{ color: '#888', fontSize: 10 }}>
-                引用 {col.tabs.length} 个页签
-              </span>
-            )}
-          </div>
-        </div>
-      );
-    }
-    if (col.source_type === 'CARD_FORMULA') {
-      const f = col.formula || '';
-      const displayFormula = f.length > 60 ? f.slice(0, 60) + '…' : f;
-      return (
-        <div style={{ width: '100%' }}>
-          <Space.Compact style={{ width: '100%' }}>
-            <Input
-              size="small"
-              readOnly
-              value={displayFormula}
-              placeholder="点击右侧按钮编辑卡片公式"
-              disabled={!isDraft}
-              onClick={() => isDraft && setCardDrawerColIdx(index)}
-              style={{
-                cursor: isDraft ? 'pointer' : 'not-allowed',
-                fontFamily: 'Consolas, Monaco, monospace',
-              }}
-            />
-            <Button
-              size="small"
-              disabled={!isDraft}
-              icon={<EditOutlined />}
-              onClick={() => setCardDrawerColIdx(index)}
-              title="编辑卡片引用公式（可引用报价单页签小计/字段/聚合）"
-            >
-              编辑
-            </Button>
-          </Space.Compact>
-          <div style={{ marginTop: 4, fontSize: 11, lineHeight: '18px' }}>
-            <Tag color="geekblue">CARD</Tag>
-            {col.refs && Object.keys(col.refs).length > 0 && (
-              <span style={{ color: '#888', fontSize: 10 }}>
-                {Object.keys(col.refs).length} 个引用已注册
-              </span>
-            )}
-          </div>
-        </div>
-      );
-    }
-    if (col.source_type === 'FORMULA') {
-      const f = col.formula || '';
-      return (
-        <div style={{ width: '100%' }}>
-          <Space.Compact style={{ width: '100%' }}>
-            <Input
-              size="small"
-              readOnly
-              value={f}
-              placeholder="点击右侧按钮编辑公式（如 =[I]+[J]）"
-              disabled={!isDraft}
-              onClick={() => isDraft && openFormulaDrawer(index)}
-              style={{
-                cursor: isDraft ? 'pointer' : 'not-allowed',
-                fontFamily: 'Consolas, Monaco, monospace',
-              }}
-            />
-            <Button
-              size="small"
-              disabled={!isDraft}
-              icon={<EditOutlined />}
-              onClick={() => openFormulaDrawer(index)}
-              title="编辑公式表达式（用 [X] 引用其他列）"
-            >
-              编辑公式
-            </Button>
-          </Space.Compact>
-          {f && (
-            <div style={{ marginTop: 4, fontSize: 11, lineHeight: '18px' }}>
-              <Tag color="purple" icon={<FunctionOutlined />}>FORMULA</Tag>
-              <span style={{ color: '#888', fontSize: 10 }}>
-                模板层计算 · 第二遍求值 · 不查 SQL 视图
-              </span>
-            </div>
-          )}
-        </div>
-      );
-    }
-    if (col.source_type === 'VARIABLE') {
-      const path = col.variable_path || '';
-      const label = path ? labelMap[path] : undefined;
-      return (
-        <div style={{ width: '100%' }}>
-          <Space.Compact style={{ width: '100%' }}>
-            <Input
-              size="small"
-              readOnly
-              value={label ? label.displayName : path}
-              placeholder="点击右侧按钮选择路径"
-              title={path || undefined}
-              disabled={!isDraft}
-              onClick={() => isDraft && openLabelPicker(index)}
-              style={{
-                cursor: isDraft ? 'pointer' : 'not-allowed',
-                fontFamily: label ? undefined : 'Consolas, Monaco, monospace',
-                fontWeight: label ? 500 : undefined,
-              }}
-            />
-            <Button
-              size="small"
-              disabled={!isDraft}
-              onClick={() => openLabelPicker(index)}
-              title="从已命名字段库选（按业务分类显示中文名），适合普通用户"
-            >
-              📚 字段库
-            </Button>
-            <Button
-              size="small"
-              disabled={!isDraft}
-              onClick={() => openPathPicker(index)}
-              title="从本模板 SQL 视图选择路径（$视图名.列名 格式）"
-            >
-              🗄 SQL 视图
-            </Button>
-          </Space.Compact>
-          {(label || path) && (
-            <div style={{ marginTop: 4, fontSize: 11, lineHeight: '18px' }}>
-              {label && (label.dataType || label.unit) && (
-                <Tag color="blue" style={{ marginRight: 6 }}>
-                  {label.dataType ?? ''}{label.unit ? ` ${label.unit}` : ''}
-                </Tag>
-              )}
-              {path && (
-                <span style={{ color: '#bbb', fontFamily: 'Consolas, Monaco, monospace', fontSize: 10 }}>
-                  {path}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      );
-    }
-    // 老的 4 种 source_type — 只读展示, 用户可改 col_key/title/删除, 不可编辑值
-    return (
-      <Space direction="vertical" size={2} style={{ fontSize: 12 }}>
-        <Tag color="default">{LEGACY_TYPE_LABEL[col.source_type] || col.source_type}</Tag>
-        <Text type="secondary" style={{ fontSize: 11 }}>
-          老格式列 · 数据保留 · 如需改请删除后新增
-        </Text>
-      </Space>
-    );
   };
 
   return (
@@ -458,7 +218,7 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
         <div>
           <Typography.Title level={5} style={{ margin: 0 }}>Excel 视图配置</Typography.Title>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            配置 Excel 导出时的列结构,引用 V149 字段库的已命名视图列
+            引用一个 EXCEL 组件作为列定义来源, 本模板仅做列覆写(隐藏 / 显示格式)
           </Text>
         </div>
         {isDraft && (
@@ -468,250 +228,145 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
         )}
       </div>
 
-      {columns.length === 0 ? (
-        <div style={{ padding: 24, textAlign: 'center', color: '#999', background: '#fafafa', borderRadius: 6 }}>
-          暂无列配置,点击下方按钮添加第一列
-        </div>
+      {legacyArray && !config.excel_component_id && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="检测到旧格式内联列配置"
+          description="该模板曾使用内联 Excel 列定义(已弃用)。请在下方选择或先到「组件管理」创建一个 EXCEL 组件，保存后将切换为组件引用模式。旧配置在选择并保存前仍向后兼容。"
+        />
+      )}
+
+      <div style={{ marginBottom: 16 }}>
+        <Text strong style={{ marginRight: 8 }}>引用 EXCEL 组件:</Text>
+        <Select
+          showSearch
+          allowClear
+          style={{ width: 360 }}
+          placeholder="选择一个 EXCEL 组件"
+          loading={loadingComponents}
+          disabled={!isDraft}
+          value={config.excel_component_id ?? undefined}
+          optionFilterProp="label"
+          onChange={handleSelectComponent}
+          options={excelComponents.map(c => ({
+            label: `${c.name}${c.code ? `（${c.code}）` : ''}`,
+            value: c.id,
+          }))}
+        />
+        {selectedComponent && (
+          <Text type="secondary" style={{ marginLeft: 12, fontSize: 12 }}>
+            共 {baseColumns.length} 列
+          </Text>
+        )}
+      </div>
+
+      {!config.excel_component_id ? (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={
+            <span style={{ color: '#999' }}>
+              请选择一个 EXCEL 组件作为列定义来源；如尚未创建，请先在「组件管理」中创建 EXCEL 组件。
+            </span>
+          }
+          style={{ padding: 24, background: '#fafafa', borderRadius: 6 }}
+        />
+      ) : baseColumns.length === 0 ? (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={<span style={{ color: '#999' }}>该 EXCEL 组件尚未配置列定义，请到「组件管理」中为其添加列。</span>}
+          style={{ padding: 24, background: '#fafafa', borderRadius: 6 }}
+        />
       ) : (
         <div style={{ overflowX: 'auto' }}>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 8 }}
+            message="列定义为只读（来源于 EXCEL 组件）。本模板仅可覆写「隐藏」与「显示格式」，覆写后右侧出现“已覆写”标记。"
+          />
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ background: '#fafafa' }}>
               <tr>
-                <th style={thStyle}>列 Key</th>
+                <th style={{ ...thStyle, width: 80 }}>列 Key</th>
                 <th style={thStyle}>列标题</th>
-                <th style={{ ...thStyle, width: 120 }}>类型</th>
-                <th style={thStyle}>值 / 公式</th>
-                <th style={{ ...thStyle, width: 80, textAlign: 'center' }}>隐藏</th>
-                {isDraft && <th style={{ ...thStyle, width: 120 }}>操作</th>}
+                <th style={{ ...thStyle, width: 140 }}>类型</th>
+                <th style={{ ...thStyle, width: 100, textAlign: 'center' }}>隐藏</th>
+                <th style={{ ...thStyle, width: 220 }}>显示格式</th>
+                <th style={{ ...thStyle, width: 90 }}>状态</th>
               </tr>
             </thead>
             <tbody>
-              {columns.map((col, index) => (
-                <tr key={index} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                  <td style={tdStyle}>
-                    <Input
-                      size="small"
-                      style={{ width: 90 }}
-                      value={col.col_key}
-                      onChange={e => updateColumn(index, { col_key: e.target.value })}
-                      disabled={!isDraft}
-                    />
-                  </td>
-                  <td style={tdStyle}>
-                    <Input
-                      size="small"
-                      style={{ width: 180 }}
-                      value={col.title}
-                      onChange={e => updateColumn(index, { title: e.target.value })}
-                      disabled={!isDraft}
-                    />
-                  </td>
-                  <td style={tdStyle}>
-                    {(col.source_type === 'VARIABLE' || col.source_type === 'FORMULA' || col.source_type === 'CARD_FORMULA' || col.source_type === 'TAB_JOIN_FORMULA') ? (
-                      <Select
-                        size="small"
-                        style={{ width: 160 }}
-                        value={col.source_type}
-                        disabled={!isDraft}
-                        onChange={v => {
-                          if (v === 'FORMULA') {
-                            updateColumn(index, { source_type: 'FORMULA', variable_path: undefined, formula: col.formula || '', refs: undefined, display_format: undefined, expression: undefined, tabs: undefined });
-                          } else if (v === 'CARD_FORMULA') {
-                            updateColumn(index, { source_type: 'CARD_FORMULA', variable_path: undefined, formula: col.formula || '=', refs: col.refs || {}, expression: undefined, tabs: undefined });
-                          } else if (v === 'TAB_JOIN_FORMULA') {
-                            updateColumn(index, { source_type: 'TAB_JOIN_FORMULA', variable_path: undefined, formula: undefined, refs: undefined, display_format: undefined, expression: col.expression || '', tabs: col.tabs || [] });
-                          } else {
-                            updateColumn(index, { source_type: 'VARIABLE', formula: undefined, variable_path: col.variable_path || '', refs: undefined, display_format: undefined, expression: undefined, tabs: undefined });
-                          }
-                        }}
-                        options={[
-                          { label: '变量 VARIABLE', value: 'VARIABLE' },
-                          { label: '公式 FORMULA', value: 'FORMULA' },
-                          { label: '卡片公式 CARD', value: 'CARD_FORMULA' },
-                          { label: '页签连表公式', value: 'TAB_JOIN_FORMULA' },
-                        ]}
-                      />
-                    ) : (
+              {baseColumns.map((col) => {
+                const ov = overrideMap[col.col_key];
+                const overridden = !!ov && Object.keys(ov).some(k => k !== 'col_key');
+                const fmt = effectiveFormat(col);
+                return (
+                  <tr key={col.col_key} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                    <td style={tdStyle}>
+                      <Text code>{col.col_key}</Text>
+                    </td>
+                    <td style={tdStyle}>
+                      <Text>{col.title || <Text type="secondary">—</Text>}</Text>
+                    </td>
+                    <td style={tdStyle}>
                       <Tag color="default" style={{ fontSize: 11 }}>
-                        {LEGACY_TYPE_LABEL[col.source_type] || col.source_type}
+                        {SOURCE_TYPE_LABEL[col.source_type] || col.source_type}
                       </Tag>
-                    )}
-                  </td>
-                  <td style={tdStyle}>{renderValueCell(col, index)}</td>
-                  <td style={{ ...tdStyle, textAlign: 'center' }}>
-                    <Switch
-                      size="small"
-                      checked={!!col.hidden}
-                      disabled={!isDraft}
-                      onChange={v => updateColumn(index, { hidden: v })}
-                    />
-                  </td>
-                  {isDraft && (
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: 'center' }}>
+                      <Switch
+                        size="small"
+                        checked={effectiveHidden(col)}
+                        disabled={!isDraft}
+                        onChange={v => setOverride(col, 'hidden', v)}
+                      />
+                    </td>
                     <td style={tdStyle}>
                       <Space size={4}>
-                        <Tooltip title="上移">
-                          <Button type="text" size="small" icon={<ArrowUpOutlined />}
-                                  onClick={() => moveColumn(index, 'up')} disabled={index === 0} />
-                        </Tooltip>
-                        <Tooltip title="下移">
-                          <Button type="text" size="small" icon={<ArrowDownOutlined />}
-                                  onClick={() => moveColumn(index, 'down')} disabled={index === columns.length - 1} />
-                        </Tooltip>
-                        <Tooltip title="删除">
-                          <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                                  onClick={() => removeColumn(index)} />
-                        </Tooltip>
+                        <Select
+                          size="small"
+                          style={{ width: 110 }}
+                          disabled={!isDraft}
+                          value={fmt?.type ?? '__base__'}
+                          onChange={v => {
+                            if (v === '__base__') {
+                              setOverride(col, 'display_format', undefined);
+                            } else {
+                              setOverride(col, 'display_format', { type: v, decimals: fmt?.decimals });
+                            }
+                          }}
+                          options={[
+                            { label: '默认', value: '__base__' },
+                            { label: '数值', value: 'NUMBER' },
+                            { label: '百分比', value: 'PERCENT' },
+                          ]}
+                        />
+                        {fmt?.type && (
+                          <InputNumber
+                            size="small"
+                            style={{ width: 90 }}
+                            min={0}
+                            max={6}
+                            placeholder="小数位"
+                            disabled={!isDraft}
+                            value={fmt?.decimals}
+                            onChange={v => setOverride(col, 'display_format', { type: fmt.type, decimals: v ?? undefined })}
+                          />
+                        )}
                       </Space>
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td style={tdStyle}>
+                      {overridden ? <Tag color="orange">已覆写</Tag> : <Text type="secondary" style={{ fontSize: 11 }}>基线</Text>}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
-
-      {isDraft && (
-        <Dropdown
-          menu={{
-            items: [
-              {
-                key: 'VARIABLE',
-                label: '变量列（从 SQL 视图取数）',
-                icon: <PlusOutlined />,
-                onClick: () => addColumn('VARIABLE'),
-              },
-              {
-                key: 'FORMULA',
-                label: '公式列（基于其他列计算，如 =[I]+[J]）',
-                icon: <FunctionOutlined />,
-                onClick: () => addColumn('FORMULA'),
-              },
-              {
-                key: 'CARD_FORMULA',
-                label: '卡片公式 CARD_FORMULA（引用报价单页签小计/字段/聚合）',
-                icon: <FunctionOutlined />,
-                onClick: () => addColumn('CARD_FORMULA'),
-              },
-              {
-                key: 'TAB_JOIN_FORMULA',
-                label: '页签连表公式（跨页签行键对齐后单值计算）',
-                icon: <FunctionOutlined />,
-                onClick: () => addColumn('TAB_JOIN_FORMULA'),
-              },
-            ],
-          }}
-        >
-          <Button type="dashed" size="small" style={{ marginTop: 12 }}>
-            <Space>
-              <PlusOutlined />
-              添加列
-              <DownOutlined />
-            </Space>
-          </Button>
-        </Dropdown>
-      )}
-
-      {cardDrawerColIdx !== null && (
-        <CardFormulaDrawer
-          open={cardDrawerColIdx !== null}
-          templateId={templateId}
-          allColKeys={columns.map(c => c.col_key)}
-          allFormulas={Object.fromEntries(
-            columns
-              .filter(c => c.source_type === 'CARD_FORMULA')
-              .map(c => [c.col_key, c.formula || '']),
-          )}
-          colSourceTypes={Object.fromEntries(columns.map(c => [c.col_key, c.source_type || '']))}
-          value={columns[cardDrawerColIdx]}
-          onSave={(patch) => {
-            updateColumn(cardDrawerColIdx, { ...patch, source_type: 'CARD_FORMULA' });
-            setCardDrawerColIdx(null);
-          }}
-          onClose={() => setCardDrawerColIdx(null)}
-        />
-      )}
-
-      {tabJoinColIdx !== null && (
-        <TabJoinFormulaDrawer
-          open={tabJoinColIdx !== null}
-          templateId={templateId}
-          column={columns[tabJoinColIdx]}
-          onClose={() => setTabJoinColIdx(null)}
-          onSave={(patch) => { updateColumn(tabJoinColIdx, patch); setTabJoinColIdx(null); }}
-        />
-      )}
-
-      <VariableLabelPickerDrawer
-        open={labelPickerOpen}
-        onClose={() => { setLabelPickerOpen(false); setLabelPickerColIdx(null); }}
-        onPick={handleLabelPick}
-        initialPath={labelPickerColIdx != null ? (columns[labelPickerColIdx]?.variable_path || '') : ''}
-      />
-
-      <PathPickerDrawer
-        open={pathPickerOpen}
-        onClose={() => { setPathPickerOpen(false); setPathPickerColIdx(null); }}
-        initialPath={pathPickerColIdx != null ? (columns[pathPickerColIdx]?.variable_path || '') : ''}
-        onConfirm={handlePathPickerConfirm}
-        ownerContext={{ type: 'TEMPLATE', templateId }}
-        defaultTab="sql-view"
-        legacyPathPolicy={isDraft ? 'WARN_WITH_MIGRATION_SUGGEST' : 'BLOCK'}
-      />
-
-      {/* 公式编辑 Drawer (FORMULA 列才会打开) */}
-      <Drawer
-        title={
-          formulaDrawerColIdx != null
-            ? `编辑公式 —— 列 ${columns[formulaDrawerColIdx]?.col_key}（${columns[formulaDrawerColIdx]?.title}）`
-            : '编辑公式'
-        }
-        placement="right"
-        width={720}
-        open={formulaDrawerOpen}
-        onClose={() => { setFormulaDrawerOpen(false); setFormulaDrawerColIdx(null); }}
-        destroyOnClose
-        footer={
-          <div style={{ textAlign: 'right' }}>
-            <Button onClick={() => setFormulaDrawerOpen(false)} style={{ marginRight: 8 }}>取消</Button>
-            <Button type="primary" onClick={saveFormulaDrawer}>保存</Button>
-          </div>
-        }
-      >
-        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          示例：<code>=[I]+[J]</code>(总成本=材料成本+加工费)、<code>=[I]*1.13</code>(含税)、<code>=[F]&gt;10 ? [I]*0.9 : [I]</code>(阶梯折扣)。
-          <br/>语法：<code>[X]</code> 引用本模板其他列;<code>{'{code}'}</code> 引用 lineItem 简写;支持 <code>+ - * / ( )</code> 四则、<code>&lt; &gt; == != &amp;&amp; || ? :</code> 比较 / 逻辑 / 三元。
-          <br/>限制:**只能引用本行其他 VARIABLE 列**(单遍依赖),不支持 SUM / IF / VLOOKUP 等 Excel 函数,不支持字符串字面量。
-        </Typography.Paragraph>
-        <Form layout="vertical">
-          <Form.Item label="公式表达式">
-            <Input.TextArea
-              ref={formulaTextAreaRef}
-              rows={4}
-              value={formulaDraft}
-              onChange={(e) => setFormulaDraft(e.target.value)}
-              placeholder="如 =[I]+[J]"
-              style={{ fontFamily: 'Consolas, Monaco, monospace' }}
-            />
-          </Form.Item>
-          <Form.Item label="快速插入 列引用（点击追加到光标位置）">
-            <Space size={[4, 4]} wrap>
-              {columns
-                .filter((_, i) => i !== formulaDrawerColIdx)
-                .map((c) => (
-                  <Tag
-                    key={c.col_key}
-                    color={c.source_type === 'FORMULA' ? 'purple' : 'blue'}
-                    style={{ cursor: 'pointer', userSelect: 'none' }}
-                    onClick={() => insertFormulaToken(`[${c.col_key}]`)}
-                  >
-                    [{c.col_key}] {c.title}
-                  </Tag>
-                ))}
-            </Space>
-          </Form.Item>
-        </Form>
-      </Drawer>
     </div>
   );
 };

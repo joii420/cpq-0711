@@ -47,6 +47,12 @@ export interface ComponentItem {
   treeConfig?: TreeConfig;
   /** 核价 BOM 递归展开开关(默认 true,仅核价侧生效;与 treeConfig 正交) */
   bomRecursiveExpand?: boolean;
+  /**
+   * Task 3.1: EXCEL 组件持有的列定义(JSON 数组字符串).
+   * 仅 componentType==='EXCEL' 的组件非空; 模板 Excel 视图通过 excel_component_id 引用本字段 + column_overrides 合并.
+   * 数组元素形如 { col_key, title, source_type, hidden, formula, ... }.
+   */
+  excelColumns?: string;
 }
 
 export interface FieldItem {
