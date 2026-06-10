@@ -162,7 +162,7 @@ export function buildComponentDataFromTemplate(tmpl: any): ComponentDataItem[] {
       formulas,
       formulaAssignments,
       dataDriverPath: comp.data_driver_path || comp.dataDriverPath || undefined,
-      rows: compType === 'SUBTOTAL' ? [] : initialRows,
+      rows: compType !== 'NORMAL' ? [] : initialRows,
       subtotal: 0,
     };
   });

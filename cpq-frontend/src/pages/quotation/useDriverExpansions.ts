@@ -204,7 +204,7 @@ export function useDriverExpansions(
           // COMPOSITE 父级子件 ID 集变化时 fingerprint 变 → tasks 重建 → 重 fetch (消除缓存旧子件集)
           cids: childIds,
           comps: (li.componentData || [])
-            .filter((cd) => cd.componentId && cd.componentType !== 'SUBTOTAL')
+            .filter((cd) => cd.componentId && cd.componentType === 'NORMAL')
             .map((cd: any) => {
               return `${cd.componentId}::${cd.dataDriverPath || ''}::${fieldsOverrideHash(cd.fields || [])}`;
             })
@@ -261,7 +261,7 @@ export function useDriverExpansions(
       const partVersion = item.partVersionLocked ?? null;
       for (const comp of item.componentData || []) {
         if (!comp.componentId) continue;
-        if (comp.componentType === 'SUBTOTAL') continue;
+        if (comp.componentType !== 'NORMAL') continue;
         const effectiveDriver = comp.dataDriverPath || undefined;
         const effectiveFields = comp.fields;
         // 跳过 enrich 前的 raw 数据: fields/driverPath 都没 → 没法做有意义的 expand

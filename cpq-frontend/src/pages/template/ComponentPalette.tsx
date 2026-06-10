@@ -93,8 +93,9 @@ const ComponentPalette: React.FC<ComponentPaletteProps> = ({ onAddComponent: _on
 
   useEffect(() => { loadComponents(); }, [loadComponents]);
 
-  const normalComps = components.filter(c => c.componentType !== 'SUBTOTAL');
+  const normalComps = components.filter(c => c.componentType === 'NORMAL');
   const subtotalComps = components.filter(c => c.componentType === 'SUBTOTAL');
+  // EXCEL 组件不在普通页签桶里（=== 'NORMAL' 过滤已排除）；EXCEL 调色板分组渲染见 Phase 5.2。
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>

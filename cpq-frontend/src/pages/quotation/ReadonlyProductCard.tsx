@@ -258,7 +258,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   //   空 Tab 内部表格显示"暂无数据"占位 (走 Ant Design Table 默认 emptyText).
   //   这一改动同时修复 ReadonlyProductCard 与 QuotationStep2 Tab 数量不一致的问题.
   const normalComponents = components
-    .filter(c => (c as any)?.componentType !== 'SUBTOTAL');
+    .filter(c => (c as any)?.componentType === 'NORMAL');
   const activeComp = normalComponents[activeTab];
 
   // activeTab 越界钳位

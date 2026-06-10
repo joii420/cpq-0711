@@ -514,7 +514,7 @@ const AddProductModal: React.FC<AddProductModalProps> = ({ open, onCancel, onCon
           fields,
           formulas,
           formulaAssignments,
-          rows: compType === 'SUBTOTAL' ? [] : initialRows,
+          rows: compType !== 'NORMAL' ? [] : initialRows,
           subtotal: 0,
         };
       });

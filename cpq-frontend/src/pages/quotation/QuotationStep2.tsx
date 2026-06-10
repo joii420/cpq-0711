@@ -759,7 +759,7 @@ export function buildCrossTabRows(
   lookupExpansion: (comp: ComponentDataItem) => (import('./useDriverExpansions').DriverExpansion | undefined),
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
 ): Record<string, Array<Record<string, any>>> {
-  const normals = componentData.filter(c => c?.fields && c.componentType !== 'SUBTOTAL');
+  const normals = componentData.filter(c => c?.fields && c.componentType === 'NORMAL');
   const ids = normals.map(c => c.componentId || c.componentCode || c.tabName);
   const deps: Record<string, string[]> = {};
   normals.forEach((c, i) => { deps[ids[i]] = extractSourceRefs(c.formulas as any); });
@@ -905,7 +905,7 @@ function computeProductSubtotal(
   // Compute NORMAL component subtotals first
   const componentSubtotals: Record<string, number> = {};
   for (const comp of item.componentData) {
-    if (!comp?.fields || comp.componentType === 'SUBTOTAL') continue;
+    if (!comp?.fields || comp.componentType !== 'NORMAL') continue;
     // partNo + driverExpansion 一起传 —— BASIC_DATA 字段才能按行取值，
     // 不然落到全局 path cache 第一项 / 当 0 算（产品小计 156.80 vs 列小计 750.80 的根因）
     const subtotal = computeTabSubtotal(
@@ -957,7 +957,7 @@ function computeProductSubtotal(
   // 避免 componentSubtotals 同值三键(componentId/componentCode/tabName)被 Object.values 重复累加。
   let fallbackSum = 0;
   for (const c of item.componentData) {
-    if (!c?.fields || c.componentType === 'SUBTOTAL') continue;
+    if (!c?.fields || c.componentType !== 'NORMAL') continue;
     if (!c.fields.some((ff: any) => ff.is_subtotal)) continue;
     const key = c.componentId ?? c.componentCode ?? c.tabName;
     fallbackSum += componentSubtotals[key] ?? 0;
@@ -1479,7 +1479,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   //   AP-31 "0-row Tab by componentHasData 隐藏" 的设计在此**撤销** — driver 展开仍按需 fetch
   //   并填充单元格, 但 Tab 头不再依赖展开数据决定显隐.
   const normalComponents = (item.componentData ?? [])
-    .filter(c => c?.componentType !== 'SUBTOTAL');
+    .filter(c => c?.componentType === 'NORMAL');
   const activeComponent = normalComponents[activeTab];
 
   // normalComponents 过滤掉了 SUBTOTAL 组件，其下标 (activeTab) 与底层 item.componentData
