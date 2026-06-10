@@ -247,4 +247,114 @@ public class TabJoinPlanEvaluator {
             default -> false;
         };
     }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Task 5: 整列求值入口 evaluateColumn
+    // ─────────────────────────────────────────────────────────────────
+
+    public record Result(Map<String, java.math.BigDecimal> groupValues, java.math.BigDecimal finalValue) {}
+
+    /** 整列求值：每组算标量 → 绑 ref → 算 final_expression。provider 来自 CardEffectiveRows。 */
+    @SuppressWarnings("unchecked")
+    public Result evaluateColumn(Map<String, Object> col,
+                                 com.cpq.quotation.service.card.CardDataProvider provider) {
+        Map<String, java.math.BigDecimal> groupValues = new LinkedHashMap<>();
+        List<Map<String, Object>> groups = (List<Map<String, Object>>) col.getOrDefault("groups", List.of());
+        for (Map<String, Object> g : groups) {
+            String ref = (String) g.get("ref");
+            try {
+                groupValues.put(ref, evalOneGroup(g, provider));
+            } catch (Exception e) {
+                groupValues.put(ref, java.math.BigDecimal.ZERO);
+            }
+        }
+        String finalExpr = (String) col.getOrDefault("final_expression", "");
+        java.math.BigDecimal finalVal = evalFinal(finalExpr, groupValues);
+        return new Result(groupValues, finalVal);
+    }
+
+    @SuppressWarnings("unchecked")
+    private java.math.BigDecimal evalOneGroup(Map<String, Object> g,
+                                              com.cpq.quotation.service.card.CardDataProvider provider) {
+        String mainTab = (String) g.get("main_tab");
+        List<Map<String, Object>> tabs = (List<Map<String, Object>>) g.getOrDefault("tabs", List.of());
+        Map<String, List<Map<String, Object>>> tabRows = new LinkedHashMap<>();
+        Map<String, java.math.BigDecimal> subtotals = new LinkedHashMap<>();
+        for (Map<String, Object> t : tabs) {
+            String alias = (String) t.get("alias");
+            String tabKey = (String) t.get("tabKey");
+            tabRows.put(alias, provider.rowsOf(tabKey));
+            java.math.BigDecimal sub = provider.subtotalOf(tabKey);
+            if (sub != null) { subtotals.put(alias + ".小计", sub); subtotals.put(alias + ".总计", sub); }
+        }
+        List<Join> joins = parseJoins((List<Map<String, Object>>) g.getOrDefault("joins", List.of()));
+        List<Cond> where = parseWhere((List<Map<String, Object>>) g.getOrDefault("where", List.of()));
+
+        List<Map<String, Object>> wide = buildWideRows(mainTab, tabRows, joins);
+        wide = applyWhere(wide, where);
+        return evalGroupExpression((String) g.get("agg_expression"), wide, subtotals);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Join> parseJoins(List<Map<String, Object>> raw) {
+        List<Join> out = new ArrayList<>();
+        for (Map<String, Object> j : raw) {
+            out.add(new Join(
+                (String) j.get("left_tab"), (List<String>) j.getOrDefault("left_cols", List.of()),
+                (String) j.get("right_tab"), (List<String>) j.getOrDefault("right_cols", List.of())));
+        }
+        return out;
+    }
+
+    private List<Cond> parseWhere(List<Map<String, Object>> raw) {
+        List<Cond> out = new ArrayList<>();
+        for (Map<String, Object> c : raw) {
+            out.add(new Cond((String) c.get("col"), (String) c.get("op"),
+                    c.get("value") == null ? "" : c.get("value").toString(),
+                    (String) c.getOrDefault("logic", "AND")));
+        }
+        return out;
+    }
+
+    /**
+     * final 层：组N 当变量，只四则+常数；SafeArithmetic 处理缺值/除零。
+     * 因 JEXL 不支持中文+数字作变量名（如"组1"），先将表达式中所有"组\d+"
+     * 替换为安全 ASCII 变量名（_g1, _g2, ...），同步 set 进 ctx 后再求值。
+     */
+    private java.math.BigDecimal evalFinal(String expr, Map<String, java.math.BigDecimal> groupValues) {
+        if (expr == null || expr.isBlank()) return java.math.BigDecimal.ZERO;
+
+        // 建立 组N → _gN 映射表，对表达式与 ctx 同步替换
+        java.util.regex.Pattern groupPat = java.util.regex.Pattern.compile("组(\\d+)");
+        java.util.regex.Matcher m = groupPat.matcher(expr);
+        Map<String, String> renameMap = new LinkedHashMap<>();
+        while (m.find()) {
+            String original = m.group(0);          // e.g. "组1"
+            String safeVar = "_g" + m.group(1);    // e.g. "_g1"
+            renameMap.put(original, safeVar);
+        }
+
+        // 把表达式中的中文变量名替换为安全 ASCII 名
+        String safeExpr = expr;
+        for (Map.Entry<String, String> e : renameMap.entrySet()) {
+            safeExpr = safeExpr.replace(e.getKey(), e.getValue());
+        }
+
+        // 构建 JEXL ctx：用替换后的 ASCII 名 set 值
+        org.apache.commons.jexl3.JexlContext ctx = new org.apache.commons.jexl3.MapContext();
+        for (Map.Entry<String, java.math.BigDecimal> e : groupValues.entrySet()) {
+            String safeVar = renameMap.get(e.getKey());
+            if (safeVar != null) {
+                ctx.set(safeVar, e.getValue());
+            } else {
+                // 无中文前缀的 ref 直接放（兜底）
+                ctx.set(e.getKey(), e.getValue());
+            }
+        }
+
+        try {
+            Object r = jexl.createExpression(safeExpr).evaluate(ctx);
+            return toBig(r);
+        } catch (Exception e) { return java.math.BigDecimal.ZERO; }
+    }
 }
