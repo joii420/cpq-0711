@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>页签连表公式构建器 · 原型</title>
+<style>
+  :root{
+    --blue:#1677ff; --blue-bg:#e6f0ff; --green:#52c41a; --orange:#fa8c16;
+    --border:#e5e7eb; --bg:#f5f6f8; --text:#1f2329; --sub:#8a909a; --danger:#ff4d4f;
+    --main-tab:#722ed1;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:13px;}
+  .wrap{max-width:1180px;margin:0 auto;padding:16px;}
+  .drawer-head{display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:12px;}
+  .drawer-head h2{margin:0;font-size:16px;}
+  .drawer-head .meta{color:var(--sub);font-size:12px;margin-top:2px;}
+  .btn{border:1px solid var(--border);background:#fff;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:13px;}
+  .btn:hover{border-color:var(--blue);color:var(--blue);}
+  .btn.primary{background:var(--blue);color:#fff;border-color:var(--blue);}
+  .btn.primary:hover{opacity:.9;color:#fff;}
+  .btn.sm{padding:2px 8px;font-size:12px;}
+  .card{background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:12px;}
+  .card-h{padding:9px 14px;border-bottom:1px solid var(--border);font-weight:600;display:flex;align-items:center;gap:8px;}
+  .card-h .tag{font-weight:400;font-size:11px;color:var(--sub);background:var(--bg);border-radius:4px;padding:1px 7px;}
+  .card-b{padding:14px;}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:9px 11px;font-family:"SF Mono",Consolas,monospace;font-size:13px;resize:vertical;line-height:1.7;}
+  textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-bg);}
+  .toolbar{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;align-items:center;}
+  .toolbar .lbl{color:var(--sub);font-size:12px;width:54px;flex:none;}
+  .chip{border:1px solid var(--border);background:#fff;border-radius:5px;padding:3px 9px;cursor:pointer;font-size:12px;user-select:none;}
+  .chip:hover{border-color:var(--blue);background:var(--blue-bg);color:var(--blue);}
+  .chip.op{font-family:monospace;font-weight:600;min-width:30px;text-align:center;}
+  .chip.fn{color:var(--orange);border-color:#ffd591;}
+  .chip.fn:hover{background:#fff7e6;}
+  /* groups */
+  .group{border:1px solid #d6e4ff;border-radius:8px;margin-bottom:12px;background:#fafcff;}
+  .group.active{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-bg);}
+  .group-h{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #e6f0ff;}
+  .group-h .gname{font-weight:600;font-size:14px;}
+  .group-h .ref{font-family:monospace;color:var(--blue);background:var(--blue-bg);border-radius:4px;padding:1px 8px;font-size:12px;}
+  .group-h .spacer{flex:1;}
+  .group-b{padding:12px 14px;}
+  .tab-pill{border:1px solid var(--border);background:#fff;border-radius:16px;padding:4px 12px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:6px;}
+  .tab-pill.main{border-color:var(--main-tab);color:var(--main-tab);background:#f9f0ff;}
+  .tab-pill .x{color:var(--sub);font-size:13px;}
+  .tab-pill .x:hover{color:var(--danger);}
+  .tab-add{border:1px dashed var(--blue);color:var(--blue);background:#fff;}
+  .join-line{font-size:12px;color:#555;background:#fff;border:1px solid var(--border);border-radius:5px;padding:5px 10px;margin-top:8px;display:inline-flex;gap:8px;align-items:center;}
+  .join-line code{font-family:monospace;color:var(--main-tab);}
+  .sect-lbl{font-size:12px;color:var(--sub);margin:14px 0 6px;font-weight:600;}
+  /* variable matrix */
+  .matrix{border:1px solid var(--border);border-radius:6px;overflow:hidden;}
+  .matrix .mrow{display:flex;border-bottom:1px solid var(--border);}
+  .matrix .mrow:last-child{border-bottom:none;}
+  .matrix .mtab{flex:none;width:120px;background:#f7f9fc;border-right:1px solid var(--border);padding:9px 10px;font-weight:600;font-size:12px;display:flex;align-items:center;}
+  .matrix .mtab.main{color:var(--main-tab);}
+  .matrix .mfields{flex:1;padding:7px 9px;display:flex;gap:6px;flex-wrap:wrap;}
+  .fchip{border:1px solid var(--border);background:#fff;border-radius:5px;padding:3px 9px;cursor:pointer;font-size:12px;position:relative;}
+  .fchip:hover{border-color:var(--blue);background:var(--blue-bg);color:var(--blue);}
+  .fchip.agg{border-style:dashed;color:#389e0d;border-color:#b7eb8f;}
+  .fchip.agg:hover{background:#f6ffed;color:#389e0d;}
+  .fchip .cond-dot{position:absolute;top:-4px;right:-4px;width:8px;height:8px;border-radius:50%;background:var(--orange);display:none;}
+  .fchip.has-cond .cond-dot{display:block;}
+  /* where */
+  .cond-row{display:flex;gap:6px;align-items:center;margin-bottom:6px;}
+  .cond-row select,.cond-row input{border:1px solid var(--border);border-radius:5px;padding:4px 7px;font-size:12px;}
+  .cond-row .logic{width:64px;color:var(--orange);font-weight:600;}
+  .cond-row input{width:120px;}
+  .cond-row .del{color:var(--sub);cursor:pointer;padding:2px 6px;}
+  .cond-row .del:hover{color:var(--danger);}
+  .preview{margin-top:10px;background:#f6ffed;border:1px solid #b7eb8f;border-radius:6px;padding:8px 12px;font-size:12px;color:#389e0d;display:flex;align-items:center;gap:10px;}
+  .preview.err{background:#fff2f0;border-color:#ffccc7;color:var(--danger);}
+  .muted{color:var(--sub);font-size:12px;}
+  /* popover/menu */
+  .menu{position:absolute;z-index:50;background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);min-width:140px;padding:4px;display:none;}
+  .menu div{padding:7px 12px;cursor:pointer;border-radius:4px;font-size:13px;}
+  .menu div:hover{background:var(--blue-bg);color:var(--blue);}
+  /* modal */
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:100;}
+  .modal{background:#fff;border-radius:10px;width:560px;max-width:92vw;}
+  .modal-h{padding:14px 18px;border-bottom:1px solid var(--border);font-weight:600;font-size:15px;}
+  .modal-b{padding:18px;}
+  .modal-f{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;}
+  .pair{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+  .pair select{flex:1;border:1px solid var(--border);border-radius:6px;padding:7px 9px;font-size:13px;}
+  .pair .eq{font-weight:700;color:var(--main-tab);}
+  .final-res{font-size:15px;font-weight:700;color:var(--blue);}
+  .hint{background:#fffbe6;border:1px solid #ffe58f;border-radius:6px;padding:8px 12px;font-size:12px;color:#874d00;margin-bottom:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="drawer-head">
+    <div>
+      <h2>配置列公式 · <span style="color:var(--blue)">单件总成本</span></h2>
+      <div class="meta">列来源：页签连表公式（TAB_JOIN_FORMULA） · 作用域：单张产品卡片 · 结果：单值写入 Excel 单元格</div>
+    </div>
+    <div class="row">
+      <button class="btn" onclick="openSample()">选样本卡片：<b id="sampleName">SO-2026-018 / 主板A</b></button>
+      <button class="btn primary" onclick="runAll()">▶ 整列试算</button>
+    </div>
+  </div>
+
+  <div class="hint">
+    💡 交互演示：① 点页签字段 chip → 「插入表达式」或「设置条件」；② 点运算符/函数按钮插入到<b>当前聚焦的表达式框</b>；
+    ③ 计算组里「+添加页签」会弹出关联键(JOIN)选择；④ 每个组、最终表达式都能单独试算。点谁，谁高亮为当前编辑组。
+  </div>
+
+  <!-- 最终表达式 -->
+  <div class="card">
+    <div class="card-h">① 最终表达式 <span class="tag">把各计算组的结果用四则 + 常数组合，算出最终单值</span></div>
+    <div class="card-b">
+      <textarea id="finalExpr" rows="2" onfocus="setActive('finalExpr')" placeholder="例：组1 + 组2 - 100">组1 + 组2 - 100</textarea>
+      <div class="toolbar">
+        <span class="lbl">运算符</span>
+        <span class="chip op" onclick="ins('finalExpr','+')">+</span>
+        <span class="chip op" onclick="ins('finalExpr','-')">-</span>
+        <span class="chip op" onclick="ins('finalExpr','*')">*</span>
+        <span class="chip op" onclick="ins('finalExpr','/')">/</span>
+        <span class="chip op" onclick="ins('finalExpr','(')">(</span>
+        <span class="chip op" onclick="ins('finalExpr',')')">)</span>
+        <span class="muted" style="margin-left:10px">可引用：<code onclick="ins('finalExpr','组1')" class="chip" style="padding:2px 8px">组1</code> <code onclick="ins('finalExpr','组2')" class="chip" style="padding:2px 8px">组2</code>（最终层只用四则+常数，不放函数）</span>
+      </div>
+      <div class="preview" id="finalPrev">
+        <span>试算结果（样本卡片 主板A）：</span><span class="final-res" id="finalVal">—</span>
+        <span class="muted">= 组1(1820.00) + 组2(96.00) - 100</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 计算组区 -->
+  <div class="card">
+    <div class="card-h">② 计算组 <span class="tag">每组 = 若干页签 JOIN + 该组 WHERE + 组内聚合表达式 → 一个标量</span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn sm primary" onclick="alert('原型：新增一个空计算组')">+ 新增计算组</button>
+    </div>
+    <div class="card-b" id="groupHost"></div>
+  </div>
+
+  <div class="muted" style="text-align:center;padding:8px 0 24px">原型 · 数据为 mock · 仅演示布局与交互流程</div>
+</div>
+
+<!-- 字段右键菜单 -->
+<div class="menu" id="fieldMenu">
+  <div onclick="menuInsert()">插入到表达式</div>
+  <div onclick="menuCond()">设置条件（加到本组 WHERE）</div>
+</div>
+
+<!-- JOIN 关联键 modal -->
+<div class="mask" id="joinMask">
+  <div class="modal">
+    <div class="modal-h">设置关联键（JOIN） · 新页签「<span id="joinNewTab">加工</span>」</div>
+    <div class="modal-b">
+      <div class="muted" style="margin-bottom:10px">选「新页签」与「已加入的哪个页签」按哪些列对齐（支持复合键，多行 = AND）。默认 INNER JOIN。</div>
+      <div class="row" style="margin-bottom:12px">
+        <span class="muted">关联到已加入页签：</span>
+        <select style="border:1px solid var(--border);border-radius:6px;padding:6px 9px">
+          <option>投料（主页签）</option>
+          <option>加工</option>
+        </select>
+      </div>
+      <div id="pairHost">
+        <div class="pair">
+          <select><option>加工.物料编码</option><option>加工.工序</option></select>
+          <span class="eq">=</span>
+          <select><option>投料.物料编码</option><option>投料.物料名称</option></select>
+          <span class="del" onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--sub)">✕</span>
+        </div>
+      </div>
+      <button class="btn sm" onclick="addPair()">+ 增加一对关联列（复合键）</button>
+    </div>
+    <div class="modal-f">
+      <button class="btn" onclick="closeJoin()">取消</button>
+      <button class="btn primary" onclick="closeJoin()">确定连接</button>
+    </div>
+  </div>
+</div>
+
+<!-- 样本卡片选择 modal -->
+<div class="mask" id="sampleMask">
+  <div class="modal">
+    <div class="modal-h">选择试算样本卡片</div>
+    <div class="modal-b">
+      <div class="muted" style="margin-bottom:10px">从已有报价单/核价单里挑一张产品卡片（运行态才有真实页签行数据）。</div>
+      <div class="row" style="margin-bottom:10px">
+        <select style="flex:1;border:1px solid var(--border);border-radius:6px;padding:7px 9px">
+          <option>报价单 SO-2026-018（客户：华为）</option>
+          <option>核价单 CO-2026-007（客户：小米）</option>
+        </select>
+      </div>
+      <div class="matrix">
+        <div class="mrow" style="cursor:pointer" onclick="pickSample('SO-2026-018 / 主板A')"><div class="mtab">产品卡片</div><div class="mfields"><b>主板A</b> <span class="muted">（投料3 / 加工8 / 回料2 行）</span></div></div>
+        <div class="mrow" style="cursor:pointer" onclick="pickSample('SO-2026-018 / 外壳B')"><div class="mtab">产品卡片</div><div class="mfields"><b>外壳B</b> <span class="muted">（投料2 / 加工4 行）</span></div></div>
+      </div>
+    </div>
+    <div class="modal-f"><button class="btn" onclick="closeSample()">取消</button></div>
+  </div>
+</div>
+
+<script>
+// ---- mock 页签字段（含小计/总计聚合字段） ----
+const TABS = {
+  '投料':{main:true, detail:['物料编码','物料名称','单价','数量','金额'], agg:['小计','总计']},
+  '加工':{main:false,detail:['物料编码','工序','工时','工费'], agg:['小计']},
+  '回料':{main:false,detail:['物料编码','回料量','回料金额'], agg:['小计']},
+};
+// ---- mock 组配置 ----
+const GROUPS = [
+  {name:'组1', tabs:['投料','加工'], join:'加工.物料编码 = 投料.物料编码', expr:'SUM([投料.金额])', where:[{f:'投料.类型',op:'=',v:'主料',logic:''}], val:'1820.00'},
+  {name:'组2', tabs:['回料'], join:null, expr:'SUM([回料.回料金额])', where:[], val:'96.00'},
+];
+
+let active = 'finalExpr';   // 当前聚焦表达式框 id
+let menuCtx = null;
+
+function setActive(id){ active=id; document.querySelectorAll('.group').forEach(g=>g.classList.remove('active'));
+  const gi=id.startsWith('gexpr')?+id.slice(5):-1; if(gi>=0) document.getElementById('group'+gi).classList.add('active'); }
+
+function ins(id,token){ const ta=document.getElementById(id); const s=ta.selectionStart??ta.value.length;
+  ta.value=ta.value.slice(0,s)+token+ta.value.slice(ta.selectionEnd??s); ta.focus(); const p=s+token.length; ta.setSelectionRange(p,p); }
+
+function insActive(token){ ins(active.startsWith('gexpr')||active==='finalExpr'?active:'finalExpr', token); }
+
+// 渲染计算组
+function renderGroups(){
+  const host=document.getElementById('groupHost'); host.innerHTML='';
+  GROUPS.forEach((g,gi)=>{
+    const div=document.createElement('div'); div.className='group'+(gi===0?' active':''); div.id='group'+gi;
+    // 页签 pills
+    let pills=g.tabs.map(t=>`<span class="tab-pill ${TABS[t].main?'main':''}">${t}${TABS[t].main?' · 主':''} <span class="x" onclick="event.stopPropagation()">✕</span></span>`).join('');
+    // join line
+    let joinHtml=g.join?`<div class="join-line">🔗 关联：<code>${g.join}</code> <span class="muted">(INNER)</span> <a class="btn sm" style="margin-left:4px" onclick="openJoin('${g.tabs[g.tabs.length-1]}')">编辑</a></div>`:'<div class="muted" style="margin-top:6px">单页签，无需关联</div>';
+    // matrix
+    let matrix=g.tabs.map(t=>{
+      const T=TABS[t];
+      const det=T.detail.map(f=>fchip(t,f,false,g)).join('');
+      const agg=T.agg.map(f=>fchip(t,f,true,g)).join('');
+      return `<div class="mrow"><div class="mtab ${T.main?'main':''}">${t}${T.main?' (主)':''}</div><div class="mfields">${det}${agg}</div></div>`;
+    }).join('');
+    // where
+    let where=g.where.length? g.where.map((c,ci)=>condRow(c,ci)).join('') : '<div class="muted">无条件（全部行参与）</div>';
+
+    div.innerHTML=`
+      <div class="group-h" onclick="setActive('gexpr${gi}')">
+        <span class="gname">${g.name}</span><span class="ref">引用名：${g.name}</span>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn sm" onclick="event.stopPropagation();runGroup(${gi})">▶ 本组试算</button>
+        <button class="btn sm" onclick="event.stopPropagation();alert('原型：删除组')">删除</button>
+      </div>
+      <div class="group-b">
+        <div class="sect-lbl">参与页签（点第一个=主页签；再加页签弹关联键）</div>
+        <div class="row">${pills}<span class="tab-pill tab-add" onclick="openJoin('新页签')">+ 添加页签</span></div>
+        ${joinHtml}
+
+        <div class="sect-lbl">变量矩阵（页签 → 字段；点字段可「插入」或「设置条件」；虚线=小计/总计聚合字段）</div>
+        <div class="matrix">${matrix}</div>
+
+        <div class="sect-lbl">本组 WHERE 条件（全局过滤本组 JOIN 宽表的行；支持 AND/OR）</div>
+        <div id="whereHost${gi}">${where}</div>
+        <button class="btn sm" style="margin-top:6px" onclick="alert('原型：新增条件行')">+ 增加条件</button>
+
+        <div class="sect-lbl">组内聚合表达式（在本组行集上算 → 一个标量；允许多聚合四则，如 SUM(x)/SUM(y)）</div>
+        <textarea id="gexpr${gi}" rows="2" onfocus="setActive('gexpr${gi}')">${g.expr}</textarea>
+        <div class="toolbar">
+          <span class="lbl">运算符</span>
+          ${['+','-','*','/','(',')'].map(o=>`<span class="chip op" onclick="ins('gexpr${gi}','${o}')">${o}</span>`).join('')}
+          <span class="lbl" style="margin-left:8px">函数</span>
+          ${['SUM','AVG','MIN','MAX','COUNT'].map(f=>`<span class="chip fn" onclick="ins('gexpr${gi}','${f}()')">${f}</span>`).join('')}
+        </div>
+        <div class="preview"><span>本组结果：</span><span class="final-res" style="font-size:13px">${g.val}</span></div>
+      </div>`;
+    host.appendChild(div);
+  });
+}
+function fchip(tab,field,isAgg,g){
+  const hasCond=g.where.some(c=>c.f===tab+'.'+field);
+  return `<span class="fchip ${isAgg?'agg':''} ${hasCond?'has-cond':''}" onclick="openFieldMenu(event,'${tab}','${field}')">${field}<span class="cond-dot"></span></span>`;
+}
+function condRow(c,ci){
+  const ops=['=','>','<','包含','不包含'];
+  return `<div class="cond-row">
+    ${c.logic?`<select class="logic"><option ${c.logic==='AND'?'selected':''}>AND</option><option ${c.logic==='OR'?'selected':''}>OR</option></select>`:'<span style="width:64px"></span>'}
+    <select><option>${c.f}</option></select>
+    <select>${ops.map(o=>`<option ${o===c.op?'selected':''}>${o}</option>`).join('')}</select>
+    <input value="${c.v}">
+    <span class="del" onclick="this.parentElement.remove()">✕</span>
+  </div>`;
+}
+
+// 字段菜单
+function openFieldMenu(e,tab,field){ e.stopPropagation(); menuCtx={tab,field};
+  const m=document.getElementById('fieldMenu'); m.style.display='block';
+  m.style.left=e.pageX+'px'; m.style.top=(e.pageY+4)+'px'; }
+function menuInsert(){ insActive('['+menuCtx.tab+'.'+menuCtx.field+']'); hideMenu(); }
+function menuCond(){ alert('原型：弹出条件设置 → 形成 WHERE [ '+menuCtx.tab+'.'+menuCtx.field+' = ? ]（加到本组）'); hideMenu(); }
+function hideMenu(){ document.getElementById('fieldMenu').style.display='none'; }
+document.addEventListener('click',e=>{ if(!e.target.closest('.menu')&&!e.target.closest('.fchip')) hideMenu(); });
+
+// JOIN modal
+function openJoin(t){ document.getElementById('joinNewTab').textContent=t==='新页签'?'加工':t; document.getElementById('joinMask').style.display='flex'; }
+function closeJoin(){ document.getElementById('joinMask').style.display='none'; }
+function addPair(){ const p=document.getElementById('pairHost').firstElementChild.cloneNode(true); document.getElementById('pairHost').appendChild(p); }
+
+// 样本卡片
+function openSample(){ document.getElementById('sampleMask').style.display='flex'; }
+function closeSample(){ document.getElementById('sampleMask').style.display='none'; }
+function pickSample(n){ document.getElementById('sampleName').textContent=n; closeSample(); }
+
+// 试算
+function runGroup(gi){ alert('原型：调后端 试算接口 → 用样本卡片「'+document.getElementById('sampleName').textContent+'」算「'+GROUPS[gi].name+'」\\n\\n返回标量：'+GROUPS[gi].val); }
+function runAll(){ document.getElementById('finalVal').textContent='1816.00';
+  alert('原型：调后端 /excel-view/dry-run-tab-formula\\n依次算 组1=1820.00, 组2=96.00 → 最终 = 1820 + 96 - 100 = 1816.00'); }
+
+renderGroups();
+</script>
+</body>
+</html>
