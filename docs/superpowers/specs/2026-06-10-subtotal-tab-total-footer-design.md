@@ -92,15 +92,15 @@ return sum;
 - 不强制"有 SUBTOTAL 组件时产品小计 = 各页签总计之和"（用户接受公式可自定义、可不自洽）。
 - 不动 SUBTOTAL 组件"每模板只 1 个"的约束（仅解除"必须有"）。
 
-## 6. 验证项（实施前/中必须用代码核实，勿假设）
+## 6. 验证项（已用代码核实 — 定案）
 
-1. **后端产品小计默认求和落点**：`calculateProductSubtotal` 只认旧 token。需查清后端在**无 SUBTOTAL 组件**时，Excel 视图 / quote snapshot 的产品小计走哪条路、是否需要补"默认求和"。若后端某视图产品小计恒 0/异常 → 在对应后端落点补默认求和（与前端口径一致）。
-2. **"SUBTOTAL 必须有 formulas"校验**：确认它与 `:204-217` 是否同一处。解除"必须有 SUBTOTAL 组件"后，若用户**配了** SUBTOTAL 组件但没填 formulas，是否仍应报错（倾向保留：配了就得填）。
-3. **详情页 per-column 小计源**：确认 `ReadonlyProductCard` 里可复用的 `allComponentSubtotals` 等价 map（`:276-283` 一带），口径与编辑页 `allComponentSubtotals` 一致，确保抽取的 `buildTabTotalLines` 两处通用。
+1. **后端产品小计落点 → 无需改**：`FormulaCalculationService.calculateProductSubtotal` 在后端**无任何调用方（死代码）**；`subtotalFormula` 后端仅用于存储 + 发布校验，**无后端运行期产品小计计算**。产品小计**纯前端**（`computeProductSubtotal`，编辑 + 详情共用）。→ 本期**后端不动产品小计**，后端唯一改动是 §4.3 发布校验。
+2. **"SUBTOTAL 必须有 formulas"校验 → 不存在硬校验**：`TemplateService.publish` 里 SUBTOTAL 相关只有 `:195-217` 这一处"存在性二选一"检查（subtotalFormula 非空 **或** 有 SUBTOTAL 组件），**并不**强制"SUBTOTAL 必须有 formulas"。`ConfigGuideDrawer:266` 的措辞是引导提示，非后端硬校验。→ 删除 `:205-217` 的 throw 分支即可，无连带校验需放开。
+3. **详情页 per-column 小计源 → 已对齐**：`ReadonlyProductCard:273-310` 构建的 `compSubtotals` 用与编辑页 `allComponentSubtotals` **完全相同的 per-column 键**（`${comp.tabName}#${列名}` / `${comp.componentCode}#${列名}` + 组件级 `tabName`/`code`，`:304-309`）。→ 共享纯函数 `buildTabTotalLines(componentData, subtotalMap)` 两处通用。
 
 ## 7. 影响面 / 测试（AP-50 + 协议级）
 
-- 改 `QuotationStep2.tsx`（footer）+ `ReadonlyProductCard.tsx`（footer）+ `TemplateService.java`（校验）+ `ConfigGuideDrawer.tsx`（文案）+ 可能后端产品小计落点。命中 CLAUDE.md「协议级 + 三视图」→ 必跑 E2E。
+- 改 `QuotationStep2.tsx`（footer + computeProductSubtotal）+ `ReadonlyProductCard.tsx`（footer）+ `TemplateService.java`（删发布校验 throw）+ `ConfigGuideDrawer.tsx`（文案）。**后端产品小计无运行期计算（死代码），不动。** 命中 CLAUDE.md「协议级 + 三视图」→ 必跑 E2E。
 - **单测**：`computeProductSubtotal` 默认求和（无 SUBTOTAL 组件，多组件多列，验证不重复累加 + = 各页签总计之和）vitest；`buildTabTotalLines` 纯函数 vitest（多列合一条 / 多组件多条 / 无小计列不出条）。
 - **E2E**：`quotation-flow` 回归（编辑页 footer 现为「页签·总计」多条 + 产品小计）；详情页/核价页底部同构截图；模板「不配 SUBTOTAL 组件也能发布」用例。
 - **三视图一致**：编辑 / 详情 / 核价 三处 footer 数字与结构一致（共享 `buildTabTotalLines` + `computeProductSubtotal`）。
