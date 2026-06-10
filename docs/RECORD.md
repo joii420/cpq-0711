@@ -4,6 +4,18 @@
 
 ---
 
+### [2026-06-10] 报价小计体系调整 — 底部按页签总计 + 产品小计默认求和 + 解除小计组件强制 | tabTotalLines.ts / QuotationStep2.tsx(footer+computeProductSubtotal) / ReadonlyProductCard.tsx(footer) / TemplateService.java(删发布throw) / ConfigGuideDrawer.tsx / PublishWithoutSubtotalTest.java | 计划 plans/2026-06-10-subtotal-tab-total-footer.md + spec specs/2026-06-10-subtotal-tab-total-footer-design.md
+
+- **背景**: 用户在报价 Step2 底部看到「元素·小计」冒到产品小计上方 → 排查为 Plan2「多小计列向上汇总」(commit a8e6475)有意设计:每个非SUBTOTAL组件的每个 is_subtotal 列各出一条 `组件·列名`。非本会话行键工作。
+- **诉求(Q&A 澄清)**: ①底部汇总条改"按页签一条"(`页签名 · 总计` = 该页签多列小计之和,替代"按列一条");②产品小计:有 SUBTOTAL 组件走其公式(不变),无则默认 = 各页签总计之和;③解除模板发布"必须配小计"强制;④三视图一致(编辑/详情/核价底部同构)。**列小计计算 + 页签内每列小计行不变。**
+- **方案**: 抽纯函数 `buildTabTotalLines(componentData, subtotalMap)` 供编辑页(`allComponentSubtotals`)+详情页(`compSubtotals`,同 per-column 键)底部共用,标签 `页签名 · 总计`。
+- **关键 bug 修复**: `computeProductSubtotal` 最终兜底 `Object.values(componentSubtotals).reduce(+)` —— componentSubtotals 同值按 componentId/componentCode/tabName **3 键存** → **三重累加**(休眠 quirk,因发布强制有 SUBTOTAL 组件从不触发)。解除强制后必踩,改为**逐组件按 componentId 取一次**(测试印证:修前得 276=92×3,修后 92)。
+- **后端**: `calculateProductSubtotal` 是**死代码**(无调用方),产品小计**纯前端** → 后端只删 `TemplateService.publish:204-217` 的"无subtotalFormula且无SUBTOTAL组件则抛『必须配置小计』"throw;"至少一个组件"校验保留。
+- **验证**: vitest 9 passed(tabTotalLines 4 + computeMultiSubtotal 5,含 SUBTOTAL路径62/无SUBTOTAL兜底92/无小计列0);TS 0;PublishWithoutSubtotalTest 1 passed(`publish(UUID,PublishRequest)` 双参,templateSeriesId NOT NULL);E2E quotation-flow 1 passed + 加载中=0;截图 qf-29 底部已显示多条「页签·总计」。
+- **commits**: 6e497e6/cf3f17a/a566bf0/16af462/dc7d42e/bac72a1(6 个 feat/fix)。分支 feat/subtotal-tab-total。
+
+---
+
 ### [2026-06-04] 核价 BOM 递归展开 P1(默认最新+树+固定列) | BomClosureService/ComponentDriverService/CardSnapshotService/QuotationStep2.tsx/useDriverExpansions.ts/ConfigureProductResource | 核价卡片由 material_bom_item 算根料号整棵 PRICING BOM 闭包, 每个核价组件按 spine 全节点展开成树
 
 - **目标**: 核价渲染时不再只查根料号一层, 而是算整棵 BOM 子料号闭包灌 :hfPartNos, 各核价组件按整棵树取数 + 3 系统固定列(料号/父料号/版本占位) + parent_id→node_id 建树。报价侧零改动。无开关, 核价一律生效。
