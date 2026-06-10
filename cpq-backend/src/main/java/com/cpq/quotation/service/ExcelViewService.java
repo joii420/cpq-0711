@@ -45,6 +45,10 @@ public class ExcelViewService {
     @Inject
     com.cpq.component.service.BomClosureService bomClosureService;
 
+    /** TAB_JOIN_FORMULA 列：跨页签连表聚合求值。 */
+    @Inject
+    com.cpq.quotation.service.tabjoin.TabJoinPlanEvaluator tabJoinPlanEvaluator;
+
     // ---- Template excel-view-config API ----
 
     public String getExcelViewConfig(UUID templateId) {
@@ -330,6 +334,12 @@ public class ExcelViewService {
             }
         }
 
+        // TAB_JOIN_FORMULA：构造 provider（有效行优先，缺省降级持久化 componentData）
+        com.cpq.quotation.service.card.CardDataProvider tabJoinProvider =
+            (effectiveRows != null)
+                ? com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(effectiveRows)
+                : new com.cpq.quotation.service.card.CardDataProvider(componentDataList);
+
         // Stage 2: 逐列计算，VARIABLE 列先算好，FORMULA 列引用时可以直接用 cachedCells
         Map<String, Object> cachedCells = new LinkedHashMap<>();
 
@@ -367,6 +377,13 @@ public class ExcelViewService {
                 }
                 case "FIXED_VALUE" -> col.get("fixed_value");
                 case "CARD_FORMULA" -> cardFormulaValues.get(colKey);
+                case "TAB_JOIN_FORMULA" -> {
+                    try { yield tabJoinPlanEvaluator.evaluateColumn(col, tabJoinProvider); }
+                    catch (Exception e) {
+                        LOG.warnf("[ExcelView] TAB_JOIN_FORMULA col '%s' eval failed: %s", colKey, e.getMessage());
+                        yield null;
+                    }
+                }
                 default -> null;
             };
             row.put(colKey, value);
