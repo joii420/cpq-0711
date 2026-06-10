@@ -192,28 +192,12 @@ public class TemplateService {
             throw new BusinessException("Only DRAFT templates can be published");
         }
 
-        // 校验:小计配置二选一(向前兼容旧模板的 subtotalFormula token 数组,新模板使用 SUBTOTAL 组件)
-        // - 旧:模板属性页直接填 subtotalFormula JSONB token 数组
-        // - 新:拖入 SUBTOTAL 类型组件,公式由组件自身的 formulas 承载
-        // 只要满足其一即视为已配置小计
-        List<?> subtotalList = parseJsonArray(template.subtotalFormula);
+        // 小计配置可选(2026-06-10 解除强制): 模板可不配 subtotalFormula、不拖 SUBTOTAL 组件而发布;
+        // 此时产品小计运行期默认 = 各页签总计之和(前端 computeProductSubtotal 兜底)。
+        // 配了 subtotalFormula token 或 SUBTOTAL 组件则照其公式算(行为不变)。
         long tcCount = TemplateComponent.count("templateId", id);
         if (tcCount == 0) {
             throw new BusinessException("模板发布前必须至少包含一个组件");
-        }
-        boolean hasSubtotalComponent = false;
-        if (subtotalList.isEmpty()) {
-            List<TemplateComponent> tcsForCheck = TemplateComponent.list("templateId = ?1", id);
-            for (TemplateComponent tc : tcsForCheck) {
-                Component comp = Component.findById(tc.componentId);
-                if (comp != null && "SUBTOTAL".equals(comp.componentType)) {
-                    hasSubtotalComponent = true;
-                    break;
-                }
-            }
-            if (!hasSubtotalComponent) {
-                throw new BusinessException("模板发布前必须配置小计:请拖入一个『小计』类型的组件,或在模板属性中填写小计公式");
-            }
         }
 
         // Build components_snapshot
