@@ -4,6 +4,14 @@
 
 ---
 
+### [2026-06-11] E2E quotation-flow 对齐现存数据(组合产品模板已清理) | cpq-frontend/e2e/quotation-flow.spec.ts
+
+- **背景**: 批3 合并后跑 `quotation-flow.spec.ts` 验渲染层,卡在"选报价模板"步——它写死选「组合产品 v1.10」,但该模板及整套"选配/组合产品"数据已被 2026-06-11 测试数据清理移除(查库:5 个模板无一组合,`components_snapshot` 搜不到任何"选配-"Tab)。失败在批3一行未改的模板选择步、且在渲染层之前,**非批3回归**。
+- **修复(只改 E2E spec,不动模板/组件——用户决策)**: 重指到现存有效组合 = **苏州西门子客户 + 报价模板0608 v1.9(报价模板V2 目录组件构建)+ 产品 10110002**。改动:客户 罗克韦尔→西门子;模板 组合产品v1.10→报价模板0608 v1.9(搜"0608"缩候选);Tab 断言 8 个组合 Tab→报价模板0608 的 **7 个 NORMAL Tab**(产品/来料/元素/自制·组装加工费/其他费用/外购件/电镀费用;报价小计=SUBTOTAL 不渲染为 Tab);SUBTOTAL 检查 总成本→报价小计;test 标题同步。
+- **关键数据定位**: 报价模板V2 目录组件 = 产品/元素/其他费用/外购件/来料/电镀费用/自制·组装加工费(NORMAL)+报价小计(SUBTOTAL)+Excel1(EXCEL);用这些组件建的模板 = `报价模板0608`(grep components_snapshot 含"自制/组装加工费"/"外购件"命中)。
+- **结果**: E2E **1 passed**(52s):7 Tab 全 FOUND、报价小计不作 Tab、产品小计条在、**全 Tab '加载中'=0**(渲染层无永久占位)、产品卡片渲染 10110002(AgNi)真实数据行(截图 qf-20 确认)。console.error 8 条全 antd 弃用警告非错误。**注**: 日志 `rows=0` 是 `.ant-table-row` 选择器对不上自定义产品卡片表格(qt-tab-btn + 自定义 grid),非真问题(原测试即此选择器);测试实际断言(Tab+加载中)有意义。
+- **教训**: E2E 写死的测试数据(模板名/版本/产品/Tab 结构)与库脱节是数据清理的常见副作用;数据大清理后应同步过一遍依赖固定数据的 E2E spec。
+
 ### [2026-06-11] 连表公式重设计批3(需求1·行键宿主分组+FN聚合+试算=渲染) | formulaSerialize.ts / TabFieldMatrix.tsx / TabJoinFormulaDrawer.tsx / FormulaCalculator.java / TokenMappabilityValidator.java / CardSnapshotService.java(+RowKeyCompare/夹具/4新测试) | spec: 2026-06-11-tabjoin-rowkey-host-grouping-design.md §58 + plan: 2026-06-11-tabjoin-rowkey-host-grouping.md
 
 - **背景**: 批1(样本卡500修)、批2(组件名[编号]+过滤文本+添加公式分离)之后的**批3=需求1**,最重一批(触三大核心基线:求值/渲染/序列化)。经 6 版 spec/5 轮 architect 评审收敛,plan 拆 11 Task(T1~T11+T9b),子代理逐 Task 驱动+主线亲验,**全 TDD 先红后绿**。
