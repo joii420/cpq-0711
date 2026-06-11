@@ -560,6 +560,9 @@
 .cmm-dir.open .cmm-dir-caret { transform: rotate(90deg); }
 .cmm-dir-name { font-weight: 600; font-size: 13px; flex: 1; }
 .cmm-dir-counts { display: flex; gap: 4px; }
+.cmm-dir-acts { display: flex; gap: 0; margin-left: 4px; }
+.cmm-dir-acts .ant-btn { color: #8c8c8c; }
+.cmm-dir-acts .ant-btn:hover { color: #1677ff; background: #f0f5ff; }
 .cmm-pill { font-size: 10px; padding: 0 6px; border-radius: 8px; background: #f0f5ff; color: #1677ff; line-height: 16px; }
 .cmm-pill.excel { background: #e6fffb; color: #08979c; }
 .cmm-pill.sub { background: #fff7e6; color: #d48806; }
@@ -586,6 +589,17 @@
 .cmm-card.active { outline: 2px solid #fff; box-shadow: 0 0 0 3px rgba(22,119,255,.5); }
 .cmm-card .cmm-c-name { font-weight: 600; font-size: 13px; }
 .cmm-card .cmm-c-code { font-size: 10px; opacity: .85; margin-top: 2px; }
+/* 任务5: 停用组件 = 淡红底 + 左侧红色竖条（覆盖渐变底，文字转深红保证可读） */
+.cmm-card.cmm-card-disabled {
+  background: #fff1f0; color: #a8071a;
+  border: 1px solid #ffccc7; border-left: 4px solid #ff4d4f;
+  padding-left: 27px; box-shadow: none;
+}
+.cmm-card.cmm-card-disabled .cmm-c-name,
+.cmm-card.cmm-card-disabled .cmm-c-code { color: #a8071a; }
+.cmm-card.cmm-card-disabled .cmm-chk { color: #cf1322; background: rgba(255,77,79,.15); border-color: #ff7875; }
+.cmm-card.cmm-card-disabled:hover { transform: translateX(2px); background: #ffe7e5; }
+.cmm-card.cmm-card-disabled.active { outline: 2px solid #ff4d4f; box-shadow: 0 0 0 3px rgba(255,77,79,.4); }
 .cmm-card .cmm-chk {
   position: absolute; top: 50%; left: 9px; transform: translateY(-50%);
   width: 16px; height: 16px; border-radius: 4px;

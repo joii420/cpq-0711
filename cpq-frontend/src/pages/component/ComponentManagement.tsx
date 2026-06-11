@@ -15,13 +15,14 @@ import {
   Tooltip,
   Empty,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined } from '@ant-design/icons';
 import { componentService } from '../../services/componentService';
 import { datasourceService } from '../../services/datasourceService';
 import { tabJoinFormulaService, type TabDef } from '../../services/tabJoinFormulaService';
 import type { DirectoryNode, ComponentItem, FieldItem, ComponentType, FormulaItem, FormulaToken } from './types';
 import { newFormulaRow } from './types';
 import FieldConfigTable from './FieldConfigTable';
+import ComponentImportDrawer from './ComponentImportDrawer';
 import ConfigGuideDrawer from './ConfigGuideDrawer';
 import PathPickerDrawer from './PathPickerDrawer';
 import SqlViewListPanel from './SqlViewListPanel';
@@ -530,15 +531,28 @@ interface MasterListProps {
   onCreate: (dirId?: string, type?: ComponentType) => void;
   onBatchToggleStatus: (rows: ComponentItem[]) => Promise<void>;
   onBatchDelete: (rows: ComponentItem[]) => Promise<void>;
+  onRefresh: () => void;
 }
 
 const MasterList: React.FC<MasterListProps> = ({
   directories, loading, selectedId, checkedIds, searchKeyword, onSearchChange,
-  onSelect, onToggleCheck, onCreate, onBatchToggleStatus, onBatchDelete,
+  onSelect, onToggleCheck, onCreate, onBatchToggleStatus, onBatchDelete, onRefresh,
 }) => {
   const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  // 任务4: 按目录导入/导出
+  const [importTarget, setImportTarget] = useState<{ id: string; name: string } | null>(null);
+
+  const handleExportDir = async (e: React.MouseEvent, dir: DirectoryNode) => {
+    e.stopPropagation();
+    try {
+      await componentService.exportDirectory(dir.id);
+      message.success(`已导出目录「${dir.name}」的组件`);
+    } catch (err) {
+      message.error((err as { message?: string }).message ?? '导出失败');
+    }
+  };
 
   // 默认展开第一个目录
   useEffect(() => {
@@ -570,7 +584,7 @@ const MasterList: React.FC<MasterListProps> = ({
     return (
       <div
         key={comp.id}
-        className={`cmm-card ${cls}${comp.id === selectedId ? ' active' : ''}${checked ? ' checked' : ''}`}
+        className={`cmm-card ${cls}${comp.id === selectedId ? ' active' : ''}${checked ? ' checked' : ''}${comp.status === 'DISABLED' ? ' cmm-card-disabled' : ''}`}
         onClick={() => onSelect(comp, dir)}
       >
         <span
@@ -622,6 +636,16 @@ const MasterList: React.FC<MasterListProps> = ({
               {counts.tab > 0 && <span className="cmm-pill">页签{counts.tab}</span>}
               {counts.excel > 0 && <span className="cmm-pill excel">XLS{counts.excel}</span>}
               {counts.sub > 0 && <span className="cmm-pill sub">小计{counts.sub}</span>}
+            </span>
+            <span className="cmm-dir-acts">
+              <Tooltip title="导出本目录直属组件为 JSON">
+                <Button type="text" size="small" icon={<ExportOutlined />}
+                  onClick={(e) => handleExportDir(e, dir)} />
+              </Tooltip>
+              <Tooltip title="导入组件到本目录">
+                <Button type="text" size="small" icon={<ImportOutlined />}
+                  onClick={(e) => { e.stopPropagation(); setImportTarget({ id: dir.id, name: dir.name }); }} />
+              </Tooltip>
             </span>
           </div>
           <div className="cmm-dir-body">
@@ -708,6 +732,15 @@ const MasterList: React.FC<MasterListProps> = ({
           )}
         </ul>
       </Modal>
+
+      {/* 任务4: 按目录导入组件抽屉 */}
+      <ComponentImportDrawer
+        open={!!importTarget}
+        targetDirId={importTarget?.id ?? null}
+        targetDirName={importTarget?.name}
+        onClose={() => setImportTarget(null)}
+        onImported={() => { setImportTarget(null); onRefresh(); }}
+      />
     </div>
   );
 };
@@ -1151,6 +1184,7 @@ const ComponentManagement: React.FC = () => {
         onCreate={openCreate}
         onBatchToggleStatus={handleBatchToggleStatus}
         onBatchDelete={handleBatchDelete}
+        onRefresh={() => loadTree(searchKeyword || undefined)}
       />
 
       {/* 右：详情（内嵌，非抽屉） */}
