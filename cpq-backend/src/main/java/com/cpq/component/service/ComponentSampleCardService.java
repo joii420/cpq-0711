@@ -82,10 +82,13 @@ public class ComponentSampleCardService {
             UUID liId = cd.lineItemId;
             if (liId == null || seenLineItem.containsKey(liId)) continue;
             seenLineItem.put(liId, Boolean.TRUE);
-            QuotationLineItem li = liCache.computeIfAbsent(liId, QuotationLineItem::findById);
+            // Panache 坑：Entity::findById 方法引用编译成 invokedynamic，绑定到未增强的
+            // PanacheEntityBase 占位方法 → 抛 "did you forget @Entity"。改用 lambda 包静态调用
+            // （lambda 体内 Entity.findById(id) 是正常增强调用点，与 ExcelViewService 一致）。
+            QuotationLineItem li = liCache.computeIfAbsent(liId, id -> QuotationLineItem.findById(id));
             if (li == null) continue;
             Quotation q = li.quotationId != null
-                ? qCache.computeIfAbsent(li.quotationId, Quotation::findById)
+                ? qCache.computeIfAbsent(li.quotationId, id -> Quotation.findById(id))
                 : null;
             String quotationNo = q != null ? q.quotationNumber : null;
             String cardName = (li.productNameSnapshot != null && !li.productNameSnapshot.isBlank())
