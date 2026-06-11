@@ -45,4 +45,17 @@ export const tabJoinFormulaService = {
       column,
       cardValuesJson,
     }) as Promise<any>,
+
+  /** POST /components/{id}/dry-run-token — token 试算(NORMAL/SUBTOTAL),返逐行 {rows,errors} */
+  dryRunToken: (
+    componentId: string,
+    lineItemId: string | null,
+    tokens: unknown[],
+    selfRowKeyFields: string[],
+  ): Promise<{ code: number; data: { rows: { rowKey: string; value: number | null }[]; errors: string[] } }> =>
+    api.post(`/components/${componentId}/dry-run-token`, {
+      lineItemId,
+      tokens,
+      selfRowKeyFields,
+    }) as Promise<any>,
 };

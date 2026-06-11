@@ -24,6 +24,9 @@ import {
   expressionToTokens,
   tokensToDrawerExpression,
   checkMappable,
+  comparable,
+  isSubset,
+  __lexForTest,
 } from './formulaSerialize';
 import type { TabDef } from '../../services/tabJoinFormulaService';
 import type { FormulaToken } from './types';
@@ -306,7 +309,7 @@ describe('tokensToDrawerExpression', () => {
     expect(tokensToDrawerExpression(tokens, allTabs)).toBe('[COMP_RL.金额]');
   });
 
-  it('cross_tab_ref agg=SUM with target → [alias.field(总计)]', () => {
+  it('cross_tab_ref agg=SUM with target → SUM([alias.field])', () => {
     const tokens: FormulaToken[] = [
       {
         type: 'cross_tab_ref',
@@ -317,7 +320,7 @@ describe('tokensToDrawerExpression', () => {
         match: [{ a: '料号', b: '料号' }],
       },
     ];
-    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('[COMP_RL.金额(总计)]');
+    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('SUM([COMP_RL.金额])');
   });
 
   it('cross_tab_ref agg=SUM with empty target → [alias(总计)]', () => {
@@ -377,11 +380,12 @@ describe('tokensToDrawerExpression', () => {
 describe('round-trip', () => {
   const normalise = (s: string) => s.replace(/\s+/g, ' ').trim();
 
-  it('[COMP_RL.金额(总计)] round-trips', () => {
+  it('[COMP_RL.金额(总计)] 解析后回显归一为 SUM([COMP_RL.金额])', () => {
+    // 旧格式仍可解析（兼容），但回显收敛到 FN() 新格式
     const expr = '[COMP_RL.金额(总计)]';
     const tokens = expressionToTokens(expr, allTabs, selfRKF);
     const back = tokensToDrawerExpression(tokens, allTabs);
-    expect(normalise(back)).toBe(normalise(expr));
+    expect(normalise(back)).toBe(normalise('SUM([COMP_RL.金额])'));
   });
 
   it('[COMP_RL.金额] round-trips', () => {
@@ -406,11 +410,12 @@ describe('round-trip', () => {
     expect(normalise(back2)).toBe(normalise('[COMP_RL.金额]'));
   });
 
-  it('compound expression "[单重] * [单价] - [COMP_RL.金额(总计)]" round-trips', () => {
+  it('compound expression "[单重] * [单价] - [COMP_RL.金额(总计)]" 解析后回显归一', () => {
+    // 旧格式 [alias.field(总计)] 解析后回显为新格式 SUM([alias.field])
     const expr = '[单重] * [单价] - [COMP_RL.金额(总计)]';
     const tokens = expressionToTokens(expr, allTabs, selfRKF);
     const back = tokensToDrawerExpression(tokens, allTabs);
-    expect(normalise(back)).toBe(normalise(expr));
+    expect(normalise(back)).toBe(normalise('[单重] * [单价] - SUM([COMP_RL.金额])'));
   });
 
   it('expression with only same-component fields round-trips', () => {
@@ -450,7 +455,8 @@ describe('checkMappable', () => {
     expect(checkMappable(tokens)).toEqual({ mappable: true });
   });
 
-  it('one agg=SUM cross_tab_ref → mappable', () => {
+  it('one agg=SUM cross_tab_ref with non-empty match → mappable', () => {
+    // v4-C 新规则：match 非空则放行，agg 类型无关
     const tokens: FormulaToken[] = [
       {
         type: 'cross_tab_ref',
@@ -458,13 +464,14 @@ describe('checkMappable', () => {
         sourceLabel: '回料',
         target: '金额',
         agg: 'SUM',
-        match: [],
+        match: [{ a: '料号', b: '料号' }],
       },
     ];
     expect(checkMappable(tokens)).toEqual({ mappable: true });
   });
 
-  it('one agg=NONE cross_tab_ref → mappable', () => {
+  it('one agg=NONE cross_tab_ref with non-empty match → mappable', () => {
+    // v4-C 新规则：match 非空则放行
     const tokens: FormulaToken[] = [
       {
         type: 'cross_tab_ref',
@@ -472,13 +479,29 @@ describe('checkMappable', () => {
         sourceLabel: '回料',
         target: '金额',
         agg: 'NONE',
-        match: [],
+        match: [{ a: '料号', b: '料号' }],
       },
     ];
     expect(checkMappable(tokens)).toEqual({ mappable: true });
   });
 
-  it('two agg=NONE cross_tab_refs → NOT mappable with reason', () => {
+  it('cross_tab_ref with match=[] → NOT mappable（v4-C 命门1：空match即拒）', () => {
+    // 旧规则"≥2 NONE 才拒"已作废；新规则：任何 cross_tab_ref 且 match 为空即拒
+    const tokens: FormulaToken[] = [
+      {
+        type: 'cross_tab_ref',
+        source: 'uuid-rl',
+        target: '金额',
+        agg: 'NONE',
+        match: [],
+      },
+    ];
+    const result = checkMappable(tokens);
+    expect(result.mappable).toBe(false);
+    expect(result.reason).toBeTruthy();
+  });
+
+  it('two agg=NONE cross_tab_refs with match=[] → NOT mappable', () => {
     const tokens: FormulaToken[] = [
       {
         type: 'cross_tab_ref',
@@ -498,10 +521,10 @@ describe('checkMappable', () => {
     ];
     const result = checkMappable(tokens);
     expect(result.mappable).toBe(false);
-    expect(result.reason).toMatch(/2\+/);
+    expect(result.reason).toBeTruthy();
   });
 
-  it('three agg=NONE → NOT mappable', () => {
+  it('three agg=NONE with match=[] → NOT mappable', () => {
     const makeRef = (src: string): FormulaToken => ({
       type: 'cross_tab_ref',
       source: src,
@@ -513,7 +536,8 @@ describe('checkMappable', () => {
     expect(checkMappable(tokens).mappable).toBe(false);
   });
 
-  it('two cross_tab_refs where one is SUM and one is NONE → still mappable', () => {
+  it('two cross_tab_refs where one is SUM and one is NONE, both match=[] → NOT mappable', () => {
+    // v4-C 新规则：任一 cross_tab_ref match 为空即拒，agg 类型无关
     const tokens: FormulaToken[] = [
       {
         type: 'cross_tab_ref',
@@ -531,11 +555,11 @@ describe('checkMappable', () => {
         match: [],
       },
     ];
-    // Only 1 agg=NONE → under threshold
-    expect(checkMappable(tokens)).toEqual({ mappable: true });
+    expect(checkMappable(tokens).mappable).toBe(false);
   });
 
-  it('agg undefined treated as NONE', () => {
+  it('cross_tab_ref with match=[] → NOT mappable（match 为空拒绝，不计 agg）', () => {
+    // v4-C 新规则：match 为空即拒
     const tokens: FormulaToken[] = [
       {
         type: 'cross_tab_ref',
@@ -695,7 +719,9 @@ describe('component_subtotal — subtotal column references', () => {
     expect(checkMappable(tokens)).toEqual({ mappable: true });
   });
 
-  it('checkMappable: component_subtotal does NOT count toward the 2+ cross_tab_ref rule', () => {
+  it('checkMappable: component_subtotal 不受"空match拒"规则影响；cross_tab_ref match=[] 仍拒（v4-C）', () => {
+    // component_subtotal 无 match 字段，不触发空 match 规则；
+    // 但 cross_tab_ref match=[] 仍触发拒绝
     const tokens: FormulaToken[] = [
       {
         type: 'component_subtotal',
@@ -721,8 +747,54 @@ describe('component_subtotal — subtotal column references', () => {
         match: [],
       },
     ];
-    // only 1 cross_tab_ref agg=NONE → still mappable
+    // cross_tab_ref match=[] → 拒绝（v4-C 命门1）
+    expect(checkMappable(tokens).mappable).toBe(false);
+  });
+
+  it('checkMappable: 纯 component_subtotal（无 cross_tab_ref）→ mappable', () => {
+    const tokens: FormulaToken[] = [
+      {
+        type: 'component_subtotal',
+        value: '金额',
+        tab_name: '金额',
+        component_code: 'COMP-A',
+        label: 'A·金额',
+      },
+      { type: 'operator', value: '+' },
+      {
+        type: 'component_subtotal',
+        value: '金额',
+        tab_name: '金额',
+        component_code: 'COMP-B',
+        label: 'B·金额',
+      },
+    ];
+    // 纯 component_subtotal，无 cross_tab_ref → 通过
     expect(checkMappable(tokens)).toEqual({ mappable: true });
+  });
+});
+
+// ── Task 1: buildMatch 公共字段名交集配对（顺序无关） ──
+describe('buildMatch — 公共字段名交集配对', () => {
+  const tabs: TabDef[] = [
+    { alias: 'JG', tabKey: 'jg', componentId: 'cid-jg', componentName: '加工',
+      rowKeyFields: ['工序', '子件'], detailFields: ['工时'], subtotalCols: [] },
+  ];
+  it('host[子件] × source[工序,子件] → 配对 {a:子件,b:子件}', () => {
+    const t = expressionToTokens('[JG.工时(总计)]', tabs, ['子件']);
+    expect((t[0] as any).match).toEqual([{ a: '子件', b: '子件' }]);
+  });
+  it('乱序同集 host[A,B] × source[B,A] → 按 host 序 {A,A},{B,B}', () => {
+    const tabs2: TabDef[] = [{ alias: 'X', tabKey: 'x', componentId: 'cid-x',
+      rowKeyFields: ['B', 'A'], detailFields: ['v'], subtotalCols: [] }];
+    const t = expressionToTokens('[X.v(总计)]', tabs2, ['A', 'B']);
+    expect((t[0] as any).match).toEqual([{ a: 'A', b: 'A' }, { a: 'B', b: 'B' }]);
+  });
+  it('无公共字段 → match=[]', () => {
+    const tabs3: TabDef[] = [{ alias: 'Y', tabKey: 'y', componentId: 'cid-y',
+      rowKeyFields: ['料号'], detailFields: ['v'], subtotalCols: [] }];
+    const t = expressionToTokens('[Y.v(总计)]', tabs3, ['工序']);
+    expect((t[0] as any).match).toEqual([]);
   });
 });
 
@@ -741,15 +813,130 @@ describe('integration: expression → tokens → checkMappable', () => {
     expect(checkMappable(tokens)).toEqual({ mappable: true });
   });
 
-  it('two detail refs → NOT mappable', () => {
-    // 用量 (COMP_RL) and 单价 (COMP_INV) are DETAIL fields, not subtotalCols
+  it('two detail refs with non-empty match (same row key) → mappable（v4-C 新规则）', () => {
+    // v4-C 新规则：match 非空即放行。COMP_RL/COMP_INV 均有 rowKeyFields=['料号']，
+    // selfRKF=['料号']，expressionToTokens 会生成 match=[{a:'料号',b:'料号'}]，match 非空 → 通过。
+    // 旧规则"≥2 NONE 即拒"已作废。
     const tokens = expressionToTokens(
       '[COMP_RL.用量] + [COMP_INV.单价]',
       allTabs,
       selfRKF,
     );
     const result = checkMappable(tokens);
-    expect(result.mappable).toBe(false);
-    expect(result.reason).toBeTruthy();
+    expect(result.mappable).toBe(true);
+  });
+});
+
+// ── Task 2: lexer 函数名 token ──
+describe('lex — 函数名 token', () => {
+  it('SUM( 识别为 func token，不再抛"无法识别字符"', () => {
+    expect(() => __lexForTest('SUM([A.f])')).not.toThrow();
+  });
+  it('大小写不敏感 avg → AVG', () => {
+    const raw = __lexForTest('avg([A.f])');
+    expect(raw[0]).toEqual({ kind: 'func', name: 'AVG' });
+  });
+  it('非函数字母仍抛错', () => {
+    expect(() => __lexForTest('FOO([A.f])')).toThrow(/无法识别/);
+  });
+});
+
+// ── Task 3: FN() 状态机 ──
+describe('expressionToTokens — FN() 单列聚合', () => {
+  const tabs: TabDef[] = [
+    { alias: 'JG', tabKey: 'jg', componentId: 'cid-jg', componentName: '加工',
+      rowKeyFields: ['工序', '子件'], detailFields: ['工时'], subtotalCols: [] },
+  ];
+  it('SUM([JG.工时]) → 单个 cross_tab_ref agg=SUM，吞外层括号', () => {
+    const t = expressionToTokens('SUM([JG.工时])', tabs, ['子件']);
+    expect(t).toHaveLength(1);
+    expect(t[0]).toMatchObject({ type: 'cross_tab_ref', source: 'cid-jg', target: '工时',
+      agg: 'SUM', match: [{ a: '子件', b: '子件' }] });
+  });
+  it('AVG/MAX/MIN/COUNT 各自映射 agg', () => {
+    for (const fn of ['AVG', 'MAX', 'MIN', 'COUNT'] as const) {
+      const t = expressionToTokens(`${fn}([JG.工时])`, tabs, ['子件']);
+      expect(t[0]).toMatchObject({ type: 'cross_tab_ref', agg: fn });
+    }
+  });
+  it('外层算式保留：[本] * SUM([JG.工时]) → field, op, cross_tab_ref', () => {
+    const t = expressionToTokens('[本] * SUM([JG.工时])', tabs, ['子件']);
+    expect(t.map(x => x.type)).toEqual(['field', 'operator', 'cross_tab_ref']);
+  });
+  it('FN 内运算符 → 报错（单列收口 v5-I）', () => {
+    expect(() => expressionToTokens('SUM([JG.工时]+[JG.工时])', tabs, ['子件']))
+      .toThrow(/只支持单列|单列|不支持/);
+  });
+  it('FN 内多引用 → 报错', () => {
+    expect(() => expressionToTokens('SUM([JG.工时][JG.工时])', tabs, ['子件']))
+      .toThrow(/只支持单列|单列|不支持/);
+  });
+  it('FN 内非明细（裸字段）→ 报错', () => {
+    expect(() => expressionToTokens('SUM([本])', tabs, ['子件'])).toThrow();
+  });
+  it('旧 [JG.工时(总计)] 仍解析为 agg=SUM（兼容）', () => {
+    const t = expressionToTokens('[JG.工时(总计)]', tabs, ['子件']);
+    expect(t[0]).toMatchObject({ type: 'cross_tab_ref', agg: 'SUM', target: '工时' });
+  });
+});
+
+// ── Task 4: 回显归一 + 往返稳定 ──
+describe('tokensToDrawerExpression — FN 回显归一', () => {
+  const tabs: TabDef[] = [
+    { alias: 'JG', tabKey: 'jg', componentId: 'cid-jg', componentName: '加工',
+      rowKeyFields: ['子件'], detailFields: ['工时'], subtotalCols: [] },
+  ];
+  it('agg=SUM → SUM([JG.工时])（不再 (总计)）', () => {
+    const t = expressionToTokens('SUM([JG.工时])', tabs, ['子件']);
+    expect(tokensToDrawerExpression(t, tabs)).toBe('SUM([JG.工时])');
+  });
+  it('AVG/MAX/MIN/COUNT 往返同串', () => {
+    for (const fn of ['AVG', 'MAX', 'MIN', 'COUNT']) {
+      const s = `${fn}([JG.工时])`;
+      expect(tokensToDrawerExpression(expressionToTokens(s, tabs, ['子件']), tabs)).toBe(s);
+    }
+  });
+  it('往返两次稳定 (idempotent)', () => {
+    const s = 'AVG([JG.工时])';
+    const once = tokensToDrawerExpression(expressionToTokens(s, tabs, ['子件']), tabs);
+    const twice = tokensToDrawerExpression(expressionToTokens(once, tabs, ['子件']), tabs);
+    expect(twice).toBe(once);
+  });
+  it('旧 [JG.工时(总计)] 解析后回显归一为 SUM([JG.工时])', () => {
+    const t = expressionToTokens('[JG.工时(总计)]', tabs, ['子件']);
+    expect(tokensToDrawerExpression(t, tabs)).toBe('SUM([JG.工时])');
+  });
+});
+
+// ── Task 5: checkMappable 新规则 + comparable ──
+describe('comparable / isSubset（集合包含，顺序无关）', () => {
+  it('isSubset', () => {
+    expect(isSubset(['子件'], ['工序', '子件'])).toBe(true);
+    expect(isSubset(['工序', '子件'], ['子件'])).toBe(false);
+  });
+  it('comparable = 任一方 ⊆ 另一方（顺序无关）', () => {
+    expect(comparable(['子件'], ['子件', '工序'])).toBe(true);
+    expect(comparable(['子件', '工序'], ['子件'])).toBe(true);
+    expect(comparable(['A', 'B'], ['B', 'A'])).toBe(true);
+    expect(comparable(['料号'], ['工序'])).toBe(false);
+  });
+});
+describe('checkMappable — 空 match 拒（v4-C 命门 1）', () => {
+  it('cross_tab_ref 且 match=[] → 拒绝（含 agg=NONE）', () => {
+    const tk: any = { type: 'cross_tab_ref', source: 'c', target: 'f', agg: 'NONE', match: [] };
+    expect(checkMappable([tk]).mappable).toBe(false);
+  });
+  it('cross_tab_ref agg=SUM 且 match=[] → 拒绝', () => {
+    const tk: any = { type: 'cross_tab_ref', source: 'c', target: 'f', agg: 'SUM', match: [] };
+    expect(checkMappable([tk]).mappable).toBe(false);
+  });
+  it('非空 match 放行（含多个 NONE，各自命中≤1）', () => {
+    const a: any = { type: 'cross_tab_ref', source: 'a', target: 'f', agg: 'NONE', match: [{ a: 'k', b: 'k' }] };
+    const b: any = { type: 'cross_tab_ref', source: 'b', target: 'g', agg: 'NONE', match: [{ a: 'k', b: 'k' }] };
+    expect(checkMappable([a, b]).mappable).toBe(true);
+  });
+  it('component_subtotal（无 match）不受影响', () => {
+    const cs: any = { type: 'component_subtotal', component_code: 'X', value: '小计' };
+    expect(checkMappable([cs]).mappable).toBe(true);
   });
 });

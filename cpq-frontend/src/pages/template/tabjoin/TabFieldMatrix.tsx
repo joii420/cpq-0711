@@ -1,46 +1,17 @@
 import React from 'react';
-import { Tag, Tooltip, Typography, Space, Button } from 'antd';
+import { Tag, Tooltip, Typography, Space, Button, Dropdown } from 'antd';
 import type { TabDef } from '../../../services/tabJoinFormulaService';
+import { comparable } from '../../component/formulaSerialize';
 
 const { Text } = Typography;
 
 // ──────────────────────────────────────────────
-// 工具函数：解析表达式中的明细令牌，得到当前锁定行键类签名
-// 令牌格式：明细 [alias.field]，列总计 [alias.field(总计)]，页签总计 [alias(总计)]
+// 宿主可比判定（v4-D/v4-M 新机制；已废除 parseActiveRowKeySig"首令牌锁签名"旧机制）
 // ──────────────────────────────────────────────
-export function parseActiveRowKeySig(
-  expression: string,
-  tabDefs: TabDef[],
-): string | null {
-  const TOKEN_RE = /\[([^\[\]]+)\]/g;
-  let match: RegExpExecArray | null;
-  const detailAliases: string[] = [];
-
-  TOKEN_RE.lastIndex = 0;
-  while ((match = TOKEN_RE.exec(expression)) !== null) {
-    const body = match[1].trim();
-    // 跳过总计令牌（结尾含 (总计)）
-    if (body.endsWith('(总计)')) continue;
-    // 明细令牌：alias.field
-    if (body.includes('.')) {
-      const alias = body.slice(0, body.indexOf('.'));
-      const field = body.slice(body.indexOf('.') + 1);
-      // 跳过组件小计列引用 [alias.subtotalCol]：序列化为 component_subtotal（标量），
-      // 非逐行明细，不应触发行键锁（否则会误把后续其它页签明细置灰）。
-      const def = tabDefs.find((d) => d.alias === alias);
-      if (def && (def.subtotalCols ?? []).includes(field)) continue;
-      detailAliases.push(alias);
-    }
-  }
-
-  if (detailAliases.length === 0) return null;
-
-  // 取第一个明细令牌对应的 alias，查其 rowKeyFields 作为锁定签名
-  const firstAlias = detailAliases[0];
-  const def = tabDefs.find((d) => d.alias === firstAlias);
-  if (!def || !def.rowKeyFields.length) return null;
-
-  return def.rowKeyFields.join('+');
+/** 宿主可比：source 行键与宿主 selfRowKeyFields 集合包含(⊆/⊇);空行键 source 不可比(只留总计) */
+export function tabComparable(selfRowKeyFields: string[], sourceRowKeyFields: string[]): boolean {
+  if (!sourceRowKeyFields.length) return false;
+  return comparable(selfRowKeyFields ?? [], sourceRowKeyFields);
 }
 
 // ──────────────────────────────────────────────
@@ -51,14 +22,13 @@ interface Props {
   expression: string;
   onInsert: (token: string) => void;
   onClearExpression?: () => void;
+  selfRowKeyFields?: string[];
 }
 
 // ──────────────────────────────────────────────
 // 主组件
 // ──────────────────────────────────────────────
-const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClearExpression }) => {
-  const activeSig = parseActiveRowKeySig(expression, tabDefs);
-
+const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClearExpression, selfRowKeyFields }) => {
   if (tabDefs.length === 0) {
     return (
       <div style={{ padding: '12px 0', color: '#8a909a', fontSize: 12 }}>
@@ -69,7 +39,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
 
   return (
     <div>
-      {/* 锁定状态条 */}
+      {/* 宿主行键状态条 */}
       <div
         style={{
           display: 'flex',
@@ -80,13 +50,9 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
           color: '#8a909a',
         }}
       >
-        <span>
-          当前行键锁定：
-          <Text strong style={{ color: activeSig ? '#722ed1' : '#8a909a' }}>
-            {activeSig
-              ? `已锁定行键类 [${activeSig}]（仅同类页签明细可选；其它页签仅总计可用）`
-              : '未锁定（任意页签明细可选）'}
-          </Text>
+        <span style={{ fontSize: 12, color: '#8a909a' }}>
+          宿主行键 <Text strong style={{ color: '#722ed1' }}>[{(selfRowKeyFields ?? []).join(' + ') || '—'}]</Text>
+          ；可比页签明细可逐行对齐，更细页签字段需聚合，不可比页签仅整页签小计可用。
         </span>
         {onClearExpression && (
           <Button size="small" onClick={onClearExpression}>
@@ -105,9 +71,9 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
         }}
       >
         {tabDefs.map((def, idx) => {
-          const defSig = def.rowKeyFields.join('+');
-          const sameClass = activeSig === null || defSig === activeSig;
-          const rkActive = activeSig !== null && defSig === activeSig;
+          const selfRKF = selfRowKeyFields ?? [];
+          const isComparable = tabComparable(selfRKF, def.rowKeyFields ?? []);
+          const sourceFiner = isComparable && (def.rowKeyFields ?? []).length > selfRKF.length;
 
           return (
             <div
@@ -116,7 +82,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                 display: 'flex',
                 alignItems: 'stretch',
                 borderBottom: idx < tabDefs.length - 1 ? '1px solid #e5e7eb' : 'none',
-                background: sameClass ? '#fff' : '#fafafa',
+                background: isComparable ? '#fff' : '#fafafa',
               }}
             >
               {/* 左侧：页签名 + 行键徽标 */}
@@ -144,8 +110,8 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                 <span
                   style={{
                     fontSize: 11,
-                    background: rkActive ? '#722ed1' : '#f9f0ff',
-                    color: rkActive ? '#fff' : '#722ed1',
+                    background: '#f9f0ff',
+                    color: '#722ed1',
                     border: '1px solid #efdbff',
                     borderRadius: 4,
                     padding: '1px 6px',
@@ -172,33 +138,31 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                 <Space wrap style={{ gap: 6 }}>
                   <span style={{ fontSize: 11, color: '#8a909a' }}>明细</span>
                   {def.detailFields.map((f) => {
-                    const disabled = !sameClass;
-                    const tooltipTitle = disabled
-                      ? `行键 [${defSig}] 与已锁定类 [${activeSig}] 不同，明细不可逐行对齐；可改用其总计字段`
-                      : '';
+                    if (!isComparable) {
+                      return (
+                        <Tooltip key={f} title={`行键 [${(def.rowKeyFields ?? []).join('+')}] 与宿主 [${selfRKF.join('+')}] 不可比；可改用「${def.alias}(总计)」`}>
+                          <Tag style={{ cursor: 'not-allowed', color: '#bfbfbf', background: '#fafafa',
+                            borderColor: '#f0f0f0', margin: 0, fontSize: 12, padding: '3px 9px', userSelect: 'none' }}>{f}</Tag>
+                        </Tooltip>
+                      );
+                    }
+                    if (sourceFiner) {
+                      const items = ['SUM', 'AVG', 'MAX', 'MIN', 'COUNT'].map((fn) => ({
+                        key: fn, label: fn, onClick: () => onInsert(`${fn}([${def.alias}.${f}])`),
+                      }));
+                      return (
+                        <Dropdown key={f} menu={{ items }} trigger={['click']}>
+                          <Tag style={{ cursor: 'pointer', background: '#fff', borderColor: '#91caff',
+                            margin: 0, fontSize: 12, padding: '3px 9px', borderStyle: 'solid', userSelect: 'none' }}>
+                            {f} <span style={{ fontSize: 10, color: '#1677ff' }}>Σ需聚合</span>
+                          </Tag>
+                        </Dropdown>
+                      );
+                    }
                     return (
-                      <Tooltip key={f} title={tooltipTitle}>
-                        <Tag
-                          style={{
-                            cursor: disabled ? 'not-allowed' : 'pointer',
-                            color: disabled ? '#bfbfbf' : undefined,
-                            borderColor: disabled ? '#f0f0f0' : undefined,
-                            background: disabled ? '#fafafa' : '#fff',
-                            margin: 0,
-                            fontSize: 12,
-                            padding: '3px 9px',
-                            borderStyle: 'solid',
-                            userSelect: 'none',
-                          }}
-                          onClick={
-                            disabled
-                              ? undefined
-                              : () => onInsert(`[${def.alias}.${f}]`)
-                          }
-                        >
-                          {f}
-                        </Tag>
-                      </Tooltip>
+                      <Tag key={f} onClick={() => onInsert(`[${def.alias}.${f}]`)}
+                        style={{ cursor: 'pointer', background: '#fff', margin: 0, fontSize: 12,
+                          padding: '3px 9px', borderStyle: 'solid', userSelect: 'none' }}>{f}</Tag>
                     );
                   })}
                 </Space>

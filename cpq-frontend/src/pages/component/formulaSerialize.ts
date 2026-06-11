@@ -21,8 +21,10 @@
  *   numeric literals    — number tokens
  *
  * match row-key alignment convention:
- *   match[i] = { a: tabDef.rowKeyFields[i], b: selfRowKeyFields[i] }
- *   Aligned positionally; if one side runs out, remaining entries are omitted.
+ *   match = common field-name intersection of source rowKeyFields and self rowKeyFields.
+ *   For each field f in selfRowKeyFields that also appears in source rowKeyFields,
+ *   emit { a: f, b: f }. Order follows selfRowKeyFields (host) for determinism.
+ *   No common field → [] (validator rejects empty match downstream).
  *   If either array is empty, match = [].
  */
 
@@ -36,16 +38,21 @@ export type { TabDef };
 // Helpers
 // ─────────────────────────────────────────────
 
-/** Build the match array by positionally aligning rowKeyFields of the source (a) and self (b). */
+/**
+ * Build match[] by COMMON ROW-KEY FIELD NAME intersection (order-independent).
+ * For each field f in selfRowKeyFields that also appears in source rowKeyFields,
+ * emit { a: f, b: f }. Order follows selfRowKeyFields (host) for determinism.
+ * No common field → [] (validator rejects empty match downstream).
+ */
 function buildMatch(
   tabRowKeyFields: string[],
   selfRowKeyFields: string[] | undefined,
 ): Array<{ a: string; b: string }> {
   if (!tabRowKeyFields.length || !selfRowKeyFields?.length) return [];
-  const count = Math.min(tabRowKeyFields.length, selfRowKeyFields.length);
+  const sourceSet = new Set(tabRowKeyFields);
   const result: Array<{ a: string; b: string }> = [];
-  for (let i = 0; i < count; i++) {
-    result.push({ a: tabRowKeyFields[i], b: selfRowKeyFields[i] });
+  for (const f of selfRowKeyFields) {
+    if (sourceSet.has(f)) result.push({ a: f, b: f });
   }
   return result;
 }
@@ -68,7 +75,8 @@ type RawToken =
   | { kind: 'operator'; value: string }
   | { kind: 'paren_open' }
   | { kind: 'paren_close' }
-  | { kind: 'whitespace' };
+  | { kind: 'whitespace' }
+  | { kind: 'func'; name: string }           // SUM/AVG/MAX/MIN/COUNT
 
 /**
  * Lex `expr` into raw tokens. Throws with a descriptive message on unrecognised input.
@@ -114,6 +122,18 @@ function lex(expr: string): RawToken[] {
       continue;
     }
 
+    // Function names: SUM/AVG/MAX/MIN/COUNT (case-insensitive)
+    if (/[A-Za-z]/.test(ch)) {
+      let word = '';
+      while (i < expr.length && /[A-Za-z]/.test(expr[i])) word += expr[i++];
+      const upper = word.toUpperCase();
+      if (['SUM', 'AVG', 'MAX', 'MIN', 'COUNT'].includes(upper)) {
+        tokens.push({ kind: 'func', name: upper });
+        continue;
+      }
+      throw new Error(`表达式中含有无法识别的标识符 '${word}'（位置 ${i - word.length}）`);
+    }
+
     // Numeric literals (integer or decimal, optional leading sign NOT consumed here)
     if (/[0-9]/.test(ch) || (ch === '.' && /[0-9]/.test(expr[i + 1] ?? ''))) {
       let num = '';
@@ -127,6 +147,34 @@ function lex(expr: string): RawToken[] {
     throw new Error(`表达式中含有无法识别的字符 '${ch}'（位置 ${i}）`);
   }
   return tokens;
+}
+
+// ─────────────────────────────────────────────
+// makeCrossTabRef helper
+// ─────────────────────────────────────────────
+
+/**
+ * Build a cross_tab_ref FormulaToken from an alias + field + agg.
+ * Throws if the alias is not found in tabDefs or lacks a componentId.
+ */
+function makeCrossTabRef(
+  alias: string,
+  field: string,
+  agg: FormulaToken['agg'],
+  tabDefs: TabDef[],
+  selfRowKeyFields?: string[],
+): FormulaToken {
+  const tabDef = tabDefs.find((d) => d.alias === alias);
+  if (!tabDef) throw new Error(`表达式中引用了未知页签别名 "${alias}"`);
+  if (!tabDef.componentId) throw new Error(`页签 "${alias}" 缺少 componentId`);
+  return {
+    type: 'cross_tab_ref',
+    source: tabDef.componentId,
+    sourceLabel: tabDef.componentName ?? alias,
+    target: field,
+    agg: agg ?? 'NONE',
+    match: buildMatch(tabDef.rowKeyFields ?? [], selfRowKeyFields),
+  };
 }
 
 // ─────────────────────────────────────────────
@@ -148,7 +196,48 @@ export function expressionToTokens(
   const rawTokens = lex(expr);
   const result: FormulaToken[] = [];
 
-  for (const raw of rawTokens) {
+  let k = 0;
+  while (k < rawTokens.length) {
+    const raw = rawTokens[k];
+
+    // ── FN([alias.field]) 前瞻折叠 ──
+    // Pattern: func paren_open bracket_expr paren_close
+    if (raw.kind === 'func') {
+      const fnName = raw.name as NonNullable<FormulaToken['agg']>;
+      const next1 = rawTokens[k + 1];
+      const next2 = rawTokens[k + 2];
+      const next3 = rawTokens[k + 3];
+
+      // Validate: must be followed by ( bracket_expr )
+      if (!next1 || next1.kind !== 'paren_open') {
+        throw new Error(`函数 ${fnName} 后必须紧跟 '('`);
+      }
+      // next2 must be exactly ONE bracket_expr (no operators or extra tokens before close)
+      if (!next2 || next2.kind !== 'bracket_expr') {
+        throw new Error(`${fnName}() 只支持单列引用，括号内不能含运算符或其他表达式`);
+      }
+      // next3 must be paren_close — if not, there are multiple tokens inside parens
+      if (!next3 || next3.kind !== 'paren_close') {
+        throw new Error(`${fnName}() 只支持单列引用，括号内不能含多个 token 或运算符`);
+      }
+
+      // Validate: bracket_expr body must be a cross-tab reference (contains '.')
+      const body = next2.body.trim();
+      if (!body.includes('.')) {
+        throw new Error(
+          `${fnName}() 内只支持跨页签明细引用 [alias.field]，不支持裸字段 [${body}]`,
+        );
+      }
+
+      const dotIdx = body.indexOf('.');
+      const alias = body.slice(0, dotIdx);
+      const fieldPart = body.slice(dotIdx + 1);
+
+      result.push(makeCrossTabRef(alias, fieldPart, fnName, tabDefs, selfRowKeyFields));
+      k += 4; // consume: func + paren_open + bracket_expr + paren_close
+      continue;
+    }
+
     switch (raw.kind) {
       case 'whitespace':
         // already skipped in lex
@@ -216,14 +305,9 @@ export function expressionToTokens(
               label: `${tabDef.componentName ?? alias}·${fieldPart}`,
             });
           } else {
-            result.push({
-              type: 'cross_tab_ref',
-              source: tabDef.componentId,
-              sourceLabel: tabDef.componentName ?? alias,
-              target: fieldPart,
-              agg: isAgg ? 'SUM' : 'NONE',
-              match: buildMatch(tabDef.rowKeyFields ?? [], selfRowKeyFields),
-            });
+            result.push(
+              makeCrossTabRef(alias, fieldPart, isAgg ? 'SUM' : 'NONE', tabDefs, selfRowKeyFields),
+            );
           }
         } else {
           // Check for whole-tab total: [alias(总计)] (no dot but ends in (总计))
@@ -269,6 +353,8 @@ export function expressionToTokens(
         // Exhaustive check
         break;
     }
+
+    k += 1;
   }
 
   return result;
@@ -337,11 +423,11 @@ export function tokensToDrawerExpression(
         const alias = tabDef?.alias ?? token.sourceLabel ?? token.source ?? '';
 
         if (!token.target) {
-          // Whole-tab total [alias(总计)]
+          // Whole-tab total [alias(总计)] (empty target, 旧路保留)
           parts.push(`[${alias}(总计)]`);
         } else if (token.agg && token.agg !== 'NONE') {
-          // Aggregated column: [alias.field(总计)]
-          parts.push(`[${alias}.${token.target}(总计)]`);
+          // 归一：FN([alias.field])，含 SUM（不再回显 (总计)）
+          parts.push(`${token.agg}([${alias}.${token.target}])`);
         } else {
           // Detail reference: [alias.field]
           parts.push(`[${alias}.${token.target}]`);
@@ -364,28 +450,32 @@ export function tokensToDrawerExpression(
 // checkMappable
 // ─────────────────────────────────────────────
 
+/** test-only：暴露 lex 给单测 */
+export const __lexForTest = (expr: string) => lex(expr);
+
+/** A ⊆ B（视为集合，顺序无关） */
+export function isSubset(sub: string[], sup: string[]): boolean {
+  const s = new Set(sup);
+  return sub.every((x) => s.has(x));
+}
+/** 行键可比 = 任一方 ⊆ 另一方 */
+export function comparable(a: string[], b: string[]): boolean {
+  return isSubset(a, b) || isSubset(b, a);
+}
+
 /**
- * Gate check mirroring the backend TokenMappabilityValidator rule:
- * If ≥ 2 cross_tab_ref tokens have agg === 'NONE' (row-detail alignment),
- * the formula cannot be trivially mapped to a row-keyed join and is "unmappable".
- *
- * One detail ref is fine (it drives the row iteration).
- * Two or more require multi-table alignment that Excel handles better.
+ * Gate 镜像后端 TokenMappabilityValidator（v4-C 收敛）：
+ * 拒绝任何 cross_tab_ref 且 match 为空（含 agg=NONE）——空 match → 全源行命中
+ * → 聚合退化全表 / NONE 静默广播或吞 0。component_subtotal 无 match，不受影响。
+ * 旧"≥2 个 agg=NONE 即拒"已作废。
  */
-export function checkMappable(tokens: FormulaToken[]): {
-  mappable: boolean;
-  reason?: string;
-} {
-  const noneCount = tokens.filter(
-    (t) => t.type === 'cross_tab_ref' && (!t.agg || t.agg === 'NONE'),
-  ).length;
-
-  if (noneCount >= 2) {
-    return {
-      mappable: false,
-      reason: '存在 2+ 个未聚合的跨页签明细引用，请改用 Excel 组件',
-    };
+export function checkMappable(tokens: FormulaToken[]): { mappable: boolean; reason?: string } {
+  const emptyMatch = tokens.some(
+    (t) => t.type === 'cross_tab_ref' && (!t.match || t.match.length === 0),
+  );
+  if (emptyMatch) {
+    return { mappable: false,
+      reason: '存在与宿主无公共行键的跨页签引用（match 为空），不可对齐。请改引可比页签或用其整页签小计 [页签(总计)]。' };
   }
-
   return { mappable: true };
 }

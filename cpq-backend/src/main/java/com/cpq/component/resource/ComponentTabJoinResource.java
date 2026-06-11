@@ -5,6 +5,8 @@ import com.cpq.common.exception.BusinessException;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.component.service.ComponentSampleCardService;
 import com.cpq.component.service.ComponentTabDefService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
@@ -30,6 +32,8 @@ import java.util.UUID;
 @Consumes(MediaType.APPLICATION_JSON)
 @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
 public class ComponentTabJoinResource {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Inject
     ComponentTabDefService componentTabDefService;
@@ -86,5 +90,48 @@ public class ComponentTabJoinResource {
         }
         return ApiResponse.success(
             componentSampleCardService.dryRunForComponent(id, lineItemId, column, cardValuesJson));
+    }
+
+    /**
+     * POST /api/cpq/components/{id}/dry-run-token
+     * 🔴 命门0 token 试算（NORMAL/SUBTOTAL 连表公式）：走 token 引擎、复用真实卡片渲染装配，
+     * 使「试算逐行值 == 渲染逐行值」。旧 EXCEL 试算端点 {@code /dry-run} 保留不动。
+     *
+     * <p>请求体：{@code {"lineItemId":"uuid"(可空), "tokens":[...token...], "selfRowKeyFields":["子件",...]}}。
+     * <p>无 lineItemId / 无样本 → {@code {rows:[], errors:["试算不可用(无样本卡)..."]}}（非 500）。
+     * <p>内部异常 → {@code {rows:[], errors:[msg]}}（非 500）。
+     */
+    @POST
+    @Path("/{id}/dry-run-token")
+    @SuppressWarnings("unchecked")
+    public ApiResponse<Map<String, Object>> dryRunToken(
+            @PathParam("id") UUID id,
+            Map<String, Object> body) {
+        if (body == null) body = Map.of();
+
+        // lineItemId（可空）
+        UUID lineItemId = null;
+        Object liIdObj = body.get("lineItemId");
+        if (liIdObj != null && !liIdObj.toString().isBlank()) {
+            try {
+                lineItemId = UUID.fromString(liIdObj.toString());
+            } catch (IllegalArgumentException e) {
+                throw new BusinessException(400, "lineItemId 格式非法: " + liIdObj);
+            }
+        }
+
+        // tokens → JsonNode（缺省 → 空数组）
+        JsonNode tokens = MAPPER.valueToTree(body.getOrDefault("tokens", List.of()));
+
+        // selfRowKeyFields → List<String>
+        List<String> selfRowKeyFields = null;
+        Object rkfObj = body.get("selfRowKeyFields");
+        if (rkfObj instanceof List<?> rkfList) {
+            selfRowKeyFields = new java.util.ArrayList<>();
+            for (Object o : rkfList) if (o != null) selfRowKeyFields.add(o.toString());
+        }
+
+        return ApiResponse.success(
+            componentSampleCardService.dryRunTokenForComponent(id, lineItemId, tokens, selfRowKeyFields));
     }
 }

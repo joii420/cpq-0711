@@ -204,6 +204,10 @@ public class FormulaCalculator {
 
     /** cross_tab_ref 求值。返回 Number / String（NONE 文本）/ ERR。 */
     Object evalCrossTab(JsonNode token, RowContext ctx) {
+        // 防御：空 match 不得进聚合/广播（v4-C 防御；validator 漏网兜底）
+        if (!token.path("match").isArray() || token.path("match").size() == 0) {
+            return ERR;
+        }
         String source = token.path("source").asText("");
         String target = token.path("target").asText("");
         String agg = token.path("agg").asText("NONE").toUpperCase();

@@ -4,7 +4,9 @@ import com.cpq.common.exception.BusinessException;
 import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineComponentData;
 import com.cpq.quotation.entity.QuotationLineItem;
+import com.cpq.quotation.service.CardSnapshotService;
 import com.cpq.quotation.service.ExcelViewService;
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -39,6 +41,9 @@ public class ComponentSampleCardService {
 
     @Inject
     ExcelViewService excelViewService;
+
+    @Inject
+    CardSnapshotService cardSnapshotService;
 
     /**
      * 行投影：用于样本卡片去重/排序的最小投影（lineItemId + sortOrder 占位）。
@@ -141,5 +146,43 @@ public class ComponentSampleCardService {
         if (column == null) throw new BusinessException(400, "column is required");
         // seam：直接复用模板级求值内核——其入参为 lineItemId，从 lineItem 自身派生上下文，不耦合 templateId
         return excelViewService.dryRunTabFormula(lineItemId, column, cardValuesJson);
+    }
+
+    /**
+     * 🔴 命门0 token 试算（NORMAL/SUBTOTAL 连表公式）：走 token 引擎、复用真实卡片渲染装配
+     * （{@link CardSnapshotService#dryRunTokenRows}），使「试算逐行值 == 渲染逐行值」。
+     *
+     * <p>旧 EXCEL 试算链（{@link #dryRunForComponent}）完全保留不动；本方法是并行的新路径。
+     *
+     * <p>无样本卡片（lineItemId 缺省）→ 返回 {@code {rows:[], errors:["试算不可用(无样本卡)..."]}}（非 500）。
+     * 内部任一步异常 → catch 返回 {@code {rows:[], errors:[e.message]}}（非 500）。
+     *
+     * @param componentId           当前编辑公式的宿主组件
+     * @param lineItemId            选定样本卡片 lineItemId（可空 → 无样本）
+     * @param draftTokens           草稿公式 token 数组（camelCase）
+     * @param draftSelfRowKeyFields 草稿自身行键字段名列表（覆盖宿主持久化行键）
+     * @return {@code {rows:[{rowKey,value}], errors:[...]}}
+     */
+    public Map<String, Object> dryRunTokenForComponent(
+            UUID componentId, UUID lineItemId, JsonNode draftTokens, List<String> draftSelfRowKeyFields) {
+        if (lineItemId == null) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("rows", List.of());
+            out.put("errors", List.of("试算不可用(无样本卡): 该组件尚无报价行引用，无法对真实卡片试算"));
+            return out;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        try {
+            List<Map<String, Object>> rows = cardSnapshotService.dryRunTokenRows(
+                componentId != null ? componentId.toString() : null,
+                lineItemId, draftTokens, draftSelfRowKeyFields);
+            out.put("rows", rows);
+            out.put("errors", List.of());
+        } catch (Exception e) {
+            LOG.warnf("[dry-run-token] failed comp=%s li=%s: %s", componentId, lineItemId, e.getMessage());
+            out.put("rows", List.of());
+            out.put("errors", List.of(e.getMessage() != null ? e.getMessage() : e.toString()));
+        }
+        return out;
     }
 }

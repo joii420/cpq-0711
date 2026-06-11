@@ -671,6 +671,23 @@ public class CardSnapshotService {
      */
     private ObjectNode assembleTabsWithFormulaResults(JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
                                                       Map<String, ArrayNode> editRowsByComp) {
+        // 三参签名零破坏：delegate 到四参（rkfOverride=null）。所有既有调用走此入口，行为不变（AP-40/AP-51 纪律）。
+        return assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp, null);
+    }
+
+    /**
+     * 四参重载（v6-N 草稿行键双注入）：在默认从持久化 row_key_fields 组装 {@code rkfByComp} 之后，
+     * 若传入 {@code rkfOverride} 非空，则 {@code rkfByComp.putAll(rkfOverride)} 覆盖指定 componentId 的行键。
+     *
+     * <p><b>零破坏</b>：三参方法 delegate 到此（rkfOverride=null），既有所有调用（buildCardValues /
+     * buildCostingCardValues / refreshQuoteCardValues / editCardValue / *ForTest）行为完全不变 —
+     * rkfOverride=null 时此方法与原实现逐行等价（仅多一个 null 判空分支）。
+     *
+     * @param rkfOverride componentId → rowKeyFields 节点（覆盖该组件持久化行键）；null → 不覆盖。
+     */
+    private ObjectNode assembleTabsWithFormulaResults(JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
+                                                      Map<String, ArrayNode> editRowsByComp,
+                                                      Map<String, JsonNode> rkfOverride) {
         ObjectNode root = MAPPER.createObjectNode();
         ArrayNode tabs = root.putArray("tabs");
 
@@ -681,6 +698,8 @@ public class CardSnapshotService {
             String cid = tab.path("componentId").asText("");
             if (!rkfByComp.containsKey(cid)) rkfByComp.put(cid, loadRowKeyFieldsNode(cid));
         }
+        // v6-N 草稿行键覆盖：装配里 rkfByComp 默认读持久化行键；试算时把宿主 cid 行键覆盖为草稿行键。
+        if (rkfOverride != null) rkfByComp.putAll(rkfOverride);
 
         // 草稿重刷：旧 editRows 按 rowKey 对齐到新 baseRows，丢弃新数据中不存在的 rowKey（AP-54 业务键对齐）
         Map<String, ArrayNode> filteredEdit = filterEditRowsToNewBaseRows(
@@ -1419,4 +1438,161 @@ public class CardSnapshotService {
             return null;
         }
     }
+
+    // =========================================================================
+    // dryRunTokenRows — token 引擎试算（草稿公式 + 草稿行键双注入，复用渲染装配）
+    // =========================================================================
+
+    /**
+     * 🔴 命门0：走 token 引擎、复用真实渲染装配（{@link #assembleTabsWithFormulaResults}）的「试算预览」，
+     * 使「试算逐行值 == 渲染逐行值」。旧 EXCEL 试算链（{@link ExcelViewService#dryRunTabFormula}）完全保留不动。
+     *
+     * <p><b>草稿双注入（v6-N/v6-O）</b>：
+     * <ol>
+     *   <li>读 lineItem → snapshot = {@link #loadComponentsSnapshot}(li.templateId)。</li>
+     *   <li><b>草稿公式注入</b>：深拷贝 snapshot；按 componentId 定位宿主 tab（同 cid 多实例本期取首个命中，
+     *       多实例 follow-up 应按 sortOrder — v6-O）；宿主 tab 的 {@code formulas} 替换为单条草稿公式
+     *       {@code [{name:__dryrun__, fieldName:__dryrun__, expression: draftTokens}]} + {@code fields} 追加
+     *       {@code {name:__dryrun__, field_type:FORMULA}}（{@code collectFormulaFields} 从 fields 收集 FORMULA 字段，
+     *       故须同步追加字段定义）；兄弟 source 组件 formulas 保持已存版本。</li>
+     *   <li><b>baseRows 展开 + editRows 合并</b>：与 {@link #refreshQuoteCardValues} 同源
+     *       （{@link #expandTemplateDriverBaseRows} + {@link #extractEditRowsByComp} + {@link #mergeRowDataInputsIntoEdits}）。</li>
+     *   <li><b>草稿行键覆盖（v6-N）</b>：把宿主 cid 的行键覆盖为 {@code draftSelfRowKeyFields}，通过
+     *       {@link #assembleTabsWithFormulaResults} 四参重载的 {@code rkfOverride} 实现。</li>
+     *   <li>取宿主 tab formulaResults 逐行，提取 {@code values["__dryrun__"]} → {@code [{rowKey, value}]}。</li>
+     * </ol>
+     *
+     * @param hostComponentId      宿主组件 id（被编辑公式所属组件）
+     * @param lineItemId           样本卡片 lineItemId
+     * @param draftTokens          草稿公式 token 数组（camelCase，cross_tab_ref source/target/agg/match）
+     * @param draftSelfRowKeyFields 草稿自身行键字段名列表（覆盖宿主持久化行键）；null/空 → 不覆盖（用持久化行键）
+     * @return 宿主逐行 {@code [{rowKey, value}]}（value 为 token 引擎求值结果，Number/String/null）
+     */
+    public List<Map<String, Object>> dryRunTokenRows(String hostComponentId, UUID lineItemId,
+                                                      JsonNode draftTokens, List<String> draftSelfRowKeyFields) {
+        if (hostComponentId == null || lineItemId == null) {
+            throw new IllegalArgumentException("hostComponentId / lineItemId 必填");
+        }
+        QuotationLineItem li = QuotationLineItem.findById(lineItemId);
+        if (li == null) throw new IllegalStateException("lineItem 不存在: " + lineItemId);
+        Quotation q = Quotation.findById(li.quotationId);
+        if (q == null || q.customerTemplateId == null) {
+            throw new IllegalStateException("quotation / customerTemplateId 缺失 li=" + lineItemId);
+        }
+
+        JsonNode snapshot = loadComponentsSnapshot(q.customerTemplateId);
+        if (snapshot == null || !snapshot.isArray()) {
+            throw new IllegalStateException("模板 components_snapshot 缺失 tid=" + q.customerTemplateId);
+        }
+
+        // 1. baseRows 展开 + editRows 合并（与 refreshQuoteCardValues 同源）
+        Map<String, ArrayNode> baseRowsByComp =
+            expandTemplateDriverBaseRows(q.customerTemplateId, li, q.customerId, q.id);
+        Map<String, ArrayNode> oldEdits = extractEditRowsByComp(li.quoteCardValues);
+        Map<String, ArrayNode> mergedEdits =
+            mergeRowDataInputsIntoEdits(snapshot, baseRowsByComp, oldEdits, li.id);
+
+        return dryRunTokenRowsCore(snapshot, hostComponentId, draftTokens, draftSelfRowKeyFields,
+            baseRowsByComp, mergedEdits);
+    }
+
+    /**
+     * 试算核心（与 {@link #dryRunTokenRows} 共用；测试可注入 baseRows/editRows 做确定性命门0 对拍）。
+     * 不读 DB、纯装配，故与 {@link #refreshQuoteCardValues} 喂同样 baseRows 时逐行可对拍。
+     */
+    List<Map<String, Object>> dryRunTokenRowsCore(JsonNode snapshot, String hostComponentId,
+                                                  JsonNode draftTokens, List<String> draftSelfRowKeyFields,
+                                                  Map<String, ArrayNode> baseRowsByComp,
+                                                  Map<String, ArrayNode> editRowsByComp) {
+        // 2. 草稿公式注入（深拷贝，不污染 loadComponentsSnapshot 返回的节点）
+        JsonNode draftSnapshot = injectDraftFormula(snapshot, hostComponentId, draftTokens);
+
+        // 3. 草稿行键覆盖（v6-N）：宿主 cid 行键 → draftSelfRowKeyFields（空 → 不覆盖）
+        Map<String, JsonNode> rkfOverride = null;
+        if (draftSelfRowKeyFields != null && !draftSelfRowKeyFields.isEmpty()) {
+            ArrayNode rkf = MAPPER.createArrayNode();
+            for (String f : draftSelfRowKeyFields) rkf.add(f);
+            rkfOverride = new LinkedHashMap<>();
+            rkfOverride.put(hostComponentId, rkf);
+        }
+
+        // 4. 复用真实渲染装配（token 引擎）
+        ObjectNode assembled = assembleTabsWithFormulaResults(
+            draftSnapshot, baseRowsByComp, editRowsByComp, rkfOverride);
+
+        // 5. 取宿主 tab formulaResults 逐行 __dryrun__
+        return extractHostDryRunRows(assembled, hostComponentId);
+    }
+
+    /**
+     * 深拷贝 snapshot 并把宿主 tab 注入单条草稿公式 {@code __dryrun__}（formulas + fields 同步追加 FORMULA 字段）。
+     * <p>同 cid 多实例本期取首个命中（v6-O follow-up：应按 sortOrder 精确匹配，参见 AP-40）。
+     * 兄弟 source 组件 formulas 保持已存版本不动。
+     */
+    private JsonNode injectDraftFormula(JsonNode snapshot, String hostComponentId, JsonNode draftTokens) {
+        ArrayNode copy = (ArrayNode) snapshot.deepCopy();
+        boolean injected = false;
+        for (JsonNode tabNode : copy) {
+            if (!tabNode.isObject()) continue;
+            if (injected) break; // 同 cid 多实例：仅首个命中（v6-O follow-up: sortOrder）
+            if (!hostComponentId.equals(tabNode.path("componentId").asText(""))) continue;
+            ObjectNode tab = (ObjectNode) tabNode;
+
+            // formulas → 单条草稿公式
+            ArrayNode formulas = MAPPER.createArrayNode();
+            ObjectNode fm = MAPPER.createObjectNode();
+            fm.put("name", DRYRUN_FIELD);
+            fm.put("fieldName", DRYRUN_FIELD);
+            fm.set("expression", draftTokens != null ? draftTokens.deepCopy() : MAPPER.createArrayNode());
+            formulas.add(fm);
+            tab.set("formulas", formulas);
+            // 模板级 formula_assignments 会按字段下标绑公式名 → 清空，避免 __dryrun__ 被错绑/漏绑
+            tab.putArray("formula_assignments");
+
+            // fields 追加 FORMULA 字段定义（collectFormulaFields 从 fields 收集 FORMULA 字段）
+            JsonNode fieldsNode = tab.path("fields");
+            ArrayNode fields = fieldsNode.isArray() ? (ArrayNode) fieldsNode : tab.putArray("fields");
+            // 去重：若已存在同名字段（理论上不会），先移除
+            for (int i = fields.size() - 1; i >= 0; i--) {
+                if (DRYRUN_FIELD.equals(fields.get(i).path("name").asText(""))) fields.remove(i);
+            }
+            ObjectNode df = MAPPER.createObjectNode();
+            df.put("name", DRYRUN_FIELD);
+            df.put("field_type", "FORMULA");
+            fields.add(df);
+            injected = true;
+        }
+        if (!injected) {
+            throw new IllegalStateException("宿主组件不在模板 snapshot 中: " + hostComponentId);
+        }
+        return copy;
+    }
+
+    /** 从装配结果取宿主 tab 的 formulaResults 逐行，提取 {@code values["__dryrun__"]} → [{rowKey, value}]。 */
+    private List<Map<String, Object>> extractHostDryRunRows(ObjectNode assembled, String hostComponentId) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (JsonNode tab : assembled.path("tabs")) {
+            if (!hostComponentId.equals(tab.path("componentId").asText(""))) continue;
+            for (JsonNode fr : tab.path("formulaResults")) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("rowKey", fr.path("rowKey").asText(""));
+                JsonNode v = fr.path("values").path(DRYRUN_FIELD);
+                row.put("value", jsonToScalar(v));
+                out.add(row);
+            }
+            break;
+        }
+        return out;
+    }
+
+    /** JsonNode → 标量（Number/String/Boolean/null），供试算行 value 输出。 */
+    private static Object jsonToScalar(JsonNode v) {
+        if (v == null || v.isMissingNode() || v.isNull()) return null;
+        if (v.isNumber()) return v.numberValue();
+        if (v.isBoolean()) return v.booleanValue();
+        return v.asText();
+    }
+
+    /** 草稿试算公式/字段固定名（命名空间前缀，杜绝与业务字段碰撞）。 */
+    private static final String DRYRUN_FIELD = "__dryrun__";
 }

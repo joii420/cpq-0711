@@ -2617,6 +2617,20 @@ v_costing_exchange_rate[from_currency='CNY' AND to_currency='USD'].costing_rate
 | **验证** | `manualRows.test.ts` 4/4;E2E `quote-manual-row.spec.ts` 5/5(添加 N+1 / 小计 / 持久化 / 详情 / 加载中=0);回归 `quotation-flow.spec.ts` passed。`composite-product-flow.spec.ts` 唯一失败为 RECORD:296 预存已知缺陷(元素模板 unit_weight 列不存在,用户确认停用不修),与本次无关 |
 | **Phase 2(待立项)** | driver 行删除 + `deleted_driver_keys` + driverRow 内容指纹匹配 + 重开不复活 |
 
+### 9.20 v4.2(2026-06-11)— 页签连表公式 行键宿主分组(包含关系)重设计 + 试算=渲染（批3/需求1）
+
+| 决策 | 内容 |
+|---|---|
+| **结果粒度=宿主组件行键** | NORMAL/SUBTOTAL 页签连表公式逐行按宿主组件行键分组;被引用 source 页签按"行键集合包含(⊆/⊇,顺序无关)"对齐宿主——**不笛卡尔**(多细 source 各自独立聚合) |
+| **三态引用(spec §58 模型)** | 粗/同级 source(键⊆宿主)→广播 agg=NONE 裸明细可用;**细 source(键⊋宿主)→强制 `FN()` 单列聚合**(SUM/AVG/MAX/MIN/COUNT,默认SUM);不可比/空行键 source→置灰,仅整页签小计 `[页签(总计)]` 可用 |
+| **FN 函数语法(序列化)** | `buildMatch` 改公共行键字段名交集配对(非位置zip);lexer+状态机支持 `FN([alias.field])`→cross_tab_ref agg=FN,**单列收口**(FN内运算符/多引用报错,复合留二期);回显归一 `FN([a.f])`(SUM 不再 `(总计)`,解析仍兼容旧串) |
+| **mappability 命门** | 前端 `checkMappable`+后端 `TokenMappabilityValidator` 同改"**任何 cross_tab_ref 且 match 为空即拒**"(作废旧"≥2 NONE 拒");`evalCrossTab` 求值逻辑不改,加防御"空 match→ERR" |
+| **置灰基准换宿主可比** | `TabFieldMatrix` 废 `parseActiveRowKeySig`("首明细令牌锁签名"旧机制),改 `tabComparable(宿主行键, source行键)` 集合包含;prop 链转发 `selfRowKeyFields`;细 source 明细 chip 弹 FN 下拉录入 |
+| **🔴 试算=渲染(同引擎)** | NORMAL/SUBTOTAL 试算改走 token 渲染引擎(新端点 `/components/{id}/dry-run-token` + 复用 `assembleTabsWithFormulaResults`,草稿公式+草稿行键双注入),逐行小表展示,与真实卡片渲染逐行一致(命门0 对拍);EXCEL 仍走 `TabJoinPlanEvaluator` 单值不变 |
+| **存量不管** | 旧 token 落库 match[] 引擎只读不重跑 `buildMatch`,已发布 snapshot 求值不变;同序同集等价、乱序同集存量按"不回溯"处理;无迁移脚本 |
+| **验证** | 前端 173 测试(序列化/矩阵/引擎)+ tsc 0;后端 78 测试(FormulaCalculator*/CardSnapshot*/validator);cross-tab-cases.json 前后端同夹具锁引擎一致;命门0 `CardSnapshotDryRunParityTest` 螺丝行 80 逐行对拍绿 |
+| **遗留 follow-up** | ① v6-N 草稿改行键差异化未单独断言(机制走通,受 @TestTransaction/readonly 约束;driver-expand 实路由 RefreshCardSnapshotTest 覆盖);② 同 cid 多实例 injectDraftFormula 取首个,sortOrder 精确定位留 v6-O |
+
 ### 9.8 关键设计决策追溯
 
 #### Q1:为何不引入 Drools?
