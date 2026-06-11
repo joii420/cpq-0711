@@ -4,6 +4,18 @@
 
 ---
 
+### [2026-06-11] 连表公式重设计批2(需求3+4·纯UI/展示) | TabFieldMatrix.tsx + ComponentManagement.tsx + ComponentTabDefService.java(+Test) | spec: 2026-06-11-tabjoin-rowkey-host-grouping-design.md §167/§181
+
+- **背景**: 批 1(样本卡 500 修)之后的批 2。spec §194 拆分: 批2=需求3+4,**纯 UI/展示、不碰序列化/求值**,不在 CLAUDE.md E2E 触发清单内(未动 useDriverExpansions/QuotationStep2/ComponentDriverService 等)。
+- **需求3 — 配置抽屉显示「组件名称[编号]」+ 过滤文本字段**:
+  - 前端 `TabFieldMatrix.tsx:136`: 左栏页签标签从只渲染 `def.alias`(=code COMP-00xx,"误显示编号"真源)改为 `componentName` 加粗主 + `[alias]` 小字辅;`componentName` 缺省/与 alias 同义时回退只显 alias。`TabDef.componentName` 已有,后端 `componentsToTabDefs:89` 已下发,纯前端渲染改动。
+  - 后端 `ComponentTabDefService.componentsToTabDefs`(:74 fields 循环): 按 `field_type=="INPUT_TEXT"` 过滤掉文本型 `detailFields`(不可数值聚合,不应作明细令牌被公式引用),**保持 `detailFields:String[]` 协议不变**(仅元素变少)→ 不波及消费方。**行键徽标走独立来源 `c.rowKeyFields`(:69)不受影响**,INPUT_TEXT 仍可作行键(spec §175)。补单测 `componentsToTabDefs_filtersInputTextFromDetailFields_keepsRowKeyBadge`。
+- **需求4 — 添加公式与配置分离**(`FormulaListPanel` + `ComponentManagement`):
+  - 「添加公式」从"直接弹抽屉"改为 `addFormulaInline`: 在本地 `formulas` 状态行内追加一空表达式行(默认「公式N」、`autoFocusKey` 聚焦命名),**不弹抽屉**;表达式留空待点「配置」进抽屉编辑;整行随组件「保存」入库(spec §186 显式允许空表达式)。
+  - `FormulaListPanel`: 名称列改可编辑 `Input`(`onRename` 随时改名)、操作列「编辑」→「配置」(`onConfig`=openFormulaForComponent,弹抽屉只编辑表达式,formulaKey 已存在 → save 走更新分支保留名称)。
+- **自检**: tsc --noEmit 0 错误 ✅;`ComponentTabDefServiceTest` 3 测全绿(新增1+存量2)✅;两改动 TSX 经 vite `transformWithOxc`(rolldown-vite 实际转换器)transform OK ✅(dev server 服务主工作区旧文件,curl 200 无意义,改用真实转换器校验)。E2E 非批2必需(spec §194 + 不在触发清单)。
+- **流程**: 隔离 worktree `worktree-tabjoin-batch2-req34`(baseRef=head,含批1);node_modules 软链主工作区跑检查后移除,不重装/不另起 server(worktree 共享约束)。
+
 ### [2026-06-11] 样本卡端点 500 修复(Panache findById 方法引用坑) | ComponentSampleCardService.java + ComponentSampleCardServiceQuarkusTest.java | 连表公式重设计批1(spec: 2026-06-11-tabjoin-rowkey-host-grouping-design.md)
 
 - **现象**: 页签组件「添加公式 → 配置页签连表公式」抽屉弹出后报「样本卡片加载失败，请刷新后重试」。

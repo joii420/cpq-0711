@@ -75,6 +75,11 @@ public class ComponentTabDefService {
                 Object nameObj = fm.get("name");
                 if (nameObj == null) continue;
                 String fieldName = nameObj.toString();
+                // 需求3：过滤文本型字段（INPUT_TEXT）——不可数值聚合，不应作为明细令牌被公式引用。
+                // 行键字段走独立来源 c.rowKeyFields（见上），INPUT_TEXT 仍可作行键、徽标不受影响。
+                if ("INPUT_TEXT".equals(String.valueOf(fm.get("field_type")))) {
+                    continue;
+                }
                 detailFields.add(fieldName);
                 Object isSubtotal = fm.get("is_subtotal");
                 if (Boolean.TRUE.equals(isSubtotal) || "true".equals(String.valueOf(isSubtotal))) {
