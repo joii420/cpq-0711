@@ -12,6 +12,14 @@
 > - E. 空行键 source（SUBTOTAL）：只允许整页签总计、明细一律置灰。
 > - F. 补"漏匹配缺补 0"边界 + 声明"存量 token 不重跑 `buildMatch`（仅新建/编辑走新配对；除非 `refreshSnapshotsByComponent` 重序列化）"。
 > - G. `(总计)` 双语义表补第三条（`[alias.subtotalCol]`→component_subtotal）。
+>
+> **v5 增量（第四轮评审补正 + 用户确认）**：
+> - 🔴 **H. 试算 = 渲染同引擎（用户拍板）**：NORMAL/SUBTOTAL 试算**改走 token 引擎 `FormulaCalculator`**（复用 `CardSnapshotService` 的 crossTabRows 装配），**不再走 `TabJoinPlanEvaluator`**（B 引擎，全外连语义，与渲染不一致）。`TabJoinPlanEvaluator` 仅留 EXCEL。详见下方"试算引擎一致性"。
+> - 🔴 **I. FN() 只做单列（本期收口）**：`FN([alias.field])` 仅允许**单列**；`FN([a]+[b])` 复合内表达式（→ `targetExpr` 递归子解析）**留二期**，本期解析到 `FN(` 内出现运算符/多引用即报错。与 RECORD 06-05"函数留二期"分期一致。
+> - 🔴 **J. round-trip 归一**：SUM 统一回显 `SUM([a.f])`（解析仍容旧 `[a.f(总计)]`）；**同步改老测试** `formulaSerialize.test.ts` 的 `(总计)` 回显预期；新增"往返两次稳定(idempotent)"用例。
+> - **K. 拆分交付**：需求 2 → 需求 3+4 → 需求 1，分三批（详见实施顺序）。
+> - **L. 需求3 真源**：左栏"误显示编号"在前端 `TabFieldMatrix.tsx:136`（渲染 `def.alias` 未渲染 `componentName`）；后端 `componentsToTabDefs` 数据已够，**主改前端渲染那一行** + 后端补 `field_type` 过滤。
+> - **M. `parseActiveRowKeySig` 废除后**，`TabFieldMatrix` 顶部"行键锁定状态条"文案 + `sameClass/rkActive` 高亮逻辑整体重写为"每页签独立可比/置灰"。
 
 ## 现状认知（实地核查结论，纠正 v1）
 
@@ -80,9 +88,12 @@
 ### 改动清单
 **前端**
 - `formulaSerialize.ts` `buildMatch`：位置 zip → **公共字段名交集配对**（顺序无关）。无公共字段 → 返回 `[]`（交给 validator 拒绝）。
-- **🔴 聚合函数序列化（v4，B 范围）**：
-  - `expressionToTokens`：新增 `FN([alias.field])`（FN∈SUM/AVG/MAX/MIN/COUNT）解析 → `cross_tab_ref agg=FN`；保留旧 `[alias.field(总计)]`→SUM 兼容；lexer 识别函数名（现遇字母抛错）。
-  - `tokensToDrawerExpression`：`agg=FN` 反向回显 `FN([alias.field])`（现状把任意 agg 回显成 `(总计)`，会丢 AVG/MAX 语义 → round-trip 破坏，必须改）。
+- **🔴 聚合函数序列化（v4/v5，B 范围；工作量按 v4 评审重估约 2~3 倍）**：
+  - lexer：新增"函数名"token（`SUM/AVG/MAX/MIN/COUNT`，现遇字母即抛"无法识别"）。
+  - `expressionToTokens`（**线性发射 → 加前瞻状态机**）：识别 `函数名 + ( + [alias.field] + )` 序列，折叠成单个 `cross_tab_ref agg=FN`，吞掉外层括号（不发射 bracket）。**🔴 本期只做单列（v5-I）**：`FN(` 内出现运算符 / 多 `[...]` → **报错**（复合 `targetExpr` 留二期）。保留旧 `[alias.field(总计)]`→SUM 解析兼容。
+  - `tokensToDrawerExpression`（**回显归一，v5-J**）：`agg=FN`（含 SUM）统一回显 `FN([alias.field])`；**SUM 不再回显 `(总计)`**（解析仍容旧串，回显收敛到一种）→ **同步改老测试** `formulaSerialize.test.ts` 的 `(总计)` 预期 + 加"往返两次稳定"用例。
+  - 现状 bug 认知：抽屉函数工具条（`TabJoinFormulaDrawer:266`）已能插 `SUM()`，但 `expressionToTokens` lexer 现在就解析不了 → 保存即 `message.error`，属**现存能力错配**，本期一并补齐。
+  - chip 录入：细 source 明细 chip（`TabFieldMatrix:189`）点击改为插 `FN([alias.field])`（弹函数选择，默认 SUM），与函数工具条手敲两路**统一容错**。
 - `TabFieldMatrix.tsx`：
   - 置灰基准改为宿主 `selfRowKeyFields`；按集合 ⊆/⊇ 判可比；细 source 裸明细置灰、仅留聚合入口（chip 上加 SUM/AVG/MAX/MIN/COUNT 选择）；**空行键 source（SUBTOTAL，rowKeyFields=[]）→ 明细一律置灰、只留 `[alias(总计)]` 整页签小计**（v4-E）。
   - **🔴 `parseActiveRowKeySig` 重构（v4-D）**：废除"取表达式首个明细令牌锁签名"机制，改为**纯按宿主可比**——每个 tab 独立判 `comparable(def.rowKeyFields, selfRowKeyFields)`，与表达式已有内容无关（否则首令牌锁死、多个不同细 source 无法共存）。
@@ -99,7 +110,18 @@
   4. 同级/粗 source 的多个 NONE 允许（各自命中 ≤1、互不相乘）。
 - `comparable(a,b)` / `isSubset`（视行键为 Set，顺序无关）工具：前后端各一份，共享用例锁一致。
 
-**EXCEL（模型 B）不动**：`TabJoinPlanEvaluator` + `validateTabJoinConfig`（"裸明细须同一行键类"）保持，EXCEL 列单值语义不回归。
+**EXCEL（模型 B）不动**：`TabJoinPlanEvaluator` + `validateTabJoinConfig`（"裸明细须同一行键类"）保持，**仅服务 EXCEL 列**（渲染 + 试算）。
+
+### 🔴 试算 / 渲染引擎一致性（v5 核心 · 用户拍板"必须同一套"）
+
+**问题**：现状 NORMAL/SUBTOTAL 的试算预览 `dryRunForComponent → ExcelViewService.dryRunTabFormula → TabJoinPlanEvaluator.evaluateColumn`（**B 引擎，全外连语义**），而真实卡片渲染走 `CardSnapshotService → FormulaCalculator`（**token 引擎，宿主行驱动**）。两套语义不同 → **试算值可能 ≠ 渲染值**（尤其"粗 host × 细 source 聚合"）。
+
+**方案**：NORMAL/SUBTOTAL 试算**改走 token 引擎,复用渲染装配**：
+- 后端新增 token 试算路径：以样本卡 `lineItem` 为上下文，**复用 `CardSnapshotService` PASS2 的 crossTabRows 装配**（拓扑序逐兄弟组件算 `resolvedRows` 存 `crossTabRows`），再对宿主组件用 `FormulaCalculator.calculate(..., crossTabRows)` **逐宿主行**求值。
+- **入参改 token 数组**（当前抽屉对 NORMAL/SUBTOTAL 已 `kind:'tokens'` 保存；试算同样传 token，不再走 `buildColumn` 的 EXCEL 列形态）。
+- **结果是逐行的**（NORMAL 公式每宿主行一个值）→ 试算 UI 展示**逐行结果**（小表），不再是单值标量。
+- `TabJoinPlanEvaluator` 试算路径**仅留 EXCEL**。
+- **验收**：同一条公式，试算逐行值 == 该卡片渲染逐行值（补一组"试算 vs 渲染对拍"断言）。
 
 ### 向后兼容（存量不管，但实际低风险）
 - 旧 `cross_tab_ref` token 的 `match[]` 是位置配对生成的。旧模型只允许"行键完全相同"（其它置灰），**同序同集**时位置配对 == 公共字段名配对 → 旧 token 仍正确。
@@ -153,14 +175,17 @@ did you forget to annotate your entity with @Entity?
 
 ---
 
-## 实施顺序与验证
+## 实施顺序与验证（v5：拆分三批交付）
 
-1. **需求 2**：独立 worktree，先写复现 IT（红）→ lambda 修 → 绿，先交付。
-2. **需求 1 + 3 + 4**：一个 worktree。
-3. **测试（重点：三视图一致 + 双引擎对等；🔴 命门项先写失败测试 TDD）**
+- **第 1 批 · 需求 2**（独立 worktree、低风险、先交付）：lambda 修 + 业务契约回归 IT（不强求"先红"）。
+- **第 2 批 · 需求 3 + 4**（独立 worktree、纯 UI/展示、不碰序列化/求值）：需求3 主改前端 `TabFieldMatrix:136` 渲染 `componentName[alias]` + 后端 `componentsToTabDefs` 补 `field_type` 过滤；需求4 行内命名 + 配置按钮。
+- **第 3 批 · 需求 1**（独立 worktree、触基线、最重）：行键宿主分组 + FN 聚合 + 试算改 token 引擎。**动代码前三决策已拍死**：①试算走 token 引擎（H）②FN 只做单列（I）③SUM 回显归一（J）。
+
+**测试（重点：试算=渲染同源 + 三视图一致 + 双引擎对等；🔴 命门项先写失败测试 TDD）**
+   - **🔴 TDD 命门 0（v5）**：**试算 vs 渲染对拍**——同一公式同一样本卡，token 试算逐行值 == `CardSnapshotService` 渲染逐行值。
    - **🔴 TDD 命门 1**：前后端 mappability 各加「**任何 cross_tab_ref 且 match 为空 → 拒绝**」用例（含 NONE，先红）；`evalCrossTab`+`formulaEngine.ts` 加防御性断言「空 match 不得进聚合/广播」。
    - **🔴 TDD 命门 2**：聚合/总计三语义用例——`SUM([a.f])`=宿主分组、`[a(总计)]`=整页签小计、`[a.subtotalCol]`=组件小计列，断言聚合范围不同。
-   - **🔴 聚合函数 round-trip 用例（v4-B）**：`AVG/MAX/MIN/COUNT([a.f])` → `expressionToTokens` → `agg=FN` → `tokensToDrawerExpression` 还原回同串（防 AVG 被回显成 SUM 丢语义）；lexer 识别函数名。
+   - **🔴 FN round-trip 归一用例（v5-J）**：`AVG/MAX/MIN/COUNT([a.f])` 往返同串；**SUM 回显归一为 `SUM([a.f])`**（改老 `(总计)` 预期）；往返两次稳定(idempotent)；`FN(` 内含运算符/多引用 → 报错（单列收口 v5-I）。
    - `cross-tab-cases.json` **新增宿主分组用例**：粗 host+细 source 聚合(SUM/AVG)、细 host+粗 source 广播、同级 1:1、不可比置灰、公共字段名**乱序对齐**。
    - 后端 `FormulaCalculator` 单测 + 前端 `formulaEngine.ts` 对等单测 + **`CardSnapshotCrossTabTest`**（三视图写回）**同跑同夹具**（防三视图漂移，AP-50/AP-41）。
    - `buildMatch` 公共字段名配对单测（顺序无关、长度不等、**无公共字段→返回 []**）。
@@ -170,10 +195,12 @@ did you forget to annotate your entity with @Entity?
    - 涉求值语义但不在 E2E 强制清单 → 单测+IT+真机+夹具覆盖。
 
 ## 验收标准
-- 抽屉中：包含关系页签可引用、细 source 强制聚合、不可比置灰；`组件名称[编号]` 显示；文本字段从明细隐藏（行键徽标保留）。
+- 抽屉中：包含关系页签可引用、细 source 强制选聚合函数(SUM/AVG/MAX/MIN/COUNT 单列)、不可比/空键页签置灰；`组件名称[编号]` 显示；文本字段从明细隐藏（行键徽标保留）。
 - NORMAL 公式逐行按宿主键分组、细 source 聚合、不笛卡尔；前后端两引擎 + 三视图结果一致（夹具锁定）。
+- **试算 = 渲染**：试算走 token 引擎、逐行展示，与卡片渲染逐行值一致。
 - EXCEL/小计单值语义不回归。
-- 样本卡端点不再 500（复现 IT 红→绿）。
+- 样本卡端点不再 500（业务契约 IT 绿）。
+- FN round-trip 归一稳定（AVG 不被回显成 SUM）；FN 复合内表达式本期报错（留二期）。
 - 添加公式先命名、可改名、点配置才弹抽屉。
 
 ## 风险与遗留
