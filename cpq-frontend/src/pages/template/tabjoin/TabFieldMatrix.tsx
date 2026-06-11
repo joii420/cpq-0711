@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tag, Tooltip, Typography, Space, Button } from 'antd';
+import { Tag, Tooltip, Typography, Space, Button, Dropdown } from 'antd';
 import type { TabDef } from '../../../services/tabJoinFormulaService';
 import { comparable } from '../../component/formulaSerialize';
 
@@ -73,6 +73,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
         {tabDefs.map((def, idx) => {
           const selfRKF = selfRowKeyFields ?? [];
           const isComparable = tabComparable(selfRKF, def.rowKeyFields ?? []);
+          const sourceFiner = isComparable && (def.rowKeyFields ?? []).length > selfRKF.length;
 
           return (
             <div
@@ -137,33 +138,31 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                 <Space wrap style={{ gap: 6 }}>
                   <span style={{ fontSize: 11, color: '#8a909a' }}>明细</span>
                   {def.detailFields.map((f) => {
-                    const disabled = !isComparable;
-                    const tooltipTitle = disabled
-                      ? `行键 [${(def.rowKeyFields ?? []).join('+')}] 与宿主 [${selfRKF.join('+')}] 不可比；可改用「${def.alias}(总计)」`
-                      : '';
+                    if (!isComparable) {
+                      return (
+                        <Tooltip key={f} title={`行键 [${(def.rowKeyFields ?? []).join('+')}] 与宿主 [${selfRKF.join('+')}] 不可比；可改用「${def.alias}(总计)」`}>
+                          <Tag style={{ cursor: 'not-allowed', color: '#bfbfbf', background: '#fafafa',
+                            borderColor: '#f0f0f0', margin: 0, fontSize: 12, padding: '3px 9px', userSelect: 'none' }}>{f}</Tag>
+                        </Tooltip>
+                      );
+                    }
+                    if (sourceFiner) {
+                      const items = ['SUM', 'AVG', 'MAX', 'MIN', 'COUNT'].map((fn) => ({
+                        key: fn, label: fn, onClick: () => onInsert(`${fn}([${def.alias}.${f}])`),
+                      }));
+                      return (
+                        <Dropdown key={f} menu={{ items }} trigger={['click']}>
+                          <Tag style={{ cursor: 'pointer', background: '#fff', borderColor: '#91caff',
+                            margin: 0, fontSize: 12, padding: '3px 9px', borderStyle: 'solid', userSelect: 'none' }}>
+                            {f} <span style={{ fontSize: 10, color: '#1677ff' }}>Σ需聚合</span>
+                          </Tag>
+                        </Dropdown>
+                      );
+                    }
                     return (
-                      <Tooltip key={f} title={tooltipTitle}>
-                        <Tag
-                          style={{
-                            cursor: disabled ? 'not-allowed' : 'pointer',
-                            color: disabled ? '#bfbfbf' : undefined,
-                            borderColor: disabled ? '#f0f0f0' : undefined,
-                            background: disabled ? '#fafafa' : '#fff',
-                            margin: 0,
-                            fontSize: 12,
-                            padding: '3px 9px',
-                            borderStyle: 'solid',
-                            userSelect: 'none',
-                          }}
-                          onClick={
-                            disabled
-                              ? undefined
-                              : () => onInsert(`[${def.alias}.${f}]`)
-                          }
-                        >
-                          {f}
-                        </Tag>
-                      </Tooltip>
+                      <Tag key={f} onClick={() => onInsert(`[${def.alias}.${f}]`)}
+                        style={{ cursor: 'pointer', background: '#fff', margin: 0, fontSize: 12,
+                          padding: '3px 9px', borderStyle: 'solid', userSelect: 'none' }}>{f}</Tag>
                     );
                   })}
                 </Space>
