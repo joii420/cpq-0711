@@ -20,6 +20,13 @@
 > - **K. 拆分交付**：需求 2 → 需求 3+4 → 需求 1，分三批（详见实施顺序）。
 > - **L. 需求3 真源**：左栏"误显示编号"在前端 `TabFieldMatrix.tsx:136`（渲染 `def.alias` 未渲染 `componentName`）；后端 `componentsToTabDefs` 数据已够，**主改前端渲染那一行** + 后端补 `field_type` 过滤。
 > - **M. `parseActiveRowKeySig` 废除后**，`TabFieldMatrix` 顶部"行键锁定状态条"文案 + `sameClass/rkActive` 高亮逻辑整体重写为"每页签独立可比/置灰"。
+>
+> **v6 增量（第五轮评审补正；评审判定"基本收敛、小改即可非返工"）**：
+> - 🔴 **N. 草稿"公式 + 行键"双注入（唯一方向性残留）**：试算注入草稿公式后，宿主逐行分组的 `computeRowKey` 读 `loadRowKeyFieldsNode`（**持久化行键**），**没读抽屉草稿行键** → 改行键场景"试算 ≠ 保存后渲染"。修法：试算入参**同时带草稿 `tokens` + 草稿 `selfRowKeyFields`**，后端覆盖宿主 `rkfByComp.get(hostCid)`。见"草稿上下文注入"。
+> - O. **SUBTOTAL 试算收敛单值**（非逐行表）；多实例宿主按 **componentId+sortOrder** 定位（防 AP-40）。
+> - P. 新增 **token 试算端点**（不改旧 `dryRunForComponent` 签名，EXCEL 旧路径零风险保留）。
+> - Q. 命门 0 升级为"**试算 vs `refreshQuoteCardValues` 渲染对拍**逐行相等"。
+> - R. **批 3 必须基于批 2 已合并的 master 起 worktree**（两批都动 `TabFieldMatrix`，串行避冲突）。
 
 ## 现状认知（实地核查结论，纠正 v1）
 
@@ -117,11 +124,17 @@
 **问题**：现状 NORMAL/SUBTOTAL 的试算预览 `dryRunForComponent → ExcelViewService.dryRunTabFormula → TabJoinPlanEvaluator.evaluateColumn`（**B 引擎，全外连语义**），而真实卡片渲染走 `CardSnapshotService → FormulaCalculator`（**token 引擎，宿主行驱动**）。两套语义不同 → **试算值可能 ≠ 渲染值**（尤其"粗 host × 细 source 聚合"）。
 
 **方案**：NORMAL/SUBTOTAL 试算**改走 token 引擎,复用渲染装配**：
-- 后端新增 token 试算路径：以样本卡 `lineItem` 为上下文，**复用 `CardSnapshotService` PASS2 的 crossTabRows 装配**（拓扑序逐兄弟组件算 `resolvedRows` 存 `crossTabRows`），再对宿主组件用 `FormulaCalculator.calculate(..., crossTabRows)` **逐宿主行**求值。
-- **入参改 token 数组**（当前抽屉对 NORMAL/SUBTOTAL 已 `kind:'tokens'` 保存；试算同样传 token，不再走 `buildColumn` 的 EXCEL 列形态）。
-- **结果是逐行的**（NORMAL 公式每宿主行一个值）→ 试算 UI 展示**逐行结果**（小表），不再是单值标量。
-- `TabJoinPlanEvaluator` 试算路径**仅留 EXCEL**。
-- **验收**：同一条公式，试算逐行值 == 该卡片渲染逐行值（补一组"试算 vs 渲染对拍"断言）。
+- 后端**新增 token 试算端点**（v6-P，不改旧 `dryRunForComponent` 签名；EXCEL 仍走旧 `TabJoinPlanEvaluator` 路径）。以样本卡 `lineItem` 为上下文，照 `refreshQuoteCardValues(li)` 单卡渲染范本：`loadComponentsSnapshot(templateId)` → 展开 baseRows → `assembleTabsWithFormulaResults(snapshot, ...)`（已与 quotation 持久化解耦，有 test seam）→ 取宿主 tab 的 `formulaResults`（逐行）。
+- **结果逐行**（NORMAL 每宿主行一值）→ 试算 UI 展示**逐行小表**；**SUBTOTAL 组件收敛为单值展示**（v6-O，其业务语义是整页签标量）。
+- `TabJoinPlanEvaluator` 试算**仅留 EXCEL**。
+
+#### 🔴 草稿上下文注入（v6-N，进实现前唯一必拍死的设计）
+试算的是抽屉里**未保存的草稿**，但装配默认读持久化数据。必须**双注入**：
+1. **草稿公式**：深拷贝 snapshot，按 **`componentId + sortOrder`** 定位宿主 tab（v6-O，同 cid 多实例防 AP-40 反向污染），把其 `formulas` 节点替换为草稿 `tokens`；兄弟 source 组件 `formulas` 保持已存版本。
+2. **草稿行键**：`computeRowKey` 默认用 `loadRowKeyFieldsNode(cid)`=**持久化行键**。试算入参**带草稿 `selfRowKeyFields`**，后端覆盖宿主 `rkfByComp.get(hostCid)`=草稿行键。否则草稿 `match[]`(用草稿行键 build)与宿主分组键(持久化)错配 → 试算≠保存后渲染。
+3. 试算入参 = `{ componentId, lineItemId, tokens(草稿), selfRowKeyFields(草稿) }`。
+
+- **🔴 验收（命门 0，v6-Q）**：同一 `lineItem`，token 试算逐行值 == `refreshQuoteCardValues` 渲染逐行值（直接两条线对拍断言相等）。
 
 ### 向后兼容（存量不管，但实际低风险）
 - 旧 `cross_tab_ref` token 的 `match[]` 是位置配对生成的。旧模型只允许"行键完全相同"（其它置灰），**同序同集**时位置配对 == 公共字段名配对 → 旧 token 仍正确。
@@ -179,10 +192,10 @@ did you forget to annotate your entity with @Entity?
 
 - **第 1 批 · 需求 2**（独立 worktree、低风险、先交付）：lambda 修 + 业务契约回归 IT（不强求"先红"）。
 - **第 2 批 · 需求 3 + 4**（独立 worktree、纯 UI/展示、不碰序列化/求值）：需求3 主改前端 `TabFieldMatrix:136` 渲染 `componentName[alias]` + 后端 `componentsToTabDefs` 补 `field_type` 过滤；需求4 行内命名 + 配置按钮。
-- **第 3 批 · 需求 1**（独立 worktree、触基线、最重）：行键宿主分组 + FN 聚合 + 试算改 token 引擎。**动代码前三决策已拍死**：①试算走 token 引擎（H）②FN 只做单列（I）③SUM 回显归一（J）。
+- **第 3 批 · 需求 1**（独立 worktree、触基线、最重；**必须基于批 2 已合并的 master 起 worktree**，因两批都动 `TabFieldMatrix`，v6-R）：行键宿主分组 + FN 聚合 + 试算改 token 引擎。**动代码前决策已拍死**：①试算走 token 引擎（H）②FN 只做单列（I）③SUM 回显归一（J）④草稿公式+行键双注入（N）。
 
 **测试（重点：试算=渲染同源 + 三视图一致 + 双引擎对等；🔴 命门项先写失败测试 TDD）**
-   - **🔴 TDD 命门 0（v5）**：**试算 vs 渲染对拍**——同一公式同一样本卡，token 试算逐行值 == `CardSnapshotService` 渲染逐行值。
+   - **🔴 TDD 命门 0（v5/v6-Q）**：**试算 vs 渲染对拍**——同一公式同一样本 `lineItem`，token 试算逐行值 == `refreshQuoteCardValues` 渲染逐行值；含"草稿改行键"场景（验证 v6-N 双注入）。
    - **🔴 TDD 命门 1**：前后端 mappability 各加「**任何 cross_tab_ref 且 match 为空 → 拒绝**」用例（含 NONE，先红）；`evalCrossTab`+`formulaEngine.ts` 加防御性断言「空 match 不得进聚合/广播」。
    - **🔴 TDD 命门 2**：聚合/总计三语义用例——`SUM([a.f])`=宿主分组、`[a(总计)]`=整页签小计、`[a.subtotalCol]`=组件小计列，断言聚合范围不同。
    - **🔴 FN round-trip 归一用例（v5-J）**：`AVG/MAX/MIN/COUNT([a.f])` 往返同串；**SUM 回显归一为 `SUM([a.f])`**（改老 `(总计)` 预期）；往返两次稳定(idempotent)；`FN(` 内含运算符/多引用 → 报错（单列收口 v5-I）。
