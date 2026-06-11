@@ -6,46 +6,7 @@ import { comparable } from '../../component/formulaSerialize';
 const { Text } = Typography;
 
 // ──────────────────────────────────────────────
-// 工具函数：解析表达式中的明细令牌，得到当前锁定行键类签名
-// 令牌格式：明细 [alias.field]，列总计 [alias.field(总计)]，页签总计 [alias(总计)]
-// ──────────────────────────────────────────────
-export function parseActiveRowKeySig(
-  expression: string,
-  tabDefs: TabDef[],
-): string | null {
-  const TOKEN_RE = /\[([^\[\]]+)\]/g;
-  let match: RegExpExecArray | null;
-  const detailAliases: string[] = [];
-
-  TOKEN_RE.lastIndex = 0;
-  while ((match = TOKEN_RE.exec(expression)) !== null) {
-    const body = match[1].trim();
-    // 跳过总计令牌（结尾含 (总计)）
-    if (body.endsWith('(总计)')) continue;
-    // 明细令牌：alias.field
-    if (body.includes('.')) {
-      const alias = body.slice(0, body.indexOf('.'));
-      const field = body.slice(body.indexOf('.') + 1);
-      // 跳过组件小计列引用 [alias.subtotalCol]：序列化为 component_subtotal（标量），
-      // 非逐行明细，不应触发行键锁（否则会误把后续其它页签明细置灰）。
-      const def = tabDefs.find((d) => d.alias === alias);
-      if (def && (def.subtotalCols ?? []).includes(field)) continue;
-      detailAliases.push(alias);
-    }
-  }
-
-  if (detailAliases.length === 0) return null;
-
-  // 取第一个明细令牌对应的 alias，查其 rowKeyFields 作为锁定签名
-  const firstAlias = detailAliases[0];
-  const def = tabDefs.find((d) => d.alias === firstAlias);
-  if (!def || !def.rowKeyFields.length) return null;
-
-  return def.rowKeyFields.join('+');
-}
-
-// ──────────────────────────────────────────────
-// 宿主可比判定（v4-D/v4-M 新机制）
+// 宿主可比判定（v4-D/v4-M 新机制；已废除 parseActiveRowKeySig"首令牌锁签名"旧机制）
 // ──────────────────────────────────────────────
 /** 宿主可比：source 行键与宿主 selfRowKeyFields 集合包含(⊆/⊇);空行键 source 不可比(只留总计) */
 export function tabComparable(selfRowKeyFields: string[], sourceRowKeyFields: string[]): boolean {
