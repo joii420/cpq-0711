@@ -4,6 +4,15 @@
 
 ---
 
+### [2026-06-11] 样本卡端点 500 修复(Panache findById 方法引用坑) | ComponentSampleCardService.java + ComponentSampleCardServiceQuarkusTest.java | 连表公式重设计批1(spec: 2026-06-11-tabjoin-rowkey-host-grouping-design.md)
+
+- **现象**: 页签组件「添加公式 → 配置页签连表公式」抽屉弹出后报「样本卡片加载失败，请刷新后重试」。
+- **根因**(后端日志真实堆栈): `ComponentSampleCardService:85/88` 用 Panache 方法引用 `QuotationLineItem::findById` / `Quotation::findById`。方法引用编译成 invokedynamic, 绑定到**未增强的 `PanacheEntityBase` 占位静态方法** → 抛 `IllegalStateException: ...did you forget to annotate your entity with @Entity?` → 端点 500 → 前端 `.catch` 弹 warning。仅当组件被 ≥1 条 `quotation_line_component_data` 引用(cds 非空、越过空分支)时触发; 单测只覆盖纯函数 `projectionsToSampleCards`、IT 只覆盖模板级端点 → 组件级碰库路径带病上线。
+- **修复**: 改 lambda `id -> QuotationLineItem.findById(id)` / `id -> Quotation.findById(id)`(lambda 体内是正常增强调用点, 与同仓 `ExcelViewService.sampleCardsOfTemplate:897` 一致)。**通用教训**: Panache `Entity::findById` 等静态方法**不能用方法引用**(`computeIfAbsent(k, Entity::findById)` 必踩), 必须 lambda 包一层。
+- **回归 IT**: `ComponentSampleCardServiceQuarkusTest`(@QuarkusTest + @TestTransaction 回滚): 有引用返正确样本卡(经两个 findById)/无引用返空/null 返空, 3 绿。注: @Entity 异常在干净构建下复现不出红(依赖增强时序), 故 IT 测**业务契约绿**而非"先复现红"。
+- **流程**: 隔离 worktree → mvnw 跑 IT 3 绿 → FF 合并 master → 端点 401(auth, 非 500)+ 日志无新增 @Entity 异常 → 清理 worktree。
+- **背景**: 此为"页签连表公式行键宿主分组重设计"(经 6 版 spec / 5 轮独立 architect 评审收敛)的**批 1**; 后续批 2(抽屉显示组件名[编号]+过滤文本字段 / 添加公式行内命名分离)、批 3(行键宿主分组+包含关系+FN 聚合+试算改 token 引擎)。
+
 ### [2026-06-11] 测试数据清理 + 组件导入/导出按钮补回 + 停用组件红色背景 | ComponentManagement.tsx / styles.css | spec: docs/superpowers/specs/2026-06-11-data-cleanup-and-component-import-export-design.md
 
 - **背景**: 用户做一次测试数据收敛 + 两处 UI 修复（5 项需求，经 10 轮澄清确认；决策记录见 spec）。
