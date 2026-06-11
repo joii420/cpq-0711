@@ -150,6 +150,34 @@ function lex(expr: string): RawToken[] {
 }
 
 // ─────────────────────────────────────────────
+// makeCrossTabRef helper
+// ─────────────────────────────────────────────
+
+/**
+ * Build a cross_tab_ref FormulaToken from an alias + field + agg.
+ * Throws if the alias is not found in tabDefs or lacks a componentId.
+ */
+function makeCrossTabRef(
+  alias: string,
+  field: string,
+  agg: FormulaToken['agg'],
+  tabDefs: TabDef[],
+  selfRowKeyFields?: string[],
+): FormulaToken {
+  const tabDef = tabDefs.find((d) => d.alias === alias);
+  if (!tabDef) throw new Error(`表达式中引用了未知页签别名 "${alias}"`);
+  if (!tabDef.componentId) throw new Error(`页签 "${alias}" 缺少 componentId`);
+  return {
+    type: 'cross_tab_ref',
+    source: tabDef.componentId,
+    sourceLabel: tabDef.componentName ?? alias,
+    target: field,
+    agg: agg ?? 'NONE',
+    match: buildMatch(tabDef.rowKeyFields ?? [], selfRowKeyFields),
+  };
+}
+
+// ─────────────────────────────────────────────
 // expressionToTokens
 // ─────────────────────────────────────────────
 
@@ -168,7 +196,48 @@ export function expressionToTokens(
   const rawTokens = lex(expr);
   const result: FormulaToken[] = [];
 
-  for (const raw of rawTokens) {
+  let k = 0;
+  while (k < rawTokens.length) {
+    const raw = rawTokens[k];
+
+    // ── FN([alias.field]) 前瞻折叠 ──
+    // Pattern: func paren_open bracket_expr paren_close
+    if (raw.kind === 'func') {
+      const fnName = raw.name as NonNullable<FormulaToken['agg']>;
+      const next1 = rawTokens[k + 1];
+      const next2 = rawTokens[k + 2];
+      const next3 = rawTokens[k + 3];
+
+      // Validate: must be followed by ( bracket_expr )
+      if (!next1 || next1.kind !== 'paren_open') {
+        throw new Error(`函数 ${fnName} 后必须紧跟 '('`);
+      }
+      // next2 must be exactly ONE bracket_expr (no operators or extra tokens before close)
+      if (!next2 || next2.kind !== 'bracket_expr') {
+        throw new Error(`${fnName}() 只支持单列引用，括号内不能含运算符或其他表达式`);
+      }
+      // next3 must be paren_close — if not, there are multiple tokens inside parens
+      if (!next3 || next3.kind !== 'paren_close') {
+        throw new Error(`${fnName}() 只支持单列引用，括号内不能含多个 token 或运算符`);
+      }
+
+      // Validate: bracket_expr body must be a cross-tab reference (contains '.')
+      const body = next2.body.trim();
+      if (!body.includes('.')) {
+        throw new Error(
+          `${fnName}() 内只支持跨页签明细引用 [alias.field]，不支持裸字段 [${body}]`,
+        );
+      }
+
+      const dotIdx = body.indexOf('.');
+      const alias = body.slice(0, dotIdx);
+      const fieldPart = body.slice(dotIdx + 1);
+
+      result.push(makeCrossTabRef(alias, fieldPart, fnName, tabDefs, selfRowKeyFields));
+      k += 4; // consume: func + paren_open + bracket_expr + paren_close
+      continue;
+    }
+
     switch (raw.kind) {
       case 'whitespace':
         // already skipped in lex
@@ -236,14 +305,9 @@ export function expressionToTokens(
               label: `${tabDef.componentName ?? alias}·${fieldPart}`,
             });
           } else {
-            result.push({
-              type: 'cross_tab_ref',
-              source: tabDef.componentId,
-              sourceLabel: tabDef.componentName ?? alias,
-              target: fieldPart,
-              agg: isAgg ? 'SUM' : 'NONE',
-              match: buildMatch(tabDef.rowKeyFields ?? [], selfRowKeyFields),
-            });
+            result.push(
+              makeCrossTabRef(alias, fieldPart, isAgg ? 'SUM' : 'NONE', tabDefs, selfRowKeyFields),
+            );
           }
         } else {
           // Check for whole-tab total: [alias(总计)] (no dot but ends in (总计))
@@ -289,6 +353,8 @@ export function expressionToTokens(
         // Exhaustive check
         break;
     }
+
+    k += 1;
   }
 
   return result;

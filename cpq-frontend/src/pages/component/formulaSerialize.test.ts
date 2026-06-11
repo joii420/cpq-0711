@@ -792,3 +792,42 @@ describe('lex — 函数名 token', () => {
     expect(() => __lexForTest('FOO([A.f])')).toThrow(/无法识别/);
   });
 });
+
+// ── Task 3: FN() 状态机 ──
+describe('expressionToTokens — FN() 单列聚合', () => {
+  const tabs: TabDef[] = [
+    { alias: 'JG', tabKey: 'jg', componentId: 'cid-jg', componentName: '加工',
+      rowKeyFields: ['工序', '子件'], detailFields: ['工时'], subtotalCols: [] },
+  ];
+  it('SUM([JG.工时]) → 单个 cross_tab_ref agg=SUM，吞外层括号', () => {
+    const t = expressionToTokens('SUM([JG.工时])', tabs, ['子件']);
+    expect(t).toHaveLength(1);
+    expect(t[0]).toMatchObject({ type: 'cross_tab_ref', source: 'cid-jg', target: '工时',
+      agg: 'SUM', match: [{ a: '子件', b: '子件' }] });
+  });
+  it('AVG/MAX/MIN/COUNT 各自映射 agg', () => {
+    for (const fn of ['AVG', 'MAX', 'MIN', 'COUNT'] as const) {
+      const t = expressionToTokens(`${fn}([JG.工时])`, tabs, ['子件']);
+      expect(t[0]).toMatchObject({ type: 'cross_tab_ref', agg: fn });
+    }
+  });
+  it('外层算式保留：[本] * SUM([JG.工时]) → field, op, cross_tab_ref', () => {
+    const t = expressionToTokens('[本] * SUM([JG.工时])', tabs, ['子件']);
+    expect(t.map(x => x.type)).toEqual(['field', 'operator', 'cross_tab_ref']);
+  });
+  it('FN 内运算符 → 报错（单列收口 v5-I）', () => {
+    expect(() => expressionToTokens('SUM([JG.工时]+[JG.工时])', tabs, ['子件']))
+      .toThrow(/只支持单列|单列|不支持/);
+  });
+  it('FN 内多引用 → 报错', () => {
+    expect(() => expressionToTokens('SUM([JG.工时][JG.工时])', tabs, ['子件']))
+      .toThrow(/只支持单列|单列|不支持/);
+  });
+  it('FN 内非明细（裸字段）→ 报错', () => {
+    expect(() => expressionToTokens('SUM([本])', tabs, ['子件'])).toThrow();
+  });
+  it('旧 [JG.工时(总计)] 仍解析为 agg=SUM（兼容）', () => {
+    const t = expressionToTokens('[JG.工时(总计)]', tabs, ['子件']);
+    expect(t[0]).toMatchObject({ type: 'cross_tab_ref', agg: 'SUM', target: '工时' });
+  });
+});
