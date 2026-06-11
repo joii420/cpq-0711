@@ -4,6 +4,20 @@
 
 ---
 
+### [2026-06-11] 测试数据清理 + 组件导入/导出按钮补回 + 停用组件红色背景 | ComponentManagement.tsx / styles.css | spec: docs/superpowers/specs/2026-06-11-data-cleanup-and-component-import-export-design.md
+
+- **背景**: 用户做一次测试数据收敛 + 两处 UI 修复（5 项需求，经 10 轮澄清确认；决策记录见 spec）。
+- **数据清理（线上库单事务 COMMIT，不可逆无备份，按用户决策）**:
+  - 组件目录 14→3（**严格按字面**只留 报价模板/报价模板V2/核价模板；同名「…组件」库一并删，决策 9-B）；组件 162→23（含 4 个 directory_id=NULL 孤儿，用「不在保留目录下的全部组件」口径避开 SQL `NOT IN NULL` 漏删坑）。
+  - 模板 122→38：删 84 张「`template_component` 中引用任一被删组件」的模板（含混合引用，决策 4-A）；连带 component_sql_view(32)/template_sql_view(28)/template_global_variable_binding(15)/product_template_binding(1)；`costing_template.linked_template_id` 指向被删模板的置 NULL(8)；存活模板验证无悬空组件引用=0。
+  - 报价单 574→0 + 全部 quotation_* 子表（line_item 1642 / line_component_data 12341 / view_structure 734 等）+ 核价单实例 costing_summary/result；**保留 V6 基础资料**（costing_part_*/价格/汇率，决策 10-A）；`import_record.quotation_id` 置 NULL(146)。
+  - 客户 31→3（施耐德/罗克韦尔/苏州西门子）；连带删挂测试客户的 mat_process(5)/customer_contact(2)/plating_fee(1)/mat_fee(1)；保留模板若绑被删客户则 customer_id 置 NULL（本次=0）。
+  - **执行顺序**: 任务2(清报价单解除对模板/客户引用) → 任务1(组件/模板/目录) → 任务3(客户)，全程单事务先 SELECT count 预览再 COMMIT。
+- **任务4 组件导入/导出按钮补回**: 根因 = commit `0722079`（组件管理改 Master-Detail 双栏）弃用 `ComponentTree.tsx` 不再挂载，而导出按钮+导入抽屉原长在其中随之消失；后端 `/component-directories/{id}/export|import`、`componentService.exportDirectory/importPreview/importCommit`、`ComponentImportDrawer.tsx` 全在。修法：`MasterList.renderDir` 每个目录标题行 `cmm-dir-head` 右侧加 ExportOutlined/ImportOutlined 两个 text 按钮（stopPropagation 防折叠），复用既有 service + 抽屉，导入成功 `onRefresh`=loadTree。
+- **任务5 停用组件红色背景**: `renderCard` 当 `comp.status==='DISABLED'` 加 `cmm-card-disabled` class；卡片原为渐变底白字，故 CSS 覆盖为淡红底(#fff1f0)+左红条(4px #ff4d4f)+深红文字(#a8071a) 保可读，仍可点击重新启用。
+- **自检**: tsc --noEmit 0 错 ✅；esbuild transform ComponentManagement.tsx OK ✅；merge 后 Vite 200（ComponentManagement.tsx/styles.css/主入口）✅。纯展示层改动，不在 AP-44 字段类型联动清单 / E2E 强制触发清单内。
+- **流程**: 隔离 worktree 分支开发 → tsc+esbuild 自检 → 用户确认 → FF 合并 master → Vite 200 复检 → ExitWorktree 清理。
+
 ### [2026-06-10] Excel 页签连表公式列 TAB_JOIN_FORMULA（v2 行键自动对齐方案）| TabJoinPlanEvaluator.java / SafeArithmetic.java / ExcelViewService.java / TemplateExcelViewResource.java / TabJoinFormulaDrawer.tsx + tabjoin/* / ExcelViewConfigTab.tsx / tabJoinFormulaService.ts | spec+plan: docs/superpowers/{specs,plans}/2026-06-10-excel-tab-join-formula*; 原型 docs/html/excel-tab-join-formula-builder-v2.html
 
 - **目标**: Excel 模板视图列新增来源 `TAB_JOIN_FORMULA`，单卡片内多页签按行键自动对齐算出一个单值写入单元格 + 可视化构建器 + 样本试算。
