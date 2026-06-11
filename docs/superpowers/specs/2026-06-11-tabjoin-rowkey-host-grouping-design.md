@@ -2,7 +2,16 @@
 
 > 日期：2026-06-11 ｜ 状态：**v3（经两轮独立架构评审 + 实地代码核查）** ｜ 前提：**存量数据不管（无迁移、无双语义共存）**
 > v1 已废：锚错引擎 `TabJoinPlanEvaluator`。v2 锚对 `cross_tab_ref` 引擎但有 5 处"必改"被乐观地说成"不动"。
-> **v3 增量（第二轮评审补正）**：①后端+前端 validator 增「空 match 聚合 → 拒绝」正确性兜底；②补 `(总计)` 双语义表；③显式列出 `selfRowKeyFields` prop 链改动；④需求3 定调"后端过滤、不扩协议"；⑤需求2 IT 改测业务契约（不强求"先复现红"）；⑥双份 mappability 同步 + 置灰用例重写；⑦存量等价收紧为"同序同集"。
+> **v3 增量（第二轮评审补正）**：①后端+前端 validator 增「空 match 聚合 → 拒绝」；②补 `(总计)` 双语义表；③`selfRowKeyFields` prop 链；④需求3 后端过滤；⑤需求2 IT 测业务契约；⑥双份 mappability 同步 + 置灰用例重写；⑦存量收紧为"同序同集"。
+>
+> **v4 增量（第三轮评审补正 + 用户范围决定）**：
+> - 🔴 **A. 需求3 锚错文件纠正**：组件抽屉页签来自 **`ComponentTabDefService.componentsToTabDefs`（component-scoped，`alias=c.code` 即"误显示编号"真源）**，**不是** `ExcelViewService.parseTabDefs`（template/Excel-scoped）。需求3 全部改动落 `componentsToTabDefs`。
+> - 🔴 **B. 聚合范围 = 全函数（用户定）**：SUM/AVG/MAX/MIN/COUNT 全做，按函数字面语义。**现状序列化只支持 `(总计)`→SUM**，AVG/MAX/MIN/COUNT 需新建"UI 聚合选择 + `expressionToTokens` 解析 + `tokensToDrawerExpression` 回显（round-trip）"三处通道，纳入本期。
+> - 🔴 **C. validator 规则收敛**：拒绝"**任何 cross_tab_ref 且 match 为空**"（含 `agg=NONE`——否则 1 源行静默广播错值 / 多源行 ERR 吞 0）。
+> - D. `parseActiveRowKeySig` 废"首个明细令牌锁签名"、改**纯按宿主可比**判定（否则多个不同细 source 无法共存）。
+> - E. 空行键 source（SUBTOTAL）：只允许整页签总计、明细一律置灰。
+> - F. 补"漏匹配缺补 0"边界 + 声明"存量 token 不重跑 `buildMatch`（仅新建/编辑走新配对；除非 `refreshSnapshotsByComponent` 重序列化）"。
+> - G. `(总计)` 双语义表补第三条（`[alias.subtotalCol]`→component_subtotal）。
 
 ## 现状认知（实地核查结论，纠正 v1）
 
@@ -40,42 +49,55 @@
   |---|---|---|
   | 宿主自身字段 | 取本行值 | `field` token（不变）|
   | **粗 / 同级**（source 键 ⊆ host 键）| 广播 / 1:1（host 行命中 ≤1 source 行）| `cross_tab_ref` agg=NONE（裸明细可用）|
-  | **细**（source 键 ⊋ host 键）| 按宿主键**聚合**（host 行命中多 source 行）| `cross_tab_ref` agg=SUM(默认)/AVG/MAX/MIN/COUNT，**强制显式** |
+  | **细**（source 键 ⊋ host 键）| 按宿主键**聚合**（host 行命中多 source 行）| `FN([alias.field])`，FN∈SUM/AVG/MAX/MIN/COUNT，**强制显式选函数**（裸明细置灰）|
   | **不可比** | 置灰（仅 source 整页签总计可用）| —— |
 - **不笛卡尔**：多个细 source 各自独立按宿主键聚合，互不相乘。
 
-### ⚠️ `(总计)` 双语义表（命门，UI 改造必须区分）
-"总计"在序列化时走**两条不同 token、不同聚合范围**，不可混淆：
+### ⚠️ 聚合 / 总计 语义表（命门，UI 改造必须区分三条路径）
+"聚合"与"总计"序列化时走**三条不同 token、不同聚合范围**，不可混淆：
 
 | 抽屉写法 | 序列化 token | 聚合范围 | 用途 |
 |---|---|---|---|
-| `[加工.工时(总计)]`（字段+总计）| `cross_tab_ref` agg=SUM（match 按公共行键）| **按宿主行分组** SUM | 细 source 字段聚合贴回宿主行（本方案模型 A 默认）|
+| `[加工.工时]`（裸明细）| `cross_tab_ref` agg=NONE | 单行匹配（>1→ERR）| 粗/同级 source 1:1/广播 |
+| **`FN([加工.工时])`** FN∈{SUM,AVG,MAX,MIN,COUNT}（**v4 新增函数语法**）| `cross_tab_ref` agg=FN（match 按公共行键）| **按宿主行分组**聚合 | 细 source 字段聚合贴回宿主行（模型 A）。兼容旧 `[加工.工时(总计)]`=SUM |
 | `[加工(总计)]`（裸页签+总计）| `component_subtotal`（标量）| **整页签全表**小计 | 跨页签拿一个全局小计标量 |
+| `[加工.小计列]`（field∈subtotalCols）| `component_subtotal`（标量，**v4 补列**）| 整页签该列小计 | 组件小计列引用 |
 
-**UI 规则**：不可比页签**只留 `[alias(总计)]`（整页签小计）入口**，**禁止**给它 `[alias.field(总计)]`（宿主分组）入口——因为不可比 → 无公共行键 → match 为空（见下方正确性兜底），宿主分组会退化成全表，语义错且无意义。
+**v4 序列化改造**（B 范围）：新增函数语法 `FN([alias.field])`：
+- `expressionToTokens` 解析 `SUM/AVG/MAX/MIN/COUNT(...)` → `cross_tab_ref agg=FN`（保留旧 `(总计)`→SUM 兼容）；
+- `tokensToDrawerExpression` 反向回显 `agg=FN` → `FN([alias.field])`（现状只会回显成 `(总计)`，会丢 AVG/MAX 语义，必须改）；
+- lexer 识别函数名 token（现遇字母即抛错）。
+
+**UI 规则**：不可比页签**只留 `[alias(总计)]`（整页签小计）入口**，**禁止**给它宿主分组入口——不可比 → 无公共行键 → match 为空 → 被 validator 拒。
 
 ### 求值示例（宿主 投料`[子件]` 金额=10；细 source 加工`[子件,工序]` 工时 3、5）
-- `[投料.金额] * [加工.工时(总计)]` → 加工按子件 SUM=8 → 螺丝行 `10*8=80`
+- `[投料.金额] * SUM([加工.工时])` → 加工按子件 SUM=8 → 螺丝行 `10*8=80`
 - `[投料.金额] / AVG([加工.工时])` → `10 / 4 = 2.5`
-- 裸 `[加工.工时]`（细 source、未聚合）→ UI 置灰，不允许（否则运行时 ERR）
+- `MAX([加工.工时])` → 5；`COUNT([加工.工时])` → 2
+- 裸 `[加工.工时]`（细 source、未聚合）→ UI 置灰，不允许（否则运行时多命中 ERR）
+- **缺补 0 边界（v4 补）**：宿主某行（如 子件=垫片）在 source 无匹配行 → hits 为空 → 聚合/广播均返 **0**（与 RECORD 2026-06-10「全外连·缺补 0」一致，非报错）
 
 ### 改动清单
 **前端**
-- `formulaSerialize.ts` `buildMatch`：位置 zip → **公共字段名交集配对**（顺序无关）。无公共字段 → 返回 `[]`（交给下方 validator 拒绝）。
-- `TabFieldMatrix.tsx` `parseActiveRowKeySig` / 置灰：基准改为宿主 `selfRowKeyFields`；按集合 ⊆/⊇ 判可比；细 source 裸明细置灰、仅留聚合入口；不可比整页签明细置灰（仅 `[alias(总计)]` 整页签小计保留，见双语义表）。
-  - **prop 链改动（v3 补列）**：`parseActiveRowKeySig` 当前签名 `(expression, tabDefs)` **无 selfRowKeyFields 入参**、`TabFieldMatrix.Props` 也**无该 prop**。需新增 prop 链：`ComponentManagement`(已持 `rowKeyFields`) → `TabJoinFormulaDrawer`(已持 `selfRowKeyFields`) → **`TabFieldMatrix`(新增 prop)** → **`parseActiveRowKeySig`(新增入参)**。
-- 抽屉引用细 source 字段时**强制选聚合函数**（默认 SUM，可选 AVG/MAX/MIN/COUNT）——需在 chip 交互上加聚合选择（现有"(总计)"=SUM，扩出其余聚合）。
-- `formulaEngine.ts`：**求值逻辑不改**（消费新 `token.match`+`agg` 即自洽，已实地证实按宿主行 filter→聚合）；仅随夹具回归验证。
+- `formulaSerialize.ts` `buildMatch`：位置 zip → **公共字段名交集配对**（顺序无关）。无公共字段 → 返回 `[]`（交给 validator 拒绝）。
+- **🔴 聚合函数序列化（v4，B 范围）**：
+  - `expressionToTokens`：新增 `FN([alias.field])`（FN∈SUM/AVG/MAX/MIN/COUNT）解析 → `cross_tab_ref agg=FN`；保留旧 `[alias.field(总计)]`→SUM 兼容；lexer 识别函数名（现遇字母抛错）。
+  - `tokensToDrawerExpression`：`agg=FN` 反向回显 `FN([alias.field])`（现状把任意 agg 回显成 `(总计)`，会丢 AVG/MAX 语义 → round-trip 破坏，必须改）。
+- `TabFieldMatrix.tsx`：
+  - 置灰基准改为宿主 `selfRowKeyFields`；按集合 ⊆/⊇ 判可比；细 source 裸明细置灰、仅留聚合入口（chip 上加 SUM/AVG/MAX/MIN/COUNT 选择）；**空行键 source（SUBTOTAL，rowKeyFields=[]）→ 明细一律置灰、只留 `[alias(总计)]` 整页签小计**（v4-E）。
+  - **🔴 `parseActiveRowKeySig` 重构（v4-D）**：废除"取表达式首个明细令牌锁签名"机制，改为**纯按宿主可比**——每个 tab 独立判 `comparable(def.rowKeyFields, selfRowKeyFields)`，与表达式已有内容无关（否则首令牌锁死、多个不同细 source 无法共存）。
+  - **prop 链（v3）**：`ComponentManagement`(持 `rowKeyFields`) → `TabJoinFormulaDrawer`(已持 `selfRowKeyFields`，但**未转发**) → `TabFieldMatrix`(新增 prop) → `parseActiveRowKeySig`(新增入参)。
+- `formulaEngine.ts`：**求值逻辑不改**（消费 `token.match`+`agg`，已证实按宿主行 filter→聚合）；随夹具回归。
 - `formulaSerialize.ts` `checkMappable`（前端 gate）：与后端 validator **同步**改新规则（见下）。
 
 **后端**
-- `FormulaCalculator.evalCrossTab`：**求值逻辑不改**（消费 `token.match`+`agg`）；随夹具回归。
-- **🔴 mappability 新规则（正确性兜底，前端 `checkMappable` + 后端 `TokenMappabilityValidator` 两份同改、同夹具锁）**：
-  1. 作废旧规则"≥2 个 agg=NONE 即拒"（旧理由"无宿主锚点"已不成立——host 即锚点）。
-  2. **拒绝 `agg=NONE` 且 source 比 host 细**（host 一行命中多行 → 运行时 ERR）。
-  3. **🔴 拒绝 `agg≠NONE` 且 `match` 为空**（关键！`evalCrossTab` 空 match → 内层循环零次 → 全源行命中 → SUM **退化为全表求和**；UI 置灰只防新建、挡不住绕过/直接 PUT，必须后端硬拦）。
+- `FormulaCalculator.evalCrossTab`：**求值逻辑不改**；建议加防御性断言"空 match 不得进聚合/广播"（validator 漏网也返 ERR 而非全表）。
+- **🔴 mappability 新规则（前端 `checkMappable` + 后端 `TokenMappabilityValidator` 两份同改、同夹具锁）**：
+  1. 作废旧规则"≥2 个 agg=NONE 即拒"。
+  2. **拒绝 `agg=NONE` 且 source 比 host 细**（运行时多命中 ERR）。
+  3. **🔴 拒绝任何 cross_tab_ref 且 `match` 为空（含 agg=NONE）**（v4-C 收敛）：空 match → 全源行命中 → 聚合退化全表 / NONE 静默广播或吞 0。`[alias(总计)]` 走 component_subtotal、本无 match，不受影响。
   4. 同级/粗 source 的多个 NONE 允许（各自命中 ≤1、互不相乘）。
-- `comparable(a,b)` / `isSubset`（视行键为 Set，顺序无关）工具：前端 `formulaSerialize`/`TabFieldMatrix` 与后端 validator 各一份，由共享用例锁一致。
+- `comparable(a,b)` / `isSubset`（视行键为 Set，顺序无关）工具：前后端各一份，共享用例锁一致。
 
 **EXCEL（模型 B）不动**：`TabJoinPlanEvaluator` + `validateTabJoinConfig`（"裸明细须同一行键类"）保持，EXCEL 列单值语义不回归。
 
@@ -83,6 +105,7 @@
 - 旧 `cross_tab_ref` token 的 `match[]` 是位置配对生成的。旧模型只允许"行键完全相同"（其它置灰），**同序同集**时位置配对 == 公共字段名配对 → 旧 token 仍正确。
 - **收紧（v3）**：仅对**同序同集**等价；**乱序同集**（如两组件行键 `[A,B]` vs `[B,A]`）的存量 token，旧位置配对生成 `{A,B}{B,A}`（错配）、新公共名配对生成 `{A,A}{B,B}`（正确）→ 新旧结果可能不同。此类**极少且本就语义可疑**，按"存量不管"**不回溯**。
 - 细/粗组合的旧 token 本就无法被创建（曾被置灰），不存在。**无需迁移脚本。**
+- **存量渲染不漂移（v4-F）**：引擎只读落库的 `token.match`、**不重跑 `buildMatch`**，故已发布 snapshot 的存量公式求值期不变；**仅新建/编辑公式才走新配对**。唯一例外：`refreshSnapshotsByComponent` 重序列化会把乱序同集存量从旧错配翻成新配对（值变）——属"存量不管"范畴，不专门处理。
 
 ---
 
@@ -108,13 +131,15 @@ did you forget to annotate your entity with @Entity?
 
 ## 需求 3 — 配置抽屉：显示组件名[编号] + 过滤文本字段
 
-- **左栏标签 → `组件名称[组件编号]`**（名称加粗为主、编号 `COMP-00xx` 小字）。当前误显示编号（`alias` 落到 code）。
-  - 后端 `ExcelViewService.parseTabDefs`（:829）TabDef 补 `componentName` + `componentCode`；前端 `TabDef` 类型 + `TabFieldMatrix` 改显示。
+> 🔴 **改对文件（v4 纠正）**：组件抽屉页签来自 **`ComponentTabDefService.componentsToTabDefs`**（`GET /components/{id}/tab-defs`，ComponentTabJoinResource），**不是** `ExcelViewService.parseTabDefs`（那是 Excel 模板视图）。需求 3 全部落 `componentsToTabDefs`。该 service **已有** `alias=c.code`（:65，即"误显示编号"真源）+ `componentName=c.name`（:89）。
+
+- **左栏标签 → `组件名称[组件编号]`**（`componentName` 加粗为主、`alias`(=code) `COMP-00xx` 小字）。
+  - 后端 `componentsToTabDefs` 已下发 `componentName`+`alias`，**只需前端 `TabFieldMatrix` 改显示**（`componentName` 主、`alias` 括号辅）。若 `componentCode` 与 `alias` 同义即直接用 `alias`。
 - **隐藏"文本输入"类型字段**（明细 chip 区）：纯文本无法数值计算。
-  - **行键字段仍显示在左栏"行键"徽标**（INPUT_TEXT 可作行键，见 RECORD 2026-06-10）。
-  - **定调（v3）**：在**后端 `parseTabDefs` 直接按 `field_type` 过滤掉文本型** `detailFields`，**保持 `detailFields:String[]` 协议不变**（仅元素变少）→ 不波及 `parseActiveRowKeySig` 等消费方，**不扩成 `{name,type}`**。
-  - 行键徽标走**独立来源** `Component.rowKeyFields`（与 `detailFields` 不共享），过滤明细不影响徽标——天然成立。
-  - **不触发 AP-44**：这是"按已有类型做展示过滤"，不改 `field_type` 枚举/渲染分支/cache key，不属字段类型联动协议变动。
+  - 在 **`componentsToTabDefs` 按 `field_type` 过滤掉文本型** `detailFields`（该方法 :74 已读 `fm.get("name")/("is_subtotal")`，同样能读 `fm.get("field_type")`），**保持 `detailFields:String[]` 协议不变**（仅元素变少）→ 不波及消费方。
+  - **行键字段仍显示在左栏"行键"徽标**：走**独立来源** `Component.rowKeyFields`（:69，与 detailFields 不共享）→ 过滤明细不影响徽标，天然成立。INPUT_TEXT 可作行键（RECORD 2026-06-10）。
+  - **不触发 AP-44**：仅"按已有类型做展示过滤"，不改 `field_type` 枚举/渲染分支/cache key。
+  - ⚠️ 若模板级 `parseTabDefs` 也被复用（Excel 视图），按是否需要同款展示决定是否同步（本需求只要求组件抽屉）。
 
 ---
 
@@ -133,8 +158,9 @@ did you forget to annotate your entity with @Entity?
 1. **需求 2**：独立 worktree，先写复现 IT（红）→ lambda 修 → 绿，先交付。
 2. **需求 1 + 3 + 4**：一个 worktree。
 3. **测试（重点：三视图一致 + 双引擎对等；🔴 命门项先写失败测试 TDD）**
-   - **🔴 TDD 命门 1**：前后端 mappability 各加「`agg≠NONE 且 match 为空 → 拒绝」用例（先红）；`evalCrossTab` + `formulaEngine.ts` 加「空 match 不得全表聚合」断言。
-   - **🔴 TDD 命门 2**：`(总计)` 双语义用例——`[alias.field(总计)]`=宿主分组 SUM vs `[alias(总计)]`=整页签小计，断言聚合范围不同。
+   - **🔴 TDD 命门 1**：前后端 mappability 各加「**任何 cross_tab_ref 且 match 为空 → 拒绝**」用例（含 NONE，先红）；`evalCrossTab`+`formulaEngine.ts` 加防御性断言「空 match 不得进聚合/广播」。
+   - **🔴 TDD 命门 2**：聚合/总计三语义用例——`SUM([a.f])`=宿主分组、`[a(总计)]`=整页签小计、`[a.subtotalCol]`=组件小计列，断言聚合范围不同。
+   - **🔴 聚合函数 round-trip 用例（v4-B）**：`AVG/MAX/MIN/COUNT([a.f])` → `expressionToTokens` → `agg=FN` → `tokensToDrawerExpression` 还原回同串（防 AVG 被回显成 SUM 丢语义）；lexer 识别函数名。
    - `cross-tab-cases.json` **新增宿主分组用例**：粗 host+细 source 聚合(SUM/AVG)、细 host+粗 source 广播、同级 1:1、不可比置灰、公共字段名**乱序对齐**。
    - 后端 `FormulaCalculator` 单测 + 前端 `formulaEngine.ts` 对等单测 + **`CardSnapshotCrossTabTest`**（三视图写回）**同跑同夹具**（防三视图漂移，AP-50/AP-41）。
    - `buildMatch` 公共字段名配对单测（顺序无关、长度不等、**无公共字段→返回 []**）。
