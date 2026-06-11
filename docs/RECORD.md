@@ -4,6 +4,23 @@
 
 ---
 
+### [2026-06-11] 连表公式重设计批3(需求1·行键宿主分组+FN聚合+试算=渲染) | formulaSerialize.ts / TabFieldMatrix.tsx / TabJoinFormulaDrawer.tsx / FormulaCalculator.java / TokenMappabilityValidator.java / CardSnapshotService.java(+RowKeyCompare/夹具/4新测试) | spec: 2026-06-11-tabjoin-rowkey-host-grouping-design.md §58 + plan: 2026-06-11-tabjoin-rowkey-host-grouping.md
+
+- **背景**: 批1(样本卡500修)、批2(组件名[编号]+过滤文本+添加公式分离)之后的**批3=需求1**,最重一批(触三大核心基线:求值/渲染/序列化)。经 6 版 spec/5 轮 architect 评审收敛,plan 拆 11 Task(T1~T11+T9b),子代理逐 Task 驱动+主线亲验,**全 TDD 先红后绿**。
+- **核心模型(落 cross_tab_ref token)**: 结果粒度=宿主组件行键;被引用 source 页签按"集合包含(⊆/⊇,顺序无关)"对齐宿主——粗/同级 source 广播(agg=NONE)、细 source(键⊋宿主)强制 `FN()` 单列聚合(SUM/AVG/MAX/MIN/COUNT)、不可比/空键置灰。**不笛卡尔**(多细 source 各自独立聚合)。
+- **前端序列化(formulaSerialize.ts)**:
+  - `buildMatch` 位置zip→**公共行键字段名交集配对**(按宿主序,无公共→[]);`host[子件]×source[工序,子件]` 正确配 `{子件,子件}` 而非错配 `{工序,子件}`。
+  - **FN 函数语法**: lexer 识别 SUM/AVG/MAX/MIN/COUNT func token;`expressionToTokens` 主循环改带前瞻状态机,`FN([alias.field])` 折叠成单 cross_tab_ref agg=FN、吞外层括号;**单列收口(v5-I)**:FN内运算符/多引用/裸字段报错(复合 targetExpr 留二期);旧 `[a.f(总计)]`→SUM 兼容解析。
+  - **回显归一(v5-J)**: `tokensToDrawerExpression` agg=FN(含SUM)统一回显 `FN([a.f])`,**SUM 不再 (总计)**(解析仍容旧串);改老测试 4 条 + 往返两次稳定用例。
+  - `checkMappable` 改**空match即拒**(命门1,作废"≥2NONE"旧规则);导出 `comparable`/`isSubset`(集合包含)。
+- **置灰 UI(TabFieldMatrix.tsx)**: 废 `parseActiveRowKeySig`("首明细令牌锁签名"旧机制,spec §206 旧用例作废重写);改 `tabComparable(宿主selfRowKeyFields, source行键)`(集合包含,空键不可比);prop 链 ComponentManagement→Drawer→TabFieldMatrix 转发 selfRowKeyFields;明细 chip **三态**:不可比置灰/同级粗裸插/**细 source 弹 FN 下拉**(默认SUM)。
+- **后端 mappability + 防御**: `TokenMappabilityValidator` 改空match拒(命门1后端);新建 `RowKeyCompare`(Java comparable/isSubset,镜像前端);`FormulaCalculator.evalCrossTab` **求值逻辑不改**,仅加防御"空 match→ERR"(validator漏网兜底,不聚合全表)。
+- **🔴 试算=渲染(命门0,v5-H/v6-N/v6-P)**: 新增 `POST /components/{id}/dry-run-token` + `CardSnapshotService.dryRunTokenRows`——复用真实渲染装配 `assembleTabsWithFormulaResults`(**加可选 rkfOverride 四参重载,三参 delegate 零破坏既有调用**),**草稿双注入**:草稿公式按 componentId 注入宿主 tab(同cid多实例取首个,sortOrder留v6-O follow-up)+草稿行键覆盖 rkfByComp。旧 EXCEL 试算链(TabJoinPlanEvaluator)一行不动。`CardSnapshotDryRunParityTest` 对拍:草稿注入路 vs 持久化路同装配内核,螺丝行 `金额10*SUM(工时3+5)=80` 逐行相等。前端 NORMAL/SUBTOTAL 试算切新端点+逐行小表,EXCEL 仍单值。
+- **夹具(cross-tab-cases.json,前后端逐字同步)**: 新增 7 宿主分组用例(粗host×细source SUM=8/AVG=4/MAX=5/COUNT=2、细host×粗source广播=10、乱序对齐=11、缺补0);前端 formulaEngine 74 例 + 后端 FixtureTest 23 例**同夹具锁前后端引擎一致**。
+- **自检(全量回归)**: 前端 173 测试绿(formulaSerialize+tabFieldMatrix+formulaEngine 3文件)+ tsc 0 错误;后端 78 测试绿(FormulaCalculator*/CardSnapshot*/validator/ComponentTabDefService);Vite transform 改动 TSX 全 OK。
+- **遗留(follow-up,已记录)**: ① **v6-N 草稿改行键差异化**未单独断言(rkfOverride 机制实现+走通,但测试传值==持久化值未差异化,受 @TestTransaction/readonly-连接池约束;driver-expand 实路由 RefreshCardSnapshotTest 覆盖);② **同 cid 多实例** injectDraftFormula 取首个,sortOrder 精确定位留 v6-O(防 AP-40)。
+- **事故教训(隔离)**: T9 子代理误把后端 commit 落到主仓 **master**(而非特性分支)——主线 cherry-pick 到特性分支 + master `reset --mixed` 退回 + 仅 checkout 那4文件(保留预存 deploy/.gitignore 改动)修复。**教训**: 派后端子代理须明确"在 worktree 内 git 操作",验收必查 `git branch --contains <commit>` 确认提交落在特性分支。
+
 ### [2026-06-11] 连表公式重设计批2(需求3+4·纯UI/展示) | TabFieldMatrix.tsx + ComponentManagement.tsx + ComponentTabDefService.java(+Test) | spec: 2026-06-11-tabjoin-rowkey-host-grouping-design.md §167/§181
 
 - **背景**: 批 1(样本卡 500 修)之后的批 2。spec §194 拆分: 批2=需求3+4,**纯 UI/展示、不碰序列化/求值**,不在 CLAUDE.md E2E 触发清单内(未动 useDriverExpansions/QuotationStep2/ComponentDriverService 等)。
