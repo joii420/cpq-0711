@@ -307,7 +307,7 @@ describe('tokensToDrawerExpression', () => {
     expect(tokensToDrawerExpression(tokens, allTabs)).toBe('[COMP_RL.金额]');
   });
 
-  it('cross_tab_ref agg=SUM with target → [alias.field(总计)]', () => {
+  it('cross_tab_ref agg=SUM with target → SUM([alias.field])', () => {
     const tokens: FormulaToken[] = [
       {
         type: 'cross_tab_ref',
@@ -318,7 +318,7 @@ describe('tokensToDrawerExpression', () => {
         match: [{ a: '料号', b: '料号' }],
       },
     ];
-    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('[COMP_RL.金额(总计)]');
+    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('SUM([COMP_RL.金额])');
   });
 
   it('cross_tab_ref agg=SUM with empty target → [alias(总计)]', () => {
@@ -378,11 +378,12 @@ describe('tokensToDrawerExpression', () => {
 describe('round-trip', () => {
   const normalise = (s: string) => s.replace(/\s+/g, ' ').trim();
 
-  it('[COMP_RL.金额(总计)] round-trips', () => {
+  it('[COMP_RL.金额(总计)] 解析后回显归一为 SUM([COMP_RL.金额])', () => {
+    // 旧格式仍可解析（兼容），但回显收敛到 FN() 新格式
     const expr = '[COMP_RL.金额(总计)]';
     const tokens = expressionToTokens(expr, allTabs, selfRKF);
     const back = tokensToDrawerExpression(tokens, allTabs);
-    expect(normalise(back)).toBe(normalise(expr));
+    expect(normalise(back)).toBe(normalise('SUM([COMP_RL.金额])'));
   });
 
   it('[COMP_RL.金额] round-trips', () => {
@@ -407,11 +408,12 @@ describe('round-trip', () => {
     expect(normalise(back2)).toBe(normalise('[COMP_RL.金额]'));
   });
 
-  it('compound expression "[单重] * [单价] - [COMP_RL.金额(总计)]" round-trips', () => {
+  it('compound expression "[单重] * [单价] - [COMP_RL.金额(总计)]" 解析后回显归一', () => {
+    // 旧格式 [alias.field(总计)] 解析后回显为新格式 SUM([alias.field])
     const expr = '[单重] * [单价] - [COMP_RL.金额(总计)]';
     const tokens = expressionToTokens(expr, allTabs, selfRKF);
     const back = tokensToDrawerExpression(tokens, allTabs);
-    expect(normalise(back)).toBe(normalise(expr));
+    expect(normalise(back)).toBe(normalise('[单重] * [单价] - SUM([COMP_RL.金额])'));
   });
 
   it('expression with only same-component fields round-trips', () => {
@@ -829,5 +831,33 @@ describe('expressionToTokens — FN() 单列聚合', () => {
   it('旧 [JG.工时(总计)] 仍解析为 agg=SUM（兼容）', () => {
     const t = expressionToTokens('[JG.工时(总计)]', tabs, ['子件']);
     expect(t[0]).toMatchObject({ type: 'cross_tab_ref', agg: 'SUM', target: '工时' });
+  });
+});
+
+// ── Task 4: 回显归一 + 往返稳定 ──
+describe('tokensToDrawerExpression — FN 回显归一', () => {
+  const tabs: TabDef[] = [
+    { alias: 'JG', tabKey: 'jg', componentId: 'cid-jg', componentName: '加工',
+      rowKeyFields: ['子件'], detailFields: ['工时'], subtotalCols: [] },
+  ];
+  it('agg=SUM → SUM([JG.工时])（不再 (总计)）', () => {
+    const t = expressionToTokens('SUM([JG.工时])', tabs, ['子件']);
+    expect(tokensToDrawerExpression(t, tabs)).toBe('SUM([JG.工时])');
+  });
+  it('AVG/MAX/MIN/COUNT 往返同串', () => {
+    for (const fn of ['AVG', 'MAX', 'MIN', 'COUNT']) {
+      const s = `${fn}([JG.工时])`;
+      expect(tokensToDrawerExpression(expressionToTokens(s, tabs, ['子件']), tabs)).toBe(s);
+    }
+  });
+  it('往返两次稳定 (idempotent)', () => {
+    const s = 'AVG([JG.工时])';
+    const once = tokensToDrawerExpression(expressionToTokens(s, tabs, ['子件']), tabs);
+    const twice = tokensToDrawerExpression(expressionToTokens(once, tabs, ['子件']), tabs);
+    expect(twice).toBe(once);
+  });
+  it('旧 [JG.工时(总计)] 解析后回显归一为 SUM([JG.工时])', () => {
+    const t = expressionToTokens('[JG.工时(总计)]', tabs, ['子件']);
+    expect(tokensToDrawerExpression(t, tabs)).toBe('SUM([JG.工时])');
   });
 });

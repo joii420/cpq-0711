@@ -423,11 +423,11 @@ export function tokensToDrawerExpression(
         const alias = tabDef?.alias ?? token.sourceLabel ?? token.source ?? '';
 
         if (!token.target) {
-          // Whole-tab total [alias(总计)]
+          // Whole-tab total [alias(总计)] (empty target, 旧路保留)
           parts.push(`[${alias}(总计)]`);
         } else if (token.agg && token.agg !== 'NONE') {
-          // Aggregated column: [alias.field(总计)]
-          parts.push(`[${alias}.${token.target}(总计)]`);
+          // 归一：FN([alias.field])，含 SUM（不再回显 (总计)）
+          parts.push(`${token.agg}([${alias}.${token.target}])`);
         } else {
           // Detail reference: [alias.field]
           parts.push(`[${alias}.${token.target}]`);
