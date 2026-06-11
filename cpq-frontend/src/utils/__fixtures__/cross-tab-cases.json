@@ -278,5 +278,73 @@
       ]
     },
     "expected": 6
+  },
+  {
+    "name": "宿主分组: 粗host[子件]×细source[子件,工序] SUM 聚合",
+    "_doc": "宿主螺丝行按公共字段子件命中加工2行(钻3+铣5) → SUM=8; 垫片行不入",
+    "aRows": [
+      {"子件": "螺丝", "工序": "钻", "工时": 3},
+      {"子件": "螺丝", "工序": "铣", "工时": 5},
+      {"子件": "垫片", "工序": "钻", "工时": 9}
+    ],
+    "currentRow": {"子件": "螺丝"},
+    "token": {"type": "cross_tab_ref", "source": "A", "target": "工时", "match": [{"a": "子件", "b": "子件"}], "agg": "SUM"},
+    "expected": 8
+  },
+  {
+    "name": "宿主分组: 粗host×细source AVG",
+    "aRows": [
+      {"子件": "螺丝", "工序": "钻", "工时": 3},
+      {"子件": "螺丝", "工序": "铣", "工时": 5}
+    ],
+    "currentRow": {"子件": "螺丝"},
+    "token": {"type": "cross_tab_ref", "source": "A", "target": "工时", "match": [{"a": "子件", "b": "子件"}], "agg": "AVG"},
+    "expected": 4
+  },
+  {
+    "name": "宿主分组: 粗host×细source MAX",
+    "aRows": [
+      {"子件": "螺丝", "工序": "钻", "工时": 3},
+      {"子件": "螺丝", "工序": "铣", "工时": 5}
+    ],
+    "currentRow": {"子件": "螺丝"},
+    "token": {"type": "cross_tab_ref", "source": "A", "target": "工时", "match": [{"a": "子件", "b": "子件"}], "agg": "MAX"},
+    "expected": 5
+  },
+  {
+    "name": "宿主分组: COUNT 命中行数",
+    "aRows": [
+      {"子件": "螺丝", "工序": "钻", "工时": 3},
+      {"子件": "螺丝", "工序": "铣", "工时": 5}
+    ],
+    "currentRow": {"子件": "螺丝"},
+    "token": {"type": "cross_tab_ref", "source": "A", "target": "工时", "match": [{"a": "子件", "b": "子件"}], "agg": "COUNT"},
+    "expected": 2
+  },
+  {
+    "name": "宿主分组: 细host[子件,工序]×粗source[子件] 广播 NONE 命中1",
+    "_doc": "host携带子件+工序,match只按公共字段子件;粗source每子件1行→命中唯一→广播",
+    "aRows": [
+      {"子件": "螺丝", "单价": 10},
+      {"子件": "垫片", "单价": 2}
+    ],
+    "currentRow": {"子件": "螺丝", "工序": "钻"},
+    "token": {"type": "cross_tab_ref", "source": "A", "target": "单价", "match": [{"a": "子件", "b": "子件"}], "agg": "NONE"},
+    "expected": 10
+  },
+  {
+    "name": "宿主分组: 公共字段名乱序对齐 host[A,B]×source同集 match{A,A}{B,B}",
+    "_doc": "行键顺序无关,按公共字段名配对,全键匹配命中",
+    "aRows": [{"A": "x", "B": "y", "值": 11}],
+    "currentRow": {"A": "x", "B": "y"},
+    "token": {"type": "cross_tab_ref", "source": "A", "target": "值", "match": [{"a": "A", "b": "A"}, {"a": "B", "b": "B"}], "agg": "SUM"},
+    "expected": 11
+  },
+  {
+    "name": "宿主分组: source无匹配 → 缺补0 (SUM)",
+    "aRows": [{"子件": "螺丝", "工时": 3}],
+    "currentRow": {"子件": "垫片"},
+    "token": {"type": "cross_tab_ref", "source": "A", "target": "工时", "match": [{"a": "子件", "b": "子件"}], "agg": "SUM"},
+    "expected": 0
   }
 ]
