@@ -133,7 +133,14 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                   justifyContent: 'center',
                 }}
               >
-                <span style={{ fontWeight: 600, fontSize: 13 }}>{def.alias}</span>
+                <span style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.3 }}>
+                  {def.componentName || def.alias}
+                  {def.componentName && def.alias && def.alias !== def.componentName && (
+                    <span style={{ fontWeight: 400, fontSize: 11, color: '#8a909a' }}>
+                      {' '}[{def.alias}]
+                    </span>
+                  )}
+                </span>
                 <span
                   style={{
                     fontSize: 11,

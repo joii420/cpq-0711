@@ -354,25 +354,35 @@ function parseExcelColumns(raw?: string): ExcelColumn[] {
 const FormulaListPanel: React.FC<{
   formulas: FormulaItem[];
   tabDefs: TabDef[];
-  onEdit: (formula: FormulaItem) => void;
+  onConfig: (formula: FormulaItem) => void;
   onAdd: () => void;
+  onRename: (key: string, name: string) => void;
   onDelete: (key: string) => void;
-}> = ({ formulas, tabDefs, onEdit, onAdd, onDelete }) => {
+  autoFocusKey?: string | null;
+}> = ({ formulas, tabDefs, onConfig, onAdd, onRename, onDelete, autoFocusKey }) => {
   const renderExpression = (f: FormulaItem) => {
     const expr = tokensToDrawerExpression(f.expression || [], tabDefs);
     return expr
       ? <span style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: 12 }}>{expr}</span>
-      : <span style={{ color: '#bfbfbf' }}>（空表达式）</span>;
+      : <span style={{ color: '#bfbfbf' }}>（空表达式，点「配置」编辑）</span>;
   };
   const columns = [
-    { title: '公式名称', dataIndex: 'name', key: 'name', width: 180,
-      render: (v: string) => v || <span style={{ color: '#bfbfbf' }}>(未命名)</span> },
+    { title: '公式名称', dataIndex: 'name', key: 'name', width: 200,
+      render: (_: unknown, f: FormulaItem) => (
+        <Input
+          value={f.name}
+          size="small"
+          autoFocus={f.key === autoFocusKey}
+          placeholder="公式名称（FORMULA 字段名）"
+          onChange={(e) => onRename(f.key, e.target.value)}
+        />
+      ) },
     { title: '表达式', key: 'expr', render: (_: unknown, f: FormulaItem) => renderExpression(f) },
     {
       title: '操作', key: 'action', width: 110,
       render: (_: unknown, f: FormulaItem) => (
         <Space size={4}>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => onEdit(f)}>编辑</Button>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => onConfig(f)}>配置</Button>
           <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => onDelete(f.key)} />
         </Space>
       ),
@@ -396,7 +406,8 @@ const FormulaListPanel: React.FC<{
         locale={{ emptyText: '暂无公式，点击"添加公式"' }}
       />
       <div className="cmm-removed-note">
-        点「编辑/添加」弹出统一「页签连表公式配置抽屉」（本组件字段引用 + 同目录跨页签引用，聚合可选）。
+        「添加公式」直接新增一行（可直接命名）；点「配置」弹出统一「页签连表公式配置抽屉」编辑表达式
+        （本组件字段引用 + 同目录跨页签引用，聚合可选）。名称随时点单元格改名。
         已移除：公式「结果类型」列、全局变量插入入口。
       </div>
     </>
@@ -753,6 +764,7 @@ const ComponentManagement: React.FC = () => {
   const [selectedComponent, setSelectedComponent] = useState<ComponentItem | null>(null);
   const [fields, setFields] = useState<FieldItem[]>([]);
   const [formulas, setFormulas] = useState<FormulaItem[]>([]);
+  const [focusFormulaKey, setFocusFormulaKey] = useState<string | null>(null);
   const [excelColumns, setExcelColumns] = useState<ExcelColumn[]>([]);
   const [dataDriverPath, setDataDriverPath] = useState<string>('');
   const [rowKeyFields, setRowKeyFields] = useState<string[]>([]);
@@ -958,6 +970,18 @@ const ComponentManagement: React.FC = () => {
     setDsModalVisible(false);
   };
 
+  // ── Formula list wiring (需求4: 添加=行内新增 / 配置=弹抽屉编辑表达式) ──
+  // 「添加公式」直接在本地 formulas 状态追加一空表达式行（默认「公式N」、聚焦命名）；
+  // 表达式留空待点「配置」进抽屉编辑；整行随组件「保存」入库。
+  const addFormulaInline = () => {
+    const row: FormulaItem = { ...newFormulaRow(), name: `公式${formulas.length + 1}` };
+    setFormulas((prev) => [...prev, row]);
+    setFocusFormulaKey(row.key);
+  };
+  const renameFormula = (key: string, name: string) => {
+    setFormulas((prev) => prev.map((f) => (f.key === key ? { ...f, name } : f)));
+  };
+
   // ── Formula drawer wiring ───────────────────────────────────
   const openFormulaForComponent = (formula: FormulaItem | null) => {
     const column = formula
@@ -1134,9 +1158,11 @@ const ComponentManagement: React.FC = () => {
               <FormulaListPanel
                 formulas={formulas}
                 tabDefs={tabDefs}
-                onEdit={openFormulaForComponent}
-                onAdd={() => openFormulaForComponent(null)}
+                onConfig={openFormulaForComponent}
+                onAdd={addFormulaInline}
+                onRename={renameFormula}
                 onDelete={(key) => setFormulas((prev) => prev.filter((f) => f.key !== key))}
+                autoFocusKey={focusFormulaKey}
               />
             ),
           },
@@ -1153,9 +1179,11 @@ const ComponentManagement: React.FC = () => {
     <FormulaListPanel
       formulas={formulas}
       tabDefs={tabDefs}
-      onEdit={openFormulaForComponent}
-      onAdd={() => openFormulaForComponent(null)}
+      onConfig={openFormulaForComponent}
+      onAdd={addFormulaInline}
+      onRename={renameFormula}
       onDelete={(key) => setFormulas((prev) => prev.filter((f) => f.key !== key))}
+      autoFocusKey={focusFormulaKey}
     />
   );
 
