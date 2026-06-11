@@ -75,7 +75,8 @@ type RawToken =
   | { kind: 'operator'; value: string }
   | { kind: 'paren_open' }
   | { kind: 'paren_close' }
-  | { kind: 'whitespace' };
+  | { kind: 'whitespace' }
+  | { kind: 'func'; name: string }           // SUM/AVG/MAX/MIN/COUNT
 
 /**
  * Lex `expr` into raw tokens. Throws with a descriptive message on unrecognised input.
@@ -119,6 +120,18 @@ function lex(expr: string): RawToken[] {
       tokens.push({ kind: 'operator', value: ch });
       i++;
       continue;
+    }
+
+    // Function names: SUM/AVG/MAX/MIN/COUNT (case-insensitive)
+    if (/[A-Za-z]/.test(ch)) {
+      let word = '';
+      while (i < expr.length && /[A-Za-z]/.test(expr[i])) word += expr[i++];
+      const upper = word.toUpperCase();
+      if (['SUM', 'AVG', 'MAX', 'MIN', 'COUNT'].includes(upper)) {
+        tokens.push({ kind: 'func', name: upper });
+        continue;
+      }
+      throw new Error(`表达式中含有无法识别的标识符 '${word}'（位置 ${i - word.length}）`);
     }
 
     // Numeric literals (integer or decimal, optional leading sign NOT consumed here)
@@ -370,6 +383,9 @@ export function tokensToDrawerExpression(
 // ─────────────────────────────────────────────
 // checkMappable
 // ─────────────────────────────────────────────
+
+/** test-only：暴露 lex 给单测 */
+export const __lexForTest = (expr: string) => lex(expr);
 
 /**
  * Gate check mirroring the backend TokenMappabilityValidator rule:

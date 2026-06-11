@@ -24,6 +24,7 @@ import {
   expressionToTokens,
   tokensToDrawerExpression,
   checkMappable,
+  __lexForTest,
 } from './formulaSerialize';
 import type { TabDef } from '../../services/tabJoinFormulaService';
 import type { FormulaToken } from './types';
@@ -775,5 +776,19 @@ describe('integration: expression → tokens → checkMappable', () => {
     const result = checkMappable(tokens);
     expect(result.mappable).toBe(false);
     expect(result.reason).toBeTruthy();
+  });
+});
+
+// ── Task 2: lexer 函数名 token ──
+describe('lex — 函数名 token', () => {
+  it('SUM( 识别为 func token，不再抛"无法识别字符"', () => {
+    expect(() => __lexForTest('SUM([A.f])')).not.toThrow();
+  });
+  it('大小写不敏感 avg → AVG', () => {
+    const raw = __lexForTest('avg([A.f])');
+    expect(raw[0]).toEqual({ kind: 'func', name: 'AVG' });
+  });
+  it('非函数字母仍抛错', () => {
+    expect(() => __lexForTest('FOO([A.f])')).toThrow(/无法识别/);
   });
 });
