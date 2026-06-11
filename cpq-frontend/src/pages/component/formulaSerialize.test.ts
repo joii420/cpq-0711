@@ -726,6 +726,30 @@ describe('component_subtotal — subtotal column references', () => {
   });
 });
 
+// ── Task 1: buildMatch 公共字段名交集配对（顺序无关） ──
+describe('buildMatch — 公共字段名交集配对', () => {
+  const tabs: TabDef[] = [
+    { alias: 'JG', tabKey: 'jg', componentId: 'cid-jg', componentName: '加工',
+      rowKeyFields: ['工序', '子件'], detailFields: ['工时'], subtotalCols: [] },
+  ];
+  it('host[子件] × source[工序,子件] → 配对 {a:子件,b:子件}', () => {
+    const t = expressionToTokens('[JG.工时(总计)]', tabs, ['子件']);
+    expect((t[0] as any).match).toEqual([{ a: '子件', b: '子件' }]);
+  });
+  it('乱序同集 host[A,B] × source[B,A] → 按 host 序 {A,A},{B,B}', () => {
+    const tabs2: TabDef[] = [{ alias: 'X', tabKey: 'x', componentId: 'cid-x',
+      rowKeyFields: ['B', 'A'], detailFields: ['v'], subtotalCols: [] }];
+    const t = expressionToTokens('[X.v(总计)]', tabs2, ['A', 'B']);
+    expect((t[0] as any).match).toEqual([{ a: 'A', b: 'A' }, { a: 'B', b: 'B' }]);
+  });
+  it('无公共字段 → match=[]', () => {
+    const tabs3: TabDef[] = [{ alias: 'Y', tabKey: 'y', componentId: 'cid-y',
+      rowKeyFields: ['料号'], detailFields: ['v'], subtotalCols: [] }];
+    const t = expressionToTokens('[Y.v(总计)]', tabs3, ['工序']);
+    expect((t[0] as any).match).toEqual([]);
+  });
+});
+
 // ─────────────────────────────────────────────
 // 8. Integration: expressionToTokens → checkMappable
 // ─────────────────────────────────────────────

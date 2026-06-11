@@ -21,8 +21,10 @@
  *   numeric literals    — number tokens
  *
  * match row-key alignment convention:
- *   match[i] = { a: tabDef.rowKeyFields[i], b: selfRowKeyFields[i] }
- *   Aligned positionally; if one side runs out, remaining entries are omitted.
+ *   match = common field-name intersection of source rowKeyFields and self rowKeyFields.
+ *   For each field f in selfRowKeyFields that also appears in source rowKeyFields,
+ *   emit { a: f, b: f }. Order follows selfRowKeyFields (host) for determinism.
+ *   No common field → [] (validator rejects empty match downstream).
  *   If either array is empty, match = [].
  */
 
@@ -36,16 +38,21 @@ export type { TabDef };
 // Helpers
 // ─────────────────────────────────────────────
 
-/** Build the match array by positionally aligning rowKeyFields of the source (a) and self (b). */
+/**
+ * Build match[] by COMMON ROW-KEY FIELD NAME intersection (order-independent).
+ * For each field f in selfRowKeyFields that also appears in source rowKeyFields,
+ * emit { a: f, b: f }. Order follows selfRowKeyFields (host) for determinism.
+ * No common field → [] (validator rejects empty match downstream).
+ */
 function buildMatch(
   tabRowKeyFields: string[],
   selfRowKeyFields: string[] | undefined,
 ): Array<{ a: string; b: string }> {
   if (!tabRowKeyFields.length || !selfRowKeyFields?.length) return [];
-  const count = Math.min(tabRowKeyFields.length, selfRowKeyFields.length);
+  const sourceSet = new Set(tabRowKeyFields);
   const result: Array<{ a: string; b: string }> = [];
-  for (let i = 0; i < count; i++) {
-    result.push({ a: tabRowKeyFields[i], b: selfRowKeyFields[i] });
+  for (const f of selfRowKeyFields) {
+    if (sourceSet.has(f)) result.push({ a: f, b: f });
   }
   return result;
 }
