@@ -1,12 +1,12 @@
 /**
- * E2E 验证用户给的报价单流程:
- * 报价单管理 → 新建 → 罗克韦尔 + 模板 v1.10 → 添加产品 → 选配添加
- *   → 独立产品 → 料号 10110002 → 工序总装配+部件装配 → 确认
+ * E2E 验证报价单渲染流程(2026-06-11 数据对齐: 组合产品模板已清理, 改用现存数据):
+ * 报价单管理 → 新建 → 苏州西门子 + 报价模板0608 v1.9(报价模板V2 目录组件)
+ *   → 添加产品 → 料号 10110002 → 确认
  *
  * 验证目标:
- * 1) 9 个 Tab 都按模板配置渲染
- * 2) 字段按组件管理的公式计算 (单价/成材率走全局变量, 小计走公式)
- * 3) 不出现"加载中..."永久占位
+ * 1) 报价模板0608 的 7 个 NORMAL Tab 都按模板配置渲染(报价小计=SUBTOTAL 不渲染为 Tab)
+ * 2) 字段按组件管理的公式计算
+ * 3) 不出现"加载中..."永久占位(渲染层无回归)
  */
 import { test, expect, Page } from '@playwright/test';
 import * as fs from 'fs';
@@ -50,7 +50,7 @@ async function selectByLabel(page: Page, label: string, search: string, optionTe
 let backendUp = false;
 test.beforeAll(async () => { backendUp = await isBackendUp(); });
 
-test('报价单流程: 罗克韦尔 + v1.10 + 10110002 + 总装配/部件装配', async ({ page }) => {
+test('报价单流程: 苏州西门子 + 报价模板0608 v1.9 + 10110002(渲染层无回归)', async ({ page }) => {
   test.skip(!backendUp, '后端未启动');
 
   // 控制台错误监控
@@ -72,8 +72,8 @@ test('报价单流程: 罗克韦尔 + v1.10 + 10110002 + 总装配/部件装配'
   await page.waitForLoadState('networkidle');
   await shot(page, 'step1-init');
 
-  // ── 3) 选客户: 罗克韦尔 (label-based) ──
-  await selectByLabel(page, '客户', '罗克韦尔');
+  // ── 3) 选客户: 苏州西门子 (label-based) ──
+  await selectByLabel(page, '客户', '西门子');
   await shot(page, 'customer-selected');
 
   // ── 4) 等 QuotationCreateForm 子卡片渲染 + 滚动让它入视野 ──
@@ -91,28 +91,24 @@ test('报价单流程: 罗克韦尔 + v1.10 + 10110002 + 总装配/部件装配'
   await selectByLabel(page, '产品分类', '默认分类');
   await shot(page, 'category-selected');
 
-  // ── 6) 报价模板 v1.10 ──
-  // 注意: antd Select optionFilterProp="label" 对 JSX label 无效, 28+ 选项 + virtual scrolling
-  // 导致 selectByLabel helper 的 filter({hasText}) 在下拉中间位置 15s 内未渲染到 → timeout
-  // 局部加固: 打开 dropdown 后输入更短搜索词让候选集变小, 再 scrollIntoViewIfNeeded 兜底
+  // ── 6) 报价模板: 报价模板0608 v1.9 (报价模板V2 目录组件构建) ──
+  // antd Select 28+ 选项 + virtual scrolling: 打开 dropdown 后输入短搜索词缩小候选集, scrollIntoViewIfNeeded 兜底
   await page.waitForTimeout(1200);  // 等模板加载
   {
-    // 1. 定位并展开报价模板 Select
     const templateItem = page.locator('.ant-form-item')
       .filter({ has: page.locator('label', { hasText: '报价模板' }) })
       .first();
     await templateItem.locator('.ant-select').first().click();
     await page.waitForTimeout(300);
 
-    // 2. 输入 "v1.10" 触发原生 input filter（比输入全称更短, 降低 virtual scroll 风险）
-    await page.keyboard.type('v1.10', { delay: 60 });
+    // 输入 "0608" 缩小候选集
+    await page.keyboard.type('0608', { delay: 60 });
     await page.waitForTimeout(900);
 
-    // 3. 精确匹配 "组合产品 v1.10"（\b 或行尾锚, 防止撞 v1.100/v1.101 等未来版本）
+    // 精确匹配 "报价模板0608 v1.9"(行尾锚, 防撞 v1.90 等)
     const opt = page.locator('.ant-select-item-option')
-      .filter({ hasText: /组合产品\s+v1\.10(\s|$)/ })
+      .filter({ hasText: /报价模板0608\s+v1\.9(\s|$|<)/ })
       .first();
-    // scrollIntoViewIfNeeded 兜底 virtual scroll 未渲染到目标选项的情况
     await opt.scrollIntoViewIfNeeded().catch(() => {});
     await opt.click();
     await page.waitForTimeout(400);
@@ -219,7 +215,7 @@ test('报价单流程: 罗克韦尔 + v1.10 + 10110002 + 总装配/部件装配'
   // 8 个组件 Tab 实际是产品卡片内的 <button class="qt-tab-btn">
   const tabs = page.locator('button.qt-tab-btn');
   const tabCount = await tabs.count();
-  console.log(`\n=== Tab 总数 (qt-tab-btn): ${tabCount} (期望 8 = 9 组件 - 1 SUBTOTAL) ===`);
+  console.log(`\n=== Tab 总数 (qt-tab-btn): ${tabCount} (期望 7 = 8 组件 - 1 SUBTOTAL报价小计) ===`);
 
   // 列出每个 Tab 名称
   for (let i = 0; i < tabCount; i++) {
@@ -232,20 +228,20 @@ test('报价单流程: 罗克韦尔 + v1.10 + 10110002 + 总装配/部件装配'
   }
 
   // 检查每个期望的 Tab (总成本是 SUBTOTAL 不渲染为 Tab 是设计)
-  const expected = ['材质', '工序', '元素含量', '组合工艺', '选配-材质', '选配-工序列表', '选配-元素含量', '选配-组合工艺'];
+  const expected = ['产品', '来料', '元素', '自制/组装加工费', '其他费用', '外购件', '电镀费用'];
   for (const name of expected) {
     const c = await tabs.filter({ hasText: name }).count();
     console.log(`  expect '${name}': ${c > 0 ? '✅ FOUND' : '❌ MISSING'}`);
   }
-  // SUBTOTAL 不应该作为 Tab
-  const subtotalTab = await tabs.filter({ hasText: '总成本' }).count();
-  console.log(`  '总成本' Tab (期望 0, SUBTOTAL 不渲染为 Tab): ${subtotalTab === 0 ? '✅' : '❌ 误渲染 ' + subtotalTab}`);
+  // SUBTOTAL(报价小计) 不应该作为 Tab
+  const subtotalTab = await tabs.filter({ hasText: '报价小计' }).count();
+  console.log(`  '报价小计' Tab (期望 0, SUBTOTAL 不渲染为 Tab): ${subtotalTab === 0 ? '✅' : '❌ 误渲染 ' + subtotalTab}`);
   // 但产品小计应该在底部小计条里
   const subtotalBar = await page.locator('text=产品小计').count();
   console.log(`  '产品小计' (底部条): ${subtotalBar > 0 ? '✅ 存在' : '❌ 缺失'}`);
 
   // ── 逐 Tab 切换并截图 ──
-  const tabNames = ['材质', '工序', '元素含量', '组合工艺', '选配-材质', '选配-工序列表', '选配-元素含量', '选配-组合工艺'];
+  const tabNames = ['产品', '来料', '元素', '自制/组装加工费', '其他费用', '外购件', '电镀费用'];
   for (const tabName of tabNames) {
     // 精确匹配文本 (避免 "选配-工序列表" 包含 "工序" 的子串误命中)
     const tab = tabs.filter({ hasText: new RegExp(`^${tabName}$`) }).first();
