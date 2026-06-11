@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Drawer, Button, Input, Space, message, Typography } from 'antd';
+import { Drawer, Button, Input, Space, message, Table, Typography } from 'antd';
 import { tabJoinFormulaService, type TabDef } from '../../services/tabJoinFormulaService';
 import TabFieldMatrix from './tabjoin/TabFieldMatrix';
 import SampleCardPicker from './tabjoin/SampleCardPicker';
@@ -59,6 +59,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
   // 试算相关状态
   const [sampleLi, setSampleLi] = useState<string | undefined>(undefined);
   const [dryRunValue, setDryRunValue] = useState<string | number | null>(null);
+  const [dryRunRows, setDryRunRows] = useState<{ rowKey: string; value: number | null }[] | null>(null);
   const [dryRunErrors, setDryRunErrors] = useState<string[]>([]);
   const [dryRunLoading, setDryRunLoading] = useState(false);
 
@@ -166,18 +167,39 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
       message.warning('请先选样本卡片');
       return;
     }
-    const col = buildColumn(expr);
     setDryRunLoading(true);
     try {
-      const res: any = await tabJoinFormulaService.dryRunByComponent(componentId, sampleLi, col);
-      const data = res?.data ?? res;
-      setDryRunValue(data?.value ?? null);
-      setDryRunErrors(data?.errors ?? []);
-      if (data?.errors?.length) {
-        message.warning(data.errors.join('; '));
+      if (componentType === 'EXCEL') {
+        // EXCEL 路径：沿用旧端点，返回单值
+        setDryRunRows(null);
+        const col = buildColumn(expr);
+        const res: any = await tabJoinFormulaService.dryRunByComponent(componentId, sampleLi, col);
+        const data = res?.data ?? res;
+        setDryRunValue(data?.value ?? null);
+        setDryRunErrors(data?.errors ?? []);
+        if (data?.errors?.length) {
+          message.warning(data.errors.join('; '));
+        }
+      } else {
+        // NORMAL / SUBTOTAL 路径：走 token 试算端点，返逐行结果
+        setDryRunValue(null);
+        const tokens = expressionToTokens(expr, tabDefs, selfRowKeyFields);
+        const res: any = await tabJoinFormulaService.dryRunToken(
+          componentId,
+          sampleLi,
+          tokens,
+          selfRowKeyFields ?? [],
+        );
+        const data = res?.data ?? res;
+        setDryRunRows(data?.rows ?? []);
+        setDryRunErrors(data?.errors ?? []);
+        if (data?.errors?.length) {
+          message.warning(data.errors.join('; '));
+        }
       }
     } catch (e: any) {
       setDryRunValue(null);
+      setDryRunRows(null);
       setDryRunErrors([]);
       message.error('试算失败: ' + (e?.message ?? String(e)));
     } finally {
@@ -212,6 +234,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
             onChange={(li) => {
               setSampleLi(li || undefined);
               setDryRunValue(null);
+              setDryRunRows(null);
               setDryRunErrors([]);
             }}
           />
@@ -222,17 +245,44 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
           >
             试算
           </Button>
-          {dryRunValue !== null && dryRunErrors.length === 0 && (
+          {/* EXCEL 单值结果 */}
+          {componentType === 'EXCEL' && dryRunValue !== null && dryRunErrors.length === 0 && (
             <Text strong style={{ color: '#1677ff' }}>
               试算结果：{String(dryRunValue)}
             </Text>
           )}
+          {/* 错误显示（所有类型公用） */}
           {dryRunErrors.length > 0 && (
             <Text style={{ color: '#cf1322', fontSize: 12 }}>
               错误：{dryRunErrors.join('; ')}
             </Text>
           )}
         </Space>
+        {/* NORMAL / SUBTOTAL 逐行试算结果小表 */}
+        {componentType !== 'EXCEL' && dryRunRows !== null && dryRunErrors.length === 0 && dryRunRows.length > 0 && (
+          <Table
+            size="small"
+            pagination={false}
+            style={{ marginTop: 8 }}
+            rowKey={(_, i) => String(i)}
+            dataSource={dryRunRows}
+            columns={[
+              { title: '行键', dataIndex: 'rowKey', key: 'rowKey' },
+              {
+                title: '试算值',
+                dataIndex: 'value',
+                key: 'value',
+                render: (v: number | null) => (v == null ? '—' : String(v)),
+              },
+            ]}
+          />
+        )}
+        {/* SUBTOTAL 语义是单值；若 rows 多行，仅供参考（取首行即为合计行） */}
+        {componentType !== 'EXCEL' && dryRunRows !== null && dryRunErrors.length === 0 && dryRunRows.length === 0 && (
+          <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
+            试算无行（样本卡该组件 0 行）
+          </Text>
+        )}
       </div>
 
       {/* 公式表达式 */}
