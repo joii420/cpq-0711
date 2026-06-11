@@ -453,28 +453,29 @@ export function tokensToDrawerExpression(
 /** test-only：暴露 lex 给单测 */
 export const __lexForTest = (expr: string) => lex(expr);
 
+/** A ⊆ B（视为集合，顺序无关） */
+export function isSubset(sub: string[], sup: string[]): boolean {
+  const s = new Set(sup);
+  return sub.every((x) => s.has(x));
+}
+/** 行键可比 = 任一方 ⊆ 另一方 */
+export function comparable(a: string[], b: string[]): boolean {
+  return isSubset(a, b) || isSubset(b, a);
+}
+
 /**
- * Gate check mirroring the backend TokenMappabilityValidator rule:
- * If ≥ 2 cross_tab_ref tokens have agg === 'NONE' (row-detail alignment),
- * the formula cannot be trivially mapped to a row-keyed join and is "unmappable".
- *
- * One detail ref is fine (it drives the row iteration).
- * Two or more require multi-table alignment that Excel handles better.
+ * Gate 镜像后端 TokenMappabilityValidator（v4-C 收敛）：
+ * 拒绝任何 cross_tab_ref 且 match 为空（含 agg=NONE）——空 match → 全源行命中
+ * → 聚合退化全表 / NONE 静默广播或吞 0。component_subtotal 无 match，不受影响。
+ * 旧"≥2 个 agg=NONE 即拒"已作废。
  */
-export function checkMappable(tokens: FormulaToken[]): {
-  mappable: boolean;
-  reason?: string;
-} {
-  const noneCount = tokens.filter(
-    (t) => t.type === 'cross_tab_ref' && (!t.agg || t.agg === 'NONE'),
-  ).length;
-
-  if (noneCount >= 2) {
-    return {
-      mappable: false,
-      reason: '存在 2+ 个未聚合的跨页签明细引用，请改用 Excel 组件',
-    };
+export function checkMappable(tokens: FormulaToken[]): { mappable: boolean; reason?: string } {
+  const emptyMatch = tokens.some(
+    (t) => t.type === 'cross_tab_ref' && (!t.match || t.match.length === 0),
+  );
+  if (emptyMatch) {
+    return { mappable: false,
+      reason: '存在与宿主无公共行键的跨页签引用（match 为空），不可对齐。请改引可比页签或用其整页签小计 [页签(总计)]。' };
   }
-
   return { mappable: true };
 }
