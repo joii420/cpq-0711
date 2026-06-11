@@ -304,6 +304,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
           expression={expression}
           onInsert={(token) => insertAtCursor(token)}
           onClearExpression={() => setExpression('')}
+          selfRowKeyFields={selfRowKeyFields}
         />
       </div>
 

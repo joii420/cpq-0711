@@ -13,7 +13,7 @@
  *   9. 置灰判定: 同类页签 sameClass=true / 不同类 sameClass=false
  */
 import { describe, it, expect } from 'vitest';
-import { parseActiveRowKeySig } from './TabFieldMatrix';
+import { parseActiveRowKeySig, tabComparable } from './TabFieldMatrix';
 import type { TabDef } from '../../../services/tabJoinFormulaService';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -219,5 +219,24 @@ describe('置灰判定 isDetailDisabled', () => {
     // activeSig = process_code 签名
     expect(isDetailDisabled(TAB_PROCESS, expr, ALL_TABS)).toBe(false);  // 同类
     expect(isDetailDisabled(TAB_INVEST, expr, ALL_TABS)).toBe(true);    // 不同类
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// tabComparable — 宿主可比判定（替代 parseActiveRowKeySig 旧机制）
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe('TabFieldMatrix — 宿主可比判定（替代 parseActiveRowKeySig）', () => {
+  it('宿主[子件] vs 粗source[子件] → 可比(同级)', () => {
+    expect(tabComparable(['子件'], ['子件'])).toBe(true);
+  });
+  it('宿主[子件] vs 细source[子件,工序] → 可比(⊆)', () => {
+    expect(tabComparable(['子件'], ['子件', '工序'])).toBe(true);
+  });
+  it('宿主[子件] vs 不可比[料号] → 不可比', () => {
+    expect(tabComparable(['子件'], ['料号'])).toBe(false);
+  });
+  it('空行键 source（SUBTOTAL rowKeyFields=[]） → 不可比（只留总计）', () => {
+    expect(tabComparable(['子件'], [])).toBe(false);
   });
 });

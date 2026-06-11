@@ -1,6 +1,7 @@
 import React from 'react';
 import { Tag, Tooltip, Typography, Space, Button } from 'antd';
 import type { TabDef } from '../../../services/tabJoinFormulaService';
+import { comparable } from '../../component/formulaSerialize';
 
 const { Text } = Typography;
 
@@ -44,6 +45,15 @@ export function parseActiveRowKeySig(
 }
 
 // ──────────────────────────────────────────────
+// 宿主可比判定（v4-D/v4-M 新机制）
+// ──────────────────────────────────────────────
+/** 宿主可比：source 行键与宿主 selfRowKeyFields 集合包含(⊆/⊇);空行键 source 不可比(只留总计) */
+export function tabComparable(selfRowKeyFields: string[], sourceRowKeyFields: string[]): boolean {
+  if (!sourceRowKeyFields.length) return false;
+  return comparable(selfRowKeyFields ?? [], sourceRowKeyFields);
+}
+
+// ──────────────────────────────────────────────
 // Props
 // ──────────────────────────────────────────────
 interface Props {
@@ -51,14 +61,13 @@ interface Props {
   expression: string;
   onInsert: (token: string) => void;
   onClearExpression?: () => void;
+  selfRowKeyFields?: string[];
 }
 
 // ──────────────────────────────────────────────
 // 主组件
 // ──────────────────────────────────────────────
-const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClearExpression }) => {
-  const activeSig = parseActiveRowKeySig(expression, tabDefs);
-
+const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClearExpression, selfRowKeyFields }) => {
   if (tabDefs.length === 0) {
     return (
       <div style={{ padding: '12px 0', color: '#8a909a', fontSize: 12 }}>
@@ -69,7 +78,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
 
   return (
     <div>
-      {/* 锁定状态条 */}
+      {/* 宿主行键状态条 */}
       <div
         style={{
           display: 'flex',
@@ -80,13 +89,9 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
           color: '#8a909a',
         }}
       >
-        <span>
-          当前行键锁定：
-          <Text strong style={{ color: activeSig ? '#722ed1' : '#8a909a' }}>
-            {activeSig
-              ? `已锁定行键类 [${activeSig}]（仅同类页签明细可选；其它页签仅总计可用）`
-              : '未锁定（任意页签明细可选）'}
-          </Text>
+        <span style={{ fontSize: 12, color: '#8a909a' }}>
+          宿主行键 <Text strong style={{ color: '#722ed1' }}>[{(selfRowKeyFields ?? []).join(' + ') || '—'}]</Text>
+          ；可比页签明细可逐行对齐，更细页签字段需聚合，不可比页签仅整页签小计可用。
         </span>
         {onClearExpression && (
           <Button size="small" onClick={onClearExpression}>
@@ -105,9 +110,8 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
         }}
       >
         {tabDefs.map((def, idx) => {
-          const defSig = def.rowKeyFields.join('+');
-          const sameClass = activeSig === null || defSig === activeSig;
-          const rkActive = activeSig !== null && defSig === activeSig;
+          const selfRKF = selfRowKeyFields ?? [];
+          const isComparable = tabComparable(selfRKF, def.rowKeyFields ?? []);
 
           return (
             <div
@@ -116,7 +120,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                 display: 'flex',
                 alignItems: 'stretch',
                 borderBottom: idx < tabDefs.length - 1 ? '1px solid #e5e7eb' : 'none',
-                background: sameClass ? '#fff' : '#fafafa',
+                background: isComparable ? '#fff' : '#fafafa',
               }}
             >
               {/* 左侧：页签名 + 行键徽标 */}
@@ -144,8 +148,8 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                 <span
                   style={{
                     fontSize: 11,
-                    background: rkActive ? '#722ed1' : '#f9f0ff',
-                    color: rkActive ? '#fff' : '#722ed1',
+                    background: '#f9f0ff',
+                    color: '#722ed1',
                     border: '1px solid #efdbff',
                     borderRadius: 4,
                     padding: '1px 6px',
@@ -172,9 +176,9 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                 <Space wrap style={{ gap: 6 }}>
                   <span style={{ fontSize: 11, color: '#8a909a' }}>明细</span>
                   {def.detailFields.map((f) => {
-                    const disabled = !sameClass;
+                    const disabled = !isComparable;
                     const tooltipTitle = disabled
-                      ? `行键 [${defSig}] 与已锁定类 [${activeSig}] 不同，明细不可逐行对齐；可改用其总计字段`
+                      ? `行键 [${(def.rowKeyFields ?? []).join('+')}] 与宿主 [${selfRKF.join('+')}] 不可比；可改用「${def.alias}(总计)」`
                       : '';
                     return (
                       <Tooltip key={f} title={tooltipTitle}>
