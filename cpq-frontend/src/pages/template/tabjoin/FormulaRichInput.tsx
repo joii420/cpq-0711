@@ -24,6 +24,7 @@ const BLOCK_STYLE: Record<NonNullable<SegmentColor> | 'neutral', React.CSSProper
   yellow:  { background: '#fffbe6', border: '1px solid #ffd591', color: '#d46b08' },
   green:   { background: '#f6ffed', border: '1px solid #b7eb8f', color: '#389e0d' },
   red:     { background: '#fff1f0', border: '1px solid #ffa39e', color: '#cf1322' },
+  purple:  { background: '#f9f0ff', border: '1px solid #d3adf7', color: '#722ed1' },
   neutral: { background: '#f5f5f5', border: '1px solid #d9d9d9', color: '#595959' },
 };
 
