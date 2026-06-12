@@ -68,6 +68,11 @@ interface Props {
    * 未传时默认显示谓词输入区（原有行为）。
    */
   disablePredicate?: boolean;
+  /**
+   * 不做 driver 过滤、但用"选视图→点列"可点列表 body（核价模板列等跨视图取数用）。
+   * driverViewPath 优先级高于本项。
+   */
+  clickableColumns?: boolean;
 }
 
 
@@ -82,6 +87,7 @@ const PathPickerDrawer: React.FC<Props> = ({
   // legacyPathPolicy: Task 6.1 — 手动 Tab 已移除，prop 保留供调用方兼容但不再读取
   driverViewPath,
   disablePredicate,
+  clickableColumns,
 }) => {
   // 解析 effectiveComponentId：ownerContext.COMPONENT 优先，否则回退 componentId prop
   const effectiveComponentId =
@@ -382,6 +388,29 @@ const PathPickerDrawer: React.FC<Props> = ({
                       reset();
                       onClose();
                     }}
+                  />
+                </>
+              );
+            }
+
+            // 跨视图可点模式：列出全部可选视图，点列即确认，无 driver 锁定
+            if (clickableColumns) {
+              const currentName = selectedSqlView?.sqlViewName;
+              return (
+                <>
+                  <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
+                    选择 SQL 视图，点击列名即插入 BNF path，无谓词约束。
+                  </Paragraph>
+                  <ViewColumnPickerBody
+                    views={allComponentViews}
+                    selectedViewName={currentName}
+                    onSelectView={(name) => {
+                      const v = allComponentViews.find((x) => x.sqlViewName === name);
+                      if (v) setSelectedSqlViewId(v.id);
+                    }}
+                    driverOnly={false}
+                    currentPath={pathExpr || undefined}
+                    onPick={(path, label) => { onConfirm(path, label); reset(); onClose(); }}
                   />
                 </>
               );
