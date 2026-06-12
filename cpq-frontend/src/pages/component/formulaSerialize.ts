@@ -859,9 +859,13 @@ export function parseFormulaSegments(
   };
 
   // FN(...) 深度追踪：判断 [引用] 是否处于 FN 括号内
-  const FN_NAMES = new Set(['SUM', 'AVG', 'MAX', 'MIN', 'COUNT']);
+  // K* 系列也纳入 FN_NAMES，使 insideFn=true → 跳过 needs-agg（KSUM 内细 source 合法聚合）
+  const FN_NAMES = new Set(['SUM', 'AVG', 'MAX', 'MIN', 'COUNT', 'KSUM', 'KAVG', 'KMAX', 'KMIN', 'KCOUNT']);
+  // KFUNC_NAMES：K* 函数子集，用于独立追踪 insideKsum 上下文
+  const KFUNC_NAMES = new Set(['KSUM', 'KAVG', 'KMAX', 'KMIN', 'KCOUNT']);
   let parenDepth = 0;
   const fnOpenDepths: number[] = [];
+  const ksumOpenDepths: number[] = []; // K* 开启的括号深度栈
   let word = '';
 
   let i = 0;
@@ -874,7 +878,8 @@ export function parseFormulaSegments(
       const raw = expr.slice(i, end + 1);
       const body = expr.slice(i + 1, end).trim();
       const insideFn = fnOpenDepths.length > 0;
-      const { color } = classifyRefSegment(body, tabDefs, selfRowKeyFields, enforceMappable, insideFn);
+      const insideKsum = ksumOpenDepths.length > 0;
+      const { color } = classifyRefSegment(body, tabDefs, selfRowKeyFields, enforceMappable, insideFn, insideKsum);
       segs.push({ raw, isBlock: true, display: blockDisplay(body), color });
       word = ''; // 方括号内容不贡献函数名
       i = end + 1;
@@ -891,16 +896,21 @@ export function parseFormulaSegments(
       i = end + 1;
       continue;
     }
-    // 追踪括号深度和函数名，以便判断 [引用] 是否在 FN(...) 内
+    // 追踪括号深度和函数名，以便判断 [引用] 是否在 FN(...) / KSUM(...) 内
     if (/[A-Za-z]/.test(ch)) {
       word += ch;
     } else {
       if (ch === '(') {
         parenDepth++;
-        if (FN_NAMES.has(word.toUpperCase())) fnOpenDepths.push(parenDepth);
+        const upperWord = word.toUpperCase();
+        if (FN_NAMES.has(upperWord)) fnOpenDepths.push(parenDepth);
+        if (KFUNC_NAMES.has(upperWord)) ksumOpenDepths.push(parenDepth);
       } else if (ch === ')') {
         if (fnOpenDepths.length && fnOpenDepths[fnOpenDepths.length - 1] === parenDepth) {
           fnOpenDepths.pop();
+        }
+        if (ksumOpenDepths.length && ksumOpenDepths[ksumOpenDepths.length - 1] === parenDepth) {
+          ksumOpenDepths.pop();
         }
         parenDepth--;
       }
@@ -961,6 +971,7 @@ export interface FormulaSegment {
  * 单个 [...] body 判色(body 已去外层方括号且已 trim)。
  * 行序即优先级(spec §3.4 / §5):总计无点(绿) → 小计列(黄) → 宿主自身字段(紫,self-agg 红) → 明细(蓝) → 查不到(红) → 无点裸字段(紫)。
  * enforceMappable: NORMAL/SUBTOTAL=true(明细 match 空判红);EXCEL=false(解析得到即蓝)。
+ * insideKsum: 当处于 K*(…) 括号区间内时为 true —— 宿主自身字段(tab.self)在此区间违规 → 红。
  */
 export function classifyRefSegment(
   body: string,
@@ -968,6 +979,7 @@ export function classifyRefSegment(
   selfRowKeyFields: string[] | undefined,
   enforceMappable: boolean,
   insideFn: boolean = false,
+  insideKsum: boolean = false,
 ): { kind: string; color: SegmentColor } {
   // 1) 无点 + (总计) 结尾 → 整页签小计(component_subtotal,无 match 约束)
   if (!body.includes('.') && body.endsWith('(总计)')) {
@@ -994,9 +1006,11 @@ export function classifyRefSegment(
     }
 
     // 宿主自身字段(spec §5):tabDef.self → 紫;自聚合(isAgg)本期不支持 → 红
+    // 特例: insideKsum 内宿主自身字段 → 违规 → red（KSUM 内不能引用宿主列）
     if (tab.self) {
       if (isAgg) return { kind: 'invalid', color: 'red' };
       if (!(tab.detailFields ?? []).includes(field)) return { kind: 'invalid', color: 'red' };
+      if (insideKsum) return { kind: 'insideKsum-illegal', color: 'red' };
       return { kind: 'self-field', color: 'purple' };
     }
 
@@ -1022,5 +1036,7 @@ export function classifyRefSegment(
   }
 
   // 无点无总计 → 宿主自身列(裸字段)→ 紫
+  // insideKsum 内裸字段引用宿主列也是违规 → red
+  if (insideKsum) return { kind: 'insideKsum-illegal', color: 'red' };
   return { kind: 'self-field', color: 'purple' };
 }

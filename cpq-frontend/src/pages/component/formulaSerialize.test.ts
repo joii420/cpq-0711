@@ -1685,3 +1685,72 @@ describe('T1 token schema 扩展', () => {
     expect(multi.sources?.length).toBe(1);
   });
 });
+
+// ─────────────────────────────────────────────
+// T8: insideKsum 配色
+//   宿主=来料(uuid-ll), 外购件(uuid-wgj, 同粒度), 元素(uuid-ys, 更细粒度)
+//   KSUM_CTX 已在上方定义（KSUM_WGJ/KSUM_LL/KSUM_YS）
+// ─────────────────────────────────────────────
+describe('T8 配色 insideKsum', () => {
+  // 测试1: KSUM 内被聚合的细 source 列 → 蓝（不因 srcStrictlyFiner 判红）
+  // 元素 rowKeyFields=['料件','元素']，宿主 selfRowKeyFields=['料件'] → 元素是严格更细 source
+  // KSUM([元素.单价]) 在顶层（无外层 SUM/FN 包裹）：
+  //   修复前（FN_NAMES 缺 K*）：KSUM 不识别为函数 → insideFn=false → needs-agg → red
+  //   修复后（FN_NAMES 含 KSUM）：insideFn=true → 跳过 needs-agg → blue
+  it('合法 KSUM 内被聚合的细 source 列 → 蓝(不是 needs-agg 红)', () => {
+    // parseFormulaSegments 是纯着色，不抛错（不像 expressionToTokens 有顶层 KSUM 约束）
+    const segs = parseFormulaSegments(
+      'KSUM([元素.单价])',
+      KSUM_CTX,
+      KSUM_SELF_RKF,
+      true,
+    );
+    const blk = segs.find(s => s.isBlock && s.display === '元素·单价');
+    expect(blk?.color).toBe('blue');
+  });
+
+  // 测试2: KSUM 内宿主自身字段（tab.self=true）→ insideKsum-illegal 红
+  // 宿主紫块在 KSUM 内是违规的（会导致求值错误），应标红
+  it('KSUM 内宿主紫块(tab.self=true) → insideKsum-illegal 红', () => {
+    // 构造带 self=true 的来料 tab（模拟宿主自引用场景）
+    const tabSelfLL: TabDef = { ...KSUM_LL, self: true };
+    const ctxWithSelf = [KSUM_WGJ, tabSelfLL, KSUM_YS];
+    // [来料.组成用量] 在 KSUM 外 → purple；在 KSUM 内 → 违规 → red
+    const segs = parseFormulaSegments(
+      'SUM([外购件.费用] + KSUM([来料.组成用量]))',
+      ctxWithSelf,
+      KSUM_SELF_RKF,
+      true,
+    );
+    const blk = segs.find(s => s.isBlock && s.display.includes('组成用量'));
+    expect(blk?.color).toBe('red');
+  });
+
+  // 测试3: KSUM 外宿主紫块保持紫色（非 KSUM 区间零变化）
+  it('KSUM 外宿主紫块仍为紫色（非 KSUM 区间零变化）', () => {
+    const tabSelfLL: TabDef = { ...KSUM_LL, self: true };
+    const ctxWithSelf = [KSUM_WGJ, tabSelfLL, KSUM_YS];
+    // [来料.组成用量] 在外层 SUM 里，不在 KSUM 内 → 紫
+    const segs = parseFormulaSegments(
+      'SUM([来料.组成用量] + KSUM([外购件.费用]))',
+      ctxWithSelf,
+      KSUM_SELF_RKF,
+      true,
+    );
+    const blk = segs.find(s => s.isBlock && s.display.includes('组成用量'));
+    expect(blk?.color).toBe('purple');
+  });
+
+  // 测试4: KSUM 外细 source 裸引用仍为红（非 KSUM 区间 needs-agg 不变）
+  it('KSUM 外细 source 裸引用保持 needs-agg 红（非 KSUM 区间零变化）', () => {
+    // [元素.单价] 不在 KSUM 内，是细 source → needs-agg → red（基线行为不变）
+    const segs = parseFormulaSegments(
+      '[元素.单价] + [外购件.费用]',
+      KSUM_CTX,
+      KSUM_SELF_RKF,
+      true,
+    );
+    const blk = segs.find(s => s.isBlock && s.display === '元素·单价');
+    expect(blk?.color).toBe('red');
+  });
+});
