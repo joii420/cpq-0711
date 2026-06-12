@@ -580,9 +580,9 @@ export function tokensToDrawerExpression(
 /** test-only：暴露 lex 给单测 */
 export const __lexForTest = (expr: string) => lex(expr);
 
-/** 块展示文本：去外层括号已在调用处剥离；此处把首个 '.' 换 '·'（总计/裸字段不含点则原样） */
+/** 块展示文本：去外层括号已在调用处剥离；把所有 '.' 换 '·'（总计/裸字段不含点则原样） */
 function blockDisplay(body: string): string {
-  return body.replace('.', '·');
+  return body.replaceAll('.', '·');
 }
 
 /**
