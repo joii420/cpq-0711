@@ -549,12 +549,13 @@ interface MasterListProps {
   onRefresh: () => void;
   draftCount: number;
   onSaveAllDrafts: () => void;
+  draftIds: Set<string>;
 }
 
 const MasterList: React.FC<MasterListProps> = ({
   directories, loading, selectedId, checkedIds, searchKeyword, onSearchChange,
   onSelect, onToggleCheck, onCreate, onBatchToggleStatus, onBatchDelete, onRefresh,
-  draftCount, onSaveAllDrafts,
+  draftCount, onSaveAllDrafts, draftIds,
 }) => {
   const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({});
   // 分区折叠：key = `${dirId}:${type}`；读不到即视为折叠（默认全折叠，保持左栏紧凑）
@@ -618,6 +619,12 @@ const MasterList: React.FC<MasterListProps> = ({
         </span>
         <div className="cmm-c-name">
           {comp.name}
+          {draftIds.has(comp.id) && (
+            <span title="有未保存的本地草稿" style={{
+              display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+              background: '#faad14', marginLeft: 6, verticalAlign: 'middle',
+            }} />
+          )}
           {comp.status === 'DISABLED' && (
             <span style={{ fontSize: 10, marginLeft: 6, opacity: 0.85 }}>（已停用）</span>
           )}
@@ -1341,6 +1348,7 @@ const ComponentManagement: React.FC = () => {
         onRefresh={() => loadTree(searchKeyword || undefined)}
         draftCount={allDrafts.length}
         onSaveAllDrafts={openSaveAll}
+        draftIds={new Set(allDrafts.map(d => d.componentId))}
       />
 
       {/* 右：详情（内嵌，非抽屉） */}
