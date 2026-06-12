@@ -1164,8 +1164,8 @@ describe('parseFormulaSegments', () => {
     expect(segs[1].color).toBe('blue');
   });
 
-  it('带空格 [投料. 金额]:body trim 后判色(金额∈subtotalCols → yellow)', () => {
-    const segs = parseFormulaSegments('[投料. 金额]', allTabs, self, true);
+  it('整体空格 [ 投料.金额 ]:整 body trim 后判色(金额∈subtotalCols → yellow)', () => {
+    const segs = parseFormulaSegments('[ 投料.金额 ]', allTabs, self, true);
     expect(segs[0].color).toBe('yellow');
   });
 

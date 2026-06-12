@@ -702,8 +702,8 @@ export function classifyRefSegment(
   // 含点 → 跨页签引用
   if (body.includes('.')) {
     const dotIdx = body.indexOf('.');
-    const alias = body.slice(0, dotIdx).trim();
-    let field = body.slice(dotIdx + 1).trim();
+    const alias = body.slice(0, dotIdx);
+    let field = body.slice(dotIdx + 1);
     const isAgg = field.endsWith('(总计)');
     if (isAgg) field = field.slice(0, -'(总计)'.length);
 
