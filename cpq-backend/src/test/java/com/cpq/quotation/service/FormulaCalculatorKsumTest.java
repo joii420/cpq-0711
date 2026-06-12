@@ -287,6 +287,62 @@ class FormulaCalculatorKsumTest {
             "粗 source 0 命中 → 组成用量不注入=0 → (2+0)+(3+0)=5");
     }
 
+    // ── T6 修复验证: KSUM 子 token 非空 match 按驱动行键过滤（对齐前端 mergedRow）────────────
+
+    /**
+     * KSUM 子 token 带非空 match（按驱动行键精确过滤）时，后端与前端行为对称。
+     *
+     * <p>场景：
+     * <ul>
+     *   <li>驱动 ELEM_ID: [{料件:'Ag', 单价:2}, {料件:'Ni', 单价:3}]</li>
+     *   <li>KSUM 源 WGJ_ID: [{料件:'Ag', 费用:10}, {料件:'Ni', 费用:20}]</li>
+     *   <li>KSUM 子 token: match=[{a:'料件', b:'料件'}]（按驱动行的料件字段精确过滤）</li>
+     *   <li>ctx.currentRowRaw.料件='X'（宿主行与驱动行不同，旧逻辑会用宿主行 X 去 match → 0 命中 → KSUM=0）</li>
+     * </ul>
+     *
+     * <p>修复前（旧逻辑）：sub.currentRowRaw = ctx.currentRowRaw（料件='X'）
+     *   → KSUM match b='料件' 取 X → WGJ 无行 → 空集 I-1 → scalar=0 → 每行 += 0 → SUM=5（错）。
+     *
+     * <p>修复后（arow 覆盖）：sub.currentRowRaw = {料件:'Ag'|'Ni',...}
+     *   → KSUM match 取驱动行 → Ag命中费用10, Ni命中费用20 → SUM=(2+10)+(3+20)=35（正确）。
+     */
+    @Test
+    void ksum_nonEmptyMatch_usesDriverRowKey_notHostRowKey_sumsTo35() throws Exception {
+        List<Map<String, Object>> elemRows = List.of(
+            Map.of("料件", "Ag", "单价", 2),
+            Map.of("料件", "Ni", "单价", 3));
+        List<Map<String, Object>> wgjRows = List.of(
+            Map.of("料件", "Ag", "费用", 10),
+            Map.of("料件", "Ni", "费用", 20));
+
+        Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
+        crossTabRows.put(ELEM_ID, elemRows);
+        crossTabRows.put(WGJ_ID, wgjRows);
+
+        FormulaCalculator.RowContext ctx = new FormulaCalculator.RowContext();
+        ctx.crossTabRows = crossTabRows;
+        // 宿主行 料件='X'（与驱动行 Ag/Ni 不同），旧逻辑会用 X 匹配 WGJ → 0 命中 → KSUM=0
+        ctx.currentRowRaw = new HashMap<>(Map.of("料件", "X"));
+
+        // KSUM 子 token: match=[{a:'料件', b:'料件'}]（按驱动行的料件精确过滤）
+        JsonNode ksumSubToken = om.readTree("{"
+            + "\"type\":\"cross_tab_ref\","
+            + "\"projectToHostKey\":true,"
+            + "\"source\":\"" + WGJ_ID + "\","
+            + "\"sourceLabel\":\"外购件\","
+            + "\"agg\":\"SUM\","
+            + "\"match\":[{\"a\":\"料件\",\"b\":\"料件\"}],"
+            + "\"targetExpr\":[{\"type\":\"field\",\"value\":\"费用\"}]"
+            + "}");
+
+        JsonNode tokens = outerSumToken(ksumSubToken);
+        BigDecimal result = calc.evaluateExpression(tokens, ctx);
+
+        // 修复后: Ag行=2+10=12, Ni行=3+20=23, SUM=35
+        assertEquals(35.0, result.doubleValue(), 1e-4,
+            "KSUM 非空 match 必须从驱动行 arow 取 b 键: (2+10)+(3+20)=35");
+    }
+
     /** 多 source: 粗 source >1 命中 → multiSrcHitErr → 整项塌 0. */
     @Test
     void multiSource_coarseSource_multiHit_collapseToZero() throws Exception {

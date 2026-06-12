@@ -367,7 +367,15 @@ public class FormulaCalculator {
             if (multiSrcHitErr) return ERR;
 
             // C1: 透传所有上下文字段（使 targetExpr 内嵌 KSUM/component_subtotal/quotation_field 等可求值）
-            sub.currentRowRaw = ctx.currentRowRaw;
+            // 对齐前端 mergedRow = {...hostRow, ...ar}: 宿主行打底 + 驱动行 arow 覆盖同名列。
+            // KSUM 子 token 带非空 match 时，match 的 b 键从 sub.currentRowRaw 取值；
+            // 若只传外层宿主行（旧逻辑），则 b 键取宿主行而非驱动行 arow，与前端行为分叉。
+            java.util.Map<String, Object> mergedCurrentRow =
+                ctx.currentRowRaw != null
+                    ? new java.util.HashMap<>(ctx.currentRowRaw)
+                    : new java.util.HashMap<>();
+            mergedCurrentRow.putAll(arow);   // arow 高优先，覆盖同名宿主列（与前端 {...hostRow, ...ar} 一致）
+            sub.currentRowRaw = mergedCurrentRow;
             sub.basicDataValues = ctx.basicDataValues;
             sub.crossTabRows = ctx.crossTabRows;
             sub.componentSubtotals = ctx.componentSubtotals;   // C1 新增
