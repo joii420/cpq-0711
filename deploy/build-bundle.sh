@@ -7,6 +7,8 @@
 #   cpq-offline-bundle-YYYYMMDD-HHMM.tar.gz
 #     ├── cpq-latest-amd64.tar.gz      (the docker image, gzipped)
 #     ├── docker-compose.offline.yml   (runtime-only compose, no build section)
+#     ├── docker-start.sh              (offline one-command starter)
+#     ├── docker-stop.sh               (stop/remove container)
 #     ├── .env.example                 (env template — fill in on the intranet)
 #     └── README.txt                   (intranet deployment cheat sheet)
 #
@@ -50,6 +52,10 @@ command -v gzip   >/dev/null || die "gzip not found in PATH"
     || die "docker-compose.offline.yml missing - run from dev/deploy/"
 [ -f "${SCRIPT_DIR}/.env.example" ] \
     || die ".env.example missing in ${SCRIPT_DIR}"
+[ -f "${SCRIPT_DIR}/docker-start.sh" ] \
+    || die "docker-start.sh missing in ${SCRIPT_DIR}"
+[ -f "${SCRIPT_DIR}/docker-stop.sh" ] \
+    || die "docker-stop.sh missing in ${SCRIPT_DIR}"
 [ -d "${BUILD_CTX}/cpq-frontend" ] && [ -d "${BUILD_CTX}/cpq-backend" ] \
     || die "cpq-frontend or cpq-backend missing under ${BUILD_CTX}"
 
@@ -86,6 +92,9 @@ ok "Image tarball: $(du -h "${STAGING_DIR}/${IMAGE_TAR_NAME}" | cut -f1)"
 
 cp "${SCRIPT_DIR}/docker-compose.offline.yml" "${STAGING_DIR}/"
 cp "${SCRIPT_DIR}/.env.example"               "${STAGING_DIR}/"
+cp "${SCRIPT_DIR}/docker-start.sh"            "${STAGING_DIR}/"
+cp "${SCRIPT_DIR}/docker-stop.sh"             "${STAGING_DIR}/"
+chmod +x "${STAGING_DIR}/docker-start.sh" "${STAGING_DIR}/docker-stop.sh"
 
 cat > "${STAGING_DIR}/README.txt" <<EOF
 CPQ Offline Deployment Bundle
@@ -97,39 +106,46 @@ Platform: ${PLATFORM}
 Files in this bundle:
   - ${IMAGE_TAR_NAME}           (gzipped docker image, ~300-450 MB)
   - docker-compose.offline.yml  (runtime-only compose, no build section)
+  - docker-start.sh             (offline one-command starter)
+  - docker-stop.sh              (stop/remove container)
   - .env.example                (env template - fill before starting)
   - README.txt                  (this file)
 
-Intranet deployment steps
--------------------------
-  1) Pick a working directory, e.g.:
+Intranet deployment — quick path (recommended)
+----------------------------------------------
+  1) Extract into a working dir:
        mkdir -p /opt/cpq && cd /opt/cpq
+       tar -xzf /tmp/cpq-offline-bundle-*.tar.gz -C /opt/cpq
 
-  2) Copy this bundle's contents into that directory (after extraction):
-       tar -xzf cpq-offline-bundle-*.tar.gz -C /opt/cpq
+  2) First run creates .env from template, then stops so you can fill it:
+       chmod +x docker-start.sh docker-stop.sh
+       ./docker-start.sh
+       vim .env       # fill DB_*, REDIS_*, CPQ_ENCRYPTION_KEY(32 chars)
 
-  3) Load the docker image (one-time):
-       gunzip -c ${IMAGE_TAR_NAME} | docker load
-       docker images | grep cpq
+  3) Run again — loads image (if needed), validates .env, starts, waits health:
+       ./docker-start.sh
 
-  4) Configure environment:
-       cp .env.example .env
-       chmod 600 .env
-       vim .env       # fill DB_*, REDIS_*, CPQ_ENCRYPTION_KEY
+  4) Stop:
+       ./docker-stop.sh
 
-  5) Start:
-       docker compose -f docker-compose.offline.yml --env-file .env up -d
-       docker compose -f docker-compose.offline.yml logs -f app
+  docker-start.sh does docker load + compose up offline (no network, no build,
+  pull_policy=never). It is idempotent: safe to re-run.
 
-  6) Verify (wait 30-90s for Flyway):
-       curl -fsS http://localhost:\${HTTP_PORT:-8200}/api/cpq/health
+Intranet deployment — manual path (if you prefer raw commands)
+--------------------------------------------------------------
+  gunzip -c ${IMAGE_TAR_NAME} | docker load
+  docker images | grep cpq
+  cp .env.example .env && chmod 600 .env && vim .env
+  docker compose -f docker-compose.offline.yml --env-file .env up -d
+  docker compose -f docker-compose.offline.yml logs -f app
+  curl -fsS http://localhost:\${HTTP_PORT:-8200}/api/cpq/health   # wait 30-90s for Flyway
 
 Upgrades
 --------
-  Bring a new bundle. Then:
-     docker compose -f docker-compose.offline.yml down
-     gunzip -c <new-image>.tar.gz | docker load
-     docker compose -f docker-compose.offline.yml --env-file .env up -d
+  Bring a new bundle, extract over the same dir, then:
+     ./docker-stop.sh
+     rm -f cpq:latest 2>/dev/null; docker rmi cpq:latest 2>/dev/null || true
+     ./docker-start.sh        # loads the new image and restarts
 
 DO NOT add --build to any docker compose command on the intranet -
 the offline compose has no build section and will fail fast.

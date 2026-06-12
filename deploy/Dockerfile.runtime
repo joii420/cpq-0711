@@ -1,0 +1,37 @@
+# Dockerfile.runtime — CPQ 离线瘦运行镜像（在内网用预构建产物组装，无需联网）。
+#
+# 前置条件：
+#   1) 基础镜像 eclipse-temurin:17-jre-jammy 已存在本地
+#      （docker load 离线包里的 base-temurin-17-jre.tar.gz，或内网本就有）。
+#   2) 构建上下文里有 ./quarkus-app/ —— 由 build-artifacts.sh 在联网机产出，
+#      其中前端 dist 已在 mvn package 时烤进 META-INF/resources，无需单独处理。
+#
+# 构建（在解压后的产物包目录里）：
+#   docker build -f Dockerfile.runtime -t cpq:latest .
+#   —— 只有 FROM + COPY，无 apt / npm / mvn / registry 拉取，可在隔离内网执行。
+#
+# 注意：本文件刻意不写 `# syntax=...` 指令 —— 否则 BuildKit 会去 Docker Hub
+#       拉 dockerfile frontend 镜像，隔离内网会失败。
+
+FROM eclipse-temurin:17-jre-jammy
+
+# 非 root 运行用户（groupadd/useradd 为本地操作，不联网）
+RUN groupadd -r app && useradd -r -g app -d /app -s /sbin/nologin app
+WORKDIR /app
+
+# Quarkus fast-jar 四层布局：lib 最大且最少变动，放最前以便镜像层复用。
+COPY --chown=app:app quarkus-app/lib/     ./lib/
+COPY --chown=app:app quarkus-app/*.jar    ./
+COPY --chown=app:app quarkus-app/app/     ./app/
+COPY --chown=app:app quarkus-app/quarkus/ ./quarkus/
+
+USER app
+EXPOSE 8201
+
+# 时区：-Duser.timezone 已在 JAVA_OPTS 里强制 JVM 时区，无需 apt 装 tzdata。
+ENV TZ=Asia/Shanghai
+# 容器内 Quarkus 监听 8201（与本地 dev 的 8081 区分）。
+ENV QUARKUS_HTTP_PORT=8201
+ENV JAVA_OPTS="-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -Duser.timezone=Asia/Shanghai -Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
+
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/quarkus-run.jar"]

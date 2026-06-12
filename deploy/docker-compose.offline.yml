@@ -39,7 +39,10 @@ services:
       # --- JVM tuning (optional override) ---
       JAVA_OPTS: "${JAVA_OPTS:--XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -Duser.timezone=Asia/Shanghai -Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager}"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8201/api/cpq/health || exit 1"]
+      # TCP 探活：瘦运行镜像(Dockerfile.runtime)不含 curl，改用 bash /dev/tcp 检测
+      # 8201 端口是否就绪。Quarkus 在 Flyway 迁移完成后才绑定端口，故端口可连=应用就绪。
+      # jammy 基础镜像自带 bash，整镜像(方案①)与瘦镜像(方案②)均适用。
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8201"]
       interval: 30s
       timeout: 5s
       retries: 3

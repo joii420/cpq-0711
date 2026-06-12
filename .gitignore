@@ -59,6 +59,7 @@ data/*.rar
 # 本地 Claude 状态
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
+.claude/worktrees/
 # 临时 / 规划文件
 preview.tmp.json
 temp
