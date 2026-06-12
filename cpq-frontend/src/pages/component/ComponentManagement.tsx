@@ -952,8 +952,11 @@ const ComponentManagement: React.FC = () => {
       const map: Record<string, import('./types').RowKeyCandidate> = {};
       for (const c of list) { if (c.fieldName) map[c.fieldName] = c; }
       setRowKeyCandidates(map);
-    } catch {
-      setRowKeyCandidates({});
+    } catch (e) {
+      // 不清空已有候选：一次瞬时刷新失败若把 map 清成 {}，会让全部字段行键复选框被禁用，
+      // 用户感知为"改名后全禁用、重进才好"（重进走 handleSelectComponent 直接刷新重填）。
+      // 保留上次候选 + 显式 warn（替代原静默 catch），避免 AP-43 式吞错。
+      console.warn('[rowKeyCandidates] refresh failed, keep previous candidates:', e);
     }
   }, []);
 
