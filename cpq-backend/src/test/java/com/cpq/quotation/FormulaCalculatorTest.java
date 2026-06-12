@@ -352,6 +352,33 @@ public class FormulaCalculatorTest {
     }
 
     // ======================================================================
+    // T16: computeTabSubtotalsByColumn — INPUT_NUMBER is_subtotal 列小计
+    // ======================================================================
+
+    @Test
+    @DisplayName("T16: computeTabSubtotalsByColumn — is_subtotal 的 INPUT_NUMBER 列两行值累加（非 FORMULA，当前恒 0 = bug）")
+    void t16_subtotalInputNumberColumn() {
+        // 场景：汇率(INPUT_NUMBER, is_subtotal=true) 两行用户输入 7.12 和 3.0，无 FORMULA 列
+        // 期望小计 = 7.12 + 3.0 = 10.12；bug 状态下返回 0
+        JsonNode fields = json("["
+            + "{\"name\":\"exchange_rate\",\"fieldType\":\"INPUT_NUMBER\",\"isSubtotal\":true}"
+            + "]");
+        JsonNode formulas = json("[]");
+        JsonNode rkf = json("[\"row_id\"]");
+        JsonNode baseRows = json("["
+            + "{\"driverRow\":{\"row_id\":\"R1\",\"exchange_rate\":7.12},\"basicDataValues\":{}},"
+            + "{\"driverRow\":{\"row_id\":\"R2\",\"exchange_rate\":3.0},\"basicDataValues\":{}}"
+            + "]");
+
+        Map<String, java.math.BigDecimal> result = calc.computeTabSubtotalsByColumn(
+            fields, formulas, null, rkf, baseRows, json("[]"), new HashMap<>());
+
+        assertTrue(result.containsKey("exchange_rate"), "exchange_rate 列应出现在小计结果中");
+        assertEquals(10.12, result.get("exchange_rate").doubleValue(), 1e-9,
+            "INPUT_NUMBER is_subtotal 列应累加行值 7.12+3.0=10.12");
+    }
+
+    // ======================================================================
     // Phase4 Task6 — 防漂移红线: 与前端 formulaEngine 共享样本逐分对账
     // ======================================================================
 

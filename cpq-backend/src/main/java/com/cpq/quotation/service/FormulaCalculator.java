@@ -356,7 +356,11 @@ public class FormulaCalculator {
         for (String sf : subtotalFields) {
             double sum = 0.0;
             for (RowResult rr : rows) {
-                Double v = rr.formulaValues.get(sf);
+                // FORMULA 字段优先取 formulaValues；INPUT_NUMBER/FIXED_VALUE/BASIC_DATA 等
+                // 输入型字段的值在 fieldValues 里，formulaValues 中无此键，回退读 fieldValues。
+                Double v = rr.formulaValues.containsKey(sf)
+                    ? rr.formulaValues.get(sf)
+                    : rr.fieldValues.get(sf);
                 if (v != null) sum += v;
             }
             out.put(sf, BigDecimal.valueOf(sum).setScale(4, RoundingMode.HALF_UP));
@@ -367,7 +371,14 @@ public class FormulaCalculator {
     private static class RowResult {
         final String rowKey;
         final Map<String, Double> formulaValues;
-        RowResult(String rowKey, Map<String, Double> v) { this.rowKey = rowKey; this.formulaValues = v; }
+        /** 非 FORMULA 字段（INPUT_NUMBER/FIXED_VALUE/BASIC_DATA/DATA_SOURCE 等）的收集值，
+         *  用于 computeTabSubtotalsByColumn 对输入型 is_subtotal 列的累加。 */
+        final Map<String, Double> fieldValues;
+        RowResult(String rowKey, Map<String, Double> formulaValues, Map<String, Double> fieldValues) {
+            this.rowKey = rowKey;
+            this.formulaValues = formulaValues;
+            this.fieldValues = fieldValues != null ? fieldValues : Map.of();
+        }
     }
 
     /**
@@ -433,7 +444,7 @@ public class FormulaCalculator {
                 ctx.fieldValues.put(name, val);
             }
 
-            out.add(new RowResult(effKey, results));
+            out.add(new RowResult(effKey, results, fieldValues));
 
             // Plan 2b：本行全量公式值传下行，各列下一行按本列取 prev。
             prevRowValues = results;
