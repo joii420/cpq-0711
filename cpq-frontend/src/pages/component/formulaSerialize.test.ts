@@ -1351,8 +1351,9 @@ describe('T2 lexer K* + C3 + 多 source', () => {
       .toThrow(/不能拆写.*请连写/);
   });
 
-  it('多 source 链 SUM (元素细 + 来料粗，两两可比) → 不抛"只允许同一细页签"', () => {
-    // 元素 rowKeyFields=['料件','元素'] ⊇ 来料 rowKeyFields=['料件'] → 可比成链
+  it('selfCid=来料时 [来料.组成用量] 判为宿主列(b_field) → srcTabsSeen 仅元素 → N=1 路径不抛错', () => {
+    // 注意: selfCid=uuid-ll(来料是宿主), [来料.组成用量] 退化为 b_field 不进 srcTabsSeen,
+    // 实际只有元素一个 source → 走 N=1 原路径（多 source N>=2 正向覆盖由下方 uuid-host 测试承担）
     expect(() =>
       expressionToTokens('SUM([元素.单价] + [来料.组成用量])', multiSrcTabs, selfRKF2, selfCid),
     ).not.toThrow();

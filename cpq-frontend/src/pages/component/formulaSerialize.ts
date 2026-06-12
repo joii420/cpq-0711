@@ -367,9 +367,11 @@ export function expressionToTokens(
             }
           }
         }
-        // 按 rowKeyFields 长度排序：最细（字段最多）→ 更粗
+        // 按 rowKeyFields 长度排序：最细（字段最多）→ 更粗；等长时按 componentId 字典序作 tie-breaker 保证快照确定性
         const ordered = [...srcTabsSeen].sort(
-          (x, y) => (y.rowKeyFields?.length ?? 0) - (x.rowKeyFields?.length ?? 0),
+          (x, y) =>
+            (y.rowKeyFields?.length ?? 0) - (x.rowKeyFields?.length ?? 0) ||
+            x.componentId.localeCompare(y.componentId),
         );
         // source 镜像为最细 sources[0]
         const primaryTab = ordered[0];
