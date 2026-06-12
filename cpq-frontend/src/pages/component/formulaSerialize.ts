@@ -347,7 +347,13 @@ export function expressionToTokens(
               }
               const di = bb.indexOf('.');
               const al = bb.slice(0, di);
-              const col = bb.slice(di + 1);
+              let col = bb.slice(di + 1);
+              // 修复 I-3：检测 (总计) 后缀，静默产出怪字段名违反"忌静默失败"纪律
+              if (col.endsWith('(总计)')) {
+                throw new Error(
+                  `${innerFnName}() 内不支持 (总计) 总计引用 [${al}.${col}]，请引用明细字段或把总计放到外层`,
+                );
+              }
               const td = findTabByRef(tabDefs, al);
               if (!td) throw new Error(`${innerFnName}() 内引用了未知页签 "${al}"`);
               if (!td.componentId) throw new Error(`页签 "${al}" 缺少 componentId`);
@@ -372,8 +378,11 @@ export function expressionToTokens(
               innerTargetExpr.push({ type: 'bracket_open' });
             } else if (irr.kind === 'paren_close') {
               innerTargetExpr.push({ type: 'bracket_close' });
+            } else if (irr.kind === 'brace_expr') {
+              // 修复 spec §2.4：global_variable {路径} 是与行无关的常量，逐行广播安全 → 放行为 path token
+              innerTargetExpr.push({ type: 'path', path: irr.body });
             } else {
-              // 不支持 func/brace_expr 等在 KSUM 内（J 已处理 K 套 K，其他聚合也禁止）
+              // 不支持 func 等在 KSUM 内（J 已处理 K 套 K，其他聚合也禁止）
               throw new Error(`${innerFnName}() 内不支持 ${irr.kind} 类型的 token`);
             }
           }
@@ -475,8 +484,8 @@ export function expressionToTokens(
 
       // ── 多 source 校验 + token 组装 ──
       if (srcTabsSeen.length === 0 && ksumWrappedSources.size > 0) {
-        // 纯 KSUM 折叠（外层 FN body 内无普通 cross-tab source，只有 KSUM 子 token）
-        // 外层 token 是标量折叠容器，source 留空（宿主自身聚合）
+        // 纯 KSUM 容器: match=[] 表示外层无需直接 join, 求值器应下钻 targetExpr 内 projectToHostKey 子 token
+        // (T6 后端镜像此契约)
         result.push({
           type: 'cross_tab_ref',
           source: selfComponentId ?? '',

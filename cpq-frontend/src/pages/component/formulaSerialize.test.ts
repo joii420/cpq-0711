@@ -1566,6 +1566,53 @@ describe('T3 KSUM 折叠 + 约束', () => {
 });
 
 // ─────────────────────────────────────────────
+// T3 KSUM 评审修复
+// ─────────────────────────────────────────────
+describe('T3 KSUM 评审修复', () => {
+  // 修复1: global_variable(brace_expr) 在 KSUM inner body 应被放行
+  it('修复1: KSUM 内含 {路径} global_variable → 不抛错, inner targetExpr 含 path token', () => {
+    // {某全局变量} 在 lex 层是 brace_expr，外层顶级已支持 → inner 应同样放行为 path token
+    const toks = expressionToTokens(
+      'SUM([元素.单价] + KSUM([外购件.费用] * {某全局变量}))',
+      KSUM_CTX,
+      KSUM_SELF_RKF,
+      KSUM_SELF_CID,
+    );
+    const ksumTok = pickKsum(toks);
+    expect(ksumTok.projectToHostKey).toBe(true);
+    // inner targetExpr 应含 path token（global_variable / brace_expr 产出的 type='path'）
+    expect(ksumTok.targetExpr!.some(t => t.type === 'path')).toBe(true);
+  });
+
+  // 修复2: KSUM 内 [alias.field(总计)] 应抛显式错误而非静默产出怪字段名
+  it('修复2: KSUM 内含 (总计) 总计引用 → 抛显式错误', () => {
+    expect(() =>
+      expressionToTokens(
+        'SUM([元素.单价] + KSUM([外购件.费用(总计)]))',
+        KSUM_CTX,
+        KSUM_SELF_RKF,
+        KSUM_SELF_CID,
+      ),
+    ).toThrow(/总计/);
+  });
+
+  // 修复3: 纯 KSUM 容器 — SUM(KSUM([外购件.费用]))
+  it('修复3: 纯 KSUM 容器 SUM(KSUM([外购件.费用])) → 外层 source=selfCid, match=[], targetExpr 含 projectToHostKey 子 token', () => {
+    const toks = expressionToTokens(
+      'SUM(KSUM([外购件.费用]))',
+      KSUM_CTX,
+      KSUM_SELF_RKF,
+      KSUM_SELF_CID,
+    );
+    const outer = toks.find(t => t.type === 'cross_tab_ref' && !t.projectToHostKey)!;
+    expect(outer).toBeDefined();
+    expect(outer.source).toBe(KSUM_SELF_CID);
+    expect(outer.match).toEqual([]);
+    expect(outer.targetExpr!.some(t => t.type === 'cross_tab_ref' && t.projectToHostKey)).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────
 // T1 token schema 扩展
 // ─────────────────────────────────────────────
 describe('T1 token schema 扩展', () => {
