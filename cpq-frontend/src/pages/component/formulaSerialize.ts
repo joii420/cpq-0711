@@ -580,6 +580,62 @@ export function tokensToDrawerExpression(
 /** test-only：暴露 lex 给单测 */
 export const __lexForTest = (expr: string) => lex(expr);
 
+/** 块展示文本：去外层括号已在调用处剥离；此处把首个 '.' 换 '·'（总计/裸字段不含点则原样） */
+function blockDisplay(body: string): string {
+  return body.replace('.', '·');
+}
+
+/**
+ * 把表达式串切成有序 FormulaSegment[]（块 + 文本交替），供 FormulaRichInput 渲染。
+ * 宽容：未闭合 [ / { 降级为文本段（用户正在打字），绝不抛错。
+ * 块 body 先 trim 再判色，与 lex() 内 body.trim() 对齐。
+ */
+export function parseFormulaSegments(
+  expr: string,
+  tabDefs: TabDef[],
+  selfRowKeyFields: string[] | undefined,
+  enforceMappable: boolean,
+): FormulaSegment[] {
+  const segs: FormulaSegment[] = [];
+  let textBuf = '';
+  const flush = () => {
+    if (textBuf) {
+      segs.push({ raw: textBuf, isBlock: false, display: textBuf, color: null });
+      textBuf = '';
+    }
+  };
+
+  let i = 0;
+  while (i < expr.length) {
+    const ch = expr[i];
+    if (ch === '[') {
+      const end = expr.indexOf(']', i);
+      if (end === -1) { textBuf += expr.slice(i); break; }
+      flush();
+      const raw = expr.slice(i, end + 1);
+      const body = expr.slice(i + 1, end).trim();
+      const { color } = classifyRefSegment(body, tabDefs, selfRowKeyFields, enforceMappable);
+      segs.push({ raw, isBlock: true, display: blockDisplay(body), color });
+      i = end + 1;
+      continue;
+    }
+    if (ch === '{') {
+      const end = expr.indexOf('}', i);
+      if (end === -1) { textBuf += expr.slice(i); break; }
+      flush();
+      const raw = expr.slice(i, end + 1);
+      const body = expr.slice(i + 1, end).trim();
+      segs.push({ raw, isBlock: true, display: body, color: null });
+      i = end + 1;
+      continue;
+    }
+    textBuf += ch;
+    i++;
+  }
+  flush();
+  return segs;
+}
+
 /** A ⊆ B（视为集合，顺序无关） */
 export function isSubset(sub: string[], sup: string[]): boolean {
   const s = new Set(sup);
@@ -646,8 +702,8 @@ export function classifyRefSegment(
   // 含点 → 跨页签引用
   if (body.includes('.')) {
     const dotIdx = body.indexOf('.');
-    const alias = body.slice(0, dotIdx);
-    let field = body.slice(dotIdx + 1);
+    const alias = body.slice(0, dotIdx).trim();
+    let field = body.slice(dotIdx + 1).trim();
     const isAgg = field.endsWith('(总计)');
     if (isAgg) field = field.slice(0, -'(总计)'.length);
 

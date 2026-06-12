@@ -28,6 +28,7 @@ import {
   isSubset,
   __lexForTest,
   classifyRefSegment,
+  parseFormulaSegments,
 } from './formulaSerialize';
 import type { TabDef } from '../../services/tabJoinFormulaService';
 import type { FormulaToken } from './types';
@@ -1132,5 +1133,59 @@ describe('classifyRefSegment', () => {
   });
   it('[别名(总计)] 优先于 self-field(行序)', () => {
     expect(classifyRefSegment('回料(总计)', allTabs, self, true).kind).toBe('tab-total');
+  });
+});
+
+describe('parseFormulaSegments', () => {
+  const self = ['料号'];
+
+  it('混合串切分顺序:SUM([投料.金额] * [回料.用量])', () => {
+    const segs = parseFormulaSegments('SUM([投料.金额] * [回料.用量])', allTabs, self, true);
+    expect(segs.map((s) => s.raw)).toEqual(['SUM(', '[投料.金额]', ' * ', '[回料.用量]', ')']);
+    expect(segs.map((s) => s.isBlock)).toEqual([false, true, false, true, false]);
+    expect(segs[1].color).toBe('yellow'); // 投料.金额∈subtotalCols
+    expect(segs[3].color).toBe('blue');   // 回料.用量∈detailFields 可比
+  });
+
+  it('块 display 去括号、点换 ·', () => {
+    const segs = parseFormulaSegments('[投料.金额]', allTabs, self, true);
+    expect(segs[0].display).toBe('投料·金额');
+  });
+
+  it('[回料(总计)] display 保留总计、green', () => {
+    const segs = parseFormulaSegments('[回料(总计)]', allTabs, self, true);
+    expect(segs[0].display).toBe('回料(总计)');
+    expect(segs[0].color).toBe('green');
+  });
+
+  it('回显形态 SUM([回料.用量]):SUM(/)为文本,内层块 blue', () => {
+    const segs = parseFormulaSegments('SUM([回料.用量])', allTabs, self, true);
+    expect(segs.map((s) => s.isBlock)).toEqual([false, true, false]);
+    expect(segs[1].color).toBe('blue');
+  });
+
+  it('带空格 [投料. 金额]:body trim 后判色(金额∈subtotalCols → yellow)', () => {
+    const segs = parseFormulaSegments('[投料. 金额]', allTabs, self, true);
+    expect(segs[0].color).toBe('yellow');
+  });
+
+  it('未闭合 [ 不抛错,降级文本段', () => {
+    const segs = parseFormulaSegments('[投料.金额', allTabs, self, true);
+    expect(segs).toEqual([{ raw: '[投料.金额', isBlock: false, display: '[投料.金额', color: null }]);
+  });
+
+  it('{路径} → 中性块 color null', () => {
+    const segs = parseFormulaSegments('{a.b}', allTabs, self, true);
+    expect(segs[0]).toMatchObject({ isBlock: true, color: null, display: 'a.b' });
+  });
+
+  it('空串 → []', () => {
+    expect(parseFormulaSegments('', allTabs, self, true)).toEqual([]);
+  });
+
+  it('round-trip 无损:raw 拼接 === 原串', () => {
+    const expr = 'SUM([投料.金额] * [回料.用量]) + [回料(总计)] - 3.5';
+    const segs = parseFormulaSegments(expr, allTabs, self, true);
+    expect(segs.map((s) => s.raw).join('')).toBe(expr);
   });
 });
