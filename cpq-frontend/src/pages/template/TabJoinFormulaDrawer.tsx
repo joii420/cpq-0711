@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Drawer, Button, Input, Space, message, Table, Typography } from 'antd';
+import { Drawer, Button, Space, message, Table, Typography } from 'antd';
 import { tabJoinFormulaService, type TabDef } from '../../services/tabJoinFormulaService';
 import TabFieldMatrix from './tabjoin/TabFieldMatrix';
+import FormulaRichInput, { type FormulaRichInputHandle } from './tabjoin/FormulaRichInput';
 import SampleCardPicker from './tabjoin/SampleCardPicker';
 import {
   expressionToTokens,
@@ -54,7 +55,8 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
 }) => {
   const [expression, setExpression] = useState<string>(column?.expression ?? '');
   const [tabDefs, setTabDefs] = useState<TabDef[]>([]);
-  const exprRef = useRef<any>(null);
+  const exprRef = useRef<FormulaRichInputHandle | null>(null);
+  const enforceMappable = componentType !== 'EXCEL';
 
   // 试算相关状态
   const [sampleLi, setSampleLi] = useState<string | undefined>(undefined);
@@ -83,23 +85,9 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
       });
   }, [open, componentId]);
 
-  /** 在光标处插入文本，caretOffsetFromEnd 控制插入后光标左偏（用于 fn() 光标落在括号内） */
+  /** 在富文本光标处插入文本(转发给 FormulaRichInput),caretOffsetFromEnd 用于 fn() 光标落括号内 */
   const insertAtCursor = (text: string, caretOffsetFromEnd = 0) => {
-    const el: HTMLTextAreaElement | undefined =
-      exprRef.current?.resizableTextArea?.textArea ?? exprRef.current;
-    const start = el?.selectionStart ?? expression.length;
-    const end = el?.selectionEnd ?? start;
-    const next = expression.slice(0, start) + text + expression.slice(end);
-    setExpression(next);
-    const pos = start + text.length - caretOffsetFromEnd;
-    requestAnimationFrame(() => {
-      try {
-        el?.focus();
-        el?.setSelectionRange(pos, pos);
-      } catch {
-        // 忽略 focus 失败（如 SSR / 测试环境）
-      }
-    });
+    exprRef.current?.insertAtCursor(text, caretOffsetFromEnd);
   };
 
   /** 从当前表达式解析 tabs，组装 column payload（save 和 dryRun 共用） */
@@ -291,13 +279,14 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
       <div style={{ color: '#8a909a', fontSize: 12, marginBottom: 6 }}>
         列来源：页签连表公式 · 单卡片单值 · 行键自动对齐(全外连·缺补0) · 明细默认按对齐行求和
       </div>
-      <Input.TextArea
+      <FormulaRichInput
         ref={exprRef}
-        rows={2}
         value={expression}
-        onChange={(e) => setExpression(e.target.value)}
-        placeholder="例：[投料.金额] * [加工.工时] + [回料(总计)]"
-        style={{ fontFamily: 'SF Mono, Consolas, Monaco, monospace', marginTop: 4 }}
+        onChange={setExpression}
+        tabDefs={tabDefs}
+        selfRowKeyFields={selfRowKeyFields}
+        enforceMappable={enforceMappable}
+        placeholder="例:[投料.金额] * [加工.工时] + [回料(总计)]"
       />
 
       {/* 运算符 + 函数工具条 */}
