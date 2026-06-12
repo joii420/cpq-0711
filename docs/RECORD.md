@@ -4,6 +4,15 @@
 
 ---
 
+### [2026-06-12] 组件管理编辑体验三项优化 (14 task, subagent-driven) | componentDraft/useComponentDraft/ViewColumnPickerBody/sqlViewPath(新) + ComponentManagement/FieldConfigTable/DefaultSourceEditor/PathPickerDrawer/CostingTemplateConfig | spec: specs/2026-06-12-component-editor-ux-design.md + plan: plans/2026-06-12-component-editor-ux.md
+- **请求1 自动保存**: localStorage 本地草稿(不触发后端 snapshot 传播),编辑防抖 800ms 写入,切组件/刷新自动恢复 + 脏 banner + 左侧橙点徽标;全局「保存全部草稿(N)」确认 Modal 可勾选,逐个落库前复检 updatedAt 陈旧(被他人改过则跳过,runBatch 串行 concurrent:false 避免批量 snapshot 传播打爆)。草稿 snapshot 剥离临时 key、恢复时重建。
+- **请求2 行键资格实时刷新**: 撞名约束(ComponentDriverService:1065 仅对无 basic_data_path 的 INPUT 字段)**保留**(运行时 computeDedupKey driver 列优先,手填值会被同名列静默顶替,是正确护栏)。修前端 `refreshRowKeyCandidates` 的 catch:原 `setRowKeyCandidates({})` 把一次瞬时刷新失败放大成"全字段行键复选框禁用、重进才好";改为保留上次候选 + console.warn(替代静默 catch,AP-43 族)。**根因仅静态分析定位(dev server 服务主工作区、headless 无法浏览器复现),待真机确认;若仍复现需 F12 抓 /row-key-candidates 请求/响应。**
+- **请求3 统一点选取数(C2)**: 抽共享 `ViewColumnPickerBody`(选视图+列以可点 CheckableTag 铺开)。① 默认值来源 BASIC_DATA 改内联点选(允许任意视图列,语义=兜底查表,与字段自身 basic_data_path 区分);② 字段 basic_data_path 增强 PathPickerDrawer(传 driverViewPath→只列 driver 视图列+无谓词,新 prop 可选不破坏另2调用方,回归评审逐行确认 else 分支等价原行为);③ driver 路径本期不动(已是点选器);④ 核价模板列加 clickableColumns opt-in 跨视图可点。历史非 driver 列/含谓词旧路径保留+⚠Tag 标注。LIST_FORMULA/cross_tab_ref/DATA_SOURCE 不受"只 driver 列"约束。
+- **自检**: tsc 0 错误;vitest 7 文件/149 测试全绿(新增 componentDraft/useComponentDraft/sqlViewPath/ViewColumnPickerBody 测试)。**E2E quotation-flow 因主工作区测试数据(10110002 组合产品已清理,见 2026-06-11 条)卡在选模板步,非本次回归;且 dev server 服务主工作区代码,合并后才能在 5174 跑到本次改动 → 浏览器/E2E 验证须合并后做。**
+- **注意(重要)**: worktree 的 dev server(5174)cwd=主工作区,不反映 worktree 改动 → worktree 内 `curl 5174` 自检无效,真正有效验证是 worktree 内 tsc + vitest;UI 运行时验证须合并到 master 后在 5174 做。
+
+---
+
 ### [2026-06-11] E2E quotation-flow 对齐现存数据(组合产品模板已清理) | cpq-frontend/e2e/quotation-flow.spec.ts
 
 - **背景**: 批3 合并后跑 `quotation-flow.spec.ts` 验渲染层,卡在"选报价模板"步——它写死选「组合产品 v1.10」,但该模板及整套"选配/组合产品"数据已被 2026-06-11 测试数据清理移除(查库:5 个模板无一组合,`components_snapshot` 搜不到任何"选配-"Tab)。失败在批3一行未改的模板选择步、且在渲染层之前,**非批3回归**。
