@@ -594,6 +594,114 @@ describe('T5 前端引擎 KSUM', () => {
   });
 });
 
+// ─── 多 source 广播（§4.3 token.sources 求值）────────────────────────────────
+//
+// 场景: 公式 SUM([元素.单价] + [来料.组成用量])
+//   驱动 = 元素组件(ELEM_ID), 2 行: [{料件:'A', 单价:2}, {料件:'A', 单价:3}]
+//   更粗 source = 来料组件(MAT_ID), 按料件与驱动行匹配
+//   token.sources = [
+//     { source: ELEM_ID, match: [{a:'料件', b:'料件'}] },   // sources[0] = 驱动
+//     { source: MAT_ID,  match: [{a:'料件', b:'料件'}] },   // sources[1] = 更粗
+//   ]
+//   targetExpr = [field('单价'), op('+'), field('组成用量')]
+//   (单价来自驱动行 ar, 组成用量来自来料广播行)
+//
+// 期望:
+//   来料 1 行(料件='A', 组成用量=10) → 广播合并
+//   驱动行0: {单价:2} + 广播{组成用量:10} = 12
+//   驱动行1: {单价:3} + 广播{组成用量:10} = 13
+//   SUM = 25
+
+describe('多 source 广播 (token.sources §4.3)', () => {
+  const ELEM_ID = 'elem-id';
+  const MAT_ID = 'mat-id';
+
+  // 构造带 sources 的外层 SUM token
+  const makeMultiSrcToken = (
+    elemRows: Array<Record<string, any>>,
+    matRows: Array<Record<string, any>>,
+  ) => {
+    const token: ExpressionToken = {
+      type: 'cross_tab_ref',
+      source: ELEM_ID,  // 镜像 sources[0]
+      agg: 'SUM',
+      match: [],  // 外层 match=[] → hits = 所有驱动行
+      targetExpr: [
+        { type: 'field', value: '单价' },
+        { type: 'operator', value: '+' },
+        { type: 'field', value: '组成用量' },
+      ],
+      sources: [
+        { source: ELEM_ID, match: [{ a: '料件', b: '料件' }] },  // sources[0] = 驱动
+        { source: MAT_ID,  match: [{ a: '料件', b: '料件' }] },  // sources[1] = 更粗
+      ],
+    };
+    return { token, crossTabRows: { [ELEM_ID]: elemRows, [MAT_ID]: matRows } as Record<string, Array<Record<string, any>>> };
+  };
+
+  function evalMultiSrc(
+    token: ExpressionToken,
+    crossTabRows: Record<string, Array<Record<string, any>>>,
+    outDiag?: { crossTabError?: string },
+  ): number {
+    return evaluateExpression(
+      [token],
+      {},
+      undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined,
+      undefined,  // currentRow（外层 match=[] 时不需要）
+      crossTabRows,
+      outDiag,
+    );
+  }
+
+  it('多 source 链: SUM([元素.单价] + [来料.组成用量]) 驱动=元素, 来料更粗按料件广播', () => {
+    // 驱动 2 行 + 来料 1 行(料件=A 命中两驱动行)
+    const elemRows = [
+      { 料件: 'A', 单价: 2 },
+      { 料件: 'A', 单价: 3 },
+    ];
+    const matRows = [
+      { 料件: 'A', 组成用量: 10 },
+    ];
+    const { token, crossTabRows } = makeMultiSrcToken(elemRows, matRows);
+    // 驱动行0: 单价=2 + 广播 组成用量=10 = 12
+    // 驱动行1: 单价=3 + 广播 组成用量=10 = 13
+    // SUM = 25
+    expect(evalMultiSrc(token, crossTabRows)).toBe(25);
+  });
+
+  it('多 source: 粗 source 0 命中 → 该项=0 (不报 crossTabError)', () => {
+    // 来料无与驱动行(料件=A)匹配的行
+    const elemRows = [
+      { 料件: 'A', 单价: 2 },
+      { 料件: 'A', 单价: 3 },
+    ];
+    const matRows: Array<Record<string, any>> = [];  // 空 → 0 命中
+    const { token, crossTabRows } = makeMultiSrcToken(elemRows, matRows);
+    const outDiag: { crossTabError?: string } = {};
+    // 组成用量不注入 → aFieldValues.组成用量 = 0
+    // 驱动行0: 2 + 0 = 2 ; 驱动行1: 3 + 0 = 3 ; SUM = 5
+    expect(evalMultiSrc(token, crossTabRows, outDiag)).toBe(5);
+    expect(outDiag.crossTabError).toBeUndefined();
+  });
+
+  it('多 source: 粗 source >1 命中 → multiMatchErr → 整项塌 0 + crossTabError', () => {
+    // 来料 2 行同料件='A' → 粗 source 多命中 → multiSrcHitErr=true → multiMatchErr=true → 塌 0
+    const elemRows = [
+      { 料件: 'A', 单价: 2 },
+    ];
+    const matRows = [
+      { 料件: 'A', 组成用量: 10 },
+      { 料件: 'A', 组成用量: 20 },  // 重复行 → 多命中
+    ];
+    const { token, crossTabRows } = makeMultiSrcToken(elemRows, matRows);
+    const outDiag: { crossTabError?: string } = {};
+    expect(evalMultiSrc(token, crossTabRows, outDiag)).toBe(0);
+    expect(outDiag.crossTabError).toBeTruthy();
+  });
+});
+
 // ─── isWithinTolerance ──────────────────────────────────────────────────────
 
 describe('isWithinTolerance', () => {

@@ -40,7 +40,7 @@ export interface ExpressionToken {
   sources?: Array<{ source: string; sourceLabel?: string; match: Array<{ a: string; b: string }> }>;
   /**
    * v2 KSUM: true = 按宿主结果行键塌缩成宿主粒度标量 (区别外层 join-set 聚合).
-   * KSUM/KCOUNT/KMAX/KMIN 空集 → 0 (静默, I-1 决策 K).
+   * KSUM/KCOUNT 空集 → 0 (静默, I-1 决策 K).
    * KAVG/KMAX/KMIN 空集 → null → 整外层表达式塌 0 + outDiag.crossTabError (I-2 决策 K).
    * 缺省 false.
    */
@@ -293,16 +293,53 @@ export function evaluateExpression(
           const A = agg.toUpperCase();
           const toNum = (v: any) => { const n = Number(v); return isNaN(n) ? null : n; };
           const hasTE = !!(targetExpr && targetExpr.length > 0);
+
+          // §4.3 多 source 广播: 粗 source >1 命中时的错误标志 (闭包)
+          // evalRowExpr 命中 >1 时置 true → aggregateRows 合并进 multiMatchErr
+          let multiSrcHitErr = false;
+
           // evalRowExpr: 对单驱动行 ar 求值 targetExpr，透传所有求值上下文。
           // currentRow 传 ar 使 KSUM 子 token(projectToHostKey) 按驱动行键塌缩；
           // b_field 取 ar[field] 等价于原宿主行（因 match key 字段值对齐）。
           const evalRowExpr = (ar: Record<string, any>): number => {
             const aFieldValues: Record<string, number> = {};
-            for (const k of Object.keys(ar)) { const n = Number(ar[k]); if (!isNaN(n)) aFieldValues[k] = n; }
-            // §4.3: 合并驱动行(ar)与宿主行(currentRow)作为递归的 currentRow。
-            // - b_field 取宿主列（如"数量"）→ 保留原 currentRow 字段（N=1 退化路径零变化）
+
+            // §4.3 多 source 广播（仅当 token.sources 存在且含 ≥2 项时触发）:
+            // N=1 / 无 sources / 纯 KSUM 容器路径 → 跳过，aFieldValues 完全同既有逻辑。
+            if (token.sources && token.sources.length >= 2) {
+              // 步骤1: 先放更粗 source 的列（低优先级）
+              for (const s of token.sources.slice(1)) {
+                const coarseRows = crossTabRows?.[s.source] ?? [];
+                // 用 s.match 命中: cr[p.a] 对应粗 source 列, ar[p.b] 对应驱动行（公共行键）
+                const hitRows = coarseRows.filter((cr) =>
+                  s.match.every((p) => keyEq(cr[p.a], ar[p.b]))
+                );
+                if (hitRows.length === 0) {
+                  // 0 命中 → 该粗 source 的列不注入（其 field 取值缺省 → 项=0）
+                  continue;
+                }
+                if (hitRows.length > 1) {
+                  // >1 命中 → 粗 source 行键非唯一 → 标记错误（等价 null → multiMatchErr）
+                  multiSrcHitErr = true;
+                  continue;
+                }
+                // 恰好 1 命中 → 把该行所有数值列并入 aFieldValues（低优先级，后续被驱动行覆盖）
+                for (const k of Object.keys(hitRows[0])) {
+                  const n = Number(hitRows[0][k]);
+                  if (!isNaN(n)) aFieldValues[k] = n;
+                }
+              }
+              // 步骤2: 放驱动行 ar 的列（高优先级，覆盖粗 source 同名列）
+              for (const k of Object.keys(ar)) { const n = Number(ar[k]); if (!isNaN(n)) aFieldValues[k] = n; }
+            } else {
+              // N=1 退化路径（无 sources / 纯 KSUM 容器）: 逐字保留旧逻辑，零变化
+              for (const k of Object.keys(ar)) { const n = Number(ar[k]); if (!isNaN(n)) aFieldValues[k] = n; }
+            }
+
+            // §4.3: 合并驱动行(ar)与宿主行(hostRow)作为递归的 currentRow。
+            // - b_field 取宿主列（如"数量"）→ 保留原 hostRow 字段（N=1 退化路径零变化）
             // - KSUM 子 token 按 ar 的行键（如"料件"）做 match → ar 字段覆盖同名项（match key 对齐）
-            const mergedRow = currentRow ? { ...currentRow, ...ar } : ar;
+            const mergedRow = hostRow ? { ...hostRow, ...ar } : ar;
             return evaluateExpression(
               targetExpr!, aFieldValues, componentSubtotals, productAttributes, quotationFields,
               pathCache, partNo, basicDataValues, undefined, globalVariableDefs,
@@ -333,7 +370,8 @@ export function evaluateExpression(
           }
 
           const nums = hasTE ? hits.map(evalRowExpr) : hits.map((h) => toNum(h[target ?? '']));
-          if (nums.some((n) => n === null)) return { value: null, multiMatchErr: true };
+          // §4.3: 粗 source >1 命中时 multiSrcHitErr=true → 等价 multiMatchErr（整项塌 0 + crossTabError）
+          if (multiSrcHitErr || nums.some((n) => n === null)) return { value: null, multiMatchErr: true };
           const arr = nums as number[];
           const v = A === 'SUM' ? arr.reduce((s, x) => s + x, 0)
                   : A === 'AVG' ? arr.reduce((s, x) => s + x, 0) / arr.length
@@ -351,8 +389,11 @@ export function evaluateExpression(
           const r = aggregateRows(rows, token.match ?? [], currentRow, token.targetExpr, agg, token.target, true);
           if (r.value === null) {
             // I-2: KAVG/KMAX/KMIN 空集 → 注入非法表达式 → 外层 try/catch → 0; 同时写 outDiag
+            // C-2: 区分"空集无定义"与"含非数值字段/多命中无法聚合"两种 null 原因
             if (outDiag) {
-              outDiag.crossTabError = `[${token.sourceLabel ?? token.source}] ${token.agg} 命中 0 行,无定义`;
+              outDiag.crossTabError = r.multiMatchErr
+                ? `[${token.sourceLabel ?? token.source}] ${token.agg} 含非数值字段,无法聚合`
+                : `[${token.sourceLabel ?? token.source}] ${token.agg} 命中 0 行,无定义`;
             }
             expr += '(null.x)';
           } else {
@@ -362,7 +403,11 @@ export function evaluateExpression(
         }
 
         // ── 外层 source join 分支（存量路径，N=1 无嵌套退化路径零变化）──
-        const rows = crossTabRows?.[token.source ?? ''] ?? [];
+        // §4.3: 驱动 = sources[0].source（与 token.source 镜像等价，显式引用更清晰）
+        const driverSource = (token.sources && token.sources.length >= 2)
+          ? token.sources[0].source
+          : (token.source ?? '');
+        const rows = crossTabRows?.[driverSource] ?? [];
         const r = aggregateRows(rows, token.match ?? [], currentRow, token.targetExpr, agg, token.target, false);
         let crossTabError = r.multiMatchErr;
         // 错误路径: 注入非法表达式让外层 try/catch 捕获并返回 0 (对齐后端 error→0 行为)
