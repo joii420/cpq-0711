@@ -1357,6 +1357,49 @@ describe('T2 lexer K* + C3 + 多 source', () => {
       expressionToTokens('SUM([元素.单价] + [来料.组成用量])', multiSrcTabs, selfRKF2, selfCid),
     ).not.toThrow();
   });
+
+  it('多 source 正向：第三 host(selfCid=uuid-host) 引用元素+来料两个非宿主 source → token.sources 长度=2、最细在前、source 镜像、match 非空', () => {
+    // 构造第三 host（不是元素也不是来料），selfRowKeyFields=['料件']
+    const tabHost: TabDef = {
+      alias: 'COMP_HOST',
+      tabKey: 'tab-host',
+      componentId: 'uuid-host',
+      componentName: '主料',
+      componentType: 'NORMAL',
+      rowKeyFields: ['料件'],
+      detailFields: ['数量'],
+      subtotalCols: [],
+    };
+    const thirdHostTabs: TabDef[] = [tabYS, tabLL, tabHost];
+    // selfComponentId = 'uuid-host'（第三 host，非 uuid-ys 也非 uuid-ll）
+    // → [元素.单价] 和 [来料.组成用量] 都是非宿主 source → N=2 分支
+    const tokens = expressionToTokens(
+      'SUM([元素.单价] + [来料.组成用量])',
+      thirdHostTabs,
+      ['料件'],
+      'uuid-host',
+    );
+
+    expect(tokens).toHaveLength(1);
+    const tok = tokens[0];
+
+    // sources 数组长度 = 2
+    expect(tok.sources).toHaveLength(2);
+
+    // 最细在前：元素 rowKeyFields=['料件','元素'](长度2) > 来料 ['料件'](长度1)
+    // → sources[0].source = 元素的 componentId
+    expect(tok.sources![0].source).toBe('uuid-ys');
+    expect(tok.sources![0].sourceLabel).toBe('元素');
+    expect(tok.sources![1].source).toBe('uuid-ll');
+    expect(tok.sources![1].sourceLabel).toBe('来料');
+
+    // token.source 镜像为 sources[0].source（= 最细 source = 元素）
+    expect(tok.source).toBe('uuid-ys');
+
+    // 各 source 的 match 非空（与宿主公共行键 '料件' 配对）
+    expect(tok.sources![0].match).toEqual([{ a: '料件', b: '料件' }]);
+    expect(tok.sources![1].match).toEqual([{ a: '料件', b: '料件' }]);
+  });
 });
 
 // ─────────────────────────────────────────────
