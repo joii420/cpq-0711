@@ -158,6 +158,12 @@ public class FormulaCalculator {
             }
             case "cross_tab_ref": {
                 Object v = evalCrossTab(token, ctx);
+                if (v == null) {
+                    // I-2: KAVG/KMAX/KMIN 空集 → null → 注入非法表达式 → 外层 try/catch → 0
+                    // 对齐前端 `expr += '(null.x)'` 行为
+                    expr.append("(0/0)");  // 触发 ArithParser 除零 → Double.isInfinite → ZERO4
+                    break;
+                }
                 if (v instanceof FormulaErrorMarker) {
                     throw new IllegalStateException("cross_tab_ref multi/non-numeric");
                 }
@@ -202,45 +208,83 @@ public class FormulaCalculator {
     private static final class FormulaErrorMarker {}
     private static final FormulaErrorMarker ERR = new FormulaErrorMarker();
 
-    /** cross_tab_ref 求值。返回 Number / String（NONE 文本）/ ERR。 */
+    /**
+     * cross_tab_ref 求值。返回 Number / String（NONE 文本）/ ERR / {@code null}（KAVG/KMAX/KMIN 空集，I-2）。
+     *
+     * <p><b>KSUM 分支</b>（{@code projectToHostKey=true}）：按宿主行（ctx.currentRowRaw）过滤 hits，
+     * 塌缩成标量后广播到调用方（targetRowValue 内嵌求值）。match 允许空（全量塌缩）。
+     * 决策 K 空集分流（I-1/I-2）在统一 hits.isEmpty()→ZERO 之前判：
+     * <ul>
+     *   <li>KSUM/KCOUNT 空集 → 0（静默，I-1）</li>
+     *   <li>KAVG/KMAX/KMIN 空集 → {@code null}（I-2，整外层塌 0 + outDiag；由 appendToken 注入非法表达式）</li>
+     * </ul>
+     *
+     * <p><b>外层分支</b>（存量路径，N=1 无嵌套退化，零变化）：match 须非空（防御兜底）。
+     */
     Object evalCrossTab(JsonNode token, RowContext ctx) {
-        // 防御：空 match 不得进聚合/广播（v4-C 防御；validator 漏网兜底）
-        if (!token.path("match").isArray() || token.path("match").size() == 0) {
+        boolean proj = token.path("projectToHostKey").asBoolean(false);
+
+        // 防御：match 字段必须是数组（v4-C 防御；validator 漏网兜底）。
+        // match=[] 全量匹配在 KSUM（proj=true）和多 source 场景（外层 match=[]）中均合法；
+        // 旧规则"非 KSUM + 空 match → ERR"已被 KSUM 特性放开：外层也可 match=[] 全量。
+        // 保留的防御：match 字段不是数组时（missing/非法结构）→ ERR。
+        if (!token.path("match").isArray()) {
             return ERR;
         }
+
         String source = token.path("source").asText("");
-        String target = token.path("target").asText("");
         String agg = token.path("agg").asText("NONE").toUpperCase();
         List<Map<String, Object>> rows = ctx.crossTabRows.getOrDefault(source, List.of());
 
+        // hits 过滤：KSUM 按 match⋈ctx.currentRowRaw；外层同旧
         List<Map<String, Object>> hits = new ArrayList<>();
+        JsonNode matchNode = token.path("match");
+        boolean hasMatch = matchNode.isArray() && matchNode.size() > 0;
         for (Map<String, Object> arow : rows) {
-            boolean ok = true;
-            for (JsonNode pair : token.path("match")) {
-                Object av = arow.get(pair.path("a").asText(""));
-                Object bv = ctx.currentRowRaw.get(pair.path("b").asText(""));
-                if (isBlank(av) || isBlank(bv) || !valEquals(av, bv)) { ok = false; break; }
+            if (!hasMatch) {
+                // match=[] → 全量（KSUM 全量塌缩场景）
+                hits.add(arow);
+            } else {
+                boolean ok = true;
+                for (JsonNode pair : matchNode) {
+                    Object av = arow.get(pair.path("a").asText(""));
+                    Object bv = ctx.currentRowRaw.get(pair.path("b").asText(""));
+                    if (isBlank(av) || isBlank(bv) || !valEquals(av, bv)) { ok = false; break; }
+                }
+                if (ok) hits.add(arow);
             }
-            if (ok) hits.add(arow);
         }
 
         if ("COUNT".equals(agg)) return java.math.BigDecimal.valueOf(hits.size());
         if ("NONE".equals(agg)) {
+            // ① NONE 旁路：保留原始"零变化"行为（不受 proj 影响）
             if (hits.isEmpty()) return java.math.BigDecimal.ZERO;
             if (hits.size() > 1) return ERR;
             return targetRowValue(hits.get(0), token, ctx);
         }
-        if (hits.isEmpty()) return java.math.BigDecimal.ZERO;
+
+        // 【I-1/I-2 决策 K 空集分流】—— 在统一"空集→ZERO"之前
+        if (hits.isEmpty()) {
+            if (proj && ("AVG".equals(agg) || "MAX".equals(agg) || "MIN".equals(agg))) {
+                // I-2: KAVG/KMAX/KMIN 空集 → null → appendToken 注入非法表达式 → 外层 try/catch → 0
+                return null;
+            }
+            // I-1: KSUM/外层 SUM/AVG/... 空集 → 0（保持旧行为不变）
+            return java.math.BigDecimal.ZERO;
+        }
+
         List<Double> nums = new ArrayList<>(hits.size());
         for (Map<String, Object> h : hits) {
-            Double n = toNumber(targetRowValue(h, token, ctx));
+            Object rv = targetRowValue(h, token, ctx);
+            if (rv instanceof FormulaErrorMarker) return ERR;  // 多 source 广播 multiSrcHitErr
+            Double n = toNumber(rv);
             if (n == null) return ERR;
             nums.add(n);
         }
         double r;
         switch (agg) {
             case "SUM": r = nums.stream().mapToDouble(Double::doubleValue).sum(); break;
-            case "AVG": r = nums.stream().mapToDouble(Double::doubleValue).average().orElse(0); break;
+            case "AVG": r = nums.stream().mapToDouble(Double::doubleValue).average().orElse(0); break;  // 死分支保留
             case "MAX": r = nums.stream().mapToDouble(Double::doubleValue).max().orElse(0); break;
             case "MIN": r = nums.stream().mapToDouble(Double::doubleValue).min().orElse(0); break;
             default: return ERR;
@@ -248,18 +292,88 @@ public class FormulaCalculator {
         return java.math.BigDecimal.valueOf(r);
     }
 
-    /** 取匹配 A 行的目标值: 有 targetExpr → 在 (A行 field + B行 b_field + B 上下文 gvar) 求值; 否则 arow[target]。 */
+    /**
+     * 取匹配 A 行的目标值: 有 targetExpr → 在 (A行 field + B行 b_field + B 上下文 gvar) 求值; 否则 arow[target]。
+     *
+     * <p>§4.3 多 source 广播：当 token 含 {@code sources}（长度≥2）时，在放入驱动行 arow 列之前，
+     * 先按 {@code sources[1..]} 更粗 source 的 match 命中对应行，把其数值列低优先级注入
+     * aFieldValues；驱动行 arow 的列高优先级覆盖同名项。
+     * 0命中→该粗 source 列不注入（默认 0）；>1命中→标 multiSrcHitErr→返 null（→ ERR →整项塌0）。
+     *
+     * <p>C1 sub 透传：sub 继承外层所有 RowContext 字段（包括 componentSubtotals / quotationFields /
+     * productAttributes / previousRowSubtotal），使 targetExpr 内嵌的 KSUM/component_subtotal 等
+     * token 可正确取值。
+     */
     private Object targetRowValue(Map<String, Object> arow, JsonNode token, RowContext ctx) {
         JsonNode te = token.path("targetExpr");
         if (te.isArray() && te.size() > 0) {
             RowContext sub = new RowContext();
-            for (Map.Entry<String, Object> e : arow.entrySet()) {
-                Double n = toNumber(e.getValue());
-                if (n != null) sub.fieldValues.put(e.getKey(), n);
+
+            // §4.3 多 source 广播（sources 长度≥2 时触发）
+            boolean multiSrcHitErr = false;
+            JsonNode sourcesNode = token.path("sources");
+            if (sourcesNode.isArray() && sourcesNode.size() >= 2) {
+                // 步骤1: 先放更粗 source 的列（低优先级）
+                for (int si = 1; si < sourcesNode.size(); si++) {
+                    JsonNode s = sourcesNode.get(si);
+                    String coarseSource = s.path("source").asText("");
+                    JsonNode coarseMatchNode = s.path("match");
+                    List<Map<String, Object>> coarseRows =
+                        ctx.crossTabRows.getOrDefault(coarseSource, List.of());
+
+                    // 用 s.match 命中：coarseRow[p.a] 对应粗 source 列，arow[p.b] 对应驱动行公共行键
+                    List<Map<String, Object>> coarseHits = new ArrayList<>();
+                    for (Map<String, Object> cr : coarseRows) {
+                        boolean ok = true;
+                        if (coarseMatchNode.isArray()) {
+                            for (JsonNode p : coarseMatchNode) {
+                                Object av = cr.get(p.path("a").asText(""));
+                                Object bv = arow.get(p.path("b").asText(""));
+                                if (isBlank(av) || isBlank(bv) || !valEquals(av, bv)) { ok = false; break; }
+                            }
+                        }
+                        if (ok) coarseHits.add(cr);
+                    }
+
+                    if (coarseHits.size() == 0) {
+                        // 0 命中 → 该粗 source 的列不注入（其 field 取值缺省 → 项=0）
+                        continue;
+                    }
+                    if (coarseHits.size() > 1) {
+                        // >1 命中 → 粗 source 行键非唯一 → 标记错误
+                        multiSrcHitErr = true;
+                        continue;
+                    }
+                    // 恰好 1 命中 → 把该行所有数值列并入 sub.fieldValues（低优先级）
+                    for (Map.Entry<String, Object> e : coarseHits.get(0).entrySet()) {
+                        Double n = toNumber(e.getValue());
+                        if (n != null) sub.fieldValues.put(e.getKey(), n);
+                    }
+                }
+                // 步骤2: 放驱动行 arow 的列（高优先级，覆盖粗 source 同名列）
+                for (Map.Entry<String, Object> e : arow.entrySet()) {
+                    Double n = toNumber(e.getValue());
+                    if (n != null) sub.fieldValues.put(e.getKey(), n);
+                }
+            } else {
+                // N=1 退化路径（无 sources / 纯 KSUM 容器）: 零变化旧逻辑
+                for (Map.Entry<String, Object> e : arow.entrySet()) {
+                    Double n = toNumber(e.getValue());
+                    if (n != null) sub.fieldValues.put(e.getKey(), n);
+                }
             }
+
+            // 多 source >1 命中错误 → 返 ERR（→ appendToken 注入非法表达式 → 整外层塌 0）
+            if (multiSrcHitErr) return ERR;
+
+            // C1: 透传所有上下文字段（使 targetExpr 内嵌 KSUM/component_subtotal/quotation_field 等可求值）
             sub.currentRowRaw = ctx.currentRowRaw;
             sub.basicDataValues = ctx.basicDataValues;
             sub.crossTabRows = ctx.crossTabRows;
+            sub.componentSubtotals = ctx.componentSubtotals;   // C1 新增
+            sub.quotationFields = ctx.quotationFields;          // C1 新增
+            sub.productAttributes = ctx.productAttributes;      // C1 新增
+            sub.previousRowSubtotal = ctx.previousRowSubtotal;  // C1 新增（inner 白名单已禁该 token）
             return evaluateExpression(te, sub);
         }
         return arow.get(token.path("target").asText(""));
