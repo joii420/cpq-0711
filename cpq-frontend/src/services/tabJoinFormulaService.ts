@@ -10,6 +10,8 @@ export interface TabDef {
   rowKeyFields: string[];
   detailFields: string[];
   subtotalCols: string[];
+  /** 后端标记:该 tabDef 是否为当前被编辑(宿主)组件(ComponentTabDefService 注入) */
+  self?: boolean;
 }
 
 export interface SampleCard {
