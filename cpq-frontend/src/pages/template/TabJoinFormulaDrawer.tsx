@@ -141,7 +141,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
     // NORMAL / SUBTOTAL 组件：转 FormulaToken[] 落组件公式。
     let tokens: FormulaToken[];
     try {
-      tokens = expressionToTokens(expr, tabDefs, selfRowKeyFields);
+      tokens = expressionToTokens(expr, tabDefs, selfRowKeyFields, componentId);
     } catch (e: any) {
       // 解析错误（未知别名 / 括号不匹配 / 非法字符等）→ 拦截保存
       message.error(e?.message ?? '表达式解析失败，请检查语法');
@@ -183,7 +183,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
       } else {
         // NORMAL / SUBTOTAL 路径：走 token 试算端点，返逐行结果
         setDryRunValue(null);
-        const tokens = expressionToTokens(expr, tabDefs, selfRowKeyFields);
+        const tokens = expressionToTokens(expr, tabDefs, selfRowKeyFields, componentId);
         const res: any = await tabJoinFormulaService.dryRunToken(
           componentId,
           sampleLi,
@@ -342,6 +342,10 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
         按顶层 +/- 拆项：含裸明细的项逐行求和，纯标量/总计项算一次。
         引用格式：<code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>[页签别名.字段名]</code> 或{' '}
         <code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>[页签别名(总计)]</code>。
+        <br />
+        <strong>行级聚合（粗 host × 细 source）</strong>：写{' '}
+        <code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>SUM([宿主别名.列] * [细页签别名.列])</code>{' '}
+        —— 按行键对齐(LEFT JOIN)后<strong>逐行</strong>算括号内表达式，再按宿主行键聚合(SUMPRODUCT)；宿主列在每个对齐行广播为同值。
       </div>
 
       {/* 页签字段矩阵 + 置灰锁定 */}

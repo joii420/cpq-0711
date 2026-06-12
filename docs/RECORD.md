@@ -3435,4 +3435,15 @@ E2E:
 
 ---
 
+### [2026-06-12] 页签连表公式 行级聚合 SUMPRODUCT（批4）—— 接通 targetExpr 入口 | formulaSerialize.ts + TabFieldMatrix.tsx + TabJoinFormulaDrawer.tsx + cross-tab-cases.json(前后端) + 组件管理字段配置指南§2.6 | 承 specs/2026-06-11-tabjoin-rowkey-host-grouping-design.md
+
+- **诉求**: 用户配 `SUM([投料.单价] * [加工.数量])` 这类"宿主列 × 细 source 列 逐行乘后求和"(SUMPRODUCT)。期望语义 = 按行键 **LEFT JOIN** 拼行 → 逐行算 → 按宿主行键 **GROUP BY** 聚合。实际只能写 `SUM(单价)*SUM(数量)`(列级先聚合，结果错：48≠100)。
+- **根因(非引擎缺陷，是入口回归)**: 求值引擎两端(`formulaEngine.ts evalCrossTab` 的 `hasTE` 分支 + 后端 `FormulaCalculator.targetRowValue`)自 2026-06-05 起一直完整实现 `targetExpr` 行级求值(field=source 命中行列、b_field=宿主当前行列广播、逐命中行算 targetExpr 再 agg)；`FormulaToken.targetExpr`/`b_field` 类型也健在。但批3(06-11)做单列 FN chip 时把 `expressionToTokens` 的 FN 折叠收口成"只接受单个 `[alias.field]`"(原 :216-221 抛错)，`makeCrossTabRef` 只产 `target` 单列、从不产 `targetExpr` → **引擎能算、入口给不出**，用户被迫列级先聚合。
+- **方案(打通入口，引擎零改动)**: ①`expressionToTokens` 加第4参 `selfComponentId`，FN 内单列走旧路径、含运算符/多 token 解析为 `targetExpr`(`tabDef.componentId===self → b_field`、否则 `field`；校验单一 source + 相邻缺运算符报错)；②`tokensToDrawerExpression` 加 `selfComponentId` + targetExpr 回显归一(幂等)；③`TabJoinFormulaDrawer` 两处 `expressionToTokens` 传 `componentId`、规则提示补行级聚合说明；④`TabFieldMatrix` 细页签 chip 下拉加「插入明细 `[别名.列]`」项(供 FN 内组合)+状态条文案。
+- **TDD**: 先写 RED(formulaSerialize.test.ts「行级聚合 targetExpr」块 9 例，确认旧 FN 折叠 :221 抛错失败)→ 实现 GREEN → 更新 2 个 v5-I 单列收口旧用例为新需求(FN 内运算符现合法/相邻缺运算符仍报错)；`cross-tab-cases.json` 加 4 个 SUMPRODUCT 对拍用例(宿主单价×source数量=100、同源两列=26、AVG=20、缺补0)。
+- **自检**: 前端 tsc 0 ✅；Vite transform(formulaSerialize/TabFieldMatrix/TabJoinFormulaDrawer)OK ✅；vitest **191 passed**(formulaSerialize 93 + formulaEngine 78 含 4 新例 + crossTab 文本/序)✅；**后端对拍 `FormulaCalculatorCrossTabFixtureTest` 27 passed**(含 4 SUMPRODUCT)✅。**E2E 留合并后主工作区跑**(worktree 改动对共享 5174 不可见；且渲染求值引擎零改动，预期无回归)。
+- **注意**: EXCEL 列(模型B `TabJoinPlanEvaluator`)**本期未做** —— 其聚合是整体(非按宿主行键 GROUP BY，整列收敛单标量)，将来另接通；§2.6 已注明差异。**未做**: E2E 实证(合并后)、真机验收(交用户)。
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。

@@ -863,13 +863,19 @@ describe('expressionToTokens — FN() 单列聚合', () => {
     const t = expressionToTokens('[本] * SUM([JG.工时])', tabs, ['子件']);
     expect(t.map(x => x.type)).toEqual(['field', 'operator', 'cross_tab_ref']);
   });
-  it('FN 内运算符 → 报错（单列收口 v5-I）', () => {
-    expect(() => expressionToTokens('SUM([JG.工时]+[JG.工时])', tabs, ['子件']))
-      .toThrow(/只支持单列|单列|不支持/);
+  it('FN 内运算符 → 行级聚合 targetExpr（批4 取消 v5-I 单列收口）', () => {
+    const t = expressionToTokens('SUM([JG.工时]+[JG.工时])', tabs, ['子件']);
+    expect(t).toHaveLength(1);
+    expect(t[0]).toMatchObject({ type: 'cross_tab_ref', source: 'cid-jg', agg: 'SUM' });
+    expect(t[0].targetExpr).toEqual([
+      { type: 'field', value: '工时' },
+      { type: 'operator', value: '+' },
+      { type: 'field', value: '工时' },
+    ]);
   });
-  it('FN 内多引用 → 报错', () => {
+  it('FN 内多引用且缺运算符 → 仍报错（[a][b] 畸形）', () => {
     expect(() => expressionToTokens('SUM([JG.工时][JG.工时])', tabs, ['子件']))
-      .toThrow(/只支持单列|单列|不支持/);
+      .toThrow(/缺少运算符|运算符/);
   });
   it('FN 内非明细（裸字段）→ 报错', () => {
     expect(() => expressionToTokens('SUM([本])', tabs, ['子件'])).toThrow();
@@ -938,5 +944,108 @@ describe('checkMappable — 空 match 拒（v4-C 命门 1）', () => {
   it('component_subtotal（无 match）不受影响', () => {
     const cs: any = { type: 'component_subtotal', component_code: 'X', value: '小计' };
     expect(checkMappable([cs]).mappable).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────
+// 批4 · 行级聚合 targetExpr（SUMPRODUCT）：
+//   FN 括号内允许「宿主列 × 细 source 列」子表达式，按行键 LEFT JOIN
+//   逐行算 targetExpr 再按宿主行键聚合。宿主列→b_field、source列→field。
+//   判定靠第 4 参 selfComponentId：alias 的 componentId === self → 宿主列(b_field)。
+// ─────────────────────────────────────────────
+describe('expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT)', () => {
+  const host: TabDef = {
+    alias: 'TL', tabKey: 'tl', componentId: 'cid-host', componentName: '投料',
+    rowKeyFields: ['子件'], detailFields: ['单价'], subtotalCols: [],
+  };
+  const src: TabDef = {
+    alias: 'JG', tabKey: 'jg', componentId: 'cid-jg', componentName: '加工',
+    rowKeyFields: ['子件', '工序'], detailFields: ['数量', '工时'], subtotalCols: [],
+  };
+  const tabs: TabDef[] = [host, src];
+
+  it('SUM([TL.单价] * [JG.数量]) → 单 cross_tab_ref(source=细页签) + targetExpr(b_field 单价 * field 数量)', () => {
+    const t = expressionToTokens('SUM([TL.单价] * [JG.数量])', tabs, ['子件'], 'cid-host');
+    expect(t).toHaveLength(1);
+    expect(t[0]).toMatchObject({
+      type: 'cross_tab_ref',
+      source: 'cid-jg',
+      agg: 'SUM',
+      match: [{ a: '子件', b: '子件' }],
+    });
+    expect(t[0].targetExpr).toEqual([
+      { type: 'b_field', value: '单价' },
+      { type: 'operator', value: '*' },
+      { type: 'field', value: '数量' },
+    ]);
+    expect(t[0].target ?? '').toBe('');
+  });
+
+  it('source 列在前：SUM([JG.数量] * [TL.单价]) → targetExpr(field 数量 * b_field 单价)，source 仍=细页签', () => {
+    const t = expressionToTokens('SUM([JG.数量] * [TL.单价])', tabs, ['子件'], 'cid-host');
+    expect(t[0].source).toBe('cid-jg');
+    expect(t[0].targetExpr).toEqual([
+      { type: 'field', value: '数量' },
+      { type: 'operator', value: '*' },
+      { type: 'b_field', value: '单价' },
+    ]);
+  });
+
+  it('同一 source 两列：SUM([JG.数量] * [JG.工时]) → targetExpr(field 数量 * field 工时)', () => {
+    const t = expressionToTokens('SUM([JG.数量] * [JG.工时])', tabs, ['子件', '工序'], 'cid-host');
+    expect(t[0].source).toBe('cid-jg');
+    expect(t[0].targetExpr).toEqual([
+      { type: 'field', value: '数量' },
+      { type: 'operator', value: '*' },
+      { type: 'field', value: '工时' },
+    ]);
+  });
+
+  it('含数字常量：SUM([JG.数量] * 2) → targetExpr(field 数量 * number 2)', () => {
+    const t = expressionToTokens('SUM([JG.数量] * 2)', tabs, ['子件'], 'cid-host');
+    expect(t[0].targetExpr).toEqual([
+      { type: 'field', value: '数量' },
+      { type: 'operator', value: '*' },
+      { type: 'number', value: '2' },
+    ]);
+  });
+
+  it('AVG 也走行级聚合：AVG([TL.单价] * [JG.数量]) → agg=AVG + targetExpr', () => {
+    const t = expressionToTokens('AVG([TL.单价] * [JG.数量])', tabs, ['子件'], 'cid-host');
+    expect(t[0]).toMatchObject({ type: 'cross_tab_ref', source: 'cid-jg', agg: 'AVG' });
+    expect(t[0].targetExpr).toHaveLength(3);
+  });
+
+  it('跨两个 source 页签 → 报错（一个 FN 内只允许同一个细页签行集）', () => {
+    const src2: TabDef = {
+      alias: 'HL', tabKey: 'hl', componentId: 'cid-hl', componentName: '回料',
+      rowKeyFields: ['子件'], detailFields: ['费率'], subtotalCols: [],
+    };
+    expect(() =>
+      expressionToTokens('SUM([JG.数量] * [HL.费率])', [host, src, src2], ['子件'], 'cid-host'),
+    ).toThrow(/同一个|单一|同一.*页签|跨.*页签/);
+  });
+
+  it('FN 内只有宿主列、无细 source → 报错（没有可聚合的行集）', () => {
+    expect(() =>
+      expressionToTokens('SUM([TL.单价] * 2)', tabs, ['子件'], 'cid-host'),
+    ).toThrow();
+  });
+
+  it('单列仍走旧路径：SUM([JG.数量]) → 无 targetExpr、target=数量（向后兼容）', () => {
+    const t = expressionToTokens('SUM([JG.数量])', tabs, ['子件'], 'cid-host');
+    expect(t[0].targetExpr).toBeUndefined();
+    expect(t[0].target).toBe('数量');
+    expect(t[0].agg).toBe('SUM');
+  });
+
+  it('round-trip：SUM([TL.单价] * [JG.数量]) 回显归一', () => {
+    const t = expressionToTokens('SUM([TL.单价] * [JG.数量])', tabs, ['子件'], 'cid-host');
+    const back = tokensToDrawerExpression(t, tabs, 'cid-host');
+    expect(back.replace(/\s+/g, ' ').trim()).toBe('SUM([TL.单价] * [JG.数量])');
+    // 幂等：回显串再解析再回显应稳定
+    const t2 = expressionToTokens(back, tabs, ['子件'], 'cid-host');
+    expect(tokensToDrawerExpression(t2, tabs, 'cid-host').replace(/\s+/g, ' ').trim())
+      .toBe('SUM([TL.单价] * [JG.数量])');
   });
 });

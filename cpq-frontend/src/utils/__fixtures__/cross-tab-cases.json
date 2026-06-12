@@ -346,5 +346,78 @@
     "currentRow": {"子件": "垫片"},
     "token": {"type": "cross_tab_ref", "source": "A", "target": "工时", "match": [{"a": "子件", "b": "子件"}], "agg": "SUM"},
     "expected": 0
+  },
+  {
+    "name": "行级聚合 SUMPRODUCT: SUM(宿主单价 * source数量) 逐行后聚合 = 100",
+    "_doc": "宿主单价10(b_field,广播)× source数量2/5/3(field,逐行) → 10*2+10*5+10*3=100; P2不命中不计入",
+    "aRows": [
+      {"子件": "P1", "数量": 2},
+      {"子件": "P1", "数量": 5},
+      {"子件": "P1", "数量": 3},
+      {"子件": "P2", "数量": 9}
+    ],
+    "currentRow": {"子件": "P1", "单价": 10},
+    "token": {
+      "type": "cross_tab_ref", "source": "A", "target": "",
+      "match": [{"a": "子件", "b": "子件"}], "agg": "SUM",
+      "targetExpr": [
+        {"type": "b_field", "value": "单价"},
+        {"type": "operator", "value": "*"},
+        {"type": "field", "value": "数量"}
+      ]
+    },
+    "expected": 100
+  },
+  {
+    "name": "行级聚合: 同source两列 SUM(数量 * 工时) = 2*3 + 4*5 = 26",
+    "_doc": "targetExpr 两个 field 均取命中行(source)各自列, 逐行乘后求和",
+    "aRows": [
+      {"子件": "P1", "数量": 2, "工时": 3},
+      {"子件": "P1", "数量": 4, "工时": 5}
+    ],
+    "currentRow": {"子件": "P1"},
+    "token": {
+      "type": "cross_tab_ref", "source": "A", "target": "",
+      "match": [{"a": "子件", "b": "子件"}], "agg": "SUM",
+      "targetExpr": [
+        {"type": "field", "value": "数量"},
+        {"type": "operator", "value": "*"},
+        {"type": "field", "value": "工时"}
+      ]
+    },
+    "expected": 26
+  },
+  {
+    "name": "行级聚合: AVG(宿主单价 * source数量) = (10 + 30)/2 = 20",
+    "aRows": [
+      {"子件": "P1", "数量": 1},
+      {"子件": "P1", "数量": 3}
+    ],
+    "currentRow": {"子件": "P1", "单价": 10},
+    "token": {
+      "type": "cross_tab_ref", "source": "A", "target": "",
+      "match": [{"a": "子件", "b": "子件"}], "agg": "AVG",
+      "targetExpr": [
+        {"type": "b_field", "value": "单价"},
+        {"type": "operator", "value": "*"},
+        {"type": "field", "value": "数量"}
+      ]
+    },
+    "expected": 20
+  },
+  {
+    "name": "行级聚合: 宿主行在 source 无匹配 → targetExpr 缺补0",
+    "aRows": [{"子件": "螺丝", "数量": 2}],
+    "currentRow": {"子件": "垫片", "单价": 10},
+    "token": {
+      "type": "cross_tab_ref", "source": "A", "target": "",
+      "match": [{"a": "子件", "b": "子件"}], "agg": "SUM",
+      "targetExpr": [
+        {"type": "b_field", "value": "单价"},
+        {"type": "operator", "value": "*"},
+        {"type": "field", "value": "数量"}
+      ]
+    },
+    "expected": 0
   }
 ]

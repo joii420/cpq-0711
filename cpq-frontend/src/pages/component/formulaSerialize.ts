@@ -192,6 +192,12 @@ export function expressionToTokens(
   expr: string,
   tabDefs: TabDef[],
   selfRowKeyFields?: string[],
+  /**
+   * 宿主(self)组件 componentId。提供时，FN(...) 行级表达式内 `[别名.列]` 若 alias 的
+   * componentId === selfComponentId，判为宿主自身列 → b_field（逐 join 行广播宿主当前行值）；
+   * 否则判为细 source 列 → field（逐命中行取值）。不传时一律按 source 列处理（旧行为）。
+   */
+  selfComponentId?: string,
 ): FormulaToken[] {
   const rawTokens = lex(expr);
   const result: FormulaToken[] = [];
@@ -200,41 +206,127 @@ export function expressionToTokens(
   while (k < rawTokens.length) {
     const raw = rawTokens[k];
 
-    // ── FN([alias.field]) 前瞻折叠 ──
-    // Pattern: func paren_open bracket_expr paren_close
+    // ── FN(...) 折叠 ──
+    //   单列   FN([alias.field])            → 旧 cross_tab_ref（单 target，向后兼容）
+    //   行级   FN([宿主.列] * [source.列])  → cross_tab_ref + targetExpr（SUMPRODUCT）
+    //          按行键 LEFT JOIN，逐 join 行算 targetExpr，再按宿主行键聚合。
     if (raw.kind === 'func') {
       const fnName = raw.name as NonNullable<FormulaToken['agg']>;
       const next1 = rawTokens[k + 1];
-      const next2 = rawTokens[k + 2];
-      const next3 = rawTokens[k + 3];
-
-      // Validate: must be followed by ( bracket_expr )
       if (!next1 || next1.kind !== 'paren_open') {
         throw new Error(`函数 ${fnName} 后必须紧跟 '('`);
       }
-      // next2 must be exactly ONE bracket_expr (no operators or extra tokens before close)
-      if (!next2 || next2.kind !== 'bracket_expr') {
-        throw new Error(`${fnName}() 只支持单列引用，括号内不能含运算符或其他表达式`);
+
+      // 扫描与 FN 的 '(' 匹配的 ')'（支持嵌套括号）
+      let depth = 0;
+      let closeIdx = -1;
+      for (let j = k + 1; j < rawTokens.length; j++) {
+        const rt = rawTokens[j];
+        if (rt.kind === 'paren_open') depth++;
+        else if (rt.kind === 'paren_close') {
+          depth--;
+          if (depth === 0) { closeIdx = j; break; }
+        }
       }
-      // next3 must be paren_close — if not, there are multiple tokens inside parens
-      if (!next3 || next3.kind !== 'paren_close') {
-        throw new Error(`${fnName}() 只支持单列引用，括号内不能含多个 token 或运算符`);
+      if (closeIdx === -1) throw new Error(`函数 ${fnName} 的 '(' 缺少对应的 ')'`);
+      const bodyTokens = rawTokens.slice(k + 2, closeIdx); // FN 括号内 raw tokens
+
+      // 单列快捷路径：恰好一个 [alias.field] → 旧单 target cross_tab_ref（保持现状）
+      if (bodyTokens.length === 1 && bodyTokens[0].kind === 'bracket_expr') {
+        const body = bodyTokens[0].body.trim();
+        if (!body.includes('.')) {
+          throw new Error(
+            `${fnName}() 内只支持跨页签明细引用 [alias.field]，不支持裸字段 [${body}]`,
+          );
+        }
+        const dotIdx = body.indexOf('.');
+        result.push(
+          makeCrossTabRef(body.slice(0, dotIdx), body.slice(dotIdx + 1), fnName, tabDefs, selfRowKeyFields),
+        );
+        k = closeIdx + 1;
+        continue;
       }
 
-      // Validate: bracket_expr body must be a cross-tab reference (contains '.')
-      const body = next2.body.trim();
-      if (!body.includes('.')) {
+      // 行级表达式路径：解析 bodyTokens → targetExpr（宿主列 b_field / source列 field）
+      const targetExpr: FormulaToken[] = [];
+      let srcComponentId: string | undefined;
+      let srcTabDef: TabDef | undefined;
+      let lastKind: string | null = null;
+      for (const rt of bodyTokens) {
+        // 相邻两"值项"之间必须有运算符（防 `[a][b]` 这类畸形 → 求值静默返 0）
+        const startsValue =
+          rt.kind === 'bracket_expr' || rt.kind === 'number' || rt.kind === 'paren_open';
+        const lastEndsValue =
+          lastKind === 'bracket_expr' || lastKind === 'number' || lastKind === 'paren_close';
+        if (startsValue && lastEndsValue) {
+          throw new Error(`${fnName}() 内表达式缺少运算符（相邻两项之间需 + - * /）`);
+        }
+        lastKind = rt.kind;
+        switch (rt.kind) {
+          case 'operator':
+            targetExpr.push({ type: 'operator', value: normalizeOp(rt.value) });
+            break;
+          case 'number':
+            targetExpr.push({ type: 'number', value: rt.value });
+            break;
+          case 'paren_open':
+            targetExpr.push({ type: 'bracket_open' });
+            break;
+          case 'paren_close':
+            targetExpr.push({ type: 'bracket_close' });
+            break;
+          case 'func':
+            throw new Error(`${fnName}() 内暂不支持嵌套聚合函数`);
+          case 'brace_expr':
+            throw new Error(`${fnName}() 内暂不支持 {路径} 引用`);
+          case 'bracket_expr': {
+            const bb = rt.body.trim();
+            if (!bb.includes('.')) {
+              // 裸字段 = 宿主本行列 → b_field（逐 join 行广播）
+              targetExpr.push({ type: 'b_field', value: bb });
+              break;
+            }
+            const di = bb.indexOf('.');
+            const al = bb.slice(0, di);
+            const col = bb.slice(di + 1);
+            const td = tabDefs.find((d) => d.alias === al);
+            if (!td) throw new Error(`${fnName}() 内引用了未知页签别名 "${al}"`);
+            if (!td.componentId) throw new Error(`页签 "${al}" 缺少 componentId`);
+            if (selfComponentId && td.componentId === selfComponentId) {
+              // 宿主自身列 → b_field
+              targetExpr.push({ type: 'b_field', value: col });
+            } else {
+              // 细 source 列 → field；一个 FN 内只允许同一个细页签行集
+              if (srcComponentId && srcComponentId !== td.componentId) {
+                throw new Error(
+                  `${fnName}() 内只允许引用同一个细页签的明细列（检测到跨页签 "${al}"）`,
+                );
+              }
+              srcComponentId = td.componentId;
+              srcTabDef = td;
+              targetExpr.push({ type: 'field', value: col });
+            }
+            break;
+          }
+          default:
+            break;
+        }
+      }
+      if (!srcComponentId || !srcTabDef) {
         throw new Error(
-          `${fnName}() 内只支持跨页签明细引用 [alias.field]，不支持裸字段 [${body}]`,
+          `${fnName}() 行级聚合必须引用至少一个细页签明细列 [页签别名.字段]`,
         );
       }
-
-      const dotIdx = body.indexOf('.');
-      const alias = body.slice(0, dotIdx);
-      const fieldPart = body.slice(dotIdx + 1);
-
-      result.push(makeCrossTabRef(alias, fieldPart, fnName, tabDefs, selfRowKeyFields));
-      k += 4; // consume: func + paren_open + bracket_expr + paren_close
+      result.push({
+        type: 'cross_tab_ref',
+        source: srcComponentId,
+        sourceLabel: srcTabDef.componentName ?? srcTabDef.alias,
+        target: '',
+        agg: fnName,
+        match: buildMatch(srcTabDef.rowKeyFields ?? [], selfRowKeyFields),
+        targetExpr,
+      });
+      k = closeIdx + 1;
       continue;
     }
 
@@ -374,6 +466,8 @@ export function expressionToTokens(
 export function tokensToDrawerExpression(
   tokens: FormulaToken[],
   tabDefs: TabDef[],
+  /** 宿主 componentId — 用于把 targetExpr 内 b_field 回显为 [宿主别名.列]（不传则回显裸 [列]） */
+  selfComponentId?: string,
 ): string {
   const parts: string[] = [];
 
@@ -422,7 +516,28 @@ export function tokensToDrawerExpression(
         const tabDef = tabDefs.find((d) => d.componentId === token.source);
         const alias = tabDef?.alias ?? token.sourceLabel ?? token.source ?? '';
 
-        if (!token.target) {
+        if (token.targetExpr && token.targetExpr.length > 0) {
+          // 行级聚合 SUMPRODUCT：FN(回显 targetExpr)，field→[source别名.列]、b_field→[宿主别名.列]
+          const hostAlias = selfComponentId
+            ? (tabDefs.find((d) => d.componentId === selfComponentId)?.alias ?? '')
+            : '';
+          const inner = token.targetExpr
+            .map((te) => {
+              switch (te.type) {
+                case 'field': return `[${alias}.${te.value ?? ''}]`;
+                case 'b_field': return hostAlias ? `[${hostAlias}.${te.value ?? ''}]` : `[${te.value ?? ''}]`;
+                case 'operator': return ` ${te.value ?? ''} `;
+                case 'number': return te.value ?? '';
+                case 'bracket_open': return '(';
+                case 'bracket_close': return ')';
+                default: return '';
+              }
+            })
+            .join('')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+          parts.push(`${token.agg ?? 'SUM'}(${inner})`);
+        } else if (!token.target) {
           // Whole-tab total [alias(总计)] (empty target, 旧路保留)
           parts.push(`[${alias}(总计)]`);
         } else if (token.agg && token.agg !== 'NONE') {

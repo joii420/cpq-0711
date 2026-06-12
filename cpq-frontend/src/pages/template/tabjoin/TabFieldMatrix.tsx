@@ -1,5 +1,6 @@
 import React from 'react';
 import { Tag, Tooltip, Typography, Space, Button, Dropdown } from 'antd';
+import type { MenuProps } from 'antd';
 import type { TabDef } from '../../../services/tabJoinFormulaService';
 import { comparable } from '../../component/formulaSerialize';
 
@@ -52,7 +53,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
       >
         <span style={{ fontSize: 12, color: '#8a909a' }}>
           宿主行键 <Text strong style={{ color: '#722ed1' }}>[{(selfRowKeyFields ?? []).join(' + ') || '—'}]</Text>
-          ；可比页签明细可逐行对齐，更细页签字段需聚合，不可比页签仅整页签小计可用。
+          ；可比页签明细可逐行对齐，更细页签字段需聚合（单列 SUM/AVG…，或在 SUM(宿主列 * 此列) 中作行级聚合），不可比页签仅整页签小计可用。
         </span>
         {onClearExpression && (
           <Button size="small" onClick={onClearExpression}>
@@ -147,9 +148,19 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                       );
                     }
                     if (sourceFiner) {
-                      const items = ['SUM', 'AVG', 'MAX', 'MIN', 'COUNT'].map((fn) => ({
-                        key: fn, label: fn, onClick: () => onInsert(`${fn}([${def.alias}.${f}])`),
-                      }));
+                      const items: MenuProps['items'] = [
+                        ...['SUM', 'AVG', 'MAX', 'MIN', 'COUNT'].map((fn) => ({
+                          key: fn,
+                          label: `${fn}([${def.alias}.${f}]) · 单列聚合`,
+                          onClick: () => onInsert(`${fn}([${def.alias}.${f}])`),
+                        })),
+                        { type: 'divider' },
+                        {
+                          key: 'raw',
+                          label: `插入明细 [${def.alias}.${f}] · 供 SUM(宿主列 * 此列) 行级聚合`,
+                          onClick: () => onInsert(`[${def.alias}.${f}]`),
+                        },
+                      ];
                       return (
                         <Dropdown key={f} menu={{ items }} trigger={['click']}>
                           <Tag style={{ cursor: 'pointer', background: '#fff', borderColor: '#91caff',
