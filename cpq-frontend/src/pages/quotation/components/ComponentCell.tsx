@@ -101,6 +101,12 @@ export interface CellContext {
   pathCacheState: PathCache;
   /** 按行预计算的 FORMULA 值 map（computeAllFormulas 输出） */
   formulaCache: Record<string, number | null>;
+  /**
+   * 按行预计算的 FORMULA 错误旁路 map（computeAllFormulas out.errors 输出）。
+   * 不传 = 旧行为。某字段有此条目 = cross_tab_ref 细项多命中等错误,数值已静默归 0,
+   * 渲染层据此显示 ⚠ 错误态 + tooltip(替代误导的 0)。
+   */
+  formulaErrors?: Record<string, string>;
   /** 当前行所属产品的料号 */
   partNo: string | undefined;
   /** 当前激活的组件 */
@@ -249,6 +255,7 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
     basicDataValues,
     pathCacheState,
     formulaCache,
+    formulaErrors,
     partNo,
     activeComponent,
     activeDriverExpansion,
@@ -269,6 +276,14 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
 
   // ── 1. FORMULA ──────────────────────────────────────────────────────────────
   if (field.field_type === 'FORMULA') {
+    // 错误旁路: cross_tab_ref 细项多命中等场景,数值已静默归 0/null。
+    // 此时显示 ⚠ + tooltip 说明原因,避免误导(替代看似有效的 0)。
+    const err = formulaErrors?.[field.name];
+    if (err) {
+      return (
+        <span className="qt-formula-cell-error" title={err}>⚠</span>
+      );
+    }
     const val = formulaCache[field.name];
     return (
       <span className="qt-formula-cell-value">
