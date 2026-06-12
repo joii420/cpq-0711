@@ -1494,6 +1494,16 @@ describe('T3 KSUM 折叠 + 约束', () => {
       expressionToTokens('SUM([元素.单价] + KCOUNT([外购件.费用]))', KSUM_CTX, KSUM_SELF_RKF, KSUM_SELF_CID),
     );
     expect(t2).toMatchObject({ agg: 'COUNT', projectToHostKey: true });
+
+    const t3 = pickKsum(
+      expressionToTokens('SUM([元素.单价] + KMAX([外购件.费用]))', KSUM_CTX, KSUM_SELF_RKF, KSUM_SELF_CID),
+    );
+    expect(t3).toMatchObject({ agg: 'MAX', projectToHostKey: true });
+
+    const t4 = pickKsum(
+      expressionToTokens('SUM([元素.单价] + KMIN([外购件.费用]))', KSUM_CTX, KSUM_SELF_RKF, KSUM_SELF_CID),
+    );
+    expect(t4).toMatchObject({ agg: 'MIN', projectToHostKey: true });
   });
 
   it('白名单: KSUM 内含宿主列 → 抛错', () => {
