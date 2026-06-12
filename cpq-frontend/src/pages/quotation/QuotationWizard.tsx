@@ -31,6 +31,21 @@ import { splitRows, rowAt } from './manualRows';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
+
+/** 递归把所有数值规范化为 4 位定点,消除 live↔snap 求值浮点尾差,保证 payload 去重稳定。 */
+export function normalizeDraftPayloadNumbers<T>(payload: T): T {
+  const norm = (v: any): any => {
+    if (typeof v === 'number') return Number.isFinite(v) ? Number(v.toFixed(4)) : v;
+    if (Array.isArray(v)) return v.map(norm);
+    if (v && typeof v === 'object') {
+      const o: any = {};
+      for (const k of Object.keys(v)) o[k] = norm(v[k]);
+      return o;
+    }
+    return v;
+  };
+  return norm(payload);
+}
 const { Text, Title } = Typography;
 
 const statusMap: Record<string, { label: string; color: string }> = {
@@ -582,7 +597,7 @@ const QuotationWizard: React.FC = () => {
     if (!quotationId) return;
     try {
       const values = form.getFieldsValue();
-      const payload = buildDraftPayload(values);
+      const payload = normalizeDraftPayloadNumbers(buildDraftPayload(values));
       const payloadStr = JSON.stringify(payload);
       if (payloadStr === lastSaveRef.current) return;
       lastSaveRef.current = payloadStr;
