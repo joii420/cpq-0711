@@ -3443,6 +3443,32 @@ E2E:
 - **TDD**: 先写 RED(formulaSerialize.test.ts「行级聚合 targetExpr」块 9 例，确认旧 FN 折叠 :221 抛错失败)→ 实现 GREEN → 更新 2 个 v5-I 单列收口旧用例为新需求(FN 内运算符现合法/相邻缺运算符仍报错)；`cross-tab-cases.json` 加 4 个 SUMPRODUCT 对拍用例(宿主单价×source数量=100、同源两列=26、AVG=20、缺补0)。
 - **自检**: 前端 tsc 0 ✅；Vite transform(formulaSerialize/TabFieldMatrix/TabJoinFormulaDrawer)OK ✅；vitest **191 passed**(formulaSerialize 93 + formulaEngine 78 含 4 新例 + crossTab 文本/序)✅；**后端对拍 `FormulaCalculatorCrossTabFixtureTest` 27 passed**(含 4 SUMPRODUCT)✅。**E2E 留合并后主工作区跑**(worktree 改动对共享 5174 不可见；且渲染求值引擎零改动，预期无回归)。
 - **注意**: EXCEL 列(模型B `TabJoinPlanEvaluator`)**本期未做** —— 其聚合是整体(非按宿主行键 GROUP BY，整列收敛单标量)，将来另接通；§2.6 已注明差异。**未做**: E2E 实证(合并后)、真机验收(交用户)。
+- **后续(已合并 master `123d0de` 后验证)**: E2E `quotation-flow` 1 passed + 加载中=0，渲染层无回归 ✅。
+
+---
+
+### [2026-06-12] 页签连表公式编辑器 可读性优化（chip 点击即插 + 引用用页签名称） | TabFieldMatrix.tsx + formulaSerialize.ts + TabJoinFormulaDrawer.tsx + 组件管理字段配置指南§2.6 | 用户反馈驱动（批4 follow-up）
+
+- **诉求**: ①细页签字段 chip「Σ需聚合」点开下拉强制选聚合函数 = 多一步，改为**点击直接裸插 `[页签.列]`**，聚合与否用户用工具条函数按钮自决（保留蓝边 + hover 提示作轻引导）；②公式表达式里**用页签名称、不用组件编号**（`[元素.单价]` 而非 `[COMP-0029.单价]`）。
+- **方案(纯前端序列化层 + UI，后端零影响)**: `cross_tab_ref` token 内部存 `componentId`（非名称字符串），所以"名称化"只改抽屉字符串层（插入/解析/回显），token 与后端求值不变。
+  - 解析：新增 `findTabByRef(tabDefs, ref)` = **名称(componentName)优先、编号(alias)兜底**；`expressionToTokens` 全部查找点（makeCrossTabRef / bracket-cross-tab / whole-tab / targetExpr 内）切换之；`component_subtotal.component_code` 锁定为 `tabDef.alias`（权威编号，与后端解析一致，不受用户输入名/编号影响）。
+  - 回显：`tokensToDrawerExpression` 的 `cross_tab_ref`/`hostAlias`/`component_subtotal` 改用 `componentName`（按 componentId / component_code 反查，回退编号）。
+  - UI：`TabFieldMatrix` 细页签 chip 去下拉、`onInsert([ref.列])`（`ref=componentName||alias`）；明细/小计/总计/tooltip 全切 ref；`buildColumn`(EXCEL) find 同步名称优先。
+- **TDD**: 新增「页签名称作公式标识」8 例（名称解析 cross_tab_ref/component_subtotal/whole-tab + 编号兼容 + 名称回显 + 幂等）先 RED→GREEN；回显改名称导致 13 个旧用例预期更新（COMP_RL→回料 / JG→加工 / TL→投料 + 错误文案"未知页签别名"→"未知页签"）。
+- **自检**: 前端 tsc 0 ✅；Vite transform(formulaSerialize/TabFieldMatrix/TabJoinFormulaDrawer) OK ✅；vitest **214 passed**(formulaSerialize 101 + formulaEngine 78 + crossTab + tabFieldMatrix 15)✅；E2E `quotation-flow` **1 passed + 加载中=0**(渲染层无回归)✅。
+- **注意**: 同名页签罕见时按名称命中第一个、否则回退编号（业务上同目录组件名宜唯一）。**未做**: 真机验收(交用户)。
+
+---
+
+### [2026-06-12] 页签连表公式编辑器 配色统一 + 富文本原子块 | formulaSerialize.ts(+.test) + TabFieldMatrix.tsx + FormulaRichInput.tsx(新) + TabJoinFormulaDrawer.tsx | spec specs/2026-06-12-tabjoin-formula-editor-coloring-design.md + plan plans/2026-06-12-tabjoin-formula-editor-coloring.md（subagent-driven，8 commit）
+
+- **诉求**: ①矩阵 chip 配色统一让"明细/小计/总计/不可比"一眼可辨；②公式输入框从纯文本升级为**彩色原子块**（`[...]` 引用渲染成不可逐字编的彩块，配色与矩阵同语义）。
+- **配色分类器（纯前端，与保存期同源）**: `formulaSerialize.ts` 新增 `classifyRefSegment` / `parseFormulaSegments` / `blockDisplay` + 类型 `SegmentColor`/`FormulaSegment`。判色 = 明细蓝 / 小计黄 / 总计绿 / 无效红。**核心纪律**：判红镜像保存期 `checkMappable` 的 `buildMatch(...).length===0`（**不是** `comparable`——`selfRowKeyFields=[]` 时 `comparable` 返 true 但 match 必空仍判红）；`enforceMappable` 由 `componentType!=='EXCEL'` 推导（EXCEL 走 buildColumn 不过 checkMappable→不误标红，NORMAL/SUBTOTAL→true）。`component_subtotal`(小计/总计) 无 match 约束恒黄/绿。
+- **富文本**: `FormulaRichInput.tsx`（新）受控 contentEditable，字符串⇄彩块 DOM 双向渲染；`expression` 契约不变、save/dryRun/序列化**一字未动**。块原子（contenteditable=false + data-raw）、退格删整块、IME compositionstart/end 挂起重渲、粘贴强制纯文本、insertAtCursor 走 Range API。`TabJoinFormulaDrawer` 用它替换 `Input.TextArea`，exprRef 迁移为 `FormulaRichInputHandle`。
+- **TDD**: classifyRefSegment 10 例 + parseFormulaSegments 9 例（判色表全行 + round-trip 无损 + 同源关键用例 `selfRowKeyFields=[]`→红 / EXCEL→蓝 + 未闭合括号宽容降级）。
+- **评审捕获**: subagent 双段评审，Task3 误在 classifyRefSegment 加 field `.trim()` → "显示黄、保存却 detail ref" 同源分叉，已回退（save 路径 expressionToTokens 只 trim 整 body 不 trim field part）。
+- **自检**: vitest **120 passed** ✅；tsc 0 ✅；curl 5174 transform(TabFieldMatrix/FormulaRichInput/TabJoinFormulaDrawer/formulaSerialize) 全 200 ✅；E2E `quotation-flow` **passed + 加载中=0** ✅。`composite-product-flow` 失败于报价向导选"组合产品 v1.16"模板（该测试数据 2026-06-11 已清理，与本改动无关，0 引用我改动面）。真机验收**已通过**（用户）。
+- **注意**: contentEditable 的 IME/光标/Firefox 退格删块靠真机验收（headless 测不到）；AP-44 不适用（无 field_type 变更，纯显示层 + 新输入组件）。
 
 ---
 
