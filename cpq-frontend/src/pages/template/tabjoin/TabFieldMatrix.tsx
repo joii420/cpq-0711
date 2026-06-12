@@ -138,8 +138,19 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
               >
                 {/* 明细组 */}
                 <Space wrap style={{ gap: 6 }}>
-                  <span style={{ fontSize: 11, color: '#8a909a' }}>明细</span>
+                  <span style={{ fontSize: 11, color: def.self ? '#722ed1' : '#8a909a' }}>
+                    {def.self ? '明细(本页签·同行)' : '明细'}
+                  </span>
                   {def.detailFields.map((f) => {
+                    if (def.self) {
+                      // 宿主自身明细字段:插裸 [字段](序列化归一为 field,不成环)+ 紫边
+                      return (
+                        <Tag key={f} onClick={() => onInsert(`[${f}]`)}
+                          style={{ cursor: 'pointer', background: '#fff', borderColor: '#d3adf7',
+                            color: '#722ed1', margin: 0, fontSize: 12, padding: '3px 9px',
+                            borderStyle: 'solid', userSelect: 'none' }}>{f}</Tag>
+                      );
+                    }
                     if (!isComparable) {
                       return (
                         <Tooltip key={f} title={`行键 [${(def.rowKeyFields ?? []).join('+')}] 与宿主 [${selfRKF.join('+')}] 不可比；可改用「${ref}(总计)」`}>

@@ -1128,8 +1128,8 @@ describe('classifyRefSegment', () => {
   it('字段不在该 tab 任何字段 [回料.不存在列] → red', () => {
     expect(classifyRefSegment('回料.不存在列', allTabs, self, true).color).toBe('red');
   });
-  it('宿主自身列 [单重](无点无总计)→ blue self-field', () => {
-    expect(classifyRefSegment('单重', allTabs, self, true)).toEqual({ kind: 'self-field', color: 'blue' });
+  it('宿主自身列 [单重](无点无总计)→ purple self-field', () => {
+    expect(classifyRefSegment('单重', allTabs, self, true)).toEqual({ kind: 'self-field', color: 'purple' });
   });
   it('[别名(总计)] 优先于 self-field(行序)', () => {
     expect(classifyRefSegment('回料(总计)', allTabs, self, true).kind).toBe('tab-total');
@@ -1187,5 +1187,66 @@ describe('parseFormulaSegments', () => {
     const expr = 'SUM([投料.金额] * [回料.用量]) + [回料(总计)] - 3.5';
     const segs = parseFormulaSegments(expr, allTabs, self, true);
     expect(segs.map((s) => s.raw).join('')).toBe(expr);
+  });
+});
+
+// ─────────────────────────────────────────────
+// 宿主自身字段 → 紫(spec §5)
+// ─────────────────────────────────────────────
+describe('classifyRefSegment — 宿主自身字段(紫)', () => {
+  const self = ['料号'];
+  const tabSelf: TabDef = {
+    alias: 'COMP_SELF', tabKey: 'tab-self', componentId: 'uuid-self',
+    componentName: '宿主组件', componentType: 'NORMAL', self: true,
+    rowKeyFields: ['料号'], detailFields: ['组成用量'], subtotalCols: ['金额小计'],
+  };
+  const tabs = [...allTabs, tabSelf];
+
+  it('宿主明细字段 [宿主组件.组成用量] → purple', () => {
+    expect(classifyRefSegment('宿主组件.组成用量', tabs, self, true))
+      .toEqual({ kind: 'self-field', color: 'purple' });
+  });
+  it('宿主小计列 [宿主组件.金额小计] → yellow(小计优先于 self)', () => {
+    expect(classifyRefSegment('宿主组件.金额小计', tabs, self, true))
+      .toEqual({ kind: 'subtotal', color: 'yellow' });
+  });
+  it('宿主自聚合 [宿主组件.组成用量(总计)] → red(本期不支持)', () => {
+    expect(classifyRefSegment('宿主组件.组成用量(总计)', tabs, self, true).color).toBe('red');
+  });
+  it('宿主未知字段 [宿主组件.不存在] → red', () => {
+    expect(classifyRefSegment('宿主组件.不存在', tabs, self, true).color).toBe('red');
+  });
+  it('兄弟明细仍蓝 [回料.用量] → blue', () => {
+    expect(classifyRefSegment('回料.用量', tabs, self, true).color).toBe('blue');
+  });
+});
+
+// ─────────────────────────────────────────────
+// 宿主自引用归一 field (spec §4)
+// ─────────────────────────────────────────────
+
+describe('expressionToTokens — 宿主自引用归一 field(spec §4)', () => {
+  const rkf = ['料号'];
+
+  it('[回料.用量] + selfComponentId=回料 → field token', () => {
+    const t = expressionToTokens('[回料.用量]', allTabs, rkf, 'uuid-rl');
+    expect(t).toHaveLength(1);
+    expect(t[0]).toEqual({ type: 'field', value: '用量' });
+  });
+  it('[回料.用量] + selfComponentId=别的(uuid-inv) → cross_tab_ref(回归)', () => {
+    const t = expressionToTokens('[回料.用量]', allTabs, rkf, 'uuid-inv');
+    expect(t[0]).toMatchObject({ type: 'cross_tab_ref', source: 'uuid-rl' });
+  });
+  it('[回料.金额](金额∈subtotalCols) + self=回料 → 仍 component_subtotal', () => {
+    const t = expressionToTokens('[回料.金额]', allTabs, rkf, 'uuid-rl');
+    expect(t[0]).toMatchObject({ type: 'component_subtotal' });
+  });
+  it('[回料.用量(总计)](自聚合) + self=回料 → 仍 cross_tab_ref(不归一)', () => {
+    const t = expressionToTokens('[回料.用量(总计)]', allTabs, rkf, 'uuid-rl');
+    expect(t[0]).toMatchObject({ type: 'cross_tab_ref', agg: 'SUM', source: 'uuid-rl' });
+  });
+  it('不传 selfComponentId → cross_tab_ref(旧行为保留)', () => {
+    const t = expressionToTokens('[回料.用量]', allTabs, rkf);
+    expect(t[0]).toMatchObject({ type: 'cross_tab_ref' });
   });
 });

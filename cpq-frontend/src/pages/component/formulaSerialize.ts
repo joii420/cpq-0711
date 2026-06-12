@@ -406,6 +406,10 @@ export function expressionToTokens(
               component_code: tabDef.alias,
               label: `${tabDef.componentName ?? tabDef.alias}·${fieldPart}`,
             });
+          } else if (selfComponentId && tabDef.componentId === selfComponentId && !isAgg) {
+            // 宿主自身明细字段 → 同行裸字段 token(不成环、读本行)。
+            // 小计列已被上面的 if 截走;自聚合(isAgg)不在此归一,仍走下面 cross_tab_ref。
+            result.push({ type: 'field', value: fieldPart });
           } else {
             result.push(
               makeCrossTabRef(alias, fieldPart, isAgg ? 'SUM' : 'NONE', tabDefs, selfRowKeyFields),
@@ -667,7 +671,7 @@ export function checkMappable(tokens: FormulaToken[]): { mappable: boolean; reas
 // 配色分类器(显示侧,与保存期 checkMappable 同源)
 // ─────────────────────────────────────────────
 
-export type SegmentColor = 'blue' | 'yellow' | 'green' | 'red' | null;
+export type SegmentColor = 'blue' | 'yellow' | 'green' | 'red' | 'purple' | null;
 
 export interface FormulaSegment {
   /** 原始片段文本(块含括号,文本原样) */
@@ -682,7 +686,7 @@ export interface FormulaSegment {
 
 /**
  * 单个 [...] body 判色(body 已去外层方括号且已 trim)。
- * 行序即优先级(spec §3.4):总计无点 → 小计列 → 明细 → 查不到 → self-field。
+ * 行序即优先级(spec §3.4 / §5):总计无点(绿) → 小计列(黄) → 宿主自身字段(紫,self-agg 红) → 明细(蓝) → 查不到(红) → 无点裸字段(紫)。
  * enforceMappable: NORMAL/SUBTOTAL=true(明细 match 空判红);EXCEL=false(解析得到即蓝)。
  */
 export function classifyRefSegment(
@@ -715,6 +719,13 @@ export function classifyRefSegment(
       return { kind: 'subtotal', color: 'yellow' };
     }
 
+    // 宿主自身字段(spec §5):tabDef.self → 紫;自聚合(isAgg)本期不支持 → 红
+    if (tab.self) {
+      if (isAgg) return { kind: 'invalid', color: 'red' };
+      if (!(tab.detailFields ?? []).includes(field)) return { kind: 'invalid', color: 'red' };
+      return { kind: 'self-field', color: 'purple' };
+    }
+
     // 字段必须是该 tab 的真实列(明细或小计),否则查不到 → 红
     const known = new Set([...(tab.detailFields ?? []), ...(tab.subtotalCols ?? [])]);
     if (!known.has(field)) return { kind: 'invalid', color: 'red' };
@@ -727,6 +738,6 @@ export function classifyRefSegment(
     return { kind: 'detail', color: 'blue' };
   }
 
-  // 6) 无点无总计 → 宿主自身列(tabDefs 无法证伪)
-  return { kind: 'self-field', color: 'blue' };
+  // 无点无总计 → 宿主自身列(裸字段)→ 紫
+  return { kind: 'self-field', color: 'purple' };
 }
