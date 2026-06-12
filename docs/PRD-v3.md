@@ -2396,6 +2396,22 @@ v_costing_exchange_rate[from_currency='CNY' AND to_currency='USD'].costing_rate
 
 精炼自旧 PRD 80+ 条变更日志,以**决策点**形式保留(便于追溯"为什么这么做")。完整日志见 `docs/PRD.md` 变更记录章节。
 
+### 9.12 v3.5(2026-06-13)— 多 source 链式 SUM + KSUM 嵌套预聚合
+
+连表公式（`cross_tab_ref`）求值能力扩展，详见 `docs/配置方法论-合并版.md §3.4.1`。
+
+| 决策 | 内容 |
+|---|---|
+| **多 source 链式 SUM（v1）** | 一个 `SUM(...)` 内可引用多个非宿主 source 页签,各 source 与宿主 row_key_fields 两两可比(⊆/⊇)即合法成链;驱动=最细 source,更粗 source 按公共行键广播(0命中→项0 / 1命中→取值 / >1命中→报错改 KSUM);互不包含→报错 |
+| **KSUM/KAVG/KMAX/KMIN/KCOUNT（v2 降维投影）** | 内层算子,对单个被聚合页签按宿主行键塌缩成标量,绕开"互不包含维度→笛卡尔积"限制;只能写在外层 SUM 等内 |
+| **inner 白名单** | KSUM 内只允许 field(限被聚合页签列)/operator/number/bracket/global_variable(token type=path);拒宿主列/跨页签/上下文标量/嵌套 K*;前端序列化 + 后端 TokenMappabilityValidator 双端镜像拒绝 |
+| **决策 K 空集分流** | KSUM/KCOUNT 空集→0(静默);KAVG/KMAX/KMIN 空集→null→整外层塌 0+⚠(无定义,不静默给 0) |
+| **决策 J/M/I2/C3** | J=K 套 K 双端拒;M=顶层裸 KSUM 拒;I2=同页签既 KSUM 又裸引拒;C3=`K SUM` 不可拆写专门文案 |
+| **C1 前后端求值对称** | 后端 sub 透传 componentSubtotals/quotationFields/productAttributes/previousRowSubtotal + sub.currentRowRaw 合并驱动行(对齐前端 mergedRow);共享夹具 cross-tab-cases.json 锁前后端一致 |
+| **token 模型零迁移** | FormulaToken 纯新增 sources + projectToHostKey,无 DB 列、无 snapshot 迁移,缺省即旧 token |
+| **Excel 模型 B 降级** | TabJoinPlanEvaluator 遇 KSUM/多 source token 显式抛错(非静默少算),改用页签连表渲染(模型 A) |
+| **核价单不受影响** | 核价单走独立 8 指标引擎,不评估 cross_tab_ref token,本特性无核价侧改动 |
+
 ### 9.1 v1.0 → v1.5(2026-04-09 ~ 2026-04-10)
 
 | 决策 | 内容 |
