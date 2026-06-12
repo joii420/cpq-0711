@@ -76,7 +76,7 @@ type RawToken =
   | { kind: 'paren_open' }
   | { kind: 'paren_close' }
   | { kind: 'whitespace' }
-  | { kind: 'func'; name: string }           // SUM/AVG/MAX/MIN/COUNT
+  | { kind: 'func'; name: string }           // SUM/AVG/MAX/MIN/COUNT/KSUM/KAVG/KMAX/KMIN/KCOUNT
 
 /**
  * Lex `expr` into raw tokens. Throws with a descriptive message on unrecognised input.
@@ -122,14 +122,24 @@ function lex(expr: string): RawToken[] {
       continue;
     }
 
-    // Function names: SUM/AVG/MAX/MIN/COUNT (case-insensitive)
+    // Function names: SUM/AVG/MAX/MIN/COUNT/KSUM/KAVG/KMAX/KMIN/KCOUNT (case-insensitive)
     if (/[A-Za-z]/.test(ch)) {
       let word = '';
       while (i < expr.length && /[A-Za-z]/.test(expr[i])) word += expr[i++];
       const upper = word.toUpperCase();
-      if (['SUM', 'AVG', 'MAX', 'MIN', 'COUNT'].includes(upper)) {
+      const OUTER_FNS = ['SUM', 'AVG', 'MAX', 'MIN', 'COUNT'];
+      const INNER_FNS = ['KSUM', 'KAVG', 'KMAX', 'KMIN', 'KCOUNT'];
+      if ([...OUTER_FNS, ...INNER_FNS].includes(upper)) {
         tokens.push({ kind: 'func', name: upper });
         continue;
+      }
+      // 【C3】单字母 K + 空白 + 聚合词 → 误拆专门文案
+      if (upper === 'K') {
+        let j = i; while (j < expr.length && /\s/.test(expr[j])) j++;
+        let peek = ''; let p = j; while (p < expr.length && /[A-Za-z]/.test(expr[p])) peek += expr[p++];
+        if (OUTER_FNS.includes(peek.toUpperCase())) {
+          throw new Error(`KSUM/KAVG/KMAX/KMIN/KCOUNT 不能拆写，请连写（应写成 "K${peek.toUpperCase()}"，不要写成 "K ${peek.toUpperCase()}"）`);
+        }
       }
       throw new Error(`表达式中含有无法识别的标识符 '${word}'（位置 ${i - word.length}）`);
     }
@@ -258,8 +268,9 @@ export function expressionToTokens(
 
       // 行级表达式路径：解析 bodyTokens → targetExpr（宿主列 b_field / source列 field）
       const targetExpr: FormulaToken[] = [];
-      let srcComponentId: string | undefined;
-      let srcTabDef: TabDef | undefined;
+      // 多 source 收集：按遇到顺序去重（同一 componentId 只保留一份）
+      const srcTabsSeen: TabDef[] = [];
+      const srcTabSeenIds = new Set<string>();
       let lastKind: string | null = null;
       for (const rt of bodyTokens) {
         // 相邻两"值项"之间必须有运算符（防 `[a][b]` 这类畸形 → 求值静默返 0）
@@ -305,14 +316,12 @@ export function expressionToTokens(
               // 宿主自身列 → b_field
               targetExpr.push({ type: 'b_field', value: col });
             } else {
-              // 细 source 列 → field；一个 FN 内只允许同一个细页签行集
-              if (srcComponentId && srcComponentId !== td.componentId) {
-                throw new Error(
-                  `${fnName}() 内只允许引用同一个细页签的明细列（检测到跨页签 "${al}"）`,
-                );
+              // 细/兄弟 source 列 → field；记录 source componentId 供多 source 校验
+              if (!srcTabSeenIds.has(td.componentId)) {
+                srcTabSeenIds.add(td.componentId);
+                srcTabsSeen.push(td);
               }
-              srcComponentId = td.componentId;
-              srcTabDef = td;
+              // field token 保持原样（不附带 source），多 source 信息通过外层 sources 数组传递
               targetExpr.push({ type: 'field', value: col });
             }
             break;
@@ -321,20 +330,64 @@ export function expressionToTokens(
             break;
         }
       }
-      if (!srcComponentId || !srcTabDef) {
+      if (srcTabsSeen.length === 0) {
         throw new Error(
           `${fnName}() 行级聚合必须引用至少一个细页签明细列 [页签别名.字段]`,
         );
       }
-      result.push({
-        type: 'cross_tab_ref',
-        source: srcComponentId,
-        sourceLabel: srcTabDef.componentName ?? srcTabDef.alias,
-        target: '',
-        agg: fnName,
-        match: buildMatch(srcTabDef.rowKeyFields ?? [], selfRowKeyFields),
-        targetExpr,
-      });
+
+      // ── 多 source 校验 + token 组装 ──
+      if (srcTabsSeen.length === 1) {
+        // N=1：原行为，不写 sources（字节级兼容存量 token）
+        const srcTabDef = srcTabsSeen[0];
+        result.push({
+          type: 'cross_tab_ref',
+          source: srcTabDef.componentId,
+          sourceLabel: srcTabDef.componentName ?? srcTabDef.alias,
+          target: '',
+          agg: fnName,
+          match: buildMatch(srcTabDef.rowKeyFields ?? [], selfRowKeyFields),
+          targetExpr,
+        });
+      } else {
+        // N>=2：验证所有 source 页签行键两两可比（含宿主，宿主用 selfRowKeyFields）
+        const selfRKF = selfRowKeyFields ?? [];
+        const allSets: Array<{ tab: TabDef | null; rkf: string[] }> = [
+          { tab: null, rkf: selfRKF },
+          ...srcTabsSeen.map((td) => ({ tab: td, rkf: td.rowKeyFields ?? [] })),
+        ];
+        for (let a = 0; a < allSets.length; a++) {
+          for (let b = a + 1; b < allSets.length; b++) {
+            if (!comparable(allSets[a].rkf, allSets[b].rkf)) {
+              const nameA = allSets[a].tab?.componentName ?? allSets[a].tab?.alias ?? '宿主';
+              const nameB = allSets[b].tab?.componentName ?? allSets[b].tab?.alias ?? '宿主';
+              throw new Error(
+                `页签「${nameA}」与「${nameB}」行键不可比（互不包含），无法同进一个 ${fnName}；请改用 KSUM 聚合其中更细/不可比的页签`,
+              );
+            }
+          }
+        }
+        // 按 rowKeyFields 长度排序：最细（字段最多）→ 更粗
+        const ordered = [...srcTabsSeen].sort(
+          (x, y) => (y.rowKeyFields?.length ?? 0) - (x.rowKeyFields?.length ?? 0),
+        );
+        // source 镜像为最细 sources[0]
+        const primaryTab = ordered[0];
+        result.push({
+          type: 'cross_tab_ref',
+          source: primaryTab.componentId,
+          sourceLabel: primaryTab.componentName ?? primaryTab.alias,
+          target: '',
+          agg: fnName,
+          match: buildMatch(primaryTab.rowKeyFields ?? [], selfRowKeyFields),
+          sources: ordered.map((td) => ({
+            source: td.componentId,
+            sourceLabel: td.componentName ?? td.alias,
+            match: buildMatch(td.rowKeyFields ?? [], selfRowKeyFields),
+          })),
+          targetExpr,
+        });
+      }
       k = closeIdx + 1;
       continue;
     }

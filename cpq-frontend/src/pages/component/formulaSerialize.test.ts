@@ -1018,14 +1018,15 @@ describe('expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT)', () =>
     expect(t[0].targetExpr).toHaveLength(3);
   });
 
-  it('跨两个 source 页签 → 报错（一个 FN 内只允许同一个细页签行集）', () => {
+  it('跨两个 source 页签且行键不可比（互不包含）→ 报错', () => {
+    // JG rowKeyFields=['子件','工序']，HL2 rowKeyFields=['料号'] — 互不包含 → 不可比 → 应报错
     const src2: TabDef = {
       alias: 'HL', tabKey: 'hl', componentId: 'cid-hl', componentName: '回料',
-      rowKeyFields: ['子件'], detailFields: ['费率'], subtotalCols: [],
+      rowKeyFields: ['料号'], detailFields: ['费率'], subtotalCols: [],
     };
     expect(() =>
       expressionToTokens('SUM([JG.数量] * [HL.费率])', [host, src, src2], ['子件'], 'cid-host'),
-    ).toThrow(/同一个|单一|同一.*页签|跨.*页签/);
+    ).toThrow(/不可比|行键|KSUM/);
   });
 
   it('FN 内只有宿主列、无细 source → 报错（没有可聚合的行集）', () => {
@@ -1306,6 +1307,55 @@ describe('parseFormulaSegments — 细 source 裸引用判红(需聚合)', () =>
     const segs = parseFormulaSegments('[投料.重量]', tabsSame, ['料件'], true);
     const blk = segs.find(s => s.isBlock);
     expect(blk?.color).toBe('blue');
+  });
+});
+
+// ─────────────────────────────────────────────
+// T2: lexer K* func + C3 误拆文案 + 多 source 成链
+// ─────────────────────────────────────────────
+describe('T2 lexer K* + C3 + 多 source', () => {
+  // 元素 tab：rowKeyFields=['料件','元素']（严格更细于宿主）
+  const tabYS: TabDef = {
+    alias: 'COMP_YS',
+    tabKey: 'tab-ys',
+    componentId: 'uuid-ys',
+    componentName: '元素',
+    componentType: 'NORMAL',
+    rowKeyFields: ['料件', '元素'],
+    detailFields: ['单价'],
+    subtotalCols: [],
+  };
+  // 来料 tab（宿主）：rowKeyFields=['料件']
+  const tabLL: TabDef = {
+    alias: 'COMP_LL',
+    tabKey: 'tab-ll',
+    componentId: 'uuid-ll',
+    componentName: '来料',
+    componentType: 'NORMAL',
+    rowKeyFields: ['料件'],
+    detailFields: ['组成用量'],
+    subtotalCols: [],
+  };
+  const multiSrcTabs: TabDef[] = [tabYS, tabLL];
+  // selfRowKeyFields = 来料的 rowKeyFields；selfComponentId = 来料
+  const selfRKF2 = ['料件'];
+  const selfCid = 'uuid-ll';
+
+  it('KSUM 连写 → func token name=KSUM (不被切成 K+SUM)', () => {
+    const toks = __lexForTest('KSUM([外购件.费用])');
+    expect(toks.find(t => (t as any).kind === 'func')).toMatchObject({ kind: 'func', name: 'KSUM' });
+  });
+
+  it('K SUM(...) 拆写 → 专门 C3 文案 (非通用无法识别)', () => {
+    expect(() => __lexForTest('K SUM([外购件.费用])'))
+      .toThrow(/不能拆写.*请连写/);
+  });
+
+  it('多 source 链 SUM (元素细 + 来料粗，两两可比) → 不抛"只允许同一细页签"', () => {
+    // 元素 rowKeyFields=['料件','元素'] ⊇ 来料 rowKeyFields=['料件'] → 可比成链
+    expect(() =>
+      expressionToTokens('SUM([元素.单价] + [来料.组成用量])', multiSrcTabs, selfRKF2, selfCid),
+    ).not.toThrow();
   });
 });
 
