@@ -482,6 +482,118 @@ describe('cross-tab fixture', () => {
   }
 });
 
+// ─── T5 前端引擎 KSUM ──────────────────────────────────────────────────────
+//
+// 测试场景:
+//   元素组件 (ELEM_ID): 2 行 [{料件:'Cu', 单价:2}, {料件:'Ni', 单价:3}]
+//   外购件组件 (WGJ_ID): 2 行 [{来料:'X', 费用:1.0}, {来料:'X', 费用:0.5}]
+//
+// 公式: SUM([元素.单价] + KSUM([外购件.费用]))
+//   外层 match=[] → hits = 所有元素行
+//   对每行 evalRow(ar): 单价 + KSUM_scalar
+//     KSUM_scalar: source=WGJ_ID, projectToHostKey=true, match=[], SUM(费用) → 1.0+0.5=1.5
+//   Cu行: 2+1.5=3.5 ; Ni行: 3+1.5=4.5 ; 外层 SUM=8
+//
+// I-1 决策 K: KSUM 空集 → 0 (静默, 无 crossTabError)
+//   把 WGJ_ID 行清空 → KSUM_scalar=0 → Cu:2+0=2, Ni:3+0=3 → SUM=5
+//
+// I-2: KAVG 空集 → 整外层表达式塌 0 + crossTabError 非空
+
+describe('T5 前端引擎 KSUM', () => {
+  const ELEM_ID = 'elem-comp-id';
+  const WGJ_ID = 'wgj-comp-id';
+
+  const elemRows = [
+    { 料件: 'Cu', 单价: 2 },
+    { 料件: 'Ni', 单价: 3 },
+  ];
+  const wgjRows = [
+    { 来料: 'X', 费用: 1.0 },
+    { 来料: 'X', 费用: 0.5 },
+  ];
+
+  // KSUM 子 token: projectToHostKey=true, match=[]（无约束→全量塌缩）
+  const ksumSubToken: any = {
+    type: 'cross_tab_ref',
+    projectToHostKey: true,
+    source: WGJ_ID,
+    sourceLabel: '外购件',
+    agg: 'SUM',
+    match: [],
+    targetExpr: [{ type: 'field', value: '费用' }],
+  };
+
+  // 外层 SUM([元素.单价] + KSUM([外购件.费用]))
+  // targetExpr: [field 单价] + [KSUM 子 token]
+  const outerToken: any = {
+    type: 'cross_tab_ref',
+    source: ELEM_ID,
+    sourceLabel: '元素',
+    agg: 'SUM',
+    match: [],
+    targetExpr: [
+      { type: 'field', value: '单价' },
+      { type: 'operator', value: '+' },
+      ksumSubToken,
+    ],
+  };
+
+  // KAVG 变体（空集→整外层塌 0）
+  const kavgSubToken: any = {
+    ...ksumSubToken,
+    agg: 'AVG',
+  };
+  const outerTokenKavg: any = {
+    ...outerToken,
+    targetExpr: [
+      { type: 'field', value: '单价' },
+      { type: 'operator', value: '+' },
+      kavgSubToken,
+    ],
+  };
+
+  function evalKsum(
+    token: any,
+    crossTabRows: Record<string, Array<Record<string, any>>>,
+    outDiag?: { crossTabError?: string },
+  ): number {
+    return evaluateExpression(
+      [token] as any,
+      {},        // fieldValues
+      undefined, // componentSubtotals
+      undefined, // productAttributes
+      undefined, // quotationFields
+      undefined, // pathCache
+      undefined, // partNo
+      undefined, // basicDataValues
+      undefined, // previousRowSubtotal
+      undefined, // globalVariableDefs
+      undefined, // currentRow (外层 match=[] 时不需要 join)
+      crossTabRows,
+      outDiag,
+    );
+  }
+
+  it('KSUM 按宿主键塌缩 = Σ费用=1.5, 广播进每元素驱动行 → (2+1.5)+(3+1.5)=8', () => {
+    const result = evalKsum(outerToken, { [ELEM_ID]: elemRows, [WGJ_ID]: wgjRows });
+    expect(result).toBe(8);
+  });
+
+  it('决策 K: KSUM 空集(WGJ 无行) → scalar=0 静默, 无 crossTabError → (2+0)+(3+0)=5', () => {
+    const diag: { crossTabError?: string } = {};
+    const result = evalKsum(outerToken, { [ELEM_ID]: elemRows, [WGJ_ID]: [] }, diag);
+    expect(result).toBe(5);
+    expect(diag.crossTabError).toBeUndefined();
+  });
+
+  it('决策 K + I-2: KAVG 空集 → 整外层表达式塌 0 + crossTabError 非空', () => {
+    const diag: { crossTabError?: string } = {};
+    const result = evalKsum(outerTokenKavg, { [ELEM_ID]: elemRows, [WGJ_ID]: [] }, diag);
+    expect(result).toBe(0);
+    expect(diag.crossTabError).toBeTruthy();
+  });
+});
+
 // ─── isWithinTolerance ──────────────────────────────────────────────────────
 
 describe('isWithinTolerance', () => {

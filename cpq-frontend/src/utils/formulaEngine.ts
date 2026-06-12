@@ -36,6 +36,15 @@ export interface ExpressionToken {
   agg?: 'NONE' | 'SUM' | 'AVG' | 'COUNT' | 'MAX' | 'MIN';
   /** cross_tab_ref 目标公式（非空时优先于 target）；其内 field=A列, b_field=B列 */
   targetExpr?: ExpressionToken[];
+  /** v1 多 source 有序链 (最细→更粗); source 镜像为最细 sources[0] */
+  sources?: Array<{ source: string; sourceLabel?: string; match: Array<{ a: string; b: string }> }>;
+  /**
+   * v2 KSUM: true = 按宿主结果行键塌缩成宿主粒度标量 (区别外层 join-set 聚合).
+   * KSUM/KCOUNT/KMAX/KMIN 空集 → 0 (静默, I-1 决策 K).
+   * KAVG/KMAX/KMIN 空集 → null → 整外层表达式塌 0 + outDiag.crossTabError (I-2 决策 K).
+   * 缺省 false.
+   */
+  projectToHostKey?: boolean;
 }
 
 /** 检测公式 token 数组中是否含 path 类型(决定走前端本地求值还是后端 API) */
@@ -255,47 +264,107 @@ export function evaluateExpression(
         break;
       }
       case 'cross_tab_ref': {
-        const rows = crossTabRows?.[token.source ?? ''] ?? [];
-        const hits = rows.filter((ar) =>
-          (token.match ?? []).every((p) => {
-            const av = ar[p.a];
-            const bv = currentRow?.[p.b];
-            const blank = (x: any) => x == null || String(x).trim() === '';
-            if (blank(av) || blank(bv)) return false;
-            const na = Number(av), nb = Number(bv);
-            if (!isNaN(na) && !isNaN(nb)) return na === nb;
-            return String(av).trim() === String(bv).trim();
-          }));
-        const agg = (token.agg ?? 'NONE').toUpperCase();
-        const num = (v: any) => { const n = Number(v); return isNaN(n) ? null : n; };
-        const hasTE = !!(token.targetExpr && token.targetExpr.length > 0);
-        const evalRow = (ar: Record<string, any>): number => {
-          const aFieldValues: Record<string, number> = {};
-          for (const k of Object.keys(ar)) { const n = Number(ar[k]); if (!isNaN(n)) aFieldValues[k] = n; }
-          return evaluateExpression(
-            token.targetExpr!, aFieldValues, componentSubtotals, productAttributes, quotationFields,
-            pathCache, partNo, basicDataValues, undefined, globalVariableDefs, currentRow, crossTabRows,
-          );
+        // ── 公共 key 比较器 (blank/number-safe) ──
+        const keyEq = (av: any, bv: any): boolean => {
+          const blank = (x: any) => x == null || String(x).trim() === '';
+          if (blank(av) || blank(bv)) return false;
+          const na = Number(av), nb = Number(bv);
+          if (!isNaN(na) && !isNaN(nb)) return na === nb;
+          return String(av).trim() === String(bv).trim();
         };
-        let out = 0;
-        let crossTabError = false;
-        if (agg === 'COUNT') out = hits.length;
-        else if (agg === 'NONE') {
-          if (hits.length === 0) out = 0;
-          else if (hits.length > 1) crossTabError = true; // multi match → error → 0
-          else { out = hasTE ? evalRow(hits[0]) : (num(hits[0][token.target ?? '']) ?? 0); }
-        } else if (hits.length === 0) out = 0;
-        else {
-          const nums = hasTE ? hits.map(evalRow) : hits.map((h) => num(h[token.target ?? '']));
-          if (nums.some((n) => n === null)) crossTabError = true; // non-numeric → error → 0
-          else {
-            const arr = nums as number[];
-            out = agg === 'SUM' ? arr.reduce((s, x) => s + x, 0)
-                : agg === 'AVG' ? arr.reduce((s, x) => s + x, 0) / arr.length
-                : agg === 'MAX' ? Math.max(...arr)
-                : agg === 'MIN' ? Math.min(...arr) : 0;
+
+        // ── aggregateRows: 纯重构抽取，存量 NONE/SUM/AVG/COUNT/MAX/MIN 行为逐字等价 ──
+        //
+        // projectToHostKey 参数:
+        //   false → 外层 source join（存量路径，NONE/SUM/... 保持旧行为，空集→0）
+        //   true  → KSUM 子 token，决策 K 空集分流:
+        //            KSUM/KCOUNT    空集 → 0 (I-1 静默)
+        //            KAVG/KMAX/KMIN 空集 → null (I-2 → 整外层塌 0 + outDiag)
+        const aggregateRows = (
+          rows: Array<Record<string, any>>,
+          matchPairs: Array<{ a: string; b: string }>,
+          hostRow: Record<string, any> | undefined,
+          targetExpr: ExpressionToken[] | undefined,
+          agg: string,
+          target: string | undefined,
+          isProjectToHostKey: boolean,
+        ): { value: number | null; multiMatchErr: boolean } => {
+          const hits = rows.filter((ar) => matchPairs.every((p) => keyEq(ar[p.a], hostRow?.[p.b])));
+          const A = agg.toUpperCase();
+          const toNum = (v: any) => { const n = Number(v); return isNaN(n) ? null : n; };
+          const hasTE = !!(targetExpr && targetExpr.length > 0);
+          // evalRowExpr: 对单驱动行 ar 求值 targetExpr，透传所有求值上下文。
+          // currentRow 传 ar 使 KSUM 子 token(projectToHostKey) 按驱动行键塌缩；
+          // b_field 取 ar[field] 等价于原宿主行（因 match key 字段值对齐）。
+          const evalRowExpr = (ar: Record<string, any>): number => {
+            const aFieldValues: Record<string, number> = {};
+            for (const k of Object.keys(ar)) { const n = Number(ar[k]); if (!isNaN(n)) aFieldValues[k] = n; }
+            // §4.3: 合并驱动行(ar)与宿主行(currentRow)作为递归的 currentRow。
+            // - b_field 取宿主列（如"数量"）→ 保留原 currentRow 字段（N=1 退化路径零变化）
+            // - KSUM 子 token 按 ar 的行键（如"料件"）做 match → ar 字段覆盖同名项（match key 对齐）
+            const mergedRow = currentRow ? { ...currentRow, ...ar } : ar;
+            return evaluateExpression(
+              targetExpr!, aFieldValues, componentSubtotals, productAttributes, quotationFields,
+              pathCache, partNo, basicDataValues, undefined, globalVariableDefs,
+              mergedRow,    // 合并行：b_field 走宿主字段，KSUM 内层 match 走 ar 字段
+              crossTabRows,
+              outDiag,      // 透传 diag 袋：内层 KAVG/KMAX/KMIN 空集写 crossTabError 穿透到最外层
+            );
+          };
+
+          if (A === 'COUNT') return { value: hits.length, multiMatchErr: false };
+
+          if (A === 'NONE') {
+            // ① NONE 旁路：保留原始"零变化"行为
+            if (hits.length === 0) return { value: 0, multiMatchErr: false };
+            if (hits.length > 1) return { value: 0, multiMatchErr: true };   // ERR 旁路
+            const v = hasTE ? evalRowExpr(hits[0]) : (toNum(hits[0][target ?? '']) ?? 0);
+            return { value: v, multiMatchErr: false };
           }
+
+          // 【I-1/I-2 决策 K 空集分流】—— 在统一"空集→0 提前返回"之前
+          if (hits.length === 0) {
+            if (isProjectToHostKey && (A === 'AVG' || A === 'MAX' || A === 'MIN')) {
+              // I-2: KAVG/KMAX/KMIN 空集 → null → 整外层塌 0 + outDiag（由调用侧写入）
+              return { value: null, multiMatchErr: false };
+            }
+            // I-1: KSUM/KCOUNT 空集 → 0 (静默); 外层 SUM/AVG/... 空集 → 0 (旧行为不变)
+            return { value: 0, multiMatchErr: false };
+          }
+
+          const nums = hasTE ? hits.map(evalRowExpr) : hits.map((h) => toNum(h[target ?? '']));
+          if (nums.some((n) => n === null)) return { value: null, multiMatchErr: true };
+          const arr = nums as number[];
+          const v = A === 'SUM' ? arr.reduce((s, x) => s + x, 0)
+                  : A === 'AVG' ? arr.reduce((s, x) => s + x, 0) / arr.length
+                  : A === 'MAX' ? Math.max(...arr)
+                  : A === 'MIN' ? Math.min(...arr) : 0;
+          return { value: v, multiMatchErr: false };
+        };
+
+        const agg = (token.agg ?? 'NONE').toUpperCase();
+        const hasTE = !!(token.targetExpr && token.targetExpr.length > 0);
+
+        if (token.projectToHostKey) {
+          // ── KSUM 子 token 分支：按宿主行(currentRow)塌缩成标量 ──
+          const rows = crossTabRows?.[token.source ?? ''] ?? [];
+          const r = aggregateRows(rows, token.match ?? [], currentRow, token.targetExpr, agg, token.target, true);
+          if (r.value === null) {
+            // I-2: KAVG/KMAX/KMIN 空集 → 注入非法表达式 → 外层 try/catch → 0; 同时写 outDiag
+            if (outDiag) {
+              outDiag.crossTabError = `[${token.sourceLabel ?? token.source}] ${token.agg} 命中 0 行,无定义`;
+            }
+            expr += '(null.x)';
+          } else {
+            expr += r.value.toString();
+          }
+          break;
         }
+
+        // ── 外层 source join 分支（存量路径，N=1 无嵌套退化路径零变化）──
+        const rows = crossTabRows?.[token.source ?? ''] ?? [];
+        const r = aggregateRows(rows, token.match ?? [], currentRow, token.targetExpr, agg, token.target, false);
+        let crossTabError = r.multiMatchErr;
         // 错误路径: 注入非法表达式让外层 try/catch 捕获并返回 0 (对齐后端 error→0 行为)
         // ★ 旁路(数值零改): 同时把可读原因写入 outDiag,供渲染层显示 ⚠ 错误态。
         if (crossTabError && outDiag) {
@@ -304,7 +373,7 @@ export function evaluateExpression(
           const ref = src || tgt ? `[${src}${tgt ? '.' + tgt : ''}] ` : '';
           outDiag.crossTabError = `${ref}细项引用命中多行,请改用 SUM 等聚合(或引用「(总计)」)`;
         }
-        expr += crossTabError ? '(null.x)' : out.toString();
+        expr += crossTabError ? '(null.x)' : (r.value ?? 0).toString();
         break;
       }
       case 'global_variable': {
