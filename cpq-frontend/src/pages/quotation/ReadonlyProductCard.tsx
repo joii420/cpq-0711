@@ -65,7 +65,11 @@ function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
 
 /**
  * 按行预计算所有 FORMULA 字段值，支持 prev_row_subtotal 累加（与 QuotationStep2 同源）。
- * 返回 { row: 0, 1, ... } → formulaCache Map（按 rowIndex 索引）。
+ * 返回每行 { formulaCache, fieldValues } 数组：
+ *   - formulaCache：FORMULA 字段求值结果（原有语义）
+ *   - fieldValues：所有字段（含 INPUT/FIXED/DATA_SOURCE/BASIC_DATA）的数值，供列小计回退取值
+ * AP-50 三视图一致修复：列小计累加时对输入型小计列使用 fieldValues 回退，与
+ * computeTabSubtotalsByColumn (Task1) 和后端 (Task2) 口径一致。
  */
 function buildFormulaCache(
   comp: ComponentDataItem,
@@ -80,23 +84,27 @@ function buildFormulaCache(
   // cross_tab_ref 三视图对齐 (Task 4.3): PASS1 小计循环不传（undefined），
   // 仅渲染层 PASS2 才传 crossTabRows，镜像后端两阶段。
   crossTabRows?: Record<string, Array<Record<string, any>>>,
-): Array<Record<string, number | null>> {
+): Array<{ formulaCache: Record<string, number | null>; fieldValues: Record<string, number> }> {
   const useDriver = !!(driverExpansion && driverExpansion.rowCount > 0);
   // AP-51 行数纪律：driver 权威优先，仅 rowCount=0 时退回持久化行数。
   const effectiveCount = useDriver ? driverExpansion!.rowCount : rows.length;
-  const caches: Array<Record<string, number | null>> = [];
+  const caches: Array<{ formulaCache: Record<string, number | null>; fieldValues: Record<string, number> }> = [];
   // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
   let prevRowValues: Record<string, number | null> | undefined = undefined;
   for (let ri = 0; ri < effectiveCount; ri++) {
     const row = rows[ri] ?? {};
     const bdv = useDriver ? driverExpansion!.rows[ri]?.basicDataValues : undefined;
-    const cache = computeAllFormulas(
+    // AP-50 修复：传入 out.fieldValues 让 computeAllFormulas 回填所有字段（含输入型），
+    // 用于列小计累加时对输入型小计列回退取值（与 computeTabSubtotalsByColumn 同口径）。
+    const fv: Record<string, number> = {};
+    const formulaCache = computeAllFormulas(
       comp, row, compSubtotals,
       undefined, undefined, partNo, bdv,
       undefined, globalVariableDefs, crossTabRows, prevRowValues,
+      { fieldValues: fv },
     );
-    caches.push(cache);
-    prevRowValues = cache;
+    caches.push({ formulaCache, fieldValues: fv });
+    prevRowValues = formulaCache;
   }
   return caches;
 }
@@ -299,9 +307,12 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
       compDriverExpansion,
     );
     // Plan 2-核心：逐列求和 + per-column 键 `${code|tabName}#${列名}`，组件级 = 各列之和。
+    // AP-50 修复：优先取 formulaCache（FORMULA 字段），回退取 fieldValues（输入型字段），
+    // 与 computeTabSubtotalsByColumn (Task1) 和后端 (Task2) 口径一致（三视图对齐）。
     let st = 0;
     for (const sf of subtotalFields) {
-      const colSum = formulaCaches.reduce((s, fc) => s + ((fc[sf.name] as number) ?? 0), 0);
+      const colSum = formulaCaches.reduce((s, { formulaCache: fc, fieldValues: fv }) =>
+        s + ((fc[sf.name] as number) ?? fv[sf.name] ?? 0), 0);
       compSubtotals[`${comp.tabName}#${sf.name}`] = colSum;
       if (comp.componentCode) compSubtotals[`${comp.componentCode}#${sf.name}`] = colSum;
       st += colSum;
