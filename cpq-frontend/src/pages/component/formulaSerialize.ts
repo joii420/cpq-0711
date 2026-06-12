@@ -750,21 +750,57 @@ export function tokensToDrawerExpression(
             ? tabDefs.find((d) => d.componentId === selfComponentId)
             : undefined;
           const hostAlias = hostTab?.componentName ?? hostTab?.alias ?? '';
-          const inner = token.targetExpr
-            .map((te) => {
-              switch (te.type) {
-                case 'field': return `[${alias}.${te.value ?? ''}]`;
-                case 'b_field': return hostAlias ? `[${hostAlias}.${te.value ?? ''}]` : `[${te.value ?? ''}]`;
-                case 'operator': return ` ${te.value ?? ''} `;
-                case 'number': return te.value ?? '';
-                case 'bracket_open': return '(';
-                case 'bracket_close': return ')';
-                default: return '';
-              }
-            })
-            .join('')
-            .replace(/\s{2,}/g, ' ')
-            .trim();
+
+          // AGG 名 → K* 函数名（KSUM 递归回显用）
+          const AGG_TO_KFUNC: Record<string, string> = {
+            SUM: 'KSUM', AVG: 'KAVG', MAX: 'KMAX', MIN: 'KMIN', COUNT: 'KCOUNT',
+          };
+
+          /**
+           * 递归回显一个 targetExpr 的子 token 序列。
+           * @param teList  子 token 列表
+           * @param outerAlias  外层 cross_tab_ref 的页签名（供无 source 的 field token 使用）
+           */
+          const renderTargetExprParts = (teList: FormulaToken[], outerAlias: string): string => {
+            return teList
+              .map((te) => {
+                switch (te.type) {
+                  case 'field': {
+                    // field token 可能携带 source（KSUM 内层赋值的 componentId）
+                    const fieldTabDef = te.source
+                      ? tabDefs.find((d) => d.componentId === te.source)
+                      : undefined;
+                    const fieldAlias = fieldTabDef?.componentName ?? fieldTabDef?.alias ?? outerAlias;
+                    return `[${fieldAlias}.${te.value ?? ''}]`;
+                  }
+                  case 'b_field': return hostAlias ? `[${hostAlias}.${te.value ?? ''}]` : `[${te.value ?? ''}]`;
+                  case 'operator': return ` ${te.value ?? ''} `;
+                  case 'number': return te.value ?? '';
+                  case 'bracket_open': return '(';
+                  case 'bracket_close': return ')';
+                  case 'path': return `{${te.path ?? ''}}`;
+                  case 'cross_tab_ref': {
+                    // projectToHostKey=true → KSUM 子 token，回显为 K<AGG>(...)
+                    if (te.projectToHostKey) {
+                      const kTabDef = tabDefs.find((d) => d.componentId === te.source);
+                      const kAlias = kTabDef?.componentName ?? kTabDef?.alias ?? te.sourceLabel ?? te.source ?? '';
+                      const kFuncName = AGG_TO_KFUNC[(te.agg ?? 'SUM').toUpperCase()] ?? 'KSUM';
+                      const kInner = te.targetExpr && te.targetExpr.length > 0
+                        ? renderTargetExprParts(te.targetExpr, kAlias)
+                        : '';
+                      return `${kFuncName}(${kInner})`;
+                    }
+                    return '';
+                  }
+                  default: return '';
+                }
+              })
+              .join('')
+              .replace(/\s{2,}/g, ' ')
+              .trim();
+          };
+
+          const inner = renderTargetExprParts(token.targetExpr, alias);
           parts.push(`${token.agg ?? 'SUM'}(${inner})`);
         } else if (!token.target) {
           // Whole-tab total [alias(总计)] (empty target, 旧路保留)

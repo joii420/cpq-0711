@@ -1613,6 +1613,58 @@ describe('T3 KSUM 评审修复', () => {
 });
 
 // ─────────────────────────────────────────────
+// T4 回显：KSUM 递归回显 + round-trip 幂等
+// ─────────────────────────────────────────────
+describe('T4 回显', () => {
+  // 复用 KSUM_CTX：宿主=来料(uuid-ll), 外购件(uuid-wgj), 元素(uuid-ys)
+  // expressionToTokens 签名: (expr, tabDefs, selfRowKeyFields?, selfComponentId?)
+  // tokensToDrawerExpression 签名: (tokens, tabDefs, selfComponentId?)
+
+  it('KSUM token → 回显 KSUM(...) 并幂等 round-trip', () => {
+    const src = 'SUM([元素.单价] + KSUM([外购件.费用]))';
+    const toks1 = expressionToTokens(src, KSUM_CTX, KSUM_SELF_RKF, KSUM_SELF_CID);
+    const str1 = tokensToDrawerExpression(toks1, KSUM_CTX, KSUM_SELF_CID);
+    expect(str1).toContain('KSUM([外购件.费用])');
+    const toks2 = expressionToTokens(str1, KSUM_CTX, KSUM_SELF_RKF, KSUM_SELF_CID);
+    const str2 = tokensToDrawerExpression(toks2, KSUM_CTX, KSUM_SELF_CID);
+    expect(str2).toBe(str1);                            // 两次稳定
+  });
+
+  it('KAVG 回显反查 AVG+proj → KAVG', () => {
+    const toks = expressionToTokens('SUM([元素.单价] + KAVG([外购件.费用]))', KSUM_CTX, KSUM_SELF_RKF, KSUM_SELF_CID);
+    expect(tokensToDrawerExpression(toks, KSUM_CTX, KSUM_SELF_CID)).toContain('KAVG([外购件.费用])');
+  });
+
+  it('KMAX/KMIN/KCOUNT 各自回显正确', () => {
+    for (const fn of ['KMAX', 'KMIN', 'KCOUNT'] as const) {
+      const src = `SUM([元素.单价] + ${fn}([外购件.费用]))`;
+      const toks = expressionToTokens(src, KSUM_CTX, KSUM_SELF_RKF, KSUM_SELF_CID);
+      const out = tokensToDrawerExpression(toks, KSUM_CTX, KSUM_SELF_CID);
+      expect(out).toContain(`${fn}([外购件.费用])`);
+    }
+  });
+
+  it('纯 KSUM 容器 SUM(KSUM([外购件.费用])) 回显并幂等', () => {
+    const src = 'SUM(KSUM([外购件.费用]))';
+    const toks1 = expressionToTokens(src, KSUM_CTX, KSUM_SELF_RKF, KSUM_SELF_CID);
+    const str1 = tokensToDrawerExpression(toks1, KSUM_CTX, KSUM_SELF_CID);
+    expect(str1).toContain('KSUM([外购件.费用])');
+    // round-trip
+    const toks2 = expressionToTokens(str1, KSUM_CTX, KSUM_SELF_RKF, KSUM_SELF_CID);
+    const str2 = tokensToDrawerExpression(toks2, KSUM_CTX, KSUM_SELF_CID);
+    expect(str2).toBe(str1);
+  });
+
+  it('KSUM 内含 {路径} global_variable 回显', () => {
+    const src = 'SUM([元素.单价] + KSUM([外购件.费用] * {某全局变量}))';
+    const toks = expressionToTokens(src, KSUM_CTX, KSUM_SELF_RKF, KSUM_SELF_CID);
+    const out = tokensToDrawerExpression(toks, KSUM_CTX, KSUM_SELF_CID);
+    expect(out).toContain('KSUM(');
+    expect(out).toContain('{某全局变量}');
+  });
+});
+
+// ─────────────────────────────────────────────
 // T1 token schema 扩展
 // ─────────────────────────────────────────────
 describe('T1 token schema 扩展', () => {
