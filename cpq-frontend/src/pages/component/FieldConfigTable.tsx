@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Input, Select, Checkbox, Button, Typography, Tooltip, Space, Modal, Form, Alert, Segmented } from 'antd';
+import { Input, Select, Checkbox, Button, Typography, Tooltip, Space, Modal, Form, Alert, Segmented, Tag } from 'antd';
 import { dataSourceResolverService, RESOLVER_TYPE_LABEL } from '../../services/dataSourceResolverService';
 import { SortableTable, DragHandle } from '../../components/SortableTable';
 
@@ -12,6 +12,7 @@ import GlobalVariablePickerDrawer from '../../components/GlobalVariablePickerDra
 import DefaultSourceEditor from './DefaultSourceEditor';
 import ListFormulaConfigDrawer from './ListFormulaConfigDrawer';
 import ConditionalFormulaDrawer, { type ConditionalFormulaValue } from './ConditionalFormulaDrawer';
+import { extractSqlViewName } from './sqlViewPath';
 import './styles.css';
 
 interface FieldConfigTableProps {
@@ -33,6 +34,8 @@ interface FieldConfigTableProps {
   candidatesByField?: Record<string, import('./types').RowKeyCandidate>;
   /** 勾选/取消某字段作行键：传该字段反查出的真实列名 + 选中态。 */
   onToggleRowKey?: (resolvedColumn: string, checked: boolean) => void;
+  /** 组件 driver 路径（$视图…）；用于行键判定 + 字段路径选择器只列 driver 视图列。 */
+  dataDriverPath?: string;
 }
 
 const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
@@ -44,6 +47,7 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
   rowKeyFields,
   candidatesByField,
   onToggleRowKey,
+  dataDriverPath,
 }) => {
   const [pathPickerKey, setPathPickerKey] = useState<string | null>(null);
   // V109: 全局变量选择器, 选完编译为 BNF path + 写入 global_variable_code 元数据
@@ -246,6 +250,17 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
                     🌐
                   </Button>
                 </Tooltip>
+                {(() => {
+                  const driverView = extractSqlViewName(dataDriverPath);
+                  const fieldView = extractSqlViewName(record.basic_data_path);
+                  const hasPredicate = (record.basic_data_path ?? '').includes('[');
+                  const nonDriver = hasPredicate || !fieldView || (!!driverView && fieldView !== driverView);
+                  return nonDriver ? (
+                    <Tooltip title="该路径非 driver 视图列（含谓词或指向别的表），建议重新配置为 driver 列">
+                      <Tag color="warning" style={{ marginLeft: 4 }}>⚠ 非driver列</Tag>
+                    </Tooltip>
+                  ) : null;
+                })()}
               </Space>
             );
           }
@@ -522,6 +537,8 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
       <PathPickerDrawer
         open={pathPickerKey !== null}
         componentId={componentId}
+        driverViewPath={dataDriverPath}
+        disablePredicate
         initialPath={pathPickerKey ? (() => {
           const f = fields.find(x => x.key === pathPickerKey);
           if (!f) return '';
@@ -628,6 +645,7 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
         open={defaultSourceKey !== null}
         value={defaultSourceKey ? fields.find(f => f.key === defaultSourceKey)?.default_source : undefined}
         fieldName={defaultSourceKey ? fields.find(f => f.key === defaultSourceKey)?.name : undefined}
+        componentId={componentId}
         onClose={() => setDefaultSourceKey(null)}
         onConfirm={(next) => {
           if (defaultSourceKey) {

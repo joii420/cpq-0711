@@ -83,9 +83,11 @@ All UI, prototypes, and PRD are in Chinese. Code artifacts (variables, APIs, com
 ## 开发流程规范（新功能必须用隔离 worktree 分支）🔒
 **强制**：开发任何新功能 / 较大改动，**必须**先用 `superpowers:using-git-worktrees` 技能创建**隔离 worktree 分支**，在该隔离工作区里开发，**不直接在主工作区或 master 上改**。
 
+**计划执行方式（默认，不必再询问用户）**：写好实现计划（`superpowers:writing-plans`）后，**默认走 `superpowers:subagent-driven-development`**——每个 Task 派全新子代理实现，Task 间做两阶段评审（先 spec 合规、再代码质量），连续执行不中途请示。除非用户当次明确要求改用 `superpowers:executing-plans` 或手动执行。
+
 **生命周期**：
 1. **起步**：调 `superpowers:using-git-worktrees` 建独立 worktree + 特性分支，后续所有编码/提交都在该 worktree 内进行。
-2. **开发**：按本文「质量保证规范」「修改后强制自检」完成功能 + 测试 + 自检；协议级改动跑 E2E。
+2. **开发**：按本文「质量保证规范」「修改后强制自检」完成功能 + 测试 + 自检；协议级改动跑 E2E。默认按上面「计划执行方式」用 subagent-driven 推进。
 3. **确认**：完成后**由用户确认**功能达标（不得自行宣布"完成即合并"）。
 4. **收尾（用户确认后自动执行）**：走 `superpowers:finishing-a-development-branch` 的"合并并清理"路径 —— 切回 `master` → `git merge <特性分支>` → 跑一遍测试确认合并结果 → **`git worktree remove` 删除新建的 worktree 目录** + 删除该特性分支。
 

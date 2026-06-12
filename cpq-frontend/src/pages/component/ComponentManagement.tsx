@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
+  Alert,
   Button,
+  Checkbox,
   Modal,
   Form,
   Input,
@@ -15,6 +17,8 @@ import {
   Tooltip,
   Empty,
 } from 'antd';
+import { buildDraftSnapshot, rebuildFieldKeys, rebuildFormulaKeys } from './componentDraft';
+import { readDraft, clearDraft, useDraftAutosave, listAllDrafts } from './useComponentDraft';
 import { PlusOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined } from '@ant-design/icons';
 import { componentService } from '../../services/componentService';
 import { datasourceService } from '../../services/datasourceService';
@@ -543,11 +547,15 @@ interface MasterListProps {
   onBatchToggleStatus: (rows: ComponentItem[]) => Promise<void>;
   onBatchDelete: (rows: ComponentItem[]) => Promise<void>;
   onRefresh: () => void;
+  draftCount: number;
+  onSaveAllDrafts: () => void;
+  draftIds: Set<string>;
 }
 
 const MasterList: React.FC<MasterListProps> = ({
   directories, loading, selectedId, checkedIds, searchKeyword, onSearchChange,
   onSelect, onToggleCheck, onCreate, onBatchToggleStatus, onBatchDelete, onRefresh,
+  draftCount, onSaveAllDrafts, draftIds,
 }) => {
   const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({});
   // 分区折叠：key = `${dirId}:${type}`；读不到即视为折叠（默认全折叠，保持左栏紧凑）
@@ -611,6 +619,12 @@ const MasterList: React.FC<MasterListProps> = ({
         </span>
         <div className="cmm-c-name">
           {comp.name}
+          {draftIds.has(comp.id) && (
+            <span title="有未保存的本地草稿" style={{
+              display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+              background: '#faad14', marginLeft: 6, verticalAlign: 'middle',
+            }} />
+          )}
           {comp.status === 'DISABLED' && (
             <span style={{ fontSize: 10, marginLeft: 6, opacity: 0.85 }}>（已停用）</span>
           )}
@@ -728,6 +742,14 @@ const MasterList: React.FC<MasterListProps> = ({
         <div style={{ marginTop: 6, fontSize: 12, color: n > 0 ? '#0958d9' : '#8c8c8c' }}>
           {n > 0 ? `已选 ${n} 项` : '勾选卡片左侧框可批量操作'}
         </div>
+        <div className="cmm-row" style={{ marginTop: 6 }}>
+          <Tooltip title={draftCount === 0 ? '没有未保存的本地草稿' : `保存 ${draftCount} 个组件的本地草稿`}>
+            <Button size="small" type="primary" ghost disabled={draftCount === 0} onClick={onSaveAllDrafts}
+              style={{ flex: 1 }}>
+              保存全部草稿{draftCount > 0 ? ` (${draftCount})` : ''}
+            </Button>
+          </Tooltip>
+        </div>
       </div>
 
       {loading ? (
@@ -777,6 +799,23 @@ const MasterList: React.FC<MasterListProps> = ({
 // ─────────────────────────────────────────────────────────────
 // Main Container
 // ─────────────────────────────────────────────────────────────
+/**
+ * 最终行键字段 = 当前勾选 ∪ 存量锚定列（候选反查不到 resolvedColumn 的存量行键列）。
+ * 勾选只覆盖"有字段可代表"的行键列，不能因勾选覆盖把无字段代表的锚定列丢掉。
+ * handleSave（单组件）与草稿 snapshot（供批量保存同源使用）共用此函数，避免批量落库截断 rowKeyFields。
+ */
+function computeFinalRowKeyFields(
+  checked: string[],
+  serverRowKeyFields: string[] | undefined,
+  candidates: Record<string, import('./types').RowKeyCandidate>,
+): string[] {
+  const reachableCols = new Set(
+    (Object.values(candidates).map((c) => c.resolvedColumn).filter(Boolean) as string[]),
+  );
+  const preservedAnchors = (serverRowKeyFields ?? []).filter((c) => !reachableCols.has(c));
+  return Array.from(new Set([...(checked ?? []), ...preservedAnchors]));
+}
+
 const ComponentManagement: React.FC = () => {
   const [directories, setDirectories] = useState<DirectoryNode[]>([]);
   const [selectedComponent, setSelectedComponent] = useState<ComponentItem | null>(null);
@@ -794,6 +833,81 @@ const ComponentManagement: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [loadingTree, setLoadingTree] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+
+  // ── 草稿自动写入 + 恢复 ──
+  const baselineUpdatedAt = selectedComponent?.updatedAt;
+  // draftListVersion 提前声明：autosave 写入后 bump 它，刷新左栏橙点徽标 + 「保存全部草稿(N)」计数。
+  const [draftListVersion, setDraftListVersion] = useState(0);
+  const { scheduleSave, flush: flushDraft } = useDraftAutosave(
+    selectedComponent?.id, baselineUpdatedAt, 800,
+    () => setDraftListVersion((v) => v + 1),
+  );
+  const restoringRef = useRef(false);
+  const [draftBanner, setDraftBanner] = useState<{ kind: 'restored' | 'stale'; componentId: string } | null>(null);
+
+  // ── 全局保存全部草稿 ──
+  const allDrafts = useMemo(() => listAllDrafts(), [draftListVersion, selectedComponent?.id]);
+  const [saveAllOpen, setSaveAllOpen] = useState(false);
+  const [saveAllChecked, setSaveAllChecked] = useState<string[]>([]);
+
+  const openSaveAll = () => {
+    const ids = listAllDrafts().map((d) => d.componentId);
+    setSaveAllChecked(ids);
+    setSaveAllOpen(true);
+  };
+
+  const doSaveAll = async () => {
+    const targets = listAllDrafts().filter((d) => saveAllChecked.includes(d.componentId));
+    const res = await runBatch(
+      targets,
+      async (d) => {
+        const fresh = (await componentService.getById(d.componentId)).data as ComponentItem;
+        if (d.env.baselineUpdatedAt && fresh.updatedAt && d.env.baselineUpdatedAt !== fresh.updatedAt) {
+          throw new Error('该组件已被他人更新（跳过，避免覆盖）');
+        }
+        const s = d.env.snapshot;
+        const payload: any = { name: fresh.name, fields: s.fields, formulas: s.formulas };
+        if (fresh.componentType === 'EXCEL') {
+          payload.excelColumns = JSON.stringify(s.excelColumns ?? []);
+        } else if (fresh.componentType === 'NORMAL') {
+          payload.dataDriverPath = s.dataDriverPath ?? '';
+          payload.rowKeyFields = (s.rowKeyFields ?? []).length > 0 ? s.rowKeyFields : undefined;
+          payload.bomRecursiveExpand = s.bomRecursiveExpand;
+        }
+        await componentService.update(d.componentId, payload);
+        clearDraft(d.componentId);
+      },
+      { concurrent: false, rowLabel: (d) => d.componentId },
+    );
+    setSaveAllOpen(false);
+    setDraftListVersion((v) => v + 1);
+    loadTree(searchKeyword || undefined);
+    if (res.failed.length === 0) {
+      message.success(`已保存 ${res.ok} 个组件草稿`);
+    } else {
+      message.warning(
+        `成功 ${res.ok} · 失败/跳过 ${res.failed.length}：` +
+        res.failed.map((f) => `${f.row.componentId}(${f.reason})`).join('；')
+      );
+    }
+    if (selectedComponent && saveAllChecked.includes(selectedComponent.id)) {
+      setDraftBanner(null);
+    }
+  };
+
+  // 编辑态任一变化 → 防抖写草稿（恢复中/程序化加载跳过）
+  useEffect(() => {
+    if (!selectedComponent?.id) return;
+    if (restoringRef.current) { restoringRef.current = false; return; }
+    // 草稿存"最终行键字段"（含锚定列），与 handleSave 同源，使批量保存(doSaveAll)直接用 snapshot.rowKeyFields 不丢锚定列。
+    const draftRowKeyFields = selectedComponent.componentType === 'NORMAL'
+      ? computeFinalRowKeyFields(rowKeyFields, selectedComponent.rowKeyFields, rowKeyCandidates)
+      : rowKeyFields;
+    scheduleSave(buildDraftSnapshot({
+      fields, formulas, dataDriverPath, rowKeyFields: draftRowKeyFields, excelColumns, bomRecursiveExpand,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fields, formulas, dataDriverPath, rowKeyFields, excelColumns, bomRecursiveExpand]);
 
   // Left list selection (checkboxes) + search
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
@@ -863,8 +977,11 @@ const ComponentManagement: React.FC = () => {
       const map: Record<string, import('./types').RowKeyCandidate> = {};
       for (const c of list) { if (c.fieldName) map[c.fieldName] = c; }
       setRowKeyCandidates(map);
-    } catch {
-      setRowKeyCandidates({});
+    } catch (e) {
+      // 不清空已有候选：一次瞬时刷新失败若把 map 清成 {}，会让全部字段行键复选框被禁用，
+      // 用户感知为"改名后全禁用、重进才好"（重进走 handleSelectComponent 直接刷新重填）。
+      // 保留上次候选 + 显式 warn（替代原静默 catch），避免 AP-43 式吞错。
+      console.warn('[rowKeyCandidates] refresh failed, keep previous candidates:', e);
     }
   }, []);
 
@@ -897,6 +1014,7 @@ const ComponentManagement: React.FC = () => {
   // Load component when selected from list
   const handleSelectComponent = async (comp: ComponentItem) => {
     try {
+      restoringRef.current = true; // 跳过本次程序化加载触发的自动写草稿
       const res = await componentService.getById(comp.id);
       const loaded = res.data as ComponentItem;
       setSelectedComponent(loaded);
@@ -916,6 +1034,28 @@ const ComponentManagement: React.FC = () => {
       setDataDriverPath(loaded.dataDriverPath ?? '');
       setRowKeyFields(loaded.rowKeyFields ?? []);
       setBomRecursiveExpand((loaded as any).bomRecursiveExpand === true); // 默认关
+
+      // ── 草稿自动恢复 ──
+      const draft = readDraft(loaded.id);
+      if (draft) {
+        const stale = !!draft.baselineUpdatedAt && !!loaded.updatedAt
+          && draft.baselineUpdatedAt !== loaded.updatedAt;
+        if (!stale) {
+          restoringRef.current = true;
+          setFields(rebuildFieldKeys(draft.snapshot.fields));
+          setFormulas(rebuildFormulaKeys(draft.snapshot.formulas));
+          setExcelColumns(draft.snapshot.excelColumns ?? []);
+          setDataDriverPath(draft.snapshot.dataDriverPath ?? '');
+          setRowKeyFields(draft.snapshot.rowKeyFields ?? []);
+          setBomRecursiveExpand(!!draft.snapshot.bomRecursiveExpand);
+          setDraftBanner({ kind: 'restored', componentId: loaded.id });
+        } else {
+          setDraftBanner({ kind: 'stale', componentId: loaded.id });
+        }
+      } else {
+        setDraftBanner(null);
+      }
+
       if (loaded.componentType === 'NORMAL') {
         void refreshRowKeyCandidates(
           loaded.id,
@@ -946,22 +1086,19 @@ const ComponentManagement: React.FC = () => {
       if (selectedComponent.componentType === 'EXCEL') {
         payload.excelColumns = JSON.stringify(excelColumns);
       } else if (selectedComponent.componentType === 'NORMAL') {
-        // 不丢锚定列：勾选只覆盖"有字段可代表"的行键列；存量无候选列代表的锚定列并回。
-        const reachableCols = new Set(
-          (Object.values(rowKeyCandidates)
-            .map((c) => c.resolvedColumn)
-            .filter(Boolean) as string[])
+        // 不丢锚定列：勾选只覆盖"有字段可代表"的行键列；存量无候选列代表的锚定列并回（与 computeFinalRowKeyFields 同源）。
+        const finalRowKeyFields = computeFinalRowKeyFields(
+          rowKeyFields, selectedComponent.rowKeyFields, rowKeyCandidates,
         );
-        const preservedAnchors = (selectedComponent.rowKeyFields ?? []).filter(
-          (c) => !reachableCols.has(c)
-        );
-        const finalRowKeyFields = Array.from(new Set([...rowKeyFields, ...preservedAnchors]));
         payload.dataDriverPath = dataDriverPath ?? '';
         payload.rowKeyFields = finalRowKeyFields.length > 0 ? finalRowKeyFields : undefined;
         payload.bomRecursiveExpand = bomRecursiveExpand;
       }
       await componentService.update(selectedComponent.id, payload);
       message.success('保存成功');
+      clearDraft(selectedComponent.id);
+      flushDraft();
+      setDraftBanner(null);
       loadTree(searchKeyword || undefined);
       const res = await componentService.getById(selectedComponent.id);
       setSelectedComponent(res.data);
@@ -1167,6 +1304,7 @@ const ComponentManagement: React.FC = () => {
                     return Array.from(set);
                   });
                 }}
+                dataDriverPath={dataDriverPath}
               />
             ),
           },
@@ -1231,6 +1369,9 @@ const ComponentManagement: React.FC = () => {
         onBatchToggleStatus={handleBatchToggleStatus}
         onBatchDelete={handleBatchDelete}
         onRefresh={() => loadTree(searchKeyword || undefined)}
+        draftCount={allDrafts.length}
+        onSaveAllDrafts={openSaveAll}
+        draftIds={new Set(allDrafts.map(d => d.componentId))}
       />
 
       {/* 右：详情（内嵌，非抽屉） */}
@@ -1247,6 +1388,41 @@ const ComponentManagement: React.FC = () => {
                 <Button type="primary" size="small" loading={saving} onClick={handleSave}>保存</Button>
               </div>
             </div>
+            {draftBanner?.componentId === selectedComponent.id && (
+              <Alert
+                style={{ margin: '0 0 8px' }}
+                type={draftBanner.kind === 'restored' ? 'warning' : 'info'}
+                showIcon
+                message={draftBanner.kind === 'restored'
+                  ? '检测到未保存的修改，已自动恢复'
+                  : '该组件在别处已更新，本地草稿可能过期'}
+                action={
+                  <Space>
+                    {draftBanner.kind === 'stale' && (
+                      <Button size="small" onClick={() => {
+                        const d = readDraft(selectedComponent.id);
+                        if (d) {
+                          restoringRef.current = true;
+                          setFields(rebuildFieldKeys(d.snapshot.fields));
+                          setFormulas(rebuildFormulaKeys(d.snapshot.formulas));
+                          setExcelColumns(d.snapshot.excelColumns ?? []);
+                          setDataDriverPath(d.snapshot.dataDriverPath ?? '');
+                          setRowKeyFields(d.snapshot.rowKeyFields ?? []);
+                          setBomRecursiveExpand(!!d.snapshot.bomRecursiveExpand);
+                          setDraftBanner({ kind: 'restored', componentId: selectedComponent.id });
+                        }
+                      }}>仍恢复草稿</Button>
+                    )}
+                    <Button size="small" danger onClick={() => {
+                      clearDraft(selectedComponent.id);
+                      flushDraft();
+                      setDraftBanner(null);
+                      handleSelectComponent(selectedComponent);
+                    }}>放弃草稿</Button>
+                  </Space>
+                }
+              />
+            )}
             <div className="cmm-panel">
               {componentType === 'EXCEL'
                 ? renderExcelDetail()
@@ -1322,6 +1498,30 @@ const ComponentManagement: React.FC = () => {
             </Form.Item>
           )}
         </Form>
+      </Modal>
+
+      {/* 保存全部草稿确认 Modal */}
+      <Modal
+        title="保存全部草稿"
+        open={saveAllOpen}
+        onCancel={() => setSaveAllOpen(false)}
+        onOk={doSaveAll}
+        okText="确认保存"
+        cancelText="取消"
+        width={520}
+        destroyOnClose
+      >
+        <Alert type="warning" showIcon style={{ marginBottom: 12 }}
+          message="确认后将把以下组件的本地草稿逐个落库（会触发模板 snapshot 同步）。被他人改过的组件将自动跳过。" />
+        <Checkbox.Group
+          style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+          value={saveAllChecked}
+          onChange={(v) => setSaveAllChecked(v as string[])}
+          options={listAllDrafts().map((d) => ({
+            label: `${d.componentId} · 草稿于 ${new Date(d.env.savedAt).toLocaleString()}`,
+            value: d.componentId,
+          }))}
+        />
       </Modal>
     </div>
   );

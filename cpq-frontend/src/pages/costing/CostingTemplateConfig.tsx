@@ -550,6 +550,8 @@ const CostingTemplateConfig: React.FC = () => {
         onClose={() => { setPathPickerOpen(false); setPathPickerColIdx(null); }}
         initialPath={pathPickerColIdx != null ? (columns[pathPickerColIdx]?.variable_path || '') : ''}
         onConfirm={handlePathPickerConfirm}
+        clickableColumns
+        disablePredicate
       />
 
       {/* V104: 全局变量选择 —— 从全局变量配置选 var+key, 自动编译 BNF 路径填到 variable_path
