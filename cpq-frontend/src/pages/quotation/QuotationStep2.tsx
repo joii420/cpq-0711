@@ -397,6 +397,9 @@ function computeAllFormulas(
   // Plan 2b：上一行全量公式值（按字段名）。提供后 previous_row_subtotal 按"当前列"取上一行本列值；
   // 不传则退回 previousRowSubtotal 标量（旧行为）。
   previousRowValues?: Record<string, number | null>,
+  // 输出袋：调用方若传入 { fieldValues? } 则函数会将 fieldValues（非公式字段也含）写入其中，
+  // 供 computeTabSubtotalsByColumn 等读取 INPUT_NUMBER 等纯输入列的行值。
+  out?: { fieldValues?: Record<string, number> },
 ): Record<string, number | null> {
   if (!comp.fields || !comp.formulas) return {};
 
@@ -419,7 +422,7 @@ function computeAllFormulas(
       if (formula) formulaFields.push({ name, formula });
     }
   }
-  if (formulaFields.length === 0) return {};
+  if (formulaFields.length === 0 && !out?.fieldValues) return {};
 
   // Build dependency graph among formula fields（Plan 3a：条件字段取并集依赖）
   const formulaNameSet = new Set(formulaFields.map(ff => ff.name));
@@ -647,6 +650,7 @@ function computeAllFormulas(
       results[name] = null;
     }
   }
+  if (out?.fieldValues) Object.assign(out.fieldValues, fieldValues);
   return results;
 }
 
@@ -853,11 +857,13 @@ export function computeTabSubtotalsByColumn(
     const ra = rowAt(i, comp, s);
     const row = fillFixedDefaults(comp.fields, ra.row);
     const basicDataValues = ra.expIndex >= 0 ? driverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
+    const fv: Record<string, number> = {};
     const cache = computeAllFormulas(
       comp, row, allComponentSubtotals, quotationFields, pathCache, partNo, basicDataValues,
       undefined, globalVariableDefs,
+      undefined /*crossTabRows*/, undefined /*previousRowValues*/, { fieldValues: fv },
     );
-    for (const sf of subtotalFields) out[sf.name] += cache[sf.name] ?? 0;
+    for (const sf of subtotalFields) out[sf.name] += cache[sf.name] ?? fv[sf.name] ?? 0;
   }
   return out;
 }
