@@ -8,6 +8,23 @@ export function buildColumnPath(viewName: string, col: string): string {
   return `$${viewName}.${col}`;
 }
 
+/**
+ * 按视图 scope 生成正确的 BNF 路径（与 PathPickerDrawer.generatedSqlPath 同源规则）：
+ * 跨组件 GLOBAL 视图（scope=GLOBAL 且不属于当前 effectiveComponentId）→ `$$<componentCode>.<view>.<col>`；
+ * 否则 → `$<view>.<col>`。漏掉 `$$` 前缀会让核价模板列等跨组件取数落库格式错（后端 SqlViewPathRewriter 找不到组件维度）。
+ */
+export function buildViewColumnPath(
+  view: ComponentSqlView,
+  col: string,
+  effectiveComponentId?: string,
+): string {
+  const isGlobal = view.scope === 'GLOBAL' && view.componentId !== effectiveComponentId;
+  const prefix = isGlobal
+    ? `$$${view.componentCode ?? view.componentId}.${view.sqlViewName}`
+    : `$${view.sqlViewName}`;
+  return `${prefix}.${col}`;
+}
+
 interface Props {
   views: ComponentSqlView[];
   selectedViewName?: string;
@@ -17,10 +34,12 @@ interface Props {
   onPick: (path: string, label: string) => void;
   /** 当前已选路径（高亮用） */
   currentPath?: string;
+  /** 当前 owner 组件 id；用于判定某视图是否"跨组件 GLOBAL"以决定 $$ 前缀 */
+  effectiveComponentId?: string;
 }
 
 export const ViewColumnPickerBody: React.FC<Props> = ({
-  views, selectedViewName, onSelectView, driverOnly, onPick, currentPath,
+  views, selectedViewName, onSelectView, driverOnly, onPick, currentPath, effectiveComponentId,
 }) => {
   const view = views.find((v) => v.sqlViewName === selectedViewName) ?? views[0];
   const cols = view?.declaredColumns ?? [];
@@ -44,7 +63,7 @@ export const ViewColumnPickerBody: React.FC<Props> = ({
           {cols.length === 0
             ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该视图无列 / 请先把数据驱动路径配为 SQL 视图" />
             : cols.map((c) => {
-                const path = buildColumnPath(view!.sqlViewName, c.name);
+                const path = buildViewColumnPath(view!, c.name, effectiveComponentId);
                 const active = currentPath === path;
                 return (
                   <Tag.CheckableTag key={c.name} checked={active} onChange={() => onPick(path, c.name)}>

@@ -55,15 +55,20 @@ export function useDraftAutosave(
   componentId: string | undefined,
   baselineUpdatedAt: string | undefined,
   delay = 800,
+  onWritten?: () => void,
 ) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef<{ id: string; snap: DraftSnapshot; baseline?: string } | null>(null);
+  // 用 ref 持有最新回调，避免把 onWritten 放进 scheduleSave/flush 的依赖里导致频繁重建。
+  const onWrittenRef = useRef(onWritten);
+  onWrittenRef.current = onWritten;
 
   const flush = useCallback(() => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
     if (pending.current) {
       writeDraft(pending.current.id, pending.current.snap, pending.current.baseline);
       pending.current = null;
+      onWrittenRef.current?.();
     }
   }, []);
 
@@ -75,6 +80,7 @@ export function useDraftAutosave(
       if (pending.current) {
         writeDraft(pending.current.id, pending.current.snap, pending.current.baseline);
         pending.current = null;
+        onWrittenRef.current?.();
       }
       timer.current = null;
     }, delay);

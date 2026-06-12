@@ -382,6 +382,7 @@ const PathPickerDrawer: React.FC<Props> = ({
                     selectedViewName={driverViewName}
                     onSelectView={undefined}
                     driverOnly
+                    effectiveComponentId={effectiveComponentId}
                     currentPath={pathExpr || undefined}
                     onPick={(path, label) => {
                       onConfirm(path, label);
@@ -409,6 +410,7 @@ const PathPickerDrawer: React.FC<Props> = ({
                       if (v) setSelectedSqlViewId(v.id);
                     }}
                     driverOnly={false}
+                    effectiveComponentId={effectiveComponentId}
                     currentPath={pathExpr || undefined}
                     onPick={(path, label) => { onConfirm(path, label); reset(); onClose(); }}
                   />

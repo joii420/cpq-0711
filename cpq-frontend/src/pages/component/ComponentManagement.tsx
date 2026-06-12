@@ -799,6 +799,23 @@ const MasterList: React.FC<MasterListProps> = ({
 // ─────────────────────────────────────────────────────────────
 // Main Container
 // ─────────────────────────────────────────────────────────────
+/**
+ * 最终行键字段 = 当前勾选 ∪ 存量锚定列（候选反查不到 resolvedColumn 的存量行键列）。
+ * 勾选只覆盖"有字段可代表"的行键列，不能因勾选覆盖把无字段代表的锚定列丢掉。
+ * handleSave（单组件）与草稿 snapshot（供批量保存同源使用）共用此函数，避免批量落库截断 rowKeyFields。
+ */
+function computeFinalRowKeyFields(
+  checked: string[],
+  serverRowKeyFields: string[] | undefined,
+  candidates: Record<string, import('./types').RowKeyCandidate>,
+): string[] {
+  const reachableCols = new Set(
+    (Object.values(candidates).map((c) => c.resolvedColumn).filter(Boolean) as string[]),
+  );
+  const preservedAnchors = (serverRowKeyFields ?? []).filter((c) => !reachableCols.has(c));
+  return Array.from(new Set([...(checked ?? []), ...preservedAnchors]));
+}
+
 const ComponentManagement: React.FC = () => {
   const [directories, setDirectories] = useState<DirectoryNode[]>([]);
   const [selectedComponent, setSelectedComponent] = useState<ComponentItem | null>(null);
@@ -819,12 +836,16 @@ const ComponentManagement: React.FC = () => {
 
   // ── 草稿自动写入 + 恢复 ──
   const baselineUpdatedAt = selectedComponent?.updatedAt;
-  const { scheduleSave, flush: flushDraft } = useDraftAutosave(selectedComponent?.id, baselineUpdatedAt);
+  // draftListVersion 提前声明：autosave 写入后 bump 它，刷新左栏橙点徽标 + 「保存全部草稿(N)」计数。
+  const [draftListVersion, setDraftListVersion] = useState(0);
+  const { scheduleSave, flush: flushDraft } = useDraftAutosave(
+    selectedComponent?.id, baselineUpdatedAt, 800,
+    () => setDraftListVersion((v) => v + 1),
+  );
   const restoringRef = useRef(false);
   const [draftBanner, setDraftBanner] = useState<{ kind: 'restored' | 'stale'; componentId: string } | null>(null);
 
   // ── 全局保存全部草稿 ──
-  const [draftListVersion, setDraftListVersion] = useState(0);
   const allDrafts = useMemo(() => listAllDrafts(), [draftListVersion, selectedComponent?.id]);
   const [saveAllOpen, setSaveAllOpen] = useState(false);
   const [saveAllChecked, setSaveAllChecked] = useState<string[]>([]);
@@ -878,8 +899,12 @@ const ComponentManagement: React.FC = () => {
   useEffect(() => {
     if (!selectedComponent?.id) return;
     if (restoringRef.current) { restoringRef.current = false; return; }
+    // 草稿存"最终行键字段"（含锚定列），与 handleSave 同源，使批量保存(doSaveAll)直接用 snapshot.rowKeyFields 不丢锚定列。
+    const draftRowKeyFields = selectedComponent.componentType === 'NORMAL'
+      ? computeFinalRowKeyFields(rowKeyFields, selectedComponent.rowKeyFields, rowKeyCandidates)
+      : rowKeyFields;
     scheduleSave(buildDraftSnapshot({
-      fields, formulas, dataDriverPath, rowKeyFields, excelColumns, bomRecursiveExpand,
+      fields, formulas, dataDriverPath, rowKeyFields: draftRowKeyFields, excelColumns, bomRecursiveExpand,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fields, formulas, dataDriverPath, rowKeyFields, excelColumns, bomRecursiveExpand]);
@@ -1061,16 +1086,10 @@ const ComponentManagement: React.FC = () => {
       if (selectedComponent.componentType === 'EXCEL') {
         payload.excelColumns = JSON.stringify(excelColumns);
       } else if (selectedComponent.componentType === 'NORMAL') {
-        // 不丢锚定列：勾选只覆盖"有字段可代表"的行键列；存量无候选列代表的锚定列并回。
-        const reachableCols = new Set(
-          (Object.values(rowKeyCandidates)
-            .map((c) => c.resolvedColumn)
-            .filter(Boolean) as string[])
+        // 不丢锚定列：勾选只覆盖"有字段可代表"的行键列；存量无候选列代表的锚定列并回（与 computeFinalRowKeyFields 同源）。
+        const finalRowKeyFields = computeFinalRowKeyFields(
+          rowKeyFields, selectedComponent.rowKeyFields, rowKeyCandidates,
         );
-        const preservedAnchors = (selectedComponent.rowKeyFields ?? []).filter(
-          (c) => !reachableCols.has(c)
-        );
-        const finalRowKeyFields = Array.from(new Set([...rowKeyFields, ...preservedAnchors]));
         payload.dataDriverPath = dataDriverPath ?? '';
         payload.rowKeyFields = finalRowKeyFields.length > 0 ? finalRowKeyFields : undefined;
         payload.bomRecursiveExpand = bomRecursiveExpand;

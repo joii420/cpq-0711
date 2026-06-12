@@ -316,6 +316,7 @@ const DefaultSourceEditor: React.FC<Props> = ({ open, value, fieldName, componen
             views={views}
             selectedViewName={pickedViewName}
             onSelectView={setPickedViewName}
+            effectiveComponentId={componentId}
             currentPath={bnfPath}
             onPick={(path) => setBnfPath(path)}
           />
