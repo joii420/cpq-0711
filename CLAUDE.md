@@ -39,15 +39,14 @@ Templates and components use JSONB storage for flexible field/formula configurat
 - 🔒 **`docs/三大核心模块基线.md` - 组件管理 / 模板管理 / 报价单渲染 三大核心架构基线（2026-05-21 终态锁定，后续不轻易修改；任何破坏性改动前必读 + 评估 + 走 architect）**
 - `docs/统一智能视图路径方案.md` - 配置驱动方案 §13 终态设计（含 RuntimeContext 上下文字典 + 显式谓词 path + Tab visibleWhen 表达式）
 - `docs/反模式.md` - 反模式速查（PR 自检用，新增功能前必读）
-- `docs/组件管理字段配置指南.md` - 字段类型矩阵 / default_source / DATA_SOURCE 4 类型 / 公式 token / 自检 checklist / 避坑速查（**组件字段配置改动前必读**, 2026-05-18 Phase K 后版本）
+- 🆕 `docs/配置方法论-合并版.md` - **组件字段 / Excel 模板 / 公式 三层配置的统一权威指南**（第一部·操作手册 + 第二部·原理参考；由 `配置方法论.md` + `Excel模板配置指南.md` + `组件管理字段配置指南.md` 三份合并去重、以当前代码为准重写，与代码同源；**任何字段 / 指标 / 公式 / Excel 列配置改动前必读**；含 §3.5 字段类型切换清理矩阵 / §11 字段类型联动协议(AP-44) / 附录 A 常见坑速查 / 附录 B V6 现役 vs V44 废弃表对照）
 - `docs/配置中心架构.md` - 三层模型 + snapshot 同步 + 管理端点 + datasource_field token（架构基线）
 - `docs/全局变量使用指南.md` - 单表 schema + 新建/维护/引用 SOP
 - `docs/数据源类型扩展指南.md` - 加 Resolver SPI（DATABASE_QUERY / GLOBAL_VARIABLE / BNF_PATH / HTTP_API）
 - `docs/HTTP_API_安全配置.md` - HTTP_API 启用步骤 + 安全不变量
 - `docs/列表操作规范.md` - 列表页面的工具栏动作规范（**所有列表页面必须按此规范实现**，详见下方"UI 交互规范"）
 - `docs/报价单核价单功能总结.md` - 报价单与核价单两条主线的功能、流程、视图、状态机、模板体系、数据库主表的整合视图（PRD 没回写核价系统，以本文 + RECORD.md 为准）
-- `docs/Excel模板配置指南.md` - Excel 模板（核价单/报价单 Excel 视图）列配置 + VARIABLE/FORMULA 来源 + 公式语法 + 23 列实操对照
-- `docs/配置方法论.md` - **组件 / Excel 模板 / 公式 三层配置决策树 + 模式模板 + 16 个常见坑速查**（V96~V118 实战沉淀，新增任何"指标/公式/字段"前必读；含**多行数据展示问题专题**）
+- ~~`docs/组件管理字段配置指南.md`~~ / ~~`docs/Excel模板配置指南.md`~~ / ~~`docs/配置方法论.md`~~ - ⚠️ **已合并 + 已归档**（2026-06-12 三份合并去重为上方 `docs/配置方法论-合并版.md`，原件移入 `docs/archive/`，仅作历史追溯；新引用一律指向合并版对应章节）
 - `docs/反模式.md` AP-22 - **多行数据 "X (共N项)" 显示族**（4 类共因：SQL 隐式 JOIN 失效 / 渲染层漏读 row / 视图 COALESCE 遮蔽 NULL / comparison_tag 未注册）
 - `docs/反模式.md` AP-31 - **"加载中…" 永久占位族**（修 `useDriverExpansions.ts` / `QuotationStep2.tsx` / `QuotationWizard.tsx` / `ConfigureProductService` 等写后端 `mat_*` 流程**必读**；4 类共因：fingerprint 漏维度 / pre-enrich 缓存 EMPTY_EXPANSION / invalidate 漏调 / DATA_SOURCE 渲染缺 fallback；含 PR 专项自检清单 + F12 Network 验证步骤）
 - `docs/反模式.md` AP-37 - **新字段类型 / 同 componentId 多实例 cache 冲突**（AP-31 续集；加新 `field_type` (如 LIST_FORMULA) 必须同步改 **9 处协议传播点** — enrich mapper / normalize / cache key / 渲染 case / 后端白名单 / computeAllFormulas 字段值循环 / parseBasicDataPaths+usePathFormulaCache 路径采集 / **driverExpansionKey 含 fields hash 维度**；模板里同 componentId 多次出现时 cache key 必须含 `dataDriverPath + fieldsHash`；batchExpand 结果配对必须用 task index 而非 backend r.key；含 6 个独立根因诊断 + PR 协议清单 + DATA_SOURCE 4 子类型解析协议对照表）
@@ -58,7 +57,7 @@ Templates and components use JSONB storage for flexible field/formula configurat
   - AP-41 prop drilling 漏传（报价单 vs 核价单 ProductCard 不对齐 → 一个视图功能正常另一个失效）
   - AP-42 `{...lfItem, ...rawRow}` 用 null 字段反向覆盖 lfItem 自动映射（V207 前端修；用 `rawRowNonEmpty` filter）
   - AP-43 Vite ESM 项目残留 `require()` 抛 ReferenceError → catch 吞错误 → 渲染 "—"
-- `docs/反模式.md` AP-44 - **字段类型变动 / 新增 = 组件管理 + 报价渲染 强联动协议（核心规范）**：任何 `field_type` 改动跨 **17 个检查点 (约 13 个独立文件，部分文件含多子项, 2026-05-20 双轨方案后从 15 处扩到 17 处)** 协议变换 — 写代码前 grep 全工程 / 写代码中按矩阵勾掉 / 写完跑 E2E `quotation-flow.spec.ts` + `composite-product-flow.spec.ts` 双 spec 三步走；详见 `docs/组件管理字段配置指南.md §十一 字段类型联动性矩阵`
+- `docs/反模式.md` AP-44 - **字段类型变动 / 新增 = 组件管理 + 报价渲染 强联动协议（核心规范）**：任何 `field_type` 改动跨 **17 个检查点 (约 13 个独立文件，部分文件含多子项, 2026-05-20 双轨方案后从 15 处扩到 17 处)** 协议变换 — 写代码前 grep 全工程 / 写代码中按矩阵勾掉 / 写完跑 E2E `quotation-flow.spec.ts` + `composite-product-flow.spec.ts` 双 spec 三步走；详见 `docs/配置方法论-合并版.md §11 字段类型联动协议（AP-44 核心规范）`
 - `docs/反模式.md` AP-50 - **详情页/编辑页渲染层 single-source 反模式**（2026-05-22；ReadonlyProductCard 缺 DATA_SOURCE/LIST_FORMULA 分支致僵尸数据掩盖；抽 ComponentCell 共享解决；AP-44 矩阵 #14/#15 合一）
 - `docs/反模式.md` AP-51 - **`snapshotRows` Math.max 持久化累加死锁**（2026-05-22；driver 行数权威纪律；写 snapshotRows / computeTabSubtotal 必读）
 - `docs/反模式.md` AP-52 - **全局变量绑定的"语义错配 + 契约不对齐"双重隐患**（2026-05-22；QT-1590~1604 连环 bug 综合教训；含 4 类独立根因 + 4 条强制规范）
@@ -170,7 +169,7 @@ All UI, prototypes, and PRD are in Chinese. Code artifacts (variables, APIs, com
    - 影响: **17 个协议检查点跨约 13 个独立文件** — 前端 enrich / normalizeFieldType / cache key / 渲染分支 / computeAllFormulas 字段值循环 / 所有 ProductCard callsite prop / 详情页 ReadonlyProductCard 同步 + 后端 校验 / 路径采集 / 公式 token / refreshSnapshotsByComponent + (新增) useDriverExpansions tasks 切换 + QuotationStep2 渲染层 isCompositeItem 参数
    - 漏一处必有静默失败（不报编译错也没运行时错，只是 UI 渲染不对）
    - **强制 SOP**:
-     - 写代码前 grep 全工程列清单（详见 `docs/组件管理字段配置指南.md §十一 字段类型联动性矩阵`）
+     - 写代码前 grep 全工程列清单（详见 `docs/配置方法论-合并版.md §11 字段类型联动协议（AP-44 核心规范）`）
      - 写代码中对照 15 项 checklist 勾掉每格
      - 写完**跑 E2E + 复测报价单 + 核价单 + 详情页三个视图** + admin 端点验证 snapshot 各 Tab fields_override 独立保留
    - **PR 必含**:

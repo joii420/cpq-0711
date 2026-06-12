@@ -21,6 +21,7 @@
 - `templates/核价Excel模板-完整公式版-mapping.md` — 被 `docs/Excel模板配置指南.md` + 端到端方案取代
 - `同模板双轨支持组合产品.md` — CLAUDE.md 已标废弃(统一智能视图方案取代)
 - `方案-加产品整份快照.md` / `方案-Excel模板BNF迁移至组件SQL视图.md` / `组件级数据源SQL方案.md` — 已落地方案
+- `配置方法论.md` / `Excel模板配置指南.md` / `组件管理字段配置指南.md` — 2026-06-12 三份合并去重重写为 `docs/配置方法论-合并版.md`,以当前代码为准校对;新引用一律指向合并版对应章节
 
 ### C. 旧开发文档 + 用户/运维手册(根目录)
 - 早期开发文档(已被 PRD-v3.md 覆盖):`API.md`、`UI-FLOW.md`、`TDD.md`、`TEST-CHECKLIST.md`、`FIX-PLAN.md`
