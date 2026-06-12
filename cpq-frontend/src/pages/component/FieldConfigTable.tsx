@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Input, Select, Checkbox, Button, Typography, Tooltip, Space, Modal, Form, Alert, Segmented } from 'antd';
+import { Input, Select, Checkbox, Button, Typography, Tooltip, Space, Modal, Form, Alert, Segmented, Tag } from 'antd';
 import { dataSourceResolverService, RESOLVER_TYPE_LABEL } from '../../services/dataSourceResolverService';
 import { SortableTable, DragHandle } from '../../components/SortableTable';
 
@@ -12,6 +12,7 @@ import GlobalVariablePickerDrawer from '../../components/GlobalVariablePickerDra
 import DefaultSourceEditor from './DefaultSourceEditor';
 import ListFormulaConfigDrawer from './ListFormulaConfigDrawer';
 import ConditionalFormulaDrawer, { type ConditionalFormulaValue } from './ConditionalFormulaDrawer';
+import { extractSqlViewName } from './sqlViewPath';
 import './styles.css';
 
 interface FieldConfigTableProps {
@@ -249,6 +250,17 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
                     🌐
                   </Button>
                 </Tooltip>
+                {(() => {
+                  const driverView = extractSqlViewName(dataDriverPath);
+                  const fieldView = extractSqlViewName(record.basic_data_path);
+                  const hasPredicate = (record.basic_data_path ?? '').includes('[');
+                  const nonDriver = hasPredicate || !fieldView || (!!driverView && fieldView !== driverView);
+                  return nonDriver ? (
+                    <Tooltip title="该路径非 driver 视图列（含谓词或指向别的表），建议重新配置为 driver 列">
+                      <Tag color="warning" style={{ marginLeft: 4 }}>⚠ 非driver列</Tag>
+                    </Tooltip>
+                  ) : null;
+                })()}
               </Space>
             );
           }
