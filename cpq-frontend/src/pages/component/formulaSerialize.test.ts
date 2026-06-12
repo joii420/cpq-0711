@@ -1404,6 +1404,158 @@ describe('T2 lexer K* + C3 + 多 source', () => {
 });
 
 // ─────────────────────────────────────────────
+// T3: KSUM 折叠 + 约束校验
+// ─────────────────────────────────────────────
+
+// KSUM_CTX 构造：宿主=来料(uuid-ll, rowKeyFields=['料件'])
+//   外购件(WGJ_ID='uuid-wgj', rowKeyFields=['料件']) — 与宿主同粒度，可被 KSUM 折叠
+//   元素(uuid-ys, rowKeyFields=['料件','元素']) — 更细粒度
+const KSUM_WGJ: TabDef = {
+  alias: 'COMP_WGJ',
+  tabKey: 'tab-wgj',
+  componentId: 'uuid-wgj',
+  componentName: '外购件',
+  componentType: 'NORMAL',
+  rowKeyFields: ['料件'],
+  detailFields: ['费用', '数量'],
+  subtotalCols: [],
+};
+const KSUM_LL: TabDef = {
+  alias: 'COMP_LL',
+  tabKey: 'tab-ll',
+  componentId: 'uuid-ll',
+  componentName: '来料',
+  componentType: 'NORMAL',
+  rowKeyFields: ['料件'],
+  detailFields: ['组成用量'],
+  subtotalCols: [],
+};
+const KSUM_YS: TabDef = {
+  alias: 'COMP_YS',
+  tabKey: 'tab-ys',
+  componentId: 'uuid-ys',
+  componentName: '元素',
+  componentType: 'NORMAL',
+  rowKeyFields: ['料件', '元素'],
+  detailFields: ['单价'],
+  subtotalCols: [],
+};
+const WGJ_ID = 'uuid-wgj';
+const KSUM_CTX: TabDef[] = [KSUM_WGJ, KSUM_LL, KSUM_YS];
+// 宿主是来料(uuid-ll), selfRowKeyFields=['料件']
+const KSUM_SELF_RKF = ['料件'];
+const KSUM_SELF_CID = 'uuid-ll';
+
+/** 从结果里取出第一个 projectToHostKey=true 的 cross_tab_ref (KSUM 子 token) */
+function pickKsum(toks: FormulaToken[]): FormulaToken {
+  // 先在顶层找，再在 targetExpr 里找
+  for (const t of toks) {
+    if (t.type === 'cross_tab_ref' && t.projectToHostKey) return t;
+    if (t.targetExpr) {
+      const inner = t.targetExpr.find(
+        (te) => te.type === 'cross_tab_ref' && te.projectToHostKey,
+      );
+      if (inner) return inner;
+    }
+  }
+  throw new Error('没有找到 projectToHostKey=true 的 cross_tab_ref token');
+}
+
+describe('T3 KSUM 折叠 + 约束', () => {
+  it('C2: 单列 KSUM([外购件.费用]) → projectToHostKey:true + targetExpr (非单列 shortcut)', () => {
+    const toks = expressionToTokens(
+      'SUM([元素.单价] + KSUM([外购件.费用]))',
+      KSUM_CTX,
+      KSUM_SELF_RKF,
+      KSUM_SELF_CID,
+    );
+    // 外层 cross_tab_ref（非 projectToHostKey）
+    const outer = toks.find(t => t.type === 'cross_tab_ref' && !t.projectToHostKey)!;
+    expect(outer).toBeDefined();
+    // 在外层的 targetExpr 里找 KSUM 子 token
+    const ksum = outer.targetExpr!.find(
+      t => t.type === 'cross_tab_ref' && t.projectToHostKey,
+    )!;
+    expect(ksum).toBeDefined();
+    expect(ksum.projectToHostKey).toBe(true);
+    expect(ksum.agg).toBe('SUM');
+    // C2 关键：不走单列 shortcut，target 必须为空，targetExpr 携带字段
+    expect(ksum.target ?? '').toBe('');
+    expect(ksum.targetExpr).toEqual([{ type: 'field', value: '费用', source: WGJ_ID }]);
+  });
+
+  it('K-agg 映射: KAVG→AVG+proj, KCOUNT→COUNT+proj', () => {
+    const t1 = pickKsum(
+      expressionToTokens('SUM([元素.单价] + KAVG([外购件.费用]))', KSUM_CTX, KSUM_SELF_RKF, KSUM_SELF_CID),
+    );
+    expect(t1).toMatchObject({ agg: 'AVG', projectToHostKey: true });
+
+    const t2 = pickKsum(
+      expressionToTokens('SUM([元素.单价] + KCOUNT([外购件.费用]))', KSUM_CTX, KSUM_SELF_RKF, KSUM_SELF_CID),
+    );
+    expect(t2).toMatchObject({ agg: 'COUNT', projectToHostKey: true });
+  });
+
+  it('白名单: KSUM 内含宿主列 → 抛错', () => {
+    // 宿主列 = 来料(uuid-ll) 的列，KSUM 内不允许宿主自身列
+    expect(() =>
+      expressionToTokens(
+        'SUM([元素.单价] + KSUM([来料.组成用量]))',
+        KSUM_CTX,
+        KSUM_SELF_RKF,
+        KSUM_SELF_CID,
+      ),
+    ).toThrow(/宿主.*列|宿主自身/);
+  });
+
+  it('白名单: KSUM 内含跨页签(多个不同 source) → 抛错', () => {
+    expect(() =>
+      expressionToTokens(
+        'SUM([元素.单价] + KSUM([外购件.费用] + [元素.单价]))',
+        KSUM_CTX,
+        KSUM_SELF_RKF,
+        KSUM_SELF_CID,
+      ),
+    ).toThrow(/跨页签|同一个页签/);
+  });
+
+  it('J: K 套 K → 抛错', () => {
+    expect(() =>
+      expressionToTokens(
+        'SUM([元素.单价] + KSUM(KSUM([外购件.费用])))',
+        KSUM_CTX,
+        KSUM_SELF_RKF,
+        KSUM_SELF_CID,
+      ),
+    ).toThrow(/K 套 K|再嵌套/);
+  });
+
+  it('I2: 同页签既 KSUM 又裸引 → 抛错', () => {
+    // 外购件在 KSUM 内被聚合，同一 SUM 里又有裸 [外购件.费用] → 冲突
+    expect(() =>
+      expressionToTokens(
+        'SUM(KSUM([外购件.费用]) + [外购件.费用])',
+        KSUM_CTX,
+        KSUM_SELF_RKF,
+        KSUM_SELF_CID,
+      ),
+    ).toThrow(/已被 KSUM 聚合.*不能.*裸引用|二选一/);
+  });
+
+  it('M: 顶层裸 KSUM → 抛错', () => {
+    // KSUM 不能出现在顶层（不在任何外层 SUM/AVG/... 内）
+    expect(() =>
+      expressionToTokens(
+        'KSUM([外购件.费用]) * [组成用量]',
+        KSUM_CTX,
+        KSUM_SELF_RKF,
+        KSUM_SELF_CID,
+      ),
+    ).toThrow(/只能写在外层 SUM|顶层/);
+  });
+});
+
+// ─────────────────────────────────────────────
 // T1 token schema 扩展
 // ─────────────────────────────────────────────
 describe('T1 token schema 扩展', () => {

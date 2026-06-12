@@ -221,9 +221,23 @@ export function expressionToTokens(
   const rawTokens = lex(expr);
   const result: FormulaToken[] = [];
 
+  // K* 函数名集合（不允许出现在顶层）
+  const INNER_FNS_SET = new Set(['KSUM', 'KAVG', 'KMAX', 'KMIN', 'KCOUNT']);
+  // K* → 对应外层聚合名映射
+  const INNER_TO_AGG: Record<string, string> = {
+    KSUM: 'SUM', KAVG: 'AVG', KMAX: 'MAX', KMIN: 'MIN', KCOUNT: 'COUNT',
+  };
+
   let k = 0;
   while (k < rawTokens.length) {
     const raw = rawTokens[k];
+
+    // ── M: 顶层裸 K* 拒绝 ──
+    if (raw.kind === 'func' && INNER_FNS_SET.has(raw.name)) {
+      throw new Error(
+        `${raw.name} 只能写在外层 SUM/AVG/MAX/MIN/COUNT 函数内，不支持顶层直接使用`,
+      );
+    }
 
     // ── FN(...) 折叠 ──
     //   单列   FN([alias.field])            → 旧 cross_tab_ref（单 target，向后兼容）
@@ -271,16 +285,128 @@ export function expressionToTokens(
       // 多 source 收集：按遇到顺序去重（同一 componentId 只保留一份）
       const srcTabsSeen: TabDef[] = [];
       const srcTabSeenIds = new Set<string>();
+      // KSUM 折叠：记录 KSUM 内被聚合的 source componentId，用于 I2 冲突校验
+      const ksumWrappedSources = new Set<string>();
       let lastKind: string | null = null;
-      for (const rt of bodyTokens) {
+      let bodyIdx = 0;
+      while (bodyIdx < bodyTokens.length) {
+        const rt = bodyTokens[bodyIdx];
         // 相邻两"值项"之间必须有运算符（防 `[a][b]` 这类畸形 → 求值静默返 0）
         const startsValue =
-          rt.kind === 'bracket_expr' || rt.kind === 'number' || rt.kind === 'paren_open';
+          rt.kind === 'bracket_expr' || rt.kind === 'number' || rt.kind === 'paren_open'
+          || (rt.kind === 'func' && INNER_FNS_SET.has(rt.name));
         const lastEndsValue =
-          lastKind === 'bracket_expr' || lastKind === 'number' || lastKind === 'paren_close';
+          lastKind === 'bracket_expr' || lastKind === 'number' || lastKind === 'paren_close'
+          || lastKind === 'ksum_fold'; // KSUM 折叠后虚拟 kind
         if (startsValue && lastEndsValue) {
           throw new Error(`${fnName}() 内表达式缺少运算符（相邻两项之间需 + - * /）`);
         }
+
+        // ── KSUM 折叠（C2）：先于单列 shortcut 捕获 inner K* func ──
+        if (rt.kind === 'func' && INNER_FNS_SET.has(rt.name)) {
+          const innerFnName = rt.name;
+          const innerAgg = INNER_TO_AGG[innerFnName];
+          const next = bodyTokens[bodyIdx + 1];
+          if (!next || next.kind !== 'paren_open') {
+            throw new Error(`函数 ${innerFnName} 后必须紧跟 '('`);
+          }
+          // 找 inner K* 的匹配闭括号
+          let innerDepth = 0;
+          let innerCloseIdx = -1;
+          for (let jj = bodyIdx + 1; jj < bodyTokens.length; jj++) {
+            const rjj = bodyTokens[jj];
+            if (rjj.kind === 'paren_open') innerDepth++;
+            else if (rjj.kind === 'paren_close') {
+              innerDepth--;
+              if (innerDepth === 0) { innerCloseIdx = jj; break; }
+            }
+          }
+          if (innerCloseIdx === -1) throw new Error(`${innerFnName}() 的 '(' 缺少对应的 ')'`);
+          const innerBodyTokens = bodyTokens.slice(bodyIdx + 2, innerCloseIdx);
+
+          // J: inner body 仍含 K* → K 套 K 拒绝
+          const hasNestedK = innerBodyTokens.some(
+            rr => rr.kind === 'func' && INNER_FNS_SET.has(rr.name),
+          );
+          if (hasNestedK) {
+            throw new Error(`${innerFnName}() 内不能再嵌套 K 套 K（KSUM/KAVG/...）`);
+          }
+
+          // 从 innerBodyTokens 收集被聚合 source（只允许同一页签）
+          const innerSrcSeen: TabDef[] = [];
+          const innerSrcSeenIds = new Set<string>();
+          const innerTargetExpr: FormulaToken[] = [];
+          for (const irr of innerBodyTokens) {
+            if (irr.kind === 'bracket_expr') {
+              const bb = irr.body.trim();
+              if (!bb.includes('.')) {
+                // 裸字段（无点）= 宿主列 → KSUM 内不允许
+                throw new Error(
+                  `${innerFnName}() 内不能引用宿主自身裸字段 [${bb}]，宿主列请放到外层 SUM`,
+                );
+              }
+              const di = bb.indexOf('.');
+              const al = bb.slice(0, di);
+              const col = bb.slice(di + 1);
+              const td = findTabByRef(tabDefs, al);
+              if (!td) throw new Error(`${innerFnName}() 内引用了未知页签 "${al}"`);
+              if (!td.componentId) throw new Error(`页签 "${al}" 缺少 componentId`);
+              // 白名单：不允许宿主自身列
+              if (selfComponentId && td.componentId === selfComponentId) {
+                throw new Error(
+                  `${innerFnName}() 内不能引用宿主自身列 [${al}.${col}]，宿主列请放到外层 SUM`,
+                );
+              }
+              // 记录被聚合 source
+              if (!innerSrcSeenIds.has(td.componentId)) {
+                innerSrcSeenIds.add(td.componentId);
+                innerSrcSeen.push(td);
+              }
+              // C2 关键：field token 携带 source（被聚合页签 componentId），强制 targetExpr（不走单列 shortcut）
+              innerTargetExpr.push({ type: 'field', value: col, source: td.componentId });
+            } else if (irr.kind === 'operator') {
+              innerTargetExpr.push({ type: 'operator', value: normalizeOp(irr.value) });
+            } else if (irr.kind === 'number') {
+              innerTargetExpr.push({ type: 'number', value: irr.value });
+            } else if (irr.kind === 'paren_open') {
+              innerTargetExpr.push({ type: 'bracket_open' });
+            } else if (irr.kind === 'paren_close') {
+              innerTargetExpr.push({ type: 'bracket_close' });
+            } else {
+              // 不支持 func/brace_expr 等在 KSUM 内（J 已处理 K 套 K，其他聚合也禁止）
+              throw new Error(`${innerFnName}() 内不支持 ${irr.kind} 类型的 token`);
+            }
+          }
+          // 白名单：KSUM 内必须恰好引用同一个页签（不能跨页签）
+          if (innerSrcSeen.length === 0) {
+            throw new Error(`${innerFnName}() 内必须引用至少一个页签明细列 [页签别名.字段]`);
+          }
+          if (innerSrcSeen.length > 1) {
+            throw new Error(
+              `${innerFnName}() 内只能引用同一个页签的列，跨页签引用请分别放到外层 SUM 内`,
+            );
+          }
+          const kSrc = innerSrcSeen[0];
+          // 记录 KSUM 折叠的 source 供 I2 校验
+          ksumWrappedSources.add(kSrc.componentId);
+          // 构建 match
+          const kMatch = buildMatch(kSrc.rowKeyFields ?? [], selfRowKeyFields);
+          // 推入 KSUM 子 token（projectToHostKey=true，target='', targetExpr 强制写入）
+          targetExpr.push({
+            type: 'cross_tab_ref',
+            projectToHostKey: true,
+            source: kSrc.componentId,
+            sourceLabel: kSrc.componentName ?? kSrc.alias,
+            target: '',
+            agg: innerAgg,
+            match: kMatch,
+            targetExpr: innerTargetExpr,
+          });
+          lastKind = 'ksum_fold';
+          bodyIdx = innerCloseIdx + 1;
+          continue;
+        }
+
         lastKind = rt.kind;
         switch (rt.kind) {
           case 'operator':
@@ -296,6 +422,7 @@ export function expressionToTokens(
             targetExpr.push({ type: 'bracket_close' });
             break;
           case 'func':
+            // 普通聚合函数（非 K*）嵌套仍不支持
             throw new Error(`${fnName}() 内暂不支持嵌套聚合函数`);
           case 'brace_expr':
             throw new Error(`${fnName}() 内暂不支持 {路径} 引用`);
@@ -329,15 +456,37 @@ export function expressionToTokens(
           default:
             break;
         }
+        bodyIdx++;
       }
-      if (srcTabsSeen.length === 0) {
+      // I2: 同页签既被 KSUM 聚合、又在外层 FN body 裸引用 → 冲突（二选一）
+      for (const td of srcTabsSeen) {
+        if (ksumWrappedSources.has(td.componentId)) {
+          throw new Error(
+            `页签「${td.componentName ?? td.alias}」已被 KSUM 聚合，不能在同一 SUM 内再被裸引用；请二选一`,
+          );
+        }
+      }
+      // 外层 body 既无 cross-tab source 也无 KSUM 折叠 → 什么都没引用
+      if (srcTabsSeen.length === 0 && ksumWrappedSources.size === 0) {
         throw new Error(
           `${fnName}() 行级聚合必须引用至少一个细页签明细列 [页签别名.字段]`,
         );
       }
 
       // ── 多 source 校验 + token 组装 ──
-      if (srcTabsSeen.length === 1) {
+      if (srcTabsSeen.length === 0 && ksumWrappedSources.size > 0) {
+        // 纯 KSUM 折叠（外层 FN body 内无普通 cross-tab source，只有 KSUM 子 token）
+        // 外层 token 是标量折叠容器，source 留空（宿主自身聚合）
+        result.push({
+          type: 'cross_tab_ref',
+          source: selfComponentId ?? '',
+          sourceLabel: '',
+          target: '',
+          agg: fnName,
+          match: [],
+          targetExpr,
+        });
+      } else if (srcTabsSeen.length === 1) {
         // N=1：原行为，不写 sources（字节级兼容存量 token）
         const srcTabDef = srcTabsSeen[0];
         result.push({
