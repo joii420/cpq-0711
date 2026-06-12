@@ -57,7 +57,12 @@ function caretOffset(root: HTMLElement): number {
   return readBack(tmp).length;
 }
 
-/** 重建 DOM 后把光标恢复到 raw 偏移 offset(块原子:落到块边界) */
+/**
+ * 重建 DOM 后把光标恢复到 raw 偏移 offset(块原子:落到块边界)。
+ * 前提:块是 contentEditable=false,浏览器不允许光标进块内,且 offset 来自 caretOffset
+ * (用 cloneContents+readBack 按 data-raw 长度计),因此 offset 永远落在块边界而非块内,
+ * 块分支只需判 `offset <= acc`(块前)即可,不会出现"块内偏移"。
+ */
 function restoreCaret(root: HTMLElement, offset: number) {
   const sel = window.getSelection();
   if (!sel) return;
@@ -100,7 +105,12 @@ const FormulaRichInput = forwardRef<FormulaRichInputHandle, Props>(function Form
 ) {
   const editorRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
-  /** 最近一次由本组件 emit 的字符串,用来判断 value 是否外部变更(避免无谓重建打断光标) */
+  /**
+   * 最近一次由本组件 emit 的字符串,用来判断 value 是否外部变更(避免无谓重建打断光标)。
+   * 契约:父组件的 onChange 回调**不可**对值做 trim/normalize 等规整 —— 否则 value 会
+   * 与 lastEmittedRef 不等,useEffect 触发无 caret 参数的重建,打字中光标会丢。
+   * 当前 TabJoinFormulaDrawer 的 onChange = setExpression(原样回写),满足该契约。
+   */
   const lastEmittedRef = useRef<string | null>(null);
 
   /** 把 value 渲染进编辑器 DOM(块 + 文本节点),可选恢复光标偏移 */
