@@ -154,8 +154,17 @@ function lex(expr: string): RawToken[] {
 // ─────────────────────────────────────────────
 
 /**
- * Build a cross_tab_ref FormulaToken from an alias + field + agg.
- * Throws if the alias is not found in tabDefs or lacks a componentId.
+ * 按引用串定位页签：**名称(componentName)优先、编号(alias)兜底**。
+ * 公式里用页签中文名(如 [元素.单价])更可读；旧公式用编号(如 [COMP-0029.单价])仍兼容。
+ * 同名页签罕见，按名称命中第一个；否则回退编号匹配。
+ */
+function findTabByRef(tabDefs: TabDef[], ref: string): TabDef | undefined {
+  return tabDefs.find((d) => d.componentName === ref) ?? tabDefs.find((d) => d.alias === ref);
+}
+
+/**
+ * Build a cross_tab_ref FormulaToken from a ref(名称或编号) + field + agg.
+ * Throws if the ref is not found in tabDefs or lacks a componentId.
  */
 function makeCrossTabRef(
   alias: string,
@@ -164,8 +173,8 @@ function makeCrossTabRef(
   tabDefs: TabDef[],
   selfRowKeyFields?: string[],
 ): FormulaToken {
-  const tabDef = tabDefs.find((d) => d.alias === alias);
-  if (!tabDef) throw new Error(`表达式中引用了未知页签别名 "${alias}"`);
+  const tabDef = findTabByRef(tabDefs, alias);
+  if (!tabDef) throw new Error(`表达式中引用了未知页签 "${alias}"`);
   if (!tabDef.componentId) throw new Error(`页签 "${alias}" 缺少 componentId`);
   return {
     type: 'cross_tab_ref',
@@ -289,8 +298,8 @@ export function expressionToTokens(
             const di = bb.indexOf('.');
             const al = bb.slice(0, di);
             const col = bb.slice(di + 1);
-            const td = tabDefs.find((d) => d.alias === al);
-            if (!td) throw new Error(`${fnName}() 内引用了未知页签别名 "${al}"`);
+            const td = findTabByRef(tabDefs, al);
+            if (!td) throw new Error(`${fnName}() 内引用了未知页签 "${al}"`);
             if (!td.componentId) throw new Error(`页签 "${al}" 缺少 componentId`);
             if (selfComponentId && td.componentId === selfComponentId) {
               // 宿主自身列 → b_field
@@ -371,11 +380,11 @@ export function expressionToTokens(
             fieldPart = fieldPart.slice(0, -'(总计)'.length);
           }
 
-          // Resolve alias → tabDef
-          const tabDef = tabDefs.find((d) => d.alias === alias);
+          // Resolve ref(名称/编号) → tabDef
+          const tabDef = findTabByRef(tabDefs, alias);
           if (!tabDef) {
             throw new Error(
-              `表达式中引用了未知页签别名 "${alias}"，请检查别名是否与模板中页签配置一致`,
+              `表达式中引用了未知页签 "${alias}"，请检查名称/编号是否与模板中页签配置一致`,
             );
           }
           if (!tabDef.componentId) {
@@ -388,13 +397,14 @@ export function expressionToTokens(
           //   if 字段 ∈ tabDef.subtotalCols → component_subtotal (scalar sibling subtotal),
           //   else (and NOT aggregated) → cross_tab_ref detail (row-aligned).
           // Note: an explicit (总计) aggregate over a DETAIL field stays a cross_tab_ref SUM.
+          //   component_code 始终存权威 alias(tabDef.alias)，与后端解析一致；不受用户输入名/编号影响。
           if (!isAgg && (tabDef.subtotalCols ?? []).includes(fieldPart)) {
             result.push({
               type: 'component_subtotal',
               value: fieldPart,
               tab_name: fieldPart,
-              component_code: alias,
-              label: `${tabDef.componentName ?? alias}·${fieldPart}`,
+              component_code: tabDef.alias,
+              label: `${tabDef.componentName ?? tabDef.alias}·${fieldPart}`,
             });
           } else {
             result.push(
@@ -405,10 +415,10 @@ export function expressionToTokens(
           // Check for whole-tab total: [alias(总计)] (no dot but ends in (总计))
           if (body.endsWith('(总计)')) {
             const alias = body.slice(0, -'(总计)'.length);
-            const tabDef = tabDefs.find((d) => d.alias === alias);
+            const tabDef = findTabByRef(tabDefs, alias);
             if (!tabDef) {
               throw new Error(
-                `表达式中引用了未知页签别名 "${alias}"（总计引用），请检查别名是否与模板中页签配置一致`,
+                `表达式中引用了未知页签 "${alias}"（总计引用），请检查名称/编号是否与模板中页签配置一致`,
               );
             }
             if (!tabDef.componentId) {
@@ -428,10 +438,10 @@ export function expressionToTokens(
               type: 'component_subtotal',
               value: primarySubtotal,
               tab_name: primarySubtotal,
-              component_code: alias,
+              component_code: tabDef.alias,
               label: primarySubtotal
-                ? `${tabDef.componentName ?? alias}·${primarySubtotal}`
-                : (tabDef.componentName ?? alias),
+                ? `${tabDef.componentName ?? tabDef.alias}·${primarySubtotal}`
+                : (tabDef.componentName ?? tabDef.alias),
             });
           } else {
             // Plain same-component field: [field]
@@ -499,28 +509,30 @@ export function tokensToDrawerExpression(
         break;
 
       case 'component_subtotal': {
-        // Render from the TOKEN'S OWN fields — robust even if the referenced
-        // sibling component is not present in tabDefs (display must not break).
+        // 优先用页签名称回显（按 component_code=alias 查 tabDef→componentName）；
+        // tabDefs 空/查不到时回退 component_code，保证显示不破。
         const code = token.component_code ?? '';
+        const label = tabDefs.find((d) => d.alias === code)?.componentName ?? code;
         const col = token.value ?? '';
         if (col) {
-          parts.push(`[${code}.${col}]`);
+          parts.push(`[${label}.${col}]`);
         } else {
-          parts.push(`[${code}(总计)]`);
+          parts.push(`[${label}(总计)]`);
         }
         break;
       }
 
       case 'cross_tab_ref': {
-        // Resolve componentId → alias
+        // Resolve componentId → 页签名称(优先) / 编号(兜底)
         const tabDef = tabDefs.find((d) => d.componentId === token.source);
-        const alias = tabDef?.alias ?? token.sourceLabel ?? token.source ?? '';
+        const alias = tabDef?.componentName ?? tabDef?.alias ?? token.sourceLabel ?? token.source ?? '';
 
         if (token.targetExpr && token.targetExpr.length > 0) {
-          // 行级聚合 SUMPRODUCT：FN(回显 targetExpr)，field→[source别名.列]、b_field→[宿主别名.列]
-          const hostAlias = selfComponentId
-            ? (tabDefs.find((d) => d.componentId === selfComponentId)?.alias ?? '')
-            : '';
+          // 行级聚合 SUMPRODUCT：FN(回显 targetExpr)，field→[source名.列]、b_field→[宿主名.列]
+          const hostTab = selfComponentId
+            ? tabDefs.find((d) => d.componentId === selfComponentId)
+            : undefined;
+          const hostAlias = hostTab?.componentName ?? hostTab?.alias ?? '';
           const inner = token.targetExpr
             .map((te) => {
               switch (te.type) {

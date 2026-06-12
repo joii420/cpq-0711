@@ -1,6 +1,5 @@
 import React from 'react';
-import { Tag, Tooltip, Typography, Space, Button, Dropdown } from 'antd';
-import type { MenuProps } from 'antd';
+import { Tag, Tooltip, Typography, Space, Button } from 'antd';
 import type { TabDef } from '../../../services/tabJoinFormulaService';
 import { comparable } from '../../component/formulaSerialize';
 
@@ -53,7 +52,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
       >
         <span style={{ fontSize: 12, color: '#8a909a' }}>
           宿主行键 <Text strong style={{ color: '#722ed1' }}>[{(selfRowKeyFields ?? []).join(' + ') || '—'}]</Text>
-          ；可比页签明细可逐行对齐，更细页签字段需聚合（单列 SUM/AVG…，或在 SUM(宿主列 * 此列) 中作行级聚合），不可比页签仅整页签小计可用。
+          ；明细点击即插；更细页签明细需自行套 SUM/AVG 等聚合函数（或写 SUM(宿主列 * 细页签列) 行级聚合），否则一行命中多行报错；不可比页签仅整页签小计可用。
         </span>
         {onClearExpression && (
           <Button size="small" onClick={onClearExpression}>
@@ -75,6 +74,8 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
           const selfRKF = selfRowKeyFields ?? [];
           const isComparable = tabComparable(selfRKF, def.rowKeyFields ?? []);
           const sourceFiner = isComparable && (def.rowKeyFields ?? []).length > selfRKF.length;
+          // 公式标识用「页签名称」优先（更可读），名称缺失回退编号；解析侧名称优先、编号兜底
+          const ref = def.componentName || def.alias;
 
           return (
             <div
@@ -141,37 +142,25 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                   {def.detailFields.map((f) => {
                     if (!isComparable) {
                       return (
-                        <Tooltip key={f} title={`行键 [${(def.rowKeyFields ?? []).join('+')}] 与宿主 [${selfRKF.join('+')}] 不可比；可改用「${def.alias}(总计)」`}>
+                        <Tooltip key={f} title={`行键 [${(def.rowKeyFields ?? []).join('+')}] 与宿主 [${selfRKF.join('+')}] 不可比；可改用「${ref}(总计)」`}>
                           <Tag style={{ cursor: 'not-allowed', color: '#bfbfbf', background: '#fafafa',
                             borderColor: '#f0f0f0', margin: 0, fontSize: 12, padding: '3px 9px', userSelect: 'none' }}>{f}</Tag>
                         </Tooltip>
                       );
                     }
                     if (sourceFiner) {
-                      const items: MenuProps['items'] = [
-                        ...['SUM', 'AVG', 'MAX', 'MIN', 'COUNT'].map((fn) => ({
-                          key: fn,
-                          label: `${fn}([${def.alias}.${f}]) · 单列聚合`,
-                          onClick: () => onInsert(`${fn}([${def.alias}.${f}])`),
-                        })),
-                        { type: 'divider' },
-                        {
-                          key: 'raw',
-                          label: `插入明细 [${def.alias}.${f}] · 供 SUM(宿主列 * 此列) 行级聚合`,
-                          onClick: () => onInsert(`[${def.alias}.${f}]`),
-                        },
-                      ];
+                      // 细页签明细：点击直接裸插 [别名.列]，是否聚合由用户用工具条函数按钮自决
+                      // （蓝边 + hover 提示作轻量引导，不强制、不挡操作）
                       return (
-                        <Dropdown key={f} menu={{ items }} trigger={['click']}>
-                          <Tag style={{ cursor: 'pointer', background: '#fff', borderColor: '#91caff',
-                            margin: 0, fontSize: 12, padding: '3px 9px', borderStyle: 'solid', userSelect: 'none' }}>
-                            {f} <span style={{ fontSize: 10, color: '#1677ff' }}>Σ需聚合</span>
-                          </Tag>
-                        </Dropdown>
+                        <Tooltip key={f} title={`「${ref}」行键较宿主细，引用其明细一般需套 SUM/AVG 等聚合函数（点上方函数按钮），否则一行命中多行将报错`}>
+                          <Tag onClick={() => onInsert(`[${ref}.${f}]`)}
+                            style={{ cursor: 'pointer', background: '#fff', borderColor: '#91caff',
+                              margin: 0, fontSize: 12, padding: '3px 9px', borderStyle: 'solid', userSelect: 'none' }}>{f}</Tag>
+                        </Tooltip>
                       );
                     }
                     return (
-                      <Tag key={f} onClick={() => onInsert(`[${def.alias}.${f}]`)}
+                      <Tag key={f} onClick={() => onInsert(`[${ref}.${f}]`)}
                         style={{ cursor: 'pointer', background: '#fff', margin: 0, fontSize: 12,
                           padding: '3px 9px', borderStyle: 'solid', userSelect: 'none' }}>{f}</Tag>
                     );
@@ -204,7 +193,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                           padding: '3px 9px',
                           userSelect: 'none',
                         }}
-                        onClick={() => onInsert(`[${def.alias}.${f}]`)}
+                        onClick={() => onInsert(`[${ref}.${f}]`)}
                       >
                         {f}(小计)
                       </Tag>
@@ -235,9 +224,9 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                       padding: '3px 9px',
                       userSelect: 'none',
                     }}
-                    onClick={() => onInsert(`[${def.alias}(总计)]`)}
+                    onClick={() => onInsert(`[${ref}(总计)]`)}
                   >
-                    {def.alias}(总计)
+                    {ref}(总计)
                   </Tag>
                 </Space>
               </div>

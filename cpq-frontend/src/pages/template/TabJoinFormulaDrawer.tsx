@@ -113,7 +113,8 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
       ),
     );
     const tabs = refAliases
-      .map((a) => tabDefs.find((d) => d.alias === a))
+      // 引用串可能是页签名称(优先)或编号(兜底)，与序列化 findTabByRef 同语义
+      .map((a) => tabDefs.find((d) => d.componentName === a) ?? tabDefs.find((d) => d.alias === a))
       .filter(Boolean)
       .map((d: any) => ({ alias: d.alias, tabKey: d.tabKey, rowKeyFields: d.rowKeyFields }));
     return { source_type: 'TAB_JOIN_FORMULA' as const, expression: expr, tabs };
@@ -340,11 +341,11 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
       >
         明细字段默认按对齐行自动求和；套 <code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>AVG/MIN/MAX/COUNT</code> 改聚合方式。
         按顶层 +/- 拆项：含裸明细的项逐行求和，纯标量/总计项算一次。
-        引用格式：<code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>[页签别名.字段名]</code> 或{' '}
-        <code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>[页签别名(总计)]</code>。
+        引用格式：<code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>[页签名称.字段名]</code> 或{' '}
+        <code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>[页签名称(总计)]</code>。
         <br />
         <strong>行级聚合（粗 host × 细 source）</strong>：写{' '}
-        <code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>SUM([宿主别名.列] * [细页签别名.列])</code>{' '}
+        <code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>SUM([宿主别名.列] * [细页签名称.列])</code>{' '}
         —— 按行键对齐(LEFT JOIN)后<strong>逐行</strong>算括号内表达式，再按宿主行键聚合(SUMPRODUCT)；宿主列在每个对齐行广播为同值。
       </div>
 

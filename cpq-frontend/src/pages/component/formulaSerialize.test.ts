@@ -262,13 +262,13 @@ describe('match row-key alignment', () => {
 describe('expressionToTokens — errors', () => {
   it('unknown alias in cross-tab detail ref throws', () => {
     expect(() => expressionToTokens('[UNKNOWN.金额]', allTabs, selfRKF)).toThrow(
-      /未知页签别名.*UNKNOWN/,
+      /未知页签.*UNKNOWN/,
     );
   });
 
   it('unknown alias in whole-tab total throws', () => {
     expect(() => expressionToTokens('[GHOST(总计)]', allTabs, selfRKF)).toThrow(
-      /未知页签别名.*GHOST/,
+      /未知页签.*GHOST/,
     );
   });
 
@@ -306,7 +306,7 @@ describe('tokensToDrawerExpression', () => {
         match: [{ a: '料号', b: '料号' }],
       },
     ];
-    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('[COMP_RL.金额]');
+    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('[回料.金额]');
   });
 
   it('cross_tab_ref agg=SUM with target → SUM([alias.field])', () => {
@@ -320,7 +320,7 @@ describe('tokensToDrawerExpression', () => {
         match: [{ a: '料号', b: '料号' }],
       },
     ];
-    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('SUM([COMP_RL.金额])');
+    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('SUM([回料.金额])');
   });
 
   it('cross_tab_ref agg=SUM with empty target → [alias(总计)]', () => {
@@ -334,7 +334,7 @@ describe('tokensToDrawerExpression', () => {
         match: [],
       },
     ];
-    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('[COMP_RL(总计)]');
+    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('[回料(总计)]');
   });
 
   it('operator → spaced', () => {
@@ -385,11 +385,11 @@ describe('round-trip', () => {
     const expr = '[COMP_RL.金额(总计)]';
     const tokens = expressionToTokens(expr, allTabs, selfRKF);
     const back = tokensToDrawerExpression(tokens, allTabs);
-    expect(normalise(back)).toBe(normalise('SUM([COMP_RL.金额])'));
+    expect(normalise(back)).toBe(normalise('SUM([回料.金额])'));
   });
 
   it('[COMP_RL.金额] round-trips', () => {
-    const expr = '[COMP_RL.金额]';
+    const expr = '[回料.金额]';
     const tokens = expressionToTokens(expr, allTabs, selfRKF);
     const back = tokensToDrawerExpression(tokens, allTabs);
     expect(normalise(back)).toBe(normalise(expr));
@@ -401,13 +401,13 @@ describe('round-trip', () => {
     const expr = '[COMP_RL(总计)]';
     const tokens = expressionToTokens(expr, allTabs, selfRKF);
     const back = tokensToDrawerExpression(tokens, allTabs);
-    expect(normalise(back)).toBe(normalise('[COMP_RL.金额]'));
+    expect(normalise(back)).toBe(normalise('[回料.金额]'));
     // And re-parsing the canonical form is stable (idempotent)
     const back2 = tokensToDrawerExpression(
       expressionToTokens(back, allTabs, selfRKF),
       allTabs,
     );
-    expect(normalise(back2)).toBe(normalise('[COMP_RL.金额]'));
+    expect(normalise(back2)).toBe(normalise('[回料.金额]'));
   });
 
   it('compound expression "[单重] * [单价] - [COMP_RL.金额(总计)]" 解析后回显归一', () => {
@@ -415,7 +415,7 @@ describe('round-trip', () => {
     const expr = '[单重] * [单价] - [COMP_RL.金额(总计)]';
     const tokens = expressionToTokens(expr, allTabs, selfRKF);
     const back = tokensToDrawerExpression(tokens, allTabs);
-    expect(normalise(back)).toBe(normalise('[单重] * [单价] - SUM([COMP_RL.金额])'));
+    expect(normalise(back)).toBe(normalise('[单重] * [单价] - SUM([回料.金额])'));
   });
 
   it('expression with only same-component fields round-trips', () => {
@@ -894,11 +894,11 @@ describe('tokensToDrawerExpression — FN 回显归一', () => {
   ];
   it('agg=SUM → SUM([JG.工时])（不再 (总计)）', () => {
     const t = expressionToTokens('SUM([JG.工时])', tabs, ['子件']);
-    expect(tokensToDrawerExpression(t, tabs)).toBe('SUM([JG.工时])');
+    expect(tokensToDrawerExpression(t, tabs)).toBe('SUM([加工.工时])');
   });
   it('AVG/MAX/MIN/COUNT 往返同串', () => {
     for (const fn of ['AVG', 'MAX', 'MIN', 'COUNT']) {
-      const s = `${fn}([JG.工时])`;
+      const s = `${fn}([加工.工时])`;
       expect(tokensToDrawerExpression(expressionToTokens(s, tabs, ['子件']), tabs)).toBe(s);
     }
   });
@@ -910,7 +910,7 @@ describe('tokensToDrawerExpression — FN 回显归一', () => {
   });
   it('旧 [JG.工时(总计)] 解析后回显归一为 SUM([JG.工时])', () => {
     const t = expressionToTokens('[JG.工时(总计)]', tabs, ['子件']);
-    expect(tokensToDrawerExpression(t, tabs)).toBe('SUM([JG.工时])');
+    expect(tokensToDrawerExpression(t, tabs)).toBe('SUM([加工.工时])');
   });
 });
 
@@ -1042,10 +1042,56 @@ describe('expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT)', () =>
   it('round-trip：SUM([TL.单价] * [JG.数量]) 回显归一', () => {
     const t = expressionToTokens('SUM([TL.单价] * [JG.数量])', tabs, ['子件'], 'cid-host');
     const back = tokensToDrawerExpression(t, tabs, 'cid-host');
-    expect(back.replace(/\s+/g, ' ').trim()).toBe('SUM([TL.单价] * [JG.数量])');
+    expect(back.replace(/\s+/g, ' ').trim()).toBe('SUM([投料.单价] * [加工.数量])');
     // 幂等：回显串再解析再回显应稳定
     const t2 = expressionToTokens(back, tabs, ['子件'], 'cid-host');
     expect(tokensToDrawerExpression(t2, tabs, 'cid-host').replace(/\s+/g, ' ').trim())
-      .toBe('SUM([TL.单价] * [JG.数量])');
+      .toBe('SUM([投料.单价] * [加工.数量])');
+  });
+});
+
+// ─────────────────────────────────────────────
+// 用页签名称(componentName)作公式标识：插入/解析/回显都用中文名而非编号(alias)
+//   名称优先、编号兜底(旧公式兼容)；token 内部(source=componentId、component_code=alias)不变
+// ─────────────────────────────────────────────
+describe('expressionToTokens / 回显 — 页签名称(componentName)作公式标识', () => {
+  // 复用顶部 allTabs：tabRL(alias=COMP_RL,name=回料,detail[金额,用量],subtotal[金额])，selfRKF=['料号']
+  it('用名称解析明细 [回料.用量] → cross_tab_ref(source=componentId)', () => {
+    const t = expressionToTokens('[回料.用量]', allTabs, selfRKF);
+    expect(t[0]).toMatchObject({ type: 'cross_tab_ref', source: 'uuid-rl', target: '用量', agg: 'NONE' });
+  });
+  it('编号仍兼容 [COMP_RL.用量]（旧公式不破）', () => {
+    const t = expressionToTokens('[COMP_RL.用量]', allTabs, selfRKF);
+    expect(t[0]).toMatchObject({ type: 'cross_tab_ref', source: 'uuid-rl', target: '用量' });
+  });
+  it('用名称解析小计 [回料.金额] → component_subtotal(component_code 仍存 alias，后端不变)', () => {
+    const t = expressionToTokens('[回料.金额]', allTabs, selfRKF);
+    expect(t[0]).toMatchObject({ type: 'component_subtotal', component_code: 'COMP_RL', value: '金额' });
+  });
+  it('用名称解析整页签总计 [回料(总计)] → component_subtotal', () => {
+    const t = expressionToTokens('[回料(总计)]', allTabs, selfRKF);
+    expect(t[0]).toMatchObject({ type: 'component_subtotal', component_code: 'COMP_RL', value: '金额' });
+  });
+  it('回显 cross_tab_ref 用名称 → [回料.用量]', () => {
+    const tokens: FormulaToken[] = [
+      { type: 'cross_tab_ref', source: 'uuid-rl', sourceLabel: '回料', target: '用量', agg: 'NONE', match: [{ a: '料号', b: '料号' }] },
+    ];
+    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('[回料.用量]');
+  });
+  it('回显 component_subtotal 用名称 → [回料.金额]（tabDefs 非空时按 component_code 查名称）', () => {
+    const tokens: FormulaToken[] = [
+      { type: 'component_subtotal', value: '金额', tab_name: '金额', component_code: 'COMP_RL', label: '回料·金额' },
+    ];
+    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('[回料.金额]');
+  });
+  it('回显 SUM 聚合用名称 → SUM([回料.金额])', () => {
+    const tokens: FormulaToken[] = [
+      { type: 'cross_tab_ref', source: 'uuid-rl', sourceLabel: '回料', target: '金额', agg: 'SUM', match: [{ a: '料号', b: '料号' }] },
+    ];
+    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('SUM([回料.金额])');
+  });
+  it('名称 round-trip 幂等：[回料.用量] → tokens → [回料.用量]', () => {
+    const back = tokensToDrawerExpression(expressionToTokens('[回料.用量]', allTabs, selfRKF), allTabs);
+    expect(back).toBe('[回料.用量]');
   });
 });
