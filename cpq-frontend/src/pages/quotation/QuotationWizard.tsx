@@ -929,7 +929,8 @@ const QuotationWizard: React.FC = () => {
     if (!quotationId) return;
     try {
       const values = form.getFieldsValue();
-      const payload = buildDraftPayload(values);
+      // 与 autoSaveDraft 同口径:规范化数值后再 PUT/落 localStorage,避免手动/自动保存写库精度不一致
+      const payload = normalizeDraftPayloadNumbers(buildDraftPayload(values));
       const res = await quotationService.saveDraft(quotationId, payload);
       setQuotationPreservingStructures(res.data);
       // 回填重建后的新行 id + partVersionLocked,避免卡片版本号停在旧值、并触发展开按新 id 重拉
@@ -939,7 +940,7 @@ const QuotationWizard: React.FC = () => {
     } catch (e: any) {
       try {
         const values2 = form.getFieldsValue();
-        const payload2 = buildDraftPayload(values2);
+        const payload2 = normalizeDraftPayloadNumbers(buildDraftPayload(values2));
         localStorage.setItem(`cpq-draft-${quotationId}`, JSON.stringify(payload2));
         if (!silent) message.warning('已保存到本地，网络恢复后将同步');
       } catch {
