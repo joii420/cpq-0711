@@ -161,7 +161,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                     }
                     return (
                       <Tag key={f} onClick={() => onInsert(`[${ref}.${f}]`)}
-                        style={{ cursor: 'pointer', background: '#fff', margin: 0, fontSize: 12,
+                        style={{ cursor: 'pointer', background: '#fff', borderColor: '#91caff', margin: 0, fontSize: 12,
                           padding: '3px 9px', borderStyle: 'solid', userSelect: 'none' }}>{f}</Tag>
                     );
                   })}
@@ -184,8 +184,8 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                         key={f}
                         style={{
                           cursor: 'pointer',
-                          color: '#389e0d',
-                          borderColor: '#b7eb8f',
+                          color: '#fa8c16',
+                          borderColor: '#ffd591',
                           borderStyle: 'dashed',
                           background: '#fff',
                           margin: 0,
