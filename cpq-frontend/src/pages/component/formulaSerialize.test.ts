@@ -1308,3 +1308,25 @@ describe('parseFormulaSegments — 细 source 裸引用判红(需聚合)', () =>
     expect(blk?.color).toBe('blue');
   });
 });
+
+// ─────────────────────────────────────────────
+// T1 token schema 扩展
+// ─────────────────────────────────────────────
+describe('T1 token schema 扩展', () => {
+  it('FormulaToken 支持 sources 与 projectToHostKey（可选,缺省兼容）', () => {
+    const legacy: FormulaToken = { type: 'cross_tab_ref', source: 'X', agg: 'SUM' };
+    expect(legacy.projectToHostKey).toBeUndefined();   // 缺省 = 旧 token
+
+    const ksum: FormulaToken = {
+      type: 'cross_tab_ref', projectToHostKey: true, source: 'WGJ', agg: 'SUM',
+      match: [{ a: '料件', b: '料件' }], targetExpr: [{ type: 'field', value: '费用', source: 'WGJ' }],
+    };
+    expect(ksum.projectToHostKey).toBe(true);
+
+    const multi: FormulaToken = {
+      type: 'cross_tab_ref', source: 'YS', agg: 'SUM',
+      sources: [{ source: 'YS', sourceLabel: '元素', match: [{ a: '料件', b: '料件' }] }],
+    };
+    expect(multi.sources?.length).toBe(1);
+  });
+});

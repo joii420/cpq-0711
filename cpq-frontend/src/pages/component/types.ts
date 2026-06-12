@@ -177,6 +177,10 @@ export interface FormulaToken {
    * 支持 field(A列) / b_field(B本组件列) / operator / bracket / number / global_variable tokens。
    */
   targetExpr?: FormulaToken[];
+  /** v1 多 source 有序链 (最细→更粗); source 镜像为最细 sources[0] */
+  sources?: Array<{ source: string; sourceLabel?: string; match: Array<{ a: string; b: string }> }>;
+  /** v2 KSUM: true = 按宿主结果行键塌缩成宿主粒度标量 (区别外层 join-set 聚合); 缺省 false */
+  projectToHostKey?: boolean;
 }
 
 export const FIELD_TYPE_OPTIONS = [
