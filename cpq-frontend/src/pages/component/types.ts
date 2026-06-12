@@ -53,6 +53,8 @@ export interface ComponentItem {
    * 数组元素形如 { col_key, title, source_type, hidden, formula, ... }.
    */
   excelColumns?: string;
+  /** 后端 ComponentDTO.updatedAt（ISO 字符串）；草稿陈旧检测用。getById 返回。 */
+  updatedAt?: string;
 }
 
 export interface FieldItem {
