@@ -1282,6 +1282,7 @@ const ComponentManagement: React.FC = () => {
                     return Array.from(set);
                   });
                 }}
+                dataDriverPath={dataDriverPath}
               />
             ),
           },

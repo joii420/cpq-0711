@@ -33,6 +33,8 @@ interface FieldConfigTableProps {
   candidatesByField?: Record<string, import('./types').RowKeyCandidate>;
   /** 勾选/取消某字段作行键：传该字段反查出的真实列名 + 选中态。 */
   onToggleRowKey?: (resolvedColumn: string, checked: boolean) => void;
+  /** 组件 driver 路径（$视图…）；用于行键判定 + 字段路径选择器只列 driver 视图列。 */
+  dataDriverPath?: string;
 }
 
 const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
@@ -44,6 +46,7 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
   rowKeyFields,
   candidatesByField,
   onToggleRowKey,
+  dataDriverPath: _dataDriverPath,
 }) => {
   const [pathPickerKey, setPathPickerKey] = useState<string | null>(null);
   // V109: 全局变量选择器, 选完编译为 BNF path + 写入 global_variable_code 元数据
