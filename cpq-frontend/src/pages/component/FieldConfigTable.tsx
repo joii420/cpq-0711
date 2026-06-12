@@ -46,7 +46,7 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
   rowKeyFields,
   candidatesByField,
   onToggleRowKey,
-  dataDriverPath: _dataDriverPath,
+  dataDriverPath,
 }) => {
   const [pathPickerKey, setPathPickerKey] = useState<string | null>(null);
   // V109: 全局变量选择器, 选完编译为 BNF path + 写入 global_variable_code 元数据
@@ -525,6 +525,8 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
       <PathPickerDrawer
         open={pathPickerKey !== null}
         componentId={componentId}
+        driverViewPath={dataDriverPath}
+        disablePredicate
         initialPath={pathPickerKey ? (() => {
           const f = fields.find(x => x.key === pathPickerKey);
           if (!f) return '';
