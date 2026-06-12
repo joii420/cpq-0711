@@ -1,6 +1,6 @@
 /**
  * E2E 验证报价单渲染流程(2026-06-11 数据对齐: 组合产品模板已清理, 改用现存数据):
- * 报价单管理 → 新建 → 苏州西门子 + 报价模板0608 v1.9(报价模板V2 目录组件)
+ * 报价单管理 → 新建 → 苏州西门子 + 报价模板0608 v1.10(报价模板V2 目录组件)
  *   → 添加产品 → 料号 10110002 → 确认
  *
  * 验证目标:
@@ -50,7 +50,7 @@ async function selectByLabel(page: Page, label: string, search: string, optionTe
 let backendUp = false;
 test.beforeAll(async () => { backendUp = await isBackendUp(); });
 
-test('报价单流程: 苏州西门子 + 报价模板0608 v1.9 + 10110002(渲染层无回归)', async ({ page }) => {
+test('报价单流程: 苏州西门子 + 报价模板0608 v1.10 + 10110002(渲染层无回归)', async ({ page }) => {
   test.skip(!backendUp, '后端未启动');
 
   // 控制台错误监控
@@ -91,7 +91,7 @@ test('报价单流程: 苏州西门子 + 报价模板0608 v1.9 + 10110002(渲染
   await selectByLabel(page, '产品分类', '默认分类');
   await shot(page, 'category-selected');
 
-  // ── 6) 报价模板: 报价模板0608 v1.9 (报价模板V2 目录组件构建) ──
+  // ── 6) 报价模板: 报价模板0608 v1.10 (报价模板V2 目录组件构建) ──
   // antd Select 28+ 选项 + virtual scrolling: 打开 dropdown 后输入短搜索词缩小候选集, scrollIntoViewIfNeeded 兜底
   await page.waitForTimeout(1200);  // 等模板加载
   {
@@ -105,9 +105,9 @@ test('报价单流程: 苏州西门子 + 报价模板0608 v1.9 + 10110002(渲染
     await page.keyboard.type('0608', { delay: 60 });
     await page.waitForTimeout(900);
 
-    // 精确匹配 "报价模板0608 v1.9"(行尾锚, 防撞 v1.90 等)
+    // 精确匹配 "报价模板0608 v1.10" 最新版(行尾锚, 防撞 v1.1 等)
     const opt = page.locator('.ant-select-item-option')
-      .filter({ hasText: /报价模板0608\s+v1\.9(\s|$|<)/ })
+      .filter({ hasText: /报价模板0608\s+v1\.10(\s|$|<)/ })
       .first();
     await opt.scrollIntoViewIfNeeded().catch(() => {});
     await opt.click();
