@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
+  Alert,
   Button,
   Modal,
   Form,
@@ -15,6 +16,8 @@ import {
   Tooltip,
   Empty,
 } from 'antd';
+import { buildDraftSnapshot, rebuildFieldKeys, rebuildFormulaKeys } from './componentDraft';
+import { readDraft, clearDraft, useDraftAutosave } from './useComponentDraft';
 import { PlusOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined } from '@ant-design/icons';
 import { componentService } from '../../services/componentService';
 import { datasourceService } from '../../services/datasourceService';
@@ -795,6 +798,22 @@ const ComponentManagement: React.FC = () => {
   const [loadingTree, setLoadingTree] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
 
+  // ── 草稿自动写入 + 恢复 ──
+  const baselineUpdatedAt = selectedComponent?.updatedAt;
+  const { scheduleSave, flush: flushDraft } = useDraftAutosave(selectedComponent?.id, baselineUpdatedAt);
+  const restoringRef = useRef(false);
+  const [draftBanner, setDraftBanner] = useState<{ kind: 'restored' | 'stale'; componentId: string } | null>(null);
+
+  // 编辑态任一变化 → 防抖写草稿（恢复中/程序化加载跳过）
+  useEffect(() => {
+    if (!selectedComponent?.id) return;
+    if (restoringRef.current) { restoringRef.current = false; return; }
+    scheduleSave(buildDraftSnapshot({
+      fields, formulas, dataDriverPath, rowKeyFields, excelColumns, bomRecursiveExpand,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fields, formulas, dataDriverPath, rowKeyFields, excelColumns, bomRecursiveExpand]);
+
   // Left list selection (checkboxes) + search
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -897,6 +916,7 @@ const ComponentManagement: React.FC = () => {
   // Load component when selected from list
   const handleSelectComponent = async (comp: ComponentItem) => {
     try {
+      restoringRef.current = true; // 跳过本次程序化加载触发的自动写草稿
       const res = await componentService.getById(comp.id);
       const loaded = res.data as ComponentItem;
       setSelectedComponent(loaded);
@@ -916,6 +936,28 @@ const ComponentManagement: React.FC = () => {
       setDataDriverPath(loaded.dataDriverPath ?? '');
       setRowKeyFields(loaded.rowKeyFields ?? []);
       setBomRecursiveExpand((loaded as any).bomRecursiveExpand === true); // 默认关
+
+      // ── 草稿自动恢复 ──
+      const draft = readDraft(loaded.id);
+      if (draft) {
+        const stale = !!draft.baselineUpdatedAt && !!loaded.updatedAt
+          && draft.baselineUpdatedAt !== loaded.updatedAt;
+        if (!stale) {
+          restoringRef.current = true;
+          setFields(rebuildFieldKeys(draft.snapshot.fields));
+          setFormulas(rebuildFormulaKeys(draft.snapshot.formulas));
+          setExcelColumns(draft.snapshot.excelColumns ?? []);
+          setDataDriverPath(draft.snapshot.dataDriverPath ?? '');
+          setRowKeyFields(draft.snapshot.rowKeyFields ?? []);
+          setBomRecursiveExpand(!!draft.snapshot.bomRecursiveExpand);
+          setDraftBanner({ kind: 'restored', componentId: loaded.id });
+        } else {
+          setDraftBanner({ kind: 'stale', componentId: loaded.id });
+        }
+      } else {
+        setDraftBanner(null);
+      }
+
       if (loaded.componentType === 'NORMAL') {
         void refreshRowKeyCandidates(
           loaded.id,
@@ -962,6 +1004,9 @@ const ComponentManagement: React.FC = () => {
       }
       await componentService.update(selectedComponent.id, payload);
       message.success('保存成功');
+      clearDraft(selectedComponent.id);
+      flushDraft();
+      setDraftBanner(null);
       loadTree(searchKeyword || undefined);
       const res = await componentService.getById(selectedComponent.id);
       setSelectedComponent(res.data);
@@ -1247,6 +1292,41 @@ const ComponentManagement: React.FC = () => {
                 <Button type="primary" size="small" loading={saving} onClick={handleSave}>保存</Button>
               </div>
             </div>
+            {draftBanner?.componentId === selectedComponent.id && (
+              <Alert
+                style={{ margin: '0 0 8px' }}
+                type={draftBanner.kind === 'restored' ? 'warning' : 'info'}
+                showIcon
+                message={draftBanner.kind === 'restored'
+                  ? '检测到未保存的修改，已自动恢复'
+                  : '该组件在别处已更新，本地草稿可能过期'}
+                action={
+                  <Space>
+                    {draftBanner.kind === 'stale' && (
+                      <Button size="small" onClick={() => {
+                        const d = readDraft(selectedComponent.id);
+                        if (d) {
+                          restoringRef.current = true;
+                          setFields(rebuildFieldKeys(d.snapshot.fields));
+                          setFormulas(rebuildFormulaKeys(d.snapshot.formulas));
+                          setExcelColumns(d.snapshot.excelColumns ?? []);
+                          setDataDriverPath(d.snapshot.dataDriverPath ?? '');
+                          setRowKeyFields(d.snapshot.rowKeyFields ?? []);
+                          setBomRecursiveExpand(!!d.snapshot.bomRecursiveExpand);
+                          setDraftBanner({ kind: 'restored', componentId: selectedComponent.id });
+                        }
+                      }}>仍恢复草稿</Button>
+                    )}
+                    <Button size="small" danger onClick={() => {
+                      clearDraft(selectedComponent.id);
+                      flushDraft();
+                      setDraftBanner(null);
+                      handleSelectComponent(selectedComponent);
+                    }}>放弃草稿</Button>
+                  </Space>
+                }
+              />
+            )}
             <div className="cmm-panel">
               {componentType === 'EXCEL'
                 ? renderExcelDetail()
