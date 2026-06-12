@@ -609,6 +609,12 @@ export function parseFormulaSegments(
     }
   };
 
+  // FN(...) 深度追踪：判断 [引用] 是否处于 FN 括号内
+  const FN_NAMES = new Set(['SUM', 'AVG', 'MAX', 'MIN', 'COUNT']);
+  let parenDepth = 0;
+  const fnOpenDepths: number[] = [];
+  let word = '';
+
   let i = 0;
   while (i < expr.length) {
     const ch = expr[i];
@@ -618,8 +624,10 @@ export function parseFormulaSegments(
       flush();
       const raw = expr.slice(i, end + 1);
       const body = expr.slice(i + 1, end).trim();
-      const { color } = classifyRefSegment(body, tabDefs, selfRowKeyFields, enforceMappable);
+      const insideFn = fnOpenDepths.length > 0;
+      const { color } = classifyRefSegment(body, tabDefs, selfRowKeyFields, enforceMappable, insideFn);
       segs.push({ raw, isBlock: true, display: blockDisplay(body), color });
+      word = ''; // 方括号内容不贡献函数名
       i = end + 1;
       continue;
     }
@@ -630,8 +638,24 @@ export function parseFormulaSegments(
       const raw = expr.slice(i, end + 1);
       const body = expr.slice(i + 1, end).trim();
       segs.push({ raw, isBlock: true, display: body, color: null });
+      word = ''; // 花括号内容不贡献函数名
       i = end + 1;
       continue;
+    }
+    // 追踪括号深度和函数名，以便判断 [引用] 是否在 FN(...) 内
+    if (/[A-Za-z]/.test(ch)) {
+      word += ch;
+    } else {
+      if (ch === '(') {
+        parenDepth++;
+        if (FN_NAMES.has(word.toUpperCase())) fnOpenDepths.push(parenDepth);
+      } else if (ch === ')') {
+        if (fnOpenDepths.length && fnOpenDepths[fnOpenDepths.length - 1] === parenDepth) {
+          fnOpenDepths.pop();
+        }
+        parenDepth--;
+      }
+      word = '';
     }
     textBuf += ch;
     i++;
@@ -694,6 +718,7 @@ export function classifyRefSegment(
   tabDefs: TabDef[],
   selfRowKeyFields: string[] | undefined,
   enforceMappable: boolean,
+  insideFn: boolean = false,
 ): { kind: string; color: SegmentColor } {
   // 1) 无点 + (总计) 结尾 → 整页签小计(component_subtotal,无 match 约束)
   if (!body.includes('.') && body.endsWith('(总计)')) {
@@ -735,6 +760,15 @@ export function classifyRefSegment(
       const matchEmpty = buildMatch(tab.rowKeyFields ?? [], selfRowKeyFields).length === 0;
       if (matchEmpty) return { kind: 'invalid', color: 'red' };
     }
+
+    // 5) 细 source 裸引用（既非 FN 包裹、也非 (总计) inline 聚合）→ 红：需聚合，否则求值命中多行归 0
+    if (enforceMappable && !insideFn && !isAgg) {
+      const self = selfRowKeyFields ?? [];
+      const src = tab.rowKeyFields ?? [];
+      const srcStrictlyFiner = isSubset(self, src) && !isSubset(src, self);
+      if (srcStrictlyFiner) return { kind: 'needs-agg', color: 'red' };
+    }
+
     return { kind: 'detail', color: 'blue' };
   }
 

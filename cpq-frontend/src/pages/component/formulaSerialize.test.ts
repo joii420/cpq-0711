@@ -1250,3 +1250,61 @@ describe('expressionToTokens — 宿主自引用归一 field(spec §4)', () => {
     expect(t[0]).toMatchObject({ type: 'cross_tab_ref' });
   });
 });
+
+// ─────────────────────────────────────────────
+// parseFormulaSegments — 细 source 裸引用判红(需聚合)
+// 宿主 selfRowKeyFields=['料件']
+// 「元素」tab rowKeyFields=['料件','元素'] — 键严格超集(更细)
+// 「投料」tab rowKeyFields=['料件'] — 同级
+// ─────────────────────────────────────────────
+describe('parseFormulaSegments — 细 source 裸引用判红(需聚合)', () => {
+  // 「元素」tab：rowKeyFields=['料件','元素']（严格更细于宿主 ['料件']）
+  const tabYuanSu: TabDef = {
+    alias: 'COMP_YS',
+    tabKey: 'tab-ys',
+    componentId: 'uuid-ys',
+    componentName: '元素',
+    componentType: 'NORMAL',
+    rowKeyFields: ['料件', '元素'],
+    detailFields: ['单价'],
+    subtotalCols: ['单价(总计)'],
+  };
+  // 「投料」tab：rowKeyFields=['料件']（与宿主同级）
+  const tabTouLiao: TabDef = {
+    alias: 'COMP_TL',
+    tabKey: 'tab-tl',
+    componentId: 'uuid-tl',
+    componentName: '投料',
+    componentType: 'NORMAL',
+    rowKeyFields: ['料件'],
+    detailFields: ['重量'],
+    subtotalCols: [],
+  };
+
+  const tabsFiner: TabDef[] = [tabYuanSu, tabTouLiao];
+  const tabsSame: TabDef[] = [tabTouLiao];
+
+  it('裸 [元素.单价](细 source，非 FN 内) → red', () => {
+    const segs = parseFormulaSegments('[元素.单价]', tabsFiner, ['料件'], true);
+    const blk = segs.find(s => s.isBlock);
+    expect(blk?.color).toBe('red');
+  });
+
+  it('SUM([元素.单价])(FN 内细引用) → blue', () => {
+    const segs = parseFormulaSegments('SUM([元素.单价])', tabsFiner, ['料件'], true);
+    const blk = segs.find(s => s.isBlock);
+    expect(blk?.color).toBe('blue');
+  });
+
+  it('[元素.单价(总计)](inline 聚合) → blue', () => {
+    const segs = parseFormulaSegments('[元素.单价(总计)]', tabsFiner, ['料件'], true);
+    const blk = segs.find(s => s.isBlock);
+    expect(blk?.color).toBe('blue');
+  });
+
+  it('裸 [投料.重量](同级 source) → blue', () => {
+    const segs = parseFormulaSegments('[投料.重量]', tabsSame, ['料件'], true);
+    const blk = segs.find(s => s.isBlock);
+    expect(blk?.color).toBe('blue');
+  });
+});
