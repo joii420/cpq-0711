@@ -550,6 +550,11 @@ const MasterList: React.FC<MasterListProps> = ({
   onSelect, onToggleCheck, onCreate, onBatchToggleStatus, onBatchDelete, onRefresh,
 }) => {
   const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({});
+  // 分区折叠：key = `${dirId}:${type}`；读不到即视为折叠（默认全折叠，保持左栏紧凑）
+  const [collapsedSecs, setCollapsedSecs] = useState<Record<string, boolean>>({});
+  const sectionKey = (dirId: string, type: ComponentType) => `${dirId}:${type}`;
+  const toggleSec = (key: string) =>
+    setCollapsedSecs((p) => ({ ...p, [key]: !(p[key] ?? true) }));
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   // 任务4: 按目录导入/导出
@@ -617,15 +622,28 @@ const MasterList: React.FC<MasterListProps> = ({
 
   const renderSection = (dir: DirectoryNode, type: ComponentType, title: string, cls: string, addLabel: string) => {
     const comps = dir.components.filter((c) => c.componentType === type);
+    const key = sectionKey(dir.id, type);
+    // 搜索激活时一律展开（不写 state）；否则取手动状态，默认折叠
+    const collapsed = searchKeyword ? false : (collapsedSecs[key] ?? true);
+    // 折叠态下点「＋」新建：先展开该分区，再走新建
+    const createHere = () => { setCollapsedSecs((p) => ({ ...p, [key]: false })); onCreate(dir.id, type); };
     return (
-      <div className="cmm-sec">
-        <div className={`cmm-sec-title ${cls}`}>
+      <div className={`cmm-sec${collapsed ? '' : ' open'}`}>
+        <div
+          className={`cmm-sec-title ${cls}`}
+          onClick={() => { if (!searchKeyword) toggleSec(key); }}
+        >
+          <span className="cmm-sec-caret">▶</span>
           <span className="cmm-dot" />
           {title}
-          <span className="cmm-add" onClick={() => onCreate(dir.id, type)}>＋</span>
+          <span className="cmm-add" onClick={(e) => { e.stopPropagation(); createHere(); }}>＋</span>
         </div>
-        {comps.map((c) => renderCard(c, dir, cls === 'tab' ? '' : cls))}
-        <div className="cmm-card-add" onClick={() => onCreate(dir.id, type)}>＋ {addLabel}</div>
+        {!collapsed && (
+          <>
+            {comps.map((c) => renderCard(c, dir, cls === 'tab' ? '' : cls))}
+            <div className="cmm-card-add" onClick={createHere}>＋ {addLabel}</div>
+          </>
+        )}
       </div>
     );
   };

@@ -570,7 +570,10 @@
 .cmm-dir.open .cmm-dir-body { display: block; }
 
 .cmm-sec { margin-top: 8px; }
-.cmm-sec-title { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #8c8c8c; padding: 4px 0; }
+.cmm-sec-title { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #8c8c8c; padding: 5px 4px; cursor: pointer; border-radius: 6px; }
+.cmm-sec-title:hover { background: #fafafa; }
+.cmm-sec-caret { transition: transform .2s; color: #bfbfbf; font-size: 9px; width: 10px; text-align: center; flex: none; }
+.cmm-sec.open .cmm-sec-caret { transform: rotate(90deg); }
 .cmm-sec-title .cmm-dot { width: 7px; height: 7px; border-radius: 2px; }
 .cmm-sec-title.tab .cmm-dot { background: #764ba2; }
 .cmm-sec-title.excel .cmm-dot { background: #08979c; }
