@@ -155,6 +155,10 @@ const QuotationWizard: React.FC = () => {
   //   ③ 手动「保存草稿」按钮 / 步骤切换 / 提交。
   // 保留 autoSaveDraft 函数 + ref 供 ①/手动复用；仅删除定时器。
   const lastSaveRef = useRef<string>('');
+  // 自动保存死循环修复(方案 B):syncingRef 切断 saveDraft 回填 → lineItems effect → 再次调度保存的反馈环。
+  //   syncLineItemsFromResponse 调用前置位 true;监听 lineItems 的 effect 读到 true 即消费复位并 return,
+  //   不再调度保存。用户真实编辑直接调 scheduleAutoSave 或走不同路径,syncingRef 始终为 false,不受影响。
+  const syncingRef = useRef(false);
   // 自动保存死循环修复(方案 A):tempId → 后端持久化 DB id 的稳定映射。
   //   导入建的行只有稳定 tempId、初始无 id;saveDraft 响应回填 DB id 后记入此表。
   //   buildDraftPayload 以 li.id || 本表[tempId] 兜底发送,确保某次重建抹掉 li.id 时仍能凭
@@ -205,6 +209,11 @@ const QuotationWizard: React.FC = () => {
   useEffect(() => {
     if (!quotationId) return;
     if (lineItems.length === 0) return;
+    // 方案 B guard:syncLineItemsFromResponse 回填触发的那一次变化不再调度保存(它本身就是刚保存的结果)。
+    if (syncingRef.current) {
+      syncingRef.current = false;
+      return;
+    }
     scheduleAutoSave();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lineItems, quotationId]);
@@ -563,6 +572,8 @@ const QuotationWizard: React.FC = () => {
   const syncLineItemsFromResponse = (resData: any) => {
     const respLines = resData?.lineItems;
     if (!Array.isArray(respLines)) return;
+    // 方案 B:置位 syncingRef,让 lineItems effect 跳过本次回填引发的调度,切断死循环。
+    syncingRef.current = true;
     setLineItems(prev => {
       // 数量不一致(理论不会)时不冒险按 index 错位回填,退化为依赖手动刷新。
       if (respLines.length !== prev.length) return prev;
