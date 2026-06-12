@@ -406,6 +406,10 @@ export function expressionToTokens(
               component_code: tabDef.alias,
               label: `${tabDef.componentName ?? tabDef.alias}·${fieldPart}`,
             });
+          } else if (selfComponentId && tabDef.componentId === selfComponentId && !isAgg) {
+            // 宿主自身明细字段 → 同行裸字段 token(不成环、读本行)。
+            // 小计列已被上面的 if 截走;自聚合(isAgg)不在此归一,仍走下面 cross_tab_ref。
+            result.push({ type: 'field', value: fieldPart });
           } else {
             result.push(
               makeCrossTabRef(alias, fieldPart, isAgg ? 'SUM' : 'NONE', tabDefs, selfRowKeyFields),

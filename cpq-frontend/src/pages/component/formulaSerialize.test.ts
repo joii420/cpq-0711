@@ -1220,3 +1220,33 @@ describe('classifyRefSegment — 宿主自身字段(紫)', () => {
     expect(classifyRefSegment('回料.用量', tabs, self, true).color).toBe('blue');
   });
 });
+
+// ─────────────────────────────────────────────
+// 宿主自引用归一 field (spec §4)
+// ─────────────────────────────────────────────
+
+describe('expressionToTokens — 宿主自引用归一 field(spec §4)', () => {
+  const rkf = ['料号'];
+
+  it('[回料.用量] + selfComponentId=回料 → field token', () => {
+    const t = expressionToTokens('[回料.用量]', allTabs, rkf, 'uuid-rl');
+    expect(t).toHaveLength(1);
+    expect(t[0]).toEqual({ type: 'field', value: '用量' });
+  });
+  it('[回料.用量] + selfComponentId=别的(uuid-inv) → cross_tab_ref(回归)', () => {
+    const t = expressionToTokens('[回料.用量]', allTabs, rkf, 'uuid-inv');
+    expect(t[0]).toMatchObject({ type: 'cross_tab_ref', source: 'uuid-rl' });
+  });
+  it('[回料.金额](金额∈subtotalCols) + self=回料 → 仍 component_subtotal', () => {
+    const t = expressionToTokens('[回料.金额]', allTabs, rkf, 'uuid-rl');
+    expect(t[0]).toMatchObject({ type: 'component_subtotal' });
+  });
+  it('[回料.用量(总计)](自聚合) + self=回料 → 仍 cross_tab_ref(不归一)', () => {
+    const t = expressionToTokens('[回料.用量(总计)]', allTabs, rkf, 'uuid-rl');
+    expect(t[0]).toMatchObject({ type: 'cross_tab_ref', agg: 'SUM', source: 'uuid-rl' });
+  });
+  it('不传 selfComponentId → cross_tab_ref(旧行为保留)', () => {
+    const t = expressionToTokens('[回料.用量]', allTabs, rkf);
+    expect(t[0]).toMatchObject({ type: 'cross_tab_ref' });
+  });
+});
