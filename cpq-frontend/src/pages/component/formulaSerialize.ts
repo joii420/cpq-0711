@@ -606,3 +606,71 @@ export function checkMappable(tokens: FormulaToken[]): { mappable: boolean; reas
   }
   return { mappable: true };
 }
+
+// ─────────────────────────────────────────────
+// 配色分类器(显示侧,与保存期 checkMappable 同源)
+// ─────────────────────────────────────────────
+
+export type SegmentColor = 'blue' | 'yellow' | 'green' | 'red' | null;
+
+export interface FormulaSegment {
+  /** 原始片段文本(块含括号,文本原样) */
+  raw: string;
+  /** true=原子块([...]/{...});false=普通文本 */
+  isBlock: boolean;
+  /** 块展示文本(去括号、'.'→'·');文本段等于 raw */
+  display: string;
+  /** 块配色;文本段 null */
+  color: SegmentColor;
+}
+
+/**
+ * 单个 [...] body 判色(body 已去外层方括号且已 trim)。
+ * 行序即优先级(spec §3.4):总计无点 → 小计列 → 明细 → 查不到 → self-field。
+ * enforceMappable: NORMAL/SUBTOTAL=true(明细 match 空判红);EXCEL=false(解析得到即蓝)。
+ */
+export function classifyRefSegment(
+  body: string,
+  tabDefs: TabDef[],
+  selfRowKeyFields: string[] | undefined,
+  enforceMappable: boolean,
+): { kind: string; color: SegmentColor } {
+  // 1) 无点 + (总计) 结尾 → 整页签小计(component_subtotal,无 match 约束)
+  if (!body.includes('.') && body.endsWith('(总计)')) {
+    const alias = body.slice(0, -'(总计)'.length);
+    return findTabByRef(tabDefs, alias)
+      ? { kind: 'tab-total', color: 'green' }
+      : { kind: 'invalid', color: 'red' };
+  }
+
+  // 含点 → 跨页签引用
+  if (body.includes('.')) {
+    const dotIdx = body.indexOf('.');
+    const alias = body.slice(0, dotIdx);
+    let field = body.slice(dotIdx + 1);
+    const isAgg = field.endsWith('(总计)');
+    if (isAgg) field = field.slice(0, -'(总计)'.length);
+
+    const tab = findTabByRef(tabDefs, alias);
+    if (!tab) return { kind: 'invalid', color: 'red' };
+
+    // 2) 非聚合 + 字段∈subtotalCols → 小计列(component_subtotal,无 match 约束)
+    if (!isAgg && (tab.subtotalCols ?? []).includes(field)) {
+      return { kind: 'subtotal', color: 'yellow' };
+    }
+
+    // 字段必须是该 tab 的真实列(明细或小计),否则查不到 → 红
+    const known = new Set([...(tab.detailFields ?? []), ...(tab.subtotalCols ?? [])]);
+    if (!known.has(field)) return { kind: 'invalid', color: 'red' };
+
+    // 3/4) 明细 cross_tab_ref:enforceMappable 下镜像 buildMatch 是否空判红
+    if (enforceMappable) {
+      const matchEmpty = buildMatch(tab.rowKeyFields ?? [], selfRowKeyFields).length === 0;
+      if (matchEmpty) return { kind: 'invalid', color: 'red' };
+    }
+    return { kind: 'detail', color: 'blue' };
+  }
+
+  // 6) 无点无总计 → 宿主自身列(tabDefs 无法证伪)
+  return { kind: 'self-field', color: 'blue' };
+}
