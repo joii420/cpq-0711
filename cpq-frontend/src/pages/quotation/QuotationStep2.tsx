@@ -399,7 +399,9 @@ function computeAllFormulas(
   previousRowValues?: Record<string, number | null>,
   // 输出袋：调用方若传入 { fieldValues? } 则函数会将 fieldValues（非公式字段也含）写入其中，
   // 供 computeTabSubtotalsByColumn 等读取 INPUT_NUMBER 等纯输入列的行值。
-  out?: { fieldValues?: Record<string, number> },
+  // errors?: 调用方传入则函数会把 cross_tab_ref 细项多命中等错误原因按字段名写入(数值仍归 0/null,
+  //          仅旁路透出原因供渲染层显示 ⚠)。
+  out?: { fieldValues?: Record<string, number>; errors?: Record<string, string> },
 ): Record<string, number | null> {
   if (!comp.fields || !comp.formulas) return {};
 
@@ -638,14 +640,19 @@ function computeAllFormulas(
       } else {
         expr = ff.formula!.expression;
       }
+      // 错误旁路袋(数值零改): cross_tab_ref 细项多命中时,evaluateExpression 仍返 0/null,
+      // 但把可读原因写入 diag,本字段求值后转存到 out.errors[name],供渲染层显示 ⚠。
+      const diag: { crossTabError?: string } = {};
       const val = expr
         ? evaluateExpression(
             expr, fieldValues, allComponentSubtotals || {}, undefined, quotationFields,
             pathCache, partNo, basicDataValues, prevForField, globalVariableDefs, row, crossTabRows,
+            diag,
           )
         : null;
       results[name] = val;
       if (val != null) fieldValues[name] = val; // feed result for downstream formulas
+      if (diag.crossTabError && out?.errors) out.errors[name] = diag.crossTabError;
     } catch {
       results[name] = null;
     }
@@ -1939,20 +1946,26 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     // 传给下一行作为 previous_row_subtotal token 的求值上下文.
                     // 单 row 场景(无累加 token)行为不变 — previousRowSubtotal 仅 token 命中时取.
                     const preComputedCaches: Array<Record<string, number | null>> = [];
+                    // 错误旁路: 与 preComputedCaches 平行 — 每行 computeAllFormulas 的 out.errors
+                    // (cross_tab_ref 细项多命中等; 数值已静默归 0)。渲染层据此显示 ⚠。
+                    const preComputedErrors: Array<Record<string, string>> = [];
                     // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
                     let prevRowValues: Record<string, number | null> | undefined = undefined;
                     for (const r of effectiveRows) {
                       // Phase4 Task3: 报价侧优先读快照 formulaResults[rowKey](真零计算);
                       // 缺(无快照/新行/LIST_FORMULA 字符串公式未进 formulaResults)时 computeAllFormulas 兜底(防漂移)。
                       const snapFormula = useSnapEdit ? activeSnap?.formula.get(r.rowKey) : undefined;
+                      const errForRow: Record<string, string> = {};
                       const cache = (snapFormula && Object.keys(snapFormula).length > 0)
                         ? (snapFormula as Record<string, number | null>)
                         : computeAllFormulas(
                             activeComponent, r.row, allComponentSubtotals,
                             undefined, undefined, item.productPartNo, r.basicDataValues,
                             undefined, globalVariableDefs, crossTabRows, prevRowValues,
+                            { errors: errForRow },
                           );
                       preComputedCaches.push(cache);
+                      preComputedErrors.push(errForRow);
                       prevRowValues = cache;
                     }
                     // 行键实时判重：组合键重复的行下标集合（driver 列取 driverRow、输入字段取 row 上的手填值）。
@@ -1961,7 +1974,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       effectiveRows.map((e) => ({ driverRow: e.driverRow, rowValues: e.row })),
                       activeRowKeyFields,
                     );
-                    const withCache = effectiveRows.map((er, idx) => ({ ...er, formulaCache: preComputedCaches[idx], _isDupKey: dupRowIdx.has(er.rowIndex) }));
+                    const withCache = effectiveRows.map((er, idx) => ({ ...er, formulaCache: preComputedCaches[idx], formulaErrors: preComputedErrors[idx], _isDupKey: dupRowIdx.has(er.rowIndex) }));
                     // 核价 BOM 递归展开（P1）：COSTING 侧按 spine 系统列 __parentId→__nodeId 建树（不是料号）。
                     // 归一化：根 nodeId='' → '__bomroot__'；根直接子 parentId='' → '__bomroot__'；根自身 parentId=null → null。
                     // 其余为 uuid 边路径，原样。DAG 重复子件 nodeId 各不同 → 各自独立 occurrence，不塌成 DAG。
@@ -2000,7 +2013,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     return laid.rows
                       .filter(r => !isTreeRowHidden(r.originalIndex, laid.parentIndexByIndex, laid.nodeKeyByIndex, collapsed))
                       .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
-                  })().map(({ row, rowIndex, realRowIndex, rowKey, basicDataValues, isDriverBound, isManualRow: isManualRowFlag, isListFormulaBound, formulaCache, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey, _isDupKey }) => {
+                  })().map(({ row, rowIndex, realRowIndex, rowKey, basicDataValues, isDriverBound, isManualRow: isManualRowFlag, isListFormulaBound, formulaCache, formulaErrors, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey, _isDupKey }) => {
                     const bomSys = activeComponentBomTree ? (__sys as import('./useDriverExpansions').BomSysCols | undefined) : undefined;
                     return (
                     <tr key={rowIndex}
@@ -2057,6 +2070,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           basicDataValues,
                           pathCacheState: pathCacheState ?? {},
                           formulaCache,
+                          formulaErrors,
                           partNo: item.productPartNo,
                           activeComponent,
                           activeDriverExpansion,

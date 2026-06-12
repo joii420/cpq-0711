@@ -157,6 +157,12 @@ export function evaluateExpression(
    * 向后兼容: 老调用点不传时 cross_tab_ref token 返 0.
    */
   crossTabRows?: Record<string, Array<Record<string, any>>>,
+  /**
+   * 错误旁路（不改数值）：cross_tab_ref 命中多行 / 非数值聚合时,数值仍按既有逻辑归 0/null,
+   * 但若调用方传入此袋,则把人类可读的错误原因写入 outDiag.crossTabError,
+   * 供渲染层显示 ⚠ 错误态(替代静默 0)。向后兼容: 老调用不传 = 零破坏。
+   */
+  outDiag?: { crossTabError?: string },
 ): number {
   // Build expression string from tokens
   let expr = '';
@@ -291,6 +297,13 @@ export function evaluateExpression(
           }
         }
         // 错误路径: 注入非法表达式让外层 try/catch 捕获并返回 0 (对齐后端 error→0 行为)
+        // ★ 旁路(数值零改): 同时把可读原因写入 outDiag,供渲染层显示 ⚠ 错误态。
+        if (crossTabError && outDiag) {
+          const src = token.source ?? '';
+          const tgt = token.target ?? (hasTE ? '表达式' : '');
+          const ref = src || tgt ? `[${src}${tgt ? '.' + tgt : ''}] ` : '';
+          outDiag.crossTabError = `${ref}细项引用命中多行,请改用 SUM 等聚合(或引用「(总计)」)`;
+        }
         expr += crossTabError ? '(null.x)' : out.toString();
         break;
       }

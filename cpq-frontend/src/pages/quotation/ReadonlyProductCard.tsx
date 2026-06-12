@@ -467,6 +467,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     const activeSnap = useSnap ? snapFormulaByComp.get(activeComp.componentId) : undefined;
                     const activeRowKeyFields = rowKeyFieldsByComp.get(activeComp.componentId);
                     const preComputedCaches: Array<Record<string, number | null>> = [];
+                    // 错误旁路(AP-50: 详情页与编辑页口径对齐) — cross_tab_ref 细项多命中等场景,
+                    // 数值已静默归 0; 详情页同样显示 ⚠ 而非误导的 0。
+                    const preComputedErrors: Array<Record<string, string>> = [];
                     {
                       // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
                       let prevRowValues: Record<string, number | null> | undefined = undefined;
@@ -478,14 +481,17 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         const driverRowForKey = (ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined) ?? activeSnap?.driverRows[ri] ?? rawRow;
                         const rowKey = useSnap ? computeRowKey(activeRowKeyFields, driverRowForKey, ri) : String(ri);
                         const snapFormula = useSnap ? activeSnap?.formula.get(rowKey) : undefined;
+                        const errForRow: Record<string, string> = {};
                         const cache = (snapFormula && Object.keys(snapFormula).length > 0)
                           ? (snapFormula as Record<string, number | null>)
                           : computeAllFormulas(
                               activeComp, rawRow, compSubtotals,
                               undefined, undefined, lineItem.productPartNo,
                               rowBdv, undefined, globalVariableDefs, crossTabRows, prevRowValues,
+                              { errors: errForRow },
                             );
                         preComputedCaches.push(cache);
+                        preComputedErrors.push(errForRow);
                         prevRowValues = cache;
                       }
                     }
@@ -511,6 +517,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                               rawRow: ra.row,
                               rowBdv: ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined,
                               formulaCache: preComputedCaches[ri] ?? {},
+                              formulaErrors: preComputedErrors[ri] ?? {},
                             };
                           });
                           const treeCfg = activeComp.treeConfig;
@@ -531,7 +538,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                               .filter(r => !isTreeRowHidden(r.originalIndex, laid.parentIndexByIndex, laid.nodeKeyByIndex, collapsed))
                               .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
                           }
-                          return ordered.map(({ ri, rawRow, rowBdv, formulaCache, _depth, _hasChildren, _nodeKey }) => (
+                          return ordered.map(({ ri, rawRow, rowBdv, formulaCache, formulaErrors, _depth, _hasChildren, _nodeKey }) => (
                           <tr key={ri}>
                             {activeComp.fields.map((field) => {
                               const key = field.name || '';
@@ -543,6 +550,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                                 basicDataValues: rowBdv,
                                 pathCacheState: pathCacheState,
                                 formulaCache,
+                                formulaErrors,
                                 partNo: lineItem.productPartNo,
                                 activeComponent: activeComp,
                                 activeDriverExpansion,

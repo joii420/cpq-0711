@@ -396,6 +396,52 @@ describe('cross_tab_ref', () => {
       undefined, undefined, undefined, { 子件: 'P1' }, { A: aRows });
     expect(r).toBe(10);
   });
+
+  // ─── outDiag 错误旁路 (细项多命中渲染 ⚠) ─────────────────────────────────
+  it('NONE — multi match → 0 且 outDiag.crossTabError 被写入', () => {
+    // aRows 含两个 P1 行 → NONE 多命中 → crossTabError → 数值仍 0,但 outDiag 透出原因
+    const outDiag: { crossTabError?: string } = {};
+    const r = evaluateExpression(
+      [tokenNone],
+      {},        // fieldValues
+      undefined, // componentSubtotals
+      undefined, // productAttributes
+      undefined, // quotationFields
+      undefined, // pathCache
+      undefined, // partNo
+      undefined, // basicDataValues
+      undefined, // previousRowSubtotal
+      undefined, // globalVariableDefs
+      { 子件: 'P1' }, // currentRow
+      { A: aRows },    // crossTabRows
+      outDiag,         // ← NEW trailing param
+    );
+    expect(r).toBe(0);
+    expect(outDiag.crossTabError).toBeTruthy();
+  });
+
+  it('SUM — non-numeric target → 0 且 outDiag.crossTabError 被写入', () => {
+    const rowsNonNumeric = [{ 子件: 'P1', 单重: 'abc' }, { 子件: 'P2', 单重: 0.3 }];
+    const tokenSum: ExpressionToken = { ...tokenNone, agg: 'SUM' };
+    const outDiag: { crossTabError?: string } = {};
+    const r = evaluateExpression(
+      [tokenSum], {}, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, { 子件: 'P1' }, { A: rowsNonNumeric }, outDiag,
+    );
+    expect(r).toBe(0);
+    expect(outDiag.crossTabError).toBeTruthy();
+  });
+
+  it('NONE — single match → outDiag.crossTabError 不被写入', () => {
+    const rows2 = [{ 子件: 'P1', 单重: 0.8 }, { 子件: 'P2', 单重: 0.3 }];
+    const outDiag: { crossTabError?: string } = {};
+    const r = evaluateExpression(
+      [tokenNone], {}, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, { 子件: 'P1' }, { A: rows2 }, outDiag,
+    );
+    expect(r).toBe(0.8);
+    expect(outDiag.crossTabError).toBeUndefined();
+  });
 });
 
 // ─── cross-tab fixture (shared with backend FormulaCalculatorCrossTabFixtureTest) ───────────

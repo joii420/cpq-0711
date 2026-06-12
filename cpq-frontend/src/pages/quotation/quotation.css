@@ -821,6 +821,13 @@
   color: #2e7d32;
 }
 
+/* 细项多命中等求值错误态：替代静默 0，显示 ⚠ + tooltip(title)说明原因 */
+.qt-formula-cell-error {
+  color: #cf1322;
+  cursor: help;
+  font-weight: 600;
+}
+
 .qt-ds-value {
   color: #1976d2;
   font-weight: 500;
