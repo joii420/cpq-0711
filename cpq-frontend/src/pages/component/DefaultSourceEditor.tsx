@@ -18,6 +18,8 @@ import { globalVariableService, type GlobalVariableDefinition } from '../../serv
 import api from '../../services/api';
 import { dataSourceResolverService, RESOLVER_TYPE_LABEL } from '../../services/dataSourceResolverService';
 import type { DefaultSource } from './types';
+import { componentSqlViewService, type ComponentSqlView } from '../../services/componentSqlViewService';
+import { ViewColumnPickerBody } from './ViewColumnPickerBody';
 
 const { Text } = Typography;
 
@@ -27,6 +29,8 @@ interface Props {
   value?: DefaultSource;
   /** 字段名 — 显示在标题里 */
   fieldName?: string;
+  /** 组件 ID — 用于拉取 BASIC_DATA 分支可用的 SQL 视图列表 */
+  componentId?: string;
   onClose: () => void;
   onConfirm: (next: DefaultSource | undefined) => void;
 }
@@ -38,7 +42,7 @@ interface Props {
  *   BNF_PATH        — 手填 BNF 路径
  *   HTTP_API        — 占位 (Phase D follow-up)
  */
-const DefaultSourceEditor: React.FC<Props> = ({ open, value, fieldName, onClose, onConfirm }) => {
+const DefaultSourceEditor: React.FC<Props> = ({ open, value, fieldName, componentId, onClose, onConfirm }) => {
   const [type, setType] = useState<DefaultSource['type']>('GLOBAL_VARIABLE');
   const [gvCode, setGvCode] = useState<string | undefined>(undefined);
   const [keyFieldRefs, setKeyFieldRefs] = useState<string>('');
@@ -50,6 +54,9 @@ const DefaultSourceEditor: React.FC<Props> = ({ open, value, fieldName, onClose,
 
   const [defs, setDefs] = useState<GlobalVariableDefinition[]>([]);
   const [loading, setLoading] = useState(false);
+  // BASIC_DATA 内联视图点选
+  const [views, setViews] = useState<ComponentSqlView[]>([]);
+  const [pickedViewName, setPickedViewName] = useState<string | undefined>();
   // K2: 动态拉数据源类型, 不再硬编码 Radio 选项
   const [availableTypes, setAvailableTypes] = useState<string[]>(
     ['GLOBAL_VARIABLE', 'BNF_PATH', 'HTTP_API', 'BASIC_DATA']  // SSR/初始默认, 拉到后端列表后会更新
@@ -94,6 +101,13 @@ const DefaultSourceEditor: React.FC<Props> = ({ open, value, fieldName, onClose,
       ))
       .catch(() => {/* 用默认 */});
   }, [open, value]);
+
+  useEffect(() => {
+    if (!open || !componentId) return;
+    componentSqlViewService.list(componentId)
+      .then((r) => setViews(r.data || []))
+      .catch(() => setViews([]));
+  }, [open, componentId]);
 
   const submit = () => {
     if (type === 'GLOBAL_VARIABLE') {
@@ -297,17 +311,15 @@ const DefaultSourceEditor: React.FC<Props> = ({ open, value, fieldName, onClose,
       )}
 
       {type === 'BASIC_DATA' && (
-        <Form.Item
-          label="基础数据路径"
-          required
-          extra="同 BASIC_DATA 字段路径语法, 必须 $视图引用(支持中文列), 如 $cp_view.品名"
-        >
-          <Input
-            value={bnfPath}
-            onChange={(e) => setBnfPath(e.target.value)}
-            placeholder="$cp_view.品名"
-            style={{ fontFamily: 'Consolas, Monaco, monospace' }}
+        <Form.Item label="基础数据来源（选视图 → 点字段）" required>
+          <ViewColumnPickerBody
+            views={views}
+            selectedViewName={pickedViewName}
+            onSelectView={setPickedViewName}
+            currentPath={bnfPath}
+            onPick={(path) => setBnfPath(path)}
           />
+          {bnfPath && <div style={{ marginTop: 6, fontSize: 12 }}>已选：<code>{bnfPath}</code></div>}
         </Form.Item>
       )}
 

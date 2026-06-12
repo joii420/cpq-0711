@@ -631,6 +631,7 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
         open={defaultSourceKey !== null}
         value={defaultSourceKey ? fields.find(f => f.key === defaultSourceKey)?.default_source : undefined}
         fieldName={defaultSourceKey ? fields.find(f => f.key === defaultSourceKey)?.name : undefined}
+        componentId={componentId}
         onClose={() => setDefaultSourceKey(null)}
         onConfirm={(next) => {
           if (defaultSourceKey) {
