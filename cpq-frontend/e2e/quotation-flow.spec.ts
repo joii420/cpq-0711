@@ -63,6 +63,12 @@ test('报价单流程: 苏州西门子 + 报价模板0608 v1.10 + 10110002(渲�
   });
   page.on('pageerror', (e) => consoleErrors.push('PAGE-ERROR: ' + e.message));
 
+  // PUT /quotations/{id}/draft 计数(验证自动保存不死循环)
+  let draftPutCount = 0;
+  page.on('request', (req) => {
+    if (req.method() === 'PUT' && /\/quotations\/[^/]+\/draft/.test(req.url())) draftPutCount += 1;
+  });
+
   // ── 1) 登录 (用项目 fixture) ──
   await loginAsAdmin(page);
   await shot(page, 'after-login');
@@ -264,6 +270,13 @@ test('报价单流程: 苏州西门子 + 报价模板0608 v1.10 + 10110002(渲�
       console.log(`    row[${i}]: ${cells.map(c => `"${c.trim().slice(0, 30)}"`).join(' | ')}`);
     }
   }
+
+  // ── 自动保存不死循环:搭建完成后空闲 5s,PUT /draft 应 ≤1 ──
+  const putBeforeIdle = draftPutCount;
+  await page.waitForTimeout(5000);  // 空闲,不做任何操作
+  const idlePut = draftPutCount - putBeforeIdle;
+  console.log(`\n=== 空闲 5s 内 PUT /draft 次数 = ${idlePut} (期望 ≤1,死循环时会持续累加) ===`);
+  expect(idlePut).toBeLessThanOrEqual(1);
 
   console.log(`\n=== console.error 总数: ${consoleErrors.length} ===`);
   consoleErrors.slice(0, 10).forEach(e => console.log('  🔴 ' + e.slice(0, 200)));

@@ -31,6 +31,21 @@ import { splitRows, rowAt } from './manualRows';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
+
+/** 递归把所有数值规范化为 4 位定点,消除 live↔snap 求值浮点尾差,保证 payload 去重稳定。 */
+export function normalizeDraftPayloadNumbers<T>(payload: T): T {
+  const norm = (v: any): any => {
+    if (typeof v === 'number') return Number.isFinite(v) ? Number(v.toFixed(4)) : v;
+    if (Array.isArray(v)) return v.map(norm);
+    if (v && typeof v === 'object') {
+      const o: any = {};
+      for (const k of Object.keys(v)) o[k] = norm(v[k]);
+      return o;
+    }
+    return v;
+  };
+  return norm(payload);
+}
 const { Text, Title } = Typography;
 
 const statusMap: Record<string, { label: string; color: string }> = {
@@ -140,6 +155,10 @@ const QuotationWizard: React.FC = () => {
   //   ③ 手动「保存草稿」按钮 / 步骤切换 / 提交。
   // 保留 autoSaveDraft 函数 + ref 供 ①/手动复用；仅删除定时器。
   const lastSaveRef = useRef<string>('');
+  // 自动保存死循环修复(方案 B):syncingRef 切断 saveDraft 回填 → lineItems effect → 再次调度保存的反馈环。
+  //   syncLineItemsFromResponse 调用前置位 true;监听 lineItems 的 effect 读到 true 即消费复位并 return,
+  //   不再调度保存。用户真实编辑直接调 scheduleAutoSave 或走不同路径,syncingRef 始终为 false,不受影响。
+  const syncingRef = useRef(false);
   // 自动保存死循环修复(方案 A):tempId → 后端持久化 DB id 的稳定映射。
   //   导入建的行只有稳定 tempId、初始无 id;saveDraft 响应回填 DB id 后记入此表。
   //   buildDraftPayload 以 li.id || 本表[tempId] 兜底发送,确保某次重建抹掉 li.id 时仍能凭
@@ -190,6 +209,11 @@ const QuotationWizard: React.FC = () => {
   useEffect(() => {
     if (!quotationId) return;
     if (lineItems.length === 0) return;
+    // 方案 B guard:syncLineItemsFromResponse 回填触发的那一次变化不再调度保存(它本身就是刚保存的结果)。
+    if (syncingRef.current) {
+      syncingRef.current = false;
+      return;
+    }
     scheduleAutoSave();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lineItems, quotationId]);
@@ -548,6 +572,8 @@ const QuotationWizard: React.FC = () => {
   const syncLineItemsFromResponse = (resData: any) => {
     const respLines = resData?.lineItems;
     if (!Array.isArray(respLines)) return;
+    // 方案 B:置位 syncingRef,让 lineItems effect 跳过本次回填引发的调度,切断死循环。
+    syncingRef.current = true;
     setLineItems(prev => {
       // 数量不一致(理论不会)时不冒险按 index 错位回填,退化为依赖手动刷新。
       if (respLines.length !== prev.length) return prev;
@@ -582,7 +608,7 @@ const QuotationWizard: React.FC = () => {
     if (!quotationId) return;
     try {
       const values = form.getFieldsValue();
-      const payload = buildDraftPayload(values);
+      const payload = normalizeDraftPayloadNumbers(buildDraftPayload(values));
       const payloadStr = JSON.stringify(payload);
       if (payloadStr === lastSaveRef.current) return;
       lastSaveRef.current = payloadStr;
@@ -903,7 +929,8 @@ const QuotationWizard: React.FC = () => {
     if (!quotationId) return;
     try {
       const values = form.getFieldsValue();
-      const payload = buildDraftPayload(values);
+      // 与 autoSaveDraft 同口径:规范化数值后再 PUT/落 localStorage,避免手动/自动保存写库精度不一致
+      const payload = normalizeDraftPayloadNumbers(buildDraftPayload(values));
       const res = await quotationService.saveDraft(quotationId, payload);
       setQuotationPreservingStructures(res.data);
       // 回填重建后的新行 id + partVersionLocked,避免卡片版本号停在旧值、并触发展开按新 id 重拉
@@ -913,7 +940,7 @@ const QuotationWizard: React.FC = () => {
     } catch (e: any) {
       try {
         const values2 = form.getFieldsValue();
-        const payload2 = buildDraftPayload(values2);
+        const payload2 = normalizeDraftPayloadNumbers(buildDraftPayload(values2));
         localStorage.setItem(`cpq-draft-${quotationId}`, JSON.stringify(payload2));
         if (!silent) message.warning('已保存到本地，网络恢复后将同步');
       } catch {
