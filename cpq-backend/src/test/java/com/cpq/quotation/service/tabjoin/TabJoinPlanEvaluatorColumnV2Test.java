@@ -57,4 +57,30 @@ class TabJoinPlanEvaluatorColumnV2Test {
         BigDecimal v = ev.evaluateColumn(col("[加工.工时(总计)]"), provider());
         assertEquals(0, new BigDecimal("0").compareTo(v), "got " + v);
     }
+
+    // ── Task 9: Excel 模型 B 显式拦截 KSUM / 多 source ───────────────────────
+
+    @Test void tabjoin_rejects_ksum_token_not_silent() {
+        // projectToHostKey=true → KSUM 降维，Excel 列模型不支持，必须抛而非静默返 0
+        Map<String, Object> ksumCol = col("[投料.金额]");
+        ksumCol.put("projectToHostKey", true);
+        Exception e = assertThrows(IllegalStateException.class,
+                () -> ev.evaluateColumn(ksumCol, provider()));
+        String msg = e.getMessage();
+        assertTrue(msg != null && (msg.contains("KSUM") || msg.contains("Excel 列模型")),
+                "期望错误消息含 KSUM 或 Excel 列模型，实际: " + msg);
+    }
+
+    @Test void tabjoin_rejects_multi_source_token() {
+        // sources.size >= 2 → 多 source 链式 SUM，Excel 列模型不支持，必须抛而非静默返 0
+        Map<String, Object> multiSrcCol = col("[投料.金额]");
+        multiSrcCol.put("sources", List.of(
+                Map.of("source", "cid-A", "match", List.of()),
+                Map.of("source", "cid-B", "match", List.of())));
+        Exception e = assertThrows(IllegalStateException.class,
+                () -> ev.evaluateColumn(multiSrcCol, provider()));
+        String msg = e.getMessage();
+        assertTrue(msg != null && (msg.contains("source") || msg.contains("Excel 列模型")),
+                "期望错误消息含 source 或 Excel 列模型，实际: " + msg);
+    }
 }

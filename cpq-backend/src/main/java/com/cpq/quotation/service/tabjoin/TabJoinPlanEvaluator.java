@@ -242,6 +242,20 @@ public class TabJoinPlanEvaluator {
     @SuppressWarnings("unchecked")
     public java.math.BigDecimal evaluateColumn(Map<String, Object> col,
                                                com.cpq.quotation.service.card.CardDataProvider provider) {
+        // ── Task 9: 显式拦截 Excel 列模型不支持的高级特性（非静默吞错）────────────────
+        // KSUM 降维聚合（projectToHostKey=true）：需按宿主行键塌缩，Excel 列模型无宿主行上下文
+        if (Boolean.TRUE.equals(col.get("projectToHostKey"))) {
+            throw new IllegalStateException(
+                "Excel 列模型暂不支持 KSUM 降维聚合（projectToHostKey=true），请改用页签连表渲染（模型 A）");
+        }
+        // 多 source 链式 SUM（sources 数组长度 ≥ 2）：Excel 列模型仅支持单 source 连表
+        Object sourcesRaw = col.get("sources");
+        if (sourcesRaw instanceof List<?> sources && sources.size() >= 2) {
+            throw new IllegalStateException(
+                "Excel 列模型暂不支持多 source 链式 SUM（sources.size=" + sources.size() +
+                "），请改用页签连表渲染（模型 A）");
+        }
+        // ────────────────────────────────────────────────────────────────────────────
         String expr = (String) col.getOrDefault("expression", "");
         if (expr.isBlank()) return java.math.BigDecimal.ZERO;
         List<Map<String, Object>> tabs = (List<Map<String, Object>>) col.getOrDefault("tabs", List.of());
