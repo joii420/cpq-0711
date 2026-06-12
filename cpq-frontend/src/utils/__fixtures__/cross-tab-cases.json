@@ -419,5 +419,530 @@
       ]
     },
     "expected": 0
+  },
+
+  {
+    "name": "T7-01: 2 source 链 SUM — 驱动细+1粗按行键广播",
+    "_doc": "驱动=ELEM(料件:A×2行), 更粗=MAT(料件:A,组成用量:10), targetExpr=[单价+组成用量], sources=[ELEM{料件:料件},MAT{料件:料件}]; 行0:2+10=12, 行1:3+10=13; SUM=25",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "ELEM",
+        "agg": "SUM",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "单价"},
+          {"type": "operator", "value": "+"},
+          {"type": "field", "value": "组成用量"}
+        ],
+        "sources": [
+          {"source": "ELEM", "match": [{"a": "料件", "b": "料件"}]},
+          {"source": "MAT",  "match": [{"a": "料件", "b": "料件"}]}
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "ELEM": [{"料件": "A", "单价": 2}, {"料件": "A", "单价": 3}],
+      "MAT":  [{"料件": "A", "组成用量": 10}]
+    },
+    "expected": 25
+  },
+
+  {
+    "name": "T7-02: 粗 source 0 命中 → 项=0 不报错",
+    "_doc": "来料 MAT 为空 → 0命中 → 组成用量不注入(缺省0) → (2+0)+(3+0)=5",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "ELEM",
+        "agg": "SUM",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "单价"},
+          {"type": "operator", "value": "+"},
+          {"type": "field", "value": "组成用量"}
+        ],
+        "sources": [
+          {"source": "ELEM", "match": [{"a": "料件", "b": "料件"}]},
+          {"source": "MAT",  "match": [{"a": "料件", "b": "料件"}]}
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "ELEM": [{"料件": "A", "单价": 2}, {"料件": "A", "单价": 3}],
+      "MAT":  []
+    },
+    "expected": 5
+  },
+
+  {
+    "name": "T7-03: 盲区A — 外层链式join×KSUM同公式组合",
+    "_doc": "元素驱动[{料件:Cu,单价:2}], 来料更粗[{料件:Cu,组成用量:5}], 外购件KSUM全量[{费用:1.5},{费用:0.5}]→Σ=2; targetExpr=[单价+组成用量+KSUM(外购件.费用)]; (2+5+2)=9",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "ELEM",
+        "agg": "SUM",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "单价"},
+          {"type": "operator", "value": "+"},
+          {"type": "field", "value": "组成用量"},
+          {"type": "operator", "value": "+"},
+          {
+            "type": "cross_tab_ref",
+            "projectToHostKey": true,
+            "source": "WGJ",
+            "agg": "SUM",
+            "match": [],
+            "targetExpr": [{"type": "field", "value": "费用"}]
+          }
+        ],
+        "sources": [
+          {"source": "ELEM", "match": [{"a": "料件", "b": "料件"}]},
+          {"source": "MAT",  "match": [{"a": "料件", "b": "料件"}]}
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "ELEM": [{"料件": "Cu", "单价": 2}],
+      "MAT":  [{"料件": "Cu", "组成用量": 5}],
+      "WGJ":  [{"费用": 1.5}, {"费用": 0.5}]
+    },
+    "expected": 9
+  },
+
+  {
+    "name": "T7-04: 3 source 跳层 — rowKey集合可比但跳层",
+    "_doc": "驱动=ELEM(料件:X,工序:P1,单价:3), 来料MAT(料件:X,组成用量:7), 费用FEE(工序:P1,费率:2); sources 3项跳层; targetExpr=[单价+组成用量+费率]; (3+7+2)=12",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "ELEM",
+        "agg": "SUM",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "单价"},
+          {"type": "operator", "value": "+"},
+          {"type": "field", "value": "组成用量"},
+          {"type": "operator", "value": "+"},
+          {"type": "field", "value": "费率"}
+        ],
+        "sources": [
+          {"source": "ELEM", "match": [{"a": "料件", "b": "料件"}]},
+          {"source": "MAT",  "match": [{"a": "料件", "b": "料件"}]},
+          {"source": "FEE",  "match": [{"a": "工序", "b": "工序"}]}
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "ELEM": [{"料件": "X", "工序": "P1", "单价": 3}],
+      "MAT":  [{"料件": "X", "组成用量": 7}],
+      "FEE":  [{"工序": "P1", "费率": 2}]
+    },
+    "expected": 12
+  },
+
+  {
+    "name": "T7-05: 料8终态 — KSUM多行塌缩Kp + 外层Σ元素",
+    "_doc": "元素[{料件:Cu,单价:2},{料件:Ni,单价:3}], 外购件KSUM全量[{费用:1},{费用:0.5}]→1.5; Cu:2+1.5=3.5, Ni:3+1.5=4.5; SUM=8",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "ELEM",
+        "agg": "SUM",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "单价"},
+          {"type": "operator", "value": "+"},
+          {
+            "type": "cross_tab_ref",
+            "projectToHostKey": true,
+            "source": "WGJ",
+            "agg": "SUM",
+            "match": [],
+            "targetExpr": [{"type": "field", "value": "费用"}]
+          }
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "ELEM": [{"料件": "Cu", "单价": 2}, {"料件": "Ni", "单价": 3}],
+      "WGJ":  [{"费用": 1}, {"费用": 0.5}]
+    },
+    "expected": 8
+  },
+
+  {
+    "name": "T7-06: KSUM 空集 → 0 静默(I-1)",
+    "_doc": "外购件WGJ为空; KSUM SUM空集→I-1→0; Cu:2+0=2, Ni:3+0=3; SUM=5; 无crossTabError",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "ELEM",
+        "agg": "SUM",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "单价"},
+          {"type": "operator", "value": "+"},
+          {
+            "type": "cross_tab_ref",
+            "projectToHostKey": true,
+            "source": "WGJ",
+            "agg": "SUM",
+            "match": [],
+            "targetExpr": [{"type": "field", "value": "费用"}]
+          }
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "ELEM": [{"料件": "Cu", "单价": 2}, {"料件": "Ni", "单价": 3}],
+      "WGJ":  []
+    },
+    "expected": 5
+  },
+
+  {
+    "name": "T7-07a: KSUM agg=SUM 有命中塌缩 → scalar=1.5",
+    "_doc": "驱动1行[{单价:5}], KSUM SUM全量[{费用:1},{费用:0.5}]→1.5; SUM=5+1.5=6.5",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "ELEM",
+        "agg": "SUM",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "单价"},
+          {"type": "operator", "value": "+"},
+          {
+            "type": "cross_tab_ref",
+            "projectToHostKey": true,
+            "source": "WGJ",
+            "agg": "SUM",
+            "match": [],
+            "targetExpr": [{"type": "field", "value": "费用"}]
+          }
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "ELEM": [{"单价": 5}],
+      "WGJ":  [{"费用": 1}, {"费用": 0.5}]
+    },
+    "expected": 6.5
+  },
+
+  {
+    "name": "T7-07b: KAVG agg=AVG 有命中塌缩 → scalar=0.75",
+    "_doc": "KAVG全量[{费用:1},{费用:0.5}]→avg=0.75; 驱动[{单价:5}]; SUM=5+0.75=5.75",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "ELEM",
+        "agg": "SUM",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "单价"},
+          {"type": "operator", "value": "+"},
+          {
+            "type": "cross_tab_ref",
+            "projectToHostKey": true,
+            "source": "WGJ",
+            "agg": "AVG",
+            "match": [],
+            "targetExpr": [{"type": "field", "value": "费用"}]
+          }
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "ELEM": [{"单价": 5}],
+      "WGJ":  [{"费用": 1}, {"费用": 0.5}]
+    },
+    "expected": 5.75
+  },
+
+  {
+    "name": "T7-07c: KMAX agg=MAX 有命中塌缩 → scalar=1",
+    "_doc": "KMAX全量[{费用:1},{费用:0.5}]→max=1; 驱动[{单价:5}]; SUM=5+1=6",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "ELEM",
+        "agg": "SUM",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "单价"},
+          {"type": "operator", "value": "+"},
+          {
+            "type": "cross_tab_ref",
+            "projectToHostKey": true,
+            "source": "WGJ",
+            "agg": "MAX",
+            "match": [],
+            "targetExpr": [{"type": "field", "value": "费用"}]
+          }
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "ELEM": [{"单价": 5}],
+      "WGJ":  [{"费用": 1}, {"费用": 0.5}]
+    },
+    "expected": 6
+  },
+
+  {
+    "name": "T7-07d: KMIN agg=MIN 有命中塌缩 → scalar=0.5",
+    "_doc": "KMIN全量[{费用:1},{费用:0.5}]→min=0.5; 驱动[{单价:5}]; SUM=5+0.5=5.5",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "ELEM",
+        "agg": "SUM",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "单价"},
+          {"type": "operator", "value": "+"},
+          {
+            "type": "cross_tab_ref",
+            "projectToHostKey": true,
+            "source": "WGJ",
+            "agg": "MIN",
+            "match": [],
+            "targetExpr": [{"type": "field", "value": "费用"}]
+          }
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "ELEM": [{"单价": 5}],
+      "WGJ":  [{"费用": 1}, {"费用": 0.5}]
+    },
+    "expected": 5.5
+  },
+
+  {
+    "name": "T7-07e: KCOUNT agg=COUNT 有命中塌缩 → scalar=2",
+    "_doc": "KCOUNT全量[{费用:1},{费用:0.5}]→count=2; 驱动[{单价:5}]; SUM=5+2=7",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "ELEM",
+        "agg": "SUM",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "单价"},
+          {"type": "operator", "value": "+"},
+          {
+            "type": "cross_tab_ref",
+            "projectToHostKey": true,
+            "source": "WGJ",
+            "agg": "COUNT",
+            "match": [],
+            "targetExpr": [{"type": "field", "value": "费用"}]
+          }
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "ELEM": [{"单价": 5}],
+      "WGJ":  [{"费用": 1}, {"费用": 0.5}]
+    },
+    "expected": 7
+  },
+
+  {
+    "name": "T7-08: I-2 KAVG 空集 → 整表达式塌0 + error(expectError)",
+    "_doc": "WGJ为空; KAVG空集→I-2→null→整外层塌0; expected=0, expectError=true(前后端均断言value=0)",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "ELEM",
+        "agg": "SUM",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "单价"},
+          {"type": "operator", "value": "+"},
+          {
+            "type": "cross_tab_ref",
+            "projectToHostKey": true,
+            "source": "WGJ",
+            "agg": "AVG",
+            "match": [],
+            "targetExpr": [{"type": "field", "value": "费用"}]
+          }
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "ELEM": [{"料件": "Cu", "单价": 2}],
+      "WGJ":  []
+    },
+    "expected": 0,
+    "expectError": true
+  },
+
+  {
+    "name": "T7-09: 外层AVG+KSUM内塌缩",
+    "_doc": "外层AVG, 驱动[{单价:4},{单价:6}], KSUM SUM全量[{费用:1},{费用:0.5}]→1.5; AVG((4+1.5)+(6+1.5))/2=(5.5+7.5)/2=6.5",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "ELEM",
+        "agg": "AVG",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "单价"},
+          {"type": "operator", "value": "+"},
+          {
+            "type": "cross_tab_ref",
+            "projectToHostKey": true,
+            "source": "WGJ",
+            "agg": "SUM",
+            "match": [],
+            "targetExpr": [{"type": "field", "value": "费用"}]
+          }
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "ELEM": [{"单价": 4}, {"单价": 6}],
+      "WGJ":  [{"费用": 1}, {"费用": 0.5}]
+    },
+    "expected": 6.5
+  },
+
+  {
+    "name": "T7-10: 双独立KSUM引不同页签互不串号",
+    "_doc": "驱动[{单价:2}], WGJ1[{费用:3}], WGJ2[{费用:4}]; KSUM(WGJ1)=3, KSUM(WGJ2)=4; targetExpr=[单价+KSUM1+KSUM2]=2+3+4=9",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "ELEM",
+        "agg": "SUM",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "单价"},
+          {"type": "operator", "value": "+"},
+          {
+            "type": "cross_tab_ref",
+            "projectToHostKey": true,
+            "source": "WGJ1",
+            "agg": "SUM",
+            "match": [],
+            "targetExpr": [{"type": "field", "value": "费用"}]
+          },
+          {"type": "operator", "value": "+"},
+          {
+            "type": "cross_tab_ref",
+            "projectToHostKey": true,
+            "source": "WGJ2",
+            "agg": "SUM",
+            "match": [],
+            "targetExpr": [{"type": "field", "value": "费用"}]
+          }
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "ELEM": [{"单价": 2}],
+      "WGJ1": [{"费用": 3}],
+      "WGJ2": [{"费用": 4}]
+    },
+    "expected": 9
+  },
+
+  {
+    "name": "T7-11: C1对称 — targetExpr引用component_subtotal透传",
+    "_doc": "驱动WGJ[{费用:3}], targetExpr=[费用+component_subtotal(COMP_A)], componentSubtotals={COMP_A:10}; SUM=3+10=13; 验证sub透传componentSubtotals",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "WGJ",
+        "agg": "SUM",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "费用"},
+          {"type": "operator", "value": "+"},
+          {"type": "component_subtotal", "component_code": "COMP_A", "tab_name": "COMP_A"}
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "WGJ": [{"费用": 3}]
+    },
+    "componentSubtotals": {"COMP_A": 10},
+    "expected": 13
+  },
+
+  {
+    "name": "T7-12: KSUM子token带非空match+驱动行键≠宿主键(T6修复对称性)",
+    "_doc": "驱动ELEM[{料件:Ag,单价:2},{料件:Ni,单价:3}], WGJ[{料件:Ag,费用:10},{料件:Ni,费用:20}]; KSUM match=[{a:料件,b:料件}]; 宿主行currentRow={料件:X}; 修复后用驱动行键: Ag→10, Ni→20; SUM=(2+10)+(3+20)=35",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "ELEM",
+        "agg": "SUM",
+        "match": [],
+        "targetExpr": [
+          {"type": "field", "value": "单价"},
+          {"type": "operator", "value": "+"},
+          {
+            "type": "cross_tab_ref",
+            "projectToHostKey": true,
+            "source": "WGJ",
+            "agg": "SUM",
+            "match": [{"a": "料件", "b": "料件"}],
+            "targetExpr": [{"type": "field", "value": "费用"}]
+          }
+        ]
+      }
+    ],
+    "crossTabRows": {
+      "ELEM": [{"料件": "Ag", "单价": 2}, {"料件": "Ni", "单价": 3}],
+      "WGJ":  [{"料件": "Ag", "费用": 10}, {"料件": "Ni", "费用": 20}]
+    },
+    "currentRow": {"料件": "X"},
+    "expected": 35
+  },
+
+  {
+    "name": "T7-14: 单source退化 — 无sources字段 SUM命中多行",
+    "_doc": "退化路径：无sources字段, 单token SUM; aRows两行P1命中→0.8+0.5=1.3; 与重构前行为一致",
+    "aRows": [
+      {"子件": "P1", "单重": 0.8},
+      {"子件": "P1", "单重": 0.5},
+      {"子件": "P2", "单重": 0.3}
+    ],
+    "currentRow": {"子件": "P1"},
+    "token": {
+      "type": "cross_tab_ref",
+      "source": "A",
+      "target": "单重",
+      "match": [{"a": "子件", "b": "子件"}],
+      "agg": "SUM"
+    },
+    "expected": 1.3
+  },
+
+  {
+    "name": "T7-15: NONE多命中ERR旁路 — agg=NONE命中>1 → 0(expectError)",
+    "_doc": "两行都匹配P1 → NONE多命中 → ERR旁路 → value=0; expectError=true(重构零变化)",
+    "aRows": [
+      {"子件": "P1", "单重": 0.8},
+      {"子件": "P1", "单重": 0.5}
+    ],
+    "currentRow": {"子件": "P1"},
+    "token": {
+      "type": "cross_tab_ref",
+      "source": "A",
+      "target": "单重",
+      "match": [{"a": "子件", "b": "子件"}],
+      "agg": "NONE"
+    },
+    "expected": 0,
+    "expectError": true
   }
 ]

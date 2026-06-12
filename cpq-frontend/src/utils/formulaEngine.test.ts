@@ -453,31 +453,63 @@ describe('cross_tab_ref', () => {
  * any future drift between the two engines surfaces here immediately.
  * Source of truth: cpq-frontend/src/utils/__fixtures__/cross-tab-cases.json
  * (identical copy at cpq-backend/src/test/resources/cross-tab-cases.json).
+ *
+ * Fixture fields:
+ *   name         - test name (required)
+ *   token        - single ExpressionToken (legacy; used when tokens absent)
+ *   tokens       - ExpressionToken[] array (optional; overrides [token])
+ *   aRows        - rows for source "A" (legacy; used when crossTabRows absent)
+ *   crossTabRows - Record<source, rows[]> (optional; overrides {A: aRows})
+ *   currentRow   - current row values (optional)
+ *   expected     - expected numeric result (required)
+ *   expectError  - if true: assert result===0 only (no crossTabError check at fixture level)
  */
 describe('cross-tab fixture', () => {
   for (const c of crossTabCases) {
     const caseName = (c as any).name as string;
-    const token = (c as any).token as ExpressionToken;
-    const currentRow = (c as any).currentRow as Record<string, any>;
-    const aRows = (c as any).aRows as Array<Record<string, any>>;
+    const tokenRaw = (c as any).token as ExpressionToken | undefined;
+    const tokensRaw = (c as any).tokens as ExpressionToken[] | undefined;
+    const currentRow = (c as any).currentRow as Record<string, any> | undefined;
+    const aRows = (c as any).aRows as Array<Record<string, any>> | undefined;
+    const crossTabRowsRaw = (c as any).crossTabRows as Record<string, Array<Record<string, any>>> | undefined;
+    const quotationFieldsRaw = (c as any).quotationFields as Record<string, number> | undefined;
+    const componentSubtotalsRaw = (c as any).componentSubtotals as Record<string, number> | undefined;
     const expected = (c as any).expected as number;
+    const expectError = (c as any).expectError as boolean | undefined;
+
+    // Resolve tokens array: explicit tokens[] overrides [token]
+    const resolvedTokens: ExpressionToken[] = tokensRaw
+      ? tokensRaw
+      : tokenRaw
+        ? [tokenRaw]
+        : [];
+
+    // Resolve crossTabRows: explicit map overrides {A: aRows}
+    const resolvedCrossTabRows: Record<string, Array<Record<string, any>>> = crossTabRowsRaw
+      ? crossTabRowsRaw
+      : { A: aRows ?? [] };
 
     it(caseName, () => {
       const result = evaluateExpression(
-        [token],
-        {},        // fieldValues
-        undefined, // componentSubtotals
-        undefined, // productAttributes
-        undefined, // quotationFields
+        resolvedTokens,
+        {},                         // fieldValues
+        componentSubtotalsRaw,      // componentSubtotals (optional)
+        undefined,                  // productAttributes
+        quotationFieldsRaw,         // quotationFields (optional)
         undefined, // pathCache
         undefined, // partNo
         undefined, // basicDataValues
         undefined, // previousRowSubtotal
         undefined, // globalVariableDefs
         currentRow,
-        { A: aRows },
+        resolvedCrossTabRows,
       );
-      expect(result).toBeCloseTo(expected, 4);
+      if (expectError) {
+        // Error-path cases: result collapses to 0 (crossTabError check is engine-level, not fixture-level)
+        expect(result).toBeCloseTo(0, 4);
+      } else {
+        expect(result).toBeCloseTo(expected, 4);
+      }
     });
   }
 });
