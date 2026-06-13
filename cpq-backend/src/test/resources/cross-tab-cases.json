@@ -944,5 +944,21 @@
     },
     "expected": 0,
     "expectError": true
+  },
+  {
+    "name": "SUM over 料件 match on 字段名键行 (INPUT+default_source 解析后形态)",
+    "token": {
+      "type": "cross_tab_ref", "source": "元素", "target": "单价",
+      "match": [{ "a": "料件", "b": "料件" }], "agg": "SUM"
+    },
+    "crossTabRows": {
+      "元素": [
+        { "料件": "料8", "单价": 60 },
+        { "料件": "料8", "单价": 34.5 },
+        { "料件": "料9", "单价": 99 }
+      ]
+    },
+    "currentRow": { "料件": "料8" },
+    "expected": 94.5
   }
 ]
