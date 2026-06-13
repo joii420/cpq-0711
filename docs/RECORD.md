@@ -4,6 +4,25 @@
 
 ---
 
+### [2026-06-13] fix(rowkey): computeRowKey/computeDedupKey 字段感知修复 — 外购件 _前缀视图列 rowKey 塌缩导致 cross_tab SUM 算错 | FormulaCalculator.java / CardSnapshotService.java / RowKeyUniquenessService.java + 测试 | 全 TDD（T17/T18 RED→GREEN）
+
+- **根因**: `computeRowKey(rkf, driverRow)` 按字段名直读 `driverRow["料件"]`，但外购件 driverRow 键是视图列别名 `_料件`（来自 default_source path `$wgj_view._料件`）→ 取不到值 → 2 个 key 字段拼出 `"||"` → 4 行全塌缩为同一 key → editByKey 只保留最后一行 → cross_tab SUM 退化为末值×4（`SUM([外购件.费用])` 本应 0.259 但得 0.008）。`computeDedupKey` 同病。
+- **修法（三层优先级）**: 新增 4-arg 实例重载 `computeRowKey(rkf, fields, driverRow, basicDataValues)` 和 5-arg 实例重载 `computeDedupKey(rkf, fields, driverRow, basicDataValues, rowValues)`：① 先直读 `driverRow[fieldName]`（兼容 material_no 等字段名==列名场景）② 直读失败 → 通过 `resolveRowByFieldName(fields, driverRow, basicDataValues)` 按 defaultSource 解析 ③ dedupKey 再回退 rowValues（手填值）。全部 key 段为空 → null（调用方行号兜底，不返回 `"||"` 假键）。
+- **改动范围（4 文件）**：
+  - `FormulaCalculator.java`: 新增 4-arg computeRowKey + 5-arg computeDedupKey（实例方法）；computeRows(:532) 调用点升 4-arg（透传 fields+basicDataValues）；旧 2-arg/3-arg static 重载保留兼容
+  - `CardSnapshotService.java`: 3 处 computeRowKey 调用点全升 4-arg（buildResolvedRows/:872、filterEditRowsToNewBaseRows/:919、mergeRowDataInputsIntoEdits/:1400）
+  - `RowKeyUniquenessService.java`: 注入 FormulaCalculator 实例；TabKeyCfg 加 fields 字段；2 处调用点升 5-arg
+- **测试（52 全绿）**：
+  - T17/T18（FormulaCalculatorTest）: 外购件 _前缀驱动列期望 `料9||加工费` + 全空期望 null → RED→GREEN
+  - FormulaCalculatorComputeDedupKeyTest: 新增 fieldAware_resolvesThroughDefaultSource + fieldAware_allEmptyReturnsNull（9/9）
+  - FormulaCalculatorCrossTabTest T8+T8b: 外购件 4 行 rowKey 互不相同 + 来料宿主 cross_tab SUM 料9=0.25/料10=0.009（14/14）
+  - RefreshCardSnapshotTest: 新增 computeRowKeyFieldAware 辅助（从模板 snapshot 取 fieldsDef，用 4-arg），T1/T3 targetRowKey 构造对齐（3/3）
+  - SnapshotReconcileTest: baseKeys 改 4-arg 对齐实际口径；usesCrossContextToken 加 cross_tab_ref 排除（独立重算 crossTabRows={} 必然 0，与 component_subtotal 同理跳过）（4/4）
+- **排除的预存失败**: `CardStructureSnapshotTest.quoteCardStructure_preservesFieldContract`（`其他费用` 组件缺 rowKeyFields，master 上就失败，与本次改动无关，数据库配置问题）
+- **提交**: 4 commits（d42e370 T1+T2 / f0fbf1a T3 / e4722c7 T4 / a86b43b T8）均在分支 `worktree-fix-rowkey-field-driver-col`
+
+---
+
 ### [2026-06-12] 组件管理编辑体验三项优化 (14 task, subagent-driven) | componentDraft/useComponentDraft/ViewColumnPickerBody/sqlViewPath(新) + ComponentManagement/FieldConfigTable/DefaultSourceEditor/PathPickerDrawer/CostingTemplateConfig | spec: specs/2026-06-12-component-editor-ux-design.md + plan: plans/2026-06-12-component-editor-ux.md
 - **请求1 自动保存**: localStorage 本地草稿(不触发后端 snapshot 传播),编辑防抖 800ms 写入,切组件/刷新自动恢复 + 脏 banner + 左侧橙点徽标;全局「保存全部草稿(N)」确认 Modal 可勾选,逐个落库前复检 updatedAt 陈旧(被他人改过则跳过,runBatch 串行 concurrent:false 避免批量 snapshot 传播打爆)。草稿 snapshot 剥离临时 key、恢复时重建。
 - **请求2 行键资格实时刷新**: 撞名约束(ComponentDriverService:1065 仅对无 basic_data_path 的 INPUT 字段)**保留**(运行时 computeDedupKey driver 列优先,手填值会被同名列静默顶替,是正确护栏)。修前端 `refreshRowKeyCandidates` 的 catch:原 `setRowKeyCandidates({})` 把一次瞬时刷新失败放大成"全字段行键复选框禁用、重进才好";改为保留上次候选 + console.warn(替代静默 catch,AP-43 族)。**根因仅静态分析定位(dev server 服务主工作区、headless 无法浏览器复现),待真机确认;若仍复现需 F12 抓 /row-key-candidates 请求/响应。**
