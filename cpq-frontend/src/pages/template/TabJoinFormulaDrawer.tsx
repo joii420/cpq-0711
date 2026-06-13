@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Drawer, Button, Space, message, Table, Typography } from 'antd';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Drawer, Button, Space, message, Table, Typography, Tooltip } from 'antd';
 import { tabJoinFormulaService, type TabDef } from '../../services/tabJoinFormulaService';
 import TabFieldMatrix from './tabjoin/TabFieldMatrix';
 import FormulaRichInput, { type FormulaRichInputHandle } from './tabjoin/FormulaRichInput';
@@ -9,6 +9,7 @@ import {
   checkMappable,
 } from '../component/formulaSerialize';
 import type { FormulaToken } from '../component/types';
+import { checkParenBalance } from './tabjoin/formulaBracketCheck';
 
 const { Text } = Typography;
 
@@ -57,6 +58,8 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
   const [tabDefs, setTabDefs] = useState<TabDef[]>([]);
   const exprRef = useRef<FormulaRichInputHandle | null>(null);
   const enforceMappable = componentType !== 'EXCEL';
+
+  const parenCheck = useMemo(() => checkParenBalance(expression), [expression]);
 
   // 试算相关状态
   const [sampleLi, setSampleLi] = useState<string | undefined>(undefined);
@@ -112,6 +115,12 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
     const expr = expression.trim();
     if (!expr) {
       message.error('表达式不能为空');
+      return;
+    }
+
+    const pc = checkParenBalance(expr);
+    if (!pc.ok) {
+      message.error(pc.error);
       return;
     }
 
@@ -207,9 +216,11 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
       extra={
         <Space>
           <Button onClick={onClose}>取消</Button>
-          <Button type="primary" onClick={save}>
-            保存
-          </Button>
+          <Tooltip title={parenCheck.ok ? '' : parenCheck.error}>
+            <Button type="primary" onClick={save} disabled={!parenCheck.ok}>
+              保存
+            </Button>
+          </Tooltip>
         </Space>
       }
     >
@@ -288,6 +299,11 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
         enforceMappable={enforceMappable}
         placeholder="例:[投料.金额] * [加工.工时] + [回料(总计)]"
       />
+      {!parenCheck.ok && (
+        <Text style={{ color: '#cf1322', fontSize: 12, display: 'block', marginTop: 4 }}>
+          {parenCheck.error}
+        </Text>
+      )}
 
       {/* 运算符 + 函数工具条 */}
       <Space style={{ marginTop: 10 }} wrap>
