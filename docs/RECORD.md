@@ -4,6 +4,16 @@
 
 ---
 
+### [2026-06-13] fix(card): CardEffectiveRows 回退路径 rowKey 对齐 FormulaCalculator 字段感知语义 | CardEffectiveRows.java + CardEffectiveRowsTest.java | parse 新增 fieldsOf 4参数重载；computeRowKey 对齐 || 分隔 + defaultSource 解析
+
+- **问题**: `CardEffectiveRows` 私有 `computeRowKey` 直接读 `driverRow[字段名]`，对 `_`前缀视图列别名取不到值；且用 `|` 分隔（产出 `料9|加工费|`），而 FormulaCalculator 用 `||`（产出 `料9||加工费`）→ 格式不一致 → `formulaByKey.get(rowKey)` 永远查不中 → 旧快照回退路径 formula/edit 值全部丢失。
+- **修法**: `parse` 增加 4-参数重载（含 `fieldsOf: Function<String,JsonNode>`），旧 3-参数重载透传 null（向后兼容，现有 ExcelViewService 调用方无需修改）。私有 `computeRowKey` 改为 5-参数字段感知版：① 直读 `driverRow[fieldName]`；② 按 `defaultSource`（BNF_PATH→`{path}`；GLOBAL_VARIABLE→`@gvar:code`）或 `basicDataPath` 从 `basicDataValues` 解析；③ 全空退行号。分隔符统一 `||`。
+- **新增辅助**: `resolveFromFieldDef`、`bnfDriverLookupKey`、`pickNonEmpty`（静态，不引入外部依赖）
+- **测试（37 全绿）**: CardEffectiveRowsTest 新增 3 case（BNF_PATH _前缀→命中；全空→行号；GLOBAL_VARIABLE→命中）RED→GREEN；RefreshCardSnapshotTest×3 + SnapshotReconcileTest×4 + FormulaCalculatorTest×19 + ResolveRowByFieldNameTest×1 + CardEffectiveRowsResolvedTest×2 无回归
+- **提交**: 3dc2c8c（分支 worktree-fix-rowkey-field-driver-col）
+
+---
+
 ### [2026-06-13] fix(rowkey): computeRowKey/computeDedupKey 字段感知修复 — 外购件 _前缀视图列 rowKey 塌缩导致 cross_tab SUM 算错 | FormulaCalculator.java / CardSnapshotService.java / RowKeyUniquenessService.java + 测试 | 全 TDD（T17/T18 RED→GREEN）
 
 - **根因**: `computeRowKey(rkf, driverRow)` 按字段名直读 `driverRow["料件"]`，但外购件 driverRow 键是视图列别名 `_料件`（来自 default_source path `$wgj_view._料件`）→ 取不到值 → 2 个 key 字段拼出 `"||"` → 4 行全塌缩为同一 key → editByKey 只保留最后一行 → cross_tab SUM 退化为末值×4（`SUM([外购件.费用])` 本应 0.259 但得 0.008）。`computeDedupKey` 同病。
