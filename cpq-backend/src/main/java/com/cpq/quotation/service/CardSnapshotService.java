@@ -802,10 +802,8 @@ public class CardSnapshotService {
                 crossTabRows);
             List<Map<String, Object>> resolved = buildResolvedRows(
                 tab, baseRows, editRows, formulaResults, rkfByComp.get(cid));
-            // SUBTOTAL tab 同样回填（可能含 cross_tab_ref 列，PASS1 时也是 0）
-            String code = tab.path("componentCode").asText(null);
-            backfillSubtotalsFromResolved(tab.path("fields"), resolved, cid, code,
-                tab.path("tabName").asText(""), componentSubtotals);
+            // SUBTOTAL tab 不回填列小计：其 is_subtotal 列由组件级聚合公式(component_subtotal token)决定，
+            // 不能从 resolvedRows 重算覆盖（评审 #1）。列小计回填仅针对 NORMAL 组件的 cross_tab 列。
             // SUBTOTAL 行不并入 crossTabRows（不可被 cross_tab_ref 引用）
             tabNodeById.put(cid, buildTabNode(tab, cid, baseRows, editRows, formulaResults,
                 resolved, componentSubtotals));

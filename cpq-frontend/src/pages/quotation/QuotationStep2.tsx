@@ -886,6 +886,9 @@ function subtotalsFromResolvedRows(
     keys.push(comp.componentId);
   }
 
+  // 4dp 舍入，与后端 backfillSubtotalsFromResolved 的 setScale(4, HALF_UP) 对齐，
+  // 清除浮点累加尾差，避免前端显示与后端持久化 subtotalByColumn 数值分叉（评审 #2）。
+  const round4 = (x: number) => Math.round(x * 1e4) / 1e4;
   let totalForComp = 0;
   for (const sf of subtotalFields) {
     const colName: string = sf.name || sf.key || '';
@@ -895,11 +898,13 @@ function subtotalsFromResolvedRows(
       const v = row[colName];
       if (typeof v === 'number' && isFinite(v)) colSum += v;
     }
+    const colVal = round4(colSum);
     for (const k of keys) {
-      allComponentSubtotals[`${k}#${colName}`] = colSum;
+      allComponentSubtotals[`${k}#${colName}`] = colVal;
     }
-    totalForComp += colSum;
+    totalForComp += colVal;
   }
+  totalForComp = round4(totalForComp);
   // 总小计键（与 PASS1 的 componentSubtotals[comp.tabName] 对齐）
   for (const k of keys) {
     allComponentSubtotals[k] = totalForComp;
