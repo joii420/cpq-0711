@@ -48,20 +48,90 @@ export interface CardSnapshotReader {
   getCell: (componentId: string, rowIndex: number, fieldName: string) => any;
 }
 
-/** rowKey = 按 rowKeyFields 从 driverRow 取值用 `||` 拼接；空/null/哨兵 → 行号（与后端 FormulaCalculator.computeRowKey 一致）。 */
+/**
+ * 单个 rowKey 段解析（字段感知）。
+ *
+ * 优先级：
+ * 1. driverRow[fieldName] 直读（字段名即为视图列名的旧场景，如 material_no）
+ * 2. defaultSource.GLOBAL_VARIABLE → basicDataValues["@gvar:CODE"]
+ * 3. defaultSource.BNF_PATH / BASIC_DATA → basicDataValues[bnfDriverLookupKey(path)]
+ * 4. 降级：driverRow[path 末段]（path = "$view.col" 时取 "col"，兼容部分旧场景）
+ * 全空 → undefined（调用方按行号兜底）。
+ *
+ * 对齐后端 FormulaCalculator 4-arg computeRowKey 的 resolveRowByFieldName 分支。
+ */
+function resolveRowKeyPart(
+  fieldName: string,
+  defaultSource: { type?: string; code?: string; path?: string } | undefined | null,
+  driverRow: Record<string, any> | undefined,
+  basicDataValues: Record<string, any> | undefined,
+): string | undefined {
+  // 1. 直读 driverRow（兼容字段名 == 视图列名的旧场景）
+  if (driverRow) {
+    const direct = driverRow[fieldName];
+    if (direct != null && String(direct).length > 0) return String(direct);
+  }
+
+  // 2/3. defaultSource 解析
+  if (defaultSource && basicDataValues) {
+    const dsType = defaultSource.type;
+    if (dsType === 'GLOBAL_VARIABLE' && defaultSource.code) {
+      const gvKey = `@gvar:${defaultSource.code}`;
+      const v = basicDataValues[gvKey];
+      if (v != null && String(v).length > 0) return String(v);
+    } else if ((dsType === 'BNF_PATH' || dsType === 'BASIC_DATA') && defaultSource.path) {
+      const lookupKey = bnfDriverLookupKey(defaultSource.path);
+      const v = basicDataValues[lookupKey];
+      if (v != null && String(v).length > 0) return String(v);
+    }
+  }
+
+  // 4. 降级：driverRow[path 末段]（如 "$wgj_view._料件" → "_料件"）
+  if (defaultSource?.path && driverRow) {
+    const lastSeg = defaultSource.path.split('.').pop() ?? '';
+    if (lastSeg) {
+      const v = driverRow[lastSeg];
+      if (v != null && String(v).length > 0) return String(v);
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * rowKey（字段感知版）：修复 driverRow 键为视图列别名（如 `_料件`）而 rowKeyFields 存字段名
+ * （如 `料件`）时直接读 driverRow 取不到值的 bug。
+ *
+ * 新签名：(fields, rowKeyFields, driverRow, rowIndex, basicDataValues?)
+ * 对齐后端 FormulaCalculator.computeRowKey(rowKeyFields, fields, driverRow, basicDataValues)。
+ *
+ * 分隔符 `||`，全空 → 行号字符串（与后端 null → 调用方按 idx 兜底 对齐）。
+ */
 export function computeRowKey(
+  fields: Array<{ name: string; fieldType?: string; defaultSource?: { type?: string; code?: string; path?: string } | null }> | undefined | null,
   rowKeyFields: string[] | undefined | null,
   driverRow: Record<string, any> | undefined,
   rowIndex: number,
+  basicDataValues?: Record<string, any>,
 ): string {
   if (!rowKeyFields || rowKeyFields.length === 0) return String(rowIndex);
   if (rowKeyFields.length === 1 && rowKeyFields[0] === '__seq_no__') return String(rowIndex);
-  const parts = rowKeyFields.map((f) => {
-    const v = driverRow ? driverRow[f] : undefined;
-    return v != null ? String(v) : '';
+
+  // 懒建字段 map（大多数调用只有少量 rowKeyFields，按需查找即可）
+  const fieldMap = new Map<string, { defaultSource?: { type?: string; code?: string; path?: string } | null }>();
+  for (const f of (fields ?? [])) fieldMap.set(f.name, f);
+
+  let any = false;
+  const parts = rowKeyFields.map((fieldName) => {
+    const fd = fieldMap.get(fieldName);
+    const part = resolveRowKeyPart(fieldName, fd?.defaultSource, driverRow, basicDataValues);
+    if (part !== undefined) { any = true; return part; }
+    return '';
   });
-  const joined = parts.join('||');
-  return joined.length > 0 ? joined : String(rowIndex);
+
+  // 全空 → 行号（与后端 null → 调用方 effKey=idx 对齐）
+  if (!any) return String(rowIndex);
+  return parts.join('||');
 }
 
 function safeParse<T>(json: string | null | undefined): T | null {
@@ -132,8 +202,8 @@ export function useCardSnapshots(
     const rowKeyOf = (componentId: string, rowIndex: number): string => {
       const st = structByComp.get(componentId);
       const vt = valByComp.get(componentId);
-      const driverRow = vt?.baseRows?.[rowIndex]?.driverRow;
-      return computeRowKey(st?.rowKeyFields, driverRow, rowIndex);
+      const baseRow = vt?.baseRows?.[rowIndex];
+      return computeRowKey(st?.fields, st?.rowKeyFields, baseRow?.driverRow, rowIndex, baseRow?.basicDataValues);
     };
 
     const rowCount = (componentId: string): number =>
@@ -145,7 +215,7 @@ export function useCardSnapshots(
       if (!st || !vt) return undefined;
       const field = st.fields?.find((f) => f.name === fieldName);
       const baseRow = vt.baseRows?.[rowIndex];
-      const rk = computeRowKey(st.rowKeyFields, baseRow?.driverRow, rowIndex);
+      const rk = computeRowKey(st.fields, st.rowKeyFields, baseRow?.driverRow, rowIndex, baseRow?.basicDataValues);
 
       // 1. 编辑覆盖
       const editVals = findKeyedValues(vt.editRows, rk);

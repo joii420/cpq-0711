@@ -1975,7 +1975,13 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       } : rawRow;
                       // Phase4 Task3: rowKey 对齐后端(FormulaCalculator.computeRowKey) — 用于 formulaResults 查表 + 编辑回写。
                       const driverRowForKey = (ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined) ?? activeSnap?.driverRows[i] ?? rawRow;
-                      const rowKey = useSnapEdit ? computeRowKey(activeRowKeyFields, driverRowForKey, i) : String(i);
+                      const rowKey = useSnapEdit ? computeRowKey(
+                        activeComponent.fields,
+                        activeRowKeyFields,
+                        driverRowForKey,
+                        i,
+                        ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined,
+                      ) : String(i);
                       // AP-54: realRowIndex = 对象引用映射回 comp.rows 真实下标，用于写路径(handleRowChange/handleDeleteRow 等)
                       const realRowIndex = ra.isManual
                         ? activeComponent.rows.indexOf(ra.row)

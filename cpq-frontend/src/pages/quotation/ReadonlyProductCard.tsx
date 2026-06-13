@@ -479,7 +479,13 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         const rowBdv = ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
                         // Phase4 Task4: 优先读快照 formulaResults[rowKey](真零计算, 与编辑页 AP-50 同源), 缺时 computeAllFormulas 兜底。
                         const driverRowForKey = (ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined) ?? activeSnap?.driverRows[ri] ?? rawRow;
-                        const rowKey = useSnap ? computeRowKey(activeRowKeyFields, driverRowForKey, ri) : String(ri);
+                        const rowKey = useSnap ? computeRowKey(
+                          activeComp.fields,
+                          activeRowKeyFields,
+                          driverRowForKey,
+                          ri,
+                          rowBdv,
+                        ) : String(ri);
                         const snapFormula = useSnap ? activeSnap?.formula.get(rowKey) : undefined;
                         const errForRow: Record<string, string> = {};
                         const cache = (snapFormula && Object.keys(snapFormula).length > 0)
