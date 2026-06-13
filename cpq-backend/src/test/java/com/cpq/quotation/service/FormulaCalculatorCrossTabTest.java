@@ -154,6 +154,36 @@ class FormulaCalculatorCrossTabTest {
         assertEquals(0, new java.math.BigDecimal("10.0000").compareTo(calc.evaluateExpression(tok, c)));
     }
 
+    /**
+     * 回归（spec 2026-06-13）：宿主字段 料件(INPUT_TEXT) 经 default_source.BASIC_DATA 绑定到驱动列
+     * $ll_view._料件 —— driverRow 只有 _料件，没有 料件。calculate 必须把 default_source 解析进
+     * currentRowRaw[料件]，cross_tab_ref match[料件=料件] 才能命中源行 → SUM 目标列。
+     * 修复前：currentRowRaw 缺 料件 → 命中 0 行 → 结果 0（红）。
+     */
+    @Test void calculate_hostInputDefaultSource_resolvesMatchKey() {
+        JsonNode fields = json("["
+            + "{\"name\":\"料件\",\"fieldType\":\"INPUT_TEXT\","
+            + "  \"default_source\":{\"type\":\"BASIC_DATA\",\"path\":\"$ll_view._料件\"}},"
+            + "{\"name\":\"材料费\",\"fieldType\":\"FORMULA\"}"
+            + "]");
+        JsonNode formulas = json("[{\"name\":\"材料费\",\"expression\":["
+            + "{\"type\":\"cross_tab_ref\",\"source\":\"元素\",\"target\":\"单价\","
+            + "\"match\":[{\"a\":\"料件\",\"b\":\"料件\"}],\"agg\":\"SUM\"}]}]");
+        JsonNode rkf = json("[\"料件\"]");
+        JsonNode baseRows = json("[{\"driverRow\":{\"_料件\":\"料8\"},"
+            + "\"basicDataValues\":{\"{$ll_view._料件}\":\"料8\"}}]");
+        Map<String, List<Map<String, Object>>> crossTabRows = Map.of("元素", List.of(
+            Map.of("料件", "料8", "单价", new java.math.BigDecimal("60")),
+            Map.of("料件", "料8", "单价", new java.math.BigDecimal("34.5")),
+            Map.of("料件", "料9", "单价", new java.math.BigDecimal("99"))));
+
+        JsonNode fr = calc.calculate(fields, formulas, null, rkf, baseRows, json("[]"),
+            new HashMap<>(), new HashMap<>(), new HashMap<>(), crossTabRows);
+
+        assertEquals(1, fr.size());
+        assertEquals(94.5, fr.get(0).path("values").path("材料费").asDouble(), 1e-4);
+    }
+
     @Test void targetExpr_takesPriorityOverTarget() throws Exception {
         var aRows = List.<Map<String, Object>>of(Map.of("子件", "P1", "单价", "2", "数量", "3"));
         FormulaCalculator.RowContext c = new FormulaCalculator.RowContext();

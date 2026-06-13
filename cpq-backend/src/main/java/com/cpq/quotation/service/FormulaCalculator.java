@@ -551,6 +551,7 @@ public class FormulaCalculator {
             // cross_tab_ref（Task 1.3）：兄弟组件已算行 + 本行原始合并值（含文本，供匹配键 b 取值）
             ctx.crossTabRows = crossTabRows != null ? crossTabRows : Map.of();
             ctx.currentRowRaw = toRawRowMap(mergedRow);
+            fillInputDefaultSourceByFieldName(fields, basicDataValues, ctx.currentRowRaw);
 
             // 按拓扑序求值，结果回填 fieldValues 供下游公式引用
             Map<String, Double> results = new LinkedHashMap<>();
@@ -1150,6 +1151,35 @@ public class FormulaCalculator {
             if (v != null) map.put(e.getKey(), v);
         }
         return map;
+    }
+
+    /**
+     * 方案 B（spec 2026-06-13）：宿主行 currentRowRaw 增量补 INPUT 型 default_source
+     * (GLOBAL_VARIABLE/BNF_PATH/BASIC_DATA) 按字段名解析的值，供 cross_tab_ref 的 match 键 b 命中。
+     * 仅当 currentRowRaw 尚无该字段名（空）时写入——driver/手填值优先，不覆盖。文本保留（unwrapNode）。
+     * 源行路径由 resolveRowByFieldName 覆盖，故此处只补宿主行，不动源行。
+     */
+    private void fillInputDefaultSourceByFieldName(JsonNode fields, JsonNode basicDataValues,
+                                                   Map<String, Object> currentRowRaw) {
+        if (fields == null || !fields.isArray() || basicDataValues == null) return;
+        for (JsonNode f : fields) {
+            String type = fieldType(f);
+            if (!("INPUT_NUMBER".equals(type) || "INPUT_TEXT".equals(type) || "INPUT".equals(type))) continue;
+            String name = fieldName(f);
+            if (name.isEmpty()) continue;
+            if (nonEmpty(currentRowRaw.get(name))) continue;   // driver/手填优先
+            JsonNode ds = defaultSource(f);
+            if (ds == null) continue;
+            String dsType = ds.path("type").asText("");
+            Object v = null;
+            if ("GLOBAL_VARIABLE".equals(dsType)) {
+                v = lookupBdv(basicDataValues, "@gvar:" + ds.path("code").asText(""));
+            } else if ("BNF_PATH".equals(dsType) || "BASIC_DATA".equals(dsType)) {
+                String p = ds.path("path").asText("");
+                if (!p.isEmpty()) v = lookupBdv(basicDataValues, bnfDriverLookupKey(p));
+            }
+            if (nonEmpty(v)) currentRowRaw.put(name, unwrapNode(v));
+        }
     }
 
     private Map<String, Object> toBasicDataMap(JsonNode basicDataValues) {
