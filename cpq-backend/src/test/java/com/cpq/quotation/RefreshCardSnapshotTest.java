@@ -63,6 +63,36 @@ public class RefreshCardSnapshotTest {
         }
     }
 
+    /**
+     * 用 4-arg 重载（字段感知）计算 rowKey，与 CardSnapshotService 内部口径一致。
+     * 需要从 quote_card_structure（组件字段定义）里取 fieldsDef。
+     */
+    private String computeRowKeyFieldAware(UUID lineItemId, String componentId,
+                                           JsonNode driverRow, JsonNode basicDataValues) {
+        try {
+            @SuppressWarnings("unchecked")
+            var structRows = em.createNativeQuery(
+                "SELECT t1.components_snapshot FROM quotation_line_item li " +
+                "JOIN quotation q ON q.id = li.quotation_id " +
+                "JOIN template t1 ON t1.id = q.customer_template_id WHERE li.id = :id")
+                .setParameter("id", lineItemId).getResultList();
+            if (structRows.isEmpty() || structRows.get(0) == null) return null;
+            JsonNode snapshot = MAPPER.readTree(structRows.get(0).toString());
+            JsonNode fieldsDef = null;
+            for (JsonNode tab : snapshot) {
+                if (componentId.equals(tab.path("componentId").asText(""))) {
+                    fieldsDef = tab.path("fields");
+                    break;
+                }
+            }
+            JsonNode rkf = rowKeyFieldsOf(componentId);
+            String rk = formulaCalculator.computeRowKey(rkf, fieldsDef, driverRow, basicDataValues);
+            return (rk != null && !rk.isEmpty()) ? rk : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private String readQuoteCardValues(UUID id) {
         @SuppressWarnings("unchecked")
         var rows = em.createNativeQuery("SELECT quote_card_values FROM quotation_line_item WHERE id = :id")
@@ -100,15 +130,16 @@ public class RefreshCardSnapshotTest {
         assertNotNull(beforeQcv, "refresh 后 quote_card_values 应非空");
         JsonNode before = MAPPER.readTree(beforeQcv);
 
-        // 找一个 baseRows 非空的 driver tab，取 baseRows[0] 的 rowKey
+        // 找一个 baseRows 非空的 driver tab，取 baseRows[0] 的 rowKey（用 4-arg 字段感知重载，与 refresh 内部口径一致）
         String targetComp = null;
         String targetRowKey = null;
         for (JsonNode tab : before.path("tabs")) {
             JsonNode baseRows = tab.path("baseRows");
             if (baseRows.isArray() && baseRows.size() > 0) {
                 String cid = tab.path("componentId").asText("");
-                JsonNode rkf = rowKeyFieldsOf(cid);
-                String rk = formulaCalculator.computeRowKey(rkf, baseRows.get(0).path("driverRow"));
+                JsonNode br0 = baseRows.get(0);
+                String rk = computeRowKeyFieldAware(lineId, cid,
+                        br0.path("driverRow"), br0.path("basicDataValues"));
                 targetComp = cid;
                 targetRowKey = (rk != null && !rk.isEmpty()) ? rk : "0";
                 break;
@@ -254,8 +285,9 @@ public class RefreshCardSnapshotTest {
             JsonNode baseRows = tab.path("baseRows");
             if (baseRows.isArray() && baseRows.size() > 0) {
                 comp = tab.path("componentId").asText("");
-                JsonNode rkf = rowKeyFieldsOf(comp);
-                String k = formulaCalculator.computeRowKey(rkf, baseRows.get(0).path("driverRow"));
+                JsonNode br0 = baseRows.get(0);
+                String k = computeRowKeyFieldAware(lineId, comp,
+                        br0.path("driverRow"), br0.path("basicDataValues"));
                 rk = (k != null && !k.isEmpty()) ? k : "0";
                 break;
             }

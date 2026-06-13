@@ -364,11 +364,15 @@ public class SnapshotReconcileTest {
             }
 
             // rowKey 必须与 baseRows 按 rowKeyFields 算出的键集合一致（AP-54 对齐）
+            // 注意：用 4-arg 重载（传 fields+basicDataValues）对齐 CardSnapshotService.calculate()
+            // 的实际 rowKey 计算口径（修复 _前缀视图列与字段名不一致导致的 rowKey 塌缩 bug）
             JsonNode rowKeyFields = loadRowKeyFieldsNode(compId);
+            JsonNode fieldsDef = structTab.path("fields");
             Set<String> baseKeys = new HashSet<>();
             int idx = 0;
             for (JsonNode br : baseRows) {
-                String rk = formulaCalculator.computeRowKey(rowKeyFields, br.path("driverRow"));
+                String rk = formulaCalculator.computeRowKey(rowKeyFields, fieldsDef,
+                        br.path("driverRow"), br.path("basicDataValues"));
                 baseKeys.add(rk != null && !rk.isEmpty() ? rk : String.valueOf(idx));
                 idx++;
             }
@@ -417,7 +421,10 @@ public class SnapshotReconcileTest {
         for (JsonNode fm : formulas) {
             for (JsonNode t : fm.path("expression")) {
                 String type = t.path("type").asText("");
-                if ("component_subtotal".equals(type) || "previous_row_subtotal".equals(type)) return true;
+                // cross_tab_ref 依赖跨 tab 行数据（crossTabRows 参数），精确重算需要提供完整跨组件数据；
+                // 独立重算（crossTabRows={}）必然得 0，无法有效比对。与 component_subtotal 同理跳过。
+                if ("component_subtotal".equals(type) || "previous_row_subtotal".equals(type)
+                        || "cross_tab_ref".equals(type)) return true;
             }
         }
         return false;

@@ -869,7 +869,7 @@ public class CardSnapshotService {
         for (JsonNode br : baseRows) {
             JsonNode driverRow = br.path("driverRow");
             JsonNode basicDataValues = br.path("basicDataValues");
-            String rk = formulaCalculator.computeRowKey(rowKeyFields, driverRow);
+            String rk = formulaCalculator.computeRowKey(rowKeyFields, fieldsDef, driverRow, basicDataValues);
             String rowKey = (rk != null && !rk.isEmpty()) ? rk : String.valueOf(ri);
             JsonNode editValues = edByKey.get(rowKey);
             JsonNode formulaValues = frByKey.get(rowKey);
@@ -913,10 +913,12 @@ public class CardSnapshotService {
             // 新 baseRows 的 rowKey 集合
             ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, emptyEdit);
             JsonNode rkf = rkfByComp.get(cid);
+            JsonNode fieldsDef = tab.path("fields");
             java.util.Set<String> newKeys = new java.util.HashSet<>();
             int idx = 0;
             for (JsonNode br : baseRows) {
-                String rk = formulaCalculator.computeRowKey(rkf, br.path("driverRow"));
+                String rk = formulaCalculator.computeRowKey(rkf, fieldsDef,
+                        br.path("driverRow"), br.path("basicDataValues"));
                 newKeys.add(rk != null && !rk.isEmpty() ? rk : String.valueOf(idx));
                 idx++;
             }
@@ -1394,10 +1396,13 @@ public class CardSnapshotService {
                     if (er.isObject()) editByKey.put(er.path("rowKey").asText(""), (ObjectNode) er);
                 }
 
+                JsonNode fieldsDef = tab.path("fields");
                 int n = Math.min(baseRows.size(), rowData.size());
                 for (int i = 0; i < n; i++) {
-                    JsonNode driverRow = baseRows.get(i).path("driverRow");
-                    String rk = formulaCalculator.computeRowKey(rkf, driverRow);
+                    JsonNode br = baseRows.get(i);
+                    JsonNode driverRow = br.path("driverRow");
+                    String rk = formulaCalculator.computeRowKey(rkf, fieldsDef,
+                            driverRow, br.path("basicDataValues"));
                     String rowKey = (rk != null && !rk.isEmpty()) ? rk : String.valueOf(i);
                     JsonNode rdRow = rowData.get(i);
 
