@@ -55,4 +55,13 @@ describe('checkParenBalance', () => {
     expect(r.ok).toBe(false);
     expect(r.error).toContain('缺少 1 个右括号');
   });
+
+  // 已知 + 有意：未闭合 [ / { 块跳到串尾，本函数不报 []/{} 缺配对（由 lex() 保存时报）
+  it('未闭合 [ 块被跳过 → ok（圆括号检查不负责 [] 配对）', () => {
+    expect(checkParenBalance('[abc')).toEqual({ ok: true });
+  });
+
+  it('{...} 路径块内 () 不计入 → ok', () => {
+    expect(checkParenBalance('{SUM(a,b)} + 1')).toEqual({ ok: true });
+  });
 });
