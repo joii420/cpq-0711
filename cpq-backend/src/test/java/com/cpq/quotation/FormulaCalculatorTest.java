@@ -413,6 +413,50 @@ public class FormulaCalculatorTest {
         }
     }
 
+    // ======================================================================
+    // T17-T18: computeRowKey(rkf, fields, driverRow, basicDataValues) 新重载
+    // 外购件场景：row_key_fields=["料件","要素"]，driverRow 键为 _料件/_要素（视图列别名）
+    // ======================================================================
+
+    @Test
+    @DisplayName("T17: computeRowKey 4-arg — driverRow 键为 _前缀视图列时，通过字段 defaultSource 解析出正确 rowKey")
+    void t17_computeRowKey_withFieldsAndBdv() {
+        // 外购件字段：料件/要素 都是 INPUT_TEXT，default_source=BASIC_DATA path=$wgj_view._料件
+        JsonNode fields = json("["
+            + "{\"name\":\"料件\",\"fieldType\":\"INPUT_TEXT\","
+            + " \"defaultSource\":{\"type\":\"BASIC_DATA\",\"path\":\"$wgj_view._料件\"}},"
+            + "{\"name\":\"要素\",\"fieldType\":\"INPUT_TEXT\","
+            + " \"defaultSource\":{\"type\":\"BASIC_DATA\",\"path\":\"$wgj_view._要素\"}},"
+            + "{\"name\":\"费用\",\"fieldType\":\"INPUT_NUMBER\"}"
+            + "]");
+        JsonNode rkf = json("[\"料件\",\"要素\"]");
+        // driverRow 键是视图列名（_前缀），字段名"料件"在 driverRow 中不存在
+        JsonNode driverRow = json("{\"_料件\":\"料9\",\"_要素\":\"加工费\",\"_费用\":0.05}");
+        // basicDataValues 按 BNF key "{$wgj_view._料件}" 存储解析好的值
+        JsonNode basicDataValues = json("{\"{$wgj_view._料件}\":\"料9\",\"{$wgj_view._要素}\":\"加工费\"}");
+
+        String key = calc.computeRowKey(rkf, fields, driverRow, basicDataValues);
+        assertEquals("料9||加工费", key,
+            "通过 fields defaultSource 解析应拼出正确 rowKey，而非空串 '||'");
+    }
+
+    @Test
+    @DisplayName("T18: computeRowKey 4-arg — 全字段解析为空时返回 null（调用方按行号兜底）")
+    void t18_computeRowKey_allEmptyReturnsNull() {
+        JsonNode fields = json("["
+            + "{\"name\":\"料件\",\"fieldType\":\"INPUT_TEXT\","
+            + " \"defaultSource\":{\"type\":\"BASIC_DATA\",\"path\":\"$wgj_view._料件\"}},"
+            + "{\"name\":\"要素\",\"fieldType\":\"INPUT_TEXT\","
+            + " \"defaultSource\":{\"type\":\"BASIC_DATA\",\"path\":\"$wgj_view._要素\"}}"
+            + "]");
+        JsonNode rkf = json("[\"料件\",\"要素\"]");
+        JsonNode driverRow = json("{}");
+        JsonNode basicDataValues = json("{}");
+
+        String key = calc.computeRowKey(rkf, fields, driverRow, basicDataValues);
+        assertNull(key, "全部 key 字段解析为空时应返回 null，让调用方按行号兜底");
+    }
+
     private void putDoubles(Map<String, Double> target, JsonNode node) {
         if (node != null && node.isObject()) {
             node.fields().forEachRemaining(e -> target.put(e.getKey(), e.getValue().asDouble()));

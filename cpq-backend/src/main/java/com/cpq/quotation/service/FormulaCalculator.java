@@ -529,7 +529,7 @@ public class FormulaCalculator {
             JsonNode driverRow = baseRow.path("driverRow");
             JsonNode basicDataValues = baseRow.path("basicDataValues");
 
-            String rowKey = computeRowKey(rowKeyFields, driverRow);
+            String rowKey = computeRowKey(rowKeyFields, fields, driverRow, basicDataValues);
             String effKey = (rowKey != null && !rowKey.isEmpty()) ? rowKey : String.valueOf(idx);
 
             JsonNode editValues = editByKey.containsKey(effKey)
@@ -580,7 +580,8 @@ public class FormulaCalculator {
     // rowKey
     // ======================================================================
 
-    /** rowKey = 按 rowKeyFields 从 driverRow 取值用 {@code ||} 拼接；rowKeyFields 空/null → null。 */
+    /** rowKey = 按 rowKeyFields 从 driverRow 取值用 {@code ||} 拼接；rowKeyFields 空/null → null。
+     * 兼容旧调用（CardEffectiveRows 等只有 driverRow，无 fields/basicDataValues 上下文）。*/
     public String computeRowKey(JsonNode rowKeyFields, JsonNode driverRow) {
         if (rowKeyFields == null || !rowKeyFields.isArray() || rowKeyFields.size() == 0) return null;
         // 哨兵：按行号对齐
@@ -591,6 +592,59 @@ public class FormulaCalculator {
             JsonNode v = driverRow != null ? driverRow.path(field) : null;
             parts.add(v != null && !v.isMissingNode() && !v.isNull() ? v.asText("") : "");
         }
+        return String.join("||", parts);
+    }
+
+    /**
+     * rowKey（字段感知版）：修复 driverRow 键为视图列别名（如 {@code _料件}）而 rowKeyFields
+     * 存字段名（如 {@code 料件}）时直接读 driverRow 取不到值的 bug。
+     *
+     * <p><b>解析策略（优先级从高到低）</b>：
+     * <ol>
+     *   <li>直接读 {@code driverRow[fieldName]} — 兼容旧场景（字段名 == 视图列名，如 material_no）</li>
+     *   <li>通过 {@link #resolveRowByFieldName} 按字段 defaultSource 解析（INPUT 型字段名 ≠ 视图列别名时）</li>
+     * </ol>
+     * 全部 key 段解析为空 → 返回 {@code null}（调用方按行号兜底），不返回全分隔符串。
+     *
+     * @param rowKeyFields    rowKeyFields JSON 数组（字段名列表）
+     * @param fields          组件字段定义数组（含 fieldType / defaultSource，供 resolveRowByFieldName 用）
+     * @param driverRow       driver 展开的原始行（键可能为视图列别名）
+     * @param basicDataValues 该行预查询好的基础数据值（供 default_source 解析）
+     */
+    public String computeRowKey(JsonNode rowKeyFields, JsonNode fields,
+                                JsonNode driverRow, JsonNode basicDataValues) {
+        if (rowKeyFields == null || !rowKeyFields.isArray() || rowKeyFields.size() == 0) return null;
+        if (rowKeyFields.size() == 1 && "__seq_no__".equals(rowKeyFields.get(0).asText(""))) return null;
+
+        // 懒计算：只在有字段直接读不到时才触发 resolveRowByFieldName（避免性能开销）
+        Map<String, Object> resolved = null;
+
+        List<String> parts = new ArrayList<>();
+        boolean any = false;
+        for (JsonNode k : rowKeyFields) {
+            String fieldName = k.asText("");
+            String part = "";
+
+            // 1. 优先直接读 driverRow（字段名即为视图列名的场景，如 material_no）
+            String direct = pickNonEmpty(driverRow, fieldName);
+            if (direct != null) {
+                part = direct;
+                any = true;
+            } else {
+                // 2. 直接读不到 → 通过字段定义 defaultSource 解析（如 INPUT 型字段绑 $view._料件）
+                if (resolved == null) {
+                    resolved = resolveRowByFieldName(fields, driverRow, basicDataValues, null, null);
+                }
+                Object v = resolved.get(fieldName);
+                if (v != null) {
+                    part = v.toString();
+                    if (!part.isEmpty()) any = true;
+                }
+            }
+            parts.add(part);
+        }
+        // 全部 key 段为空 → null，让调用方按行号兜底，避免 "||" 假键导致行冲突
+        if (!any) return null;
         return String.join("||", parts);
     }
 
