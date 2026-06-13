@@ -118,9 +118,10 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
       return;
     }
 
-    const pc = checkParenBalance(expr);
-    if (!pc.ok) {
-      message.error(pc.error);
+    // 防御性冗余：正常路径下保存按钮已因 !parenCheck.ok 被 disabled、点不到这里；
+    // 此守卫兜住程序化/绕过 disabled 的调用。括号检查对空白不敏感，复用 parenCheck 即可。
+    if (!parenCheck.ok) {
+      message.error(parenCheck.error);
       return;
     }
 
@@ -216,7 +217,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
       extra={
         <Space>
           <Button onClick={onClose}>取消</Button>
-          <Tooltip title={parenCheck.ok ? '' : parenCheck.error}>
+          <Tooltip title={parenCheck.ok ? undefined : parenCheck.error}>
             <Button type="primary" onClick={save} disabled={!parenCheck.ok}>
               保存
             </Button>
@@ -300,7 +301,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
         placeholder="例:[投料.金额] * [加工.工时] + [回料(总计)]"
       />
       {!parenCheck.ok && (
-        <Text style={{ color: '#cf1322', fontSize: 12, display: 'block', marginTop: 4 }}>
+        <Text type="danger" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
           {parenCheck.error}
         </Text>
       )}
