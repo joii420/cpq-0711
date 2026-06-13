@@ -4,6 +4,12 @@
 
 ---
 
+### [2026-06-13] fix(rowkey): 前端 computeRowKey/computeDedupKey 字段感知（_前缀视图列别名 → 字段名解析）| useCardSnapshots.ts + rowDedup.ts + QuotationStep2.tsx + ReadonlyProductCard.tsx | 新签名 computeRowKey(fields, rowKeyFields, driverRow, rowIndex, bdv?)；resolveRowKeyPart 按 defaultSource 解析；rowDedup 同款可选 fields+bdv；4 调用点升级；418 测试全绿
+
+- **问题**: 外购件 rowKeyFields=["料件","要素"]（字段名），driverRow 键为视图列别名 _料件/_要素，旧 computeRowKey 直接读 driverRow["料件"]→undefined → 4 行 rowKey 全冲突为 "||" → cross_tab SUM 退化为末值×4。
+- **修法**: resolveRowKeyPart 优先级：直读 → GLOBAL_VARIABLE(@gvar:CODE) → BNF_PATH/BASIC_DATA(bnfDriverLookupKey(path)) → path末段降级。computeDedupKey 同款 5-arg(可选 fields+bdv)保持 3-arg 旧调用兼容。调用点升级：useCardSnapshots 内部 2 处、QuotationStep2.tsx:1978、ReadonlyProductCard.tsx:482。对齐后端 FormulaCalculator.computeRowKey 4-arg + computeDedupKey 5-arg 字段感知重载。
+- **测试**: useCardSnapshots.test.ts 新建 9 用例(RED→GREEN)；rowDedup.test.ts 新增 5 用例；418 passed 全绿。
+
 ### [2026-06-13] fix(card): CardEffectiveRows 回退路径 rowKey 对齐 FormulaCalculator 字段感知语义 | CardEffectiveRows.java + CardEffectiveRowsTest.java | parse 新增 fieldsOf 4参数重载；computeRowKey 对齐 || 分隔 + defaultSource 解析
 
 - **问题**: `CardEffectiveRows` 私有 `computeRowKey` 直接读 `driverRow[字段名]`，对 `_`前缀视图列别名取不到值；且用 `|` 分隔（产出 `料9|加工费|`），而 FormulaCalculator 用 `||`（产出 `料9||加工费`）→ 格式不一致 → `formulaByKey.get(rowKey)` 永远查不中 → 旧快照回退路径 formula/edit 值全部丢失。
