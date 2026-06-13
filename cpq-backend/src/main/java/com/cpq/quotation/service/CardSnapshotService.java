@@ -778,6 +778,11 @@ public class CardSnapshotService {
             crossTabRows.put(cid, resolved);
             String code = tab.path("componentCode").asText(null);
             if (code != null && !code.isBlank()) crossTabRows.put(code, resolved);
+            // PASS2 回填：cross_tab_ref 列 PASS1 时 crossTabRows 为空，小计算成 0；
+            // 现在用 resolved（含正确行值）重算 is_subtotal 列之和，覆盖 componentSubtotals。
+            // buildTabNode 从 componentSubtotals#col 键读 subtotalByColumn，回填后自动得正确值。
+            backfillSubtotalsFromResolved(tab.path("fields"), resolved, cid, code,
+                tab.path("tabName").asText(""), componentSubtotals);
             tabNodeById.put(cid, buildTabNode(tab, cid, baseRows, editRows, formulaResults,
                 resolved, componentSubtotals));
         }
@@ -797,6 +802,8 @@ public class CardSnapshotService {
                 crossTabRows);
             List<Map<String, Object>> resolved = buildResolvedRows(
                 tab, baseRows, editRows, formulaResults, rkfByComp.get(cid));
+            // SUBTOTAL tab 不回填列小计：其 is_subtotal 列由组件级聚合公式(component_subtotal token)决定，
+            // 不能从 resolvedRows 重算覆盖（评审 #1）。列小计回填仅针对 NORMAL 组件的 cross_tab 列。
             // SUBTOTAL 行不并入 crossTabRows（不可被 cross_tab_ref 引用）
             tabNodeById.put(cid, buildTabNode(tab, cid, baseRows, editRows, formulaResults,
                 resolved, componentSubtotals));
@@ -1600,4 +1607,63 @@ public class CardSnapshotService {
 
     /** 草稿试算公式/字段固定名（命名空间前缀，杜绝与业务字段碰撞）。 */
     private static final String DRYRUN_FIELD = "__dryrun__";
+
+    /**
+     * PASS2 回填：从 PASS2 正确算出的 resolvedRows 重算 is_subtotal 列的列小计，
+     * 覆盖 componentSubtotals 中对应的 {@code ${key}#${列名}} 和总小计 {@code ${key}} 键。
+     *
+     * <p>解决根因：PASS1（:708-733）调用 computeTabSubtotalsByColumn 时 crossTabRows 为空，
+     * cross_tab_ref 列只能算出 0；PASS2（:764-803）有完整 crossTabRows 后算出正确 resolved，
+     * 但 componentSubtotals 里的 per-column 值未更新，导致 buildTabNode 读到 0。
+     *
+     * <p>实现与前端 {@code subtotalsFromResolvedRows} 口径一致：对 is_subtotal 列的各行值
+     * 做数值累加（字符串能解析为数字则累加，否则跳过），结果覆盖写入 componentSubtotals。
+     *
+     * @param fields           tab 字段定义数组（含 is_subtotal / isSubtotal 标记）
+     * @param resolvedRows     PASS2 逐行解析后的行（按字段名键标量值）
+     * @param cid              componentId
+     * @param code             componentCode（可为 null）
+     * @param tabName          tabName
+     * @param componentSubtotals 可变 map，直接覆盖写入
+     */
+    private void backfillSubtotalsFromResolved(
+            JsonNode fields,
+            List<Map<String, Object>> resolvedRows,
+            String cid,
+            String code,
+            String tabName,
+            Map<String, Double> componentSubtotals) {
+        List<String> subtotalFields = formulaCalculator.findSubtotalFieldNames(fields);
+        if (subtotalFields.isEmpty()) return;
+
+        double totalSum = 0.0;
+        for (String col : subtotalFields) {
+            double colSum = 0.0;
+            for (Map<String, Object> row : resolvedRows) {
+                Object val = row.get(col);
+                if (val == null) continue;
+                double d;
+                if (val instanceof Number n) {
+                    d = n.doubleValue();
+                } else {
+                    try { d = Double.parseDouble(val.toString()); } catch (NumberFormatException ignore) { continue; }
+                }
+                colSum += d;
+            }
+            java.math.BigDecimal rounded =
+                java.math.BigDecimal.valueOf(colSum).setScale(4, java.math.RoundingMode.HALF_UP);
+            double roundedDouble = rounded.doubleValue();
+            // 写 per-column 键（三种 key 形式，与 PASS1 写法对称）
+            if (!cid.isBlank()) componentSubtotals.put(cid + "#" + col, roundedDouble);
+            if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + col, roundedDouble);
+            componentSubtotals.put(tabName + "#" + col, roundedDouble);
+            totalSum += roundedDouble;
+        }
+        // 回填总小计（= 所有 is_subtotal 列之和，与 PASS1 computeTabSubtotalsByColumn 逻辑对称）
+        double roundedTotal = java.math.BigDecimal.valueOf(totalSum)
+            .setScale(4, java.math.RoundingMode.HALF_UP).doubleValue();
+        if (!cid.isBlank()) componentSubtotals.put(cid, roundedTotal);
+        if (code != null && !code.isBlank()) componentSubtotals.put(code, roundedTotal);
+        componentSubtotals.put(tabName, roundedTotal);
+    }
 }

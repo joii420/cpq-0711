@@ -817,6 +817,10 @@ function buildResolvedRow(
  * 前置: allComponentSubtotals 必须已构建完 (PASS1)。
  * 每算完一个组件即把其 resolvedRows 存入 store (componentId + componentCode + ids[] 三键),
  * 拓扑序保证被引用组件 A 先于引用方 B 入 store。环 → 退回输入序 (模板保存层已硬拦环)。
+ *
+ * 副作用(PASS2 回填): 每个组件 resolvedRows 算完后，从 rows 的 is_subtotal 列值求和，
+ * 回填传入的 allComponentSubtotals（键: `${id}#${colName}` 及总计 `${id}`）。
+ * 这保证「列小计 == 各行显示值之和」（DRY，修复 cross_tab 公式列小计显示 0 的问题）。
  */
 export function buildCrossTabRows(
   componentData: ComponentDataItem[],
@@ -854,8 +858,57 @@ export function buildCrossTabRows(
     store[cid] = rows;
     if (comp.componentCode) store[comp.componentCode] = rows;
     if (comp.componentId) store[comp.componentId] = rows;
+
+    // PASS2 回填：从 resolvedRows 的 is_subtotal 列值求和，更新 allComponentSubtotals。
+    // 保证「列小计显示 == 各行 cross_tab 公式实际值之和」（PASS1 因 crossTabRows=undefined 算出 0）。
+    subtotalsFromResolvedRows(comp, rows, allComponentSubtotals);
   }
   return store;
+}
+
+/**
+ * 从已计算的 resolvedRows 按 is_subtotal 列求和，回填到 allComponentSubtotals。
+ * 键名格式与 PASS1 一致: `${tabName/componentCode/componentId}#${colName}` 及总计键。
+ * 仅当组件有 is_subtotal 列时才写入（无 is_subtotal 列的组件不修改 allComponentSubtotals）。
+ */
+function subtotalsFromResolvedRows(
+  comp: ComponentDataItem,
+  rows: Array<Record<string, any>>,
+  allComponentSubtotals: Record<string, number>,
+): void {
+  const subtotalFields = (comp.fields ?? []).filter((f: ComponentField) => f.is_subtotal);
+  if (subtotalFields.length === 0) return;
+
+  const keys: string[] = [];
+  if (comp.tabName) keys.push(comp.tabName);
+  if (comp.componentCode && comp.componentCode !== comp.tabName) keys.push(comp.componentCode);
+  if (comp.componentId && comp.componentId !== comp.tabName && comp.componentId !== comp.componentCode) {
+    keys.push(comp.componentId);
+  }
+
+  // 4dp 舍入，与后端 backfillSubtotalsFromResolved 的 setScale(4, HALF_UP) 对齐，
+  // 清除浮点累加尾差，避免前端显示与后端持久化 subtotalByColumn 数值分叉（评审 #2）。
+  const round4 = (x: number) => Math.round(x * 1e4) / 1e4;
+  let totalForComp = 0;
+  for (const sf of subtotalFields) {
+    const colName: string = sf.name || sf.key || '';
+    if (!colName) continue;
+    let colSum = 0;
+    for (const row of rows) {
+      const v = row[colName];
+      if (typeof v === 'number' && isFinite(v)) colSum += v;
+    }
+    const colVal = round4(colSum);
+    for (const k of keys) {
+      allComponentSubtotals[`${k}#${colName}`] = colVal;
+    }
+    totalForComp += colVal;
+  }
+  totalForComp = round4(totalForComp);
+  // 总小计键（与 PASS1 的 componentSubtotals[comp.tabName] 对齐）
+  for (const k of keys) {
+    allComponentSubtotals[k] = totalForComp;
+  }
 }
 
 /** Compute a single formula field value (convenience wrapper using computeAllFormulas cache) */
