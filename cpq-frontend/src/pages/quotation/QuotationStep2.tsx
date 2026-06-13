@@ -97,7 +97,7 @@ export interface ComponentField {
   global_variable_code?: string;
   /** V190: 统一默认值来源结构 (替代 V184 散字段) */
   default_source?: {
-    type: 'GLOBAL_VARIABLE' | 'BNF_PATH' | 'HTTP_API';
+    type: 'GLOBAL_VARIABLE' | 'BNF_PATH' | 'HTTP_API' | 'BASIC_DATA';
     code?: string;
     key_values?: Record<string, any>;
     key_field_refs?: Record<string, string>;
@@ -614,6 +614,24 @@ function computeAllFormulas(
     }
   }
 
+  // cross_tab match 键 b 取宿主行字段名值；裸 row 只含驱动 _ 键，需按 INPUT default_source 补字段名键。
+  // 与后端 FormulaCalculator.computeRows 方案 B 对称：仅补 INPUT default_source，不动 BASIC_DATA/DATA_SOURCE。
+  let currentRowForEval: Record<string, any> = row;
+  {
+    let augmented: Record<string, any> | undefined;
+    for (const f of comp.fields) {
+      if ((f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT')
+          && f.default_source) {
+        const k = f.name || f.key || '';
+        if (k && (row[k] == null || row[k] === '')) {
+          const v = resolveInputDefaultSourceForRow(f, basicDataValues);
+          if (v != null) { if (!augmented) augmented = { ...row }; augmented[k] = v; }
+        }
+      }
+    }
+    if (augmented) currentRowForEval = augmented;
+  }
+
   const results: Record<string, number | null> = {};
   for (const name of order) {
     const ff = formulaFields.find(f => f.name === name)!;
@@ -646,7 +664,7 @@ function computeAllFormulas(
       const val = expr
         ? evaluateExpression(
             expr, fieldValues, allComponentSubtotals || {}, undefined, quotationFields,
-            pathCache, partNo, basicDataValues, prevForField, globalVariableDefs, row, crossTabRows,
+            pathCache, partNo, basicDataValues, prevForField, globalVariableDefs, currentRowForEval, crossTabRows,
             diag,
           )
         : null;
@@ -722,6 +740,37 @@ function resolveDataSourceForRow(
 }
 
 /**
+ * INPUT_TEXT/INPUT_NUMBER + default_source 行级取值 (RAW, 文本保留) —— 镜像后端
+ * resolveRowByFieldName 的 INPUT 分支 + computeAllFormulas default_source 链。
+ * 仅行级 basicDataValues (BASIC_DATA/BNF_PATH→{path} 键; GLOBAL_VARIABLE→@gvar:CODE 键)。
+ * 文本不 parseFloat (cross_tab 匹配键需原始文本)。
+ */
+function resolveInputDefaultSourceForRow(
+  f: ComponentField,
+  basicDataValues: Record<string, any> | undefined,
+): any {
+  const ds = f.default_source;
+  if (!ds || !basicDataValues) return undefined;
+  let resolved: any = undefined;
+  if (ds.type === 'GLOBAL_VARIABLE' && ds.code) {
+    const gvKey = `@gvar:${ds.code}`;
+    if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
+      const v = basicDataValues[gvKey];
+      if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
+    }
+  } else if ((ds.type === 'BNF_PATH' || ds.type === 'BASIC_DATA') && ds.path) {
+    const lookupKey = bnfDriverLookupKey(ds.path);
+    if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
+      const v = basicDataValues[lookupKey];
+      if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
+    }
+  }
+  if (resolved == null) return undefined;
+  if (typeof resolved === 'number') return resolved;
+  return formatPathValue(resolved) ?? undefined;  // 文本保留
+}
+
+/**
  * 把一行解析成 "字段名 → RAW 值" 映射 (镜像后端 CardSnapshotService.buildResolvedRows /
  * FormulaCalculator.resolveRowByFieldName)。供 cross_tab_ref 兄弟组件按字段名取数:
  * 既覆盖匹配键 (常为驱动/输入文本列), 又覆盖目标列 (FORMULA / BASIC_DATA / input)。
@@ -750,6 +799,12 @@ function buildResolvedRow(
     } else if (f.field_type === 'DATA_SOURCE' && f.datasource_binding) {
       if (out[key] == null || out[key] === '') {
         const v = resolveDataSourceForRow(f, basicDataValues);
+        if (v != null) out[key] = v;
+      }
+    } else if ((f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT')
+               && f.default_source) {
+      if (out[key] == null || out[key] === '') {
+        const v = resolveInputDefaultSourceForRow(f, basicDataValues);
         if (v != null) out[key] = v;
       }
     }
