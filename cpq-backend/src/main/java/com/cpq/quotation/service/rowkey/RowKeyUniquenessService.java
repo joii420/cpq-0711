@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
 import java.util.ArrayList;
@@ -26,12 +27,16 @@ public class RowKeyUniquenessService {
     private static final Logger LOG = Logger.getLogger(RowKeyUniquenessService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    @Inject
+    FormulaCalculator formulaCalculator;
+
     /** 单组件两路原始 JSON。 */
     public record CompRows(String componentId, String snapshotRowsJson, String rowDataJson) {}
     /** 单明细的全部组件行。 */
     public record LineItemComps(String lineItemLabel, List<CompRows> comps) {}
 
-    private record TabKeyCfg(String componentName, JsonNode rowKeyFields) {}
+    /** fields 含字段定义，用于 computeDedupKey 字段感知解析（修复 _前缀视图列 bug）。 */
+    private record TabKeyCfg(String componentName, JsonNode rowKeyFields, JsonNode fields) {}
 
     public List<RowKeyConflict> collectConflicts(String structureJson, List<LineItemComps> items) {
         List<RowKeyConflict> out = new ArrayList<>();
@@ -56,13 +61,19 @@ public class RowKeyUniquenessService {
 
                 List<String> keys = new ArrayList<>();
                 for (int i = 0; i < snapshotRows.size(); i++) {
-                    JsonNode driverRow = snapshotRows.get(i).path("driverRow");
+                    JsonNode br = snapshotRows.get(i);
+                    JsonNode driverRow = br.path("driverRow");
+                    JsonNode basicDataValues = br.path("basicDataValues");
                     JsonNode overlay = i < driverDataRows.size() ? driverDataRows.get(i) : MAPPER.createObjectNode();
-                    keys.add(FormulaCalculator.computeDedupKey(cfg.rowKeyFields(), driverRow, overlay));
+                    // 字段感知重载：透传 fields + basicDataValues，修复 _前缀视图列与字段名不一致 bug
+                    keys.add(formulaCalculator.computeDedupKey(
+                            cfg.rowKeyFields(), cfg.fields(), driverRow, basicDataValues, overlay));
                 }
                 ObjectNode emptyDriver = MAPPER.createObjectNode();
                 for (JsonNode mr : manualRows) {
-                    keys.add(FormulaCalculator.computeDedupKey(cfg.rowKeyFields(), emptyDriver, mr));
+                    // 手动行：driverRow 为空，basicDataValues 为空，rowValues = mr
+                    keys.add(formulaCalculator.computeDedupKey(
+                            cfg.rowKeyFields(), cfg.fields(), emptyDriver, MAPPER.createObjectNode(), mr));
                 }
 
                 String label = (item.lineItemLabel() == null ? "" : item.lineItemLabel() + " · ") + cfg.componentName();
@@ -80,7 +91,8 @@ public class RowKeyUniquenessService {
                 String cid = tab.path("componentId").asText("");
                 if (cid.isBlank()) continue;
                 String name = tab.path("componentName").asText(cid);
-                map.put(cid, new TabKeyCfg(name, tab.path("rowKeyFields")));
+                // 存 fields 供 computeDedupKey 字段感知解析（修复 _前缀视图列与字段名不一致 bug）
+                map.put(cid, new TabKeyCfg(name, tab.path("rowKeyFields"), tab.path("fields")));
             }
         } catch (Exception e) {
             LOG.warnf("[rowkey] parseStructure failed: %s", e.getMessage());

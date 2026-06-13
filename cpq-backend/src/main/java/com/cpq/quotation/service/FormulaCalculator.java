@@ -649,6 +649,62 @@ public class FormulaCalculator {
     }
 
     /**
+     * 判重专用组合键（字段感知版，实例方法）：当 driverRow 键为视图列别名时，直接读 driverRow 取不到值，
+     * 此重载先走 driverRow 直读，再通过 {@link #resolveRowByFieldName} 按字段 defaultSource 解析，
+     * 最后回退 rowValues（手填值）。全部 key 段为空 → null（不参与判重）。
+     *
+     * <p>注意：旧的 3-arg static 重载保留兼容；此重载为实例方法，需通过注入的 bean 调用。
+     *
+     * @param rowKeyFields    rowKeyFields JSON 数组（字段名列表）
+     * @param fields          组件字段定义数组（供 resolveRowByFieldName 解析 defaultSource）
+     * @param driverRow       driver 展开的原始行（键可能为视图列别名）
+     * @param basicDataValues 该行预查询好的基础数据值
+     * @param rowValues       用户手填值（rowData），判重兜底
+     */
+    public String computeDedupKey(JsonNode rowKeyFields, JsonNode fields,
+                                  JsonNode driverRow, JsonNode basicDataValues,
+                                  JsonNode rowValues) {
+        if (rowKeyFields == null || !rowKeyFields.isArray() || rowKeyFields.size() == 0) return null;
+        if (rowKeyFields.size() == 1 && "__seq_no__".equals(rowKeyFields.get(0).asText(""))) return null;
+
+        // 懒计算：只在有字段直接读不到时才触发 resolveRowByFieldName
+        Map<String, Object> resolved = null;
+
+        List<String> parts = new ArrayList<>();
+        boolean any = false;
+        for (JsonNode k : rowKeyFields) {
+            String fieldName = k.asText("");
+            String part = "";
+
+            // 1. 优先直接读 driverRow（字段名即视图列名的场景）
+            String direct = pickNonEmpty(driverRow, fieldName);
+            if (direct != null) {
+                part = direct;
+                any = true;
+            } else {
+                // 2. 通过字段 defaultSource 解析（如 INPUT 型字段绑 $view._料件）
+                if (resolved == null) {
+                    resolved = resolveRowByFieldName(fields, driverRow, basicDataValues, null, null);
+                }
+                Object v = resolved.get(fieldName);
+                if (v != null) {
+                    String sv = v.toString();
+                    if (!sv.isEmpty()) { part = sv; any = true; }
+                }
+            }
+
+            // 3. 还是空 → 回退 rowValues（用户手填值，判重专用路径）
+            if (part.isEmpty()) {
+                String rv = pickNonEmpty(rowValues, fieldName);
+                if (rv != null) { part = rv; any = true; }
+            }
+            parts.add(part);
+        }
+        if (!any) return null;
+        return String.join("||", parts);
+    }
+
+    /**
      * 判重专用组合键（input-inclusive）：逐字段 driverRow 非空优先，否则取 rowValues。
      * 与 computeRowKey 区别：额外读 rowValues（手填输入字段值），仅用于行键唯一性判重，
      * 不接入 editRows / formula 路径（避开鸡生蛋）。全字段为空 → null（不参与判重）。
