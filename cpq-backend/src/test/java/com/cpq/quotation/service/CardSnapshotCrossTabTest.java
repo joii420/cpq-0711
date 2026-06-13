@@ -56,6 +56,120 @@ class CardSnapshotCrossTabTest {
         return row;
     }
 
+    /**
+     * T4/T5 — cross_tab 列 is_subtotal 时，来料 tab 的 subtotalByColumn 必须等于
+     * PASS2 resolved 行的列值之和，不能是 PASS1（crossTabRows 为空）的 0。
+     *
+     * <p>场景：
+     * <ul>
+     *   <li>Tab WGJ（外购件，源）：4 行，费用=0.05/0.2/0.002/0.007（is_subtotal=true）。
+     *   <li>Tab LI（来料，引用方）：公式"材料费"=SUM([WGJ.费用], match=[])，is_subtotal=true；
+     *       宿主只有 1 行（无 match 条件，KSUM 全聚合）。
+     * </ul>
+     * 期望：LI 的 subtotalByColumn["材料费"] ≈ 0.259（= 0.05+0.2+0.002+0.007）。
+     * 修复前 PASS1 crossTabRows 为空 → 0；修复后从 resolved 回填 → 0.259。
+     */
+    @Test
+    void crossTabColumnSubtotalBackfilledFromResolvedRows() throws Exception {
+        // ── Tab WGJ（外购件，源）──
+        ObjectNode tabWGJ = M.createObjectNode();
+        tabWGJ.put("componentId", "WGJ");
+        tabWGJ.put("componentCode", "WGJ");
+        tabWGJ.put("componentType", "NORMAL");
+        tabWGJ.put("tabName", "外购件");
+        ArrayNode fieldsWGJ = tabWGJ.putArray("fields");
+        // 料件（文本 key 字段）
+        ObjectNode fLJ = M.createObjectNode();
+        fLJ.put("name", "料件"); fLJ.put("field_type", "INPUT_TEXT");
+        fieldsWGJ.add(fLJ);
+        // 费用（is_subtotal=true）
+        ObjectNode fFY = M.createObjectNode();
+        fFY.put("name", "费用"); fFY.put("field_type", "INPUT_NUMBER"); fFY.put("is_subtotal", true);
+        fieldsWGJ.add(fFY);
+        tabWGJ.putArray("formulas");
+        tabWGJ.putArray("formula_assignments");
+
+        // ── Tab LI（来料，引用方）──
+        ObjectNode tabLI = M.createObjectNode();
+        tabLI.put("componentId", "LI");
+        tabLI.put("componentCode", "LI");
+        tabLI.put("componentType", "NORMAL");
+        tabLI.put("tabName", "来料");
+        ArrayNode fieldsLI = tabLI.putArray("fields");
+        // 材料费（FORMULA, is_subtotal=true）
+        ObjectNode fCF = M.createObjectNode();
+        fCF.put("name", "材料费"); fCF.put("field_type", "FORMULA"); fCF.put("is_subtotal", true);
+        fieldsLI.add(fCF);
+        // 公式：材料费 = SUM([WGJ.费用])，match=[] 表示全聚合（KSUM 语义）
+        ArrayNode formulasLI = tabLI.putArray("formulas");
+        ObjectNode fml = M.createObjectNode();
+        fml.put("fieldName", "材料费");
+        ArrayNode expr = fml.putArray("expression");
+        ObjectNode tok = M.createObjectNode();
+        tok.put("type", "cross_tab_ref");
+        tok.put("source", "WGJ");
+        tok.put("target", "费用");
+        tok.put("agg", "SUM");
+        tok.putArray("match"); // 空 match = 全聚合
+        expr.add(tok);
+        formulasLI.add(fml);
+        tabLI.putArray("formula_assignments");
+
+        // snapshot：WGJ 在前，LI 在后（都是 NORMAL，顺序依赖不影响，拓扑序会排 WGJ 先算）
+        ArrayNode snapshot = M.createArrayNode();
+        snapshot.add(tabWGJ);
+        snapshot.add(tabLI);
+
+        // baseRows：WGJ 4 行费用值
+        Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
+        ArrayNode wgjRows = M.createArrayNode();
+        for (double fee : new double[]{0.05, 0.2, 0.002, 0.007}) {
+            ObjectNode row = M.createObjectNode();
+            ObjectNode dr = M.createObjectNode(); dr.put("料件", "料9"); dr.put("费用", fee);
+            row.set("driverRow", dr);
+            row.set("basicDataValues", M.createObjectNode());
+            wgjRows.add(row);
+        }
+        baseRowsByComp.put("WGJ", wgjRows);
+
+        // LI：1 宿主行（无 driver，公式全聚合源行）
+        ArrayNode liRows = M.createArrayNode();
+        ObjectNode liRow = M.createObjectNode();
+        liRow.set("driverRow", M.createObjectNode());
+        liRow.set("basicDataValues", M.createObjectNode());
+        liRows.add(liRow);
+        baseRowsByComp.put("LI", liRows);
+
+        String json = cardSnapshotService.assembleTabsWithFormulaResultsForTest(
+            snapshot, baseRowsByComp, null);
+
+        JsonNode root = M.readTree(json);
+        JsonNode tabs = root.path("tabs");
+        assertEquals(2, tabs.size());
+
+        // 找来料 tab
+        JsonNode liTab = null;
+        for (JsonNode t : tabs) {
+            if ("LI".equals(t.path("componentId").asText())) { liTab = t; break; }
+        }
+        assertNotNull(liTab, "来料 tab 必须存在");
+
+        // 来料 formulaResults[0].values.材料费 应 ≈ 0.259（每行 cross_tab SUM）
+        JsonNode liFormula = liTab.path("formulaResults");
+        assertEquals(1, liFormula.size(), "来料应有 1 行 formulaResults");
+        double materialsPerRow = liFormula.get(0).path("values").path("材料费").asDouble(-1);
+        assertEquals(0.259, materialsPerRow, 1e-9,
+            "来料每行材料费应 = SUM(WGJ.费用) = 0.05+0.2+0.002+0.007=0.259");
+
+        // ★ 核心断言：来料 subtotalByColumn["材料费"] 必须从 resolved 回填，不能是 PASS1 的 0
+        JsonNode byCol = liTab.path("subtotalByColumn");
+        assertTrue(byCol.has("材料费"),
+            "来料 tab 应有 subtotalByColumn.材料费（is_subtotal 列）");
+        double colSubtotal = byCol.path("材料费").asDouble(-1);
+        assertEquals(0.259, colSubtotal, 1e-4,
+            "来料 subtotalByColumn[材料费] 应 = 0.259（来自 PASS2 resolved 行之和，不能是 PASS1 的 0）");
+    }
+
     @Test
     void crossTabRefResolvesAcrossTabsRegardlessOfSnapshotOrder() throws Exception {
         // ── Tab B（引用方），排在前面 ──
