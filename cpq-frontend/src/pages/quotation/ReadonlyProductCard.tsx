@@ -322,8 +322,12 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   }
   // cross_tab_ref 三视图对齐 (Task 4.3): PASS1（compSubtotals 循环）完成后构建 crossTabRows，
   // 镜像后端 CardSnapshotService PASS2。lookupExpansion 复用与 compSubtotals 循环相同的 key 构造。
+  // 必须喂 enrich 后的 `components`（含 fields/componentType/dataDriverPath），不能用 raw
+  // `lineItem.componentData`——后端 ComponentDataDTO 不持久化 fields/componentType，
+  // buildCrossTabRows 首行按 `c?.fields && c.componentType==='NORMAL'` 过滤会滤掉全部组件，
+  // 导致 crossTabRows={} → 所有跨页签(cross_tab_ref)公式列/小计/总计求值为 0（详情页专有回归）。
   const crossTabRows = buildCrossTabRows(
-    lineItem.componentData ?? [],
+    components,
     compSubtotals,
     lineItem.productPartNo || undefined,
     (comp) => {

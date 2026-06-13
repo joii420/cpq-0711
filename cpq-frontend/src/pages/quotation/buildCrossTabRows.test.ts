@@ -115,4 +115,27 @@ describe('buildCrossTabRows 列小计回填', () => {
     const ygjColKeys = Object.keys(allComponentSubtotals).filter(k => k.startsWith('外购件#'));
     expect(ygjColKeys).toHaveLength(0);
   });
+
+  // 契约守卫（详情页 ReadonlyProductCard bug 回归）：buildCrossTabRows 第一行按
+  // `c?.fields && c.componentType === 'NORMAL'` 过滤。若调用方误喂后端 raw
+  // `lineItem.componentData`（ComponentDataDTO 不持久化 fields / componentType），
+  // 则所有组件被滤掉 → crossTabRows 为空 → 所有 cross_tab 公式列/小计求值为 0。
+  // 详情页必须喂 enrich 后的 `components`（含 fields），与编辑页 item.componentData 同款。
+  it('喂 raw DTO（无 fields/componentType）→ 全被过滤 → cross_tab 小计回填为 0（详情页漏喂 enriched 的失败机理）', () => {
+    // 模拟后端 raw lineItem.componentData：只有 {componentId, tabName, rowData, subtotal, sortOrder}
+    const rawComponentData = componentData.map((c: any) => ({
+      componentId: c.componentId,
+      tabName: c.tabName,
+      rowData: c.rows,
+      subtotal: 0,
+      sortOrder: 0,
+      // 关键：无 fields、无 componentType、无 formulas（后端不持久化）
+    }));
+    const allComponentSubtotals: Record<string, number> = {};
+    const store = buildCrossTabRows(rawComponentData as any, allComponentSubtotals, undefined, lookupExpansion);
+
+    // 全被过滤 → store 空 → 来料材料费 cross_tab 列得不到回填（undefined/0）
+    expect(Object.keys(store)).toHaveLength(0);
+    expect(allComponentSubtotals['来料#材料费'] ?? 0).toBe(0);
+  });
 });
