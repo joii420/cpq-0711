@@ -2,6 +2,7 @@ package com.cpq.quotation.service.card;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -108,5 +109,139 @@ class CardEffectiveRowsTest {
         Map<String, CardEffectiveRows.TabRows> result =
             CardEffectiveRows.parse(M.readTree(cv), M.readTree(COMPONENTS_SNAPSHOT), (cid) -> null);
         assertEquals("e1/e2", result.get("comp-A:2").rows.get(0).get("__nodeId"));
+    }
+
+    // ── 回退路径 rowKey 对齐（_前缀驱动列 + ||分隔符）─────────────────────────
+
+    /**
+     * 外购件式 fixture: row_key_fields=["料件","要素"]，driverRow 键为 _料件/_要素（视图别名列），
+     * 字段定义 INPUT 型 default_source 绑 BNF_PATH "$wgj_view._料件"，
+     * basicDataValues 存 "{$wgj_view._料件}" = "料9"、"{$wgj_view._要素}" = "加工费"。
+     *
+     * <p>期望回退路径 rowKey = "料9||加工费"（|| 分隔，非旧式 "料9|加工费|"）。
+     * formulaByKey / editByKey 按 "料9||加工费" 键查到对应值，行数据被正确合并。
+     */
+    @Test
+    @DisplayName("回退路径 rowKey: _前缀驱动列 via defaultSource BNF_PATH → || 分隔键，formulaByKey 命中")
+    void fallbackRowKey_prefixedDriverCol_viaDefaultSourceBnfPath() throws Exception {
+        // 字段定义: 料件(INPUT + default_source BNF_PATH), 要素(INPUT + default_source BNF_PATH), 金额(FORMULA)
+        String fieldsJson = """
+            [
+              { "name":"料件", "fieldType":"INPUT",
+                "defaultSource":{"type":"BNF_PATH","path":"$wgj_view._料件"} },
+              { "name":"要素", "fieldType":"INPUT",
+                "defaultSource":{"type":"BNF_PATH","path":"$wgj_view._要素"} },
+              { "name":"金额", "fieldType":"FORMULA" }
+            ]
+            """;
+        JsonNode fields = M.readTree(fieldsJson);
+
+        // 旧快照（无 resolvedRows），driverRow 键为视图别名 _料件/_要素
+        String cv = """
+            { "tabs": [ {
+                "componentId": "comp-A", "tabName": "料件",
+                "baseRows": [ {
+                    "driverRow": { "_料件": "料9", "_要素": "加工费" },
+                    "basicDataValues": {
+                        "{$wgj_view._料件}": "料9",
+                        "{$wgj_view._要素}": "加工费"
+                    }
+                } ],
+                "editRows": [],
+                "formulaResults": [ { "rowKey": "料9||加工费", "values": { "金额": 999.5 } } ]
+            } ] }
+            """;
+
+        JsonNode rowKeyFields = M.readTree("[\"料件\",\"要素\"]");
+
+        Map<String, CardEffectiveRows.TabRows> result =
+            CardEffectiveRows.parse(
+                M.readTree(cv),
+                M.readTree(COMPONENTS_SNAPSHOT),
+                (cid) -> rowKeyFields,
+                (cid) -> fields);
+
+        CardEffectiveRows.TabRows tab = result.get("comp-A:2");
+        assertNotNull(tab, "应按 comp-A:2 建键");
+        assertEquals(1, tab.rows.size());
+        Map<String, Object> row0 = tab.rows.get(0);
+
+        // 核心断言：formulaByKey 按 "料9||加工费" 命中 → 金额 = 999.5
+        assertEquals(999.5, ((Number) row0.get("金额")).doubleValue(), 1e-9,
+            "回退路径 rowKey 应为 '料9||加工费'（|| 分隔），使 formulaByKey 精确命中");
+    }
+
+    /**
+     * 全空 key 场景：driverRow/basicDataValues 均无值 → 退行号 "0"，formulaByKey 按行号 "0" 命中。
+     */
+    @Test
+    @DisplayName("回退路径 rowKey: 全空 key 退行号兜底，formulaByKey 按行号命中")
+    void fallbackRowKey_allEmpty_fallsBackToIndex() throws Exception {
+        String fieldsJson = """
+            [ { "name":"料件", "fieldType":"INPUT",
+                "defaultSource":{"type":"BNF_PATH","path":"$wgj_view._料件"} } ]
+            """;
+        JsonNode fields = M.readTree(fieldsJson);
+        JsonNode rowKeyFields = M.readTree("[\"料件\"]");
+
+        String cv = """
+            { "tabs": [ {
+                "componentId": "comp-A", "tabName": "料件",
+                "baseRows": [ {
+                    "driverRow": {},
+                    "basicDataValues": {}
+                } ],
+                "editRows": [],
+                "formulaResults": [ { "rowKey": "0", "values": { "金额": 42.0 } } ]
+            } ] }
+            """;
+
+        Map<String, CardEffectiveRows.TabRows> result =
+            CardEffectiveRows.parse(
+                M.readTree(cv),
+                M.readTree(COMPONENTS_SNAPSHOT),
+                (cid) -> rowKeyFields,
+                (cid) -> fields);
+
+        Map<String, Object> row0 = result.get("comp-A:2").rows.get(0);
+        assertEquals(42.0, ((Number) row0.get("金额")).doubleValue(), 1e-9,
+            "全空 key 应退行号 '0'，formulaByKey 按行号命中");
+    }
+
+    /**
+     * GLOBAL_VARIABLE 型 defaultSource：basicDataValues["@gvar:MY_CODE"] = "GV值"
+     */
+    @Test
+    @DisplayName("回退路径 rowKey: defaultSource GLOBAL_VARIABLE 从 basicDataValues @gvar: 取值")
+    void fallbackRowKey_globalVariableDefaultSource() throws Exception {
+        String fieldsJson = """
+            [ { "name":"料件", "fieldType":"INPUT",
+                "defaultSource":{"type":"GLOBAL_VARIABLE","code":"MY_CODE"} } ]
+            """;
+        JsonNode fields = M.readTree(fieldsJson);
+        JsonNode rowKeyFields = M.readTree("[\"料件\"]");
+
+        String cv = """
+            { "tabs": [ {
+                "componentId": "comp-A", "tabName": "料件",
+                "baseRows": [ {
+                    "driverRow": {},
+                    "basicDataValues": { "@gvar:MY_CODE": "GV值" }
+                } ],
+                "editRows": [],
+                "formulaResults": [ { "rowKey": "GV值", "values": { "金额": 7.7 } } ]
+            } ] }
+            """;
+
+        Map<String, CardEffectiveRows.TabRows> result =
+            CardEffectiveRows.parse(
+                M.readTree(cv),
+                M.readTree(COMPONENTS_SNAPSHOT),
+                (cid) -> rowKeyFields,
+                (cid) -> fields);
+
+        Map<String, Object> row0 = result.get("comp-A:2").rows.get(0);
+        assertEquals(7.7, ((Number) row0.get("金额")).doubleValue(), 1e-9,
+            "GLOBAL_VARIABLE defaultSource 应从 basicDataValues[@gvar:MY_CODE] 取值作 rowKey");
     }
 }
