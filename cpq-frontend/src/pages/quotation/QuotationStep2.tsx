@@ -2356,6 +2356,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           // AP-54: 写路径用 realRowIndex(对象引用映射回 comp.rows 真实下标)
                           onCellChange: (ri, k, val) => handleRowChange(activeComponentDataIndex, realRowIndex, k, val),
                           onCellBlur: (ri, k) => {
+                            // B5: 输入数值列失焦/回车后重算 footer 小计。
+                            // 重算入口：handleRowChange 已把最新值写入 item.componentData，
+                            // 触发重渲染时 activeInputColSums（computeNonSubtotalColumnSums）自动重算。
+                            // 此处无需额外触发——受控受控组件 onChange 已保证 item 与 UI 同步；
+                            // onCellBlur 负责（1）DATA_SOURCE 重查 (handleInputBlur)（2）快照写回 (handleSnapshotCellEdit)。
                             handleInputBlur(activeComponentDataIndex, realRowIndex, k);
                             // Phase4 Task3: 报价侧用户输入字段 onBlur → 写快照 editRows(替代仅靠 autosave 写 row_data)。
                             // 仅 INPUT* 类型(FORMULA/BASIC_DATA/DATA_SOURCE/FIXED 不在此触发); row[k] 为最新受控值。
