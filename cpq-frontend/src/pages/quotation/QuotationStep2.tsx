@@ -813,6 +813,36 @@ function buildResolvedRow(
 }
 
 /**
+ * 识别组件内"二阶列"（is_subtotal FORMULA 字段，其公式包含 component_subtotal token
+ * 且 token.component_code 属于本组件的 id/code/tabName）。
+ * 二阶列在算行时需要依赖本组件一阶列小计（allComponentSubtotals['self#colName']），
+ * 但一阶列小计在同轮行迭代内尚未回填，因此需要两阶段算行。
+ * 返回二阶字段名集合；空集 = 无二阶列（大多数组件）。
+ */
+function detectSecondOrderFields(comp: ComponentDataItem): Set<string> {
+  const selfIds = new Set<string>();
+  if (comp.componentId) selfIds.add(comp.componentId);
+  if (comp.componentCode) selfIds.add(comp.componentCode);
+  if (comp.tabName) selfIds.add(comp.tabName);
+
+  const secondOrder = new Set<string>();
+  for (const f of comp.fields ?? []) {
+    if (!f.is_subtotal || f.field_type !== 'FORMULA') continue;
+    const fname = f.name || f.key || '';
+    if (!fname) continue;
+    const formula = (comp.formulas ?? []).find((fm: any) => fm.name === fname);
+    if (!formula?.expression) continue;
+    for (const token of formula.expression) {
+      if (token?.type === 'component_subtotal' && selfIds.has(token.component_code ?? '')) {
+        secondOrder.add(fname);
+        break;
+      }
+    }
+  }
+  return secondOrder;
+}
+
+/**
  * 按组件 cross_tab_ref 依赖拓扑序构建 crossTabRows (镜像后端 CardSnapshotService PASS2)。
  * 前置: allComponentSubtotals 必须已构建完 (PASS1)。
  * 每算完一个组件即把其 resolvedRows 存入 store (componentId + componentCode + ids[] 三键),
@@ -821,6 +851,10 @@ function buildResolvedRow(
  * 副作用(PASS2 回填): 每个组件 resolvedRows 算完后，从 rows 的 is_subtotal 列值求和，
  * 回填传入的 allComponentSubtotals（键: `${id}#${colName}` 及总计 `${id}`）。
  * 这保证「列小计 == 各行显示值之和」（DRY，修复 cross_tab 公式列小计显示 0 的问题）。
+ *
+ * 二阶列处理(B2): 若组件含"引用本组件小计的二阶 FORMULA 列"，先做第一轮行迭代算一阶列
+ * 并立即回填一阶列小计(含 `self#colName` 键)，再做第二轮算含二阶列的完整结果。
+ * 这消除"算二阶列时本组件一阶列小计尚为 0"的双口径问题。
  */
 export function buildCrossTabRows(
   componentData: ComponentDataItem[],
@@ -837,31 +871,65 @@ export function buildCrossTabRows(
   try { order = topoOrderComponents(ids, deps); }
   catch { order = ids; /* 环：退回原序，避免整卡渲染崩溃；模板保存层已拦截环 */ }
 
+  /** 单组件全量行迭代 → resolvedRows（复用逻辑，避免重复）。 */
+  function computeRows(comp: ComponentDataItem, exp: import('./useDriverExpansions').DriverExpansion | undefined): Array<Record<string, any>> {
+    const s = splitRows(comp, exp);
+    const rows: Array<Record<string, any>> = [];
+    for (let i = 0; i < s.totalRows; i++) {
+      const ra = rowAt(i, comp, s);
+      const row = fillFixedDefaults(comp.fields!, ra.row);
+      const basicDataValues = ra.expIndex >= 0 ? exp!.rows[ra.expIndex]?.basicDataValues : undefined;
+      const driverRow = ra.expIndex >= 0 ? exp!.rows[ra.expIndex]?.driverRow : undefined;
+      const formulaCache = computeAllFormulas(
+        comp, row, allComponentSubtotals, undefined, undefined, partNo, basicDataValues,
+        undefined, globalVariableDefs, store,
+      );
+      rows.push(buildResolvedRow(comp.fields!, row, driverRow, basicDataValues, formulaCache));
+    }
+    return rows;
+  }
+
   const store: Record<string, Array<Record<string, any>>> = {};
   for (const cid of order) {
     const comp = normals[ids.indexOf(cid)];
     if (!comp) continue;
     const exp = lookupExpansion(comp);
-    const s = splitRows(comp, exp);
-    const rows: Array<Record<string, any>> = [];
-    for (let i = 0; i < s.totalRows; i++) {
-      const ra = rowAt(i, comp, s);
-      const row = fillFixedDefaults(comp.fields!, ra.row); // 手动行 fillFixedDefaults 已短路
-      const basicDataValues = ra.expIndex >= 0 ? exp!.rows[ra.expIndex]?.basicDataValues : undefined;
-      const driverRow = ra.expIndex >= 0 ? exp!.rows[ra.expIndex]?.driverRow : undefined;
-      const formulaCache = computeAllFormulas(
-        comp, row, allComponentSubtotals, undefined, undefined, partNo, basicDataValues,
-        undefined, globalVariableDefs, store,   // crossTabRows-so-far (topo order → A ready before B)
-      );
-      rows.push(buildResolvedRow(comp.fields!, row, driverRow, basicDataValues, formulaCache));
-    }
-    store[cid] = rows;
-    if (comp.componentCode) store[comp.componentCode] = rows;
-    if (comp.componentId) store[comp.componentId] = rows;
 
-    // PASS2 回填：从 resolvedRows 的 is_subtotal 列值求和，更新 allComponentSubtotals。
-    // 保证「列小计显示 == 各行 cross_tab 公式实际值之和」（PASS1 因 crossTabRows=undefined 算出 0）。
-    subtotalsFromResolvedRows(comp, rows, allComponentSubtotals);
+    // B2: 检测是否有二阶列（引用本组件小计的 component_subtotal）。
+    // 有则做两阶段：第一轮只算一阶列并立即回填列小计，第二轮算含二阶列的完整结果。
+    const secondOrderFields = detectSecondOrderFields(comp);
+
+    if (secondOrderFields.size > 0) {
+      // ── 第一轮：临时屏蔽二阶列（制造只含一阶 is_subtotal 列的"影子组件"），算出一阶行值
+      // 并立即回填一阶列小计，使二阶列公式在第二轮能正确读到 allComponentSubtotals['self#colName']。
+      // "影子组件"的 fields 过滤掉二阶列，formulas 同步过滤（防止 computeAllFormulas 找到二阶公式）。
+      const firstOrderComp: ComponentDataItem = {
+        ...comp,
+        fields: (comp.fields ?? []).filter((f: ComponentField) => !secondOrderFields.has(f.name || f.key || '')),
+        formulas: (comp.formulas ?? []).filter((fm: any) => !secondOrderFields.has(fm.name ?? '')),
+      };
+      const firstPassRows = computeRows(firstOrderComp as ComponentDataItem, exp);
+      // 立即回填一阶列小计（subtotalsFromResolvedRows 按 is_subtotal 列过滤）。
+      // 此时 allComponentSubtotals['self#aCost'] 等键即就绪，供第二轮二阶列公式查询。
+      subtotalsFromResolvedRows(firstOrderComp as ComponentDataItem, firstPassRows, allComponentSubtotals);
+
+      // ── 第二轮：用完整 comp（含二阶列）算最终 resolvedRows，此时一阶列小计已正确。
+      const rows = computeRows(comp, exp);
+      store[cid] = rows;
+      if (comp.componentCode) store[comp.componentCode] = rows;
+      if (comp.componentId) store[comp.componentId] = rows;
+      // 最终回填（覆盖第一轮的一阶列小计，同时写入二阶列小计 + 更新总小计）。
+      subtotalsFromResolvedRows(comp, rows, allComponentSubtotals);
+    } else {
+      // 无二阶列：原有逻辑，一轮完成。
+      const rows = computeRows(comp, exp);
+      store[cid] = rows;
+      if (comp.componentCode) store[comp.componentCode] = rows;
+      if (comp.componentId) store[comp.componentId] = rows;
+      // PASS2 回填：从 resolvedRows 的 is_subtotal 列值求和，更新 allComponentSubtotals。
+      // 保证「列小计显示 == 各行 cross_tab 公式实际值之和」（PASS1 因 crossTabRows=undefined 算出 0）。
+      subtotalsFromResolvedRows(comp, rows, allComponentSubtotals);
+    }
   }
   return store;
 }
@@ -1003,38 +1071,109 @@ function computeTabSubtotal(
   return sum;
 }
 
+/**
+ * B4：对活跃组件所有「数值列但 is_subtotal=false」求 per-column 行合计。
+ * 覆盖：INPUT_NUMBER（直接读 row 值）+ FORMULA / DATA_SOURCE（通过 computeAllFormulas fieldValues）。
+ * is_subtotal=true 列已由 computeTabSubtotalsByColumn 在 allComponentSubtotals 里填好，不重算。
+ * AP-51 纪律：行数用 expansion.rowCount > 0 ? expansion.rowCount : comp.rows.length，禁 Math.max。
+ */
+export function computeNonSubtotalColumnSums(
+  comp: ComponentDataItem,
+  allComponentSubtotals?: Record<string, number>,
+  partNo?: string,
+  driverExpansion?: import('./useDriverExpansions').DriverExpansion,
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!comp?.fields) return out;
+  // 目标列：数值型但不是 is_subtotal（避免与 allComponentSubtotals 重复/干扰）
+  const targetFields = comp.fields.filter(f => {
+    if (f.is_subtotal) return false; // 已由 computeTabSubtotalsByColumn 处理
+    return (
+      f.field_type === 'INPUT_NUMBER' ||
+      f.field_type === 'FORMULA' ||
+      f.field_type === 'DATA_SOURCE'
+    );
+  });
+  if (targetFields.length === 0) return out;
+  for (const f of targetFields) out[f.name || f.key || ''] = 0;
+
+  const s = splitRows(comp, driverExpansion as any);
+  // AP-51：driver 权威优先；comp.rows.length 仅 rowCount=0 时使用
+  const rowCount = (driverExpansion?.rowCount ?? 0) > 0 ? driverExpansion!.rowCount : s.totalRows;
+
+  for (let i = 0; i < rowCount; i++) {
+    const ra = rowAt(i, comp, s);
+    const row = fillFixedDefaults(comp.fields, ra.row);
+    const basicDataValues = ra.expIndex >= 0 ? driverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
+    const fv: Record<string, number> = {};
+    const formulaCache = computeAllFormulas(
+      comp, row, allComponentSubtotals, undefined, undefined, partNo, basicDataValues,
+      undefined, globalVariableDefs,
+      undefined, undefined, { fieldValues: fv },
+    );
+    for (const f of targetFields) {
+      const colName = f.name || f.key || '';
+      if (!colName) continue;
+      let val: number;
+      if (f.field_type === 'INPUT_NUMBER') {
+        // INPUT_NUMBER 直接读行值（formulaCache 不算输入列）
+        const raw = row[colName];
+        val = typeof raw === 'number' && isFinite(raw) ? raw : (parseFloat(raw) || 0);
+      } else {
+        // FORMULA / DATA_SOURCE 优先取 formulaCache，缺时取 fieldValues
+        val = (formulaCache[colName] as number | null | undefined) ?? (fv[colName] ?? 0);
+        if (!isFinite(val)) val = 0;
+      }
+      out[colName] += val;
+    }
+  }
+  return out;
+}
 
 function computeProductSubtotal(
   item: LineItem,
   // 让 caller 把 driverExpansions / customerId 透传进来 —— 不传则退化为旧行为（仅 comp.rows）
   driverExpansions?: import('./useDriverExpansions').DriverExpansionMap,
   customerId?: string,
+  // B3: 调用方已完成 PASS1+PASS2(buildCrossTabRows 回填后)的 allComponentSubtotals。
+  // 提供时直接用（跳过函数内 PASS1 重算），消除双口径（cross_tab 列/二阶列小计与渲染行同源）。
+  // 不提供时退化为旧 PASS1 重算行为（兜底，向后兼容）。
+  precomputedSubtotals?: Record<string, number>,
 ): number {
   if (!item.componentData || item.componentData.length === 0) return item.subtotal || 0;
 
-  const partNo = item.productPartNo;
-  // V203/Phase B: 必须传 comp.dataDriverPath 才能区分同 componentId 不同 driver 的两个组件实例
-  // V196 (2026-05-19): 加 fieldsHash 维度区分同 cid 同 driver 不同 fields_override 的两个 Tab
-  const lookupExpansion = (comp: ComponentDataItem) => {
-    if (!driverExpansions || !partNo || !comp.componentId) return undefined;
-    // Bug B: lineItemId = item.id || item.tempId || ''
-    const lineItemId = (item as any).id || (item as any).tempId || '';
-    const k = driverExpansionKey(lineItemId, partNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
-    return driverExpansions[k];
-  };
+  let componentSubtotals: Record<string, number>;
 
-  // Compute NORMAL component subtotals first
-  const componentSubtotals: Record<string, number> = {};
-  for (const comp of item.componentData) {
-    if (!comp?.fields || comp.componentType !== 'NORMAL') continue;
-    // partNo + driverExpansion 一起传 —— BASIC_DATA 字段才能按行取值，
-    // 不然落到全局 path cache 第一项 / 当 0 算（产品小计 156.80 vs 列小计 750.80 的根因）
-    const subtotal = computeTabSubtotal(
-      comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp),
-    );
-    if (comp.componentId) componentSubtotals[comp.componentId] = subtotal;
-    if (comp.componentCode) componentSubtotals[comp.componentCode] = subtotal;
-    componentSubtotals[comp.tabName] = subtotal;
+  if (precomputedSubtotals) {
+    // B3: 用调用方传入的（buildCrossTabRows 回填后）已修正小计，跳过 PASS1 重算。
+    // 消除"产品小计 PASS1 不含 crossTabRows → cross_tab 列贡献 0"的双口径。
+    componentSubtotals = precomputedSubtotals;
+  } else {
+    const partNo = item.productPartNo;
+    // V203/Phase B: 必须传 comp.dataDriverPath 才能区分同 componentId 不同 driver 的两个组件实例
+    // V196 (2026-05-19): 加 fieldsHash 维度区分同 cid 同 driver 不同 fields_override 的两个 Tab
+    const lookupExpansion = (comp: ComponentDataItem) => {
+      if (!driverExpansions || !partNo || !comp.componentId) return undefined;
+      // Bug B: lineItemId = item.id || item.tempId || ''
+      const lineItemId = (item as any).id || (item as any).tempId || '';
+      const k = driverExpansionKey(lineItemId, partNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
+      return driverExpansions[k];
+    };
+
+    // Compute NORMAL component subtotals first (PASS1: 无 crossTabRows，cross_tab 列小计为 0)
+    componentSubtotals = {};
+    for (const comp of item.componentData) {
+      if (!comp?.fields || comp.componentType !== 'NORMAL') continue;
+      // partNo + driverExpansion 一起传 —— BASIC_DATA 字段才能按行取值，
+      // 不然落到全局 path cache 第一项 / 当 0 算（产品小计 156.80 vs 列小计 750.80 的根因）
+      const subtotal = computeTabSubtotal(
+        comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp),
+      );
+      if (comp.componentId) componentSubtotals[comp.componentId] = subtotal;
+      if (comp.componentCode) componentSubtotals[comp.componentCode] = subtotal;
+      componentSubtotals[comp.tabName] = subtotal;
+    }
   }
 
   // Find SUBTOTAL component and use its first formula as product subtotal
@@ -1681,6 +1820,20 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     globalVariableDefs,
   );
 
+  // B4：活跃 Tab 非 is_subtotal 数值列（INPUT_NUMBER / FORMULA / DATA_SOURCE）的 per-column 行合计。
+  // 依赖 allComponentSubtotals（PASS1+PASS2 后），与 effectiveRows 同源（splitRows + rowAt + AP-51 行数纪律）。
+  // 每次渲染自动重算，无需额外 state，用户 blur/enter 触发 handleRowChange → item.componentData 更新
+  // → 重渲染 → 此处自动更新（B5 重算入口）。
+  const activeInputColSums: Record<string, number> = activeComponent
+    ? computeNonSubtotalColumnSums(
+        activeComponent,
+        allComponentSubtotals,
+        item.productPartNo,
+        activeDriverExpansion as any,
+        globalVariableDefs,
+      )
+    : {};
+
   // Dynamic product attribute fields from template definition
   const attrFields = item.productAttributes || [];
 
@@ -2203,6 +2356,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           // AP-54: 写路径用 realRowIndex(对象引用映射回 comp.rows 真实下标)
                           onCellChange: (ri, k, val) => handleRowChange(activeComponentDataIndex, realRowIndex, k, val),
                           onCellBlur: (ri, k) => {
+                            // B5: 输入数值列失焦/回车后重算 footer 小计。
+                            // 重算入口：handleRowChange 已把最新值写入 item.componentData，
+                            // 触发重渲染时 activeInputColSums（computeNonSubtotalColumnSums）自动重算。
+                            // 此处无需额外触发——受控受控组件 onChange 已保证 item 与 UI 同步；
+                            // onCellBlur 负责（1）DATA_SOURCE 重查 (handleInputBlur)（2）快照写回 (handleSnapshotCellEdit)。
                             handleInputBlur(activeComponentDataIndex, realRowIndex, k);
                             // Phase4 Task3: 报价侧用户输入字段 onBlur → 写快照 editRows(替代仅靠 autosave 写 row_data)。
                             // 仅 INPUT* 类型(FORMULA/BASIC_DATA/DATA_SOURCE/FIXED 不在此触发); row[k] 为最新受控值。
@@ -2290,42 +2448,72 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     );
                   })}
                 </tbody>
-                {/* Tab subtotal row */}
-                {activeComponent.fields.some(f => f.is_subtotal) && (
+                {/* Tab subtotal row
+                    B4: 显示条件扩展——有 is_subtotal 列 OR 有 INPUT_NUMBER/FORMULA/DATA_SOURCE 数值列均显示 footer。
+                    小计行：is_subtotal 列用 allComponentSubtotals（PASS1+PASS2 已算），
+                           INPUT_NUMBER/FORMULA/DATA_SOURCE（非 is_subtotal）列用 activeInputColSums（逐行累加）。
+                    本页签总计行：维持只汇总 is_subtotal（成本）列，不把输入量并入成本总计。
+                */}
+                {activeComponent.fields.some(f =>
+                  f.is_subtotal ||
+                  f.field_type === 'INPUT_NUMBER' ||
+                  f.field_type === 'FORMULA' ||
+                  f.field_type === 'DATA_SOURCE'
+                ) && (
                   <tfoot>
                     <tr className="qt-subtotal-row">
                       {/* 核价 BOM 递归展开：与 3 系统固定列对齐的占位单元格（仅"勾选递归"组件） */}
                       {activeComponentBomTree && (<><td /><td /><td /></>)}
                       {activeComponent.fields.map((field, fi) => {
+                        const colName = field.name || field.key || '';
                         if (field.is_subtotal) {
                           // Plan 2-核心：按列取本列总计，回退到组件级（单小计列）兼容。
                           const tabSubtotal =
-                            allComponentSubtotals[`${activeComponent.componentCode}#${field.name}`]
-                            ?? allComponentSubtotals[`${activeComponent.tabName}#${field.name}`]
+                            allComponentSubtotals[`${activeComponent.componentCode}#${colName}`]
+                            ?? allComponentSubtotals[`${activeComponent.tabName}#${colName}`]
                             ?? allComponentSubtotals[activeComponent.componentCode]
                             ?? allComponentSubtotals[activeComponent.tabName]
                             ?? 0;
                           return (
-                            <td key={field.name || fi} className="qt-subtotal-cell">
+                            <td key={colName || fi} className="qt-subtotal-cell">
                               {formatCurrency(tabSubtotal)}
                             </td>
                           );
                         }
-                        if (fi === 0) {
-                          return <td key={field.name || fi} className="qt-subtotal-label-cell">小计</td>;
+                        // B4：非 is_subtotal 的 INPUT_NUMBER / FORMULA / DATA_SOURCE 列显示行合计
+                        const isNumericCol =
+                          field.field_type === 'INPUT_NUMBER' ||
+                          field.field_type === 'FORMULA' ||
+                          field.field_type === 'DATA_SOURCE';
+                        if (isNumericCol && colName && colName in activeInputColSums) {
+                          const colSum = activeInputColSums[colName] ?? 0;
+                          // 输入量列用适当小数位（最多4位，去除无意义末尾0）
+                          const formatted = colSum === 0
+                            ? '0'
+                            : parseFloat(colSum.toFixed(4)).toString();
+                          return (
+                            <td key={colName || fi} className="qt-subtotal-cell" style={{ color: '#595959' }}>
+                              {formatted}
+                            </td>
+                          );
                         }
-                        return <td key={field.name || fi} />;
+                        if (fi === 0) {
+                          return <td key={colName || fi} className="qt-subtotal-label-cell">小计</td>;
+                        }
+                        return <td key={colName || fi} />;
                       })}
                       <td />
                     </tr>
-                    {/* 本页签总计 = 该页签多个小计列之和（页签内展示，不上提到卡片底部） */}
-                    <tr className="qt-subtotal-row qt-tab-total-row">
-                      {activeComponentBomTree && (<><td /><td /><td /></>)}
-                      <td className="qt-subtotal-label-cell">本页签总计</td>
-                      <td colSpan={activeComponent.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
-                        {formatCurrency(sumTabColumns(activeComponent as any, allComponentSubtotals))}
-                      </td>
-                    </tr>
+                    {/* 本页签总计 = 该页签多个 is_subtotal 列之和（成本列汇总；输入量列不并入） */}
+                    {activeComponent.fields.some(f => f.is_subtotal) && (
+                      <tr className="qt-subtotal-row qt-tab-total-row">
+                        {activeComponentBomTree && (<><td /><td /><td /></>)}
+                        <td className="qt-subtotal-label-cell">本页签总计</td>
+                        <td colSpan={activeComponent.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
+                          {formatCurrency(sumTabColumns(activeComponent as any, allComponentSubtotals))}
+                        </td>
+                      </tr>
+                    )}
                   </tfoot>
                 )}
               </table>
@@ -2353,7 +2541,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           <span className="qt-subtotal-value">
             {formatCurrency(
               item.componentData.length > 0
-                ? computeProductSubtotal(item, driverExpansions, customerId)
+                // B3: 传 allComponentSubtotals（buildCrossTabRows 回填后，含 cross_tab 列+二阶列正确小计），
+                // 消除函数内 PASS1 重算双口径（产品小计与渲染行同源）。
+                ? computeProductSubtotal(item, driverExpansions, customerId, allComponentSubtotals)
                 : item.subtotal
             )}
           </span>

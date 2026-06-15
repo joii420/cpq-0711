@@ -767,22 +767,54 @@ public class CardSnapshotService {
             if (tab == null) continue;
             ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, MAPPER.createArrayNode());
             ArrayNode editRows = filteredEdit.getOrDefault(cid, MAPPER.createArrayNode());
-            ArrayNode formulaResults = formulaCalculator.calculate(
+            String code = tab.path("componentCode").asText(null);
+            String tabNameStr = tab.path("tabName").asText("");
+
+            // B6 两阶段：同组件内可能存在二阶列（component_subtotal 引用本组件其它 is_subtotal 列）。
+            // 第 1 次 calculate：得到正确的 cross_tab_ref 列行值（crossTabRows 已有兄弟组件行）；
+            //   backfill 本组件各列小计到 componentSubtotals（含一阶列 "${code}#${col}" 列小计键）。
+            // 第 2 次 calculate：component_subtotal 对本组件列小计键的引用此时已就绪 → 二阶列算对。
+            ArrayNode pass1Results = formulaCalculator.calculate(
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
                 rkfByComp.get(cid), baseRows, editRows,
                 componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>(),
                 crossTabRows); // 10 参重载：透传已算兄弟组件行
-            List<Map<String, Object>> resolved = buildResolvedRows(
-                tab, baseRows, editRows, formulaResults, rkfByComp.get(cid));
-            // 存入 crossTabRows（componentId + componentCode 双键，供 token.source 任一形式命中）
-            crossTabRows.put(cid, resolved);
-            String code = tab.path("componentCode").asText(null);
-            if (code != null && !code.isBlank()) crossTabRows.put(code, resolved);
-            // PASS2 回填：cross_tab_ref 列 PASS1 时 crossTabRows 为空，小计算成 0；
-            // 现在用 resolved（含正确行值）重算 is_subtotal 列之和，覆盖 componentSubtotals。
-            // buildTabNode 从 componentSubtotals#col 键读 subtotalByColumn，回填后自动得正确值。
-            backfillSubtotalsFromResolved(tab.path("fields"), resolved, cid, code,
-                tab.path("tabName").asText(""), componentSubtotals);
+            List<Map<String, Object>> pass1Resolved = buildResolvedRows(
+                tab, baseRows, editRows, pass1Results, rkfByComp.get(cid));
+            // 存入 crossTabRows（双键，供后续兄弟组件 cross_tab_ref 查询）
+            crossTabRows.put(cid, pass1Resolved);
+            if (code != null && !code.isBlank()) crossTabRows.put(code, pass1Resolved);
+            // 第 1 次 backfill：用 pass1 的 resolved 更新本组件一阶列列小计到 componentSubtotals，
+            //   关键：把 "${cid}#${col}" / "${code}#${col}" / "${tabName}#${col}" 三类键都写入，
+            //   供第 2 次 calculate 的 component_subtotal token 查到本组件一阶列的正确值。
+            backfillSubtotalsFromResolved(tab.path("fields"), pass1Resolved, cid, code,
+                tabNameStr, componentSubtotals);
+
+            // 第 2 次 calculate（仅在组件含 is_subtotal 列时执行，否则结果与 pass1 相同可复用）：
+            //   componentSubtotals 已有正确一阶列小计键 → 二阶列 component_subtotal token 能正确求值。
+            boolean hasSubtotalCols = !formulaCalculator.findSubtotalFieldNames(tab.path("fields")).isEmpty();
+            ArrayNode formulaResults;
+            List<Map<String, Object>> resolved;
+            if (hasSubtotalCols) {
+                formulaResults = formulaCalculator.calculate(
+                    tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
+                    rkfByComp.get(cid), baseRows, editRows,
+                    componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>(),
+                    crossTabRows);
+                resolved = buildResolvedRows(
+                    tab, baseRows, editRows, formulaResults, rkfByComp.get(cid));
+                // 更新 crossTabRows 为第 2 次 resolved（二阶列已算对，兄弟组件引用此组件 cross_tab_ref 时应取最终值）
+                crossTabRows.put(cid, resolved);
+                if (code != null && !code.isBlank()) crossTabRows.put(code, resolved);
+                // 第 2 次 backfill：更新二阶列本身的列小计
+                backfillSubtotalsFromResolved(tab.path("fields"), resolved, cid, code,
+                    tabNameStr, componentSubtotals);
+            } else {
+                // 无 is_subtotal 列 → 复用 pass1 结果，零额外开销
+                formulaResults = pass1Results;
+                resolved = pass1Resolved;
+            }
+
             tabNodeById.put(cid, buildTabNode(tab, cid, baseRows, editRows, formulaResults,
                 resolved, componentSubtotals));
         }

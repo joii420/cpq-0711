@@ -1754,3 +1754,243 @@ describe('T8 配色 insideKsum', () => {
     expect(blk?.color).toBe('red');
   });
 });
+
+// ─────────────────────────────────────────────
+// A1: 稳定身份绑定 — findTabByRef 按 componentId/alias 优先（不按 componentName 优先）
+// 背景: 编辑器用 alias(如 COMP-0036) 或中文名插入引用时，同名/改名页签不能串号
+// 根因: SUM([A.列] * [B.列]) — N=2 路径的 primaryTab 按行键长度排序，覆盖了第二个 source;
+//       同名页签时 findTabByRef(componentName 优先) 也会命中错误的第一个。
+// ─────────────────────────────────────────────
+describe('A1 — cross_tab 引用稳定身份绑定（alias/componentId 优先）', () => {
+  const tabDefs: TabDef[] = [
+    {
+      componentId: 'CID-元素',
+      alias: 'COMP-0029',
+      componentName: '元素',
+      tabKey: 'tab-0029',
+      rowKeyFields: ['料件'],
+      detailFields: ['重量'],
+      subtotalCols: [],
+    },
+    {
+      componentId: 'CID-来料加工费',
+      alias: 'COMP-0036',
+      componentName: '来料加工费',
+      tabKey: 'tab-0036',
+      rowKeyFields: ['料件'],
+      detailFields: ['费用'],
+      subtotalCols: [],
+    },
+  ];
+
+  // 两个独立 SUM：各自是单列快捷路径，alias 格式 → source 各自正确（回归护栏）
+  it('A1 alias格式两个独立SUM引用不同页签 source各自正确', () => {
+    const tokens = expressionToTokens(
+      'SUM([COMP-0029.重量]) + SUM([COMP-0036.费用])',
+      tabDefs,
+      ['料件'],
+      'CID-来料',
+    );
+    const refs = tokens.filter((t) => t.type === 'cross_tab_ref');
+    expect(refs).toHaveLength(2);
+    expect(refs[0].source).toBe('CID-元素');
+    expect(refs[1].source).toBe('CID-来料加工费');
+  });
+
+  // 同名页签 + alias 格式：findTabByRef 应精确按 alias 匹配，不能按 componentName 命中第一个
+  // alias='COMP-B' → componentName='加工费'≠'COMP-B' → 回退 alias 匹配 → CID-B ✓（当前已正确）
+  it('A1 alias格式单个SUM同名页签精确命中', () => {
+    const dup: TabDef[] = [
+      {
+        componentId: 'CID-A',
+        alias: 'COMP-A',
+        componentName: '加工费',
+        tabKey: 'tab-a',
+        rowKeyFields: ['料件'],
+        detailFields: ['费用'],
+        subtotalCols: [],
+      },
+      {
+        componentId: 'CID-B',
+        alias: 'COMP-B',
+        componentName: '加工费',
+        tabKey: 'tab-b',
+        rowKeyFields: ['料件'],
+        detailFields: ['费用'],
+        subtotalCols: [],
+      },
+    ];
+    // 表达式用 alias 格式：COMP-B → 必须精确命中 CID-B
+    const ref = expressionToTokens(
+      'SUM([COMP-B.费用])',
+      dup,
+      ['料件'],
+      'CID-self',
+    ).find((t) => t.type === 'cross_tab_ref')!;
+    expect(ref.source).toBe('CID-B');
+  });
+
+  // RED before fix: alias='COMP-B' 恰好等于另一页签 componentName='COMP-B' → componentName 优先截走
+  it('A1 RED: alias串恰好等于另一页签componentName时串号（修复前）', () => {
+    // 构造：tabDefs 里有页签 componentName='COMP-B'（中文名就是那串alias），另一个 alias='COMP-B'
+    // 当引用串='COMP-B'，componentName 优先 → 命中 componentName='COMP-B'(CID-特殊)，而非 alias='COMP-B'(CID-B)
+    const tricky: TabDef[] = [
+      {
+        componentId: 'CID-特殊',
+        alias: 'COMP-特殊',
+        componentName: 'COMP-B',       // ← componentName 故意写成另一个页签的 alias 字符串
+        tabKey: 'tab-special',
+        rowKeyFields: ['料件'],
+        detailFields: ['费用'],
+        subtotalCols: [],
+      },
+      {
+        componentId: 'CID-B',
+        alias: 'COMP-B',               // ← alias='COMP-B'
+        componentName: '正常名称',
+        tabKey: 'tab-b',
+        rowKeyFields: ['料件'],
+        detailFields: ['费用'],
+        subtotalCols: [],
+      },
+    ];
+    // 表达式用 alias='COMP-B' → 应命中 CID-B（alias 精确），不能被 componentName='COMP-B' 的 CID-特殊 截走
+    const ref = expressionToTokens(
+      'SUM([COMP-B.费用])',
+      tricky,
+      ['料件'],
+      'CID-self',
+    ).find((t) => t.type === 'cross_tab_ref')!;
+    expect(ref.source).toBe('CID-B');  // 修复前：会得到 'CID-特殊'（componentName 优先截走）
+  });
+
+  // 真实 bug 场景：SUM([A.列] * [B.列]) — N=2 行级路径
+  // primaryTab 按 rowKeyFields 长度+componentId 字典序排序取 ordered[0]，其 componentId 覆盖了 source
+  // 导致两列都映射到排序后第一个页签的 componentId
+  // 此用例在修复前 RED（source='CID-元素' 不正确，应是两个各自独立的 source）
+  // 注意：N=2 行级路径产出单个 cross_tab_ref，source=primaryTab，sources[]=两个
+  // 验证点：sources 数组两个元素各自含正确 componentId
+  it('A1 SUM行级路径N=2: sources数组含两个正确componentId', () => {
+    // 宿主是 CID-来料，selfComponentId='CID-来料' — 元素和来料加工费都是 source
+    // 两者 rowKeyFields 相同（都是 ['料件']）→ 按 componentId 字典序决定 primaryTab
+    const tokens = expressionToTokens(
+      'SUM([COMP-0029.重量] * [COMP-0036.费用])',
+      tabDefs,
+      ['料件'],
+      'CID-来料',
+    );
+    const ref = tokens.find((t) => t.type === 'cross_tab_ref')!;
+    // sources 数组必须含 CID-元素 和 CID-来料加工费 各一个
+    const sourceCids = (ref.sources ?? []).map((s: any) => s.source);
+    expect(sourceCids).toContain('CID-元素');
+    expect(sourceCids).toContain('CID-来料加工费');
+  });
+});
+
+// ─────────────────────────────────────────────
+// A4: round-trip 护栏 — 两轮 expressionToTokens ∘ tokensToDrawerExpression 后 source 稳定
+// 验证 findTabByRef 改 alias 优先后，序列化往返不丢失身份
+// ─────────────────────────────────────────────
+describe('A4 — cross_tab 引用 round-trip 身份稳定护栏', () => {
+  const rtTabDefs: TabDef[] = [
+    {
+      componentId: 'CID-元素',
+      alias: 'COMP-0029',
+      componentName: '元素',
+      tabKey: 'tab-0029',
+      rowKeyFields: ['料件'],
+      detailFields: ['重量'],
+      subtotalCols: [],
+    },
+    {
+      componentId: 'CID-来料加工费',
+      alias: 'COMP-0036',
+      componentName: '来料加工费',
+      tabKey: 'tab-0036',
+      rowKeyFields: ['料件'],
+      detailFields: ['费用'],
+      subtotalCols: [],
+    },
+  ];
+
+  const normalise = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+  it('A4 alias格式表达式 round-trip 两轮 source 完全一致', () => {
+    const expr = 'SUM([COMP-0029.重量]) + SUM([COMP-0036.费用])';
+    const selfRKF = ['料件'];
+    const selfCid = 'CID-来料';
+
+    // 第一轮
+    const tokens1 = expressionToTokens(expr, rtTabDefs, selfRKF, selfCid);
+    const sources1 = tokens1
+      .filter((t) => t.type === 'cross_tab_ref')
+      .map((t) => t.source);
+
+    // 回显 → 中文名格式串（tokensToDrawerExpression 用 componentName 回显）
+    const back1 = tokensToDrawerExpression(tokens1, rtTabDefs);
+
+    // 第二轮（对中文名格式串再次解析）
+    const tokens2 = expressionToTokens(back1, rtTabDefs, selfRKF, selfCid);
+    const sources2 = tokens2
+      .filter((t) => t.type === 'cross_tab_ref')
+      .map((t) => t.source);
+
+    // 两轮 source 完全一致
+    expect(sources1).toEqual(sources2);
+    expect(sources1).toEqual(['CID-元素', 'CID-来料加工费']);
+  });
+
+  it('A4 中文名格式表达式 round-trip 幂等（名称唯一场景）', () => {
+    const expr = 'SUM([元素.重量]) + SUM([来料加工费.费用])';
+    const selfRKF = ['料件'];
+
+    const tokens1 = expressionToTokens(expr, rtTabDefs, selfRKF);
+    const back1 = tokensToDrawerExpression(tokens1, rtTabDefs);
+    const tokens2 = expressionToTokens(back1, rtTabDefs, selfRKF);
+    const back2 = tokensToDrawerExpression(tokens2, rtTabDefs);
+
+    // 两次回显串一致（幂等）
+    expect(normalise(back1)).toBe(normalise(back2));
+    // source 稳定
+    const src1 = tokens1.filter((t) => t.type === 'cross_tab_ref').map((t) => t.source);
+    const src2 = tokens2.filter((t) => t.type === 'cross_tab_ref').map((t) => t.source);
+    expect(src1).toEqual(src2);
+    expect(src1).toEqual(['CID-元素', 'CID-来料加工费']);
+  });
+
+  it('A4 tricky场景: alias串=另一页签componentName → round-trip后 source 仍正确', () => {
+    // 此场景在修复前会导致 source 串号，修复后 alias 优先确保稳定
+    const trickyTabs: TabDef[] = [
+      {
+        componentId: 'CID-特殊',
+        alias: 'COMP-特殊',
+        componentName: 'COMP-B',      // componentName 故意等于下面那个的 alias
+        tabKey: 'tab-special',
+        rowKeyFields: ['料件'],
+        detailFields: ['费用'],
+        subtotalCols: [],
+      },
+      {
+        componentId: 'CID-B',
+        alias: 'COMP-B',
+        componentName: '正常名称',
+        tabKey: 'tab-b',
+        rowKeyFields: ['料件'],
+        detailFields: ['费用'],
+        subtotalCols: [],
+      },
+    ];
+
+    // 表达式用 alias 格式 COMP-B → 应命中 CID-B
+    const tokens1 = expressionToTokens('SUM([COMP-B.费用])', trickyTabs, ['料件']);
+    expect(tokens1.find((t) => t.type === 'cross_tab_ref')?.source).toBe('CID-B');
+
+    // 回显：tokensToDrawerExpression 按 componentId 查 componentName → CID-B → '正常名称'
+    const back1 = tokensToDrawerExpression(tokens1, trickyTabs);
+    expect(back1).toContain('正常名称');
+
+    // 再次解析（中文名'正常名称' 按 componentName 兜底 → CID-B）
+    const tokens2 = expressionToTokens(back1, trickyTabs, ['料件']);
+    expect(tokens2.find((t) => t.type === 'cross_tab_ref')?.source).toBe('CID-B');
+  });
+});

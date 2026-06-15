@@ -4,6 +4,22 @@
 
 ---
 
+### [2026-06-15] fix(subtotal): 报价小计统一 — 配置公式权威 + 所有数值列求和 + 二阶列依赖序 + 输入失焦重算 | QuotationStep2.tsx(buildCrossTabRows 两阶段/computeNonSubtotalColumnSums/footer/computeProductSubtotal) + formulaEngine.ts(component_subtotal 列小计键) + ReadonlyProductCard.tsx + CardSnapshotService.java(PASS2 两阶段) + FormulaCalculator.java(component_subtotal 列小计键) | plan: superpowers/plans/2026-06-15-B-quote-subtotal-unify-allnumeric.md
+
+- **症状(QT-20260615-1722 来料 tab)**: `材料成本` 列行1=515.4248 但小计 ¥0.00；`外购件材料费` 行值≠小计；输入类型数值列无小计。
+- **根因**: ① 二阶公式列(`材料成本 = component_subtotal(来料·来料材料费)+…` 引用**本组件**其它小计列)在小计 pass 里、被引用的一阶列小计尚未回填 → 读 0 → 列小计 0；② `component_subtotal` token 只查组件总小计、不查 `code#列名` 列小计键；③ `computeTabSubtotalsByColumn`/`computeProductSubtotal` 走 PASS1(传 `crossTabRows=undefined`) 与渲染层(PASS2 有 crossTabRows)双口径割裂；④ footer 仅渲染 is_subtotal 列。
+- **修法**: 决策"配置公式权威+小计=各显示行之和+所有数值列求和(含输入,失焦/回车重算)"。前端 `buildCrossTabRows` 组件内两阶段(先一阶列回填 `allComponentSubtotals[组件键#列名]` 再算二阶列)；`formulaEngine`/后端 `FormulaCalculator` 的 `component_subtotal` 优先查 `${code}#${col}` 列小计键、回退组件总小计；`computeProductSubtotal` 增 `precomputedSubtotals` 参数读 buildCrossTabRows 回填值、废 PASS1 重算；footer `computeNonSubtotalColumnSums` 对所有数值列(INPUT_NUMBER/FORMULA/DATA_SOURCE)Σ行(本页签总计仍仅成本列)；输入 blur/enter 触发既有重算；后端 `CardSnapshotService` PASS2 两阶段对齐。
+- **测试**: 前端 vitest 372 passed(含 buildCrossTabRows 二阶列=Σ行 + computeNonSubtotalColumnSums)；后端 ComponentSubtotalColumnKeyTest 5 + 回归 28 passed；tsc 0。**真机+E2E 合并后验证**。
+- **AP-51**: 行数迭代守 `rowCount>0?rowCount:baseRows.length`，禁 Math.max。
+
+### [2026-06-15] fix(bom): MaterialBomMergeHandler 版本分组键收敛，料号重分类单序列升版 | MaterialBomMergeHandler.java + MaterialBomMergeHandlerTest.java | plan: superpowers/plans/2026-06-15-C-bom-version-single-sequence-per-material.md | 根因：masterGk 含 bom_type+characteristic，MATERIAL↔ASSEMBLY 重分类落不同组，nextVersionOf 在新组空历史返 "2000"（重置而非升版）。修法：masterGk/childGk 收敛为 system_type+customer_no+material_no；bom_type/characteristic 降为 masterFixedColumns；characteristic 写入每个 childRow 固定字段（不加 CHILD_CONTENT，避免 multisetEqual 误判内容变化）；删 flipReverse + EntityManager 注入。约束/视图审计：uq_material_bom_v6 含 bom_version 不含 bom_type→不冲突；视图按 characteristic 过滤是既有设计、收敛不改 characteristic 取值→中性。决策"按料号单一序列、只修代码、存量手工重导"。TDD: RED(expected 2001 was 2000)→GREEN(4 passed)。
+
+### [2026-06-15] fix(formula): cross_tab 引用 findTabByRef 稳定键优先(硬化) + #1 真因待深挖 | formulaSerialize.ts(findTabByRef) + formulaSerialize.test.ts | plan: superpowers/plans/2026-06-15-A-formula-ref-identity-by-componentid.md
+
+- **用户报**: 组件管理 来料 公式 `纯材料成本(来料)` 选 `[来料加工费.费用]` 保存后变 `[元素…]`。
+- **本轮**: `findTabByRef` 解析改 alias/componentId 稳定键优先、componentName 仅兜底(硬化，防同名/alias 撞 componentName)。vitest 165 passed。
+- **⚠️ 真因更深、按用户决策延后**: 实测该公式库内两个 cross_tab_ref source 都是元素 componentId，`费用` 是元素源下**无 src 的孤立字段**——来料加工费源整个丢失。真因=**跨页签多 source 字段归属**：targetExpr 的 field token 不带 per-field source(解析 :461 故意不带，KSUM 路径 :372 才带)，后端 `evaluateTargetValue` 按字段名在合并行查值不读 per-field source。属 AP-44 协议级(前端解析+编辑器归属+后端求值+E2E)。下一轮先浏览器/E2E 真实复现精确机制再改写计划实现。
+
 ### [2026-06-13] fix(detail): 报价单详情页 cross_tab(页签连表)公式列/小计/总计全 0 — ReadonlyProductCard 漏喂 enriched components | ReadonlyProductCard.tsx(buildCrossTabRows 入参) + buildCrossTabRows.test.ts(契约守卫) | 已合并本地 master(FF 99e1998)；RECORD 按并发约定留工作树未提交
 
 - **症状**: 草稿态报价单(QT-20260613-1714)，编辑页 `QuotationStep2` 页签连表公式全对；**详情页** `ReadonlyProductCard` 产品卡片里跨页签(引用别页签数据)的公式列、列小计、本页签总计、产品小计**全 0**；非公式列(driver 明细/输入/基础资料)与行数均正常。

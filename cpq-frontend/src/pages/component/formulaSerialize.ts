@@ -164,12 +164,24 @@ function lex(expr: string): RawToken[] {
 // ─────────────────────────────────────────────
 
 /**
- * 按引用串定位页签：**名称(componentName)优先、编号(alias)兜底**。
- * 公式里用页签中文名(如 [元素.单价])更可读；旧公式用编号(如 [COMP-0029.单价])仍兼容。
- * 同名页签罕见，按名称命中第一个；否则回退编号匹配。
+ * 按引用串定位页签：**稳定键（alias → componentId）优先、名称(componentName)兜底**。
+ *
+ * 优先级：
+ *   1. alias 精确匹配（COMP-0029 等编号格式，编辑器插入的稳定标识）
+ *   2. componentId 精确匹配（直接用 componentId 串作引用，极少但须支持）
+ *   3. componentName 兜底（旧公式/名称唯一时可读性好；同名时命中第一个仍有歧义，但属于配置问题）
+ *
+ * 修复原因（AP fix 2026-06-15）：
+ *   旧顺序 componentName → alias 时，若某页签的 componentName 恰好等于另一页签的 alias 字符串，
+ *   则 alias 格式的引用串会被 componentName 优先截走，命中错误页签（source 串号）。
+ *   改为 alias 优先后，编辑器产出的稳定 alias 格式始终精确命中正确页签。
  */
 function findTabByRef(tabDefs: TabDef[], ref: string): TabDef | undefined {
-  return tabDefs.find((d) => d.componentName === ref) ?? tabDefs.find((d) => d.alias === ref);
+  return (
+    tabDefs.find((d) => d.alias === ref)
+    ?? tabDefs.find((d) => d.componentId === ref)
+    ?? tabDefs.find((d) => d.componentName === ref)
+  );
 }
 
 /**

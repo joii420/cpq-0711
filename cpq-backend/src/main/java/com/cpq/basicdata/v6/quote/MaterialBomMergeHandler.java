@@ -7,7 +7,6 @@ import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 
 import java.util.ArrayList;
@@ -34,7 +33,6 @@ public class MaterialBomMergeHandler {
 
     @Inject VersionedV6Writer writer;
     @Inject MaterialMasterRepository materialMasterRepo;
-    @Inject EntityManager em;
 
     /** 合并后子表内容列 = 物料BOM ∪ 组成件BOM。 */
     private static final List<String> CHILD_CONTENT = List.of(
@@ -117,21 +115,26 @@ public class MaterialBomMergeHandler {
                 }
                 List<Map<String, Object>> childRows = new ArrayList<>(merged.values());
 
-                flipReverse(ctx.customerNo, materialNo, isAssembly ? null : "ASSEMBLY");
+                // 把 bom_type/characteristic 写入每个子行（insertRowGeneric 会 putAll(row)）。
+                // 注意：characteristic 不加入 CHILD_CONTENT（不参与 multisetEqual 内容比较，
+                // 避免 NULL→ASSEMBLY 时被误判为组成件内容变化）。
+                for (var r : childRows) r.put("characteristic", targetChar);
 
+                // 分组键收敛为 system_type+customer_no+material_no（单料号单序列）。
+                // bom_type/characteristic 降为 masterFixedColumns（固定写入列，不参与版本分组）。
                 Map<String, Object> masterGk = new LinkedHashMap<>();
                 masterGk.put("system_type", "QUOTE");
                 masterGk.put("customer_no", ctx.customerNo);
                 masterGk.put("material_no", materialNo);
-                masterGk.put("bom_type", bomType);
-                masterGk.put("characteristic", targetChar);
+                Map<String, Object> masterFixed = new LinkedHashMap<>();
+                masterFixed.put("bom_type", bomType);
+                masterFixed.put("characteristic", targetChar);
                 Map<String, Object> childGk = new LinkedHashMap<>();
                 childGk.put("system_type", "QUOTE");
                 childGk.put("customer_no", ctx.customerNo);
                 childGk.put("material_no", materialNo);
-                childGk.put("characteristic", targetChar);
                 writer.writeVersionedMasterDetail(
-                    "material_bom", "bom_version", masterGk, Map.of(),
+                    "material_bom", "bom_version", masterGk, masterFixed,
                     "material_bom_item", "bom_version", childGk, CHILD_CONTENT, childRows);
                 result.recordWrite("material_bom", 1);
                 result.recordWrite("material_bom_item", childRows.size());
@@ -140,20 +143,6 @@ public class MaterialBomMergeHandler {
             }
         }
         return result;
-    }
-
-    /** FLIP 反向 characteristic 当前主+子行 → is_current=false（保留历史,不删）。仅按单料号 QUOTE。revChar=null → 翻 characteristic IS NULL。 */
-    private void flipReverse(String customerNo, String materialNo, String revChar) {
-        String charPred = (revChar == null) ? "characteristic IS NULL" : "characteristic = :rc";
-        for (String table : List.of("material_bom", "material_bom_item")) {
-            var q = em.createNativeQuery(
-                "UPDATE " + table + " SET is_current=false " +
-                "WHERE system_type='QUOTE' AND customer_no=:cn AND material_no=:mn " +
-                "  AND " + charPred + " AND is_current=true")
-              .setParameter("cn", customerNo).setParameter("mn", materialNo);
-            if (revChar != null) q.setParameter("rc", revChar);
-            q.executeUpdate();
-        }
     }
 
     private static boolean isCfg(String materialNo) {

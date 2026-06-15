@@ -102,10 +102,28 @@ public class FormulaCalculator {
                 expr.append(token.has("value") ? token.path("value").asText("0") : "0");
                 break;
             case "component_subtotal": {
+                // 列名（value 字段）：用于构造 "${key}#${col}" 列小计键（与前端 formulaEngine 对齐）。
+                // component_subtotal token 可能携带 component_code / tab_name / value 三种 key 形式。
+                // 优先级（与前端 formulaEngine.ts component_subtotal 分支 1:1 对齐）：
+                //   1. "${component_code}#${value}" 列小计键
+                //   2. "${tab_name}#${value}"       列小计键
+                //   3. component_code               组件总小计（回退）
+                //   4. tab_name                     组件总小计（回退）
+                //   5. value                        组件总小计（最终回退，兼容旧 token 形状）
+                //   6. 0（缺失兜底）
+                String colName = asTextOrNull(token, "value");
+                String compCode = asTextOrNull(token, "component_code");
+                String tabName  = asTextOrNull(token, "tab_name");
                 Double v = firstNonNull(
-                    ctx.componentSubtotals.get(asTextOrNull(token, "component_code")),
-                    ctx.componentSubtotals.get(asTextOrNull(token, "tab_name")),
-                    ctx.componentSubtotals.get(asTextOrNull(token, "value")));
+                    // 列小计键（优先）
+                    (compCode != null && colName != null)
+                        ? ctx.componentSubtotals.get(compCode + "#" + colName) : null,
+                    (tabName  != null && colName != null)
+                        ? ctx.componentSubtotals.get(tabName  + "#" + colName) : null,
+                    // 组件总小计（回退）
+                    ctx.componentSubtotals.get(compCode),
+                    ctx.componentSubtotals.get(tabName),
+                    ctx.componentSubtotals.get(colName));
                 expr.append(numStr(v != null ? v : 0.0));
                 break;
             }
