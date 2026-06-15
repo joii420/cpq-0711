@@ -106,6 +106,8 @@ export interface ComponentField {
     api_config?: Record<string, any>;
   };
   sort_order?: number;
+  /** 单位换算：同行取该字段值作为单位来源（如 "单位"），换算到标准单位后再代入公式 */
+  unit_source_field?: string;
   // Backward-compat aliases
   key?: string;
   label?: string;
@@ -2736,6 +2738,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       global_variable_code: f.global_variable_code,
       default_source: f.default_source,
       sort_order: f.sort_order,
+      unit_source_field: f.unit_source_field,
       label: f.label || f.name || '',
       key: f.name || f.key || '',
     });

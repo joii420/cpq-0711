@@ -132,6 +132,8 @@ export function buildComponentDataFromTemplate(tmpl: any): ComponentDataItem[] {
       // V203/Phase B: LIST_FORMULA 字段的配置
       list_formula_config: f.list_formula_config,
       sort_order: f.sort_order,
+      // 单位换算：透传 unit_source_field，供 computeAllFormulas 换算时按同行单位归一
+      unit_source_field: f.unit_source_field,
       label: f.label || f.fieldLabel || f.name || '',
       key: f.name || f.key || f.fieldKey || '',
     }));

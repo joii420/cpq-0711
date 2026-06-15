@@ -150,6 +150,8 @@ export async function enrichComponentData(
         list_formula_config: f.list_formula_config,
         // Bug C 关键字段透传
         sort_order: f.sort_order,
+        // 单位换算：透传 unit_source_field，供 computeAllFormulas 换算时按同行单位归一
+        unit_source_field: f.unit_source_field,
         label: f.label || f.name || '',
         key: f.name || f.key || '',
       }));
@@ -258,6 +260,8 @@ export function buildComponentDataFromStructure(
       default_source: f.defaultSource,
       list_formula_config: f.listFormulaConfig,
       sort_order: f.sortOrder,
+      // 单位换算：结构快照支持 camelCase 和 snake_case 两种写法
+      unit_source_field: f.unitSourceField ?? f.unit_source_field,
       label: f.label || f.name || '',
       key: f.name || '',
     }));
