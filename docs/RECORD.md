@@ -4,6 +4,15 @@
 
 ---
 
+### [2026-06-15] fix(formula): #1 真修 — cross_tab 多源 SUM targetExpr field 带 per-field source | formulaSerialize.ts(行级 body field push) + FormulaCalculator.java(targetRowValue bySource 分桶) + 测试 | plan: superpowers/plans/2026-06-15-D-crosstab-targetexpr-perfield-source.md
+
+- **症状**: 组件管理 来料 公式 `纯材料成本(来料)` 选 `[来料加工费.费用]` 保存后显示成 `[元素.费用]`。
+- **根因(线上数据+代码链确证)**: 单个 SUM 混引多页签 `SUM([来料.毛重]*[元素.含量]*([元素.单价]+[来料加工费.费用]))` 走 N≥2 多源路径，顶层 `source=元素`(元素 rowKeyFields 2个排 primaryTab 首)，`sources=[元素,来料加工费]` 正确，但 targetExpr 的 field token 在解析处(`formulaSerialize.ts` 行级 body)只 push `{type:field,value}` **不带 source**(KSUM 路径才带)；渲染 `renderTargetExprParts` 对无 source field 回退用顶层 source 标签 → `费用` 显示成 `[元素.费用]`。后端 `targetRowValue` 多源按字段名合并求值，跨源同名会串值。
+- **修法**: ① 前端解析行级 body 非宿主 source 的 field push 带 `source: td.componentId`(对齐 KSUM)；渲染侧 `renderTargetExprParts` 已支持 `te.source` → 自动正确回显。② 后端 `targetRowValue` 多源注入按 source 分桶 `bySource`，field token 带 source 时优先桶取值、否则回退按名(无 source 存量 token 逐字节不变)。
+- **测试**: 前端 formulaSerialize 167 passed(D1 多源 field 带 source + 回显 `[来料加工费.费用]`；5 个单源断言更新为带 source 新形状,回显不变)；后端 FormulaCalculatorPerFieldSourceTest 4 + 回归 30 passed；quotation-flow E2E 1 passed 无回归。
+- **存量自愈限制(重要)**: 已存损坏公式**不能靠重开重存自愈**——已存 token 丢 source、回显即 `[元素.费用]`，重存会把错串重新解析回元素。需在编辑器**删错引用 + 重新点选 `[来料加工费.费用]`** 再保存(新解析带 source)。新建/重选的公式从此正确。
+- **范围**: 顶层 source(primaryTab) 排序逻辑不改；字段归属已由 per-field source 解决,不依赖顶层 source 是谁。AP-44 协议级(解析+求值)→ 已跑 E2E。
+
 ### [2026-06-15] fix(subtotal): 报价小计统一 — 配置公式权威 + 所有数值列求和 + 二阶列依赖序 + 输入失焦重算 | QuotationStep2.tsx(buildCrossTabRows 两阶段/computeNonSubtotalColumnSums/footer/computeProductSubtotal) + formulaEngine.ts(component_subtotal 列小计键) + ReadonlyProductCard.tsx + CardSnapshotService.java(PASS2 两阶段) + FormulaCalculator.java(component_subtotal 列小计键) | plan: superpowers/plans/2026-06-15-B-quote-subtotal-unify-allnumeric.md
 
 - **症状(QT-20260615-1722 来料 tab)**: `材料成本` 列行1=515.4248 但小计 ¥0.00；`外购件材料费` 行值≠小计；输入类型数值列无小计。
