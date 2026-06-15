@@ -1994,3 +1994,66 @@ describe('A4 — cross_tab 引用 round-trip 身份稳定护栏', () => {
     expect(tokens2.find((t) => t.type === 'cross_tab_ref')?.source).toBe('CID-B');
   });
 });
+
+// ─────────────────────────────────────────────
+// D1: 多源 SUM targetExpr 跨页签 field token 带 per-field source
+//   Bug: SUM([元素.含量]*([元素.单价]+[来料加工费.费用])) 中
+//   [来料加工费.费用] 的 field token 不带 source → 回显时用外层 outerAlias(元素) → 显示 [元素.费用]
+//   Fix: 非宿主 source 分支 push field token 时附带 td.componentId 作为 source
+// ─────────────────────────────────────────────
+describe('D1 多源SUM targetExpr per-field source', () => {
+  const tabDefs: TabDef[] = [
+    {
+      componentId: 'CID-来料',
+      alias: 'COMP-0028',
+      componentName: '来料',
+      tabKey: 'tab-ll',
+      rowKeyFields: ['料件'],
+      detailFields: ['毛重'],
+      subtotalCols: [],
+    },
+    {
+      componentId: 'CID-元素',
+      alias: 'COMP-0029',
+      componentName: '元素',
+      tabKey: 'tab-ys',
+      rowKeyFields: ['料件', '元素'],
+      detailFields: ['含量', '单价'],
+      subtotalCols: [],
+    },
+    {
+      componentId: 'CID-来料加工费',
+      alias: 'COMP-0036',
+      componentName: '来料加工费',
+      tabKey: 'tab-ljg',
+      rowKeyFields: ['料件'],
+      detailFields: ['费用'],
+      subtotalCols: [],
+    },
+  ];
+
+  it('D1 多源SUM内每个跨页签field带各自source', () => {
+    const tokens = expressionToTokens(
+      'SUM([元素.含量] * ([元素.单价] + [来料加工费.费用]))',
+      tabDefs,
+      ['料件'],
+      'CID-来料',
+    );
+    const sum = tokens.find((t) => t.type === 'cross_tab_ref')!;
+    const te = sum.targetExpr!;
+    expect(te.find((t) => t.type === 'field' && t.value === '含量')!.source).toBe('CID-元素');
+    expect(te.find((t) => t.type === 'field' && t.value === '费用')!.source).toBe('CID-来料加工费');
+  });
+
+  it('D1 回显: 来料加工费.费用 不再显示成 元素.费用', () => {
+    const tokens = expressionToTokens(
+      'SUM([元素.含量] * ([元素.单价] + [来料加工费.费用]))',
+      tabDefs,
+      ['料件'],
+      'CID-来料',
+    );
+    const shown = tokensToDrawerExpression(tokens, tabDefs, 'CID-来料');
+    expect(shown).toContain('[来料加工费.费用]');
+    expect(shown).not.toContain('[元素.费用]');
+  });
+});
