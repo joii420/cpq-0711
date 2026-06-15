@@ -63,11 +63,9 @@ public class MaterialBomMergeHandler {
             String componentName = row.getStr("投入料号名称");
             // 注意：getStr("投入料号") 用 contains 匹配，会命中"投入料号名称"列（AP-bug）。
             // 必须用精确键读取，以区分"投入料号"(可空)和"投入料号名称"(名称)。
-            String rawComponentNo = row.cells.get("投入料号");
-            String exactComponentNo = (rawComponentNo == null || rawComponentNo.isBlank()) ? null : rawComponentNo.trim();
             String componentNo;
             try {
-                componentNo = materialNoResolver.resolve(exactComponentNo, componentName, batch);
+                componentNo = materialNoResolver.resolve(exactCell(row, "投入料号"), componentName, batch);
             } catch (MaterialNoUnresolvableException ex) {
                 result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
             }
@@ -97,7 +95,7 @@ public class MaterialBomMergeHandler {
             String componentName = row.getStr("组成件名称");
             String componentNo;
             try {
-                componentNo = materialNoResolver.resolve(row.getStr("组成件料号"), componentName, batch);
+                componentNo = materialNoResolver.resolve(exactCell(row, "组成件料号"), componentName, batch);
             } catch (MaterialNoUnresolvableException ex) {
                 result.recordError(row.rowNo, "组成件料号", "料号与名称均为空"); continue;
             }
@@ -195,5 +193,12 @@ public class MaterialBomMergeHandler {
             else if (sb.length() > 0) break;
         }
         return sb.length() == 0 ? null : sb.toString();
+    }
+
+    /** 按精确表头读取单元格值，空白→null。用于读「料号」列，避开 SheetRow.getStr 的 contains 匹配
+     *  会命中「料号名称」列的问题（如 投入料号 vs 投入料号名称）。 */
+    private static String exactCell(SheetRow row, String header) {
+        String v = row.cells.get(header);
+        return (v == null || v.isBlank()) ? null : v.trim();
     }
 }
