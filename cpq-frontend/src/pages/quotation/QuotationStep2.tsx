@@ -1110,6 +1110,7 @@ export function computeNonSubtotalColumnSums(
   for (let i = 0; i < rowCount; i++) {
     const ra = rowAt(i, comp, s);
     const row = fillFixedDefaults(comp.fields, ra.row);
+    const convRow = applyUnitConversion(comp.fields as any, row); // 物化点2：输入列直读用 canonical
     const basicDataValues = ra.expIndex >= 0 ? driverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
     const fv: Record<string, number> = {};
     const formulaCache = computeAllFormulas(
@@ -1122,8 +1123,8 @@ export function computeNonSubtotalColumnSums(
       if (!colName) continue;
       let val: number;
       if (f.field_type === 'INPUT_NUMBER') {
-        // INPUT_NUMBER 直接读行值（formulaCache 不算输入列）
-        const raw = row[colName];
+        // INPUT_NUMBER 直读 canonical 值（物化点2：经 applyUnitConversion 换算后的行值）
+        const raw = convRow[colName];
         val = typeof raw === 'number' && isFinite(raw) ? raw : (parseFloat(raw) || 0);
       } else {
         // FORMULA / DATA_SOURCE 优先取 formulaCache，缺时取 fieldValues
