@@ -7,7 +7,7 @@ import { useDriverExpansions, driverExpansionKey, fieldsOverrideHash, bnfDriverL
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { splitRows, rowAt } from './manualRows';
 import { useTreeCollapse } from './useTreeCollapse';
-import { computeRowKey } from './useCardSnapshots';
+import { computeRowKey, buildUniqueRowKeys } from './useCardSnapshots';
 import type { CardStructure, CardValues } from '../../services/quotationService';
 import { useConfigTemplates } from './useConfigTemplates';
 import { usePathFormulaCache } from './usePathFormulaCache';
@@ -480,19 +480,25 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     {
                       // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
                       let prevRowValues: Record<string, number | null> | undefined = undefined;
+                      // 撞键消歧：详情/核价侧也按组件成批算唯一 rowKey（与编辑页 + 后端一致）。
+                      const roUniqRowKeys = useSnap
+                        ? buildUniqueRowKeys(
+                            activeComp.fields,
+                            activeRowKeyFields,
+                            Array.from({ length: effectiveCount }, (_, ri) => {
+                              const ra = rowAt(ri, activeComp, s);
+                              const drv = (ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined) ?? activeSnap?.driverRows[ri] ?? ra.row;
+                              const bdv = ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
+                              return { driverRow: drv, basicDataValues: bdv };
+                            }),
+                          )
+                        : [];
                       for (let ri = 0; ri < effectiveCount; ri++) {
                         const ra = rowAt(ri, activeComp, s);
                         const rawRow = ra.row;
                         const rowBdv = ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
                         // Phase4 Task4: 优先读快照 formulaResults[rowKey](真零计算, 与编辑页 AP-50 同源), 缺时 computeAllFormulas 兜底。
-                        const driverRowForKey = (ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined) ?? activeSnap?.driverRows[ri] ?? rawRow;
-                        const rowKey = useSnap ? computeRowKey(
-                          activeComp.fields,
-                          activeRowKeyFields,
-                          driverRowForKey,
-                          ri,
-                          rowBdv,
-                        ) : String(ri);
+                        const rowKey = useSnap ? (roUniqRowKeys[ri] ?? String(ri)) : String(ri);
                         const snapFormula = useSnap ? activeSnap?.formula.get(rowKey) : undefined;
                         const errForRow: Record<string, string> = {};
                         const cache: Record<string, number | null> = (snapFormula && Object.keys(snapFormula).length > 0)

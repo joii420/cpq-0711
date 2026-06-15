@@ -227,7 +227,17 @@ export function useCardSnapshots(
     const valByComp = new Map<string, CardValuesTab>();
     for (const t of (values?.tabs ?? [])) valByComp.set(t.componentId, t);
 
+    // 每组件唯一化 rowKey 表（撞键消歧）：rowKeyOf/getCell 按下标取，保证与写路径 + 后端一致。
+    const uniqKeysByComp = new Map<string, string[]>();
+    for (const t of tabs) {
+      const vt = valByComp.get(t.componentId);
+      uniqKeysByComp.set(t.componentId, buildUniqueRowKeys(t.fields, t.rowKeyFields, vt?.baseRows));
+    }
+
     const rowKeyOf = (componentId: string, rowIndex: number): string => {
+      const keys = uniqKeysByComp.get(componentId);
+      if (keys && rowIndex < keys.length) return keys[rowIndex];
+      // 兜底（无快照/越界）：退回单行算法
       const st = structByComp.get(componentId);
       const vt = valByComp.get(componentId);
       const baseRow = vt?.baseRows?.[rowIndex];
@@ -243,7 +253,8 @@ export function useCardSnapshots(
       if (!st || !vt) return undefined;
       const field = st.fields?.find((f) => f.name === fieldName);
       const baseRow = vt.baseRows?.[rowIndex];
-      const rk = computeRowKey(st.fields, st.rowKeyFields, baseRow?.driverRow, rowIndex, baseRow?.basicDataValues);
+      const rk = (uniqKeysByComp.get(componentId)?.[rowIndex])
+        ?? computeRowKey(st.fields, st.rowKeyFields, baseRow?.driverRow, rowIndex, baseRow?.basicDataValues);
 
       // 1. 编辑覆盖
       const editVals = findKeyedValues(vt.editRows, rk);

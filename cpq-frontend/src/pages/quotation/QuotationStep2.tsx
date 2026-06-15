@@ -22,7 +22,7 @@ import type { CellContext } from './components/ComponentCell';
 import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
 import { quotationService } from '../../services/quotationService';
 import type { CardStructure, CardValues } from '../../services/quotationService';
-import { computeRowKey } from './useCardSnapshots';
+import { computeRowKey, buildUniqueRowKeys } from './useCardSnapshots';
 import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns } from './tabTotalLines';
 import { partVersionService } from '../../services/partVersionService';
@@ -2116,6 +2116,20 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     // Phase4 Task3: 本组件的快照编辑/公式映射 + rowKeyFields(报价侧)。
                     const activeSnap = useSnapEdit ? snapByComp.get(activeComponent.componentId) : undefined;
                     const activeRowKeyFields = rowKeyFieldsByComp.get(activeComponent.componentId);
+                    // 撞键消歧：活动组件全部行成批算唯一 rowKey（与后端 computeRows + 快照查表一致）。
+                    // 用与下方逐行相同的 driverRowForKey / basicDataValues 口径，仅批量化 + 唯一化。
+                    const activeUniqRowKeys = useSnapEdit
+                      ? buildUniqueRowKeys(
+                          activeComponent.fields,
+                          activeRowKeyFields,
+                          Array.from({ length: effectiveCount }, (_, i) => {
+                            const ra = rowAt(i, activeComponent, renderSplit);
+                            const driverRowForKey = (ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined) ?? activeSnap?.driverRows[i] ?? ra.row;
+                            const bdv = ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
+                            return { driverRow: driverRowForKey, basicDataValues: bdv };
+                          }),
+                        )
+                      : [];
                     // FIXED_VALUE 默认值回填：driver 展开行 / 旧报价单回读的行都有可能没经过 handleAddRow，
                     // 导致 row[key] === undefined。回填后单元格 / 公式 / 列小计 / 产品小计 共享同一份数据视图。
                     const effectiveRows = Array.from({ length: effectiveCount }, (_, i) => {
@@ -2180,14 +2194,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         ...rawRowNonEmpty,         // 用户真实输入覆盖, null/undefined/'' 不动
                       } : rawRow;
                       // Phase4 Task3: rowKey 对齐后端(FormulaCalculator.computeRowKey) — 用于 formulaResults 查表 + 编辑回写。
-                      const driverRowForKey = (ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined) ?? activeSnap?.driverRows[i] ?? rawRow;
-                      const rowKey = useSnapEdit ? computeRowKey(
-                        activeComponent.fields,
-                        activeRowKeyFields,
-                        driverRowForKey,
-                        i,
-                        ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined,
-                      ) : String(i);
+                      // 撞键消歧：取活动组件预算的唯一化键表（与后端 computeRows + 快照一致），兜底退回 String(i)。
+                      const rowKey = useSnapEdit ? (activeUniqRowKeys[i] ?? String(i)) : String(i);
                       // AP-54: realRowIndex = 对象引用映射回 comp.rows 真实下标，用于写路径(handleRowChange/handleDeleteRow 等)
                       const realRowIndex = ra.isManual
                         ? activeComponent.rows.indexOf(ra.row)
