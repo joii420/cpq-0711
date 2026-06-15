@@ -23,6 +23,7 @@ import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
 import { quotationService } from '../../services/quotationService';
 import type { CardStructure, CardValues } from '../../services/quotationService';
 import { computeRowKey, buildUniqueRowKeys } from './useCardSnapshots';
+import { applyUnitConversion } from '../../utils/unitConversion';
 import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns } from './tabTotalLines';
 import { partVersionService } from '../../services/partVersionService';
@@ -404,6 +405,10 @@ function computeAllFormulas(
   out?: { fieldValues?: Record<string, number>; errors?: Record<string, string> },
 ): Record<string, number | null> {
   if (!comp.fields || !comp.formulas) return {};
+
+  // 单位换算（物化点1）：配 unit_source_field 的列在算公式前按同行单位归一到 KG/PCS。
+  // 必须克隆——入参 row 是渲染用同一对象 (:2236)，原地 mutate 会污染明细格子显示原值。
+  row = applyUnitConversion(comp.fields as any, row);
 
   // Collect FORMULA fields and their resolved formulas
   // Plan 3a：FORMULA 字段可为单一模式(formula) 或条件模式(conditional)。
