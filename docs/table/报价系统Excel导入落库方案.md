@@ -295,10 +295,6 @@
 > 📌 `system_type=QUOTE`，`bom_type=MATERIAL` 固定写入主表；客户编号由系统自动提供。投入料号同步 upsert 至料号表，写入 `material_type` ,只写入数字。
 > 🔀 **去重合并**：若同一料号本次也出现在「组成件BOM」(§12)，则按「组成件优先」合并为**一条 `characteristic='ASSEMBLY'` 当前行**，不再单独插入 `characteristic=NULL` 行；子行按 `(system_type,customer_no,material_no,component_no)` 合并，冲突字段取组成件值——详见 §一 总览末尾【物料BOM ⇄ 组成件BOM 同料号去重合并规则】。
 
-> 20260615更新: 如果导入时的料号（投入料号）为空且名称（投入料号名称）有值，先按名称查料号表 `material_master` 命中则取其料号 upsert；未命中则按 9 字头（`MAX+1`，advisory lock 保证并发安全）生成新料号写入。
-
-> ✅ 已实现（2026-06-15）：见 MaterialNoResolver + MaterialBomMergeHandler；规则与本说明一致。
-
 ---
 
 ### 4. 物料与元素BOM
@@ -560,10 +556,6 @@
 
 > 📌 `bom_type=ASSEMBLY` 固定写入，与物料BOM（`bom_type=MATERIAL`）共用同一主/子表。客户编号由系统自动提供。
 > 🔀 **去重合并（组成件优先）**：同一料号只要出现在本表，最终即以 `bom_type=ASSEMBLY`、`characteristic='ASSEMBLY'` 保存为**唯一当前行**；若该料号本次也出现在「物料BOM」(§3)，两表子行按 `(system_type,customer_no,material_no,component_no)` 合并、冲突字段取本表（组成件）值，物料BOM 不再单独留 `characteristic=NULL` 行——详见 §一 总览末尾【物料BOM ⇄ 组成件BOM 同料号去重合并规则】。
-
-> 20260615更新: 若工序编号为空且工序名称有值，则按工序名称到 `process_master` 查第一条匹配记录，将其 `process_no` 回填至 `operation_no`。料号表（`material_master`）同步：`material_type` 默认写 3；若组成件料号为空且名称有值，先按名称查料号表命中则取其料号，未命中则按 9 字头自动生成。
-
-> ✅ 已实现（2026-06-15）：见 MaterialNoResolver + MaterialBomMergeHandler；规则与本说明一致。
 
 ---
 
