@@ -469,8 +469,9 @@ export function expressionToTokens(
                 srcTabSeenIds.add(td.componentId);
                 srcTabsSeen.push(td);
               }
-              // field token 保持原样（不附带 source），多 source 信息通过外层 sources 数组传递
-              targetExpr.push({ type: 'field', value: col });
+              // field token 带各自 source componentId，供回显时精确找到页签名
+              // （修复 D1: 多 source 时 [来料加工费.费用] 不再错显为 [元素.费用]）
+              targetExpr.push({ type: 'field', value: col, source: td.componentId });
             }
             break;
           }

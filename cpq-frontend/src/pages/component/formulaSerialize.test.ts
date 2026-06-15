@@ -869,10 +869,11 @@ describe('expressionToTokens — FN() 单列聚合', () => {
     const t = expressionToTokens('SUM([JG.工时]+[JG.工时])', tabs, ['子件']);
     expect(t).toHaveLength(1);
     expect(t[0]).toMatchObject({ type: 'cross_tab_ref', source: 'cid-jg', agg: 'SUM' });
+    // D1 fix: field token 现在带 source（即使单源，兼容 render — te.source=outerAlias 等价）
     expect(t[0].targetExpr).toEqual([
-      { type: 'field', value: '工时' },
+      { type: 'field', value: '工时', source: 'cid-jg' },
       { type: 'operator', value: '+' },
-      { type: 'field', value: '工时' },
+      { type: 'field', value: '工时', source: 'cid-jg' },
     ]);
   });
   it('FN 内多引用且缺运算符 → 仍报错（[a][b] 畸形）', () => {
@@ -975,10 +976,11 @@ describe('expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT)', () =>
       agg: 'SUM',
       match: [{ a: '子件', b: '子件' }],
     });
+    // D1 fix: field token 现在带 source；b_field（宿主列）不受影响
     expect(t[0].targetExpr).toEqual([
       { type: 'b_field', value: '单价' },
       { type: 'operator', value: '*' },
-      { type: 'field', value: '数量' },
+      { type: 'field', value: '数量', source: 'cid-jg' },
     ]);
     expect(t[0].target ?? '').toBe('');
   });
@@ -986,8 +988,9 @@ describe('expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT)', () =>
   it('source 列在前：SUM([JG.数量] * [TL.单价]) → targetExpr(field 数量 * b_field 单价)，source 仍=细页签', () => {
     const t = expressionToTokens('SUM([JG.数量] * [TL.单价])', tabs, ['子件'], 'cid-host');
     expect(t[0].source).toBe('cid-jg');
+    // D1 fix: field token 现在带 source；b_field（宿主列）不受影响
     expect(t[0].targetExpr).toEqual([
-      { type: 'field', value: '数量' },
+      { type: 'field', value: '数量', source: 'cid-jg' },
       { type: 'operator', value: '*' },
       { type: 'b_field', value: '单价' },
     ]);
@@ -996,17 +999,19 @@ describe('expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT)', () =>
   it('同一 source 两列：SUM([JG.数量] * [JG.工时]) → targetExpr(field 数量 * field 工时)', () => {
     const t = expressionToTokens('SUM([JG.数量] * [JG.工时])', tabs, ['子件', '工序'], 'cid-host');
     expect(t[0].source).toBe('cid-jg');
+    // D1 fix: field token 现在带 source；同一 source 两列均带同一 source componentId
     expect(t[0].targetExpr).toEqual([
-      { type: 'field', value: '数量' },
+      { type: 'field', value: '数量', source: 'cid-jg' },
       { type: 'operator', value: '*' },
-      { type: 'field', value: '工时' },
+      { type: 'field', value: '工时', source: 'cid-jg' },
     ]);
   });
 
   it('含数字常量：SUM([JG.数量] * 2) → targetExpr(field 数量 * number 2)', () => {
     const t = expressionToTokens('SUM([JG.数量] * 2)', tabs, ['子件'], 'cid-host');
+    // D1 fix: field token 现在带 source；number token 不变
     expect(t[0].targetExpr).toEqual([
-      { type: 'field', value: '数量' },
+      { type: 'field', value: '数量', source: 'cid-jg' },
       { type: 'operator', value: '*' },
       { type: 'number', value: '2' },
     ]);
