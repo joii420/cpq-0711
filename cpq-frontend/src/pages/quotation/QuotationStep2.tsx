@@ -946,13 +946,17 @@ export function buildCrossTabRows(
  * 键名格式与 PASS1 一致: `${tabName/componentCode/componentId}#${colName}` 及总计键。
  * 仅当组件有 is_subtotal 列时才写入（无 is_subtotal 列的组件不修改 allComponentSubtotals）。
  */
-function subtotalsFromResolvedRows(
+export function subtotalsFromResolvedRows(
   comp: ComponentDataItem,
   rows: Array<Record<string, any>>,
   allComponentSubtotals: Record<string, number>,
 ): void {
   const subtotalFields = (comp.fields ?? []).filter((f: ComponentField) => f.is_subtotal);
   if (subtotalFields.length === 0) return;
+
+  // 单位换算（与后端 backfillSubtotalsFromResolved 物化点5 对齐）：求和用换算后行，
+  // 避免配 unit_source_field 的 is_subtotal 列前端 sum(原值) 与后端 sum(canonical) 分叉。
+  const convRows = rows.map((row) => applyUnitConversion(comp.fields as any, row));
 
   const keys: string[] = [];
   if (comp.tabName) keys.push(comp.tabName);
@@ -969,7 +973,7 @@ function subtotalsFromResolvedRows(
     const colName: string = sf.name || sf.key || '';
     if (!colName) continue;
     let colSum = 0;
-    for (const row of rows) {
+    for (const row of convRows) {
       const v = row[colName];
       if (typeof v === 'number' && isFinite(v)) colSum += v;
     }
