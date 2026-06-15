@@ -4,6 +4,8 @@
 
 ---
 
+### [2026-06-15] fix(bom): MaterialBomMergeHandler 版本分组键收敛，料号重分类单序列升版 | MaterialBomMergeHandler.java + MaterialBomMergeHandlerTest.java | 根因：masterGk 含 bom_type+characteristic，MATERIAL↔ASSEMBLY 重分类落不同组，nextVersionOf 在新组空历史返 "2000"（重置而非升版）。修法：masterGk/childGk 收敛为 system_type+customer_no+material_no；bom_type/characteristic 降为 masterFixedColumns；characteristic 写入每个 childRow 固定字段（不加 CHILD_CONTENT，避免 multisetEqual 误判内容变化）；删 flipReverse + EntityManager 注入。TDD: RED(expected 2001 was 2000)→GREEN(4 passed)。VersionedV6MasterDetailTest 两个 material_bom ERROR 为 V293 前预存在旧测试，与本改动无关（stash 验证）。
+
 ### [2026-06-13] fix(rowkey): 前端 computeRowKey/computeDedupKey 字段感知（_前缀视图列别名 → 字段名解析）| useCardSnapshots.ts + rowDedup.ts + QuotationStep2.tsx + ReadonlyProductCard.tsx | 新签名 computeRowKey(fields, rowKeyFields, driverRow, rowIndex, bdv?)；resolveRowKeyPart 按 defaultSource 解析；rowDedup 同款可选 fields+bdv；4 调用点升级；418 测试全绿
 
 - **问题**: 外购件 rowKeyFields=["料件","要素"]（字段名），driverRow 键为视图列别名 _料件/_要素，旧 computeRowKey 直接读 driverRow["料件"]→undefined → 4 行 rowKey 全冲突为 "||" → cross_tab SUM 退化为末值×4。
