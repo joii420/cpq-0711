@@ -847,6 +847,46 @@ public class TemplateFormulaService {
     }
 
     /**
+     * 把 valueExpr 里的 {@code [页签.字段]} / {@code [字段]} 规整为裸字段名
+     * （取最后一个 '.' 后的段），供 evalValueExpr 求值。
+     *
+     * <p>与 {@code ConditionPredicateParser} 取字段的口径一致：有 '.' 取其后，无 '.' 取整体。
+     *
+     * <p>示例：
+     * <ul>
+     *   <li>{@code [页签A.金额]}       → {@code 金额}</li>
+     *   <li>{@code [金额]}             → {@code 金额}</li>
+     *   <li>{@code [页签A.金额] * [页签A.数量]} → {@code 金额 * 数量}</li>
+     *   <li>{@code 金额}               → {@code 金额}（原样）</li>
+     * </ul>
+     *
+     * <p>注意：{@code [宿主页签.字段]} 剥壳后变裸字段名；EXCEL/小计线无宿主行时
+     * evalValueExpr 取不到该字段则按 0/缺省处理（不崩溃）。见 spec §9 P0-5。
+     *
+     * <p>包内可见（非 private）以便单元测试直接调用验证剥壳逻辑。
+     */
+    String stripFieldRefs(String expr) {
+        if (expr == null) return null;
+        StringBuilder sb = new StringBuilder();
+        int i = 0;
+        while (i < expr.length()) {
+            char c = expr.charAt(i);
+            if (c == '[') {
+                int rb = expr.indexOf(']', i);
+                if (rb < 0) { sb.append(expr.substring(i)); break; }
+                String inner = expr.substring(i + 1, rb).trim();
+                int dot = inner.lastIndexOf('.');
+                sb.append(dot >= 0 ? inner.substring(dot + 1) : inner);
+                i = rb + 1;
+            } else {
+                sb.append(c);
+                i++;
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
      * SUMIF 族行内 valueExpr 求值，优先支持中文字段名。
      *
      * <p>两步策略：
@@ -1598,6 +1638,9 @@ public class TemplateFormulaService {
                                       java.util.List<java.util.Map<String, Object>> rows,
                                       com.cpq.formula.predicate.ConditionPredicate pred,
                                       String valueExprText) {
+        // 剥壳：用户真实语法 [页签.字段] / [字段] → 裸字段名，让 evalValueExpr 能正确求值。
+        // COUNTIF（valueExprText=null）不受影响；[宿主页签.字段] 剥壳后若 row 无该字段按 0/缺省处理（见 spec §9 P0-5）。
+        String resolvedValueExpr = stripFieldRefs(valueExprText);
         var ev = new com.cpq.formula.predicate.ConditionPredicateEvaluator();
         java.util.List<BigDecimal> values = new java.util.ArrayList<>();
         java.util.Map<String, Object> emptyHost = java.util.Map.of();
@@ -1607,9 +1650,10 @@ public class TemplateFormulaService {
                 values.add(BigDecimal.ONE);
                 continue;
             }
-            // 优先：valueExprText 是纯字段名 → 直接从 row 取值（支持中文字段名，无 JEXL tokenize 问题）
+            // 优先：resolvedValueExpr 是纯字段名 → 直接从 row 取值（支持中文字段名，无 JEXL tokenize 问题）
             // 回退：复杂表达式（含运算符）→ evalRowExpression（字段名须为 ASCII）
-            Object val = evalValueExpr(valueExprText, row);
+            // resolvedValueExpr 已在入口处由 stripFieldRefs 剥去 [页签.字段] 外壳
+            Object val = evalValueExpr(resolvedValueExpr, row);
             BigDecimal bd = toBigDecimal(val);
             if (bd != null) values.add(bd);
         }
