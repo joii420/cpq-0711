@@ -78,6 +78,7 @@ export function evalPredicate(
     : o.value;
   const lv = resolve(p.lhs), rv = resolve(p.rhs);
   const blank = (x: any) => x == null || String(x).trim() === '';
+  // 注：数字解析用 Number()，与后端 Double.valueOf 在 0x../类型后缀/"NaN" 等病态输入上口径略异；CPQ 业务数据(金额/数量/类型名)不会出现这些，沿用既有 keyEq/valEquals 容差，不额外收紧。
   const num = (x: any) => { const n = Number(String(x).trim()); return isNaN(n) ? null : n; };
   const eq = (): boolean => {
     if (blank(lv) || blank(rv)) return false;
