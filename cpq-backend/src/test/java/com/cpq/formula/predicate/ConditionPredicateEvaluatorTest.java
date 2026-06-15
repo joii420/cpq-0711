@@ -58,4 +58,25 @@ class ConditionPredicateEvaluatorTest {
         assertTrue(eval(or, Map.of("类型","运费","金额","1500"), Map.of()));
         assertFalse(eval(or, Map.of("类型","运费","金额","500"), Map.of()));
     }
+
+    // —— ConditionPredicateJson round-trip ——
+    @Test void json_parse_comparison() throws Exception {
+        var json = new com.fasterxml.jackson.databind.ObjectMapper().readTree(
+            "{\"op\":\"=\",\"lhs\":{\"kind\":\"sourceField\",\"field\":\"类型\"}," +
+            "\"rhs\":{\"kind\":\"literal\",\"value\":\"管理费\"}}");
+        var p = ConditionPredicateJson.fromJson(json);
+        assertTrue(ev.test(p, Map.of("类型","管理费"), Map.of()));
+    }
+
+    @Test void json_parse_bool_tree() throws Exception {
+        var json = new com.fasterxml.jackson.databind.ObjectMapper().readTree(
+            "{\"bool\":\"AND\",\"children\":[" +
+            "{\"op\":\">\",\"lhs\":{\"kind\":\"sourceField\",\"field\":\"金额\"},\"rhs\":{\"kind\":\"literal\",\"value\":\"1000\"}}]}");
+        var p = ConditionPredicateJson.fromJson(json);
+        assertTrue(ev.test(p, Map.of("金额","1500"), Map.of()));
+    }
+
+    @Test void json_null_or_missing_is_null_predicate() {
+        assertNull(ConditionPredicateJson.fromJson(null));
+    }
 }
