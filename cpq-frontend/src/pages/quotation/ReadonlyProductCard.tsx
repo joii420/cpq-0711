@@ -492,7 +492,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         ) : String(ri);
                         const snapFormula = useSnap ? activeSnap?.formula.get(rowKey) : undefined;
                         const errForRow: Record<string, string> = {};
-                        const cache = (snapFormula && Object.keys(snapFormula).length > 0)
+                        const cache: Record<string, number | null> = (snapFormula && Object.keys(snapFormula).length > 0)
                           ? (snapFormula as Record<string, number | null>)
                           : computeAllFormulas(
                               activeComp, rawRow, compSubtotals,

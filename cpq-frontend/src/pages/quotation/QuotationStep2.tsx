@@ -2070,7 +2070,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       // 缺(无快照/新行/LIST_FORMULA 字符串公式未进 formulaResults)时 computeAllFormulas 兜底(防漂移)。
                       const snapFormula = useSnapEdit ? activeSnap?.formula.get(r.rowKey) : undefined;
                       const errForRow: Record<string, string> = {};
-                      const cache = (snapFormula && Object.keys(snapFormula).length > 0)
+                      const cache: Record<string, number | null> = (snapFormula && Object.keys(snapFormula).length > 0)
                         ? (snapFormula as Record<string, number | null>)
                         : computeAllFormulas(
                             activeComponent, r.row, allComponentSubtotals,

@@ -397,7 +397,7 @@ export function expressionToTokens(
           }
           const kSrc = innerSrcSeen[0];
           // 记录 KSUM 折叠的 source 供 I2 校验
-          ksumWrappedSources.add(kSrc.componentId);
+          ksumWrappedSources.add(kSrc.componentId!);
           // 构建 match
           const kMatch = buildMatch(kSrc.rowKeyFields ?? [], selfRowKeyFields);
           // 推入 KSUM 子 token（projectToHostKey=true，target='', targetExpr 强制写入）
@@ -469,7 +469,7 @@ export function expressionToTokens(
       }
       // I2: 同页签既被 KSUM 聚合、又在外层 FN body 裸引用 → 冲突（二选一）
       for (const td of srcTabsSeen) {
-        if (ksumWrappedSources.has(td.componentId)) {
+        if (ksumWrappedSources.has(td.componentId!)) {
           throw new Error(
             `页签「${td.componentName ?? td.alias}」已被 KSUM 聚合，不能在同一 SUM 内再被裸引用；请二选一`,
           );
@@ -529,7 +529,7 @@ export function expressionToTokens(
         const ordered = [...srcTabsSeen].sort(
           (x, y) =>
             (y.rowKeyFields?.length ?? 0) - (x.rowKeyFields?.length ?? 0) ||
-            x.componentId.localeCompare(y.componentId),
+            x.componentId!.localeCompare(y.componentId!),
         );
         // source 镜像为最细 sources[0]
         const primaryTab = ordered[0];
@@ -541,7 +541,7 @@ export function expressionToTokens(
           agg: fnName,
           match: buildMatch(primaryTab.rowKeyFields ?? [], selfRowKeyFields),
           sources: ordered.map((td) => ({
-            source: td.componentId,
+            source: td.componentId!,
             sourceLabel: td.componentName ?? td.alias,
             match: buildMatch(td.rowKeyFields ?? [], selfRowKeyFields),
           })),

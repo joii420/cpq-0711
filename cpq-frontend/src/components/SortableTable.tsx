@@ -55,7 +55,7 @@ export interface SortableTableProps<T> extends Omit<TableProps<T>, 'components'>
 }
 
 /** AntD Table + dnd-kit 垂直拖拽排序。消费方需在 columns 里放一列 render={() => <DragHandle />}。 */
-export function SortableTable<T extends Record<string, unknown>>(
+export function SortableTable<T extends object>(
   { rowKey, onReorder, dataSource, ...rest }: SortableTableProps<T>,
 ) {
   const sensors = useSensors(
@@ -63,11 +63,12 @@ export function SortableTable<T extends Record<string, unknown>>(
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
   const list = (dataSource ?? []) as T[];
-  const items = list.map((d) => String(d[rowKey]));
+  const keyOf = (d: T) => String((d as Record<string, unknown>)[rowKey]);
+  const items = list.map(keyOf);
   const onDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over || active.id === over.id) return;
-    const from = list.findIndex((d) => String(d[rowKey]) === active.id);
-    const to = list.findIndex((d) => String(d[rowKey]) === over.id);
+    const from = list.findIndex((d) => keyOf(d) === active.id);
+    const to = list.findIndex((d) => keyOf(d) === over.id);
     if (from < 0 || to < 0) return;
     onReorder(arrayMove(list, from, to));
   };

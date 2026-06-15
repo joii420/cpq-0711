@@ -4,6 +4,35 @@
 
 ---
 
+### [2026-06-13] fix(detail): 报价单详情页 cross_tab(页签连表)公式列/小计/总计全 0 — ReadonlyProductCard 漏喂 enriched components | ReadonlyProductCard.tsx(buildCrossTabRows 入参) + buildCrossTabRows.test.ts(契约守卫) | 已合并本地 master(FF 99e1998)；RECORD 按并发约定留工作树未提交
+
+- **症状**: 草稿态报价单(QT-20260613-1714)，编辑页 `QuotationStep2` 页签连表公式全对；**详情页** `ReadonlyProductCard` 产品卡片里跨页签(引用别页签数据)的公式列、列小计、本页签总计、产品小计**全 0**；非公式列(driver 明细/输入/基础资料)与行数均正常。
+- **根因(单点·详情页专有)**: `ReadonlyProductCard.tsx:326` 给 `buildCrossTabRows` 传的是 **raw `lineItem.componentData`**（后端 `ComponentDataDTO` 不持久化 `fields`/`componentType`，只有 `{componentId,tabName,rowData,subtotal,sortOrder}`）。而 `buildCrossTabRows`(`QuotationStep2.tsx:832`)首行 `componentData.filter(c => c?.fields && c.componentType==='NORMAL')` → 全部被滤掉 → `crossTabRows={}` → 渲染层 `computeAllFormulas(...,crossTabRows,...)` 所有 `cross_tab_ref` token 取不到源行 → 求值 0 → 公式列 0 → 列小计/总计随之 0。
+- **差异证明**: 编辑页 `ProductCard`(`QuotationStep2.tsx:1671`)传 `item.componentData` 在 Wizard 里已 enrich(含 fields)→ 正常；详情页 enrich 后数据在 `components` 状态里，本文件**其它所有调用都用 `components`**（compSubtotals 循环 line283 / `computeProductSubtotal` line349），**唯独 line326 这处漏改**。给详情页加 cross_tab 支持(Task4.3)时遗漏。
+- **修法(一行)**: `buildCrossTabRows(lineItem.componentData ?? [], ...)` → `buildCrossTabRows(components, ...)`。顺带 `lookupExpansion` 的 `fieldsOverrideHash(comp.fields)` 也因此对齐(raw 下 comp.fields=undefined key 本来也对不上)。+`buildCrossTabRows.test.ts` 加契约守卫:喂 raw DTO(无 fields/componentType)→ store 空 + 列小计回填 0，固化"必须喂 enriched"机理。
+- **与并发条目区分**: 下条 [2026-06-13] cross_tab「列小计恒0」修的是**编辑页/后端 PASS1↔PASS2** 时序回填(buildCrossTabRows 内 subtotalsFromResolvedRows + 后端)，那条已合并且在本修复基线内；本修复是**详情页调用方喂错参数**，两者正交互补。
+- **自检**: tsc 0 ✅；vitest buildCrossTabRows+crossTabInputDefaultSource 6 passed ✅；ReadonlyProductCard.tsx + QuotationStep2.tsx → Vite 200 ✅；**quotation-flow E2E 1 passed + '加载中' final=0 + 全Tab=0 + PUT/draft=0**(协议级强制；测试产品 10110002 数据已清→各Tab rows=0，故 E2E 为无回归验证非实证)。**真机实证待用户**: 浏览器打开 QT-20260613-1714 详情页确认跨页签公式列/小计/总计已显示正确值(与编辑页一致)。
+
+### [2026-06-13] fix(crosstab): cross_tab 公式列「列小计恒 0」修复（subagent-driven，已合并 master）| QuotationStep2.tsx(buildCrossTabRows) + CardSnapshotService.java(PASS2) + buildCrossTabRows.test.ts/CardSnapshotCrossTabTest.java | plan: superpowers/plans/2026-06-13-crosstab-column-subtotal-resolution.md
+
+- **根因**: cross_tab 公式列（来料.材料费=`SUM([元素…])+SUM([外购件.费用])`）每行已算对，但**列小计=0**。列小计在 PASS1 算（`computeTabSubtotalsByColumn` 传 `crossTabRows=undefined`），此时 crossTabRows 未建 → cross_tab token 返 0 → 列小计 0；每行显示走 PASS2（有 crossTabRows）才对。前端底部读 `allComponentSubtotals[#col]`=PASS1 的 0；后端 `buildTabNode` 的 `subtotalByColumn` 取自 PASS1 `componentSubtotals#col`=0。**两端同病，既有缺陷**（此前材料费每行也 0 被掩盖，rowkey 修复后暴露）。
+- **修法（DRY）**: PASS2 的 resolvedRows 已含每行正确(含 cross_tab)值 → **从 resolvedRows 的 is_subtotal 列求和回填**，保证「列小计==各行显示之和」。前端 `buildCrossTabRows` 拓扑循环内 `subtotalsFromResolvedRows` 按引用回填 `allComponentSubtotals`；后端 `CardSnapshotService` PASS2 `backfillSubtotalsFromResolved` 回填 `componentSubtotals`（buildTabNode 自动写出正确 subtotalByColumn）。拓扑序保证下游 component_subtotal token 引用上游小计时已修正。
+- **评审纠偏**: ① **SUBTOTAL 循环不回填**（其 is_subtotal 列由组件级聚合公式决定，从 resolvedRows 重算会污染报价小计）—仅 NORMAL 组件回填；② 前端列小计 `Math.round(x*1e4)/1e4` 4dp 舍入对齐后端 `setScale(4,HALF_UP)` 防数值分叉。
+- **测试**: 前端 vitest（buildCrossTabRows 列小计=0.259 + 既有不回归）+ 后端 29 测试绿（CardSnapshotCrossTabTest 对拍 subtotalByColumn=0.259）；合并后 quotation-flow E2E。
+- **流程**: subagent-driven（前后端各 implementer + 只读质量评审 NEEDS_FIX→主线亲修 Critical+Important→重测）；feature 不提交 RECORD.md（本条目主线合并后追加工作树）；与并发 tabjoin 改动零文件重叠，合并无冲突。
+
+---
+
+### [2026-06-13] 页签连表公式编辑器 - 公式输入框圆括号实时校验 | formulaBracketCheck.ts(新)+.test.ts(新) + TabJoinFormulaDrawer.tsx | spec specs/2026-06-13-tabjoin-formula-paren-check-design.md + plan plans/2026-06-13-tabjoin-formula-paren-check.md（隔离 worktree `tabjoin-paren-check` subagent-driven）
+
+- **诉求**: 「配置页签连表公式」抽屉公式表达式框增加圆括号 `()` 基本语法检测 —— 实时提示 + 保存硬拦截。
+- **方案(纯前端)**: 纯函数 `checkParenBalance(expr)→{ok,error?}`,**数量+顺序**(深度计数法,深度<0 立即报"多了 1 个右括号"、扫描结束深度>0 报"缺少 N 个右括号")。**关键**:`(总计)` 用 ASCII 圆括号且总在 `[...]` 字段块内(如 `[COMP_RL.金额(总计)]`),朴素字符计数概念错误 → 扫描遇 `[` 跳到配对 `]`、遇 `{` 跳到配对 `}` 整体跳过块内字符,只对真分组括号计数(假设块不嵌套,当前文法保证;未闭合块跳到串尾)。**仅查圆括号**,`[]`/`{}` 缺配对仍由 `formulaSerialize.lex()` 保存时报。
+- **接线**: `TabJoinFormulaDrawer` 用 `useMemo(checkParenBalance)` → ①`FormulaRichInput` 下方 `<Text type="danger">` 实时红字 ②保存 `<Button disabled>` 包 `<Tooltip>`(原因 hover) ③`save()` 守卫复用 `parenCheck` 在组件类型分支**之前**兜底拦截 → **EXCEL/NORMAL/SUBTOTAL 全类型生效**。空表达式仍由既有"不能为空"处理。
+- **自检**: vitest `formulaBracketCheck` 13 passed(平衡/空/纯文本/嵌套/块内`(总计)`排除×2/缺1/缺2/多余/`)(`顺序错/块排除后仍抓块外错/未闭合块跳过/`{}`路径块排除);tsc 0 错误;**合回 master 后**用主工作区运行中的 5174 跑 Vite-200(TabJoinFormulaDrawer.tsx + formulaBracketCheck.ts)。本改动不涉及 driver/snapshot/字段类型协议文件,**不触发 E2E**(AP-44 不适用,无 field_type 变更)。两阶段评审:Task1 spec✅+质量 Approved(补块边界注释+2测试 I-1/M-1/M-3);Task2 质量 Approved(采纳 3 Minor:save 复用 parenCheck+Tooltip undefined+Text type=danger)。
+- **注意**: contentEditable 输入框的实时红字/按钮禁用交互靠真机验收(headless 测不到);校验对中文/空白不敏感。**RECORD 条目按项目并发约定留主工作区工作树未提交,不随 feature 分支合并。**
+
+---
+
 ### [2026-06-13] fix(rowkey): 前端 computeRowKey/computeDedupKey 字段感知（_前缀视图列别名 → 字段名解析）| useCardSnapshots.ts + rowDedup.ts + QuotationStep2.tsx + ReadonlyProductCard.tsx | 新签名 computeRowKey(fields, rowKeyFields, driverRow, rowIndex, bdv?)；resolveRowKeyPart 按 defaultSource 解析；rowDedup 同款可选 fields+bdv；4 调用点升级；418 测试全绿
 
 - **问题**: 外购件 rowKeyFields=["料件","要素"]（字段名），driverRow 键为视图列别名 _料件/_要素，旧 computeRowKey 直接读 driverRow["料件"]→undefined → 4 行 rowKey 全冲突为 "||" → cross_tab SUM 退化为末值×4。
@@ -36,6 +65,46 @@
   - SnapshotReconcileTest: baseKeys 改 4-arg 对齐实际口径；usesCrossContextToken 加 cross_tab_ref 排除（独立重算 crossTabRows={} 必然 0，与 component_subtotal 同理跳过）（4/4）
 - **排除的预存失败**: `CardStructureSnapshotTest.quoteCardStructure_preservesFieldContract`（`其他费用` 组件缺 rowKeyFields，master 上就失败，与本次改动无关，数据库配置问题）
 - **提交**: 4 commits（d42e370 T1+T2 / f0fbf1a T3 / e4722c7 T4 / a86b43b T8）均在分支 `worktree-fix-rowkey-field-driver-col`
+
+---
+
+### [2026-06-13] fix(crosstab): INPUT+default_source 字段未按字段名解析进 cross_tab 行致聚合全0 (4 Task, subagent-driven, 已合并 master) | FormulaCalculator.java(宿主currentRowRaw) + QuotationStep2.tsx(源行+宿主currentRow) + cross-tab-cases.json(前后端各一份) | spec+plan: specs/plans/2026-06-13-crosstab-input-default-source-resolution.md
+
+- **根因(四象限非对称)**: cross_tab 求值前"行解析"只对 FORMULA/BASIC_DATA/DATA_SOURCE 按字段名写回；INPUT_TEXT/INPUT_NUMBER + `default_source`(绑驱动列, 如 料件→`$ll_view._料件`) 被漏 → match 键 `行['料件']` 与目标列 `行['单价']` 全 undefined → SUM/KSUM/NONE 全 0。**既有缺陷, 非 KSUM 改动引入**。料8 手算 94.5 但渲染/落库 0。
+- **四象限**: 前端源行 `buildResolvedRow`❌ + 前端宿主行 `computeAllFormulas` currentRow❌ + 后端宿主行 `FormulaCalculator.computeRows` currentRowRaw❌ = 缺陷; **后端源行 `resolveRowByFieldName` 已正确(:753-779), 不动**(前后端共同基准)。
+- **修法(对称)**: 源行=全解析(前端 buildResolvedRow 加 INPUT 分支, 对齐后端 resolveRowByFieldName); 宿主行=裸row+INPUT-only(后端 `fillInputDefaultSourceByFieldName` 方案B 增量补 + 前端 `currentRowForEval` INPUT-only, 两端对称避免对拍/真机分叉)。DRY 落单字段解析器 `resolveInputDefaultSourceForRow`。子类型 GLOBAL_VARIABLE/BNF_PATH/BASIC_DATA(键 @gvar:CODE / `{path}`)。手填>default_source(空才补)、文本保留(不 parseFloat)。
+- **关键纠偏(评审推翻初稿)**: ① 初稿"前后端对称缺陷"错→后端源行本就对; ② 初稿"扩 computeAllFormulas fieldValues 到 INPUT_TEXT"=死代码(cross_tab 读行对象不读 numeric fieldValues)→删; ③ **对拍夹具只测求值器(直灌 currentRowRaw, 不经 calculate)→抓不到本 bug**, 真回归测试必须经 `calculate`(后端)/`buildCrossTabRows`(前端)的解析层。
+- **测试**: 后端 108 绿(新 calculate_hostInputDefaultSource→94.5 + CrossTab 11→12 + Fixture 45→46); 前端 404 绿(新 crossTabInputDefaultSource.test.ts 源行料件/单价 + 宿主材料费=94.5); 前后端对拍新增字段名键 SUM 用例 diff 空。
+- **自检**: TS 0 错误 ✅; QuotationStep2 → Vite 200 ✅; 后端 api/cpq → 401(auth 正常) ✅; **quotation-flow E2E PASS + 加载中 final=0 + 全8Tab 加载中=0 + PUT/draft=0** ✅(协议级强制)。**注**: E2E 测试产品 10110002 组合数据 2026-06-11 已清→各Tab rows=0(环境数据缺失非回归); **真机 QT-20260613-1705 来料 材料费 具体值(料8≈94.5)需用户 UI 触发该报价单重算后复核**(curl 无 auth token 无法本会话重算; 正确性已由 后端calculate 94.5 + 前端buildCrossTabRows 94.5 + 对拍双引擎一致 四重穷举证明)。
+- **范围外**: 同模板 `加工费`(agg=NONE 多工序多命中 ERR)= 语义问题待产品确认; INPUT default_source 的 DATABASE_QUERY/HTTP_API 子类型按字段名解析待确认是否有此配法。
+- **流程**: subagent-driven(每 Task fresh 子代理 + spec/质量双评审, Task3/4 机械改动主线亲验); 4 子代理无虚报, 每 Task 后 `git branch --contains` 验证未串 master; FF 合并 master(feature 不碰 RECORD.md 避开并发会话, 本条目追加工作树未提交)。
+
+---
+
+### [2026-06-13] 多 source 链式 SUM + KSUM 嵌套预聚合 (11 Task, subagent-driven, 已合并 master) | formulaSerialize.ts/formulaEngine.ts/types.ts + FormulaCalculator.java/TokenMappabilityValidator.java/TabJoinPlanEvaluator.java + cross-tab-cases.json(前后端各一份) | spec: specs/2026-06-12-multi-source-chain-sum-design.md(v3.1) + plan: plans/2026-06-12-multi-source-chain-sum.md
+
+- **能力**: ① 多 source 链式 SUM(v1) — 一个 SUM 内引用多个非宿主 source(两两可比 ⊆/⊇),驱动=最细,更粗 source 按公共行键广播(0命中→项0/1命中→取值/>1→报错改KSUM);② KSUM/KAVG/KMAX/KMIN/KCOUNT(v2 降维投影) — 对单页签按宿主行键塌缩成标量,绕开"互不包含维度→笛卡尔"。详见 `配置方法论-合并版.md §3.4.1` + `PRD-v3.md §9.12` + 反模式 **AP-56**。
+- **关键决策(踩坑沉淀在 AP-56)**:
+  - **决策 K 空集分流落点**: KSUM/KCOUNT 空集→0(静默); KAVG/KMAX/KMIN 空集→null→整外层塌0+⚠。落在前端 aggregateRows hits===0 / 后端 evalCrossTab hits.isEmpty()→ZERO **之前**,**不动** AVG 的 .average().orElse(0)/arr.length 死分支。
+  - **前后端 mergedRow 须合并驱动行**: 后端 sub.currentRowRaw 必须 `{...hostRow, ...arow}`(对齐前端),否则非空 match KSUM 分叉。全用 match=[] 测试遮盖,必须有非空 match 对拍(T7-12=35)。
+  - **全局变量 token 实际 type=path**(非字面 global_variable): validator 白名单 + 回显须放行 path。
+  - **C2**: 单列 KSUM 强制 targetExpr(不复用单列 shortcut)。**C1**: 后端 sub 透传 componentSubtotals/quotationFields/productAttributes/previousRowSubtotal。
+  - **多 source 广播**: buildCrossTabRows 各组件行独立不预 join → 求值器须按 sources[1..] 行键广播(token.sources 否则是 dead code)。
+  - **J/M/I2/C3**: K套K双端拒 / 顶层裸KSUM拒 / 同页签既KSUM又裸引拒 / `K SUM` 不可拆写。Excel 模型B(TabJoinPlanEvaluator)遇 KSUM/多source 显式抛错。核价单走独立8指标引擎,不评估 cross_tab,无核价侧改动(spec §7.2 Minor⑤ 伪命题)。
+  - **token 模型零迁移**: FormulaToken 纯加 sources + projectToHostKey,无 DB 列/无 snapshot 迁移。
+- **测试**: 前端 263(formulaEngine+formulaSerialize) + 后端 98(KSUM 8/validator 14/CrossTab 11/Fixture 45/TabJoin 20) 全绿; **前后端对拍 cross-tab-cases.json 18 类 diff 逐字空**(含盲区A/料8终态=8/各agg/I-2空集/双独立KSUM/C1对称/非空match=35/NONE旁路); N=1 退化路径逐字不变(既有 CrossTab 零回归)。
+- **自检**: TS 0 错误 ✅; formulaEngine.ts/formulaSerialize.ts → Vite 200 ✅; 后端 /api/cpq → 401(auth 正常) ✅; 前后端 cross-tab-cases.json diff 空 ✅; **quotation-flow E2E PASS + 加载中 final=0 + 全 7 Tab 加载中=0** ✅(协议级强制 E2E)。**注**: E2E 各 Tab rows=0 因测试产品 10110002 组合/选配数据 2026-06-11 已清(环境数据缺失,非本改动回归),故"料8 KSUM 真机算出值"受测试数据阻塞,正确性由 263+98 单测 + 18 对拍夹具(含真实料8 公式)穷尽证明。
+- **流程**: subagent-driven(每 Task fresh 子代理 + spec/质量双评审 + 修复轮); 2 次子代理中途死亡(T6/T10docs),主线亲验 git/测试状态续完,无虚报; fast-forward 合并 master(feature 不碰 RECORD.md 避开并发会话)。
+
+---
+
+### [2026-06-12] fix(formula): 后端小计累加对输入型 is_subtotal 列恒 0 bug 修复 | FormulaCalculator.java / FormulaCalculatorTest.java | TDD: T16 先红后绿
+
+- **根因**: `RowResult` 只持有 `formulaValues`（FORMULA 字段拓扑序求值结果），`collectFieldValues` 收集的 INPUT_NUMBER/FIXED_VALUE/BASIC_DATA/DATA_SOURCE 等输入型字段值存于局部变量 `fieldValues`，未传入 `RowResult`；`computeTabSubtotalsByColumn` 累加时只查 `rr.formulaValues.get(sf)`，输入型 `is_subtotal` 列始终 null → sum 恒 0。
+- **修法（最小）**: `RowResult` 增 `Map<String,Double> fieldValues` 字段；`computeRows` 造 `RowResult` 时同时传入；`computeTabSubtotalsByColumn` 累加改为"formulaValues 优先，缺键则回退 fieldValues"（与前端 `computeTabSubtotalsByColumn` 中 `cache[sf.name] ?? row[sf.name]` 口径一致）。
+- **TDD**: T16 先失败（expected 10.12 but was 0.0）→修复后通过；既有 T1-T15 + reconcile 全绿（17/17）。
+- **自检**: mvnw test FormulaCalculatorTest 17/17 GREEN；后端 /api/cpq/quotations → 401（auth 正常）✅。
+- **注意**: `RowResult` 只有一处 `computeRows` 内造实例（第 436 行），无其他分支，NPE 风险通过 `Map.of()` 默认值兜底。
 
 ---
 
