@@ -1,9 +1,19 @@
 # SUMIF 条件聚合函数族 — 设计方案（v2，已核实代码现状后重写）
 
 - 日期：2026-06-15
-- 状态：方向已确认，待用户复审 → 进 writing-plans
+- 状态：✅ 已实现并合并 master（2026-06-16，merge c314ccd；实现计划 `docs/superpowers/plans/2026-06-15-sumif-conditional-aggregate-functions.md` 10 task 全完成）
 - 涉及核心基线：是（公式渲染，见 `docs/三大核心模块基线.md`）
 - 修订说明：v1 误判组件线走 JEXL、且漏看了已存在的 `cross_tab_ref` 特性。经逐行核实（见 §10 证据）重写为"扩展两个现有底座"方案。
+
+## 0.5 落地后已知边界 / 限制（实现复盘补记）
+
+- **EXCEL/小计线 SUMIF 仅文本可达、无抽屉 UI 入口**：组件线（NORMAL/SUBTOTAL）有 `TabJoinFormulaDrawer` 条件构造器点击生成；EXCEL 线 SUMIF 需手敲文本触发，符合"单值辅助线"定位。
+- **EXCEL/卡片别名源字段名错配**：`CardAggregateSource.rowsFor` 返别名重映射行（`c0/c1`），predicate 用人类字段名，卡片源场景下条件可能取不到值→静默 0。视图源/driver 源不受影响。建议卡片源 SUMIF 用视图列名或后续做别名回填。
+- **EXCEL 线 host 引用恒空**：`[宿主页签.字段]` 在 EXCEL 单值线无宿主行（hostRow=空），语法 2 跨页签在该线恒 false→0（spec §9 P0-5 已声明）。
+- **SUMIF chip 不可字段级编辑**：抽屉重开时已配 SUMIF 在预览区只能整体删除重配（predicate 完整保留不丢，纯 UX 限制）。
+- **多条件强制同一 AND/OR**：UI 层多行共用一个逻辑连接符；底层模型/解析器支持嵌套括号混合，仅 UI 受限。
+- **数字解析口径**：前端 `Number()` 与后端 `Double.valueOf` 在 `0x..`/类型后缀/`"NaN"` 等病态输入上略异；CPQ 业务数据不会出现，沿用既有 keyEq/valEquals 容差。
+- **验收**：后端 71 单测 + 前端 517 单测全绿；SIMPLE E2E 零回归（`'加载中'=0`）；COMPOSITE E2E 失败为合并前既有环境 bug（旧模板只读，RECORD 2026-06-10 记录，与本特性无关）；浏览器实测 SUMIF 出值因测试料号 rows=0 未观察到，语义由 `FormulaCalculatorPredicateTest` 构造行覆盖。
 
 ## 1. 背景与目标
 
