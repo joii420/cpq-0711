@@ -454,6 +454,27 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
       },
     }] : []),
     {
+      title: '单位换算来源',
+      key: 'unit_source_field',
+      width: 160,
+      render: (_: unknown, record: FieldItem) => {
+        const siblingOptions = fields
+          .filter((f) => f.key !== record.key && (f.name || f.key))
+          .map((f) => ({ label: f.name || f.key, value: f.name || f.key }));
+        return (
+          <Select
+            value={record.unit_source_field || undefined}
+            onChange={(val) => updateField(record.key, { unit_source_field: val ?? undefined })}
+            options={siblingOptions}
+            allowClear
+            placeholder="无（不换算）"
+            size="small"
+            style={{ width: '100%' }}
+          />
+        );
+      },
+    },
+    {
       title: '备注',
       key: 'notes',
       render: (_: unknown, record: FieldItem) => (
