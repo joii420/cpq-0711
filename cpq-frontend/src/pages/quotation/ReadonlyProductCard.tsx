@@ -350,10 +350,13 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   //   公式结果（产品单价 = 元素小计 + 工艺单价）。直接复用编辑页同源的 computeProductSubtotal：
   //   它内部只算 NORMAL 组件小计（带 driver 行级展开）再求 SUBTOTAL 组件公式，与编辑页完全一致。
   //   注意喂 enrich 后的 components（含 fields/dataDriverPath），否则函数内 lookupExpansion 失效。
+  // B3: 传 compSubtotals（buildCrossTabRows 回填后，含 cross_tab 列+二阶列正确小计），
+  //   消除函数内 PASS1 重算双口径，保证详情页产品小计与渲染行同源。
   const productSubtotal = computeProductSubtotal(
     { ...lineItem, componentData: components } as any,
     driverExpansions,
     customerId,
+    compSubtotals,
   );
 
   return (

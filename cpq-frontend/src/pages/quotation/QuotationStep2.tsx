@@ -1077,32 +1077,44 @@ function computeProductSubtotal(
   // 让 caller 把 driverExpansions / customerId 透传进来 —— 不传则退化为旧行为（仅 comp.rows）
   driverExpansions?: import('./useDriverExpansions').DriverExpansionMap,
   customerId?: string,
+  // B3: 调用方已完成 PASS1+PASS2(buildCrossTabRows 回填后)的 allComponentSubtotals。
+  // 提供时直接用（跳过函数内 PASS1 重算），消除双口径（cross_tab 列/二阶列小计与渲染行同源）。
+  // 不提供时退化为旧 PASS1 重算行为（兜底，向后兼容）。
+  precomputedSubtotals?: Record<string, number>,
 ): number {
   if (!item.componentData || item.componentData.length === 0) return item.subtotal || 0;
 
-  const partNo = item.productPartNo;
-  // V203/Phase B: 必须传 comp.dataDriverPath 才能区分同 componentId 不同 driver 的两个组件实例
-  // V196 (2026-05-19): 加 fieldsHash 维度区分同 cid 同 driver 不同 fields_override 的两个 Tab
-  const lookupExpansion = (comp: ComponentDataItem) => {
-    if (!driverExpansions || !partNo || !comp.componentId) return undefined;
-    // Bug B: lineItemId = item.id || item.tempId || ''
-    const lineItemId = (item as any).id || (item as any).tempId || '';
-    const k = driverExpansionKey(lineItemId, partNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
-    return driverExpansions[k];
-  };
+  let componentSubtotals: Record<string, number>;
 
-  // Compute NORMAL component subtotals first
-  const componentSubtotals: Record<string, number> = {};
-  for (const comp of item.componentData) {
-    if (!comp?.fields || comp.componentType !== 'NORMAL') continue;
-    // partNo + driverExpansion 一起传 —— BASIC_DATA 字段才能按行取值，
-    // 不然落到全局 path cache 第一项 / 当 0 算（产品小计 156.80 vs 列小计 750.80 的根因）
-    const subtotal = computeTabSubtotal(
-      comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp),
-    );
-    if (comp.componentId) componentSubtotals[comp.componentId] = subtotal;
-    if (comp.componentCode) componentSubtotals[comp.componentCode] = subtotal;
-    componentSubtotals[comp.tabName] = subtotal;
+  if (precomputedSubtotals) {
+    // B3: 用调用方传入的（buildCrossTabRows 回填后）已修正小计，跳过 PASS1 重算。
+    // 消除"产品小计 PASS1 不含 crossTabRows → cross_tab 列贡献 0"的双口径。
+    componentSubtotals = precomputedSubtotals;
+  } else {
+    const partNo = item.productPartNo;
+    // V203/Phase B: 必须传 comp.dataDriverPath 才能区分同 componentId 不同 driver 的两个组件实例
+    // V196 (2026-05-19): 加 fieldsHash 维度区分同 cid 同 driver 不同 fields_override 的两个 Tab
+    const lookupExpansion = (comp: ComponentDataItem) => {
+      if (!driverExpansions || !partNo || !comp.componentId) return undefined;
+      // Bug B: lineItemId = item.id || item.tempId || ''
+      const lineItemId = (item as any).id || (item as any).tempId || '';
+      const k = driverExpansionKey(lineItemId, partNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
+      return driverExpansions[k];
+    };
+
+    // Compute NORMAL component subtotals first (PASS1: 无 crossTabRows，cross_tab 列小计为 0)
+    componentSubtotals = {};
+    for (const comp of item.componentData) {
+      if (!comp?.fields || comp.componentType !== 'NORMAL') continue;
+      // partNo + driverExpansion 一起传 —— BASIC_DATA 字段才能按行取值，
+      // 不然落到全局 path cache 第一项 / 当 0 算（产品小计 156.80 vs 列小计 750.80 的根因）
+      const subtotal = computeTabSubtotal(
+        comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp),
+      );
+      if (comp.componentId) componentSubtotals[comp.componentId] = subtotal;
+      if (comp.componentCode) componentSubtotals[comp.componentCode] = subtotal;
+      componentSubtotals[comp.tabName] = subtotal;
+    }
   }
 
   // Find SUBTOTAL component and use its first formula as product subtotal
@@ -2421,7 +2433,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           <span className="qt-subtotal-value">
             {formatCurrency(
               item.componentData.length > 0
-                ? computeProductSubtotal(item, driverExpansions, customerId)
+                // B3: 传 allComponentSubtotals（buildCrossTabRows 回填后，含 cross_tab 列+二阶列正确小计），
+                // 消除函数内 PASS1 重算双口径（产品小计与渲染行同源）。
+                ? computeProductSubtotal(item, driverExpansions, customerId, allComponentSubtotals)
                 : item.subtotal
             )}
           </span>
