@@ -813,6 +813,36 @@ function buildResolvedRow(
 }
 
 /**
+ * 识别组件内"二阶列"（is_subtotal FORMULA 字段，其公式包含 component_subtotal token
+ * 且 token.component_code 属于本组件的 id/code/tabName）。
+ * 二阶列在算行时需要依赖本组件一阶列小计（allComponentSubtotals['self#colName']），
+ * 但一阶列小计在同轮行迭代内尚未回填，因此需要两阶段算行。
+ * 返回二阶字段名集合；空集 = 无二阶列（大多数组件）。
+ */
+function detectSecondOrderFields(comp: ComponentDataItem): Set<string> {
+  const selfIds = new Set<string>();
+  if (comp.componentId) selfIds.add(comp.componentId);
+  if (comp.componentCode) selfIds.add(comp.componentCode);
+  if (comp.tabName) selfIds.add(comp.tabName);
+
+  const secondOrder = new Set<string>();
+  for (const f of comp.fields ?? []) {
+    if (!f.is_subtotal || f.field_type !== 'FORMULA') continue;
+    const fname = f.name || f.key || '';
+    if (!fname) continue;
+    const formula = (comp.formulas ?? []).find((fm: any) => fm.name === fname);
+    if (!formula?.expression) continue;
+    for (const token of formula.expression) {
+      if (token?.type === 'component_subtotal' && selfIds.has(token.component_code ?? '')) {
+        secondOrder.add(fname);
+        break;
+      }
+    }
+  }
+  return secondOrder;
+}
+
+/**
  * 按组件 cross_tab_ref 依赖拓扑序构建 crossTabRows (镜像后端 CardSnapshotService PASS2)。
  * 前置: allComponentSubtotals 必须已构建完 (PASS1)。
  * 每算完一个组件即把其 resolvedRows 存入 store (componentId + componentCode + ids[] 三键),
@@ -821,6 +851,10 @@ function buildResolvedRow(
  * 副作用(PASS2 回填): 每个组件 resolvedRows 算完后，从 rows 的 is_subtotal 列值求和，
  * 回填传入的 allComponentSubtotals（键: `${id}#${colName}` 及总计 `${id}`）。
  * 这保证「列小计 == 各行显示值之和」（DRY，修复 cross_tab 公式列小计显示 0 的问题）。
+ *
+ * 二阶列处理(B2): 若组件含"引用本组件小计的二阶 FORMULA 列"，先做第一轮行迭代算一阶列
+ * 并立即回填一阶列小计(含 `self#colName` 键)，再做第二轮算含二阶列的完整结果。
+ * 这消除"算二阶列时本组件一阶列小计尚为 0"的双口径问题。
  */
 export function buildCrossTabRows(
   componentData: ComponentDataItem[],
@@ -837,31 +871,65 @@ export function buildCrossTabRows(
   try { order = topoOrderComponents(ids, deps); }
   catch { order = ids; /* 环：退回原序，避免整卡渲染崩溃；模板保存层已拦截环 */ }
 
+  /** 单组件全量行迭代 → resolvedRows（复用逻辑，避免重复）。 */
+  function computeRows(comp: ComponentDataItem, exp: import('./useDriverExpansions').DriverExpansion | undefined): Array<Record<string, any>> {
+    const s = splitRows(comp, exp);
+    const rows: Array<Record<string, any>> = [];
+    for (let i = 0; i < s.totalRows; i++) {
+      const ra = rowAt(i, comp, s);
+      const row = fillFixedDefaults(comp.fields!, ra.row);
+      const basicDataValues = ra.expIndex >= 0 ? exp!.rows[ra.expIndex]?.basicDataValues : undefined;
+      const driverRow = ra.expIndex >= 0 ? exp!.rows[ra.expIndex]?.driverRow : undefined;
+      const formulaCache = computeAllFormulas(
+        comp, row, allComponentSubtotals, undefined, undefined, partNo, basicDataValues,
+        undefined, globalVariableDefs, store,
+      );
+      rows.push(buildResolvedRow(comp.fields!, row, driverRow, basicDataValues, formulaCache));
+    }
+    return rows;
+  }
+
   const store: Record<string, Array<Record<string, any>>> = {};
   for (const cid of order) {
     const comp = normals[ids.indexOf(cid)];
     if (!comp) continue;
     const exp = lookupExpansion(comp);
-    const s = splitRows(comp, exp);
-    const rows: Array<Record<string, any>> = [];
-    for (let i = 0; i < s.totalRows; i++) {
-      const ra = rowAt(i, comp, s);
-      const row = fillFixedDefaults(comp.fields!, ra.row); // 手动行 fillFixedDefaults 已短路
-      const basicDataValues = ra.expIndex >= 0 ? exp!.rows[ra.expIndex]?.basicDataValues : undefined;
-      const driverRow = ra.expIndex >= 0 ? exp!.rows[ra.expIndex]?.driverRow : undefined;
-      const formulaCache = computeAllFormulas(
-        comp, row, allComponentSubtotals, undefined, undefined, partNo, basicDataValues,
-        undefined, globalVariableDefs, store,   // crossTabRows-so-far (topo order → A ready before B)
-      );
-      rows.push(buildResolvedRow(comp.fields!, row, driverRow, basicDataValues, formulaCache));
-    }
-    store[cid] = rows;
-    if (comp.componentCode) store[comp.componentCode] = rows;
-    if (comp.componentId) store[comp.componentId] = rows;
 
-    // PASS2 回填：从 resolvedRows 的 is_subtotal 列值求和，更新 allComponentSubtotals。
-    // 保证「列小计显示 == 各行 cross_tab 公式实际值之和」（PASS1 因 crossTabRows=undefined 算出 0）。
-    subtotalsFromResolvedRows(comp, rows, allComponentSubtotals);
+    // B2: 检测是否有二阶列（引用本组件小计的 component_subtotal）。
+    // 有则做两阶段：第一轮只算一阶列并立即回填列小计，第二轮算含二阶列的完整结果。
+    const secondOrderFields = detectSecondOrderFields(comp);
+
+    if (secondOrderFields.size > 0) {
+      // ── 第一轮：临时屏蔽二阶列（制造只含一阶 is_subtotal 列的"影子组件"），算出一阶行值
+      // 并立即回填一阶列小计，使二阶列公式在第二轮能正确读到 allComponentSubtotals['self#colName']。
+      // "影子组件"的 fields 过滤掉二阶列，formulas 同步过滤（防止 computeAllFormulas 找到二阶公式）。
+      const firstOrderComp: ComponentDataItem = {
+        ...comp,
+        fields: (comp.fields ?? []).filter((f: ComponentField) => !secondOrderFields.has(f.name || f.key || '')),
+        formulas: (comp.formulas ?? []).filter((fm: any) => !secondOrderFields.has(fm.name ?? '')),
+      };
+      const firstPassRows = computeRows(firstOrderComp as ComponentDataItem, exp);
+      // 立即回填一阶列小计（subtotalsFromResolvedRows 按 is_subtotal 列过滤）。
+      // 此时 allComponentSubtotals['self#aCost'] 等键即就绪，供第二轮二阶列公式查询。
+      subtotalsFromResolvedRows(firstOrderComp as ComponentDataItem, firstPassRows, allComponentSubtotals);
+
+      // ── 第二轮：用完整 comp（含二阶列）算最终 resolvedRows，此时一阶列小计已正确。
+      const rows = computeRows(comp, exp);
+      store[cid] = rows;
+      if (comp.componentCode) store[comp.componentCode] = rows;
+      if (comp.componentId) store[comp.componentId] = rows;
+      // 最终回填（覆盖第一轮的一阶列小计，同时写入二阶列小计 + 更新总小计）。
+      subtotalsFromResolvedRows(comp, rows, allComponentSubtotals);
+    } else {
+      // 无二阶列：原有逻辑，一轮完成。
+      const rows = computeRows(comp, exp);
+      store[cid] = rows;
+      if (comp.componentCode) store[comp.componentCode] = rows;
+      if (comp.componentId) store[comp.componentId] = rows;
+      // PASS2 回填：从 resolvedRows 的 is_subtotal 列值求和，更新 allComponentSubtotals。
+      // 保证「列小计显示 == 各行 cross_tab 公式实际值之和」（PASS1 因 crossTabRows=undefined 算出 0）。
+      subtotalsFromResolvedRows(comp, rows, allComponentSubtotals);
+    }
   }
   return store;
 }

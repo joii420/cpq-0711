@@ -199,12 +199,25 @@ export function evaluateExpression(
       case 'number':
         expr += token.value!;
         break;
-      case 'component_subtotal':
-        expr += (componentSubtotals?.[token.component_code!]
+      case 'component_subtotal': {
+        // 优先查「组件#列名」列小计键（二阶列场景：token 引用本组件某 is_subtotal 列，
+        // 而非整组件总小计）。value/tab_name 非空时才尝试列小计键，否则退回旧逻辑。
+        // 旧逻辑：仅 component_code → 组件总小计（[alias(总计)] 无列名的整体引用仍走此路）。
+        const _colVal = token.value || token.tab_name;
+        const _colKey = token.component_code && _colVal
+          ? `${token.component_code}#${_colVal}`
+          : undefined;
+        const _resolvedSubtotal =
+          (_colKey !== undefined && componentSubtotals?.[_colKey] !== undefined
+            ? componentSubtotals[_colKey]
+            : undefined)
+          ?? componentSubtotals?.[token.component_code!]
           ?? componentSubtotals?.[token.tab_name!]
           ?? componentSubtotals?.[token.value!]
-          ?? 0).toString();
+          ?? 0;
+        expr += _resolvedSubtotal.toString();
         break;
+      }
       case 'previous_row_subtotal': {
         // 优先用调用方传入的上一行小计 (按 row_index 顺序累加场景);
         // 行 0 时未传入 → fallback_component_code 跨组件 subtotal 兜底.
