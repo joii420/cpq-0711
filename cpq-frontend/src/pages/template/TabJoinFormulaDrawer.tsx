@@ -10,6 +10,7 @@ import FormulaRichInput, { type FormulaRichInputHandle } from './tabjoin/Formula
 import SampleCardPicker from './tabjoin/SampleCardPicker';
 import {
   expressionToTokens,
+  tokensToDrawerExpression,
   checkMappable,
 } from '../component/formulaSerialize';
 import type { FormulaToken } from '../component/types';
@@ -44,6 +45,13 @@ interface Props {
   /** 本组件行键字段，供跨页签引用构建 match[] 对齐对（仅 token 形态需要） */
   selfRowKeyFields?: string[];
   column: any;
+  /**
+   * NORMAL/SUBTOTAL 模式下，编辑已有公式时传入原始 FormulaToken[]。
+   * 打开时经 splitSumifTokens 拆分：带 predicate 的 cross_tab_ref → sumifTokens 侧状态；
+   * 其余 token → tokensToDrawerExpression 转字符串填入表达式区。
+   * 这样 SUMIF predicate 在重开时不丢失，保存时也不会被静默清除。
+   */
+  initialTokens?: FormulaToken[];
   onClose: () => void;
   onSave: (payload: TabJoinFormulaSavePayload) => void;
 }
@@ -130,6 +138,35 @@ function condRowsToPredicate(rows: CondRow[]): ConditionPredicate | null {
 let _idSeq = 0;
 const nextId = () => ++_idSeq;
 
+// ── splitSumifTokens：把带 predicate 的 cross_tab_ref token 拆出来作为 sumifTokens ──
+
+/**
+ * 把 token 数组按「是否带 predicate 的 cross_tab_ref」拆分：
+ * - sumifTokens：type === 'cross_tab_ref' && predicate != null（直接作为 SUMIF side-state）
+ * - exprTokens：其余 token，送去 tokensToDrawerExpression 渲染表达式串
+ *
+ * 这样重开含 SUMIF 公式时：
+ * - 带 predicate 的 token 进侧状态，预览列表可见可删；
+ * - 表达式串只含非 SUMIF token，不会把 SUMIF 渲染成丢 predicate 的 SUM(...)；
+ * - 保存时 [...exprTokens, ...sumifTokens] 合并，predicate 完整保留，无重复。
+ */
+export function splitSumifTokens(tokens: FormulaToken[]): {
+  sumifTokens: ExpressionToken[];
+  exprTokens: FormulaToken[];
+} {
+  const sumifTokens: ExpressionToken[] = [];
+  const exprTokens: FormulaToken[] = [];
+  for (const t of tokens) {
+    if (t.type === 'cross_tab_ref' && t.predicate != null) {
+      // 带 predicate 的 cross_tab_ref → SUMIF side-state（ExpressionToken 同构）
+      sumifTokens.push(t as unknown as ExpressionToken);
+    } else {
+      exprTokens.push(t);
+    }
+  }
+  return { sumifTokens, exprTokens };
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 
 const TabJoinFormulaDrawer: React.FC<Props> = ({
@@ -138,6 +175,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
   componentType,
   selfRowKeyFields,
   column,
+  initialTokens,
   onClose,
   onSave,
 }) => {
@@ -183,19 +221,37 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
   );
   // ─────────────────────────────────────────────────────────────────────────
 
-  // 列切换时重置表达式
+  // 列切换时重置表达式（EXCEL 模式或无 initialTokens 时直接用 column.expression 字符串）
   useEffect(() => {
-    setExpression(column?.expression ?? '');
-  }, [column]);
+    // 有 initialTokens 时不直接用 column.expression —— 等 tabDefs 拉到后再拆分初始化（下方 useEffect）
+    if (!initialTokens || initialTokens.length === 0) {
+      setExpression(column?.expression ?? '');
+    }
+  }, [column, initialTokens]);
 
-  // Drawer 打开时拉页签定义（同目录组件集）
+  // Drawer 打开时拉页签定义（同目录组件集），加载完后若有 initialTokens 则执行拆分初始化
   useEffect(() => {
     if (!open || !componentId) return;
     tabJoinFormulaService
       .tabDefsByComponent(componentId)
       .then((res: any) => {
         // api 拦截器返回 {code, message, data}，需手动解包 .data
-        setTabDefs(Array.isArray(res?.data) ? res.data : []);
+        const defs = Array.isArray(res?.data) ? res.data : [];
+        setTabDefs(defs);
+
+        // SUMIF predicate 回显修复：有 initialTokens 时，按 predicate 有无拆分，
+        // 带 predicate 的 cross_tab_ref → sumifTokens 侧状态；其余 → 表达式串
+        if (initialTokens && initialTokens.length > 0) {
+          const { sumifTokens: st, exprTokens: et } = splitSumifTokens(initialTokens);
+          setSumifTokens(st);
+          // 非 SUMIF token 转字符串（tabDefs 已加载，能正确解析 source→页签名称）
+          const exprStr = et.length > 0 ? tokensToDrawerExpression(et, defs, componentId) : '';
+          setExpression(exprStr);
+          // 若有 SUMIF token，自动展开面板方便用户感知
+          if (st.length > 0) {
+            setSumifPanelOpen(true);
+          }
+        }
       })
       .catch(() => {
         message.error('页签定义加载失败，引用补全不可用');

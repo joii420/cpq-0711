@@ -181,6 +181,12 @@ export interface FormulaToken {
   sources?: Array<{ source: string; sourceLabel?: string; match: Array<{ a: string; b: string }> }>;
   /** v2 KSUM: true = 按宿主结果行键塌缩成宿主粒度标量 (区别外层 join-set 聚合); 缺省 false */
   projectToHostKey?: boolean;
+  /**
+   * SUMIF 族专用：条件过滤谓词（与 ExpressionToken.predicate 同构）。
+   * 运行时由 buildSumifToken 填入，落库后随 FormulaToken[] 持久化。
+   * 类型使用 unknown 避免循环依赖 formulaEngine；求值侧转 ExpressionToken 后正常访问。
+   */
+  predicate?: unknown;
 }
 
 export const FIELD_TYPE_OPTIONS = [

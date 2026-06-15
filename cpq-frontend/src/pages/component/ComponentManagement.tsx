@@ -932,6 +932,8 @@ const ComponentManagement: React.FC = () => {
     // editing an EXCEL column formula → index; null = not excel
     excelColIndex: number | null;
     column: any;
+    /** 编辑已有公式时，传原始 FormulaToken[]（含 predicate）供抽屉拆分初始化 */
+    initialTokens?: FormulaToken[];
   }>({ open: false, formulaKey: null, excelColIndex: null, column: null });
 
   // Load directory tree
@@ -1139,10 +1141,14 @@ const ComponentManagement: React.FC = () => {
 
   // ── Formula drawer wiring ───────────────────────────────────
   const openFormulaForComponent = (formula: FormulaItem | null) => {
-    const column = formula
-      ? { expression: tokensToDrawerExpression(formula.expression || [], tabDefs) }
-      : { expression: '' };
-    setFormulaDrawer({ open: true, formulaKey: formula?.key ?? null, excelColIndex: null, column });
+    // SUMIF predicate 修复：传原始 tokens 给抽屉，让抽屉内部拆分初始化（splitSumifTokens）。
+    // 不再提前调 tokensToDrawerExpression，避免 predicate 在序列化时静默丢失。
+    // column.expression 留空串（抽屉不再从 column.expression 回显 token 公式）。
+    const column = { expression: '' };
+    const initialTokens = formula?.expression && formula.expression.length > 0
+      ? formula.expression
+      : undefined;
+    setFormulaDrawer({ open: true, formulaKey: formula?.key ?? null, excelColIndex: null, column, initialTokens });
   };
   const openFormulaForExcelColumn = (idx: number) => {
     const col = excelColumns[idx];
@@ -1178,7 +1184,7 @@ const ComponentManagement: React.FC = () => {
         );
       }
     }
-    setFormulaDrawer({ open: false, formulaKey: null, excelColIndex: null, column: null });
+    setFormulaDrawer({ open: false, formulaKey: null, excelColIndex: null, column: null, initialTokens: undefined });
   };
 
   // ── Create component ────────────────────────────────────────
@@ -1453,7 +1459,8 @@ const ComponentManagement: React.FC = () => {
           componentType={componentType}
           selfRowKeyFields={rowKeyFields}
           column={formulaDrawer.column}
-          onClose={() => setFormulaDrawer({ open: false, formulaKey: null, excelColIndex: null, column: null })}
+          initialTokens={formulaDrawer.initialTokens}
+          onClose={() => setFormulaDrawer({ open: false, formulaKey: null, excelColIndex: null, column: null, initialTokens: undefined })}
           onSave={handleFormulaSave}
         />
       )}
