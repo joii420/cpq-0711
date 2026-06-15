@@ -3621,4 +3621,8 @@ E2E:
 
 ---
 
+### [2026-06-15] 报价导入-料号自动维护 - 组成件/投入料号空+名称有值则按名匹配料号表、匹配不到按9字头(MAX+1)生成; §12新增料号表同步(type=3)+工序按名回填; upsertByMaterialNo新增preserveDescriptive重载(报价true保留旧名/类型,核价P05沿用false零回归) | MaterialNoResolver.java/MaterialMasterRepository.java/ProcessMasterRepository.java/MaterialBomMergeHandler.java | advisory lock+batchMaxGenerated保证生成递增; 交叉料件保留§3数字类型; §3用cells.get精确读投入料号避开getStr的contains碰撞
+
+---
+
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
