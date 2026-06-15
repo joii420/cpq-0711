@@ -134,6 +134,34 @@ export function computeRowKey(
   return parts.join('||');
 }
 
+/** 行键唯一化：同一组件内出现 ≥2 次的 rowKey 按出现序追加 `#<0基序号>`；
+ *  出现 1 次的键保持原样（向后兼容，现有非撞键报价单 editRows 仍绑定）。
+ *  修复撞键导致 editRows 写覆盖/读串行 → resolvedRows「末值×行数」塌缩。
+ *  与后端 FormulaCalculator.uniquifyRowKeys 逐字节等价。 */
+export function uniquifyRowKeys(keys: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const k of keys) counts.set(k, (counts.get(k) ?? 0) + 1);
+  const running = new Map<string, number>();
+  return keys.map((k) => {
+    if ((counts.get(k) ?? 0) <= 1) return k;
+    const n = running.get(k) ?? 0;
+    running.set(k, n + 1);
+    return `${k}#${n}`;
+  });
+}
+
+/** 按组件 baseRows 成批算 rowKey 并唯一化。序号按 baseRows 数组序（与后端同序）。 */
+export function buildUniqueRowKeys(
+  fields: any[] | undefined,
+  rowKeyFields: string[] | undefined | null,
+  baseRows: Array<{ driverRow?: Record<string, any>; basicDataValues?: Record<string, any> }> | undefined,
+): string[] {
+  const raw = (baseRows ?? []).map((br, i) =>
+    computeRowKey(fields, rowKeyFields, br?.driverRow, i, br?.basicDataValues),
+  );
+  return uniquifyRowKeys(raw);
+}
+
 function safeParse<T>(json: string | null | undefined): T | null {
   if (!json || typeof json !== 'string' || !json.trim()) return null;
   try {
