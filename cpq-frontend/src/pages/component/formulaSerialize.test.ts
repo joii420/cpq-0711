@@ -1243,9 +1243,13 @@ describe('expressionToTokens — 宿主自引用归一 field(spec §4)', () => {
     const t = expressionToTokens('[回料.用量]', allTabs, rkf, 'uuid-inv');
     expect(t[0]).toMatchObject({ type: 'cross_tab_ref', source: 'uuid-rl' });
   });
-  it('[回料.金额](金额∈subtotalCols) + self=回料 → 仍 component_subtotal', () => {
+  it('[回料.金额](金额∈subtotalCols) + self=回料 → field(同行值，新语义)', () => {
+    // 更新于 2026-06-15：E2 修复后，同组件小计列引用(无总计)取同行值(field)，
+    // 不再映射成 component_subtotal。旧断言 component_subtotal 是错误行为
+    // （导致每行均等于整列总计标量，列小计=标量×行数的 bug）。
+    // 跨组件小计列引用仍是 component_subtotal（见 E1 第三个用例）。
     const t = expressionToTokens('[回料.金额]', allTabs, rkf, 'uuid-rl');
-    expect(t[0]).toMatchObject({ type: 'component_subtotal' });
+    expect(t[0]).toEqual({ type: 'field', value: '金额' });
   });
   it('[回料.用量(总计)](自聚合) + self=回料 → 仍 cross_tab_ref(不归一)', () => {
     const t = expressionToTokens('[回料.用量(总计)]', allTabs, rkf, 'uuid-rl');

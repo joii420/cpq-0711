@@ -619,12 +619,22 @@ export function expressionToTokens(
             );
           }
 
-          // Disambiguate subtotal column vs detail field:
-          //   if 字段 ∈ tabDef.subtotalCols → component_subtotal (scalar sibling subtotal),
-          //   else (and NOT aggregated) → cross_tab_ref detail (row-aligned).
-          // Note: an explicit (总计) aggregate over a DETAIL field stays a cross_tab_ref SUM.
-          //   component_code 始终存权威 alias(tabDef.alias)，与后端解析一致；不受用户输入名/编号影响。
-          if (!isAgg && (tabDef.subtotalCols ?? []).includes(fieldPart)) {
+          // Disambiguate subtotal column vs detail field vs same-component row-aligned field:
+          //
+          // Priority order (highest → lowest):
+          //   1. 同组件列引用(无总计) → field(同行值)，即使该列是小计列。
+          //      引擎拓扑序先算被引用公式列，再算本列，行内相加无循环依赖。
+          //   2. 跨组件小计列引用(无总计) → component_subtotal(整列总计标量)。
+          //   3. 其余（显式总计/跨组件明细） → cross_tab_ref。
+          //
+          // 注意：isAgg(显式 "(总计)") 不进入 1/2，直接走 3 的 cross_tab_ref SUM，
+          //       component_code 始终存权威 alias(tabDef.alias)，与后端解析一致。
+          if (selfComponentId && tabDef.componentId === selfComponentId && !isAgg) {
+            // 同组件列引用(无总计) → 同行值(field token)，引擎拓扑序保证被引用列先算。
+            // 即使该列是小计列也取同行值；只有显式 "(总计)" 才取整列总计。
+            result.push({ type: 'field', value: fieldPart });
+          } else if (!isAgg && (tabDef.subtotalCols ?? []).includes(fieldPart)) {
+            // 跨组件小计列引用(无总计) → component_subtotal(整列总计标量)。
             result.push({
               type: 'component_subtotal',
               value: fieldPart,
@@ -632,10 +642,6 @@ export function expressionToTokens(
               component_code: tabDef.alias,
               label: `${tabDef.componentName ?? tabDef.alias}·${fieldPart}`,
             });
-          } else if (selfComponentId && tabDef.componentId === selfComponentId && !isAgg) {
-            // 宿主自身明细字段 → 同行裸字段 token(不成环、读本行)。
-            // 小计列已被上面的 if 截走;自聚合(isAgg)不在此归一,仍走下面 cross_tab_ref。
-            result.push({ type: 'field', value: fieldPart });
           } else {
             result.push(
               makeCrossTabRef(alias, fieldPart, isAgg ? 'SUM' : 'NONE', tabDefs, selfRowKeyFields),
