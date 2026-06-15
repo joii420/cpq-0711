@@ -2062,3 +2062,98 @@ describe('D1 多源SUM targetExpr per-field source', () => {
     expect(shown).not.toContain('[元素.费用]');
   });
 });
+
+// ─────────────────────────────────────────────
+// E1 (RED) — 同组件小计列引用默认取同行值
+//
+// 根因: formulaSerialize.ts 分支判断中 subtotalCols 判断排在
+// "同组件(selfComponentId)" 判断前 → 自身组件引用小计列也被映射成
+// component_subtotal(整列总计标量)，而非 field(同行值)。
+//
+// 正确语义:
+//   - 同组件列引用(无"(总计)") → field(同行值)，即使该列是小计列
+//   - 跨组件引用小计列 → component_subtotal(总计标量)
+//   - 任意组件 [alias.列(总计)] → component_subtotal
+// ─────────────────────────────────────────────
+
+describe('E1 — 同组件小计列引用应取同行值(field), 跨组件小计列才取 component_subtotal', () => {
+  const tabDefs: TabDef[] = [
+    {
+      componentId: 'CID-来料',
+      alias: 'COMP-0028',
+      componentName: '来料',
+      tabKey: 'tab-来料',
+      componentType: 'NORMAL',
+      rowKeyFields: ['料件'],
+      detailFields: ['来料材料费', '外购件材料费'],
+      subtotalCols: ['来料材料费', '外购件材料费'],
+    },
+    {
+      componentId: 'CID-元素',
+      alias: 'COMP-0029',
+      componentName: '元素',
+      tabKey: 'tab-元素',
+      componentType: 'NORMAL',
+      rowKeyFields: ['料件', '元素'],
+      detailFields: ['费用小计'],
+      subtotalCols: [],
+    },
+  ];
+
+  it('E1 同组件小计列引用(无总计)→ 同行 field（非 component_subtotal）', () => {
+    // "材料成本 = 来料材料费 + 外购件材料费"：引用自身组件的小计列，
+    // 应取本行值(field)，引擎拓扑序会先算被引用列再算此列。
+    const tokens = expressionToTokens(
+      '[来料.来料材料费] + [来料.外购件材料费]',
+      tabDefs,
+      ['料件'],
+      'CID-来料',                    // selfComponentId = 来料自身
+    );
+    expect(tokens.filter((t) => t.type === 'field').map((f) => (f as any).value))
+      .toEqual(['来料材料费', '外购件材料费']);
+    expect(tokens.some((t) => t.type === 'component_subtotal')).toBe(false);
+  });
+
+  it('E1 同组件列显式(总计)→ 不取 field，走 cross_tab_ref SUM（整列总计标量）', () => {
+    // 显式带 "(总计)" 后缀 → isAgg=true → 走 cross_tab_ref SUM，不取同行 field
+    // 与既有行为一致（见 test line 116: [COMP_RL.金额(总计)] → cross_tab_ref agg=SUM）
+    const tokens = expressionToTokens(
+      '[来料.来料材料费(总计)]',
+      tabDefs,
+      ['料件'],
+      'CID-来料',
+    );
+    expect(tokens.some((t) => t.type === 'field')).toBe(false);
+    expect(tokens.some((t) => t.type === 'cross_tab_ref')).toBe(true);
+    expect((tokens[0] as any).agg).toBe('SUM');
+  });
+
+  it('E1 跨组件小计列引用→ component_subtotal(不变)', () => {
+    // 自身是 CID-self，引用 CID-other 的小计列 → 应仍是 component_subtotal
+    const tabs2: TabDef[] = [
+      {
+        componentId: 'CID-self',
+        alias: 'SELF',
+        componentName: '自',
+        tabKey: 'tab-self',
+        componentType: 'NORMAL',
+        rowKeyFields: ['料件'],
+        detailFields: ['费用小计'],
+        subtotalCols: [],
+      },
+      {
+        componentId: 'CID-other',
+        alias: 'OTH',
+        componentName: '他',
+        tabKey: 'tab-other',
+        componentType: 'NORMAL',
+        rowKeyFields: ['料件'],
+        detailFields: ['费用小计'],
+        subtotalCols: ['费用小计'],
+      },
+    ];
+    const tokens = expressionToTokens('[他.费用小计]', tabs2, ['料件'], 'CID-self');
+    expect(tokens.some((t) => t.type === 'component_subtotal')).toBe(true);
+    expect(tokens.some((t) => t.type === 'field')).toBe(false);
+  });
+});
