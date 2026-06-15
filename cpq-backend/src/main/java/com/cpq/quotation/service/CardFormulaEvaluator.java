@@ -183,7 +183,8 @@ public class CardFormulaEvaluator {
     }
 
     private static boolean hasAggregate(String f) {
-        return f != null && f.toUpperCase().matches(".*\\b(SUM|COUNT|AVG|MIN|MAX)_OVER\\b.*");
+        // *_OVER 家族 + SUMIF/COUNTIF/AVGIF/MINIF/MAXIF 条件聚合家族（否则含 SUMIF 的全空 ref 列会被 DASH 误抑制）
+        return f != null && f.toUpperCase().matches(".*\\b((SUM|COUNT|AVG|MIN|MAX)_OVER|(SUM|COUNT|AVG|MIN|MAX)IF)\\b.*");
     }
 
     /**
