@@ -1071,6 +1071,65 @@ function computeTabSubtotal(
   return sum;
 }
 
+/**
+ * B4：对活跃组件所有「数值列但 is_subtotal=false」求 per-column 行合计。
+ * 覆盖：INPUT_NUMBER（直接读 row 值）+ FORMULA / DATA_SOURCE（通过 computeAllFormulas fieldValues）。
+ * is_subtotal=true 列已由 computeTabSubtotalsByColumn 在 allComponentSubtotals 里填好，不重算。
+ * AP-51 纪律：行数用 expansion.rowCount > 0 ? expansion.rowCount : comp.rows.length，禁 Math.max。
+ */
+export function computeNonSubtotalColumnSums(
+  comp: ComponentDataItem,
+  allComponentSubtotals?: Record<string, number>,
+  partNo?: string,
+  driverExpansion?: import('./useDriverExpansions').DriverExpansion,
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!comp?.fields) return out;
+  // 目标列：数值型但不是 is_subtotal（避免与 allComponentSubtotals 重复/干扰）
+  const targetFields = comp.fields.filter(f => {
+    if (f.is_subtotal) return false; // 已由 computeTabSubtotalsByColumn 处理
+    return (
+      f.field_type === 'INPUT_NUMBER' ||
+      f.field_type === 'FORMULA' ||
+      f.field_type === 'DATA_SOURCE'
+    );
+  });
+  if (targetFields.length === 0) return out;
+  for (const f of targetFields) out[f.name || f.key || ''] = 0;
+
+  const s = splitRows(comp, driverExpansion as any);
+  // AP-51：driver 权威优先；comp.rows.length 仅 rowCount=0 时使用
+  const rowCount = (driverExpansion?.rowCount ?? 0) > 0 ? driverExpansion!.rowCount : s.totalRows;
+
+  for (let i = 0; i < rowCount; i++) {
+    const ra = rowAt(i, comp, s);
+    const row = fillFixedDefaults(comp.fields, ra.row);
+    const basicDataValues = ra.expIndex >= 0 ? driverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
+    const fv: Record<string, number> = {};
+    const formulaCache = computeAllFormulas(
+      comp, row, allComponentSubtotals, undefined, undefined, partNo, basicDataValues,
+      undefined, globalVariableDefs,
+      undefined, undefined, { fieldValues: fv },
+    );
+    for (const f of targetFields) {
+      const colName = f.name || f.key || '';
+      if (!colName) continue;
+      let val: number;
+      if (f.field_type === 'INPUT_NUMBER') {
+        // INPUT_NUMBER 直接读行值（formulaCache 不算输入列）
+        const raw = row[colName];
+        val = typeof raw === 'number' && isFinite(raw) ? raw : (parseFloat(raw) || 0);
+      } else {
+        // FORMULA / DATA_SOURCE 优先取 formulaCache，缺时取 fieldValues
+        val = (formulaCache[colName] as number | null | undefined) ?? (fv[colName] ?? 0);
+        if (!isFinite(val)) val = 0;
+      }
+      out[colName] += val;
+    }
+  }
+  return out;
+}
 
 function computeProductSubtotal(
   item: LineItem,
@@ -1761,6 +1820,20 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     globalVariableDefs,
   );
 
+  // B4：活跃 Tab 非 is_subtotal 数值列（INPUT_NUMBER / FORMULA / DATA_SOURCE）的 per-column 行合计。
+  // 依赖 allComponentSubtotals（PASS1+PASS2 后），与 effectiveRows 同源（splitRows + rowAt + AP-51 行数纪律）。
+  // 每次渲染自动重算，无需额外 state，用户 blur/enter 触发 handleRowChange → item.componentData 更新
+  // → 重渲染 → 此处自动更新（B5 重算入口）。
+  const activeInputColSums: Record<string, number> = activeComponent
+    ? computeNonSubtotalColumnSums(
+        activeComponent,
+        allComponentSubtotals,
+        item.productPartNo,
+        activeDriverExpansion as any,
+        globalVariableDefs,
+      )
+    : {};
+
   // Dynamic product attribute fields from template definition
   const attrFields = item.productAttributes || [];
 
@@ -2370,42 +2443,72 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     );
                   })}
                 </tbody>
-                {/* Tab subtotal row */}
-                {activeComponent.fields.some(f => f.is_subtotal) && (
+                {/* Tab subtotal row
+                    B4: 显示条件扩展——有 is_subtotal 列 OR 有 INPUT_NUMBER/FORMULA/DATA_SOURCE 数值列均显示 footer。
+                    小计行：is_subtotal 列用 allComponentSubtotals（PASS1+PASS2 已算），
+                           INPUT_NUMBER/FORMULA/DATA_SOURCE（非 is_subtotal）列用 activeInputColSums（逐行累加）。
+                    本页签总计行：维持只汇总 is_subtotal（成本）列，不把输入量并入成本总计。
+                */}
+                {activeComponent.fields.some(f =>
+                  f.is_subtotal ||
+                  f.field_type === 'INPUT_NUMBER' ||
+                  f.field_type === 'FORMULA' ||
+                  f.field_type === 'DATA_SOURCE'
+                ) && (
                   <tfoot>
                     <tr className="qt-subtotal-row">
                       {/* 核价 BOM 递归展开：与 3 系统固定列对齐的占位单元格（仅"勾选递归"组件） */}
                       {activeComponentBomTree && (<><td /><td /><td /></>)}
                       {activeComponent.fields.map((field, fi) => {
+                        const colName = field.name || field.key || '';
                         if (field.is_subtotal) {
                           // Plan 2-核心：按列取本列总计，回退到组件级（单小计列）兼容。
                           const tabSubtotal =
-                            allComponentSubtotals[`${activeComponent.componentCode}#${field.name}`]
-                            ?? allComponentSubtotals[`${activeComponent.tabName}#${field.name}`]
+                            allComponentSubtotals[`${activeComponent.componentCode}#${colName}`]
+                            ?? allComponentSubtotals[`${activeComponent.tabName}#${colName}`]
                             ?? allComponentSubtotals[activeComponent.componentCode]
                             ?? allComponentSubtotals[activeComponent.tabName]
                             ?? 0;
                           return (
-                            <td key={field.name || fi} className="qt-subtotal-cell">
+                            <td key={colName || fi} className="qt-subtotal-cell">
                               {formatCurrency(tabSubtotal)}
                             </td>
                           );
                         }
-                        if (fi === 0) {
-                          return <td key={field.name || fi} className="qt-subtotal-label-cell">小计</td>;
+                        // B4：非 is_subtotal 的 INPUT_NUMBER / FORMULA / DATA_SOURCE 列显示行合计
+                        const isNumericCol =
+                          field.field_type === 'INPUT_NUMBER' ||
+                          field.field_type === 'FORMULA' ||
+                          field.field_type === 'DATA_SOURCE';
+                        if (isNumericCol && colName && colName in activeInputColSums) {
+                          const colSum = activeInputColSums[colName] ?? 0;
+                          // 输入量列用适当小数位（最多4位，去除无意义末尾0）
+                          const formatted = colSum === 0
+                            ? '0'
+                            : parseFloat(colSum.toFixed(4)).toString();
+                          return (
+                            <td key={colName || fi} className="qt-subtotal-cell" style={{ color: '#595959' }}>
+                              {formatted}
+                            </td>
+                          );
                         }
-                        return <td key={field.name || fi} />;
+                        if (fi === 0) {
+                          return <td key={colName || fi} className="qt-subtotal-label-cell">小计</td>;
+                        }
+                        return <td key={colName || fi} />;
                       })}
                       <td />
                     </tr>
-                    {/* 本页签总计 = 该页签多个小计列之和（页签内展示，不上提到卡片底部） */}
-                    <tr className="qt-subtotal-row qt-tab-total-row">
-                      {activeComponentBomTree && (<><td /><td /><td /></>)}
-                      <td className="qt-subtotal-label-cell">本页签总计</td>
-                      <td colSpan={activeComponent.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
-                        {formatCurrency(sumTabColumns(activeComponent as any, allComponentSubtotals))}
-                      </td>
-                    </tr>
+                    {/* 本页签总计 = 该页签多个 is_subtotal 列之和（成本列汇总；输入量列不并入） */}
+                    {activeComponent.fields.some(f => f.is_subtotal) && (
+                      <tr className="qt-subtotal-row qt-tab-total-row">
+                        {activeComponentBomTree && (<><td /><td /><td /></>)}
+                        <td className="qt-subtotal-label-cell">本页签总计</td>
+                        <td colSpan={activeComponent.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
+                          {formatCurrency(sumTabColumns(activeComponent as any, allComponentSubtotals))}
+                        </td>
+                      </tr>
+                    )}
                   </tfoot>
                 )}
               </table>
