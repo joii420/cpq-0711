@@ -23,10 +23,10 @@ public class ConditionPredicateEvaluator {
         return switch (c.op()) {
             case EQ -> valEquals(lv, rv);
             case NE -> !valEquals(lv, rv);
-            case GT -> cmp(lv, rv) != null && cmp(lv, rv) > 0;
-            case LT -> cmp(lv, rv) != null && cmp(lv, rv) < 0;
-            case GE -> cmp(lv, rv) != null && cmp(lv, rv) >= 0;
-            case LE -> cmp(lv, rv) != null && cmp(lv, rv) <= 0;
+            case GT -> { Integer c2 = cmp(lv, rv); yield c2 != null && c2 > 0; }
+            case LT -> { Integer c2 = cmp(lv, rv); yield c2 != null && c2 < 0; }
+            case GE -> { Integer c2 = cmp(lv, rv); yield c2 != null && c2 >= 0; }
+            case LE -> { Integer c2 = cmp(lv, rv); yield c2 != null && c2 <= 0; }
         };
     }
 
@@ -46,7 +46,7 @@ public class ConditionPredicateEvaluator {
         try { return Double.valueOf(String.valueOf(o).trim()); } catch (Exception e) { return null; }
     }
 
-    /** 与现有 valEquals/keyEq 同口径。 */
+    /** 相等口径：任一 blank → false（见 spec 求值语义）；两边可解析为数 → 数值比较；否则 trim 文本比较。 */
     private boolean valEquals(Object a, Object b) {
         if (isBlank(a) || isBlank(b)) return false;
         Double na = num(a), nb = num(b);

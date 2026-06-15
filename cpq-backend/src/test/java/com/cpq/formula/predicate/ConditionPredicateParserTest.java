@@ -35,4 +35,30 @@ class ConditionPredicateParserTest {
     @Test void malformed_throws() {
         assertThrows(RuntimeException.class, () -> new ConditionPredicateParser().parse("[A.x] = "));
     }
+
+    // —— 嵌套括号求值 ——
+    @Test void nested_parens_complex_expr() {
+        // ([A.类型]='运费') OR ([A.金额] > 1000 AND [A.金额] < 2000)
+        String cond = "([A.类型]='运费') OR ([A.金额] > 1000 AND [A.金额] < 2000)";
+
+        // 类型=运费 → 左 OR 分支命中
+        assertTrue(run(cond, Map.of("类型","运费","金额","500"), Map.of()));
+        // 类型≠运费，金额1500 在 (1000,2000) 之间 → 右 AND 分支命中
+        assertTrue(run(cond, Map.of("类型","管理费","金额","1500"), Map.of()));
+        // 类型≠运费，金额2000 不满足 <2000 → 两侧均 false
+        assertFalse(run(cond, Map.of("类型","管理费","金额","2000"), Map.of()));
+    }
+
+    // —— 错误格式抛异常 ——
+    @Test void unclosed_string_throws() {
+        assertThrows(RuntimeException.class,
+            () -> new ConditionPredicateParser().parse("[A.类型] = '未闭合"),
+            "未闭合字符串应抛异常");
+    }
+
+    @Test void missing_right_paren_throws() {
+        assertThrows(RuntimeException.class,
+            () -> new ConditionPredicateParser().parse("([A.类型] = '运费'"),
+            "缺右括号应抛异常");
+    }
 }

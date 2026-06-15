@@ -79,4 +79,15 @@ class ConditionPredicateEvaluatorTest {
     @Test void json_null_or_missing_is_null_predicate() {
         assertNull(ConditionPredicateJson.fromJson(null));
     }
+
+    // —— 空 children 边界 ——
+    @Test void and_empty_children_is_true() {
+        var p = new Bool(BoolOp.AND, java.util.List.of());
+        assertTrue(eval(p, Map.of(), Map.of()), "AND 无子条件应为 true（空合取）");
+    }
+
+    @Test void or_empty_children_is_false() {
+        var p = new Bool(BoolOp.OR, java.util.List.of());
+        assertFalse(eval(p, Map.of(), Map.of()), "OR 无子条件应为 false（空析取）");
+    }
 }
