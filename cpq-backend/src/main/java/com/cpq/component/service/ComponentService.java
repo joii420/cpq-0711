@@ -530,7 +530,9 @@ public class ComponentService {
                     throw new BusinessException(400, "跨页签引用缺少源组件(source)");
 
                 Object matchObj = token.get("match");
-                if (!(matchObj instanceof List<?> ml) || ml.isEmpty())
+                boolean emptyMatch = !(matchObj instanceof List<?> ml) || ml.isEmpty();
+                boolean hasPredicate = token.get("predicate") != null;
+                if (emptyMatch && !hasPredicate)   // SUMIF 族用 predicate 过滤，match 可空
                     throw new BusinessException(400, "跨页签引用缺少匹配列(match)");
 
                 Object aggObj = token.get("agg");
@@ -551,7 +553,7 @@ public class ComponentService {
                 if (pred != null) {
                     try {
                         com.cpq.formula.predicate.ConditionPredicateJson.fromJson(
-                            new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(pred));
+                            MAPPER.valueToTree(pred));
                     } catch (Exception e) {
                         throw new BusinessException(400, "cross_tab_ref.predicate 结构非法: " + e.getMessage());
                     }

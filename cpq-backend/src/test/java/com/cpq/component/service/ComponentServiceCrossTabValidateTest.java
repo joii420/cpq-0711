@@ -253,4 +253,53 @@ class ComponentServiceCrossTabValidateTest {
                 svc.validateFormulas(emptyFields(), formulasWith(token)));
         assertEquals(400, ex.getCode());
     }
+
+    // ------------------------------------------------------------------
+    // T12 (TDD-red): SUMIF 族 — match=[] 但携带合法 predicate → 应通过不抛
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("T12: SUMIF 族 match=[] + predicate 存在 → 通过不抛")
+    void sumif_token_empty_match_with_predicate_passes() {
+        Map<String, Object> token = new HashMap<>();
+        token.put("type", "cross_tab_ref");
+        token.put("source", "comp_fee");
+        token.put("agg", "SUM");
+        token.put("target", "金额");
+        // targetExpr 非空（满足目标列校验）
+        token.put("targetExpr", List.of(Map.of("type", "field", "value", "金额")));
+        // match 故意留空（SUMIF 族靠 predicate 过滤，不需要 match）
+        token.put("match", new ArrayList<>());
+        // 合法 predicate：类型 = '管理费'（ConditionPredicateJson 格式：op 用符号, lhs/rhs 带 kind）
+        Map<String, Object> predicate = new HashMap<>();
+        predicate.put("op", "=");
+        predicate.put("lhs", Map.of("kind", "sourceField", "field", "类型"));
+        predicate.put("rhs", Map.of("kind", "literal", "value", "管理费"));
+        token.put("predicate", predicate);
+
+        assertDoesNotThrow(() ->
+                svc.validateFormulas(emptyFields(), formulasWith(token)),
+                "SUMIF 族 match=[] 且带 predicate 时不应被拒绝");
+    }
+
+    // ------------------------------------------------------------------
+    // T13 (TDD-red 对照): match=[] 且无 predicate → 仍拒（原有语义不变）
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("T13: match=[] 且无 predicate → 仍抛 BusinessException 含'match'")
+    void cross_tab_ref_empty_match_without_predicate_still_rejected() {
+        Map<String, Object> token = new HashMap<>();
+        token.put("type", "cross_tab_ref");
+        token.put("source", "comp_fee");
+        token.put("agg", "SUM");
+        token.put("target", "金额");
+        // match 空，且没有 predicate
+        token.put("match", new ArrayList<>());
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                svc.validateFormulas(emptyFields(), formulasWith(token)),
+                "无 predicate 时 match=[] 仍应被拒绝");
+        assertTrue(ex.getMessage().contains("match"),
+                "消息应含 'match'，实际: " + ex.getMessage());
+        assertEquals(400, ex.getCode());
+    }
 }
