@@ -1687,10 +1687,16 @@ public class CardSnapshotService {
         List<String> subtotalFields = formulaCalculator.findSubtotalFieldNames(fields);
         if (subtotalFields.isEmpty()) return;
 
+        // 单位换算（物化点5）：求和用换算后行（canonical）；resolvedRows 本身（落库）保持原值不动。
+        List<Map<String, Object>> rowsForSum = new ArrayList<>(resolvedRows.size());
+        for (Map<String, Object> r : resolvedRows) {
+            rowsForSum.add(com.cpq.engine.unit.UnitConversion.convertObjectRow(fields, r));
+        }
+
         double totalSum = 0.0;
         for (String col : subtotalFields) {
             double colSum = 0.0;
-            for (Map<String, Object> row : resolvedRows) {
+            for (Map<String, Object> row : rowsForSum) {
                 Object val = row.get(col);
                 if (val == null) continue;
                 double d;
