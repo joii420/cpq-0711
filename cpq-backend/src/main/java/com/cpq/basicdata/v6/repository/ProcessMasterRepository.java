@@ -8,6 +8,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -30,5 +31,10 @@ public class ProcessMasterRepository implements PanacheRepositoryBase<ProcessMas
         Map<String, Object> params = new HashMap<>();
         params.put("kw", "%" + keyword.toLowerCase() + "%");
         return find("LOWER(processNo) LIKE :kw OR LOWER(processName) LIKE :kw", sort, params);
+    }
+
+    /** 按工序名称精确取第一条（process_no 升序）。供导入工序回填用（决策 #5）。 */
+    public Optional<ProcessMaster> findFirstByProcessName(String name) {
+        return find("processName = ?1 ORDER BY processNo ASC", name).firstResultOptional();
     }
 }

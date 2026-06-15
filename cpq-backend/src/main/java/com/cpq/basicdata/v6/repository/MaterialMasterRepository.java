@@ -20,15 +20,52 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
         return find("materialNo", materialNo).firstResultOptional();
     }
 
-    /**
-     * Upsert material_master by material_no.
-     *
-     * <p>非 NULL 入参覆盖现有列；NULL 列保留旧值（COALESCE 模式）。
-     */
+    /** 同名多条取 material_no 升序第一条（决策 #4）。 */
+    public java.util.Optional<MaterialMaster> findFirstByMaterialName(String name) {
+        return find("materialName = ?1 ORDER BY materialNo ASC", name).firstResultOptional();
+    }
+
+    /** 当前最大「恰好 10 位、9 字头」料号的数值；无则回退 8999999999（生成基数，+1=9000000000）。 */
+    public long maxNineLeadingMaterialNo() {
+        Object r = em.createNativeQuery(
+            "SELECT COALESCE(MAX(material_no::bigint), 8999999999) " +
+            "FROM material_master WHERE material_no ~ '^9[0-9]{9}$'")
+            .getSingleResult();
+        return ((Number) r).longValue();
+    }
+
+    /** 料号生成专用事务级 advisory lock（提交/回滚自动释放），串行化跨导入的「读 MAX→生成」窗口。 */
+    public void lockForMaterialNoGeneration() {
+        em.createNativeQuery("SELECT pg_advisory_xact_lock(:k)")
+          .setParameter("k", MATERIAL_NO_GEN_LOCK_KEY)
+          .getSingleResult();
+    }
+    private static final long MATERIAL_NO_GEN_LOCK_KEY = 906_000_000_001L;
+
+    /** 现状语义（preserveDescriptive=false：名称/类型非空覆盖）。核价 P05 / 单重沿用此重载，行为不变。 */
     public int upsertByMaterialNo(String materialNo, String materialName, String specification,
                                   String dimension, String oldMaterialNo, String materialType,
                                   String usageProperty, BigDecimal unitWeight, String standardUnit,
                                   UUID updatedBy) {
+        return upsertByMaterialNo(materialNo, materialName, specification, dimension, oldMaterialNo,
+            materialType, usageProperty, unitWeight, standardUnit, updatedBy, false);
+    }
+
+    /**
+     * Upsert material_master by material_no。
+     * @param preserveDescriptive true=已存在则保留旧 material_name/material_type（仅空才回填）；
+     *                            false=非空覆盖（现状语义）。其余列恒为非空覆盖。
+     */
+    public int upsertByMaterialNo(String materialNo, String materialName, String specification,
+                                  String dimension, String oldMaterialNo, String materialType,
+                                  String usageProperty, BigDecimal unitWeight, String standardUnit,
+                                  UUID updatedBy, boolean preserveDescriptive) {
+        String nameClause = preserveDescriptive
+            ? "COALESCE(material_master.material_name, EXCLUDED.material_name)"
+            : "COALESCE(EXCLUDED.material_name, material_master.material_name)";
+        String typeClause = preserveDescriptive
+            ? "COALESCE(material_master.material_type, EXCLUDED.material_type)"
+            : "COALESCE(EXCLUDED.material_type, material_master.material_type)";
         String sql =
             "INSERT INTO material_master (material_no, material_name, specification, dimension, " +
             "  old_material_no, material_type, usage_property, unit_weight, standard_unit, " +
@@ -37,11 +74,11 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
             "  :oldMaterialNo, :materialType, :usageProperty, :unitWeight, :standardUnit, " +
             "  NOW(), NOW(), :updatedBy) " +
             "ON CONFLICT (material_no) DO UPDATE SET " +
-            "  material_name    = COALESCE(EXCLUDED.material_name,    material_master.material_name), " +
+            "  material_name    = " + nameClause + ", " +
+            "  material_type    = " + typeClause + ", " +
             "  specification    = COALESCE(EXCLUDED.specification,    material_master.specification), " +
             "  dimension        = COALESCE(EXCLUDED.dimension,        material_master.dimension), " +
             "  old_material_no  = COALESCE(EXCLUDED.old_material_no,  material_master.old_material_no), " +
-            "  material_type    = COALESCE(EXCLUDED.material_type,    material_master.material_type), " +
             "  usage_property   = COALESCE(EXCLUDED.usage_property,   material_master.usage_property), " +
             "  unit_weight      = COALESCE(EXCLUDED.unit_weight,      material_master.unit_weight), " +
             "  standard_unit    = COALESCE(EXCLUDED.standard_unit,    material_master.standard_unit), " +
