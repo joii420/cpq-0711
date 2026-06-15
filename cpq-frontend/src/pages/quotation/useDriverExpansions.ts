@@ -85,6 +85,8 @@ export function fieldsOverrideHash(fields: any[] | undefined): string {
       def.type || '',
       def.code || '',
       def.path || '',
+      // AP-37 (2026-06-16): 单位换算字段纳入 hash — 改 unit_source_field 配置后立即失效 driver-expansion 缓存
+      f.unit_source_field || '',
     ].join('|');
   });
   return shortHash(parts.join('::'));
