@@ -104,10 +104,19 @@ public final class CardEffectiveRows {
                 // 回退（旧快照无 resolvedRows）：driverRow∪basicDataValues∪formulaResults∪editRows 合并
                 int i = 0;
                 if (baseRows.isArray()) {
+                    // 行键唯一化预扫（撞键→#序号），与 CardSnapshotService.buildResolvedRows / FormulaCalculator.computeRows 一致
+                    java.util.List<String> rawKeys = new ArrayList<>();
+                    int p = 0;
+                    for (JsonNode br : baseRows) {
+                        rawKeys.add(computeRowKey(rkf, fields, br.path("driverRow"), br.path("basicDataValues"), p));
+                        p++;
+                    }
+                    java.util.List<String> uniqKeys =
+                            com.cpq.quotation.service.FormulaCalculator.uniquifyRowKeys(rawKeys);
                     for (JsonNode br : baseRows) {
                         JsonNode driverRow = br.path("driverRow");
                         JsonNode basicDataValues = br.path("basicDataValues");
-                        String rowKey = computeRowKey(rkf, fields, driverRow, basicDataValues, i);
+                        String rowKey = uniqKeys.get(i);
 
                         Map<String, Object> row = new LinkedHashMap<>();
                         putAll(row, driverRow);

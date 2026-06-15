@@ -903,13 +903,22 @@ public class CardSnapshotService {
         for (JsonNode fr : formulaResults) frByKey.put(fr.path("rowKey").asText(""), fr.path("values"));
         Map<String, JsonNode> edByKey = new LinkedHashMap<>();
         for (JsonNode er : editRows) edByKey.put(er.path("rowKey").asText(""), er.path("values"));
+        // 行键唯一化预扫（撞键→#序号），与 FormulaCalculator.computeRows / 前端 / editRows 存储键一致
+        List<String> rawKeys = new ArrayList<>();
+        int pk = 0;
+        for (JsonNode br : baseRows) {
+            String rk0 = formulaCalculator.computeRowKey(rowKeyFields, fieldsDef, br.path("driverRow"), br.path("basicDataValues"));
+            rawKeys.add((rk0 != null && !rk0.isEmpty()) ? rk0 : String.valueOf(pk));
+            pk++;
+        }
+        List<String> uniqKeys = FormulaCalculator.uniquifyRowKeys(rawKeys);
+
         List<Map<String, Object>> out = new ArrayList<>();
         int ri = 0;
         for (JsonNode br : baseRows) {
             JsonNode driverRow = br.path("driverRow");
             JsonNode basicDataValues = br.path("basicDataValues");
-            String rk = formulaCalculator.computeRowKey(rowKeyFields, fieldsDef, driverRow, basicDataValues);
-            String rowKey = (rk != null && !rk.isEmpty()) ? rk : String.valueOf(ri);
+            String rowKey = uniqKeys.get(ri);
             JsonNode editValues = edByKey.get(rowKey);
             JsonNode formulaValues = frByKey.get(rowKey);
             Map<String, Object> resolvedRow = formulaCalculator.resolveRowByFieldName(
@@ -953,14 +962,17 @@ public class CardSnapshotService {
             ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, emptyEdit);
             JsonNode rkf = rkfByComp.get(cid);
             JsonNode fieldsDef = tab.path("fields");
-            java.util.Set<String> newKeys = new java.util.HashSet<>();
+            // 行键唯一化预扫（撞键→#序号），与 buildResolvedRows / computeRows / 前端一致
+            List<String> rawNewKeys = new ArrayList<>();
             int idx = 0;
             for (JsonNode br : baseRows) {
                 String rk = formulaCalculator.computeRowKey(rkf, fieldsDef,
                         br.path("driverRow"), br.path("basicDataValues"));
-                newKeys.add(rk != null && !rk.isEmpty() ? rk : String.valueOf(idx));
+                rawNewKeys.add(rk != null && !rk.isEmpty() ? rk : String.valueOf(idx));
                 idx++;
             }
+            java.util.Set<String> newKeys = new java.util.HashSet<>(
+                    FormulaCalculator.uniquifyRowKeys(rawNewKeys));
 
             ArrayNode kept = MAPPER.createArrayNode();
             for (JsonNode er : oldEdits) {
@@ -1436,13 +1448,20 @@ public class CardSnapshotService {
                 }
 
                 JsonNode fieldsDef = tab.path("fields");
+                // 行键唯一化预扫（撞键→#序号），对齐 computeRows / buildResolvedRows / 前端；
+                // 须按全部 baseRows 定序号，再按下标取（保证与逐行求值的 #序号一致）。
+                List<String> rawKeys = new ArrayList<>();
+                for (int i = 0; i < baseRows.size(); i++) {
+                    JsonNode br = baseRows.get(i);
+                    String rk = formulaCalculator.computeRowKey(rkf, fieldsDef,
+                            br.path("driverRow"), br.path("basicDataValues"));
+                    rawKeys.add((rk != null && !rk.isEmpty()) ? rk : String.valueOf(i));
+                }
+                List<String> uniqKeys = FormulaCalculator.uniquifyRowKeys(rawKeys);
+
                 int n = Math.min(baseRows.size(), rowData.size());
                 for (int i = 0; i < n; i++) {
-                    JsonNode br = baseRows.get(i);
-                    JsonNode driverRow = br.path("driverRow");
-                    String rk = formulaCalculator.computeRowKey(rkf, fieldsDef,
-                            driverRow, br.path("basicDataValues"));
-                    String rowKey = (rk != null && !rk.isEmpty()) ? rk : String.valueOf(i);
+                    String rowKey = uniqKeys.get(i);
                     JsonNode rdRow = rowData.get(i);
 
                     ObjectNode editRow = editByKey.get(rowKey);
