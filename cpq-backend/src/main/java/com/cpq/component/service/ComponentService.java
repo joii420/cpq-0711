@@ -545,6 +545,17 @@ public class ComponentService {
                 boolean hasTargetExpr = targetExprObj instanceof java.util.List<?> tl && !tl.isEmpty();
                 if (!"COUNT".equalsIgnoreCase(agg) && (target == null || target.isBlank()) && !hasTargetExpr)
                     throw new BusinessException(400, "跨页签引用缺少目标列或目标公式");
+
+                // SUMIF 族：predicate 字段存在时，结构必须可解析（复用模型转换做结构校验）
+                Object pred = token.get("predicate");
+                if (pred != null) {
+                    try {
+                        com.cpq.formula.predicate.ConditionPredicateJson.fromJson(
+                            new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(pred));
+                    } catch (Exception e) {
+                        throw new BusinessException(400, "cross_tab_ref.predicate 结构非法: " + e.getMessage());
+                    }
+                }
             }
         }
     }
