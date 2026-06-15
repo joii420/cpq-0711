@@ -1,6 +1,10 @@
 package com.cpq.engine.unit;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.DecimalNode;
 import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -39,5 +43,71 @@ public final class UnitConversion {
         String key = normalize(unitText);
         if (key.isEmpty()) return BigDecimal.ONE;
         return FACTORS.getOrDefault(key, BigDecimal.ONE);
+    }
+
+    /** 字段取值键：name 优先，回退 key（与各引擎 fieldName 口径一致）。 */
+    private static String fieldKey(JsonNode f) {
+        String n = f.path("name").asText(null);
+        if (n != null && !n.isBlank()) return n;
+        return f.path("key").asText(null);
+    }
+
+    /** 解析 (字段名 → 单位来源字段名) 仅含配了 unit_source_field 的列。 */
+    private static Map<String, String> configuredColumns(JsonNode fields) {
+        Map<String, String> m = new HashMap<>();
+        if (fields == null || !fields.isArray()) return m;
+        for (JsonNode f : fields) {
+            String usf = f.path("unit_source_field").asText(null);
+            if (usf == null || usf.isBlank()) continue;
+            String c = fieldKey(f);
+            if (c != null && !c.isBlank()) m.put(c, usf);
+        }
+        return m;
+    }
+
+    private static BigDecimal toBig(Object v) {
+        if (v == null) return null;
+        if (v instanceof BigDecimal b) return b;
+        if (v instanceof Number n) return new BigDecimal(n.toString());
+        try { return new BigDecimal(v.toString().trim()); } catch (Exception e) { return null; }
+    }
+
+    /**
+     * 返回换算后新 Object 行（原 row 不变）。配换算列 C → rawC × factorFor(同行 D 文本)。
+     * 用于 parseEffectiveRows / backfillSubtotalsFromResolved 等 Object 行。
+     */
+    public static Map<String, Object> convertObjectRow(JsonNode fields, Map<String, Object> row) {
+        Map<String, String> cols = configuredColumns(fields);
+        if (cols.isEmpty() || row == null) return row;
+        Map<String, Object> out = new LinkedHashMap<>(row);
+        for (Map.Entry<String, String> e : cols.entrySet()) {
+            String c = e.getKey(), d = e.getValue();
+            BigDecimal raw = toBig(row.get(c));
+            if (raw == null) continue;
+            Object dv = row.get(d);
+            BigDecimal factor = factorFor(dv == null ? null : dv.toString());
+            out.put(c, raw.multiply(factor));
+        }
+        return out;
+    }
+
+    /**
+     * 返回换算后新 JsonNode 行（原 mergedRow 不变）。用于 FormulaCalculator.computeRows。
+     */
+    public static Map<String, JsonNode> convertNodeRow(JsonNode fields, Map<String, JsonNode> mergedRow) {
+        Map<String, String> cols = configuredColumns(fields);
+        if (cols.isEmpty() || mergedRow == null) return mergedRow;
+        Map<String, JsonNode> out = new LinkedHashMap<>(mergedRow);
+        for (Map.Entry<String, String> e : cols.entrySet()) {
+            String c = e.getKey(), d = e.getValue();
+            JsonNode cn = mergedRow.get(c);
+            if (cn == null || cn.isNull()) continue;
+            BigDecimal raw = toBig(cn.isNumber() ? cn.numberValue() : cn.asText());
+            if (raw == null) continue;
+            JsonNode dn = mergedRow.get(d);
+            BigDecimal factor = factorFor(dn == null ? null : dn.asText());
+            out.put(c, DecimalNode.valueOf(raw.multiply(factor)));
+        }
+        return out;
     }
 }
