@@ -98,6 +98,7 @@ public final class CardEffectiveRows {
                 for (JsonNode rr : resolved) {
                     Map<String, Object> row = new LinkedHashMap<>();
                     putAll(row, rr);
+                    row = com.cpq.engine.unit.UnitConversion.convertObjectRow(fields, row);
                     rows.add(row);
                 }
             } else {
@@ -126,6 +127,7 @@ public final class CardEffectiveRows {
                         // P2-B 核价 Excel 树：保留 spine 节点身份(resolvedRows 路径已由 putAll(row,rr) 自带)
                         JsonNode nodeId = br.path("__nodeId");
                         if (!nodeId.isMissingNode() && !nodeId.isNull()) row.put("__nodeId", nodeId.asText());
+                        row = com.cpq.engine.unit.UnitConversion.convertObjectRow(fields, row);
                         rows.add(row);
                         i++;
                     }

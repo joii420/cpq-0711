@@ -610,6 +610,10 @@ public class FormulaCalculator {
             // mergedRow = driverRow + editRows（编辑覆盖）
             Map<String, JsonNode> mergedRow = mergeRow(driverRow, editValues);
 
+            // 单位换算（物化点3）：配 unit_source_field 的列在喂公式前按同行单位归一到 KG/PCS。
+            // 在 collectFieldValues / toRawRowMap 之前，使 fieldValues 与 currentRowRaw 同口径。
+            mergedRow = com.cpq.engine.unit.UnitConversion.convertNodeRow(fields, mergedRow);
+
             // Layer 2: 字段值收集（AP-37 每 field_type）
             Map<String, Double> fieldValues =
                 collectFieldValues(fields, mergedRow, basicDataValues);

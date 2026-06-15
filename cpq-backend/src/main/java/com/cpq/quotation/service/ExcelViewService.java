@@ -276,8 +276,15 @@ public class ExcelViewService {
             com.fasterxml.jackson.databind.JsonNode componentsSnapshot =
                 (t != null && t.componentsSnapshot != null)
                     ? MAPPER.readTree(t.componentsSnapshot) : null;
+            java.util.Map<String, com.fasterxml.jackson.databind.JsonNode> fieldsByCid = new java.util.HashMap<>();
+            if (componentsSnapshot != null && componentsSnapshot.isArray()) {
+                for (com.fasterxml.jackson.databind.JsonNode c : componentsSnapshot) {
+                    String cid = c.path("componentId").asText("");
+                    if (!cid.isBlank()) fieldsByCid.put(cid, c.path("fields"));
+                }
+            }
             return com.cpq.quotation.service.card.CardEffectiveRows.parse(
-                cardValues, componentsSnapshot, (cid) -> null);
+                cardValues, componentsSnapshot, (cid) -> null, fieldsByCid::get);
         } catch (Exception e) {
             LOG.debugf("[ExcelView] parseEffectiveRows failed tmpl=%s: %s", templateId, e.getMessage());
             return null;

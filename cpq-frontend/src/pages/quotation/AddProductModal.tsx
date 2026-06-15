@@ -478,6 +478,7 @@ const AddProductModal: React.FC<AddProductModalProps> = ({ open, onCancel, onCon
           formula_name: f.formula_name,
           datasource_binding: f.datasource_binding,
           sort_order: f.sort_order,
+          unit_source_field: f.unit_source_field,
           label: f.label || f.fieldLabel || f.name || '',
           key: f.name || f.key || f.fieldKey || '',
         }));

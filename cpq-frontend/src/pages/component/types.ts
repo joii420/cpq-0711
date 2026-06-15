@@ -108,6 +108,11 @@ export interface FieldItem {
   sort_order?: number;
   /** V149 字段库 label 中文显示名（snapshot 透传，UI 渲染不依赖） */
   label?: string;
+  /**
+   * 单位换算来源：指向同组件内单位文本字段的 name；非空则该数值列在公式计算前按同行单位归一到 KG/PCS。
+   * 存储值 = 被引用字段的 name（字符串）。留空 = 不换算。
+   */
+  unit_source_field?: string;
 }
 
 export interface DefaultSource {

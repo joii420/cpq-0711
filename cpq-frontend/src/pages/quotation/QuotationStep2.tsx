@@ -23,6 +23,7 @@ import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
 import { quotationService } from '../../services/quotationService';
 import type { CardStructure, CardValues } from '../../services/quotationService';
 import { computeRowKey, buildUniqueRowKeys } from './useCardSnapshots';
+import { applyUnitConversion } from '../../utils/unitConversion';
 import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns } from './tabTotalLines';
 import { partVersionService } from '../../services/partVersionService';
@@ -105,6 +106,8 @@ export interface ComponentField {
     api_config?: Record<string, any>;
   };
   sort_order?: number;
+  /** 单位换算：同行取该字段值作为单位来源（如 "单位"），换算到标准单位后再代入公式 */
+  unit_source_field?: string;
   // Backward-compat aliases
   key?: string;
   label?: string;
@@ -404,6 +407,10 @@ function computeAllFormulas(
   out?: { fieldValues?: Record<string, number>; errors?: Record<string, string> },
 ): Record<string, number | null> {
   if (!comp.fields || !comp.formulas) return {};
+
+  // 单位换算（物化点1）：配 unit_source_field 的列在算公式前按同行单位归一到 KG/PCS。
+  // 必须克隆——入参 row 是渲染用同一对象 (:2236)，原地 mutate 会污染明细格子显示原值。
+  row = applyUnitConversion(comp.fields as any, row);
 
   // Collect FORMULA fields and their resolved formulas
   // Plan 3a：FORMULA 字段可为单一模式(formula) 或条件模式(conditional)。
@@ -939,13 +946,17 @@ export function buildCrossTabRows(
  * 键名格式与 PASS1 一致: `${tabName/componentCode/componentId}#${colName}` 及总计键。
  * 仅当组件有 is_subtotal 列时才写入（无 is_subtotal 列的组件不修改 allComponentSubtotals）。
  */
-function subtotalsFromResolvedRows(
+export function subtotalsFromResolvedRows(
   comp: ComponentDataItem,
   rows: Array<Record<string, any>>,
   allComponentSubtotals: Record<string, number>,
 ): void {
   const subtotalFields = (comp.fields ?? []).filter((f: ComponentField) => f.is_subtotal);
   if (subtotalFields.length === 0) return;
+
+  // 单位换算（与后端 backfillSubtotalsFromResolved 物化点5 对齐）：求和用换算后行，
+  // 避免配 unit_source_field 的 is_subtotal 列前端 sum(原值) 与后端 sum(canonical) 分叉。
+  const convRows = rows.map((row) => applyUnitConversion(comp.fields as any, row));
 
   const keys: string[] = [];
   if (comp.tabName) keys.push(comp.tabName);
@@ -962,7 +973,7 @@ function subtotalsFromResolvedRows(
     const colName: string = sf.name || sf.key || '';
     if (!colName) continue;
     let colSum = 0;
-    for (const row of rows) {
+    for (const row of convRows) {
       const v = row[colName];
       if (typeof v === 'number' && isFinite(v)) colSum += v;
     }
@@ -1105,6 +1116,7 @@ export function computeNonSubtotalColumnSums(
   for (let i = 0; i < rowCount; i++) {
     const ra = rowAt(i, comp, s);
     const row = fillFixedDefaults(comp.fields, ra.row);
+    const convRow = applyUnitConversion(comp.fields as any, row); // 物化点2：输入列直读用 canonical
     const basicDataValues = ra.expIndex >= 0 ? driverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
     const fv: Record<string, number> = {};
     const formulaCache = computeAllFormulas(
@@ -1117,8 +1129,8 @@ export function computeNonSubtotalColumnSums(
       if (!colName) continue;
       let val: number;
       if (f.field_type === 'INPUT_NUMBER') {
-        // INPUT_NUMBER 直接读行值（formulaCache 不算输入列）
-        const raw = row[colName];
+        // INPUT_NUMBER 直读 canonical 值（物化点2：经 applyUnitConversion 换算后的行值）
+        const raw = convRow[colName];
         val = typeof raw === 'number' && isFinite(raw) ? raw : (parseFloat(raw) || 0);
       } else {
         // FORMULA / DATA_SOURCE 优先取 formulaCache，缺时取 fieldValues
@@ -2730,6 +2742,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       global_variable_code: f.global_variable_code,
       default_source: f.default_source,
       sort_order: f.sort_order,
+      unit_source_field: f.unit_source_field,
       label: f.label || f.name || '',
       key: f.name || f.key || '',
     });
