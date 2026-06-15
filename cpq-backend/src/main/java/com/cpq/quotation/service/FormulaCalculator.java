@@ -575,6 +575,17 @@ public class FormulaCalculator {
         // editRows 按 rowKey 索引（AP-54：业务键对齐，不用下标）
         Map<String, JsonNode> editByKey = indexEditRows(editRows);
 
+        // 行键唯一化预扫(撞键→#序号)：先算全部 raw effKey 再消歧，保证 editRows 逐行绑定(修末值×行数塌缩)。
+        // 与前端 buildUniqueRowKeys / 快照 / CardSnapshotService 同序同口径。
+        List<String> rawKeys = new ArrayList<>();
+        int pre = 0;
+        for (JsonNode baseRow : baseRows) {
+            String rk = computeRowKey(rowKeyFields, fields, baseRow.path("driverRow"), baseRow.path("basicDataValues"));
+            rawKeys.add((rk != null && !rk.isEmpty()) ? rk : String.valueOf(pre));
+            pre++;
+        }
+        List<String> effKeys = uniquifyRowKeys(rawKeys);
+
         // 公式字段拓扑序（依赖先算），与前端 computeAllFormulas 一致
         List<FormulaField> formulaFields = collectFormulaFields(fields, formulas, formulaAssignments);
         List<String> order = topoOrder(formulaFields);
@@ -585,8 +596,7 @@ public class FormulaCalculator {
             JsonNode driverRow = baseRow.path("driverRow");
             JsonNode basicDataValues = baseRow.path("basicDataValues");
 
-            String rowKey = computeRowKey(rowKeyFields, fields, driverRow, basicDataValues);
-            String effKey = (rowKey != null && !rowKey.isEmpty()) ? rowKey : String.valueOf(idx);
+            String effKey = effKeys.get(idx);
 
             JsonNode editValues = editByKey.containsKey(effKey)
                 ? editByKey.get(effKey).path("values") : null;
@@ -702,6 +712,27 @@ public class FormulaCalculator {
         // 全部 key 段为空 → null，让调用方按行号兜底，避免 "||" 假键导致行冲突
         if (!any) return null;
         return String.join("||", parts);
+    }
+
+    /**
+     * 行键唯一化：同一组件内出现 ≥2 次的 rowKey 按出现序追加 {@code #<0基序号>}；
+     * 出现 1 次的键保持原样（向后兼容，现有非撞键报价单 editRows 仍绑定）。
+     *
+     * <p>修复撞键（行键字段值为空/重复）导致 editRows 写覆盖/读串行 → resolvedRows
+     * 「末值×行数」塌缩。前端 useCardSnapshots.uniquifyRowKeys 逐字节等价。
+     * 序号按入参 keys 顺序（= baseRows 数组序，前后端同序）。
+     */
+    public static java.util.List<String> uniquifyRowKeys(java.util.List<String> keys) {
+        java.util.Map<String, Integer> counts = new java.util.HashMap<>();
+        for (String k : keys) counts.merge(k, 1, Integer::sum);
+        java.util.Map<String, Integer> running = new java.util.HashMap<>();
+        java.util.List<String> out = new java.util.ArrayList<>(keys.size());
+        for (String k : keys) {
+            if (counts.getOrDefault(k, 0) <= 1) { out.add(k); continue; }
+            int n = running.merge(k, 1, Integer::sum) - 1;
+            out.add(k + "#" + n);
+        }
+        return out;
     }
 
     /**
