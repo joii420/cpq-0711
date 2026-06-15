@@ -45,6 +45,61 @@ export interface ExpressionToken {
    * 缺省 false.
    */
   projectToHostKey?: boolean;
+  /** SUMIF 族：cross_tab_ref 的可选附加过滤条件（布尔树）。缺省 = 不过滤。 */
+  predicate?: ConditionPredicate | null;
+}
+
+// ── predicate 类型 + 求值器（与后端 ConditionPredicateEvaluator 逐字一致） ──
+
+export type PredicateOperand =
+  | { kind: 'sourceField'; field: string }
+  | { kind: 'hostField'; field: string }
+  | { kind: 'literal'; value: string };
+
+export type ConditionPredicate =
+  | { bool: 'AND' | 'OR'; children: ConditionPredicate[] }
+  | { op: '=' | '!=' | '<>' | '>' | '<' | '>=' | '<='; lhs: PredicateOperand; rhs: PredicateOperand };
+
+/** 与后端 ConditionPredicateEvaluator 逐字一致。arow=source 行, hostRow=宿主行。 */
+export function evalPredicate(
+  p: ConditionPredicate | null | undefined,
+  arow: Record<string, any>,
+  hostRow: Record<string, any>,
+): boolean {
+  if (p == null) return true;
+  if ('bool' in p) {
+    return p.bool === 'AND'
+      ? p.children.every((c) => evalPredicate(c, arow, hostRow))
+      : p.children.some((c) => evalPredicate(c, arow, hostRow));
+  }
+  const resolve = (o: PredicateOperand) =>
+    o.kind === 'sourceField' ? arow?.[o.field]
+    : o.kind === 'hostField' ? hostRow?.[o.field]
+    : o.value;
+  const lv = resolve(p.lhs), rv = resolve(p.rhs);
+  const blank = (x: any) => x == null || String(x).trim() === '';
+  // 注：数字解析用 Number()，与后端 Double.valueOf 在 0x../类型后缀/"NaN" 等病态输入上口径略异；CPQ 业务数据(金额/数量/类型名)不会出现这些，沿用既有 keyEq/valEquals 容差，不额外收紧。
+  const num = (x: any) => { const n = Number(String(x).trim()); return isNaN(n) ? null : n; };
+  const eq = (): boolean => {
+    if (blank(lv) || blank(rv)) return false;
+    const na = num(lv), nb = num(rv);
+    if (na !== null && nb !== null) return na === nb;
+    return String(lv).trim() === String(rv).trim();
+  };
+  const cmp = (): number | null => {
+    if (blank(lv) || blank(rv)) return null;
+    const na = num(lv), nb = num(rv);
+    if (na === null || nb === null) return null;
+    return na < nb ? -1 : na > nb ? 1 : 0;
+  };
+  switch (p.op) {
+    case '=': return eq();
+    case '!=': case '<>': return !eq();
+    case '>': { const c = cmp(); return c !== null && c > 0; }
+    case '<': { const c = cmp(); return c !== null && c < 0; }
+    case '>=': { const c = cmp(); return c !== null && c >= 0; }
+    case '<=': { const c = cmp(); return c !== null && c <= 0; }
+  }
 }
 
 /** 检测公式 token 数组中是否含 path 类型(决定走前端本地求值还是后端 API) */
@@ -302,7 +357,10 @@ export function evaluateExpression(
           target: string | undefined,
           isProjectToHostKey: boolean,
         ): { value: number | null; multiMatchErr: boolean } => {
-          const hits = rows.filter((ar) => matchPairs.every((p) => keyEq(ar[p.a], hostRow?.[p.b])));
+          const hits = rows.filter((ar) =>
+            matchPairs.every((p) => keyEq(ar[p.a], hostRow?.[p.b]))
+            && evalPredicate(token.predicate, ar, hostRow ?? {})
+          );
           const A = agg.toUpperCase();
           const toNum = (v: any) => { const n = Number(v); return isNaN(n) ? null : n; };
           const hasTE = !!(targetExpr && targetExpr.length > 0);

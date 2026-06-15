@@ -89,6 +89,17 @@ public class TokenMappabilityValidator {
                     "请改引可比页签或用其整页签小计 [页签(总计)]。");
             }
 
+            // SUMIF 族：predicate 字段存在时，结构必须可解析（复用模型转换做结构校验）
+            Object pred = t.get("predicate");
+            if (pred != null) {
+                try {
+                    com.cpq.formula.predicate.ConditionPredicateJson.fromJson(
+                        new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(pred));
+                } catch (Exception e) {
+                    return new Result(false, "cross_tab_ref.predicate 结构非法: " + e.getMessage());
+                }
+            }
+
             // 对 targetExpr 内的 KSUM 子 token 做镜像校验
             Object teObj = t.get("targetExpr");
             if (teObj instanceof List<?> teList) {

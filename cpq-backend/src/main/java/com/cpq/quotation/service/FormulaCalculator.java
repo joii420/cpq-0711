@@ -40,6 +40,9 @@ public class FormulaCalculator {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final BigDecimal ZERO4 = BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
 
+    private final com.cpq.formula.predicate.ConditionPredicateEvaluator predicateEval =
+            new com.cpq.formula.predicate.ConditionPredicateEvaluator();
+
     /** 单行公式求值上下文（对齐 formulaEngine.ts evaluateExpression 的多个参数）。 */
     public static class RowContext {
         /** field / datasource_field token 取值：字段名 → 数值 */
@@ -276,23 +279,26 @@ public class FormulaCalculator {
         String agg = token.path("agg").asText("NONE").toUpperCase();
         List<Map<String, Object>> rows = ctx.crossTabRows.getOrDefault(source, List.of());
 
-        // hits 过滤：KSUM 按 match⋈ctx.currentRowRaw；外层同旧
+        // hits 过滤：KSUM 按 match⋈ctx.currentRowRaw；外层同旧；再叠加可选 predicate（SUMIF 族）
+        com.cpq.formula.predicate.ConditionPredicate predicate =
+                com.cpq.formula.predicate.ConditionPredicateJson.fromJson(
+                        token.has("predicate") ? token.get("predicate") : null);
         List<Map<String, Object>> hits = new ArrayList<>();
         JsonNode matchNode = token.path("match");
         boolean hasMatch = matchNode.isArray() && matchNode.size() > 0;
         for (Map<String, Object> arow : rows) {
-            if (!hasMatch) {
-                // match=[] → 全量（KSUM 全量塌缩场景）
-                hits.add(arow);
-            } else {
-                boolean ok = true;
+            boolean ok = true;
+            if (hasMatch) {
                 for (JsonNode pair : matchNode) {
                     Object av = arow.get(pair.path("a").asText(""));
                     Object bv = ctx.currentRowRaw.get(pair.path("b").asText(""));
                     if (isBlank(av) || isBlank(bv) || !valEquals(av, bv)) { ok = false; break; }
                 }
-                if (ok) hits.add(arow);
             }
+            if (ok && predicate != null) {
+                ok = predicateEval.test(predicate, arow, ctx.currentRowRaw);
+            }
+            if (ok) hits.add(arow);
         }
 
         if ("COUNT".equals(agg)) return java.math.BigDecimal.valueOf(hits.size());
