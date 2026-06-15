@@ -4,6 +4,9 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
 import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
+import com.cpq.basicdata.v6.repository.ProcessMasterRepository;
+import com.cpq.basicdata.v6.service.MaterialNoResolver;
+import com.cpq.basicdata.v6.service.MaterialNoUnresolvableException;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -33,7 +36,8 @@ public class MaterialBomMergeHandler {
 
     @Inject VersionedV6Writer writer;
     @Inject MaterialMasterRepository materialMasterRepo;
-    @Inject com.cpq.basicdata.v6.service.MaterialNoResolver materialNoResolver;
+    @Inject MaterialNoResolver materialNoResolver;
+    @Inject ProcessMasterRepository processMasterRepo;
 
     /** 合并后子表内容列 = 物料BOM ∪ 组成件BOM。 */
     private static final List<String> CHILD_CONTENT = List.of(
@@ -45,8 +49,7 @@ public class MaterialBomMergeHandler {
     public SheetImportResult merge(List<SheetRow> materialRows, List<SheetRow> assemblyRows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult("物料BOM+组成件BOM(合并)");
 
-        com.cpq.basicdata.v6.service.MaterialNoResolver.BatchState batch =
-            new com.cpq.basicdata.v6.service.MaterialNoResolver.BatchState();
+        MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
 
         Map<String, Map<String, Map<String, Object>>> matByMat = new LinkedHashMap<>();
         Map<String, Map<String, Map<String, Object>>> asmByMat = new LinkedHashMap<>();
@@ -65,7 +68,7 @@ public class MaterialBomMergeHandler {
             String componentNo;
             try {
                 componentNo = materialNoResolver.resolve(exactComponentNo, componentName, batch);
-            } catch (com.cpq.basicdata.v6.service.MaterialNoUnresolvableException ex) {
+            } catch (MaterialNoUnresolvableException ex) {
                 result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
             }
             // 决策 #9：报价 §3 已存在则保留旧名称/类型 → preserveDescriptive=true
@@ -91,11 +94,31 @@ public class MaterialBomMergeHandler {
             String materialNo = row.getStr("宏丰料号");
             if (materialNo == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
             if (isCfg(materialNo)) { result.recordError(row.rowNo, "宏丰料号", "禁止导入系统生成料号(CFG- 前缀): " + materialNo); continue; }
-            String componentNo = row.getStr("组成件料号");
-            if (componentNo == null) { result.recordError(row.rowNo, "组成件料号", "为空"); continue; }
+            String componentName = row.getStr("组成件名称");
+            String componentNo;
+            try {
+                componentNo = materialNoResolver.resolve(row.getStr("组成件料号"), componentName, batch);
+            } catch (MaterialNoUnresolvableException ex) {
+                result.recordError(row.rowNo, "组成件料号", "料号与名称均为空"); continue;
+            }
+            // §12 料号表同步：material_type 固定 3，已存在保留原值（决策 #6 → preserveDescriptive=true）
+            materialMasterRepo.upsertByMaterialNo(componentNo, componentName,
+                null, null, null, "3", null, null, null, ctx.importedBy, true);
+            result.recordWrite("material_master", 1);
+
+            // 工序回填（决策 #5）：工序编号空 + 组装工序(工序名称)有值 → 按名取第一条 process_no
+            String operationNo = row.getStr("工序编号");
+            if (operationNo == null) {
+                String procName = row.getStr("组装工序");
+                if (procName != null) {
+                    operationNo = processMasterRepo.findFirstByProcessName(procName)
+                        .map(p -> p.processNo).orElse(null);
+                }
+            }
+
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("seq_no", row.getInt("项次（一级）", "项次"));
-            c.put("operation_no", row.getStr("工序编号"));
+            c.put("operation_no", operationNo);
             c.put("item_seq", row.getIntNth("项次", 2));
             c.put("component_no", componentNo);
             c.put("composition_qty", row.getDecimal("组成数量"));
