@@ -44,6 +44,12 @@ public class FormulaCalculator {
     public static class RowContext {
         /** field / datasource_field token 取值：字段名 → 数值 */
         public Map<String, Double> fieldValues = new HashMap<>();
+        /**
+         * per-field source 分桶（D3 加固）：source componentId → {列名 → 数值}。
+         * 在多源 cross_tab_ref 的 targetRowValue 中填充，供 field token 带 source 时优先取值，
+         * 防止不同 source 同名列按名合并后串值。field token 无 source 时回退 fieldValues。
+         */
+        public Map<String, Map<String, Double>> bySource = new HashMap<>();
         /** component_subtotal token 取值：component_code / tab_name / value → 跨 tab 小计 */
         public Map<String, Double> componentSubtotals = new HashMap<>();
         /** quotation_field token 取值 */
@@ -83,9 +89,25 @@ public class FormulaCalculator {
     private void appendToken(StringBuilder expr, JsonNode token, RowContext ctx) {
         String type = token.path("type").asText("");
         switch (type) {
-            case "field":
-                expr.append(numStr(ctx.fieldValues.getOrDefault(token.path("value").asText(""), 0.0)));
+            case "field": {
+                String fieldName = token.path("value").asText("");
+                String fieldSource = token.path("source").asText(null);
+                double fieldVal = 0.0;
+                // D3 per-field source：token 带 source 时优先从 bySource 分桶取值（防同名串值）；
+                // source 缺失或桶里找不到时回退 fieldValues（兼容无 source 的存量 token）。
+                if (fieldSource != null && !fieldSource.isEmpty()) {
+                    Map<String, Double> bucket = ctx.bySource.get(fieldSource);
+                    if (bucket != null && bucket.containsKey(fieldName)) {
+                        fieldVal = bucket.get(fieldName);
+                    } else {
+                        fieldVal = ctx.fieldValues.getOrDefault(fieldName, 0.0);
+                    }
+                } else {
+                    fieldVal = ctx.fieldValues.getOrDefault(fieldName, 0.0);
+                }
+                expr.append(numStr(fieldVal));
                 break;
+            }
             case "operator": {
                 String v = token.path("value").asText("");
                 String op = "×".equals(v) ? "*" : "÷".equals(v) ? "/" : v;
@@ -331,7 +353,11 @@ public class FormulaCalculator {
             boolean multiSrcHitErr = false;
             JsonNode sourcesNode = token.path("sources");
             if (sourcesNode.isArray() && sourcesNode.size() >= 2) {
-                // 步骤1: 先放更粗 source 的列（低优先级）
+                // D3 per-field source 分桶：source componentId → {列名 → 数值}
+                // 各 source 的数值列独立存桶，供 field token 带 source 时精确取值，防同名串值。
+                Map<String, Map<String, Double>> bySource = new HashMap<>();
+
+                // 步骤1: 先放更粗 source 的列（低优先级，进 fieldValues 也进 bySource 桶）
                 for (int si = 1; si < sourcesNode.size(); si++) {
                     JsonNode s = sourcesNode.get(si);
                     String coarseSource = s.path("source").asText("");
@@ -362,17 +388,29 @@ public class FormulaCalculator {
                         multiSrcHitErr = true;
                         continue;
                     }
-                    // 恰好 1 命中 → 把该行所有数值列并入 sub.fieldValues（低优先级）
+                    // 恰好 1 命中 → 把该行所有数值列并入 sub.fieldValues（低优先级）并填充 bySource 桶
+                    Map<String, Double> coarseBucket = bySource.computeIfAbsent(coarseSource, k -> new HashMap<>());
                     for (Map.Entry<String, Object> e : coarseHits.get(0).entrySet()) {
                         Double n = toNumber(e.getValue());
-                        if (n != null) sub.fieldValues.put(e.getKey(), n);
+                        if (n != null) {
+                            sub.fieldValues.put(e.getKey(), n);
+                            coarseBucket.put(e.getKey(), n);
+                        }
                     }
                 }
-                // 步骤2: 放驱动行 arow 的列（高优先级，覆盖粗 source 同名列）
+                // 步骤2: 放驱动行 arow 的列（高优先级，覆盖粗 source 同名列的 fieldValues，
+                //        但 bySource[sources[0]] 独立保存驱动行真实值，不被覆盖）
+                String primarySource = sourcesNode.get(0).path("source").asText("");
+                Map<String, Double> primaryBucket = bySource.computeIfAbsent(primarySource, k -> new HashMap<>());
                 for (Map.Entry<String, Object> e : arow.entrySet()) {
                     Double n = toNumber(e.getValue());
-                    if (n != null) sub.fieldValues.put(e.getKey(), n);
+                    if (n != null) {
+                        sub.fieldValues.put(e.getKey(), n);   // 高优先级覆盖（现有逻辑不变）
+                        primaryBucket.put(e.getKey(), n);     // D3: 驱动行进 primary source 桶
+                    }
                 }
+                // D3: 把 bySource 分桶注入 sub，供 appendToken field 分支按 source 取值
+                sub.bySource = bySource;
             } else {
                 // N=1 退化路径（无 sources / 纯 KSUM 容器）: 零变化旧逻辑
                 for (Map.Entry<String, Object> e : arow.entrySet()) {
