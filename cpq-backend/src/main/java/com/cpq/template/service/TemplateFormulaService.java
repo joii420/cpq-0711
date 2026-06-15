@@ -79,6 +79,7 @@ public class TemplateFormulaService {
      */
     static final Set<String> STAGE2_AGGREGATE_FUNCS =
             Set.of("SUM_OVER", "COUNT_OVER", "AVG_OVER", "MIN_OVER", "MAX_OVER",
+                   "SUMIF", "COUNTIF", "AVGIF", "MINIF", "MAXIF",
                    "FILTER", "MAP", "GROUP_BY", "REDUCE");
 
     /** Stage 1 遗留：仍拒绝的纯占位函数（Stage 2 不实现） */
@@ -87,9 +88,10 @@ public class TemplateFormulaService {
     /** 表达式长度上限 */
     static final int MAX_EXPRESSION_LENGTH = 5000;
 
-    /** SUM_OVER(...) 整体 pattern: SUM_OVER([source] WHERE predicate, expression) */
+    /** SUM_OVER(...) 整体 pattern: SUM_OVER([source] WHERE predicate, expression)
+     *  SUMIF(...) pattern: SUMIF(cond, valueExpr) 或 COUNTIF(cond) */
     private static final Pattern OVER_FUNC_PATTERN = Pattern.compile(
-            "\\b(SUM_OVER|COUNT_OVER|AVG_OVER|MIN_OVER|MAX_OVER)\\s*\\(",
+            "\\b(SUM_OVER|COUNT_OVER|AVG_OVER|MIN_OVER|MAX_OVER|SUMIF|COUNTIF|AVGIF|MINIF|MAXIF)\\s*\\(",
             Pattern.CASE_INSENSITIVE);
 
     /**
@@ -681,6 +683,32 @@ public class TemplateFormulaService {
     private BigDecimal executeOverFunction(String funcName, String argsContent,
                                            UUID customerId, String partNo) {
         try {
+            // SUMIF/COUNTIF/AVGIF/MINIF/MAXIF 族：cond 文本 → predicate 过滤聚合
+            if (funcName.toUpperCase().endsWith("IF")) {
+                int comma = findTopLevelComma(argsContent);
+                String condText   = (comma >= 0 ? argsContent.substring(0, comma) : argsContent).trim();
+                String valueExpr  = (comma >= 0 ? argsContent.substring(comma + 1).trim() : null);
+                var pred = new com.cpq.formula.predicate.ConditionPredicateParser().parse(condText);
+                // source：取 cond/valueExpr 中首个 [页签.字段] 的页签前缀（与 *_OVER source 同源）
+                String source = extractFirstTabRef(condText, valueExpr);
+                List<Map<String, Object>> rows = com.cpq.template.service.CardAggregateSource.rowsFor(source);
+                if (rows == null) {
+                    String driverPath = resolveDriverPath(source);
+                    if (driverPath == null || driverPath.isBlank()) {
+                        LOG.warnf("[Stage2] %s: cannot resolve driver path for source '%s'", funcName, source);
+                        return BigDecimal.ZERO;
+                    }
+                    try {
+                        rows = dataLoader.loadByPath(driverPath, null, partNo, customerId).get();
+                    } catch (InterruptedException | ExecutionException e) {
+                        LOG.warnf("[Stage2] %s: driver query failed: %s", funcName, e.getMessage());
+                        return BigDecimal.ZERO;
+                    }
+                }
+                if (rows == null) rows = List.of();
+                return aggregateWithPredicate(funcName, rows, pred, valueExpr);
+            }
+
             // 解析 source + (WHERE predicate) + expression
             // source 是第一个 [...] 部分
             OverFuncArgs parsed = parseOverFuncArgs(argsContent);
@@ -800,6 +828,55 @@ public class TemplateFormulaService {
             else if (c == ',' && depth == 0) return i;
         }
         return -1;
+    }
+
+    /**
+     * 从 cond + valueExpr 文本里取第一个 [页签.字段] 的页签前缀，作为聚合 source。
+     * 例：condText="[费用明细.类型]='管理费'" → "费用明细"。
+     */
+    private String extractFirstTabRef(String cond, String valueExpr) {
+        for (String s : new String[]{ cond, valueExpr }) {
+            if (s == null) continue;
+            int lb = s.indexOf('[');
+            int dot = lb >= 0 ? s.indexOf('.', lb) : -1;
+            int rb  = lb >= 0 ? s.indexOf(']', lb) : -1;
+            if (lb >= 0 && dot > lb && rb > dot) return s.substring(lb + 1, dot).trim();
+            if (lb >= 0 && rb > lb)              return s.substring(lb + 1, rb).trim();
+        }
+        return "";
+    }
+
+    /**
+     * SUMIF 族行内 valueExpr 求值，优先支持中文字段名。
+     *
+     * <p>两步策略：
+     * <ol>
+     *   <li>纯字段名（trim 后直接匹配 row.get(key)，含中文）→ 直接取值，避免 JEXL tokenize 中文失败。</li>
+     *   <li>复杂表达式（含运算符）→ 先把 row 里出现在表达式中的中文 key 替换为
+     *       {@code f_<index>} 占位符，同时注入对应值，再走 JEXL。这样支持 {@code 金额*数量} 等。</li>
+     * </ol>
+     */
+    private Object evalValueExpr(String expr, Map<String, Object> row) {
+        if (expr == null || expr.isBlank()) return null;
+        String trimmed = expr.trim();
+        // 策略 1：纯字段名（无运算符）→ 直接 row.get
+        if (row.containsKey(trimmed)) return toJexlValue(row.get(trimmed));
+        // 策略 2：复杂表达式 → 替换中文字段名为 ASCII 占位符后走 JEXL
+        String rewritten = trimmed;
+        Map<String, Object> rewrittenRow = new java.util.LinkedHashMap<>(row);
+        int idx = 0;
+        // 按 key 长度从长到短，避免短 key 先匹配
+        java.util.List<String> sortedKeys = new java.util.ArrayList<>(row.keySet());
+        sortedKeys.sort((a, b) -> Integer.compare(b.length(), a.length()));
+        for (String key : sortedKeys) {
+            boolean hasNonAscii = key.chars().anyMatch(c -> c > 127);
+            if (!hasNonAscii) continue;
+            if (!rewritten.contains(key)) continue;
+            String placeholder = "f_cpq_" + idx++;
+            rewritten = rewritten.replace(key, placeholder);
+            rewrittenRow.put(placeholder, row.get(key));
+        }
+        return evalRowExpression(rewritten, rewrittenRow);
     }
 
     /** 找匹配的右括号，openParen 是 '(' 的下标 */
@@ -1504,6 +1581,48 @@ public class TemplateFormulaService {
             }
             default -> BigDecimal.ZERO;
         };
+    }
+
+    /**
+     * 包内可测：对给定行集按 predicate 过滤后求 valueExprText（COUNTIF 无需 valueExpr），单值聚合。
+     *
+     * <p>不依赖任何 @Inject 字段（仅用 evalRowExpression / aggregate / toBigDecimal），
+     * 可由 {@code new TemplateFormulaService()} 直接测试。
+     *
+     * @param funcName     SUMIF / COUNTIF / AVGIF / MINIF / MAXIF（大写）
+     * @param rows         源行集，由调用方（executeOverFunction / 测试）传入
+     * @param pred         predicate（null = 不过滤）
+     * @param valueExprText 行内聚合表达式（COUNTIF 传 null 即可）
+     */
+    BigDecimal aggregateWithPredicate(String funcName,
+                                      java.util.List<java.util.Map<String, Object>> rows,
+                                      com.cpq.formula.predicate.ConditionPredicate pred,
+                                      String valueExprText) {
+        var ev = new com.cpq.formula.predicate.ConditionPredicateEvaluator();
+        java.util.List<BigDecimal> values = new java.util.ArrayList<>();
+        java.util.Map<String, Object> emptyHost = java.util.Map.of();
+        for (var row : rows) {
+            if (!ev.test(pred, row, emptyHost)) continue;
+            if ("COUNTIF".equalsIgnoreCase(funcName)) {
+                values.add(BigDecimal.ONE);
+                continue;
+            }
+            // 优先：valueExprText 是纯字段名 → 直接从 row 取值（支持中文字段名，无 JEXL tokenize 问题）
+            // 回退：复杂表达式（含运算符）→ evalRowExpression（字段名须为 ASCII）
+            Object val = evalValueExpr(valueExprText, row);
+            BigDecimal bd = toBigDecimal(val);
+            if (bd != null) values.add(bd);
+        }
+        // 把 XXXIF 归一到对应 *_OVER 名后复用 aggregate() reduce + 空集语义
+        String overName = switch (funcName.toUpperCase()) {
+            case "SUMIF"   -> "SUM_OVER";
+            case "COUNTIF" -> "COUNT_OVER";
+            case "AVGIF"   -> "AVG_OVER";
+            case "MINIF"   -> "MIN_OVER";
+            case "MAXIF"   -> "MAX_OVER";
+            default        -> "SUM_OVER";
+        };
+        return aggregate(overName, values);
     }
 
     @SuppressWarnings("unchecked")
