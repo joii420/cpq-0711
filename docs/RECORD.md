@@ -4,6 +4,17 @@
 
 ---
 
+### [2026-06-15] fix(formula): 同页签列引用默认取同行值 — 材料成本等二阶列真修 | formulaSerialize.ts(bracket_expr 含点分支优先级) + 护栏测试(前端 buildCrossTabRows.test + 后端 FormulaCalculatorSamePageFieldRefTest) | plan: superpowers/plans/2026-06-15-E-samepage-column-ref-rowvalue.md
+
+- **症状(QT-20260615-1727 来料 tab)**: `材料成本` resolvedRows 三行同值 6.703(=各成本列**小计**之和标量)、subtotalByColumn.材料成本=20.109=6.703×3。用户要的是每行=该行自己各成本列之和、小计=Σ各行。
+- **根因(线上数据确证)**: `材料成本 = 来料材料费+外购件材料费+自制加工费−回收成本` 引用本组件(来料)的**小计列**;`formulaSerialize.ts` bracket_expr 含点分支里 `tabDef.subtotalCols.includes(fieldPart)` 判断**排在"同组件同行(:635)"之前** → 即使自身组件也映射成 `component_subtotal`(整列总计标量) → 每行=同一标量、小计=标量×行数。
+- **用户确认语义(枢纽)**: 同页签列引用(无`(总计)`)= **同一行的值**(行内相加),只有显式 `(总计)` 才取整列总计;小计严格=各行该列值之和,统一、与列类型无关;行值与小计必须同源(一套引擎)。
+- **修法(序列化一处)**: 分支优先级改为 ①同组件列引用(无总计)→ `field`(同行,即使是小计列) ②跨组件小计列→ `component_subtotal`(总计) ③`(总计)`/whole-tab→ component_subtotal。前后端引擎**已有公式列拓扑依赖排序**(`getFormulaDeps`/`buildFormulaDeps` 收集 field 依赖 → 先算被引用列再算本列同行相加),无需改引擎(加前后端护栏测试固化)。
+- **为什么"一套引擎部分对部分错"**: 两类 token 语义混用——`field`(同行) vs `component_subtotal`(整列总计标量);引用小计列时一律被当总计 → 引用小计列的那列(材料成本)每行=标量算错,而 cross_tab 逐行列(外购件材料费)行值对。同引擎、token 语义不同。
+- **存量自愈(优于 #1)**: 存量 `材料成本` 抽屉串回显为 `[来料.来料材料费]+...`,在编辑器**重存一次**即经修复解析器转为同行 field(无需手工重选)。
+- **测试**: 前端 formulaSerialize+buildCrossTabRows 181 passed(含同组件→field/跨组件→总计/(总计)→总计/逐行护栏;更新 1 个旧用例 `[回料.金额] self→field` 反映新语义);后端 FormulaCalculatorSamePageFieldRefTest 3 + 回归 26 passed;quotation-flow E2E 1 passed 无回归;tsc 0。
+- **范围外**: 外购件 重复行(外购件2/单价/0.802×2)致 cross_tab 行键匹配求和=1.604 属基础能力正常结果;若重复行本身是 driver/行键 bug 另起排查。
+
 ### [2026-06-15] fix(formula): #1 真修 — cross_tab 多源 SUM targetExpr field 带 per-field source | formulaSerialize.ts(行级 body field push) + FormulaCalculator.java(targetRowValue bySource 分桶) + 测试 | plan: superpowers/plans/2026-06-15-D-crosstab-targetexpr-perfield-source.md
 
 - **症状**: 组件管理 来料 公式 `纯材料成本(来料)` 选 `[来料加工费.费用]` 保存后显示成 `[元素.费用]`。
