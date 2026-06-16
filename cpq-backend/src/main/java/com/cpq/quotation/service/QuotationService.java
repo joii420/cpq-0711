@@ -82,6 +82,9 @@ public class QuotationService {
     @Inject
     ExcelViewService excelViewService;
 
+    @Inject
+    com.cpq.quotation.service.CardSnapshotService cardSnapshotService;
+
     private static final java.util.Set<String> VALID_QUOTATION_STATUSES = java.util.Set.of(
             "DRAFT", "SUBMITTED", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "EXPIRED", "CANCELLED"
     );
@@ -1193,11 +1196,35 @@ public class QuotationService {
 
     @Transactional
     public QuotationDTO copy(UUID id) {
+        return copy(id, null);
+    }
+
+    /**
+     * 复制报价单。templateId 非空 → 换模板：新单 customerTemplateId=templateId，
+     * 行项目页签按新模板重建，仅迁移用户输入值(INPUT 类型，按字段名)，driver/公式由新模板重算。
+     * templateId 为空 → 沿用源 customerTemplateId（同模板复制，同样走重建流程修正历史缺陷）。
+     */
+    @Transactional
+    public QuotationDTO copy(UUID id, UUID templateId) {
         Quotation source = Quotation.findById(id);
-        if (source == null) {
-            throw new BusinessException(404, "Quotation not found: " + id);
+        if (source == null) throw new BusinessException(404, "Quotation not found: " + id);
+
+        UUID newTemplateId = (templateId != null) ? templateId : source.customerTemplateId;
+
+        // 读新模板页签输入字段（用于 row_data 迁移）
+        java.util.List<TabFields> newTabs;
+        {
+            Object snap = null;
+            if (newTemplateId != null) {
+                var rows = em.createNativeQuery(
+                        "SELECT components_snapshot FROM template WHERE id = :tid")
+                        .setParameter("tid", newTemplateId).getResultList();
+                if (!rows.isEmpty() && rows.get(0) != null) snap = rows.get(0);
+            }
+            newTabs = parseTemplateTabFields(snap == null ? null : snap.toString(), MAPPER);
         }
 
+        // 1. 单据头（保留原 copy 的全部字段赋值；customerTemplateId 改为新模板）
         Quotation copy = new Quotation();
         copy.quotationNumber = generateQuotationNumber();
         copy.customerId = source.customerId;
@@ -1227,47 +1254,96 @@ public class QuotationService {
         copy.snapshotCustomerRegion = source.snapshotCustomerRegion;
         copy.snapshotCustomerIndustry = source.snapshotCustomerIndustry;
         copy.snapshotCustomerAddress = source.snapshotCustomerAddress;
+        copy.customerTemplateId = newTemplateId;
+        copy.costingCardTemplateId = source.costingCardTemplateId;
         copy.persist();
 
-        // Copy line items
-        List<QuotationLineItem> sourceItems = QuotationLineItem.list("quotationId = ?1 ORDER BY sortOrder ASC", id);
+        // 2. 行项目（先建，记录 源id→新id 映射；父子链稍后重映射）
+        java.util.Map<UUID, UUID> lineIdMap = new java.util.LinkedHashMap<>();
+        List<QuotationLineItem> sourceItems =
+                QuotationLineItem.list("quotationId = ?1 ORDER BY sortOrder ASC", id);
+        java.util.List<QuotationLineItem> newItems = new java.util.ArrayList<>();
         for (QuotationLineItem srcLi : sourceItems) {
             QuotationLineItem newLi = new QuotationLineItem();
             newLi.quotationId = copy.id;
             newLi.productId = srcLi.productId;
-            newLi.templateId = srcLi.templateId;
+            newLi.templateId = newTemplateId;
+            newLi.productNameSnapshot = srcLi.productNameSnapshot;
+            newLi.productPartNoSnapshot = srcLi.productPartNoSnapshot;
             newLi.productAttributeValues = srcLi.productAttributeValues;
-            newLi.subtotal = srcLi.subtotal;
+            newLi.subtotal = java.math.BigDecimal.ZERO;
+            newLi.systemDiscountRate = srcLi.systemDiscountRate;
+            newLi.finalDiscountRate = srcLi.finalDiscountRate;
             newLi.sortOrder = srcLi.sortOrder;
+            newLi.customerPartNo = srcLi.customerPartNo;
+            newLi.partVersionLocked = srcLi.partVersionLocked;
+            newLi.compositeType = srcLi.compositeType;
+            // parentLineItemId 稍后重映射；4 份值快照列留空（重建）
             newLi.persist();
+            lineIdMap.put(srcLi.id, newLi.id);
+            newItems.add(newLi);
 
-            // Copy processes
-            List<QuotationLineProcess> srcProcesses = QuotationLineProcess.list("lineItemId = ?1", srcLi.id);
-            for (QuotationLineProcess srcP : srcProcesses) {
+            for (QuotationLineProcess srcP : QuotationLineProcess.<QuotationLineProcess>list("lineItemId = ?1", srcLi.id)) {
                 QuotationLineProcess newP = new QuotationLineProcess();
                 newP.lineItemId = newLi.id;
                 newP.processId = srcP.processId;
                 newP.persist();
             }
 
-            // Copy component data
-            List<QuotationLineComponentData> srcData = QuotationLineComponentData.list("lineItemId = ?1 ORDER BY sortOrder ASC", srcLi.id);
-            for (QuotationLineComponentData srcCd : srcData) {
-                QuotationLineComponentData newCd = new QuotationLineComponentData();
-                newCd.lineItemId = newLi.id;
-                newCd.componentId = srcCd.componentId;
-                newCd.tabName = srcCd.tabName;
-                newCd.rowData = srcCd.rowData;
-                newCd.subtotal = srcCd.subtotal;
-                newCd.sortOrder = srcCd.sortOrder;
-                newCd.persist();
-            }
+            migrateAndCreateComponentData(srcLi.id, newLi.id, newTabs);
         }
 
-        LOG.infof("Copied quotation from id=%s to id=%s number=%s", id, copy.id, copy.quotationNumber);
+        // 3. 重映射父子链
+        for (int i = 0; i < sourceItems.size(); i++) {
+            UUID srcParent = sourceItems.get(i).parentLineItemId;
+            if (srcParent != null) newItems.get(i).parentLineItemId = lineIdMap.get(srcParent);
+        }
+
+        // 4. 用新模板重建报价侧 4 份快照（driver 重展开 + 合并迁移 row_data 输入 + 重算公式）
+        for (QuotationLineItem newLi : newItems) {
+            cardSnapshotService.refreshQuoteCardValues(newLi);
+        }
+        if (copy.costingCardTemplateId != null) {
+            cardSnapshotService.refreshCostingCardValues(copy.id);
+        }
+
+        LOG.infof("Copied quotation id=%s -> id=%s number=%s template=%s",
+                id, copy.id, copy.quotationNumber, newTemplateId);
         QuotationDTO dto = QuotationDTO.from(copy);
         dto.lineItems = loadLineItems(copy.id);
         return dto;
+    }
+
+    /** 按新模板页签建 QuotationLineComponentData，row_data 仅迁移 INPUT 字段（先 componentId 后 tabName 配对）。 */
+    private void migrateAndCreateComponentData(UUID srcLineItemId, UUID newLineItemId,
+                                               java.util.List<TabFields> newTabs) {
+        List<QuotationLineComponentData> srcData =
+                QuotationLineComponentData.list("lineItemId = ?1", srcLineItemId);
+        java.util.Map<String, QuotationLineComponentData> byCompId = new java.util.HashMap<>();
+        java.util.Map<String, QuotationLineComponentData> byTabName = new java.util.HashMap<>();
+        for (QuotationLineComponentData cd : srcData) {
+            if (cd.componentId != null) byCompId.put(cd.componentId.toString(), cd);
+            if (cd.tabName != null) byTabName.put(cd.tabName, cd);
+        }
+        int sort = 0;
+        for (TabFields tab : newTabs) {
+            QuotationLineComponentData match = byCompId.get(tab.componentId);
+            if (match == null) match = byTabName.get(tab.tabName);
+            String migratedRowData = (match == null)
+                    ? "[]"
+                    : mapInputRowData(match.rowData, tab.inputFieldNames, MAPPER);
+
+            QuotationLineComponentData newCd = new QuotationLineComponentData();
+            newCd.lineItemId = newLineItemId;
+            newCd.componentId = (tab.componentId == null || tab.componentId.isEmpty())
+                    ? null : UUID.fromString(tab.componentId);
+            newCd.tabName = tab.tabName;
+            newCd.rowData = migratedRowData;
+            newCd.snapshotRows = null;
+            newCd.subtotal = java.math.BigDecimal.ZERO;
+            newCd.sortOrder = sort++;
+            newCd.persist();
+        }
     }
 
     /**
