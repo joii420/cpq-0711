@@ -3623,6 +3623,12 @@ E2E:
 - **自检**: vitest **120 passed** ✅；tsc 0 ✅；curl 5174 transform(TabFieldMatrix/FormulaRichInput/TabJoinFormulaDrawer/formulaSerialize) 全 200 ✅；E2E `quotation-flow` **passed + 加载中=0** ✅。`composite-product-flow` 失败于报价向导选"组合产品 v1.16"模板（该测试数据 2026-06-11 已清理，与本改动无关，0 引用我改动面）。真机验收**已通过**（用户）。
 - **注意**: contentEditable 的 IME/光标/Firefox 退格删块靠真机验收（headless 测不到）；AP-44 不适用（无 field_type 变更，纯显示层 + 新输入组件）。
 
+### [2026-06-16] 字段属性 小计/金额/行键 — 渲染判定修正 | tabTotalLines.ts(+test) / QuotationStep2.tsx(footer) / ReadonlyProductCard.tsx(footer) / FieldConfigTable.tsx | spec specs/2026-06-16-subtotal-amount-rowkey-field-attributes-design.md + plan plans/2026-06-16-subtotal-amount-rowkey-field-attributes.md（subagent-driven worktree）
+- **小计**：小计行只对勾选 is_subtotal 的列求和，非小计列留空（修「项次/毛重/组成用量等未勾列仍被整列求和」的渲染判定 `is_subtotal||INPUT_NUMBER||FORMULA||DATA_SOURCE` → 仅 `is_subtotal`）。文本列勾小计按 0。
+- **金额**：底部「本页签总计」行改名「**本页签金额合计**」= 仅 `is_amount && is_subtotal` 列之和（无金额列整行隐藏），修原「全 is_subtotal 列重复累加(¥260.67)」；金额列小计 ¥+通用精度(4位去末尾0)，金额合计 ¥+2位。组件管理强制金额⊆小计（金额框未勾小计置灰 + 取消小计联动清金额）。
+- **行键**：本次零改动（多列联合主键判重 + 跨页签按行键归组写回宿主行的公式引擎逻辑既有）。
+- **边界纪律**：禁改公式引擎；`buildColumnSumsByComp` 数据层谓词不动（仅渲染层 gate，故 columnSumsByComp/nonSubtotalSums/subtotalInputColumn 等数据层测试不回归，相关 5 spec 25 passed）；不迁移存量（以最新报价数据为主）；Excel 视图单独评估未动。评审采纳 M1(`is_amount&&is_subtotal` 保险)/M2(置灰+联动同 PR)/O1(改名+注释)/O3(类型补 is_amount)。
+
 ---
 
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
