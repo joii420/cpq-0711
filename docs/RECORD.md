@@ -4,6 +4,10 @@
 
 ---
 
+[2026-06-16] 报价渲染 - footer 列小计单一来源化(columnSumsByComp) | QuotationStep2.tsx / ReadonlyProductCard.tsx | 删空-crossTabRows旁路(废弃computeNonSubtotalColumnSums), buildCrossTabRows改返{store,columnSumsByComp}(每组件每数值列从resolvedRows求和), computeRows串prevRowValues(修与effectiveRows分叉), ¥严格按field.is_amount; 后端A-保守不改(backfillSubtotalsFromResolved仍只is_subtotal落库); 不变量:footer列值===该列已渲染行resolvedRow之和; 新增columnSumsByComp.test.ts+两旧测试迁移单一来源, 前端quotation单测绿, E2E门禁由主控合并后跑. 未做(后续Phase A-彻底):非小计列落库subtotalByColumn+Excel引用扩展+Phase4零计算读快照. 详见 三大核心模块基线.md §4.6 / 反模式.md AP-57
+
+---
+
 ### [2026-06-15] fix(formula): 同页签列引用默认取同行值 — 材料成本等二阶列真修 | formulaSerialize.ts(bracket_expr 含点分支优先级) + 护栏测试(前端 buildCrossTabRows.test + 后端 FormulaCalculatorSamePageFieldRefTest) | plan: superpowers/plans/2026-06-15-E-samepage-column-ref-rowvalue.md
 
 - **症状(QT-20260615-1727 来料 tab)**: `材料成本` resolvedRows 三行同值 6.703(=各成本列**小计**之和标量)、subtotalByColumn.材料成本=20.109=6.703×3。用户要的是每行=该行自己各成本列之和、小计=Σ各行。
