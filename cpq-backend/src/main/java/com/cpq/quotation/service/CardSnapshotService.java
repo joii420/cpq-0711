@@ -281,6 +281,13 @@ public class CardSnapshotService {
                     if (!binding.isMissingNode() && !binding.isNull()) {
                         fieldNode.set("datasourceBinding", binding);
                     }
+                    // 单位换算（AP-44 完备性补漏 2026-06-17）：搬运 unit_source_field → unitSourceField。
+                    // 前端结构脱钩路径(buildComponentDataFromStructure)据此让 applyUnitConversion/computeAllFormulas
+                    // 按同行单位列归一被换算列；漏搬则前端实时重算用原值（净用量 g/pcs 未 ×0.001 → 产品小计虚高 ~1000x）。
+                    JsonNode usf = f.path("unit_source_field");
+                    if (!usf.isMissingNode() && !usf.isNull() && !usf.asText("").isBlank()) {
+                        fieldNode.put("unitSourceField", usf.asText());
+                    }
                     fieldsNode.add(fieldNode);
                 }
 

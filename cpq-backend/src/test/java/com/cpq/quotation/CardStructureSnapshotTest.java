@@ -166,6 +166,48 @@ public class CardStructureSnapshotTest {
         assertEquals(1, count, "重复插入后应只有 1 行（不重复、不丢）");
     }
 
+    // -----------------------------------------------------------------------
+    // T4: 单位换算绑定 unit_source_field 必须搬进 QUOTE_CARD 结构（unitSourceField）。
+    //   回归（2026-06-17）：前端「结构脱钩」(659cb09) 改读 quotation_view_structure 建 componentData，
+    //   而 buildCardStructure 的字段序列化漏搬 unit_source_field → 结构无绑定 →
+    //   buildComponentDataFromStructure 拿到的 comp.fields 无 unit_source_field →
+    //   applyUnitConversion 空操作 → 前端实时重算用原值（g/pcs 未 ×0.001 归一 kg/pcs）→ 产品小计虚高 ~1000x。
+    //   后端保存计算读 components_snapshot（有绑定）仍正确，故落库值对、仅前端实时视图错。
+    // -----------------------------------------------------------------------
+    @Test
+    @Order(4)
+    @DisplayName("T4: 组件字段 unit_source_field 必须搬进 QUOTE_CARD 结构(unitSourceField)")
+    void quoteCardStructure_propagatesUnitSourceField() throws Exception {
+        // 找一张 DRAFT 报价单，其报价模板 components_snapshot 含配了 unit_source_field 的字段
+        @SuppressWarnings("unchecked")
+        var rows = em.createNativeQuery(
+            "SELECT q.id FROM quotation q " +
+            "JOIN template t1 ON t1.id = q.customer_template_id " +
+            "WHERE q.status='DRAFT' AND t1.components_snapshot::text LIKE '%unit_source_field%' " +
+            "LIMIT 1").getResultList();
+        org.junit.jupiter.api.Assumptions.assumeTrue(!rows.isEmpty(),
+            "需要一张 DRAFT 报价单且其报价模板含配了 unit_source_field 的字段");
+        UUID qid = UUID.fromString(rows.get(0).toString());
+
+        // 草稿：rebuildStructureForDraft 删旧 4 份后重插，避免读到漏搬的冻结旧结构。
+        svc.rebuildStructureForDraft(qid);
+
+        var s = QuotationViewStructure.findByQuotationAndKind(qid, "QUOTE_CARD");
+        assertNotNull(s, "QUOTE_CARD structure must exist");
+        var root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(s.structure);
+
+        boolean found = false;
+        for (var tab : root.path("tabs")) {
+            for (var f : tab.path("fields")) {
+                if (!f.path("unitSourceField").asText("").isBlank()) { found = true; break; }
+            }
+            if (found) break;
+        }
+        assertTrue(found,
+            "QUOTE_CARD 结构必须把组件 unit_source_field 搬为 unitSourceField"
+            + "（前端结构脱钩路径据此实时换算；漏搬则净用量等列实时重算用原值）");
+    }
+
     /** 辅助：假设前提不满足时跳过测试 */
     private void assumeNotNull(Object val, String msg) {
         org.junit.jupiter.api.Assumptions.assumeTrue(val != null, msg);
