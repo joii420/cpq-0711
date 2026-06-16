@@ -582,6 +582,20 @@ describe('checkMappable', () => {
     const result = checkMappable(tokens);
     expect(result.mappable).toBe(false);
   });
+
+  it('SUMIF cross_tab_ref with match=[] but predicate → mappable（SUMIF 靠 predicate 过滤, 豁免空 match）', () => {
+    const tokens: FormulaToken[] = [
+      {
+        type: 'cross_tab_ref',
+        source: 'uuid-fee',
+        agg: 'SUM',
+        match: [],
+        predicate: { op: '=', lhs: { kind: 'sourceField', field: '类型' }, rhs: { kind: 'literal', value: '管理费' } },
+        targetExpr: [{ type: 'field', value: '费用', source: 'uuid-fee' }],
+      } as any,
+    ];
+    expect(checkMappable(tokens)).toEqual({ mappable: true });
+  });
 });
 
 // ─────────────────────────────────────────────

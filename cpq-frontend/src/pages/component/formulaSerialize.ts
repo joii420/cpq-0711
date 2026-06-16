@@ -1178,7 +1178,8 @@ export function comparable(a: string[], b: string[]): boolean {
  */
 export function checkMappable(tokens: FormulaToken[]): { mappable: boolean; reason?: string } {
   const emptyMatch = tokens.some(
-    (t) => t.type === 'cross_tab_ref' && (!t.match || t.match.length === 0),
+    // SUMIF 族（带 predicate）靠条件过滤而非行键 JOIN，match 为空是合法的，豁免本检查
+    (t) => t.type === 'cross_tab_ref' && (!t.match || t.match.length === 0) && !(t as any).predicate,
   );
   if (emptyMatch) {
     return { mappable: false,
