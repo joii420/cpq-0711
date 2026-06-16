@@ -16,6 +16,7 @@ import {
 import type { FormulaToken } from '../component/types';
 import { checkParenBalance } from './tabjoin/formulaBracketCheck';
 import type { ExpressionToken, ConditionPredicate, PredicateOperand } from '../../utils/formulaEngine';
+import { serializePredicate } from '../../utils/predicateText';
 
 const { Text } = Typography;
 const { Option } = Select;
@@ -47,9 +48,8 @@ interface Props {
   column: any;
   /**
    * NORMAL/SUBTOTAL 模式下，编辑已有公式时传入原始 FormulaToken[]。
-   * 打开时经 splitSumifTokens 拆分：带 predicate 的 cross_tab_ref → sumifTokens 侧状态；
-   * 其余 token → tokensToDrawerExpression 转字符串填入表达式区。
-   * 这样 SUMIF predicate 在重开时不丢失，保存时也不会被静默清除。
+   * 打开时经 tokensToDrawerExpression 转为字符串填入表达式区（SUMIF token 因
+   * Phase 2 tokensToDrawerExpression 已支持 predicate→文本，会直接内联进表达式串）。
    */
   initialTokens?: FormulaToken[];
   onClose: () => void;
@@ -72,7 +72,6 @@ const FUNC_TO_AGG: Record<SumifFunc, ExpressionToken['agg']> = {
 };
 
 // 条件聚合函数（EXCEL 线文本可解析：SUMIF([页签.字段]=值, [页签.字段])）。
-// 仅 EXCEL 模式在工具条点选插入；NORMAL/SUBTOTAL 组件线走下方"条件聚合配置区"构造器。
 const SUMIF_TEXT_FUNCS: SumifFunc[] = ['SUMIF', 'COUNTIF', 'AVGIF', 'MINIF', 'MAXIF'];
 
 /**
@@ -96,6 +95,43 @@ export function buildSumifToken(input: {
     predicate: input.predicate,
     targetExpr: input.valueExprTokens.length > 0 ? input.valueExprTokens : undefined,
   };
+}
+
+/**
+ * 纯函数：把 SUMIF 构造器输入转为内联文本，供插入表达式框。
+ *
+ * 产出：
+ *   SUMIF([源别名.条件字段] op '值', [源别名.值字段1] + [源别名.值字段2])
+ *   COUNTIF([源别名.条件字段] op '值')   ← 无值表达式
+ *
+ * @param input.func         SUMIF / COUNTIF / AVGIF / MINIF / MAXIF
+ * @param input.sourceAlias  来源页签别名（显示在 [...] 里）
+ * @param input.hostAlias    宿主页签别名（predicate 中 hostField 使用；可选）
+ * @param input.predicate    过滤条件，由 serializePredicate 序列化
+ * @param input.valueFieldRefs  值字段列表（alias + field），COUNTIF 时可为空
+ */
+export function buildSumifText(input: {
+  func: SumifFunc;
+  sourceAlias: string;
+  hostAlias?: string;
+  predicate: ConditionPredicate;
+  valueFieldRefs: { alias: string; field: string }[];
+}): string {
+  const condText = serializePredicate(input.predicate, {
+    sourceAlias: input.sourceAlias,
+    hostAlias: input.hostAlias ?? '',
+  });
+
+  // COUNTIF 单参，不输出值字段部分
+  if (input.func === 'COUNTIF') {
+    return `COUNTIF(${condText})`;
+  }
+
+  const valueText = input.valueFieldRefs
+    .map((r) => `[${r.alias}.${r.field}]`)
+    .join(' + ');
+
+  return `${input.func}(${condText}, ${valueText})`;
 }
 
 // ── SUMIF 条件行编辑器内部类型 ─────────────────────────────────────────────
@@ -142,35 +178,6 @@ function condRowsToPredicate(rows: CondRow[]): ConditionPredicate | null {
 let _idSeq = 0;
 const nextId = () => ++_idSeq;
 
-// ── splitSumifTokens：把带 predicate 的 cross_tab_ref token 拆出来作为 sumifTokens ──
-
-/**
- * 把 token 数组按「是否带 predicate 的 cross_tab_ref」拆分：
- * - sumifTokens：type === 'cross_tab_ref' && predicate != null（直接作为 SUMIF side-state）
- * - exprTokens：其余 token，送去 tokensToDrawerExpression 渲染表达式串
- *
- * 这样重开含 SUMIF 公式时：
- * - 带 predicate 的 token 进侧状态，预览列表可见可删；
- * - 表达式串只含非 SUMIF token，不会把 SUMIF 渲染成丢 predicate 的 SUM(...)；
- * - 保存时 [...exprTokens, ...sumifTokens] 合并，predicate 完整保留，无重复。
- */
-export function splitSumifTokens(tokens: FormulaToken[]): {
-  sumifTokens: ExpressionToken[];
-  exprTokens: FormulaToken[];
-} {
-  const sumifTokens: ExpressionToken[] = [];
-  const exprTokens: FormulaToken[] = [];
-  for (const t of tokens) {
-    if (t.type === 'cross_tab_ref' && t.predicate != null) {
-      // 带 predicate 的 cross_tab_ref → SUMIF side-state（ExpressionToken 同构）
-      sumifTokens.push(t as unknown as ExpressionToken);
-    } else {
-      exprTokens.push(t);
-    }
-  }
-  return { sumifTokens, exprTokens };
-}
-
 // ────────────────────────────────────────────────────────────────────────────
 
 const TabJoinFormulaDrawer: React.FC<Props> = ({
@@ -198,8 +205,6 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
   const [dryRunLoading, setDryRunLoading] = useState(false);
 
   // ── SUMIF 配置区状态 ──────────────────────────────────────────────────────
-  /** 待插入的 SUMIF token 列表（独立于字符串表达式，保存时拼入 tokens 末尾） */
-  const [sumifTokens, setSumifTokens] = useState<ExpressionToken[]>([]);
   /** SUMIF 配置区是否展开 */
   const [sumifPanelOpen, setSumifPanelOpen] = useState(false);
   /** SUMIF 函数选择 */
@@ -230,17 +235,22 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
     if (all && all.length > 0) return all;
     return sourceFields;
   }, [sumifSourceTab, sourceFields]);
+  // 宿主页签别名（self===true 的那个）
+  const hostAlias = useMemo(
+    () => tabDefs.find((d) => d.self)?.alias ?? '',
+    [tabDefs],
+  );
   // ─────────────────────────────────────────────────────────────────────────
 
   // 列切换时重置表达式（EXCEL 模式或无 initialTokens 时直接用 column.expression 字符串）
   useEffect(() => {
-    // 有 initialTokens 时不直接用 column.expression —— 等 tabDefs 拉到后再拆分初始化（下方 useEffect）
+    // 有 initialTokens 时不直接用 column.expression —— 等 tabDefs 拉到后再初始化（下方 useEffect）
     if (!initialTokens || initialTokens.length === 0) {
       setExpression(column?.expression ?? '');
     }
   }, [column, initialTokens]);
 
-  // Drawer 打开时拉页签定义（同目录组件集），加载完后若有 initialTokens 则执行拆分初始化
+  // Drawer 打开时拉页签定义（同目录组件集），加载完后若有 initialTokens 则执行初始化
   useEffect(() => {
     if (!open || !componentId) return;
     tabJoinFormulaService
@@ -250,18 +260,11 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
         const defs = Array.isArray(res?.data) ? res.data : [];
         setTabDefs(defs);
 
-        // SUMIF predicate 回显修复：有 initialTokens 时，按 predicate 有无拆分，
-        // 带 predicate 的 cross_tab_ref → sumifTokens 侧状态；其余 → 表达式串
+        // reopen 时：tokensToDrawerExpression 已支持 predicate→SUMIF 文本，
+        // 直接把所有 token（含 SUMIF）转成表达式串填入表达式框，无需侧状态拆分。
         if (initialTokens && initialTokens.length > 0) {
-          const { sumifTokens: st, exprTokens: et } = splitSumifTokens(initialTokens);
-          setSumifTokens(st);
-          // 非 SUMIF token 转字符串（tabDefs 已加载，能正确解析 source→页签名称）
-          const exprStr = et.length > 0 ? tokensToDrawerExpression(et, defs, componentId) : '';
+          const exprStr = tokensToDrawerExpression(initialTokens, defs, componentId);
           setExpression(exprStr);
-          // 若有 SUMIF token，自动展开面板方便用户感知
-          if (st.length > 0) {
-            setSumifPanelOpen(true);
-          }
         }
       })
       .catch(() => {
@@ -274,7 +277,6 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
   useEffect(() => {
     if (!open) {
       setSumifPanelOpen(false);
-      setSumifTokens([]);
       setSumifFunc('SUMIF');
       setSumifSourceId('');
       setCondRows([{ id: nextId(), lhsField: '', op: '=', rhsKind: 'literal', rhsValue: '', logic: 'AND' }]);
@@ -305,7 +307,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
     return { source_type: 'TAB_JOIN_FORMULA' as const, expression: expr, tabs };
   };
 
-  // ── SUMIF 配置区：插入 token ─────────────────────────────────────────────
+  // ── SUMIF 配置区：插入文本到表达式框 ────────────────────────────────────
 
   const handleInsertSumifToken = () => {
     if (!sumifSourceId) {
@@ -327,22 +329,22 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
     }
 
     const predicate = condRowsToPredicate(validCondRows);
-    const valueExprTokens: ExpressionToken[] = validValueFields.map((r) => ({
-      type: 'field' as const,
-      value: r.fieldName,
-      source: sumifSourceId,
-    }));
+    if (!predicate) {
+      message.error('条件配置有误');
+      return;
+    }
 
-    const token = buildSumifToken({
+    const sourceAlias = sumifSourceTab?.componentName ?? sumifSourceTab?.alias ?? sumifSourceId;
+    const text = buildSumifText({
       func: sumifFunc,
-      source: sumifSourceId,
-      sourceLabel: sumifSourceTab?.componentName ?? sumifSourceId,
+      sourceAlias,
+      hostAlias: hostAlias || undefined,
       predicate,
-      valueExprTokens,
+      valueFieldRefs: validValueFields.map((r) => ({ alias: sourceAlias, field: r.fieldName })),
     });
 
-    setSumifTokens((prev) => [...prev, token]);
-    message.success(`已追加 ${sumifFunc} token，将在保存时生效`);
+    insertAtCursor(text);
+    message.success('已插入 SUMIF，可在表达式框继续编辑或加运算符');
 
     // 重置配置区（保留页签选择，方便连续添加）
     setCondRows([{ id: nextId(), lhsField: '', op: '=', rhsKind: 'literal', rhsValue: '', logic: 'AND' }]);
@@ -381,7 +383,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
   const save = () => {
     const expr = expression.trim();
 
-    // EXCEL 组件：沿用原行为 —— 保存为 TAB_JOIN_FORMULA string column（不支持 SUMIF side-token）
+    // EXCEL 组件：沿用原行为 —— 保存为 TAB_JOIN_FORMULA string column
     if (componentType === 'EXCEL') {
       if (!expr) {
         message.error('表达式不能为空');
@@ -402,37 +404,34 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
     }
 
     // NORMAL / SUBTOTAL 组件：转 FormulaToken[] 落组件公式。
-    // 允许纯 SUMIF token（expr 为空）或 expr + SUMIF 混合。
-    if (!expr && sumifTokens.length === 0) {
-      message.error('表达式不能为空，请填写表达式或配置 SUMIF 公式');
+    // SUMIF 现已内联在表达式串里，expressionToTokens 会正确解析为带 predicate 的 cross_tab_ref。
+    if (!expr) {
+      message.error('表达式不能为空，请填写表达式或通过 SUMIF 构造器插入条件聚合');
       return;
     }
 
-    let exprTokens: FormulaToken[] = [];
-    if (expr) {
-      // 防御性冗余：正常路径下保存按钮已因 !parenCheck.ok 被 disabled、点不到这里；
-      // 此守卫兜住程序化/绕过 disabled 的调用。括号检查对空白不敏感，复用 parenCheck 即可。
-      if (!parenCheck.ok) {
-        message.error(parenCheck.error);
-        return;
-      }
-      try {
-        exprTokens = expressionToTokens(expr, tabDefs, selfRowKeyFields, componentId);
-      } catch (e: any) {
-        // 解析错误（未知别名 / 括号不匹配 / 非法字符等）→ 拦截保存
-        message.error(e?.message ?? '表达式解析失败，请检查语法');
-        return;
-      }
-      const mappable = checkMappable(exprTokens);
-      if (!mappable.mappable) {
-        message.error(`${mappable.reason ?? '该公式无法映射为组件公式'}，请改用 Excel 组件`);
-        return;
-      }
+    // 防御性冗余：正常路径下保存按钮已因 !parenCheck.ok 被 disabled、点不到这里；
+    // 此守卫兜住程序化/绕过 disabled 的调用。
+    if (!parenCheck.ok) {
+      message.error(parenCheck.error);
+      return;
     }
 
-    // 合并：字符串表达式 tokens + SUMIF side-tokens
-    const allTokens = [...exprTokens, ...(sumifTokens as FormulaToken[])];
-    onSave({ kind: 'tokens', tokens: allTokens });
+    let tokens: FormulaToken[];
+    try {
+      tokens = expressionToTokens(expr, tabDefs, selfRowKeyFields, componentId);
+    } catch (e: any) {
+      // 解析错误（未知别名 / 括号不匹配 / 非法字符等）→ 拦截保存
+      message.error(e?.message ?? '表达式解析失败，请检查语法');
+      return;
+    }
+    const mappable = checkMappable(tokens);
+    if (!mappable.mappable) {
+      message.error(`${mappable.reason ?? '该公式无法映射为组件公式'}，请改用 Excel 组件`);
+      return;
+    }
+
+    onSave({ kind: 'tokens', tokens });
   };
 
   const runDryRun = async () => {
@@ -485,10 +484,8 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
     }
   };
 
-  // 保存按钮是否可点击：EXCEL 模式跟括号校验；NORMAL 模式还需有内容（expr 或 sumifTokens）
-  const saveDisabled = componentType === 'EXCEL'
-    ? !parenCheck.ok
-    : (!parenCheck.ok && expression.trim().length > 0);
+  // 保存按钮是否可点击：表达式非空 + 括号合法
+  const saveDisabled = !parenCheck.ok && expression.trim().length > 0;
 
   return (
     <Drawer
@@ -628,7 +625,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
             }
             style={{ color: '#722ed1', borderColor: '#d3adf7' }}
             onClick={() => {
-              // EXCEL 线：文本可解析，直接插入；组件线：文本不生成 predicate，改为展开下方可视化构造器并预选该函数。
+              // EXCEL 线：文本可解析，直接插入；组件线：展开可视化构造器并预选该函数。
               if (componentType === 'EXCEL') {
                 insertAtCursor(`${fn}()`, 1);
               } else {
@@ -663,6 +660,8 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
         <strong>行级聚合（粗 host × 细 source）</strong>：写{' '}
         <code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>SUM([宿主别名.列] * [细页签名称.列])</code>{' '}
         —— 按行键对齐(LEFT JOIN)后<strong>逐行</strong>算括号内表达式，再按宿主行键聚合(SUMPRODUCT)；宿主列在每个对齐行广播为同值。
+        <br />
+        SUMIF 用法：<code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>SUMIF([页签.条件字段]='值', [页签.值字段])</code>，可与运算符自由组合。
       </div>
 
       {/* ── SUMIF 条件聚合配置区（仅 NORMAL/SUBTOTAL 组件） ── */}
@@ -692,7 +691,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
                 SUMIF 条件聚合构造器
               </Text>
               <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
-                （生成的 token 将追加在保存的公式末尾）
+                （配置完成后点「插入 SUMIF 到表达式」，SUMIF 文本将插入到表达式框光标处）
               </Text>
 
               <Form layout="vertical" style={{ marginTop: 12 }}>
@@ -892,49 +891,9 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
                   style={{ background: '#722ed1', borderColor: '#722ed1' }}
                   onClick={handleInsertSumifToken}
                 >
-                  插入 {sumifFunc} token
+                  插入 {sumifFunc} 到表达式
                 </Button>
               </Form>
-
-              {/* 已追加的 SUMIF token 预览 */}
-              {sumifTokens.length > 0 && (
-                <div style={{ marginTop: 12 }}>
-                  <Text strong style={{ fontSize: 12, color: '#531dab' }}>
-                    已追加 {sumifTokens.length} 个 SUMIF token（保存时生效）：
-                  </Text>
-                  {sumifTokens.map((tk, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        marginTop: 4,
-                        padding: '4px 8px',
-                        background: '#f9f0ff',
-                        border: '1px solid #d3adf7',
-                        borderRadius: 4,
-                        fontSize: 12,
-                      }}
-                    >
-                      <Text style={{ fontSize: 12, color: '#531dab' }}>
-                        [{i + 1}] {tk.agg}({tk.sourceLabel ?? tk.source})
-                        {tk.predicate ? ' — 含过滤条件' : ''}
-                        {tk.targetExpr && tk.targetExpr.length > 0
-                          ? ` → ${tk.targetExpr.map((t) => t.value ?? '?').join(', ')}`
-                          : ''}
-                      </Text>
-                      <Button
-                        size="small"
-                        type="text"
-                        danger
-                        icon={<DeleteOutlined />}
-                        onClick={() => setSumifTokens((prev) => prev.filter((_, j) => j !== i))}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           )}
         </div>
