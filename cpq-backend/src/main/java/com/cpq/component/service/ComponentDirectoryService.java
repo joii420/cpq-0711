@@ -74,12 +74,12 @@ public class ComponentDirectoryService {
     @Transactional
     public ComponentDirectoryDTO create(String name, UUID parentId, Integer sortOrder) {
         if (name == null || name.isBlank()) {
-            throw new BusinessException("Directory name is required");
+            throw new BusinessException("目录名称不能为空");
         }
         if (parentId != null) {
             ComponentDirectory parent = ComponentDirectory.findById(parentId);
             if (parent == null) {
-                throw new BusinessException("Parent directory not found: " + parentId);
+                throw new BusinessException("父目录不存在：" + parentId);
             }
         }
         ComponentDirectory dir = new ComponentDirectory();
@@ -95,7 +95,7 @@ public class ComponentDirectoryService {
     public ComponentDirectoryDTO update(UUID id, String name, Integer sortOrder) {
         ComponentDirectory dir = ComponentDirectory.findById(id);
         if (dir == null) {
-            throw new BusinessException(404, "Component directory not found: " + id);
+            throw new BusinessException(404, "目录不存在：" + id);
         }
         if (name != null && !name.isBlank()) {
             dir.name = name.trim();
@@ -111,17 +111,17 @@ public class ComponentDirectoryService {
     public void delete(UUID id) {
         ComponentDirectory dir = ComponentDirectory.findById(id);
         if (dir == null) {
-            throw new BusinessException(404, "Component directory not found: " + id);
+            throw new BusinessException(404, "目录不存在：" + id);
         }
         // Check for children
         long childCount = ComponentDirectory.count("parentId", id);
         if (childCount > 0) {
-            throw new BusinessException("Cannot delete directory with children");
+            throw new BusinessException("无法删除：该目录下还有子目录，请先删除或移走子目录");
         }
         // Check for components
         long compCount = Component.count("directoryId", id);
         if (compCount > 0) {
-            throw new BusinessException("Cannot delete directory that contains components");
+            throw new BusinessException("无法删除：该目录下还有组件，请先删除或移走组件");
         }
         dir.delete();
         LOG.infof("Deleted component directory id=%s", id);
