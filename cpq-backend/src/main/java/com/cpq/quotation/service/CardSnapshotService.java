@@ -782,8 +782,11 @@ public class CardSnapshotService {
             List<Map<String, Object>> pass1Resolved = buildResolvedRows(
                 tab, baseRows, editRows, pass1Results, rkfByComp.get(cid));
             // 存入 crossTabRows（双键，供后续兄弟组件 cross_tab_ref 查询）
-            crossTabRows.put(cid, pass1Resolved);
-            if (code != null && !code.isBlank()) crossTabRows.put(code, pass1Resolved);
+            // 单位换算（cross_tab 物化点）：跨组件引用方读 canonical（按同行单位列换算）。
+            // 仅换喂 crossTabRows 的副本——pass1Resolved 原值留给 backfill(各自换副本) + 落库 resolvedRows。
+            List<Map<String, Object>> pass1CrossTab = convertRowsForCrossTab(tab.path("fields"), pass1Resolved);
+            crossTabRows.put(cid, pass1CrossTab);
+            if (code != null && !code.isBlank()) crossTabRows.put(code, pass1CrossTab);
             // 第 1 次 backfill：用 pass1 的 resolved 更新本组件一阶列列小计到 componentSubtotals，
             //   关键：把 "${cid}#${col}" / "${code}#${col}" / "${tabName}#${col}" 三类键都写入，
             //   供第 2 次 calculate 的 component_subtotal token 查到本组件一阶列的正确值。
@@ -804,8 +807,9 @@ public class CardSnapshotService {
                 resolved = buildResolvedRows(
                     tab, baseRows, editRows, formulaResults, rkfByComp.get(cid));
                 // 更新 crossTabRows 为第 2 次 resolved（二阶列已算对，兄弟组件引用此组件 cross_tab_ref 时应取最终值）
-                crossTabRows.put(cid, resolved);
-                if (code != null && !code.isBlank()) crossTabRows.put(code, resolved);
+                List<Map<String, Object>> resolvedCrossTab = convertRowsForCrossTab(tab.path("fields"), resolved);
+                crossTabRows.put(cid, resolvedCrossTab);
+                if (code != null && !code.isBlank()) crossTabRows.put(code, resolvedCrossTab);
                 // 第 2 次 backfill：更新二阶列本身的列小计
                 backfillSubtotalsFromResolved(tab.path("fields"), resolved, cid, code,
                     tabNameStr, componentSubtotals);
@@ -1722,5 +1726,17 @@ public class CardSnapshotService {
         if (!cid.isBlank()) componentSubtotals.put(cid, roundedTotal);
         if (code != null && !code.isBlank()) componentSubtotals.put(code, roundedTotal);
         componentSubtotals.put(tabName, roundedTotal);
+    }
+
+    /**
+     * 单位换算（cross_tab 物化点）：把一组 resolved 行换算成 canonical 副本喂 crossTabRows，原行不变。
+     * 配 unit_source_field 的输入列按同行单位归一到 KG/PCS；未配列原样。与前端 buildCrossTabRows putCrossTab 对称。
+     */
+    private List<Map<String, Object>> convertRowsForCrossTab(JsonNode fields, List<Map<String, Object>> rows) {
+        List<Map<String, Object>> out = new ArrayList<>(rows.size());
+        for (Map<String, Object> r : rows) {
+            out.add(com.cpq.engine.unit.UnitConversion.convertObjectRow(fields, r));
+        }
+        return out;
     }
 }

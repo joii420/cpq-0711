@@ -897,6 +897,16 @@ export function buildCrossTabRows(
   }
 
   const store: Record<string, Array<Record<string, any>>> = {};
+  // 单位换算（cross_tab 物化点）：cross_tab 消费的兄弟组件源行需 canonical（按同行单位列换算），
+  // 否则跨页签引用配了 unit_source_field 的输入列读到原值（改单位无反应）。
+  // 仅换喂 store 的副本——subtotalsFromResolvedRows 收原始 rows 自行内部换算，落库 resolvedRows 另走快照通道，
+  // 三者各换各的副本，互不双重换算（与后端 CardSnapshotService crossTabRows.put 换算副本对称）。
+  const putCrossTab = (cid: string, comp: ComponentDataItem, rows: Array<Record<string, any>>) => {
+    const ctRows = rows.map(r => applyUnitConversion(comp.fields as any, r));
+    store[cid] = ctRows;
+    if (comp.componentCode) store[comp.componentCode] = ctRows;
+    if (comp.componentId) store[comp.componentId] = ctRows;
+  };
   for (const cid of order) {
     const comp = normals[ids.indexOf(cid)];
     if (!comp) continue;
@@ -922,17 +932,13 @@ export function buildCrossTabRows(
 
       // ── 第二轮：用完整 comp（含二阶列）算最终 resolvedRows，此时一阶列小计已正确。
       const rows = computeRows(comp, exp);
-      store[cid] = rows;
-      if (comp.componentCode) store[comp.componentCode] = rows;
-      if (comp.componentId) store[comp.componentId] = rows;
+      putCrossTab(cid, comp, rows);
       // 最终回填（覆盖第一轮的一阶列小计，同时写入二阶列小计 + 更新总小计）。
       subtotalsFromResolvedRows(comp, rows, allComponentSubtotals);
     } else {
       // 无二阶列：原有逻辑，一轮完成。
       const rows = computeRows(comp, exp);
-      store[cid] = rows;
-      if (comp.componentCode) store[comp.componentCode] = rows;
-      if (comp.componentId) store[comp.componentId] = rows;
+      putCrossTab(cid, comp, rows);
       // PASS2 回填：从 resolvedRows 的 is_subtotal 列值求和，更新 allComponentSubtotals。
       // 保证「列小计显示 == 各行 cross_tab 公式实际值之和」（PASS1 因 crossTabRows=undefined 算出 0）。
       subtotalsFromResolvedRows(comp, rows, allComponentSubtotals);
