@@ -70,11 +70,15 @@ public class ComponentTabDefService {
 
             List<String> detailFields = new ArrayList<>();
             List<String> subtotalCols = new ArrayList<>();
+            // allFields：本页签全部字段（含 INPUT_TEXT 文本字段），供 SUMIF 条件过滤按任意字段选取
+            // （条件可比文本字段如 类型='管理费'）；detailFields 仍只含可数值聚合字段供取值/明细令牌。
+            List<String> allFields = new ArrayList<>();
             List<Map<String, Object>> fields = parseJsonArray(c.fields);
             for (Map<String, Object> fm : fields) {
                 Object nameObj = fm.get("name");
                 if (nameObj == null) continue;
                 String fieldName = nameObj.toString();
+                allFields.add(fieldName);
                 // 需求3：过滤文本型字段（INPUT_TEXT）——不可数值聚合，不应作为明细令牌被公式引用。
                 // 行键字段走独立来源 c.rowKeyFields（见上），INPUT_TEXT 仍可作行键、徽标不受影响。
                 if ("INPUT_TEXT".equals(String.valueOf(fm.get("field_type")))) {
@@ -96,6 +100,7 @@ public class ComponentTabDefService {
             def.put("sortOrder", sortOrder);
             def.put("rowKeyFields", rowKeyFields);
             def.put("detailFields", detailFields);
+            def.put("allFields", allFields);
             def.put("subtotalCols", subtotalCols);
             if (selfId != null && c.id != null && selfId.equals(c.id)) {
                 def.put("self", Boolean.TRUE);

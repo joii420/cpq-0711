@@ -219,10 +219,17 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
     () => tabDefs.find((d) => d.componentId === sumifSourceId),
     [tabDefs, sumifSourceId],
   );
+  // 聚合值字段：仅数值可聚合字段（detailFields + 小计列）
   const sourceFields = useMemo(
     () => [...(sumifSourceTab?.detailFields ?? []), ...(sumifSourceTab?.subtotalCols ?? [])],
     [sumifSourceTab],
   );
+  // 过滤条件字段：源页签全部字段（含文本字段，如 类型='管理费'）；后端无 allFields 时回退数值字段
+  const conditionFields = useMemo(() => {
+    const all = sumifSourceTab?.allFields;
+    if (all && all.length > 0) return all;
+    return sourceFields;
+  }, [sumifSourceTab, sourceFields]);
   // ─────────────────────────────────────────────────────────────────────────
 
   // 列切换时重置表达式（EXCEL 模式或无 initialTokens 时直接用 column.expression 字符串）
@@ -759,7 +766,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
                             showSearch
                             disabled={!sumifSourceId}
                           >
-                            {sourceFields.map((f) => (
+                            {conditionFields.map((f) => (
                               <Option key={f} value={f}>{f}</Option>
                             ))}
                           </Select>

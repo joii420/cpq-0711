@@ -9,6 +9,8 @@ export interface TabDef {
   sortOrder?: number;
   rowKeyFields: string[];
   detailFields: string[];
+  /** 本页签全部字段(含 INPUT_TEXT 文本字段);供 SUMIF 条件过滤按任意字段选取 */
+  allFields?: string[];
   subtotalCols: string[];
   /** 后端标记:该 tabDef 是否为当前被编辑(宿主)组件(ComponentTabDefService 注入) */
   self?: boolean;
