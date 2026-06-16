@@ -21,7 +21,9 @@ const tabDefs: TabDef[] = [
     componentId: 'cid-fee',
     componentName: '其他费用',
     rowKeyFields: ['项次'],
-    detailFields: ['类型', '费用', '比例'],
+    // 真实后端：INPUT_TEXT 字段（类型）被 ComponentTabDefService 排除出 detailFields
+    // 只有数值/公式字段才在 detailFields；文本字段仅在 allFields
+    detailFields: ['费用', '比例'],
     allFields: ['项次', '类型', '费用', '比例'],
     subtotalCols: [],
     self: false,

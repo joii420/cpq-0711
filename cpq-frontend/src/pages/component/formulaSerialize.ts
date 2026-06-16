@@ -1248,13 +1248,21 @@ export function classifyRefSegment(
     // 特例: insideKsum 内宿主自身字段 → 违规 → red（KSUM 内不能引用宿主列）
     if (tab.self) {
       if (isAgg) return { kind: 'invalid', color: 'red' };
-      if (!(tab.detailFields ?? []).includes(field)) return { kind: 'invalid', color: 'red' };
+      // insideSumif 时条件可引用任意字段(含文本字段)，allFields 亦放行
+      const selfFieldValid = (tab.detailFields ?? []).includes(field)
+        || (insideSumif && (tab.allFields ?? []).includes(field));
+      if (!selfFieldValid) return { kind: 'invalid', color: 'red' };
       if (insideKsum) return { kind: 'insideKsum-illegal', color: 'red' };
       return { kind: 'self-field', color: 'purple' };
     }
 
     // 字段必须是该 tab 的真实列(明细或小计),否则查不到 → 红
-    const known = new Set([...(tab.detailFields ?? []), ...(tab.subtotalCols ?? [])]);
+    // insideSumif 时条件可引用任意字段(含文本字段 INPUT_TEXT 不在 detailFields)，allFields 亦放行
+    const known = new Set([
+      ...(tab.detailFields ?? []),
+      ...(tab.subtotalCols ?? []),
+      ...(insideSumif ? (tab.allFields ?? []) : []),
+    ]);
     if (!known.has(field)) return { kind: 'invalid', color: 'red' };
 
     // 3/4) 明细 cross_tab_ref:enforceMappable 下镜像 buildMatch 是否空判红
