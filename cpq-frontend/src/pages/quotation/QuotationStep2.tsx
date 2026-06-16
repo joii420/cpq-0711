@@ -1932,7 +1932,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
 
   // cross_tab_ref (PASS2, 镜像后端 CardSnapshotService): 在 allComponentSubtotals (PASS1) 之后,
   // 按组件拓扑序构建兄弟组件已算行, 供本卡 FORMULA cross_tab_ref token 跨 Tab 取数聚合。
-  const { store: crossTabRows } = buildCrossTabRows(
+  const { store: crossTabRows, columnSumsByComp } = buildCrossTabRows(
     item.componentData,
     allComponentSubtotals,
     item.productPartNo,
@@ -1944,20 +1944,6 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     },
     globalVariableDefs,
   );
-
-  // B4：活跃 Tab 非 is_subtotal 数值列（INPUT_NUMBER / FORMULA / DATA_SOURCE）的 per-column 行合计。
-  // 依赖 allComponentSubtotals（PASS1+PASS2 后），与 effectiveRows 同源（splitRows + rowAt + AP-51 行数纪律）。
-  // 每次渲染自动重算，无需额外 state，用户 blur/enter 触发 handleRowChange → item.componentData 更新
-  // → 重渲染 → 此处自动更新（B5 重算入口）。
-  const activeInputColSums: Record<string, number> = activeComponent
-    ? computeNonSubtotalColumnSums(
-        activeComponent,
-        allComponentSubtotals,
-        item.productPartNo,
-        activeDriverExpansion as any,
-        globalVariableDefs,
-      )
-    : {};
 
   // Dynamic product attribute fields from template definition
   const attrFields = item.productAttributes || [];
@@ -2491,8 +2477,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           onCellBlur: (ri, k) => {
                             // B5: 输入数值列失焦/回车后重算 footer 小计。
                             // 重算入口：handleRowChange 已把最新值写入 item.componentData，
-                            // 触发重渲染时 activeInputColSums（computeNonSubtotalColumnSums）自动重算。
-                            // 此处无需额外触发——受控受控组件 onChange 已保证 item 与 UI 同步；
+                            // 触发重渲染时 columnSumsByComp（buildCrossTabRows resolvedRows）自动重算。
+                            // 此处无需额外触发——受控组件 onChange 已保证 item 与 UI 同步；
                             // onCellBlur 负责（1）DATA_SOURCE 重查 (handleInputBlur)（2）快照写回 (handleSnapshotCellEdit)。
                             handleInputBlur(activeComponentDataIndex, realRowIndex, k);
                             // Phase4 Task3: 报价侧用户输入字段 onBlur → 写快照 editRows(替代仅靠 autosave 写 row_data)。
@@ -2583,8 +2569,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                 </tbody>
                 {/* Tab subtotal row
                     B4: 显示条件扩展——有 is_subtotal 列 OR 有 INPUT_NUMBER/FORMULA/DATA_SOURCE 数值列均显示 footer。
-                    小计行：is_subtotal 列用 allComponentSubtotals（PASS1+PASS2 已算），
-                           INPUT_NUMBER/FORMULA/DATA_SOURCE（非 is_subtotal）列用 activeInputColSums（逐行累加）。
+                    小计行：is_subtotal 列 + 非小计数值列统一读 columnSumsByComp（buildCrossTabRows resolvedRows 单一来源）。
+                           is_amount=true 显示 ¥ 货币格式；否则显示纯数字（最多4位小数，去末尾0）。
                     本页签总计行：维持只汇总 is_subtotal（成本）列，不把输入量并入成本总计。
                 */}
                 {activeComponent.fields.some(f =>
@@ -2599,34 +2585,23 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       {activeComponentBomTree && (<><td /><td /><td /></>)}
                       {activeComponent.fields.map((field, fi) => {
                         const colName = field.name || field.key || '';
-                        if (field.is_subtotal) {
-                          // Plan 2-核心：按列取本列总计，回退到组件级（单小计列）兼容。
-                          const tabSubtotal =
-                            allComponentSubtotals[`${activeComponent.componentCode}#${colName}`]
-                            ?? allComponentSubtotals[`${activeComponent.tabName}#${colName}`]
-                            ?? allComponentSubtotals[activeComponent.componentCode]
-                            ?? allComponentSubtotals[activeComponent.tabName]
-                            ?? 0;
-                          return (
-                            <td key={colName || fi} className="qt-subtotal-cell">
-                              {formatCurrency(tabSubtotal)}
-                            </td>
-                          );
-                        }
-                        // B4：非 is_subtotal 的 INPUT_NUMBER / FORMULA / DATA_SOURCE 列显示行合计
+                        // 单一来源：columnSumsByComp（buildCrossTabRows resolvedRows Σ行）
+                        const compKey = activeComponent.componentId || activeComponent.componentCode || activeComponent.tabName;
+                        const colSums = (columnSumsByComp && compKey) ? (columnSumsByComp[compKey] ?? {}) : {};
                         const isNumericCol =
+                          field.is_subtotal ||
                           field.field_type === 'INPUT_NUMBER' ||
                           field.field_type === 'FORMULA' ||
                           field.field_type === 'DATA_SOURCE';
-                        if (isNumericCol && colName && colName in activeInputColSums) {
-                          const colSum = activeInputColSums[colName] ?? 0;
-                          // 输入量列用适当小数位（最多4位，去除无意义末尾0）
-                          const formatted = colSum === 0
-                            ? '0'
-                            : parseFloat(colSum.toFixed(4)).toString();
+                        if (isNumericCol && colName && colName in colSums) {
+                          const v = colSums[colName] ?? 0;
+                          // ¥ 仅当 is_amount===true；其他数值列（含管理费/利润等 is_subtotal 但非金额列）纯数字
+                          const text = field.is_amount === true
+                            ? formatCurrency(v)
+                            : (v === 0 ? '0' : parseFloat(v.toFixed(4)).toString());
                           return (
-                            <td key={colName || fi} className="qt-subtotal-cell" style={{ color: '#595959' }}>
-                              {formatted}
+                            <td key={colName || fi} className="qt-subtotal-cell" style={field.is_amount === true ? undefined : { color: '#595959' }}>
+                              {text}
                             </td>
                           );
                         }
