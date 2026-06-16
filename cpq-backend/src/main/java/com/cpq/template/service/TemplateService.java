@@ -562,7 +562,6 @@ public class TemplateService {
      * <p>对每个 PUBLISHED 模板的每个 tc：
      * <ol>
      *   <li>fields_override 各字段: basic_data_path_composite 有值 → 覆盖 basic_data_path，删除 _composite 键</li>
-     *   <li>tc 顶层: dataDriverPathComposite 有值 → 覆盖 dataDriverPathOverride，列写 null</li>
      *   <li>snapshot 同步刷新</li>
      * </ol>
      *
@@ -600,16 +599,9 @@ public class TemplateService {
                 try {
                     boolean tcChanged = false;
 
-                    // 1. tc 顶层: dataDriverPathComposite → dataDriverPathOverride
-                    if (tc.dataDriverPathComposite != null && !tc.dataDriverPathComposite.isBlank()) {
-                        LOG.infof("[migrate-unified-view] template=%s tc=%s: driver_path_composite=%s → override",
-                                tpl.id, tc.id, tc.dataDriverPathComposite);
-                        tc.dataDriverPathOverride = tc.dataDriverPathComposite;
-                        tc.dataDriverPathComposite = null;
-                        tcChanged = true;
-                    }
-
-                    // 2. fields_override: basic_data_path_composite → basic_data_path
+                    // fields_override: basic_data_path_composite → basic_data_path
+                    // (driver 路径级双轨 data_driver_path_composite 已于 V299 物理 DROP，
+                    //  统一智能视图统一走 data_driver_path_override，此处无需再迁移)
                     if (tc.fieldsOverride != null && !tc.fieldsOverride.isBlank()) {
                         List<Map<String, Object>> fields;
                         try {
@@ -718,87 +710,6 @@ public class TemplateService {
             }
         }
         tpl.componentsSnapshot = toJson(snapshot);
-    }
-
-    /**
-     * 2026-05-20 admin endpoint: SYSTEM_ADMIN 修复 PUBLISHED 模板的 tc composite overrides.
-     *
-     * <p>用于双轨方案迁移 / 紧急数据修复。标记 @deprecated — 统一视图方案后此端点不再推荐使用。
-     *
-     * @deprecated 使用 migrateToUnifiedView 替代
-     */
-    @Deprecated
-    @Transactional
-    public Map<String, Object> patchTemplateComponentCompositeOverrides(
-            UUID templateId,
-            UUID tcId,
-            String dataDriverPathComposite,
-            List<java.util.Map<String, String>> fieldComposites,
-            List<Object> replaceFieldsOverride) {
-
-        Template tpl = Template.findById(templateId);
-        if (tpl == null) throw new com.cpq.common.exception.BusinessException(404, "Template not found: " + templateId);
-
-        TemplateComponent tc = TemplateComponent.findById(tcId);
-        if (tc == null || !templateId.equals(tc.templateId)) {
-            throw new com.cpq.common.exception.BusinessException(404, "TemplateComponent not found: " + tcId);
-        }
-
-        Map<String, Object> before = new LinkedHashMap<>();
-        before.put("dataDriverPathComposite", tc.dataDriverPathComposite);
-        before.put("fieldsOverride", tc.fieldsOverride);
-
-        // 写 composite driver path
-        if (dataDriverPathComposite != null) {
-            tc.dataDriverPathComposite = dataDriverPathComposite;
-        }
-
-        // 整体替换 fieldsOverride（如果提供）
-        if (replaceFieldsOverride != null) {
-            try {
-                tc.fieldsOverride = MAPPER.writeValueAsString(replaceFieldsOverride);
-            } catch (Exception e) {
-                throw new com.cpq.common.exception.BusinessException("fieldsOverride 序列化失败: " + e.getMessage());
-            }
-        }
-
-        // 注入 basic_data_path_composite 字段（覆盖单个字段）
-        if (!fieldComposites.isEmpty() && replaceFieldsOverride == null) {
-            try {
-                List<Map<String, Object>> fields;
-                if (tc.fieldsOverride != null && !tc.fieldsOverride.isBlank()) {
-                    fields = MAPPER.readValue(tc.fieldsOverride,
-                            new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
-                } else {
-                    fields = new ArrayList<>();
-                }
-                for (java.util.Map<String, String> fc : fieldComposites) {
-                    String name = fc.get("name");
-                    String path = fc.get("basicDataPathComposite");
-                    if (name == null || path == null) continue;
-                    for (Map<String, Object> f : fields) {
-                        if (name.equals(f.get("name"))) {
-                            f.put("basic_data_path_composite", path);
-                        }
-                    }
-                }
-                tc.fieldsOverride = MAPPER.writeValueAsString(fields);
-            } catch (Exception e) {
-                throw new com.cpq.common.exception.BusinessException("fieldsOverride 更新失败: " + e.getMessage());
-            }
-        }
-
-        // 重建 snapshot
-        List<TemplateComponent> tcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", templateId);
-        rebuildSnapshotForTemplate(tpl, tcs);
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("tcId", tcId.toString());
-        result.put("before", before);
-        result.put("after", Map.of(
-                "dataDriverPathComposite", tc.dataDriverPathComposite,
-                "fieldsOverride", tc.fieldsOverride));
-        return result;
     }
 
     /**

@@ -3629,6 +3629,8 @@ E2E:
 - **行键**：本次零改动（多列联合主键判重 + 跨页签按行键归组写回宿主行的公式引擎逻辑既有）。
 - **边界纪律**：禁改公式引擎；`buildColumnSumsByComp` 数据层谓词不动（仅渲染层 gate，故 columnSumsByComp/nonSubtotalSums/subtotalInputColumn 等数据层测试不回归，相关 5 spec 25 passed）；不迁移存量（以最新报价数据为主）；Excel 视图单独评估未动。评审采纳 M1(`is_amount&&is_subtotal` 保险)/M2(置灰+联动同 PR)/O1(改名+注释)/O3(类型补 is_amount)。
 
+[2026-06-16] 模板管理 - 废弃双轨(composite)死代码清理 | TemplateComponent.java / TemplateService.java / TemplateResource.java / V299 | 双轨字段方案(V200/V205)已于 2026-05-21 被统一智能视图取代,残留死代码物理删除:① V299 DROP `template_component.data_driver_path_composite`(DROP 前兜底回填 data_driver_path_override);② 删 `TemplateComponent.dataDriverPathComposite` 字段、`TemplateService#patchTemplateComponentCompositeOverrides`、`TemplateResource#adminPatchComposite`(/patch-composite 端点);③ `migrateToUnifiedView` 移除失效的 driver_path_composite→override 步骤,保留 basic_data_path_composite JSON 键清理。现役唯一机制=`data_driver_path_override`(ComponentDriverService 只读它,渲染期从不读 composite 列/前端零引用)。详见 AP-45 终态更新。无测试依赖被删代码;编译+test-compile 绿。
+
 ---
 
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。

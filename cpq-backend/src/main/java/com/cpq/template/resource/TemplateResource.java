@@ -133,7 +133,6 @@ public class TemplateResource {
      * <p>对每个 PUBLISHED 模板的每个 tc:
      * <ul>
      *   <li>fields_override 内 basic_data_path_composite 值 → 覆盖 basic_data_path，删除 _composite 键</li>
-     *   <li>tc.dataDriverPathComposite 值 → 覆盖 dataDriverPathOverride，列写 null</li>
      *   <li>snapshot 同步重建</li>
      * </ul>
      *
@@ -167,55 +166,7 @@ public class TemplateResource {
      * { "sortOrders": [0, 1, 2, 4] }</pre>
      *
      * <p>返回: { deletedTcs, snapshotBefore, snapshotAfter }
-     *
-     * 2026-05-20: SYSTEM_ADMIN 数据修复 — 给某 tc 的 fields_override 注入 _composite 双轨字段.
-     * @deprecated 统一智能视图方案后不再推荐使用，使用 migrate-to-unified-view 替代
-     *
-     * <p>Body:
-     * <pre>
-     * {
-     *   "tcId": "...",
-     *   "dataDriverPathComposite": "v_composite_child_processes",
-     *   "fieldComposites": [
-     *     {"name": "工序代码", "basicDataPathComposite": "v_composite_child_processes.process_code"}
-     *   ]
-     * }
-     * </pre>
      */
-    @POST
-    @Path("/admin/{templateId}/patch-composite")
-    @RoleAllowed({"SYSTEM_ADMIN"})
-    @SuppressWarnings("deprecation")
-    public ApiResponse<java.util.Map<String, Object>> adminPatchComposite(
-            @PathParam("templateId") UUID templateId,
-            java.util.Map<String, Object> body) {
-        if (body == null) throw new com.cpq.common.exception.BusinessException(400, "body required");
-        UUID tcId = body.get("tcId") != null ? UUID.fromString(body.get("tcId").toString()) : null;
-        if (tcId == null) throw new com.cpq.common.exception.BusinessException(400, "tcId required");
-        String dataDriverPathComposite = body.get("dataDriverPathComposite") != null
-                ? body.get("dataDriverPathComposite").toString() : null;
-        @SuppressWarnings("unchecked")
-        List<java.util.Map<String, String>> fieldComposites = body.get("fieldComposites") instanceof List
-                ? ((List<Object>) body.get("fieldComposites")).stream()
-                        .map(o -> {
-                            @SuppressWarnings("unchecked")
-                            java.util.Map<String, Object> m = (java.util.Map<String, Object>) o;
-                            java.util.Map<String, String> r = new java.util.HashMap<>();
-                            if (m.get("name") != null) r.put("name", m.get("name").toString());
-                            if (m.get("basicDataPathComposite") != null) r.put("basicDataPathComposite", m.get("basicDataPathComposite").toString());
-                            return r;
-                        })
-                        .collect(java.util.stream.Collectors.toList())
-                : java.util.Collections.emptyList();
-        // 2026-05-20: replaceFieldsOverride — 提供时整体替换 tc.fieldsOverride (问题 1: 加缺失字段)
-        @SuppressWarnings("unchecked")
-        List<Object> replaceFieldsOverride = body.get("fieldsOverride") instanceof List
-                ? (List<Object>) body.get("fieldsOverride")
-                : null;
-        return ApiResponse.success(templateService.patchTemplateComponentCompositeOverrides(
-                templateId, tcId, dataDriverPathComposite, fieldComposites, replaceFieldsOverride));
-    }
-
     @POST
     @Path("/admin/{templateId}/delete-tcs")
     @RoleAllowed({"SYSTEM_ADMIN"})
