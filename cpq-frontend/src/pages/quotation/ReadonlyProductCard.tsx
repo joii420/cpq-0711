@@ -641,12 +641,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                            is_amount=true 显示 ¥ 货币格式；否则纯数字（最多4位小数，去末尾0）。
                     本页签总计行：只汇总 is_subtotal（成本）列，不把输入量并入。
                 */}
-                {activeComp.fields.some(f =>
-                  f.is_subtotal ||
-                  f.field_type === 'INPUT_NUMBER' ||
-                  f.field_type === 'FORMULA' ||
-                  f.field_type === 'DATA_SOURCE'
-                ) && (
+                {activeComp.fields.some(f => f.is_subtotal) && (
                   <tfoot>
                     <tr className="qt-subtotal-row">
                       {activeComp.fields.map((field, fi) => {
@@ -654,17 +649,14 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         // 单一来源：columnSumsByComp（buildCrossTabRows resolvedRows Σ行）
                         const compKey = activeComp.componentId || activeComp.componentCode || activeComp.tabName;
                         const colSums = (columnSumsByComp && compKey) ? (columnSumsByComp[compKey] ?? {}) : {};
-                        const isNumericCol =
-                          field.is_subtotal ||
-                          field.field_type === 'INPUT_NUMBER' ||
-                          field.field_type === 'FORMULA' ||
-                          field.field_type === 'DATA_SOURCE';
+                        // C1：小计行只对勾选了 is_subtotal 的列求和；非小计列一律留空。
+                        const isNumericCol = !!field.is_subtotal;
                         if (isNumericCol && colName && colName in colSums) {
                           const v = colSums[colName] ?? 0;
                           // ¥ 仅当 is_amount===true；其他数值列（含管理费/利润等 is_subtotal 但非金额列）纯数字
-                          const text = field.is_amount === true
-                            ? formatCurrency(v)
-                            : (v === 0 ? '0' : parseFloat(v.toFixed(4)).toString());
+                          // C2：金额列 = ¥ + 通用精度（与其它小计列同款 4 位去末尾 0，仅多 ¥ 前缀）
+                          const plain = v === 0 ? '0' : parseFloat(v.toFixed(4)).toString();
+                          const text = field.is_amount === true ? `¥ ${plain}` : plain;
                           return (
                             <td key={colName || fi} className="qt-subtotal-cell" style={field.is_amount === true ? undefined : { color: '#595959' }}>
                               {text}
@@ -677,10 +669,10 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         return <td key={colName || fi} />;
                       })}
                     </tr>
-                    {/* 本页签总计 = 该页签多个 is_subtotal 列之和（成本列汇总；输入量列不并入） */}
-                    {activeComp.fields.some(f => f.is_subtotal) && (
+                    {/* 本页签金额合计 = 该页签所有金额列(is_amount&&is_subtotal)之和；无金额列整行隐藏 */}
+                    {activeComp.fields.some(f => f.is_amount) && (
                       <tr className="qt-subtotal-row qt-tab-total-row">
-                        <td className="qt-subtotal-label-cell">本页签总计</td>
+                        <td className="qt-subtotal-label-cell">本页签金额合计</td>
                         <td colSpan={Math.max(1, activeComp.fields.length - 1)} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
                           {formatCurrency(sumTabColumns(activeComp as any, compSubtotals))}
                         </td>
