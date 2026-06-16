@@ -30,6 +30,7 @@
 
 import type { FormulaToken } from './types';
 import type { TabDef } from '../../services/tabJoinFormulaService';
+import { parsePredicateText, serializePredicate } from '../../utils/predicateText';
 
 // Re-export TabDef for convenience of tests (they import from this module)
 export type { TabDef };
@@ -77,6 +78,7 @@ type RawToken =
   | { kind: 'paren_close' }
   | { kind: 'whitespace' }
   | { kind: 'func'; name: string }           // SUM/AVG/MAX/MIN/COUNT/KSUM/KAVG/KMAX/KMIN/KCOUNT
+  | { kind: 'sumif_call'; funcName: string; body: string } // SUMIF/COUNTIF/AVGIF/MINIF/MAXIF(...) 整体
 
 /**
  * Lex `expr` into raw tokens. Throws with a descriptive message on unrecognised input.
@@ -122,13 +124,48 @@ function lex(expr: string): RawToken[] {
       continue;
     }
 
-    // Function names: SUM/AVG/MAX/MIN/COUNT/KSUM/KAVG/KMAX/KMIN/KCOUNT (case-insensitive)
+    // Function names (case-insensitive)
     if (/[A-Za-z]/.test(ch)) {
       let word = '';
       while (i < expr.length && /[A-Za-z]/.test(expr[i])) word += expr[i++];
       const upper = word.toUpperCase();
       const OUTER_FNS = ['SUM', 'AVG', 'MAX', 'MIN', 'COUNT'];
       const INNER_FNS = ['KSUM', 'KAVG', 'KMAX', 'KMIN', 'KCOUNT'];
+      // SUMIF 族：把整个 FUNC(...) 括号内容原样抽出为 sumif_call token。
+      // 括号内可包含单引号字符串、比较运算符等，lex 无法逐字符解析，故整体保留为原始文本。
+      const SUMIF_FNS = ['SUMIF', 'COUNTIF', 'AVGIF', 'MINIF', 'MAXIF'];
+      if (SUMIF_FNS.includes(upper)) {
+        // 跳过空白，期待紧跟 '('
+        let j = i;
+        while (j < expr.length && /\s/.test(expr[j])) j++;
+        if (j >= expr.length || expr[j] !== '(') {
+          throw new Error(`函数 ${upper} 后必须紧跟 '('`);
+        }
+        // 扫描匹配括号（处理嵌套括号，但括号内可有单引号字符串，引号内括号不计深度）
+        let depth = 0;
+        let inStr = false;
+        let strChar = '';
+        let bodyStart = j + 1;
+        let closeIdx = -1;
+        for (let p = j; p < expr.length; p++) {
+          const c = expr[p];
+          if (inStr) {
+            if (c === strChar) inStr = false;
+          } else {
+            if (c === "'" || c === '"') { inStr = true; strChar = c; }
+            else if (c === '(') depth++;
+            else if (c === ')') {
+              depth--;
+              if (depth === 0) { closeIdx = p; break; }
+            }
+          }
+        }
+        if (closeIdx === -1) throw new Error(`函数 ${upper} 的 '(' 缺少对应的 ')'`);
+        const body = expr.slice(bodyStart, closeIdx);
+        tokens.push({ kind: 'sumif_call', funcName: upper, body });
+        i = closeIdx + 1;
+        continue;
+      }
       if ([...OUTER_FNS, ...INNER_FNS].includes(upper)) {
         tokens.push({ kind: 'func', name: upper });
         continue;
@@ -209,6 +246,66 @@ function makeCrossTabRef(
 }
 
 // ─────────────────────────────────────────────
+// parseValueExpr: SUMIF 第二参数（值表达式）解析
+// ─────────────────────────────────────────────
+
+/**
+ * 解析 SUMIF 的值表达式（第二个参数，形如 `[别名.字段]` 或 `[别名.字段] * [别名.字段]`）。
+ * 只允许 [别名.字段]、运算符、数字、括号；不允许 SUMIF 族嵌套。
+ * 结果产出 FormulaToken[]（field/operator/number/bracket_open/bracket_close），
+ * 供 tokensToDrawerExpression 的 renderTargetExprParts 还原。
+ */
+function parseValueExpr(
+  text: string,
+  tabDefs: TabDef[],
+  selfRowKeyFields?: string[],
+  selfComponentId?: string,
+): FormulaToken[] {
+  // valueExpr 不含单引号字符串，可直接用 lex（但 lex 不支持 SUMIF 族，不会有问题）
+  const rawToks = lex(text);
+  const result: FormulaToken[] = [];
+  for (const rt of rawToks) {
+    switch (rt.kind) {
+      case 'bracket_expr': {
+        const bb = rt.body.trim();
+        if (!bb.includes('.')) {
+          // 裸字段 → b_field（宿主本行列）
+          result.push({ type: 'b_field', value: bb });
+        } else {
+          const di = bb.indexOf('.');
+          const al = bb.slice(0, di);
+          const col = bb.slice(di + 1);
+          const td = findTabByRef(tabDefs, al);
+          if (!td) throw new Error(`SUMIF 值表达式中引用了未知页签 "${al}"`);
+          if (!td.componentId) throw new Error(`页签 "${al}" 缺少 componentId`);
+          if (selfComponentId && td.componentId === selfComponentId) {
+            result.push({ type: 'b_field', value: col });
+          } else {
+            result.push({ type: 'field', value: col, source: td.componentId });
+          }
+        }
+        break;
+      }
+      case 'operator':
+        result.push({ type: 'operator', value: normalizeOp(rt.value) });
+        break;
+      case 'number':
+        result.push({ type: 'number', value: rt.value });
+        break;
+      case 'paren_open':
+        result.push({ type: 'bracket_open' });
+        break;
+      case 'paren_close':
+        result.push({ type: 'bracket_close' });
+        break;
+      default:
+        throw new Error(`SUMIF 值表达式中不支持 ${rt.kind} 类型`);
+    }
+  }
+  return result;
+}
+
+// ─────────────────────────────────────────────
 // expressionToTokens
 // ─────────────────────────────────────────────
 
@@ -249,6 +346,74 @@ export function expressionToTokens(
       throw new Error(
         `${raw.name} 只能写在外层 SUM/AVG/MAX/MIN/COUNT 函数内，不支持顶层直接使用`,
       );
+    }
+
+    // ── SUMIF 族解析 ──
+    // lex 已把 SUMIF(body) 整体抽出；此处解析 body → predicate + 可选 targetExpr
+    if (raw.kind === 'sumif_call') {
+      const FUNC_TO_AGG: Record<string, string> = {
+        SUMIF: 'SUM', COUNTIF: 'COUNT', AVGIF: 'AVG', MINIF: 'MIN', MAXIF: 'MAX',
+      };
+      const agg = FUNC_TO_AGG[raw.funcName] ?? 'SUM';
+
+      // 用顶层逗号切 cond 与 valueExpr（跳过单引号字符串内、括号内的逗号）
+      const splitTopLevelComma = (text: string): [string, string | undefined] => {
+        let depth = 0;
+        let inStr = false;
+        let strChar = '';
+        for (let pi = 0; pi < text.length; pi++) {
+          const c = text[pi];
+          if (inStr) {
+            if (c === strChar) inStr = false;
+          } else if (c === "'" || c === '"') {
+            inStr = true; strChar = c;
+          } else if (c === '(') {
+            depth++;
+          } else if (c === ')') {
+            depth--;
+          } else if (c === ',' && depth === 0) {
+            return [text.slice(0, pi).trim(), text.slice(pi + 1).trim()];
+          }
+        }
+        return [text.trim(), undefined];
+      };
+
+      const [condText, valueText] = splitTopLevelComma(raw.body);
+
+      // 解析 cond → ConditionPredicate
+      const predicate = parsePredicateText(condText);
+
+      // 从 condText 中提取首个 [别名.字段] 的别名（= SUMIF source 页签 alias）
+      const firstBracketMatch = condText.match(/\[([^\].]+)\./);
+      const sourceAlias = firstBracketMatch ? firstBracketMatch[1] : '';
+      const srcTabDef = findTabByRef(tabDefs, sourceAlias);
+      if (!srcTabDef) {
+        throw new Error(`SUMIF 条件中引用了未知页签 "${sourceAlias}"`);
+      }
+      if (!srcTabDef.componentId) {
+        throw new Error(`页签 "${sourceAlias}" 缺少 componentId`);
+      }
+
+      // 解析可选 valueExpr（用现有行级 targetExpr 解析逻辑）
+      let targetExpr: FormulaToken[] | undefined;
+      if (valueText && valueText.length > 0 && raw.funcName !== 'COUNTIF') {
+        // valueExpr 是合法的表达式串（仅含 [别名.字段] 和运算符/数字），可用 expressionToTokens 递归解析
+        // 但为避免无限递归且 valueExpr 语义简单，直接解析 [别名.字段] 片段
+        targetExpr = parseValueExpr(valueText, tabDefs, selfRowKeyFields, selfComponentId);
+      }
+
+      result.push({
+        type: 'cross_tab_ref',
+        source: srcTabDef.componentId,
+        sourceLabel: srcTabDef.componentName ?? sourceAlias,
+        target: '',
+        agg: agg as FormulaToken['agg'],
+        match: [],  // SUMIF 族：match 为空，按 predicate 过滤而非行键 JOIN
+        predicate,
+        ...(targetExpr && targetExpr.length > 0 ? { targetExpr } : {}),
+      });
+      k++;
+      continue;
     }
 
     // ── FN(...) 折叠 ──
@@ -762,6 +927,50 @@ export function tokensToDrawerExpression(
         // Resolve componentId → 页签名称(优先) / 编号(兜底)
         const tabDef = tabDefs.find((d) => d.componentId === token.source);
         const alias = tabDef?.componentName ?? tabDef?.alias ?? token.sourceLabel ?? token.source ?? '';
+
+        // ── SUMIF 族序列化（predicate 存在 → 走 SUMIF/COUNTIF/AVGIF/MINIF/MAXIF 路径）──
+        if (token.predicate) {
+          const AGG_TO_IFUNC: Record<string, string> = {
+            SUM: 'SUMIF', COUNT: 'COUNTIF', AVG: 'AVGIF', MIN: 'MINIF', MAX: 'MAXIF',
+          };
+          const ifuncName = AGG_TO_IFUNC[(token.agg ?? 'SUM').toUpperCase()] ?? 'SUMIF';
+          // sourceAlias = 该 cross_tab_ref 的 source 页签名（用于 serializePredicate）
+          const sourceAlias = alias;
+          // hostAlias = tabDefs 里 self===true 的别名
+          const hostTabDef = tabDefs.find((d) => d.self === true);
+          const hostAlias = hostTabDef?.componentName ?? hostTabDef?.alias ?? '';
+
+          const condStr = serializePredicate(token.predicate, { sourceAlias, hostAlias });
+
+          if (token.targetExpr && token.targetExpr.length > 0) {
+            // 行内值表达式回显：field→[source名.列]、b_field→[宿主名.列]
+            const valueStr = token.targetExpr
+              .map((te) => {
+                switch (te.type) {
+                  case 'field': {
+                    const ftd = te.source ? tabDefs.find((d) => d.componentId === te.source) : undefined;
+                    const fAlias = ftd?.componentName ?? ftd?.alias ?? sourceAlias;
+                    return `[${fAlias}.${te.value ?? ''}]`;
+                  }
+                  case 'b_field':
+                    return hostAlias ? `[${hostAlias}.${te.value ?? ''}]` : `[${te.value ?? ''}]`;
+                  case 'operator': return ` ${te.value ?? ''} `;
+                  case 'number': return te.value ?? '';
+                  case 'bracket_open': return '(';
+                  case 'bracket_close': return ')';
+                  default: return '';
+                }
+              })
+              .join('')
+              .replace(/\s{2,}/g, ' ')
+              .trim();
+            parts.push(`${ifuncName}(${condStr}, ${valueStr})`);
+          } else {
+            // COUNTIF：无值表达式
+            parts.push(`${ifuncName}(${condStr})`);
+          }
+          break;
+        }
 
         if (token.targetExpr && token.targetExpr.length > 0) {
           // 行级聚合 SUMPRODUCT：FN(回显 targetExpr)，field→[source名.列]、b_field→[宿主名.列]
