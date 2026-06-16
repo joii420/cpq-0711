@@ -76,7 +76,8 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
 
   const handleSubtotalChange = (key: string, checked: boolean) => {
     // 多小计列（Plan 2-核心）：每个字段独立勾选，不再互斥。
-    updateField(key, { is_subtotal: checked });
+    // C4：金额 ⊆ 小计 —— 取消小计时联动清掉金额，杜绝「金额脱离小计」脏数据。
+    updateField(key, { is_subtotal: checked, ...(checked ? {} : { is_amount: false }) });
   };
 
   const moveField = (index: number, direction: 'up' | 'down') => {
@@ -415,6 +416,7 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
       render: (_: unknown, record: FieldItem) => (
         <Checkbox
           checked={!!record.is_amount}
+          disabled={!record.is_subtotal}
           onChange={(e) => updateField(record.key, { is_amount: e.target.checked })}
         />
       ),
