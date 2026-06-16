@@ -607,24 +607,32 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
             {fn}
           </Button>
         ))}
-        {componentType === 'EXCEL' && (
-          <>
-            <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-              条件聚合
-            </Text>
-            {SUMIF_TEXT_FUNCS.map((fn) => (
-              <Button
-                key={fn}
-                size="small"
-                title={`${fn}(条件, 取值表达式)，如 SUMIF([页签.类型]='管理费', [页签.金额])`}
-                style={{ color: '#722ed1', borderColor: '#d3adf7' }}
-                onClick={() => insertAtCursor(`${fn}()`, 1)}
-              >
-                {fn}
-              </Button>
-            ))}
-          </>
-        )}
+        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+          条件聚合
+        </Text>
+        {SUMIF_TEXT_FUNCS.map((fn) => (
+          <Button
+            key={fn}
+            size="small"
+            title={
+              componentType === 'EXCEL'
+                ? `${fn}(条件, 取值表达式)，如 ${fn}([页签.类型]='管理费', [页签.金额])`
+                : `点击展开下方「条件聚合」构造器配置 ${fn}（条件过滤后按行键聚合）`
+            }
+            style={{ color: '#722ed1', borderColor: '#d3adf7' }}
+            onClick={() => {
+              // EXCEL 线：文本可解析，直接插入；组件线：文本不生成 predicate，改为展开下方可视化构造器并预选该函数。
+              if (componentType === 'EXCEL') {
+                insertAtCursor(`${fn}()`, 1);
+              } else {
+                setSumifFunc(fn);
+                setSumifPanelOpen(true);
+              }
+            }}
+          >
+            {fn}
+          </Button>
+        ))}
       </Space>
 
       {/* 规则提示 */}
