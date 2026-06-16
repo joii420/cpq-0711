@@ -681,7 +681,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     {activeComp.fields.some(f => f.is_subtotal) && (
                       <tr className="qt-subtotal-row qt-tab-total-row">
                         <td className="qt-subtotal-label-cell">本页签总计</td>
-                        <td colSpan={activeComp.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
+                        <td colSpan={Math.max(1, activeComp.fields.length - 1)} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
                           {formatCurrency(sumTabColumns(activeComp as any, compSubtotals))}
                         </td>
                       </tr>
