@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Drawer, Select, Button, Space, Alert, message } from 'antd';
-import templateService from '../../services/templateService';
+import { templateService } from '../../services/templateService';
 
 interface TemplateOption {
   id: string;
