@@ -672,7 +672,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     {/* 本页签金额合计 = 该页签所有金额列(is_amount&&is_subtotal)之和；无金额列整行隐藏 */}
                     {activeComp.fields.some(f => f.is_amount) && (
                       <tr className="qt-subtotal-row qt-tab-total-row">
-                        <td className="qt-subtotal-label-cell">本页签金额合计</td>
+                        <td className="qt-subtotal-label-cell">合计</td>
                         <td colSpan={Math.max(1, activeComp.fields.length - 1)} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
                           {formatCurrency(sumTabColumns(activeComp as any, compSubtotals))}
                         </td>

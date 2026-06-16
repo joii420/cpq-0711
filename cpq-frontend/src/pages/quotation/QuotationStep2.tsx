@@ -2571,7 +2571,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     {activeComponent.fields.some(f => f.is_amount) && (
                       <tr className="qt-subtotal-row qt-tab-total-row">
                         {activeComponentBomTree && (<><td /><td /><td /></>)}
-                        <td className="qt-subtotal-label-cell">本页签金额合计</td>
+                        <td className="qt-subtotal-label-cell">合计</td>
                         <td colSpan={activeComponent.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
                           {formatCurrency(sumTabColumns(activeComponent as any, allComponentSubtotals))}
                         </td>
