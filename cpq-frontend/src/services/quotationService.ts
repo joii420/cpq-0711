@@ -137,7 +137,8 @@ export const quotationService = {
   approve: (id: string, comment?: string) => api.post(`/quotations/${id}/approve`, { comment }) as Promise<any>,
   reject: (id: string, comment: string) => api.post(`/quotations/${id}/reject`, { comment }) as Promise<any>,
   withdraw: (id: string) => api.post(`/quotations/${id}/withdraw`) as Promise<any>,
-  copy: (id: string) => api.post(`/quotations/${id}/copy`) as Promise<any>,
+  copy: (id: string, templateId?: string) =>
+    api.post(`/quotations/${id}/copy`, templateId ? { templateId } : {}) as Promise<any>,
   delete: (id: string) => api.delete(`/quotations/${id}`) as Promise<any>,
 
   // M5: Output module
