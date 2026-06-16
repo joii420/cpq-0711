@@ -56,7 +56,7 @@ function makeData(unit: string) {
 function compute来料材料费(unit: string): number {
   const data = makeData(unit);
   const subs: Record<string, number> = {};
-  const store = buildCrossTabRows(data, subs, undefined,
+  const { store } = buildCrossTabRows(data, subs, undefined,
     (c: any) => (c.componentId === 元素Id ? { rowCount: 1, rows: [{ driverRow: { 料件: 'P1', 净用量: 100, 单价: 100, 计价单位: unit }, basicDataValues: {} }] } as any : undefined));
   const llComp = data[1];
   const res = computeAllFormulas(llComp, { 料件: 'P1' }, subs, undefined, undefined, undefined,

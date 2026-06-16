@@ -896,7 +896,7 @@ export function buildCrossTabRows(
   partNo: string | undefined,
   lookupExpansion: (comp: ComponentDataItem) => (import('./useDriverExpansions').DriverExpansion | undefined),
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
-): Record<string, Array<Record<string, any>>> {
+): { store: Record<string, Array<Record<string, any>>>; columnSumsByComp: Record<string, Record<string, number>> } {
   const normals = componentData.filter(c => c?.fields && c.componentType === 'NORMAL');
   const ids = normals.map(c => c.componentId || c.componentCode || c.tabName);
   const deps: Record<string, string[]> = {};
@@ -905,10 +905,15 @@ export function buildCrossTabRows(
   try { order = topoOrderComponents(ids, deps); }
   catch { order = ids; /* 环：退回原序，避免整卡渲染崩溃；模板保存层已拦截环 */ }
 
-  /** 单组件全量行迭代 → resolvedRows（复用逻辑，避免重复）。 */
+  /** 单组件全量行迭代 → resolvedRows（复用逻辑，避免重复）。
+   *  prevRowValues 串行：每组件独立 reset，逐行把上一行公式结果串入 computeAllFormulas，
+   *  与渲染层 effectiveRows 的 prevRowValues 口径对齐（约 2278/2294 行）。
+   */
   function computeRows(comp: ComponentDataItem, exp: import('./useDriverExpansions').DriverExpansion | undefined): Array<Record<string, any>> {
     const s = splitRows(comp, exp);
     const rows: Array<Record<string, any>> = [];
+    // 每组件独立 reset prevRowValues（不跨组件复用，与渲染层 effectiveRows 口径一致）
+    let prevRowValues: Record<string, number | null> | undefined = undefined;
     for (let i = 0; i < s.totalRows; i++) {
       const ra = rowAt(i, comp, s);
       const row = fillFixedDefaults(comp.fields!, ra.row);
@@ -917,13 +922,22 @@ export function buildCrossTabRows(
       const formulaCache = computeAllFormulas(
         comp, row, allComponentSubtotals, undefined, undefined, partNo, basicDataValues,
         undefined, globalVariableDefs, store,
+        prevRowValues, // 串入上一行公式结果（previous_row_subtotal token 按本列取）
       );
+      // 更新 prevRowValues 供下一行使用
+      prevRowValues = formulaCache;
       rows.push(buildResolvedRow(comp.fields!, row, driverRow, basicDataValues, formulaCache));
     }
     return rows;
   }
 
   const store: Record<string, Array<Record<string, any>>> = {};
+  // columnSumsByComp: 每组件每数值列（is_subtotal + INPUT_NUMBER/FORMULA/DATA_SOURCE）的 Σ行
+  // 使用 canonical（applyUnitConversion）行值，4dp 舍入。
+  // footer 单一来源：Task2 改用 columnSumsByComp 替代旧的二次重算（根治分叉）。
+  // 注意：不回灌 allComponentSubtotals（is_subtotal 列已由 subtotalsFromResolvedRows 回填）。
+  const columnSumsByComp: Record<string, Record<string, number>> = {};
+
   // 单位换算（cross_tab 物化点）：cross_tab 消费的兄弟组件源行需 canonical（按同行单位列换算），
   // 否则跨页签引用配了 unit_source_field 的输入列读到原值（改单位无反应）。
   // 仅换喂 store 的副本——subtotalsFromResolvedRows 收原始 rows 自行内部换算，落库 resolvedRows 另走快照通道，
@@ -934,6 +948,47 @@ export function buildCrossTabRows(
     if (comp.componentCode) store[comp.componentCode] = ctRows;
     if (comp.componentId) store[comp.componentId] = ctRows;
   };
+
+  /** 计算组件所有数值列（is_subtotal + INPUT_NUMBER/FORMULA/DATA_SOURCE）的 Σ行 canonical 值，
+   *  写入 columnSumsByComp（三键：componentId / componentCode / tabName）。
+   *  4dp 舍入，与 subtotalsFromResolvedRows 的 round4 对齐（后端 setScale(4,HALF_UP)）。
+   */
+  const buildColumnSumsByComp = (comp: ComponentDataItem, rows: Array<Record<string, any>>) => {
+    const round4 = (x: number) => Math.round(x * 1e4) / 1e4;
+    // 列范围：is_subtotal 或 field_type ∈ {INPUT_NUMBER, FORMULA, DATA_SOURCE}
+    const targetFields = (comp.fields ?? []).filter((f: ComponentField) => {
+      if (f.is_subtotal) return true;
+      const ft = f.field_type;
+      return ft === 'INPUT_NUMBER' || ft === 'FORMULA' || ft === 'DATA_SOURCE';
+    });
+    if (targetFields.length === 0) return;
+
+    // 求和用 canonical（applyUnitConversion），与 subtotalsFromResolvedRows 物化点对齐
+    const convRows = rows.map(r => applyUnitConversion(comp.fields as any, r));
+    const colSums: Record<string, number> = {};
+    for (const f of targetFields) {
+      const colName: string = f.name || f.key || '';
+      if (!colName) continue;
+      let sum = 0;
+      for (const row of convRows) {
+        const v = row[colName];
+        if (typeof v === 'number' && isFinite(v)) sum += v;
+      }
+      colSums[colName] = round4(sum);
+    }
+
+    // 写入三键（componentId / componentCode / tabName），与 allComponentSubtotals 键逻辑一致
+    const keys: string[] = [];
+    if (comp.tabName) keys.push(comp.tabName);
+    if (comp.componentCode && comp.componentCode !== comp.tabName) keys.push(comp.componentCode);
+    if (comp.componentId && comp.componentId !== comp.tabName && comp.componentId !== comp.componentCode) {
+      keys.push(comp.componentId);
+    }
+    for (const k of keys) {
+      columnSumsByComp[k] = colSums;
+    }
+  };
+
   for (const cid of order) {
     const comp = normals[ids.indexOf(cid)];
     if (!comp) continue;
@@ -962,6 +1017,8 @@ export function buildCrossTabRows(
       putCrossTab(cid, comp, rows);
       // 最终回填（覆盖第一轮的一阶列小计，同时写入二阶列小计 + 更新总小计）。
       subtotalsFromResolvedRows(comp, rows, allComponentSubtotals);
+      // columnSumsByComp 取第二轮最终 rows（含二阶列），不得取第一轮影子组件。
+      buildColumnSumsByComp(comp, rows);
     } else {
       // 无二阶列：原有逻辑，一轮完成。
       const rows = computeRows(comp, exp);
@@ -969,9 +1026,11 @@ export function buildCrossTabRows(
       // PASS2 回填：从 resolvedRows 的 is_subtotal 列值求和，更新 allComponentSubtotals。
       // 保证「列小计显示 == 各行 cross_tab 公式实际值之和」（PASS1 因 crossTabRows=undefined 算出 0）。
       subtotalsFromResolvedRows(comp, rows, allComponentSubtotals);
+      // columnSumsByComp：所有数值列 Σ行（is_subtotal + INPUT_NUMBER/FORMULA/DATA_SOURCE）
+      buildColumnSumsByComp(comp, rows);
     }
   }
-  return store;
+  return { store, columnSumsByComp };
 }
 
 /**
@@ -1857,7 +1916,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
 
   // cross_tab_ref (PASS2, 镜像后端 CardSnapshotService): 在 allComponentSubtotals (PASS1) 之后,
   // 按组件拓扑序构建兄弟组件已算行, 供本卡 FORMULA cross_tab_ref token 跨 Tab 取数聚合。
-  const crossTabRows = buildCrossTabRows(
+  const { store: crossTabRows } = buildCrossTabRows(
     item.componentData,
     allComponentSubtotals,
     item.productPartNo,

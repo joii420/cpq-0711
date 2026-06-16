@@ -54,7 +54,7 @@ const lookupExpansion = (comp: any) =>
 
 describe('cross_tab INPUT+default_source 行解析', () => {
   it('源行按字段名解析 INPUT default_source（料件文本 / 单价数值）', () => {
-    const store = buildCrossTabRows(componentData, {}, undefined, lookupExpansion);
+    const { store } = buildCrossTabRows(componentData, {}, undefined, lookupExpansion);
     const ysRows = store['元素'];
     expect(ysRows).toHaveLength(3);
     expect(ysRows[0]['料件']).toBe('料8');
@@ -62,7 +62,7 @@ describe('cross_tab INPUT+default_source 行解析', () => {
   });
 
   it('宿主行 match 键经 INPUT default_source 解析 → SUM 命中正确（料8=94.5）', () => {
-    const store = buildCrossTabRows(componentData, {}, undefined, lookupExpansion);
+    const { store } = buildCrossTabRows(componentData, {}, undefined, lookupExpansion);
     const llRow = store['来料'][0];
     expect(Number(llRow['材料费'])).toBeCloseTo(94.5, 4);
   });

@@ -326,7 +326,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   // `lineItem.componentData`——后端 ComponentDataDTO 不持久化 fields/componentType，
   // buildCrossTabRows 首行按 `c?.fields && c.componentType==='NORMAL'` 过滤会滤掉全部组件，
   // 导致 crossTabRows={} → 所有跨页签(cross_tab_ref)公式列/小计/总计求值为 0（详情页专有回归）。
-  const crossTabRows = buildCrossTabRows(
+  const { store: crossTabRows } = buildCrossTabRows(
     components,
     compSubtotals,
     lineItem.productPartNo || undefined,

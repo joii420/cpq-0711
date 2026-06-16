@@ -132,7 +132,7 @@ describe('buildCrossTabRows 列小计回填', () => {
       // 关键：无 fields、无 componentType、无 formulas（后端不持久化）
     }));
     const allComponentSubtotals: Record<string, number> = {};
-    const store = buildCrossTabRows(rawComponentData as any, allComponentSubtotals, undefined, lookupExpansion);
+    const { store } = buildCrossTabRows(rawComponentData as any, allComponentSubtotals, undefined, lookupExpansion);
 
     // 全被过滤 → store 空 → 来料材料费 cross_tab 列得不到回填（undefined/0）
     expect(Object.keys(store)).toHaveLength(0);
@@ -330,7 +330,7 @@ const e3LookupExpansion = (comp: any) => {
 describe('E3 护栏 — 材料成本逐行 = 各列同行之和(field token)', () => {
   it('E3-1 — 行1: 材料成本 = 来料材料费(5) + 外购件材料费(2) = 7', () => {
     const allComponentSubtotals: Record<string, number> = {};
-    const store = buildCrossTabRows(e3ComponentData, allComponentSubtotals, undefined, e3LookupExpansion);
+    const { store } = buildCrossTabRows(e3ComponentData, allComponentSubtotals, undefined, e3LookupExpansion);
 
     // store['ll_test'] 存各行已算公式值（含材料成本）
     // 行1：材料成本应为 7（同行相加）
@@ -340,7 +340,7 @@ describe('E3 护栏 — 材料成本逐行 = 各列同行之和(field token)', (
 
   it('E3-2 — 行2: 材料成本 = 来料材料费(0) + 外购件材料费(3) = 3', () => {
     const allComponentSubtotals: Record<string, number> = {};
-    const store = buildCrossTabRows(e3ComponentData, allComponentSubtotals, undefined, e3LookupExpansion);
+    const { store } = buildCrossTabRows(e3ComponentData, allComponentSubtotals, undefined, e3LookupExpansion);
 
     const row2 = store['ll_test']?.[1];
     expect(row2?.['材料成本']).toBeCloseTo(3, 4);
@@ -358,7 +358,7 @@ describe('E3 护栏 — 材料成本逐行 = 各列同行之和(field token)', (
     // 这个测试验证：field token 确实在逐行取行值，而非 component_subtotal 的全局标量。
     // 两行之和 7+3=10，若两行都等于某个标量 s，则 s≠7 且 s≠3 → 行间值不同 → 说明是同行取值
     const allComponentSubtotals: Record<string, number> = {};
-    const store = buildCrossTabRows(e3ComponentData, allComponentSubtotals, undefined, e3LookupExpansion);
+    const { store } = buildCrossTabRows(e3ComponentData, allComponentSubtotals, undefined, e3LookupExpansion);
 
     const row1Val = store['ll_test']?.[0]?.['材料成本'];
     const row2Val = store['ll_test']?.[1]?.['材料成本'];
