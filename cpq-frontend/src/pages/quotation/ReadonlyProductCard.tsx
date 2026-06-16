@@ -326,7 +326,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   // `lineItem.componentData`——后端 ComponentDataDTO 不持久化 fields/componentType，
   // buildCrossTabRows 首行按 `c?.fields && c.componentType==='NORMAL'` 过滤会滤掉全部组件，
   // 导致 crossTabRows={} → 所有跨页签(cross_tab_ref)公式列/小计/总计求值为 0（详情页专有回归）。
-  const { store: crossTabRows } = buildCrossTabRows(
+  const { store: crossTabRows, columnSumsByComp } = buildCrossTabRows(
     components,
     compSubtotals,
     lineItem.productPartNo || undefined,
@@ -635,33 +635,57 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     );
                   })()}
                 </tbody>
-                {activeComp.fields.some(f => f.is_subtotal) && (
+                {/* Tab subtotal footer
+                    B4 对齐编辑页：有 is_subtotal 列 OR 有 INPUT_NUMBER/FORMULA/DATA_SOURCE 数值列均显示。
+                    小计行：统一读 columnSumsByComp（buildCrossTabRows resolvedRows 单一来源）。
+                           is_amount=true 显示 ¥ 货币格式；否则纯数字（最多4位小数，去末尾0）。
+                    本页签总计行：只汇总 is_subtotal（成本）列，不把输入量并入。
+                */}
+                {activeComp.fields.some(f =>
+                  f.is_subtotal ||
+                  f.field_type === 'INPUT_NUMBER' ||
+                  f.field_type === 'FORMULA' ||
+                  f.field_type === 'DATA_SOURCE'
+                ) && (
                   <tfoot>
                     <tr className="qt-subtotal-row">
                       {activeComp.fields.map((field, fi) => {
-                        if (field.is_subtotal) {
-                          // Plan 2-核心：按列取本列总计，回退组件级兼容。
-                          const v = compSubtotals[`${activeComp.componentCode}#${field.name}`]
-                            ?? compSubtotals[`${activeComp.tabName}#${field.name}`]
-                            ?? compSubtotals[activeComp.tabName] ?? 0;
+                        const colName = field.name || field.key || '';
+                        // 单一来源：columnSumsByComp（buildCrossTabRows resolvedRows Σ行）
+                        const compKey = activeComp.componentId || activeComp.componentCode || activeComp.tabName;
+                        const colSums = (columnSumsByComp && compKey) ? (columnSumsByComp[compKey] ?? {}) : {};
+                        const isNumericCol =
+                          field.is_subtotal ||
+                          field.field_type === 'INPUT_NUMBER' ||
+                          field.field_type === 'FORMULA' ||
+                          field.field_type === 'DATA_SOURCE';
+                        if (isNumericCol && colName && colName in colSums) {
+                          const v = colSums[colName] ?? 0;
+                          // ¥ 仅当 is_amount===true；其他数值列（含管理费/利润等 is_subtotal 但非金额列）纯数字
+                          const text = field.is_amount === true
+                            ? formatCurrency(v)
+                            : (v === 0 ? '0' : parseFloat(v.toFixed(4)).toString());
                           return (
-                            <td key={fi} className="qt-subtotal-cell">
-                              {formatCurrency(v)}
+                            <td key={colName || fi} className="qt-subtotal-cell" style={field.is_amount === true ? undefined : { color: '#595959' }}>
+                              {text}
                             </td>
                           );
                         }
-                        return fi === 0
-                          ? <td key={fi} className="qt-subtotal-label-cell">小计</td>
-                          : <td key={fi} />;
+                        if (fi === 0) {
+                          return <td key={colName || fi} className="qt-subtotal-label-cell">小计</td>;
+                        }
+                        return <td key={colName || fi} />;
                       })}
                     </tr>
-                    {/* 本页签总计 = 该页签多个小计列之和（页签内展示，与编辑页一致） */}
-                    <tr className="qt-subtotal-row qt-tab-total-row">
-                      <td className="qt-subtotal-label-cell">本页签总计</td>
-                      <td colSpan={Math.max(1, activeComp.fields.length - 1)} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
-                        {formatCurrency(sumTabColumns(activeComp as any, compSubtotals))}
-                      </td>
-                    </tr>
+                    {/* 本页签总计 = 该页签多个 is_subtotal 列之和（成本列汇总；输入量列不并入） */}
+                    {activeComp.fields.some(f => f.is_subtotal) && (
+                      <tr className="qt-subtotal-row qt-tab-total-row">
+                        <td className="qt-subtotal-label-cell">本页签总计</td>
+                        <td colSpan={activeComp.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
+                          {formatCurrency(sumTabColumns(activeComp as any, compSubtotals))}
+                        </td>
+                      </tr>
+                    )}
                   </tfoot>
                 )}
               </table>
