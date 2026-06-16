@@ -16,10 +16,11 @@ import {
   Tabs,
   Tooltip,
   Empty,
+  Typography,
 } from 'antd';
 import { buildDraftSnapshot, rebuildFieldKeys, rebuildFormulaKeys } from './componentDraft';
 import { readDraft, clearDraft, useDraftAutosave, listAllDrafts } from './useComponentDraft';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, FolderAddOutlined } from '@ant-design/icons';
 import { componentService } from '../../services/componentService';
 import { datasourceService } from '../../services/datasourceService';
 import { tabJoinFormulaService, type TabDef } from '../../services/tabJoinFormulaService';
@@ -321,6 +322,16 @@ function flattenComponents(dirs: DirectoryNode[]): ComponentItem[] {
   return result;
 }
 
+// 目录树扁平化为带缩进的 Select 选项（用于「新建目录」时选父目录，支持任意层级嵌套）。
+function flattenDirOptions(dirs: DirectoryNode[], depth = 0): { value: string; label: string }[] {
+  const out: { value: string; label: string }[] = [];
+  for (const d of dirs) {
+    out.push({ value: d.id, label: `${'　'.repeat(depth)}${d.name}` });
+    if (d.children?.length) out.push(...flattenDirOptions(d.children, depth + 1));
+  }
+  return out;
+}
+
 const TYPE_TAG: Record<ComponentType, { label: string; color: string }> = {
   NORMAL: { label: '页签组件', color: 'blue' },
   EXCEL: { label: 'EXCEL 组件', color: 'cyan' },
@@ -567,6 +578,56 @@ const MasterList: React.FC<MasterListProps> = ({
   const [busy, setBusy] = useState<string | null>(null);
   // 任务4: 按目录导入/导出
   const [importTarget, setImportTarget] = useState<{ id: string; name: string } | null>(null);
+  // 目录管理：新建 / 重命名 Modal + 删除二次确认
+  const [dirModal, setDirModal] = useState<{ open: boolean; mode: 'create' | 'rename'; id?: string }>(
+    { open: false, mode: 'create' },
+  );
+  const [dirName, setDirName] = useState('');
+  const [dirParent, setDirParent] = useState<string | undefined>(undefined);
+  const [dirBusy, setDirBusy] = useState(false);
+  const [delDir, setDelDir] = useState<DirectoryNode | null>(null);
+
+  const openCreateDir = () => { setDirModal({ open: true, mode: 'create' }); setDirName(''); setDirParent(undefined); };
+  const openRenameDir = (e: React.MouseEvent, dir: DirectoryNode) => {
+    e.stopPropagation();
+    setDirModal({ open: true, mode: 'rename', id: dir.id });
+    setDirName(dir.name);
+  };
+  const submitDir = async () => {
+    const name = dirName.trim();
+    if (!name) { message.warning('请输入目录名称'); return; }
+    setDirBusy(true);
+    try {
+      if (dirModal.mode === 'create') {
+        await componentService.createDirectory({ name, parentId: dirParent ?? null });
+        message.success('目录已创建');
+      } else {
+        await componentService.updateDirectory(dirModal.id!, { name });
+        message.success('目录已重命名');
+      }
+      setDirModal({ open: false, mode: 'create' });
+      onRefresh();
+    } catch (err) {
+      message.error((err as { message?: string }).message ?? '操作失败');
+    } finally {
+      setDirBusy(false);
+    }
+  };
+  const confirmDeleteDir = async () => {
+    if (!delDir) return;
+    setDirBusy(true);
+    try {
+      await componentService.deleteDirectory(delDir.id);
+      message.success(`已删除目录「${delDir.name}」`);
+      setDelDir(null);
+      onRefresh();
+    } catch (err) {
+      // 后端对「含子目录 / 含组件」的非空目录会拒删，直接展示后端原因
+      message.error((err as { message?: string }).message ?? '删除失败');
+    } finally {
+      setDirBusy(false);
+    }
+  };
 
   const handleExportDir = async (e: React.MouseEvent, dir: DirectoryNode) => {
     e.stopPropagation();
@@ -681,6 +742,10 @@ const MasterList: React.FC<MasterListProps> = ({
               {counts.sub > 0 && <span className="cmm-pill sub">小计{counts.sub}</span>}
             </span>
             <span className="cmm-dir-acts">
+              <Tooltip title="重命名目录">
+                <Button type="text" size="small" icon={<EditOutlined />}
+                  onClick={(e) => openRenameDir(e, dir)} />
+              </Tooltip>
               <Tooltip title="导出本目录直属组件为 JSON">
                 <Button type="text" size="small" icon={<ExportOutlined />}
                   onClick={(e) => handleExportDir(e, dir)} />
@@ -688,6 +753,10 @@ const MasterList: React.FC<MasterListProps> = ({
               <Tooltip title="导入组件到本目录">
                 <Button type="text" size="small" icon={<ImportOutlined />}
                   onClick={(e) => { e.stopPropagation(); setImportTarget({ id: dir.id, name: dir.name }); }} />
+              </Tooltip>
+              <Tooltip title="删除目录（需为空：无子目录且无组件）">
+                <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                  onClick={(e) => { e.stopPropagation(); setDelDir(dir); }} />
               </Tooltip>
             </span>
           </div>
@@ -722,6 +791,9 @@ const MasterList: React.FC<MasterListProps> = ({
           />
           <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => onCreate()}>
             新建
+          </Button>
+          <Button size="small" icon={<FolderAddOutlined />} onClick={openCreateDir}>
+            新建目录
           </Button>
         </div>
         {/* 批量动作工具栏：选择驱动启用 + 危险动作 Modal 列项二次确认（runBatch 聚合部分失败） */}
@@ -792,6 +864,58 @@ const MasterList: React.FC<MasterListProps> = ({
         onClose={() => setImportTarget(null)}
         onImported={() => { setImportTarget(null); onRefresh(); }}
       />
+
+      {/* 目录新建 / 重命名 Modal */}
+      <Modal
+        title={dirModal.mode === 'create' ? '新建目录' : '重命名目录'}
+        open={dirModal.open}
+        onOk={submitDir}
+        onCancel={() => setDirModal({ open: false, mode: 'create' })}
+        okText={dirModal.mode === 'create' ? '创建' : '保存'}
+        cancelText="取消"
+        confirmLoading={dirBusy}
+        destroyOnClose
+      >
+        <Form layout="vertical">
+          <Form.Item label="目录名称" required>
+            <Input
+              value={dirName}
+              autoFocus
+              placeholder="例：投料类组件"
+              onChange={(e) => setDirName(e.target.value)}
+              onPressEnter={submitDir}
+            />
+          </Form.Item>
+          {dirModal.mode === 'create' && (
+            <Form.Item label="父目录（可选，留空为顶级目录）">
+              <Select
+                placeholder="选择父目录"
+                allowClear
+                value={dirParent}
+                onChange={(v) => setDirParent(v)}
+                options={flattenDirOptions(directories)}
+              />
+            </Form.Item>
+          )}
+        </Form>
+      </Modal>
+
+      {/* 目录删除二次确认（后端对非空目录会拒删并返回原因） */}
+      <Modal
+        title={delDir ? `确认删除目录「${delDir.name}」？` : ''}
+        open={!!delDir}
+        onOk={confirmDeleteDir}
+        onCancel={() => setDelDir(null)}
+        okText="删除"
+        okButtonProps={{ danger: true }}
+        cancelText="取消"
+        confirmLoading={dirBusy}
+        destroyOnClose
+      >
+        <p style={{ color: '#ad6800' }}>
+          仅可删除<strong>空目录</strong>：若目录下仍有子目录或组件，删除会被后端拒绝并提示原因。
+        </p>
+      </Modal>
     </div>
   );
 };
@@ -1112,6 +1236,22 @@ const ComponentManagement: React.FC = () => {
     }
   };
 
+  // 组件改名：详情头部内联编辑名称。后端 update 对 fields/formulas/dataDriverPath 全有 null 守卫，
+  // 只传 name 不会冲掉字段/公式，可即时落库；本地仅 patch name，不重载 fields 以免覆盖未保存编辑/草稿。
+  const handleRenameComponent = async (raw: string) => {
+    if (!selectedComponent) return;
+    const next = (raw || '').trim();
+    if (!next || next === selectedComponent.name) return;
+    try {
+      await componentService.update(selectedComponent.id, { name: next });
+      setSelectedComponent((prev) => (prev ? { ...prev, name: next } : prev));
+      message.success('组件已重命名');
+      loadTree(searchKeyword || undefined);
+    } catch (e: unknown) {
+      message.error('重命名失败: ' + ((e as { message?: string }).message ?? ''));
+    }
+  };
+
   // DataSource modal handlers
   const handleOpenDsModal = (fieldIndex: number) => {
     setDsModalFieldIndex(fieldIndex);
@@ -1385,7 +1525,13 @@ const ComponentManagement: React.FC = () => {
         {selectedComponent ? (
           <div className="cmm-detail-wrap">
             <div className="cmm-detail-head">
-              <span className="cmm-t">{selectedComponent.name}</span>
+              <Typography.Text
+                className="cmm-t"
+                editable={{ tooltip: '点击重命名组件', onChange: handleRenameComponent, maxLength: 200 }}
+                style={{ marginBottom: 0 }}
+              >
+                {selectedComponent.name}
+              </Typography.Text>
               <Tag color={TYPE_TAG[componentType].color}>
                 {TYPE_TAG[componentType].label} · {selectedComponent.code}
               </Tag>
