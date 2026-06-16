@@ -635,11 +635,11 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     );
                   })()}
                 </tbody>
-                {/* Tab subtotal footer
-                    B4 对齐编辑页：有 is_subtotal 列 OR 有 INPUT_NUMBER/FORMULA/DATA_SOURCE 数值列均显示。
-                    小计行：统一读 columnSumsByComp（buildCrossTabRows resolvedRows 单一来源）。
-                           is_amount=true 显示 ¥ 货币格式；否则纯数字（最多4位小数，去末尾0）。
-                    本页签总计行：只汇总 is_subtotal（成本）列，不把输入量并入。
+                {/* Tab subtotal footer（对齐编辑页 QuotationStep2）
+                    显示门槛：有任意 is_subtotal 列才显示 footer。
+                    小计行：只对 is_subtotal 列求和（读 columnSumsByComp 单一来源）；非小计列一律留空。
+                           is_amount=true 显示 ¥ + 通用精度；否则纯数字（最多4位小数，去末尾0）。
+                    本页签金额合计行：只汇总金额列(is_amount&&is_subtotal)，无金额列整行隐藏。
                 */}
                 {activeComp.fields.some(f => f.is_subtotal) && (
                   <tfoot>
@@ -688,7 +688,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
         <div className="qt-no-component-data">��无组件数据</div>
       )}
 
-      {/* 卡片底部只保留「产品小计」；各页签小计在各自页签内（本页签总计行）。 */}
+      {/* 卡片底部只保留「产品小计」；各页签小计在各自页签内（本页签金额合计行）。 */}
       <div className="qt-subtotal-bar">
         <span className="qt-subtotal-label">产品小计</span>
         <span className="qt-subtotal-value">
