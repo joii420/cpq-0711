@@ -1270,6 +1270,31 @@ public class QuotationService {
         return dto;
     }
 
+    /**
+     * 跨模板复制：从源页签 row_data 只迁移「目标页签输入型字段」的值（按字段名匹配）。
+     * 非输入字段(FORMULA/BASIC_DATA/DATA_SOURCE/FIXED_VALUE/LIST_FORMULA)不迁移，由新模板重算。
+     */
+    static String mapInputRowData(String sourceRowDataJson, java.util.Set<String> targetInputFieldNames,
+                                  com.fasterxml.jackson.databind.ObjectMapper mapper) {
+        if (sourceRowDataJson == null || sourceRowDataJson.isBlank()) return "[]";
+        try {
+            com.fasterxml.jackson.databind.JsonNode rows = mapper.readTree(sourceRowDataJson);
+            if (!rows.isArray() || rows.isEmpty()) return "[]";
+            com.fasterxml.jackson.databind.node.ArrayNode out = mapper.createArrayNode();
+            for (com.fasterxml.jackson.databind.JsonNode row : rows) {
+                com.fasterxml.jackson.databind.node.ObjectNode newRow = mapper.createObjectNode();
+                if (row.has("row_index")) newRow.set("row_index", row.get("row_index"));
+                for (String fieldName : targetInputFieldNames) {
+                    if (row.has(fieldName)) newRow.set(fieldName, row.get(fieldName));
+                }
+                out.add(newRow);
+            }
+            return mapper.writeValueAsString(out);
+        } catch (Exception e) {
+            return "[]";
+        }
+    }
+
     @Transactional
     public void delete(UUID id) {
         Quotation q = Quotation.findById(id);
