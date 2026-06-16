@@ -1141,8 +1141,8 @@ const ComponentManagement: React.FC = () => {
 
   // ── Formula drawer wiring ───────────────────────────────────
   const openFormulaForComponent = (formula: FormulaItem | null) => {
-    // SUMIF predicate 修复：传原始 tokens 给抽屉，让抽屉内部拆分初始化（splitSumifTokens）。
-    // 不再提前调 tokensToDrawerExpression，避免 predicate 在序列化时静默丢失。
+    // 传原始 tokens 给抽屉；抽屉用 tokensToDrawerExpression 把全部 token（含带 predicate 的
+    // SUMIF cross_tab_ref）直接渲染为内联文本填入表达式框，无需侧状态拆分。
     // column.expression 留空串（抽屉不再从 column.expression 回显 token 公式）。
     const column = { expression: '' };
     const initialTokens = formula?.expression && formula.expression.length > 0
