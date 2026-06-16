@@ -59,4 +59,28 @@ public final class CrossTabComponentOrder {
         }
         return refs;
     }
+
+    /**
+     * 收集所有 component_subtotal 跨组件引用的目标标识（component_code 优先，否则 tab_name）。
+     * 用于把"本组件公式引用别组件列小计"也纳入拓扑依赖 —— 被引用组件必须先算，
+     * 否则其列小计尚未回填 → 引用列算成 0（QT-1743 管理费=0 根因，与前端 extractSubtotalRefs 对齐）。
+     * 调用方需把返回的 code/tabName 解析为 componentId 后再并入 deps（自引用由 B6 两阶段处理，调用方排除）。
+     */
+    public static Set<String> extractSubtotalRefs(JsonNode formulas) {
+        Set<String> refs = new LinkedHashSet<>();
+        if (formulas == null || !formulas.isArray()) return refs;
+        for (JsonNode f : formulas) {
+            JsonNode expr = f.path("expression");
+            if (!expr.isArray()) continue;
+            for (JsonNode tk : expr) {
+                if ("component_subtotal".equals(tk.path("type").asText(""))) {
+                    String code = tk.path("component_code").asText("");
+                    String tab = tk.path("tab_name").asText("");
+                    if (!code.isBlank()) refs.add(code);
+                    else if (!tab.isBlank()) refs.add(tab);
+                }
+            }
+        }
+        return refs;
+    }
 }

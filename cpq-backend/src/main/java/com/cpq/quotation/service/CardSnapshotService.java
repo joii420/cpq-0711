@@ -21,7 +21,9 @@ import org.jboss.logging.Logger;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -737,6 +739,17 @@ public class CardSnapshotService {
         //   输出顺序仍按原 snapshot 顺序（拓扑序只决定计算次序，不改变 UI tab 顺序）。
 
         // 1) 组件级拓扑序（仅 NORMAL tab；SUBTOTAL 不参与，单独在原序补算）
+        // 1a) 解析表：component_code / tabName / componentId → componentId（供 component_subtotal 依赖解析）
+        Map<String, String> refToCid = new HashMap<>();
+        for (JsonNode tab : snapshot) {
+            if (!"NORMAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
+            String cid = tab.path("componentId").asText("");
+            if (!cid.isBlank()) refToCid.put(cid, cid);
+            String code = tab.path("componentCode").asText("");
+            if (!code.isBlank()) refToCid.put(code, cid);
+            String tn = tab.path("tabName").asText("");
+            if (!tn.isBlank()) refToCid.put(tn, cid);
+        }
         List<String> compIds = new ArrayList<>();
         Map<String, Set<String>> compDeps = new LinkedHashMap<>();
         for (JsonNode tab : snapshot) {
@@ -744,7 +757,13 @@ public class CardSnapshotService {
             if (!"NORMAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
             String cid = tab.path("componentId").asText("");
             compIds.add(cid);
-            compDeps.put(cid, CrossTabComponentOrder.extractSourceRefs(tab.path("formulas")));
+            // cross_tab_ref 源依赖（既有） + component_subtotal 跨组件依赖（QT-1743 修复，与前端对齐）
+            Set<String> deps = new LinkedHashSet<>(CrossTabComponentOrder.extractSourceRefs(tab.path("formulas")));
+            for (String r : CrossTabComponentOrder.extractSubtotalRefs(tab.path("formulas"))) {
+                String tcid = refToCid.get(r);
+                if (tcid != null && !tcid.equals(cid)) deps.add(tcid);  // 排除自引用（二阶列由 B6 两阶段处理）
+            }
+            compDeps.put(cid, deps);
         }
         List<String> order = CrossTabComponentOrder.topoOrder(compIds, compDeps);
 
