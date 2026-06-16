@@ -57,7 +57,9 @@ public final class UnitConversion {
         Map<String, String> m = new HashMap<>();
         if (fields == null || !fields.isArray()) return m;
         for (JsonNode f : fields) {
-            String usf = f.path("unit_source_field").asText(null);
+            // 与 FormulaCalculator 同款：camelCase 优先、snake_case 兜底（生产快照为 snake）。
+            String usf = f.path("unitSourceField").asText(null);
+            if (usf == null || usf.isBlank()) usf = f.path("unit_source_field").asText(null);
             if (usf == null || usf.isBlank()) continue;
             String c = fieldKey(f);
             if (c != null && !c.isBlank()) m.put(c, usf);
@@ -109,5 +111,32 @@ public final class UnitConversion {
             out.put(c, DecimalNode.valueOf(raw.multiply(factor)));
         }
         return out;
+    }
+
+    /**
+     * 值解析后换算（与前端 computeAllFormulas "值解析后换算"段对称）：对配 unit_source_field 的列 C，
+     * 用 currentRowRaw 里同行已解析的单位文本 D，把已解析的 fieldValues[C] 与 currentRowRaw[C] × 系数。
+     * 就地修改（两者均为 per-row 局部 map，非共享渲染行）。供 FormulaCalculator.computeRows 在
+     * collectFieldValues + fillInputDefaultSourceByFieldName 之后调用，覆盖 driver / data-source 列。
+     */
+    public static void convertResolvedRow(JsonNode fields,
+                                          Map<String, Double> fieldValues,
+                                          Map<String, Object> currentRowRaw) {
+        Map<String, String> cols = configuredColumns(fields);
+        if (cols.isEmpty()) return;
+        for (Map.Entry<String, String> e : cols.entrySet()) {
+            String c = e.getKey(), d = e.getValue();
+            Object unitObj = currentRowRaw != null ? currentRowRaw.get(d) : null;
+            BigDecimal factor = factorFor(unitObj == null ? null : unitObj.toString());
+            if (factor.compareTo(BigDecimal.ONE) == 0) continue;
+            if (fieldValues != null) {
+                Double cv = fieldValues.get(c);
+                if (cv != null) fieldValues.put(c, factor.multiply(BigDecimal.valueOf(cv)).doubleValue());
+            }
+            if (currentRowRaw != null) {
+                BigDecimal raw = toBig(currentRowRaw.get(c));
+                if (raw != null) currentRowRaw.put(c, factor.multiply(raw));
+            }
+        }
     }
 }

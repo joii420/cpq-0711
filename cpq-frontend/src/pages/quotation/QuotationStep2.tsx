@@ -23,7 +23,7 @@ import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
 import { quotationService } from '../../services/quotationService';
 import type { CardStructure, CardValues } from '../../services/quotationService';
 import { computeRowKey, buildUniqueRowKeys } from './useCardSnapshots';
-import { applyUnitConversion } from '../../utils/unitConversion';
+import { applyUnitConversion, factorFor } from '../../utils/unitConversion';
 import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns } from './tabTotalLines';
 import { partVersionService } from '../../services/partVersionService';
@@ -408,9 +408,8 @@ function computeAllFormulas(
 ): Record<string, number | null> {
   if (!comp.fields || !comp.formulas) return {};
 
-  // 单位换算（物化点1）：配 unit_source_field 的列在算公式前按同行单位归一到 KG/PCS。
-  // 必须克隆——入参 row 是渲染用同一对象 (:2236)，原地 mutate 会污染明细格子显示原值。
-  row = applyUnitConversion(comp.fields as any, row);
+  // 单位换算见下方"值解析后换算"段：必须在 fieldValues / currentRowForEval 解析完之后做——
+  // 因为 driver / data-source(default_source $view) 列的值此刻才到位，顶部换 row 会漏掉它们。
 
   // Collect FORMULA fields and their resolved formulas
   // Plan 3a：FORMULA 字段可为单一模式(formula) 或条件模式(conditional)。
@@ -637,6 +636,34 @@ function computeAllFormulas(
       }
     }
     if (augmented) currentRowForEval = augmented;
+  }
+
+  // 单位换算（修正时机）：在 fieldValues / currentRowForEval 解析完之后做。
+  // 配 unit_source_field 的列 C，用同行已解析的单位文本 D 把 C 的已解析值 × 系数：
+  //   - fieldValues[C]：供 `field` token 引用（同页签公式直接引用 C 走这里）
+  //   - currentRowForEval[C]：供 `b_field` token / cross_tab 宿主行匹配引用
+  // 顶部对 row 换算会漏掉 driver / data-source(default_source $view) 列（此刻 row 里还没值）。
+  {
+    let ctClone = false;
+    for (const f of comp.fields) {
+      const usf = (f as any).unit_source_field as string | undefined;
+      if (!usf) continue;
+      const C = f.name || f.key || '';
+      if (!C) continue;
+      const unitText = currentRowForEval[usf] ?? (row as any)[usf];
+      const factor = factorFor(unitText == null ? '' : String(unitText));
+      if (factor === 1) continue;
+      if (typeof fieldValues[C] === 'number') fieldValues[C] = fieldValues[C] * factor;
+      const cv = currentRowForEval[C];
+      if (cv != null && cv !== '') {
+        const n = typeof cv === 'number' ? cv : parseFloat(cv);
+        if (!isNaN(n)) {
+          // 克隆后再改，绝不 mutate 入参 row（渲染同对象）
+          if (!ctClone && currentRowForEval === row) { currentRowForEval = { ...row }; ctClone = true; }
+          currentRowForEval[C] = n * factor;
+        }
+      }
+    }
   }
 
   const results: Record<string, number | null> = {};
@@ -1135,9 +1162,14 @@ export function computeNonSubtotalColumnSums(
       if (!colName) continue;
       let val: number;
       if (f.field_type === 'INPUT_NUMBER') {
-        // INPUT_NUMBER 直读 canonical 值（物化点2：经 applyUnitConversion 换算后的行值）
-        const raw = convRow[colName];
-        val = typeof raw === 'number' && isFinite(raw) ? raw : (parseFloat(raw) || 0);
+        // 优先取 computeAllFormulas 已解析+换算的 fv（数据源/换算列在 row 里没值，必须走 fv）；
+        // 缺时回退直读行值（已过 applyUnitConversion，覆盖直接录入的换算列）。
+        if (typeof fv[colName] === 'number' && isFinite(fv[colName])) {
+          val = fv[colName];
+        } else {
+          const raw = convRow[colName];
+          val = typeof raw === 'number' && isFinite(raw) ? raw : (parseFloat(raw) || 0);
+        }
       } else {
         // FORMULA / DATA_SOURCE 优先取 formulaCache，缺时取 fieldValues
         val = (formulaCache[colName] as number | null | undefined) ?? (fv[colName] ?? 0);

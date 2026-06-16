@@ -610,10 +610,6 @@ public class FormulaCalculator {
             // mergedRow = driverRow + editRows（编辑覆盖）
             Map<String, JsonNode> mergedRow = mergeRow(driverRow, editValues);
 
-            // 单位换算（物化点3）：配 unit_source_field 的列在喂公式前按同行单位归一到 KG/PCS。
-            // 在 collectFieldValues / toRawRowMap 之前，使 fieldValues 与 currentRowRaw 同口径。
-            mergedRow = com.cpq.engine.unit.UnitConversion.convertNodeRow(fields, mergedRow);
-
             // Layer 2: 字段值收集（AP-37 每 field_type）
             Map<String, Double> fieldValues =
                 collectFieldValues(fields, mergedRow, basicDataValues);
@@ -628,6 +624,11 @@ public class FormulaCalculator {
             ctx.crossTabRows = crossTabRows != null ? crossTabRows : Map.of();
             ctx.currentRowRaw = toRawRowMap(mergedRow);
             fillInputDefaultSourceByFieldName(fields, basicDataValues, ctx.currentRowRaw);
+
+            // 单位换算（修正时机，物化点3）：必须在 collectFieldValues + fillInputDefaultSourceByFieldName 之后做——
+            // driver / data-source(default_source $view) 列的值此刻才解析进 fieldValues / currentRowRaw，
+            // 顶部对 mergedRow 换算会漏掉它们。用同行已解析单位换算 fieldValues[C] 与 currentRowRaw[C]。
+            com.cpq.engine.unit.UnitConversion.convertResolvedRow(fields, fieldValues, ctx.currentRowRaw);
 
             // 按拓扑序求值，结果回填 fieldValues 供下游公式引用
             Map<String, Double> results = new LinkedHashMap<>();
