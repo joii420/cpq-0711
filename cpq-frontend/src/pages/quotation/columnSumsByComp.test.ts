@@ -373,3 +373,33 @@ describe('columnSumsByComp — 回归: INPUT_NUMBER 字符串值不得丢成 0',
     expect(columnSumsByComp['PSTR']['管理费']).toBeCloseTo(0.384, 4);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 回归 (QT-20260616-1743): component_subtotal 跨组件依赖必须进拓扑序。
+// 公式列引用别组件列小计(component_subtotal)时，被引用组件必须先处理，否则其列小计未回填→读 0。
+// 此前 extractSourceRefs 只看 cross_tab_ref，漏 component_subtotal → 引用方排前时算 0。
+// ─────────────────────────────────────────────────────────────────────────────
+describe('columnSumsByComp — 回归: component_subtotal 跨组件依赖进拓扑序', () => {
+  const A: any = {
+    componentId: 'COMP-A', componentCode: 'COMP-A', tabName: 'TabA', componentType: 'NORMAL',
+    fields: [{ name: 'cost', field_type: 'INPUT_NUMBER', is_subtotal: true }],
+    formulas: [], rows: [{ cost: '100' }], subtotal: 0,
+  };
+  const C: any = {
+    componentId: 'COMP-C', componentCode: 'COMP-C', tabName: 'TabC', componentType: 'NORMAL',
+    fields: [{ name: 'mgmt', field_type: 'FORMULA', formula_name: 'f_mgmt', is_subtotal: true }],
+    formulas: [{ name: 'f_mgmt', expression: [
+      { type: 'component_subtotal', component_code: 'COMP-A', value: 'cost', tab_name: 'cost' },
+      { type: 'operator', value: '*' }, { type: 'number', value: 2 },
+    ] }],
+    formulaAssignments: { '0': 'f_mgmt' }, rows: [{}], subtotal: 0,
+  };
+
+  it('引用方(C)排在被引用方(A)之前，mgmt 小计=200 非 0；产品小计键同步正确', () => {
+    const acs: Record<string, number> = {};
+    const { columnSumsByComp } = buildCrossTabRows([C, A], acs, 'PART', () => undefined);
+    expect(columnSumsByComp['COMP-A']['cost']).toBe(100);
+    expect(columnSumsByComp['COMP-C']['mgmt']).toBe(200);
+    expect(acs['COMP-C#mgmt']).toBe(200);
+  });
+});

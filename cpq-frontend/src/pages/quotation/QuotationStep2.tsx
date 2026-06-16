@@ -954,8 +954,32 @@ export function buildCrossTabRows(
 ): { store: Record<string, Array<Record<string, any>>>; columnSumsByComp: Record<string, Record<string, number>> } {
   const normals = componentData.filter(c => c?.fields && c.componentType === 'NORMAL');
   const ids = normals.map(c => c.componentId || c.componentCode || c.tabName);
+  // 被引用组件的 componentCode / tabName / componentId → 它在 deps 图里的 idKey（供 component_subtotal 解析）
+  const idKeyOf = new Map<string, string>();
+  normals.forEach((c, i) => {
+    if (c.componentId) idKeyOf.set(c.componentId, ids[i]);
+    if (c.componentCode) idKeyOf.set(c.componentCode, ids[i]);
+    if (c.tabName) idKeyOf.set(c.tabName, ids[i]);
+  });
   const deps: Record<string, string[]> = {};
-  normals.forEach((c, i) => { deps[ids[i]] = extractSourceRefs(c.formulas as any); });
+  normals.forEach((c, i) => {
+    // cross_tab_ref 源依赖（既有）
+    const crossRefs = extractSourceRefs(c.formulas as any);
+    // component_subtotal 跨组件依赖（修 QT-1743 管理费=0）：本组件公式引用别的组件列小计时，
+    // 被引用组件必须先处理 —— 否则处理本组件时被引用列小计尚未 PASS2 回填 → 读到 0（行渲染在全部跑完后才算 → 行对小计错）。
+    // 自引用（二阶列）不计入：由下方 B2 两阶段处理。
+    const subRefs: string[] = [];
+    for (const f of (c.formulas ?? [])) {
+      for (const t of (((f as any)?.expression ?? []) as any[])) {
+        if (t?.type === 'component_subtotal') {
+          const refKey = (t.component_code && idKeyOf.get(t.component_code))
+            || (t.tab_name && idKeyOf.get(t.tab_name));
+          if (refKey && refKey !== ids[i]) subRefs.push(refKey);
+        }
+      }
+    }
+    deps[ids[i]] = [...new Set([...crossRefs, ...subRefs])];
+  });
   let order: string[];
   try { order = topoOrderComponents(ids, deps); }
   catch { order = ids; /* 环：退回原序，避免整卡渲染崩溃；模板保存层已拦截环 */ }
