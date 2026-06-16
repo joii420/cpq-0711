@@ -37,4 +37,18 @@ class QuotationCopyMappingTest {
         assertEquals("[]", QuotationService.mapInputRowData(null, Set.of("x"), M));
         assertEquals("[]", QuotationService.mapInputRowData("[]", Set.of("x"), M));
     }
+
+    @Test
+    void parsesInputFieldNamesFromSnapshot() throws Exception {
+        String snap = "[{\"componentId\":\"c1\",\"tabName\":\"产品\",\"fields\":["
+            + "{\"name\":\"材料管理费\",\"field_type\":\"INPUT_NUMBER\"},"
+            + "{\"name\":\"品名\",\"field_type\":\"INPUT_TEXT\"},"
+            + "{\"name\":\"利润\",\"field_type\":\"FORMULA\"},"
+            + "{\"name\":\"汇率\",\"field_type\":\"BASIC_DATA\"}]}]";
+        var tabs = QuotationService.parseTemplateTabFields(snap, M);
+        assertEquals(1, tabs.size());
+        assertEquals("c1", tabs.get(0).componentId);
+        assertEquals("产品", tabs.get(0).tabName);
+        assertEquals(Set.of("材料管理费", "品名"), tabs.get(0).inputFieldNames);
+    }
 }

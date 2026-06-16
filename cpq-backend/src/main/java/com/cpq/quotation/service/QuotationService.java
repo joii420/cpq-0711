@@ -1295,6 +1295,46 @@ public class QuotationService {
         }
     }
 
+    /** 复制迁移用：模板某页签的标识 + 输入型字段名集合。 */
+    static final class TabFields {
+        final String componentId;
+        final String tabName;
+        final java.util.Set<String> inputFieldNames;
+        TabFields(String componentId, String tabName, java.util.Set<String> inputFieldNames) {
+            this.componentId = componentId; this.tabName = tabName; this.inputFieldNames = inputFieldNames;
+        }
+    }
+
+    private static final java.util.Set<String> INPUT_FIELD_TYPES =
+            java.util.Set.of("INPUT", "INPUT_TEXT", "INPUT_NUMBER");
+
+    /** 解析 components_snapshot → 每页签的输入字段名集合。 */
+    static java.util.List<TabFields> parseTemplateTabFields(String componentsSnapshotJson,
+                                                            com.fasterxml.jackson.databind.ObjectMapper mapper) {
+        java.util.List<TabFields> result = new java.util.ArrayList<>();
+        if (componentsSnapshotJson == null || componentsSnapshotJson.isBlank()) return result;
+        try {
+            com.fasterxml.jackson.databind.JsonNode arr = mapper.readTree(componentsSnapshotJson);
+            if (!arr.isArray()) return result;
+            for (com.fasterxml.jackson.databind.JsonNode tab : arr) {
+                java.util.Set<String> inputs = new java.util.LinkedHashSet<>();
+                com.fasterxml.jackson.databind.JsonNode fields = tab.path("fields");
+                if (fields.isArray()) {
+                    for (com.fasterxml.jackson.databind.JsonNode f : fields) {
+                        String type = f.path("field_type").asText("");
+                        String name = f.path("name").asText("");
+                        if (!name.isEmpty() && INPUT_FIELD_TYPES.contains(type)) inputs.add(name);
+                    }
+                }
+                result.add(new TabFields(
+                    tab.path("componentId").asText(""),
+                    tab.path("tabName").asText(""),
+                    inputs));
+            }
+        } catch (Exception ignore) { }
+        return result;
+    }
+
     @Transactional
     public void delete(UUID id) {
         Quotation q = Quotation.findById(id);
