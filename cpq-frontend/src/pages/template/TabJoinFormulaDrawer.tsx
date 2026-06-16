@@ -71,6 +71,10 @@ const FUNC_TO_AGG: Record<SumifFunc, ExpressionToken['agg']> = {
   MAXIF: 'MAX',
 };
 
+// 条件聚合函数（EXCEL 线文本可解析：SUMIF([页签.字段]=值, [页签.字段])）。
+// 仅 EXCEL 模式在工具条点选插入；NORMAL/SUBTOTAL 组件线走下方"条件聚合配置区"构造器。
+const SUMIF_TEXT_FUNCS: SumifFunc[] = ['SUMIF', 'COUNTIF', 'AVGIF', 'MINIF', 'MAXIF'];
+
 /**
  * 纯函数：把 SUMIF 向导的用户输入转为带 predicate 的 cross_tab_ref ExpressionToken。
  * match 始终为 []（SUMIF 族通过 predicate 过滤，不依赖行键 match 对齐）。
@@ -603,6 +607,24 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
             {fn}
           </Button>
         ))}
+        {componentType === 'EXCEL' && (
+          <>
+            <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+              条件聚合
+            </Text>
+            {SUMIF_TEXT_FUNCS.map((fn) => (
+              <Button
+                key={fn}
+                size="small"
+                title={`${fn}(条件, 取值表达式)，如 SUMIF([页签.类型]='管理费', [页签.金额])`}
+                style={{ color: '#722ed1', borderColor: '#d3adf7' }}
+                onClick={() => insertAtCursor(`${fn}()`, 1)}
+              >
+                {fn}
+              </Button>
+            ))}
+          </>
+        )}
       </Space>
 
       {/* 规则提示 */}
