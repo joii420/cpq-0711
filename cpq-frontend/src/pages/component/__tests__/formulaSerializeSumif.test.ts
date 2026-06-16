@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { expressionToTokens, tokensToDrawerExpression } from '../formulaSerialize';
+import { expressionToTokens, tokensToDrawerExpression, parseFormulaSegments } from '../formulaSerialize';
 import type { TabDef } from '../../../services/tabJoinFormulaService';
 
 // 两个页签：其他费用(源, componentId=cid-fee)、来料(宿主自身, componentId=cid-host)
@@ -21,7 +21,7 @@ const tabDefs: TabDef[] = [
     componentId: 'cid-fee',
     componentName: '其他费用',
     rowKeyFields: ['项次'],
-    detailFields: ['费用', '比例'],
+    detailFields: ['类型', '费用', '比例'],
     allFields: ['项次', '类型', '费用', '比例'],
     subtotalCols: [],
     self: false,
@@ -120,5 +120,103 @@ describe('SUMIF in formulaSerialize', () => {
     expect((ct as any).predicate).toBeFalsy();
     const back = tokensToDrawerExpression(toks, tabDefs);
     expect(back.trim()).toBe(expr.trim());
+  });
+});
+
+// ─── Phase 3 Task 3: parseFormulaSegments 着色测试 ─────────────────────────────
+
+describe('parseFormulaSegments SUMIF 着色', () => {
+  it('SUMIF 函数名 segment 不应被标红（应识别为函数）', () => {
+    const segs = parseFormulaSegments(
+      "SUMIF([其他费用.类型]='管理费', [其他费用.费用])",
+      tabDefs,
+      ['料件'],
+      true,
+    );
+    // 找到含 SUMIF 的文本 segment
+    const sumifSeg = segs.find((s: any) => s.text !== undefined
+      ? s.text.toUpperCase().includes('SUMIF')
+      : s.display?.toUpperCase().includes('SUMIF') || s.raw?.toUpperCase().includes('SUMIF'));
+    expect(sumifSeg).toBeTruthy();
+    // SUMIF 所在 segment 不能是 error 颜色（红色 = 未知/非法）
+    expect((sumifSeg as any).color).not.toBe('error');
+    expect((sumifSeg as any).color).not.toBe('red');
+  });
+
+  it('SUMIF 内部的 [引用] 应被正确着色（不标红）', () => {
+    const segs = parseFormulaSegments(
+      "SUMIF([其他费用.类型]='管理费', [其他费用.费用])",
+      tabDefs,
+      ['料件'],
+      true,
+    );
+    // SUMIF 内部有两个 [其他费用.xxx] 引用，它们是跨页签引用应着绿色（非 source-only 时 red；insideFn=true 放开聚合约束）
+    const blockSegs = segs.filter((s: any) => s.isBlock);
+    // 在 insideFn=true 下，跨页签细节引用被允许 → color 应为 green 或 blue 或 yellow（不为 red）
+    for (const seg of blockSegs) {
+      expect((seg as any).color).not.toBe('red');
+    }
+  });
+
+  it('COUNTIF 不应被标红', () => {
+    const segs = parseFormulaSegments(
+      "COUNTIF([其他费用.类型]='管理费')",
+      tabDefs,
+      ['料件'],
+      true,
+    );
+    const countifSeg = segs.find((s: any) =>
+      (s.raw ?? '').toUpperCase().includes('COUNTIF') ||
+      (s.display ?? '').toUpperCase().includes('COUNTIF'),
+    );
+    expect(countifSeg).toBeTruthy();
+    expect((countifSeg as any).color).not.toBe('red');
+    expect((countifSeg as any).color).not.toBe('error');
+  });
+
+  it('AVGIF / MINIF / MAXIF 均不标红', () => {
+    for (const fn of ['AVGIF', 'MINIF', 'MAXIF']) {
+      const segs = parseFormulaSegments(
+        `${fn}([其他费用.类型]='管理费', [其他费用.费用])`,
+        tabDefs,
+        ['料件'],
+        true,
+      );
+      const fnSeg = segs.find((s: any) =>
+        (s.raw ?? '').toUpperCase().includes(fn) ||
+        (s.display ?? '').toUpperCase().includes(fn),
+      );
+      expect(fnSeg, `${fn} segment 应存在`).toBeTruthy();
+      expect((fnSeg as any).color, `${fn} 不应标红`).not.toBe('red');
+      expect((fnSeg as any).color, `${fn} 不应标 error`).not.toBe('error');
+    }
+  });
+
+  it('SUMIF 与运算符组合：两者均不标红', () => {
+    const segs = parseFormulaSegments(
+      "[来料.数量] * SUMIF([其他费用.类型]='管理费', [其他费用.费用])",
+      tabDefs,
+      ['料件'],
+      true,
+    );
+    const sumifSeg = segs.find((s: any) =>
+      (s.raw ?? '').toUpperCase().includes('SUMIF'),
+    );
+    expect(sumifSeg).toBeTruthy();
+    expect((sumifSeg as any).color).not.toBe('red');
+    expect((sumifSeg as any).color).not.toBe('error');
+  });
+
+  it('普通 SUM 着色零回归：FN_NAMES 扩展不影响 SUM', () => {
+    const segs = parseFormulaSegments(
+      'SUM([其他费用.费用])',
+      tabDefs,
+      ['料件'],
+      true,
+    );
+    // SUM 开头的文本 segment 应存在，且不标红
+    const sumSeg = segs.find((s: any) => (s.raw ?? '').toUpperCase().startsWith('SUM('));
+    expect(sumSeg).toBeTruthy();
+    expect((sumSeg as any).color).not.toBe('red');
   });
 });

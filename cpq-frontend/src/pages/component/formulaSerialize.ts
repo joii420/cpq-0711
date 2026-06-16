@@ -261,7 +261,7 @@ function parseValueExpr(
   selfRowKeyFields?: string[],
   selfComponentId?: string,
 ): FormulaToken[] {
-  // valueExpr 不含单引号字符串，可直接用 lex（但 lex 不支持 SUMIF 族，不会有问题）
+  // valueExpr 不含单引号字符串，可直接用 lex；SUMIF 族嵌套被上层"不允许"约束排除，此处无需特殊处理
   const rawToks = lex(text);
   const result: FormulaToken[] = [];
   for (const rt of rawToks) {
@@ -1088,12 +1088,16 @@ export function parseFormulaSegments(
 
   // FN(...) 深度追踪：判断 [引用] 是否处于 FN 括号内
   // K* 系列也纳入 FN_NAMES，使 insideFn=true → 跳过 needs-agg（KSUM 内细 source 合法聚合）
-  const FN_NAMES = new Set(['SUM', 'AVG', 'MAX', 'MIN', 'COUNT', 'KSUM', 'KAVG', 'KMAX', 'KMIN', 'KCOUNT']);
+  // SUMIF 族（SUMIF/COUNTIF/AVGIF/MINIF/MAXIF）同样纳入，使 insideFn=true → 内部 [引用] 不要求聚合
+  const FN_NAMES = new Set(['SUM', 'AVG', 'MAX', 'MIN', 'COUNT', 'KSUM', 'KAVG', 'KMAX', 'KMIN', 'KCOUNT', 'SUMIF', 'COUNTIF', 'AVGIF', 'MINIF', 'MAXIF']);
   // KFUNC_NAMES：K* 函数子集，用于独立追踪 insideKsum 上下文
   const KFUNC_NAMES = new Set(['KSUM', 'KAVG', 'KMAX', 'KMIN', 'KCOUNT']);
+  // SUMIF_FN_NAMES：SUMIF 族，用于独立追踪 insideSumif 上下文（不要求行键有公共集）
+  const SUMIF_FN_NAMES = new Set(['SUMIF', 'COUNTIF', 'AVGIF', 'MINIF', 'MAXIF']);
   let parenDepth = 0;
   const fnOpenDepths: number[] = [];
   const ksumOpenDepths: number[] = []; // K* 开启的括号深度栈
+  const sumifOpenDepths: number[] = []; // SUMIF 族开启的括号深度栈
   let word = '';
 
   let i = 0;
@@ -1107,7 +1111,8 @@ export function parseFormulaSegments(
       const body = expr.slice(i + 1, end).trim();
       const insideFn = fnOpenDepths.length > 0;
       const insideKsum = ksumOpenDepths.length > 0;
-      const { color } = classifyRefSegment(body, tabDefs, selfRowKeyFields, enforceMappable, insideFn, insideKsum);
+      const insideSumif = sumifOpenDepths.length > 0;
+      const { color } = classifyRefSegment(body, tabDefs, selfRowKeyFields, enforceMappable, insideFn, insideKsum, insideSumif);
       segs.push({ raw, isBlock: true, display: blockDisplay(body), color });
       word = ''; // 方括号内容不贡献函数名
       i = end + 1;
@@ -1133,12 +1138,16 @@ export function parseFormulaSegments(
         const upperWord = word.toUpperCase();
         if (FN_NAMES.has(upperWord)) fnOpenDepths.push(parenDepth);
         if (KFUNC_NAMES.has(upperWord)) ksumOpenDepths.push(parenDepth);
+        if (SUMIF_FN_NAMES.has(upperWord)) sumifOpenDepths.push(parenDepth);
       } else if (ch === ')') {
         if (fnOpenDepths.length && fnOpenDepths[fnOpenDepths.length - 1] === parenDepth) {
           fnOpenDepths.pop();
         }
         if (ksumOpenDepths.length && ksumOpenDepths[ksumOpenDepths.length - 1] === parenDepth) {
           ksumOpenDepths.pop();
+        }
+        if (sumifOpenDepths.length && sumifOpenDepths[sumifOpenDepths.length - 1] === parenDepth) {
+          sumifOpenDepths.pop();
         }
         parenDepth--;
       }
@@ -1208,6 +1217,8 @@ export function classifyRefSegment(
   enforceMappable: boolean,
   insideFn: boolean = false,
   insideKsum: boolean = false,
+  /** SUMIF 族（SUMIF/COUNTIF/…）括号内：跳过行键 match 空检查，SUMIF 靠 predicate 过滤行 */
+  insideSumif: boolean = false,
 ): { kind: string; color: SegmentColor } {
   // 1) 无点 + (总计) 结尾 → 整页签小计(component_subtotal,无 match 约束)
   if (!body.includes('.') && body.endsWith('(总计)')) {
@@ -1247,7 +1258,8 @@ export function classifyRefSegment(
     if (!known.has(field)) return { kind: 'invalid', color: 'red' };
 
     // 3/4) 明细 cross_tab_ref:enforceMappable 下镜像 buildMatch 是否空判红
-    if (enforceMappable) {
+    // SUMIF 族内引用不要求行键有公共集（SUMIF 靠 predicate 过滤行，不依赖行键 JOIN）
+    if (enforceMappable && !insideSumif) {
       const matchEmpty = buildMatch(tab.rowKeyFields ?? [], selfRowKeyFields).length === 0;
       if (matchEmpty) return { kind: 'invalid', color: 'red' };
     }
