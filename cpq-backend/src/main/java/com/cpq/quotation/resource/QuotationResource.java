@@ -311,8 +311,12 @@ public class QuotationResource {
 
     @POST
     @Path("/{id}/copy")
-    public ApiResponse<QuotationDTO> copy(@PathParam("id") UUID id) {
-        return ApiResponse.success(quotationService.copy(id));
+    public ApiResponse<QuotationDTO> copy(@PathParam("id") UUID id, java.util.Map<String, Object> body) {
+        UUID templateId = null;
+        if (body != null && body.get("templateId") != null && !body.get("templateId").toString().isBlank()) {
+            templateId = UUID.fromString(body.get("templateId").toString());
+        }
+        return ApiResponse.success(quotationService.copy(id, templateId));
     }
 
     @DELETE
