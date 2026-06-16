@@ -13,6 +13,7 @@ import { quotationService } from '../../services/quotationService';
 import { quotationSnapshotService } from '../../services/quotationSnapshotService';
 import { useAuthStore } from '../../stores/authStore';
 import QuoteBasicDataImportV6Drawer from './QuoteBasicDataImportV6Drawer';
+import CopyQuotationDrawer from './CopyQuotationDrawer';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
 
 const { Search } = Input;
@@ -58,6 +59,7 @@ const QuotationList: React.FC = () => {
   const [approveComment, setApproveComment] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [basicImportOpen, setBasicImportOpen] = useState(false);
+  const [copySource, setCopySource] = useState<{ id: string; templateId?: string } | null>(null);
 
   const isPendingApprovalTab = statusFilter === PENDING_APPROVAL_TAB;
 
@@ -166,12 +168,9 @@ const QuotationList: React.FC = () => {
       label: '复制',
       icon: <CopyOutlined />,
       enabledWhen: (rows) => rows.length === 1 ? true : '复制一次只能选一行',
-      onClick: async (rows) => {
-        try {
-          const res = await quotationService.copy(rows[0].id);
-          message.success('复制成功');
-          navigate(`/quotations/${res.data.id}/edit`);
-        } catch (e: any) { message.error(e.message); }
+      onClick: (rows) => {
+        const r: any = rows[0];
+        setCopySource({ id: r.id, templateId: r.customerTemplateId ?? r.templateId });
       },
     },
     {
@@ -402,6 +401,19 @@ const QuotationList: React.FC = () => {
         <Input.TextArea rows={3} placeholder="请填写退回原因（必填）" value={rejectComment} onChange={e => setRejectComment(e.target.value)} />
       </Modal>
       <QuoteBasicDataImportV6Drawer open={basicImportOpen} onClose={() => { setBasicImportOpen(false); loadData(); }} />
+      <CopyQuotationDrawer
+        open={!!copySource}
+        defaultTemplateId={copySource?.templateId}
+        onClose={() => setCopySource(null)}
+        onConfirm={async (templateId) => {
+          try {
+            const res = await quotationService.copy(copySource!.id, templateId);
+            message.success('复制成功');
+            setCopySource(null);
+            navigate(`/quotations/${res.data.id}/edit`);
+          } catch (e: any) { message.error(e.message); }
+        }}
+      />
     </Card>
   );
 };
