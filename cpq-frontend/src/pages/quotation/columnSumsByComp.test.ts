@@ -343,3 +343,33 @@ describe('columnSumsByComp — 断言⑤ unit_source_field 换算按 canonical �
     expect(unitSums?.['净用量']).not.toBeCloseTo(300, 1);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 回归 (QT-20260616-1741): 输入框写入的是【字符串】值，footer 小计必须 parseFloat 兜底，
+// 不能因 typeof!=='number' 丢成 0。此前 fixture 都用数字值，漏了字符串路径。
+// ─────────────────────────────────────────────────────────────────────────────
+describe('columnSumsByComp — 回归: INPUT_NUMBER 字符串值不得丢成 0', () => {
+  const compStr: any = {
+    componentId: 'PSTR', componentCode: 'PSTR', tabName: '产品', componentType: 'NORMAL',
+    fields: [
+      { name: '材料管理费', field_type: 'INPUT_NUMBER' },
+      { name: '单重', field_type: 'INPUT_NUMBER' },
+      { name: '管理费', field_type: 'FORMULA', formula_name: 'f_m', is_subtotal: true },
+    ],
+    formulas: [{ name: 'f_m', expression: [
+      { type: 'field', value: '材料管理费' }, { type: 'operator', value: '*' },
+      { type: 'field', value: '单重' }, { type: 'operator', value: '*' }, { type: 'number', value: 0.001 },
+    ] }],
+    formulaAssignments: { '2': 'f_m' },
+    rows: [{ '材料管理费': '12', '单重': '32' }],  // 字符串，模拟输入框
+    subtotal: 0,
+  };
+
+  it('字符串 "12"/"32" → 材料管理费=12, 单重=32（非 0）, 依赖输入的公式列=0.384', () => {
+    const acs: Record<string, number> = {};
+    const { columnSumsByComp } = buildCrossTabRows([compStr], acs, 'PART', () => undefined);
+    expect(columnSumsByComp['PSTR']['材料管理费']).toBe(12);
+    expect(columnSumsByComp['PSTR']['单重']).toBe(32);
+    expect(columnSumsByComp['PSTR']['管理费']).toBeCloseTo(0.384, 4);
+  });
+});

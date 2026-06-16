@@ -917,7 +917,12 @@ function sumColumnsCanonical(
     let sum = 0;
     for (const row of convRows) {
       const v = row[colName];
-      if (typeof v === 'number' && isFinite(v)) sum += v;
+      // INPUT_NUMBER 等输入列在 resolvedRow 里是原始字符串（输入框写 "12"），
+      // 必须 parseFloat 兜底（复刻旧 computeNonSubtotalColumnSums 的 parseFloat(raw) 行为，
+      // 否则字符串被 typeof==='number' 丢成 0 → 输入列小计恒 0、改输入不变）。
+      // 公式/小计列已是数字，走 number 分支不变。空/非数字 → NaN → 跳过（计 0）。
+      const n = typeof v === 'number' ? v : parseFloat(v);
+      if (isFinite(n)) sum += n;
     }
     result[colName] = round4(sum);
   }
