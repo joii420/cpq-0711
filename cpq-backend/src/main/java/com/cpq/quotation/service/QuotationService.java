@@ -1244,10 +1244,10 @@ public class QuotationService {
         copy.expiryDate = LocalDate.now().plusDays(30);
         copy.paymentTerms = source.paymentTerms;
         copy.deliveryCycle = source.deliveryCycle;
-        copy.originalAmount = source.originalAmount;
+        copy.originalAmount = BigDecimal.ZERO;   // 占位：换模板后金额由编辑/重算回填，避免列表显示源模板陈旧金额
         copy.systemDiscountRate = source.systemDiscountRate;
         copy.finalDiscountRate = source.finalDiscountRate;
-        copy.totalAmount = source.totalAmount;
+        copy.totalAmount = BigDecimal.ZERO;       // 同上
         copy.sourceQuotationId = source.id;
         copy.snapshotCustomerName = source.snapshotCustomerName;
         copy.snapshotCustomerLevel = source.snapshotCustomerLevel;
@@ -1382,7 +1382,7 @@ public class QuotationService {
     }
 
     private static final java.util.Set<String> INPUT_FIELD_TYPES =
-            java.util.Set.of("INPUT", "INPUT_TEXT", "INPUT_NUMBER");
+            java.util.Set.of("INPUT_TEXT", "INPUT_NUMBER");
 
     /** 解析 components_snapshot → 每页签的输入字段名集合。 */
     static java.util.List<TabFields> parseTemplateTabFields(String componentsSnapshotJson,
