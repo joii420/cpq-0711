@@ -876,6 +876,56 @@ function detectSecondOrderFields(comp: ComponentDataItem): Set<string> {
   return secondOrder;
 }
 
+// ─── 共享原语：消除 buildColumnSumsByComp / subtotalsFromResolvedRows 重复 ─────────────────
+
+/**
+ * 提取组件的三键列表（tabName / componentCode / componentId），去重保持顺序。
+ * 逻辑与 buildColumnSumsByComp 和 subtotalsFromResolvedRows 的原有键构建完全一致。
+ */
+function componentKeys(comp: ComponentDataItem): string[] {
+  const keys: string[] = [];
+  if (comp.tabName) keys.push(comp.tabName);
+  if (comp.componentCode && comp.componentCode !== comp.tabName) keys.push(comp.componentCode);
+  if (comp.componentId && comp.componentId !== comp.tabName && comp.componentId !== comp.componentCode) {
+    keys.push(comp.componentId);
+  }
+  return keys;
+}
+
+/**
+ * 对 rows 应用 canonical 单位换算后，按 colFilter 选出目标列，逐列 Σ 行（typeof==='number'&&isFinite），
+ * 结果 4dp 舍入（与后端 setScale(4,HALF_UP) 对齐）。返回 { colName → sum } Map。
+ *
+ * 调用方：
+ *   buildColumnSumsByComp → colFilter = is_subtotal || field_type ∈ {INPUT_NUMBER,FORMULA,DATA_SOURCE}
+ *   subtotalsFromResolvedRows → colFilter = is_subtotal
+ */
+function sumColumnsCanonical(
+  fields: ComponentField[],
+  rows: Array<Record<string, any>>,
+  colFilter: (f: ComponentField) => boolean,
+): Record<string, number> {
+  const round4 = (x: number) => Math.round(x * 1e4) / 1e4;
+  const targetFields = fields.filter(colFilter);
+  const result: Record<string, number> = {};
+  if (targetFields.length === 0) return result;
+
+  const convRows = rows.map((r) => applyUnitConversion(fields as any, r));
+  for (const f of targetFields) {
+    const colName: string = f.name || (f as any).key || '';
+    if (!colName) continue;
+    let sum = 0;
+    for (const row of convRows) {
+      const v = row[colName];
+      if (typeof v === 'number' && isFinite(v)) sum += v;
+    }
+    result[colName] = round4(sum);
+  }
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
 /**
  * 按组件 cross_tab_ref 依赖拓扑序构建 crossTabRows (镜像后端 CardSnapshotService PASS2)。
  * 前置: allComponentSubtotals 必须已构建完 (PASS1)。
@@ -951,40 +1001,22 @@ export function buildCrossTabRows(
 
   /** 计算组件所有数值列（is_subtotal + INPUT_NUMBER/FORMULA/DATA_SOURCE）的 Σ行 canonical 值，
    *  写入 columnSumsByComp（三键：componentId / componentCode / tabName）。
-   *  4dp 舍入，与 subtotalsFromResolvedRows 的 round4 对齐（后端 setScale(4,HALF_UP)）。
+   *  4dp 舍入，委托 sumColumnsCanonical 原语（与 subtotalsFromResolvedRows 同口径）。
+   *  注意：三键共享同一 colSums 引用，下游应只读不写。
    */
   const buildColumnSumsByComp = (comp: ComponentDataItem, rows: Array<Record<string, any>>) => {
-    const round4 = (x: number) => Math.round(x * 1e4) / 1e4;
-    // 列范围：is_subtotal 或 field_type ∈ {INPUT_NUMBER, FORMULA, DATA_SOURCE}
-    const targetFields = (comp.fields ?? []).filter((f: ComponentField) => {
-      if (f.is_subtotal) return true;
-      const ft = f.field_type;
-      return ft === 'INPUT_NUMBER' || ft === 'FORMULA' || ft === 'DATA_SOURCE';
-    });
-    if (targetFields.length === 0) return;
-
-    // 求和用 canonical（applyUnitConversion），与 subtotalsFromResolvedRows 物化点对齐
-    const convRows = rows.map(r => applyUnitConversion(comp.fields as any, r));
-    const colSums: Record<string, number> = {};
-    for (const f of targetFields) {
-      const colName: string = f.name || f.key || '';
-      if (!colName) continue;
-      let sum = 0;
-      for (const row of convRows) {
-        const v = row[colName];
-        if (typeof v === 'number' && isFinite(v)) sum += v;
-      }
-      colSums[colName] = round4(sum);
-    }
-
-    // 写入三键（componentId / componentCode / tabName），与 allComponentSubtotals 键逻辑一致
-    const keys: string[] = [];
-    if (comp.tabName) keys.push(comp.tabName);
-    if (comp.componentCode && comp.componentCode !== comp.tabName) keys.push(comp.componentCode);
-    if (comp.componentId && comp.componentId !== comp.tabName && comp.componentId !== comp.componentCode) {
-      keys.push(comp.componentId);
-    }
-    for (const k of keys) {
+    const colSums = sumColumnsCanonical(
+      comp.fields ?? [],
+      rows,
+      (f) => {
+        if (f.is_subtotal) return true;
+        const ft = f.field_type;
+        return ft === 'INPUT_NUMBER' || ft === 'FORMULA' || ft === 'DATA_SOURCE';
+      },
+    );
+    if (Object.keys(colSums).length === 0) return;
+    // 写入三键（componentId / componentCode / tabName），三键共享同一只读对象引用
+    for (const k of componentKeys(comp)) {
       columnSumsByComp[k] = colSums;
     }
   };
@@ -1043,33 +1075,17 @@ export function subtotalsFromResolvedRows(
   rows: Array<Record<string, any>>,
   allComponentSubtotals: Record<string, number>,
 ): void {
-  const subtotalFields = (comp.fields ?? []).filter((f: ComponentField) => f.is_subtotal);
-  if (subtotalFields.length === 0) return;
+  // sumColumnsCanonical 内部已做 is_subtotal 过滤、applyUnitConversion canonical 换算、4dp 舍入。
+  // 若无 is_subtotal 列，colSums 为空对象，下方循环不执行（与原有 early-return 语义一致）。
+  const colSums = sumColumnsCanonical(comp.fields ?? [], rows, (f) => !!f.is_subtotal);
+  if (Object.keys(colSums).length === 0) return;
 
-  // 单位换算（与后端 backfillSubtotalsFromResolved 物化点5 对齐）：求和用换算后行，
-  // 避免配 unit_source_field 的 is_subtotal 列前端 sum(原值) 与后端 sum(canonical) 分叉。
-  const convRows = rows.map((row) => applyUnitConversion(comp.fields as any, row));
-
-  const keys: string[] = [];
-  if (comp.tabName) keys.push(comp.tabName);
-  if (comp.componentCode && comp.componentCode !== comp.tabName) keys.push(comp.componentCode);
-  if (comp.componentId && comp.componentId !== comp.tabName && comp.componentId !== comp.componentCode) {
-    keys.push(comp.componentId);
-  }
-
-  // 4dp 舍入，与后端 backfillSubtotalsFromResolved 的 setScale(4, HALF_UP) 对齐，
-  // 清除浮点累加尾差，避免前端显示与后端持久化 subtotalByColumn 数值分叉（评审 #2）。
+  const keys = componentKeys(comp);
   const round4 = (x: number) => Math.round(x * 1e4) / 1e4;
+
+  // 写入 `key#colName` 键；同时累加 totalForComp（与后端 backfillSubtotalsFromResolved 对齐）
   let totalForComp = 0;
-  for (const sf of subtotalFields) {
-    const colName: string = sf.name || sf.key || '';
-    if (!colName) continue;
-    let colSum = 0;
-    for (const row of convRows) {
-      const v = row[colName];
-      if (typeof v === 'number' && isFinite(v)) colSum += v;
-    }
-    const colVal = round4(colSum);
+  for (const [colName, colVal] of Object.entries(colSums)) {
     for (const k of keys) {
       allComponentSubtotals[`${k}#${colName}`] = colVal;
     }
