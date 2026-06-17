@@ -299,6 +299,8 @@
 
 ### 4. 物料与元素BOM
 
+> ✅ **2026-06-17 实现**：本 Sheet「投入料号/组成件料号」为空+名称有值时，按名称匹配料号表 / 匹配不到自动生成 9 字头料号并登记料号表(material_type=3)，再回填键列继续落库；§5 为更新型仅匹配不生成（详见 `docs/superpowers/plans/2026-06-17-quote-import-materialno-autogen-extend.md`）。
+
 **目标表：** `element_bom`（主表） + `element_bom_item`（子表）
 
 | 固定写入字段 | 固定值 / 来源 |
@@ -340,6 +342,8 @@
 
 ### 5. 元素回收折扣
 
+> ✅ **2026-06-17 实现**：本 Sheet 投入料号为空+名称有值时，按名称匹配料号表取 material_no 后 UPDATE；更新型仅匹配不生成、不登记料号表（详见 plan 2026-06-17）。
+
 **目标表：** `element_bom_item`（更新已有记录的 `recovery_discount` 字段）
 
 > ⚠️ **关键语义修正（2026-05-26）**：与 §4 字段语义保持一致 — "投入料号"是 `material_no`（主件），"元素"是 `component_no`（组件）；"宏丰料号"不导入。
@@ -359,6 +363,8 @@
 ---
 
 ### 6. 来料固定加工费
+
+> ✅ **2026-06-17 实现**：本 Sheet「投入料号/组成件料号」为空+名称有值时，按名称匹配料号表 / 匹配不到自动生成 9 字头料号并登记料号表(material_type=3)，再回填键列继续落库；§5 为更新型仅匹配不生成（详见 `docs/superpowers/plans/2026-06-17-quote-import-materialno-autogen-extend.md`）。
 
 **目标表：** `unit_price`
 
@@ -391,6 +397,8 @@
 
 ### 7. 来料其他费用
 
+> ✅ **2026-06-17 实现**：本 Sheet「投入料号/组成件料号」为空+名称有值时，按名称匹配料号表 / 匹配不到自动生成 9 字头料号并登记料号表(material_type=3)，再回填键列继续落库；§5 为更新型仅匹配不生成（详见 `docs/superpowers/plans/2026-06-17-quote-import-materialno-autogen-extend.md`）。
+
 **目标表：** `unit_price`
 
 | 固定写入字段 | 固定值 / 来源 |
@@ -418,6 +426,8 @@
 ---
 
 ### 8. 来料年降
+
+> ✅ **2026-06-17 实现**：本 Sheet「投入料号/组成件料号」为空+名称有值时，按名称匹配料号表 / 匹配不到自动生成 9 字头料号并登记料号表(material_type=3)，再回填键列继续落库；§5 为更新型仅匹配不生成（详见 `docs/superpowers/plans/2026-06-17-quote-import-materialno-autogen-extend.md`）。
 
 **目标表：** `unit_price`
 
@@ -447,6 +457,8 @@
 
 ### 9. 来料回收折扣
 
+> ✅ **2026-06-17 实现**：本 Sheet「投入料号/组成件料号」为空+名称有值时，按名称匹配料号表 / 匹配不到自动生成 9 字头料号并登记料号表(material_type=3)，再回填键列继续落库；§5 为更新型仅匹配不生成（详见 `docs/superpowers/plans/2026-06-17-quote-import-materialno-autogen-extend.md`）。
+
 **目标表：** `unit_price`
 
 | 固定写入字段 | 固定值 / 来源 |
@@ -469,6 +481,8 @@
 ---
 
 ### 10. 自制加工费
+
+> ✅ **2026-06-17 实现**：本 Sheet「投入料号/组成件料号」为空+名称有值时，按名称匹配料号表 / 匹配不到自动生成 9 字头料号并登记料号表(material_type=3)，再回填键列继续落库；§5 为更新型仅匹配不生成（详见 `docs/superpowers/plans/2026-06-17-quote-import-materialno-autogen-extend.md`）。
 
 **目标表：** `unit_price`
 
@@ -560,6 +574,8 @@
 ---
 
 ### 13. 组成件其他费用
+
+> ✅ **2026-06-17 实现**：本 Sheet「投入料号/组成件料号」为空+名称有值时，按名称匹配料号表 / 匹配不到自动生成 9 字头料号并登记料号表(material_type=3)，再回填键列继续落库；§5 为更新型仅匹配不生成（详见 `docs/superpowers/plans/2026-06-17-quote-import-materialno-autogen-extend.md`）。
 
 **目标表：** `unit_price`
 
