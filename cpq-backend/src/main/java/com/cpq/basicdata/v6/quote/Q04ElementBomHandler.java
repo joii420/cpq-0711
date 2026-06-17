@@ -4,6 +4,9 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
+import com.cpq.basicdata.v6.service.MaterialNoResolver;
+import com.cpq.basicdata.v6.service.MaterialNoUnresolvableException;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -28,6 +31,8 @@ import java.util.Map;
 public class Q04ElementBomHandler implements SheetHandler {
 
     @Inject VersionedV6Writer writer;
+    @Inject MaterialNoResolver materialNoResolver;
+    @Inject MaterialMasterRepository materialMasterRepo;
 
     @Override public String sheetName() { return "物料与元素BOM"; }
 
@@ -39,12 +44,21 @@ public class Q04ElementBomHandler implements SheetHandler {
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
 
+        MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
+
         // 按 material_no 分组；组内按 (seq_no, component_no) 去重（后写覆盖，匹配原 ON CONFLICT 语义）
         Map<String, Map<List<Object>, Map<String, Object>>> childDedupByMat = new LinkedHashMap<>();
         for (SheetRow row : rows) {
             result.totalRows++;
-            String materialNo = row.getStr("投入料号");
-            if (materialNo == null) { result.recordError(row.rowNo, "投入料号", "为空（应作为主件料号）"); continue; }
+            String inputName = row.exact("投入料号名称");
+            String materialNo;
+            try {
+                materialNo = materialNoResolver.resolve(row.exact("投入料号"), inputName, batch);
+            } catch (MaterialNoUnresolvableException ex) {
+                result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
+            }
+            materialMasterRepo.upsertByMaterialNo(materialNo, inputName,
+                null, null, null, "3", null, null, null, ctx.importedBy, true);
             Integer seq = row.getInt("项次");
             String componentNo = row.getStr("元素");
             Map<String, Object> c = new LinkedHashMap<>();
