@@ -2108,4 +2108,52 @@ public class QuotationService {
         }
         return null;
     }
+
+    // ──────────────────────────────────────────────
+    // driver 默认行墓碑管理（deletable-driver-rows）
+    // ──────────────────────────────────────────────
+
+    @Transactional
+    public void deleteDriverRow(UUID lineItemId, UUID componentId, String effKey, String fp) {
+        QuotationLineComponentData cd = QuotationLineComponentData
+            .find("lineItemId = ?1 and componentId = ?2", lineItemId, componentId).firstResult();
+        if (cd == null) throw new BusinessException(404, "component data not found");
+        try {
+            var raw = (cd.deletedRowKeys == null || cd.deletedRowKeys.isBlank()) ? "[]" : cd.deletedRowKeys;
+            var arr = MAPPER.readTree(raw);
+            com.fasterxml.jackson.databind.node.ArrayNode out = arr.isArray()
+                ? (com.fasterxml.jackson.databind.node.ArrayNode) arr : MAPPER.createArrayNode();
+            boolean exists = false;
+            for (var n : out) {
+                if (effKey.equals(n.path("effKey").asText()) && fp.equals(n.path("fp").asText())) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                if (out.size() >= 500) {
+                    LOG.warnf("[row-delete] tombstones >=500 lineItem=%s comp=%s", lineItemId, componentId);
+                }
+                var t = MAPPER.createObjectNode();
+                t.put("effKey", effKey);
+                t.put("fp", fp);
+                out.add(t);
+                cd.deletedRowKeys = MAPPER.writeValueAsString(out);
+            }
+        } catch (Exception e) {
+            throw new BusinessException(500, "deleted_row_keys 更新失败: " + e.getMessage());
+        }
+        QuotationLineItem li = QuotationLineItem.findById(lineItemId);
+        if (li != null) cardSnapshotService.refreshQuoteCardValues(li);
+    }
+
+    @Transactional
+    public void restoreAllDriverRows(UUID lineItemId, UUID componentId) {
+        QuotationLineComponentData cd = QuotationLineComponentData
+            .find("lineItemId = ?1 and componentId = ?2", lineItemId, componentId).firstResult();
+        if (cd == null) return;
+        cd.deletedRowKeys = "[]";
+        QuotationLineItem li = QuotationLineItem.findById(lineItemId);
+        if (li != null) cardSnapshotService.refreshQuoteCardValues(li);
+    }
 }

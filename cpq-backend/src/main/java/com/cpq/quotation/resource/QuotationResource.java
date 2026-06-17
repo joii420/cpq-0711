@@ -528,6 +528,46 @@ public class QuotationResource {
         }
     }
 
+    // ──────────────────────────────────────────────
+    // driver 默认行墓碑端点（deletable-driver-rows）
+    // ──────────────────────────────────────────────
+
+    /**
+     * POST /api/cpq/quotations/{qid}/line-items/{lid}/delete-driver-row
+     * body: { componentId, effKey, fp? }
+     * 将指定行追加到 deletedRowKeys 墓碑列表并立即重刷报价快照。
+     */
+    @POST
+    @Path("/{qid}/line-items/{lid}/delete-driver-row")
+    public ApiResponse<Void> deleteDriverRow(@PathParam("qid") UUID qid, @PathParam("lid") UUID lid,
+            Map<String, Object> body) {
+        if (body == null || body.get("componentId") == null || body.get("effKey") == null) {
+            throw new BusinessException(400, "componentId 和 effKey 不能为空");
+        }
+        UUID componentId = UUID.fromString(body.get("componentId").toString());
+        String effKey = String.valueOf(body.get("effKey"));
+        String fp = String.valueOf(body.getOrDefault("fp", ""));
+        quotationService.deleteDriverRow(lid, componentId, effKey, fp);
+        return ApiResponse.success(null);
+    }
+
+    /**
+     * POST /api/cpq/quotations/{qid}/line-items/{lid}/restore-driver-rows
+     * body: { componentId }
+     * 清空 deletedRowKeys 墓碑列表并立即重刷报价快照。
+     */
+    @POST
+    @Path("/{qid}/line-items/{lid}/restore-driver-rows")
+    public ApiResponse<Void> restoreDriverRows(@PathParam("qid") UUID qid, @PathParam("lid") UUID lid,
+            Map<String, Object> body) {
+        if (body == null || body.get("componentId") == null) {
+            throw new BusinessException(400, "componentId 不能为空");
+        }
+        UUID componentId = UUID.fromString(body.get("componentId").toString());
+        quotationService.restoreAllDriverRows(lid, componentId);
+        return ApiResponse.success(null);
+    }
+
     private static UUID asUuid(Object o) {
         if (o == null) return null;
         if (o instanceof UUID u) return u;
