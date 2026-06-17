@@ -1912,4 +1912,112 @@ public class CardSnapshotService {
         }
         return out;
     }
+
+    // =========================================================================
+    // migrateFreezeDrafts — 存量 DRAFT 草稿迁移（一次性运维端点，D1）
+    // =========================================================================
+
+    /**
+     * 存量 DRAFT 草稿迁移端点逻辑（D1，2026-06-18）。
+     *
+     * <p>背景："草稿默认冻结"改造（Bug1 路径修复 + A1/A2）完成后，存量 DRAFT 报价单的
+     * {@code quote_card_values} 可能含 {@code #ERROR[QUERY_ERROR]}（Bug1 路径不一致导致）。
+     * 本方法对存量 DRAFT 进行干净重烤，清掉脏值。
+     *
+     * <p><b>dryRun=true</b>（默认/安全）：只扫描——统计哪些草稿的 {@code quote_card_values}
+     * 含 {@code #ERROR} 子串，返回清单，<b>不改任何数据</b>。
+     *
+     * <p><b>dryRun=false</b>：对每个 DRAFT 报价单调 {@link #refreshDraftQuoteCards(UUID)}
+     * （内部逐行 force=true 干净重烤，走 self 代理保事务持久化）。重烤后再检查是否仍含 {@code #ERROR}，
+     * 记录每单结果。单单失败不中断整体（try-catch per quotation）。
+     *
+     * <p><b>I-1 约束</b>：force=true 重算通过 {@link #refreshDraftQuoteCards} 复用，
+     * 其内部已走 {@code self.refreshQuoteCardValues(li, true)} CDI 代理，事务边界正确。
+     *
+     * @param dryRun true=只扫描不改数据，false=触发重烤
+     * @return 每个 DRAFT 报价单的扫描/迁移结果列表
+     */
+    public List<Map<String, Object>> migrateFreezeDrafts(boolean dryRun) {
+        // 1. 查所有 DRAFT 报价单
+        @SuppressWarnings("unchecked")
+        List<Object[]> draftRows = em.createNativeQuery(
+            "SELECT id, quotation_number FROM quotation WHERE status = 'DRAFT' ORDER BY created_at")
+            .getResultList();
+
+        List<Map<String, Object>> results = new ArrayList<>();
+
+        for (Object[] row : draftRows) {
+            UUID quotationId = UUID.fromString(row[0].toString());
+            String quoteNo = row[1] == null ? "" : row[1].toString();
+
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("quotationId", quotationId.toString());
+            entry.put("quoteNo", quoteNo);
+
+            try {
+                // 2. 扫描 quote_card_values 是否含 #ERROR
+                boolean beforeHasError = checkQuoteCardValuesHasError(quotationId);
+                entry.put("before", beforeHasError);
+
+                if (dryRun) {
+                    // dryRun：只统计含错行项数，不改数据
+                    int errorLineCount = countErrorLineItems(quotationId);
+                    entry.put("errorLineCount", errorLineCount);
+                    entry.put("status", "DRY_RUN");
+                } else {
+                    // 3. 触发重烤（复用 A2：refreshDraftQuoteCards 内部逐行 force=true + self 代理）
+                    int refreshed = refreshDraftQuoteCards(quotationId);
+                    entry.put("refreshedLines", refreshed);
+
+                    // 4. 重烤后再扫描是否仍含 #ERROR
+                    em.clear(); // 清 L1 缓存，读最新 DB 值
+                    boolean afterHasError = checkQuoteCardValuesHasError(quotationId);
+                    entry.put("after", afterHasError);
+                    entry.put("status", afterHasError ? "STILL_ERROR" : "OK");
+                }
+            } catch (Exception e) {
+                LOG.warnf("[migrate-freeze-drafts] quotation=%s (%s) failed: %s", quotationId, quoteNo, e.getMessage());
+                entry.put("status", "FAILED");
+                entry.put("error", e.getMessage());
+            }
+
+            results.add(entry);
+        }
+
+        LOG.infof("[migrate-freeze-drafts] dryRun=%b total=%d results=%s",
+            dryRun, results.size(),
+            results.stream().map(r -> r.get("status")).toList());
+        return results;
+    }
+
+    /**
+     * 检查指定报价单是否有任意行的 {@code quote_card_values} 含 {@code #ERROR} 子串。
+     * 用 PostgreSQL {@code ::text LIKE} 避免 JSONB 解析开销。
+     */
+    private boolean checkQuoteCardValuesHasError(UUID quotationId) {
+        @SuppressWarnings("unchecked")
+        List<Object> rows = em.createNativeQuery(
+            "SELECT 1 FROM quotation_line_item " +
+            "WHERE quotation_id = :qid " +
+            "  AND quote_card_values IS NOT NULL " +
+            "  AND quote_card_values::text LIKE '%#ERROR%' " +
+            "LIMIT 1")
+            .setParameter("qid", quotationId)
+            .getResultList();
+        return !rows.isEmpty();
+    }
+
+    /**
+     * 统计指定报价单中 {@code quote_card_values} 含 {@code #ERROR} 的行项数（dryRun 用）。
+     */
+    private int countErrorLineItems(UUID quotationId) {
+        Object cnt = em.createNativeQuery(
+            "SELECT COUNT(*) FROM quotation_line_item " +
+            "WHERE quotation_id = :qid " +
+            "  AND quote_card_values IS NOT NULL " +
+            "  AND quote_card_values::text LIKE '%#ERROR%'")
+            .setParameter("qid", quotationId)
+            .getSingleResult();
+        return cnt == null ? 0 : ((Number) cnt).intValue();
+    }
 }
