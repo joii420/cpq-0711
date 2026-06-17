@@ -2396,7 +2396,7 @@ v_costing_exchange_rate[from_currency='CNY' AND to_currency='USD'].costing_rate
 
 精炼自旧 PRD 80+ 条变更日志,以**决策点**形式保留(便于追溯"为什么这么做")。完整日志见 `docs/PRD.md` 变更记录章节。
 
-### 9.13 v3.6(2026-06-18)— 报价单草稿默认冻结(显式刷新仅值)
+### 9.21 v4.3(2026-06-18)— 报价单草稿默认冻结(显式刷新仅值)
 
 报价单草稿态卡片值的"打开自动重刷"改为默认冻结 + 显式刷新,详见 `docs/superpowers/specs/2026-06-18-草稿默认冻结-design.md`。
 
