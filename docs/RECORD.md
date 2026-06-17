@@ -4,6 +4,10 @@
 
 ---
 
+[2026-06-18] Bug1 前置 Task C1 - 全库 basic-data path↔视图列名审计端点 | cpq-backend/src/main/java/com/cpq/component/service/ComponentService.java(+auditBasicDataPaths + extractDeclaredColumnNames + buildSuggestion) / cpq-backend/src/main/java/com/cpq/component/resource/ComponentResource.java(+GET /audit-basicdata-paths @RoleAllowed SYSTEM_ADMIN,PRICING_MANAGER) / cpq-backend/src/test/java/com/cpq/component/BasicDataPathAuditTest.java(新建,5用例全绿) | 根因：default_source.path 形如 $ll_view._类型 但视图 declared_columns 只有「类型」(无下划线前缀)，运行期路径解析失败冻进快照 → #ERROR[QUERY_ERROR]。审计逻辑：遍历全库 fields[].default_source.path，只处理 $view.col 形态($$global.view.col 也支持)，按 componentId 查 component_sql_view.declared_columns，列名不匹配时输出 issueType=columnMismatch，视图不存在时输出 viewNotFound；下划线前缀差异自动 suggestion（去掉下划线/加下划线）。真实扫描结果：共享 DB 38 组件中发现 11 个可疑项（存量Bug1数据）。不修改任何数据，供 C2 手工修正。编译 0 错误 + 5单测全绿。提交 dfe1ce0 在 worktree-quote-draft-freeze 分支。
+
+---
+
 [2026-06-18] 报价冻结 Task B1(前端) - 草稿打开删除自动重刷逻辑 | QuotationWizard.tsx(loadQuotation 函数，删除 DRAFT 分支的 refreshCardSnapshot + 二次 getById + hideRecalc 变量，共 -17 行) | `let res`→`const res`，只 getById 一次直接读已冻快照；`message` import 因文件其他处仍大量使用保留；`refreshCardSnapshot` 为 service 方法非独立 import，无需清理。tsc 0 错误。提交 f8afb8c 在 worktree-quote-draft-freeze 分支。
 
 [2026-06-18] 报价冻结 Task A3 - deleteDriverRow/restoreAllDriverRows callsite 改 force=true | QuotationService.java(行 2168、2178 各加 true 参数) | 用户显式删行/恢复行属于主动操作，必须重算快照；copy 方法(行 1321)保持单参——新 line item cardSnapshotAt==null 走首次 bake 语义，加 force 反而会误强刷。两处改动均为跨 bean CDI 调用（cardSnapshotService.refreshQuoteCardValues），@Transactional 代理正常，无 I-1 问题。编译 0 错误，CardSnapshotFreezeTest 3/3 passed。提交 875314d 在 worktree-quote-draft-freeze 分支。
