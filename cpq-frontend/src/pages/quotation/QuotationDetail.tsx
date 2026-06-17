@@ -17,6 +17,7 @@ import { globalVariableService } from '../../services/globalVariableService';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 import { useAuthStore } from '../../stores/authStore';
 import ReadonlyProductCard from './ReadonlyProductCard';
+import CopyQuotationDrawer from './CopyQuotationDrawer';
 import { usePathFormulaCache } from './usePathFormulaCache';
 import { enrichComponentData } from './enrichComponentData';
 import type { LineItem } from './QuotationStep2';
@@ -55,6 +56,7 @@ const QuotationDetail: React.FC = () => {
   // ----------------------------------------------------------------
   // 迁移：Drawer 替代 Modal（导出PDF / 导出Excel / 发送邮件 / 延期 / 拒绝）
   // ----------------------------------------------------------------
+  const [copyDrawerOpen, setCopyDrawerOpen] = useState(false);
   const [pdfDrawerOpen, setPdfDrawerOpen] = useState(false);
   const [excelDrawerOpen, setExcelDrawerOpen] = useState(false);
   const [emailDrawerOpen, setEmailDrawerOpen] = useState(false);
@@ -251,15 +253,7 @@ const QuotationDetail: React.FC = () => {
     }
   };
 
-  const handleCopy = async () => {
-    try {
-      const res = await quotationService.copy(id!);
-      message.success('复制成功');
-      navigate(`/quotations/${res.data.id}/edit`);
-    } catch (e: any) {
-      message.error(e.message);
-    }
-  };
+  const handleCopy = () => setCopyDrawerOpen(true);
 
   const handleAccept = async () => {
     setActionLoading(true);
@@ -919,6 +913,20 @@ const QuotationDetail: React.FC = () => {
           </Form.Item>
         </Form>
       </Drawer>
+
+      <CopyQuotationDrawer
+        open={copyDrawerOpen}
+        defaultTemplateId={quotation?.customerTemplateId}
+        onClose={() => setCopyDrawerOpen(false)}
+        onConfirm={async (templateId) => {
+          try {
+            const res = await quotationService.copy(id!, templateId);
+            message.success('复制成功');
+            setCopyDrawerOpen(false);
+            navigate(`/quotations/${res.data.id}/edit`);
+          } catch (e: any) { message.error(e.message); }
+        }}
+      />
     </div>
   );
 };
