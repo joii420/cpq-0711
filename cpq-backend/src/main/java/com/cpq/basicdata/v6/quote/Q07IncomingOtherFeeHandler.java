@@ -4,6 +4,9 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
+import com.cpq.basicdata.v6.service.MaterialNoResolver;
+import com.cpq.basicdata.v6.service.MaterialNoUnresolvableException;
 import com.cpq.basicdata.v6.versioning.VersionedGroupSpec;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -26,6 +29,8 @@ import java.util.Map;
 public class Q07IncomingOtherFeeHandler implements SheetHandler {
 
     @Inject VersionedV6Writer writer;
+    @Inject MaterialNoResolver materialNoResolver;
+    @Inject MaterialMasterRepository materialMasterRepo;
 
     @Override public String sheetName() { return "来料其他费用"; }
 
@@ -38,14 +43,21 @@ public class Q07IncomingOtherFeeHandler implements SheetHandler {
         SheetImportResult result = new SheetImportResult(sheetName());
         Map<List<Object>, Map<String, Object>> groupKeyOf = new LinkedHashMap<>();
         Map<List<Object>, List<Map<String, Object>>> contentOf = new LinkedHashMap<>();
+        MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
         for (SheetRow row : rows) {
             result.totalRows++;
-            String code = row.getStr("投入料号");
             String costType = row.getStr("要素名称");
-            if (code == null || costType == null) {
-                result.recordError(row.rowNo, "投入料号/要素名称", "必填项为空");
-                continue;
+            if (costType == null) { result.recordError(row.rowNo, "要素名称", "为空"); continue; }
+            String inputName = row.exact("投入料号名称");
+            String code;
+            try {
+                code = materialNoResolver.resolve(row.exact("投入料号"), inputName, batch);
+            } catch (MaterialNoUnresolvableException ex) {
+                result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
             }
+            materialMasterRepo.upsertByMaterialNo(code, inputName,
+                null, null, null, "3", null, null, null, ctx.importedBy, true);
+            result.recordWrite("material_master", 1);
             String finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
             List<Object> key = Arrays.asList(costType, code, finishedMaterialNo);
             groupKeyOf.computeIfAbsent(key, k -> {
