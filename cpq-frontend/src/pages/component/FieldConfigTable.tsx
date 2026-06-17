@@ -6,7 +6,7 @@ import { SortableTable, DragHandle } from '../../components/SortableTable';
 const { Text } = Typography;
 import { DeleteOutlined, PlusOutlined, LinkOutlined, EditOutlined } from '@ant-design/icons';
 import type { FieldItem, FormulaItem } from './types';
-import { FIELD_TYPE_OPTIONS, newFieldRow, FIELD_WIDTH_PRESETS, resolveFieldWidth } from './types';
+import { FIELD_TYPE_OPTIONS, newFieldRow, FIELD_WIDTH_PRESETS } from './types';
 import PathPickerDrawer from './PathPickerDrawer';
 import GlobalVariablePickerDrawer from '../../components/GlobalVariablePickerDrawer';
 import DefaultSourceEditor from './DefaultSourceEditor';
