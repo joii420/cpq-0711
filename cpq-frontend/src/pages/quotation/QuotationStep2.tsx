@@ -34,6 +34,7 @@ import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { useTreeCollapse } from './useTreeCollapse';
 import { splitRows, rowAt, isManualRow } from './manualRows';
 import { resolveInputDefault, resolveInputDefaultSourceOnly } from './inputDefaults';
+import { resolveFieldWidth } from '../component/types';
 import './quotation.css';
 
 // 与 QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard 中的同名函数保持完全对齐。
@@ -2177,9 +2178,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         <th style={{ minWidth: 90 }}>版本</th>
                       </>
                     )}
-                    {activeComponent.fields.map(field => (
-                      <th key={field.name || field.key}>{field.label || field.name}</th>
-                    ))}
+                    {activeComponent.fields.map(field => {
+                      const w = resolveFieldWidth(field.width);
+                      return (
+                        <th key={field.name || field.key} style={{ width: w, minWidth: w }}>
+                          {field.label || field.name}
+                        </th>
+                      );
+                    })}
                     <th style={{ width: 40 }} />
                   </tr>
                 </thead>

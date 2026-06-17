@@ -16,6 +16,7 @@ import ComponentCell from './components/ComponentCell';
 import type { CellContext } from './components/ComponentCell';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 import { sumTabColumns } from './tabTotalLines';
+import { resolveFieldWidth } from '../component/types';
 import './quotation.css';
 
 /** Readonly product card for quotation detail page */
@@ -445,9 +446,14 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
               <table className="qt-cost-table">
                 <thead>
                   <tr>
-                    {activeComp.fields.map(field => (
-                      <th key={field.name}>{field.label || field.name}</th>
-                    ))}
+                    {activeComp.fields.map(field => {
+                      const w = resolveFieldWidth(field.width);
+                      return (
+                        <th key={field.name} style={{ width: w, minWidth: w }}>
+                          {field.label || field.name}
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
