@@ -75,25 +75,25 @@ class AssemblyBomMaterialSyncTest {
     }
 
     @Test
-    void newComponent_materialTypeIs3() {
+    void newComponent_materialTypeIsAssemblyLabel() {
         handler.merge(List.of(), List.of(asmRow(1, "ASM-NEW", "ASM-N1", "OP1", null)), ctx());
-        assertEquals("3", typeOf("ASM-NEW"), "§12 新料件 material_type 固定 3（决策 #6）");
+        assertEquals("组成件", typeOf("ASM-NEW"), "§12 新料件 material_type 固定汉字「组成件」（决策 Q5-A）");
     }
 
     @Test
     void existingComponent_keepsOriginalType() {
         em_upsertMaster("ASM-EXIST", "ASM-E1", "1");
         handler.merge(List.of(), List.of(asmRow(1, "ASM-EXIST", "ASM-E1", "OP1", null)), ctx());
-        assertEquals("1", typeOf("ASM-EXIST"), "已存在保留原 type，不被改成 3（决策 #6）");
+        assertEquals("1", typeOf("ASM-EXIST"), "已存在保留原 type，不被改成「组成件」（决策 #6）");
     }
 
     @Test
-    void crossing_materialKeepsSection3NumericType() {
+    void crossing_materialKeepsSection3ChineseType() {
         handler.merge(
             List.of(matRow(1, "ASM-CROSS", "ASM-C1", "2.非银点类")),
             List.of(asmRow(1, "ASM-CROSS", "ASM-C1", "OP1", null)),
             ctx());
-        assertEquals("2", typeOf("ASM-CROSS"), "交叉料件保留 §3 数字类型（B1）");
+        assertEquals("非银点类", typeOf("ASM-CROSS"), "交叉料件保留 §3 汉字类型（物料BOM 先写，组成件 preserve 不覆盖）");
     }
 
     @Test
@@ -111,7 +111,7 @@ class AssemblyBomMaterialSyncTest {
     @Test
     void emptyComponentNo_withName_generates() {
         handler.merge(List.of(), List.of(asmRow(1, null, "ASM-GEN", "OP1", null)), ctx());
-        assertEquals("3", typeOf("9000000000"), "料号空+名称→生成 9 字头，type=3");
+        assertEquals("组成件", typeOf("9000000000"), "料号空+名称→生成 9 字头，type=组成件");
     }
 
     @Transactional
