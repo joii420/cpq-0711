@@ -134,6 +134,8 @@ export async function enrichComponentData(
         content: f.content,
         is_amount: f.is_amount,
         is_subtotal: f.is_subtotal,
+        // 字段展示宽度：snapshot 存 component.fields 原样(snake/camel 同名 width)，透传供渲染列宽
+        width: f.width,
         is_required: f.is_required,
         formula_name: f.formula_name,
         // Plan 3a：条件公式必须透传（否则渲染期 computeAllFormulas 拿不到 → 退回单一解析）
@@ -254,6 +256,8 @@ export function buildComponentDataFromStructure(
       content: f.defaultValue,
       is_amount: f.isAmount,
       is_subtotal: f.isSubtotal,
+      // 字段展示宽度：结构快照(camelCase width，见 CardSnapshotService)透传
+      width: f.width,
       is_required: f.isRequired,
       formula_name: f.formulaName,
       // Plan 3a：条件公式透传（结构快照 camelCase；兼容 snake_case）
