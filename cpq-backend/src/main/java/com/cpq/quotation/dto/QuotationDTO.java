@@ -252,6 +252,8 @@ public class QuotationDTO {
         public UUID componentId;
         public String tabName;
         public String rowData;
+        /** driver 默认行墓碑数组 JSON（[{effKey,fp}]），前端按此过滤被删行。默认 "[]"。 */
+        public String deletedRowKeys;
         public BigDecimal subtotal;
         public Integer sortOrder;
 
@@ -261,6 +263,7 @@ public class QuotationDTO {
             dto.componentId = cd.componentId;
             dto.tabName = cd.tabName;
             dto.rowData = cd.rowData;
+            dto.deletedRowKeys = cd.deletedRowKeys;
             dto.subtotal = cd.subtotal;
             dto.sortOrder = cd.sortOrder;
             return dto;
