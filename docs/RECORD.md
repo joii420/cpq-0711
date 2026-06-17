@@ -4,6 +4,10 @@
 
 ---
 
+[2026-06-18] 报价冻结 Task F - E2E spec 改写（草稿冻结行为验证）| cpq-frontend/e2e/quotation-flow.spec.ts(新增 TC-F1/TC-F2 + 工具函数) / cpq-frontend/src/pages/quotation/QuotationStep2.tsx(刷新按钮加 data-testid="refresh-basic-data-btn") | TC-F1：打开 DRAFT 报价单通过 page.on('request') 监听，断言未发出 POST /quotations/{id}/refresh-card-snapshot（B1 删除自动重刷的回归保障）；TC-F2：点击「刷新基础数据」按钮 → 确认 Modal 点「刷新」→ 断言恰好触发 1 次 POST refresh-card-snapshot + 后端 2xx + message.success 提示；两用例均通过 createMinimalDraftQuotation() 直连 8081 API 快速创建 DRAFT 测试数据（无需走 UI 五步向导）；原有主流程用例无结构改动（不含 refresh-card-snapshot 监听，因为是新建流程不打开草稿）；tsc 0 错误。**spec 已写，运行验证待合并到 master 后执行**（worktree 未合并，共享 dev server 跑的是旧代码）。提交 eaf5d8b 在 worktree-quote-draft-freeze 分支。
+
+---
+
 [2026-06-18] 报价单草稿默认冻结 - 2026-06-08「待立项」已立项实现 | 判据复用 QuotationLineItem.cardSnapshotAt(非空=已首次冻结,无新列) + on-open 自动重刷改 Step2 显式「刷新基础数据」按钮(仅值,R1 结构永冻) + refreshQuoteCardValues 加 force 短路 + refreshDraftQuoteCards 移除结构重建 + Bug1 路径↔视图列名审计/软校验 + 存量草稿一次性 migrate-freeze-drafts 端点重烤清 #ERROR | 详见 docs/superpowers/specs/2026-06-18-草稿默认冻结-design.md + plans/2026-06-18-草稿默认冻结.md
 
 [2026-06-18] 报价冻结 Task D1 - 存量草稿迁移端点 migrate-freeze-drafts | cpq-backend/src/main/java/com/cpq/quotation/service/CardSnapshotService.java(+migrateFreezeDrafts+checkQuoteCardValuesHasError+countErrorLineItems 三方法) / cpq-backend/src/main/java/com/cpq/quotation/resource/QuotationAdminResource.java(新建，POST /api/cpq/admin/quotations/migrate-freeze-drafts @RoleAllowed SYSTEM_ADMIN) / cpq-backend/src/test/java/com/cpq/quotation/MigrateFreezeDraftsTest.java(新建，TDD 3用例全绿) | 逻辑：dryRun=true 扫描全部 DRAFT 报价单的 quote_card_values::text LIKE '%#ERROR%'，统计 before/errorLineCount，不改数据，status=DRY_RUN；dryRun=false 对每单调 refreshDraftQuoteCards(复用 A2，内部 self.refreshQuoteCardValues(li,true) CDI 代理，每行独立事务)，重烤后再扫 before/after，status=OK/STILL_ERROR/FAILED，单单失败不中断整体。I-1约束：通过复用 refreshDraftQuoteCards 满足（其内部已走 self 代理）。TDD T1 dryRun识别#ERROR且不改数据，T2 非dryRun触发重烤返回refreshedLines+status字段，T3 不抛异常健壮性。CardSnapshotFreezeTest 3/3无回归，编译0错误。提交 fed4b6c 在 worktree-quote-draft-freeze 分支。
