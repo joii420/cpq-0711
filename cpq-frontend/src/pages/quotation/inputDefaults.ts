@@ -18,10 +18,11 @@ export function coerceInputNumber(v: unknown): number | undefined {
 }
 
 /**
- * 解析 INPUT_TEXT / INPUT_NUMBER 的有效默认值（不判 row[key]——调用方先判已有值）。
- * 优先级：default_source(GLOBAL_VARIABLE | BNF_PATH | BASIC_DATA，实时) > 静态 content > undefined。
+ * 仅解析 default_source（GLOBAL_VARIABLE | BNF_PATH | BASIC_DATA），**不回退静态 content**。
+ * 源未命中（或字段非 INPUT*）返回 undefined。供"快照回填(bake)"等只应冻结真实源值的场景使用——
+ * content 兜底归 snapshotRows(无源) + 实时渲染，不该被 bake 冻结锁死。
  */
-export function resolveInputDefault(field: ComponentField, ctx: InputDefaultCtx): string | number | undefined {
+export function resolveInputDefaultSourceOnly(field: ComponentField, ctx: InputDefaultCtx): string | number | undefined {
   const ft = field.field_type;
   if (ft !== 'INPUT_TEXT' && ft !== 'INPUT_NUMBER' && ft !== 'INPUT') return undefined;
 
@@ -55,6 +56,19 @@ export function resolveInputDefault(field: ComponentField, ctx: InputDefaultCtx)
     const fmt = formatPathValue(resolved);
     if (fmt != null) return fmt;
   }
+  return undefined;
+}
+
+/**
+ * 解析 INPUT_TEXT / INPUT_NUMBER 的有效默认值（不判 row[key]——调用方先判已有值）。
+ * 优先级：default_source(GLOBAL_VARIABLE | BNF_PATH | BASIC_DATA，实时) > 静态 content > undefined。
+ */
+export function resolveInputDefault(field: ComponentField, ctx: InputDefaultCtx): string | number | undefined {
+  const fromSource = resolveInputDefaultSourceOnly(field, ctx);
+  if (fromSource !== undefined) return fromSource;
+
+  const ft = field.field_type;
+  if (ft !== 'INPUT_TEXT' && ft !== 'INPUT_NUMBER' && ft !== 'INPUT') return undefined;
   if (field.content != null && field.content !== '') return field.content;
   return undefined;
 }

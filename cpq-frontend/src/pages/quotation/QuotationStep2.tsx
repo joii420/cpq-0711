@@ -32,7 +32,7 @@ import { templateService } from '../../services/templateService';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { useTreeCollapse } from './useTreeCollapse';
 import { splitRows, rowAt, isManualRow } from './manualRows';
-import { resolveInputDefault } from './inputDefaults';
+import { resolveInputDefault, resolveInputDefaultSourceOnly } from './inputDefaults';
 import './quotation.css';
 
 // 与 QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard 中的同名函数保持完全对齐。
@@ -1555,8 +1555,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           if (bakedRef.current.has(guard)) continue;
           const cur = curRow[key];
           if (!(cur === undefined || cur === null || cur === '')) { bakedRef.current.add(guard); continue; }
-          // 统一解析器：GLOBAL_VARIABLE / BNF_PATH / BASIC_DATA 子类型全走 resolveInputDefault
-          const v = resolveInputDefault(f as ComponentField, { basicDataValues: bdv });
+          // 快照回填只冻结"真正解析到的 default_source 源值"（GV / BNF_PATH / BASIC_DATA）——
+          // 不用 resolveInputDefault（含 content 兜底），否则源未命中时会把静态 content 冻结并被 bakedRef
+          // 一次性锁死，driver 后续补回真值也不再刷新（陈旧锁定）。content 兜底归 snapshotRows(无源)+ 实时渲染。
+          const v = resolveInputDefaultSourceOnly(f as ComponentField, { basicDataValues: bdv });
           if (v == null) continue;
           bakedRef.current.add(guard);
           writes.push({

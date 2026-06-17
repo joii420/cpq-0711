@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveInputDefault, coerceInputNumber } from './inputDefaults';
+import { resolveInputDefault, resolveInputDefaultSourceOnly, coerceInputNumber } from './inputDefaults';
 import type { ComponentField } from './QuotationStep2';
 import { bnfDriverLookupKey } from './useDriverExpansions';
 
@@ -33,6 +33,21 @@ describe('resolveInputDefault', () => {
   });
   it('全空 → undefined', () => {
     expect(resolveInputDefault(f({ content: '' }), {})).toBeUndefined();
+  });
+});
+
+describe('resolveInputDefaultSourceOnly（不回退 content）', () => {
+  it('源命中 → 返回源值', () => {
+    const field = f({ field_type: 'INPUT_TEXT', content: 'KG', default_source: { type: 'BASIC_DATA', path: '$ys_view.单位' } });
+    const bdv = { [bnfDriverLookupKey('$ys_view.单位')]: 'PCS' };
+    expect(resolveInputDefaultSourceOnly(field, { basicDataValues: bdv })).toBe('PCS');
+  });
+  it('源未命中 → undefined（不回退 content）', () => {
+    const field = f({ field_type: 'INPUT_TEXT', content: 'KG', default_source: { type: 'BASIC_DATA', path: '$ys_view.单位' } });
+    expect(resolveInputDefaultSourceOnly(field, { basicDataValues: {} })).toBeUndefined();
+  });
+  it('无 default_source → undefined（绝不取 content）', () => {
+    expect(resolveInputDefaultSourceOnly(f({ content: 'RMB' }), {})).toBeUndefined();
   });
 });
 
