@@ -1514,8 +1514,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     }));
   }, [onUpdate]);
 
-  // ── 快照回填:default_source.type=BASIC_DATA 的空 INPUT 单元格,首次拿到 expansion 时
+  // ── 快照回填:有 default_source 的空 INPUT 单元格,首次拿到 expansion 时
   //    把解析值写进行数据(快照语义);写一次即非空 → 不再触发。bakedRef 防"清空后又回填"。
+  //    覆盖 default_source 全部子类型(BASIC_DATA / BNF_PATH / GLOBAL_VARIABLE)及 INPUT / INPUT_TEXT / INPUT_NUMBER。
+  //    取值委托 resolveInputDefault(与 computeAllFormulas / buildResolvedRow 统一口径)。
   //    注:bakedRef 随 ProductCard 实例存活、不随 item 切换重置 —— 依赖父列表按 item.id/tempId 稳定 key
   //    渲染(item 变 = 新实例 = 新 bakedRef)。若某调用点未用稳定 key 复用同卡片,同 index 单元格回填会被误抑制。
   //    ⚠️ 必须"收集全部回填 → 一次性 onUpdate":handleUpdateQuoteLineItem 对每次更新整段替换 comp.rows,
@@ -1536,9 +1538,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       );
       const exp = driverExpansions?.[expKey];
       if (!exp || exp.rowCount <= 0) return;
+      // 覆盖全部 INPUT* 类型中有 default_source 的字段（统一走解析器，不再按 BASIC_DATA 子类型手写分支）
       const inputFields = (comp.fields as any[]).filter(
-        (f) => (f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT_NUMBER')
-          && f.default_source?.type === 'BASIC_DATA' && f.default_source?.path,
+        (f) => (f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT')
+          && f.default_source,
       );
       if (inputFields.length === 0) return;
       for (let ri = 0; ri < exp.rowCount; ri++) {
@@ -1552,13 +1555,13 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           if (bakedRef.current.has(guard)) continue;
           const cur = curRow[key];
           if (!(cur === undefined || cur === null || cur === '')) { bakedRef.current.add(guard); continue; }
-          const lk = bnfDriverLookupKey(f.default_source.path);
-          const v = Object.prototype.hasOwnProperty.call(bdv, lk) ? bdv[lk] : undefined;
-          if (v == null || (Array.isArray(v) && v.length === 0)) continue;
+          // 统一解析器：GLOBAL_VARIABLE / BNF_PATH / BASIC_DATA 子类型全走 resolveInputDefault
+          const v = resolveInputDefault(f as ComponentField, { basicDataValues: bdv });
+          if (v == null) continue;
           bakedRef.current.add(guard);
           writes.push({
             componentId: comp.componentId, ri, key,
-            value: typeof v === 'object' ? (formatPathValue(v) ?? String(v)) : v,
+            value: v,
           });
         }
       }
