@@ -252,6 +252,8 @@ public class CardSnapshotService {
                     fieldNode.put("isAmount", f.path("is_amount").asBoolean(false));
                     fieldNode.put("isRequired", f.path("is_required").asBoolean(false));
                     fieldNode.put("isSubtotal", f.path("is_subtotal").asBoolean(false));
+                    // 字段列展示宽度(px)。组件 fields 中无 width 或 <=0 时存 0，前端 resolveFieldWidth 回退默认 120。
+                    fieldNode.put("width", f.path("width").asInt(0));
                     fieldNode.put("editable", isEditable(f.path("field_type").asText("")));
                     if (!f.path("content").isMissingNode()) {
                         fieldNode.put("defaultValue", f.path("content").asText(null));
