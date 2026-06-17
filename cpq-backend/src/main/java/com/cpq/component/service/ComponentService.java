@@ -43,6 +43,21 @@ public class ComponentService {
     public static final java.util.Set<String> VALID_COMPONENT_TYPES =
         java.util.Set.of("NORMAL", "SUBTOTAL", "EXCEL");
 
+    /**
+     * C1/C3 共用: default_source.path 视图路径解析正则。
+     *
+     * <p>匹配两种形态：
+     * <ul>
+     *   <li>group 1-3: {@code $$compCode.viewName.col}（GLOBAL 跨组件视图）</li>
+     *   <li>group 4-5: {@code $viewName[pred].col} 或 {@code $viewName.col}（COMPONENT 视图）</li>
+     * </ul>
+     */
+    static final Pattern VIEW_PATH_PATTERN = Pattern.compile(
+        "^\\$\\$([^.$\\[.]+)\\.([^.$\\[.]+)\\.([^.$\\[.]+)" +  // group1=compCode group2=viewName group3=col
+        "|" +
+        "^\\$([^.$\\[.]+)(?:\\[[^\\]]*\\])?\\.([^.$\\[.]+)$"    // group4=viewName group5=col
+    );
+
     public static void assertValidComponentType(String type) {
         String t = type == null ? "NORMAL" : type;
         if (!VALID_COMPONENT_TYPES.contains(t)) {
@@ -142,6 +157,9 @@ public class ComponentService {
 
         component.persist();
 
+        // C3: 保存后对 default_source.path 列名做软校验（只 warn，不阻断）
+        warnDefaultSourcePaths(component.id, fieldList);
+
         LOG.infof("Created component id=%s code=%s", component.id, component.code);
         return ComponentDTO.from(component);
     }
@@ -201,6 +219,9 @@ public class ComponentService {
             component.fields = fieldsJson;
             component.formulas = toJson(formulaList);
             component.columnCount = fieldList.size();
+
+            // C3: default_source.path 列名软校验（只 warn，不阻断）
+            warnDefaultSourcePaths(id, fieldList);
         }
 
         // rowKeyFields 更新（null=不变，传值=覆盖）
@@ -739,14 +760,7 @@ public class ComponentService {
      */
     @Transactional(jakarta.transaction.Transactional.TxType.SUPPORTS)
     public List<Map<String, Object>> auditBasicDataPaths() {
-        // $viewName.col — COMPONENT 视图引用（单 $）
-        // $$compCode.viewName.col — GLOBAL 视图跨组件引用（双 $$）
-        // 谓词形式：$viewName[pred].col 或 $viewName.col（末段始终是列名）
-        Pattern VIEW_PATH_PATTERN = Pattern.compile(
-            "^\\$\\$([^.$\\[.]+)\\.([^.$\\[.]+)\\.([^.$\\[.]+)" +  // group1=compCode group2=viewName group3=col
-            "|" +
-            "^\\$([^.$\\[.]+)(?:\\[[^\\]]*\\])?\\.([^.$\\[.]+)$"    // group4=viewName group5=col
-        );
+        // VIEW_PATH_PATTERN 已提升为 class-level static 常量（C1/C3 共用）
 
         List<Map<String, Object>> suspects = new ArrayList<>();
 
@@ -839,6 +853,89 @@ public class ComponentService {
         LOG.infof("[auditBasicDataPaths] 扫描完成，共检出 %d 个可疑项（组件总数=%d）",
             suspects.size(), allComponents.size());
         return suspects;
+    }
+
+    // C3: 组件保存时对 default_source.path 列名软校验
+    // -----------------------------------------------------------------------
+
+    /**
+     * 对字段列表中每个 {@code default_source.path} 的末段列名做软校验：
+     * 若列名不在该组件对应视图的 {@code declared_columns} 中，则产生告警（LOG.warnf）
+     * 并将告警信息加入返回列表。
+     *
+     * <p><strong>不阻断保存</strong>：此方法永远不抛异常，存量错误配置可正常保存。
+     *
+     * <p>仅处理 {@code $viewName.col} / {@code $$compCode.viewName.col} 形态的 path；
+     * 其他形态（无 $ 前缀的 BNF 路径）直接跳过。
+     *
+     * <p>Package-private 供单元测试直接调用断言 warnings。
+     *
+     * @param componentId 当前组件 UUID（用于查询 component_sql_view）
+     * @param fields      反序列化后的字段列表
+     * @return warning 字符串列表；无问题时为空列表
+     */
+    List<String> warnDefaultSourcePaths(UUID componentId, List<Map<String, Object>> fields) {
+        if (fields == null || fields.isEmpty() || componentId == null) {
+            return Collections.emptyList();
+        }
+
+        List<String> warnings = new ArrayList<>();
+        // 按视图名缓存该组件的 declared_columns（避免同视图多字段重复查 DB）
+        Map<String, List<String>> viewColumnsCache = new HashMap<>();
+
+        for (Map<String, Object> field : fields) {
+            Object defaultSource = field.get("default_source");
+            if (!(defaultSource instanceof Map)) continue;
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> ds = (Map<String, Object>) defaultSource;
+            Object pathObj = ds.get("path");
+            if (pathObj == null) continue;
+            String path = pathObj.toString().trim();
+            if (path.isEmpty() || !path.startsWith("$")) continue;
+
+            Matcher m = VIEW_PATH_PATTERN.matcher(path);
+            if (!m.matches()) continue;
+
+            String viewName;
+            String colName;
+            if (m.group(1) != null) {
+                // $$compCode.viewName.col 形态
+                viewName = m.group(2);
+                colName  = m.group(3);
+            } else {
+                // $viewName.col 形态
+                viewName = m.group(4);
+                colName  = m.group(5);
+            }
+            if (viewName == null || colName == null) continue;
+
+            String fieldName = String.valueOf(field.getOrDefault("name", ""));
+            final String fv = viewName;
+
+            // 取该组件该视图的 declared_columns（带缓存；null 表示视图不存在）
+            List<String> actualColumns = viewColumnsCache.computeIfAbsent(viewName, vn -> {
+                Optional<ComponentSqlView> csv = sqlViewRepository.findByComponentAndName(componentId, fv);
+                if (csv.isEmpty()) return null;
+                return extractDeclaredColumnNames(csv.get().declaredColumns);
+            });
+
+            if (actualColumns == null) {
+                String warn = String.format(
+                    "[C3 default_source.path soft-warn] componentId=%s field='%s' path='%s' — 视图 '%s' 未在 component_sql_view 中找到",
+                    componentId, fieldName, path, viewName);
+                LOG.warnf("%s", warn);
+                warnings.add(warn);
+            } else if (!actualColumns.contains(colName)) {
+                String warn = String.format(
+                    "[C3 default_source.path soft-warn] componentId=%s field='%s' path='%s' — 列名 '%s' 不在视图 '%s' 的 declared_columns %s 中",
+                    componentId, fieldName, path, colName, viewName, actualColumns);
+                LOG.warnf("%s", warn);
+                warnings.add(warn);
+            }
+        }
+
+        return warnings;
     }
 
     /**
