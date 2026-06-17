@@ -9,9 +9,11 @@ import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.*;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * TDD: CardSnapshotService.refreshQuoteCardValues(li, force) 草稿冻结短路。
@@ -126,6 +128,117 @@ public class CardSnapshotFreezeTest {
         OffsetDateTime afterValuesAt = readQuoteValuesAt(lineId);
         assertNull(afterValuesAt,
             "force=false 且 cardSnapshotAt!=null 时，refreshQuoteCardValues 必须 no-op，quoteValuesAt 不得被更新");
+    }
+
+    // -----------------------------------------------------------------------
+    // Helpers for T3
+    // -----------------------------------------------------------------------
+
+    /**
+     * 找一个满足以下条件的报价单 ID：
+     * <ul>
+     *   <li>status = 'DRAFT'</li>
+     *   <li>有 quotation_view_structure 结构行（至少 QUOTE_CARD）</li>
+     *   <li>至少有 1 条 lineItem（有 driver 数据，供 force 重算）</li>
+     * </ul>
+     */
+    @SuppressWarnings("unchecked")
+    private UUID resolveQuotationIdWithStructure() {
+        var rows = em.createNativeQuery(
+            "SELECT q.id FROM quotation q " +
+            "JOIN quotation_view_structure vs ON vs.quotation_id = q.id AND vs.view_kind = 'QUOTE_CARD' " +
+            "WHERE q.status = 'DRAFT' " +
+            "  AND EXISTS (" +
+            "    SELECT 1 FROM quotation_line_item li " +
+            "    WHERE li.quotation_id = q.id" +
+            "  ) " +
+            "LIMIT 1").getResultList();
+        return rows.isEmpty() ? null : UUID.fromString(rows.get(0).toString());
+    }
+
+    /**
+     * 读指定报价单的所有 quotation_view_structure 行的 created_at（字符串列表，顺序固定）。
+     * 用于在调用前后对比，验证结构行没有被 delete+重建。
+     */
+    @SuppressWarnings("unchecked")
+    private List<String> readStructureCreatedAts(UUID quotationId) {
+        var rows = em.createNativeQuery(
+            "SELECT created_at::text FROM quotation_view_structure " +
+            "WHERE quotation_id = :qid ORDER BY view_kind")
+            .setParameter("qid", quotationId)
+            .getResultList();
+        return rows.stream().map(Object::toString).toList();
+    }
+
+    /** 读指定报价单第一条 lineItem 的 quoteValuesAt（用于验证 force=true 有走）。 */
+    @SuppressWarnings("unchecked")
+    private OffsetDateTime readFirstLineQuoteValuesAt(UUID quotationId) {
+        var rows = em.createNativeQuery(
+            "SELECT li.quote_values_at FROM quotation_line_item li " +
+            "WHERE li.quotation_id = :qid ORDER BY li.created_at LIMIT 1")
+            .setParameter("qid", quotationId)
+            .getResultList();
+        if (rows.isEmpty() || rows.get(0) == null) return null;
+        Object val = rows.get(0);
+        if (val instanceof OffsetDateTime odt) return odt;
+        if (val instanceof java.time.Instant inst) return inst.atOffset(java.time.ZoneOffset.UTC);
+        if (val instanceof java.sql.Timestamp ts) return ts.toInstant().atOffset(java.time.ZoneOffset.UTC);
+        return OffsetDateTime.parse(val.toString().replace(" ", "T"));
+    }
+
+    /**
+     * seed：把指定报价单所有 lineItem 的 cardSnapshotAt 写为过去（已 bake），清零 quoteValuesAt。
+     * 确保 force=false 时 no-op，但我们在 refreshDraftQuoteCards 里要测的是 force=true。
+     */
+    @Transactional
+    void seedAllLinesBaked(UUID quotationId) {
+        OffsetDateTime past = OffsetDateTime.now().minusHours(2);
+        em.createNativeQuery(
+            "UPDATE quotation_line_item " +
+            "   SET card_snapshot_at = CAST(:ts AS timestamptz), " +
+            "       quote_values_at  = NULL " +
+            " WHERE quotation_id = :qid")
+            .setParameter("ts", past.toString())
+            .setParameter("qid", quotationId)
+            .executeUpdate();
+    }
+
+    // -----------------------------------------------------------------------
+    // T3: refreshDraftQuoteCards 不重建结构 + 逐行 force=true 重算
+    // -----------------------------------------------------------------------
+    @Test
+    @Order(3)
+    @DisplayName("T3: refreshDraftQuoteCards → 不调 rebuildStructureForDraft(结构 createdAt 不变) + 逐行 force=true 重算(quoteValuesAt 被更新)")
+    void refreshDraftQuoteCards_doesNotRebuildStructure() {
+        UUID quotationId = resolveQuotationIdWithStructure();
+        assumeTrue(quotationId != null,
+            "需要 DRAFT 报价单且有 quotation_view_structure 行 + lineItem");
+
+        // seed：所有行设为已 bake 状态（cardSnapshotAt=过去, quoteValuesAt=NULL）
+        seedAllLinesBaked(quotationId);
+
+        // 记录调用前的结构快照 createdAt（rebuildStructureForDraft = delete+重建 → createdAt 会变）
+        em.clear();
+        List<String> beforeCreatedAts = readStructureCreatedAts(quotationId);
+        assertFalse(beforeCreatedAts.isEmpty(),
+            "前置条件：quotation_view_structure 应有行");
+
+        // 执行：显式刷新整单（被改造后：不重建结构 + 逐行 force=true 重算值）
+        svc.refreshDraftQuoteCards(quotationId);
+
+        // 验证1：quotation_view_structure 的 created_at 完全不变
+        // （rebuildStructureForDraft 会先 DELETE 再 insert 新行，createdAt 必然变化）
+        em.clear();
+        List<String> afterCreatedAts = readStructureCreatedAts(quotationId);
+        assertEquals(beforeCreatedAts.size(), afterCreatedAts.size(),
+            "R1：refreshDraftQuoteCards 不得重建结构，行数不得变化");
+        assertEquals(beforeCreatedAts, afterCreatedAts,
+            "R1：rebuildStructureForDraft 未被调用 → quotation_view_structure.created_at 必须与调用前完全相同");
+
+        // 验证2：第一条 lineItem 的 quoteValuesAt 被更新（证明 force=true 路径有走）
+        OffsetDateTime afterValuesAt = readFirstLineQuoteValuesAt(quotationId);
+        assertNotNull(afterValuesAt,
+            "I-1+force=true：refreshDraftQuoteCards 应逐行调 self.refreshQuoteCardValues(li, true)，quoteValuesAt 必须被更新");
     }
 
     // -----------------------------------------------------------------------

@@ -1370,29 +1370,35 @@ public class CardSnapshotService {
     }
 
     /**
-     * 草稿态打开时重刷整单报价侧卡片值（设计 §5 触发点）。
+     * 草稿态<b>显式刷新</b>整单报价侧卡片值（R1：仅刷"值"，不重建结构）。
      * <ul>
      *   <li>仅 {@code status="DRAFT"} 执行；非 DRAFT（已提交/冻结）→ no-op 返 0。</li>
-     *   <li>遍历该报价单全部 lineItems，逐行 {@link #refreshQuoteCardValues}（本方法无外层事务，每行 REQUIRED 即独立新事务，单行失败不连坐）。</li>
+     *   <li>遍历该报价单全部 lineItems，逐行 {@code self.refreshQuoteCardValues(li, true)}（force=true 强制重算，
+     *       走 self 代理保 {@code @Transactional} 生效；每行独立事务，单行失败不连坐）。</li>
      * </ul>
+     * <p><b>R1（2026-06-18 草稿默认冻结）</b>：显式刷新只刷"值"，不重建结构。
+     * 原 {@code rebuildStructureForDraft} 调用已移除——结构创建即冻、永不变。
+     * {@code rebuildStructureForDraft} 方法本体保留，迁移端点 / 首次结构组装按需调用。
+     *
      * @return 实际重刷的行数（非 DRAFT 返 0）。
      */
     public int refreshDraftQuoteCards(UUID quotationId) {
         if (quotationId == null) return 0;
         Quotation q = Quotation.findById(quotationId);
         if (q == null || !"DRAFT".equals(q.status)) return 0; // 非 DRAFT no-op
-        // Task5(2026-06-01): DRAFT 打开重刷时一并重建结构（草稿跟随当前模板 + 旧单补全 v2 config keys/productAttributes；提交后冻结不动）。
-        try { self.rebuildStructureForDraft(quotationId); }
-        catch (Exception e) { LOG.warnf("[card-snapshot] rebuildStructureForDraft failed q=%s: %s", quotationId, e.getMessage()); }
+        // R1（2026-06-18 草稿默认冻结）：显式刷新只刷"值"，不重建结构。
+        // 原 rebuildStructureForDraft 调用已移除——结构创建即冻、永不变。
         List<QuotationLineItem> lines = QuotationLineItem.list("quotationId", quotationId);
         int n = 0;
         for (QuotationLineItem li : lines) {
             try {
-                // 2026-06-02 修复(草稿打开刷不出后台改的基础数据): 草稿重刷是用户"重查最新 SQL"的显式动作，
+                // 2026-06-02 修复(草稿打开刷不出后台改的基础数据): 显式刷新是用户"重查最新 SQL"的显式动作，
                 //   先定向清掉本行 driver 展开缓存（30s TTL）。否则后台直接改库（未走 app 导入 → 未调 evictAll）
                 //   时缓存命中旧值，refreshQuoteCardValues 重 expand 仍拿陈旧数据 → baseRows/含量 刷不出新值。
                 if (li.id != null) componentDriverService.evictForLineItem(li.id);
-                self.refreshQuoteCardValues(li); // self → 触发 @Transactional 代理（每行独立事务）
+                // I-1（2026-06-18）：必须走 self 代理，保 @Transactional 生效（this.xxx 绕过 CDI 代理不持久化）。
+                // force=true：显式刷新路径强制重算，无论 cardSnapshotAt 是否已设。
+                self.refreshQuoteCardValues(li, true);
                 n++;
             } catch (Exception e) {
                 LOG.warnf("[card-snapshot] refreshDraftQuoteCards line=%s failed: %s", li.id, e.getMessage());
