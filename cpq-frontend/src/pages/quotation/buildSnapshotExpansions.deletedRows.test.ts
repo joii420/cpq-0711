@@ -183,3 +183,69 @@ describe('buildSnapshotExpansions 墓碑过滤', () => {
     expect(mapWith[keyWith]!.rowCount).toBe(2);
   });
 });
+
+// ── AP-54 C3：撞键场景 __effKey 不变量（Fix C3 回归保护） ─────────────────────
+//
+// 撞键：同一组件 3 行的 rowKeyFields 值相同（都是 '料件'='P1'）。
+// buildUniqueRowKeys 产物：['P1#0', 'P1#1', 'P1#2']（追加 #序号消歧）。
+// 删中间行后，剩余 2 行的 __effKey 必须仍是完整集键 P1#0 / P1#2，
+// 而不是在过滤后子集上重算成 P1#0 / P1#1（这是 C3 修复的核心 bug）。
+
+describe('buildSnapshotExpansions 撞键 __effKey 不变量 (AP-54 C3)', () => {
+  // 3 行全部 rowKeyFields 值相同（料件='P1'），qty 不同只为区分 fp
+  const rowX0 = { driverRow: { 料件: 'P1', 数量: 1 }, basicDataValues: { price: 10 } };
+  const rowX1 = { driverRow: { 料件: 'P1', 数量: 2 }, basicDataValues: { price: 20 } };
+  const rowX2 = { driverRow: { 料件: 'P1', 数量: 3 }, basicDataValues: { price: 30 } };
+
+  const fpX0 = rowFingerprint(ROW_KEY_FIELDS, rowX0.driverRow);
+  const fpX1 = rowFingerprint(ROW_KEY_FIELDS, rowX1.driverRow);
+  const fpX2 = rowFingerprint(ROW_KEY_FIELDS, rowX2.driverRow);
+
+  const rowKeyFieldsByComp = new Map([[COMP_ID, ROW_KEY_FIELDS]]);
+
+  it('断言①：无墓碑时，rows[i].__effKey 是完整集键 [P1#0, P1#1, P1#2]', () => {
+    const item = makeLineItem([rowX0, rowX1, rowX2]);
+    const map = buildSnapshotExpansions([item], 'QUOTE', CUSTOMER_ID, rowKeyFieldsByComp);
+    const expansion = Object.values(map)[0]!;
+
+    expect(expansion.rowCount).toBe(3);
+    expect(expansion.rows).toHaveLength(3);
+    expect((expansion.rows[0] as any).__effKey).toBe('P1#0');
+    expect((expansion.rows[1] as any).__effKey).toBe('P1#1');
+    expect((expansion.rows[2] as any).__effKey).toBe('P1#2');
+  });
+
+  it('断言②：墓碑删中间行(P1#1)后，剩余 2 行的 __effKey 仍是完整集原键 P1#0 / P1#2（不重算成 P1#0/P1#1）', () => {
+    // 墓碑：完整集中间键 P1#1 + 其 fp
+    const tomb = JSON.stringify([{ effKey: 'P1#1', fp: fpX1 }]);
+    const item = makeLineItem([rowX0, rowX1, rowX2], tomb);
+    const map = buildSnapshotExpansions([item], 'QUOTE', CUSTOMER_ID, rowKeyFieldsByComp);
+    const expansion = Object.values(map)[0]!;
+
+    expect(expansion.rowCount).toBe(2);
+    expect(expansion.rows).toHaveLength(2);
+    // 核心断言：__effKey 必须是完整集原键，绝不重新编号
+    expect((expansion.rows[0] as any).__effKey).toBe('P1#0');
+    expect((expansion.rows[1] as any).__effKey).toBe('P1#2');  // 不是 P1#1！
+    // 并且剩余行的 driverRow 确实是 P1#0（数量=1）和 P1#2（数量=3）
+    expect(expansion.rows[0].driverRow['数量']).toBe(1);
+    expect(expansion.rows[1].driverRow['数量']).toBe(3);
+  });
+
+  it('断言③：对剩余的 P1#2 行再删，能命中过滤（第二次删撞键行生效，rowCount 再 −1）', () => {
+    // 同时放入两条墓碑：P1#1（先删）+ P1#2（再删）
+    const tombs = JSON.stringify([
+      { effKey: 'P1#1', fp: fpX1 },
+      { effKey: 'P1#2', fp: fpX2 },
+    ]);
+    const item = makeLineItem([rowX0, rowX1, rowX2], tombs);
+    const map = buildSnapshotExpansions([item], 'QUOTE', CUSTOMER_ID, rowKeyFieldsByComp);
+    const expansion = Object.values(map)[0]!;
+
+    // P1#1 和 P1#2 都被过滤，只剩 P1#0
+    expect(expansion.rowCount).toBe(1);
+    expect(expansion.rows).toHaveLength(1);
+    expect((expansion.rows[0] as any).__effKey).toBe('P1#0');
+    expect(expansion.rows[0].driverRow['数量']).toBe(1);
+  });
+});

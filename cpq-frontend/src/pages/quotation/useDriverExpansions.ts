@@ -36,6 +36,13 @@ export interface DriverRow {
   basicDataValues: Record<string, any>;
   /** 核价 BOM spine 系统列（P1）；仅核价侧快照行有值。 */
   __sys?: BomSysCols;
+  /**
+   * AP-54 C3：完整集 effKey（由 buildSnapshotExpansions 在完整 baseRows 上算后盖入）。
+   * 渲染层用此值作 driver 行 rowKey，与过滤口径、后端 resolvedRows/formulaResults 键
+   * 保持单一口径。COSTING 侧 undefined（spec §3.7 隔离）；手动行不经此路径。
+   * 不变量：过滤后子集绝不重算 key，__effKey 始终是完整集下标对应的键。
+   */
+  __effKey?: string;
 }
 
 export interface DriverExpansion {

@@ -1384,9 +1384,17 @@ export function buildSnapshotExpansions(
       );
 
       // ── QUOTE 侧墓碑过滤（AP-54 不变量，COSTING 侧绝不过滤） ──────────────────
-      // 头号不变量：effKey 在完整集 baseRows 上算；fp 用完整集每行 driverRow 算；
-      // 双命中才剔除；过滤后子集不重算 key / 不重建 effKey 序。
-      let effRows: any[] = baseRows;
+      // 头号不变量：effKey 必须在完整 baseRows 上算（唯一化），过滤后子集绝不重算 key。
+      // C3 补丁：QUOTE 侧有 rowKeyFields 时始终算完整集 uniqFull，并给每个保留行盖上
+      // 其完整集下标对应的 __effKey，渲染层据此对齐删除/查表，守 AP-54 单一口径。
+      // COSTING 侧 uniqFull=null → __effKey=undefined，行为不变（spec §3.7 隔离）。
+      const rkfForSide = (side === 'QUOTE') ? (rowKeyFieldsByComp?.get(cid) ?? []) : [];
+      const uniqFull = (side === 'QUOTE' && rkfForSide.length > 0)
+        ? buildUniqueRowKeys(comp.fields as any, rkfForSide, baseRows)  // 完整集 effKey，不变量
+        : null;
+
+      // kept：保留 (baseRow, 完整集下标) 对；默认保留全部
+      let kept: Array<{ br: any; i: number }> = baseRows.map((br: any, i: number) => ({ br, i }));
       if (side === 'QUOTE' && comp.deletedRowKeys) {
         let tombs: Tombstone[] = [];
         try {
@@ -1395,23 +1403,24 @@ export function buildSnapshotExpansions(
         } catch {
           tombs = [];
         }
-        if (tombs.length > 0) {
-          const rkf = rowKeyFieldsByComp?.get(cid) ?? [];
-          // 步骤1：完整集唯一化得到每行的 effKey（不变，不受过滤影响）
-          const uniq = buildUniqueRowKeys(comp.fields as any, rkf, baseRows);
-          // 步骤2：按墓碑双命中(effKey + fp)过滤，过滤后不重算 key
-          effRows = baseRows.filter((br: any, i: number) =>
-            keepRow(uniq[i], rowFingerprint(rkf, br?.driverRow ?? {}), tombs));
+        if (tombs.length > 0 && uniqFull) {
+          // 步骤：按墓碑双命中(完整集 effKey + fp)过滤，保留 (br, 原始下标)
+          kept = kept.filter(({ br, i }) =>
+            keepRow(uniqFull[i], rowFingerprint(rkfForSide, br?.driverRow ?? {}), tombs));
         }
       }
 
       map[key] = {
         // rowCount = effectiveRowCount（有效行数，渲染/prune 按此迭代）
         // AP-51「原始行数」监控在后端 /expand 与 refreshQuoteCardValues 侧，此处取过滤后行数正确。
-        rowCount: effRows.length,
-        rows: effRows.map((br: any) => ({
+        rowCount: kept.length,
+        rows: kept.map(({ br, i }) => ({
           driverRow: br?.driverRow ?? {},
           basicDataValues: br?.basicDataValues ?? {},
+          // AP-54 C3：完整集 effKey 盖到每个保留行，渲染层用 __effKey 作 rowKey，
+          // 与 buildSnapshotExpansions 过滤口径、后端 resolvedRows/formulaResults 键完全一致。
+          // COSTING 侧 uniqFull=null → __effKey=undefined，渲染层不使用（守 AP-41 隔离）。
+          __effKey: uniqFull ? uniqFull[i] : undefined,
           // 核价 BOM 递归展开（P1）：透传 spine 系统列（__ 前缀），供 COSTING 卡片渲染固定列 + 建树。
           // 报价侧快照无 __* 字段 → __sys 各项 undefined，渲染层据此不注入（守 AP-41 隔离）。
           __sys: (br && br.__nodeId !== undefined) ? {
@@ -2343,8 +2352,17 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         ...rawRowNonEmpty,         // 用户真实输入覆盖, null/undefined/'' 不动
                       } : rawRow;
                       // Phase4 Task3: rowKey 对齐后端(FormulaCalculator.computeRowKey) — 用于 formulaResults 查表 + 编辑回写。
-                      // 撞键消歧：取活动组件预算的唯一化键表（与后端 computeRows + 快照一致），兜底退回 String(i)。
-                      const rowKey = useSnapEdit ? (activeUniqRowKeys[i] ?? String(i)) : String(i);
+                      // AP-54 C3：driver 行优先取完整集 __effKey（buildSnapshotExpansions 盖入，在完整 baseRows
+                      // 上算，不受过滤后子集影响）；手动行（expIndex<0）仍走 activeUniqRowKeys（不受 driver
+                      // 过滤影响，行为不变）；两者都无时退回 String(i)。
+                      // 不变量：rowKey 口径与 buildSnapshotExpansions 过滤、后端 resolvedRows/formulaResults、
+                      // handleDeleteDriverRow 传参完全一致，过滤后子集绝不重算 key。
+                      const driverEffKey = ra.expIndex >= 0
+                        ? (activeDriverExpansion!.rows[ra.expIndex] as any)?.__effKey as string | undefined
+                        : undefined;
+                      const rowKey = useSnapEdit
+                        ? (driverEffKey ?? activeUniqRowKeys[i] ?? String(i))
+                        : String(i);
                       // AP-54: realRowIndex = 对象引用映射回 comp.rows 真实下标，用于写路径(handleRowChange/handleDeleteRow 等)
                       const realRowIndex = ra.isManual
                         ? activeComponent.rows.indexOf(ra.row)
