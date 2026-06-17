@@ -59,6 +59,7 @@ public class Q04ElementBomHandler implements SheetHandler {
             }
             materialMasterRepo.upsertByMaterialNo(materialNo, inputName,
                 null, null, null, "3", null, null, null, ctx.importedBy, true);
+            result.recordWrite("material_master", 1);
             Integer seq = row.getInt("项次");
             String componentNo = row.getStr("元素");
             Map<String, Object> c = new LinkedHashMap<>();
