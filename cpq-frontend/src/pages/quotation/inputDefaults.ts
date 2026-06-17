@@ -1,5 +1,5 @@
 import { bnfDriverLookupKey } from './useDriverExpansions';
-import { formatPathValue } from './components/ComponentCell';
+import { formatPathValue } from './components/formatPathValue';
 import type { ComponentField } from './QuotationStep2';
 
 export interface InputDefaultCtx {
