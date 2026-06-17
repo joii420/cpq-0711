@@ -307,16 +307,28 @@ public class QuotationService {
             // V169 二阶段 parent_line_item_id 重建用: index → 行 UUID 的映射(复用行=原 id, 新行=新 id)
             java.util.UUID[] newIdsByIndex = new java.util.UUID[request.lineItems.size()];
 
+            // FixC1: 复用行 clearLineItemChildren 前先保存各 component 的 deletedRowKeys,
+            // 重建时按 componentId 回填; saveDraft 请求不携带 deletedRowKeys(由专用端点管)
+            java.util.Map<java.util.UUID, String> preservedTombstones = new java.util.HashMap<>();
+
             for (int i = 0; i < request.lineItems.size(); i++) {
                 SaveDraftRequest.LineItemDraft liDraft = request.lineItems.get(i);
                 QuotationLineItem li;
                 if (liDraft.id != null && existingById.containsKey(liDraft.id)) {
                     li = existingById.get(liDraft.id);   // 复用 → 就地 UPDATE, id 不变
                     keptIds.add(li.id);
+                    // FixC1: clear 前先存现有墓碑,重建时按 componentId 回填(saveDraft 请求不带 deletedRowKeys)
+                    preservedTombstones.clear();
+                    for (QuotationLineComponentData old :
+                            QuotationLineComponentData.<QuotationLineComponentData>list("lineItemId = ?1", li.id)) {
+                        if (old.componentId != null && old.deletedRowKeys != null)
+                            preservedTombstones.put(old.componentId, old.deletedRowKeys);
+                    }
                     clearLineItemChildren(li.id);        // 旧子表清掉, 下面按 draft 重建
                     li.parentLineItemId = null;          // 父子关系清空, 待二阶段重链
                 } else {
                     li = new QuotationLineItem();
+                    preservedTombstones.clear();         // 新行无墓碑
                 }
                 li.quotationId = id;
                 li.productId = liDraft.productId;
@@ -482,6 +494,10 @@ public class QuotationService {
                         if (cdDraft.rowData != null) cd.rowData = cdDraft.rowData;
                         if (cdDraft.subtotal != null) cd.subtotal = cdDraft.subtotal;
                         cd.sortOrder = cdDraft.sortOrder != null ? cdDraft.sortOrder : j;
+                        // FixC1: 回填墓碑(同模板复用行,源集/effKey 不变,墓碑仍匹配);新行/无记录 → "[]"
+                        String preserved = (cdDraft.componentId != null)
+                                ? preservedTombstones.get(cdDraft.componentId) : null;
+                        cd.deletedRowKeys = (preserved != null) ? preserved : "[]";
                         cd.persist();
                     }
                 }
