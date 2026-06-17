@@ -4,6 +4,8 @@
 
 ---
 
+[2026-06-18] 报价冻结 Task B1(前端) - 草稿打开删除自动重刷逻辑 | QuotationWizard.tsx(loadQuotation 函数，删除 DRAFT 分支的 refreshCardSnapshot + 二次 getById + hideRecalc 变量，共 -17 行) | `let res`→`const res`，只 getById 一次直接读已冻快照；`message` import 因文件其他处仍大量使用保留；`refreshCardSnapshot` 为 service 方法非独立 import，无需清理。tsc 0 错误。提交 f8afb8c 在 worktree-quote-draft-freeze 分支。
+
 [2026-06-18] 报价冻结 Task A3 - deleteDriverRow/restoreAllDriverRows callsite 改 force=true | QuotationService.java(行 2168、2178 各加 true 参数) | 用户显式删行/恢复行属于主动操作，必须重算快照；copy 方法(行 1321)保持单参——新 line item cardSnapshotAt==null 走首次 bake 语义，加 force 反而会误强刷。两处改动均为跨 bean CDI 调用（cardSnapshotService.refreshQuoteCardValues），@Transactional 代理正常，无 I-1 问题。编译 0 错误，CardSnapshotFreezeTest 3/3 passed。提交 875314d 在 worktree-quote-draft-freeze 分支。
 
 [2026-06-18] 报价冻结 Task A2 - refreshDraftQuoteCards 移除结构重建(R1)+逐行 self.force 重算 | CardSnapshotService.java(refreshDraftQuoteCards 方法体改动 + javadoc 更新) / CardSnapshotFreezeTest.java(新增 T3 + helpers) | R1：移除 try{self.rebuildStructureForDraft} 整块，结构创建即冻永不变；逐行调用从 self.refreshQuoteCardValues(li) 改为 self.refreshQuoteCardValues(li, true)。I-1 约束：必须走 self 代理（@Inject CardSnapshotService self 第76行），禁止 this.xxx 或裸调——CDI 代理绕过导致 @Transactional 失效、重算结果不持久化。rebuildStructureForDraft 方法本体保留供迁移端点/首次结构组装按需调用。TDD：T3 以 quotation_view_structure.created_at 不变为观测指标（rebuildStructureForDraft = delete+upsert → createdAt 必变），再验 quoteValuesAt 非 NULL 证明 force=true 路径有走；RED(createdAt 变化失败)→GREEN(3/3 passed)。提交 68fed02 在 worktree-quote-draft-freeze 分支。
