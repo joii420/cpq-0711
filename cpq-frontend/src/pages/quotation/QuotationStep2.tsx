@@ -3192,6 +3192,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
           )}
           {quotationStatus === 'DRAFT' && quotationId && (
             <Button
+              data-testid="refresh-basic-data-btn"
               icon={<ReloadOutlined />}
               loading={refreshingSnapshot}
               onClick={handleRefreshSnapshot}
