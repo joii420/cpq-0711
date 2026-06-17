@@ -4,6 +4,7 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.service.MaterialNoResolver;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -30,6 +31,7 @@ import java.util.List;
 public class Q05ElementRecoveryHandler implements SheetHandler {
 
     @Inject EntityManager em;
+    @Inject MaterialNoResolver materialNoResolver;
 
     @Override public String sheetName() { return "元素回收折扣"; }
 
@@ -37,16 +39,21 @@ public class Q05ElementRecoveryHandler implements SheetHandler {
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
+        MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
-                String materialNo = row.getStr("投入料号");
+                String inputName = row.exact("投入料号名称");
+                String materialNo = materialNoResolver.resolveMatchOnly(row.exact("投入料号"), inputName, batch);
                 String componentNo = row.getStr("元素");
                 java.math.BigDecimal recoveryDiscount = row.getDecimal("回收折扣");
 
-                // §5 字段表：项次 ❌ 不导入。匹配键仅 (material_no=投入料号, component_no=元素)，取最新 characteristic。
+                // §5 更新型：只按名匹配不生成。料号为空且按名称查不到 → 记错误跳过。
                 if (materialNo == null || componentNo == null) {
-                    result.recordError(row.rowNo, "投入料号/元素", "匹配键不全");
+                    result.recordError(row.rowNo, "投入料号/元素",
+                        materialNo == null
+                            ? "投入料号为空，且按名称[" + (inputName == null ? "" : inputName) + "]在料号表查无对应料号"
+                            : "匹配键不全");
                     continue;
                 }
 
