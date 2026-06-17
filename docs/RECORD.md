@@ -5,6 +5,13 @@
 ---
 
 [2026-06-17] 报价单 - driver 默认行可永久删除 | V301__qlcd_add_deleted_row_keys(+QuotationLineComponentData.deletedRowKeys jsonb) / DeletedRowKeys.java↔deletedRows.ts(前后端逐字节对拍指纹+双命中) / CardSnapshotService+FormulaCalculator 唯一化后双命中过滤落点+核价隔离 / QuotationService 追加墓碑端点 delete-driver-row+restore-driver-rows / QuotationDTO.ComponentDataDTO 暴露 deletedRowKeys / QuotationStep2 🔗→✕(QUOTE侧)+buildSnapshotExpansions 过滤+__effKey / enrichComponentData 透传 / QuotationService.copy+saveDraft 墓碑处理 | 每页签 deleted_row_keys[{effKey,fp}]墓碑;前后端统一"完整集唯一化→双命中(effKey+指纹fp)剔除整行"严守 AP-54(过滤后子集绝不重算key/重排下标);snapshot_rows/baseRows 存全量、渲染/求值/Excel 期一律过滤;rowCount 语义不变另立 effectiveRowCount(=effRows.length);deletedRowKeys 不进 driverExpansionKey(防缓存击穿);换模板复制清墓碑/同模板拷;核价侧 side==QUOTE 显式隔离(前端门控+后端 buildCostingCardValues 传空);专用追加端点+单行重刷,不混高频 saveDraft;前端乐观更新+失败回滚。**三处集成接缝 bug(最终整体评审发现,单任务评审看不到)已修**:FixC1 saveDraft 重建 component_data 时按 componentId 回填 deletedRowKeys(否则任一 autosave 抹墓碑→被删行复活);FixC2 enrichComponentData 两处字面量透传 saved.deletedRowKeys(否则刷新/重进编辑后 comp.deletedRowKeys=undefined→过滤 no-op→复活);FixC3 渲染层 effKey 改用 buildSnapshotExpansions 盖的完整集 __effKey(原在过滤后子集重算 buildUniqueRowKeys→撞键行二次删除失配+editRows 串行错位)。验证:后端单测 13(DeletedRowKeys6+FormulaCalculatorDeletedRow7)/前端 15(deletedRows6+buildSnapshotExpansions9含撞键删除seam)全绿+tsc0错;E2E quotation-flow **1 passed**(加载中=0/PUT draft=0),composite-product-flow 既有 Step1 模板下拉环境失败(RECORD 2026-06-10,与本改动无关);curl 删行 200→DB 墓碑落库+formulaResults 2→1+刷新3次稳定不回弹(AP-51)+restore-driver-rows 清墓碑恢复2行。⚠️**并发会话 material-bom 已占用 V300(material_bom_item_weight_fields)并应用到共享DB,本特性迁移让位重编号为 V301**(原 V300 触发 Flyway checksum 冲突致共享后端 500,renumber 后恢复);该会话 V300 文件已暂置主仓 migration 目录(untracked)供 Flyway 校验,待其合并时正式入库。spec/plan 见 docs/superpowers/2026-06-17-deletable-driver-default-rows-*.
+---
+
+[2026-06-17] 报价渲染 - INPUT 字段默认值解析统一化(AP-44 漂移收敛) | 新增 inputDefaults.ts(resolveInputDefault + resolveInputDefaultSourceOnly + coerceInputNumber) / components/formatPathValue.ts(抽出断循环依赖) / inputDefaults.test.ts(11) / inputDefaultCompute.test.ts(3) ; 改 QuotationStep2.tsx(computeAllFormulas+快照回填useEffect+resolveInputDefaultSourceForRow委托) / components/ComponentCell.tsx(编辑+只读态) / QuotationWizard.tsx(snapshotRows) / BulkImportPartsDrawer.tsx+AddProductModal.tsx(buildEmptyRow注释) | 根因:组件管理给输入类字段(INPUT_TEXT/INPUT_NUMBER)配的默认值(货币=RMB静态content无源 / 计价单位=KG+BASIC_DATA源)在报价向导渲染为空——INPUT默认值解析散落~8处且覆盖不一致(ComponentCell编辑态:644 + computeAllFormulas:577 把INPUT_TEXT排除在默认值兜底外;快照回填useEffect只认default_source.type=BASIC_DATA;snapshotRows完全不解析INPUT默认值)。**方案=抽单一共享解析器,所有消费点统一改调**。优先级铁律:已有用户值(row[key]非空) > default_source(GLOBAL_VARIABLE|BNF_PATH|BASIC_DATA,实时/快照bake) > 静态content > 空。持久化:无源静态content由snapshotRows冻结进row_data(常量安全,后端核价/Excel才读得到);有源走快照回填useEffect bake(**S1评审修:只冻结真正解析到的源值,改用resolveInputDefaultSourceOnly剥离content兜底——否则源未命中时content被bake+bakedRef一次性锁死,driver补回真值不再刷新=陈旧锁定**)。决策:①循环依赖 inputDefaults↔ComponentCell 经抽 formatPathValue 独立模块打断(inputDefaults直接import ./components/formatPathValue 绕开ComponentCell);②S2评审项=编辑态默认值作"实值"带出(value=effectiveValue,空时回填解析默认),保留用户显式需求A(可编辑预填+未改动也保存),未回退master占位语义(占位与"未改动也保存"冲突且本feature要的就是实值);经核 effectiveValue 在用户输入时仍=row[key],不触发AP-54受控假死。约束:usePathFormulaCache 的 BASIC_DATA 路径采集排除**保持不动**(防$view.中文列撞键)。后端(静态分析):报价Excel新路径走resolvedRows已覆盖INPUT_TEXT/INPUT_NUMBER,提交快照只收元数据值已固化4列,核价侧设计隔离(editRows=null);裸`INPUT`类型在mergeRowDataInputsIntoEdits/collectFieldValues遗漏但属低风险(INPUT非组件可配置类型、仅前端normalize兜底、resolveRowByFieldName已覆盖),核价/Excel五处一致留post-merge真实单运行时核。存量爆炸面:无源静态content的INPUT仅3个组件字段(冻结面极小);INPUT_TEXT+default_source 710字段(本次新激活解析,均属修复)。DRAFT-only边界:snapshotRows仅draft保存/创建路径调用,已提交单走Phase4冻结快照不重算。验证:tsc 0错 + quotation单测merged master 163绿(含resolveInputDefault真值表11 + computeAllFormulas content参与 + bake source-only) + E2E quotation-flow **1 passed**(全8 Tab '加载中'=0 / PUT draft=0 / 零渲染回归;注:该测试数据元素Tab driver rows=0故cells不出现,货币=RMB运行时值由单测覆盖,实际单渲染待用户/post-merge核)。⚠️**并发会话**已推master至408dee7(deletable-driver-rows等),本分支合并时auto-merged QuotationStep2+QuotationWizard无文本冲突,merged master 163测试+tsc 0错确认语义无碍。AP-44教训:INPUT默认值解析无单一真源、散8处各自演进→新type/新字段类型必漏几处静默失败,本次收敛为单点。7+1 commit(367994e→c664e2c)。spec/plan见 docs/superpowers/2026-06-17-input-*。
+
+---
+
+[2026-06-17] 报价导入落库文档 - 电镀费用 price_type 文档↔代码对齐(报价侧) | docs/table/报价系统Excel导入落库方案.md | 排查"从基础数据导入后电镀费用查不到数据": 根因是按设计规则——「电镀费用」Sheet 当「电镀方案编号」非空时整行跳过不落 unit_price(由系统按电镀方案 plating_scheme 计算), 测试数据该行方案编号=A0001 故 0 条落库(import_record metadata 显示 totalRows=1/successRows=1/writtenCounts={}, 非 bug)。顺带发现并修文档不一致: 报价 doc 原写电镀费用 price_type=MATERIAL, 实际代码 Q17PlatingCostHandler.java:92 写 PLATING; 经用户决策"以 PLATING 为准, 只对齐报价侧, 存量不校验", 把 doc 4 处 MATERIAL→PLATING(汇总表 58/59 行 + 第1/2条固定字段 569/589 行)+ 645 行枚举补 PLATING。仅文档改动无代码改动。**遗留**: 核价侧「电镀成本」P22PlatingCostHandler.java:44,51 代码+核价 doc 仍为 MATERIAL(核价自洽), 故报价电镀=PLATING、核价电镀=MATERIAL 两管线仍不一致; 后续如需全系统统一为 PLATING 须改 P22 代码并评估核价视图/模板按 price_type 取电镀数的影响。
 
 ---
 
@@ -15,6 +22,74 @@
 [2026-06-16] 报价渲染 - footer 列小计单一来源化(columnSumsByComp) | QuotationStep2.tsx / ReadonlyProductCard.tsx | 删空-crossTabRows旁路(废弃computeNonSubtotalColumnSums), buildCrossTabRows改返{store,columnSumsByComp}(每组件每数值列从resolvedRows求和), computeRows串prevRowValues(修与effectiveRows分叉), ¥严格按field.is_amount; 后端A-保守不改(backfillSubtotalsFromResolved仍只is_subtotal落库); 不变量:footer列值===该列已渲染行resolvedRow之和; 新增columnSumsByComp.test.ts+两旧测试迁移单一来源, 前端quotation单测绿, E2E门禁由主控合并后跑. 未做(后续Phase A-彻底):非小计列落库subtotalByColumn+Excel引用扩展+Phase4零计算读快照. 详见 三大核心模块基线.md §4.6 / 反模式.md AP-57
 
 ---
+
+### [2026-06-16] test(sumif-chip): Phase 5 E2E 验收 — SUMIF 内联 chip 渲染层可用 + 零回归 | 纯测试验收，无代码改动
+
+- **双 spec 回归**:
+  - `quotation-flow.spec.ts` (SIMPLE): **1 passed** / '加载中' final=0 / 全 9 Tab '加载中'=0 / PUT /draft=0 / TS 0 错误 / Vite 200
+  - `composite-product-flow.spec.ts` (COMPOSITE): **1 failed** — `selectByLabel('报价模板')` click 超时 15s，失败点停在 Step1 选模板（核价模板0603 只读环境问题），与 SUMIF chip 代码零关联；与 RECORD 2026-06-10 既有记录一致
+- **SUMIF chip 内联验证**:
+  - 单测 3 文件 199 passed：`formulaSerialize.test.ts`(170) + `sumifTokenBuild.test.ts`(15) + `predicateText.test.ts`(14)，含 SUMIF 文本↔token round-trip 全覆盖
+  - 机制确认：`handleInsertSumifToken` → `buildSumifText` → `insertAtCursor`（chip 内联插入表达式框，不走侧边列表）；重开时 `tokensToDrawerExpression`（第 266 行）把带 predicate 的 cross_tab_ref token 序列化成 `SUMIF(...)` 文本填入表达式框，往返无丢失
+  - `splitSumifTokens` 函数未在代码库中找到（RECORD 2026-06-15 提及的名称）；实际实现为 `tokensToDrawerExpression` 直接序列化所有 token（含 SUMIF）成表达式串，无需侧状态拆分
+- **API 落库验证**: 已在 RECORD 2026-06-15 Task10 完成（PUT 带 predicate token → 持久化，已撤销），本次不重复
+- **改动文件**: 无（纯测试验收）
+- **结论**: SUMIF 内联 chip 渲染层可用 + 公式序列化层无回归
+
+---
+
+### [2026-06-16] feat(unit): 单位换算逐行归一 KG/PCS | UnitConversion(前后端) + FormulaCalculator/CardEffectiveRows/ExcelView/CardSnapshotService/QuotationStep2/enrich 等 | 明细原值·派生 canonical·克隆不 mutate·BNF 直读不支持
+
+- **需求**: 组件数值列配 `unit_source_field` 指向同组件同行的单位文本字段; 公式/聚合消费该列时逐行读单位、按硬编码预设表(克/G→KG ÷1000, 千克/KG→×1, 吨/T→×1000, 片/PCS→×1, KPCS/千片→×1000, g/PCS→kg/PCS ÷1000; 未知/空→×1透传)归一。明细输入列界面/落库存**原值**, 公式结果列/小计列存 **canonical**。
+- **机制(v5 终态, 不用伴生键)**: 在每个**持有 fields 的"公式面物化点"**把配换算列覆盖成 canonical 的**克隆**视图(绝不 mutate 原行——渲染行同对象, 原地改会污染明细显示)。共享 `UnitConversion.java` / `unitConversion.ts` **双副本 + 跨端对拍测试**守一致(项目无 monorepo 共享包)。
+- **物化点(7处)**: 前端 `computeAllFormulas`(顶部克隆) / `computeNonSubtotalColumnSums`(输入列直读) / `subtotalsFromResolvedRows`(求和); 后端 `FormulaCalculator.computeRows`(mergedRow, collectFieldValues 前) / `CardEffectiveRows.parse`(ExcelView 传 fieldsOf) / `backfillSubtotalsFromResolved`(求和用换算 copy, resolvedRows 落库不动)。cross_tab 经 computeRows/computeAllFormulas 输出透传(**仅公式列**; 裸输入列 cross_tab 拉取前后端一致地不换 = 已知限制)。
+- **传播**: `unit_source_field` 经 enrich 5 处构建点透传到 `comp.fields`(原 whitelist pick 会丢→已补, 否则前端换算全静默失效); 纳入 `fieldsOverrideHash`(AP-37 改配置后缓存失效); `FieldConfigTable` 加"单位换算来源"Select(存 name, 排除自身)。
+- **不支持/约束**: BNF 视图直读列(`{path}`/VARIABLE, 实测现役模板 100% 卡片取数 CARD_FORMULA, BNF 0 绑定); 被换算列**不得**当行键/cross_tab 匹配键(spec §8, UI 暂未强校验, 文档约束); 后端一律 BigDecimal 禁 double。
+- **验证**: 后端 13 + 前端 29 单测全绿, 前后端 factorFor 对拍逐档一致; `quotation-flow.spec.ts` E2E **1 passed**(渲染层无回归, 8 Tab 加载中=0, PUT/draft=0)。全量后端 `@QuarkusTest` 失败为既有环境问题(master 基线同样 3/6·5/5·4/4 失败, 与本改动无关)。
+- **spec/plan**: `docs/superpowers/specs/2026-06-15-unit-conversion-design.md`(v5, 经 4 轮架构评审收敛) + `docs/superpowers/plans/2026-06-15-unit-conversion.md`(12 任务 TDD)。
+
+---
+
+### [2026-06-16] test(sumif): Task 10 E2E 验证 — SUMIF 条件聚合无回归 + 渲染层可用 | 无代码改动（纯测试验收）
+
+- **第一步 双 spec 回归**:
+  - `quotation-flow.spec.ts` (SIMPLE): **1 passed** / '加载中' final=0 / 全 9 Tab '加载中'=0 / PUT /draft=0 / 无报错 / 模板自动升级至 v1.26
+  - `composite-product-flow.spec.ts` (COMPOSITE): **1 failed** — `selectByLabel('报价模板')` click 超时 15s，失败截图显示产品分类选择后出现黄色警告框（核价模板0603 v1.12 只读），页面停在 Step1，未进入任何渲染环节
+  - **COMPOSITE 失败根因**: 数据/环境问题（罗克韦尔客户+产品分类+模板 v1.16 组合在当前 DB 里的状态），与 SUMIF 代码零关联；RECORD 2026-06-10 已明确记录"composite-product-flow.spec.ts 仍失败 = 既有 bug，用户确认旧视图/模板配置已废弃，不予理会"
+  - **结论**: SUMIF 合并（c314ccd）未引入任何新回归；SIMPLE 路径零回归
+
+- **第二步 SUMIF 功能端到端验证**:
+  - **后端 46 单测全绿**: ConditionPredicateEvaluatorTest(12) + ConditionPredicateParserTest(8) + ConditionPredicateJsonValidateTest(2) + FormulaCalculatorPredicateTest(2) + TemplateFormulaSumifTest(5) + ComponentServiceCrossTabValidateTest(17)
+  - **前端 517 单测全绿**: sumifTokenBuild.test.ts(24) + formulaEnginePredicate.test.ts(10) 在内
+  - **API 落库验证**: 向`来料`组件（3cb220be）PUT 一个带 predicate 的 SUMIF cross_tab_ref token（`元素.损耗率>0` 过滤行求`单价`总和），HTTP 200，重读组件 predicate op/lhs/rhs 完整持久化；已撤销恢复原状（8 formula，14 field）
+  - **渲染路径确认**: `formulaEngine.ts:362` `evalPredicate(token.predicate, ar, hostRow)` 已整合进 `aggregateRows` 的 `.filter()` 分支，predicate absent 时 null→true 保向后兼容
+  - **E2E 真机限制**: 测试报价单 10110002 料件数据为空（rows=0），无法验证带真实数据的按行分值渲染；该限制与 SUMIF 本身无关，属测试数据问题
+
+- **改动文件**: 无（本次纯测试验收，未改任何代码文件）
+
+---
+
+### [2026-06-15] fix(ui): SUMIF 抽屉重开时 predicate 丢失 | TabJoinFormulaDrawer.tsx + ComponentManagement.tsx + types.ts + sumifTokenBuild.test.ts | splitSumifTokens 拆分策略
+
+- **症状**: 打开含 SUMIF 公式的公式抽屉时，过滤条件（predicate）不回显；再保存后 predicate 被静默清除。
+- **根因三链**:
+  1. `openFormulaForComponent` 调 `tokensToDrawerExpression` 把所有 token 序列化成字符串，`cross_tab_ref.predicate` 在序列化时被忽略（生成 `SUM([xxx.yyy])`），传给 drawer 时 predicate 已丢。
+  2. drawer 打开时 `sumifTokens` 被重置为空（关闭 useEffect），没有从 `column.expression` 回填 SUMIF token。
+  3. `FormulaToken` 类型定义缺 `predicate` 字段，TS 无法静态检测。
+- **修法**:
+  - 导出 `splitSumifTokens(tokens)` 纯函数：`predicate != null` 的 `cross_tab_ref` → `sumifTokens`；其余 → `exprTokens`（送 `tokensToDrawerExpression`）。
+  - `TabJoinFormulaDrawer` 新增 `initialTokens?: FormulaToken[]` prop，tabDefs 异步加载完后执行拆分（保证 source→页签名称正确解析）。
+  - `ComponentManagement.openFormulaForComponent` 传 `initialTokens`（原始 token[]），不再提前序列化。
+  - `FormulaToken` 补 `predicate?: unknown` 字段（避免循环依赖，运行时类型兼容）。
+- **测试**: 14 个 vitest 用例全绿（原 8 + 新 6 个 round-trip，覆盖拆分/合并/无predicate/空/多token）。
+
+### [2026-06-15] fix(excel-formula): SUMIF/AVGIF/MINIF/MAXIF valueExpr [页签.字段] 括号记法静默返回 0 | TemplateFormulaService.java(stripFieldRefs + aggregateWithPredicate) + TemplateFormulaSumifTest.java(3 个新用例) | TDD 红→绿
+
+- **症状**: `SUMIF([页签A.类型]='管理费', [页签A.金额])` 对 3 行数据期望 17，实得 0。
+- **根因**: `aggregateWithPredicate` 把 `valueExprText` 原样传给 `evalValueExpr`；后者策略1（纯字段名直接 row.get）匹配不到 `[页签A.金额]`（含括号+页签前缀），策略2 JEXL 因中文标识符 tokenize 失败 → 整行 null → 空集 → SUM=0。cond 侧由 `ConditionPredicateParser` 正确剥壳了，valueExpr 侧没有。
+- **修法**: 新增包内可见方法 `String stripFieldRefs(String)` — 把表达式里每个 `[...]` 替换为最后一个 `.` 后的字段名段（有 `.` 取其后，无 `.` 取整体，与 `ConditionPredicateParser` 口径一致）；在 `aggregateWithPredicate` 入口处 `String resolvedValueExpr = stripFieldRefs(valueExprText)` 后传给 `evalValueExpr`。COUNTIF（valueExprText=null）不受影响；`[宿主页签.字段]` 剥壳后若 row 无该字段按 0/缺省处理（spec §9 P0-5，不崩）。
+- **TDD**: 先补 3 个红测试（编译失败：stripFieldRefs 不存在）→ 实现 → 5 个全绿；回归 `*TemplateFormula*` 0 failures；health 401（auth 正常）。
+- **新测试**: `sumif_bracketed_value_expr`（核心，17）/ `sumif_bracketed_arithmetic`（复合算术，41）/ `stripFieldRefs_various_forms`（纯函数 6 断言）。
 
 ### [2026-06-15] fix(formula): 同页签列引用默认取同行值 — 材料成本等二阶列真修 | formulaSerialize.ts(bracket_expr 含点分支优先级) + 护栏测试(前端 buildCrossTabRows.test + 后端 FormulaCalculatorSamePageFieldRefTest) | plan: superpowers/plans/2026-06-15-E-samepage-column-ref-rowvalue.md
 
@@ -3636,9 +3711,16 @@ E2E:
 - **金额**：底部「本页签总计」行改名「**本页签金额合计**」= 仅 `is_amount && is_subtotal` 列之和（无金额列整行隐藏），修原「全 is_subtotal 列重复累加(¥260.67)」；金额列小计 ¥+通用精度(4位去末尾0)，金额合计 ¥+2位。组件管理强制金额⊆小计（金额框未勾小计置灰 + 取消小计联动清金额）。
 - **行键**：本次零改动（多列联合主键判重 + 跨页签按行键归组写回宿主行的公式引擎逻辑既有）。
 - **边界纪律**：禁改公式引擎；`buildColumnSumsByComp` 数据层谓词不动（仅渲染层 gate，故 columnSumsByComp/nonSubtotalSums/subtotalInputColumn 等数据层测试不回归，相关 5 spec 25 passed）；不迁移存量（以最新报价数据为主）；Excel 视图单独评估未动。评审采纳 M1(`is_amount&&is_subtotal` 保险)/M2(置灰+联动同 PR)/O1(改名+注释)/O3(类型补 is_amount)。
+[2026-06-15] 报价渲染/公式引擎 - 行键唯一性消歧(撞键→#序号) | FormulaCalculator.java(新增 static uniquifyRowKeys + computeRows 预扫) / CardSnapshotService.java(buildResolvedRows + filterEditRowsToNewBaseRows + rowData→editRows 合并 三处预扫) / CardEffectiveRows.java(回退路径预扫) / useCardSnapshots.ts(新增导出 uniquifyRowKeys+buildUniqueRowKeys; rowKeyOf/getCell 按组件唯一键表) / QuotationStep2.tsx + ReadonlyProductCard.tsx(渲染前成批算唯一键) | **根因**: 外购件 `row_key_fields=[料件,要素]`，两行 driver `(料件=空,要素=单价)` → 行键都算成 `||单价` 撞键 → editRows 写覆盖(只活末条)+读串行 → resolvedRows「末值×行数」塌缩 → 来料 cross_tab 逐行匹配错(外购件1=0、外购件2=0.802×2=1.604)。06-13 rowkey 修复只覆盖「全空→行号」，键非空但不唯一不触发。**修法**: 对一个组件全部行的 rowKey 列表做唯一化——只对出现≥2次的键按出现序追加 `#<0基序号>`(唯一键不变=向后兼容)；前后端逐字节等价算法，序号按 baseRows 数组序(同序)；rowKey 由 driver 内容派生(非编辑后内容)→跨刷新稳定。**存量**: 旧撞键 editRow(无#)失配作废且不可自动迁移(末值覆盖丢失前条)，用户须在外购件页签重填一次料件→按新键 `||单价#0/#1` 逐行绑定。**验证**: 前后端 TDD RED→GREEN + 对拍同 fixture 同期望串 `["||单价#0","||单价#1"]`；computeRows 测试证 editRows 逐行绑定(数量10/20)；quotation-flow E2E 1 passed/加载中=0/8Tab=0/PUT=0；base 对比确认 QuotationSnapshotTest(DB env)+CardStructureSnapshotTest(配置契约) 为既有失败非本轮。计划见 docs/superpowers/plans/2026-06-15-rowkey-uniqueness-disambiguation.md。AP-51/AP-44 协议区。
+
+[2026-06-15] 报价导入-料号自动维护 - 组成件/投入料号空+名称有值则按名匹配料号表、匹配不到按9字头(MAX+1)生成; §12新增料号表同步(type=3)+工序按名回填; upsertByMaterialNo新增preserveDescriptive重载(报价true保留旧名/类型,核价P05沿用false零回归) | MaterialNoResolver.java/MaterialMasterRepository.java/ProcessMasterRepository.java/MaterialBomMergeHandler.java | advisory lock+batchMaxGenerated保证生成递增; 交叉料件保留§3数字类型; §3用cells.get精确读投入料号避开getStr的contains碰撞; 27/27后端测试通过. 计划见 docs/superpowers/plans/2026-06-15-quote-import-materialno-autogen.md
 
 [2026-06-16] 模板管理 - 废弃双轨(composite)死代码清理 | TemplateComponent.java / TemplateService.java / TemplateResource.java / V299 | 双轨字段方案(V200/V205)已于 2026-05-21 被统一智能视图取代,残留死代码物理删除:① V299 DROP `template_component.data_driver_path_composite`(DROP 前兜底回填 data_driver_path_override);② 删 `TemplateComponent.dataDriverPathComposite` 字段、`TemplateService#patchTemplateComponentCompositeOverrides`、`TemplateResource#adminPatchComposite`(/patch-composite 端点);③ `migrateToUnifiedView` 移除失效的 driver_path_composite→override 步骤,保留 basic_data_path_composite JSON 键清理。现役唯一机制=`data_driver_path_override`(ComponentDriverService 只读它,渲染期从不读 composite 列/前端零引用)。详见 AP-45 终态更新。无测试依赖被删代码;编译+test-compile 绿。
 
 ---
 
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
+
+[2026-06-16] 组件管理-目录/组件改名入口补回 | Master-Detail 双栏改版(0722079)把目录树从旧 ComponentTree.tsx(死代码,已无人 import)换成内联 MasterList 时,丢了「新建/改名/删除目录」+「组件改名」四个动作,后端 component-directories CRUD + componentService.createDirectory/updateDirectory/deleteDirectory 一直健全,纯 UI 缺入口 | cpq-frontend/src/pages/component/ComponentManagement.tsx | 顶部加「新建目录」(可选父目录任意嵌套);目录行内补「重命名」「删除」图标(删除二次确认 Modal,非空目录后端拒删回传原因经 api 拦截器 new Error(message) 展示);详情头部组件名改 Typography.Text 内联可编辑,改名只传 name(后端对 fields/formulas 有 null 守卫不冲掉)+本地仅 patch name 不重载 fields(避覆盖未保存草稿)。隔离 worktree 开发,tsc 0 错误 + Vite transform 200 + app root 200 自检通过,已合并 master
+
+[2026-06-17] 报价-单位换算实时重算失效根因修复(QT-20260616-1748) | 现象:元素页签净用量(g/pcs)前端实时重算未×0.001归一kg/pcs,产品小计虚高~1000x(135,601 vs 落库正确101.77)。根因:前端Phase4「结构脱钩」(659cb09)读quotation_view_structure建componentData,而CardSnapshotService.buildCardStructure字段序列化漏搬unit_source_field→comp.fields无绑定→applyUnitConversion空操作。后端保存读components_snapshot(有绑定)仍正确,故落库对、仅前端实时视图错。与双轨清理c09b2e9无关(结构生成16:16早于该提交23:52;diff未碰换算/结构;全库0个QUOTE_CARD结构带过unitSourceField=实现遗漏非回归;E2E用无存储结构的单走enrich回退路径恰好绕过) | cpq-backend/.../CardSnapshotService.java(buildCardStructure +unitSourceField) + CardStructureSnapshotTest.java(T4 RED→GREEN) | 修法=补搬运unit_source_field→unitSourceField(enrich path2读camel→写snake→applyUnitConversion读snake闭环);存量草稿打开时refreshDraftQuoteCards→rebuildStructureForDraft删旧重建自愈;隔离worktree+TDD,T4绿/T1T3绿(T2电镀费用缺rowKeyFields为既有失败与本次无关),Quarkus重载401非500,已合并master(6ad0f14)
