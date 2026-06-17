@@ -28,6 +28,7 @@ import { enrichComponentData, loadProductAttributes, buildComponentDataFromStruc
 import { globalVariableService } from '../../services/globalVariableService';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 import { splitRows, rowAt } from './manualRows';
+import { coerceInputNumber } from './inputDefaults';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
@@ -879,6 +880,22 @@ const QuotationWizard: React.FC = () => {
         if (!fieldKey) continue;
         if (enriched[fieldKey] === undefined || enriched[fieldKey] === null || enriched[fieldKey] === '') {
           enriched[fieldKey] = f.content;
+        }
+      }
+
+      // 1.6. snapshot INPUT 静态默认值 → row[key]
+      //   仅"无 default_source"的静态 content 冻结落库（常量，冻结安全，后端核价/Excel 才读得到）；
+      //   有 default_source 的字段不冻结——其值由各消费点解析器/后端实时给出（"源优先、实时"）。
+      for (const f of fields) {
+        if (f.field_type !== 'INPUT_TEXT' && f.field_type !== 'INPUT_NUMBER') continue;
+        if (f.default_source) continue;                 // 有源 → 不冻结
+        if (f.content == null || f.content === '') continue;
+        const fieldKey = f.name || f.key || '';
+        if (!fieldKey) continue;
+        if (enriched[fieldKey] === undefined || enriched[fieldKey] === null || enriched[fieldKey] === '') {
+          enriched[fieldKey] = f.field_type === 'INPUT_NUMBER'
+            ? (coerceInputNumber(f.content) ?? f.content)  // 数值列归一，非法保留原值
+            : f.content;
         }
       }
 

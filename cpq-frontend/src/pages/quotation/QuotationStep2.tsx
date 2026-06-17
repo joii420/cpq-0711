@@ -33,6 +33,7 @@ import { templateService } from '../../services/templateService';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { useTreeCollapse } from './useTreeCollapse';
 import { splitRows, rowAt, isManualRow } from './manualRows';
+import { resolveInputDefault, resolveInputDefaultSourceOnly } from './inputDefaults';
 import './quotation.css';
 
 // 与 QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard 中的同名函数保持完全对齐。
@@ -571,54 +572,17 @@ function computeAllFormulas(
           && f.content != null && f.content !== '') {
         raw = f.content;
       }
-      // V190: INPUT_NUMBER 行值为空 → 默认值兜底链:
-      //   1) default_source.GLOBAL_VARIABLE → basicDataValues['@gvar:CODE'] (行级 KV)
-      //   2) default_source.BNF_PATH        → basicDataValues[bnfDriverLookupKey(path)] / pathCache
-      //   3) field.content 字面量 (静态兜底, 例: 成材率 = 100)
-      // V193 已清理 V184 散字段, 不再兼容 default_basic_data_path 旧路径
+      // 统一解析器：INPUT_TEXT / INPUT_NUMBER 默认值兜底（default_source 实时 > 静态 content）
       if ((raw === undefined || raw === null || raw === '')
-          && f.field_type === 'INPUT_NUMBER') {
-        let resolved: any = undefined;
-        const ds = f.default_source;
-        if (ds && basicDataValues) {
-          if (ds.type === 'GLOBAL_VARIABLE' && ds.code) {
-            const gvKey = `@gvar:${ds.code}`;
-            if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
-              const v = basicDataValues[gvKey];
-              if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
-            }
-          } else if (ds.type === 'BNF_PATH' && ds.path) {
-            const lookupKey = bnfDriverLookupKey(ds.path);
-            if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
-              const v = basicDataValues[lookupKey];
-              if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
-            }
-            if (resolved === undefined && partNo) {
-              const cache = pathCache ?? (getGlobalPathCache() as Record<string, any>);
-              const v = cache[`${partNo}::${ds.path}`];
-              if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
-            }
-          } else if (ds.type === 'BASIC_DATA' && ds.path) {
-            // BASIC_DATA 只吃行级 basicDataValues(整行通路, 中文安全), 不走 pathCache(单列 ASCII 会失败)
-            const lookupKey = bnfDriverLookupKey(ds.path);
-            if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
-              const v = basicDataValues[lookupKey];
-              if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
-            }
-          }
-        }
-        if (resolved !== undefined) {
-          if (typeof resolved === 'number') {
-            raw = resolved;
-          } else {
-            const formatted = formatPathValue(resolved);
-            if (formatted != null) raw = formatted;
-          }
-        } else if (f.content != null && f.content !== '') {
-          raw = f.content;  // 静态兜底
-        }
+          && (f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT')) {
+        const def = resolveInputDefault(f, {
+          basicDataValues,
+          partNo,
+          pathCache: pathCache ?? (getGlobalPathCache() as Record<string, any>),
+        });
+        if (def !== undefined) raw = def;
       }
-      const val = parseFloat(raw);
+      const val = typeof raw === 'number' ? raw : parseFloat(raw);
       if (!isNaN(val)) fieldValues[key] = val;
     }
   }
@@ -786,25 +750,8 @@ function resolveInputDefaultSourceForRow(
   f: ComponentField,
   basicDataValues: Record<string, any> | undefined,
 ): any {
-  const ds = f.default_source;
-  if (!ds || !basicDataValues) return undefined;
-  let resolved: any = undefined;
-  if (ds.type === 'GLOBAL_VARIABLE' && ds.code) {
-    const gvKey = `@gvar:${ds.code}`;
-    if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
-      const v = basicDataValues[gvKey];
-      if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
-    }
-  } else if ((ds.type === 'BNF_PATH' || ds.type === 'BASIC_DATA') && ds.path) {
-    const lookupKey = bnfDriverLookupKey(ds.path);
-    if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
-      const v = basicDataValues[lookupKey];
-      if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
-    }
-  }
-  if (resolved == null) return undefined;
-  if (typeof resolved === 'number') return resolved;
-  return formatPathValue(resolved) ?? undefined;  // 文本保留
+  const v = resolveInputDefault(f, { basicDataValues });
+  return v === undefined ? undefined : v;
 }
 
 /**
@@ -1651,8 +1598,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     }));
   }, [onUpdate]);
 
-  // ── 快照回填:default_source.type=BASIC_DATA 的空 INPUT 单元格,首次拿到 expansion 时
+  // ── 快照回填:有 default_source 的空 INPUT 单元格,首次拿到 expansion 时
   //    把解析值写进行数据(快照语义);写一次即非空 → 不再触发。bakedRef 防"清空后又回填"。
+  //    覆盖 default_source 全部子类型(BASIC_DATA / BNF_PATH / GLOBAL_VARIABLE)及 INPUT / INPUT_TEXT / INPUT_NUMBER。
+  //    取值委托 resolveInputDefault(与 computeAllFormulas / buildResolvedRow 统一口径)。
   //    注:bakedRef 随 ProductCard 实例存活、不随 item 切换重置 —— 依赖父列表按 item.id/tempId 稳定 key
   //    渲染(item 变 = 新实例 = 新 bakedRef)。若某调用点未用稳定 key 复用同卡片,同 index 单元格回填会被误抑制。
   //    ⚠️ 必须"收集全部回填 → 一次性 onUpdate":handleUpdateQuoteLineItem 对每次更新整段替换 comp.rows,
@@ -1673,9 +1622,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       );
       const exp = driverExpansions?.[expKey];
       if (!exp || exp.rowCount <= 0) return;
+      // 覆盖全部 INPUT* 类型中有 default_source 的字段（统一走解析器，不再按 BASIC_DATA 子类型手写分支）
       const inputFields = (comp.fields as any[]).filter(
-        (f) => (f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT_NUMBER')
-          && f.default_source?.type === 'BASIC_DATA' && f.default_source?.path,
+        (f) => (f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT')
+          && f.default_source,
       );
       if (inputFields.length === 0) return;
       for (let ri = 0; ri < exp.rowCount; ri++) {
@@ -1689,13 +1639,15 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           if (bakedRef.current.has(guard)) continue;
           const cur = curRow[key];
           if (!(cur === undefined || cur === null || cur === '')) { bakedRef.current.add(guard); continue; }
-          const lk = bnfDriverLookupKey(f.default_source.path);
-          const v = Object.prototype.hasOwnProperty.call(bdv, lk) ? bdv[lk] : undefined;
-          if (v == null || (Array.isArray(v) && v.length === 0)) continue;
+          // 快照回填只冻结"真正解析到的 default_source 源值"（GV / BNF_PATH / BASIC_DATA）——
+          // 不用 resolveInputDefault（含 content 兜底），否则源未命中时会把静态 content 冻结并被 bakedRef
+          // 一次性锁死，driver 后续补回真值也不再刷新（陈旧锁定）。content 兜底归 snapshotRows(无源)+ 实时渲染。
+          const v = resolveInputDefaultSourceOnly(f as ComponentField, { basicDataValues: bdv });
+          if (v == null) continue;
           bakedRef.current.add(guard);
           writes.push({
             componentId: comp.componentId, ri, key,
-            value: typeof v === 'object' ? (formatPathValue(v) ?? String(v)) : v,
+            value: v,
           });
         }
       }

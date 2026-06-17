@@ -28,69 +28,11 @@ import type { ComponentField, ComponentDataItem } from '../QuotationStep2';
 import type { PathCache } from '../usePathFormulaCache';
 import type { GlobalVariableDefinition } from '../../../services/globalVariableService';
 import type { ConfigTemplateMap } from '../useConfigTemplates';
+import { formatPathValue } from './formatPathValue';
+import { resolveInputDefault } from '../inputDefaults';
 
-// ─── ENUM 标签（与 QuotationStep2 同源） ────────────────────────────────────
-const ENUM_LABEL: Record<string, string> = {
-  INCOMING_FIXED: '来料固定加工费',
-  INCOMING_OTHER: '来料其他费用',
-  FINISHED_FIXED: '成品固定加工费',
-  FINISHED_OTHER: '成品其他费用',
-  INCOMING_ANNUAL_DOWN: '来料年降',
-  ASSEMBLY_PROCESS: '组装加工费',
-  ASSEMBLY_ANNUAL_DOWN: '组装加工费年降',
-  ANNUAL_REDUCTION_FACTOR: '年降系数',
-  ELEMENT: '元素 BOM',
-  INCOMING: '来料 BOM',
-  ASSEMBLY: '组装 BOM',
-};
-
-/**
- * 把后端 path 求值结果投影成显示字符串。
- * 与 QuotationStep2.formatPathValue 完全同源。
- */
-export function formatPathValue(v: any): string | null {
-  if (v == null || v === '') return null;
-  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
-  if (typeof v === 'string') return ENUM_LABEL[v] ?? v;
-  if (Array.isArray(v)) {
-    if (v.length === 0) return null;
-    const first = formatPathValue(v[0]);
-    if (v.length === 1) return first;
-    return first ? `${first} (共 ${v.length} 项)` : `共 ${v.length} 项`;
-  }
-  if (typeof v === 'object') {
-    if (v.type === 'jsonb' && typeof v.value === 'string') {
-      try {
-        const parsed = JSON.parse(v.value);
-        if (Array.isArray(parsed)) {
-          if (parsed.length === 0) return null;
-          const items = parsed.map((it: any) => formatPathValue(it) ?? '').filter(Boolean);
-          return items.length > 0 ? items.join(', ') : null;
-        }
-        if (parsed && typeof parsed === 'object') {
-          const keys = Object.keys(parsed);
-          if (keys.length === 0) return null;
-          const pairs = keys.map((k: string) => {
-            const sub = formatPathValue(parsed[k]);
-            return sub != null ? `${k}=${sub}` : null;
-          }).filter(Boolean);
-          return pairs.length > 0 ? pairs.join(', ') : null;
-        }
-        return formatPathValue(parsed);
-      } catch {
-        return v.value;
-      }
-    }
-    for (const k of Object.keys(v)) {
-      if (v[k] != null && v[k] !== '') {
-        const sub = formatPathValue(v[k]);
-        if (sub) return sub;
-      }
-    }
-    return null;
-  }
-  return String(v);
-}
+// re-export 供已有 `import { formatPathValue } from '.../ComponentCell'` 的调用方使用
+export { formatPathValue } from './formatPathValue';
 
 // ─── 上下文接口 ──────────────────────────────────────────────────────────────
 
@@ -596,41 +538,16 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
       return <span>{formatted ?? String(rawCell)}</span>;
     }
 
-    // default_source 解析（V190 兜底链）
-    if (isNumber || field.field_type === 'INPUT_TEXT') {
-      const ds = field.default_source;
-      if (ds && basicDataValues) {
-        if (ds.type === 'GLOBAL_VARIABLE' && ds.code) {
-          const gvKey = `@gvar:${ds.code}`;
-          if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
-            const v = (basicDataValues as Record<string, any>)[gvKey];
-            const formatted = formatPathValue(v);
-            if (formatted != null) {
-              return <span title={`默认 ${formatted} · ${ds.code}`}>{formatted}</span>;
-            }
-          }
-        } else if (ds.type === 'BNF_PATH' && ds.path) {
-          const lk = bnfDriverLookupKey(ds.path);
-          if (Object.prototype.hasOwnProperty.call(basicDataValues, lk)) {
-            const v = (basicDataValues as Record<string, any>)[lk];
-            if (v != null && !(Array.isArray(v) && v.length === 0)) {
-              const formatted = formatPathValue(v);
-              if (formatted != null) return <span>{formatted}</span>;
-            }
-          }
-          // pathCache 兜底
-          if (partNo) {
-            const cacheKey = `${partNo}::${ds.path}`;
-            const v = (pathCacheState as Record<string, any>)[cacheKey];
-            if (v != null && !(Array.isArray(v) && v.length === 0)) {
-              const formatted = formatPathValue(v);
-              if (formatted != null) return <span>{formatted}</span>;
-            }
-          }
-        }
-      }
-      if (field.content != null && field.content !== '') {
-        return <span title="默认值">{String(field.content)}</span>;
+    // default_source 解析（统一解析器；含 BASIC_DATA + content 兜底）
+    if (isNumber || field.field_type === 'INPUT_TEXT' || field.field_type === 'INPUT') {
+      const def = resolveInputDefault(field, {
+        basicDataValues,
+        partNo,
+        pathCache: pathCacheState as Record<string, any>,
+      });
+      if (def !== undefined) {
+        const formatted = formatPathValue(def) ?? String(def);
+        return <span title="默认值">{formatted}</span>;
       }
     }
 
@@ -638,54 +555,22 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
   }
 
   // readonly=false: 渲染 <input>
-  // V190 default_source placeholder 链
-  let defaultLabel: string | undefined;
-  let defaultVarCode: string | undefined;
-  if (isEmpty && (isNumber || field.field_type === 'INPUT_NUMBER')) {
-    let defVal: any = undefined;
-    const ds = field.default_source;
-    if (ds && basicDataValues) {
-      if (ds.type === 'GLOBAL_VARIABLE' && ds.code) {
-        const gvKey = `@gvar:${ds.code}`;
-        if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
-          const v = (basicDataValues as Record<string, any>)[gvKey];
-          if (v != null && !(Array.isArray(v) && v.length === 0)) {
-            defVal = v;
-            defaultVarCode = ds.code;
-          }
-        }
-      } else if (ds.type === 'BNF_PATH' && ds.path) {
-        const lk = bnfDriverLookupKey(ds.path);
-        if (Object.prototype.hasOwnProperty.call(basicDataValues, lk)) {
-          const v = (basicDataValues as Record<string, any>)[lk];
-          if (v != null && !(Array.isArray(v) && v.length === 0)) defVal = v;
-        }
-        if (defVal === undefined && partNo) {
-          const cacheKey = `${partNo}::${ds.path}`;
-          const v = (pathCacheState as Record<string, any>)[cacheKey];
-          if (v != null && !(Array.isArray(v) && v.length === 0)) defVal = v;
-        }
-      }
-    }
-    if (defVal != null) {
-      const formatted = formatPathValue(defVal);
-      if (formatted != null) defaultLabel = formatted;
-    } else if (field.content != null && field.content !== '') {
-      defaultLabel = String(field.content);
-    }
+  // row[key] 空 → 用统一解析器给默认初值（default_source 实时 > content）；非空不动（铁律）
+  let effectiveValue: any = rawCell;
+  if (isEmpty) {
+    const def = resolveInputDefault(field, {
+      basicDataValues,
+      partNo,
+      pathCache: pathCacheState as Record<string, any>,
+    });
+    if (def !== undefined) effectiveValue = isNumber ? def : String(def);
   }
-
-  const placeholder = defaultLabel
-    ? (defaultVarCode ? `默认 ${defaultLabel} · ${defaultVarCode}` : `默认 ${defaultLabel}`)
-    : undefined;
 
   return (
     <input
       type={isNumber ? 'number' : 'text'}
       step={isNumber ? 'any' : undefined}
-      value={rawCell ?? ''}
-      placeholder={placeholder}
-      title={placeholder}
+      value={effectiveValue ?? ''}
       onChange={e => {
         const val = e.target.value;
         if (isNumber && val !== '' && !/^-?\d*\.?\d*$/.test(val)) return;

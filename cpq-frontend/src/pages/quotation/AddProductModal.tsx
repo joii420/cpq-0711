@@ -43,7 +43,8 @@ function buildEmptyRow(fields: ComponentField[]): Record<string, any> {
     } else if (f.field_type === 'DATA_SOURCE') {
       row[f.name] = null; // Will be filled by datasource query
     } else {
-      // INPUT
+      // INPUT_TEXT/INPUT_NUMBER 故意写 ''：默认值(default_source 实时 / 静态 content)由
+      // inputDefaults.resolveInputDefault 在渲染/计算/快照回填/snapshotRows 动态给出，不在建行写死。
       row[f.name] = '';
     }
   }
