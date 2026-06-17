@@ -1290,7 +1290,8 @@ public class QuotationService {
                 newP.persist();
             }
 
-            migrateAndCreateComponentData(srcLi.id, newLi.id, newTabs);
+            boolean sameTemplate = newTemplateId != null && newTemplateId.equals(source.customerTemplateId);
+            migrateAndCreateComponentData(srcLi.id, newLi.id, newTabs, sameTemplate);
         }
 
         // 3. 重映射父子链
@@ -1316,7 +1317,7 @@ public class QuotationService {
 
     /** 按新模板页签建 QuotationLineComponentData，row_data 仅迁移 INPUT 字段（先 componentId 后 tabName 配对）。 */
     private void migrateAndCreateComponentData(UUID srcLineItemId, UUID newLineItemId,
-                                               java.util.List<TabFields> newTabs) {
+                                               java.util.List<TabFields> newTabs, boolean sameTemplate) {
         List<QuotationLineComponentData> srcData =
                 QuotationLineComponentData.list("lineItemId = ?1", srcLineItemId);
         java.util.Map<String, QuotationLineComponentData> byCompId = new java.util.HashMap<>();
@@ -1342,6 +1343,10 @@ public class QuotationService {
             newCd.snapshotRows = null;
             newCd.subtotal = java.math.BigDecimal.ZERO;
             newCd.sortOrder = sort++;
+            // driver 默认行墓碑：同模板复制按 componentId 原样拷贝（源集/effKey/fp 不变,墓碑仍匹配）；
+            // 换模板复制清空（换模板后 driver/源集/effKey 全变,旧墓碑必失配 → 会误删新行）。
+            newCd.deletedRowKeys = (sameTemplate && match != null && match.deletedRowKeys != null)
+                    ? match.deletedRowKeys : "[]";
             newCd.persist();
         }
     }
