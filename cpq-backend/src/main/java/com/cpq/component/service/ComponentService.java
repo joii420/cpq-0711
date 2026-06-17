@@ -4,8 +4,11 @@ import com.cpq.common.exception.BusinessException;
 import com.cpq.component.dto.ComponentDTO;
 import com.cpq.component.dto.CreateComponentRequest;
 import com.cpq.component.entity.Component;
+import com.cpq.component.entity.ComponentSqlView;
+import com.cpq.component.repository.ComponentSqlViewRepository;
 import com.cpq.template.service.TemplateService;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -14,6 +17,8 @@ import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @ApplicationScoped
@@ -51,6 +56,9 @@ public class ComponentService {
 
     @Inject
     TemplateService templateService;
+
+    @Inject
+    ComponentSqlViewRepository sqlViewRepository;
 
     public List<ComponentDTO> list(UUID directoryId, String keyword) {
         StringBuilder query = new StringBuilder("1=1");
@@ -701,6 +709,189 @@ public class ComponentService {
         } catch (Exception e) {
             LOG.debugf("Template reference check skipped for componentId=%s: %s", componentId, e.getMessage());
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // C1: 全库 BASIC_DATA path↔视图列名审计（只读，不修改数据）
+    // -----------------------------------------------------------------------
+
+    /**
+     * 审计全库所有组件字段的 {@code default_source.path}，检出 path 末段列名与
+     * 该组件 {@code component_sql_view.declared_columns} 不一致的可疑项。
+     *
+     * <p>只处理形如 {@code $viewName.col} 或 {@code $$compCode.viewName.col} 的路径；
+     * 其他形式（无 $ 前缀的 BNF 路径）直接跳过。
+     *
+     * <p>每个可疑项包含以下字段：
+     * <ul>
+     *   <li>{@code componentId}     — 组件 UUID</li>
+     *   <li>{@code componentCode}   — 组件业务 code</li>
+     *   <li>{@code fieldName}       — 字段名（fields[].name）</li>
+     *   <li>{@code path}            — 原始 default_source.path</li>
+     *   <li>{@code viewName}        — 提取的视图名</li>
+     *   <li>{@code columnName}      — 提取的末段列名</li>
+     *   <li>{@code issueType}       — "columnMismatch" | "viewNotFound"</li>
+     *   <li>{@code actualColumns}   — 视图实际 declared_columns 名称列表（viewNotFound 时为空）</li>
+     *   <li>{@code suggestion}      — 可能的修正建议（无等价列时为 null）</li>
+     * </ul>
+     *
+     * @return 可疑项列表（正常项不包含在内）；全部正常时返回空列表
+     */
+    @Transactional(jakarta.transaction.Transactional.TxType.SUPPORTS)
+    public List<Map<String, Object>> auditBasicDataPaths() {
+        // $viewName.col — COMPONENT 视图引用（单 $）
+        // $$compCode.viewName.col — GLOBAL 视图跨组件引用（双 $$）
+        // 谓词形式：$viewName[pred].col 或 $viewName.col（末段始终是列名）
+        Pattern VIEW_PATH_PATTERN = Pattern.compile(
+            "^\\$\\$([^.$\\[.]+)\\.([^.$\\[.]+)\\.([^.$\\[.]+)" +  // group1=compCode group2=viewName group3=col
+            "|" +
+            "^\\$([^.$\\[.]+)(?:\\[[^\\]]*\\])?\\.([^.$\\[.]+)$"    // group4=viewName group5=col
+        );
+
+        List<Map<String, Object>> suspects = new ArrayList<>();
+
+        List<Component> allComponents = Component.<Component>listAll();
+
+        for (Component comp : allComponents) {
+            if (comp.fields == null || comp.fields.isBlank() || "[]".equals(comp.fields.trim())) {
+                continue;
+            }
+
+            List<Map<String, Object>> fields;
+            try {
+                fields = MAPPER.readValue(comp.fields, new TypeReference<>() {});
+            } catch (Exception e) {
+                LOG.warnf("[auditBasicDataPaths] componentId=%s fields JSON 解析失败: %s", comp.id, e.getMessage());
+                continue;
+            }
+
+            // 按视图名缓存该组件的 declared_columns（避免同视图多字段重复查 DB）
+            Map<String, List<String>> viewColumnsCache = new HashMap<>();
+
+            for (Map<String, Object> field : fields) {
+                String fieldName = String.valueOf(field.getOrDefault("name", ""));
+                Object defaultSource = field.get("default_source");
+                if (!(defaultSource instanceof Map)) continue;
+
+                @SuppressWarnings("unchecked")
+                Map<String, Object> ds = (Map<String, Object>) defaultSource;
+                Object pathObj = ds.get("path");
+                if (pathObj == null) continue;
+                String path = pathObj.toString().trim();
+                if (path.isEmpty()) continue;
+
+                // 只处理 $ 开头的视图路径
+                if (!path.startsWith("$")) continue;
+
+                Matcher m = VIEW_PATH_PATTERN.matcher(path);
+                if (!m.matches()) continue;
+
+                // 解析视图名和列名
+                String viewName;
+                String colName;
+                if (m.group(1) != null) {
+                    // $$compCode.viewName.col 形态（GLOBAL）
+                    // group1=compCode, group2=viewName, group3=col
+                    viewName = m.group(2);
+                    colName = m.group(3);
+                } else {
+                    // $viewName.col 形态（COMPONENT）
+                    // group4=viewName, group5=col
+                    viewName = m.group(4);
+                    colName = m.group(5);
+                }
+
+                if (viewName == null || colName == null) continue;
+
+                // 取该组件该视图的 declared_columns（带缓存）
+                final String finalViewName = viewName;
+                List<String> actualColumns = viewColumnsCache.computeIfAbsent(viewName, vn -> {
+                    Optional<ComponentSqlView> csv = sqlViewRepository.findByComponentAndName(comp.id, finalViewName);
+                    if (csv.isEmpty()) return null; // null 表示视图不存在
+                    return extractDeclaredColumnNames(csv.get().declaredColumns);
+                });
+
+                Map<String, Object> suspect = new LinkedHashMap<>();
+                suspect.put("componentId", comp.id.toString());
+                suspect.put("componentCode", comp.code);
+                suspect.put("fieldName", fieldName);
+                suspect.put("path", path);
+                suspect.put("viewName", viewName);
+                suspect.put("columnName", colName);
+
+                if (actualColumns == null) {
+                    // 视图在 component_sql_view 中不存在
+                    suspect.put("issueType", "viewNotFound");
+                    suspect.put("actualColumns", Collections.emptyList());
+                    suspect.put("suggestion", null);
+                    suspects.add(suspect);
+                } else if (!actualColumns.contains(colName)) {
+                    // 列名与视图列不匹配 — 检查是否有下划线差异等价列
+                    suspect.put("issueType", "columnMismatch");
+                    suspect.put("actualColumns", actualColumns);
+                    suspect.put("suggestion", buildSuggestion(colName, actualColumns, path, viewName));
+                    suspects.add(suspect);
+                }
+                // 精确匹配 → 正常，不加入 suspects
+            }
+        }
+
+        LOG.infof("[auditBasicDataPaths] 扫描完成，共检出 %d 个可疑项（组件总数=%d）",
+            suspects.size(), allComponents.size());
+        return suspects;
+    }
+
+    /**
+     * 从 declared_columns JSON 字符串中提取列名列表。
+     * 格式：[{"name":"col","dataType":"text",...}, ...]
+     */
+    private List<String> extractDeclaredColumnNames(String declaredColumnsJson) {
+        if (declaredColumnsJson == null || declaredColumnsJson.isBlank()) return Collections.emptyList();
+        try {
+            JsonNode arr = MAPPER.readTree(declaredColumnsJson);
+            List<String> names = new ArrayList<>();
+            if (arr.isArray()) {
+                for (JsonNode node : arr) {
+                    JsonNode nameNode = node.get("name");
+                    if (nameNode != null && !nameNode.isNull()) {
+                        names.add(nameNode.asText());
+                    }
+                }
+            }
+            return names;
+        } catch (Exception e) {
+            LOG.warnf("[auditBasicDataPaths] declaredColumns JSON 解析失败: %s", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * 根据列名与实际列列表构建修正建议。
+     *
+     * <p>策略：
+     * <ol>
+     *   <li>若 col 以 "_" 开头且去掉后命中 actualColumns → 建议去掉下划线</li>
+     *   <li>若 col 不以 "_" 开头但加上 "_" 后命中 actualColumns → 建议加下划线</li>
+     *   <li>否则无明显等价列 → 返回 null</li>
+     * </ol>
+     *
+     * @return 建议字符串，如 "建议将列名「_类型」改为「类型」"；无等价列时为 null
+     */
+    private String buildSuggestion(String col, List<String> actualColumns, String path, String viewName) {
+        if (col.startsWith("_")) {
+            String withoutUnderscore = col.substring(1);
+            if (actualColumns.contains(withoutUnderscore)) {
+                return String.format("建议将列名「%s」改为「%s」（去掉下划线前缀），即路径改为 $%s.%s",
+                    col, withoutUnderscore, viewName, withoutUnderscore);
+            }
+        } else {
+            String withUnderscore = "_" + col;
+            if (actualColumns.contains(withUnderscore)) {
+                return String.format("建议将列名「%s」改为「%s」（加下划线前缀），即路径改为 $%s.%s",
+                    col, withUnderscore, viewName, withUnderscore);
+            }
+        }
+        return null;
     }
 
     /** 规范化 driver path:剥花括号 + trim,空字符串 → null。 */
