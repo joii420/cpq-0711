@@ -12,6 +12,17 @@ class LabelOnlyTest {
     }
 
     @Test
+    void stripsMultiDigitPrefix() {
+        assertEquals("其他类", MaterialBomMergeHandler.labelOnly("10.其他类"));
+    }
+
+    @Test
+    void stripsNonDotSeparators() {
+        assertEquals("回料",   MaterialBomMergeHandler.labelOnly("3、回料"));
+        assertEquals("边角料", MaterialBomMergeHandler.labelOnly("4 边角料"));
+    }
+
+    @Test
     void keepsPlainChineseAsIs() {
         assertEquals("组成件", MaterialBomMergeHandler.labelOnly("组成件"));
         assertEquals("边角料", MaterialBomMergeHandler.labelOnly("边角料"));
