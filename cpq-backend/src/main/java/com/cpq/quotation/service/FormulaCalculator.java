@@ -1,5 +1,6 @@
 package com.cpq.quotation.service;
 
+import com.cpq.quotation.rowkey.DeletedRowKeys;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -499,9 +500,33 @@ public class FormulaCalculator {
                                Map<String, Double> quotationFields,
                                Map<String, Double> productAttributes,
                                Map<String, List<Map<String, Object>>> crossTabRows) {
+        // 零破坏：旧 10 参调用 → 不过滤（deleted=null，rowKeyFieldNames=null）
+        return calculate(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
+            componentSubtotals, quotationFields, productAttributes, crossTabRows, null, null);
+    }
+
+    /**
+     * calculate 新重载（带墓碑过滤）：在 10 参重载基础上增加 deleted + rowKeyFieldNames 参数，
+     * 供报价侧漏斗按永久删除行双命中剔除（head 不变量：唯一化后过滤，fps 用完整 baseRows 计算）。
+     *
+     * <p>零破坏：旧 10 参签名 delegate 到此，传 {@code null, null} = 不过滤；核价侧与所有既有
+     * 调用方行为完全不变。
+     *
+     * @param deleted          墓碑列表（null 或空 → 不过滤，全行保留）
+     * @param rowKeyFieldNames rowKeyFields 节点解出的字段名列表（与 deleted 配套；null 则不过滤）
+     */
+    public ArrayNode calculate(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
+                               JsonNode rowKeyFields,
+                               JsonNode baseRows, JsonNode editRows,
+                               Map<String, Double> componentSubtotals,
+                               Map<String, Double> quotationFields,
+                               Map<String, Double> productAttributes,
+                               Map<String, List<Map<String, Object>>> crossTabRows,
+                               List<DeletedRowKeys.Tombstone> deleted,
+                               List<String> rowKeyFieldNames) {
         ArrayNode out = MAPPER.createArrayNode();
         List<RowResult> rows = computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
-            componentSubtotals, quotationFields, productAttributes, crossTabRows);
+            componentSubtotals, quotationFields, productAttributes, crossTabRows, deleted, rowKeyFieldNames);
         for (RowResult rr : rows) {
             ObjectNode node = MAPPER.createObjectNode();
             node.put("rowKey", rr.rowKey);
@@ -527,16 +552,32 @@ public class FormulaCalculator {
         return sum.setScale(4, RoundingMode.HALF_UP);
     }
 
-    /** 逐列求和：每个 is_subtotal 列 → 该列各行结果之和。Plan 2-核心：多小计列。 */
+    /** 逐列求和：每个 is_subtotal 列 → 该列各行结果之和。Plan 2-核心：多小计列。零破坏：旧签名不过滤。 */
     public Map<String, BigDecimal> computeTabSubtotalsByColumn(
             JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
             JsonNode rowKeyFields, JsonNode baseRows, JsonNode editRows,
             Map<String, Double> componentSubtotals) {
+        return computeTabSubtotalsByColumn(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
+            componentSubtotals, null, null);
+    }
+
+    /**
+     * 逐列求和（带墓碑过滤新重载）：在旧签名基础上增加 deleted + rowKeyFieldNames，
+     * 报价侧 PASS 1 小计也需要反映永久删除的行（过滤后行数才是正确小计基数）。
+     *
+     * @param deleted          墓碑列表（null 或空 → 不过滤，旧路径零变化）
+     * @param rowKeyFieldNames rowKeyFields 节点解出的字段名列表（供 rowFingerprint 提取 driverRow 键值）
+     */
+    public Map<String, BigDecimal> computeTabSubtotalsByColumn(
+            JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
+            JsonNode rowKeyFields, JsonNode baseRows, JsonNode editRows,
+            Map<String, Double> componentSubtotals,
+            List<DeletedRowKeys.Tombstone> deleted, List<String> rowKeyFieldNames) {
         Map<String, BigDecimal> out = new LinkedHashMap<>();
         List<String> subtotalFields = findSubtotalFieldNames(fields);
         if (subtotalFields.isEmpty()) return out;
         List<RowResult> rows = computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
-            componentSubtotals, new HashMap<>(), new HashMap<>(), Map.of());
+            componentSubtotals, new HashMap<>(), new HashMap<>(), Map.of(), deleted, rowKeyFieldNames);
         for (String sf : subtotalFields) {
             double sum = 0.0;
             for (RowResult rr : rows) {
@@ -567,6 +608,7 @@ public class FormulaCalculator {
 
     /**
      * 逐行求值核心（calculate + computeTabSubtotal 共用）。AP-51：行数权威 = baseRows（driver 展开结果）。
+     * 零破坏：旧 10 参签名 delegate 到新 12 参重载，传 null,null = 不过滤。
      */
     private List<RowResult> computeRows(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
                                         JsonNode rowKeyFields,
@@ -575,6 +617,29 @@ public class FormulaCalculator {
                                         Map<String, Double> quotationFields,
                                         Map<String, Double> productAttributes,
                                         Map<String, List<Map<String, Object>>> crossTabRows) {
+        return computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
+            componentSubtotals, quotationFields, productAttributes, crossTabRows, null, null);
+    }
+
+    /**
+     * 逐行求值核心（带墓碑过滤新重载）。AP-51：行数权威 = baseRows（driver 展开结果）。
+     *
+     * <p><b>头号不变量（AP-54）</b>：effKey 永远基于「完整」driver 展开集唯一化；过滤在唯一化之后，
+     * 按墓碑双命中剔除整行。迭代下标 idx 仍走完整集（命中则 continue，绝不重排）。
+     * fps 用同一份完整 baseRows 的 driverRow 计算，与 keepMask 传入的 effKeys 等长。
+     *
+     * @param deleted          墓碑列表（null 或空 → 不过滤）
+     * @param rowKeyFieldNames rowKeyFields 节点解出的字段名列表（供 rowFingerprint 提取 driverRow 键值）
+     */
+    private List<RowResult> computeRows(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
+                                        JsonNode rowKeyFields,
+                                        JsonNode baseRows, JsonNode editRows,
+                                        Map<String, Double> componentSubtotals,
+                                        Map<String, Double> quotationFields,
+                                        Map<String, Double> productAttributes,
+                                        Map<String, List<Map<String, Object>>> crossTabRows,
+                                        List<DeletedRowKeys.Tombstone> deleted,
+                                        List<String> rowKeyFieldNames) {
         List<RowResult> out = new ArrayList<>();
         if (baseRows == null || !baseRows.isArray()) return out;
 
@@ -592,6 +657,15 @@ public class FormulaCalculator {
         }
         List<String> effKeys = uniquifyRowKeys(rawKeys);
 
+        // driver 默认行永久删除：先唯一化(上方)，再按墓碑双命中过滤；fps 用完整 baseRows 计算（守头号不变量）。
+        // keep==null 表示不过滤（deleted 为 null/空 → 核价侧及所有旧调用方零影响）。
+        boolean[] keep = null;
+        if (deleted != null && !deleted.isEmpty()) {
+            List<String> fps = new ArrayList<>(baseRows.size());
+            for (JsonNode br : baseRows) fps.add(DeletedRowKeys.rowFingerprint(rowKeyFieldNames, br.path("driverRow")));
+            keep = DeletedRowKeys.keepMask(effKeys, fps, deleted);
+        }
+
         // 公式字段拓扑序（依赖先算），与前端 computeAllFormulas 一致
         List<FormulaField> formulaFields = collectFormulaFields(fields, formulas, formulaAssignments);
         List<String> order = topoOrder(formulaFields);
@@ -599,6 +673,9 @@ public class FormulaCalculator {
         Map<String, Double> prevRowValues = null;  // Plan 2b：上一行全量公式值（按字段名）
         int idx = 0;
         for (JsonNode baseRow : baseRows) {
+            // driver 默认行永久删除：idx 仍随完整集递增（effKeys.get(idx) 对齐完整集），命中则 continue（不重排）
+            if (keep != null && !keep[idx]) { idx++; continue; }
+
             JsonNode driverRow = baseRow.path("driverRow");
             JsonNode basicDataValues = baseRow.path("basicDataValues");
 

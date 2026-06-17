@@ -8,6 +8,7 @@ import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.entity.QuotationViewStructure;
+import com.cpq.quotation.rowkey.DeletedRowKeys;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -501,8 +502,23 @@ public class CardSnapshotService {
                 baseRowsByComp.put(cid, buildBaseRowsFromSnapshotRows(snapByCompId.get(cid), cid));
             }
 
-            // 4. 组装 tabs（Task 3: 填 formulaResults，加产品时 editRows 恒空）
-            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null);
+            // 3.5. 查各组件 deleted_row_keys 墓碑（报价侧需过滤永久删除的 driver 默认行）
+            Map<String, List<DeletedRowKeys.Tombstone>> delByComp = new HashMap<>();
+            @SuppressWarnings("unchecked")
+            List<Object[]> delData = em.createNativeQuery(
+                "SELECT component_id, deleted_row_keys FROM quotation_line_component_data " +
+                "WHERE line_item_id = :lid")
+                .setParameter("lid", li.id)
+                .getResultList();
+            for (Object[] r : delData) {
+                if (r[0] != null) {
+                    delByComp.put(r[0].toString(),
+                        DeletedRowKeys.parse(r[1] == null ? null : r[1].toString()));
+                }
+            }
+
+            // 4. 组装 tabs（Task 3: 填 formulaResults，加产品时 editRows 恒空；报价侧传真实墓碑）
+            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null, null, delByComp);
 
             return MAPPER.writeValueAsString(root);
 
@@ -547,6 +563,7 @@ public class CardSnapshotService {
                 expandTemplateDriverBaseRows(costingTemplateId, li, customerId, quotationId, closure);
 
             // 5. 组装 tabs（Task 3: 填 formulaResults；核价侧 editRows 恒空）
+            // 核价侧 side==COSTING 显式不传墓碑（spec §3.7 隔离）：三参签名 delegate → delByComp=null → 不过滤
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null);
 
             // 6. 成环料号回传根节点（前端告警「已截断展开」）
@@ -685,18 +702,38 @@ public class CardSnapshotService {
     }
 
     /**
-     * 四参重载（v6-N 草稿行键双注入）：在默认从持久化 row_key_fields 组装 {@code rkfByComp} 之后，
-     * 若传入 {@code rkfOverride} 非空，则 {@code rkfByComp.putAll(rkfOverride)} 覆盖指定 componentId 的行键。
+     * 四参重载（v6-N 草稿行键双注入）：delegate 到五参（delByComp=null，不过滤）。
      *
-     * <p><b>零破坏</b>：三参方法 delegate 到此（rkfOverride=null），既有所有调用（buildCardValues /
-     * buildCostingCardValues / refreshQuoteCardValues / editCardValue / *ForTest）行为完全不变 —
-     * rkfOverride=null 时此方法与原实现逐行等价（仅多一个 null 判空分支）。
+     * <p><b>零破坏</b>：既有所有调用（buildCostingCardValues / *ForTest 等）经此入口，行为完全不变。
      *
      * @param rkfOverride componentId → rowKeyFields 节点（覆盖该组件持久化行键）；null → 不覆盖。
      */
     private ObjectNode assembleTabsWithFormulaResults(JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
                                                       Map<String, ArrayNode> editRowsByComp,
                                                       Map<String, JsonNode> rkfOverride) {
+        // 四参签名零破坏：delegate 到五参（delByComp=null），核价侧与旧测试不经过滤路径
+        return assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp, rkfOverride, null);
+    }
+
+    /**
+     * 五参重载（driver 默认行永久删除 + v6-N 草稿行键双注入）：
+     *
+     * <p>对每个 cid 取 {@code delByComp.get(cid)} 的墓碑列表，连同 rowKeyFieldNames 一起传入
+     * {@link FormulaCalculator#calculate} 与 {@link #buildResolvedRows} 的带墓碑新重载，
+     * 在唯一化之后按双命中剔除被永久删除的 driver 默认行（守头号不变量 AP-54）。
+     *
+     * <p><b>核价隔离（spec §3.7）</b>：buildCostingCardValues 经四参入口传 {@code delByComp=null}，
+     * 核价侧绝不误伤任何行。
+     *
+     * <p><b>零破坏</b>：四参 → 三参 → 此方法，delByComp=null 时全程不进过滤分支。
+     *
+     * @param rkfOverride componentId → rowKeyFields 节点（覆盖该组件持久化行键）；null → 不覆盖。
+     * @param delByComp   componentId → 墓碑列表（报价侧传真实值；核价/旧路径传 null → 不过滤）。
+     */
+    private ObjectNode assembleTabsWithFormulaResults(JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
+                                                      Map<String, ArrayNode> editRowsByComp,
+                                                      Map<String, JsonNode> rkfOverride,
+                                                      Map<String, List<DeletedRowKeys.Tombstone>> delByComp) {
         ObjectNode root = MAPPER.createObjectNode();
         ArrayNode tabs = root.putArray("tabs");
 
@@ -715,6 +752,7 @@ public class CardSnapshotService {
             snapshot, baseRowsByComp, editRowsByComp, rkfByComp, emptyEdit);
 
         // PASS 1: componentSubtotals（顺序累加，后 tab 可引用前 tab 小计；含保留的 editRows）
+        // 报价侧：传入 deleted 以反映永久删除行后的正确小计基数（核价侧 delByComp=null → 不过滤）
         Map<String, Double> componentSubtotals = new java.util.HashMap<>();
         for (JsonNode tab : snapshot) {
             // 仅处理 NORMAL tab（跳过 SUBTOTAL 及 EXCEL —— EXCEL 非普通公式 tab，不参与小计累加）
@@ -722,9 +760,12 @@ public class CardSnapshotService {
             String cid = tab.path("componentId").asText("");
             ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, emptyEdit);
             ArrayNode editRows = filteredEdit.getOrDefault(cid, emptyEdit);
+            // 墓碑路由：报价侧取该组件墓碑；delByComp==null（核价侧/旧路径）→ deleted=null → 不过滤（spec §3.7 隔离）
+            List<DeletedRowKeys.Tombstone> deleted = (delByComp == null) ? null : delByComp.get(cid);
+            List<String> rkfNames = rowKeyFieldNamesOf(rkfByComp.get(cid));
             java.util.Map<String, java.math.BigDecimal> byCol = formulaCalculator.computeTabSubtotalsByColumn(
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
-                rkfByComp.get(cid), baseRows, editRows, componentSubtotals);
+                rkfByComp.get(cid), baseRows, editRows, componentSubtotals, deleted, rkfNames);
             double sub = 0.0;
             for (java.math.BigDecimal v : byCol.values()) sub += v.doubleValue();
             String code = tab.path("componentCode").asText(null);
@@ -796,6 +837,10 @@ public class CardSnapshotService {
             String code = tab.path("componentCode").asText(null);
             String tabNameStr = tab.path("tabName").asText("");
 
+            // 墓碑路由：报价侧取该组件墓碑；delByComp==null（核价侧/旧路径）→ deleted=null → 不过滤（spec §3.7 隔离）
+            List<DeletedRowKeys.Tombstone> deleted = (delByComp == null) ? null : delByComp.get(cid);
+            List<String> rkfNames = rowKeyFieldNamesOf(rkfByComp.get(cid));
+
             // B6 两阶段：同组件内可能存在二阶列（component_subtotal 引用本组件其它 is_subtotal 列）。
             // 第 1 次 calculate：得到正确的 cross_tab_ref 列行值（crossTabRows 已有兄弟组件行）；
             //   backfill 本组件各列小计到 componentSubtotals（含一阶列 "${code}#${col}" 列小计键）。
@@ -804,9 +849,9 @@ public class CardSnapshotService {
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
                 rkfByComp.get(cid), baseRows, editRows,
                 componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>(),
-                crossTabRows); // 10 参重载：透传已算兄弟组件行
+                crossTabRows, deleted, rkfNames); // 带墓碑新重载：报价侧过滤删除行；核价侧 deleted=null → 不变
             List<Map<String, Object>> pass1Resolved = buildResolvedRows(
-                tab, baseRows, editRows, pass1Results, rkfByComp.get(cid));
+                tab, baseRows, editRows, pass1Results, rkfByComp.get(cid), deleted, rkfNames);
             // 存入 crossTabRows（双键，供后续兄弟组件 cross_tab_ref 查询）
             // 单位换算（cross_tab 物化点）：跨组件引用方读 canonical（按同行单位列换算）。
             // 仅换喂 crossTabRows 的副本——pass1Resolved 原值留给 backfill(各自换副本) + 落库 resolvedRows。
@@ -829,9 +874,9 @@ public class CardSnapshotService {
                     tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
                     rkfByComp.get(cid), baseRows, editRows,
                     componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>(),
-                    crossTabRows);
+                    crossTabRows, deleted, rkfNames);
                 resolved = buildResolvedRows(
-                    tab, baseRows, editRows, formulaResults, rkfByComp.get(cid));
+                    tab, baseRows, editRows, formulaResults, rkfByComp.get(cid), deleted, rkfNames);
                 // 更新 crossTabRows 为第 2 次 resolved（二阶列已算对，兄弟组件引用此组件 cross_tab_ref 时应取最终值）
                 List<Map<String, Object>> resolvedCrossTab = convertRowsForCrossTab(tab.path("fields"), resolved);
                 crossTabRows.put(cid, resolvedCrossTab);
@@ -851,6 +896,9 @@ public class CardSnapshotService {
 
         // 3) SUBTOTAL tab：不参与拓扑序，按需补算（crossTabRows 可用，但其行不并入 crossTabRows）
         //    EXCEL tab 不在此补算：EXCEL 非普通公式 tab，不参与卡片公式计算（Excel 视图渲染走独立通道，Phase 3）。
+        //    SUBTOTAL tab 不过滤：SUBTOTAL 聚合全组件，不属于单一 componentId 的 driver 行，
+        //    其基础行来自 NORMAL 组件已算的 componentSubtotals（token 型），不是 driver expand 行，
+        //    因此 delByComp 对 SUBTOTAL tab 无意义（传 null → 不过滤）。
         for (JsonNode tab : snapshot) {
             String cid = tab.path("componentId").asText("");
             if ("EXCEL".equals(tab.path("componentType").asText("NORMAL"))) continue;
@@ -925,9 +973,27 @@ public class CardSnapshotService {
      *
      * <p>通用引擎 {@link FormulaCalculator#resolveRowByFieldName}，配置驱动，零硬编码字段名。
      * 值 <b>RAW 类型</b>（文本保留文本、数字保留数字），故 cross_tab_ref 文本匹配键可命中。
+     *
+     * <p>零破坏：旧 5 参签名 delegate 到新 7 参，传 null,null = 不过滤。
      */
     private List<Map<String, Object>> buildResolvedRows(JsonNode tab, ArrayNode baseRows,
             ArrayNode editRows, ArrayNode formulaResults, JsonNode rowKeyFields) {
+        return buildResolvedRows(tab, baseRows, editRows, formulaResults, rowKeyFields, null, null);
+    }
+
+    /**
+     * buildResolvedRows 新重载（带墓碑过滤）。
+     *
+     * <p><b>头号不变量（AP-54）</b>：uniqKeys 由完整 baseRows 唯一化所得；过滤在唯一化之后，
+     * 按墓碑双命中剔除整行。迭代下标 ri 仍走完整集（命中则 continue，绝不重排）。
+     * fps 用同一份完整 baseRows 的 driverRow 计算，与 keepMask 传入的 effKeys 等长。
+     *
+     * @param deleted          墓碑列表（null 或空 → 不过滤，旧路径零变化）
+     * @param rowKeyFieldNames rowKeyFields 节点解出的字段名列表（供 rowFingerprint 提取 driverRow 键值）
+     */
+    private List<Map<String, Object>> buildResolvedRows(JsonNode tab, ArrayNode baseRows,
+            ArrayNode editRows, ArrayNode formulaResults, JsonNode rowKeyFields,
+            List<DeletedRowKeys.Tombstone> deleted, List<String> rowKeyFieldNames) {
         JsonNode fieldsDef = tab.path("fields");
         Map<String, JsonNode> frByKey = new LinkedHashMap<>();
         for (JsonNode fr : formulaResults) frByKey.put(fr.path("rowKey").asText(""), fr.path("values"));
@@ -943,9 +1009,21 @@ public class CardSnapshotService {
         }
         List<String> uniqKeys = FormulaCalculator.uniquifyRowKeys(rawKeys);
 
+        // driver 默认行永久删除：先唯一化(上方)，再按墓碑双命中过滤；fps 用完整 baseRows 计算（守头号不变量）。
+        // keep==null 表示不过滤（deleted 为 null/空 → 核价侧及旧路径零影响）。
+        boolean[] keep = null;
+        if (deleted != null && !deleted.isEmpty()) {
+            List<String> fps = new ArrayList<>(baseRows.size());
+            for (JsonNode br : baseRows) fps.add(DeletedRowKeys.rowFingerprint(rowKeyFieldNames, br.path("driverRow")));
+            keep = DeletedRowKeys.keepMask(uniqKeys, fps, deleted);
+        }
+
         List<Map<String, Object>> out = new ArrayList<>();
         int ri = 0;
         for (JsonNode br : baseRows) {
+            // driver 默认行永久删除：ri 仍随完整集递增（uniqKeys.get(ri) 对齐完整集），命中则 continue（不重排）
+            if (keep != null && !keep[ri]) { ri++; continue; }
+
             JsonNode driverRow = br.path("driverRow");
             JsonNode basicDataValues = br.path("basicDataValues");
             String rowKey = uniqKeys.get(ri);
@@ -1263,8 +1341,23 @@ public class CardSnapshotService {
             Map<String, ArrayNode> mergedEdits =
                 mergeRowDataInputsIntoEdits(snapshot, baseRowsByComp, oldEdits, managed.id);
 
-            // 3. 组装新 quote_card_values（保留编辑 + 重算 formulaResults）
-            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits);
+            // 2.6. 查各组件 deleted_row_keys 墓碑（报价侧需过滤永久删除的 driver 默认行）
+            Map<String, List<DeletedRowKeys.Tombstone>> delByComp = new HashMap<>();
+            @SuppressWarnings("unchecked")
+            List<Object[]> delData = em.createNativeQuery(
+                "SELECT component_id, deleted_row_keys FROM quotation_line_component_data " +
+                "WHERE line_item_id = :lid")
+                .setParameter("lid", managed.id)
+                .getResultList();
+            for (Object[] r : delData) {
+                if (r[0] != null) {
+                    delByComp.put(r[0].toString(),
+                        DeletedRowKeys.parse(r[1] == null ? null : r[1].toString()));
+                }
+            }
+
+            // 3. 组装新 quote_card_values（保留编辑 + 重算 formulaResults；报价侧传真实墓碑）
+            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp);
             managed.quoteCardValues = MAPPER.writeValueAsString(root);
 
             // 4. 重算报价 Excel（核价不动），透传刚算好的新 quoteCardValues（CARD_FORMULA 同侧取数）
@@ -1367,8 +1460,23 @@ public class CardSnapshotService {
             if (!valuesNode.isObject()) valuesNode = target.putObject("values");
             ((ObjectNode) valuesNode).set(fieldName, MAPPER.valueToTree(value));
 
-            // 重算（baseRows 不变 + 新 editRows）
-            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp);
+            // 查各组件 deleted_row_keys 墓碑（报价侧重算时仍需过滤永久删除的 driver 默认行）
+            Map<String, List<DeletedRowKeys.Tombstone>> delByComp = new HashMap<>();
+            @SuppressWarnings("unchecked")
+            List<Object[]> delDataEdit = em.createNativeQuery(
+                "SELECT component_id, deleted_row_keys FROM quotation_line_component_data " +
+                "WHERE line_item_id = :lid")
+                .setParameter("lid", li.id)
+                .getResultList();
+            for (Object[] r : delDataEdit) {
+                if (r[0] != null) {
+                    delByComp.put(r[0].toString(),
+                        DeletedRowKeys.parse(r[1] == null ? null : r[1].toString()));
+                }
+            }
+
+            // 重算（baseRows 不变 + 新 editRows；报价侧传真实墓碑，确保删除行不出现在重算结果中）
+            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp, null, delByComp);
             li.quoteCardValues = MAPPER.writeValueAsString(root);
 
             // 重算报价 Excel（核价不动），透传刚算好的新 quoteCardValues（CARD_FORMULA 同侧取数）
@@ -1399,6 +1507,29 @@ public class CardSnapshotService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * 从 rowKeyFields 节点提取字段名列表，供 {@link DeletedRowKeys#rowFingerprint} 使用。
+     *
+     * <p><b>提取口径</b>（与 computeRowKey 对齐）：rowKeyFields 是 JSON 数组，每项为字符串，
+     * 直接取 {@code asText()}（= 字段名）。例如 {@code ["material_no","spec"]} → {@code ["material_no","spec"]}。
+     * 哨兵 {@code __seq_no__} 也原样保留（keepMask 用不到，但保留口径一致性）。
+     *
+     * <p><b>Task8 前端对齐说明</b>：前端 deletedRows.ts 计算 fp 时，需用同一组字段名（即 rowKeyFields 数组的
+     * 每项字符串值）作为 {@code rowKeyFieldNames}，与此方法提取规则完全一致。
+     *
+     * @param rowKeyFieldsNode rowKeyFields 节点（可为 null、非数组 → 返回空列表）
+     * @return 字段名列表，null 节点时返回空列表
+     */
+    private List<String> rowKeyFieldNamesOf(JsonNode rowKeyFieldsNode) {
+        if (rowKeyFieldsNode == null || !rowKeyFieldsNode.isArray()) return List.of();
+        List<String> names = new ArrayList<>(rowKeyFieldsNode.size());
+        for (JsonNode n : rowKeyFieldsNode) {
+            String name = n.asText("");
+            if (!name.isEmpty()) names.add(name);
+        }
+        return names;
     }
 
     private String loadRowKeyFields(String componentId) {
