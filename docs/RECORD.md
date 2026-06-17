@@ -3635,6 +3635,8 @@ E2E:
 
 [2026-06-16] 模板管理 - 废弃双轨(composite)死代码清理 | TemplateComponent.java / TemplateService.java / TemplateResource.java / V299 | 双轨字段方案(V200/V205)已于 2026-05-21 被统一智能视图取代,残留死代码物理删除:① V299 DROP `template_component.data_driver_path_composite`(DROP 前兜底回填 data_driver_path_override);② 删 `TemplateComponent.dataDriverPathComposite` 字段、`TemplateService#patchTemplateComponentCompositeOverrides`、`TemplateResource#adminPatchComposite`(/patch-composite 端点);③ `migrateToUnifiedView` 移除失效的 driver_path_composite→override 步骤,保留 basic_data_path_composite JSON 键清理。现役唯一机制=`data_driver_path_override`(ComponentDriverService 只读它,渲染期从不读 composite 列/前端零引用)。详见 AP-45 终态更新。无测试依赖被删代码;编译+test-compile 绿。
 
+[2026-06-17] 报价导入/物料BOM - 材料毛重/净重/单位改存专用列 rough_weight/net_weight/weight_unit(Flyway V300)；产出料号类型(component_usage_type + material_master.material_type)统一存汉字(新增 labelOnly helper 剥离 N. 编号)，组成件BOM 侧 material_type "3"→"组成件" | V300 迁移 + MaterialBomItem.java + MaterialBomMergeHandler.java + LabelOnlyTest/MaterialBomMergeHandlerTest/AssemblyBomMaterialSyncTest + docs/table/报价系统Excel导入落库方案.md §3 | Q2-A 物料BOM 侧不再写 composition_qty/base_qty/issue_unit；Q6-B 本次只改落库不改 v12_raw_bom 视图(报价"来料BOM"Tab 毛重/净重/单位暂空，后续单独处理)；Q7-A 不写存量迁移靠重导自愈；v6/quote 全包 53 测试绿
+
 ---
 
 > 📦 **2026-05-20 及更早的历史条目已归档** → 见 [RECORD-archive.md](./RECORD-archive.md)(2026-06-03 切分)。
