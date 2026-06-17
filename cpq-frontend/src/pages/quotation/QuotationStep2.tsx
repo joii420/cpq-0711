@@ -1572,6 +1572,41 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     }));
   };
 
+  // Task 8: driver 默认行永久删除 —— 乐观本地更新 + 端点持久化 + 失败回滚
+  const handleDeleteDriverRow = async (componentId: string, effKey: string, driverRowData: Record<string, any>) => {
+    const lid = (item as any).id as string | undefined;
+    if (!quotationId || !lid) {
+      message.warning('请先保存报价单后再删除行');
+      return;
+    }
+    const rkf = rowKeyFieldsByComp.get(componentId) ?? [];
+    const fp = rowFingerprint(rkf, driverRowData ?? {});
+    // 乐观更新：本地追加墓碑 → buildSnapshotExpansions 立即过滤该行
+    onUpdate((prevItem: LineItem) => ({
+      componentData: prevItem.componentData.map(c => {
+        if (c.componentId !== componentId) return c;
+        let arr: Tombstone[] = [];
+        try { const p = JSON.parse((c as any).deletedRowKeys ?? '[]'); if (Array.isArray(p)) arr = p; } catch { arr = []; }
+        if (!arr.some(t => t?.effKey === effKey && t?.fp === fp)) arr = [...arr, { effKey, fp }];
+        return { ...c, deletedRowKeys: JSON.stringify(arr) };
+      }),
+    }));
+    try {
+      await quotationService.deleteDriverRow(quotationId, lid, componentId, effKey, fp);
+    } catch (e: any) {
+      message.error(`删除失败: ${e?.message ?? e}`);
+      // 失败回滚：移除刚追加的墓碑
+      onUpdate((prevItem: LineItem) => ({
+        componentData: prevItem.componentData.map(c => {
+          if (c.componentId !== componentId) return c;
+          let arr: Tombstone[] = [];
+          try { const p = JSON.parse((c as any).deletedRowKeys ?? '[]'); if (Array.isArray(p)) arr = p; } catch { arr = []; }
+          return { ...c, deletedRowKeys: JSON.stringify(arr.filter(t => !(t?.effKey === effKey && t?.fp === fp))) };
+        }),
+      }));
+    }
+  };
+
   const handleAddRow = (tabIndex: number) => {
     onUpdate((prevItem: LineItem) => ({
       componentData: prevItem.componentData.map((comp, ci) => {
@@ -2402,7 +2437,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     return laid.rows
                       .filter(r => !isTreeRowHidden(r.originalIndex, laid.parentIndexByIndex, laid.nodeKeyByIndex, collapsed))
                       .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
-                  })().map(({ row, rowIndex, realRowIndex, rowKey, basicDataValues, isDriverBound, isManualRow: isManualRowFlag, isListFormulaBound, formulaCache, formulaErrors, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey, _isDupKey }) => {
+                  })().map(({ row, rowIndex, realRowIndex, rowKey, basicDataValues, driverRow, isDriverBound, isManualRow: isManualRowFlag, isListFormulaBound, formulaCache, formulaErrors, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey, _isDupKey }) => {
                     const bomSys = activeComponentBomTree ? (__sys as import('./useDriverExpansions').BomSysCols | undefined) : undefined;
                     return (
                     <tr key={rowIndex}
@@ -2547,7 +2582,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         {row._preset ? (
                           <span title="固定行，不可删除" style={{ color: '#ccc', fontSize: 12, cursor: 'default' }}>🔒</span>
                         ) : isDriverBound ? (
-                          <span title="基础数据自动展开行，不可删除（请在基础数据导入侧调整）" style={{ color: '#ccc', fontSize: 12, cursor: 'default' }}>🔗</span>
+                          cardSide === 'QUOTE' ? (
+                            <button type="button"
+                              onClick={() => handleDeleteDriverRow(activeComponent.componentId, rowKey, driverRow ?? {})}
+                              style={{ background: 'none', border: 'none', color: '#ff4d4f', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}
+                              title="删除行（永久，刷新/重算后不再出现）">✕</button>
+                          ) : (
+                            <span title="基础数据自动展开行（核价侧不可删）" style={{ color: '#ccc', fontSize: 12, cursor: 'default' }}>🔗</span>
+                          )
                         ) : (
                           <button
                             type="button"

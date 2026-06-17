@@ -178,4 +178,10 @@ export const quotationService = {
     return api.post('/quotations/import-excel', fd, { headers: { 'Content-Type': 'multipart/form-data' } }) as Promise<any>;
   },
   confirmImport: (data: any) => api.post('/quotations/confirm-import', data) as Promise<any>,
+
+  // driver 默认行永久删除 / 还原（Task 8）
+  deleteDriverRow: (qid: string, lid: string, componentId: string, effKey: string, fp: string) =>
+    api.post(`/quotations/${qid}/line-items/${lid}/delete-driver-row`, { componentId, effKey, fp }) as Promise<any>,
+  restoreDriverRows: (qid: string, lid: string, componentId: string) =>
+    api.post(`/quotations/${qid}/line-items/${lid}/restore-driver-rows`, { componentId }) as Promise<any>,
 };
