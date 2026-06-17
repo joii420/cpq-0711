@@ -32,6 +32,7 @@ import { templateService } from '../../services/templateService';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { useTreeCollapse } from './useTreeCollapse';
 import { splitRows, rowAt, isManualRow } from './manualRows';
+import { resolveInputDefault } from './inputDefaults';
 import './quotation.css';
 
 // 与 QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard 中的同名函数保持完全对齐。
@@ -568,54 +569,17 @@ function computeAllFormulas(
           && f.content != null && f.content !== '') {
         raw = f.content;
       }
-      // V190: INPUT_NUMBER 行值为空 → 默认值兜底链:
-      //   1) default_source.GLOBAL_VARIABLE → basicDataValues['@gvar:CODE'] (行级 KV)
-      //   2) default_source.BNF_PATH        → basicDataValues[bnfDriverLookupKey(path)] / pathCache
-      //   3) field.content 字面量 (静态兜底, 例: 成材率 = 100)
-      // V193 已清理 V184 散字段, 不再兼容 default_basic_data_path 旧路径
+      // 统一解析器：INPUT_TEXT / INPUT_NUMBER 默认值兜底（default_source 实时 > 静态 content）
       if ((raw === undefined || raw === null || raw === '')
-          && f.field_type === 'INPUT_NUMBER') {
-        let resolved: any = undefined;
-        const ds = f.default_source;
-        if (ds && basicDataValues) {
-          if (ds.type === 'GLOBAL_VARIABLE' && ds.code) {
-            const gvKey = `@gvar:${ds.code}`;
-            if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
-              const v = basicDataValues[gvKey];
-              if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
-            }
-          } else if (ds.type === 'BNF_PATH' && ds.path) {
-            const lookupKey = bnfDriverLookupKey(ds.path);
-            if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
-              const v = basicDataValues[lookupKey];
-              if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
-            }
-            if (resolved === undefined && partNo) {
-              const cache = pathCache ?? (getGlobalPathCache() as Record<string, any>);
-              const v = cache[`${partNo}::${ds.path}`];
-              if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
-            }
-          } else if (ds.type === 'BASIC_DATA' && ds.path) {
-            // BASIC_DATA 只吃行级 basicDataValues(整行通路, 中文安全), 不走 pathCache(单列 ASCII 会失败)
-            const lookupKey = bnfDriverLookupKey(ds.path);
-            if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
-              const v = basicDataValues[lookupKey];
-              if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
-            }
-          }
-        }
-        if (resolved !== undefined) {
-          if (typeof resolved === 'number') {
-            raw = resolved;
-          } else {
-            const formatted = formatPathValue(resolved);
-            if (formatted != null) raw = formatted;
-          }
-        } else if (f.content != null && f.content !== '') {
-          raw = f.content;  // 静态兜底
-        }
+          && (f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT')) {
+        const def = resolveInputDefault(f, {
+          basicDataValues,
+          partNo,
+          pathCache: pathCache ?? (getGlobalPathCache() as Record<string, any>),
+        });
+        if (def !== undefined) raw = def;
       }
-      const val = parseFloat(raw);
+      const val = typeof raw === 'number' ? raw : parseFloat(raw);
       if (!isNaN(val)) fieldValues[key] = val;
     }
   }
@@ -783,25 +747,8 @@ function resolveInputDefaultSourceForRow(
   f: ComponentField,
   basicDataValues: Record<string, any> | undefined,
 ): any {
-  const ds = f.default_source;
-  if (!ds || !basicDataValues) return undefined;
-  let resolved: any = undefined;
-  if (ds.type === 'GLOBAL_VARIABLE' && ds.code) {
-    const gvKey = `@gvar:${ds.code}`;
-    if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
-      const v = basicDataValues[gvKey];
-      if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
-    }
-  } else if ((ds.type === 'BNF_PATH' || ds.type === 'BASIC_DATA') && ds.path) {
-    const lookupKey = bnfDriverLookupKey(ds.path);
-    if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
-      const v = basicDataValues[lookupKey];
-      if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
-    }
-  }
-  if (resolved == null) return undefined;
-  if (typeof resolved === 'number') return resolved;
-  return formatPathValue(resolved) ?? undefined;  // 文本保留
+  const v = resolveInputDefault(f, { basicDataValues });
+  return v === undefined ? undefined : v;
 }
 
 /**
