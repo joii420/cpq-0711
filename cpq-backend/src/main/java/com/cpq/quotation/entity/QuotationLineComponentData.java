@@ -34,6 +34,10 @@ public class QuotationLineComponentData extends PanacheEntityBase {
     @Column(name = "snapshot_rows", columnDefinition = "jsonb")
     public String snapshotRows;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "deleted_row_keys", columnDefinition = "jsonb")
+    public String deletedRowKeys = "[]";
+
     @Column(precision = 18, scale = 4)
     public BigDecimal subtotal = BigDecimal.ZERO;
 
