@@ -195,6 +195,24 @@ public class MaterialBomMergeHandler {
         return sb.length() == 0 ? null : sb.toString();
     }
 
+    /**
+     * 「产出料号类型」只存汉字：剥离前导数字 + 紧随的一个分隔符，保留其后标签。
+     * "1.银点类"→"银点类"；"2.非银点类"→"非银点类"；"组成件"→"组成件"；"1"→"1"；null→null。
+     */
+    static String labelOnly(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        int i = 0;
+        while (i < t.length() && t.charAt(i) >= '0' && t.charAt(i) <= '9') i++;
+        if (i > 0 && i < t.length()) {
+            char sep = t.charAt(i);
+            if (sep == '.' || sep == '。' || sep == '、' || sep == '．'
+                    || sep == '/' || sep == '／' || sep == ' ' || sep == '\t') i++;
+        }
+        String rest = t.substring(i).trim();
+        return rest.isEmpty() ? t : rest;
+    }
+
     /** 按精确表头读取单元格值，空白→null。用于读「料号」列，避开 SheetRow.getStr 的 contains 匹配
      *  会命中「料号名称」列的问题（如 投入料号 vs 投入料号名称）。 */
     private static String exactCell(SheetRow row, String header) {
