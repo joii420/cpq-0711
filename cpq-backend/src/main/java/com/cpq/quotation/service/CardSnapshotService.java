@@ -480,41 +480,28 @@ public class CardSnapshotService {
             JsonNode snapshot = MAPPER.readTree(tmplRows.get(0).toString());
             if (!snapshot.isArray()) return null;
 
-            // 2. 取本行所有已有 snapshot_rows（key = componentId → rows JSON）
+            // 2. 一次查 snapshot_rows + deleted_row_keys（同表同条件，避免两次往返）
             @SuppressWarnings("unchecked")
-            List<Object[]> snapData = em.createNativeQuery(
-                "SELECT component_id, snapshot_rows FROM quotation_line_component_data " +
-                "WHERE line_item_id = :lid AND snapshot_rows IS NOT NULL")
+            List<Object[]> compData = em.createNativeQuery(
+                "SELECT component_id, snapshot_rows, deleted_row_keys " +
+                "FROM quotation_line_component_data WHERE line_item_id = :lid")
                 .setParameter("lid", li.id)
                 .getResultList();
 
             Map<String, String> snapByCompId = new LinkedHashMap<>();
-            for (Object[] r : snapData) {
-                if (r[0] != null && r[1] != null) {
-                    snapByCompId.put(r[0].toString(), r[1].toString());
-                }
+            Map<String, List<DeletedRowKeys.Tombstone>> delByComp = new HashMap<>();
+            for (Object[] r : compData) {
+                if (r[0] == null) continue;
+                String cid = r[0].toString();
+                if (r[1] != null) snapByCompId.put(cid, r[1].toString());
+                delByComp.put(cid, DeletedRowKeys.parse(r[2] == null ? null : r[2].toString()));
             }
 
-            // 3. 预构建每个组件的 baseRows（按 componentId） + rowKeyFields
+            // 3. 预构建每个组件的 baseRows（按 componentId）
             Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
             for (JsonNode tab : snapshot) {
                 String cid = tab.path("componentId").asText("");
                 baseRowsByComp.put(cid, buildBaseRowsFromSnapshotRows(snapByCompId.get(cid), cid));
-            }
-
-            // 3.5. 查各组件 deleted_row_keys 墓碑（报价侧需过滤永久删除的 driver 默认行）
-            Map<String, List<DeletedRowKeys.Tombstone>> delByComp = new HashMap<>();
-            @SuppressWarnings("unchecked")
-            List<Object[]> delData = em.createNativeQuery(
-                "SELECT component_id, deleted_row_keys FROM quotation_line_component_data " +
-                "WHERE line_item_id = :lid")
-                .setParameter("lid", li.id)
-                .getResultList();
-            for (Object[] r : delData) {
-                if (r[0] != null) {
-                    delByComp.put(r[0].toString(),
-                        DeletedRowKeys.parse(r[1] == null ? null : r[1].toString()));
-                }
             }
 
             // 4. 组装 tabs（Task 3: 填 formulaResults，加产品时 editRows 恒空；报价侧传真实墓碑）
@@ -1342,19 +1329,7 @@ public class CardSnapshotService {
                 mergeRowDataInputsIntoEdits(snapshot, baseRowsByComp, oldEdits, managed.id);
 
             // 2.6. 查各组件 deleted_row_keys 墓碑（报价侧需过滤永久删除的 driver 默认行）
-            Map<String, List<DeletedRowKeys.Tombstone>> delByComp = new HashMap<>();
-            @SuppressWarnings("unchecked")
-            List<Object[]> delData = em.createNativeQuery(
-                "SELECT component_id, deleted_row_keys FROM quotation_line_component_data " +
-                "WHERE line_item_id = :lid")
-                .setParameter("lid", managed.id)
-                .getResultList();
-            for (Object[] r : delData) {
-                if (r[0] != null) {
-                    delByComp.put(r[0].toString(),
-                        DeletedRowKeys.parse(r[1] == null ? null : r[1].toString()));
-                }
-            }
+            Map<String, List<DeletedRowKeys.Tombstone>> delByComp = loadTombstonesByComp(managed.id);
 
             // 3. 组装新 quote_card_values（保留编辑 + 重算 formulaResults；报价侧传真实墓碑）
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp);
@@ -1461,19 +1436,7 @@ public class CardSnapshotService {
             ((ObjectNode) valuesNode).set(fieldName, MAPPER.valueToTree(value));
 
             // 查各组件 deleted_row_keys 墓碑（报价侧重算时仍需过滤永久删除的 driver 默认行）
-            Map<String, List<DeletedRowKeys.Tombstone>> delByComp = new HashMap<>();
-            @SuppressWarnings("unchecked")
-            List<Object[]> delDataEdit = em.createNativeQuery(
-                "SELECT component_id, deleted_row_keys FROM quotation_line_component_data " +
-                "WHERE line_item_id = :lid")
-                .setParameter("lid", li.id)
-                .getResultList();
-            for (Object[] r : delDataEdit) {
-                if (r[0] != null) {
-                    delByComp.put(r[0].toString(),
-                        DeletedRowKeys.parse(r[1] == null ? null : r[1].toString()));
-                }
-            }
+            Map<String, List<DeletedRowKeys.Tombstone>> delByComp = loadTombstonesByComp(li.id);
 
             // 重算（baseRows 不变 + 新 editRows；报价侧传真实墓碑，确保删除行不出现在重算结果中）
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp, null, delByComp);
@@ -1514,7 +1477,6 @@ public class CardSnapshotService {
      *
      * <p><b>提取口径</b>（与 computeRowKey 对齐）：rowKeyFields 是 JSON 数组，每项为字符串，
      * 直接取 {@code asText()}（= 字段名）。例如 {@code ["material_no","spec"]} → {@code ["material_no","spec"]}。
-     * 哨兵 {@code __seq_no__} 也原样保留（keepMask 用不到，但保留口径一致性）。
      *
      * <p><b>Task8 前端对齐说明</b>：前端 deletedRows.ts 计算 fp 时，需用同一组字段名（即 rowKeyFields 数组的
      * 每项字符串值）作为 {@code rowKeyFieldNames}，与此方法提取规则完全一致。
@@ -1530,6 +1492,33 @@ public class CardSnapshotService {
             if (!name.isEmpty()) names.add(name);
         }
         return names;
+    }
+
+    /**
+     * 按 lineItemId 查 quotation_line_component_data.deleted_row_keys，
+     * 返回 componentId → 墓碑列表的映射（供报价侧过滤永久删除的 driver 默认行）。
+     *
+     * <p>一次查全行，O(1) 往返，无 N+1。deleted_row_keys 为 null/空白 → 该组件对应空列表（不过滤）。
+     */
+    private Map<String, List<DeletedRowKeys.Tombstone>> loadTombstonesByComp(UUID lineItemId) {
+        Map<String, List<DeletedRowKeys.Tombstone>> result = new HashMap<>();
+        try {
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = em.createNativeQuery(
+                "SELECT component_id, deleted_row_keys FROM quotation_line_component_data " +
+                "WHERE line_item_id = :lid")
+                .setParameter("lid", lineItemId)
+                .getResultList();
+            for (Object[] r : rows) {
+                if (r[0] != null) {
+                    result.put(r[0].toString(),
+                        DeletedRowKeys.parse(r[1] == null ? null : r[1].toString()));
+                }
+            }
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] loadTombstonesByComp failed lid=%s: %s", lineItemId, e.getMessage());
+        }
+        return result;
     }
 
     private String loadRowKeyFields(String componentId) {
