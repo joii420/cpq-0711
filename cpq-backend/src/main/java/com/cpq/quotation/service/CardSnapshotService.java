@@ -1292,8 +1292,19 @@ public class CardSnapshotService {
     // =========================================================================
 
     /**
-     * 草稿态重刷报价侧两份值（设计 §5）：
+     * 草稿态重刷报价侧两份值（设计 §5）。委托 {@link #refreshQuoteCardValues(QuotationLineItem, boolean)}，
+     * {@code force=false}（默认冻结模式：已首次 bake 的行直接 no-op，防误调覆盖冻结值）。
+     */
+    @Transactional
+    public void refreshQuoteCardValues(QuotationLineItem li) {
+        refreshQuoteCardValues(li, false);
+    }
+
+    /**
+     * 草稿态重刷报价侧两份值（设计 §5，带 force 参数）：
      * <ol>
+     *   <li>短路判断（2026-06-18 草稿默认冻结）：{@code force=false} 且 {@code cardSnapshotAt!=null}
+     *       → 直接 no-op，防草稿打开/误调覆盖已冻结的报价值；{@code force=true}（显式刷新/删恢复行）才继续。</li>
      *   <li>重查基础值：按报价模板 driver 组件 expand 种子 → 新 baseRows（实时最新数据）。</li>
      *   <li>对齐保留编辑：旧 {@code quote_card_values} 的 editRows 按 rowKey 叠加到新 baseRows；新数据无该 key 丢弃。</li>
      *   <li>重算公式：基于新 baseRows + 保留 editRows → 新 formulaResults。</li>
@@ -1302,13 +1313,21 @@ public class CardSnapshotService {
      * </ol>
      * <p><b>核价两列物理不参与本次 UPDATE</b>（结构性隔离，核价永久冻死）。
      * <p>降级：任一步失败 → 保留上一次报价值快照，不抛、不阻断打开（与加产品同等降级）。
+     *
+     * @param li    报价产品行（detached 或 managed 均可）
+     * @param force {@code true} = 强制重算（显式刷新 / 删除恢复行）；{@code false} = 已 bake 行 no-op
      */
     @Transactional
-    public void refreshQuoteCardValues(QuotationLineItem li) {
+    public void refreshQuoteCardValues(QuotationLineItem li, boolean force) {
         if (li == null || li.id == null) return;
         try {
             QuotationLineItem managed = QuotationLineItem.findById(li.id);
             if (managed == null) return;
+
+            // 草稿默认冻结（2026-06-18）：已首次 bake 的行非 force 调用直接 no-op，
+            // 防 on-open / 误调覆盖冻结值。force=true（显式刷新/删恢复行）才重算。
+            if (!force && managed.cardSnapshotAt != null) return;
+
             Quotation q = Quotation.findById(managed.quotationId);
             if (q == null || q.customerTemplateId == null) return;
 
