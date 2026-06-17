@@ -23,6 +23,7 @@ import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
 import { quotationService } from '../../services/quotationService';
 import type { CardStructure, CardValues } from '../../services/quotationService';
 import { computeRowKey, buildUniqueRowKeys } from './useCardSnapshots';
+import { rowFingerprint, keepRow, type Tombstone } from './deletedRows';
 import { applyUnitConversion, factorFor } from '../../utils/unitConversion';
 import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns } from './tabTotalLines';
@@ -132,6 +133,8 @@ export interface ComponentDataItem {
   /** Y1.5 行驱动 BNF 路径(从模板快照透传)— 非空时 Step2 按 expand-driver 返回的 N 行渲染 */
   dataDriverPath?: string;
   treeConfig?: import('../component/types').TreeConfig;
+  /** driver 默认行墓碑数组 JSON（[{effKey,fp}]）；前端按此过滤被删行。来自后端 ComponentDataDTO.deletedRowKeys。*/
+  deletedRowKeys?: string;
 }
 
 export interface LineItem {
@@ -1340,11 +1343,22 @@ export const EMPTY_LINEITEMS: LineItem[] = [];
  *
  * <p>有此 map 时, activeDriverExpansion 命中快照 baseRows → driver 行数 + BASIC_DATA 值直接来自快照,
  * 渲染期不再调 /batch-expand。FORMULA 仍由 computeAllFormulas 按快照 basicDataValues 实时算(同引擎同输入, 防漂移)。
+ *
+ * <p><b>AP-54 头号不变量（QUOTE 侧）</b>：
+ *   1. effKey 由 buildUniqueRowKeys 在<b>完整</b> baseRows 上算（不动）；
+ *   2. fp 用完整集每行 driverRow 算；
+ *   3. 按墓碑双命中(keepRow)剔除整行，过滤后子集绝不再 buildUniqueRowKeys / 重排；
+ *   4. deletedRowKeys 不进 driverExpansionKey（删除是展开后纯函数过滤，进 key 会每删一行击穿 driver 缓存）；
+ *   5. rowCount 取 effRows.length（= effectiveRowCount 有效行数）。COSTING 侧绝不过滤（spec §3.7 隔离）。
+ *
+ * @param rowKeyFieldsByComp componentId → rowKeyFields 字段名数组（来自 cardStructure.tabs）；
+ *                           不传时退化为不过滤（向后兼容，新产品无快照时墓碑必为空）。
  */
 export function buildSnapshotExpansions(
   items: LineItem[],
   side: 'QUOTE' | 'COSTING',
   customerId?: string,
+  rowKeyFieldsByComp?: Map<string, string[]>,
 ): import('./useDriverExpansions').DriverExpansionMap {
   const map: import('./useDriverExpansions').DriverExpansionMap = {};
   for (const item of items) {
@@ -1366,10 +1380,36 @@ export function buildSnapshotExpansions(
       const key = driverExpansionKey(
         lineItemId, partNo, cid, customerId,
         comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]),
+        // 注意：deletedRowKeys 不进 key —— 见 AP-54 头号不变量第 4 点
       );
+
+      // ── QUOTE 侧墓碑过滤（AP-54 不变量，COSTING 侧绝不过滤） ──────────────────
+      // 头号不变量：effKey 在完整集 baseRows 上算；fp 用完整集每行 driverRow 算；
+      // 双命中才剔除；过滤后子集不重算 key / 不重建 effKey 序。
+      let effRows: any[] = baseRows;
+      if (side === 'QUOTE' && comp.deletedRowKeys) {
+        let tombs: Tombstone[] = [];
+        try {
+          const p = JSON.parse(comp.deletedRowKeys);
+          if (Array.isArray(p)) tombs = p;
+        } catch {
+          tombs = [];
+        }
+        if (tombs.length > 0) {
+          const rkf = rowKeyFieldsByComp?.get(cid) ?? [];
+          // 步骤1：完整集唯一化得到每行的 effKey（不变，不受过滤影响）
+          const uniq = buildUniqueRowKeys(comp.fields as any, rkf, baseRows);
+          // 步骤2：按墓碑双命中(effKey + fp)过滤，过滤后不重算 key
+          effRows = baseRows.filter((br: any, i: number) =>
+            keepRow(uniq[i], rowFingerprint(rkf, br?.driverRow ?? {}), tombs));
+        }
+      }
+
       map[key] = {
-        rowCount: baseRows.length,
-        rows: baseRows.map((br: any) => ({
+        // rowCount = effectiveRowCount（有效行数，渲染/prune 按此迭代）
+        // AP-51「原始行数」监控在后端 /expand 与 refreshQuoteCardValues 侧，此处取过滤后行数正确。
+        rowCount: effRows.length,
+        rows: effRows.map((br: any) => ({
           driverRow: br?.driverRow ?? {},
           basicDataValues: br?.basicDataValues ?? {},
           // 核价 BOM 递归展开（P1）：透传 spine 系统列（__ 前缀），供 COSTING 卡片渲染固定列 + 建树。
@@ -2972,13 +3012,24 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   // 核价单卡片所需的展开（按 costingTemplate 视图下的 componentData 收集）
   const { cache: driverExpansionsCosting } = useDriverExpansions(useSnapCosting ? EMPTY_LINEITEMS : costingLineItems, customerId, quotationId);
   // 快照模式: 从行级值快照构造 expansions(键与渲染查找一致)
+  // rowKeyFieldsByComp 供 buildSnapshotExpansions 过滤墓碑行(AP-54)；与 ProductCard 内同口径。
+  const pageRowKeyFieldsByQuote = React.useMemo(() => {
+    const m = new Map<string, string[]>();
+    (quoteCardStructure?.tabs ?? []).forEach(t => { if (t.componentId) m.set(t.componentId, t.rowKeyFields ?? []); });
+    return m;
+  }, [quoteCardStructure]);
+  const pageRowKeyFieldsByCosting = React.useMemo(() => {
+    const m = new Map<string, string[]>();
+    (costingCardStructure?.tabs ?? []).forEach(t => { if (t.componentId) m.set(t.componentId, t.rowKeyFields ?? []); });
+    return m;
+  }, [costingCardStructure]);
   const snapExpansionsQuote = React.useMemo(
-    () => (useSnapQuote ? buildSnapshotExpansions(lineItems, 'QUOTE', customerId) : {}),
-    [lineItems, useSnapQuote, customerId],
+    () => (useSnapQuote ? buildSnapshotExpansions(lineItems, 'QUOTE', customerId, pageRowKeyFieldsByQuote) : {}),
+    [lineItems, useSnapQuote, customerId, pageRowKeyFieldsByQuote],
   );
   const snapExpansionsCosting = React.useMemo(
-    () => (useSnapCosting ? buildSnapshotExpansions(costingLineItems, 'COSTING', customerId) : {}),
-    [costingLineItems, useSnapCosting, customerId],
+    () => (useSnapCosting ? buildSnapshotExpansions(costingLineItems, 'COSTING', customerId, pageRowKeyFieldsByCosting) : {}),
+    [costingLineItems, useSnapCosting, customerId, pageRowKeyFieldsByCosting],
   );
   // 合并：实时(回退) + 快照(优先, 后写入); 同 key 含 componentId, 两侧不互覆盖
   const driverExpansions = React.useMemo(() => ({

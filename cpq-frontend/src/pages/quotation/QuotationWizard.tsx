@@ -124,9 +124,16 @@ const QuotationWizard: React.FC = () => {
   const useSnapAll = lineItems.length > 0 && lineItems.every(li => !!li.quoteCardValues);
   const { cache: driverExpansionsLive, invalidate: invalidateDriverExpansions } =
     useDriverExpansions(useSnapAll ? EMPTY_LINEITEMS : lineItems, customerIdValue, quotationId ?? undefined);
+  // rowKeyFieldsByComp 供 buildSnapshotExpansions 按墓碑过滤（AP-54）；来自顶层结构快照。
+  const rowKeyFieldsByComp = React.useMemo(() => {
+    const m = new Map<string, string[]>();
+    ((quotation?.quoteCardStructure as import('../../services/quotationService').CardStructure | null)?.tabs ?? [])
+      .forEach((t: any) => { if (t.componentId) m.set(t.componentId, t.rowKeyFields ?? []); });
+    return m;
+  }, [quotation?.quoteCardStructure]);
   const driverExpansionsSnap = React.useMemo(
-    () => (useSnapAll ? buildSnapshotExpansions(lineItems, 'QUOTE', customerIdValue) : {}),
-    [useSnapAll, lineItems, customerIdValue],
+    () => (useSnapAll ? buildSnapshotExpansions(lineItems, 'QUOTE', customerIdValue, rowKeyFieldsByComp) : {}),
+    [useSnapAll, lineItems, customerIdValue, rowKeyFieldsByComp],
   );
   const driverExpansions = React.useMemo(
     () => (useSnapAll ? driverExpansionsSnap : driverExpansionsLive),

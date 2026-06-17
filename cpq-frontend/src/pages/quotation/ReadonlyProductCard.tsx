@@ -224,9 +224,15 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   const useSnap = !!lineItem.quoteCardValues && components.length > 0;
   const { cache: liveExpansions } = useDriverExpansions(
     useSnap ? EMPTY_LINEITEMS : (lineItemsForDriver as any), customerId, quotationId);
+  // rowKeyFieldsByComp 须先于 snapExpansions 构建（snapExpansions 依赖它做墓碑过滤 AP-54）
+  const rowKeyFieldsByComp = useMemo(() => {
+    const m = new Map<string, string[]>();
+    (quoteCardStructure?.tabs ?? []).forEach(t => { if (t.componentId) m.set(t.componentId, t.rowKeyFields ?? []); });
+    return m;
+  }, [quoteCardStructure]);
   const snapExpansions = useMemo(
-    () => (useSnap ? buildSnapshotExpansions(lineItemsForDriver as any, 'QUOTE', customerId) : {}),
-    [useSnap, lineItemsForDriver, customerId],
+    () => (useSnap ? buildSnapshotExpansions(lineItemsForDriver as any, 'QUOTE', customerId, rowKeyFieldsByComp) : {}),
+    [useSnap, lineItemsForDriver, customerId, rowKeyFieldsByComp],
   );
   const driverExpansions = useMemo(
     () => (useSnap ? snapExpansions : liveExpansions),
@@ -238,11 +244,6 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
     if (!json) return null;
     try { return typeof json === 'string' ? JSON.parse(json) as CardValues : (json as CardValues); } catch { return null; }
   }, [lineItem.quoteCardValues]);
-  const rowKeyFieldsByComp = useMemo(() => {
-    const m = new Map<string, string[]>();
-    (quoteCardStructure?.tabs ?? []).forEach(t => { if (t.componentId) m.set(t.componentId, t.rowKeyFields ?? []); });
-    return m;
-  }, [quoteCardStructure]);
   const snapFormulaByComp = useMemo(() => {
     const m = new Map<string, { formula: Map<string, Record<string, any>>; driverRows: Record<string, any>[] }>();
     (sideCardValues?.tabs ?? []).forEach(vt => {
