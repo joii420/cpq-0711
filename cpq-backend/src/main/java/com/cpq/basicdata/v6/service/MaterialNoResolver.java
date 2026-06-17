@@ -60,6 +60,30 @@ public class MaterialNoResolver {
         return generated;
     }
 
+    /**
+     * 仅匹配不生成（更新型 sheet 用，如 §5 元素回收折扣）。
+     * 料号有值→trim 返回；料号空+名称有值→按名匹配料号表（含 {@link BatchState#nameToNo} 缓存），
+     * 命中返回其料号，未命中返回 {@code null}；料号与名称都空→返回 {@code null}。**绝不生成 9 字头。**
+     */
+    public String resolveMatchOnly(String materialNo, String materialName, BatchState state) {
+        String no = trimToNull(materialNo);
+        if (no != null) return no;
+
+        String name = trimToNull(materialName);
+        if (name == null) return null;
+
+        String cached = state.nameToNo.get(name);
+        if (cached != null) return cached;
+
+        Optional<MaterialMaster> existing = repo.findFirstByMaterialName(name);
+        if (existing.isPresent()) {
+            String existingNo = existing.get().materialNo;
+            state.nameToNo.put(name, existingNo);
+            return existingNo;
+        }
+        return null;
+    }
+
     private String generateNextMaterialNo(BatchState state) {
         repo.lockForMaterialNoGeneration();
         long dbMax = repo.maxNineLeadingMaterialNo();
