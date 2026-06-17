@@ -193,6 +193,10 @@ export async function enrichComponentData(
         subtotal: saved.subtotal || 0,
         dataDriverPath,
         treeConfig: normalizeTreeConfig(snapshotComp),
+        // AP-54 Fix C2: 透传后端 deletedRowKeys（墓碑数组）；
+        // 未透传时刷新/重进编辑后 comp.deletedRowKeys===undefined，
+        // buildSnapshotExpansions QUOTE 过滤 no-op → 被删行重现。
+        deletedRowKeys: saved.deletedRowKeys,
       } as ComponentDataItem;
     });
   } catch {
@@ -288,6 +292,10 @@ export function buildComponentDataFromStructure(
       subtotal: saved.subtotal || 0,
       dataDriverPath: tab.dataDriverPath || saved.dataDriverPath || undefined,
       treeConfig: normalizeTreeConfig(tab),
+      // AP-54 Fix C2: 透传后端 deletedRowKeys（墓碑数组）；
+      // 未透传时刷新/重进编辑后 comp.deletedRowKeys===undefined，
+      // buildSnapshotExpansions QUOTE 过滤 no-op → 被删行重现。
+      deletedRowKeys: saved.deletedRowKeys,
     } as ComponentDataItem;
   });
 }
