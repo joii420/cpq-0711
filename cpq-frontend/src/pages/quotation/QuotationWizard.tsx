@@ -1333,6 +1333,7 @@ const QuotationWizard: React.FC = () => {
         costingCardTemplateId={costingCardTemplateId}
         driftDetection={(quotation?.driftDetection as DriftDetectionResult) || undefined}
         onRefreshQuotation={handleRefreshDrift}
+        onReloadQuotation={() => loadQuotation(quotationId!)}
         quotationStatus={quotation?.status}
         quoteCardStructure={quotation?.quoteCardStructure ?? null}
         costingCardStructure={quotation?.costingCardStructure ?? null}

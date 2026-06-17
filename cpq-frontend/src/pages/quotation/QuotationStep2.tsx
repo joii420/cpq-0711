@@ -243,8 +243,10 @@ export interface QuotationStep2Props {
   costingCardTemplateId?: string;
   /** 报价漂移检测结果(来自报价单 getById 返回的 driftDetection 字段) */
   driftDetection?: DriftDetectionResult;
-  /** 刷新报价单后的回调(用于横幅刷新按钮 + 「刷新基础数据」按钮) */
+  /** 刷新报价单后的回调(用于横幅版本漂移刷新按钮) */
   onRefreshQuotation?: () => void;
+  /** 纯重载回调：仅重新 getById+applyData，不触发版本漂移刷新（「刷新基础数据」按钮专用） */
+  onReloadQuotation?: () => void | Promise<void>;
   /** 当前报价单状态（来自后端 quotation.status），用于控制「刷新基础数据」按钮仅 DRAFT 可见 */
   quotationStatus?: string;
   /** Phase4 Task3: 报价卡片结构快照(顶层, 提供 rowKeyFields) — 报价侧渲染读 editRows/formulaResults + 编辑回写需要 */
@@ -2693,6 +2695,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   quotationId,
   driftDetection,
   onRefreshQuotation,
+  onReloadQuotation,
   quotationStatus,
   quoteCardStructure,
   costingCardStructure,
@@ -3099,7 +3102,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
         try {
           await quotationService.refreshCardSnapshot(quotationId);
           hideLoading();
-          onRefreshQuotation?.();
+          await onReloadQuotation?.();
           message.success('已按最新基础数据刷新');
         } catch {
           hideLoading();
