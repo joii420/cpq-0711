@@ -55,6 +55,15 @@ public class SheetRow {
         return null;
     }
 
+    /**
+     * 按**精确表头**读取单元格值（非 contains），空白→null、trim。
+     * 用于读「料号」键列，避开 {@link #getStr(String...)} 的 contains 匹配命中「…名称」列（如 投入料号 vs 投入料号名称）。
+     */
+    public String exact(String header) {
+        String v = cells.get(header);
+        return (v == null || v.isBlank()) ? null : v.trim();
+    }
+
     /** 取第 n 个（1-based）表头 contains(name) 的列值；不足 n 个返 null。 */
     public String getStrNth(String name, int n) {
         int count = 0;
