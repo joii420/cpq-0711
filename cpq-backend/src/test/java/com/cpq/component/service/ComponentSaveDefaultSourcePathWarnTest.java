@@ -242,4 +242,80 @@ class ComponentSaveDefaultSourcePathWarnTest {
         assertTrue(warnings.isEmpty(),
             "无 default_source 的字段不应产生告警，实际 warnings=" + warnings);
     }
+
+    // -------------------------------------------------------------------
+    // T6: 视图存在但 declared_columns 是损坏 JSON → per-field catch 兜底，
+    //     方法不抛异常，其余字段继续被正常校验（保存事务不被阻断）
+    // -------------------------------------------------------------------
+    @Test
+    @TestTransaction
+    @DisplayName("T6: declared_columns JSON 损坏 → per-field 异常被兜住，方法永不抛，其余字段仍被校验")
+    void malformedDeclaredColumnsJson_doesNotEscapeMethod_otherFieldsStillValidated() {
+        Component comp = new Component();
+        comp.name  = "C3测试-损坏JSON";
+        comp.code  = "C3-WARN-MALFORMED-" + System.nanoTime();
+        comp.columnCount = 1;
+        comp.status = "ACTIVE";
+        comp.fields = "[]";
+        comp.formulas = "[]";
+        comp.excelColumns = "[]";
+        comp.persist();
+
+        // 视图1：declaredColumns 是损坏 JSON（触发 extractDeclaredColumnNames catch，
+        // 返回 empty list → 列名校验认为 "notexist" 不在列表里 → 产生告警而不抛异常）
+        ComponentSqlView badView = new ComponentSqlView();
+        badView.componentId = comp.id;
+        badView.sqlViewName = "c3_bad_json_view";
+        badView.sqlTemplate = "SELECT 1";
+        badView.declaredColumns = "NOT_VALID_JSON[[[";  // 损坏 JSON
+        badView.requiredVariables = new String[0];
+        badView.scope = "COMPONENT";
+        badView.status = "ACTIVE";
+        badView.persist();
+
+        // 视图2：正常视图，用于验证损坏字段不影响后续字段的正常校验
+        ComponentSqlView goodView = new ComponentSqlView();
+        goodView.componentId = comp.id;
+        goodView.sqlViewName = "c3_good_view";
+        goodView.sqlTemplate = "SELECT 1";
+        goodView.declaredColumns = """
+            [{"name":"price","dataType":"numeric","nullable":true}]
+            """;
+        goodView.requiredVariables = new String[0];
+        goodView.scope = "COMPONENT";
+        goodView.status = "ACTIVE";
+        goodView.persist();
+
+        // field1 引用损坏视图；field2 引用正常视图且列名匹配（应无告警）
+        List<Map<String, Object>> fields = List.of(
+            Map.of(
+                "name", "损坏视图字段",
+                "field_type", "BASIC_DATA",
+                "default_source", Map.of(
+                    "type", "BASIC_DATA",
+                    "path", "$c3_bad_json_view.notexist"
+                )
+            ),
+            Map.of(
+                "name", "正常视图字段",
+                "field_type", "BASIC_DATA",
+                "default_source", Map.of(
+                    "type", "BASIC_DATA",
+                    "path", "$c3_good_view.price"   // 列名匹配，应无告警
+                )
+            )
+        );
+
+        // 核心断言：损坏 JSON 不能让方法抛异常（per-field catch 必须兜住）
+        List<String> warnings = assertDoesNotThrow(
+            () -> componentService.warnDefaultSourcePaths(comp.id, fields),
+            "declared_columns JSON 损坏不应让 warnDefaultSourcePaths 抛异常（保存事务不被阻断）"
+        );
+
+        // 正常视图字段（price 精确匹配）不应产生告警，证明后续字段未被跳过
+        boolean goodFieldFlagged = warnings.stream()
+            .anyMatch(w -> w.contains("c3_good_view") && w.contains("price"));
+        assertFalse(goodFieldFlagged,
+            "正常视图字段（price 精确匹配）不应产生告警，说明单字段异常不影响其余字段，实际: " + warnings);
+    }
 }

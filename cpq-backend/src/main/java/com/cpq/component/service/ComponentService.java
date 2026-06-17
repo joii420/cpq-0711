@@ -884,54 +884,63 @@ public class ComponentService {
         Map<String, List<String>> viewColumnsCache = new HashMap<>();
 
         for (Map<String, Object> field : fields) {
-            Object defaultSource = field.get("default_source");
-            if (!(defaultSource instanceof Map)) continue;
+            // per-field 兜底：单字段校验失败只跳过该字段，绝不影响其余字段及保存事务
+            String fieldNameForCatch = String.valueOf(field.getOrDefault("name", ""));
+            try {
+                Object defaultSource = field.get("default_source");
+                if (!(defaultSource instanceof Map)) continue;
 
-            @SuppressWarnings("unchecked")
-            Map<String, Object> ds = (Map<String, Object>) defaultSource;
-            Object pathObj = ds.get("path");
-            if (pathObj == null) continue;
-            String path = pathObj.toString().trim();
-            if (path.isEmpty() || !path.startsWith("$")) continue;
+                @SuppressWarnings("unchecked")
+                Map<String, Object> ds = (Map<String, Object>) defaultSource;
+                Object pathObj = ds.get("path");
+                if (pathObj == null) continue;
+                String path = pathObj.toString().trim();
+                if (path.isEmpty() || !path.startsWith("$")) continue;
 
-            Matcher m = VIEW_PATH_PATTERN.matcher(path);
-            if (!m.matches()) continue;
+                Matcher m = VIEW_PATH_PATTERN.matcher(path);
+                if (!m.matches()) continue;
 
-            String viewName;
-            String colName;
-            if (m.group(1) != null) {
-                // $$compCode.viewName.col 形态
-                viewName = m.group(2);
-                colName  = m.group(3);
-            } else {
-                // $viewName.col 形态
-                viewName = m.group(4);
-                colName  = m.group(5);
-            }
-            if (viewName == null || colName == null) continue;
+                String viewName;
+                String colName;
+                if (m.group(1) != null) {
+                    // $$compCode.viewName.col 形态
+                    viewName = m.group(2);
+                    colName  = m.group(3);
+                } else {
+                    // $viewName.col 形态
+                    viewName = m.group(4);
+                    colName  = m.group(5);
+                }
+                if (viewName == null || colName == null) continue;
 
-            String fieldName = String.valueOf(field.getOrDefault("name", ""));
-            final String fv = viewName;
+                String fieldName = String.valueOf(field.getOrDefault("name", ""));
+                final String fv = viewName;
 
-            // 取该组件该视图的 declared_columns（带缓存；null 表示视图不存在）
-            List<String> actualColumns = viewColumnsCache.computeIfAbsent(viewName, vn -> {
-                Optional<ComponentSqlView> csv = sqlViewRepository.findByComponentAndName(componentId, fv);
-                if (csv.isEmpty()) return null;
-                return extractDeclaredColumnNames(csv.get().declaredColumns);
-            });
+                // 取该组件该视图的 declared_columns（带缓存；null 表示视图不存在）
+                // computeIfAbsent lambda 内的 DB 查询异常由外层 per-field catch 捕获
+                List<String> actualColumns = viewColumnsCache.computeIfAbsent(viewName, vn -> {
+                    Optional<ComponentSqlView> csv = sqlViewRepository.findByComponentAndName(componentId, fv);
+                    if (csv.isEmpty()) return null;
+                    return extractDeclaredColumnNames(csv.get().declaredColumns);
+                });
 
-            if (actualColumns == null) {
-                String warn = String.format(
-                    "[C3 default_source.path soft-warn] componentId=%s field='%s' path='%s' — 视图 '%s' 未在 component_sql_view 中找到",
-                    componentId, fieldName, path, viewName);
-                LOG.warnf("%s", warn);
-                warnings.add(warn);
-            } else if (!actualColumns.contains(colName)) {
-                String warn = String.format(
-                    "[C3 default_source.path soft-warn] componentId=%s field='%s' path='%s' — 列名 '%s' 不在视图 '%s' 的 declared_columns %s 中",
-                    componentId, fieldName, path, colName, viewName, actualColumns);
-                LOG.warnf("%s", warn);
-                warnings.add(warn);
+                if (actualColumns == null) {
+                    String warn = String.format(
+                        "[C3 default_source.path soft-warn] componentId=%s field='%s' path='%s' — 视图 '%s' 未在 component_sql_view 中找到",
+                        componentId, fieldName, path, viewName);
+                    LOG.warnf("%s", warn);
+                    warnings.add(warn);
+                } else if (!actualColumns.contains(colName)) {
+                    String warn = String.format(
+                        "[C3 default_source.path soft-warn] componentId=%s field='%s' path='%s' — 列名 '%s' 不在视图 '%s' 的 declared_columns %s 中",
+                        componentId, fieldName, path, colName, viewName, actualColumns);
+                    LOG.warnf("%s", warn);
+                    warnings.add(warn);
+                }
+            } catch (Exception e) {
+                // 软校验异常（含 DB RuntimeException / PersistenceException）：只告警，绝不逃逸
+                LOG.warnf("[default_source.path soft-warn] 校验字段 '%s' 异常(已忽略,不阻断保存): %s",
+                        fieldNameForCatch, e.getMessage());
             }
         }
 
@@ -957,7 +966,7 @@ public class ComponentService {
             }
             return names;
         } catch (Exception e) {
-            LOG.warnf("[auditBasicDataPaths] declaredColumns JSON 解析失败: %s", e.getMessage());
+            LOG.warnf("[declaredColumns parse] declaredColumns JSON 解析失败: %s", e.getMessage());
             return Collections.emptyList();
         }
     }
