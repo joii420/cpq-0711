@@ -12,6 +12,7 @@ import com.cpq.component.dto.CreateComponentRequest;
 import com.cpq.component.dto.ExpandDriverRequest;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
+import com.cpq.component.service.ComponentImportService;
 import com.cpq.component.service.ComponentService;
 import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.template.service.TemplateService;
@@ -45,6 +46,9 @@ public class ComponentResource {
 
     @Inject
     TemplateService templateService;
+
+    @Inject
+    ComponentImportService componentImportService;
 
     @GET
     public ApiResponse<List<ComponentDTO>> list(
@@ -366,5 +370,34 @@ public class ComponentResource {
             if (p != null && !seen.add(p)) return false;
         }
         return true;
+    }
+
+    /**
+     * G4: 目录级存量导入引用补救。
+     *
+     * <p>扫描指定目录内所有组件的 formulas，将仍指向目录外源组件的跨组件引用
+     * 重映射为同目录内对应的副本（base code 一致）。
+     *
+     * <p>映射规则：
+     * <ul>
+     *   <li>cross_tab_ref.source（UUID）：若目录外 → 按 base code 找目录内副本 → 更新</li>
+     *   <li>component_subtotal.component_code：若 code 不在目录内 → 按 base 找副本 → 更新</li>
+     * </ul>
+     *
+     * <p>同 base 多副本（__imp1/__imp2）时按 code 升序取第一个；无法解析的引用记录为
+     * unresolved 并跳过（不中断其他组件处理）。
+     *
+     * @param dirId  目标目录 UUID
+     * @param dryRun true(默认) = 只返回将要重映射的清单，不修改数据库；
+     *               false = 实际写库
+     */
+    @POST
+    @Path("/directories/{dirId}/remap-imported-refs")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<ComponentImportService.DirRemapResult> remapImportedRefs(
+            @PathParam("dirId") UUID dirId,
+            @QueryParam("dryRun") @DefaultValue("true") boolean dryRun) {
+        return ApiResponse.success(
+                componentImportService.remapImportedRefsInDirectory(dirId, dryRun));
     }
 }
