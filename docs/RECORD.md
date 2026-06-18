@@ -4,6 +4,10 @@
 
 ---
 
+[2026-06-18] import-remap G2 - FormulaRefRemapper 递归处理嵌套 targetExpr（KSUM 内层 cross_tab_ref source 重映射）| cpq-backend/src/main/java/com/cpq/component/service/FormulaRefRemapper.java / cpq-backend/src/test/java/com/cpq/component/service/FormulaRefRemapperTest.java | 根因：原 remapCrossTabRefToken 只处理单层 targetExpr[].source，KSUM 嵌套公式中 targetExpr 元素本身又是 cross_tab_ref（含自己的 source + 自己的 targetExpr），内层未递归 → 导入含嵌套公式时内层 source 仍指旧 UUID。修法：抽 remapTokenRecursive(ObjectNode, idMap, codeMap) 递归方法，对任意深度统一处理：① 含 source 字段 → 命中 idMap 替换；② type=component_subtotal → 替换 component_code；③ type=cross_tab_ref → 递归进 targetExpr 每个元素。原 remapCrossTabRefToken 委托递归方法，remapComponentSubtotalToken 保留向后兼容。TDD：TC-8 先红（内层 OLD_ID_B 未替换断言失败）→ 实现递归 → 全绿；原有 13 用例无回归，共 14 用例全通过。提交 1006159 在 worktree-component-import-ref-remap 分支。
+
+---
+
 [2026-06-18] import-remap G1 - 导出 bundle 记录组件原 id | cpq-backend/src/main/java/com/cpq/component/dto/ComponentExportBundle.java / cpq-backend/src/main/java/com/cpq/component/service/ComponentExportService.java / cpq-backend/src/test/java/com/cpq/component/ComponentExportBundleItemIdTest.java | Item 内类新增 public String id 字段（原组件 id UUID 字符串，放 code 字段前，含注释说明用途）；exportDirectory 组装 Item 时写 item.id = c.id.toString()；TDD：先写测试（编译失败），再实现，两个用例均通过（round-trip 保留 + 老 bundle 向后兼容 null）；老 bundle 无 id 字段反序列化后 id=null，导入端 G3 降级处理。提交 fb60fff 在 worktree-component-import-ref-remap 分支。
 
 ---
