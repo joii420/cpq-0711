@@ -4,6 +4,20 @@
 
 ---
 
+[2026-06-18] import-remap G4 - 目录级存量引用补救端点 remapImportedRefsInDirectory + POST /api/cpq/components/directories/{dirId}/remap-imported-refs：扫描目录内所有组件 formulas，cross_tab_ref.source(UUID)若指向目录外则按 base code(去掉__impN)找目录内副本，component_subtotal.component_code 同理；同 base 多副本按 code 升序取第一；dryRun=true(默认)只返回清单不写库；@RoleAllowed SYSTEM_ADMIN；@Transactional REQUIRES_NEW 隔离外层 JTA 事务。TDD 6 用例(cross_tab_ref重映射/subtotal重映射/dryRun不写库/目录内引用不重映射/无副本记unresolved/多副本取升序第一)全绿；G3 5例+FormulaRefRemapper 14例无回归。| ComponentImportService.java / ComponentResource.java / DirectoryRefRemapServiceTest.java | 关键决策：UPDATE SQL 用位置参数 CAST(?1 AS jsonb) 规避 Hibernate 把 ::jsonb 误解析为命名参数；REQUIRES_NEW 避免测试 utx.begin() 与服务 @Transactional 嵌套冲突。
+
+[2026-06-18] import-remap G3 - ComponentImportService.commit 两遍重映射：第一遍建组件收集 idMap(Item.id→新UUID) + codeMap(原code→finalCode)，第二遍全部建完后调 FormulaRefRemapper.remap() 重写新副本 formulas 里的 cross_tab_ref.source 和 component_subtotal.component_code。SKIP 组件不进 map；Item.id=null 老 bundle 降级 warn + codeMap 仍有效。5 个 TDD 场景（cross_tab_ref重映射 / subtotal重映射 / RENAME后code重映射 / 老bundle向后兼容 / SKIP策略不映射）先红后绿；全套 22 用例无回归。提交 ee1adb9 在 worktree-component-import-ref-remap 分支。| cpq-backend/src/main/java/com/cpq/component/service/ComponentImportService.java / cpq-backend/src/test/java/com/cpq/component/service/ComponentImportRefRemapTest.java | 关键决策：第二遍必须在第一遍全部建完后执行（组件A可能引用同批B）；Panache managed实体赋值后Hibernate脏检查自动flush，无需显式c.persist()。
+
+---
+
+[2026-06-18] import-remap G2 - FormulaRefRemapper 递归处理嵌套 targetExpr（KSUM 内层 cross_tab_ref source 重映射）| cpq-backend/src/main/java/com/cpq/component/service/FormulaRefRemapper.java / cpq-backend/src/test/java/com/cpq/component/service/FormulaRefRemapperTest.java | 根因：原 remapCrossTabRefToken 只处理单层 targetExpr[].source，KSUM 嵌套公式中 targetExpr 元素本身又是 cross_tab_ref（含自己的 source + 自己的 targetExpr），内层未递归 → 导入含嵌套公式时内层 source 仍指旧 UUID。修法：抽 remapTokenRecursive(ObjectNode, idMap, codeMap) 递归方法，对任意深度统一处理：① 含 source 字段 → 命中 idMap 替换；② type=component_subtotal → 替换 component_code；③ type=cross_tab_ref → 递归进 targetExpr 每个元素。原 remapCrossTabRefToken 委托递归方法，remapComponentSubtotalToken 保留向后兼容。TDD：TC-8 先红（内层 OLD_ID_B 未替换断言失败）→ 实现递归 → 全绿；原有 13 用例无回归，共 14 用例全通过。提交 1006159 在 worktree-component-import-ref-remap 分支。
+
+---
+
+[2026-06-18] import-remap G1 - 导出 bundle 记录组件原 id | cpq-backend/src/main/java/com/cpq/component/dto/ComponentExportBundle.java / cpq-backend/src/main/java/com/cpq/component/service/ComponentExportService.java / cpq-backend/src/test/java/com/cpq/component/ComponentExportBundleItemIdTest.java | Item 内类新增 public String id 字段（原组件 id UUID 字符串，放 code 字段前，含注释说明用途）；exportDirectory 组装 Item 时写 item.id = c.id.toString()；TDD：先写测试（编译失败），再实现，两个用例均通过（round-trip 保留 + 老 bundle 向后兼容 null）；老 bundle 无 id 字段反序列化后 id=null，导入端 G3 降级处理。提交 fb60fff 在 worktree-component-import-ref-remap 分支。
+
+---
+
 [2026-06-18] 文档审阅 - 活跃文档冲突消解 + 重复去重（10 项决策）| docs/PRD.md→docs/archive/PRD-v2.8-历史档案.md(git mv+改头部链接) / CLAUDE.md(PRD 路径×2 + §13 措辞改"§2现行/§13未实施备选") / docs/配置方法论-合并版.md(字段配置表后新增「金额字段配置通则」:金额性质字段必标 is_amount=true,类型层规则不点字段名) + docs/方案-报价标准模板v1.7-重配方案.md(改为指向通则,撤掉逐字段 is_amount 枚举——文档=规则不钉具体可变字段) / docs/报价单核价单功能总结.md(§2.4 补 Phase2 整行级快照脚注+版本日期 2026-06-18+PRD 链接改 v3) / docs/配置方法论-合并版.md(§3.3 HTTP_API 安全复述改引用) / docs/全局变量使用指南.md(加 schema 交叉引用配置中心架构§三) / docs/方案制定前必读.md(§一症状表改"去哪查"导航表,保留§三时间线) / docs/统一智能视图路径方案.md(§2现行/§13备选定性 + 删§1.3 重复 V202 SQL 改引用基线§5.1 + §2.3 加 BNF 权威引用) / docs/superpowers/specs+plans 3 份历史文档补红旗 / docs/templates/核价完整版 PRD 链接修复 | 4 并行审阅 agent(配置类/架构基线类/PRD+3D类/130份plans+specs)出冲突重复清单→逐条与用户确认决策→7 并行编辑 agent落地。关键判定：6份配置类零硬冲突(分层互补);PRD.md vs PRD-v3 真冲突(Drools→纯Java/V5六步→V6三步staging/品类折扣移除)故归档;130份历史plans/specs为正常时间演进无需合并(报价快照Phase1/2/4、多小计7plan均合理拆分),仅补红旗。**altitude 修正**:用户指出"文档应体现规则而非钉死具体可变字段"——is_amount 由 4 字段逐项标注返工为「配置方法论通则(不点字段名,配置者按语义判断)+ v1.7 仅引用通则」,基线§4.6(渲染规则)保持不动;原"2 个漏标字段补不补"问题随之消解(不再是文档职责)。git diff 已逐文件核对落盘。
 
 ---

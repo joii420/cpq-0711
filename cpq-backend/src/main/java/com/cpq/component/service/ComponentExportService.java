@@ -55,6 +55,7 @@ public class ComponentExportService {
         List<ComponentExportBundle.Item> items = new ArrayList<>(components.size());
         for (Component c : components) {
             ComponentExportBundle.Item item = new ComponentExportBundle.Item();
+            item.id = c.id.toString(); // 原组件 id，供导入端重映射跨组件引用
             item.code = c.code;
             item.name = c.name;
             item.componentType = c.componentType;
