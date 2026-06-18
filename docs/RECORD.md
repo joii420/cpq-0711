@@ -4,6 +4,10 @@
 
 ---
 
+[2026-06-18] import-remap G3 - ComponentImportService.commit 两遍重映射：第一遍建组件收集 idMap(Item.id→新UUID) + codeMap(原code→finalCode)，第二遍全部建完后调 FormulaRefRemapper.remap() 重写新副本 formulas 里的 cross_tab_ref.source 和 component_subtotal.component_code。SKIP 组件不进 map；Item.id=null 老 bundle 降级 warn + codeMap 仍有效。5 个 TDD 场景（cross_tab_ref重映射 / subtotal重映射 / RENAME后code重映射 / 老bundle向后兼容 / SKIP策略不映射）先红后绿；全套 22 用例无回归。提交 ee1adb9 在 worktree-component-import-ref-remap 分支。| cpq-backend/src/main/java/com/cpq/component/service/ComponentImportService.java / cpq-backend/src/test/java/com/cpq/component/service/ComponentImportRefRemapTest.java | 关键决策：第二遍必须在第一遍全部建完后执行（组件A可能引用同批B）；Panache managed实体赋值后Hibernate脏检查自动flush，无需显式c.persist()。
+
+---
+
 [2026-06-18] import-remap G2 - FormulaRefRemapper 递归处理嵌套 targetExpr（KSUM 内层 cross_tab_ref source 重映射）| cpq-backend/src/main/java/com/cpq/component/service/FormulaRefRemapper.java / cpq-backend/src/test/java/com/cpq/component/service/FormulaRefRemapperTest.java | 根因：原 remapCrossTabRefToken 只处理单层 targetExpr[].source，KSUM 嵌套公式中 targetExpr 元素本身又是 cross_tab_ref（含自己的 source + 自己的 targetExpr），内层未递归 → 导入含嵌套公式时内层 source 仍指旧 UUID。修法：抽 remapTokenRecursive(ObjectNode, idMap, codeMap) 递归方法，对任意深度统一处理：① 含 source 字段 → 命中 idMap 替换；② type=component_subtotal → 替换 component_code；③ type=cross_tab_ref → 递归进 targetExpr 每个元素。原 remapCrossTabRefToken 委托递归方法，remapComponentSubtotalToken 保留向后兼容。TDD：TC-8 先红（内层 OLD_ID_B 未替换断言失败）→ 实现递归 → 全绿；原有 13 用例无回归，共 14 用例全通过。提交 1006159 在 worktree-component-import-ref-remap 分支。
 
 ---
