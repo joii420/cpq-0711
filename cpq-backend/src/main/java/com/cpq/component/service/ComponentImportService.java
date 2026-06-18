@@ -13,12 +13,15 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
+import org.jboss.logging.Logger;
 
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -32,6 +35,7 @@ import java.util.UUID;
 public class ComponentImportService {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final Logger LOG = Logger.getLogger(ComponentImportService.class);
 
     @Inject
     EntityManager em;
@@ -202,6 +206,17 @@ public class ComponentImportService {
         result.skipped = new ArrayList<>();
         int sqlViews = 0;
 
+        // ── 第一遍：创建所有新组件，同时收集 idMap / codeMap ─────────────────
+        // idMap:  原组件 id（bundle Item.id）→ 新副本 id（新建后的 UUID 字符串）
+        // codeMap: 原组件 code（bundle Item.code）→ 新副本 finalCode
+        // 仅 CREATE 的组件进 map；SKIP 的组件不进 map（引用无法重映射）
+        Map<String, String> idMap = new HashMap<>();
+        Map<String, String> codeMap = new HashMap<>();
+        // 记录新建的组件实体，供第二遍重写 formulas
+        List<Component> createdComponents = new ArrayList<>();
+
+        boolean hasNullId = false;
+
         for (ComponentExportBundle.Item it : bundle.components) {
             boolean conflict = it.code != null && existing.contains(it.code);
             if (conflict && policy.equals("SKIP")) {
@@ -231,6 +246,19 @@ public class ComponentImportService {
             c.directoryId = targetDirId;
             c.persist();
 
+            // 收集 idMap：it.id 为 null 时跳过（老 bundle，UUID 类引用无法重映射）
+            if (it.id != null && !it.id.isBlank()) {
+                idMap.put(it.id, c.id.toString());
+            } else {
+                hasNullId = true;
+            }
+            // 收集 codeMap：原 code → finalCode（RENAME 场景 finalCode 与原 code 不同）
+            if (it.code != null) {
+                codeMap.put(it.code, finalCode);
+            }
+
+            createdComponents.add(c);
+
             int viewCnt = 0;
             if (it.sqlViews != null) {
                 for (ComponentExportBundle.SqlView sv : it.sqlViews) {
@@ -257,6 +285,26 @@ public class ComponentImportService {
             ci.renamed = renamed;
             ci.sqlViewCount = viewCnt;
             result.created.add(ci);
+        }
+
+        // 向后兼容提示：老 bundle 无 id 字段，UUID 类跨组件引用无法重映射
+        if (hasNullId) {
+            LOG.warnf("导入 bundle 含老格式 Item(id=null)，UUID 类跨组件引用(cross_tab_ref.source)未重映射；" +
+                      "component_subtotal.component_code 仍通过 codeMap 映射");
+        }
+
+        // ── 第二遍：对每个新建组件重写 formulas 里的跨组件引用 ──────────────
+        // 必须在第一遍全部建完（idMap/codeMap 收集完整）之后执行，
+        // 因为组件 A 可能引用同批次组件 B，B 必须先进 map。
+        if (!idMap.isEmpty() || !codeMap.isEmpty()) {
+            for (Component c : createdComponents) {
+                String remapped = FormulaRefRemapper.remap(c.formulas, idMap, codeMap);
+                if (remapped != null && !remapped.equals(c.formulas)) {
+                    c.formulas = remapped;
+                    // Panache 实体在 @Transactional 方法内，赋值后由 Hibernate 脏检查
+                    // 自动 flush；无需显式调用 c.persist()（已 managed 状态）
+                }
+            }
         }
 
         result.createdCount = result.created.size();
