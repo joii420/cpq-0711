@@ -4,6 +4,8 @@
 
 ---
 
+[2026-06-18] import-remap G4 - 目录级存量引用补救端点 remapImportedRefsInDirectory + POST /api/cpq/components/directories/{dirId}/remap-imported-refs：扫描目录内所有组件 formulas，cross_tab_ref.source(UUID)若指向目录外则按 base code(去掉__impN)找目录内副本，component_subtotal.component_code 同理；同 base 多副本按 code 升序取第一；dryRun=true(默认)只返回清单不写库；@RoleAllowed SYSTEM_ADMIN；@Transactional REQUIRES_NEW 隔离外层 JTA 事务。TDD 6 用例(cross_tab_ref重映射/subtotal重映射/dryRun不写库/目录内引用不重映射/无副本记unresolved/多副本取升序第一)全绿；G3 5例+FormulaRefRemapper 14例无回归。| ComponentImportService.java / ComponentResource.java / DirectoryRefRemapServiceTest.java | 关键决策：UPDATE SQL 用位置参数 CAST(?1 AS jsonb) 规避 Hibernate 把 ::jsonb 误解析为命名参数；REQUIRES_NEW 避免测试 utx.begin() 与服务 @Transactional 嵌套冲突。
+
 [2026-06-18] import-remap G3 - ComponentImportService.commit 两遍重映射：第一遍建组件收集 idMap(Item.id→新UUID) + codeMap(原code→finalCode)，第二遍全部建完后调 FormulaRefRemapper.remap() 重写新副本 formulas 里的 cross_tab_ref.source 和 component_subtotal.component_code。SKIP 组件不进 map；Item.id=null 老 bundle 降级 warn + codeMap 仍有效。5 个 TDD 场景（cross_tab_ref重映射 / subtotal重映射 / RENAME后code重映射 / 老bundle向后兼容 / SKIP策略不映射）先红后绿；全套 22 用例无回归。提交 ee1adb9 在 worktree-component-import-ref-remap 分支。| cpq-backend/src/main/java/com/cpq/component/service/ComponentImportService.java / cpq-backend/src/test/java/com/cpq/component/service/ComponentImportRefRemapTest.java | 关键决策：第二遍必须在第一遍全部建完后执行（组件A可能引用同批B）；Panache managed实体赋值后Hibernate脏检查自动flush，无需显式c.persist()。
 
 ---
