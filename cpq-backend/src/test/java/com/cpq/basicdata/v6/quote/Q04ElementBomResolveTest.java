@@ -60,7 +60,7 @@ class Q04ElementBomResolveTest {
         assertEquals("9000000000", bomMaterialNo(), "生成号回填为 element_bom.material_no");
         String type = em.createNativeQuery("SELECT material_type FROM material_master WHERE material_name=:n")
             .setParameter("n", NAME).getSingleResult().toString();
-        assertEquals("3", type, "material_type 统一写 3");
+        assertEquals("组成件", type, "material_type 统一写汉字「组成件」(对齐 master §12 约定)");
     }
 
     @Test

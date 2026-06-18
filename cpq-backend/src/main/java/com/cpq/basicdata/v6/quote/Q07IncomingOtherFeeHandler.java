@@ -56,7 +56,7 @@ public class Q07IncomingOtherFeeHandler implements SheetHandler {
                 result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
             }
             materialMasterRepo.upsertByMaterialNo(code, inputName,
-                null, null, null, "3", null, null, null, ctx.importedBy, true);
+                null, null, null, "组成件", null, null, null, ctx.importedBy, true);
             result.recordWrite("material_master", 1);
             String finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
             List<Object> key = Arrays.asList(costType, code, finishedMaterialNo);

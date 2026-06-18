@@ -4,7 +4,7 @@
 
 ---
 
-[2026-06-17] 报价导入-料号自动维护推广 - 把 §3/§12 的「投入料号空+名称有值→匹配/生成/登记/回填」推广到全部投入料号键页签：新建型 §4/§6/§7/§8/§9/§10/§13 走 resolve+upsert(type=3,preserveDescriptive=true)+recordWrite，更新型 §5 走 resolveMatchOnly(只匹配不生成) | SheetRow.exact / MaterialNoResolver.resolveMatchOnly / Q04/Q05/Q06/Q07/Q08/Q09/Q10/Q13 + 各 *ResolveTest | 决策：material_type 统一写 3；读键列一律 row.exact 避开 getStr contains 命中名称列；每 handler 自持 BatchState，handler 顺序保证先登记后匹配、生成走 advisory lock+DB MAX 跨 handler 不重号；§5 用 resolveMatchOnly 避免生成的 9 字头号 UPDATE 0 行静默丢数据
+[2026-06-17] 报价导入-料号自动维护推广 - 把 §3/§12 的「投入料号空+名称有值→匹配/生成/登记/回填」推广到全部投入料号键页签：新建型 §4/§6/§7/§8/§9/§10/§13 走 resolve+upsert(type=组成件,preserveDescriptive=true)+recordWrite，更新型 §5 走 resolveMatchOnly(只匹配不生成) | SheetRow.exact / MaterialNoResolver.resolveMatchOnly / Q04/Q05/Q06/Q07/Q08/Q09/Q10/Q13 + 各 *ResolveTest | 决策：material_type 统一写汉字「组成件」(对齐 master §12 约定)；读键列一律 row.exact 避开 getStr contains 命中名称列；每 handler 自持 BatchState，handler 顺序保证先登记后匹配、生成走 advisory lock+DB MAX 跨 handler 不重号；§5 用 resolveMatchOnly 避免生成的 9 字头号 UPDATE 0 行静默丢数据
 
 ---
 

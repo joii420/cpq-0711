@@ -209,6 +209,6 @@ return String.valueOf(nextNo)
 ## 2026-06-17 推广续作
 
 §3/§12 的料号匹配/生成规则已推广到全部「投入料号 / 组成件料号」键的报价页签，详见实现计划 `docs/superpowers/plans/2026-06-17-quote-import-materialno-autogen-extend.md`：
-- 新建型（匹配/生成/登记 type=3）：§4 物料与元素BOM、§6 来料固定加工费、§7 来料其他费用、§8 来料年降、§9 来料回收折扣、§10 自制加工费、§13 组成件其他费用
+- 新建型（匹配/生成/登记 type=组成件）：§4 物料与元素BOM、§6 来料固定加工费、§7 来料其他费用、§8 来料年降、§9 来料回收折扣、§10 自制加工费、§13 组成件其他费用
 - 更新型（仅匹配不生成）：§5 元素回收折扣
 - 基础设施：`SheetRow.exact()` 精确表头读取 + `MaterialNoResolver.resolveMatchOnly()`。
