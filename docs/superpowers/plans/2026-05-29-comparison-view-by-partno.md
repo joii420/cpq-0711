@@ -1,5 +1,7 @@
 # 比对视图重构（料号双行对比 + 单元格高亮）Implementation Plan
 
+> 📌 **状态**：实现计划/设计（交付状态未标注——若已落地请补 commit/E2E 链接；本文按历史设计快照保留）
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把报价单编辑里的「比对视图」重构为：按料号横向对比报价单 Excel 视图与核价单 Excel 视图、相同 `comparison_tag` 字段一个料号两行（报价/核价）、值不同时两格高亮，并支持导出 Excel。

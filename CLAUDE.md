@@ -34,10 +34,10 @@ Templates and components use JSONB storage for flexible field/formula configurat
 
 - 🚨 **`docs/方案制定前必读.md` — 历史教训速查 + 决策清单（任何编码/架构/迁移方案制定前必读，不读 = 高概率撞已知坑；含症状→反模式速查表 + 7 类改动决策树 + 连环 bug 案例 + 7 步自检清单）**
 - `docs/PRD-v3.md` - Full product requirements with data models, user scenarios, and project plan（功能交付的唯一标准,2026-05-13 起活跃版本）
-- `docs/PRD.md` - 已废弃的历史 PRD (v1.0~v2.8),仅作变更决策回溯用途,**不再维护**
+- `docs/archive/PRD-v2.8-历史档案.md` - 已废弃的历史 PRD (v1.0~v2.8),仅作变更决策回溯用途,**不再维护**（2026-06-18 由 `docs/PRD.md` 移入 `archive/`）
 - `docs/RECORD.md` - Development record for multi-agent shared memory（开始工作前必须先阅读此文件了解历史上下文）
 - 🔒 **`docs/三大核心模块基线.md` - 组件管理 / 模板管理 / 报价单渲染 三大核心架构基线（2026-05-21 终态锁定，后续不轻易修改；任何破坏性改动前必读 + 评估 + 走 architect）**
-- `docs/统一智能视图路径方案.md` - 配置驱动方案 §13 终态设计（含 RuntimeContext 上下文字典 + 显式谓词 path + Tab visibleWhen 表达式）
+- `docs/统一智能视图路径方案.md` - 配置驱动方案。**当前版本采用 §2 核心方案（已随 V202 智能视图落地）**；§13（RuntimeContext 上下文字典 + 显式谓词 path + Tab visibleWhen 表达式）为**未来演进方向的备选设计，尚未实施**，不要当成现行终态
 - `docs/反模式.md` - 反模式速查（PR 自检用，新增功能前必读）
 - 🆕 `docs/配置方法论-合并版.md` - **组件字段 / Excel 模板 / 公式 三层配置的统一权威指南**（第一部·操作手册 + 第二部·原理参考；由 `配置方法论.md` + `Excel模板配置指南.md` + `组件管理字段配置指南.md` 三份合并去重、以当前代码为准重写，与代码同源；**任何字段 / 指标 / 公式 / Excel 列配置改动前必读**；含 §3.5 字段类型切换清理矩阵 / §11 字段类型联动协议(AP-44) / 附录 A 常见坑速查 / 附录 B V6 现役 vs V44 废弃表对照）
 - `docs/配置中心架构.md` - 三层模型 + snapshot 同步 + 管理端点 + datasource_field token（架构基线）
@@ -78,7 +78,7 @@ All UI, prototypes, and PRD are in Chinese. Code artifacts (variables, APIs, com
 ## 开发规范
 - 当需求发生变更时，必须同步更新 PRD-v3.md 的对应章节
 - 在 PRD-v3.md 末尾或第 9 章演进史中记录所有调整
-- 不要再修改 PRD.md（已废弃归档）
+- 不要再修改 `docs/archive/PRD-v2.8-历史档案.md`（原 PRD.md，已废弃归档）
 
 ## 开发流程规范（新功能必须用隔离 worktree 分支）🔒
 **强制**：开发任何新功能 / 较大改动，**必须**先用 `superpowers:using-git-worktrees` 技能创建**隔离 worktree 分支**，在该隔离工作区里开发，**不直接在主工作区或 master 上改**。
