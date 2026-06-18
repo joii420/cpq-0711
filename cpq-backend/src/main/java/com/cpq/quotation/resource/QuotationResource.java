@@ -69,6 +69,9 @@ public class QuotationResource {
     @Inject
     com.cpq.quotation.service.CardSnapshotService cardSnapshotService;
 
+    @Inject
+    jakarta.persistence.EntityManager em;
+
     @GET
     public ApiResponse<PageResult<QuotationDTO>> list(
             @QueryParam("page") @DefaultValue("0") int page,
@@ -152,8 +155,13 @@ public class QuotationResource {
         // (useSnapQuote=true), 否则报价卡走实时展开路径——该路径不读 deletedRowKeys 墓碑, 导致
         // driver 行删除"点了无反应"。故仅在确有新行落快照时, 重建一份新鲜 DTO 返回(读路径, 无副作用);
         // 高频防抖空存(无新行)不触发, 不增加额外开销。
+        //
+        // ⚠ 一级缓存陷阱: snapshotLineValues(@Transactional)已把值落库提交, 但本请求会话里在
+        // 行 137 findById 时已缓存了"无快照"的 line 实体; 直接 getById 会命中陈旧 L1 缓存 → 仍读到
+        // quoteCardValues=null。必须先 em.clear() 驱逐, 让 getById 重新从库读已提交的新值。
         if (snapshotsCreated) {
             try {
+                em.clear();
                 dto = quotationService.getById(id);
             } catch (Exception ignore) {
                 // 取不到新鲜 DTO 时退回原 dto(不影响保存本身)
