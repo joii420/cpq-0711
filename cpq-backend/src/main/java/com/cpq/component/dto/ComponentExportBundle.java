@@ -31,6 +31,9 @@ public class ComponentExportBundle {
     }
 
     public static class Item {
+        /** 原组件 id（UUID 字符串），供导入端重映射跨组件引用（cross_tab_ref.source 等）。
+         *  老 bundle（无此字段）反序列化后为 null，导入端需做降级处理。 */
+        public String id;
         public String code;
         public String name;
         public String componentType;
