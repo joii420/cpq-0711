@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Popover, Button, Segmented, Alert, Space, message, Dropdown } from 'antd';
-import { DatabaseOutlined, SettingOutlined, PlusOutlined, DownOutlined } from '@ant-design/icons';
+import { Popover, Button, Segmented, Alert, Space, message, Dropdown, Modal } from 'antd';
+import { DatabaseOutlined, SettingOutlined, PlusOutlined, DownOutlined, ReloadOutlined } from '@ant-design/icons';
 import { evaluateExpression, getGlobalPathCache, evaluateListFormulaString } from '../../utils/formulaEngine';
 import { evalCondTree, condTreeColumns, type CondTree } from '../../utils/condTree';
 import { usePathFormulaCache } from './usePathFormulaCache';
@@ -34,6 +34,7 @@ import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { useTreeCollapse } from './useTreeCollapse';
 import { splitRows, rowAt, isManualRow } from './manualRows';
 import { resolveInputDefault, resolveInputDefaultSourceOnly } from './inputDefaults';
+import { resolveFieldWidth } from '../component/types';
 import './quotation.css';
 
 // 与 QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard 中的同名函数保持完全对齐。
@@ -58,6 +59,8 @@ export interface ComponentField {
   content?: string;
   is_amount?: boolean;
   is_subtotal?: boolean;
+  /** 列展示宽度(px)，空/0=默认 120。来自 component.fields，经 snapshot/结构透传。 */
+  width?: number;
   /** Plan 3a：条件公式。存在即走条件模式（优先于 formula_name）。 */
   conditional_formula?: { rules: { when: CondTree; formula: string }[]; default: string };
   is_required?: boolean;
@@ -240,8 +243,12 @@ export interface QuotationStep2Props {
   costingCardTemplateId?: string;
   /** 报价漂移检测结果(来自报价单 getById 返回的 driftDetection 字段) */
   driftDetection?: DriftDetectionResult;
-  /** 刷新报价单后的回调(用于横幅刷新按钮) */
+  /** 刷新报价单后的回调(用于横幅版本漂移刷新按钮) */
   onRefreshQuotation?: () => void;
+  /** 纯重载回调：仅重新 getById+applyData，不触发版本漂移刷新（「刷新基础数据」按钮专用） */
+  onReloadQuotation?: () => void | Promise<void>;
+  /** 当前报价单状态（来自后端 quotation.status），用于控制「刷新基础数据」按钮仅 DRAFT 可见 */
+  quotationStatus?: string;
   /** Phase4 Task3: 报价卡片结构快照(顶层, 提供 rowKeyFields) — 报价侧渲染读 editRows/formulaResults + 编辑回写需要 */
   quoteCardStructure?: CardStructure | null;
   /** Phase4 Task3: 核价卡片结构快照(暂仅占位, 核价侧本任务不切换) */
@@ -2175,9 +2182,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         <th style={{ minWidth: 90 }}>版本</th>
                       </>
                     )}
-                    {activeComponent.fields.map(field => (
-                      <th key={field.name || field.key}>{field.label || field.name}</th>
-                    ))}
+                    {activeComponent.fields.map(field => {
+                      const w = resolveFieldWidth(field.width);
+                      return (
+                        <th key={field.name || field.key} style={{ width: w, minWidth: w }}>
+                          {field.label || field.name}
+                        </th>
+                      );
+                    })}
                     <th style={{ width: 40 }} />
                   </tr>
                 </thead>
@@ -2683,6 +2695,8 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   quotationId,
   driftDetection,
   onRefreshQuotation,
+  onReloadQuotation,
+  quotationStatus,
   quoteCardStructure,
   costingCardStructure,
 }) => {
@@ -2691,6 +2705,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   const [mainTab, setMainTab] = useState<'quote' | 'costing' | 'comparison'>('quote');
   const [viewType, setViewType] = useState<'card' | 'excel'>('card');
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshingSnapshot, setRefreshingSnapshot] = useState(false);
   // autoPopulating state 保留 — UI(空状态文案、loading)仍在用,但实际触发已移除。
   // 父组件 QuotationWizard 已接管 autoPopulate(L631-668),Step2 内的重复实现会导致
   // 同 URL 含 ?autoPopulate=1 时 Wizard + Step2 各 fetch+append 一次,产生 2× 重复 lineItem,
@@ -3073,6 +3088,32 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
     }
   };
 
+  // 「刷新基础数据」按钮处理：调后端 refreshCardSnapshot 重算快照，再整页重载
+  const handleRefreshSnapshot = () => {
+    if (!quotationId) return;
+    Modal.confirm({
+      title: '刷新基础数据',
+      content: '将按最新基础数据重算本报价单（公式重算、driver 行重查）。已删行的编辑会丢失；模板结构不会变化。确认刷新？',
+      okText: '刷新',
+      cancelText: '取消',
+      onOk: async () => {
+        setRefreshingSnapshot(true);
+        const hideLoading = message.loading('正在刷新基础数据…', 0);
+        try {
+          await quotationService.refreshCardSnapshot(quotationId);
+          hideLoading();
+          await onReloadQuotation?.();
+          message.success('已按最新基础数据刷新');
+        } catch {
+          hideLoading();
+          message.error('刷新失败，请重试');
+        } finally {
+          setRefreshingSnapshot(false);
+        }
+      },
+    });
+  };
+
   // 构建漂移横幅文案
   const buildDriftMessage = () => {
     if (!driftDetection?.driftedRecords?.length) return '基础数据已更新，部分版本已过期';
@@ -3148,6 +3189,16 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
                 size="small"
               />
             </>
+          )}
+          {quotationStatus === 'DRAFT' && quotationId && (
+            <Button
+              data-testid="refresh-basic-data-btn"
+              icon={<ReloadOutlined />}
+              loading={refreshingSnapshot}
+              onClick={handleRefreshSnapshot}
+            >
+              刷新基础数据
+            </Button>
           )}
           {mainTab === 'quote' && (
             <Dropdown

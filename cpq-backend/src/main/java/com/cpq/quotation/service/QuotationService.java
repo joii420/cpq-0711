@@ -2165,7 +2165,7 @@ public class QuotationService {
             throw new BusinessException(500, "deleted_row_keys 更新失败: " + e.getMessage());
         }
         QuotationLineItem li = QuotationLineItem.findById(lineItemId);
-        if (li != null) cardSnapshotService.refreshQuoteCardValues(li);
+        if (li != null) cardSnapshotService.refreshQuoteCardValues(li, true);
     }
 
     @Transactional
@@ -2175,6 +2175,6 @@ public class QuotationService {
         if (cd == null) return;
         cd.deletedRowKeys = "[]";
         QuotationLineItem li = QuotationLineItem.findById(lineItemId);
-        if (li != null) cardSnapshotService.refreshQuoteCardValues(li);
+        if (li != null) cardSnapshotService.refreshQuoteCardValues(li, true);
     }
 }

@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Input, Select, Checkbox, Button, Typography, Tooltip, Space, Modal, Form, Alert, Segmented, Tag } from 'antd';
+import { Input, InputNumber, Select, Checkbox, Button, Typography, Tooltip, Space, Modal, Form, Alert, Segmented, Tag } from 'antd';
 import { dataSourceResolverService, RESOLVER_TYPE_LABEL } from '../../services/dataSourceResolverService';
 import { SortableTable, DragHandle } from '../../components/SortableTable';
 
 const { Text } = Typography;
 import { DeleteOutlined, PlusOutlined, LinkOutlined, EditOutlined } from '@ant-design/icons';
 import type { FieldItem, FormulaItem } from './types';
-import { FIELD_TYPE_OPTIONS, newFieldRow } from './types';
+import { FIELD_TYPE_OPTIONS, newFieldRow, FIELD_WIDTH_PRESETS, resolveFieldWidth } from './types';
 import PathPickerDrawer from './PathPickerDrawer';
 import GlobalVariablePickerDrawer from '../../components/GlobalVariablePickerDrawer';
 import DefaultSourceEditor from './DefaultSourceEditor';
@@ -432,6 +432,39 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
         />
       ),
     },
+    {
+      title: '宽度',
+      key: 'width',
+      width: 150,
+      render: (_: unknown, record: FieldItem) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <InputNumber
+            size="small"
+            min={1}
+            value={record.width}
+            onChange={(val) =>
+              updateField(record.key, { width: typeof val === 'number' && val > 0 ? val : undefined })
+            }
+            placeholder="默认120"
+            addonAfter="px"
+            style={{ width: '100%' }}
+          />
+          <Space size={2}>
+            {FIELD_WIDTH_PRESETS.map((p) => (
+              <Button
+                key={p.value}
+                size="small"
+                type={record.width === p.value ? 'primary' : 'default'}
+                style={{ padding: '0 6px', height: 18, fontSize: 11 }}
+                onClick={() => updateField(record.key, { width: p.value })}
+              >
+                {p.label}
+              </Button>
+            ))}
+          </Space>
+        </div>
+      ),
+    },
     ...(onToggleRowKey ? [{
       title: '行键',
       key: 'is_row_key',
@@ -555,6 +588,31 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
         locale={{ emptyText: '暂无字段，点击"添加字段"' }}
         onReorder={(next) => onChange(next.map((f, i) => ({ ...f, sort_order: i })))}
       />
+
+      {/* 字段宽度就地预览：按各字段 width 横排成模拟列头，接近报价单真实列排布 */}
+      <div className="cm-field-width-preview">
+        <div className="cm-field-width-preview-title">宽度预览（模拟报价单列头）</div>
+        {fields.length === 0 ? (
+          <Text type="secondary" style={{ fontSize: 12 }}>暂无字段</Text>
+        ) : (
+          <div className="cm-field-width-preview-row">
+            {fields.map((f) => {
+              const w = resolveFieldWidth(f.width);
+              return (
+                <div
+                  key={f.key}
+                  className="cm-field-width-preview-cell"
+                  style={{ width: w, minWidth: w }}
+                  title={`${f.name || f.key || '(未命名)'} · ${w}px`}
+                >
+                  <span className="cm-fwp-name">{f.name || f.key || '(未命名)'}</span>
+                  <span className="cm-fwp-size">{w}px</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* 路径配置: BASIC_DATA → basic_data_path; DATA_SOURCE → datasource_binding.bnf_path */}
       <PathPickerDrawer

@@ -43,7 +43,8 @@ public class MaterialBomMergeHandler {
     private static final List<String> CHILD_CONTENT = List.of(
         "seq_no", "component_no", "component_usage_type", "composition_qty",
         "base_qty", "issue_unit", "scrap_rate", "defect_rate",
-        "operation_no", "item_seq");
+        "operation_no", "item_seq",
+        "rough_weight", "net_weight", "weight_unit");
 
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public SheetImportResult merge(List<SheetRow> materialRows, List<SheetRow> assemblyRows, ImportContext ctx) {
@@ -69,17 +70,17 @@ public class MaterialBomMergeHandler {
             } catch (MaterialNoUnresolvableException ex) {
                 result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
             }
-            // 决策 #9：报价 §3 已存在则保留旧名称/类型 → preserveDescriptive=true
+            // material_master：产出料号类型只存汉字（labelOnly）
             materialMasterRepo.upsertByMaterialNo(componentNo, componentName,
-                null, null, null, digitsOnly(componentUsageType), null, null, null, ctx.importedBy, true);
+                null, null, null, labelOnly(componentUsageType), null, null, null, ctx.importedBy, true);
             result.recordWrite("material_master", 1);
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("seq_no", row.getInt("项次"));
             c.put("component_no", componentNo);
-            c.put("component_usage_type", componentUsageType);
-            c.put("composition_qty", row.getDecimal("材料毛重", "毛重"));
-            c.put("base_qty", row.getDecimal("材料净重", "净重"));
-            c.put("issue_unit", row.getStr("重量单位"));
+            c.put("component_usage_type", labelOnly(componentUsageType));
+            c.put("rough_weight", row.getDecimal("材料毛重", "毛重"));
+            c.put("net_weight",   row.getDecimal("材料净重", "净重"));
+            c.put("weight_unit",  row.getStr("重量单位"));
             c.put("scrap_rate", row.getDecimal("损耗率"));
             c.put("defect_rate", row.getDecimal("不良率"));
             matByMat.computeIfAbsent(materialNo, k -> new LinkedHashMap<>())
@@ -99,9 +100,9 @@ public class MaterialBomMergeHandler {
             } catch (MaterialNoUnresolvableException ex) {
                 result.recordError(row.rowNo, "组成件料号", "料号与名称均为空"); continue;
             }
-            // §12 料号表同步：material_type 固定 3，已存在保留原值（决策 #6 → preserveDescriptive=true）
+            // §12 料号表同步：组成件 material_type 固定存汉字「组成件」，已存在保留原值（preserveDescriptive=true）
             materialMasterRepo.upsertByMaterialNo(componentNo, componentName,
-                null, null, null, "3", null, null, null, ctx.importedBy, true);
+                null, null, null, "组成件", null, null, null, ctx.importedBy, true);
             result.recordWrite("material_master", 1);
 
             // 工序回填（决策 #5）：工序编号空 + 组装工序(工序名称)有值 → 按名取第一条 process_no
@@ -184,15 +185,22 @@ public class MaterialBomMergeHandler {
         return materialNo != null && materialNo.startsWith("CFG-");
     }
 
-    private static String digitsOnly(String s) {
+    /**
+     * 「产出料号类型」只存汉字：剥离前导数字 + 紧随的一个分隔符，保留其后标签。
+     * "1.银点类"→"银点类"；"2.非银点类"→"非银点类"；"组成件"→"组成件"；"1"→"1"；null→null。
+     */
+    static String labelOnly(String s) {
         if (s == null) return null;
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < s.length(); i++) {
-            char ch = s.charAt(i);
-            if (ch >= '0' && ch <= '9') sb.append(ch);
-            else if (sb.length() > 0) break;
+        String t = s.trim();
+        int i = 0;
+        while (i < t.length() && t.charAt(i) >= '0' && t.charAt(i) <= '9') i++;
+        if (i > 0 && i < t.length()) {
+            char sep = t.charAt(i);
+            if (sep == '.' || sep == '。' || sep == '、' || sep == '．'
+                    || sep == '/' || sep == '／' || sep == ' ' || sep == '\t') i++;
         }
-        return sb.length() == 0 ? null : sb.toString();
+        String rest = t.substring(i).trim();
+        return rest.isEmpty() ? t : rest;
     }
 
 }

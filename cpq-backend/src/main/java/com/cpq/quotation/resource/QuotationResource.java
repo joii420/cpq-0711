@@ -178,7 +178,7 @@ public class QuotationResource {
     /**
      * 草稿态重刷报价侧卡片值快照（报价单整份快照 Phase 2 §5）。
      * 仅 DRAFT 执行（遍历报价行重 expand + 按行键保编辑 + 重算）；非 DRAFT no-op 返 refreshed=0。
-     * 前端 Step2 进入编辑态时调用，再 getById 拿最新快照渲染。
+     * 前端 Step2「刷新基础数据」按钮显式触发（2026-06-18 草稿默认冻结后不再 on-open 自动调用），再 getById 拿最新快照渲染。
      */
     @POST
     @Path("/{id}/refresh-card-snapshot")

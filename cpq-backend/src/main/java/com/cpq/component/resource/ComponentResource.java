@@ -86,6 +86,24 @@ public class ComponentResource {
     }
 
     /**
+     * C1: 全库 BASIC_DATA path↔视图列名审计（只读，不修改数据）。
+     *
+     * <p>遍历全库所有组件的 fields[].default_source.path，检出 $view.col 形态中
+     * col 与该组件 component_sql_view.declared_columns 不一致的可疑项，
+     * 并给出下划线前缀差异的修正建议。
+     *
+     * <p>用途：手工执行后根据清单在 Task C2 修正存量 path 配置，组件保存校验在 C3 防回归。
+     *
+     * @return 可疑项列表；全部正常时返回空列表
+     */
+    @GET
+    @Path("/audit-basicdata-paths")
+    @RoleAllowed({"SYSTEM_ADMIN", "PRICING_MANAGER"})
+    public ApiResponse<List<Map<String, Object>>> auditBasicDataPaths() {
+        return ApiResponse.success(componentService.auditBasicDataPaths());
+    }
+
+    /**
      * H1: 手工触发: 同步所有引用该组件的模板 snapshot.
      * 组件 update 已自动调用本同款逻辑; 此端点用于:
      *  - 历史模板 (V184 之前发布) 修复

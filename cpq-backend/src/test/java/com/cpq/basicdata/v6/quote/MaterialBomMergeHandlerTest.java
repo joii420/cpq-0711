@@ -182,4 +182,23 @@ class MaterialBomMergeHandlerTest {
         assertEquals(0L, ((Number) em.createNativeQuery(
             "SELECT count(*) FROM material_bom WHERE material_no=:c").setParameter("c", CFG).getSingleResult()).longValue());
     }
+
+    @Test
+    void materialOnly_writesWeightColumns_notLegacyAndTypeAsLabel() {
+        // matRow 默认 产出料号类型="2.非银点类", 材料毛重=qty, 重量单位=KG（净重缺省=null）
+        handler.merge(List.of(matRow(1, 1, "TEST-MBM-C1", "0.5")), List.of(), ctx());
+
+        Object[] r = (Object[]) em.createNativeQuery(
+            "SELECT rough_weight, net_weight, weight_unit, composition_qty, base_qty, issue_unit, component_usage_type " +
+            "FROM material_bom_item WHERE material_no=:m AND is_current=TRUE")
+            .setParameter("m", MAT).getSingleResult();
+
+        assertEquals(0, new java.math.BigDecimal("0.5").compareTo((java.math.BigDecimal) r[0]), "rough_weight 应=0.5");
+        assertNull(r[1], "net_weight 缺省输入应=null");
+        assertEquals("KG", r[2], "weight_unit 应=KG");
+        assertNull(r[3], "composition_qty 旧字段不再写");
+        assertNull(r[4], "base_qty 旧字段不再写");
+        assertNull(r[5], "issue_unit 旧字段不再写");
+        assertEquals("非银点类", r[6], "component_usage_type 应存汉字");
+    }
 }

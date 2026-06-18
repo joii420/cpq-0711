@@ -113,6 +113,8 @@ export interface FieldItem {
    * 存储值 = 被引用字段的 name（字符串）。留空 = 不换算。
    */
   unit_source_field?: string;
+  /** 报价单/核价单渲染时该字段列的展示宽度(px)。空/0 = 默认 120。仅展示用，不参与计算。 */
+  width?: number;
 }
 
 export interface DefaultSource {
@@ -282,4 +284,22 @@ export interface RowKeyCandidate {
   reason: string | null;
   /** 行键来源："driver" | "input"；eligible=false 时可能为 undefined。 */
   source?: 'driver' | 'input' | null;
+}
+
+/** 字段列在报价单/核价单表格渲染时的默认展示宽度(px)，未设置时使用。 */
+export const DEFAULT_FIELD_WIDTH = 120;
+
+/** 字段宽度预设档位：窄/中/宽。仅作 UI 快捷，最终只存像素值。 */
+export const FIELD_WIDTH_PRESETS = [
+  { label: '窄', value: 80 },
+  { label: '中', value: 120 },
+  { label: '宽', value: 200 },
+] as const;
+
+/**
+ * 解析字段展示宽度(px)。width 为空 / 0 / 负数 一律视为未设置 → 返回 DEFAULT_FIELD_WIDTH。
+ * 报价单/核价单详情页与编辑页渲染列宽的唯一真源。
+ */
+export function resolveFieldWidth(width?: number | null): number {
+  return typeof width === 'number' && width > 0 ? width : DEFAULT_FIELD_WIDTH;
 }

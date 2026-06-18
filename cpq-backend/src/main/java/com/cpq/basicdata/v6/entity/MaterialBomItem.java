@@ -57,6 +57,15 @@ public class MaterialBomItem extends V6BaseEntity {
     @Column(name = "base_qty", precision = 18, scale = 6)
     public BigDecimal baseQty;
 
+    @Column(name = "rough_weight", precision = 18, scale = 6)
+    public BigDecimal roughWeight;
+
+    @Column(name = "net_weight", precision = 18, scale = 6)
+    public BigDecimal netWeight;
+
+    @Column(name = "weight_unit", length = 20)
+    public String weightUnit;
+
     @Column(name = "component_usage_type", length = 20)
     public String componentUsageType;
 
