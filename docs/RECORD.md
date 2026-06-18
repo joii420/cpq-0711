@@ -4,6 +4,10 @@
 
 ---
 
+[2026-06-18] 组件导入跨组件引用重映射 Task G2 - FormulaRefRemapper 纯函数 + TDD 单测(13/13 全绿) | cpq-backend/src/main/java/com/cpq/component/service/FormulaRefRemapper.java(新建) / cpq-backend/src/test/java/com/cpq/component/service/FormulaRefRemapperTest.java(新建 TDD) | 真实字段名以代码为准:cross_tab_ref.source(UUID)/cross_tab_ref.targetExpr[].source(UUID)/component_subtotal.component_code(code 字符串,tab_name 字段不在重映射范围内); 纯静态工具无 CDI,static final ObjectMapper 实例复用; null/空/非数组/非法 JSON 全部返回原值不抛; 幂等:新值不在 idMap key 集合内故二次 remap 无变化; 供 G3(导入 commit)和 G4(存量补救)复用
+
+---
+
 [2026-06-18] 报价冻结 Task F - E2E spec 改写（草稿冻结行为验证）| cpq-frontend/e2e/quotation-flow.spec.ts(新增 TC-F1/TC-F2 + 工具函数) / cpq-frontend/src/pages/quotation/QuotationStep2.tsx(刷新按钮加 data-testid="refresh-basic-data-btn") | TC-F1：打开 DRAFT 报价单通过 page.on('request') 监听，断言未发出 POST /quotations/{id}/refresh-card-snapshot（B1 删除自动重刷的回归保障）；TC-F2：点击「刷新基础数据」按钮 → 确认 Modal 点「刷新」→ 断言恰好触发 1 次 POST refresh-card-snapshot + 后端 2xx + message.success 提示；两用例均通过 createMinimalDraftQuotation() 直连 8081 API 快速创建 DRAFT 测试数据（无需走 UI 五步向导）；原有主流程用例无结构改动（不含 refresh-card-snapshot 监听，因为是新建流程不打开草稿）；tsc 0 错误。**spec 已写，运行验证待合并到 master 后执行**（worktree 未合并，共享 dev server 跑的是旧代码）。提交 eaf5d8b 在 worktree-quote-draft-freeze 分支。
 
 ---
