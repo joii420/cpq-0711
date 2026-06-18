@@ -312,6 +312,55 @@ class FormulaRefRemapperTest {
         assertTrue(result.contains(OLD_ID_A), "null idMap 不替换任何 source");
     }
 
+    // ── TC-8: 嵌套 cross_tab_ref — KSUM 场景：内层 cross_tab_ref 的 source 和
+    //         它自身的 targetExpr[].source 也必须被递归替换 ───────────────────
+
+    @Test
+    void nested_crossTabRef_in_targetExpr_recursively_remapped() throws Exception {
+        // 外层 cross_tab_ref: source=OLD_ID_A, targetExpr 中嵌套一个内层 cross_tab_ref
+        // 内层 cross_tab_ref: source=OLD_ID_B, 其 targetExpr:[{type:field, source:OLD_ID_B}]
+        String formulasJson = """
+                [
+                  {
+                    "name": "KSUM嵌套公式",
+                    "expression": [
+                      {
+                        "type": "cross_tab_ref",
+                        "agg": "KSUM",
+                        "source": "%s",
+                        "sourceLabel": "外层组件",
+                        "targetExpr": [
+                          {
+                            "type": "cross_tab_ref",
+                            "agg": "SUM",
+                            "source": "%s",
+                            "sourceLabel": "内层组件",
+                            "targetExpr": [
+                              { "type": "field", "value": "数量", "source": "%s" }
+                            ],
+                            "match": []
+                          }
+                        ],
+                        "match": []
+                      }
+                    ]
+                  }
+                ]
+                """.formatted(OLD_ID_A, OLD_ID_B, OLD_ID_B);
+
+        Map<String, String> idMap = Map.of(OLD_ID_A, NEW_ID_A, OLD_ID_B, NEW_ID_B);
+        String result = FormulaRefRemapper.remap(formulasJson, idMap, Map.of());
+
+        // 外层 source 应替换
+        assertTrue(result.contains(NEW_ID_A), "外层 cross_tab_ref.source 应被替换为 NEW_ID_A");
+        // 内层 cross_tab_ref.source 应递归替换
+        assertTrue(result.contains(NEW_ID_B), "内层 cross_tab_ref.source 应被递归替换为 NEW_ID_B");
+        // 内层 targetExpr[].source (field token) 也应递归替换
+        // 验证：所有旧 id 均不再出现
+        assertFalse(result.contains(OLD_ID_A), "旧 OLD_ID_A 不应残留");
+        assertFalse(result.contains(OLD_ID_B), "旧 OLD_ID_B 不应残留（内层 source 和内层 targetExpr[].source 均已替换）");
+    }
+
     // ── TC-7: 幂等 — 对已重映射结果再 remap(同 map) → 不变 ─────────────────
 
     @Test

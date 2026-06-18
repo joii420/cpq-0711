@@ -103,14 +103,23 @@ public final class FormulaRefRemapper {
     }
 
     /**
-     * 重写 cross_tab_ref token 内的 source 及 targetExpr[].source。
+     * 递归重映射单个 token（任意深度）。
      *
-     * @return true 表示发生了替换
+     * <ul>
+     *   <li>含 {@code source} 字段（UUID）的 token → 若命中 idMap 则替换</li>
+     *   <li>{@code type=cross_tab_ref} → 额外递归进其 {@code targetExpr} 数组（每个元素可能
+     *       又是 cross_tab_ref 或 field token，再次调用本方法）</li>
+     *   <li>{@code type=component_subtotal} → 重映射 {@code component_code}</li>
+     * </ul>
+     *
+     * @return true 表示发生了任何替换
      */
-    private static boolean remapCrossTabRefToken(ObjectNode token, Map<String, String> idMap) {
+    private static boolean remapTokenRecursive(ObjectNode token,
+                                               Map<String, String> idMap,
+                                               Map<String, String> codeMap) {
         boolean changed = false;
 
-        // ① 顶层 source
+        // ① 任意含 source 字段的 token → 替换 UUID
         JsonNode sourceNode = token.get("source");
         if (sourceNode != null && sourceNode.isTextual()) {
             String oldId = sourceNode.asText();
@@ -121,19 +130,29 @@ public final class FormulaRefRemapper {
             }
         }
 
-        // ② targetExpr 数组内每个元素的 source
-        JsonNode targetExprNode = token.get("targetExpr");
-        if (targetExprNode != null && targetExprNode.isArray()) {
-            ArrayNode targetExpr = (ArrayNode) targetExprNode;
-            for (int i = 0; i < targetExpr.size(); i++) {
-                JsonNode elem = targetExpr.get(i);
-                if (!elem.isObject()) continue;
-                JsonNode elemSource = elem.get("source");
-                if (elemSource != null && elemSource.isTextual()) {
-                    String oldId = elemSource.asText();
-                    String newId = idMap.get(oldId);
-                    if (newId != null) {
-                        ((ObjectNode) elem).put("source", newId);
+        // ② component_subtotal → 替换 component_code
+        String type = token.path("type").asText("");
+        if ("component_subtotal".equals(type)) {
+            JsonNode codeNode = token.get("component_code");
+            if (codeNode != null && codeNode.isTextual()) {
+                String oldCode = codeNode.asText();
+                String newCode = codeMap.get(oldCode);
+                if (newCode != null) {
+                    token.put("component_code", newCode);
+                    changed = true;
+                }
+            }
+        }
+
+        // ③ cross_tab_ref → 递归处理 targetExpr 数组的每个元素（任意深度嵌套）
+        if ("cross_tab_ref".equals(type)) {
+            JsonNode targetExprNode = token.get("targetExpr");
+            if (targetExprNode != null && targetExprNode.isArray()) {
+                ArrayNode targetExpr = (ArrayNode) targetExprNode;
+                for (int i = 0; i < targetExpr.size(); i++) {
+                    JsonNode elem = targetExpr.get(i);
+                    if (!elem.isObject()) continue;
+                    if (remapTokenRecursive((ObjectNode) elem, idMap, codeMap)) {
                         changed = true;
                     }
                 }
@@ -141,6 +160,15 @@ public final class FormulaRefRemapper {
         }
 
         return changed;
+    }
+
+    /**
+     * 重写 cross_tab_ref token 内的 source 及 targetExpr（递归，任意深度）。
+     *
+     * @return true 表示发生了替换
+     */
+    private static boolean remapCrossTabRefToken(ObjectNode token, Map<String, String> idMap) {
+        return remapTokenRecursive(token, idMap, Map.of());
     }
 
     /**
