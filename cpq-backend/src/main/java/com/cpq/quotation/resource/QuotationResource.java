@@ -127,6 +127,7 @@ public class QuotationResource {
         //   3) **严禁**在此高频防抖保存路径对已有行做 driver 全量重 expand(refreshQuoteCardValues)——
         //      会占满 worker 线程池 → 503/502(代理层 502 Bad Gateway)。全量重 expand 只在草稿**打开**时
         //      的 refresh-card-snapshot 触发一次。详见 docs/RECORD.md。
+        boolean snapshotsCreated = false;
         try {
             cardSnapshotService.ensureStructure(id);
             var lines = snapshotService.loadQuotationLines(id);
@@ -139,11 +140,24 @@ public class QuotationResource {
                         && li.quoteCardValues != null && !li.quoteCardValues.isBlank();
                     if (li != null && !hasSnapshot) {
                         cardSnapshotService.snapshotLineValues(li); // 仅新行首次初始化, 已有行保留 editQuoteCardValue 的增量
+                        snapshotsCreated = true;
                     }
                 }
             }
         } catch (Exception ignore) {
             // 尽力而为
+        }
+        // 行 113 的 dto 在算快照"之前"构建, 不含本次新行刚生成的 quoteCardValues/costingCardValues。
+        // 导入流程首存(新行)时, 前端 syncLineItemsFromResponse 依赖响应里的 4 份卡片值翻入"快照模式"
+        // (useSnapQuote=true), 否则报价卡走实时展开路径——该路径不读 deletedRowKeys 墓碑, 导致
+        // driver 行删除"点了无反应"。故仅在确有新行落快照时, 重建一份新鲜 DTO 返回(读路径, 无副作用);
+        // 高频防抖空存(无新行)不触发, 不增加额外开销。
+        if (snapshotsCreated) {
+            try {
+                dto = quotationService.getById(id);
+            } catch (Exception ignore) {
+                // 取不到新鲜 DTO 时退回原 dto(不影响保存本身)
+            }
         }
         return ApiResponse.success(dto);
     }
