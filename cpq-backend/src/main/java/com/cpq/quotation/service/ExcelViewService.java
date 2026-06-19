@@ -50,6 +50,10 @@ public class ExcelViewService {
     @Inject
     com.cpq.quotation.service.tabjoin.TabJoinPlanEvaluator tabJoinPlanEvaluator;
 
+    /** TAB_JOIN 有效行重算：从持久化 componentData 现算（含列小计 + SUBTOTAL 公式总计）。 */
+    @Inject
+    FormulaCalculator formulaCalculator;
+
     // ---- Task 3.1: Excel column resolver (config 归属迁移到 EXCEL 组件) ----
 
     /** 委托给 {@link ExcelColumnResolver}：所有"列定义读取"站点统一走 getEffectiveColumns。 */
@@ -353,11 +357,18 @@ public class ExcelViewService {
             }
         }
 
-        // TAB_JOIN_FORMULA：构造 provider（有效行优先，缺省降级持久化 componentData）
+        // TAB_JOIN_FORMULA：构造 provider。
+        // effectiveRows!=null（预览/试算）→ 用传入有效行（原行为）。
+        // effectiveRows==null（报价单渲染）→ 仅当存在 TAB_JOIN 列时，从持久化 componentData 现算有效行
+        //   （含列小计 + SUBTOTAL 公式），以裸 componentId 键命中 Excel 列 tabKey；修复明细列取数 0 与小计引用 0。
+        //   无 TAB_JOIN 列时给空 provider，避免对每行做无谓的 Component.findById（性能守卫）。
+        boolean hasTabJoin = columns.stream()
+            .anyMatch(c -> "TAB_JOIN_FORMULA".equals(c.get("source_type")));
         com.cpq.quotation.service.card.CardDataProvider tabJoinProvider =
             (effectiveRows != null)
                 ? com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(effectiveRows)
-                : new com.cpq.quotation.service.card.CardDataProvider(componentDataList);
+                : com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(
+                      hasTabJoin ? buildTabJoinEffectiveRows(componentDataList) : java.util.Map.of());
 
         // Stage 2: 逐列计算，VARIABLE 列先算好，FORMULA 列引用时可以直接用 cachedCells
         Map<String, Object> cachedCells = new LinkedHashMap<>();
@@ -412,6 +423,34 @@ public class ExcelViewService {
         } finally {
             com.cpq.formula.dataloader.PartVersionContext.clear();
         }
+    }
+
+    /**
+     * 读时：从持久化 componentData 现算 TAB_JOIN 用的有效行（含列小计 + SUBTOTAL 公式总计）。
+     * 加载各页签 Component 元数据（code/name/type/formulas）后委托纯计算器
+     * {@link com.cpq.quotation.service.card.ComponentDataEffectiveRows}。
+     */
+    private Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows>
+            buildTabJoinEffectiveRows(java.util.List<com.cpq.quotation.entity.QuotationLineComponentData> cdList) {
+        java.util.Map<java.util.UUID, com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta> metaById =
+            new java.util.HashMap<>();
+        for (com.cpq.quotation.entity.QuotationLineComponentData cd : cdList) {
+            if (cd.componentId == null || metaById.containsKey(cd.componentId)) continue;
+            com.cpq.component.entity.Component c =
+                com.cpq.component.entity.Component.findById(cd.componentId);
+            if (c == null) continue;
+            com.fasterxml.jackson.databind.JsonNode formulas = null;
+            try {
+                if (c.formulas != null && !c.formulas.isBlank()) {
+                    formulas = MAPPER.readTree(c.formulas);
+                }
+            } catch (Exception ignore) { /* 公式坏 → 当无公式，subtotal 退回持久化值 */ }
+            metaById.put(cd.componentId,
+                new com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta(
+                    c.code, c.name, c.componentType, formulas));
+        }
+        return com.cpq.quotation.service.card.ComponentDataEffectiveRows.compute(
+            cdList, metaById, formulaCalculator);
     }
 
     /**
