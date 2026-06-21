@@ -4,6 +4,7 @@ import com.cpq.component.dto.BomClosureResult;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.BomClosureService;
 import com.cpq.component.service.ComponentDriverService;
+import com.cpq.configure.service.ConfigureSnapshotService;
 import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
@@ -66,6 +67,14 @@ public class CardSnapshotService {
 
     @Inject
     FormulaCalculator formulaCalculator;
+
+    /** 失焦同步：用真实公式引擎物化被编辑组件的 row_data（与配置态同款 materializer）。 */
+    @Inject
+    RowDataMaterializer rowDataMaterializer;
+
+    /** 失焦同步：复用 ConfigureSnapshotService.writeRowData（REQUIRES_NEW UPSERT）持久化物化结果。 */
+    @Inject
+    ConfigureSnapshotService configureSnapshotService;
 
     /** 核价 BOM 递归展开（P1）：算根料号闭包（partSet+spine+环清单）。 */
     @Inject
@@ -1469,23 +1478,102 @@ public class CardSnapshotService {
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp, null, delByComp);
             li.quoteCardValues = MAPPER.writeValueAsString(root);
 
+            // 失焦同步（Excel 视图随卡片更新）：把"被编辑组件"的 row_data 用真实公式引擎重新物化并落库。
+            // 背景：Excel 视图（ComponentDataEffectiveRows.compute）只读 quotation_line_component_data.row_data，
+            // 而 row_data 此前仅由 1.5s 防抖 saveDraft 写；编辑后卡片立刻更新但 Excel 视图仍是配置态旧值。
+            // 解法：editCardValue 写完 quote_card_values 后、构建 Excel 前，按本次编辑同步重算该组件 row_data。
+            // 注：仅物化被编辑组件（Option A 最小范围）；saveDraft 不在本次改动（follow-up §7 另行评估）。
+            materializeEditedComponentRowData(li, snapshot, componentId,
+                    baseRowsByComp.get(componentId), editRowsByComp.get(componentId),
+                    loadRowKeyFieldsNode(componentId), delByComp.get(componentId));
+
+            // L1 缓存可见性：writeRowData 走 REQUIRES_NEW + 原生 SQL UPDATE，外层持久化上下文里已加载的
+            // QuotationLineComponentData 托管实体不会看到该更新；buildExcelValues → buildLineRowData 用 Panache
+            // 托管实体读 row_data，故须 flush + clear 强制下次按库重读（沿用本工程 em.clear() 先例）。
+            // flush 先把上面 li.quoteCardValues 的脏写落库；clear 后 li 脱管，须按 id 重读为托管实体，
+            // 否则后续对 li.quoteExcelValues / quoteValuesAt 的写不会在事务提交时刷库。
+            em.flush();
+            em.clear();
+            QuotationLineItem liManaged = QuotationLineItem.findById(lineItemId);
+            if (liManaged == null) return null; // 理论不达：上面已 flush，该行必在库
+
             // 重算报价 Excel（核价不动），透传刚算好的新 quoteCardValues（CARD_FORMULA 同侧取数）
             String excel = safeCall(() ->
-                buildExcelValues(li, q.customerTemplateId, q.customerId, li.quoteCardValues));
-            if (excel != null) li.quoteExcelValues = excel;
+                buildExcelValues(liManaged, q.customerTemplateId, q.customerId, liManaged.quoteCardValues));
+            if (excel != null) liManaged.quoteExcelValues = excel;
 
-            li.quoteValuesAt = OffsetDateTime.now();
+            liManaged.quoteValuesAt = OffsetDateTime.now();
             // 核价两列：物理不参与本次 UPDATE
 
             Map<String, Object> resp = new LinkedHashMap<>();
-            resp.put("quoteCardValues", li.quoteCardValues);
-            resp.put("quoteExcelValues", li.quoteExcelValues);
-            resp.put("quoteValuesAt", li.quoteValuesAt != null ? li.quoteValuesAt.toString() : null);
+            resp.put("quoteCardValues", liManaged.quoteCardValues);
+            resp.put("quoteExcelValues", liManaged.quoteExcelValues);
+            resp.put("quoteValuesAt", liManaged.quoteValuesAt != null ? liManaged.quoteValuesAt.toString() : null);
             return resp;
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] editCardValue failed li=%s comp=%s rowKey=%s field=%s: %s",
                 lineItemId, componentId, rowKey, fieldName, e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * 失焦同步核心（Option A）：把"被编辑组件"的 row_data 用真实公式引擎重新物化并落库，
+     * 使 Excel 视图（只读 row_data）随卡片编辑即时刷新，无需等 1.5s 防抖 saveDraft。
+     *
+     * <ul>
+     *   <li>按 componentId 在 snapshot 定位被编辑 tab → 取 componentCode + componentType。</li>
+     *   <li>SUBTOTAL 组件跳过（其值读时按公式重算，不物化 row_data；镜像 ConfigureSnapshotService）。</li>
+     *   <li>否则调 {@link RowDataMaterializer#materializeComponentRows}（带 editRows + rowKeyFields + 墓碑），
+     *       让本次编辑同时算进 INPUT 列扁平值与 FORMULA 叶子列，再经
+     *       {@link ConfigureSnapshotService#writeRowData}（REQUIRES_NEW UPSERT）落库。</li>
+     * </ul>
+     *
+     * <p><b>降级纪律</b>：找不到组件 → 记 warn 直接返回，不影响卡片编辑；物化/写库异常被吞并记 warn，
+     * 绝不让 row_data 同步失败回滚整次卡片编辑（与 ConfigureSnapshotService 全程降级一致）。
+     * <p><b>跨组件范围</b>：仅物化被编辑组件，crossComponentSubtotals / crossTabRows 传空（Option A 最小范围）。
+     *
+     * @param componentId  被编辑组件 id（字符串）
+     * @param baseRows     该组件 baseRows（= snapshot_rows，{@code [{driverRow,basicDataValues}]}）
+     * @param editRows     该组件 editRows（含本次编辑），可空
+     * @param rowKeyFields 该组件行键字段节点（必须传真实值以对齐 editRows，AP-54），可空
+     * @param tombstones   该组件永久删除墓碑，可空
+     */
+    private void materializeEditedComponentRowData(QuotationLineItem li, JsonNode snapshot, String componentId,
+                                                   ArrayNode baseRows, ArrayNode editRows,
+                                                   JsonNode rowKeyFields,
+                                                   List<DeletedRowKeys.Tombstone> tombstones) {
+        try {
+            if (li == null || snapshot == null || componentId == null) return;
+
+            // 按 componentId 定位被编辑 tab。
+            JsonNode editedTab = null;
+            for (JsonNode tab : snapshot) {
+                if (componentId.equals(tab.path("componentId").asText(null))) { editedTab = tab; break; }
+            }
+            if (editedTab == null) {
+                LOG.warnf("[card-snapshot] 失焦同步：组件 %s 不在快照中，跳过 row_data 物化（不影响卡片编辑）", componentId);
+                return;
+            }
+
+            String componentType = editedTab.path("componentType").asText("NORMAL");
+            if ("SUBTOTAL".equals(componentType)) return; // SUBTOTAL 读时重算，不物化（镜像 ConfigureSnapshotService）
+
+            String code = editedTab.path("componentCode").asText(null);
+            JsonNode snapshotRows = baseRows; // baseRows 即配置态 snapshot_rows 口径
+            List<String> rowKeyFieldNames = rowKeyFieldNamesOf(rowKeyFields);
+
+            ArrayNode flat = rowDataMaterializer.materializeComponentRows(
+                    snapshot, code, snapshotRows,
+                    editRows, rowKeyFields,
+                    Map.of(), Map.of(),
+                    tombstones, rowKeyFieldNames);
+
+            UUID cid = UUID.fromString(componentId);
+            configureSnapshotService.writeRowData(li.id, cid, MAPPER.writeValueAsString(flat));
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] 失焦同步：物化/写 row_data 失败 li=%s comp=%s: %s（已降级，不影响卡片编辑）",
+                    li != null ? li.id : "null", componentId, e.getMessage());
         }
     }
 
