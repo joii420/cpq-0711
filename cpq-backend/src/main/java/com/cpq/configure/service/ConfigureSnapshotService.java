@@ -417,13 +417,20 @@ public class ConfigureSnapshotService {
                 continue;
             }
 
-            // crossTabRows(双键 componentId / componentCode):供后续组件 cross_tab_ref 引用。
-            List<Map<String, Object>> flatRows = toRowMaps(flat);
-            crossTabRows.put(cidStr, flatRows);
-            if (code != null && !code.isBlank()) crossTabRows.put(code, flatRows);
+            // 单位换算(cross_tab 物化点,与生产兄弟 CardSnapshotService.convertRowsForCrossTab 对齐):
+            // 跨页签引用方 + 列小计求和都读 canonical(按同行 unit_source_field 列归一到 KG/PCS)。
+            // 落库 flat 保持原值(与卡片 resolvedRows 落库不换算同纪律);仅换喂下游的副本。
+            // 缺此步时 crossTabRows/componentSubtotals 喂原始值 → Excel(读 row_data) 与卡片(读 formulaResults,
+            // 卡片链已换算)在含单位列的跨页签引用处分叉(如 来料.材料成本 引 元素.单价 g/PCS)。
+            JsonNode fields = tab.path("fields");
+            List<Map<String, Object>> canonRows = convertRowsForCrossTab(fields, toRowMaps(flat));
 
-            // 列小计累计(键 code#col / name#col):供后续组件 component_subtotal token 求值。
-            accumulateColumnSubtotals(flat, code, tabName, componentSubtotals);
+            // crossTabRows(双键 componentId / componentCode):供后续组件 cross_tab_ref 引用(canonical)。
+            crossTabRows.put(cidStr, canonRows);
+            if (code != null && !code.isBlank()) crossTabRows.put(code, canonRows);
+
+            // 列小计累计(键 code#col / name#col):供后续组件 component_subtotal token 求值(canonical)。
+            accumulateColumnSubtotals(canonRows, code, tabName, componentSubtotals);
 
             result.put(cid, flat);
         }
@@ -465,19 +472,35 @@ public class ConfigureSnapshotService {
         return out;
     }
 
-    /** 对扁平行各数值列求和,写入 componentSubtotals(键 code#col / name#col),与 ComponentDataEffectiveRows 一致。 */
-    private void accumulateColumnSubtotals(ArrayNode flat, String code, String tabName,
+    /**
+     * 单位换算(cross_tab 物化点):把一组扁平行换算成 canonical 副本喂 crossTabRows/列小计,原行不变。
+     * 配 {@code unit_source_field} 的列按同行单位文本归一到 KG/PCS;未配列原样。
+     * 与生产兄弟 {@code CardSnapshotService.convertRowsForCrossTab} 同口径(同调 {@code UnitConversion.convertObjectRow})。
+     */
+    private List<Map<String, Object>> convertRowsForCrossTab(JsonNode fields, List<Map<String, Object>> rows) {
+        if (rows == null) return List.of();
+        List<Map<String, Object>> out = new ArrayList<>(rows.size());
+        for (Map<String, Object> r : rows) {
+            out.add(com.cpq.engine.unit.UnitConversion.convertObjectRow(fields, r));
+        }
+        return out;
+    }
+
+    /**
+     * 对(已换算 canonical)扁平行各数值列求和,写入 componentSubtotals(键 code#col / name#col),与 ComponentDataEffectiveRows 一致。
+     * 入参为换算后行(见 {@link #convertRowsForCrossTab}),与卡片 {@code backfillSubtotalsFromResolved} 求和用 canonical 一致。
+     */
+    private void accumulateColumnSubtotals(List<Map<String, Object>> rows, String code, String tabName,
                                            Map<String, Double> componentSubtotals) {
-        if (flat == null) return;
+        if (rows == null) return;
         Map<String, Double> colSums = new LinkedHashMap<>();
-        for (JsonNode row : flat) {
-            if (row == null || !row.isObject()) continue;
-            row.fields().forEachRemaining(en -> {
-                JsonNode v = en.getValue();
-                if (v != null && v.isNumber()) {
-                    colSums.merge(en.getKey(), v.doubleValue(), Double::sum);
+        for (Map<String, Object> row : rows) {
+            if (row == null) continue;
+            for (Map.Entry<String, Object> en : row.entrySet()) {
+                if (en.getValue() instanceof Number n) {
+                    colSums.merge(en.getKey(), n.doubleValue(), Double::sum);
                 }
-            });
+            }
         }
         for (Map.Entry<String, Double> e : colSums.entrySet()) {
             if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + e.getKey(), e.getValue());
