@@ -4,6 +4,10 @@
 
 ---
 
+[2026-06-21] Excel与卡片统一前端单引擎 Task1 - 新增前端 Excel 列求值器 buildExcelSnapshot | cpq-frontend/src/pages/quotation/buildExcelSnapshot.ts（主实现）、buildExcelSnapshot.test.ts（17测试全绿）、__fixtures__/lineItem093.ts（夹具）、useLinkedExcelRows.ts（加 export 5 个工具函数） | 关键决策：(1) TAB_JOIN_FORMULA 列的 col.expression 是字符串（非 token[]），col.tabs 是 TabDef 子集，expressionToTokens(expr, col.tabs) 解析；(2) buildCrossTabRows 返回 {store, columnSumsByComp}，store 作为 crossTabRows 传 evaluateExpression；(3) 产品小计 evalProductSubtotalFromSubtotals 算完后必须注册到 componentSubtotals 三键（id/code/tabName），使 [X(总计)] 引用能取到正确值；(4) FORMULA/EXCEL_FORMULA 列做 second pass（先算所有其他列，再算引用列结果的 FORMULA）；(5) 恒等性不变量：C列(TAB_JOIN_FORMULA 引产品小计) == evalProductSubtotalFromSubtotals(item, getComponentSubtotals(item)) 通过测试验证；(6) useLinkedExcelRows.ts 仅加 export 关键字，不改逻辑（isLegacyVarCode/resolveVariable/evaluateFormula/formatPathValue/pathCacheKey）。分支：worktree-excel-card-unified，commit c5296bd。
+
+---
+
 [2026-06-18] 文档漂移补救 - 报价系统Excel导入落库方案.md price_type 细分化补齐(V3.0→V3.3) | docs/table/报价系统Excel导入落库方案.md(总览表 8 行 + §6/7/8/9/10/11/13/15 各 Sheet price_type 行 + 4 处内联备注 + price_type/cost_type 说明段 + 版本头) | 背景:2026-06-08 price_type 细分化(见本文件 [2026-06-08] 条目)代码(9 个 Q*Handler+V297)已生效,但**该 2026-06-08 条目当时声称"+报价系统Excel导入落库方案.md(V3.3)"实际未落地**——文件一直停在 V3.0/2026-05-26、price_type 仍写旧大类 MATERIAL/COMPONENT(用户发现"代码生效文档没变")。本次按 spec/代码补齐为 9 细分值(来料固定加工费=INCOMING_MATERIAL_PROCESS/来料其他=INCOMING_MATERIAL_OTHER/来料年降=INCOMING_MATERIAL_REDUCTION/来料回收折扣=INCOMING_MATERIAL_RECYCLE/自制加工费=PROCESS/成品其他=FINISHED_MATERIAL_OTHER/组成件其他=COMPONENT_OTHER/组装加工费年降=COMPONENT_REDUCTION/电镀=PLATING),cost_type 不动。**教训**:RECORD 写了"已同步 X 文档"≠该文档真改了;跨文档同步声明应以 grep 实查为准。规则权威三处:specs/2026-06-08-quote-price-type-subdivide-design.md + RECORD 2026-06-08 条目 + 代码;落库方案文档此前是第 4 处漂移点,现已对齐(旧大类 0 残留 + 9 细分值齐全)。
 
 ---
