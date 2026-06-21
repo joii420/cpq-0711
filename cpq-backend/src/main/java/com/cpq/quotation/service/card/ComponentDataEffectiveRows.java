@@ -213,7 +213,7 @@ public final class ComponentDataEffectiveRows {
     }
 
     /** 对每个数值列求和；非数值/空白列跳过（不进结果）。 */
-    static Map<String, BigDecimal> columnSums(List<Map<String, Object>> rows) {
+    public static Map<String, BigDecimal> columnSums(List<Map<String, Object>> rows) {
         Map<String, BigDecimal> sums = new LinkedHashMap<>();
         for (Map<String, Object> row : rows) {
             if (row == null) continue;
