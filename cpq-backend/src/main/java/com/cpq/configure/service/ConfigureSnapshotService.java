@@ -3,6 +3,7 @@ package com.cpq.configure.service;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.formula.dataloader.QuotationIdContext;
+import com.cpq.quotation.service.CrossTabComponentOrder;
 import com.cpq.quotation.service.RowDataMaterializer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -226,8 +227,9 @@ public class ConfigureSnapshotService {
         return out;
     }
 
-    /** 取本报价单 customer_template 的 components_snapshot(物化 row_data 用);缺失/解析失败 → null。 */
-    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    /** 取本报价单 customer_template 的 components_snapshot(物化 row_data 用);缺失/解析失败 → null。
+     *  只读 → SUPPORTS(表意:无需独立写事务;configure 已提交,SELECT 读最新已提交态即可)。 */
+    @Transactional(Transactional.TxType.SUPPORTS)
     @SuppressWarnings("unchecked")
     public JsonNode loadComponentsSnapshot(UUID quotationId) {
         try {
@@ -245,20 +247,25 @@ public class ConfigureSnapshotService {
     }
 
     /**
-     * 写时算齐 row_data(2-pass):用真实公式引擎把各非 SUBTOTAL 组件的 FORMULA 叶子列算进
+     * 写时算齐 row_data(单趟拓扑序):用真实公式引擎把各非 SUBTOTAL 组件的 FORMULA 叶子列算进
      * {@code row_data}(扁平),供 Excel 视图({@code ComponentDataEffectiveRows.columnSums})无需用户
      * 编辑即正确求和。
      *
-     * <ul>
-     *   <li><b>Pass 1</b>:每个非 SUBTOTAL 组件用空跨组件小计物化,累计其按列小计到
-     *       {@code componentSubtotals}(键 {@code code#col} / {@code name#col},与
-     *       {@link com.cpq.quotation.service.card.ComponentDataEffectiveRows} 一致),并把扁平行存入
-     *       {@code crossTabRows}(键 = componentId / componentCode)供 cross_tab_ref 引用。</li>
-     *   <li><b>Pass 2</b>:对公式引用了 {@code component_subtotal} 的组件带 Pass1 小计 + crossTabRows 复算,
-     *       覆盖 row_data。其余组件沿用 Pass1 结果。</li>
-     * </ul>
+     * <p><b>对齐生产兄弟 {@link com.cpq.quotation.service.CardSnapshotService#assembleTabsWithFormulaResults}</b>:
+     * 按组件级 {@link CrossTabComponentOrder#topoOrder} 排序(依赖边 = {@code cross_tab_ref} 源
+     * + {@code component_subtotal} 跨组件引用),保证<b>被引用组件先于引用方计算</b>。每算完一个组件即:
+     * <ol>
+     *   <li>把其扁平行存入 {@code crossTabRows}(双键 componentId / componentCode)供后续 cross_tab_ref 引用;</li>
+     *   <li>累计其按列小计到 {@code componentSubtotals}(键 {@code code#col} / {@code name#col},与
+     *       {@link com.cpq.quotation.service.card.ComponentDataEffectiveRows} 一致)供后续 component_subtotal 求值;</li>
+     *   <li>UPSERT 落库一次。</li>
+     * </ol>
+     * 因此到引用方计算时,它依赖的全部小计 / cross-tab 行均已就绪 —— 消除了旧 2-pass 里
+     * {@code cross_tab_ref → 依赖 component_subtotal 的列} 链路读到引用方 Pass1 陈旧值的缺陷,
+     * 同时去掉了冗余复算。
      *
-     * <p>AP-51:行数权威 = snapshot_rows;SUBTOTAL 组件跳过(读时按公式重算)。
+     * <p>AP-51:行数权威 = snapshot_rows(materializeComponentRows 内按其行数迭代,绝不 Math.max);
+     * SUBTOTAL 组件跳过(读时按公式重算)。
      */
     private void materializeRowData(UUID lineItemId, JsonNode componentsSnapshot,
                                     Map<UUID, String> snapByComp) {
@@ -274,44 +281,67 @@ public class ConfigureSnapshotService {
         }
         if (tabByComp.isEmpty()) return;
 
+        // ── 组件级拓扑序(与生产兄弟 assembleTabsWithFormulaResults 同款) ──
+        // 解析表:componentId / componentCode / tabName → componentId 字符串(供 component_subtotal 依赖解析)。
+        Map<String, String> refToCid = new HashMap<>();
+        for (Map.Entry<UUID, JsonNode> e : tabByComp.entrySet()) {
+            String cid = e.getKey().toString();
+            JsonNode tab = e.getValue();
+            refToCid.put(cid, cid);
+            String code = tab.path("componentCode").asText("");
+            if (!code.isBlank()) refToCid.put(code, cid);
+            String tn = tab.path("tabName").asText("");
+            if (!tn.isBlank()) refToCid.put(tn, cid);
+        }
+        List<String> compIds = new ArrayList<>();
+        Map<String, java.util.Set<String>> compDeps = new LinkedHashMap<>();
+        for (Map.Entry<UUID, JsonNode> e : tabByComp.entrySet()) {
+            String cid = e.getKey().toString();
+            JsonNode formulas = e.getValue().path("formulas");
+            compIds.add(cid);
+            // cross_tab_ref 源依赖 + component_subtotal 跨组件依赖(token 精确,与前端/生产兄弟对齐)。
+            java.util.Set<String> deps = new java.util.LinkedHashSet<>(
+                    CrossTabComponentOrder.extractSourceRefs(formulas));
+            for (String r : CrossTabComponentOrder.extractSubtotalRefs(formulas)) {
+                String tcid = refToCid.get(r);
+                if (tcid != null && !tcid.equals(cid)) deps.add(tcid); // 排除自引用(本组件二阶列由引擎内两阶段处理)
+            }
+            compDeps.put(cid, deps);
+        }
+        List<String> order;
+        try {
+            order = CrossTabComponentOrder.topoOrder(compIds, compDeps);
+        } catch (Exception cyc) {
+            // 环(配置异常)→ 降级按原序物化,绝不中止整份快照(沿用本类全程降级纪律)。
+            LOG.warnf("[add-snapshot] line=%s 组件拓扑序失败(降级原序): %s", lineItemId, cyc.getMessage());
+            order = compIds;
+        }
+
         Map<String, Double> componentSubtotals = new HashMap<>();
         Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
-        Map<UUID, ArrayNode> pass1Out = new LinkedHashMap<>();
 
-        // ── Pass 1: 空跨组件小计物化 + 累计列小计 + 收集 crossTabRows ──
-        for (Map.Entry<UUID, JsonNode> e : tabByComp.entrySet()) {
-            UUID cid = e.getKey();
-            JsonNode tab = e.getValue();
+        // ── 单趟拓扑序:依赖在前,引用在后 —— 引用方计算时其依赖小计 / cross-tab 行已就绪 ──
+        for (String cidStr : order) {
+            UUID cid = asUuid(cidStr);
+            JsonNode tab = cid != null ? tabByComp.get(cid) : null;
+            if (tab == null) continue;
             String code = tab.path("componentCode").asText(null);
             String tabName = tab.path("tabName").asText(null);
             JsonNode snapshotRows = parseRows(snapByComp.get(cid));
 
             ArrayNode flat = rowDataMaterializer.materializeComponentRows(
                     componentsSnapshot, code, snapshotRows, componentSubtotals, crossTabRows);
-            pass1Out.put(cid, flat);
 
             // crossTabRows(双键 componentId / componentCode):供后续组件 cross_tab_ref 引用。
             List<Map<String, Object>> flatRows = toRowMaps(flat);
-            crossTabRows.put(cid.toString(), flatRows);
+            crossTabRows.put(cidStr, flatRows);
             if (code != null && !code.isBlank()) crossTabRows.put(code, flatRows);
 
-            // 列小计累计(键 code#col / name#col),供 Pass2 component_subtotal token 求值。
+            // 列小计累计(键 code#col / name#col):供后续组件 component_subtotal token 求值。
             accumulateColumnSubtotals(flat, code, tabName, componentSubtotals);
-        }
 
-        // ── Pass 2: 引用 component_subtotal 的组件带完整小计复算;其余沿用 Pass1 ──
-        for (Map.Entry<UUID, JsonNode> e : tabByComp.entrySet()) {
-            UUID cid = e.getKey();
-            JsonNode tab = e.getValue();
-            ArrayNode finalFlat = pass1Out.get(cid);
-            if (referencesComponentSubtotal(tab.path("formulas"))) {
-                String code = tab.path("componentCode").asText(null);
-                JsonNode snapshotRows = parseRows(snapByComp.get(cid));
-                finalFlat = rowDataMaterializer.materializeComponentRows(
-                        componentsSnapshot, code, snapshotRows, componentSubtotals, crossTabRows);
-            }
             try {
-                self.writeRowData(lineItemId, cid, MAPPER.writeValueAsString(finalFlat));
+                self.writeRowData(lineItemId, cid, MAPPER.writeValueAsString(flat));
             } catch (Exception ex) {
                 LOG.warnf("[add-snapshot] line=%s comp=%s 写 row_data 失败: %s", lineItemId, cid, ex.getMessage());
             }
@@ -360,12 +390,6 @@ public class ConfigureSnapshotService {
             if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + e.getKey(), e.getValue());
             if (tabName != null && !tabName.isBlank()) componentSubtotals.put(tabName + "#" + e.getKey(), e.getValue());
         }
-    }
-
-    /** 组件 formulas 是否含 component_subtotal token(决定是否进 Pass2 复算)。 */
-    private boolean referencesComponentSubtotal(JsonNode formulas) {
-        if (formulas == null || !formulas.isArray()) return false;
-        return formulas.toString().contains("component_subtotal");
     }
 
     /**

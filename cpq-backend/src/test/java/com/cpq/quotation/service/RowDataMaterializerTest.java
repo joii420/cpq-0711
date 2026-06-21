@@ -2,13 +2,16 @@ package com.cpq.quotation.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -195,5 +198,128 @@ class RowDataMaterializerTest {
         assertEquals(1, out.size());
         assertEquals(0, new java.math.BigDecimal("100").compareTo(out.get(0).get("引用值").decimalValue()),
                 "引用值 = KSUM over SRC.金额 = 30 + 70 = 100");
+    }
+
+    /**
+     * ⑤ <b>Issue #1 regression — topo-ordered single pass</b>:
+     * the chain B —(cross_tab_ref)→ A.调整, where A.调整 —(component_subtotal)→ C.基数.
+     *
+     * <p>If components are materialized in plain snapshot order (C absent → A absent), A computes 调整
+     * with C's subtotal still 0, and B then pulls A's stale (pre-subtotal) value. The production fix
+     * (see {@link com.cpq.configure.service.ConfigureSnapshotService}) orders components via
+     * {@link CrossTabComponentOrder#topoOrder} over {@code cross_tab_ref} +
+     * {@code component_subtotal} deps (mirroring
+     * {@link CardSnapshotService#assembleTabsWithFormulaResults}), so by the time A is computed C's
+     * subtotal is present, and by the time B is computed A's CORRECTED rows are in crossTabRows.
+     *
+     * <p>This test replays that exact single-pass loop (topoOrder → materialize → accumulate column
+     * subtotals → thread crossTabRows) over the REAL {@link RowDataMaterializer} engine and asserts B
+     * sees A's corrected value (210), not the pre-subtotal value (10).
+     */
+    @Test
+    void singlePassTopoOrderResolvesCrossTabIntoSubtotalDependentColumn() throws Exception {
+        // C(基数=200, INPUT) — provides component_subtotal CC#基数 = 200
+        // A(调整 = component_subtotal(CC#基数) + 10) — corrected value 210; stale value (subtotal 0) = 10
+        // B(引用 = cross_tab_ref SUM over AA.调整) — must see A's corrected 210
+        JsonNode componentsSnapshot = MAPPER.readTree("""
+            [
+              {
+                "componentId": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+                "componentCode": "CC", "componentType": "NORMAL", "tabName": "基数表",
+                "fields": [ {"name": "基数", "field_type": "INPUT_NUMBER"} ],
+                "formulas": []
+              },
+              {
+                "componentId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                "componentCode": "AA", "componentType": "NORMAL", "tabName": "调整表",
+                "fields": [ {"name": "调整", "field_type": "FORMULA", "formula_name": "调整"} ],
+                "formulas": [
+                  {"name": "调整", "expression": [
+                    {"type": "component_subtotal", "component_code": "CC", "value": "基数", "tab_name": "基数表"},
+                    {"type": "operator", "value": "+"},
+                    {"type": "number", "value": "10"}
+                  ]}
+                ]
+              },
+              {
+                "componentId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                "componentCode": "BB", "componentType": "NORMAL", "tabName": "引用表",
+                "fields": [ {"name": "引用", "field_type": "FORMULA", "formula_name": "引用"} ],
+                "formulas": [
+                  {"name": "引用", "expression": [
+                    {"type": "cross_tab_ref", "agg": "SUM", "source": "AA", "match": [], "target": "调整"}
+                  ]}
+                ]
+              }
+            ]
+            """);
+
+        Map<String, JsonNode> rowsByCode = new LinkedHashMap<>();
+        rowsByCode.put("CC", MAPPER.readTree("[ {\"driverRow\": {\"基数\": 200}, \"basicDataValues\": {}} ]"));
+        rowsByCode.put("AA", MAPPER.readTree("[ {\"driverRow\": {}, \"basicDataValues\": {}} ]"));
+        rowsByCode.put("BB", MAPPER.readTree("[ {\"driverRow\": {}, \"basicDataValues\": {}} ]"));
+
+        // ── topo order over cross_tab_ref + component_subtotal deps (same model as production) ──
+        Map<String, String> refToCid = new HashMap<>();
+        List<String> compCodes = new ArrayList<>();
+        Map<String, JsonNode> tabByCode = new LinkedHashMap<>();
+        for (JsonNode tab : componentsSnapshot) {
+            String code = tab.path("componentCode").asText("");
+            compCodes.add(code);
+            tabByCode.put(code, tab);
+            refToCid.put(code, code);
+            refToCid.put(tab.path("tabName").asText(""), code);
+        }
+        Map<String, Set<String>> deps = new LinkedHashMap<>();
+        for (JsonNode tab : componentsSnapshot) {
+            String code = tab.path("componentCode").asText("");
+            Set<String> d = new LinkedHashSet<>(CrossTabComponentOrder.extractSourceRefs(tab.path("formulas")));
+            for (String r : CrossTabComponentOrder.extractSubtotalRefs(tab.path("formulas"))) {
+                String tc = refToCid.get(r);
+                if (tc != null && !tc.equals(code)) d.add(tc);
+            }
+            deps.put(code, d);
+        }
+        List<String> order = CrossTabComponentOrder.topoOrder(compCodes, deps);
+        // C and A must precede their referrers
+        assertTrue(order.indexOf("CC") < order.indexOf("AA"), "CC (subtotal source) must precede AA");
+        assertTrue(order.indexOf("AA") < order.indexOf("BB"), "AA (cross_tab source) must precede BB");
+
+        // ── single pass: materialize in topo order, accumulate subtotals + thread crossTabRows ──
+        RowDataMaterializer mat = newMaterializer();
+        Map<String, Double> componentSubtotals = new HashMap<>();
+        Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
+        Map<String, ArrayNode> outByCode = new LinkedHashMap<>();
+        for (String code : order) {
+            JsonNode tab = tabByCode.get(code);
+            ArrayNode flat = mat.materializeComponentRows(
+                    componentsSnapshot, code, rowsByCode.get(code), componentSubtotals, crossTabRows);
+            outByCode.put(code, flat);
+            // thread sibling rows (componentCode key) for downstream cross_tab_ref
+            List<Map<String, Object>> flatRows = new ArrayList<>();
+            for (JsonNode r : flat) flatRows.add(MAPPER.convertValue(r, Map.class));
+            crossTabRows.put(code, flatRows);
+            // accumulate column subtotals (code#col convention) for downstream component_subtotal
+            Map<String, Double> colSums = new LinkedHashMap<>();
+            for (JsonNode r : flat) {
+                if (r == null || !r.isObject()) continue;
+                r.fields().forEachRemaining(en -> {
+                    if (en.getValue() != null && en.getValue().isNumber())
+                        colSums.merge(en.getKey(), en.getValue().doubleValue(), Double::sum);
+                });
+            }
+            for (Map.Entry<String, Double> e : colSums.entrySet())
+                componentSubtotals.put(code + "#" + e.getKey(), e.getValue());
+        }
+
+        // A's 调整 corrected = CC#基数(200) + 10 = 210 (NOT the pre-subtotal 10)
+        assertEquals(0, new java.math.BigDecimal("210").compareTo(
+                        outByCode.get("AA").get(0).get("调整").decimalValue()),
+                "A.调整 must use C's subtotal (200) → 210, not pre-subtotal 10");
+
+        // B's 引用 reads A's CORRECTED value via cross_tab_ref → 210 (the regression assertion)
+        assertEquals(0, new java.math.BigDecimal("210").compareTo(
+                        outByCode.get("BB").get(0).get("引用").decimalValue()),
+                "B.引用 must see A's corrected 调整 (210), not the stale pre-subtotal value (10)");
     }
 }
