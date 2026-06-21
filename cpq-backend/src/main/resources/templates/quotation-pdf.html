@@ -70,8 +70,8 @@
         <th>产品规格</th>
         <th style="width:80px">产品分类</th>
         <th style="width:120px">属性值</th>
-        {#if showDiscount}<th style="width:80px">折扣率(%)</th>{/if}
-        <th style="width:100px">小计(元)</th>
+        {#if showDiscount}<th style="width:80px">折扣率(%)</th><th style="width:100px">单价(元)</th><th style="width:100px">折扣金额(元)</th><th style="width:100px">折后单价(元)</th><th style="width:100px">行合计(元)</th>{/if}
+        {#if !showDiscount}<th style="width:100px">小计(元)</th>{/if}
       </tr>
     </thead>
     <tbody>
@@ -81,8 +81,8 @@
         <td style="text-align:left">{item.specification}</td>
         <td>{item.category}</td>
         <td style="text-align:left;font-size:10px">{item.attributeValues}</td>
-        {#if showDiscount}<td>{item.discountRate}</td>{/if}
-        <td style="text-align:right">{item.subtotal}</td>
+        {#if showDiscount}<td>{item.discountRate}</td><td style="text-align:right">{item.lineUnitPrice}</td><td style="text-align:right">{item.lineDiscountAmount}</td><td style="text-align:right">{item.lineFinalPrice}</td><td style="text-align:right">{item.lineTotalAmount}</td>{/if}
+        {#if !showDiscount}<td style="text-align:right">{item.subtotal}</td>{/if}
       </tr>
       {/for}
     </tbody>
