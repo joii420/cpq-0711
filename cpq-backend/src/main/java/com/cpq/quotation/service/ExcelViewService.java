@@ -753,9 +753,12 @@ public class ExcelViewService {
                 // 无快照 → 整行 fallback 重算（保证旧草稿/未算行仍可导出）
                 exportRows.add(fallbackRow);
             } else {
-                // 有快照 → 按快照 rows 顺序拼（通常 1 行/产品）
+                // 有快照 → 按快照 rows 顺序拼（报价侧 buildExcelSnapshot 恒返单行；核价侧可 N>1 行）
                 // EXCEL_FORMULA 列特殊：快照存的是计算值（数字），导出需写公式串让 Excel 重算；
                 // 公式串来自 fallback 重算行的该列值（那里存的就是 "=SUM(...)" 公式串）。
+                // 注意：此处对每个快照行都写同一个 fallback 公式串，依赖 EXCEL_FORMULA 公式为
+                // 配置态行无关静态串（col.get("formula")）。若将来改成按行相对引用(=B{n}*C{n})，
+                // N>1 行场景需改为按行生成公式，否则会给每行写错公式。
                 for (Map<String, Object> snapshotRow : snapshotRows) {
                     Map<String, Object> mergedRow = new LinkedHashMap<>(snapshotRow);
                     // 覆写：EXCEL_FORMULA 列取 fallback 行的公式串

@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * TDD Phase 4 — exportExcelView 改读前端 quote_excel_values 快照渲染，不再后端重算。
@@ -157,22 +158,10 @@ public class ExportFromSnapshotTest {
             }
         }
 
-        if (targetColKey == null || columns.isEmpty()) {
-            // 模板无非 EXCEL_FORMULA 列，退化为：仅断言调用不抛、返回非空字节
-            // 并断言快照路径被激活（不抛即表示新代码路径走通）
-            em.flush();
-            em.clear();
-            String sentinelSnapshot = "{\"rows\":[{\"__test__\":0.93}]}";
-            writeQuoteExcelValues(lineItemId, sentinelSnapshot);
-            em.flush();
-            em.clear();
-
-            byte[] bytes = excelViewService.exportExcelView(quotationId);
-            assertNotNull(bytes, "exportExcelView 不应返回 null");
-            assertTrue(bytes.length > 0, "exportExcelView 应返回非空字节（有效 XLSX）");
-            // 能跑到这里说明快照读取路径（parseQuoteExcelValuesRows）不抛异常
-            return;
-        }
+        // 显式 skip（而非静默退化成假绿）：模板无可写测试列时，T1 无法证伪「读快照而非重算」，
+        // 用 assumeTrue 让测试 SKIPPED（可见）而非 PASS（掩盖功能回归）。
+        assumeTrue(targetColKey != null && !columns.isEmpty(),
+                "模板无非 EXCEL_FORMULA 可测列 — T1 无法验证读快照路径，跳过（非通过）");
 
         // 写快照：将 targetColKey 写成 0.93（与后端重算值不同的特征值）
         // 后端重算路径从 componentData/productAttribute 取值，不可能恰好 = 0.93
