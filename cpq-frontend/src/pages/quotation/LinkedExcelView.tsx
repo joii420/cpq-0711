@@ -133,12 +133,14 @@ const LinkedExcelView: React.FC<Props> = ({
         legacyColumns,
         driverExpansions,
         customerId,
-        { pathCache: pathCache as Record<string, number> | undefined, globalVariableDefs },
+        { pathCache: pathCache as Record<string, any> | undefined, globalVariableDefs },
       );
       return snap.rows.map((r, ri) => ({
+        // __key 仅作 React key，不参与 driverExpansionKey 计算，`??` 语义正确（undefined/null 才降级）
         __key: `fe-${(li as any).id ?? (li as any).tempId ?? i}-${ri}`,
         __label: r.__hfPartNo ?? `产品 ${i + 1}`,
         __hfPartNo: r.__hfPartNo,
+        // 报价行恒有产品结构，前端快照不复用 __noData 空态，此处恒 false
         __noData: false,
         ...r,
       }));

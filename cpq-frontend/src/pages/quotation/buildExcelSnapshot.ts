@@ -315,7 +315,7 @@ function evalTabJoinOrCard(
       componentSubtotals,
       productAttrs,
       ctx.quotationFields,
-      ctx.pathCache as Record<string, number> | undefined,
+      ctx.pathCache as Record<string, any> | undefined,
       partNo,
       ctx.basicDataValues,
       undefined,                 // previousRowSubtotal

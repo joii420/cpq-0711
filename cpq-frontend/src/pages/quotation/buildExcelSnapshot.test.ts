@@ -402,6 +402,7 @@ describe('buildExcelSnapshot', () => {
 // vitest 需要 beforeAll（来自 vitest 全局）
 import { beforeAll } from 'vitest';
 import { driverExpansionKey, fieldsOverrideHash } from './useDriverExpansions';
+import { makeLineItemWithDriver } from './__fixtures__/lineItem093';
 
 /** 来料组件 fields 的最小定义（供 key 构造测试中 fieldsOverrideHash 使用） */
 const materialCompFields = [
@@ -412,3 +413,128 @@ const materialCompFields = [
     is_subtotal: true,
   },
 ];
+
+// ─── driver 展开端到端测试 ─────────────────────────────────────────────────────
+/**
+ * 验证 lookupExpansion 真被消费：
+ *   - 命中时：basicDataValues.材料单价=50，料件成本=50*2=100，列小计=100
+ *   - miss 时：无 expansion，材料单价=0（rows 里初始值），料件成本=0*2=0，列小计=0
+ *
+ * 两个断言值不同（100 vs 0），证明 driverExpansion 真实影响了计算路径。
+ */
+describe('driver 展开端到端：lookupExpansion 真被消费', () => {
+  /**
+   * 来料D 组件 Excel 列：TAB_JOIN_FORMULA 引用来料D 组件列小计（料件成本），
+   * 对应 buildCrossTabRows 算出的 component_subtotal。
+   */
+  const colDriverSubtotal: CostingTemplateColumn & { expression: string; tabs: any[] } = {
+    col_key: 'DS',
+    title: '来料D料件成本',
+    source_type: 'TAB_JOIN_FORMULA',
+    expression: '[来料D(总计)]',
+    tabs: [
+      {
+        alias: '来料D',
+        tabKey: 'comp-mat-driver',
+        componentId: 'comp-mat-driver',
+        componentName: '来料D',
+        rowKeyFields: [],
+        subtotalCols: ['料件成本'],
+        detailFields: ['材料单价', '用量', '料件成本'],
+      },
+    ],
+  } as any;
+
+  it('driverExpansions 命中 → 材料单价来自 basicDataValues(50)，料件成本=100', () => {
+    const item = makeLineItemWithDriver();
+    const lineItemId = (item as any).id || (item as any).tempId || '';
+    const compFields = (item.componentData![0] as any).fields;
+
+    // 构造与 buildExcelSnapshot 内 lookupExpansion 逻辑对齐的 key
+    // lineItemId='li-driver-001', partNo='HF-DRIVER-001', componentId='comp-mat-driver'
+    const k = driverExpansionKey(
+      lineItemId,
+      item.productPartNo!,
+      'comp-mat-driver',
+      'cust-test',
+      '$v_material_driver',
+      fieldsOverrideHash(compFields),
+    );
+
+    // expansion: 1 行，basicDataValues 提供材料单价=50，driverRow 提供原始行
+    // basicDataValues 的 key 格式：bnfDriverLookupKey(basic_data_path) = '{unit_price}'
+    // （花括号包裹 basic_data_path，与 computeAllFormulas L513 / resolveBasicDataForRow L709 协议对齐）
+    const driverExpansionsMap = {
+      [k]: {
+        rowCount: 1,
+        driverPath: '$v_material_driver',
+        rows: [
+          {
+            driverRow: { 用量: 2 },
+            basicDataValues: { '{unit_price}': 50 },
+          },
+        ],
+      },
+    };
+
+    const { rows } = buildExcelSnapshot(
+      item,
+      [colDriverSubtotal as CostingTemplateColumn],
+      driverExpansionsMap,
+      'cust-test',
+      {},
+    );
+
+    // 命中时：材料单价=50（来自 basicDataValues['{unit_price}']），用量=2（来自 rows[0].用量），
+    // 料件成本 = 50 * 2 = 100，列小计 = 100
+    expect(rows[0].DS).toBeCloseTo(100, 4);
+  });
+
+  it('driverExpansions miss（空 map）→ 料件成本退化为 0（rows 初始值 材料单价=0）', () => {
+    const item = makeLineItemWithDriver();
+
+    // 不提供匹配 key → expansion undefined → basicDataValues 缺失 → 材料单价读 rows 初始 0
+    const { rows } = buildExcelSnapshot(
+      item,
+      [colDriverSubtotal as CostingTemplateColumn],
+      {}, // 空 map，key 不命中
+      'cust-test',
+      {},
+    );
+
+    // miss 时：材料单价=0（comp.rows[0].材料单价=0），用量=2，料件成本=0*2=0
+    expect(rows[0].DS).toBeCloseTo(0, 4);
+  });
+
+  it('命中值(100) ≠ miss 值(0)：有区分度，证明 expansion 真被消费', () => {
+    const item = makeLineItemWithDriver();
+    const lineItemId = (item as any).id || (item as any).tempId || '';
+    const compFields = (item.componentData![0] as any).fields;
+
+    const k = driverExpansionKey(
+      lineItemId,
+      item.productPartNo!,
+      'comp-mat-driver',
+      'cust-test',
+      '$v_material_driver',
+      fieldsOverrideHash(compFields),
+    );
+
+    const hitMap = {
+      [k]: {
+        rowCount: 1,
+        driverPath: '$v_material_driver',
+        // basicDataValues key = '{unit_price}'（bnfDriverLookupKey 协议）
+        rows: [{ driverRow: { 用量: 2 }, basicDataValues: { '{unit_price}': 50 } }],
+      },
+    };
+
+    const { rows: hitRows } = buildExcelSnapshot(item, [colDriverSubtotal as CostingTemplateColumn], hitMap, 'cust-test', {});
+    const { rows: missRows } = buildExcelSnapshot(item, [colDriverSubtotal as CostingTemplateColumn], {}, 'cust-test', {});
+
+    // 断言：命中值与 miss 值有明显区分（100 vs 0），排除"无论是否命中结果一样"的空验证
+    expect(hitRows[0].DS).not.toBeCloseTo(missRows[0].DS as number, 1);
+    expect(hitRows[0].DS).toBeCloseTo(100, 4);
+    expect(missRows[0].DS).toBeCloseTo(0, 4);
+  });
+});
