@@ -1492,11 +1492,10 @@ public class CardSnapshotService {
             // 使引用方（来料）物化时读到依赖方（元素）的最新列小计 → Excel 跨页签依赖随编辑传播。
             materializeWholeLineRowData(li, snapshot, baseRowsByComp, editRowsByComp, delByComp);
 
-            // L1 缓存可见性：writeRowData 走 REQUIRES_NEW + 原生 SQL UPDATE，外层持久化上下文里已加载的
-            // QuotationLineComponentData 托管实体不会看到该更新；buildExcelValues → buildLineRowData 用 Panache
-            // 托管实体读 row_data，故须 flush + clear 强制下次按库重读（沿用本工程 em.clear() 先例）。
-            // flush 先把上面 li.quoteCardValues 的脏写落库；clear 后 li 脱管，须按 id 重读为托管实体，
-            // 否则后续对 li.quoteExcelValues / quoteValuesAt 的写不会在事务提交时刷库。
+            // flush 先把上面 li.quoteCardValues 的脏写 + materializeWholeLineRowData(REQUIRES_NEW 原生 SQL)
+            // 的 row_data 落库并对齐 L1 缓存；clear 后 li 脱管，须按 id 重读为托管实体，
+            // 否则后续对 quoteValuesAt 的写不会在事务提交时刷库。
+            // (Phase6 前端权威后，此处不再重算 quoteExcelValues；保留 flush/clear 仅为 row_data 落库 + quoteValuesAt 写库)
             em.flush();
             em.clear();
             QuotationLineItem liManaged = QuotationLineItem.findById(lineItemId);
