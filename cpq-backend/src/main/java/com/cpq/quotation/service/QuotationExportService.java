@@ -153,8 +153,8 @@ public class QuotationExportService {
                 dataRow.createCell(col++).setCellValue(cat);
                 dataRow.createCell(col++).setCellValue(li.productAttributeValues != null ? li.productAttributeValues : "");
                 if (showDiscount) {
-                    // 折扣率(%)
-                    dataRow.createCell(col++).setCellValue(li.finalDiscountRate != null ? li.finalDiscountRate.doubleValue() : 100.0);
+                    // 折扣率(%)：行级 discountRateApplied（非整单 finalDiscountRate）
+                    dataRow.createCell(col++).setCellValue(li.discountRateApplied != null ? li.discountRateApplied.doubleValue() : 0.0);
                     // 单价
                     Cell unitPriceCell = dataRow.createCell(col++);
                     unitPriceCell.setCellStyle(amountStyle);
@@ -245,7 +245,7 @@ public class QuotationExportService {
             m.put("specification", li.snapshot != null && li.snapshot.productSpecification != null ? li.snapshot.productSpecification : "");
             m.put("category", li.snapshot != null && li.snapshot.productCategory != null ? li.snapshot.productCategory : "");
             m.put("attributeValues", li.productAttributeValues != null ? li.productAttributeValues : "");
-            m.put("discountRate", li.finalDiscountRate != null ? li.finalDiscountRate.toString() : "100");
+            m.put("discountRate", li.discountRateApplied != null ? li.discountRateApplied.toString() : "0");
             m.put("subtotal", li.subtotal != null ? NumberFormatUtil.format(li.subtotal, null, true) : "0");
             // 行级折扣明细字段（Task6）
             m.put("lineUnitPrice", formatAmount(li.lineUnitPrice));
