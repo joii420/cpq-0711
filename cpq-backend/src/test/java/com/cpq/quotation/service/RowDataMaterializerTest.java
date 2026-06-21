@@ -97,6 +97,74 @@ class RowDataMaterializerTest {
         assertEquals(1, r1.get("row_index").asInt());
     }
 
+    /**
+     * ①b <b>editRows override (card-edit sync)</b>: the same FEEDING component, but with a per-row
+     * editRows entry that overrides 单价. The new overload (accepting editRows + rowKeyFields) must
+     * thread the edit into BOTH the flat INPUT value (单价 reflects the edited value, not the driver
+     * value) AND the recomputed FORMULA leaf (材料成本 = edited 单价 × 用量).
+     *
+     * <p>rowKeyFields = ["料号"] so the editRows rowKey aligns by business key (AP-54), not row index.
+     */
+    @Test
+    void editRowsOverrideFlowsIntoInputValueAndFormulaLeaf() throws Exception {
+        JsonNode componentsSnapshot = MAPPER.readTree("""
+            [{
+                "componentId": "11111111-1111-1111-1111-111111111111",
+                "componentCode": "FEEDING",
+                "componentType": "NORMAL",
+                "tabName": "来料",
+                "fields": [
+                    {"name": "料号", "field_type": "INPUT_TEXT"},
+                    {"name": "单价", "field_type": "INPUT_NUMBER"},
+                    {"name": "用量", "field_type": "INPUT_NUMBER"},
+                    {"name": "材料成本", "field_type": "FORMULA", "formula_name": "材料成本"}
+                ],
+                "formulas": [
+                    {"name": "材料成本", "expression": [
+                        {"type": "field", "value": "单价"},
+                        {"type": "operator", "value": "×"},
+                        {"type": "field", "value": "用量"}
+                    ]}
+                ]
+            }]
+            """);
+
+        // two driver rows keyed by 料号; driver 单价 = 10 / 5.
+        JsonNode snapshotRows = MAPPER.readTree("""
+            [
+                {"driverRow": {"料号": "P-A", "单价": 10, "用量": 2}, "basicDataValues": {}},
+                {"driverRow": {"料号": "P-B", "单价": 5,  "用量": 3}, "basicDataValues": {}}
+            ]
+            """);
+
+        // rowKeyFields = ["料号"]; editRows rowKey = 料号 value (computeRowKey/uniquify口径).
+        JsonNode rowKeyFields = MAPPER.readTree("[\"料号\"]");
+        // user edits row P-A: 单价 10 → 99.
+        JsonNode editRows = MAPPER.readTree("""
+            [ {"rowKey": "P-A", "values": {"单价": 99}} ]
+            """);
+
+        JsonNode out = newMaterializer().materializeComponentRows(
+                componentsSnapshot, "FEEDING", snapshotRows,
+                editRows, rowKeyFields, Map.of(), Map.of(), null, null);
+
+        assertEquals(2, out.size());
+
+        // row P-A: INPUT 单价 reflects the edit (99), FORMULA 材料成本 recomputed = 99 × 2 = 198.
+        JsonNode rA = out.get(0);
+        assertEquals("P-A", rA.get("料号").asText());
+        assertEquals(0, new java.math.BigDecimal("99").compareTo(rA.get("单价").decimalValue()),
+                "INPUT 单价 must reflect the edited value (99), not driver 10");
+        assertEquals(0, new java.math.BigDecimal("198").compareTo(rA.get("材料成本").decimalValue()),
+                "FORMULA 材料成本 must recompute from edited 单价: 99 × 2 = 198");
+
+        // row P-B: untouched → driver values.
+        JsonNode rB = out.get(1);
+        assertEquals(0, new java.math.BigDecimal("5").compareTo(rB.get("单价").decimalValue()));
+        assertEquals(0, new java.math.BigDecimal("15").compareTo(rB.get("材料成本").decimalValue()),
+                "untouched row: 5 × 3 = 15");
+    }
+
     /** ② empty / null snapshot rows → empty array, no exception. */
     @Test
     void emptyRowsReturnsEmptyArray() throws Exception {

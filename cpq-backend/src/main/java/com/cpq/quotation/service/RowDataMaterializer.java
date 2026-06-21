@@ -1,5 +1,6 @@
 package com.cpq.quotation.service;
 
+import com.cpq.quotation.rowkey.DeletedRowKeys;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -8,6 +9,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -88,6 +91,47 @@ public class RowDataMaterializer {
                                               JsonNode snapshotRows,
                                               Map<String, Double> crossComponentSubtotals,
                                               Map<String, List<Map<String, Object>>> crossTabRows) {
+        // 配置态：editRows 恒空、无行键覆盖、无墓碑过滤 → 委派全参重载传空/ null。
+        return materializeComponentRows(componentsSnapshot, componentCode, snapshotRows,
+                /* editRows */ null, /* rowKeyFields */ null,
+                crossComponentSubtotals, crossTabRows,
+                /* deleted */ null, /* rowKeyFieldNames */ null);
+    }
+
+    /**
+     * 全参重载（报价侧失焦同步用）：在配置态物化基础上额外接受
+     * <b>editRows（用户编辑）+ rowKeyFields（行键对齐）+ deleted（永久删除墓碑）</b>，
+     * 把编辑同时算进 <b>INPUT 列扁平值</b> 与 <b>FORMULA 叶子列</b>，并按墓碑剔除已删除行。
+     *
+     * <p><b>editRows → 双落点（AP-54 行键对齐）</b>：
+     * <ol>
+     *   <li>FORMULA 叶子：editRows 透传 {@link FormulaCalculator#calculate}，引擎内部按 effKey
+     *       合并 editValues 到 driverRow 后求值（与生产 assembleTabsWithFormulaResults 同款）。</li>
+     *   <li>INPUT 扁平值：本方法用<b>同款 effKey 口径</b>（{@code computeRowKey + uniquifyRowKeys}，
+     *       与 calculate/前端 buildUniqueRowKeys 逐字节一致）重算每行 effKey，按 effKey 取本行
+     *       editValues 喂 {@link FormulaCalculator#resolveRowByFieldName}（INPUT 取 editValues 优先），
+     *       使用户手填的 料号/单价 也反映在 row_data，而非仅 FORMULA 叶子。</li>
+     * </ol>
+     *
+     * <p><b>行对齐</b>：calculate 的 formulaResults 跳过墓碑行且其 {@code rowKey}=effKey，故按 rowKey
+     * 建索引取 values（不靠下标，避免删除行错位）。flat 输出迭代完整 baseRows、按 keep 掩码 continue
+     * 跳过删除行（AP-51 行数权威=baseRows；不 Math.max）。
+     *
+     * @param editRows         该组件 editRows（{@code [{rowKey, values:{字段名→值}}]}），可空
+     * @param rowKeyFields     行键字段节点（{@code ["料号",…]}），<b>必须传真实值</b>——null 退化为按行号
+     *                         对齐致 editRows 错位（AP-54）；无编辑时可传 null。
+     * @param deleted          永久删除墓碑列表（null/空 → 不过滤）
+     * @param rowKeyFieldNames rowKeyFields 解出的字段名列表（与 deleted 配套；null 则不过滤）
+     */
+    public ArrayNode materializeComponentRows(JsonNode componentsSnapshot,
+                                              String componentCode,
+                                              JsonNode snapshotRows,
+                                              JsonNode editRows,
+                                              JsonNode rowKeyFields,
+                                              Map<String, Double> crossComponentSubtotals,
+                                              Map<String, List<Map<String, Object>>> crossTabRows,
+                                              List<DeletedRowKeys.Tombstone> deleted,
+                                              List<String> rowKeyFieldNames) {
         ArrayNode out = MAPPER.createArrayNode();
         if (snapshotRows == null || !snapshotRows.isArray() || snapshotRows.isEmpty()) {
             return out;
@@ -102,38 +146,77 @@ public class RowDataMaterializer {
         JsonNode formulas = tab.path("formulas");
         JsonNode formulaAssignments = tab.path("formula_assignments");
 
-        // baseRows = snapshot_rows（已是 [{driverRow, basicDataValues}]）；editRows 恒空（配置态无编辑）。
-        // rowKeyFields 传 null：无 editRows → 行键仅用于唯一化对齐，无影响（按行序兜底）。
+        // baseRows = snapshot_rows（已是 [{driverRow, basicDataValues}]）。
         ArrayNode baseRows = (ArrayNode) snapshotRows;
-        ArrayNode emptyEdit = MAPPER.createArrayNode();
+        JsonNode edits = (editRows != null && editRows.isArray()) ? editRows : MAPPER.createArrayNode();
 
         Map<String, Double> cross = crossComponentSubtotals != null
                 ? crossComponentSubtotals : Map.of();
         Map<String, List<Map<String, Object>>> xtab = crossTabRows != null
                 ? crossTabRows : Map.of();
 
-        // 逐行 FORMULA 求值（与 CardSnapshotService PASS2 同款引擎调用）。
+        // ① 逐行 FORMULA 求值（带 editRows + 墓碑过滤；与 CardSnapshotService PASS2 同款引擎调用）。
+        //    formulaResults: [{rowKey(=effKey), values:{字段名→数值}}]，已跳过墓碑行。
         ArrayNode formulaResults = formulaCalculator.calculate(
                 fields, formulas, formulaAssignments,
-                /* rowKeyFields */ null, baseRows, emptyEdit,
+                rowKeyFields, baseRows, edits,
                 cross, Map.of(), Map.of(),
-                xtab);
+                xtab, deleted, rowKeyFieldNames);
 
-        // formulaResults: [{rowKey, values:{字段名→数值}}]；行键唯一化口径与 calculate 内部一致。
-        // 无 editRows 时各行 rowKey 即按行序兜底（uniquify 不改单次出现键），按下标取 values 即可。
+        // ② 按 rowKey(=effKey) 建 formulaResults 索引（删除行被跳过 → 不靠下标对齐）。
+        Map<String, JsonNode> frByKey = new HashMap<>();
+        for (JsonNode fr : formulaResults) {
+            String rk = fr.path("rowKey").asText(null);
+            if (rk != null) frByKey.put(rk, fr.path("values"));
+        }
+
+        // ③ 复算与 calculate 内部逐字节一致的 effKeys（rawKey → uniquify），用于：
+        //    (a) 按 effKey 取本行 editValues 喂 resolveRowByFieldName（INPUT 列反映编辑）；
+        //    (b) 按 effKey 命中 frByKey 取 FORMULA 叶子值。
+        List<String> rawKeys = new ArrayList<>(baseRows.size());
         for (int i = 0; i < baseRows.size(); i++) {
+            JsonNode br = baseRows.get(i);
+            String rk = formulaCalculator.computeRowKey(
+                    rowKeyFields, fields, br.path("driverRow"), br.path("basicDataValues"));
+            rawKeys.add((rk != null && !rk.isEmpty()) ? rk : String.valueOf(i));
+        }
+        List<String> effKeys = FormulaCalculator.uniquifyRowKeys(rawKeys);
+
+        // editRows 按 rowKey 索引（取本行 editValues）。
+        Map<String, JsonNode> editByKey = new HashMap<>();
+        for (JsonNode er : edits) {
+            String rk = er.path("rowKey").asText(null);
+            if (rk != null) editByKey.put(rk, er.path("values"));
+        }
+
+        // ④ 墓碑过滤掩码（与 calculate 内部口径一致：唯一化后按指纹双命中剔除整行；fps 用完整 baseRows）。
+        boolean[] keep = null;
+        if (deleted != null && !deleted.isEmpty()) {
+            List<String> fps = new ArrayList<>(baseRows.size());
+            for (JsonNode br : baseRows) {
+                fps.add(DeletedRowKeys.rowFingerprint(rowKeyFieldNames, br.path("driverRow")));
+            }
+            keep = DeletedRowKeys.keepMask(effKeys, fps, deleted);
+        }
+
+        // ⑤ 扁平解析输出。迭代完整 baseRows（行数权威，AP-51），按 keep 跳过删除行；
+        //    row_index 随保留行重新连续编号（与 ConfigureSnapshotService 物化输出口径一致）。
+        int rowIndex = 0;
+        for (int i = 0; i < baseRows.size(); i++) {
+            if (keep != null && !keep[i]) continue; // 删除行不写入 row_data
             JsonNode br = baseRows.get(i);
             JsonNode driverRow = br.path("driverRow");
             JsonNode basicDataValues = br.path("basicDataValues");
-            JsonNode frValues = (i < formulaResults.size())
-                    ? formulaResults.get(i).path("values") : null;
+            String effKey = effKeys.get(i);
+            JsonNode editValues = editByKey.get(effKey);   // 本行编辑（INPUT 列覆盖），可空
+            JsonNode frValues = frByKey.get(effKey);       // 本行已算 FORMULA 叶子，可空
 
-            // 扁平解析（FORMULA 取已算 values；其余按字段定义来源解析）—— 复用通用引擎。
+            // 扁平解析：FORMULA 取已算 values；INPUT 取 editValues 优先（→ driverRow → default_source）。
             Map<String, Object> resolved = formulaCalculator.resolveRowByFieldName(
-                    fields, driverRow, basicDataValues, /* editValues */ null, frValues);
+                    fields, driverRow, basicDataValues, editValues, frValues);
 
             ObjectNode rowNode = MAPPER.valueToTree(resolved);
-            rowNode.put("row_index", i);
+            rowNode.put("row_index", rowIndex++);
             out.add(rowNode);
         }
         return out;
