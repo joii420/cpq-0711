@@ -4,6 +4,7 @@ import type { CostingTemplateColumn } from '../../services/costingTemplateServic
 import type { LineItem } from './QuotationStep2';
 import { useLinkedExcelRows } from './useLinkedExcelRows';
 import { useExcelSnapshotRows } from './useExcelSnapshotRows';
+import { formatNumber } from '../../utils/formatNumber';
 
 interface Props {
   linkedTemplateId?: string;
@@ -29,11 +30,15 @@ function isNewModel(parsedColumns: CostingTemplateColumn[]): boolean {
 }
 
 /**
- * 格式化单元格值：
+ * 格式化单元格值（统一接入 formatNumber，与卡片视图同口径）：
  * - null/undefined/''/''—'' → 显示 "—"
- * - PERCENT 格式：数值 × 100，按 decimals 保留小数，加 % 后缀
- * - 其余数值原样显示（toLocaleString）
+ * - PERCENT 格式：经 formatNumber(isPercent) → 值 ×100 + % 后缀（默认 2 位）
+ * - 计算列（FORMULA/CARD_FORMULA/EXCEL_FORMULA）未配 decimals → 兜底 2 位；
+ *   原始/取数列未配 decimals → 保留原精度（如汇率 6.9755）
+ * - 非数值字符串原样显示
  */
+const COMPUTED_SOURCE_TYPES = ['FORMULA', 'CARD_FORMULA', 'EXCEL_FORMULA'];
+
 function renderCellValue(val: any, col: CostingTemplateColumn): React.ReactNode {
   if (val === null || val === undefined || val === '' || val === '—') {
     return <span style={{ color: '#bbb' }}>—</span>;
@@ -41,13 +46,16 @@ function renderCellValue(val: any, col: CostingTemplateColumn): React.ReactNode 
 
   const fmt = col.display_format;
   if (fmt?.type === 'PERCENT') {
-    const n = typeof val === 'number' ? val : parseFloat(String(val));
-    if (isNaN(n)) return <span style={{ color: '#bbb' }}>—</span>;
-    const decimals = fmt.decimals ?? 2;
-    return `${(n * 100).toFixed(decimals)}%`;
+    const out = formatNumber(val, { isPercent: true, decimals: fmt.decimals ?? 2 });
+    return out ?? <span style={{ color: '#bbb' }}>—</span>;
   }
 
-  if (typeof val === 'number') return val.toLocaleString();
+  const isComputed = COMPUTED_SOURCE_TYPES.includes(col.source_type);
+  // 数值（含数值字符串）走 formatNumber；返回 null（空/非数值）→ 占位 "—"
+  const out = formatNumber(val, { decimals: fmt?.decimals ?? null, isComputed });
+  if (out != null) return out;
+  // formatNumber 判定非数值 → 保持原字符串
+  if (typeof val === 'number') return <span style={{ color: '#bbb' }}>—</span>;
   return String(val);
 }
 
