@@ -3,6 +3,7 @@ package com.cpq.configure.service;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.formula.dataloader.QuotationIdContext;
+import com.cpq.quotation.rowkey.DeletedRowKeys;
 import com.cpq.quotation.service.CrossTabComponentOrder;
 import com.cpq.quotation.service.RowDataMaterializer;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -270,16 +271,84 @@ public class ConfigureSnapshotService {
     private void materializeRowData(UUID lineItemId, JsonNode componentsSnapshot,
                                     Map<UUID, String> snapByComp) {
         if (componentsSnapshot == null || snapByComp == null || snapByComp.isEmpty()) return;
+        // 配置态：baseRows = snapshot_rows；editRows / rowKeyFields / 墓碑全空（行为与改造前 1:1）。
+        Map<UUID, JsonNode> baseRowsByComp = new LinkedHashMap<>();
+        for (Map.Entry<UUID, String> e : snapByComp.entrySet()) {
+            baseRowsByComp.put(e.getKey(), parseRows(e.getValue()));
+        }
+        materializeLineRowData(lineItemId, componentsSnapshot, baseRowsByComp,
+                /* editRowsByComp */ Map.of(), /* rowKeyFieldsByComp */ Map.of(),
+                /* deletedByComp */ Map.of());
+    }
 
-        // componentId → snapshot tab(仅非 SUBTOTAL,且本行有 snapshot_rows)
+    /**
+     * 整行 row_data 物化（共享）——按组件拓扑序逐组件物化并逐组件 {@code writeRowData} 落库。
+     *
+     * <p>配置态（{@link #materializeRowData}）与报价失焦同步（
+     * {@code CardSnapshotService.editCardValue}）共用此入口：前者传 editRows/rowKeyFields/墓碑 全空
+     * （行为与改造前一致）；后者传本次编辑产生的真实 editRows / 各组件行键 / 永久删除墓碑，
+     * 从而让<b>跨页签依赖</b>（如「来料.材料成本」引用「元素」列小计）随编辑一并重物化 →
+     * Excel 视图（只读 row_data 的列求和，不在读时重算 FORMULA 叶子）随卡片同步更新。
+     *
+     * <p><b>拓扑序 + 跨组件累积（不可破坏）</b>：依赖在前、引用在后单趟物化；每物化完一个组件即把它的
+     * 扁平行（{@code crossTabRows} 双键 componentId/componentCode）+ 列小计（{@code componentSubtotals}
+     * 键 code#col / name#col）累积进上下文，故后物化的引用方能读到其依赖的<b>最新</b>值（含本次编辑）。
+     *
+     * <p>全程降级：单组件物化/写库失败仅记 warn，不中止整行；拓扑环 → 降级原序。AP-51：行数权威=baseRows。
+     *
+     * @param lineItemId         报价行
+     * @param componentsSnapshot 模板 components_snapshot（各 tab 含 componentCode/fields/formulas）
+     * @param baseRowsByComp     componentId → baseRows（= snapshot_rows，{@code [{driverRow,basicDataValues}]}）
+     * @param editRowsByComp     componentId → editRows（含本次编辑；配置态传空 Map）
+     * @param rowKeyFieldsByComp componentId → rowKeyFields 节点（对齐 editRows，AP-54；无则缺省）
+     * @param deletedByComp      componentId → 永久删除墓碑列表（无则缺省）
+     */
+    public void materializeLineRowData(UUID lineItemId, JsonNode componentsSnapshot,
+                                       Map<UUID, JsonNode> baseRowsByComp,
+                                       Map<UUID, JsonNode> editRowsByComp,
+                                       Map<UUID, JsonNode> rowKeyFieldsByComp,
+                                       Map<UUID, List<DeletedRowKeys.Tombstone>> deletedByComp) {
+        if (componentsSnapshot == null || baseRowsByComp == null || baseRowsByComp.isEmpty()) return;
+        LinkedHashMap<UUID, ArrayNode> byComp = computeLineRowData(lineItemId, componentsSnapshot,
+                baseRowsByComp, editRowsByComp, rowKeyFieldsByComp, deletedByComp);
+        for (Map.Entry<UUID, ArrayNode> e : byComp.entrySet()) {
+            try {
+                self.writeRowData(lineItemId, e.getKey(), MAPPER.writeValueAsString(e.getValue()));
+            } catch (Exception ex) {
+                LOG.warnf("[materialize-line] line=%s comp=%s 写 row_data 失败: %s",
+                        lineItemId, e.getKey(), ex.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 纯计算：按组件拓扑序物化整行各非 SUBTOTAL 组件的扁平 row_data，<b>不落库</b>（便于单测）。
+     * 拓扑序 + 跨组件 {@code crossTabRows}/{@code componentSubtotals} 累积逻辑与原
+     * {@link #materializeRowData} 完全一致；额外按 componentId 透传 editRows/rowKeyFields/墓碑。
+     *
+     * @return componentId → 扁平 row_data（按拓扑序的 LinkedHashMap，仅含成功物化的非 SUBTOTAL 组件）
+     */
+    public LinkedHashMap<UUID, ArrayNode> computeLineRowData(UUID lineItemId, JsonNode componentsSnapshot,
+                                                             Map<UUID, JsonNode> baseRowsByComp,
+                                                             Map<UUID, JsonNode> editRowsByComp,
+                                                             Map<UUID, JsonNode> rowKeyFieldsByComp,
+                                                             Map<UUID, List<DeletedRowKeys.Tombstone>> deletedByComp) {
+        LinkedHashMap<UUID, ArrayNode> result = new LinkedHashMap<>();
+        if (componentsSnapshot == null || baseRowsByComp == null || baseRowsByComp.isEmpty()) return result;
+
+        Map<UUID, JsonNode> editsByComp = editRowsByComp != null ? editRowsByComp : Map.of();
+        Map<UUID, JsonNode> rkfByComp = rowKeyFieldsByComp != null ? rowKeyFieldsByComp : Map.of();
+        Map<UUID, List<DeletedRowKeys.Tombstone>> delByComp = deletedByComp != null ? deletedByComp : Map.of();
+
+        // componentId → snapshot tab(仅非 SUBTOTAL,且本行有 baseRows)
         Map<UUID, JsonNode> tabByComp = new LinkedHashMap<>();
         for (JsonNode tab : componentsSnapshot) {
             String type = tab.path("componentType").asText("NORMAL");
             if ("SUBTOTAL".equals(type)) continue; // 读时重算,不物化
             UUID cid = asUuid(tab.path("componentId").asText(null));
-            if (cid != null && snapByComp.containsKey(cid)) tabByComp.put(cid, tab);
+            if (cid != null && baseRowsByComp.containsKey(cid)) tabByComp.put(cid, tab);
         }
-        if (tabByComp.isEmpty()) return;
+        if (tabByComp.isEmpty()) return result;
 
         // ── 组件级拓扑序(与生产兄弟 assembleTabsWithFormulaResults 同款) ──
         // 解析表:componentId / componentCode / tabName → componentId 字符串(供 component_subtotal 依赖解析)。
@@ -313,7 +382,7 @@ public class ConfigureSnapshotService {
             order = CrossTabComponentOrder.topoOrder(compIds, compDeps);
         } catch (Exception cyc) {
             // 环(配置异常)→ 降级按原序物化,绝不中止整份快照(沿用本类全程降级纪律)。
-            LOG.warnf("[add-snapshot] line=%s 组件拓扑序失败(降级原序): %s", lineItemId, cyc.getMessage());
+            LOG.warnf("[materialize-line] line=%s 组件拓扑序失败(降级原序): %s", lineItemId, cyc.getMessage());
             order = compIds;
         }
 
@@ -327,10 +396,26 @@ public class ConfigureSnapshotService {
             if (tab == null) continue;
             String code = tab.path("componentCode").asText(null);
             String tabName = tab.path("tabName").asText(null);
-            JsonNode snapshotRows = parseRows(snapByComp.get(cid));
+            JsonNode snapshotRows = baseRowsByComp.get(cid);
 
-            ArrayNode flat = rowDataMaterializer.materializeComponentRows(
-                    componentsSnapshot, code, snapshotRows, componentSubtotals, crossTabRows);
+            // 本组件 editRows / rowKeyFields / 墓碑（缺省 → null/空，物化退化为配置态口径）。
+            JsonNode editRows = editsByComp.get(cid);
+            JsonNode rowKeyFields = rkfByComp.get(cid);
+            List<DeletedRowKeys.Tombstone> tombstones = delByComp.get(cid);
+            List<String> rowKeyFieldNames = rowKeyFieldNamesOf(rowKeyFields);
+
+            ArrayNode flat;
+            try {
+                flat = rowDataMaterializer.materializeComponentRows(
+                        componentsSnapshot, code, snapshotRows,
+                        editRows, rowKeyFields,
+                        componentSubtotals, crossTabRows,
+                        tombstones, rowKeyFieldNames);
+            } catch (Exception ex) {
+                LOG.warnf("[materialize-line] line=%s comp=%s 物化失败(降级跳过): %s",
+                        lineItemId, cid, ex.getMessage());
+                continue;
+            }
 
             // crossTabRows(双键 componentId / componentCode):供后续组件 cross_tab_ref 引用。
             List<Map<String, Object>> flatRows = toRowMaps(flat);
@@ -340,12 +425,20 @@ public class ConfigureSnapshotService {
             // 列小计累计(键 code#col / name#col):供后续组件 component_subtotal token 求值。
             accumulateColumnSubtotals(flat, code, tabName, componentSubtotals);
 
-            try {
-                self.writeRowData(lineItemId, cid, MAPPER.writeValueAsString(flat));
-            } catch (Exception ex) {
-                LOG.warnf("[add-snapshot] line=%s comp=%s 写 row_data 失败: %s", lineItemId, cid, ex.getMessage());
-            }
+            result.put(cid, flat);
         }
+        return result;
+    }
+
+    /** 从 rowKeyFields 节点（{@code ["料号",…]}）提取字段名列表，供墓碑指纹/effKey 对齐（与 CardSnapshotService 同口径）。 */
+    private static List<String> rowKeyFieldNamesOf(JsonNode rowKeyFieldsNode) {
+        if (rowKeyFieldsNode == null || !rowKeyFieldsNode.isArray()) return List.of();
+        List<String> names = new ArrayList<>(rowKeyFieldsNode.size());
+        for (JsonNode n : rowKeyFieldsNode) {
+            String name = n.asText("");
+            if (!name.isEmpty()) names.add(name);
+        }
+        return names;
     }
 
     /** 解析 snapshot_rows JSON 为 JsonNode 数组;失败 → 空数组。 */
