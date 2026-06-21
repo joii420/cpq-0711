@@ -371,7 +371,7 @@ public class ExcelViewService {
             (effectiveRows != null)
                 ? com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(effectiveRows)
                 : com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(
-                      hasTabJoin ? buildTabJoinEffectiveRows(componentDataList) : java.util.Map.of());
+                      hasTabJoin ? buildTabJoinEffectiveRows(componentDataList, templateId) : java.util.Map.of());
 
         // Stage 2: 逐列计算，VARIABLE 列先算好，FORMULA 列引用时可以直接用 cachedCells
         Map<String, Object> cachedCells = new LinkedHashMap<>();
@@ -432,28 +432,77 @@ public class ExcelViewService {
      * 读时：从持久化 componentData 现算 TAB_JOIN 用的有效行（含列小计 + SUBTOTAL 公式总计）。
      * 加载各页签 Component 元数据（code/name/type/formulas）后委托纯计算器
      * {@link com.cpq.quotation.service.card.ComponentDataEffectiveRows}。
+     *
+     * <p>额外：从模板 componentsSnapshot 取出「无 cd 记录的 SUBTOTAL 组件」（新配置报价单
+     * ConfigureSnapshotService 不为其建行）补成 extraSubtotalMetas，令读时合成其总计，
+     * 修复 {@code [报价小计(总计)]}=0 致产品小计=0 的残留 bug。
      */
     private Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows>
-            buildTabJoinEffectiveRows(java.util.List<com.cpq.quotation.entity.QuotationLineComponentData> cdList) {
+            buildTabJoinEffectiveRows(java.util.List<com.cpq.quotation.entity.QuotationLineComponentData> cdList,
+                                      UUID templateId) {
         java.util.Map<java.util.UUID, com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta> metaById =
             new java.util.HashMap<>();
+        java.util.Set<java.util.UUID> presentInCd = new java.util.HashSet<>();
         for (com.cpq.quotation.entity.QuotationLineComponentData cd : cdList) {
-            if (cd.componentId == null || metaById.containsKey(cd.componentId)) continue;
+            if (cd.componentId == null) continue;
+            presentInCd.add(cd.componentId);
+            if (metaById.containsKey(cd.componentId)) continue;
             com.cpq.component.entity.Component c =
                 com.cpq.component.entity.Component.findById(cd.componentId);
             if (c == null) continue;
-            com.fasterxml.jackson.databind.JsonNode formulas = null;
-            try {
-                if (c.formulas != null && !c.formulas.isBlank()) {
-                    formulas = MAPPER.readTree(c.formulas);
-                }
-            } catch (Exception ignore) { /* 公式坏 → 当无公式，subtotal 退回持久化值 */ }
             metaById.put(cd.componentId,
                 new com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta(
-                    c.code, c.name, c.componentType, formulas));
+                    c.code, c.name, c.componentType, parseComponentFormulas(c.formulas)));
         }
+
+        // 从模板 componentsSnapshot 找出 SUBTOTAL 组件中未出现在 cdList 的，补成 extraSubtotalMetas。
+        java.util.Map<java.util.UUID, com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta> extraSubtotalMetas =
+            buildMissingSubtotalMetas(templateId, presentInCd);
+
         return com.cpq.quotation.service.card.ComponentDataEffectiveRows.compute(
-            cdList, metaById, formulaCalculator);
+            cdList, metaById, extraSubtotalMetas, formulaCalculator);
+    }
+
+    /** Component.formulas JSON 字符串 → JsonNode；坏/空 → null（subtotal 退回持久化值或 0）。 */
+    private com.fasterxml.jackson.databind.JsonNode parseComponentFormulas(String formulasJson) {
+        try {
+            if (formulasJson != null && !formulasJson.isBlank()) return MAPPER.readTree(formulasJson);
+        } catch (Exception ignore) { /* 公式坏 → 当无公式 */ }
+        return null;
+    }
+
+    /**
+     * 从模板 componentsSnapshot 取出所有 componentType=SUBTOTAL 且不在 presentInCd 的组件，
+     * 加载其 Component.formulas 组成 componentId → Meta。无模板/无 SUBTOTAL → 空 Map。
+     */
+    private java.util.Map<java.util.UUID, com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta>
+            buildMissingSubtotalMetas(UUID templateId, java.util.Set<java.util.UUID> presentInCd) {
+        java.util.Map<java.util.UUID, com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta> out =
+            new java.util.HashMap<>();
+        if (templateId == null) return out;
+        try {
+            Template t = Template.findById(templateId);
+            if (t == null || t.componentsSnapshot == null || t.componentsSnapshot.isBlank()) return out;
+            com.fasterxml.jackson.databind.JsonNode snap = MAPPER.readTree(t.componentsSnapshot);
+            if (snap == null || !snap.isArray()) return out;
+            for (com.fasterxml.jackson.databind.JsonNode c : snap) {
+                String type = c.path("componentType").asText("");
+                if (!"SUBTOTAL".equals(type)) continue;
+                String cidStr = c.path("componentId").asText("");
+                if (cidStr.isBlank()) continue;
+                java.util.UUID cid;
+                try { cid = java.util.UUID.fromString(cidStr); } catch (Exception e) { continue; }
+                if (presentInCd.contains(cid)) continue;   // 已有 cd → 走 Pass 2，不重复合成
+                com.cpq.component.entity.Component comp = com.cpq.component.entity.Component.findById(cid);
+                if (comp == null) continue;
+                out.put(cid,
+                    new com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta(
+                        comp.code, comp.name, comp.componentType, parseComponentFormulas(comp.formulas)));
+            }
+        } catch (Exception e) {
+            LOG.warnf("[ExcelView] buildMissingSubtotalMetas failed tmpl=%s: %s", templateId, e.getMessage());
+        }
+        return out;
     }
 
     /**

@@ -61,15 +61,41 @@ public final class ComponentDataEffectiveRows {
             List<QuotationLineComponentData> cdList,
             Map<UUID, Meta> metaById,
             FormulaCalculator fc) {
+        return compute(cdList, metaById, Map.of(), fc);
+    }
+
+    /**
+     * 重载：额外合成「无 cd 记录的 SUBTOTAL 组件」的 TabRows。
+     *
+     * <p>背景：新配置（CONFIGURED）的报价单里 {@code ConfigureSnapshotService} 不为 SUBTOTAL
+     * 组件建 component_data 记录（它无 driver 行）→ 旧 compute 仅遍历 cdList → 该 SUBTOTAL
+     * 页签缺席 → Excel 列 {@code [报价小计(总计)]} 解析为 0（产品小计=0 残留 bug）。
+     *
+     * <p>本重载对 {@code extraSubtotalMetas} 里每个 SUBTOTAL 组件：合成 0 明细行的 TabRows，
+     * 用 Pass 1 已从 NORMAL 页签构建的 componentSubtotals 跑公式求总计，双键登记
+     * （裸 componentId + componentId:sortOrder），令 tabKey 引用得以命中。
+     *
+     * @param extraSubtotalMetas componentId → Meta（SUBTOTAL 类型，须含 formulas）；
+     *        已在 cdList 中出现的组件会跳过，避免重复处理。
+     */
+    public static Map<String, CardEffectiveRows.TabRows> compute(
+            List<QuotationLineComponentData> cdList,
+            Map<UUID, Meta> metaById,
+            Map<UUID, Meta> extraSubtotalMetas,
+            FormulaCalculator fc) {
         Map<String, CardEffectiveRows.TabRows> out = new LinkedHashMap<>();
-        if (cdList == null || cdList.isEmpty()) return out;
+        Map<UUID, Meta> extras = extraSubtotalMetas != null ? extraSubtotalMetas : Map.of();
+        boolean noCd = cdList == null || cdList.isEmpty();
+        if (noCd && extras.isEmpty()) return out;
         Map<UUID, Meta> metas = metaById != null ? metaById : Map.of();
 
         // Pass 1：解析行 + 列求和；构建全局 componentSubtotals（code#col 与 name#col，避免同名列 费用 串值）
         List<TabAcc> accs = new ArrayList<>();
         Map<String, Double> componentSubtotals = new HashMap<>();
-        for (QuotationLineComponentData cd : cdList) {
+        Set<UUID> presentInCd = new HashSet<>();
+        for (QuotationLineComponentData cd : (noCd ? List.<QuotationLineComponentData>of() : cdList)) {
             if (cd == null) continue;
+            if (cd.componentId != null) presentInCd.add(cd.componentId);
             List<Map<String, Object>> rows = parseRows(cd.rowData);
             Map<String, BigDecimal> colSums = columnSums(rows);
             Meta meta = cd.componentId != null ? metas.get(cd.componentId) : null;
@@ -88,15 +114,9 @@ public final class ComponentDataEffectiveRows {
         // Pass 2：算 subtotal（SUBTOTAL → 公式求值；其余 → 沿用持久化值）+ 双键装配
         for (TabAcc a : accs) {
             BigDecimal subtotal = a.cd.subtotal;
-            if (a.meta != null && COMPONENT_TYPE_SUBTOTAL.equals(a.meta.componentType)
-                    && a.meta.formulas != null && a.meta.formulas.isArray() && a.meta.formulas.size() > 0) {
-                // SUBTOTAL 组件取首个公式为总计；多公式场景不支持（约定）。
-                JsonNode expr = a.meta.formulas.get(0).path(EXPR_KEY);
-                if (expr.isArray() && expr.size() > 0) {
-                    FormulaCalculator.RowContext ctx = new FormulaCalculator.RowContext();
-                    ctx.componentSubtotals = componentSubtotals;
-                    subtotal = fc.evaluateExpression(expr, ctx);
-                }
+            if (a.meta != null && COMPONENT_TYPE_SUBTOTAL.equals(a.meta.componentType)) {
+                BigDecimal evaluated = evaluateSubtotalFormula(a.meta, componentSubtotals, fc);
+                if (evaluated != null) subtotal = evaluated;
             }
             CardEffectiveRows.TabRows tr =
                 new CardEffectiveRows.TabRows(a.rows, subtotal, a.colSums);
@@ -109,7 +129,37 @@ public final class ComponentDataEffectiveRows {
                 out.putIfAbsent(cid + TABKEY_SORT_SEP + sort, tr);   // componentId:sortOrder（CardRef 约定）
             }
         }
+
+        // Pass 3：合成无 cd 记录的 SUBTOTAL 组件（新配置报价单产品小计=0 修复）。
+        // 0 明细行（AP-51：纯公式总计），公式对 Pass 1 的 componentSubtotals 求值，双键登记。
+        for (Map.Entry<UUID, Meta> e : extras.entrySet()) {
+            UUID cid = e.getKey();
+            Meta meta = e.getValue();
+            if (cid == null || meta == null) continue;
+            if (presentInCd.contains(cid)) continue;            // 已有 cd → 避免重复处理
+            if (!COMPONENT_TYPE_SUBTOTAL.equals(meta.componentType)) continue;
+            BigDecimal subtotal = evaluateSubtotalFormula(meta, componentSubtotals, fc);
+            if (subtotal == null) subtotal = BigDecimal.ZERO;
+            CardEffectiveRows.TabRows tr =
+                new CardEffectiveRows.TabRows(List.of(), subtotal, Map.of());
+            String cidStr = cid.toString();
+            out.put(cidStr, tr);                                // 裸 componentId（tabKey 命中 [报价小计(总计)]）
+            out.putIfAbsent(cidStr + TABKEY_SORT_SEP + 0, tr);  // componentId:sortOrder（CardRef 约定）
+        }
         return out;
+    }
+
+    /**
+     * SUBTOTAL 组件取首个公式为总计求值；无公式/空表达式 → null（调用方退回持久化值或 0）。
+     */
+    private static BigDecimal evaluateSubtotalFormula(
+            Meta meta, Map<String, Double> componentSubtotals, FormulaCalculator fc) {
+        if (meta.formulas == null || !meta.formulas.isArray() || meta.formulas.size() == 0) return null;
+        JsonNode expr = meta.formulas.get(0).path(EXPR_KEY);
+        if (!expr.isArray() || expr.size() == 0) return null;
+        FormulaCalculator.RowContext ctx = new FormulaCalculator.RowContext();
+        ctx.componentSubtotals = componentSubtotals;
+        return fc.evaluateExpression(expr, ctx);
     }
 
     private static List<Map<String, Object>> parseRows(String json) {

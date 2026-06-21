@@ -90,6 +90,48 @@ class ComponentDataEffectiveRowsTest {
             "实际=" + productSubtotal);
     }
 
+    /**
+     * 新配置报价单：SUBTOTAL 组件无 cd 记录（ConfigureSnapshotService 不为其建行）→
+     * 通过 extraSubtotalMetas 读时合成其 TabRows，公式对 NORMAL 页签列小计求值，
+     * 以裸 componentId 键命中 → [报价小计(总计)] 解析为正确总计（修复产品小计=0 残留 bug）。
+     */
+    @Test
+    void synthesizedSubtotalWithoutCdRecord() {
+        String LL = "11111111-1111-1111-1111-111111111111"; // 来料 COMP-0028 (NORMAL, 有 cd)
+        String ZZ = "22222222-2222-2222-2222-222222222222"; // 组装加工费 COMP-0038 (NORMAL, 有 cd)
+        String ST = "44444444-4444-4444-4444-444444444444"; // 报价小计 COMP-0034 SUBTOTAL (无 cd)
+
+        // cdList 只含 NORMAL 页签；列小计：材料成本=0.08，费用=0.06
+        var cdList = List.of(
+            cd(LL, 1, "[{\"材料成本\":0.05},{\"材料成本\":0.03}]"),
+            cd(ZZ, 2, "[{\"费用\":0.04},{\"费用\":0.02}]"));
+
+        Map<UUID, ComponentDataEffectiveRows.Meta> meta = new HashMap<>();
+        meta.put(UUID.fromString(LL), new ComponentDataEffectiveRows.Meta("COMP-0028__imp1", "来料", "DETAIL", null));
+        meta.put(UUID.fromString(ZZ), new ComponentDataEffectiveRows.Meta("COMP-0038__imp1", "组装加工费", "DETAIL", null));
+
+        String subtotalFormulas = "[{\"name\":\"产品小计\",\"expression\":["
+            + "{\"type\":\"component_subtotal\",\"value\":\"材料成本\",\"tab_name\":\"材料成本\",\"component_code\":\"COMP-0028__imp1\"},"
+            + "{\"type\":\"operator\",\"value\":\"+\"},"
+            + "{\"type\":\"component_subtotal\",\"value\":\"费用\",\"tab_name\":\"费用\",\"component_code\":\"COMP-0038__imp1\"}"
+            + "]}]";
+
+        // SUBTOTAL 组件 meta 走 extraSubtotalMetas（不在 cdList，也不在 metaById）
+        Map<UUID, ComponentDataEffectiveRows.Meta> extra = new HashMap<>();
+        extra.put(UUID.fromString(ST), new ComponentDataEffectiveRows.Meta(
+            "COMP-0034__imp1", "报价小计", "SUBTOTAL", formulas(subtotalFormulas)));
+
+        Map<String, CardEffectiveRows.TabRows> out =
+            ComponentDataEffectiveRows.compute(cdList, meta, extra, new FormulaCalculator());
+
+        CardEffectiveRows.TabRows st = out.get(ST);
+        assertNotNull(st, "合成的 SUBTOTAL 必须以裸 componentId 命中（[报价小计(总计)] 解析依赖此键）");
+        assertEquals(0, st.rows.size(), "AP-51: 纯公式总计，无明细行");
+        // 0.08 + 0.06 = 0.14
+        assertEquals(0, new BigDecimal("0.14").compareTo(st.subtotal),
+            "实际=" + st.subtotal);
+    }
+
     /** 脏/空数据兜底：null rowData、非数值列、缺 meta 都不抛异常。 */
     @Test
     void nullAndDirtyDataSafe() {
