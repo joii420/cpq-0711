@@ -362,6 +362,16 @@ public class QuotationService {
                 if (liDraft.compositeType != null && !liDraft.compositeType.isBlank()) {
                     li.compositeType = liDraft.compositeType;
                 }
+                // Step3 行级折扣（V302）：原样落库前端送来的值；submit 时再权威重算覆盖。
+                li.annualVolume = liDraft.annualVolume;
+                li.discountSource = liDraft.discountSource;
+                li.discountBaseAmount = liDraft.discountBaseAmount;
+                li.discountRateApplied = liDraft.discountRateApplied;
+                li.lineDiscountAmount = liDraft.lineDiscountAmount;
+                li.lineUnitPrice = liDraft.lineUnitPrice;
+                li.lineFinalPrice = liDraft.lineFinalPrice;
+                li.lineTotalAmount = liDraft.lineTotalAmount;
+                li.discountRuleCode = liDraft.discountRuleCode;
                 li.persist();
                 newIdsByIndex[i] = li.id;  // V169 二阶段父子关系重建用
 

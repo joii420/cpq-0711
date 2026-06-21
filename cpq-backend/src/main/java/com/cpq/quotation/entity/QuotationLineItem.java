@@ -54,6 +54,34 @@ public class QuotationLineItem extends PanacheEntityBase {
     @Column(name = "sort_order")
     public Integer sortOrder = 0;
 
+    // ─── Step3 行级折扣（V302）─────────────────────────────────────────────
+    @Column(name = "annual_volume")
+    public Integer annualVolume;
+
+    @Column(name = "discount_source", length = 64)
+    public String discountSource;
+
+    @Column(name = "discount_base_amount", precision = 18, scale = 4)
+    public BigDecimal discountBaseAmount;
+
+    @Column(name = "discount_rate_applied", precision = 5, scale = 2)
+    public BigDecimal discountRateApplied;
+
+    @Column(name = "line_discount_amount", precision = 18, scale = 4)
+    public BigDecimal lineDiscountAmount;
+
+    @Column(name = "line_unit_price", precision = 18, scale = 4)
+    public BigDecimal lineUnitPrice;
+
+    @Column(name = "line_final_price", precision = 18, scale = 4)
+    public BigDecimal lineFinalPrice;
+
+    @Column(name = "line_total_amount", precision = 18, scale = 4)
+    public BigDecimal lineTotalAmount;
+
+    @Column(name = "discount_rule_code", length = 64)
+    public String discountRuleCode;
+
     @Column(name = "customer_part_no", length = 200)
     public String customerPartNo;
 
