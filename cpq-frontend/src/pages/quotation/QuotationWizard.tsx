@@ -31,6 +31,7 @@ import { splitRows, rowAt } from './manualRows';
 import { coerceInputNumber } from './inputDefaults';
 import type { CostingTemplateColumn } from '../../services/costingTemplateService';
 import { buildExcelSnapshot } from './buildExcelSnapshot';
+import { parseExcelViewColumns } from './useLinkedExcelRows';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
@@ -164,19 +165,22 @@ const QuotationWizard: React.FC = () => {
   const excelColumnsRef = useRef<CostingTemplateColumn[]>([]);
   useEffect(() => {
     if (!customerTemplateId) { excelColumnsRef.current = []; return; }
+    // I1 fix（2026-06-21）：customerTemplateId 快速切换时旧响应可能晚于新响应到达，
+    // 用 cancelled 标志丢弃过时响应，防止旧列定义覆盖新 ref。
+    let cancelled = false;
     templateService.getExcelViewConfig(customerTemplateId)
       .then((r: any) => {
+        if (cancelled) return;
         try {
           const raw = r?.data ?? r;
-          const cols = Array.isArray(raw)
-            ? raw
-            : Array.isArray(raw?.columns) ? raw.columns : [];
-          excelColumnsRef.current = cols as CostingTemplateColumn[];
+          const cols = parseExcelViewColumns(raw);
+          excelColumnsRef.current = cols;
         } catch {
           excelColumnsRef.current = [];
         }
       })
       .catch(() => { excelColumnsRef.current = []; });
+    return () => { cancelled = true; };
   }, [customerTemplateId]);
 
   // 2026-06-01: 取消 10 秒定时自动保存（用户决议）。草稿持久化改为按需触发：
@@ -810,11 +814,19 @@ const QuotationWizard: React.FC = () => {
         discountRuleCode: li.discountRuleCode ?? null,
         // Phase 3（2026-06-21）：前端单引擎算好的报价 Excel 快照，随 saveDraft 原样落库。
         // 后端 snapshotLineValues 守卫：仅当 li.quoteExcelValues==null 时才 buildExcelValues 兜底。
+        // C1 fix（2026-06-21）：buildExcelSnapshot 未传 pathCache 时 BNF/VARIABLE 列 cache-miss
+        // 会返 '__loading__' 哨兵。JSON.stringify 不抛错，哨兵会原样落库，守卫见非 null 不重算
+        // → 脏值永久固化（历史教训：excel-snapshot-no-persist-loading-sentinel）。
+        // 最小稳健修法：算完后检测含哨兵则放弃前端快照，让后端 buildExcelValues 兜底。
         quoteExcelValues: (() => {
           try {
             const cols = excelColumnsRef.current;
             if (!cols?.length) return undefined;
-            return JSON.stringify(buildExcelSnapshot(li, cols, driverExpansions, customerIdValue, { globalVariableDefs: gvDefs }));
+            const snap = buildExcelSnapshot(li, cols, driverExpansions, customerIdValue, { globalVariableDefs: gvDefs });
+            // C1 guard: if any cell still holds '__loading__' (BNF path not yet resolved),
+            // discard the frontend snapshot and let the backend fallback recalculate.
+            if (snap.rows.some(r => Object.values(r).some(v => v === '__loading__'))) return undefined;
+            return JSON.stringify(snap);
           } catch {
             return undefined;
           }

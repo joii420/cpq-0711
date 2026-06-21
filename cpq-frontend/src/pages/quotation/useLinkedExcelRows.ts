@@ -13,6 +13,17 @@ import type { LineItem } from './QuotationStep2';
 export const pathCacheKey = (partNo: string, path: string) => `${partNo}::${path}`;
 
 /**
+ * M1（2026-06-21）：共享列解析 helper，消除 QuotationWizard 与 useLinkedExcelRows 的重复逻辑。
+ * getExcelViewConfig 响应可能返回数组或含 columns 属性的对象，此 helper 统一处理两种格式。
+ * 行为与原两处实现 1:1 等价。
+ */
+export function parseExcelViewColumns(raw: any): CostingTemplateColumn[] {
+  if (Array.isArray(raw)) return raw as CostingTemplateColumn[];
+  if (Array.isArray(raw?.columns)) return raw.columns as CostingTemplateColumn[];
+  return [];
+}
+
+/**
  * 单行数据：__key/__label/__hfPartNo/__noData 为元数据，其余 key 为 col_key → 求值后的值。
  * 注意：BNF 路径仍在异步求值中的 cell 值为哨兵字符串 '__loading__'，
  * 消费方（LinkedExcelView 渲染、ComparisonView 比对）必须识别并处理该哨兵。
@@ -173,9 +184,7 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
       .getExcelViewConfig(linkedTemplateId)
       .then((r: any) => {
         const raw = r?.data ?? r;
-        const cols = Array.isArray(raw)
-          ? raw
-          : Array.isArray(raw?.columns) ? raw.columns : [];
+        const cols = parseExcelViewColumns(raw);
         if (cols.length === 0) {
           setExcelTemplate(null);
           return;

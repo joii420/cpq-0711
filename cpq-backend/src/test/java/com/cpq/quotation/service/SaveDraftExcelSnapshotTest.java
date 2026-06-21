@@ -8,11 +8,11 @@ import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.*;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * TDD Phase 3 — saveDraft 携带前端 quoteExcelSnapshot 并原样落库。
@@ -26,14 +26,17 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *       调 {@code buildExcelValues} 兜底；前端已送值则跳过（前端权威，后端退让）。</li>
  * </ul>
  *
- * <p><b>测试策略：</b>
+ * <p><b>测试策略（I3 取舍说明）：</b>
+ * <p>原版依赖 DB 现存 DRAFT 报价单，干净 CI 会因 {@code assumeTrue} 静默跳过（零覆盖）。
+ * <p>理想方案是完整自建 quotation 图谱（customer→user→product→template→quotation→line_item），
+ * 但 quotation 有 customer_id/sales_rep_id 真实外键约束，cost 过高。
+ * <p><b>实际方案</b>：
  * <ol>
- *   <li>用 native SQL 找一条真实 DRAFT 报价单（无则 assumeTrue 跳过）。</li>
- *   <li>调用 {@code quotationService.saveDraft}，LineItemDraft 携带
- *       {@code quoteExcelValues='{"rows":[{"C":0.93}]}'} 和该单现有 line item 的
- *       关键字段（确保 UPSERT 命中已有行）。</li>
- *   <li>断言落库后 {@code QuotationLineItem.quoteExcelValues} 含 {@code "0.93"}
- *       （原样落库，未被后端重算覆盖）。</li>
+ *   <li>先查一条 DRAFT quotation（只读 quotation 表，FK 约束已满足）。</li>
+ *   <li>@TestTransaction 内自建最小 QuotationLineItem（quotationId 指向该 DRAFT），
+ *       测试完毕事务自动回滚，不污染 DB。</li>
+ *   <li>若 DB 确实无任何 DRAFT quotation，改为显式 fail 而非静默 skip，
+ *       测试失败可见（CI 红）而非假绿（zero-coverage green）。</li>
  * </ol>
  */
 @QuarkusTest
@@ -47,26 +50,65 @@ public class SaveDraftExcelSnapshotTest {
     @Inject
     EntityManager em;
 
-    /** 前端送来的 Excel 快照 JSON 字符串（含特征值 0.93，便于断言）。 */
+    /**
+     * T2 guard sentinel: 物理上不可能由 buildExcelValues 产出的哨兵 JSON。
+     * 用于 T2 证伪强度：若守卫失效（buildExcelValues 被调），返回值必然不含该哨兵。
+     */
+    private static final String GUARD_SENTINEL_SNAPSHOT =
+            "{\"rows\":[{\"__guard_sentinel__\":\"GUARD_KEEP_ME\"}]}";
+
+    /** T1 用的特征值快照。 */
     private static final String FRONTEND_SNAPSHOT = "{\"rows\":[{\"C\":0.93}]}";
 
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
-    /** 找一条真实 DRAFT 报价单及其第一条 lineItem；不存在返回 null。 */
+    /** 找一条 DRAFT quotation ID；不存在返回 null。 */
     @SuppressWarnings("unchecked")
-    private Object[] findDraftQuotationWithLineItem() {
-        List<Object[]> rows = em.createNativeQuery(
-                "SELECT q.id, li.id, li.product_id, li.template_id, " +
-                "li.product_part_no_snapshot, li.product_name_snapshot " +
-                "FROM quotation q " +
-                "JOIN quotation_line_item li ON li.quotation_id = q.id " +
-                "WHERE q.status = 'DRAFT' " +
-                "ORDER BY q.created_at LIMIT 1")
+    private UUID findDraftQuotationId() {
+        List<Object> rows = em.createNativeQuery(
+                "SELECT id FROM quotation WHERE status = 'DRAFT' ORDER BY created_at LIMIT 1")
                 .getResultList();
         if (rows.isEmpty()) return null;
-        return rows.get(0);
+        Object o = rows.get(0);
+        if (o instanceof UUID u) return u;
+        try { return UUID.fromString(o.toString()); } catch (Exception e) { return null; }
+    }
+
+    /**
+     * 在当前事务内自建最小 QuotationLineItem，挂到 quotationId 下。
+     * 直接从 product / template 表各取一条合法 ID 满足 FK 约束。
+     * 调用方须在 @Transactional 测试方法中，事务回滚后自动清理（不污染 DB）。
+     */
+    @SuppressWarnings("unchecked")
+    private UUID createMinimalLineItem(UUID quotationId) {
+        // 直接从 product 表取任意一条，满足 FK quotation_line_item.product_id → product.id
+        List<Object> products = em.createNativeQuery(
+                "SELECT id FROM product LIMIT 1")
+                .getResultList();
+        if (products.isEmpty()) return null;
+        UUID productId = toUUID(products.get(0));
+
+        // 直接从 template 表取任意一条，满足 FK quotation_line_item.template_id → template.id
+        List<Object> templates = em.createNativeQuery(
+                "SELECT id FROM template LIMIT 1")
+                .getResultList();
+        if (templates.isEmpty()) return null;
+        UUID templateId = toUUID(templates.get(0));
+
+        UUID newId = UUID.randomUUID();
+        em.createNativeQuery(
+                "INSERT INTO quotation_line_item " +
+                "(id, quotation_id, product_id, template_id, sort_order, created_at) " +
+                "VALUES (:id, :qid, :pid, :tid, 99, :now)")
+                .setParameter("id",   newId)
+                .setParameter("qid",  quotationId)
+                .setParameter("pid",  productId)
+                .setParameter("tid",  templateId)
+                .setParameter("now",  OffsetDateTime.now())
+                .executeUpdate();
+        return newId;
     }
 
     /** 用 native SQL 直接读 quote_excel_values，绕过 Hibernate L1 缓存。 */
@@ -79,24 +121,6 @@ public class SaveDraftExcelSnapshotTest {
         return r.isEmpty() ? null : (String) r.get(0);
     }
 
-    /** 还原 quote_excel_values（AfterEach 清理，不污染 DB）。 */
-    @Transactional
-    public void restoreQuoteExcelValues(UUID lineItemId, String original) {
-        if (lineItemId == null) return;
-        if (original == null) {
-            em.createNativeQuery(
-                    "UPDATE quotation_line_item SET quote_excel_values = NULL WHERE id = :lid")
-                    .setParameter("lid", lineItemId)
-                    .executeUpdate();
-        } else {
-            em.createNativeQuery(
-                    "UPDATE quotation_line_item SET quote_excel_values = CAST(:val AS jsonb) WHERE id = :lid")
-                    .setParameter("val", original)
-                    .setParameter("lid", lineItemId)
-                    .executeUpdate();
-        }
-    }
-
     // -----------------------------------------------------------------------
     // T1 — 前端送 quoteExcelValues → 原样落库，不被后端重算覆盖
     // -----------------------------------------------------------------------
@@ -104,54 +128,42 @@ public class SaveDraftExcelSnapshotTest {
     @Test
     @Order(1)
     @DisplayName("T1: saveDraft 携带 quoteExcelValues → 原样落库含 '0.93'")
+    @Transactional
     void saveDraft_carriesQuoteExcelValues_persistedAsIs() {
-        Object[] row = findDraftQuotationWithLineItem();
-        assumeTrue(row != null, "DB 无 DRAFT 报价单，跳过 T1");
+        UUID quotationId = findDraftQuotationId();
+        assertNotNull(quotationId,
+                "DB 无 DRAFT 报价单 — 请先通过 UI 创建至少一条 DRAFT 状态报价单后再运行本测试");
 
-        UUID quotationId = toUUID(row[0]);
-        UUID lineItemId  = toUUID(row[1]);
-        UUID productId   = toUUID(row[2]);
-        UUID templateId  = toUUID(row[3]);
-        String partNo    = row[4] != null ? row[4].toString() : null;
-        String name      = row[5] != null ? row[5].toString() : null;
+        UUID lineItemId = createMinimalLineItem(quotationId);
+        assertNotNull(lineItemId,
+                "无法自建 QuotationLineItem（无可用 product_id/template_id 引用），请检查基础数据");
 
-        // 记录原始值（AfterEach 还原用）
-        String originalVal = readQuoteExcelValues(lineItemId);
+        // 构造 SaveDraftRequest，LineItemDraft 携带前端 Excel 快照（命中自建行 → UPSERT）
+        SaveDraftRequest req = new SaveDraftRequest();
+        SaveDraftRequest.LineItemDraft liDraft = new SaveDraftRequest.LineItemDraft();
+        liDraft.id              = lineItemId;
+        liDraft.sortOrder       = 99;
+        // ★ Phase 3 核心：携带前端算好的 Excel 快照
+        liDraft.quoteExcelValues = FRONTEND_SNAPSHOT;
+        req.lineItems = List.of(liDraft);
 
-        try {
-            // 构造 SaveDraftRequest，LineItemDraft 携带前端 Excel 快照
-            SaveDraftRequest req = new SaveDraftRequest();
-            SaveDraftRequest.LineItemDraft liDraft = new SaveDraftRequest.LineItemDraft();
-            liDraft.id              = lineItemId;  // 命中已有行 → UPSERT
-            liDraft.productId       = productId;
-            liDraft.templateId      = templateId;
-            liDraft.productPartNo   = partNo;
-            liDraft.productName     = name;
-            liDraft.sortOrder       = 0;
-            // ★ Phase 3 核心：携带前端算好的 Excel 快照
-            liDraft.quoteExcelValues = FRONTEND_SNAPSHOT;
-            req.lineItems = List.of(liDraft);
+        quotationService.saveDraft(quotationId, req);
 
-            quotationService.saveDraft(quotationId, req);
+        // 绕过 Hibernate L1 缓存直接读库
+        em.flush();
+        em.clear();
+        String stored = readQuoteExcelValues(lineItemId);
 
-            // 绕过 Hibernate L1 缓存直接读库
-            em.clear();
-            String stored = readQuoteExcelValues(lineItemId);
-
-            assertNotNull(stored, "quoteExcelValues 不应为 null（前端已送值）");
-            assertTrue(stored.contains("0.93"),
-                    "quoteExcelValues 应原样含 '0.93'，实际：" + stored);
-        } finally {
-            restoreQuoteExcelValues(lineItemId, originalVal);
-        }
+        assertNotNull(stored, "quoteExcelValues 不应为 null（前端已送值）");
+        assertTrue(stored.contains("0.93"),
+                "quoteExcelValues 应原样含 '0.93'，实际：" + stored);
+        // 事务回滚（@Transactional on test）自动清理自建数据
     }
 
     // -----------------------------------------------------------------------
     // T2 — snapshotLineValues 守卫验证：前端已送值后，守卫不覆盖（不调 buildExcelValues）。
-    //   策略：先用 T1 同样的方式写入 FRONTEND_SNAPSHOT，再调用 snapshotLineValues，
-    //   验证守卫生效——quoteExcelValues 仍然是 FRONTEND_SNAPSHOT 而非后端算出的其他值。
-    //   注：snapshotLineValues 在 QuotationResource 里仅对新行（quoteCardValues=null）触发；
-    //   本测试直接调 CardSnapshotService.snapshotLineValues 以白盒验证守卫逻辑本身。
+    //   I2 fix（2026-06-21）：改用物理不可产出的哨兵值 GUARD_SENTINEL_SNAPSHOT，
+    //   证伪强度远高于依赖"buildExcelValues 不产出 0.93"的隐含前提。
     // -----------------------------------------------------------------------
 
     @Inject
@@ -159,41 +171,43 @@ public class SaveDraftExcelSnapshotTest {
 
     @Test
     @Order(2)
-    @DisplayName("T2: snapshotLineValues 守卫 — 前端值已存在时不覆盖")
+    @DisplayName("T2: snapshotLineValues 守卫 — 前端值已存在时不覆盖（哨兵证伪）")
+    @Transactional
     void snapshotLineValues_guardDoesNotOverwriteFrontendValue() {
-        Object[] row = findDraftQuotationWithLineItem();
-        assumeTrue(row != null, "DB 无 DRAFT 报价单，跳过 T2");
+        UUID quotationId = findDraftQuotationId();
+        assertNotNull(quotationId,
+                "DB 无 DRAFT 报价单 — 请先通过 UI 创建至少一条 DRAFT 状态报价单后再运行本测试");
 
-        UUID lineItemId = toUUID(row[1]);
+        UUID lineItemId = createMinimalLineItem(quotationId);
+        assertNotNull(lineItemId,
+                "无法自建 QuotationLineItem（无可用 product_id/template_id 引用），请检查基础数据");
 
-        // 记录原始值（AfterEach 还原用）
-        String originalVal = readQuoteExcelValues(lineItemId);
+        // 先直写哨兵快照（模拟 saveDraft Phase3 落库后的状态）
+        // I2: 使用物理不可能由 buildExcelValues 产出的哨兵值，证伪强度更高
+        writeFrontendSnapshot(lineItemId, GUARD_SENTINEL_SNAPSHOT);
+        em.flush();
+        em.clear();
 
-        try {
-            // 先直接写入 FRONTEND_SNAPSHOT（模拟 saveDraft Phase3 落库后的状态）
-            writeFrontendSnapshot(lineItemId, FRONTEND_SNAPSHOT);
-            em.clear();
+        // 验证写入成功
+        String afterWrite = readQuoteExcelValues(lineItemId);
+        assertNotNull(afterWrite, "直接写入后应非 null");
+        assertTrue(afterWrite.contains("GUARD_KEEP_ME"),
+                "直接写入后应含哨兵 'GUARD_KEEP_ME'，实际：" + afterWrite);
 
-            // 验证写入成功
-            String afterWrite = readQuoteExcelValues(lineItemId);
-            assertNotNull(afterWrite, "直接写入后应非 null");
-            assertTrue(afterWrite.contains("0.93"), "直接写入后应含 '0.93'，实际：" + afterWrite);
+        // 调 snapshotLineValues（守卫路径：quoteExcelValues != null → 不调 buildExcelValues）
+        QuotationLineItem li = QuotationLineItem.findById(lineItemId);
+        assertNotNull(li, "自建 line item 应可查到");
+        cardSnapshotService.snapshotLineValues(li);
 
-            // 调 snapshotLineValues（守卫路径：quoteExcelValues != null → 不调 buildExcelValues）
-            QuotationLineItem li = QuotationLineItem.findById(lineItemId);
-            assumeTrue(li != null, "lineItem 找不到，跳过");
-            cardSnapshotService.snapshotLineValues(li);
+        // 绕过 Hibernate L1 缓存验证
+        em.flush();
+        em.clear();
+        String afterSnapshot = readQuoteExcelValues(lineItemId);
 
-            // 绕过 Hibernate L1 缓存验证
-            em.clear();
-            String afterSnapshot = readQuoteExcelValues(lineItemId);
-
-            assertNotNull(afterSnapshot, "snapshotLineValues 后不应为 null");
-            assertTrue(afterSnapshot.contains("0.93"),
-                    "守卫应生效：snapshotLineValues 不应覆盖前端值，实际：" + afterSnapshot);
-        } finally {
-            restoreQuoteExcelValues(lineItemId, originalVal);
-        }
+        assertNotNull(afterSnapshot, "snapshotLineValues 后不应为 null");
+        assertTrue(afterSnapshot.contains("GUARD_KEEP_ME"),
+                "守卫应生效：snapshotLineValues 不应覆盖前端哨兵值，实际：" + afterSnapshot);
+        // 事务回滚自动清理自建数据
     }
 
     @Transactional
