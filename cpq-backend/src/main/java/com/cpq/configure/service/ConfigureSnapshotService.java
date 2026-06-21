@@ -3,7 +3,11 @@ package com.cpq.configure.service;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.formula.dataloader.QuotationIdContext;
+import com.cpq.quotation.service.CrossTabComponentOrder;
+import com.cpq.quotation.service.RowDataMaterializer;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -11,6 +15,8 @@ import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -45,6 +51,9 @@ public class ConfigureSnapshotService {
 
     @Inject
     ComponentDriverService componentDriverService;
+
+    @Inject
+    RowDataMaterializer rowDataMaterializer;
 
     /** 自注入:用于触发 REQUIRES_NEW 拦截器(同 bean 内自调用不经代理则拦截器失效)。 */
     @Inject
@@ -112,11 +121,15 @@ public class ConfigureSnapshotService {
                 // 自适应 SIMPLE / COMPOSITE 语义(视图内 UNION ALL),Java 不再按 driverPath 判定聚合。
             QuotationIdContext.set(quotationId);
             try {
+                // 物化所需:模板 components_snapshot(含各 tab 的 componentCode/fields/formulas)。一次加载,逐行复用。
+                JsonNode componentsSnapshot = self.loadComponentsSnapshot(quotationId);
                 for (Map<String, Object> li : lineItems) {
                     UUID lineItemId = asUuid(li.get("id"));
                     String partNo = li.get("productPartNo") != null ? li.get("productPartNo").toString() : null;
                     String compositeType = li.get("compositeType") != null ? li.get("compositeType").toString() : null;
                     if (lineItemId == null || partNo == null || partNo.isBlank()) continue;
+                    // 本行各组件刚写入的 snapshot_rows JSON(componentId → rowsJson),供随后物化 row_data 复用。
+                    Map<UUID, String> snapByComp = new LinkedHashMap<>();
                     for (DriverComp comp : comps) {
                         try {
                             ExpandDriverResponse exp = componentDriverService.expand(
@@ -124,9 +137,17 @@ public class ConfigureSnapshotService {
                             List<ExpandDriverResponse.Row> rows = (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
                             String rowsJson = MAPPER.writeValueAsString(rows);
                             self.writeSnapshot(lineItemId, comp.id, comp.name, rowsJson);
+                            snapByComp.put(comp.id, rowsJson);
                         } catch (Exception e) {
                             LOG.warnf("[add-snapshot] line=%s comp=%s 跳过: %s", lineItemId, comp.id, e.getMessage());
                         }
+                    }
+                    // 写时算齐:把 FORMULA 叶子列算进 row_data(扁平),让 Excel 视图无需用户编辑即正确求和。
+                    try {
+                        materializeRowData(lineItemId, componentsSnapshot, snapByComp);
+                    } catch (Exception e) {
+                        LOG.warnf("[add-snapshot] line=%s 物化 row_data 失败(已降级,仍可编辑后修正): %s",
+                                lineItemId, e.getMessage());
                     }
                 }
             } finally {
@@ -204,6 +225,195 @@ public class ConfigureSnapshotService {
             out.add(cl);
         }
         return out;
+    }
+
+    /** 取本报价单 customer_template 的 components_snapshot(物化 row_data 用);缺失/解析失败 → null。
+     *  只读 → SUPPORTS(表意:无需独立写事务;configure 已提交,SELECT 读最新已提交态即可)。 */
+    @Transactional(Transactional.TxType.SUPPORTS)
+    @SuppressWarnings("unchecked")
+    public JsonNode loadComponentsSnapshot(UUID quotationId) {
+        try {
+            List<Object> r = em.createNativeQuery(
+                    "SELECT t.components_snapshot FROM quotation q " +
+                    "JOIN template t ON t.id = q.customer_template_id WHERE q.id = :q")
+                    .setParameter("q", quotationId).getResultList();
+            if (r.isEmpty() || r.get(0) == null) return null;
+            JsonNode node = MAPPER.readTree(r.get(0).toString());
+            return node.isArray() ? node : null;
+        } catch (Exception e) {
+            LOG.warnf("[add-snapshot] quotation=%s 取 components_snapshot 失败: %s", quotationId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 写时算齐 row_data(单趟拓扑序):用真实公式引擎把各非 SUBTOTAL 组件的 FORMULA 叶子列算进
+     * {@code row_data}(扁平),供 Excel 视图({@code ComponentDataEffectiveRows.columnSums})无需用户
+     * 编辑即正确求和。
+     *
+     * <p><b>对齐生产兄弟 {@link com.cpq.quotation.service.CardSnapshotService#assembleTabsWithFormulaResults}</b>:
+     * 按组件级 {@link CrossTabComponentOrder#topoOrder} 排序(依赖边 = {@code cross_tab_ref} 源
+     * + {@code component_subtotal} 跨组件引用),保证<b>被引用组件先于引用方计算</b>。每算完一个组件即:
+     * <ol>
+     *   <li>把其扁平行存入 {@code crossTabRows}(双键 componentId / componentCode)供后续 cross_tab_ref 引用;</li>
+     *   <li>累计其按列小计到 {@code componentSubtotals}(键 {@code code#col} / {@code name#col},与
+     *       {@link com.cpq.quotation.service.card.ComponentDataEffectiveRows} 一致)供后续 component_subtotal 求值;</li>
+     *   <li>UPSERT 落库一次。</li>
+     * </ol>
+     * 因此到引用方计算时,它依赖的全部小计 / cross-tab 行均已就绪 —— 消除了旧 2-pass 里
+     * {@code cross_tab_ref → 依赖 component_subtotal 的列} 链路读到引用方 Pass1 陈旧值的缺陷,
+     * 同时去掉了冗余复算。
+     *
+     * <p>AP-51:行数权威 = snapshot_rows(materializeComponentRows 内按其行数迭代,绝不 Math.max);
+     * SUBTOTAL 组件跳过(读时按公式重算)。
+     */
+    private void materializeRowData(UUID lineItemId, JsonNode componentsSnapshot,
+                                    Map<UUID, String> snapByComp) {
+        if (componentsSnapshot == null || snapByComp == null || snapByComp.isEmpty()) return;
+
+        // componentId → snapshot tab(仅非 SUBTOTAL,且本行有 snapshot_rows)
+        Map<UUID, JsonNode> tabByComp = new LinkedHashMap<>();
+        for (JsonNode tab : componentsSnapshot) {
+            String type = tab.path("componentType").asText("NORMAL");
+            if ("SUBTOTAL".equals(type)) continue; // 读时重算,不物化
+            UUID cid = asUuid(tab.path("componentId").asText(null));
+            if (cid != null && snapByComp.containsKey(cid)) tabByComp.put(cid, tab);
+        }
+        if (tabByComp.isEmpty()) return;
+
+        // ── 组件级拓扑序(与生产兄弟 assembleTabsWithFormulaResults 同款) ──
+        // 解析表:componentId / componentCode / tabName → componentId 字符串(供 component_subtotal 依赖解析)。
+        Map<String, String> refToCid = new HashMap<>();
+        for (Map.Entry<UUID, JsonNode> e : tabByComp.entrySet()) {
+            String cid = e.getKey().toString();
+            JsonNode tab = e.getValue();
+            refToCid.put(cid, cid);
+            String code = tab.path("componentCode").asText("");
+            if (!code.isBlank()) refToCid.put(code, cid);
+            String tn = tab.path("tabName").asText("");
+            if (!tn.isBlank()) refToCid.put(tn, cid);
+        }
+        List<String> compIds = new ArrayList<>();
+        Map<String, java.util.Set<String>> compDeps = new LinkedHashMap<>();
+        for (Map.Entry<UUID, JsonNode> e : tabByComp.entrySet()) {
+            String cid = e.getKey().toString();
+            JsonNode formulas = e.getValue().path("formulas");
+            compIds.add(cid);
+            // cross_tab_ref 源依赖 + component_subtotal 跨组件依赖(token 精确,与前端/生产兄弟对齐)。
+            java.util.Set<String> deps = new java.util.LinkedHashSet<>(
+                    CrossTabComponentOrder.extractSourceRefs(formulas));
+            for (String r : CrossTabComponentOrder.extractSubtotalRefs(formulas)) {
+                String tcid = refToCid.get(r);
+                if (tcid != null && !tcid.equals(cid)) deps.add(tcid); // 排除自引用(本组件二阶列由引擎内两阶段处理)
+            }
+            compDeps.put(cid, deps);
+        }
+        List<String> order;
+        try {
+            order = CrossTabComponentOrder.topoOrder(compIds, compDeps);
+        } catch (Exception cyc) {
+            // 环(配置异常)→ 降级按原序物化,绝不中止整份快照(沿用本类全程降级纪律)。
+            LOG.warnf("[add-snapshot] line=%s 组件拓扑序失败(降级原序): %s", lineItemId, cyc.getMessage());
+            order = compIds;
+        }
+
+        Map<String, Double> componentSubtotals = new HashMap<>();
+        Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
+
+        // ── 单趟拓扑序:依赖在前,引用在后 —— 引用方计算时其依赖小计 / cross-tab 行已就绪 ──
+        for (String cidStr : order) {
+            UUID cid = asUuid(cidStr);
+            JsonNode tab = cid != null ? tabByComp.get(cid) : null;
+            if (tab == null) continue;
+            String code = tab.path("componentCode").asText(null);
+            String tabName = tab.path("tabName").asText(null);
+            JsonNode snapshotRows = parseRows(snapByComp.get(cid));
+
+            ArrayNode flat = rowDataMaterializer.materializeComponentRows(
+                    componentsSnapshot, code, snapshotRows, componentSubtotals, crossTabRows);
+
+            // crossTabRows(双键 componentId / componentCode):供后续组件 cross_tab_ref 引用。
+            List<Map<String, Object>> flatRows = toRowMaps(flat);
+            crossTabRows.put(cidStr, flatRows);
+            if (code != null && !code.isBlank()) crossTabRows.put(code, flatRows);
+
+            // 列小计累计(键 code#col / name#col):供后续组件 component_subtotal token 求值。
+            accumulateColumnSubtotals(flat, code, tabName, componentSubtotals);
+
+            try {
+                self.writeRowData(lineItemId, cid, MAPPER.writeValueAsString(flat));
+            } catch (Exception ex) {
+                LOG.warnf("[add-snapshot] line=%s comp=%s 写 row_data 失败: %s", lineItemId, cid, ex.getMessage());
+            }
+        }
+    }
+
+    /** 解析 snapshot_rows JSON 为 JsonNode 数组;失败 → 空数组。 */
+    private JsonNode parseRows(String json) {
+        if (json == null || json.isBlank()) return MAPPER.createArrayNode();
+        try {
+            JsonNode n = MAPPER.readTree(json);
+            return n.isArray() ? n : MAPPER.createArrayNode();
+        } catch (Exception e) {
+            return MAPPER.createArrayNode();
+        }
+    }
+
+    /** 扁平行 ArrayNode → List<Map>(供 crossTabRows)。 */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> toRowMaps(ArrayNode flat) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (flat == null) return out;
+        for (JsonNode r : flat) {
+            try {
+                out.add(MAPPER.convertValue(r, Map.class));
+            } catch (Exception ignore) { /* 跳过坏行 */ }
+        }
+        return out;
+    }
+
+    /** 对扁平行各数值列求和,写入 componentSubtotals(键 code#col / name#col),与 ComponentDataEffectiveRows 一致。 */
+    private void accumulateColumnSubtotals(ArrayNode flat, String code, String tabName,
+                                           Map<String, Double> componentSubtotals) {
+        if (flat == null) return;
+        Map<String, Double> colSums = new LinkedHashMap<>();
+        for (JsonNode row : flat) {
+            if (row == null || !row.isObject()) continue;
+            row.fields().forEachRemaining(en -> {
+                JsonNode v = en.getValue();
+                if (v != null && v.isNumber()) {
+                    colSums.merge(en.getKey(), v.doubleValue(), Double::sum);
+                }
+            });
+        }
+        for (Map.Entry<String, Double> e : colSums.entrySet()) {
+            if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + e.getKey(), e.getValue());
+            if (tabName != null && !tabName.isBlank()) componentSubtotals.put(tabName + "#" + e.getKey(), e.getValue());
+        }
+    }
+
+    /**
+     * 写一个组件物化后的 row_data(REQUIRES_NEW 独立小事务)。
+     * UPSERT:行已存在(writeSnapshot 已建)→ UPDATE row_data;不存在 → INSERT。
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public void writeRowData(UUID lineItemId, UUID componentId, String rowDataJson) {
+        String expr = rowDataJson == null ? "NULL" : "CAST(:rd AS jsonb)";
+        var update = em.createNativeQuery(
+                "UPDATE quotation_line_component_data SET row_data = " + expr + " " +
+                "WHERE line_item_id = :lid AND component_id = :cid")
+                .setParameter("lid", lineItemId).setParameter("cid", componentId);
+        if (rowDataJson != null) update.setParameter("rd", rowDataJson);
+        int updated = update.executeUpdate();
+        if (updated == 0) {
+            var insert = em.createNativeQuery(
+                    "INSERT INTO quotation_line_component_data " +
+                    "(line_item_id, component_id, row_data, created_at) " +
+                    "VALUES (:lid, :cid, " + expr + ", NOW())")
+                    .setParameter("lid", lineItemId).setParameter("cid", componentId);
+            if (rowDataJson != null) insert.setParameter("rd", rowDataJson);
+            insert.executeUpdate();
+        }
     }
 
     /**

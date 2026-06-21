@@ -25,6 +25,7 @@ import type { CardStructure, CardValues } from '../../services/quotationService'
 import { computeRowKey, buildUniqueRowKeys } from './useCardSnapshots';
 import { rowFingerprint, keepRow, type Tombstone } from './deletedRows';
 import { applyUnitConversion, factorFor } from '../../utils/unitConversion';
+import { formatNumber } from '../../utils/formatNumber';
 import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns } from './tabTotalLines';
 import { partVersionService } from '../../services/partVersionService';
@@ -113,6 +114,8 @@ export interface ComponentField {
   sort_order?: number;
   /** 单位换算：同行取该字段值作为单位来源（如 "单位"），换算到标准单位后再代入公式 */
   unit_source_field?: string;
+  /** 显示位数：null/未配 = 保留原精度（原始/取数列）或计算列兜底 2 位。仅作用于显示，不改计算。 */
+  decimals?: number | null;
   // Backward-compat aliases
   key?: string;
   label?: string;
@@ -1856,8 +1859,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     });
   }, [item.componentData, executeDsQuery]);
 
+  // 金额显示：统一走 formatNumber（计算口径 2 位），保留 ¥ 前缀与空值兜底 ¥0
   const formatCurrency = (val: number) =>
-    `¥ ${(val || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    `¥ ${formatNumber(val || 0, { isComputed: true, decimals: 2 }) ?? '0'}`;
 
   // 2026-05-17 WYSIWYG 原则: 模板配几个组件就显示几个 Tab.
   // 2026-05-19 (方案 A 用户决议, 推翻同日 QT-1409 的"自动隐藏空 Tab"策略):
@@ -2615,8 +2619,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         if (isNumericCol && colName && colName in colSums) {
                           const v = colSums[colName] ?? 0;
                           // ¥ 仅当 is_amount===true；其他数值列（含管理费/利润等 is_subtotal 但非金额列）纯数字
-                          // C2：金额列 = ¥ + 通用精度（与其它小计列同款 4 位去末尾 0，仅多 ¥ 前缀）
-                          const plain = v === 0 ? '0' : parseFloat(v.toFixed(4)).toString();
+                          // C2：小计为计算值 → formatNumber 计算口径（未配 decimals 兜底 2 位），金额列加 ¥ 前缀
+                          const plain = v === 0 ? '0' : (formatNumber(v, { isComputed: true }) ?? '—');
                           const text = field.is_amount === true ? `¥ ${plain}` : plain;
                           return (
                             <td key={colName || fi} className="qt-subtotal-cell" style={field.is_amount === true ? undefined : { color: '#595959' }}>
@@ -2853,6 +2857,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       default_source: f.default_source,
       sort_order: f.sort_order,
       unit_source_field: f.unit_source_field,
+      decimals: f.decimals ?? null,
       label: f.label || f.name || '',
       key: f.name || f.key || '',
     });

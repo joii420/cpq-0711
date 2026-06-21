@@ -115,6 +115,8 @@ export interface FieldItem {
   unit_source_field?: string;
   /** 报价单/核价单渲染时该字段列的展示宽度(px)。空/0 = 默认 120。仅展示用，不参与计算。 */
   width?: number;
+  /** 显示小数位数（卡片/Excel/导出共用）。未配 → 计算列兜底 2 位、输入/取数列保留原精度。 */
+  decimals?: number | null;
 }
 
 export interface DefaultSource {

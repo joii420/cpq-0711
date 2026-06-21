@@ -30,6 +30,7 @@ import type { GlobalVariableDefinition } from '../../../services/globalVariableS
 import type { ConfigTemplateMap } from '../useConfigTemplates';
 import { formatPathValue } from './formatPathValue';
 import { resolveInputDefault } from '../inputDefaults';
+import { formatNumber } from '../../../utils/formatNumber';
 
 // re-export 供已有 `import { formatPathValue } from '.../ComponentCell'` 的调用方使用
 export { formatPathValue } from './formatPathValue';
@@ -127,7 +128,7 @@ function resolveGvarFallback(
     const gvKey = `@gvar:${code}`;
     if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
       const v = basicDataValues[gvKey];
-      const formatted = formatPathValue(v);
+      const formatted = formatPathValue(v, field.decimals);
       if (formatted != null) {
         return <span className="qt-ds-value" title={`🌐 ${code}`}>{formatted}</span>;
       }
@@ -140,7 +141,7 @@ function resolveGvarFallback(
     const lk = bnfDriverLookupKey(path);
     if (Object.prototype.hasOwnProperty.call(basicDataValues, lk)) {
       const v = (basicDataValues as Record<string, any>)[lk];
-      const formatted = formatPathValue(v);
+      const formatted = formatPathValue(v, field.decimals);
       if (formatted != null) {
         return <span className="qt-ds-value">{formatted}</span>;
       }
@@ -152,7 +153,7 @@ function resolveGvarFallback(
     const cacheKey = `${partNo}::${path}`;
     if (Object.prototype.hasOwnProperty.call(pathCacheState, cacheKey)) {
       const v = (pathCacheState as Record<string, any>)[cacheKey];
-      const formatted = formatPathValue(v);
+      const formatted = formatPathValue(v, field.decimals);
       if (formatted != null) {
         return <span className="qt-ds-value">{formatted}</span>;
       }
@@ -166,7 +167,7 @@ function resolveGvarFallback(
 
   // Step 5: row[key]（历史持久化兜底，兼容 QT-20260522-1590）
   if (row[key] != null && row[key] !== '') {
-    const formatted = formatPathValue(row[key]);
+    const formatted = formatPathValue(row[key], field.decimals);
     if (formatted != null) {
       return (
         <span
@@ -227,9 +228,11 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
       );
     }
     const val = formulaCache[field.name];
+    // 计算列：未配 decimals → 兜底 2 位（与 Excel 视图同口径）
+    const text = formatNumber(val, { decimals: field.decimals ?? null, isComputed: true }) ?? '—';
     return (
       <span className="qt-formula-cell-value">
-        {val != null ? val : '—'}
+        {text}
       </span>
     );
   }

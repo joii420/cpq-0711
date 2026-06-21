@@ -1,5 +1,6 @@
 package com.cpq.quotation.service;
 
+import com.cpq.common.NumberFormatUtil;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.component.entity.Component;
 import com.cpq.quotation.entity.Quotation;
@@ -19,6 +20,8 @@ import org.jboss.logging.Logger;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 
 /**
@@ -690,6 +693,10 @@ public class ExcelViewService {
                 cell.setCellStyle(headerStyle);
             }
 
+            // Per-format-string CellStyle cache (POI 限制样式总数，绝不能逐格新建样式)
+            DataFormat dataFormat = workbook.createDataFormat();
+            Map<String, CellStyle> numberStyleCache = new HashMap<>();
+
             // Data rows
             for (int rowIdx = 0; rowIdx < rows.size(); rowIdx++) {
                 Row dataRow = sheet.createRow(rowIdx + 1);
@@ -704,7 +711,7 @@ public class ExcelViewService {
                     Cell cell = dataRow.createCell(colIdx);
 
                     if ("EXCEL_FORMULA".equals(sourceType) && cellValue != null) {
-                        // Write as Excel formula
+                        // Write as Excel formula（公式列原样写公式，不参与显示格式化）
                         String formula = cellValue.toString();
                         // Strip leading '=' if present for setCellFormula
                         if (formula.startsWith("=")) formula = formula.substring(1);
@@ -714,7 +721,7 @@ public class ExcelViewService {
                             cell.setCellValue(formula);
                         }
                     } else if (cellValue != null) {
-                        setCellValue(cell, cellValue);
+                        writeFormattedCell(workbook, dataFormat, numberStyleCache, cell, col, cellValue);
                     }
                 }
             }
@@ -732,14 +739,91 @@ public class ExcelViewService {
         }
     }
 
-    private void setCellValue(Cell cell, Object value) {
-        if (value instanceof Number) {
-            cell.setCellValue(((Number) value).doubleValue());
+    /**
+     * 写一个非公式单元格，数值列统一接入显示口径（与前端 formatNumber / NumberFormatUtil 同口径）：
+     * - 数值（含数值字符串）→ 保持 NUMERIC + 附"至多 N 位"DataFormat 样式（# 而非 0，得到去末尾 0 语义），
+     *   并按解析出的小数位 HALF_UP 预舍入，使存储值与显示值一致；原始/取数列未配位数 → General（保留原精度）。
+     * - 非数值 → 原样写字符串；Boolean → 写布尔。
+     */
+    private void writeFormattedCell(XSSFWorkbook workbook, DataFormat dataFormat,
+                                    Map<String, CellStyle> numberStyleCache,
+                                    Cell cell, Map<String, Object> col, Object value) {
+        BigDecimal num = toBigDecimalOrNull(value);
+        if (num != null) {
+            String sourceType = (String) col.get("source_type");
+            boolean isComputed = isComputedColumn(sourceType);
+            Integer explicitDecimals = explicitDecimals(col);
+            // 解析有效位数：显式优先 → 计算列兜底 2 位 → 原始/取数列 null（保留原精度）
+            Integer scale = explicitDecimals != null ? explicitDecimals
+                    : (isComputed ? COMPUTED_FALLBACK_DECIMALS : null);
+            if (scale != null) {
+                num = num.setScale(scale, RoundingMode.HALF_UP);
+                cell.setCellStyle(numberStyleFor(workbook, dataFormat, numberStyleCache, scale));
+            }
+            cell.setCellValue(num.doubleValue());
         } else if (value instanceof Boolean) {
             cell.setCellValue((Boolean) value);
         } else {
             cell.setCellValue(value.toString());
         }
+    }
+
+    // 导出走 POI DataFormat（需数值态+格式串）故未复用 NumberFormatUtil，单列一份兜底位数。
+    // ⚠️ 与 NumberFormatUtil.COMPUTED_FALLBACK + 前端 formatNumber.COMPUTED_FALLBACK 保持同步。
+    private static final int COMPUTED_FALLBACK_DECIMALS = 2;
+
+    /** 与前端 isComputedExcelColumn 同一份计算列类型集。 */
+    private boolean isComputedColumn(String sourceType) {
+        return "FORMULA".equals(sourceType)
+                || "CARD_FORMULA".equals(sourceType)
+                || "TAB_JOIN_FORMULA".equals(sourceType)
+                || "EXCEL_FORMULA".equals(sourceType);
+    }
+
+    /** 取列 display_format.decimals（缺省返回 null）。 */
+    @SuppressWarnings("unchecked")
+    private Integer explicitDecimals(Map<String, Object> col) {
+        Object df = col.get("display_format");
+        if (!(df instanceof Map)) return null;
+        Object dec = ((Map<String, Object>) df).get("decimals");
+        if (dec instanceof Number) return ((Number) dec).intValue();
+        if (dec instanceof String) {
+            try {
+                return Integer.parseInt(((String) dec).trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private BigDecimal toBigDecimalOrNull(Object value) {
+        if (value instanceof BigDecimal) return (BigDecimal) value;
+        if (value instanceof Number) return new BigDecimal(value.toString());
+        if (value instanceof String) {
+            String s = ((String) value).trim();
+            if (s.isEmpty()) return null;
+            try {
+                return new BigDecimal(s);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 取/建"至多 scale 位小数"的数字样式（用 # 得到去末尾 0 语义）：
+     * 0 位 → "0"；2 位 → "0.##"；3 位 → "0.###"。按格式串缓存，避免逐格新建样式触发 POI 样式上限。
+     */
+    private CellStyle numberStyleFor(XSSFWorkbook workbook, DataFormat dataFormat,
+                                     Map<String, CellStyle> cache, int scale) {
+        String pattern = scale <= 0 ? "0" : "0." + "#".repeat(scale);
+        return cache.computeIfAbsent(pattern, p -> {
+            CellStyle style = workbook.createCellStyle();
+            style.setDataFormat(dataFormat.getFormat(p));
+            return style;
+        });
     }
 
     private CellStyle createHeaderStyle(XSSFWorkbook wb) {

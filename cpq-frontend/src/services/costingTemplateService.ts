@@ -3,7 +3,7 @@ import api from './api';
 export interface CostingTemplateColumn {
   col_key: string;
   title: string;
-  source_type: 'VARIABLE' | 'FORMULA' | 'CARD_FORMULA' | 'PRODUCT_ATTRIBUTE' | 'COMPONENT_FIELD' | 'EXCEL_FORMULA' | 'FIXED_VALUE';
+  source_type: 'VARIABLE' | 'FORMULA' | 'CARD_FORMULA' | 'TAB_JOIN_FORMULA' | 'PRODUCT_ATTRIBUTE' | 'COMPONENT_FIELD' | 'EXCEL_FORMULA' | 'FIXED_VALUE';
   variable_path?: string;
   formula?: string;
   /** CARD_FORMULA / COMPONENT_FIELD / PRODUCT_ATTRIBUTE 列的字段 key */
