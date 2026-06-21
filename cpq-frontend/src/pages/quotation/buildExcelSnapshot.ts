@@ -151,6 +151,8 @@ export function buildExcelSnapshot(
   }
 
   // second pass: FORMULA/EXCEL_FORMULA 列（可引用 first pass 的结果）
+  // 注意：单遍非拓扑，FORMULA 列若引用另一 FORMULA 列会取 undefined→evaluateFormula 强制为 0
+  //（与 useLinkedExcelRows 源行为一致；多级 FORMULA 引用不支持）
   for (const col of columns) {
     if (col.source_type !== 'FORMULA' && col.source_type !== 'EXCEL_FORMULA') continue;
     // 复用 useLinkedExcelRows 的 evaluateFormula（替换 [col_key] 引用）
@@ -192,7 +194,7 @@ function evalColumn(
 
     case 'FIXED_VALUE': {
       // 优先解析为数字，失败则返回原始字符串
-      const fv = (col as any).fixed_value ?? col.fixed_value;
+      const fv = col.fixed_value;
       if (fv == null || fv === '') return null;
       const n = Number(fv);
       return isNaN(n) ? fv : n;
@@ -222,6 +224,12 @@ function evalColumn(
     }
 
     case 'VARIABLE': {
+      // ## 快照时不变量（snapshot invariant）
+      // BNF 路径分支依赖 ctx.pathCache 在调用前已预填所有在用路径的值。
+      // - 用于持久化（saveDraft / submit）：调用方必须保证 pathCache 对所有 BNF 路径已预填，
+      //   否则 cache-miss 将产生 '__loading__' 哨兵，持久化快照会含不完整值。
+      // - 用于显示场景：'__loading__' 哨兵透传给显示层（与 useLinkedExcelRows:292-293 一致），
+      //   由显示层（stillLoading / noCostingData 整行置空逻辑）处理。
       const vp = (col.variable_path ?? '').trim();
       if (!vp) return null;
       if (isLegacyVarCode(vp)) {
@@ -236,7 +244,8 @@ function evalColumn(
       if (!partNo) return null;
       const k = pathCacheKey(partNo, vp);
       const cached = ctx.pathCache;
-      if (!cached || !Object.prototype.hasOwnProperty.call(cached, k)) return null;
+      // cache-miss → 返回 '__loading__' 哨兵（与 useLinkedExcelRows L292-293 源行为一致）
+      if (!cached || !Object.prototype.hasOwnProperty.call(cached, k)) return '__loading__';
       return formatPathValue(cached[k]);
     }
 
@@ -281,7 +290,8 @@ function evalTabJoinOrCard(
   let tokens: ReturnType<typeof expressionToTokens>;
   try {
     tokens = expressionToTokens(exprStr, tabs as any);
-  } catch {
+  } catch (e) {
+    console.warn('[buildExcelSnapshot] TAB_JOIN/CARD eval failed for col', col.col_key, e);
     return 0;
   }
 
@@ -300,7 +310,8 @@ function evalTabJoinOrCard(
       undefined,                 // currentRow
       crossTabRows,
     );
-  } catch {
+  } catch (e) {
+    console.warn('[buildExcelSnapshot] TAB_JOIN/CARD eval failed for col', col.col_key, e);
     return 0;
   }
 }

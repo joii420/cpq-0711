@@ -273,7 +273,7 @@ describe('buildExcelSnapshot', () => {
       expect(rows[0].TEXT).toBe('ABC');
     });
 
-    it('VARIABLE 无 pathCache 时 BNF 路径列返回 null', () => {
+    it('VARIABLE 无 pathCache 时 BNF 路径列返回 __loading__（哨兵，与 useLinkedExcelRows 源行为对齐）', () => {
       const bnfCol: CostingTemplateColumn = {
         col_key: 'BNF',
         title: 'BNF路径',
@@ -281,8 +281,8 @@ describe('buildExcelSnapshot', () => {
         variable_path: 'v_costing.unit_price',
       };
       const { rows } = buildExcelSnapshot(lineItem093, [bnfCol], undefined, undefined, {});
-      // pathCache 不含该路径 → null
-      expect(rows[0].BNF).toBeNull();
+      // pathCache 不含该路径 → '__loading__'（不再是 null）
+      expect(rows[0].BNF).toBe('__loading__');
     });
 
     it('componentData 为空时不抛错，C 列返回 0', () => {
@@ -291,6 +291,71 @@ describe('buildExcelSnapshot', () => {
         const { rows } = buildExcelSnapshot(emptyItem as any, [colC as CostingTemplateColumn], undefined, undefined, {});
         expect(typeof rows[0].C).toBe('number');
       }).not.toThrow();
+    });
+
+    it('VARIABLE BNF 路径 pathCache miss → 返回 __loading__ 哨兵', () => {
+      // 不提供 pathCache（ctx = {}），cache-miss 应返回 '__loading__' 而非 null
+      const bnfCol: CostingTemplateColumn = {
+        col_key: 'BNF2',
+        title: 'BNF路径哨兵',
+        source_type: 'VARIABLE',
+        variable_path: 'v_costing.unit_price',
+      };
+      const { rows } = buildExcelSnapshot(lineItem093, [bnfCol], undefined, undefined, {});
+      expect(rows[0].BNF2).toBe('__loading__');
+    });
+  });
+
+  // ── twin 用例：锁定 CARD_FORMULA / EXCEL_FORMULA 与孪生类型共享 switch case ──
+  describe('twin 用例：CARD_FORMULA 与 EXCEL_FORMULA 共享分支', () => {
+    it('CARD_FORMULA 与 TAB_JOIN_FORMULA 共走 evalTabJoinOrCard，无 expression 时返回 0', () => {
+      // CARD_FORMULA 与 TAB_JOIN_FORMULA 同走 case 'TAB_JOIN_FORMULA': case 'CARD_FORMULA':
+      // 验证：有 expression 时走同一路径，与 TAB_JOIN_FORMULA 行为一致
+      const cardFormulaCol: CostingTemplateColumn & { expression: string; tabs: any[] } = {
+        col_key: 'CF',
+        title: 'CARD_FORMULA列',
+        source_type: 'CARD_FORMULA',
+        expression: '[来料(总计)]',
+        tabs: [
+          {
+            alias: '来料',
+            tabKey: 'comp-material',
+            componentId: 'comp-material',
+            componentName: '来料',
+            rowKeyFields: [],
+            subtotalCols: ['材料成本'],
+            detailFields: ['材料成本'],
+          },
+        ],
+      } as any;
+      const { rows } = buildExcelSnapshot(lineItem093, [cardFormulaCol as CostingTemplateColumn], undefined, undefined, {});
+      // 与 A 列（同 expression 同 tabs 的 TAB_JOIN_FORMULA）结果相同
+      const { rows: rowsA } = buildExcelSnapshot(lineItem093, [colA as CostingTemplateColumn], undefined, undefined, {});
+      expect(typeof rows[0].CF).toBe('number');
+      expect(rows[0].CF).toBeCloseTo(rowsA[0].A as number, 6);
+    });
+
+    it('CARD_FORMULA 无 expression 时返回 0（与 TAB_JOIN_FORMULA 无 expression 行为一致）', () => {
+      const noExprCol: any = {
+        col_key: 'CF_NOEXPR',
+        title: 'CARD_FORMULA无表达式',
+        source_type: 'CARD_FORMULA',
+      };
+      const { rows } = buildExcelSnapshot(lineItem093, [noExprCol], undefined, undefined, {});
+      expect(rows[0].CF_NOEXPR).toBe(0);
+    });
+
+    it('EXCEL_FORMULA 与 FORMULA 共走 evaluateFormula second-pass，=[B]*3 引用 FIXED_VALUE 列', () => {
+      // EXCEL_FORMULA 与 FORMULA 同走 second pass（evaluateFormula）
+      // B 列 FIXED_VALUE=5，EXCEL_FORMULA =[B]*3 期望 15
+      const excelFormulaCol: CostingTemplateColumn = {
+        col_key: 'EF',
+        title: 'EXCEL_FORMULA列',
+        source_type: 'EXCEL_FORMULA',
+        formula: '=[B]*3',
+      };
+      const { rows } = buildExcelSnapshot(lineItem093, [colB, excelFormulaCol], undefined, undefined, {});
+      expect(rows[0].EF).toBe(15);
     });
   });
 });
