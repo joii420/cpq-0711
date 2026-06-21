@@ -10,7 +10,7 @@ import { batchEvaluate, buildEvalKey } from '../../services/formulaService';
 import type { LineItem } from './QuotationStep2';
 
 /** BNF path cache key: `${partNo}::${path}` */
-const pathCacheKey = (partNo: string, path: string) => `${partNo}::${path}`;
+export const pathCacheKey = (partNo: string, path: string) => `${partNo}::${path}`;
 
 /**
  * 单行数据：__key/__label/__hfPartNo/__noData 为元数据，其余 key 为 col_key → 求值后的值。
@@ -46,12 +46,12 @@ export interface UseLinkedExcelRowsResult {
 }
 
 /** 是否为老 `{CODE}` 简写格式（V73 过渡格式）；非此格式即按 BNF 路径走后端求值。 */
-function isLegacyVarCode(s: string | undefined): boolean {
+export function isLegacyVarCode(s: string | undefined): boolean {
   return !!s && /^\{[^}]+\}$/.test(s.trim());
 }
 
 /** 解析老 `{CODE}` 格式 VARIABLE 列：去括号转小写后按 lineItem / quotationContext 字段映射取值。 */
-function resolveVariable(
+export function resolveVariable(
   variablePath: string | undefined,
   lineItem: LineItem,
   quotationContext: Record<string, any>,
@@ -89,7 +89,7 @@ function resolveVariable(
 }
 
 /** FORMULA 列求值：替换列引用 [X] 与变量 {CODE} 后，受限字符白名单内用 Function 构造器计算。 */
-function evaluateFormula(
+export function evaluateFormula(
   formula: string | undefined,
   rowCellValues: Record<string, any>,
   rowVariableValues: Record<string, any>,
@@ -122,7 +122,7 @@ function evaluateFormula(
   }
 }
 
-function formatPathValue(v: any): any {
+export function formatPathValue(v: any): any {
   if (v == null) return null;
   if (typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean') return v;
   if (Array.isArray(v)) {
