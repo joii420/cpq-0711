@@ -8,9 +8,12 @@ export interface DiscountSourceOption {
 }
 
 /**
- * 折扣来源选项 = 总金额(默认置顶) + 产品小计公式里每个去重的 component_subtotal 页签。
- * 解析 SUBTOTAL 组件的 formulas[0].expression（或 item.subtotalFormula）中的
- * component_subtotal token，按 component_code 去重，生成下拉选项。
+ * 折扣来源选项 = 总金额(默认置顶) + 产品小计公式里每个 component_subtotal 引用项（按字段粒度）。
+ *
+ * 解析 SUBTOTAL 组件 formulas[0].expression（或 item.subtotalFormula）里的 component_subtotal token，
+ * **每个 token 一项**（不按 component_code 折叠——否则同页签多列如 [来料.材料成本]+[来料.材料损耗成本] 会丢项）。
+ * - value = `component_code#列名`（唯一列键，与前/后端 componentSubtotals 列键格式一致）；
+ * - label = token 自带的 `label`（如「来料·材料成本」，页签·字段，清晰唯一），缺失时退回列名。
  */
 export function extractDiscountSources(item: LineItem): DiscountSourceOption[] {
   const opts: DiscountSourceOption[] = [{ value: 'SUBTOTAL', label: '总金额' }];
@@ -22,10 +25,13 @@ export function extractDiscountSources(item: LineItem): DiscountSourceOption[] {
   const seen = new Set<string>();
   for (const tok of expr) {
     if (tok?.type !== 'component_subtotal') continue;
-    const code = tok.component_code ?? tok.value;
-    if (!code || seen.has(code)) continue;
-    seen.add(code);
-    opts.push({ value: code, label: `${tok.tab_name ?? code}.小计` });
+    const col: string | undefined = tok.value;          // 列名(字段), 如 材料成本 / 费用
+    const compCode: string | undefined = tok.component_code;
+    const key = compCode && col ? `${compCode}#${col}` : (compCode ?? col);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const label = (tok.label && String(tok.label).trim()) || col || key;
+    opts.push({ value: key, label });
   }
   return opts;
 }
@@ -49,8 +55,9 @@ export interface LineDiscountResult {
  * 按所选来源/折扣率/年用量计算折后小计与各金额。
  *
  * - source='SUBTOTAL'：整单价打折 → discounted = original * (1 - rate/100)
- * - source=某页签 code：把该页签小计缩放后代回公式重算
- *   （同时按 tab_name 也缩放，保证 evaluateExpression 命中）
+ * - source=`component_code#列名`：把该列小计缩放后代回公式重算。
+ *   evaluateExpression 解析 component_subtotal token 时优先用 `component_code#列名` 键，
+ *   故只需缩放 scaled[source] 即命中（getComponentSubtotals 已写入该列键）。
  */
 export function computeLineDiscount(
   item: LineItem,
@@ -73,37 +80,10 @@ export function computeLineDiscount(
     s1 = s0 * scale;
     base = s0;
   } else {
+    // source = `component_code#列名`（按列折扣）：缩放该列键后代回公式重算。
     base = subs[source] ?? 0;
-    // 缩放对应页签的三个键（componentId/componentCode/tabName）
     const scaled = { ...subs };
-    // 找到对应 token，一并缩放 tab_name 键（evaluateExpression 可能按 tab_name 解析）
-    if (scaled[source] !== undefined) {
-      scaled[source] = scaled[source] * scale;
-    }
-    // 同步缩放 tab_name 键（找 SUBTOTAL 公式 token 中对应 component_code 的 tab_name）
-    const subtotalComp = item.componentData?.find(c => c.componentType === 'SUBTOTAL');
-    const expr: any[] =
-      subtotalComp?.formulas?.[0]?.expression ??
-      (item as any).subtotalFormula ??
-      [];
-    for (const tok of expr) {
-      if (tok?.type !== 'component_subtotal') continue;
-      const code = tok.component_code ?? tok.value;
-      if (code !== source) continue;
-      const tabName: string | undefined = tok.tab_name;
-      if (tabName && tabName !== source && scaled[tabName] !== undefined) {
-        scaled[tabName] = scaled[tabName] * scale;
-      }
-      // 也同步缩放 componentId 键（如果与 source 不同）
-      // （subs 里 componentId/componentCode/tabName 三键都有同值，缩放 source 键后其他键仍是旧值）
-      // 找对应 NORMAL 组件的 componentId
-      const normComp = item.componentData?.find(
-        c => c.componentCode === source || c.tabName === source,
-      );
-      if (normComp?.componentId && normComp.componentId !== source && scaled[normComp.componentId] !== undefined) {
-        scaled[normComp.componentId] = scaled[normComp.componentId] * scale;
-      }
-    }
+    if (scaled[source] !== undefined) scaled[source] = scaled[source] * scale;
     s1 = evalProductSubtotalFromSubtotals(item, scaled);
   }
 

@@ -78,7 +78,7 @@ public class LineDiscountService {
             // 页签折扣：仅对 source 页签的列和乘 scale，再重算 SUBTOTAL 公式
             s1 = ComponentDataEffectiveRows.subtotalWithDiscount(
                 cdList, metaById, subtotalCid, formulaCalculator, source, scale);
-            base = componentColumnSumOf(cdList, metaById, source);
+            base = discountBaseOf(cdList, metaById, source);
         } else {
             // 没有 SUBTOTAL 组件且指定了页签折扣 → 兜底不折
             s1 = s0;
@@ -101,20 +101,30 @@ public class LineDiscountService {
     // -------------------------------------------------------------------------
 
     /**
-     * 被折页签所有数值列和之和（用作折扣基数展示）。
-     * 按 code 或 name 匹配元数据，找到后计算该组件 cd 的列和汇总值。
+     * 折扣基数（用作展示）。source = `code#列名`（按列折扣）→ 返回该列的列和；
+     * 兼容旧整组件格式 source = code/name（无 #）→ 返回该组件全部列和之和。
      */
-    private BigDecimal componentColumnSumOf(
+    private BigDecimal discountBaseOf(
             List<QuotationLineComponentData> cdList,
             Map<UUID, ComponentDataEffectiveRows.Meta> metaById,
-            String code) {
+            String source) {
+        String code = source;
+        String col = null;
+        int hash = source.indexOf('#');
+        if (hash >= 0) {
+            code = source.substring(0, hash);
+            col = source.substring(hash + 1);
+        }
         for (QuotationLineComponentData cd : cdList) {
             if (cd.componentId == null) continue;
             ComponentDataEffectiveRows.Meta m = metaById.get(cd.componentId);
             if (m == null) continue;
             if (!code.equals(m.code) && !code.equals(m.name)) continue;
             Map<String, BigDecimal> sums = ComponentDataEffectiveRows.columnSums(parseRows(cd.rowData));
-            BigDecimal total = BigDecimal.ZERO;
+            if (col != null) {
+                return sums.getOrDefault(col, BigDecimal.ZERO);   // 特定列
+            }
+            BigDecimal total = BigDecimal.ZERO;                   // 整组件（legacy）
             for (BigDecimal v : sums.values()) total = total.add(v);
             return total;
         }

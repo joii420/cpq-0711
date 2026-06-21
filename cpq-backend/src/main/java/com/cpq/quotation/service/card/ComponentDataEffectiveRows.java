@@ -137,12 +137,17 @@ public final class ComponentDataEffectiveRows {
             Meta meta = cd.componentId != null ? metas.get(cd.componentId) : null;
             accs.add(new TabAcc(cd, rows, colSums, meta));
             if (meta != null) {
-                boolean hit = discountCode != null
-                    && (discountCode.equals(meta.code) || discountCode.equals(meta.name));
                 for (Map.Entry<String, BigDecimal> e : colSums.entrySet()) {
                     // double 受限于 FormulaCalculator.RowContext.componentSubtotals 的 Map<String,Double> 契约；
                     // 列和本身仍是 BigDecimal（见 subtotalByColumn），勿擅自改回 BigDecimal 破坏契约。
                     double v = e.getValue().doubleValue();
+                    // 按列折扣：discountCode = `code#列名`（或 `name#列名`）→ 仅缩放该列；
+                    // 兼容旧整组件格式（discountCode = code/name 无 #）→ 缩放该组件全部列。
+                    boolean hit = discountCode != null && (
+                        discountCode.equals(meta.code + SUBTOTAL_KEY_SEP + e.getKey())
+                        || discountCode.equals(meta.name + SUBTOTAL_KEY_SEP + e.getKey())
+                        || discountCode.equals(meta.code)
+                        || discountCode.equals(meta.name));
                     if (hit) v = v * discountScale;
                     if (meta.code != null) componentSubtotals.put(meta.code + SUBTOTAL_KEY_SEP + e.getKey(), v);
                     if (meta.name != null) componentSubtotals.put(meta.name + SUBTOTAL_KEY_SEP + e.getKey(), v);

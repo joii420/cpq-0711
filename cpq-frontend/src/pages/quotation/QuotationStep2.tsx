@@ -1202,11 +1202,21 @@ export function getComponentSubtotals(
   };
   for (const comp of item.componentData) {
     if (!comp?.fields || comp.componentType !== 'NORMAL') continue;
+    // 按列求小计：既写整组件三键，又写 `key#列名` 列键 —— 使含同组件多列引用的产品小计公式
+    // （如 [来料.材料成本]+[来料.材料损耗成本]）在求值与按列折扣时能区分到列
+    // （键格式与渲染路径 backfillSubtotalsFromResolved / 后端 componentSubtotals 一致）。
     // partNo + driverExpansion 一起传 —— BASIC_DATA 字段才能按行取值，
     // 不然落到全局 path cache 第一项 / 当 0 算（产品小计 156.80 vs 列小计 750.80 的根因）
-    const subtotal = computeTabSubtotal(
+    const byCol = computeTabSubtotalsByColumn(
       comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp),
     );
+    let subtotal = 0;
+    for (const [colName, colVal] of Object.entries(byCol)) {
+      subtotal += colVal;
+      if (comp.componentId) componentSubtotals[`${comp.componentId}#${colName}`] = colVal;
+      if (comp.componentCode) componentSubtotals[`${comp.componentCode}#${colName}`] = colVal;
+      componentSubtotals[`${comp.tabName}#${colName}`] = colVal;
+    }
     if (comp.componentId) componentSubtotals[comp.componentId] = subtotal;
     if (comp.componentCode) componentSubtotals[comp.componentCode] = subtotal;
     componentSubtotals[comp.tabName] = subtotal;
