@@ -413,10 +413,10 @@ public class CardSnapshotService {
             managed.quoteCardValues = safeCall(() ->
                 buildCardValues(managed, q.customerTemplateId));
 
-            // 报价侧：Excel 值由 ExcelViewService 计算，透传同侧卡片快照（CARD_FORMULA 用同侧有效行取数）。
-            // Phase 3 守卫（2026-06-21）：前端单引擎权威 — 若前端已送 quoteExcelValues（saveDraft 落库），
-            // 本兜底不覆盖；仅新行（null）才调 buildExcelValues 初始化。
-            // TODO(Phase6): 前端权威后退役此后端 Excel 重算（buildExcelValues）
+            // 报价侧 Excel 值：前端权威（buildExcelSnapshot + saveDraft），此处为新行（null）bootstrap 兜底。
+            // Phase6 (2026-06-21) 基线：quote_excel_values 唯一写入源 = saveDraft（前端值）；
+            // 仅前端从未 saveDraft 过的新行（quoteExcelValues == null）才调 buildExcelValues 初始化一次，
+            // 之后由前端实时覆盖。不再有 editCardValue / refreshQuoteCardValues 的后端重算路径。
             if (managed.quoteExcelValues == null) {
                 managed.quoteExcelValues = safeCall(() ->
                     buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
@@ -1370,11 +1370,9 @@ public class CardSnapshotService {
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp);
             managed.quoteCardValues = MAPPER.writeValueAsString(root);
 
-            // 4. 重算报价 Excel（核价不动），透传刚算好的新 quoteCardValues（CARD_FORMULA 同侧取数）。
-            // TODO(Phase6): 前端权威后退役此后端 Excel 重算（buildExcelValues）
-            String excel = safeCall(() ->
-                buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
-            if (excel != null) managed.quoteExcelValues = excel;
+            // 4. 报价 Excel 值前端权威（buildExcelSnapshot + saveDraft），此处不再后端重算。
+            // Phase6 (2026-06-21) 退役：原 buildExcelValues 重算已删除；
+            // quote_excel_values 唯一写入源 = saveDraft（前端值） + snapshotLineValues（==null bootstrap 兜底）。
 
             // 5. 更新报价侧时间戳
             managed.quoteValuesAt = OffsetDateTime.now();
@@ -1504,11 +1502,9 @@ public class CardSnapshotService {
             QuotationLineItem liManaged = QuotationLineItem.findById(lineItemId);
             if (liManaged == null) return null; // 理论不达：上面已 flush，该行必在库
 
-            // 重算报价 Excel（核价不动），透传刚算好的新 quoteCardValues（CARD_FORMULA 同侧取数）。
-            // TODO(Phase6): 前端权威后退役此后端 Excel 重算（buildExcelValues）
-            String excel = safeCall(() ->
-                buildExcelValues(liManaged, q.customerTemplateId, q.customerId, liManaged.quoteCardValues));
-            if (excel != null) liManaged.quoteExcelValues = excel;
+            // 报价 Excel 值前端权威（buildExcelSnapshot + saveDraft），此处不再后端重算。
+            // Phase6 (2026-06-21) 退役：原 buildExcelValues 重算已删除；
+            // 返回 resp.quoteExcelValues = liManaged.quoteExcelValues（DB 现值 = 前端最近 saveDraft 保存值，无害）。
 
             liManaged.quoteValuesAt = OffsetDateTime.now();
             // 核价两列：物理不参与本次 UPDATE
