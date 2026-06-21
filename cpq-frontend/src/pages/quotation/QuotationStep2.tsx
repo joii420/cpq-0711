@@ -184,6 +184,11 @@ export interface LineItem {
   quoteExcelValues?: string;
   costingExcelValues?: string;
   /**
+   * 报价卡片值最近一次重算/物化的时间戳（editCardValue 响应回灌）。
+   * Excel 视图取数刷新信号：编辑落库后该值更新 → useBackendExcelRows 重取最新 row_data（excelRefreshSignal）。
+   */
+  quoteValuesAt?: string;
+  /**
    * Bug B (2026-05-20): 前端临时 id，用于 driverExpansionKey lineItemId 维度。
    * 新建 lineItem 时生成 (crypto.randomUUID())，后端持久化后 id 接管。
    * 保证同 productPartNo / componentId / customerId / driverPath / fieldsHash 组合
@@ -1843,10 +1848,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       const res = await quotationService.editQuoteCardValue(lineItemId, { componentId, rowKey, fieldName, value });
       const qcv = res?.data?.quoteCardValues;
       const qev = res?.data?.quoteExcelValues;
-      if (qcv || qev) onUpdate(() => {
+      // quoteValuesAt：编辑落库时间戳，作为 Excel 视图取数刷新信号(excelRefreshSignal)，
+      // 编辑完成(后端已重算+物化该料号 row_data)后回灌 → Excel 视图随之重取最新数据。
+      const qva = res?.data?.quoteValuesAt;
+      if (qcv || qev || qva) onUpdate(() => {
         const patch: Partial<LineItem> = {};
         if (qcv) patch.quoteCardValues = qcv;
         if (qev) patch.quoteExcelValues = qev;
+        if (qva) patch.quoteValuesAt = qva;
         return patch;
       });
     } catch {
