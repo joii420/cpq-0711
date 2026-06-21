@@ -31,4 +31,15 @@ describe('formatNumber', () => {
     expect(formatNumber(null, {})).toBeNull();
     expect(formatNumber('abc', {})).toBeNull();
   });
+  it('负数去尾零正确(不破坏符号)', () => {
+    expect(formatNumber(-0.1, { isComputed: true })).toBe('-0.1');
+    expect(formatNumber(-0.145, { isComputed: true })).toBe('-0.15');
+  });
+  it('无小数点的整数尾零不被裁剪', () => {
+    expect(formatNumber(1200, { isComputed: true })).toBe('1200');
+    expect(formatNumber(10, { isComputed: true })).toBe('10');
+  });
+  it('进位跨位(HALF_UP + 去尾零)', () => {
+    expect(formatNumber(0.999, { isComputed: true })).toBe('1');
+  });
 });
