@@ -68,7 +68,10 @@ public class Q04ElementBomHandler implements SheetHandler {
             c.put("content", row.getDecimal("组成含量"));
             c.put("scrap_rate", row.getDecimal("损耗率"));
             c.put("composition_qty", row.getDecimal("毛用量"));
-            c.put("issue_unit", row.getStr("毛用量单位"));
+            // issue_unit: 净用量单位非空(trim 后)时优先采用, 否则回退毛用量单位。
+            // getStr 已对空白做 trim→null 归一, 故 != null 即等价于"trim 后非空"。
+            String netUnit = row.getStr("净用量单位");
+            c.put("issue_unit", netUnit != null ? netUnit : row.getStr("毛用量单位"));
             c.put("base_qty", row.getDecimal("净用量"));
             childDedupByMat
                 .computeIfAbsent(materialNo, k -> new LinkedHashMap<>())
