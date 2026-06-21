@@ -768,6 +768,8 @@ public class ExcelViewService {
         }
     }
 
+    // 导出走 POI DataFormat（需数值态+格式串）故未复用 NumberFormatUtil，单列一份兜底位数。
+    // ⚠️ 与 NumberFormatUtil.COMPUTED_FALLBACK + 前端 formatNumber.COMPUTED_FALLBACK 保持同步。
     private static final int COMPUTED_FALLBACK_DECIMALS = 2;
 
     /** 与前端 isComputedExcelColumn 同一份计算列类型集。 */

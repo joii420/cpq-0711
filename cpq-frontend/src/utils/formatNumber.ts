@@ -9,6 +9,8 @@ export interface DecimalSpec {
   isPercent?: boolean;
 }
 
+// 计算列未配位数时的兜底位数。⚠️ 与后端保持同步：
+// NumberFormatUtil.COMPUTED_FALLBACK + ExcelViewService.COMPUTED_FALLBACK_DECIMALS（导出走 POI 故另有一份）。
 const COMPUTED_FALLBACK = 2;
 
 export function resolveDecimals(spec: DecimalSpec): number | null {

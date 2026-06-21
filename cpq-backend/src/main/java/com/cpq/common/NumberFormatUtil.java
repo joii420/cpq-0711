@@ -13,6 +13,7 @@ import java.math.RoundingMode;
  */
 public final class NumberFormatUtil {
 
+    // ⚠️ 与前端 formatNumber.COMPUTED_FALLBACK + ExcelViewService.COMPUTED_FALLBACK_DECIMALS 保持同步。
     private static final int COMPUTED_FALLBACK = 2;
 
     private NumberFormatUtil() {

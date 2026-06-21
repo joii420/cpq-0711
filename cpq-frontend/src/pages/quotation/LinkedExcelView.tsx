@@ -47,8 +47,6 @@ export function isComputedExcelColumn(sourceType: string | undefined): boolean {
   return ['FORMULA', 'CARD_FORMULA', 'TAB_JOIN_FORMULA', 'EXCEL_FORMULA'].includes(sourceType ?? '');
 }
 
-const COMPUTED_SOURCE_TYPES = ['FORMULA', 'CARD_FORMULA', 'TAB_JOIN_FORMULA', 'EXCEL_FORMULA'];
-
 function renderCellValue(val: any, col: CostingTemplateColumn): React.ReactNode {
   if (val === null || val === undefined || val === '' || val === '—') {
     return <span style={{ color: '#bbb' }}>—</span>;
