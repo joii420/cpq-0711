@@ -413,9 +413,14 @@ public class CardSnapshotService {
             managed.quoteCardValues = safeCall(() ->
                 buildCardValues(managed, q.customerTemplateId));
 
-            // 报价侧：Excel 值由 ExcelViewService 计算，透传同侧卡片快照（CARD_FORMULA 用同侧有效行取数）
-            managed.quoteExcelValues = safeCall(() ->
-                buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
+            // 报价侧：Excel 值由 ExcelViewService 计算，透传同侧卡片快照（CARD_FORMULA 用同侧有效行取数）。
+            // Phase 3 守卫（2026-06-21）：前端单引擎权威 — 若前端已送 quoteExcelValues（saveDraft 落库），
+            // 本兜底不覆盖；仅新行（null）才调 buildExcelValues 初始化。
+            // TODO(Phase6): 前端权威后退役此后端 Excel 重算（buildExcelValues）
+            if (managed.quoteExcelValues == null) {
+                managed.quoteExcelValues = safeCall(() ->
+                    buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
+            }
 
             // 核价侧：需单独 expand（核价模板组件，无现成快照）
             if (q.costingCardTemplateId != null) {
@@ -1365,7 +1370,8 @@ public class CardSnapshotService {
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp);
             managed.quoteCardValues = MAPPER.writeValueAsString(root);
 
-            // 4. 重算报价 Excel（核价不动），透传刚算好的新 quoteCardValues（CARD_FORMULA 同侧取数）
+            // 4. 重算报价 Excel（核价不动），透传刚算好的新 quoteCardValues（CARD_FORMULA 同侧取数）。
+            // TODO(Phase6): 前端权威后退役此后端 Excel 重算（buildExcelValues）
             String excel = safeCall(() ->
                 buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
             if (excel != null) managed.quoteExcelValues = excel;
@@ -1498,7 +1504,8 @@ public class CardSnapshotService {
             QuotationLineItem liManaged = QuotationLineItem.findById(lineItemId);
             if (liManaged == null) return null; // 理论不达：上面已 flush，该行必在库
 
-            // 重算报价 Excel（核价不动），透传刚算好的新 quoteCardValues（CARD_FORMULA 同侧取数）
+            // 重算报价 Excel（核价不动），透传刚算好的新 quoteCardValues（CARD_FORMULA 同侧取数）。
+            // TODO(Phase6): 前端权威后退役此后端 Excel 重算（buildExcelValues）
             String excel = safeCall(() ->
                 buildExcelValues(liManaged, q.customerTemplateId, q.customerId, liManaged.quoteCardValues));
             if (excel != null) liManaged.quoteExcelValues = excel;

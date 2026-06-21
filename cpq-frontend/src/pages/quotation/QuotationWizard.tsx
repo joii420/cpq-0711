@@ -29,6 +29,8 @@ import { globalVariableService } from '../../services/globalVariableService';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 import { splitRows, rowAt } from './manualRows';
 import { coerceInputNumber } from './inputDefaults';
+import type { CostingTemplateColumn } from '../../services/costingTemplateService';
+import { buildExcelSnapshot } from './buildExcelSnapshot';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
@@ -156,6 +158,26 @@ const QuotationWizard: React.FC = () => {
       })
       .catch(() => setGvDefs({}));
   }, []);
+
+  // Phase 3（2026-06-21）：报价 Excel 列定义 ref — 供 buildDraftPayload 按 customerTemplateId 拉一次。
+  // 用 ref 存储避免触发 re-render；失败时静默退化为空数组（quoteExcelValues=undefined，后端兜底）。
+  const excelColumnsRef = useRef<CostingTemplateColumn[]>([]);
+  useEffect(() => {
+    if (!customerTemplateId) { excelColumnsRef.current = []; return; }
+    templateService.getExcelViewConfig(customerTemplateId)
+      .then((r: any) => {
+        try {
+          const raw = r?.data ?? r;
+          const cols = Array.isArray(raw)
+            ? raw
+            : Array.isArray(raw?.columns) ? raw.columns : [];
+          excelColumnsRef.current = cols as CostingTemplateColumn[];
+        } catch {
+          excelColumnsRef.current = [];
+        }
+      })
+      .catch(() => { excelColumnsRef.current = []; });
+  }, [customerTemplateId]);
 
   // 2026-06-01: 取消 10 秒定时自动保存（用户决议）。草稿持久化改为按需触发：
   //   ① 基础数据导入流程创建后自动保存一次（下方 import-auto-save effect）；
@@ -786,6 +808,17 @@ const QuotationWizard: React.FC = () => {
         lineFinalPrice: li.lineFinalPrice ?? null,
         lineTotalAmount: li.lineTotalAmount ?? null,
         discountRuleCode: li.discountRuleCode ?? null,
+        // Phase 3（2026-06-21）：前端单引擎算好的报价 Excel 快照，随 saveDraft 原样落库。
+        // 后端 snapshotLineValues 守卫：仅当 li.quoteExcelValues==null 时才 buildExcelValues 兜底。
+        quoteExcelValues: (() => {
+          try {
+            const cols = excelColumnsRef.current;
+            if (!cols?.length) return undefined;
+            return JSON.stringify(buildExcelSnapshot(li, cols, driverExpansions, customerIdValue, { globalVariableDefs: gvDefs }));
+          } catch {
+            return undefined;
+          }
+        })(),
         componentData: (li.componentData || []).map((cd, ci) => ({
           componentId: cd.componentId || null,
           tabName: cd.tabName || '',

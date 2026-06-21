@@ -375,6 +375,9 @@ public class QuotationService {
                 li.lineFinalPrice = liDraft.lineFinalPrice;
                 li.lineTotalAmount = liDraft.lineTotalAmount;
                 li.discountRuleCode = liDraft.discountRuleCode;
+                // Phase 3（2026-06-21）：前端单引擎算好的报价 Excel 快照原样落库。
+                // 后端 snapshotLineValues 守卫：仅当 li.quoteExcelValues==null 时才 buildExcelValues 兜底。
+                if (liDraft.quoteExcelValues != null) li.quoteExcelValues = liDraft.quoteExcelValues;
                 li.persist();
                 newIdsByIndex[i] = li.id;  // V169 二阶段父子关系重建用
 
