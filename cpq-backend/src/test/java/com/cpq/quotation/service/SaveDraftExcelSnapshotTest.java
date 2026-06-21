@@ -2,6 +2,7 @@ package com.cpq.quotation.service;
 
 import com.cpq.quotation.dto.SaveDraftRequest;
 import com.cpq.quotation.entity.QuotationLineItem;
+import io.quarkus.test.TestTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -79,7 +80,7 @@ public class SaveDraftExcelSnapshotTest {
     /**
      * 在当前事务内自建最小 QuotationLineItem，挂到 quotationId 下。
      * 直接从 product / template 表各取一条合法 ID 满足 FK 约束。
-     * 调用方须在 @Transactional 测试方法中，事务回滚后自动清理（不污染 DB）。
+     * 调用方须在 @TestTransaction 测试方法中，事务结束自动回滚清理（不污染 DB）。
      */
     @SuppressWarnings("unchecked")
     private UUID createMinimalLineItem(UUID quotationId) {
@@ -128,7 +129,7 @@ public class SaveDraftExcelSnapshotTest {
     @Test
     @Order(1)
     @DisplayName("T1: saveDraft 携带 quoteExcelValues → 原样落库含 '0.93'")
-    @Transactional
+    @TestTransaction
     void saveDraft_carriesQuoteExcelValues_persistedAsIs() {
         UUID quotationId = findDraftQuotationId();
         assertNotNull(quotationId,
@@ -157,7 +158,7 @@ public class SaveDraftExcelSnapshotTest {
         assertNotNull(stored, "quoteExcelValues 不应为 null（前端已送值）");
         assertTrue(stored.contains("0.93"),
                 "quoteExcelValues 应原样含 '0.93'，实际：" + stored);
-        // 事务回滚（@Transactional on test）自动清理自建数据
+        // 事务回滚（@TestTransaction on test）自动清理自建数据
     }
 
     // -----------------------------------------------------------------------
@@ -172,7 +173,7 @@ public class SaveDraftExcelSnapshotTest {
     @Test
     @Order(2)
     @DisplayName("T2: snapshotLineValues 守卫 — 前端值已存在时不覆盖（哨兵证伪）")
-    @Transactional
+    @TestTransaction
     void snapshotLineValues_guardDoesNotOverwriteFrontendValue() {
         UUID quotationId = findDraftQuotationId();
         assertNotNull(quotationId,
