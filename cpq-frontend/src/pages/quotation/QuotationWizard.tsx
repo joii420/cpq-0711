@@ -1362,6 +1362,8 @@ const QuotationWizard: React.FC = () => {
       quotationId={quotationId || undefined}
       lineItems={lineItems}
       baseCurrency={quotation?.baseCurrency || 'CNY'}
+      driverExpansions={driverExpansions}
+      customerId={customerIdValue}
       onUpdate={(updater) => setLineItems(prev => updater(prev))}
     />
   );

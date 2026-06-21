@@ -85,6 +85,9 @@ public class QuotationService {
     @Inject
     com.cpq.quotation.service.CardSnapshotService cardSnapshotService;
 
+    @Inject
+    LineDiscountService lineDiscountService;
+
     private static final java.util.Set<String> VALID_QUOTATION_STATUSES = java.util.Set.of(
             "DRAFT", "SUBMITTED", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "EXPIRED", "CANCELLED"
     );
@@ -362,6 +365,16 @@ public class QuotationService {
                 if (liDraft.compositeType != null && !liDraft.compositeType.isBlank()) {
                     li.compositeType = liDraft.compositeType;
                 }
+                // Step3 行级折扣（V302）：原样落库前端送来的值；submit 时再权威重算覆盖。
+                li.annualVolume = liDraft.annualVolume;
+                li.discountSource = liDraft.discountSource;
+                li.discountBaseAmount = liDraft.discountBaseAmount;
+                li.discountRateApplied = liDraft.discountRateApplied;
+                li.lineDiscountAmount = liDraft.lineDiscountAmount;
+                li.lineUnitPrice = liDraft.lineUnitPrice;
+                li.lineFinalPrice = liDraft.lineFinalPrice;
+                li.lineTotalAmount = liDraft.lineTotalAmount;
+                li.discountRuleCode = liDraft.discountRuleCode;
                 li.persist();
                 newIdsByIndex[i] = li.id;  // V169 二阶段父子关系重建用
 
@@ -777,6 +790,15 @@ public class QuotationService {
         } catch (Exception e) {
             LOG.warnf("[QuotationService] freezeSqlViewsForQuotation failed (non-blocking): %s", e.getMessage());
         }
+
+        // Step3：提交时权威重算每行折后小计（防前端篡改），整单总额 = Σ行合计。
+        BigDecimal lineSum = BigDecimal.ZERO;
+        for (QuotationLineItem li : lineItems) {
+            if ("PART".equals(li.compositeType)) continue;   // 选配子件不单独计入整单
+            lineDiscountService.recompute(li);
+            if (li.lineTotalAmount != null) lineSum = lineSum.add(li.lineTotalAmount);
+        }
+        q.totalAmount = lineSum.setScale(4, java.math.RoundingMode.HALF_UP);
 
         q.status = "SUBMITTED";
         LOG.infof("Submitted quotation id=%s number=%s approver=%s", id, q.quotationNumber, q.assignedApproverId);

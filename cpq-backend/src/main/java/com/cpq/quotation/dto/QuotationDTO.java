@@ -186,6 +186,17 @@ public class QuotationDTO {
         public String costingCardValues;
         public String costingExcelValues;
 
+        // Step3 行级折扣（V302）
+        public Integer annualVolume;
+        public String discountSource;
+        public java.math.BigDecimal discountBaseAmount;
+        public java.math.BigDecimal discountRateApplied;
+        public java.math.BigDecimal lineDiscountAmount;
+        public java.math.BigDecimal lineUnitPrice;
+        public java.math.BigDecimal lineFinalPrice;
+        public java.math.BigDecimal lineTotalAmount;
+        public String discountRuleCode;
+
         public static LineItemDTO from(QuotationLineItem li) {
             LineItemDTO dto = new LineItemDTO();
             dto.id = li.id;
@@ -219,6 +230,15 @@ public class QuotationDTO {
             dto.quoteExcelValues = li.quoteExcelValues;
             dto.costingCardValues = li.costingCardValues;
             dto.costingExcelValues = li.costingExcelValues;
+            dto.annualVolume = li.annualVolume;
+            dto.discountSource = li.discountSource;
+            dto.discountBaseAmount = li.discountBaseAmount;
+            dto.discountRateApplied = li.discountRateApplied;
+            dto.lineDiscountAmount = li.lineDiscountAmount;
+            dto.lineUnitPrice = li.lineUnitPrice;
+            dto.lineFinalPrice = li.lineFinalPrice;
+            dto.lineTotalAmount = li.lineTotalAmount;
+            dto.discountRuleCode = li.discountRuleCode;
             return dto;
         }
     }

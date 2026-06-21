@@ -131,8 +131,13 @@ public class QuotationExportService {
         createHeaderCell(lineHeader, col++, "属性值", headerStyle);
         if (showDiscount) {
             createHeaderCell(lineHeader, col++, "折扣率(%)", headerStyle);
+            createHeaderCell(lineHeader, col++, "单价(元)", headerStyle);
+            createHeaderCell(lineHeader, col++, "折扣金额(元)", headerStyle);
+            createHeaderCell(lineHeader, col++, "折后单价(元)", headerStyle);
+            createHeaderCell(lineHeader, col++, "行合计(元)", headerStyle);
+        } else {
+            createHeaderCell(lineHeader, col++, "小计(元)", headerStyle);
         }
-        createHeaderCell(lineHeader, col++, "小计(元)", headerStyle);
 
         // Line items data
         int lineNum = 1;
@@ -148,13 +153,34 @@ public class QuotationExportService {
                 dataRow.createCell(col++).setCellValue(cat);
                 dataRow.createCell(col++).setCellValue(li.productAttributeValues != null ? li.productAttributeValues : "");
                 if (showDiscount) {
-                    dataRow.createCell(col++).setCellValue(li.finalDiscountRate != null ? li.finalDiscountRate.doubleValue() : 100.0);
-                }
-                Cell subtotalCell = dataRow.createCell(col++);
-                subtotalCell.setCellStyle(amountStyle);
-                if (li.subtotal != null) {
-                    subtotalCell.setCellValue(li.subtotal.doubleValue());
-                    grandTotal = grandTotal.add(li.subtotal);
+                    // 折扣率(%)：行级 discountRateApplied（非整单 finalDiscountRate）
+                    dataRow.createCell(col++).setCellValue(li.discountRateApplied != null ? li.discountRateApplied.doubleValue() : 0.0);
+                    // 单价
+                    Cell unitPriceCell = dataRow.createCell(col++);
+                    unitPriceCell.setCellStyle(amountStyle);
+                    if (li.lineUnitPrice != null) unitPriceCell.setCellValue(li.lineUnitPrice.doubleValue());
+                    // 折扣金额
+                    Cell discAmtCell = dataRow.createCell(col++);
+                    discAmtCell.setCellStyle(amountStyle);
+                    if (li.lineDiscountAmount != null) discAmtCell.setCellValue(li.lineDiscountAmount.doubleValue());
+                    // 折后单价
+                    Cell finalUnitCell = dataRow.createCell(col++);
+                    finalUnitCell.setCellStyle(amountStyle);
+                    if (li.lineFinalPrice != null) finalUnitCell.setCellValue(li.lineFinalPrice.doubleValue());
+                    // 行合计
+                    Cell lineTotalCell = dataRow.createCell(col++);
+                    lineTotalCell.setCellStyle(amountStyle);
+                    BigDecimal lineTotal = li.lineTotalAmount != null ? li.lineTotalAmount
+                            : (li.subtotal != null ? li.subtotal : BigDecimal.ZERO);
+                    lineTotalCell.setCellValue(lineTotal.doubleValue());
+                    grandTotal = grandTotal.add(lineTotal);
+                } else {
+                    Cell subtotalCell = dataRow.createCell(col++);
+                    subtotalCell.setCellStyle(amountStyle);
+                    if (li.subtotal != null) {
+                        subtotalCell.setCellValue(li.subtotal.doubleValue());
+                        grandTotal = grandTotal.add(li.subtotal);
+                    }
                 }
             }
         }
@@ -219,10 +245,23 @@ public class QuotationExportService {
             m.put("specification", li.snapshot != null && li.snapshot.productSpecification != null ? li.snapshot.productSpecification : "");
             m.put("category", li.snapshot != null && li.snapshot.productCategory != null ? li.snapshot.productCategory : "");
             m.put("attributeValues", li.productAttributeValues != null ? li.productAttributeValues : "");
-            m.put("discountRate", li.finalDiscountRate != null ? li.finalDiscountRate.toString() : "100");
+            m.put("discountRate", li.discountRateApplied != null ? li.discountRateApplied.toString() : "0");
             m.put("subtotal", li.subtotal != null ? NumberFormatUtil.format(li.subtotal, null, true) : "0");
+            // 行级折扣明细字段（Task6）
+            m.put("lineUnitPrice", formatAmount(li.lineUnitPrice));
+            m.put("lineDiscountAmount", formatAmount(li.lineDiscountAmount));
+            m.put("lineFinalPrice", formatAmount(li.lineFinalPrice));
+            BigDecimal lineTotal = li.lineTotalAmount != null ? li.lineTotalAmount
+                    : (li.subtotal != null ? li.subtotal : BigDecimal.ZERO);
+            m.put("lineTotalAmount", formatAmount(lineTotal));
             return m;
         }).toList();
+    }
+
+    /** 格式化金额为 2 位小数字符串，null 返回 "0.00" */
+    private static String formatAmount(BigDecimal v) {
+        if (v == null) return "0.00";
+        return v.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
     }
 
     private String getStatusLabel(String status) {

@@ -87,6 +87,17 @@ public class SaveDraftRequest {
          * quotation_line_composite_process,使组合工艺跨保存存活。
          */
         public List<CompositeProcessDraft> compositeProcesses;
+
+        // ─── Step3 行级折扣（V302；前端 buildDraftPayload 早已透传，后端此前丢弃）───
+        public Integer annualVolume;
+        public String discountSource;
+        public BigDecimal discountBaseAmount;
+        public BigDecimal discountRateApplied;
+        public BigDecimal lineDiscountAmount;
+        public BigDecimal lineUnitPrice;
+        public BigDecimal lineFinalPrice;
+        public BigDecimal lineTotalAmount;
+        public String discountRuleCode;
     }
 
     public static class CompositeProcessDraft {

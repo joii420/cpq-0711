@@ -1179,6 +1179,92 @@ function computeTabSubtotal(
   return sum;
 }
 
+/**
+ * PASS1：遍历 NORMAL 组件，按 componentId/componentCode/tabName 三键登记各页签小计。
+ * 折扣重算时可单独调用此函数取得 map，再缩放后代入 evalProductSubtotalFromSubtotals。
+ */
+export function getComponentSubtotals(
+  item: LineItem,
+  driverExpansions?: import('./useDriverExpansions').DriverExpansionMap,
+  customerId?: string,
+): Record<string, number> {
+  const componentSubtotals: Record<string, number> = {};
+  if (!item.componentData) return componentSubtotals;
+  const partNo = item.productPartNo;
+  // V203/Phase B: 必须传 comp.dataDriverPath 才能区分同 componentId 不同 driver 的两个组件实例
+  // V196 (2026-05-19): 加 fieldsHash 维度区分同 cid 同 driver 不同 fields_override 的两个 Tab
+  const lookupExpansion = (comp: ComponentDataItem) => {
+    if (!driverExpansions || !partNo || !comp.componentId) return undefined;
+    // Bug B: lineItemId = item.id || item.tempId || ''
+    const lineItemId = (item as any).id || (item as any).tempId || '';
+    const k = driverExpansionKey(lineItemId, partNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
+    return driverExpansions[k];
+  };
+  for (const comp of item.componentData) {
+    if (!comp?.fields || comp.componentType !== 'NORMAL') continue;
+    // partNo + driverExpansion 一起传 —— BASIC_DATA 字段才能按行取值，
+    // 不然落到全局 path cache 第一项 / 当 0 算（产品小计 156.80 vs 列小计 750.80 的根因）
+    const subtotal = computeTabSubtotal(
+      comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp),
+    );
+    if (comp.componentId) componentSubtotals[comp.componentId] = subtotal;
+    if (comp.componentCode) componentSubtotals[comp.componentCode] = subtotal;
+    componentSubtotals[comp.tabName] = subtotal;
+  }
+  return componentSubtotals;
+}
+
+/**
+ * 给定 componentSubtotals map，用 SUBTOTAL 公式（或 subtotalFormula / fallback 累加）求产品单价。
+ * 折扣重算时可把某页签小计缩放后代入此函数重新求积。
+ */
+export function evalProductSubtotalFromSubtotals(
+  item: LineItem,
+  componentSubtotals: Record<string, number>,
+): number {
+  // Build NUMBER product attribute values
+  const productAttrs: Record<string, number> = {};
+  for (const attr of item.productAttributes || []) {
+    if (attr.field_type === 'NUMBER') {
+      const val = parseFloat(item.productAttributeValues?.[attr.name]);
+      if (!isNaN(val)) productAttrs[attr.name] = val;
+    }
+  }
+
+  // Find SUBTOTAL component and use its first formula as product subtotal
+  const subtotalComp = item.componentData?.find(c => c.componentType === 'SUBTOTAL');
+  if (subtotalComp && subtotalComp.formulas && subtotalComp.formulas.length > 0) {
+    const formula = subtotalComp.formulas[0];
+    if (formula.expression && formula.expression.length > 0) {
+      try {
+        return evaluateExpression(formula.expression, {}, componentSubtotals, productAttrs);
+      } catch {
+        return 0;
+      }
+    }
+  }
+
+  // Fallback: use legacy subtotalFormula if present
+  if (item.subtotalFormula && item.subtotalFormula.length > 0) {
+    try {
+      return evaluateExpression(item.subtotalFormula, {}, componentSubtotals, productAttrs);
+    } catch {
+      return 0;
+    }
+  }
+
+  // Final fallback（无 SUBTOTAL 组件/公式）：各页签总计之和 —— 逐组件按 componentId 取一次，
+  // 避免 componentSubtotals 同值三键(componentId/componentCode/tabName)被 Object.values 重复累加。
+  let fallbackSum = 0;
+  for (const c of item.componentData || []) {
+    if (!c?.fields || c.componentType !== 'NORMAL') continue;
+    if (!c.fields.some((ff: any) => ff.is_subtotal)) continue;
+    const key = c.componentId ?? c.componentCode ?? c.tabName;
+    fallbackSum += componentSubtotals[key] ?? 0;
+  }
+  return fallbackSum;
+}
+
 function computeProductSubtotal(
   item: LineItem,
   // 让 caller 把 driverExpansions / customerId 透传进来 —— 不传则退化为旧行为（仅 comp.rows）
@@ -1191,86 +1277,15 @@ function computeProductSubtotal(
 ): number {
   if (!item.componentData || item.componentData.length === 0) return item.subtotal || 0;
 
-  let componentSubtotals: Record<string, number>;
-
   if (precomputedSubtotals) {
     // B3: 用调用方传入的（buildCrossTabRows 回填后）已修正小计，跳过 PASS1 重算。
     // 消除"产品小计 PASS1 不含 crossTabRows → cross_tab 列贡献 0"的双口径。
-    componentSubtotals = precomputedSubtotals;
-  } else {
-    const partNo = item.productPartNo;
-    // V203/Phase B: 必须传 comp.dataDriverPath 才能区分同 componentId 不同 driver 的两个组件实例
-    // V196 (2026-05-19): 加 fieldsHash 维度区分同 cid 同 driver 不同 fields_override 的两个 Tab
-    const lookupExpansion = (comp: ComponentDataItem) => {
-      if (!driverExpansions || !partNo || !comp.componentId) return undefined;
-      // Bug B: lineItemId = item.id || item.tempId || ''
-      const lineItemId = (item as any).id || (item as any).tempId || '';
-      const k = driverExpansionKey(lineItemId, partNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
-      return driverExpansions[k];
-    };
-
-    // Compute NORMAL component subtotals first (PASS1: 无 crossTabRows，cross_tab 列小计为 0)
-    componentSubtotals = {};
-    for (const comp of item.componentData) {
-      if (!comp?.fields || comp.componentType !== 'NORMAL') continue;
-      // partNo + driverExpansion 一起传 —— BASIC_DATA 字段才能按行取值，
-      // 不然落到全局 path cache 第一项 / 当 0 算（产品小计 156.80 vs 列小计 750.80 的根因）
-      const subtotal = computeTabSubtotal(
-        comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp),
-      );
-      if (comp.componentId) componentSubtotals[comp.componentId] = subtotal;
-      if (comp.componentCode) componentSubtotals[comp.componentCode] = subtotal;
-      componentSubtotals[comp.tabName] = subtotal;
-    }
+    return evalProductSubtotalFromSubtotals(item, precomputedSubtotals);
   }
 
-  // Find SUBTOTAL component and use its first formula as product subtotal
-  const subtotalComp = item.componentData.find(c => c.componentType === 'SUBTOTAL');
-  if (subtotalComp && subtotalComp.formulas && subtotalComp.formulas.length > 0) {
-    const formula = subtotalComp.formulas[0];
-    if (formula.expression && formula.expression.length > 0) {
-      // Build NUMBER product attribute values
-      const productAttrs: Record<string, number> = {};
-      for (const attr of item.productAttributes || []) {
-        if (attr.field_type === 'NUMBER') {
-          const val = parseFloat(item.productAttributeValues?.[attr.name]);
-          if (!isNaN(val)) productAttrs[attr.name] = val;
-        }
-      }
-      try {
-        return evaluateExpression(formula.expression, {}, componentSubtotals, productAttrs);
-      } catch {
-        return 0;
-      }
-    }
-  }
-
-  // Fallback: use legacy subtotalFormula if present
-  if (item.subtotalFormula && item.subtotalFormula.length > 0) {
-    const productAttrs: Record<string, number> = {};
-    for (const attr of item.productAttributes || []) {
-      if (attr.field_type === 'NUMBER') {
-        const val = parseFloat(item.productAttributeValues?.[attr.name]);
-        if (!isNaN(val)) productAttrs[attr.name] = val;
-      }
-    }
-    try {
-      return evaluateExpression(item.subtotalFormula, {}, componentSubtotals, productAttrs);
-    } catch {
-      return 0;
-    }
-  }
-
-  // Final fallback（无 SUBTOTAL 组件/公式）：各页签总计之和 —— 逐组件按 componentId 取一次，
-  // 避免 componentSubtotals 同值三键(componentId/componentCode/tabName)被 Object.values 重复累加。
-  let fallbackSum = 0;
-  for (const c of item.componentData) {
-    if (!c?.fields || c.componentType !== 'NORMAL') continue;
-    if (!c.fields.some((ff: any) => ff.is_subtotal)) continue;
-    const key = c.componentId ?? c.componentCode ?? c.tabName;
-    fallbackSum += componentSubtotals[key] ?? 0;
-  }
-  return fallbackSum;
+  // Compute NORMAL component subtotals first (PASS1: 无 crossTabRows，cross_tab 列小计为 0)
+  const componentSubtotals = getComponentSubtotals(item, driverExpansions, customerId);
+  return evalProductSubtotalFromSubtotals(item, componentSubtotals);
 }
 
 /** 测试用：按行序逐行 computeAllFormulas，previous_row_subtotal 按本列累加（Plan 2b）。 */
