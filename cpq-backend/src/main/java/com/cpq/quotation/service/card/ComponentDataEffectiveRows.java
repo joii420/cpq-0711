@@ -83,6 +83,42 @@ public final class ComponentDataEffectiveRows {
             Map<UUID, Meta> metaById,
             Map<UUID, Meta> extraSubtotalMetas,
             FormulaCalculator fc) {
+        return computeScaled(cdList, metaById, extraSubtotalMetas, fc, null, 1.0);
+    }
+
+    /**
+     * 折扣重算：对 discountCode 命中的页签（meta.code 或 meta.name 相等）列和乘 discountScale，
+     * 再跑 SUBTOTAL 公式，返回该 SUBTOTAL 页签的折后小计。
+     * discountCode=null 或 scale=1.0 → 等价无折扣（返原产品小计 S0）。
+     */
+    public static BigDecimal subtotalWithDiscount(
+            List<QuotationLineComponentData> cdList,
+            Map<UUID, Meta> metaById,
+            UUID subtotalComponentId,
+            FormulaCalculator fc,
+            String discountCode,
+            double discountScale) {
+        Map<String, CardEffectiveRows.TabRows> tabs =
+            computeScaled(cdList, metaById, Map.of(), fc, discountCode, discountScale);
+        CardEffectiveRows.TabRows tr = subtotalComponentId != null
+            ? tabs.get(subtotalComponentId.toString()) : null;
+        BigDecimal s = tr != null ? tr.subtotal : null;
+        return s != null ? s.setScale(4, java.math.RoundingMode.HALF_UP)
+                         : java.math.BigDecimal.ZERO.setScale(4);
+    }
+
+    /**
+     * 内部实现：在 Pass1 列求和时对命中页签（discountCode 匹配 meta.code 或 meta.name）的每列值
+     * 乘 discountScale，再走 Pass2/Pass3 重算 SUBTOTAL 公式。
+     * discountCode=null → 缩放不触发，与原 compute 完全等价。
+     */
+    private static Map<String, CardEffectiveRows.TabRows> computeScaled(
+            List<QuotationLineComponentData> cdList,
+            Map<UUID, Meta> metaById,
+            Map<UUID, Meta> extraSubtotalMetas,
+            FormulaCalculator fc,
+            String discountCode,
+            double discountScale) {
         Map<String, CardEffectiveRows.TabRows> out = new LinkedHashMap<>();
         Map<UUID, Meta> extras = extraSubtotalMetas != null ? extraSubtotalMetas : Map.of();
         boolean noCd = cdList == null || cdList.isEmpty();
@@ -101,10 +137,13 @@ public final class ComponentDataEffectiveRows {
             Meta meta = cd.componentId != null ? metas.get(cd.componentId) : null;
             accs.add(new TabAcc(cd, rows, colSums, meta));
             if (meta != null) {
+                boolean hit = discountCode != null
+                    && (discountCode.equals(meta.code) || discountCode.equals(meta.name));
                 for (Map.Entry<String, BigDecimal> e : colSums.entrySet()) {
                     // double 受限于 FormulaCalculator.RowContext.componentSubtotals 的 Map<String,Double> 契约；
                     // 列和本身仍是 BigDecimal（见 subtotalByColumn），勿擅自改回 BigDecimal 破坏契约。
                     double v = e.getValue().doubleValue();
+                    if (hit) v = v * discountScale;
                     if (meta.code != null) componentSubtotals.put(meta.code + SUBTOTAL_KEY_SEP + e.getKey(), v);
                     if (meta.name != null) componentSubtotals.put(meta.name + SUBTOTAL_KEY_SEP + e.getKey(), v);
                 }
