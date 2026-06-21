@@ -358,7 +358,57 @@ describe('buildExcelSnapshot', () => {
       expect(rows[0].EF).toBe(15);
     });
   });
+
+  // ── driverExpansions 自建 lookupExpansion（与卡片同源）─────────────────────
+  describe('driverExpansions 自建 lookupExpansion（与卡片同源）', () => {
+    it('传入空 driverExpansions 时不报错，结果与 undefined 一致（lineItem093 组件无 dataDriverPath）', () => {
+      const { rows: rowsNoDriver } = buildExcelSnapshot(lineItem093, allColumns, undefined, undefined, {});
+      const { rows: rowsEmptyDriver } = buildExcelSnapshot(lineItem093, allColumns, {}, 'cust-001', {});
+      // 来料无 dataDriverPath，driverExpansionKey 仍返空串后缀 → expansions[k] = undefined → 与 undefined 行为一致
+      expect(rowsEmptyDriver[0].C).toBeCloseTo(rowsNoDriver[0].C as number, 6);
+      expect(rowsEmptyDriver[0].A).toBeCloseTo(rowsNoDriver[0].A as number, 6);
+    });
+
+    it('ctx.lookupExpansion 优先级高于 driverExpansions 自建（提供时 spy 被调用）', () => {
+      // 构造一个 spy lookupExpansion，返回 undefined（不实际影响计算，只验证被调用）
+      const spyCalls: string[] = [];
+      const spyLookup = (comp: any) => {
+        spyCalls.push(comp.componentId ?? '');
+        return undefined;
+      };
+      buildExcelSnapshot(lineItem093, allColumns, {}, 'cust-001', { lookupExpansion: spyLookup });
+      // buildCrossTabRows 对每个 NORMAL 组件调 lookupExpansion 一次
+      expect(spyCalls.length).toBeGreaterThan(0);
+      expect(spyCalls).toContain('comp-material');
+    });
+
+    it('driverExpansions 中匹配 key 时不报错，A/C 列仍为有限数（key 格式验证）', () => {
+      // 构造来料组件的 driverExpansion key（与卡片 1204 行对齐：lineItemId=item.id || item.tempId || ''）
+      const lineItemId = (lineItem093 as any).id || (lineItem093 as any).tempId || '';
+      const k = driverExpansionKey(lineItemId, lineItem093.productPartNo!, 'comp-material', 'cust-001', undefined, fieldsOverrideHash(materialCompFields));
+      const fakeExpansion = { rowCount: 1, rows: [{ driverRow: {}, basicDataValues: {} }] };
+      const driverExpansionsMap = { [k]: fakeExpansion };
+
+      // 提供 driverExpansions 时不报错，且 A/C 结果值仍为有限数
+      const { rows } = buildExcelSnapshot(lineItem093, allColumns, driverExpansionsMap, 'cust-001', {});
+      expect(typeof rows[0].A).toBe('number');
+      expect(Number.isFinite(rows[0].A as number)).toBe(true);
+      expect(typeof rows[0].C).toBe('number');
+      expect(Number.isFinite(rows[0].C as number)).toBe(true);
+    });
+  });
 });
 
 // vitest 需要 beforeAll（来自 vitest 全局）
 import { beforeAll } from 'vitest';
+import { driverExpansionKey, fieldsOverrideHash } from './useDriverExpansions';
+
+/** 来料组件 fields 的最小定义（供 key 构造测试中 fieldsOverrideHash 使用） */
+const materialCompFields = [
+  {
+    name: '材料成本',
+    field_type: 'FIXED_VALUE',
+    content: '10',
+    is_subtotal: true,
+  },
+];

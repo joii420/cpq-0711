@@ -3359,6 +3359,9 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
           templateId={customerTemplateId || null}
           quotationId={quotationId}
           side="QUOTE"
+          driverExpansions={driverExpansions}
+          pathCache={quotationPathCache}
+          globalVariableDefs={gvDefs}
         />
       ) : lineItems.length === 0 ? (
         <div className="qt-empty-state">

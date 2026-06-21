@@ -5,6 +5,10 @@ import type { LineItem } from './QuotationStep2';
 import { useLinkedExcelRows } from './useLinkedExcelRows';
 import { useExcelSnapshotRows } from './useExcelSnapshotRows';
 import { formatNumber } from '../../utils/formatNumber';
+import { buildExcelSnapshot } from './buildExcelSnapshot';
+import type { DriverExpansionMap } from './useDriverExpansions';
+import type { PathCache } from './usePathFormulaCache';
+import type { GlobalVariableDefinition } from '../../utils/formulaEngine';
 
 interface Props {
   linkedTemplateId?: string;
@@ -19,6 +23,15 @@ interface Props {
   costingTemplateId?: string | null;
   /** 本视图侧：QUOTE=报价 Excel、COSTING=核价 Excel；新模型下据此读对应 Excel 值快照 */
   side?: 'QUOTE' | 'COSTING';
+  /**
+   * Phase 2：报价侧 Excel 视图改走前端 buildExcelSnapshot 即时求值，与卡片共用同一引擎。
+   * 由 QuotationStep2.tsx 报价侧 LinkedExcelView 调用处传入（side=QUOTE 时生效）。
+   */
+  driverExpansions?: DriverExpansionMap;
+  /** BNF 路径求值缓存（来自 usePathFormulaCache，即 quotationPathCache），key=`${partNo}::${path}` */
+  pathCache?: PathCache;
+  /** 全局变量定义字典（code → def），供动态 key GV 路径重写 */
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>;
 }
 
 /**
@@ -78,6 +91,9 @@ const LinkedExcelView: React.FC<Props> = ({
   templateId,
   costingTemplateId: _costingTemplateId, // @deprecated 已由 templateId 替代, 接收但不使用
   side,
+  driverExpansions,
+  pathCache,
+  globalVariableDefs,
 }) => {
   // ---- 旧模型 hook（始终调用，用 enabled 控制是否真正运行）----
   // useLinkedExcelRows 内部用 linkedTemplateId 有无控制；直接传完整参数，
@@ -105,13 +121,45 @@ const LinkedExcelView: React.FC<Props> = ({
     parsedColumns: legacyColumns,
   });
 
+  // ---- Phase 2：报价侧 Excel 视图改走前端 buildExcelSnapshot 即时求值 ----
+  // 核价侧（side=COSTING）不动，保持原 useBackend/legacy 路径。
+  // 报价侧（side=QUOTE）：用 buildExcelSnapshot 与卡片同引擎即时算列值。
+  // 依赖：lineItems / legacyColumns / driverExpansions / customerId / pathCache / globalVariableDefs
+  const frontendRows = React.useMemo(() => {
+    if (side === 'COSTING' || !legacyColumns?.length) return null;
+    return lineItems.flatMap((li, i) => {
+      const snap = buildExcelSnapshot(
+        li,
+        legacyColumns,
+        driverExpansions,
+        customerId,
+        { pathCache: pathCache as Record<string, number> | undefined, globalVariableDefs },
+      );
+      return snap.rows.map((r, ri) => ({
+        __key: `fe-${(li as any).id ?? (li as any).tempId ?? i}-${ri}`,
+        __label: r.__hfPartNo ?? `产品 ${i + 1}`,
+        __hfPartNo: r.__hfPartNo,
+        __noData: false,
+        ...r,
+      }));
+    });
+  }, [side, lineItems, legacyColumns, driverExpansions, customerId, pathCache, globalVariableDefs]);
+
   // ---- 按模型选用最终结果 ----
+  // Phase 2：报价侧优先用 frontendRows（前端即时算值）；核价侧保持原路径。
   const {
     rows,
     parsedColumns,
     loading: resolvedLoading,
     error: resolvedError,
-  } = useBackend
+  } = (side !== 'COSTING' && frontendRows != null)
+    ? {
+        rows: frontendRows,
+        parsedColumns: legacyColumns,
+        loading: legacyResult.loading,
+        error: legacyResult.error,
+      }
+    : useBackend
     ? {
         rows: snapshotResult.rows,
         parsedColumns: legacyColumns, // 列配置结构仍用旧 hook 已解析的（含 display_format 等）
@@ -203,7 +251,10 @@ const LinkedExcelView: React.FC<Props> = ({
             <Tag color={excelTemplate.status === 'PUBLISHED' ? 'green' : 'default'}>
               {excelTemplate.status === 'PUBLISHED' ? '已发布' : excelTemplate.status}
             </Tag>
-            {useBackend && <Tag color="cyan">后端算值</Tag>}
+            {side !== 'COSTING' && frontendRows != null
+              ? <Tag color="green">前端算值</Tag>
+              : useBackend && <Tag color="cyan">后端算值</Tag>
+            }
           </span>
         }
         extra={<span style={{ fontSize: 12, color: '#999' }}>按本报价单产品行渲染，共 {rows.length} 行</span>}

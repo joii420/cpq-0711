@@ -41,6 +41,7 @@ import type { GlobalVariableDefinition } from '../../utils/formulaEngine';
 import { expressionToTokens } from '../component/formulaSerialize';
 import type { CostingTemplateColumn } from '../../services/costingTemplateService';
 import type { DriverExpansionMap } from './useDriverExpansions';
+import { driverExpansionKey, fieldsOverrideHash } from './useDriverExpansions';
 import {
   isLegacyVarCode,
   resolveVariable,
@@ -107,7 +108,19 @@ export function buildExcelSnapshot(
   // ── Step 2: 构建 cross-tab 行并 PASS2 回填列小计 ────────────────────────────
   // buildCrossTabRows 按拓扑序算所有 NORMAL 组件的行，并将 is_subtotal 列值回填
   // componentSubtotals（覆盖 Step1 的 PASS1 结果，修正 cross_tab 列贡献 0 的问题）。
-  const lookupExpansion = ctx.lookupExpansion ?? (() => undefined);
+  //
+  // lookupExpansion 与卡片同源（QuotationStep2.tsx:1201-1207 / 1983-1988）：
+  //   lineItemId = item.id || item.tempId || ''（与卡片 Bug B 注释对齐，用 || 而非 ??）
+  //   key 维度：lineItemId + partNo + componentId + customerId + dataDriverPath + fieldsOverrideHash
+  // 若调用方已在 ctx.lookupExpansion 提供则优先使用（测试/特殊场景）；
+  // 否则从 driverExpansions 参数自建（正常渲染路径）。
+  const lookupExpansion = ctx.lookupExpansion ?? ((comp: import('./QuotationStep2').ComponentDataItem) => {
+    if (!driverExpansions || !partNo || !comp.componentId) return undefined;
+    // lineItemId 与卡片对齐：item.id || item.tempId || ''（|| 判 falsy，与卡片 1204 行一致）
+    const lineItemId = (item as any).id || (item as any).tempId || '';
+    const k = driverExpansionKey(lineItemId, partNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
+    return driverExpansions[k];
+  });
   const { store: crossTabRows } = buildCrossTabRows(
     item.componentData ?? [],
     componentSubtotals,
