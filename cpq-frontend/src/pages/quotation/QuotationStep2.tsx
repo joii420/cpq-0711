@@ -2675,7 +2675,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         {activeComponentBomTree && (<><td /><td /><td /></>)}
                         <td className="qt-subtotal-label-cell">合计</td>
                         <td colSpan={activeComponent.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
-                          {formatCurrency(sumTabColumns(activeComponent as any, allComponentSubtotals))}
+                          {/* 本页签金额合计走"其余"高精度 4 位（精度优先）；仅最终产品小计保持 formatCurrency 2 位 */}
+                          {`¥ ${formatNumber(sumTabColumns(activeComponent as any, allComponentSubtotals), { isComputed: true }) ?? '0'}`}
                         </td>
                       </tr>
                     )}

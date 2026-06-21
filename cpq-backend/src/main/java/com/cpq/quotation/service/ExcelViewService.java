@@ -802,7 +802,7 @@ public class ExcelViewService {
             String sourceType = (String) col.get("source_type");
             boolean isComputed = isComputedColumn(sourceType);
             Integer explicitDecimals = explicitDecimals(col);
-            // 解析有效位数：显式优先 → 计算列兜底 2 位 → 原始/取数列 null（保留原精度）
+            // 解析有效位数：显式优先 → 计算列兜底 4 位（精度优先）→ 原始/取数列 null（保留原精度）
             Integer scale = explicitDecimals != null ? explicitDecimals
                     : (isComputed ? COMPUTED_FALLBACK_DECIMALS : null);
             if (scale != null) {
@@ -819,7 +819,7 @@ public class ExcelViewService {
 
     // 导出走 POI DataFormat（需数值态+格式串）故未复用 NumberFormatUtil，单列一份兜底位数。
     // ⚠️ 与 NumberFormatUtil.COMPUTED_FALLBACK + 前端 formatNumber.COMPUTED_FALLBACK 保持同步。
-    private static final int COMPUTED_FALLBACK_DECIMALS = 2;
+    private static final int COMPUTED_FALLBACK_DECIMALS = 4;
 
     /** 与前端 isComputedExcelColumn 同一份计算列类型集。 */
     private boolean isComputedColumn(String sourceType) {
