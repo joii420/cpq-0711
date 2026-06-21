@@ -3,7 +3,10 @@ package com.cpq.configure.service;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.formula.dataloader.QuotationIdContext;
+import com.cpq.quotation.service.RowDataMaterializer;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -11,6 +14,8 @@ import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -45,6 +50,9 @@ public class ConfigureSnapshotService {
 
     @Inject
     ComponentDriverService componentDriverService;
+
+    @Inject
+    RowDataMaterializer rowDataMaterializer;
 
     /** 自注入:用于触发 REQUIRES_NEW 拦截器(同 bean 内自调用不经代理则拦截器失效)。 */
     @Inject
@@ -112,11 +120,15 @@ public class ConfigureSnapshotService {
                 // 自适应 SIMPLE / COMPOSITE 语义(视图内 UNION ALL),Java 不再按 driverPath 判定聚合。
             QuotationIdContext.set(quotationId);
             try {
+                // 物化所需:模板 components_snapshot(含各 tab 的 componentCode/fields/formulas)。一次加载,逐行复用。
+                JsonNode componentsSnapshot = self.loadComponentsSnapshot(quotationId);
                 for (Map<String, Object> li : lineItems) {
                     UUID lineItemId = asUuid(li.get("id"));
                     String partNo = li.get("productPartNo") != null ? li.get("productPartNo").toString() : null;
                     String compositeType = li.get("compositeType") != null ? li.get("compositeType").toString() : null;
                     if (lineItemId == null || partNo == null || partNo.isBlank()) continue;
+                    // 本行各组件刚写入的 snapshot_rows JSON(componentId → rowsJson),供随后物化 row_data 复用。
+                    Map<UUID, String> snapByComp = new LinkedHashMap<>();
                     for (DriverComp comp : comps) {
                         try {
                             ExpandDriverResponse exp = componentDriverService.expand(
@@ -124,9 +136,17 @@ public class ConfigureSnapshotService {
                             List<ExpandDriverResponse.Row> rows = (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
                             String rowsJson = MAPPER.writeValueAsString(rows);
                             self.writeSnapshot(lineItemId, comp.id, comp.name, rowsJson);
+                            snapByComp.put(comp.id, rowsJson);
                         } catch (Exception e) {
                             LOG.warnf("[add-snapshot] line=%s comp=%s 跳过: %s", lineItemId, comp.id, e.getMessage());
                         }
+                    }
+                    // 写时算齐:把 FORMULA 叶子列算进 row_data(扁平),让 Excel 视图无需用户编辑即正确求和。
+                    try {
+                        materializeRowData(lineItemId, componentsSnapshot, snapByComp);
+                    } catch (Exception e) {
+                        LOG.warnf("[add-snapshot] line=%s 物化 row_data 失败(已降级,仍可编辑后修正): %s",
+                                lineItemId, e.getMessage());
                     }
                 }
             } finally {
@@ -204,6 +224,172 @@ public class ConfigureSnapshotService {
             out.add(cl);
         }
         return out;
+    }
+
+    /** 取本报价单 customer_template 的 components_snapshot(物化 row_data 用);缺失/解析失败 → null。 */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @SuppressWarnings("unchecked")
+    public JsonNode loadComponentsSnapshot(UUID quotationId) {
+        try {
+            List<Object> r = em.createNativeQuery(
+                    "SELECT t.components_snapshot FROM quotation q " +
+                    "JOIN template t ON t.id = q.customer_template_id WHERE q.id = :q")
+                    .setParameter("q", quotationId).getResultList();
+            if (r.isEmpty() || r.get(0) == null) return null;
+            JsonNode node = MAPPER.readTree(r.get(0).toString());
+            return node.isArray() ? node : null;
+        } catch (Exception e) {
+            LOG.warnf("[add-snapshot] quotation=%s 取 components_snapshot 失败: %s", quotationId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 写时算齐 row_data(2-pass):用真实公式引擎把各非 SUBTOTAL 组件的 FORMULA 叶子列算进
+     * {@code row_data}(扁平),供 Excel 视图({@code ComponentDataEffectiveRows.columnSums})无需用户
+     * 编辑即正确求和。
+     *
+     * <ul>
+     *   <li><b>Pass 1</b>:每个非 SUBTOTAL 组件用空跨组件小计物化,累计其按列小计到
+     *       {@code componentSubtotals}(键 {@code code#col} / {@code name#col},与
+     *       {@link com.cpq.quotation.service.card.ComponentDataEffectiveRows} 一致),并把扁平行存入
+     *       {@code crossTabRows}(键 = componentId / componentCode)供 cross_tab_ref 引用。</li>
+     *   <li><b>Pass 2</b>:对公式引用了 {@code component_subtotal} 的组件带 Pass1 小计 + crossTabRows 复算,
+     *       覆盖 row_data。其余组件沿用 Pass1 结果。</li>
+     * </ul>
+     *
+     * <p>AP-51:行数权威 = snapshot_rows;SUBTOTAL 组件跳过(读时按公式重算)。
+     */
+    private void materializeRowData(UUID lineItemId, JsonNode componentsSnapshot,
+                                    Map<UUID, String> snapByComp) {
+        if (componentsSnapshot == null || snapByComp == null || snapByComp.isEmpty()) return;
+
+        // componentId → snapshot tab(仅非 SUBTOTAL,且本行有 snapshot_rows)
+        Map<UUID, JsonNode> tabByComp = new LinkedHashMap<>();
+        for (JsonNode tab : componentsSnapshot) {
+            String type = tab.path("componentType").asText("NORMAL");
+            if ("SUBTOTAL".equals(type)) continue; // 读时重算,不物化
+            UUID cid = asUuid(tab.path("componentId").asText(null));
+            if (cid != null && snapByComp.containsKey(cid)) tabByComp.put(cid, tab);
+        }
+        if (tabByComp.isEmpty()) return;
+
+        Map<String, Double> componentSubtotals = new HashMap<>();
+        Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
+        Map<UUID, ArrayNode> pass1Out = new LinkedHashMap<>();
+
+        // ── Pass 1: 空跨组件小计物化 + 累计列小计 + 收集 crossTabRows ──
+        for (Map.Entry<UUID, JsonNode> e : tabByComp.entrySet()) {
+            UUID cid = e.getKey();
+            JsonNode tab = e.getValue();
+            String code = tab.path("componentCode").asText(null);
+            String tabName = tab.path("tabName").asText(null);
+            JsonNode snapshotRows = parseRows(snapByComp.get(cid));
+
+            ArrayNode flat = rowDataMaterializer.materializeComponentRows(
+                    componentsSnapshot, code, snapshotRows, componentSubtotals, crossTabRows);
+            pass1Out.put(cid, flat);
+
+            // crossTabRows(双键 componentId / componentCode):供后续组件 cross_tab_ref 引用。
+            List<Map<String, Object>> flatRows = toRowMaps(flat);
+            crossTabRows.put(cid.toString(), flatRows);
+            if (code != null && !code.isBlank()) crossTabRows.put(code, flatRows);
+
+            // 列小计累计(键 code#col / name#col),供 Pass2 component_subtotal token 求值。
+            accumulateColumnSubtotals(flat, code, tabName, componentSubtotals);
+        }
+
+        // ── Pass 2: 引用 component_subtotal 的组件带完整小计复算;其余沿用 Pass1 ──
+        for (Map.Entry<UUID, JsonNode> e : tabByComp.entrySet()) {
+            UUID cid = e.getKey();
+            JsonNode tab = e.getValue();
+            ArrayNode finalFlat = pass1Out.get(cid);
+            if (referencesComponentSubtotal(tab.path("formulas"))) {
+                String code = tab.path("componentCode").asText(null);
+                JsonNode snapshotRows = parseRows(snapByComp.get(cid));
+                finalFlat = rowDataMaterializer.materializeComponentRows(
+                        componentsSnapshot, code, snapshotRows, componentSubtotals, crossTabRows);
+            }
+            try {
+                self.writeRowData(lineItemId, cid, MAPPER.writeValueAsString(finalFlat));
+            } catch (Exception ex) {
+                LOG.warnf("[add-snapshot] line=%s comp=%s 写 row_data 失败: %s", lineItemId, cid, ex.getMessage());
+            }
+        }
+    }
+
+    /** 解析 snapshot_rows JSON 为 JsonNode 数组;失败 → 空数组。 */
+    private JsonNode parseRows(String json) {
+        if (json == null || json.isBlank()) return MAPPER.createArrayNode();
+        try {
+            JsonNode n = MAPPER.readTree(json);
+            return n.isArray() ? n : MAPPER.createArrayNode();
+        } catch (Exception e) {
+            return MAPPER.createArrayNode();
+        }
+    }
+
+    /** 扁平行 ArrayNode → List<Map>(供 crossTabRows)。 */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> toRowMaps(ArrayNode flat) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (flat == null) return out;
+        for (JsonNode r : flat) {
+            try {
+                out.add(MAPPER.convertValue(r, Map.class));
+            } catch (Exception ignore) { /* 跳过坏行 */ }
+        }
+        return out;
+    }
+
+    /** 对扁平行各数值列求和,写入 componentSubtotals(键 code#col / name#col),与 ComponentDataEffectiveRows 一致。 */
+    private void accumulateColumnSubtotals(ArrayNode flat, String code, String tabName,
+                                           Map<String, Double> componentSubtotals) {
+        if (flat == null) return;
+        Map<String, Double> colSums = new LinkedHashMap<>();
+        for (JsonNode row : flat) {
+            if (row == null || !row.isObject()) continue;
+            row.fields().forEachRemaining(en -> {
+                JsonNode v = en.getValue();
+                if (v != null && v.isNumber()) {
+                    colSums.merge(en.getKey(), v.doubleValue(), Double::sum);
+                }
+            });
+        }
+        for (Map.Entry<String, Double> e : colSums.entrySet()) {
+            if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + e.getKey(), e.getValue());
+            if (tabName != null && !tabName.isBlank()) componentSubtotals.put(tabName + "#" + e.getKey(), e.getValue());
+        }
+    }
+
+    /** 组件 formulas 是否含 component_subtotal token(决定是否进 Pass2 复算)。 */
+    private boolean referencesComponentSubtotal(JsonNode formulas) {
+        if (formulas == null || !formulas.isArray()) return false;
+        return formulas.toString().contains("component_subtotal");
+    }
+
+    /**
+     * 写一个组件物化后的 row_data(REQUIRES_NEW 独立小事务)。
+     * UPSERT:行已存在(writeSnapshot 已建)→ UPDATE row_data;不存在 → INSERT。
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public void writeRowData(UUID lineItemId, UUID componentId, String rowDataJson) {
+        String expr = rowDataJson == null ? "NULL" : "CAST(:rd AS jsonb)";
+        var update = em.createNativeQuery(
+                "UPDATE quotation_line_component_data SET row_data = " + expr + " " +
+                "WHERE line_item_id = :lid AND component_id = :cid")
+                .setParameter("lid", lineItemId).setParameter("cid", componentId);
+        if (rowDataJson != null) update.setParameter("rd", rowDataJson);
+        int updated = update.executeUpdate();
+        if (updated == 0) {
+            var insert = em.createNativeQuery(
+                    "INSERT INTO quotation_line_component_data " +
+                    "(line_item_id, component_id, row_data, created_at) " +
+                    "VALUES (:lid, :cid, " + expr + ", NOW())")
+                    .setParameter("lid", lineItemId).setParameter("cid", componentId);
+            if (rowDataJson != null) insert.setParameter("rd", rowDataJson);
+            insert.executeUpdate();
+        }
     }
 
     /**

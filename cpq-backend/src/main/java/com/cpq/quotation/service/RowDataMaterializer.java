@@ -72,6 +72,22 @@ public class RowDataMaterializer {
                                               String componentCode,
                                               JsonNode snapshotRows,
                                               Map<String, Double> crossComponentSubtotals) {
+        return materializeComponentRows(componentsSnapshot, componentCode, snapshotRows,
+                crossComponentSubtotals, Map.of());
+    }
+
+    /**
+     * 重载：额外透传 cross_tab_ref 兄弟组件已算行（{@code source(componentId/componentCode) → 行表}）。
+     * 配置态 2-pass：Pass1 各组件先用空 cross 物化并把其扁平行存入 crossTabRows，
+     * Pass2 引用方再带 crossTabRows 复算（与 {@link CardSnapshotService#assembleTabsWithFormulaResults} 同款）。
+     *
+     * @param crossTabRows source 标识 → 已算扁平行表（行=字段名→值）；null 视作空。
+     */
+    public ArrayNode materializeComponentRows(JsonNode componentsSnapshot,
+                                              String componentCode,
+                                              JsonNode snapshotRows,
+                                              Map<String, Double> crossComponentSubtotals,
+                                              Map<String, List<Map<String, Object>>> crossTabRows) {
         ArrayNode out = MAPPER.createArrayNode();
         if (snapshotRows == null || !snapshotRows.isArray() || snapshotRows.isEmpty()) {
             return out;
@@ -93,13 +109,15 @@ public class RowDataMaterializer {
 
         Map<String, Double> cross = crossComponentSubtotals != null
                 ? crossComponentSubtotals : Map.of();
+        Map<String, List<Map<String, Object>>> xtab = crossTabRows != null
+                ? crossTabRows : Map.of();
 
         // 逐行 FORMULA 求值（与 CardSnapshotService PASS2 同款引擎调用）。
         ArrayNode formulaResults = formulaCalculator.calculate(
                 fields, formulas, formulaAssignments,
                 /* rowKeyFields */ null, baseRows, emptyEdit,
                 cross, Map.of(), Map.of(),
-                /* crossTabRows */ Map.of());
+                xtab);
 
         // formulaResults: [{rowKey, values:{字段名→数值}}]；行键唯一化口径与 calculate 内部一致。
         // 无 editRows 时各行 rowKey 即按行序兜底（uniquify 不改单次出现键），按下标取 values 即可。

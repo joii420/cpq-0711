@@ -4,7 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -148,5 +151,49 @@ class RowDataMaterializerTest {
         assertEquals(1, out.size());
         assertEquals(0, new java.math.BigDecimal("600").compareTo(out.get(0).get("合计").decimalValue()),
                 "合计 = component_subtotal(FEEDING#材料成本=500) + 100 = 600");
+    }
+
+    /**
+     * ④ cross_tab_ref overload: a FORMULA pulls a sibling component's row value via cross_tab_ref
+     *    (KSUM over a source keyed by componentCode), proving the crossTabRows overload threads
+     *    sibling resolved rows into the engine at materialize time.
+     */
+    @Test
+    void usesCrossTabRowsOverload() throws Exception {
+        JsonNode componentsSnapshot = MAPPER.readTree("""
+            [{
+                "componentId": "33333333-3333-3333-3333-333333333333",
+                "componentCode": "TARGET",
+                "componentType": "NORMAL",
+                "tabName": "目标",
+                "fields": [
+                    {"name": "引用值", "field_type": "FORMULA", "formula_name": "引用值"}
+                ],
+                "formulas": [
+                    {"name": "引用值", "expression": [
+                        {"type": "cross_tab_ref", "agg": "SUM", "source": "SRC",
+                         "match": [], "target": "金额"}
+                    ]}
+                ]
+            }]
+            """);
+
+        JsonNode snapshotRows = MAPPER.readTree("""
+            [ {"driverRow": {}, "basicDataValues": {}} ]
+            """);
+
+        // sibling SRC resolved rows: two rows of 金额, KSUM(match=[]) → 30 + 70 = 100
+        List<Map<String, Object>> srcRows = new ArrayList<>();
+        Map<String, Object> r0 = new LinkedHashMap<>(); r0.put("金额", 30); srcRows.add(r0);
+        Map<String, Object> r1 = new LinkedHashMap<>(); r1.put("金额", 70); srcRows.add(r1);
+        Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
+        crossTabRows.put("SRC", srcRows);
+
+        JsonNode out = newMaterializer().materializeComponentRows(
+                componentsSnapshot, "TARGET", snapshotRows, null, crossTabRows);
+
+        assertEquals(1, out.size());
+        assertEquals(0, new java.math.BigDecimal("100").compareTo(out.get(0).get("引用值").decimalValue()),
+                "引用值 = KSUM over SRC.金额 = 30 + 70 = 100");
     }
 }
