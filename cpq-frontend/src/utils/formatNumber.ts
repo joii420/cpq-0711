@@ -3,15 +3,16 @@ import Decimal from 'decimal.js';
 export interface DecimalSpec {
   /** 显式配置位数：字段 decimals 或列 display_format.decimals。null/undefined = 未配。 */
   decimals?: number | null;
-  /** 是否为"计算得出的列"(FORMULA/TAB_JOIN/CARD_FORMULA/小计/总计/is_subtotal)；未配时兜底 2 位。 */
+  /** 是否为"计算得出的列"(FORMULA/TAB_JOIN/CARD_FORMULA/小计/总计/is_subtotal)；未配时兜底 4 位（精度优先）。 */
   isComputed?: boolean;
   /** PERCENT 列：值 ×100 加 % 后缀（默认 2 位）。 */
   isPercent?: boolean;
 }
 
-// 计算列未配位数时的兜底位数。⚠️ 与后端保持同步：
-// NumberFormatUtil.COMPUTED_FALLBACK + ExcelViewService.COMPUTED_FALLBACK_DECIMALS（导出走 POI 故另有一份）。
-const COMPUTED_FALLBACK = 2;
+// 计算列未配位数时的兜底位数。精度优先：计算列/列小计/页签金额合计统一 4 位（至多4位去尾零）；
+// 唯一例外是「最终产品/卡片小计」与「对外导出总额」走 formatCurrency 固定 2 位（不经本兜底）。
+// ⚠️ 与后端保持同步：NumberFormatUtil.COMPUTED_FALLBACK + ExcelViewService.COMPUTED_FALLBACK_DECIMALS（导出走 POI 故另有一份）。
+const COMPUTED_FALLBACK = 4;
 
 export function resolveDecimals(spec: DecimalSpec): number | null {
   if (spec.decimals != null) return spec.decimals;

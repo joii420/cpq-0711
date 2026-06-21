@@ -16,6 +16,7 @@ import ComponentCell from './components/ComponentCell';
 import type { CellContext } from './components/ComponentCell';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 import { sumTabColumns } from './tabTotalLines';
+import { formatNumber } from '../../utils/formatNumber';
 import { resolveFieldWidth } from '../component/types';
 import './quotation.css';
 
@@ -681,7 +682,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                       <tr className="qt-subtotal-row qt-tab-total-row">
                         <td className="qt-subtotal-label-cell">合计</td>
                         <td colSpan={Math.max(1, activeComp.fields.length - 1)} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
-                          {formatCurrency(sumTabColumns(activeComp as any, compSubtotals))}
+                          {/* 本页签金额合计走"其余"高精度 4 位（精度优先）；仅最终产品小计保持 formatCurrency 2 位 */}
+                          {`¥ ${formatNumber(sumTabColumns(activeComp as any, compSubtotals), { isComputed: true }) ?? '0'}`}
                         </td>
                       </tr>
                     )}
