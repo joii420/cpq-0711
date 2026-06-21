@@ -722,11 +722,60 @@ public class ExcelViewService {
     // ---- Export Excel with formulas ----
 
     public byte[] exportExcelView(UUID quotationId) {
+        // 列定义 + fallback 重算行（含 _lineItemId 索引键 + EXCEL_FORMULA 公式串）
         Map<String, Object> viewData = getExcelView(quotationId);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> columns = (List<Map<String, Object>>) viewData.get("columns");
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> rows = (List<Map<String, Object>>) viewData.get("rows");
+        List<Map<String, Object>> fallbackRows = (List<Map<String, Object>>) viewData.get("rows");
+
+        // 按 sortOrder 加载 lineItems，提取 quoteExcelValues 快照（前端算好的行值）
+        List<QuotationLineItem> lineItems = QuotationLineItem.list(
+                "quotationId = ?1 ORDER BY sortOrder ASC", quotationId);
+
+        // 将 fallback 行按 lineItemId 建索引（_lineItemId 是 getExcelView 注入的字符串）
+        Map<String, Map<String, Object>> fallbackByLineItemId = new LinkedHashMap<>();
+        for (Map<String, Object> row : fallbackRows) {
+            Object lid = row.get("_lineItemId");
+            if (lid != null) fallbackByLineItemId.put(lid.toString(), row);
+        }
+
+        // 构造最终导出行：按 lineItem 顺序逐条拼装
+        List<Map<String, Object>> exportRows = new ArrayList<>();
+        for (QuotationLineItem li : lineItems) {
+            String liIdStr = li.id.toString();
+            Map<String, Object> fallbackRow = fallbackByLineItemId.getOrDefault(liIdStr, Map.of());
+
+            // 解析前端快照 rows（quoteExcelValues = {"rows":[{col_key: value,...}]}）
+            List<Map<String, Object>> snapshotRows = parseQuoteExcelValuesRows(li.quoteExcelValues);
+
+            if (snapshotRows.isEmpty()) {
+                // 无快照 → 整行 fallback 重算（保证旧草稿/未算行仍可导出）
+                exportRows.add(fallbackRow);
+            } else {
+                // 有快照 → 按快照 rows 顺序拼（通常 1 行/产品）
+                // EXCEL_FORMULA 列特殊：快照存的是计算值（数字），导出需写公式串让 Excel 重算；
+                // 公式串来自 fallback 重算行的该列值（那里存的就是 "=SUM(...)" 公式串）。
+                for (Map<String, Object> snapshotRow : snapshotRows) {
+                    Map<String, Object> mergedRow = new LinkedHashMap<>(snapshotRow);
+                    // 覆写：EXCEL_FORMULA 列取 fallback 行的公式串
+                    for (Map<String, Object> col : columns) {
+                        String colKey = (String) col.get("col_key");
+                        String sourceType = (String) col.get("source_type");
+                        if ("EXCEL_FORMULA".equals(sourceType)) {
+                            // fallback 行此列存的是公式串（如 "=B2*C2"），替换快照里的数字值
+                            Object formulaStr = fallbackRow.get(colKey);
+                            if (formulaStr != null) {
+                                mergedRow.put(colKey, formulaStr);
+                            } else {
+                                mergedRow.remove(colKey); // 无公式则置空
+                            }
+                        }
+                    }
+                    exportRows.add(mergedRow);
+                }
+            }
+        }
 
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             Sheet sheet = workbook.createSheet("Excel View");
@@ -747,9 +796,9 @@ public class ExcelViewService {
             Map<String, CellStyle> numberStyleCache = new HashMap<>();
 
             // Data rows
-            for (int rowIdx = 0; rowIdx < rows.size(); rowIdx++) {
+            for (int rowIdx = 0; rowIdx < exportRows.size(); rowIdx++) {
                 Row dataRow = sheet.createRow(rowIdx + 1);
-                Map<String, Object> rowData = rows.get(rowIdx);
+                Map<String, Object> rowData = exportRows.get(rowIdx);
 
                 for (int colIdx = 0; colIdx < columns.size(); colIdx++) {
                     Map<String, Object> col = columns.get(colIdx);
@@ -785,6 +834,34 @@ public class ExcelViewService {
             return out.toByteArray();
         } catch (IOException e) {
             throw new BusinessException(500, "Failed to generate Excel view export: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 解析 quoteExcelValues JSONB 快照中的 rows 数组。
+     * 快照形态：{@code {"rows":[{"col_key":value,...}]}}（前端 buildExcelSnapshot 产出）。
+     * null / 空 / 解析失败 → 返回空 List（调用方走 fallback 重算）。
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> parseQuoteExcelValuesRows(String quoteExcelValues) {
+        if (quoteExcelValues == null || quoteExcelValues.isBlank()) return List.of();
+        try {
+            Map<String, Object> snapshot = MAPPER.readValue(quoteExcelValues,
+                    new TypeReference<Map<String, Object>>() {});
+            Object rowsObj = snapshot.get("rows");
+            if (!(rowsObj instanceof List)) return List.of();
+            List<?> rawList = (List<?>) rowsObj;
+            if (rawList.isEmpty()) return List.of();
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (Object item : rawList) {
+                if (item instanceof Map) {
+                    result.add((Map<String, Object>) item);
+                }
+            }
+            return result.isEmpty() ? List.of() : result;
+        } catch (Exception e) {
+            LOG.warnf("[ExcelView] parseQuoteExcelValuesRows parse failed, fallback to recompute: %s", e.getMessage());
+            return List.of();
         }
     }
 
