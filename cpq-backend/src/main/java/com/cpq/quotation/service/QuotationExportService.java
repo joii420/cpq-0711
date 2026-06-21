@@ -1,5 +1,6 @@
 package com.cpq.quotation.service;
 
+import com.cpq.common.NumberFormatUtil;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.quotation.dto.QuotationDTO;
 import io.quarkus.qute.Template;
@@ -219,7 +220,7 @@ public class QuotationExportService {
             m.put("category", li.snapshot != null && li.snapshot.productCategory != null ? li.snapshot.productCategory : "");
             m.put("attributeValues", li.productAttributeValues != null ? li.productAttributeValues : "");
             m.put("discountRate", li.finalDiscountRate != null ? li.finalDiscountRate.toString() : "100");
-            m.put("subtotal", li.subtotal != null ? li.subtotal.toString() : "0.00");
+            m.put("subtotal", li.subtotal != null ? NumberFormatUtil.format(li.subtotal, null, true) : "0");
             return m;
         }).toList();
     }
