@@ -34,7 +34,7 @@ import { templateService } from '../../services/templateService';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { useTreeCollapse } from './useTreeCollapse';
 import { splitRows, rowAt, isManualRow } from './manualRows';
-import { resolveInputDefault, resolveInputDefaultSourceOnly } from './inputDefaults';
+import { resolveInputDefault, resolveInputDefaultForBake } from './inputDefaults';
 import { resolveFieldWidth } from '../component/types';
 import './quotation.css';
 
@@ -1662,15 +1662,15 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       );
       const exp = driverExpansions?.[expKey];
       if (!exp || exp.rowCount <= 0) return;
-      // 覆盖全部 INPUT* 类型中有 default_source 的字段（统一走解析器，不再按 BASIC_DATA 子类型手写分支）
+      // 覆盖全部 INPUT* 类型中"配了默认值"的字段：default_source(数据源默认) 或 静态 content(固定默认值)。
       const inputFields = (comp.fields as any[]).filter(
         (f) => (f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT')
-          && f.default_source,
+          && (f.default_source || (f.content != null && f.content !== '')),
       );
       if (inputFields.length === 0) return;
       for (let ri = 0; ri < exp.rowCount; ri++) {
+        // bdv 可能为空(纯 content 默认值不依赖 bdv); 不在此 continue, 交给取值器按字段判定。
         const bdv = exp.rows[ri]?.basicDataValues;
-        if (!bdv) continue;
         const curRow = comp.rows?.[ri] || {};
         for (const f of inputFields) {
           const key = f.name || f.key || '';
@@ -1679,10 +1679,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           if (bakedRef.current.has(guard)) continue;
           const cur = curRow[key];
           if (!(cur === undefined || cur === null || cur === '')) { bakedRef.current.add(guard); continue; }
-          // 快照回填只冻结"真正解析到的 default_source 源值"（GV / BNF_PATH / BASIC_DATA）——
-          // 不用 resolveInputDefault（含 content 兜底），否则源未命中时会把静态 content 冻结并被 bakedRef
-          // 一次性锁死，driver 后续补回真值也不再刷新（陈旧锁定）。content 兜底归 snapshotRows(无源)+ 实时渲染。
-          const v = resolveInputDefaultSourceOnly(f as ComponentField, { basicDataValues: bdv });
+          // 导入带出一次性烘焙默认值进行数据 → 之后用户清空(='')即真实持久值, 不再被渲染兜底回弹。
+          // resolveInputDefaultForBake: 有 default_source 时只烘已解析的源值(源未命中返 undefined, 等驱动补值
+          // 下一轮再烘, 不提前冻结 content); 无 default_source 时烘静态 content。bakedRef 守卫保证"清空后不再回填"。
+          const v = resolveInputDefaultForBake(f as ComponentField, { basicDataValues: bdv });
           if (v == null) continue;
           bakedRef.current.add(guard);
           writes.push({

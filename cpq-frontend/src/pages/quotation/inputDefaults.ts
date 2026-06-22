@@ -60,6 +60,21 @@ export function resolveInputDefaultSourceOnly(field: ComponentField, ctx: InputD
 }
 
 /**
+ * 导入带出"一次性烘焙(bake)"取值：把默认值固化进行数据，使之后清空可保持空白。
+ * - 字段含 default_source：只烘"已解析到的源值"(同 resolveInputDefaultSourceOnly)；源未命中返回
+ *   undefined → 不提前冻结 content，等驱动补值后下一轮再烘（避免静态 content 被 bakedRef 锁死）。
+ * - 字段无 default_source：直接烘静态 content。
+ * 非 INPUT* / 无可烘值 → undefined。
+ */
+export function resolveInputDefaultForBake(field: ComponentField, ctx: InputDefaultCtx): string | number | undefined {
+  const ft = field.field_type;
+  if (ft !== 'INPUT_TEXT' && ft !== 'INPUT_NUMBER' && ft !== 'INPUT') return undefined;
+  if (field.default_source) return resolveInputDefaultSourceOnly(field, ctx);
+  if (field.content != null && field.content !== '') return field.content;
+  return undefined;
+}
+
+/**
  * 解析 INPUT_TEXT / INPUT_NUMBER 的有效默认值（不判 row[key]——调用方先判已有值）。
  * 优先级：default_source(GLOBAL_VARIABLE | BNF_PATH | BASIC_DATA，实时) > 静态 content > undefined。
  */

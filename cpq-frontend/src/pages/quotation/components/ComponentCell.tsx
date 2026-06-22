@@ -558,22 +558,17 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
   }
 
   // readonly=false: 渲染 <input>
-  // row[key] 空 → 用统一解析器给默认初值（default_source 实时 > content）；非空不动（铁律）
-  let effectiveValue: any = rawCell;
-  if (isEmpty) {
-    const def = resolveInputDefault(field, {
-      basicDataValues,
-      partNo,
-      pathCache: pathCacheState as Record<string, any>,
-    });
-    if (def !== undefined) effectiveValue = isNumber ? def : String(def);
-  }
+  // 默认值不再在渲染时回填 —— 导入带出行的默认值已由 QuotationStep2 bake effect 一次性烘焙进行数据,
+  // 故 <input> 纯受控于 row[key]: 用户清空(='')即保持空白, 不再被默认值瞬间弹回(本次修复的核心)。
+  // 静态默认值(content)仍作 placeholder 灰字提示展示, 供清空后/手动新增行参考, 但不构成实际值。
+  const placeholderHint = field.content != null && field.content !== '' ? String(field.content) : undefined;
 
   return (
     <input
       type={isNumber ? 'number' : 'text'}
       step={isNumber ? 'any' : undefined}
-      value={effectiveValue ?? ''}
+      placeholder={placeholderHint}
+      value={rawCell ?? ''}
       onChange={e => {
         const val = e.target.value;
         if (isNumber && val !== '' && !/^-?\d*\.?\d*$/.test(val)) return;
