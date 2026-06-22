@@ -206,6 +206,12 @@ const QuotationWizard: React.FC = () => {
   // 基础数据导入流程：autoPopulate 完成后立即触发一次保存草稿，把"已自动加入 N 个产品"
   // 持久化下来，避免用户刷新前丢数据。一次性，避免重复触发。
   const importAutoSavedRef = useRef(false);
+  // ③ autoSaveDraft 串行化：导入流下 import-auto-save effect 与 lineItems-change effect
+  // 会用「不同」payload（driverExpansions 仍在陆续到位）几乎同时触发两次保存；
+  // 两条 id=null payload 的后端事务重叠 → 各插 85 行、谁的「删未保留行」都删不到对方 → 170。
+  // savingRef：有保存在飞时不再并发起第二次；pendingSaveRef：飞行中到来的变更，落地后补跑一次（取最新 payload）。
+  const savingRef = useRef(false);
+  const pendingSaveRef = useRef(false);
 
   // Load existing quotation
   useEffect(() => {
@@ -626,6 +632,9 @@ const QuotationWizard: React.FC = () => {
 
   const autoSaveDraft = useCallback(async () => {
     if (!quotationId) return;
+    // ③ 串行化：已有保存在飞 → 记一个待补跑标记后直接返回，不并发第二条 id=null payload。
+    if (savingRef.current) { pendingSaveRef.current = true; return; }
+    savingRef.current = true;
     try {
       const values = form.getFieldsValue();
       const payload = normalizeDraftPayloadNumbers(buildDraftPayload(values));
@@ -648,6 +657,14 @@ const QuotationWizard: React.FC = () => {
         message.warning('网络异常，已保存到本地缓存');
       } catch {
         // ignore
+      }
+    } finally {
+      savingRef.current = false;
+      // 飞行期间有新的保存请求被合并 → 现在串行补跑一次（取最新 lineItems/expansion 的 payload）。
+      // 此时第一次保存的 syncLineItemsFromResponse 已回填行 id，补跑 payload 带 id → 后端就地复用，不再新增重复行。
+      if (pendingSaveRef.current) {
+        pendingSaveRef.current = false;
+        autoSaveDraftRef.current?.();
       }
     }
     // 把 driverExpansions / customerIdValue 列入 deps，让 buildDraftPayload → snapshotRows
