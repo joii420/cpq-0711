@@ -116,7 +116,7 @@ public class QuotationResource {
         QuotationDTO dto = quotationService.saveDraft(id, request);
         // saveDraft 已提交,按新行重快照(降级:失败不影响保存)
         try {
-            snapshotService.snapshotQuotation(id);
+            snapshotService.snapshotQuotation(id, true);  // 增量: 复用行已回写 snapshot_rows → 跳过全量重 expand
         } catch (Exception ignore) {
             // 快照尽力而为
         }
