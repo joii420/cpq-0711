@@ -55,4 +55,12 @@ public class MaterialCustomerMapRepository implements PanacheRepositoryBase<Mate
             .setParameter("updatedBy", updatedBy)
             .executeUpdate();
     }
+
+    /** ① replace-per-customer：删除该客户全部映射（重导前清栈，避免历史脏行残留扇出）。 */
+    public int deleteByCustomerNo(String customerNo) {
+        return em.createNativeQuery(
+                "DELETE FROM material_customer_map WHERE customer_no = :customerNo")
+            .setParameter("customerNo", customerNo)
+            .executeUpdate();
+    }
 }
