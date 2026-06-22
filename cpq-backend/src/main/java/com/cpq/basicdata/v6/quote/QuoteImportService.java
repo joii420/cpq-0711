@@ -95,7 +95,13 @@ public class QuoteImportService {
         List<SheetResultDTO> sheetDtos = new ArrayList<>();
         int totalSuccess = 0, totalFailed = 0;
 
+        // 进度：总步数 = 1(物料BOM/组成件BOM 合并) + 各 Sheet handler。每步前增量写 import_record.metadata，
+        // 供前端轮询渲染真实进度条；done = 已完成步数，current = 当前正在处理的 Sheet。
+        final int totalSteps = 1 + orderedHandlers().size();
+        int done = 0;
+
         try (XSSFWorkbook wb = parser.open(new ByteArrayInputStream(bytes))) {
+            updateProgress(recordId, done, totalSteps, "物料BOM/组成件BOM 合并");
             // 物料BOM ⇄ 组成件BOM 去重合并（两 sheet 单一事务，组成件优先；替代 Q03/Q12 各写各的）
             {
                 var matSheet = wb.getSheet("物料BOM");
@@ -114,7 +120,9 @@ public class QuoteImportService {
                 totalSuccess += mr.successRows;
                 totalFailed += mr.failedRows;
             }
+            done++;   // 合并步完成
             for (SheetHandler h : orderedHandlers()) {
+                updateProgress(recordId, done, totalSteps, h.sheetName());
                 SheetImportResult r;
                 try {
                     var sheet = wb.getSheet(h.sheetName());
@@ -145,6 +153,7 @@ public class QuoteImportService {
                 sheetDtos.add(SheetResultDTO.from(r));
                 totalSuccess += r.successRows;
                 totalFailed += r.failedRows;
+                done++;
             }
         } catch (Exception e) {
             // 后台线程：解析/未知失败不抛出（无处可抛），落 FAILED 供前端轮询
@@ -196,5 +205,28 @@ public class QuoteImportService {
             rec.metadata = "{}";
         }
         // managed entity 字段改动自动 flush，无需 persist()
+    }
+
+    /**
+     * 增量写导入进度到 import_record.metadata（{@code {progress:{done,total,current}}}），REQUIRES_NEW 立即
+     * 提交，供前端轮询渲染真实进度条；处理结束后由 {@link #finalizeImportRecord} 把 metadata 覆盖为
+     * sheetResults。进度写入失败不影响导入本身（吞掉异常）。与 finalizeImportRecord 同为本 bean 的
+     * REQUIRES_NEW 方法、同样在 processImport 内自调用——既有 finalize 路径已验证此模式可正常提交。
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public void updateProgress(UUID recordId, int done, int total, String current) {
+        ImportRecord rec = ImportRecord.findById(recordId);
+        if (rec == null) return;
+        try {
+            Map<String, Object> progress = new LinkedHashMap<>();
+            progress.put("done", done);
+            progress.put("total", total);
+            progress.put("current", current == null ? "" : current);
+            Map<String, Object> meta = new LinkedHashMap<>();
+            meta.put("progress", progress);
+            rec.metadata = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(meta);
+        } catch (Exception e) {
+            // 进度写入失败忽略，不影响导入主流程
+        }
     }
 }
