@@ -69,6 +69,13 @@ class AsyncImportProcessTest {
             .setParameter("id", recordId).getSingleResult();
     }
 
+    @Transactional
+    String metadataOf(UUID recordId) {
+        return (String) em.createNativeQuery(
+            "SELECT metadata FROM import_record WHERE id = :id")
+            .setParameter("id", recordId).getSingleResult();
+    }
+
     @Test
     void processImport_onManagedExecutorThread_finalizesRecord() throws Exception {
         UUID user = anyUserId();
@@ -85,5 +92,18 @@ class AsyncImportProcessTest {
         assertTrue(List.of("SUCCESS", "PARTIAL", "FAILED").contains(finalStatus),
             "终态应为 SUCCESS/PARTIAL/FAILED，实际=" + finalStatus);
         assertEquals("SUCCESS", finalStatus, "0 行空 workbook 期望 SUCCESS（机制跑通）");
+    }
+
+    /** updateProgress 应把 {progress:{done,total,current}} 提交到 metadata（供前端轮询渲染进度条）。 */
+    @Test
+    void updateProgress_writesCommittedProgressJson() {
+        UUID recordId = svc.createImportRecord(anyCustomerId(), FNAME, anyUserId());
+        svc.updateProgress(recordId, 3, 18, "元素单价");
+        String meta = metadataOf(recordId);
+        assertNotNull(meta, "metadata 应已写入进度");
+        String compact = meta.replaceAll("\\s+", "");   // jsonb 列回读带空格，去空白后比对
+        assertTrue(compact.contains("\"done\":3"), "进度 done=3，实际 metadata=" + meta);
+        assertTrue(compact.contains("\"total\":18"), "进度 total=18，实际 metadata=" + meta);
+        assertTrue(meta.contains("元素单价"), "应含当前 Sheet 名，实际 metadata=" + meta);
     }
 }

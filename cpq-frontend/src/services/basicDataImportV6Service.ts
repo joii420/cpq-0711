@@ -20,6 +20,27 @@ export interface ImportResultDTO {
 
 const BASE = '/basic-data-import/v6';
 
+/** 处理中进度（后端每完成一步写入 metadata.progress）。 */
+export interface ImportProgress {
+  done: number;
+  total: number;
+  current: string;
+}
+
+/** 从导入记录 metadata 解析处理进度；无进度（未开始/已结束）返回 null。 */
+function parseProgress(rec: any): ImportProgress | null {
+  try {
+    const meta = typeof rec?.metadata === 'string' ? JSON.parse(rec.metadata) : rec?.metadata;
+    const p = meta?.progress;
+    if (p && typeof p.total === 'number' && p.total > 0) {
+      return { done: Number(p.done ?? 0), total: Number(p.total), current: String(p.current ?? '') };
+    }
+  } catch {
+    /* metadata 此刻可能是 sheetResults 或空，忽略 */
+  }
+  return null;
+}
+
 /** 把后端 GET /v6/{recordId} 的导入记录映射回 ImportResultDTO（metadata 内为同构 sheetResults）。 */
 function recordToResult(rec: any): ImportResultDTO {
   let sheetResults: SheetResultDTO[] = [];
@@ -92,4 +113,7 @@ export const basicDataImportV6Service = {
     const res: any = await api.get(`${BASE}/${recordId}`);
     return (res.data ?? res) as Record<string, unknown>;
   },
+
+  /** 从轮询返回的记录解析处理进度（无则 null）。 */
+  parseProgress,
 };
