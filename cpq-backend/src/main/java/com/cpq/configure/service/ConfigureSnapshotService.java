@@ -77,13 +77,52 @@ public class ConfigureSnapshotService {
      * 直接查 quotation_line_item,自包含;UPSERT 保留编辑层 row_data。
      */
     public void snapshotQuotation(UUID quotationId) {
+        snapshotQuotation(quotationId, false);
+    }
+
+    /**
+     * @param skipRowsWithSnapshot true（saveDraft 高频路径）：某行所有 driver 组件都已有
+     *        snapshot_rows 即整行跳过 expand；false（强制刷新/加产品）：行为同改造前。
+     */
+    public void snapshotQuotation(UUID quotationId, boolean skipRowsWithSnapshot) {
         if (quotationId == null) return;
         try {
             List<Map<String, Object>> lines = self.loadQuotationLines(quotationId);
-            snapshotLines(quotationId, lines);
+            snapshotLines(quotationId, lines, skipRowsWithSnapshot);
         } catch (Exception e) {
             LOG.warnf("[add-snapshot] quotation=%s 整单重快照失败(已降级): %s", quotationId, e.getMessage());
         }
+    }
+
+    /**
+     * Part B 跳过判定：给定本行的 driver 组件集合与各组件现有 snapshot_rows，
+     * 判断是否仍需重 expand。任一 driver 组件缺 snapshot_rows（不在 map 或值为 null）→ 需 expand。
+     * 合法的 0 行组件其值为 "[]"（非 null）视为已快照、可跳过。
+     */
+    public static boolean lineNeedsExpand(java.util.Collection<UUID> driverCompIds,
+                                          Map<UUID, String> snapshotByComp) {
+        if (driverCompIds == null || driverCompIds.isEmpty()) return false;
+        for (UUID cid : driverCompIds) {
+            String sr = snapshotByComp == null ? null : snapshotByComp.get(cid);
+            if (sr == null) return true;   // 缺键或 null 值 → 需 expand
+        }
+        return false;
+    }
+
+    /** 读某行各组件现有 snapshot_rows（componentId → snapshot_rows，可能 null 值）。Part B 跳过判定用。 */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @SuppressWarnings("unchecked")
+    public Map<UUID, String> loadSnapshotRowsByComp(UUID lineItemId) {
+        Map<UUID, String> out = new HashMap<>();
+        if (lineItemId == null) return out;
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT component_id, snapshot_rows FROM quotation_line_component_data WHERE line_item_id = :li")
+                .setParameter("li", lineItemId).getResultList();
+        for (Object[] r : rows) {
+            if (r[0] == null) continue;
+            out.put(UUID.fromString(r[0].toString()), r[1] == null ? null : r[1].toString());
+        }
+        return out;
     }
 
     @Transactional(Transactional.TxType.REQUIRES_NEW)
@@ -109,6 +148,15 @@ public class ConfigureSnapshotService {
      * 全程 try/catch 降级,绝不抛出影响加产品。
      */
     public void snapshotLines(UUID quotationId, List<Map<String, Object>> lineItems) {
+        snapshotLines(quotationId, lineItems, false);
+    }
+
+    /**
+     * @param skipRowsWithSnapshot true（saveDraft 增量）：复用行已有完整 snapshot_rows 时整行跳过
+     *        expand + materialize；false（加产品只传新行 / 强制刷新）：行为同改造前。
+     */
+    public void snapshotLines(UUID quotationId, List<Map<String, Object>> lineItems,
+                              boolean skipRowsWithSnapshot) {
         if (quotationId == null || lineItems == null || lineItems.isEmpty()) return;
         try {
             // 清 driver 进程缓存(30s TTL),保证快照冻结的是"当前"基础值而非缓存旧值
@@ -117,6 +165,9 @@ public class ConfigureSnapshotService {
             UUID customerId = self.loadCustomerId(quotationId);
             List<DriverComp> comps = self.loadDriverComponents(quotationId);
             if (comps.isEmpty()) return;
+            // Part B: driver 组件 id 集合，用于复用行"已有完整 snapshot_rows → 跳过"判定
+            java.util.List<UUID> driverCompIds = new java.util.ArrayList<>();
+            for (DriverComp dc : comps) driverCompIds.add(dc.id);
             // 统一协议(2026-05-30):所有 (line × component) 走同一路径,SQL 视图自己用
                 //   :quotationId + :customerCode + 外层 :hfPartNos
                 // 自适应 SIMPLE / COMPOSITE 语义(视图内 UNION ALL),Java 不再按 driverPath 判定聚合。
@@ -129,6 +180,12 @@ public class ConfigureSnapshotService {
                     String partNo = li.get("productPartNo") != null ? li.get("productPartNo").toString() : null;
                     String compositeType = li.get("compositeType") != null ? li.get("compositeType").toString() : null;
                     if (lineItemId == null || partNo == null || partNo.isBlank()) continue;
+                    // Part B: 复用行所有 driver 组件已有 snapshot_rows → 整行跳过 expand + materialize（增量）
+                    if (skipRowsWithSnapshot
+                            && !lineNeedsExpand(driverCompIds, self.loadSnapshotRowsByComp(lineItemId))) {
+                        LOG.debugf("[add-snapshot] line=%s 已有完整 snapshot_rows, 跳过重 expand(增量)", lineItemId);
+                        continue;
+                    }
                     // 本行各组件刚写入的 snapshot_rows JSON(componentId → rowsJson),供随后物化 row_data 复用。
                     Map<UUID, String> snapByComp = new LinkedHashMap<>();
                     for (DriverComp comp : comps) {

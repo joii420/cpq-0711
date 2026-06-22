@@ -313,6 +313,8 @@ public class QuotationService {
             // FixC1: 复用行 clearLineItemChildren 前先保存各 component 的 deletedRowKeys,
             // 重建时按 componentId 回填; saveDraft 请求不携带 deletedRowKeys(由专用端点管)
             java.util.Map<java.util.UUID, String> preservedTombstones = new java.util.HashMap<>();
+            // Part A: 复用行 snapshot_rows 保留 —— 全量重建会清子表, 重建时回写避免 snapshotQuotation 全量重 expand
+            java.util.Map<java.util.UUID, String> preservedSnapshots = new java.util.HashMap<>();
 
             for (int i = 0; i < request.lineItems.size(); i++) {
                 SaveDraftRequest.LineItemDraft liDraft = request.lineItems.get(i);
@@ -322,16 +324,20 @@ public class QuotationService {
                     keptIds.add(li.id);
                     // FixC1: clear 前先存现有墓碑,重建时按 componentId 回填(saveDraft 请求不带 deletedRowKeys)
                     preservedTombstones.clear();
+                    preservedSnapshots.clear();          // Part A
                     for (QuotationLineComponentData old :
                             QuotationLineComponentData.<QuotationLineComponentData>list("lineItemId = ?1", li.id)) {
                         if (old.componentId != null && old.deletedRowKeys != null)
                             preservedTombstones.put(old.componentId, old.deletedRowKeys);
+                        if (old.componentId != null && old.snapshotRows != null)   // Part A
+                            preservedSnapshots.put(old.componentId, old.snapshotRows);
                     }
                     clearLineItemChildren(li.id);        // 旧子表清掉, 下面按 draft 重建
                     li.parentLineItemId = null;          // 父子关系清空, 待二阶段重链
                 } else {
                     li = new QuotationLineItem();
                     preservedTombstones.clear();         // 新行无墓碑
+                    preservedSnapshots.clear();          // Part A: 新行无快照
                 }
                 li.quotationId = id;
                 li.productId = liDraft.productId;
@@ -514,6 +520,10 @@ public class QuotationService {
                         String preserved = (cdDraft.componentId != null)
                                 ? preservedTombstones.get(cdDraft.componentId) : null;
                         cd.deletedRowKeys = (preserved != null) ? preserved : "[]";
+                        // Part A: 复用行回写旧 snapshot_rows(新行 = null, 由 snapshotQuotation 重 expand 填充)
+                        String preservedSr = (cdDraft.componentId != null)
+                                ? preservedSnapshots.get(cdDraft.componentId) : null;
+                        if (preservedSr != null) cd.snapshotRows = preservedSr;
                         cd.persist();
                     }
                 }
