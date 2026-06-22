@@ -72,13 +72,6 @@ public class QuotationResource {
     @Inject
     jakarta.persistence.EntityManager em;
 
-    // 导入首存内部并行化:专用有界池 + per-line worker(@ActivateRequestContext)
-    @Inject
-    com.cpq.quotation.service.SnapshotParallelExecutor parallelExecutor;
-
-    @Inject
-    com.cpq.quotation.service.LineSnapshotWorker lineSnapshotWorker;
-
     @GET
     public ApiResponse<PageResult<QuotationDTO>> list(
             @QueryParam("page") @DefaultValue("0") int page,
@@ -141,9 +134,6 @@ public class QuotationResource {
         try {
             cardSnapshotService.ensureStructure(id);
             var lines = snapshotService.loadQuotationLines(id);
-            // 屏障 2: 主线程过滤出"无快照的新行", 再用专用池并行算核价/4 份值快照(每 worker
-            // 自带 @ActivateRequestContext + 独立事务)。复用行(已有 quoteCardValues)仍跳过。
-            java.util.List<UUID> toSnapshot = new java.util.ArrayList<>();
             for (var liMap : lines) {
                 UUID lineItemId = asUuid(liMap.get("id"));
                 if (lineItemId != null) {
@@ -152,13 +142,10 @@ public class QuotationResource {
                     boolean hasSnapshot = li != null
                         && li.quoteCardValues != null && !li.quoteCardValues.isBlank();
                     if (li != null && !hasSnapshot) {
-                        toSnapshot.add(lineItemId); // 仅新行首次初始化, 已有行保留 editQuoteCardValue 的增量
+                        cardSnapshotService.snapshotLineValues(li); // 仅新行首次初始化, 已有行保留 editQuoteCardValue 的增量
+                        snapshotsCreated = true;
                     }
                 }
-            }
-            if (!toSnapshot.isEmpty()) {
-                snapshotsCreated = true;
-                parallelExecutor.runParallel(toSnapshot, lineSnapshotWorker::snapshotOneLineValues);
             }
         } catch (Exception ignore) {
             // 尽力而为
