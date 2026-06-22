@@ -55,6 +55,10 @@ public class MaterialBomMergeHandler {
         Map<String, Map<String, Map<String, Object>>> matByMat = new LinkedHashMap<>();
         Map<String, Map<String, Map<String, Object>>> asmByMat = new LinkedHashMap<>();
 
+        // §12 料号表 upsert 延后批量：按 material_no 去重 + 首个非空归并 name/type，
+        // 末尾一次 upsertBatchNameType(preserve=true)，等价于原逐行 upsert（resolver 不依赖本批 upsert 可见性）。
+        Map<String, String[]> mmAcc = new LinkedHashMap<>();   // material_no -> [name, type]（首个非空胜）
+
         for (SheetRow row : materialRows) {
             result.totalRows++;
             String materialNo = row.getStr("宏丰料号");
@@ -70,9 +74,8 @@ public class MaterialBomMergeHandler {
             } catch (MaterialNoUnresolvableException ex) {
                 result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
             }
-            // material_master：产出料号类型只存汉字（labelOnly）
-            materialMasterRepo.upsertByMaterialNo(componentNo, componentName,
-                null, null, null, labelOnly(componentUsageType), null, null, null, ctx.importedBy, true);
+            // material_master：产出料号类型只存汉字（labelOnly）。延后批量 upsert（见 mmAcc）。
+            accMaterialMaster(mmAcc, componentNo, componentName, labelOnly(componentUsageType));
             result.recordWrite("material_master", 1);
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("seq_no", row.getInt("项次"));
@@ -100,9 +103,8 @@ public class MaterialBomMergeHandler {
             } catch (MaterialNoUnresolvableException ex) {
                 result.recordError(row.rowNo, "组成件料号", "料号与名称均为空"); continue;
             }
-            // §12 料号表同步：组成件 material_type 固定存汉字「组成件」，已存在保留原值（preserveDescriptive=true）
-            materialMasterRepo.upsertByMaterialNo(componentNo, componentName,
-                null, null, null, "组成件", null, null, null, ctx.importedBy, true);
+            // §12 料号表同步：组成件 material_type 固定存汉字「组成件」，已存在保留原值（preserveDescriptive=true）。延后批量。
+            accMaterialMaster(mmAcc, componentNo, componentName, "组成件");
             result.recordWrite("material_master", 1);
 
             // 工序回填（决策 #5）：工序编号空 + 组装工序(工序名称)有值 → 按名取第一条 process_no
@@ -125,6 +127,17 @@ public class MaterialBomMergeHandler {
             asmByMat.computeIfAbsent(materialNo, k -> new LinkedHashMap<>())
                     .put(String.valueOf(componentNo), c);
             result.successRows++;
+        }
+
+        // §12 料号表：一次批量 upsert（去重后；preserve=true 与原逐行等价）。
+        // 置于子表写入循环之前，保持"先写 material_master 再写 BOM 子表"的原有相对顺序。
+        if (!mmAcc.isEmpty()) {
+            List<MaterialMasterRepository.NameTypeRow> mmRows = new ArrayList<>(mmAcc.size());
+            for (Map.Entry<String, String[]> e : mmAcc.entrySet()) {
+                mmRows.add(new MaterialMasterRepository.NameTypeRow(
+                    e.getKey(), e.getValue()[0], e.getValue()[1]));
+            }
+            materialMasterRepo.upsertBatchNameType(mmRows, ctx.importedBy, true);
         }
 
         Set<String> allMats = new LinkedHashSet<>();
@@ -183,6 +196,21 @@ public class MaterialBomMergeHandler {
 
     private static boolean isCfg(String materialNo) {
         return materialNo != null && materialNo.startsWith("CFG-");
+    }
+
+    /**
+     * 累积 material_master 的 name/type（按 material_no 去重，<b>首个非空胜</b>）。
+     * 对齐原逐行 {@code upsertByMaterialNo(preserve=true)} 的 COALESCE(existing,new) 顺序语义：
+     * 同一 material_no 多次出现时，name/type 取遍历顺序里第一个非空值。
+     */
+    private static void accMaterialMaster(Map<String, String[]> acc, String no, String name, String type) {
+        String[] cur = acc.get(no);
+        if (cur == null) {
+            acc.put(no, new String[]{name, type});
+        } else {
+            if (cur[0] == null) cur[0] = name;
+            if (cur[1] == null) cur[1] = type;
+        }
     }
 
     /**
