@@ -31,6 +31,14 @@ public class Q02CustomerMapHandler implements SheetHandler {
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
+        // ① replace-per-customer：本 sheet 是该客户客户料号映射的权威全集。
+        // 仅当有数据行时先清掉该客户旧映射，再 upsert 本次行，避免上一次（含脏数据）
+        // 导入残留的多余 customer_product_no 在候选查询里扇出（77→85 bug）。
+        // 空 sheet 不删，防止误清（缺该 sheet 的部分导入不触发本 handler）。
+        if (ctx.customerNo != null && !ctx.customerNo.isBlank() && !rows.isEmpty()) {
+            int removed = repo.deleteByCustomerNo(ctx.customerNo);
+            result.recordWrite("material_customer_map.deleted", removed);
+        }
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
