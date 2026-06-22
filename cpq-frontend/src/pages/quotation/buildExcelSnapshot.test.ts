@@ -538,3 +538,32 @@ describe('driver 展开端到端：lookupExpansion 真被消费', () => {
     expect(missRows[0].DS).toBeCloseTo(0, 4);
   });
 });
+
+// 真实 v2 模板形态：col.tabs 只有 {alias,tabKey,rowKeyFields}（无 componentId、无 subtotalCols），
+// 列表达式用 [别名.小计列] / [别名(总计)]。复现线上 Excel 全 0 bug
+// （expressionToTokens 需 TabDef.componentId/subtotalCols 才能产出 component_subtotal token）。
+describe('buildExcelSnapshot — 真实 v2 列(tabs 无 componentId/subtotalCols)', () => {
+  const colA_real = {
+    col_key: 'A', title: '材料成本', source_type: 'TAB_JOIN_FORMULA',
+    expression: '[来料.材料成本]',
+    tabs: [{ alias: '来料', tabKey: 'comp-material', rowKeyFields: [] }],
+  } as unknown as CostingTemplateColumn;
+  const colC_real = {
+    col_key: 'C', title: '产品小计', source_type: 'TAB_JOIN_FORMULA',
+    expression: '[报价小计(总计)]',
+    tabs: [{ alias: '报价小计', tabKey: 'comp-subtotal', rowKeyFields: [] }],
+  } as unknown as CostingTemplateColumn;
+
+  it('A 列 [来料.材料成本] → component_subtotal → componentSubtotals[来料#材料成本]=10（非 0）', () => {
+    const { rows } = buildExcelSnapshot(lineItem093, [colA_real], undefined, undefined, {});
+    expect(rows[0].A).toBeCloseTo(10, 4);
+  });
+
+  it('C 列 [报价小计(总计)] → component_subtotal → 产品小计=10（非 0，恒等卡片）', () => {
+    const { rows } = buildExcelSnapshot(lineItem093, [colC_real], undefined, undefined, {});
+    const subtotals = getComponentSubtotals(lineItem093, undefined, undefined);
+    const expected = evalProductSubtotalFromSubtotals(lineItem093, subtotals);
+    expect(rows[0].C).toBeCloseTo(expected, 4);
+    expect(rows[0].C).toBeCloseTo(10, 4);
+  });
+});

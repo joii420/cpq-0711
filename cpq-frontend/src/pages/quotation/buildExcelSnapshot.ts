@@ -202,7 +202,7 @@ function evalColumn(
   switch (col.source_type) {
     case 'TAB_JOIN_FORMULA':
     case 'CARD_FORMULA': {
-      return evalTabJoinOrCard(col, partNo, productAttrs, componentSubtotals, crossTabRows, ctx);
+      return evalTabJoinOrCard(col, item.componentData ?? [], partNo, productAttrs, componentSubtotals, crossTabRows, ctx);
     }
 
     case 'FIXED_VALUE': {
@@ -287,6 +287,7 @@ function evalColumn(
  */
 function evalTabJoinOrCard(
   col: CostingTemplateColumn,
+  componentData: import('./QuotationStep2').ComponentDataItem[],
   partNo: string,
   productAttrs: Record<string, number>,
   componentSubtotals: Record<string, number>,
@@ -297,12 +298,31 @@ function evalTabJoinOrCard(
   const exprStr: string | undefined = colAny.expression;
   if (!exprStr) return 0;
 
-  // expressionToTokens 需要 TabDef[]；col.tabs 已包含 alias/tabKey/rowKeyFields
-  const tabs = (colAny.tabs ?? []) as Array<{ alias: string; tabKey: string; rowKeyFields: string[] }>;
+  // expressionToTokens 需要**完整** TabDef[]（含 componentId + subtotalCols + detailFields），
+  // 否则 `[别名.小计列]` 无法判为 component_subtotal（缺 subtotalCols → 误当 cross_tab 明细 → 读空），
+  // `[别名(总计)]` 的 component 引用也会缺 componentId → 求值得 0（线上 Excel 全 0 根因）。
+  // col.tabs 只有 {alias,tabKey,rowKeyFields}，故从 item.componentData 按 tabKey 补齐
+  // componentId/componentName/subtotalCols/detailFields（与后端 tabDefsByComponent 同口径）。
+  const rawTabs = (colAny.tabs ?? []) as Array<{ alias: string; tabKey: string; rowKeyFields?: string[] }>;
+  const tabDefs = rawTabs.map((t) => {
+    const comp = componentData.find((c) => c.componentId === t.tabKey);
+    const fields = (comp?.fields ?? []) as Array<{ name: string; is_subtotal?: boolean }>;
+    return {
+      alias: t.alias,
+      tabKey: t.tabKey,
+      componentId: comp?.componentId ?? t.tabKey,
+      componentName: comp?.tabName ?? t.alias,
+      componentType: (comp as any)?.componentType,
+      rowKeyFields: t.rowKeyFields ?? [],
+      detailFields: fields.filter((f) => !f.is_subtotal).map((f) => f.name),
+      allFields: fields.map((f) => f.name),
+      subtotalCols: fields.filter((f) => f.is_subtotal).map((f) => f.name),
+    };
+  });
 
   let tokens: ReturnType<typeof expressionToTokens>;
   try {
-    tokens = expressionToTokens(exprStr, tabs as any);
+    tokens = expressionToTokens(exprStr, tabDefs as any);
   } catch (e) {
     console.warn('[buildExcelSnapshot] TAB_JOIN/CARD eval failed for col', col.col_key, e);
     return 0;
