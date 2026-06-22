@@ -44,6 +44,7 @@ public class BasicDataImportV6Resource {
     @Inject PricingImportService pricingService;
     @Inject V6QuotationCommitService commitService;
     @Inject SessionHelper sessionHelper;
+    @Inject org.eclipse.microprofile.context.ManagedExecutor managedExecutor;
 
     @Context HttpServerRequest httpRequest;
 
@@ -67,15 +68,25 @@ public class BasicDataImportV6Resource {
 
         UUID importedBy = sessionHelper.getCurrentUserId(httpRequest);
         if (importedBy == null) throw new BusinessException(401, "未登录");
+
+        // 异步导入：同步建记录 + 读文件入内存 → 后台线程处理 → 立即返回 PROCESSING。
+        // 前端用 GET /v6/{recordId} 轮询，避免大文件导入撞 HTTP/代理超时。
+        UUID recordId = quoteService.createImportRecord(customerId, file.fileName(), importedBy);
+        final byte[] bytes;
         try (InputStream stream = Files.newInputStream(file.uploadedFile())) {
-            ImportResultDTO result = quoteService.importExcel(
-                customerId, customerNo, file.fileName(), stream, importedBy);
-            return ApiResponse.success(result);
-        } catch (BusinessException be) {
-            throw be;
+            bytes = stream.readAllBytes();   // 必须在请求线程读完：上传临时文件请求结束后可能被回收
         } catch (Exception e) {
-            throw new BusinessException(500, "报价基础数据导入失败: " + e.getMessage());
+            throw new BusinessException(500, "读取上传文件失败: " + e.getMessage());
         }
+        final String fname = file.fileName();
+        managedExecutor.runAsync(() ->
+            quoteService.processImport(recordId, customerNo, fname, bytes, importedBy));
+
+        ImportResultDTO pending = new ImportResultDTO();
+        pending.importRecordId = recordId;
+        pending.systemType = "QUOTE";
+        pending.status = "PROCESSING";
+        return ApiResponse.success(pending);
     }
 
     @POST

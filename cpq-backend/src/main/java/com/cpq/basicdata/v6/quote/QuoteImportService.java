@@ -9,6 +9,7 @@ import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
 import com.cpq.importexcel.entity.ImportRecord;
 import io.quarkus.logging.Log;
+import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
@@ -16,7 +17,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
-import java.io.InputStream;
+import java.io.ByteArrayInputStream;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -65,16 +66,23 @@ public class QuoteImportService {
     }
 
     /**
-     * 执行报价基础数据导入。
-     * @param customerNo 客户编码（由调用方从 customerId 查出）
-     * @param fileName 上传文件名（落 import_record.original_file_name）
-     * @param stream Excel 二进制流
+     * 后台执行报价基础数据导入（异步）。调用方先 {@link #createImportRecord} 拿到 recordId 并把
+     * Excel 读入内存 bytes，再经 ManagedExecutor 调本方法；HTTP 请求立即返回 PROCESSING，前端轮询
+     * {@code GET /v6/{recordId}} 查进度。业务处理逻辑与原同步路径逐字一致，仅执行边界改为后台线程。
+     *
+     * <p>{@code @ActivateRequestContext}：让 request-scoped 的 EntityManager 在后台线程可用
+     * （与原 HTTP 请求内单一 request-scoped EM 跨多 Sheet 事务的语义一致）。
+     * <p>顶层 try/catch：后台线程的任何失败都 finalize 记录为 FAILED（轮询可见），不静默吞没。
+     *
+     * @param recordId   已建 import_record 主键（status=PROCESSING）
+     * @param customerNo 客户编码
+     * @param fileName   上传文件名
+     * @param bytes      Excel 二进制（请求线程已读入内存，避免上传临时文件被回收）
      * @param importedBy 当前用户 UUID
-     * @return ImportResultDTO（含 importRecordId + per-Sheet 结果）
      */
-    public ImportResultDTO importExcel(UUID customerId, String customerNo, String fileName,
-                                       InputStream stream, UUID importedBy) {
-        UUID recordId = createImportRecord(customerId, fileName, importedBy);
+    @ActivateRequestContext
+    public void processImport(UUID recordId, String customerNo, String fileName,
+                              byte[] bytes, UUID importedBy) {
         ImportContext ctx = new ImportContext();
         ctx.customerNo = customerNo;
         ctx.systemType = "QUOTE";
@@ -87,7 +95,7 @@ public class QuoteImportService {
         List<SheetResultDTO> sheetDtos = new ArrayList<>();
         int totalSuccess = 0, totalFailed = 0;
 
-        try (XSSFWorkbook wb = parser.open(stream)) {
+        try (XSSFWorkbook wb = parser.open(new ByteArrayInputStream(bytes))) {
             // 物料BOM ⇄ 组成件BOM 去重合并（两 sheet 单一事务，组成件优先；替代 Q03/Q12 各写各的）
             {
                 var matSheet = wb.getSheet("物料BOM");
@@ -139,8 +147,14 @@ public class QuoteImportService {
                 totalFailed += r.failedRows;
             }
         } catch (Exception e) {
+            // 后台线程：解析/未知失败不抛出（无处可抛），落 FAILED 供前端轮询
             Log.error("Excel 解析失败", e);
-            throw new RuntimeException("Excel 解析失败: " + e.getMessage(), e);
+            out.sheetResults = sheetDtos;
+            out.totalSuccessRows = totalSuccess;
+            out.totalFailedRows = totalFailed;
+            out.status = "FAILED";
+            finalizeImportRecord(recordId, out, sheetDtos);
+            return;
         }
 
         out.sheetResults = sheetDtos;
@@ -148,7 +162,6 @@ public class QuoteImportService {
         out.totalFailedRows = totalFailed;
         out.status = totalFailed == 0 ? "SUCCESS" : (totalSuccess > 0 ? "PARTIAL" : "FAILED");
         finalizeImportRecord(recordId, out, sheetDtos);
-        return out;
     }
 
     @Transactional(Transactional.TxType.REQUIRES_NEW)

@@ -56,6 +56,7 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
   const [customerId, setCustomerId] = useState<string | undefined>(defaultCustomerId);
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState<ImportResultDTO | null>(null);
 
   const [createForm, setCreateForm] = useState<QuotationFormValue>({
@@ -76,6 +77,7 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
     setStep(1);
     setCustomerId(defaultCustomerId);
     setResult(null);
+    setProcessing(false);
     setFileList([]);
     setCreateForm({ name: '', categoryId: undefined, customerTemplateId: undefined, costingTemplateId: undefined });
     setFormValid(false);
@@ -129,10 +131,16 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
     if (!customerId) return message.warning('请先选择客户');
     if (fileList.length === 0) return message.warning('请先上传 Excel 文件');
     setSubmitting(true);
+    setResult(null);
+    setProcessing(true);
     try {
       const file = (fileList[0] as unknown as { originFileObj?: File }).originFileObj
         ?? (fileList[0] as unknown as File);
-      const r = await basicDataImportV6Service.importQuote(customerId, file as File);
+      // 后端异步：POST 立即返回 importRecordId(PROCESSING)，前端轮询直到终态（不撞超时）。
+      const pending = await basicDataImportV6Service.importQuote(customerId, file as File);
+      const r = await basicDataImportV6Service.pollImportResult(pending.importRecordId, {
+        intervalMs: 1500,
+      });
       setResult(r);
       if (r.status === 'SUCCESS') message.success(`导入成功 ${r.totalSuccessRows} 行`);
       else if (r.status === 'PARTIAL')
@@ -141,6 +149,7 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
     } catch (e: any) {
       message.error(e?.message ?? '导入异常');
     } finally {
+      setProcessing(false);
       setSubmitting(false);
     }
   };
@@ -304,6 +313,15 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
               开始导入
             </Button>
           </Space>
+
+          {processing && !result && (
+            <Alert
+              type="info"
+              showIcon
+              message="后台导入处理中…"
+              description="大文件导入在后台执行，本页会自动轮询进度，请勿关闭抽屉。完成后将展示各 Sheet 结果。"
+            />
+          )}
 
           {result && (
             <>
