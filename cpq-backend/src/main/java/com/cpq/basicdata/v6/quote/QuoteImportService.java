@@ -215,8 +215,6 @@ public class QuoteImportService {
      */
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void updateProgress(UUID recordId, int done, int total, String current) {
-        ImportRecord rec = ImportRecord.findById(recordId);
-        if (rec == null) return;
         try {
             Map<String, Object> progress = new LinkedHashMap<>();
             progress.put("done", done);
@@ -224,7 +222,12 @@ public class QuoteImportService {
             progress.put("current", current == null ? "" : current);
             Map<String, Object> meta = new LinkedHashMap<>();
             meta.put("progress", progress);
-            rec.metadata = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(meta);
+            String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(meta);
+            // 单条 native UPDATE（不 findById，省一次远程 SELECT 往返）。metadata 为 jsonb，显式 CAST。
+            em.createNativeQuery("UPDATE import_record SET metadata = CAST(:m AS jsonb) WHERE id = :id")
+              .setParameter("m", json)
+              .setParameter("id", recordId)
+              .executeUpdate();
         } catch (Exception e) {
             // 进度写入失败忽略，不影响导入主流程
         }
