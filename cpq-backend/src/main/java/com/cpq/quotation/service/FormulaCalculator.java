@@ -967,8 +967,10 @@ public class FormulaCalculator {
                 if (content != null && !content.isEmpty()) raw = content;
             }
 
-            // INPUT_NUMBER：空 → default_source(GLOBAL_VARIABLE/BNF_PATH) → content 兜底
-            if (!nonEmpty(raw) && "INPUT_NUMBER".equals(fieldType)) {
+            // INPUT_NUMBER：仅"键缺失(从未填/未烘焙)"才兜默认值；显式清空('')视为用户置空 → 按 0 算，
+            // 不再回落 default_source / content（与前端 computeAllFormulas 对称：raw===undefined||null 才兜）。
+            boolean inputAbsent = rawNode == null || rawNode.isNull();
+            if (inputAbsent && "INPUT_NUMBER".equals(fieldType)) {
                 Object resolved = null;
                 JsonNode ds = defaultSource(f);
                 if (ds != null && basicDataValues != null) {
@@ -1038,27 +1040,34 @@ public class FormulaCalculator {
 
             // ── INPUT_NUMBER / INPUT_TEXT / INPUT: editValues 覆盖 → driverRow[name] → default_source → content ──
             if ("INPUT_NUMBER".equals(type) || "INPUT_TEXT".equals(type) || "INPUT".equals(type)) {
-                Object v = (editValues != null) ? nodeToObject(editValues.path(name)) : null;
-                if (!nonEmpty(v) && driverRow != null) v = nodeToObject(driverRow.path(name));
-                if (!nonEmpty(v)) {
-                    JsonNode ds = defaultSource(f);
-                    if (ds != null && basicDataValues != null) {
-                        String dsType = ds.path("type").asText("");
-                        if ("GLOBAL_VARIABLE".equals(dsType)) {
-                            Object g = lookupBdv(basicDataValues, "@gvar:" + ds.path("code").asText(""));
-                            if (nonEmpty(g)) v = g;
-                        } else if ("BNF_PATH".equals(dsType) || "BASIC_DATA".equals(dsType)) {
-                            String p = ds.path("path").asText("");
-                            if (!p.isEmpty()) {
-                                Object g = lookupBdv(basicDataValues, bnfDriverLookupKey(p));
+                // 显式编辑(含清空'')优先且独占：editValues 明确含该字段(present, 非 null)→ 用其值, 不再回落
+                // driverRow/default_source/content（清空'' → nonEmpty 假 → 不写入 out → 下游 cross_tab 按空/0）。
+                // 与前端 buildResolvedRow 对称（仅 out[key]==null 才补 default_source）。
+                JsonNode editNode = (editValues != null) ? editValues.path(name) : null;
+                boolean editHas = editNode != null && !editNode.isMissingNode() && !editNode.isNull();
+                Object v = editHas ? nodeToObject(editNode) : null;
+                if (!editHas) {
+                    if (driverRow != null) v = nodeToObject(driverRow.path(name));
+                    if (!nonEmpty(v)) {
+                        JsonNode ds = defaultSource(f);
+                        if (ds != null && basicDataValues != null) {
+                            String dsType = ds.path("type").asText("");
+                            if ("GLOBAL_VARIABLE".equals(dsType)) {
+                                Object g = lookupBdv(basicDataValues, "@gvar:" + ds.path("code").asText(""));
                                 if (nonEmpty(g)) v = g;
+                            } else if ("BNF_PATH".equals(dsType) || "BASIC_DATA".equals(dsType)) {
+                                String p = ds.path("path").asText("");
+                                if (!p.isEmpty()) {
+                                    Object g = lookupBdv(basicDataValues, bnfDriverLookupKey(p));
+                                    if (nonEmpty(g)) v = g;
+                                }
                             }
                         }
                     }
-                }
-                if (!nonEmpty(v)) {
-                    String c = content(f);
-                    if (c != null && !c.isEmpty()) v = c;
+                    if (!nonEmpty(v)) {
+                        String c = content(f);
+                        if (c != null && !c.isEmpty()) v = c;
+                    }
                 }
                 if (nonEmpty(v)) out.put(name, unwrapNode(v));
                 continue;
@@ -1452,7 +1461,9 @@ public class FormulaCalculator {
             if (!("INPUT_NUMBER".equals(type) || "INPUT_TEXT".equals(type) || "INPUT".equals(type))) continue;
             String name = fieldName(f);
             if (name.isEmpty()) continue;
-            if (nonEmpty(currentRowRaw.get(name))) continue;   // driver/手填优先
+            // 键存在(driver/手填/显式清空'')均不补：清空'' 经 toRawRowMap 保留为非 null → 尊重置空，
+            // 仅"键缺失"才补 default_source（与前端 currentRowForEval 增量补值口径对称）。
+            if (currentRowRaw.get(name) != null) continue;
             JsonNode ds = defaultSource(f);
             if (ds == null) continue;
             String dsType = ds.path("type").asText("");

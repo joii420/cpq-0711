@@ -588,7 +588,8 @@ function computeAllFormulas(
         raw = f.content;
       }
       // 统一解析器：INPUT_TEXT / INPUT_NUMBER 默认值兜底（default_source 实时 > 静态 content）
-      if ((raw === undefined || raw === null || raw === '')
+      // 仅"键缺失(从未填/未烘焙)"才兜默认值；显式清空('')视为用户置空 → 按 0 算，不再回落默认值。
+      if ((raw === undefined || raw === null)
           && (f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT')) {
         const def = resolveInputDefault(f, {
           basicDataValues,
@@ -611,7 +612,8 @@ function computeAllFormulas(
       if ((f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT')
           && f.default_source) {
         const k = f.name || f.key || '';
-        if (k && (row[k] == null || row[k] === '')) {
+        // 仅键缺失才补 default_source；显式清空('')尊重用户置空，不补（与 computeAllFormulas 一致）。
+        if (k && row[k] == null) {
           const v = resolveInputDefaultSourceForRow(f, basicDataValues);
           if (v != null) { if (!augmented) augmented = { ...row }; augmented[k] = v; }
         }
@@ -802,7 +804,8 @@ function buildResolvedRow(
       }
     } else if ((f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT')
                && f.default_source) {
-      if (out[key] == null || out[key] === '') {
+      // 仅键缺失才补 default_source；显式清空('')尊重用户置空（cross_tab 取数同步按空处理）。
+      if (out[key] == null) {
         const v = resolveInputDefaultSourceForRow(f, basicDataValues);
         if (v != null) out[key] = v;
       }

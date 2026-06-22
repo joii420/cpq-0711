@@ -106,6 +106,33 @@ describe('computeAllFormulas INPUT 静态 content 参与公式', () => {
     expect(Object.prototype.hasOwnProperty.call(out.fieldValues, '备注')).toBe(false);
   });
 
+  it('显式清空("")→ 不再 content 兜底，按 0 算（金额=0，fieldValues 无单价）', () => {
+    const out: { fieldValues: Record<string, number>; errors: Record<string, string> } = {
+      fieldValues: {},
+      errors: {},
+    };
+    const cache = computeAllFormulas(
+      comp,
+      { '单价': '' }, // 用户主动清空 → key 存在但值为 ''（区别于 key 缺失）
+      {}, {}, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, out,
+    );
+    expect(cache['金额']).toBe(0);
+    expect(Object.prototype.hasOwnProperty.call(out.fieldValues, '单价')).toBe(false);
+  });
+
+  it('key 缺失（从未填/未烘焙）仍按 content 兜底（区别于显式清空）', () => {
+    const out: { fieldValues: Record<string, number>; errors: Record<string, string> } = {
+      fieldValues: {}, errors: {},
+    };
+    const cache = computeAllFormulas(
+      comp, {}, {}, {}, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, out,
+    );
+    expect(cache['金额']).toBe(8);
+    expect(out.fieldValues['单价']).toBe(8);
+  });
+
   it('行值优先于 content（有行值时不用 content 兜底）', () => {
     const out: { fieldValues: Record<string, number>; errors: Record<string, string> } = {
       fieldValues: {},
