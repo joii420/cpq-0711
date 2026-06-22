@@ -5,6 +5,7 @@ import com.cpq.common.exception.BusinessException;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.importexcel.service.CustomerExcelTemplateService;
 import com.cpq.quotation.service.ExcelViewService;
+import com.cpq.template.entity.Template;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -47,6 +48,19 @@ public class TemplateExcelViewResource {
             // Fall back to raw string if not valid JSON (defensive — should not happen)
             return ApiResponse.success(json);
         }
+    }
+
+    /**
+     * GET /api/cpq/templates/{id}/excel-view-config/effective-columns
+     * 返回后端解析后的有效列（getEffectiveColumns: excel_component_id→component.excel_columns + column_overrides）。
+     * 供前端 saveDraft(buildExcelSnapshot) 取列定义；列结构非分叉源，行值仍由前端算（恒等卡片）。
+     */
+    @GET
+    @Path("/effective-columns")
+    public ApiResponse<Object> getEffectiveColumns(@PathParam("id") UUID id) {
+        Template t = Template.findById(id);
+        if (t == null) return ApiResponse.success(List.of());
+        return ApiResponse.success(excelViewService.getEffectiveColumns(t));
     }
 
     /**

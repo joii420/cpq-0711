@@ -31,7 +31,6 @@ import { splitRows, rowAt } from './manualRows';
 import { coerceInputNumber } from './inputDefaults';
 import type { CostingTemplateColumn } from '../../services/costingTemplateService';
 import { buildExcelSnapshot } from './buildExcelSnapshot';
-import { parseExcelViewColumns } from './useLinkedExcelRows';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
@@ -168,13 +167,14 @@ const QuotationWizard: React.FC = () => {
     // I1 fix（2026-06-21）：customerTemplateId 快速切换时旧响应可能晚于新响应到达，
     // 用 cancelled 标志丢弃过时响应，防止旧列定义覆盖新 ref。
     let cancelled = false;
-    templateService.getExcelViewConfig(customerTemplateId)
+    // Phase2.5：取后端解析的有效列（v2 引用配置 excel_component_id 客户端无法解析，须经 getEffectiveColumns）。
+    // 端点直接返回解析列数组；v2/legacy 都能拿到 A/B/C，使 saveDraft buildExcelSnapshot 算出非空快照。
+    templateService.getEffectiveExcelColumns(customerTemplateId)
       .then((r: any) => {
         if (cancelled) return;
         try {
-          const raw = r?.data ?? r;
-          const cols = parseExcelViewColumns(raw);
-          excelColumnsRef.current = cols;
+          const body = r?.data ?? r;
+          excelColumnsRef.current = Array.isArray(body) ? body : [];
         } catch {
           excelColumnsRef.current = [];
         }
