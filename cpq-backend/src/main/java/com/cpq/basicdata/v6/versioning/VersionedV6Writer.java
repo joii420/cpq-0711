@@ -123,13 +123,15 @@ public class VersionedV6Writer {
         if (triggerSame) {
             String cur = currentVersionOf(spec.tableName, spec.versionColumn, spec.groupKeyColumns);
             deleteCurrent(spec.tableName, spec.groupKeyColumns);   // 删当前组 current 行(避免同版本号 uq 冲突)
+            List<Map<String, Object>> toInsert = new ArrayList<>();
             for (Map<String, Object> row : spec.newRows) {
                 Map<String, Object> all = new LinkedHashMap<>(spec.groupKeyColumns);
                 all.putAll(row);
                 all.put(spec.versionColumn, cur);                  // 复用旧版本号
                 all.put("is_current", true);
-                insertRowGeneric(spec.tableName, all);
+                toInsert.add(all);
             }
+            insertRowsBatched(spec.tableName, toInsert);
             return cur;
         }
 
@@ -138,13 +140,15 @@ public class VersionedV6Writer {
         if (!existing.isEmpty()) {
             flip(spec.tableName, spec.groupKeyColumns);
         }
+        List<Map<String, Object>> toInsert = new ArrayList<>();
         for (Map<String, Object> row : spec.newRows) {
             Map<String, Object> all = new LinkedHashMap<>(spec.groupKeyColumns);
             all.putAll(row);
             all.put(spec.versionColumn, newVersion);
             all.put("is_current", true);
-            insertRowGeneric(spec.tableName, all);
+            toInsert.add(all);
         }
+        insertRowsBatched(spec.tableName, toInsert);
         return newVersion;
     }
 
@@ -217,18 +221,20 @@ public class VersionedV6Writer {
         master.put("is_current", true);
         insertRowGeneric(masterTable, master);
 
-        // 5. 写子表行集
+        // 5. 写子表行集（childVersionColumn!=null 路径批量插入；null-path 保留逐行 upsert）
+        List<Map<String, Object>> childToInsert = new ArrayList<>();
         for (Map<String, Object> row : childRows) {
             Map<String, Object> all = new LinkedHashMap<>(childGroupKey);
             all.putAll(row);
             all.put("is_current", true);
             if (childVersionColumn != null) {
-                all.put(childVersionColumn, newVersion);   // element_bom_item：写版本列 → 多版本保留
-                insertRowGeneric(childTable, all);
+                all.put(childVersionColumn, newVersion);   // element_bom_item / material_bom_item(V293+)：写版本列 → 多版本保留
+                childToInsert.add(all);
             } else {
                 upsertChildRow(childTable, all);            // null-path 子表 upsert（保留备用；V293 后无实际调用方）
             }
         }
+        insertRowsBatched(childTable, childToInsert);
 
         // 6. childVersionColumn==null：清理仍 is_current=false 的残留下线子行（仅保留当前版本明细，§5.3）。
         //    element_bom_item（childVersionColumn!=null）绝不走此步——否则删除多版本历史。
@@ -369,6 +375,51 @@ public class VersionedV6Writer {
         for (int i = 0; i < cols.size(); i++) q.setParameter("v" + i, all.get(cols.get(i)));
         q.executeUpdate();
     }
+
+    /**
+     * 批量整行 INSERT（等价于逐行 {@link #insertRowGeneric}，仅减少 DB 往返）。
+     * <p>语义保持：每行只写入自己拥有的列（其余列保持 DB 默认/NULL）——故按"列名有序列表"签名分组，
+     * 同签名行合并为一条多值 INSERT；不同签名行各发一条，与逐行行为逐位一致。
+     * <p>分块上限 {@link #INSERT_BATCH_ROWS} 防 PostgreSQL 单语句 65535 绑定参数上限。
+     */
+    private void insertRowsBatched(String table, List<Map<String, Object>> rows) {
+        if (rows.isEmpty()) return;
+        Map<List<String>, List<Map<String, Object>>> bySig = new LinkedHashMap<>();
+        for (Map<String, Object> r : rows) {
+            bySig.computeIfAbsent(new ArrayList<>(r.keySet()), k -> new ArrayList<>()).add(r);
+        }
+        for (Map.Entry<List<String>, List<Map<String, Object>>> e : bySig.entrySet()) {
+            List<String> cols = e.getKey();
+            cols.forEach(VersionedV6Writer::safeIdent);
+            String colSql = String.join(", ", cols);
+            List<Map<String, Object>> group = e.getValue();
+            for (int start = 0; start < group.size(); start += INSERT_BATCH_ROWS) {
+                List<Map<String, Object>> chunk = group.subList(
+                    start, Math.min(start + INSERT_BATCH_ROWS, group.size()));
+                StringBuilder vals = new StringBuilder();
+                int p = 0;
+                for (int ri = 0; ri < chunk.size(); ri++) {
+                    if (ri > 0) vals.append(", ");
+                    vals.append("(");
+                    for (int ci = 0; ci < cols.size(); ci++) {
+                        if (ci > 0) vals.append(", ");
+                        vals.append(":v").append(p++);
+                    }
+                    vals.append(")");
+                }
+                Query q = em.createNativeQuery(
+                    "INSERT INTO " + table + " (" + colSql + ") VALUES " + vals);
+                p = 0;
+                for (Map<String, Object> r : chunk) {
+                    for (String c : cols) q.setParameter("v" + (p++), r.get(c));
+                }
+                q.executeUpdate();
+            }
+        }
+    }
+
+    /** 单条多值 INSERT 的最大行数（cols × rows 需远低于 PG 65535 参数上限；按最宽 ~30 列留足余量）。 */
+    private static final int INSERT_BATCH_ROWS = 500;
 
     /** 子表无版本维度时的 upsert：INSERT ... ON CONFLICT (表达式) DO UPDATE SET 非键列=EXCLUDED。 */
     private void upsertChildRow(String table, Map<String, Object> all) {
