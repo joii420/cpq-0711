@@ -66,7 +66,7 @@ public class MaterialBomItem extends V6BaseEntity {
     @Column(name = "weight_unit", length = 20)
     public String weightUnit;
 
-    @Column(name = "component_usage_type", length = 20)
+    @Column(name = "component_usage_type", length = 100)
     public String componentUsageType;
 
     @Column(name = "feature_mgmt", length = 20)
