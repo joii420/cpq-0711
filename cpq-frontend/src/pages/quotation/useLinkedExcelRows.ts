@@ -43,6 +43,14 @@ export interface UseLinkedExcelRowsResult {
   excelTemplate: CostingTemplate | null;
   loading: boolean;
   error: string | null;
+  /**
+   * 配置模型：
+   *  - 'v2'    = 模板「引用 EXCEL 组件」配置 {excel_component_id}，客户端无法解析，
+   *              须走后端 getExcelView(getEffectiveColumns + TabJoinPlanEvaluator)。
+   *  - 'legacy'= 老内联列数组（VARIABLE/FORMULA 客户端可算）。
+   *  - 'empty' = 未配置 / 无 linkedTemplateId。
+   */
+  configShape: 'v2' | 'legacy' | 'empty';
 }
 
 /** 是否为老 `{CODE}` 简写格式（V73 过渡格式）；非此格式即按 BNF 路径走后端求值。 */
@@ -158,6 +166,7 @@ function formatPathValue(v: any): any {
 export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedExcelRowsResult {
   const { linkedTemplateId, lineItems, customerId, templateId, quotationContext, quotationId, quotationStatus } = params;
   const [excelTemplate, setExcelTemplate] = useState<CostingTemplate | null>(null);
+  const [configShape, setConfigShape] = useState<'v2' | 'legacy' | 'empty'>('empty');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pathCache, setPathCache] = useState<Record<string, any>>({});
@@ -165,6 +174,7 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
   useEffect(() => {
     if (!linkedTemplateId) {
       setExcelTemplate(null);
+      setConfigShape('empty');
       return;
     }
     setLoading(true);
@@ -173,13 +183,23 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
       .getExcelViewConfig(linkedTemplateId)
       .then((r: any) => {
         const raw = r?.data ?? r;
+        // v2「引用 EXCEL 组件」配置 {version,excel_component_id,column_overrides}：客户端无法把组件引用
+        // 解析成列（需后端 getEffectiveColumns），且其列多为 TAB_JOIN/CARD_FORMULA（须后端求值）。
+        // 标记为 v2，由 LinkedExcelView 改走后端路径 useBackendExcelRows；不再误判为"未配置"。
+        if (raw && typeof raw === 'object' && !Array.isArray(raw) && raw.excel_component_id) {
+          setConfigShape('v2');
+          setExcelTemplate(null);
+          return;
+        }
         const cols = Array.isArray(raw)
           ? raw
           : Array.isArray(raw?.columns) ? raw.columns : [];
         if (cols.length === 0) {
+          setConfigShape('empty');
           setExcelTemplate(null);
           return;
         }
+        setConfigShape('legacy');
         setExcelTemplate({
           id: linkedTemplateId,
           columns: JSON.stringify(cols),
@@ -337,5 +357,5 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
     // 注：formatPathValue/resolveVariable/evaluateFormula 均为模块级稳定引用，无需进 deps
   }, [parsedColumns, lineItems, quotationContext, pathCache]);
 
-  return { rows, parsedColumns, excelTemplate, loading, error };
+  return { rows, parsedColumns, excelTemplate, loading, error, configShape };
 }

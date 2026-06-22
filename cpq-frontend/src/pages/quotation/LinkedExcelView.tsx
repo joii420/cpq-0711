@@ -4,6 +4,7 @@ import type { CostingTemplateColumn } from '../../services/costingTemplateServic
 import type { LineItem } from './QuotationStep2';
 import { useLinkedExcelRows } from './useLinkedExcelRows';
 import { useExcelSnapshotRows } from './useExcelSnapshotRows';
+import { useBackendExcelRows } from './useBackendExcelRows';
 import { formatNumber } from '../../utils/formatNumber';
 
 interface Props {
@@ -97,7 +98,9 @@ const LinkedExcelView: React.FC<Props> = ({
   // 旧 hook 已加载好 parsedColumns → 用它判断模型；
   // 新 hook 的 enabled 由判断结果控制。
   const legacyColumns = legacyResult.parsedColumns;
-  const useBackend = isNewModel(legacyColumns);
+  // v2「引用 EXCEL 组件」配置：客户端无法解析(需后端 getEffectiveColumns)，且列多为 TAB_JOIN/CARD_FORMULA(须后端求值)。
+  const isV2 = legacyResult.configShape === 'v2';
+  const useSnapshot = isNewModel(legacyColumns);
 
   const snapshotResult = useExcelSnapshotRows({
     lineItems,
@@ -105,13 +108,28 @@ const LinkedExcelView: React.FC<Props> = ({
     parsedColumns: legacyColumns,
   });
 
-  // ---- 按模型选用最终结果 ----
+  // v2 走后端 getExcelView：返回已解析列 + 已算值（含 TAB_JOIN，由 TabJoinPlanEvaluator 计算）。
+  const backendResult = useBackendExcelRows({
+    quotationId,
+    lineItems,
+    enabled: isV2,
+    templateId: templateId ?? linkedTemplateId ?? null,
+  });
+
+  // ---- 按模型选用最终结果：v2(后端解析) > 新模型快照(CARD_FORMULA) > 老内联(客户端) ----
   const {
     rows,
     parsedColumns,
     loading: resolvedLoading,
     error: resolvedError,
-  } = useBackend
+  } = isV2
+    ? {
+        rows: backendResult.rows,
+        parsedColumns: backendResult.parsedColumns,
+        loading: backendResult.loading,
+        error: backendResult.error,
+      }
+    : useSnapshot
     ? {
         rows: snapshotResult.rows,
         parsedColumns: legacyColumns, // 列配置结构仍用旧 hook 已解析的（含 display_format 等）
@@ -126,6 +144,8 @@ const LinkedExcelView: React.FC<Props> = ({
       };
 
   const excelTemplate = legacyResult.excelTemplate;
+  // 标题栏"后端算值"标记：v2 与新模型快照都走后端。
+  const backendComputed = isV2 || useSnapshot;
 
   // ---- 渲染 ----
   if (!linkedTemplateId) {
@@ -138,7 +158,8 @@ const LinkedExcelView: React.FC<Props> = ({
   }
   if (resolvedLoading) return <div style={{ textAlign: 'center', padding: 48 }}><Spin /></div>;
   if (resolvedError) return <Alert type="error" showIcon message={resolvedError} style={{ margin: 16 }} />;
-  if (!excelTemplate) {
+  // v2 引用配置无 excelTemplate（列由后端解析），不走"未找到关联"分支。
+  if (!excelTemplate && !isV2) {
     return (
       <Alert type="warning" showIcon
         message="未找到关联的 Excel 模板"
@@ -149,8 +170,10 @@ const LinkedExcelView: React.FC<Props> = ({
   if (parsedColumns.length === 0) {
     return (
       <Alert type="warning" showIcon
-        message="关联的 Excel 模板未配置任何列"
-        description={`Excel 模板「${excelTemplate.name}」没有列定义。请前往「Excel 模板配置」打开它，添加列后重试。`}
+        message={isV2 ? 'Excel 视图暂无可显示的列' : '关联的 Excel 模板未配置任何列'}
+        description={isV2
+          ? '请确认模板已「引用 EXCEL 组件」并配置列，且本报价单已添加产品行后重试。'
+          : `Excel 模板「${excelTemplate?.name}」没有列定义。请前往「Excel 模板配置」打开它，添加列后重试。`}
         style={{ margin: 16 }} />
     );
   }
@@ -197,13 +220,19 @@ const LinkedExcelView: React.FC<Props> = ({
       <Card size="small" style={{ marginBottom: 12 }}
         title={
           <span>
-            {viewLabel || 'Excel 视图'} · <Tag color="blue">{excelTemplate.name}</Tag>
-            <Tag>{excelTemplate.version}</Tag>
-            {excelTemplate.isDefault && <Tag color="gold">默认</Tag>}
-            <Tag color={excelTemplate.status === 'PUBLISHED' ? 'green' : 'default'}>
-              {excelTemplate.status === 'PUBLISHED' ? '已发布' : excelTemplate.status}
-            </Tag>
-            {useBackend && <Tag color="cyan">后端算值</Tag>}
+            {viewLabel || 'Excel 视图'}
+            {/* v2 引用配置无 excelTemplate 元信息（列由后端解析），仅 legacy/snapshot 模型显示模板 Tag。 */}
+            {excelTemplate && (
+              <>
+                {' · '}<Tag color="blue">{excelTemplate.name}</Tag>
+                <Tag>{excelTemplate.version}</Tag>
+                {excelTemplate.isDefault && <Tag color="gold">默认</Tag>}
+                <Tag color={excelTemplate.status === 'PUBLISHED' ? 'green' : 'default'}>
+                  {excelTemplate.status === 'PUBLISHED' ? '已发布' : excelTemplate.status}
+                </Tag>
+              </>
+            )}
+            {backendComputed && <Tag color="cyan" style={{ marginLeft: 6 }}>后端算值</Tag>}
           </span>
         }
         extra={<span style={{ fontSize: 12, color: '#999' }}>按本报价单产品行渲染，共 {rows.length} 行</span>}
