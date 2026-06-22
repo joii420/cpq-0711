@@ -2,6 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> ✅ **状态：已落地（报价侧 Phase 1~6）+ Phase 2.5 修正 + TabDef 修复**，并通过 LIVE 四口径验证（Excel C == 卡片产品小计）。
+> ⚠️ **落地修正（本计划两处描述作废，以 `docs/三大核心模块基线.md §4.7` + 反模式 AP-59 为准）**：
+> 1. 本计划 Architecture/Phase 2 写「`LinkedExcelView` 退役 `isV2`/`useBackendExcelRows` 后端 GET」**作废**——报价模板列是服务端 `excel_component_id` 引用，客户端拿不到列；`useBackendExcelRows` **未退役，改作「列定义来源」**（`parsedColumns`），值仍走前端 `buildExcelSnapshot`。
+> 2. **新增 Phase 2.5**：后端加 `GET .../excel-view-config/effective-columns` 端点，saveDraft 侧（`buildDraftPayload`）取后端解析列；并修 `buildExcelSnapshot` 从 `item.componentData` 补全 `TabDef`（componentId+subtotalCols），否则 TAB_JOIN 列全 0。
+
 **Goal:** 让报价单 Excel 视图改用与产品卡片**同一套前端 token 引擎**计算列值，使 Excel 值**按构造恒等于卡片**（消除前后端双引擎分叉，0.93≡0.93），saveDraft 落前端算好的两份快照，导出/提交读快照不再后端重算。
 
 **Architecture:** 新增前端纯函数 `buildExcelSnapshot`，复用卡片现有引擎 `getComponentSubtotals` / `buildCrossTabRows` / `evalProductSubtotalFromSubtotals` / `evaluateExpression`，逐列按 `source_type` 求值产出 `{rows:[{col_key:value}]}`（与现有 `quote_excel_values` 快照同形态）。`LinkedExcelView` 始终走「前端快照」路径，退役 `isV2` 的后端 GET。`buildDraftPayload` 携带前端算好的 `quoteExcelValues`，后端 `saveDraft` 原样落库、**停止**用后端引擎 `buildExcelValues` 重算覆盖。导出（XLSX/PDF）改读 `quote_excel_values` 快照渲染。这是**核心渲染基线反转**（后端权威→前端权威），落地后同步更新 `docs/三大核心模块基线.md`。

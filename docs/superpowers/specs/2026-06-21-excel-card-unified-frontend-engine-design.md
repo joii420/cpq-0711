@@ -1,7 +1,12 @@
 # 设计：报价/核价 Excel 视图与产品卡片统一前端单引擎计算 + saveDraft 两份快照
 
-> 日期：2026-06-21 ｜ 状态：设计已与用户确认，待写实现计划 ｜ 类型：**核心渲染基线反转（破坏性）**
-> 关联基线：`docs/三大核心模块基线.md`（报价单渲染）—— 本设计将其「后端权威」反转为「前端权威」，落地后须同步更新该基线文档。
+> 日期：2026-06-21 ｜ 状态：**已落地（报价侧 Phase 1~6 + Phase 2.5）**，本文为初稿设计，部分假设落地时被修正（见下方横幅）｜ 类型：**核心渲染基线反转（破坏性）**
+> 关联基线：`docs/三大核心模块基线.md` §4.7（报价单渲染）—— 本设计将其「后端权威」反转为「前端权威」，已同步更新该基线文档。
+
+> ⚠️ **2026-06-21 Phase 2.5 落地修正（本初稿两处假设作废，以基线 §4.7 + 反模式 AP-59 为准）**：
+> 1. **§4.1「`VARIABLE/BASIC_DATA/FIXED` 复用 `useLinkedExcelRows` 客户端解析」+ §4.2「退役 `useBackendExcelRows`」均作废**。报价模板的列是服务端 `excel_component_id` 引用，客户端拿不到列定义（会得空列 → Excel 全 0）。正解：**列定义仍由后端解析**（显示侧取 `useBackendExcelRows.parsedColumns`，saveDraft 侧取新端点 `GET .../excel-view-config/effective-columns`），**只「列值」走前端 `buildExcelSnapshot`**。`useBackendExcelRows` **未退役，改作列定义来源**。
+> 2. **TAB_JOIN_FORMULA 列求值需完整 `TabDef`**（componentId + subtotalCols），`col.tabs` 子集不够，须从 `item.componentData` 补全，否则列值全 0（见 AP-59 坑 2）。
+> 3. 不变量保持：列结构由后端解析不破坏恒等性——分叉只在「值」不在「列结构」。
 
 ## 1. 背景与问题
 
