@@ -30,6 +30,8 @@ public class MaterialNoResolver {
     public static final class BatchState {
         final Map<String, String> nameToNo = new HashMap<>();
         long batchMaxGenerated = 0L;
+        /** P2-D: 9 字头 MAX 缓存（首次生成时锁内读一次，null=未读）。advisory xact lock 持有到提交 → 锁后 MAX 稳定，重读冗余。 */
+        Long dbMax = null;
     }
 
     /**
@@ -85,9 +87,14 @@ public class MaterialNoResolver {
     }
 
     private String generateNextMaterialNo(BatchState state) {
-        repo.lockForMaterialNoGeneration();
-        long dbMax = repo.maxNineLeadingMaterialNo();
-        long base = Math.max(dbMax, Math.max(state.batchMaxGenerated, GEN_BASE));
+        // P2-D: 仅首次生成时取 advisory xact lock + 读一次 9 字头 MAX。
+        // 该锁持有到事务提交 → 其它导入此后阻塞、9 字头 MAX 不再变化 → 后续生成复用缓存 dbMax + batchMaxGenerated，
+        // 与"每次重锁+重读 MAX"逐位等价(原逻辑每次重读拿到的就是同一个稳定值),省去每次生成 2 次远程往返。
+        if (state.dbMax == null) {
+            repo.lockForMaterialNoGeneration();
+            state.dbMax = repo.maxNineLeadingMaterialNo();
+        }
+        long base = Math.max(state.dbMax, Math.max(state.batchMaxGenerated, GEN_BASE));
         long next = base + 1;
         state.batchMaxGenerated = next;
         return String.valueOf(next);
