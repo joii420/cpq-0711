@@ -193,11 +193,13 @@ public class ComponentResource {
             resp.results.add(r);
         }
 
-        // Feature flag — 默认关,生产行为不变;开启:
-        //   -Dcpq.batch-expand-bucket=true 或 export CPQ_BATCH_EXPAND_BUCKET=true
+        // Feature flag — 2026-06-23 默认开(已用 BatchExpandBucketEquivTest 证合桶 ON==OFF 逐位等价:
+        //   DataLoader.stableSort 根治视图无 ORDER BY 行序非确定性 → 合桶 expandMulti 与逐 task expand 同序)。
+        //   合桶把首次加载 batch-expand 的 N×M 次远程 expand 压到每桶 1 次,直击"导入后进报价单 6-21s"。
+        //   kill switch:-Dcpq.batch-expand-bucket=false 或 export CPQ_BATCH_EXPAND_BUCKET=false。
         boolean bucketEnabled = "true".equalsIgnoreCase(
                 System.getProperty("cpq.batch-expand-bucket",
-                    System.getenv().getOrDefault("CPQ_BATCH_EXPAND_BUCKET", "false")));
+                    System.getenv().getOrDefault("CPQ_BATCH_EXPAND_BUCKET", "true")));
 
         // ── Phase 1:每个 task 先试 snapshot,命中直返;未命中收集进 Phase 2 候选 ──
         List<Integer> phase2 = new ArrayList<>();
