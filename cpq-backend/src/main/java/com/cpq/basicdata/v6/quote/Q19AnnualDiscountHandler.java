@@ -4,18 +4,22 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.repository.AnnualDiscountRepository;
+import com.cpq.basicdata.v6.repository.AnnualDiscountRepository.DiscountRow;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /** Q19 年降系数 → annual_discount。biz_type 报价默认 INCOMING。 */
 @ApplicationScoped
 public class Q19AnnualDiscountHandler implements SheetHandler {
 
-    @Inject EntityManager em;
+    @Inject AnnualDiscountRepository repo;
 
     @Override public String sheetName() { return "年降系数"; }
 
@@ -23,6 +27,9 @@ public class Q19AnnualDiscountHandler implements SheetHandler {
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
+        // §P1-Q19 延后批量：按冲突键 (material_no, discount_order) 去重 + 末值非空胜（逐字段），
+        // 循环后一次多值 INSERT...ON CONFLICT，与逐行 upsertOne 等价。biz_type/discount_strategy 为常量。
+        Map<String, DiscountRow> acc = new LinkedHashMap<>();
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
@@ -32,34 +39,21 @@ public class Q19AnnualDiscountHandler implements SheetHandler {
                     result.recordError(row.rowNo, "宏丰料号/年降顺序", "必填项为空");
                     continue;
                 }
-                em.createNativeQuery(
-                        "INSERT INTO annual_discount (biz_type, material_no, discount_strategy, " +
-                        "  discount_order, discount_ratio, fixed_discount_value, currency, unit, discount_times, " +
-                        "  created_at, updated_at, updated_by) " +
-                        "VALUES (:bt, :m, :ds, :o, :r, :v, :c, :u, :dt, NOW(), NOW(), :ub) " +
-                        "ON CONFLICT (biz_type, material_no, discount_strategy, discount_order) DO UPDATE SET " +
-                        "  discount_ratio = COALESCE(EXCLUDED.discount_ratio, annual_discount.discount_ratio), " +
-                        "  fixed_discount_value = COALESCE(EXCLUDED.fixed_discount_value, annual_discount.fixed_discount_value), " +
-                        "  currency = COALESCE(EXCLUDED.currency, annual_discount.currency), " +
-                        "  unit = COALESCE(EXCLUDED.unit, annual_discount.unit), " +
-                        "  discount_times = COALESCE(EXCLUDED.discount_times, annual_discount.discount_times), " +
-                        "  updated_at = NOW(), updated_by = EXCLUDED.updated_by")
-                    .setParameter("bt", "INCOMING")
-                    .setParameter("m", materialNo)
-                    .setParameter("ds", "来料年降")
-                    .setParameter("o", order)
-                    .setParameter("r", row.getDecimal("年降系数"))
-                    .setParameter("v", row.getDecimal("单次固定年降金额"))
-                    .setParameter("c", row.getStr("货币"))
-                    .setParameter("u", row.getStr("计价单位"))
-                    .setParameter("dt", row.getInt("降价次数"))
-                    .setParameter("ub", ctx.importedBy)
-                    .executeUpdate();
+                AnnualDiscountRepository.accDiscount(acc, new DiscountRow(
+                    materialNo, order,
+                    row.getDecimal("年降系数"),
+                    row.getDecimal("单次固定年降金额"),
+                    row.getStr("货币"),
+                    row.getStr("计价单位"),
+                    row.getInt("降价次数")));
                 result.successRows++;
                 result.recordWrite("annual_discount", 1);
             } catch (Exception e) {
                 result.recordError(row.rowNo, "_row_", e.getMessage());
             }
+        }
+        if (!acc.isEmpty()) {
+            repo.upsertBatch("INCOMING", "来料年降", new ArrayList<>(acc.values()), ctx.importedBy);
         }
         return result;
     }

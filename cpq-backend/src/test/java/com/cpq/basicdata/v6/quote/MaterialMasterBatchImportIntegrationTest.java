@@ -54,6 +54,7 @@ class MaterialMasterBatchImportIntegrationTest {
     void cleanup() {
         em.createNativeQuery("DELETE FROM material_customer_map WHERE customer_no = :c").setParameter("c", CUST).executeUpdate();
         em.createNativeQuery("DELETE FROM unit_price WHERE customer_no = :c").setParameter("c", CUST).executeUpdate();
+        em.createNativeQuery("DELETE FROM annual_discount WHERE material_no LIKE :p").setParameter("p", PFX + "%").executeUpdate();
         em.createNativeQuery("DELETE FROM material_master WHERE material_no LIKE :p").setParameter("p", PFX + "%").executeUpdate();
         em.createNativeQuery("DELETE FROM import_record WHERE original_file_name = :f").setParameter("f", FNAME).executeUpdate();
     }
@@ -89,7 +90,12 @@ class MaterialMasterBatchImportIntegrationTest {
             "SELECT md5(COALESCE(string_agg(material_no||'|'||COALESCE(customer_product_no,''), ';' " +
             "ORDER BY material_no, customer_product_no),'')) " +
             "FROM material_customer_map WHERE customer_no = :c").setParameter("c", CUST).getSingleResult();
-        return mm + "::" + cm;
+        Object ad = em.createNativeQuery(
+            "SELECT md5(COALESCE(string_agg(material_no||'|'||discount_order||'|'||COALESCE(discount_ratio::text,'')||" +
+            "'|'||COALESCE(fixed_discount_value::text,'')||'|'||COALESCE(currency,'')||'|'||COALESCE(unit,'')||" +
+            "'|'||COALESCE(discount_times::text,''), ';' ORDER BY material_no, discount_order),'')) " +
+            "FROM annual_discount WHERE material_no LIKE :p").setParameter("p", PFX + "%").getSingleResult();
+        return mm + "::" + cm + "::" + ad;
     }
 
     @Transactional
@@ -154,6 +160,24 @@ class MaterialMasterBatchImportIntegrationTest {
             // dup：P1 再来一行不同客户产品编号（material_master 去重为 1，customer_map 两行）
             { Row row = s02.createRow(r++); setCell(row, 0, PFX + "_P1"); setCell(row, 1, "CPN1B"); }
 
+            // --- 年降系数 (Q19) : headers [宏丰料号, 年降顺序, 年降系数, 单次固定年降金额, 货币, 计价单位, 降价次数] ---
+            Sheet s19 = wb.createSheet("年降系数");
+            Row h19 = s19.createRow(0);
+            String[] hd19 = {"宏丰料号", "年降顺序", "年降系数", "单次固定年降金额", "货币", "计价单位", "降价次数"};
+            for (int c = 0; c < hd19.length; c++) h19.createCell(c).setCellValue(hd19[c]);
+            r = 1;
+            for (int i = 1; i <= N; i++, r++) {
+                Row row = s19.createRow(r);
+                setCell(row, 0, PFX + "_AD" + i);
+                setCell(row, 1, "1");
+                setCell(row, 2, "0.9" + (i % 9 + 1));
+                setCell(row, 4, "CNY");
+                setCell(row, 5, "件");
+                setCell(row, 6, String.valueOf(i % 3 + 1));
+            }
+            // dup：AD1/order=1 再来一行只带 fixed（逐字段末值非空胜：ratio 保留、fixed 补上）
+            { Row row = s19.createRow(r++); setCell(row, 0, PFX + "_AD1"); setCell(row, 1, "1"); setCell(row, 3, "7.5"); }
+
             wb.write(bos);
             return bos.toByteArray();
         }
@@ -199,8 +223,9 @@ class MaterialMasterBatchImportIntegrationTest {
         String md5Run2 = footprintMd5();
         assertEquals(md5Run1, md5Run2, "连跑两次 material_master/customer_map md5 必须一致（确定性/幂等）");
 
-        // 该数字两遍运行（新代码 / git stash 后旧代码）对比：差值≈material_master 批量节省（其余路径恒定）。
-        System.out.println("=== P1A-INTEG prepareStatementCount(processImport, " + (3 * N + 2)
-            + " material_master 行级写折叠为 3 批) = " + prepared + " ===");
+        // 该数字两遍运行（新代码 / git stash 后旧代码）对比：差值≈material_master(3 批) + annual_discount(1 批)
+        // 批量节省（其余路径恒定）。
+        System.out.println("=== P1A/Q19-INTEG prepareStatementCount(processImport, ~"
+            + (4 * N) + " 行级写折叠为 4 批) = " + prepared + " ===");
     }
 }
