@@ -101,6 +101,25 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
     /** 批量 upsert 的一行（仅 material_no / material_name / material_type 维度，其余列恒 NULL）。 */
     public record NameTypeRow(String materialNo, String materialName, String materialType) {}
 
+    /** 批量 upsert 的一行（仅 material_no / unit_weight 维度，其余列恒 NULL）。 */
+    public record WeightRow(String materialNo, BigDecimal unitWeight) {}
+
+    /**
+     * 累积 name/type 的 <b>首个非空</b>（按 material_no 去重归并）。与逐行
+     * {@link #upsertByMaterialNo}(no, name, ..., type, ..., updatedBy, <b>true</b>) 的
+     * {@code COALESCE(existing, new)} 顺序语义等价：同一 material_no 多次出现取遍历顺序里第一个非空值。
+     * 供各 name/type 类 handler(Q04/06/07/08/09/10/13) 共用，避免逐处复制。
+     */
+    public static void accNameType(java.util.Map<String, String[]> acc, String no, String name, String type) {
+        String[] cur = acc.get(no);
+        if (cur == null) {
+            acc.put(no, new String[]{name, type});
+        } else {
+            if (cur[0] == null) cur[0] = name;
+            if (cur[1] == null) cur[1] = type;
+        }
+    }
+
     /**
      * 批量 upsert（name/type 维度，其余列恒 NULL），等价于对每行调
      * {@link #upsertByMaterialNo}(materialNo, name, null,null,null, type, null,null,null, updatedBy, preserveDescriptive)
@@ -151,5 +170,67 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
             q.setParameter("u", updatedBy);
             q.executeUpdate();
         }
+    }
+
+    /**
+     * 批量 upsert（unit_weight 维度，其余列恒 NULL），等价于对每行调
+     * {@link #upsertByMaterialNo}(no, null,null,null,null,null,null, unitWeight, null, updatedBy)
+     * （10 参重载 = preserveDescriptive=false）的顺序结果——前提：<b>调用方先按 material_no 去重</b>，
+     * 且 unit_weight 按 <b>末值非空胜</b> 归并（因 unit_weight 等非描述列在 ON CONFLICT 恒
+     * {@code COALESCE(EXCLUDED, existing)} → 后到的非空值覆盖，与 preserveDescriptive 无关；
+     * 尾随 null 不覆盖；仅出现过 null 权重的料号也须保留以建行）。
+     * name/type 在 EXCLUDED 恒 NULL → {@code COALESCE(NULL, existing)=existing}，逐行/批量一致。
+     * unit_weight 用 {@code CAST(:w AS numeric)} 显式标注类型，防多行 VALUES 首行 NULL 致 PG 无法推断列类型。
+     * 按 {@code CHUNK} 分块防 PG 65535 参数上限。
+     */
+    public void upsertBatchWithWeight(java.util.List<WeightRow> rows, UUID updatedBy) {
+        if (rows == null || rows.isEmpty()) return;
+        final int CHUNK = 500;
+        for (int start = 0; start < rows.size(); start += CHUNK) {
+            java.util.List<WeightRow> chunk = rows.subList(start, Math.min(start + CHUNK, rows.size()));
+            StringBuilder vals = new StringBuilder();
+            for (int i = 0; i < chunk.size(); i++) {
+                if (i > 0) vals.append(", ");
+                vals.append("(:m").append(i)
+                    .append(", NULL, NULL, NULL, NULL, NULL, NULL, CAST(:w").append(i)
+                    .append(" AS numeric), NULL, NOW(), NOW(), :u)");
+            }
+            String sql =
+                "INSERT INTO material_master (material_no, material_name, specification, dimension, " +
+                "  old_material_no, material_type, usage_property, unit_weight, standard_unit, " +
+                "  created_at, updated_at, updated_by) VALUES " + vals +
+                " ON CONFLICT (material_no) DO UPDATE SET " +
+                "  material_name    = COALESCE(EXCLUDED.material_name,    material_master.material_name), " +
+                "  material_type    = COALESCE(EXCLUDED.material_type,    material_master.material_type), " +
+                "  specification    = COALESCE(EXCLUDED.specification,    material_master.specification), " +
+                "  dimension        = COALESCE(EXCLUDED.dimension,        material_master.dimension), " +
+                "  old_material_no  = COALESCE(EXCLUDED.old_material_no,  material_master.old_material_no), " +
+                "  usage_property   = COALESCE(EXCLUDED.usage_property,   material_master.usage_property), " +
+                "  unit_weight      = COALESCE(EXCLUDED.unit_weight,      material_master.unit_weight), " +
+                "  standard_unit    = COALESCE(EXCLUDED.standard_unit,    material_master.standard_unit), " +
+                "  updated_at       = NOW(), " +
+                "  updated_by       = EXCLUDED.updated_by";
+            var q = em.createNativeQuery(sql);
+            for (int i = 0; i < chunk.size(); i++) {
+                q.setParameter("m" + i, chunk.get(i).materialNo());
+                q.setParameter("w" + i, chunk.get(i).unitWeight());
+            }
+            q.setParameter("u", updatedBy);
+            q.executeUpdate();
+        }
+    }
+
+    /**
+     * 批量 upsert（仅 material_no 维度，无任何描述列），等价于对每行调
+     * {@link #upsertByMaterialNo}(no, null×8, updatedBy, <b>true</b>) 的顺序结果（Q02 成品料号同步）。
+     * 因全列 EXCLUDED 为 NULL、preserve=true → 冲突时所有 COALESCE 保留 existing，仅刷新 updated_at/updated_by，
+     * 与 {@link #upsertBatchNameType}(NameTypeRow(no,null,null), updatedBy, true) <b>逐位等价</b> → 直接委托，避免重复 SQL。
+     * 前提：<b>调用方先按 material_no 去重</b>。
+     */
+    public void upsertBatchMaterialNoOnly(java.util.List<String> materialNos, UUID updatedBy) {
+        if (materialNos == null || materialNos.isEmpty()) return;
+        java.util.List<NameTypeRow> rows = new java.util.ArrayList<>(materialNos.size());
+        for (String no : materialNos) rows.add(new NameTypeRow(no, null, null));
+        upsertBatchNameType(rows, updatedBy, true);
     }
 }

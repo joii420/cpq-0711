@@ -104,4 +104,39 @@ class MaterialMasterBatchUpsertEquivTest {
         assertArrayEquals(new Object[]{"NameC", "Tc"}, row(BAT + "X3"), "X3 → 单行直写");
         assertArrayEquals(new Object[]{"NameD", "TD"}, row(BAT + "X4"), "X4 → 首个非空 name/type 胜");
     }
+
+    static final String MOS = "EQMOS";  // material-no-only 逐行命名空间
+    static final String MOB = "EQMOB";  // material-no-only 批量命名空间
+
+    /**
+     * P1-A 类③ 等价护栏:{@link MaterialMasterRepository#upsertBatchMaterialNoOnly}(去重)
+     * 与原 Q02 逐行 {@code upsertByMaterialNo(no, null×8, USER, true)} 逐位等价。
+     * 覆盖:已存在行(name/type/weight 全保留,仅刷新 updated)/ 新建(全 null 描述列)/ 批内重复去重。
+     */
+    @Test
+    @Transactional
+    void batchMaterialNoOnly_equalsSequential() {
+        // 预置 M1 已存在行(带 name/type),验证 material-no-only upsert 不动描述列。
+        repo.upsertByMaterialNo(MOS + "M1", "Keep", null, null, null, "KeepT",
+            null, null, null, USER, true);
+        repo.upsertByMaterialNo(MOB + "M1", "Keep", null, null, null, "KeepT",
+            null, null, null, USER, true);
+
+        // --- 逐行路径(Q02 原语义:11 参 preserve=true,全 null 描述列)---
+        for (String no : List.of("M1", "M2", "M3", "M3")) {   // M3 重复
+            repo.upsertByMaterialNo(MOS + no, null, null, null, null, null, null, null, null, USER, true);
+        }
+
+        // --- 去重批量路径(LinkedHashSet 去重,与 Q02 handler 同规则)---
+        java.util.LinkedHashSet<String> nos = new java.util.LinkedHashSet<>();
+        for (String no : List.of("M1", "M2", "M3", "M3")) nos.add(MOB + no);
+        repo.upsertBatchMaterialNoOnly(new java.util.ArrayList<>(nos), USER);
+
+        for (String k : List.of("M1", "M2", "M3")) {
+            assertArrayEquals(row(MOS + k), row(MOB + k), "key=" + k + " material-no-only 批量应=逐行");
+        }
+        assertArrayEquals(new Object[]{"Keep", "KeepT"}, row(MOB + "M1"), "M1 已存在 → 描述列全保留");
+        assertArrayEquals(new Object[]{null, null}, row(MOB + "M2"), "M2 新建 → 描述列全 null");
+        assertArrayEquals(new Object[]{null, null}, row(MOB + "M3"), "M3 新建去重 → 描述列全 null");
+    }
 }

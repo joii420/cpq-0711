@@ -480,7 +480,10 @@ public class ComponentDriverService {
             List<String> basicDataPaths = parseBasicDataPaths(effectiveFieldsJson);
             List<GvarDefaultTask> gvarTasks = parseGvarDefaultTasks(effectiveFieldsJson);
 
-            // 3. 对每一�?逐路径求�?+ 逐全局变量求�?
+            // 3. 对每一行逐路径求值 + 全局变量求值（gvar P1-C3: 跨行批量预解析，逐位等价逐行）
+            List<Map<String, Object>> gvarPerRow =
+                    gvarTasks.isEmpty() ? null : resolveGvarsBatched(gvarTasks, driverRows);
+            int _ri = 0;
             for (Map<String, Object> driverRow : driverRows) {
                 ExpandDriverResponse.Row row = new ExpandDriverResponse.Row();
                 row.driverRow = driverRow;
@@ -489,12 +492,10 @@ public class ComponentDriverService {
                     Object value = evaluatePath(fieldPath, driverRow, customerId, partNo);
                     row.basicDataValues.put(fieldPath, value);
                 }
-                // V190: 把字�?default_source 按本 driver 行解出的 GLOBAL_VARIABLE 值塞入合�?key
-                for (GvarDefaultTask task : gvarTasks) {
-                    Object value = resolveGvarForRow(task, driverRow);
-                    row.basicDataValues.put(gvarKey(task.code), value);
-                }
+                // V190: 把字段 default_source 按本 driver 行解出的 GLOBAL_VARIABLE 值塞入合并 key
+                if (gvarPerRow != null) row.basicDataValues.putAll(gvarPerRow.get(_ri));
                 resp.rows.add(row);
+                _ri++;
             }
         } finally {
             PartVersionContext.clear();
@@ -571,8 +572,12 @@ public class ComponentDriverService {
                 List<String> basicDataPaths = parseBasicDataPaths(effectiveFieldsJson);
                 List<GvarDefaultTask> gvarTasks = parseGvarDefaultTasks(effectiveFieldsJson);
 
+                // gvar P1-C3: 跨行批量预解析（按 mergedRows 同序对齐 index），逐位等价逐行
+                List<Map<String, Object>> gvarPerRow =
+                        gvarTasks.isEmpty() ? null : resolveGvarsBatched(gvarTasks, mergedRows);
                 // 按行 hf_part_no 分发回各 partNo 的响应
-                for (Map<String, Object> driverRow : mergedRows) {
+                for (int mi = 0; mi < mergedRows.size(); mi++) {
+                    Map<String, Object> driverRow = mergedRows.get(mi);
                     Object hf = driverRow.get("hf_part_no");
                     String rowPart = hf == null ? null : hf.toString();
                     ExpandDriverResponse target = rowPart == null ? null : resultByPart.get(rowPart);
@@ -587,9 +592,7 @@ public class ComponentDriverService {
                         Object value = evaluatePath(fieldPath, driverRow, customerId, rowPart);
                         row.basicDataValues.put(fieldPath, value);
                     }
-                    for (GvarDefaultTask task : gvarTasks) {
-                        row.basicDataValues.put(gvarKey(task.code), resolveGvarForRow(task, driverRow));
-                    }
+                    if (gvarPerRow != null) row.basicDataValues.putAll(gvarPerRow.get(mi));
                     target.rows.add(row);
                     target.rowCount++;
                 }
@@ -704,8 +707,8 @@ public class ComponentDriverService {
 
     // ── 内部 ─────────────────────────────────────────────────────────────
 
-    /** V190: default_source GLOBAL_VARIABLE 任务 �?code + 动�?key 映射 */
-    private static class GvarDefaultTask {
+    /** V190: default_source GLOBAL_VARIABLE 任务 �?code + 动�?key 映射（包级可见：供 P1-C3 批量等价测试构造） */
+    static class GvarDefaultTask {
         final String code;
         final Map<String, String> keyFieldRefs;  // key 列名 �?driver 行字段名
         GvarDefaultTask(String code, Map<String, String> keyFieldRefs) {
@@ -774,34 +777,77 @@ public class ComponentDriverService {
         }
     }
 
-    /** V190: �?driver row �?GLOBAL_VARIABLE �? key_field_refs 名映�?def.keyColumns �?driver row 字段 */
-    private Object resolveGvarForRow(GvarDefaultTask task, Map<String, Object> driverRow) {
+    /**
+     * V190: 组装某 driver row 对某 gvar task 的 keyValues（key_field_refs 名映射 def.keyColumns → driver row 字段，
+     * 含 *_code/*_name 别名兜底）。任一 key 解不出 → 返 null（= 该行该 gvar 不解，值应为 null）。
+     * 由 {@link #resolveGvarForRow}（逐行）与 {@link #resolveGvarsBatched}（批量）共用，保证两路组装逻辑一致。
+     */
+    Map<String, Object> assembleGvarKeyValues(GvarDefaultTask task, Map<String, Object> driverRow) {
+        GlobalVariableDefinition def = globalVariableService.getByCode(task.code).orElse(null);
+        if (def == null || !def.isLookup()) return null;
+        Map<String, Object> keyValues = new LinkedHashMap<>();
+        for (String col : def.keyColumns) {
+            // 优先按 key_field_refs[col] 取 driver 行字段，默认同名映射 col → driverRow[col]
+            String driverField = task.keyFieldRefs.getOrDefault(col, col);
+            Object v = driverRow.get(driverField);
+            // 2026-05-22 fix (情况B): driverRow 列名与 GV keyColumns 不一致时（如
+            // v_composite_child_elements.element_name vs ELEM_PRICE.keyColumns=["element_code"]），
+            // 同名映射取出 null，探测候选别名列（*_code <-> *_name 互换等）兜底。
+            if (v == null) v = findAliasValue(driverField, driverRow);
+            if (v == null) return null;  // 任一 key 空 → 不解
+            keyValues.put(col, v);
+        }
+        return keyValues;
+    }
+
+    /** V190: 从 driver row 按 GLOBAL_VARIABLE 单行精确取值（逐行；批量路径见 {@link #resolveGvarsBatched}）。 */
+    Object resolveGvarForRow(GvarDefaultTask task, Map<String, Object> driverRow) {
         try {
-            GlobalVariableDefinition def = globalVariableService.getByCode(task.code).orElse(null);
-            if (def == null || !def.isLookup()) return null;
-            Map<String, Object> keyValues = new LinkedHashMap<>();
-            for (String col : def.keyColumns) {
-                // 优先�?key_field_refs[col] �?driver 行字�? 默认同名映射 col �?driverRow[col]
-                String driverField = task.keyFieldRefs.getOrDefault(col, col);
-                Object v = driverRow.get(driverField);
-                // 2026-05-22 fix (情况B): driverRow 列名与 GV keyColumns 不一致时（如
-                // v_composite_child_elements.element_name vs ELEM_PRICE.keyColumns=["element_code"]），
-                // 同名映射取出 null，探测候选别名列（*_code <-> *_name 互换等）兜底。
-                if (v == null) {
-                    v = findAliasValue(driverField, driverRow);
-                    if (v != null) {
-                        LOG.debugf("[resolveGvarForRow] gvar=%s col=%s alias-matched in driverRow, value=%s",
-                                task.code, col, v);
-                    }
-                }
-                if (v == null) return null;  //�?key �?不解
-                keyValues.put(col, v);
-            }
+            Map<String, Object> keyValues = assembleGvarKeyValues(task, driverRow);
+            if (keyValues == null) return null;
             return globalVariableService.resolveValue(task.code, keyValues);
         } catch (Exception e) {
             LOG.warnf("resolveGvarForRow failed for code=%s: %s", task.code, e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * P1-C3: 批量预解析 gvar —— 每 task 一次 IN 查（KvTable，跨行折叠 N 次单查为 1 次）。
+     * 返回与 {@code driverRows} <b>同序</b> 的 per-row {@code gvarKey→value} map 列表，与逐行
+     * {@link #resolveGvarForRow} <b>逐位等价</b>：组装逻辑共用 {@link #assembleGvarKeyValues}，
+     * 批量值由 {@link GlobalVariableService#resolveValues} 提供（KvTable 单列 IN，与 resolveValue 逐位一致；
+     * SCALAR/View 服务层自动逐行回落）。任一 task 批量异常 → 该 task 整体逐行回落老逻辑（绝不改结果）。
+     */
+    List<Map<String, Object>> resolveGvarsBatched(List<GvarDefaultTask> tasks,
+                                                  List<Map<String, Object>> driverRows) {
+        List<Map<String, Object>> perRow = new ArrayList<>(driverRows.size());
+        for (int i = 0; i < driverRows.size(); i++) perRow.add(new LinkedHashMap<>());
+        for (GvarDefaultTask task : tasks) {
+            // 1) 每行组装 keyValues（与逐行同逻辑；null=该行不解）
+            List<Map<String, Object>> kvs = new ArrayList<>(driverRows.size());
+            for (Map<String, Object> dr : driverRows) {
+                Map<String, Object> kv;
+                try { kv = assembleGvarKeyValues(task, dr); } catch (Exception e) { kv = null; }
+                kvs.add(kv);
+            }
+            // 2) 非 null 行批量解析；null 行直接 null
+            List<Integer> idx = new ArrayList<>();
+            List<Map<String, Object>> nonNull = new ArrayList<>();
+            for (int i = 0; i < kvs.size(); i++) if (kvs.get(i) != null) { idx.add(i); nonNull.add(kvs.get(i)); }
+            try {
+                List<java.math.BigDecimal> vals = nonNull.isEmpty()
+                        ? List.of() : globalVariableService.resolveValues(task.code, nonNull);
+                for (int j = 0; j < idx.size(); j++) perRow.get(idx.get(j)).put(gvarKey(task.code), vals.get(j));
+                for (int i = 0; i < kvs.size(); i++) if (kvs.get(i) == null) perRow.get(i).put(gvarKey(task.code), null);
+            } catch (Exception e) {
+                // 批量失败 → 该 task 整体逐行回落（保守，等价老逻辑）
+                LOG.warnf("resolveGvarsBatched fallback per-row for code=%s: %s", task.code, e.getMessage());
+                for (int i = 0; i < driverRows.size(); i++)
+                    perRow.get(i).put(gvarKey(task.code), resolveGvarForRow(task, driverRows.get(i)));
+            }
+        }
+        return perRow;
     }
 
     /**

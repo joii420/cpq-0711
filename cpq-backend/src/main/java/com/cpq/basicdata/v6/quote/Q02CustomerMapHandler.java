@@ -10,6 +10,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
@@ -39,6 +41,8 @@ public class Q02CustomerMapHandler implements SheetHandler {
             int removed = repo.deleteByCustomerNo(ctx.customerNo);
             result.recordWrite("material_customer_map.deleted", removed);
         }
+        // §P1-A 成品料号 material_master 同步延后批量：去重后一次 upsertBatchMaterialNoOnly。
+        LinkedHashSet<String> mmAcc = new LinkedHashSet<>();
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
@@ -66,12 +70,14 @@ public class Q02CustomerMapHandler implements SheetHandler {
                 // 方案 §2「→ 料号表（material_master）同步」: 宏丰料号(成品)按 upsert 写入料号主数据表。
                 // 仅同步 material_no（本 sheet 无宏丰料号本身的名称列，客户料号名称属客户维度，不写主数据），
                 // preserveDescriptive=true 避免覆盖已有成品/BOM 父件的名称等描述字段。
-                materialMasterRepo.upsertByMaterialNo(
-                    materialNo, null, null, null, null, null, null, null, null, ctx.importedBy, true);
+                mmAcc.add(materialNo);
                 result.recordWrite("material_master", 1);
             } catch (Exception e) {
                 result.recordError(row.rowNo, "_row_", e.getMessage());
             }
+        }
+        if (!mmAcc.isEmpty()) {
+            materialMasterRepo.upsertBatchMaterialNoOnly(new ArrayList<>(mmAcc), ctx.importedBy);
         }
         return result;
     }
