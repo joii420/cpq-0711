@@ -705,6 +705,35 @@ public class ComponentDriverService {
         return null;
     }
 
+    /**
+     * P2-C4: 该 recursive 核价组件能否纳入「跨行 partSet union 预取」。充要条件(全成立)：
+     * ① {@code bom_recursive_expand==true}(否则走 expand 单值,非 union 现场)；
+     * ② 非 composite 聚合视图(composite 走逐料号 + lineItemId,不能跨行 union)；
+     * ③ driver 视图 sql_template 不含 {@code :spineKeys}(无单行 spine 上下文可设)；
+     * ④ 不含 {@code :lineItemId} / {@code quotation_line_item_id} 行维度(AP-53 守门)。
+     * 任一不满足 → 回落逐行 {@link #expandForPartSet}(带 li.id / SpineKeysContext),与改动前逐位一致。
+     *
+     * <p>sql_template <b>必须按 componentId 精确取</b>(同名视图跨组件会串号,见记忆
+     * {@code cpq-sqlview-cache-key-needs-component-dim})——不同于 {@link #viewUsesLineItemId} 的仅按 sqlViewName 取。
+     */
+    public boolean eligibleForBomUnion(UUID componentId) {
+        Component c = Component.findById(componentId);
+        if (c == null) return false;
+        if (!Boolean.TRUE.equals(c.bomRecursiveExpand)) return false;     // ①
+        String path = c.dataDriverPath;
+        if (path == null || path.isBlank()) return false;
+        if (path.contains("v_composite_child_") || path.contains("composite_child_")) return false;  // ②
+        String viewName = extractSqlViewName(path);
+        if (viewName == null) return false;                              // 非 $view 路径,保守回落逐行
+        com.cpq.component.entity.ComponentSqlView v = com.cpq.component.entity.ComponentSqlView
+                .find("componentId = ?1 and sqlViewName = ?2", componentId, viewName).firstResult();
+        if (v == null || v.sqlTemplate == null) return false;
+        String tpl = v.sqlTemplate;
+        if (com.cpq.datasource.sqlview.SpineKeysMacro.containsMacro(tpl)) return false;               // ③
+        if (tpl.contains(":lineItemId") || tpl.contains("quotation_line_item_id")) return false;      // ④
+        return true;
+    }
+
     // ── 内部 ─────────────────────────────────────────────────────────────
 
     /** V190: default_source GLOBAL_VARIABLE 任务 �?code + 动�?key 映射（包级可见：供 P1-C3 批量等价测试构造） */
