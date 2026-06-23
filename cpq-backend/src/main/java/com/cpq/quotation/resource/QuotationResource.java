@@ -134,6 +134,10 @@ public class QuotationResource {
         try {
             cardSnapshotService.ensureStructure(id);
             var lines = snapshotService.loadQuotationLines(id);
+            // P2-C4: 核价 driver 整单 union 预取 —— 懒触发(仅遇到首个新行才算一次),
+            // 把 N 新行的核价 driver 远程查从 N×M_rec 压到 M_rec;无新行的高频防抖空存零开销(不进 if)。
+            java.util.Map<java.util.UUID, java.util.Map<String, com.cpq.component.dto.ExpandDriverResponse>> union = null;
+            boolean unionDone = false;
             for (var liMap : lines) {
                 UUID lineItemId = asUuid(liMap.get("id"));
                 if (lineItemId != null) {
@@ -142,7 +146,8 @@ public class QuotationResource {
                     boolean hasSnapshot = li != null
                         && li.quoteCardValues != null && !li.quoteCardValues.isBlank();
                     if (li != null && !hasSnapshot) {
-                        cardSnapshotService.snapshotLineValues(li); // 仅新行首次初始化, 已有行保留 editQuoteCardValue 的增量
+                        if (!unionDone) { union = cardSnapshotService.precomputeCostingDriverUnion(id); unionDone = true; }
+                        cardSnapshotService.snapshotLineValuesWithUnion(li, union); // 仅新行首次初始化(核价 union), 已有行保留 editQuoteCardValue 的增量
                         snapshotsCreated = true;
                     }
                 }
