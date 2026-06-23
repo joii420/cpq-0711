@@ -231,7 +231,7 @@
   - 批量加入 lineItems
 - **lineItem 列表**:每行展示 HF 料号、客户料号、产品名称、规格、数量、当前小计
 - **删除行 / 重排序**:行内只保留主入口(点击进卡片视图),其他动作走工具栏
-- **料号版本切换**(V2.8 新):每 lineItem 可点开 `PartVersionDrawer`,选择该料号的历史版本 → 同步重算 `excel_view_snapshot`
+- ~~**料号版本切换**(V2.8 新):每 lineItem 可点开 `PartVersionDrawer`,选择该料号的历史版本 → 同步重算 `excel_view_snapshot`~~ **(2026-06-23 移除报价单内版本切换 UI 入口 + 产品卡片"版本: vXXXX"标签，详见演进史)**：报价单产品卡片不再显示版本标签、不再提供卡内 `PartVersionDrawer` 切换入口。**后端 `part_version_locked` 机制完全保留**（导入/建单按 `current_version` 锁版本、BNF 路径求值仍按版本注入谓词）；料号版本本身的维护仍走独立 `/part-versions` 页与产品详情「料号版本」Tab（§5.2.5，不受影响）
 
 **双视图共享内存模型**:
 
@@ -2395,6 +2395,18 @@ v_costing_exchange_rate[from_currency='CNY' AND to_currency='USD'].costing_rate
 ## 9. 项目演进史
 
 精炼自旧 PRD 80+ 条变更日志,以**决策点**形式保留(便于追溯"为什么这么做")。完整日志见 `docs/PRD.md` 变更记录章节。
+
+### 9.22 v4.4(2026-06-23)— 报价单产品卡片移除「料号版本」标签 + 卡内版本切换入口
+
+报价单产品卡片上的「版本: vXXXX」标签及编辑页点击该标签打开 `PartVersionDrawer` 切换版本的入口一并移除（用户需求；仅去 UI，后端机制保留）。
+
+| 决策 | 内容 |
+|---|---|
+| **移除范围** | 编辑页（`QuotationStep2`）+ 只读详情页（`ReadonlyProductCard`，报价单详情 & 核价单详情共用）的产品卡片均不再显示「版本: vXXXX」标签 |
+| **编辑页切换入口一并去掉** | 编辑页该标签原本是版本切换入口（onClick 开 `PartVersionDrawer`），按需求连同 `PartVersionDrawer` 渲染/state/`onApplied` 处理一并清理（死代码移除）；报价单内不再能手动切换料号版本 |
+| **后端机制完全保留** | `part_version_locked` 不动：导入/建单仍按 `mat_customer_part_mapping.current_version` 锁版本、BNF 路径求值仍按版本注入谓词；料号版本维护仍走独立 `/part-versions` 页 + 产品详情「料号版本」Tab（§5.2.5 不受影响） |
+| **影响的旧描述** | §234「料号版本切换(V2.8 新)」标记废弃（仅指报价单卡内切换 UI；版本机制与独立维护页不变） |
+| **背景** | 用户 2026-06-23 反馈：报价单产品卡片不需展示版本号、也不在卡内切版本 |
 
 ### 9.21 v4.3(2026-06-18)— 报价单草稿默认冻结(显式刷新仅值)
 

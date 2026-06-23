@@ -28,8 +28,6 @@ import { applyUnitConversion, factorFor } from '../../utils/unitConversion';
 import { formatNumber } from '../../utils/formatNumber';
 import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns } from './tabTotalLines';
-import { partVersionService } from '../../services/partVersionService';
-import PartVersionDrawer from '../../components/PartVersionDrawer';
 import { templateService } from '../../services/templateService';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { useTreeCollapse } from './useTreeCollapse';
@@ -1451,7 +1449,6 @@ interface ProductCardProps {
 
 const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs, cardSide, cardStructure }) => {
   const [activeTab, setActiveTab] = useState(0);
-  const [versionDrawerOpen, setVersionDrawerOpen] = useState(false);
   const [dsLoading, setDsLoading] = useState<Record<string, boolean>>({});
   const [dsErrors, setDsErrors] = useState<Record<string, string>>({});
   // Material match state for border coloring
@@ -2091,59 +2088,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
               </span>
             </Popover>
           )}
-          {/* 料号版本号 Tag — 草稿态可点击切换 (新需求) */}
-          {item.customerProductNo && item.productPartNo && (
-            <span
-              style={{
-                background: '#f6ffed',
-                color: '#389e0d',
-                border: '1px solid #b7eb8f',
-                borderRadius: 4,
-                padding: '2px 10px',
-                fontSize: 12,
-                fontFamily: 'monospace',
-                cursor: quotationId && item.id ? 'pointer' : 'default',
-              }}
-              title={quotationId && item.id ? '点击切换料号版本' : '料号版本 (草稿创建后可切换)'}
-              onClick={() => {
-                if (quotationId && item.id) setVersionDrawerOpen(true);
-              }}
-            >
-              版本: v{item.partVersionLocked ?? 2000}
-            </span>
-          )}
           <button className="qt-action-btn delete" type="button" onClick={onRemove}>
             删除
           </button>
         </div>
       </div>
-
-      {/* 料号版本切换 Drawer — 报价单内只做"选择已存在的版本", 不升版.
-          升版的语义属于"主数据导入"时, 报价单只是消费版本. */}
-      {item.customerProductNo && item.productPartNo && quotationId && item.id && (
-        <PartVersionDrawer
-          open={versionDrawerOpen}
-          onClose={() => setVersionDrawerOpen(false)}
-          customerProductNo={item.customerProductNo}
-          hfPartNo={item.productPartNo}
-          mode="select"
-          lockedVersion={item.partVersionLocked ?? 2000}
-          onApplied={async (newVer) => {
-            try {
-              const result = await partVersionService.updateLineItemVersion(quotationId, item.id!, newVer);
-              // V6：同步更新 excelViewSnapshot，让 ProductCard 立即按新版本数据渲染
-              const updates: Record<string, any> = { partVersionLocked: result.partVersionLocked ?? newVer };
-              if (result.excelViewSnapshot !== undefined) {
-                updates.excelViewSnapshot = result.excelViewSnapshot;
-              }
-              onUpdate(updates);
-              message.success(`已切换至 v${result.partVersionLocked ?? newVer}，公式已重算`);
-            } catch (e) {
-              message.error('切换失败: ' + (e as Error).message);
-            }
-          }}
-        />
-      )}
 
       {/* Product Attributes */}
       {attrFields.length > 0 && (

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useAuthStore } from '../../stores/authStore';
 import type { ComponentDataItem, ComponentField } from './QuotationStep2';
 import { computeAllFormulas, computeProductSubtotal, buildSnapshotExpansions, buildCrossTabRows, EMPTY_LINEITEMS } from './QuotationStep2';
 import { enrichComponentData } from './enrichComponentData';
@@ -164,17 +163,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   const [activeTab, setActiveTab] = useState(0);
   const [components, setComponents] = useState<ComponentDataItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const { user } = useAuthStore();
   const treeCollapse = useTreeCollapse();
 
   const attrValues: Record<string, any> = parseJson(lineItem.productAttributeValues, {});
-
-  // 料号版本 Tag 显示规则 (新需求):
-  // - 草稿态 (DRAFT): 不显示 (草稿走 QuotationStep2 编辑视图, 那里已显示并可切换)
-  // - 已提交态 (非 DRAFT): 仅销售经理(SALES_MANAGER) + 系统管理员(SYSTEM_ADMIN) 可见, 不可修改
-  // - 其他角色 (SALES_REP / PRICING_MANAGER 等普通用户): 不显示
-  const canSeeVersionTag = quotationStatus !== 'DRAFT'
-      && (user?.role === 'SALES_MANAGER' || user?.role === 'SYSTEM_ADMIN');
 
   // Enrich componentData with fields/formulas from template snapshot.
   // Bug C (2026-05-20): 改调共享的 enrichComponentData，与 QuotationWizard 完全同源。
@@ -389,16 +380,6 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
               style={{ background: '#e6f4ff', color: '#0958d9', border: '1px solid #91caff' }}
             >
               生产料号: {lineItem.productPartNo}
-            </span>
-          )}
-          {/* 料号版本锁定 — 仅已提交报价单且角色为销售经理/系统管理员时显示, 不可修改 */}
-          {canSeeVersionTag && lineItem.partVersionLocked != null && (
-            <span
-              className="qt-sku-badge"
-              style={{ background: '#f6ffed', color: '#389e0d', border: '1px solid #b7eb8f' }}
-              title="料号版本锁定 — 本行报价数据锁定版本 (不可修改)"
-            >
-              版本: v{lineItem.partVersionLocked}
             </span>
           )}
           {lineItem.snapshot?.productCategory && (
