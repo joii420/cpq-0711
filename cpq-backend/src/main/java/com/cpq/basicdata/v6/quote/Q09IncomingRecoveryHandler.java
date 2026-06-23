@@ -43,6 +43,7 @@ public class Q09IncomingRecoveryHandler implements SheetHandler {
         Map<List<Object>, Map<String, Object>> groupKeyOf = new LinkedHashMap<>();
         Map<List<Object>, List<Map<String, Object>>> contentOf = new LinkedHashMap<>();
         MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
+        Map<String, String[]> mmAcc = new LinkedHashMap<>();   // §P1-A 料号表延后批量(首个非空胜)
         for (SheetRow row : rows) {
             result.totalRows++;
             String inputName = row.exact("投入料号名称");
@@ -52,8 +53,7 @@ public class Q09IncomingRecoveryHandler implements SheetHandler {
             } catch (MaterialNoUnresolvableException ex) {
                 result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
             }
-            materialMasterRepo.upsertByMaterialNo(code, inputName,
-                null, null, null, "组成件", null, null, null, ctx.importedBy, true);
+            MaterialMasterRepository.accNameType(mmAcc, code, inputName, "组成件");
             result.recordWrite("material_master", 1);
             String finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
             List<Object> key = Arrays.asList(code, finishedMaterialNo);
@@ -72,6 +72,15 @@ public class Q09IncomingRecoveryHandler implements SheetHandler {
             contentOf.computeIfAbsent(key, k -> new ArrayList<>()).add(c);
             result.successRows++;
         }
+        // §P1-A 料号表：一次批量 upsert（去重后；preserve=true 与原逐行等价），置于版本化写入之前。
+        if (!mmAcc.isEmpty()) {
+            List<MaterialMasterRepository.NameTypeRow> mmRows = new ArrayList<>(mmAcc.size());
+            for (Map.Entry<String, String[]> me : mmAcc.entrySet()) {
+                mmRows.add(new MaterialMasterRepository.NameTypeRow(me.getKey(), me.getValue()[0], me.getValue()[1]));
+            }
+            materialMasterRepo.upsertBatchNameType(mmRows, ctx.importedBy, true);
+        }
+
         for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet()) {
             try {
                 writer.writeVersionedGroup(new VersionedGroupSpec(

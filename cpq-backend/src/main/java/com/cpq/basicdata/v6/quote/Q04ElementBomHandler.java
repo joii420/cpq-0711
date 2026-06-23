@@ -45,6 +45,8 @@ public class Q04ElementBomHandler implements SheetHandler {
         SheetImportResult result = new SheetImportResult(sheetName());
 
         MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
+        // §P1-A 料号表 upsert 延后批量：material_no -> [name, type]（首个非空胜）
+        Map<String, String[]> mmAcc = new LinkedHashMap<>();
 
         // 按 material_no 分组；组内按 (seq_no, component_no) 去重（后写覆盖，匹配原 ON CONFLICT 语义）
         Map<String, Map<List<Object>, Map<String, Object>>> childDedupByMat = new LinkedHashMap<>();
@@ -57,8 +59,7 @@ public class Q04ElementBomHandler implements SheetHandler {
             } catch (MaterialNoUnresolvableException ex) {
                 result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
             }
-            materialMasterRepo.upsertByMaterialNo(materialNo, inputName,
-                null, null, null, "组成件", null, null, null, ctx.importedBy, true);
+            MaterialMasterRepository.accNameType(mmAcc, materialNo, inputName, "组成件");
             result.recordWrite("material_master", 1);
             Integer seq = row.getInt("项次");
             String componentNo = row.getStr("元素");
@@ -77,6 +78,15 @@ public class Q04ElementBomHandler implements SheetHandler {
                 .computeIfAbsent(materialNo, k -> new LinkedHashMap<>())
                 .put(Arrays.asList(seq, componentNo), c);   // 去重键 = (项次, 元素)
             result.successRows++;
+        }
+
+        // §P1-A 料号表：一次批量 upsert（去重后；preserve=true 与原逐行等价），置于版本化写入之前。
+        if (!mmAcc.isEmpty()) {
+            List<MaterialMasterRepository.NameTypeRow> mmRows = new ArrayList<>(mmAcc.size());
+            for (Map.Entry<String, String[]> me : mmAcc.entrySet()) {
+                mmRows.add(new MaterialMasterRepository.NameTypeRow(me.getKey(), me.getValue()[0], me.getValue()[1]));
+            }
+            materialMasterRepo.upsertBatchNameType(mmRows, ctx.importedBy, true);
         }
 
         for (Map.Entry<String, Map<List<Object>, Map<String, Object>>> e : childDedupByMat.entrySet()) {
