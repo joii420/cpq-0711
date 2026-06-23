@@ -17,6 +17,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -241,6 +242,69 @@ public class GlobalVariableService {
         return def.isKvTable()
                 ? resolveValueFromKvTable(def, keyValues)
                 : resolveValueFromView(def, keyValues);
+    }
+
+    /**
+     * P1-C3 批量解析：对 {@code keyValuesList} 逐元素返回与 {@link #resolveValue}(code, kv) <b>逐位相同</b> 的值，
+     * 输出顺序与输入对齐。
+     *
+     * <ul>
+     *   <li><b>KvTable LOOKUP</b>（首存 gvar 主路径）：每元素算 key_id（{@link #buildKeyIdForKvTable}，
+     *       与逐行同一编码），distinct 后一次 {@code key_id IN (...)} 取回（按 1000 分块）。
+     *       因 {@code (var_code,key_id)} 为主键唯一 → 与逐行 {@code LIMIT 1} 逐位等价；缺失/值 NULL → null。</li>
+     *   <li><b>SCALAR / COSTING_VIEW</b>：保守逐行回落 {@link #resolveValue}（View 路径 LIMIT 1 选行语义复杂，
+     *       不批量化以确保等价、不碰渲染基线；后续如需可单独评估元组 IN + NULL 回落）。</li>
+     * </ul>
+     * key 数量校验与 {@link #resolveValue} 一致（不匹配抛 400），保证两路异常语义也一致。
+     */
+    @Transactional(Transactional.TxType.SUPPORTS)
+    public List<BigDecimal> resolveValues(String code, List<Map<String, Object>> keyValuesList) {
+        List<BigDecimal> out = new ArrayList<>();
+        if (keyValuesList == null || keyValuesList.isEmpty()) return out;
+        GlobalVariableDefinition def = getByCode(code)
+                .orElseThrow(() -> new BusinessException(404, "全局变量未注册: " + code));
+        // 非 KvTable LOOKUP（SCALAR / COSTING_VIEW）：保守逐行，与 resolveValue 逐位一致
+        if (!def.isLookup() || !def.isKvTable()) {
+            for (Map<String, Object> kv : keyValuesList) out.add(resolveValue(code, kv));
+            return out;
+        }
+        // KvTable：逐元素校验 key 数量（对齐 resolveValue 400 语义）+ 算 key_id；distinct 一次 IN 查
+        List<String> keyIds = new ArrayList<>(keyValuesList.size());
+        LinkedHashSet<String> distinct = new LinkedHashSet<>();
+        for (Map<String, Object> kv : keyValuesList) {
+            if (kv == null || kv.size() != def.keyColumns.size()) {
+                throw new BusinessException(400, "key 数量不匹配: 期望 " + def.keyColumns.size()
+                        + ", 实得 " + (kv == null ? 0 : kv.size()));
+            }
+            String keyId = buildKeyIdForKvTable(def, kv);
+            keyIds.add(keyId);
+            distinct.add(keyId);
+        }
+        Map<String, BigDecimal> byKeyId = new HashMap<>();
+        List<String> distinctList = new ArrayList<>(distinct);
+        final int CHUNK = 1000;
+        for (int start = 0; start < distinctList.size(); start += CHUNK) {
+            List<String> chunk = distinctList.subList(start, Math.min(start + CHUNK, distinctList.size()));
+            StringBuilder in = new StringBuilder();
+            for (int i = 0; i < chunk.size(); i++) { if (i > 0) in.append(','); in.append(":k").append(i); }
+            var q = em.createNativeQuery(
+                    "SELECT key_id, value_number FROM global_variable_value " +
+                    "WHERE var_code = :c AND key_id IN (" + in + ")")
+                    .setParameter("c", def.code);
+            for (int i = 0; i < chunk.size(); i++) q.setParameter("k" + i, chunk.get(i));
+            @SuppressWarnings("unchecked")
+            List<Object[]> rs = q.getResultList();
+            for (Object[] r : rs) {
+                Object v = r[1];
+                BigDecimal bd = null;
+                if (v instanceof BigDecimal x) bd = x;
+                else if (v instanceof Number n) bd = new BigDecimal(n.toString());
+                else if (v != null) { try { bd = new BigDecimal(v.toString()); } catch (Exception ignore) {} }
+                byKeyId.put(String.valueOf(r[0]), bd);
+            }
+        }
+        for (String keyId : keyIds) out.add(byKeyId.get(keyId));   // 缺失/值 NULL → null，同 resolveValue
+        return out;
     }
 
     /** V188: KV_TABLE 模式 — 查 global_variable_value 单表 */
