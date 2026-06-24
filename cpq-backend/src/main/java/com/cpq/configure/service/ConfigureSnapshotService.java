@@ -216,11 +216,12 @@ public class ConfigureSnapshotService {
         boolean batchWriteEnabled = "true".equalsIgnoreCase(
                 System.getProperty("cpq.firstsave-batch-write",
                     System.getenv().getOrDefault("CPQ_FIRSTSAVE_BATCH_WRITE", "true")));
-        // Phase 2 kill switch: cpq.firstsave-quote-bucket（默认 false，灰度）
-        // enable: -Dcpq.firstsave-quote-bucket=true 或 export CPQ_FIRSTSAVE_QUOTE_BUCKET=true
+        // Phase 2 kill switch: cpq.firstsave-quote-bucket（默认 true，2026-06-24 灰度通过后开启）
+        // 等价已铁证：罗克韦尔 8f0c37a4(170 行/含重复料号) 新旧路径 md5 全等 + 连跑两次确定 + 108s→8.6s。
+        // kill: -Dcpq.firstsave-quote-bucket=false 或 export CPQ_FIRSTSAVE_QUOTE_BUCKET=false
         boolean quoteBucketEnabled = "true".equalsIgnoreCase(
                 System.getProperty("cpq.firstsave-quote-bucket",
-                    System.getenv().getOrDefault("CPQ_FIRSTSAVE_QUOTE_BUCKET", "false")));
+                    System.getenv().getOrDefault("CPQ_FIRSTSAVE_QUOTE_BUCKET", "true")));
         try {
             // 清 driver 进程缓存(30s TTL),保证快照冻结的是"当前"基础值而非缓存旧值
             // (尤其"从基础刷新"在基础变更后需读到最新)。
