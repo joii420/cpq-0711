@@ -81,6 +81,9 @@ function renderCellValue(val: any, col: CostingTemplateColumn): React.ReactNode 
   return String(val);
 }
 
+/** A2: 稳定空数组引用 —— QUOTE 侧 useLinkedExcelRows 不消费 legacy rows 时传入，断开其 batch-evaluate。 */
+const EMPTY_LINE_ITEMS: LineItem[] = [];
+
 const LinkedExcelView: React.FC<Props> = ({
   linkedTemplateId,
   lineItems,
@@ -99,9 +102,16 @@ const LinkedExcelView: React.FC<Props> = ({
   // ---- 旧模型 hook（始终调用，用 enabled 控制是否真正运行）----
   // useLinkedExcelRows 内部用 linkedTemplateId 有无控制；直接传完整参数，
   // 新模型下它拿到 excelTemplate 后 parsedColumns 会有值但 rows 不被 LinkedExcelView 消费。
+  //
+  // A2: QUOTE 侧渲染恒走 frontendRows(buildExcelSnapshot)/v2/快照，**从不消费 legacyResult.rows**
+  // (见下方 rows 选择：side!=COSTING && frontendRows!=null 时用 frontendRows)，故 QUOTE 侧传空 lineItems
+  // 断开 useLinkedExcelRows 的 batch-evaluate(纯浪费)。parsedColumns/configShape/excelTemplate 由
+  // linkedTemplateId 的 config effect 决定，与 lineItems 无关 → 不受影响。
+  // COSTING 侧 legacy 非新模型仍消费 legacyResult.rows → 保持原 lineItems(不 gate)。
+  const legacyLineItems = side === 'COSTING' ? lineItems : EMPTY_LINE_ITEMS;
   const legacyResult = useLinkedExcelRows({
     linkedTemplateId,
-    lineItems,
+    lineItems: legacyLineItems,
     customerId,
     templateId,
     quotationContext,
