@@ -231,8 +231,10 @@ export function usePathFormulaCache(
       customerId: customerId ?? null,
     }));
 
-    batchEvaluate(batchTasks)
+    const controller = new AbortController();
+    batchEvaluate(batchTasks, controller.signal)
       .then((results) => {
+        if (controller.signal.aborted) return;
         const updates: PathCache = {};
 
         for (const r of results) {
@@ -270,6 +272,7 @@ export function usePathFormulaCache(
         });
       })
       .catch((err) => {
+        if (controller.signal.aborted || (err && (err as any).code === 'ERR_CANCELED')) return;
         // eslint-disable-next-line no-console
         console.error('[path-formula-cache] batch 整体失败', err);
         // 整个 batch 失败 → 所有 missing 写 null 兜底，避免 effect 反复重跑
@@ -283,6 +286,7 @@ export function usePathFormulaCache(
           return next;
         });
       });
+    return () => controller.abort();
 
     // tasks 已 dedupe；cache 读 ref 不入依赖；customerId 是原始依赖
     // eslint-disable-next-line react-hooks/exhaustive-deps

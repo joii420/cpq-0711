@@ -357,8 +357,10 @@ export function useDriverExpansions(
     })();
     const firstPartNo = (lineItems && lineItems.length > 0) ? lineItems[0].productPartNo : undefined;
 
-    batchExpandDriver(batchTasks, debugSqlOn)
+    const controller = new AbortController();
+    batchExpandDriver(batchTasks, debugSqlOn, controller.signal)
       .then((results) => {
+        if (controller.signal.aborted) return;
         const updates: DriverExpansionMap = {};
 
         for (let i = 0; i < missing.length; i++) {
@@ -416,6 +418,7 @@ export function useDriverExpansions(
         });
       })
       .catch((err) => {
+        if (controller.signal.aborted || (err && (err as any).code === 'ERR_CANCELED')) return;
         // eslint-disable-next-line no-console
         console.error('[Y1.5 expand-driver] batch 整体失败', err);
         // 失败时把所有 missing 写空，避免 effect 反复重跑
@@ -428,6 +431,7 @@ export function useDriverExpansions(
           return next;
         });
       });
+    return () => controller.abort();
 
     // tasks 已 dedupe；cache 读 ref 不入依赖；customerId 是原始依赖
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -260,8 +260,10 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
       quotationStatus: quotationStatus || null,
     }));
 
-    batchEvaluate(tasks)
+    const controller = new AbortController();
+    batchEvaluate(tasks, controller.signal)
       .then((items) => {
+        if (controller.signal.aborted) return;
         const itemByKey: Record<string, typeof items[number]> = {};
         for (const it of items) itemByKey[it.key] = it;
         setPathCache((prev) => {
@@ -280,7 +282,8 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
           return next;
         });
       })
-      .catch(() => {
+      .catch((err) => {
+        if (controller.signal.aborted || (err && (err as any).code === 'ERR_CANCELED')) return;
         setPathCache((prev) => {
           const next = { ...prev };
           for (const t of missing) {
@@ -290,6 +293,7 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
           return next;
         });
       });
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathTasks, customerId, templateId, linkedTemplateId, quotationId, quotationStatus]);
 

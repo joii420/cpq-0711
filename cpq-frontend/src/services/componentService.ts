@@ -60,11 +60,12 @@ export function buildBatchKey(
 export async function batchExpandDriver(
   tasks: BatchExpandTask[],
   debugSql?: boolean,
+  signal?: AbortSignal,
 ): Promise<BatchExpandResultItem[]> {
   if (tasks.length === 0) return [];
   const CHUNK = 5000;
   if (tasks.length <= CHUNK) {
-    const resp: any = await api.post('/components/batch-expand', { tasks, debugSql: !!debugSql });
+    const resp: any = await api.post('/components/batch-expand', { tasks, debugSql: !!debugSql }, { signal });
     return (resp?.data?.results ?? resp?.results ?? []) as BatchExpandResultItem[];
   }
   // 兜底:极端大批量分片(>5000),正常路径走不到
@@ -74,7 +75,7 @@ export async function batchExpandDriver(
   }
   const allResults: BatchExpandResultItem[] = [];
   for (const chunk of chunks) {
-    const resp: any = await api.post('/components/batch-expand', { tasks: chunk, debugSql: !!debugSql });
+    const resp: any = await api.post('/components/batch-expand', { tasks: chunk, debugSql: !!debugSql }, { signal });
     const results: BatchExpandResultItem[] = resp?.data?.results ?? resp?.results ?? [];
     allResults.push(...results);
   }
