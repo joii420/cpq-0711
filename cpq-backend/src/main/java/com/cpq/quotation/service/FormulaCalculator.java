@@ -524,9 +524,30 @@ public class FormulaCalculator {
                                Map<String, List<Map<String, Object>>> crossTabRows,
                                List<DeletedRowKeys.Tombstone> deleted,
                                List<String> rowKeyFieldNames) {
+        return calculate(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
+            componentSubtotals, quotationFields, productAttributes, crossTabRows, deleted, rowKeyFieldNames,
+            null, null);
+    }
+
+    /**
+     * B1：calculate 带 per-call computeRows 复用缓存重载（PASS2 入口）。{@code cache}/{@code cacheKey}
+     * 非空且该 tab memo-eligible（不读 componentSubtotals/crossTabRows）时，同次 assemble 内
+     * PASS1/PASS2 共用一份 computeRows 结果。旧 12 参签名 delegate（cache=null）→ 行为完全不变。
+     */
+    public ArrayNode calculate(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
+                               JsonNode rowKeyFields,
+                               JsonNode baseRows, JsonNode editRows,
+                               Map<String, Double> componentSubtotals,
+                               Map<String, Double> quotationFields,
+                               Map<String, Double> productAttributes,
+                               Map<String, List<Map<String, Object>>> crossTabRows,
+                               List<DeletedRowKeys.Tombstone> deleted,
+                               List<String> rowKeyFieldNames,
+                               RowCache cache, String cacheKey) {
         ArrayNode out = MAPPER.createArrayNode();
-        List<RowResult> rows = computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
-            componentSubtotals, quotationFields, productAttributes, crossTabRows, deleted, rowKeyFieldNames);
+        List<RowResult> rows = computeRowsCached(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
+            componentSubtotals, quotationFields, productAttributes, crossTabRows, deleted, rowKeyFieldNames,
+            cache, cacheKey);
         for (RowResult rr : rows) {
             ObjectNode node = MAPPER.createObjectNode();
             node.put("rowKey", rr.rowKey);
@@ -573,11 +594,26 @@ public class FormulaCalculator {
             JsonNode rowKeyFields, JsonNode baseRows, JsonNode editRows,
             Map<String, Double> componentSubtotals,
             List<DeletedRowKeys.Tombstone> deleted, List<String> rowKeyFieldNames) {
+        return computeTabSubtotalsByColumn(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
+            componentSubtotals, deleted, rowKeyFieldNames, null, null);
+    }
+
+    /**
+     * B1：computeTabSubtotalsByColumn 带 per-call computeRows 复用缓存重载（PASS1 入口）。
+     * 旧 9 参签名 delegate（cache=null）→ 行为完全不变。
+     */
+    public Map<String, BigDecimal> computeTabSubtotalsByColumn(
+            JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
+            JsonNode rowKeyFields, JsonNode baseRows, JsonNode editRows,
+            Map<String, Double> componentSubtotals,
+            List<DeletedRowKeys.Tombstone> deleted, List<String> rowKeyFieldNames,
+            RowCache cache, String cacheKey) {
         Map<String, BigDecimal> out = new LinkedHashMap<>();
         List<String> subtotalFields = findSubtotalFieldNames(fields);
         if (subtotalFields.isEmpty()) return out;
-        List<RowResult> rows = computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
-            componentSubtotals, new HashMap<>(), new HashMap<>(), Map.of(), deleted, rowKeyFieldNames);
+        List<RowResult> rows = computeRowsCached(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
+            componentSubtotals, new HashMap<>(), new HashMap<>(), Map.of(), deleted, rowKeyFieldNames,
+            cache, cacheKey);
         for (String sf : subtotalFields) {
             double sum = 0.0;
             for (RowResult rr : rows) {
@@ -604,6 +640,106 @@ public class FormulaCalculator {
             this.formulaValues = formulaValues;
             this.fieldValues = fieldValues != null ? fieldValues : Map.of();
         }
+    }
+
+    // ======================================================================
+    // B1: per-call computeRows 复用缓存（仅 assembleTabsWithFormulaResults 单次调用内）
+    // ======================================================================
+
+    /**
+     * per-call computeRows 复用缓存：仅在一次 {@code assembleTabsWithFormulaResults} 调用内，
+     * 为「不读 componentSubtotals/crossTabRows」的 tab 复用 computeRows 结果。
+     * <b>局部对象、单线程使用 → 线程安全</b>（不放进程级缓存，守 expand 层非并发约束）。
+     *
+     * <p><b>复用正确性前提</b>：同一 {@code cacheKey}（=componentId）的多次调用，除
+     * componentSubtotals/crossTabRows 外的入参必须恒定。assemble 内成立：PASS1/PASS2 对同一
+     * 组件传相同 fields/baseRows/editRows/deleted/rkfNames，且 quotationFields/productAttributes 恒空。
+     */
+    public static final class RowCache {
+        /** cacheKey(=componentId) → 该 tab 在本次 assemble 内的 computeRows 结果（仅 eligible tab 存）。 */
+        private final Map<String, List<RowResult>> rows = new HashMap<>();
+        /** cacheKey → eligibility（首次 isMemoEligible 结果缓存，避免重复扫公式树）。 */
+        private final Map<String, Boolean> eligible = new HashMap<>();
+    }
+
+    /** 新建一个 per-call 复用缓存（供 CardSnapshotService.assembleTabsWithFormulaResults 在调用起点创建）。 */
+    public RowCache newRowCache() {
+        return new RowCache();
+    }
+
+    /**
+     * tab 是否 memo-eligible：其 computeRows 结果<b>不依赖</b> componentSubtotals / crossTabRows，
+     * 即同次 assemble 内 PASS1/PASS2（这两者是仅有的变化入参）的结果恒等可复用。
+     * <p>判据：公式 / 赋值 / 条件分支里<b>不出现</b>以下任一会读这两个 map 的 token：
+     * <ul>
+     *   <li>{@code component_subtotal} —— 读 componentSubtotals；
+     *   <li>{@code previous_row_subtotal} —— 行 0 fallback 分支按 {@code fallback_component_code}
+     *       读 {@code componentSubtotals.get(fb)}（评审发现的边界路径，必须计入）；
+     *   <li>{@code cross_tab_ref} —— 读 crossTabRows（含其 targetExpr 内嵌求值的 C1 子上下文透传）。
+     * </ul>
+     * 保守：疑似即判不可复用（只少加速、绝不错值）。
+     */
+    private boolean isMemoEligible(JsonNode formulas, JsonNode formulaAssignments) {
+        return !containsTokenType(formulas, "component_subtotal", "cross_tab_ref", "previous_row_subtotal")
+            && !containsTokenType(formulaAssignments, "component_subtotal", "cross_tab_ref", "previous_row_subtotal");
+    }
+
+    /** 递归扫 JSON 树：是否存在任一对象节点 {@code "type"} 属于给定集合（覆盖嵌套表达式/条件/赋值）。 */
+    private boolean containsTokenType(JsonNode node, String... types) {
+        if (node == null || node.isNull()) return false;
+        if (node.isObject()) {
+            JsonNode t = node.get("type");
+            if (t != null && t.isTextual()) {
+                String tv = t.asText();
+                for (String ty : types) if (ty.equals(tv)) return true;
+            }
+            for (JsonNode child : node) {
+                if (containsTokenType(child, types)) return true;
+            }
+        } else if (node.isArray()) {
+            for (JsonNode child : node) {
+                if (containsTokenType(child, types)) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * computeRows 的缓存包装：cache/cacheKey 为空或 tab 不 eligible → 直接实算（行为不变）；
+     * eligible → 同 cacheKey 首次实算后存缓存，后续命中复用同一份只读 {@code List<RowResult>}
+     * （构造后不被任何调用方 mutate，PASS1/PASS2 均只读迭代）。
+     */
+    private List<RowResult> computeRowsCached(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
+                                              JsonNode rowKeyFields,
+                                              JsonNode baseRows, JsonNode editRows,
+                                              Map<String, Double> componentSubtotals,
+                                              Map<String, Double> quotationFields,
+                                              Map<String, Double> productAttributes,
+                                              Map<String, List<Map<String, Object>>> crossTabRows,
+                                              List<DeletedRowKeys.Tombstone> deleted,
+                                              List<String> rowKeyFieldNames,
+                                              RowCache cache, String cacheKey) {
+        if (cache == null || cacheKey == null) {
+            return computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
+                componentSubtotals, quotationFields, productAttributes, crossTabRows, deleted, rowKeyFieldNames);
+        }
+        Boolean elig = cache.eligible.get(cacheKey);
+        if (elig == null) {
+            elig = isMemoEligible(formulas, formulaAssignments);
+            cache.eligible.put(cacheKey, elig);
+        }
+        if (!elig) {
+            return computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
+                componentSubtotals, quotationFields, productAttributes, crossTabRows, deleted, rowKeyFieldNames);
+        }
+        // eligible ⟹ 结果不依赖 componentSubtotals/crossTabRows，故 PASS1(空 crossTab/累加中 subtotal)
+        // 与 PASS2(真实 crossTab/全量 subtotal) 即使传值不同，也共享同一 cacheKey 的结果，安全。
+        List<RowResult> cached = cache.rows.get(cacheKey);
+        if (cached != null) return cached;
+        List<RowResult> fresh = computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
+            componentSubtotals, quotationFields, productAttributes, crossTabRows, deleted, rowKeyFieldNames);
+        cache.rows.put(cacheKey, fresh);
+        return fresh;
     }
 
     /**

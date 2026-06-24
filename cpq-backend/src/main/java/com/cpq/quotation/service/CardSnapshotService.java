@@ -827,6 +827,11 @@ public class CardSnapshotService {
         ObjectNode root = MAPPER.createObjectNode();
         ArrayNode tabs = root.putArray("tabs");
 
+        // B1: per-call computeRows 复用缓存——同次 assemble 内，仅当 tab 不读 componentSubtotals/crossTabRows
+        // 时，PASS1(小计) 与 PASS2(结果×1~2) 共用一份 computeRows，避免对同一输入重复逐行求值。
+        // 局部对象、单线程使用 → 线程安全（守 expand/公式层非并发约束）。
+        final FormulaCalculator.RowCache rowCache = formulaCalculator.newRowCache();
+
         final ArrayNode emptyEdit = MAPPER.createArrayNode();
         // rowKeyFields 缓存（每组件一次）
         Map<String, JsonNode> rkfByComp = new LinkedHashMap<>();
@@ -855,7 +860,8 @@ public class CardSnapshotService {
             List<String> rkfNames = rowKeyFieldNamesOf(rkfByComp.get(cid));
             java.util.Map<String, java.math.BigDecimal> byCol = formulaCalculator.computeTabSubtotalsByColumn(
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
-                rkfByComp.get(cid), baseRows, editRows, componentSubtotals, deleted, rkfNames);
+                rkfByComp.get(cid), baseRows, editRows, componentSubtotals, deleted, rkfNames,
+                rowCache, cid.isBlank() ? null : cid);
             double sub = 0.0;
             for (java.math.BigDecimal v : byCol.values()) sub += v.doubleValue();
             String code = tab.path("componentCode").asText(null);
@@ -939,7 +945,8 @@ public class CardSnapshotService {
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
                 rkfByComp.get(cid), baseRows, editRows,
                 componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>(),
-                crossTabRows, deleted, rkfNames); // 带墓碑新重载：报价侧过滤删除行；核价侧 deleted=null → 不变
+                crossTabRows, deleted, rkfNames,
+                rowCache, cid.isBlank() ? null : cid); // 带墓碑新重载：报价侧过滤删除行；核价侧 deleted=null → 不变
             List<Map<String, Object>> pass1Resolved = buildResolvedRows(
                 tab, baseRows, editRows, pass1Results, rkfByComp.get(cid), deleted, rkfNames);
             // 存入 crossTabRows（双键，供后续兄弟组件 cross_tab_ref 查询）
@@ -964,7 +971,8 @@ public class CardSnapshotService {
                     tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
                     rkfByComp.get(cid), baseRows, editRows,
                     componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>(),
-                    crossTabRows, deleted, rkfNames);
+                    crossTabRows, deleted, rkfNames,
+                    rowCache, cid.isBlank() ? null : cid);
                 resolved = buildResolvedRows(
                     tab, baseRows, editRows, formulaResults, rkfByComp.get(cid), deleted, rkfNames);
                 // 更新 crossTabRows 为第 2 次 resolved（二阶列已算对，兄弟组件引用此组件 cross_tab_ref 时应取最终值）
