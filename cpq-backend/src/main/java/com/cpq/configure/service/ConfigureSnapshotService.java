@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -215,6 +216,11 @@ public class ConfigureSnapshotService {
         boolean batchWriteEnabled = "true".equalsIgnoreCase(
                 System.getProperty("cpq.firstsave-batch-write",
                     System.getenv().getOrDefault("CPQ_FIRSTSAVE_BATCH_WRITE", "true")));
+        // Phase 2 kill switch: cpq.firstsave-quote-bucket（默认 false，灰度）
+        // enable: -Dcpq.firstsave-quote-bucket=true 或 export CPQ_FIRSTSAVE_QUOTE_BUCKET=true
+        boolean quoteBucketEnabled = "true".equalsIgnoreCase(
+                System.getProperty("cpq.firstsave-quote-bucket",
+                    System.getenv().getOrDefault("CPQ_FIRSTSAVE_QUOTE_BUCKET", "false")));
         try {
             // 清 driver 进程缓存(30s TTL),保证快照冻结的是"当前"基础值而非缓存旧值
             // (尤其"从基础刷新"在基础变更后需读到最新)。
@@ -248,6 +254,15 @@ public class ConfigureSnapshotService {
                     byLine = null; // null → 循环内回退逐行查（kill switch off 或非增量路径）
                 }
 
+                // Phase 2 改造点：整单合桶预取（在 evictAll() 之后，保冷跑语义）。
+                // buckets: componentId → (partNo → ExpandDriverResponse)。
+                // 仅 eligible 组件进 Map；不 eligible 组件不进（调用方据此逐行回落）。
+                // quoteBucketEnabled=false → 空 Map，内层全部逐行 expand（与改造前 1:1 等价）。
+                Map<UUID, Map<String, ExpandDriverResponse>> buckets =
+                        quoteBucketEnabled
+                                ? precomputeQuoteDriverBuckets(quotationId, customerId, comps, lineItems)
+                                : Map.of();
+
                 for (Map<String, Object> li : lineItems) {
                     UUID lineItemId = asUuid(li.get("id"));
                     String partNo = li.get("productPartNo") != null ? li.get("productPartNo").toString() : null;
@@ -270,9 +285,25 @@ public class ConfigureSnapshotService {
                     List<SnapRow> snapRowBatch = batchWriteEnabled ? new ArrayList<>() : null;
                     for (DriverComp comp : comps) {
                         try {
-                            ExpandDriverResponse exp = componentDriverService.expand(
-                                    comp.id, customerId, partNo, null, null, null, lineItemId, compositeType);
+                            ExpandDriverResponse exp;
+                            Map<String, ExpandDriverResponse> bucket = buckets.get(comp.id);
+                            if (bucket != null) {
+                                // Phase 2 合桶命中：按本行 partNo 取（expandMulti 已按 hf_part_no 回分）。
+                                // 重复料号多行从同一 entry 取数 = 期望语义（同料号产品卡内容相同）。
+                                // AP-37 可变共享面：exp.rows 是共享引用，写入前必须经 MAPPER.writeValueAsString 深拷贝。
+                                exp = bucket.get(partNo);
+                                if (exp == null) {
+                                    // 防御：expandMulti 已预置全 partNo 空响应，理论上不会为 null
+                                    exp = emptyExpandResponse();
+                                }
+                            } else {
+                                // 不 eligible 或 flag off → 逐行回落（保 Bug B + lineItemId 隔离 + composite 语义）。
+                                // 8-arg 签名 1:1 复刻现状，childLineItemIds 不传（null）。
+                                exp = componentDriverService.expand(
+                                        comp.id, customerId, partNo, null, null, null, lineItemId, compositeType);
+                            }
                             List<ExpandDriverResponse.Row> rows = (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
+                            // writeValueAsString 序列化 = 深拷贝（AP-37 可变共享面保护：各行独立 JSON 字符串）
                             String rowsJson = MAPPER.writeValueAsString(rows);
                             if (batchWriteEnabled) {
                                 // 收集到批次，循环结束后统一写
@@ -309,6 +340,73 @@ public class ConfigureSnapshotService {
         } catch (Exception e) {
             LOG.warnf("[add-snapshot] quotation=%s 快照整体失败(已降级): %s", quotationId, e.getMessage());
         }
+    }
+
+    /**
+     * Phase 2 — 报价侧整单合桶预取（P3-C1）。
+     *
+     * <p>对每个 {@link com.cpq.component.service.ComponentDriverService#eligibleForQuoteBucket eligible}
+     * 组件，一次 {@code expandMulti(全部不同 partNo)} 取回整单所有料号的行，按 {@code hf_part_no} 回分；
+     * 不 eligible 的组件不进返回 Map → 调用方据此逐行回落（保 Bug B + lineItemId 隔离）。
+     *
+     * <p><b>调用时机</b>：在 {@code evictAll()} 之后调用（保冷跑语义）。
+     * {@code expandMulti} 不进 {@code expandCache}（:521 注释）→ 天然冷跑。
+     *
+     * <p><b>报价侧 vs 核价侧区别</b>：报价侧无 BOM 闭包，分桶键就是产品料号本身（不做 BOM 递归展开）。
+     * 参照 {@code CardSnapshotService#precomputeCostingDriverUnion}（核价侧同套路）。
+     *
+     * <p><b>可变共享面（AP-37 硬约束）</b>：返回的 Map 中同一 partNo 的 resp 被多行共享；
+     * 调用方每行写入前必须经 {@code MAPPER.writeValueAsString(exp.rows)}（深拷贝），不得就地 mutate。
+     *
+     * @param quotationId 报价单 id（用于日志）
+     * @param customerId  客户 id（传入 expandMulti）
+     * @param comps       driver 组件列表（loadDriverComponents 已取）
+     * @param lineItems   报价行列表（取全部不同料号）
+     * @return componentId → (partNo → ExpandDriverResponse)；仅含 eligible 组件
+     */
+    Map<UUID, Map<String, ExpandDriverResponse>> precomputeQuoteDriverBuckets(
+            UUID quotationId, UUID customerId, List<DriverComp> comps, List<Map<String, Object>> lineItems) {
+        Map<UUID, Map<String, ExpandDriverResponse>> result = new LinkedHashMap<>();
+        if (comps == null || comps.isEmpty() || lineItems == null || lineItems.isEmpty()) return result;
+
+        // 收集全部不同料号（LinkedHashSet 保插入序去重）
+        LinkedHashSet<String> distinctPartNoSet = new LinkedHashSet<>();
+        for (Map<String, Object> li : lineItems) {
+            Object pn = li.get("productPartNo");
+            if (pn != null && !pn.toString().isBlank()) distinctPartNoSet.add(pn.toString());
+        }
+        if (distinctPartNoSet.isEmpty()) return result;
+        List<String> distinctPartNos = new ArrayList<>(distinctPartNoSet);
+
+        for (DriverComp comp : comps) {
+            try {
+                if (!componentDriverService.eligibleForQuoteBucket(comp.id)) {
+                    // 不 eligible（含 lineItemId/spineKeys/composite/EXCEL）→ 不进 buckets，调用方逐行回落
+                    continue;
+                }
+                // 一次 expandMulti(全部不同 partNo)，expandMulti 已按 hf_part_no 回分，
+                // 每个 partNo 都有 entry（0 行也返空 resp），保证调用方 bucket.get(partNo) 不为 null。
+                Map<String, ExpandDriverResponse> byPart =
+                        componentDriverService.expandMulti(comp.id, customerId, distinctPartNos, null, null, null);
+                result.put(comp.id, byPart);
+                LOG.debugf("[quote-bucket] comp=%s eligible eligible parts=%d bucketEntries=%d",
+                        comp.id, distinctPartNos.size(), byPart.size());
+            } catch (Exception e) {
+                LOG.warnf("[quote-bucket] comp=%s precompute 失败(跳过,回落逐行): %s", comp.id, e.getMessage());
+                // 失败则不放入 result → 调用方对该组件逐行回落（保守安全）
+            }
+        }
+        LOG.infof("[quote-bucket] quotation=%s eligibleComps=%d totalComps=%d distinctParts=%d",
+                quotationId, result.size(), comps.size(), distinctPartNos.size());
+        return result;
+    }
+
+    /** 防御性空响应（expandMulti 应已预置，理论上不触发）。 */
+    private static ExpandDriverResponse emptyExpandResponse() {
+        ExpandDriverResponse r = new ExpandDriverResponse();
+        r.rows = new ArrayList<>();
+        r.rowCount = 0;
+        return r;
     }
 
     @Transactional(Transactional.TxType.REQUIRES_NEW)
