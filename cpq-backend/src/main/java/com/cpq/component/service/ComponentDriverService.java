@@ -706,32 +706,65 @@ public class ComponentDriverService {
     }
 
     /**
+     * 共享私有 helper（闸门②③④）：该 driver 视图是否「无行维度」——即视图按 customerCode+hf_part_no
+     * 过滤、不含 lineItemId / spineKeys / composite 聚合等逐行上下文，可跨行合桶预取。
+     *
+     * <p>充要条件（全成立）：
+     * ② {@code dataDriverPath} 非空且能提取出 $view 名（非 $view 路径保守回落）；
+     * ③ path 不含 {@code v_composite_child_} / {@code composite_child_}（composite 聚合视图
+     *    走逐 lineItemId 聚合，不能跨行）；
+     * ④ 按 <b>componentId 精确取</b> {@code ComponentSqlView}（同名视图跨组件会串号，见记忆
+     *    {@code cpq-sqlview-cache-key-needs-component-dim}），其 sql_template 不含
+     *    {@code :lineItemId} / {@code quotation_line_item_id} 行维度 / {@link com.cpq.datasource.sqlview.SpineKeysMacro}。
+     *
+     * <p>任一不满足 → {@code false}（回落逐行 expand，慢但正确）。
+     */
+    private boolean viewHasNoRowDimension(UUID componentId, String path) {
+        if (path == null || path.isBlank()) return false;                    // ② 路径非空
+        if (path.contains("v_composite_child_") || path.contains("composite_child_")) return false;  // ③ 非 composite
+        String viewName = extractSqlViewName(path);
+        if (viewName == null) return false;                                  // ② 必须是 $view 形态
+        com.cpq.component.entity.ComponentSqlView v = com.cpq.component.entity.ComponentSqlView
+                .find("componentId = ?1 and sqlViewName = ?2", componentId, viewName).firstResult();
+        if (v == null || v.sqlTemplate == null) return false;               // ④ 视图存在
+        String tpl = v.sqlTemplate;
+        if (com.cpq.datasource.sqlview.SpineKeysMacro.containsMacro(tpl)) return false;  // ④ 无 :spineKeys
+        if (tpl.contains(":lineItemId") || tpl.contains("quotation_line_item_id")) return false;  // ④ 无行维度
+        return true;
+    }
+
+    /**
      * P2-C4: 该 recursive 核价组件能否纳入「跨行 partSet union 预取」。充要条件(全成立)：
      * ① {@code bom_recursive_expand==true}(否则走 expand 单值,非 union 现场)；
-     * ② 非 composite 聚合视图(composite 走逐料号 + lineItemId,不能跨行 union)；
-     * ③ driver 视图 sql_template 不含 {@code :spineKeys}(无单行 spine 上下文可设)；
-     * ④ 不含 {@code :lineItemId} / {@code quotation_line_item_id} 行维度(AP-53 守门)。
+     * ②③④ 视图无行维度（见 {@link #viewHasNoRowDimension}）。
      * 任一不满足 → 回落逐行 {@link #expandForPartSet}(带 li.id / SpineKeysContext),与改动前逐位一致。
      *
-     * <p>sql_template <b>必须按 componentId 精确取</b>(同名视图跨组件会串号,见记忆
-     * {@code cpq-sqlview-cache-key-needs-component-dim})——不同于 {@link #viewUsesLineItemId} 的仅按 sqlViewName 取。
+     * <p><b>重构等价说明</b>：原实现直接内联闸门②③④；重构后委托 {@link #viewHasNoRowDimension}，
+     * 行为与改动前逐位不变（闸门条件完全相同，仅提取为 helper 复用）。
      */
     public boolean eligibleForBomUnion(UUID componentId) {
         Component c = Component.findById(componentId);
         if (c == null) return false;
         if (!Boolean.TRUE.equals(c.bomRecursiveExpand)) return false;     // ①
-        String path = c.dataDriverPath;
-        if (path == null || path.isBlank()) return false;
-        if (path.contains("v_composite_child_") || path.contains("composite_child_")) return false;  // ②
-        String viewName = extractSqlViewName(path);
-        if (viewName == null) return false;                              // 非 $view 路径,保守回落逐行
-        com.cpq.component.entity.ComponentSqlView v = com.cpq.component.entity.ComponentSqlView
-                .find("componentId = ?1 and sqlViewName = ?2", componentId, viewName).firstResult();
-        if (v == null || v.sqlTemplate == null) return false;
-        String tpl = v.sqlTemplate;
-        if (com.cpq.datasource.sqlview.SpineKeysMacro.containsMacro(tpl)) return false;               // ③
-        if (tpl.contains(":lineItemId") || tpl.contains("quotation_line_item_id")) return false;      // ④
-        return true;
+        return viewHasNoRowDimension(componentId, c.dataDriverPath);      // ②③④
+    }
+
+    /**
+     * P3-C1: 该报价 driver 组件能否纳入「整单合桶预取」（报价侧 Bug B 安全闸门）。充要条件(全成立)：
+     * ① {@code componentType != "EXCEL"}（EXCEL 组件不走 driver expand，统一逐行安全）；
+     * ②③④ 视图无行维度（见 {@link #viewHasNoRowDimension}）。
+     * 任一不满足 → 回落逐行 expand（保 Bug B + lineItemId 隔离 + composite 聚合语义）。
+     *
+     * <p>与 {@link #eligibleForBomUnion} 的区别：报价 driver 组件多数
+     * {@code bomRecursiveExpand=false}，故去掉闸门①（BOM 递归维度），直接检查视图无行维度。
+     *
+     * <p><b>精确优于宽松</b>：闸门宁可错挡（慢但正确）不可错放（合桶绕过 lineItem 隔离 → 串号）。
+     */
+    public boolean eligibleForQuoteBucket(UUID componentId) {
+        Component c = Component.findById(componentId);
+        if (c == null) return false;
+        if ("EXCEL".equals(c.componentType)) return false;               // ① 非 EXCEL
+        return viewHasNoRowDimension(componentId, c.dataDriverPath);    // ②③④
     }
 
     // ── 内部 ─────────────────────────────────────────────────────────────
