@@ -1326,6 +1326,41 @@ export function computeRowsCachesForTest(
 export const EMPTY_LINEITEMS: LineItem[] = [];
 
 /**
+ * A1 自我保护 gate 判定:lineItems 里是否存在「快照模式下仍需 path cache(batch-evaluate)」的字段。
+ *
+ * 快照模式下绝大多数取值已在快照里:BASIC_DATA `$view.列` 随 driver 行进 basicDataValues、
+ * FORMULA 进 formulaResults、INPUT 进 editRows —— 这些都<b>不</b>需 path cache。
+ * 仅以下字段在快照模式仍会 fallback 读 path cache(formulaEngine / inputDefaults / computeAllFormulas):
+ *   - LIST_FORMULA(BNF 路径 fallback)
+ *   - DATA_SOURCE 且 datasource_binding.type==='BNF_PATH'
+ *   - 任意字段 default_source.type==='BNF_PATH'
+ *   - 任意字段 default_basic_data_path(INPUT 默认值按 partNo 路径兜底)
+ *   - FORMULA expression 含 path / global_variable token
+ * 现役配置这些均为 0(BNF 动态绑定已废弃),故恒返 false → 可安全 gate;
+ * 若将来有人重新配置上述任一,本函数返 true → 自动不 gate(照旧发 batch-evaluate),防 AP-31 缺值。
+ */
+export function lineItemsNeedPathCache(items: LineItem[]): boolean {
+  for (const li of items || []) {
+    for (const comp of ((li as any).componentData as any[]) || []) {
+      for (const f of (comp?.fields as any[]) || []) {
+        if (!f) continue;
+        if (f.field_type === 'LIST_FORMULA') return true;
+        if (f.field_type === 'DATA_SOURCE' && f.datasource_binding?.type === 'BNF_PATH' && f.datasource_binding?.bnf_path) return true;
+        if (f.default_source?.type === 'BNF_PATH' && f.default_source?.path) return true;
+        if (f.default_basic_data_path) return true;
+      }
+      for (const fr of (comp?.formulas as any[]) || []) {
+        for (const tok of (fr?.expression as any[]) || []) {
+          if ((tok?.type === 'path' || tok?.type === 'global_variable') && tok?.path) return true;
+          if (tok?.type === 'global_variable' && !tok?.path && tok?.key_field_refs && tok?.code) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Task 8 渲染脱钩: 从行级值快照(quoteCardValues/costingCardValues)构造 DriverExpansionMap,
  * 键与 ProductCard 渲染查找完全一致(driverExpansionKey)。
  *
@@ -2728,7 +2763,11 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   // ProductCard 子组件中的 evaluateExpression 在不传 pathCache 时回退到模块级(setGlobalPathCache),
   // 此处保留 hook 调用以触发后台求值 + 组件 re-render
   // 2026-05-20: 接收返值供 LIST_FORMULA cell BNF path fallback 使用 (driver expand 注入驱动列谓词查空时)
-  const quotationPathCache = usePathFormulaCache(lineItems, customerId, gvDefs);
+  // A1: 快照模式且无 path-cache 依赖字段 → 传空集断开 batch-evaluate(值已全在快照里;自我保护见 lineItemsNeedPathCache)
+  const gateQuotePathCache = lineItems.length > 0
+    && lineItems.every(li => !!li.quoteCardValues)
+    && !lineItemsNeedPathCache(lineItems);
+  const quotationPathCache = usePathFormulaCache(gateQuotePathCache ? EMPTY_LINEITEMS : lineItems, customerId, gvDefs);
   // 核价单视图同样需要按 costing 模板下的 path token 求值；hook 内部基于 (partNo, path) 缓存，
   // 与 quote 侧调用结果合并到同一全局 cache，互不冲突
   // 调用位置在 costingLineItems 声明之后
@@ -3008,7 +3047,11 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   }, [quoteLineItems, onUpdateLineItem]);
 
   // 核价单视图的 path token 求值缓存（与上方 quote 侧 hook 调用合并到同一 globalPathCache）
-  usePathFormulaCache(costingLineItems, customerId, gvDefs);
+  // A1: 同报价侧——快照模式且无 path-cache 依赖字段时传空集断开 batch-evaluate
+  const gateCostingPathCache = costingLineItems.length > 0
+    && costingLineItems.every(li => !!li.costingCardValues)
+    && !lineItemsNeedPathCache(costingLineItems);
+  usePathFormulaCache(gateCostingPathCache ? EMPTY_LINEITEMS : costingLineItems, customerId, gvDefs);
 
   // Y1.5: 行驱动展开 — 含 dataDriverPath 的组件按后端返回的 N 行渲染,BASIC_DATA 值直接来自此 hook
   // 报价单卡片所需的展开（按 customerTemplate 视图下的 componentData 收集）
