@@ -212,6 +212,20 @@ const QuotationWizard: React.FC = () => {
   // savingRef：有保存在飞时不再并发起第二次；pendingSaveRef：飞行中到来的变更，落地后补跑一次（取最新 payload）。
   const savingRef = useRef(false);
   const pendingSaveRef = useRef(false);
+  // Plan A(2026-06-24 空白BUG止血):autosave 默认拒绝门。
+  //   背景:打开报价单时 applyQuotationData(:300 basicItems)+ enrich(:425)两处**程序化** setLineItems
+  //   触发 autosave 风暴 → saveDraft 慢 + 并发 → 占满后端线程池 → getById 超时 → 退空本地缓存 → 空白页
+  //   (违反 :470「草稿默认冻结、打开不重刷」设计意图)。
+  //   修法:autosave effect 默认 return,**只有真实用户编辑(经 setLineItemsByUser 置位)才放行**。
+  //   打开 / enrich / saveDraft 响应回填等所有程序化 setLineItems 走原始 setLineItems,不置位 → 不 autosave。
+  //   表单头部字段编辑走独立的 onValuesChange→scheduleAutoSave 路径(不经此 effect),不受影响。
+  const userEditedRef = useRef(false);
+  // 用户编辑专用 setter:置位 userEditedRef 后再改 lineItems,使 autosave effect 放行本次变化。
+  // 子组件(Step2/Step3/各 Drawer)的 lineItems 写入一律走它;程序化写入仍用原始 setLineItems。
+  const setLineItemsByUser = useCallback((update: Parameters<typeof setLineItems>[0]) => {
+    userEditedRef.current = true;
+    setLineItems(update);
+  }, []);
 
   // Load existing quotation
   useEffect(() => {
@@ -254,6 +268,11 @@ const QuotationWizard: React.FC = () => {
       syncingRef.current = false;
       return;
     }
+    // Plan A 默认拒绝门:仅"真实用户编辑"(经 setLineItemsByUser 置位)才 autosave;
+    // 打开 / enrich 等程序化 setLineItems 不置位 → 直接 return,不发请求(止血风暴)。
+    // 命中即消费复位:saveDraft 后 syncLineItemsFromResponse 回填(及后续程序化变化)不再误触发。
+    if (!userEditedRef.current) return;
+    userEditedRef.current = false;
     scheduleAutoSave();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lineItems, quotationId]);
@@ -262,6 +281,8 @@ const QuotationWizard: React.FC = () => {
   // 旧的整单折扣自动计算 effect 已废弃（V1 行级折扣由 Step3 组件处理）
 
   const applyQuotationData = (q: any) => {
+    // Plan A:打开/加载一律从"默认拒绝"起步,清掉可能残留的用户编辑标记(防跨报价单泄漏 → 打开误存)。
+    userEditedRef.current = false;
     setQuotation(q);
     setQuotationId(q.id);
     form.setFieldsValue({
@@ -1064,11 +1085,11 @@ const QuotationWizard: React.FC = () => {
   };
 
   const handleRemoveLineItem = (index: number) => {
-    setLineItems(prev => prev.filter((_, i) => i !== index));
+    setLineItemsByUser(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleUpdateLineItem = (index: number, data: Partial<LineItem> | ((prev: LineItem) => Partial<LineItem>)) => {
-    setLineItems(prev => prev.map((item, i) => {
+    setLineItemsByUser(prev => prev.map((item, i) => {
       if (i !== index) return item;
       const patch = typeof data === 'function' ? data(item) : data;
       return { ...item, ...patch };
@@ -1138,8 +1159,8 @@ const QuotationWizard: React.FC = () => {
         compositeProcesses: Array.isArray(li.compositeProcesses) ? li.compositeProcesses : [],
       }) as LineItem;
     });
-    // 1. 立即追加新行 (函数式, 防 race)
-    setLineItems(prev => [...prev, ...basicItems]);
+    // 1. 立即追加新行 (函数式, 防 race) —— 用户确认选配 = 真实编辑,放行 autosave
+    setLineItemsByUser(prev => [...prev, ...basicItems]);
     // 2. 异步拉模板 schema (componentData + productAttributes), 合回 state
     const enriched = await Promise.all(basicItems.map(async (li) => {
       if (!li.templateId) return li;
@@ -1156,7 +1177,8 @@ const QuotationWizard: React.FC = () => {
       invalidateDriverExpansions(affectedPartNos);
     }
     // 3. 按 id 匹配回灌 (用户已开始编辑的不动 — 但选配新行 id 唯一不冲突, 简单 replace 即可)
-    setLineItems(prev => prev.map(cur => {
+    //    仍属用户选配流程的产物,放行 autosave(保证选配新行 enrich 后的结构被持久化)。
+    setLineItemsByUser(prev => prev.map(cur => {
       const updated = enriched.find(e => e.id && e.id === cur.id);
       if (!updated) return cur;
       return {
@@ -1381,7 +1403,7 @@ const QuotationWizard: React.FC = () => {
         lineItems={lineItems}
         onAddProduct={() => setAddProductModalOpen(true)}
         onAddConfigured={() => setConfigureDrawerOpen(true)}
-        onAddBatch={(items) => setLineItems((prev) => {
+        onAddBatch={(items) => setLineItemsByUser((prev) => {
           // 去重:同一 productPartNo 只保留一份(以现有为准,新增的覆盖不了)
           const existing = new Set(prev.map((p) => p.productPartNo).filter(Boolean));
           const newItems = items.filter((it) => !it.productPartNo || !existing.has(it.productPartNo));
@@ -1405,7 +1427,7 @@ const QuotationWizard: React.FC = () => {
         open={addProductModalOpen}
         onCancel={() => setAddProductModalOpen(false)}
         onConfirm={(lineItem) => {
-          setLineItems(prev => [...prev, lineItem]);
+          setLineItemsByUser(prev => [...prev, lineItem]);
           setAddProductModalOpen(false);
         }}
       />
@@ -1426,7 +1448,7 @@ const QuotationWizard: React.FC = () => {
       baseCurrency={quotation?.baseCurrency || 'CNY'}
       driverExpansions={driverExpansions}
       customerId={customerIdValue}
-      onUpdate={(updater) => setLineItems(prev => updater(prev))}
+      onUpdate={(updater) => setLineItemsByUser(prev => updater(prev))}
     />
   );
 
