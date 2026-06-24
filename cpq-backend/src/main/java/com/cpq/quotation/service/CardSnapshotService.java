@@ -410,14 +410,22 @@ public class CardSnapshotService {
     @Transactional
     public void snapshotLineValuesWithUnion(QuotationLineItem li,
                                             Map<UUID, Map<String, ExpandDriverResponse>> unionByComp) {
+        snapshotLineValuesWithUnion(li, unionByComp, null);
+    }
+
+    /** B2 重载：透传 {@code prefetch}（saveDraft 首存循环外一次预取的模板 snapshot + 整单 compdata）；null=逐行旧路径。 */
+    @Transactional
+    public void snapshotLineValuesWithUnion(QuotationLineItem li,
+                                            Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
+                                            CardValuesPrefetch prefetch) {
         if (li == null || li.id == null) return;
         // 在当前事务内重新加载，避免 "Detached entity" 错误
         QuotationLineItem managed = QuotationLineItem.findById(li.id);
         if (managed == null) return;
         Quotation q = Quotation.findById(managed.quotationId);
         if (q == null) return;
-        snapshotQuoteSideOnly(managed, q);                       // 报价侧逐行不变
-        snapshotCostingSideOnly(managed, q, unionByComp);        // 核价侧可 union
+        snapshotQuoteSideOnly(managed, q, prefetch);                       // 报价侧逐行不变
+        snapshotCostingSideOnly(managed, q, unionByComp, prefetch);        // 核价侧可 union
     }
 
     /**
@@ -427,10 +435,16 @@ public class CardSnapshotService {
      */
     @Transactional
     public void snapshotQuoteSideOnly(QuotationLineItem managed, Quotation q) {
+        snapshotQuoteSideOnly(managed, q, null);
+    }
+
+    /** B2 重载：buildCardValues 传 {@code prefetch}（命中则复用预取模板 snapshot + 整单 compdata）。 */
+    @Transactional
+    public void snapshotQuoteSideOnly(QuotationLineItem managed, Quotation q, CardValuesPrefetch prefetch) {
         if (managed == null || q == null) return;
         try {
             // 报价侧：卡片值复用 snapshot_rows（Task 6 真实填充，不二次 expand）
-            managed.quoteCardValues = safeCall(() -> buildCardValues(managed, q.customerTemplateId));
+            managed.quoteCardValues = safeCall(() -> buildCardValues(managed, q.customerTemplateId, prefetch));
             // 报价侧 Excel 值：前端权威（saveDraft）；仅从未 saveDraft 的新行 bootstrap 一次。
             if (managed.quoteExcelValues == null) {
                 managed.quoteExcelValues = safeCall(() ->
@@ -450,11 +464,19 @@ public class CardSnapshotService {
     @Transactional
     public void snapshotCostingSideOnly(QuotationLineItem managed, Quotation q,
                                         Map<UUID, Map<String, ExpandDriverResponse>> unionByComp) {
+        snapshotCostingSideOnly(managed, q, unionByComp, null);
+    }
+
+    /** B2 重载：buildCostingCardValues 传 {@code prefetch}（命中则复用预取核价模板 snapshot）。 */
+    @Transactional
+    public void snapshotCostingSideOnly(QuotationLineItem managed, Quotation q,
+                                        Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
+                                        CardValuesPrefetch prefetch) {
         if (managed == null || q == null) return;
         try {
             if (q.costingCardTemplateId != null) {
                 managed.costingCardValues = safeCall(() ->
-                    buildCostingCardValues(managed, q.costingCardTemplateId, q.customerId, q.id, unionByComp));
+                    buildCostingCardValues(managed, q.costingCardTemplateId, q.customerId, q.id, unionByComp, prefetch));
                 managed.costingExcelValues = safeCall(() ->
                     buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues, true));
             }
@@ -551,6 +573,81 @@ public class CardSnapshotService {
     }
 
     // =========================================================================
+    // B2: 批量 EM 预取 —— saveDraft 首存 N-行循环外一次预取，消除每行重复的
+    //     「模板 components_snapshot 读+解析」与「compdata 逐行查」。
+    // =========================================================================
+
+    /**
+     * 首存 card values 批量预取上下文（per-call，单线程使用）。{@code null} 传入 = 逐行旧路径（零破坏）。
+     * <ul>
+     *   <li>{@code templateSnapshotById}：全单只有报价/核价两个模板，各 parse 一次复用（替代 ×N 读+解析）；
+     *       解析后的 JsonNode 全程<b>只读</b>（assemble 只读 tab.path、不 mutate 入参），跨行共享安全。
+     *   <li>{@code compDataByLine}：整单一次 IN 查所有行的 (component_id, snapshot_rows, deleted_row_keys)，
+     *       按 lineItemId 分桶（替代 buildCardValues 每行一次 compdata 查）。每元素 = [component_id, snapshot_rows, deleted_row_keys]，
+     *       与逐行查 SELECT 列序一致 → buildCardValues prefetch 分支与逐行分支产物逐位相同。
+     * </ul>
+     */
+    public static final class CardValuesPrefetch {
+        final Map<UUID, JsonNode> templateSnapshotById;
+        final Map<UUID, List<Object[]>> compDataByLine;
+        CardValuesPrefetch(Map<UUID, JsonNode> t, Map<UUID, List<Object[]>> c) {
+            this.templateSnapshotById = t;
+            this.compDataByLine = c;
+        }
+    }
+
+    /**
+     * B2 预取构建：解析报价/核价模板 snapshot 各一次 + 整单一次 IN 查所有行 compdata。
+     * 失败降级——任一片缺失时对应 build 方法 prefetch 分支回落逐行查（getOrDefault / containsKey 判定）。
+     */
+    @Transactional
+    public CardValuesPrefetch precomputeCardValuesPrefetch(UUID quotationId, java.util.Collection<UUID> lineItemIds) {
+        Map<UUID, JsonNode> tplById = new HashMap<>();
+        Map<UUID, List<Object[]>> byLine = new HashMap<>();
+        try {
+            Quotation q = Quotation.findById(quotationId);
+            if (q != null) {
+                parseTemplateSnapshotInto(tplById, q.customerTemplateId);
+                parseTemplateSnapshotInto(tplById, q.costingCardTemplateId);
+            }
+            if (lineItemIds != null && !lineItemIds.isEmpty()) {
+                @SuppressWarnings("unchecked")
+                List<Object[]> rows = em.createNativeQuery(
+                    "SELECT line_item_id, component_id, snapshot_rows, deleted_row_keys " +
+                    "FROM quotation_line_component_data WHERE line_item_id IN (:ids)")
+                    .setParameter("ids", lineItemIds)
+                    .getResultList();
+                for (Object[] r : rows) {
+                    if (r[0] == null) continue;
+                    UUID lid = (r[0] instanceof UUID u) ? u : UUID.fromString(r[0].toString());
+                    // 仅保留 [component_id, snapshot_rows, deleted_row_keys]，与逐行查列序一致
+                    byLine.computeIfAbsent(lid, k -> new ArrayList<>())
+                          .add(new Object[]{ r[1], r[2], r[3] });
+                }
+            }
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] precomputeCardValuesPrefetch failed quotation=%s: %s", quotationId, e.getMessage());
+        }
+        return new CardValuesPrefetch(tplById, byLine);
+    }
+
+    /** 解析模板 components_snapshot 为 JsonNode 存入 map（templateId→snapshot）；失败/空跳过。 */
+    private void parseTemplateSnapshotInto(Map<UUID, JsonNode> into, UUID templateId) {
+        if (templateId == null || into.containsKey(templateId)) return;
+        try {
+            @SuppressWarnings("unchecked")
+            var rows = em.createNativeQuery("SELECT components_snapshot FROM template WHERE id = :tid")
+                .setParameter("tid", templateId).getResultList();
+            if (!rows.isEmpty() && rows.get(0) != null) {
+                JsonNode snap = MAPPER.readTree(rows.get(0).toString());
+                if (snap.isArray()) into.put(templateId, snap);
+            }
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] parseTemplateSnapshotInto failed tmpl=%s: %s", templateId, e.getMessage());
+        }
+    }
+
+    // =========================================================================
     // buildCardValues — 复用 snapshot_rows 组装报价卡片值（不双写 expand）
     // =========================================================================
 
@@ -563,26 +660,39 @@ public class CardSnapshotService {
      * AP-51: rowCount 不做 Math.max，以 snapshot_rows 行数为准。
      */
     String buildCardValues(QuotationLineItem li, UUID templateId) {
+        return buildCardValues(li, templateId, null);
+    }
+
+    /** B2 重载：{@code prefetch!=null} 时复用预取模板 snapshot + 整单 IN compdata；{@code null}=逐行查（零破坏）。 */
+    String buildCardValues(QuotationLineItem li, UUID templateId, CardValuesPrefetch prefetch) {
         if (li == null || li.id == null || templateId == null) return null;
         try {
-            // 1. 取模板 components_snapshot（用于 tab 顺序 + componentId）
-            @SuppressWarnings("unchecked")
-            var tmplRows = em.createNativeQuery(
-                "SELECT components_snapshot FROM template WHERE id = :tid")
-                .setParameter("tid", templateId)
-                .getResultList();
-            if (tmplRows.isEmpty() || tmplRows.get(0) == null) return null;
+            // 1. 模板 components_snapshot（tab 顺序 + componentId）—— prefetch 命中复用已解析，否则逐行读+解析
+            JsonNode snapshot = (prefetch != null) ? prefetch.templateSnapshotById.get(templateId) : null;
+            if (snapshot == null) {
+                @SuppressWarnings("unchecked")
+                var tmplRows = em.createNativeQuery(
+                    "SELECT components_snapshot FROM template WHERE id = :tid")
+                    .setParameter("tid", templateId)
+                    .getResultList();
+                if (tmplRows.isEmpty() || tmplRows.get(0) == null) return null;
+                snapshot = MAPPER.readTree(tmplRows.get(0).toString());
+            }
+            if (snapshot == null || !snapshot.isArray()) return null;
 
-            JsonNode snapshot = MAPPER.readTree(tmplRows.get(0).toString());
-            if (!snapshot.isArray()) return null;
-
-            // 2. 一次查 snapshot_rows + deleted_row_keys（同表同条件，避免两次往返）
-            @SuppressWarnings("unchecked")
-            List<Object[]> compData = em.createNativeQuery(
-                "SELECT component_id, snapshot_rows, deleted_row_keys " +
-                "FROM quotation_line_component_data WHERE line_item_id = :lid")
-                .setParameter("lid", li.id)
-                .getResultList();
+            // 2. snapshot_rows + deleted_row_keys —— prefetch 命中取整单 IN 预取的本行分桶，否则逐行查
+            List<Object[]> compData;
+            if (prefetch != null && prefetch.compDataByLine != null) {
+                compData = prefetch.compDataByLine.getOrDefault(li.id, java.util.List.of());
+            } else {
+                @SuppressWarnings("unchecked")
+                List<Object[]> q = em.createNativeQuery(
+                    "SELECT component_id, snapshot_rows, deleted_row_keys " +
+                    "FROM quotation_line_component_data WHERE line_item_id = :lid")
+                    .setParameter("lid", li.id)
+                    .getResultList();
+                compData = q;
+            }
 
             Map<String, String> snapByCompId = new LinkedHashMap<>();
             Map<String, List<DeletedRowKeys.Tombstone>> delByComp = new HashMap<>();
@@ -631,18 +741,28 @@ public class CardSnapshotService {
     String buildCostingCardValues(QuotationLineItem li, UUID costingTemplateId,
                                            UUID customerId, UUID quotationId,
                                            Map<UUID, Map<String, ExpandDriverResponse>> unionByComp) {
+        return buildCostingCardValues(li, costingTemplateId, customerId, quotationId, unionByComp, null);
+    }
+
+    /** B2 重载：{@code prefetch!=null} 时复用预取核价模板 snapshot；{@code null}=逐行读+解析（零破坏）。 */
+    String buildCostingCardValues(QuotationLineItem li, UUID costingTemplateId,
+                                           UUID customerId, UUID quotationId,
+                                           Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
+                                           CardValuesPrefetch prefetch) {
         if (li == null || li.id == null || costingTemplateId == null) return null;
         try {
-            // 1. 取核价模板 components_snapshot
-            @SuppressWarnings("unchecked")
-            var tmplRows = em.createNativeQuery(
-                "SELECT components_snapshot FROM template WHERE id = :tid")
-                .setParameter("tid", costingTemplateId)
-                .getResultList();
-            if (tmplRows.isEmpty() || tmplRows.get(0) == null) return null;
-
-            JsonNode snapshot = MAPPER.readTree(tmplRows.get(0).toString());
-            if (!snapshot.isArray()) return null;
+            // 1. 取核价模板 components_snapshot —— prefetch 命中复用已解析，否则逐行读+解析
+            JsonNode snapshot = (prefetch != null) ? prefetch.templateSnapshotById.get(costingTemplateId) : null;
+            if (snapshot == null) {
+                @SuppressWarnings("unchecked")
+                var tmplRows = em.createNativeQuery(
+                    "SELECT components_snapshot FROM template WHERE id = :tid")
+                    .setParameter("tid", costingTemplateId)
+                    .getResultList();
+                if (tmplRows.isEmpty() || tmplRows.get(0) == null) return null;
+                snapshot = MAPPER.readTree(tmplRows.get(0).toString());
+            }
+            if (snapshot == null || !snapshot.isArray()) return null;
 
             // 核价 BOM 递归展开（P1）：先算根料号闭包（整棵 PRICING BOM 树）。
             // 闭包 partSet 喂各核价组件多值取数；spine 全节点作行主轴（缺数据补空行）。

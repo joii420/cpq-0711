@@ -138,6 +138,15 @@ public class QuotationResource {
             // 把 N 新行的核价 driver 远程查从 N×M_rec 压到 M_rec;无新行的高频防抖空存零开销(不进 if)。
             java.util.Map<java.util.UUID, java.util.Map<String, com.cpq.component.dto.ExpandDriverResponse>> union = null;
             boolean unionDone = false;
+            // B2: 整单全部行 id（compdata IN 预取用；含已有快照行也无妨，多取的桶不被读）
+            java.util.List<UUID> allLineIds = new java.util.ArrayList<>();
+            for (var liMap : lines) {
+                UUID lid = asUuid(liMap.get("id"));
+                if (lid != null) allLineIds.add(lid);
+            }
+            // B2: 首存 card values 批量预取（懒触发，仅遇首个新行才建一次；无新行的高频防抖空存零开销）
+            com.cpq.quotation.service.CardSnapshotService.CardValuesPrefetch prefetch = null;
+            boolean prefetchDone = false;
             for (var liMap : lines) {
                 UUID lineItemId = asUuid(liMap.get("id"));
                 if (lineItemId != null) {
@@ -147,7 +156,8 @@ public class QuotationResource {
                         && li.quoteCardValues != null && !li.quoteCardValues.isBlank();
                     if (li != null && !hasSnapshot) {
                         if (!unionDone) { union = cardSnapshotService.precomputeCostingDriverUnion(id); unionDone = true; }
-                        cardSnapshotService.snapshotLineValuesWithUnion(li, union); // 仅新行首次初始化(核价 union), 已有行保留 editQuoteCardValue 的增量
+                        if (!prefetchDone) { prefetch = cardSnapshotService.precomputeCardValuesPrefetch(id, allLineIds); prefetchDone = true; }
+                        cardSnapshotService.snapshotLineValuesWithUnion(li, union, prefetch); // 仅新行首次初始化(核价 union + B2 预取), 已有行保留 editQuoteCardValue 的增量
                         snapshotsCreated = true;
                     }
                 }
