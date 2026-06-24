@@ -143,6 +143,40 @@ public class ConfigureSnapshotService {
         return out;
     }
 
+    /**
+     * Phase 1 改造点②：整单一次查所有行的 snapshot_rows。
+     *
+     * <p>现状 {@link #loadSnapshotRowsByComp} 每行调一次（saveDraft 增量路径 N 次往返）；
+     * 本方法改为一条 {@code WHERE line_item_id IN (:lis)} 一次取全，循环内查内存 map，
+     * 从 N 次往返降到 1 次。
+     *
+     * <p>空集合入参 → 直接返空 map（避免 SQL {@code IN ()} 语法错）。
+     *
+     * @param lineItemIds 本次报价单全部 line_item_id
+     * @return 外层 lineItemId → 内层 componentId → snapshot_rows（值可为 null，保留 null 语义）
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @SuppressWarnings("unchecked")
+    public Map<UUID, Map<UUID, String>> loadSnapshotRowsByLines(java.util.Collection<UUID> lineItemIds) {
+        Map<UUID, Map<UUID, String>> out = new HashMap<>();
+        if (lineItemIds == null || lineItemIds.isEmpty()) return out;
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT line_item_id, component_id, snapshot_rows " +
+                "FROM quotation_line_component_data " +
+                "WHERE line_item_id IN (:lis)")
+                .setParameter("lis", new ArrayList<>(lineItemIds))
+                .getResultList();
+        for (Object[] r : rows) {
+            if (r[0] == null) continue;  // line_item_id 不应为 null，但防御
+            UUID lid = UUID.fromString(r[0].toString());
+            if (r[1] == null) continue;  // component_id 为 null 的行跳过（与 loadSnapshotRowsByComp 同）
+            UUID cid = UUID.fromString(r[1].toString());
+            String snapshotRows = r[2] == null ? null : r[2].toString();
+            out.computeIfAbsent(lid, k -> new HashMap<>()).put(cid, snapshotRows);
+        }
+        return out;
+    }
+
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     @SuppressWarnings("unchecked")
     public List<Map<String, Object>> loadQuotationLines(UUID quotationId) {
@@ -198,16 +232,37 @@ public class ConfigureSnapshotService {
             try {
                 // 物化所需:模板 components_snapshot(含各 tab 的 componentCode/fields/formulas)。一次加载,逐行复用。
                 JsonNode componentsSnapshot = self.loadComponentsSnapshot(quotationId);
+
+                // Phase 1 改造点②：整单一次查 snapshot_rows（kill switch on → 1 次；off → 循环内逐行查）
+                // byLine: lineItemId → (componentId → snapshot_rows)；循环内读内存 map 替代逐行 DB 查。
+                Map<UUID, Map<UUID, String>> byLine;
+                if (skipRowsWithSnapshot && batchWriteEnabled) {
+                    // 收集全部 lineItemId，整单一次 IN 查
+                    java.util.List<UUID> allLineIds = new java.util.ArrayList<>();
+                    for (Map<String, Object> li : lineItems) {
+                        UUID lid = asUuid(li.get("id"));
+                        if (lid != null) allLineIds.add(lid);
+                    }
+                    byLine = self.loadSnapshotRowsByLines(allLineIds);
+                } else {
+                    byLine = null; // null → 循环内回退逐行查（kill switch off 或非增量路径）
+                }
+
                 for (Map<String, Object> li : lineItems) {
                     UUID lineItemId = asUuid(li.get("id"));
                     String partNo = li.get("productPartNo") != null ? li.get("productPartNo").toString() : null;
                     String compositeType = li.get("compositeType") != null ? li.get("compositeType").toString() : null;
                     if (lineItemId == null || partNo == null || partNo.isBlank()) continue;
                     // Part B: 复用行所有 driver 组件已有 snapshot_rows → 整行跳过 expand + materialize（增量）
-                    if (skipRowsWithSnapshot
-                            && !lineNeedsExpand(driverCompIds, self.loadSnapshotRowsByComp(lineItemId))) {
-                        LOG.debugf("[add-snapshot] line=%s 已有完整 snapshot_rows, 跳过重 expand(增量)", lineItemId);
-                        continue;
+                    if (skipRowsWithSnapshot) {
+                        // 读内存 map（整单已预取，kill switch on）或逐行 DB 查（kill switch off）
+                        Map<UUID, String> snapshotByComp = (byLine != null)
+                                ? byLine.getOrDefault(lineItemId, Map.of())
+                                : self.loadSnapshotRowsByComp(lineItemId);
+                        if (!lineNeedsExpand(driverCompIds, snapshotByComp)) {
+                            LOG.debugf("[add-snapshot] line=%s 已有完整 snapshot_rows, 跳过重 expand(增量)", lineItemId);
+                            continue;
+                        }
                     }
                     // 本行各组件刚写入的 snapshot_rows JSON(componentId → rowsJson),供随后物化 row_data 复用。
                     Map<UUID, String> snapByComp = new LinkedHashMap<>();
