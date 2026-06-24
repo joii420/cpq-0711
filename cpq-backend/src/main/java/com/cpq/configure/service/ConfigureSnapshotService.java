@@ -17,9 +17,11 @@ import org.jboss.logging.Logger;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -64,6 +66,22 @@ public class ConfigureSnapshotService {
         public UUID id;
         public String name;
         public String driverPath;
+    }
+
+    /**
+     * 批量写快照的行载体（整行 M 个组件打包一个事务）。
+     */
+    public static class SnapRow {
+        public final UUID componentId;
+        public final String tabName;
+        /** null → snapshot_rows 落 NULL jsonb；非 null → CAST(:rows AS jsonb)。 */
+        public final String rowsJson;
+
+        public SnapRow(UUID componentId, String tabName, String rowsJson) {
+            this.componentId = componentId;
+            this.tabName = tabName;
+            this.rowsJson = rowsJson;
+        }
     }
 
     /** 组合父级的子件行(lineItemId + partNo),用于按子件聚合展开。 */
@@ -158,6 +176,11 @@ public class ConfigureSnapshotService {
     public void snapshotLines(UUID quotationId, List<Map<String, Object>> lineItems,
                               boolean skipRowsWithSnapshot) {
         if (quotationId == null || lineItems == null || lineItems.isEmpty()) return;
+        // Phase 1 kill switch: cpq.firstsave-batch-write（默认 true）
+        // kill: -Dcpq.firstsave-batch-write=false 或 export CPQ_FIRSTSAVE_BATCH_WRITE=false
+        boolean batchWriteEnabled = "true".equalsIgnoreCase(
+                System.getProperty("cpq.firstsave-batch-write",
+                    System.getenv().getOrDefault("CPQ_FIRSTSAVE_BATCH_WRITE", "true")));
         try {
             // 清 driver 进程缓存(30s TTL),保证快照冻结的是"当前"基础值而非缓存旧值
             // (尤其"从基础刷新"在基础变更后需读到最新)。
@@ -188,21 +211,38 @@ public class ConfigureSnapshotService {
                     }
                     // 本行各组件刚写入的 snapshot_rows JSON(componentId → rowsJson),供随后物化 row_data 复用。
                     Map<UUID, String> snapByComp = new LinkedHashMap<>();
+                    // Phase 1: 收集整行 SnapRow，循环末一次批量写（ON=batch，OFF=逐行）
+                    List<SnapRow> snapRowBatch = batchWriteEnabled ? new ArrayList<>() : null;
                     for (DriverComp comp : comps) {
                         try {
                             ExpandDriverResponse exp = componentDriverService.expand(
                                     comp.id, customerId, partNo, null, null, null, lineItemId, compositeType);
                             List<ExpandDriverResponse.Row> rows = (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
                             String rowsJson = MAPPER.writeValueAsString(rows);
-                            self.writeSnapshot(lineItemId, comp.id, comp.name, rowsJson);
+                            if (batchWriteEnabled) {
+                                // 收集到批次，循环结束后统一写
+                                snapRowBatch.add(new SnapRow(comp.id, comp.name, rowsJson));
+                            } else {
+                                // kill switch OFF：保持原逐行写
+                                self.writeSnapshot(lineItemId, comp.id, comp.name, rowsJson);
+                            }
                             snapByComp.put(comp.id, rowsJson);
                         } catch (Exception e) {
                             LOG.warnf("[add-snapshot] line=%s comp=%s 跳过: %s", lineItemId, comp.id, e.getMessage());
                         }
                     }
+                    // Phase 1: 整行一次批量写（N×M×1 → N×1 REQUIRES_NEW）
+                    if (batchWriteEnabled && snapRowBatch != null && !snapRowBatch.isEmpty()) {
+                        try {
+                            self.writeSnapshotBatch(lineItemId, snapRowBatch);
+                        } catch (Exception e) {
+                            LOG.warnf("[add-snapshot] line=%s 批量写 snapshot 失败(已降级): %s",
+                                    lineItemId, e.getMessage());
+                        }
+                    }
                     // 写时算齐:把 FORMULA 叶子列算进 row_data(扁平),让 Excel 视图无需用户编辑即正确求和。
                     try {
-                        materializeRowData(lineItemId, componentsSnapshot, snapByComp);
+                        materializeRowData(lineItemId, componentsSnapshot, snapByComp, batchWriteEnabled);
                     } catch (Exception e) {
                         LOG.warnf("[add-snapshot] line=%s 物化 row_data 失败(已降级,仍可编辑后修正): %s",
                                 lineItemId, e.getMessage());
@@ -327,6 +367,11 @@ public class ConfigureSnapshotService {
      */
     private void materializeRowData(UUID lineItemId, JsonNode componentsSnapshot,
                                     Map<UUID, String> snapByComp) {
+        materializeRowData(lineItemId, componentsSnapshot, snapByComp, false);
+    }
+
+    private void materializeRowData(UUID lineItemId, JsonNode componentsSnapshot,
+                                    Map<UUID, String> snapByComp, boolean batchWriteEnabled) {
         if (componentsSnapshot == null || snapByComp == null || snapByComp.isEmpty()) return;
         // 配置态：baseRows = snapshot_rows；editRows / rowKeyFields / 墓碑全空（行为与改造前 1:1）。
         Map<UUID, JsonNode> baseRowsByComp = new LinkedHashMap<>();
@@ -335,7 +380,7 @@ public class ConfigureSnapshotService {
         }
         materializeLineRowData(lineItemId, componentsSnapshot, baseRowsByComp,
                 /* editRowsByComp */ Map.of(), /* rowKeyFieldsByComp */ Map.of(),
-                /* deletedByComp */ Map.of());
+                /* deletedByComp */ Map.of(), batchWriteEnabled);
     }
 
     /**
@@ -365,15 +410,49 @@ public class ConfigureSnapshotService {
                                        Map<UUID, JsonNode> editRowsByComp,
                                        Map<UUID, JsonNode> rowKeyFieldsByComp,
                                        Map<UUID, List<DeletedRowKeys.Tombstone>> deletedByComp) {
+        materializeLineRowData(lineItemId, componentsSnapshot, baseRowsByComp, editRowsByComp,
+                rowKeyFieldsByComp, deletedByComp, false);
+    }
+
+    /**
+     * 整行 row_data 物化（共享）—— batchWriteEnabled=true 时一次 {@link #writeRowDataBatch}；
+     * false 时逐组件 {@link #writeRowData}（原行为）。
+     */
+    public void materializeLineRowData(UUID lineItemId, JsonNode componentsSnapshot,
+                                       Map<UUID, JsonNode> baseRowsByComp,
+                                       Map<UUID, JsonNode> editRowsByComp,
+                                       Map<UUID, JsonNode> rowKeyFieldsByComp,
+                                       Map<UUID, List<DeletedRowKeys.Tombstone>> deletedByComp,
+                                       boolean batchWriteEnabled) {
         if (componentsSnapshot == null || baseRowsByComp == null || baseRowsByComp.isEmpty()) return;
         LinkedHashMap<UUID, ArrayNode> byComp = computeLineRowData(lineItemId, componentsSnapshot,
                 baseRowsByComp, editRowsByComp, rowKeyFieldsByComp, deletedByComp);
-        for (Map.Entry<UUID, ArrayNode> e : byComp.entrySet()) {
+        if (batchWriteEnabled) {
+            // Phase 1: 整行一次 REQUIRES_NEW（N×M → N×1）
             try {
-                self.writeRowData(lineItemId, e.getKey(), MAPPER.writeValueAsString(e.getValue()));
+                self.writeRowDataBatch(lineItemId, byComp);
             } catch (Exception ex) {
-                LOG.warnf("[materialize-line] line=%s comp=%s 写 row_data 失败: %s",
-                        lineItemId, e.getKey(), ex.getMessage());
+                LOG.warnf("[materialize-line] line=%s 批量写 row_data 失败(已降级逐行): %s",
+                        lineItemId, ex.getMessage());
+                // 降级逐行写（防止整行丢失）
+                for (Map.Entry<UUID, ArrayNode> e : byComp.entrySet()) {
+                    try {
+                        self.writeRowData(lineItemId, e.getKey(), MAPPER.writeValueAsString(e.getValue()));
+                    } catch (Exception ex2) {
+                        LOG.warnf("[materialize-line] line=%s comp=%s 降级写 row_data 也失败: %s",
+                                lineItemId, e.getKey(), ex2.getMessage());
+                    }
+                }
+            }
+        } else {
+            // kill switch OFF：原逐行写
+            for (Map.Entry<UUID, ArrayNode> e : byComp.entrySet()) {
+                try {
+                    self.writeRowData(lineItemId, e.getKey(), MAPPER.writeValueAsString(e.getValue()));
+                } catch (Exception ex) {
+                    LOG.warnf("[materialize-line] line=%s comp=%s 写 row_data 失败: %s",
+                            lineItemId, e.getKey(), ex.getMessage());
+                }
             }
         }
     }
@@ -617,6 +696,189 @@ public class ConfigureSnapshotService {
             if (rowsJson != null) insert.setParameter("rows", rowsJson);
             insert.executeUpdate();
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 1 批量写 — kill switch: cpq.firstsave-batch-write (默认 true)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Phase 1 批量写快照（路线 A 两段式，整行一个 REQUIRES_NEW 事务）。
+     *
+     * <p>① 一条 {@code UPDATE … FROM (VALUES …) AS v RETURNING d.component_id}
+     * 批量更新 snapshot_rows（保留 row_data，tab_name 用 COALESCE 不覆盖已有值）；
+     * ② RETURNING 未覆盖的 component_id 一条多值 {@code INSERT}（首存全新行场景）。
+     *
+     * <p>⚠ 表无 {@code UNIQUE(line_item_id, component_id)}（V11 只有 PK id + idx_qlcd_line），
+     * 不能用 ON CONFLICT；两段式与逐行 UPSERT 语义 1:1。
+     *
+     * <p>NULL 处理：rowsJson==null → VALUES 列用 {@code NULL::jsonb}（显式 cast，避免
+     * PG "could not determine data type"，同 P2-Q05 陷阱）。
+     *
+     * @param lineItemId 报价行
+     * @param rows       整行各组件快照（componentId, tabName, rowsJson）
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public void writeSnapshotBatch(UUID lineItemId, List<SnapRow> rows) {
+        if (lineItemId == null || rows == null || rows.isEmpty()) return;
+
+        // ── ① 批量 UPDATE ──
+        // 构造 VALUES 子句：每个元素一行，NULL jsonb 显式 cast
+        StringBuilder valBuilder = new StringBuilder();
+        List<Object[]> params = new ArrayList<>();  // [componentId, rowsJson, tabName]
+        for (int i = 0; i < rows.size(); i++) {
+            SnapRow sr = rows.get(i);
+            if (i > 0) valBuilder.append(", ");
+            if (sr.rowsJson == null) {
+                valBuilder.append("(CAST(:cid").append(i).append(" AS uuid), NULL::jsonb, CAST(:tab").append(i).append(" AS text))");
+            } else {
+                valBuilder.append("(CAST(:cid").append(i).append(" AS uuid), CAST(:rows").append(i).append(" AS jsonb), CAST(:tab").append(i).append(" AS text))");
+            }
+            params.add(new Object[]{sr.componentId, sr.rowsJson, sr.tabName});
+        }
+
+        String updateSql =
+                "UPDATE quotation_line_component_data d " +
+                "SET snapshot_rows = v.rows, snapshot_at = NOW(), tab_name = COALESCE(d.tab_name, v.tab) " +
+                "FROM (VALUES " + valBuilder + ") AS v(component_id, rows, tab) " +
+                "WHERE d.line_item_id = :lid AND d.component_id = v.component_id " +
+                "RETURNING d.component_id";
+
+        var updateQuery = em.createNativeQuery(updateSql);
+        updateQuery.setParameter("lid", lineItemId);
+        for (int i = 0; i < params.size(); i++) {
+            Object[] p = params.get(i);
+            updateQuery.setParameter("cid" + i, p[0].toString());  // UUID as string for CAST
+            if (p[1] != null) updateQuery.setParameter("rows" + i, p[1]);
+            updateQuery.setParameter("tab" + i, p[2]);
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Object> returned = updateQuery.getResultList();
+        Set<String> updated = new HashSet<>();
+        for (Object o : returned) updated.add(o.toString());
+
+        // ── ② 未命中的多值 INSERT ──
+        List<SnapRow> toInsert = new ArrayList<>();
+        for (SnapRow sr : rows) {
+            if (!updated.contains(sr.componentId.toString())) toInsert.add(sr);
+        }
+        if (toInsert.isEmpty()) return;
+
+        StringBuilder insBuilder = new StringBuilder();
+        for (int i = 0; i < toInsert.size(); i++) {
+            SnapRow sr = toInsert.get(i);
+            if (i > 0) insBuilder.append(", ");
+            if (sr.rowsJson == null) {
+                insBuilder.append("(:ilid").append(i).append(", :icid").append(i)
+                          .append(", :itab").append(i).append(", NULL::jsonb, NOW())");
+            } else {
+                insBuilder.append("(:ilid").append(i).append(", :icid").append(i)
+                          .append(", :itab").append(i).append(", CAST(:irows").append(i).append(" AS jsonb), NOW())");
+            }
+        }
+
+        String insertSql =
+                "INSERT INTO quotation_line_component_data " +
+                "(line_item_id, component_id, tab_name, snapshot_rows, snapshot_at) " +
+                "VALUES " + insBuilder;
+
+        var insertQuery = em.createNativeQuery(insertSql);
+        for (int i = 0; i < toInsert.size(); i++) {
+            SnapRow sr = toInsert.get(i);
+            insertQuery.setParameter("ilid" + i, lineItemId);
+            insertQuery.setParameter("icid" + i, sr.componentId);
+            insertQuery.setParameter("itab" + i, sr.tabName);
+            if (sr.rowsJson != null) insertQuery.setParameter("irows" + i, sr.rowsJson);
+        }
+        insertQuery.executeUpdate();
+    }
+
+    /**
+     * Phase 1 批量写 row_data（路线 A 两段式，整行一个 REQUIRES_NEW 事务）。
+     *
+     * <p>只更 row_data，保留 snapshot_rows（互不清零）。
+     * 实务上 {@link #writeSnapshotBatch} 已先建行，UPDATE 几乎全命中，INSERT 段通常空。
+     *
+     * @param lineItemId 报价行
+     * @param byComp     componentId → 扁平 row_data（ArrayNode）
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public void writeRowDataBatch(UUID lineItemId, Map<UUID, ArrayNode> byComp) throws Exception {
+        if (lineItemId == null || byComp == null || byComp.isEmpty()) return;
+
+        List<Map.Entry<UUID, ArrayNode>> entries = new ArrayList<>(byComp.entrySet());
+
+        // ── ① 批量 UPDATE（只更 row_data，不碰 snapshot_rows）──
+        StringBuilder valBuilder = new StringBuilder();
+        for (int i = 0; i < entries.size(); i++) {
+            Map.Entry<UUID, ArrayNode> e = entries.get(i);
+            if (i > 0) valBuilder.append(", ");
+            String rdJson = e.getValue() != null ? MAPPER.writeValueAsString(e.getValue()) : null;
+            if (rdJson == null) {
+                valBuilder.append("(CAST(:cid").append(i).append(" AS uuid), NULL::jsonb)");
+            } else {
+                valBuilder.append("(CAST(:cid").append(i).append(" AS uuid), CAST(:rd").append(i).append(" AS jsonb))");
+            }
+        }
+
+        String updateSql =
+                "UPDATE quotation_line_component_data d " +
+                "SET row_data = v.rd " +
+                "FROM (VALUES " + valBuilder + ") AS v(component_id, rd) " +
+                "WHERE d.line_item_id = :lid AND d.component_id = v.component_id " +
+                "RETURNING d.component_id";
+
+        var updateQuery = em.createNativeQuery(updateSql);
+        updateQuery.setParameter("lid", lineItemId);
+        for (int i = 0; i < entries.size(); i++) {
+            Map.Entry<UUID, ArrayNode> e = entries.get(i);
+            updateQuery.setParameter("cid" + i, e.getKey().toString());
+            if (e.getValue() != null) {
+                updateQuery.setParameter("rd" + i, MAPPER.writeValueAsString(e.getValue()));
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Object> returned = updateQuery.getResultList();
+        Set<String> updated = new HashSet<>();
+        for (Object o : returned) updated.add(o.toString());
+
+        // ── ② 未命中的多值 INSERT ──
+        List<Map.Entry<UUID, ArrayNode>> toInsert = new ArrayList<>();
+        for (Map.Entry<UUID, ArrayNode> e : entries) {
+            if (!updated.contains(e.getKey().toString())) toInsert.add(e);
+        }
+        if (toInsert.isEmpty()) return;
+
+        StringBuilder insBuilder = new StringBuilder();
+        List<String[]> insertParams = new ArrayList<>();
+        for (int i = 0; i < toInsert.size(); i++) {
+            Map.Entry<UUID, ArrayNode> e = toInsert.get(i);
+            if (i > 0) insBuilder.append(", ");
+            String rdJson = e.getValue() != null ? MAPPER.writeValueAsString(e.getValue()) : null;
+            if (rdJson == null) {
+                insBuilder.append("(:ilid").append(i).append(", :icid").append(i).append(", NULL::jsonb, NOW())");
+            } else {
+                insBuilder.append("(:ilid").append(i).append(", :icid").append(i)
+                          .append(", CAST(:ird").append(i).append(" AS jsonb), NOW())");
+            }
+            insertParams.add(new String[]{e.getKey().toString(), rdJson});
+        }
+
+        String insertSql =
+                "INSERT INTO quotation_line_component_data " +
+                "(line_item_id, component_id, row_data, created_at) " +
+                "VALUES " + insBuilder;
+
+        var insertQuery = em.createNativeQuery(insertSql);
+        for (int i = 0; i < toInsert.size(); i++) {
+            String[] p = insertParams.get(i);
+            insertQuery.setParameter("ilid" + i, lineItemId);
+            insertQuery.setParameter("icid" + i, UUID.fromString(p[0]));
+            if (p[1] != null) insertQuery.setParameter("ird" + i, p[1]);
+        }
+        insertQuery.executeUpdate();
     }
 
     private static UUID asUuid(Object o) {
