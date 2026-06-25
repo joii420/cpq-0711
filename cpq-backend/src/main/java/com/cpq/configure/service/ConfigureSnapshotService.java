@@ -227,8 +227,9 @@ public class ConfigureSnapshotService {
         boolean wholeBatchEnabled = batchWriteEnabled && "true".equalsIgnoreCase(
                 System.getProperty("cpq.firstsave-whole-batch",
                     System.getenv().getOrDefault("CPQ_FIRSTSAVE_WHOLE_BATCH", "true")));
-        // 整单收集各行 SnapRow,循环末一次 writeSnapshotBatchAllLines(wholeBatchEnabled 时)。
+        // 整单收集各行 SnapRow / row_data,循环末各一次 writeSnapshotBatchAllLines / writeRowDataBatchAllLines。
         Map<UUID, List<SnapRow>> allSnapRows = wholeBatchEnabled ? new LinkedHashMap<>() : null;
+        Map<UUID, Map<UUID, ArrayNode>> allRowData = wholeBatchEnabled ? new LinkedHashMap<>() : null;
         try {
             // 清 driver 进程缓存(30s TTL),保证快照冻结的是"当前"基础值而非缓存旧值
             // (尤其"从基础刷新"在基础变更后需读到最新)。
@@ -340,21 +341,36 @@ public class ConfigureSnapshotService {
                         }
                     }
                     // 写时算齐:把 FORMULA 叶子列算进 row_data(扁平),让 Excel 视图无需用户编辑即正确求和。
+                    // #2 物化批量: wholeBatchEnabled 时只算不写,循环末整单一次 writeRowDataBatchAllLines。
                     try {
-                        materializeRowData(lineItemId, componentsSnapshot, snapByComp, batchWriteEnabled);
+                        if (wholeBatchEnabled) {
+                            Map<UUID, ArrayNode> rd = computeRowDataFromSnap(lineItemId, componentsSnapshot, snapByComp);
+                            if (rd != null && !rd.isEmpty()) allRowData.put(lineItemId, rd);
+                        } else {
+                            materializeRowData(lineItemId, componentsSnapshot, snapByComp, batchWriteEnabled);
+                        }
                     } catch (Exception e) {
                         LOG.warnf("[add-snapshot] line=%s 物化 row_data 失败(已降级,仍可编辑后修正): %s",
                                 lineItemId, e.getMessage());
                     }
                 }
                 // Phase 2 落库批量: 整单一次写全部行 snapshot_rows(替代每行 writeSnapshotBatch)。
-                // 注:materialize 已先 per-line 写 row_data(其 INSERT 段建行),此处 UPDATE 命中回填 snapshot_rows
-                //    → 最终 (snapshot_rows,row_data,tab_name) 与逐行序逐位一致(仅 NOW() 时间戳差,非渲染/golden 维度)。
+                // 顺序:先 snapshot(建行 + snapshot_rows),后 row_data(UPDATE 命中);最终
+                //   (snapshot_rows,row_data,tab_name) 与逐行序逐位一致(仅 NOW() 时间戳差,非渲染/golden 维度)。
                 if (wholeBatchEnabled && allSnapRows != null && !allSnapRows.isEmpty()) {
                     try {
                         self.writeSnapshotBatchAllLines(allSnapRows);
                     } catch (Exception e) {
                         LOG.warnf("[add-snapshot] quotation=%s 整单批量写 snapshot 失败(已降级): %s",
+                                quotationId, e.getMessage());
+                    }
+                }
+                // #2 物化批量: 整单一次写全部行 row_data(替代每行 writeRowDataBatch)。
+                if (wholeBatchEnabled && allRowData != null && !allRowData.isEmpty()) {
+                    try {
+                        self.writeRowDataBatchAllLines(allRowData);
+                    } catch (Exception e) {
+                        LOG.warnf("[add-snapshot] quotation=%s 整单批量写 row_data 失败(已降级): %s",
                                 quotationId, e.getMessage());
                     }
                 }
@@ -558,6 +574,92 @@ public class ConfigureSnapshotService {
         materializeLineRowData(lineItemId, componentsSnapshot, baseRowsByComp,
                 /* editRowsByComp */ Map.of(), /* rowKeyFieldsByComp */ Map.of(),
                 /* deletedByComp */ Map.of(), batchWriteEnabled);
+    }
+
+    /**
+     * #2 物化批量:纯计算本行 row_data(componentId→ArrayNode),<b>不落库</b>,供整单收集后
+     * 一次 {@link #writeRowDataBatchAllLines}。计算与 {@link #materializeRowData} 同款
+     * (parse snapByComp → baseRows → {@link #computeLineRowData}),仅去掉 per-line 写。
+     */
+    private Map<UUID, ArrayNode> computeRowDataFromSnap(UUID lineItemId, JsonNode componentsSnapshot,
+                                                        Map<UUID, String> snapByComp) {
+        if (componentsSnapshot == null || snapByComp == null || snapByComp.isEmpty()) return Map.of();
+        Map<UUID, JsonNode> baseRowsByComp = new LinkedHashMap<>();
+        for (Map.Entry<UUID, String> e : snapByComp.entrySet()) {
+            baseRowsByComp.put(e.getKey(), parseRows(e.getValue()));
+        }
+        return computeLineRowData(lineItemId, componentsSnapshot, baseRowsByComp,
+                Map.of(), Map.of(), Map.of());
+    }
+
+    /**
+     * #2 物化批量:<b>整单一次</b>写全部行的 row_data(替代每行 {@link #writeRowDataBatch} 的
+     * N×REQUIRES_NEW)。两段式 {@code UPDATE…FROM(VALUES (lid,cid,rd))}(双键匹配)+ 未命中 INSERT,
+     * 分块 200 元组。只更 row_data,不碰 snapshot_rows。与逐行 writeRowDataBatch 落库内容逐位一致。
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public void writeRowDataBatchAllLines(Map<UUID, Map<UUID, ArrayNode>> byLineComp) throws Exception {
+        if (byLineComp == null || byLineComp.isEmpty()) return;
+        final int CHUNK = 200;
+        List<Object[]> tuples = new ArrayList<>();   // [lineItemId, componentId, rdJson]
+        for (Map.Entry<UUID, Map<UUID, ArrayNode>> le : byLineComp.entrySet()) {
+            if (le.getKey() == null || le.getValue() == null) continue;
+            for (Map.Entry<UUID, ArrayNode> ce : le.getValue().entrySet()) {
+                String rd = ce.getValue() != null ? MAPPER.writeValueAsString(ce.getValue()) : null;
+                tuples.add(new Object[]{ le.getKey(), ce.getKey(), rd });
+            }
+        }
+        if (tuples.isEmpty()) return;
+
+        for (int start = 0; start < tuples.size(); start += CHUNK) {
+            int end = Math.min(start + CHUNK, tuples.size());
+            List<Object[]> chunk = tuples.subList(start, end);
+            // ── ① 批量 UPDATE(双键 lid+cid,只更 row_data)──
+            StringBuilder valB = new StringBuilder();
+            for (int i = 0; i < chunk.size(); i++) {
+                if (i > 0) valB.append(", ");
+                String rdCast = chunk.get(i)[2] == null ? "NULL::jsonb" : "CAST(:rd" + i + " AS jsonb)";
+                valB.append("(CAST(:lid").append(i).append(" AS uuid), CAST(:cid").append(i)
+                    .append(" AS uuid), ").append(rdCast).append(")");
+            }
+            String updateSql =
+                "UPDATE quotation_line_component_data d SET row_data = v.rd " +
+                "FROM (VALUES " + valB + ") AS v(line_item_id, component_id, rd) " +
+                "WHERE d.line_item_id = v.line_item_id AND d.component_id = v.component_id " +
+                "RETURNING d.line_item_id, d.component_id";
+            var upd = em.createNativeQuery(updateSql);
+            for (int i = 0; i < chunk.size(); i++) {
+                upd.setParameter("lid" + i, ((UUID) chunk.get(i)[0]).toString());
+                upd.setParameter("cid" + i, ((UUID) chunk.get(i)[1]).toString());
+                if (chunk.get(i)[2] != null) upd.setParameter("rd" + i, chunk.get(i)[2]);
+            }
+            @SuppressWarnings("unchecked")
+            List<Object[]> returned = upd.getResultList();
+            Set<String> updated = new HashSet<>();
+            for (Object[] r : returned) updated.add(r[0].toString() + "|" + r[1].toString());
+
+            // ── ② 未命中多值 INSERT ──
+            List<Object[]> toInsert = new ArrayList<>();
+            for (Object[] t : chunk) {
+                if (!updated.contains(t[0].toString() + "|" + t[1].toString())) toInsert.add(t);
+            }
+            if (toInsert.isEmpty()) continue;
+            StringBuilder insB = new StringBuilder();
+            for (int i = 0; i < toInsert.size(); i++) {
+                if (i > 0) insB.append(", ");
+                String rdCast = toInsert.get(i)[2] == null ? "NULL::jsonb" : "CAST(:ird" + i + " AS jsonb)";
+                insB.append("(:ilid").append(i).append(", :icid").append(i).append(", ").append(rdCast).append(", NOW())");
+            }
+            String insertSql =
+                "INSERT INTO quotation_line_component_data (line_item_id, component_id, row_data, created_at) VALUES " + insB;
+            var ins = em.createNativeQuery(insertSql);
+            for (int i = 0; i < toInsert.size(); i++) {
+                ins.setParameter("ilid" + i, (UUID) toInsert.get(i)[0]);
+                ins.setParameter("icid" + i, (UUID) toInsert.get(i)[1]);
+                if (toInsert.get(i)[2] != null) ins.setParameter("ird" + i, toInsert.get(i)[2]);
+            }
+            ins.executeUpdate();
+        }
     }
 
     /**
