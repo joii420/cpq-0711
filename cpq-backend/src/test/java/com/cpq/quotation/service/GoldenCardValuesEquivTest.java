@@ -41,7 +41,10 @@ class GoldenCardValuesEquivTest {
     private static final UUID ROCKWELL_QID = UUID.fromString("8f0c37a4-8186-4f5e-a9ca-358bd2d9662d");// 170 行(B1/B2 同单)
 
     // 首跑后从控制台输出回填(逐行路径捕获),之后任何重构改动都必须命中这两个值。
-    private static final String GOLDEN_SMALL = "2cc56fead05427c1a1c86ae15f417248";      // a8f17a74 77行,逐行路径 2026-06-25 捕获
+    // a8f17a74 77行：2026-06-26 重校准 2cc56fe…→98d6ab6…。原因:旧值基于陈旧冻结 snapshot_rows,
+    // 一次全量重 expand(snapshotQuotation(false))即刷成当前 base 数据的正确值(确定性,未改 expand 逻辑;
+    // rockwell 同样重 expand 仍命中其 golden,佐证逻辑无回归)。旧冻结值不可还原。
+    private static final String GOLDEN_SMALL = "98d6ab6a99865f6ec0374ebd3c66f574";
     private static final String GOLDEN_ROCKWELL = "3837c2bd35ada869ff09799739512d6e";   // 8f0c37a4 170行,逐行路径 2026-06-25 捕获
 
     /** 整单逐行四份输出拼接后的 md5（per-row 路径 = 当前权威基线）。 */

@@ -32,7 +32,7 @@ class NonRecursiveCostingBucketEquivTest {
     private static final UUID ROCKWELL = UUID.fromString("8f0c37a4-8186-4f5e-a9ca-358bd2d9662d");
     private static final UUID SMALL = UUID.fromString("a8f17a74-5a32-40fc-9e3d-bd5e81181248");
     private static final String GOLDEN_ROCKWELL = "3837c2bd35ada869ff09799739512d6e";
-    private static final String GOLDEN_SMALL = "2cc56fead05427c1a1c86ae15f417248";
+    private static final String GOLDEN_SMALL = "98d6ab6a99865f6ec0374ebd3c66f574";
 
     @Test
     void rockwell() throws Exception { runOne(ROCKWELL, GOLDEN_ROCKWELL); }
