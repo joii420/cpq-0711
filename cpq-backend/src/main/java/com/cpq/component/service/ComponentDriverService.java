@@ -767,6 +767,25 @@ public class ComponentDriverService {
         return viewHasNoRowDimension(componentId, c.dataDriverPath);    // ②③④
     }
 
+    /**
+     * Phase 2-2'：核价侧<b>非递归</b> driver 组件能否纳入「整单 partNo 合桶」。充要条件(全成立)：
+     * ① {@code bomRecursiveExpand != true}（递归组件走 {@link #eligibleForBomUnion} 的 partSet union，不重复处理）；
+     * ② {@code componentType != "EXCEL"}；
+     * ③④⑤ 视图无行维度（见 {@link #viewHasNoRowDimension}：无 lineItemId / 无 spineKeys / 非 composite）。
+     *
+     * <p>满足时该组件在 {@code expandTemplateDriverBaseRows} 的 recursive=false 分支可用
+     * {@code expandMulti(全单 distinct 根料号)} 一次取回（170→1/组件），按 partNo 回配；
+     * 与逐行 {@code expand(…,partNo,…,li.id,…)} 对无行维度视图逐位等价（li.id 被视图忽略）。
+     * 任一不满足 → 回落逐行 expand（慢但正确）。
+     */
+    public boolean eligibleForNonRecursiveCostingBucket(UUID componentId) {
+        Component c = Component.findById(componentId);
+        if (c == null) return false;
+        if (Boolean.TRUE.equals(c.bomRecursiveExpand)) return false;     // ① 非递归
+        if ("EXCEL".equals(c.componentType)) return false;               // ②
+        return viewHasNoRowDimension(componentId, c.dataDriverPath);    // ③④⑤
+    }
+
     // ── 内部 ─────────────────────────────────────────────────────────────
 
     /** V190: default_source GLOBAL_VARIABLE 任务 �?code + 动�?key 映射（包级可见：供 P1-C3 批量等价测试构造） */
