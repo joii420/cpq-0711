@@ -500,12 +500,12 @@ public class CardSnapshotService {
         Quotation q = Quotation.findById(quotationId);
         if (q == null || q.costingCardTemplateId == null) return unionByComp;
 
-        // 核价模板的 recursive driver 组件清单(整单一次,顺带省 expandTemplateDriverBaseRows 每行重查)
+        // 核价模板的全部 driver 组件清单(整单一次)。Phase 2-2'：不再仅 recursive——
+        // 非递归无行维度组件(COMP-0021/22/23 类)也纳入合桶,打中真实 per-line expand 热点。
         @SuppressWarnings("unchecked")
         List<Object> driverComps = em.createNativeQuery(
             "SELECT DISTINCT c.id FROM template_component tc JOIN component c ON c.id = tc.component_id " +
-            "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> '' " +
-            "  AND c.bom_recursive_expand = TRUE")
+            "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
             .setParameter("tid", q.costingCardTemplateId).getResultList();
         if (driverComps.isEmpty()) return unionByComp;
 
@@ -513,7 +513,12 @@ public class CardSnapshotService {
         for (Object idObj : driverComps) {     // 单列 SELECT → 元素即 c.id
             if (idObj == null) continue;
             UUID compId = (idObj instanceof UUID u) ? u : UUID.fromString(idObj.toString());
-            if (componentDriverService.eligibleForBomUnion(compId)) eligible.add(compId);
+            // 递归走 partSet union(C4,既有);非递归无行维度走 partNo 合桶(Phase 2-2',新)。
+            // 两路最终都 expandForPartSet(unionList)=expandMulti(非 composite),仅闸门来源不同。
+            if (componentDriverService.eligibleForBomUnion(compId)
+                    || componentDriverService.eligibleForNonRecursiveCostingBucket(compId)) {
+                eligible.add(compId);
+            }
         }
         if (eligible.isEmpty()) return unionByComp;
 
@@ -1562,9 +1567,18 @@ public class CardSnapshotService {
                                     compId, customerId, closure.partSet, li.id, compositeType);
                         baseRowsByComp.put(cidStr, buildSpineBaseRows(closure, byPart));
                     } else {
-                        // 未勾选：按根料号单料号普通展开(无系统列)，等同报价侧取数
-                        ExpandDriverResponse exp = componentDriverService.expand(
-                            compId, customerId, partNo, null, null, null, li.id, compositeType);
+                        // 未勾选：按根料号单料号普通展开(无系统列)，等同报价侧取数。
+                        // Phase 2-2'：非递归无行维度组件命中整单合桶(unionByComp)则按 partNo 取,否则逐行 expand 兜底。
+                        ExpandDriverResponse exp;
+                        Map<String, ExpandDriverResponse> nrBucket =
+                            (unionByComp != null) ? unionByComp.get(compId) : null;
+                        if (nrBucket != null) {
+                            exp = nrBucket.get(partNo);   // 命中合桶：0 往返(unionMulti 已按 hf_part_no 回分)
+                        } else {
+                            NON_RECURSIVE_EXPAND_QUERY_COUNT.incrementAndGet();
+                            exp = componentDriverService.expand(
+                                compId, customerId, partNo, null, null, null, li.id, compositeType);
+                        }
                         List<ExpandDriverResponse.Row> rows =
                             (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
                         baseRowsByComp.put(cidStr, buildBaseRowsFromRows(rows));
@@ -2024,6 +2038,10 @@ public class CardSnapshotService {
 
     /** F4 可观测性：driver 组件清单查执行次数(整单首存应由 ~170 降到 0,全部命中预取)。供测试断言/监控。 */
     public static final java.util.concurrent.atomic.AtomicLong DRIVER_COMPS_QUERY_COUNT =
+        new java.util.concurrent.atomic.AtomicLong();
+
+    /** Phase 2-2' 可观测性：非递归 driver 单值逐行 expand 兜底次数(eligible 组件整单合桶后应由 ~N×行 降到 0)。 */
+    public static final java.util.concurrent.atomic.AtomicLong NON_RECURSIVE_EXPAND_QUERY_COUNT =
         new java.util.concurrent.atomic.AtomicLong();
 
     private String loadRowKeyFields(String componentId) {
