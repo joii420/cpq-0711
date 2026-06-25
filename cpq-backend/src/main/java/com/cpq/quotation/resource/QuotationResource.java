@@ -147,6 +147,7 @@ public class QuotationResource {
             // B2: 首存 card values 批量预取（懒触发，仅遇首个新行才建一次；无新行的高频防抖空存零开销）
             com.cpq.quotation.service.CardSnapshotService.CardValuesPrefetch prefetch = null;
             boolean prefetchDone = false;
+            boolean excelCdDone = false;   // Excel compData 整单预取上下文(懒触发,与 prefetch 同时机)
             for (var liMap : lines) {
                 UUID lineItemId = asUuid(liMap.get("id"));
                 if (lineItemId != null) {
@@ -157,6 +158,17 @@ public class QuotationResource {
                     if (li != null && !hasSnapshot) {
                         if (!unionDone) { union = cardSnapshotService.precomputeCostingDriverUnion(id); unionDone = true; }
                         if (!prefetchDone) { prefetch = cardSnapshotService.precomputeCardValuesPrefetch(id, allLineIds); prefetchDone = true; }
+                        // Excel compData 整单 IN 查一次 + 按 lineItemId 分组,设入 ThreadLocal,
+                        // 供 buildExcelValues→buildRowData 读内存(消逐行/逐节点 QuotationLineComponentData.list)。
+                        if (!excelCdDone) {
+                            java.util.Map<UUID, java.util.List<com.cpq.quotation.entity.QuotationLineComponentData>> cdByLine =
+                                com.cpq.quotation.entity.QuotationLineComponentData
+                                    .<com.cpq.quotation.entity.QuotationLineComponentData>list(
+                                        "lineItemId IN ?1 ORDER BY lineItemId, sortOrder, id", allLineIds)
+                                    .stream().collect(java.util.stream.Collectors.groupingBy(cd -> cd.lineItemId));
+                            com.cpq.formula.dataloader.ExcelCompDataContext.set(cdByLine);
+                            excelCdDone = true;
+                        }
                         cardSnapshotService.snapshotLineValuesWithUnion(li, union, prefetch); // 仅新行首次初始化(核价 union + B2 预取), 已有行保留 editQuoteCardValue 的增量
                         snapshotsCreated = true;
                     }
@@ -164,6 +176,8 @@ public class QuotationResource {
             }
         } catch (Exception ignore) {
             // 尽力而为
+        } finally {
+            com.cpq.formula.dataloader.ExcelCompDataContext.clear();   // ThreadLocal 卫生:务必清
         }
         // 行 113 的 dto 在算快照"之前"构建, 不含本次新行刚生成的 quoteCardValues/costingCardValues。
         // 导入流程首存(新行)时, 前端 syncLineItemsFromResponse 依赖响应里的 4 份卡片值翻入"快照模式"
