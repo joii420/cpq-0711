@@ -212,6 +212,9 @@ const QuotationWizard: React.FC = () => {
   // savingRef：有保存在飞时不再并发起第二次；pendingSaveRef：飞行中到来的变更，落地后补跑一次（取最新 payload）。
   const savingRef = useRef(false);
   const pendingSaveRef = useRef(false);
+  // 止血B(2026-06-25):保存在飞状态,驱动「保存草稿/下一步/上一步」按钮禁用 + loading,
+  //   配合 handleSaveDraft 的 savingRef 在飞守卫,杜绝卡顿期连点并发触发 saveDraft(→OptimisticLock/腐蚀)。
+  const [saving, setSaving] = useState(false);
   // Plan A(2026-06-24 空白BUG止血):autosave 默认拒绝门。
   //   背景:打开报价单时 applyQuotationData(:300 basicItems)+ enrich(:425)两处**程序化** setLineItems
   //   触发 autosave 风暴 → saveDraft 慢 + 并发 → 占满后端线程池 → getById 超时 → 退空本地缓存 → 空白页
@@ -656,6 +659,7 @@ const QuotationWizard: React.FC = () => {
     // ③ 串行化：已有保存在飞 → 记一个待补跑标记后直接返回，不并发第二条 id=null payload。
     if (savingRef.current) { pendingSaveRef.current = true; return; }
     savingRef.current = true;
+    setSaving(true);
     try {
       const values = form.getFieldsValue();
       const payload = normalizeDraftPayloadNumbers(buildDraftPayload(values));
@@ -681,6 +685,7 @@ const QuotationWizard: React.FC = () => {
       }
     } finally {
       savingRef.current = false;
+      setSaving(false);
       // 飞行期间有新的保存请求被合并 → 现在串行补跑一次（取最新 lineItems/expansion 的 payload）。
       // 此时第一次保存的 syncLineItemsFromResponse 已回填行 id，补跑 payload 带 id → 后端就地复用，不再新增重复行。
       if (pendingSaveRef.current) {
@@ -1020,6 +1025,17 @@ const QuotationWizard: React.FC = () => {
 
   const handleSaveDraft = async (silent = false) => {
     if (!quotationId) return;
+    // 止血B(2026-06-25)在飞守卫:已有保存在飞(autoSave 或手动)→ 标记补跑后返回,不并发起第二条
+    //   saveDraft。背景:首存慢(几十秒)时用户在卡顿期连点「保存草稿/下一步」会并发触发多个 saveDraft,
+    //   阶段③ 卡片值循环互删被对方重建的行 → OptimisticLock + 可能腐蚀数据(939e072e 被抹0行同机制)。
+    //   与 autoSaveDraft 共用 savingRef/pendingSaveRef,使所有 save(自动+手动+步骤切换)全局串行。
+    if (savingRef.current) {
+      pendingSaveRef.current = true;
+      if (!silent) message.info('正在保存中，请稍候…');
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
     try {
       const values = form.getFieldsValue();
       // 与 autoSaveDraft 同口径:规范化数值后再 PUT/落 localStorage,避免手动/自动保存写库精度不一致
@@ -1038,6 +1054,14 @@ const QuotationWizard: React.FC = () => {
         if (!silent) message.warning('已保存到本地，网络恢复后将同步');
       } catch {
         if (!silent) message.error(e.message);
+      }
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+      // 飞行期间合并的保存请求,落地后补跑一次(取最新 payload),与 autoSaveDraft 同款。
+      if (pendingSaveRef.current) {
+        pendingSaveRef.current = false;
+        autoSaveDraftRef.current?.();
       }
     }
   };
@@ -1582,7 +1606,7 @@ const QuotationWizard: React.FC = () => {
         extra={
           <Space>
             {quotationId && (
-              <Button icon={<SaveOutlined />} onClick={() => handleSaveDraft()}>
+              <Button icon={<SaveOutlined />} loading={saving} disabled={saving} onClick={() => handleSaveDraft()}>
                 保存草稿
               </Button>
             )}
@@ -1615,13 +1639,14 @@ const QuotationWizard: React.FC = () => {
         <Divider />
 
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <Button disabled={currentStep === 0} onClick={prev}>
+          <Button disabled={currentStep === 0 || saving} onClick={prev}>
             上一步
           </Button>
           <Button
             type="primary"
+            loading={saving}
             onClick={next}
-            disabled={currentStep === steps.length - 1 || (currentStep === 0 && !!selectedCustomer && !step1Valid)}
+            disabled={saving || currentStep === steps.length - 1 || (currentStep === 0 && !!selectedCustomer && !step1Valid)}
             title={currentStep === 0 && !!selectedCustomer && !step1Valid ? '请先填写产品分类和报价模板' : undefined}
           >
             下一步
