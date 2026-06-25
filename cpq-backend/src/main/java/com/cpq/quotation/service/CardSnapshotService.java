@@ -597,10 +597,18 @@ public class CardSnapshotService {
          * 故 key 缺失=未预取→回落逐行查,key 存在但值=NullNode→该组件无行键(不再查库)。
          */
         final Map<String, JsonNode> rowKeyFieldsByComp;
-        CardValuesPrefetch(Map<UUID, JsonNode> t, Map<UUID, List<Object[]>> c, Map<String, JsonNode> rkf) {
+        /**
+         * F4：templateId → driver 组件清单（[c.id, c.bom_recursive_expand] 列表）。整单一次查替代
+         * {@code expandTemplateDriverBaseRows} 每行重发的 {@code SELECT DISTINCT ... template_component}
+         * （仅依赖 templateId，跨行同值）。key 缺失=未预取→回落逐行查。
+         */
+        final Map<UUID, List<Object[]>> driverCompsByTemplate;
+        CardValuesPrefetch(Map<UUID, JsonNode> t, Map<UUID, List<Object[]>> c, Map<String, JsonNode> rkf,
+                           Map<UUID, List<Object[]>> dc) {
             this.templateSnapshotById = t;
             this.compDataByLine = c;
             this.rowKeyFieldsByComp = rkf;
+            this.driverCompsByTemplate = dc;
         }
     }
 
@@ -613,11 +621,15 @@ public class CardSnapshotService {
         Map<UUID, JsonNode> tplById = new HashMap<>();
         Map<UUID, List<Object[]>> byLine = new HashMap<>();
         Map<String, JsonNode> rkfByComp = new HashMap<>();
+        Map<UUID, List<Object[]>> driverCompsByTpl = new HashMap<>();
         try {
             Quotation q = Quotation.findById(quotationId);
             if (q != null) {
                 parseTemplateSnapshotInto(tplById, q.customerTemplateId);
                 parseTemplateSnapshotInto(tplById, q.costingCardTemplateId);
+                // F4：driver 组件清单整单一次查（报价+核价模板各一次,替代 expandTemplateDriverBaseRows 每行重查）。
+                prefetchDriverComps(driverCompsByTpl, q.customerTemplateId);
+                prefetchDriverComps(driverCompsByTpl, q.costingCardTemplateId);
             }
             // F1(方案 B)：从两份模板 snapshot 收集 distinct componentId，整单一次 IN 查 row_key_fields。
             prefetchRowKeyFields(tplById, rkfByComp);
@@ -639,7 +651,31 @@ public class CardSnapshotService {
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] precomputeCardValuesPrefetch failed quotation=%s: %s", quotationId, e.getMessage());
         }
-        return new CardValuesPrefetch(tplById, byLine, rkfByComp);
+        return new CardValuesPrefetch(tplById, byLine, rkfByComp, driverCompsByTpl);
+    }
+
+    /**
+     * F4：整单一次查某模板的 driver 组件清单（与 {@link #expandTemplateDriverBaseRows} 内逐行查 <b>同一条 SQL</b>，
+     * 结果仅依赖 templateId → 跨行同值）。kill switch {@code cpq.firstsave-drivercomps-prefetch}（默认 true）。
+     */
+    private void prefetchDriverComps(Map<UUID, List<Object[]>> into, UUID templateId) {
+        if (templateId == null || into.containsKey(templateId)) return;
+        boolean enabled = "true".equalsIgnoreCase(
+            System.getProperty("cpq.firstsave-drivercomps-prefetch",
+                System.getenv().getOrDefault("CPQ_FIRSTSAVE_DRIVERCOMPS_PREFETCH", "true")));
+        if (!enabled) return;
+        try {
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = em.createNativeQuery(
+                "SELECT DISTINCT c.id, c.bom_recursive_expand FROM template_component tc " +
+                "JOIN component c ON c.id = tc.component_id " +
+                "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
+                .setParameter("tid", templateId)
+                .getResultList();
+            into.put(templateId, rows);
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] prefetchDriverComps failed tmpl=%s: %s（已降级,回落逐行查）", templateId, e.getMessage());
+        }
     }
 
     /**
@@ -833,8 +869,12 @@ public class CardSnapshotService {
             BomClosureResult closure = bomClosureService.compute(li.productPartNoSnapshot, java.util.Map.of());
 
             // 2-4. 加载核价模板 driver 组件并按 spine 全节点展开 → baseRows（按 componentId）
+            // F4：透传整单预取的 driver 组件清单（prefetch 缺失 → null → 回落逐行查）
+            List<Object[]> driverCompsPrefetch = (prefetch != null && prefetch.driverCompsByTemplate != null)
+                ? prefetch.driverCompsByTemplate.get(costingTemplateId) : null;
             Map<String, ArrayNode> baseRowsByComp =
-                expandTemplateDriverBaseRows(costingTemplateId, li, customerId, quotationId, closure, unionByComp);
+                expandTemplateDriverBaseRows(costingTemplateId, li, customerId, quotationId, closure, unionByComp,
+                    driverCompsPrefetch);
 
             // 5. 组装 tabs（Task 3: 填 formulaResults；核价侧 editRows 恒空）
             // 核价侧 side==COSTING 显式不传墓碑（spec §3.7 隔离）：editRowsByComp=null + rkfOverride=null + delByComp=null。
@@ -1469,17 +1509,36 @@ public class CardSnapshotService {
                                                                 UUID customerId, UUID quotationId,
                                                                 BomClosureResult closure,
                                                                 Map<UUID, Map<String, ExpandDriverResponse>> unionByComp) {
+        return expandTemplateDriverBaseRows(templateId, li, customerId, quotationId, closure, unionByComp, null);
+    }
+
+    /**
+     * F4 重载：{@code driverCompsPrefetch != null} 时复用整单预取的 driver 组件清单(同一条 SQL,跨行同值),
+     * 不再每行重发 {@code SELECT DISTINCT ... template_component}；null=逐行查(零破坏 + kill switch off 回落)。
+     */
+    private Map<String, ArrayNode> expandTemplateDriverBaseRows(UUID templateId, QuotationLineItem li,
+                                                                UUID customerId, UUID quotationId,
+                                                                BomClosureResult closure,
+                                                                Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
+                                                                List<Object[]> driverCompsPrefetch) {
         if (closure == null) {
             return expandTemplateDriverBaseRows(templateId, li, customerId, quotationId);
         }
         Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
-        @SuppressWarnings("unchecked")
-        List<Object[]> driverComps = em.createNativeQuery(
-            "SELECT DISTINCT c.id, c.bom_recursive_expand FROM template_component tc " +
-            "JOIN component c ON c.id = tc.component_id " +
-            "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
-            .setParameter("tid", templateId)
-            .getResultList();
+        List<Object[]> driverComps;
+        if (driverCompsPrefetch != null) {
+            driverComps = driverCompsPrefetch;          // F4：命中预取,0 往返
+        } else {
+            DRIVER_COMPS_QUERY_COUNT.incrementAndGet();
+            @SuppressWarnings("unchecked")
+            List<Object[]> queried = em.createNativeQuery(
+                "SELECT DISTINCT c.id, c.bom_recursive_expand FROM template_component tc " +
+                "JOIN component c ON c.id = tc.component_id " +
+                "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
+                .setParameter("tid", templateId)
+                .getResultList();
+            driverComps = queried;
+        }
 
         String compositeType = li.compositeType;
         String partNo = li.productPartNoSnapshot;   // 未勾选(false)分支：单料号普通 expand 用
@@ -1961,6 +2020,10 @@ public class CardSnapshotService {
 
     /** F1 可观测性：row_key_fields 单行查执行次数(整单首存应由 ~2550 降到 0,全部命中预取)。供测试断言/监控。 */
     public static final java.util.concurrent.atomic.AtomicLong ROW_KEY_FIELDS_QUERY_COUNT =
+        new java.util.concurrent.atomic.AtomicLong();
+
+    /** F4 可观测性：driver 组件清单查执行次数(整单首存应由 ~170 降到 0,全部命中预取)。供测试断言/监控。 */
+    public static final java.util.concurrent.atomic.AtomicLong DRIVER_COMPS_QUERY_COUNT =
         new java.util.concurrent.atomic.AtomicLong();
 
     private String loadRowKeyFields(String componentId) {
