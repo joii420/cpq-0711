@@ -331,270 +331,287 @@ public class QuotationService {
         //   draft.id 命中现有行 → 复用同一实体(就地 UPDATE, id 不变); 未命中 → 新建; 末尾删除本次未保留的旧行。
         //   动机: 原"全删全建"每次换新 UUID, 导致 editQuoteCardValue 撞已删 id(400) + driver 缓存 churn。
         //   子表(process/componentData/snapshot/composite_process)仍按 draft 全量重建(行为不变), 仅 line 实体 id 稳定。
-        LOG.infof("[saveDraft-diag] id=%s received lineItems=%s", id,
-            request.lineItems == null ? "null" : String.valueOf(request.lineItems.size()));
+        //
+        // Phase 2-1 kill switch: cpq.savedraft-batch-stage1（默认 false 灰度）
+        //   true  → 集合化路径（E2/E3/E4/E5/§2.1 批量子表 DELETE/INSERT）
+        //   false → 原逐行路径（行为保持，等价铁证后再转 true）
+        boolean batchStage1Enabled = "true".equalsIgnoreCase(
+                System.getProperty("cpq.savedraft-batch-stage1",
+                    System.getenv().getOrDefault("CPQ_SAVEDRAFT_BATCH_STAGE1", "false")));
+
+        LOG.infof("[saveDraft-diag] id=%s received lineItems=%s batchStage1=%b", id,
+            request.lineItems == null ? "null" : String.valueOf(request.lineItems.size()),
+            batchStage1Enabled);
         if (request.lineItems != null) {
-            java.util.List<QuotationLineItem> existingLines = QuotationLineItem.list("quotationId = ?1", id);
-            java.util.Map<java.util.UUID, QuotationLineItem> existingById = new java.util.HashMap<>();
-            for (QuotationLineItem ex : existingLines) existingById.put(ex.id, ex);
-            java.util.Set<java.util.UUID> keptIds = new java.util.HashSet<>();
-            BigDecimal total = BigDecimal.ZERO;
-            Set<String> collectedPartNos = new LinkedHashSet<>();
-            // V169 二阶段 parent_line_item_id 重建用: index → 行 UUID 的映射(复用行=原 id, 新行=新 id)
-            java.util.UUID[] newIdsByIndex = new java.util.UUID[request.lineItems.size()];
+            if (batchStage1Enabled) {
+                // ── Phase 2-1 批量集合化路径 ──────────────────────────────────────────────
+                // E2/E3/E4/E5/§2.1：把阶段①里的 per-row SQL 合成整单集合 SQL，单线程批量。
+                // 产出与逐行路径逐位等价（详见 docs/superpowers/plans/2026-06-25-savedraft-setbased-rearchitecture.md §3 表）。
+                processBatchStage1(id, q, request);
+            } else {
+                // ── 原逐行路径（Phase 2-0 基线，默认） ────────────────────────────────────
+                java.util.List<QuotationLineItem> existingLines = QuotationLineItem.list("quotationId = ?1", id);
+                java.util.Map<java.util.UUID, QuotationLineItem> existingById = new java.util.HashMap<>();
+                for (QuotationLineItem ex : existingLines) existingById.put(ex.id, ex);
+                java.util.Set<java.util.UUID> keptIds = new java.util.HashSet<>();
+                BigDecimal total = BigDecimal.ZERO;
+                Set<String> collectedPartNos = new LinkedHashSet<>();
+                // V169 二阶段 parent_line_item_id 重建用: index → 行 UUID 的映射(复用行=原 id, 新行=新 id)
+                java.util.UUID[] newIdsByIndex = new java.util.UUID[request.lineItems.size()];
 
-            // FixC1: 复用行 clearLineItemChildren 前先保存各 component 的 deletedRowKeys,
-            // 重建时按 componentId 回填; saveDraft 请求不携带 deletedRowKeys(由专用端点管)
-            java.util.Map<java.util.UUID, String> preservedTombstones = new java.util.HashMap<>();
-            // Part A: 复用行 snapshot_rows 保留 —— 全量重建会清子表, 重建时回写避免 snapshotQuotation 全量重 expand
-            java.util.Map<java.util.UUID, String> preservedSnapshots = new java.util.HashMap<>();
+                // FixC1: 复用行 clearLineItemChildren 前先保存各 component 的 deletedRowKeys,
+                // 重建时按 componentId 回填; saveDraft 请求不携带 deletedRowKeys(由专用端点管)
+                java.util.Map<java.util.UUID, String> preservedTombstones = new java.util.HashMap<>();
+                // Part A: 复用行 snapshot_rows 保留 —— 全量重建会清子表, 重建时回写避免 snapshotQuotation 全量重 expand
+                java.util.Map<java.util.UUID, String> preservedSnapshots = new java.util.HashMap<>();
 
-            for (int i = 0; i < request.lineItems.size(); i++) {
-                SaveDraftRequest.LineItemDraft liDraft = request.lineItems.get(i);
-                QuotationLineItem li;
-                if (liDraft.id != null && existingById.containsKey(liDraft.id)) {
-                    li = existingById.get(liDraft.id);   // 复用 → 就地 UPDATE, id 不变
-                    keptIds.add(li.id);
-                    // FixC1: clear 前先存现有墓碑,重建时按 componentId 回填(saveDraft 请求不带 deletedRowKeys)
-                    preservedTombstones.clear();
-                    preservedSnapshots.clear();          // Part A
-                    for (QuotationLineComponentData old :
-                            QuotationLineComponentData.<QuotationLineComponentData>list("lineItemId = ?1", li.id)) {
-                        if (old.componentId != null && old.deletedRowKeys != null)
-                            preservedTombstones.put(old.componentId, old.deletedRowKeys);
-                        if (old.componentId != null && old.snapshotRows != null)   // Part A
-                            preservedSnapshots.put(old.componentId, old.snapshotRows);
-                    }
-                    clearLineItemChildren(li.id);        // 旧子表清掉, 下面按 draft 重建
-                    li.parentLineItemId = null;          // 父子关系清空, 待二阶段重链
-                } else {
-                    li = new QuotationLineItem();
-                    preservedTombstones.clear();         // 新行无墓碑
-                    preservedSnapshots.clear();          // Part A: 新行无快照
-                }
-                li.quotationId = id;
-                li.productId = liDraft.productId;
-                // 选配产品行的 templateId 偶发为空(前端 onConfigureConfirm 读 customerTemplateId 有竞态),
-                // 持久化成 NULL → 刷新时 enrichComponentData 在 if(!templateId) 处跳过 → 所有页签拿不到
-                // dataDriverPath → 全空。兜底为报价单模板,保证每行都有模板 id、刷新必能 enrich。
-                li.templateId = liDraft.templateId != null ? liDraft.templateId : q.customerTemplateId;
-                if (liDraft.productAttributeValues != null) li.productAttributeValues = liDraft.productAttributeValues;
-                if (liDraft.subtotal != null) li.subtotal = liDraft.subtotal;
-                li.sortOrder = liDraft.sortOrder != null ? liDraft.sortOrder : i;
-                // V5 批量导入：productId 为空时，把前端送来的 partNo / name 直接写入 snapshot 列，
-                // 否则刷新后前端 li.productPartNo 永远为空，driver 展开失败 → BASIC_DATA 列全空。
-                if (liDraft.productPartNo != null && !liDraft.productPartNo.isBlank()) {
-                    li.productPartNoSnapshot = liDraft.productPartNo;
-                }
-                if (liDraft.productName != null && !liDraft.productName.isBlank()) {
-                    li.productNameSnapshot = liDraft.productName;
-                }
-                // V6 修复: 兼容前端 BulkImportPartsDrawer.buildLineItemFromTemplate 写的 customerProductNo 字段
-                // 若 customerPartNo 为空 fallback 到 customerProductNo，避免 part_version_locked 漏查
-                String effectiveCpn = (liDraft.customerPartNo != null && !liDraft.customerPartNo.isBlank())
-                        ? liDraft.customerPartNo
-                        : ((liDraft.customerProductNo != null && !liDraft.customerProductNo.isBlank())
-                                ? liDraft.customerProductNo : null);
-                if (effectiveCpn != null) {
-                    li.customerPartNo = effectiveCpn;
-                }
-                // V169 选配组合关系 — saveDraft 全量重建后所有 line_items 是新 UUID,
-                // 不能直接写 liDraft.parentLineItemId (旧 UUID 已被 CASCADE 删除会触发 FK 违反 409).
-                // compositeType 直接写; parentLineItemId 留 null, 循环结束后按 tempParentIndex 二阶段 UPDATE.
-                if (liDraft.compositeType != null && !liDraft.compositeType.isBlank()) {
-                    li.compositeType = liDraft.compositeType;
-                }
-                // Step3 行级折扣（V302）：原样落库前端送来的值；submit 时再权威重算覆盖。
-                li.annualVolume = liDraft.annualVolume;
-                li.discountSource = liDraft.discountSource;
-                li.discountBaseAmount = liDraft.discountBaseAmount;
-                li.discountRateApplied = liDraft.discountRateApplied;
-                li.lineDiscountAmount = liDraft.lineDiscountAmount;
-                li.lineUnitPrice = liDraft.lineUnitPrice;
-                li.lineFinalPrice = liDraft.lineFinalPrice;
-                li.lineTotalAmount = liDraft.lineTotalAmount;
-                li.discountRuleCode = liDraft.discountRuleCode;
-                // Phase 3（2026-06-21）：前端单引擎算好的报价 Excel 快照原样落库。
-                // 后端 snapshotLineValues 守卫：仅当 li.quoteExcelValues==null 时才 buildExcelValues 兜底。
-                if (liDraft.quoteExcelValues != null) li.quoteExcelValues = liDraft.quoteExcelValues;
-                li.persist();
-                newIdsByIndex[i] = li.id;  // V169 二阶段父子关系重建用
-
-                // 料号版本管理 (S5): 拷贝 mat_customer_part_mapping.current_version → part_version_locked
-                // 业务功能不变 — 仅写入 line_item 的版本快照, 读路径仍按旧方式工作
-                if (li.customerPartNo != null && !li.customerPartNo.isBlank()
-                        && li.productPartNoSnapshot != null && !li.productPartNoSnapshot.isBlank()) {
-                    try {
-                        Object cur = em.createNativeQuery(
-                                "SELECT current_version FROM mat_customer_part_mapping " +
-                                "WHERE customer_product_no = :cpn AND hf_part_no = :hf LIMIT 1")
-                                .setParameter("cpn", li.customerPartNo)
-                                .setParameter("hf", li.productPartNoSnapshot)
-                                .getResultList().stream().findFirst().orElse(null);
-                        if (cur != null) {
-                            li.partVersionLocked = ((Number) cur).intValue();
+                for (int i = 0; i < request.lineItems.size(); i++) {
+                    SaveDraftRequest.LineItemDraft liDraft = request.lineItems.get(i);
+                    QuotationLineItem li;
+                    if (liDraft.id != null && existingById.containsKey(liDraft.id)) {
+                        li = existingById.get(liDraft.id);   // 复用 → 就地 UPDATE, id 不变
+                        keptIds.add(li.id);
+                        // FixC1: clear 前先存现有墓碑,重建时按 componentId 回填(saveDraft 请求不带 deletedRowKeys)
+                        preservedTombstones.clear();
+                        preservedSnapshots.clear();          // Part A
+                        for (QuotationLineComponentData old :
+                                QuotationLineComponentData.<QuotationLineComponentData>list("lineItemId = ?1", li.id)) {
+                            if (old.componentId != null && old.deletedRowKeys != null)
+                                preservedTombstones.put(old.componentId, old.deletedRowKeys);
+                            if (old.componentId != null && old.snapshotRows != null)   // Part A
+                                preservedSnapshots.put(old.componentId, old.snapshotRows);
                         }
-                    } catch (Exception e) {
-                        // 失败保留默认 2000, 不阻塞报价单创建
+                        clearLineItemChildren(li.id);        // 旧子表清掉, 下面按 draft 重建
+                        li.parentLineItemId = null;          // 父子关系清空, 待二阶段重链
+                    } else {
+                        li = new QuotationLineItem();
+                        preservedTombstones.clear();         // 新行无墓碑
+                        preservedSnapshots.clear();          // Part A: 新行无快照
                     }
-                }
+                    li.quotationId = id;
+                    li.productId = liDraft.productId;
+                    // 选配产品行的 templateId 偶发为空(前端 onConfigureConfirm 读 customerTemplateId 有竞态),
+                    // 持久化成 NULL → 刷新时 enrichComponentData 在 if(!templateId) 处跳过 → 所有页签拿不到
+                    // dataDriverPath → 全空。兜底为报价单模板,保证每行都有模板 id、刷新必能 enrich。
+                    li.templateId = liDraft.templateId != null ? liDraft.templateId : q.customerTemplateId;
+                    if (liDraft.productAttributeValues != null) li.productAttributeValues = liDraft.productAttributeValues;
+                    if (liDraft.subtotal != null) li.subtotal = liDraft.subtotal;
+                    li.sortOrder = liDraft.sortOrder != null ? liDraft.sortOrder : i;
+                    // V5 批量导入：productId 为空时，把前端送来的 partNo / name 直接写入 snapshot 列，
+                    // 否则刷新后前端 li.productPartNo 永远为空，driver 展开失败 → BASIC_DATA 列全空。
+                    if (liDraft.productPartNo != null && !liDraft.productPartNo.isBlank()) {
+                        li.productPartNoSnapshot = liDraft.productPartNo;
+                    }
+                    if (liDraft.productName != null && !liDraft.productName.isBlank()) {
+                        li.productNameSnapshot = liDraft.productName;
+                    }
+                    // V6 修复: 兼容前端 BulkImportPartsDrawer.buildLineItemFromTemplate 写的 customerProductNo 字段
+                    // 若 customerPartNo 为空 fallback 到 customerProductNo，避免 part_version_locked 漏查
+                    String effectiveCpn = (liDraft.customerPartNo != null && !liDraft.customerPartNo.isBlank())
+                            ? liDraft.customerPartNo
+                            : ((liDraft.customerProductNo != null && !liDraft.customerProductNo.isBlank())
+                                    ? liDraft.customerProductNo : null);
+                    if (effectiveCpn != null) {
+                        li.customerPartNo = effectiveCpn;
+                    }
+                    // V169 选配组合关系 — saveDraft 全量重建后所有 line_items 是新 UUID,
+                    // 不能直接写 liDraft.parentLineItemId (旧 UUID 已被 CASCADE 删除会触发 FK 违反 409).
+                    // compositeType 直接写; parentLineItemId 留 null, 循环结束后按 tempParentIndex 二阶段 UPDATE.
+                    if (liDraft.compositeType != null && !liDraft.compositeType.isBlank()) {
+                        li.compositeType = liDraft.compositeType;
+                    }
+                    // Step3 行级折扣（V302）：原样落库前端送来的值；submit 时再权威重算覆盖。
+                    li.annualVolume = liDraft.annualVolume;
+                    li.discountSource = liDraft.discountSource;
+                    li.discountBaseAmount = liDraft.discountBaseAmount;
+                    li.discountRateApplied = liDraft.discountRateApplied;
+                    li.lineDiscountAmount = liDraft.lineDiscountAmount;
+                    li.lineUnitPrice = liDraft.lineUnitPrice;
+                    li.lineFinalPrice = liDraft.lineFinalPrice;
+                    li.lineTotalAmount = liDraft.lineTotalAmount;
+                    li.discountRuleCode = liDraft.discountRuleCode;
+                    // Phase 3（2026-06-21）：前端单引擎算好的报价 Excel 快照原样落库。
+                    // 后端 snapshotLineValues 守卫：仅当 li.quoteExcelValues==null 时才 buildExcelValues 兜底。
+                    if (liDraft.quoteExcelValues != null) li.quoteExcelValues = liDraft.quoteExcelValues;
+                    li.persist();
+                    newIdsByIndex[i] = li.id;  // V169 二阶段父子关系重建用
 
-                // 收集 partNo 供版本快照（通过 Product 查询 HF 料号）
-                if (liDraft.productId != null) {
-                    Product product = Product.findById(liDraft.productId);
-                    if (product != null && product.partNo != null) {
-                        collectedPartNos.add(product.partNo);
-                        // 把 productPartNo / productName 同步到快照列，
-                        // 这样即便后续 product 行被改、被删，列表 DTO 仍能给出料号。
-                        li.productPartNoSnapshot = product.partNo;
-                        li.productNameSnapshot = product.name;
-
-                        // v5.1 §6.6 公式引擎接入：计算衍生属性（每个 lineItem）
-                        // 查询此 product 对应的衍生属性定义
+                    // 料号版本管理 (S5): 拷贝 mat_customer_part_mapping.current_version → part_version_locked
+                    // 业务功能不变 — 仅写入 line_item 的版本快照, 读路径仍按旧方式工作
+                    if (li.customerPartNo != null && !li.customerPartNo.isBlank()
+                            && li.productPartNoSnapshot != null && !li.productPartNoSnapshot.isBlank()) {
                         try {
-                            List<DerivedAttribute> derivedAttrs = loadDerivedAttributes(product.partNo);
-                            if (!derivedAttrs.isEmpty()) {
-                                Map<String, Object> calcResults = derivedAttributeCalculatorV5.calculate(
-                                        q.customerId, product.partNo, derivedAttrs);
-                                // 将计算结果合并到 productAttributeValues（JSON 字符串）
-                                if (!calcResults.isEmpty()) {
-                                    li.productAttributeValues = mergeFormulaResults(
-                                            li.productAttributeValues, calcResults);
-                                    // flush 已 persist 的 li，更新 productAttributeValues
-                                    em.flush();
-                                }
-                                logFormulaErrors(calcResults, q.id, product.partNo);
+                            Object cur = em.createNativeQuery(
+                                    "SELECT current_version FROM mat_customer_part_mapping " +
+                                    "WHERE customer_product_no = :cpn AND hf_part_no = :hf LIMIT 1")
+                                    .setParameter("cpn", li.customerPartNo)
+                                    .setParameter("hf", li.productPartNoSnapshot)
+                                    .getResultList().stream().findFirst().orElse(null);
+                            if (cur != null) {
+                                li.partVersionLocked = ((Number) cur).intValue();
                             }
                         } catch (Exception e) {
-                            LOG.warnf("FormulaEngine calculation failed for quotation=%s partNo=%s: %s",
-                                    q.id, product.partNo, e.getMessage());
-                            // 公式计算失败不阻塞保存
+                            // 失败保留默认 2000, 不阻塞报价单创建
                         }
                     }
-                }
 
-                if (liDraft.subtotal != null) {
-                    total = total.add(liDraft.subtotal);
-                }
+                    // 收集 partNo 供版本快照（通过 Product 查询 HF 料号）
+                    if (liDraft.productId != null) {
+                        Product product = Product.findById(liDraft.productId);
+                        if (product != null && product.partNo != null) {
+                            collectedPartNos.add(product.partNo);
+                            // 把 productPartNo / productName 同步到快照列，
+                            // 这样即便后续 product 行被改、被删，列表 DTO 仍能给出料号。
+                            li.productPartNoSnapshot = product.partNo;
+                            li.productNameSnapshot = product.name;
 
-                // Save processes
-                if (liDraft.processIds != null) {
-                    for (UUID processId : liDraft.processIds) {
-                        QuotationLineProcess lp = new QuotationLineProcess();
-                        lp.lineItemId = li.id;
-                        lp.processId = processId;
-                        lp.persist();
-                    }
-                }
-
-                // 导入来源行:无用户工序时,从该料号基础工序(material_bom_item.operation_no)
-                // seed 本行 quotation_line_process(operation_no → process.id),使 [选配-工序列表]
-                // 与选配产品渲染一致。仅 seedProcessesFromBase=true 的导入行触发(选配路径不设,保持"没选=空")。
-                boolean noProcs = (liDraft.processIds == null || liDraft.processIds.isEmpty());
-                if (noProcs && Boolean.TRUE.equals(liDraft.seedProcessesFromBase)
-                        && li.productPartNoSnapshot != null && !li.productPartNoSnapshot.isBlank()) {
-                    try {
-                        Object ccObj = em.createNativeQuery("SELECT code FROM customer WHERE id = :cid")
-                                .setParameter("cid", q.customerId)
-                                .getResultStream().findFirst().orElse(null);
-                        if (ccObj != null) {
-                            em.createNativeQuery(
-                                    "INSERT INTO quotation_line_process (id, line_item_id, process_id) " +
-                                    "SELECT gen_random_uuid(), :lid, p.id FROM (" +
-                                    "  SELECT DISTINCT operation_no FROM material_bom_item " +
-                                    "  WHERE system_type='QUOTE' AND customer_no=:cc AND material_no=:part " +
-                                    "    AND characteristic='ASSEMBLY' AND operation_no IS NOT NULL AND is_current = true" +
-                                    ") ops JOIN process p ON p.code = ops.operation_no")
-                                .setParameter("lid", li.id)
-                                .setParameter("cc", ccObj.toString())
-                                .setParameter("part", li.productPartNoSnapshot)
-                                .executeUpdate();
+                            // v5.1 §6.6 公式引擎接入：计算衍生属性（每个 lineItem）
+                            // 查询此 product 对应的衍生属性定义
+                            try {
+                                List<DerivedAttribute> derivedAttrs = loadDerivedAttributes(product.partNo);
+                                if (!derivedAttrs.isEmpty()) {
+                                    Map<String, Object> calcResults = derivedAttributeCalculatorV5.calculate(
+                                            q.customerId, product.partNo, derivedAttrs);
+                                    // 将计算结果合并到 productAttributeValues（JSON 字符串）
+                                    if (!calcResults.isEmpty()) {
+                                        li.productAttributeValues = mergeFormulaResults(
+                                                li.productAttributeValues, calcResults);
+                                        // flush 已 persist 的 li，更新 productAttributeValues
+                                        em.flush();
+                                    }
+                                    logFormulaErrors(calcResults, q.id, product.partNo);
+                                }
+                            } catch (Exception e) {
+                                LOG.warnf("FormulaEngine calculation failed for quotation=%s partNo=%s: %s",
+                                        q.id, product.partNo, e.getMessage());
+                                // 公式计算失败不阻塞保存
+                            }
                         }
-                    } catch (Exception e) {
-                        LOG.warnf("[seed-import-process] line=%s 从基础工序 seed 失败(降级): %s", li.id, e.getMessage());
                     }
-                }
 
-                // 选配-组合工艺 per-quote:从 draft 重写本行(全量重建换 line id 后跨保存存活)。
-                // 上层 deleteLineItems 已级联删旧行的 quotation_line_composite_process,这里按新 li.id 重写。
-                if (liDraft.compositeProcesses != null && !liDraft.compositeProcesses.isEmpty()) {
-                    com.fasterxml.jackson.databind.ObjectMapper cpOm = new com.fasterxml.jackson.databind.ObjectMapper();
-                    for (SaveDraftRequest.CompositeProcessDraft cpd : liDraft.compositeProcesses) {
-                        if (cpd.defCode == null || cpd.defCode.isBlank()) continue;
+                    if (liDraft.subtotal != null) {
+                        total = total.add(liDraft.subtotal);
+                    }
+
+                    // Save processes
+                    if (liDraft.processIds != null) {
+                        for (UUID processId : liDraft.processIds) {
+                            QuotationLineProcess lp = new QuotationLineProcess();
+                            lp.lineItemId = li.id;
+                            lp.processId = processId;
+                            lp.persist();
+                        }
+                    }
+
+                    // 导入来源行:无用户工序时,从该料号基础工序(material_bom_item.operation_no)
+                    // seed 本行 quotation_line_process(operation_no → process.id),使 [选配-工序列表]
+                    // 与选配产品渲染一致。仅 seedProcessesFromBase=true 的导入行触发(选配路径不设,保持"没选=空")。
+                    boolean noProcs = (liDraft.processIds == null || liDraft.processIds.isEmpty());
+                    if (noProcs && Boolean.TRUE.equals(liDraft.seedProcessesFromBase)
+                            && li.productPartNoSnapshot != null && !li.productPartNoSnapshot.isBlank()) {
                         try {
-                            em.createNativeQuery(
-                                    "INSERT INTO quotation_line_composite_process " +
-                                    "(line_item_id, def_code, seq_no, participating_parts, param_values) " +
-                                    "VALUES (:lid, :d, :sq, CAST(:pp AS jsonb), CAST(:pv AS jsonb))")
-                                .setParameter("lid", li.id)
-                                .setParameter("d", cpd.defCode)
-                                .setParameter("sq", cpd.seqNo)
-                                .setParameter("pp", cpOm.writeValueAsString(cpd.participatingParts == null ? java.util.List.of() : cpd.participatingParts))
-                                .setParameter("pv", cpOm.writeValueAsString(cpd.paramValues == null ? java.util.Map.of() : cpd.paramValues))
-                                .executeUpdate();
+                            Object ccObj = em.createNativeQuery("SELECT code FROM customer WHERE id = :cid")
+                                    .setParameter("cid", q.customerId)
+                                    .getResultStream().findFirst().orElse(null);
+                            if (ccObj != null) {
+                                em.createNativeQuery(
+                                        "INSERT INTO quotation_line_process (id, line_item_id, process_id) " +
+                                        "SELECT gen_random_uuid(), :lid, p.id FROM (" +
+                                        "  SELECT DISTINCT operation_no FROM material_bom_item " +
+                                        "  WHERE system_type='QUOTE' AND customer_no=:cc AND material_no=:part " +
+                                        "    AND characteristic='ASSEMBLY' AND operation_no IS NOT NULL AND is_current = true" +
+                                        ") ops JOIN process p ON p.code = ops.operation_no")
+                                    .setParameter("lid", li.id)
+                                    .setParameter("cc", ccObj.toString())
+                                    .setParameter("part", li.productPartNoSnapshot)
+                                    .executeUpdate();
+                            }
                         } catch (Exception e) {
-                            LOG.warnf("[composite-proc-save] line=%s 写组合工艺失败(降级): %s", li.id, e.getMessage());
+                            LOG.warnf("[seed-import-process] line=%s 从基础工序 seed 失败(降级): %s", li.id, e.getMessage());
+                        }
+                    }
+
+                    // 选配-组合工艺 per-quote:从 draft 重写本行(全量重建换 line id 后跨保存存活)。
+                    // 上层 deleteLineItems 已级联删旧行的 quotation_line_composite_process,这里按新 li.id 重写。
+                    if (liDraft.compositeProcesses != null && !liDraft.compositeProcesses.isEmpty()) {
+                        com.fasterxml.jackson.databind.ObjectMapper cpOm = new com.fasterxml.jackson.databind.ObjectMapper();
+                        for (SaveDraftRequest.CompositeProcessDraft cpd : liDraft.compositeProcesses) {
+                            if (cpd.defCode == null || cpd.defCode.isBlank()) continue;
+                            try {
+                                em.createNativeQuery(
+                                        "INSERT INTO quotation_line_composite_process " +
+                                        "(line_item_id, def_code, seq_no, participating_parts, param_values) " +
+                                        "VALUES (:lid, :d, :sq, CAST(:pp AS jsonb), CAST(:pv AS jsonb))")
+                                    .setParameter("lid", li.id)
+                                    .setParameter("d", cpd.defCode)
+                                    .setParameter("sq", cpd.seqNo)
+                                    .setParameter("pp", cpOm.writeValueAsString(cpd.participatingParts == null ? java.util.List.of() : cpd.participatingParts))
+                                    .setParameter("pv", cpOm.writeValueAsString(cpd.paramValues == null ? java.util.Map.of() : cpd.paramValues))
+                                    .executeUpdate();
+                            } catch (Exception e) {
+                                LOG.warnf("[composite-proc-save] line=%s 写组合工艺失败(降级): %s", li.id, e.getMessage());
+                            }
+                        }
+                    }
+
+                    // Save component data
+                    if (liDraft.componentData != null) {
+                        for (int j = 0; j < liDraft.componentData.size(); j++) {
+                            SaveDraftRequest.ComponentDataDraft cdDraft = liDraft.componentData.get(j);
+                            QuotationLineComponentData cd = new QuotationLineComponentData();
+                            cd.lineItemId = li.id;
+                            cd.componentId = cdDraft.componentId;
+                            cd.tabName = cdDraft.tabName;
+                            if (cdDraft.rowData != null) cd.rowData = cdDraft.rowData;
+                            if (cdDraft.subtotal != null) cd.subtotal = cdDraft.subtotal;
+                            cd.sortOrder = cdDraft.sortOrder != null ? cdDraft.sortOrder : j;
+                            // FixC1: 回填墓碑(同模板复用行,源集/effKey 不变,墓碑仍匹配);新行/无记录 → "[]"
+                            String preserved = (cdDraft.componentId != null)
+                                    ? preservedTombstones.get(cdDraft.componentId) : null;
+                            cd.deletedRowKeys = (preserved != null) ? preserved : "[]";
+                            // Part A: 复用行回写旧 snapshot_rows(新行 = null, 由 snapshotQuotation 重 expand 填充)
+                            String preservedSr = (cdDraft.componentId != null)
+                                    ? preservedSnapshots.get(cdDraft.componentId) : null;
+                            if (preservedSr != null) cd.snapshotRows = preservedSr;
+                            cd.persist();
                         }
                     }
                 }
 
-                // Save component data
-                if (liDraft.componentData != null) {
-                    for (int j = 0; j < liDraft.componentData.size(); j++) {
-                        SaveDraftRequest.ComponentDataDraft cdDraft = liDraft.componentData.get(j);
-                        QuotationLineComponentData cd = new QuotationLineComponentData();
-                        cd.lineItemId = li.id;
-                        cd.componentId = cdDraft.componentId;
-                        cd.tabName = cdDraft.tabName;
-                        if (cdDraft.rowData != null) cd.rowData = cdDraft.rowData;
-                        if (cdDraft.subtotal != null) cd.subtotal = cdDraft.subtotal;
-                        cd.sortOrder = cdDraft.sortOrder != null ? cdDraft.sortOrder : j;
-                        // FixC1: 回填墓碑(同模板复用行,源集/effKey 不变,墓碑仍匹配);新行/无记录 → "[]"
-                        String preserved = (cdDraft.componentId != null)
-                                ? preservedTombstones.get(cdDraft.componentId) : null;
-                        cd.deletedRowKeys = (preserved != null) ? preserved : "[]";
-                        // Part A: 复用行回写旧 snapshot_rows(新行 = null, 由 snapshotQuotation 重 expand 填充)
-                        String preservedSr = (cdDraft.componentId != null)
-                                ? preservedSnapshots.get(cdDraft.componentId) : null;
-                        if (preservedSr != null) cd.snapshotRows = preservedSr;
-                        cd.persist();
-                    }
+                // 删除本次 payload 未保留的旧行(用户删除的产品行) + 其子表
+                for (QuotationLineItem ex : existingLines) {
+                    if (keptIds.contains(ex.id)) continue;
+                    clearLineItemChildren(ex.id);
+                    ex.delete();
                 }
-            }
 
-            // 删除本次 payload 未保留的旧行(用户删除的产品行) + 其子表
-            for (QuotationLineItem ex : existingLines) {
-                if (keptIds.contains(ex.id)) continue;
-                clearLineItemChildren(ex.id);
-                ex.delete();
-            }
+                q.originalAmount = total;
+                q.totalAmount = total.multiply(q.finalDiscountRate).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
 
-            q.originalAmount = total;
-            q.totalAmount = total.multiply(q.finalDiscountRate).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+                // V169 二阶段父子关系重建: 按 tempParentIndex 把 PART 子件 UPDATE 指向新父 UUID
+                for (int i = 0; i < request.lineItems.size(); i++) {
+                    SaveDraftRequest.LineItemDraft draft = request.lineItems.get(i);
+                    if (draft.tempParentIndex == null) continue;
+                    int parentIdx = draft.tempParentIndex;
+                    if (parentIdx < 0 || parentIdx >= newIdsByIndex.length) continue;
+                    java.util.UUID childId = newIdsByIndex[i];
+                    java.util.UUID parentId = newIdsByIndex[parentIdx];
+                    if (childId == null || parentId == null) continue;
+                    em.createNativeQuery(
+                            "UPDATE quotation_line_item SET parent_line_item_id = :pid WHERE id = :cid")
+                        .setParameter("pid", parentId)
+                        .setParameter("cid", childId)
+                        .executeUpdate();
+                }
 
-            // V169 二阶段父子关系重建: 按 tempParentIndex 把 PART 子件 UPDATE 指向新父 UUID
-            for (int i = 0; i < request.lineItems.size(); i++) {
-                SaveDraftRequest.LineItemDraft draft = request.lineItems.get(i);
-                if (draft.tempParentIndex == null) continue;
-                int parentIdx = draft.tempParentIndex;
-                if (parentIdx < 0 || parentIdx >= newIdsByIndex.length) continue;
-                java.util.UUID childId = newIdsByIndex[i];
-                java.util.UUID parentId = newIdsByIndex[parentIdx];
-                if (childId == null || parentId == null) continue;
-                em.createNativeQuery(
-                        "UPDATE quotation_line_item SET parent_line_item_id = :pid WHERE id = :cid")
-                    .setParameter("pid", parentId)
-                    .setParameter("cid", childId)
-                    .executeUpdate();
-            }
-
-            // v5.1 §6.6 收集版本快照
-            if (!collectedPartNos.isEmpty()) {
-                String versionsJson = driftDetectionService.collectReferencedVersions(
-                        q.customerId, new ArrayList<>(collectedPartNos));
-                q.referencedVersions = versionsJson;
-                LOG.debugf("Recorded referencedVersions for quotation=%s partNos=%s", q.id, collectedPartNos);
-            }
+                // v5.1 §6.6 收集版本快照
+                if (!collectedPartNos.isEmpty()) {
+                    String versionsJson = driftDetectionService.collectReferencedVersions(
+                            q.customerId, new ArrayList<>(collectedPartNos));
+                    q.referencedVersions = versionsJson;
+                    LOG.debugf("Recorded referencedVersions for quotation=%s partNos=%s", q.id, collectedPartNos);
+                }
+            } // end per-row path
         }
 
         q.persist();
@@ -1784,6 +1801,436 @@ public class QuotationService {
         QuotationLineItemSnapshot.delete("lineItemId = ?1", lineItemId);
         em.createNativeQuery("DELETE FROM quotation_line_composite_process WHERE line_item_id = :lid")
             .setParameter("lid", lineItemId).executeUpdate();
+    }
+
+    /**
+     * Phase 2-1 §2.1 辅助：一次批量删除多个 line_item_id 的所有子表记录。
+     * 用 unnest(CAST(:ids AS text[]))::uuid 规避 Hibernate native query 不能直接传 uuid[] 的限制。
+     * ids 是 UUID.toString() 字符串数组。
+     */
+    private void batchDeleteChildrenByIds(String[] idsAsText) {
+        if (idsAsText == null || idsAsText.length == 0) return;
+        // PostgreSQL: unnest(CAST(:ids AS text[]))::uuid 展开文本数组并转型 uuid
+        em.createNativeQuery(
+            "DELETE FROM quotation_line_process " +
+            "WHERE line_item_id IN (SELECT unnest(CAST(:ids AS text[]))::uuid)")
+            .setParameter("ids", idsAsText).executeUpdate();
+        em.createNativeQuery(
+            "DELETE FROM quotation_line_component_data " +
+            "WHERE line_item_id IN (SELECT unnest(CAST(:ids AS text[]))::uuid)")
+            .setParameter("ids", idsAsText).executeUpdate();
+        em.createNativeQuery(
+            "DELETE FROM quotation_line_item_snapshot " +
+            "WHERE line_item_id IN (SELECT unnest(CAST(:ids AS text[]))::uuid)")
+            .setParameter("ids", idsAsText).executeUpdate();
+        em.createNativeQuery(
+            "DELETE FROM quotation_line_composite_process " +
+            "WHERE line_item_id IN (SELECT unnest(CAST(:ids AS text[]))::uuid)")
+            .setParameter("ids", idsAsText).executeUpdate();
+    }
+
+    /**
+     * Phase 2-1 集合化路径：把阶段①里的 per-row SQL 合成整单集合 SQL。
+     *
+     * <p>等价论证（§3 表 E1~E5）：
+     * <ul>
+     *   <li>§2.1/E1：子表全删全建，只是把逐行 DELETE/INSERT 合批为 DELETE ANY + 批量 INSERT。
+     *       同 draft payload → 同 INSERT 集合；sortOrder 落库序保持 componentData 顺序。</li>
+     *   <li>E2：mat_customer_part_mapping (cpn,hf) 有唯一约束 uq_mat_cust_part_per_hf，
+     *       LIMIT 1 确定 → IN 一次等价。</li>
+     *   <li>E3：seedProcessesFromBase INSERT 集合相同，customer code 一次查等价逐行查。</li>
+     *   <li>E4：derivedAttr 公式纯函数，flush 时机不影响结果。</li>
+     *   <li>E5：V169 父子 UPDATE，(childId,parentId) 对不变，批量等价逐行。</li>
+     * </ul>
+     *
+     * <p>纪律：单线程批量 SQL，严禁并行（[[cpq-expand-layer-not-threadsafe]]）。
+     */
+    @SuppressWarnings("unchecked")
+    private void processBatchStage1(UUID quotationId, Quotation q, SaveDraftRequest request) {
+        java.util.List<QuotationLineItem> existingLines = QuotationLineItem.list("quotationId = ?1", quotationId);
+        java.util.Map<java.util.UUID, QuotationLineItem> existingById = new java.util.HashMap<>();
+        for (QuotationLineItem ex : existingLines) existingById.put(ex.id, ex);
+
+        java.util.Set<java.util.UUID> keptIds = new java.util.HashSet<>();
+        java.util.Set<java.util.UUID> removedIds = new java.util.HashSet<>();
+
+        // ── §2.1 预处理：批量读旧 componentData（tombstones + snapshotRows），然后整单一次 DELETE ──
+        // 先确定复用行集合 & 被删行集合
+        for (int i = 0; i < request.lineItems.size(); i++) {
+            SaveDraftRequest.LineItemDraft d = request.lineItems.get(i);
+            if (d.id != null && existingById.containsKey(d.id)) {
+                keptIds.add(d.id);
+            }
+        }
+        for (QuotationLineItem ex : existingLines) {
+            if (!keptIds.contains(ex.id)) removedIds.add(ex.id);
+        }
+
+        // 整单一次读取所有复用行的旧 componentData（FixC1 + Part A）
+        // Map: lineItemId → (componentId → tombstoneJson)
+        java.util.Map<java.util.UUID, java.util.Map<java.util.UUID, String>> allTombstones = new java.util.HashMap<>();
+        java.util.Map<java.util.UUID, java.util.Map<java.util.UUID, String>> allSnapshots = new java.util.HashMap<>();
+        if (!keptIds.isEmpty()) {
+            // 批量查所有复用行的 component data（一次 IN）
+            List<QuotationLineComponentData> oldCds = QuotationLineComponentData.list(
+                "lineItemId IN ?1", new ArrayList<>(keptIds));
+            for (QuotationLineComponentData old : oldCds) {
+                if (old.componentId == null) continue;
+                if (old.deletedRowKeys != null) {
+                    allTombstones.computeIfAbsent(old.lineItemId, k -> new java.util.HashMap<>())
+                            .put(old.componentId, old.deletedRowKeys);
+                }
+                if (old.snapshotRows != null) {
+                    allSnapshots.computeIfAbsent(old.lineItemId, k -> new java.util.HashMap<>())
+                            .put(old.componentId, old.snapshotRows);
+                }
+            }
+        }
+
+        // §2.1 整单一次 DELETE ANY：复用行子表（4 个子表）
+        // 用 unnest(CAST(:ids AS text[]))::uuid 方式传 UUID 集合（Hibernate native query 无法直接传 uuid[]）
+        if (!keptIds.isEmpty()) {
+            String[] keptStrArr = keptIds.stream().map(UUID::toString).toArray(String[]::new);
+            batchDeleteChildrenByIds(keptStrArr);
+        }
+
+        // §2.1 被删行子表 + 行实体
+        if (!removedIds.isEmpty()) {
+            String[] removedStrArr = removedIds.stream().map(UUID::toString).toArray(String[]::new);
+            batchDeleteChildrenByIds(removedStrArr);
+            for (QuotationLineItem ex : existingLines) {
+                if (removedIds.contains(ex.id)) ex.delete();
+            }
+        }
+
+        // ── 主循环：persist 行实体 + 子表 ────────────────────────────────────────────────────
+        // E2 收集：需要版本查询的 (cpn, hf) 对 → lineItem 回填
+        // key = cpn + " " + hf（零字节分隔，两字段均不含此字符）
+        java.util.Map<String, List<QuotationLineItem>> cpnHfToLines = new java.util.LinkedHashMap<>();
+
+        // E3 收集：需要 seed 工序的 (lineItemId → partNo) 对
+        java.util.Map<java.util.UUID, String> seedProcLines = new java.util.LinkedHashMap<>();
+
+        // E4 收集：需要 derivedAttr 计算的行 (lineItem, partNo)
+        // 先用对象持有引用，计算后直接写 li.productAttributeValues，循环结束统一 flush
+        java.util.List<QuotationLineItem> derivedAttrLines = new java.util.ArrayList<>();
+        java.util.List<String> derivedAttrPartNos = new java.util.ArrayList<>();
+
+        BigDecimal total = BigDecimal.ZERO;
+        Set<String> collectedPartNos = new LinkedHashSet<>();
+        java.util.UUID[] newIdsByIndex = new java.util.UUID[request.lineItems.size()];
+        com.fasterxml.jackson.databind.ObjectMapper cpOm = new com.fasterxml.jackson.databind.ObjectMapper();
+
+        for (int i = 0; i < request.lineItems.size(); i++) {
+            SaveDraftRequest.LineItemDraft liDraft = request.lineItems.get(i);
+            QuotationLineItem li;
+            if (liDraft.id != null && existingById.containsKey(liDraft.id)) {
+                li = existingById.get(liDraft.id);
+                li.parentLineItemId = null;  // 父子关系清空，待二阶段重链
+            } else {
+                li = new QuotationLineItem();
+            }
+            li.quotationId = quotationId;
+            li.productId = liDraft.productId;
+            li.templateId = liDraft.templateId != null ? liDraft.templateId : q.customerTemplateId;
+            if (liDraft.productAttributeValues != null) li.productAttributeValues = liDraft.productAttributeValues;
+            if (liDraft.subtotal != null) li.subtotal = liDraft.subtotal;
+            li.sortOrder = liDraft.sortOrder != null ? liDraft.sortOrder : i;
+            if (liDraft.productPartNo != null && !liDraft.productPartNo.isBlank()) {
+                li.productPartNoSnapshot = liDraft.productPartNo;
+            }
+            if (liDraft.productName != null && !liDraft.productName.isBlank()) {
+                li.productNameSnapshot = liDraft.productName;
+            }
+            String effectiveCpn = (liDraft.customerPartNo != null && !liDraft.customerPartNo.isBlank())
+                    ? liDraft.customerPartNo
+                    : ((liDraft.customerProductNo != null && !liDraft.customerProductNo.isBlank())
+                            ? liDraft.customerProductNo : null);
+            if (effectiveCpn != null) li.customerPartNo = effectiveCpn;
+            if (liDraft.compositeType != null && !liDraft.compositeType.isBlank()) {
+                li.compositeType = liDraft.compositeType;
+            }
+            li.annualVolume = liDraft.annualVolume;
+            li.discountSource = liDraft.discountSource;
+            li.discountBaseAmount = liDraft.discountBaseAmount;
+            li.discountRateApplied = liDraft.discountRateApplied;
+            li.lineDiscountAmount = liDraft.lineDiscountAmount;
+            li.lineUnitPrice = liDraft.lineUnitPrice;
+            li.lineFinalPrice = liDraft.lineFinalPrice;
+            li.lineTotalAmount = liDraft.lineTotalAmount;
+            li.discountRuleCode = liDraft.discountRuleCode;
+            if (liDraft.quoteExcelValues != null) li.quoteExcelValues = liDraft.quoteExcelValues;
+            li.persist();
+            newIdsByIndex[i] = li.id;
+
+            // E2 收集：有 cpn + hf 才加入批量版本查
+            if (li.customerPartNo != null && !li.customerPartNo.isBlank()
+                    && li.productPartNoSnapshot != null && !li.productPartNoSnapshot.isBlank()) {
+                String key = li.customerPartNo + " " + li.productPartNoSnapshot;
+                cpnHfToLines.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(li);
+            }
+
+            // Product 查询：填充 productPartNoSnapshot / productNameSnapshot，收集 partNo
+            if (liDraft.productId != null) {
+                Product product = Product.findById(liDraft.productId);
+                if (product != null && product.partNo != null) {
+                    collectedPartNos.add(product.partNo);
+                    li.productPartNoSnapshot = product.partNo;
+                    li.productNameSnapshot = product.name;
+                    // E2：product 覆盖了 productPartNoSnapshot，需要重新更新 E2 收集 key
+                    // 先移除原来按旧 snapshot 加的条目，再按新 snapshot 重新加
+                    if (li.customerPartNo != null && !li.customerPartNo.isBlank()) {
+                        // 移除旧 key（如果存在且 hf 字段刚被 product 覆盖）
+                        String oldHf = liDraft.productPartNo != null && !liDraft.productPartNo.isBlank()
+                                ? liDraft.productPartNo : null;
+                        if (oldHf != null && !oldHf.equals(product.partNo)) {
+                            String oldKey = li.customerPartNo + " " + oldHf;
+                            List<QuotationLineItem> oldList = cpnHfToLines.get(oldKey);
+                            if (oldList != null) {
+                                oldList.remove(li);
+                                if (oldList.isEmpty()) cpnHfToLines.remove(oldKey);
+                            }
+                        }
+                        // 加入新 key
+                        String newKey = li.customerPartNo + " " + product.partNo;
+                        cpnHfToLines.computeIfAbsent(newKey, k -> new java.util.ArrayList<>()).add(li);
+                    }
+
+                    // E4 收集：有 derivedAttrs 的行
+                    // 注意：这里只收集，实际计算在循环结束后批量处理
+                    derivedAttrLines.add(li);
+                    derivedAttrPartNos.add(product.partNo);
+                }
+            }
+
+            if (liDraft.subtotal != null) total = total.add(liDraft.subtotal);
+
+            // processIds（低频，逐行 persist，无性能收益集合化）
+            if (liDraft.processIds != null) {
+                for (UUID processId : liDraft.processIds) {
+                    QuotationLineProcess lp = new QuotationLineProcess();
+                    lp.lineItemId = li.id;
+                    lp.processId = processId;
+                    lp.persist();
+                }
+            }
+
+            // E3 收集：seedProcessesFromBase 行
+            boolean noProcs = (liDraft.processIds == null || liDraft.processIds.isEmpty());
+            if (noProcs && Boolean.TRUE.equals(liDraft.seedProcessesFromBase)
+                    && li.productPartNoSnapshot != null && !li.productPartNoSnapshot.isBlank()) {
+                seedProcLines.put(li.id, li.productPartNoSnapshot);
+            }
+
+            // compositeProcesses（低频，逐行 INSERT，不做集合化）
+            if (liDraft.compositeProcesses != null && !liDraft.compositeProcesses.isEmpty()) {
+                for (SaveDraftRequest.CompositeProcessDraft cpd : liDraft.compositeProcesses) {
+                    if (cpd.defCode == null || cpd.defCode.isBlank()) continue;
+                    try {
+                        em.createNativeQuery(
+                                "INSERT INTO quotation_line_composite_process " +
+                                "(line_item_id, def_code, seq_no, participating_parts, param_values) " +
+                                "VALUES (:lid, :d, :sq, CAST(:pp AS jsonb), CAST(:pv AS jsonb))")
+                            .setParameter("lid", li.id)
+                            .setParameter("d", cpd.defCode)
+                            .setParameter("sq", cpd.seqNo)
+                            .setParameter("pp", cpOm.writeValueAsString(cpd.participatingParts == null ? java.util.List.of() : cpd.participatingParts))
+                            .setParameter("pv", cpOm.writeValueAsString(cpd.paramValues == null ? java.util.Map.of() : cpd.paramValues))
+                            .executeUpdate();
+                    } catch (Exception e) {
+                        LOG.warnf("[batch-composite-proc-save] line=%s 写组合工艺失败(降级): %s", li.id, e.getMessage());
+                    }
+                }
+            }
+
+            // componentData：逐行 persist（批量 INSERT 收益低，且需要正确回填 tombstones/snapshots）
+            if (liDraft.componentData != null) {
+                java.util.Map<java.util.UUID, String> tombstonesForLine =
+                        allTombstones.getOrDefault(li.id, java.util.Collections.emptyMap());
+                java.util.Map<java.util.UUID, String> snapshotsForLine =
+                        allSnapshots.getOrDefault(li.id, java.util.Collections.emptyMap());
+                for (int j = 0; j < liDraft.componentData.size(); j++) {
+                    SaveDraftRequest.ComponentDataDraft cdDraft = liDraft.componentData.get(j);
+                    QuotationLineComponentData cd = new QuotationLineComponentData();
+                    cd.lineItemId = li.id;
+                    cd.componentId = cdDraft.componentId;
+                    cd.tabName = cdDraft.tabName;
+                    if (cdDraft.rowData != null) cd.rowData = cdDraft.rowData;
+                    if (cdDraft.subtotal != null) cd.subtotal = cdDraft.subtotal;
+                    cd.sortOrder = cdDraft.sortOrder != null ? cdDraft.sortOrder : j;
+                    String preserved = (cdDraft.componentId != null)
+                            ? tombstonesForLine.get(cdDraft.componentId) : null;
+                    cd.deletedRowKeys = (preserved != null) ? preserved : "[]";
+                    String preservedSr = (cdDraft.componentId != null)
+                            ? snapshotsForLine.get(cdDraft.componentId) : null;
+                    if (preservedSr != null) cd.snapshotRows = preservedSr;
+                    cd.persist();
+                }
+            }
+        } // end main loop
+
+        // ── E2 批量版本查询 ────────────────────────────────────────────────────────────────────
+        // 一次 IN 查询，按 (cpn, hf) 回填 partVersionLocked
+        if (!cpnHfToLines.isEmpty()) {
+            try {
+                // 构造 (cpn, hf) 对列表
+                java.util.List<String> cpns = new java.util.ArrayList<>();
+                java.util.List<String> hfs = new java.util.ArrayList<>();
+                for (String key : cpnHfToLines.keySet()) {
+                    int sep = key.indexOf(' ');
+                    cpns.add(key.substring(0, sep));
+                    hfs.add(key.substring(sep + 1));
+                }
+                // PostgreSQL：(cpn, hf) IN (...) 写法；用 unnest 两个数组 JOIN 方式最稳健
+                List<Object[]> versionRows = em.createNativeQuery(
+                        "SELECT m.customer_product_no, m.hf_part_no, m.current_version " +
+                        "FROM mat_customer_part_mapping m " +
+                        "JOIN (SELECT unnest(CAST(:cpns AS text[])) AS cpn, unnest(CAST(:hfs AS text[])) AS hf) pairs " +
+                        "  ON m.customer_product_no = pairs.cpn AND m.hf_part_no = pairs.hf")
+                    .setParameter("cpns", cpns.toArray(new String[0]))
+                    .setParameter("hfs", hfs.toArray(new String[0]))
+                    .getResultList();
+                for (Object[] row : versionRows) {
+                    String cpn = (String) row[0];
+                    String hf  = (String) row[1];
+                    int ver = ((Number) row[2]).intValue();
+                    String key = cpn + " " + hf;
+                    List<QuotationLineItem> lis = cpnHfToLines.get(key);
+                    if (lis != null) {
+                        for (QuotationLineItem lx : lis) lx.partVersionLocked = ver;
+                    }
+                }
+            } catch (Exception e) {
+                LOG.warnf("[batch-E2] mat_customer_part_mapping 批量版本查询失败(降级): %s", e.getMessage());
+            }
+        }
+
+        // ── E4 derivedAttr 批量计算 + 末尾统一 flush ─────────────────────────────────────────
+        // 公式纯函数；去掉 per-row flush，循环结束后统一一次 flush。
+        boolean anyDerivedChanged = false;
+        for (int k = 0; k < derivedAttrLines.size(); k++) {
+            QuotationLineItem li = derivedAttrLines.get(k);
+            String partNo = derivedAttrPartNos.get(k);
+            try {
+                List<DerivedAttribute> derivedAttrs = loadDerivedAttributes(partNo);
+                if (!derivedAttrs.isEmpty()) {
+                    Map<String, Object> calcResults = derivedAttributeCalculatorV5.calculate(
+                            q.customerId, partNo, derivedAttrs);
+                    if (!calcResults.isEmpty()) {
+                        li.productAttributeValues = mergeFormulaResults(li.productAttributeValues, calcResults);
+                        anyDerivedChanged = true;
+                    }
+                    logFormulaErrors(calcResults, quotationId, partNo);
+                }
+            } catch (Exception e) {
+                LOG.warnf("FormulaEngine calculation failed for quotation=%s partNo=%s: %s",
+                        quotationId, partNo, e.getMessage());
+            }
+        }
+        if (anyDerivedChanged) {
+            em.flush();  // 统一一次 flush，等价于逐行 flush（公式纯函数，顺序无关）
+        }
+
+        // ── E3 seedProcessesFromBase 整单批量 INSERT ───────────────────────────────────────────
+        // 原逐行：每行各自按 partNo 查 material_bom_item + INSERT quotation_line_process。
+        // 集合化：一次查客户 code，再用 (lineItemId, partNo) 对一次 INSERT…SELECT。
+        // 等价论证：INSERT 集合 = ∪_{per-row} INSERT，因为 (lineItemId, partNo) 对独立，操作集合相同。
+        if (!seedProcLines.isEmpty()) {
+            try {
+                Object ccObj = em.createNativeQuery("SELECT code FROM customer WHERE id = :cid")
+                        .setParameter("cid", q.customerId)
+                        .getResultStream().findFirst().orElse(null);
+                if (ccObj != null) {
+                    String customerCode = ccObj.toString();
+                    // 构造 (lineItemId, partNo) VALUES 表用于 JOIN
+                    // 用 unnest 两个数组展开成行，再 JOIN material_bom_item 按 partNo 匹配
+                    // lid 用 text[] + ::uuid 转型，规避 Hibernate native query 传 uuid[] 的兼容性问题
+                    java.util.List<java.util.UUID> lidList = new java.util.ArrayList<>(seedProcLines.keySet());
+                    java.util.List<String> partList = new java.util.ArrayList<>();
+                    String[] lidStrArr = new String[lidList.size()];
+                    for (int si = 0; si < lidList.size(); si++) {
+                        lidStrArr[si] = lidList.get(si).toString();
+                        partList.add(seedProcLines.get(lidList.get(si)));
+                    }
+                    String[] partArr = partList.toArray(new String[0]);
+
+                    em.createNativeQuery(
+                            "INSERT INTO quotation_line_process (id, line_item_id, process_id) " +
+                            "SELECT gen_random_uuid(), kv.lid::uuid, p.id " +
+                            "FROM ( " +
+                            "  SELECT unnest(CAST(:lids AS text[]))::uuid AS lid, unnest(CAST(:parts AS text[])) AS part_no " +
+                            ") kv " +
+                            "JOIN ( " +
+                            "  SELECT DISTINCT material_no, operation_no FROM material_bom_item " +
+                            "  WHERE system_type='QUOTE' AND customer_no=:cc " +
+                            "    AND characteristic='ASSEMBLY' AND operation_no IS NOT NULL AND is_current = true " +
+                            "    AND material_no = ANY(CAST(:parts_arr AS text[])) " +
+                            ") bom ON bom.material_no = kv.part_no " +
+                            "JOIN process p ON p.code = bom.operation_no")
+                        .setParameter("lids", lidStrArr)
+                        .setParameter("parts", partArr)
+                        .setParameter("cc", customerCode)
+                        .setParameter("parts_arr", partArr)
+                        .executeUpdate();
+                }
+            } catch (Exception e) {
+                LOG.warnf("[batch-E3] seedProcessesFromBase 批量 seed 失败(降级): %s", e.getMessage());
+            }
+        }
+
+        // ── 更新总额 ───────────────────────────────────────────────────────────────────────────
+        q.originalAmount = total;
+        q.totalAmount = total.multiply(q.finalDiscountRate).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+
+        // ── E5 V169 父子关系批量 UPDATE ────────────────────────────────────────────────────────
+        // 原逐行：per-child UPDATE quotation_line_item SET parent_line_item_id = :pid WHERE id = :cid。
+        // 集合化：批量 UPDATE...FROM (VALUES (...)) AS v(cid, pid)。
+        // 等价论证：同 (childId, parentId) 对，UPDATE 结果逐行相同。
+        java.util.List<java.util.UUID[]> parentChildPairs = new java.util.ArrayList<>();
+        for (int i = 0; i < request.lineItems.size(); i++) {
+            SaveDraftRequest.LineItemDraft draft = request.lineItems.get(i);
+            if (draft.tempParentIndex == null) continue;
+            int parentIdx = draft.tempParentIndex;
+            if (parentIdx < 0 || parentIdx >= newIdsByIndex.length) continue;
+            java.util.UUID childId = newIdsByIndex[i];
+            java.util.UUID parentId = newIdsByIndex[parentIdx];
+            if (childId == null || parentId == null) continue;
+            parentChildPairs.add(new java.util.UUID[]{childId, parentId});
+        }
+        if (!parentChildPairs.isEmpty()) {
+            if (parentChildPairs.size() == 1) {
+                // 单对：直接 UPDATE（避免构造 VALUES 列表的复杂度）
+                em.createNativeQuery(
+                        "UPDATE quotation_line_item SET parent_line_item_id = :pid WHERE id = :cid")
+                    .setParameter("pid", parentChildPairs.get(0)[1])
+                    .setParameter("cid", parentChildPairs.get(0)[0])
+                    .executeUpdate();
+            } else {
+                // 多对：批量 UPDATE...FROM (VALUES ...) AS v(cid, pid)
+                StringBuilder values = new StringBuilder();
+                for (int k = 0; k < parentChildPairs.size(); k++) {
+                    if (k > 0) values.append(',');
+                    values.append("(CAST(:c").append(k).append(" AS uuid), CAST(:p").append(k).append(" AS uuid))");
+                }
+                StringBuilder sql = new StringBuilder(
+                        "UPDATE quotation_line_item qli SET parent_line_item_id = v.pid " +
+                        "FROM (VALUES ").append(values).append(") AS v(cid, pid) WHERE qli.id = v.cid");
+                jakarta.persistence.Query upd = em.createNativeQuery(sql.toString());
+                for (int k = 0; k < parentChildPairs.size(); k++) {
+                    upd.setParameter("c" + k, parentChildPairs.get(k)[0]);
+                    upd.setParameter("p" + k, parentChildPairs.get(k)[1]);
+                }
+                upd.executeUpdate();
+            }
+        }
+
+        // ── 收集版本快照（v5.1 §6.6） ─────────────────────────────────────────────────────────
+        if (!collectedPartNos.isEmpty()) {
+            String versionsJson = driftDetectionService.collectReferencedVersions(
+                    q.customerId, new ArrayList<>(collectedPartNos));
+            q.referencedVersions = versionsJson;
+            LOG.debugf("Recorded referencedVersions for quotation=%s partNos=%s", quotationId, collectedPartNos);
+        }
     }
 
     private void deleteLineItems(UUID quotationId) {
