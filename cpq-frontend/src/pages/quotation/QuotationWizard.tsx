@@ -18,6 +18,7 @@ import QuotationStep3 from './QuotationStep3';
 import type { DriftDetectionResult } from '../../types/quotation-drift';
 import type { LineItem, ComponentDataItem } from './QuotationStep2';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
+import { safeSetLocalDraft } from './draftCache';
 import AddProductModal from './AddProductModal';
 import ConfigureProductDrawer from './ConfigureProductDrawer';
 import QuotationCreateForm from './QuotationCreateForm';
@@ -501,7 +502,7 @@ const QuotationWizard: React.FC = () => {
       // 需要最新基础数据 → 用户在 Step2 主动点「刷新基础数据」按钮（Task B2）。
       applyQuotationData(res.data);
       // Update localStorage backup on successful load
-      localStorage.setItem(`cpq-draft-${qId}`, JSON.stringify(res.data));
+      safeSetLocalDraft(`cpq-draft-${qId}`, JSON.stringify(res.data));
     } catch (e: any) {
       // P2-9: Try localStorage fallback on backend failure
       const local = localStorage.getItem(`cpq-draft-${qId}`);
@@ -678,13 +679,13 @@ const QuotationWizard: React.FC = () => {
       // 触发 driver 展开按新 id 重拉 → 导入工序等按行快照无需刷新即出现。
       syncLineItemsFromResponse(res?.data);
       // P2-9: backup to localStorage on success
-      localStorage.setItem(`cpq-draft-${quotationId}`, JSON.stringify(payload));
+      safeSetLocalDraft(`cpq-draft-${quotationId}`, JSON.stringify(payload));
     } catch {
       // P2-9: fallback to localStorage on failure
       try {
         const values = form.getFieldsValue();
         const payload = buildDraftPayload(values);
-        localStorage.setItem(`cpq-draft-${quotationId}`, JSON.stringify(payload));
+        safeSetLocalDraft(`cpq-draft-${quotationId}`, JSON.stringify(payload));
         message.warning('网络异常，已保存到本地缓存');
       } catch {
         // ignore
@@ -1051,12 +1052,12 @@ const QuotationWizard: React.FC = () => {
       // 回填重建后的新行 id + partVersionLocked,避免卡片版本号停在旧值、并触发展开按新 id 重拉
       syncLineItemsFromResponse(res.data);
       if (!silent) message.success('草稿已保存');
-      localStorage.setItem(`cpq-draft-${quotationId}`, JSON.stringify(payload));
+      safeSetLocalDraft(`cpq-draft-${quotationId}`, JSON.stringify(payload));
     } catch (e: any) {
       try {
         const values2 = form.getFieldsValue();
         const payload2 = normalizeDraftPayloadNumbers(buildDraftPayload(values2));
-        localStorage.setItem(`cpq-draft-${quotationId}`, JSON.stringify(payload2));
+        safeSetLocalDraft(`cpq-draft-${quotationId}`, JSON.stringify(payload2));
         if (!silent) message.warning('已保存到本地，网络恢复后将同步');
       } catch {
         if (!silent) message.error(e.message);
