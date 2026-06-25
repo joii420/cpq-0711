@@ -231,9 +231,8 @@ public class ConfigureSnapshotService {
         Map<UUID, List<SnapRow>> allSnapRows = wholeBatchEnabled ? new LinkedHashMap<>() : null;
         Map<UUID, Map<UUID, ArrayNode>> allRowData = wholeBatchEnabled ? new LinkedHashMap<>() : null;
         try {
-            // 清 driver 进程缓存(30s TTL),保证快照冻结的是"当前"基础值而非缓存旧值
-            // (尤其"从基础刷新"在基础变更后需读到最新)。
-            componentDriverService.evictAll();
+            // 注:evictAll 改为「懒触发」——仅当确有行需要 expand 时才清缓存 + 合桶预取(见下方 anyNeedsExpand 闸门),
+            // 否则增量 draft(全行已有快照→全跳过)会白白 evictAll + 报价合桶 expand(纯浪费)。
             UUID customerId = self.loadCustomerId(quotationId);
             List<DriverComp> comps = self.loadDriverComponents(quotationId);
             if (comps.isEmpty()) return;
@@ -263,12 +262,30 @@ public class ConfigureSnapshotService {
                     byLine = null; // null → 循环内回退逐行查（kill switch off 或非增量路径）
                 }
 
-                // Phase 2 改造点：整单合桶预取（在 evictAll() 之后，保冷跑语义）。
-                // buckets: componentId → (partNo → ExpandDriverResponse)。
-                // 仅 eligible 组件进 Map；不 eligible 组件不进（调用方据此逐行回落）。
-                // quoteBucketEnabled=false → 空 Map，内层全部逐行 expand（与改造前 1:1 等价）。
+                // 懒触发闸门:仅当确有行需要 expand 时才 evictAll + 合桶预取。
+                // 增量 draft(skipRowsWithSnapshot=true)且全行已有完整 snapshot_rows → 全部跳过 → 无需 expand
+                // → 省掉 evictAll + precomputeQuoteDriverBuckets(报价 driver 整单 expandMulti)这块纯浪费。
+                boolean anyNeedsExpand;
+                if (skipRowsWithSnapshot && byLine != null) {
+                    anyNeedsExpand = false;
+                    for (Map<String, Object> li : lineItems) {
+                        UUID lid = asUuid(li.get("id"));
+                        if (lid == null) continue;
+                        if (lineNeedsExpand(driverCompIds, byLine.getOrDefault(lid, java.util.Map.of()))) {
+                            anyNeedsExpand = true; break;
+                        }
+                    }
+                } else {
+                    anyNeedsExpand = true;   // 非增量(强制刷新)或无 byLine → 全行 expand,保原行为
+                }
+
+                // 清 driver 进程缓存(30s TTL),保冷跑语义——仅在确需 expand 时(否则跳过这次 evict)。
+                if (anyNeedsExpand) componentDriverService.evictAll();
+
+                // Phase 2 改造点：整单合桶预取（evictAll 之后,保冷跑语义）。仅 anyNeedsExpand 时算。
+                // buckets: componentId → (partNo → ExpandDriverResponse)；不 eligible 组件不进(逐行回落)。
                 Map<UUID, Map<String, ExpandDriverResponse>> buckets =
-                        quoteBucketEnabled
+                        (quoteBucketEnabled && anyNeedsExpand)
                                 ? precomputeQuoteDriverBuckets(quotationId, customerId, comps, lineItems)
                                 : Map.of();
 
