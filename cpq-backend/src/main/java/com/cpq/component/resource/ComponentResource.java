@@ -15,6 +15,7 @@ import com.cpq.component.service.ComponentDriverService;
 import com.cpq.component.service.ComponentImportService;
 import com.cpq.component.service.ComponentService;
 import com.cpq.formula.dataloader.QuotationIdContext;
+import com.cpq.formula.dataloader.SnapshotRowsContext;
 import com.cpq.template.service.TemplateService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -201,6 +202,29 @@ public class ComponentResource {
                 System.getProperty("cpq.batch-expand-bucket",
                     System.getenv().getOrDefault("CPQ_BATCH_EXPAND_BUCKET", "true")));
 
+        // ── P0(2026-06-26):批量预载 snapshot,杜绝 Phase 1 每 task 一次 SELECT snapshot_rows(N+1)──
+        //   收集所有 task 的 lineItemId,一次 IN 查全部 snapshot_rows 塞 ThreadLocal;expand 的 snapshot-read
+        //   命中上下文即用、不再逐 task 查库(一单 600+ task 全有快照时:600+ 次远程往返 → 1 次 IN)。
+        //   务必 finally clear,避免线程池下个请求误用旧值。
+        boolean snapBatchActive = false;
+        if (bucketEnabled) {
+            java.util.Set<UUID> lids = new java.util.LinkedHashSet<>();
+            for (Task t : req.tasks) if (t.lineItemId != null) lids.add(t.lineItemId);
+            if (!lids.isEmpty()) {
+                SnapshotRowsContext.set(componentDriverService.prefetchSnapshotRows(lids));
+                snapBatchActive = true;
+            }
+        }
+        try {
+            return doBatchExpandPhases(req, resp, bucketEnabled, debugSql);
+        } finally {
+            if (snapBatchActive) SnapshotRowsContext.clear();
+        }
+    }
+
+    private ApiResponse<BatchExpandDriverResponse> doBatchExpandPhases(
+            BatchExpandDriverRequest req, BatchExpandDriverResponse resp,
+            boolean bucketEnabled, boolean debugSql) {
         // ── Phase 1:每个 task 先试 snapshot,命中直返;未命中收集进 Phase 2 候选 ──
         List<Integer> phase2 = new ArrayList<>();
         for (int i = 0; i < req.tasks.size(); i++) {
