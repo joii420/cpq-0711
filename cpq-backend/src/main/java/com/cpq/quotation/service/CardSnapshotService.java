@@ -590,9 +590,17 @@ public class CardSnapshotService {
     public static final class CardValuesPrefetch {
         final Map<UUID, JsonNode> templateSnapshotById;
         final Map<UUID, List<Object[]>> compDataByLine;
-        CardValuesPrefetch(Map<UUID, JsonNode> t, Map<UUID, List<Object[]>> c) {
+        /**
+         * F1(方案 B)：componentId(字符串) → rowKeyFields 已解析节点。整单一次 IN 查替代 assemble 内
+         * 每行每组件 {@code SELECT row_key_fields ...}（2550→1）。值用 {@link com.fasterxml.jackson.databind.node.NullNode}
+         * 哨兵表示"已查、row_key_fields 为 null"(与 {@code loadRowKeyFieldsNode} 返回 null 逐位等价),
+         * 故 key 缺失=未预取→回落逐行查,key 存在但值=NullNode→该组件无行键(不再查库)。
+         */
+        final Map<String, JsonNode> rowKeyFieldsByComp;
+        CardValuesPrefetch(Map<UUID, JsonNode> t, Map<UUID, List<Object[]>> c, Map<String, JsonNode> rkf) {
             this.templateSnapshotById = t;
             this.compDataByLine = c;
+            this.rowKeyFieldsByComp = rkf;
         }
     }
 
@@ -604,12 +612,15 @@ public class CardSnapshotService {
     public CardValuesPrefetch precomputeCardValuesPrefetch(UUID quotationId, java.util.Collection<UUID> lineItemIds) {
         Map<UUID, JsonNode> tplById = new HashMap<>();
         Map<UUID, List<Object[]>> byLine = new HashMap<>();
+        Map<String, JsonNode> rkfByComp = new HashMap<>();
         try {
             Quotation q = Quotation.findById(quotationId);
             if (q != null) {
                 parseTemplateSnapshotInto(tplById, q.customerTemplateId);
                 parseTemplateSnapshotInto(tplById, q.costingCardTemplateId);
             }
+            // F1(方案 B)：从两份模板 snapshot 收集 distinct componentId，整单一次 IN 查 row_key_fields。
+            prefetchRowKeyFields(tplById, rkfByComp);
             if (lineItemIds != null && !lineItemIds.isEmpty()) {
                 @SuppressWarnings("unchecked")
                 List<Object[]> rows = em.createNativeQuery(
@@ -628,7 +639,58 @@ public class CardSnapshotService {
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] precomputeCardValuesPrefetch failed quotation=%s: %s", quotationId, e.getMessage());
         }
-        return new CardValuesPrefetch(tplById, byLine);
+        return new CardValuesPrefetch(tplById, byLine, rkfByComp);
+    }
+
+    /**
+     * F1(方案 B)：从已解析的模板 snapshot 收集全部 distinct componentId，整单一次
+     * {@code SELECT id, row_key_fields FROM component WHERE id IN(...)}，逐位复刻
+     * {@link #loadRowKeyFieldsNode} 的解析口径填入 {@code rkfByComp}（null/空/解析失败 → NullNode 哨兵）。
+     * 失败整体降级（map 留空 → assemble 回落逐行查），不影响正确性。
+     */
+    private void prefetchRowKeyFields(Map<UUID, JsonNode> tplById, Map<String, JsonNode> rkfByComp) {
+        // kill switch: cpq.firstsave-rkf-prefetch(默认 true)。off → map 留空 → assemble 回落逐行查(1:1 旧行为)。
+        boolean enabled = "true".equalsIgnoreCase(
+            System.getProperty("cpq.firstsave-rkf-prefetch",
+                System.getenv().getOrDefault("CPQ_FIRSTSAVE_RKF_PREFETCH", "true")));
+        if (!enabled) return;
+        try {
+            java.util.Set<UUID> compIds = new java.util.LinkedHashSet<>();
+            for (JsonNode snap : tplById.values()) {
+                if (snap == null || !snap.isArray()) continue;
+                for (JsonNode tab : snap) {
+                    String cid = tab.path("componentId").asText("");
+                    if (!cid.isBlank()) {
+                        try { compIds.add(UUID.fromString(cid)); } catch (Exception ignore) { /* 非法 id 跳过 */ }
+                    }
+                }
+            }
+            if (compIds.isEmpty()) return;
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = em.createNativeQuery(
+                "SELECT id, row_key_fields FROM component WHERE id IN (:ids)")
+                .setParameter("ids", new ArrayList<>(compIds))
+                .getResultList();
+            JsonNode nullSentinel = com.fasterxml.jackson.databind.node.NullNode.getInstance();
+            for (Object[] r : rows) {
+                if (r[0] == null) continue;
+                String cid = r[0].toString();
+                // 逐位复刻 loadRowKeyFieldsNode：cell null/blank → null；否则 readTree，失败 → null。
+                JsonNode node = nullSentinel;
+                if (r[1] != null) {
+                    String json = r[1].toString();
+                    if (!json.isBlank()) {
+                        try {
+                            JsonNode parsed = MAPPER.readTree(json);
+                            if (parsed != null) node = parsed;
+                        } catch (Exception ignore) { /* 解析失败 → null 哨兵(同 loadRowKeyFieldsNode catch) */ }
+                    }
+                }
+                rkfByComp.put(cid, node);
+            }
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] prefetchRowKeyFields failed: %s（已降级,回落逐行查）", e.getMessage());
+        }
     }
 
     /** 解析模板 components_snapshot 为 JsonNode 存入 map（templateId→snapshot）；失败/空跳过。 */
@@ -711,7 +773,9 @@ public class CardSnapshotService {
             }
 
             // 4. 组装 tabs（Task 3: 填 formulaResults，加产品时 editRows 恒空；报价侧传真实墓碑）
-            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null, null, delByComp);
+            // F1：报价侧透传 rkf 预取（prefetch 缺失 → null → 回落逐行查）
+            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null, null, delByComp,
+                prefetch != null ? prefetch.rowKeyFieldsByComp : null);
 
             return MAPPER.writeValueAsString(root);
 
@@ -773,8 +837,10 @@ public class CardSnapshotService {
                 expandTemplateDriverBaseRows(costingTemplateId, li, customerId, quotationId, closure, unionByComp);
 
             // 5. 组装 tabs（Task 3: 填 formulaResults；核价侧 editRows 恒空）
-            // 核价侧 side==COSTING 显式不传墓碑（spec §3.7 隔离）：三参签名 delegate → delByComp=null → 不过滤
-            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null);
+            // 核价侧 side==COSTING 显式不传墓碑（spec §3.7 隔离）：editRowsByComp=null + rkfOverride=null + delByComp=null。
+            // F1（B-1 修正）：核价侧也透传 rkf 预取（否则核价 ~1020 次 row_key_fields 单查原样保留）。
+            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null, null, null,
+                prefetch != null ? prefetch.rowKeyFieldsByComp : null);
 
             // 6. 成环料号回传根节点（前端告警「已截断展开」）
             if (closure != null && closure.cyclePartNos != null && !closure.cyclePartNos.isEmpty()) {
@@ -944,6 +1010,20 @@ public class CardSnapshotService {
                                                       Map<String, ArrayNode> editRowsByComp,
                                                       Map<String, JsonNode> rkfOverride,
                                                       Map<String, List<DeletedRowKeys.Tombstone>> delByComp) {
+        // 五参签名零破坏：delegate 到六参（rkfPrefetch=null → 逐行查 row_key_fields，行为不变）。
+        return assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp, rkfOverride, delByComp, null);
+    }
+
+    /**
+     * 六参重载（F1/方案 B：rowKeyFields 整单预取）：{@code rkfPrefetch} 非空时,组件行键从预取内存读
+     * （key 缺失→回落逐行 {@code loadRowKeyFieldsNode}；值=NullNode 哨兵→该组件无行键,不查库）。
+     * {@code rkfPrefetch=null} 时全程逐行查,与改造前逐位一致(零破坏 + kill switch)。
+     */
+    private ObjectNode assembleTabsWithFormulaResults(JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
+                                                      Map<String, ArrayNode> editRowsByComp,
+                                                      Map<String, JsonNode> rkfOverride,
+                                                      Map<String, List<DeletedRowKeys.Tombstone>> delByComp,
+                                                      Map<String, JsonNode> rkfPrefetch) {
         ObjectNode root = MAPPER.createObjectNode();
         ArrayNode tabs = root.putArray("tabs");
 
@@ -953,11 +1033,16 @@ public class CardSnapshotService {
         final FormulaCalculator.RowCache rowCache = formulaCalculator.newRowCache();
 
         final ArrayNode emptyEdit = MAPPER.createArrayNode();
-        // rowKeyFields 缓存（每组件一次）
+        // rowKeyFields 缓存（每组件一次）。F1：优先读整单预取(命中=0 往返);未命中或无预取→回落逐行查(零破坏)。
         Map<String, JsonNode> rkfByComp = new LinkedHashMap<>();
         for (JsonNode tab : snapshot) {
             String cid = tab.path("componentId").asText("");
-            if (!rkfByComp.containsKey(cid)) rkfByComp.put(cid, loadRowKeyFieldsNode(cid));
+            if (!rkfByComp.containsKey(cid)) {
+                JsonNode hit = (rkfPrefetch != null) ? rkfPrefetch.get(cid) : null;
+                // hit 存在：NullNode 哨兵→null(无行键)；真实节点→用之。hit 缺失(null)→回落逐行查。
+                JsonNode rkf = (hit != null) ? (hit.isNull() ? null : hit) : loadRowKeyFieldsNode(cid);
+                rkfByComp.put(cid, rkf);
+            }
         }
         // v6-N 草稿行键覆盖：装配里 rkfByComp 默认读持久化行键；试算时把宿主 cid 行键覆盖为草稿行键。
         if (rkfOverride != null) rkfByComp.putAll(rkfOverride);
@@ -1874,8 +1959,13 @@ public class CardSnapshotService {
         return result;
     }
 
+    /** F1 可观测性：row_key_fields 单行查执行次数(整单首存应由 ~2550 降到 0,全部命中预取)。供测试断言/监控。 */
+    public static final java.util.concurrent.atomic.AtomicLong ROW_KEY_FIELDS_QUERY_COUNT =
+        new java.util.concurrent.atomic.AtomicLong();
+
     private String loadRowKeyFields(String componentId) {
         try {
+            ROW_KEY_FIELDS_QUERY_COUNT.incrementAndGet();
             @SuppressWarnings("unchecked")
             var rows = em.createNativeQuery(
                 "SELECT row_key_fields FROM component WHERE id = :cid")
