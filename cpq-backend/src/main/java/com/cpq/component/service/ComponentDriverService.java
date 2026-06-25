@@ -206,15 +206,22 @@ public class ComponentDriverService {
         if (lineItemId != null && componentId != null
                 && !com.cpq.datasource.sqlview.SqlDebugContext.isActive()) {
             try {
-                @SuppressWarnings("unchecked")
-                List<Object> snap = em.createNativeQuery(
-                        "SELECT snapshot_rows FROM quotation_line_component_data " +
-                        "WHERE line_item_id = :lid AND component_id = :cid AND snapshot_rows IS NOT NULL LIMIT 1")
-                    .setParameter("lid", lineItemId).setParameter("cid", componentId)
-                    .getResultList();
-                if (!snap.isEmpty() && snap.get(0) != null) {
-                    String json = snap.get(0).toString();
-                    List<ExpandDriverResponse.Row> snapRows = (json == null || json.isBlank())
+                // 批量预载模式(batch-expand 整单一次 IN 查后设入 ThreadLocal):命中上下文即用,不再逐 task 查库;
+                //   上下文已设但该对不在 map(=无快照)→ json=null,落到下方实时 expand;未设 → 回落逐 task 查(零破坏)。
+                String json;
+                if (com.cpq.formula.dataloader.SnapshotRowsContext.isSet()) {
+                    json = com.cpq.formula.dataloader.SnapshotRowsContext.get(lineItemId, componentId);
+                } else {
+                    @SuppressWarnings("unchecked")
+                    List<Object> snap = em.createNativeQuery(
+                            "SELECT snapshot_rows FROM quotation_line_component_data " +
+                            "WHERE line_item_id = :lid AND component_id = :cid AND snapshot_rows IS NOT NULL LIMIT 1")
+                        .setParameter("lid", lineItemId).setParameter("cid", componentId)
+                        .getResultList();
+                    json = (!snap.isEmpty() && snap.get(0) != null) ? snap.get(0).toString() : null;
+                }
+                if (json != null) {
+                    List<ExpandDriverResponse.Row> snapRows = (json.isBlank())
                             ? new ArrayList<>()
                             : SNAPSHOT_MAPPER.readValue(json, new TypeReference<List<ExpandDriverResponse.Row>>() {});
                     ExpandDriverResponse resp = new ExpandDriverResponse();
@@ -229,6 +236,29 @@ public class ComponentDriverService {
         }
         return expand(componentId, customerId, partNo, partVersion, overrideDataDriverPath, overrideFieldsJson,
                 lineItemId, compositeType, childLineItemIds);
+    }
+
+    /**
+     * 批量预取整单所有 (line_item_id, component_id) 的 snapshot_rows —— 一次 IN 查替代 batch-expand
+     * Phase 1 的逐 task SELECT(N+1)。返回 key={@code lineItemId|componentId}(见 {@link com.cpq.formula.dataloader.SnapshotRowsContext#key})
+     * → snapshot_rows 文本的 Map(仅含 snapshot_rows 非 NULL 的对;无快照的对不在 map → 调用侧落实时 expand)。
+     */
+    @SuppressWarnings("unchecked")
+    public java.util.Map<String, String> prefetchSnapshotRows(java.util.Collection<UUID> lineItemIds) {
+        java.util.Map<String, String> out = new java.util.HashMap<>();
+        if (lineItemIds == null || lineItemIds.isEmpty()) return out;
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT line_item_id, component_id, snapshot_rows FROM quotation_line_component_data " +
+                "WHERE line_item_id IN (:lids) AND snapshot_rows IS NOT NULL")
+            .setParameter("lids", lineItemIds)
+            .getResultList();
+        for (Object[] r : rows) {
+            if (r[0] == null || r[1] == null || r[2] == null) continue;
+            UUID lid = (r[0] instanceof UUID u) ? u : UUID.fromString(r[0].toString());
+            UUID cid = (r[1] instanceof UUID u) ? u : UUID.fromString(r[1].toString());
+            out.put(com.cpq.formula.dataloader.SnapshotRowsContext.key(lid, cid), r[2].toString());
+        }
+        return out;
     }
 
     public ExpandDriverResponse expand(UUID componentId, UUID customerId, String partNo, Integer partVersion,
