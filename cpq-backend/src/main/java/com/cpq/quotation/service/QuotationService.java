@@ -332,12 +332,14 @@ public class QuotationService {
         //   动机: 原"全删全建"每次换新 UUID, 导致 editQuoteCardValue 撞已删 id(400) + driver 缓存 churn。
         //   子表(process/componentData/snapshot/composite_process)仍按 draft 全量重建(行为不变), 仅 line 实体 id 稳定。
         //
-        // Phase 2-1 kill switch: cpq.savedraft-batch-stage1（默认 false 灰度）
-        //   true  → 集合化路径（E2/E3/E4/E5/§2.1 批量子表 DELETE/INSERT）
-        //   false → 原逐行路径（行为保持，等价铁证后再转 true）
+        // Phase 2-1 kill switch: cpq.savedraft-batch-stage1（2026-06-26 转默认 true——
+        //   等价铁证 BatchStage1PersistEquivTest 2/2「170行/77行 OFF/ON 持久化逐位等价」已过,
+        //   且 Phase 2-0 悲观锁(默认 ON)护住并发删数据 → 满足注释「等价铁证后再转 true」条件)。
+        //   true  → 集合化路径（E2/E3/E4/E5/§2.1 批量子表 DELETE/INSERT,消删建行逐行往返）
+        //   false → 原逐行路径（逃生回落: -Dcpq.savedraft-batch-stage1=false）
         boolean batchStage1Enabled = "true".equalsIgnoreCase(
                 System.getProperty("cpq.savedraft-batch-stage1",
-                    System.getenv().getOrDefault("CPQ_SAVEDRAFT_BATCH_STAGE1", "false")));
+                    System.getenv().getOrDefault("CPQ_SAVEDRAFT_BATCH_STAGE1", "true")));
 
         LOG.infof("[saveDraft-diag] id=%s received lineItems=%s batchStage1=%b", id,
             request.lineItems == null ? "null" : String.valueOf(request.lineItems.size()),
