@@ -326,8 +326,11 @@ public class ExcelViewService {
         com.cpq.formula.dataloader.PartVersionContext.set(li.partVersionLocked);
         try {
         Map<String, Object> productAttrs = parseJsonMap(li.productAttributeValues);
-        List<QuotationLineComponentData> componentDataList =
-            QuotationLineComponentData.list("lineItemId = ?1 ORDER BY sortOrder ASC", li.id);
+        // 融合:命中整单预取上下文则读内存(0 往返),否则逐行查(回落,零破坏)。
+        List<QuotationLineComponentData> preCD =
+            com.cpq.formula.dataloader.ExcelCompDataContext.get(li.id);
+        List<QuotationLineComponentData> componentDataList = (preCD != null) ? preCD
+            : QuotationLineComponentData.list("lineItemId = ?1 ORDER BY sortOrder ASC", li.id);
 
         // Merge all row_data records into a flat map (first row of each component)
         Map<String, Object> componentRowData = new LinkedHashMap<>();
