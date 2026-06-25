@@ -2393,6 +2393,47 @@ public class QuotationService {
             }
         }
 
+        // getById N+1 融合(kill switch cpq.getbyid-batch,默认 ON):4 类子表整单一次 IN 查 + 内存按
+        // lineItemId 分组,替代 stream 内每行 4 条 WHERE line_item_id=? (680→4)。OFF=逐行(原行为)。
+        boolean getByIdBatch = "true".equalsIgnoreCase(
+                System.getProperty("cpq.getbyid-batch",
+                    System.getenv().getOrDefault("CPQ_GETBYID_BATCH", "true")));
+        final List<UUID> lineIds = items.stream().map(i -> i.id).collect(Collectors.toList());
+        final Map<UUID, List<QuotationLineProcess>> procByLine = !getByIdBatch ? Map.of()
+                : QuotationLineProcess.<QuotationLineProcess>list("lineItemId IN ?1 ORDER BY lineItemId, id", lineIds)
+                    .stream().collect(Collectors.groupingBy(p -> p.lineItemId));
+        final Map<UUID, List<QuotationLineComponentData>> cdByLine = !getByIdBatch ? Map.of()
+                : QuotationLineComponentData.<QuotationLineComponentData>list("lineItemId IN ?1 ORDER BY lineItemId, sortOrder, id", lineIds)
+                    .stream().collect(Collectors.groupingBy(c -> c.lineItemId));
+        final Map<UUID, QuotationLineItemSnapshot> snapByLine = new HashMap<>();
+        final Map<UUID, List<Map<String, Object>>> cpByLine = new HashMap<>();
+        if (getByIdBatch && !lineIds.isEmpty()) {
+            for (QuotationLineItemSnapshot s : QuotationLineItemSnapshot
+                    .<QuotationLineItemSnapshot>list("lineItemId IN ?1 ORDER BY lineItemId, id", lineIds)) {
+                snapByLine.putIfAbsent(s.lineItemId, s);   // firstResult 语义:每行第一条
+            }
+            @SuppressWarnings("unchecked")
+            List<Object[]> cpAll = em.createNativeQuery(
+                    "SELECT line_item_id, def_code, seq_no, participating_parts::text, param_values::text " +
+                    "FROM quotation_line_composite_process WHERE line_item_id IN (:ids) ORDER BY line_item_id, seq_no")
+                .setParameter("ids", lineIds).getResultList();
+            com.fasterxml.jackson.databind.ObjectMapper cpOm0 = new com.fasterxml.jackson.databind.ObjectMapper();
+            for (Object[] r : cpAll) {
+                UUID lid = (r[0] instanceof UUID u) ? u : UUID.fromString(r[0].toString());
+                java.util.Map<String, Object> m = new java.util.HashMap<>();
+                m.put("defCode", r[1]);
+                m.put("seqNo", r[2]);
+                try {
+                    m.put("participatingParts", r[3] == null ? java.util.List.of() : cpOm0.readValue(r[3].toString(), java.util.List.class));
+                    m.put("paramValues", r[4] == null ? java.util.Map.of() : cpOm0.readValue(r[4].toString(), java.util.Map.class));
+                } catch (Exception ex) {
+                    m.put("participatingParts", java.util.List.of());
+                    m.put("paramValues", java.util.Map.of());
+                }
+                cpByLine.computeIfAbsent(lid, k -> new java.util.ArrayList<>()).add(m);
+            }
+        }
+
         return items.stream().map(li -> {
             QuotationDTO.LineItemDTO dto = QuotationDTO.LineItemDTO.from(li);
 
@@ -2418,6 +2459,18 @@ public class QuotationService {
                 info.sizeInfo = mp[3] != null ? mp[3].toString() : null;
                 info.statusCode = mp[4] != null ? mp[4].toString() : null;
                 dto.hfPartInfo = info;
+            }
+
+            if (getByIdBatch) {
+                // 融合路径:从整单一次 IN 查的内存分组取(0 往返)
+                dto.processes = procByLine.getOrDefault(li.id, java.util.List.of())
+                        .stream().map(QuotationDTO.ProcessDTO::from).collect(Collectors.toList());
+                dto.compositeProcesses = new java.util.ArrayList<>(cpByLine.getOrDefault(li.id, java.util.List.of()));
+                dto.componentData = cdByLine.getOrDefault(li.id, java.util.List.of())
+                        .stream().map(QuotationDTO.ComponentDataDTO::from).collect(Collectors.toList());
+                QuotationLineItemSnapshot snapshot = snapByLine.get(li.id);
+                if (snapshot != null) dto.snapshot = QuotationDTO.SnapshotDTO.from(snapshot);
+                return dto;
             }
 
             dto.processes = QuotationLineProcess.<QuotationLineProcess>list("lineItemId = ?1", li.id)
