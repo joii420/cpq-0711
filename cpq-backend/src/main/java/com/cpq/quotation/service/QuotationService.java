@@ -31,6 +31,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
@@ -256,7 +257,39 @@ public class QuotationService {
 
     @Transactional
     public QuotationDTO saveDraft(UUID id, SaveDraftRequest request) {
-        Quotation q = Quotation.findById(id);
+        // Phase 2-0 数据安全闸: 对 quotation 行加悲观写锁，串行化同单并发 saveDraft。
+        //
+        // 背景: saveDraft 对每个复用行执行 clearLineItemChildren(全删子表) + persist(重建)。
+        // 当同一报价单的两个 saveDraft 请求并发时，事务交错 → A 的 DELETE 提交后 B 已读完旧行
+        // 并在 A 提交的空表上插入，或 A 的 INSERT 被 B 的 DELETE 抹掉 → 行数归零（939e072e 案例）。
+        //
+        // 修复方案: 在 findById 之后立即用 PESSIMISTIC_WRITE 行锁（SELECT ... FOR UPDATE）持锁
+        // 到事务结束。第二个同单 saveDraft 事务在此等待，直到第一个事务提交（释放锁）后再继续，
+        // 消除"全删"与"重建"的交错窗口。
+        //
+        // 死锁风险: 悲观锁只锁单条 quotation 行，且所有 saveDraft 请求按同一固定顺序（先锁 quotation
+        // 再操作子表）获取锁，不存在两个事务互相等待对方的情况，死锁概率极低。
+        // 不同 quotation 的 saveDraft 互不干扰（各自锁不同行）。
+        //
+        // 性能影响: 同单并发 saveDraft 将排队（每次 ~8s），但这是数据安全的必要代价。
+        // 在前端 Plan A（止住 autosave 风暴）已落地后，同单并发的实际频率极低（多 tab/多用户场景），
+        // 排队概率可接受。
+        //
+        // Kill switch: cpq.savedraft-serialize-lock（默认 true，因为这是数据安全修复而非有等价
+        // 风险的性能优化——与 firstsave-batch-write 等性能 kill switch 不同，性能 kill switch
+        // 默认 false 灰度；数据安全 kill switch 默认 true，仅在极端锁争用场景下才关）。
+        // 关闭: -Dcpq.savedraft-serialize-lock=false 或 export CPQ_SAVEDRAFT_SERIALIZE_LOCK=false
+        boolean serializeLockEnabled = "true".equalsIgnoreCase(
+                System.getProperty("cpq.savedraft-serialize-lock",
+                    System.getenv().getOrDefault("CPQ_SAVEDRAFT_SERIALIZE_LOCK", "true")));
+
+        Quotation q;
+        if (serializeLockEnabled) {
+            // PESSIMISTIC_WRITE → SELECT ... FOR UPDATE，锁到事务提交/回滚
+            q = Quotation.findById(id, LockModeType.PESSIMISTIC_WRITE);
+        } else {
+            q = Quotation.findById(id);
+        }
         if (q == null) {
             throw new BusinessException(404, "Quotation not found: " + id);
         }
