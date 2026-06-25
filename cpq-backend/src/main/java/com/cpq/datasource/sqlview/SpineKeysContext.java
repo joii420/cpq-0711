@@ -72,5 +72,46 @@ public final class SpineKeysContext {
         return new Triples(p, pp, v);
     }
 
+    /**
+     * #3 多 line spineKeys 合桶:对<b>全单多个闭包</b>取三元组并集(同款复合键去重)。
+     * 用于把 spineKeys 视图从逐行 expand 提升为整单一次 expandMulti(命中前提:见 {@link #maxTriplesPerPart}==1)。
+     */
+    public static Triples fromClosures(java.util.Collection<BomClosureResult> closures) {
+        List<String> p = new ArrayList<>();
+        List<String> pp = new ArrayList<>();
+        List<String> v = new ArrayList<>();
+        if (closures == null) return new Triples(p, pp, v);
+        Set<String> seen = new LinkedHashSet<>();
+        for (BomClosureResult closure : closures) {
+            if (closure == null || closure.spine == null) continue;
+            for (BomClosureResult.SpineNode n : closure.spine) {
+                String key = nz(n.hfPartNo) + "" + nz(n.parentNo) + "" + nz(n.bomVersion);
+                if (seen.add(key)) { p.add(n.hfPartNo); pp.add(n.parentNo); v.add(n.bomVersion); }
+            }
+        }
+        return new Triples(p, pp, v);
+    }
+
+    /**
+     * #3 安全闸门:全单 spine 里,<b>同一 partNo(子件)对应的不同 (父件,版本) 三元组的最大数量</b>。
+     * <p>==1 → 每 partNo 唯一三元组 → 「union spineKeys + 按 partNo 回配」逐位等价(spine 平,合桶安全)。
+     * <p>&gt;1 → 同料号多三元组(真多节点 BOM 树)→ partNo 回配会过量收行 → <b>必须回落逐行</b>(不合桶)。
+     */
+    public static int maxTriplesPerPart(java.util.Collection<BomClosureResult> closures) {
+        if (closures == null) return 0;
+        java.util.Map<String, Set<String>> byPart = new java.util.HashMap<>();
+        for (BomClosureResult closure : closures) {
+            if (closure == null || closure.spine == null) continue;
+            for (BomClosureResult.SpineNode n : closure.spine) {
+                if (n.hfPartNo == null) continue;
+                byPart.computeIfAbsent(n.hfPartNo, k -> new java.util.HashSet<>())
+                      .add(nz(n.parentNo) + "" + nz(n.bomVersion));
+            }
+        }
+        int max = 0;
+        for (Set<String> s : byPart.values()) max = Math.max(max, s.size());
+        return max;
+    }
+
     private static String nz(String s) { return s == null ? " " : s; }
 }

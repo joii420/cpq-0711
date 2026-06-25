@@ -509,37 +509,62 @@ public class CardSnapshotService {
             .setParameter("tid", q.costingCardTemplateId).getResultList();
         if (driverComps.isEmpty()) return unionByComp;
 
-        List<UUID> eligible = new ArrayList<>();
+        List<UUID> eligible = new ArrayList<>();          // partNo 合桶(无行维度,无需 spineKeys 上下文)
+        List<UUID> spineFlatCandidates = new ArrayList<>(); // #3 spineKeys-flat 候选(需 union spineKeys 上下文 + 平闸门)
         for (Object idObj : driverComps) {     // 单列 SELECT → 元素即 c.id
             if (idObj == null) continue;
             UUID compId = (idObj instanceof UUID u) ? u : UUID.fromString(idObj.toString());
-            // 递归走 partSet union(C4,既有);非递归无行维度走 partNo 合桶(Phase 2-2',新)。
-            // 两路最终都 expandForPartSet(unionList)=expandMulti(非 composite),仅闸门来源不同。
+            // 递归走 partSet union(C4);非递归无行维度走 partNo 合桶(2-2')。两路 expandForPartSet(union)=expandMulti。
             if (componentDriverService.eligibleForBomUnion(compId)
                     || componentDriverService.eligibleForNonRecursiveCostingBucket(compId)) {
                 eligible.add(compId);
+            } else if (componentDriverService.eligibleForSpineKeysFlatBucket(compId)) {
+                spineFlatCandidates.add(compId);   // #3:非递归+仅 spineKeys → 需平闸门才合桶
             }
         }
-        if (eligible.isEmpty()) return unionByComp;
+        if (eligible.isEmpty() && spineFlatCandidates.isEmpty()) return unionByComp;
 
-        // 全核价行 partSet 并集(确定序;闭包已 Caffeine 缓存,pass2 复用命中)
+        // 全核价行 partSet 并集 + 闭包列表(供 #3 三元组并集/maxTriples 闸门;闭包已 Caffeine 缓存)
         java.util.LinkedHashSet<String> union = new java.util.LinkedHashSet<>();
+        List<BomClosureResult> closures = new ArrayList<>();
         for (QuotationLineItem li : QuotationLineItem.<QuotationLineItem>list("quotationId", quotationId)) {
             BomClosureResult closure = bomClosureService.compute(li.productPartNoSnapshot, java.util.Map.of());
-            if (closure != null && closure.partSet != null) union.addAll(closure.partSet);
+            if (closure != null) {
+                closures.add(closure);
+                if (closure.partSet != null) union.addAll(closure.partSet);
+            }
         }
         if (union.isEmpty()) return unionByComp;
         List<String> unionList = new ArrayList<>(union);
 
-        QuotationIdContext.set(quotationId);   // eligible 视图无 spineKeys,故不设 SpineKeysContext
+        // #3 安全闸门:spine 平(每 partNo 唯一三元组)才把 spineKeys 组件合桶;非平→回落逐行(不进 unionByComp)。
+        boolean spineFlatOk = !spineFlatCandidates.isEmpty()
+            && com.cpq.datasource.sqlview.SpineKeysContext.maxTriplesPerPart(closures) <= 1;
+        List<UUID> spineEligible = spineFlatOk ? spineFlatCandidates : java.util.List.of();
+        if (!spineFlatCandidates.isEmpty() && !spineFlatOk) {
+            LOG.infof("[costing-union] spineKeys 组件 %d 个因 maxTriples>1(多节点 BOM 树)回落逐行,不合桶",
+                spineFlatCandidates.size());
+        }
+
+        QuotationIdContext.set(quotationId);
+        // #3:有 spineKeys-flat 合桶组件时设「全单三元组并集」上下文(无 spineKeys 视图忽略它,对 eligible 安全)。
+        if (!spineEligible.isEmpty()) {
+            com.cpq.datasource.sqlview.SpineKeysContext.set(
+                com.cpq.datasource.sqlview.SpineKeysContext.fromClosures(closures));
+        }
         try {
             for (UUID compId : eligible) {
-                // expandForPartSet 非 composite 分支走一次 expandMulti(union);lineItemId/compositeType 传 null
-                // (eligible 已排除 composite/lineItemId 维度 → null 与逐行传 li.id 对这些视图结果一致)
+                unionByComp.put(compId,
+                    componentDriverService.expandForPartSet(compId, q.customerId, unionList, null, null));
+            }
+            // #3:spineKeys-flat 组件——同一条 expandForPartSet(union)=expandMulti,但带 union spineKeys 上下文;
+            //     maxTriples==1 → 按 partNo 回配与逐行(1 三元组/行)逐位等价。
+            for (UUID compId : spineEligible) {
                 unionByComp.put(compId,
                     componentDriverService.expandForPartSet(compId, q.customerId, unionList, null, null));
             }
         } finally {
+            com.cpq.datasource.sqlview.SpineKeysContext.clear();
             QuotationIdContext.clear();
         }
         return unionByComp;

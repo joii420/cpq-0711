@@ -786,6 +786,33 @@ public class ComponentDriverService {
         return viewHasNoRowDimension(componentId, c.dataDriverPath);    // ③④⑤
     }
 
+    /**
+     * Phase 2-2''(#3):核价侧<b>非递归 + 仅 spineKeys 维度</b>组件能否纳入「整单 spineKeys 并集合桶」。
+     * ① 非递归;② 非 EXCEL;③ 非 composite;④ 视图<b>含 :spineKeys 宏</b>;⑤ 视图<b>不含 lineItemId 维度</b>。
+     *
+     * <p>满足者 + 运行时全单 {@code maxTriplesPerPart==1}(spine 平)时,可设「全单三元组并集」SpineKeysContext
+     * 后一次 {@code expandForPartSet(全单料号)},按 partNo 回配,与逐行(每行 1 三元组上下文)逐位等价;
+     * {@code maxTriples>1}(真多节点 BOM 树)→ 回落逐行(调用方据此不合桶)。
+     */
+    public boolean eligibleForSpineKeysFlatBucket(UUID componentId) {
+        Component c = Component.findById(componentId);
+        if (c == null) return false;
+        if (Boolean.TRUE.equals(c.bomRecursiveExpand)) return false;     // ① 非递归
+        if ("EXCEL".equals(c.componentType)) return false;               // ②
+        String path = c.dataDriverPath;
+        if (path == null || path.isBlank()) return false;
+        if (path.contains("v_composite_child_") || path.contains("composite_child_")) return false; // ③ 非 composite
+        String viewName = extractSqlViewName(path);
+        if (viewName == null) return false;
+        com.cpq.component.entity.ComponentSqlView v = com.cpq.component.entity.ComponentSqlView
+                .find("componentId = ?1 and sqlViewName = ?2", componentId, viewName).firstResult();
+        if (v == null || v.sqlTemplate == null) return false;
+        String tpl = v.sqlTemplate;
+        if (!com.cpq.datasource.sqlview.SpineKeysMacro.containsMacro(tpl)) return false;  // ④ 必须有 spineKeys
+        if (tpl.contains(":lineItemId") || tpl.contains("quotation_line_item_id")) return false;  // ⑤ 无 lineItemId
+        return true;
+    }
+
     // ── 内部 ─────────────────────────────────────────────────────────────
 
     /** V190: default_source GLOBAL_VARIABLE 任务 �?code + 动�?key 映射（包级可见：供 P1-C3 批量等价测试构造） */
