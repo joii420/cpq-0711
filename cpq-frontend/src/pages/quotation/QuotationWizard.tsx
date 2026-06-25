@@ -251,7 +251,13 @@ const QuotationWizard: React.FC = () => {
   //   autoSaveDraft 内部 lastSaveRef 去重 → payload 未变则不发请求(空闲零请求)。
   //   作用: 保证编辑落库(row_data 重开存活 + Excel/提交读新), 而无 10s 空转轮询。
   const autoSaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 2026-06-26：暂时关闭「用户编辑失焦自动触发 draft」(lineItems 编辑 effect:279 + 表单 onValuesChange:1626)。
+  //   背景:autosave 在首存慢时反复触发(4 份快照回填→payload churn→重发链),把 draft 体感乘 3。
+  //   现策略:draft 仅由「导入首存(import-auto-save effect 直调 autoSaveDraft)」+「手动保存草稿/下一步/上一步/提交
+  //   按钮(handleSaveDraft)」触发;编辑失焦不再自动存。改回:删掉下面的 return(恢复 1.5s 防抖自动保存)。
+  const EDIT_AUTOSAVE_ENABLED = false;
   const scheduleAutoSave = useCallback(() => {
+    if (!EDIT_AUTOSAVE_ENABLED) return;   // 编辑失焦自动保存已暂时关闭(见上)
     if (!quotationId) return;
     if (autoSaveDebounceRef.current) clearTimeout(autoSaveDebounceRef.current);
     autoSaveDebounceRef.current = setTimeout(() => {
