@@ -160,42 +160,70 @@ public class QuotationResource {
             boolean prefetchDone = false;
             boolean excelCdDone = false;   // Excel compData 整单预取上下文(懒触发,与 prefetch 同时机)
             long _s3setup = 0, _s3cards = 0;   // [s3-detail] 埋点:setup(union/prefetch/compData) vs 逐行卡片值
-            for (var liMap : lines) {
-                UUID lineItemId = asUuid(liMap.get("id"));
-                if (lineItemId != null) {
-                    com.cpq.quotation.entity.QuotationLineItem li =
-                        com.cpq.quotation.entity.QuotationLineItem.findById(lineItemId);
-                    boolean hasSnapshot = li != null
-                        && li.quoteCardValues != null && !li.quoteCardValues.isBlank();
-                    if (li != null && !hasSnapshot) {
-                        long _su = System.nanoTime();
-                        if (!unionDone) { union = cardSnapshotService.precomputeCostingDriverUnion(id); unionDone = true; }
-                        if (!prefetchDone) { prefetch = cardSnapshotService.precomputeCardValuesPrefetch(id, allLineIds); prefetchDone = true; }
-                        // Excel compData 整单 IN 查一次 + 按 lineItemId 分组,设入 ThreadLocal,
-                        // 供 buildExcelValues→buildRowData 读内存(消逐行/逐节点 QuotationLineComponentData.list)。
-                        if (!excelCdDone) {
-                            java.util.Map<UUID, java.util.List<com.cpq.quotation.entity.QuotationLineComponentData>> cdByLine =
-                                com.cpq.quotation.entity.QuotationLineComponentData
-                                    .<com.cpq.quotation.entity.QuotationLineComponentData>list(
-                                        "lineItemId IN ?1 ORDER BY lineItemId, sortOrder, id", allLineIds)
-                                    .stream().collect(java.util.stream.Collectors.groupingBy(cd -> cd.lineItemId));
-                            com.cpq.formula.dataloader.ExcelCompDataContext.set(cdByLine);
-                            excelCdDone = true;
+
+            // FIX 2(2026-06-26):卡片值集合化落库。默认 ON(golden + CardValuesBatchPersistEquivTest 证逐位等价);
+            //   -Dcpq.firstsave-cardvalues-batch=false / CPQ_FIRSTSAVE_CARDVALUES_BATCH=false 回退逐行老路。
+            boolean cardValuesBatch = "true".equalsIgnoreCase(
+                System.getProperty("cpq.firstsave-cardvalues-batch",
+                    System.getenv().getOrDefault("CPQ_FIRSTSAVE_CARDVALUES_BATCH", "true")));
+
+            if (cardValuesBatch) {
+                // 一次查"无快照"新行 id(blank-inclusive,与逐行 hasSnapshot=!=null&&!isBlank() 逐位对齐)
+                @SuppressWarnings("unchecked")
+                java.util.List<Object> rawIds = em.createNativeQuery(
+                        "SELECT id FROM quotation_line_item WHERE quotation_id = :q " +
+                        "AND (quote_card_values IS NULL OR btrim(quote_card_values) = '')")
+                    .setParameter("q", id).getResultList();
+                java.util.List<UUID> newLineIds = new java.util.ArrayList<>();
+                for (Object o : rawIds) { UUID u = asUuid(o); if (u != null) newLineIds.add(u); }
+                if (!newLineIds.isEmpty()) {
+                    long _su = System.nanoTime();
+                    union = cardSnapshotService.precomputeCostingDriverUnion(id);
+                    prefetch = cardSnapshotService.precomputeCardValuesPrefetch(id, allLineIds);
+                    _s3setup = (System.nanoTime() - _su) / 1_000_000;
+                    long _cd = System.nanoTime();
+                    cardSnapshotService.snapshotNewLinesCardValues(id, newLineIds, union, prefetch);  // ★ 单事务集合化落库
+                    _s3cards = (System.nanoTime() - _cd) / 1_000_000;
+                    snapshotsCreated = true;
+                    _newLines = newLineIds.size();
+                    LOG.infof("[s3-detail] id=%s newLines=%d(batch) | setup(union/prefetch,一次)=%dms 集合化卡片值落库=%dms",
+                            id, _newLines, _s3setup, _s3cards);
+                }
+            } else {
+                // ── kill switch 回退:逐行老路(每行一次 @Transactional snapshotLineValuesWithUnion = 独立事务)──
+                for (var liMap : lines) {
+                    UUID lineItemId = asUuid(liMap.get("id"));
+                    if (lineItemId != null) {
+                        com.cpq.quotation.entity.QuotationLineItem li =
+                            com.cpq.quotation.entity.QuotationLineItem.findById(lineItemId);
+                        boolean hasSnapshot = li != null
+                            && li.quoteCardValues != null && !li.quoteCardValues.isBlank();
+                        if (li != null && !hasSnapshot) {
+                            long _su = System.nanoTime();
+                            if (!unionDone) { union = cardSnapshotService.precomputeCostingDriverUnion(id); unionDone = true; }
+                            if (!prefetchDone) { prefetch = cardSnapshotService.precomputeCardValuesPrefetch(id, allLineIds); prefetchDone = true; }
+                            if (!excelCdDone) {
+                                java.util.Map<UUID, java.util.List<com.cpq.quotation.entity.QuotationLineComponentData>> cdByLine =
+                                    com.cpq.quotation.entity.QuotationLineComponentData
+                                        .<com.cpq.quotation.entity.QuotationLineComponentData>list(
+                                            "lineItemId IN ?1 ORDER BY lineItemId, sortOrder, id", allLineIds)
+                                        .stream().collect(java.util.stream.Collectors.groupingBy(cd -> cd.lineItemId));
+                                com.cpq.formula.dataloader.ExcelCompDataContext.set(cdByLine);
+                                excelCdDone = true;
+                            }
+                            _s3setup += (System.nanoTime() - _su) / 1_000_000;
+                            long _cd = System.nanoTime();
+                            cardSnapshotService.snapshotLineValuesWithUnion(li, union, prefetch, false);
+                            _s3cards += (System.nanoTime() - _cd) / 1_000_000;
+                            snapshotsCreated = true;
+                            _newLines++;
                         }
-                        _s3setup += (System.nanoTime() - _su) / 1_000_000;
-                        // P3 lazy-excel:首存只算卡片值,computeExcel=false 跳过两侧 buildExcelValues(Excel 快照 7.5s
-                        //   占 S3 大头、仅开 Excel 视图/导出时才用)→ 改由 ensureExcelValues 懒算(开视图/导出/提交前触发)。
-                        long _cd = System.nanoTime();
-                        cardSnapshotService.snapshotLineValuesWithUnion(li, union, prefetch, false); // 仅新行首次初始化卡片值(核价 union + B2 预取), 已有行保留 editQuoteCardValue 的增量
-                        _s3cards += (System.nanoTime() - _cd) / 1_000_000;
-                        snapshotsCreated = true;
-                        _newLines++;
                     }
                 }
+                if (_newLines > 0)
+                    LOG.infof("[s3-detail] id=%s newLines=%d(per-line) | setup=%dms 逐行卡片值=%dms",
+                            id, _newLines, _s3setup, _s3cards);
             }
-            if (_newLines > 0)
-                LOG.infof("[s3-detail] id=%s newLines=%d | setup(union/prefetch/compData,首行一次)=%dms 逐行卡片值=%dms",
-                        id, _newLines, _s3setup, _s3cards);
         } catch (Exception ignore) {
             // 尽力而为
         } finally {

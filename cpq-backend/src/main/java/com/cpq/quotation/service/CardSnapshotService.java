@@ -442,6 +442,58 @@ public class CardSnapshotService {
     }
 
     /**
+     * FIX 2(2026-06-26)首存卡片值<b>集合化落库</b>:打破「77 行 × 一次 @Transactional = 77 个独立事务」。
+     *
+     * <p>背景([s3-detail] 实测):S3 逐行卡片值 4.1s,其中真算值仅 0.23s,~3.9s 是 77 个独立事务的
+     * begin/commit + 逐行冷 findById×2 + 逐行 JSONB UPDATE。本方法在<b>一个事务</b>内:1 次取 Quotation +
+     * 1 次 IN 装载全部新行(托管,省逐行 findById)+ 内存算值 + commit 单次 flush(P1 JDBC batch 合并 N 条 UPDATE)。
+     *
+     * <p><b>两遍 build-then-assign(评审强制)</b>:Pass1 只把卡片值字符串 build 到内存(只读 li、不赋字段,
+     * 脏窗口为空 → 即便 prefetch/union miss 时 build 内部 fallback 的 em 查 mid-loop 跑也 flush 空、无害);
+     * Pass2 一次性给托管实体赋 4 字段 + 整批同一时间戳(中间零查询)→ commit 时单次 flush。build 只读不写 li,
+     * 两遍拆分零成本,且彻底把「批处理是否生效」与「prefetch 覆盖率」解耦。
+     *
+     * <p>等价:buildCardValues/buildCostingCardValues 逐行输入与逐行路径完全相同 → 落库卡片值逐位等价
+     * (CardValuesBatchPersistEquivTest + GoldenCardValuesEquivTest 守)。时间戳整批同一 now(不入 md5)。
+     * 只算卡片值(Excel 仍懒算,见 ensureExcelValues)。
+     */
+    @Transactional
+    public void snapshotNewLinesCardValues(UUID quotationId, List<UUID> newLineIds,
+                                           Map<UUID, Map<String, ExpandDriverResponse>> union,
+                                           CardValuesPrefetch prefetch) {
+        if (quotationId == null || newLineIds == null || newLineIds.isEmpty()) return;
+        Quotation q = Quotation.findById(quotationId);
+        if (q == null) return;
+        // 1 次 IN 装载全部新行(托管实体,赋字段即脏;省现状逐行 findById 重载)
+        List<QuotationLineItem> lines = QuotationLineItem.list("id IN ?1", newLineIds);
+        if (lines.isEmpty()) return;
+        com.cpq.formula.dataloader.QuotationIdContext.set(quotationId);
+        try {
+            // ── Pass1:只 build 字符串到内存(只读 li,不赋字段 → 脏窗口为空,任何 fallback em 查此刻 flush 空)──
+            Map<UUID, String> quoteVals = new HashMap<>();
+            Map<UUID, String> costingVals = new HashMap<>();
+            for (QuotationLineItem li : lines) {
+                quoteVals.put(li.id, safeCall(() -> buildCardValues(li, q.customerTemplateId, prefetch)));
+                if (q.costingCardTemplateId != null) {
+                    costingVals.put(li.id, safeCall(() ->
+                        buildCostingCardValues(li, q.costingCardTemplateId, q.customerId, q.id, union, prefetch)));
+                }
+            }
+            // ── Pass2:一次性赋托管实体 4 字段(中间零查询)→ commit 单次 flush,P1 batch 合并 N 条 UPDATE ──
+            OffsetDateTime now = OffsetDateTime.now();
+            for (QuotationLineItem li : lines) {
+                li.quoteCardValues = quoteVals.get(li.id);
+                li.quoteValuesAt = now;
+                if (costingVals.containsKey(li.id)) li.costingCardValues = costingVals.get(li.id);
+                li.cardSnapshotAt = now;
+            }
+        } finally {
+            com.cpq.formula.dataloader.QuotationIdContext.clear();
+        }
+        LOG.infof("[cardvalues-batch] quotation=%s 集合化落库 %d 行(单事务)", quotationId, lines.size());
+    }
+
+    /**
      * P2-C4 拆分:报价侧快照(quoteCardValues + quoteExcelValues)。导入两遍循环里留在 pass1 原位。
      * 与改动前报价两段逐字相同;输入不含本行 cd(导入路径不写 snapshot_rows、cd componentId=null 被
      * buildCardValues 跳过)→ 产出与 cd persist 时序无关,二次循环重排对报价侧零影响。
