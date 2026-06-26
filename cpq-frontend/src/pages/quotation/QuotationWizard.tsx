@@ -19,6 +19,7 @@ import type { DriftDetectionResult } from '../../types/quotation-drift';
 import type { LineItem, ComponentDataItem } from './QuotationStep2';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
 import { safeSetLocalDraft } from './draftCache';
+import { stableDraftDedupKey } from './draftPayloadDedup';
 import AddProductModal from './AddProductModal';
 import ConfigureProductDrawer from './ConfigureProductDrawer';
 import QuotationCreateForm from './QuotationCreateForm';
@@ -670,9 +671,12 @@ const QuotationWizard: React.FC = () => {
     try {
       const values = form.getFieldsValue();
       const payload = normalizeDraftPayloadNumbers(buildDraftPayload(values));
-      const payloadStr = JSON.stringify(payload);
-      if (payloadStr === lastSaveRef.current) return;
-      lastSaveRef.current = payloadStr;
+      // P0(2026-06-26):去重只比用户输入,剔除随 driverExpansions live→snap 翻转而重算的派生字段
+      //   (subtotal / quoteExcelValues / rowData)。否则首存后回填快照翻转模式 → payload 串变 → 去重失效
+      //   → pendingSaveRef 补发 → 三连发。详见 draftPayloadDedup.ts。
+      const dedupKey = stableDraftDedupKey(payload);
+      if (dedupKey === lastSaveRef.current) return;
+      lastSaveRef.current = dedupKey;
       const res = await quotationService.saveDraft(quotationId, payload);
       // BUMP 后端把新 partVersionLocked 写入 DB，前端本地 state 需同步回填，
       // 避免「卡片版本号停在旧值直到强刷」的 UX 漂移；同时回填重建后的新行 id，
@@ -1048,6 +1052,9 @@ const QuotationWizard: React.FC = () => {
       // 与 autoSaveDraft 同口径:规范化数值后再 PUT/落 localStorage,避免手动/自动保存写库精度不一致
       const payload = normalizeDraftPayloadNumbers(buildDraftPayload(values));
       const res = await quotationService.saveDraft(quotationId, payload);
+      // P0:与 autoSaveDraft 同口径登记去重键,使 finally 的 pendingSaveRef 补发(用户输入未变时)被去重,
+      //   不再因首存回填快照翻转模式而多发一次 PUT。
+      lastSaveRef.current = stableDraftDedupKey(payload);
       setQuotationPreservingStructures(res.data);
       // 回填重建后的新行 id + partVersionLocked,避免卡片版本号停在旧值、并触发展开按新 id 重拉
       syncLineItemsFromResponse(res.data);
