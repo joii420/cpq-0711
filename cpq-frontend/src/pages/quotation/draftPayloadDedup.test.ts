@@ -41,6 +41,14 @@ describe('stableDraftDedupKey', () => {
     expect(stableDraftDedupKey(a)).toBe(stableDraftDedupKey(b));
   });
 
+  it('首存回填 id(null→uuid)→ 去重键不变(实测三连发真凶,不再补发)', () => {
+    const a = basePayload();
+    (a.lineItems[0] as any).id = null;       // 首存时新行 id=null
+    const b = basePayload();
+    (b.lineItems[0] as any).id = 'db-generated-uuid';  // 首存返回后回填 DB id
+    expect(stableDraftDedupKey(a)).toBe(stableDraftDedupKey(b));
+  });
+
   it('用户改了产品料号 → 去重键变化(正常再存)', () => {
     const a = basePayload();
     const b = basePayload();
