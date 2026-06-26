@@ -159,6 +159,7 @@ public class QuotationResource {
             com.cpq.quotation.service.CardSnapshotService.CardValuesPrefetch prefetch = null;
             boolean prefetchDone = false;
             boolean excelCdDone = false;   // Excel compData 整单预取上下文(懒触发,与 prefetch 同时机)
+            long _s3setup = 0, _s3cards = 0;   // [s3-detail] 埋点:setup(union/prefetch/compData) vs 逐行卡片值
             for (var liMap : lines) {
                 UUID lineItemId = asUuid(liMap.get("id"));
                 if (lineItemId != null) {
@@ -167,6 +168,7 @@ public class QuotationResource {
                     boolean hasSnapshot = li != null
                         && li.quoteCardValues != null && !li.quoteCardValues.isBlank();
                     if (li != null && !hasSnapshot) {
+                        long _su = System.nanoTime();
                         if (!unionDone) { union = cardSnapshotService.precomputeCostingDriverUnion(id); unionDone = true; }
                         if (!prefetchDone) { prefetch = cardSnapshotService.precomputeCardValuesPrefetch(id, allLineIds); prefetchDone = true; }
                         // Excel compData 整单 IN 查一次 + 按 lineItemId 分组,设入 ThreadLocal,
@@ -180,14 +182,20 @@ public class QuotationResource {
                             com.cpq.formula.dataloader.ExcelCompDataContext.set(cdByLine);
                             excelCdDone = true;
                         }
+                        _s3setup += (System.nanoTime() - _su) / 1_000_000;
                         // P3 lazy-excel:首存只算卡片值,computeExcel=false 跳过两侧 buildExcelValues(Excel 快照 7.5s
                         //   占 S3 大头、仅开 Excel 视图/导出时才用)→ 改由 ensureExcelValues 懒算(开视图/导出/提交前触发)。
+                        long _cd = System.nanoTime();
                         cardSnapshotService.snapshotLineValuesWithUnion(li, union, prefetch, false); // 仅新行首次初始化卡片值(核价 union + B2 预取), 已有行保留 editQuoteCardValue 的增量
+                        _s3cards += (System.nanoTime() - _cd) / 1_000_000;
                         snapshotsCreated = true;
                         _newLines++;
                     }
                 }
             }
+            if (_newLines > 0)
+                LOG.infof("[s3-detail] id=%s newLines=%d | setup(union/prefetch/compData,首行一次)=%dms 逐行卡片值=%dms",
+                        id, _newLines, _s3setup, _s3cards);
         } catch (Exception ignore) {
             // 尽力而为
         } finally {
