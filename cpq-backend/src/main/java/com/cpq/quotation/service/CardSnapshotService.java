@@ -418,14 +418,27 @@ public class CardSnapshotService {
     public void snapshotLineValuesWithUnion(QuotationLineItem li,
                                             Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
                                             CardValuesPrefetch prefetch) {
+        snapshotLineValuesWithUnion(li, unionByComp, prefetch, true);
+    }
+
+    /**
+     * P3(2026-06-26 lazy-excel)重载：{@code computeExcel=false} 时跳过两侧 buildExcelValues(报价/核价 Excel 值),
+     * 只算卡片值。首存路径传 false —— Excel 快照(7.5s 占 S3 大头、且只在开 Excel 视图/导出时才用)改为懒算
+     * (见 {@link #ensureExcelValues})。{@code true}=原行为(加产品/刷新/提交前 ensure 等仍同步算)。
+     */
+    @Transactional
+    public void snapshotLineValuesWithUnion(QuotationLineItem li,
+                                            Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
+                                            CardValuesPrefetch prefetch,
+                                            boolean computeExcel) {
         if (li == null || li.id == null) return;
         // 在当前事务内重新加载，避免 "Detached entity" 错误
         QuotationLineItem managed = QuotationLineItem.findById(li.id);
         if (managed == null) return;
         Quotation q = Quotation.findById(managed.quotationId);
         if (q == null) return;
-        snapshotQuoteSideOnly(managed, q, prefetch);                       // 报价侧逐行不变
-        snapshotCostingSideOnly(managed, q, unionByComp, prefetch);        // 核价侧可 union
+        snapshotQuoteSideOnly(managed, q, prefetch, computeExcel);                  // 报价侧逐行不变
+        snapshotCostingSideOnly(managed, q, unionByComp, prefetch, computeExcel);   // 核价侧可 union
     }
 
     /**
@@ -441,12 +454,19 @@ public class CardSnapshotService {
     /** B2 重载：buildCardValues 传 {@code prefetch}（命中则复用预取模板 snapshot + 整单 compdata）。 */
     @Transactional
     public void snapshotQuoteSideOnly(QuotationLineItem managed, Quotation q, CardValuesPrefetch prefetch) {
+        snapshotQuoteSideOnly(managed, q, prefetch, true);
+    }
+
+    /** P3 lazy-excel 重载：{@code computeExcel=false} 跳过报价 Excel bootstrap(留 NULL,懒算)。 */
+    @Transactional
+    public void snapshotQuoteSideOnly(QuotationLineItem managed, Quotation q, CardValuesPrefetch prefetch, boolean computeExcel) {
         if (managed == null || q == null) return;
         try {
             // 报价侧：卡片值复用 snapshot_rows（Task 6 真实填充，不二次 expand）
             managed.quoteCardValues = safeCall(() -> buildCardValues(managed, q.customerTemplateId, prefetch));
             // 报价侧 Excel 值：前端权威（saveDraft）；仅从未 saveDraft 的新行 bootstrap 一次。
-            if (managed.quoteExcelValues == null) {
+            // P3:computeExcel=false(首存)时跳过 bootstrap,留 NULL → ensureExcelValues 懒算。
+            if (computeExcel && managed.quoteExcelValues == null) {
                 managed.quoteExcelValues = safeCall(() ->
                     buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
             }
@@ -472,18 +492,84 @@ public class CardSnapshotService {
     public void snapshotCostingSideOnly(QuotationLineItem managed, Quotation q,
                                         Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
                                         CardValuesPrefetch prefetch) {
+        snapshotCostingSideOnly(managed, q, unionByComp, prefetch, true);
+    }
+
+    /** P3 lazy-excel 重载：{@code computeExcel=false} 跳过核价 Excel(留 NULL,懒算);卡片值仍算。 */
+    @Transactional
+    public void snapshotCostingSideOnly(QuotationLineItem managed, Quotation q,
+                                        Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
+                                        CardValuesPrefetch prefetch, boolean computeExcel) {
         if (managed == null || q == null) return;
         try {
             if (q.costingCardTemplateId != null) {
                 managed.costingCardValues = safeCall(() ->
                     buildCostingCardValues(managed, q.costingCardTemplateId, q.customerId, q.id, unionByComp, prefetch));
-                managed.costingExcelValues = safeCall(() ->
-                    buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues, true));
+                // P3:computeExcel=false(首存)时跳过核价 Excel,留 NULL → ensureExcelValues 懒算。
+                if (computeExcel) {
+                    managed.costingExcelValues = safeCall(() ->
+                        buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues, true));
+                }
             }
             managed.cardSnapshotAt = OffsetDateTime.now();
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] snapshotCostingSideOnly failed lineItem=%s: %s", managed.id, e.getMessage());
         }
+    }
+
+    /**
+     * P3 lazy-excel(2026-06-26):懒算整单 Excel 值。首存只算卡片值、Excel 值留 NULL;开 Excel 视图 / 导出 /
+     * 提交前调本方法补算缺失行的 {@code quoteExcelValues}/{@code costingExcelValues} 并落库。
+     *
+     * <p><b>幂等</b>:仅对 NULL 的侧/行计算,已算的跳过 → 反复调安全、第二次零开销。计算走与同步路径
+     * <b>同款</b> {@link #buildExcelValues}(同 cardValues 输入)→ 与"首存就算"逐位等价(golden 卡口)。
+     * 整单一次 IN 预取 compData 设入 {@link com.cpq.formula.dataloader.ExcelCompDataContext},供 buildRowData 读内存。
+     *
+     * @return 实际补算(落库)的行数;0=全部已就绪(无需算)。
+     */
+    @Transactional
+    public int ensureExcelValues(UUID quotationId) {
+        if (quotationId == null) return 0;
+        Quotation q = Quotation.findById(quotationId);
+        if (q == null) return 0;
+        java.util.List<QuotationLineItem> lines =
+            QuotationLineItem.list("quotationId", quotationId);
+        if (lines.isEmpty()) return 0;
+
+        java.util.List<UUID> lineIds = new java.util.ArrayList<>();
+        for (QuotationLineItem li : lines) lineIds.add(li.id);
+        // 整单 compData 一次 IN 预取(buildExcelValues→buildRowData 读内存,免逐行查)
+        java.util.Map<UUID, java.util.List<com.cpq.quotation.entity.QuotationLineComponentData>> cdByLine =
+            com.cpq.quotation.entity.QuotationLineComponentData
+                .<com.cpq.quotation.entity.QuotationLineComponentData>list(
+                    "lineItemId IN ?1 ORDER BY lineItemId, sortOrder, id", lineIds)
+                .stream().collect(java.util.stream.Collectors.groupingBy(cd -> cd.lineItemId));
+        com.cpq.formula.dataloader.ExcelCompDataContext.set(cdByLine);
+        com.cpq.formula.dataloader.QuotationIdContext.set(quotationId);
+        int computed = 0;
+        try {
+            for (QuotationLineItem li : lines) {
+                QuotationLineItem managed = QuotationLineItem.findById(li.id);
+                if (managed == null) continue;
+                boolean changed = false;
+                if (managed.quoteExcelValues == null && q.customerTemplateId != null) {
+                    managed.quoteExcelValues = safeCall(() ->
+                        buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
+                    changed = true;
+                }
+                if (managed.costingExcelValues == null && q.costingCardTemplateId != null) {
+                    managed.costingExcelValues = safeCall(() ->
+                        buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues, true));
+                    changed = true;
+                }
+                if (changed) { managed.persist(); computed++; }
+            }
+        } finally {
+            com.cpq.formula.dataloader.ExcelCompDataContext.clear();
+            com.cpq.formula.dataloader.QuotationIdContext.clear();
+        }
+        if (computed > 0) LOG.infof("[lazy-excel] ensureExcelValues quotation=%s 补算 %d 行", quotationId, computed);
+        return computed;
     }
 
     /**
