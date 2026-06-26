@@ -207,16 +207,30 @@ public class ComponentResource {
         //   命中上下文即用、不再逐 task 查库(一单 600+ task 全有快照时:600+ 次远程往返 → 1 次 IN)。
         //   务必 finally clear,避免线程池下个请求误用旧值。
         boolean snapBatchActive = false;
+        // [be-profile] 分段埋点(2026-06-26):prefetch / phase1(snapshot 命中) / phase2(实时 expand) 各耗时与计数。
+        long _bp0 = System.nanoTime();
+        int _preCount = 0;
         if (bucketEnabled) {
             java.util.Set<UUID> lids = new java.util.LinkedHashSet<>();
             for (Task t : req.tasks) if (t.lineItemId != null) lids.add(t.lineItemId);
             if (!lids.isEmpty()) {
-                SnapshotRowsContext.set(componentDriverService.prefetchSnapshotRows(lids));
+                java.util.Map<String, String> _pf = componentDriverService.prefetchSnapshotRows(lids);
+                _preCount = _pf.size();
+                SnapshotRowsContext.set(_pf);
                 snapBatchActive = true;
             }
         }
+        long _prefetchMs = (System.nanoTime() - _bp0) / 1_000_000;
         try {
-            return doBatchExpandPhases(req, resp, bucketEnabled, debugSql);
+            long _bp1 = System.nanoTime();
+            ApiResponse<BatchExpandDriverResponse> out = doBatchExpandPhases(req, resp, bucketEnabled, debugSql);
+            // phase1 命中数(driverPath=snapshot)vs phase2(实时 expand)= 诊断 batch-expand 慢在快照读还是实时展开
+            int _snapHit = 0;
+            for (Result r : resp.results) if (r != null && r.data != null && "snapshot".equals(r.data.driverPath)) _snapHit++;
+            long _phasesMs = (System.nanoTime() - _bp1) / 1_000_000;
+            LOG.infof("[be-profile] tasks=%d prefetched=%d snapshotHit=%d realExpand=%d | prefetch=%dms phases=%dms",
+                    req.tasks.size(), _preCount, _snapHit, req.tasks.size() - _snapHit, _prefetchMs, _phasesMs);
+            return out;
         } finally {
             if (snapBatchActive) SnapshotRowsContext.clear();
         }
