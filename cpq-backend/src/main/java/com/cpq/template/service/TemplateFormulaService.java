@@ -105,6 +105,9 @@ public class TemplateFormulaService {
             .silent(true)
             .strict(false)
             .permissions(JexlPermissions.UNRESTRICTED)
+            // P3(2026-06-26 perf):缓存已解析表达式。首存逐行 Excel 快照对同模板同公式重复 createExpression
+            // (170 行 ×N 列),无 cache 时每次重新 parse JEXL → 占首存 S3 大头。cache 只缓存 AST,不改求值语义。
+            .cache(512)
             .create();
 
     @Inject

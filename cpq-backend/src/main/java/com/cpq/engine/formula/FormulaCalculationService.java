@@ -25,6 +25,8 @@ public class FormulaCalculationService {
     private final JexlEngine jexl = new JexlBuilder()
             .strict(false)
             .silent(true)
+            // P3(2026-06-26 perf):缓存已解析表达式(AST),避免逐行重复 parse;不改求值语义。
+            .cache(512)
             .create();
 
     @Inject
