@@ -202,40 +202,57 @@ public class ComponentDriverService {
     public ExpandDriverResponse expandWithSnapshot(UUID componentId, UUID customerId, String partNo, Integer partVersion,
                                                    String overrideDataDriverPath, String overrideFieldsJson,
                                                    UUID lineItemId, String compositeType, List<UUID> childLineItemIds) {
-        // 调试捕获 SQL 时旁路报价单快照直返, 强制走实时 driver 以触发并记录最终 SQL。
-        if (lineItemId != null && componentId != null
-                && !com.cpq.datasource.sqlview.SqlDebugContext.isActive()) {
-            try {
-                // 批量预载模式(batch-expand 整单一次 IN 查后设入 ThreadLocal):命中上下文即用,不再逐 task 查库;
-                //   上下文已设但该对不在 map(=无快照)→ json=null,落到下方实时 expand;未设 → 回落逐 task 查(零破坏)。
-                String json;
-                if (com.cpq.formula.dataloader.SnapshotRowsContext.isSet()) {
-                    json = com.cpq.formula.dataloader.SnapshotRowsContext.get(lineItemId, componentId);
-                } else {
-                    @SuppressWarnings("unchecked")
-                    List<Object> snap = em.createNativeQuery(
-                            "SELECT snapshot_rows FROM quotation_line_component_data " +
-                            "WHERE line_item_id = :lid AND component_id = :cid AND snapshot_rows IS NOT NULL LIMIT 1")
-                        .setParameter("lid", lineItemId).setParameter("cid", componentId)
-                        .getResultList();
-                    json = (!snap.isEmpty() && snap.get(0) != null) ? snap.get(0).toString() : null;
-                }
-                if (json != null) {
-                    List<ExpandDriverResponse.Row> snapRows = (json.isBlank())
-                            ? new ArrayList<>()
-                            : SNAPSHOT_MAPPER.readValue(json, new TypeReference<List<ExpandDriverResponse.Row>>() {});
-                    ExpandDriverResponse resp = new ExpandDriverResponse();
-                    resp.rows = snapRows != null ? snapRows : new ArrayList<>();
-                    resp.rowCount = resp.rows.size();
-                    resp.driverPath = "snapshot";
-                    return resp;
-                }
-            } catch (Exception e) {
-                LOG.warnf("[snapshot-read] line=%s comp=%s 读快照失败,回退实时: %s", lineItemId, componentId, e.getMessage());
-            }
-        }
+        ExpandDriverResponse snap = tryReadSnapshot(componentId, lineItemId);
+        if (snap != null) return snap;
         return expand(componentId, customerId, partNo, partVersion, overrideDataDriverPath, overrideFieldsJson,
                 lineItemId, compositeType, childLineItemIds);
+    }
+
+    /**
+     * FIX 1(2026-06-26 batch-expand 去白干):<b>只读报价单快照,读不到返 {@code null}(绝不 fallthrough 到实时 expand)</b>。
+     *
+     * <p>从 {@link #expandWithSnapshot} 抽出的快照读段,行为逐字不变(命中返冻结行 driverPath="snapshot"、
+     * miss/调试态/异常返 null)。供 {@code ComponentResource.batchExpand} 的 Phase 1「只窥探快照」用——
+     * 原 Phase 1 调 expandWithSnapshot,miss 时它会做一次真展开、结果又因 driverPath≠"snapshot" 被丢弃、塞进 Phase 2
+     * (导入 616 task 全 miss = 18.6s 纯白干)。改用本方法:miss → null → 直接进 Phase 2,不再算了又丢。
+     *
+     * <p>命中条件、批量预载上下文、逐 task 回落查、空快照=空渲染 语义全部保持与原 expandWithSnapshot 一致。
+     */
+    public ExpandDriverResponse tryReadSnapshot(UUID componentId, UUID lineItemId) {
+        // 调试捕获 SQL 时旁路报价单快照, 强制走实时 driver 以触发并记录最终 SQL → 返 null 让调用方落实时。
+        if (lineItemId == null || componentId == null
+                || com.cpq.datasource.sqlview.SqlDebugContext.isActive()) {
+            return null;
+        }
+        try {
+            // 批量预载模式(batch-expand 整单一次 IN 查后设入 ThreadLocal):命中上下文即用,不再逐 task 查库;
+            //   上下文已设但该对不在 map(=无快照)→ json=null → 返 null;未设 → 回落逐 task 查(零破坏)。
+            String json;
+            if (com.cpq.formula.dataloader.SnapshotRowsContext.isSet()) {
+                json = com.cpq.formula.dataloader.SnapshotRowsContext.get(lineItemId, componentId);
+            } else {
+                @SuppressWarnings("unchecked")
+                List<Object> snap = em.createNativeQuery(
+                        "SELECT snapshot_rows FROM quotation_line_component_data " +
+                        "WHERE line_item_id = :lid AND component_id = :cid AND snapshot_rows IS NOT NULL LIMIT 1")
+                    .setParameter("lid", lineItemId).setParameter("cid", componentId)
+                    .getResultList();
+                json = (!snap.isEmpty() && snap.get(0) != null) ? snap.get(0).toString() : null;
+            }
+            if (json != null) {
+                List<ExpandDriverResponse.Row> snapRows = (json.isBlank())
+                        ? new ArrayList<>()
+                        : SNAPSHOT_MAPPER.readValue(json, new TypeReference<List<ExpandDriverResponse.Row>>() {});
+                ExpandDriverResponse resp = new ExpandDriverResponse();
+                resp.rows = snapRows != null ? snapRows : new ArrayList<>();
+                resp.rowCount = resp.rows.size();
+                resp.driverPath = "snapshot";
+                return resp;
+            }
+        } catch (Exception e) {
+            LOG.warnf("[snapshot-read] line=%s comp=%s 读快照失败,回退实时: %s", lineItemId, componentId, e.getMessage());
+        }
+        return null;
     }
 
     /**

@@ -267,13 +267,13 @@ public class ComponentResource {
                         r.status = "OK";
                         continue;
                     }
-                    // Flag 开 → Phase 1 仅试 snapshot;hasContext 才有 snapshot 命中机会
+                    // Flag 开 → Phase 1 仅【窥探】snapshot:命中直返;未命中绝不实时展开,直接进 Phase 2。
+                    //   FIX 1(2026-06-26):原先调 expandWithSnapshot,miss 时它会做一次真展开、结果又因 driverPath≠"snapshot"
+                    //   被丢弃、塞进 Phase 2(导入 616 task 全 miss = 18.6s 纯白干,Phase 2 再合桶算一遍)。改用 tryReadSnapshot:
+                    //   miss 返 null、不实时展开 → 直接 phase2.add。Phase 2 产出不变(BatchExpandBucketEquivTest 守)。
                     if (hasContext) {
-                        ExpandDriverResponse snap = componentDriverService.expandWithSnapshot(
-                            t.componentId, t.customerId, t.partNo, t.partVersion,
-                            t.overrideDataDriverPath, t.overrideFieldsJson, t.lineItemId, t.compositeType,
-                            t.childLineItemIds);
-                        if (snap != null && "snapshot".equals(snap.driverPath)) {
+                        ExpandDriverResponse snap = componentDriverService.tryReadSnapshot(t.componentId, t.lineItemId);
+                        if (snap != null) {
                             r.data = snap;
                             r.status = "OK";
                             continue;
