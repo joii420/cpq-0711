@@ -22,8 +22,12 @@ export function stableDraftDedupKey(payload: any): string {
     lineItems: Array.isArray(payload.lineItems)
       ? payload.lineItems.map((li: any) => {
           if (!li || typeof li !== 'object') return li;
-          // 剔除行级派生字段:subtotal / quoteExcelValues
-          const { subtotal: _s, quoteExcelValues: _q, componentData, ...rest } = li;
+          // 剔除「服务端回填」字段(非用户输入,不应触发再存):
+          //   - id:首存时新行 id=null,首存返回后 syncLineItemsFromResponse 把 DB 生成 uuid 回填进 lineItems
+          //     → 下次 payload 的 id 从 null 变 uuid → 去重键变 → pendingSaveRef 补发(实测仍三连发的真凶,2026-06-26)。
+          //     id 是服务端身份;后端仍照常收到 id 做 UPSERT,只是不参与「用户是否改了东西」的判定。
+          //   - subtotal / quoteExcelValues:随 driverExpansions live→snap 翻转而重算的派生值。
+          const { id: _id, subtotal: _s, quoteExcelValues: _q, componentData, ...rest } = li;
           return {
             ...rest,
             componentData: Array.isArray(componentData)
