@@ -40,7 +40,10 @@ class S3SegmentProfileTest {
 
     @Test
     void profileS3_rockwell() {
-        profileOne(ROCKWELL_QID, "ROCKWELL-8f0c37a4");
+        // -Dqid=<uuid> 覆盖基准单(用户实测单);缺省 rockwell
+        String qidProp = System.getProperty("qid");
+        UUID qid = (qidProp != null && !qidProp.isBlank()) ? UUID.fromString(qidProp) : ROCKWELL_QID;
+        profileOne(qid, "QID-" + qid);
     }
 
     @Transactional
