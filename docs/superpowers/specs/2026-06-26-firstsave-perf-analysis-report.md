@@ -39,13 +39,18 @@
 
 **离线 cards+setup = ~2.3s,但生产 S3 = 6.8-8.1s → ~5.8s 缺口。**
 
-### 🔴 S3 ~5.8s 缺口定位(核心待确认项)
-离线 profiling 直接调 `buildCardValues`/`buildCostingCardValues`(返字符串、**不落库**);生产 S3 走
-`snapshotLineValuesWithUnion`,除算值外还**逐行 persist 卡片值 JSONB**(报价 334KB + 核价 193KB = 527KB/77 行)
-+ 逐行 `findById`×2 + 事务脏检查。缺口最可能在**这批 JSONB 落库 + 逐行开销**(离线测不覆盖)。
-已部署 `[s3-detail]` 埋点(setup vs 逐行卡片值 ms);下次复现即可实锤:
-- 若「逐行卡片值」≈6s ≫ 离线 0.23s → 缺口 = persist + 逐行开销 → 优化方向:卡片值**批量落库**(类似 P1 的批 UPDATE,或两段式 UPDATE…FROM VALUES),把 77 行 JSONB 写合并。
-- 若「setup」≈6s → 缺口 = precomputeCostingDriverUnion 生产态更慢(冷/争用)→ 查 union。
+### 🔴 S3 缺口已实锤(`[s3-detail]` order 9881d2e2,77 行,S3=7724ms)
+```
+setup(union/prefetch/compData,首行一次) = 2030ms
+逐行卡片值(snapshotLineValuesWithUnion ×77) = 4095ms
+余(ensureStructure + loadQuotationLines + 循环内 findById) ≈ 1599ms
+```
+**逐行卡片值 4.1s vs 离线纯算值 0.23s → ~3.9s 是「逐行落库+开销」,不是算值。** 根因:S3 循环从
+**非事务**编排器逐行调 `snapshotLineValuesWithUnion`(`@Transactional`),77 次 = **77 个独立事务**,每个:
+begin + `findById`×2(跨 tx 不复用 L1,冷查)+ 卡片值 JSONB UPDATE + commit。77 次 begin/commit/冷 findById
+= ~3.9s(与历史 F7「非事务编排 170 独立 txn」同源)。
+**修法:卡片值集合化落库** —— S3 循环包一个事务(L1 复用 + 一次 flush + P1 的 JDBC 批 UPDATE 合并 77 行),
+或两段式 `UPDATE…FROM(VALUES)`。预计 4.1s → ~1s,叠加 setup 优化后 S3 ≈ 3s。
 
 ## 3. batch-expand 20s 深度拆解
 **关键发现:用户实测单 a341844a = 77 行 / 77 distinct 料号(全不重复)。** 故 #5(去 allUniquePartNos)
@@ -55,21 +60,35 @@
 - **eligible(非 lineItemId 视图)**:合桶 → 每组件一次 `expandMulti(77 distinct partNo)`(`[be-bucket] merged=true partNos=77`,日志已见 16 条「省 76 次」)。`expandMulti` 是**一次** SQL 视图查(`DataLoader.loadByPath` 全 partNo)+ 内存逐行 `evaluatePath`(每行每 BASIC_DATA 字段)。
 - **lineItemId 视图组件(Bug-B 隔离)**:`viewUsesLineItemId=true` → **不能合桶**,逐 task(77 次)冷 expand。
 
-### 🔴 batch-expand 20s 归因(待 `[be-bucket]` 实锤)
-20s 落在二者之一(或都有):
-- **(a) 合桶组件的 expandMulti(77) 本身慢**:一次大 IN 查 + 77×N 行逐行 evaluatePath(CPU/或逐字段 BNF 远程)。
-- **(b) lineItemId 视图组件逐 task(77 次冷 expand)**:每 task 一次远程视图查,RTT 主导。
-`[be-bucket]` 已部署(每桶 comp/merged/tasks/ms/lineItemIdView)→ 下次复现即知哪类、哪些组件吃掉 20s。
-- 若 (b) 主导 → 需 **lineItemId 维度合桶**(`(lineItemId,partNo) IN` 多键一次查;P3 Phase 2-3),或服务端权威展开(S2 已 1s 算出 snapshot_rows,客户端可改读快照不自展)。
-- 若 (a) 主导 → 优化 expandMulti 的逐行 evaluatePath(批量 BNF / 减字段)。
+### 🔴🔴 batch-expand 18.9s 已实锤 —— Phase 1 在做「整批白干的逐 task 冷展开」
+`[be-bucket]`(order 9881d2e2):**8 个组件全 merged=true,合计仅 245ms**(`$cp/$ll/$ys/$jg/$wgj/$qt/$dd/$zz_view`,
+各 77 partNo「省 76 次」20-53ms)。**但 `[be-profile]` phases=18922ms!** 8 桶只占 245ms → 另外 **18.6s 不在 Phase 2**。
+
+定位:`ComponentResource.doBatchExpandPhases` 的 **Phase 1**(`:271`)对每个 hasContext task 调
+`expandWithSnapshot(...)`。而 `expandWithSnapshot`(`ComponentDriverService:202`)= 先读快照,**读不到就
+`return expand(...)` 做一次真·逐 task 冷展开**(`:230`)。导入时 616 task 全无快照(snapHit=0)→ **Phase 1
+对 616 个 task 各做一次冷远程展开 ≈ 18.6s,拿到结果后又因 `driverPath!="snapshot"` 丢弃、塞进 phase2**
+(`:276→282`)→ Phase 2 再合桶展开一遍(245ms,且 expandMulti 不吃 expandCache、与 Phase 1 无关)。
+
+**即 Phase 1 的 616 次冷展开是 100% 白干**(结果被丢、Phase 2 重算)。这是 batch-expand 18.9s 的唯一大头。
+
+**修法(简单且大):Phase 1 只「窥探快照」不展开** —— 把 `:272` 的 `expandWithSnapshot` 换成只读快照、
+miss 返 null 的 `tryReadSnapshot(componentId, lineItemId)`(把 `expandWithSnapshot` 的快照读段抽出、不 fallthrough
+到 expand);miss → 直接 `phase2.add(i)`,**不做真展开**。Phase 2 合桶照旧。**预计 batch-expand 18.9s → ~0.3s**。
+等价:Phase 2 产出不变(BatchExpandBucketEquivTest 守);Phase 1 仅停止「算了又丢」。
 
 ### 旁证:服务端 S2 只要 ~1s 做等价展开
 `snapshotQuotation` 的 S2 用 `precomputeQuoteDriverBuckets`(对 distinct partNo 一次 expandMulti)**1s** 出
 snapshot_rows;客户端 batch-expand 做"同一份展开"却 20s。差异 = 客户端含 lineItemId 视图逐 task + 冷态。
 **根治方向**:客户端渲染改"读服务端快照"而非自行冷展开(首存后快照已落)——即把展开收敛到服务端一次。
 
-## 4. 结论与下一步
-1. **已把首存从 22s×3 ≈ 60s+ 压到 ~9-11s×1**;Excel 7.5s 已移出关键路径(懒算,已证生效)。
-2. **draft 残留主项 = S3 的 ~5.8s 缺口**,强疑卡片值 JSONB 逐行落库 → 方向 = **批量落库**。待 `[s3-detail]` 实锤。
-3. **batch-expand 20s = 客户端冷展开**(eligible 合桶 expandMulti + lineItemId 逐 task)。待 `[be-bucket]` 实锤是 (a) 还是 (b);根治为"服务端权威展开/客户端读快照"或"lineItemId 维度合桶"。
-4. **请复现一次**(导入 77 行 → 保存):读 `[s3-detail]` + `[be-bucket]` 即可把上面两个 🔴 缺口换成精确数字,据此各打一个针对性优化。
+## 4. 结论与下一步(两个根因已实锤,各对应一个简单大修)
+| 项 | 现状 | 根因(已实锤) | 修法 | 预计 |
+|---|---|---|---|---|
+| **batch-expand** | 18.9s | **Phase 1 对 616 task 各做一次冷展开后全丢**,Phase 2 再合桶算一遍 | Phase 1 改「只窥探快照、miss 不展开直接进 Phase 2」 | **18.9s → ~0.3s** |
+| **draft S3** | 7.7s | 逐行卡片值 4.1s = **77 个独立事务**的 begin/冷 findById/JSONB UPDATE/commit | 卡片值**集合化落库**(一个事务 + 批 UPDATE) | S3 7.7s → ~3s |
+
+两者都是**结构性白干/逐行事务**,非算力问题;均有等价护栏(BatchExpandBucketEquivTest / GoldenCardValuesEquivTest +
+BatchStage1 持久化等价)。落地后预计:**batch-expand ~0.3s + draft ~4s**,首存体验从 ~30s(20+11)→ ~5s 量级。
+
+**优先级:先打 batch-expand Phase 1(最大、最简、风险最低),再打 draft S3 集合化落库。**
