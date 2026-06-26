@@ -323,6 +323,7 @@ public class ComponentResource {
             //   收益:eligible(非 lineItemId 视图)组件的 616 per-task → 合桶,batch-expand 22s→秒级。等价见 BatchExpandBucketEquivTest。
             boolean canMerge = idxs.size() >= 2
                     && !componentDriverService.viewUsesLineItemId(pivot.componentId, dp);
+            long _bktStart = System.nanoTime();   // [be-bucket] 分桶耗时埋点
             if (!canMerge) {
                 // 不能合 → 桶内逐 task 跑(同原逻辑)
                 for (int idx : idxs) {
@@ -330,6 +331,10 @@ public class ComponentResource {
                     Result r = resp.results.get(idx);
                     runSingleTask(t, r);
                 }
+                long _ms = (System.nanoTime() - _bktStart) / 1_000_000;
+                LOG.infof("[be-bucket] comp=%s dp=%s merged=false tasks=%d lineItemIdView=%b ms=%d",
+                        pivot.componentId, dp, idxs.size(),
+                        componentDriverService.viewUsesLineItemId(pivot.componentId, dp), _ms);
                 continue;
             }
             // 合并跑一次 SQL 视图,按 hf_part_no 分发回各 task
@@ -363,8 +368,9 @@ public class ComponentResource {
                     r.data = part;
                     r.status = "OK";
                 }
-                LOG.infof("[batch-expand bucket-merge] componentId=%s partNos=%d → 1 SQL view exec (省 %d 次)",
-                        pivot.componentId, partNos.size(), partNos.size() - 1);
+                long _ms = (System.nanoTime() - _bktStart) / 1_000_000;
+                LOG.infof("[be-bucket] comp=%s dp=%s merged=true partNos=%d 省%d次 ms=%d",
+                        pivot.componentId, dp, partNos.size(), partNos.size() - 1, _ms);
             } catch (Exception ex) {
                 LOG.warnf("[batch-expand bucket-merge] bucket=%s 失败,fallback 逐 task: %s", e.getKey(), ex.getMessage());
                 for (int idx : idxs) {
