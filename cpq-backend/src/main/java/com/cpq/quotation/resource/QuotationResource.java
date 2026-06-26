@@ -43,6 +43,9 @@ import java.util.UUID;
 @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
 public class QuotationResource {
 
+    private static final org.jboss.logging.Logger LOG =
+            org.jboss.logging.Logger.getLogger(QuotationResource.class);
+
     @Inject
     QuotationService quotationService;
 
@@ -113,13 +116,21 @@ public class QuotationResource {
     @PUT
     @Path("/{id}/draft")
     public ApiResponse<QuotationDTO> saveDraft(@PathParam("id") UUID id, SaveDraftRequest request) {
+        // [draft-profile] 分段埋点(2026-06-26):S1 saveDraft(全删全建+落库) / S2 snapshotQuotation(snapshot_rows) /
+        //   S3 整份快照 Phase1(新行 card values) / S4 getById 重建。日志前缀 [draft-profile] 便于过滤。
+        long _p0 = System.nanoTime();
         QuotationDTO dto = quotationService.saveDraft(id, request);
+        long _s1 = (System.nanoTime() - _p0) / 1_000_000;
         // saveDraft 已提交,按新行重快照(降级:失败不影响保存)
+        long _p1 = System.nanoTime();
         try {
             snapshotService.snapshotQuotation(id, true);  // 增量: 复用行已回写 snapshot_rows → 跳过全量重 expand
         } catch (Exception ignore) {
             // 快照尽力而为
         }
+        long _s2 = (System.nanoTime() - _p1) / 1_000_000;
+        long _p2 = System.nanoTime();
+        int _newLines = 0;
         // 报价单整份快照 Phase 1: 固定 4 份结构 + 仅对新行初始化 4 份值
         // 2026-06-01 修复(单价小计清零 + 并发400 + 保存502): 保存时**只对没有 quote_card_values 的新行**
         //   调 snapshotLineValues 初始化; **已有快照的行一律跳过, 不在保存路径重建**。原因:
@@ -171,6 +182,7 @@ public class QuotationResource {
                         }
                         cardSnapshotService.snapshotLineValuesWithUnion(li, union, prefetch); // 仅新行首次初始化(核价 union + B2 预取), 已有行保留 editQuoteCardValue 的增量
                         snapshotsCreated = true;
+                        _newLines++;
                     }
                 }
             }
@@ -188,6 +200,8 @@ public class QuotationResource {
         // ⚠ 一级缓存陷阱: snapshotLineValues(@Transactional)已把值落库提交, 但本请求会话里在
         // 行 137 findById 时已缓存了"无快照"的 line 实体; 直接 getById 会命中陈旧 L1 缓存 → 仍读到
         // quoteCardValues=null。必须先 em.clear() 驱逐, 让 getById 重新从库读已提交的新值。
+        long _s3 = (System.nanoTime() - _p2) / 1_000_000;
+        long _p3 = System.nanoTime();
         if (snapshotsCreated) {
             try {
                 em.clear();
@@ -196,6 +210,9 @@ public class QuotationResource {
                 // 取不到新鲜 DTO 时退回原 dto(不影响保存本身)
             }
         }
+        long _s4 = (System.nanoTime() - _p3) / 1_000_000;
+        LOG.infof("[draft-profile] id=%s newLines=%d total=%dms | S1.saveDraft=%dms S2.snapshotRows=%dms S3.cardValues=%dms S4.getById=%dms",
+                id, _newLines, _s1 + _s2 + _s3 + _s4, _s1, _s2, _s3, _s4);
         return ApiResponse.success(dto);
     }
 
