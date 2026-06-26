@@ -316,9 +316,13 @@ public class ComponentResource {
             List<Integer> idxs = e.getValue();
             String dp = bucketDriverPath.get(e.getKey());
             Task pivot = req.tasks.get(idxs.get(0));
+            // P3(2026-06-26):去掉 allUniquePartNos 约束 —— 同料号多卡(170 行/77 distinct part)也可合。
+            //   expandMulti 传的是 distinct partNos(line 333 .distinct()),分发按 t.partNo 取(同料号多 task 共享
+            //   同一只读 resp,下面只 `r.data = part` 不 mutate → AP-37 安全)。DataLoader.stableSort 保
+            //   expandMulti==逐 task 行序。与 S2 precomputeQuoteDriverBuckets 同套路(它对 distinct partNo 一次 expandMulti)。
+            //   收益:eligible(非 lineItemId 视图)组件的 616 per-task → 合桶,batch-expand 22s→秒级。等价见 BatchExpandBucketEquivTest。
             boolean canMerge = idxs.size() >= 2
-                    && !componentDriverService.viewUsesLineItemId(pivot.componentId, dp)
-                    && allUniquePartNos(idxs, req.tasks);
+                    && !componentDriverService.viewUsesLineItemId(pivot.componentId, dp);
             if (!canMerge) {
                 // 不能合 → 桶内逐 task 跑(同原逻辑)
                 for (int idx : idxs) {
@@ -400,16 +404,6 @@ public class ComponentResource {
             r.error = e.getMessage();
             LOG.warnf("batch-expand[single] task %s failed: %s", r.key, e.getMessage());
         }
-    }
-
-    /** 桶内 partNos 互不重复(同料号多卡时按 hf_part_no 分发不出来 → 不能合) */
-    private static boolean allUniquePartNos(List<Integer> idxs, List<Task> tasks) {
-        Set<String> seen = new HashSet<>();
-        for (int idx : idxs) {
-            String p = tasks.get(idx).partNo;
-            if (p != null && !seen.add(p)) return false;
-        }
-        return true;
     }
 
     /**
