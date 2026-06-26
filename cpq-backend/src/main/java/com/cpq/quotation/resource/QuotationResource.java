@@ -180,7 +180,9 @@ public class QuotationResource {
                             com.cpq.formula.dataloader.ExcelCompDataContext.set(cdByLine);
                             excelCdDone = true;
                         }
-                        cardSnapshotService.snapshotLineValuesWithUnion(li, union, prefetch); // 仅新行首次初始化(核价 union + B2 预取), 已有行保留 editQuoteCardValue 的增量
+                        // P3 lazy-excel:首存只算卡片值,computeExcel=false 跳过两侧 buildExcelValues(Excel 快照 7.5s
+                        //   占 S3 大头、仅开 Excel 视图/导出时才用)→ 改由 ensureExcelValues 懒算(开视图/导出/提交前触发)。
+                        cardSnapshotService.snapshotLineValuesWithUnion(li, union, prefetch, false); // 仅新行首次初始化卡片值(核价 union + B2 预取), 已有行保留 editQuoteCardValue 的增量
                         snapshotsCreated = true;
                         _newLines++;
                     }
@@ -259,6 +261,22 @@ public class QuotationResource {
     }
 
     /**
+     * P3 lazy-excel:懒算并落库整单 Excel 值(quoteExcelValues/costingExcelValues)。
+     * 首存只算卡片值、Excel 值留 NULL;前端开「Excel 视图」/导出前调本端点补算(幂等,已算的零开销)。
+     * 返回补算后的最新 DTO(含 Excel 值),前端据此渲染 Excel 视图。
+     */
+    @POST
+    @Path("/{id}/ensure-excel-values")
+    public ApiResponse<QuotationDTO> ensureExcelValues(@PathParam("id") UUID id) {
+        int computed = cardSnapshotService.ensureExcelValues(id);
+        // 落库后清 L1 取最新(同 saveDraft 路径的一级缓存纪律)
+        if (computed > 0) {
+            try { em.clear(); } catch (Exception ignore) { /* 尽力 */ }
+        }
+        return ApiResponse.success(quotationService.getById(id));
+    }
+
+    /**
      * 编辑回写报价卡片单元格（报价单整份快照 Phase 2 §6，替代旧 autosave 写 row_data）。
      * body: {componentId, rowKey, fieldName, value}。写 editRows + 重算 formulaResults/报价 Excel；核价不动。
      * 仅 DRAFT 可编辑；非 DRAFT → 400。返回更新后的 quoteCardValues/quoteExcelValues 供前端就地刷新（AP-50）。
@@ -307,6 +325,8 @@ public class QuotationResource {
     public ApiResponse<QuotationDTO> submit(@PathParam("id") UUID id,
                                              @Context HttpServerRequest request) {
         UUID currentUserId = sessionHelper.getCurrentUserIdOrFallback(request);
+        // P3 lazy-excel:提交冻结前确保 Excel 值已补算(首存懒算留 NULL),否则冻结/导出会缺 Excel 快照。
+        try { cardSnapshotService.ensureExcelValues(id); em.clear(); } catch (Exception ignore) { /* 尽力,不阻断提交 */ }
         return ApiResponse.success(quotationService.submit(id, currentUserId));
     }
 

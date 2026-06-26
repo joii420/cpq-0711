@@ -3149,6 +3149,26 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
     });
   };
 
+  // P3 lazy-excel:首存只算卡片值、Excel 值留空(quoteExcelValues/costingExcelValues=null)。
+  //   用户切到「Excel 视图」时,若当前侧有行缺 Excel 值 → 调后端 ensureExcelValues 懒算+落库,再整页重载。
+  //   幂等:全部已算则不发请求;in-flight 用 ref 防并发/重入;加产品后新行缺值会再次触发(无永久 ref 闸门)。
+  const [ensuringExcel, setEnsuringExcel] = useState(false);
+  const ensuringExcelRef = useRef(false);
+  useEffect(() => {
+    if (viewType !== 'excel' || !quotationId || ensuringExcelRef.current) return;
+    const sideKey = mainTab === 'costing' ? 'costingExcelValues' : 'quoteExcelValues';
+    const missing = (lineItems || []).some((li: any) => !li?.[sideKey]);
+    if (!missing) return;
+    ensuringExcelRef.current = true;
+    setEnsuringExcel(true);
+    const hide = message.loading('正在生成 Excel 视图…', 0);
+    quotationService.ensureExcelValues(quotationId)
+      .then(() => onReloadQuotation?.())
+      .catch(() => message.error('Excel 视图生成失败,请重试'))
+      .finally(() => { hide(); ensuringExcelRef.current = false; setEnsuringExcel(false); });
+  }, [viewType, mainTab, quotationId, lineItems]);
+  void ensuringExcel;
+
   // 构建漂移横幅文案
   const buildDriftMessage = () => {
     if (!driftDetection?.driftedRecords?.length) return '基础数据已更新，部分版本已过期';
