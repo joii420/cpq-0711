@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   Button, Card, Col, Collapse, Descriptions, Drawer, Form, Input,
-  Popconfirm, Row, Space, Spin, Table, Tabs, Tag, DatePicker,
+  Popconfirm, Row, Segmented, Space, Spin, Table, Tabs, Tag, DatePicker,
   Checkbox, Typography, message,
 } from 'antd';
 import {
@@ -17,6 +17,8 @@ import { globalVariableService } from '../../services/globalVariableService';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 import { useAuthStore } from '../../stores/authStore';
 import ReadonlyProductCard from './ReadonlyProductCard';
+import ReadonlyExcelView from './ReadonlyExcelView';
+import ReadonlyComparison from './ReadonlyComparison';
 import CopyQuotationDrawer from './CopyQuotationDrawer';
 import { usePathFormulaCache } from './usePathFormulaCache';
 import { enrichComponentData } from './enrichComponentData';
@@ -84,6 +86,12 @@ const QuotationDetail: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('info');
   const [snapshot, setSnapshot] = useState<SubmissionSnapshot | null>(null);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
+
+  // ----------------------------------------------------------------
+  // 产品明细区两级视图切换
+  // ----------------------------------------------------------------
+  const [mainTab, setMainTab] = useState<'quote' | 'costing' | 'comparison'>('quote');
+  const [viewType, setViewType] = useState<'card' | 'excel'>('card');
 
   // ----------------------------------------------------------------
   // B3：引用数据 Tab 可见性（无 GV 绑定时自动隐藏）
@@ -435,13 +443,55 @@ const QuotationDetail: React.FC = () => {
             </Descriptions>
           </Card>
 
-          {/* Line Items — 隐藏组合产品 PART 子件 (与 QuotationStep2 一致, 父卡片内 Tab 通过聚合视图展示子件数据) */}
+          {/* Line Items — 两级视图切换：报价/核价/比对 × 卡片/Excel */}
           <Card title="产品明细" style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
+              <Segmented
+                size="small"
+                options={[
+                  { label: '报价单', value: 'quote' },
+                  { label: '核价单', value: 'costing' },
+                  { label: '比对视图', value: 'comparison' },
+                ]}
+                value={mainTab}
+                onChange={v => setMainTab(v as 'quote' | 'costing' | 'comparison')}
+              />
+              {mainTab !== 'comparison' && (
+                <Segmented
+                  size="small"
+                  options={[
+                    { label: '产品卡片', value: 'card' },
+                    { label: 'Excel 视图', value: 'excel' },
+                  ]}
+                  value={viewType}
+                  onChange={v => setViewType(v as 'card' | 'excel')}
+                />
+              )}
+            </div>
             {(() => {
               const visible = (quotation.lineItems || []).filter((li: any) => li.compositeType !== 'PART');
-              return visible.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 32, color: '#999' }}>暂无产品</div>
-              ) : (
+              if (visible.length === 0) return <div style={{ textAlign: 'center', padding: 32, color: '#999' }}>暂无产品</div>;
+
+              if (mainTab === 'comparison') {
+                return (
+                  <ReadonlyComparison
+                    quotationId={quotation.id}
+                    lineItems={visible}
+                    quoteColumns={quotation.quoteExcelColumns}
+                    costingColumns={quotation.costingExcelColumns}
+                  />
+                );
+              }
+              if (viewType === 'excel') {
+                return (
+                  <ReadonlyExcelView
+                    lineItems={visible}
+                    side={mainTab === 'costing' ? 'COSTING' : 'QUOTE'}
+                    columns={mainTab === 'costing' ? quotation.costingExcelColumns : quotation.quoteExcelColumns}
+                  />
+                );
+              }
+              return (
                 <div className="qt-products-list">
                   {visible.map((li: any, idx: number) => (
                     <ReadonlyProductCard
@@ -452,23 +502,27 @@ const QuotationDetail: React.FC = () => {
                       quotationStatus={quotation.status}
                       customerId={quotation.customerId}
                       globalVariableDefs={gvDefs}
+                      side={mainTab === 'costing' ? 'COSTING' : 'QUOTE'}
                       quoteCardStructure={quotation.quoteCardStructure ?? null}
+                      costingCardStructure={quotation.costingCardStructure ?? null}
                     />
                   ))}
                 </div>
               );
             })()}
-            <Row justify="end" style={{ marginTop: 16 }}>
-              <Col>
-                <Space direction="vertical" align="end">
-                  <Text>原价合计：<Text strong>¥{Number(quotation.originalAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</Text></Text>
-                  <Text>折扣率：<Text strong>{quotation.finalDiscountRate}%</Text></Text>
-                  <Text style={{ fontSize: 16 }}>
-                    报价总金额：<Text strong style={{ fontSize: 18, color: '#c00' }}>¥{Number(quotation.totalAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</Text>
-                  </Text>
-                </Space>
-              </Col>
-            </Row>
+            {mainTab === 'quote' && viewType === 'card' && (
+              <Row justify="end" style={{ marginTop: 16 }}>
+                <Col>
+                  <Space direction="vertical" align="end">
+                    <Text>原价合计：<Text strong>¥{Number(quotation.originalAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</Text></Text>
+                    <Text>折扣率：<Text strong>{quotation.finalDiscountRate}%</Text></Text>
+                    <Text style={{ fontSize: 16 }}>
+                      报价总金额：<Text strong style={{ fontSize: 18, color: '#c00' }}>¥{Number(quotation.totalAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</Text>
+                    </Text>
+                  </Space>
+                </Col>
+              </Row>
+            )}
           </Card>
 
           {/* Approval History */}
