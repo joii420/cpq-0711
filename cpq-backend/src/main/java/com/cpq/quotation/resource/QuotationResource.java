@@ -186,7 +186,7 @@ public class QuotationResource {
                     _s3cards = (System.nanoTime() - _cd) / 1_000_000;
                     snapshotsCreated = true;
                     _newLines = newLineIds.size();
-                    LOG.infof("[s3-detail] id=%s newLines=%d(batch) | setup(union/prefetch,一次)=%dms 集合化卡片值落库=%dms",
+                    LOG.debugf("[s3-detail] id=%s newLines=%d(batch) | setup(union/prefetch,一次)=%dms 集合化卡片值落库=%dms",
                             id, _newLines, _s3setup, _s3cards);
                 }
             } else {
@@ -221,7 +221,7 @@ public class QuotationResource {
                     }
                 }
                 if (_newLines > 0)
-                    LOG.infof("[s3-detail] id=%s newLines=%d(per-line) | setup=%dms 逐行卡片值=%dms",
+                    LOG.debugf("[s3-detail] id=%s newLines=%d(per-line) | setup=%dms 逐行卡片值=%dms",
                             id, _newLines, _s3setup, _s3cards);
             }
         } catch (Exception ignore) {
@@ -249,7 +249,7 @@ public class QuotationResource {
             }
         }
         long _s4 = (System.nanoTime() - _p3) / 1_000_000;
-        LOG.infof("[draft-profile] id=%s newLines=%d total=%dms | S1.saveDraft=%dms S2.snapshotRows=%dms S3.cardValues=%dms S4.getById=%dms",
+        LOG.debugf("[draft-profile] id=%s newLines=%d total=%dms | S1.saveDraft=%dms S2.snapshotRows=%dms S3.cardValues=%dms S4.getById=%dms",
                 id, _newLines, _s1 + _s2 + _s3 + _s4, _s1, _s2, _s3, _s4);
         return ApiResponse.success(dto);
     }
