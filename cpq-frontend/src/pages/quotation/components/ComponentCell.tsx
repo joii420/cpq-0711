@@ -93,8 +93,12 @@ export interface CellContext {
   dsErrors?: Record<string, string>;
   /** 编辑态：cell 值变化回调 */
   onCellChange?: (rowIndex: number, key: string, value: any) => void;
-  /** 编辑态：cell 失焦回调（触发 autoSave） */
-  onCellBlur?: (rowIndex: number, key: string) => void;
+  /**
+   * 编辑态：cell 失焦回调（触发 autoSave / DATA_SOURCE 重查 / 快照回写）。
+   * 第三参 committedValue = 失焦时已提交到全局的值；EditableCellInput 采用"本地态 + 失焦提交"后，
+   * 失焦那一刻全局 row[key] 尚未刷新，故快照回写等必须用此入参而非渲染期闭包里的旧 row[key]。
+   */
+  onCellBlur?: (rowIndex: number, key: string, committedValue?: any) => void;
   /** 编辑态：dsLoading/dsErrors 的 key 前缀（`${tabIndex}-${rowIndex}`） */
   dsStateKey?: string;
 }
@@ -183,6 +187,56 @@ function resolveGvarFallback(
   // Step 6: '—'
   return <span className="qt-ds-placeholder">—</span>;
 }
+
+// ─── 可编辑单元格输入框（本地态缓冲 + 失焦提交）──────────────────────────────────
+/**
+ * 打字时只更新组件本地 state（仅重渲染本单元格），失焦才把值提交回全局 lineItems。
+ *
+ * 旧实现 <input> 的 value 直接受控于全局 row[key]、onChange 每敲一键就写全局 →
+ * 触发整份报价单的派生重算（QuotationStep2 的 buildSnapshotExpansions 等 useMemo 依赖整个
+ * lineItems）→ 字符要等全量重渲染跑完才显示 = 输入延迟。本组件把"每键写全局"降为"失焦写一次"。
+ *
+ * 外部值变化（快照回填 / 程序化重置 / DATA_SOURCE 重查结果）在未聚焦时同步进本地；
+ * 聚焦中（用户正在打字）不被外部值打断，避免回灌覆盖正在输入的内容（AP-54 同源风险）。
+ */
+const EditableCellInput: React.FC<{
+  value: any;
+  isNumber?: boolean;
+  placeholder?: string;
+  /** 提交到全局（仅当相对外部值确有变化时才调用，避免无谓全量重算） */
+  onCommit: (value: string) => void;
+  /** 失焦副作用（DATA_SOURCE 重查 / 快照回写），始终在失焦时调用，入参为已提交值 */
+  onCommitBlur: (value: string) => void;
+}> = ({ value, isNumber, placeholder, onCommit, onCommitBlur }) => {
+  const norm = (v: any) => (v == null ? '' : String(v));
+  const [local, setLocal] = React.useState<string>(norm(value));
+  const focusedRef = React.useRef(false);
+  React.useEffect(() => {
+    // 未聚焦时同步外部值；聚焦中不覆盖用户正在输入的内容
+    if (!focusedRef.current) setLocal(norm(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  return (
+    <input
+      type={isNumber ? 'number' : 'text'}
+      step={isNumber ? 'any' : undefined}
+      placeholder={placeholder}
+      value={local}
+      onFocus={() => { focusedRef.current = true; }}
+      onChange={e => {
+        const val = e.target.value;
+        if (isNumber && val !== '' && !/^-?\d*\.?\d*$/.test(val)) return;
+        setLocal(val);            // 仅本地，不触发全局重算 → 字符即时显示
+      }}
+      onBlur={() => {
+        focusedRef.current = false;
+        const committed = local;
+        if (norm(value) !== committed) onCommit(committed);   // 值变了才写全局
+        onCommitBlur(committed);                              // 失焦副作用始终执行，拿已提交值
+      }}
+    />
+  );
+};
 
 // ─── 主组件 ──────────────────────────────────────────────────────────────────
 
@@ -410,11 +464,10 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
     // 注：DATA_SOURCE 手动行下拉选择器待 Phase 1.1 接入，暂用文本框。
     if (isManual) {
       return (
-        <input
-          type="text"
-          value={row[key] ?? ''}
-          onChange={(e) => onCellChange?.(rowIndex, key, e.target.value)}
-          onBlur={() => onCellBlur?.(rowIndex, key)}
+        <EditableCellInput
+          value={row[key]}
+          onCommit={(val) => onCellChange?.(rowIndex, key, val)}
+          onCommitBlur={(val) => onCellBlur?.(rowIndex, key, val)}
         />
       );
     }
@@ -513,11 +566,10 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
     // 手动新增行：FIXED_VALUE 渲染为可填文本框（用户自填，忽略 field.content 模板值）
     if (isManual) {
       return (
-        <input
-          type="text"
-          value={row[key] ?? ''}
-          onChange={(e) => onCellChange?.(rowIndex, key, e.target.value)}
-          onBlur={() => onCellBlur?.(rowIndex, key)}
+        <EditableCellInput
+          value={row[key]}
+          onCommit={(val) => onCellChange?.(rowIndex, key, val)}
+          onCommitBlur={(val) => onCellBlur?.(rowIndex, key, val)}
         />
       );
     }
@@ -564,17 +616,12 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
   const placeholderHint = field.content != null && field.content !== '' ? String(field.content) : undefined;
 
   return (
-    <input
-      type={isNumber ? 'number' : 'text'}
-      step={isNumber ? 'any' : undefined}
+    <EditableCellInput
+      value={rawCell}
+      isNumber={isNumber}
       placeholder={placeholderHint}
-      value={rawCell ?? ''}
-      onChange={e => {
-        const val = e.target.value;
-        if (isNumber && val !== '' && !/^-?\d*\.?\d*$/.test(val)) return;
-        onCellChange?.(rowIndex, key, val);
-      }}
-      onBlur={() => onCellBlur?.(rowIndex, key)}
+      onCommit={(val) => onCellChange?.(rowIndex, key, val)}
+      onCommitBlur={(val) => onCellBlur?.(rowIndex, key, val)}
     />
   );
 };

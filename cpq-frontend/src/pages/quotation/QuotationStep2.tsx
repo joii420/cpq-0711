@@ -1553,6 +1553,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   // 300ms debounce timers per blur event
   const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
+  // 始终指向最新 item 的 ref —— ComponentCell 改"本地态 + 失焦提交"后,延迟读取(executeDsQuery /
+  // handleInputBlur 的 300ms 定时器)若读渲染期闭包 item 会拿到提交前的旧值;改读 itemRef.current
+  // 在定时器触发时取到已 flush 的最新 componentData。同步调用处 itemRef.current === item,行为不变。
+  const itemRef = useRef(item);
+  itemRef.current = item;
+
   // 5-minute cache: cacheKey → { value, timestamp }
   const dsCache = useRef<Map<string, { value: any; timestamp: number }>>(new Map());
 
@@ -1753,7 +1759,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     // executeDsQuery 仅服务于 DATABASE_QUERY 子类型(GLOBAL_VARIABLE / BNF_PATH 走 computeAllFormulas 内的 enrich)
     if (!binding.datasource_id) return;
     const paramBindings = binding.param_bindings || [];
-    const comp = item.componentData[tabIndex];
+    const comp = itemRef.current.componentData[tabIndex];
     if (!comp) return;
 
     // Collect all param values — all must be filled
@@ -1823,7 +1829,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       clearTimeout(debounceTimers.current[timerKey]);
     }
     debounceTimers.current[timerKey] = setTimeout(() => {
-      const comp = item.componentData[tabIndex];
+      const comp = itemRef.current.componentData[tabIndex];
       if (!comp) return;
 
       for (const dsField of comp.fields) {
@@ -2519,19 +2525,22 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           dsStateKey: `${activeComponentDataIndex}-${realRowIndex}`,
                           // AP-54: 写路径用 realRowIndex(对象引用映射回 comp.rows 真实下标)
                           onCellChange: (ri, k, val) => handleRowChange(activeComponentDataIndex, realRowIndex, k, val),
-                          onCellBlur: (ri, k) => {
+                          onCellBlur: (ri, k, committedVal) => {
                             // B5: 输入数值列失焦/回车后重算 footer 小计。
-                            // 重算入口：handleRowChange 已把最新值写入 item.componentData，
+                            // EditableCellInput 改"本地态 + 失焦提交"后：committedVal = 失焦时已提交到全局的值。
+                            // committedVal 已在 onCommit 里经 handleRowChange 写入 item.componentData(异步),
                             // 触发重渲染时 columnSumsByComp（buildCrossTabRows resolvedRows）自动重算。
-                            // 此处无需额外触发——受控组件 onChange 已保证 item 与 UI 同步；
-                            // onCellBlur 负责（1）DATA_SOURCE 重查 (handleInputBlur)（2）快照写回 (handleSnapshotCellEdit)。
+                            // onCellBlur 负责（1）DATA_SOURCE 重查 (handleInputBlur, 内部 300ms 后读最新 item)
+                            //            （2）快照写回 (handleSnapshotCellEdit)。
                             handleInputBlur(activeComponentDataIndex, realRowIndex, k);
                             // Phase4 Task3: 报价侧用户输入字段 onBlur → 写快照 editRows(替代仅靠 autosave 写 row_data)。
-                            // 仅 INPUT* 类型(FORMULA/BASIC_DATA/DATA_SOURCE/FIXED 不在此触发); row[k] 为最新受控值。
+                            // 仅 INPUT* 类型(FORMULA/BASIC_DATA/DATA_SOURCE/FIXED 不在此触发)。
+                            // ⚠️ 必须用 committedVal:失焦那一刻全局 row[k] 还是旧值(onCommit 的 setState 未 flush),
+                            //    用 row[k] 会把旧值写进快照。committedVal===undefined 时(理论不会)回退 row[k] 兜底。
                             const ft = field.field_type;
                             const isUserInputField = ft === 'INPUT' || ft === 'INPUT_TEXT' || ft === 'INPUT_NUMBER';
                             if (useSnapEdit && isUserInputField && activeComponent.componentId) {
-                              handleSnapshotCellEdit(activeComponent.componentId, rowKey, k, row[k]);
+                              handleSnapshotCellEdit(activeComponent.componentId, rowKey, k, committedVal !== undefined ? committedVal : row[k]);
                             }
                           },
                           // Phase 1 手动行标记(供后续 Task 7 ComponentCell 消费)
