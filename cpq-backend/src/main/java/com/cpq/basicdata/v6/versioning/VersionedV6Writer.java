@@ -398,6 +398,109 @@ public class VersionedV6Writer {
         Profile p = PROFILE.get(); p.flipN++; p.flipNs += System.nanoTime() - t0;
     }
 
+    // ====================== 批量 BOM 主从版本化 ======================
+    /**
+     * 批量主从版本化：整 sheet 所有 BOM group 一次提交。逐位等价于逐组
+     * {@link #writeVersionedMasterDetail}。仅支持 childVersionColumn != null（多版本保留）路径，
+     * 现役全部 BOM handler 均属此类。
+     *
+     * @param items 每项 = {masterGroupKey, childGroupKey, childRows}；masterFixedColumns 整批恒定。
+     * @return masterGroupKey → 版本号。
+     */
+    public Map<Map<String, Object>, String> writeVersionedMasterDetails(
+            String masterTable, String masterVersionColumn, Map<String, ?> masterFixedColumns,
+            String childTable, String childVersionColumn, List<String> childContentColumns,
+            List<MasterDetailItem> items) {
+
+        if (!ALLOWED_TABLES.contains(masterTable) || !ALLOWED_TABLES.contains(childTable))
+            throw new IllegalArgumentException("表未登记白名单: " + masterTable + " / " + childTable);
+        if (childVersionColumn == null)
+            throw new IllegalArgumentException("批量主从仅支持 childVersionColumn != null（多版本保留）");
+        safeIdent(masterTable); safeIdent(masterVersionColumn); safeIdent(childTable); safeIdent(childVersionColumn);
+        childContentColumns.forEach(VersionedV6Writer::safeIdent);
+        if (masterFixedColumns != null) masterFixedColumns.keySet().forEach(VersionedV6Writer::safeIdent);
+        if (childContentColumns.isEmpty()) throw new IllegalArgumentException("childContentColumns 不能为空");
+
+        Map<Map<String, Object>, String> versionOut = new LinkedHashMap<>();
+        if (items.isEmpty()) return versionOut;
+
+        List<String> mGkCols = new ArrayList<>(items.get(0).masterGroupKey.keySet());
+        List<String> cGkCols = new ArrayList<>(items.get(0).childGroupKey.keySet());
+        mGkCols.forEach(VersionedV6Writer::safeIdent);
+        cGkCols.forEach(VersionedV6Writer::safeIdent);
+        LinkedHashMap<Map<String, Object>, Object> masterKeys = new LinkedHashMap<>();
+        LinkedHashMap<Map<String, Object>, Object> childKeys = new LinkedHashMap<>();
+        for (MasterDetailItem it : items) {
+            requireSystemType(masterTable, it.masterGroupKey);
+            requireSystemType(childTable, it.childGroupKey);
+            if (it.childRows.isEmpty()) throw new IllegalArgumentException("childRows 为空: " + it.masterGroupKey);
+            masterKeys.put(it.masterGroupKey, null); childKeys.put(it.childGroupKey, null);
+        }
+
+        Map<String, Object> mPrefix = constantColumns(masterKeys.keySet(), mGkCols);
+        Map<String, Object> cPrefix = constantColumns(childKeys.keySet(), cGkCols);
+        // 锁/加载前缀必须非空(同 writeVersionedGroups)：BOM handler 的 master/child groupKey 恒含常量 system_type，
+        // 故前缀锁对「同组并发写」的串行不弱于逐组 advisoryLock；空前缀会退化为全表加载+表级锁，属配置错误，直接拒绝。
+        if (mPrefix.isEmpty())
+            throw new IllegalStateException(
+                "批量主从写入要求 masterGroupKey 至少一个跨组恒定列(如 system_type)作锁/加载前缀: " + mGkCols);
+        if (cPrefix.isEmpty())
+            throw new IllegalStateException(
+                "批量主从写入要求 childGroupKey 至少一个跨组恒定列(如 system_type)作锁/加载前缀: " + cGkCols);
+
+        advisoryLockPrefix(masterTable, mPrefix);                                                       // 1 RT
+        Map<List<String>, List<Map<String, Object>>> curMaster =
+            loadCurrentByPrefix(masterTable, masterVersionColumn, mPrefix, mGkCols, List.of());          // 1 RT（content 空→只取 id+ver+gk）
+        Map<List<String>, List<Map<String, Object>>> curChild =
+            loadCurrentByPrefix(childTable, childVersionColumn, cPrefix, cGkCols, childContentColumns);   // 1 RT
+        Map<List<String>, Integer> maxVer =
+            maxVersionByPrefix(masterTable, masterVersionColumn, mPrefix, mGkCols);                       // 1 RT
+
+        List<UUID> masterFlip = new ArrayList<>(), childFlip = new ArrayList<>();
+        List<Map<String, Object>> masterInsert = new ArrayList<>(), childInsert = new ArrayList<>();
+        for (MasterDetailItem it : items) {
+            List<String> cKey = gkKey(it.childGroupKey, cGkCols);
+            List<String> mKey = gkKey(it.masterGroupKey, mGkCols);
+            List<Map<String, Object>> existingChild = curChild.getOrDefault(cKey, List.of());
+            if (multisetEqual(existingChild, it.childRows, childContentColumns)) {                        // 不写
+                List<Map<String, Object>> em0 = curMaster.getOrDefault(mKey, List.of());
+                versionOut.put(it.masterGroupKey, currentVersionFrom(em0, masterVersionColumn));
+                continue;
+            }
+            Integer mx = maxVer.get(mKey);
+            String newVersion = (mx == null) ? "2000" : String.valueOf(mx + 1);
+            for (Map<String, Object> r : curMaster.getOrDefault(mKey, List.of())) masterFlip.add(asUuid(r.get("__id")));
+            for (Map<String, Object> r : existingChild) childFlip.add(asUuid(r.get("__id")));
+            Map<String, Object> master = new LinkedHashMap<>(it.masterGroupKey);
+            if (masterFixedColumns != null) master.putAll(masterFixedColumns);
+            master.put(masterVersionColumn, newVersion); master.put("is_current", true);
+            masterInsert.add(master);
+            for (Map<String, Object> row : it.childRows) {
+                Map<String, Object> all = new LinkedHashMap<>(it.childGroupKey);
+                all.putAll(row); all.put(childVersionColumn, newVersion); all.put("is_current", true);
+                childInsert.add(all);
+            }
+            versionOut.put(it.masterGroupKey, newVersion);
+        }
+
+        if (!masterFlip.isEmpty()) flipByIds(masterTable, masterFlip);     // 1 RT
+        if (!childFlip.isEmpty())  flipByIds(childTable, childFlip);       // 1 RT
+        insertRowsBatched(masterTable, masterInsert);                       // ~1 RT（原逐行 insertRowGeneric → 合并）
+        insertRowsBatched(childTable, childInsert);                        // ~1 RT
+        return versionOut;
+    }
+
+    /** 批量主从单项入参。 */
+    public static final class MasterDetailItem {
+        public final Map<String, Object> masterGroupKey;
+        public final Map<String, Object> childGroupKey;
+        public final List<Map<String, Object>> childRows;
+        public MasterDetailItem(Map<String, Object> masterGroupKey, Map<String, Object> childGroupKey,
+                                List<Map<String, Object>> childRows) {
+            this.masterGroupKey = masterGroupKey; this.childGroupKey = childGroupKey; this.childRows = childRows;
+        }
+    }
+
     // ====================== BOM 主从版本化 ======================
 
     /**
