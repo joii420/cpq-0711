@@ -228,7 +228,7 @@ public class ComponentResource {
             int _snapHit = 0;
             for (Result r : resp.results) if (r != null && r.data != null && "snapshot".equals(r.data.driverPath)) _snapHit++;
             long _phasesMs = (System.nanoTime() - _bp1) / 1_000_000;
-            LOG.infof("[be-profile] tasks=%d prefetched=%d snapshotHit=%d realExpand=%d | prefetch=%dms phases=%dms",
+            LOG.debugf("[be-profile] tasks=%d prefetched=%d snapshotHit=%d realExpand=%d | prefetch=%dms phases=%dms",
                     req.tasks.size(), _preCount, _snapHit, req.tasks.size() - _snapHit, _prefetchMs, _phasesMs);
             return out;
         } finally {
@@ -332,7 +332,7 @@ public class ComponentResource {
                     runSingleTask(t, r);
                 }
                 long _ms = (System.nanoTime() - _bktStart) / 1_000_000;
-                LOG.infof("[be-bucket] comp=%s dp=%s merged=false tasks=%d lineItemIdView=%b ms=%d",
+                LOG.debugf("[be-bucket] comp=%s dp=%s merged=false tasks=%d lineItemIdView=%b ms=%d",
                         pivot.componentId, dp, idxs.size(),
                         componentDriverService.viewUsesLineItemId(pivot.componentId, dp), _ms);
                 continue;
@@ -369,7 +369,7 @@ public class ComponentResource {
                     r.status = "OK";
                 }
                 long _ms = (System.nanoTime() - _bktStart) / 1_000_000;
-                LOG.infof("[be-bucket] comp=%s dp=%s merged=true partNos=%d 省%d次 ms=%d",
+                LOG.debugf("[be-bucket] comp=%s dp=%s merged=true partNos=%d 省%d次 ms=%d",
                         pivot.componentId, dp, partNos.size(), partNos.size() - 1, _ms);
             } catch (Exception ex) {
                 LOG.warnf("[batch-expand bucket-merge] bucket=%s 失败,fallback 逐 task: %s", e.getKey(), ex.getMessage());

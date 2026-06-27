@@ -490,7 +490,7 @@ public class CardSnapshotService {
         } finally {
             com.cpq.formula.dataloader.QuotationIdContext.clear();
         }
-        LOG.infof("[cardvalues-batch] quotation=%s 集合化落库 %d 行(单事务)", quotationId, lines.size());
+        LOG.debugf("[cardvalues-batch] quotation=%s 集合化落库 %d 行(单事务)", quotationId, lines.size());
     }
 
     /**
