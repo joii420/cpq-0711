@@ -39,6 +39,9 @@ public class MaterialBomMergeHandler {
     @Inject MaterialNoResolver materialNoResolver;
     @Inject ProcessMasterRepository processMasterRepo;
 
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "cpq.v6import-setbased-writer", defaultValue = "false")
+    boolean setBased;
+
     /** 合并后子表内容列 = 物料BOM ∪ 组成件BOM。 */
     private static final List<String> CHILD_CONTENT = List.of(
         "seq_no", "component_no", "component_usage_type", "composition_qty",
@@ -144,8 +147,12 @@ public class MaterialBomMergeHandler {
         allMats.addAll(matByMat.keySet());
         allMats.addAll(asmByMat.keySet());
 
-        for (String materialNo : allMats) {
-            try {
+        if (setBased) {
+            // 按 master 构建 item，再按 masterFixed 组合(bom_type+characteristic)分区，每个分区一次批量调用。
+            // 批量 API 对整批应用同一 masterFixedColumns，故同一组合(MATERIAL/null 或 ASSEMBLY/ASSEMBLY)的 item 归一桶。
+            // 物料要么是组成件(ASSEMBLY)要么不是 → 跨分区 master 组互斥，N 个批量调用与逐项循环等价。
+            Map<Map<String, Object>, List<VersionedV6Writer.MasterDetailItem>> byFixed = new LinkedHashMap<>();
+            for (String materialNo : allMats) {
                 Map<String, Map<String, Object>> matChild = matByMat.getOrDefault(materialNo, Map.of());
                 Map<String, Map<String, Object>> asmChild = asmByMat.getOrDefault(materialNo, Map.of());
                 boolean isAssembly = !asmChild.isEmpty();
@@ -163,14 +170,8 @@ public class MaterialBomMergeHandler {
                     }
                 }
                 List<Map<String, Object>> childRows = new ArrayList<>(merged.values());
-
-                // 把 bom_type/characteristic 写入每个子行（insertRowGeneric 会 putAll(row)）。
-                // 注意：characteristic 不加入 CHILD_CONTENT（不参与 multisetEqual 内容比较，
-                // 避免 NULL→ASSEMBLY 时被误判为组成件内容变化）。
                 for (var r : childRows) r.put("characteristic", targetChar);
 
-                // 分组键收敛为 system_type+customer_no+material_no（单料号单序列）。
-                // bom_type/characteristic 降为 masterFixedColumns（固定写入列，不参与版本分组）。
                 Map<String, Object> masterGk = new LinkedHashMap<>();
                 masterGk.put("system_type", "QUOTE");
                 masterGk.put("customer_no", ctx.customerNo);
@@ -182,13 +183,70 @@ public class MaterialBomMergeHandler {
                 childGk.put("system_type", "QUOTE");
                 childGk.put("customer_no", ctx.customerNo);
                 childGk.put("material_no", materialNo);
-                writer.writeVersionedMasterDetail(
-                    "material_bom", "bom_version", masterGk, masterFixed,
-                    "material_bom_item", "bom_version", childGk, CHILD_CONTENT, childRows);
-                result.recordWrite("material_bom", 1);
-                result.recordWrite("material_bom_item", childRows.size());
-            } catch (Exception ex) {
-                result.recordError(0, "_group_", "material_no=" + materialNo + ": " + ex.getMessage());
+                byFixed.computeIfAbsent(masterFixed, k -> new ArrayList<>())
+                       .add(new VersionedV6Writer.MasterDetailItem(masterGk, childGk, childRows));
+            }
+            for (Map.Entry<Map<String, Object>, List<VersionedV6Writer.MasterDetailItem>> p : byFixed.entrySet()) {
+                List<VersionedV6Writer.MasterDetailItem> items = p.getValue();
+                try {
+                    writer.writeVersionedMasterDetails(
+                        "material_bom", "bom_version", p.getKey(),
+                        "material_bom_item", "bom_version", CHILD_CONTENT, items);
+                    for (VersionedV6Writer.MasterDetailItem it : items) {
+                        result.recordWrite("material_bom", 1);
+                        result.recordWrite("material_bom_item", it.childRows.size());
+                    }
+                } catch (Exception ex) {
+                    result.recordError(0, "_batch_", ex.getMessage());
+                }
+            }
+        } else {
+            for (String materialNo : allMats) {
+                try {
+                    Map<String, Map<String, Object>> matChild = matByMat.getOrDefault(materialNo, Map.of());
+                    Map<String, Map<String, Object>> asmChild = asmByMat.getOrDefault(materialNo, Map.of());
+                    boolean isAssembly = !asmChild.isEmpty();
+                    String targetChar = isAssembly ? "ASSEMBLY" : null;
+                    String bomType = isAssembly ? "ASSEMBLY" : "MATERIAL";
+
+                    Map<String, Map<String, Object>> merged = new LinkedHashMap<>();
+                    for (Map.Entry<String, Map<String, Object>> e : matChild.entrySet()) {
+                        merged.put(e.getKey(), new LinkedHashMap<>(e.getValue()));
+                    }
+                    for (Map.Entry<String, Map<String, Object>> e : asmChild.entrySet()) {
+                        Map<String, Object> tgt = merged.computeIfAbsent(e.getKey(), k -> new LinkedHashMap<>());
+                        for (Map.Entry<String, Object> f : e.getValue().entrySet()) {
+                            if (f.getValue() != null) tgt.put(f.getKey(), f.getValue());
+                        }
+                    }
+                    List<Map<String, Object>> childRows = new ArrayList<>(merged.values());
+
+                    // 把 bom_type/characteristic 写入每个子行（insertRowGeneric 会 putAll(row)）。
+                    // 注意：characteristic 不加入 CHILD_CONTENT（不参与 multisetEqual 内容比较，
+                    // 避免 NULL→ASSEMBLY 时被误判为组成件内容变化）。
+                    for (var r : childRows) r.put("characteristic", targetChar);
+
+                    // 分组键收敛为 system_type+customer_no+material_no（单料号单序列）。
+                    // bom_type/characteristic 降为 masterFixedColumns（固定写入列，不参与版本分组）。
+                    Map<String, Object> masterGk = new LinkedHashMap<>();
+                    masterGk.put("system_type", "QUOTE");
+                    masterGk.put("customer_no", ctx.customerNo);
+                    masterGk.put("material_no", materialNo);
+                    Map<String, Object> masterFixed = new LinkedHashMap<>();
+                    masterFixed.put("bom_type", bomType);
+                    masterFixed.put("characteristic", targetChar);
+                    Map<String, Object> childGk = new LinkedHashMap<>();
+                    childGk.put("system_type", "QUOTE");
+                    childGk.put("customer_no", ctx.customerNo);
+                    childGk.put("material_no", materialNo);
+                    writer.writeVersionedMasterDetail(
+                        "material_bom", "bom_version", masterGk, masterFixed,
+                        "material_bom_item", "bom_version", childGk, CHILD_CONTENT, childRows);
+                    result.recordWrite("material_bom", 1);
+                    result.recordWrite("material_bom_item", childRows.size());
+                } catch (Exception ex) {
+                    result.recordError(0, "_group_", "material_no=" + materialNo + ": " + ex.getMessage());
+                }
             }
         }
         return result;
