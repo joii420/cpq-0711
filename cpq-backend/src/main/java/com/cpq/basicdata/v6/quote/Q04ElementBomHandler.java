@@ -34,6 +34,9 @@ public class Q04ElementBomHandler implements SheetHandler {
     @Inject MaterialNoResolver materialNoResolver;
     @Inject MaterialMasterRepository materialMasterRepo;
 
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "cpq.v6import-setbased-writer", defaultValue = "false")
+    boolean setBased;
+
     @Override public String sheetName() { return "物料与元素BOM"; }
 
     private static final List<String> CHILD_CONTENT = List.of(
@@ -89,22 +92,46 @@ public class Q04ElementBomHandler implements SheetHandler {
             materialMasterRepo.upsertBatchNameType(mmRows, ctx.importedBy, true);
         }
 
-        for (Map.Entry<String, Map<List<Object>, Map<String, Object>>> e : childDedupByMat.entrySet()) {
-            String materialNo = e.getKey();
-            List<Map<String, Object>> childRows = new ArrayList<>(e.getValue().values());
-            try {
+        if (setBased) {
+            List<VersionedV6Writer.MasterDetailItem> items = new ArrayList<>();
+            for (Map.Entry<String, Map<List<Object>, Map<String, Object>>> e : childDedupByMat.entrySet()) {
                 Map<String, Object> masterGk = new LinkedHashMap<>();
                 masterGk.put("system_type", "QUOTE");
                 masterGk.put("customer_no", ctx.customerNo);
-                masterGk.put("material_no", materialNo);
-                Map<String, Object> childGk = new LinkedHashMap<>(masterGk);   // element_bom_item 同身份
-                writer.writeVersionedMasterDetail(
-                    "element_bom", "characteristic", masterGk, Map.of("bom_type", "MATERIAL"),
-                    "element_bom_item", "characteristic", childGk, CHILD_CONTENT, childRows);
-                result.recordWrite("element_bom", 1);
-                result.recordWrite("element_bom_item", childRows.size());
+                masterGk.put("material_no", e.getKey());
+                Map<String, Object> childGk = new LinkedHashMap<>(masterGk);
+                List<Map<String, Object>> childRows = new ArrayList<>(e.getValue().values());
+                items.add(new VersionedV6Writer.MasterDetailItem(masterGk, childGk, childRows));
+            }
+            try {
+                writer.writeVersionedMasterDetails("element_bom", "characteristic",
+                    Map.of("bom_type", "MATERIAL"), "element_bom_item", "characteristic",
+                    CHILD_CONTENT, items);
+                for (VersionedV6Writer.MasterDetailItem it : items) {
+                    result.recordWrite("element_bom", 1);
+                    result.recordWrite("element_bom_item", it.childRows.size());
+                }
             } catch (Exception ex) {
-                result.recordError(0, "_group_", "material_no=" + materialNo + ": " + ex.getMessage());
+                result.recordError(0, "_batch_", ex.getMessage());
+            }
+        } else {
+            for (Map.Entry<String, Map<List<Object>, Map<String, Object>>> e : childDedupByMat.entrySet()) {
+                String materialNo = e.getKey();
+                List<Map<String, Object>> childRows = new ArrayList<>(e.getValue().values());
+                try {
+                    Map<String, Object> masterGk = new LinkedHashMap<>();
+                    masterGk.put("system_type", "QUOTE");
+                    masterGk.put("customer_no", ctx.customerNo);
+                    masterGk.put("material_no", materialNo);
+                    Map<String, Object> childGk = new LinkedHashMap<>(masterGk);   // element_bom_item 同身份
+                    writer.writeVersionedMasterDetail(
+                        "element_bom", "characteristic", masterGk, Map.of("bom_type", "MATERIAL"),
+                        "element_bom_item", "characteristic", childGk, CHILD_CONTENT, childRows);
+                    result.recordWrite("element_bom", 1);
+                    result.recordWrite("element_bom_item", childRows.size());
+                } catch (Exception ex) {
+                    result.recordError(0, "_group_", "material_no=" + materialNo + ": " + ex.getMessage());
+                }
             }
         }
         return result;
