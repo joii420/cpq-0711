@@ -97,3 +97,25 @@ export function computeLineDiscount(
     lineTotalAmount: round4(s1 * qty),
   };
 }
+
+/**
+ * 对「可见行」中第 visibleIndex 个（PART 子件不计入可见序）应用 transform，**只改命中的那一行**，
+ * 其余行（含全部 PART 子件、未命中行）原样返回（保留原对象引用，避免无谓重渲染）。
+ *
+ * Step3 优惠策略每行的 年用量 / 折扣来源 / 折扣率 编辑都经由此函数定位回 prev 全集中的真实行。
+ * 关键不变量：可见下标自增对**每个非 PART 行都执行**（命中与否都 +1）——否则命中后下标冻结，
+ * 会把目标行之后的所有料号一并改掉（编辑首行 = 全改）。
+ */
+export function patchVisibleLineItem(
+  prev: LineItem[],
+  visibleIndex: number,
+  transform: (li: LineItem) => LineItem,
+): LineItem[] {
+  let visibleIdx = 0;
+  return prev.map(li => {
+    if (li.compositeType === 'PART') return li;
+    const isTarget = visibleIdx === visibleIndex;
+    visibleIdx += 1;
+    return isTarget ? transform(li) : li;
+  });
+}

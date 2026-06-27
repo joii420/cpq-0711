@@ -10,7 +10,7 @@
  *   { type, component_code, value=列名, tab_name=列名(数据里被写成字段名), label='页签·字段' }
  */
 import { describe, it, expect } from 'vitest';
-import { extractDiscountSources, computeLineDiscount } from './lineDiscount';
+import { extractDiscountSources, computeLineDiscount, patchVisibleLineItem } from './lineDiscount';
 import type { LineItem } from './QuotationStep2';
 
 function tok(component_code: string, col: string, label: string) {
@@ -117,5 +117,45 @@ describe('computeLineDiscount', () => {
     const r = computeLineDiscount(makeItem(), mockExpansions, undefined, 'LL#材料成本', 0, 100);
     expect(r.lineDiscountAmount).toBeCloseTo(0, 4);
     expect(r.discounted).toBeCloseTo(r.original, 4);
+  });
+});
+
+describe('patchVisibleLineItem（行级编辑：只改命中的可见行，不污染后续料号）', () => {
+  // 用最小桩，只关心 compositeType 过滤与 discountRateApplied 标记
+  const simpleItem = (partNo: string, compositeType?: 'PART' | 'COMPOSITE'): LineItem =>
+    ({ productPartNo: partNo, compositeType, discountRateApplied: 0 } as unknown as LineItem);
+  const mark = (li: LineItem): LineItem => ({ ...li, discountRateApplied: 99 } as LineItem);
+
+  it('编辑第 0 行只改第 0 行，第 1、2 行不动（回归：修复前编辑首行会全改）', () => {
+    const prev = [simpleItem('A'), simpleItem('B'), simpleItem('C')];
+    const next = patchVisibleLineItem(prev, 0, mark);
+    expect(next.map(li => li.discountRateApplied)).toEqual([99, 0, 0]);
+  });
+
+  it('编辑中间行只改该行', () => {
+    const prev = [simpleItem('A'), simpleItem('B'), simpleItem('C')];
+    const next = patchVisibleLineItem(prev, 1, mark);
+    expect(next.map(li => li.discountRateApplied)).toEqual([0, 99, 0]);
+  });
+
+  it('编辑最后一行只改最后一行', () => {
+    const prev = [simpleItem('A'), simpleItem('B'), simpleItem('C')];
+    const next = patchVisibleLineItem(prev, 2, mark);
+    expect(next.map(li => li.discountRateApplied)).toEqual([0, 0, 99]);
+  });
+
+  it('PART 子件不计入可见下标，且永不被改', () => {
+    // 可见序: [A=可见0, C=可见1]，B 是 PART 跳过
+    const prev = [simpleItem('A'), simpleItem('B', 'PART'), simpleItem('C')];
+    const next = patchVisibleLineItem(prev, 1, mark);   // 改可见第 1 行 = C
+    expect(next.map(li => li.discountRateApplied)).toEqual([0, 0, 99]);
+    expect(next[1].compositeType).toBe('PART');          // PART 原样
+  });
+
+  it('未命中的行保持原对象引用（避免无谓重渲染）', () => {
+    const prev = [simpleItem('A'), simpleItem('B'), simpleItem('C')];
+    const next = patchVisibleLineItem(prev, 0, mark);
+    expect(next[1]).toBe(prev[1]);
+    expect(next[2]).toBe(prev[2]);
   });
 });

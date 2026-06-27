@@ -12,7 +12,7 @@ import { Card, Table, InputNumber, Select, Typography, Tag, Alert, Space } from 
 import type { ColumnsType } from 'antd/es/table';
 import type { LineItem } from './QuotationStep2';
 import type { DriverExpansionMap } from './useDriverExpansions';
-import { computeLineDiscount, extractDiscountSources } from './lineDiscount';
+import { computeLineDiscount, extractDiscountSources, patchVisibleLineItem } from './lineDiscount';
 
 const { Text } = Typography;
 
@@ -55,19 +55,14 @@ const QuotationStep3: React.FC<Props> = ({
   };
 
   const patchRow = (index: number, patch: Partial<LineItem>) => {
-    onUpdate(prev => {
-      // 找到 visibleItems[index] 在 prev 数组中真实索引（考虑 PART filter）
-      let visibleIdx = 0;
-      return prev.map(li => {
-        if (li.compositeType === 'PART') return li;
-        if (visibleIdx === index) {
-          const merged = { ...li, ...patch };
-          return { ...merged, ...recomputeRow(merged as LineItem) };
-        }
-        visibleIdx += 1;
-        return li;
-      });
-    });
+    // patchVisibleLineItem 把可见下标 index 精确映射回 prev 全集真实行（PART 不计入可见序），
+    // 只改命中的那一行——内部对每个非 PART 行都自增下标，杜绝「编辑首行 = 全改」。
+    onUpdate(prev =>
+      patchVisibleLineItem(prev, index, li => {
+        const merged = { ...li, ...patch };
+        return { ...merged, ...recomputeRow(merged as LineItem) };
+      }),
+    );
   };
 
   const columns: ColumnsType<LineItem> = [
