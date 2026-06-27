@@ -21,6 +21,8 @@ interface Props {
   costingColumns: CostingTemplateColumn[] | null | undefined;
 }
 
+const EMPTY_COLS: CostingTemplateColumn[] = [];
+
 const ReadonlyComparison: React.FC<Props> = ({ quotationId, lineItems, quoteColumns, costingColumns }) => {
   const [tagMetas, setTagMetas] = useState<TagMeta[]>([]);
 
@@ -33,8 +35,8 @@ const ReadonlyComparison: React.FC<Props> = ({ quotationId, lineItems, quoteColu
       .catch(() => setTagMetas([]));
   }, []);
 
-  const quoteCols = quoteColumns ?? [];
-  const costingCols = costingColumns ?? [];
+  const quoteCols = quoteColumns ?? EMPTY_COLS;
+  const costingCols = costingColumns ?? EMPTY_COLS;
 
   const { rows: quoteRows } = useExcelSnapshotRows({ lineItems, side: 'QUOTE', parsedColumns: quoteCols });
   const { rows: costingRows } = useExcelSnapshotRows({ lineItems, side: 'COSTING', parsedColumns: costingCols });

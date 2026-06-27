@@ -711,7 +711,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
       <div className="qt-subtotal-bar">
         <span className="qt-subtotal-label">产品小计</span>
         <span className="qt-subtotal-value">
-          {formatCurrency(productSubtotal || lineItem.subtotal || 0)}
+          {formatCurrency(productSubtotal || (isCosting ? 0 : (lineItem.subtotal || 0)))}
         </span>
       </div>
     </div>
