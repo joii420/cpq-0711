@@ -78,6 +78,8 @@ public class PricingImportService {
         List<SheetResultDTO> sheetDtos = new ArrayList<>();
         int totalSuccess = 0, totalFailed = 0;
 
+        long importT0 = System.nanoTime();
+        double sumParseMs = 0, sumHandleMs = 0;
         try (XSSFWorkbook wb = parser.open(stream)) {
             for (SheetHandler h : orderedHandlers()) {
                 SheetImportResult r;
@@ -86,8 +88,18 @@ public class PricingImportService {
                     if (sheet == null) {
                         r = new SheetImportResult(h.sheetName());
                     } else {
+                        long parseT0 = System.nanoTime();
                         List<SheetRow> rows = parser.parseSheet(sheet);
+                        double parseMs = (System.nanoTime() - parseT0) / 1e6;
+                        // 写入器分段计时：sheet 边界 reset → handle → 读 summary
+                        com.cpq.basicdata.v6.versioning.VersionedV6Writer.profile().reset();
+                        long handleT0 = System.nanoTime();
                         r = h.handle(rows, ctx);
+                        double handleMs = (System.nanoTime() - handleT0) / 1e6;
+                        sumParseMs += parseMs; sumHandleMs += handleMs;
+                        Log.infof("[v6import] PRICING sheet=%s rows=%d parse=%.0fms handle=%.0fms writer{%s}",
+                            h.sheetName(), rows.size(), parseMs, handleMs,
+                            com.cpq.basicdata.v6.versioning.VersionedV6Writer.profile().summary());
                     }
                 } catch (Exception ex) {
                     Log.error("Sheet [" + h.sheetName() + "] 导入异常", ex);
@@ -98,6 +110,8 @@ public class PricingImportService {
                 totalSuccess += r.successRows;
                 totalFailed += r.failedRows;
             }
+            Log.infof("[v6import] PRICING TOTAL elapsed=%.0fms parseSum=%.0fms handleSum=%.0fms",
+                (System.nanoTime() - importT0) / 1e6, sumParseMs, sumHandleMs);
         } catch (Exception e) {
             Log.error("Excel 解析失败", e);
             throw new RuntimeException("Excel 解析失败: " + e.getMessage(), e);

@@ -27,6 +27,33 @@ public class VersionedV6Writer {
 
     public VersionedV6Writer(EntityManager em) { this.em = em; }
 
+    // ====================== 埋点：每类 DB 操作的次数 + 耗时（ThreadLocal，按 sheet 边界 reset/dump） ======================
+    /**
+     * 写入器分段计时器。每个 SheetHandler 在同一线程内串行调用本写入器，编排器在每个 sheet 边界
+     * {@link #reset()} → 跑 handle → 读 {@link #summary()}，即可定位「逐 group N+1」的 DB 往返开销分布。
+     * 纯计数/计时,不改变任何写入行为。
+     */
+    public static final class Profile {
+        public int groups;                       // 版本化写入入口被调次数（≈ group 数）
+        public int lockN, loadN, verN, flipN, insN;   // 各类 DB 往返次数
+        public long lockNs, loadNs, verNs, flipNs, insNs;  // 各类累计耗时(ns)
+        public void reset() {
+            groups = lockN = loadN = verN = flipN = insN = 0;
+            lockNs = loadNs = verNs = flipNs = insNs = 0;
+        }
+        public int dbCalls() { return lockN + loadN + verN + flipN + insN; }
+        public String summary() {
+            return String.format(
+                "groups=%d dbCalls=%d | lock=%dx/%.0fms load=%dx/%.0fms ver=%dx/%.0fms flip=%dx/%.0fms ins=%dx/%.0fms",
+                groups, dbCalls(),
+                lockN, lockNs / 1e6, loadN, loadNs / 1e6, verN, verNs / 1e6,
+                flipN, flipNs / 1e6, insN, insNs / 1e6);
+        }
+    }
+    private static final ThreadLocal<Profile> PROFILE = ThreadLocal.withInitial(Profile::new);
+    /** 取当前线程的写入器计时器（编排器在 sheet 边界 reset + 读 summary）。 */
+    public static Profile profile() { return PROFILE.get(); }
+
     /** 允许写入的表（白名单）。新增表在此登记。 */
     private static final Set<String> ALLOWED_TABLES = Set.of(
         "unit_price", "capacity", "plating_scheme",
@@ -70,6 +97,7 @@ public class VersionedV6Writer {
      * @return 本组当前生效使用的版本号（复用时为旧版本，否则为新版本）。
      */
     public String writeVersionedGroup(VersionedGroupSpec spec) {
+        PROFILE.get().groups++;
         if (!ALLOWED_TABLES.contains(spec.tableName)) {
             throw new IllegalArgumentException("表未登记白名单: " + spec.tableName);
         }
@@ -176,6 +204,7 @@ public class VersionedV6Writer {
             Map<String, Object> childGroupKey, List<String> childContentColumns,
             List<Map<String, Object>> childRows) {
 
+        PROFILE.get().groups++;
         if (!ALLOWED_TABLES.contains(masterTable) || !ALLOWED_TABLES.contains(childTable)) {
             throw new IllegalArgumentException("表未登记白名单: " + masterTable + " / " + childTable);
         }
@@ -266,21 +295,25 @@ public class VersionedV6Writer {
 
     /** 并发串行化：同一分组键在事务内取 advisory lock，避免双 current/重复版本。 */
     private void advisoryLock(String table, Map<String, Object> groupKey) {
+        long t0 = System.nanoTime();
         String lockKey = table + "|" + groupKey.values().stream()
             .map(String::valueOf).collect(java.util.stream.Collectors.joining("|"));
         em.createNativeQuery("SELECT pg_advisory_xact_lock(hashtext(:k))")
           .setParameter("k", lockKey).getSingleResult();
+        Profile p = PROFILE.get(); p.lockN++; p.lockNs += System.nanoTime() - t0;
     }
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> loadCurrentGroup(
             String table, Map<String, Object> groupKey, List<String> contentColumns) {
+        long t0 = System.nanoTime();
         String cols = String.join(", ", contentColumns);
         Query q = em.createNativeQuery(
             "SELECT " + cols + " FROM " + table
                 + " WHERE " + whereClause(groupKey) + " AND is_current = TRUE");
         bindWhere(q, groupKey);
         List<Object> raw = q.getResultList();
+        Profile pf = PROFILE.get(); pf.loadN++; pf.loadNs += System.nanoTime() - t0;
         List<Map<String, Object>> out = new ArrayList<>();
         for (Object r : raw) {
             Object[] arr = (contentColumns.size() == 1) ? new Object[]{r} : (Object[]) r;
@@ -317,54 +350,65 @@ public class VersionedV6Writer {
     }
 
     private String currentVersionOf(String table, String versionColumn, Map<String, Object> groupKey) {
+        long t0 = System.nanoTime();
         Query q = em.createNativeQuery(
             "SELECT " + versionColumn + " FROM " + table
                 + " WHERE " + whereClause(groupKey) + " AND is_current = TRUE LIMIT 1");
         bindWhere(q, groupKey);
         List<?> r = q.getResultList();
+        Profile p = PROFILE.get(); p.verN++; p.verNs += System.nanoTime() - t0;
         return r.isEmpty() ? "2000" : String.valueOf(r.get(0));
     }
 
     /** max(数字版本)+1；无数字版本则 "2000"。非数字版本值（'V_DEFAULT'/'V1' 等）被正则过滤。 */
     private String nextVersionOf(String table, String versionColumn, Map<String, Object> groupKey) {
+        long t0 = System.nanoTime();
         Query q = em.createNativeQuery(
             "SELECT MAX(CASE WHEN " + versionColumn + " ~ '^[0-9]+$' THEN "
                 + versionColumn + "::int END) FROM " + table
                 + " WHERE " + whereClause(groupKey));
         bindWhere(q, groupKey);
         Object max = q.getSingleResult();
+        Profile p = PROFILE.get(); p.verN++; p.verNs += System.nanoTime() - t0;
         return (max == null) ? "2000" : String.valueOf(((Number) max).intValue() + 1);
     }
 
     /** 旧组整体下线：UPDATE ... SET is_current=FALSE WHERE <groupKey> AND is_current=TRUE。 */
     private void flip(String table, Map<String, Object> groupKey) {
+        long t0 = System.nanoTime();
         Query q = em.createNativeQuery(
             "UPDATE " + table + " SET is_current = FALSE WHERE "
                 + whereClause(groupKey) + " AND is_current = TRUE");
         bindWhere(q, groupKey);
         q.executeUpdate();
+        Profile p = PROFILE.get(); p.flipN++; p.flipNs += System.nanoTime() - t0;
     }
 
     /** 删除该 groupKey 下仍 is_current=FALSE 的行（仅无版本列子表用，清残留；V293 后 material_bom_item 已版本化、暂无调用方）。 */
     private void deleteNonCurrent(String table, Map<String, Object> groupKey) {
+        long t0 = System.nanoTime();
         Query q = em.createNativeQuery(
             "DELETE FROM " + table + " WHERE "
                 + whereClause(groupKey) + " AND is_current = FALSE");
         bindWhere(q, groupKey);
         q.executeUpdate();
+        Profile p = PROFILE.get(); p.flipN++; p.flipNs += System.nanoTime() - t0;
     }
 
     /** 删除该 groupKey 下当前生效(is_current=TRUE)的行（原地更新前清当前组，避免同版本号 uq 冲突）。 */
     private void deleteCurrent(String table, Map<String, Object> groupKey) {
+        long t0 = System.nanoTime();
         Query q = em.createNativeQuery(
             "DELETE FROM " + table + " WHERE "
                 + whereClause(groupKey) + " AND is_current = TRUE");
         bindWhere(q, groupKey);
         q.executeUpdate();
+        Profile p = PROFILE.get(); p.flipN++; p.flipNs += System.nanoTime() - t0;
     }
 
     /** 通用整行 INSERT（列名走 safeIdent，值命名参数绑定）。 */
     private void insertRowGeneric(String table, Map<String, Object> all) {
+        long t0 = System.nanoTime();
         List<String> cols = new ArrayList<>(all.keySet());
         cols.forEach(VersionedV6Writer::safeIdent);
         String colSql = String.join(", ", cols);
@@ -374,6 +418,7 @@ public class VersionedV6Writer {
             "INSERT INTO " + table + " (" + colSql + ") VALUES (" + ph + ")");
         for (int i = 0; i < cols.size(); i++) q.setParameter("v" + i, all.get(cols.get(i)));
         q.executeUpdate();
+        Profile p = PROFILE.get(); p.insN++; p.insNs += System.nanoTime() - t0;
     }
 
     /**
@@ -384,6 +429,7 @@ public class VersionedV6Writer {
      */
     private void insertRowsBatched(String table, List<Map<String, Object>> rows) {
         if (rows.isEmpty()) return;
+        long t0 = System.nanoTime();
         Map<List<String>, List<Map<String, Object>>> bySig = new LinkedHashMap<>();
         for (Map<String, Object> r : rows) {
             bySig.computeIfAbsent(new ArrayList<>(r.keySet()), k -> new ArrayList<>()).add(r);
@@ -416,6 +462,7 @@ public class VersionedV6Writer {
                 q.executeUpdate();
             }
         }
+        Profile pf = PROFILE.get(); pf.insN++; pf.insNs += System.nanoTime() - t0;
     }
 
     /** 单条多值 INSERT 的最大行数（cols × rows 需远低于 PG 65535 参数上限；按最宽 ~30 列留足余量）。 */
@@ -423,6 +470,7 @@ public class VersionedV6Writer {
 
     /** 子表无版本维度时的 upsert：INSERT ... ON CONFLICT (表达式) DO UPDATE SET 非键列=EXCLUDED。 */
     private void upsertChildRow(String table, Map<String, Object> all) {
+        long t0 = System.nanoTime();
         ChildUq uq = CHILD_UQ.get(table);
         if (uq == null) throw new IllegalArgumentException("无 upsert 冲突目标登记: " + table);
         List<String> cols = new ArrayList<>(all.keySet());
@@ -441,5 +489,6 @@ public class VersionedV6Writer {
         Query q = em.createNativeQuery(sql);
         for (int i = 0; i < cols.size(); i++) q.setParameter("v" + i, all.get(cols.get(i)));
         q.executeUpdate();
+        Profile p = PROFILE.get(); p.insN++; p.insNs += System.nanoTime() - t0;
     }
 }

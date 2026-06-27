@@ -100,17 +100,25 @@ public class QuoteImportService {
         final int totalSteps = 1 + orderedHandlers().size();
         int done = 0;
 
+        long importT0 = System.nanoTime();
         try (XSSFWorkbook wb = parser.open(new ByteArrayInputStream(bytes))) {
             updateProgress(recordId, done, totalSteps, "物料BOM/组成件BOM 合并");
             // 物料BOM ⇄ 组成件BOM 去重合并（两 sheet 单一事务，组成件优先；替代 Q03/Q12 各写各的）
             {
+                long parseT0 = System.nanoTime();
                 var matSheet = wb.getSheet("物料BOM");
                 var asmSheet = wb.getSheet("组成件BOM");
                 List<SheetRow> matRows = matSheet != null ? parser.parseSheet(matSheet) : List.of();
                 List<SheetRow> asmRows = asmSheet != null ? parser.parseSheet(asmSheet) : List.of();
+                double parseMs = (System.nanoTime() - parseT0) / 1e6;
+                com.cpq.basicdata.v6.versioning.VersionedV6Writer.profile().reset();
+                long mergeT0 = System.nanoTime();
                 SheetImportResult mr;
                 try {
                     mr = bomMerge.merge(matRows, asmRows, ctx);
+                    Log.infof("[v6import] QUOTE sheet=物料BOM+组成件BOM(合并) rows=%d/%d parse=%.0fms handle=%.0fms writer{%s}",
+                        matRows.size(), asmRows.size(), parseMs, (System.nanoTime() - mergeT0) / 1e6,
+                        com.cpq.basicdata.v6.versioning.VersionedV6Writer.profile().summary());
                 } catch (Exception ex) {
                     Log.error("物料BOM/组成件BOM 合并导入异常", ex);
                     mr = new SheetImportResult("物料BOM+组成件BOM(合并)");
@@ -130,8 +138,17 @@ public class QuoteImportService {
                         r = new SheetImportResult(h.sheetName());
                         // 不视为错误，仅记 0 行
                     } else {
+                        long parseT0 = System.nanoTime();
                         List<SheetRow> rows = parser.parseSheet(sheet);
+                        double parseMs = (System.nanoTime() - parseT0) / 1e6;
+                        // 写入器分段计时：sheet 边界 reset → handle → 读 summary
+                        com.cpq.basicdata.v6.versioning.VersionedV6Writer.profile().reset();
+                        long handleT0 = System.nanoTime();
                         r = h.handle(rows, ctx);
+                        double handleMs = (System.nanoTime() - handleT0) / 1e6;
+                        Log.infof("[v6import] QUOTE sheet=%s rows=%d parse=%.0fms handle=%.0fms writer{%s}",
+                            h.sheetName(), rows.size(), parseMs, handleMs,
+                            com.cpq.basicdata.v6.versioning.VersionedV6Writer.profile().summary());
                     }
                 } catch (Exception ex) {
                     Log.error("Sheet [" + h.sheetName() + "] 导入异常", ex);
@@ -155,6 +172,8 @@ public class QuoteImportService {
                 totalFailed += r.failedRows;
                 done++;
             }
+            Log.infof("[v6import] QUOTE TOTAL elapsed=%.0fms sheets=%d (含BOM合并步)",
+                (System.nanoTime() - importT0) / 1e6, totalSteps);
         } catch (Exception e) {
             // 后台线程：解析/未知失败不抛出（无处可抛），落 FAILED 供前端轮询
             Log.error("Excel 解析失败", e);
