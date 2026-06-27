@@ -180,6 +180,224 @@ public class VersionedV6Writer {
         return newVersion;
     }
 
+    // ====================== 批量单表行集版本化（集合化，零 N+1） ======================
+    /**
+     * 批量版本化写入：整 sheet 所有 group 一次提交。DB 往返与 group 数无关（常数 ~6 次），
+     * 逐位等价于「对每个 group 依次调用 {@link #writeVersionedGroup}」。
+     *
+     * @param groups 保持插入顺序的 groupKey→newRows；各 groupKey 的列集必须一致。
+     * @return 每个 groupKey → 本组生效版本号（与逐组返回值一致）。
+     */
+    public Map<Map<String, Object>, String> writeVersionedGroups(
+            String tableName, String versionColumn,
+            List<String> contentColumns, List<String> versionTriggerColumns,
+            LinkedHashMap<Map<String, Object>, List<Map<String, Object>>> groups) {
+
+        if (!ALLOWED_TABLES.contains(tableName)) throw new IllegalArgumentException("表未登记白名单: " + tableName);
+        safeIdent(tableName); safeIdent(versionColumn);
+        contentColumns.forEach(VersionedV6Writer::safeIdent);
+        if (contentColumns.isEmpty()) throw new IllegalArgumentException("contentColumns 不能为空");
+        List<String> triggerCols = (versionTriggerColumns == null) ? contentColumns : versionTriggerColumns;
+        if (!new HashSet<>(contentColumns).containsAll(triggerCols))
+            throw new IllegalArgumentException("versionTriggerColumns 必须是 contentColumns 子集: " + triggerCols);
+
+        Map<Map<String, Object>, String> versionOut = new LinkedHashMap<>();
+        if (groups.isEmpty()) return versionOut;
+
+        List<String> gkCols = new ArrayList<>(groups.keySet().iterator().next().keySet());
+        gkCols.forEach(VersionedV6Writer::safeIdent);
+        for (Map.Entry<Map<String, Object>, List<Map<String, Object>>> e : groups.entrySet()) {
+            Map<String, Object> gk = e.getKey();
+            if (!new ArrayList<>(gk.keySet()).equals(gkCols))
+                throw new IllegalArgumentException("同批 group 的 groupKey 列集必须一致: " + gk.keySet() + " vs " + gkCols);
+            requireSystemType(tableName, gk);
+            Set<String> overlap = new HashSet<>(gk.keySet()); overlap.retainAll(new HashSet<>(contentColumns));
+            if (!overlap.isEmpty()) throw new IllegalArgumentException("contentColumns 与 groupKeyColumns 列名重叠: " + overlap);
+            if (e.getValue().isEmpty()) throw new IllegalArgumentException("newRows 为空;整组下线请用专门 API: " + gk);
+        }
+
+        Map<String, Object> constPrefix = constantColumns(groups.keySet(), gkCols);
+        // 锁/加载前缀必须非空：V6 导入 handler 的 groupKey 恒含常量 system_type(QUOTE/PRICING)，
+        // QUOTE 侧还恒含 customer_no，故单把前缀锁对「同组并发写」的串行保证不弱于逐组 advisoryLock。
+        // 空前缀会退化为全表加载 + 表级锁，属配置错误，直接拒绝。
+        if (constPrefix.isEmpty())
+            throw new IllegalStateException(
+                "批量写入要求至少一个跨组恒定的 groupKey 列(如 system_type)作锁/加载前缀: " + gkCols);
+        advisoryLockPrefix(tableName, constPrefix);                                                  // 1 RT
+        Map<List<String>, List<Map<String, Object>>> curByGk =
+            loadCurrentByPrefix(tableName, versionColumn, constPrefix, gkCols, contentColumns);      // 1 RT
+        Map<List<String>, Integer> maxVerByGk =
+            maxVersionByPrefix(tableName, versionColumn, constPrefix, gkCols);                       // 1 RT
+
+        List<UUID> flipIds = new ArrayList<>();
+        List<UUID> deleteIds = new ArrayList<>();
+        List<Map<String, Object>> toInsert = new ArrayList<>();
+        for (Map.Entry<Map<String, Object>, List<Map<String, Object>>> e : groups.entrySet()) {
+            Map<String, Object> gk = e.getKey();
+            List<Map<String, Object>> newRows = e.getValue();
+            List<String> key = gkKey(gk, gkCols);
+            List<Map<String, Object>> existing = curByGk.getOrDefault(key, List.of());
+
+            boolean triggerSame = multisetEqual(existing, newRows, triggerCols);
+            boolean contentSame = multisetEqual(existing, newRows, contentColumns);
+
+            if (triggerSame && contentSame) {                                  // (a)
+                versionOut.put(gk, currentVersionFrom(existing, versionColumn));
+                continue;
+            }
+            if (triggerSame) {                                                 // (b) 原地更新
+                String cur = currentVersionFrom(existing, versionColumn);
+                for (Map<String, Object> r : existing) deleteIds.add(asUuid(r.get("__id")));
+                for (Map<String, Object> row : newRows) toInsert.add(assembleRow(gk, row, versionColumn, cur));
+                versionOut.put(gk, cur);
+                continue;
+            }
+            Integer mx = maxVerByGk.get(key);                                  // (c) 升版
+            String newVersion = (mx == null) ? "2000" : String.valueOf(mx + 1);
+            if (!existing.isEmpty()) for (Map<String, Object> r : existing) flipIds.add(asUuid(r.get("__id")));
+            for (Map<String, Object> row : newRows) toInsert.add(assembleRow(gk, row, versionColumn, newVersion));
+            versionOut.put(gk, newVersion);
+        }
+
+        if (!flipIds.isEmpty())   flipByIds(tableName, flipIds);               // 1 RT
+        if (!deleteIds.isEmpty()) deleteByIds(tableName, deleteIds);          // 1 RT
+        insertRowsBatched(tableName, toInsert);                                // ~1 RT
+        return versionOut;
+    }
+
+    /** 本批所有 group 取值恒定的 groupKey 列（用 null 安全 toString 判定）。 */
+    private static Map<String, Object> constantColumns(Set<Map<String, Object>> gks, List<String> gkCols) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (String col : gkCols) {
+            String first = null; boolean init = false, constant = true;
+            for (Map<String, Object> gk : gks) {
+                String v = textKey(gk.get(col));
+                if (!init) { first = v; init = true; }
+                else if (!java.util.Objects.equals(first, v)) { constant = false; break; }
+            }
+            if (constant) out.put(col, gks.iterator().next().get(col));
+        }
+        return out;
+    }
+
+    /** null 安全文本键（匹配 SQL IS NOT DISTINCT FROM 的文本相等；不做数字归一）。 */
+    private static String textKey(Object v) { return v == null ? null : v.toString(); }
+    private static List<String> gkKey(Map<String, Object> gk, List<String> gkCols) {
+        List<String> k = new ArrayList<>(gkCols.size());
+        for (String c : gkCols) k.add(textKey(gk.get(c)));
+        return k;
+    }
+
+    /** 单把 advisory 锁，键 = 表 + 常量前缀值（覆盖本批所有 group）。 */
+    private void advisoryLockPrefix(String table, Map<String, Object> constPrefix) {
+        long t0 = System.nanoTime();
+        String lockKey = table + "|" + constPrefix.values().stream()
+            .map(String::valueOf).collect(java.util.stream.Collectors.joining("|"));
+        em.createNativeQuery("SELECT pg_advisory_xact_lock(hashtext(:k))")
+          .setParameter("k", lockKey).getSingleResult();
+        Profile p = PROFILE.get(); p.lockN++; p.lockNs += System.nanoTime() - t0;
+    }
+
+    /** NULL 安全等值 WHERE（前缀列）：col IS NOT DISTINCT FROM :p_col AND ...；空前缀返 "TRUE"。 */
+    private static String prefixWhere(Map<String, Object> constPrefix) {
+        if (constPrefix.isEmpty()) return "TRUE";
+        StringBuilder sb = new StringBuilder(); int i = 0;
+        for (String col : constPrefix.keySet()) {
+            if (i++ > 0) sb.append(" AND ");
+            sb.append(col).append(" IS NOT DISTINCT FROM :p_").append(col);
+        }
+        return sb.toString();
+    }
+    private Query bindPrefix(Query q, Map<String, Object> constPrefix) {
+        for (Map.Entry<String, Object> e : constPrefix.entrySet()) q.setParameter("p_" + e.getKey(), e.getValue());
+        return q;
+    }
+
+    /** 一次加载常量前缀下所有当前生效行，按完整 groupKey 分桶；每行附 __id + versionColumn 值。 */
+    @SuppressWarnings("unchecked")
+    private Map<List<String>, List<Map<String, Object>>> loadCurrentByPrefix(
+            String table, String versionColumn, Map<String, Object> constPrefix,
+            List<String> gkCols, List<String> contentColumns) {
+        long t0 = System.nanoTime();
+        LinkedHashSet<String> sel = new LinkedHashSet<>();
+        sel.add("id"); sel.add(versionColumn); sel.addAll(gkCols); sel.addAll(contentColumns);
+        List<String> selCols = new ArrayList<>(sel);
+        Query q = em.createNativeQuery("SELECT " + String.join(", ", selCols) + " FROM " + table
+            + " WHERE " + prefixWhere(constPrefix) + " AND is_current = TRUE");
+        bindPrefix(q, constPrefix);
+        List<Object> raw = q.getResultList();
+        Map<List<String>, List<Map<String, Object>>> out = new HashMap<>();
+        for (Object r : raw) {
+            Object[] arr = (selCols.size() == 1) ? new Object[]{r} : (Object[]) r;
+            Map<String, Object> m = new LinkedHashMap<>();
+            for (int i = 0; i < selCols.size(); i++) m.put(selCols.get(i), arr[i]);
+            m.put("__id", m.get("id"));
+            List<String> key = new ArrayList<>(gkCols.size());
+            for (String c : gkCols) key.add(textKey(m.get(c)));
+            out.computeIfAbsent(key, k -> new ArrayList<>()).add(m);
+        }
+        Profile p = PROFILE.get(); p.loadN++; p.loadNs += System.nanoTime() - t0;
+        return out;
+    }
+
+    /** 一次取常量前缀下每组历史 MAX(数字版本)。 */
+    @SuppressWarnings("unchecked")
+    private Map<List<String>, Integer> maxVersionByPrefix(
+            String table, String versionColumn, Map<String, Object> constPrefix, List<String> gkCols) {
+        long t0 = System.nanoTime();
+        String gkSel = String.join(", ", gkCols);
+        Query q = em.createNativeQuery("SELECT " + gkSel + ", MAX(CASE WHEN " + versionColumn
+            + " ~ '^[0-9]+$' THEN " + versionColumn + "::int END) FROM " + table
+            + " WHERE " + prefixWhere(constPrefix) + " GROUP BY " + gkSel);
+        bindPrefix(q, constPrefix);
+        List<Object> raw = q.getResultList();
+        Map<List<String>, Integer> out = new HashMap<>();
+        for (Object r : raw) {
+            Object[] arr = (Object[]) r;                       // gkCols.size() >= 1 → 必为数组
+            List<String> key = new ArrayList<>(gkCols.size());
+            for (int i = 0; i < gkCols.size(); i++) key.add(textKey(arr[i]));
+            Object mx = arr[gkCols.size()];
+            out.put(key, mx == null ? null : ((Number) mx).intValue());
+        }
+        Profile p = PROFILE.get(); p.verN++; p.verNs += System.nanoTime() - t0;
+        return out;
+    }
+
+    /** 防御式取 uuid：原生结果可能回 UUID 或 String，统一成 UUID（与 CardSnapshotService/ComponentDriverService 约定一致）。 */
+    private static UUID asUuid(Object v) {
+        return (v instanceof UUID u) ? u : UUID.fromString(String.valueOf(v));
+    }
+    private static String currentVersionFrom(List<Map<String, Object>> existing, String versionColumn) {
+        if (existing.isEmpty()) return "2000";
+        return String.valueOf(existing.get(0).get(versionColumn));
+    }
+    private static Map<String, Object> assembleRow(Map<String, Object> gk, Map<String, Object> row,
+                                                   String versionColumn, String version) {
+        Map<String, Object> all = new LinkedHashMap<>(gk);
+        all.putAll(row);
+        all.put(versionColumn, version);
+        all.put("is_current", true);
+        return all;
+    }
+    private void flipByIds(String table, List<UUID> ids) {
+        long t0 = System.nanoTime();
+        for (int s = 0; s < ids.size(); s += 1000) {
+            List<UUID> chunk = ids.subList(s, Math.min(s + 1000, ids.size()));
+            em.createNativeQuery("UPDATE " + table + " SET is_current = FALSE WHERE id IN (:ids)")
+              .setParameter("ids", chunk).executeUpdate();
+        }
+        Profile p = PROFILE.get(); p.flipN++; p.flipNs += System.nanoTime() - t0;
+    }
+    private void deleteByIds(String table, List<UUID> ids) {
+        long t0 = System.nanoTime();
+        for (int s = 0; s < ids.size(); s += 1000) {
+            List<UUID> chunk = ids.subList(s, Math.min(s + 1000, ids.size()));
+            em.createNativeQuery("DELETE FROM " + table + " WHERE id IN (:ids)")
+              .setParameter("ids", chunk).executeUpdate();
+        }
+        Profile p = PROFILE.get(); p.flipN++; p.flipNs += System.nanoTime() - t0;
+    }
+
     // ====================== BOM 主从版本化 ======================
 
     /**
