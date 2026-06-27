@@ -190,7 +190,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
         setLoading(false);
         return;
       }
-      const built = buildComponentDataFromStructure(costingCardStructure, lineItem.componentData || []);
+      // 传 [] 而非 lineItem.componentData（报价侧）：核价的值/行数来自 costingCardValues 快照，
+      // 报价 componentData 里的 rows 若与核价 tabName 撞键会通过 savedByTab 兜底污染核价 scaffold 行数。
+      const built = buildComponentDataFromStructure(costingCardStructure, []);
       setComponents(built);
       setLoading(false);
       return;
