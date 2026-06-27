@@ -27,6 +27,9 @@ public class Q02CustomerMapHandler implements SheetHandler {
     @Inject MaterialCustomerMapRepository repo;
     @Inject MaterialMasterRepository materialMasterRepo;
 
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "cpq.v6import-setbased-writer", defaultValue = "false")
+    boolean setBased;
+
     @Override public String sheetName() { return "客户料号与宏丰料号的关系"; }
 
     @Override
@@ -43,6 +46,40 @@ public class Q02CustomerMapHandler implements SheetHandler {
         }
         // §P1-A 成品料号 material_master 同步延后批量：去重后一次 upsertBatchMaterialNoOnly。
         LinkedHashSet<String> mmAcc = new LinkedHashSet<>();
+        if (setBased) {
+            // 集合化：攒行后一条多值 upsertBatch（冲突键/SET 与逐行 upsert 完全一致）。
+            List<MaterialCustomerMapRepository.MapRow> mapRows = new ArrayList<>();
+            for (SheetRow row : rows) {
+                result.totalRows++;
+                try {
+                    String materialNo = row.getStr("宏丰料号");
+                    String customerProductNo = row.getStr("客户产品编号");
+                    if (materialNo == null || customerProductNo == null) {
+                        result.recordError(row.rowNo, "宏丰料号/客户产品编号", "必填项为空");
+                        continue;
+                    }
+                    mapRows.add(new MaterialCustomerMapRepository.MapRow(
+                        materialNo,
+                        ctx.customerNo,
+                        row.getStr("客户名称"),
+                        row.getStr("客户料号名称"),
+                        customerProductNo,
+                        row.getStr("客户图号"),
+                        null,                            // seq_no 报价表无项次列
+                        row.getStr("付款方式"),
+                        row.getStr("基础货币"),
+                        row.getStr("报价货币"),
+                        row.getDecimal("汇率")));
+                    result.successRows++;
+                    result.recordWrite("material_customer_map", 1);
+                    mmAcc.add(materialNo);
+                    result.recordWrite("material_master", 1);
+                } catch (Exception e) {
+                    result.recordError(row.rowNo, "_row_", e.getMessage());
+                }
+            }
+            repo.upsertBatch(mapRows, ctx.importedBy);
+        } else {
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
@@ -75,6 +112,7 @@ public class Q02CustomerMapHandler implements SheetHandler {
             } catch (Exception e) {
                 result.recordError(row.rowNo, "_row_", e.getMessage());
             }
+        }
         }
         if (!mmAcc.isEmpty()) {
             materialMasterRepo.upsertBatchMaterialNoOnly(new ArrayList<>(mmAcc), ctx.importedBy);

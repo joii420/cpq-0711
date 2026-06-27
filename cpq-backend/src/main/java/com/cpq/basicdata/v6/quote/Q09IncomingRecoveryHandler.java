@@ -32,6 +32,9 @@ public class Q09IncomingRecoveryHandler implements SheetHandler {
     @Inject MaterialNoResolver materialNoResolver;
     @Inject MaterialMasterRepository materialMasterRepo;
 
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "cpq.v6import-setbased-writer", defaultValue = "false")
+    boolean setBased;
+
     @Override public String sheetName() { return "来料回收折扣"; }
 
     private static final List<String> CONTENT = List.of("cost_ratio");
@@ -81,13 +84,26 @@ public class Q09IncomingRecoveryHandler implements SheetHandler {
             materialMasterRepo.upsertBatchNameType(mmRows, ctx.importedBy, true);
         }
 
-        for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet()) {
+        if (setBased) {
+            LinkedHashMap<Map<String, Object>, List<Map<String, Object>>> groups = new LinkedHashMap<>();
+            for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet())
+                groups.put(groupKeyOf.get(e.getKey()), e.getValue());
             try {
-                writer.writeVersionedGroup(new VersionedGroupSpec(
-                    "unit_price", "version_no", groupKeyOf.get(e.getKey()), CONTENT, e.getValue()));
-                result.recordWrite("unit_price", e.getValue().size());
+                writer.writeVersionedGroups("unit_price", "version_no", CONTENT, null, groups);
+                for (List<Map<String, Object>> groupRows : groups.values())
+                    result.recordWrite("unit_price", groupRows.size());
             } catch (Exception ex) {
-                result.recordError(0, "_group_", ex.getMessage());
+                result.recordError(0, "_batch_", ex.getMessage());
+            }
+        } else {
+            for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet()) {
+                try {
+                    writer.writeVersionedGroup(new VersionedGroupSpec(
+                        "unit_price", "version_no", groupKeyOf.get(e.getKey()), CONTENT, e.getValue()));
+                    result.recordWrite("unit_price", e.getValue().size());
+                } catch (Exception ex) {
+                    result.recordError(0, "_group_", ex.getMessage());
+                }
             }
         }
         return result;
