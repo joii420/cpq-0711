@@ -89,6 +89,9 @@ public class QuotationService {
     @Inject
     LineDiscountService lineDiscountService;
 
+    @Inject
+    CostingFreezeService costingFreezeService;
+
     private static final java.util.Set<String> VALID_QUOTATION_STATUSES = java.util.Set.of(
             "DRAFT", "SUBMITTED", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "EXPIRED", "CANCELLED", "COSTING_REJECTED"
     );
@@ -819,7 +822,7 @@ public class QuotationService {
         java.util.List<com.cpq.quotation.service.rowkey.RowKeyUniquenessService.LineItemComps> rowsForCheck =
             new java.util.ArrayList<>();
         for (QuotationLineItem li : lineItems) {
-            String label = li.productNameSnapshot != null ? li.productNameSnapshot
+            String productName = li.productNameSnapshot != null ? li.productNameSnapshot
                          : (li.productPartNoSnapshot != null ? li.productPartNoSnapshot : "明细");
             java.util.List<com.cpq.quotation.service.rowkey.RowKeyUniquenessService.CompRows> comps =
                 new java.util.ArrayList<>();
@@ -830,16 +833,17 @@ public class QuotationService {
                 comps.add(new com.cpq.quotation.service.rowkey.RowKeyUniquenessService.CompRows(
                     cd.componentId.toString(), cd.snapshotRows, cd.rowData));
             }
-            rowsForCheck.add(new com.cpq.quotation.service.rowkey.RowKeyUniquenessService.LineItemComps(label, comps));
+            rowsForCheck.add(new com.cpq.quotation.service.rowkey.RowKeyUniquenessService.LineItemComps(
+                li.id.toString(), productName, li.productPartNoSnapshot, comps));
         }
-        java.util.List<com.cpq.quotation.service.rowkey.RowKeyConflict> conflicts =
+        java.util.List<com.cpq.quotation.service.rowkey.RowKeyConflictDTO> conflicts =
             rowKeyUniquenessService.collectConflicts(quoteCardStructureJson, rowsForCheck);
         if (!conflicts.isEmpty()) {
             StringBuilder sb = new StringBuilder("行键重复，无法提交：");
-            for (com.cpq.quotation.service.rowkey.RowKeyConflict c : conflicts) {
+            for (com.cpq.quotation.service.rowkey.RowKeyConflictDTO c : conflicts) {
                 sb.append("\n· ").append(c.describe());
             }
-            throw new BusinessException(422, sb.toString());
+            throw new com.cpq.common.exception.RowKeyConflictException(sb.toString(), conflicts);
         }
 
         for (QuotationLineItem li : lineItems) {
@@ -902,13 +906,8 @@ public class QuotationService {
         }
         q.totalAmount = lineSum.setScale(4, java.math.RoundingMode.HALF_UP);
 
-        // 进入财务核价: 自动建核价单(幂等); 角色队列模型, 不依赖 assignedApproverId。
-        if (com.cpq.quotation.entity.CostingOrder.findByQuotation(id) == null) {
-            com.cpq.quotation.entity.CostingOrder co = new com.cpq.quotation.entity.CostingOrder();
-            co.quotationId = id;
-            co.submittedBy = userId;          // submit 当前用户
-            co.persist();
-        }
+        // 进入财务核价: 每次提交都建新核价单（累积模式），冻结 DTO+gvDefs，并发时 409。
+        costingFreezeService.createForSubmission(id, userId);
 
         q.status = "SUBMITTED";
         LOG.infof("Submitted quotation id=%s number=%s approver=%s", id, q.quotationNumber, q.assignedApproverId);
@@ -1326,6 +1325,12 @@ public class QuotationService {
         if (!"SUBMITTED".equals(q.status)) throw new BusinessException(400, "仅待核价(SUBMITTED)可核价通过");
         if (!isFinanceOrAdmin(currentUserId)) throw new BusinessException(403, "仅财务/管理员可核价");
         q.status = "APPROVED";
+        CostingOrder coApprove = CostingOrder.findActiveByQuotation(id);
+        if (coApprove != null) {
+            coApprove.status = "APPROVED";
+            coApprove.reviewedBy = currentUserId;
+            coApprove.reviewedAt = java.time.OffsetDateTime.now();
+        }
         writeApproval(id, currentUserId, "COSTING_APPROVED", comment);
         LOG.infof("Costing approved quotation id=%s by=%s", id, currentUserId);
         QuotationDTO dto = QuotationDTO.from(q);
@@ -1341,6 +1346,13 @@ public class QuotationService {
         if (!isFinanceOrAdmin(currentUserId)) throw new BusinessException(403, "仅财务/管理员可核价");
         if (reason == null || reason.isBlank()) throw new BusinessException(400, "驳回原因必填");
         q.status = "COSTING_REJECTED";
+        CostingOrder coReject = CostingOrder.findActiveByQuotation(id);
+        if (coReject != null) {
+            coReject.status = "REJECTED";
+            coReject.rejectReason = reason;
+            coReject.reviewedBy = currentUserId;
+            coReject.reviewedAt = java.time.OffsetDateTime.now();
+        }
         writeApproval(id, currentUserId, "COSTING_REJECTED", reason);
         LOG.infof("Costing rejected quotation id=%s reason=%s by=%s", id, reason, currentUserId);
         QuotationDTO dto = QuotationDTO.from(q);
@@ -1376,6 +1388,11 @@ public class QuotationService {
         unfreezeToDraft(q);
         q.status = "DRAFT";
         q.assignedApproverId = null;
+        // 用 findLatest：已驳回(REJECTED)的核价单是终态，findActive 取不到；findLatest 兼容所有场景
+        CostingOrder coWithdraw = CostingOrder.findLatestByQuotation(id);
+        if (coWithdraw != null) {
+            coWithdraw.status = "WITHDRAWN";
+        }
         writeApproval(id, currentUserId, "WITHDRAWN", "撤回到草稿");
 
         LOG.infof("Withdrawn quotation id=%s number=%s by user=%s", id, q.quotationNumber, currentUserId);
@@ -1393,6 +1410,29 @@ public class QuotationService {
                 "DELETE FROM quotation_component_sql_snapshot WHERE quotation_id = :qid")
                 .setParameter("qid", q.id)
                 .executeUpdate();
+    }
+
+    /**
+     * 驳回编辑入口：仅对 COSTING_REJECTED 状态的报价单有效，将报价单退回 DRAFT。
+     * 不触碰 costing_order（驳回条留 REJECTED）；不写 quotation_approval（无合法 action 值）。
+     */
+    @Transactional
+    public QuotationDTO beginEdit(UUID id, UUID currentUserId) {
+        Quotation q = Quotation.findById(id);
+        if (q == null) throw new BusinessException(404, "Quotation not found: " + id);
+        if (!"COSTING_REJECTED".equals(q.status)) {
+            throw new BusinessException(400, "仅已驳回的报价单可进入编辑转草稿");
+        }
+        if (!q.salesRepId.equals(currentUserId) && !isFinanceOrAdmin(currentUserId)) {
+            throw new BusinessException(403, "仅创建人或管理员可编辑驳回单");
+        }
+        unfreezeToDraft(q);
+        q.status = "DRAFT";
+        q.assignedApproverId = null;
+        LOG.infof("BeginEdit quotation id=%s number=%s by user=%s", id, q.quotationNumber, currentUserId);
+        QuotationDTO dto = QuotationDTO.from(q);
+        dto.lineItems = loadLineItems(id);
+        return dto;
     }
 
     @Transactional
@@ -2853,55 +2893,36 @@ public class QuotationService {
     // ── 核价管理列表 ──────────────────────────────────────────────────────────────
 
     /**
-     * 派生核价状态（用于前端显示）。
-     * 仅将进入核价流程的状态映射为中文标签；其它状态（DRAFT 等）返回 null，不展示在核价列表。
-     */
-    private static String deriveCostingStatus(String quotationStatus) {
-        if (quotationStatus == null) return null;
-        switch (quotationStatus) {
-            case "SUBMITTED":        return "待核价";
-            case "COSTING_REJECTED": return "核价驳回";
-            case "APPROVED":
-            case "SENT":
-            case "ACCEPTED":         return "核价通过";
-            default:                 return null;
-        }
-    }
-
-    /**
      * 查核价管理列表（核价工作台用）。
      *
-     * <p>返回所有进入核价流程（SUBMITTED / COSTING_REJECTED / APPROVED / SENT / ACCEPTED）的报价单，
-     * 按 costing_order.entered_costing_at DESC 排序。
+     * <p>标量投影排除 frozen_dto 大字段（N5 防护）；直接使用 costing_order.status 英文码，
+     * 不再从 quotation.status 派生中文标签。
      *
-     * @param statusFilter 中文状态过滤（"待核价" / "核价驳回" / "核价通过"），null 或空串表示不过滤
-     * @param sort         预留排序参数，暂未使用（后续可扩展）
+     * @param statuses 英文码状态过滤列表（PENDING/APPROVED/REJECTED/WITHDRAWN），
+     *                 null 或空列表表示返回全部
+     * @param keyword  按报价单号模糊过滤（不区分大小写），null 或空串不过滤
+     * @param sort     排序字段："status" 按状态升序；"updatedAt" 按更新时间降序；
+     *                 null/其它 按 entered_costing_at 降序（默认）
      */
     @jakarta.transaction.Transactional(jakarta.transaction.Transactional.TxType.SUPPORTS)
     public java.util.List<com.cpq.quotation.dto.CostingOrderListItemDTO> listCostingOrders(
-            String statusFilter, String sort) {
+            java.util.List<String> statuses, String keyword, String sort) {
 
-        // 两步查：先取 CostingOrder 列表（含 quotationId / submittedBy / enteredCostingAt），
-        // 再按 quotationId 批量取 Quotation、按 submittedBy 批量取 User。
-        // 理由：CostingOrder / Quotation / User 三表无 JPA @ManyToOne 关系映射，
-        // Hibernate 6 虽支持 HQL theta-join，但 User 实体表名含保留字 "user" 且跨 schema 包；
-        // 两步批量查询更简洁，且能准确处理 submittedBy 为 null 的情况。
-
-        // Step 1: 取所有 CostingOrder，按 enteredCostingAt DESC
-        @SuppressWarnings("unchecked")
-        java.util.List<CostingOrder> orders = em.createQuery(
-                "FROM CostingOrder co ORDER BY co.enteredCostingAt DESC",
-                CostingOrder.class)
+        // Step 1: 标量投影取 CostingOrder（排除 frozen_dto），默认按 enteredCostingAt DESC
+        java.util.List<Object[]> rows = em.createQuery(
+                "SELECT co.id, co.quotationId, co.costingOrderNumber, co.status, co.rejectReason, " +
+                "co.submittedBy, co.enteredCostingAt, co.updatedAt " +
+                "FROM CostingOrder co ORDER BY co.enteredCostingAt DESC", Object[].class)
                 .getResultList();
 
-        if (orders.isEmpty()) {
+        if (rows.isEmpty()) {
             return java.util.Collections.emptyList();
         }
 
-        // Step 2: 批量取 Quotation（按 id IN）
-        java.util.Set<UUID> quotationIds = orders.stream()
-                .map(o -> o.quotationId).collect(java.util.stream.Collectors.toSet());
-        @SuppressWarnings("unchecked")
+        // Step 2: 批量取 Quotation（按 quotationId IN）
+        java.util.Set<UUID> quotationIds = rows.stream()
+                .map(r -> (UUID) r[1])
+                .collect(java.util.stream.Collectors.toSet());
         java.util.List<Quotation> quotations = em.createQuery(
                 "FROM Quotation q WHERE q.id IN :ids", Quotation.class)
                 .setParameter("ids", quotationIds)
@@ -2909,14 +2930,13 @@ public class QuotationService {
         java.util.Map<UUID, Quotation> quotationMap = quotations.stream()
                 .collect(java.util.stream.Collectors.toMap(q -> q.id, q -> q));
 
-        // Step 3: 批量取 User（按 id IN，排除 null）
-        java.util.Set<UUID> userIds = orders.stream()
-                .filter(o -> o.submittedBy != null)
-                .map(o -> o.submittedBy)
+        // Step 3: 批量取 User 姓名（排除 null submittedBy）
+        java.util.Set<UUID> userIds = rows.stream()
+                .filter(r -> r[5] != null)
+                .map(r -> (UUID) r[5])
                 .collect(java.util.stream.Collectors.toSet());
         java.util.Map<UUID, String> userNameMap = new java.util.HashMap<>();
         if (!userIds.isEmpty()) {
-            @SuppressWarnings("unchecked")
             java.util.List<User> users = em.createQuery(
                     "FROM User u WHERE u.id IN :ids", User.class)
                     .setParameter("ids", userIds)
@@ -2924,29 +2944,86 @@ public class QuotationService {
             users.forEach(u -> userNameMap.put(u.id, u.fullName));
         }
 
-        // Step 4: 组装 DTO，过滤状态
+        // Step 4: 组装 DTO，执行状态 + 关键字过滤
+        String kw = (keyword != null && !keyword.isBlank()) ? keyword.toLowerCase() : null;
         java.util.List<com.cpq.quotation.dto.CostingOrderListItemDTO> out = new java.util.ArrayList<>();
-        for (CostingOrder co : orders) {
-            Quotation q = quotationMap.get(co.quotationId);
-            if (q == null) continue; // 孤儿核价单，跳过
+        for (Object[] r : rows) {
+            UUID costingOrderId       = (UUID) r[0];
+            UUID quotationId          = (UUID) r[1];
+            String costingOrderNumber = (String) r[2];
+            String status             = (String) r[3];
+            String rejectReason       = (String) r[4];
+            UUID submittedBy          = (UUID) r[5];
+            java.time.OffsetDateTime enteredCostingAt = (java.time.OffsetDateTime) r[6];
+            java.time.OffsetDateTime updatedAt        = (java.time.OffsetDateTime) r[7];
 
-            String derived = deriveCostingStatus(q.status);
-            if (derived == null) continue; // 非核价流程状态，不列出
+            // 孤儿核价单（quotation 已不存在）跳过
+            Quotation q = quotationMap.get(quotationId);
+            if (q == null) continue;
 
-            if (statusFilter != null && !statusFilter.isBlank() && !derived.equals(statusFilter)) {
-                continue; // 状态不匹配
+            // 多值英文码状态过滤
+            if (statuses != null && !statuses.isEmpty() && !statuses.contains(status)) {
+                continue;
+            }
+
+            // 关键字过滤（按报价单号，不区分大小写）
+            if (kw != null && (q.quotationNumber == null || !q.quotationNumber.toLowerCase().contains(kw))) {
+                continue;
             }
 
             com.cpq.quotation.dto.CostingOrderListItemDTO d = new com.cpq.quotation.dto.CostingOrderListItemDTO();
-            d.quotationId    = co.quotationId;
-            d.quotationNumber = q.quotationNumber;
-            d.customerName   = q.snapshotCustomerName;
-            d.submittedByName = co.submittedBy != null ? userNameMap.get(co.submittedBy) : null;
-            d.currency       = "CNY"; // 当前系统统一人民币，per-part 多币种待后续演进
-            d.status         = derived;
-            d.createdAt      = co.enteredCostingAt;
+            d.costingOrderId     = costingOrderId;
+            d.quotationId        = quotationId;
+            d.costingOrderNumber = costingOrderNumber;
+            d.quotationNumber    = q.quotationNumber;
+            d.customerName       = q.snapshotCustomerName;
+            d.submittedByName    = submittedBy != null ? userNameMap.get(submittedBy) : null;
+            d.currency           = "CNY"; // 当前系统统一人民币，per-part 多币种待后续演进
+            d.status             = status;
+            d.rejectReason       = rejectReason;
+            d.createdAt          = enteredCostingAt;
+            d.updatedAt          = updatedAt;
             out.add(d);
         }
+
+        // Step 5: 内存排序（status/updatedAt；默认 enteredCostingAt DESC 已由投影保证）
+        if ("status".equals(sort)) {
+            out.sort(java.util.Comparator.comparing(d -> d.status == null ? "" : d.status));
+        } else if ("updatedAt".equals(sort)) {
+            out.sort((a, b) -> {
+                if (a.updatedAt == null && b.updatedAt == null) return 0;
+                if (a.updatedAt == null) return 1;
+                if (b.updatedAt == null) return -1;
+                return b.updatedAt.compareTo(a.updatedAt);
+            });
+        }
+
         return out;
+    }
+
+    /**
+     * 查单条核价单详情（含冻结副本），供核价工作台详情页使用。
+     *
+     * @param coid 核价单 ID
+     * @return 含 frozenDto 的详情 DTO
+     * @throws BusinessException 404 若核价单不存在
+     */
+    @jakarta.transaction.Transactional(jakarta.transaction.Transactional.TxType.SUPPORTS)
+    public com.cpq.quotation.dto.CostingOrderDetailDTO getCostingOrderById(UUID coid) {
+        CostingOrder co = CostingOrder.findById(coid);
+        if (co == null) {
+            throw new BusinessException(404, "核价单不存在");
+        }
+        com.cpq.quotation.dto.CostingOrderDetailDTO d = new com.cpq.quotation.dto.CostingOrderDetailDTO();
+        d.costingOrderId     = co.id;
+        d.quotationId        = co.quotationId;
+        d.costingOrderNumber = co.costingOrderNumber;
+        d.status             = co.status;
+        d.rejectReason       = co.rejectReason;
+        d.totalAmount        = co.totalAmount;
+        d.frozenDto          = co.frozenDto;
+        d.createdAt          = co.enteredCostingAt;
+        d.reviewedAt         = co.reviewedAt;
+        return d;
     }
 }

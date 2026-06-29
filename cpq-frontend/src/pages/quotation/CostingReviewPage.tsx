@@ -1,14 +1,17 @@
 /**
- * CostingReviewPage —— 只读核价工作台（Phase 1）
+ * CostingReviewPage —— 核价工作台（读冻结副本 frozen DTO）
  *
- * 路由：/quotations/:id/costing-review
- * 进入方式：核价管理列表"进入核价"动作跳转
+ * 路由：/costing-orders/:coid/review
+ * 进入方式：核价管理列表"进入核价"/"核价单号"跳转
  *
- * 功能：
- *   - 顶部 Card：报价单号 + 状态 Tag + 操作栏（核价通过 / 驳回）
- *   - 正文：<ProductDetailViews quotation={q} />（复用，反 AP-50）
- *   - 驳回操作走 Drawer（填驳回原因必填），调 costingOrderService.reject
- *   - canReview = ['PRICING_MANAGER','SYSTEM_ADMIN'].includes(role) && status==='SUBMITTED'
+ * 数据流：
+ *   - costingOrderService.getById(coid) → detail（CostingOrderDetail）
+ *   - detail.frozenDto (JSON 字符串) → frozen（报价单完整快照对象）
+ *   - ProductDetailViews 以 frozen 模式渲染（无 live /templates、/global-variables 请求）
+ *
+ * 审批回联：
+ *   - approve/reject 用 detail.quotationId（非 coid）
+ *   - canReview = ['PRICING_MANAGER','SYSTEM_ADMIN'].includes(role) && detail.status === 'PENDING'
  */
 import React, { useEffect, useState } from 'react';
 import {
@@ -31,41 +34,49 @@ import {
   CloseCircleOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
-import { quotationService } from '../../services/quotationService';
 import { costingOrderService } from '../../services/costingOrderService';
+import type { CostingOrderDetail } from '../../services/costingOrderService';
 import { useAuthStore } from '../../stores/authStore';
 import ProductDetailViews from './ProductDetailViews';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
-const statusConfig: Record<string, { label: string; color: string }> = {
-  DRAFT: { label: '草稿', color: 'default' },
-  SUBMITTED: { label: '审批中', color: 'processing' },
-  APPROVED: { label: '已批准', color: 'success' },
-  SENT: { label: '已发送', color: 'cyan' },
-  ACCEPTED: { label: '已接受', color: 'green' },
-  REJECTED: { label: '已退回', color: 'error' },
-  EXPIRED: { label: '已过期', color: 'warning' },
-  COSTING_REJECTED: { label: '核价驳回', color: 'error' },
+/** 核价单状态配置（与报价单 status 语义完全分离） */
+const costingStatusConfig: Record<string, { label: string; color: string }> = {
+  PENDING:   { label: '待核价',  color: 'processing' },
+  APPROVED:  { label: '已审核',  color: 'success'    },
+  REJECTED:  { label: '已驳回',  color: 'error'      },
+  WITHDRAWN: { label: '已撤回',  color: 'default'    },
 };
 
 const CostingReviewPage: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
+  const { coid } = useParams<{ coid: string }>();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
 
-  const [quotation, setQuotation] = useState<any>(null);
+  const [detail, setDetail] = useState<CostingOrderDetail | null>(null);
+  const [frozen, setFrozen] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [rejectDrawerOpen, setRejectDrawerOpen] = useState(false);
   const [rejectForm] = Form.useForm();
 
-  const loadQuotation = async () => {
-    if (!id) return;
+  const loadDetail = async () => {
+    if (!coid) return;
     setLoading(true);
     try {
-      const res = await quotationService.getById(id);
-      setQuotation(res.data);
+      const res = await costingOrderService.getById(coid);
+      const d = res.data;
+      setDetail(d);
+      if (d.frozenDto) {
+        try {
+          setFrozen(JSON.parse(d.frozenDto));
+        } catch {
+          setFrozen(null);
+        }
+      } else {
+        setFrozen(null);
+      }
     } catch (e: any) {
       message.error(e?.message || '加载失败');
     } finally {
@@ -74,18 +85,21 @@ const CostingReviewPage: React.FC = () => {
   };
 
   useEffect(() => {
-    loadQuotation();
+    loadDetail();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [coid]);
 
+  /** 核价操作权限：角色 + 核价单处于待核价状态 */
   const canReview =
     ['PRICING_MANAGER', 'SYSTEM_ADMIN'].includes(user?.role ?? '') &&
-    quotation?.status === 'SUBMITTED';
+    detail?.status === 'PENDING';
 
+  /** 审批回联：用 quotationId，不是 costingOrderId */
   const handleApprove = async () => {
+    if (!detail?.quotationId) return;
     setActionLoading(true);
     try {
-      await costingOrderService.approve(id!);
+      await costingOrderService.approve(detail.quotationId);
       message.success('核价通过');
       navigate('/costing-summary');
     } catch (e: any) {
@@ -96,9 +110,10 @@ const CostingReviewPage: React.FC = () => {
   };
 
   const handleReject = async (values: { comment: string }) => {
+    if (!detail?.quotationId) return;
     setActionLoading(true);
     try {
-      await costingOrderService.reject(id!, values.comment);
+      await costingOrderService.reject(detail.quotationId, values.comment);
       message.success('已驳回');
       setRejectDrawerOpen(false);
       rejectForm.resetFields();
@@ -118,12 +133,12 @@ const CostingReviewPage: React.FC = () => {
     );
   }
 
-  if (!quotation) {
-    return <div style={{ textAlign: 'center', padding: 80 }}>报价单不存在</div>;
+  if (!detail) {
+    return <div style={{ textAlign: 'center', padding: 80 }}>核价单不存在</div>;
   }
 
-  const statusInfo = statusConfig[quotation.status] || {
-    label: quotation.status,
+  const statusInfo = costingStatusConfig[detail.status] ?? {
+    label: detail.status,
     color: 'default',
   };
 
@@ -142,11 +157,21 @@ const CostingReviewPage: React.FC = () => {
                 返回核价列表
               </Button>
               <Title level={4} style={{ margin: 0 }}>
-                {quotation.quotationNumber}
+                {detail.costingOrderNumber}
               </Title>
+              {frozen?.quotationNumber && (
+                <Text type="secondary" style={{ fontSize: 13 }}>
+                  报价单：{frozen.quotationNumber}
+                </Text>
+              )}
               <Tag color={statusInfo.color} style={{ fontSize: 13 }}>
                 {statusInfo.label}
               </Tag>
+              {detail.rejectReason && (
+                <Text type="danger" style={{ fontSize: 12 }}>
+                  驳回原因：{detail.rejectReason}
+                </Text>
+              )}
             </Space>
           </Col>
           {canReview && (
@@ -177,12 +202,20 @@ const CostingReviewPage: React.FC = () => {
         </Row>
       </Card>
 
-      {/* 产品明细两级视图（复用 ProductDetailViews，反 AP-50 单源） */}
-      <ProductDetailViews quotation={quotation} />
+      {/* 产品明细：frozen DTO 存在则走 frozen 模式，否则降级提示 */}
+      {frozen ? (
+        <ProductDetailViews quotation={frozen} frozen />
+      ) : (
+        <Card>
+          <div style={{ textAlign: 'center', padding: 32, color: '#999' }}>
+            此单为旧版本，无冻结明细
+          </div>
+        </Card>
+      )}
 
       {/* 驳回 Drawer */}
       <Drawer
-        title="驳回报价单"
+        title="驳回核价单"
         placement="right"
         width={480}
         open={rejectDrawerOpen}

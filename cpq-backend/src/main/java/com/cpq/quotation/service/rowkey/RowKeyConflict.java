@@ -7,11 +7,4 @@ import java.util.List;
  * rowIndices 为 0 基行序（baseRows 中的位置），用于定位与报错明细。
  */
 public record RowKeyConflict(String componentName, String rowKey, List<Integer> rowIndices) {
-
-    /** 人类可读的冲突描述，用于拼装提交报错信息。 */
-    public String describe() {
-        return "组件「" + componentName + "」行键 [" + rowKey + "] 在第 "
-            + rowIndices.stream().map(i -> String.valueOf(i + 1)).reduce((a, b) -> a + "," + b).orElse("")
-            + " 行重复";
-    }
 }

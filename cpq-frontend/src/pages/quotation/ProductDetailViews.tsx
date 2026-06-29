@@ -5,7 +5,10 @@
  * 两级视图渲染逻辑，避免双源维护。
  *
  * Props:
- *   quotation — quotationService.getById 返回的完整报价单对象
+ *   quotation — quotationService.getById 返回的完整报价单对象，
+ *               或 frozenDto 解析后的快照对象（frozen=true 时）
+ *   frozen   — 若为 true，gvDefs 从 quotation.gvDefs 读取（不发 /global-variables 请求），
+ *              enrichComponentData 也跳过（不发 /templates 请求）
  *
  * 内含状态：mainTab / viewType / gvDefs / enrichedLineItems / usePathFormulaCache
  * 不向外暴露这些状态，调用方只需传入 quotation。
@@ -26,9 +29,12 @@ const { Text } = Typography;
 
 interface Props {
   quotation: any;
+  locateTarget?: { lineItemId?: string; productPartNo?: string; componentId?: string; seq: number } | null;
+  /** 冻结模式：gvDefs 取 quotation.gvDefs，enrich 跳过，QUOTE 分支由 ReadonlyProductCard 内部离线组装 */
+  frozen?: boolean;
 }
 
-const ProductDetailViews: React.FC<Props> = ({ quotation }) => {
+const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen }) => {
   // ----------------------------------------------------------------
   // 两级视图切换 state
   // ----------------------------------------------------------------
@@ -37,9 +43,21 @@ const ProductDetailViews: React.FC<Props> = ({ quotation }) => {
 
   // ----------------------------------------------------------------
   // B-GV-2：动态 key 全局变量定义字典，供 ReadonlyProductCard FORMULA 字段求值
+  // frozen 模式：从 quotation.gvDefs 构建 map，不发 /global-variables 请求
+  // live 模式：原有 globalVariableService.list() 拉取
   // ----------------------------------------------------------------
   const [gvDefs, setGvDefs] = useState<Record<string, GlobalVariableDefinition>>({});
   useEffect(() => {
+    if (frozen && Array.isArray(quotation?.gvDefs)) {
+      // frozen 模式：从冻结快照 gvDefs 数组构建 code→def map
+      const map: Record<string, GlobalVariableDefinition> = {};
+      for (const d of quotation.gvDefs as GlobalVariableDefinition[]) {
+        if (d?.code) map[d.code] = d;
+      }
+      setGvDefs(map);
+      return;
+    }
+    // live 模式：原有逻辑
     globalVariableService
       .list()
       .then((res: any) => {
@@ -55,16 +73,23 @@ const ProductDetailViews: React.FC<Props> = ({ quotation }) => {
         setGvDefs(map);
       })
       .catch(() => setGvDefs({}));
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frozen, quotation?.id]);
 
   // ----------------------------------------------------------------
   // 任务2：enriched lineItems —— 预热 _globalPathCache。
-  // 详情/核价工作台打开时 cache 是空的，需先 enrich 再让 hook 扫 path token。
+  // frozen 模式：直接用原始 lineItems（QUOTE 离线组装在 ReadonlyProductCard 内部完成）
+  // live 模式：enrich 后让 hook 扫 path token
   // ----------------------------------------------------------------
   const [enrichedLineItems, setEnrichedLineItems] = useState<LineItem[]>([]);
   useEffect(() => {
     if (!quotation?.lineItems?.length) {
       setEnrichedLineItems([]);
+      return;
+    }
+    // frozen 模式：跳过 enrichComponentData（不发 /templates 请求），直接用原始 lineItems
+    if (frozen) {
+      setEnrichedLineItems(quotation.lineItems as LineItem[]);
       return;
     }
     let cancelled = false;
@@ -85,17 +110,43 @@ const ProductDetailViews: React.FC<Props> = ({ quotation }) => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quotation?.id, quotation?.lineItems?.length]);
+  }, [frozen, quotation?.id, quotation?.lineItems?.length]);
 
   // 触发 path 公式缓存预热
   usePathFormulaCache(enrichedLineItems, quotation?.customerId, gvDefs);
 
   // ----------------------------------------------------------------
-  // 渲染
+  // Plan 1b 详情页定位：cardRefs + locateResolved state
   // ----------------------------------------------------------------
+  const cardRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
+  const [locateResolved, setLocateResolved] = useState<{ cardId?: string; componentId?: string; seq: number } | null>(null);
+
+  // visible 上移，保证 locateTarget effect 能引用
   const visible = (quotation?.lineItems || []).filter(
     (li: any) => li.compositeType !== 'PART',
   );
+
+  useEffect(() => {
+    if (!locateTarget) return;
+    setMainTab('quote');     // 后端只校验报价卡，定位恒落报价卡片视图
+    setViewType('card');
+    const all = (quotation?.lineItems || []) as any[];
+    const hit = all.find((li: any) => li.id === locateTarget.lineItemId);
+    let cardId = hit?.id;
+    if (hit?.compositeType === 'PART') cardId = hit.parentLineItemId;   // PART→父卡
+    if (!cardId && hit?.compositeType !== 'PART' && locateTarget.productPartNo) {
+      cardId = visible.find((li: any) => li.productPartNo === locateTarget.productPartNo)?.id;  // 兜底(PART 不走)
+    }
+    setLocateResolved({ cardId, componentId: locateTarget.componentId, seq: locateTarget.seq });
+    if (cardId && cardRefs.current[cardId]) {
+      cardRefs.current[cardId]!.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locateTarget?.seq]);
+
+  // ----------------------------------------------------------------
+  // 渲染
+  // ----------------------------------------------------------------
 
   return (
     <Card title="产品明细" style={{ marginBottom: 16 }}>
@@ -152,20 +203,27 @@ const ProductDetailViews: React.FC<Props> = ({ quotation }) => {
         />
       ) : (
         <div className="qt-products-list">
-          {visible.map((li: any, idx: number) => (
-            <ReadonlyProductCard
-              key={li.id || idx}
-              lineItem={li}
-              index={idx}
-              quotationId={quotation.id}
-              quotationStatus={quotation.status}
-              customerId={quotation.customerId}
-              globalVariableDefs={gvDefs}
-              side={mainTab === 'costing' ? 'COSTING' : 'QUOTE'}
-              quoteCardStructure={quotation.quoteCardStructure ?? null}
-              costingCardStructure={quotation.costingCardStructure ?? null}
-            />
-          ))}
+          {visible.map((li: any, idx: number) => {
+            const isLocateTarget = locateResolved?.cardId != null && locateResolved.cardId === li.id;
+            return (
+              <div key={li.id || idx} ref={el => { if (li.id) cardRefs.current[li.id] = el; }}>
+                <ReadonlyProductCard
+                  lineItem={li}
+                  index={idx}
+                  quotationId={quotation.id}
+                  quotationStatus={quotation.status}
+                  customerId={quotation.customerId}
+                  globalVariableDefs={gvDefs}
+                  side={mainTab === 'costing' ? 'COSTING' : 'QUOTE'}
+                  quoteCardStructure={quotation.quoteCardStructure ?? null}
+                  costingCardStructure={quotation.costingCardStructure ?? null}
+                  locateComponentId={isLocateTarget ? locateResolved!.componentId : undefined}
+                  locateSeq={isLocateTarget ? locateResolved!.seq : undefined}
+                  frozen={frozen}
+                />
+              </div>
+            );
+          })}
         </div>
       )}
 

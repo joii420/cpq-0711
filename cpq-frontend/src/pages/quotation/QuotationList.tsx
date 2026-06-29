@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Button, Input, Space, Tag, Card, message, Tabs, Modal,
+  Button, Input, Space, Tag, Card, message, Tabs,
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined,
   SendOutlined, CheckOutlined, CloseOutlined,
-  CheckCircleOutlined, CloseCircleOutlined, RollbackOutlined,
+  RollbackOutlined,
   ImportOutlined, HistoryOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -20,26 +20,26 @@ const { Search } = Input;
 
 const statusMap: Record<string, { label: string; color: string }> = {
   DRAFT: { label: '草稿', color: 'default' },
-  SUBMITTED: { label: '审批中', color: 'processing' },
-  APPROVED: { label: '已批准', color: 'success' },
+  SUBMITTED: { label: '待核价', color: 'processing' },
+  APPROVED: { label: '已审核', color: 'success' },
   SENT: { label: '已发送', color: 'cyan' },
   ACCEPTED: { label: '已接受', color: 'green' },
-  REJECTED: { label: '已退回', color: 'error' },
+  REJECTED: { label: '客户已拒绝', color: 'error' },
   EXPIRED: { label: '已过期', color: 'warning' },
+  COSTING_REJECTED: { label: '已驳回', color: 'error' },
 };
 
 const statusTabs = [
   { key: '', label: '全部' },
   { key: 'DRAFT', label: '草稿' },
-  { key: 'SUBMITTED', label: '审批中' },
-  { key: 'APPROVED', label: '已批准' },
+  { key: 'SUBMITTED', label: '待核价' },
+  { key: 'COSTING_REJECTED', label: '已驳回' },
+  { key: 'APPROVED', label: '已审核' },
   { key: 'SENT', label: '已发送' },
   { key: 'ACCEPTED', label: '已接受' },
-  { key: 'REJECTED', label: '已退回' },
+  { key: 'REJECTED', label: '客户已拒绝' },
   { key: 'EXPIRED', label: '已过期' },
 ];
-
-const PENDING_APPROVAL_TAB = '__pending_approval__';
 
 const QuotationList: React.FC = () => {
   const navigate = useNavigate();
@@ -51,17 +51,8 @@ const QuotationList: React.FC = () => {
   const [keyword, setKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [loading, setLoading] = useState(false);
-  // 审批意见 Modal（需要文本输入，独立于 SelectableTable 的简单 Modal 确认）
-  const [approveModalOpen, setApproveModalOpen] = useState(false);
-  const [rejectModalOpen, setRejectModalOpen] = useState(false);
-  const [actionTargets, setActionTargets] = useState<any[]>([]);  // 暂存所选行
-  const [rejectComment, setRejectComment] = useState('');
-  const [approveComment, setApproveComment] = useState('');
-  const [actionLoading, setActionLoading] = useState(false);
   const [basicImportOpen, setBasicImportOpen] = useState(false);
   const [copySource, setCopySource] = useState<{ id: string; templateId?: string } | null>(null);
-
-  const isPendingApprovalTab = statusFilter === PENDING_APPROVAL_TAB;
 
   const loadData = async () => {
     setLoading(true);
@@ -70,8 +61,7 @@ const QuotationList: React.FC = () => {
       const res = await quotationService.list({
         page,
         size,
-        status: isPendingApprovalTab ? 'SUBMITTED' : (statusFilter || undefined),
-        assignedApproverId: isPendingApprovalTab && user && user.role !== 'SYSTEM_ADMIN' ? user.id : undefined,
+        status: statusFilter || undefined,
         salesRepId: salesRepFilter,
         keyword: keyword || undefined,
       });
@@ -85,44 +75,6 @@ const QuotationList: React.FC = () => {
   };
 
   useEffect(() => { loadData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [page, statusFilter, keyword]);
-
-  const handleApprove = async () => {
-    if (actionTargets.length !== 1) return;
-    setActionLoading(true);
-    try {
-      await quotationService.approve(actionTargets[0].id, approveComment || undefined);
-      message.success('审批通过');
-      setApproveModalOpen(false);
-      setApproveComment('');
-      setActionTargets([]);
-      loadData();
-    } catch (e: any) {
-      message.error(e.message);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleReject = async () => {
-    if (!rejectComment.trim()) {
-      message.warning('请填写退回原因');
-      return;
-    }
-    if (actionTargets.length !== 1) return;
-    setActionLoading(true);
-    try {
-      await quotationService.reject(actionTargets[0].id, rejectComment);
-      message.success('已退回');
-      setRejectModalOpen(false);
-      setRejectComment('');
-      setActionTargets([]);
-      loadData();
-    } catch (e: any) {
-      message.error(e.message);
-    } finally {
-      setActionLoading(false);
-    }
-  };
 
   // 列定义 —— 报价单号点击进详情；不再有"操作"列
   const columns = [
@@ -158,10 +110,23 @@ const QuotationList: React.FC = () => {
       icon: <EditOutlined />,
       enabledWhen: (rows) => {
         if (rows.length !== 1) return '编辑一次只能选一行';
-        if (['ACCEPTED', 'EXPIRED'].includes(rows[0].status)) return '已接受/已过期的报价单不可编辑';
+        const s = rows[0].status;
+        if (['SUBMITTED', 'APPROVED'].includes(s)) return '请先撤回再编辑';
+        if (!['DRAFT', 'COSTING_REJECTED'].includes(s)) return '当前状态不可编辑';
         return true;
       },
-      onClick: (rows) => navigate(`/quotations/${rows[0].id}/edit`),
+      onClick: async (rows) => {
+        const row = rows[0];
+        if (row.status === 'COSTING_REJECTED') {
+          try {
+            await quotationService.beginEdit(row.id);
+          } catch (e: any) {
+            message.error(e.message || '转草稿失败');
+            return;
+          }
+        }
+        navigate(`/quotations/${row.id}/edit`);
+      },
     },
     {
       key: 'copy',
@@ -198,7 +163,8 @@ const QuotationList: React.FC = () => {
       icon: <RollbackOutlined />,
       enabledWhen: (rows) => {
         if (rows.length === 0) return false;
-        if (rows.some((r: any) => r.status !== 'SUBMITTED')) return '仅审批中的可撤回';
+        if (rows.some((r: any) => !['SUBMITTED', 'COSTING_REJECTED', 'APPROVED'].includes(r.status)))
+          return '仅待核价/已驳回/已审核可撤回';
         if (rows.some((r: any) => r.salesRepId !== user?.id)) return '只能撤回自己提交的报价单';
         return true;
       },
@@ -211,45 +177,6 @@ const QuotationList: React.FC = () => {
           successMsg: `已撤回 ${rows.length} 项`,
         });
         loadData();
-      },
-    },
-    {
-      key: 'approve',
-      label: '审批通过',
-      icon: <CheckCircleOutlined />,
-      enabledWhen: (rows) => {
-        if (!isPendingApprovalTab) return '请切到「待我审批」tab 后再审批';
-        if (rows.length !== 1) return '审批一次只能选一行（需要填写意见）';
-        const r = rows[0];
-        if (r.status !== 'SUBMITTED') return '仅审批中状态可通过';
-        const canApprove = user?.role === 'SYSTEM_ADMIN' || r.assignedApproverId === user?.id;
-        if (!canApprove) return '您不是该报价单的审批人';
-        return true;
-      },
-      onClick: (rows) => {
-        setActionTargets(rows);
-        setApproveComment('');
-        setApproveModalOpen(true);
-      },
-    },
-    {
-      key: 'reject-approval',
-      label: '审批退回',
-      icon: <CloseCircleOutlined />,
-      danger: true,
-      enabledWhen: (rows) => {
-        if (!isPendingApprovalTab) return '请切到「待我审批」tab 后再审批';
-        if (rows.length !== 1) return '退回一次只能选一行（需要填写原因）';
-        const r = rows[0];
-        if (r.status !== 'SUBMITTED') return '仅审批中状态可退回';
-        const canApprove = user?.role === 'SYSTEM_ADMIN' || r.assignedApproverId === user?.id;
-        if (!canApprove) return '您不是该报价单的审批人';
-        return true;
-      },
-      onClick: (rows) => {
-        setActionTargets(rows);
-        setRejectComment('');
-        setRejectModalOpen(true);
       },
     },
     {
@@ -350,12 +277,7 @@ const QuotationList: React.FC = () => {
   return (
     <Card title="报价单管理">
       <Tabs
-        items={[
-          ...statusTabs.map(t => ({ key: t.key, label: t.label })),
-          ...(['SALES_MANAGER', 'SYSTEM_ADMIN'].includes(user?.role || '')
-            ? [{ key: PENDING_APPROVAL_TAB, label: '待我审批' }]
-            : []),
-        ]}
+        items={statusTabs.map(t => ({ key: t.key, label: t.label }))}
         activeKey={statusFilter}
         onChange={(k) => { setStatusFilter(k); setPage(0); }}
         style={{ marginBottom: 8 }}
@@ -378,28 +300,6 @@ const QuotationList: React.FC = () => {
         rowLabel={(r: any) => `${r.quotationNumber} ${r.name}${r.snapshotCustomerName ? ' · ' + r.snapshotCustomerName : ''}`}
       />
 
-      <Modal
-        title={`审批通过${actionTargets[0] ? ' — ' + actionTargets[0].quotationNumber : ''}`}
-        open={approveModalOpen}
-        onCancel={() => { setApproveModalOpen(false); setApproveComment(''); setActionTargets([]); }}
-        onOk={handleApprove}
-        confirmLoading={actionLoading}
-        okText="确认通过"
-        okButtonProps={{ style: { backgroundColor: '#52c41a', borderColor: '#52c41a' } }}
-      >
-        <Input.TextArea rows={3} placeholder="审批意见（可选）" value={approveComment} onChange={e => setApproveComment(e.target.value)} />
-      </Modal>
-      <Modal
-        title={`退回报价单${actionTargets[0] ? ' — ' + actionTargets[0].quotationNumber : ''}`}
-        open={rejectModalOpen}
-        onCancel={() => { setRejectModalOpen(false); setRejectComment(''); setActionTargets([]); }}
-        onOk={handleReject}
-        confirmLoading={actionLoading}
-        okText="确认退回"
-        okButtonProps={{ danger: true }}
-      >
-        <Input.TextArea rows={3} placeholder="请填写退回原因（必填）" value={rejectComment} onChange={e => setRejectComment(e.target.value)} />
-      </Modal>
       <QuoteBasicDataImportV6Drawer open={basicImportOpen} onClose={() => { setBasicImportOpen(false); loadData(); }} />
       <CopyQuotationDrawer
         open={!!copySource}

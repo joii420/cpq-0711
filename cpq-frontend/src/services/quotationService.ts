@@ -144,6 +144,8 @@ export const quotationService = {
   approve: (id: string, comment?: string) => api.post(`/quotations/${id}/approve`, { comment }) as Promise<any>,
   reject: (id: string, comment: string) => api.post(`/quotations/${id}/reject`, { comment }) as Promise<any>,
   withdraw: (id: string) => api.post(`/quotations/${id}/withdraw`) as Promise<any>,
+  /** 被驳回单转草稿（COSTING_REJECTED → DRAFT），清自身快照，核价单仍保持 REJECTED */
+  beginEdit: (id: string) => api.post(`/quotations/${id}/begin-edit`) as Promise<any>,
   copy: (id: string, templateId?: string) =>
     api.post(`/quotations/${id}/copy`, templateId ? { templateId } : {}) as Promise<any>,
   delete: (id: string) => api.delete(`/quotations/${id}`) as Promise<any>,

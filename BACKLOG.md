@@ -152,10 +152,32 @@
 - **预估规模**：S（1-2 天）
 - **验收要点**：无缺值时不发 warm；有缺值时发且只发一次；不回归打开秒开。
 
-### [BL-0014] 切料号版本后失效卡片值（lazy 模型 staleness gap）
+### [BL-0014] 报价单列表页批量提交审批的行键冲突明细可读化
+- **优先级**：P2
+- **来源**：2026-06-29 行键冲突友好定位（Plan 1b）排查发现的第三个提交入口
+- **状态**：TODO（未排期）
+- **登记日期**：2026-06-29
+- **背景**：报价提交审批共 3 个入口——向导 `QuotationWizard` + 详情页 `QuotationDetail` **均已**接结构化冲突 Drawer + 定位；列表页 `QuotationList.tsx:188` 批量提交走 `runBatch` 多选场景，撞键单失败仍只在聚合 `message` 里列纯文本，未结构化。
+- **范围**：批量场景不适合弹单个 Drawer（多单各自冲突）；改进方向 = `runBatch` 失败明细按单分组、把每单的行键冲突结构化展示（料号/页签/行键），可选一个汇总抽屉列出「哪些单、哪些行键冲突」。
+- **依赖**：复用 `RowKeyConflictDTO` + `RowKeyConflictDrawer`（或新建汇总组件）。
+- **验收要点**：批量提交撞键时，失败明细能读到具体料号+页签+行键，不再是纯文本拼串。
+
+### [BL-0015] 核价单彻底冻结残留 live 侧信道（防 V6/主数据 republish 漂移）
+- **优先级**：P2
+- **来源**：`docs/superpowers/specs/2026-06-29-核价单表与报价单核价单状态机重构-design.md` v3 §0/§5.3/§11（务实版接受残留）+ 第二轮 cpq-architect 聚焦评审 N3（焦点一：§5.2"唯一 live 缺口"不成立，实测 4 条 live 侧信道）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-06-29
+- **背景**：第一期"务实版真冻结"只冻结构（`frozen_dto` 含 enrich 后 componentData + gvDefs）+ 依赖既有 costing 卡片/Excel 零计算快照冻值。残留 3 条 live 侧信道——`usePathFormulaCache` 仍 live 求值**未被卡片快照覆盖的**少数 path 单元、`useConfigTemplates`（LIST_FORMULA 配置模板）、比对视图 `comparisonTags`——仅在「模板 / 配置模板 / 全局变量 / 对比标签 / V6 底层主数据 **republish**」时漂移，**不被报价单重做触发**（验收#5 照过）。用户从未提出该边角，第一期接受之以消除 N1（两侧 path-cache 捕获互覆盖）/ N2（非 wizard 提交入口不带 cache）两个脆弱点。
+- **范围**：若未来确有审计强需求（历史核价单连 V6/主数据漂移也要 1:1 回看），补：①提交时捕获并冻结 path-cache（**取 quote+costing 两侧 `usePathFormulaCache` 返回值的并集**，避第二轮 N1）②冻结 config-template 值③冻结 comparisonTags 元数据；工作台冻结模式短路对应 live 调用。
+- **依赖**：无（独立增强，建立在第一期 `frozen_dto` 之上）。
+- **预估规模**：M（3-5 天）
+- **验收要点**：模板/GV/V6 republish 后打开历史核价单，path 单元/LIST_FORMULA/比对分组仍是提交时值；工作台冻结模式 `batch-evaluate` 请求 0 次。
+
+### [BL-0016] 切料号版本后失效卡片值（lazy 模型 staleness gap）
 - **优先级**：P2
 - **来源**：`docs/superpowers/specs/2026-06-29-lazy-card-values-design.md` 实现期 Task 4 代码评审 Important（范围外观察）
 - **状态**：TODO（未排期）
+- **登记日期**：2026-06-29
 - **推迟原因**：超出本期（saveDraft 重建）范围；且**当前潜在**——按 [[BL-0005]] 切版本引擎尚未生效（`BomClosureService` 硬编码 `is_current`、核价 expand 传 `partVersion=null`），故切版本暂不改变卡片值相关数据，staleness 暂不显现。第二期版本切换真生效后必须补。
 - **背景**：`QuotationService.updateLineItemPartVersion`（`:2632`，`li.persist()` `:2667` + `regenerateAllSnapshots`）改动行但**不置空** `quoteCardValues/costingCardValues`。lazy 模型下 `ensureCardValues` 只按 `IS NULL` 重选 → 切版本后卡片值非 NULL 不被重选 → 打开仍显示切版本前的陈旧卡片值。
 - **范围**：在 `updateLineItemPartVersion` 的 `regenerateAllSnapshots` 之后把该行 `quoteCardValues/costingCardValues` 置 NULL（与 Task 4 的 D-1 同款失效；宜抽 `invalidateCardValues(li)` 私有助手，三处复用：processBatchStage1 / 逐行路径 / 切版本）。

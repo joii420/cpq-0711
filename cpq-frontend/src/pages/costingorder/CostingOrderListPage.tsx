@@ -6,7 +6,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import {
-  Tag, Space, Select, Typography, Form, Input, Modal, message,
+  Tag, Space, Select, Typography, Form, Input, Modal, message, Tooltip,
 } from 'antd';
 import { CheckOutlined, CloseOutlined, ArrowRightOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -18,18 +18,20 @@ import SelectableTable, { runBatch, type ToolbarAction } from '../../components/
 
 const { Title } = Typography;
 
-// 后端 deriveCostingStatus 直接返回中文 label，前端 status 即显示文本，无需英文枚举映射层
-const STATUS_COLOR: Record<string, string> = {
-  '待核价': 'orange',
-  '核价通过': 'green',
-  '核价驳回': 'red',
+// 后端返回英文状态码，前端统一映射中文标签
+const COSTING_STATUS: Record<string, { label: string; color: string }> = {
+  PENDING:   { label: '待核价', color: 'orange' },
+  APPROVED:  { label: '已审核', color: 'green' },
+  REJECTED:  { label: '已驳回', color: 'red' },
+  WITHDRAWN: { label: '已撤回', color: 'default' },
 };
 
 const CostingOrderListPage: React.FC = () => {
   const navigate = useNavigate();
   const [data, setData] = useState<CostingOrderListItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string | undefined>();
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [keyword, setKeyword] = useState('');
 
   // 驳回 Modal 状态
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -40,7 +42,10 @@ const CostingOrderListPage: React.FC = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await costingOrderService.list({ status: statusFilter });
+      const res = await costingOrderService.list({
+        statuses: statusFilter.length > 0 ? statusFilter : undefined,
+        keyword: keyword || undefined,
+      });
       setData(res.data);
     } catch (e: any) {
       message.error(e?.message ?? '加载失败');
@@ -51,9 +56,24 @@ const CostingOrderListPage: React.FC = () => {
 
   useEffect(() => {
     load();
-  }, [statusFilter]);
+  }, [statusFilter, keyword]);
 
   const cols = [
+    {
+      title: '核价单号',
+      dataIndex: 'costingOrderNumber',
+      width: 180,
+      render: (v: string, r: CostingOrderListItem) => (
+        <a
+          onClick={(e) => {
+            e.stopPropagation();
+            navigate(`/costing-orders/${r.costingOrderId}/review`);
+          }}
+        >
+          {v}
+        </a>
+      ),
+    },
     {
       title: '报价单号',
       dataIndex: 'quotationNumber',
@@ -76,19 +96,50 @@ const CostingOrderListPage: React.FC = () => {
       title: '当前状态',
       dataIndex: 'status',
       width: 110,
-      render: (s: string) => (
-        <Tag color={STATUS_COLOR[s] ?? 'default'}>{s}</Tag>
-      ),
+      render: (s: string) => {
+        const info = COSTING_STATUS[s];
+        return <Tag color={info?.color ?? 'default'}>{info?.label ?? s}</Tag>;
+      },
     },
     {
       title: '创建时间',
       dataIndex: 'createdAt',
       width: 170,
-      render: (v: string) => (v ? new Date(v).toLocaleString('zh-CN') : '-'),
+      render: (v: string) => (v ? new Date(v).toLocaleString('zh-CN') : '—'),
+    },
+    {
+      title: '退回原因',
+      dataIndex: 'rejectReason',
+      width: 200,
+      render: (v: string) => {
+        if (!v) return '—';
+        return (
+          <Tooltip title={v}>
+            <span
+              style={{
+                display: 'inline-block',
+                maxWidth: 180,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                verticalAlign: 'middle',
+              }}
+            >
+              {v}
+            </span>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      title: '修改时间',
+      dataIndex: 'updatedAt',
+      width: 170,
+      render: (v: string) => (v ? new Date(v).toLocaleString('zh-CN') : '—'),
     },
   ];
 
-  const isPendingCosting = (r: CostingOrderListItem) => r.status === '待核价';
+  const isPendingCosting = (r: CostingOrderListItem) => r.status === 'PENDING';
 
   const actions: ToolbarAction<CostingOrderListItem>[] = [
     {
@@ -96,11 +147,11 @@ const CostingOrderListPage: React.FC = () => {
       label: '进入核价',
       icon: <ArrowRightOutlined />,
       enabledWhen: (rows) => {
-        if (rows.length !== 1) return '请选择一个报价单';
+        if (rows.length !== 1) return '请选择一个核价单';
         return true;
       },
       onClick: (rows) => {
-        navigate(`/quotations/${rows[0].quotationId}/costing-review`);
+        navigate(`/costing-orders/${rows[0].costingOrderId}/review`);
       },
     },
     {
@@ -113,7 +164,7 @@ const CostingOrderListPage: React.FC = () => {
         return true;
       },
       needsConfirm: true,
-      confirmTitle: '确认核价通过所选 {N} 个报价单？',
+      confirmTitle: '确认核价通过所选 {N} 个核价单？',
       onClick: async (rows) => {
         await runBatch(
           rows,
@@ -173,7 +224,7 @@ const CostingOrderListPage: React.FC = () => {
       </div>
 
       <SelectableTable<CostingOrderListItem>
-        rowKey="quotationId"
+        rowKey="costingOrderId"
         columns={cols as any}
         dataSource={data}
         loading={loading}
@@ -181,22 +232,30 @@ const CostingOrderListPage: React.FC = () => {
         toolbar={
           <Space wrap>
             <Select
+              mode="multiple"
               allowClear
               placeholder="按状态过滤"
-              style={{ width: 160 }}
+              style={{ minWidth: 200 }}
               value={statusFilter}
               onChange={setStatusFilter}
-              options={['待核价', '核价通过', '核价驳回'].map(v => ({ value: v, label: v }))}
+              options={Object.entries(COSTING_STATUS).map(([v, { label }]) => ({ value: v, label }))}
+            />
+            <Input.Search
+              placeholder="按报价单号搜索"
+              allowClear
+              style={{ width: 220 }}
+              onSearch={(v) => setKeyword(v)}
+              onChange={(e) => { if (!e.target.value) setKeyword(''); }}
             />
           </Space>
         }
         actions={actions}
-        rowLabel={(r) => `${r.quotationNumber} ${r.customerName} (${r.status})`}
+        rowLabel={(r) => `${r.costingOrderNumber ?? r.quotationNumber} ${r.customerName} (${COSTING_STATUS[r.status]?.label ?? r.status})`}
       />
 
       {/* 驳回弹窗：单独处理，因为需要填写驳回原因（不能走 needsConfirm 的通用 Modal） */}
       <Modal
-        title={`驳回所选 ${rejectRows.length} 个报价单`}
+        title={`驳回所选 ${rejectRows.length} 个核价单`}
         open={rejectOpen}
         onCancel={() => setRejectOpen(false)}
         onOk={handleRejectConfirm}
@@ -219,8 +278,8 @@ const CostingOrderListPage: React.FC = () => {
           }}
         >
           {rejectRows.slice(0, 20).map((r) => (
-            <li key={r.quotationId} style={{ marginBottom: 2 }}>
-              {r.quotationNumber} — {r.customerName}
+            <li key={r.costingOrderId} style={{ marginBottom: 2 }}>
+              {r.costingOrderNumber ?? r.quotationNumber} — {r.customerName}
             </li>
           ))}
           {rejectRows.length > 20 && (

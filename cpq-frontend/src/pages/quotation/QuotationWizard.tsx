@@ -35,6 +35,7 @@ import type { CostingTemplateColumn } from '../../services/costingTemplateServic
 import { buildExcelSnapshot } from './buildExcelSnapshot';
 // lazy-cardvalues：纯判定函数抽到小模块(便于单测,不拉本文件重依赖),运行时由此 import 复用。
 import { shouldWarmCardValues } from './cardValuesWarm';
+import RowKeyConflictDrawer, { type RowKeyConflictDTO } from './RowKeyConflictDrawer';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
@@ -219,6 +220,11 @@ const QuotationWizard: React.FC = () => {
   // 止血B(2026-06-25):保存在飞状态,驱动「保存草稿/下一步/上一步」按钮禁用 + loading,
   //   配合 handleSaveDraft 的 savingRef 在飞守卫,杜绝卡顿期连点并发触发 saveDraft(→OptimisticLock/腐蚀)。
   const [saving, setSaving] = useState(false);
+  // Plan 1b：提交行键冲突 Drawer
+  const [rowKeyConflicts, setRowKeyConflicts] = useState<RowKeyConflictDTO[]>([]);
+  const [conflictDrawerOpen, setConflictDrawerOpen] = useState(false);
+  const [locateTarget, setLocateTarget] = useState<{ lineItemId?: string; productPartNo?: string; componentId?: string; seq: number } | null>(null);
+  const locateSeqRef = useRef(0);
   // Plan A(2026-06-24 空白BUG止血):autosave 默认拒绝门。
   //   背景:打开报价单时 applyQuotationData(:300 basicItems)+ enrich(:425)两处**程序化** setLineItems
   //   触发 autosave 风暴 → saveDraft 慢 + 并发 → 占满后端线程池 → getById 超时 → 退空本地缓存 → 空白页
@@ -1126,8 +1132,21 @@ const QuotationWizard: React.FC = () => {
       // Reload to get updated status and driftDetection
       await loadQuotation(quotationId);
     } catch (e: any) {
-      message.error(e.message);
+      const conflicts = e?.payload?.conflicts;
+      if (Array.isArray(conflicts) && conflicts.length) {
+        setRowKeyConflicts(conflicts);
+        setConflictDrawerOpen(true);
+      } else {
+        message.error(e.message);
+      }
     }
+  };
+
+  const handleLocateConflict = (c: RowKeyConflictDTO) => {
+    locateSeqRef.current += 1;
+    setLocateTarget({ lineItemId: c.lineItemId, productPartNo: c.productPartNo, componentId: c.componentId, seq: locateSeqRef.current });
+    setConflictDrawerOpen(false);
+    setCurrentStep(1);
   };
 
   const handleRefreshDrift = async () => {
@@ -1495,6 +1514,7 @@ const QuotationWizard: React.FC = () => {
         quotationStatus={quotation?.status}
         quoteCardStructure={quotation?.quoteCardStructure ?? null}
         costingCardStructure={quotation?.costingCardStructure ?? null}
+        locateTarget={locateTarget}
       />
 
       <AddProductModal
@@ -1703,6 +1723,12 @@ const QuotationWizard: React.FC = () => {
           </Button>
         </div>
       </Card>
+      <RowKeyConflictDrawer
+        open={conflictDrawerOpen}
+        conflicts={rowKeyConflicts}
+        onLocate={handleLocateConflict}
+        onClose={() => setConflictDrawerOpen(false)}
+      />
     </Spin>
   );
 };

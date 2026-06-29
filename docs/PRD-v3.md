@@ -2687,6 +2687,19 @@ v_costing_exchange_rate[from_currency='CNY' AND to_currency='USD'].costing_rate
 | **第二期(未做)** | 财务**切料号版本重算子料号调价**:依赖"版本感知 BOM 闭包"前置工程(当前 BomClosureService 硬编码 is_current 不吃版本、核价卡片 expand 传 partVersion=null);核价单独立快照 + revision + 覆盖读取层下沉(导出/列表/比对/total 多路绕 DTO) |
 | **验证** | 后端 test-compile 0 + 核价 3 测试全绿(submit建单/角色队列通过驳回/撤回解冻);前端 tsc 0;合并 master 后 E2E quotation-detail-readonly-views 2 passed(AP-50 抽取无回归)+ e2e-withdraw-02 一步撤回 2 passed |
 
+### 9.22 v4.4(2026-06-29)— 核价单表与报价单/核价单状态机重构(第一期·续)
+
+> 设计 `docs/superpowers/specs/2026-06-29-核价单表与报价单核价单状态机重构-design.md`(v3,两轮 cpq-architect 评审定稿);计划 `docs/superpowers/plans/2026-06-29-核价单表与状态机重构-第一期.md`。承接 §9.21,把精简 costing_order 升级为完整核价单实体。
+
+| 决策 | 内容 |
+|---|---|
+| **核价单实体** | costing_order 升级(V305):核价单号 `HJ-yyyyMMdd-NNNN`(序列) + 显式 status + 驳回原因 + frozen_dto + 审核人 + 修改时间;**按提交累积**(每次提交新建一条,旧"已驳回/已撤回"连原因+冻结数据永久留存);**部分唯一索引 uq_co_active 保证至多一条进行中**(防并发双 PENDING,撞→409) |
+| **状态机(两侧可分叉)** | 报价单 SUBMITTED=待核价 / APPROVED=已审核 / COSTING_REJECTED=已驳回 / REJECTED=客户已拒绝(消歧);核价单 PENDING/APPROVED/REJECTED/WITHDRAWN。提交→核价单待核价;通过/驳回→两侧同步;**销售点编辑被驳回单→报价单转草稿、核价单仍已驳回**(beginEdit);**撤回→报价单草稿、核价单已撤回**(三态可撤回) |
+| **真冻结(务实版)** | 提交时把整份报价单 DTO(含 enrich 后结构 + gvDefs)冻进核价单,工作台只读冻结副本渲染(getById coid);核价卡片/Excel 本就零计算快照冻结,故只需冻结构 + gvDefs,**不做独立 path-cache 冻结**(残留 live 侧信道仅模板/主数据 republish 时漂,入 BL-0015) |
+| **列表增强** | 核价管理列表:全状态过滤 + 报价单号搜索 + 退回原因/修改时间列;身份键 costingOrderId(累积多条不撞);英文码状态前端单点映射中文 |
+| **退役老审批** | 移除详情页 + 列表页销售经理「审批通过/退回」+「待我审批」tab,财务成为唯一审批节点 |
+| **验证** | 后端 ~30 单测全绿(状态机/累积/冻结/列表/409,真实库);前端 tsc 0;V305 success=t;合并 master 后 quotation-flow 协议回归 render 检查「加载中=0」全过(其 3 个失败经 git diff 证在未改文件 QuotationWizard/QuotationStep2,系并发会话既存,与本改动无关) |
+
 ### 9.8 关键设计决策追溯
 
 #### Q1:为何不引入 Drools?
