@@ -87,6 +87,24 @@ public class SaveDraftRequest {
          * quotation_line_composite_process,使组合工艺跨保存存活。
          */
         public List<CompositeProcessDraft> compositeProcesses;
+
+        /**
+         * 前端算好的报价 Excel 列值快照 {"rows":[{"col_key":value,...},...]}。
+         * Phase 3（2026-06-21）：前端单引擎计算权威；后端原样落库 quote_excel_values，不重算。
+         * snapshotLineValues 守卫：仅当 li.quoteExcelValues==null 时才调 buildExcelValues 兜底。
+         */
+        public String quoteExcelValues;
+
+        // ─── Step3 行级折扣（V302；前端 buildDraftPayload 早已透传，后端此前丢弃）───
+        public Integer annualVolume;
+        public String discountSource;
+        public BigDecimal discountBaseAmount;
+        public BigDecimal discountRateApplied;
+        public BigDecimal lineDiscountAmount;
+        public BigDecimal lineUnitPrice;
+        public BigDecimal lineFinalPrice;
+        public BigDecimal lineTotalAmount;
+        public String discountRuleCode;
     }
 
     public static class CompositeProcessDraft {

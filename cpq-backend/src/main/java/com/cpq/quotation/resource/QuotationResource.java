@@ -43,6 +43,9 @@ import java.util.UUID;
 @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
 public class QuotationResource {
 
+    private static final org.jboss.logging.Logger LOG =
+            org.jboss.logging.Logger.getLogger(QuotationResource.class);
+
     @Inject
     QuotationService quotationService;
 
@@ -68,6 +71,9 @@ public class QuotationResource {
     // 报价单整份快照 Phase 1: 4 份结构 + 行级 4 份值
     @Inject
     com.cpq.quotation.service.CardSnapshotService cardSnapshotService;
+
+    @Inject
+    jakarta.persistence.EntityManager em;
 
     @GET
     public ApiResponse<PageResult<QuotationDTO>> list(
@@ -110,13 +116,21 @@ public class QuotationResource {
     @PUT
     @Path("/{id}/draft")
     public ApiResponse<QuotationDTO> saveDraft(@PathParam("id") UUID id, SaveDraftRequest request) {
+        // [draft-profile] 分段埋点(2026-06-26):S1 saveDraft(全删全建+落库) / S2 snapshotQuotation(snapshot_rows) /
+        //   S3 整份快照 Phase1(新行 card values) / S4 getById 重建。日志前缀 [draft-profile] 便于过滤。
+        long _p0 = System.nanoTime();
         QuotationDTO dto = quotationService.saveDraft(id, request);
+        long _s1 = (System.nanoTime() - _p0) / 1_000_000;
         // saveDraft 已提交,按新行重快照(降级:失败不影响保存)
+        long _p1 = System.nanoTime();
         try {
-            snapshotService.snapshotQuotation(id);
+            snapshotService.snapshotQuotation(id, true);  // 增量: 复用行已回写 snapshot_rows → 跳过全量重 expand
         } catch (Exception ignore) {
             // 快照尽力而为
         }
+        long _s2 = (System.nanoTime() - _p1) / 1_000_000;
+        long _p2 = System.nanoTime();
+        int _newLines = 0;
         // 报价单整份快照 Phase 1: 固定 4 份结构 + 仅对新行初始化 4 份值
         // 2026-06-01 修复(单价小计清零 + 并发400 + 保存502): 保存时**只对没有 quote_card_values 的新行**
         //   调 snapshotLineValues 初始化; **已有快照的行一律跳过, 不在保存路径重建**。原因:
@@ -127,24 +141,116 @@ public class QuotationResource {
         //   3) **严禁**在此高频防抖保存路径对已有行做 driver 全量重 expand(refreshQuoteCardValues)——
         //      会占满 worker 线程池 → 503/502(代理层 502 Bad Gateway)。全量重 expand 只在草稿**打开**时
         //      的 refresh-card-snapshot 触发一次。详见 docs/RECORD.md。
+        boolean snapshotsCreated = false;
         try {
             cardSnapshotService.ensureStructure(id);
             var lines = snapshotService.loadQuotationLines(id);
+            // P2-C4: 核价 driver 整单 union 预取 —— 懒触发(仅遇到首个新行才算一次),
+            // 把 N 新行的核价 driver 远程查从 N×M_rec 压到 M_rec;无新行的高频防抖空存零开销(不进 if)。
+            java.util.Map<java.util.UUID, java.util.Map<String, com.cpq.component.dto.ExpandDriverResponse>> union = null;
+            boolean unionDone = false;
+            // B2: 整单全部行 id（compdata IN 预取用；含已有快照行也无妨，多取的桶不被读）
+            java.util.List<UUID> allLineIds = new java.util.ArrayList<>();
             for (var liMap : lines) {
-                UUID lineItemId = asUuid(liMap.get("id"));
-                if (lineItemId != null) {
-                    com.cpq.quotation.entity.QuotationLineItem li =
-                        com.cpq.quotation.entity.QuotationLineItem.findById(lineItemId);
-                    boolean hasSnapshot = li != null
-                        && li.quoteCardValues != null && !li.quoteCardValues.isBlank();
-                    if (li != null && !hasSnapshot) {
-                        cardSnapshotService.snapshotLineValues(li); // 仅新行首次初始化, 已有行保留 editQuoteCardValue 的增量
+                UUID lid = asUuid(liMap.get("id"));
+                if (lid != null) allLineIds.add(lid);
+            }
+            // B2: 首存 card values 批量预取（懒触发，仅遇首个新行才建一次；无新行的高频防抖空存零开销）
+            com.cpq.quotation.service.CardSnapshotService.CardValuesPrefetch prefetch = null;
+            boolean prefetchDone = false;
+            boolean excelCdDone = false;   // Excel compData 整单预取上下文(懒触发,与 prefetch 同时机)
+            long _s3setup = 0, _s3cards = 0;   // [s3-detail] 埋点:setup(union/prefetch/compData) vs 逐行卡片值
+
+            // FIX 2(2026-06-26):卡片值集合化落库。默认 ON(golden + CardValuesBatchPersistEquivTest 证逐位等价);
+            //   -Dcpq.firstsave-cardvalues-batch=false / CPQ_FIRSTSAVE_CARDVALUES_BATCH=false 回退逐行老路。
+            boolean cardValuesBatch = "true".equalsIgnoreCase(
+                System.getProperty("cpq.firstsave-cardvalues-batch",
+                    System.getenv().getOrDefault("CPQ_FIRSTSAVE_CARDVALUES_BATCH", "true")));
+
+            if (cardValuesBatch) {
+                // 一次查"无快照"新行 id(blank-inclusive,与逐行 hasSnapshot=!=null&&!isBlank() 逐位对齐)
+                @SuppressWarnings("unchecked")
+                java.util.List<Object> rawIds = em.createNativeQuery(
+                        "SELECT id FROM quotation_line_item WHERE quotation_id = :q " +
+                        "AND (quote_card_values IS NULL OR btrim(quote_card_values) = '')")
+                    .setParameter("q", id).getResultList();
+                java.util.List<UUID> newLineIds = new java.util.ArrayList<>();
+                for (Object o : rawIds) { UUID u = asUuid(o); if (u != null) newLineIds.add(u); }
+                if (!newLineIds.isEmpty()) {
+                    long _su = System.nanoTime();
+                    union = cardSnapshotService.precomputeCostingDriverUnion(id);
+                    prefetch = cardSnapshotService.precomputeCardValuesPrefetch(id, allLineIds);
+                    _s3setup = (System.nanoTime() - _su) / 1_000_000;
+                    long _cd = System.nanoTime();
+                    cardSnapshotService.snapshotNewLinesCardValues(id, newLineIds, union, prefetch);  // ★ 单事务集合化落库
+                    _s3cards = (System.nanoTime() - _cd) / 1_000_000;
+                    snapshotsCreated = true;
+                    _newLines = newLineIds.size();
+                    LOG.debugf("[s3-detail] id=%s newLines=%d(batch) | setup(union/prefetch,一次)=%dms 集合化卡片值落库=%dms",
+                            id, _newLines, _s3setup, _s3cards);
+                }
+            } else {
+                // ── kill switch 回退:逐行老路(每行一次 @Transactional snapshotLineValuesWithUnion = 独立事务)──
+                for (var liMap : lines) {
+                    UUID lineItemId = asUuid(liMap.get("id"));
+                    if (lineItemId != null) {
+                        com.cpq.quotation.entity.QuotationLineItem li =
+                            com.cpq.quotation.entity.QuotationLineItem.findById(lineItemId);
+                        boolean hasSnapshot = li != null
+                            && li.quoteCardValues != null && !li.quoteCardValues.isBlank();
+                        if (li != null && !hasSnapshot) {
+                            long _su = System.nanoTime();
+                            if (!unionDone) { union = cardSnapshotService.precomputeCostingDriverUnion(id); unionDone = true; }
+                            if (!prefetchDone) { prefetch = cardSnapshotService.precomputeCardValuesPrefetch(id, allLineIds); prefetchDone = true; }
+                            if (!excelCdDone) {
+                                java.util.Map<UUID, java.util.List<com.cpq.quotation.entity.QuotationLineComponentData>> cdByLine =
+                                    com.cpq.quotation.entity.QuotationLineComponentData
+                                        .<com.cpq.quotation.entity.QuotationLineComponentData>list(
+                                            "lineItemId IN ?1 ORDER BY lineItemId, sortOrder, id", allLineIds)
+                                        .stream().collect(java.util.stream.Collectors.groupingBy(cd -> cd.lineItemId));
+                                com.cpq.formula.dataloader.ExcelCompDataContext.set(cdByLine);
+                                excelCdDone = true;
+                            }
+                            _s3setup += (System.nanoTime() - _su) / 1_000_000;
+                            long _cd = System.nanoTime();
+                            cardSnapshotService.snapshotLineValuesWithUnion(li, union, prefetch, false);
+                            _s3cards += (System.nanoTime() - _cd) / 1_000_000;
+                            snapshotsCreated = true;
+                            _newLines++;
+                        }
                     }
                 }
+                if (_newLines > 0)
+                    LOG.debugf("[s3-detail] id=%s newLines=%d(per-line) | setup=%dms 逐行卡片值=%dms",
+                            id, _newLines, _s3setup, _s3cards);
             }
         } catch (Exception ignore) {
             // 尽力而为
+        } finally {
+            com.cpq.formula.dataloader.ExcelCompDataContext.clear();   // ThreadLocal 卫生:务必清
         }
+        // 行 113 的 dto 在算快照"之前"构建, 不含本次新行刚生成的 quoteCardValues/costingCardValues。
+        // 导入流程首存(新行)时, 前端 syncLineItemsFromResponse 依赖响应里的 4 份卡片值翻入"快照模式"
+        // (useSnapQuote=true), 否则报价卡走实时展开路径——该路径不读 deletedRowKeys 墓碑, 导致
+        // driver 行删除"点了无反应"。故仅在确有新行落快照时, 重建一份新鲜 DTO 返回(读路径, 无副作用);
+        // 高频防抖空存(无新行)不触发, 不增加额外开销。
+        //
+        // ⚠ 一级缓存陷阱: snapshotLineValues(@Transactional)已把值落库提交, 但本请求会话里在
+        // 行 137 findById 时已缓存了"无快照"的 line 实体; 直接 getById 会命中陈旧 L1 缓存 → 仍读到
+        // quoteCardValues=null。必须先 em.clear() 驱逐, 让 getById 重新从库读已提交的新值。
+        long _s3 = (System.nanoTime() - _p2) / 1_000_000;
+        long _p3 = System.nanoTime();
+        if (snapshotsCreated) {
+            try {
+                em.clear();
+                dto = quotationService.getById(id);
+            } catch (Exception ignore) {
+                // 取不到新鲜 DTO 时退回原 dto(不影响保存本身)
+            }
+        }
+        long _s4 = (System.nanoTime() - _p3) / 1_000_000;
+        LOG.debugf("[draft-profile] id=%s newLines=%d total=%dms | S1.saveDraft=%dms S2.snapshotRows=%dms S3.cardValues=%dms S4.getById=%dms",
+                id, _newLines, _s1 + _s2 + _s3 + _s4, _s1, _s2, _s3, _s4);
         return ApiResponse.success(dto);
     }
 
@@ -188,6 +294,22 @@ public class QuotationResource {
         resp.put("quotationId", id);
         resp.put("refreshed", refreshed);
         return ApiResponse.success(resp);
+    }
+
+    /**
+     * P3 lazy-excel:懒算并落库整单 Excel 值(quoteExcelValues/costingExcelValues)。
+     * 首存只算卡片值、Excel 值留 NULL;前端开「Excel 视图」/导出前调本端点补算(幂等,已算的零开销)。
+     * 返回补算后的最新 DTO(含 Excel 值),前端据此渲染 Excel 视图。
+     */
+    @POST
+    @Path("/{id}/ensure-excel-values")
+    public ApiResponse<QuotationDTO> ensureExcelValues(@PathParam("id") UUID id) {
+        int computed = cardSnapshotService.ensureExcelValues(id);
+        // 落库后清 L1 取最新(同 saveDraft 路径的一级缓存纪律)
+        if (computed > 0) {
+            try { em.clear(); } catch (Exception ignore) { /* 尽力 */ }
+        }
+        return ApiResponse.success(quotationService.getById(id));
     }
 
     /**
@@ -239,6 +361,8 @@ public class QuotationResource {
     public ApiResponse<QuotationDTO> submit(@PathParam("id") UUID id,
                                              @Context HttpServerRequest request) {
         UUID currentUserId = sessionHelper.getCurrentUserIdOrFallback(request);
+        // P3 lazy-excel:提交冻结前确保 Excel 值已补算(首存懒算留 NULL),否则冻结/导出会缺 Excel 快照。
+        try { cardSnapshotService.ensureExcelValues(id); em.clear(); } catch (Exception ignore) { /* 尽力,不阻断提交 */ }
         return ApiResponse.success(quotationService.submit(id, currentUserId));
     }
 

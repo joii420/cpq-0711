@@ -4,6 +4,7 @@ import com.cpq.component.dto.BomClosureResult;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.BomClosureService;
 import com.cpq.component.service.ComponentDriverService;
+import com.cpq.configure.service.ConfigureSnapshotService;
 import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
@@ -66,6 +67,14 @@ public class CardSnapshotService {
 
     @Inject
     FormulaCalculator formulaCalculator;
+
+    /** 失焦同步：用真实公式引擎物化被编辑组件的 row_data（与配置态同款 materializer）。 */
+    @Inject
+    RowDataMaterializer rowDataMaterializer;
+
+    /** 失焦同步：复用 ConfigureSnapshotService.writeRowData（REQUIRES_NEW UPSERT）持久化物化结果。 */
+    @Inject
+    ConfigureSnapshotService configureSnapshotService;
 
     /** 核价 BOM 递归展开（P1）：算根料号闭包（partSet+spine+环清单）。 */
     @Inject
@@ -391,39 +400,312 @@ public class CardSnapshotService {
      */
     @Transactional
     public void snapshotLineValues(QuotationLineItem li) {
+        snapshotLineValuesWithUnion(li, null);
+    }
+
+    /**
+     * P2-C4: 单行四份值快照,核价侧可注入整单 {@code unionByComp}(saveDraft 首存在 N-行循环外一次预取后传入,
+     * 把核价 driver 远程查从 N×M_rec 压到 M_rec);null=逐行旧路径(加产品/单行刷新)。报价侧恒逐行不变。
+     */
+    @Transactional
+    public void snapshotLineValuesWithUnion(QuotationLineItem li,
+                                            Map<UUID, Map<String, ExpandDriverResponse>> unionByComp) {
+        snapshotLineValuesWithUnion(li, unionByComp, null);
+    }
+
+    /** B2 重载：透传 {@code prefetch}（saveDraft 首存循环外一次预取的模板 snapshot + 整单 compdata）；null=逐行旧路径。 */
+    @Transactional
+    public void snapshotLineValuesWithUnion(QuotationLineItem li,
+                                            Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
+                                            CardValuesPrefetch prefetch) {
+        snapshotLineValuesWithUnion(li, unionByComp, prefetch, true);
+    }
+
+    /**
+     * P3(2026-06-26 lazy-excel)重载：{@code computeExcel=false} 时跳过两侧 buildExcelValues(报价/核价 Excel 值),
+     * 只算卡片值。首存路径传 false —— Excel 快照(7.5s 占 S3 大头、且只在开 Excel 视图/导出时才用)改为懒算
+     * (见 {@link #ensureExcelValues})。{@code true}=原行为(加产品/刷新/提交前 ensure 等仍同步算)。
+     */
+    @Transactional
+    public void snapshotLineValuesWithUnion(QuotationLineItem li,
+                                            Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
+                                            CardValuesPrefetch prefetch,
+                                            boolean computeExcel) {
         if (li == null || li.id == null) return;
+        // 在当前事务内重新加载，避免 "Detached entity" 错误
+        QuotationLineItem managed = QuotationLineItem.findById(li.id);
+        if (managed == null) return;
+        Quotation q = Quotation.findById(managed.quotationId);
+        if (q == null) return;
+        snapshotQuoteSideOnly(managed, q, prefetch, computeExcel);                  // 报价侧逐行不变
+        snapshotCostingSideOnly(managed, q, unionByComp, prefetch, computeExcel);   // 核价侧可 union
+    }
+
+    /**
+     * FIX 2(2026-06-26)首存卡片值<b>集合化落库</b>:打破「77 行 × 一次 @Transactional = 77 个独立事务」。
+     *
+     * <p>背景([s3-detail] 实测):S3 逐行卡片值 4.1s,其中真算值仅 0.23s,~3.9s 是 77 个独立事务的
+     * begin/commit + 逐行冷 findById×2 + 逐行 JSONB UPDATE。本方法在<b>一个事务</b>内:1 次取 Quotation +
+     * 1 次 IN 装载全部新行(托管,省逐行 findById)+ 内存算值 + commit 单次 flush(P1 JDBC batch 合并 N 条 UPDATE)。
+     *
+     * <p><b>两遍 build-then-assign(评审强制)</b>:Pass1 只把卡片值字符串 build 到内存(只读 li、不赋字段,
+     * 脏窗口为空 → 即便 prefetch/union miss 时 build 内部 fallback 的 em 查 mid-loop 跑也 flush 空、无害);
+     * Pass2 一次性给托管实体赋 4 字段 + 整批同一时间戳(中间零查询)→ commit 时单次 flush。build 只读不写 li,
+     * 两遍拆分零成本,且彻底把「批处理是否生效」与「prefetch 覆盖率」解耦。
+     *
+     * <p>等价:buildCardValues/buildCostingCardValues 逐行输入与逐行路径完全相同 → 落库卡片值逐位等价
+     * (CardValuesBatchPersistEquivTest + GoldenCardValuesEquivTest 守)。时间戳整批同一 now(不入 md5)。
+     * 只算卡片值(Excel 仍懒算,见 ensureExcelValues)。
+     */
+    @Transactional
+    public void snapshotNewLinesCardValues(UUID quotationId, List<UUID> newLineIds,
+                                           Map<UUID, Map<String, ExpandDriverResponse>> union,
+                                           CardValuesPrefetch prefetch) {
+        if (quotationId == null || newLineIds == null || newLineIds.isEmpty()) return;
+        Quotation q = Quotation.findById(quotationId);
+        if (q == null) return;
+        // 1 次 IN 装载全部新行(托管实体,赋字段即脏;省现状逐行 findById 重载)
+        List<QuotationLineItem> lines = QuotationLineItem.list("id IN ?1", newLineIds);
+        if (lines.isEmpty()) return;
+        com.cpq.formula.dataloader.QuotationIdContext.set(quotationId);
         try {
-            // 在当前事务内重新加载，避免 "Detached entity" 错误
-            QuotationLineItem managed = QuotationLineItem.findById(li.id);
-            if (managed == null) return;
+            // ── Pass1:只 build 字符串到内存(只读 li,不赋字段 → 脏窗口为空,任何 fallback em 查此刻 flush 空)──
+            Map<UUID, String> quoteVals = new HashMap<>();
+            Map<UUID, String> costingVals = new HashMap<>();
+            for (QuotationLineItem li : lines) {
+                quoteVals.put(li.id, safeCall(() -> buildCardValues(li, q.customerTemplateId, prefetch)));
+                if (q.costingCardTemplateId != null) {
+                    costingVals.put(li.id, safeCall(() ->
+                        buildCostingCardValues(li, q.costingCardTemplateId, q.customerId, q.id, union, prefetch)));
+                }
+            }
+            // ── Pass2:一次性赋托管实体 4 字段(中间零查询)→ commit 单次 flush,P1 batch 合并 N 条 UPDATE ──
+            OffsetDateTime now = OffsetDateTime.now();
+            for (QuotationLineItem li : lines) {
+                li.quoteCardValues = quoteVals.get(li.id);
+                li.quoteValuesAt = now;
+                if (costingVals.containsKey(li.id)) li.costingCardValues = costingVals.get(li.id);
+                li.cardSnapshotAt = now;
+            }
+        } finally {
+            com.cpq.formula.dataloader.QuotationIdContext.clear();
+        }
+        LOG.debugf("[cardvalues-batch] quotation=%s 集合化落库 %d 行(单事务)", quotationId, lines.size());
+    }
 
-            Quotation q = Quotation.findById(managed.quotationId);
-            if (q == null) return;
+    /**
+     * P2-C4 拆分:报价侧快照(quoteCardValues + quoteExcelValues)。导入两遍循环里留在 pass1 原位。
+     * 与改动前报价两段逐字相同;输入不含本行 cd(导入路径不写 snapshot_rows、cd componentId=null 被
+     * buildCardValues 跳过)→ 产出与 cd persist 时序无关,二次循环重排对报价侧零影响。
+     */
+    @Transactional
+    public void snapshotQuoteSideOnly(QuotationLineItem managed, Quotation q) {
+        snapshotQuoteSideOnly(managed, q, null);
+    }
 
+    /** B2 重载：buildCardValues 传 {@code prefetch}（命中则复用预取模板 snapshot + 整单 compdata）。 */
+    @Transactional
+    public void snapshotQuoteSideOnly(QuotationLineItem managed, Quotation q, CardValuesPrefetch prefetch) {
+        snapshotQuoteSideOnly(managed, q, prefetch, true);
+    }
+
+    /** P3 lazy-excel 重载：{@code computeExcel=false} 跳过报价 Excel bootstrap(留 NULL,懒算)。 */
+    @Transactional
+    public void snapshotQuoteSideOnly(QuotationLineItem managed, Quotation q, CardValuesPrefetch prefetch, boolean computeExcel) {
+        if (managed == null || q == null) return;
+        try {
             // 报价侧：卡片值复用 snapshot_rows（Task 6 真实填充，不二次 expand）
-            managed.quoteCardValues = safeCall(() ->
-                buildCardValues(managed, q.customerTemplateId));
+            managed.quoteCardValues = safeCall(() -> buildCardValues(managed, q.customerTemplateId, prefetch));
+            // 报价侧 Excel 值：前端权威（saveDraft）；仅从未 saveDraft 的新行 bootstrap 一次。
+            // P3:computeExcel=false(首存)时跳过 bootstrap,留 NULL → ensureExcelValues 懒算。
+            if (computeExcel && managed.quoteExcelValues == null) {
+                managed.quoteExcelValues = safeCall(() ->
+                    buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
+            }
+            managed.quoteValuesAt = OffsetDateTime.now();
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] snapshotQuoteSideOnly failed lineItem=%s: %s", managed.id, e.getMessage());
+        }
+    }
 
-            // 报价侧：Excel 值由 ExcelViewService 计算，透传同侧卡片快照（CARD_FORMULA 用同侧有效行取数）
-            managed.quoteExcelValues = safeCall(() ->
-                buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
+    /**
+     * P2-C4 拆分:核价侧快照(costingCardValues + costingExcelValues)。导入挪到 pass2,可注入整单
+     * {@code unionByComp}(跨行 partSet 并集一次多值查的结果);null=逐行旧路径。核价侧 editRows 恒空、
+     * 与报价侧物理隔离,延后到 pass2 安全。{@code cardSnapshotAt} 恒设(守 saveDraft 新行判定,与改动前一致)。
+     */
+    @Transactional
+    public void snapshotCostingSideOnly(QuotationLineItem managed, Quotation q,
+                                        Map<UUID, Map<String, ExpandDriverResponse>> unionByComp) {
+        snapshotCostingSideOnly(managed, q, unionByComp, null);
+    }
 
-            // 核价侧：需单独 expand（核价模板组件，无现成快照）
+    /** B2 重载：buildCostingCardValues 传 {@code prefetch}（命中则复用预取核价模板 snapshot）。 */
+    @Transactional
+    public void snapshotCostingSideOnly(QuotationLineItem managed, Quotation q,
+                                        Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
+                                        CardValuesPrefetch prefetch) {
+        snapshotCostingSideOnly(managed, q, unionByComp, prefetch, true);
+    }
+
+    /** P3 lazy-excel 重载：{@code computeExcel=false} 跳过核价 Excel(留 NULL,懒算);卡片值仍算。 */
+    @Transactional
+    public void snapshotCostingSideOnly(QuotationLineItem managed, Quotation q,
+                                        Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
+                                        CardValuesPrefetch prefetch, boolean computeExcel) {
+        if (managed == null || q == null) return;
+        try {
             if (q.costingCardTemplateId != null) {
                 managed.costingCardValues = safeCall(() ->
-                    buildCostingCardValues(managed, q.costingCardTemplateId,
-                        q.customerId, q.id));
-                // 核价 Excel 透传同侧核价卡片快照（核价只在加产品时算，草稿重刷/编辑不碰此两列）
-                managed.costingExcelValues = safeCall(() ->
-                    buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues, true));
+                    buildCostingCardValues(managed, q.costingCardTemplateId, q.customerId, q.id, unionByComp, prefetch));
+                // P3:computeExcel=false(首存)时跳过核价 Excel,留 NULL → ensureExcelValues 懒算。
+                if (computeExcel) {
+                    managed.costingExcelValues = safeCall(() ->
+                        buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues, true));
+                }
             }
-
             managed.cardSnapshotAt = OffsetDateTime.now();
-            managed.quoteValuesAt  = managed.cardSnapshotAt;
-            // Panache managed entity — no explicit persist needed in active transaction
         } catch (Exception e) {
-            LOG.warnf("[card-snapshot] snapshotLineValues failed lineItem=%s: %s", li.id, e.getMessage());
+            LOG.warnf("[card-snapshot] snapshotCostingSideOnly failed lineItem=%s: %s", managed.id, e.getMessage());
         }
+    }
+
+    /**
+     * P3 lazy-excel(2026-06-26):懒算整单 Excel 值。首存只算卡片值、Excel 值留 NULL;开 Excel 视图 / 导出 /
+     * 提交前调本方法补算缺失行的 {@code quoteExcelValues}/{@code costingExcelValues} 并落库。
+     *
+     * <p><b>幂等</b>:仅对 NULL 的侧/行计算,已算的跳过 → 反复调安全、第二次零开销。计算走与同步路径
+     * <b>同款</b> {@link #buildExcelValues}(同 cardValues 输入)→ 与"首存就算"逐位等价(golden 卡口)。
+     * 整单一次 IN 预取 compData 设入 {@link com.cpq.formula.dataloader.ExcelCompDataContext},供 buildRowData 读内存。
+     *
+     * @return 实际补算(落库)的行数;0=全部已就绪(无需算)。
+     */
+    @Transactional
+    public int ensureExcelValues(UUID quotationId) {
+        if (quotationId == null) return 0;
+        Quotation q = Quotation.findById(quotationId);
+        if (q == null) return 0;
+        java.util.List<QuotationLineItem> lines =
+            QuotationLineItem.list("quotationId", quotationId);
+        if (lines.isEmpty()) return 0;
+
+        java.util.List<UUID> lineIds = new java.util.ArrayList<>();
+        for (QuotationLineItem li : lines) lineIds.add(li.id);
+        // 整单 compData 一次 IN 预取(buildExcelValues→buildRowData 读内存,免逐行查)
+        java.util.Map<UUID, java.util.List<com.cpq.quotation.entity.QuotationLineComponentData>> cdByLine =
+            com.cpq.quotation.entity.QuotationLineComponentData
+                .<com.cpq.quotation.entity.QuotationLineComponentData>list(
+                    "lineItemId IN ?1 ORDER BY lineItemId, sortOrder, id", lineIds)
+                .stream().collect(java.util.stream.Collectors.groupingBy(cd -> cd.lineItemId));
+        com.cpq.formula.dataloader.ExcelCompDataContext.set(cdByLine);
+        com.cpq.formula.dataloader.QuotationIdContext.set(quotationId);
+        int computed = 0;
+        try {
+            for (QuotationLineItem li : lines) {
+                QuotationLineItem managed = QuotationLineItem.findById(li.id);
+                if (managed == null) continue;
+                boolean changed = false;
+                if (managed.quoteExcelValues == null && q.customerTemplateId != null) {
+                    managed.quoteExcelValues = safeCall(() ->
+                        buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
+                    changed = true;
+                }
+                if (managed.costingExcelValues == null && q.costingCardTemplateId != null) {
+                    managed.costingExcelValues = safeCall(() ->
+                        buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues, true));
+                    changed = true;
+                }
+                if (changed) { managed.persist(); computed++; }
+            }
+        } finally {
+            com.cpq.formula.dataloader.ExcelCompDataContext.clear();
+            com.cpq.formula.dataloader.QuotationIdContext.clear();
+        }
+        if (computed > 0) LOG.infof("[lazy-excel] ensureExcelValues quotation=%s 补算 %d 行", quotationId, computed);
+        return computed;
+    }
+
+    /**
+     * P2-C4 整单核价 driver union 预取:对该报价单全部核价行求各 recursive 组件 partSet 并集,每个
+     * <b>eligible</b>(recursive + 非composite + 无spineKeys + 无lineItemId,见
+     * {@link ComponentDriverService#eligibleForBomUnion})组件 <b>一次</b> {@code expandForPartSet(union)}
+     * → {@code Map<componentId, Map<partNo, resp>>}。把核价侧 driver 远程查从 N×M_rec 压到 M_rec(÷N)。
+     * 不 eligible 的组件不进返回 Map → 调用方逐行回落(带 li.id / SpineKeysContext),逐位等价。
+     */
+    @Transactional
+    public Map<UUID, Map<String, ExpandDriverResponse>> precomputeCostingDriverUnion(UUID quotationId) {
+        Map<UUID, Map<String, ExpandDriverResponse>> unionByComp = new LinkedHashMap<>();
+        if (quotationId == null) return unionByComp;
+        Quotation q = Quotation.findById(quotationId);
+        if (q == null || q.costingCardTemplateId == null) return unionByComp;
+
+        // 核价模板的全部 driver 组件清单(整单一次)。Phase 2-2'：不再仅 recursive——
+        // 非递归无行维度组件(COMP-0021/22/23 类)也纳入合桶,打中真实 per-line expand 热点。
+        @SuppressWarnings("unchecked")
+        List<Object> driverComps = em.createNativeQuery(
+            "SELECT DISTINCT c.id FROM template_component tc JOIN component c ON c.id = tc.component_id " +
+            "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
+            .setParameter("tid", q.costingCardTemplateId).getResultList();
+        if (driverComps.isEmpty()) return unionByComp;
+
+        List<UUID> eligible = new ArrayList<>();          // partNo 合桶(无行维度,无需 spineKeys 上下文)
+        List<UUID> spineFlatCandidates = new ArrayList<>(); // #3 spineKeys-flat 候选(需 union spineKeys 上下文 + 平闸门)
+        for (Object idObj : driverComps) {     // 单列 SELECT → 元素即 c.id
+            if (idObj == null) continue;
+            UUID compId = (idObj instanceof UUID u) ? u : UUID.fromString(idObj.toString());
+            // 递归走 partSet union(C4);非递归无行维度走 partNo 合桶(2-2')。两路 expandForPartSet(union)=expandMulti。
+            if (componentDriverService.eligibleForBomUnion(compId)
+                    || componentDriverService.eligibleForNonRecursiveCostingBucket(compId)) {
+                eligible.add(compId);
+            } else if (componentDriverService.eligibleForSpineKeysFlatBucket(compId)) {
+                spineFlatCandidates.add(compId);   // #3:非递归+仅 spineKeys → 需平闸门才合桶
+            }
+        }
+        if (eligible.isEmpty() && spineFlatCandidates.isEmpty()) return unionByComp;
+
+        // 全核价行 partSet 并集 + 闭包列表(供 #3 三元组并集/maxTriples 闸门;闭包已 Caffeine 缓存)
+        java.util.LinkedHashSet<String> union = new java.util.LinkedHashSet<>();
+        List<BomClosureResult> closures = new ArrayList<>();
+        for (QuotationLineItem li : QuotationLineItem.<QuotationLineItem>list("quotationId", quotationId)) {
+            BomClosureResult closure = bomClosureService.compute(li.productPartNoSnapshot, java.util.Map.of());
+            if (closure != null) {
+                closures.add(closure);
+                if (closure.partSet != null) union.addAll(closure.partSet);
+            }
+        }
+        if (union.isEmpty()) return unionByComp;
+        List<String> unionList = new ArrayList<>(union);
+
+        // #3 安全闸门:spine 平(每 partNo 唯一三元组)才把 spineKeys 组件合桶;非平→回落逐行(不进 unionByComp)。
+        boolean spineFlatOk = !spineFlatCandidates.isEmpty()
+            && com.cpq.datasource.sqlview.SpineKeysContext.maxTriplesPerPart(closures) <= 1;
+        List<UUID> spineEligible = spineFlatOk ? spineFlatCandidates : java.util.List.of();
+        if (!spineFlatCandidates.isEmpty() && !spineFlatOk) {
+            LOG.infof("[costing-union] spineKeys 组件 %d 个因 maxTriples>1(多节点 BOM 树)回落逐行,不合桶",
+                spineFlatCandidates.size());
+        }
+
+        QuotationIdContext.set(quotationId);
+        // #3:有 spineKeys-flat 合桶组件时设「全单三元组并集」上下文(无 spineKeys 视图忽略它,对 eligible 安全)。
+        if (!spineEligible.isEmpty()) {
+            com.cpq.datasource.sqlview.SpineKeysContext.set(
+                com.cpq.datasource.sqlview.SpineKeysContext.fromClosures(closures));
+        }
+        try {
+            for (UUID compId : eligible) {
+                unionByComp.put(compId,
+                    componentDriverService.expandForPartSet(compId, q.customerId, unionList, null, null));
+            }
+            // #3:spineKeys-flat 组件——同一条 expandForPartSet(union)=expandMulti,但带 union spineKeys 上下文;
+            //     maxTriples==1 → 按 partNo 回配与逐行(1 三元组/行)逐位等价。
+            for (UUID compId : spineEligible) {
+                unionByComp.put(compId,
+                    componentDriverService.expandForPartSet(compId, q.customerId, unionList, null, null));
+            }
+        } finally {
+            com.cpq.datasource.sqlview.SpineKeysContext.clear();
+            QuotationIdContext.clear();
+        }
+        return unionByComp;
     }
 
     /**
@@ -441,12 +723,14 @@ public class CardSnapshotService {
         Quotation q = Quotation.findById(quotationId);
         if (q == null || q.costingCardTemplateId == null) return;
         List<QuotationLineItem> lines = QuotationLineItem.list("quotationId", quotationId);
+        // P2-C4: 整单一次 union 预取(把核价 driver 远程查从 N×M_rec 压到 M_rec);null/空=逐行兜底。
+        Map<UUID, Map<String, ExpandDriverResponse>> unionByComp = precomputeCostingDriverUnion(quotationId);
         for (QuotationLineItem li : lines) {
             try {
                 QuotationLineItem managed = QuotationLineItem.findById(li.id);
                 if (managed == null) continue;
                 managed.costingCardValues = safeCall(() ->
-                    buildCostingCardValues(managed, q.costingCardTemplateId, q.customerId, q.id));
+                    buildCostingCardValues(managed, q.costingCardTemplateId, q.customerId, q.id, unionByComp));
                 managed.costingExcelValues = safeCall(() ->
                     buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues, true));
             } catch (Exception e) {
@@ -454,6 +738,179 @@ public class CardSnapshotService {
             }
         }
         LOG.infof("[card-snapshot] refreshCostingCardValues done quotation=%s lines=%d", quotationId, lines.size());
+    }
+
+    // =========================================================================
+    // B2: 批量 EM 预取 —— saveDraft 首存 N-行循环外一次预取，消除每行重复的
+    //     「模板 components_snapshot 读+解析」与「compdata 逐行查」。
+    // =========================================================================
+
+    /**
+     * 首存 card values 批量预取上下文（per-call，单线程使用）。{@code null} 传入 = 逐行旧路径（零破坏）。
+     * <ul>
+     *   <li>{@code templateSnapshotById}：全单只有报价/核价两个模板，各 parse 一次复用（替代 ×N 读+解析）；
+     *       解析后的 JsonNode 全程<b>只读</b>（assemble 只读 tab.path、不 mutate 入参），跨行共享安全。
+     *   <li>{@code compDataByLine}：整单一次 IN 查所有行的 (component_id, snapshot_rows, deleted_row_keys)，
+     *       按 lineItemId 分桶（替代 buildCardValues 每行一次 compdata 查）。每元素 = [component_id, snapshot_rows, deleted_row_keys]，
+     *       与逐行查 SELECT 列序一致 → buildCardValues prefetch 分支与逐行分支产物逐位相同。
+     * </ul>
+     */
+    public static final class CardValuesPrefetch {
+        final Map<UUID, JsonNode> templateSnapshotById;
+        final Map<UUID, List<Object[]>> compDataByLine;
+        /**
+         * F1(方案 B)：componentId(字符串) → rowKeyFields 已解析节点。整单一次 IN 查替代 assemble 内
+         * 每行每组件 {@code SELECT row_key_fields ...}（2550→1）。值用 {@link com.fasterxml.jackson.databind.node.NullNode}
+         * 哨兵表示"已查、row_key_fields 为 null"(与 {@code loadRowKeyFieldsNode} 返回 null 逐位等价),
+         * 故 key 缺失=未预取→回落逐行查,key 存在但值=NullNode→该组件无行键(不再查库)。
+         */
+        final Map<String, JsonNode> rowKeyFieldsByComp;
+        /**
+         * F4：templateId → driver 组件清单（[c.id, c.bom_recursive_expand] 列表）。整单一次查替代
+         * {@code expandTemplateDriverBaseRows} 每行重发的 {@code SELECT DISTINCT ... template_component}
+         * （仅依赖 templateId，跨行同值）。key 缺失=未预取→回落逐行查。
+         */
+        final Map<UUID, List<Object[]>> driverCompsByTemplate;
+        CardValuesPrefetch(Map<UUID, JsonNode> t, Map<UUID, List<Object[]>> c, Map<String, JsonNode> rkf,
+                           Map<UUID, List<Object[]>> dc) {
+            this.templateSnapshotById = t;
+            this.compDataByLine = c;
+            this.rowKeyFieldsByComp = rkf;
+            this.driverCompsByTemplate = dc;
+        }
+    }
+
+    /**
+     * B2 预取构建：解析报价/核价模板 snapshot 各一次 + 整单一次 IN 查所有行 compdata。
+     * 失败降级——任一片缺失时对应 build 方法 prefetch 分支回落逐行查（getOrDefault / containsKey 判定）。
+     */
+    @Transactional
+    public CardValuesPrefetch precomputeCardValuesPrefetch(UUID quotationId, java.util.Collection<UUID> lineItemIds) {
+        Map<UUID, JsonNode> tplById = new HashMap<>();
+        Map<UUID, List<Object[]>> byLine = new HashMap<>();
+        Map<String, JsonNode> rkfByComp = new HashMap<>();
+        Map<UUID, List<Object[]>> driverCompsByTpl = new HashMap<>();
+        try {
+            Quotation q = Quotation.findById(quotationId);
+            if (q != null) {
+                parseTemplateSnapshotInto(tplById, q.customerTemplateId);
+                parseTemplateSnapshotInto(tplById, q.costingCardTemplateId);
+                // F4：driver 组件清单整单一次查（报价+核价模板各一次,替代 expandTemplateDriverBaseRows 每行重查）。
+                prefetchDriverComps(driverCompsByTpl, q.customerTemplateId);
+                prefetchDriverComps(driverCompsByTpl, q.costingCardTemplateId);
+            }
+            // F1(方案 B)：从两份模板 snapshot 收集 distinct componentId，整单一次 IN 查 row_key_fields。
+            prefetchRowKeyFields(tplById, rkfByComp);
+            if (lineItemIds != null && !lineItemIds.isEmpty()) {
+                @SuppressWarnings("unchecked")
+                List<Object[]> rows = em.createNativeQuery(
+                    "SELECT line_item_id, component_id, snapshot_rows, deleted_row_keys " +
+                    "FROM quotation_line_component_data WHERE line_item_id IN (:ids)")
+                    .setParameter("ids", lineItemIds)
+                    .getResultList();
+                for (Object[] r : rows) {
+                    if (r[0] == null) continue;
+                    UUID lid = (r[0] instanceof UUID u) ? u : UUID.fromString(r[0].toString());
+                    // 仅保留 [component_id, snapshot_rows, deleted_row_keys]，与逐行查列序一致
+                    byLine.computeIfAbsent(lid, k -> new ArrayList<>())
+                          .add(new Object[]{ r[1], r[2], r[3] });
+                }
+            }
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] precomputeCardValuesPrefetch failed quotation=%s: %s", quotationId, e.getMessage());
+        }
+        return new CardValuesPrefetch(tplById, byLine, rkfByComp, driverCompsByTpl);
+    }
+
+    /**
+     * F4：整单一次查某模板的 driver 组件清单（与 {@link #expandTemplateDriverBaseRows} 内逐行查 <b>同一条 SQL</b>，
+     * 结果仅依赖 templateId → 跨行同值）。kill switch {@code cpq.firstsave-drivercomps-prefetch}（默认 true）。
+     */
+    private void prefetchDriverComps(Map<UUID, List<Object[]>> into, UUID templateId) {
+        if (templateId == null || into.containsKey(templateId)) return;
+        boolean enabled = "true".equalsIgnoreCase(
+            System.getProperty("cpq.firstsave-drivercomps-prefetch",
+                System.getenv().getOrDefault("CPQ_FIRSTSAVE_DRIVERCOMPS_PREFETCH", "true")));
+        if (!enabled) return;
+        try {
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = em.createNativeQuery(
+                "SELECT DISTINCT c.id, c.bom_recursive_expand FROM template_component tc " +
+                "JOIN component c ON c.id = tc.component_id " +
+                "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
+                .setParameter("tid", templateId)
+                .getResultList();
+            into.put(templateId, rows);
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] prefetchDriverComps failed tmpl=%s: %s（已降级,回落逐行查）", templateId, e.getMessage());
+        }
+    }
+
+    /**
+     * F1(方案 B)：从已解析的模板 snapshot 收集全部 distinct componentId，整单一次
+     * {@code SELECT id, row_key_fields FROM component WHERE id IN(...)}，逐位复刻
+     * {@link #loadRowKeyFieldsNode} 的解析口径填入 {@code rkfByComp}（null/空/解析失败 → NullNode 哨兵）。
+     * 失败整体降级（map 留空 → assemble 回落逐行查），不影响正确性。
+     */
+    private void prefetchRowKeyFields(Map<UUID, JsonNode> tplById, Map<String, JsonNode> rkfByComp) {
+        // kill switch: cpq.firstsave-rkf-prefetch(默认 true)。off → map 留空 → assemble 回落逐行查(1:1 旧行为)。
+        boolean enabled = "true".equalsIgnoreCase(
+            System.getProperty("cpq.firstsave-rkf-prefetch",
+                System.getenv().getOrDefault("CPQ_FIRSTSAVE_RKF_PREFETCH", "true")));
+        if (!enabled) return;
+        try {
+            java.util.Set<UUID> compIds = new java.util.LinkedHashSet<>();
+            for (JsonNode snap : tplById.values()) {
+                if (snap == null || !snap.isArray()) continue;
+                for (JsonNode tab : snap) {
+                    String cid = tab.path("componentId").asText("");
+                    if (!cid.isBlank()) {
+                        try { compIds.add(UUID.fromString(cid)); } catch (Exception ignore) { /* 非法 id 跳过 */ }
+                    }
+                }
+            }
+            if (compIds.isEmpty()) return;
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = em.createNativeQuery(
+                "SELECT id, row_key_fields FROM component WHERE id IN (:ids)")
+                .setParameter("ids", new ArrayList<>(compIds))
+                .getResultList();
+            JsonNode nullSentinel = com.fasterxml.jackson.databind.node.NullNode.getInstance();
+            for (Object[] r : rows) {
+                if (r[0] == null) continue;
+                String cid = r[0].toString();
+                // 逐位复刻 loadRowKeyFieldsNode：cell null/blank → null；否则 readTree，失败 → null。
+                JsonNode node = nullSentinel;
+                if (r[1] != null) {
+                    String json = r[1].toString();
+                    if (!json.isBlank()) {
+                        try {
+                            JsonNode parsed = MAPPER.readTree(json);
+                            if (parsed != null) node = parsed;
+                        } catch (Exception ignore) { /* 解析失败 → null 哨兵(同 loadRowKeyFieldsNode catch) */ }
+                    }
+                }
+                rkfByComp.put(cid, node);
+            }
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] prefetchRowKeyFields failed: %s（已降级,回落逐行查）", e.getMessage());
+        }
+    }
+
+    /** 解析模板 components_snapshot 为 JsonNode 存入 map（templateId→snapshot）；失败/空跳过。 */
+    private void parseTemplateSnapshotInto(Map<UUID, JsonNode> into, UUID templateId) {
+        if (templateId == null || into.containsKey(templateId)) return;
+        try {
+            @SuppressWarnings("unchecked")
+            var rows = em.createNativeQuery("SELECT components_snapshot FROM template WHERE id = :tid")
+                .setParameter("tid", templateId).getResultList();
+            if (!rows.isEmpty() && rows.get(0) != null) {
+                JsonNode snap = MAPPER.readTree(rows.get(0).toString());
+                if (snap.isArray()) into.put(templateId, snap);
+            }
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] parseTemplateSnapshotInto failed tmpl=%s: %s", templateId, e.getMessage());
+        }
     }
 
     // =========================================================================
@@ -469,26 +926,39 @@ public class CardSnapshotService {
      * AP-51: rowCount 不做 Math.max，以 snapshot_rows 行数为准。
      */
     String buildCardValues(QuotationLineItem li, UUID templateId) {
+        return buildCardValues(li, templateId, null);
+    }
+
+    /** B2 重载：{@code prefetch!=null} 时复用预取模板 snapshot + 整单 IN compdata；{@code null}=逐行查（零破坏）。 */
+    String buildCardValues(QuotationLineItem li, UUID templateId, CardValuesPrefetch prefetch) {
         if (li == null || li.id == null || templateId == null) return null;
         try {
-            // 1. 取模板 components_snapshot（用于 tab 顺序 + componentId）
-            @SuppressWarnings("unchecked")
-            var tmplRows = em.createNativeQuery(
-                "SELECT components_snapshot FROM template WHERE id = :tid")
-                .setParameter("tid", templateId)
-                .getResultList();
-            if (tmplRows.isEmpty() || tmplRows.get(0) == null) return null;
+            // 1. 模板 components_snapshot（tab 顺序 + componentId）—— prefetch 命中复用已解析，否则逐行读+解析
+            JsonNode snapshot = (prefetch != null) ? prefetch.templateSnapshotById.get(templateId) : null;
+            if (snapshot == null) {
+                @SuppressWarnings("unchecked")
+                var tmplRows = em.createNativeQuery(
+                    "SELECT components_snapshot FROM template WHERE id = :tid")
+                    .setParameter("tid", templateId)
+                    .getResultList();
+                if (tmplRows.isEmpty() || tmplRows.get(0) == null) return null;
+                snapshot = MAPPER.readTree(tmplRows.get(0).toString());
+            }
+            if (snapshot == null || !snapshot.isArray()) return null;
 
-            JsonNode snapshot = MAPPER.readTree(tmplRows.get(0).toString());
-            if (!snapshot.isArray()) return null;
-
-            // 2. 一次查 snapshot_rows + deleted_row_keys（同表同条件，避免两次往返）
-            @SuppressWarnings("unchecked")
-            List<Object[]> compData = em.createNativeQuery(
-                "SELECT component_id, snapshot_rows, deleted_row_keys " +
-                "FROM quotation_line_component_data WHERE line_item_id = :lid")
-                .setParameter("lid", li.id)
-                .getResultList();
+            // 2. snapshot_rows + deleted_row_keys —— prefetch 命中取整单 IN 预取的本行分桶，否则逐行查
+            List<Object[]> compData;
+            if (prefetch != null && prefetch.compDataByLine != null) {
+                compData = prefetch.compDataByLine.getOrDefault(li.id, java.util.List.of());
+            } else {
+                @SuppressWarnings("unchecked")
+                List<Object[]> q = em.createNativeQuery(
+                    "SELECT component_id, snapshot_rows, deleted_row_keys " +
+                    "FROM quotation_line_component_data WHERE line_item_id = :lid")
+                    .setParameter("lid", li.id)
+                    .getResultList();
+                compData = q;
+            }
 
             Map<String, String> snapByCompId = new LinkedHashMap<>();
             Map<String, List<DeletedRowKeys.Tombstone>> delByComp = new HashMap<>();
@@ -507,7 +977,9 @@ public class CardSnapshotService {
             }
 
             // 4. 组装 tabs（Task 3: 填 formulaResults，加产品时 editRows 恒空；报价侧传真实墓碑）
-            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null, null, delByComp);
+            // F1：报价侧透传 rkf 预取（prefetch 缺失 → null → 回落逐行查）
+            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null, null, delByComp,
+                prefetch != null ? prefetch.rowKeyFieldsByComp : null);
 
             return MAPPER.writeValueAsString(root);
 
@@ -530,30 +1002,53 @@ public class CardSnapshotService {
      */
     private String buildCostingCardValues(QuotationLineItem li, UUID costingTemplateId,
                                            UUID customerId, UUID quotationId) {
+        return buildCostingCardValues(li, costingTemplateId, customerId, quotationId, null);
+    }
+
+    /** P2-C4 重载：透传整单 union 预取 Map(null=逐行旧路径)。包级可见供 A/B 等价测试(纯读、不写 managed)。 */
+    String buildCostingCardValues(QuotationLineItem li, UUID costingTemplateId,
+                                           UUID customerId, UUID quotationId,
+                                           Map<UUID, Map<String, ExpandDriverResponse>> unionByComp) {
+        return buildCostingCardValues(li, costingTemplateId, customerId, quotationId, unionByComp, null);
+    }
+
+    /** B2 重载：{@code prefetch!=null} 时复用预取核价模板 snapshot；{@code null}=逐行读+解析（零破坏）。 */
+    String buildCostingCardValues(QuotationLineItem li, UUID costingTemplateId,
+                                           UUID customerId, UUID quotationId,
+                                           Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
+                                           CardValuesPrefetch prefetch) {
         if (li == null || li.id == null || costingTemplateId == null) return null;
         try {
-            // 1. 取核价模板 components_snapshot
-            @SuppressWarnings("unchecked")
-            var tmplRows = em.createNativeQuery(
-                "SELECT components_snapshot FROM template WHERE id = :tid")
-                .setParameter("tid", costingTemplateId)
-                .getResultList();
-            if (tmplRows.isEmpty() || tmplRows.get(0) == null) return null;
-
-            JsonNode snapshot = MAPPER.readTree(tmplRows.get(0).toString());
-            if (!snapshot.isArray()) return null;
+            // 1. 取核价模板 components_snapshot —— prefetch 命中复用已解析，否则逐行读+解析
+            JsonNode snapshot = (prefetch != null) ? prefetch.templateSnapshotById.get(costingTemplateId) : null;
+            if (snapshot == null) {
+                @SuppressWarnings("unchecked")
+                var tmplRows = em.createNativeQuery(
+                    "SELECT components_snapshot FROM template WHERE id = :tid")
+                    .setParameter("tid", costingTemplateId)
+                    .getResultList();
+                if (tmplRows.isEmpty() || tmplRows.get(0) == null) return null;
+                snapshot = MAPPER.readTree(tmplRows.get(0).toString());
+            }
+            if (snapshot == null || !snapshot.isArray()) return null;
 
             // 核价 BOM 递归展开（P1）：先算根料号闭包（整棵 PRICING BOM 树）。
             // 闭包 partSet 喂各核价组件多值取数；spine 全节点作行主轴（缺数据补空行）。
             BomClosureResult closure = bomClosureService.compute(li.productPartNoSnapshot, java.util.Map.of());
 
             // 2-4. 加载核价模板 driver 组件并按 spine 全节点展开 → baseRows（按 componentId）
+            // F4：透传整单预取的 driver 组件清单（prefetch 缺失 → null → 回落逐行查）
+            List<Object[]> driverCompsPrefetch = (prefetch != null && prefetch.driverCompsByTemplate != null)
+                ? prefetch.driverCompsByTemplate.get(costingTemplateId) : null;
             Map<String, ArrayNode> baseRowsByComp =
-                expandTemplateDriverBaseRows(costingTemplateId, li, customerId, quotationId, closure);
+                expandTemplateDriverBaseRows(costingTemplateId, li, customerId, quotationId, closure, unionByComp,
+                    driverCompsPrefetch);
 
             // 5. 组装 tabs（Task 3: 填 formulaResults；核价侧 editRows 恒空）
-            // 核价侧 side==COSTING 显式不传墓碑（spec §3.7 隔离）：三参签名 delegate → delByComp=null → 不过滤
-            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null);
+            // 核价侧 side==COSTING 显式不传墓碑（spec §3.7 隔离）：editRowsByComp=null + rkfOverride=null + delByComp=null。
+            // F1（B-1 修正）：核价侧也透传 rkf 预取（否则核价 ~1020 次 row_key_fields 单查原样保留）。
+            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null, null, null,
+                prefetch != null ? prefetch.rowKeyFieldsByComp : null);
 
             // 6. 成环料号回传根节点（前端告警「已截断展开」）
             if (closure != null && closure.cyclePartNos != null && !closure.cyclePartNos.isEmpty()) {
@@ -723,15 +1218,39 @@ public class CardSnapshotService {
                                                       Map<String, ArrayNode> editRowsByComp,
                                                       Map<String, JsonNode> rkfOverride,
                                                       Map<String, List<DeletedRowKeys.Tombstone>> delByComp) {
+        // 五参签名零破坏：delegate 到六参（rkfPrefetch=null → 逐行查 row_key_fields，行为不变）。
+        return assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp, rkfOverride, delByComp, null);
+    }
+
+    /**
+     * 六参重载（F1/方案 B：rowKeyFields 整单预取）：{@code rkfPrefetch} 非空时,组件行键从预取内存读
+     * （key 缺失→回落逐行 {@code loadRowKeyFieldsNode}；值=NullNode 哨兵→该组件无行键,不查库）。
+     * {@code rkfPrefetch=null} 时全程逐行查,与改造前逐位一致(零破坏 + kill switch)。
+     */
+    private ObjectNode assembleTabsWithFormulaResults(JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
+                                                      Map<String, ArrayNode> editRowsByComp,
+                                                      Map<String, JsonNode> rkfOverride,
+                                                      Map<String, List<DeletedRowKeys.Tombstone>> delByComp,
+                                                      Map<String, JsonNode> rkfPrefetch) {
         ObjectNode root = MAPPER.createObjectNode();
         ArrayNode tabs = root.putArray("tabs");
 
+        // B1: per-call computeRows 复用缓存——同次 assemble 内，仅当 tab 不读 componentSubtotals/crossTabRows
+        // 时，PASS1(小计) 与 PASS2(结果×1~2) 共用一份 computeRows，避免对同一输入重复逐行求值。
+        // 局部对象、单线程使用 → 线程安全（守 expand/公式层非并发约束）。
+        final FormulaCalculator.RowCache rowCache = formulaCalculator.newRowCache();
+
         final ArrayNode emptyEdit = MAPPER.createArrayNode();
-        // rowKeyFields 缓存（每组件一次）
+        // rowKeyFields 缓存（每组件一次）。F1：优先读整单预取(命中=0 往返);未命中或无预取→回落逐行查(零破坏)。
         Map<String, JsonNode> rkfByComp = new LinkedHashMap<>();
         for (JsonNode tab : snapshot) {
             String cid = tab.path("componentId").asText("");
-            if (!rkfByComp.containsKey(cid)) rkfByComp.put(cid, loadRowKeyFieldsNode(cid));
+            if (!rkfByComp.containsKey(cid)) {
+                JsonNode hit = (rkfPrefetch != null) ? rkfPrefetch.get(cid) : null;
+                // hit 存在：NullNode 哨兵→null(无行键)；真实节点→用之。hit 缺失(null)→回落逐行查。
+                JsonNode rkf = (hit != null) ? (hit.isNull() ? null : hit) : loadRowKeyFieldsNode(cid);
+                rkfByComp.put(cid, rkf);
+            }
         }
         // v6-N 草稿行键覆盖：装配里 rkfByComp 默认读持久化行键；试算时把宿主 cid 行键覆盖为草稿行键。
         if (rkfOverride != null) rkfByComp.putAll(rkfOverride);
@@ -754,7 +1273,8 @@ public class CardSnapshotService {
             List<String> rkfNames = rowKeyFieldNamesOf(rkfByComp.get(cid));
             java.util.Map<String, java.math.BigDecimal> byCol = formulaCalculator.computeTabSubtotalsByColumn(
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
-                rkfByComp.get(cid), baseRows, editRows, componentSubtotals, deleted, rkfNames);
+                rkfByComp.get(cid), baseRows, editRows, componentSubtotals, deleted, rkfNames,
+                rowCache, cid.isBlank() ? null : cid);
             double sub = 0.0;
             for (java.math.BigDecimal v : byCol.values()) sub += v.doubleValue();
             String code = tab.path("componentCode").asText(null);
@@ -838,7 +1358,8 @@ public class CardSnapshotService {
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
                 rkfByComp.get(cid), baseRows, editRows,
                 componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>(),
-                crossTabRows, deleted, rkfNames); // 带墓碑新重载：报价侧过滤删除行；核价侧 deleted=null → 不变
+                crossTabRows, deleted, rkfNames,
+                rowCache, cid.isBlank() ? null : cid); // 带墓碑新重载：报价侧过滤删除行；核价侧 deleted=null → 不变
             List<Map<String, Object>> pass1Resolved = buildResolvedRows(
                 tab, baseRows, editRows, pass1Results, rkfByComp.get(cid), deleted, rkfNames);
             // 存入 crossTabRows（双键，供后续兄弟组件 cross_tab_ref 查询）
@@ -863,7 +1384,8 @@ public class CardSnapshotService {
                     tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
                     rkfByComp.get(cid), baseRows, editRows,
                     componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>(),
-                    crossTabRows, deleted, rkfNames);
+                    crossTabRows, deleted, rkfNames,
+                    rowCache, cid.isBlank() ? null : cid);
                 resolved = buildResolvedRows(
                     tab, baseRows, editRows, formulaResults, rkfByComp.get(cid), deleted, rkfNames);
                 // 更新 crossTabRows 为第 2 次 resolved（二阶列已算对，兄弟组件引用此组件 cross_tab_ref 时应取最终值）
@@ -1143,17 +1665,48 @@ public class CardSnapshotService {
     private Map<String, ArrayNode> expandTemplateDriverBaseRows(UUID templateId, QuotationLineItem li,
                                                                 UUID customerId, UUID quotationId,
                                                                 BomClosureResult closure) {
+        return expandTemplateDriverBaseRows(templateId, li, customerId, quotationId, closure, null);
+    }
+
+    /**
+     * P2-C4 重载：{@code unionByComp != null} 时，recursive 组件若命中 union 预取(整单一次多值查的
+     * {@code Map<partNo,resp>})则直接复用、不再逐行 {@code expandForPartSet}；未命中(含被闸门挡下的
+     * composite/spineKeys/lineItemId 组件)回落逐行 → 与改动前逐位一致。
+     */
+    private Map<String, ArrayNode> expandTemplateDriverBaseRows(UUID templateId, QuotationLineItem li,
+                                                                UUID customerId, UUID quotationId,
+                                                                BomClosureResult closure,
+                                                                Map<UUID, Map<String, ExpandDriverResponse>> unionByComp) {
+        return expandTemplateDriverBaseRows(templateId, li, customerId, quotationId, closure, unionByComp, null);
+    }
+
+    /**
+     * F4 重载：{@code driverCompsPrefetch != null} 时复用整单预取的 driver 组件清单(同一条 SQL,跨行同值),
+     * 不再每行重发 {@code SELECT DISTINCT ... template_component}；null=逐行查(零破坏 + kill switch off 回落)。
+     */
+    private Map<String, ArrayNode> expandTemplateDriverBaseRows(UUID templateId, QuotationLineItem li,
+                                                                UUID customerId, UUID quotationId,
+                                                                BomClosureResult closure,
+                                                                Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
+                                                                List<Object[]> driverCompsPrefetch) {
         if (closure == null) {
             return expandTemplateDriverBaseRows(templateId, li, customerId, quotationId);
         }
         Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
-        @SuppressWarnings("unchecked")
-        List<Object[]> driverComps = em.createNativeQuery(
-            "SELECT DISTINCT c.id, c.bom_recursive_expand FROM template_component tc " +
-            "JOIN component c ON c.id = tc.component_id " +
-            "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
-            .setParameter("tid", templateId)
-            .getResultList();
+        List<Object[]> driverComps;
+        if (driverCompsPrefetch != null) {
+            driverComps = driverCompsPrefetch;          // F4：命中预取,0 往返
+        } else {
+            DRIVER_COMPS_QUERY_COUNT.incrementAndGet();
+            @SuppressWarnings("unchecked")
+            List<Object[]> queried = em.createNativeQuery(
+                "SELECT DISTINCT c.id, c.bom_recursive_expand FROM template_component tc " +
+                "JOIN component c ON c.id = tc.component_id " +
+                "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
+                .setParameter("tid", templateId)
+                .getResultList();
+            driverComps = queried;
+        }
 
         String compositeType = li.compositeType;
         String partNo = li.productPartNoSnapshot;   // 未勾选(false)分支：单料号普通 expand 用
@@ -1169,13 +1722,26 @@ public class CardSnapshotService {
                 try {
                     if (recursive) {
                         // 勾选：BOM 闭包递归 → spine 全节点行 + __* 系统列
-                        Map<String, ExpandDriverResponse> byPart = componentDriverService.expandForPartSet(
-                            compId, customerId, closure.partSet, li.id, compositeType);
+                        // P2-C4：union 命中(整单一次多值查)则复用；否则逐行 expandForPartSet(兜底，逐位等价)。
+                        Map<String, ExpandDriverResponse> byPart =
+                            (unionByComp != null && unionByComp.containsKey(compId))
+                                ? unionByComp.get(compId)
+                                : componentDriverService.expandForPartSet(
+                                    compId, customerId, closure.partSet, li.id, compositeType);
                         baseRowsByComp.put(cidStr, buildSpineBaseRows(closure, byPart));
                     } else {
-                        // 未勾选：按根料号单料号普通展开(无系统列)，等同报价侧取数
-                        ExpandDriverResponse exp = componentDriverService.expand(
-                            compId, customerId, partNo, null, null, null, li.id, compositeType);
+                        // 未勾选：按根料号单料号普通展开(无系统列)，等同报价侧取数。
+                        // Phase 2-2'：非递归无行维度组件命中整单合桶(unionByComp)则按 partNo 取,否则逐行 expand 兜底。
+                        ExpandDriverResponse exp;
+                        Map<String, ExpandDriverResponse> nrBucket =
+                            (unionByComp != null) ? unionByComp.get(compId) : null;
+                        if (nrBucket != null) {
+                            exp = nrBucket.get(partNo);   // 命中合桶：0 往返(unionMulti 已按 hf_part_no 回分)
+                        } else {
+                            NON_RECURSIVE_EXPAND_QUERY_COUNT.incrementAndGet();
+                            exp = componentDriverService.expand(
+                                compId, customerId, partNo, null, null, null, li.id, compositeType);
+                        }
                         List<ExpandDriverResponse.Row> rows =
                             (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
                         baseRowsByComp.put(cidStr, buildBaseRowsFromRows(rows));
@@ -1207,10 +1773,23 @@ public class CardSnapshotService {
             if (bizRows.isEmpty()) {
                 out.add(spineRowNode(node, null));                 // 缺数据补空行
             } else {
-                for (ExpandDriverResponse.Row r : bizRows) out.add(spineRowNode(node, r));
+                // P2-C4: 同一 partNo 桶内按稳定键排序(排副本,不 mutate 共享 union 列表)。
+                // 视图无 ORDER BY → PG 行内顺序依赖 ANY 列表;排序后 union 与逐行两路顺序一致且跨运行确定。
+                List<ExpandDriverResponse.Row> sorted = new ArrayList<>(bizRows);
+                sorted.sort(java.util.Comparator.comparing(this::stableRowKey));
+                for (ExpandDriverResponse.Row r : sorted) out.add(spineRowNode(node, r));
             }
         }
         return out;
+    }
+
+    /** P2-C4: 业务行稳定排序键(driverRow + basicDataValues 规范序列化)。同内容行 key 相同(顺序无所谓)。 */
+    private String stableRowKey(ExpandDriverResponse.Row r) {
+        try {
+            return MAPPER.writeValueAsString(r.driverRow) + "" + MAPPER.writeValueAsString(r.basicDataValues);
+        } catch (Exception e) {
+            return String.valueOf(r.driverRow) + "" + String.valueOf(r.basicDataValues);
+        }
     }
 
     /** 组装单行：业务行(或空行) + 注入系统列 {@code __*}（命名空间前缀防碰撞）。 */
@@ -1356,10 +1935,9 @@ public class CardSnapshotService {
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp);
             managed.quoteCardValues = MAPPER.writeValueAsString(root);
 
-            // 4. 重算报价 Excel（核价不动），透传刚算好的新 quoteCardValues（CARD_FORMULA 同侧取数）
-            String excel = safeCall(() ->
-                buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
-            if (excel != null) managed.quoteExcelValues = excel;
+            // 4. 报价 Excel 值前端权威（buildExcelSnapshot + saveDraft），此处不再后端重算。
+            // Phase6 (2026-06-21) 退役：原 buildExcelValues 重算已删除；
+            // quote_excel_values 唯一写入源 = saveDraft（前端值） + snapshotLineValues（==null bootstrap 兜底）。
 
             // 5. 更新报价侧时间戳
             managed.quoteValuesAt = OffsetDateTime.now();
@@ -1469,23 +2047,92 @@ public class CardSnapshotService {
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp, null, delByComp);
             li.quoteCardValues = MAPPER.writeValueAsString(root);
 
-            // 重算报价 Excel（核价不动），透传刚算好的新 quoteCardValues（CARD_FORMULA 同侧取数）
-            String excel = safeCall(() ->
-                buildExcelValues(li, q.customerTemplateId, q.customerId, li.quoteCardValues));
-            if (excel != null) li.quoteExcelValues = excel;
+            // 失焦同步（Excel 视图随卡片更新）：按组件拓扑序重物化整行所有非 SUBTOTAL 组件的 row_data 并落库。
+            // 背景：Excel 视图（ComponentDataEffectiveRows.compute）只读 quotation_line_component_data.row_data，
+            // 且对 NORMAL 组件仅做 row_data 列求和，<b>不在读时重算 FORMULA 叶子</b>；row_data 此前仅由 1.5s 防抖
+            // saveDraft 写。若只物化被编辑组件（旧 Option A），跨页签依赖（如「来料.材料成本」= Σ(元素…) 持久在
+            // 「来料」row_data）不会随「元素」编辑刷新 → 卡片与 Excel 不一致（来料列仍是配置态旧值）。
+            // 解法：复用 ConfigureSnapshotService 配置态同款单趟拓扑序物化（依赖在前、引用在后，跨组件
+            // crossTabRows/componentSubtotals 累积），但额外透传本次编辑产生的 editRows / 各组件行键 / 墓碑，
+            // 使引用方（来料）物化时读到依赖方（元素）的最新列小计 → Excel 跨页签依赖随编辑传播。
+            materializeWholeLineRowData(li, snapshot, baseRowsByComp, editRowsByComp, delByComp);
 
-            li.quoteValuesAt = OffsetDateTime.now();
+            // flush 先把上面 li.quoteCardValues 的脏写 + materializeWholeLineRowData(REQUIRES_NEW 原生 SQL)
+            // 的 row_data 落库并对齐 L1 缓存；clear 后 li 脱管，须按 id 重读为托管实体，
+            // 否则后续对 quoteValuesAt 的写不会在事务提交时刷库。
+            // (Phase6 前端权威后，此处不再重算 quoteExcelValues；保留 flush/clear 仅为 row_data 落库 + quoteValuesAt 写库)
+            em.flush();
+            em.clear();
+            QuotationLineItem liManaged = QuotationLineItem.findById(lineItemId);
+            if (liManaged == null) return null; // 理论不达：上面已 flush，该行必在库
+
+            // 报价 Excel 值前端权威（buildExcelSnapshot + saveDraft），此处不再后端重算。
+            // Phase6 (2026-06-21) 退役：原 buildExcelValues 重算已删除；
+            // 返回 resp.quoteExcelValues = liManaged.quoteExcelValues（DB 现值 = 前端最近 saveDraft 保存值，无害）。
+
+            liManaged.quoteValuesAt = OffsetDateTime.now();
             // 核价两列：物理不参与本次 UPDATE
 
             Map<String, Object> resp = new LinkedHashMap<>();
-            resp.put("quoteCardValues", li.quoteCardValues);
-            resp.put("quoteExcelValues", li.quoteExcelValues);
-            resp.put("quoteValuesAt", li.quoteValuesAt != null ? li.quoteValuesAt.toString() : null);
+            resp.put("quoteCardValues", liManaged.quoteCardValues);
+            resp.put("quoteExcelValues", liManaged.quoteExcelValues);
+            resp.put("quoteValuesAt", liManaged.quoteValuesAt != null ? liManaged.quoteValuesAt.toString() : null);
             return resp;
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] editCardValue failed li=%s comp=%s rowKey=%s field=%s: %s",
                 lineItemId, componentId, rowKey, fieldName, e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * 失焦同步核心：按组件拓扑序把<b>整行所有非 SUBTOTAL 组件</b>的 row_data 用真实公式引擎重物化并落库，
+     * 使 Excel 视图（只读 row_data、对 NORMAL 组件仅列求和不重算 FORMULA 叶子）随卡片编辑即时刷新，
+     * <b>含跨页签依赖</b>（如「来料.材料成本」引用「元素」列小计 —— 编辑「元素.单价」后「来料」也随之重物化）。
+     *
+     * <p>委派 {@link ConfigureSnapshotService#materializeLineRowData}（与配置态加产品同一物化入口：单趟
+     * 组件拓扑序 + 跨组件 crossTabRows/componentSubtotals 累积），仅额外透传本次编辑产生的
+     * editRows / 各组件行键 / 墓碑。每组件经 {@link ConfigureSnapshotService#writeRowData}（REQUIRES_NEW UPSERT）落库。
+     *
+     * <p><b>行键来源（AP-54 对齐）</b>：各组件 rowKeyFields 取自 {@link #loadRowKeyFieldsNode}（读 component 表），
+     * 与 {@link #loadComponentsSnapshot} 冻进 tab 的行键同源，故 effKey 口径与卡片重算一致。
+     *
+     * <p><b>降级纪律</b>：整体异常被吞并记 warn，绝不让 row_data 同步失败回滚整次卡片编辑
+     * （与 ConfigureSnapshotService 全程降级一致）；单组件物化/写库失败在 materializeLineRowData 内逐组件降级。
+     *
+     * @param baseRowsByComp  componentId(字符串) → baseRows（= snapshot_rows）
+     * @param editRowsByComp  componentId(字符串) → editRows（含本次编辑）
+     * @param delByComp       componentId(字符串) → 永久删除墓碑列表
+     */
+    private void materializeWholeLineRowData(QuotationLineItem li, JsonNode snapshot,
+                                             Map<String, ArrayNode> baseRowsByComp,
+                                             Map<String, ArrayNode> editRowsByComp,
+                                             Map<String, List<DeletedRowKeys.Tombstone>> delByComp) {
+        try {
+            if (li == null || snapshot == null || baseRowsByComp == null || baseRowsByComp.isEmpty()) return;
+
+            // String 键 → UUID 键转换 + 各组件行键加载（与 loadComponentsSnapshot 冻进 tab 的 row_key_fields 同源）。
+            Map<UUID, JsonNode> baseByComp = new LinkedHashMap<>();
+            Map<UUID, JsonNode> editsByComp = new LinkedHashMap<>();
+            Map<UUID, JsonNode> rkfByComp = new LinkedHashMap<>();
+            Map<UUID, List<DeletedRowKeys.Tombstone>> tombsByComp = new LinkedHashMap<>();
+            for (Map.Entry<String, ArrayNode> e : baseRowsByComp.entrySet()) {
+                UUID cid;
+                try { cid = UUID.fromString(e.getKey()); } catch (Exception ex) { continue; }
+                baseByComp.put(cid, e.getValue());
+                ArrayNode er = editRowsByComp != null ? editRowsByComp.get(e.getKey()) : null;
+                if (er != null) editsByComp.put(cid, er);
+                JsonNode rkf = loadRowKeyFieldsNode(e.getKey());
+                if (rkf != null) rkfByComp.put(cid, rkf);
+                List<DeletedRowKeys.Tombstone> ts = delByComp != null ? delByComp.get(e.getKey()) : null;
+                if (ts != null) tombsByComp.put(cid, ts);
+            }
+
+            configureSnapshotService.materializeLineRowData(
+                    li.id, snapshot, baseByComp, editsByComp, rkfByComp, tombsByComp);
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] 失焦同步：整行物化失败 li=%s: %s（已降级，不影响卡片编辑）",
+                    li != null ? li.id : "null", e.getMessage());
         }
     }
 
@@ -1548,8 +2195,21 @@ public class CardSnapshotService {
         return result;
     }
 
+    /** F1 可观测性：row_key_fields 单行查执行次数(整单首存应由 ~2550 降到 0,全部命中预取)。供测试断言/监控。 */
+    public static final java.util.concurrent.atomic.AtomicLong ROW_KEY_FIELDS_QUERY_COUNT =
+        new java.util.concurrent.atomic.AtomicLong();
+
+    /** F4 可观测性：driver 组件清单查执行次数(整单首存应由 ~170 降到 0,全部命中预取)。供测试断言/监控。 */
+    public static final java.util.concurrent.atomic.AtomicLong DRIVER_COMPS_QUERY_COUNT =
+        new java.util.concurrent.atomic.AtomicLong();
+
+    /** Phase 2-2' 可观测性：非递归 driver 单值逐行 expand 兜底次数(eligible 组件整单合桶后应由 ~N×行 降到 0)。 */
+    public static final java.util.concurrent.atomic.AtomicLong NON_RECURSIVE_EXPAND_QUERY_COUNT =
+        new java.util.concurrent.atomic.AtomicLong();
+
     private String loadRowKeyFields(String componentId) {
         try {
+            ROW_KEY_FIELDS_QUERY_COUNT.incrementAndGet();
             @SuppressWarnings("unchecked")
             var rows = em.createNativeQuery(
                 "SELECT row_key_fields FROM component WHERE id = :cid")

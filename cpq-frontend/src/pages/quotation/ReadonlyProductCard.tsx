@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useAuthStore } from '../../stores/authStore';
 import type { ComponentDataItem, ComponentField } from './QuotationStep2';
 import { computeAllFormulas, computeProductSubtotal, buildSnapshotExpansions, buildCrossTabRows, EMPTY_LINEITEMS } from './QuotationStep2';
-import { enrichComponentData } from './enrichComponentData';
+import { enrichComponentData, buildComponentDataFromStructure } from './enrichComponentData';
 import { useDriverExpansions, driverExpansionKey, fieldsOverrideHash, bnfDriverLookupKey } from './useDriverExpansions';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { splitRows, rowAt } from './manualRows';
@@ -16,6 +15,7 @@ import ComponentCell from './components/ComponentCell';
 import type { CellContext } from './components/ComponentCell';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 import { sumTabColumns } from './tabTotalLines';
+import { formatNumber } from '../../utils/formatNumber';
 import { resolveFieldWidth } from '../component/types';
 import './quotation.css';
 
@@ -54,6 +54,10 @@ interface ReadonlyProductCardProps {
   globalVariableDefs?: Record<string, GlobalVariableDefinition>;
   /** Phase4 Task4: 报价卡片结构快照(顶层, 提供 rowKeyFields) — 详情页读 formulaResults 对齐编辑页(AP-50) */
   quoteCardStructure?: CardStructure | null;
+  /** 视图侧：缺省 'QUOTE'（报价卡片，现状不变）；'COSTING' 走核价结构驱动快照 */
+  side?: 'QUOTE' | 'COSTING';
+  /** 核价卡片结构快照（顶层，提供 tabs 结构 + rowKeyFields，用于结构驱动组装 componentData） */
+  costingCardStructure?: CardStructure | null;
 }
 
 function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
@@ -159,27 +163,41 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   customerId,
   globalVariableDefs,
   quoteCardStructure,
+  side: sideProp,
+  costingCardStructure,
 }) => {
+  const side = sideProp ?? 'QUOTE';
+  const isCosting = side === 'COSTING';
   const [activeTab, setActiveTab] = useState(0);
   const [components, setComponents] = useState<ComponentDataItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const { user } = useAuthStore();
   const treeCollapse = useTreeCollapse();
 
   const attrValues: Record<string, any> = parseJson(lineItem.productAttributeValues, {});
-
-  // 料号版本 Tag 显示规则 (新需求):
-  // - 草稿态 (DRAFT): 不显示 (草稿走 QuotationStep2 编辑视图, 那里已显示并可切换)
-  // - 已提交态 (非 DRAFT): 仅销售经理(SALES_MANAGER) + 系统管理员(SYSTEM_ADMIN) 可见, 不可修改
-  // - 其他角色 (SALES_REP / PRICING_MANAGER 等普通用户): 不显示
-  const canSeeVersionTag = quotationStatus !== 'DRAFT'
-      && (user?.role === 'SALES_MANAGER' || user?.role === 'SYSTEM_ADMIN');
 
   // Enrich componentData with fields/formulas from template snapshot.
   // Bug C (2026-05-20): 改调共享的 enrichComponentData，与 QuotationWizard 完全同源。
   // 保证详情页 = 编辑页只读版，4 个关键字段 (datasource_binding / global_variable_code /
   // default_source / sort_order) 在详情页也被透传，Tab 列表与编辑页对齐。
+  //
+  // COSTING 分支（side='COSTING'）：用 buildComponentDataFromStructure 从 costingCardStructure
+  // 同步组装，不发网络请求，与编辑态 costingLineItems 的结构驱动路径对齐（零计算、零 batch-expand）。
   useEffect(() => {
+    if (isCosting) {
+      // COSTING: 从结构快照同步组装，无需 GET /templates
+      if (!costingCardStructure) {
+        setComponents([]);
+        setLoading(false);
+        return;
+      }
+      // 传 [] 而非 lineItem.componentData（报价侧）：核价的值/行数来自 costingCardValues 快照，
+      // 报价 componentData 里的 rows 若与核价 tabName 撞键会通过 savedByTab 兜底污染核价 scaffold 行数。
+      const built = buildComponentDataFromStructure(costingCardStructure, []);
+      setComponents(built);
+      setLoading(false);
+      return;
+    }
+    // QUOTE: 异步 enrich（现状不变）
     const enrich = async () => {
       const rawCompData: any[] = lineItem.componentData || [];
       if (!lineItem.templateId) {
@@ -197,7 +215,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
       }
     };
     enrich();
-  }, [lineItem]);
+  }, [lineItem, isCosting, costingCardStructure]);
 
   // Bug C 续 (2026-05-20): 引入 useDriverExpansions，与编辑页渲染行数对齐。
   // 问题根因：enrichComponentData 直接返回 saved.rows（DB 持久化行数，历史上可能含多余行），
@@ -219,32 +237,43 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
     [lineItem, components],
   );
   // Phase4 Task4: 详情页读快照(AP-50 与编辑页 single-source)。
-  //   有 quoteCardValues 时: 不再 batch-expand(传 EMPTY_LINEITEMS), 改从行级值快照构造 driverExpansions
-  //   (BASIC_DATA + 行数来自快照 baseRows); FORMULA 优先读 formulaResults[rowKey](真零计算)。
+  //   有 quoteCardValues/costingCardValues 时: 不再 batch-expand(传 EMPTY_LINEITEMS), 改从行级值快照
+  //   构造 driverExpansions (BASIC_DATA + 行数来自快照 baseRows); FORMULA 优先读 formulaResults[rowKey]。
   //   只读页无受控 input, 故安全(不涉 AP-54)。无快照(存量单)回退实时 batch-expand。
-  const useSnap = !!lineItem.quoteCardValues && components.length > 0;
+  //   COSTING/QUOTE 两侧各读自己的 cardValues，绝不串源。
+  //
+  //   竞态修复（2026-06-29）：去掉旧的 `&& components.length > 0` 守卫。
+  //   该守卫是 Phase4 Task4 引入的"等 async enrich 完成"保守项，但副作用是首渲染时
+  //   components=[]（enrich/rebuild 未完成）→ useSnap=false → driver 闸门开放 → 发 batch-expand，
+  //   违反"零 batch-expand"约定（E2E 可见 3 次 /api/cpq/components/batch-expand）。
+  //   cardValues 是服务端字段，打开即确定、稳定，以它为唯一闸门。
+  //   useSnap=true 但 components=[] 时渲染层 normalComponents=[] → 显示"加载组件结构..."占位，
+  //   无错误、无串值（AP-38 驱动行 0 时已有 "—" 兜底）。
+  const useSnap = !!(isCosting ? lineItem.costingCardValues : lineItem.quoteCardValues);
   const { cache: liveExpansions } = useDriverExpansions(
     useSnap ? EMPTY_LINEITEMS : (lineItemsForDriver as any), customerId, quotationId);
   // rowKeyFieldsByComp 须先于 snapExpansions 构建（snapExpansions 依赖它做墓碑过滤 AP-54）
+  // COSTING/QUOTE 两侧各读自己的结构，绝不串源。
   const rowKeyFieldsByComp = useMemo(() => {
     const m = new Map<string, string[]>();
-    (quoteCardStructure?.tabs ?? []).forEach(t => { if (t.componentId) m.set(t.componentId, t.rowKeyFields ?? []); });
+    ((isCosting ? costingCardStructure : quoteCardStructure)?.tabs ?? []).forEach(t => { if (t.componentId) m.set(t.componentId, t.rowKeyFields ?? []); });
     return m;
-  }, [quoteCardStructure]);
+  }, [isCosting, costingCardStructure, quoteCardStructure]);
   const snapExpansions = useMemo(
-    () => (useSnap ? buildSnapshotExpansions(lineItemsForDriver as any, 'QUOTE', customerId, rowKeyFieldsByComp) : {}),
-    [useSnap, lineItemsForDriver, customerId, rowKeyFieldsByComp],
+    () => (useSnap ? buildSnapshotExpansions(lineItemsForDriver as any, isCosting ? 'COSTING' : 'QUOTE', customerId, rowKeyFieldsByComp) : {}),
+    [useSnap, lineItemsForDriver, isCosting, customerId, rowKeyFieldsByComp],
   );
   const driverExpansions = useMemo(
     () => (useSnap ? snapExpansions : liveExpansions),
     [useSnap, snapExpansions, liveExpansions],
   );
   // 解析本侧值快照(formulaResults 真零计算) + rowKeyFields(对齐后端 rowKey)
+  // COSTING/QUOTE 各读自己的 cardValues，绝不串源。
   const sideCardValues = useMemo<CardValues | null>(() => {
-    const json = lineItem.quoteCardValues as string | undefined;
+    const json = (isCosting ? lineItem.costingCardValues : lineItem.quoteCardValues) as string | undefined;
     if (!json) return null;
     try { return typeof json === 'string' ? JSON.parse(json) as CardValues : (json as CardValues); } catch { return null; }
-  }, [lineItem.quoteCardValues]);
+  }, [isCosting, lineItem.quoteCardValues, lineItem.costingCardValues]);
   const snapFormulaByComp = useMemo(() => {
     const m = new Map<string, { formula: Map<string, Record<string, any>>; driverRows: Record<string, any>[] }>();
     (sideCardValues?.tabs ?? []).forEach(vt => {
@@ -388,16 +417,6 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
               style={{ background: '#e6f4ff', color: '#0958d9', border: '1px solid #91caff' }}
             >
               生产料号: {lineItem.productPartNo}
-            </span>
-          )}
-          {/* 料号版本锁定 — 仅已提交报价单且角色为销售经理/系统管理员时显示, 不可修改 */}
-          {canSeeVersionTag && lineItem.partVersionLocked != null && (
-            <span
-              className="qt-sku-badge"
-              style={{ background: '#f6ffed', color: '#389e0d', border: '1px solid #b7eb8f' }}
-              title="料号版本锁定 — 本行报价数据锁定版本 (不可修改)"
-            >
-              版本: v{lineItem.partVersionLocked}
             </span>
           )}
           {lineItem.snapshot?.productCategory && (
@@ -681,7 +700,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                       <tr className="qt-subtotal-row qt-tab-total-row">
                         <td className="qt-subtotal-label-cell">合计</td>
                         <td colSpan={Math.max(1, activeComp.fields.length - 1)} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
-                          {formatCurrency(sumTabColumns(activeComp as any, compSubtotals))}
+                          {/* 本页签金额合计走"其余"高精度 4 位（精度优先）；仅最终产品小计保持 formatCurrency 2 位 */}
+                          {`¥ ${formatNumber(sumTabColumns(activeComp as any, compSubtotals), { isComputed: true }) ?? '0'}`}
                         </td>
                       </tr>
                     )}
@@ -699,7 +719,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
       <div className="qt-subtotal-bar">
         <span className="qt-subtotal-label">产品小计</span>
         <span className="qt-subtotal-value">
-          {formatCurrency(productSubtotal || lineItem.subtotal || 0)}
+          {formatCurrency(productSubtotal || (isCosting ? 0 : (lineItem.subtotal || 0)))}
         </span>
       </div>
     </div>

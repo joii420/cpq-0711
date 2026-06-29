@@ -70,6 +70,85 @@ class ExcelColumnResolverTest {
     }
 
     @Test
+    void mergeColumnOverrides_overrideDisplayFormatDecimals_reachesMergedColumn() {
+        // B5: lock the contract that an override's display_format.decimals (set via
+        // ExcelViewConfigTab) survives the merge so BOTH on-screen getExcelView and
+        // exportExcelView (which both consume getEffectiveColumns) see the configured precision.
+        List<Map<String, Object>> base = new ArrayList<>();
+        base.add(col("PRICE", "Price", false)); // base has NO display_format
+
+        Map<String, Object> df = new LinkedHashMap<>();
+        df.put("type", "NUMBER");
+        df.put("decimals", 4);
+        Map<String, Object> ov = new LinkedHashMap<>();
+        ov.put("col_key", "PRICE");
+        ov.put("display_format", df);
+
+        List<Map<String, Object>> result =
+                ExcelColumnResolver.mergeColumnOverrides(base, List.of(ov));
+
+        Map<String, Object> r = result.get(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> mergedDf = (Map<String, Object>) r.get("display_format");
+        assertNotNull(mergedDf, "override display_format must be present on merged column");
+        assertEquals(4, mergedDf.get("decimals"));
+        assertEquals("NUMBER", mergedDf.get("type"));
+        assertEquals("Price", r.get("title")); // base title untouched
+    }
+
+    @Test
+    void mergeColumnOverrides_overrideDisplayFormat_replacesBaseDisplayFormat() {
+        // When an override supplies display_format, it wholly replaces the base column's
+        // display_format (shallow merge by top-level key) — the override's decimals wins.
+        List<Map<String, Object>> base = new ArrayList<>();
+        Map<String, Object> b = col("AMT", "Amount", false);
+        Map<String, Object> baseDf = new LinkedHashMap<>();
+        baseDf.put("type", "NUMBER");
+        baseDf.put("decimals", 2);
+        b.put("display_format", baseDf);
+        base.add(b);
+
+        Map<String, Object> ovDf = new LinkedHashMap<>();
+        ovDf.put("type", "NUMBER");
+        ovDf.put("decimals", 6);
+        Map<String, Object> ov = new LinkedHashMap<>();
+        ov.put("col_key", "AMT");
+        ov.put("display_format", ovDf);
+
+        List<Map<String, Object>> result =
+                ExcelColumnResolver.mergeColumnOverrides(base, List.of(ov));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> mergedDf = (Map<String, Object>) result.get(0).get("display_format");
+        assertEquals(6, mergedDf.get("decimals"), "override decimals must win over base");
+    }
+
+    @Test
+    void mergeColumnOverrides_overrideWithoutDisplayFormat_preservesBaseDecimals() {
+        // An override that only flips hidden must NOT wipe a base column's display_format.decimals.
+        List<Map<String, Object>> base = new ArrayList<>();
+        Map<String, Object> b = col("FEE", "Fee", false);
+        Map<String, Object> baseDf = new LinkedHashMap<>();
+        baseDf.put("type", "NUMBER");
+        baseDf.put("decimals", 3);
+        b.put("display_format", baseDf);
+        base.add(b);
+
+        Map<String, Object> ov = new LinkedHashMap<>();
+        ov.put("col_key", "FEE");
+        ov.put("hidden", true); // no display_format key
+
+        List<Map<String, Object>> result =
+                ExcelColumnResolver.mergeColumnOverrides(base, List.of(ov));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> mergedDf = (Map<String, Object>) result.get(0).get("display_format");
+        assertNotNull(mergedDf, "base display_format must survive an override that omits it");
+        assertEquals(3, mergedDf.get("decimals"));
+        assertEquals(Boolean.TRUE, result.get(0).get("hidden"));
+    }
+
+    @Test
     void mergeColumnOverrides_nullOrEmptyOverrides_returnsBaseUnchanged() {
         List<Map<String, Object>> base = new ArrayList<>();
         base.add(col("A", "T", false));

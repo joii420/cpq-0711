@@ -92,6 +92,25 @@ class VersionedV6MasterDetailTest {
         assertEquals(1L, count("element_bom", null));
     }
 
+    /**
+     * 批量插入等价性特征测试（#1 性能优化护栏）：子行列集不一致时，
+     * 每行必须仍只写入自己拥有的列、其余列保持 NULL —— 批量化（按列集签名分组）不得改变此行为。
+     * r1 不含 component_usage_type，r2 含 → 两种插入签名。
+     */
+    @Test @Transactional
+    void elementBom_mixedColumnChildRows_eachRowKeepsOwnColumns() {
+        Map<String, Object> r1 = ebItem(1, "Ag", "75");                 // {seq_no, component_no, content}
+        Map<String, Object> r2 = ebItem(2, "Ni", "25");
+        r2.put("component_usage_type", "TYPE-X");                        // 仅 r2 多一列
+        writer.writeVersionedMasterDetail(
+            "element_bom", "characteristic", ebGk(), Map.of("bom_type", "MATERIAL"),
+            "element_bom_item", "characteristic", ebGk(),
+            List.of("seq_no", "component_no", "content", "component_usage_type"), List.of(r1, r2));
+        assertEquals(2L, count("element_bom_item", "is_current=true"));
+        assertEquals(1L, count("element_bom_item", "component_no='Ag' AND component_usage_type IS NULL"));
+        assertEquals(1L, count("element_bom_item", "component_no='Ni' AND component_usage_type='TYPE-X'"));
+    }
+
     // ---------- material_bom：子表 uq 无版本 + characteristic=NULL（Q03）→ NULL 安全 + upsert ----------
 
     private Map<String, Object> mbMasterGk(String bomType) {  // 主表身份含 bom_type 维度（#5）

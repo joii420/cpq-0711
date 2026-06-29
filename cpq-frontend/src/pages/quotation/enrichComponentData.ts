@@ -154,6 +154,8 @@ export async function enrichComponentData(
         sort_order: f.sort_order,
         // 单位换算：透传 unit_source_field，供 computeAllFormulas 换算时按同行单位归一
         unit_source_field: f.unit_source_field,
+        // 显示位数：透传供 ComponentCell 显示格式化（仅显示，不改计算）
+        decimals: f.decimals ?? null,
         label: f.label || f.name || '',
         key: f.name || f.key || '',
       }));
@@ -270,6 +272,8 @@ export function buildComponentDataFromStructure(
       sort_order: f.sortOrder,
       // 单位换算：结构快照支持 camelCase 和 snake_case 两种写法
       unit_source_field: f.unitSourceField ?? f.unit_source_field,
+      // 显示位数：透传供 ComponentCell 显示格式化（仅显示，不改计算）
+      decimals: f.decimals ?? null,
       label: f.label || f.name || '',
       key: f.name || '',
     }));

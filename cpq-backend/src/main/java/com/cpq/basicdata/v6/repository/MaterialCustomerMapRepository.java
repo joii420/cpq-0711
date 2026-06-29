@@ -4,9 +4,13 @@ import com.cpq.basicdata.v6.entity.MaterialCustomerMap;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.Query;
 import jakarta.inject.Inject;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -53,6 +57,117 @@ public class MaterialCustomerMapRepository implements PanacheRepositoryBase<Mate
             .setParameter("quoteCurrency", quoteCurrency)
             .setParameter("exchangeRate", exchangeRate)
             .setParameter("updatedBy", updatedBy)
+            .executeUpdate();
+    }
+
+    /** 行载体：upsertBatch 一行的 11 个值字段（与 upsert 形参一一对应）。 */
+    public static final class MapRow {
+        public final String materialNo, customerNo, customerName, customerMaterialName,
+                customerProductNo, customerDrawingNo, paymentMethod, baseCurrency, quoteCurrency;
+        public final Integer seqNo;
+        public final BigDecimal exchangeRate;
+
+        public MapRow(String materialNo, String customerNo, String customerName,
+                      String customerMaterialName, String customerProductNo, String customerDrawingNo,
+                      Integer seqNo, String paymentMethod, String baseCurrency, String quoteCurrency,
+                      BigDecimal exchangeRate) {
+            this.materialNo = materialNo; this.customerNo = customerNo; this.customerName = customerName;
+            this.customerMaterialName = customerMaterialName; this.customerProductNo = customerProductNo;
+            this.customerDrawingNo = customerDrawingNo; this.seqNo = seqNo; this.paymentMethod = paymentMethod;
+            this.baseCurrency = baseCurrency; this.quoteCurrency = quoteCurrency; this.exchangeRate = exchangeRate;
+        }
+
+        /** 同冲突键折叠：逐 COALESCE 列「后行非空覆盖前行」，复刻逐行 ON CONFLICT 的 last-non-null 语义。
+         *  注：key 三列（materialNo/customerNo/customerProductNo）按定义两行相同，取 next 即可。 */
+        static MapRow coalesceOver(MapRow prev, MapRow next) {
+            return new MapRow(
+                next.materialNo, next.customerNo,
+                next.customerName != null ? next.customerName : prev.customerName,
+                next.customerMaterialName != null ? next.customerMaterialName : prev.customerMaterialName,
+                next.customerProductNo,
+                next.customerDrawingNo != null ? next.customerDrawingNo : prev.customerDrawingNo,
+                next.seqNo != null ? next.seqNo : prev.seqNo,
+                next.paymentMethod != null ? next.paymentMethod : prev.paymentMethod,
+                next.baseCurrency != null ? next.baseCurrency : prev.baseCurrency,
+                next.quoteCurrency != null ? next.quoteCurrency : prev.quoteCurrency,
+                next.exchangeRate != null ? next.exchangeRate : prev.exchangeRate);
+        }
+    }
+
+    private static String nz(String s) { return s == null ? "" : s; }
+
+    /**
+     * 批量 upsert，等价于对每行调用 {@link #upsert}（冲突键 + DO UPDATE SET 完全一致）。
+     * sheet 内先按 (material_no, customer_no, customer_product_no) 去重折叠（后行 COALESCE 覆盖前行），
+     * 再分块（≤500 行/语句）发单条多值 INSERT … ON CONFLICT。
+     */
+    public int upsertBatch(List<MapRow> rows, UUID updatedBy) {
+        if (rows == null || rows.isEmpty()) return 0;
+        LinkedHashMap<List<String>, MapRow> dedup = new LinkedHashMap<>();
+        for (MapRow r : rows) {
+            List<String> k = List.of(nz(r.materialNo), nz(r.customerNo), nz(r.customerProductNo));
+            dedup.merge(k, r, MapRow::coalesceOver);
+        }
+        List<MapRow> folded = new ArrayList<>(dedup.values());
+        final int CHUNK = 500;
+        int affected = 0;
+        for (int off = 0; off < folded.size(); off += CHUNK) {
+            List<MapRow> chunk = folded.subList(off, Math.min(off + CHUNK, folded.size()));
+            affected += upsertChunk(chunk, updatedBy);
+        }
+        return affected;
+    }
+
+    private int upsertChunk(List<MapRow> chunk, UUID updatedBy) {
+        StringBuilder vals = new StringBuilder();
+        for (int i = 0; i < chunk.size(); i++) {
+            if (i > 0) vals.append(", ");
+            int b = i * 11;
+            vals.append("(:p").append(b).append(", :p").append(b + 1).append(", :p").append(b + 2)
+                .append(", :p").append(b + 3).append(", :p").append(b + 4).append(", :p").append(b + 5)
+                .append(", :p").append(b + 6).append(", :p").append(b + 7).append(", :p").append(b + 8)
+                .append(", :p").append(b + 9).append(", :p").append(b + 10).append(", NOW(), NOW(), :ub)");
+        }
+        String sql =
+            "INSERT INTO material_customer_map (material_no, customer_no, customer_name, " +
+            "  customer_material_name, customer_product_no, customer_drawing_no, seq_no, " +
+            "  payment_method, base_currency, quote_currency, exchange_rate, " +
+            "  created_at, updated_at, updated_by) VALUES " + vals +
+            " ON CONFLICT (material_no, customer_no, customer_product_no) DO UPDATE SET " +
+            "  customer_name          = COALESCE(EXCLUDED.customer_name,          material_customer_map.customer_name), " +
+            "  customer_material_name = COALESCE(EXCLUDED.customer_material_name, material_customer_map.customer_material_name), " +
+            "  customer_drawing_no    = COALESCE(EXCLUDED.customer_drawing_no,    material_customer_map.customer_drawing_no), " +
+            "  seq_no                 = COALESCE(EXCLUDED.seq_no,                 material_customer_map.seq_no), " +
+            "  payment_method         = COALESCE(EXCLUDED.payment_method,         material_customer_map.payment_method), " +
+            "  base_currency          = COALESCE(EXCLUDED.base_currency,          material_customer_map.base_currency), " +
+            "  quote_currency         = COALESCE(EXCLUDED.quote_currency,         material_customer_map.quote_currency), " +
+            "  exchange_rate          = COALESCE(EXCLUDED.exchange_rate,          material_customer_map.exchange_rate), " +
+            "  updated_at             = NOW(), " +
+            "  updated_by             = EXCLUDED.updated_by";
+        Query q = em.createNativeQuery(sql);
+        for (int i = 0; i < chunk.size(); i++) {
+            MapRow r = chunk.get(i); int b = i * 11;
+            q.setParameter("p" + b, r.materialNo);
+            q.setParameter("p" + (b + 1), r.customerNo);
+            q.setParameter("p" + (b + 2), r.customerName);
+            q.setParameter("p" + (b + 3), r.customerMaterialName);
+            q.setParameter("p" + (b + 4), r.customerProductNo);
+            q.setParameter("p" + (b + 5), r.customerDrawingNo);
+            q.setParameter("p" + (b + 6), r.seqNo);
+            q.setParameter("p" + (b + 7), r.paymentMethod);
+            q.setParameter("p" + (b + 8), r.baseCurrency);
+            q.setParameter("p" + (b + 9), r.quoteCurrency);
+            q.setParameter("p" + (b + 10), r.exchangeRate);
+        }
+        q.setParameter("ub", updatedBy);
+        return q.executeUpdate();
+    }
+
+    /** ① replace-per-customer：删除该客户全部映射（重导前清栈，避免历史脏行残留扇出）。 */
+    public int deleteByCustomerNo(String customerNo) {
+        return em.createNativeQuery(
+                "DELETE FROM material_customer_map WHERE customer_no = :customerNo")
+            .setParameter("customerNo", customerNo)
             .executeUpdate();
     }
 }

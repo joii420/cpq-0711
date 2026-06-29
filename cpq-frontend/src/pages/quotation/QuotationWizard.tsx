@@ -18,6 +18,8 @@ import QuotationStep3 from './QuotationStep3';
 import type { DriftDetectionResult } from '../../types/quotation-drift';
 import type { LineItem, ComponentDataItem } from './QuotationStep2';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
+import { safeSetLocalDraft } from './draftCache';
+import { stableDraftDedupKey } from './draftPayloadDedup';
 import AddProductModal from './AddProductModal';
 import ConfigureProductDrawer from './ConfigureProductDrawer';
 import QuotationCreateForm from './QuotationCreateForm';
@@ -29,6 +31,8 @@ import { globalVariableService } from '../../services/globalVariableService';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 import { splitRows, rowAt } from './manualRows';
 import { coerceInputNumber } from './inputDefaults';
+import type { CostingTemplateColumn } from '../../services/costingTemplateService';
+import { buildExcelSnapshot } from './buildExcelSnapshot';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
@@ -157,6 +161,30 @@ const QuotationWizard: React.FC = () => {
       .catch(() => setGvDefs({}));
   }, []);
 
+  // Phase 3（2026-06-21）：报价 Excel 列定义 ref — 供 buildDraftPayload 按 customerTemplateId 拉一次。
+  // 用 ref 存储避免触发 re-render；失败时静默退化为空数组（quoteExcelValues=undefined，后端兜底）。
+  const excelColumnsRef = useRef<CostingTemplateColumn[]>([]);
+  useEffect(() => {
+    if (!customerTemplateId) { excelColumnsRef.current = []; return; }
+    // I1 fix（2026-06-21）：customerTemplateId 快速切换时旧响应可能晚于新响应到达，
+    // 用 cancelled 标志丢弃过时响应，防止旧列定义覆盖新 ref。
+    let cancelled = false;
+    // Phase2.5：取后端解析的有效列（v2 引用配置 excel_component_id 客户端无法解析，须经 getEffectiveColumns）。
+    // 端点直接返回解析列数组；v2/legacy 都能拿到 A/B/C，使 saveDraft buildExcelSnapshot 算出非空快照。
+    templateService.getEffectiveExcelColumns(customerTemplateId)
+      .then((r: any) => {
+        if (cancelled) return;
+        try {
+          const body = r?.data ?? r;
+          excelColumnsRef.current = Array.isArray(body) ? body : [];
+        } catch {
+          excelColumnsRef.current = [];
+        }
+      })
+      .catch(() => { excelColumnsRef.current = []; });
+    return () => { cancelled = true; };
+  }, [customerTemplateId]);
+
   // 2026-06-01: 取消 10 秒定时自动保存（用户决议）。草稿持久化改为按需触发：
   //   ① 基础数据导入流程创建后自动保存一次（下方 import-auto-save effect）；
   //   ② 报价卡片单元格编辑走 editQuoteCardValue 端点即时回写（Task3）；
@@ -180,6 +208,29 @@ const QuotationWizard: React.FC = () => {
   // 基础数据导入流程：autoPopulate 完成后立即触发一次保存草稿，把"已自动加入 N 个产品"
   // 持久化下来，避免用户刷新前丢数据。一次性，避免重复触发。
   const importAutoSavedRef = useRef(false);
+  // ③ autoSaveDraft 串行化：导入流下 import-auto-save effect 与 lineItems-change effect
+  // 会用「不同」payload（driverExpansions 仍在陆续到位）几乎同时触发两次保存；
+  // 两条 id=null payload 的后端事务重叠 → 各插 85 行、谁的「删未保留行」都删不到对方 → 170。
+  // savingRef：有保存在飞时不再并发起第二次；pendingSaveRef：飞行中到来的变更，落地后补跑一次（取最新 payload）。
+  const savingRef = useRef(false);
+  const pendingSaveRef = useRef(false);
+  // 止血B(2026-06-25):保存在飞状态,驱动「保存草稿/下一步/上一步」按钮禁用 + loading,
+  //   配合 handleSaveDraft 的 savingRef 在飞守卫,杜绝卡顿期连点并发触发 saveDraft(→OptimisticLock/腐蚀)。
+  const [saving, setSaving] = useState(false);
+  // Plan A(2026-06-24 空白BUG止血):autosave 默认拒绝门。
+  //   背景:打开报价单时 applyQuotationData(:300 basicItems)+ enrich(:425)两处**程序化** setLineItems
+  //   触发 autosave 风暴 → saveDraft 慢 + 并发 → 占满后端线程池 → getById 超时 → 退空本地缓存 → 空白页
+  //   (违反 :470「草稿默认冻结、打开不重刷」设计意图)。
+  //   修法:autosave effect 默认 return,**只有真实用户编辑(经 setLineItemsByUser 置位)才放行**。
+  //   打开 / enrich / saveDraft 响应回填等所有程序化 setLineItems 走原始 setLineItems,不置位 → 不 autosave。
+  //   表单头部字段编辑走独立的 onValuesChange→scheduleAutoSave 路径(不经此 effect),不受影响。
+  const userEditedRef = useRef(false);
+  // 用户编辑专用 setter:置位 userEditedRef 后再改 lineItems,使 autosave effect 放行本次变化。
+  // 子组件(Step2/Step3/各 Drawer)的 lineItems 写入一律走它;程序化写入仍用原始 setLineItems。
+  const setLineItemsByUser = useCallback((update: Parameters<typeof setLineItems>[0]) => {
+    userEditedRef.current = true;
+    setLineItems(update);
+  }, []);
 
   // Load existing quotation
   useEffect(() => {
@@ -202,7 +253,13 @@ const QuotationWizard: React.FC = () => {
   //   autoSaveDraft 内部 lastSaveRef 去重 → payload 未变则不发请求(空闲零请求)。
   //   作用: 保证编辑落库(row_data 重开存活 + Excel/提交读新), 而无 10s 空转轮询。
   const autoSaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 2026-06-26：暂时关闭「用户编辑失焦自动触发 draft」(lineItems 编辑 effect:279 + 表单 onValuesChange:1626)。
+  //   背景:autosave 在首存慢时反复触发(4 份快照回填→payload churn→重发链),把 draft 体感乘 3。
+  //   现策略:draft 仅由「导入首存(import-auto-save effect 直调 autoSaveDraft)」+「手动保存草稿/下一步/上一步/提交
+  //   按钮(handleSaveDraft)」触发;编辑失焦不再自动存。改回:删掉下面的 return(恢复 1.5s 防抖自动保存)。
+  const EDIT_AUTOSAVE_ENABLED = false;
   const scheduleAutoSave = useCallback(() => {
+    if (!EDIT_AUTOSAVE_ENABLED) return;   // 编辑失焦自动保存已暂时关闭(见上)
     if (!quotationId) return;
     if (autoSaveDebounceRef.current) clearTimeout(autoSaveDebounceRef.current);
     autoSaveDebounceRef.current = setTimeout(() => {
@@ -222,6 +279,11 @@ const QuotationWizard: React.FC = () => {
       syncingRef.current = false;
       return;
     }
+    // Plan A 默认拒绝门:仅"真实用户编辑"(经 setLineItemsByUser 置位)才 autosave;
+    // 打开 / enrich 等程序化 setLineItems 不置位 → 直接 return,不发请求(止血风暴)。
+    // 命中即消费复位:saveDraft 后 syncLineItemsFromResponse 回填(及后续程序化变化)不再误触发。
+    if (!userEditedRef.current) return;
+    userEditedRef.current = false;
     scheduleAutoSave();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lineItems, quotationId]);
@@ -230,6 +292,8 @@ const QuotationWizard: React.FC = () => {
   // 旧的整单折扣自动计算 effect 已废弃（V1 行级折扣由 Step3 组件处理）
 
   const applyQuotationData = (q: any) => {
+    // Plan A:打开/加载一律从"默认拒绝"起步,清掉可能残留的用户编辑标记(防跨报价单泄漏 → 打开误存)。
+    userEditedRef.current = false;
     setQuotation(q);
     setQuotationId(q.id);
     form.setFieldsValue({
@@ -439,7 +503,7 @@ const QuotationWizard: React.FC = () => {
       // 需要最新基础数据 → 用户在 Step2 主动点「刷新基础数据」按钮（Task B2）。
       applyQuotationData(res.data);
       // Update localStorage backup on successful load
-      localStorage.setItem(`cpq-draft-${qId}`, JSON.stringify(res.data));
+      safeSetLocalDraft(`cpq-draft-${qId}`, JSON.stringify(res.data));
     } catch (e: any) {
       // P2-9: Try localStorage fallback on backend failure
       const local = localStorage.getItem(`cpq-draft-${qId}`);
@@ -600,28 +664,44 @@ const QuotationWizard: React.FC = () => {
 
   const autoSaveDraft = useCallback(async () => {
     if (!quotationId) return;
+    // ③ 串行化：已有保存在飞 → 记一个待补跑标记后直接返回，不并发第二条 id=null payload。
+    if (savingRef.current) { pendingSaveRef.current = true; return; }
+    savingRef.current = true;
+    setSaving(true);
     try {
       const values = form.getFieldsValue();
       const payload = normalizeDraftPayloadNumbers(buildDraftPayload(values));
-      const payloadStr = JSON.stringify(payload);
-      if (payloadStr === lastSaveRef.current) return;
-      lastSaveRef.current = payloadStr;
+      // P0(2026-06-26):去重只比用户输入,剔除随 driverExpansions live→snap 翻转而重算的派生字段
+      //   (subtotal / quoteExcelValues / rowData)。否则首存后回填快照翻转模式 → payload 串变 → 去重失效
+      //   → pendingSaveRef 补发 → 三连发。详见 draftPayloadDedup.ts。
+      const dedupKey = stableDraftDedupKey(payload);
+      if (dedupKey === lastSaveRef.current) return;
+      lastSaveRef.current = dedupKey;
       const res = await quotationService.saveDraft(quotationId, payload);
       // BUMP 后端把新 partVersionLocked 写入 DB，前端本地 state 需同步回填，
       // 避免「卡片版本号停在旧值直到强刷」的 UX 漂移；同时回填重建后的新行 id，
       // 触发 driver 展开按新 id 重拉 → 导入工序等按行快照无需刷新即出现。
       syncLineItemsFromResponse(res?.data);
       // P2-9: backup to localStorage on success
-      localStorage.setItem(`cpq-draft-${quotationId}`, JSON.stringify(payload));
+      safeSetLocalDraft(`cpq-draft-${quotationId}`, JSON.stringify(payload));
     } catch {
       // P2-9: fallback to localStorage on failure
       try {
         const values = form.getFieldsValue();
         const payload = buildDraftPayload(values);
-        localStorage.setItem(`cpq-draft-${quotationId}`, JSON.stringify(payload));
+        safeSetLocalDraft(`cpq-draft-${quotationId}`, JSON.stringify(payload));
         message.warning('网络异常，已保存到本地缓存');
       } catch {
         // ignore
+      }
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+      // 飞行期间有新的保存请求被合并 → 现在串行补跑一次（取最新 lineItems/expansion 的 payload）。
+      // 此时第一次保存的 syncLineItemsFromResponse 已回填行 id，补跑 payload 带 id → 后端就地复用，不再新增重复行。
+      if (pendingSaveRef.current) {
+        pendingSaveRef.current = false;
+        autoSaveDraftRef.current?.();
       }
     }
     // 把 driverExpansions / customerIdValue 列入 deps，让 buildDraftPayload → snapshotRows
@@ -786,6 +866,25 @@ const QuotationWizard: React.FC = () => {
         lineFinalPrice: li.lineFinalPrice ?? null,
         lineTotalAmount: li.lineTotalAmount ?? null,
         discountRuleCode: li.discountRuleCode ?? null,
+        // Phase 3（2026-06-21）：前端单引擎算好的报价 Excel 快照，随 saveDraft 原样落库。
+        // 后端 snapshotLineValues 守卫：仅当 li.quoteExcelValues==null 时才 buildExcelValues 兜底。
+        // C1 fix（2026-06-21）：buildExcelSnapshot 未传 pathCache 时 BNF/VARIABLE 列 cache-miss
+        // 会返 '__loading__' 哨兵。JSON.stringify 不抛错，哨兵会原样落库，守卫见非 null 不重算
+        // → 脏值永久固化（历史教训：excel-snapshot-no-persist-loading-sentinel）。
+        // 最小稳健修法：算完后检测含哨兵则放弃前端快照，让后端 buildExcelValues 兜底。
+        quoteExcelValues: (() => {
+          try {
+            const cols = excelColumnsRef.current;
+            if (!cols?.length) return undefined;
+            const snap = buildExcelSnapshot(li, cols, driverExpansions, customerIdValue, { globalVariableDefs: gvDefs });
+            // C1 guard: if any cell still holds '__loading__' (BNF path not yet resolved),
+            // discard the frontend snapshot and let the backend fallback recalculate.
+            if (snap.rows.some(r => Object.values(r).some(v => v === '__loading__'))) return undefined;
+            return JSON.stringify(snap);
+          } catch {
+            return undefined;
+          }
+        })(),
         componentData: (li.componentData || []).map((cd, ci) => ({
           componentId: cd.componentId || null,
           tabName: cd.tabName || '',
@@ -937,24 +1036,46 @@ const QuotationWizard: React.FC = () => {
 
   const handleSaveDraft = async (silent = false) => {
     if (!quotationId) return;
+    // 止血B(2026-06-25)在飞守卫:已有保存在飞(autoSave 或手动)→ 标记补跑后返回,不并发起第二条
+    //   saveDraft。背景:首存慢(几十秒)时用户在卡顿期连点「保存草稿/下一步」会并发触发多个 saveDraft,
+    //   阶段③ 卡片值循环互删被对方重建的行 → OptimisticLock + 可能腐蚀数据(939e072e 被抹0行同机制)。
+    //   与 autoSaveDraft 共用 savingRef/pendingSaveRef,使所有 save(自动+手动+步骤切换)全局串行。
+    if (savingRef.current) {
+      pendingSaveRef.current = true;
+      if (!silent) message.info('正在保存中，请稍候…');
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
     try {
       const values = form.getFieldsValue();
       // 与 autoSaveDraft 同口径:规范化数值后再 PUT/落 localStorage,避免手动/自动保存写库精度不一致
       const payload = normalizeDraftPayloadNumbers(buildDraftPayload(values));
       const res = await quotationService.saveDraft(quotationId, payload);
+      // P0:与 autoSaveDraft 同口径登记去重键,使 finally 的 pendingSaveRef 补发(用户输入未变时)被去重,
+      //   不再因首存回填快照翻转模式而多发一次 PUT。
+      lastSaveRef.current = stableDraftDedupKey(payload);
       setQuotationPreservingStructures(res.data);
       // 回填重建后的新行 id + partVersionLocked,避免卡片版本号停在旧值、并触发展开按新 id 重拉
       syncLineItemsFromResponse(res.data);
       if (!silent) message.success('草稿已保存');
-      localStorage.setItem(`cpq-draft-${quotationId}`, JSON.stringify(payload));
+      safeSetLocalDraft(`cpq-draft-${quotationId}`, JSON.stringify(payload));
     } catch (e: any) {
       try {
         const values2 = form.getFieldsValue();
         const payload2 = normalizeDraftPayloadNumbers(buildDraftPayload(values2));
-        localStorage.setItem(`cpq-draft-${quotationId}`, JSON.stringify(payload2));
+        safeSetLocalDraft(`cpq-draft-${quotationId}`, JSON.stringify(payload2));
         if (!silent) message.warning('已保存到本地，网络恢复后将同步');
       } catch {
         if (!silent) message.error(e.message);
+      }
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+      // 飞行期间合并的保存请求,落地后补跑一次(取最新 payload),与 autoSaveDraft 同款。
+      if (pendingSaveRef.current) {
+        pendingSaveRef.current = false;
+        autoSaveDraftRef.current?.();
       }
     }
   };
@@ -1002,11 +1123,11 @@ const QuotationWizard: React.FC = () => {
   };
 
   const handleRemoveLineItem = (index: number) => {
-    setLineItems(prev => prev.filter((_, i) => i !== index));
+    setLineItemsByUser(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleUpdateLineItem = (index: number, data: Partial<LineItem> | ((prev: LineItem) => Partial<LineItem>)) => {
-    setLineItems(prev => prev.map((item, i) => {
+    setLineItemsByUser(prev => prev.map((item, i) => {
       if (i !== index) return item;
       const patch = typeof data === 'function' ? data(item) : data;
       return { ...item, ...patch };
@@ -1076,8 +1197,8 @@ const QuotationWizard: React.FC = () => {
         compositeProcesses: Array.isArray(li.compositeProcesses) ? li.compositeProcesses : [],
       }) as LineItem;
     });
-    // 1. 立即追加新行 (函数式, 防 race)
-    setLineItems(prev => [...prev, ...basicItems]);
+    // 1. 立即追加新行 (函数式, 防 race) —— 用户确认选配 = 真实编辑,放行 autosave
+    setLineItemsByUser(prev => [...prev, ...basicItems]);
     // 2. 异步拉模板 schema (componentData + productAttributes), 合回 state
     const enriched = await Promise.all(basicItems.map(async (li) => {
       if (!li.templateId) return li;
@@ -1094,7 +1215,8 @@ const QuotationWizard: React.FC = () => {
       invalidateDriverExpansions(affectedPartNos);
     }
     // 3. 按 id 匹配回灌 (用户已开始编辑的不动 — 但选配新行 id 唯一不冲突, 简单 replace 即可)
-    setLineItems(prev => prev.map(cur => {
+    //    仍属用户选配流程的产物,放行 autosave(保证选配新行 enrich 后的结构被持久化)。
+    setLineItemsByUser(prev => prev.map(cur => {
       const updated = enriched.find(e => e.id && e.id === cur.id);
       if (!updated) return cur;
       return {
@@ -1319,7 +1441,7 @@ const QuotationWizard: React.FC = () => {
         lineItems={lineItems}
         onAddProduct={() => setAddProductModalOpen(true)}
         onAddConfigured={() => setConfigureDrawerOpen(true)}
-        onAddBatch={(items) => setLineItems((prev) => {
+        onAddBatch={(items) => setLineItemsByUser((prev) => {
           // 去重:同一 productPartNo 只保留一份(以现有为准,新增的覆盖不了)
           const existing = new Set(prev.map((p) => p.productPartNo).filter(Boolean));
           const newItems = items.filter((it) => !it.productPartNo || !existing.has(it.productPartNo));
@@ -1343,7 +1465,7 @@ const QuotationWizard: React.FC = () => {
         open={addProductModalOpen}
         onCancel={() => setAddProductModalOpen(false)}
         onConfirm={(lineItem) => {
-          setLineItems(prev => [...prev, lineItem]);
+          setLineItemsByUser(prev => [...prev, lineItem]);
           setAddProductModalOpen(false);
         }}
       />
@@ -1362,7 +1484,9 @@ const QuotationWizard: React.FC = () => {
       quotationId={quotationId || undefined}
       lineItems={lineItems}
       baseCurrency={quotation?.baseCurrency || 'CNY'}
-      onUpdate={(updater) => setLineItems(prev => updater(prev))}
+      driverExpansions={driverExpansions}
+      customerId={customerIdValue}
+      onUpdate={(updater) => setLineItemsByUser(prev => updater(prev))}
     />
   );
 
@@ -1496,7 +1620,7 @@ const QuotationWizard: React.FC = () => {
         extra={
           <Space>
             {quotationId && (
-              <Button icon={<SaveOutlined />} onClick={() => handleSaveDraft()}>
+              <Button icon={<SaveOutlined />} loading={saving} disabled={saving} onClick={() => handleSaveDraft()}>
                 保存草稿
               </Button>
             )}
@@ -1529,13 +1653,14 @@ const QuotationWizard: React.FC = () => {
         <Divider />
 
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <Button disabled={currentStep === 0} onClick={prev}>
+          <Button disabled={currentStep === 0 || saving} onClick={prev}>
             上一步
           </Button>
           <Button
             type="primary"
+            loading={saving}
             onClick={next}
-            disabled={currentStep === steps.length - 1 || (currentStep === 0 && !!selectedCustomer && !step1Valid)}
+            disabled={saving || currentStep === steps.length - 1 || (currentStep === 0 && !!selectedCustomer && !step1Valid)}
             title={currentStep === 0 && !!selectedCustomer && !step1Valid ? '请先填写产品分类和报价模板' : undefined}
           >
             下一步

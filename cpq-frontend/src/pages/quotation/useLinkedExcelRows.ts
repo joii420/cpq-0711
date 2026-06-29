@@ -10,7 +10,18 @@ import { batchEvaluate, buildEvalKey } from '../../services/formulaService';
 import type { LineItem } from './QuotationStep2';
 
 /** BNF path cache key: `${partNo}::${path}` */
-const pathCacheKey = (partNo: string, path: string) => `${partNo}::${path}`;
+export const pathCacheKey = (partNo: string, path: string) => `${partNo}::${path}`;
+
+/**
+ * M1（2026-06-21）：共享列解析 helper，消除 QuotationWizard 与 useLinkedExcelRows 的重复逻辑。
+ * getExcelViewConfig 响应可能返回数组或含 columns 属性的对象，此 helper 统一处理两种格式。
+ * 行为与原两处实现 1:1 等价。
+ */
+export function parseExcelViewColumns(raw: any): CostingTemplateColumn[] {
+  if (Array.isArray(raw)) return raw as CostingTemplateColumn[];
+  if (Array.isArray(raw?.columns)) return raw.columns as CostingTemplateColumn[];
+  return [];
+}
 
 /**
  * 单行数据：__key/__label/__hfPartNo/__noData 为元数据，其余 key 为 col_key → 求值后的值。
@@ -43,15 +54,23 @@ export interface UseLinkedExcelRowsResult {
   excelTemplate: CostingTemplate | null;
   loading: boolean;
   error: string | null;
+  /**
+   * 配置模型：
+   *  - 'v2'    = 模板「引用 EXCEL 组件」配置 {excel_component_id}，客户端无法解析，
+   *              须走后端 getExcelView(getEffectiveColumns + TabJoinPlanEvaluator)。
+   *  - 'legacy'= 老内联列数组（VARIABLE/FORMULA 客户端可算）。
+   *  - 'empty' = 未配置 / 无 linkedTemplateId。
+   */
+  configShape: 'v2' | 'legacy' | 'empty';
 }
 
 /** 是否为老 `{CODE}` 简写格式（V73 过渡格式）；非此格式即按 BNF 路径走后端求值。 */
-function isLegacyVarCode(s: string | undefined): boolean {
+export function isLegacyVarCode(s: string | undefined): boolean {
   return !!s && /^\{[^}]+\}$/.test(s.trim());
 }
 
 /** 解析老 `{CODE}` 格式 VARIABLE 列：去括号转小写后按 lineItem / quotationContext 字段映射取值。 */
-function resolveVariable(
+export function resolveVariable(
   variablePath: string | undefined,
   lineItem: LineItem,
   quotationContext: Record<string, any>,
@@ -89,7 +108,7 @@ function resolveVariable(
 }
 
 /** FORMULA 列求值：替换列引用 [X] 与变量 {CODE} 后，受限字符白名单内用 Function 构造器计算。 */
-function evaluateFormula(
+export function evaluateFormula(
   formula: string | undefined,
   rowCellValues: Record<string, any>,
   rowVariableValues: Record<string, any>,
@@ -122,7 +141,7 @@ function evaluateFormula(
   }
 }
 
-function formatPathValue(v: any): any {
+export function formatPathValue(v: any): any {
   if (v == null) return null;
   if (typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean') return v;
   if (Array.isArray(v)) {
@@ -158,6 +177,7 @@ function formatPathValue(v: any): any {
 export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedExcelRowsResult {
   const { linkedTemplateId, lineItems, customerId, templateId, quotationContext, quotationId, quotationStatus } = params;
   const [excelTemplate, setExcelTemplate] = useState<CostingTemplate | null>(null);
+  const [configShape, setConfigShape] = useState<'v2' | 'legacy' | 'empty'>('empty');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pathCache, setPathCache] = useState<Record<string, any>>({});
@@ -165,6 +185,7 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
   useEffect(() => {
     if (!linkedTemplateId) {
       setExcelTemplate(null);
+      setConfigShape('empty');
       return;
     }
     setLoading(true);
@@ -173,13 +194,21 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
       .getExcelViewConfig(linkedTemplateId)
       .then((r: any) => {
         const raw = r?.data ?? r;
-        const cols = Array.isArray(raw)
-          ? raw
-          : Array.isArray(raw?.columns) ? raw.columns : [];
-        if (cols.length === 0) {
+        // v2「引用 EXCEL 组件」配置 {version,excel_component_id,column_overrides}：客户端无法把组件引用
+        // 解析成列（需后端 getEffectiveColumns），其列多为 TAB_JOIN/CARD_FORMULA。
+        // 标记为 v2，由 LinkedExcelView 据 side 决定列定义来源（报价侧取后端解析列 + 前端 buildExcelSnapshot 算值）。
+        if (raw && typeof raw === 'object' && !Array.isArray(raw) && raw.excel_component_id) {
+          setConfigShape('v2');
           setExcelTemplate(null);
           return;
         }
+        const cols = parseExcelViewColumns(raw);
+        if (cols.length === 0) {
+          setConfigShape('empty');
+          setExcelTemplate(null);
+          return;
+        }
+        setConfigShape('legacy');
         setExcelTemplate({
           id: linkedTemplateId,
           columns: JSON.stringify(cols),
@@ -231,8 +260,10 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
       quotationStatus: quotationStatus || null,
     }));
 
-    batchEvaluate(tasks)
+    const controller = new AbortController();
+    batchEvaluate(tasks, controller.signal)
       .then((items) => {
+        if (controller.signal.aborted) return;
         const itemByKey: Record<string, typeof items[number]> = {};
         for (const it of items) itemByKey[it.key] = it;
         setPathCache((prev) => {
@@ -251,7 +282,8 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
           return next;
         });
       })
-      .catch(() => {
+      .catch((err) => {
+        if (controller.signal.aborted || (err && (err as any).code === 'ERR_CANCELED')) return;
         setPathCache((prev) => {
           const next = { ...prev };
           for (const t of missing) {
@@ -261,6 +293,7 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
           return next;
         });
       });
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathTasks, customerId, templateId, linkedTemplateId, quotationId, quotationStatus]);
 
@@ -337,5 +370,5 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
     // 注：formatPathValue/resolveVariable/evaluateFormula 均为模块级稳定引用，无需进 deps
   }, [parsedColumns, lineItems, quotationContext, pathCache]);
 
-  return { rows, parsedColumns, excelTemplate, loading, error };
+  return { rows, parsedColumns, excelTemplate, loading, error, configShape };
 }

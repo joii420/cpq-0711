@@ -49,6 +49,10 @@ public class QuotationDTO {
     public com.fasterxml.jackson.databind.JsonNode costingCardStructure;
     public com.fasterxml.jackson.databind.JsonNode costingExcelStructure;
 
+    /** 详情页只读 Excel/比对所需：带 display_format 的有效列（snake_case），零值计算。 */
+    public java.util.List<java.util.Map<String, Object>> quoteExcelColumns;
+    public java.util.List<java.util.Map<String, Object>> costingExcelColumns;
+
     /**
      * 客户报价模板 ID(由 BasicDataImportV5ToQuotation 创建报价单时按
      * (customerId, categoryId) 自动匹配后写入)。
@@ -186,6 +190,17 @@ public class QuotationDTO {
         public String costingCardValues;
         public String costingExcelValues;
 
+        // Step3 行级折扣（V302）
+        public Integer annualVolume;
+        public String discountSource;
+        public java.math.BigDecimal discountBaseAmount;
+        public java.math.BigDecimal discountRateApplied;
+        public java.math.BigDecimal lineDiscountAmount;
+        public java.math.BigDecimal lineUnitPrice;
+        public java.math.BigDecimal lineFinalPrice;
+        public java.math.BigDecimal lineTotalAmount;
+        public String discountRuleCode;
+
         public static LineItemDTO from(QuotationLineItem li) {
             LineItemDTO dto = new LineItemDTO();
             dto.id = li.id;
@@ -219,6 +234,15 @@ public class QuotationDTO {
             dto.quoteExcelValues = li.quoteExcelValues;
             dto.costingCardValues = li.costingCardValues;
             dto.costingExcelValues = li.costingExcelValues;
+            dto.annualVolume = li.annualVolume;
+            dto.discountSource = li.discountSource;
+            dto.discountBaseAmount = li.discountBaseAmount;
+            dto.discountRateApplied = li.discountRateApplied;
+            dto.lineDiscountAmount = li.lineDiscountAmount;
+            dto.lineUnitPrice = li.lineUnitPrice;
+            dto.lineFinalPrice = li.lineFinalPrice;
+            dto.lineTotalAmount = li.lineTotalAmount;
+            dto.discountRuleCode = li.discountRuleCode;
             return dto;
         }
     }

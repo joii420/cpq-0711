@@ -28,6 +28,9 @@ public class Q14AssemblyProcessFeeHandler implements SheetHandler {
 
     @Inject VersionedV6Writer writer;
 
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "cpq.v6import-setbased-writer", defaultValue = "false")
+    boolean setBased;
+
     @Override public String sheetName() { return "组装加工费"; }
 
     private static final List<String> CONTENT = List.of(
@@ -73,14 +76,27 @@ public class Q14AssemblyProcessFeeHandler implements SheetHandler {
             rowsOf.computeIfAbsent(key, k -> new ArrayList<>()).add(c);
             result.successRows++;
         }
-        for (Map.Entry<List<Object>, List<Map<String, Object>>> e : rowsOf.entrySet()) {
+        if (setBased) {
+            LinkedHashMap<Map<String, Object>, List<Map<String, Object>>> groups = new LinkedHashMap<>();
+            for (Map.Entry<List<Object>, List<Map<String, Object>>> e : rowsOf.entrySet())
+                groups.put(groupKeyOf.get(e.getKey()), e.getValue());
             try {
-                writer.writeVersionedGroup(new VersionedGroupSpec(
-                    "capacity", "calc_version", groupKeyOf.get(e.getKey()),
-                    CONTENT, e.getValue(), VERSION_TRIGGER));
-                result.recordWrite("capacity", e.getValue().size());
+                writer.writeVersionedGroups("capacity", "calc_version", CONTENT, VERSION_TRIGGER, groups);
+                for (List<Map<String, Object>> groupRows : groups.values())
+                    result.recordWrite("capacity", groupRows.size());
             } catch (Exception ex) {
-                result.recordError(0, "_group_", ex.getMessage());
+                result.recordError(0, "_batch_", ex.getMessage());
+            }
+        } else {
+            for (Map.Entry<List<Object>, List<Map<String, Object>>> e : rowsOf.entrySet()) {
+                try {
+                    writer.writeVersionedGroup(new VersionedGroupSpec(
+                        "capacity", "calc_version", groupKeyOf.get(e.getKey()),
+                        CONTENT, e.getValue(), VERSION_TRIGGER));
+                    result.recordWrite("capacity", e.getValue().size());
+                } catch (Exception ex) {
+                    result.recordError(0, "_group_", ex.getMessage());
+                }
             }
         }
         return result;

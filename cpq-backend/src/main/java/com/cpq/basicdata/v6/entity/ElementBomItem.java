@@ -58,7 +58,7 @@ public class ElementBomItem extends V6BaseEntity {
     @Column(name = "base_qty", precision = 18, scale = 6)
     public BigDecimal baseQty;
 
-    @Column(name = "component_usage_type", length = 20)
+    @Column(name = "component_usage_type", length = 100)
     public String componentUsageType;
 
     @Column(name = "feature_mgmt", length = 20)

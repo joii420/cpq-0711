@@ -75,7 +75,9 @@ public class TabJoinPlanEvaluator {
 
     private final org.apache.commons.jexl3.JexlEngine jexl =
         new org.apache.commons.jexl3.JexlBuilder()
-            .arithmetic(new SafeArithmetic()).strict(false).silent(true).create();
+            // P3(2026-06-26 perf):cache(512) 缓存已解析表达式(AST),首存逐行 TAB_JOIN 重复 createExpression
+            // 不再每次 parse;只缓存 AST,不改求值语义。
+            .arithmetic(new SafeArithmetic()).strict(false).silent(true).cache(512).create();
 
     // ─────────────────────────────────────────────────────────────────
     // Task 4: v2 evalExpression — 加减项分段 + 裸明细默认求和

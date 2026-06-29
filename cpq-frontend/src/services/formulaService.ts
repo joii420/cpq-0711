@@ -70,10 +70,10 @@ export function buildEvalKey(
  * 后端 BATCH_MAX 同步从 200 提到 5000。
  */
 const BATCH_EVALUATE_CHUNK = 5000;
-export async function batchEvaluate(tasks: BatchEvaluateTask[]): Promise<BatchEvaluateResultItem[]> {
+export async function batchEvaluate(tasks: BatchEvaluateTask[], signal?: AbortSignal): Promise<BatchEvaluateResultItem[]> {
   if (tasks.length === 0) return [];
   if (tasks.length <= BATCH_EVALUATE_CHUNK) {
-    const resp = await api.post('/formulas/batch-evaluate', { tasks });
+    const resp = await api.post('/formulas/batch-evaluate', { tasks }, { signal });
     return (resp?.data?.results || []) as BatchEvaluateResultItem[];
   }
   // 兜底:极端大批量分片(>5000),正常路径走不到
@@ -83,7 +83,7 @@ export async function batchEvaluate(tasks: BatchEvaluateTask[]): Promise<BatchEv
   }
   const all: BatchEvaluateResultItem[] = [];
   for (const chunk of chunks) {
-    const resp = await api.post('/formulas/batch-evaluate', { tasks: chunk });
+    const resp = await api.post('/formulas/batch-evaluate', { tasks: chunk }, { signal });
     all.push(...((resp?.data?.results || []) as BatchEvaluateResultItem[]));
   }
   return all;

@@ -33,6 +33,9 @@ public class Q13ComponentOtherFeeHandler implements SheetHandler {
     @Inject MaterialNoResolver materialNoResolver;
     @Inject MaterialMasterRepository materialMasterRepo;
 
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "cpq.v6import-setbased-writer", defaultValue = "false")
+    boolean setBased;
+
     @Override public String sheetName() { return "组成件其他费用"; }
 
     private static final List<String> CONTENT = List.of(
@@ -45,6 +48,7 @@ public class Q13ComponentOtherFeeHandler implements SheetHandler {
         Map<List<Object>, Map<String, Object>> groupKeyOf = new LinkedHashMap<>();
         Map<List<Object>, List<Map<String, Object>>> contentOf = new LinkedHashMap<>();
         MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
+        Map<String, String[]> mmAcc = new LinkedHashMap<>();   // §P1-A 料号表延后批量(首个非空胜)
         for (SheetRow row : rows) {
             result.totalRows++;
             String costType = row.getStr("要素名称");
@@ -56,8 +60,7 @@ public class Q13ComponentOtherFeeHandler implements SheetHandler {
             } catch (MaterialNoUnresolvableException ex) {
                 result.recordError(row.rowNo, "组成件料号", "料号与名称均为空"); continue;
             }
-            materialMasterRepo.upsertByMaterialNo(code, componentName,
-                null, null, null, "组成件", null, null, null, ctx.importedBy, true);
+            MaterialMasterRepository.accNameType(mmAcc, code, componentName, "组成件");
             result.recordWrite("material_master", 1);
             String finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
             String operationNo = row.getStr("工序编号");
@@ -83,13 +86,35 @@ public class Q13ComponentOtherFeeHandler implements SheetHandler {
             contentOf.computeIfAbsent(key, k -> new ArrayList<>()).add(c);
             result.successRows++;
         }
-        for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet()) {
+        // §P1-A 料号表：一次批量 upsert（去重后；preserve=true 与原逐行等价），置于版本化写入之前。
+        if (!mmAcc.isEmpty()) {
+            List<MaterialMasterRepository.NameTypeRow> mmRows = new ArrayList<>(mmAcc.size());
+            for (Map.Entry<String, String[]> me : mmAcc.entrySet()) {
+                mmRows.add(new MaterialMasterRepository.NameTypeRow(me.getKey(), me.getValue()[0], me.getValue()[1]));
+            }
+            materialMasterRepo.upsertBatchNameType(mmRows, ctx.importedBy, true);
+        }
+
+        if (setBased) {
+            LinkedHashMap<Map<String, Object>, List<Map<String, Object>>> groups = new LinkedHashMap<>();
+            for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet())
+                groups.put(groupKeyOf.get(e.getKey()), e.getValue());
             try {
-                writer.writeVersionedGroup(new VersionedGroupSpec(
-                    "unit_price", "version_no", groupKeyOf.get(e.getKey()), CONTENT, e.getValue()));
-                result.recordWrite("unit_price", e.getValue().size());
+                writer.writeVersionedGroups("unit_price", "version_no", CONTENT, null, groups);
+                for (List<Map<String, Object>> groupRows : groups.values())
+                    result.recordWrite("unit_price", groupRows.size());
             } catch (Exception ex) {
-                result.recordError(0, "_group_", ex.getMessage());
+                result.recordError(0, "_batch_", ex.getMessage());
+            }
+        } else {
+            for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet()) {
+                try {
+                    writer.writeVersionedGroup(new VersionedGroupSpec(
+                        "unit_price", "version_no", groupKeyOf.get(e.getKey()), CONTENT, e.getValue()));
+                    result.recordWrite("unit_price", e.getValue().size());
+                } catch (Exception ex) {
+                    result.recordError(0, "_group_", ex.getMessage());
+                }
             }
         }
         return result;

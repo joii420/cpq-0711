@@ -1,0 +1,310 @@
+# saveDraft 全链路集合化（set-based）重构 — Phase 1 架构设计
+
+> 立项 2026-06-25。架构师产出，仅设计 + 实现计划 + spec，不写业务代码、不提交。
+>
+> **目标（用户已拍板，硬约束）**：把 saveDraft 从「逐行 × 远程SQL/递归DB」改成「集合化批量」，使**上万行导入首存**：同步秒级 + 卡片值/Excel/snapshot 全部算好落库 + 与现状逐位等价（md5）；覆盖**全路径**（首存/导入、加产品、刷新基础数据、editQuoteCardValue、submit）× **全侧**（报价/核价/Excel）；全删全建改为批量/真增量。
+>
+> **逐位等价标尺**：`cpq-backend/.../quotation/service/GoldenCardValuesEquivTest.java`（8f0c37a4(170)=`3837c2bd35ada869ff09799739512d6e`、a8f17a74(77)=`2cc56fead05427c1a1c86ae15f417248`，含 determinism）。**重构每阶段必须命中 golden。**
+>
+> **非线程安全纪律**：[[cpq-expand-layer-not-threadsafe]]（2026-06-22 实证并行化 9/73 静默错价已回滚）→ **集合化必须单线程批量 SQL，严禁并行化。**
+
+---
+
+## 0. 术语与边界澄清（先统一，避免走回头路）
+
+- **集合化（set-based）≠ 并行化**。本方案所有「一次多值」都是**单线程一条 SQL** 处理多行（`WHERE x = ANY(:array)` / `unnest` JOIN / 批量 `UPDATE…FROM (VALUES…)`），CPU 仍单线程。与被否的「后台异步线程预算核价」（踩非线程安全 + FK 违反）正交。
+- **核价侧 ≠ 核价单**。核价侧 = 报价单内的核价视图（per line `costingCardValues`，`buildCostingCardValues`，在 saveDraft 算）；核价单 = 独立单据 `CostingSummary`（不在 saveDraft 范围）。本方案「全侧」指**报价卡 / 报价Excel / 核价卡 / 核价Excel 四份**，均 per-line。
+- **已落地基线**（master `93c7768` 起，本设计的起点，**不重复造**）：
+  - Phase 1 批量写：`ConfigureSnapshotService.writeSnapshotBatch` + `writeRowDataBatch`（两段式 `UPDATE…FROM(VALUES)…RETURNING` + 未命中多值 INSERT，逐行 UPSERT 语义 1:1）；
+  - Phase 2 报价合桶：`precomputeQuoteDriverBuckets`（eligible 组件 `expandMulti(全部不同 partNo)` 一次取回，按 hf_part_no 回分）；
+  - 核价合桶：`CardSnapshotService.precomputeCostingDriverUnion`（eligible recursive 组件对全单 partSet 并集一次 `expandForPartSet`）；
+  - B1 memoize computeRows、B2 批量 EM（模板 parse 一次 + compdata 整单 IN）、A1/A2/A3 前端 gate batch-evaluate + AbortController（commit `0c9f6c0`..`d703c1f`）。
+  - **现状 saveDraft 首存 ≈ 8.6s（170 行，报价侧 snapshotQuotation 108s→8.6s 已合并）**。本设计要把它推到「上万行同步秒级」并把**剩余 per-row 热点全部集合化**，同时把残留的「逐行 driver expand / 全删全建 / getById N+1」一并治理。
+
+---
+
+## 1. 现状代价模型（分阶段 × per-row 热点，落到真实文件:行号）
+
+saveDraft 由 `QuotationResource.saveDraft`（`QuotationResource.java:113`）**非事务编排**，内部三个独立事务阶段：
+
+### 阶段 ①：`QuotationService.saveDraft`（单大事务，`QuotationService.java:257`）
+
+| 热点 | 位置 | per-row 代价 | set-based 化空间 |
+|---|---|---|---|
+| 逐行 `clearLineItemChildren`（DELETE 4 子表） | `:335` / `:1748` | N 行 × 4 DELETE（按 lineItemId 单删） | 复用行**真 diff**取代全删全建（见 §2.1） |
+| 逐行 `li.persist()` | `:387` | N 次单 INSERT/UPDATE | Hibernate batch insert / 保持 UPSERT |
+| 逐行 mat_customer_part_mapping 版本查 | `:395-400` | N 次 `SELECT current_version … LIMIT 1` | 整单一次 `WHERE (cpn,hf) IN (…)`（§2.5） |
+| 逐行 derivedAttributeCalculatorV5 + `em.flush()` | `:421-432` | N 次公式计算 + N 次 flush | 仅 productId 行触发；批量化 + 去掉 per-row flush |
+| 逐行 seedProcessesFromBase（INSERT…SELECT material_bom_item） | `:461-483` | 导入行 N 次 INSERT…SELECT + N 次 customer code 查 | 整单一次 INSERT…SELECT（§2.5） |
+| 逐行 compositeProcesses INSERT | `:487-506` | per composite-proc 单 INSERT | 批量 INSERT（低频，次要） |
+| 逐行 componentData persist | `:509-528` | N×M 次单 INSERT | Hibernate batch insert（结构落库，非分叉源） |
+| V169 二阶段父子 UPDATE | `:543-556` | per-child 单 UPDATE | 批量 `UPDATE…FROM(VALUES)`（§2.4） |
+| 末尾 `loadLineItems` 整单回读 | `:570` / `:1830` | getById N+1（见阶段后） | §2.6 |
+
+### 阶段 ②：`snapshotService.snapshotQuotation(id, true)`（`QuotationResource.java:119` → `ConfigureSnapshotService.snapshotLines:211`）
+
+- **已集合化**（Phase 1+2）：整单一次 `loadSnapshotRowsByLines`（`:253`）+ `precomputeQuoteDriverBuckets`（`:262`）+ `writeSnapshotBatch`（`:324`）+ `writeRowDataBatch`。
+- **残留 per-row 热点**：`comps` 循环里 **不 eligible 的组件逐行 `componentDriverService.expand(...,lineItemId,compositeType)`**（`:303`）。这是 §2.3 多 line expand 的主战场（报价侧）。
+- `materializeRowData`（`:522`）整行物化，computeRows 已 memoize（B1）。
+
+### 阶段 ③：卡片值循环（`QuotationResource.java:133-185`）
+
+对**无 `quoteCardValues` 的新行**：`snapshotLineValuesWithUnion` → `snapshotQuoteSideOnly`（`buildCardValues`+`buildExcelValues`）+ `snapshotCostingSideOnly`（`buildCostingCardValues`+`buildExcelValues(costingTree=true)`）。
+- **已有 B2 prefetch**（`precomputeCardValuesPrefetch`，模板 parse 一次 + compdata IN）+ **P2-C4 核价 union**（`precomputeCostingDriverUnion`，`CardSnapshotService:497`）。
+- **残留 per-row 热点**（two-track 实测 88s 分项，是「上万行」的真正天花板）：
+  - **baseRows 25s**：`expandTemplateDriverBoseRows`（`CardSnapshotService:1316`）对每行每 driver 组件逐行 `expand(…,li.id,compositeType)`（`:1338`）——**带 lineItemId / spine 维度的组件无法进 union，逐行远程**（§2.3 核价侧 + spine 侧）。
+  - assemble 33s（B1 已 memoize，剩 PASS1+PASS2 复用）、EM 15s（B2 已批量 0.19s）、Excel 11s。
+  - 公式求值 0.1s、序列化 0.02s — **可忽略，慢在管道不在公式**。
+
+### getById / loadLineItems N+1（读路径，`:1830`）
+
+- `loadLineItems` 已批量查 mat_customer_part_mapping（`:1834`），但 `populateViewStructures`（`:161`）+ 4 份卡片值读取仍 per-quotation 多次。上万行打开时放大，**次要靶**（§2.6）。
+
+### 关键障碍：Bug-B / 多 line expand（14s 来源的墙）
+
+`ComponentDriverService.eligibleForBomUnion`（`:745`）+ `viewHasNoRowDimension`（`:722`）规定：仅 `bom_recursive_expand==true` 且视图**无 lineItemId / 无 spineKeys / 非 composite** 的组件能合桶。**带 lineItemId 维度的组件**（`v_composite_child_processes` 等、spine-keyed 视图）走 `expand` 单行远程（`:381` 注入 `quotation_line_item_id = :lid` 经 `lineItemHint` → `loadByPath`）——这就是逐行 14s 的根因，也是「全集合化」必须正面攻克的墙（§2.3）。
+
+---
+
+## 2. 目标架构
+
+总原则：**「准备阶段集合化 → 分发阶段纯内存 → 落库阶段批量」三段式**。每个 per-row 远程 I/O / 递归 DB / 全删全建，映射成「一次集合 SQL + 内存按 key 回配」。落库走已落地的 `writeSnapshotBatch`/`writeRowDataBatch` 同款两段式批量。
+
+### 2.1 批量持久化 + 真 diff 取代全删全建（顺带根治并发删数据）
+
+**现状**：复用行也 `clearLineItemChildren`（全删 4 子表）再全量重建（`:335`）；删除行再删（`:533-537`）。Phase 0 实测「全删全建并发竞态会真实删数据」（939e072e 被抹成 0 行）。
+
+**目标**：
+- **行实体**：保持已落地的「按 id UPSERT」（`:322`，复用行就地 UPDATE id 不变）。
+- **子表**：把「逐行 clearLineItemChildren + 逐行 persist」改为**整单批量 diff**：
+  - `quotation_line_process` / `quotation_line_component_data` / `quotation_line_item_snapshot` / `quotation_line_composite_process` 各自：一次 `DELETE … WHERE line_item_id = ANY(:keptLineIds)`（仅复用行）+ 批量 INSERT（`UNNEST` 多行 VALUES）。
+  - 删除行：一次 `DELETE … WHERE line_item_id = ANY(:removedLineIds)`。
+- **并发删数据根治**：当前 saveDraft 阶段①已是单事务 + 按 id UPSERT，并发竞态主要来自「autosave 风暴下两个 saveDraft 交错全删全建」。在 `quotation` 行上加**乐观锁版本列 `version`（@Version）**或 saveDraft 入口 `SELECT … FOR UPDATE` 行锁，串行化同单 saveDraft，使「全删」不再与另一请求的「重建」交错。**这是数据安全修复，与性能正交，优先级最高。**
+
+**等价论证**：diff 后子表最终内容 = 全删全建后内容（同 draft payload → 同 INSERT 集合）。golden 不读子表行号顺序（buildCardValues 按 componentsSnapshot 拓扑序 + snapshot_rows），但**必须保证 INSERT 顺序与 sortOrder 一致**（componentData.sortOrder 落库值参与渲染序）。
+
+**取舍**：
+- 方案 A（推荐）：保留「子表全删 + 批量重建」，只是把逐行 DELETE/INSERT 合成集合 SQL。**改动小、等价显然**（语义不变，只是 SQL 合批）。
+- 方案 B：真行级 diff（按 row_key 比对，只 UPDATE 变动行）。更省 I/O，但引入 row_key 比对复杂度 + 撞 AP-51 行数纪律 + AP-54 下标错位风险。**不推荐**第一阶段做。
+- 取 A：风险/收益最优，且子表落库非 golden 分叉源（分叉只在「值」）。
+
+### 2.2 集合 BOM 闭包（对全部根料号一次）
+
+**现状**：`precomputeCostingDriverUnion` 已对全单 partSet 并集合桶；`expandTemplateDriverBaseRows` 逐行重算闭包（Caffeine 缓存兜底）。Phase 0 实测「BOM 闭包递归 = 992ms，仅 7.5%，不是瓶颈」。
+
+**目标**：保持现状（已足够快），仅做两点收口：
+- 闭包结果整单一次预算（按根 partNo 去重），结果驻留请求级 Map，供阶段②③共享（消除 `expandTemplateDriverBaseRows` per-row 重算闭包）。
+- 闭包 Caffeine key 必须含 customerId（V6 customer×material 共享，[[cpq-sqlview-cache-key-needs-component-dim]] 同源风险）。
+
+**取舍**：闭包不是热点，**不重写算法**，只复用。避免过度工程。
+
+### 2.3 多 line driver expand（攻 Bug-B 的核心 —— 可落地方案，非「待定」）
+
+这是全集合化的墙。现状「带 lineItemId / spineKeys 维度的视图必须逐行远程」。目标：**一次接受全部 `(lineItemId, partNo)` 集合、返回按 lineItemId 打标行的 multi-line expand**，产出与逐行**逐位一致**。
+
+#### 2.3.1 三类视图按维度归类（决定可合桶性）
+
+| 类 | 代表视图 | 行维度 | 现状 | 集合化方案 |
+|---|---|---|---|---|
+| **无行维度** | 核价 5 视图（customer×material 共享，无 lineItemId 无 spineKeys） | hf_part_no only | 已合桶（`expandMulti` ANY(:hfPartNos)） | 不变（已最优） |
+| **spineKeys 维度** | 核价 BOM 树 recursive 视图（`:spineKeys(p,pp,v)` 宏） | (子件,父件,版本) 三元组 | 逐行 `expandForPartSet` + per-line `SpineKeysContext` | **§2.3.2 多 line spine expand** |
+| **lineItemId 维度** | `v_composite_child_processes` / per-quote 工序 mirror（`:lineItemId` / `quotation_line_item_id`） | quotation_line_item_id | 逐行 `expand` 注入 `quotation_line_item_id = :lid`（`:381`） | **§2.3.3 多 line id expand** |
+
+#### 2.3.2 spineKeys 维度的多 line 合桶
+
+`SpineKeysContext`（ThreadLocal `Triples{partNos[],parentNos[],versions[]}`）+ `SpineKeysMacro` 把宏展开成 `EXISTS(SELECT 1 FROM unnest(:__skP,:__skPP,:__skV) AS k(p,pp,v) WHERE … IS NOT DISTINCT FROM …)`。**这个机制本身已是集合化的**——它一次接受一个三元组数组。现状之所以逐行，是因为**每行用自己那行的闭包 spine 设 Context**。
+
+**多 line 方案**：
+- 把**全单所有行的 spine 三元组取并集**（按 `子件|父件|版本` 复合键去重，复用 `SpineKeysContext.fromClosure` 的去重逻辑，扩成 `fromClosures(List)`），一次设 Context。
+- 一次 `loadByPath(spineView, partSetUnion, customerId)`（`WHERE hf_part_no = ANY(:hfPartNos)` 外层 + `:spineKeys` EXISTS 内层），返回全单所有 spine 节点的行。
+- **回配**：结果行带 `hf_part_no`（子件）+ 父件列 + 版本列，按 `(子件,父件,版本)` 三元组键回配到每行的 spine 节点（与逐行 `expandForPartSet` 的左关联键一致）。
+- **逐位等价论证**：逐行版每行设 `SpineKeysContext.fromClosure(本行闭包)`；并集版设 `fromClosures(全单闭包)`。`unnest…IS NOT DISTINCT FROM` 是**集合成员判定**，「该三元组是否在数组里」对单行子集和全单并集**结果集相同**（行被选中当且仅当其三元组 ∈ 并集 ⊇ 本行子集，且本行只取属于本行 spine 的三元组）。**前提**：回配严格按三元组键，不靠数组下标——本行只领取键在本行 spine 里的行。**这是可证明逐位等价的。**
+
+#### 2.3.3 lineItemId 维度的多 line 合桶（最难，给可落地机制）
+
+现状 `expand` 对 lineItemId 维度视图：构造 `lineItemHint{quotation_line_item_id: lineItemId}` → `loadByPath` → `ImplicitJoinRewriter` 注入 `quotation_line_item_id = :lid`（单值等值谓词，`:381-401`）。**专属行不存在直接返 EMPTY（不 fallback 主数据）**（`:392-401`，Bug-B 隔离纪律）。
+
+**多 line 方案 = 把单值等值谓词升级为 IN 谓词 + 按 lineItemId 列回配**：
+1. **路径层**：新增 `appendLineItemInPredicate(path, List<lineItemId>)`（仿现有 `appendChildLineItemInPredicate`，`:1264`，已验证可生成 `quotation_line_item_id IN (…)`）。把全单（同一组件、同一 driverPath）所有 SIMPLE 行的 lineItemId 收集成 IN 列表，一次 `loadByPath(inPath, null, partSetUnion, customerId)`。
+2. **结果必须带 `quotation_line_item_id` 列**：mirror SQL 已 SELECT 该列（V207/V209 注释，`:407`）。返回行按 `quotation_line_item_id` 回配到对应行。
+3. **EMPTY 语义保持**：逐行版「专属行不存在 → EMPTY 不 fallback」。多 line 版：某 lineItemId 在结果里无行 → 该行得空响应（rowCount=0），**不补主数据**。等价。
+4. **缓存**：多 line 入口**不写 `expandCache`**（与 `expandMulti` 同策略，`:521` 注释），避免 lineItemId-tagged key 串号。saveDraft 是写路径，缓存收益小。
+
+**逐位等价论证（lineItemId 维度）**：逐行版 `WHERE quotation_line_item_id = :lid`（每行一查）；多 line 版 `WHERE quotation_line_item_id IN (:lids)`（一查）+ 按列回配。**关键不变量**：每行最终领取的行集 = `{r : r.quotation_line_item_id == thisLineId}`，与单值等值查结果**逐行相同**。**前提**：
+- 回配按 `quotation_line_item_id` 列值，不靠下标（避免 AP-54 下标错位）；
+- 视图对同一 lineItemId 的行**集合稳定**（IN 不改变单行子集的行集，只是一次取回多个 lineItemId 的并集）；
+- **同 partNo 多 lineItem 不串**（Bug-B 核心）：因为回配键是 lineItemId 不是 partNo，天然隔离。✅
+
+**风险点**：`v_composite_child_processes` 的 COMPOSITE 父级分支（`:402-459`）现用「childLineItemIds IN + 主数据 IS NULL 合并 + 去重」。COMPOSITE 父级是**少数行**（组合产品父卡），其逐行成本占比小。**第一阶段不合桶 COMPOSITE 父级**（保留逐行 `expand` 9-arg），只合桶 SIMPLE 行（占上万行导入的绝对多数）。COMPOSITE 父级合桶留作后续可选阶段。
+
+#### 2.3.4 统一入口
+
+新增 `ComponentDriverService.expandForLineItems(componentId, customerId, List<LineItemKey>, …)`，`LineItemKey{lineItemId, partNo, compositeType}`。内部按 §2.3.1 三类分派：
+- 无行维度 → 委托 `expandMulti`（已存在）。
+- spineKeys 维度 → §2.3.2（全单 spine 并集一次查 + 三元组回配）。
+- lineItemId 维度（SIMPLE）→ §2.3.3（IN 谓词一次查 + lineItemId 列回配）。
+- COMPOSITE 父级 / 不可合桶 → 逐行 `expand`（保留，少数行）。
+返回 `Map<lineItemId, ExpandDriverResponse>`。**调用方（snapshotLines / expandTemplateDriverBaseRows）改为先 `expandForLineItems` 取全单，再内存按 lineItemId 取**，消除 per-row 远程。
+
+**AP-37 可变共享面**：返回 Map 的 resp.rows 被回配后**每行落库前必须 `MAPPER.writeValueAsString` 深拷贝**（已有先例 `:308`）。
+
+### 2.4 批量公式 assemble + 批量序列化
+
+- **assemble**：B1 已 memoize computeRows（PASS1/PASS2 复用）。剩余：`buildCardValues`/`buildCostingCardValues` 仍 per-line 调用。集合化方案：**模板 parse 一次（B2 已做）+ 把 per-line assemble 收敛成一个循环内纯内存计算**（输入已是内存 baseRows，不再触发 I/O）。公式求值实测 0.1s，**不是靶**——只要把它前面的「取数 I/O」集合化（§2.3），assemble 自然秒级。
+- **序列化**：实测 0.02s，可忽略。`valueToTree` 逐行建节点（baseRows 25s 的一部分）在 §2.3 集合化取数后大幅下降。
+
+### 2.5 阶段① per-row SQL 集合化
+
+- **mat_customer_part_mapping 版本查**（`:395`）：整单一次 `SELECT customer_product_no, hf_part_no, current_version FROM mat_customer_part_mapping WHERE (customer_product_no, hf_part_no) IN (…)`，内存按 (cpn,hf) 回填 `partVersionLocked`。等价（同 LIMIT 1 语义：(cpn,hf) 应唯一；若不唯一，用 `DISTINCT ON` 取确定一行，与现状 `LIMIT 1` 对齐——需核对现状 LIMIT 1 的确定性，见 §6 开放问题）。
+- **derivedAttributeCalculatorV5**（`:421`）：仅 productId 行触发，去掉 per-row `em.flush()`（`:431`），循环结束统一 flush。批量加载 derivedAttrs（一次 IN）。
+- **seedProcessesFromBase**（`:461`）：整单一次 INSERT…SELECT，把 `WHERE material_no = :part` 升级为 `material_no = ANY(:parts)` + JOIN line_item 映射回 lineId。customer code 一次查。等价（INSERT 集合相同）。
+
+### 2.6 getById N+1 治理（次要靶，一并做）
+
+- `loadLineItems`（`:1830`）：mat_customer_part_mapping 已批量。`populateViewStructures`（`:161`）整单一次 `WHERE quotationId = ?` 已批量。剩余 per-line 读 4 份卡片值在 `QuotationDTO.from` / loadLineItems —— 确认是否 per-line 查实体（Panache lazy）。**上万行打开**：改为一次 `QuotationLineItem.list` + 投影需要的列，避免逐行 findById。
+- 优先级：低于阶段①②③，但「上万行打开」体验需要。放最后阶段。
+
+### 全路径全侧覆盖矩阵
+
+| 路径 | 入口 | 触及阶段 | 集合化要点 |
+|---|---|---|---|
+| 首存 / 导入 | saveDraft（新行全部） | ①②③ | 全量；§2.1~2.5 主战场 |
+| 加产品 | saveDraft（部分新行）+ `snapshotQuotation(false)` | ②③ | 新行集合化；复用行 skip |
+| 刷新基础数据 | `refreshDraftQuoteCards` / `refreshQuoteCardValues` | ②③（强制重 expand） | §2.3 多 line expand 同样适用 |
+| editQuoteCardValue | 单卡端点 | 单卡（0.24s 可接受） | **不改**（单卡集合化无收益） |
+| submit | `submit` | 冻结现有快照 | 不重算（已冻结）；不在热点 |
+| 报价卡 / 报价Excel / 核价卡 / 核价Excel | buildCardValues / buildExcelValues(×2) / buildCostingCardValues | ③ | 四份均经 §2.3 集合化取数 + §2.4 assemble |
+
+---
+
+## 3. 逐位等价策略（每个 per-row → set-based 映射的等价论证 + golden 卡口）
+
+| # | per-row 操作 | set-based 等价物 | 等价依据 | 能否逐位等价 |
+|---|---|---|---|---|
+| E1 | 逐行 clearChildren + persist | 集合 DELETE ANY + 批量 INSERT | 同 draft → 同行集合；保 sortOrder 序 | ✅（§2.1 方案 A） |
+| E2 | 逐行 mat_customer_part_mapping LIMIT 1 | (cpn,hf) IN + DISTINCT ON 回填 | (cpn,hf) 唯一性下结果相同 | ✅（需核对 LIMIT 1 确定性，§6-Q1） |
+| E3 | 逐行 seedProcessesFromBase | 一次 INSERT…SELECT ANY(:parts) | INSERT 集合相同 | ✅ |
+| E4 | 逐行 derivedAttr + flush | 批量计算 + 末尾 flush | 公式纯函数；flush 时机不影响结果 | ✅ |
+| E5 | 逐行 V169 父子 UPDATE | 批量 UPDATE…FROM(VALUES) | 同 (child,parent) 对 | ✅ |
+| E6 | 无行维度 driver 逐行 expand | expandMulti ANY(:hfPartNos) | 已落地，md5 已铁证（108s→8.6s 等价） | ✅（已验证） |
+| E7 | spineKeys 逐行 expand | 全单 spine 并集 + 三元组回配 | `IS NOT DISTINCT FROM` 成员判定，回配按键 | ✅（§2.3.2 论证） |
+| E8 | lineItemId 逐行 expand（SIMPLE） | IN 谓词 + lineItemId 列回配 | 等值 vs IN 行集相同，回配按列 | ✅（§2.3.3 论证，前提:回配按列不靠下标） |
+| E9 | COMPOSITE 父级逐行 expand | **保留逐行**（第一阶段不合桶） | 不改 = 天然等价 | ✅（不改） |
+| E10 | assemble / 序列化 | memoize + 内存 | 公式纯函数 | ✅（B1 已验证） |
+
+**golden 卡口纪律**：每个阶段（独立 PR）必须：
+1. 跑 `GoldenCardValuesEquivTest`（rockwell 170 + small 77）→ md5 命中两个常量 + determinism（连跑两次一致）。
+2. 真实复现单（罗克韦尔 8f0c37a4）清快照后首存，A/B 对比新旧路径 md5（kill switch 切换）。
+3. 上万行 perf 单（**需用户提供或构造**，§6-Q4）测同步耗时目标。
+
+**做不到逐位等价的地方**：暂无识别出**无法**逐位等价的映射。**风险最高的是 E8（lineItemId IN 回配）**——若某 mirror SQL 在 `quotation_line_item_id IS NULL` 主数据行上有特殊语义（SIMPLE 行也可能领取 IS NULL 主数据 fallback？需核对，§6-Q2）。**这是必须先用单测证伪/证实的前置条件。**
+
+---
+
+## 4. 风险与基线影响
+
+### 4.1 对三大核心基线（🔒锁定）的冲击点
+
+- **§4.5 ComponentDriverService.expand 三分支策略**：§2.3.3 在 SIMPLE 分支引入 IN 谓词的 multi-line 变体。**不改 expand 本身**（保留 9-arg 逐行入口作 COMPOSITE + fallback），新增 `expandForLineItems` 旁路。基线 §10.1.3「Bug B 链路改动必须验证 mat_process UNIQUE index 仍约束 + V211 诊断 PASS」→ **本方案不写 mat_process（只读 expand），但仍跑 V211 诊断确认 lineItemId 隔离未破。**
+- **§4.7 报价 Excel 前端单引擎权威**：集合化只动**后端 saveDraft 写路径**的取数+落库，`quote_excel_values` 唯一写入源不变（saveDraft 前端值 + snapshotLineValues bootstrap）。**核价 Excel（costingExcelValues）后端重算路径在范围内**（§2.3 核价侧），需确认不破坏「报价侧前端权威」隔离。
+- **§5.1 V202 智能视图自适应**：不改视图 SQL。§2.3.2/2.3.3 只改**谓词注入方式**（等值→IN / 单 spine→并集 spine），视图 UNION ALL 分支逻辑不动（基线 §10.1.1 禁改）。
+
+### 4.2 对 AP-44（字段类型协议 17 处）的冲击
+
+- 本方案**不新增/不改 field_type**，不触发 AP-44 全矩阵。但 §2.3 改 driver expand 链路 → **触发「改动 3：driver expansion / batchExpand」决策树**（方案制定前必读 §二）：
+  - cache key 6 维不省（多 line 入口不写 cache，规避）；
+  - **强制跑 E2E 三 spec**（quotation-flow SIMPLE + composite-product-flow COMPOSITE + multi-product-flow Bug-B 隔离）——multi-product 专测「同 partNo 双独立产品工序隔离」，正是 §2.3.3 lineItemId 回配的回归门槛。
+
+### 4.3 非线程安全纪律（[[cpq-expand-layer-not-threadsafe]]）
+
+- **全程单线程批量 SQL，零并行 stream / 零 parallelStream / 零线程池**。
+- expand/expandMulti/expandForPartSet 返回的是**缓存可变对象引用** → 回配后落库前**必须深拷贝**（`MAPPER.writeValueAsString`）。这是 AP-37 + 非线程安全的双重约束，§2.3.4 已纳入。
+- ThreadLocal（`SpineKeysContext` / `PartVersionContext` / `QuotationIdContext`）**必须 finally clear**（现状已遵守）；多 line 一次设一次清，比逐行设清更安全（少了 N×set/clear 的窗口）。
+
+### 4.4 数据安全（最高优先级，独立于性能）
+
+- §2.1 乐观锁 / 行锁修「全删全建并发竞态真实删数据」（939e072e 案例）。**这一项即使不做性能也该做**，建议 Phase 2 第一个 PR。
+
+---
+
+## 5. 分阶段实现计划（每阶段独立 PR + golden 卡口 + subagent-driven）
+
+> 落地顺序按「风险递增 + 收益递增」。每阶段：worktree 隔离分支 → TDD（先写等价测试）→ 实现 → golden + 复现 + perf 三验收 → 安全合并清理。
+> kill switch 模式统一仿 `cpq.firstsave-batch-write`（System property + env，默认先 false 灰度、铁证等价后转 true）。
+
+### Phase 2-0：数据安全闸（并发删数据根治）— 最高优先级
+- 内容：§2.1 quotation 乐观锁 `@Version` 或 saveDraft `SELECT FOR UPDATE` 串行化同单。
+- 验收：构造并发 saveDraft（两请求交错）复现 939e072e 式删空 → 修复后行数不丢；golden 不回归。
+- 风险：低（不碰计算）。**先做，与后续解耦。**
+
+### Phase 2-1：阶段① per-row SQL 集合化（E2/E3/E4/E5）
+- 内容：§2.5（mat_customer_part_mapping IN / seedProcessesFromBase 一次 INSERT…SELECT / derivedAttr 批量+末尾flush）+ §2.1 子表批量 DELETE ANY + 批量 INSERT（方案 A）+ V169 批量父子 UPDATE。
+- 验收：golden 命中；阶段① 耗时下降；E2E 三 spec passed。
+- 风险：中（E2 LIMIT 1 确定性需先核对 §6-Q1）。
+
+### Phase 2-2：spineKeys 维度多 line 合桶（E7）— 核价 BOM 树侧
+- 内容：§2.3.2 `SpineKeysContext.fromClosures(全单)` + 一次查 + 三元组回配；接 `expandTemplateDriverBaseRows` / `precomputeCostingDriverUnion` 的 spine 回退分支。
+- 验收：golden 命中（核价侧 C/CE 两份是主战场）；核价 baseRows 段耗时骤降；A/B md5 等价。
+- 风险：中高（三元组回配正确性）。先 TDD 写「逐行 vs 并集」等价单测。
+
+### Phase 2-3：lineItemId 维度多 line 合桶（E8）— 报价工序侧（SIMPLE）
+- **前置硬门槛**：先单测证实/证伪 §6-Q2（SIMPLE 行是否领取 IS NULL 主数据 fallback）。证伪前不动。
+- 内容：§2.3.3 `appendLineItemInPredicate` + IN 一次查 + lineItemId 列回配；§2.3.4 `expandForLineItems` 统一入口；接 snapshotLines（`:303` 不 eligible 逐行回落）+ expandTemplateDriverBaseRows（`:1338`）。**只合桶 SIMPLE，COMPOSITE 父级保留逐行（E9）。**
+- 验收：golden 命中；**multi-product-flow.spec.ts 必须 passed**（Bug-B 同 partNo 双产品隔离）；V211 诊断 PASS；baseRows 段骤降。
+- 风险：**最高**（Bug-B 隔离 + 回配按列）。
+
+### Phase 2-4：assemble / 序列化收口 + 全路径接线（E10）
+- 内容：把 §2.3 集合化入口接到全四份（buildCardValues / buildExcelValues×2 / buildCostingCardValues）+ refreshDraftQuoteCards 路径；确认 editQuoteCardValue 不改。
+- 验收：golden 命中；上万行 perf 单**同步秒级**目标达成；四份 md5 全等。
+
+### Phase 2-5：getById / loadLineItems N+1（§2.6）
+- 内容：上万行打开读路径批量化。
+- 验收：上万行打开 GET 耗时目标；DTO 内容不变。
+- 风险：低（读路径）。
+
+### 每阶段统一验收门
+1. `GoldenCardValuesEquivTest`：rockwell `3837c2bd35ada869ff09799739512d6e` + small `2cc56fead05427c1a1c86ae15f417248` + determinism。
+2. 罗克韦尔 8f0c37a4 清快照首存 A/B（kill switch）md5 逐位等价。
+3. E2E 三 spec passed + '加载中' final count=0。
+4. 上万行 perf 单同步耗时（Phase 2-4 起强制）。
+5. 主线亲验（[[cpq-deliver-agents-overreport]]）+ `git branch --contains` 查子代理误提交（[[cpq-worktree-subagent-commits-to-master]]）；worktree 测试在 worktree 的 cpq-backend 跑（[[cpq-worktree-maven-test-tree]]）。
+
+---
+
+## 6. 未决 / 需架构师（用户）拍板的关键选择
+
+| # | 开放问题 | 为何需拍板 | 建议默认 |
+|---|---|---|---|
+| **Q1** | mat_customer_part_mapping `LIMIT 1`（`:397`）是否依赖某确定顺序？(cpn,hf) 是否唯一？ | E2 集合化用 DISTINCT ON 必须对齐现状取的「那一行」，否则 partVersionLocked 漂移破 golden | 假设 (cpn,hf) 唯一；先 DB 验证唯一性 |
+| **Q2** | lineItemId 维度视图（`v_composite_child_processes` mirror）对 **SIMPLE 行**是否会领取 `quotation_line_item_id IS NULL` 主数据 fallback 行？ | 决定 E8 IN 回配是否需补 IS NULL 主数据（现状 SIMPLE 分支 `:381` 不补，但 COMPOSITE 分支 `:424` 补）。证伪是 Phase 2-3 前置门槛 | 需单测证实；按现状 SIMPLE 不补 |
+| **Q3** | 「上万行」的真实模板形态：是否仍是 v_composite_child_* + 核价 spine 树双重 lineItemId/spine 维度？还是纯导入 SIMPLE 行（无 composite、无 spine）？ | 决定 §2.3 三类哪类是上万行主导。若上万行全是「无行维度」则 E6 已解决，§2.3.2/2.3.3 收益有限 | 假设上万行=SIMPLE 导入行（lineItemId 维度工序为主）→ E8 是关键 |
+| **Q4** | 上万行 perf 基准单从哪来？（现有最大单 170 行） | 没有上万行单无法验证「同步秒级」目标，也无法定 perf 回归门槛 | 需用户提供导入文件或授权构造合成单 |
+| **Q5** | 「同步秒级」的精确 SLA：上万行首存目标几秒？（如 ≤5s / ≤10s） | 决定是否需要 §2.6 之外的进一步优化（如 COPY 替代批量 INSERT、Excel 渲染集合化深度） | 建议先定 ≤10s（万行），达不到再深挖 Excel 11s 段 |
+| **Q6** | COMPOSITE 父级是否需要在本轮合桶？ | §2.3.3 第一阶段保留逐行（E9）。若上万行含大量组合产品父卡，需追加阶段 | 建议本轮不做，实测占比后再定 |
+| **Q7** | kill switch 灰度策略：每阶段默认 false 灰度，还是铁证后直接 true？ | 影响交付节奏与回滚成本 | 仿现状：先 false，A/B 铁证 + 灰度后转 true |
+
+### 6.1 决议(2026-06-25 用户拍板 + 主线核实)
+
+- **Q1 ✓ 已解(主线 DB 核实)**:`mat_customer_part_mapping` 有唯一约束 `uq_mat_cust_part_per_hf`、`(cpn,hf)` 无重复、`current_version` 单列非多版本 → `LIMIT 1` 确定 → E2 集合化(IN + 回填)逐位等价安全。
+- **Q2 ✓ 已解(主线源码核实)**:`ComponentDriverService:361/392-401` SIMPLE 分支**不**领取 `quotation_line_item_id IS NULL` 主数据 fallback(显式注释 + 返 EMPTY);COMPOSITE 分支(`:424`)才合并主数据。→ **E8 的 IN 回配前提成立**(SIMPLE 不会误领主数据)。Phase 2-3 仍以单测正式钉死此不变量。
+- **Q3 → 含大量组合/BOM树双维度**:主战场是 E7(spineKeys)+ E8(lineItemId)+ E9(COMPOSITE)都重,非单一 SIMPLE。
+- **Q4 → 暂不验 perf,等价优先**:本轮以 golden 逐位等价为交付门;「上万行同步秒级」的 perf 实测顺延到有真实/合成大单时。每阶段用 170 行 `SaveDraftProfileTest` 看分段耗时是否下降作过程指标。
+- **Q5 → SLA ≤10s(万行)**:留作 perf 验证阶段目标。
+- **Q6 → COMPOSITE 父级合桶顺延**:纯 perf 优化,与 Q4(暂不验 perf)一致 → 本轮 COMPOSITE 保持逐行(E9,天然等价);待 perf 阶段按实测占比再合桶。
+- **Q7 → kill switch 灰度**:每阶段默认 false,A/B 铁证等价 + 灰度后转 true。
+- **Phase 2-0 时机**:用户要求「问题都定了再统一开」;现已全定 → 进入 Phase 2,2-0 数据安全闸为第一个。注:Plan A 已止住「打开风暴」这一并发删数据的主诱因,故 2-0 现为**纵深加固**(防多 tab/多用户/快速编辑仍可能的同单并发),非仍在流血。
+
+---
+
+## 7. 关联文档与基线索引
+
+- 🔒 `docs/三大核心模块基线.md`（§4.5 三分支 / §4.7 Excel 权威 / §5.1 V202 / §10 变更红线）
+- `docs/方案制定前必读.md`（§二 改动 3 driver expansion 决策树 / V6 表规则）
+- `docs/反模式.md` AP-37（可变共享面深拷贝）/ AP-51（行数纪律）/ AP-54（回配按引用/ID 不靠下标）/ AP-53（V6 表）
+- `docs/handover/2026-06-24-open-quote-perf-two-track-handover.md`（已落地 Phase 1+2 + 实测分项 + 被否方案）
+- 记忆：[[cpq-expand-layer-not-threadsafe]] / [[cpq-firstsave-real-perf-measurement]] / [[cpq-savedraft-incremental-snapshot]] / [[cpq-sqlview-cache-key-needs-component-dim]] / [[cpq-decimal-display-policy]] / [[cpq-deliver-agents-overreport]] / [[cpq-worktree-maven-test-tree]]
+- golden harness：`cpq-backend/src/test/java/com/cpq/quotation/service/GoldenCardValuesEquivTest.java` + `SaveDraftProfileTest.java`
+
+---
+
+**状态**：Phase 1 架构设计完成，待用户拍板 §6 开放问题后进入 Phase 2 subagent-driven 实现。

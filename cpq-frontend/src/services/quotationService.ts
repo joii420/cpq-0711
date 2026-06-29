@@ -96,6 +96,9 @@ export interface ExcelValues {
   rows: Array<Record<string, any>>;
 }
 
+/** getById 捎回的有效 Excel 列（snake_case + display_format），可直接当 CostingTemplateColumn 用。 */
+export type ExcelEffectiveColumn = import('./costingTemplateService').CostingTemplateColumn;
+
 /** getById 顶层附带的 4 份结构快照（JsonNode → 已解析对象，可能为 null）。 */
 export interface QuotationSnapshotStructures {
   quoteCardStructure?: CardStructure | null;
@@ -124,6 +127,8 @@ export const quotationService = {
   saveDraft: (id: string, data: any) => api.put(`/quotations/${id}/draft`, data) as Promise<any>,
   /** 报价单整份快照 Phase2 §5: 草稿态重刷报价侧卡片值(按行键保编辑); 仅 DRAFT 生效, 非 DRAFT no-op 返 refreshed=0 */
   refreshCardSnapshot: (id: string) => api.post(`/quotations/${id}/refresh-card-snapshot`) as Promise<any>,
+  /** P3 lazy-excel: 懒算并落库整单 Excel 值(首存只算卡片、Excel 留空); 开 Excel 视图/导出前调, 幂等; 返回含 Excel 值的最新 DTO */
+  ensureExcelValues: (id: string) => api.post(`/quotations/${id}/ensure-excel-values`) as Promise<any>,
   /**
    * 报价单整份快照 Phase2 §6: 编辑回写报价卡片单元格(替代旧 autosave 写 row_data)。
    * body: {componentId, rowKey, fieldName, value}; 写 editRows + 重算 formulaResults/报价Excel; 核价不动。

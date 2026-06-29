@@ -465,6 +465,28 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
         </div>
       ),
     },
+    {
+      title: '小数位数',
+      key: 'decimals',
+      width: 90,
+      render: (_: unknown, record: FieldItem) => {
+        const numericTypes: FieldItem['field_type'][] = ['INPUT_NUMBER', 'FORMULA', 'BASIC_DATA', 'LIST_FORMULA'];
+        if (!numericTypes.includes(record.field_type)) {
+          return <Text type="secondary" style={{ fontSize: 12 }}>—</Text>;
+        }
+        return (
+          <InputNumber
+            size="small"
+            min={0}
+            max={6}
+            value={record.decimals ?? null}
+            onChange={(v) => updateField(record.key, { decimals: v == null ? null : Number(v) })}
+            placeholder="默认"
+            style={{ width: '100%' }}
+          />
+        );
+      },
+    },
     ...(onToggleRowKey ? [{
       title: '行键',
       key: 'is_row_key',

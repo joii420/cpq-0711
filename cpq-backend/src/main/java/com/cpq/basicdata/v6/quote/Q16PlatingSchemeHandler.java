@@ -27,6 +27,9 @@ public class Q16PlatingSchemeHandler implements SheetHandler {
 
     @Inject VersionedV6Writer writer;
 
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "cpq.v6import-setbased-writer", defaultValue = "false")
+    boolean setBased;
+
     @Override public String sheetName() { return "电镀方案"; }
 
     private static final List<String> CONTENT = List.of(
@@ -64,16 +67,33 @@ public class Q16PlatingSchemeHandler implements SheetHandler {
             contentOf.computeIfAbsent(schemeNo, k -> new ArrayList<>()).add(c);
             result.successRows++;
         }
-        for (Map.Entry<String, List<Map<String, Object>>> e : contentOf.entrySet()) {
-            try {
+        if (setBased) {
+            LinkedHashMap<Map<String, Object>, List<Map<String, Object>>> groups = new LinkedHashMap<>();
+            for (Map.Entry<String, List<Map<String, Object>>> e : contentOf.entrySet()) {
                 Map<String, Object> gk = new LinkedHashMap<>();
                 gk.put("system_type", "QUOTE");
                 gk.put("scheme_no", e.getKey());
-                writer.writeVersionedGroup(new VersionedGroupSpec(
-                    "plating_scheme", "scheme_version", gk, CONTENT, e.getValue()));
-                result.recordWrite("plating_scheme", e.getValue().size());
+                groups.put(gk, e.getValue());
+            }
+            try {
+                writer.writeVersionedGroups("plating_scheme", "scheme_version", CONTENT, null, groups);
+                for (List<Map<String, Object>> groupRows : groups.values())
+                    result.recordWrite("plating_scheme", groupRows.size());
             } catch (Exception ex) {
-                result.recordError(0, "_group_", "scheme_no=" + e.getKey() + ": " + ex.getMessage());
+                result.recordError(0, "_batch_", ex.getMessage());
+            }
+        } else {
+            for (Map.Entry<String, List<Map<String, Object>>> e : contentOf.entrySet()) {
+                try {
+                    Map<String, Object> gk = new LinkedHashMap<>();
+                    gk.put("system_type", "QUOTE");
+                    gk.put("scheme_no", e.getKey());
+                    writer.writeVersionedGroup(new VersionedGroupSpec(
+                        "plating_scheme", "scheme_version", gk, CONTENT, e.getValue()));
+                    result.recordWrite("plating_scheme", e.getValue().size());
+                } catch (Exception ex) {
+                    result.recordError(0, "_group_", "scheme_no=" + e.getKey() + ": " + ex.getMessage());
+                }
             }
         }
         return result;

@@ -204,7 +204,7 @@ public class DataLoader {
                     } else {
                         rows = sqlViewExecutor.execute(normalizedPath, ctx, partNos);
                     }
-                    return CompletableFuture.completedFuture(rows);
+                    return CompletableFuture.completedFuture(stableSort(rows));
                 } catch (Exception e) {
                     LOG.warnf("DataLoader sql-view-ctx failed for path='%s': %s", normalizedPath, e.getMessage());
                     CompletableFuture<List<Map<String, Object>>> failed = new CompletableFuture<>();
@@ -267,7 +267,7 @@ public class DataLoader {
             List<Map<String, Object>> rows = sqlViewExecutor.isDriverViewPath(normalizedPath)
                     ? sqlViewExecutor.executeAllRows(normalizedPath, ctx, partNos)
                     : sqlViewExecutor.execute(normalizedPath, ctx, partNos);
-            return CompletableFuture.completedFuture(rows);
+            return CompletableFuture.completedFuture(stableSort(rows));
         } catch (Exception e) {
             LOG.warnf("DataLoader multi-value sql-view failed path='%s' partNosSize=%d: %s",
                     normalizedPath, partNos == null ? 0 : partNos.size(), e.getMessage());
@@ -275,6 +275,28 @@ public class DataLoader {
             failed.completeExceptionally(e);
             return failed;
         }
+    }
+
+    /**
+     * 根治视图无 ORDER BY 的行序非确定性(2026-06-23):对取回行按"列名升序拼 col=value"稳定键排序。
+     * 保证 expand(单 partNo) 与 expandMulti(ANY 多 partNo) 对同一 partNo 子集返回 <b>逐位相同的行序</b>
+     * (全集稳定排序 → 任一 partNo 子集仍稳定),使 batch-expand 合桶与逐 task 等价、C4 union 与逐行等价、
+     * 渲染行序跨运行确定。仅改顺序不改行/值(AP-51 行数不变)。同内容行 key 相同(相对序无所谓)。
+     */
+    static List<Map<String, Object>> stableSort(List<Map<String, Object>> rows) {
+        if (rows == null || rows.size() < 2) return rows;
+        List<Map<String, Object>> out = new ArrayList<>(rows);
+        out.sort(java.util.Comparator.comparing(DataLoader::stableKey));
+        return out;
+    }
+
+    private static String stableKey(Map<String, Object> r) {
+        if (r == null || r.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, Object> e : new java.util.TreeMap<>(r).entrySet()) {
+            sb.append(e.getKey()).append('=').append(String.valueOf(e.getValue())).append('');
+        }
+        return sb.toString();
     }
 
     /**

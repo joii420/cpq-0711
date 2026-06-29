@@ -12,8 +12,10 @@ import com.cpq.component.dto.CreateComponentRequest;
 import com.cpq.component.dto.ExpandDriverRequest;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
+import com.cpq.component.service.ComponentImportService;
 import com.cpq.component.service.ComponentService;
 import com.cpq.formula.dataloader.QuotationIdContext;
+import com.cpq.formula.dataloader.SnapshotRowsContext;
 import com.cpq.template.service.TemplateService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -45,6 +47,9 @@ public class ComponentResource {
 
     @Inject
     TemplateService templateService;
+
+    @Inject
+    ComponentImportService componentImportService;
 
     @GET
     public ApiResponse<List<ComponentDTO>> list(
@@ -189,12 +194,51 @@ public class ComponentResource {
             resp.results.add(r);
         }
 
-        // Feature flag — 默认关,生产行为不变;开启:
-        //   -Dcpq.batch-expand-bucket=true 或 export CPQ_BATCH_EXPAND_BUCKET=true
+        // Feature flag — 2026-06-23 默认开(已用 BatchExpandBucketEquivTest 证合桶 ON==OFF 逐位等价:
+        //   DataLoader.stableSort 根治视图无 ORDER BY 行序非确定性 → 合桶 expandMulti 与逐 task expand 同序)。
+        //   合桶把首次加载 batch-expand 的 N×M 次远程 expand 压到每桶 1 次,直击"导入后进报价单 6-21s"。
+        //   kill switch:-Dcpq.batch-expand-bucket=false 或 export CPQ_BATCH_EXPAND_BUCKET=false。
         boolean bucketEnabled = "true".equalsIgnoreCase(
                 System.getProperty("cpq.batch-expand-bucket",
-                    System.getenv().getOrDefault("CPQ_BATCH_EXPAND_BUCKET", "false")));
+                    System.getenv().getOrDefault("CPQ_BATCH_EXPAND_BUCKET", "true")));
 
+        // ── P0(2026-06-26):批量预载 snapshot,杜绝 Phase 1 每 task 一次 SELECT snapshot_rows(N+1)──
+        //   收集所有 task 的 lineItemId,一次 IN 查全部 snapshot_rows 塞 ThreadLocal;expand 的 snapshot-read
+        //   命中上下文即用、不再逐 task 查库(一单 600+ task 全有快照时:600+ 次远程往返 → 1 次 IN)。
+        //   务必 finally clear,避免线程池下个请求误用旧值。
+        boolean snapBatchActive = false;
+        // [be-profile] 分段埋点(2026-06-26):prefetch / phase1(snapshot 命中) / phase2(实时 expand) 各耗时与计数。
+        long _bp0 = System.nanoTime();
+        int _preCount = 0;
+        if (bucketEnabled) {
+            java.util.Set<UUID> lids = new java.util.LinkedHashSet<>();
+            for (Task t : req.tasks) if (t.lineItemId != null) lids.add(t.lineItemId);
+            if (!lids.isEmpty()) {
+                java.util.Map<String, String> _pf = componentDriverService.prefetchSnapshotRows(lids);
+                _preCount = _pf.size();
+                SnapshotRowsContext.set(_pf);
+                snapBatchActive = true;
+            }
+        }
+        long _prefetchMs = (System.nanoTime() - _bp0) / 1_000_000;
+        try {
+            long _bp1 = System.nanoTime();
+            ApiResponse<BatchExpandDriverResponse> out = doBatchExpandPhases(req, resp, bucketEnabled, debugSql);
+            // phase1 命中数(driverPath=snapshot)vs phase2(实时 expand)= 诊断 batch-expand 慢在快照读还是实时展开
+            int _snapHit = 0;
+            for (Result r : resp.results) if (r != null && r.data != null && "snapshot".equals(r.data.driverPath)) _snapHit++;
+            long _phasesMs = (System.nanoTime() - _bp1) / 1_000_000;
+            LOG.debugf("[be-profile] tasks=%d prefetched=%d snapshotHit=%d realExpand=%d | prefetch=%dms phases=%dms",
+                    req.tasks.size(), _preCount, _snapHit, req.tasks.size() - _snapHit, _prefetchMs, _phasesMs);
+            return out;
+        } finally {
+            if (snapBatchActive) SnapshotRowsContext.clear();
+        }
+    }
+
+    private ApiResponse<BatchExpandDriverResponse> doBatchExpandPhases(
+            BatchExpandDriverRequest req, BatchExpandDriverResponse resp,
+            boolean bucketEnabled, boolean debugSql) {
         // ── Phase 1:每个 task 先试 snapshot,命中直返;未命中收集进 Phase 2 候选 ──
         List<Integer> phase2 = new ArrayList<>();
         for (int i = 0; i < req.tasks.size(); i++) {
@@ -223,13 +267,13 @@ public class ComponentResource {
                         r.status = "OK";
                         continue;
                     }
-                    // Flag 开 → Phase 1 仅试 snapshot;hasContext 才有 snapshot 命中机会
+                    // Flag 开 → Phase 1 仅【窥探】snapshot:命中直返;未命中绝不实时展开,直接进 Phase 2。
+                    //   FIX 1(2026-06-26):原先调 expandWithSnapshot,miss 时它会做一次真展开、结果又因 driverPath≠"snapshot"
+                    //   被丢弃、塞进 Phase 2(导入 616 task 全 miss = 18.6s 纯白干,Phase 2 再合桶算一遍)。改用 tryReadSnapshot:
+                    //   miss 返 null、不实时展开 → 直接 phase2.add。Phase 2 产出不变(BatchExpandBucketEquivTest 守)。
                     if (hasContext) {
-                        ExpandDriverResponse snap = componentDriverService.expandWithSnapshot(
-                            t.componentId, t.customerId, t.partNo, t.partVersion,
-                            t.overrideDataDriverPath, t.overrideFieldsJson, t.lineItemId, t.compositeType,
-                            t.childLineItemIds);
-                        if (snap != null && "snapshot".equals(snap.driverPath)) {
+                        ExpandDriverResponse snap = componentDriverService.tryReadSnapshot(t.componentId, t.lineItemId);
+                        if (snap != null) {
                             r.data = snap;
                             r.status = "OK";
                             continue;
@@ -272,9 +316,14 @@ public class ComponentResource {
             List<Integer> idxs = e.getValue();
             String dp = bucketDriverPath.get(e.getKey());
             Task pivot = req.tasks.get(idxs.get(0));
+            // P3(2026-06-26):去掉 allUniquePartNos 约束 —— 同料号多卡(170 行/77 distinct part)也可合。
+            //   expandMulti 传的是 distinct partNos(line 333 .distinct()),分发按 t.partNo 取(同料号多 task 共享
+            //   同一只读 resp,下面只 `r.data = part` 不 mutate → AP-37 安全)。DataLoader.stableSort 保
+            //   expandMulti==逐 task 行序。与 S2 precomputeQuoteDriverBuckets 同套路(它对 distinct partNo 一次 expandMulti)。
+            //   收益:eligible(非 lineItemId 视图)组件的 616 per-task → 合桶,batch-expand 22s→秒级。等价见 BatchExpandBucketEquivTest。
             boolean canMerge = idxs.size() >= 2
-                    && !componentDriverService.viewUsesLineItemId(pivot.componentId, dp)
-                    && allUniquePartNos(idxs, req.tasks);
+                    && !componentDriverService.viewUsesLineItemId(pivot.componentId, dp);
+            long _bktStart = System.nanoTime();   // [be-bucket] 分桶耗时埋点
             if (!canMerge) {
                 // 不能合 → 桶内逐 task 跑(同原逻辑)
                 for (int idx : idxs) {
@@ -282,6 +331,10 @@ public class ComponentResource {
                     Result r = resp.results.get(idx);
                     runSingleTask(t, r);
                 }
+                long _ms = (System.nanoTime() - _bktStart) / 1_000_000;
+                LOG.debugf("[be-bucket] comp=%s dp=%s merged=false tasks=%d lineItemIdView=%b ms=%d",
+                        pivot.componentId, dp, idxs.size(),
+                        componentDriverService.viewUsesLineItemId(pivot.componentId, dp), _ms);
                 continue;
             }
             // 合并跑一次 SQL 视图,按 hf_part_no 分发回各 task
@@ -315,8 +368,9 @@ public class ComponentResource {
                     r.data = part;
                     r.status = "OK";
                 }
-                LOG.infof("[batch-expand bucket-merge] componentId=%s partNos=%d → 1 SQL view exec (省 %d 次)",
-                        pivot.componentId, partNos.size(), partNos.size() - 1);
+                long _ms = (System.nanoTime() - _bktStart) / 1_000_000;
+                LOG.debugf("[be-bucket] comp=%s dp=%s merged=true partNos=%d 省%d次 ms=%d",
+                        pivot.componentId, dp, partNos.size(), partNos.size() - 1, _ms);
             } catch (Exception ex) {
                 LOG.warnf("[batch-expand bucket-merge] bucket=%s 失败,fallback 逐 task: %s", e.getKey(), ex.getMessage());
                 for (int idx : idxs) {
@@ -358,13 +412,32 @@ public class ComponentResource {
         }
     }
 
-    /** 桶内 partNos 互不重复(同料号多卡时按 hf_part_no 分发不出来 → 不能合) */
-    private static boolean allUniquePartNos(List<Integer> idxs, List<Task> tasks) {
-        Set<String> seen = new HashSet<>();
-        for (int idx : idxs) {
-            String p = tasks.get(idx).partNo;
-            if (p != null && !seen.add(p)) return false;
-        }
-        return true;
+    /**
+     * G4: 目录级存量导入引用补救。
+     *
+     * <p>扫描指定目录内所有组件的 formulas，将仍指向目录外源组件的跨组件引用
+     * 重映射为同目录内对应的副本（base code 一致）。
+     *
+     * <p>映射规则：
+     * <ul>
+     *   <li>cross_tab_ref.source（UUID）：若目录外 → 按 base code 找目录内副本 → 更新</li>
+     *   <li>component_subtotal.component_code：若 code 不在目录内 → 按 base 找副本 → 更新</li>
+     * </ul>
+     *
+     * <p>同 base 多副本（__imp1/__imp2）时按 code 升序取第一个；无法解析的引用记录为
+     * unresolved 并跳过（不中断其他组件处理）。
+     *
+     * @param dirId  目标目录 UUID
+     * @param dryRun true(默认) = 只返回将要重映射的清单，不修改数据库；
+     *               false = 实际写库
+     */
+    @POST
+    @Path("/directories/{dirId}/remap-imported-refs")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<ComponentImportService.DirRemapResult> remapImportedRefs(
+            @PathParam("dirId") UUID dirId,
+            @QueryParam("dryRun") @DefaultValue("true") boolean dryRun) {
+        return ApiResponse.success(
+                componentImportService.remapImportedRefsInDirectory(dirId, dryRun));
     }
 }

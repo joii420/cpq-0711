@@ -25,15 +25,14 @@ import type { CardStructure, CardValues } from '../../services/quotationService'
 import { computeRowKey, buildUniqueRowKeys } from './useCardSnapshots';
 import { rowFingerprint, keepRow, type Tombstone } from './deletedRows';
 import { applyUnitConversion, factorFor } from '../../utils/unitConversion';
+import { formatNumber } from '../../utils/formatNumber';
 import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns } from './tabTotalLines';
-import { partVersionService } from '../../services/partVersionService';
-import PartVersionDrawer from '../../components/PartVersionDrawer';
 import { templateService } from '../../services/templateService';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { useTreeCollapse } from './useTreeCollapse';
 import { splitRows, rowAt, isManualRow } from './manualRows';
-import { resolveInputDefault, resolveInputDefaultSourceOnly } from './inputDefaults';
+import { resolveInputDefault, resolveInputDefaultForBake } from './inputDefaults';
 import { resolveFieldWidth } from '../component/types';
 import './quotation.css';
 
@@ -113,6 +112,8 @@ export interface ComponentField {
   sort_order?: number;
   /** 单位换算：同行取该字段值作为单位来源（如 "单位"），换算到标准单位后再代入公式 */
   unit_source_field?: string;
+  /** 显示位数：null/未配 = 保留原精度（原始/取数列）或计算列兜底 2 位。仅作用于显示，不改计算。 */
+  decimals?: number | null;
   // Backward-compat aliases
   key?: string;
   label?: string;
@@ -180,6 +181,11 @@ export interface LineItem {
   /** Excel 值快照（后端已算好，形态 `{rows:[{colKey:value}]}`，每 lineItem 一行 rows[0]）。缺值→显示"—"，不降级实时拉数。 */
   quoteExcelValues?: string;
   costingExcelValues?: string;
+  /**
+   * 报价卡片值最近一次重算/物化的时间戳（editCardValue 响应回灌）。
+   * Excel 视图取数刷新信号：编辑落库后该值更新 → useBackendExcelRows 重取最新 row_data（excelRefreshSignal）。
+   */
+  quoteValuesAt?: string;
   /**
    * Bug B (2026-05-20): 前端临时 id，用于 driverExpansionKey lineItemId 维度。
    * 新建 lineItem 时生成 (crypto.randomUUID())，后端持久化后 id 接管。
@@ -580,7 +586,8 @@ function computeAllFormulas(
         raw = f.content;
       }
       // 统一解析器：INPUT_TEXT / INPUT_NUMBER 默认值兜底（default_source 实时 > 静态 content）
-      if ((raw === undefined || raw === null || raw === '')
+      // 仅"键缺失(从未填/未烘焙)"才兜默认值；显式清空('')视为用户置空 → 按 0 算，不再回落默认值。
+      if ((raw === undefined || raw === null)
           && (f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT')) {
         const def = resolveInputDefault(f, {
           basicDataValues,
@@ -603,7 +610,8 @@ function computeAllFormulas(
       if ((f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT')
           && f.default_source) {
         const k = f.name || f.key || '';
-        if (k && (row[k] == null || row[k] === '')) {
+        // 仅键缺失才补 default_source；显式清空('')尊重用户置空，不补（与 computeAllFormulas 一致）。
+        if (k && row[k] == null) {
           const v = resolveInputDefaultSourceForRow(f, basicDataValues);
           if (v != null) { if (!augmented) augmented = { ...row }; augmented[k] = v; }
         }
@@ -794,7 +802,8 @@ function buildResolvedRow(
       }
     } else if ((f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT')
                && f.default_source) {
-      if (out[key] == null || out[key] === '') {
+      // 仅键缺失才补 default_source；显式清空('')尊重用户置空（cross_tab 取数同步按空处理）。
+      if (out[key] == null) {
         const v = resolveInputDefaultSourceForRow(f, basicDataValues);
         if (v != null) out[key] = v;
       }
@@ -1176,6 +1185,102 @@ function computeTabSubtotal(
   return sum;
 }
 
+/**
+ * PASS1：遍历 NORMAL 组件，按 componentId/componentCode/tabName 三键登记各页签小计。
+ * 折扣重算时可单独调用此函数取得 map，再缩放后代入 evalProductSubtotalFromSubtotals。
+ */
+export function getComponentSubtotals(
+  item: LineItem,
+  driverExpansions?: import('./useDriverExpansions').DriverExpansionMap,
+  customerId?: string,
+): Record<string, number> {
+  const componentSubtotals: Record<string, number> = {};
+  if (!item.componentData) return componentSubtotals;
+  const partNo = item.productPartNo;
+  // V203/Phase B: 必须传 comp.dataDriverPath 才能区分同 componentId 不同 driver 的两个组件实例
+  // V196 (2026-05-19): 加 fieldsHash 维度区分同 cid 同 driver 不同 fields_override 的两个 Tab
+  const lookupExpansion = (comp: ComponentDataItem) => {
+    if (!driverExpansions || !partNo || !comp.componentId) return undefined;
+    // Bug B: lineItemId = item.id || item.tempId || ''
+    const lineItemId = (item as any).id || (item as any).tempId || '';
+    const k = driverExpansionKey(lineItemId, partNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
+    return driverExpansions[k];
+  };
+  for (const comp of item.componentData) {
+    if (!comp?.fields || comp.componentType !== 'NORMAL') continue;
+    // 按列求小计：既写整组件三键，又写 `key#列名` 列键 —— 使含同组件多列引用的产品小计公式
+    // （如 [来料.材料成本]+[来料.材料损耗成本]）在求值与按列折扣时能区分到列
+    // （键格式与渲染路径 backfillSubtotalsFromResolved / 后端 componentSubtotals 一致）。
+    // partNo + driverExpansion 一起传 —— BASIC_DATA 字段才能按行取值，
+    // 不然落到全局 path cache 第一项 / 当 0 算（产品小计 156.80 vs 列小计 750.80 的根因）
+    const byCol = computeTabSubtotalsByColumn(
+      comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp),
+    );
+    let subtotal = 0;
+    for (const [colName, colVal] of Object.entries(byCol)) {
+      subtotal += colVal;
+      if (comp.componentId) componentSubtotals[`${comp.componentId}#${colName}`] = colVal;
+      if (comp.componentCode) componentSubtotals[`${comp.componentCode}#${colName}`] = colVal;
+      componentSubtotals[`${comp.tabName}#${colName}`] = colVal;
+    }
+    if (comp.componentId) componentSubtotals[comp.componentId] = subtotal;
+    if (comp.componentCode) componentSubtotals[comp.componentCode] = subtotal;
+    componentSubtotals[comp.tabName] = subtotal;
+  }
+  return componentSubtotals;
+}
+
+/**
+ * 给定 componentSubtotals map，用 SUBTOTAL 公式（或 subtotalFormula / fallback 累加）求产品单价。
+ * 折扣重算时可把某页签小计缩放后代入此函数重新求积。
+ */
+export function evalProductSubtotalFromSubtotals(
+  item: LineItem,
+  componentSubtotals: Record<string, number>,
+): number {
+  // Build NUMBER product attribute values
+  const productAttrs: Record<string, number> = {};
+  for (const attr of item.productAttributes || []) {
+    if (attr.field_type === 'NUMBER') {
+      const val = parseFloat(item.productAttributeValues?.[attr.name]);
+      if (!isNaN(val)) productAttrs[attr.name] = val;
+    }
+  }
+
+  // Find SUBTOTAL component and use its first formula as product subtotal
+  const subtotalComp = item.componentData?.find(c => c.componentType === 'SUBTOTAL');
+  if (subtotalComp && subtotalComp.formulas && subtotalComp.formulas.length > 0) {
+    const formula = subtotalComp.formulas[0];
+    if (formula.expression && formula.expression.length > 0) {
+      try {
+        return evaluateExpression(formula.expression, {}, componentSubtotals, productAttrs);
+      } catch {
+        return 0;
+      }
+    }
+  }
+
+  // Fallback: use legacy subtotalFormula if present
+  if (item.subtotalFormula && item.subtotalFormula.length > 0) {
+    try {
+      return evaluateExpression(item.subtotalFormula, {}, componentSubtotals, productAttrs);
+    } catch {
+      return 0;
+    }
+  }
+
+  // Final fallback（无 SUBTOTAL 组件/公式）：各页签总计之和 —— 逐组件按 componentId 取一次，
+  // 避免 componentSubtotals 同值三键(componentId/componentCode/tabName)被 Object.values 重复累加。
+  let fallbackSum = 0;
+  for (const c of item.componentData || []) {
+    if (!c?.fields || c.componentType !== 'NORMAL') continue;
+    if (!c.fields.some((ff: any) => ff.is_subtotal)) continue;
+    const key = c.componentId ?? c.componentCode ?? c.tabName;
+    fallbackSum += componentSubtotals[key] ?? 0;
+  }
+  return fallbackSum;
+}
+
 function computeProductSubtotal(
   item: LineItem,
   // 让 caller 把 driverExpansions / customerId 透传进来 —— 不传则退化为旧行为（仅 comp.rows）
@@ -1188,86 +1293,15 @@ function computeProductSubtotal(
 ): number {
   if (!item.componentData || item.componentData.length === 0) return item.subtotal || 0;
 
-  let componentSubtotals: Record<string, number>;
-
   if (precomputedSubtotals) {
     // B3: 用调用方传入的（buildCrossTabRows 回填后）已修正小计，跳过 PASS1 重算。
     // 消除"产品小计 PASS1 不含 crossTabRows → cross_tab 列贡献 0"的双口径。
-    componentSubtotals = precomputedSubtotals;
-  } else {
-    const partNo = item.productPartNo;
-    // V203/Phase B: 必须传 comp.dataDriverPath 才能区分同 componentId 不同 driver 的两个组件实例
-    // V196 (2026-05-19): 加 fieldsHash 维度区分同 cid 同 driver 不同 fields_override 的两个 Tab
-    const lookupExpansion = (comp: ComponentDataItem) => {
-      if (!driverExpansions || !partNo || !comp.componentId) return undefined;
-      // Bug B: lineItemId = item.id || item.tempId || ''
-      const lineItemId = (item as any).id || (item as any).tempId || '';
-      const k = driverExpansionKey(lineItemId, partNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
-      return driverExpansions[k];
-    };
-
-    // Compute NORMAL component subtotals first (PASS1: 无 crossTabRows，cross_tab 列小计为 0)
-    componentSubtotals = {};
-    for (const comp of item.componentData) {
-      if (!comp?.fields || comp.componentType !== 'NORMAL') continue;
-      // partNo + driverExpansion 一起传 —— BASIC_DATA 字段才能按行取值，
-      // 不然落到全局 path cache 第一项 / 当 0 算（产品小计 156.80 vs 列小计 750.80 的根因）
-      const subtotal = computeTabSubtotal(
-        comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp),
-      );
-      if (comp.componentId) componentSubtotals[comp.componentId] = subtotal;
-      if (comp.componentCode) componentSubtotals[comp.componentCode] = subtotal;
-      componentSubtotals[comp.tabName] = subtotal;
-    }
+    return evalProductSubtotalFromSubtotals(item, precomputedSubtotals);
   }
 
-  // Find SUBTOTAL component and use its first formula as product subtotal
-  const subtotalComp = item.componentData.find(c => c.componentType === 'SUBTOTAL');
-  if (subtotalComp && subtotalComp.formulas && subtotalComp.formulas.length > 0) {
-    const formula = subtotalComp.formulas[0];
-    if (formula.expression && formula.expression.length > 0) {
-      // Build NUMBER product attribute values
-      const productAttrs: Record<string, number> = {};
-      for (const attr of item.productAttributes || []) {
-        if (attr.field_type === 'NUMBER') {
-          const val = parseFloat(item.productAttributeValues?.[attr.name]);
-          if (!isNaN(val)) productAttrs[attr.name] = val;
-        }
-      }
-      try {
-        return evaluateExpression(formula.expression, {}, componentSubtotals, productAttrs);
-      } catch {
-        return 0;
-      }
-    }
-  }
-
-  // Fallback: use legacy subtotalFormula if present
-  if (item.subtotalFormula && item.subtotalFormula.length > 0) {
-    const productAttrs: Record<string, number> = {};
-    for (const attr of item.productAttributes || []) {
-      if (attr.field_type === 'NUMBER') {
-        const val = parseFloat(item.productAttributeValues?.[attr.name]);
-        if (!isNaN(val)) productAttrs[attr.name] = val;
-      }
-    }
-    try {
-      return evaluateExpression(item.subtotalFormula, {}, componentSubtotals, productAttrs);
-    } catch {
-      return 0;
-    }
-  }
-
-  // Final fallback（无 SUBTOTAL 组件/公式）：各页签总计之和 —— 逐组件按 componentId 取一次，
-  // 避免 componentSubtotals 同值三键(componentId/componentCode/tabName)被 Object.values 重复累加。
-  let fallbackSum = 0;
-  for (const c of item.componentData) {
-    if (!c?.fields || c.componentType !== 'NORMAL') continue;
-    if (!c.fields.some((ff: any) => ff.is_subtotal)) continue;
-    const key = c.componentId ?? c.componentCode ?? c.tabName;
-    fallbackSum += componentSubtotals[key] ?? 0;
-  }
-  return fallbackSum;
+  // Compute NORMAL component subtotals first (PASS1: 无 crossTabRows，cross_tab 列小计为 0)
+  const componentSubtotals = getComponentSubtotals(item, driverExpansions, customerId);
+  return evalProductSubtotalFromSubtotals(item, componentSubtotals);
 }
 
 /** 测试用：按行序逐行 computeAllFormulas，previous_row_subtotal 按本列累加（Plan 2b）。 */
@@ -1290,6 +1324,41 @@ export function computeRowsCachesForTest(
 
 /** 稳定空数组引用 — 传给 useDriverExpansions 表示"无需 batch-expand"(快照模式), 避免每渲染新建 [] 触发 churn。 */
 export const EMPTY_LINEITEMS: LineItem[] = [];
+
+/**
+ * A1 自我保护 gate 判定:lineItems 里是否存在「快照模式下仍需 path cache(batch-evaluate)」的字段。
+ *
+ * 快照模式下绝大多数取值已在快照里:BASIC_DATA `$view.列` 随 driver 行进 basicDataValues、
+ * FORMULA 进 formulaResults、INPUT 进 editRows —— 这些都<b>不</b>需 path cache。
+ * 仅以下字段在快照模式仍会 fallback 读 path cache(formulaEngine / inputDefaults / computeAllFormulas):
+ *   - LIST_FORMULA(BNF 路径 fallback)
+ *   - DATA_SOURCE 且 datasource_binding.type==='BNF_PATH'
+ *   - 任意字段 default_source.type==='BNF_PATH'
+ *   - 任意字段 default_basic_data_path(INPUT 默认值按 partNo 路径兜底)
+ *   - FORMULA expression 含 path / global_variable token
+ * 现役配置这些均为 0(BNF 动态绑定已废弃),故恒返 false → 可安全 gate;
+ * 若将来有人重新配置上述任一,本函数返 true → 自动不 gate(照旧发 batch-evaluate),防 AP-31 缺值。
+ */
+export function lineItemsNeedPathCache(items: LineItem[]): boolean {
+  for (const li of items || []) {
+    for (const comp of ((li as any).componentData as any[]) || []) {
+      for (const f of (comp?.fields as any[]) || []) {
+        if (!f) continue;
+        if (f.field_type === 'LIST_FORMULA') return true;
+        if (f.field_type === 'DATA_SOURCE' && f.datasource_binding?.type === 'BNF_PATH' && f.datasource_binding?.bnf_path) return true;
+        if (f.default_source?.type === 'BNF_PATH' && f.default_source?.path) return true;
+        if (f.default_basic_data_path) return true;
+      }
+      for (const fr of (comp?.formulas as any[]) || []) {
+        for (const tok of (fr?.expression as any[]) || []) {
+          if ((tok?.type === 'path' || tok?.type === 'global_variable') && tok?.path) return true;
+          if (tok?.type === 'global_variable' && !tok?.path && tok?.key_field_refs && tok?.code) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
 
 /**
  * Task 8 渲染脱钩: 从行级值快照(quoteCardValues/costingCardValues)构造 DriverExpansionMap,
@@ -1415,7 +1484,6 @@ interface ProductCardProps {
 
 const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs, cardSide, cardStructure }) => {
   const [activeTab, setActiveTab] = useState(0);
-  const [versionDrawerOpen, setVersionDrawerOpen] = useState(false);
   const [dsLoading, setDsLoading] = useState<Record<string, boolean>>({});
   const [dsErrors, setDsErrors] = useState<Record<string, string>>({});
   // Material match state for border coloring
@@ -1484,6 +1552,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
 
   // 300ms debounce timers per blur event
   const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // 始终指向最新 item 的 ref —— ComponentCell 改"本地态 + 失焦提交"后,延迟读取(executeDsQuery /
+  // handleInputBlur 的 300ms 定时器)若读渲染期闭包 item 会拿到提交前的旧值;改读 itemRef.current
+  // 在定时器触发时取到已 flush 的最新 componentData。同步调用处 itemRef.current === item,行为不变。
+  const itemRef = useRef(item);
+  itemRef.current = item;
 
   // 5-minute cache: cacheKey → { value, timestamp }
   const dsCache = useRef<Map<string, { value: any; timestamp: number }>>(new Map());
@@ -1629,15 +1703,15 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       );
       const exp = driverExpansions?.[expKey];
       if (!exp || exp.rowCount <= 0) return;
-      // 覆盖全部 INPUT* 类型中有 default_source 的字段（统一走解析器，不再按 BASIC_DATA 子类型手写分支）
+      // 覆盖全部 INPUT* 类型中"配了默认值"的字段：default_source(数据源默认) 或 静态 content(固定默认值)。
       const inputFields = (comp.fields as any[]).filter(
         (f) => (f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT')
-          && f.default_source,
+          && (f.default_source || (f.content != null && f.content !== '')),
       );
       if (inputFields.length === 0) return;
       for (let ri = 0; ri < exp.rowCount; ri++) {
+        // bdv 可能为空(纯 content 默认值不依赖 bdv); 不在此 continue, 交给取值器按字段判定。
         const bdv = exp.rows[ri]?.basicDataValues;
-        if (!bdv) continue;
         const curRow = comp.rows?.[ri] || {};
         for (const f of inputFields) {
           const key = f.name || f.key || '';
@@ -1646,10 +1720,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           if (bakedRef.current.has(guard)) continue;
           const cur = curRow[key];
           if (!(cur === undefined || cur === null || cur === '')) { bakedRef.current.add(guard); continue; }
-          // 快照回填只冻结"真正解析到的 default_source 源值"（GV / BNF_PATH / BASIC_DATA）——
-          // 不用 resolveInputDefault（含 content 兜底），否则源未命中时会把静态 content 冻结并被 bakedRef
-          // 一次性锁死，driver 后续补回真值也不再刷新（陈旧锁定）。content 兜底归 snapshotRows(无源)+ 实时渲染。
-          const v = resolveInputDefaultSourceOnly(f as ComponentField, { basicDataValues: bdv });
+          // 导入带出一次性烘焙默认值进行数据 → 之后用户清空(='')即真实持久值, 不再被渲染兜底回弹。
+          // resolveInputDefaultForBake: 有 default_source 时只烘已解析的源值(源未命中返 undefined, 等驱动补值
+          // 下一轮再烘, 不提前冻结 content); 无 default_source 时烘静态 content。bakedRef 守卫保证"清空后不再回填"。
+          const v = resolveInputDefaultForBake(f as ComponentField, { basicDataValues: bdv });
           if (v == null) continue;
           bakedRef.current.add(guard);
           writes.push({
@@ -1685,7 +1759,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     // executeDsQuery 仅服务于 DATABASE_QUERY 子类型(GLOBAL_VARIABLE / BNF_PATH 走 computeAllFormulas 内的 enrich)
     if (!binding.datasource_id) return;
     const paramBindings = binding.param_bindings || [];
-    const comp = item.componentData[tabIndex];
+    const comp = itemRef.current.componentData[tabIndex];
     if (!comp) return;
 
     // Collect all param values — all must be filled
@@ -1755,7 +1829,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       clearTimeout(debounceTimers.current[timerKey]);
     }
     debounceTimers.current[timerKey] = setTimeout(() => {
-      const comp = item.componentData[tabIndex];
+      const comp = itemRef.current.componentData[tabIndex];
       if (!comp) return;
 
       for (const dsField of comp.fields) {
@@ -1815,10 +1889,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       const res = await quotationService.editQuoteCardValue(lineItemId, { componentId, rowKey, fieldName, value });
       const qcv = res?.data?.quoteCardValues;
       const qev = res?.data?.quoteExcelValues;
-      if (qcv || qev) onUpdate(() => {
+      // quoteValuesAt：编辑落库时间戳，作为 Excel 视图取数刷新信号(excelRefreshSignal)，
+      // 编辑完成(后端已重算+物化该料号 row_data)后回灌 → Excel 视图随之重取最新数据。
+      const qva = res?.data?.quoteValuesAt;
+      if (qcv || qev || qva) onUpdate(() => {
         const patch: Partial<LineItem> = {};
         if (qcv) patch.quoteCardValues = qcv;
         if (qev) patch.quoteExcelValues = qev;
+        if (qva) patch.quoteValuesAt = qva;
         return patch;
       });
     } catch {
@@ -1856,8 +1934,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     });
   }, [item.componentData, executeDsQuery]);
 
+  // 金额显示：统一走 formatNumber（计算口径 2 位），保留 ¥ 前缀与空值兜底 ¥0
   const formatCurrency = (val: number) =>
-    `¥ ${(val || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    `¥ ${formatNumber(val || 0, { isComputed: true, decimals: 2 }) ?? '0'}`;
 
   // 2026-05-17 WYSIWYG 原则: 模板配几个组件就显示几个 Tab.
   // 2026-05-19 (方案 A 用户决议, 推翻同日 QT-1409 的"自动隐藏空 Tab"策略):
@@ -2050,59 +2129,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
               </span>
             </Popover>
           )}
-          {/* 料号版本号 Tag — 草稿态可点击切换 (新需求) */}
-          {item.customerProductNo && item.productPartNo && (
-            <span
-              style={{
-                background: '#f6ffed',
-                color: '#389e0d',
-                border: '1px solid #b7eb8f',
-                borderRadius: 4,
-                padding: '2px 10px',
-                fontSize: 12,
-                fontFamily: 'monospace',
-                cursor: quotationId && item.id ? 'pointer' : 'default',
-              }}
-              title={quotationId && item.id ? '点击切换料号版本' : '料号版本 (草稿创建后可切换)'}
-              onClick={() => {
-                if (quotationId && item.id) setVersionDrawerOpen(true);
-              }}
-            >
-              版本: v{item.partVersionLocked ?? 2000}
-            </span>
-          )}
           <button className="qt-action-btn delete" type="button" onClick={onRemove}>
             删除
           </button>
         </div>
       </div>
-
-      {/* 料号版本切换 Drawer — 报价单内只做"选择已存在的版本", 不升版.
-          升版的语义属于"主数据导入"时, 报价单只是消费版本. */}
-      {item.customerProductNo && item.productPartNo && quotationId && item.id && (
-        <PartVersionDrawer
-          open={versionDrawerOpen}
-          onClose={() => setVersionDrawerOpen(false)}
-          customerProductNo={item.customerProductNo}
-          hfPartNo={item.productPartNo}
-          mode="select"
-          lockedVersion={item.partVersionLocked ?? 2000}
-          onApplied={async (newVer) => {
-            try {
-              const result = await partVersionService.updateLineItemVersion(quotationId, item.id!, newVer);
-              // V6：同步更新 excelViewSnapshot，让 ProductCard 立即按新版本数据渲染
-              const updates: Record<string, any> = { partVersionLocked: result.partVersionLocked ?? newVer };
-              if (result.excelViewSnapshot !== undefined) {
-                updates.excelViewSnapshot = result.excelViewSnapshot;
-              }
-              onUpdate(updates);
-              message.success(`已切换至 v${result.partVersionLocked ?? newVer}，公式已重算`);
-            } catch (e) {
-              message.error('切换失败: ' + (e as Error).message);
-            }
-          }}
-        />
-      )}
 
       {/* Product Attributes */}
       {attrFields.length > 0 && (
@@ -2494,19 +2525,22 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           dsStateKey: `${activeComponentDataIndex}-${realRowIndex}`,
                           // AP-54: 写路径用 realRowIndex(对象引用映射回 comp.rows 真实下标)
                           onCellChange: (ri, k, val) => handleRowChange(activeComponentDataIndex, realRowIndex, k, val),
-                          onCellBlur: (ri, k) => {
+                          onCellBlur: (ri, k, committedVal) => {
                             // B5: 输入数值列失焦/回车后重算 footer 小计。
-                            // 重算入口：handleRowChange 已把最新值写入 item.componentData，
+                            // EditableCellInput 改"本地态 + 失焦提交"后：committedVal = 失焦时已提交到全局的值。
+                            // committedVal 已在 onCommit 里经 handleRowChange 写入 item.componentData(异步),
                             // 触发重渲染时 columnSumsByComp（buildCrossTabRows resolvedRows）自动重算。
-                            // 此处无需额外触发——受控组件 onChange 已保证 item 与 UI 同步；
-                            // onCellBlur 负责（1）DATA_SOURCE 重查 (handleInputBlur)（2）快照写回 (handleSnapshotCellEdit)。
+                            // onCellBlur 负责（1）DATA_SOURCE 重查 (handleInputBlur, 内部 300ms 后读最新 item)
+                            //            （2）快照写回 (handleSnapshotCellEdit)。
                             handleInputBlur(activeComponentDataIndex, realRowIndex, k);
                             // Phase4 Task3: 报价侧用户输入字段 onBlur → 写快照 editRows(替代仅靠 autosave 写 row_data)。
-                            // 仅 INPUT* 类型(FORMULA/BASIC_DATA/DATA_SOURCE/FIXED 不在此触发); row[k] 为最新受控值。
+                            // 仅 INPUT* 类型(FORMULA/BASIC_DATA/DATA_SOURCE/FIXED 不在此触发)。
+                            // ⚠️ 必须用 committedVal:失焦那一刻全局 row[k] 还是旧值(onCommit 的 setState 未 flush),
+                            //    用 row[k] 会把旧值写进快照。committedVal===undefined 时(理论不会)回退 row[k] 兜底。
                             const ft = field.field_type;
                             const isUserInputField = ft === 'INPUT' || ft === 'INPUT_TEXT' || ft === 'INPUT_NUMBER';
                             if (useSnapEdit && isUserInputField && activeComponent.componentId) {
-                              handleSnapshotCellEdit(activeComponent.componentId, rowKey, k, row[k]);
+                              handleSnapshotCellEdit(activeComponent.componentId, rowKey, k, committedVal !== undefined ? committedVal : row[k]);
                             }
                           },
                           // Phase 1 手动行标记(供后续 Task 7 ComponentCell 消费)
@@ -2615,8 +2649,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         if (isNumericCol && colName && colName in colSums) {
                           const v = colSums[colName] ?? 0;
                           // ¥ 仅当 is_amount===true；其他数值列（含管理费/利润等 is_subtotal 但非金额列）纯数字
-                          // C2：金额列 = ¥ + 通用精度（与其它小计列同款 4 位去末尾 0，仅多 ¥ 前缀）
-                          const plain = v === 0 ? '0' : parseFloat(v.toFixed(4)).toString();
+                          // C2：小计为计算值 → formatNumber 计算口径（未配 decimals 兜底 2 位），金额列加 ¥ 前缀
+                          const plain = v === 0 ? '0' : (formatNumber(v, { isComputed: true }) ?? '—');
                           const text = field.is_amount === true ? `¥ ${plain}` : plain;
                           return (
                             <td key={colName || fi} className="qt-subtotal-cell" style={field.is_amount === true ? undefined : { color: '#595959' }}>
@@ -2637,7 +2671,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         {activeComponentBomTree && (<><td /><td /><td /></>)}
                         <td className="qt-subtotal-label-cell">合计</td>
                         <td colSpan={activeComponent.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
-                          {formatCurrency(sumTabColumns(activeComponent as any, allComponentSubtotals))}
+                          {/* 本页签金额合计走"其余"高精度 4 位（精度优先）；仅最终产品小计保持 formatCurrency 2 位 */}
+                          {`¥ ${formatNumber(sumTabColumns(activeComponent as any, allComponentSubtotals), { isComputed: true }) ?? '0'}`}
                         </td>
                       </tr>
                     )}
@@ -2737,7 +2772,11 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   // ProductCard 子组件中的 evaluateExpression 在不传 pathCache 时回退到模块级(setGlobalPathCache),
   // 此处保留 hook 调用以触发后台求值 + 组件 re-render
   // 2026-05-20: 接收返值供 LIST_FORMULA cell BNF path fallback 使用 (driver expand 注入驱动列谓词查空时)
-  const quotationPathCache = usePathFormulaCache(lineItems, customerId, gvDefs);
+  // A1: 快照模式且无 path-cache 依赖字段 → 传空集断开 batch-evaluate(值已全在快照里;自我保护见 lineItemsNeedPathCache)
+  const gateQuotePathCache = lineItems.length > 0
+    && lineItems.every(li => !!li.quoteCardValues)
+    && !lineItemsNeedPathCache(lineItems);
+  const quotationPathCache = usePathFormulaCache(gateQuotePathCache ? EMPTY_LINEITEMS : lineItems, customerId, gvDefs);
   // 核价单视图同样需要按 costing 模板下的 path token 求值；hook 内部基于 (partNo, path) 缓存，
   // 与 quote 侧调用结果合并到同一全局 cache，互不冲突
   // 调用位置在 costingLineItems 声明之后
@@ -2853,6 +2892,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       default_source: f.default_source,
       sort_order: f.sort_order,
       unit_source_field: f.unit_source_field,
+      decimals: f.decimals ?? null,
       label: f.label || f.name || '',
       key: f.name || f.key || '',
     });
@@ -3016,7 +3056,11 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   }, [quoteLineItems, onUpdateLineItem]);
 
   // 核价单视图的 path token 求值缓存（与上方 quote 侧 hook 调用合并到同一 globalPathCache）
-  usePathFormulaCache(costingLineItems, customerId, gvDefs);
+  // A1: 同报价侧——快照模式且无 path-cache 依赖字段时传空集断开 batch-evaluate
+  const gateCostingPathCache = costingLineItems.length > 0
+    && costingLineItems.every(li => !!li.costingCardValues)
+    && !lineItemsNeedPathCache(costingLineItems);
+  usePathFormulaCache(gateCostingPathCache ? EMPTY_LINEITEMS : costingLineItems, customerId, gvDefs);
 
   // Y1.5: 行驱动展开 — 含 dataDriverPath 的组件按后端返回的 N 行渲染,BASIC_DATA 值直接来自此 hook
   // 报价单卡片所需的展开（按 customerTemplate 视图下的 componentData 收集）
@@ -3113,6 +3157,26 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       },
     });
   };
+
+  // P3 lazy-excel:首存只算卡片值、Excel 值留空(quoteExcelValues/costingExcelValues=null)。
+  //   用户切到「Excel 视图」时,若当前侧有行缺 Excel 值 → 调后端 ensureExcelValues 懒算+落库,再整页重载。
+  //   幂等:全部已算则不发请求;in-flight 用 ref 防并发/重入;加产品后新行缺值会再次触发(无永久 ref 闸门)。
+  const [ensuringExcel, setEnsuringExcel] = useState(false);
+  const ensuringExcelRef = useRef(false);
+  useEffect(() => {
+    if (viewType !== 'excel' || !quotationId || ensuringExcelRef.current) return;
+    const sideKey = mainTab === 'costing' ? 'costingExcelValues' : 'quoteExcelValues';
+    const missing = (lineItems || []).some((li: any) => !li?.[sideKey]);
+    if (!missing) return;
+    ensuringExcelRef.current = true;
+    setEnsuringExcel(true);
+    const hide = message.loading('正在生成 Excel 视图…', 0);
+    quotationService.ensureExcelValues(quotationId)
+      .then(() => onReloadQuotation?.())
+      .catch(() => message.error('Excel 视图生成失败,请重试'))
+      .finally(() => { hide(); ensuringExcelRef.current = false; setEnsuringExcel(false); });
+  }, [viewType, mainTab, quotationId, lineItems]);
+  void ensuringExcel;
 
   // 构建漂移横幅文案
   const buildDriftMessage = () => {
@@ -3319,6 +3383,9 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
           templateId={customerTemplateId || null}
           quotationId={quotationId}
           side="QUOTE"
+          driverExpansions={driverExpansions}
+          pathCache={quotationPathCache}
+          globalVariableDefs={gvDefs}
         />
       ) : lineItems.length === 0 ? (
         <div className="qt-empty-state">

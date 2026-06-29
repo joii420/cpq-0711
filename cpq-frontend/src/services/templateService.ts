@@ -93,6 +93,8 @@ export const templateService = {
   ) => api.patch(`/templates/${templateId}/components/${tcId}/overrides`, body) as Promise<any>,
   // Excel view config
   getExcelViewConfig: (id: string) => api.get(`/templates/${id}/excel-view-config`) as Promise<any>,
+  // 后端解析后的有效列（v2 引用配置 excel_component_id 也能拿到 A/B/C 解析列）；供 saveDraft buildExcelSnapshot 取列。
+  getEffectiveExcelColumns: (id: string) => api.get(`/templates/${id}/excel-view-config/effective-columns`) as Promise<any>,
   updateExcelViewConfig: (id: string, config: any) => api.put(`/templates/${id}/excel-view-config`, config) as Promise<any>,
   parseHeader: (templateId: string, file: File, sheetIndex: number, headerRowIndex: number) => {
     const fd = new FormData();

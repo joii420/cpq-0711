@@ -4,13 +4,18 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.repository.ElementRecoveryDiscountRepository;
+import com.cpq.basicdata.v6.repository.ElementRecoveryDiscountRepository.Update;
 import com.cpq.basicdata.v6.service.MaterialNoResolver;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Q05 元素回收折扣 → element_bom_item UPDATE 操作。
@@ -30,24 +35,29 @@ import java.util.List;
 @ApplicationScoped
 public class Q05ElementRecoveryHandler implements SheetHandler {
 
-    @Inject EntityManager em;
+    @Inject ElementRecoveryDiscountRepository repo;
     @Inject MaterialNoResolver materialNoResolver;
 
     @Override public String sheetName() { return "元素回收折扣"; }
+
+    /** 一条已通过校验的更新意图（保留 rowNo 供逐行报告）。 */
+    private record ValidRow(int rowNo, String materialNo, String componentNo, BigDecimal rd) {}
 
     @Override
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
         MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
+
+        // §P2-Q05 阶段1：逐行解析+校验(resolveMatchOnly 顺序/缓存不变)，收集有效行。
+        List<ValidRow> valid = new ArrayList<>();
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
                 String inputName = row.exact("投入料号名称");
                 String materialNo = materialNoResolver.resolveMatchOnly(row.exact("投入料号"), inputName, batch);
                 String componentNo = row.getStr("元素");
-                java.math.BigDecimal recoveryDiscount = row.getDecimal("回收折扣");
-
+                BigDecimal recoveryDiscount = row.getDecimal("回收折扣");
                 // §5 更新型：只按名匹配不生成。料号为空且按名称查不到 → 记错误跳过。
                 if (materialNo == null || componentNo == null) {
                     result.recordError(row.rowNo, "投入料号/元素",
@@ -56,31 +66,38 @@ public class Q05ElementRecoveryHandler implements SheetHandler {
                             : "匹配键不全");
                     continue;
                 }
+                valid.add(new ValidRow(row.rowNo, materialNo, componentNo, recoveryDiscount));
+            } catch (Exception e) {
+                result.recordError(row.rowNo, "_row_", e.getMessage());
+            }
+        }
 
-                // Task 8（决策⑤）：2 键 (material_no, component_no) + is_current=true 锁定当前生效版本组；
-                // 去掉原"取最新 characteristic 子查询"——is_current=true 已唯一确定当前版本。
-                int updated = em.createNativeQuery(
-                        "UPDATE element_bom_item SET recovery_discount = :rd, updated_at = NOW(), updated_by = :u " +
-                        "WHERE system_type='QUOTE' AND customer_no=:c AND material_no=:m " +
-                        "  AND component_no=:cn " +
-                        "  AND is_current = TRUE")
-                    .setParameter("rd", recoveryDiscount)
-                    .setParameter("u", ctx.importedBy)
-                    .setParameter("c", ctx.customerNo)
-                    .setParameter("m", materialNo)
-                    .setParameter("cn", componentNo)
-                    .executeUpdate();
+        if (!valid.isEmpty()) {
+            // §P2-Q05 阶段2：一次 tuple-IN 取每键 is_current 匹配行数(=逐行 updated 计数)；
+            // 去重(末值胜，对齐逐行后写覆盖)后一条 UPDATE…FROM(VALUES) 批量写。
+            Map<String, Update> dedup = new LinkedHashMap<>();   // 末值胜
+            for (ValidRow vr : valid) {
+                dedup.put(ElementRecoveryDiscountRepository.key(vr.materialNo(), vr.componentNo()),
+                    new Update(vr.materialNo(), vr.componentNo(), vr.rd()));
+            }
+            List<String[]> distinctKeys = new ArrayList<>();
+            for (Update u : dedup.values()) distinctKeys.add(new String[]{u.materialNo(), u.componentNo()});
 
+            Map<String, Integer> matchCount = repo.countCurrentMatches(ctx.customerNo, distinctKeys);
+            repo.batchUpdate(ctx.customerNo, new ArrayList<>(dedup.values()), ctx.importedBy);
+
+            // §P2-Q05 阶段3：逐行报告(与原逐行 updated==0 错误 / successRows / recordWrite 计数逐位一致)。
+            for (ValidRow vr : valid) {
+                int updated = matchCount.getOrDefault(
+                    ElementRecoveryDiscountRepository.key(vr.materialNo(), vr.componentNo()), 0);
                 if (updated == 0) {
-                    result.recordError(row.rowNo, "_lookup_",
+                    result.recordError(vr.rowNo(), "_lookup_",
                         String.format("未匹配 element_bom_item (material_no=%s, component_no=%s) - 请先导入物料与元素BOM",
-                            materialNo, componentNo));
+                            vr.materialNo(), vr.componentNo()));
                 } else {
                     result.successRows++;
                     result.recordWrite("element_bom_item", updated);
                 }
-            } catch (Exception e) {
-                result.recordError(row.rowNo, "_row_", e.getMessage());
             }
         }
         return result;

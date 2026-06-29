@@ -38,6 +38,23 @@ function normalizeBackendValue(v: any): any {
   return v;
 }
 
+/**
+ * Excel 视图取数刷新信号（取值时机修复）：把每个 lineItem 的「编辑落库时间戳 quoteValuesAt」
+ * （editCardValue 每次重算 + 物化 row_data 后都会更新并由前端就地回灌）拼成一个稳定字符串。
+ *
+ * <p>约定：用户在产品卡片改任意数据触发公式计算 → 后端重算并物化该料号 row_data → 前端 patch
+ * quoteValuesAt → 本信号变化 → useBackendExcelRows useEffect 重取最新 row_data。
+ *
+ * <p>无 quoteValuesAt 时回退用 quoteCardValues 长度兜底（仍能在编辑改变卡片值时变化）；
+ * 二者皆缺则该 lineItem 贡献空段（首次加载阶段，mount 本身已触发取数）。
+ */
+export function excelRefreshSignal(lineItems: LineItem[] | undefined): string {
+  if (!lineItems || lineItems.length === 0) return '';
+  return lineItems
+    .map(li => `${li.id ?? li.tempId ?? ''}@${li.quoteValuesAt ?? (li.quoteCardValues ? li.quoteCardValues.length : '')}`)
+    .join('|');
+}
+
 export function useBackendExcelRows(params: UseBackendExcelRowsParams): UseBackendExcelRowsResult {
   const { quotationId, lineItems, enabled, templateId } = params;
 
@@ -45,6 +62,10 @@ export function useBackendExcelRows(params: UseBackendExcelRowsParams): UseBacke
   const [rawRows, setRawRows] = useState<Array<Record<string, any>>>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 取值时机修复：编辑落库后 lineItems[].quoteValuesAt 变化 → 信号变化 → 重取最新 row_data。
+  // 约定：卡片改任意数据触发公式计算 → 后端一并重算+物化该料号 row_data → Excel 视图随之刷新。
+  const refreshSignal = useMemo(() => excelRefreshSignal(lineItems), [lineItems]);
 
   useEffect(() => {
     if (!enabled || !quotationId) {
@@ -74,7 +95,8 @@ export function useBackendExcelRows(params: UseBackendExcelRowsParams): UseBacke
         setRawRows([]);
       })
       .finally(() => setLoading(false));
-  }, [enabled, quotationId, templateId]);
+    // refreshSignal 入依赖：编辑落库(quoteValuesAt 变)→ 重取 Excel 视图最新行数据。
+  }, [enabled, quotationId, templateId, refreshSignal]);
 
   // 按 lineItemId 建索引，用于 __hfPartNo 关联
   const lineItemById = useMemo(() => {

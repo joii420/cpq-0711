@@ -5,6 +5,7 @@
  * 使用 inputDefaults，若二者互相 import 会形成循环依赖（Vite ESM AP-43 问题）。
  * 将 formatPathValue 独立成此模块，断开该循环。
  */
+import { formatNumber } from '../../../utils/formatNumber';
 
 // ─── ENUM 标签（与 QuotationStep2 同源） ────────────────────────────────────
 const ENUM_LABEL: Record<string, string> = {
@@ -24,10 +25,15 @@ const ENUM_LABEL: Record<string, string> = {
 /**
  * 把后端 path 求值结果投影成显示字符串。
  * 与 QuotationStep2.formatPathValue 完全同源。
+ *
+ * @param decimals 数值显示位数（来自字段 decimals）。null/undefined = 未配 →
+ *                 formatNumber 保留原精度（如汇率 6.9755 不被截断）。仅作用于
+ *                 number 分支；ENUM/array/jsonb 等分支不受影响。
  */
-export function formatPathValue(v: any): string | null {
+export function formatPathValue(v: any, decimals?: number | null): string | null {
   if (v == null || v === '') return null;
-  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (typeof v === 'number') return formatNumber(v, { decimals }) ?? String(v);
+  if (typeof v === 'boolean') return String(v);
   if (typeof v === 'string') return ENUM_LABEL[v] ?? v;
   if (Array.isArray(v)) {
     if (v.length === 0) return null;

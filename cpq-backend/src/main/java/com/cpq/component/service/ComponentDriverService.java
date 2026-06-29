@@ -202,33 +202,80 @@ public class ComponentDriverService {
     public ExpandDriverResponse expandWithSnapshot(UUID componentId, UUID customerId, String partNo, Integer partVersion,
                                                    String overrideDataDriverPath, String overrideFieldsJson,
                                                    UUID lineItemId, String compositeType, List<UUID> childLineItemIds) {
-        // 调试捕获 SQL 时旁路报价单快照直返, 强制走实时 driver 以触发并记录最终 SQL。
-        if (lineItemId != null && componentId != null
-                && !com.cpq.datasource.sqlview.SqlDebugContext.isActive()) {
-            try {
+        ExpandDriverResponse snap = tryReadSnapshot(componentId, lineItemId);
+        if (snap != null) return snap;
+        return expand(componentId, customerId, partNo, partVersion, overrideDataDriverPath, overrideFieldsJson,
+                lineItemId, compositeType, childLineItemIds);
+    }
+
+    /**
+     * FIX 1(2026-06-26 batch-expand 去白干):<b>只读报价单快照,读不到返 {@code null}(绝不 fallthrough 到实时 expand)</b>。
+     *
+     * <p>从 {@link #expandWithSnapshot} 抽出的快照读段,行为逐字不变(命中返冻结行 driverPath="snapshot"、
+     * miss/调试态/异常返 null)。供 {@code ComponentResource.batchExpand} 的 Phase 1「只窥探快照」用——
+     * 原 Phase 1 调 expandWithSnapshot,miss 时它会做一次真展开、结果又因 driverPath≠"snapshot" 被丢弃、塞进 Phase 2
+     * (导入 616 task 全 miss = 18.6s 纯白干)。改用本方法:miss → null → 直接进 Phase 2,不再算了又丢。
+     *
+     * <p>命中条件、批量预载上下文、逐 task 回落查、空快照=空渲染 语义全部保持与原 expandWithSnapshot 一致。
+     */
+    public ExpandDriverResponse tryReadSnapshot(UUID componentId, UUID lineItemId) {
+        // 调试捕获 SQL 时旁路报价单快照, 强制走实时 driver 以触发并记录最终 SQL → 返 null 让调用方落实时。
+        if (lineItemId == null || componentId == null
+                || com.cpq.datasource.sqlview.SqlDebugContext.isActive()) {
+            return null;
+        }
+        try {
+            // 批量预载模式(batch-expand 整单一次 IN 查后设入 ThreadLocal):命中上下文即用,不再逐 task 查库;
+            //   上下文已设但该对不在 map(=无快照)→ json=null → 返 null;未设 → 回落逐 task 查(零破坏)。
+            String json;
+            if (com.cpq.formula.dataloader.SnapshotRowsContext.isSet()) {
+                json = com.cpq.formula.dataloader.SnapshotRowsContext.get(lineItemId, componentId);
+            } else {
                 @SuppressWarnings("unchecked")
                 List<Object> snap = em.createNativeQuery(
                         "SELECT snapshot_rows FROM quotation_line_component_data " +
                         "WHERE line_item_id = :lid AND component_id = :cid AND snapshot_rows IS NOT NULL LIMIT 1")
                     .setParameter("lid", lineItemId).setParameter("cid", componentId)
                     .getResultList();
-                if (!snap.isEmpty() && snap.get(0) != null) {
-                    String json = snap.get(0).toString();
-                    List<ExpandDriverResponse.Row> snapRows = (json == null || json.isBlank())
-                            ? new ArrayList<>()
-                            : SNAPSHOT_MAPPER.readValue(json, new TypeReference<List<ExpandDriverResponse.Row>>() {});
-                    ExpandDriverResponse resp = new ExpandDriverResponse();
-                    resp.rows = snapRows != null ? snapRows : new ArrayList<>();
-                    resp.rowCount = resp.rows.size();
-                    resp.driverPath = "snapshot";
-                    return resp;
-                }
-            } catch (Exception e) {
-                LOG.warnf("[snapshot-read] line=%s comp=%s 读快照失败,回退实时: %s", lineItemId, componentId, e.getMessage());
+                json = (!snap.isEmpty() && snap.get(0) != null) ? snap.get(0).toString() : null;
             }
+            if (json != null) {
+                List<ExpandDriverResponse.Row> snapRows = (json.isBlank())
+                        ? new ArrayList<>()
+                        : SNAPSHOT_MAPPER.readValue(json, new TypeReference<List<ExpandDriverResponse.Row>>() {});
+                ExpandDriverResponse resp = new ExpandDriverResponse();
+                resp.rows = snapRows != null ? snapRows : new ArrayList<>();
+                resp.rowCount = resp.rows.size();
+                resp.driverPath = "snapshot";
+                return resp;
+            }
+        } catch (Exception e) {
+            LOG.warnf("[snapshot-read] line=%s comp=%s 读快照失败,回退实时: %s", lineItemId, componentId, e.getMessage());
         }
-        return expand(componentId, customerId, partNo, partVersion, overrideDataDriverPath, overrideFieldsJson,
-                lineItemId, compositeType, childLineItemIds);
+        return null;
+    }
+
+    /**
+     * 批量预取整单所有 (line_item_id, component_id) 的 snapshot_rows —— 一次 IN 查替代 batch-expand
+     * Phase 1 的逐 task SELECT(N+1)。返回 key={@code lineItemId|componentId}(见 {@link com.cpq.formula.dataloader.SnapshotRowsContext#key})
+     * → snapshot_rows 文本的 Map(仅含 snapshot_rows 非 NULL 的对;无快照的对不在 map → 调用侧落实时 expand)。
+     */
+    @SuppressWarnings("unchecked")
+    public java.util.Map<String, String> prefetchSnapshotRows(java.util.Collection<UUID> lineItemIds) {
+        java.util.Map<String, String> out = new java.util.HashMap<>();
+        if (lineItemIds == null || lineItemIds.isEmpty()) return out;
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT line_item_id, component_id, snapshot_rows FROM quotation_line_component_data " +
+                "WHERE line_item_id IN (:lids) AND snapshot_rows IS NOT NULL")
+            .setParameter("lids", lineItemIds)
+            .getResultList();
+        for (Object[] r : rows) {
+            if (r[0] == null || r[1] == null || r[2] == null) continue;
+            UUID lid = (r[0] instanceof UUID u) ? u : UUID.fromString(r[0].toString());
+            UUID cid = (r[1] instanceof UUID u) ? u : UUID.fromString(r[1].toString());
+            out.put(com.cpq.formula.dataloader.SnapshotRowsContext.key(lid, cid), r[2].toString());
+        }
+        return out;
     }
 
     public ExpandDriverResponse expand(UUID componentId, UUID customerId, String partNo, Integer partVersion,
@@ -480,7 +527,10 @@ public class ComponentDriverService {
             List<String> basicDataPaths = parseBasicDataPaths(effectiveFieldsJson);
             List<GvarDefaultTask> gvarTasks = parseGvarDefaultTasks(effectiveFieldsJson);
 
-            // 3. 对每一�?逐路径求�?+ 逐全局变量求�?
+            // 3. 对每一行逐路径求值 + 全局变量求值（gvar P1-C3: 跨行批量预解析，逐位等价逐行）
+            List<Map<String, Object>> gvarPerRow =
+                    gvarTasks.isEmpty() ? null : resolveGvarsBatched(gvarTasks, driverRows);
+            int _ri = 0;
             for (Map<String, Object> driverRow : driverRows) {
                 ExpandDriverResponse.Row row = new ExpandDriverResponse.Row();
                 row.driverRow = driverRow;
@@ -489,12 +539,10 @@ public class ComponentDriverService {
                     Object value = evaluatePath(fieldPath, driverRow, customerId, partNo);
                     row.basicDataValues.put(fieldPath, value);
                 }
-                // V190: 把字�?default_source 按本 driver 行解出的 GLOBAL_VARIABLE 值塞入合�?key
-                for (GvarDefaultTask task : gvarTasks) {
-                    Object value = resolveGvarForRow(task, driverRow);
-                    row.basicDataValues.put(gvarKey(task.code), value);
-                }
+                // V190: 把字段 default_source 按本 driver 行解出的 GLOBAL_VARIABLE 值塞入合并 key
+                if (gvarPerRow != null) row.basicDataValues.putAll(gvarPerRow.get(_ri));
                 resp.rows.add(row);
+                _ri++;
             }
         } finally {
             PartVersionContext.clear();
@@ -571,8 +619,12 @@ public class ComponentDriverService {
                 List<String> basicDataPaths = parseBasicDataPaths(effectiveFieldsJson);
                 List<GvarDefaultTask> gvarTasks = parseGvarDefaultTasks(effectiveFieldsJson);
 
+                // gvar P1-C3: 跨行批量预解析（按 mergedRows 同序对齐 index），逐位等价逐行
+                List<Map<String, Object>> gvarPerRow =
+                        gvarTasks.isEmpty() ? null : resolveGvarsBatched(gvarTasks, mergedRows);
                 // 按行 hf_part_no 分发回各 partNo 的响应
-                for (Map<String, Object> driverRow : mergedRows) {
+                for (int mi = 0; mi < mergedRows.size(); mi++) {
+                    Map<String, Object> driverRow = mergedRows.get(mi);
                     Object hf = driverRow.get("hf_part_no");
                     String rowPart = hf == null ? null : hf.toString();
                     ExpandDriverResponse target = rowPart == null ? null : resultByPart.get(rowPart);
@@ -587,9 +639,7 @@ public class ComponentDriverService {
                         Object value = evaluatePath(fieldPath, driverRow, customerId, rowPart);
                         row.basicDataValues.put(fieldPath, value);
                     }
-                    for (GvarDefaultTask task : gvarTasks) {
-                        row.basicDataValues.put(gvarKey(task.code), resolveGvarForRow(task, driverRow));
-                    }
+                    if (gvarPerRow != null) row.basicDataValues.putAll(gvarPerRow.get(mi));
                     target.rows.add(row);
                     target.rowCount++;
                 }
@@ -702,10 +752,118 @@ public class ComponentDriverService {
         return null;
     }
 
+    /**
+     * 共享私有 helper（闸门②③④）：该 driver 视图是否「无行维度」——即视图按 customerCode+hf_part_no
+     * 过滤、不含 lineItemId / spineKeys / composite 聚合等逐行上下文，可跨行合桶预取。
+     *
+     * <p>充要条件（全成立）：
+     * ② {@code dataDriverPath} 非空且能提取出 $view 名（非 $view 路径保守回落）；
+     * ③ path 不含 {@code v_composite_child_} / {@code composite_child_}（composite 聚合视图
+     *    走逐 lineItemId 聚合，不能跨行）；
+     * ④ 按 <b>componentId 精确取</b> {@code ComponentSqlView}（同名视图跨组件会串号，见记忆
+     *    {@code cpq-sqlview-cache-key-needs-component-dim}），其 sql_template 不含
+     *    {@code :lineItemId} / {@code quotation_line_item_id} 行维度 / {@link com.cpq.datasource.sqlview.SpineKeysMacro}。
+     *
+     * <p>任一不满足 → {@code false}（回落逐行 expand，慢但正确）。
+     */
+    private boolean viewHasNoRowDimension(UUID componentId, String path) {
+        if (path == null || path.isBlank()) return false;                    // ② 路径非空
+        if (path.contains("v_composite_child_") || path.contains("composite_child_")) return false;  // ③ 非 composite
+        String viewName = extractSqlViewName(path);
+        if (viewName == null) return false;                                  // ② 必须是 $view 形态
+        com.cpq.component.entity.ComponentSqlView v = com.cpq.component.entity.ComponentSqlView
+                .find("componentId = ?1 and sqlViewName = ?2", componentId, viewName).firstResult();
+        if (v == null || v.sqlTemplate == null) return false;               // ④ 视图存在
+        String tpl = v.sqlTemplate;
+        if (com.cpq.datasource.sqlview.SpineKeysMacro.containsMacro(tpl)) return false;  // ④ 无 :spineKeys
+        if (tpl.contains(":lineItemId") || tpl.contains("quotation_line_item_id")) return false;  // ④ 无行维度
+        return true;
+    }
+
+    /**
+     * P2-C4: 该 recursive 核价组件能否纳入「跨行 partSet union 预取」。充要条件(全成立)：
+     * ① {@code bom_recursive_expand==true}(否则走 expand 单值,非 union 现场)；
+     * ②③④ 视图无行维度（见 {@link #viewHasNoRowDimension}）。
+     * 任一不满足 → 回落逐行 {@link #expandForPartSet}(带 li.id / SpineKeysContext),与改动前逐位一致。
+     *
+     * <p><b>重构等价说明</b>：原实现直接内联闸门②③④；重构后委托 {@link #viewHasNoRowDimension}，
+     * 行为与改动前逐位不变（闸门条件完全相同，仅提取为 helper 复用）。
+     */
+    public boolean eligibleForBomUnion(UUID componentId) {
+        Component c = Component.findById(componentId);
+        if (c == null) return false;
+        if (!Boolean.TRUE.equals(c.bomRecursiveExpand)) return false;     // ①
+        return viewHasNoRowDimension(componentId, c.dataDriverPath);      // ②③④
+    }
+
+    /**
+     * P3-C1: 该报价 driver 组件能否纳入「整单合桶预取」（报价侧 Bug B 安全闸门）。充要条件(全成立)：
+     * ① {@code componentType != "EXCEL"}（EXCEL 组件不走 driver expand，统一逐行安全）；
+     * ②③④ 视图无行维度（见 {@link #viewHasNoRowDimension}）。
+     * 任一不满足 → 回落逐行 expand（保 Bug B + lineItemId 隔离 + composite 聚合语义）。
+     *
+     * <p>与 {@link #eligibleForBomUnion} 的区别：报价 driver 组件多数
+     * {@code bomRecursiveExpand=false}，故去掉闸门①（BOM 递归维度），直接检查视图无行维度。
+     *
+     * <p><b>精确优于宽松</b>：闸门宁可错挡（慢但正确）不可错放（合桶绕过 lineItem 隔离 → 串号）。
+     */
+    public boolean eligibleForQuoteBucket(UUID componentId) {
+        Component c = Component.findById(componentId);
+        if (c == null) return false;
+        if ("EXCEL".equals(c.componentType)) return false;               // ① 非 EXCEL
+        return viewHasNoRowDimension(componentId, c.dataDriverPath);    // ②③④
+    }
+
+    /**
+     * Phase 2-2'：核价侧<b>非递归</b> driver 组件能否纳入「整单 partNo 合桶」。充要条件(全成立)：
+     * ① {@code bomRecursiveExpand != true}（递归组件走 {@link #eligibleForBomUnion} 的 partSet union，不重复处理）；
+     * ② {@code componentType != "EXCEL"}；
+     * ③④⑤ 视图无行维度（见 {@link #viewHasNoRowDimension}：无 lineItemId / 无 spineKeys / 非 composite）。
+     *
+     * <p>满足时该组件在 {@code expandTemplateDriverBaseRows} 的 recursive=false 分支可用
+     * {@code expandMulti(全单 distinct 根料号)} 一次取回（170→1/组件），按 partNo 回配；
+     * 与逐行 {@code expand(…,partNo,…,li.id,…)} 对无行维度视图逐位等价（li.id 被视图忽略）。
+     * 任一不满足 → 回落逐行 expand（慢但正确）。
+     */
+    public boolean eligibleForNonRecursiveCostingBucket(UUID componentId) {
+        Component c = Component.findById(componentId);
+        if (c == null) return false;
+        if (Boolean.TRUE.equals(c.bomRecursiveExpand)) return false;     // ① 非递归
+        if ("EXCEL".equals(c.componentType)) return false;               // ②
+        return viewHasNoRowDimension(componentId, c.dataDriverPath);    // ③④⑤
+    }
+
+    /**
+     * Phase 2-2''(#3):核价侧<b>非递归 + 仅 spineKeys 维度</b>组件能否纳入「整单 spineKeys 并集合桶」。
+     * ① 非递归;② 非 EXCEL;③ 非 composite;④ 视图<b>含 :spineKeys 宏</b>;⑤ 视图<b>不含 lineItemId 维度</b>。
+     *
+     * <p>满足者 + 运行时全单 {@code maxTriplesPerPart==1}(spine 平)时,可设「全单三元组并集」SpineKeysContext
+     * 后一次 {@code expandForPartSet(全单料号)},按 partNo 回配,与逐行(每行 1 三元组上下文)逐位等价;
+     * {@code maxTriples>1}(真多节点 BOM 树)→ 回落逐行(调用方据此不合桶)。
+     */
+    public boolean eligibleForSpineKeysFlatBucket(UUID componentId) {
+        Component c = Component.findById(componentId);
+        if (c == null) return false;
+        if (Boolean.TRUE.equals(c.bomRecursiveExpand)) return false;     // ① 非递归
+        if ("EXCEL".equals(c.componentType)) return false;               // ②
+        String path = c.dataDriverPath;
+        if (path == null || path.isBlank()) return false;
+        if (path.contains("v_composite_child_") || path.contains("composite_child_")) return false; // ③ 非 composite
+        String viewName = extractSqlViewName(path);
+        if (viewName == null) return false;
+        com.cpq.component.entity.ComponentSqlView v = com.cpq.component.entity.ComponentSqlView
+                .find("componentId = ?1 and sqlViewName = ?2", componentId, viewName).firstResult();
+        if (v == null || v.sqlTemplate == null) return false;
+        String tpl = v.sqlTemplate;
+        if (!com.cpq.datasource.sqlview.SpineKeysMacro.containsMacro(tpl)) return false;  // ④ 必须有 spineKeys
+        if (tpl.contains(":lineItemId") || tpl.contains("quotation_line_item_id")) return false;  // ⑤ 无 lineItemId
+        return true;
+    }
+
     // ── 内部 ─────────────────────────────────────────────────────────────
 
-    /** V190: default_source GLOBAL_VARIABLE 任务 �?code + 动�?key 映射 */
-    private static class GvarDefaultTask {
+    /** V190: default_source GLOBAL_VARIABLE 任务 �?code + 动�?key 映射（包级可见：供 P1-C3 批量等价测试构造） */
+    static class GvarDefaultTask {
         final String code;
         final Map<String, String> keyFieldRefs;  // key 列名 �?driver 行字段名
         GvarDefaultTask(String code, Map<String, String> keyFieldRefs) {
@@ -774,34 +932,77 @@ public class ComponentDriverService {
         }
     }
 
-    /** V190: �?driver row �?GLOBAL_VARIABLE �? key_field_refs 名映�?def.keyColumns �?driver row 字段 */
-    private Object resolveGvarForRow(GvarDefaultTask task, Map<String, Object> driverRow) {
+    /**
+     * V190: 组装某 driver row 对某 gvar task 的 keyValues（key_field_refs 名映射 def.keyColumns → driver row 字段，
+     * 含 *_code/*_name 别名兜底）。任一 key 解不出 → 返 null（= 该行该 gvar 不解，值应为 null）。
+     * 由 {@link #resolveGvarForRow}（逐行）与 {@link #resolveGvarsBatched}（批量）共用，保证两路组装逻辑一致。
+     */
+    Map<String, Object> assembleGvarKeyValues(GvarDefaultTask task, Map<String, Object> driverRow) {
+        GlobalVariableDefinition def = globalVariableService.getByCode(task.code).orElse(null);
+        if (def == null || !def.isLookup()) return null;
+        Map<String, Object> keyValues = new LinkedHashMap<>();
+        for (String col : def.keyColumns) {
+            // 优先按 key_field_refs[col] 取 driver 行字段，默认同名映射 col → driverRow[col]
+            String driverField = task.keyFieldRefs.getOrDefault(col, col);
+            Object v = driverRow.get(driverField);
+            // 2026-05-22 fix (情况B): driverRow 列名与 GV keyColumns 不一致时（如
+            // v_composite_child_elements.element_name vs ELEM_PRICE.keyColumns=["element_code"]），
+            // 同名映射取出 null，探测候选别名列（*_code <-> *_name 互换等）兜底。
+            if (v == null) v = findAliasValue(driverField, driverRow);
+            if (v == null) return null;  // 任一 key 空 → 不解
+            keyValues.put(col, v);
+        }
+        return keyValues;
+    }
+
+    /** V190: 从 driver row 按 GLOBAL_VARIABLE 单行精确取值（逐行；批量路径见 {@link #resolveGvarsBatched}）。 */
+    Object resolveGvarForRow(GvarDefaultTask task, Map<String, Object> driverRow) {
         try {
-            GlobalVariableDefinition def = globalVariableService.getByCode(task.code).orElse(null);
-            if (def == null || !def.isLookup()) return null;
-            Map<String, Object> keyValues = new LinkedHashMap<>();
-            for (String col : def.keyColumns) {
-                // 优先�?key_field_refs[col] �?driver 行字�? 默认同名映射 col �?driverRow[col]
-                String driverField = task.keyFieldRefs.getOrDefault(col, col);
-                Object v = driverRow.get(driverField);
-                // 2026-05-22 fix (情况B): driverRow 列名与 GV keyColumns 不一致时（如
-                // v_composite_child_elements.element_name vs ELEM_PRICE.keyColumns=["element_code"]），
-                // 同名映射取出 null，探测候选别名列（*_code <-> *_name 互换等）兜底。
-                if (v == null) {
-                    v = findAliasValue(driverField, driverRow);
-                    if (v != null) {
-                        LOG.debugf("[resolveGvarForRow] gvar=%s col=%s alias-matched in driverRow, value=%s",
-                                task.code, col, v);
-                    }
-                }
-                if (v == null) return null;  //�?key �?不解
-                keyValues.put(col, v);
-            }
+            Map<String, Object> keyValues = assembleGvarKeyValues(task, driverRow);
+            if (keyValues == null) return null;
             return globalVariableService.resolveValue(task.code, keyValues);
         } catch (Exception e) {
             LOG.warnf("resolveGvarForRow failed for code=%s: %s", task.code, e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * P1-C3: 批量预解析 gvar —— 每 task 一次 IN 查（KvTable，跨行折叠 N 次单查为 1 次）。
+     * 返回与 {@code driverRows} <b>同序</b> 的 per-row {@code gvarKey→value} map 列表，与逐行
+     * {@link #resolveGvarForRow} <b>逐位等价</b>：组装逻辑共用 {@link #assembleGvarKeyValues}，
+     * 批量值由 {@link GlobalVariableService#resolveValues} 提供（KvTable 单列 IN，与 resolveValue 逐位一致；
+     * SCALAR/View 服务层自动逐行回落）。任一 task 批量异常 → 该 task 整体逐行回落老逻辑（绝不改结果）。
+     */
+    List<Map<String, Object>> resolveGvarsBatched(List<GvarDefaultTask> tasks,
+                                                  List<Map<String, Object>> driverRows) {
+        List<Map<String, Object>> perRow = new ArrayList<>(driverRows.size());
+        for (int i = 0; i < driverRows.size(); i++) perRow.add(new LinkedHashMap<>());
+        for (GvarDefaultTask task : tasks) {
+            // 1) 每行组装 keyValues（与逐行同逻辑；null=该行不解）
+            List<Map<String, Object>> kvs = new ArrayList<>(driverRows.size());
+            for (Map<String, Object> dr : driverRows) {
+                Map<String, Object> kv;
+                try { kv = assembleGvarKeyValues(task, dr); } catch (Exception e) { kv = null; }
+                kvs.add(kv);
+            }
+            // 2) 非 null 行批量解析；null 行直接 null
+            List<Integer> idx = new ArrayList<>();
+            List<Map<String, Object>> nonNull = new ArrayList<>();
+            for (int i = 0; i < kvs.size(); i++) if (kvs.get(i) != null) { idx.add(i); nonNull.add(kvs.get(i)); }
+            try {
+                List<java.math.BigDecimal> vals = nonNull.isEmpty()
+                        ? List.of() : globalVariableService.resolveValues(task.code, nonNull);
+                for (int j = 0; j < idx.size(); j++) perRow.get(idx.get(j)).put(gvarKey(task.code), vals.get(j));
+                for (int i = 0; i < kvs.size(); i++) if (kvs.get(i) == null) perRow.get(i).put(gvarKey(task.code), null);
+            } catch (Exception e) {
+                // 批量失败 → 该 task 整体逐行回落（保守，等价老逻辑）
+                LOG.warnf("resolveGvarsBatched fallback per-row for code=%s: %s", task.code, e.getMessage());
+                for (int i = 0; i < driverRows.size(); i++)
+                    perRow.get(i).put(gvarKey(task.code), resolveGvarForRow(task, driverRows.get(i)));
+            }
+        }
+        return perRow;
     }
 
     /**

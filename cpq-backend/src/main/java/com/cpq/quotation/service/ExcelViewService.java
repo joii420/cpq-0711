@@ -1,5 +1,6 @@
 package com.cpq.quotation.service;
 
+import com.cpq.common.NumberFormatUtil;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.component.entity.Component;
 import com.cpq.quotation.entity.Quotation;
@@ -19,6 +20,8 @@ import org.jboss.logging.Logger;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 
 /**
@@ -49,6 +52,10 @@ public class ExcelViewService {
     /** TAB_JOIN_FORMULA 列：跨页签连表聚合求值。 */
     @Inject
     com.cpq.quotation.service.tabjoin.TabJoinPlanEvaluator tabJoinPlanEvaluator;
+
+    /** TAB_JOIN 有效行重算：从持久化 componentData 现算（含列小计 + SUBTOTAL 公式总计）。 */
+    @Inject
+    FormulaCalculator formulaCalculator;
 
     // ---- Task 3.1: Excel column resolver (config 归属迁移到 EXCEL 组件) ----
 
@@ -319,8 +326,11 @@ public class ExcelViewService {
         com.cpq.formula.dataloader.PartVersionContext.set(li.partVersionLocked);
         try {
         Map<String, Object> productAttrs = parseJsonMap(li.productAttributeValues);
-        List<QuotationLineComponentData> componentDataList =
-            QuotationLineComponentData.list("lineItemId = ?1 ORDER BY sortOrder ASC", li.id);
+        // 融合:命中整单预取上下文则读内存(0 往返),否则逐行查(回落,零破坏)。
+        List<QuotationLineComponentData> preCD =
+            com.cpq.formula.dataloader.ExcelCompDataContext.get(li.id);
+        List<QuotationLineComponentData> componentDataList = (preCD != null) ? preCD
+            : QuotationLineComponentData.list("lineItemId = ?1 ORDER BY sortOrder ASC", li.id);
 
         // Merge all row_data records into a flat map (first row of each component)
         Map<String, Object> componentRowData = new LinkedHashMap<>();
@@ -353,11 +363,18 @@ public class ExcelViewService {
             }
         }
 
-        // TAB_JOIN_FORMULA：构造 provider（有效行优先，缺省降级持久化 componentData）
+        // TAB_JOIN_FORMULA：构造 provider。
+        // effectiveRows!=null（预览/试算）→ 用传入有效行（原行为）。
+        // effectiveRows==null（报价单渲染）→ 仅当存在 TAB_JOIN 列时，从持久化 componentData 现算有效行
+        //   （含列小计 + SUBTOTAL 公式），以裸 componentId 键命中 Excel 列 tabKey；修复明细列取数 0 与小计引用 0。
+        //   无 TAB_JOIN 列时给空 provider，避免对每行做无谓的 Component.findById（性能守卫）。
+        boolean hasTabJoin = columns.stream()
+            .anyMatch(c -> "TAB_JOIN_FORMULA".equals(c.get("source_type")));
         com.cpq.quotation.service.card.CardDataProvider tabJoinProvider =
             (effectiveRows != null)
                 ? com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(effectiveRows)
-                : new com.cpq.quotation.service.card.CardDataProvider(componentDataList);
+                : com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(
+                      hasTabJoin ? buildTabJoinEffectiveRows(componentDataList, templateId) : java.util.Map.of());
 
         // Stage 2: 逐列计算，VARIABLE 列先算好，FORMULA 列引用时可以直接用 cachedCells
         Map<String, Object> cachedCells = new LinkedHashMap<>();
@@ -412,6 +429,83 @@ public class ExcelViewService {
         } finally {
             com.cpq.formula.dataloader.PartVersionContext.clear();
         }
+    }
+
+    /**
+     * 读时：从持久化 componentData 现算 TAB_JOIN 用的有效行（含列小计 + SUBTOTAL 公式总计）。
+     * 加载各页签 Component 元数据（code/name/type/formulas）后委托纯计算器
+     * {@link com.cpq.quotation.service.card.ComponentDataEffectiveRows}。
+     *
+     * <p>额外：从模板 componentsSnapshot 取出「无 cd 记录的 SUBTOTAL 组件」（新配置报价单
+     * ConfigureSnapshotService 不为其建行）补成 extraSubtotalMetas，令读时合成其总计，
+     * 修复 {@code [报价小计(总计)]}=0 致产品小计=0 的残留 bug。
+     */
+    private Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows>
+            buildTabJoinEffectiveRows(java.util.List<com.cpq.quotation.entity.QuotationLineComponentData> cdList,
+                                      UUID templateId) {
+        java.util.Map<java.util.UUID, com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta> metaById =
+            new java.util.HashMap<>();
+        java.util.Set<java.util.UUID> presentInCd = new java.util.HashSet<>();
+        for (com.cpq.quotation.entity.QuotationLineComponentData cd : cdList) {
+            if (cd.componentId == null) continue;
+            presentInCd.add(cd.componentId);
+            if (metaById.containsKey(cd.componentId)) continue;
+            com.cpq.component.entity.Component c =
+                com.cpq.component.entity.Component.findById(cd.componentId);
+            if (c == null) continue;
+            metaById.put(cd.componentId,
+                new com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta(
+                    c.code, c.name, c.componentType, parseComponentFormulas(c.formulas)));
+        }
+
+        // 从模板 componentsSnapshot 找出 SUBTOTAL 组件中未出现在 cdList 的，补成 extraSubtotalMetas。
+        java.util.Map<java.util.UUID, com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta> extraSubtotalMetas =
+            buildMissingSubtotalMetas(templateId, presentInCd);
+
+        return com.cpq.quotation.service.card.ComponentDataEffectiveRows.compute(
+            cdList, metaById, extraSubtotalMetas, formulaCalculator);
+    }
+
+    /** Component.formulas JSON 字符串 → JsonNode；坏/空 → null（subtotal 退回持久化值或 0）。 */
+    private com.fasterxml.jackson.databind.JsonNode parseComponentFormulas(String formulasJson) {
+        try {
+            if (formulasJson != null && !formulasJson.isBlank()) return MAPPER.readTree(formulasJson);
+        } catch (Exception ignore) { /* 公式坏 → 当无公式 */ }
+        return null;
+    }
+
+    /**
+     * 从模板 componentsSnapshot 取出所有 componentType=SUBTOTAL 且不在 presentInCd 的组件，
+     * 加载其 Component.formulas 组成 componentId → Meta。无模板/无 SUBTOTAL → 空 Map。
+     */
+    private java.util.Map<java.util.UUID, com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta>
+            buildMissingSubtotalMetas(UUID templateId, java.util.Set<java.util.UUID> presentInCd) {
+        java.util.Map<java.util.UUID, com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta> out =
+            new java.util.HashMap<>();
+        if (templateId == null) return out;
+        try {
+            Template t = Template.findById(templateId);
+            if (t == null || t.componentsSnapshot == null || t.componentsSnapshot.isBlank()) return out;
+            com.fasterxml.jackson.databind.JsonNode snap = MAPPER.readTree(t.componentsSnapshot);
+            if (snap == null || !snap.isArray()) return out;
+            for (com.fasterxml.jackson.databind.JsonNode c : snap) {
+                String type = c.path("componentType").asText("");
+                if (!"SUBTOTAL".equals(type)) continue;
+                String cidStr = c.path("componentId").asText("");
+                if (cidStr.isBlank()) continue;
+                java.util.UUID cid;
+                try { cid = java.util.UUID.fromString(cidStr); } catch (Exception e) { continue; }
+                if (presentInCd.contains(cid)) continue;   // 已有 cd → 走 Pass 2，不重复合成
+                com.cpq.component.entity.Component comp = com.cpq.component.entity.Component.findById(cid);
+                if (comp == null) continue;
+                out.put(cid,
+                    new com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta(
+                        comp.code, comp.name, comp.componentType, parseComponentFormulas(comp.formulas)));
+            }
+        } catch (Exception e) {
+            LOG.warnf("[ExcelView] buildMissingSubtotalMetas failed tmpl=%s: %s", templateId, e.getMessage());
+        }
+        return out;
     }
 
     /**
@@ -631,11 +725,63 @@ public class ExcelViewService {
     // ---- Export Excel with formulas ----
 
     public byte[] exportExcelView(UUID quotationId) {
+        // 列定义 + fallback 重算行（含 _lineItemId 索引键 + EXCEL_FORMULA 公式串）
         Map<String, Object> viewData = getExcelView(quotationId);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> columns = (List<Map<String, Object>>) viewData.get("columns");
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> rows = (List<Map<String, Object>>) viewData.get("rows");
+        List<Map<String, Object>> fallbackRows = (List<Map<String, Object>>) viewData.get("rows");
+
+        // 按 sortOrder 加载 lineItems，提取 quoteExcelValues 快照（前端算好的行值）
+        List<QuotationLineItem> lineItems = QuotationLineItem.list(
+                "quotationId = ?1 ORDER BY sortOrder ASC", quotationId);
+
+        // 将 fallback 行按 lineItemId 建索引（_lineItemId 是 getExcelView 注入的字符串）
+        Map<String, Map<String, Object>> fallbackByLineItemId = new LinkedHashMap<>();
+        for (Map<String, Object> row : fallbackRows) {
+            Object lid = row.get("_lineItemId");
+            if (lid != null) fallbackByLineItemId.put(lid.toString(), row);
+        }
+
+        // 构造最终导出行：按 lineItem 顺序逐条拼装
+        List<Map<String, Object>> exportRows = new ArrayList<>();
+        for (QuotationLineItem li : lineItems) {
+            String liIdStr = li.id.toString();
+            Map<String, Object> fallbackRow = fallbackByLineItemId.getOrDefault(liIdStr, Map.of());
+
+            // 解析前端快照 rows（quoteExcelValues = {"rows":[{col_key: value,...}]}）
+            List<Map<String, Object>> snapshotRows = parseQuoteExcelValuesRows(li.quoteExcelValues);
+
+            if (snapshotRows.isEmpty()) {
+                // 无快照 → 整行 fallback 重算（保证旧草稿/未算行仍可导出）
+                exportRows.add(fallbackRow);
+            } else {
+                // 有快照 → 按快照 rows 顺序拼（报价侧 buildExcelSnapshot 恒返单行；核价侧可 N>1 行）
+                // EXCEL_FORMULA 列特殊：快照存的是计算值（数字），导出需写公式串让 Excel 重算；
+                // 公式串来自 fallback 重算行的该列值（那里存的就是 "=SUM(...)" 公式串）。
+                // 注意：此处对每个快照行都写同一个 fallback 公式串，依赖 EXCEL_FORMULA 公式为
+                // 配置态行无关静态串（col.get("formula")）。若将来改成按行相对引用(=B{n}*C{n})，
+                // N>1 行场景需改为按行生成公式，否则会给每行写错公式。
+                for (Map<String, Object> snapshotRow : snapshotRows) {
+                    Map<String, Object> mergedRow = new LinkedHashMap<>(snapshotRow);
+                    // 覆写：EXCEL_FORMULA 列取 fallback 行的公式串
+                    for (Map<String, Object> col : columns) {
+                        String colKey = (String) col.get("col_key");
+                        String sourceType = (String) col.get("source_type");
+                        if ("EXCEL_FORMULA".equals(sourceType)) {
+                            // fallback 行此列存的是公式串（如 "=B2*C2"），替换快照里的数字值
+                            Object formulaStr = fallbackRow.get(colKey);
+                            if (formulaStr != null) {
+                                mergedRow.put(colKey, formulaStr);
+                            } else {
+                                mergedRow.remove(colKey); // 无公式则置空
+                            }
+                        }
+                    }
+                    exportRows.add(mergedRow);
+                }
+            }
+        }
 
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             Sheet sheet = workbook.createSheet("Excel View");
@@ -651,10 +797,14 @@ public class ExcelViewService {
                 cell.setCellStyle(headerStyle);
             }
 
+            // Per-format-string CellStyle cache (POI 限制样式总数，绝不能逐格新建样式)
+            DataFormat dataFormat = workbook.createDataFormat();
+            Map<String, CellStyle> numberStyleCache = new HashMap<>();
+
             // Data rows
-            for (int rowIdx = 0; rowIdx < rows.size(); rowIdx++) {
+            for (int rowIdx = 0; rowIdx < exportRows.size(); rowIdx++) {
                 Row dataRow = sheet.createRow(rowIdx + 1);
-                Map<String, Object> rowData = rows.get(rowIdx);
+                Map<String, Object> rowData = exportRows.get(rowIdx);
 
                 for (int colIdx = 0; colIdx < columns.size(); colIdx++) {
                     Map<String, Object> col = columns.get(colIdx);
@@ -665,7 +815,7 @@ public class ExcelViewService {
                     Cell cell = dataRow.createCell(colIdx);
 
                     if ("EXCEL_FORMULA".equals(sourceType) && cellValue != null) {
-                        // Write as Excel formula
+                        // Write as Excel formula（公式列原样写公式，不参与显示格式化）
                         String formula = cellValue.toString();
                         // Strip leading '=' if present for setCellFormula
                         if (formula.startsWith("=")) formula = formula.substring(1);
@@ -675,7 +825,7 @@ public class ExcelViewService {
                             cell.setCellValue(formula);
                         }
                     } else if (cellValue != null) {
-                        setCellValue(cell, cellValue);
+                        writeFormattedCell(workbook, dataFormat, numberStyleCache, cell, col, cellValue);
                     }
                 }
             }
@@ -693,14 +843,119 @@ public class ExcelViewService {
         }
     }
 
-    private void setCellValue(Cell cell, Object value) {
-        if (value instanceof Number) {
-            cell.setCellValue(((Number) value).doubleValue());
+    /**
+     * 解析 quoteExcelValues JSONB 快照中的 rows 数组。
+     * 快照形态：{@code {"rows":[{"col_key":value,...}]}}（前端 buildExcelSnapshot 产出）。
+     * null / 空 / 解析失败 → 返回空 List（调用方走 fallback 重算）。
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> parseQuoteExcelValuesRows(String quoteExcelValues) {
+        if (quoteExcelValues == null || quoteExcelValues.isBlank()) return List.of();
+        try {
+            Map<String, Object> snapshot = MAPPER.readValue(quoteExcelValues,
+                    new TypeReference<Map<String, Object>>() {});
+            Object rowsObj = snapshot.get("rows");
+            if (!(rowsObj instanceof List)) return List.of();
+            List<?> rawList = (List<?>) rowsObj;
+            if (rawList.isEmpty()) return List.of();
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (Object item : rawList) {
+                if (item instanceof Map) {
+                    result.add((Map<String, Object>) item);
+                }
+            }
+            return result.isEmpty() ? List.of() : result;
+        } catch (Exception e) {
+            LOG.warnf("[ExcelView] parseQuoteExcelValuesRows parse failed, fallback to recompute: %s", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * 写一个非公式单元格，数值列统一接入显示口径（与前端 formatNumber / NumberFormatUtil 同口径）：
+     * - 数值（含数值字符串）→ 保持 NUMERIC + 附"至多 N 位"DataFormat 样式（# 而非 0，得到去末尾 0 语义），
+     *   并按解析出的小数位 HALF_UP 预舍入，使存储值与显示值一致；原始/取数列未配位数 → General（保留原精度）。
+     * - 非数值 → 原样写字符串；Boolean → 写布尔。
+     */
+    private void writeFormattedCell(XSSFWorkbook workbook, DataFormat dataFormat,
+                                    Map<String, CellStyle> numberStyleCache,
+                                    Cell cell, Map<String, Object> col, Object value) {
+        BigDecimal num = toBigDecimalOrNull(value);
+        if (num != null) {
+            String sourceType = (String) col.get("source_type");
+            boolean isComputed = isComputedColumn(sourceType);
+            Integer explicitDecimals = explicitDecimals(col);
+            // 解析有效位数：显式优先 → 计算列兜底 4 位（精度优先）→ 原始/取数列 null（保留原精度）
+            Integer scale = explicitDecimals != null ? explicitDecimals
+                    : (isComputed ? COMPUTED_FALLBACK_DECIMALS : null);
+            if (scale != null) {
+                num = num.setScale(scale, RoundingMode.HALF_UP);
+                cell.setCellStyle(numberStyleFor(workbook, dataFormat, numberStyleCache, scale));
+            }
+            cell.setCellValue(num.doubleValue());
         } else if (value instanceof Boolean) {
             cell.setCellValue((Boolean) value);
         } else {
             cell.setCellValue(value.toString());
         }
+    }
+
+    // 导出走 POI DataFormat（需数值态+格式串）故未复用 NumberFormatUtil，单列一份兜底位数。
+    // ⚠️ 与 NumberFormatUtil.COMPUTED_FALLBACK + 前端 formatNumber.COMPUTED_FALLBACK 保持同步。
+    private static final int COMPUTED_FALLBACK_DECIMALS = 4;
+
+    /** 与前端 isComputedExcelColumn 同一份计算列类型集。 */
+    private boolean isComputedColumn(String sourceType) {
+        return "FORMULA".equals(sourceType)
+                || "CARD_FORMULA".equals(sourceType)
+                || "TAB_JOIN_FORMULA".equals(sourceType)
+                || "EXCEL_FORMULA".equals(sourceType);
+    }
+
+    /** 取列 display_format.decimals（缺省返回 null）。 */
+    @SuppressWarnings("unchecked")
+    private Integer explicitDecimals(Map<String, Object> col) {
+        Object df = col.get("display_format");
+        if (!(df instanceof Map)) return null;
+        Object dec = ((Map<String, Object>) df).get("decimals");
+        if (dec instanceof Number) return ((Number) dec).intValue();
+        if (dec instanceof String) {
+            try {
+                return Integer.parseInt(((String) dec).trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private BigDecimal toBigDecimalOrNull(Object value) {
+        if (value instanceof BigDecimal) return (BigDecimal) value;
+        if (value instanceof Number) return new BigDecimal(value.toString());
+        if (value instanceof String) {
+            String s = ((String) value).trim();
+            if (s.isEmpty()) return null;
+            try {
+                return new BigDecimal(s);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 取/建"至多 scale 位小数"的数字样式（用 # 得到去末尾 0 语义）：
+     * 0 位 → "0"；2 位 → "0.##"；3 位 → "0.###"。按格式串缓存，避免逐格新建样式触发 POI 样式上限。
+     */
+    private CellStyle numberStyleFor(XSSFWorkbook workbook, DataFormat dataFormat,
+                                     Map<String, CellStyle> cache, int scale) {
+        String pattern = scale <= 0 ? "0" : "0." + "#".repeat(scale);
+        return cache.computeIfAbsent(pattern, p -> {
+            CellStyle style = workbook.createCellStyle();
+            style.setDataFormat(dataFormat.getFormat(p));
+            return style;
+        });
     }
 
     private CellStyle createHeaderStyle(XSSFWorkbook wb) {
