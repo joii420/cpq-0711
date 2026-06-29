@@ -3,13 +3,14 @@
  *
  * 策略：API-driven 混合 E2E
  * - API 层一路推进到 APPROVED 状态（复用金路径前 7 步）
- * - alice 提交撤回申请（withdraw-request），admin 审批同意撤回
- * - UI 验证撤回 PENDING 提示 + 最终 DRAFT 状态
+ * - alice（创建人 salesRepId）直接 POST /withdraw 一步撤回回 DRAFT
+ * - UI 验证最终 DRAFT 状态
  *
- * 金路径：DRAFT → SUBMITTED → APPROVED → [withdraw-request] → DRAFT
+ * 金路径：DRAFT → SUBMITTED → APPROVED → [一步直接撤回] → DRAFT
  *
- * 注：前端 /withdraw 端点仅限 SUBMITTED 状态的直接撤回（回草稿）；
- *     APPROVED 状态需走 /withdraw-request + /withdraw/approve 两步流程
+ * 注：两步流程（withdraw-request + withdraw/approve）已废弃，
+ *     当前后端允许 SUBMITTED/COSTING_REJECTED/APPROVED 状态由创建人或
+ *     管理员/财务直接 POST /withdraw 一步撤回回 DRAFT。
  */
 
 import { test, expect, request as playwrightRequest } from '@playwright/test';
@@ -35,8 +36,8 @@ test('E2E-WITHDRAW-02 报价列表存在操作区域', async ({ page }) => {
   await expect(page.locator('.ant-table')).toBeVisible({ timeout: 10_000 });
 });
 
-// 完整撤回流程金路径
-test('E2E-WITHDRAW-02 完整撤回流程 APPROVED → withdraw-request → DRAFT', async ({ page }) => {
+// 完整撤回流程金路径（一步直接撤回）
+test('E2E-WITHDRAW-02 完整撤回流程 APPROVED → 一步直接撤回 → DRAFT', async ({ page }) => {
   if (!backendUp) {
     test.skip(true, '后端未启动，跳过 E2E-WITHDRAW-02 金路径');
   }
@@ -51,7 +52,7 @@ test('E2E-WITHDRAW-02 完整撤回流程 APPROVED → withdraw-request → DRAFT
   });
   expect(aliceLogin.ok(), 'alice 登录失败').toBe(true);
 
-  // 2. admin 登录（兜底审批）
+  // 2. admin 登录（用于审批）
   const adminLogin = await adminCtx.post('/api/cpq/auth/login', {
     data: { username: 'admin', password: 'Admin@2026' },
   });
@@ -96,59 +97,30 @@ test('E2E-WITHDRAW-02 完整撤回流程 APPROVED → withdraw-request → DRAFT
   expect(approveRes.ok(), 'admin 审批失败').toBe(true);
   const afterApprove = await aliceCtx.get(`/api/cpq/quotations/${quotationId}`);
   expect((await afterApprove.json()).data.status, '审批后状态应为 APPROVED').toBe('APPROVED');
-  console.log('[E2E-WITHDRAW-02] APPROVED OK，准备提交撤回申请');
+  console.log('[E2E-WITHDRAW-02] APPROVED OK，准备一步撤回');
 
-  // 7. alice 提交撤回申请（APPROVED → PENDING 撤回）
-  const wrRes = await aliceCtx.post(`/api/cpq/quotations/${quotationId}/withdraw-request`, {
-    data: { reason: 'E2E withdraw test - 客户需求变更' },
-  });
-  expect(wrRes.ok(), '提交撤回申请失败').toBe(true);
-  const wrBody = await wrRes.json();
-  expect(wrBody.data.status, '撤回申请应为 PENDING').toBe('PENDING');
-  const withdrawRequestId: string = wrBody.data.id;
-  console.log('[E2E-WITHDRAW-02] withdraw-request PENDING OK, wrId:', withdrawRequestId);
+  // 7. alice 直接一步撤回（APPROVED → DRAFT）
+  //    alice 是创建人(salesRepId)，后端允许直接撤回
+  const withdrawRes = await aliceCtx.post(`/api/cpq/quotations/${quotationId}/withdraw`);
+  expect(withdrawRes.ok(), 'alice 一步撤回失败').toBe(true);
+  console.log('[E2E-WITHDRAW-02] withdraw OK');
 
-  // 8. UI 验证：alice 视角看到报价单仍显示 APPROVED（"已批准"）
-  //    同时验证页面可正常访问（撤回申请中）
+  // 8. API 验证：报价单状态已回到 DRAFT
+  const afterWithdraw = await aliceCtx.get(`/api/cpq/quotations/${quotationId}`);
+  const withdrawnStatus = (await afterWithdraw.json()).data.status;
+  expect(withdrawnStatus, '撤回后状态应为 DRAFT').toBe('DRAFT');
+  console.log('[E2E-WITHDRAW-02] DRAFT OK，一步撤回流程完成');
+
+  // 9. UI 终态验证：alice 视角看到"草稿"Tag
   await loginAsAlice(page);
   await page.goto(`/quotations/${quotationId}`);
   await page.waitForLoadState('networkidle');
-  // 报价单状态仍是 APPROVED（撤回只是申请，尚未批准）
-  await expect(
-    page.locator('.ant-tag').filter({ hasText: '已批准' }).first(),
-  ).toBeVisible({ timeout: 15_000 });
-  console.log('[E2E-WITHDRAW-02] UI 显示 APPROVED OK');
-
-  // 9. admin 审批同意撤回（APPROVED → DRAFT）
-  const withdrawApproveRes = await adminCtx.post(
-    `/api/cpq/quotations/${quotationId}/withdraw/approve`,
-    { data: { note: 'E2E admin approved withdraw' } },
-  );
-  if (!withdrawApproveRes.ok()) {
-    const errBody = await withdrawApproveRes.json();
-    console.warn('[E2E-WITHDRAW-02] withdraw/approve 失败，降级验证:', errBody.message);
-    // 降级：撤回申请已提交即算部分通过
-    const current = await aliceCtx.get(`/api/cpq/quotations/${quotationId}`);
-    const fallbackStatus = (await current.json()).data.status;
-    expect(['APPROVED', 'DRAFT']).toContain(fallbackStatus);
-    return;
-  }
-  console.log('[E2E-WITHDRAW-02] withdraw/approve OK');
-
-  // 10. 验证报价单状态回到 DRAFT
-  const finalCheck = await aliceCtx.get(`/api/cpq/quotations/${quotationId}`);
-  const finalStatus = (await finalCheck.json()).data.status;
-  expect(finalStatus, '撤回批准后状态应为 DRAFT').toBe('DRAFT');
-  console.log('[E2E-WITHDRAW-02] DRAFT OK，撤回流程完成');
-
-  // 11. UI 终态验证：DRAFT（"草稿"）
-  await page.reload();
   await expect(
     page.locator('.ant-tag').filter({ hasText: '草稿' }).first(),
-  ).toBeVisible({ timeout: 10_000 });
+  ).toBeVisible({ timeout: 15_000 });
   console.log('[E2E-WITHDRAW-02] UI 终态 DRAFT 验证通过');
 
-  // 12. 验证报价单可以再次提交（DRAFT 状态允许提交）
+  // 10. 验证报价单可以再次提交（DRAFT 状态允许提交）
   const resubmitRes = await aliceCtx.post(`/api/cpq/quotations/${quotationId}/submit`);
   expect(resubmitRes.ok(), 'DRAFT 状态应可再次提交').toBe(true);
   const resubmitStatus = (await resubmitRes.json()).data.status;
