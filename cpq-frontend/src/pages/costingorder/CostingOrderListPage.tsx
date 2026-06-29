@@ -4,7 +4,7 @@
  * 列出所有进入核价流程的报价单，财务人员在此页面执行核价通过/驳回。
  * 工具栏动作：进入核价（单选）/ 核价通过（批量）/ 驳回（批量，需填理由）
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Tag, Space, Select, Typography, Form, Input, Modal, message,
 } from 'antd';
@@ -18,15 +18,11 @@ import SelectableTable, { runBatch, type ToolbarAction } from '../../components/
 
 const { Title } = Typography;
 
-const STATUS_LABEL: Record<string, string> = {
-  PENDING_COSTING: '待核价',
-  COSTING_APPROVED: '核价通过',
-  COSTING_REJECTED: '核价驳回',
-};
+// 后端 deriveCostingStatus 直接返回中文 label，前端 status 即显示文本，无需英文枚举映射层
 const STATUS_COLOR: Record<string, string> = {
-  PENDING_COSTING: 'orange',
-  COSTING_APPROVED: 'green',
-  COSTING_REJECTED: 'red',
+  '待核价': 'orange',
+  '核价通过': 'green',
+  '核价驳回': 'red',
 };
 
 const CostingOrderListPage: React.FC = () => {
@@ -81,9 +77,7 @@ const CostingOrderListPage: React.FC = () => {
       dataIndex: 'status',
       width: 110,
       render: (s: string) => (
-        <Tag color={STATUS_COLOR[s] ?? 'default'}>
-          {STATUS_LABEL[s] ?? s}
-        </Tag>
+        <Tag color={STATUS_COLOR[s] ?? 'default'}>{s}</Tag>
       ),
     },
     {
@@ -94,7 +88,7 @@ const CostingOrderListPage: React.FC = () => {
     },
   ];
 
-  const isPendingCosting = (r: CostingOrderListItem) => r.status === 'PENDING_COSTING';
+  const isPendingCosting = (r: CostingOrderListItem) => r.status === '待核价';
 
   const actions: ToolbarAction<CostingOrderListItem>[] = [
     {
@@ -193,12 +187,12 @@ const CostingOrderListPage: React.FC = () => {
               style={{ width: 160 }}
               value={statusFilter}
               onChange={setStatusFilter}
-              options={Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label }))}
+              options={['待核价', '核价通过', '核价驳回'].map(v => ({ value: v, label: v }))}
             />
           </Space>
         }
         actions={actions}
-        rowLabel={(r) => `${r.quotationNumber} ${r.customerName} (${STATUS_LABEL[r.status] ?? r.status})`}
+        rowLabel={(r) => `${r.quotationNumber} ${r.customerName} (${r.status})`}
       />
 
       {/* 驳回弹窗：单独处理，因为需要填写驳回原因（不能走 needsConfirm 的通用 Modal） */}
