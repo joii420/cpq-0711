@@ -98,12 +98,14 @@ record RowKeyConflictDTO(
 > 注（#1 纠偏）：`productPartNo` 必须显式取 `li.productPartNoSnapshot`，**不可复用 label**——label 优先是产品名（`QuotationService.java:818-819`），用它匹配卡片会错。
 > 注（rowIndices 语义）：行号是「driver 展开行 ++ 手动行」合并序列的 1 基序（`RowKeyUniquenessService.java:62-77`），与卡片内可见行序（含墓碑删除行 / 树形布局）不必然一一对应。既已降级不做行高亮，Drawer 文案对它仅作"参考行"提示，**不要让用户误当可见行号**。
 
-### 6.2 `RowKeyUniquenessService` 携带 id 出参（改造比初版描述更深，#4）
-现状 `collectConflicts` 在调 `detect()` 前已把信息塌缩成 `label` 单串（`:79-80`）、返回的 `RowKeyConflict` 只带 `(label, rowKey, rowIndices)`。改造要点：
-- `LineItemComps` 增加 `lineItemId` 字段；`QuotationService.submit` 装配时把 `li.id` 一并传入（当前只传了 label，见 `:815-830`）。
-- `CompRows` 已有 `componentId`，沿用；`tabName` 直接取 `cfg.componentName`（**已现成，无需额外解析**，#2）。
-- 在嵌套循环内（`comp.componentId()` / 新增 `lineItemId` / `cfg.componentName` / `productPartNo` 均在作用域内时）**就地组装 `RowKeyConflictDTO`**，每条带齐 7 字段。
-- **返回类型迁移方案（钉死）**：`collectConflicts` 改为返回 `List<RowKeyConflictDTO>`；submit 侧（`:834-838`）原先用 `c.describe()` 拼 message 文本的路径，改为**从 DTO 列表重建同样的文本**（保持文案逐字不变、日志可读、向后兼容）。`RowKeyConflict` + `describe()` 作为纯文本判重内部产物**保留**（detect 仍用它），仅 service 出参类型升级为 DTO。
+### 6.2 `RowKeyUniquenessService` 携带 id 出参（改造比初版描述更深）
+现状 `collectConflicts` 在调 `detect()` 前已把信息塌缩成 `label` 单串（`:79-80`）、返回的 `RowKeyConflict` 只带 `(label, rowKey, rowIndices)`；`LineItemComps` 当前仅 `(lineItemLabel, comps)`（`:36`），不含料号。改造要点：
+- `LineItemComps` 增加 `lineItemId` **和 `productPartNo`** 两个字段；`QuotationService.submit` 装配时把 `li.id` 与 `li.productPartNoSnapshot` 一并传入（当前只传了 label=`productNameSnapshot`，见 `:815-830, 818-819`）。**注**：DTO.`productName` 复用 label，DTO.`productPartNo` 取新增字段——二者来源不同（产品名 vs 料号），**不可混用**。
+  - 备选实现：把 DTO 组装直接**上移到 `QuotationService.submit`**（`li.id` / `li.productPartNoSnapshot` / `li.productNameSnapshot` 全在作用域），`collectConflicts` 只返回带 componentId 的中间结构。实现时二选一，效果等价。
+- `CompRows` 已有 `componentId`，沿用；`tabName` 直接取 `cfg.componentName`（**已现成，无需额外解析**）。
+- 在嵌套循环内（`comp.componentId()` / `lineItemId` / `productPartNo` / `cfg.componentName` 均在作用域时）**就地组装 `RowKeyConflictDTO`**，每条带齐 7 字段。
+- **返回类型迁移（钉死）**：`collectConflicts` 改为返回 `List<RowKeyConflictDTO>`；submit 侧（`:834-838`）原用 `c.describe()` 拼 message 的路径，改为**从 DTO 列表重建同样文本**（文案逐字不变、日志可读、向后兼容）。
+- **1 基 / 0 基纪律（防双增）**：`describe()` 收 **0 基** rowIndices 并做 `i+1`（`RowKeyConflict.java:14`），而 DTO.`rowIndices` 已存 **1 基**；DTO→文本重建时**直接 join，不得再 +1**，否则变成 +2、文案不再逐字一致。`RowKeyConflict` + `describe()` 作为 detect 内部产物**保留**，仅 service 出参类型升级为 DTO。`SubmitRowKeyUniquenessQuarkusTest`（文案逐字断言）兜底。
 
 ### 6.3 承载方式 = 新异常子类
 ```
@@ -156,21 +158,24 @@ catch (e: any) {
 }
 ```
 
-### 7.4 定位联动（料号 + 页签级）— 关键，初版 §7.4 写得不准，按评审重写
-`activeTab` 在 **ProductCard 内部**（`QuotationStep2.tsx:1486`），不在 Step2 顶层。联动必须层层下钻：
+### 7.4 定位联动（料号 + 页签级）— 关键，按两轮评审重写
+`activeTab` 在 **ProductCard 内部**（`QuotationStep2.tsx:1485-1486`），不在 Step2 顶层；卡片渲染自 **`quoteLineItems = lineItems.filter(li => li.compositeType !== 'PART')`**（`:2828`，渲染 `:3404`），其下标与全量 `lineItems` 不一致（**AP-54 同类坑搬到卡片维度**）。联动必须层层下钻，且全程**按稳定 id、不按下标**定位：
 
-1. **QuotationWizard** 持有 `locateTarget: { lineItemId, productPartNo, componentId } | null`。
-2. Drawer `onLocate(c)` → `setLocateTarget({lineItemId, productPartNo, componentId})`、关 Drawer、`setCurrentStep(1)`（Step2 全新挂载）。
-3. **QuotationStep2** 接收 `locateTarget` prop，`useEffect` 监听其变化：
-   - **先复位视图**（#9）：`setMainTab('quote')` + `setViewType('card')`，否则停在 costing/excel 视图时切了看不见。
-   - 找卡片：`lineItems.findIndex(li => li.id === locateTarget.lineItemId)`；找不到（前端 line item 可能尚未带持久化 id，#10）→ 回退按 `productPartNo` 匹配可见卡片。
-   - 可滚动到该**料号卡片顶部**（给每张卡片加 `ref`；现工程无 cardRef，需新增）——属料号级定位，不滚动到具体行。
-4. **下钻进匹配的 ProductCard**：把"目标 componentId"作为 prop 传给该卡片；ProductCard 自身 `useEffect` 里——
-   - 在 **`normalComponents`（过滤 SUBTOTAL + 模板成员后的子集，`:1952/:2831`）** 里 `findIndex(c => c.componentId === 目标)` 求 tab 序号，`setActiveTab(序号)`。
-   - **AP-54 纪律**：必须用 `normalComponents` 的下标，不可用 raw `componentData` 下标（详见 `docs/反模式.md AP-54`「过滤后下标当原数组下标」）。
-5. **降级与兜底**：
-   - 组件是 SUBTOTAL / 被模板过滤 / 在 `normalComponents` 里找不到 → 不切 tab，只定位到卡片（或保持原样）。
-   - **组合产品 PART 冲突**（#8）：后端对全部 line item 校验（含 PART，`:817`），但前端 `:2828/:2879` 隐藏 PART 子卡片。若冲突 `lineItemId` 属某 PART → 按其 `parentLineItemId` 定位**父卡**（PART 数据在父卡聚合视图内展示）；若仍无法定位 → 该条降级为"只在 Drawer 展示、点定位给一句 toast 提示，不跳转"，不阻断用户看清其余冲突。
+1. **QuotationWizard** 持有 `locateTarget: { lineItemId, productPartNo, componentId, seq } | null`。`seq` 单调递增（每次 `onLocate` +1），保证连点同一条冲突也能重新触发。
+2. Drawer `onLocate(c)` → `setLocateTarget({ ...c, seq: prevSeq + 1 })`、关 Drawer、`setCurrentStep(1)`（Step2 全新挂载）。
+3. **QuotationStep2** 接收 `locateTarget` prop，`useEffect`（**依赖含 `locateTarget.seq`**）监听其变化：
+   - **先复位视图**：`setMainTab('quote')` + `setViewType('card')`。后端只校验 `QUOTE_CARD` 结构（`QuotationService.java:808-813`），冲突恒来自报价卡 → 复位到 quote/card **永远正确**。
+   - **解析目标卡片（按 id，不按下标）**：
+     - 在**全量 `lineItems`** 按 `li.id === locateTarget.lineItemId` 找到冲突行 `hit`。
+     - 若 `hit.compositeType === 'PART'` → 真正要定位的是父卡：目标卡 id = `hit.parentLineItemId`（`:209`，仅 PART 非空）。
+     - 否则目标卡 id = `hit.id`。目标卡 id 须存在于**渲染用的 `quoteLineItems`**（父卡/普通卡都在其中）。
+   - **滚动**：卡片 ref 用 **以 line item id 为 key 的 Map**（`cardRefs.current[item.id]`，按 id 取、杜绝下标偏移），滚动到目标料号卡片顶部（现工程无 cardRef，需新增）——属料号级定位，不滚动到具体行。
+4. **下钻进目标 ProductCard 切页签**：把 `componentId`（+ `seq`）作为 prop 传给该卡片；ProductCard 自身 `useEffect`（**依赖含 `seq`**）在 **`normalComponents`（过滤 SUBTOTAL + 模板成员后的子集，`:1951-1964/:2831`）** 里 `findIndex(c => c.componentId === 目标)` 求 tab 序号、`setActiveTab(序号)`。
+   - **AP-54 纪律**：必须用 `normalComponents` 下标，不可用 raw `componentData` 下标（`docs/反模式.md AP-54`「过滤后下标当原数组下标」）。
+5. **降级与兜底（按优先级）**：
+   - 普通行 `lineItemId` 在前端尚未回灌持久化 id → 回退按 `productPartNo` 在 `quoteLineItems` 匹配卡片。
+   - **PART 冲突只能走 id→`parentLineItemId`**：PART 的 `productPartNo` 在 `quoteLineItems`（父卡列表）里**永不命中，不得退化到 productPartNo 兜底**；若 PART 行 id 缺失无法解析父卡 → 该条降级为"只在 Drawer 展示、点定位给一句 toast，不跳转"。
+   - 目标组件是 SUBTOTAL / 被模板过滤 / 在 `normalComponents` 找不到 → 只定位到卡片，不切 tab。
 
 ## 8. 测试计划
 
@@ -196,8 +201,8 @@ catch (e: any) {
 |---|---|
 | **`ApiResponse.data` 形状不一致 → Drawer 静默不弹** | §6.4 钉死 `data={conflicts:[...]}` 对象包一层；后端测试断言形状；前端只认非空数组。 |
 | `api.ts` 全局拦截器改动波及所有请求 | 只**新增**挂载字段（`payload`/`httpStatus`），`message` 取值与抛出形态不变；全工程无 `.payload` 依赖；跑回归确认。 |
-| **前端 lineItem 未带持久化 id**（#10，真实风险在前端非后端） | 后端装配侧 `li.id` 恒非空（`:805`）；前端首存后若 `LineItem.id` 尚未同步回，则按 `productPartNo` 兜底匹配卡片；实现时验证 handleSubmit 前 `handleSaveDraft` 已回灌持久化 id。 |
-| **组合产品 PART 冲突无可见卡片** | §7.4#8：映射 `parentLineItemId` 定位父卡；无法定位则降级"只展示不跳转"。 |
+| **前端 lineItem 未带持久化 id**（真实风险在前端非后端） | 后端装配侧 `li.id` 恒非空（`:805`）；前端首存后若**普通行** `LineItem.id` 尚未同步回，则按 `productPartNo` 兜底匹配卡片；实现时验证 handleSubmit 前 `handleSaveDraft` 已回灌持久化 id。 |
+| **组合产品 PART 冲突无可见卡片** | §7.4 step5：PART **只能**走 id→`parentLineItemId` 定位父卡（PART 的 productPartNo 在 `quoteLineItems` 永不命中，**不可退 productPartNo 兜底**）；PART 行 id 缺失即降级"只展示+toast 不跳转"。 |
 | 切 tab 用错下标（撞 AP-54） | 强制 `normalComponents.findIndex`；E2E 断言 activeTab 命中。 |
 | 误把其它 422/业务错当行键冲突 | 前端严格判 `err.payload?.conflicts` 是非空数组才开 Drawer，否则走原 message。 |
 | 改协议级文件引发渲染回归 | 强制 `quotation-flow.spec.ts` + `composite-product-flow.spec.ts` 回归。 |
