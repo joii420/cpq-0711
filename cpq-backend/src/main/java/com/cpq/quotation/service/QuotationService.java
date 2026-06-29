@@ -89,6 +89,9 @@ public class QuotationService {
     @Inject
     LineDiscountService lineDiscountService;
 
+    @Inject
+    CostingFreezeService costingFreezeService;
+
     private static final java.util.Set<String> VALID_QUOTATION_STATUSES = java.util.Set.of(
             "DRAFT", "SUBMITTED", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "EXPIRED", "CANCELLED", "COSTING_REJECTED"
     );
@@ -899,13 +902,8 @@ public class QuotationService {
         }
         q.totalAmount = lineSum.setScale(4, java.math.RoundingMode.HALF_UP);
 
-        // 进入财务核价: 自动建核价单(幂等); 角色队列模型, 不依赖 assignedApproverId。
-        if (com.cpq.quotation.entity.CostingOrder.findByQuotation(id) == null) {
-            com.cpq.quotation.entity.CostingOrder co = new com.cpq.quotation.entity.CostingOrder();
-            co.quotationId = id;
-            co.submittedBy = userId;          // submit 当前用户
-            co.persist();
-        }
+        // 进入财务核价: 每次提交都建新核价单（累积模式），冻结 DTO+gvDefs，并发时 409。
+        costingFreezeService.createForSubmission(id, userId);
 
         q.status = "SUBMITTED";
         LOG.infof("Submitted quotation id=%s number=%s approver=%s", id, q.quotationNumber, q.assignedApproverId);
