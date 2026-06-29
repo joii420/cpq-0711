@@ -1,5 +1,6 @@
 import React from 'react';
 import { Drawer, Table, Typography, Button, Alert } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 
 export interface RowKeyConflictDTO {
   lineItemId?: string;
@@ -11,6 +12,9 @@ export interface RowKeyConflictDTO {
   rowIndices: number[];
 }
 
+export const rowKeyOf = (c: RowKeyConflictDTO, i: number): string =>
+  `${c.lineItemId ?? ''}-${c.componentId ?? ''}-${c.rowKey}-${i}`;
+
 interface Props {
   open: boolean;
   conflicts: RowKeyConflictDTO[];
@@ -19,9 +23,9 @@ interface Props {
 }
 
 const RowKeyConflictDrawer: React.FC<Props> = ({ open, conflicts, onLocate, onClose }) => {
-  const columns = [
+  const columns: ColumnsType<RowKeyConflictDTO> = [
     {
-      title: '料号',
+      title: '产品 (料号)',
       key: 'product',
       render: (_: any, c: RowKeyConflictDTO) => (
         <span>{c.productName ?? '—'}{c.productPartNo ? ` (${c.productPartNo})` : ''}</span>
@@ -53,7 +57,7 @@ const RowKeyConflictDrawer: React.FC<Props> = ({ open, conflicts, onLocate, onCl
         description="点「定位」跳到对应料号卡片与页签。参考行号为后端校验序，仅作参考。"
       />
       <Table
-        rowKey={(c, i) => `${c.lineItemId ?? ''}-${c.componentId ?? ''}-${c.rowKey}-${i}`}
+        rowKey={rowKeyOf}
         columns={columns}
         dataSource={conflicts}
         pagination={false}

@@ -19,10 +19,15 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-export function buildApiError(error: any): Error {
-  const err = new Error(error?.response?.data?.message || 'Network error');
-  (err as any).payload = error?.response?.data?.data ?? null;   // 信封.data，与成功侧 response.data 同层级
-  (err as any).httpStatus = error?.response?.status;
+export interface ApiError extends Error {
+  payload: unknown;
+  httpStatus?: number;
+}
+
+export function buildApiError(error: any): ApiError {
+  const err = new Error(error?.response?.data?.message || 'Network error') as ApiError;
+  err.payload = error?.response?.data?.data ?? null;   // 信封.data，与成功侧 response.data 同层级
+  err.httpStatus = error?.response?.status;
   return err;
 }
 
