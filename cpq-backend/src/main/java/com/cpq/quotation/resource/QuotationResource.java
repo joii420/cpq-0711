@@ -452,6 +452,13 @@ public class QuotationResource {
     }
 
     @POST
+    @Path("/{id}/begin-edit")
+    public ApiResponse<QuotationDTO> beginEdit(@PathParam("id") UUID id, @Context HttpServerRequest request) {
+        UUID uid = sessionHelper.getCurrentUserIdOrFallback(request);
+        return ApiResponse.success(quotationService.beginEdit(id, uid));
+    }
+
+    @POST
     @Path("/{id}/copy")
     public ApiResponse<QuotationDTO> copy(@PathParam("id") UUID id, java.util.Map<String, Object> body) {
         UUID templateId = null;

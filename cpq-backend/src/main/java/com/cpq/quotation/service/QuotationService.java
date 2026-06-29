@@ -1321,6 +1321,12 @@ public class QuotationService {
         if (!"SUBMITTED".equals(q.status)) throw new BusinessException(400, "仅待核价(SUBMITTED)可核价通过");
         if (!isFinanceOrAdmin(currentUserId)) throw new BusinessException(403, "仅财务/管理员可核价");
         q.status = "APPROVED";
+        CostingOrder coApprove = CostingOrder.findActiveByQuotation(id);
+        if (coApprove != null) {
+            coApprove.status = "APPROVED";
+            coApprove.reviewedBy = currentUserId;
+            coApprove.reviewedAt = java.time.OffsetDateTime.now();
+        }
         writeApproval(id, currentUserId, "COSTING_APPROVED", comment);
         LOG.infof("Costing approved quotation id=%s by=%s", id, currentUserId);
         QuotationDTO dto = QuotationDTO.from(q);
@@ -1336,6 +1342,13 @@ public class QuotationService {
         if (!isFinanceOrAdmin(currentUserId)) throw new BusinessException(403, "仅财务/管理员可核价");
         if (reason == null || reason.isBlank()) throw new BusinessException(400, "驳回原因必填");
         q.status = "COSTING_REJECTED";
+        CostingOrder coReject = CostingOrder.findActiveByQuotation(id);
+        if (coReject != null) {
+            coReject.status = "REJECTED";
+            coReject.rejectReason = reason;
+            coReject.reviewedBy = currentUserId;
+            coReject.reviewedAt = java.time.OffsetDateTime.now();
+        }
         writeApproval(id, currentUserId, "COSTING_REJECTED", reason);
         LOG.infof("Costing rejected quotation id=%s reason=%s by=%s", id, reason, currentUserId);
         QuotationDTO dto = QuotationDTO.from(q);
@@ -1371,6 +1384,11 @@ public class QuotationService {
         unfreezeToDraft(q);
         q.status = "DRAFT";
         q.assignedApproverId = null;
+        // 用 findLatest：已驳回(REJECTED)的核价单是终态，findActive 取不到；findLatest 兼容所有场景
+        CostingOrder coWithdraw = CostingOrder.findLatestByQuotation(id);
+        if (coWithdraw != null) {
+            coWithdraw.status = "WITHDRAWN";
+        }
         writeApproval(id, currentUserId, "WITHDRAWN", "撤回到草稿");
 
         LOG.infof("Withdrawn quotation id=%s number=%s by user=%s", id, q.quotationNumber, currentUserId);
@@ -1388,6 +1406,29 @@ public class QuotationService {
                 "DELETE FROM quotation_component_sql_snapshot WHERE quotation_id = :qid")
                 .setParameter("qid", q.id)
                 .executeUpdate();
+    }
+
+    /**
+     * 驳回编辑入口：仅对 COSTING_REJECTED 状态的报价单有效，将报价单退回 DRAFT。
+     * 不触碰 costing_order（驳回条留 REJECTED）；不写 quotation_approval（无合法 action 值）。
+     */
+    @Transactional
+    public QuotationDTO beginEdit(UUID id, UUID currentUserId) {
+        Quotation q = Quotation.findById(id);
+        if (q == null) throw new BusinessException(404, "Quotation not found: " + id);
+        if (!"COSTING_REJECTED".equals(q.status)) {
+            throw new BusinessException(400, "仅已驳回的报价单可进入编辑转草稿");
+        }
+        if (!q.salesRepId.equals(currentUserId) && !isFinanceOrAdmin(currentUserId)) {
+            throw new BusinessException(403, "仅创建人或管理员可编辑驳回单");
+        }
+        unfreezeToDraft(q);
+        q.status = "DRAFT";
+        q.assignedApproverId = null;
+        LOG.infof("BeginEdit quotation id=%s number=%s by user=%s", id, q.quotationNumber, currentUserId);
+        QuotationDTO dto = QuotationDTO.from(q);
+        dto.lineItems = loadLineItems(id);
+        return dto;
     }
 
     @Transactional
