@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Button, Card, Col, Collapse, Descriptions, Drawer, Form, Input,
   Popconfirm, Row, Space, Spin, Table, Tabs, Tag, DatePicker,
@@ -15,6 +15,7 @@ import { quotationSnapshotService } from '../../services/quotationSnapshotServic
 import { boundGlobalVariableService } from '../../services/boundGlobalVariableService';
 import { useAuthStore } from '../../stores/authStore';
 import CopyQuotationDrawer from './CopyQuotationDrawer';
+import RowKeyConflictDrawer, { type RowKeyConflictDTO } from './RowKeyConflictDrawer';
 import ProductDetailViews from './ProductDetailViews';
 import SnapshotTab from './components/SnapshotTab';
 import BoundGlobalVariablesTab from './components/BoundGlobalVariablesTab';
@@ -89,6 +90,14 @@ const QuotationDetail: React.FC = () => {
   // Phase 4 #21：提交按钮
   // ----------------------------------------------------------------
   const [submitLoading, setSubmitLoading] = useState(false);
+
+  // ----------------------------------------------------------------
+  // 行键冲突 Drawer + 定位 state（详情页提交入口复刻）
+  // ----------------------------------------------------------------
+  const [rowKeyConflicts, setRowKeyConflicts] = useState<RowKeyConflictDTO[]>([]);
+  const [conflictDrawerOpen, setConflictDrawerOpen] = useState(false);
+  const [locateTarget, setLocateTarget] = useState<{ lineItemId?: string; productPartNo?: string; componentId?: string; seq: number } | null>(null);
+  const locateSeqRef = useRef(0);
 
   // ----------------------------------------------------------------
   // Handlers
@@ -312,10 +321,23 @@ const QuotationDetail: React.FC = () => {
       // 清掉旧快照缓存，触发重新加载
       setSnapshot(null);
     } catch (e: any) {
-      message.error(e.message || '提交失败，请稍后重试');
+      const conflicts = e?.payload?.conflicts;
+      if (Array.isArray(conflicts) && conflicts.length) {
+        setRowKeyConflicts(conflicts);
+        setConflictDrawerOpen(true);
+      } else {
+        message.error(e.message || '提交失败，请稍后重试');
+      }
     } finally {
       setSubmitLoading(false);
     }
+  };
+
+  const handleLocateConflict = (c: RowKeyConflictDTO) => {
+    locateSeqRef.current += 1;
+    setLocateTarget({ lineItemId: c.lineItemId, productPartNo: c.productPartNo, componentId: c.componentId, seq: locateSeqRef.current });
+    setConflictDrawerOpen(false);
+    setActiveTab('info');   // 产品明细在 'info' 顶层 tab 内
   };
 
   if (loading) {
@@ -383,7 +405,7 @@ const QuotationDetail: React.FC = () => {
           </Card>
 
           {/* 产品明细 — 两级视图切换（抽至 ProductDetailViews，反 AP-50） */}
-          <ProductDetailViews quotation={quotation} />
+          <ProductDetailViews quotation={quotation} locateTarget={locateTarget} />
 
           {/* Approval History */}
           {quotation.approvalHistory && quotation.approvalHistory.length > 0 && (
@@ -843,6 +865,13 @@ const QuotationDetail: React.FC = () => {
             navigate(`/quotations/${res.data.id}/edit`);
           } catch (e: any) { message.error(e.message); }
         }}
+      />
+
+      <RowKeyConflictDrawer
+        open={conflictDrawerOpen}
+        conflicts={rowKeyConflicts}
+        onLocate={handleLocateConflict}
+        onClose={() => setConflictDrawerOpen(false)}
       />
     </div>
   );
