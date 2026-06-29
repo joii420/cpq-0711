@@ -2217,9 +2217,15 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           showIcon
           message="该料号卡片数据待重算"
           description={
-            <Button size="small" loading={recomputing} disabled={!quotationId} onClick={handleRecompute}>
-              重算
-            </Button>
+            // QUOTE 侧带可用「重算」入口(refreshCardSnapshot 仅刷报价侧);
+            // COSTING 侧该入口刷不到核价值 → 不给假希望, 只留静态提示(按侧/按行重算归 BL-0012)。
+            cardSide === 'COSTING' ? (
+              <span style={{ color: '#8c8c8c' }}>请重新生成核价快照后查看</span>
+            ) : (
+              <Button size="small" loading={recomputing} disabled={!quotationId} onClick={handleRecompute}>
+                重算
+              </Button>
+            )
           }
           style={{ margin: 8 }}
         />
