@@ -303,6 +303,24 @@ public class QuotationResource {
     }
 
     @POST
+    @Path("/{id}/costing-approve")
+    @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
+    public ApiResponse<QuotationDTO> costingApprove(@PathParam("id") UUID id, Map<String, String> body, @Context HttpServerRequest request) {
+        UUID uid = sessionHelper.getCurrentUserIdOrFallback(request);
+        String comment = body != null ? body.get("comment") : null;
+        return ApiResponse.success(quotationService.costingApprove(id, comment, uid));
+    }
+
+    @POST
+    @Path("/{id}/costing-reject")
+    @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
+    public ApiResponse<QuotationDTO> costingReject(@PathParam("id") UUID id, Map<String, String> body, @Context HttpServerRequest request) {
+        UUID uid = sessionHelper.getCurrentUserIdOrFallback(request);
+        String reason = body != null ? body.get("comment") : null;
+        return ApiResponse.success(quotationService.costingReject(id, reason, uid));
+    }
+
+    @POST
     @Path("/{id}/withdraw")
     public ApiResponse<QuotationDTO> withdraw(@PathParam("id") UUID id, @Context HttpServerRequest request) {
         UUID currentUserId = sessionHelper.getCurrentUserIdOrFallback(request);

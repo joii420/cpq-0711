@@ -1188,6 +1188,52 @@ public class QuotationService {
         return dto;
     }
 
+    // ── 核价通过/驳回（role-based 队列，任一 PRICING_MANAGER/SYSTEM_ADMIN 均可操作）────────────
+
+    private boolean isFinanceOrAdmin(UUID userId) {
+        User u = User.findById(userId);
+        return u != null && ("PRICING_MANAGER".equals(u.role) || "SYSTEM_ADMIN".equals(u.role));
+    }
+
+    @Transactional
+    public QuotationDTO costingApprove(UUID id, String comment, UUID currentUserId) {
+        Quotation q = Quotation.findById(id);
+        if (q == null) throw new BusinessException(404, "Quotation not found: " + id);
+        if (!"SUBMITTED".equals(q.status)) throw new BusinessException(400, "仅待核价(SUBMITTED)可核价通过");
+        if (!isFinanceOrAdmin(currentUserId)) throw new BusinessException(403, "仅财务/管理员可核价");
+        q.status = "APPROVED";
+        writeApproval(id, currentUserId, "COSTING_APPROVED", comment);
+        LOG.infof("Costing approved quotation id=%s by=%s", id, currentUserId);
+        QuotationDTO dto = QuotationDTO.from(q);
+        dto.lineItems = loadLineItems(id);
+        return dto;
+    }
+
+    @Transactional
+    public QuotationDTO costingReject(UUID id, String reason, UUID currentUserId) {
+        Quotation q = Quotation.findById(id);
+        if (q == null) throw new BusinessException(404, "Quotation not found: " + id);
+        if (!"SUBMITTED".equals(q.status)) throw new BusinessException(400, "仅待核价(SUBMITTED)可驳回");
+        if (!isFinanceOrAdmin(currentUserId)) throw new BusinessException(403, "仅财务/管理员可核价");
+        if (reason == null || reason.isBlank()) throw new BusinessException(400, "驳回原因必填");
+        q.status = "COSTING_REJECTED";
+        writeApproval(id, currentUserId, "COSTING_REJECTED", reason);
+        LOG.infof("Costing rejected quotation id=%s reason=%s by=%s", id, reason, currentUserId);
+        QuotationDTO dto = QuotationDTO.from(q);
+        dto.lineItems = loadLineItems(id);
+        return dto;
+    }
+
+    private void writeApproval(UUID quotationId, UUID approverId, String action, String comment) {
+        QuotationApproval a = new QuotationApproval();
+        a.quotationId = quotationId;
+        a.approverId = approverId;
+        a.action = action;
+        a.comment = comment;
+        a.actedAt = OffsetDateTime.now();
+        a.persist();
+    }
+
     @Transactional
     public QuotationDTO withdraw(UUID id, UUID currentUserId) {
         Quotation q = Quotation.findById(id);
