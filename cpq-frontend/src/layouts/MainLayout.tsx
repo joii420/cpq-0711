@@ -60,7 +60,7 @@ const allMenuItems: MenuItem[] = [
     roles: ALL_ROLES,
     children: [
       { key: '/quotations', label: '报价单管理', roles: ALL_ROLES },
-      { key: '/costing-summary', label: '核价管理', roles: ['PRICING_MANAGER', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
+      { key: '/costing-summary', label: '核价管理', roles: ['PRICING_MANAGER', 'SYSTEM_ADMIN'] },
     ],
   },
   {
