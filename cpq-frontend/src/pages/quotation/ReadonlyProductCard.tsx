@@ -241,7 +241,15 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   //   构造 driverExpansions (BASIC_DATA + 行数来自快照 baseRows); FORMULA 优先读 formulaResults[rowKey]。
   //   只读页无受控 input, 故安全(不涉 AP-54)。无快照(存量单)回退实时 batch-expand。
   //   COSTING/QUOTE 两侧各读自己的 cardValues，绝不串源。
-  const useSnap = !!(isCosting ? lineItem.costingCardValues : lineItem.quoteCardValues) && components.length > 0;
+  //
+  //   竞态修复（2026-06-29）：去掉旧的 `&& components.length > 0` 守卫。
+  //   该守卫是 Phase4 Task4 引入的"等 async enrich 完成"保守项，但副作用是首渲染时
+  //   components=[]（enrich/rebuild 未完成）→ useSnap=false → driver 闸门开放 → 发 batch-expand，
+  //   违反"零 batch-expand"约定（E2E 可见 3 次 /api/cpq/components/batch-expand）。
+  //   cardValues 是服务端字段，打开即确定、稳定，以它为唯一闸门。
+  //   useSnap=true 但 components=[] 时渲染层 normalComponents=[] → 显示"加载组件结构..."占位，
+  //   无错误、无串值（AP-38 驱动行 0 时已有 "—" 兜底）。
+  const useSnap = !!(isCosting ? lineItem.costingCardValues : lineItem.quoteCardValues);
   const { cache: liveExpansions } = useDriverExpansions(
     useSnap ? EMPTY_LINEITEMS : (lineItemsForDriver as any), customerId, quotationId);
   // rowKeyFieldsByComp 须先于 snapExpansions 构建（snapExpansions 依赖它做墓碑过滤 AP-54）
