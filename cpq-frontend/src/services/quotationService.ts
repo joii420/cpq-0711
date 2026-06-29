@@ -125,6 +125,8 @@ export const quotationService = {
     }) as Promise<any>,
   create: (data: any) => api.post('/quotations', data) as Promise<any>,
   saveDraft: (id: string, data: any) => api.put(`/quotations/${id}/draft`, data) as Promise<any>,
+  /** lazy-cardvalues：懒算并落库整单卡片值。warm 与打开兜底复用。返回 { data: QuotationDTO(含 cardValuesWarming) }。 */
+  ensureCardValues: (id: string) => api.post(`/quotations/${id}/ensure-card-values`) as Promise<any>,
   /** 报价单整份快照 Phase2 §5: 草稿态重刷报价侧卡片值(按行键保编辑); 仅 DRAFT 生效, 非 DRAFT no-op 返 refreshed=0 */
   refreshCardSnapshot: (id: string) => api.post(`/quotations/${id}/refresh-card-snapshot`) as Promise<any>,
   /** P3 lazy-excel: 懒算并落库整单 Excel 值(首存只算卡片、Excel 留空); 开 Excel 视图/导出前调, 幂等; 返回含 Excel 值的最新 DTO */

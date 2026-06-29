@@ -33,6 +33,9 @@ import { splitRows, rowAt } from './manualRows';
 import { coerceInputNumber } from './inputDefaults';
 import type { CostingTemplateColumn } from '../../services/costingTemplateService';
 import { buildExcelSnapshot } from './buildExcelSnapshot';
+// lazy-cardvalues：纯判定函数抽到小模块(便于单测 + 运行时复用),此处 re-export 保持调用面统一。
+import { shouldWarmCardValues } from './cardValuesWarm';
+export { shouldWarmCardValues } from './cardValuesWarm';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
@@ -502,6 +505,16 @@ const QuotationWizard: React.FC = () => {
       // 草稿默认冻结（2026-06-18）：打开不再自动重刷，直接读已冻快照渲染。
       // 需要最新基础数据 → 用户在 Step2 主动点「刷新基础数据」按钮（Task B2）。
       applyQuotationData(res.data);
+      // lazy-cardvalues 打开兜底:若仍缺卡片值(warm 未跑/未完成/受损存量单)→ 同步 ensure 一次再渲染,
+      //   避免 QuotationStep2 闸门回退实时 batch-expand/evaluate 风暴。仍在 loading 内 await(沿用向导既有 loading)。
+      const opened = (res.data?.lineItems ?? []) as any[];
+      if (shouldWarmCardValues(opened)) {
+        try {
+          const r = await quotationService.ensureCardValues(qId);
+          if (r?.data && !r.data.cardValuesWarming) applyQuotationData(r.data);  // 回灌带卡片值的 DTO
+          // cardValuesWarming=true(warm 在飞):保持现有渲染/兜底,不重复 apply
+        } catch { /* ensure 失败 → 回退现有实时渲染(同今天) */ }
+      }
       // Update localStorage backup on successful load
       safeSetLocalDraft(`cpq-draft-${qId}`, JSON.stringify(res.data));
     } catch (e: any) {
@@ -662,6 +675,12 @@ const QuotationWizard: React.FC = () => {
     });
   };
 
+  // lazy-cardvalues：首存/显式保存成功后 warm:不阻塞、不挡操作,失败静默(打开守卫兜底)。
+  const warmCardValues = useCallback((qId: string, items: any[]) => {
+    if (!shouldWarmCardValues(items)) return;
+    quotationService.ensureCardValues(qId).catch(() => { /* warm best-effort;打开守卫兜底 */ });
+  }, []);
+
   const autoSaveDraft = useCallback(async () => {
     if (!quotationId) return;
     // ③ 串行化：已有保存在飞 → 记一个待补跑标记后直接返回，不并发第二条 id=null payload。
@@ -682,6 +701,9 @@ const QuotationWizard: React.FC = () => {
       // 避免「卡片版本号停在旧值直到强刷」的 UX 漂移；同时回填重建后的新行 id，
       // 触发 driver 展开按新 id 重拉 → 导入工序等按行快照无需刷新即出现。
       syncLineItemsFromResponse(res?.data);
+      // lazy-cardvalues：saveDraft 不再算卡片值 → 此处 fire-and-forget warm(导入首存的主路径)。
+      //   用响应里的最新行(其卡片值此刻为 NULL)判定;guard 内部 shouldWarmCardValues 决定是否真发。
+      warmCardValues(quotationId, (res?.data?.lineItems ?? lineItems) as any[]);
       // P2-9: backup to localStorage on success
       safeSetLocalDraft(`cpq-draft-${quotationId}`, JSON.stringify(payload));
     } catch {
@@ -708,7 +730,7 @@ const QuotationWizard: React.FC = () => {
     // 内部访问的是最新的 expansion 缓存。否则 useCallback 会缓存空 expansion 的旧闭包：
     // 导入流自动保存即便等到 expansion ready 才触发，autoSaveDraft 内部仍会读到空 driverExpansions
     // → snapshotRows 落 1 行而不是展开后的 N 行（明细页只看到 1 行 — 数据的根因）。
-  }, [quotationId, form, lineItems, driverExpansions, customerIdValue]);
+  }, [quotationId, form, lineItems, driverExpansions, customerIdValue, warmCardValues]);
 
   // 让 setInterval 总是调用最新的 autoSaveDraft（避开闭包陷阱）
   useEffect(() => {
@@ -1058,6 +1080,8 @@ const QuotationWizard: React.FC = () => {
       setQuotationPreservingStructures(res.data);
       // 回填重建后的新行 id + partVersionLocked,避免卡片版本号停在旧值、并触发展开按新 id 重拉
       syncLineItemsFromResponse(res.data);
+      // lazy-cardvalues：显式保存(保存草稿/下一步/提交前置存)成功后 warm,与导入首存同口径,fire-and-forget。
+      warmCardValues(quotationId, (res.data?.lineItems ?? lineItems) as any[]);
       if (!silent) message.success('草稿已保存');
       safeSetLocalDraft(`cpq-draft-${quotationId}`, JSON.stringify(payload));
     } catch (e: any) {
