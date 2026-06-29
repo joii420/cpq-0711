@@ -1,6 +1,5 @@
 package com.cpq.system;
 
-import com.cpq.quotation.entity.QuotationWithdrawRequest;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
@@ -26,8 +25,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>DDL-FIELD-IMPORTANCE-08: POST /api/system/ddl/extend-column 含 importance +
  *       affectsCalculation 字段后, basic_data_attribute 写入对应 importance_level /
  *       affects_calculation</li>
- *   <li>QAPP-WD-REQ-04: 同一报价单已有 PENDING 撤回请求时, 再次 POST
- *       /quotations/{id}/withdraw-request 返回 400</li>
  * </ul>
  *
  * <p>RBAC is disabled in test profile (cpq.security.rbac.enabled=false).
@@ -36,24 +33,19 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @QuarkusTest
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-@DisplayName("MiscEdgeTest — MD-FIELD-IMP-05 / DDL-FIELD-IMPORTANCE-08 / QAPP-WD-REQ-04")
+@DisplayName("MiscEdgeTest — MD-FIELD-IMP-05 / DDL-FIELD-IMPORTANCE-08")
 class MiscEdgeTest {
 
     private static final String BASE_BDC = "/api/cpq/basic-data-config";
     private static final String BASE_DDL = "/api/system/ddl";
-    private static final String BASE_Q   = "/api/cpq/quotations";
 
-    /** Stable UUID for admin user seeded once */
+    /** Stable UUID for admin user seeded once (used by seedOnce setup) */
     private static final UUID ADMIN_USER_ID =
             UUID.fromString("ee000000-0000-0000-0000-000000000001");
 
-    /** Stable UUID for test customer (quotation FK) */
+    /** Stable UUID for test customer (seeded for potential future tests) */
     private static final UUID TEST_CUSTOMER_ID =
             UUID.fromString("ee000000-0000-0000-0000-000000000002");
-
-    /** Stable UUID for test quotation used in QAPP-WD-REQ-04 */
-    private static final UUID TEST_QUOTATION_ID =
-            UUID.fromString("ee000000-0000-0000-0000-000000000003");
 
     @Inject
     EntityManager em;
@@ -94,19 +86,6 @@ class MiscEdgeTest {
                 "VALUES (:id, 'Misc Test Customer', 'MISC-CUST-01', 'STANDARD', 0, 'ACTIVE', " +
                 "NOW(), NOW()) ON CONFLICT (id) DO NOTHING")
                 .setParameter("id", TEST_CUSTOMER_ID)
-                .executeUpdate();
-
-        // Quotation for QAPP-WD-REQ-04 — status APPROVED (required by requestWithdraw)
-        em.createNativeQuery(
-                "INSERT INTO quotation(id, quotation_number, customer_id, name, sales_rep_id, " +
-                "status, total_amount, original_amount, system_discount_rate, final_discount_rate, " +
-                "tax_rate, tax_amount, created_at, updated_at) " +
-                "VALUES (:id, 'QT-MISC-WD-TEST', :cid, 'Misc WD Test Quotation', :uid, " +
-                "'APPROVED', 0, 0, 100, 100, 0, 0, NOW(), NOW()) " +
-                "ON CONFLICT (id) DO NOTHING")
-                .setParameter("id", TEST_QUOTATION_ID)
-                .setParameter("cid", TEST_CUSTOMER_ID)
-                .setParameter("uid", ADMIN_USER_ID)
                 .executeUpdate();
 
         utx.commit();
@@ -287,53 +266,4 @@ class MiscEdgeTest {
                 "affects_calculation must be true");
     }
 
-    // =========================================================================
-    // QAPP-WD-REQ-04
-    // 同一报价单仅一个 PENDING 撤回请求。
-    //
-    // 实现:
-    //   1. 通过 EntityManager persist 一个 PENDING QuotationWithdrawRequest
-    //   2. 调 POST /quotations/{id}/withdraw-request 期望 400 ("已有待处理的撤回请求")
-    // =========================================================================
-
-    @Test
-    @Order(3)
-    @DisplayName("QAPP-WD-REQ-04: 同一报价单已有 PENDING 撤回请求时, 再次申请返回 400")
-    void qappWdReq_04_duplicatePendingWithdrawReturns400() throws Exception {
-        // Clean existing withdraw requests for this quotation to start fresh
-        utx.begin();
-        em.joinTransaction();
-
-        em.createNativeQuery(
-                "DELETE FROM quotation_withdraw_request WHERE quotation_id = :qid")
-                .setParameter("qid", TEST_QUOTATION_ID)
-                .executeUpdate();
-
-        // Also ensure quotation status is APPROVED (required by requestWithdraw service)
-        em.createNativeQuery(
-                "UPDATE quotation SET status = 'APPROVED' WHERE id = :id")
-                .setParameter("id", TEST_QUOTATION_ID)
-                .executeUpdate();
-
-        // Persist a PENDING QuotationWithdrawRequest directly via EntityManager
-        QuotationWithdrawRequest existing = new QuotationWithdrawRequest();
-        existing.quotationId = TEST_QUOTATION_ID;
-        existing.requestedBy = ADMIN_USER_ID;
-        existing.reason = "先期撤回原因 (QAPP-WD-REQ-04)";
-        existing.status = "PENDING";
-        em.persist(existing);
-        em.flush();
-
-        utx.commit();
-
-        // Now call POST /quotations/{id}/withdraw-request — should return 400
-        given()
-                .contentType(ContentType.JSON)
-                .body("{\"reason\": \"重复撤回申请\"}")
-            .when()
-                .post(BASE_Q + "/" + TEST_QUOTATION_ID + "/withdraw-request")
-            .then()
-                .statusCode(400)
-                .body("message", containsString("已有待处理的撤回请求"));
-    }
 }

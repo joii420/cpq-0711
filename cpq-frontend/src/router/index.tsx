@@ -27,6 +27,7 @@ import PricingStrategy from '../pages/pricing/PricingStrategy';
 import QuotationList from '../pages/quotation/QuotationList';
 import QuotationWizard from '../pages/quotation/QuotationWizard';
 import QuotationDetail from '../pages/quotation/QuotationDetail';
+import CostingReviewPage from '../pages/quotation/CostingReviewPage';
 import ApprovalRuleManagement from '../pages/system/ApprovalRuleManagement';
 import NotificationList from '../pages/system/NotificationList';
 import OperationLogList from '../pages/system/OperationLogList';
@@ -37,8 +38,7 @@ import ComparisonTagManagement from '../pages/basicdata/ComparisonTagManagement'
 import CostingTemplateList from '../pages/costing/CostingTemplateList';
 import CostingTemplateConfig from '../pages/costing/CostingTemplateConfig';
 import CostingPartDataPage from '../pages/costingpart/CostingPartDataPage';
-import CostingSummaryListPage from '../pages/costingsummary/CostingSummaryListPage';
-import CostingSummaryDetailPage from '../pages/costingsummary/CostingSummaryDetailPage';
+import CostingOrderListPage from '../pages/costingorder/CostingOrderListPage';
 import MasterDataPage from '../pages/master-data/MasterDataPage';
 import MasterDataTableViewerPage from '../pages/master-data/MasterDataTableViewerPage';
 import VersionHistoryPage from '../pages/master-data/VersionHistoryPage';
@@ -104,6 +104,7 @@ const router = createBrowserRouter([
       { path: 'quotations/new', element: <QuotationWizard /> },
       { path: 'quotations/:id', element: <QuotationDetail /> },
       { path: 'quotations/:id/edit', element: <QuotationWizard /> },
+      { path: 'quotations/:id/costing-review', element: <CostingReviewPage /> },
       { path: 'materials', element: <InternalMaterialManagement /> },
       { path: 'import-history', element: <ImportHistoryList /> },
       { path: 'product-categories', element: <ProductCategoryManagement /> },
@@ -111,8 +112,7 @@ const router = createBrowserRouter([
       { path: 'costing-templates', element: <CostingTemplateList /> },
       { path: 'costing-templates/:id', element: <CostingTemplateConfig /> },
       { path: 'costing-part-data', element: <CostingPartDataPage /> },
-      { path: 'costing-summary', element: <CostingSummaryListPage /> },
-      { path: 'costing-summary/:id', element: <CostingSummaryDetailPage /> },
+      { path: 'costing-summary', element: <CostingOrderListPage /> },
       { path: 'master-data', element: <MasterDataPage /> },
       { path: 'master-data/history', element: <VersionHistoryPage /> },
       { path: 'master-data/viewer', element: <MasterDataTableViewerPage /> },

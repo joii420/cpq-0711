@@ -9,7 +9,7 @@ const roleMap: Record<string, { label: string; color: string }> = {
   SYSTEM_ADMIN: { label: '系统管理员', color: 'red' },
   SALES_MANAGER: { label: '销售经理', color: 'blue' },
   SALES_REP: { label: '销售代表', color: 'green' },
-  PRICING_MANAGER: { label: '定价经理', color: 'orange' },
+  PRICING_MANAGER: { label: '财务', color: 'orange' },
 };
 
 const UserManagement: React.FC = () => {
