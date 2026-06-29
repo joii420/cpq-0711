@@ -38,6 +38,14 @@ public class ApiResponse<T> {
         return response;
     }
 
+    public static <T> ApiResponse<T> error(int code, String message, T data) {
+        ApiResponse<T> response = new ApiResponse<>();
+        response.code = code;
+        response.message = message;
+        response.data = data;
+        return response;
+    }
+
     public int getCode() { return code; }
     public String getMessage() { return message; }
     public T getData() { return data; }

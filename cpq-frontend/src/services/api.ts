@@ -19,6 +19,18 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+export interface ApiError extends Error {
+  payload: unknown;
+  httpStatus?: number;
+}
+
+export function buildApiError(error: any): ApiError {
+  const err = new Error(error?.response?.data?.message || 'Network error') as ApiError;
+  err.payload = error?.response?.data?.data ?? null;   // 信封.data，与成功侧 response.data 同层级
+  err.httpStatus = error?.response?.status;
+  return err;
+}
+
 api.interceptors.response.use(
   (response) => {
     return response.data;
@@ -29,8 +41,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !isAuthEndpoint) {
       window.location.href = '/login';
     }
-    const message = error.response?.data?.message || 'Network error';
-    return Promise.reject(new Error(message));
+    return Promise.reject(buildApiError(error));
   }
 );
 

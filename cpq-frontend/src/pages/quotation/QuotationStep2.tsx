@@ -259,6 +259,8 @@ export interface QuotationStep2Props {
   quoteCardStructure?: CardStructure | null;
   /** Phase4 Task3: 核价卡片结构快照(暂仅占位, 核价侧本任务不切换) */
   costingCardStructure?: CardStructure | null;
+  /** Plan 1b：提交行键冲突定位目标（seq 单调递增触发）。报价侧专用。 */
+  locateTarget?: { lineItemId?: string; productPartNo?: string; componentId?: string; seq: number } | null;
 }
 
 // ─── BASIC_DATA path 求值结果格式化 ─────────────────────────────────────────
@@ -1480,9 +1482,12 @@ interface ProductCardProps {
   cardSide?: 'QUOTE' | 'COSTING';
   /** Phase4 Task3: 本侧卡片结构快照(提供 rowKeyFields, 用于 rowKey 计算对齐后端) */
   cardStructure?: CardStructure | null;
+  /** Plan 1b：定位目标页签 componentId（仅目标卡非空）；locateSeq 变化时切到该页签 */
+  locateComponentId?: string;
+  locateSeq?: number;
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs, cardSide, cardStructure }) => {
+const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs, cardSide, cardStructure, locateComponentId, locateSeq }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [dsLoading, setDsLoading] = useState<Record<string, boolean>>({});
   const [dsErrors, setDsErrors] = useState<Record<string, string>>({});
@@ -1951,6 +1956,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   const normalComponents = (item.componentData ?? [])
     .filter(c => c?.componentType === 'NORMAL');
   const activeComponent = normalComponents[activeTab];
+
+  // Plan 1b：locateSeq 变化时切到目标 componentId 对应的 Tab（AP-54：normalComponents 下标）
+  useEffect(() => {
+    if (!locateComponentId) return;
+    const idx = normalComponents.findIndex(c => c.componentId === locateComponentId);
+    if (idx >= 0) setActiveTab(idx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locateSeq]);
 
   // normalComponents 过滤掉了 SUBTOTAL 组件，其下标 (activeTab) 与底层 item.componentData
   // 下标不对齐（典型：SUBTOTAL "总成本" 排在第 0 位 → 整体偏移 +1）。
@@ -2734,11 +2747,39 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   quotationStatus,
   quoteCardStructure,
   costingCardStructure,
+  locateTarget,
 }) => {
   // 两级 tab：左侧 mainTab（报价单 / 核价单 / 比对视图），右侧 viewType（产品卡片 / Excel视图）。
   // 比对视图为单一展示，无 viewType 切换。
   const [mainTab, setMainTab] = useState<'quote' | 'costing' | 'comparison'>('quote');
   const [viewType, setViewType] = useState<'card' | 'excel'>('card');
+
+  // Plan 1b 定位：cardRef 以 line item id 为 key（按 id 取、杜绝过滤后下标偏移，AP-54）
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // 解析后的定位结果：目标卡 id（PART 已映射为父卡）+ 目标 componentId + seq
+  const [locateResolved, setLocateResolved] = useState<{ cardId?: string; componentId?: string; seq: number } | null>(null);
+
+  useEffect(() => {
+    if (!locateTarget) return;
+    // 复位视图：后端只校验 QUOTE_CARD，冲突恒来自报价卡 → quote/card 永远正确
+    setMainTab('quote');
+    setViewType('card');
+    // 按 id 在全量 lineItems 找冲突行；PART → 映射父卡
+    const hit = lineItems.find(li => li.id === locateTarget.lineItemId);
+    let cardId = hit?.id;
+    if (hit?.compositeType === 'PART') cardId = hit.parentLineItemId;
+    // 兜底：普通行 id 未回灌 → 按 productPartNo 在可见卡片匹配（PART 不走此兜底）
+    if (!cardId && hit?.compositeType !== 'PART' && locateTarget.productPartNo) {
+      cardId = quoteLineItems.find(li => li.productPartNo === locateTarget.productPartNo)?.id;
+    }
+    setLocateResolved({ cardId, componentId: locateTarget.componentId, seq: locateTarget.seq });
+    if (cardId && cardRefs.current[cardId]) {
+      cardRefs.current[cardId]!.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (!cardId) {
+      message.warning('未能定位到该冲突所在卡片，请在产品卡片中手动查找');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locateTarget?.seq]);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshingSnapshot, setRefreshingSnapshot] = useState(false);
   // autoPopulating state 保留 — UI(空状态文案、loading)仍在用,但实际触发已移除。
@@ -3401,23 +3442,32 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
         </div>
       ) : (
         <div className="qt-products-list">
-          {quoteLineItems.map((item, index) => (
-            <ProductCard
-              key={item.productId ? `${item.productId}-${index}` : `item-${index}`}
-              item={item}
-              index={index}
-              onRemove={() => onRemoveProduct(index)}
-              onUpdate={(data) => handleUpdateQuoteLineItem(index, data)}
-              customerId={customerId}
-              quotationId={quotationId}
-              driverExpansions={driverExpansions}
-              configTemplates={configTemplates}
-              pathCacheState={quotationPathCache}
-              globalVariableDefs={gvDefs}
-              cardSide="QUOTE"
-              cardStructure={quoteCardStructure}
-            />
-          ))}
+          {quoteLineItems.map((item, index) => {
+            const isLocateTarget = locateResolved?.cardId != null && locateResolved.cardId === item.id;
+            return (
+              <div
+                key={item.id ?? (item.productId ? `${item.productId}-${index}` : `item-${index}`)}
+                ref={el => { if (item.id) cardRefs.current[item.id] = el; }}
+              >
+                <ProductCard
+                  item={item}
+                  index={index}
+                  onRemove={() => onRemoveProduct(index)}
+                  onUpdate={(data) => handleUpdateQuoteLineItem(index, data)}
+                  customerId={customerId}
+                  quotationId={quotationId}
+                  driverExpansions={driverExpansions}
+                  configTemplates={configTemplates}
+                  pathCacheState={quotationPathCache}
+                  globalVariableDefs={gvDefs}
+                  cardSide="QUOTE"
+                  cardStructure={quoteCardStructure}
+                  locateComponentId={isLocateTarget ? locateResolved!.componentId : undefined}
+                  locateSeq={isLocateTarget ? locateResolved!.seq : undefined}
+                />
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
