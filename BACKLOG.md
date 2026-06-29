@@ -152,6 +152,17 @@
 - **预估规模**：S（1-2 天）
 - **验收要点**：无缺值时不发 warm；有缺值时发且只发一次；不回归打开秒开。
 
+### [BL-0014] 切料号版本后失效卡片值（lazy 模型 staleness gap）
+- **优先级**：P2
+- **来源**：`docs/superpowers/specs/2026-06-29-lazy-card-values-design.md` 实现期 Task 4 代码评审 Important（范围外观察）
+- **状态**：TODO（未排期）
+- **推迟原因**：超出本期（saveDraft 重建）范围；且**当前潜在**——按 [[BL-0005]] 切版本引擎尚未生效（`BomClosureService` 硬编码 `is_current`、核价 expand 传 `partVersion=null`），故切版本暂不改变卡片值相关数据，staleness 暂不显现。第二期版本切换真生效后必须补。
+- **背景**：`QuotationService.updateLineItemPartVersion`（`:2632`，`li.persist()` `:2667` + `regenerateAllSnapshots`）改动行但**不置空** `quoteCardValues/costingCardValues`。lazy 模型下 `ensureCardValues` 只按 `IS NULL` 重选 → 切版本后卡片值非 NULL 不被重选 → 打开仍显示切版本前的陈旧卡片值。
+- **范围**：在 `updateLineItemPartVersion` 的 `regenerateAllSnapshots` 之后把该行 `quoteCardValues/costingCardValues` 置 NULL（与 Task 4 的 D-1 同款失效；宜抽 `invalidateCardValues(li)` 私有助手，三处复用：processBatchStage1 / 逐行路径 / 切版本）。
+- **依赖**：[[BL-0005]] 版本感知 BOM 闭包（切版本真生效后此 gap 才显现）；[[BL-0006]] 核价切版本调价主体。
+- **预估规模**：S（1-2 天）
+- **验收要点**：切版本后该行卡片值被重算（打开显示新版本值，不再陈旧）；未切版本的行不受影响；不引入 batch 风暴。
+
 ---
 
 ## 已完成
