@@ -32,14 +32,14 @@ public class RowKeyUniquenessService {
 
     /** 单组件两路原始 JSON。 */
     public record CompRows(String componentId, String snapshotRowsJson, String rowDataJson) {}
-    /** 单明细的全部组件行。 */
-    public record LineItemComps(String lineItemLabel, List<CompRows> comps) {}
+    /** 单明细的全部组件行。productName=展示名(label)，productPartNo=料号(兜底匹配用)。 */
+    public record LineItemComps(String lineItemId, String productName, String productPartNo, List<CompRows> comps) {}
 
     /** fields 含字段定义，用于 computeDedupKey 字段感知解析（修复 _前缀视图列 bug）。 */
     private record TabKeyCfg(String componentName, JsonNode rowKeyFields, JsonNode fields) {}
 
-    public List<RowKeyConflict> collectConflicts(String structureJson, List<LineItemComps> items) {
-        List<RowKeyConflict> out = new ArrayList<>();
+    public List<RowKeyConflictDTO> collectConflicts(String structureJson, List<LineItemComps> items) {
+        List<RowKeyConflictDTO> out = new ArrayList<>();
         Map<String, TabKeyCfg> cfgByComp = parseStructure(structureJson);
         if (cfgByComp.isEmpty() || items == null) return out;
 
@@ -76,8 +76,14 @@ public class RowKeyUniquenessService {
                             cfg.rowKeyFields(), cfg.fields(), emptyDriver, MAPPER.createObjectNode(), mr));
                 }
 
-                String label = (item.lineItemLabel() == null ? "" : item.lineItemLabel() + " · ") + cfg.componentName();
-                out.addAll(RowKeyConflictDetector.detect(label, keys));
+                for (RowKeyConflict rc : RowKeyConflictDetector.detect(cfg.componentName(), keys)) {
+                    List<Integer> oneBased = new ArrayList<>();
+                    for (Integer idx : rc.rowIndices()) oneBased.add(idx + 1);   // 0 基 → 1 基
+                    out.add(new RowKeyConflictDTO(
+                            item.lineItemId(), item.productName(), item.productPartNo(),
+                            comp.componentId(), cfg.componentName(),
+                            rc.rowKey(), oneBased));
+                }
             }
         }
         return out;
