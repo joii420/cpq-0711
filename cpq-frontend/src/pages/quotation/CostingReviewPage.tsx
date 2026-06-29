@@ -40,13 +40,13 @@ const { Title } = Typography;
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   DRAFT: { label: '草稿', color: 'default' },
-  SUBMITTED: { label: '审批中', color: 'processing' },
-  APPROVED: { label: '已批准', color: 'success' },
+  SUBMITTED: { label: '待核价', color: 'processing' },
+  APPROVED: { label: '已审核', color: 'success' },
   SENT: { label: '已发送', color: 'cyan' },
   ACCEPTED: { label: '已接受', color: 'green' },
-  REJECTED: { label: '已退回', color: 'error' },
+  REJECTED: { label: '客户已拒绝', color: 'error' },
   EXPIRED: { label: '已过期', color: 'warning' },
-  COSTING_REJECTED: { label: '核价驳回', color: 'error' },
+  COSTING_REJECTED: { label: '已驳回', color: 'error' },
 };
 
 const CostingReviewPage: React.FC = () => {

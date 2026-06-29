@@ -25,13 +25,13 @@ const { Title } = Typography;
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   DRAFT: { label: '草稿', color: 'default' },
-  SUBMITTED: { label: '审批中', color: 'processing' },
-  APPROVED: { label: '已批准', color: 'success' },
+  SUBMITTED: { label: '待核价', color: 'processing' },
+  APPROVED: { label: '已审核', color: 'success' },
   SENT: { label: '已发送', color: 'cyan' },
   ACCEPTED: { label: '已接受', color: 'green' },
-  REJECTED: { label: '已退回', color: 'error' },
+  REJECTED: { label: '客户已拒绝', color: 'error' },
   EXPIRED: { label: '已过期', color: 'warning' },
-  COSTING_REJECTED: { label: '核价驳回', color: 'error' },
+  COSTING_REJECTED: { label: '已驳回', color: 'error' },
 };
 
 const approvalActionMap: Record<string, { label: string; color: string }> = {
@@ -57,12 +57,6 @@ const QuotationDetail: React.FC = () => {
   const [emailDrawerOpen, setEmailDrawerOpen] = useState(false);
   const [extendDrawerOpen, setExtendDrawerOpen] = useState(false);
   const [rejectDrawerOpen, setRejectDrawerOpen] = useState(false);
-
-  // 审批操作 Drawer（原 Modal）
-  const [approveDrawerOpen, setApproveDrawerOpen] = useState(false);
-  const [approvalRejectDrawerOpen, setApprovalRejectDrawerOpen] = useState(false);
-  const [approveComment, setApproveComment] = useState('');
-  const [approvalRejectComment, setApprovalRejectComment] = useState('');
 
   // Form instances
   const [emailForm] = Form.useForm();
@@ -93,39 +87,6 @@ const QuotationDetail: React.FC = () => {
   // ----------------------------------------------------------------
   // Handlers
   // ----------------------------------------------------------------
-  const handleApprove = async () => {
-    setActionLoading(true);
-    try {
-      await quotationService.approve(id!, approveComment || undefined);
-      message.success('审批通过');
-      setApproveDrawerOpen(false);
-      setApproveComment('');
-      loadQuotation();
-    } catch (e: any) {
-      message.error(e.message);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleApprovalReject = async () => {
-    if (!approvalRejectComment.trim()) {
-      message.warning('请填写退回原因');
-      return;
-    }
-    setActionLoading(true);
-    try {
-      await quotationService.reject(id!, approvalRejectComment);
-      message.success('已退回');
-      setApprovalRejectDrawerOpen(false);
-      setApprovalRejectComment('');
-      loadQuotation();
-    } catch (e: any) {
-      message.error(e.message);
-    } finally {
-      setActionLoading(false);
-    }
-  };
 
   const handleWithdraw = async () => {
     setActionLoading(true);
@@ -478,41 +439,6 @@ const QuotationDetail: React.FC = () => {
                 </>
               )}
 
-              {/* SUBMITTED：审批操作 */}
-              {status === 'SUBMITTED' && (() => {
-                const isAssigned = user?.id === quotation.assignedApproverId;
-                const isAdmin = user?.role === 'SYSTEM_ADMIN';
-                return (
-                  <>
-                    {(isAssigned || isAdmin) && (
-                      <>
-                        <Button
-                          type="primary"
-                          style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
-                          icon={<CheckCircleOutlined />}
-                          onClick={() => setApproveDrawerOpen(true)}
-                        >
-                          通过
-                        </Button>
-                        <Button
-                          danger
-                          icon={<CloseCircleOutlined />}
-                          onClick={() => setApprovalRejectDrawerOpen(true)}
-                        >
-                          退回
-                        </Button>
-                      </>
-                    )}
-                    {user?.role === 'SALES_MANAGER' && !isAssigned && !isAdmin && (
-                      <>
-                        <Button disabled icon={<CheckCircleOutlined />} title="该报价单不在您的审批范围内">通过</Button>
-                        <Button disabled icon={<CloseCircleOutlined />} title="该报价单不在您的审批范围内">退回</Button>
-                      </>
-                    )}
-                  </>
-                );
-              })()}
-
               {status === 'APPROVED' && (
                 <Button type="primary" icon={<SendOutlined />} onClick={() => {
                   emailForm.setFieldValue('subject', `报价单 ${quotation.quotationNumber}`);
@@ -760,73 +686,6 @@ const QuotationDetail: React.FC = () => {
               <Button type="primary" danger htmlType="submit" loading={actionLoading} icon={<CloseCircleOutlined />}>确认拒绝</Button>
               <Button onClick={() => setRejectDrawerOpen(false)}>取消</Button>
             </Space>
-          </Form.Item>
-        </Form>
-      </Drawer>
-
-      {/* 审批通过 Drawer */}
-      <Drawer
-        title="审批通过"
-        placement="right"
-        width={480}
-        open={approveDrawerOpen}
-        onClose={() => { setApproveDrawerOpen(false); setApproveComment(''); }}
-        destroyOnClose
-        extra={
-          <Space>
-            <Button onClick={() => { setApproveDrawerOpen(false); setApproveComment(''); }}>取消</Button>
-            <Button
-              type="primary"
-              style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
-              loading={actionLoading}
-              onClick={handleApprove}
-            >
-              确认通过
-            </Button>
-          </Space>
-        }
-      >
-        <Form layout="vertical">
-          <Form.Item label="审批意见（可选）">
-            <Input.TextArea
-              rows={4}
-              placeholder="审批意见（可选）"
-              value={approveComment}
-              onChange={(e) => setApproveComment(e.target.value)}
-            />
-          </Form.Item>
-        </Form>
-      </Drawer>
-
-      {/* 退回报价单 Drawer */}
-      <Drawer
-        title="退回报价单"
-        placement="right"
-        width={480}
-        open={approvalRejectDrawerOpen}
-        onClose={() => { setApprovalRejectDrawerOpen(false); setApprovalRejectComment(''); }}
-        destroyOnClose
-        extra={
-          <Space>
-            <Button onClick={() => { setApprovalRejectDrawerOpen(false); setApprovalRejectComment(''); }}>取消</Button>
-            <Button
-              danger
-              loading={actionLoading}
-              onClick={handleApprovalReject}
-            >
-              确认退回
-            </Button>
-          </Space>
-        }
-      >
-        <Form layout="vertical">
-          <Form.Item label="退回原因" required>
-            <Input.TextArea
-              rows={4}
-              placeholder="请填写退回原因（必填）"
-              value={approvalRejectComment}
-              onChange={(e) => setApprovalRejectComment(e.target.value)}
-            />
           </Form.Item>
         </Form>
       </Drawer>
