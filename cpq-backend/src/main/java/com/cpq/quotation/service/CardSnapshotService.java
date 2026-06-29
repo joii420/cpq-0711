@@ -56,6 +56,13 @@ public class CardSnapshotService {
     private static final Logger LOG = Logger.getLogger(CardSnapshotService.class);
     static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /** 卡片值 build 确定性失败时落库的非 NULL 哨兵（防前端「全有或全无」gate 把整侧打回实时风暴）。 */
+    public static final String CARD_VALUE_FAILED_SENTINEL = "{\"tabs\":[],\"__cardValueFailed\":true}";
+
+    private static String orSentinel(String built) {
+        return (built == null || built.isBlank()) ? CARD_VALUE_FAILED_SENTINEL : built;
+    }
+
     @Inject
     EntityManager em;
 
@@ -482,9 +489,15 @@ public class CardSnapshotService {
             // ── Pass2:一次性赋托管实体 4 字段(中间零查询)→ commit 单次 flush,P1 batch 合并 N 条 UPDATE ──
             OffsetDateTime now = OffsetDateTime.now();
             for (QuotationLineItem li : lines) {
-                li.quoteCardValues = quoteVals.get(li.id);
+                // build 确定性失败(null)→ 落非 NULL 哨兵,而非 NULL：前端「全有或全无」gate 不被打回实时风暴,
+                // 且 ensureCardValues 的 IS NULL 谓词下次不再重选该行(自愈、不无限重算)。失败非静默——warn 记下哪侧。
+                if (quoteVals.get(li.id) == null)
+                    LOG.warnf("[cardvalues-sentinel] quote build 失败 line=%s → 落失败哨兵", li.id);
+                if (costingVals.containsKey(li.id) && costingVals.get(li.id) == null)
+                    LOG.warnf("[cardvalues-sentinel] costing build 失败 line=%s → 落失败哨兵", li.id);
+                li.quoteCardValues = orSentinel(quoteVals.get(li.id));
                 li.quoteValuesAt = now;
-                if (costingVals.containsKey(li.id)) li.costingCardValues = costingVals.get(li.id);
+                if (costingVals.containsKey(li.id)) li.costingCardValues = orSentinel(costingVals.get(li.id));
                 li.cardSnapshotAt = now;
             }
         } finally {
