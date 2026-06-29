@@ -152,6 +152,17 @@
 - **预估规模**：S（1-2 天）
 - **验收要点**：无缺值时不发 warm；有缺值时发且只发一次；不回归打开秒开。
 
+### [BL-0014] 核价单彻底冻结残留 live 侧信道（防 V6/主数据 republish 漂移）
+- **优先级**：P2
+- **来源**：`docs/superpowers/specs/2026-06-29-核价单表与报价单核价单状态机重构-design.md` v3 §0/§5.3/§11（务实版接受残留）+ 第二轮 cpq-architect 聚焦评审 N3（焦点一：§5.2"唯一 live 缺口"不成立，实测 4 条 live 侧信道）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-06-29
+- **背景**：第一期"务实版真冻结"只冻结构（`frozen_dto` 含 enrich 后 componentData + gvDefs）+ 依赖既有 costing 卡片/Excel 零计算快照冻值。残留 3 条 live 侧信道——`usePathFormulaCache` 仍 live 求值**未被卡片快照覆盖的**少数 path 单元、`useConfigTemplates`（LIST_FORMULA 配置模板）、比对视图 `comparisonTags`——仅在「模板 / 配置模板 / 全局变量 / 对比标签 / V6 底层主数据 **republish**」时漂移，**不被报价单重做触发**（验收#5 照过）。用户从未提出该边角，第一期接受之以消除 N1（两侧 path-cache 捕获互覆盖）/ N2（非 wizard 提交入口不带 cache）两个脆弱点。
+- **范围**：若未来确有审计强需求（历史核价单连 V6/主数据漂移也要 1:1 回看），补：①提交时捕获并冻结 path-cache（**取 quote+costing 两侧 `usePathFormulaCache` 返回值的并集**，避第二轮 N1）②冻结 config-template 值③冻结 comparisonTags 元数据；工作台冻结模式短路对应 live 调用。
+- **依赖**：无（独立增强，建立在第一期 `frozen_dto` 之上）。
+- **预估规模**：M（3-5 天）
+- **验收要点**：模板/GV/V6 republish 后打开历史核价单，path 单元/LIST_FORMULA/比对分组仍是提交时值；工作台冻结模式 `batch-evaluate` 请求 0 次。
+
 ---
 
 ## 已完成
