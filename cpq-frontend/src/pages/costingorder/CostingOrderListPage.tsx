@@ -100,8 +100,7 @@ const CostingOrderListPage: React.FC = () => {
         return true;
       },
       onClick: (rows) => {
-        // TODO(T7): 改跳 /quotations/${rows[0].quotationId}/costing-review
-        navigate(`/quotations/${rows[0].quotationId}`);
+        navigate(`/quotations/${rows[0].quotationId}/costing-review`);
       },
     },
     {

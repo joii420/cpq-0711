@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Button, Card, Col, Collapse, Descriptions, Drawer, Form, Input,
-  Popconfirm, Row, Segmented, Space, Spin, Table, Tabs, Tag, DatePicker,
+  Popconfirm, Row, Space, Spin, Table, Tabs, Tag, DatePicker,
   Checkbox, Typography, message,
 } from 'antd';
 import {
@@ -13,22 +13,15 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { quotationService } from '../../services/quotationService';
 import { quotationSnapshotService } from '../../services/quotationSnapshotService';
 import { boundGlobalVariableService } from '../../services/boundGlobalVariableService';
-import { globalVariableService } from '../../services/globalVariableService';
-import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 import { useAuthStore } from '../../stores/authStore';
-import ReadonlyProductCard from './ReadonlyProductCard';
-import ReadonlyExcelView from './ReadonlyExcelView';
-import ReadonlyComparison from './ReadonlyComparison';
 import CopyQuotationDrawer from './CopyQuotationDrawer';
-import { usePathFormulaCache } from './usePathFormulaCache';
-import { enrichComponentData } from './enrichComponentData';
-import type { LineItem } from './QuotationStep2';
+import ProductDetailViews from './ProductDetailViews';
 import SnapshotTab from './components/SnapshotTab';
 import BoundGlobalVariablesTab from './components/BoundGlobalVariablesTab';
 import type { SubmissionSnapshot } from '../../types/quotation-snapshot';
 import dayjs from 'dayjs';
 
-const { Title, Text } = Typography;
+const { Title } = Typography;
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   DRAFT: { label: '草稿', color: 'default' },
@@ -38,6 +31,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   ACCEPTED: { label: '已接受', color: 'green' },
   REJECTED: { label: '已退回', color: 'error' },
   EXPIRED: { label: '已过期', color: 'warning' },
+  COSTING_REJECTED: { label: '核价驳回', color: 'error' },
 };
 
 const approvalActionMap: Record<string, { label: string; color: string }> = {
@@ -87,63 +81,9 @@ const QuotationDetail: React.FC = () => {
   const [snapshotLoading, setSnapshotLoading] = useState(false);
 
   // ----------------------------------------------------------------
-  // 产品明细区两级视图切换
-  // ----------------------------------------------------------------
-  const [mainTab, setMainTab] = useState<'quote' | 'costing' | 'comparison'>('quote');
-  const [viewType, setViewType] = useState<'card' | 'excel'>('card');
-
-  // ----------------------------------------------------------------
   // B3：引用数据 Tab 可见性（无 GV 绑定时自动隐藏）
   // ----------------------------------------------------------------
   const [hasGvBindings, setHasGvBindings] = useState(false);
-
-  // ----------------------------------------------------------------
-  // B-GV-2 修复: 动态 key 全局变量定义字典，传给 ReadonlyProductCard 供 FORMULA 字段求值
-  // ----------------------------------------------------------------
-  const [gvDefs, setGvDefs] = useState<Record<string, GlobalVariableDefinition>>({});
-  useEffect(() => {
-    globalVariableService.list()
-      .then((res: any) => {
-        const arr: GlobalVariableDefinition[] = Array.isArray(res) ? res
-          : Array.isArray(res?.data) ? res.data
-          : [];
-        const map: Record<string, GlobalVariableDefinition> = {};
-        for (const d of arr) { if (d?.code) map[d.code] = d; }
-        setGvDefs(map);
-      })
-      .catch(() => setGvDefs({}));
-  }, []);
-
-  // ----------------------------------------------------------------
-  // 任务2: enriched lineItems —— 供 usePathFormulaCache 预热 _globalPathCache。
-  // 详情页打开时 _globalPathCache 是空的（编辑页的 cache 不跨路由），
-  // 需要先把 lineItems enrich（补 fields/formulas），hook 才能扫到 path token 并预热。
-  // ----------------------------------------------------------------
-  const [enrichedLineItems, setEnrichedLineItems] = useState<LineItem[]>([]);
-  useEffect(() => {
-    if (!quotation?.lineItems?.length) {
-      setEnrichedLineItems([]);
-      return;
-    }
-    let cancelled = false;
-    Promise.all(
-      (quotation.lineItems as any[]).map(async (li: any) => {
-        if (!li.templateId) return li as LineItem;
-        const enrichedComps = await enrichComponentData(li.templateId, li.componentData || []);
-        return { ...li, componentData: enrichedComps } as LineItem;
-      }),
-    ).then((result) => {
-      if (!cancelled) setEnrichedLineItems(result);
-    }).catch(() => {
-      if (!cancelled) setEnrichedLineItems([]);
-    });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quotation?.id, quotation?.lineItems?.length]);
-
-  // 触发 path 公式缓存预热（写 _globalPathCache 模块级，ReadonlyProductCard 的
-  // evaluateExpression 调用会在 path/global_variable case 里直接命中缓存）
-  usePathFormulaCache(enrichedLineItems, quotation?.customerId, gvDefs);
 
   // ----------------------------------------------------------------
   // Phase 4 #21：提交按钮
@@ -442,87 +382,8 @@ const QuotationDetail: React.FC = () => {
             </Descriptions>
           </Card>
 
-          {/* Line Items — 两级视图切换：报价/核价/比对 × 卡片/Excel */}
-          <Card title="产品明细" style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
-              <Segmented
-                size="small"
-                options={[
-                  { label: '报价单', value: 'quote' },
-                  { label: '核价单', value: 'costing' },
-                  { label: '比对视图', value: 'comparison' },
-                ]}
-                value={mainTab}
-                onChange={v => setMainTab(v as 'quote' | 'costing' | 'comparison')}
-              />
-              {mainTab !== 'comparison' && (
-                <Segmented
-                  size="small"
-                  options={[
-                    { label: '产品卡片', value: 'card' },
-                    { label: 'Excel 视图', value: 'excel' },
-                  ]}
-                  value={viewType}
-                  onChange={v => setViewType(v as 'card' | 'excel')}
-                />
-              )}
-            </div>
-            {(() => {
-              const visible = (quotation.lineItems || []).filter((li: any) => li.compositeType !== 'PART');
-              if (visible.length === 0) return <div style={{ textAlign: 'center', padding: 32, color: '#999' }}>暂无产品</div>;
-
-              if (mainTab === 'comparison') {
-                return (
-                  <ReadonlyComparison
-                    quotationId={quotation.id}
-                    lineItems={visible}
-                    quoteColumns={quotation.quoteExcelColumns}
-                    costingColumns={quotation.costingExcelColumns}
-                  />
-                );
-              }
-              if (viewType === 'excel') {
-                return (
-                  <ReadonlyExcelView
-                    lineItems={visible}
-                    side={mainTab === 'costing' ? 'COSTING' : 'QUOTE'}
-                    columns={mainTab === 'costing' ? quotation.costingExcelColumns : quotation.quoteExcelColumns}
-                  />
-                );
-              }
-              return (
-                <div className="qt-products-list">
-                  {visible.map((li: any, idx: number) => (
-                    <ReadonlyProductCard
-                      key={li.id || idx}
-                      lineItem={li}
-                      index={idx}
-                      quotationId={quotation.id}
-                      quotationStatus={quotation.status}
-                      customerId={quotation.customerId}
-                      globalVariableDefs={gvDefs}
-                      side={mainTab === 'costing' ? 'COSTING' : 'QUOTE'}
-                      quoteCardStructure={quotation.quoteCardStructure ?? null}
-                      costingCardStructure={quotation.costingCardStructure ?? null}
-                    />
-                  ))}
-                </div>
-              );
-            })()}
-            {mainTab === 'quote' && viewType === 'card' && (
-              <Row justify="end" style={{ marginTop: 16 }}>
-                <Col>
-                  <Space direction="vertical" align="end">
-                    <Text>原价合计：<Text strong>¥{Number(quotation.originalAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</Text></Text>
-                    <Text>折扣率：<Text strong>{quotation.finalDiscountRate}%</Text></Text>
-                    <Text style={{ fontSize: 16 }}>
-                      报价总金额：<Text strong style={{ fontSize: 18, color: '#c00' }}>¥{Number(quotation.totalAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</Text>
-                    </Text>
-                  </Space>
-                </Col>
-              </Row>
-            )}
-          </Card>
+          {/* 产品明细 — 两级视图切换（抽至 ProductDetailViews，反 AP-50） */}
+          <ProductDetailViews quotation={quotation} />
 
           {/* Approval History */}
           {quotation.approvalHistory && quotation.approvalHistory.length > 0 && (
@@ -621,7 +482,6 @@ const QuotationDetail: React.FC = () => {
               {status === 'SUBMITTED' && (() => {
                 const isAssigned = user?.id === quotation.assignedApproverId;
                 const isAdmin = user?.role === 'SYSTEM_ADMIN';
-                const isCreator = user?.id === quotation.salesRepId;
                 return (
                   <>
                     {(isAssigned || isAdmin) && (
@@ -648,11 +508,6 @@ const QuotationDetail: React.FC = () => {
                         <Button disabled icon={<CheckCircleOutlined />} title="该报价单不在您的审批范围内">通过</Button>
                         <Button disabled icon={<CloseCircleOutlined />} title="该报价单不在您的审批范围内">退回</Button>
                       </>
-                    )}
-                    {isCreator && (
-                      <Popconfirm title="撤回后报价单将回到草稿状态，需重新提交审批。是否继续？" onConfirm={handleWithdraw}>
-                        <Button loading={actionLoading}>撤回</Button>
-                      </Popconfirm>
                     )}
                   </>
                 );
@@ -684,6 +539,23 @@ const QuotationDetail: React.FC = () => {
                   if (quotation.expiryDate) extendForm.setFieldValue('newExpiryDate', dayjs(quotation.expiryDate));
                   setExtendDrawerOpen(true);
                 }}>延期</Button>
+              )}
+
+              {/* ----------------------------------------------------------------
+                  撤回：SUBMITTED / COSTING_REJECTED / APPROVED 均可；
+                  创建人（salesRepId）或管理员（SYSTEM_ADMIN / PRICING_MANAGER）可操作
+              ---------------------------------------------------------------- */}
+              {['SUBMITTED', 'COSTING_REJECTED', 'APPROVED'].includes(status) &&
+                (user?.id === quotation.salesRepId ||
+                  ['SYSTEM_ADMIN', 'PRICING_MANAGER'].includes(user?.role ?? '')) && (
+                <Popconfirm
+                  title="撤回后报价单将回到草稿状态，需重新提交审批。是否继续？"
+                  onConfirm={handleWithdraw}
+                  okText="确认撤回"
+                  cancelText="取消"
+                >
+                  <Button loading={actionLoading}>撤回</Button>
+                </Popconfirm>
               )}
 
               {/* 通用操作 */}

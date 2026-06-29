@@ -27,6 +27,7 @@ import PricingStrategy from '../pages/pricing/PricingStrategy';
 import QuotationList from '../pages/quotation/QuotationList';
 import QuotationWizard from '../pages/quotation/QuotationWizard';
 import QuotationDetail from '../pages/quotation/QuotationDetail';
+import CostingReviewPage from '../pages/quotation/CostingReviewPage';
 import ApprovalRuleManagement from '../pages/system/ApprovalRuleManagement';
 import NotificationList from '../pages/system/NotificationList';
 import OperationLogList from '../pages/system/OperationLogList';
@@ -105,6 +106,7 @@ const router = createBrowserRouter([
       { path: 'quotations/new', element: <QuotationWizard /> },
       { path: 'quotations/:id', element: <QuotationDetail /> },
       { path: 'quotations/:id/edit', element: <QuotationWizard /> },
+      { path: 'quotations/:id/costing-review', element: <CostingReviewPage /> },
       { path: 'materials', element: <InternalMaterialManagement /> },
       { path: 'import-history', element: <ImportHistoryList /> },
       { path: 'product-categories', element: <ProductCategoryManagement /> },
