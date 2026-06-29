@@ -2672,6 +2672,21 @@ v_costing_exchange_rate[from_currency='CNY' AND to_currency='USD'].costing_rate
 | **验证** | 前端 173 测试(序列化/矩阵/引擎)+ tsc 0;后端 78 测试(FormulaCalculator*/CardSnapshot*/validator);cross-tab-cases.json 前后端同夹具锁引擎一致;命门0 `CardSnapshotDryRunParityTest` 螺丝行 80 逐行对拍绿 |
 | **遗留 follow-up** | ① v6-N 草稿改行键差异化未单独断言(机制走通,受 @TestTransaction/readonly 约束;driver-expand 实路由 RefreshCardSnapshotTest 覆盖);② 同 cid 多实例 injectDraftFormula 取首个,sortOrder 精确定位留 v6-O |
 
+### 9.21 v4.3(2026-06-29)— 核价管理改为「财务核价工作台」(第一期)
+
+> 设计 `docs/superpowers/specs/2026-06-29-核价管理财务核价工作台-design.md`(v3 分期);计划 `docs/superpowers/plans/2026-06-29-核价管理财务核价工作台-第一期.md`。
+
+| 决策 | 内容 |
+|---|---|
+| **定位** | 「核价管理」菜单(原手动料号级核价单 CostingSummary,**废弃**)改为**财务核价审批节点**:报价单提交审批→进财务角色队列→财务在列表/只读核价工作台复核后**整单**核价通过/驳回 |
+| **审批流** | 提交审批(SUBMITTED=待核价)→核价审批(财务)→已审核(APPROVED);驳回→**COSTING_REJECTED**(新增状态);〔流程审批·后期接流程引擎〕;**财务=当前唯一审批节点** |
+| **角色队列** | 任一 财务/系统管理员 可操作待核价单,**不用 assignedApproverId 指派**;`PRICING_MANAGER` 显示名→"财务";核价管理菜单去 SALES_MANAGER(仅财务+管理员) |
+| **撤回** | 统一为**销售一步直接撤回**(废弃两步申请-审批流程):SUBMITTED/COSTING_REJECTED/APPROVED→DRAFT + 解冻(清提交快照/SQL 闭包);排除 SENT/ACCEPTED(涉客户累计金额,放后续) |
+| **工作台** | 独立路由 `/quotations/:id/costing-review`,**复用详情页只读两级视图**(报价/核价/比对×卡片/Excel,抽共享 ProductDetailViews 反 AP-50);财务+待核价 时叠加顶部通过/驳回;列表亦可通过/批量驳回 |
+| **货币** | 列默认 **CNY**(系统暂无报价单级币种;币种切换功能=后续) |
+| **第二期(未做)** | 财务**切料号版本重算子料号调价**:依赖"版本感知 BOM 闭包"前置工程(当前 BomClosureService 硬编码 is_current 不吃版本、核价卡片 expand 传 partVersion=null);核价单独立快照 + revision + 覆盖读取层下沉(导出/列表/比对/total 多路绕 DTO) |
+| **验证** | 后端 test-compile 0 + 核价 3 测试全绿(submit建单/角色队列通过驳回/撤回解冻);前端 tsc 0;合并 master 后 E2E quotation-detail-readonly-views 2 passed(AP-50 抽取无回归)+ e2e-withdraw-02 一步撤回 2 passed |
+
 ### 9.8 关键设计决策追溯
 
 #### Q1:为何不引入 Drools?
