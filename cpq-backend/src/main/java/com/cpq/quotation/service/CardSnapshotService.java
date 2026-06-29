@@ -625,6 +625,60 @@ public class CardSnapshotService {
     }
 
     /**
+     * P3 lazy-cardvalues(2026-06-29):懒算整单卡片值。首存只算卡片值的快路径下,新行可能留 NULL 卡片值;
+     * 打开报价单 / 切版本 / 提交前调本方法补算缺失行的 {@code quoteCardValues}/{@code costingCardValues} 并落库。
+     *
+     * <p><b>单飞(single-flight)纪律</b>:进方法<b>第一件事</b>就 {@code pg_try_advisory_xact_lock}(key=quotationId
+     * 的 md5 前 16 hex → bigint)。拿不到锁=另一并发 warm 正在飞 → 直接返回 {@code -1}(warming-in-progress),
+     * 由调用方决定等待/重试,<b>不重复补算</b>。<b>加锁必须早于</b>下面"缺失行 SELECT" —— 否则两事务都读到 NULL
+     * 会双重补算(这是顺序正确性约束,非可调换)。
+     *
+     * <p><b>缺失谓词</b>:仅用 {@code IS NULL}(列是 jsonb,{@code btrim(jsonb)} 会抛错——原始 bug);核价侧仅当
+     * 该单挂了核价模板({@code hasCostingTpl})时才纳入判断。复用 {@link #precomputeCostingDriverUnion} +
+     * {@link #precomputeCardValuesPrefetch} + {@link #snapshotNewLinesCardValues}(与"首存就算"同款 build → 逐位等价)。
+     *
+     * @return 实际补算(落库)的行数;0=全部已就绪(无需算);-1=另一并发 warm 在飞(本次未补算)。
+     */
+    @Transactional
+    public int ensureCardValues(UUID quotationId) {
+        if (quotationId == null) return 0;
+        // 单飞:加锁必须早于缺失行 SELECT,否则两事务都读 NULL → 双重补算
+        Boolean locked = (Boolean) em.createNativeQuery(
+                "SELECT pg_try_advisory_xact_lock( ('x'||substr(md5(:q),1,16))::bit(64)::bigint )")
+            .setParameter("q", quotationId.toString()).getSingleResult();
+        if (locked == null || !locked) return -1;   // warm 在飞
+
+        Quotation q = Quotation.findById(quotationId);
+        if (q == null) return 0;
+        boolean hasCostingTpl = q.costingCardTemplateId != null;
+
+        String sql = "SELECT id FROM quotation_line_item WHERE quotation_id = :q " +
+            "AND ( quote_card_values IS NULL" +
+            (hasCostingTpl ? " OR costing_card_values IS NULL" : "") + " )";
+        @SuppressWarnings("unchecked")
+        java.util.List<Object> rawIds = em.createNativeQuery(sql)
+            .setParameter("q", quotationId).getResultList();
+        java.util.List<UUID> missing = new java.util.ArrayList<>();
+        for (Object o : rawIds) { UUID u = asUuid(o); if (u != null) missing.add(u); }
+        if (missing.isEmpty()) return 0;
+
+        java.util.List<UUID> allIds = QuotationLineItem.<QuotationLineItem>list("quotationId", quotationId)
+            .stream().map(li -> li.id).collect(java.util.stream.Collectors.toList());
+        var union = precomputeCostingDriverUnion(quotationId);
+        var prefetch = precomputeCardValuesPrefetch(quotationId, allIds);
+        snapshotNewLinesCardValues(quotationId, missing, union, prefetch);
+        LOG.infof("[ensure-cardvalues] quotation=%s 补算 %d 行", quotationId, missing.size());
+        return missing.size();
+    }
+
+    /** native SELECT 返回的 id 列(可能 UUID 或 String)归一化为 UUID;不可解析返 null。 */
+    private static UUID asUuid(Object o) {
+        if (o == null) return null;
+        if (o instanceof UUID u) return u;
+        try { return UUID.fromString(o.toString()); } catch (Exception e) { return null; }
+    }
+
+    /**
      * P2-C4 整单核价 driver union 预取:对该报价单全部核价行求各 recursive 组件 partSet 并集,每个
      * <b>eligible</b>(recursive + 非composite + 无spineKeys + 无lineItemId,见
      * {@link ComponentDriverService#eligibleForBomUnion})组件 <b>一次</b> {@code expandForPartSet(union)}
