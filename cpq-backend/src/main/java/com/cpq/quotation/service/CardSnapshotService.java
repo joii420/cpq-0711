@@ -637,6 +637,9 @@ public class CardSnapshotService {
         return computed;
     }
 
+    /** ensureCardValues 返回值：未取到单飞锁（另一 warm 在飞），调用方应返回轻量 warming 状态。 */
+    public static final int WARMING_IN_PROGRESS = -1;
+
     /**
      * P3 lazy-cardvalues(2026-06-29):懒算整单卡片值。首存只算卡片值的快路径下,新行可能留 NULL 卡片值;
      * 打开报价单 / 切版本 / 提交前调本方法补算缺失行的 {@code quoteCardValues}/{@code costingCardValues} 并落库。
@@ -650,7 +653,7 @@ public class CardSnapshotService {
      * 该单挂了核价模板({@code hasCostingTpl})时才纳入判断。复用 {@link #precomputeCostingDriverUnion} +
      * {@link #precomputeCardValuesPrefetch} + {@link #snapshotNewLinesCardValues}(与"首存就算"同款 build → 逐位等价)。
      *
-     * @return 实际补算(落库)的行数;0=全部已就绪(无需算);-1=另一并发 warm 在飞(本次未补算)。
+     * @return 实际补算(落库)的行数;0=全部已就绪(无需算);{@link #WARMING_IN_PROGRESS}(-1)=另一并发 warm 在飞(本次未补算)。
      */
     @Transactional
     public int ensureCardValues(UUID quotationId) {
@@ -659,7 +662,7 @@ public class CardSnapshotService {
         Boolean locked = (Boolean) em.createNativeQuery(
                 "SELECT pg_try_advisory_xact_lock( ('x'||substr(md5(:q),1,16))::bit(64)::bigint )")
             .setParameter("q", quotationId.toString()).getSingleResult();
-        if (locked == null || !locked) return -1;   // warm 在飞
+        if (locked == null || !locked) return WARMING_IN_PROGRESS;   // warm 在飞
 
         Quotation q = Quotation.findById(quotationId);
         if (q == null) return 0;

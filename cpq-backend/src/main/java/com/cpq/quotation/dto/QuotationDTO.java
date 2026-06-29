@@ -95,6 +95,9 @@ public class QuotationDTO {
     /** 漂移明细列表（hasDrift=true 时非空）*/
     public List<DriftedRecordDTO> driftedRecords;
 
+    /** lazy-cardvalues：warm 在飞（未取到单飞锁）时为 true，前端据此显示 spinner/稍后重试。默认 false。 */
+    public boolean cardValuesWarming = false;
+
     public static QuotationDTO from(Quotation q) {
         QuotationDTO dto = new QuotationDTO();
         dto.id = q.id;

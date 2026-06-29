@@ -312,6 +312,21 @@ public class QuotationResource {
         return ApiResponse.success(quotationService.getById(id));
     }
 
+    /** P3 lazy-cardvalues：懒算并落库整单卡片值（quote/costing card values）。warm 与打开兜底复用。 */
+    @POST
+    @Path("/{id}/ensure-card-values")
+    public ApiResponse<QuotationDTO> ensureCardValues(@PathParam("id") UUID id) {
+        int r = cardSnapshotService.ensureCardValues(id);
+        if (r == com.cpq.quotation.service.CardSnapshotService.WARMING_IN_PROGRESS) {
+            // warm 在飞（未取到单飞锁）：返回轻量 warming 状态，不阻塞、不重算
+            QuotationDTO dto = new QuotationDTO();
+            dto.cardValuesWarming = true;
+            return ApiResponse.success(dto);
+        }
+        em.clear();                          // 驱逐陈旧 L1，让 getById 读新值
+        return ApiResponse.success(quotationService.getById(id));
+    }
+
     /**
      * 编辑回写报价卡片单元格（报价单整份快照 Phase 2 §6，替代旧 autosave 写 row_data）。
      * body: {componentId, rowKey, fieldName, value}。写 editRows + 重算 formulaResults/报价 Excel；核价不动。
