@@ -815,7 +815,7 @@ public class QuotationService {
         java.util.List<com.cpq.quotation.service.rowkey.RowKeyUniquenessService.LineItemComps> rowsForCheck =
             new java.util.ArrayList<>();
         for (QuotationLineItem li : lineItems) {
-            String label = li.productNameSnapshot != null ? li.productNameSnapshot
+            String productName = li.productNameSnapshot != null ? li.productNameSnapshot
                          : (li.productPartNoSnapshot != null ? li.productPartNoSnapshot : "明细");
             java.util.List<com.cpq.quotation.service.rowkey.RowKeyUniquenessService.CompRows> comps =
                 new java.util.ArrayList<>();
@@ -826,16 +826,20 @@ public class QuotationService {
                 comps.add(new com.cpq.quotation.service.rowkey.RowKeyUniquenessService.CompRows(
                     cd.componentId.toString(), cd.snapshotRows, cd.rowData));
             }
-            rowsForCheck.add(new com.cpq.quotation.service.rowkey.RowKeyUniquenessService.LineItemComps(label, comps));
+            rowsForCheck.add(new com.cpq.quotation.service.rowkey.RowKeyUniquenessService.LineItemComps(
+                li.id.toString(), productName, li.productPartNoSnapshot, comps));
         }
-        java.util.List<com.cpq.quotation.service.rowkey.RowKeyConflict> conflicts =
+        java.util.List<com.cpq.quotation.service.rowkey.RowKeyConflictDTO> conflicts =
             rowKeyUniquenessService.collectConflicts(quoteCardStructureJson, rowsForCheck);
         if (!conflicts.isEmpty()) {
             StringBuilder sb = new StringBuilder("行键重复，无法提交：");
-            for (com.cpq.quotation.service.rowkey.RowKeyConflict c : conflicts) {
-                sb.append("\n· ").append(c.describe());
+            for (com.cpq.quotation.service.rowkey.RowKeyConflictDTO c : conflicts) {
+                String rows = c.rowIndices().stream().map(String::valueOf)
+                        .reduce((a, b) -> a + "," + b).orElse("");
+                sb.append("\n· 组件「").append(c.tabName()).append("」行键 [")
+                  .append(c.rowKey()).append("] 在第 ").append(rows).append(" 行重复");
             }
-            throw new BusinessException(422, sb.toString());
+            throw new com.cpq.common.exception.RowKeyConflictException(sb.toString(), conflicts);
         }
 
         for (QuotationLineItem li : lineItems) {

@@ -80,10 +80,18 @@ class SubmitRowKeyUniquenessQuarkusTest {
         cd.rowData = "[]";
         cd.persist();
 
-        BusinessException ex = assertThrows(BusinessException.class,
-            () -> quotationService.submit(q.id, null));
+        com.cpq.common.exception.RowKeyConflictException ex =
+            assertThrows(com.cpq.common.exception.RowKeyConflictException.class,
+                () -> quotationService.submit(q.id, null));
         assertEquals(422, ex.getCode());
         assertTrue(ex.getMessage().contains("行键重复"), "报错应含『行键重复』: " + ex.getMessage());
         assertTrue(ex.getMessage().contains("P1||Cu"), "报错应含冲突组合键 P1||Cu: " + ex.getMessage());
+        assertFalse(ex.getConflicts().isEmpty(), "conflicts 不应为空");
+        var c = ex.getConflicts().get(0);
+        assertEquals(compId.toString(), c.componentId());
+        assertEquals("投料", c.tabName());
+        assertEquals(li.id.toString(), c.lineItemId());
+        assertEquals("P1||Cu", c.rowKey());
+        assertEquals(java.util.List.of(1, 2), c.rowIndices());
     }
 }
