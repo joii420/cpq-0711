@@ -104,7 +104,7 @@ const router = createBrowserRouter([
       { path: 'quotations/new', element: <QuotationWizard /> },
       { path: 'quotations/:id', element: <QuotationDetail /> },
       { path: 'quotations/:id/edit', element: <QuotationWizard /> },
-      { path: 'quotations/:id/costing-review', element: <CostingReviewPage /> },
+      { path: 'costing-orders/:coid/review', element: <CostingReviewPage /> },
       { path: 'materials', element: <InternalMaterialManagement /> },
       { path: 'import-history', element: <ImportHistoryList /> },
       { path: 'product-categories', element: <ProductCategoryManagement /> },

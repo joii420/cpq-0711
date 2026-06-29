@@ -58,6 +58,12 @@ interface ReadonlyProductCardProps {
   side?: 'QUOTE' | 'COSTING';
   /** 核价卡片结构快照（顶层，提供 tabs 结构 + rowKeyFields，用于结构驱动组装 componentData） */
   costingCardStructure?: CardStructure | null;
+  /**
+   * frozen 模式（核价工作台读冻结副本）：
+   * QUOTE 分支用 buildComponentDataFromStructure 离线组装，不发 /templates 请求。
+   * COSTING 分支本就离线，frozen 对其无影响。
+   */
+  frozen?: boolean;
 }
 
 function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
@@ -165,6 +171,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   quoteCardStructure,
   side: sideProp,
   costingCardStructure,
+  frozen,
 }) => {
   const side = sideProp ?? 'QUOTE';
   const isCosting = side === 'COSTING';
@@ -197,6 +204,13 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
       setLoading(false);
       return;
     }
+    // QUOTE frozen 模式：用 quoteCardStructure 离线组装，不发 /templates 请求
+    if (frozen && quoteCardStructure) {
+      const built = buildComponentDataFromStructure(quoteCardStructure, lineItem.componentData || []);
+      setComponents(built);
+      setLoading(false);
+      return;
+    }
     // QUOTE: 异步 enrich（现状不变）
     const enrich = async () => {
       const rawCompData: any[] = lineItem.componentData || [];
@@ -215,7 +229,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
       }
     };
     enrich();
-  }, [lineItem, isCosting, costingCardStructure]);
+  }, [lineItem, isCosting, costingCardStructure, frozen, quoteCardStructure]);
 
   // Bug C 续 (2026-05-20): 引入 useDriverExpansions，与编辑页渲染行数对齐。
   // 问题根因：enrichComponentData 直接返回 saved.rows（DB 持久化行数，历史上可能含多余行），
