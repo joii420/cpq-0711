@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isComputedExcelColumn } from './LinkedExcelView';
+import { isComputedExcelColumn } from './excelCellFormat';
 
 describe('isComputedExcelColumn', () => {
   it('TAB_JOIN_FORMULA is computed (core regression guard)', () => {

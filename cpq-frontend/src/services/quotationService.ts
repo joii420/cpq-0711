@@ -96,6 +96,9 @@ export interface ExcelValues {
   rows: Array<Record<string, any>>;
 }
 
+/** getById 捎回的有效 Excel 列（snake_case + display_format），可直接当 CostingTemplateColumn 用。 */
+export type ExcelEffectiveColumn = import('./costingTemplateService').CostingTemplateColumn;
+
 /** getById 顶层附带的 4 份结构快照（JsonNode → 已解析对象，可能为 null）。 */
 export interface QuotationSnapshotStructures {
   quoteCardStructure?: CardStructure | null;

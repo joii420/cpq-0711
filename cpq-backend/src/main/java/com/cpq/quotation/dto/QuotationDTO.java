@@ -49,6 +49,10 @@ public class QuotationDTO {
     public com.fasterxml.jackson.databind.JsonNode costingCardStructure;
     public com.fasterxml.jackson.databind.JsonNode costingExcelStructure;
 
+    /** 详情页只读 Excel/比对所需：带 display_format 的有效列（snake_case），零值计算。 */
+    public java.util.List<java.util.Map<String, Object>> quoteExcelColumns;
+    public java.util.List<java.util.Map<String, Object>> costingExcelColumns;
+
     /**
      * 客户报价模板 ID(由 BasicDataImportV5ToQuotation 创建报价单时按
      * (customerId, categoryId) 自动匹配后写入)。

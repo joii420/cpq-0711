@@ -155,7 +155,40 @@ public class QuotationService {
         // Phase 2 渲染脱钩: 报价单级 4 份结构快照(从 quotation_view_structure 读填充)
         populateViewStructures(dto, id);
 
+        // 详情页只读 Excel/比对：把带 display_format 的有效列定义捎回（零值计算）
+        populateEffectiveExcelColumns(dto, q);
+
         return dto;
+    }
+
+    /**
+     * 填充报价/核价有效 Excel 列定义到 DTO（详情页只读 Excel/比对视图渲染用）。
+     * 调 ExcelViewService.getEffectiveColumns 仅读列结构，不做任何值计算。
+     * 任何异常（模板不存在/配置损坏）静默降级为 null，不阻断 getById。
+     */
+    private void populateEffectiveExcelColumns(QuotationDTO dto, Quotation q) {
+        try {
+            if (q.customerTemplateId != null) {
+                com.cpq.template.entity.Template qt =
+                        com.cpq.template.entity.Template.findById(q.customerTemplateId);
+                if (qt != null) {
+                    dto.quoteExcelColumns = excelViewService.getEffectiveColumns(qt);
+                }
+            }
+        } catch (Exception e) {
+            LOG.warnf("Failed to load quoteExcelColumns for quotation=%s: %s", q.id, e.getMessage());
+        }
+        try {
+            if (q.costingCardTemplateId != null) {
+                com.cpq.template.entity.Template ct =
+                        com.cpq.template.entity.Template.findById(q.costingCardTemplateId);
+                if (ct != null) {
+                    dto.costingExcelColumns = excelViewService.getEffectiveColumns(ct);
+                }
+            }
+        } catch (Exception e) {
+            LOG.warnf("Failed to load costingExcelColumns for quotation=%s: %s", q.id, e.getMessage());
+        }
     }
 
     /** Phase 2: 把 quotation_view_structure 的四份结构填进 DTO(渲染脱钩, 创建即冻)。 */
