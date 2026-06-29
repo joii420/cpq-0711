@@ -416,9 +416,22 @@ const QuotationDetail: React.FC = () => {
               {/* ---------------------------------------------------------------- */}
               {/* DRAFT：提交按钮（Phase 4 #21 增强）                               */}
               {/* ---------------------------------------------------------------- */}
+              {['DRAFT', 'COSTING_REJECTED'].includes(status) && (
+                <Button icon={<EditOutlined />} onClick={async () => {
+                  if (status === 'COSTING_REJECTED') {
+                    try {
+                      await quotationService.beginEdit(id!);
+                    } catch (e: any) {
+                      message.error(e.message || '转草稿失败');
+                      return;
+                    }
+                  }
+                  navigate(`/quotations/${id}/edit`);
+                }}>编辑</Button>
+              )}
+
               {status === 'DRAFT' && (
                 <>
-                  <Button icon={<EditOutlined />} onClick={() => navigate(`/quotations/${id}/edit`)}>编辑</Button>
                   <Popconfirm
                     title="提交后报价单进入审批流程，数据将被冻结快照。是否继续？"
                     onConfirm={handleSubmit}

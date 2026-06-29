@@ -110,10 +110,23 @@ const QuotationList: React.FC = () => {
       icon: <EditOutlined />,
       enabledWhen: (rows) => {
         if (rows.length !== 1) return '编辑一次只能选一行';
-        if (['ACCEPTED', 'EXPIRED'].includes(rows[0].status)) return '已接受/已过期的报价单不可编辑';
+        const s = rows[0].status;
+        if (['SUBMITTED', 'APPROVED'].includes(s)) return '请先撤回再编辑';
+        if (!['DRAFT', 'COSTING_REJECTED'].includes(s)) return '当前状态不可编辑';
         return true;
       },
-      onClick: (rows) => navigate(`/quotations/${rows[0].id}/edit`),
+      onClick: async (rows) => {
+        const row = rows[0];
+        if (row.status === 'COSTING_REJECTED') {
+          try {
+            await quotationService.beginEdit(row.id);
+          } catch (e: any) {
+            message.error(e.message || '转草稿失败');
+            return;
+          }
+        }
+        navigate(`/quotations/${row.id}/edit`);
+      },
     },
     {
       key: 'copy',
@@ -150,7 +163,8 @@ const QuotationList: React.FC = () => {
       icon: <RollbackOutlined />,
       enabledWhen: (rows) => {
         if (rows.length === 0) return false;
-        if (rows.some((r: any) => r.status !== 'SUBMITTED')) return '仅审批中的可撤回';
+        if (rows.some((r: any) => !['SUBMITTED', 'COSTING_REJECTED', 'APPROVED'].includes(r.status)))
+          return '仅待核价/已驳回/已审核可撤回';
         if (rows.some((r: any) => r.salesRepId !== user?.id)) return '只能撤回自己提交的报价单';
         return true;
       },
