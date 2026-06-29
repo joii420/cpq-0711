@@ -19,6 +19,39 @@
 - **依赖**：第一期 Plan 1b 落地（后端结构化返回 + Drawer + locate 联动）。
 - **验收要点**：编辑产生撞键时无需提交即出现红点；标记数与后端提交校验结果一致；不引入额外 batch-expand 风暴（守 AP-31/AP-37）。
 
+### [BL-0005] 第二期前置：版本感知 BOM 闭包展开（让切版本真正重算子料号）
+- **优先级**：P1
+- **来源**：`docs/superpowers/specs/2026-06-29-核价管理财务核价工作台-design.md` §0/§9（第二期前置工程）；cpq-architect 评审 B-1 + 主线穿透核验
+- **状态**：TODO（未排期）
+- **登记日期**：2026-06-29
+- **背景**：核价工作台"财务切料号版本→重算子料号"在当前引擎**不生效**——`BomClosureService.CLOSURE_SQL` 硬编码 `is_current=true`（`:71/:88`）、`compute()` 在 P1 显式忽略 `versionOverrides`（`:120-124`）；核价卡片 `expandTemplateDriverBaseRows` 传 `partVersion=null`（`CardSnapshotService.java:1631`）→ `ComponentDriverService.expand:402` `set(null)` 清空版本上下文。
+- **范围**：让 BOM 闭包支持按 `bom_version` 逐层迭代展开（注释所言"P2 走 Java 逐层迭代"）；把 `partVersion` 透传进核价卡片 expand 链路。先做最小验证（给某料号造两个版本，确认重算后子料号集合/值真变）。
+- **依赖**：无（独立后端工程，是 BL-0006 的前置）。
+- **预估规模**：L（1 周以上）
+- **验收要点**：切到另一 `bom_version` 后核价卡片的子料号集合与数据按该版本变化；不破坏默认 is_current 行为（现网无版本锁的单逐字节不变）。
+
+### [BL-0006] 第二期：核价单切版本调价主体（财务调价能力）
+- **优先级**：P1
+- **来源**：spec §9（第二期大纲）+ 12 轮 brainstorming 核心诉求"调价是常态"
+- **状态**：TODO（未排期）
+- **登记日期**：2026-06-29
+- **背景**：第一期只做只读复核+审批，财务**不能调价**。本条补上财务切版本调价：另存核价单版本、记录变更、单据总价随之重算，**不动报价单冻结快照**。
+- **范围**：新增 `costing_order_revision`（追加）+ `costing_order_line_snapshot`（逐行核价快照 + part_version_locked）；核价专用切版本端点（只重算核价侧改动卡片 + 单据总价 + 写 revision，允许 SUBMITTED+财务，不调 regenerateAllSnapshots）；并发 `SELECT FOR UPDATE costing_order`+seq 序列防竞态（评审 M-1）；line_snapshot 加 FK（M-4）；可编辑工作台外壳 `CostingReviewCardContainer`（持 lineItem state+角色门+切版本入口，内层仍纯只读 `ReadonlyProductCard` 反 AP-50，M-x1）+ 复活 `PartVersionDrawer`；单据总价口径锁定（含/不含 Step3 折扣，倾向复用 `lineDiscountService.recompute`，M-5）。
+- **依赖**：**BL-0005（版本感知 BOM 闭包）必须先就绪。**
+- **预估规模**：L
+- **验收要点**：财务切某料号版本→该卡片子料号/值 + 单据总价按新版本重算、写入核价单新 revision；报价单原始快照不变；重提延续最新 revision（spec §6.4）；并发切版本不丢改动（连跑两次结果一致）。
+
+### [BL-0007] 第二期：核价单覆盖读取层下沉（B-3，对外以核价单为准）
+- **优先级**：P1
+- **来源**：spec §9 + cpq-architect 评审 B-3
+- **状态**：TODO（未排期）
+- **登记日期**：2026-06-29
+- **背景**：第一期不切版本→核价单与报价单数据不分叉，故无需覆盖。第二期切版本后两者分叉，必须让"核价单最新 revision"在**所有读核价值/单据总价处**覆盖报价单原值，否则对外 PDF/Excel/邮件/比对/列表仍是报价原值。
+- **范围**：覆盖不能只在 `loadLineItems` DTO 一处——还含导出 `ExcelViewService.exportExcelView:753`、`QuotationExportService`（totalAmount `:193/206/380/382`）、核价表 `CostingSheetService:157-159`、列表、邮件。方案二选一：切版本时回写一份供导出读取的稳定位置；或建统一"读时取核价覆盖值"服务。
+- **依赖**：BL-0006（核价单 revision 已产生）。
+- **预估规模**：M（3-5 天）
+- **验收要点**：财务调价后，详情页核价视图/金额/对外 PDF·Excel·邮件/比对表 TOTAL/列表金额全部以核价单最新值为准；报价侧不受影响。
+
 ---
 
 ## P2
@@ -52,6 +85,28 @@
 - **范围**：仅在产品确认"撞键应自动消歧放行 vs 必须人工去重"后才定方案；**本期不动校验语义**（spec §4 已明确排除）。
 - **依赖**：需 `docs/superpowers/specs/2026-06-09-multi-subtotal-conditional-formula-design.md` §7/设计 E 的需求复核。
 - **验收要点**：先有书面需求结论再开 spec，不在 Plan 1b 内附带修改。
+
+### [BL-0008] 撤回扩到 SENT/ACCEPTED + 客户累计金额回退
+- **优先级**：P2
+- **来源**：`docs/superpowers/specs/2026-06-29-核价管理财务核价工作台-design.md` §7/§12（第一期撤回明确排除 SENT/ACCEPTED）+ 评审 M-2
+- **状态**：TODO（未排期）
+- **登记日期**：2026-06-29
+- **背景**：第一期一步撤回只覆盖 `SUBMITTED/COSTING_REJECTED/APPROVED`；`SENT/ACCEPTED` 涉及已对客户发出 + `accept()` 已累加 `customer.accumulated_amount`（无回退路径），风险高故第一期排除。
+- **范围**：撤回扩到 SENT/ACCEPTED；从 ACCEPTED 撤回须回退 `customer.accumulated_amount`（`QuotationService.accept():1623-1627` 的逆操作）；解冻须兼顾已发送态。
+- **依赖**：无（独立增强）。
+- **预估规模**：M（3-5 天）
+- **验收要点**：从 ACCEPTED 撤回后客户累计金额正确回退、无重复扣减；SENT 撤回不留发送残留；其余撤回行为不回归。
+
+### [BL-0009]（技术债）`QuotationWithdrawRequest` 残留实体清理
+- **优先级**：P2
+- **来源**：第一期 T5 收尾（废弃两步撤回时保留实体供 `delete()` 清理）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-06-29
+- **背景**：第一期废弃两步撤回 `QuotationWithdrawService`/`Resource`，但 `QuotationWithdrawRequest` 实体+DTO 保留，因 `QuotationService.delete()` 仍调 `QuotationWithdrawRequest.delete()` 清理关联（无 DB CASCADE）。该实体现已无任何写入方，属残留技术债。
+- **范围**：评估彻底移除 `QuotationWithdrawRequest` 实体/表/`delete()` 引用（或给 FK 加 DB CASCADE 后删）；确认无历史数据/外部依赖。
+- **依赖**：无。
+- **预估规模**：S（1-2 天）
+- **验收要点**：移除后 `delete()` 仍正常、无悬挂引用、无历史数据丢失风险。
 
 ---
 
