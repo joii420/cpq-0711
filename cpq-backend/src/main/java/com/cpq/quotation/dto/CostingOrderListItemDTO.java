@@ -20,6 +20,8 @@ public class CostingOrderListItemDTO {
     /** snapshot_customer_name 快照客户名 */
     public String customerName;
     public String submittedByName;
+    /** 货币码，当前系统统一为 CNY（人民币）*/
+    public String currency;
     /** 派生：待核价 / 核价驳回 / 核价通过 */
     public String status;
     /** costing_order.entered_costing_at */

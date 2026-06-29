@@ -112,6 +112,11 @@ class CostingOrderListTest {
         assertTrue(byId.containsKey(b), "列表中应包含 quotation b");
         assertEquals("待核价",  byId.get(a), "a 状态应为 待核价");
         assertEquals("核价通过", byId.get(b), "b 状态应为 核价通过（核价已批准仍可回看）");
+
+        // 货币码固定为 CNY
+        list.stream()
+            .filter(x -> x.quotationId.equals(a) || x.quotationId.equals(b))
+            .forEach(x -> assertEquals("CNY", x.currency, "货币码应为 CNY"));
     }
 
     // ── T2: 状态过滤 ──────────────────────────────────────────────────────────

@@ -2324,6 +2324,7 @@ public class QuotationService {
             d.quotationNumber = q.quotationNumber;
             d.customerName   = q.snapshotCustomerName;
             d.submittedByName = co.submittedBy != null ? userNameMap.get(co.submittedBy) : null;
+            d.currency       = "CNY"; // 当前系统统一人民币，per-part 多币种待后续演进
             d.status         = derived;
             d.createdAt      = co.enteredCostingAt;
             out.add(d);
