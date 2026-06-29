@@ -116,7 +116,7 @@ public class QuoteImportService {
                 SheetImportResult mr;
                 try {
                     mr = bomMerge.merge(matRows, asmRows, ctx);
-                    Log.infof("[v6import] QUOTE sheet=物料BOM+组成件BOM(合并) rows=%d/%d parse=%.0fms handle=%.0fms writer{%s}",
+                    Log.debugf("[v6import] QUOTE sheet=物料BOM+组成件BOM(合并) rows=%d/%d parse=%.0fms handle=%.0fms writer{%s}",
                         matRows.size(), asmRows.size(), parseMs, (System.nanoTime() - mergeT0) / 1e6,
                         com.cpq.basicdata.v6.versioning.VersionedV6Writer.profile().summary());
                 } catch (Exception ex) {
@@ -146,7 +146,7 @@ public class QuoteImportService {
                         long handleT0 = System.nanoTime();
                         r = h.handle(rows, ctx);
                         double handleMs = (System.nanoTime() - handleT0) / 1e6;
-                        Log.infof("[v6import] QUOTE sheet=%s rows=%d parse=%.0fms handle=%.0fms writer{%s}",
+                        Log.debugf("[v6import] QUOTE sheet=%s rows=%d parse=%.0fms handle=%.0fms writer{%s}",
                             h.sheetName(), rows.size(), parseMs, handleMs,
                             com.cpq.basicdata.v6.versioning.VersionedV6Writer.profile().summary());
                     }
@@ -172,7 +172,7 @@ public class QuoteImportService {
                 totalFailed += r.failedRows;
                 done++;
             }
-            Log.infof("[v6import] QUOTE TOTAL elapsed=%.0fms sheets=%d (含BOM合并步)",
+            Log.debugf("[v6import] QUOTE TOTAL elapsed=%.0fms sheets=%d (含BOM合并步)",
                 (System.nanoTime() - importT0) / 1e6, totalSteps);
         } catch (Exception e) {
             // 后台线程：解析/未知失败不抛出（无处可抛），落 FAILED 供前端轮询

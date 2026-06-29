@@ -97,7 +97,7 @@ public class PricingImportService {
                         r = h.handle(rows, ctx);
                         double handleMs = (System.nanoTime() - handleT0) / 1e6;
                         sumParseMs += parseMs; sumHandleMs += handleMs;
-                        Log.infof("[v6import] PRICING sheet=%s rows=%d parse=%.0fms handle=%.0fms writer{%s}",
+                        Log.debugf("[v6import] PRICING sheet=%s rows=%d parse=%.0fms handle=%.0fms writer{%s}",
                             h.sheetName(), rows.size(), parseMs, handleMs,
                             com.cpq.basicdata.v6.versioning.VersionedV6Writer.profile().summary());
                     }
@@ -110,7 +110,7 @@ public class PricingImportService {
                 totalSuccess += r.successRows;
                 totalFailed += r.failedRows;
             }
-            Log.infof("[v6import] PRICING TOTAL elapsed=%.0fms parseSum=%.0fms handleSum=%.0fms",
+            Log.debugf("[v6import] PRICING TOTAL elapsed=%.0fms parseSum=%.0fms handleSum=%.0fms",
                 (System.nanoTime() - importT0) / 1e6, sumParseMs, sumHandleMs);
         } catch (Exception e) {
             Log.error("Excel 解析失败", e);
