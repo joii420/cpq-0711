@@ -1240,28 +1240,35 @@ public class QuotationService {
         if (q == null) {
             throw new BusinessException(404, "Quotation not found: " + id);
         }
-        if (!"SUBMITTED".equals(q.status)) {
-            throw new BusinessException(400, "Only SUBMITTED quotations can be withdrawn");
+
+        java.util.Set<String> withdrawable = java.util.Set.of("SUBMITTED", "COSTING_REJECTED", "APPROVED");
+        if (!withdrawable.contains(q.status)) {
+            throw new BusinessException(400, "仅待核价/核价驳回/核价通过的单可撤回(SENT/ACCEPTED 不可)");
         }
-        if (!q.salesRepId.equals(currentUserId)) {
-            throw new BusinessException(403, "Only the creator can withdraw this quotation");
+        if (!q.salesRepId.equals(currentUserId) && !isFinanceOrAdmin(currentUserId)) {
+            throw new BusinessException(403, "仅创建人或管理员可撤回");
         }
 
+        unfreezeToDraft(q);
         q.status = "DRAFT";
         q.assignedApproverId = null;
-
-        QuotationApproval record = new QuotationApproval();
-        record.quotationId = id;
-        record.approverId = currentUserId;
-        record.action = "WITHDRAWN";
-        record.comment = "销售代表撤回";
-        record.actedAt = OffsetDateTime.now();
-        record.persist();
+        writeApproval(id, currentUserId, "WITHDRAWN", "撤回到草稿");
 
         LOG.infof("Withdrawn quotation id=%s number=%s by user=%s", id, q.quotationNumber, currentUserId);
         QuotationDTO dto = QuotationDTO.from(q);
         dto.lineItems = loadLineItems(id);
         return dto;
+    }
+
+    /**
+     * 回 DRAFT 统一解冻: 清提交快照 + SQL 视图闭包; total 留待下次重算。
+     */
+    private void unfreezeToDraft(Quotation q) {
+        q.submissionSnapshot = null;
+        em.createNativeQuery(
+                "DELETE FROM quotation_component_sql_snapshot WHERE quotation_id = :qid")
+                .setParameter("qid", q.id)
+                .executeUpdate();
     }
 
     @Transactional

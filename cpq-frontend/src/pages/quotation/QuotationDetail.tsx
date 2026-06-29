@@ -21,7 +21,6 @@ import CopyQuotationDrawer from './CopyQuotationDrawer';
 import { usePathFormulaCache } from './usePathFormulaCache';
 import { enrichComponentData } from './enrichComponentData';
 import type { LineItem } from './QuotationStep2';
-import WithdrawSection from './WithdrawSection';
 import SnapshotTab from './components/SnapshotTab';
 import BoundGlobalVariablesTab from './components/BoundGlobalVariablesTab';
 import type { SubmissionSnapshot } from '../../types/quotation-snapshot';
@@ -642,14 +641,6 @@ const QuotationDetail: React.FC = () => {
           </Col>
         </Row>
       </Card>
-
-      {/* Withdraw Request Section */}
-      <WithdrawSection
-        quotationId={quotation.id}
-        quotationStatus={status}
-        assignedApproverId={quotation.assignedApproverId}
-        onChanged={() => loadQuotation()}
-      />
 
       {/* Approval Progress */}
       {(status === 'SUBMITTED' || status === 'APPROVED' || (status === 'DRAFT' && quotation.approvalHistory?.length > 0)) && (
