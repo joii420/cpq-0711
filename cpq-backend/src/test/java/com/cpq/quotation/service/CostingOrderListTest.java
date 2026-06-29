@@ -17,12 +17,12 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * CostingOrderListTest — 核价管理列表端点 Task 4。
+ * CostingOrderListTest — 核价管理列表端点 Task 4（已迁移至英文码状态）。
  *
- * <p>T1: list_shows_submitted_and_approved_with_derived_status
- *        — SUBMITTED → 待核价；approve 后 → 核价通过。
+ * <p>T1: list_shows_pending_and_approved_with_english_status
+ *        — submit 后 status=PENDING；approve 后 status=APPROVED。
  * <p>T2: list_filters_by_status
- *        — status=待核价 时只返回 SUBMITTED 对应的行。
+ *        — statuses=["PENDING"] 时只返回 PENDING 行。
  *
  * <p>夹具策略：复用 CostingReviewFlowTest 相同 helper 逻辑（resolveCustomerId /
  * resolveUserId / financeUserId / submittedQuotation）。
@@ -93,25 +93,28 @@ class CostingOrderListTest {
         return q.id;
     }
 
-    // ── T1: 派生状态 ──────────────────────────────────────────────────────────
+    // ── T1: 英文码状态 ───────────────────────────────────────────────────────
 
     @Test
     @Transactional
-    void list_shows_submitted_and_approved_with_derived_status() {
-        UUID a = submittedQuotation();                                // → 待核价
+    void list_shows_pending_and_approved_with_english_status() {
+        UUID a = submittedQuotation();                                // → PENDING
         UUID b = submittedQuotation();
-        quotationService.costingApprove(b, null, financeUserId());   // → 核价通过
+        quotationService.costingApprove(b, null, financeUserId());   // → APPROVED
 
-        List<CostingOrderListItemDTO> list = quotationService.listCostingOrders(null, null);
+        List<CostingOrderListItemDTO> list = quotationService.listCostingOrders(null, null, null);
 
-        // 过滤出本测试创建的两条（其它测试产生的老数据不干扰断言，按 quotationId 精确查）
+        // 过滤出本测试创建的两条（其它测试产生的老数据不干扰断言，按 quotationId 精确查）。
+        // 同一 quotationId 可能在共享 DB 中存在多条历史核价单；只取最新一条（enteredCostingAt DESC
+        // 已保证列表首条为最新，合并时保留 first 即当前最新状态）。
         Map<UUID, String> byId = list.stream()
-                .collect(Collectors.toMap(x -> x.quotationId, x -> x.status));
+                .filter(x -> x.quotationId.equals(a) || x.quotationId.equals(b))
+                .collect(Collectors.toMap(x -> x.quotationId, x -> x.status, (s1, s2) -> s1));
 
         assertTrue(byId.containsKey(a), "列表中应包含 quotation a");
         assertTrue(byId.containsKey(b), "列表中应包含 quotation b");
-        assertEquals("待核价",  byId.get(a), "a 状态应为 待核价");
-        assertEquals("核价通过", byId.get(b), "b 状态应为 核价通过（核价已批准仍可回看）");
+        assertEquals("PENDING",  byId.get(a), "a 状态应为英文码 PENDING");
+        assertEquals("APPROVED", byId.get(b), "b 状态应为英文码 APPROVED（核价已批准仍可回看）");
 
         // 货币码固定为 CNY
         list.stream()
@@ -119,17 +122,18 @@ class CostingOrderListTest {
             .forEach(x -> assertEquals("CNY", x.currency, "货币码应为 CNY"));
     }
 
-    // ── T2: 状态过滤 ──────────────────────────────────────────────────────────
+    // ── T2: 状态过滤（英文码多值） ────────────────────────────────────────────
 
     @Test
     @Transactional
     void list_filters_by_status() {
-        submittedQuotation(); // 建一条 SUBMITTED，确保至少有数据
+        submittedQuotation(); // 建一条 PENDING，确保至少有数据
 
-        List<CostingOrderListItemDTO> list = quotationService.listCostingOrders("待核价", null);
+        List<CostingOrderListItemDTO> list = quotationService.listCostingOrders(
+                List.of("PENDING"), null, null);
 
-        // 所有返回项必须是 待核价
-        assertTrue(list.stream().allMatch(x -> "待核价".equals(x.status)),
-                "status=待核价 过滤后，所有结果的 status 必须为 待核价");
+        // 所有返回项必须是 PENDING
+        assertTrue(list.stream().allMatch(x -> "PENDING".equals(x.status)),
+                "statuses=[PENDING] 过滤后，所有结果的 status 必须为 PENDING");
     }
 }
