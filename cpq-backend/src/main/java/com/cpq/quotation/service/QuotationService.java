@@ -469,6 +469,10 @@ public class QuotationService {
                     // 后端 snapshotLineValues 守卫：仅当 li.quoteExcelValues==null 时才 buildExcelValues 兜底。
                     if (liDraft.quoteExcelValues != null) li.quoteExcelValues = liDraft.quoteExcelValues;
                     li.persist();
+                    // D-1 失效(lazy-cardvalues):本行子表(snapshot_rows)被重建 → 旧卡片值过期,置 NULL,
+                    // 使 ensureCardValues 的 IS NULL 谓词下次重新选中、用最新 snapshot_rows 重算。
+                    li.quoteCardValues = null;
+                    li.costingCardValues = null;
                     newIdsByIndex[i] = li.id;  // V169 二阶段父子关系重建用
 
                     // 料号版本管理 (S5): 拷贝 mat_customer_part_mapping.current_version → part_version_locked
@@ -2057,6 +2061,10 @@ public class QuotationService {
             li.discountRuleCode = liDraft.discountRuleCode;
             if (liDraft.quoteExcelValues != null) li.quoteExcelValues = liDraft.quoteExcelValues;
             li.persist();
+            // D-1 失效(lazy-cardvalues):本行子表(snapshot_rows)被重建 → 旧卡片值过期,置 NULL,
+            // 使 ensureCardValues 的 IS NULL 谓词下次重新选中、用最新 snapshot_rows 重算。
+            li.quoteCardValues = null;
+            li.costingCardValues = null;
             newIdsByIndex[i] = li.id;
 
             // E2 收集：有 cpn + hf 才加入批量版本查
