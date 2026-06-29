@@ -51,7 +51,9 @@ async function extractSessionCookie(page: Page): Promise<string> {
  */
 async function findTestQuotation(cookie: string): Promise<{ id: string; hasCosting: boolean } | null> {
   // 先试任务书指定 id
-  const PREFERRED_ID = '3f025848-c08f-4ddf-a5c9-3007bc1002c9';
+  // 选 snapshot 齐备的报价单（四值 quote/costing card+excel 均已落库），详情页才能纯读快照、零 batch-expand。
+  // 注：本库 SUBMITTED 单多为快照特性之前创建（四值 NULL→详情页回退实时），故用四值齐备的 DRAFT 验证只读路径。
+  const PREFERRED_ID = '89da551c-9b91-4cde-846e-a37e7c73dddb';
   try {
     const r = await fetch(`http://localhost:8081/api/cpq/quotations/${PREFERRED_ID}`, {
       headers: { Cookie: cookie },
@@ -62,11 +64,13 @@ async function findTestQuotation(cookie: string): Promise<{ id: string; hasCosti
       const status = data.status;
       const lineItems = data.lineItems || [];
       const hasCosting = !!data.costingCardTemplateId;
-      if (status && status !== 'DRAFT' && lineItems.length > 0) {
-        console.log(`[fixture] 使用指定 id=${PREFERRED_ID} status=${status} lineItems=${lineItems.length} hasCosting=${hasCosting}`);
+      // 关键判据：有快照（quoteCardValues 已落库）→ 详情页走只读快照路径（零 batch-expand），与 status 无关。
+      const hasSnapshot = lineItems.some((li: any) => li.quoteCardValues);
+      if (lineItems.length > 0 && hasSnapshot) {
+        console.log(`[fixture] 使用指定 id=${PREFERRED_ID} status=${status} lineItems=${lineItems.length} hasCosting=${hasCosting} hasSnapshot=${hasSnapshot}`);
         return { id: PREFERRED_ID, hasCosting };
       }
-      console.log(`[fixture] 指定 id=${PREFERRED_ID} 不满足条件: status=${status} lineItems=${lineItems.length}`);
+      console.log(`[fixture] 指定 id=${PREFERRED_ID} 不满足条件: status=${status} lineItems=${lineItems.length} hasSnapshot=${hasSnapshot}`);
     }
   } catch (e) {
     console.log(`[fixture] 查询指定 id 失败: ${e}`);
