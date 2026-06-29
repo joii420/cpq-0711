@@ -1957,11 +1957,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     .filter(c => c?.componentType === 'NORMAL');
   const activeComponent = normalComponents[activeTab];
 
-  // Plan 1b：locateSeq 变化时切到目标 componentId 对应的 Tab（AP-54：按 normalComponents 下标）
+  // Plan 1b：locateSeq 变化时切到目标 componentId 对应的 Tab（AP-54：normalComponents 下标）
   useEffect(() => {
     if (!locateComponentId) return;
-    const list = (item.componentData ?? []).filter(c => c?.componentType === 'NORMAL');
-    const idx = list.findIndex(c => c.componentId === locateComponentId);
+    const idx = normalComponents.findIndex(c => c.componentId === locateComponentId);
     if (idx >= 0) setActiveTab(idx);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locateSeq]);
@@ -2756,11 +2755,11 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   const [viewType, setViewType] = useState<'card' | 'excel'>('card');
 
   // Plan 1b 定位：cardRef 以 line item id 为 key（按 id 取、杜绝过滤后下标偏移，AP-54）
-  const cardRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   // 解析后的定位结果：目标卡 id（PART 已映射为父卡）+ 目标 componentId + seq
-  const [locateResolved, setLocateResolved] = React.useState<{ cardId?: string; componentId?: string; seq: number } | null>(null);
+  const [locateResolved, setLocateResolved] = useState<{ cardId?: string; componentId?: string; seq: number } | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!locateTarget) return;
     // 复位视图：后端只校验 QUOTE_CARD，冲突恒来自报价卡 → quote/card 永远正确
     setMainTab('quote');
@@ -3441,29 +3440,32 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
         </div>
       ) : (
         <div className="qt-products-list">
-          {quoteLineItems.map((item, index) => (
-            <div
-              key={item.id ?? (item.productId ? `${item.productId}-${index}` : `item-${index}`)}
-              ref={el => { if (item.id) cardRefs.current[item.id] = el; }}
-            >
-              <ProductCard
-                item={item}
-                index={index}
-                onRemove={() => onRemoveProduct(index)}
-                onUpdate={(data) => handleUpdateQuoteLineItem(index, data)}
-                customerId={customerId}
-                quotationId={quotationId}
-                driverExpansions={driverExpansions}
-                configTemplates={configTemplates}
-                pathCacheState={quotationPathCache}
-                globalVariableDefs={gvDefs}
-                cardSide="QUOTE"
-                cardStructure={quoteCardStructure}
-                locateComponentId={locateResolved?.cardId === item.id ? locateResolved?.componentId : undefined}
-                locateSeq={locateResolved?.cardId === item.id ? locateResolved?.seq : undefined}
-              />
-            </div>
-          ))}
+          {quoteLineItems.map((item, index) => {
+            const isLocateTarget = locateResolved?.cardId != null && locateResolved.cardId === item.id;
+            return (
+              <div
+                key={item.id ?? (item.productId ? `${item.productId}-${index}` : `item-${index}`)}
+                ref={el => { if (item.id) cardRefs.current[item.id] = el; }}
+              >
+                <ProductCard
+                  item={item}
+                  index={index}
+                  onRemove={() => onRemoveProduct(index)}
+                  onUpdate={(data) => handleUpdateQuoteLineItem(index, data)}
+                  customerId={customerId}
+                  quotationId={quotationId}
+                  driverExpansions={driverExpansions}
+                  configTemplates={configTemplates}
+                  pathCacheState={quotationPathCache}
+                  globalVariableDefs={gvDefs}
+                  cardSide="QUOTE"
+                  cardStructure={quoteCardStructure}
+                  locateComponentId={isLocateTarget ? locateResolved!.componentId : undefined}
+                  locateSeq={isLocateTarget ? locateResolved!.seq : undefined}
+                />
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
