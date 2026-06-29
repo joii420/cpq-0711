@@ -2775,6 +2775,8 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
     setLocateResolved({ cardId, componentId: locateTarget.componentId, seq: locateTarget.seq });
     if (cardId && cardRefs.current[cardId]) {
       cardRefs.current[cardId]!.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (!cardId) {
+      message.warning('未能定位到该冲突所在卡片，请在产品卡片中手动查找');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locateTarget?.seq]);
