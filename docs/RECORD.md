@@ -4,6 +4,10 @@
 
 ---
 
+[2026-06-29] 核价管理-财务核价工作台 Phase1 Task 2 - CostingOrder 实体 + submit 自动建单(幂等) + COSTING_REJECTED 状态 | cpq-backend/src/main/java/com/cpq/quotation/entity/CostingOrder.java(新建) / cpq-backend/src/main/java/com/cpq/quotation/service/QuotationService.java(VALID_QUOTATION_STATUSES 加 COSTING_REJECTED + submit 尾部幂等建单) / cpq-backend/src/test/java/com/cpq/quotation/service/CostingReviewFlowTest.java(新建 TDD 1/1 PASS) | 关键决策：①提交存在唯一约束 UNIQUE(quotation_id) 在 DB 层 + 代码层 findByQuotation()==null 守门双保险幂等；②submit(UUID,UUID) 有 userId 参数，直接传 co.submittedBy；③测试夹具改用 EntityManager native SQL 查真实 customer/user ID（外键约束合规），避免 QuarkusTest 环境 RestAssured HTTP 调用 401 问题（共享 DB 测试环境 RBAC 配置导致 QuotationSnapshotTest 等 HTTP 类测试同期也不可用，与本改动无关）；④@TestTransaction 替换为 @Transactional（两者语义相同，后者在 @BeforeAll 等非测试方法上更兼容）；提交 SHA=4cce08d 仅在 worktree-costing-review-finance-phase1 分支
+
+---
+
 [2026-06-18] 文档审阅 - 活跃文档冲突消解 + 重复去重（10 项决策）| docs/PRD.md→docs/archive/PRD-v2.8-历史档案.md(git mv+改头部链接) / CLAUDE.md(PRD 路径×2 + §13 措辞改"§2现行/§13未实施备选") / docs/配置方法论-合并版.md(字段配置表后新增「金额字段配置通则」:金额性质字段必标 is_amount=true,类型层规则不点字段名) + docs/方案-报价标准模板v1.7-重配方案.md(改为指向通则,撤掉逐字段 is_amount 枚举——文档=规则不钉具体可变字段) / docs/报价单核价单功能总结.md(§2.4 补 Phase2 整行级快照脚注+版本日期 2026-06-18+PRD 链接改 v3) / docs/配置方法论-合并版.md(§3.3 HTTP_API 安全复述改引用) / docs/全局变量使用指南.md(加 schema 交叉引用配置中心架构§三) / docs/方案制定前必读.md(§一症状表改"去哪查"导航表,保留§三时间线) / docs/统一智能视图路径方案.md(§2现行/§13备选定性 + 删§1.3 重复 V202 SQL 改引用基线§5.1 + §2.3 加 BNF 权威引用) / docs/superpowers/specs+plans 3 份历史文档补红旗 / docs/templates/核价完整版 PRD 链接修复 | 4 并行审阅 agent(配置类/架构基线类/PRD+3D类/130份plans+specs)出冲突重复清单→逐条与用户确认决策→7 并行编辑 agent落地。关键判定：6份配置类零硬冲突(分层互补);PRD.md vs PRD-v3 真冲突(Drools→纯Java/V5六步→V6三步staging/品类折扣移除)故归档;130份历史plans/specs为正常时间演进无需合并(报价快照Phase1/2/4、多小计7plan均合理拆分),仅补红旗。**altitude 修正**:用户指出"文档应体现规则而非钉死具体可变字段"——is_amount 由 4 字段逐项标注返工为「配置方法论通则(不点字段名,配置者按语义判断)+ v1.7 仅引用通则」,基线§4.6(渲染规则)保持不动;原"2 个漏标字段补不补"问题随之消解(不再是文档职责)。git diff 已逐文件核对落盘。
 
 ---
