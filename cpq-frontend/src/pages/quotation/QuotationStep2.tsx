@@ -28,6 +28,7 @@ import { applyUnitConversion, factorFor } from '../../utils/unitConversion';
 import { formatNumber } from '../../utils/formatNumber';
 import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns } from './tabTotalLines';
+import { isCardValueFailed } from './cardValueFailed';
 import { templateService } from '../../services/templateService';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { useTreeCollapse } from './useTreeCollapse';
@@ -1480,9 +1481,11 @@ interface ProductCardProps {
   cardSide?: 'QUOTE' | 'COSTING';
   /** Phase4 Task3: 本侧卡片结构快照(提供 rowKeyFields, 用于 rowKey 计算对齐后端) */
   cardStructure?: CardStructure | null;
+  /** Task6: 失败哨兵『重算』入口 —— 复用整单 refreshCardSnapshot 后整页重载 */
+  onReloadQuotation?: () => void | Promise<void>;
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs, cardSide, cardStructure }) => {
+const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs, cardSide, cardStructure, onReloadQuotation }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [dsLoading, setDsLoading] = useState<Record<string, boolean>>({});
   const [dsErrors, setDsErrors] = useState<Record<string, string>>({});
@@ -1862,6 +1865,30 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     if (cardSide !== 'QUOTE' || !quoteValuesJson) return null;
     try { return JSON.parse(quoteValuesJson) as CardValues; } catch { return null; }
   }, [cardSide, quoteValuesJson]);
+  // Task6: 失败哨兵卡片值识别(本侧)。命中则该卡片以显式『数据待重算』占位替换
+  // 正常 Tab/组件体, 防 AP-38 静默降级为"加载中"/AP-50 僵尸数据。
+  // 仅按"本侧"卡片值判定 —— 哨兵是 per-line+per-side 非空 JSON, 不影响健康卡片。
+  const cardValueFailed = React.useMemo(
+    () => isCardValueFailed(cardSide === 'COSTING' ? (item as any).costingCardValues : quoteValuesJson),
+    [cardSide, (item as any).costingCardValues, quoteValuesJson],
+  );
+  const [recomputing, setRecomputing] = useState(false);
+  const handleRecompute = useCallback(async () => {
+    if (!quotationId) return;
+    setRecomputing(true);
+    const hide = message.loading('正在重算该料号卡片数据…', 0);
+    try {
+      await quotationService.refreshCardSnapshot(quotationId);
+      hide();
+      await onReloadQuotation?.();
+      message.success('已重算');
+    } catch {
+      hide();
+      message.error('重算失败，请重试');
+    } finally {
+      setRecomputing(false);
+    }
+  }, [quotationId, onReloadQuotation]);
   const rowKeyFieldsByComp = React.useMemo(() => {
     const m = new Map<string, string[]>();
     (cardStructure?.tabs ?? []).forEach(t => { if (t.componentId) m.set(t.componentId, t.rowKeyFields ?? []); });
@@ -2182,6 +2209,22 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         </div>
       )}
 
+      {/* Task6: 失败哨兵 → 显式『数据待重算』占位, 替换正常 Tab/组件体(防 AP-38 静默降级)。
+          仅本侧哨兵命中时触发, 健康卡片走下方原渲染分支 100% 不受影响。 */}
+      {cardValueFailed ? (
+        <Alert
+          type="warning"
+          showIcon
+          message="该料号卡片数据待重算"
+          description={
+            <Button size="small" loading={recomputing} disabled={!quotationId} onClick={handleRecompute}>
+              重算
+            </Button>
+          }
+          style={{ margin: 8 }}
+        />
+      ) : (
+      <>
       {/* Component Tabs */}
       {normalComponents.length > 0 ? (
         <div className="qt-tab-section">
@@ -2711,6 +2754,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           </span>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 };
@@ -3368,6 +3413,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
                 globalVariableDefs={gvDefs}
                 cardSide="COSTING"
                 cardStructure={costingCardStructure}
+                onReloadQuotation={onReloadQuotation}
               />
             ))}
           </div>
@@ -3416,6 +3462,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
               globalVariableDefs={gvDefs}
               cardSide="QUOTE"
               cardStructure={quoteCardStructure}
+              onReloadQuotation={onReloadQuotation}
             />
           ))}
         </div>
@@ -3425,4 +3472,5 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
 };
 
 export { computeProductSubtotal, computeAllFormulas };
+export { isCardValueFailed };
 export default QuotationStep2;
