@@ -20,4 +20,12 @@ public record RowKeyConflictDTO(
         String componentId,
         String tabName,
         String rowKey,
-        List<Integer> rowIndices) {}
+        List<Integer> rowIndices) {
+
+    /** 人类可读冲突描述，与旧 RowKeyConflict.describe() 文案逐字一致；rowIndices 已是 1 基，直接 join。 */
+    public String describe() {
+        String rows = rowIndices.stream().map(String::valueOf)
+                .collect(java.util.stream.Collectors.joining(","));
+        return "组件「" + tabName + "」行键 [" + rowKey + "] 在第 " + rows + " 行重复";
+    }
+}

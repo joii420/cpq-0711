@@ -2,6 +2,7 @@ package com.cpq.common.exception;
 
 import com.cpq.common.dto.ApiResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import java.util.Map;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.ws.rs.NotAcceptableException;
 import jakarta.ws.rs.NotAllowedException;
@@ -20,10 +21,10 @@ public class GlobalExceptionMapper {
     @ServerExceptionMapper
     public Response handleBusinessException(BusinessException e) {
         LOG.warnf("Business error: %s", e.getMessage());
-        if (e instanceof com.cpq.common.exception.RowKeyConflictException rce) {
+        if (e instanceof RowKeyConflictException rce) {
             return Response.status(e.getCode())
                     .entity(ApiResponse.error(e.getCode(), e.getMessage(),
-                            java.util.Map.of("conflicts", rce.getConflicts())))
+                            Map.of("conflicts", rce.getConflicts())))
                     .build();
         }
         return Response.status(e.getCode())

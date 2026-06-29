@@ -834,10 +834,7 @@ public class QuotationService {
         if (!conflicts.isEmpty()) {
             StringBuilder sb = new StringBuilder("行键重复，无法提交：");
             for (com.cpq.quotation.service.rowkey.RowKeyConflictDTO c : conflicts) {
-                String rows = c.rowIndices().stream().map(String::valueOf)
-                        .reduce((a, b) -> a + "," + b).orElse("");
-                sb.append("\n· 组件「").append(c.tabName()).append("」行键 [")
-                  .append(c.rowKey()).append("] 在第 ").append(rows).append(" 行重复");
+                sb.append("\n· ").append(c.describe());
             }
             throw new com.cpq.common.exception.RowKeyConflictException(sb.toString(), conflicts);
         }
