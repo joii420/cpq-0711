@@ -16,4 +16,10 @@ describe('shouldWarmCardValues', () => {
   it('空集 → false', () => {
     expect(shouldWarmCardValues([] as any)).toBe(false);
   });
+  it('多行:首行齐全但后续行缺一 → true(钉死 .some 语义,非 .every)', () => {
+    expect(shouldWarmCardValues([
+      { quoteCardValues: '{"tabs":[]}', costingCardValues: '{"tabs":[]}' },
+      { quoteCardValues: '{"tabs":[]}', costingCardValues: undefined },
+    ] as any)).toBe(true);
+  });
 });

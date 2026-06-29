@@ -33,9 +33,8 @@ import { splitRows, rowAt } from './manualRows';
 import { coerceInputNumber } from './inputDefaults';
 import type { CostingTemplateColumn } from '../../services/costingTemplateService';
 import { buildExcelSnapshot } from './buildExcelSnapshot';
-// lazy-cardvalues：纯判定函数抽到小模块(便于单测 + 运行时复用),此处 re-export 保持调用面统一。
+// lazy-cardvalues：纯判定函数抽到小模块(便于单测,不拉本文件重依赖),运行时由此 import 复用。
 import { shouldWarmCardValues } from './cardValuesWarm';
-export { shouldWarmCardValues } from './cardValuesWarm';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
@@ -260,6 +259,9 @@ const QuotationWizard: React.FC = () => {
   //   背景:autosave 在首存慢时反复触发(4 份快照回填→payload churn→重发链),把 draft 体感乘 3。
   //   现策略:draft 仅由「导入首存(import-auto-save effect 直调 autoSaveDraft)」+「手动保存草稿/下一步/上一步/提交
   //   按钮(handleSaveDraft)」触发;编辑失焦不再自动存。改回:删掉下面的 return(恢复 1.5s 防抖自动保存)。
+  // ⚠️ lazy-cardvalues 防御(参考 BL-0013):若将来重开此 flag,防抖编辑会反复走 autoSaveDraft,
+  //   而 saveDraft 已不再算卡片值(每次存后卡片值置 NULL)→ autoSaveDraft 里的 warm 会被每次编辑必触发
+  //   → 变高频 ensure 风暴。重开前须给 warm 加节流/去抖(如仅在卡片值真缺时 + 限频),不能直接打开。
   const EDIT_AUTOSAVE_ENABLED = false;
   const scheduleAutoSave = useCallback(() => {
     if (!EDIT_AUTOSAVE_ENABLED) return;   // 编辑失焦自动保存已暂时关闭(见上)
@@ -508,15 +510,25 @@ const QuotationWizard: React.FC = () => {
       // lazy-cardvalues 打开兜底:若仍缺卡片值(warm 未跑/未完成/受损存量单)→ 同步 ensure 一次再渲染,
       //   避免 QuotationStep2 闸门回退实时 batch-expand/evaluate 风暴。仍在 loading 内 await(沿用向导既有 loading)。
       const opened = (res.data?.lineItems ?? []) as any[];
+      // 大单 ensure 可阻塞 ~9-12s,通用 spinner 外再给一条轻提示(对齐 QuotationStep2 的 ensureExcelValues)。
+      let backupData: any = res.data;
       if (shouldWarmCardValues(opened)) {
+        const hide = message.loading('正在准备快速浏览…', 0);
         try {
           const r = await quotationService.ensureCardValues(qId);
-          if (r?.data && !r.data.cardValuesWarming) applyQuotationData(r.data);  // 回灌带卡片值的 DTO
-          // cardValuesWarming=true(warm 在飞):保持现有渲染/兜底,不重复 apply
-        } catch { /* ensure 失败 → 回退现有实时渲染(同今天) */ }
+          if (r?.data && !r.data.cardValuesWarming) {
+            applyQuotationData(r.data);  // 回灌带卡片值的 DTO
+            backupData = r.data;         // 本地备份也存 warmed 副本,避免后端失败回退又恢复无卡片值版本
+          }
+          // cardValuesWarming=true(warm 在飞):保持现有渲染/兜底,不重复 apply,本地仍备份 res.data
+        } catch {
+          // ensure 失败 → 回退现有实时渲染(同今天);静默,不弹 error 吓用户
+        } finally {
+          hide();
+        }
       }
       // Update localStorage backup on successful load
-      safeSetLocalDraft(`cpq-draft-${qId}`, JSON.stringify(res.data));
+      safeSetLocalDraft(`cpq-draft-${qId}`, JSON.stringify(backupData));
     } catch (e: any) {
       // P2-9: Try localStorage fallback on backend failure
       const local = localStorage.getItem(`cpq-draft-${qId}`);
