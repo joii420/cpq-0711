@@ -52,6 +52,17 @@
 - **预估规模**：M（3-5 天）
 - **验收要点**：财务调价后，详情页核价视图/金额/对外 PDF·Excel·邮件/比对表 TOTAL/列表金额全部以核价单最新值为准；报价侧不受影响。
 
+### [BL-0010] 降低首开 / warm 阻塞时长：核价卡片值 expand 集合化
+- **优先级**：P1
+- **来源**：`docs/superpowers/specs/2026-06-29-lazy-card-values-design.md` §12 + 两轮评审（首开 ~9~12s 阻塞主因＝核价侧逐行实时 `bomClosureService.compute` + `expandTemplateDriverBaseRows`）
+- **状态**：TODO（未排期）
+- **推迟原因**：超出本期范围 + 动核心基线（须 architect）。本期已用 eager warm 把该成本移出用户感知路径（首存后台 warm + 后续秒开），窄窗口首开阻塞已可接受，故 expand 提速本身可后续单独治。
+- **背景**：`ensureCardValues` 第一次跑大单（罗克韦尔 170 行）阻塞 ~9~12s，几乎全在核价侧 `buildCostingCardValues` 逐行实时 BOM 闭包 + driver expand（`CardSnapshotService.java:1037/1044`，Bug-B 闸门不合桶、不能并行）。这也是 saveDraft 首存历史耗时同一热点。
+- **范围**：把核价侧多行 driver expand / BOM 闭包按集合化批量（与 `savedraft-setbased` 集合化项目同根，复用其 union 合桶成果）；单线程、逐位等价（md5）、守 `cpq-expand-layer-not-threadsafe`（禁并行）。先做最小验证再推广。
+- **依赖**：与 savedraft-setbased 集合化项目协同；动核心基线须走 cpq-architect。
+- **预估规模**：L（1 周以上）
+- **验收要点**：大单首开/warm 阻塞时长显著下降；卡片值落库逐位等价（`GoldenCardValuesEquivTest` 不变）；无并行竞态（刷新多次行数/值稳定）。
+
 ---
 
 ## P2
@@ -107,6 +118,39 @@
 - **依赖**：无。
 - **预估规模**：S（1-2 天）
 - **验收要点**：移除后 `delete()` 仍正常、无悬挂引用、无历史数据丢失风险。
+
+### [BL-0011] 窄窗口 warming-in-progress 前端轮询进度条
+- **优先级**：P2
+- **来源**：`docs/superpowers/specs/2026-06-29-lazy-card-values-design.md` §3.2/§3.3/§12 + v2 评审 B-3
+- **状态**：TODO（未排期）
+- **推迟原因**：增强体验。本期 try-lock 返回 warming-in-progress + 简单 spinner + 第一次打开延迟基准已满足正确性与可用性。
+- **背景**：窄窗口（刚导入立刻打开同一大单、warm 在飞）首开会等 ~10s。本期显示简单 spinner；更佳体验是轮询 warm 进度（已算行数 / 总行数）显示进度条。
+- **范围**：ensure 端点暴露 warm 进度（落库行数 / 总行数）；前端轮询渲染进度条 + 完成自动切快照。
+- **依赖**：本期 try-lock 单飞 + ensure 端点已就绪。
+- **预估规模**：S（1-2 天）
+- **验收要点**：窄窗口首开显示真实进度（非裸 spinner）；进度到 100% 自动读快照、不发 batch。
+
+### [BL-0012] 失败哨兵行「重算此行」卡内交互入口
+- **优先级**：P2
+- **来源**：`docs/superpowers/specs/2026-06-29-lazy-card-values-design.md` §3.5/§4.4/§12 + v2 评审 C-2
+- **状态**：TODO（未排期）
+- **推迟原因**：增强。本期失败行已显式「数据待重算」占位 + warn，并可用既有 admin `POST /components/{id}/refresh-template-snapshots` 重算，故卡内按钮非必需。
+- **背景**：卡片值 build 确定性失败的行落 `__cardValueFailed` 哨兵 + 占位。更顺手的是占位上直接给「重算此行」按钮，单行触发重算并回灌。
+- **范围**：占位组件加「重算此行」入口 → 调单行重算端点 → 回灌该 line 卡片值 → 切快照；与既有 refresh 端点对齐。
+- **依赖**：本期哨兵 + 占位渲染已就绪。
+- **预估规模**：S（1-2 天）
+- **验收要点**：点「重算此行」后该行卡片值正确补回、占位消失、不发整侧 batch 风暴。
+
+### [BL-0013] saveDraft 回 `hasMissingCardValues` 提示以彻底去抖 eager warm
+- **优先级**：P2
+- **来源**：`docs/superpowers/specs/2026-06-29-lazy-card-values-design.md` §4.1/§12 + v2 评审 E-中
+- **状态**：TODO（未排期）
+- **推迟原因**：性能增强，非正确性。本期靠「仅导入完成 / 显式手动保存 + 客户端防抖」已避免高频空发。
+- **背景**：§3.4 删了 saveDraft 响应里的 `newLines` → 前端无法廉价判断是否真有缺值行。若 saveDraft 回一个 `hasMissingCardValues` 布尔，前端可仅在确有缺值时才 fire warm，彻底消除冗余 ensure（即便幂等返 0 也省一次取锁+查询）。
+- **范围**：saveDraft 响应增 `hasMissingCardValues`（一次 `EXISTS(... IS NULL ...)` 廉价查）；前端据此条件触发 warm。
+- **依赖**：本期 ensure + warm 触发已就绪。
+- **预估规模**：S（1-2 天）
+- **验收要点**：无缺值时不发 warm；有缺值时发且只发一次；不回归打开秒开。
 
 ---
 
