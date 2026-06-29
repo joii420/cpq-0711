@@ -38,8 +38,6 @@ import ComparisonTagManagement from '../pages/basicdata/ComparisonTagManagement'
 import CostingTemplateList from '../pages/costing/CostingTemplateList';
 import CostingTemplateConfig from '../pages/costing/CostingTemplateConfig';
 import CostingPartDataPage from '../pages/costingpart/CostingPartDataPage';
-import CostingSummaryListPage from '../pages/costingsummary/CostingSummaryListPage';
-import CostingSummaryDetailPage from '../pages/costingsummary/CostingSummaryDetailPage';
 import CostingOrderListPage from '../pages/costingorder/CostingOrderListPage';
 import MasterDataPage from '../pages/master-data/MasterDataPage';
 import MasterDataTableViewerPage from '../pages/master-data/MasterDataTableViewerPage';
@@ -115,7 +113,6 @@ const router = createBrowserRouter([
       { path: 'costing-templates/:id', element: <CostingTemplateConfig /> },
       { path: 'costing-part-data', element: <CostingPartDataPage /> },
       { path: 'costing-summary', element: <CostingOrderListPage /> },
-      { path: 'costing-summary/:id', element: <CostingSummaryDetailPage /> },
       { path: 'master-data', element: <MasterDataPage /> },
       { path: 'master-data/history', element: <VersionHistoryPage /> },
       { path: 'master-data/viewer', element: <MasterDataTableViewerPage /> },
