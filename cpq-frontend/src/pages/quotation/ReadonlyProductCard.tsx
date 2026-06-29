@@ -58,6 +58,9 @@ interface ReadonlyProductCardProps {
   side?: 'QUOTE' | 'COSTING';
   /** 核价卡片结构快照（顶层，提供 tabs 结构 + rowKeyFields，用于结构驱动组装 componentData） */
   costingCardStructure?: CardStructure | null;
+  /** Plan 1b 详情页定位:目标页签 componentId(仅目标卡非空);locateSeq 变化时切到该页签 */
+  locateComponentId?: string;
+  locateSeq?: number;
 }
 
 function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
@@ -165,6 +168,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   quoteCardStructure,
   side: sideProp,
   costingCardStructure,
+  locateComponentId,
+  locateSeq,
 }) => {
   const side = sideProp ?? 'QUOTE';
   const isCosting = side === 'COSTING';
@@ -306,6 +311,14 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
       setActiveTab(0);
     }
   }, [normalComponents.length, activeTab]);
+
+  // Plan 1b 详情页定位：locateSeq 变化时切到目标 componentId 对应页签（AP-54：用 normalComponents 下标）
+  useEffect(() => {
+    if (!locateComponentId) return;
+    const idx = normalComponents.findIndex((c: any) => c.componentId === locateComponentId);
+    if (idx >= 0) setActiveTab(idx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locateSeq]);
 
   // Compute subtotals using buildFormulaCache（支持 prev_row_subtotal 累加公式）
   // compSubtotals 先用空 map 初始化，按 component 顺序逐步填入，供后续组件引用前组件小计。

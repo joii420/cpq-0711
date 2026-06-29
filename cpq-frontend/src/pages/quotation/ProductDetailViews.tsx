@@ -26,9 +26,10 @@ const { Text } = Typography;
 
 interface Props {
   quotation: any;
+  locateTarget?: { lineItemId?: string; productPartNo?: string; componentId?: string; seq: number } | null;
 }
 
-const ProductDetailViews: React.FC<Props> = ({ quotation }) => {
+const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget }) => {
   // ----------------------------------------------------------------
   // 两级视图切换 state
   // ----------------------------------------------------------------
@@ -91,11 +92,37 @@ const ProductDetailViews: React.FC<Props> = ({ quotation }) => {
   usePathFormulaCache(enrichedLineItems, quotation?.customerId, gvDefs);
 
   // ----------------------------------------------------------------
-  // 渲染
+  // Plan 1b 详情页定位：cardRefs + locateResolved state
   // ----------------------------------------------------------------
+  const cardRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
+  const [locateResolved, setLocateResolved] = useState<{ cardId?: string; componentId?: string; seq: number } | null>(null);
+
+  // visible 上移，保证 locateTarget effect 能引用
   const visible = (quotation?.lineItems || []).filter(
     (li: any) => li.compositeType !== 'PART',
   );
+
+  useEffect(() => {
+    if (!locateTarget) return;
+    setMainTab('quote');     // 后端只校验报价卡，定位恒落报价卡片视图
+    setViewType('card');
+    const all = (quotation?.lineItems || []) as any[];
+    const hit = all.find((li: any) => li.id === locateTarget.lineItemId);
+    let cardId = hit?.id;
+    if (hit?.compositeType === 'PART') cardId = hit.parentLineItemId;   // PART→父卡
+    if (!cardId && hit?.compositeType !== 'PART' && locateTarget.productPartNo) {
+      cardId = visible.find((li: any) => li.productPartNo === locateTarget.productPartNo)?.id;  // 兜底(PART 不走)
+    }
+    setLocateResolved({ cardId, componentId: locateTarget.componentId, seq: locateTarget.seq });
+    if (cardId && cardRefs.current[cardId]) {
+      cardRefs.current[cardId]!.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locateTarget?.seq]);
+
+  // ----------------------------------------------------------------
+  // 渲染
+  // ----------------------------------------------------------------
 
   return (
     <Card title="产品明细" style={{ marginBottom: 16 }}>
@@ -152,20 +179,26 @@ const ProductDetailViews: React.FC<Props> = ({ quotation }) => {
         />
       ) : (
         <div className="qt-products-list">
-          {visible.map((li: any, idx: number) => (
-            <ReadonlyProductCard
-              key={li.id || idx}
-              lineItem={li}
-              index={idx}
-              quotationId={quotation.id}
-              quotationStatus={quotation.status}
-              customerId={quotation.customerId}
-              globalVariableDefs={gvDefs}
-              side={mainTab === 'costing' ? 'COSTING' : 'QUOTE'}
-              quoteCardStructure={quotation.quoteCardStructure ?? null}
-              costingCardStructure={quotation.costingCardStructure ?? null}
-            />
-          ))}
+          {visible.map((li: any, idx: number) => {
+            const isLocateTarget = locateResolved?.cardId != null && locateResolved.cardId === li.id;
+            return (
+              <div key={li.id || idx} ref={el => { if (li.id) cardRefs.current[li.id] = el; }}>
+                <ReadonlyProductCard
+                  lineItem={li}
+                  index={idx}
+                  quotationId={quotation.id}
+                  quotationStatus={quotation.status}
+                  customerId={quotation.customerId}
+                  globalVariableDefs={gvDefs}
+                  side={mainTab === 'costing' ? 'COSTING' : 'QUOTE'}
+                  quoteCardStructure={quotation.quoteCardStructure ?? null}
+                  costingCardStructure={quotation.costingCardStructure ?? null}
+                  locateComponentId={isLocateTarget ? locateResolved!.componentId : undefined}
+                  locateSeq={isLocateTarget ? locateResolved!.seq : undefined}
+                />
+              </div>
+            );
+          })}
         </div>
       )}
 
