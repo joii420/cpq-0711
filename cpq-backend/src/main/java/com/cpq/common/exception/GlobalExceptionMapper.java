@@ -20,6 +20,12 @@ public class GlobalExceptionMapper {
     @ServerExceptionMapper
     public Response handleBusinessException(BusinessException e) {
         LOG.warnf("Business error: %s", e.getMessage());
+        if (e instanceof com.cpq.common.exception.RowKeyConflictException rce) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(),
+                            java.util.Map.of("conflicts", rce.getConflicts())))
+                    .build();
+        }
         return Response.status(e.getCode())
                 .entity(ApiResponse.error(e.getCode(), e.getMessage()))
                 .build();
