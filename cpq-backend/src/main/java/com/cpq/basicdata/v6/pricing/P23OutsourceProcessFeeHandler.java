@@ -33,7 +33,7 @@ public class P23OutsourceProcessFeeHandler implements SheetHandler {
                     result.recordError(row.rowNo, "宏丰料号/工序编号", "必填项为空");
                     continue;
                 }
-                UnitPrice p = UnitPriceWriter.newRow("PRICING", "MATERIAL", "其他加工费", null, null, ctx.importedBy);
+                UnitPrice p = UnitPriceWriter.newRow("PRICING", PricingPriceType.OUTSOURCE_PROCESS, "其他加工费", null, null, ctx.importedBy);
                 p.code = code;
                 p.operationNo = operationNo;
                 p.pricingPrice = row.getDecimal("外加工费用");

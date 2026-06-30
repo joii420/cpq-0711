@@ -41,14 +41,14 @@ public class P22PlatingCostHandler implements SheetHandler {
                 String unit = row.getStr("计价单位");
                 BigDecimal defectRate = row.getDecimal("不良率");
 
-                UnitPrice p1 = UnitPriceWriter.newRow("PRICING", "MATERIAL", "电镀加工费", versionNo, null, ctx.importedBy);
+                UnitPrice p1 = UnitPriceWriter.newRow("PRICING", PricingPriceType.PLATING, "电镀加工费", versionNo, null, ctx.importedBy);
                 p1.code = code;
                 p1.pricingPrice = processFee != null ? processFee : BigDecimal.ZERO;
                 p1.currency = currency; p1.unit = unit; p1.defectRate = defectRate;
                 writer.upsert(p1);
                 result.recordWrite("unit_price", 1);
 
-                UnitPrice p2 = UnitPriceWriter.newRow("PRICING", "MATERIAL", "电镀材料费", versionNo, null, ctx.importedBy);
+                UnitPrice p2 = UnitPriceWriter.newRow("PRICING", PricingPriceType.PLATING, "电镀材料费", versionNo, null, ctx.importedBy);
                 p2.code = code;
                 p2.pricingPrice = materialFee != null ? materialFee : BigDecimal.ZERO;
                 p2.currency = currency; p2.unit = unit; p2.defectRate = defectRate;

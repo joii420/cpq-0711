@@ -30,7 +30,7 @@ public class P14PackagingConsumableHandler implements SheetHandler {
                 String code = row.getStr("宏丰料号");
                 if (code == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
                 String versionNo = row.getStr("取用的耗材版本");
-                UnitPrice p = UnitPriceWriter.newRow("PRICING", "MATERIAL", "包装", versionNo, null, ctx.importedBy);
+                UnitPrice p = UnitPriceWriter.newRow("PRICING", PricingPriceType.PACKAGING, "包装", versionNo, null, ctx.importedBy);
                 p.code = code;
                 p.finishedMaterialNo = code;
                 p.operationNo = row.getStr("工序编号");
