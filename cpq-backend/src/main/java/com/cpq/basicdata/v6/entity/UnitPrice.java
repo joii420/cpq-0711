@@ -17,8 +17,8 @@ public class UnitPrice extends V6BaseEntity {
     @Column(name = "system_type", nullable = false, length = 10)
     public String systemType;
 
-    /** ELEMENT / MATERIAL / COMPONENT / PART / CONSUMABLE */
-    @Column(name = "price_type", nullable = false, length = 20)
+    /** 大类(ELEMENT/CONSUMABLE 等) + 报价/核价细分值（见 PricingPriceType / V297 / V306）；DB 为 VARCHAR(40)。 */
+    @Column(name = "price_type", nullable = false, length = 40)
     public String priceType;
 
     @Column(name = "version_no", nullable = false, length = 20)

@@ -33,7 +33,7 @@ public class P19FinishedOtherRatioFeeHandler implements SheetHandler {
                     result.recordError(row.rowNo, "宏丰料号/要素名称", "必填项为空");
                     continue;
                 }
-                UnitPrice p = UnitPriceWriter.newRow("PRICING", "MATERIAL", costType, null, null, ctx.importedBy);
+                UnitPrice p = UnitPriceWriter.newRow("PRICING", PricingPriceType.FINISHED_OTHER, costType, null, null, ctx.importedBy);
                 p.code = code;
                 p.seqNo = row.getInt("项次");
                 p.costRatio = row.getDecimal("比例");

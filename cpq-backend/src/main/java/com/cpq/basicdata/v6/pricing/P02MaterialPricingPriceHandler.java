@@ -30,7 +30,7 @@ public class P02MaterialPricingPriceHandler implements SheetHandler {
                 String code = row.getStr("材料料号");
                 if (code == null) { result.recordError(row.rowNo, "材料料号", "为空"); continue; }
                 String versionNo = row.getStr("材料价格版本");
-                UnitPrice p = UnitPriceWriter.newRow("PRICING", "MATERIAL", "材料核价价格", versionNo, null, ctx.importedBy);
+                UnitPrice p = UnitPriceWriter.newRow("PRICING", PricingPriceType.MATERIAL_PRICE, "材料核价价格", versionNo, null, ctx.importedBy);
                 p.code = code;
                 p.pricingPrice = row.getDecimal("核价单价");
                 if (p.pricingPrice == null) p.pricingPrice = java.math.BigDecimal.ZERO;

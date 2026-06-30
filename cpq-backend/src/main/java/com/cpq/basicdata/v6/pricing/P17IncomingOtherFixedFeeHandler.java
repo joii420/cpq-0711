@@ -33,7 +33,7 @@ public class P17IncomingOtherFixedFeeHandler implements SheetHandler {
                     result.recordError(row.rowNo, "来料料号/要素名称", "必填项为空");
                     continue;
                 }
-                UnitPrice p = UnitPriceWriter.newRow("PRICING", "MATERIAL", costType, null, null, ctx.importedBy);
+                UnitPrice p = UnitPriceWriter.newRow("PRICING", PricingPriceType.INCOMING_OTHER, costType, null, null, ctx.importedBy);
                 p.code = code;
                 p.finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
                 p.seqNo = row.getInt("二级项次", "项次");
