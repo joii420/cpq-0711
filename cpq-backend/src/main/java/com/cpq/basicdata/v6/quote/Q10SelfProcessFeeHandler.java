@@ -15,9 +15,11 @@ import jakarta.transaction.Transactional;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Q10 自制加工费 → unit_price (price=PROCESS, cost=自制加工费)。
@@ -48,27 +50,41 @@ public class Q10SelfProcessFeeHandler implements SheetHandler {
         Map<List<Object>, List<Map<String, Object>>> contentOf = new LinkedHashMap<>();
         MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
         Map<String, String[]> mmAcc = new LinkedHashMap<>();   // §P1-A 料号表延后批量(首个非空胜)
+        // §10 规则3 fail-fast：已用「宏丰料号」兜底过 code 的成品集合（本次导入内）。
+        // unit_price 唯一键不含 operation_no → 同一成品多条无投入料号行会塌缩撞键，故只允许一条。
+        Set<String> noInputFallbackFinished = new HashSet<>();
         for (SheetRow row : rows) {
             result.totalRows++;
             String inputName = row.exact("投入料号名称");
+            String finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
             String code;
             try {
                 code = materialNoResolver.resolve(row.exact("投入料号"), inputName, batch);
             } catch (MaterialNoUnresolvableException ex) {
-                result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
+                // §10 规则3：投入料号 + 投入料号名称都空 → code 兜底为宏丰料号(成品料号)，
+                // 语义为「针对该成品整体的自制加工费」（非针对具体投入件）。
+                if (finishedMaterialNo == null) {
+                    result.recordError(row.rowNo, "投入料号",
+                        "投入料号、投入料号名称、宏丰料号均为空，无法确定料号"); continue;
+                }
+                if (!noInputFallbackFinished.add(finishedMaterialNo)) {
+                    result.recordError(row.rowNo, "投入料号",
+                        "成品 " + finishedMaterialNo + " 存在多条无投入料号的自制加工费，数据非法"); continue;
+                }
+                code = finishedMaterialNo;
             }
-            MaterialMasterRepository.accNameType(mmAcc, code, inputName, "组成件");
+            final String resolvedCode = code;   // catch 可重新赋值 → lambda 捕获需 final 副本
+            MaterialMasterRepository.accNameType(mmAcc, resolvedCode, inputName, "组成件");
             result.recordWrite("material_master", 1);
-            String finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
             String operationNo = row.getStr("工序编号");
-            List<Object> key = Arrays.asList(code, finishedMaterialNo, operationNo);
+            List<Object> key = Arrays.asList(resolvedCode, finishedMaterialNo, operationNo);
             groupKeyOf.computeIfAbsent(key, k -> {
                 Map<String, Object> g = new LinkedHashMap<>();
                 g.put("system_type", "QUOTE");
                 g.put("customer_no", ctx.customerNo);
                 g.put("price_type", "PROCESS");
                 g.put("cost_type", "自制加工费");
-                g.put("code", code);
+                g.put("code", resolvedCode);
                 g.put("finished_material_no", finishedMaterialNo);
                 g.put("operation_no", operationNo);
                 return g;
