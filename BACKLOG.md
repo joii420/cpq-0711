@@ -66,7 +66,7 @@
 ### [BL-0017] `[页签(总计)]` 真实计算口径对齐「金额字段(is_amount)小计之和」
 - **优先级**：P1
 - **来源**：`docs/superpowers/specs/2026-06-30-tabtotal-subtotal-token-corruption-fix.md` §3.6 划出范围 + 两轮评审「语义事实」提示
-- **状态**：TODO（未排期）
+- **状态**：✅ **已落地合并 master（2026-06-30，commit `e6c53db`）**。方案 A′ 加性哨兵键（不动裸键、不动求值器）。前端 4 写键点 + 后端 5 点（含计划外新增 `CardSnapshotService` byColNode 排除哨兵）落地；`ComponentDataEffectiveRowsTest` 6/6（含哨兵=Σamount + 折扣缩放）、前端 vitest 210/210、tsc 0 错；**值中性硬证据**：`GoldenCardValuesEquivTest#rockwell` 含/不含本改动纯读 golden 逐位等价 `52380a82…`。详见 spec `…BL0017-tabtotal-amount-sum-impl.md` §10。
 - **推迟原因**：超出本期范围（本期硬约束＝「所见即所存 + 不动公式计算」，只修显示忠实性）；且涉及改动求值口径，须单独立项评估影响面。
 - **登记日期**：2026-06-30
 - **背景**：`[页签(总计)]` 本应＝该页签所有「金额属性」字段(`is_amount && is_subtotal`)的小计之和（用户口述权威规则，已由显示行模块 `tabTotalLines.ts#sumTabColumns` 实现）。但公式引擎的裸键 `componentSubtotals[tabName]` 现＝**所有 `is_subtotal` 列之和**（含非金额的 汇率/利润比例/单率），且因解析期 `value` 被塞首个小计列，`[页签(总计)]` 实际只求**首个小计列的列小计**（前端 `产品#汇率` / 后端 `compCode+"#"+col`），**既非「金额字段之和」也非「整页签总计」**。`tabTotalLines.ts:4-7` 注释明确承认显示行与引擎值「有意分叉」。本期 [BL-本次] 只让它「显示对、保存忠实」，数字仍沿用现状（首个小计列）。
@@ -90,6 +90,39 @@
 ---
 
 ## P2
+
+### [BL-0019] 零金额列页签 `[页签(总计)]`=0 的配置期 lint 警告 + 回退裁决
+- **优先级**：P2
+- **来源**：`docs/superpowers/specs/2026-06-30-BL0017-tabtotal-amount-sum-impl.md` §7 风险 5 / §9 范围外；实现 spec 评审「零金额列语义」
+- **状态**：TODO（未排期，需 PM 裁决）
+- **登记日期**：2026-06-30
+- **背景**：BL-0017 落地后，有 is_subtotal 列但**零 is_amount 列**的页签，`[页签(总计)]` 哨兵键 = 0（Σ 空集）。符合「金额字段之和」规则，但可能违反用户对「总计」的直觉（看着有小计列却显示 0）。BL-0017 本期按规则取 0、不回退。
+- **范围**：① 组件管理配置期：当页签有 is_subtotal 列但无 is_amount 列、且被 `[页签(总计)]` 引用时，给 lint 警告提示「该页签无金额字段，总计将为 0」；② 由 PM 裁决是否提供「无金额列时回退 Σis_subtotal」的可选口径。**本条仅在 PM 给出回退需求后才动求值口径**。
+- **依赖**：BL-0017 落地（哨兵键 Σamount 口径已生效）。
+- **预估规模**：S（1-2 天，lint 部分）
+- **验收要点**：零金额列页签被 `[页签(总计)]` 引用时配置期有明确警告；若 PM 要回退，回退仅作用于该场景、不影响正常金额页签。
+
+### [BL-0020]（技术债）config 路径 `[页签.列]` 经 FormulaCalculationService 只读裸 code 的粗化
+- **优先级**：P2
+- **来源**：`docs/superpowers/specs/2026-06-30-BL0017-tabtotal-amount-sum-impl.md` §9；实现 spec 评审 #7（pre-existing，非 BL-0017 引入）
+- **状态**：TODO（未排期，先确认实际触达面）
+- **登记日期**：2026-06-30
+- **背景**：`FormulaCalculationService.java:187-192` 的 component_subtotal 分支**只读裸 `component_code`、从不读列键** → 经此引擎求值的 `[页签.列]` 列引用会被粗化成整组件裸键值，而非该列的列小计。这是既有缺陷（与 BL-0017 无关，只是评审顺带发现）。需先确认配置快照产品小计实际走的是 `FormulaCalculator`（有列键，正确）还是 `FormulaCalculationService`（粗化）——若仅后者在边缘路径触达，影响面小。
+- **范围**：先排查 `FormulaCalculationService` 的真实调用面（哪些场景的 `[页签.列]` 经此引擎）；若确有错算，让其 component_subtotal 分支对齐 `FormulaCalculator` 的「列键优先、裸键回退」逻辑。
+- **依赖**：无（独立技术债）。
+- **预估规模**：S（1-2 天）
+- **验收要点**：经 FormulaCalculationService 的 `[页签.列]` 求值 = 该列列小计（非整组件裸键）；不回归现有正确路径。
+
+### [BL-0021]（测试债）`GoldenCardValuesEquivTest#rockwell` golden 常量过期 + `RefreshCardSnapshotTest:206` 预存失败
+- **优先级**：P2
+- **来源**：BL-0017 落地自检时甄别（2026-06-30）
+- **状态**：TODO（需 golden owner 重新校准；非 BL-0017 引入）
+- **登记日期**：2026-06-30
+- **背景**：`GoldenCardValuesEquivTest#rockwell_determinism_and_capture` 的 golden 常量 `GOLDEN_ROCKWELL=3837c2bd…`（2026-06-25 捕获）已过期 —— 在**干净 HEAD（移除 BL-0017）上同样漂移到 `52380a82…`**，系 2026-06-25 后 master 合入的 `2440ab3`（首存集合化落库）/ `9dd6cbc`（失败行落非 NULL 哨兵）/ `6928090`（懒算 Excel）等提交及 LIVE DB 数据变动所致。BL-0017 经背靠背纯读对比证明**值中性**（含/不含 BL-0017 均 `52380a82…`，逐位等价）。另 `RefreshCardSnapshotTest:206`（幽灵 editRow 丢弃断言）在干净 HEAD 同样 FAIL，走 editRow/baseRows 路径，与 BL-0017 无关。
+- **范围**：(1) 由 golden owner 确认 `52380a82…` 为当前正确基线后回填 `GOLDEN_ROCKWELL`（或改用对数据漂移不敏感的锚单/夹具）；(2) 排查 `RefreshCardSnapshotTest:206` 是 driver 种子数据漂移致 baseRows 不再含幽灵 rowKey，还是 refresh 重 expand 链路真回归。
+- **依赖**：无（独立测试债；不阻断 BL-0017）。
+- **预估规模**：S（1-2 天）
+- **验收要点**：两测试在当前 master 复绿（golden 重校准 + refresh 根因厘清）；保留确定性护栏语义。
 
 ### [BL-0002] 冲突定位下钻到「具体冲突行」高亮
 - **优先级**：P2
