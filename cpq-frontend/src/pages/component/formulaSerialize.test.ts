@@ -32,6 +32,7 @@ import {
 } from './formulaSerialize';
 import type { TabDef } from '../../services/tabJoinFormulaService';
 import type { FormulaToken } from './types';
+import { evaluateExpression } from '../../utils/formulaEngine';
 
 // ─────────────────────────────────────────────
 // Shared fixtures
@@ -124,15 +125,18 @@ describe('expressionToTokens — basic', () => {
     });
   });
 
-  it('whole-tab total [COMP_RL(总计)] → component_subtotal (uses tab primary subtotalCol)', () => {
-    // FIX (2026-06-10): bare [alias(总计)] now maps to component_subtotal, not cross_tab_ref.
-    // COMP_RL has a single subtotalCol 金额, so the bare total resolves to that column.
+  it('whole-tab total [COMP_RL(总计)] → component_subtotal with is_tab_total marker (value preserved for eval)', () => {
+    // FIX (2026-06-10): bare [alias(总计)] maps to component_subtotal, not cross_tab_ref.
+    // FIX (2026-06-30, WYSIWYG): value 仍存首个小计列(金额)以保持求值不变；额外打 is_tab_total
+    // 标记以区别于小计列引用 [COMP_RL.金额]，并让序列化忠实回显 [COMP_RL(总计)]。label 为纯组件名。
     const tokens = expressionToTokens('[COMP_RL(总计)]', allTabs, selfRKF);
     expect(tokens).toHaveLength(1);
     expect(tokens[0]).toMatchObject({
       type: 'component_subtotal',
       component_code: 'COMP_RL',
-      value: '金额',
+      value: '金额',          // 保留 → 求值逐字节不变（不动公式计算）
+      is_tab_total: true,     // 新标记 → 序列化区分整页签总计 vs 小计列
+      label: '回料',          // 纯 componentName（去 ·列名）
     });
   });
 
@@ -397,19 +401,19 @@ describe('round-trip', () => {
     expect(normalise(back)).toBe(normalise(expr));
   });
 
-  it('[COMP_RL(总计)] whole-tab → component_subtotal → normalises to [COMP_RL.金额]', () => {
-    // FIX (2026-06-10): bare total now resolves to the tab's primary subtotalCol (金额),
-    // so the canonical round-trip form is [COMP_RL.金额] (the explicit subtotal column).
+  it('[COMP_RL(总计)] whole-tab → faithfully round-trips back to [回料(总计)] (WYSIWYG)', () => {
+    // FIX (2026-06-30): is_tab_total 标记让整页签总计忠实往返为 [回料(总计)]，
+    // 不再被改写成小计列引用 [回料.金额]（所见即所存）。
     const expr = '[COMP_RL(总计)]';
     const tokens = expressionToTokens(expr, allTabs, selfRKF);
     const back = tokensToDrawerExpression(tokens, allTabs);
-    expect(normalise(back)).toBe(normalise('[回料.金额]'));
-    // And re-parsing the canonical form is stable (idempotent)
+    expect(normalise(back)).toBe(normalise('[回料(总计)]'));
+    // 再解析稳定（幂等）
     const back2 = tokensToDrawerExpression(
       expressionToTokens(back, allTabs, selfRKF),
       allTabs,
     );
-    expect(normalise(back2)).toBe(normalise('[回料.金额]'));
+    expect(normalise(back2)).toBe(normalise('[回料(总计)]'));
   });
 
   it('compound expression "[单重] * [单价] - [COMP_RL.金额(总计)]" 解析后回显归一', () => {
@@ -2173,5 +2177,54 @@ describe('E1 — 同组件小计列引用应取同行值(field), 跨组件小计
     const tokens = expressionToTokens('[他.费用小计]', tabs2, ['料件'], 'CID-self');
     expect(tokens.some((t) => t.type === 'component_subtotal')).toBe(true);
     expect(tokens.some((t) => t.type === 'field')).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────
+// WYSIWYG (2026-06-30)：[页签(总计)] vs [页签.列] 忠实往返 + 求值不变
+// ─────────────────────────────────────────────
+describe('WYSIWYG: 整页签总计 [页签(总计)] 与小计列 [页签.列] 可区分且各自忠实往返', () => {
+  const normalise = (s: string) => s.replace(/\s+/g, ' ').trim();
+  it('[COMP_RL(总计)] 与 [COMP_RL.金额] 解析出 token 可区分（is_tab_total 标记）', () => {
+    const totalTok = expressionToTokens('[COMP_RL(总计)]', allTabs, selfRKF)[0];
+    const colTok = expressionToTokens('[COMP_RL.金额]', allTabs, selfRKF)[0];
+    // 两者 type/component_code/value 同形，仅靠 is_tab_total 区分
+    expect(totalTok).toMatchObject({ type: 'component_subtotal', value: '金额', is_tab_total: true });
+    expect(colTok.type).toBe('component_subtotal');
+    expect(colTok.value).toBe('金额');
+    expect((colTok as FormulaToken).is_tab_total).toBeUndefined();
+  });
+
+  it('整页签总计往返 [COMP_RL(总计)] → [回料(总计)]；小计列往返 [COMP_RL.金额] → [回料.金额]', () => {
+    const totalBack = tokensToDrawerExpression(
+      expressionToTokens('[COMP_RL(总计)]', allTabs, selfRKF), allTabs,
+    );
+    const colBack = tokensToDrawerExpression(
+      expressionToTokens('[COMP_RL.金额]', allTabs, selfRKF), allTabs,
+    );
+    expect(normalise(totalBack)).toBe(normalise('[回料(总计)]'));
+    expect(normalise(colBack)).toBe(normalise('[回料.金额]'));
+  });
+
+  it('is_tab_total 标记不影响求值：带标记与不带标记的 token 求值结果一致（计算不变佐证）', () => {
+    // 两个 token 仅差 is_tab_total；value 同为 金额 → 都应命中列键 COMP_RL#金额。
+    const withMark: FormulaToken[] = [
+      { type: 'component_subtotal', component_code: 'COMP_RL', value: '金额', tab_name: '金额', is_tab_total: true },
+    ];
+    const without: FormulaToken[] = [
+      { type: 'component_subtotal', component_code: 'COMP_RL', value: '金额', tab_name: '金额' },
+    ];
+    const subtotals = { 'COMP_RL#金额': 5, COMP_RL: 99 };
+    const r1 = evaluateExpression(withMark as any, {}, subtotals);
+    const r2 = evaluateExpression(without as any, {}, subtotals);
+    expect(r1).toBe(r2);
+    expect(r1).toBe(5); // 命中列键，而非裸键 99 —— 求值逐字节与修复前一致
+  });
+
+  it('tabDefs 缺失时带标记 token 序列化兜底为 [<component_code>(总计)]', () => {
+    const tok: FormulaToken[] = [
+      { type: 'component_subtotal', component_code: 'COMP_RL', value: '金额', is_tab_total: true },
+    ];
+    expect(normalise(tokensToDrawerExpression(tok, []))).toBe(normalise('[COMP_RL(总计)]'));
   });
 });

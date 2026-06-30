@@ -835,14 +835,18 @@ export function expressionToTokens(
             //     which renders back as [alias(总计)] and lets the evaluator resolve the
             //     component's default subtotal.
             const primarySubtotal = (tabDef.subtotalCols ?? [])[0] ?? '';
+            // FIX (2026-06-30, WYSIWYG): bare [alias(总计)] 与小计列引用 [alias.col] 在塞入
+            // value=首个小计列后会塌缩成同形 token，序列化无法还原 → [alias(总计)] 被改写成
+            // [alias.col]。解法：value 原样保留（求值逐字节不变，不动公式计算），额外打
+            // is_tab_total 标记供序列化区分回显；label 用纯 componentName（去 ·列名）避免读
+            // label 的显示路径回显旧列名。求值器只读 value/tab_name/component_code，不读此标记。
             result.push({
               type: 'component_subtotal',
               value: primarySubtotal,
               tab_name: primarySubtotal,
               component_code: tabDef.alias,
-              label: primarySubtotal
-                ? `${tabDef.componentName ?? tabDef.alias}·${primarySubtotal}`
-                : (tabDef.componentName ?? tabDef.alias),
+              is_tab_total: true,
+              label: tabDef.componentName ?? tabDef.alias,
             });
           } else {
             // Plain same-component field: [field]
@@ -915,7 +919,12 @@ export function tokensToDrawerExpression(
         const code = token.component_code ?? '';
         const label = tabDefs.find((d) => d.alias === code)?.componentName ?? code;
         const col = token.value ?? '';
-        if (col) {
+        // FIX (2026-06-30, WYSIWYG): is_tab_total 标记优先 → 整页签总计形式 [label(总计)]，
+        // 不看 value（value 仍存首个小计列名，仅供求值，保持计算不变）。
+        // 无标记的小计列引用照旧按非空 value 回显 [label.col]，二者从此可区分、各自忠实往返。
+        if (token.is_tab_total) {
+          parts.push(`[${label}(总计)]`);
+        } else if (col) {
           parts.push(`[${label}.${col}]`);
         } else {
           parts.push(`[${label}(总计)]`);

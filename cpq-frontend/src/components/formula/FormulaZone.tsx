@@ -96,6 +96,12 @@ function getTokenLabel(token: FormulaToken): string {
     return `本.${token.label || token.value}`;
   }
   if (token.type === 'component_subtotal') {
+    // 2026-06-30 WYSIWYG: 整页签总计标记优先 → 「组件名(总计)」，不读 value/tab_name（仍存列名供求值）。
+    // 注：is_tab_total token 仅由 expressionToTokens 产出（TabJoinFormulaDrawer / buildExcelSnapshot），
+    // 不经 FormulaZone（仅 FormulaBuilder / SubtotalFormulaBar chip 编辑器使用）；此分支为冗余兜底，保显示一致。
+    if (token.is_tab_total) {
+      return `${token.label || token.component_code || '组件'}(总计)`;
+    }
     // Show "组件名·字段名" format for cross-component references
     if (token.label && token.label.includes('·')) return token.label;
     // Fallback for old tokens: use component_code as component identifier

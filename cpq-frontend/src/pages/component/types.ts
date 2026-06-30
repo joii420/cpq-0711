@@ -159,6 +159,12 @@ export interface FormulaToken {
   label?: string;
   component_code?: string;
   tab_name?: string;
+  /**
+   * component_subtotal 专用 (2026-06-30, WYSIWYG)：标记该 token 为「整页签总计」引用 [页签(总计)]，
+   * 以区别于「具体小计列」引用 [页签.列]（两者 value 可能同形）。仅供序列化/显示回显 [页签(总计)]，
+   * **求值器一律不读此标记**（只读 value/tab_name/component_code），故对公式计算零影响。
+   */
+  is_tab_total?: boolean;
   attribute_name?: string;
   /** path token 专用:BNF 路径原始字符串(如 mat_part.unit_weight 或 元素BOM[元素='Ag'].组成含量) */
   path?: string;
