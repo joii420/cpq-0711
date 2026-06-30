@@ -28,6 +28,7 @@ const materialComp = {
       field_type: 'FIXED_VALUE' as const,
       content: '10',
       is_subtotal: true,
+      is_amount: true, // BL-0017: 材料成本是金额列 → 计入 [来料(总计)]
     },
   ],
   formulas: [],
@@ -197,6 +198,7 @@ const materialCompDriver = {
       name: '料件成本',
       field_type: 'FORMULA' as const,
       is_subtotal: true,
+      is_amount: true, // BL-0017: 料件成本是金额列 → 计入 [来料D(总计)]
     },
   ],
   formulas: [

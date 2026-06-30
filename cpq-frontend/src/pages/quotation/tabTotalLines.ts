@@ -1,16 +1,41 @@
 /**
  * 「本页签金额合计」（页签底部那行）= 该页签所有「金额列」(is_amount && is_subtotal) 的列小计之和。
  *
- * ⚠️ 此行仅用于显示，**不参与任何公式计算**，没有任何 token 读它。
- * 切勿与公式引擎的「组件小计 component_subtotal」混淆 —— 后者 = 该页签所有 is_subtotal 列之和，
- * 存于 allComponentSubtotals[tabName]（裸键），喂产品小计 / 跨页签公式。两者改本设计后会分叉：
- * 本行显示 = 金额列之和；引擎值仍 = 小计列之和。改本函数不触公式引擎。
+ * BL-0017（2026-06-30）：`[页签(总计)]` 公式引擎值已对齐到本口径 —— 通过哨兵列键
+ * `${key}#${AMOUNT_TOTAL_KEY}`（= Σ金额列）实现，求值器不变、裸键不变。本行显示与
+ * `[页签(总计)]` 现已**同值同口径**（不再分叉）。裸键 `allComponentSubtotals[tabName]` 仍 =
+ * Σ所有 is_subtotal 列，专供 previous_row_subtotal / 产品小计兜底 / 折扣，未受 BL-0017 影响。
  */
+
+/** BL-0017 哨兵列键：`${componentId|code|tabName}#__amount_total__` = 该页签金额列小计之和。 */
+export const AMOUNT_TOTAL_KEY = '__amount_total__';
+
 interface CompLike {
   componentType?: string;
   tabName: string;
   componentCode?: string;
   fields?: Array<{ name: string; is_subtotal?: boolean; is_amount?: boolean }>;
+}
+
+/**
+ * BL-0017：从「列名→列小计」字典求金额列(is_amount && is_subtotal)之和。
+ * 供 component_subtotal 各装配点登记哨兵键 `${key}#__amount_total__`。
+ * @param fields 组件字段（带 is_amount / is_subtotal）
+ * @param byCol  列名→列小计（如 computeTabSubtotalsByColumn / sumColumnsCanonical 的产物）
+ */
+export function sumAmountFromByCol(
+  fields: Array<{ name: string; is_subtotal?: boolean; is_amount?: boolean }> | undefined,
+  byCol: Record<string, number>,
+): number {
+  if (!fields) return 0;
+  const amountCols = new Set(
+    fields.filter((f) => f.is_amount && f.is_subtotal).map((f) => f.name),
+  );
+  let total = 0;
+  for (const [col, val] of Object.entries(byCol)) {
+    if (amountCols.has(col)) total += val;
+  }
+  return total;
 }
 
 /**

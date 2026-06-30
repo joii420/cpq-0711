@@ -862,7 +862,9 @@ public class ConfigureSnapshotService {
             if (code != null && !code.isBlank()) crossTabRows.put(code, canonRows);
 
             // 列小计累计(键 code#col / name#col):供后续组件 component_subtotal token 求值(canonical)。
-            accumulateColumnSubtotals(canonRows, code, tabName, componentSubtotals);
+            // BL-0017:同时登记金额列哨兵键 code#__amount_total__ / tabName#__amount_total__(供 [页签(总计)])。
+            accumulateColumnSubtotals(canonRows, code, tabName, componentSubtotals,
+                com.cpq.quotation.service.card.ComponentDataEffectiveRows.amountColsFromFields(fields));
 
             result.put(cid, flat);
         }
@@ -923,7 +925,8 @@ public class ConfigureSnapshotService {
      * 入参为换算后行(见 {@link #convertRowsForCrossTab}),与卡片 {@code backfillSubtotalsFromResolved} 求和用 canonical 一致。
      */
     private void accumulateColumnSubtotals(List<Map<String, Object>> rows, String code, String tabName,
-                                           Map<String, Double> componentSubtotals) {
+                                           Map<String, Double> componentSubtotals,
+                                           java.util.Set<String> amountCols) {
         if (rows == null) return;
         Map<String, Double> colSums = new LinkedHashMap<>();
         for (Map<String, Object> row : rows) {
@@ -934,10 +937,16 @@ public class ConfigureSnapshotService {
                 }
             }
         }
+        double amountTotal = 0.0;
         for (Map.Entry<String, Double> e : colSums.entrySet()) {
             if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + e.getKey(), e.getValue());
             if (tabName != null && !tabName.isBlank()) componentSubtotals.put(tabName + "#" + e.getKey(), e.getValue());
+            if (amountCols != null && amountCols.contains(e.getKey())) amountTotal += e.getValue();
         }
+        // BL-0017 哨兵键(加性,不动裸键):code#__amount_total__ / tabName#__amount_total__ = Σ金额列。
+        String akey = com.cpq.quotation.service.card.ComponentDataEffectiveRows.AMOUNT_TOTAL_KEY;
+        if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + akey, amountTotal);
+        if (tabName != null && !tabName.isBlank()) componentSubtotals.put(tabName + "#" + akey, amountTotal);
     }
 
     /**

@@ -27,7 +27,7 @@ import { rowFingerprint, keepRow, type Tombstone } from './deletedRows';
 import { applyUnitConversion, factorFor } from '../../utils/unitConversion';
 import { formatNumber } from '../../utils/formatNumber';
 import { findDuplicateRowKeys } from './rowDedup';
-import { sumTabColumns } from './tabTotalLines';
+import { sumTabColumns, sumAmountFromByCol, AMOUNT_TOTAL_KEY } from './tabTotalLines';
 import { isCardValueFailed } from './cardValueFailed';
 import { templateService } from '../../services/templateService';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
@@ -1090,9 +1090,15 @@ export function subtotalsFromResolvedRows(
     totalForComp += colVal;
   }
   totalForComp = round4(totalForComp);
-  // 总小计键（与 PASS1 的 componentSubtotals[comp.tabName] 对齐）
+  // 总小计键（与 PASS1 的 componentSubtotals[comp.tabName] 对齐）—— 裸键 = Σ所有 is_subtotal 列（不变）。
   for (const k of keys) {
     allComponentSubtotals[k] = totalForComp;
+  }
+  // BL-0017：哨兵列键 = Σ金额列（按 resolvedRows colSums 过滤 is_amount），专供 `[页签(总计)]`。
+  // 必须在此 PASS2 回填（卡片视图权威值），否则 PASS1 的哨兵键会与裸键回填不同步。
+  const amountTotalResolved = round4(sumAmountFromByCol(comp.fields, colSums));
+  for (const k of keys) {
+    allComponentSubtotals[`${k}#${AMOUNT_TOTAL_KEY}`] = amountTotalResolved;
   }
 }
 
@@ -1226,9 +1232,15 @@ export function getComponentSubtotals(
       if (comp.componentCode) componentSubtotals[`${comp.componentCode}#${colName}`] = colVal;
       componentSubtotals[`${comp.tabName}#${colName}`] = colVal;
     }
+    // 裸键 = Σ所有 is_subtotal 列（不变，专供 previous_row_subtotal / 产品小计兜底 / 折扣）。
     if (comp.componentId) componentSubtotals[comp.componentId] = subtotal;
     if (comp.componentCode) componentSubtotals[comp.componentCode] = subtotal;
     componentSubtotals[comp.tabName] = subtotal;
+    // BL-0017：哨兵列键 = Σ金额列(is_amount)，专供 `[页签(总计)]`（加性，不碰任何现有键/裸键）。
+    const amountTotal = sumAmountFromByCol(comp.fields, byCol);
+    if (comp.componentId) componentSubtotals[`${comp.componentId}#${AMOUNT_TOTAL_KEY}`] = amountTotal;
+    if (comp.componentCode) componentSubtotals[`${comp.componentCode}#${AMOUNT_TOTAL_KEY}`] = amountTotal;
+    componentSubtotals[`${comp.tabName}#${AMOUNT_TOTAL_KEY}`] = amountTotal;
   }
   return componentSubtotals;
 }
@@ -2053,6 +2065,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       if (comp.componentCode) allComponentSubtotals[`${comp.componentCode}#${colName}`] = colVal;
       allComponentSubtotals[`${comp.tabName}#${colName}`] = colVal;
     }
+    // BL-0017：哨兵列键 = Σ金额列，专供 `[页签(总计)]`（加性，裸键不动）。
+    const amountTotalP1 = sumAmountFromByCol(comp.fields, byCol);
+    if (comp.componentId) allComponentSubtotals[`${comp.componentId}#${AMOUNT_TOTAL_KEY}`] = amountTotalP1;
+    if (comp.componentCode) allComponentSubtotals[`${comp.componentCode}#${AMOUNT_TOTAL_KEY}`] = amountTotalP1;
+    allComponentSubtotals[`${comp.tabName}#${AMOUNT_TOTAL_KEY}`] = amountTotalP1;
   }
 
   // cross_tab_ref (PASS2, 镜像后端 CardSnapshotService): 在 allComponentSubtotals (PASS1) 之后,

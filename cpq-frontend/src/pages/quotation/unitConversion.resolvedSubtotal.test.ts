@@ -72,3 +72,50 @@ describe('subtotalsFromResolvedRows — 物化点5 前端对齐', () => {
     expect(out['tab1#重量']).toBeCloseTo(1500, 4);
   });
 });
+
+describe('BL-0017 — subtotalsFromResolvedRows 登记金额哨兵键 + 裸键不变', () => {
+  it('混合金额/非金额小计列：哨兵键=Σ金额列，裸键=Σ所有小计列', () => {
+    const comp: any = {
+      componentId: 'cid1',
+      componentCode: 'COMP_X',
+      tabName: 'tabX',
+      fields: [
+        { name: '金额', field_type: 'INPUT_NUMBER', is_subtotal: true, is_amount: true },
+        { name: '汇率', field_type: 'INPUT_NUMBER', is_subtotal: true, is_amount: false }, // 非金额小计列
+      ],
+    };
+    const rows = [
+      { 金额: 100, 汇率: 7 },
+      { 金额: 200, 汇率: 7 },
+    ];
+    const out: Record<string, number> = {};
+    subtotalsFromResolvedRows(comp, rows, out);
+
+    // 列键：全部 is_subtotal 列照常登记
+    expect(out['COMP_X#金额']).toBeCloseTo(300, 4);
+    expect(out['COMP_X#汇率']).toBeCloseTo(14, 4);
+    // 裸键 = Σ所有 is_subtotal 列（300+14=314），未变 —— 专供 previous_row_subtotal/产品兜底/折扣
+    expect(out['COMP_X']).toBeCloseTo(314, 4);
+    expect(out['cid1']).toBeCloseTo(314, 4);
+    expect(out['tabX']).toBeCloseTo(314, 4);
+    // BL-0017 哨兵键 = Σ金额列（仅 金额=300，不含非金额的 汇率）
+    expect(out['COMP_X#__amount_total__']).toBeCloseTo(300, 4);
+    expect(out['cid1#__amount_total__']).toBeCloseTo(300, 4);
+    expect(out['tabX#__amount_total__']).toBeCloseTo(300, 4);
+  });
+
+  it('零金额列：哨兵键=0，裸键仍=Σ小计列', () => {
+    const comp: any = {
+      componentCode: 'COMP_Y',
+      tabName: 'tabY',
+      fields: [
+        { name: '汇率', field_type: 'INPUT_NUMBER', is_subtotal: true, is_amount: false },
+      ],
+    };
+    const rows = [{ 汇率: 7 }, { 汇率: 8 }];
+    const out: Record<string, number> = {};
+    subtotalsFromResolvedRows(comp, rows, out);
+    expect(out['COMP_Y']).toBeCloseTo(15, 4);                     // 裸键不变
+    expect(out['COMP_Y#__amount_total__']).toBeCloseTo(0, 4);     // 无金额列 → 0
+  });
+});

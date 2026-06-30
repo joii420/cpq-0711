@@ -31,6 +31,8 @@
 import type { FormulaToken } from './types';
 import type { TabDef } from '../../services/tabJoinFormulaService';
 import { parsePredicateText, serializePredicate } from '../../utils/predicateText';
+// BL-0017: 哨兵列键单源（与各 componentSubtotals 装配点一致），避免协议字符串漂移（AP-44）。
+import { AMOUNT_TOTAL_KEY } from '../quotation/tabTotalLines';
 
 // Re-export TabDef for convenience of tests (they import from this module)
 export type { TabDef };
@@ -827,23 +829,15 @@ export function expressionToTokens(
                 `页签 "${alias}" 缺少 componentId，无法构建跨页签引用 token`,
               );
             }
-            // FIX (2026-06-10): bare [alias(总计)] means "the SUBTOTAL of tab alias",
-            // which the evaluator consumes as a component_subtotal token (NOT cross_tab_ref).
-            // Convention for the column to use:
-            //   • if the tab has ≥1 subtotalCol → use the FIRST (primary) subtotalCol as value;
-            //   • if the tab has NO subtotalCol → emit empty value (component_code still set),
-            //     which renders back as [alias(总计)] and lets the evaluator resolve the
-            //     component's default subtotal.
-            const primarySubtotal = (tabDef.subtotalCols ?? [])[0] ?? '';
-            // FIX (2026-06-30, WYSIWYG): bare [alias(总计)] 与小计列引用 [alias.col] 在塞入
-            // value=首个小计列后会塌缩成同形 token，序列化无法还原 → [alias(总计)] 被改写成
-            // [alias.col]。解法：value 原样保留（求值逐字节不变，不动公式计算），额外打
-            // is_tab_total 标记供序列化区分回显；label 用纯 componentName（去 ·列名）避免读
-            // label 的显示路径回显旧列名。求值器只读 value/tab_name/component_code，不读此标记。
+            // bare [alias(总计)] = 整页签总计 → component_subtotal token。
+            // BL-0017 (2026-06-30, Step 2): value/tab_name 指向哨兵列键 __amount_total__，
+            //   使求值器（逻辑不变）命中各装配点登记的 `code#__amount_total__` = Σ金额列(is_amount)，
+            //   而非首个小计列。**求值器零改动、裸键零改动**——口径切换纯靠哨兵键这一数据面。
+            // is_tab_total 标记仍供序列化忠实回显 [alias(总计)]（WYSIWYG，不读 value）。
             result.push({
               type: 'component_subtotal',
-              value: primarySubtotal,
-              tab_name: primarySubtotal,
+              value: AMOUNT_TOTAL_KEY,
+              tab_name: AMOUNT_TOTAL_KEY,
               component_code: tabDef.alias,
               is_tab_total: true,
               label: tabDef.componentName ?? tabDef.alias,

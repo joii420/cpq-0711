@@ -455,7 +455,8 @@ public class ExcelViewService {
             if (c == null) continue;
             metaById.put(cd.componentId,
                 new com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta(
-                    c.code, c.name, c.componentType, parseComponentFormulas(c.formulas)));
+                    c.code, c.name, c.componentType, parseComponentFormulas(c.formulas),
+                    com.cpq.quotation.service.card.ComponentDataEffectiveRows.amountColsFromFieldsJson(c.fields)));
         }
 
         // 从模板 componentsSnapshot 找出 SUBTOTAL 组件中未出现在 cdList 的，补成 extraSubtotalMetas。
@@ -500,7 +501,8 @@ public class ExcelViewService {
                 if (comp == null) continue;
                 out.put(cid,
                     new com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta(
-                        comp.code, comp.name, comp.componentType, parseComponentFormulas(comp.formulas)));
+                        comp.code, comp.name, comp.componentType, parseComponentFormulas(comp.formulas),
+                        com.cpq.quotation.service.card.ComponentDataEffectiveRows.amountColsFromFieldsJson(comp.fields)));
             }
         } catch (Exception e) {
             LOG.warnf("[ExcelView] buildMissingSubtotalMetas failed tmpl=%s: %s", templateId, e.getMessage());

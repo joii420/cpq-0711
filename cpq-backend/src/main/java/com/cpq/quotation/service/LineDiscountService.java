@@ -155,7 +155,8 @@ public class LineDiscountService {
                 try { formulas = MAPPER.readTree(c.formulas); } catch (Exception ignore) {}
             }
             out.put(cd.componentId,
-                new ComponentDataEffectiveRows.Meta(c.code, c.name, c.componentType, formulas));
+                new ComponentDataEffectiveRows.Meta(c.code, c.name, c.componentType, formulas,
+                    ComponentDataEffectiveRows.amountColsFromFieldsJson(c.fields)));
         }
         return out;
     }

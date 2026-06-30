@@ -132,6 +132,79 @@ class ComponentDataEffectiveRowsTest {
             "实际=" + st.subtotal);
     }
 
+    /**
+     * BL-0017：`[页签(总计)]`（component_subtotal token value=__amount_total__）只取金额列(is_amount)之和，
+     * 不含非金额小计列；裸键仍 = Σ所有小计列（不变）。
+     */
+    @Test
+    void bl0017AmountTotalSentinelKeyOnlySumsAmountColumns() {
+        String LL = "11111111-1111-1111-1111-111111111111"; // 来料 (NORMAL)：材料成本(金额) + 汇率(非金额小计列)
+        String ST = "44444444-4444-4444-4444-444444444444"; // 报价小计 SUBTOTAL
+
+        // 来料两小计列：材料成本=10（is_amount），汇率=7（is_subtotal 但非金额）
+        var cdList = List.of(cd(LL, 1, "[{\"材料成本\":10,\"汇率\":7}]"));
+
+        Map<UUID, ComponentDataEffectiveRows.Meta> meta = new HashMap<>();
+        // amountCols 只含 材料成本 → 哨兵键 code#__amount_total__ = 10（不含 汇率）
+        meta.put(UUID.fromString(LL), new ComponentDataEffectiveRows.Meta(
+            "COMP-0028__imp1", "来料", "DETAIL", null, Set.of("材料成本")));
+
+        // SUBTOTAL 公式 = [来料(总计)]：token value=__amount_total__（BL-0017 解析器产出）
+        String subtotalFormulas = "[{\"name\":\"产品小计\",\"expression\":["
+            + "{\"type\":\"component_subtotal\",\"value\":\"__amount_total__\","
+            + "\"tab_name\":\"__amount_total__\",\"component_code\":\"COMP-0028__imp1\",\"is_tab_total\":true}"
+            + "]}]";
+        Map<UUID, ComponentDataEffectiveRows.Meta> extra = new HashMap<>();
+        extra.put(UUID.fromString(ST), new ComponentDataEffectiveRows.Meta(
+            "COMP-0034__imp1", "报价小计", "SUBTOTAL", formulas(subtotalFormulas)));
+
+        Map<String, CardEffectiveRows.TabRows> out =
+            ComponentDataEffectiveRows.compute(cdList, meta, extra, new FormulaCalculator());
+
+        // [来料(总计)] = Σ金额列 = 材料成本 10（非 10+7=17）
+        assertEquals(0, new BigDecimal("10").compareTo(out.get(ST).subtotal),
+            "[来料(总计)] 应=金额列之和 10，非含非金额列的 17；实际=" + out.get(ST).subtotal);
+    }
+
+    /**
+     * BL-0017 + 折扣重算：`subtotalWithDiscount`（LineDiscountService 路径）按列折扣缩放后，
+     * `[页签(总计)]` 哨兵键 = 缩放后 Σ金额列（仅金额列参与，非金额小计列不受影响）。
+     */
+    @Test
+    void bl0017AmountTotalSentinelUnderPerColumnDiscount() {
+        String LL = "11111111-1111-1111-1111-111111111111"; // 来料：材料成本(金额)=10 + 汇率(非金额)=7
+        String ST = "44444444-4444-4444-4444-444444444444"; // 报价小计 SUBTOTAL
+
+        var cdList = List.of(
+            cd(LL, 1, "[{\"材料成本\":10,\"汇率\":7}]"),
+            cd(ST, 8, "[]"));
+
+        // SUBTOTAL 公式 = [来料(总计)]：token value=__amount_total__
+        String subtotalFormulas = "[{\"name\":\"产品小计\",\"expression\":["
+            + "{\"type\":\"component_subtotal\",\"value\":\"__amount_total__\","
+            + "\"tab_name\":\"__amount_total__\",\"component_code\":\"COMP-0028__imp1\",\"is_tab_total\":true}"
+            + "]}]";
+
+        Map<UUID, ComponentDataEffectiveRows.Meta> meta = new HashMap<>();
+        meta.put(UUID.fromString(LL), new ComponentDataEffectiveRows.Meta(
+            "COMP-0028__imp1", "来料", "DETAIL", null, Set.of("材料成本")));
+        meta.put(UUID.fromString(ST), new ComponentDataEffectiveRows.Meta(
+            "COMP-0034__imp1", "报价小计", "SUBTOTAL", formulas(subtotalFormulas)));
+
+        FormulaCalculator fc = new FormulaCalculator();
+
+        // 无折扣：[来料(总计)] = Σ金额列 = 10
+        BigDecimal s0 = ComponentDataEffectiveRows.subtotalWithDiscount(
+            cdList, meta, UUID.fromString(ST), fc, null, 1.0);
+        assertEquals(0, new BigDecimal("10").compareTo(s0), "无折扣应=金额列 10，实际=" + s0);
+
+        // 按列折扣：材料成本 ×0.5 → 哨兵键 = 5（非金额的 汇率 不参与，原本也不在金额总计里）
+        BigDecimal sD = ComponentDataEffectiveRows.subtotalWithDiscount(
+            cdList, meta, UUID.fromString(ST), fc, "COMP-0028__imp1#材料成本", 0.5);
+        assertEquals(0, new BigDecimal("5").compareTo(sD),
+            "材料成本×0.5 后 [来料(总计)] 应=5（缩放后 Σ金额列），实际=" + sD);
+    }
+
     /** 脏/空数据兜底：null rowData、非数值列、缺 meta 都不抛异常。 */
     @Test
     void nullAndDirtyDataSafe() {

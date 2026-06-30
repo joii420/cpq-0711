@@ -39,6 +39,12 @@ public final class ComponentDataEffectiveRows {
     private static final String SUBTOTAL_KEY_SEP = "#";
     /** 双键中 componentId:sortOrder 的分隔符（CardRef 约定）。 */
     private static final String TABKEY_SORT_SEP = ":";
+    /**
+     * BL-0017 哨兵列名：`<code|name>#__amount_total__` = 该页签金额列(is_amount && is_subtotal)之和，
+     * 专供 `[页签(总计)]`（component_subtotal token value=此哨兵）。加性键，裸键不变。
+     * ⚠️ 必须与前端 {@code tabTotalLines.AMOUNT_TOTAL_KEY} 一致。
+     */
+    public static final String AMOUNT_TOTAL_KEY = "__amount_total__";
 
     private ComponentDataEffectiveRows() {}
 
@@ -49,12 +55,45 @@ public final class ComponentDataEffectiveRows {
         public final String componentType;
         /** 组件 formulas JSON 数组（SUBTOTAL 组件求总计用），可为 null。 */
         public final JsonNode formulas;
+        /** BL-0017：金额列名集（is_amount && is_subtotal），供哨兵键 Σ金额列；为 null/空则金额总计=0。 */
+        public final java.util.Set<String> amountCols;
         public Meta(String code, String name, String componentType, JsonNode formulas) {
+            this(code, name, componentType, formulas, java.util.Set.of());
+        }
+        public Meta(String code, String name, String componentType, JsonNode formulas,
+                    java.util.Set<String> amountCols) {
             this.code = code;
             this.name = name;
             this.componentType = componentType;
             this.formulas = formulas;
+            this.amountCols = amountCols != null ? amountCols : java.util.Set.of();
         }
+    }
+
+    /**
+     * BL-0017：从组件 fields JSON 字符串抽取金额列名集（is_amount && is_subtotal）。
+     * 供 Meta 构造点（ExcelViewService / LineDiscountService）填充 amountCols。
+     * null/空/坏 JSON → 空集（该页签金额总计 = 0）。
+     */
+    public static java.util.Set<String> amountColsFromFieldsJson(String fieldsJson) {
+        if (fieldsJson == null || fieldsJson.isBlank()) return java.util.Set.of();
+        try {
+            return amountColsFromFields(MAPPER.readTree(fieldsJson));
+        } catch (Exception ignore) { /* 坏 fields → 空集（金额总计=0） */ }
+        return java.util.Set.of();
+    }
+
+    /** BL-0017：从组件 fields JsonNode 抽取金额列名集（is_amount && is_subtotal）。null/非数组 → 空集。 */
+    public static java.util.Set<String> amountColsFromFields(JsonNode fields) {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        if (fields == null || !fields.isArray()) return out;
+        for (JsonNode f : fields) {
+            if (f.path("is_amount").asBoolean(false) && f.path("is_subtotal").asBoolean(false)) {
+                String n = f.path("name").asText("");
+                if (!n.isBlank()) out.add(n);
+            }
+        }
+        return out;
     }
 
     public static Map<String, CardEffectiveRows.TabRows> compute(
@@ -137,6 +176,8 @@ public final class ComponentDataEffectiveRows {
             Meta meta = cd.componentId != null ? metas.get(cd.componentId) : null;
             accs.add(new TabAcc(cd, rows, colSums, meta));
             if (meta != null) {
+                // BL-0017：累加金额列(is_amount)之和（用缩放后 v，与列键口径一致），登记哨兵键。
+                double amountTotal = 0.0;
                 for (Map.Entry<String, BigDecimal> e : colSums.entrySet()) {
                     // double 受限于 FormulaCalculator.RowContext.componentSubtotals 的 Map<String,Double> 契约；
                     // 列和本身仍是 BigDecimal（见 subtotalByColumn），勿擅自改回 BigDecimal 破坏契约。
@@ -151,7 +192,11 @@ public final class ComponentDataEffectiveRows {
                     if (hit) v = v * discountScale;
                     if (meta.code != null) componentSubtotals.put(meta.code + SUBTOTAL_KEY_SEP + e.getKey(), v);
                     if (meta.name != null) componentSubtotals.put(meta.name + SUBTOTAL_KEY_SEP + e.getKey(), v);
+                    if (meta.amountCols.contains(e.getKey())) amountTotal += v;
                 }
+                // BL-0017 哨兵键（加性，不动裸键）：`<code|name>#__amount_total__` = Σ金额列。
+                if (meta.code != null) componentSubtotals.put(meta.code + SUBTOTAL_KEY_SEP + AMOUNT_TOTAL_KEY, amountTotal);
+                if (meta.name != null) componentSubtotals.put(meta.name + SUBTOTAL_KEY_SEP + AMOUNT_TOTAL_KEY, amountTotal);
             }
         }
 

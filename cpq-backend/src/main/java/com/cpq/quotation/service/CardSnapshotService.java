@@ -1536,6 +1536,9 @@ public class CardSnapshotService {
             for (Map.Entry<String, Double> en : componentSubtotals.entrySet()) {
                 if (en.getKey().startsWith(keyPrefix) && en.getValue() != null) {
                     String col = en.getKey().substring(keyPrefix.length());
+                    // BL-0017：`__amount_total__` 是供 [页签(总计)] 公式求值的内部聚合键，
+                    // 不是真实列；不得泄漏进 subtotalByColumn（否则污染快照 + golden 漂移）。
+                    if (com.cpq.quotation.service.card.ComponentDataEffectiveRows.AMOUNT_TOTAL_KEY.equals(col)) continue;
                     if (!byColNode.has(col)) byColNode.put(col, en.getValue());
                 }
             }
