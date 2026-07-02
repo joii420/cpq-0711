@@ -77,6 +77,19 @@ public class ComponentResource {
         return ApiResponse.success(componentService.update(id, request));
     }
 
+    /**
+     * 设置/清空组件的驱动视图（data_driver_path 唯一真源）。
+     * sqlViewName=null/空 表示取消驱动。
+     */
+    @PUT
+    @Path("/{id}/driver-view")
+    public ApiResponse<ComponentDTO> setDriverView(
+            @PathParam("id") UUID id,
+            com.cpq.component.dto.SetDriverViewRequest req) {
+        return ApiResponse.success(
+                componentService.setDriverView(id, req == null ? null : req.sqlViewName));
+    }
+
     @PATCH
     @Path("/{id}/toggle-status")
     public ApiResponse<ComponentDTO> toggleStatus(@PathParam("id") UUID id) {

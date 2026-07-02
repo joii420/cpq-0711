@@ -262,6 +262,46 @@ public class ComponentService {
         return ComponentDTO.from(component);
     }
 
+    /**
+     * 设置/清空组件的驱动视图。data_driver_path 唯一真源，值形态 $视图名。
+     *
+     * @param sqlViewName 本组件 ACTIVE SQL 视图名（不含 $）；null/空=清空驱动。
+     */
+    @Transactional
+    public ComponentDTO setDriverView(UUID componentId, String sqlViewName) {
+        Component component = Component.findById(componentId);
+        if (component == null) {
+            throw new BusinessException(404, "Component not found: " + componentId);
+        }
+        if (sqlViewName == null || sqlViewName.isBlank()) {
+            component.dataDriverPath = null;
+        } else {
+            String name = sqlViewName.trim();
+            boolean exists = sqlViewRepository
+                    .findByComponentAndName(componentId, name)
+                    .isPresent();
+            if (!exists) {
+                throw new BusinessException(400,
+                        "SQL 视图不存在或未启用：" + name);
+            }
+            component.dataDriverPath = normalizeDriverPath("$" + name);
+        }
+        LOG.infof("[driver-view] componentId=%s set dataDriverPath='%s'",
+                componentId, component.dataDriverPath);
+
+        // 行键校验（软校验，违规只告警不阻断，与 update() 一致）
+        validateRowKeyConfig(component.dataDriverPath, component.fields, component.rowKeyFields, false);
+
+        // 配置中心原则：driver 变更后同步所有引用该组件的模板 snapshot
+        try {
+            templateService.refreshSnapshotsByComponent(componentId);
+        } catch (Exception e) {
+            LOG.warnf("[driver-view] snapshot refresh failed componentId=%s: %s",
+                    componentId, e.getMessage());
+        }
+        return ComponentDTO.from(component);
+    }
+
     @Transactional
     public ComponentDTO toggleStatus(UUID id) {
         Component component = Component.findById(id);
