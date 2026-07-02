@@ -57,6 +57,9 @@ public class ComponentSqlViewService {
     @Inject
     EntityManager em;
 
+    @Inject
+    ComponentService componentService;
+
     // ────────────────────────────────── CRUD ──────────────────────────────────
 
     public List<ComponentSqlViewDTO> listByComponent(UUID componentId) {
@@ -162,6 +165,7 @@ public class ComponentSqlViewService {
             reuse.description = req.description;
             LOG.infof("[ComponentSqlView] revived INACTIVE record id=%s name=%s",
                     reuse.id, req.sqlViewName);
+            defaultDriverIfNone(componentId, reuse.sqlViewName);
             return ComponentSqlViewDTO.from(reuse, lookupComponentCode(componentId));
         }
 
@@ -181,7 +185,16 @@ public class ComponentSqlViewService {
         repository.persist(entity);
         LOG.infof("[ComponentSqlView] created componentId=%s name=%s scope=%s",
                 componentId, req.sqlViewName, entity.scope);
+        defaultDriverIfNone(componentId, entity.sqlViewName);
         return ComponentSqlViewDTO.from(entity, lookupComponentCode(componentId));
+    }
+
+    /** 若组件当前无驱动，则把刚建/复活的视图设为默认驱动。 */
+    private void defaultDriverIfNone(UUID componentId, String sqlViewName) {
+        Component c = Component.findById(componentId);
+        if (c != null && (c.dataDriverPath == null || c.dataDriverPath.isBlank())) {
+            componentService.setDriverView(componentId, sqlViewName);
+        }
     }
 
     @Transactional
@@ -256,6 +269,15 @@ public class ComponentSqlViewService {
         entity.status = "INACTIVE";
         LOG.infof("[ComponentSqlView] soft-deleted id=%s componentId=%s name=%s",
                 id, componentId, entity.sqlViewName);
+
+        // 若被删视图正是当前驱动 → 清空组件驱动（回到无驱动=产品级单行）
+        // 注：仅清理"本组件把本视图设为驱动($视图名)"的情形。GLOBAL 视图被别的组件
+        // 以 $$code.视图名 跨组件设为驱动的悬挂引用不在此处理（本特性 driver 仅限本组件视图，
+        // 见 spec 2026-07-01；且 findReferences() 亦不扫 dataDriverPath，属既有范围外）。
+        Component owner = Component.findById(componentId);
+        if (owner != null && ("$" + entity.sqlViewName).equals(owner.dataDriverPath)) {
+            componentService.setDriverView(componentId, null);
+        }
     }
 
     /**
