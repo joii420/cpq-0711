@@ -1,0 +1,86 @@
+package com.cpq.component.service;
+
+import com.cpq.component.entity.Component;
+import com.cpq.component.entity.ComponentSqlView;
+import io.quarkus.test.TestTransaction;
+import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
+import org.junit.jupiter.api.Test;
+
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+@QuarkusTest
+public class DriverViewDesignationTest {
+
+    @Inject
+    ComponentService componentService;
+
+    /** 建一个 NORMAL 组件 + 一张 ACTIVE 视图，返回 component。 */
+    private Component newComponentWithView(String viewName) {
+        Component c = new Component();
+        c.code = "TEST-DRV-" + UUID.randomUUID().toString().substring(0, 8);
+        c.name = "driver-test";
+        c.componentType = "NORMAL";
+        c.fields = "[]";
+        c.formulas = "[]";
+        c.persist();
+
+        ComponentSqlView v = new ComponentSqlView();
+        v.componentId = c.id;
+        v.sqlViewName = viewName;
+        v.sqlTemplate = "SELECT 1 AS x";
+        v.declaredColumns = "[]";
+        v.scope = "COMPONENT";
+        v.status = "ACTIVE";
+        v.persist();
+        return c;
+    }
+
+    @Test
+    @TestTransaction
+    void setDriverView_setsDollarPrefixedPath() {
+        Component c = newComponentWithView("cz_view");
+        componentService.setDriverView(c.id, "cz_view");
+        Component reloaded = Component.findById(c.id);
+        assertEquals("$cz_view", reloaded.dataDriverPath);
+    }
+
+    @Test
+    @TestTransaction
+    void setDriverView_nullClearsDriver() {
+        Component c = newComponentWithView("cz_view");
+        componentService.setDriverView(c.id, "cz_view");
+        componentService.setDriverView(c.id, null);
+        Component reloaded = Component.findById(c.id);
+        assertTrue(reloaded.dataDriverPath == null || reloaded.dataDriverPath.isBlank());
+    }
+
+    @Test
+    @TestTransaction
+    void setDriverView_unknownViewRejected() {
+        Component c = newComponentWithView("cz_view");
+        assertThrows(RuntimeException.class,
+                () -> componentService.setDriverView(c.id, "no_such_view"));
+    }
+
+    @Test
+    @TestTransaction
+    void setDriverView_switchOverwritesPrevious() {
+        Component c = newComponentWithView("view_a");
+        ComponentSqlView vb = new ComponentSqlView();
+        vb.componentId = c.id;
+        vb.sqlViewName = "view_b";
+        vb.sqlTemplate = "SELECT 1 AS x";
+        vb.declaredColumns = "[]";
+        vb.scope = "COMPONENT";
+        vb.status = "ACTIVE";
+        vb.persist();
+
+        componentService.setDriverView(c.id, "view_a");
+        componentService.setDriverView(c.id, "view_b");
+        Component reloaded = Component.findById(c.id);
+        assertEquals("$view_b", reloaded.dataDriverPath);
+    }
+}
