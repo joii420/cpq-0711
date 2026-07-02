@@ -21,9 +21,13 @@ const { Text } = Typography;
 
 interface Props {
   componentId: string;
+  /** 当前驱动路径（= component.dataDriverPath，形态 $视图名）；空=无驱动。 */
+  currentDriverPath?: string;
+  /** 驱动变更后回调，参数为新的 dataDriverPath（可空，空串=已清空）。 */
+  onDriverChange?: (newDriverPath: string) => void;
 }
 
-const SqlViewListPanel: React.FC<Props> = ({ componentId }) => {
+const SqlViewListPanel: React.FC<Props> = ({ componentId, currentDriverPath, onDriverChange }) => {
   const [views, setViews] = useState<ComponentSqlView[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -127,6 +131,31 @@ const SqlViewListPanel: React.FC<Props> = ({ componentId }) => {
     }
   };
 
+  const isDriverView = (v: ComponentSqlView) =>
+    !!currentDriverPath && currentDriverPath === `$${v.sqlViewName}`;
+
+  const handleSetDriver = async (rows: ComponentSqlView[]) => {
+    const v = rows[0];
+    try {
+      const res = await componentSqlViewService.setDriver(componentId, v.sqlViewName);
+      onDriverChange?.(res.data?.dataDriverPath ?? `$${v.sqlViewName}`);
+      message.success(`已设为驱动：${v.sqlViewName}`);
+    } catch (e: any) {
+      message.error('设置驱动失败: ' + (e?.message ?? ''));
+    }
+  };
+
+  const handleClearDriver = async (rows: ComponentSqlView[]) => {
+    const v = rows[0];
+    try {
+      await componentSqlViewService.setDriver(componentId, null);
+      onDriverChange?.('');
+      message.success(`已取消驱动：${v.sqlViewName}`);
+    } catch (e: any) {
+      message.error('取消驱动失败: ' + (e?.message ?? ''));
+    }
+  };
+
   const columns: ColumnsType<ComponentSqlView> = [
     {
       title: '视图名称',
@@ -161,15 +190,14 @@ const SqlViewListPanel: React.FC<Props> = ({ componentId }) => {
       },
     },
     {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
+      title: '驱动',
+      key: 'driver',
       width: 90,
-      render: (status: string) =>
-        status === 'ACTIVE' ? (
-          <Tag color="success">启用</Tag>
+      render: (_: unknown, record: ComponentSqlView) =>
+        isDriverView(record) ? (
+          <Tag color="processing">驱动</Tag>
         ) : (
-          <Tag color="default">停用</Tag>
+          <Text type="secondary">—</Text>
         ),
     },
     {
@@ -212,6 +240,28 @@ const SqlViewListPanel: React.FC<Props> = ({ componentId }) => {
             onClick: handleDryRun,
           },
           {
+            key: 'set-driver',
+            label: '设为驱动',
+            enabledWhen: (rows) =>
+              rows.length !== 1
+                ? (rows.length === 0 ? false : '只能单选设置驱动')
+                : isDriverView(rows[0])
+                ? '该视图已是驱动'
+                : true,
+            onClick: handleSetDriver,
+          },
+          {
+            key: 'clear-driver',
+            label: '取消驱动',
+            enabledWhen: (rows) =>
+              rows.length === 1 && isDriverView(rows[0])
+                ? true
+                : rows.length === 0
+                ? false
+                : '仅当前驱动视图可取消',
+            onClick: handleClearDriver,
+          },
+          {
             key: 'delete',
             label: '删除',
             danger: true,
@@ -219,7 +269,7 @@ const SqlViewListPanel: React.FC<Props> = ({ componentId }) => {
             needsConfirm: true,
             confirmTitle: '确认删除选中的 {N} 个 SQL 视图？',
             confirmDescription:
-              '删除后字段配置中引用此视图的 BNF path 将失效。如有引用将列出受影响字段供确认。',
+              '删除后字段配置中引用此视图的 BNF path 将失效；若删除的是当前驱动视图，本组件将变为无驱动（产品级单行）。如有引用将列出受影响字段供确认。',
             onClick: handleDelete,
           },
         ]}
