@@ -68,4 +68,11 @@ export const componentSqlViewService = {
   /** 列出全局（scope=GLOBAL）的 SQL 视图（跨组件可引用） */
   listGlobal: (): Promise<{ data: ComponentSqlView[] }> =>
     api.get('/sql-views/global') as Promise<any>,
+
+  /** 设置/清空组件驱动视图。sqlViewName=null 表示取消驱动。返回更新后的组件。 */
+  setDriver: (
+    componentId: string,
+    sqlViewName: string | null,
+  ): Promise<{ data: { id: string; dataDriverPath?: string } }> =>
+    api.put(`/components/${componentId}/driver-view`, { sqlViewName }) as Promise<any>,
 };
