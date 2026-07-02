@@ -29,7 +29,6 @@ import { newFormulaRow } from './types';
 import FieldConfigTable from './FieldConfigTable';
 import ComponentImportDrawer from './ComponentImportDrawer';
 import ConfigGuideDrawer from './ConfigGuideDrawer';
-import PathPickerDrawer from './PathPickerDrawer';
 import SqlViewListPanel from './SqlViewListPanel';
 import TabJoinFormulaDrawer, { type TabJoinFormulaSavePayload } from '../template/TabJoinFormulaDrawer';
 import { tokensToDrawerExpression } from './formulaSerialize';
@@ -953,7 +952,6 @@ const ComponentManagement: React.FC = () => {
   const [rowKeyCandidates, setRowKeyCandidates] = useState<
     Record<string, import('./types').RowKeyCandidate>
   >({});
-  const [driverPickerOpen, setDriverPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingTree, setLoadingTree] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
@@ -994,7 +992,6 @@ const ComponentManagement: React.FC = () => {
         if (fresh.componentType === 'EXCEL') {
           payload.excelColumns = JSON.stringify(s.excelColumns ?? []);
         } else if (fresh.componentType === 'NORMAL') {
-          payload.dataDriverPath = s.dataDriverPath ?? '';
           payload.rowKeyFields = (s.rowKeyFields ?? []).length > 0 ? s.rowKeyFields : undefined;
           payload.bomRecursiveExpand = s.bomRecursiveExpand;
         }
@@ -1171,7 +1168,6 @@ const ComponentManagement: React.FC = () => {
           setFields(rebuildFieldKeys(draft.snapshot.fields));
           setFormulas(rebuildFormulaKeys(draft.snapshot.formulas));
           setExcelColumns(draft.snapshot.excelColumns ?? []);
-          setDataDriverPath(draft.snapshot.dataDriverPath ?? '');
           setRowKeyFields(draft.snapshot.rowKeyFields ?? []);
           setBomRecursiveExpand(!!draft.snapshot.bomRecursiveExpand);
           setDraftBanner({ kind: 'restored', componentId: loaded.id });
@@ -1216,7 +1212,6 @@ const ComponentManagement: React.FC = () => {
         const finalRowKeyFields = computeFinalRowKeyFields(
           rowKeyFields, selectedComponent.rowKeyFields, rowKeyCandidates,
         );
-        payload.dataDriverPath = dataDriverPath ?? '';
         payload.rowKeyFields = finalRowKeyFields.length > 0 ? finalRowKeyFields : undefined;
         payload.bomRecursiveExpand = bomRecursiveExpand;
       }
@@ -1386,31 +1381,13 @@ const ComponentManagement: React.FC = () => {
   // ── Detail panel renderers ──────────────────────────────────
   const renderNormalDetail = () => (
     <>
-      {/* 合并配置行：数据驱动路径 + 核价 BOM 递归（树表纯展示已隐藏） */}
+      {/* 配置行：核价 BOM 递归（驱动视图改由「SQL 视图」Tab 工具栏指定） */}
       <div className="cmm-cfg-row">
-        <span className="cmm-lbl">数据驱动路径(可选)：</span>
-        <Input
-          value={dataDriverPath}
-          onChange={(e) => setDataDriverPath(e.target.value)}
-          placeholder="选 SQL 视图后自动生成 $view 路径"
-          size="small"
-          style={{ flex: 1, minWidth: 220, fontFamily: 'Consolas, Monaco, monospace', fontSize: 12 }}
-          allowClear
-        />
-        <Button size="small" onClick={() => setDriverPickerOpen(true)}>选择路径</Button>
-        <span className="cmm-divider-v" />
         <span className="cmm-lbl">核价 BOM 递归展开：</span>
         <Tooltip title="勾选=核价时按 material_bom_item 闭包递归展开子料号；不勾=按根料号普通取数。仅核价侧生效。">
           <Switch size="small" checked={bomRecursiveExpand} onChange={setBomRecursiveExpand} />
         </Tooltip>
       </div>
-      <PathPickerDrawer
-        open={driverPickerOpen}
-        onClose={() => setDriverPickerOpen(false)}
-        initialPath={dataDriverPath}
-        componentId={selectedComponent?.id}
-        onConfirm={(path) => { setDataDriverPath(path); setDriverPickerOpen(false); }}
-      />
       <Tabs
         size="small"
         items={[
@@ -1470,7 +1447,16 @@ const ComponentManagement: React.FC = () => {
           },
           {
             key: 'sql-views', label: 'SQL 视图',
-            children: selectedComponent ? <SqlViewListPanel componentId={selectedComponent.id} /> : null,
+            children: selectedComponent ? (
+              <SqlViewListPanel
+                componentId={selectedComponent.id}
+                currentDriverPath={dataDriverPath}
+                onDriverChange={(newPath) => {
+                  setDataDriverPath(newPath);
+                  void refreshRowKeyCandidates(selectedComponent.id, newPath, fields);
+                }}
+              />
+            ) : null,
           },
         ]}
       />
@@ -1558,7 +1544,6 @@ const ComponentManagement: React.FC = () => {
                           setFields(rebuildFieldKeys(d.snapshot.fields));
                           setFormulas(rebuildFormulaKeys(d.snapshot.formulas));
                           setExcelColumns(d.snapshot.excelColumns ?? []);
-                          setDataDriverPath(d.snapshot.dataDriverPath ?? '');
                           setRowKeyFields(d.snapshot.rowKeyFields ?? []);
                           setBomRecursiveExpand(!!d.snapshot.bomRecursiveExpand);
                           setDraftBanner({ kind: 'restored', componentId: selectedComponent.id });
