@@ -1381,13 +1381,6 @@ const ComponentManagement: React.FC = () => {
   // ── Detail panel renderers ──────────────────────────────────
   const renderNormalDetail = () => (
     <>
-      {/* 配置行：核价 BOM 递归（驱动视图改由「SQL 视图」Tab 工具栏指定） */}
-      <div className="cmm-cfg-row">
-        <span className="cmm-lbl">核价 BOM 递归展开：</span>
-        <Tooltip title="勾选=核价时按 material_bom_item 闭包递归展开子料号；不勾=按根料号普通取数。仅核价侧生效。">
-          <Switch size="small" checked={bomRecursiveExpand} onChange={setBomRecursiveExpand} />
-        </Tooltip>
-      </div>
       <Tabs
         size="small"
         items={[
@@ -1528,6 +1521,16 @@ const ComponentManagement: React.FC = () => {
               >
                 {selectedComponent.name}
               </Typography.Text>
+              {componentType === 'NORMAL' && (
+                <Tooltip title="勾选=核价时按 material_bom_item 闭包递归展开子料号；不勾=按根料号普通取数。仅核价侧生效。">
+                  <Checkbox
+                    checked={bomRecursiveExpand}
+                    onChange={(e) => setBomRecursiveExpand(e.target.checked)}
+                  >
+                    核价树
+                  </Checkbox>
+                </Tooltip>
+              )}
               <Tag color={TYPE_TAG[componentType].color}>
                 {TYPE_TAG[componentType].label} · {selectedComponent.code}
               </Tag>
