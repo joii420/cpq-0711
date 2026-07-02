@@ -1521,6 +1521,13 @@ const ComponentManagement: React.FC = () => {
               >
                 {selectedComponent.name}
               </Typography.Text>
+              <Tag color={TYPE_TAG[componentType].color}>
+                {TYPE_TAG[componentType].label} · {selectedComponent.code}
+              </Tag>
+              <div className="cmm-acts">
+                <Button size="small" onClick={() => setGuideOpen(true)}>配置帮助</Button>
+                <Button type="primary" size="small" loading={saving} onClick={handleSave}>保存</Button>
+              </div>
               {componentType === 'NORMAL' && (
                 <Tooltip title="勾选=核价时按 material_bom_item 闭包递归展开子料号；不勾=按根料号普通取数。仅核价侧生效。">
                   <Checkbox
@@ -1531,13 +1538,6 @@ const ComponentManagement: React.FC = () => {
                   </Checkbox>
                 </Tooltip>
               )}
-              <Tag color={TYPE_TAG[componentType].color}>
-                {TYPE_TAG[componentType].label} · {selectedComponent.code}
-              </Tag>
-              <div className="cmm-acts">
-                <Button size="small" onClick={() => setGuideOpen(true)}>配置帮助</Button>
-                <Button type="primary" size="small" loading={saving} onClick={handleSave}>保存</Button>
-              </div>
             </div>
             {draftBanner?.componentId === selectedComponent.id && (
               <Alert
