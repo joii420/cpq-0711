@@ -23,11 +23,11 @@ interface Props {
   componentId: string;
   /** 当前驱动路径（= component.dataDriverPath，形态 $视图名）；空=无驱动。 */
   currentDriverPath?: string;
-  /** 驱动变更后回调，参数为新的 dataDriverPath（可空，空串=已清空）。 */
-  onDriverChange?: (newDriverPath: string) => void;
+  /** 驱动可能已变更（设置/取消/删除自动清空/新建自动设首个）→ 请父组件重新拉取组件。 */
+  onDriverChanged?: () => void | Promise<void>;
 }
 
-const SqlViewListPanel: React.FC<Props> = ({ componentId, currentDriverPath, onDriverChange }) => {
+const SqlViewListPanel: React.FC<Props> = ({ componentId, currentDriverPath, onDriverChanged }) => {
   const [views, setViews] = useState<ComponentSqlView[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -108,6 +108,7 @@ const SqlViewListPanel: React.FC<Props> = ({ componentId, currentDriverPath, onD
       },
     );
     loadViews();
+    await onDriverChanged?.();
   };
 
   const handleDryRun = async (rows: ComponentSqlView[]) => {
@@ -137,9 +138,9 @@ const SqlViewListPanel: React.FC<Props> = ({ componentId, currentDriverPath, onD
   const handleSetDriver = async (rows: ComponentSqlView[]) => {
     const v = rows[0];
     try {
-      const res = await componentSqlViewService.setDriver(componentId, v.sqlViewName);
-      onDriverChange?.(res.data?.dataDriverPath ?? `$${v.sqlViewName}`);
+      await componentSqlViewService.setDriver(componentId, v.sqlViewName);
       message.success(`已设为驱动：${v.sqlViewName}`);
+      await onDriverChanged?.();
     } catch (e: any) {
       message.error('设置驱动失败: ' + (e?.message ?? ''));
     }
@@ -149,8 +150,8 @@ const SqlViewListPanel: React.FC<Props> = ({ componentId, currentDriverPath, onD
     const v = rows[0];
     try {
       await componentSqlViewService.setDriver(componentId, null);
-      onDriverChange?.('');
       message.success(`已取消驱动：${v.sqlViewName}`);
+      await onDriverChanged?.();
     } catch (e: any) {
       message.error('取消驱动失败: ' + (e?.message ?? ''));
     }
@@ -283,7 +284,7 @@ const SqlViewListPanel: React.FC<Props> = ({ componentId, currentDriverPath, onD
         componentId={componentId}
         editingView={editingView}
         onClose={() => setDrawerOpen(false)}
-        onSaved={loadViews}
+        onSaved={() => { loadViews(); void onDriverChanged?.(); }}
       />
 
       {/* 删除引用冲突确认 Modal */}

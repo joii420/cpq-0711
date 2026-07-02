@@ -1451,9 +1451,19 @@ const ComponentManagement: React.FC = () => {
               <SqlViewListPanel
                 componentId={selectedComponent.id}
                 currentDriverPath={dataDriverPath}
-                onDriverChange={(newPath) => {
-                  setDataDriverPath(newPath);
-                  void refreshRowKeyCandidates(selectedComponent.id, newPath, fields);
+                onDriverChanged={async () => {
+                  if (!selectedComponent) return;
+                  try {
+                    const fresh = (await componentService.getById(selectedComponent.id)).data as ComponentItem;
+                    setDataDriverPath(fresh.dataDriverPath ?? '');
+                    setSelectedComponent(prev =>
+                      prev && prev.id === fresh.id
+                        ? { ...prev, dataDriverPath: fresh.dataDriverPath, updatedAt: fresh.updatedAt }
+                        : prev);
+                    void refreshRowKeyCandidates(fresh.id, fresh.dataDriverPath ?? '', fields);
+                  } catch (e: any) {
+                    message.error('刷新组件失败: ' + (e?.message ?? ''));
+                  }
                 }}
               />
             ) : null,
