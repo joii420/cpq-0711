@@ -1525,19 +1525,19 @@ const ComponentManagement: React.FC = () => {
                 {TYPE_TAG[componentType].label} · {selectedComponent.code}
               </Tag>
               <div className="cmm-acts">
+                {componentType === 'NORMAL' && (
+                  <Tooltip title="勾选=核价时按 material_bom_item 闭包递归展开子料号；不勾=按根料号普通取数。仅核价侧生效。">
+                    <Checkbox
+                      checked={bomRecursiveExpand}
+                      onChange={(e) => setBomRecursiveExpand(e.target.checked)}
+                    >
+                      核价树
+                    </Checkbox>
+                  </Tooltip>
+                )}
                 <Button size="small" onClick={() => setGuideOpen(true)}>配置帮助</Button>
                 <Button type="primary" size="small" loading={saving} onClick={handleSave}>保存</Button>
               </div>
-              {componentType === 'NORMAL' && (
-                <Tooltip title="勾选=核价时按 material_bom_item 闭包递归展开子料号；不勾=按根料号普通取数。仅核价侧生效。">
-                  <Checkbox
-                    checked={bomRecursiveExpand}
-                    onChange={(e) => setBomRecursiveExpand(e.target.checked)}
-                  >
-                    核价树
-                  </Checkbox>
-                </Tooltip>
-              )}
             </div>
             {draftBanner?.componentId === selectedComponent.id && (
               <Alert
