@@ -300,7 +300,11 @@ public class SqlViewExecutor {
             for (int i = 0; i < rewritten.params.size(); i++) {
                 Object v = rewritten.params.get(i);
                 if (v instanceof List<?> list) {
-                    String[] arr = list.stream().map(String::valueOf).toArray(String[]::new);
+                    // 保留 null 元素为 SQL NULL（不可 String.valueOf，否则 null→"null" 字符串，
+                    // 破坏 :spineKeys 对叶子节点(子件自身版本=NULL)的 NULL-safe 匹配 → 叶子被误滤空）。
+                    String[] arr = list.stream()
+                            .map(x -> x == null ? null : String.valueOf(x))
+                            .toArray(String[]::new);
                     ps.setArray(i + 1, conn.createArrayOf("text", arr));
                 } else {
                     ps.setObject(i + 1, v);
@@ -373,7 +377,10 @@ public class SqlViewExecutor {
             for (int i = 0; i < rewritten.params.size(); i++) {
                 Object v = rewritten.params.get(i);
                 if (v instanceof List<?> list) {
-                    String[] arr = list.stream().map(String::valueOf).toArray(String[]::new);
+                    // 保留 null 元素为 SQL NULL（见 executeAllRows 同款注释：null→"null" 会破坏 spineKeys 叶子匹配）。
+                    String[] arr = list.stream()
+                            .map(x -> x == null ? null : String.valueOf(x))
+                            .toArray(String[]::new);
                     ps.setArray(i + 1, conn.createArrayOf("text", arr));
                 } else {
                     ps.setObject(i + 1, v);
