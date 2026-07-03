@@ -3,7 +3,9 @@ package com.cpq.component.service;
 import com.cpq.component.entity.CostingBomTreeConfig;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
+import org.jboss.logging.Logger;
 
 import java.util.List;
 import java.util.UUID;
@@ -17,8 +19,13 @@ import java.util.UUID;
 @ApplicationScoped
 public class CostingBomTreeConfigService {
 
+    private static final Logger LOG = Logger.getLogger(CostingBomTreeConfigService.class);
+
     @Inject
     CostingTreeSqlValidator validator;
+
+    @Inject
+    EntityManager em;
 
     public List<CostingBomTreeConfig> list() {
         return CostingBomTreeConfig.listAll();
@@ -50,13 +57,12 @@ public class CostingBomTreeConfigService {
         }
         e.name = name;
         e.sqlTemplate = sqlTemplate;
-        // TODO(§10): 切换生效/改SQL后触发核价draft快照重算入口 <定位结论：
-        //   codegraph 检索 buildCostingCardValues / ensureCardValues / refreshSnapshotsByComponent
-        //   均为按 quotationId 或 componentId 局部重算，未发现"清空全部 QuotationLineItem.costingCardValues"
-        //   的全局批量失效入口；本次改的是全局配置(costing_bom_tree_config)，理论上影响所有已存快照，
-        //   需要新增/复用一个批量失效方法（如 UPDATE quotation_line_item SET costing_card_values = NULL），
-        //   但为避免在不了解快照懒算/预取全貌的情况下臆造错误的失效范围，留待集成阶段(Task 3.1 起)
-        //   结合 CardSnapshotService 实际读写路径决定。>
+        // §10 失效钩子（Task 3.1 集成阶段接入，见 invalidateTreeTabCostingCardValues 注释）：
+        // update() 改的是"当前配置的 SQL 内容"——只有它已经是 isActive=true 时才会被下次渲染实际读取。
+        // 非生效配置改动不影响任何已渲染快照，故仅当 e.isActive 时才失效。
+        if (e.isActive) {
+            invalidateTreeTabCostingCardValues();
+        }
         return e;
     }
 
@@ -70,7 +76,32 @@ public class CostingBomTreeConfigService {
         CostingBomTreeConfig.update("isActive = false where isActive = true");
         CostingBomTreeConfig.getEntityManager().flush();
         target.isActive = true;
-        // TODO(§10): 切换生效/改SQL后触发核价draft快照重算入口 <同上定位结论：暂未接入，留待集成阶段。>
+        invalidateTreeTabCostingCardValues();
+    }
+
+    /**
+     * §10 失效钩子（Task 3.1 集成阶段接入）：递归 SQL 配置切换生效 / 改动生效配置内容后，
+     * 只有<b>核价模板挂了树页签组件（{@code bom_recursive_expand=true}）</b>的存量报价单，其
+     * {@code costingCardValues} 才依赖本配置渲染（见 {@link com.cpq.quotation.service.CostingTreeRenderService}
+     * 与 {@code CardSnapshotService#templateHasTreeTab}）；不含树页签的模板/报价单完全不读本配置，
+     * 若做不加区分的全局 {@code UPDATE quotation_line_item SET costing_card_values = NULL} 会误伤它们
+     * （下次打开被迫走一次不必要的懒算）。故用 {@code EXISTS} 精确收窄到受影响的报价单行。
+     *
+     * <p>只置 NULL，不同步重算——沿用既有 P3 懒算纪律（{@code CardSnapshotService#ensureCardValues} 的
+     * {@code IS NULL} 谓词下次打开该报价单/调用 ensureCardValues 时自动补算，单飞锁防并发重复算），
+     * 不在本次配置切换事务里做重量级同步批量渲染。
+     */
+    @Transactional
+    void invalidateTreeTabCostingCardValues() {
+        int n = em.createNativeQuery(
+                "UPDATE quotation_line_item li SET costing_card_values = NULL, costing_excel_values = NULL " +
+                "WHERE li.costing_card_values IS NOT NULL AND EXISTS ( " +
+                "  SELECT 1 FROM quotation q " +
+                "  JOIN template_component tc ON tc.template_id = q.costing_card_template_id " +
+                "  JOIN component c ON c.id = tc.component_id " +
+                "  WHERE q.id = li.quotation_id AND c.bom_recursive_expand = true )")
+            .executeUpdate();
+        LOG.infof("[costing-bom-tree-config] 递归 SQL 配置变更，失效 %d 行含树页签模板的存量核价卡片值(懒算重算)", n);
     }
 
     @Transactional

@@ -87,6 +87,10 @@ public class CardSnapshotService {
     @Inject
     BomClosureService bomClosureService;
 
+    /** 核价树渲染重构（Task 3.1）：整单一次递归+分组，替代旧引擎逐 li closure+expand（仅含树页签模板走此路）。 */
+    @Inject
+    CostingTreeRenderService costingTreeRenderService;
+
     /** 自注入：触发 REQUIRES_NEW 代理拦截器 */
     @Inject
     CardSnapshotService self;
@@ -476,14 +480,23 @@ public class CardSnapshotService {
         if (lines.isEmpty()) return;
         com.cpq.formula.dataloader.QuotationIdContext.set(quotationId);
         try {
+            // Task 3.1 事项B：核价模板含树页签 → 整单一次调 CostingTreeRenderService.render，
+            // 逐 li 复用其结果（buildCostingCardValues 内部按 precomputedBaseRows!=null 跳过旧引擎 closure+expand）；
+            // 不含树页签 → treeBaseRowsByLine 恒空 map，下方 getOrDefault 恒 null → 逐 li 走老路径，零破坏。
+            Map<UUID, Map<String, ArrayNode>> treeBaseRowsByLine = java.util.Collections.emptyMap();
+            if (q.costingCardTemplateId != null && templateHasTreeTab(q.costingCardTemplateId)) {
+                treeBaseRowsByLine = costingTreeRenderService.render(q.costingCardTemplateId, lines);
+            }
             // ── Pass1:只 build 字符串到内存(只读 li,不赋字段 → 脏窗口为空,任何 fallback em 查此刻 flush 空)──
             Map<UUID, String> quoteVals = new HashMap<>();
             Map<UUID, String> costingVals = new HashMap<>();
             for (QuotationLineItem li : lines) {
                 quoteVals.put(li.id, safeCall(() -> buildCardValues(li, q.customerTemplateId, prefetch)));
                 if (q.costingCardTemplateId != null) {
+                    Map<String, ArrayNode> precomputed = treeBaseRowsByLine.get(li.id);
                     costingVals.put(li.id, safeCall(() ->
-                        buildCostingCardValues(li, q.costingCardTemplateId, q.customerId, q.id, union, prefetch)));
+                        buildCostingCardValues(li, q.costingCardTemplateId, q.customerId, q.id, union, prefetch,
+                            precomputed)));
                 }
             }
             // ── Pass2:一次性赋托管实体 4 字段(中间零查询)→ commit 单次 flush,P1 batch 合并 N 条 UPDATE ──
@@ -795,12 +808,19 @@ public class CardSnapshotService {
         List<QuotationLineItem> lines = QuotationLineItem.list("quotationId", quotationId);
         // P2-C4: 整单一次 union 预取(把核价 driver 远程查从 N×M_rec 压到 M_rec);null/空=逐行兜底。
         Map<UUID, Map<String, ExpandDriverResponse>> unionByComp = precomputeCostingDriverUnion(quotationId);
+        // Task 3.1 事项B：含树页签 → 整单一次调 CostingTreeRenderService.render；不含 → 恒空 map，逐 li 走老路径。
+        Map<UUID, Map<String, ArrayNode>> treeBaseRowsByLine = java.util.Collections.emptyMap();
+        if (templateHasTreeTab(q.costingCardTemplateId)) {
+            treeBaseRowsByLine = costingTreeRenderService.render(q.costingCardTemplateId, lines);
+        }
         for (QuotationLineItem li : lines) {
             try {
                 QuotationLineItem managed = QuotationLineItem.findById(li.id);
                 if (managed == null) continue;
+                Map<String, ArrayNode> precomputed = treeBaseRowsByLine.get(li.id);
                 managed.costingCardValues = safeCall(() ->
-                    buildCostingCardValues(managed, q.costingCardTemplateId, q.customerId, q.id, unionByComp));
+                    buildCostingCardValues(managed, q.costingCardTemplateId, q.customerId, q.id, unionByComp, null,
+                        precomputed));
                 managed.costingExcelValues = safeCall(() ->
                     buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues, true));
             } catch (Exception e) {
@@ -1064,6 +1084,30 @@ public class CardSnapshotService {
     // buildCostingCardValues — 核价侧单独 expand（无现成快照）
     // =========================================================================
 
+    /** 进程级缓存：templateId → 该核价模板下是否存在树页签组件（bom_recursive_expand=true）。
+     * 供批量层判定走新引擎（{@link CostingTreeRenderService}）还是旧引擎（closure+expandTemplateDriverBaseRows）。
+     * 模板组件挂载改动频率低，TTL 30s（与既有 expandCache 同量级）足够新鲜度，避免每批次重查。 */
+    private final com.github.benmanes.caffeine.cache.Cache<UUID, Boolean> treeTabCache =
+        com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+            .expireAfterWrite(30, java.util.concurrent.TimeUnit.SECONDS)
+            .maximumSize(500)
+            .build();
+
+    /** Task 3.1 事项B：该核价模板是否含树页签组件（勾了 {@code bom_recursive_expand} 的 driver 组件）。 */
+    boolean templateHasTreeTab(UUID templateId) {
+        if (templateId == null) return false;
+        Boolean cached = treeTabCache.getIfPresent(templateId);
+        if (cached != null) return cached;
+        Number count = (Number) em.createNativeQuery(
+                "SELECT count(*) FROM template_component tc JOIN component c ON c.id = tc.component_id " +
+                "WHERE tc.template_id = :tid AND c.bom_recursive_expand = true")
+            .setParameter("tid", templateId)
+            .getSingleResult();
+        boolean has = count != null && count.longValue() > 0;
+        treeTabCache.put(templateId, has);
+        return has;
+    }
+
     /**
      * 核价侧卡片值：加载核价模板 driver 组件，按报价行 partNo/compositeType 展开一次，
      * 组装 tabs[].{baseRows, editRows, formulaResults}。
@@ -1082,11 +1126,29 @@ public class CardSnapshotService {
         return buildCostingCardValues(li, costingTemplateId, customerId, quotationId, unionByComp, null);
     }
 
-    /** B2 重载：{@code prefetch!=null} 时复用预取核价模板 snapshot；{@code null}=逐行读+解析（零破坏）。 */
+    /** B2 重载：{@code prefetch!=null} 时复用预取核价模板 snapshot；{@code null}=逐行读+解析（零破坏）。
+     * delegate 到七参重载（{@code precomputedBaseRows=null}）→ 旧引擎路径，零破坏。 */
     String buildCostingCardValues(QuotationLineItem li, UUID costingTemplateId,
                                            UUID customerId, UUID quotationId,
                                            Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
                                            CardValuesPrefetch prefetch) {
+        return buildCostingCardValues(li, costingTemplateId, customerId, quotationId, unionByComp, prefetch, null);
+    }
+
+    /**
+     * 七参重载（Task 3.1 事项B）：{@code precomputedBaseRows != null} 时（核价模板含树页签，批量层已整单
+     * 调过 {@link CostingTreeRenderService#render} 并按 lineItemId 拆好）直接复用其结果作 {@code baseRowsByComp}，
+     * <b>跳过</b> {@code bomClosureService.compute} 与 {@link #expandTemplateDriverBaseRows}（旧引擎）。
+     * {@code precomputedBaseRows == null} → 走原有 closure+expand 老路径，逐字零破坏。
+     *
+     * <p>新管线无 closure（新契约用递归 SQL 直接建树，无「环检测」概念），故此路径<b>不回传 cyclePartNos</b>
+     * （root 节点不含 {@code cyclePartNos} 字段；前端「已截断展开」告警仅老路径产出，新契约暂无等价物）。
+     */
+    String buildCostingCardValues(QuotationLineItem li, UUID costingTemplateId,
+                                           UUID customerId, UUID quotationId,
+                                           Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
+                                           CardValuesPrefetch prefetch,
+                                           Map<String, ArrayNode> precomputedBaseRows) {
         if (li == null || li.id == null || costingTemplateId == null) return null;
         try {
             // 1. 取核价模板 components_snapshot —— prefetch 命中复用已解析，否则逐行读+解析
@@ -1102,17 +1164,23 @@ public class CardSnapshotService {
             }
             if (snapshot == null || !snapshot.isArray()) return null;
 
-            // 核价 BOM 递归展开（P1）：先算根料号闭包（整棵 PRICING BOM 树）。
-            // 闭包 partSet 喂各核价组件多值取数；spine 全节点作行主轴（缺数据补空行）。
-            BomClosureResult closure = bomClosureService.compute(li.productPartNoSnapshot, java.util.Map.of());
+            Map<String, ArrayNode> baseRowsByComp;
+            BomClosureResult closure = null;
+            if (precomputedBaseRows != null) {
+                // 新引擎：批量层已整单渲染好，直接用（新契约无 closure/cyclePartNos）。
+                baseRowsByComp = precomputedBaseRows;
+            } else {
+                // 旧引擎（零破坏）：核价 BOM 递归展开（P1）——先算根料号闭包（整棵 PRICING BOM 树）。
+                // 闭包 partSet 喂各核价组件多值取数；spine 全节点作行主轴（缺数据补空行）。
+                closure = bomClosureService.compute(li.productPartNoSnapshot, java.util.Map.of());
 
-            // 2-4. 加载核价模板 driver 组件并按 spine 全节点展开 → baseRows（按 componentId）
-            // F4：透传整单预取的 driver 组件清单（prefetch 缺失 → null → 回落逐行查）
-            List<Object[]> driverCompsPrefetch = (prefetch != null && prefetch.driverCompsByTemplate != null)
-                ? prefetch.driverCompsByTemplate.get(costingTemplateId) : null;
-            Map<String, ArrayNode> baseRowsByComp =
-                expandTemplateDriverBaseRows(costingTemplateId, li, customerId, quotationId, closure, unionByComp,
-                    driverCompsPrefetch);
+                // 2-4. 加载核价模板 driver 组件并按 spine 全节点展开 → baseRows（按 componentId）
+                // F4：透传整单预取的 driver 组件清单（prefetch 缺失 → null → 回落逐行查）
+                List<Object[]> driverCompsPrefetch = (prefetch != null && prefetch.driverCompsByTemplate != null)
+                    ? prefetch.driverCompsByTemplate.get(costingTemplateId) : null;
+                baseRowsByComp = expandTemplateDriverBaseRows(costingTemplateId, li, customerId, quotationId, closure,
+                    unionByComp, driverCompsPrefetch);
+            }
 
             // 5. 组装 tabs（Task 3: 填 formulaResults；核价侧 editRows 恒空）
             // 核价侧 side==COSTING 显式不传墓碑（spec §3.7 隔离）：editRowsByComp=null + rkfOverride=null + delByComp=null。
@@ -1120,7 +1188,7 @@ public class CardSnapshotService {
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null, null, null,
                 prefetch != null ? prefetch.rowKeyFieldsByComp : null);
 
-            // 6. 成环料号回传根节点（前端告警「已截断展开」）
+            // 6. 成环料号回传根节点（前端告警「已截断展开」）——仅旧引擎路径（closure!=null）产出。
             if (closure != null && closure.cyclePartNos != null && !closure.cyclePartNos.isEmpty()) {
                 ArrayNode cyc = root.putArray("cyclePartNos");
                 for (String pn : closure.cyclePartNos) cyc.add(pn);

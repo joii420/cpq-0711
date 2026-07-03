@@ -144,8 +144,10 @@ public class CostingTreeRenderService {
                     // 见类注释「跑组件 $view 的入口」说明：customerId/partNo/partVersion/lineItemId 全传 null，
                     // 让 SqlViewExecutor 从 CostingTreeVarsContext 拿 :total_material_no 收窄，
                     // 不再靠 partNo/lineItemId 维度过滤（这条 $view 对整单只跑一次）。
-                    ExpandDriverResponse resp = componentDriverService.expand(
-                            compId, null, null, null, null, null, null, null, null);
+                    // 用 expandUncached（Task 3.1 事项A）而非 expand：9-arg expand 的 expandCache key
+                    // 不含 :total_material_no 维度（customerId/partNo/partVersion 全传 null → key 恒定），
+                    // 30s TTL 内会与其他报价单/料号集合的同组件调用串号（AP-37 型缺维度缓存 bug）。
+                    ExpandDriverResponse resp = componentDriverService.expandUncached(compId, null);
                     if (resp != null && resp.rows != null) {
                         for (ExpandDriverResponse.Row r : resp.rows) {
                             if (r == null || r.driverRow == null) {

@@ -281,6 +281,28 @@ public class ComponentDriverService {
     public ExpandDriverResponse expand(UUID componentId, UUID customerId, String partNo, Integer partVersion,
                                        String overrideDataDriverPath, String overrideFieldsJson,
                                        UUID lineItemId, String compositeType, List<UUID> childLineItemIds) {
+        return expand(componentId, customerId, partNo, partVersion, overrideDataDriverPath, overrideFieldsJson,
+                lineItemId, compositeType, childLineItemIds, false);
+    }
+
+    /**
+     * Task 3.1 事项A（核价树渲染专用）：跳过 {@code expandCache} 的读写。
+     *
+     * <p>背景：{@link CostingTreeRenderService} 对每个 driver 组件整单只跑一次 {@code expand(compId, customerId,
+     * null, null, ...)}（customerId 之外全部传 null），落到 {@link #cacheKey} 的缓存 key 恒为
+     * {@code "componentId:customerId:_:_"}——<b>不含 {@code :total_material_no} 维度</b>。30 秒 TTL 内对同一
+     * 组件、不同报价单/不同料号集合的调用会命中上一次缓存的错行（AP-37 型缺维度缓存 bug，见
+     * 记忆 {@code cpq-sqlview-cache-key-needs-component-dim}）。由于每次 {@code render()} 对同一组件只调用一次，
+     * 跳过缓存零吞吐损失，反而消除跨批次串号风险。语义与 9-arg {@link #expand} 完全相同，仅缓存读写被跳过。
+     */
+    public ExpandDriverResponse expandUncached(UUID componentId, UUID customerId) {
+        return expand(componentId, customerId, null, null, null, null, null, null, null, true);
+    }
+
+    private ExpandDriverResponse expand(UUID componentId, UUID customerId, String partNo, Integer partVersion,
+                                       String overrideDataDriverPath, String overrideFieldsJson,
+                                       UUID lineItemId, String compositeType, List<UUID> childLineItemIds,
+                                       boolean skipCache) {
         // 阶段 3: 设 SqlViewRuntimeContext ThreadLocal，让 BNF path $xxx 引用能拿到 currentComponentId
         // （quotation/template 上下文留 null，本入口只知道 componentId 维度；
         // QuotationService.submit / 渲染期上层可进一步 setNested 补 quotationId+status）
@@ -299,8 +321,8 @@ public class ComponentDriverService {
                 ? ":cld" + Integer.toHexString(childLineItemIds.hashCode())
                 : "";
         String key = cacheKey(componentId, customerId, partNo, partVersion) + overrideTag + lineItemTag + childTag;
-        // 调试捕获 SQL 时旁路缓存读取, 强制重算以触发 SqlViewExecutor 记录最终 SQL。
-        ExpandDriverResponse cached = com.cpq.datasource.sqlview.SqlDebugContext.isActive()
+        // 调试捕获 SQL 时旁路缓存读取, 强制重算以触发 SqlViewExecutor 记录最终 SQL。skipCache=true(核价树渲染)同样旁路。
+        ExpandDriverResponse cached = (skipCache || com.cpq.datasource.sqlview.SqlDebugContext.isActive())
                 ? null : expandCache.getIfPresent(key);
         if (cached != null) {
             LOG.debugf("[expand-driver cache] HIT key=%s", key);
@@ -348,7 +370,7 @@ public class ComponentDriverService {
             if (basicDataPaths.isEmpty() && gvarTasks.isEmpty()) {
                 resp.rowCount = 0;
                 LOG.infof("[Y1.5 expand-driver] dataDriverPath EMPTY + no BASIC_DATA, skip (component=%s)", component.code);
-                if (!com.cpq.datasource.sqlview.SqlDebugContext.isActive()) expandCache.put(key, resp);
+                if (!skipCache && !com.cpq.datasource.sqlview.SqlDebugContext.isActive()) expandCache.put(key, resp);
                 return resp;
             }
             // 虚拟 driver row: 仅含 partNo / customerId, �?ImplicitJoinRewriter 能注入谓�?
@@ -394,7 +416,7 @@ public class ComponentDriverService {
             resp.rowCount = 1;
             LOG.infof("[Y1.5 expand-driver] no-driver virtual single row (component=%s, basicDataPaths=%d)",
                     component.code, basicDataPaths.size());
-            if (!com.cpq.datasource.sqlview.SqlDebugContext.isActive()) expandCache.put(key, resp);
+            if (!skipCache && !com.cpq.datasource.sqlview.SqlDebugContext.isActive()) expandCache.put(key, resp);
             return resp;
         }
 
@@ -443,7 +465,7 @@ public class ComponentDriverService {
                         LOG.infof("[Bug B expand-driver] lineItemId=%s no specialized rows -> EMPTY (no fallback) for partNo=%s path=%s",
                                 lineItemId, partNo, effectiveDriverPath);
                         resp.rowCount = 0;
-                        if (!com.cpq.datasource.sqlview.SqlDebugContext.isActive()) expandCache.put(key, resp);
+                        if (!skipCache && !com.cpq.datasource.sqlview.SqlDebugContext.isActive()) expandCache.put(key, resp);
                         return resp;
                     }
                 } else if (isCompositeAggregateView && isCompositeParent
@@ -551,7 +573,7 @@ public class ComponentDriverService {
         LOG.infof("[Y1.5 expand-driver] expanded: id=%s code=%s rows=%d partVersion=%s",
                 componentId, component.code, resp.rowCount, partVersion);
         // miss 路径成功计算后写入缓存（异常会在上方抛出，不会执行到此处，确保错误不缓存�?
-        if (!com.cpq.datasource.sqlview.SqlDebugContext.isActive()) expandCache.put(key, resp);
+        if (!skipCache && !com.cpq.datasource.sqlview.SqlDebugContext.isActive()) expandCache.put(key, resp);
         return resp;
         } finally {
             com.cpq.datasource.sqlview.SqlViewRuntimeContext.restore(_prevSqlViewCtx);
