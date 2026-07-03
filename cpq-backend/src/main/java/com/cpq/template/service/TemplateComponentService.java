@@ -1,6 +1,7 @@
 package com.cpq.template.service;
 
 import com.cpq.common.exception.BusinessException;
+import com.cpq.component.entity.Component;
 import com.cpq.template.dto.TemplateComponentDTO;
 import com.cpq.template.entity.Template;
 import com.cpq.template.entity.TemplateComponent;
@@ -34,6 +35,8 @@ public class TemplateComponentService {
             throw new BusinessException("Can only add components to DRAFT templates");
         }
 
+        validateAtMostOneTreeTab(template, componentId);
+
         long maxOrder = TemplateComponent.count("templateId", templateId);
 
         TemplateComponent tc = new TemplateComponent();
@@ -45,6 +48,34 @@ public class TemplateComponentService {
 
         LOG.infof("Added component=%s to template=%s", componentId, templateId);
         return TemplateComponentDTO.from(tc);
+    }
+
+    /**
+     * Task 5.1（核价树重构）: 一个核价模板（{@code template_kind='COSTING'}）最多挂一个
+     * "树页签"组件（{@code component.bom_recursive_expand=true}）。仅对新保存生效——存量模板
+     * 若已违反该约束不回补校验，保持硬切换不迁移的既定策略（见方案文档）。
+     * 报价模板（QUOTATION）不受此约束。
+     */
+    private void validateAtMostOneTreeTab(Template template, UUID incomingComponentId) {
+        if (!"COSTING".equals(template.templateKind)) {
+            return;
+        }
+        Component incoming = Component.findById(incomingComponentId);
+        if (incoming == null || !Boolean.TRUE.equals(incoming.bomRecursiveExpand)) {
+            return;
+        }
+        List<TemplateComponent> existingTcs = TemplateComponent.list("templateId", template.id);
+        if (existingTcs.isEmpty()) {
+            return;
+        }
+        List<UUID> existingComponentIds = existingTcs.stream()
+                .map(tc -> tc.componentId)
+                .collect(Collectors.toList());
+        long existingTreeTabCount = Component.count(
+                "id IN ?1 AND bomRecursiveExpand = true", existingComponentIds);
+        if (existingTreeTabCount > 0) {
+            throw new BusinessException(400, "一个核价模板最多一个核价树页签");
+        }
     }
 
     @Transactional
