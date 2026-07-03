@@ -4,6 +4,7 @@ import { FunctionOutlined } from '@ant-design/icons';
 import ComponentManagement from './ComponentManagement';
 import DataSourceList from '../datasource/DataSourceList';
 import GlobalVariablePage from '../global-variable/GlobalVariablePage';
+import CostingBomTreeConfigTab from './CostingBomTreeConfigTab';
 
 const ComponentManagementHub: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('component');
@@ -26,6 +27,7 @@ const ComponentManagementHub: React.FC = () => {
         items={[
           { key: 'component', label: '组件', children: <ComponentManagement /> },
           { key: 'datasource', label: '数据源', children: <DataSourceList /> },
+          { key: 'costing-bom-tree', label: '核价树配置', children: <CostingBomTreeConfigTab /> },
         ]}
       />
       <Drawer
