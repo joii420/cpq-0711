@@ -581,8 +581,22 @@ public class CardSnapshotService {
         if (managed == null || q == null) return;
         try {
             if (q.costingCardTemplateId != null) {
+                // S1 修复（2026-07）：单行路径（加产品 ConfigureProductResource → snapshotLineValues →
+                // snapshotLineValuesWithUnion → 本方法）原先未判 templateHasTreeTab，恒走六参重载
+                // （precomputedBaseRows 恒 null）→ 含树页签模板会走旧引擎，与批量路径（
+                // snapshotNewLinesCardValues / importexcel 批量路径）算出的 nodeId 不一致，且 Task 5.2
+                // 删旧引擎后本路径会直接崩。与批量层同款接法：整单（此处单元素列表）先调
+                // CostingTreeRenderService.render 拿 precomputedBaseRows，再传给七参重载。
+                Map<String, ArrayNode> precomputed = null;
+                if (templateHasTreeTab(q.costingCardTemplateId)) {
+                    precomputed = costingTreeRenderService
+                        .render(q.costingCardTemplateId, java.util.List.of(managed))
+                        .get(managed.id);
+                }
+                Map<String, ArrayNode> precomputedFinal = precomputed;
                 managed.costingCardValues = safeCall(() ->
-                    buildCostingCardValues(managed, q.costingCardTemplateId, q.customerId, q.id, unionByComp, prefetch));
+                    buildCostingCardValues(managed, q.costingCardTemplateId, q.customerId, q.id, unionByComp,
+                        prefetch, precomputedFinal));
                 // P3:computeExcel=false(首存)时跳过核价 Excel,留 NULL → ensureExcelValues 懒算。
                 if (computeExcel) {
                     managed.costingExcelValues = safeCall(() ->

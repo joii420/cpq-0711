@@ -68,10 +68,10 @@ class CostingTreeRenderServiceTest {
         assertEquals("P1", row.get("__parentNo").asText());
         assertTrue(row.get("__bomVersion").isNull());
 
-        // 业务行缺失 -> driverRow/basicDataValues 均为空对象（非缺失）
+        // 业务行缺失 -> basicDataValues 为空对象；driverRow 非空，S2 修复补 material_no 锚点
         assertTrue(row.has("driverRow"));
         assertTrue(row.get("driverRow").isObject());
-        assertEquals(0, row.get("driverRow").size());
+        assertEquals("B", row.get("driverRow").get("material_no").asText());
         assertTrue(row.has("basicDataValues"));
         assertFalse(row.get("driverRow").has("cost"));
     }

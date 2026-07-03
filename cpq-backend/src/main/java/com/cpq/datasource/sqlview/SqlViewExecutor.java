@@ -433,7 +433,15 @@ public class SqlViewExecutor {
         }
     }
 
-    /** 若当前线程有核价树变量上下文，注入 :production_part_nos / :total_material_no 两个 text[]。 */
+    /**
+     * 若当前线程有核价树变量上下文，注入 :production_part_nos / :total_material_no 两个 text[]。
+     *
+     * <p>S4（2026-07）：{@code v.productionPartNos} 分支当前不会被 {@code CostingTreeRenderService
+     * #queryRecursive} 触发——递归 SQL 走裸 JDBC（{@code PreparedStatement} 直接拼 {@code ?} 绑参），
+     * 不经过本 {@code SqlViewExecutor}。保留此分支是为将来递归 SQL 若改走 {@code SqlViewExecutor} /
+     * 内嵌 {@code $view} 预留（届时 {@code :production_part_nos} 命名参数可复用同一套注入协议），
+     * 不是死代码，勿删。
+     */
     private void injectCostingTreeVars(Map<String, Object> namedParams) {
         CostingTreeVarsContext.Vars v = CostingTreeVarsContext.get();
         if (v == null) return;

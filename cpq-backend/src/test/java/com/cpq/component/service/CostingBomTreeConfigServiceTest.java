@@ -18,7 +18,7 @@ class CostingBomTreeConfigServiceTest {
     CostingBomTreeConfigService svc;
 
     private static final String VALID =
-            "SELECT p AS root_no, p AS material_no, CAST(NULL AS text) AS bom_version, CAST(NULL AS text) AS parent_no FROM unnest(:production_part_nos) p";
+            "SELECT p AS root_no, p AS material_no, CAST(NULL AS text) AS bom_version, CAST(NULL AS text) AS parent_no, p::text AS node_path FROM unnest(:production_part_nos) p";
 
     @Test
     @TestTransaction
@@ -30,6 +30,16 @@ class CostingBomTreeConfigServiceTest {
         assertFalse(((CostingBomTreeConfig) CostingBomTreeConfig.findById(a.id)).isActive);
         assertTrue(((CostingBomTreeConfig) CostingBomTreeConfig.findById(b.id)).isActive);
         assertEquals(b.id, CostingBomTreeConfig.findActive().id);
+    }
+
+    @Test
+    @TestTransaction
+    void setActiveOnAlreadyActiveStillLeavesItActive() {
+        CostingBomTreeConfig a = svc.create("A", VALID);
+        svc.setActive(a.id);
+        svc.setActive(a.id);   // 对已生效配置再点一次（B1 回归用例）
+        assertTrue(((CostingBomTreeConfig) CostingBomTreeConfig.findById(a.id)).isActive);
+        assertEquals(a.id, CostingBomTreeConfig.findActive().id);
     }
 
     @Test

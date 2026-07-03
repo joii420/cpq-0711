@@ -211,14 +211,26 @@ public class CostingTreeRenderService {
         return out;
     }
 
-    /** 递归 SQL 直接 JDBC 执行（只一个变量 :production_part_nos → PreparedStatement ? 绑定 text[]）。 */
+    /**
+     * 递归 SQL 直接 JDBC 执行。契约里唯一的绑定变量是 {@code :production_part_nos}（text[]），但递归
+     * CTE 常见写法会在 SQL 里多次引用同一变量（如 base case + recursive case 各引用一次）。S3 修复
+     * （2026-07）：按 {@code :production_part_nos} 的<b>出现次数</b>逐个 {@code ?} 占位符绑定同一个
+     * text[] 数组，而非只绑第 1 个（原实现遇 ≥2 次引用会 "parameter index out of range"）。
+     */
     private List<CostingTreeNode> queryRecursive(String sqlTemplate, List<String> seed) {
+        int occurrences = 0;
+        for (int idx = 0; (idx = sqlTemplate.indexOf(":production_part_nos", idx)) >= 0; idx += ":production_part_nos".length()) {
+            occurrences++;
+        }
         String sql = "SELECT root_no, material_no, bom_version, parent_no, node_path FROM (" +
                 sqlTemplate.replace(":production_part_nos", "?") + ") q";
         List<CostingTreeNode> out = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setArray(1, conn.createArrayOf("text", seed.toArray()));
+            java.sql.Array arr = conn.createArrayOf("text", seed.toArray());
+            for (int i = 1; i <= occurrences; i++) {
+                ps.setArray(i, arr);
+            }
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     out.add(new CostingTreeNode(
@@ -255,12 +267,17 @@ public class CostingTreeRenderService {
      * 树页签一行（对齐 {@code CardSnapshotService#spineRowNode}）：业务行 + 系统列
      * {@code __nodeId/__parentId/__lvl/__hfPartNo/__parentNo/__bomVersion}。
      *
-     * <p>{@code bizRowOrNull=null} 时仍输出系统列（业务行缺失 = 空 driverRow/basicDataValues）。
+     * <p>{@code bizRowOrNull=null} 时仍输出系统列（业务行缺失 = 空 basicDataValues）；driverRow 补
+     * {@code material_no = node.materialNo} 作锚点（S2 修复，2026-07；对齐 §4.2「必含 material_no」——
+     * 有业务行时业务行自带 material_no 不用补，空节点时前端/下游按 material_no 取数不能没锚点）。
      * 注：新递归 SQL 契约（root_no/material_no/bom_version/parent_no/node_path）无 is_cycle 列，
      * 故本行不含旧 {@code spineRowNode} 的 {@code __isCycle}（详见交接说明）。
      */
     static ObjectNode treeRowNode(CostingTreeNode node, ExpandDriverResponse.Row bizRowOrNull) {
         ObjectNode rowNode = rowNodeFrom(bizRowOrNull);
+        if (bizRowOrNull == null) {
+            ((ObjectNode) rowNode.get("driverRow")).put("material_no", node.materialNo);
+        }
         rowNode.put("__nodeId", node.nodeId == null ? "" : node.nodeId);
         if (node.parentId == null) {
             rowNode.putNull("__parentId");

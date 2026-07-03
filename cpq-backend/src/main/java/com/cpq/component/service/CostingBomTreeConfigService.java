@@ -66,16 +66,22 @@ public class CostingBomTreeConfigService {
         return e;
     }
 
-    /** 设为生效：单事务先把当前 active 置 false（避开部分唯一索引），再置目标 true。 */
+    /**
+     * 设为生效：单事务先把除目标外的当前 active 置 false（避开部分唯一索引），再置目标 true。
+     *
+     * <p>B1 修复（2026-07）：两句都走 bulk UPDATE，不依赖 Hibernate 托管实体脏检查。旧实现对
+     * <b>已生效</b>配置再调一次会先把 target 也 bulk 置 false，随后 {@code target.isActive = true}
+     * 与加载时快照相同（true→true）不产生脏字段 → 不生成 UPDATE 语句 → DB 里该行仍是 bulk UPDATE
+     * 写入的 false，实际无任何行生效。改为对目标行也用 bulk UPDATE 后即幂等、正确。
+     */
     @Transactional
     public void setActive(UUID id) {
         CostingBomTreeConfig target = CostingBomTreeConfig.findById(id);
         if (target == null) {
             throw new RuntimeException("配置不存在: " + id);
         }
-        CostingBomTreeConfig.update("isActive = false where isActive = true");
-        CostingBomTreeConfig.getEntityManager().flush();
-        target.isActive = true;
+        CostingBomTreeConfig.update("isActive = false where isActive = true and id <> ?1", id);
+        CostingBomTreeConfig.update("isActive = true where id = ?1", id);
         invalidateTreeTabCostingCardValues();
     }
 
