@@ -28,7 +28,7 @@ class CostingTreeSqlValidatorTest {
 
     @Test
     void acceptsValidRecursiveSql() {
-        String sql = "SELECT p AS root_no, p AS material_no, CAST(NULL AS text) AS bom_version, CAST(NULL AS text) AS parent_no FROM unnest(:production_part_nos) p";
+        String sql = "SELECT p AS root_no, p AS material_no, CAST(NULL AS text) AS bom_version, CAST(NULL AS text) AS parent_no, p AS node_path FROM unnest(:production_part_nos) p";
         var r = validator.validate(sql);
         assertTrue(r.ok, r.message);
     }

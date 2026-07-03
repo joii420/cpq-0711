@@ -27,26 +27,26 @@ public final class CostingTreeGrouping {
         }
 
         for (Map.Entry<String, List<CostingTreeNode>> e : byRoot.entrySet()) {
-            String root = e.getKey();
             List<CostingTreeNode> tree = e.getValue();
-            Map<String, String> firstNodeIdOfMat = new HashMap<>();
             int seq = 0;
             for (CostingTreeNode nd : tree) {
-                nd.nodeId = root + "#" + (seq++);
-                firstNodeIdOfMat.putIfAbsent(nd.materialNo, nd.nodeId);
+                String path = nd.nodePath;
+                if (path == null || path.isBlank()) {
+                    // 兜底:node_path 缺失(应被保存期校验拦住)→ 平铺,视为配置错误
+                    nd.nodeId = nd.rootNo + "#" + seq;
+                    nd.parentId = null;
+                    nd.lvl = 1;
+                } else {
+                    nd.nodeId = path;
+                    int i = path.lastIndexOf('/');
+                    nd.parentId = (i < 0) ? null : path.substring(0, i);
+                    int lvl = 1;
+                    for (int k = 0; k < path.length(); k++) if (path.charAt(k) == '/') lvl++;
+                    nd.lvl = lvl;
+                }
+                seq++;
             }
-            for (CostingTreeNode nd : tree)
-                nd.parentId = (nd.parentNo == null) ? null : firstNodeIdOfMat.get(nd.parentNo);
-            Map<String, CostingTreeNode> byId = new HashMap<>();
-            for (CostingTreeNode nd : tree) byId.put(nd.nodeId, nd);
-            for (CostingTreeNode nd : tree) nd.lvl = depth(nd, byId, new HashSet<>());
         }
         return new Result(cardMat, new ArrayList<>(total), byRoot);
-    }
-
-    private static int depth(CostingTreeNode nd, Map<String, CostingTreeNode> byId, Set<String> seen) {
-        if (nd.parentId == null || !seen.add(nd.nodeId)) return 1;
-        CostingTreeNode p = byId.get(nd.parentId);
-        return p == null ? 1 : 1 + depth(p, byId, seen);
     }
 }

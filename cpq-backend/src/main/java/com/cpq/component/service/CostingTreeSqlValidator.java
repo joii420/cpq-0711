@@ -16,7 +16,7 @@ import java.util.Set;
  * 核价树递归 SQL 保存期 dry-run 校验器。
  *
  * <p>契约：递归 SQL 必须引用具名参数 {@code :production_part_nos}（text[]），
- * 输出列必须逐字包含 {@code root_no / material_no / bom_version / parent_no} 四列。
+ * 输出列必须逐字包含 {@code root_no / material_no / bom_version / parent_no / node_path} 五列。
  * 保存前用空 seed（{@code ARRAY[]::text[]}）包一层 {@code LIMIT 0} 子查询探测，
  * 既验证可执行性，又不产生实际数据行。
  */
@@ -26,7 +26,7 @@ public class CostingTreeSqlValidator {
     @Inject
     DataSource dataSource;
 
-    public static final List<String> REQUIRED_COLS = List.of("root_no", "material_no", "bom_version", "parent_no");
+    public static final List<String> REQUIRED_COLS = List.of("root_no", "material_no", "bom_version", "parent_no", "node_path");
 
     public static final class Result {
         public final boolean ok;
