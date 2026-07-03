@@ -289,8 +289,8 @@ public class SqlViewExecutor {
         if (partNos != null && !partNos.isEmpty()) {
             namedParams.put("hfPartNos", partNos);
         }
-        injectSpineKeysParams(namedParams);
-        String expandedSql = SpineKeysMacro.expandForExecution(sql.toString());
+        injectCostingTreeVars(namedParams);
+        String expandedSql = sql.toString();   // spineKeys 宏已废弃(类待 Phase 5 删)
         RewrittenSql rewritten = rewriteNamedParams(expandedSql, namedParams);
         SqlDebugContext.record(rewritten.sql, rewritten.params);
 
@@ -365,8 +365,8 @@ public class SqlViewExecutor {
         if (partNos != null && !partNos.isEmpty()) {
             namedParams.put("hfPartNos", partNos);
         }
-        injectSpineKeysParams(namedParams);
-        String expandedSql = SpineKeysMacro.expandForExecution(sql);
+        injectCostingTreeVars(namedParams);
+        String expandedSql = sql;   // spineKeys 宏已废弃(类待 Phase 5 删)
         RewrittenSql rewritten = rewriteNamedParams(expandedSql, namedParams);
         SqlDebugContext.record(rewritten.sql, rewritten.params);
 
@@ -433,13 +433,12 @@ public class SqlViewExecutor {
         }
     }
 
-    /** 若当前线程有 spineKeys 三元组上下文，注入 :__skP/:__skPP/:__skV 三个 text[] 命名参数。 */
-    private void injectSpineKeysParams(Map<String, Object> namedParams) {
-        SpineKeysContext.Triples t = SpineKeysContext.get();
-        if (t == null) return;
-        namedParams.put("__skP", t.partNos);
-        namedParams.put("__skPP", t.parentNos);
-        namedParams.put("__skV", t.versions);
+    /** 若当前线程有核价树变量上下文，注入 :production_part_nos / :total_material_no 两个 text[]。 */
+    private void injectCostingTreeVars(Map<String, Object> namedParams) {
+        CostingTreeVarsContext.Vars v = CostingTreeVarsContext.get();
+        if (v == null) return;
+        if (v.productionPartNos != null) namedParams.put("production_part_nos", v.productionPartNos);
+        if (v.totalMaterialNo != null)   namedParams.put("total_material_no", v.totalMaterialNo);
     }
 
     /** 查 customer.code（按 UUID）。失败返 null（占位符降级为 NULL，视图过滤返 0 行）。 */
