@@ -69,10 +69,16 @@ public class CostingBomTreeConfigService {
     /**
      * 设为生效：单事务先把除目标外的当前 active 置 false（避开部分唯一索引），再置目标 true。
      *
-     * <p>B1 修复（2026-07）：两句都走 bulk UPDATE，不依赖 Hibernate 托管实体脏检查。旧实现对
-     * <b>已生效</b>配置再调一次会先把 target 也 bulk 置 false，随后 {@code target.isActive = true}
-     * 与加载时快照相同（true→true）不产生脏字段 → 不生成 UPDATE 语句 → DB 里该行仍是 bulk UPDATE
-     * 写入的 false，实际无任何行生效。改为对目标行也用 bulk UPDATE 后即幂等、正确。
+     * <p>用<b>受管实体</b>写(非 bulk UPDATE)：
+     * <ul>
+     *   <li>幂等正确：对<b>已生效</b>配置再调一次时 {@code current==target} → 跳过置 false，
+     *       {@code target.isActive=true} 保持 true(no-op),该行仍生效;
+     *   <li>不产生陈旧读:bulk UPDATE 不会刷新持久化上下文里已加载的实体,后续同上下文
+     *       {@code findById}/{@code findActive} 会读到旧一级缓存值(true 被误读为 false);受管实体写则
+     *       读回一致。
+     * </ul>
+     * <p>部分唯一索引 {@code ux_cbt_active}(同一时刻最多一条 true):先把旧生效行置 false 并
+     * {@code em.flush()} 落库,再置目标 true,避免瞬时两条 true 违反索引。
      */
     @Transactional
     public void setActive(UUID id) {
@@ -80,8 +86,12 @@ public class CostingBomTreeConfigService {
         if (target == null) {
             throw new RuntimeException("配置不存在: " + id);
         }
-        CostingBomTreeConfig.update("isActive = false where isActive = true and id <> ?1", id);
-        CostingBomTreeConfig.update("isActive = true where id = ?1", id);
+        CostingBomTreeConfig current = CostingBomTreeConfig.findActive();
+        if (current != null && !current.id.equals(target.id)) {
+            current.isActive = false;
+            em.flush();   // 先让旧生效行落库为 false,再置目标 true(部分唯一索引)
+        }
+        target.isActive = true;
         invalidateTreeTabCostingCardValues();
     }
 
