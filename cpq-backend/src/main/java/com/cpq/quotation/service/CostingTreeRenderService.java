@@ -149,15 +149,24 @@ public class CostingTreeRenderService {
                     // 30s TTL 内会与其他报价单/料号集合的同组件调用串号（AP-37 型缺维度缓存 bug）。
                     ExpandDriverResponse resp = componentDriverService.expandUncached(compId, null);
                     if (resp != null && resp.rows != null) {
+                        int total = 0;
+                        int kept = 0;
                         for (ExpandDriverResponse.Row r : resp.rows) {
                             if (r == null || r.driverRow == null) {
                                 continue;
                             }
+                            total++;
                             Object mn = r.driverRow.get("material_no");
                             if (mn == null) {
                                 continue; // 落选行（无 material_no）丢弃
                             }
+                            kept++;
                             byMaterial.computeIfAbsent(mn.toString(), k -> new ArrayList<>()).add(r);
+                        }
+                        if (total > 0 && kept == 0) {
+                            LOG.warnf("[costing-tree] 组件 %s 的 $view 返回 %d 行但无有效 material_no"
+                                            + "（可能未输出 material_no 列），该页签数据全部落选",
+                                    cidStr, total);
                         }
                     }
                 } catch (Exception e) {
