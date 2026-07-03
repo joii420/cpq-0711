@@ -226,11 +226,16 @@ public class ExcelViewService {
     }
 
     /**
-     * P2-B 核价 Excel 树：按根料号 BOM 闭包 spine 逐节点出行（每行注入 料号/父料号/版本 + 树元数据），
-     * 各列用「过滤到本节点 {@code __nodeId}」的有效行求值（CARD_FORMULA 按节点聚合；空节点列 → null）。
+     * P2-B 核价 Excel 树（Task 4.1 改造）：不再自算 BOM 闭包，改为直接读产品卡片侧已写好的
+     * {@code costing_card_values} 快照里的树骨架（{@link #readSpineFromSnapshot}），逐节点用
+     * {@code __nodeId} 过滤有效行求值（CARD_FORMULA 按节点聚合；空节点列 → null）。
      *
-     * <p>仅核价侧调用（{@code cardValuesJson} = costingCardValues，其 baseRows/resolvedRows 含 spine {@code __nodeId}）。
-     * 返回 N 行（= spine occurrence 数）；失败返回空列表（调用方降级，不抛）。
+     * <p>两条渲染面（产品卡片 / Excel 视图）共用同一套 {@code __nodeId}（由新管线
+     * {@code CostingTreeRenderService} 按 {@code node_path} 派生，写入快照 {@code baseRows}），
+     * 逐节点一致，不再各算各的。
+     *
+     * <p>仅核价侧调用（{@code cardValuesJson} = costingCardValues）。返回 N 行（= 快照树页签的
+     * spine 节点数）；快照无树页签 / 解析失败 → 返回空列表（调用方降级，不抛）。
      */
     public List<Map<String, Object>> buildLineTreeRows(QuotationLineItem li, UUID templateId,
                                                        UUID customerId, String cardValuesJson) {
@@ -248,19 +253,20 @@ public class ExcelViewService {
 
             Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows> eff =
                 parseEffectiveRows(cardValuesJson, templateId);
-            com.cpq.component.dto.BomClosureResult closure =
-                bomClosureService.compute(li.productPartNoSnapshot, java.util.Map.of());
 
-            for (com.cpq.component.dto.BomClosureResult.SpineNode node : closure.spine) {
+            List<Map<String, Object>> spine = readSpineFromSnapshot(cardValuesJson, templateId);
+            for (Map<String, Object> node : spine) {
+                Object nodeIdObj = node.get("__nodeId");
+                String nodeId = nodeIdObj == null ? "" : nodeIdObj.toString();
                 Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows> effN =
-                    com.cpq.quotation.service.card.CardEffectiveRows.filterByNodeId(eff, node.nodeId);
+                    com.cpq.quotation.service.card.CardEffectiveRows.filterByNodeId(eff, nodeId);
                 Map<String, Object> row = buildRowData(li, columns, templateId, formulaByName, customerId, effN);
-                row.put("__hfPartNo", node.hfPartNo);
-                row.put("__parentNo", node.parentNo);
-                row.put("__bomVersion", node.bomVersion);
-                row.put("__nodeId", node.nodeId == null ? "" : node.nodeId);
-                row.put("__parentId", node.parentId);
-                row.put("__lvl", node.lvl);
+                row.put("__hfPartNo", node.get("__hfPartNo"));
+                row.put("__parentNo", node.get("__parentNo"));
+                row.put("__bomVersion", node.get("__bomVersion"));
+                row.put("__nodeId", nodeId);
+                row.put("__parentId", node.get("__parentId"));
+                row.put("__lvl", node.get("__lvl"));
                 row.put("_lineItemId", li.id != null ? li.id.toString() : null);
                 rows.add(row);
             }
@@ -269,6 +275,68 @@ public class ExcelViewService {
                 li != null ? li.id : null, templateId, e.getMessage());
         }
         return rows;
+    }
+
+    /**
+     * Task 4.1：从卡片值快照（{@code cardValuesJson}）里读出「树页签」的 spine 节点骨架序列，
+     * 不再依赖 {@code BomClosureService} 现算闭包。
+     *
+     * <p>树页签判定：{@code tabs[].baseRows[]} 中任一行顶层带 {@code __nodeId} 键即为树页签
+     * （{@code CostingTreeRenderService#treeRowNode} 写入的系统列直接挂在行顶层，非嵌套于
+     * {@code driverRow} 内）。模板最多一棵树（Task 5.1 会加保存态校验），本方法只取第一个命中的树页签。
+     *
+     * <p>同一 {@code __nodeId} 可能因业务行 &gt;1 而重复出现（树页签一节点可对多条业务行），
+     * 但树骨架每节点只需一份——按出现顺序（LinkedHashMap）去重，只取每个 {@code __nodeId} 第一次
+     * 出现时的系统列 {@code __nodeId/__parentId/__lvl/__hfPartNo/__parentNo/__bomVersion}。
+     *
+     * @return 有序节点骨架列表；无树页签/解析失败 → 空列表（调用方降级不抛）。
+     */
+    private List<Map<String, Object>> readSpineFromSnapshot(String cardValuesJson, UUID templateId) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (cardValuesJson == null || cardValuesJson.isBlank()) return out;
+        try {
+            com.fasterxml.jackson.databind.JsonNode root = MAPPER.readTree(cardValuesJson);
+            com.fasterxml.jackson.databind.JsonNode tabs = root.path("tabs");
+            if (!tabs.isArray()) return out;
+
+            for (com.fasterxml.jackson.databind.JsonNode tab : tabs) {
+                com.fasterxml.jackson.databind.JsonNode baseRows = tab.path("baseRows");
+                if (!baseRows.isArray() || baseRows.isEmpty()) continue;
+
+                boolean isTreeTab = false;
+                for (com.fasterxml.jackson.databind.JsonNode r : baseRows) {
+                    if (r.has("__nodeId")) { isTreeTab = true; break; }
+                }
+                if (!isTreeTab) continue;
+
+                Map<String, Map<String, Object>> byNodeId = new LinkedHashMap<>();
+                for (com.fasterxml.jackson.databind.JsonNode r : baseRows) {
+                    com.fasterxml.jackson.databind.JsonNode nid = r.path("__nodeId");
+                    if (nid.isMissingNode()) continue;
+                    String nodeId = nid.isNull() ? "" : nid.asText("");
+                    if (byNodeId.containsKey(nodeId)) continue; // 每节点只取一次骨架（保序）
+                    Map<String, Object> node = new LinkedHashMap<>();
+                    node.put("__nodeId", nodeId);
+                    node.put("__parentId", textOrNull(r.path("__parentId")));
+                    com.fasterxml.jackson.databind.JsonNode lvl = r.path("__lvl");
+                    node.put("__lvl", (lvl.isMissingNode() || lvl.isNull()) ? null : lvl.asInt());
+                    node.put("__hfPartNo", textOrNull(r.path("__hfPartNo")));
+                    node.put("__parentNo", textOrNull(r.path("__parentNo")));
+                    node.put("__bomVersion", textOrNull(r.path("__bomVersion")));
+                    byNodeId.put(nodeId, node);
+                }
+                out.addAll(byNodeId.values());
+                break; // 模板最多一棵树 → 只取第一个命中的树页签
+            }
+        } catch (Exception e) {
+            LOG.debugf("[ExcelView] readSpineFromSnapshot failed tmpl=%s: %s", templateId, e.getMessage());
+        }
+        return out;
+    }
+
+    /** JsonNode → 文本；missing/null → null（区别于空串）。 */
+    private String textOrNull(com.fasterxml.jackson.databind.JsonNode n) {
+        return (n == null || n.isMissingNode() || n.isNull()) ? null : n.asText();
     }
 
     /**
