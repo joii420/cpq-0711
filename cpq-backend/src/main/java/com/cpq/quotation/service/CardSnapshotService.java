@@ -1,8 +1,6 @@
 package com.cpq.quotation.service;
 
-import com.cpq.component.dto.BomClosureResult;
 import com.cpq.component.dto.ExpandDriverResponse;
-import com.cpq.component.service.BomClosureService;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.configure.service.ConfigureSnapshotService;
 import com.cpq.formula.dataloader.QuotationIdContext;
@@ -82,10 +80,6 @@ public class CardSnapshotService {
     /** 失焦同步：复用 ConfigureSnapshotService.writeRowData（REQUIRES_NEW UPSERT）持久化物化结果。 */
     @Inject
     ConfigureSnapshotService configureSnapshotService;
-
-    /** 核价 BOM 递归展开（P1）：算根料号闭包（partSet+spine+环清单）。 */
-    @Inject
-    BomClosureService bomClosureService;
 
     /** 核价树渲染重构（Task 3.1）：整单一次递归+分组，替代旧引擎逐 li closure+expand（仅含树页签模板走此路）。 */
     @Inject
@@ -722,11 +716,20 @@ public class CardSnapshotService {
     }
 
     /**
-     * P2-C4 整单核价 driver union 预取:对该报价单全部核价行求各 recursive 组件 partSet 并集,每个
-     * <b>eligible</b>(recursive + 非composite + 无spineKeys + 无lineItemId,见
-     * {@link ComponentDriverService#eligibleForBomUnion})组件 <b>一次</b> {@code expandForPartSet(union)}
-     * → {@code Map<componentId, Map<partNo, resp>>}。把核价侧 driver 远程查从 N×M_rec 压到 M_rec(÷N)。
-     * 不 eligible 的组件不进返回 Map → 调用方逐行回落(带 li.id / SpineKeysContext),逐位等价。
+     * P2-C4 整单核价 driver union 预取:对该报价单全部核价行,把 <b>非递归无行维度</b>(见
+     * {@link ComponentDriverService#eligibleForNonRecursiveCostingBucket})组件 <b>一次</b>
+     * {@code expandForPartSet(union)} → {@code Map<componentId, Map<partNo, resp>>}。
+     * 把核价侧 driver 远程查从 N×M 压到 M(÷N)。不 eligible 的组件不进返回 Map → 调用方逐行回落。
+     *
+     * <p><b>硬切换清理（Task 5.2）</b>：原 recursive 分支({@code eligibleForBomUnion} + BOM 闭包 union)
+     * 与 spineKeys-flat 分支({@code eligibleForSpineKeysFlatBucket}）已删除——recursive 组件所在的
+     * 核价模板必含树页签，{@code buildCostingCardValues} 对这类模板恒用
+     * {@link CostingTreeRenderService} 的 {@code precomputedBaseRows}、完全不读本方法产出的
+     * {@code unionByComp}（见该方法 precomputedBaseRows!=null 分支），故原 recursive 分支的计算结果
+     * 100% 从未被下游消费；spineKeys 分支依赖的 {@code SpineKeysContext.get()} 在
+     * {@link com.cpq.datasource.sqlview.SqlViewExecutor} 侧从未被读取（Task 1.1 起注入已断开），
+     * 亦是纯 no-op。两者皆确认为死代码后一并清理，{@code unionList} 改为直接取本单各行根料号
+     * （非递归组件按 {@code partNo} 精确匹配，不需要 BOM 闭包展开的子孙料号超集）。
      */
     @Transactional
     public Map<UUID, Map<String, ExpandDriverResponse>> precomputeCostingDriverUnion(UUID quotationId) {
@@ -735,8 +738,8 @@ public class CardSnapshotService {
         Quotation q = Quotation.findById(quotationId);
         if (q == null || q.costingCardTemplateId == null) return unionByComp;
 
-        // 核价模板的全部 driver 组件清单(整单一次)。Phase 2-2'：不再仅 recursive——
-        // 非递归无行维度组件(COMP-0021/22/23 类)也纳入合桶,打中真实 per-line expand 热点。
+        // 核价模板的全部 driver 组件清单(整单一次)。Phase 2-2'：非递归无行维度组件(COMP-0021/22/23 类)
+        // 是唯一还会命中合桶的类别(递归组件恒由 CostingTreeRenderService 整单渲染,见类注释)。
         @SuppressWarnings("unchecked")
         List<Object> driverComps = em.createNativeQuery(
             "SELECT DISTINCT c.id FROM template_component tc JOIN component c ON c.id = tc.component_id " +
@@ -744,62 +747,33 @@ public class CardSnapshotService {
             .setParameter("tid", q.costingCardTemplateId).getResultList();
         if (driverComps.isEmpty()) return unionByComp;
 
-        List<UUID> eligible = new ArrayList<>();          // partNo 合桶(无行维度,无需 spineKeys 上下文)
-        List<UUID> spineFlatCandidates = new ArrayList<>(); // #3 spineKeys-flat 候选(需 union spineKeys 上下文 + 平闸门)
+        List<UUID> eligible = new ArrayList<>();          // partNo 合桶(无行维度)
         for (Object idObj : driverComps) {     // 单列 SELECT → 元素即 c.id
             if (idObj == null) continue;
             UUID compId = (idObj instanceof UUID u) ? u : UUID.fromString(idObj.toString());
-            // 递归走 partSet union(C4);非递归无行维度走 partNo 合桶(2-2')。两路 expandForPartSet(union)=expandMulti。
-            if (componentDriverService.eligibleForBomUnion(compId)
-                    || componentDriverService.eligibleForNonRecursiveCostingBucket(compId)) {
+            if (componentDriverService.eligibleForNonRecursiveCostingBucket(compId)) {
                 eligible.add(compId);
-            } else if (componentDriverService.eligibleForSpineKeysFlatBucket(compId)) {
-                spineFlatCandidates.add(compId);   // #3:非递归+仅 spineKeys → 需平闸门才合桶
             }
         }
-        if (eligible.isEmpty() && spineFlatCandidates.isEmpty()) return unionByComp;
+        if (eligible.isEmpty()) return unionByComp;
 
-        // 全核价行 partSet 并集 + 闭包列表(供 #3 三元组并集/maxTriples 闸门;闭包已 Caffeine 缓存)
+        // 全核价行根料号去重集合（非递归组件按 partNo 精确匹配，取代原 BOM 闭包 partSet 超集）。
         java.util.LinkedHashSet<String> union = new java.util.LinkedHashSet<>();
-        List<BomClosureResult> closures = new ArrayList<>();
         for (QuotationLineItem li : QuotationLineItem.<QuotationLineItem>list("quotationId", quotationId)) {
-            BomClosureResult closure = bomClosureService.compute(li.productPartNoSnapshot, java.util.Map.of());
-            if (closure != null) {
-                closures.add(closure);
-                if (closure.partSet != null) union.addAll(closure.partSet);
+            if (li.productPartNoSnapshot != null && !li.productPartNoSnapshot.isBlank()) {
+                union.add(li.productPartNoSnapshot);
             }
         }
         if (union.isEmpty()) return unionByComp;
         List<String> unionList = new ArrayList<>(union);
 
-        // #3 安全闸门:spine 平(每 partNo 唯一三元组)才把 spineKeys 组件合桶;非平→回落逐行(不进 unionByComp)。
-        boolean spineFlatOk = !spineFlatCandidates.isEmpty()
-            && com.cpq.datasource.sqlview.SpineKeysContext.maxTriplesPerPart(closures) <= 1;
-        List<UUID> spineEligible = spineFlatOk ? spineFlatCandidates : java.util.List.of();
-        if (!spineFlatCandidates.isEmpty() && !spineFlatOk) {
-            LOG.infof("[costing-union] spineKeys 组件 %d 个因 maxTriples>1(多节点 BOM 树)回落逐行,不合桶",
-                spineFlatCandidates.size());
-        }
-
         QuotationIdContext.set(quotationId);
-        // #3:有 spineKeys-flat 合桶组件时设「全单三元组并集」上下文(无 spineKeys 视图忽略它,对 eligible 安全)。
-        if (!spineEligible.isEmpty()) {
-            com.cpq.datasource.sqlview.SpineKeysContext.set(
-                com.cpq.datasource.sqlview.SpineKeysContext.fromClosures(closures));
-        }
         try {
             for (UUID compId : eligible) {
                 unionByComp.put(compId,
                     componentDriverService.expandForPartSet(compId, q.customerId, unionList, null, null));
             }
-            // #3:spineKeys-flat 组件——同一条 expandForPartSet(union)=expandMulti,但带 union spineKeys 上下文;
-            //     maxTriples==1 → 按 partNo 回配与逐行(1 三元组/行)逐位等价。
-            for (UUID compId : spineEligible) {
-                unionByComp.put(compId,
-                    componentDriverService.expandForPartSet(compId, q.customerId, unionList, null, null));
-            }
         } finally {
-            com.cpq.datasource.sqlview.SpineKeysContext.clear();
             QuotationIdContext.clear();
         }
         return unionByComp;
@@ -871,7 +845,7 @@ public class CardSnapshotService {
         final Map<String, JsonNode> rowKeyFieldsByComp;
         /**
          * F4：templateId → driver 组件清单（[c.id, c.bom_recursive_expand] 列表）。整单一次查替代
-         * {@code expandTemplateDriverBaseRows} 每行重发的 {@code SELECT DISTINCT ... template_component}
+         * {@code expandFlatDriverBaseRows} 每行重发的 {@code SELECT DISTINCT ... template_component}
          * （仅依赖 templateId，跨行同值）。key 缺失=未预取→回落逐行查。
          */
         final Map<UUID, List<Object[]>> driverCompsByTemplate;
@@ -899,7 +873,7 @@ public class CardSnapshotService {
             if (q != null) {
                 parseTemplateSnapshotInto(tplById, q.customerTemplateId);
                 parseTemplateSnapshotInto(tplById, q.costingCardTemplateId);
-                // F4：driver 组件清单整单一次查（报价+核价模板各一次,替代 expandTemplateDriverBaseRows 每行重查）。
+                // F4：driver 组件清单整单一次查（报价+核价模板各一次,替代 expandFlatDriverBaseRows 每行重查）。
                 prefetchDriverComps(driverCompsByTpl, q.customerTemplateId);
                 prefetchDriverComps(driverCompsByTpl, q.costingCardTemplateId);
             }
@@ -927,7 +901,7 @@ public class CardSnapshotService {
     }
 
     /**
-     * F4：整单一次查某模板的 driver 组件清单（与 {@link #expandTemplateDriverBaseRows} 内逐行查 <b>同一条 SQL</b>，
+     * F4：整单一次查某模板的 driver 组件清单（与 {@link #expandFlatDriverBaseRows} 内逐行查 <b>同一条 SQL</b>，
      * 结果仅依赖 templateId → 跨行同值）。kill switch {@code cpq.firstsave-drivercomps-prefetch}（默认 true）。
      */
     private void prefetchDriverComps(Map<UUID, List<Object[]>> into, UUID templateId) {
@@ -1099,8 +1073,9 @@ public class CardSnapshotService {
     // =========================================================================
 
     /** 进程级缓存：templateId → 该核价模板下是否存在树页签组件（bom_recursive_expand=true）。
-     * 供批量层判定走新引擎（{@link CostingTreeRenderService}）还是旧引擎（closure+expandTemplateDriverBaseRows）。
-     * 模板组件挂载改动频率低，TTL 30s（与既有 expandCache 同量级）足够新鲜度，避免每批次重查。 */
+     * 供批量层判定走 {@link CostingTreeRenderService}（含树页签）还是非树页签平铺路径
+     * （{@link #expandFlatDriverBaseRows}）。模板组件挂载改动频率低，TTL 30s
+     * （与既有 expandCache 同量级）足够新鲜度，避免每批次重查。 */
     private final com.github.benmanes.caffeine.cache.Cache<UUID, Boolean> treeTabCache =
         com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
             .expireAfterWrite(30, java.util.concurrent.TimeUnit.SECONDS)
@@ -1141,7 +1116,7 @@ public class CardSnapshotService {
     }
 
     /** B2 重载：{@code prefetch!=null} 时复用预取核价模板 snapshot；{@code null}=逐行读+解析（零破坏）。
-     * delegate 到七参重载（{@code precomputedBaseRows=null}）→ 旧引擎路径，零破坏。 */
+     * delegate 到七参重载（{@code precomputedBaseRows=null}）→ 非树页签平铺路径。 */
     String buildCostingCardValues(QuotationLineItem li, UUID costingTemplateId,
                                            UUID customerId, UUID quotationId,
                                            Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
@@ -1151,12 +1126,11 @@ public class CardSnapshotService {
 
     /**
      * 七参重载（Task 3.1 事项B）：{@code precomputedBaseRows != null} 时（核价模板含树页签，批量层已整单
-     * 调过 {@link CostingTreeRenderService#render} 并按 lineItemId 拆好）直接复用其结果作 {@code baseRowsByComp}，
-     * <b>跳过</b> {@code bomClosureService.compute} 与 {@link #expandTemplateDriverBaseRows}（旧引擎）。
-     * {@code precomputedBaseRows == null} → 走原有 closure+expand 老路径，逐字零破坏。
+     * 调过 {@link CostingTreeRenderService#render} 并按 lineItemId 拆好）直接复用其结果作 {@code baseRowsByComp}。
+     * {@code precomputedBaseRows == null} → 走非树页签平铺路径（{@link #expandFlatDriverBaseRows}）。
      *
-     * <p>新管线无 closure（新契约用递归 SQL 直接建树，无「环检测」概念），故此路径<b>不回传 cyclePartNos</b>
-     * （root 节点不含 {@code cyclePartNos} 字段；前端「已截断展开」告警仅老路径产出，新契约暂无等价物）。
+     * <p>新契约用递归 SQL 直接建树，无「环检测」概念，故此路径<b>不回传 cyclePartNos</b>
+     * （root 节点不含 {@code cyclePartNos} 字段；前端「已截断展开」告警此契约暂无等价物）。
      */
     String buildCostingCardValues(QuotationLineItem li, UUID costingTemplateId,
                                            UUID customerId, UUID quotationId,
@@ -1179,20 +1153,15 @@ public class CardSnapshotService {
             if (snapshot == null || !snapshot.isArray()) return null;
 
             Map<String, ArrayNode> baseRowsByComp;
-            BomClosureResult closure = null;
             if (precomputedBaseRows != null) {
-                // 新引擎：批量层已整单渲染好，直接用（新契约无 closure/cyclePartNos）。
+                // 含树页签：批量层已整单调 CostingTreeRenderService 渲染好，直接用。
                 baseRowsByComp = precomputedBaseRows;
             } else {
-                // 旧引擎（零破坏）：核价 BOM 递归展开（P1）——先算根料号闭包（整棵 PRICING BOM 树）。
-                // 闭包 partSet 喂各核价组件多值取数；spine 全节点作行主轴（缺数据补空行）。
-                closure = bomClosureService.compute(li.productPartNoSnapshot, java.util.Map.of());
-
-                // 2-4. 加载核价模板 driver 组件并按 spine 全节点展开 → baseRows（按 componentId）
+                // 不含树页签：非树页签平铺路径，逐组件按 partNo 展开（无 spine/闭包）。
                 // F4：透传整单预取的 driver 组件清单（prefetch 缺失 → null → 回落逐行查）
                 List<Object[]> driverCompsPrefetch = (prefetch != null && prefetch.driverCompsByTemplate != null)
                     ? prefetch.driverCompsByTemplate.get(costingTemplateId) : null;
-                baseRowsByComp = expandTemplateDriverBaseRows(costingTemplateId, li, customerId, quotationId, closure,
+                baseRowsByComp = expandFlatDriverBaseRows(costingTemplateId, li, customerId, quotationId,
                     unionByComp, driverCompsPrefetch);
             }
 
@@ -1201,12 +1170,6 @@ public class CardSnapshotService {
             // F1（B-1 修正）：核价侧也透传 rkf 预取（否则核价 ~1020 次 row_key_fields 单查原样保留）。
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null, null, null,
                 prefetch != null ? prefetch.rowKeyFieldsByComp : null);
-
-            // 6. 成环料号回传根节点（前端告警「已截断展开」）——仅旧引擎路径（closure!=null）产出。
-            if (closure != null && closure.cyclePartNos != null && !closure.cyclePartNos.isEmpty()) {
-                ArrayNode cyc = root.putArray("cyclePartNos");
-                for (String pn : closure.cyclePartNos) cyc.add(pn);
-            }
 
             return MAPPER.writeValueAsString(root);
 
@@ -1758,96 +1721,28 @@ public class CardSnapshotService {
     }
 
     /**
-     * 加载模板 driver 组件并按 partNo/compositeType expand 一次 → baseRows（按 componentId）。
-     * 核价侧（buildCostingCardValues）与报价侧草稿重刷（refreshQuoteCardValues）共用此种子展开。
+     * 非树页签平铺路径（Task 5.2 硬切换：从旧 {@code expandTemplateDriverBaseRows}（closure 版）的
+     * <b>非递归分支</b>剥离而来，去掉 closure/spine 依赖）。逐核价 driver 组件按根料号单值展开
+     * （无系统列，等同报价侧取数）。
+     *
+     * <p>调用前提：{@code templateId} 对应模板<b>不含树页签组件</b>
+     * （{@link #templateHasTreeTab(UUID)} == false）——含树页签的模板恒由
+     * {@link CostingTreeRenderService} 整单渲染出 {@code precomputedBaseRows}，
+     * {@link #buildCostingCardValues} 只在 {@code precomputedBaseRows == null} 时才调用本方法。
+     * 报价侧（{@link #refreshQuoteCardValues}/{@link #dryRunTokenRows}）恒不含树页签组件，
+     * 亦复用本方法（{@code unionByComp}/{@code driverCompsPrefetch} 传 null）。
+     *
+     * <p>{@code unionByComp}（{@link #precomputeCostingDriverUnion} 整单按 partNo 预取）与
+     * {@code driverCompsPrefetch}（整单一次查 driver 组件清单）两个性能分支与 closure 无关，照抄保留。
      */
-    private Map<String, ArrayNode> expandTemplateDriverBaseRows(UUID templateId, QuotationLineItem li,
-                                                                UUID customerId, UUID quotationId) {
+    private Map<String, ArrayNode> expandFlatDriverBaseRows(UUID templateId, QuotationLineItem li,
+                                                             UUID customerId, UUID quotationId,
+                                                             Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
+                                                             List<Object[]> driverCompsPrefetch) {
         Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
-        // 单列查询 → List<UUID>（非 Object[]）；逐元素当 componentId
-        @SuppressWarnings("unchecked")
-        List<Object> driverComps = em.createNativeQuery(
-            "SELECT DISTINCT c.id FROM template_component tc " +
-            "JOIN component c ON c.id = tc.component_id " +
-            "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
-            .setParameter("tid", templateId)
-            .getResultList();
-
         String partNo = li.productPartNoSnapshot;
-        String compositeType = li.compositeType;
-        if (partNo != null && !partNo.isBlank()) {
-            QuotationIdContext.set(quotationId);
-            try {
-                for (Object dcObj : driverComps) {
-                    if (dcObj == null) continue;
-                    String cidStr = dcObj.toString();
-                    UUID compId = UUID.fromString(cidStr);
-                    try {
-                        ExpandDriverResponse exp = componentDriverService.expand(
-                            compId, customerId, partNo, null, null, null, li.id, compositeType);
-                        List<ExpandDriverResponse.Row> rows =
-                            (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
-                        baseRowsByComp.put(cidStr, buildBaseRowsFromRows(rows));
-                    } catch (Exception e) {
-                        LOG.warnf("[card-snapshot] expand comp=%s li=%s: %s", compId, li.id, e.getMessage());
-                        baseRowsByComp.put(cidStr, MAPPER.createArrayNode());
-                    }
-                }
-            } finally {
-                QuotationIdContext.clear();
-            }
-        }
-        return baseRowsByComp;
-    }
+        if (partNo == null || partNo.isBlank()) return baseRowsByComp;
 
-    /**
-     * 核价 BOM 递归展开（P1）专用：以闭包 {@code spine} 全节点为<b>行主轴</b>展开各 driver 组件。
-     *
-     * <p>用户决策（2026-06-04）：每个核价组件都按 spine 的<b>全部节点</b>出行，即使该组件对某节点
-     * 无业务数据也补一空行（仅系统列），保证每个 Tab 树结构完整、行对齐、不产生孤儿节点。
-     *
-     * <p>流程：每个组件对 {@code closure.partSet} 一次多值展开（{@link ComponentDriverService#expandForPartSet}），
-     * 得到 {@code Map<partNo, 业务行>}；再按 spine 顺序逐节点左关联：
-     * <ul>
-     *   <li>节点 hf_part_no 有业务行 → 每条业务行各出一行（DAG 重复子件 → 同业务数据复制到各 occurrence）；</li>
-     *   <li>节点无业务行 → 补一空行（driverRow 仅 hf_part_no，业务列空）。</li>
-     * </ul>
-     * 每行并入系统列 {@code __nodeId/__parentId/__lvl/__hfPartNo/__parentNo/__bomVersion/__isCycle}
-     * （{@code __} 前缀命名空间，杜绝与业务字段碰撞；不进 component.fields，绕开 AP-44）。
-     *
-     * @param closure 根料号闭包；{@code null} → 委托给无闭包的原方法（报价侧/兜底）。
-     */
-    private Map<String, ArrayNode> expandTemplateDriverBaseRows(UUID templateId, QuotationLineItem li,
-                                                                UUID customerId, UUID quotationId,
-                                                                BomClosureResult closure) {
-        return expandTemplateDriverBaseRows(templateId, li, customerId, quotationId, closure, null);
-    }
-
-    /**
-     * P2-C4 重载：{@code unionByComp != null} 时，recursive 组件若命中 union 预取(整单一次多值查的
-     * {@code Map<partNo,resp>})则直接复用、不再逐行 {@code expandForPartSet}；未命中(含被闸门挡下的
-     * composite/spineKeys/lineItemId 组件)回落逐行 → 与改动前逐位一致。
-     */
-    private Map<String, ArrayNode> expandTemplateDriverBaseRows(UUID templateId, QuotationLineItem li,
-                                                                UUID customerId, UUID quotationId,
-                                                                BomClosureResult closure,
-                                                                Map<UUID, Map<String, ExpandDriverResponse>> unionByComp) {
-        return expandTemplateDriverBaseRows(templateId, li, customerId, quotationId, closure, unionByComp, null);
-    }
-
-    /**
-     * F4 重载：{@code driverCompsPrefetch != null} 时复用整单预取的 driver 组件清单(同一条 SQL,跨行同值),
-     * 不再每行重发 {@code SELECT DISTINCT ... template_component}；null=逐行查(零破坏 + kill switch off 回落)。
-     */
-    private Map<String, ArrayNode> expandTemplateDriverBaseRows(UUID templateId, QuotationLineItem li,
-                                                                UUID customerId, UUID quotationId,
-                                                                BomClosureResult closure,
-                                                                Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
-                                                                List<Object[]> driverCompsPrefetch) {
-        if (closure == null) {
-            return expandTemplateDriverBaseRows(templateId, li, customerId, quotationId);
-        }
-        Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
         List<Object[]> driverComps;
         if (driverCompsPrefetch != null) {
             driverComps = driverCompsPrefetch;          // F4：命中预取,0 往返
@@ -1864,108 +1759,36 @@ public class CardSnapshotService {
         }
 
         String compositeType = li.compositeType;
-        String partNo = li.productPartNoSnapshot;   // 未勾选(false)分支：单料号普通 expand 用
         QuotationIdContext.set(quotationId);
-        com.cpq.datasource.sqlview.SpineKeysContext.set(
-            com.cpq.datasource.sqlview.SpineKeysContext.fromClosure(closure));
         try {
             for (Object[] dc : driverComps) {
                 if (dc == null || dc[0] == null) continue;
                 String cidStr = dc[0].toString();
-                boolean recursive = !(dc[1] instanceof Boolean) || (Boolean) dc[1]; // 默认/非布尔 → true
                 UUID compId = UUID.fromString(cidStr);
                 try {
-                    if (recursive) {
-                        // 勾选：BOM 闭包递归 → spine 全节点行 + __* 系统列
-                        // P2-C4：union 命中(整单一次多值查)则复用；否则逐行 expandForPartSet(兜底，逐位等价)。
-                        Map<String, ExpandDriverResponse> byPart =
-                            (unionByComp != null && unionByComp.containsKey(compId))
-                                ? unionByComp.get(compId)
-                                : componentDriverService.expandForPartSet(
-                                    compId, customerId, closure.partSet, li.id, compositeType);
-                        baseRowsByComp.put(cidStr, buildSpineBaseRows(closure, byPart));
+                    // Phase 2-2'：非递归无行维度组件命中整单合桶(unionByComp)则按 partNo 取,否则逐行 expand 兜底。
+                    ExpandDriverResponse exp;
+                    Map<String, ExpandDriverResponse> nrBucket =
+                        (unionByComp != null) ? unionByComp.get(compId) : null;
+                    if (nrBucket != null) {
+                        exp = nrBucket.get(partNo);   // 命中合桶：0 往返(unionMulti 已按 hf_part_no 回分)
                     } else {
-                        // 未勾选：按根料号单料号普通展开(无系统列)，等同报价侧取数。
-                        // Phase 2-2'：非递归无行维度组件命中整单合桶(unionByComp)则按 partNo 取,否则逐行 expand 兜底。
-                        ExpandDriverResponse exp;
-                        Map<String, ExpandDriverResponse> nrBucket =
-                            (unionByComp != null) ? unionByComp.get(compId) : null;
-                        if (nrBucket != null) {
-                            exp = nrBucket.get(partNo);   // 命中合桶：0 往返(unionMulti 已按 hf_part_no 回分)
-                        } else {
-                            NON_RECURSIVE_EXPAND_QUERY_COUNT.incrementAndGet();
-                            exp = componentDriverService.expand(
-                                compId, customerId, partNo, null, null, null, li.id, compositeType);
-                        }
-                        List<ExpandDriverResponse.Row> rows =
-                            (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
-                        baseRowsByComp.put(cidStr, buildBaseRowsFromRows(rows));
+                        NON_RECURSIVE_EXPAND_QUERY_COUNT.incrementAndGet();
+                        exp = componentDriverService.expand(
+                            compId, customerId, partNo, null, null, null, li.id, compositeType);
                     }
+                    List<ExpandDriverResponse.Row> rows =
+                        (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
+                    baseRowsByComp.put(cidStr, buildBaseRowsFromRows(rows));
                 } catch (Exception e) {
-                    LOG.warnf("[card-snapshot] expand(recursive=%b) comp=%s li=%s: %s",
-                              recursive, compId, li.id, e.getMessage());
+                    LOG.warnf("[card-snapshot] expand(flat) comp=%s li=%s: %s", compId, li.id, e.getMessage());
                     baseRowsByComp.put(cidStr, MAPPER.createArrayNode());
                 }
             }
         } finally {
-            com.cpq.datasource.sqlview.SpineKeysContext.clear();
             QuotationIdContext.clear();
         }
         return baseRowsByComp;
-    }
-
-    /**
-     * 以 spine 全节点为行主轴构建 baseRows（缺数据补空行）。
-     * 行数 = Σ(每节点 max(1, 该节点业务行数))，确定性（满足 AP-51 刷新稳定）。
-     */
-    private ArrayNode buildSpineBaseRows(BomClosureResult closure, Map<String, ExpandDriverResponse> byPart) {
-        ArrayNode out = MAPPER.createArrayNode();
-        if (closure.spine == null) return out;
-        for (BomClosureResult.SpineNode node : closure.spine) {
-            ExpandDriverResponse resp = (node.hfPartNo == null) ? null : byPart.get(node.hfPartNo);
-            List<ExpandDriverResponse.Row> bizRows =
-                (resp != null && resp.rows != null) ? resp.rows : java.util.Collections.emptyList();
-            if (bizRows.isEmpty()) {
-                out.add(spineRowNode(node, null));                 // 缺数据补空行
-            } else {
-                // P2-C4: 同一 partNo 桶内按稳定键排序(排副本,不 mutate 共享 union 列表)。
-                // 视图无 ORDER BY → PG 行内顺序依赖 ANY 列表;排序后 union 与逐行两路顺序一致且跨运行确定。
-                List<ExpandDriverResponse.Row> sorted = new ArrayList<>(bizRows);
-                sorted.sort(java.util.Comparator.comparing(this::stableRowKey));
-                for (ExpandDriverResponse.Row r : sorted) out.add(spineRowNode(node, r));
-            }
-        }
-        return out;
-    }
-
-    /** P2-C4: 业务行稳定排序键(driverRow + basicDataValues 规范序列化)。同内容行 key 相同(顺序无所谓)。 */
-    private String stableRowKey(ExpandDriverResponse.Row r) {
-        try {
-            return MAPPER.writeValueAsString(r.driverRow) + "" + MAPPER.writeValueAsString(r.basicDataValues);
-        } catch (Exception e) {
-            return String.valueOf(r.driverRow) + "" + String.valueOf(r.basicDataValues);
-        }
-    }
-
-    /** 组装单行：业务行(或空行) + 注入系统列 {@code __*}（命名空间前缀防碰撞）。 */
-    private ObjectNode spineRowNode(BomClosureResult.SpineNode node, ExpandDriverResponse.Row bizRow) {
-        ObjectNode rowNode;
-        if (bizRow != null) {
-            rowNode = rowToNode(bizRow);
-        } else {
-            rowNode = MAPPER.createObjectNode();
-            ObjectNode dr = rowNode.putObject("driverRow");
-            if (node.hfPartNo != null) { dr.put("hf_part_no", node.hfPartNo); dr.put("part_no", node.hfPartNo); }
-            rowNode.putObject("basicDataValues");
-        }
-        rowNode.put("__nodeId", node.nodeId == null ? "" : node.nodeId);
-        if (node.parentId == null) rowNode.putNull("__parentId"); else rowNode.put("__parentId", node.parentId);
-        rowNode.put("__lvl", node.lvl);
-        if (node.hfPartNo == null) rowNode.putNull("__hfPartNo"); else rowNode.put("__hfPartNo", node.hfPartNo);
-        if (node.parentNo == null) rowNode.putNull("__parentNo"); else rowNode.put("__parentNo", node.parentNo);
-        if (node.bomVersion == null) rowNode.putNull("__bomVersion"); else rowNode.put("__bomVersion", node.bomVersion);
-        rowNode.put("__isCycle", node.isCycle);
-        return rowNode;
     }
 
     /** 从 quote_card_values JSON 提取各组件的 baseRows（componentId → baseRows 数组）。 */
@@ -2068,9 +1891,9 @@ public class CardSnapshotService {
             JsonNode snapshot = loadComponentsSnapshot(q.customerTemplateId);
             if (snapshot == null) return;
 
-            // 1. 重查基础值（报价模板 driver 组件 expand 种子）
+            // 1. 重查基础值（报价模板 driver 组件 expand 种子；报价侧恒不含树页签组件，走平铺路径）
             Map<String, ArrayNode> baseRowsByComp =
-                expandTemplateDriverBaseRows(q.customerTemplateId, managed, q.customerId, q.id);  // 报价侧:无闭包(closure=null)
+                expandFlatDriverBaseRows(q.customerTemplateId, managed, q.customerId, q.id, null, null);
 
             // 2. 旧 editRows（按 rowKey 对齐保留）
             Map<String, ArrayNode> oldEdits = extractEditRowsByComp(managed.quoteCardValues);
@@ -2511,7 +2334,7 @@ public class CardSnapshotService {
      *       {@code {name:__dryrun__, field_type:FORMULA}}（{@code collectFormulaFields} 从 fields 收集 FORMULA 字段，
      *       故须同步追加字段定义）；兄弟 source 组件 formulas 保持已存版本。</li>
      *   <li><b>baseRows 展开 + editRows 合并</b>：与 {@link #refreshQuoteCardValues} 同源
-     *       （{@link #expandTemplateDriverBaseRows} + {@link #extractEditRowsByComp} + {@link #mergeRowDataInputsIntoEdits}）。</li>
+     *       （{@link #expandFlatDriverBaseRows} + {@link #extractEditRowsByComp} + {@link #mergeRowDataInputsIntoEdits}）。</li>
      *   <li><b>草稿行键覆盖（v6-N）</b>：把宿主 cid 的行键覆盖为 {@code draftSelfRowKeyFields}，通过
      *       {@link #assembleTabsWithFormulaResults} 四参重载的 {@code rkfOverride} 实现。</li>
      *   <li>取宿主 tab formulaResults 逐行，提取 {@code values["__dryrun__"]} → {@code [{rowKey, value}]}。</li>
@@ -2542,7 +2365,7 @@ public class CardSnapshotService {
 
         // 1. baseRows 展开 + editRows 合并（与 refreshQuoteCardValues 同源）
         Map<String, ArrayNode> baseRowsByComp =
-            expandTemplateDriverBaseRows(q.customerTemplateId, li, q.customerId, q.id);
+            expandFlatDriverBaseRows(q.customerTemplateId, li, q.customerId, q.id, null, null);
         Map<String, ArrayNode> oldEdits = extractEditRowsByComp(li.quoteCardValues);
         Map<String, ArrayNode> mergedEdits =
             mergeRowDataInputsIntoEdits(snapshot, baseRowsByComp, oldEdits, li.id);

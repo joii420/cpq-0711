@@ -1,7 +1,6 @@
 package com.cpq.quotation.service;
 
 import com.cpq.component.dto.ExpandDriverResponse;
-import com.cpq.component.service.BomClosureService;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.quotation.entity.Quotation;
@@ -13,6 +12,8 @@ import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
+
 import java.util.*;
 
 /**
@@ -20,15 +21,18 @@ import java.util.*;
  * 的 10-12s 拆成「报价侧 buildCardValues(复用 snapshot_rows,公式+序列化)」vs「核价侧 buildCostingCardValues
  * (BOM expand + 组装 + 序列化,union/prefetch 已应用)」,定位 P3 §2.3(多 line expand)该打哪侧。
  *
- * <p>生产路径同款:precomputeCostingDriverUnion + precomputeCardValuesPrefetch 先建,再逐行调两侧 build。
- * 两个 build 都返回 String、不写实体,故只读不污染。冷态:evictAll 取导入首存真实场景。
+ * <p>生产路径同款:precomputeCostingDriverUnion + precomputeCardValuesPrefetch 先建,再逐行调两侧 build；
+ * 含树页签模板另先整单调 {@link CostingTreeRenderService#render} 拿 precomputedBaseRows（Task 5.2
+ * 硬切换后 {@code buildCostingCardValues} 6 参重载对含树页签模板不再兜底出正确结果，须显式按
+ * {@code templateHasTreeTab} 分支同生产路径）。两个 build 都返回 String、不写实体,故只读不污染。
+ * 冷态:evictAll 取导入首存真实场景。
  */
 @QuarkusTest
 class S3SegmentProfileTest {
 
     @Inject QuotationService quotationService;
     @Inject CardSnapshotService cardSnapshotService;
-    @Inject BomClosureService bomClosureService;
+    @Inject CostingTreeRenderService costingTreeRenderService;
     @Inject ComponentDriverService componentDriverService;
     @Inject com.cpq.quotation.service.ExcelViewService excelViewService;
     @Inject com.cpq.template.service.TemplateFormulaService templateFormulaService;
@@ -60,7 +64,6 @@ class S3SegmentProfileTest {
         for (QuotationLineItem li : lines) lineIds.add(li.id);
 
         // 冷态(= 导入首存真实场景)
-        bomClosureService.evictAll();
         componentDriverService.evictAll();
 
         QuotationIdContext.set(qid);
@@ -74,6 +77,13 @@ class S3SegmentProfileTest {
             CardSnapshotService.CardValuesPrefetch prefetch =
                     cardSnapshotService.precomputeCardValuesPrefetch(qid, lineIds);
             long prefetchMs = (System.nanoTime() - t1) / 1_000_000;
+
+            // 生产路径同款(Task 3.1/5.2)：含树页签模板先整单调 CostingTreeRenderService.render,
+            // 逐 li 复用其结果；不含树页签 → 恒空 map,下方 getOrDefault 恒 null → 走非树页签平铺路径。
+            Map<UUID, Map<String, ArrayNode>> treeBaseRowsByLine = Collections.emptyMap();
+            if (cardSnapshotService.templateHasTreeTab(q.costingCardTemplateId)) {
+                treeBaseRowsByLine = costingTreeRenderService.render(q.costingCardTemplateId, lines);
+            }
 
             long quoteMs = 0, costingMs = 0, quoteExcelMs = 0, costingExcelMs = 0;
             long quoteBytes = 0, costingBytes = 0, quoteExcelBytes = 0, costingExcelBytes = 0;
@@ -93,8 +103,9 @@ class S3SegmentProfileTest {
                 if (quoteExcel != null) quoteExcelBytes += quoteExcel.length();
 
                 long b = System.nanoTime();
+                Map<String, ArrayNode> precomputed = treeBaseRowsByLine.get(li.id);
                 String costing = cardSnapshotService.buildCostingCardValues(
-                        managed, q.costingCardTemplateId, q.customerId, qid, union, prefetch);
+                        managed, q.costingCardTemplateId, q.customerId, qid, union, prefetch, precomputed);
                 costingMs += (System.nanoTime() - b) / 1_000_000;
                 if (costing != null) costingBytes += costing.length();
 

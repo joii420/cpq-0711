@@ -45,10 +45,6 @@ public class ExcelViewService {
     @Inject
     CardFormulaEvaluator cardFormulaEvaluator;
 
-    /** P2-B 核价 Excel 树：算根料号 BOM 闭包 spine（按节点出行）。 */
-    @Inject
-    com.cpq.component.service.BomClosureService bomClosureService;
-
     /** TAB_JOIN_FORMULA 列：跨页签连表聚合求值。 */
     @Inject
     com.cpq.quotation.service.tabjoin.TabJoinPlanEvaluator tabJoinPlanEvaluator;

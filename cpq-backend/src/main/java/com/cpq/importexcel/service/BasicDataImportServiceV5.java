@@ -89,10 +89,6 @@ public class BasicDataImportServiceV5 {
     @Inject
     ComponentDriverService componentDriverService;
 
-    /** 导入完成后清空核价 BOM 闭包缓存（material_bom_item 变更后） */
-    @Inject
-    com.cpq.component.service.BomClosureService bomClosureService;
-
     /** B1: 料号版本管理服务 — 升版后写 mat_part_version_log + bump current_version */
     @Inject
     com.cpq.partversion.PartVersionService partVersionService;
@@ -335,12 +331,6 @@ public class BasicDataImportServiceV5 {
                 componentDriverService.evictAll();
             } catch (Exception e) {
                 LOG.warnf("evictAll expand-driver cache failed (non-fatal): %s", e.getMessage());
-            }
-            try {
-                // 核价 BOM 递归展开（P1）：material_bom_item 变更后清闭包缓存，新 BOM 立即可见
-                bomClosureService.evictAll();
-            } catch (Exception e) {
-                LOG.warnf("evictAll bom-closure cache failed (non-fatal): %s", e.getMessage());
             }
             try {
                 com.cpq.formula.resource.FormulaEvalCache.evictAll();

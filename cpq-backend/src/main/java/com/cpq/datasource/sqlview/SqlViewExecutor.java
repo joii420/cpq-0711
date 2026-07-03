@@ -268,16 +268,11 @@ public class SqlViewExecutor {
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT * FROM (").append(view.sqlTemplate).append(") inner_q");
 
-        // spineKeys 自治：视图含 :spineKeys 宏时由其自身 scope（按 BOM 树三元组过滤+平铺），
-        // 不再自动追加 inner_q.hf_part_no = ANY(:hfPartNos)（否则非递归组件的 :hfPartNos=[根料号]
-        // 会把树里子件料号的行全部过滤掉）。详见 spineKeys 设计 §「平铺引用源树」。
-        boolean usesSpineKeys = SpineKeysMacro.containsMacro(view.sqlTemplate);
-
         List<String> whereParts = new ArrayList<>();
         if (predicate != null && !predicate.isBlank()) {
             whereParts.add("(" + predicate.trim() + ")");
         }
-        if (partNos != null && !partNos.isEmpty() && !usesSpineKeys) {
+        if (partNos != null && !partNos.isEmpty()) {
             whereParts.add("inner_q.hf_part_no = ANY(:hfPartNos)");
         }
         if (!whereParts.isEmpty()) {
@@ -290,7 +285,7 @@ public class SqlViewExecutor {
             namedParams.put("hfPartNos", partNos);
         }
         injectCostingTreeVars(namedParams);
-        String expandedSql = sql.toString();   // spineKeys 宏已废弃(类待 Phase 5 删)
+        String expandedSql = sql.toString();
         RewrittenSql rewritten = rewriteNamedParams(expandedSql, namedParams);
         SqlDebugContext.record(rewritten.sql, rewritten.params);
 
@@ -339,14 +334,11 @@ public class SqlViewExecutor {
         sql.append("SELECT ").append(column).append(" FROM (")
            .append(sqlTemplate).append(") inner_q");
 
-        // spineKeys 自治：含 :spineKeys 的视图由其自身 scope，不再追加 hf_part_no = ANY(:hfPartNos)。
-        boolean usesSpineKeys = SpineKeysMacro.containsMacro(sqlTemplate);
-
         List<String> whereParts = new ArrayList<>();
         if (predicate != null && !predicate.isBlank()) {
             whereParts.add("(" + predicate.trim() + ")");
         }
-        if (partNos != null && !partNos.isEmpty() && !usesSpineKeys) {
+        if (partNos != null && !partNos.isEmpty()) {
             whereParts.add("inner_q.hf_part_no = ANY(:hfPartNos)");
         }
         if (!whereParts.isEmpty()) {
@@ -366,7 +358,7 @@ public class SqlViewExecutor {
             namedParams.put("hfPartNos", partNos);
         }
         injectCostingTreeVars(namedParams);
-        String expandedSql = sql;   // spineKeys 宏已废弃(类待 Phase 5 删)
+        String expandedSql = sql;
         RewrittenSql rewritten = rewriteNamedParams(expandedSql, namedParams);
         SqlDebugContext.record(rewritten.sql, rewritten.params);
 
