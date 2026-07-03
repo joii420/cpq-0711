@@ -1116,7 +1116,8 @@ public class CardSnapshotService {
     }
 
     /** B2 重载：{@code prefetch!=null} 时复用预取核价模板 snapshot；{@code null}=逐行读+解析（零破坏）。
-     * delegate 到七参重载（{@code precomputedBaseRows=null}）→ 非树页签平铺路径。 */
+     * delegate 到七参重载（{@code precomputedBaseRows=null}）→ 七参重载内部按 {@link #templateHasTreeTab}
+     * 自行判定走树渲染兜底还是非树页签平铺路径，本重载零负担。 */
     String buildCostingCardValues(QuotationLineItem li, UUID costingTemplateId,
                                            UUID customerId, UUID quotationId,
                                            Map<UUID, Map<String, ExpandDriverResponse>> unionByComp,
@@ -1125,9 +1126,18 @@ public class CardSnapshotService {
     }
 
     /**
-     * 七参重载（Task 3.1 事项B）：{@code precomputedBaseRows != null} 时（核价模板含树页签，批量层已整单
-     * 调过 {@link CostingTreeRenderService#render} 并按 lineItemId 拆好）直接复用其结果作 {@code baseRowsByComp}。
-     * {@code precomputedBaseRows == null} → 走非树页签平铺路径（{@link #expandFlatDriverBaseRows}）。
+     * 七参重载（Task 3.1 事项B + 正确性兜底）：{@code baseRowsByComp} 来源三分支——
+     * <ol>
+     *   <li>{@code precomputedBaseRows != null}：批量层已整单调过 {@link CostingTreeRenderService#render}
+     *       并按 lineItemId 拆好，直接复用（最优路径，不重复 render）。</li>
+     *   <li>{@code precomputedBaseRows == null} 且 {@link #templateHasTreeTab} 为真：说明调用方（未接线的
+     *       入口 / 单测）没有预先 render，但该模板确实含树页签 —— 不能静默退化到平铺路径丢树结构，
+     *       就地单行调 {@code costingTreeRenderService.render(costingTemplateId, List.of(li))} 兜底
+     *       （与 {@link #snapshotCostingSideOnly} 的单行兜底同款做法）。render 无结果时退化为空 map，不抛。</li>
+     *   <li>{@code templateHasTreeTab} 为假：非树页签平铺路径（{@link #expandFlatDriverBaseRows}）。</li>
+     * </ol>
+     * 批量层接线因此退化为**纯性能优化**（省去本方法内部再 render 一次）；任何入口调用本方法都能拿到
+     * 正确的树结构，不存在"忘记接线就静默错渲染"的隐患。
      *
      * <p>新契约用递归 SQL 直接建树，无「环检测」概念，故此路径<b>不回传 cyclePartNos</b>
      * （root 节点不含 {@code cyclePartNos} 字段；前端「已截断展开」告警此契约暂无等价物）。
@@ -1154,8 +1164,16 @@ public class CardSnapshotService {
 
             Map<String, ArrayNode> baseRowsByComp;
             if (precomputedBaseRows != null) {
-                // 含树页签：批量层已整单调 CostingTreeRenderService 渲染好，直接用。
+                // 含树页签：批量层已整单调 CostingTreeRenderService 渲染好，直接用（最优路径，不重复 render）。
                 baseRowsByComp = precomputedBaseRows;
+            } else if (templateHasTreeTab(costingTemplateId)) {
+                // 安全兜底：未接线的调用入口（或单测）没传 precomputedBaseRows，但该模板确实含树页签 ——
+                // 不能静默退化到平铺路径（会丢树结构）。就地单行调 CostingTreeRenderService.render，
+                // 与 snapshotCostingSideOnly 的单行兜底同款做法。render 失败/无结果 → 退化为空 map（不抛）。
+                Map<String, ArrayNode> fb = costingTreeRenderService
+                    .render(costingTemplateId, java.util.List.of(li))
+                    .get(li.id);
+                baseRowsByComp = (fb != null) ? fb : new LinkedHashMap<>();
             } else {
                 // 不含树页签：非树页签平铺路径，逐组件按 partNo 展开（无 spine/闭包）。
                 // F4：透传整单预取的 driver 组件清单（prefetch 缺失 → null → 回落逐行查）

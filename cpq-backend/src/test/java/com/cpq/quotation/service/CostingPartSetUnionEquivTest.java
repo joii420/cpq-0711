@@ -37,11 +37,18 @@ class CostingPartSetUnionEquivTest {
 
     @Transactional
     Pick pickSmallestCostingQuotation() {
+        // 本测试是 P2-C4 时代产物，只测「非树页签平铺路径」下 unionByComp 预取 vs 逐行 expandForPartSet
+        // 的等价性 + 往返查询数下降。2026-07 buildCostingCardValues 加了正确性兜底后，树页签模板
+        // 无论传不传 unionByComp 都统一走 costingTreeRenderService.render()（忽略 unionByComp），
+        // 会让 roundTripReduction_unionVsPerRow 的 "NEW < OLD" 语义失真（两路都 render 同样次数）。
+        // 排除含树页签的模板，让候选范围回到本测试原始设计前提（纯 driver 平铺 expand）。
         @SuppressWarnings("unchecked")
         List<Object[]> rs = em.createNativeQuery(
             "SELECT q.id, q.costing_card_template_id, q.customer_id " +
             "FROM quotation q JOIN quotation_line_item li ON li.quotation_id = q.id " +
             "WHERE q.costing_card_template_id IS NOT NULL AND li.product_part_no_snapshot IS NOT NULL " +
+            "AND NOT EXISTS (SELECT 1 FROM template_component tc JOIN component c ON c.id = tc.component_id " +
+            "  WHERE tc.template_id = q.costing_card_template_id AND c.bom_recursive_expand = true) " +
             "GROUP BY q.id, q.costing_card_template_id, q.customer_id HAVING count(li.id) >= 2 " +
             "ORDER BY count(li.id) ASC LIMIT 1").getResultList();
         if (rs.isEmpty()) return null;
