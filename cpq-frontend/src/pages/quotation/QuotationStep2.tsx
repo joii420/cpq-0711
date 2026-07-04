@@ -3176,17 +3176,20 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   // Task 8 渲染脱钩: 当所有行已有值快照时, 从快照构造 expansions 并停掉 batch-expand(传 EMPTY_LINEITEMS);
   // 否则回退实时 batch-expand(旧链路, 兼容尚未生成快照的存量报价单)。报价/核价两侧独立判定。
   const useSnapQuote = lineItems.length > 0 && lineItems.every(li => !!li.quoteCardValues);
-  const useSnapCosting = costingLineItems.length > 0 && costingLineItems.every(li => !!li.costingCardValues);
-  // 核价 BOM 递归展开（P1）：实时兜底路径未走闭包展开（仅快照路径展开整棵树）。
-  // 快照对核价模板恒生成（CardSnapshotService.buildCostingCardValues），故兜底极少触发；
-  // 一旦触发（某核价行缺 costingCardValues）显式告警，不静默 —— BOM 树仅在快照重算后出现。
-  // TODO(P1.1)：如需兜底也出树，在 ComponentDriverService.batchExpand 注入闭包 partSet + 旁路合桶（AP-37）。
+  // 核价侧新模型「恒走快照，永不回落 live batch-expand」(2026-07-03 决策#3):
+  //  · live 兜底对核价树既产不出树(只快照路径经 CostingTreeRenderService 展开整棵 BOM 树),
+  //    又会撞新契约 $view 输出 material_no/parent_no 而非 hf_part_no → "column hf_part_no does not exist"
+  //    整批失败 + 空白;
+  //  · 快照对核价模板恒由后端补算(buildCostingCardValues + 打开 warm 轮询),就绪后 DTO 刷新自然出树。
+  //  故只要有核价行就强制快照模式;某行快照未就绪时该行暂显空(不发 batch-expand),warm 补算 + 回灌后出树。
+  const useSnapCosting = costingLineItems.length > 0;
+  const costingSnapshotPending = costingLineItems.length > 0 && costingLineItems.some(li => !li.costingCardValues);
   useEffect(() => {
-    if (costingLineItems.length > 0 && !useSnapCosting) {
+    if (costingSnapshotPending) {
       // eslint-disable-next-line no-console
-      console.warn('[bom-closure] 核价走实时兜底（缺快照）→ BOM 闭包未展开，仅显示根料号层；保存/重算快照后将出整棵树');
+      console.warn('[costing-snapshot] 部分核价行快照未就绪 → 暂显示空(不回落实时兜底);warm 补算 + 刷新后出整棵树');
     }
-  }, [useSnapCosting, costingLineItems.length]);
+  }, [costingSnapshotPending]);
   // 2026-05-19 修: useDriverExpansions 返 {cache, invalidate} 而非纯 Map; 必须解构 .cache
   const { cache: driverExpansionsQuote } = useDriverExpansions(useSnapQuote ? EMPTY_LINEITEMS : lineItems, customerId, quotationId);
   // 核价单卡片所需的展开（按 costingTemplate 视图下的 componentData 收集）
