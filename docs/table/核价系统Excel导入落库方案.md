@@ -1,6 +1,8 @@
 # 核价系统基础数据 Excel 导入落库方案
 
-> 版本：V6.0 | 日期：2026-05-26
+> 版本：V6.1 | 日期：2026-05-26
+>
+> **V6.1（2026-06-30）**：补齐 `unit_price.price_type` 细分化（2026-06-30 代码已生效，本文档此前漏更）——原超载大类 `MATERIAL` 在核价写入端废弃，各费用 Sheet 直接写 7 个细分值（材料核价价格=`MATERIAL_PRICE`、包装=`PACKAGING`、来料加工费=`INCOMING_PROCESS`、来料其他费用比例+固定合并=`INCOMING_OTHER`、自制加工费=`SELF_PROCESS`、成品其他比例+固定合并=`FINISHED_OTHER`、其他外加工=`OUTSOURCE_PROCESS`、电镀两条=`PLATING`）；`ELEMENT`（元素核价价格表）/`CONSUMABLE`（生产耗材BOM）已与 Sheet 1:1 **保留不动**；`cost_type` 全程不变。比例/固定不进 price_type，靠 `cost_ratio` vs `pricing_price` 哪列有值区分。规则出处 `docs/superpowers/specs/2026-06-30-pricing-unit-price-source-enum-design.md`（DDL=`V306`，常量类=`PricingPriceType`）。
 
 ---
 
@@ -41,14 +43,14 @@
 共 24 个有效 Sheet（忽略「汇总」Sheet），均落入 `unit_price` 或其他目标表。
 
 > **字段说明**
-> - `price_type`（价格类型）：标识该条记录的价格来源分类，如 `ELEMENT 元素`、`MATERIAL 材料`、`CONSUMABLE 耗材`
+> - `price_type`（价格类型）：标识该条记录的价格来源/Sheet 分类。2026-06-30 起原超载大类 `MATERIAL` 已按 Sheet 细分为 `MATERIAL_PRICE`/`PACKAGING`/`INCOMING_PROCESS`/`INCOMING_OTHER`/`SELF_PROCESS`/`FINISHED_OTHER`/`OUTSOURCE_PROCESS`/`PLATING`；`ELEMENT`/`CONSUMABLE` 保留
 > - `cost_type`（费用类型）：标识该条价格记录的费用用途分类，如 `元素核价价格`、`自制加工费`、`电镀加工费` 等
 > - 两个字段相互独立，均写入 `unit_price` 表，共同描述一条价格记录的分类维度
 
 | # | Excel Sheet | 目标数据库表 | price_type（价格类型） | cost_type（费用类型） |
 |:-:|-------------|-------------|----------------------|---------------------|
 | 1 | 元素核价价格表 | `unit_price` | `ELEMENT 元素` | `元素核价价格` |
-| 2 | 材料核价价格表 | `unit_price` | `MATERIAL 材料` | `材料核价价格` |
+| 2 | 材料核价价格表 | `unit_price` | `MATERIAL_PRICE` | `材料核价价格` |
 | 3 | 汇率管理表 | `exchange_rate` | — | — |
 | 4 | 核价版本 | `material_version_mgmt` | — | — |
 | 5 | 宏丰-客户料号对应关系 | `material_customer_map` + `material_master` | — | — |
@@ -60,17 +62,17 @@
 | 11 | 辅助设备能耗 | `auxiliary_energy` | — | — |
 | 12 | 模具工装成本 | `tooling_cost` | — | — |
 | 13 | 生产耗材BOM | `unit_price` | `CONSUMABLE 耗材` | `耗材` |
-| 14 | 包装材料BOM | `unit_price` | `MATERIAL 材料` | `包装` |
-| 15 | 来料加工费 | `unit_price` | `MATERIAL 材料` | `来料加工费` |
-| 16 | 来料其他费用（比例） | `unit_price` | `MATERIAL 材料` | `要素名称（动态）` |
-| 17 | 来料其他固定费用 | `unit_price` | `MATERIAL 材料` | `要素名称（动态）` |
-| 18 | 加工费&组装费 | `unit_price` | `MATERIAL 材料` | `自制加工费` |
-| 19 | 成品其他比例费用 | `unit_price` | `MATERIAL 材料` | `要素名称（动态）` |
-| 20 | 成品其他固定费用 | `unit_price` | `MATERIAL 材料` | `要素名称（动态）` |
+| 14 | 包装材料BOM | `unit_price` | `PACKAGING` | `包装` |
+| 15 | 来料加工费 | `unit_price` | `INCOMING_PROCESS` | `来料加工费` |
+| 16 | 来料其他费用（比例） | `unit_price` | `INCOMING_OTHER` | `要素名称（动态）` |
+| 17 | 来料其他固定费用 | `unit_price` | `INCOMING_OTHER` | `要素名称（动态）` |
+| 18 | 加工费&组装费 | `unit_price` | `SELF_PROCESS` | `自制加工费` |
+| 19 | 成品其他比例费用 | `unit_price` | `FINISHED_OTHER` | `要素名称（动态）` |
+| 20 | 成品其他固定费用 | `unit_price` | `FINISHED_OTHER` | `要素名称（动态）` |
 | 21 | 电镀方案 | `plating_scheme` | — | — |
-| 22 | 电镀成本（加工费） | `unit_price` | `MATERIAL 材料` | `电镀加工费` |
-| 22 | 电镀成本（材料费） | `unit_price` | `MATERIAL 材料` | `电镀材料费` |
-| 23 | 其他外加工成本 | `unit_price` | `MATERIAL 材料` | `其他加工费` |
+| 22 | 电镀成本（加工费） | `unit_price` | `PLATING` | `电镀加工费` |
+| 22 | 电镀成本（材料费） | `unit_price` | `PLATING` | `电镀材料费` |
+| 23 | 其他外加工成本 | `unit_price` | `OUTSOURCE_PROCESS` | `其他加工费` |
 | 24 | 单重 | `material_master` | — | — |
 
 ---
@@ -113,7 +115,7 @@
 | 固定写入字段 | 固定值 |
 |------------|--------|
 | `system_type` | `PRICING` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `MATERIAL_PRICE` |
 | `cost_type` | `材料核价价格` |
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
@@ -132,7 +134,7 @@
 | 回收折扣（%） | `recovery_discount` | ✅ | 回收折扣(%) |
 | 材料价格版本 | `version_no` | ✅ | 价格版本 |
 
-> 📌 品名、规格、尺寸列不导入。`system_type=PRICING`，`price_type=MATERIAL`，`cost_type=材料核价价格` 由系统写入。
+> 📌 品名、规格、尺寸列不导入。`system_type=PRICING`，`price_type=MATERIAL_PRICE`，`cost_type=材料核价价格` 由系统写入。
 
 ---
 
@@ -436,7 +438,7 @@
 | 取用的耗材版本 | `version_no` | ✅ | 价格版本 |
 | 是否有效 | — | ❌ | 不导入 |
 
-> 📌 不包含包装工序耗材（包装耗材在「包装材料BOM」Sheet 维护）。`price_type=CONSUMABLE` 与「包装材料BOM」的 `price_type=MATERIAL` 不同，通过 `cost_type` 进一步区分耗材用途。
+> 📌 不包含包装工序耗材（包装耗材在「包装材料BOM」Sheet 维护）。`price_type=CONSUMABLE` 与「包装材料BOM」的 `price_type=PACKAGING` 不同，通过 `price_type`/`cost_type` 区分耗材与包装用途。
 
 ---
 
@@ -447,7 +449,7 @@
 | 固定写入字段 | 固定值 |
 |------------|--------|
 | `system_type` | `PRICING` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `PACKAGING` |
 | `cost_type` | `包装` |
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
@@ -464,7 +466,7 @@
 | 取用的耗材版本 | `version_no` | ✅ | 价格版本 |
 | 是否有效 | — | ❌ | 不导入 |
 
-> 📌 包装材料属于材料维度（`price_type=MATERIAL`），`cost_type=包装` 用于与其他材料类费用区分。
+> 📌 包装材料写入独立细分值 `price_type=PACKAGING`（原归大类 MATERIAL），`cost_type=包装`。
 
 ---
 
@@ -475,7 +477,7 @@
 | 固定写入字段 | 固定值 |
 |------------|--------|
 | `system_type` | `PRICING` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `INCOMING_PROCESS` |
 | `cost_type` | `来料加工费` |
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
@@ -502,7 +504,7 @@
 | 固定写入字段 | 固定值 |
 |------------|--------|
 | `system_type` | `PRICING` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `INCOMING_OTHER` |
 | `cost_type` | 取自 Excel「要素编号」列（动态写入） |
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
@@ -529,7 +531,7 @@
 | 固定写入字段 | 固定值 |
 |------------|--------|
 | `system_type` | `PRICING` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `INCOMING_OTHER` |
 | `cost_type` | 取自 Excel「要素名称」列（动态写入） |
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
@@ -557,7 +559,7 @@
 | 固定写入字段 | 固定值 |
 |------------|--------|
 | `system_type` | `PRICING` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `SELF_PROCESS` |
 | `cost_type` | `自制加工费` |
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
@@ -573,7 +575,7 @@
 | 计量单位 | `unit` | ✅ | |
 | 不良率/拒收率（%） | `defect_rate` | ✅ | 不良率% |
 
-> 📌 加工费由人工+折旧+能耗+模具工装+耗材包装汇总得出，也可直接录入；适用于成品、内部半成品及原材料料号。`price_type=MATERIAL` 表示该费用归属于材料成本维度。
+> 📌 加工费由人工+折旧+能耗+模具工装+耗材包装汇总得出，也可直接录入；适用于成品、内部半成品及原材料料号。`price_type=SELF_PROCESS`（原归大类 MATERIAL）标识自制加工费维度。
 
 ---
 
@@ -584,7 +586,7 @@
 | 固定写入字段 | 固定值 |
 |------------|--------|
 | `system_type` | `PRICING` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `FINISHED_OTHER` |
 | `cost_type` | 取自 Excel「要素名称」列（动态写入） |
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
@@ -609,7 +611,7 @@
 | 固定写入字段 | 固定值 |
 |------------|--------|
 | `system_type` | `PRICING` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `FINISHED_OTHER` |
 | `cost_type` | 取自 Excel「要素名称」列（动态写入） |
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
@@ -658,7 +660,7 @@
 | 固定写入字段 | 固定值 |
 |------------|--------|
 | `system_type` | `PRICING` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `PLATING` |
 | `cost_type` | `电镀加工费` |
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
@@ -677,7 +679,7 @@
 | 固定写入字段 | 固定值 |
 |------------|--------|
 | `system_type` | `PRICING` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `PLATING` |
 | `cost_type` | `电镀材料费` |
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
@@ -702,7 +704,7 @@
 | 固定写入字段 | 固定值 |
 |------------|--------|
 | `system_type` | `PRICING` |
-| `price_type` | `MATERIAL`（材料） |
+| `price_type` | `OUTSOURCE_PROCESS` |
 | `cost_type` | `其他加工费` |
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
@@ -735,7 +737,7 @@
 
 | 规则项 | 说明 |
 |--------|------|
-| **price_type 与 cost_type 的区别** | `price_type`（价格类型）标识价格来源分类（ELEMENT/MATERIAL/CONSUMABLE），`cost_type`（费用类型）标识费用用途分类（如自制加工费、电镀材料费等）。两个字段均写入 `unit_price` 表，相互独立，共同描述一条价格记录。 |
+| **price_type 与 cost_type 的区别** | `price_type`（价格类型）标识价格来源/Sheet 分类。**2026-06-30 起原超载大类 `MATERIAL` 已在核价写入端废弃并按 Sheet 细分**，各费用 Sheet 直接写 `MATERIAL_PRICE`/`PACKAGING`/`INCOMING_PROCESS`/`INCOMING_OTHER`/`SELF_PROCESS`/`FINISHED_OTHER`/`OUTSOURCE_PROCESS`/`PLATING`；`ELEMENT`/`CONSUMABLE` 保留。`cost_type`（费用类型）标识费用用途分类（如自制加工费、电镀材料费等），保持不变。比例/固定不进 price_type，靠 `cost_ratio` vs `pricing_price` 哪列有值区分。两个字段均写入 `unit_price` 表。旧大类 `MATERIAL` 仅保留在 CHECK 白名单供存量行/报价侧使用。详见 `docs/superpowers/specs/2026-06-30-pricing-unit-price-source-enum-design.md`。 |
 | **数据清洗** | 导入前过滤空行（所有关键字段均为空的行）；注释行、说明行不导入。 |
 | **upsert 策略** | 料号表（`material_master`）按 `material_no` 做 upsert；其余表按各自唯一约束做 INSERT OR UPDATE。 |
 | **布尔字段转换** | 「是否有效」、「是否生效」等文字值统一转换：是→1，否→0，以 TINYINT(1) 存储。 |
