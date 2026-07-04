@@ -202,7 +202,8 @@ const LinkedExcelView: React.FC<Props> = ({
   }
 
   const visibleColumns = parsedColumns.filter((col: CostingTemplateColumn) => !col.hidden);
-  // P2-B 核价 Excel 树：核价侧料号列按 __lvl 缩进 + 前置 父料号/版本 两列；报价侧保持原样（隔离）
+  // P2-B 核价 Excel 树：核价侧料号列按 __lvl 缩进 + 前置「版本」列；报价侧保持原样（隔离）。
+  // 按约定「父料号」不单独成列(仅用于建层级),2026-07-03 隐藏——与产品卡片树页签一致。
   const isCosting = side === 'COSTING';
   const tableColumns = [
     {
@@ -213,10 +214,6 @@ const LinkedExcelView: React.FC<Props> = ({
       ),
     },
     ...(isCosting ? [
-      {
-        title: '父料号', dataIndex: '__parentNo', key: '__parentNo', width: 140,
-        render: (v: string) => <span style={{ fontFamily: 'monospace', color: '#888' }}>{v ?? '—'}</span>,
-      },
       {
         title: '版本', dataIndex: '__bomVersion', key: '__bomVersion', width: 90,
         render: (v: string) => <span>{v ?? '—'}</span>,

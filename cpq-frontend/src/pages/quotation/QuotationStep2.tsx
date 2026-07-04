@@ -2297,11 +2297,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
               <table className="qt-cost-table">
                 <thead>
                   <tr>
-                    {/* 核价 BOM 递归展开：3 系统固定列仅"勾选递归"组件出（数据驱动 activeComponentBomTree） */}
+                    {/* 核价 BOM 递归展开：固定列仅"勾选递归"组件出（数据驱动 activeComponentBomTree）。
+                        按约定只显示「料号 / 版本」两列；父料号(__parentNo)仅用于建父子层级,不单独成列(2026-07-03 隐藏)。 */}
                     {activeComponentBomTree && (
                       <>
                         <th style={{ minWidth: 120 }}>料号</th>
-                        <th style={{ minWidth: 110 }}>父料号</th>
                         <th style={{ minWidth: 90 }}>版本</th>
                       </>
                     )}
@@ -2568,7 +2568,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                               <span>{bomSys?.hfPartNo ?? '—'}</span>
                             </span>
                           </td>
-                          <td>{bomSys?.parentNo ?? '—'}</td>
+                          {/* 父料号列已隐藏(仅用于建层级,不成列);保留 __parentNo 数据用于树父子关系 */}
                           <td>
                             {/* 版本下拉占位：P1 仅展示当前版本，不可切换（版本切换二期开放） */}
                             <select value={bomSys?.bomVersion ?? ''} disabled
