@@ -61,6 +61,23 @@ public class CardSnapshotService {
         return (built == null || built.isBlank()) ? CARD_VALUE_FAILED_SENTINEL : built;
     }
 
+    /**
+     * BL-0030:带错误原文的失败哨兵。核价树整单渲染失败(递归 SQL / 页签 $view 报错、无生效配置等)时落库,
+     * 让前端显式提示「核价渲染失败: 原文」而非无限「加载中…」或静默空白。{@code errMsg} 为空回退通用哨兵。
+     */
+    private static String failedSentinelWithError(String errMsg) {
+        if (errMsg == null || errMsg.isBlank()) return CARD_VALUE_FAILED_SENTINEL;
+        try {
+            ObjectNode n = MAPPER.createObjectNode();
+            n.putArray("tabs");
+            n.put("__cardValueFailed", true);
+            n.put("__errorMsg", errMsg);
+            return MAPPER.writeValueAsString(n);
+        } catch (Exception e) {
+            return CARD_VALUE_FAILED_SENTINEL;
+        }
+    }
+
     @Inject
     EntityManager em;
 
@@ -478,8 +495,16 @@ public class CardSnapshotService {
             // 逐 li 复用其结果（buildCostingCardValues 内部按 precomputedBaseRows!=null 跳过旧引擎 closure+expand）；
             // 不含树页签 → treeBaseRowsByLine 恒空 map，下方 getOrDefault 恒 null → 逐 li 走老路径，零破坏。
             Map<UUID, Map<String, ArrayNode>> treeBaseRowsByLine = java.util.Collections.emptyMap();
+            String costingRenderError = null;   // BL-0030:整单核价树渲染失败原文 → 落带消息失败哨兵,前端显式提示
             if (q.costingCardTemplateId != null && templateHasTreeTab(q.costingCardTemplateId)) {
-                treeBaseRowsByLine = costingTreeRenderService.render(q.costingCardTemplateId, lines);
+                try {
+                    treeBaseRowsByLine = costingTreeRenderService.render(q.costingCardTemplateId, lines);
+                } catch (Exception e) {
+                    // 不上抛(否则整单快照 500 + 全 NULL → 前端无限「加载中…」);逐 li 落带原文的失败哨兵。
+                    costingRenderError = "核价渲染失败: " + e.getMessage();
+                    LOG.errorf("[costing-tree-render] 整单渲染失败 quotation=%s → 落错误哨兵透出前端: %s",
+                            quotationId, e.getMessage());
+                }
             }
             // ── Pass1:只 build 字符串到内存(只读 li,不赋字段 → 脏窗口为空,任何 fallback em 查此刻 flush 空)──
             Map<UUID, String> quoteVals = new HashMap<>();
@@ -487,10 +512,14 @@ public class CardSnapshotService {
             for (QuotationLineItem li : lines) {
                 quoteVals.put(li.id, safeCall(() -> buildCardValues(li, q.customerTemplateId, prefetch)));
                 if (q.costingCardTemplateId != null) {
-                    Map<String, ArrayNode> precomputed = treeBaseRowsByLine.get(li.id);
-                    costingVals.put(li.id, safeCall(() ->
-                        buildCostingCardValues(li, q.costingCardTemplateId, q.customerId, q.id, union, prefetch,
-                            precomputed)));
+                    if (costingRenderError != null) {
+                        costingVals.put(li.id, null);   // 整单渲染已失败 → 不逐 li 重试(S1 兜底会再抛),下方落带原文哨兵
+                    } else {
+                        Map<String, ArrayNode> precomputed = treeBaseRowsByLine.get(li.id);
+                        costingVals.put(li.id, safeCall(() ->
+                            buildCostingCardValues(li, q.costingCardTemplateId, q.customerId, q.id, union, prefetch,
+                                precomputed)));
+                    }
                 }
             }
             // ── Pass2:一次性赋托管实体 4 字段(中间零查询)→ commit 单次 flush,P1 batch 合并 N 条 UPDATE ──
@@ -504,7 +533,10 @@ public class CardSnapshotService {
                     LOG.warnf("[cardvalues-sentinel] costing build 失败 line=%s → 落失败哨兵", li.id);
                 li.quoteCardValues = orSentinel(quoteVals.get(li.id));
                 li.quoteValuesAt = now;
-                if (costingVals.containsKey(li.id)) li.costingCardValues = orSentinel(costingVals.get(li.id));
+                if (costingVals.containsKey(li.id))
+                    li.costingCardValues = costingRenderError != null
+                        ? failedSentinelWithError(costingRenderError)   // BL-0030:带原文,前端显式提示
+                        : orSentinel(costingVals.get(li.id));
                 li.cardSnapshotAt = now;
             }
         } finally {

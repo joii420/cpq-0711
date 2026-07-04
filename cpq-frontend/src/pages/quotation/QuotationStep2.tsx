@@ -28,7 +28,7 @@ import { applyUnitConversion, factorFor } from '../../utils/unitConversion';
 import { formatNumber } from '../../utils/formatNumber';
 import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns, sumAmountFromByCol, AMOUNT_TOTAL_KEY } from './tabTotalLines';
-import { isCardValueFailed } from './cardValueFailed';
+import { isCardValueFailed, getCardValueError } from './cardValueFailed';
 import { templateService } from '../../services/templateService';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { useTreeCollapse } from './useTreeCollapse';
@@ -1889,6 +1889,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     () => isCardValueFailed(cardSide === 'COSTING' ? (item as any).costingCardValues : quoteValuesJson),
     [cardSide, (item as any).costingCardValues, quoteValuesJson],
   );
+  // BL-0030:失败哨兵携带的后端错误原文(如「核价渲染失败: 递归 SQL 执行失败 …」),占位处显式展示。
+  const cardValueError = React.useMemo(
+    () => getCardValueError(cardSide === 'COSTING' ? (item as any).costingCardValues : quoteValuesJson),
+    [cardSide, (item as any).costingCardValues, quoteValuesJson],
+  );
   const [recomputing, setRecomputing] = useState(false);
   const handleRecompute = useCallback(async () => {
     if (!quotationId) return;
@@ -2243,14 +2248,22 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           仅本侧哨兵命中时触发, 健康卡片走下方原渲染分支 100% 不受影响。 */}
       {cardValueFailed ? (
         <Alert
-          type="warning"
+          type={cardValueError ? 'error' : 'warning'}
           showIcon
-          message="该料号卡片数据待重算"
+          message={cardValueError ? '核价渲染失败' : '该料号卡片数据待重算'}
           description={
             // QUOTE 侧带可用「重算」入口(refreshCardSnapshot 仅刷报价侧);
             // COSTING 侧该入口刷不到核价值 → 不给假希望, 只留静态提示(按侧/按行重算归 BL-0012)。
+            // BL-0030:若哨兵带错误原文(递归 SQL / 页签 $view 报错)→ 显式展示,配置员一眼定位。
             cardSide === 'COSTING' ? (
-              <span style={{ color: '#8c8c8c' }}>请重新生成核价快照后查看</span>
+              cardValueError ? (
+                <span style={{ color: '#8c8c8c' }}>
+                  <div style={{ color: '#cf1322', wordBreak: 'break-all' }}>{cardValueError}</div>
+                  <div style={{ marginTop: 4 }}>请检查「核价树配置」的递归 SQL 与页签 $view 后,重新生成核价快照。</div>
+                </span>
+              ) : (
+                <span style={{ color: '#8c8c8c' }}>请重新生成核价快照后查看</span>
+              )
             ) : (
               <Button size="small" loading={recomputing} disabled={!quotationId} onClick={handleRecompute}>
                 重算
