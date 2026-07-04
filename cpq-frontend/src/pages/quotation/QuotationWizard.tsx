@@ -521,12 +521,20 @@ const QuotationWizard: React.FC = () => {
       if (shouldWarmCardValues(opened)) {
         const hide = message.loading('正在准备快速浏览…', 0);
         try {
-          const r = await quotationService.ensureCardValues(qId);
+          let r = await quotationService.ensureCardValues(qId);
+          // warm 在飞（另一并发 warm 占单飞锁,典型如导入后台补算)→ 退避轮询等它完成再回灌,
+          // 免用户手动刷新(BL-0027 族:快照后台异步补完不自动重拉)。最多 ~16s,超时则回落现有兜底。
+          let warmAttempts = 0;
+          while (r?.data?.cardValuesWarming && warmAttempts < 20) {
+            warmAttempts++;
+            await new Promise(resolve => setTimeout(resolve, 800));
+            r = await quotationService.ensureCardValues(qId);
+          }
           if (r?.data && !r.data.cardValuesWarming) {
             applyQuotationData(r.data);  // 回灌带卡片值的 DTO
             backupData = r.data;         // 本地备份也存 warmed 副本,避免后端失败回退又恢复无卡片值版本
           }
-          // cardValuesWarming=true(warm 在飞):保持现有渲染/兜底,不重复 apply,本地仍备份 res.data
+          // 轮询超时仍 warming:保持现有渲染/兜底,不重复 apply(极端场景,用户可手刷)
         } catch {
           // ensure 失败 → 回退现有实时渲染(同今天);静默,不弹 error 吓用户
         } finally {
