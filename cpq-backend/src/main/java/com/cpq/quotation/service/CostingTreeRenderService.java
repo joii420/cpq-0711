@@ -139,7 +139,8 @@ public class CostingTreeRenderService {
                     treeTabCompIds.add(cidStr);
                 }
                 UUID compId = UUID.fromString(cidStr);
-                Map<String, List<ExpandDriverResponse.Row>> byMaterial = new LinkedHashMap<>();
+                // 分桶键语义按组件类型不同：树页签 = (parent_no, material_no) 边键；普通页签 = material_no。
+                Map<String, List<ExpandDriverResponse.Row>> byKey = new LinkedHashMap<>();
                 try {
                     // 见类注释「跑组件 $view 的入口」说明：customerId/partNo/partVersion/lineItemId 全传 null，
                     // 让 SqlViewExecutor 从 CostingTreeVarsContext 拿 :total_material_no 收窄，
@@ -151,6 +152,7 @@ public class CostingTreeRenderService {
                     if (resp != null && resp.rows != null) {
                         int total = 0;
                         int kept = 0;
+                        int missingParent = 0;
                         for (ExpandDriverResponse.Row r : resp.rows) {
                             if (r == null || r.driverRow == null) {
                                 continue;
@@ -161,18 +163,35 @@ public class CostingTreeRenderService {
                                 continue; // 落选行（无 material_no）丢弃
                             }
                             kept++;
-                            byMaterial.computeIfAbsent(mn.toString(), k -> new ArrayList<>()).add(r);
+                            if (recursive) {
+                                // 树页签：按 (parent_no, material_no) 边键分桶，让每个树节点只挂到
+                                // 它自己那条「父→子」边的业务行（同一子件挂多父时不再重复/挂错父）。
+                                Object pn = r.driverRow.get("parent_no");
+                                if (pn == null) missingParent++;
+                                byKey.computeIfAbsent(
+                                        edgeKey(pn == null ? null : pn.toString(), mn.toString()),
+                                        k -> new ArrayList<>()).add(r);
+                            } else {
+                                // 普通页签：按 material_no 料号维度分桶（不变）。
+                                byKey.computeIfAbsent(mn.toString(), k -> new ArrayList<>()).add(r);
+                            }
                         }
                         if (total > 0 && kept == 0) {
                             LOG.warnf("[costing-tree] 组件 %s 的 $view 返回 %d 行但无有效 material_no"
                                             + "（可能未输出 material_no 列），该页签数据全部落选",
                                     cidStr, total);
                         }
+                        if (recursive && kept > 0 && missingParent == kept) {
+                            LOG.warnf("[costing-tree] 树页签组件 %s 的 $view 未输出 parent_no（%d 行全无父件列）,"
+                                            + "边匹配退化为只命中根层空父 → 业务数据可能全落空;"
+                                            + "请让树页签 $view 同时输出 parent_no 与 material_no 两列",
+                                    cidStr, kept);
+                        }
                     }
                 } catch (Exception e) {
                     LOG.warnf("[costing-tree-render] expand comp=%s failed: %s", cidStr, e.getMessage());
                 }
-                rowsByCompThenMaterial.put(cidStr, byMaterial);
+                rowsByCompThenMaterial.put(cidStr, byKey);
             }
         } finally {
             CostingTreeVarsContext.clear();
@@ -187,12 +206,13 @@ public class CostingTreeRenderService {
                 Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
                 for (Map.Entry<String, Map<String, List<ExpandDriverResponse.Row>>> ce : rowsByCompThenMaterial.entrySet()) {
                     String cidStr = ce.getKey();
-                    Map<String, List<ExpandDriverResponse.Row>> byMaterial = ce.getValue();
+                    Map<String, List<ExpandDriverResponse.Row>> byKey = ce.getValue();
                     ArrayNode baseRows = MAPPER.createArrayNode();
                     if (treeTabCompIds.contains(cidStr)) {
-                        // 树页签：以卡片的 spine 节点为行主轴，缺数据补空行
+                        // 树页签：以卡片的 spine 节点为行主轴；按 (节点父件, 节点料号) 边键精确取该边的业务行
+                        // → 同一子件挂多父时,每个节点只挂到自己那条边(别父件的边无对应节点 → 丢弃),缺数据补空行。
                         for (CostingTreeNode node : treeRows) {
-                            List<ExpandDriverResponse.Row> bizRows = byMaterial.get(node.materialNo);
+                            List<ExpandDriverResponse.Row> bizRows = byKey.get(edgeKey(node.parentNo, node.materialNo));
                             if (bizRows != null && !bizRows.isEmpty()) {
                                 for (ExpandDriverResponse.Row br : bizRows) {
                                     baseRows.add(treeRowNode(node, br));
@@ -202,9 +222,9 @@ public class CostingTreeRenderService {
                             }
                         }
                     } else {
-                        // 普通页签：卡片料号集合命中的行平铺
+                        // 普通页签：卡片料号集合命中的行平铺（按 material_no,不变）
                         for (String mat : cardMaterials) {
-                            List<ExpandDriverResponse.Row> bizRows = byMaterial.get(mat);
+                            List<ExpandDriverResponse.Row> bizRows = byKey.get(mat);
                             if (bizRows != null) {
                                 for (ExpandDriverResponse.Row br : bizRows) {
                                     baseRows.add(flatRowNode(br));
@@ -218,6 +238,16 @@ public class CostingTreeRenderService {
             }
         }
         return out;
+    }
+
+    /** 树页签边键分隔符（U+0001，料号里不会出现，避免拼接歧义）。 */
+    private static final String EDGE_SEP = "\u0001";
+
+    /**
+     * 树页签边键：{@code (父件料号, 子件料号)}。根节点父件为 {@code null}，用空串占位。
+     */
+    static String edgeKey(String parentNo, String materialNo) {
+        return (parentNo == null ? "" : parentNo) + EDGE_SEP + (materialNo == null ? "" : materialNo);
     }
 
     /**

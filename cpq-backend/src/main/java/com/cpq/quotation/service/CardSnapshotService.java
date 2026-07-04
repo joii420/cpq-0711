@@ -738,6 +738,13 @@ public class CardSnapshotService {
         Quotation q = Quotation.findById(quotationId);
         if (q == null || q.costingCardTemplateId == null) return unionByComp;
 
+        // 树模板恒由 CostingTreeRenderService 整单渲染(见类注释),完全不消费本方法产出的 unionByComp;
+        // 且其非树 driver 组件(如「元素」)的新契约 $view 输出 material_no、不含 hf_part_no,用旧
+        // expandForPartSet(外层注入 hf_part_no = ANY(:hfPartNos))预取会撞
+        // "column inner_q.hf_part_no does not exist" 抛错 → 中止整个 ensureCardValues → 核价快照
+        // 永远建不出来。故树模板直接跳过这段对它无用且会崩的死预取。
+        if (templateHasTreeTab(q.costingCardTemplateId)) return unionByComp;
+
         // 核价模板的全部 driver 组件清单(整单一次)。Phase 2-2'：非递归无行维度组件(COMP-0021/22/23 类)
         // 是唯一还会命中合桶的类别(递归组件恒由 CostingTreeRenderService 整单渲染,见类注释)。
         @SuppressWarnings("unchecked")

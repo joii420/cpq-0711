@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -94,5 +95,24 @@ class CostingTreeRenderServiceTest {
         assertEquals("A", row.get("driverRow").get("material_no").asText());
         assertFalse(row.has("__nodeId"));
         assertFalse(row.has("__lvl"));
+    }
+
+    @Test
+    void edgeKeyDistinguishesParentAndHandlesNullRoot() {
+        // 同一子件挂不同父 → 不同边键(树页签消重/不挂错父的基础)
+        assertNotEquals(CostingTreeRenderService.edgeKey("P1", "A"),
+                        CostingTreeRenderService.edgeKey("P2", "A"));
+        // 同一条边 → 同键
+        assertEquals(CostingTreeRenderService.edgeKey("P1", "A"),
+                     CostingTreeRenderService.edgeKey("P1", "A"));
+        // 根节点父件 null → 空串占位,不与真实父件键相等
+        assertNotEquals(CostingTreeRenderService.edgeKey(null, "P1"),
+                        CostingTreeRenderService.edgeKey("X", "P1"));
+        // 不同子件同父 → 不同键
+        assertNotEquals(CostingTreeRenderService.edgeKey("P1", "A"),
+                        CostingTreeRenderService.edgeKey("P1", "B"));
+        // 边界:拼接不产生歧义(P1|A ≠ P|1A 之类)—— 靠 U+0001 分隔
+        assertNotEquals(CostingTreeRenderService.edgeKey("P1", "A"),
+                        CostingTreeRenderService.edgeKey("P", "1A"));
     }
 }
