@@ -701,10 +701,26 @@ const QuotationWizard: React.FC = () => {
     });
   };
 
-  // lazy-cardvalues：首存/显式保存成功后 warm:不阻塞、不挡操作,失败静默(打开守卫兜底)。
-  const warmCardValues = useCallback((qId: string, items: any[]) => {
+  // lazy-cardvalues：首存/显式保存成功后 warm。不阻塞、不挡操作,失败静默。
+  // 2026-07-03:warm 建好快照后**就地回灌**卡片值到当前 lineItems(不整页 reload、不打断编辑),
+  //   让单元格从「加载中…」解析出真值,免手刷。导入流程尤其需要:saveDraft 返回时快照尚未建完
+  //   (后端异步补算),响应里 costingCardValues 仍空 → syncLineItemsFromResponse 补不到 → 加载中;
+  //   本 warm 轮询等补算完成后再 sync,补齐。并发 warm 占单飞锁(cardValuesWarming)时退避轮询。
+  const warmCardValues = useCallback(async (qId: string, items: any[]) => {
     if (!shouldWarmCardValues(items)) return;
-    quotationService.ensureCardValues(qId).catch(() => { /* warm best-effort;打开守卫兜底 */ });
+    try {
+      let r = await quotationService.ensureCardValues(qId);
+      let attempts = 0;
+      while (r?.data?.cardValuesWarming && attempts < 20) {
+        attempts++;
+        await new Promise(resolve => setTimeout(resolve, 800));
+        r = await quotationService.ensureCardValues(qId);
+      }
+      if (r?.data && !r.data.cardValuesWarming) {
+        syncLineItemsFromResponse(r.data);  // 回灌建好的 4 份卡片/Excel 值 → 单元格解析出真值
+      }
+    } catch { /* warm best-effort;打开守卫兜底 */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const autoSaveDraft = useCallback(async () => {
