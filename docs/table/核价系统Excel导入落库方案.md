@@ -54,7 +54,7 @@
 | 3 | 汇率管理表 | `exchange_rate` | — | — |
 | 4 | 核价版本 | `material_version_mgmt` | — | — |
 | 5 | 宏丰-客户料号对应关系 | `material_customer_map` + `material_master` | — | — |
-| 6 | 物料BOM | `material_bom` + `material_bom_item` | — | — |
+| 6 | 物料BOM | `material_bom` + `material_bom_item` + `material_master`（20260705 起同步登记父件/组成料号） | — | — |
 | 7 | 物料与元素BOM | `element_bom` + `element_bom_item` | — | — |
 | 8 | 产能 | `capacity` + `labor_rate` | — | — |
 | 9 | 设备折旧成本 | `production_energy` | — | — |
@@ -252,7 +252,42 @@
 | 不良率（%） | `defect_rate` | ✅ | 不良率(%) |
 | 计算类型 | `calc_type` | ✅ | |
 
-> 📌 `system_type=PRICING` 固定写入主表；子表与主表保持一致。BOM 数据来源于 ERP，导入时需抓取成品料号往下所有级组成料号。
+> 📌 `system_type=PRICING`、`bom_type=MATERIAL` 固定写入主表；子表与主表保持一致。BOM 数据来源于 ERP，导入时需抓取成品料号往下所有级组成料号。
+
+#### 20260705 更新：物料BOM 导入时同步登记料号表（material_master）
+
+**背景 / 动机**：组成料号（`component_no`）常常只作为子件出现在 BOM 里，从未在「宏丰-客户料号对应关系」（Sheet 5）单独登记过 → 料号表 `material_master` 无此料号行 → 核价树递归展开出该子件节点时，下游页签 `$view` join 出的 品名/规格/尺寸/单重全为空。本次优化：**导入 物料BOM Sheet 时，额外把父件与所有组成料号 upsert 进 `material_master`，补齐显示用主数据**。
+
+> ⚠️ 本同步**只影响 `material_master`**，不改变 BOM 树结构——树结构来自 `material_bom_item` 的递归 SQL，与 `material_master` 无关（见 `docs/核价树页签组件配置指南.md`）。收益点正是让树上子件节点的名称/规格/尺寸不再为空。
+
+##### 同步 1 —— 父件（宏丰料号）→ material_master
+
+| Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
+|-----------|-----------|:-------:|---------|
+| 宏丰料号 | `material_no` | ✅ | 仅裸登记 `material_no`（本 Sheet 无父件名称列）；不写名称/规格/尺寸 |
+
+> 📌 父件通常是成品/半成品料号，其 品名/规格/尺寸 由 Sheet 5（客户料号对应关系）或它自身作为别处子件出现时补齐；此处只保证料号行存在，名称为空可接受。
+
+##### 同步 2 —— 组成料号 → material_master
+
+| Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
+|-----------|-----------|:-------:|---------|
+| 组成料号 | `material_no` | ✅ | upsert 主键 |
+| 品名 | `material_name` | ✅ | **仅回填空白**（见下方覆盖语义）|
+| 规格 | `specification` | ✅ | **仅回填空白** |
+| 尺寸 | `dimension` | ✅ | **仅回填空白** |
+| 使用特性 | — | ❌ | 不回填 `material_type`/`usage_property`（使用特性是 BOM 边级语义，≠ 料号级材料类型），仍按 §6 子表规则写入 `material_bom_item.component_usage_type` |
+
+> ⚠️ **组成料号的 品名/规格/尺寸 只进 `material_master`，不进 `material_bom_item`**——子表这三列仍按 §6 保持 ❌ 不导入。
+
+**覆盖语义（关键，务必按此实现）**：
+- 组成料号的 品名/规格/尺寸 采用 **「仅回填空白」**（`preserveDescriptive=true`：料号表已有值就保留，只填补原本为 NULL/空 的列），**不得覆盖** Sheet 5 写入的权威名称。
+  - 原因：导入执行顺序为 Sheet 5（客户料号对应关系，权威名称，非空覆盖）先跑 → 物料BOM 后跑；若 BOM 用「非空覆盖」，会用 BOM 里可能简写/粗糙的名称盖掉 Sheet 5 的权威名称。
+- 其余列（如别的 Sheet 负责的 `unit_weight` 等）走 `material_master` 既有的**列级 COALESCE** 合并：各 Sheet 只更新自己那几列、传空的列不清空他表已写的值，三处（Sheet 5 名称 / Sheet 24 单重 / 本次 BOM）天然共存。
+
+**落库前去重**：同一组成料号会在多父件、多 occurrence 下重复出现，upsert 前**必须按 `material_no` 去重**（PG 同一条 INSERT 不能命中同一冲突键两次）；多次出现名称不一致时取「首个非空」归并。
+
+
 
 ---
 

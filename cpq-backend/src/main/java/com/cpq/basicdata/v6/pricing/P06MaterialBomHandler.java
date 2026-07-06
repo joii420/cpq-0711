@@ -4,6 +4,7 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -28,6 +29,7 @@ public class P06MaterialBomHandler implements SheetHandler {
     public static final String PRICING_CUSTOMER = "_GLOBAL_";
 
     @Inject VersionedV6Writer writer;
+    @Inject MaterialMasterRepository masterRepo;
 
     @org.eclipse.microprofile.config.inject.ConfigProperty(name = "cpq.v6import-setbased-writer", defaultValue = "false")
     boolean setBased;
@@ -45,12 +47,25 @@ public class P06MaterialBomHandler implements SheetHandler {
         SheetImportResult result = new SheetImportResult(sheetName());
 
         Map<String, Map<List<Object>, Map<String, Object>>> childByMat = new LinkedHashMap<>();
+        // 20260705：组成料号 → [品名, 规格, 尺寸]，按 material_no 去重、首个非空归并（同料号多父件/多 occurrence）。
+        Map<String, String[]> compDesc = new LinkedHashMap<>();
         for (SheetRow row : rows) {
             result.totalRows++;
             String materialNo = row.getStr("宏丰料号");
             if (materialNo == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
             Integer seq = row.getInt("项次");
             String componentNo = row.getStr("组成料号", "组件料号");
+            if (componentNo != null) {
+                String[] cur = compDesc.get(componentNo);
+                String name = row.getStr("品名"), spec = row.getStr("规格"), dim = row.getStr("尺寸");
+                if (cur == null) {
+                    compDesc.put(componentNo, new String[]{name, spec, dim});
+                } else {
+                    if (cur[0] == null) cur[0] = name;
+                    if (cur[1] == null) cur[1] = spec;
+                    if (cur[2] == null) cur[2] = dim;
+                }
+            }
 
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("seq_no", seq);
@@ -121,6 +136,23 @@ public class P06MaterialBomHandler implements SheetHandler {
                     result.recordError(0, "_group_", "material_no=" + materialNo + ": " + ex.getMessage());
                 }
             }
+        }
+
+        // 20260705：同步登记料号表 material_master（独立于 BOM 写入，见落库方案 §6）。
+        // 父件：裸登记 material_no（本 Sheet 无父件名称列）；组成料号：回填 品名/规格/尺寸，仅补空白不覆盖 Sheet5 权威名称。
+        try {
+            if (!childByMat.isEmpty()) {
+                masterRepo.upsertBatchMaterialNoOnly(new ArrayList<>(childByMat.keySet()), ctx.importedBy);
+                result.recordWrite("material_master", childByMat.size());
+            }
+            for (Map.Entry<String, String[]> e : compDesc.entrySet()) {
+                String[] d = e.getValue();
+                masterRepo.upsertByMaterialNo(e.getKey(), d[0], d[1], d[2],
+                    null, null, null, null, null, ctx.importedBy, /*preserveDescriptive=*/true);
+                result.recordWrite("material_master", 1);
+            }
+        } catch (Exception ex) {
+            result.recordError(0, "_material_master_", ex.getMessage());
         }
         return result;
     }
