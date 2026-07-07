@@ -49,6 +49,8 @@ public class Q10SelfProcessFeeHandler implements SheetHandler {
         Map<List<Object>, Map<String, Object>> groupKeyOf = new LinkedHashMap<>();
         Map<List<Object>, List<Map<String, Object>>> contentOf = new LinkedHashMap<>();
         MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
+        batch.customerNo = ctx.customerNo;
+        batch.yyMm = java.time.YearMonth.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMM"));
         Map<String, String[]> mmAcc = new LinkedHashMap<>();   // §P1-A 料号表延后批量(首个非空胜)
         // §10 规则3 fail-fast：已用「宏丰料号」兜底过 code 的成品集合（本次导入内）。
         // unit_price 唯一键不含 operation_no → 同一成品多条无投入料号行会塌缩撞键，故只允许一条。

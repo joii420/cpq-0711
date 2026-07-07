@@ -54,6 +54,8 @@ public class MaterialBomMergeHandler {
         SheetImportResult result = new SheetImportResult("物料BOM+组成件BOM(合并)");
 
         MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
+        batch.customerNo = ctx.customerNo;
+        batch.yyMm = java.time.YearMonth.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMM"));
 
         Map<String, Map<String, Map<String, Object>>> matByMat = new LinkedHashMap<>();
         Map<String, Map<String, Map<String, Object>>> asmByMat = new LinkedHashMap<>();

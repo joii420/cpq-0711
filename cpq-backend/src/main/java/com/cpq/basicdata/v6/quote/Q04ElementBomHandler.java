@@ -48,6 +48,8 @@ public class Q04ElementBomHandler implements SheetHandler {
         SheetImportResult result = new SheetImportResult(sheetName());
 
         MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
+        batch.customerNo = ctx.customerNo;
+        batch.yyMm = java.time.YearMonth.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMM"));
         // §P1-A 料号表 upsert 延后批量：material_no -> [name, type]（首个非空胜）
         Map<String, String[]> mmAcc = new LinkedHashMap<>();
 

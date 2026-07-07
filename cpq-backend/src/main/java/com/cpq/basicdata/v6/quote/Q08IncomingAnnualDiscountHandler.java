@@ -48,6 +48,8 @@ public class Q08IncomingAnnualDiscountHandler implements SheetHandler {
         Map<List<Object>, Map<String, Object>> groupKeyOf = new LinkedHashMap<>();
         Map<List<Object>, List<Map<String, Object>>> contentOf = new LinkedHashMap<>();
         MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
+        batch.customerNo = ctx.customerNo;
+        batch.yyMm = java.time.YearMonth.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMM"));
         Map<String, String[]> mmAcc = new LinkedHashMap<>();   // §P1-A 料号表延后批量(首个非空胜)
         for (SheetRow row : rows) {
             result.totalRows++;
