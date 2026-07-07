@@ -6,14 +6,15 @@ import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
 import com.cpq.basicdata.v6.repository.MaterialCustomerMapRepository;
 import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
-import io.quarkus.narayana.jta.QuarkusTransaction;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Q02 客户料号与宏丰料号的关系 → material_customer_map。
@@ -21,6 +22,21 @@ import java.util.List;
  * <p>方案 §2「→ 料号表（material_master）同步」: 宏丰料号(成品料号)同步 upsert 至 material_master，
  * 否则成品只进客户映射表、不进料号主数据表，报价候选查询
  * (FROM material_master WHERE material_no IN hfPairs) 命中 0 → 报价单提示「该客户暂无基础数据料号」。
+ *
+ * <p><b>重导自死锁修复（报价料号统一 Spec 1）</b>：早期版本对每行 upsert 用
+ * {@code QuarkusTransaction.requiringNew()} 包一个独立子事务，意图是隔离
+ * {@code uq_mcm_quote_cust_prod} unique_violation 不毒死外层整个事务。但外层
+ * {@code @Transactional(REQUIRES_NEW)} 在 per-row 循环期间持有 ① 的 DELETE 未提交，
+ * 若某行的 material_no 恰是刚被 DELETE 但未提交的行，子事务的 INSERT 会被 Postgres
+ * MVCC 阻塞等外层 XID 结束（{@code Lock:transactionid}），外层又在同一线程同步等子事务
+ * 返回 → 应用层自锁死循环，最终被 Narayana 60s 事务超时打断（"重导同一批客户料号"是
+ * 日常场景，已用 {@code pg_blocking_pids} 锁链实锤）。
+ *
+ * <p>修法：去掉 per-row 子事务，全部 upsert 回到外层单一事务；DB 层唯一约束改为
+ * <b>写库前在内存里消灭冲突</b>（见 {@link #handle}），保证正常路径下 0 例
+ * unique_violation —— Postgres 单事务内一旦有语句抛错，整个事务即被标记 aborted，
+ * 后续语句甚至 COMMIT 都会被静默转成 ROLLBACK，子事务隔离表面"救"了单行，实则制造了
+ * 更隐蔽的死锁坑，必须从根上预防而非事后捕获。
  */
 @ApplicationScoped
 public class Q02CustomerMapHandler implements SheetHandler {
@@ -47,11 +63,56 @@ public class Q02CustomerMapHandler implements SheetHandler {
         }
         // §P1-A 成品料号 material_master 同步延后批量：去重后一次 upsertBatchMaterialNoOnly。
         LinkedHashSet<String> mmAcc = new LinkedHashSet<>();
+
+        // ②-0 逐行必填项校验 + relabel 读列，提取去重用的 key（报价料号 / 客户产品编号）。
+        // 必填项缺失的行直接 recordError，不进入后续去重/写入。
+        List<ParsedRow> parsed = new ArrayList<>();
+        for (SheetRow row : rows) {
+            result.totalRows++;
+            String materialNo = row.getStr("报价料号", "宏丰料号");
+            String customerProductNo = row.getStr("客户产品编号");
+            if (materialNo == null || customerProductNo == null) {
+                result.recordError(row.rowNo, "报价料号/客户产品编号", "必填项为空");
+                continue;
+            }
+            parsed.add(new ParsedRow(row, materialNo, customerProductNo));
+        }
+
+        // ②-a 按客户产品编号（customer_product_no）预防性去重：对应 DB 侧 uq_mcm_quote_cust_prod
+        // 部分唯一索引 (system_type, customer_no, customer_product_no) WHERE system_type='QUOTE'
+        // AND customer_product_no IS NOT NULL（ctx.customerNo 在本 handle() 调用内恒定，等价于
+        // 按 customer_product_no 分组）。该索引**不是** upsertQuote 的 ON CONFLICT target
+        // （target 是 material_no，见 uq_mcm_quote_no），若两行 material_no 不同却撞了同一
+        // customer_product_no，第二条 INSERT 会直接抛 DB 层 unique_violation，把单事务整体
+        // 毒成 aborted，必须在写库前消灭，不能指望 DB 报错后再补救。
+        //
+        // 注意：**同一 material_no 的重复行不在此列**——它们由 upsertQuote 的
+        // ON CONFLICT(material_no) 在同一事务内自然折叠（当前事务内自身写入始终可见，后行覆盖
+        // 前行的字段生效，见 MaterialCustomerMapRepository#upsertQuote），既不会触发
+        // unique_violation 也不会产生跨事务 MVCC 等待，因此不需要、也不应该预先去重报错——
+        // 早期版本曾对 material_no 重复也做内存去重报错，但这会把"同一报价料号在 sheet 内
+        // 多次出现、后值生效"这个历来受支持的合法用法（见 MaterialMasterBatchImportIntegrationTest
+        // 的 P1 dup 场景）误判为错误，已回退。
+        Map<String, String> finalMaterialNoByCpn = new LinkedHashMap<>();
+        for (ParsedRow pr : parsed) {
+            finalMaterialNoByCpn.put(pr.customerProductNo, pr.materialNo); // 后行覆盖前行 = 组内最终归属
+        }
+        List<ParsedRow> finalRows = new ArrayList<>();
+        for (ParsedRow pr : parsed) {
+            if (!pr.materialNo.equals(finalMaterialNoByCpn.get(pr.customerProductNo))) {
+                // 本行的 material_no 不是该 customer_product_no 最终归属的那个——若放行写库，
+                // 会在 uq_mcm_quote_cust_prod 上与最终归属行冲突，抛 unique_violation。
+                result.recordError(pr.row.rowNo, "客户料号", "同一客户料号映射多个报价料号");
+                continue;
+            }
+            finalRows.add(pr); // 原顺序遍历 parsed 天然保持原 sheet 顺序，无需额外排序
+        }
+
         // Task 5：Q02 是报价客户料号登记，写路径统一改走 QUOTE（upsertQuote，冲突键=material_no 部分索引
         // + 客户守卫 + customer_product_no 直接 SET）。setBased 分支不再走批量 upsertBatch（本 spec 不需要
         // QUOTE 批量；正确性优先），两分支收敛到同一逐行 writeRow。
-        for (SheetRow row : rows) {
-            writeRow(row, ctx, result, mmAcc);
+        for (ParsedRow pr : finalRows) {
+            writeRow(pr, ctx, result, mmAcc);
         }
         if (!mmAcc.isEmpty()) {
             materialMasterRepo.upsertBatchMaterialNoOnly(new ArrayList<>(mmAcc), ctx.importedBy);
@@ -59,31 +120,36 @@ public class Q02CustomerMapHandler implements SheetHandler {
         return result;
     }
 
+    /** 去重用的中间态：原始行 + 已提取的去重 key（报价料号 / 客户产品编号）。 */
+    private static final class ParsedRow {
+        final SheetRow row;
+        final String materialNo;
+        final String customerProductNo;
+        ParsedRow(SheetRow row, String materialNo, String customerProductNo) {
+            this.row = row; this.materialNo = materialNo; this.customerProductNo = customerProductNo;
+        }
+    }
+
     /**
-     * 单行 QUOTE 客户料号登记：relabel 读列 → 组装 MapRow → 隔离子事务 upsertQuote →
-     * per-row 异常处理（spec §3 Chain-4）：单行失败（跨客户串号 / 客户料号 1:1 冲突）只
-     * {@code recordError}，不毒死整 sheet 其余行。
+     * 单行 QUOTE 客户料号登记：组装 MapRow → 外层单事务直接 upsertQuote → per-row 异常处理
+     * （spec §3 Chain-4）：单行失败（跨客户串号）只 {@code recordError}，不影响 sheet 其余行——
+     * 跨客户串号靠 {@link MaterialCustomerMapRepository#upsertQuote} 的 WHERE 客户守卫返回
+     * 0 行判定，不是异常，单事务内天然安全，不需要子事务隔离。
      *
-     * <p>upsertQuote 用 {@link QuarkusTransaction#requiringNew()} 包一个独立子事务：本 handler
-     * 整体是 {@code @Transactional(REQUIRES_NEW)}，若某行撞 {@code uq_mcm_quote_cust_prod}
-     * 直接在外层事务里抛异常，会把外层事务标记 rollback-only、后续所有行的写入在 commit 时全部
-     * 丢失。子事务隔离后，撞约束的那一行独立回滚，不影响本 sheet 其余行的写入。
+     * <p>{@code uq_mcm_quote_cust_prod} 的冲突源已在 {@link #handle} 的 ②-a 内存去重阶段消灭
+     * （{@code uq_mcm_quote_no} 本身就是 upsertQuote 的 ON CONFLICT target，天然不会抛异常），
+     * 正常路径下 upsertQuote 不应再抛 unique_violation。若仍然抛出，说明去重逻辑有遗漏——
+     * 见下方 catch 块。
      */
-    private void writeRow(SheetRow row, ImportContext ctx, SheetImportResult result, LinkedHashSet<String> mmAcc) {
-        result.totalRows++;
+    private void writeRow(ParsedRow pr, ImportContext ctx, SheetImportResult result, LinkedHashSet<String> mmAcc) {
+        SheetRow row = pr.row;
         try {
-            String materialNo = row.getStr("报价料号", "宏丰料号");
-            String customerProductNo = row.getStr("客户产品编号");
-            if (materialNo == null || customerProductNo == null) {
-                result.recordError(row.rowNo, "报价料号/客户产品编号", "必填项为空");
-                return;
-            }
             MaterialCustomerMapRepository.MapRow mapRow = new MaterialCustomerMapRepository.MapRow(
-                materialNo,
+                pr.materialNo,
                 ctx.customerNo,
                 row.getStr("客户名称"),
                 row.getStr("客户料号名称"),
-                customerProductNo,
+                pr.customerProductNo,
                 row.getStr("客户图号"),
                 null,                            // seq_no 报价表无项次列
                 row.getStr("付款方式"),
@@ -94,12 +160,18 @@ public class Q02CustomerMapHandler implements SheetHandler {
                 null);
             int affected;
             try {
-                affected = QuarkusTransaction.requiringNew()
-                    .call(() -> repo.upsertQuote(mapRow, ctx.importedBy));
+                affected = repo.upsertQuote(mapRow, ctx.importedBy);
             } catch (RuntimeException e) {
                 if (isUniqueViolation(e)) {
-                    result.recordError(row.rowNo, "客户料号", "客户料号1:1冲突");
-                    return;
+                    // 不应发生：见类注释 + 本方法 javadoc。这里不能 recordError 后静默继续——
+                    // Postgres 单事务内一旦有语句抛错，整个事务已被标记 aborted，后续所有行的
+                    // 写入（包括本行之前已"成功"的行）在 commit 时会被静默转成 ROLLBACK，
+                    // 若此处吞掉异常继续跑，会产生"部分行假成功、commit 后全部丢失"的更隐蔽
+                    // 数据丢失（正是引入 per-row 子事务、进而导致死锁的历史原因）。因此让异常
+                    // 穿透，使整个 handle() 失败、事务完整回滚，同时暴露去重逻辑的遗漏。
+                    throw new IllegalStateException(
+                        "Q02 内存去重遗漏冲突（rowNo=" + row.rowNo + "）：materialNo=" + pr.materialNo
+                            + ", customerProductNo=" + pr.customerProductNo, e);
                 }
                 throw e;
             }
@@ -112,8 +184,10 @@ public class Q02CustomerMapHandler implements SheetHandler {
             // 方案 §2「→ 料号表（material_master）同步」: 报价料号(成品)按 upsert 写入料号主数据表。
             // 仅同步 material_no（本 sheet 无宏丰料号本身的名称列，客户料号名称属客户维度，不写主数据），
             // preserveDescriptive=true 避免覆盖已有成品/BOM 父件的名称等描述字段。
-            mmAcc.add(materialNo);
+            mmAcc.add(pr.materialNo);
             result.recordWrite("material_master", 1);
+        } catch (IllegalStateException e) {
+            throw e; // 去重遗漏的诊断性异常：穿透，不当作 per-row 错误吞掉（见上）。
         } catch (Exception e) {
             result.recordError(row.rowNo, "_row_", e.getMessage());
         }
