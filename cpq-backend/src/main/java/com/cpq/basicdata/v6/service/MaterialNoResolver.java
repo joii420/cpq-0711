@@ -12,26 +12,23 @@ import java.util.Optional;
 /**
  * 料号解析器（规则单一归处，决策 #1~#4/#10/#11）。
  *
- * <p>只负责「解析出料号号码」：料号有值直接返回；料号空+名称有值则按名称匹配料号表
- * （同名取 material_no 升序第一条），匹配不到则按 MAX(9字头)+1 生成；都空抛
+ * <p>只负责「解析出料号号码」：料号有值直接返回（并登记 QUOTE 映射，通道②）；料号空+名称有值
+ * 则按名称匹配料号表（同名取 material_no 升序第一条），匹配不到则经 {@link QuoteMaterialNoAllocator}
+ * 铸造报价料号（{@code XXXX-YYMMNNNNNN}，取消 9 字头生成路径）；都空抛
  * {@link MaterialNoUnresolvableException}。<b>不写 material_master</b>（由调用方 upsert）。
- *
- * <p>生成正确性：advisory lock 串行化跨导入 + 事务级 {@link BatchState#batchMaxGenerated}
- * 消除对「上一行 upsert 是否已可见」的依赖。
  */
 @ApplicationScoped
 public class MaterialNoResolver {
 
-    static final long GEN_BASE = 8_999_999_999L; // +1 = 9000000000
-
     @Inject MaterialMasterRepository repo;
+    @Inject QuoteMaterialNoAllocator allocator;
 
     /** 单次导入的事务级状态：调用方在 merge() 入口 new 一个，贯穿 §3/§12 两循环。 */
     public static final class BatchState {
         final Map<String, String> nameToNo = new HashMap<>();
-        long batchMaxGenerated = 0L;
-        /** P2-D: 9 字头 MAX 缓存（首次生成时锁内读一次，null=未读）。advisory xact lock 持有到提交 → 锁后 MAX 稳定，重读冗余。 */
-        Long dbMax = null;
+        /** 发号所需：客户号 + 年月（YYMM），由各 handler 在 new BatchState 时注入。 */
+        public String customerNo;
+        public String yyMm;
     }
 
     /**
@@ -40,7 +37,10 @@ public class MaterialNoResolver {
      */
     public String resolve(String materialNo, String materialName, BatchState state) {
         String no = trimToNull(materialNo);
-        if (no != null) return no;
+        if (no != null) {
+            allocator.ensureRegistered(state.customerNo, no);
+            return no;
+        }
 
         String name = trimToNull(materialName);
         if (name == null) {
@@ -57,9 +57,9 @@ public class MaterialNoResolver {
             return existingNo;
         }
 
-        String generated = generateNextMaterialNo(state);
-        state.nameToNo.put(name, generated);
-        return generated;
+        String minted = allocator.mintAndRegister(state.customerNo, state.yyMm);
+        state.nameToNo.put(name, minted);
+        return minted;
     }
 
     /**
@@ -84,20 +84,6 @@ public class MaterialNoResolver {
             return existingNo;
         }
         return null;
-    }
-
-    private String generateNextMaterialNo(BatchState state) {
-        // P2-D: 仅首次生成时取 advisory xact lock + 读一次 9 字头 MAX。
-        // 该锁持有到事务提交 → 其它导入此后阻塞、9 字头 MAX 不再变化 → 后续生成复用缓存 dbMax + batchMaxGenerated，
-        // 与"每次重锁+重读 MAX"逐位等价(原逻辑每次重读拿到的就是同一个稳定值),省去每次生成 2 次远程往返。
-        if (state.dbMax == null) {
-            repo.lockForMaterialNoGeneration();
-            state.dbMax = repo.maxNineLeadingMaterialNo();
-        }
-        long base = Math.max(state.dbMax, Math.max(state.batchMaxGenerated, GEN_BASE));
-        long next = base + 1;
-        state.batchMaxGenerated = next;
-        return String.valueOf(next);
     }
 
     private static String trimToNull(String s) {
