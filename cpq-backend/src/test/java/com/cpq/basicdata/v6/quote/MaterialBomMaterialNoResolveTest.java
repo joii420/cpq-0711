@@ -61,7 +61,7 @@ class MaterialBomMaterialNoResolveTest {
         SheetImportResult r = handler.merge(List.of(matRow(1, null, "RSV-GEN-1")), List.of(), ctx());
         assertEquals(0, r.failedRows);
         assertEquals(1L, masterCount("RSV-GEN-1"), "名称未命中→生成新料号写料号表");
-        assertEquals("9000000000", childComponentNos(), "BOM 子行 component_no = 生成料号");
+        assertTrue(childComponentNos().matches("^\\d{4}-\\d{10}$"), "BOM 子行 component_no = 生成的报价料号(XXXX-YYMMNNNNNN)，实得: " + childComponentNos());
     }
 
     @Test

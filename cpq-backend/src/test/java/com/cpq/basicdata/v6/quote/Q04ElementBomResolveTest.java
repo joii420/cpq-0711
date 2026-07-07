@@ -57,7 +57,9 @@ class Q04ElementBomResolveTest {
         SheetImportResult r = handler.handle(List.of(row(null, NAME, "Ag")), ctx());
         assertEquals(0, r.failedRows);
         assertEquals(1L, masterCount(NAME), "新料件登记进料号表");
-        assertEquals("9000000000", bomMaterialNo(), "生成号回填为 element_bom.material_no");
+        String generated = bomMaterialNo();
+        assertNotNull(generated, "生成号回填为 element_bom.material_no");
+        assertTrue(generated.matches("^\\d{4}-\\d{10}$"), "生成号需为报价料号格式(XXXX-YYMMNNNNNN)，实得: " + generated);
         String type = em.createNativeQuery("SELECT material_type FROM material_master WHERE material_name=:n")
             .setParameter("n", NAME).getSingleResult().toString();
         assertEquals("组成件", type, "material_type 统一写汉字「组成件」(对齐 master §12 约定)");

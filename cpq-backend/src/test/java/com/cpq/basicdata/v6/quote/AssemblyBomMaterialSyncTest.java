@@ -111,7 +111,11 @@ class AssemblyBomMaterialSyncTest {
     @Test
     void emptyComponentNo_withName_generates() {
         handler.merge(List.of(), List.of(asmRow(1, null, "ASM-GEN", "OP1", null)), ctx());
-        assertEquals("组成件", typeOf("9000000000"), "料号空+名称→生成 9 字头，type=组成件");
+        String generatedNo = (String) em.createNativeQuery(
+                "SELECT material_no FROM material_master WHERE material_name=:n")
+            .setParameter("n", "ASM-GEN").getSingleResult();
+        assertTrue(generatedNo.matches("^\\d{4}-\\d{10}$"), "料号空+名称→生成报价料号(XXXX-YYMMNNNNNN)，实得: " + generatedNo);
+        assertEquals("组成件", typeOf(generatedNo), "生成料号对应 type=组成件");
     }
 
     @Transactional

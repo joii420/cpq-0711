@@ -65,7 +65,9 @@ class Q13ComponentOtherFeeResolveTest {
         SheetImportResult r = handler.handle(List.of(row(null, NAME, "包装费")), ctx());
         assertEquals(0, r.failedRows);
         assertEquals(1L, masterCount(NAME));
-        assertEquals("9000000000", upCode());
+        String generated = upCode();
+        assertNotNull(generated, "生成号回填为 unit_price.code");
+        assertTrue(generated.matches("^\\d{4}-\\d{10}$"), "生成号需为报价料号格式(XXXX-YYMMNNNNNN)，实得: " + generated);
     }
 
     @Test

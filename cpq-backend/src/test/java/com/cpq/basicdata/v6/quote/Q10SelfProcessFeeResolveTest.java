@@ -63,7 +63,9 @@ class Q10SelfProcessFeeResolveTest {
         SheetImportResult r = handler.handle(List.of(row(null, NAME)), ctx());
         assertEquals(0, r.failedRows);
         assertEquals(1L, masterCount(NAME), "新料件登记进料号表(type=3)");
-        assertEquals("9000000000", upCode(), "生成号回填为 unit_price.code");
+        String generated = upCode();
+        assertNotNull(generated, "生成号回填为 unit_price.code");
+        assertTrue(generated.matches("^\\d{4}-\\d{10}$"), "生成号需为报价料号格式(XXXX-YYMMNNNNNN)，实得: " + generated);
     }
 
     @Test

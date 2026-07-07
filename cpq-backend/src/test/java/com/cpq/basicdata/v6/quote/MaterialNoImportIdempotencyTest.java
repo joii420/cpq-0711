@@ -44,16 +44,24 @@ class MaterialNoImportIdempotencyTest {
         m.put("材料毛重", "1.0"); m.put("重量单位", "KG");
         return new SheetRow(seq, m);
     }
-    private long nineLeadingCount() {
-        return ((Number) em.createNativeQuery("SELECT count(*) FROM material_master WHERE material_no LIKE '9%'")
+    private long generatedCount() {
+        return ((Number) em.createNativeQuery("SELECT count(*) FROM material_master WHERE material_name LIKE 'IDEM-%'")
             .getSingleResult()).longValue();
+    }
+    @SuppressWarnings("unchecked")
+    private List<String> generatedNos() {
+        return em.createNativeQuery("SELECT material_no FROM material_master WHERE material_name LIKE 'IDEM-%' ORDER BY material_no")
+            .getResultList();
     }
 
     @Test
     void reimportSameExcel_noNewMaterialNos() {
         handler.merge(List.of(matRow(1, "IDEM-A"), matRow(2, "IDEM-B")), List.of(), ctx());
-        assertEquals(2L, nineLeadingCount(), "首次生成 2 个 9 字头号");
+        assertEquals(2L, generatedCount(), "首次生成 2 个报价料号");
+        List<String> firstNos = generatedNos();
+        firstNos.forEach(no -> assertTrue(no.matches("^\\d{4}-\\d{10}$"), "生成号需为报价料号格式(XXXX-YYMMNNNNNN)，实得: " + no));
         handler.merge(List.of(matRow(1, "IDEM-A"), matRow(2, "IDEM-B")), List.of(), ctx());
-        assertEquals(2L, nineLeadingCount(), "第二次按名称命中，不新增（C5）");
+        assertEquals(2L, generatedCount(), "第二次按名称命中，不新增（C5）");
+        assertEquals(firstNos, generatedNos(), "第二次导入沿用同一批已生成号，不重新铸号");
     }
 }
