@@ -71,9 +71,11 @@ public class CustomerPartCandidateService {
             "LEFT JOIN material_customer_map m " +
             "       ON m.material_no = p.material_no " +
             "      AND m.customer_no = (SELECT code FROM customer WHERE id = :customerId) " +
+            "      AND m.system_type = 'QUOTE' " +
             "LEFT JOIN internal_material im " +
             "       ON im.material_no = p.material_no " +
-            "WHERE p.material_no IN (SELECT material_no FROM material_customer_map) " +
+            "WHERE p.material_no IN (SELECT material_no FROM material_customer_map " +
+            "                        WHERE system_type = 'QUOTE' AND customer_product_no IS NOT NULL) " +
             "ORDER BY (m.id IS NOT NULL) DESC, p.material_no ASC";
 
         var query = em.createNativeQuery(sql).setParameter("customerId", customerId);
@@ -165,6 +167,7 @@ public class CustomerPartCandidateService {
             "LEFT JOIN material_customer_map m " +
             "       ON m.material_no = p.material_no " +
             "      AND m.customer_no = (SELECT code FROM customer WHERE id = :customerId) " +
+            "      AND m.system_type = 'QUOTE' " +
             "LEFT JOIN internal_material im " +
             "       ON im.material_no = p.material_no " +
             "WHERE p.material_no IN :hfs " +

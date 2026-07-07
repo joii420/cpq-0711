@@ -53,7 +53,8 @@ public class V6QuotationCommitService {
                 "SELECT DISTINCT customer_product_no, material_no FROM material_customer_map " +
                 "WHERE customer_no = (SELECT code FROM customer WHERE id = :cid) " +
                 "  AND updated_at BETWEEN :start AND :end " +
-                "  AND customer_product_no IS NOT NULL AND material_no IS NOT NULL")
+                "  AND customer_product_no IS NOT NULL AND material_no IS NOT NULL " +
+                "  AND system_type = 'QUOTE'")
             .setParameter("cid", req.customerId)
             .setParameter("start", rec.createdAt.minusMinutes(1))
             .setParameter("end", rec.createdAt.plusMinutes(5))
