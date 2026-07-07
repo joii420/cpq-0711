@@ -7,6 +7,7 @@ import com.cpq.basicdata.v6.parser.SheetRow;
 import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
 import com.cpq.basicdata.v6.service.MaterialNoResolver;
 import com.cpq.basicdata.v6.service.MaterialNoUnresolvableException;
+import com.cpq.basicdata.v6.service.QuoteMaterialNoAllocator;
 import com.cpq.basicdata.v6.versioning.VersionedGroupSpec;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -74,6 +75,8 @@ public class Q10SelfProcessFeeHandler implements SheetHandler {
                         "成品 " + finishedMaterialNo + " 存在多条无投入料号的自制加工费，数据非法"); continue;
                 }
                 code = finishedMaterialNo;
+            } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
+                result.recordError(row.rowNo, "投入料号", "报价料号跨客户串号"); continue;
             }
             final String resolvedCode = code;   // catch 可重新赋值 → lambda 捕获需 final 副本
             MaterialMasterRepository.accNameType(mmAcc, resolvedCode, inputName, "组成件");

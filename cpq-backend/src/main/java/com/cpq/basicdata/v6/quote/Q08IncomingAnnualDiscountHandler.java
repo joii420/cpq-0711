@@ -7,6 +7,7 @@ import com.cpq.basicdata.v6.parser.SheetRow;
 import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
 import com.cpq.basicdata.v6.service.MaterialNoResolver;
 import com.cpq.basicdata.v6.service.MaterialNoUnresolvableException;
+import com.cpq.basicdata.v6.service.QuoteMaterialNoAllocator;
 import com.cpq.basicdata.v6.versioning.VersionedGroupSpec;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -59,6 +60,8 @@ public class Q08IncomingAnnualDiscountHandler implements SheetHandler {
                 code = materialNoResolver.resolve(row.exact("投入料号"), inputName, batch);
             } catch (MaterialNoUnresolvableException ex) {
                 result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
+            } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
+                result.recordError(row.rowNo, "投入料号", "报价料号跨客户串号"); continue;
             }
             MaterialMasterRepository.accNameType(mmAcc, code, inputName, "组成件");
             result.recordWrite("material_master", 1);

@@ -7,6 +7,7 @@ import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
 import com.cpq.basicdata.v6.repository.ProcessMasterRepository;
 import com.cpq.basicdata.v6.service.MaterialNoResolver;
 import com.cpq.basicdata.v6.service.MaterialNoUnresolvableException;
+import com.cpq.basicdata.v6.service.QuoteMaterialNoAllocator;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -78,6 +79,8 @@ public class MaterialBomMergeHandler {
                 componentNo = materialNoResolver.resolve(row.exact("投入料号"), componentName, batch);
             } catch (MaterialNoUnresolvableException ex) {
                 result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
+            } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
+                result.recordError(row.rowNo, "投入料号", "报价料号跨客户串号"); continue;
             }
             // material_master：产出料号类型只存汉字（labelOnly）。延后批量 upsert（见 mmAcc）。
             accMaterialMaster(mmAcc, componentNo, componentName, labelOnly(componentUsageType));
@@ -107,6 +110,8 @@ public class MaterialBomMergeHandler {
                 componentNo = materialNoResolver.resolve(row.exact("组成件料号"), componentName, batch);
             } catch (MaterialNoUnresolvableException ex) {
                 result.recordError(row.rowNo, "组成件料号", "料号与名称均为空"); continue;
+            } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
+                result.recordError(row.rowNo, "组成件料号", "报价料号跨客户串号"); continue;
             }
             // §12 料号表同步：组成件 material_type 固定存汉字「组成件」，已存在保留原值（preserveDescriptive=true）。延后批量。
             accMaterialMaster(mmAcc, componentNo, componentName, "组成件");

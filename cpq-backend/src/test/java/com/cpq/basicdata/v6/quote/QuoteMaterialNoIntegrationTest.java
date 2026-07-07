@@ -233,6 +233,72 @@ class QuoteMaterialNoIntegrationTest {
         assertEquals("QUOTE", regSystemType);
     }
 
+    // ===== 8. 跨客户报价料号经 dev handler(MaterialBomMergeHandler) 优雅降级：per-row 跳过、sheet 不回滚 =====
+
+    @Test
+    void materialBomMerge_crossCustomerComponentNo_recordsErrorAndSkipsRowOnly() {
+        String custA = "QMNI-C8A", custB = "QMNI-C8B";
+
+        // 1) 客户 A 先铸造一个报价料号 R（登记归属 custA）。
+        String parentA = "QMNI-PARENT8A";
+        Map<String, String> a1 = new LinkedHashMap<>();
+        a1.put("宏丰料号", parentA);
+        a1.put("项次（一级）", "1");
+        a1.put("组成件料号", "");
+        a1.put("组成件名称", "QMNI试制组件8A");
+        a1.put("组成数量", "1");
+        a1.put("组成单位", "PCS");
+        materialBomMergeHandler.merge(List.of(), List.of(new SheetRow(1, a1)), ctx(custA));
+
+        String r = (String) em.createNativeQuery(
+            "SELECT component_no FROM material_bom_item WHERE material_no=:m AND is_current=TRUE")
+            .setParameter("m", parentA).getSingleResult();
+        assertTrue(r.matches("^\\d{4}-\\d{4}\\d{6}$"), "R 应为铸造的报价料号，实际=" + r);
+
+        // 2) 客户 B 的一张 sheet，两行：第一行组成件料号=R（跨客户串号）、第二行正常（无号有名，可 mint）。
+        String parentB = "QMNI-PARENT8B";
+        Map<String, String> b1 = new LinkedHashMap<>();
+        b1.put("宏丰料号", parentB);
+        b1.put("项次（一级）", "1");
+        b1.put("组成件料号", r);
+        b1.put("组成件名称", "");
+        b1.put("组成数量", "1");
+        b1.put("组成单位", "PCS");
+        Map<String, String> b2 = new LinkedHashMap<>();
+        b2.put("宏丰料号", parentB);
+        b2.put("项次（一级）", "2");
+        b2.put("组成件料号", "");
+        b2.put("组成件名称", "QMNI试制组件8B");
+        b2.put("组成数量", "2");
+        b2.put("组成单位", "PCS");
+
+        SheetImportResult result = materialBomMergeHandler.merge(
+            List.of(), List.of(new SheetRow(1, b1), new SheetRow(2, b2)), ctx(custB));
+
+        // sheet 不整体回滚：两行都被计入 totalRows，只有第 1 行失败，第 2 行成功。
+        assertEquals(2, result.totalRows);
+        assertEquals(1, result.failedRows, "应恰好一行失败(跨客户)，而非整表失败");
+        assertEquals(1, result.successRows, "另一行应正常成功入库");
+        assertEquals(1, result.errors.size());
+        assertEquals(1, result.errors.get(0).rowNo);
+        assertTrue(result.errors.get(0).message.contains("跨客户"),
+            "错误信息应含跨客户，实际=" + result.errors.get(0).message);
+
+        // 第 2 行照常入库：material_bom_item 只有 1 条当前行，且不是 R（跨客户那行被跳过，不能污染 custB 的 BOM）。
+        String componentNoB = (String) em.createNativeQuery(
+            "SELECT component_no FROM material_bom_item WHERE material_no=:m AND is_current=TRUE")
+            .setParameter("m", parentB).getSingleResult();
+        assertNotEquals(r, componentNoB, "跨客户被拒的那行不应写入 custB 的 BOM");
+        assertTrue(componentNoB.matches("^\\d{4}-\\d{4}\\d{6}$"),
+            "第 2 行应正常铸造报价料号，实际=" + componentNoB);
+
+        // R 的归属客户不应被 custB 的导入动作改变。
+        String ownerR = (String) em.createNativeQuery(
+            "SELECT customer_no FROM material_customer_map WHERE material_no=:m")
+            .setParameter("m", r).getSingleResult();
+        assertEquals(custA, ownerR, "R 的归属客户不应被跨客户导入改写");
+    }
+
     // ===== 7. P05 写 PRICING =====
 
     @Test

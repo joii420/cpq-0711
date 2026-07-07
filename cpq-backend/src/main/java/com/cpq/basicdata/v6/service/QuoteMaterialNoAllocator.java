@@ -21,8 +21,9 @@ public class QuoteMaterialNoAllocator {
             .setParameter("c", customerNo).getResultList();
         if (!found.isEmpty()) return (String) found.get(0);
 
-        String code = String.format("%04d", ((Number) em.createNativeQuery("SELECT nextval('quote_customer_code_seq')").getSingleResult()).longValue());
-        if (code.compareTo("9999") > 0) throw new IllegalStateException("客户四位码枯竭(>9999): " + code);
+        long seq = ((Number) em.createNativeQuery("SELECT nextval('quote_customer_code_seq')").getSingleResult()).longValue();
+        if (seq > 9999) throw new IllegalStateException("客户四位码枯竭(>9999): seq=" + seq);
+        String code = String.format("%04d", seq);
         em.createNativeQuery("INSERT INTO quote_customer_code(customer_no, code) VALUES(:c,:code) ON CONFLICT (customer_no) DO NOTHING")
             .setParameter("c", customerNo).setParameter("code", code).executeUpdate();
         return (String) em.createNativeQuery("SELECT code FROM quote_customer_code WHERE customer_no=:c")
@@ -46,8 +47,20 @@ public class QuoteMaterialNoAllocator {
         return report;
     }
 
-    /** 料号有文件值：确保 QUOTE 行存在，幂等；命中别客户→抛 CrossCustomerQuoteNoException。 */
-    @Transactional
+    /**
+     * 料号有文件值：确保 QUOTE 行存在，幂等；命中别客户→抛 {@link CrossCustomerQuoteNoException}。
+     *
+     * <p><b>{@code dontRollbackOn} 必须显式声明</b>：本方法默认 {@code TxType.REQUIRED}，
+     * 由各发号 handler 在自己的 {@code @Transactional(REQUIRES_NEW)} 事务内调用（本方法是
+     * "join" 而非独立开启事务）。若不声明 dontRollbackOn，CDI 事务拦截器在本方法抛未检异常时
+     * 会对"当前活跃事务"调用 {@code setRollbackOnly()}——即便调用方（handler 的 per-row 循环）
+     * catch 住异常并 continue，外层事务已被标记 rollback-only，方法正常返回后外层
+     * {@code @Transactional(REQUIRES_NEW)} 提交时会被静默整体回滚（不抛异常给调用方，
+     * 表现为 successRows 与写入计数"看似正确"但 commit 后数据全部消失，比"整表抛错回滚"更隐蔽）。
+     * 该异常发生在 INSERT ON CONFLICT DO NOTHING 已成功之后（无 SQL 层 abort），标记为
+     * dontRollbackOn 后仅跳过"标记 rollback-only"这一步，不影响别的行的 DB 写入正确性。
+     */
+    @Transactional(dontRollbackOn = CrossCustomerQuoteNoException.class)
     public void ensureRegistered(String customerNo, String quoteNo) {
         int rows = em.createNativeQuery(
             "INSERT INTO material_customer_map(system_type, material_no, customer_no, customer_product_no, production_no, created_at, updated_at) " +

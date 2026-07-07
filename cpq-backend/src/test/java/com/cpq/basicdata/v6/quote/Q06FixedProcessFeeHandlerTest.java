@@ -1,8 +1,8 @@
 package com.cpq.basicdata.v6.quote;
 
 import com.cpq.basicdata.v6.parser.ImportContext;
+import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
-import com.cpq.basicdata.v6.service.QuoteMaterialNoAllocator;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -83,22 +83,29 @@ class Q06FixedProcessFeeHandlerTest {
     }
 
     /**
-     * 新契约（报价料号统一 Spec1 §7 跨客户守卫）：「投入料号」在通道②（文件里显式给值）语义已升级为
-     * 全局报价料号，同一字面量不能分属两个客户。原用例故意让 C1/C2 复用同一 CODE 来验证 unit_price
-     * 版本隔离（"各自独立成功"），在新语义下这本身就是非法的跨客户串号场景 —— 应被
-     * {@link QuoteMaterialNoAllocator.CrossCustomerQuoteNoException} 拦截，而不是各自成功。
-     * 断言改为：C2 复用 C1 的报价料号→抛跨客户异常，且 C1 已落库的数据不受影响（C2 整批因异常回滚）。
+     * 新契约（报价料号统一 Spec1 §7 跨客户守卫，2026-07 终审 Blocker-1 修复对齐 spec §2.1）：
+     * 「投入料号」在通道②（文件里显式给值）语义已升级为全局报价料号，同一字面量不能分属两个客户。
+     * 原用例故意让 C1/C2 复用同一 CODE 来验证 unit_price 版本隔离（"各自独立成功"），在新语义下这
+     * 本身就是非法的跨客户串号场景。
+     *
+     * <p><b>spec §2.1 要求 per-row 降级、不得整表/整批回滚</b>：跨客户异常必须在 handler 内
+     * per-row catch 后 {@code recordError} 跳过该行，其余行照常入库，handle() 正常返回而非抛出——
+     * 断言改为：C2 那一行被记为失败（错误信息含冲突的报价料号），C1 已落库数据不受影响，
+     * C2 因唯一的一行被跳过而没有任何 unit_price 落库（但 handle() 本身不抛异常）。
      */
     @Test
     void crossCustomer_isolated() {
         handler.handle(List.of(row(1, "10", "0.1")), ctx("C1"));
-        QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex = assertThrows(
-            QuoteMaterialNoAllocator.CrossCustomerQuoteNoException.class,
-            () -> handler.handle(List.of(row(1, "99", "0.9")), ctx("C2")),
-            "C2 复用 C1 已登记的报价料号 → 跨客户守卫应拒绝");
-        assertTrue(ex.getMessage().contains(CODE), "异常信息应含冲突的报价料号: " + ex.getMessage());
-        assertEquals(1L, count("C1", "is_current=true"), "C1 数据不受影响（C2 整批因跨客户异常回滚）");
+
+        SheetImportResult result = handler.handle(List.of(row(1, "99", "0.9")), ctx("C2"));
+
+        assertEquals(1, result.failedRows, "C2 复用 C1 已登记的报价料号 → 应记为失败行（per-row 跳过，非整批异常）");
+        assertEquals(0, result.successRows);
+        assertEquals(1, result.errors.size());
+        assertTrue(result.errors.get(0).message.contains("跨客户"),
+            "错误信息应含跨客户: " + result.errors.get(0).message);
+        assertEquals(1L, count("C1", "is_current=true"), "C1 数据不受影响");
         assertEquals("2000", currentVersion("C1"));
-        assertNull(currentVersion("C2"), "C2 的写入整批回滚，不应落库");
+        assertNull(currentVersion("C2"), "C2 唯一一行被跳过，不应落库");
     }
 }

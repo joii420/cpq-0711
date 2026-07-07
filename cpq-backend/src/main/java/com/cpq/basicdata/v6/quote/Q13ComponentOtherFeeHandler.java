@@ -7,6 +7,7 @@ import com.cpq.basicdata.v6.parser.SheetRow;
 import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
 import com.cpq.basicdata.v6.service.MaterialNoResolver;
 import com.cpq.basicdata.v6.service.MaterialNoUnresolvableException;
+import com.cpq.basicdata.v6.service.QuoteMaterialNoAllocator;
 import com.cpq.basicdata.v6.versioning.VersionedGroupSpec;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -61,6 +62,8 @@ public class Q13ComponentOtherFeeHandler implements SheetHandler {
                 code = materialNoResolver.resolve(row.exact("组成件料号"), componentName, batch);
             } catch (MaterialNoUnresolvableException ex) {
                 result.recordError(row.rowNo, "组成件料号", "料号与名称均为空"); continue;
+            } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
+                result.recordError(row.rowNo, "组成件料号", "报价料号跨客户串号"); continue;
             }
             MaterialMasterRepository.accNameType(mmAcc, code, componentName, "组成件");
             result.recordWrite("material_master", 1);
