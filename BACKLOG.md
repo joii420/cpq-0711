@@ -242,6 +242,36 @@
 - **预估规模**：S（1-2 天）
 - **验收要点**：切版本后该行卡片值被重算（打开显示新版本值，不再陈旧）；未切版本的行不受影响；不引入 batch 风暴。
 
+### [BL-0017] 报价料号统一 Spec 2 —— 选配发号统一（CFG-→XXXX-YYMMNNNNNN）
+- **优先级**：P1
+- **来源**：`docs/superpowers/specs/2026-07-06-报价料号统一-design.md` §9（Spec 1 落地时明确拆出）
+- **状态**：TODO
+- **登记日期**：2026-07-07
+- **推迟原因**：Spec 1（数据基座 + 发号服务）先行；选配是另一子系统。
+- **背景**：`PartNoProvider`/`AutoAllocatePartNoProvider` 现按 `part_no_sequence` 发 `CFG-{符号}-{6位流水}` 作选配 `hf_part_no`；统一后应复用 `QuoteMaterialNoAllocator` 发 `XXXX-YYMMNNNNNN`（选配 `XXXX` 客户码取自选配所在报价/客户上下文）。`ConfiguratorInstanceService` 接入；重估 `MaterialBomMergeHandler.isCfg` 拒绝逻辑（选配号统一后是否放开回填）。
+- **前置条件**：✅ Spec 1 的 `QuoteMaterialNoAllocator` 已就绪。
+- **预估规模**：M（3-5 天）
+
+### [BL-0018] 报价料号统一 Spec 3 —— 客户料号维护页面
+- **优先级**：P2
+- **来源**：`docs/superpowers/specs/2026-07-06-报价料号统一-design.md` §9
+- **状态**：TODO
+- **登记日期**：2026-07-07
+- **推迟原因**：UI 子系统，依赖 Spec 1 数据基座。
+- **背景**：`material_customer_map` 加了 `production_no`（生产料号，报价侧后补）。需 UI 手工维护三码映射（客户料号 / 报价料号 / 生产料号）、回填 `production_no`、`source=MANUAL` 标记。
+- **前置条件**：✅ Spec 1 表结构（`system_type`/`production_no`）已就绪。
+- **预估规模**：M（3-5 天）
+
+### [BL-0019] 清理 9 字头发号死代码 + 修历史 VersionedV6MasterDetailTest
+- **优先级**：P2
+- **来源**：报价料号 Spec 1 实现期子代理观察（范围外）
+- **状态**：TODO
+- **登记日期**：2026-07-07
+- **推迟原因**：超出 Spec 1 范围的连带清理。
+- **背景**：① `MaterialMasterRepository.maxNineLeadingMaterialNo`/`lockForMaterialNoGeneration` 在 Spec 1 后已无生产调用方（`MaterialNoResolver.generateNextMaterialNo` 已删），仅剩 `MaterialMasterRepositoryTest` 一个测试引用 → 是"测死代码的测试"，宜连方法+测试一并删。② `VersionedV6MasterDetailTest` 两个用例（`materialBom_nullCharacteristic_idempotent`/`childChange_bumpsMaster`）在 **master 上就已失败**（`VersionedV6Writer` 的 `CHILD_UQ=Map.of()` 空实现致 `material_bom_item` 无冲突目标；两名子代理用 git stash 背靠背验证与本次改动无关）→ 属独立历史 bug，需专项修 `CHILD_UQ` 登记。
+- **前置条件**：无
+- **预估规模**：S（1-2 天）
+
 ---
 
 ## 已完成
