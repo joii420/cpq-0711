@@ -24,6 +24,12 @@ import java.util.stream.Collectors;
  * <p>独立产品(SIMPLE): sha256("v1|CUST=custNo|ELE=...|MAT=...|PRC=...")
  * (token 按 paramTypeCode 升序排列)
  * <p>组合产品(COMPOSITE): sha256("v1|CUST=custNo|COMBO=childQuotePartNo_sorted")
+ *
+ * <p><b>不变量</b>: 入参码值（customerNo/materialCode/elementCode/processCode/childQuotePartNo）
+ * 不得含分隔符 {@code | = , : ∅}，否则抛 IllegalArgumentException（fail-fast 防规范串碰撞——
+ * 规范串本身用这五个字符分隔 token/字段/集合项，若码值本身含这些字符会产生规范串歧义，
+ * 例如工序码 ["a","b,c"] 与 ["a,b","c"] 都会渲染成 "PRC=a,b,c"，造成两个不同选配复用同一
+ * 报价料号的静默错价；比生产侧 FingerprintCalculator 更严格是有意为之）。
  */
 @ApplicationScoped
 public class SalesFingerprintCalculator {
@@ -38,6 +44,10 @@ public class SalesFingerprintCalculator {
 
     /**
      * 启用参数投影 —— 由 T3 运行时按本次使用模板的 enabled 参数 + 选值构造.
+     *
+     * <p>每 paramTypeCode 至多一项（单槽位）——同一 enabled 列表内不应出现两个
+     * MATERIAL / 两个 ELEMENT / 两个 PROCESS 项，否则 renderToken 按 paramTypeCode
+     * 排序后会产生多个同名 token，破坏"每类型一个 token"的规范串结构。
      *
      * @param paramTypeCode MATERIAL / ELEMENT / PROCESS（sel_param_type.code）
      * @param materialCode  MATERIAL: recipe/配比码；否则 null
@@ -66,6 +76,7 @@ public class SalesFingerprintCalculator {
         if (enabled == null || enabled.isEmpty()) {
             throw new IllegalArgumentException("computeSimple: enabled 参数集不能为空（防指纹坍缩）");
         }
+        assertNoDelimiter(customerNo, "customerNo");
 
         String tokens = enabled.stream()
             .sorted(Comparator.comparing(EnabledParam::paramTypeCode))
@@ -93,6 +104,8 @@ public class SalesFingerprintCalculator {
         if (childQuotePartNos == null || childQuotePartNos.isEmpty()) {
             throw new IllegalArgumentException("computeComposite: childQuotePartNos 不能为空");
         }
+        assertNoDelimiter(customerNo, "customerNo");
+        childQuotePartNos.forEach(p -> assertNoDelimiter(p, "childQuotePartNo"));
 
         String sorted = childQuotePartNos.stream().sorted().collect(Collectors.joining(","));
         String text = STRUCTURE_VERSION + "|CUST=" + customerNo + "|COMBO=" + sorted;
@@ -103,7 +116,11 @@ public class SalesFingerprintCalculator {
         switch (param.paramTypeCode()) {
             case "MATERIAL": {
                 String materialCode = param.materialCode();
-                return "MAT=" + ((materialCode == null || materialCode.isBlank()) ? SENTINEL_EMPTY : materialCode);
+                if (materialCode == null || materialCode.isBlank()) {
+                    return "MAT=" + SENTINEL_EMPTY;
+                }
+                assertNoDelimiter(materialCode, "materialCode");
+                return "MAT=" + materialCode;
             }
             case "ELEMENT": {
                 List<ElementPct> elements = param.elements();
@@ -112,7 +129,10 @@ public class SalesFingerprintCalculator {
                 }
                 String sortedElems = elements.stream()
                     .sorted(Comparator.comparing(ElementPct::elementCode))
-                    .map(e -> e.elementCode() + ":" + normalize(e.pct()))
+                    .map(e -> {
+                        assertNoDelimiter(e.elementCode(), "elementCode");
+                        return e.elementCode() + ":" + normalize(e.pct());
+                    })
                     .collect(Collectors.joining(","));
                 return "ELE=" + sortedElems;
             }
@@ -121,11 +141,27 @@ public class SalesFingerprintCalculator {
                 if (processCodes == null || processCodes.isEmpty()) {
                     return "PRC=" + SENTINEL_EMPTY;
                 }
+                processCodes.forEach(p -> assertNoDelimiter(p, "processCode"));
                 String sortedProcs = processCodes.stream().sorted().collect(Collectors.joining(","));
                 return "PRC=" + sortedProcs;
             }
             default:
-                throw new IllegalArgumentException("computeSimple: 未知 paramTypeCode=" + param.paramTypeCode());
+                throw new IllegalArgumentException("未知 paramTypeCode=" + param.paramTypeCode());
+        }
+    }
+
+    /**
+     * 规范串分隔符碰撞守卫: 规范串使用 {@code | = , : ∅} 五个字符分隔 token/字段/集合项，
+     * 若入参码值本身含这些字符会产生规范串歧义（不同载荷渲染出相同规范串 → 指纹碰撞 →
+     * 静默错价）。fail-fast 优于静默撞串。
+     */
+    private void assertNoDelimiter(String value, String fieldName) {
+        if (value == null) return;
+        for (char c : new char[]{'|', '=', ',', ':', '∅'}) {
+            if (value.indexOf(c) >= 0) {
+                throw new IllegalArgumentException(
+                    fieldName + " 不能包含分隔符 '" + c + "'（规范串碰撞风险）: " + value);
+            }
         }
     }
 

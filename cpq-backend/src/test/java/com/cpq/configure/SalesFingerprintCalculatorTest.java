@@ -196,4 +196,106 @@ class SalesFingerprintCalculatorTest {
         Signature sig = calculator.computeSimple("CUST-001", enabled);
         assertTrue(sig.hash().matches("[0-9a-f]{64}"), "hash 应为小写 64 位 hex, 实际: " + sig.hash());
     }
+
+    // ---- I2: 正向区分度 —— 不同载荷必须产生不同指纹 ----
+
+    @Test
+    void differentMaterialCodeProducesDifferentHash() {
+        List<EnabledParam> a = List.of(
+            material("AgNi90"),
+            element(List.of(new ElementPct("Cr", new BigDecimal("18"))))
+        );
+        List<EnabledParam> b = List.of(
+            material("AgNi70"),
+            element(List.of(new ElementPct("Cr", new BigDecimal("18"))))
+        );
+
+        Signature sigA = calculator.computeSimple("CUST-001", a);
+        Signature sigB = calculator.computeSimple("CUST-001", b);
+
+        assertNotEquals(sigA.hash(), sigB.hash());
+    }
+
+    @Test
+    void differentElementPercentageProducesDifferentHash() {
+        List<EnabledParam> a = List.of(
+            material("AgNi90"),
+            element(List.of(new ElementPct("Cr", new BigDecimal("18"))))
+        );
+        List<EnabledParam> b = List.of(
+            material("AgNi90"),
+            element(List.of(new ElementPct("Cr", new BigDecimal("20"))))
+        );
+
+        Signature sigA = calculator.computeSimple("CUST-001", a);
+        Signature sigB = calculator.computeSimple("CUST-001", b);
+
+        assertNotEquals(sigA.hash(), sigB.hash());
+    }
+
+    // ---- M1: null pct 归一化 ----
+
+    @Test
+    void nullElementPctNormalizesToZero() {
+        List<EnabledParam> enabled = List.of(
+            material("AgNi90"),
+            element(List.of(new ElementPct("Cr", null)))
+        );
+
+        Signature sig = calculator.computeSimple("CUST-001", enabled);
+
+        assertTrue(sig.text().contains("Cr:0"), "null pct 应归一化为 Cr:0, 实际: " + sig.text());
+    }
+
+    // ---- I1: 分隔符碰撞 fail-fast 守卫 ----
+
+    @Test
+    void processCodeContainingCommaTriggersDelimiterCollisionRejected() {
+        // "a","b,c" vs "a,b","c" 若不校验都会渲染成 PRC=a,b,c —— 必须 fail-fast 而非静默碰撞
+        List<EnabledParam> enabled = List.of(
+            material("AgNi90"),
+            process(List.of("a", "b,c"))
+        );
+
+        assertThrows(IllegalArgumentException.class, () -> calculator.computeSimple("CUST-001", enabled));
+    }
+
+    @Test
+    void customerNoContainingPipeRejected() {
+        List<EnabledParam> enabled = List.of(material("AgNi90"));
+        assertThrows(IllegalArgumentException.class, () -> calculator.computeSimple("CUST|001", enabled));
+    }
+
+    @Test
+    void materialCodeContainingEqualsRejected() {
+        List<EnabledParam> enabled = List.of(material("Ag=Ni90"));
+        assertThrows(IllegalArgumentException.class, () -> calculator.computeSimple("CUST-001", enabled));
+    }
+
+    @Test
+    void elementCodeContainingColonRejected() {
+        List<EnabledParam> enabled = List.of(
+            material("AgNi90"),
+            element(List.of(new ElementPct("Cr:X", new BigDecimal("18"))))
+        );
+        assertThrows(IllegalArgumentException.class, () -> calculator.computeSimple("CUST-001", enabled));
+    }
+
+    @Test
+    void codeContainingSentinelCharacterRejected() {
+        List<EnabledParam> enabled = List.of(material("Ag∅Ni90"));
+        assertThrows(IllegalArgumentException.class, () -> calculator.computeSimple("CUST-001", enabled));
+    }
+
+    @Test
+    void childQuotePartNoContainingCommaRejected() {
+        assertThrows(IllegalArgumentException.class,
+            () -> calculator.computeComposite("CUST-001", List.of("A,B", "C")));
+    }
+
+    @Test
+    void compositeCustomerNoContainingDelimiterRejected() {
+        assertThrows(IllegalArgumentException.class,
+            () -> calculator.computeComposite("CUST=001", List.of("A", "B")));
+    }
 }
