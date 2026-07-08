@@ -949,26 +949,56 @@ public class ConfigureProductService {
         // PASS 2: 组合产品父级
         String parentHfPartNo = null;
         if ("COMPOSITE".equals(req.productType)) {
-            String fp = fingerprintCalc.compositeFingerprint(childHfPartNos);
-            parentHfPartNo = lookupHfByFingerprint(fp);
-            if (parentHfPartNo == null) {
-                parentHfPartNo = partNoProvider.apply(
-                    new PartNoContext("COMBO", "COMPOSITE", operatorId));
-                // COMPOSITE 父行: V6 主写，V44 insertMatPart/insertAssemblyBom/insertCompositeProcesses 已移除
-            } else {
-                reused.add(parentHfPartNo);
+            // 选配 Plan 3b (T5): 生产侧全局指纹发号 → 销售侧客户维度指纹发号 swap（同 T4 SIMPLE）。
+            // R6: 组合体也强制 customerCode 非空 — 父报价料号内嵌客户四位码；组合体可能全 existing
+            // 子件（未走 resolvePart custom 分支）却仍需为父级发号，故此处独立校验。
+            if (customerCode == null || customerCode.isBlank()) {
+                throw new IllegalArgumentException(
+                    "选配 COMPOSITE 组合体需要 customerCode（报价料号内嵌客户码），quotation 无客户不能发号");
             }
-            // V6 双写（AP-53 续 6 Phase 1）：无论新建/复用都确保父料号 + 子件 ASSEMBLY → material_master / material_bom_item，
-            // 让 zcj_bom / composite_child_materials_mirror 视图渲染子配件清单（渲染基线零改）。幂等 ON CONFLICT（material_master DO NOTHING / material_bom_item DO UPDATE composition_qty）。
-            insertMaterialMasterV6(parentHfPartNo, "COMPOSITE", null, null, fp);
-            List<Integer> childQtys = req.parts.stream()
-                .map(pr -> (pr.quantity == null || pr.quantity < 1) ? 1 : pr.quantity)
-                .collect(Collectors.toList());
-            // V6 落库 Phase 2（选配 COMBO 补全，设计 §6 / 用户方案 B1/B2/B3）：统一走 VersionedV6Writer
-            // (内容相同复用 / 不同 max+1 升版 / is_current 翻转)。
-            writeCombomaterialBomV6(parentHfPartNo, customerCode, childHfPartNos, childQtys);
-            insertProcessUnitPriceV6(parentHfPartNo, customerCode, req.parts, childHfPartNos);
-            insertCompositeProcessCapacityV6(parentHfPartNo, req.compositeProcesses);
+
+            // 销售侧客户维度组合体指纹（childQuotePartNos 排序集合 + customerCode），取代生产侧
+            // compositeFingerprint 全局复用。
+            var sig = salesFp.computeComposite(salesCtx.customerNo, childHfPartNos);
+            String hit = sigRepo.lookup(salesCtx.customerNo, SalesFingerprintCalculator.STRUCTURE_VERSION, sig.hash());
+            if (hit != null) {
+                // R3: 命中复用父级 → 整体跳过父级落库（数据首次已落，幂等，勿重复累加，守 AP-51）
+                reused.add(hit);
+                parentHfPartNo = hit;
+            } else {
+                // ⚠️ 不变量（同 T4）：mintAndRegister + insertOrReadExisting + 下方父级 V6 落库须同处
+                // configure 同一事务（REQUIRED，勿改 REQUIRES_NEW）——保证签名可见 ⇔ V6 数据可见，
+                // 否则并发败者复用先赢父号时先赢 V6 未提交 → Tab 空。
+                parentHfPartNo = quoteAllocator.mintAndRegister(salesCtx.customerNo, salesCtx.yyMm);
+                String registered = sigRepo.insertOrReadExisting(
+                    salesCtx.customerNo, SalesFingerprintCalculator.STRUCTURE_VERSION, sig.hash(), sig.text(),
+                    parentHfPartNo, "COMPOSITE");
+                if (registered == null) {
+                    throw new IllegalStateException(
+                        "sel_part_signature 冲突但回读为空(COMPOSITE): fp=" + sig.hash());
+                }
+                if (!registered.equals(parentHfPartNo)) {
+                    // 并发败者：先赢者已落父级 V6，复用其父号，跳过本次落库
+                    reused.add(registered);
+                    parentHfPartNo = registered;
+                } else {
+                    // 先赢者：落父级 V6（R1: config_fingerprint=null，防跨客户撞全局唯一索引）+ 组合
+                    // BOM + 工序 + 组合工艺。
+                    // V6 双写（AP-53 续 6 Phase 1）：确保父料号 + 子件 ASSEMBLY → material_master /
+                    // material_bom_item，让 zcj_bom / composite_child_materials_mirror 视图渲染子配件
+                    // 清单（渲染基线零改）。幂等 ON CONFLICT（material_master DO NOTHING /
+                    // material_bom_item DO UPDATE composition_qty）。
+                    insertMaterialMasterV6(parentHfPartNo, "COMPOSITE", null, null, null); // R1
+                    List<Integer> childQtys = req.parts.stream()
+                        .map(pr -> (pr.quantity == null || pr.quantity < 1) ? 1 : pr.quantity)
+                        .collect(Collectors.toList());
+                    // V6 落库 Phase 2（选配 COMBO 补全，设计 §6 / 用户方案 B1/B2/B3）：统一走
+                    // VersionedV6Writer（内容相同复用 / 不同 max+1 升版 / is_current 翻转）。
+                    writeCombomaterialBomV6(parentHfPartNo, customerCode, childHfPartNos, childQtys);
+                    insertProcessUnitPriceV6(parentHfPartNo, customerCode, req.parts, childHfPartNos);
+                    insertCompositeProcessCapacityV6(parentHfPartNo, req.compositeProcesses);
+                }
+            }
         }
 
         // PASS 3: line_items (解法 B: 传 req.tempId 给 buildLineItems 作 parent line item id)
