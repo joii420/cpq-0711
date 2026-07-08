@@ -114,6 +114,7 @@ public class CustomerService {
         customer.code = code;
         customer.level = request.level != null ? request.level : "STANDARD";
         customer.industry = request.industry;
+        customer.industryCode = request.industryCode;
         customer.region = request.region;
         customer.address = request.address;
         customer.creditLimit = request.creditLimit;
@@ -154,6 +155,7 @@ public class CustomerService {
         if (request.name != null) customer.name = request.name;
         if (request.level != null) customer.level = request.level;
         if (request.industry != null) customer.industry = request.industry;
+        if (request.industryCode != null) customer.industryCode = request.industryCode;
         if (request.region != null) customer.region = request.region;
         if (request.address != null) customer.address = request.address;
         if (request.creditLimit != null) customer.creditLimit = request.creditLimit;

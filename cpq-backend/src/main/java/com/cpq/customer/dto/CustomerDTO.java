@@ -17,6 +17,7 @@ public class CustomerDTO {
     public String code;
     public String level;
     public String industry;
+    public String industryCode;
     public String region;
     public String address;
     public BigDecimal accumulatedAmount;
@@ -38,6 +39,7 @@ public class CustomerDTO {
         dto.code = customer.code;
         dto.level = customer.level;
         dto.industry = customer.industry;
+        dto.industryCode = customer.industryCode;
         dto.region = customer.region;
         dto.address = customer.address;
         dto.accumulatedAmount = customer.accumulatedAmount;

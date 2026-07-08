@@ -51,7 +51,16 @@ interface MenuItem {
 //   产品分类管理 (并入产品管理按钮)
 const allMenuItems: MenuItem[] = [
   { key: '/dashboard', icon: <DashboardOutlined />, label: '工作台', roles: ALL_ROLES },
-  { key: '/customers', icon: <TeamOutlined />, label: '客户管理', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
+  {
+    key: '/customers-group',
+    icon: <TeamOutlined />,
+    label: '客户管理',
+    roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'],
+    children: [
+      { key: '/customers', label: '客户列表', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
+      { key: '/customers/industries', label: '行业管理', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
+    ],
+  },
   { key: '/products-hub', icon: <ShoppingOutlined />, label: '产品管理', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
   {
     key: '/quotation-center',

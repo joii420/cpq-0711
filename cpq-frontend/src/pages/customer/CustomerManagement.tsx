@@ -5,6 +5,7 @@ import {
 } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, StopOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
 import { customerService } from '../../services/customerService';
+import { industryService } from '../../services/industryService';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
 
 const { Text } = Typography;
@@ -41,6 +42,11 @@ const CustomerManagement: React.FC = () => {
   const [contactDrawerOpen, setContactDrawerOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [currentCustomerId, setCurrentCustomerId] = useState<string | null>(null);
+  const [industries, setIndustries] = useState<{ code: string; name: string }[]>([]);
+
+  useEffect(() => {
+    industryService.listActive().then(res => setIndustries(res?.data ?? [])).catch(() => {});
+  }, []);
 
   const fetchData = async () => {
     setLoading(true);
@@ -82,7 +88,7 @@ const CustomerManagement: React.FC = () => {
         form.setFieldsValue({
           name: editingCustomer.name,
           level: editingCustomer.level,
-          industry: editingCustomer.industry,
+          industryCode: editingCustomer.industryCode,
           region: editingCustomer.region,
           address: editingCustomer.address,
           creditLimit: editingCustomer.creditLimit,
@@ -250,7 +256,11 @@ const CustomerManagement: React.FC = () => {
       title: '等级', dataIndex: 'level', key: 'level',
       render: (l: string) => <Tag color={levelMap[l]?.color}>{levelMap[l]?.label || l}</Tag>
     },
-    { title: '行业', dataIndex: 'industry', key: 'industry' },
+    {
+      title: '行业', dataIndex: 'industryCode', key: 'industryCode',
+      render: (code: string, record: any) =>
+        industries.find(i => i.code === code)?.name ?? record.industry ?? '—',
+    },
     { title: '区域', dataIndex: 'region', key: 'region' },
     {
       title: '状态', dataIndex: 'status', key: 'status',
@@ -380,8 +390,14 @@ const CustomerManagement: React.FC = () => {
               ))}
             </Select>
           </Form.Item>
-          <Form.Item name="industry" label="所属行业">
-            <Input />
+          <Form.Item name="industryCode" label="所属行业">
+            <Select
+              placeholder="请选择所属行业"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={industries.map(i => ({ value: i.code, label: `${i.name}（${i.code}）` }))}
+            />
           </Form.Item>
           <Form.Item name="region" label="所属区域">
             <Input />

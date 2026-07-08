@@ -12,6 +12,7 @@ public class CreateCustomerRequest {
 
     public String level;
     public String industry;
+    public String industryCode;
     public String region;
     public String address;
     public BigDecimal creditLimit;

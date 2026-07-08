@@ -27,6 +27,9 @@ public class Customer extends PanacheEntityBase {
     @Column(length = 100)
     public String industry;
 
+    @Column(name = "industry_code", length = 50)
+    public String industryCode;
+
     @Column(length = 100)
     public String region;
 
