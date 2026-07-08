@@ -35,6 +35,13 @@ class EffectiveTemplateServiceTest {
         utx.commit();
     }
 
+    @AfterEach
+    void cleanupCustomer() throws Exception {
+        utx.begin(); em.joinTransaction();
+        em.createNativeQuery("DELETE FROM customer WHERE code LIKE 'TEST-EFF-%'").executeUpdate();
+        utx.commit();
+    }
+
     @Test @Order(1)
     @DisplayName("T1: 客户行业有模板 → 命中该模板, 材质限2值(有效值只2个), 元素含量启用(effectiveValues空)")
     void hitsIndustryTemplate() {
@@ -57,6 +64,15 @@ class EffectiveTemplateServiceTest {
     @Test @Order(2)
     @DisplayName("T2: 客户行业无模板但有 __DEFAULT__ → 回退默认 usedDefault=true")
     void fallsBackToDefault() {
+        // 防误删护栏：__DEFAULT__ 全局唯一，Plan 2 的选配模板管理 UI 已能让 PM 真配一个 __DEFAULT__。
+        // 若库中已存在真实 __DEFAULT__，本用例的 upsert 会覆盖它、finally 再整条删掉 → 误删生产数据。
+        // 因此先探测：已存在则跳过（不建不删，绝不碰真实默认模板）；不存在才走 create+finally delete。
+        Number existingDefaultCount = (Number) em.createNativeQuery(
+                "SELECT count(*) FROM sel_template WHERE industry_code = '__DEFAULT__'")
+            .getSingleResult();
+        Assumptions.assumeTrue(existingDefaultCount.longValue() == 0,
+            "跳过: 库中已有真实__DEFAULT__模板, 避免误删");
+
         // 不建 IND 模板，建 __DEFAULT__ 模板（全局唯一——测试自建自清，finally 中按创建返回的 id 精确删除，不影响其它会话）
         String body = "{\"industryCode\":\"__DEFAULT__\",\"name\":\"默认\",\"items\":[{\"paramTypeCode\":\"PROCESS\",\"enabled\":true,\"allowedValues\":[]}]}";
         String defaultId = given().contentType("application/json").body(body)
