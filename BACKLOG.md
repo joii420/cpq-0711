@@ -87,6 +87,80 @@
 - **预估规模**：S（1-2 天，主要成本在人工确认）
 - **验收要点**：被确认为「总计」意图的存量公式补上 `is_tab_total` 后显示恢复 `[页签(总计)]`；列引用意图的公式不被误改；求值不变。
 
+### [BL-0022] 核价汇总视图 `v_costing_summary_full` 漏接已算的模具费/设计费 → 总成本系统性偏低
+- **优先级**：P1
+- **来源**：2026-07-01 核价单「已具备功能」深度复核（亲验 `V80` SQL）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-01
+- **背景**：`CostingSummaryService.compute()` 已算出并入库 7 个 metric（含 `TOOLING_FEE`/`DESIGN_COST`），但 `V80__costing_summary_view_and_excel.sql:31-32,51-58` 里 `v_costing_summary_full` **只 PIVOT 了 `MATERIAL_COST`+`PROCESS_FEE` 两列，且根本没有模具费/设计费的承接列**——`TOOLING_FEE`/`DESIGN_COST` 被静默丢弃，其余 6 列（损耗/管理/财务/利润/税费/电镀/其他）恒 NULL。走该汇总视图的核价 Excel「汇总」页总成本 `=[L]+[M]+…+[T]` 实际只剩材料+加工，**总成本系统性偏低**。注意这**超出**「商务加价 6 项未实现」的已知限制（[[BL-无]] 总结 §八#1）——模具/设计是**已实现却漏接视图列**。
+- **范围**：给 `v_costing_summary_full` 补 `tooling_cost`/`design_cost` 两个 PIVOT 列（`MAX(CASE WHEN metric_code='TOOLING_FEE'…)` / `'DESIGN_COST'`），并把默认核价 Excel 模板「汇总」页总成本列公式纳入这两列；确认与 `compute()` 的 `UNIT_TOTAL_COST` 口径一致（避免重复/漏加）。
+- **依赖**：无（独立视图 + 模板列改动）；DDL 后须重启 Quarkus（守 CLAUDE.md「视图重建后重启」）。
+- **预估规模**：S（1-2 天）
+- **验收要点**：汇总视图总成本 = 材料+加工+模具+设计（+未来商务加价），与 `costing_summary_result` 各 metric 之和逐位一致；未实现的商务加价列仍 NULL 显示「—」。
+
+### [BL-0023] 🚨 发版红线：V306 price_type 按 Sheet 细分「只改写入端、取价视图未重写」→ 重导即断链
+- **优先级**：P1（发版安全红线）
+- **来源**：2026-07-01 核价单深度复核（亲验实库 `unit_price` 分布 + `component_sql_view.sql_template` 谓词）
+- **状态**：TODO（未排期）— **落地前禁止跑新一轮 PRICING 核价基础资料导入**
+- **登记日期**：2026-07-01
+- **背景**：V306 把核价 `unit_price.price_type` 写入端细分为 7 个新值（`INCOMING_PROCESS`/`SELF_PROCESS`/`FINISHED_OTHER`/`OUTSOURCE_PROCESS`/`MATERIAL_PRICE`/`PACKAGING`，10 个 P* handler + CHECK 已就绪），但**取价视图 sql_template 未同步重写**。实库查证：① 新细分值在 `unit_price` 表 **0 行**（V306 handler 尚未跑过导入）；② 现网核价取价视图仍按**旧值**过滤——`gx_view` 滤 `price_type='MATERIAL'`、`ll_view` 滤 `INCOMING_MATERIAL_PROCESS`、`qt_view` 滤 `FINISHED_MATERIAL_OTHER`、`wgj_view` 滤 `COMPONENT_OTHER`、`dd_view` 滤 `PLATING`。因数据与视图当前**都还是旧值**，**系统现在正常**；spec `V306:18` 已自认「视图 sql_template 重写另行处理（推迟）」。
+- **⚠️ 触发条件（务必周知）**：**一旦用 V306 之后的 handler 重新导入核价基础资料** → 新行带细分 price_type → 上述视图旧谓词匹配不到 → 来料加工费/自制加工费/电镀/外加工/材料价等**取价返 NULL**；且因 `uq_unit_price` 唯一键含 `price_type` + V306 不回填存量，旧 `MATERIAL` 行与新行**并存**，读取端继续读旧 stale 行（**静默错价、导入看似成功、无报错**）。
+- **范围**：重写核价取价视图（`component_sql_view.sql_template`，config 驱动存 DB）的 `price_type` 谓词以匹配新细分值（或做值映射兼容层）；同步核对 `V255` 种子与线上 `component_sql_view` 表已漂移的实际谓词；给存量 `MATERIAL` 行制定回填/迁移策略。**在此之前，运维/开发一律不得对核价侧跑 PRICING 重导。**
+- **依赖**：无（后端视图 + 数据迁移）。
+- **预估规模**：M（3-5 天）
+- **验收要点**：用 V306 handler 重导后，各费用视图仍能按新细分 price_type 取到价；无 NULL 断链、无新旧行并存读旧值；`V255` 种子与线上 sql_template 对齐。
+
+### [BL-0024] 独立核价单 override（what-if 差量）EXCHANGE fieldName 错配静默失效 + discount_rate 死选项
+- **优先级**：P1
+- **来源**：2026-07-01 核价单深度复核（亲验 `CostingSummaryDetailPage.tsx` 前端 + `CostingSummaryService.java` compute）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-01
+- **背景**：独立核价单模块（配置中心→核价单，`CostingSummaryDetailPage`）的差量抽屉里，`fieldName` 下拉给 EXCHANGE 也列出 `costing_price`（标签误写「核价单价 / **核价汇率**」，`:302`），但 compute 对 EXCHANGE 只用 key 后缀 `costing_rate`（`CostingSummaryService.java:367,381`）。用户给汇率建差量若选被诱导的 `costing_price` → key `EXCHANGE:CNY/USD:costing_price` → Map miss → **差量静默忽略、无报错、状态照常 COMPUTED**，用户以为已生效。另 `discount_rate` 选项（`:304`）compute **全程无任何命中** → 死选项。
+- **范围**：前端按 `targetKind` 联动 `fieldName` 可选集（ELEMENT/MATERIAL→`costing_price`；EXCHANGE→`costing_rate`），去掉误导标签与不可消费的 `discount_rate`；或后端为 EXCHANGE 同时接受 `costing_price` 别名。补一条保存后校验（key 无对应求值通道时给 warning）。
+- **依赖**：无。
+- **预估规模**：S（1-2 天）
+- **验收要点**：EXCHANGE 差量只能选 `costing_rate` 且生效；不再出现选了不生效的静默失效；`discount_rate` 死选项移除或接通。
+
+### [BL-0027] 核价树导入后首屏走「实时兜底」需手动刷新才出树（快照值加载时序）
+- **优先级**：P1
+- **来源**：2026-07-02 核价树配置排查（Playwright 实测 + 前端 `QuotationStep2` 链路核实）
+- **状态**：TODO（未排期，动核价单渲染基线 → 须 architect）
+- **登记日期**：2026-07-02
+- **背景**：导入产品时前端在内存拼 `LineItem`（**不带 `costingCardValues`**），快照在 `saveDraft`/后端同步算好写库，但**前端不重新拉取** → `useSnapCosting = costingLineItems.every(li => !!li.costingCardValues)` 为假 → 走实时兜底（`QuotationStep2.tsx:3193` `useDriverExpansions(...)`）→ 该路径**未注入闭包 partSet、仅展根料号层**（`:3187` 注释原文）→ 核价递归组件（如子配件）**首屏渲染成平表、无「料号/父料号/版本」三系统列**。用户手动刷新触发 `getById` 拿到快照值 → `useSnapCosting` 转真 → 出树。**数据/配置均正确**（快照库里已含 spine），纯前端时序体验瑕疵。
+- **范围**（推荐组合 A+B）：
+  - **A（必做·前端）**：`saveDraft`（快照落库）成功后**自动 re-fetch `getById`**，把 `costingCardValues`/`quoteCardValues` 灌回内存 `lineItems` → `useSnapCosting` 自动转真、无需手动刷新。重拉须在快照落库**之后**；转真后**断开** batch-expand（`useSnapCosting ? EMPTY_LINEITEMS : ...`）避免两链同跑（守 AP-31）。
+  - **B（兜底·前端）**：`useSnapCosting=false` 但核价模板含递归组件时，不静默显示错误平表，而显示「核价树快照生成中…」占位 + 自动重试 1–2 次 `getById`。
+  - **C（可选·后端）**：`saveDraft`/导入响应直接带回 `costingCardValues`，免二次往返（代价：响应体增大，需评估）。
+- **依赖**：无（前端为主；C 动后端响应）。
+- **预估规模**：M（3-5 天，含 architect 评估 + E2E）
+- **验收要点**：导入产品后**不手动刷新** → 核价单·递归页签（子配件等）**直接出树 + 三系统列**；`'加载中' final count = 0`；无 batch-expand 风暴（守 AP-31）。
+- **注**：改 `QuotationStep2` / `saveDraft` 回调 / getById 时序 = 协议级 + 触碰「核价单渲染」基线（`docs/三大核心模块基线.md`），须走 cpq-architect + E2E（CLAUDE.md 强制）。
+
+### [BL-0028] 🔧 spineKeys 叶子节点空 = `SqlViewExecutor` 数组绑定 `String.valueOf(null)→"null"`（已修待正式落地）
+- **优先级**：P1
+- **来源**：2026-07-02 核价树配置排查（实测 spineKeys 叶子空 → 逐层定位到绑定层）
+- **状态**：**已修 + 已实测通过（应用于主工作区未提交）**；待正式落地（独立分支 + E2E + 提交）
+- **登记日期**：2026-07-02
+- **背景**：核价 BOM 树边源视图用 `:spineKeys(子件, 父件, 子件自身版本)` 过滤时,**叶子节点**(自身无下级 BOM → 版本=NULL)一直被误滤空,即使第 3 参写对(LATERAL 子件自身版本子查询)。根因:`SqlViewExecutor` 绑 `List→text[]` 时 `list.stream().map(String::valueOf)`,`String.valueOf((Object)null)` 返回**字符串 `"null"`** 而非 SQL NULL → `__skV` 里叶子的 NULL 版本变 `"null"` → `(子件版本) IS NOT DISTINCT FROM k.v` 里 真 NULL vs `"null"` = false → 叶子被滤。违背 `2026-06-06-spinekeys` 设计 §4.2「叶子 NULL-safe 命中」。
+- **修法(已应用)**:两处绑定(`executeAllRows` / `executeJdbc`)`map(x -> x==null?null:String.valueOf(x))` 保留 null → `createArrayOf` 得 SQL NULL → NULL-safe 匹配生效。
+- **实测**:1922/4141111115 子配件 spineKeys 版 27→19 行(消重)+ 叶子全填 + 仅根 1 空;Playwright 三系统列=true。
+- **依赖**:无。
+- **预估规模**：S（1-2 天,主要在 E2E + 评审）
+- **验收要点**：spineKeys 视图叶子(版本=NULL)正确命中;不破坏非叶子(有版本)匹配;`ys_view` 等其它 spineKeys 视图无回归。
+- **注**：**协议级**(动 spineKeys 绑定,影响所有 spineKeys 视图)→ 正式落地须独立分支 + `quotation-flow.spec.ts` E2E + 提交。当前改动在主工作区 `SqlViewExecutor.java`,未提交。
+
+### [BL-0031] 选配「工序」落 V6 承载表 + mirror 视图（选配模板方案前置·architect 级）
+- **优先级**：P1
+- **来源**：`docs/superpowers/specs/2026-07-06-选配模板方案-design.md` §2/§9 + 架构复核（`docs/反模式.md` AP-53 续6）
+- **状态**：TODO（未排期，architect 级）
+- **登记日期**：2026-07-07
+- **推迟原因**：AP-53 续6 已标"工序在 V6 侧无承载表、需新建业务表 + mirror UNION，走 architect"；若一期强做则范围过大。
+- **背景**：选配方案把"工序"列为一期固定参数，但 V6 侧尚无工序落库承载表（现役选配 Phase1 只落料号+元素+子件）。产品卡片工序 Tab 依赖按 `sales_part_no` 落库 + mirror 视图取数。
+- **范围**：设计工序 V6 承载表 + mirror UNION 视图，供选配/核价按 `sales_part_no` 取工序；对齐「销售料号维度落库 V6.2」口径。
+- **依赖**：material_master/element/bom V6 Phase1（已就绪）；报价料号统一 Spec1。
+- **预估规模**：L（1 周以上）
+- **验收要点**：选配产出报价料号的工序能按 `sales_part_no` 落库并在卡片工序 Tab 渲染；不破坏现役核价工序取数。
+
 ---
 
 ## P2
@@ -251,6 +325,7 @@
 - **背景**：`PartNoProvider`/`AutoAllocatePartNoProvider` 现按 `part_no_sequence` 发 `CFG-{符号}-{6位流水}` 作选配 `hf_part_no`；统一后应复用 `QuoteMaterialNoAllocator` 发 `XXXX-YYMMNNNNNN`（选配 `XXXX` 客户码取自选配所在报价/客户上下文）。`ConfiguratorInstanceService` 接入；重估 `MaterialBomMergeHandler.isCfg` 拒绝逻辑（选配号统一后是否放开回填）。
 - **前置条件**：✅ Spec 1 的 `QuoteMaterialNoAllocator` 已就绪。
 - **预估规模**：M（3-5 天）
+- **关联**：`docs/superpowers/specs/2026-07-06-选配模板方案-design.md`（**该方案是本条的严格超集**：含发号统一 `CFG-→XXXX-YYMMNNNNNN` + `isCfg` 重估，再叠加参数池/行业模板/销售侧指纹去重；若该方案落地则本条随之完成，**勿重复立项**）。
 
 ### [BL-0018] 报价料号统一 Spec 3 —— 客户料号维护页面
 - **优先级**：P2
@@ -271,6 +346,90 @@
 - **背景**：① `MaterialMasterRepository.maxNineLeadingMaterialNo`/`lockForMaterialNoGeneration` 在 Spec 1 后已无生产调用方（`MaterialNoResolver.generateNextMaterialNo` 已删），仅剩 `MaterialMasterRepositoryTest` 一个测试引用 → 是"测死代码的测试"，宜连方法+测试一并删。② `VersionedV6MasterDetailTest` 两个用例（`materialBom_nullCharacteristic_idempotent`/`childChange_bumpsMaster`）在 **master 上就已失败**（`VersionedV6Writer` 的 `CHILD_UQ=Map.of()` 空实现致 `material_bom_item` 无冲突目标；两名子代理用 git stash 背靠背验证与本次改动无关）→ 属独立历史 bug，需专项修 `CHILD_UQ` 登记。
 - **前置条件**：无
 - **预估规模**：S（1-2 天）
+
+### [BL-0025] `CostingSummaryService.compute()` 料号级查询忽略 part_version（多版本激活后跨版本累加）
+- **优先级**：P2
+- **来源**：2026-07-01 核价单深度复核（亲验实库 `costing_part_*` distinct part_version=1）
+- **状态**：TODO（潜伏，未排期）
+- **登记日期**：2026-07-01
+- **推迟原因**：**当前不触发**——实库各 `costing_part_*` 表 distinct `part_version` 均 = 1（多版本未激活）；与 [[BL-0005]] 版本切换尚未生效一致。
+- **背景**：compute 的所有料号级查询（`CostingSummaryService.java:177-185`：matBom/element/process/tooling/design）**只按 `hfPartNo+isActive`、不带 part_version 维度**，weight 用无 `ORDER BY` 的 `firstResult()`。若同一 `hf_part_no` 出现多个 `is_active=true` 的 part_version：成本类**跨版本累加**（膨胀）、weight 取任意行（非确定）。
+- **范围**：随第二期版本感知改造（[[BL-0005]]/[[BL-0006]]）一并给 compute 传入并过滤 `part_version`；weight 查询加确定性 `ORDER BY`。
+- **依赖**：[[BL-0005]]（多版本真正启用后此 gap 才显现）。
+- **预估规模**：S（1-2 天，随 BL-0005/0006 同步做）
+- **验收要点**：多版本激活后 compute 只取指定 part_version 数据；未激活时逐位不变。
+
+### [BL-0026] 核价侧低危隐患群（状态机旁路 / 渲染死代码 / 兜底反设计）
+- **优先级**：P2
+- **来源**：2026-07-01 核价单深度复核（多为审计代理报告、主线未逐一独立复核，标 PLAUSIBLE）
+- **状态**：TODO（未排期，逐条确认后可拆分）
+- **登记日期**：2026-07-01
+- **背景/清单**（按面归类，均低危或旁路）：
+  - **状态机**：遗留 `QuotationService.approve()/reject()`（`:1266,1298`）旁路核价流、不更新 `CostingOrder`，直连 API 调用可致报价单死锁 + 工作台僵尸排队项（前端 0 调用，仅 API 可触发）；`frozen_dto` 冻入 `status="DRAFT"`（submit `:910` 冻结早于 `:912` 赋 SUBMITTED，展示偏差）；`withdraw` 用 `findLatest` 覆写终态 `REJECTED`→`WITHDRAWN` 丢审计；`/copy`、`/delete`（含 `/approve /reject`）缺 `@RoleAllowed`，`RoleFilter` 无注解即放行（安全）。
+  - **BOM/缓存**：`CardSnapshotService.java:1790` `recursive` 在 `dc[1]` 非 Boolean 时兜底 TRUE（与「默认关」相反，当前被 `NOT NULL DEFAULT false` 屏蔽）；单值 `$view.col` 路径 `DataLoader` `resultCache` key 缺 componentId（同名导入副本条件串号，守 [[cpq-sqlview-cache-key-needs-component-dim]]）；DAG 单节点多业务行树形「首条胜」展示瑕疵。
+  - **渲染**：旧 `CostingSheetView` + `/costing-sheet` + `CostingSheetService` 是死组件、读「已无人维护」的 `costing_sheet` 表（重新挂回即双源不一致）；frozen 模式 QUOTE 分支在历史单 `quoteCardStructure` 缺失时回落 live `/templates` 请求（`ReadonlyProductCard.tsx:213,219`）。
+- **范围**：逐条确认后拆分处理——优先下线遗留 `/approve`·`/reject`（或补 CostingOrder 联动）+ 补写端点 `@RoleAllowed`（安全项）；其余按需修。
+- **依赖**：无。
+- **预估规模**：M（逐条确认 + 修，主要成本在确认）
+- **验收要点**：遗留旁路端点不再能制造报价单死锁；写端点有鉴权门；死代码/兜底反设计逐条裁决（修或标注保留）。
+
+### [BL-0029] 核价递归 SQL 校验器「空 seed 盲区」—— 保存通过、渲染必崩的一类 SQL 漏网
+- **优先级**：P1
+- **来源**：2026-07-03 QT-20260703-1928 核价卡片全空根因定位
+- **状态**：[-] **保存期不可行 → 由 [[BL-0030]] 兜底（2026-07-03 结论）**。实测:①空 seed + LIMIT 0 漏（现状）；②`EXPLAIN` 也抓不到（`cannot compare dissimilar column types` 是**运行期**、非 plan 期错）；③合成非空 seed 若不递归（占位料号无 BOM 子件）→ CYCLE 不触发比较 → 仍抓不到。即那类「只在真数据真递归时暴露」的错**无法在保存期用空/合成 seed 拦下**。真正安全网 = BL-0030（render 失败显式透出错误原文到前端），已实现。若将来仍要保存期兜底,唯一路是「探测库里一个真实有 BOM 子件的料号做 seed 真跑一层」,但耦合数据、且不同递归 SQL 引用的表未知,性价比低。**本条降级为 wontfix/观察,不单独修。**
+- **登记日期**：2026-07-03
+- **背景**：`CostingTreeSqlValidator.validate()` 用**空 seed** `ARRAY[]::text[]` + `LIMIT 0` 做 dry-run。递归 CTE / `CYCLE` 的**运行时错在空数据下不触发**（0 行→不进递归→不做 CYCLE 行比较），导致「保存期校验通过、真实 render 必崩」的 SQL 漏网。**实证**：用户存的递归 SQL 缺 `material_no::text`，seed 绑 `text[]`(见 `CostingTreeRenderService.queryRecursive` `createArrayOf("text")`)、递归列 `varchar` → `CYCLE material_no` 报 `cannot compare dissimilar column types` → render 崩 → 快照 NULL → 全 77 卡片空。校验器却因空 seed 放行。
+- **范围**：dry-run 改为「用一个**非空样例 seed**探测」（如取库里任一有 BOM 子件的真实料号，或注入 1 个占位料号让递归真正走一层 + CYCLE 真比较）；至少要能触发递归分支的类型/语义错。评估样例 seed 来源（固定占位 vs 探测库）。
+- **依赖**：无。
+- **预估规模**：S（1-2 天）
+- **验收要点**：一条缺 `::text`（或其它仅运行时暴露）的递归 SQL 在**保存期**即被拦下，不再能存成生效配置。
+
+### [BL-0030] 核价树 render 失败被静默吞成空卡片（AP-31 静默失败族）—— 无任何前端可见报错
+- **优先级**：P1
+- **来源**：2026-07-03 同上根因定位
+- **状态**：[x] **已完成（2026-07-03，master `092f48a`）**。`CardSnapshotService` 批量层 `render()` 加 try/catch:失败时不上抛（否则整单 500+全 NULL→前端无限「加载中…」），逐 li 落带错误原文的失败哨兵 `{tabs:[],__cardValueFailed:true,__errorMsg:"核价渲染失败: …"}`；前端 `cardValueFailed.ts#getCardValueError` 取原文，`QuotationStep2` 核价卡片占位以 error Alert 显式展示原文 + 指引查「核价树配置」。配置员一眼定位，取代翻后端日志。
+- **登记日期**：2026-07-03
+- **背景**：`CostingTreeRenderService.render()` 抛错（递归 SQL 崩 / 无生效配置 / 页签 $view 崩）后，被 `CardSnapshotService.buildCostingCardValues` 的 `try/catch` **catch 成返回 null + 仅 `LOG.warnf`** → `costing_card_values` 留 NULL → 前端**只看到空卡片、无任何红错**。用户无法自知是递归 SQL 崩了，只能靠翻后端日志。另页签 $view 忘输出 `material_no` 时也是渲染期 WARN + 静默落选（已有 WARN 守卫但 UI 不可见）。
+- **范围**：让核价树渲染失败对用户**可见**——如 `ensure-card-values` / 渲染响应带回一个「核价树配置错误 + 具体消息（递归 SQL 报错原文 / 未配置生效 SQL / 页签缺 material_no）」的结构化提示，前端在核价卡片区显式提示而非空白。区分「真无数据」与「配置/SQL 报错」两种空。
+- **依赖**：与 [[BL-0029]] 同批修更省（都属核价树配置期防呆）。
+- **预估规模**：M（3-5 天，含前端提示位）
+- **验收要点**：递归 SQL / 页签 $view 报错时，核价卡片区出现明确错误提示（含原因），而非静默空白。
+
+### [BL-0032] 选配模板版本 / 发布状态机
+- **优先级**：P2
+- **来源**：`docs/superpowers/specs/2026-07-06-选配模板方案-design.md` §9
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-07
+- **推迟原因**：一期模板"直接生效"即可满足；草稿/发布为增强。
+- **背景**：`sel_template` 一期无版本/发布态，保存即生效。未来需草稿→发布、历史版本留痕，避免编辑中的模板影响线上选配。
+- **范围**：给 `sel_template` 加状态机（草稿/发布/停用）+ 版本；选配运行时只取"已发布"版本。
+- **依赖**：选配模板 CRUD 落地。
+- **预估规模**：M（3-5 天）
+- **验收要点**：模板可草稿编辑不影响线上；发布后选配取新版本；历史版本可查。
+
+### [BL-0033] 选配组合体报价料号 BOM 关系落表
+- **优先级**：P2
+- **来源**：`docs/superpowers/specs/2026-07-06-选配模板方案-design.md` §4.3/§9
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-07
+- **推迟原因**：组合体 BOM=N 子件的完整关系表需单列设计；现役 `insertMaterialBomAssemblyV6` 仅雏形。
+- **背景**：组合产品选配的组合体报价料号 BOM（=N 个子件报价料号）+ 组合工艺挂载关系的落表口径未定。
+- **范围**：设计组合体↔子件报价料号 BOM 关系落库（对齐现役 `insertMaterialBomAssemblyV6`），组合工艺按 `sales_part_no` 落。
+- **依赖**：子件报价料号落库稳定；[[BL-0031]]（工序承载表）。
+- **预估规模**：M（3-5 天）
+- **验收要点**：组合体报价料号 BOM 正确记录 N 子件 + 组合工艺，核价/渲染可读。
+
+### [BL-0034] 选配料号编辑重算撞指纹的处置 / 合并策略
+- **优先级**：P2
+- **来源**：`docs/superpowers/specs/2026-07-06-选配模板方案-design.md` §5.4（时机 B）/§9
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-07
+- **推迟原因**：spec §5.4 已定一期"拦截并提示复用"；合并/并存是后续高级形态。
+- **背景**：允许编辑已生成报价料号的材质/元素/工序 → 重算销售侧指纹 → 若撞该客户已有料号，一期仅"拦截提示改为复用"。更完整的合并（把两个料号合一、迁移已引用报价单）留后续。
+- **范围**：撞指纹时的合并（引用迁移 / 软删旧料号）或并存策略；含被引用报价单/核价单的影响面处理。
+- **依赖**：`sel_part_signature` 唯一约束方案落地。
+- **预估规模**：M（3-5 天）
+- **验收要点**：编辑撞指纹后按所选策略处置，不产生悬挂引用 / 重复料号。
 
 ---
 
