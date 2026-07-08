@@ -319,7 +319,7 @@
 ### [BL-0017] 报价料号统一 Spec 2 —— 选配发号统一（CFG-→XXXX-YYMMNNNNNN）
 - **优先级**：P1
 - **来源**：`docs/superpowers/specs/2026-07-06-报价料号统一-design.md` §9（Spec 1 落地时明确拆出）
-- **状态**：TODO
+- **状态**：[x] **已被覆盖（2026-07-08，选配 Plan 3b/3c）**。`ConfigureProductService.resolvePart`（custom SIMPLE）+ COMPOSITE 父级发号已从 `partNoProvider`(CFG- 前缀) swap 成 `QuoteMaterialNoAllocator.mintAndRegister`，产出报价料号格式 `{4位客户码}-{yyMM}{6位流水}`（正则 `^\d{4}-\d{6,}$`），与本条诉求一致；`config_fingerprint` 落库改为恒 NULL（R1，防跨客户撞生产侧全局唯一索引），复用判定改走销售侧客户维度指纹 `sel_part_signature`（R3）；`isCfg` 拒绝逻辑（`MaterialBomMergeHandler`）按 spec 保留未放开。详见 `docs/superpowers/plans/2026-06-25-savedraft-setbased-rearchitecture.md` 关联的选配 Plan 3b 集成设计 + `ConfigureProductServiceTest` / `ConfigureProductServiceSalesFingerprintTest` R1/R3 断言。
 - **登记日期**：2026-07-07
 - **推迟原因**：Spec 1（数据基座 + 发号服务）先行；选配是另一子系统。
 - **背景**：`PartNoProvider`/`AutoAllocatePartNoProvider` 现按 `part_no_sequence` 发 `CFG-{符号}-{6位流水}` 作选配 `hf_part_no`；统一后应复用 `QuoteMaterialNoAllocator` 发 `XXXX-YYMMNNNNNN`（选配 `XXXX` 客户码取自选配所在报价/客户上下文）。`ConfiguratorInstanceService` 接入；重估 `MaterialBomMergeHandler.isCfg` 拒绝逻辑（选配号统一后是否放开回填）。
