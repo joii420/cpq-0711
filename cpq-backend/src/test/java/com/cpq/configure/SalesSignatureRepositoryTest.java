@@ -8,8 +8,11 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * TDD for Plan 3b Task 1: sel_part_signature 表 + SalesSignatureRepository。
@@ -67,6 +70,19 @@ public class SalesSignatureRepositoryTest {
             return n.longValue();
         });
         assertEquals(1L, count, "表内应只有 1 行，未产生重复登记");
+
+        // 锁死 DO NOTHING 不覆盖存量 text 的不变量：即使败者传入了不同的 config_signature_text，
+        // 库内该行仍应保留首次赢家写入的原值。
+        String persistedText = QuarkusTransaction.requiringNew().call(() -> {
+            List<?> r = em.createNativeQuery(
+                    "SELECT config_signature_text FROM sel_part_signature WHERE customer_no=:c AND structure_version=:v AND config_fingerprint=:f")
+                    .setParameter("c", customerNo)
+                    .setParameter("v", STRUCTURE_VERSION)
+                    .setParameter("f", fp)
+                    .getResultList();
+            return (String) r.get(0);
+        });
+        assertEquals("sig-text-1", persistedText, "DO NOTHING 不应覆盖存量 config_signature_text");
     }
 
     @Test
@@ -108,5 +124,25 @@ public class SalesSignatureRepositoryTest {
         String result = QuarkusTransaction.requiringNew().call(() ->
                 repo.lookup(PREFIX + "NOBODY", STRUCTURE_VERSION, "0".repeat(64)));
         assertNull(result);
+    }
+
+    @Test
+    void lookup_blankArgs_throwsIllegalArgumentException() {
+        assertThrows(IllegalArgumentException.class, () -> repo.lookup(null, STRUCTURE_VERSION, "x"));
+        assertThrows(IllegalArgumentException.class, () -> repo.lookup(" ", STRUCTURE_VERSION, "x"));
+        assertThrows(IllegalArgumentException.class, () -> repo.lookup(PREFIX + "X", "", "x"));
+        assertThrows(IllegalArgumentException.class, () -> repo.lookup(PREFIX + "X", STRUCTURE_VERSION, null));
+    }
+
+    @Test
+    void insertOrReadExisting_blankArgs_throwsIllegalArgumentException() {
+        assertThrows(IllegalArgumentException.class, () ->
+                repo.insertOrReadExisting(null, STRUCTURE_VERSION, "x", "t", "QP", "SIMPLE"));
+        assertThrows(IllegalArgumentException.class, () ->
+                repo.insertOrReadExisting(PREFIX + "X", " ", "x", "t", "QP", "SIMPLE"));
+        assertThrows(IllegalArgumentException.class, () ->
+                repo.insertOrReadExisting(PREFIX + "X", STRUCTURE_VERSION, null, "t", "QP", "SIMPLE"));
+        assertThrows(IllegalArgumentException.class, () ->
+                repo.insertOrReadExisting(PREFIX + "X", STRUCTURE_VERSION, "x", "t", "", "SIMPLE"));
     }
 }
