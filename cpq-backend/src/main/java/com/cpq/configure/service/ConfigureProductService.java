@@ -87,6 +87,19 @@ public class ConfigureProductService {
     @Inject
     EffectiveTemplateService effectiveTemplateService;
 
+    /**
+     * 选配 Plan 3b (T4): 销售侧客户维度发号 — 取代生产侧全局指纹发号
+     * (lookupHfByFingerprint + partNoProvider) 用于 custom SIMPLE 配件。
+     */
+    @Inject
+    com.cpq.basicdata.v6.service.QuoteMaterialNoAllocator quoteAllocator;
+
+    @Inject
+    SalesFingerprintCalculator salesFp;
+
+    @Inject
+    com.cpq.configure.service.SalesSignatureRepository sigRepo;
+
     // ───────────────────────────────────────────────────────────────────────
     // T19: lookup-fingerprint 端点
     // ───────────────────────────────────────────────────────────────────────
@@ -247,39 +260,48 @@ public class ConfigureProductService {
 
         validateCustomPart(pr);
 
-        List<ElementInput> elems = pr.elements.stream()
-            .map(e -> new ElementInput(e.elementCode, e.pct))
-            .collect(Collectors.toList());
-        // 料号身份 = 材质 + 元素（不含工序）：工序已改 per-quote(quotation_line_process)，
-        // 同材质+元素不同工序 = 同一料号。与 lookup-fingerprint(2参)一致，避免 P2 命中、提交却不复用。
-        String fp = fingerprintCalc.simpleFingerprint(pr.recipeCode, elems);
-
         // Phase 3 后：material_master 为指纹权威（V44 写入已停止，lookupHfByFingerprint 直接查 V6）
         com.cpq.configure.entity.MaterialRecipe recipe =
             com.cpq.configure.entity.MaterialRecipe.findByCodeOrThrow(pr.recipeCode);
-        String existing = lookupHfByFingerprint(fp);
-        String hfPartNo;
-        if (existing != null) {
-            reused.add(existing);
-            hfPartNo = existing;
-        } else {
-            // 未命中指纹 → 新建（V6 主写）
-            hfPartNo = partNoProvider.apply(
-                new PartNoContext(recipe.symbol, "SIMPLE", operatorId));
-            // 写 V6 unit_price 工序 — 需要 customerCode (NOT NULL)
-            if (pr.processIds != null && !pr.processIds.isEmpty()) {
-                if (customerCode == null || customerCode.isBlank()) {
-                    throw new IllegalArgumentException(
-                        "选配 custom 配件含 processIds 但 quotation 无 customerCode");
-                }
-                insertProcessSimpleUnitPriceV6(hfPartNo, pr.processIds, customerCode);
-            }
+
+        // 选配 Plan 3b (T4): 生产侧全局指纹发号 → 销售侧客户维度指纹发号 swap。
+        // R6: 报价料号内嵌客户四位码，无客户码 mintAndRegister 发不了号 — 强制非空。
+        if (customerCode == null || customerCode.isBlank()) {
+            throw new IllegalArgumentException(
+                "选配 custom 配件需要 customerCode（报价料号内嵌客户码），quotation 无客户不能发号");
         }
 
-        // V6 双写（AP-53 续 6 Phase 1）：无论新建/复用都确保 material_master + element_bom_item 有本料号，
-        // 让 composite_child_elements_mirror 视图渲染元素含量（渲染基线零改）。幂等 ON CONFLICT DO NOTHING —
-        // 复用的历史料号（V44-only）借此补齐 V6，否则渲染仍空。
-        insertMaterialMasterV6(hfPartNo, recipe.symbol, pr.unitWeightGrams, recipe.id, fp);
+        // 销售侧客户维度指纹判复用（取代生产侧全局指纹 lookupHfByFingerprint）
+        var sig = salesFp.computeSimple(salesCtx.customerNo, salesCtx.enabledParamsFor(pr));
+        String hit = sigRepo.lookup(salesCtx.customerNo, SalesFingerprintCalculator.STRUCTURE_VERSION, sig.hash());
+        if (hit != null) {
+            // R3: 命中复用 → 在任何落库之前 return（同客户同结构，数据首次已落，幂等不重复落库/累加）
+            reused.add(hit);
+            return hit;
+        }
+
+        // 未命中 → 铸报价料号
+        String hfPartNo = quoteAllocator.mintAndRegister(salesCtx.customerNo, salesCtx.yyMm);
+        // 登记销售指纹；并发败者 (ON CONFLICT DO NOTHING) 回读到先赢者号 → 弃己 mint 号(孤儿可接受)，
+        // 复用先赢号且跳过落库
+        String registered = sigRepo.insertOrReadExisting(
+            salesCtx.customerNo, SalesFingerprintCalculator.STRUCTURE_VERSION, sig.hash(), sig.text(),
+            hfPartNo, "SIMPLE");
+        if (!registered.equals(hfPartNo)) {
+            reused.add(registered);
+            return registered; // 并发败者：先赢者已落库，复用其号，跳过本次落库
+        }
+
+        // 先赢者：写 V6 unit_price 工序 — 需要 customerCode (NOT NULL，上方已校验非空)
+        if (pr.processIds != null && !pr.processIds.isEmpty()) {
+            insertProcessSimpleUnitPriceV6(hfPartNo, pr.processIds, customerCode);
+        }
+
+        // V6 双写（AP-53 续 6 Phase 1）：确保 material_master + element_bom_item 有本料号，
+        // 让 composite_child_elements_mirror 视图渲染元素含量（渲染基线零改）。幂等 ON CONFLICT DO NOTHING。
+        // R1: config_fingerprint 传 null — 客户维度发号后同一 material_master 可能被多个客户各自的
+        // 报价料号复用，若沿用生产侧全局指纹会撞 uq_material_master_fingerprint 全局唯一索引 → 500。
+        insertMaterialMasterV6(hfPartNo, recipe.symbol, pr.unitWeightGrams, recipe.id, null);
         insertElementBomV6(hfPartNo, customerCode, pr.elements);
         // [选配-材质] mirror(composite_child_materials_mirror)读 material_bom_item
         // (characteristic IS NULL + customer_no + 父料号)。自定义材质料号无 BOM 物料行 → 材质 Tab 空。
