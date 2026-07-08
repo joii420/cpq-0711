@@ -74,4 +74,48 @@ class SelTemplateResourceTest {
         Assertions.assertTrue(com.cpq.seltemplate.resource.SelTemplateResource.class
             .isAnnotationPresent(com.cpq.common.security.RoleAllowed.class));
     }
+
+    @Test @Order(5)
+    @DisplayName("T5: 候选端点冒烟 — MATERIAL/PROCESS 真实取数, ELEMENT 空, 未知类型 400")
+    void candidatesSmoke() {
+        given().when().get(PT + "/MATERIAL/candidates").then().statusCode(200)
+            .body("data", notNullValue())
+            .body("data.every { it.key != null && it.label != null }", equalTo(true));
+
+        given().when().get(PT + "/PROCESS/candidates").then().statusCode(200)
+            .body("data", notNullValue())
+            .body("data.every { it.key != null && it.label != null }", equalTo(true));
+
+        given().when().get(PT + "/ELEMENT/candidates").then().statusCode(200)
+            .body("data", hasSize(0));
+
+        given().when().get(PT + "/NOSUCH/candidates").then().statusCode(400);
+    }
+
+    @Test @Order(6)
+    @DisplayName("T6: delete 级联清 items/values, 不留孤儿")
+    void deleteCascade() {
+        String body = "{\"industryCode\":\"" + IND + "\",\"name\":\"待删模板\",\"items\":["
+            + "{\"paramTypeCode\":\"MATERIAL\",\"enabled\":true,\"allowedValues\":[\"304\"]},"
+            + "{\"paramTypeCode\":\"PROCESS\",\"enabled\":true,\"allowedValues\":[]}]}";
+        String id = given().contentType("application/json").body(body)
+            .when().post(TPL).then().statusCode(200)
+            .extract().path("data.id");
+
+        given().when().delete(TPL + "/" + id).then().statusCode(200);
+
+        given().when().get(TPL).then().statusCode(200)
+            .body("data.findAll { it.industryCode=='" + IND + "' }", hasSize(0));
+
+        Number itemCount = (Number) em.createNativeQuery(
+                "SELECT count(*) FROM sel_template_item WHERE template_id = '" + id + "'")
+            .getSingleResult();
+        Assertions.assertEquals(0L, itemCount.longValue());
+
+        Number valueCount = (Number) em.createNativeQuery(
+                "SELECT count(*) FROM sel_template_item_value v " +
+                "JOIN sel_template_item i ON v.item_id = i.id WHERE i.template_id = '" + id + "'")
+            .getSingleResult();
+        Assertions.assertEquals(0L, valueCount.longValue());
+    }
 }
