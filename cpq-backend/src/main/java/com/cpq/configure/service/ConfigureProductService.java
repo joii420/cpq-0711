@@ -2,26 +2,37 @@ package com.cpq.configure.service;
 
 import com.cpq.configure.FingerprintCalculator;
 import com.cpq.configure.FingerprintCalculator.ElementInput;
+import com.cpq.configure.SalesFingerprintCalculator;
+import com.cpq.configure.SalesFingerprintCalculator.ElementPct;
+import com.cpq.configure.SalesFingerprintCalculator.EnabledParam;
 import com.cpq.configure.dto.ConfigureProductRequest;
 import com.cpq.configure.dto.ConfigureProductResponse;
 import com.cpq.configure.dto.ElementOverride;
 import com.cpq.configure.dto.LookupFingerprintRequest;
 import com.cpq.configure.dto.LookupFingerprintResponse;
 import com.cpq.configure.dto.PartRequest;
+import com.cpq.configure.dto.SalesConfigContext;
 import com.cpq.basicdata.v6.versioning.VersionedGroupSpec;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import com.cpq.partno.PartNoContext;
 import com.cpq.partno.PartNoProvider;
+import com.cpq.seltemplate.dto.EffectiveTemplateDTO;
+import com.cpq.seltemplate.service.EffectiveTemplateService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 
 import java.math.BigDecimal;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -67,6 +78,14 @@ public class ConfigureProductService {
 
     @Inject
     VersionedV6Writer versionedWriter;
+
+    /**
+     * 选配 Plan 3b (T3): 有效模板解析服务 — buildSalesConfigContext 用于载入
+     * enabled 参数类型集 (PROCESS 是否作为槽位), 与 T2 SalesFingerprintCalculator 配合
+     * 组装客户维度指纹上下文。与生产侧发号逻辑互不影响 (T4/T5 消费, 本 Task 只装配)。
+     */
+    @Inject
+    EffectiveTemplateService effectiveTemplateService;
 
     // ───────────────────────────────────────────────────────────────────────
     // T19: lookup-fingerprint 端点
@@ -177,7 +196,8 @@ public class ConfigureProductService {
      * <p>注意: mat_part_version_log 基线行需要 customer_product_no (NOT NULL PK 成员),
      * configure 阶段不存在此信息，基线由 per-customer 数据导入流程 (V156/PartVersionService) 写入.
      */
-    String resolvePart(PartRequest pr, UUID operatorId, UUID customerId, String customerCode, List<String> reused) {
+    String resolvePart(PartRequest pr, UUID operatorId, UUID customerId, String customerCode,
+                        List<String> reused, SalesConfigContext salesCtx) {
         if ("existing".equals(pr.partMode)) {
             if (pr.existingHfPartNo == null || pr.existingHfPartNo.isBlank()) {
                 throw new IllegalArgumentException("existing 模式 existingHfPartNo 必填");
@@ -272,6 +292,96 @@ public class ConfigureProductService {
         // 基线由 PartVersionService / V156 在 per-customer 导入流程时写入
 
         return hfPartNo;
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // 选配 Plan 3b (T3): SalesConfigContext 装配 — 客户维度 EnabledParam 投影
+    // ───────────────────────────────────────────────────────────────────────
+
+    /**
+     * 在 configure 入口一次性组装销售侧客户维度上下文，供 T4/T5 消费。
+     *
+     * <p>customerCode 为空（quotation 未绑定客户）时跳过模板加载，enabledTypes 留空
+     * （PROCESS 槽位仅按各 part 自身 processIds 是否非空决定，不影响 MATERIAL/ELEMENT 恒定槽位）。
+     */
+    private SalesConfigContext buildSalesConfigContext(String customerCode, ConfigureProductRequest req) {
+        String yyMm = YearMonth.now().format(DateTimeFormatter.ofPattern("yyMM"));
+
+        Set<String> enabledTypes = new HashSet<>();
+        if (customerCode != null && !customerCode.isBlank()) {
+            EffectiveTemplateDTO eff = effectiveTemplateService.getEffective(customerCode);
+            for (EffectiveTemplateDTO.Param p : eff.params) {
+                enabledTypes.add(p.paramTypeCode);
+            }
+        }
+
+        Map<PartRequest, List<EnabledParam>> byPart = new IdentityHashMap<>();
+        if (req.parts != null) {
+            for (PartRequest pr : req.parts) {
+                // existing 模式不走销售指纹（复用既有料号，无需投影）；保留空 List。
+                if (!"custom".equals(pr.partMode)) {
+                    byPart.put(pr, List.of());
+                    continue;
+                }
+                byPart.put(pr, projectEnabledParams(pr, enabledTypes));
+            }
+        }
+
+        return new SalesConfigContext(customerCode, yyMm, SalesFingerprintCalculator.STRUCTURE_VERSION, byPart);
+    }
+
+    /**
+     * 按 PartRequest 投影出该配件的 EnabledParam 集 — 防坍缩核心。
+     *
+     * <p><b>防坍缩规则</b>: {@link EffectiveTemplateService#getEffective} 对无模板客户返回空
+     * params。若严格「仅 enabled 驱动槽位」，空集 → 指纹串仅 {@code v1|CUST=xxx|}
+     * → 该客户所有选配坍缩成同一报价料号。故:
+     * <ul>
+     *   <li><b>MATERIAL 恒为槽位</b>（防坍缩底线）— custom 模式强制有 recipeCode + elements，
+     *       天然非空底线，永不坍缩。</li>
+     *   <li><b>ELEMENT 恒为槽位</b>（防坍缩底线）— 同上。</li>
+     *   <li><b>PROCESS 属可选槽位</b> — 仅当模板 enabled 或用户实际选了工序时才进槽
+     *       （enabledTypes 含 PROCESS 或 pr.processIds 非空）。</li>
+     * </ul>
+     * 模板 enabled 集的完整用途（决定落库分发写哪些表）留给 3c。
+     */
+    private List<EnabledParam> projectEnabledParams(PartRequest pr, Set<String> enabledTypes) {
+        List<EnabledParam> out = new ArrayList<>();
+
+        // MATERIAL 恒为槽位
+        out.add(new EnabledParam("MATERIAL", pr.recipeCode, null, null));
+
+        // ELEMENT 恒为槽位
+        List<ElementPct> elementPcts = pr.elements == null ? List.of()
+            : pr.elements.stream()
+                .map(eo -> new ElementPct(eo.elementCode, eo.pct))
+                .collect(Collectors.toList());
+        out.add(new EnabledParam("ELEMENT", null, elementPcts, null));
+
+        // PROCESS 条件槽位
+        boolean hasProcessIds = pr.processIds != null && !pr.processIds.isEmpty();
+        if (enabledTypes.contains("PROCESS") || hasProcessIds) {
+            out.add(new EnabledParam("PROCESS", null, null, resolveProcessCodes(pr.processIds)));
+        }
+
+        return out;
+    }
+
+    /** processIds(UUID) → process.code 列表，与 {@link #insertProcessSimpleUnitPriceV6} 同查询口径。 */
+    @SuppressWarnings("unchecked")
+    private List<String> resolveProcessCodes(List<UUID> processIds) {
+        if (processIds == null || processIds.isEmpty()) return List.of();
+        List<String> codes = new ArrayList<>();
+        for (UUID processId : processIds) {
+            List<Object> rows = em.createNativeQuery(
+                    "SELECT code FROM process WHERE id = :id")
+                .setParameter("id", processId).getResultList();
+            if (rows.isEmpty() || rows.get(0) == null) {
+                throw new IllegalArgumentException("工艺不存在: " + processId);
+            }
+            codes.add(rows.get(0).toString());
+        }
+        return codes;
     }
 
     void validateCustomPart(PartRequest pr) {
@@ -779,12 +889,17 @@ public class ConfigureProductService {
         // V6 (AP-53 续 6 Phase 1): V6 BOM 表 customer_no 用 customer.code（非 UUID），派生一次贯穿落库
         String customerCode = getCustomerCodeFromCustomerId(customerId);
 
+        // 选配 Plan 3b (T3): 客户维度销售上下文 — 每 part 的 EnabledParam 投影，
+        // 供 T4/T5 计算 SalesFingerprintCalculator.computeSimple/computeComposite 消费。
+        // 本 Task 仅装配, resolvePart body 暂不消费 salesCtx。
+        SalesConfigContext salesCtx = buildSalesConfigContext(customerCode, req);
+
         List<String> childHfPartNos = new ArrayList<>();
         List<String> reused = new ArrayList<>();
 
         // PASS 1: 解析每个配件
         for (PartRequest pr : req.parts) {
-            childHfPartNos.add(resolvePart(pr, operatorId, customerId, customerCode, reused));
+            childHfPartNos.add(resolvePart(pr, operatorId, customerId, customerCode, reused, salesCtx));
         }
 
         // PASS 2: 组合产品父级
