@@ -106,6 +106,21 @@ public class ConfigureProductService {
 
     /**
      * 抽屉 P2 完成时调用 — 算指纹查 DB, 命中则返回已有料号 + 快照,未命中返回 matched=false.
+     *
+     * <p><b>选配 Plan 3b (T6) 端点处置决策 = 方案 (b) 过渡</b>（集成设计 §4.3）：
+     * 本端点仍查生产侧全局指纹 {@code material_master.config_fingerprint}
+     * （见 {@link #lookupHfByFingerprint}）。3b 后选配 custom/COMPOSITE 落库的
+     * {@code config_fingerprint} 一律为 NULL（R1，客户维度报价料号不进生产侧全局去重），
+     * 故本端点对<b>新选配报价料号恒返 matched=false</b>，只可能命中历史 CFG- 料号。
+     *
+     * <p>影响可接受：P2 仅失去「实时复用提示」，真正的客户维度去重在提交时
+     * （{@code configure → resolvePart} 的销售指纹 {@code sel_part_signature} lookup）仍生效，
+     * 同客户同选配提交时会命中复用同一报价料号、不重复落库。
+     *
+     * <p>TODO(3a)：若要恢复 P2 实时「客户维度复用提示」，需前端 P2 在
+     * {@link LookupFingerprintRequest} 携带 customerNo，本端点改查
+     * {@code SalesSignatureRepository.lookup(customerNo, "v1", 销售指纹)}
+     * （与提交时去重同源）。当前 3b 为后端专属、未改前端请求契约，故先 (b) 过渡。
      */
     public LookupFingerprintResponse lookupFingerprint(LookupFingerprintRequest req) {
         if (req == null || req.productType == null) {
