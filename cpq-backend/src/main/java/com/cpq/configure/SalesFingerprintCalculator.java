@@ -9,6 +9,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * 选配 Plan 3b — 销售侧客户维度指纹计算器 (T2).
@@ -23,7 +24,7 @@ import java.util.stream.Collectors;
  *
  * <p>独立产品(SIMPLE): sha256("v1|CUST=custNo|ELE=...|MAT=...|PRC=...")
  * (token 按 paramTypeCode 升序排列)
- * <p>组合产品(COMPOSITE): sha256("v1|CUST=custNo|COMBO=childQuotePartNo_sorted")
+ * <p>组合产品(COMPOSITE): sha256("v1|CUST=custNo|COMBO=childQuotePartNo:qty_sorted|CPROC=defCode_sorted")
  *
  * <p><b>不变量</b>: 入参码值（customerNo/materialCode/elementCode/processCode/childQuotePartNo）
  * 不得含分隔符 {@code | = , : ∅}，否则抛 IllegalArgumentException（fail-fast 防规范串碰撞——
@@ -90,14 +91,19 @@ public class SalesFingerprintCalculator {
     /**
      * 计算组合产品(COMPOSITE)的客户维度指纹.
      *
-     * <p>组合工艺维度暂不纳入指纹（§2.7 待定，本 Task 不做）.
-     * TODO(sel-plan3): 组合产品的独立工艺参数（如整机装配工序）如需纳入客户维度指纹，
-     * 需在此追加 PRC= 类似的排序 token，当前先与子件指纹一致地仅按子件报价料号聚合。
+     * <p>纳入子件装配用量(childQtys)与组合工艺(compositeProcessCodes)两个维度：同客户、同子件集，
+     * 但装配用量或组合工序不同即视为不同产品，须产生不同指纹 —— 否则命中复用会在父级落库前
+     * 短路跳过，静默丢弃新 qty/工序（见 T5 code review Important #1：错价风险）。
      *
-     * @param customerNo         客户编号，不可空白
-     * @param childQuotePartNos  子件报价料号集合，不可空（顺序无关）
+     * @param customerNo             客户编号，不可空白
+     * @param childQuotePartNos      子件报价料号集合，不可空（顺序无关）
+     * @param childQtys              与 childQuotePartNos 平行、同下标的装配数量；元素为 null 或 &lt;1
+     *                                兜底为 1；本参数整体为 null，或长度短于 childQuotePartNos 时，
+     *                                缺失下标同样兜底为 1（容错，不抛异常）
+     * @param compositeProcessCodes  组合工艺 defCode 集合（无序）；null/空 → CPROC=∅
      */
-    public Signature computeComposite(String customerNo, List<String> childQuotePartNos) {
+    public Signature computeComposite(String customerNo, List<String> childQuotePartNos,
+                                       List<Integer> childQtys, List<String> compositeProcessCodes) {
         if (customerNo == null || customerNo.isBlank()) {
             throw new IllegalArgumentException("computeComposite: customerNo 不能为空");
         }
@@ -107,8 +113,26 @@ public class SalesFingerprintCalculator {
         assertNoDelimiter(customerNo, "customerNo");
         childQuotePartNos.forEach(p -> assertNoDelimiter(p, "childQuotePartNo"));
 
-        String sorted = childQuotePartNos.stream().sorted().collect(Collectors.joining(","));
-        String text = STRUCTURE_VERSION + "|CUST=" + customerNo + "|COMBO=" + sorted;
+        String sortedPairs = IntStream.range(0, childQuotePartNos.size())
+            .mapToObj(i -> {
+                String partNo = childQuotePartNos.get(i);
+                Integer qty = (childQtys != null && i < childQtys.size()) ? childQtys.get(i) : null;
+                int safeQty = (qty == null || qty < 1) ? 1 : qty;
+                return partNo + ":" + safeQty;
+            })
+            .sorted()
+            .collect(Collectors.joining(","));
+
+        String cprocToken;
+        if (compositeProcessCodes == null || compositeProcessCodes.isEmpty()) {
+            cprocToken = SENTINEL_EMPTY;
+        } else {
+            compositeProcessCodes.forEach(c -> assertNoDelimiter(c, "compositeProcessCode"));
+            cprocToken = compositeProcessCodes.stream().sorted().collect(Collectors.joining(","));
+        }
+
+        String text = STRUCTURE_VERSION + "|CUST=" + customerNo + "|COMBO=" + sortedPairs
+            + "|CPROC=" + cprocToken;
         return new Signature(sha256(text), text);
     }
 

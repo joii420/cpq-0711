@@ -957,9 +957,16 @@ public class ConfigureProductService {
                     "选配 COMPOSITE 组合体需要 customerCode（报价料号内嵌客户码），quotation 无客户不能发号");
             }
 
-            // 销售侧客户维度组合体指纹（childQuotePartNos 排序集合 + customerCode），取代生产侧
-            // compositeFingerprint 全局复用。
-            var sig = salesFp.computeComposite(salesCtx.customerNo, childHfPartNos);
+            // 销售侧客户维度组合体指纹（childQuotePartNos + childQtys 配对排序集合 + compositeProcessCodes
+            // + customerCode），取代生产侧 compositeFingerprint 全局复用。
+            // code review Important #1: 指纹必须纳入装配用量与组合工艺，否则同客户同子件集但 qty/工序
+            // 不同会误命中复用 → 命中即跳过父级落库 → 静默丢弃新 qty/工序 → 错价。
+            List<Integer> childQtys = req.parts.stream()
+                .map(pr -> (pr.quantity == null || pr.quantity < 1) ? 1 : pr.quantity)
+                .collect(Collectors.toList());
+            List<String> compositeProcessCodes = req.compositeProcesses == null ? List.of()
+                : req.compositeProcesses.stream().map(cp -> cp.defCode).collect(Collectors.toList());
+            var sig = salesFp.computeComposite(salesCtx.customerNo, childHfPartNos, childQtys, compositeProcessCodes);
             String hit = sigRepo.lookup(salesCtx.customerNo, SalesFingerprintCalculator.STRUCTURE_VERSION, sig.hash());
             if (hit != null) {
                 // R3: 命中复用父级 → 整体跳过父级落库（数据首次已落，幂等，勿重复累加，守 AP-51）
@@ -978,20 +985,17 @@ public class ConfigureProductService {
                         "sel_part_signature 冲突但回读为空(COMPOSITE): fp=" + sig.hash());
                 }
                 if (!registered.equals(parentHfPartNo)) {
-                    // 并发败者：先赢者已落父级 V6，复用其父号，跳过本次落库
+                    // 并发败者：先赢者已落父级 V6，复用其父号，弃己 mint 号(孤儿可接受)，跳过本次落库
                     reused.add(registered);
                     parentHfPartNo = registered;
                 } else {
                     // 先赢者：落父级 V6（R1: config_fingerprint=null，防跨客户撞全局唯一索引）+ 组合
-                    // BOM + 工序 + 组合工艺。
+                    // BOM + 工序 + 组合工艺。childQtys/compositeProcessCodes 已在上方指纹计算前算好，直接复用。
                     // V6 双写（AP-53 续 6 Phase 1）：确保父料号 + 子件 ASSEMBLY → material_master /
                     // material_bom_item，让 zcj_bom / composite_child_materials_mirror 视图渲染子配件
                     // 清单（渲染基线零改）。幂等 ON CONFLICT（material_master DO NOTHING /
                     // material_bom_item DO UPDATE composition_qty）。
                     insertMaterialMasterV6(parentHfPartNo, "COMPOSITE", null, null, null); // R1
-                    List<Integer> childQtys = req.parts.stream()
-                        .map(pr -> (pr.quantity == null || pr.quantity < 1) ? 1 : pr.quantity)
-                        .collect(Collectors.toList());
                     // V6 落库 Phase 2（选配 COMBO 补全，设计 §6 / 用户方案 B1/B2/B3）：统一走
                     // VersionedV6Writer（内容相同复用 / 不同 max+1 升版 / is_current 翻转）。
                     writeCombomaterialBomV6(parentHfPartNo, customerCode, childHfPartNos, childQtys);

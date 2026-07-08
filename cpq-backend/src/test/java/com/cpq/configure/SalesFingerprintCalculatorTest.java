@@ -114,10 +114,60 @@ class SalesFingerprintCalculatorTest {
 
     @Test
     void compositeOrderInsensitive() {
-        Signature sigAB = calculator.computeComposite("CUST-001", List.of("A", "B"));
-        Signature sigBA = calculator.computeComposite("CUST-001", List.of("B", "A"));
+        // 相同子件集 + 相同(按 partNo 对应)qty，仅入参顺序不同 → 同指纹
+        Signature sigAB = calculator.computeComposite("CUST-001", List.of("A", "B"), List.of(1, 2), null);
+        Signature sigBA = calculator.computeComposite("CUST-001", List.of("B", "A"), List.of(2, 1), null);
 
         assertEquals(sigAB.hash(), sigBA.hash());
+    }
+
+    @Test
+    void compositeDifferentChildQtysProduceDifferentHash() {
+        Signature sigQty11 = calculator.computeComposite("CUST-001", List.of("A", "B"), List.of(1, 1), null);
+        Signature sigQty21 = calculator.computeComposite("CUST-001", List.of("A", "B"), List.of(2, 1), null);
+
+        assertNotEquals(sigQty11.hash(), sigQty21.hash(),
+            "同子件集不同装配用量必须产生不同指纹，否则命中复用会静默丢弃新 qty → 错价");
+    }
+
+    @Test
+    void compositeNullOrMissingQtyDefaultsToOne() {
+        // childQtys=null 整体缺省，与显式全 1 应产生相同指纹
+        Signature sigNull = calculator.computeComposite("CUST-001", List.of("A", "B"), null, null);
+        Signature sigExplicitOnes = calculator.computeComposite("CUST-001", List.of("A", "B"), List.of(1, 1), null);
+        assertEquals(sigNull.hash(), sigExplicitOnes.hash());
+
+        // childQtys 长度短于 childQuotePartNos，缺失下标兜底为 1
+        Signature sigShort = calculator.computeComposite("CUST-001", List.of("A", "B"), List.of(1), null);
+        assertEquals(sigExplicitOnes.hash(), sigShort.hash());
+    }
+
+    @Test
+    void compositeDifferentProcessCodesProduceDifferentHash() {
+        Signature sigNoProc = calculator.computeComposite("CUST-001", List.of("A", "B"), List.of(1, 1), null);
+        Signature sigRivet = calculator.computeComposite("CUST-001", List.of("A", "B"), List.of(1, 1), List.of("RIVET"));
+
+        assertNotEquals(sigNoProc.hash(), sigRivet.hash(),
+            "同子件同 qty 不同组合工艺必须产生不同指纹，否则命中复用会静默丢弃新工序 → 错价");
+    }
+
+    @Test
+    void compositeProcessCodesOrderInsensitive() {
+        Signature sigAB = calculator.computeComposite("CUST-001", List.of("A", "B"), List.of(1, 1),
+            List.of("RIVET", "WELD"));
+        Signature sigBA = calculator.computeComposite("CUST-001", List.of("A", "B"), List.of(1, 1),
+            List.of("WELD", "RIVET"));
+
+        assertEquals(sigAB.hash(), sigBA.hash());
+    }
+
+    @Test
+    void compositeEmptyProcessCodesRendersSentinel() {
+        Signature sigNull = calculator.computeComposite("CUST-001", List.of("A", "B"), List.of(1, 1), null);
+        Signature sigEmpty = calculator.computeComposite("CUST-001", List.of("A", "B"), List.of(1, 1), List.of());
+
+        assertTrue(sigNull.text().contains("CPROC=∅"), "无组合工艺应含显式空哨兵 CPROC=∅, 实际: " + sigNull.text());
+        assertEquals(sigNull.hash(), sigEmpty.hash(), "null 与空列表语义相同，均应渲染 CPROC=∅");
     }
 
     @Test
@@ -136,10 +186,10 @@ class SalesFingerprintCalculatorTest {
 
     @Test
     void computeCompositeRejectsEmptyOrNullChildren() {
-        assertThrows(IllegalArgumentException.class, () -> calculator.computeComposite("CUST-001", null));
-        assertThrows(IllegalArgumentException.class, () -> calculator.computeComposite("CUST-001", List.of()));
-        assertThrows(IllegalArgumentException.class, () -> calculator.computeComposite(null, List.of("A")));
-        assertThrows(IllegalArgumentException.class, () -> calculator.computeComposite("", List.of("A")));
+        assertThrows(IllegalArgumentException.class, () -> calculator.computeComposite("CUST-001", null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> calculator.computeComposite("CUST-001", List.of(), null, null));
+        assertThrows(IllegalArgumentException.class, () -> calculator.computeComposite(null, List.of("A"), null, null));
+        assertThrows(IllegalArgumentException.class, () -> calculator.computeComposite("", List.of("A"), null, null));
     }
 
     @Test
@@ -290,12 +340,18 @@ class SalesFingerprintCalculatorTest {
     @Test
     void childQuotePartNoContainingCommaRejected() {
         assertThrows(IllegalArgumentException.class,
-            () -> calculator.computeComposite("CUST-001", List.of("A,B", "C")));
+            () -> calculator.computeComposite("CUST-001", List.of("A,B", "C"), null, null));
     }
 
     @Test
     void compositeCustomerNoContainingDelimiterRejected() {
         assertThrows(IllegalArgumentException.class,
-            () -> calculator.computeComposite("CUST=001", List.of("A", "B")));
+            () -> calculator.computeComposite("CUST=001", List.of("A", "B"), null, null));
+    }
+
+    @Test
+    void compositeProcessCodeContainingDelimiterRejected() {
+        assertThrows(IllegalArgumentException.class,
+            () -> calculator.computeComposite("CUST-001", List.of("A", "B"), null, List.of("RIVET,X")));
     }
 }
