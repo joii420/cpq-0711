@@ -18,10 +18,20 @@ import java.util.UUID;
 @RoleAllowed({"PRICING_MANAGER", "SALES_MANAGER", "SYSTEM_ADMIN"})
 public class SelTemplateResource {
     @Inject SelTemplateService templateService;
+    @Inject com.cpq.seltemplate.service.EffectiveTemplateService effectiveTemplateService;
 
     @GET
     public ApiResponse<List<SelTemplateDTO>> list() {
         return ApiResponse.success(templateService.list());
+    }
+
+    @GET
+    @Path("/effective")
+    public ApiResponse<com.cpq.seltemplate.dto.EffectiveTemplateDTO> effective(
+            @QueryParam("customerNo") String customerNo) {
+        if (customerNo == null || customerNo.isBlank())
+            throw new com.cpq.common.exception.BusinessException("customerNo 不能为空");
+        return ApiResponse.success(effectiveTemplateService.getEffective(customerNo));
     }
 
     @GET
