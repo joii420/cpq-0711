@@ -101,12 +101,10 @@ const IndustryManagement: React.FC = () => {
       confirmTitle: '确认删除选中的 {N} 个行业？',
       confirmDescription: '⚠️ 已被客户引用的行业将删除失败（引用完整性保护）。',
       onClick: async (sel) => {
-        const { failed } = await runBatch(sel, (r) => industryService.delete(r.id), {
+        // runBatch 已在内部按结果分支弹 toast(全成功→message.success；有失败→message.error 列出明细)，此处不再重复弹
+        await runBatch(sel, (r) => industryService.delete(r.id), {
           rowLabel: (r) => `${r.code} ${r.name}`,
         });
-        if (failed.length) {
-          message.error(`${failed.length} 个删除失败（可能被客户引用）`);
-        }
         fetchData();
       },
     },
