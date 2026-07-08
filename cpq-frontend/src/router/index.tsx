@@ -11,6 +11,7 @@ import UserManagement from '../pages/system/UserManagement';
 import RegionManagement from '../pages/system/RegionManagement';
 import DepartmentManagement from '../pages/system/DepartmentManagement';
 import CustomerManagement from '../pages/customer/CustomerManagement';
+import IndustryManagement from '../pages/customer/IndustryManagement';
 import ProductManagement from '../pages/product/ProductManagement';
 import ProcessSelectionWrapper from '../pages/product/ProcessSelectionWrapper';
 import DataSourceList from '../pages/datasource/DataSourceList';
@@ -86,6 +87,7 @@ const router = createBrowserRouter([
       { path: 'system/notifications', element: <NotificationList /> },
       { path: 'system/operation-logs', element: <OperationLogList /> },
       { path: 'customers', element: <CustomerManagement /> },
+      { path: 'customers/industries', element: <IndustryManagement /> },
       { path: 'products', element: <ProductManagement /> },
       { path: 'products/:productId/processes', element: <ProcessSelectionWrapper /> },
       { path: 'datasources', element: <DataSourceList /> },
