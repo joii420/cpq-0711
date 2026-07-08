@@ -280,6 +280,11 @@ public class ConfigureProductService {
             return hit;
         }
 
+        // ⚠️ 不变量：mintAndRegister + insertOrReadExisting + 下方 V6 落库必须同处 configure 的
+        // 同一事务（REQUIRED，勿改 REQUIRES_NEW）——保证「签名可见 ⇔ V6 数据可见」，否则并发败者
+        // 复用先赢号时先赢 V6 未提交 → Tab 静默空。
+        // 并发同客户同选配时，败者会在此 INSERT 阻塞到先赢者 configure 事务提交
+        // （quoting 单人操作场景并发低，可接受）。
         // 未命中 → 铸报价料号
         String hfPartNo = quoteAllocator.mintAndRegister(salesCtx.customerNo, salesCtx.yyMm);
         // 登记销售指纹；并发败者 (ON CONFLICT DO NOTHING) 回读到先赢者号 → 弃己 mint 号(孤儿可接受)，
@@ -287,6 +292,12 @@ public class ConfigureProductService {
         String registered = sigRepo.insertOrReadExisting(
             salesCtx.customerNo, SalesFingerprintCalculator.STRUCTURE_VERSION, sig.hash(), sig.text(),
             hfPartNo, "SIMPLE");
+        if (registered == null) {
+            // 理论上不可达：sel_part_signature 无删除 + 回读键 (customer_no, structure_version,
+            // config_fingerprint) 精确命中先赢行；出现即代表不变量被破坏，fail-fast 而非 NPE。
+            throw new IllegalStateException(
+                "sel_part_signature 冲突但回读为空: fp=" + sig.hash());
+        }
         if (!registered.equals(hfPartNo)) {
             reused.add(registered);
             return registered; // 并发败者：先赢者已落库，复用其号，跳过本次落库
@@ -922,8 +933,9 @@ public class ConfigureProductService {
         String customerCode = getCustomerCodeFromCustomerId(customerId);
 
         // 选配 Plan 3b (T3): 客户维度销售上下文 — 每 part 的 EnabledParam 投影，
-        // 供 T4/T5 计算 SalesFingerprintCalculator.computeSimple/computeComposite 消费。
-        // 本 Task 仅装配, resolvePart body 暂不消费 salesCtx。
+        // 供 SalesFingerprintCalculator.computeSimple/computeComposite 计算客户维度指纹。
+        // T4 起 resolvePart(SIMPLE custom 分支) 已消费 salesCtx 做销售侧发号判复用；
+        // COMPOSITE 分支消费为 T5 范围。
         SalesConfigContext salesCtx = buildSalesConfigContext(customerCode, req);
 
         List<String> childHfPartNos = new ArrayList<>();

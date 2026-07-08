@@ -41,6 +41,9 @@ public class SalesSignatureRepository {
      *
      * 注意：败者回读依赖 READ COMMITTED 隔离级别 —— 胜者的 INSERT 提交后，败者事务内的
      * 后续查询才能读到胜者写入的行；PostgreSQL 默认隔离级别即为 READ COMMITTED。
+     *
+     * <p><b>事务不变量</b>：本方法须以 REQUIRED（默认）加入调用方（configure）事务，使签名
+     * INSERT 与调用方的业务落库原子提交；勿改 REQUIRES_NEW，否则回读到的号可能指向尚未提交的数据。
      */
     @Transactional
     public String insertOrReadExisting(String customerNo, String structureVersion, String fp, String text,
