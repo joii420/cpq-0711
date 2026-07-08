@@ -7,6 +7,8 @@ import com.cpq.industry.dto.IndustryDTO;
 import com.cpq.industry.dto.IndustryRequest;
 import com.cpq.industry.entity.Industry;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 
 import java.util.HashMap;
@@ -17,6 +19,9 @@ import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class IndustryService {
+
+    @Inject
+    EntityManager em;
 
     public PageResult<IndustryDTO> list(int page, int size, String status, String keyword) {
         page = Pagination.clampPage(page);
@@ -78,8 +83,15 @@ public class IndustryService {
     public void delete(UUID id) {
         Industry e = Industry.findById(id);
         if (e == null) return;
-        // 有客户引用则禁止删除（引用完整性，行业码存于 customer.industry_code）
-        long refs = com.cpq.customer.entity.Customer.count("industry_code = ?1", e.code);
+        // 有客户引用则禁止删除（引用完整性，行业码存于 customer.industry_code 列）。
+        // 注意：Customer 实体尚无 industryCode 属性（由 Plan1 Task9 补），故不能走 Panache
+        // JPQL（"industry_code = ?1" 按实体属性名解析会抛 SemanticException）——改用 native SQL
+        // 按数据库列直接计数，V312 迁移已建好该列，立即可用；风格对齐现役
+        // CustomerService#checkNoActiveQuotations 的跨表 native 检查。
+        long refs = ((Number) em.createNativeQuery(
+                "SELECT count(*) FROM customer WHERE industry_code = :c")
+                .setParameter("c", e.code)
+                .getSingleResult()).longValue();
         if (refs > 0) throw new BusinessException("该行业已被 " + refs + " 个客户引用，不能删除");
         e.delete();
     }

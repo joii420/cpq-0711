@@ -24,6 +24,7 @@ class IndustryResourceTest {
     void cleanup() throws Exception {
         utx.begin();
         em.joinTransaction();
+        em.createNativeQuery("DELETE FROM customer WHERE code LIKE 'TEST-IND-%'").executeUpdate();
         em.createNativeQuery("DELETE FROM industry WHERE code LIKE 'TEST-IND-%'").executeUpdate();
         utx.commit();
     }
@@ -76,5 +77,46 @@ class IndustryResourceTest {
             com.cpq.industry.resource.IndustryResource.class
                 .isAnnotationPresent(com.cpq.common.security.RoleAllowed.class),
             "IndustryResource 必须有 @RoleAllowed");
+    }
+
+    @Test
+    @Order(5)
+    @DisplayName("T5: delete 未被引用的行业 → 200，且不再出现在 listActive 里")
+    void deleteUnreferenced() {
+        String id = given().contentType("application/json")
+            .body("{\"code\":\"" + TEST_CODE + "\",\"name\":\"待删除行业\"}")
+        .when().post(BASE)
+        .then().statusCode(200)
+            .extract().path("data.id");
+
+        given().when().delete(BASE + "/" + id)
+        .then().statusCode(200);
+
+        given().when().get(BASE + "/active")
+        .then().statusCode(200)
+            .body("data.code", not(hasItem(TEST_CODE)));
+    }
+
+    @Test
+    @Order(6)
+    @DisplayName("T6: delete 被客户引用的行业 → 业务错误")
+    void deleteReferencedByCustomer() throws Exception {
+        String id = given().contentType("application/json")
+            .body("{\"code\":\"" + TEST_CODE + "\",\"name\":\"被引用行业\"}")
+        .when().post(BASE)
+        .then().statusCode(200)
+            .extract().path("data.id");
+
+        utx.begin();
+        em.joinTransaction();
+        em.createNativeQuery(
+            "INSERT INTO customer(id, name, code, level, accumulated_amount, status, industry_code) " +
+            "VALUES (gen_random_uuid(), 'TEST-IND-客户', 'TEST-IND-CUST-01', 'STANDARD', 0, 'ACTIVE', :ic)")
+            .setParameter("ic", TEST_CODE)
+            .executeUpdate();
+        utx.commit();
+
+        given().when().delete(BASE + "/" + id)
+        .then().statusCode(400);
     }
 }
