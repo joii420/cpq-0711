@@ -90,6 +90,7 @@ const allMenuItems: MenuItem[] = [
     children: [
       { key: '/components', label: '组件管理', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
       { key: '/templates', label: '模板管理', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
+      { key: '/config/sel-templates', label: '选配模板管理', roles: ['PRICING_MANAGER', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
     ],
   },
   { key: '/master-data-hub', icon: <DatabaseOutlined />, label: '主数据维护', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
