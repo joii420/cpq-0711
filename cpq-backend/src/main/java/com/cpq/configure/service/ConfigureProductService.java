@@ -352,9 +352,19 @@ public class ConfigureProductService {
         out.add(new EnabledParam("MATERIAL", pr.recipeCode, null, null));
 
         // ELEMENT 恒为槽位
+        // fail-fast 守卫: buildSalesConfigContext 跑在 validateCustomPart 之前, 脏 elements
+        // (null 项 / elementCode 空) 若静默透传会在下游 sorted/assertNoDelimiter 裸 NPE → 500。
+        // 与 SalesFingerprintCalculator 分隔符校验同风格: 脏数据 fail-fast 暴露成干净 400，不静默 filter。
+        // pct 允许为 null（T2 normalize 已兜底 null→0）。
         List<ElementPct> elementPcts = pr.elements == null ? List.of()
             : pr.elements.stream()
-                .map(eo -> new ElementPct(eo.elementCode, eo.pct))
+                .map(eo -> {
+                    if (eo == null || eo.elementCode == null || eo.elementCode.isBlank()) {
+                        throw new IllegalArgumentException(
+                            "custom 配件元素项非法(null 或 elementCode 空): recipeCode=" + pr.recipeCode);
+                    }
+                    return new ElementPct(eo.elementCode, eo.pct);
+                })
                 .collect(Collectors.toList());
         out.add(new EnabledParam("ELEMENT", null, elementPcts, null));
 
