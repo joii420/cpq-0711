@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { Card, Tag, Button, Space, message } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import React, { useEffect, useRef, useState } from 'react';
+import { Card, Tag, Button, Space, Input, message } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import SelectableTable, { runBatch } from '../../components/SelectableTable';
 import type { ToolbarAction } from '../../components/SelectableTable';
 import {
@@ -9,7 +10,7 @@ import {
   type MaterialRecipeDetail,
 } from '../../services/materialRecipeService';
 import MaterialRecipeEditDrawer from './MaterialRecipeEditDrawer';
-import MaterialRecipeSuggestDrawer from './MaterialRecipeSuggestDrawer';
+import MaterialImportDrawer from './MaterialImportDrawer';
 
 const recipeTypeTag: Record<string, { label: string; color: string }> = {
   locked:   { label: '标准锁定', color: 'red' },
@@ -17,17 +18,23 @@ const recipeTypeTag: Record<string, { label: string; color: string }> = {
   partial:  { label: '部分可调', color: 'orange' },
 };
 
+/** 时间格式化 YYYY-MM-DD HH:mm；空值回退 '—' */
+const fmtTime = (v?: string) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '—');
+
 const MaterialRecipeManagement: React.FC = () => {
   const [list, setList] = useState<MaterialRecipeLite[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingDetail, setEditingDetail] = useState<MaterialRecipeDetail | null>(null);
-  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [keyword, setKeyword] = useState('');
+  const debounceRef = useRef<number | undefined>(undefined);
 
-  const refresh = async () => {
+  // 列表顺序由后端定(启用优先→改时倒序→建时倒序)，前端不再本地 sort。
+  const refresh = async (kw?: string) => {
     setLoading(true);
     try {
-      const data = await materialRecipeService.list({ withCount: true });
+      const data = await materialRecipeService.list(kw ? { keyword: kw } : undefined);
       setList(data);
     } catch (e: any) {
       message.error(e?.message ?? '加载失败');
@@ -37,6 +44,14 @@ const MaterialRecipeManagement: React.FC = () => {
   };
 
   useEffect(() => { refresh(); }, []);
+
+  // 搜索框输入防抖 ~300ms → refresh(keyword)；清空拉全量
+  const onKeywordChange = (v: string) => {
+    setKeyword(v);
+    window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(() => refresh(v.trim() || undefined), 300);
+  };
+  useEffect(() => () => window.clearTimeout(debounceRef.current), []);
 
   const openCreate = () => {
     setEditingDetail(null);
@@ -55,7 +70,7 @@ const MaterialRecipeManagement: React.FC = () => {
 
   const columns = [
     {
-      title: '代号',
+      title: '材质编号',
       dataIndex: 'code',
       key: 'code',
       width: 120,
@@ -63,9 +78,7 @@ const MaterialRecipeManagement: React.FC = () => {
         <a onClick={(e) => { e.stopPropagation(); openEdit(r.id); }}>{v}</a>
       ),
     },
-    { title: '化学式', dataIndex: 'symbol', key: 'symbol', width: 100 },
-    { title: '名称', dataIndex: 'name', key: 'name' },
-    { title: '配比', dataIndex: 'specLabel', key: 'specLabel', width: 100 },
+    { title: '材质名称', dataIndex: 'symbol', key: 'symbol', width: 140 },
     {
       title: '类型',
       dataIndex: 'recipeType',
@@ -85,18 +98,18 @@ const MaterialRecipeManagement: React.FC = () => {
       ),
     },
     {
-      title: '绑定料号数',
-      dataIndex: 'boundPartsCount',
-      key: 'boundPartsCount',
-      width: 110,
-      render: (n: number | undefined, r: MaterialRecipeLite) => {
-        const v = n ?? 0;
-        return (
-          <a onClick={(e) => { e.stopPropagation(); openEdit(r.id); }}>
-            <Tag color={v > 0 ? 'blue' : 'default'}>{v} 个</Tag>
-          </a>
-        );
-      },
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      width: 150,
+      render: (v?: string) => fmtTime(v),
+    },
+    {
+      title: '修改时间',
+      dataIndex: 'updatedAt',
+      key: 'updatedAt',
+      width: 150,
+      render: (v?: string) => fmtTime(v),
     },
     { title: '排序', dataIndex: 'sortOrder', key: 'sortOrder', width: 80 },
   ];
@@ -126,7 +139,7 @@ const MaterialRecipeManagement: React.FC = () => {
         await runBatch(
           rows,
           (r) => materialRecipeService.deleteSoft(r.id).then(() => undefined),
-          { rowLabel: (r) => `${r.code} ${r.name}`, successMsg: `已停用 ${rows.length} 项` },
+          { rowLabel: (r) => `${r.code} ${r.symbol}`, successMsg: `已停用 ${rows.length} 项` },
         );
         refresh();
       },
@@ -138,8 +151,16 @@ const MaterialRecipeManagement: React.FC = () => {
       title="材质管理"
       extra={
         <Space>
-          <Button icon={<ThunderboltOutlined />} onClick={() => setSuggestOpen(true)}>
-            未绑料号 - 智能建议
+          <Input.Search
+            placeholder="搜索 材质编号 / 材质名称 / 元素"
+            allowClear
+            style={{ width: 260 }}
+            value={keyword}
+            onChange={(e) => onKeywordChange(e.target.value)}
+            onSearch={(v) => refresh(v.trim() || undefined)}
+          />
+          <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
+            导入材质库
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
             新建材质
@@ -154,7 +175,7 @@ const MaterialRecipeManagement: React.FC = () => {
         loading={loading}
         pagination={false}
         actions={actions}
-        rowLabel={(r) => `${r.code} ${r.name}`}
+        rowLabel={(r) => `${r.code} ${r.symbol}`}
       />
       <MaterialRecipeEditDrawer
         open={drawerOpen}
@@ -163,10 +184,10 @@ const MaterialRecipeManagement: React.FC = () => {
         onSaved={() => { setDrawerOpen(false); refresh(); }}
         onPartsChanged={refresh}
       />
-      <MaterialRecipeSuggestDrawer
-        open={suggestOpen}
-        onClose={() => setSuggestOpen(false)}
-        onConfirmed={() => { setSuggestOpen(false); refresh(); }}
+      <MaterialImportDrawer
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => { setImportOpen(false); refresh(); }}
       />
     </Card>
   );
