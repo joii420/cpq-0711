@@ -1,6 +1,12 @@
 # 报价系统基础数据 Excel 导入落库方案
 
-> 版本：V3.3 | 日期：2026-06-18
+> 版本：V3.4 | 日期：2026-07-08
+>
+> **V3.4（2026-07-08）· 销售料号主料号口径 + 材质料号**：报价 V3 各 Sheet 主料号列统一为 **`销售料号`**（已无「宏丰料号」/「报价料号」列）——各 Q* handler 主料号/成品料号读列改为 `row.getStr("销售料号", <旧名回退>)` 落 `material_no`/`finished_material_no`/`code`。
+> - **材质料号**：`物料BOM`/`物料与元素BOM`/`元素回收折扣` 含 `材质料号` 列 → 落 `element_bom.material_part_no`（新增列并纳入唯一键，与核价侧同口径）；`物料BOM`（MaterialBomMergeHandler）组件列由 `投入料号` 回退 `材质料号`（名称 `投入料号名称` 回退 `材质料号名称`），仍走 §1.5 按名发号。
+> - **`物料与元素BOM`（Q04）**：该 Sheet **无投入料号列**（只有 销售料号+材质料号+元素）→ `material_no←销售料号`、`material_part_no←材质料号`、`component_no←元素`，master/版本分组键改为 `(material_no, material_part_no)`，**本 Sheet 不再铸号**；`元素回收折扣`（Q05）同样按 `(销售料号, 材质料号, 元素)` 3 键匹配更新 `element_bom_item.recovery_discount`。
+> - **发号（铸号）边界**：仅在**仍含 `投入料号`/`材质料号` 组件列**的 Sheet 保留组件缺料号时按名发号（组件维度）。
+> - **`production_no` 恒 NULL**：报价 Excel 无生产料号列。
 >
 > **V3.3（2026-06-18）**：补齐 `unit_price.price_type` 细分化（2026-06-08 代码已生效，本文档此前漏更）——大类 `MATERIAL`/`COMPONENT` 废弃，各 Sheet 直接写 9 个细分值（来料固定加工费=`INCOMING_MATERIAL_PROCESS`、来料其他费用=`INCOMING_MATERIAL_OTHER`、来料年降=`INCOMING_MATERIAL_REDUCTION`、来料回收折扣=`INCOMING_MATERIAL_RECYCLE`、自制加工费=`PROCESS`、成品其他费用=`FINISHED_MATERIAL_OTHER`、组成件其他费用=`COMPONENT_OTHER`、组装加工费年降=`COMPONENT_REDUCTION`、电镀费用=`PLATING`）；`cost_type` 不变。规则出处 `docs/superpowers/specs/2026-06-08-quote-price-type-subdivide-design.md`。
 

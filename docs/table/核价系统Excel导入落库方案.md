@@ -1,6 +1,13 @@
 # 核价系统基础数据 Excel 导入落库方案
 
-> 版本：V6.1 | 日期：2026-05-26
+> 版本：V6.3 | 日期：2026-07-08
+>
+> **V6.3（2026-07-08）· 料号语义纠偏（废弃 V6.2 的 sales_part_no 反向设计）**：统一报价/核价两条路径的料号口径——
+> - `material_no` **承载销售料号（主料号）**：核价各 P* handler 由读「宏丰料号」改读 **`销售料号`**（旧名回退兼容）落 `material_no`；`P04PricingVersionHandler`（核价版本→`material_version_mgmt`，不在 11 表）同样必须改读列，否则列改名后整表导入失败。
+> - 新增 `production_no` **承载生产料号**（描述列，**不进唯一键**）：`宏丰-客户料号对应关系/物料BOM/产能/设备折旧/生产能耗/辅助能耗/模具工装/生产耗材BOM/包装材料BOM/来料*/加工费&组装费/成品其他*/电镀成本/其他外加工` 等 Sheet 读 `生产料号` 落对应表 `production_no`（unit_price/capacity/labor_rate/production_energy/auxiliary_energy/tooling_cost/material_customer_map/material_bom_item）。
+> - **`物料与元素BOM` 例外**：材质料号源列名仍为「物料料号」→ 落 `element_bom.material_part_no`（材质料号，新增列并纳入唯一键 `(system_type, customer_no, material_no, material_part_no, characteristic)`）；`production_no` NULL（该 Sheet 无生产料号列）。同一销售料号下多材质料号各自独立成 BOM/版本，`P07` 分组键改为 `(material_no, material_part_no)`。
+> - **唯一键 & 升版**：恢复到引入 sales_part_no 之前的键结构（迁移 `V315` `DROP COLUMN sales_part_no` + 去唯一索引 `COALESCE(sales_part_no,'')` 后缀），升版 groupKey 按 `material_no`（销售料号）；element_bom 两表额外把 `material_part_no` 纳入唯一键。**V6.2 的 `sales_part_no` 维度整体废弃**（该 spec `docs/superpowers/specs/2026-07-07-核价销售料号维度落库-design.md` 作废）。
+> - `汇总` Sheet **不导入**（无对应 handler，`costing_summary` 由 `CostingSummaryService.compute()` 算出，键 `hf_part_no`，本次不动）。
 >
 > **V6.1（2026-06-30）**：补齐 `unit_price.price_type` 细分化（2026-06-30 代码已生效，本文档此前漏更）——原超载大类 `MATERIAL` 在核价写入端废弃，各费用 Sheet 直接写 7 个细分值（材料核价价格=`MATERIAL_PRICE`、包装=`PACKAGING`、来料加工费=`INCOMING_PROCESS`、来料其他费用比例+固定合并=`INCOMING_OTHER`、自制加工费=`SELF_PROCESS`、成品其他比例+固定合并=`FINISHED_OTHER`、其他外加工=`OUTSOURCE_PROCESS`、电镀两条=`PLATING`）；`ELEMENT`（元素核价价格表）/`CONSUMABLE`（生产耗材BOM）已与 Sheet 1:1 **保留不动**；`cost_type` 全程不变。比例/固定不进 price_type，靠 `cost_ratio` vs `pricing_price` 哪列有值区分。规则出处 `docs/superpowers/specs/2026-06-30-pricing-unit-price-source-enum-design.md`（DDL=`V306`，常量类=`PricingPriceType`）。
 
