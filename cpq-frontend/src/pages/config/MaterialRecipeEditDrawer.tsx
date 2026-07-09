@@ -3,13 +3,13 @@ import {
   Drawer, Form, Input, Select, InputNumber, Switch, Button,
   Space, Table, Tabs, Empty, Alert, message,
 } from 'antd';
-import { PlusOutlined, DeleteOutlined, AppstoreOutlined, LinkOutlined, HistoryOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, AppstoreOutlined, HistoryOutlined } from '@ant-design/icons';
 import {
   materialRecipeService,
   type MaterialRecipeDetail,
   type MaterialRecipeUpsertRequest,
 } from '../../services/materialRecipeService';
-import MaterialRecipePartsTab from './MaterialRecipePartsTab';
+// 关联料号 Tab 本期隐藏(task-0708)：MaterialRecipePartsTab 组件保留不删，仅不挂载
 
 interface Props {
   open: boolean;
@@ -30,12 +30,12 @@ interface ElementRow {
   sortOrder: number;
 }
 
-const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClose, onSaved, onPartsChanged }) => {
+const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClose, onSaved }) => {
   const [form] = Form.useForm();
-  const [recipeType, setRecipeType] = useState<'locked' | 'editable' | 'partial'>('editable');
+  const [recipeType, setRecipeType] = useState<'locked' | 'editable' | 'partial'>('locked');
   const [elements, setElements] = useState<ElementRow[]>([]);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'detail' | 'parts' | 'log'>('detail');
+  const [activeTab, setActiveTab] = useState<'detail' | 'log'>('detail');
 
   const isCreating = !editingDetail;
 
@@ -49,8 +49,6 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
       form.setFieldsValue({
         code: editingDetail.code,
         symbol: editingDetail.symbol,
-        name: editingDetail.name,
-        specLabel: editingDetail.specLabel,
         recipeType: editingDetail.recipeType,
         sortOrder: editingDetail.sortOrder,
         status: editingDetail.status ?? 'ACTIVE',
@@ -67,11 +65,12 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
       })));
     } else {
       form.resetFields();
-      form.setFieldsValue({ recipeType: 'editable', sortOrder: 100, status: 'ACTIVE' });
-      setRecipeType('editable');
+      // task-0708：新建默认「标准锁定」，元素全 isLocked、无 min/max
+      form.setFieldsValue({ recipeType: 'locked', sortOrder: 100, status: 'ACTIVE' });
+      setRecipeType('locked');
       setElements([{
         elementCode: '', elementName: '', defaultPct: 100, minPct: null, maxPct: null,
-        isLocked: false, sortOrder: 1,
+        isLocked: true, sortOrder: 1,
       }]);
     }
   }, [open, editingDetail, form]);
@@ -128,8 +127,9 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
       const req: MaterialRecipeUpsertRequest = {
         code: values.code,
         symbol: values.symbol,
-        name: values.name,
-        specLabel: values.specLabel,
+        // task-0708：名称/配比管理 UI 已隐藏，导入/新建统一置 null(DTO 字段保留)
+        name: null,
+        specLabel: null,
         recipeType,
         sortOrder: values.sortOrder ?? 100,
         status: values.status ?? 'ACTIVE',
@@ -260,17 +260,11 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
     <div>
       <Form form={form} layout="vertical">
         <Space size="large" wrap>
-          <Form.Item name="code" label="代号" rules={[{ required: true, message: '请填写代号' }]}>
-            <Input placeholder="AgCu85" style={{ width: 160 }} disabled={!!editingDetail} />
+          <Form.Item name="code" label="材质编号" rules={[{ required: true, message: '请填写材质编号' }]}>
+            <Input placeholder="00300" style={{ width: 160 }} disabled={!!editingDetail} />
           </Form.Item>
-          <Form.Item name="symbol" label="化学式" rules={[{ required: true, message: '请填写化学式' }]}>
-            <Input placeholder="AgCu" style={{ width: 140 }} />
-          </Form.Item>
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请填写名称' }]}>
-            <Input placeholder="银铜合金" style={{ width: 180 }} />
-          </Form.Item>
-          <Form.Item name="specLabel" label="配比">
-            <Input placeholder="85/15" style={{ width: 120 }} />
+          <Form.Item name="symbol" label="材质名称" rules={[{ required: true, message: '请填写材质名称' }]}>
+            <Input placeholder="Ag / AgC3" style={{ width: 160 }} />
           </Form.Item>
           <Form.Item name="recipeType" label="类型" rules={[{ required: true }]}>
             <Select
@@ -325,19 +319,8 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
       label: <><AppstoreOutlined /> 材质详情</>,
       children: detailTab,
     },
+    // 关联料号 tab 本期隐藏(task-0708)，仅保留变更日志占位
     ...(isCreating ? [] : [
-      {
-        key: 'parts',
-        label: <><LinkOutlined /> 关联料号</>,
-        children: (
-          <MaterialRecipePartsTab
-            recipeId={editingDetail!.id}
-            recipeCode={editingDetail!.code}
-            recipeName={editingDetail!.name}
-            onCountChanged={onPartsChanged}
-          />
-        ),
-      },
       {
         key: 'log',
         label: <><HistoryOutlined /> 变更日志</>,
@@ -382,7 +365,7 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
     >
       <Tabs
         activeKey={activeTab}
-        onChange={(k) => setActiveTab(k as 'detail' | 'parts' | 'log')}
+        onChange={(k) => setActiveTab(k as 'detail' | 'log')}
         items={tabs}
       />
     </Drawer>

@@ -54,34 +54,72 @@ public class MaterialRecipeService {
     @Inject
     EntityManager em;
 
-    /** GET /material-recipes — 列表(不带 elements). */
+    /**
+     * 仅 ACTIVE 材质列表（不带 elements、不带 count）——供选配候选（SelParamCandidateService）等
+     * 只需启用项的场景使用。管理端列表请用 {@link #list(String, boolean)}（全状态 + 搜索 + 排序）。
+     */
     public List<MaterialRecipeDTO> listActive() {
-        return listActive(false);
+        return MaterialRecipe.<MaterialRecipe>find("status = 'ACTIVE' ORDER BY sortOrder").list()
+            .stream().map(this::toDTOLite).collect(Collectors.toList());
     }
 
     /**
-     * GET /material-recipes?withCount=true — 列表; withCount=true 时每条 DTO 填 boundPartsCount.
+     * GET /material-recipes?keyword=&withCount= — 管理端列表（task-0708 · B3 改造）。
      *
-     * <p>实现: 一条聚合 SQL `GROUP BY material_recipe_id` 拉全部 count,内存 join 回 DTO,
-     * 避免 N+1 (N 条 recipe N 次 COUNT(*)).
+     * <ul>
+     *   <li><b>全状态</b>：返回 ACTIVE + INACTIVE（停用项排在启用项之后，不再从列表消失）。</li>
+     *   <li><b>关键字搜索</b>（keyword 可空）：命中 code / symbol / 任一元素 element_code / element_name
+     *       中任意一个即返回（元素维度走 EXISTS 子查询，单条 SQL，无 N+1）。</li>
+     *   <li><b>排序</b>：启用优先 → 修改时间倒序 → 创建时间倒序。</li>
+     *   <li>withCount=true 时一次性聚合填 boundPartsCount（本期前端不展示，保留兼容）。</li>
+     * </ul>
      */
     @SuppressWarnings("unchecked")
-    public List<MaterialRecipeDTO> listActive(boolean withCount) {
-        List<MaterialRecipeDTO> dtos = MaterialRecipe.<MaterialRecipe>find(
-                "status = 'ACTIVE' ORDER BY sortOrder").list()
-            .stream().map(this::toDTOLite).collect(Collectors.toList());
+    public List<MaterialRecipeDTO> list(String keyword, boolean withCount) {
+        boolean hasKw = keyword != null && !keyword.isBlank();
+        StringBuilder sql = new StringBuilder(
+            "SELECT mr.id, mr.code, mr.symbol, mr.name, mr.spec_label, mr.recipe_type, " +
+            "       mr.status, mr.sort_order, mr.created_at, mr.updated_at " +
+            "FROM material_recipe mr ");
+        if (hasKw) {
+            sql.append("WHERE (mr.code ILIKE :kw OR mr.symbol ILIKE :kw " +
+                "OR EXISTS (SELECT 1 FROM material_recipe_element e " +
+                "           WHERE e.recipe_id = mr.id " +
+                "             AND (e.element_code ILIKE :kw OR e.element_name ILIKE :kw))) ");
+        }
+        sql.append("ORDER BY (mr.status = 'ACTIVE') DESC, mr.updated_at DESC, mr.created_at DESC");
+
+        var q = em.createNativeQuery(sql.toString());
+        if (hasKw) q.setParameter("kw", "%" + keyword.trim() + "%");
+        List<Object[]> rows = q.getResultList();
+
+        List<MaterialRecipeDTO> dtos = new ArrayList<>(rows.size());
+        for (Object[] r : rows) {
+            MaterialRecipeDTO d = new MaterialRecipeDTO();
+            d.id = r[0] instanceof UUID u ? u : (r[0] != null ? UUID.fromString(r[0].toString()) : null);
+            d.code = (String) r[1];
+            d.symbol = (String) r[2];
+            d.name = (String) r[3];
+            d.specLabel = (String) r[4];
+            d.recipeType = (String) r[5];
+            d.status = (String) r[6];
+            d.sortOrder = r[7] == null ? null : ((Number) r[7]).intValue();
+            d.createdAt = toOffsetDateTime(r[8]);
+            d.updatedAt = toOffsetDateTime(r[9]);
+            dtos.add(d);
+        }
 
         if (!withCount || dtos.isEmpty()) {
             return dtos;
         }
 
-        // 一次性聚合 count（V265: 绑定迁 material_master）
-        List<Object[]> rows = em.createNativeQuery(
+        // 一次性聚合 count（V265: 绑定迁 material_master），内存 join 回 DTO，避免 N+1。
+        List<Object[]> countRows = em.createNativeQuery(
                 "SELECT material_recipe_id, COUNT(*) AS cnt FROM material_master " +
                 "WHERE material_recipe_id IS NOT NULL " +
                 "GROUP BY material_recipe_id")
             .getResultList();
-        Map<UUID, Long> countByRecipe = rows.stream().collect(Collectors.toMap(
+        Map<UUID, Long> countByRecipe = countRows.stream().collect(Collectors.toMap(
             r -> (UUID) r[0],
             r -> ((Number) r[1]).longValue()
         ));
@@ -568,7 +606,7 @@ public class MaterialRecipeService {
         MaterialRecipe r = new MaterialRecipe();
         r.code = req.code.trim();
         r.symbol = req.symbol.trim();
-        r.name = req.name.trim();
+        r.name = req.name == null ? null : req.name.trim();
         r.specLabel = req.specLabel;
         r.recipeType = req.recipeType;
         r.sortOrder = req.sortOrder == null ? 0 : req.sortOrder;
@@ -588,13 +626,16 @@ public class MaterialRecipeService {
 
     @Transactional
     public MaterialRecipeDTO update(UUID id, MaterialRecipeUpsertRequest req) {
-        validateUpsert(req, id);
         MaterialRecipe r = MaterialRecipe.findById(id);
         if (r == null) throw new NotFoundException("material_recipe 不存在: " + id);
+        // 材质编号只读（TC-E3 / api.md §五）：强制用既有 code、忽略入参，防直连 API 篡改主键+搜索键+下游 join 键；
+        // 同时让 validateUpsert 的编号查重针对真实 code，避免客户端传脏 code 触发误报 400。
+        if (req != null) req.code = r.code;
+        validateUpsert(req, id);
 
-        r.code = req.code.trim();
+        // code 保持不变（只读）—— 不从 req 回写
         r.symbol = req.symbol.trim();
-        r.name = req.name.trim();
+        r.name = req.name == null ? null : req.name.trim();
         r.specLabel = req.specLabel;
         r.recipeType = req.recipeType;
         r.sortOrder = req.sortOrder == null ? r.sortOrder : req.sortOrder;
@@ -642,7 +683,7 @@ public class MaterialRecipeService {
         if (req == null) throw new IllegalArgumentException("request body 必填");
         if (req.code == null || req.code.isBlank()) throw new IllegalArgumentException("code 必填");
         if (req.symbol == null || req.symbol.isBlank()) throw new IllegalArgumentException("symbol 必填");
-        if (req.name == null || req.name.isBlank()) throw new IllegalArgumentException("name 必填");
+        // name 本期改为可空（决策#2：导入/新建置 NULL、UI 隐藏、DB 列保留供下游 COALESCE 引用）。
         if (req.recipeType == null
             || !List.of("locked", "editable", "partial").contains(req.recipeType)) {
             throw new IllegalArgumentException("recipeType 必须为 locked/editable/partial");
@@ -724,6 +765,8 @@ public class MaterialRecipeService {
         d.recipeType = r.recipeType;
         d.status = r.status;
         d.sortOrder = r.sortOrder;
+        d.createdAt = r.createdAt;
+        d.updatedAt = r.updatedAt;
         return d;
     }
 

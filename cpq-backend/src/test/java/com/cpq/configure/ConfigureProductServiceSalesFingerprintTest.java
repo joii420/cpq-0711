@@ -9,6 +9,8 @@ import io.quarkus.test.TestTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import jakarta.transaction.Transactional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -52,6 +54,16 @@ class ConfigureProductServiceSalesFingerprintTest {
 
     @Inject
     EntityManager em;
+
+    /**
+     * task-0708：V318 删了 V171 的 demo 材质 seed，这里幂等补种本类依赖的 AgNi90 等
+     * （独立事务提交，测试方法的 @TestTransaction 只读、可见）。
+     */
+    @BeforeEach
+    @Transactional
+    void seedDemoMaterials() {
+        DemoMaterialRecipeFixture.ensureSeeded(em);
+    }
 
     // ── Seed helpers（与 ConfigureProductServiceTest 同款，独立复制避免跨测试类耦合）───────
 

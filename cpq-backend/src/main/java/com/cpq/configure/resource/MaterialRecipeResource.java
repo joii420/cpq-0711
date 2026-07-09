@@ -5,9 +5,11 @@ import com.cpq.common.security.RoleAllowed;
 import com.cpq.configure.dto.BindPartsRequest;
 import com.cpq.configure.dto.BindingSuggestionDTO;
 import com.cpq.configure.dto.ConfirmBindingsRequest;
+import com.cpq.configure.dto.MaterialImportReportDTO;
 import com.cpq.configure.dto.MaterialRecipeDTO;
 import com.cpq.configure.dto.MaterialRecipePartDTO;
 import com.cpq.configure.dto.MaterialRecipeUpsertRequest;
+import com.cpq.configure.service.MaterialRecipeImportService;
 import com.cpq.configure.service.MaterialRecipeService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -22,7 +24,11 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.jboss.resteasy.reactive.RestForm;
+import org.jboss.resteasy.reactive.multipart.FileUpload;
 
+import java.io.InputStream;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -35,13 +41,49 @@ public class MaterialRecipeResource {
     @Inject
     MaterialRecipeService service;
 
+    @Inject
+    MaterialRecipeImportService importService;
+
     /**
-     * GET /material-recipes?withCount=true — 列表;
-     * withCount=true 时每条 DTO 带 boundPartsCount 字段(该材质下绑定的料号数).
+     * POST /material-recipes/import — 上传 xlsx 导入材质库（task-0708 · B5）。
+     * 只读 材质编号 + 材质对应元素 两 sheet；脏数据走 200 + 报告，不报 400。
+     */
+    @POST
+    @Path("/import")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public MaterialImportReportDTO importLibrary(@RestForm("file") FileUpload file) {
+        if (file == null) throw new IllegalArgumentException("file 不能为空");
+        byte[] bytes;
+        try (InputStream in = Files.newInputStream(file.uploadedFile())) {
+            bytes = in.readAllBytes();   // 请求线程读完（上传临时文件请求结束后可能被回收）
+        } catch (Exception e) {
+            throw new RuntimeException("读取上传文件失败: " + e.getMessage(), e);
+        }
+        return importService.importLibrary(bytes);
+    }
+
+    /** GET /material-recipes/import/template — 下载干净两 sheet 导入模板（task-0708 · B5）。 */
+    @GET
+    @Path("/import/template")
+    @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    public Response downloadTemplate() {
+        byte[] xlsx = importService.generateTemplate();
+        return Response.ok(xlsx)
+            .header("Content-Disposition", "attachment; filename=\"material_library_template.xlsx\"")
+            .build();
+    }
+
+    /**
+     * GET /material-recipes?keyword=&withCount= — 管理端列表（task-0708 · B3）。
+     * 全状态 + 关键字搜索（材质编号/材质名称/元素符号/元素中文名）+ 排序（启用优先→改时倒序→建时倒序）。
+     * withCount=true 时每条 DTO 带 boundPartsCount（本期前端不展示，保留兼容，可不传）。
      */
     @GET
-    public List<MaterialRecipeDTO> list(@QueryParam("withCount") @DefaultValue("false") boolean withCount) {
-        return service.listActive(withCount);
+    public List<MaterialRecipeDTO> list(
+            @QueryParam("keyword") String keyword,
+            @QueryParam("withCount") @DefaultValue("false") boolean withCount) {
+        return service.list(keyword, withCount);
     }
 
     @GET
