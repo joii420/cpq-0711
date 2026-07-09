@@ -626,11 +626,14 @@ public class MaterialRecipeService {
 
     @Transactional
     public MaterialRecipeDTO update(UUID id, MaterialRecipeUpsertRequest req) {
-        validateUpsert(req, id);
         MaterialRecipe r = MaterialRecipe.findById(id);
         if (r == null) throw new NotFoundException("material_recipe 不存在: " + id);
+        // 材质编号只读（TC-E3 / api.md §五）：强制用既有 code、忽略入参，防直连 API 篡改主键+搜索键+下游 join 键；
+        // 同时让 validateUpsert 的编号查重针对真实 code，避免客户端传脏 code 触发误报 400。
+        if (req != null) req.code = r.code;
+        validateUpsert(req, id);
 
-        r.code = req.code.trim();
+        // code 保持不变（只读）—— 不从 req 回写
         r.symbol = req.symbol.trim();
         r.name = req.name == null ? null : req.name.trim();
         r.specLabel = req.specLabel;
