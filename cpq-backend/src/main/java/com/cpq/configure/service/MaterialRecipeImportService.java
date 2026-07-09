@@ -31,7 +31,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -55,9 +54,12 @@ public class MaterialRecipeImportService {
 
     private static final BigDecimal SUM_TOLERANCE = new BigDecimal("0.02");
     private static final BigDecimal HUNDRED = new BigDecimal("100");
-    private static final Pattern PURE_NUMBER = Pattern.compile("^\\d+$");
 
-    /** 元素符号→中文字典（与 V316 seed 同源；导入遇未知符号回退=符号）。 */
+    /**
+     * 元素符号→中文字典（与 V317 seed 同源；导入遇未知符号回退=符号）。
+     * R1（2026-07-09）：数字牌号 304/316/301/430 是合法钢牌号组成项，补中文名；
+     * 191/206/223/258/721 含义不明暂留符号（回退=符号）。
+     */
     private static final Map<String, String> DICT = Map.ofEntries(
         Map.entry("Ag", "银"), Map.entry("Cu", "铜"), Map.entry("Ni", "镍"),
         Map.entry("Al", "铝"), Map.entry("Fe", "铁"), Map.entry("Sn", "锡"),
@@ -68,7 +70,9 @@ public class MaterialRecipeImportService {
         Map.entry("Pd", "钯"), Map.entry("W", "钨"), Map.entry("Au", "金"),
         Map.entry("SnO2", "二氧化锡"), Map.entry("ZnO", "氧化锌"), Map.entry("CdO", "氧化镉"),
         Map.entry("WC", "碳化钨"), Map.entry("H70", "黄铜H70"), Map.entry("DC04", "冷轧钢DC04"),
-        Map.entry("Ni36", "铁镍合金Ni36"), Map.entry("Ni42", "铁镍合金Ni42"), Map.entry("不锈钢", "不锈钢"));
+        Map.entry("Ni36", "铁镍合金Ni36"), Map.entry("Ni42", "铁镍合金Ni42"), Map.entry("不锈钢", "不锈钢"),
+        Map.entry("304", "304不锈钢"), Map.entry("316", "316不锈钢"),
+        Map.entry("301", "301不锈钢"), Map.entry("430", "430不锈钢"));
 
     @Inject
     EntityManager em;
@@ -122,10 +126,7 @@ public class MaterialRecipeImportService {
                     report.skipped.add(new SkippedRow(SHEET_ELEM, excelRow, "元素名称为空", ""));
                     continue;
                 }
-                if (PURE_NUMBER.matcher(elemName).matches()) {
-                    report.skipped.add(new SkippedRow(SHEET_ELEM, excelRow, "元素名称为纯数字(疑料号误填)", elemName));
-                    continue;
-                }
+                // R1(2026-07-09)：不再校验"非纯数字"——304/316/301/430 等数字牌号是合法组成项(复合材主含量层)。
                 BigDecimal content = parseContent(contentRaw);
                 if (content == null
                         || content.compareTo(BigDecimal.ZERO) <= 0

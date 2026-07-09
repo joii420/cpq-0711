@@ -90,23 +90,23 @@ public class MaterialRecipeImportServiceTest {
 
     @Test
     @TestTransaction
-    void pureNumberElementRow_isSkipped_materialStillImports() throws Exception {
+    void numericGradeElement_isKept_notSkipped() throws Exception {
+        // R1(2026-07-09)：数字牌号(304)是合法组成项，不再跳过。Cu 0.5 + 304 0.5 = 1.0 正常入库。
         byte[] xlsx = buildWorkbook(
-            new String[][]{{"AgC3", "TST001"}},
+            new String[][]{{"Cu/304", "TST001"}},
             new Object[][]{
-                {"AgC3", "TST001", "Ag", 0.97, "10001"},
-                {"AgC3", "TST001", "C", 0.03, "10012"},
-                {"AgC3", "TST001", "191", 0.50, "191"},   // 纯数字 → 跳过
+                {"Cu/304", "TST001", "Cu", 0.50, "10002"},
+                {"Cu/304", "TST001", "304", 0.50, "304"},
             });
         MaterialImportReportDTO rep = importService.importLibrary(xlsx);
 
-        assertEquals(1, rep.materialsUpserted, "AgC3 应落库");
-        assertTrue(rep.skipped.stream().anyMatch(s -> "191".equals(s.raw) && s.reason.contains("纯数字")),
-            "纯数字元素 191 应在 skipped 且原因含'纯数字'");
-        // 材质仅保留 Ag/C 两个合规元素，191 不入库
+        assertEquals(1, rep.materialsUpserted, "含数字牌号的复合材应正常入库");
+        assertTrue(rep.skipped.isEmpty(), "数字牌号 304 不再被跳过");
         List<MaterialRecipeElement> els = elementsOf("TST001");
-        assertEquals(2, els.size());
-        assertTrue(els.stream().noneMatch(e -> "191".equals(e.elementCode)));
+        assertEquals(2, els.size(), "Cu + 304 两个元素都入库");
+        MaterialRecipeElement grade = els.stream().filter(e -> "304".equals(e.elementCode)).findFirst().orElseThrow();
+        assertEquals(0, grade.defaultPct.compareTo(new BigDecimal("50")), "304 含量 ×100 = 50");
+        assertEquals("304不锈钢", grade.elementName, "304 回填中文名");
     }
 
     @Test
@@ -285,27 +285,30 @@ public class MaterialRecipeImportServiceTest {
         assertTrue(wallMs < 3000, "墙钟耗时应 <3s，实际 " + wallMs + "ms");
     }
 
-    // ── 真实文件验收（方案A：严格 189 + 报告 65 材质 + 9 纯数字元素）──
+    // ── 真实文件验收（R1 基线：253 落库 + 1 跳 WZHF26-25；数字牌号合法不跳）──
 
     @Test
     @TestTransaction
-    void realFile_strictImport_189Materials_reportsSkips() throws Exception {
+    void realFile_R1Import_253Materials_1Skip() throws Exception {
         byte[] xlsx = readRealFileOrSkip();
         MaterialImportReportDTO rep = importService.importLibrary(xlsx);
 
         assertEquals(654, rep.totalRows, "材质对应元素数据行=654");
-        assertEquals(189, rep.materialsUpserted, "严格校验后落库材质=189(65 覆层/复合材因 Σ≠1 跳过)");
-        assertEquals(453, rep.elementRowsInserted, "落库元素明细行=453");
+        assertEquals(253, rep.materialsUpserted, "R1: 数字牌号合法→253 落库(65 复合材全部入库)");
+        assertEquals(1, rep.skippedRowCount, "唯一脏数据闸门 Σ≠1 → 仅 1 跳");
+        assertEquals(1, rep.skipped.size());
+        MaterialImportReportDTO.SkippedRow only = rep.skipped.get(0);
+        assertTrue(only.reason.contains("含量合计≠1"), "唯一跳过是材质级 Σ≠1");
+        assertTrue(only.raw != null && only.raw.contains("00242"),
+            "唯一跳过是 WZHF26-25(code=00242)，实际 raw=" + only.raw);
         assertTrue(rep.durationMs < 3000, "真文件导入应 <3s，实际 " + rep.durationMs + "ms");
+        assertTrue(rep.elementRowsInserted > 500, "落库元素明细行合理(>500)，实际 " + rep.elementRowsInserted);
 
-        // 9 个纯数字"元素"(191/206/…721)必须在 skipped
+        // 数字牌号(304/316/…)一律不在 skipped（R1 推翻纯数字跳过）
         for (String pn : List.of("191", "206", "223", "258", "301", "304", "316", "430", "721")) {
-            assertTrue(rep.skipped.stream().anyMatch(s -> pn.equals(s.raw) && s.reason.contains("纯数字")),
-                "纯数字元素 " + pn + " 应在 skipped");
+            assertTrue(rep.skipped.stream().noneMatch(s -> pn.equals(s.raw)),
+                "数字牌号 " + pn + " 不应被跳过(R1)");
         }
-        // 应有材质级 Σ≠1 跳过条目
-        assertTrue(rep.skipped.stream().anyMatch(s -> s.reason.contains("含量合计≠1")),
-            "应有材质级 Σ≠1 跳过条目");
     }
 
     private byte[] readRealFileOrSkip() throws Exception {

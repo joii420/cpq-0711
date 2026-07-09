@@ -6,6 +6,8 @@ import io.quarkus.test.TestTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import jakarta.transaction.Transactional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -52,6 +54,16 @@ class ConfigureProductServiceTest {
 
     @Inject
     EntityManager em;
+
+    /**
+     * task-0708：V318 删了 V171 的 demo 材质 seed，这里幂等补种本类依赖的
+     * AgNi90/AgCu85/AgCu90/AgNi95（独立事务提交，测试方法只读、可见）。
+     */
+    @BeforeEach
+    @Transactional
+    void seedDemoMaterials() {
+        DemoMaterialRecipeFixture.ensureSeeded(em);
+    }
 
     // ── Seed helpers ─────────────────────────────────────────────────────────
 
