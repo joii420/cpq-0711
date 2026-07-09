@@ -71,12 +71,15 @@ public class MaterialBomMergeHandler {
             if (materialNo == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
             if (isCfg(materialNo)) { result.recordError(row.rowNo, "宏丰料号", "禁止导入系统生成料号(CFG- 前缀): " + materialNo); continue; }
             String componentUsageType = row.getStr("产出料号类型");
-            String componentName = row.getStr("投入料号名称");
-            // 注意：getStr("投入料号") 用 contains 匹配，会命中"投入料号名称"列（AP-bug）。
-            // 必须用精确键读取，以区分"投入料号"(可空)和"投入料号名称"(名称)。
+            // 报价 V3 物料BOM 组件列是「材质料号/材质料号名称」(无投入料号列); 兼容旧文件的「投入料号」。
+            // 用 exact 精确键读取(getStr contains 会命中"…名称"列); 料号空回退材质料号、名称空回退材质料号名称。
+            String componentName = row.exact("投入料号名称");
+            if (componentName == null) componentName = row.exact("材质料号名称");
             String componentNo;
             try {
-                componentNo = materialNoResolver.resolve(row.exact("投入料号"), componentName, batch);
+                String rawComponent = row.exact("投入料号");
+                if (rawComponent == null) rawComponent = row.exact("材质料号");
+                componentNo = materialNoResolver.resolve(rawComponent, componentName, batch);
             } catch (MaterialNoUnresolvableException ex) {
                 result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
             } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
