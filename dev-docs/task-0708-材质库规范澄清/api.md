@@ -89,13 +89,12 @@
 ```json
 {
   "totalRows": 654,
-  "materialsUpserted": 254,
-  "elementRowsInserted": 620,
-  "elementMasterUpserted": 5,
-  "skippedRowCount": 11,
+  "materialsUpserted": 253,
+  "elementRowsInserted": 540,
+  "elementMasterUpserted": 9,
+  "skippedRowCount": 1,
   "skipped": [
-    { "sheet": "材质对应元素", "row": 42, "reason": "元素名称为纯数字(疑料号误填)", "raw": "191" },
-    { "sheet": "材质对应元素", "row": 88, "reason": "含量合计≠1(实际0.87)", "raw": "code=00120" }
+    { "sheet": "材质对应元素", "row": 512, "reason": "含量合计≠1(实际1.44)", "raw": "code=00242 WZHF26-25" }
   ],
   "durationMs": 1180
 }
@@ -110,6 +109,8 @@
 | `skippedRowCount` | int | 跳过行/材质数 |
 | `skipped[]` | 数组 | `{sheet,row,reason,raw}` 逐条原因，前端表格展示 |
 | `durationMs` | long | 耗时（性能自检可见） |
+
+> **基线（2026-07-09 实测钉死）**：真实 `材质库.xlsx` → `materialsUpserted=253`、`skippedRowCount=1`（仅 `WZHF26-25` Σ=1.44 真错）。数字牌号(304/316/301/430 等)是**合法组成项不跳**。`elementRowsInserted`/`elementMasterUpserted`/`row` 为示意值，以实跑为准（QA test.md 铁律：不照抄，按文件推演）。
 
 ### 错误
 | HTTP | 场景 | body |
