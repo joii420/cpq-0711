@@ -26,7 +26,9 @@ public class P24UnitWeightHandler implements SheetHandler {
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
-                String materialNo = row.getStr("销售料号", "宏丰料号", "料号");
+                // 注意: getStr 用 header.contains(key) 子串匹配, 不能带裸"料号" ——
+                // 会命中同 sheet 的"生产料号"列(该列空)导致 material_no 读空。核价单重主列=销售料号。
+                String materialNo = row.getStr("销售料号", "宏丰料号");
                 java.math.BigDecimal unitWeight = row.getDecimal("单重");
                 if (materialNo == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
                 repo.upsertByMaterialNo(materialNo, null, null, null, null, null, null,
