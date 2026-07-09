@@ -43,7 +43,7 @@ public class Q11FinishedOtherFeeHandler implements SheetHandler {
         Map<List<Object>, List<Map<String, Object>>> contentOf = new LinkedHashMap<>();
         for (SheetRow row : rows) {
             result.totalRows++;
-            String code = row.getStr("宏丰料号");
+            String code = row.getStr("销售料号", "宏丰料号");
             String costType = row.getStr("要素名称");
             if (code == null || costType == null) {
                 result.recordError(row.rowNo, "宏丰料号/要素名称", "必填项为空");

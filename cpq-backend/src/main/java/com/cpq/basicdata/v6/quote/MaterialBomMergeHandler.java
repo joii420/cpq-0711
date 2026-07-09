@@ -67,7 +67,7 @@ public class MaterialBomMergeHandler {
 
         for (SheetRow row : materialRows) {
             result.totalRows++;
-            String materialNo = row.getStr("宏丰料号");
+            String materialNo = row.getStr("销售料号", "宏丰料号");
             if (materialNo == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
             if (isCfg(materialNo)) { result.recordError(row.rowNo, "宏丰料号", "禁止导入系统生成料号(CFG- 前缀): " + materialNo); continue; }
             String componentUsageType = row.getStr("产出料号类型");
@@ -101,7 +101,7 @@ public class MaterialBomMergeHandler {
 
         for (SheetRow row : assemblyRows) {
             result.totalRows++;
-            String materialNo = row.getStr("宏丰料号");
+            String materialNo = row.getStr("销售料号", "宏丰料号");
             if (materialNo == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
             if (isCfg(materialNo)) { result.recordError(row.rowNo, "宏丰料号", "禁止导入系统生成料号(CFG- 前缀): " + materialNo); continue; }
             String componentName = row.getStr("组成件名称");

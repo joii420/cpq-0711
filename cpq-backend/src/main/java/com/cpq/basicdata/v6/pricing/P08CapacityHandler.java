@@ -39,7 +39,7 @@ public class P08CapacityHandler implements SheetHandler {
     @Override public String sheetName() { return "产能"; }
 
     private static final List<String> CONTENT = List.of(
-        "process_no", "production_type", "is_effective");
+        "process_no", "production_type", "is_effective", "production_no");
     private static final List<String> VERSION_TRIGGER = List.of("process_no");
 
     /** 暂存每料号的 labor_rate 行（capacity 升版后再按版本号写）。 */
@@ -52,21 +52,26 @@ public class P08CapacityHandler implements SheetHandler {
 
         Map<String, List<Map<String, Object>>> capByMat = new LinkedHashMap<>();
         Map<String, List<LaborRow>> laborByMat = new LinkedHashMap<>();
+        // 按 material_no 缓存生产料号（首个非空归并），供下方 labor_rate 写入复用（labor_rate 无自身"生产料号"列来源）。
+        Map<String, String> prodNoByMat = new LinkedHashMap<>();
 
         for (SheetRow row : rows) {
             result.totalRows++;
-            String materialNo = row.getStr("宏丰料号");
+            String materialNo = row.getStr("销售料号", "宏丰料号");
             String processNo = row.getStr("工序编号");
             if (materialNo == null || processNo == null) {
                 result.recordError(row.rowNo, "宏丰料号/工序编号", "必填项为空");
                 continue;
             }
             Boolean isEffective = row.getBool("是否有效");
+            String productionNo = row.getStr("生产料号");
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("process_no", processNo);
             c.put("production_type", "BATCH_FIXED");
             c.put("is_effective", isEffective == null ? Boolean.TRUE : isEffective);
+            c.put("production_no", productionNo);
             capByMat.computeIfAbsent(materialNo, k -> new ArrayList<>()).add(c);
+            prodNoByMat.putIfAbsent(materialNo, productionNo);
 
             BigDecimal laborRate = row.getDecimal("人工标准单价");
             if (laborRate != null) {
@@ -121,6 +126,7 @@ public class P08CapacityHandler implements SheetHandler {
                             : (prev == null ? null : prev.get("currency")));     // COALESCE(后非空, 前)
                         r.put("unit", lr.unit() != null ? lr.unit()
                             : (prev == null ? null : prev.get("unit")));
+                        r.put("production_no", prodNoByMat.get(materialNo));
                         r.put("updated_by", ctx.importedBy);
                         laborByKey.put(ck, r);
                     }
@@ -136,17 +142,18 @@ public class P08CapacityHandler implements SheetHandler {
                         laborRows.subList(off, Math.min(off + CHUNK, laborRows.size()));
                     StringBuilder sb = new StringBuilder(
                         "INSERT INTO labor_rate (version_no, material_no, process_no, standard_labor_rate, " +
-                        "  currency, unit, created_at, updated_at, updated_by) VALUES ");
+                        "  currency, unit, production_no, created_at, updated_at, updated_by) VALUES ");
                     for (int j = 0; j < chunk.size(); j++) {
                         if (j > 0) sb.append(", ");
                         sb.append("(:vn").append(j).append(", :m").append(j).append(", :p").append(j)
                           .append(", :r").append(j).append(", :c").append(j).append(", :u").append(j)
-                          .append(", NOW(), NOW(), :ub").append(j).append(")");
+                          .append(", :pn").append(j).append(", NOW(), NOW(), :ub").append(j).append(")");
                     }
                     sb.append(" ON CONFLICT (version_no, process_no, COALESCE(material_no,''), COALESCE(labor_grade,'')) ")
                       .append("DO UPDATE SET standard_labor_rate = EXCLUDED.standard_labor_rate, ")
                       .append("  currency = COALESCE(EXCLUDED.currency, labor_rate.currency), ")
                       .append("  unit = COALESCE(EXCLUDED.unit, labor_rate.unit), ")
+                      .append("  production_no = COALESCE(EXCLUDED.production_no, labor_rate.production_no), ")
                       .append("  updated_at = NOW(), updated_by = EXCLUDED.updated_by");
                     var q = em.createNativeQuery(sb.toString());
                     for (int j = 0; j < chunk.size(); j++) {
@@ -157,6 +164,7 @@ public class P08CapacityHandler implements SheetHandler {
                         q.setParameter("r" + j, r.get("standard_labor_rate"));
                         q.setParameter("c" + j, r.get("currency"));
                         q.setParameter("u" + j, r.get("unit"));
+                        q.setParameter("pn" + j, r.get("production_no"));
                         q.setParameter("ub" + j, r.get("updated_by"));
                     }
                     q.executeUpdate();
@@ -179,12 +187,13 @@ public class P08CapacityHandler implements SheetHandler {
                     for (LaborRow lr : laborByMat.getOrDefault(materialNo, List.of())) {
                         em.createNativeQuery(
                                 "INSERT INTO labor_rate (version_no, material_no, process_no, standard_labor_rate, " +
-                                "  currency, unit, created_at, updated_at, updated_by) " +
-                                "VALUES (:vn, :m, :p, :r, :c, :u, NOW(), NOW(), :ub) " +
+                                "  currency, unit, production_no, created_at, updated_at, updated_by) " +
+                                "VALUES (:vn, :m, :p, :r, :c, :u, :pn, NOW(), NOW(), :ub) " +
                                 "ON CONFLICT (version_no, process_no, COALESCE(material_no,''), COALESCE(labor_grade,'')) " +
                                 "DO UPDATE SET standard_labor_rate = EXCLUDED.standard_labor_rate, " +
                                 "  currency = COALESCE(EXCLUDED.currency, labor_rate.currency), " +
                                 "  unit = COALESCE(EXCLUDED.unit, labor_rate.unit), " +
+                                "  production_no = COALESCE(EXCLUDED.production_no, labor_rate.production_no), " +
                                 "  updated_at = NOW(), updated_by = EXCLUDED.updated_by")
                             .setParameter("vn", version)
                             .setParameter("m", materialNo)
@@ -192,6 +201,7 @@ public class P08CapacityHandler implements SheetHandler {
                             .setParameter("r", lr.rate())
                             .setParameter("c", lr.currency())
                             .setParameter("u", lr.unit())
+                            .setParameter("pn", prodNoByMat.get(materialNo))
                             .setParameter("ub", ctx.importedBy)
                             .executeUpdate();
                         result.recordWrite("labor_rate", 1);

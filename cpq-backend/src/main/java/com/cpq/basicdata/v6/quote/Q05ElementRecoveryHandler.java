@@ -6,7 +6,6 @@ import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
 import com.cpq.basicdata.v6.repository.ElementRecoveryDiscountRepository;
 import com.cpq.basicdata.v6.repository.ElementRecoveryDiscountRepository.Update;
-import com.cpq.basicdata.v6.service.MaterialNoResolver;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -36,37 +35,33 @@ import java.util.Map;
 public class Q05ElementRecoveryHandler implements SheetHandler {
 
     @Inject ElementRecoveryDiscountRepository repo;
-    @Inject MaterialNoResolver materialNoResolver;
 
     @Override public String sheetName() { return "元素回收折扣"; }
 
     /** 一条已通过校验的更新意图（保留 rowNo 供逐行报告）。 */
-    private record ValidRow(int rowNo, String materialNo, String componentNo, BigDecimal rd) {}
+    private record ValidRow(int rowNo, String materialNo, String materialPartNo, String componentNo, BigDecimal rd) {}
 
     @Override
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
-        MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
 
-        // §P2-Q05 阶段1：逐行解析+校验(resolveMatchOnly 顺序/缓存不变)，收集有效行。
+        // §P2-Q05 阶段1：逐行读列+校验，收集有效行。
+        // 该 sheet 无投入料号列(见 backtask §3.1)：material_no←销售料号、material_part_no←材质料号、component_no←元素。
         List<ValidRow> valid = new ArrayList<>();
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
-                String inputName = row.exact("投入料号名称");
-                String materialNo = materialNoResolver.resolveMatchOnly(row.exact("投入料号"), inputName, batch);
+                String materialNo = row.getStr("销售料号");
+                String materialPartNo = row.getStr("材质料号");
                 String componentNo = row.getStr("元素");
                 BigDecimal recoveryDiscount = row.getDecimal("回收折扣");
-                // §5 更新型：只按名匹配不生成。料号为空且按名称查不到 → 记错误跳过。
+                // §5 更新型：只按键匹配现有 element_bom_item。销售料号/元素 为空 → 记错误跳过。
                 if (materialNo == null || componentNo == null) {
-                    result.recordError(row.rowNo, "投入料号/元素",
-                        materialNo == null
-                            ? "投入料号为空，且按名称[" + (inputName == null ? "" : inputName) + "]在料号表查无对应料号"
-                            : "匹配键不全");
+                    result.recordError(row.rowNo, "销售料号/元素", "匹配键不全");
                     continue;
                 }
-                valid.add(new ValidRow(row.rowNo, materialNo, componentNo, recoveryDiscount));
+                valid.add(new ValidRow(row.rowNo, materialNo, materialPartNo, componentNo, recoveryDiscount));
             } catch (Exception e) {
                 result.recordError(row.rowNo, "_row_", e.getMessage());
             }
@@ -77,11 +72,11 @@ public class Q05ElementRecoveryHandler implements SheetHandler {
             // 去重(末值胜，对齐逐行后写覆盖)后一条 UPDATE…FROM(VALUES) 批量写。
             Map<String, Update> dedup = new LinkedHashMap<>();   // 末值胜
             for (ValidRow vr : valid) {
-                dedup.put(ElementRecoveryDiscountRepository.key(vr.materialNo(), vr.componentNo()),
-                    new Update(vr.materialNo(), vr.componentNo(), vr.rd()));
+                dedup.put(ElementRecoveryDiscountRepository.key(vr.materialNo(), vr.materialPartNo(), vr.componentNo()),
+                    new Update(vr.materialNo(), vr.materialPartNo(), vr.componentNo(), vr.rd()));
             }
             List<String[]> distinctKeys = new ArrayList<>();
-            for (Update u : dedup.values()) distinctKeys.add(new String[]{u.materialNo(), u.componentNo()});
+            for (Update u : dedup.values()) distinctKeys.add(new String[]{u.materialNo(), u.materialPartNo(), u.componentNo()});
 
             Map<String, Integer> matchCount = repo.countCurrentMatches(ctx.customerNo, distinctKeys);
             repo.batchUpdate(ctx.customerNo, new ArrayList<>(dedup.values()), ctx.importedBy);
@@ -89,11 +84,11 @@ public class Q05ElementRecoveryHandler implements SheetHandler {
             // §P2-Q05 阶段3：逐行报告(与原逐行 updated==0 错误 / successRows / recordWrite 计数逐位一致)。
             for (ValidRow vr : valid) {
                 int updated = matchCount.getOrDefault(
-                    ElementRecoveryDiscountRepository.key(vr.materialNo(), vr.componentNo()), 0);
+                    ElementRecoveryDiscountRepository.key(vr.materialNo(), vr.materialPartNo(), vr.componentNo()), 0);
                 if (updated == 0) {
                     result.recordError(vr.rowNo(), "_lookup_",
-                        String.format("未匹配 element_bom_item (material_no=%s, component_no=%s) - 请先导入物料与元素BOM",
-                            vr.materialNo(), vr.componentNo()));
+                        String.format("未匹配 element_bom_item (material_no=%s, material_part_no=%s, component_no=%s) - 请先导入物料与元素BOM",
+                            vr.materialNo(), vr.materialPartNo(), vr.componentNo()));
                 } else {
                     result.successRows++;
                     result.recordWrite("element_bom_item", updated);

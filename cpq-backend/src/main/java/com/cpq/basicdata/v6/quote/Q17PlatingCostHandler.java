@@ -50,7 +50,7 @@ public class Q17PlatingCostHandler implements SheetHandler {
 
         for (SheetRow row : rows) {
             result.totalRows++;
-            String code = row.getStr("宏丰料号");
+            String code = row.getStr("销售料号", "宏丰料号");
             if (code == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
             String platingSchemeNo = row.getStr("电镀方案编号");
             if (platingSchemeNo != null && !platingSchemeNo.isBlank()) {

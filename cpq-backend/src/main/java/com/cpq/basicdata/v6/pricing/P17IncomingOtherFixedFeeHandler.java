@@ -35,7 +35,8 @@ public class P17IncomingOtherFixedFeeHandler implements SheetHandler {
                 }
                 UnitPrice p = UnitPriceWriter.newRow("PRICING", PricingPriceType.INCOMING_OTHER, costType, null, null, ctx.importedBy);
                 p.code = code;
-                p.finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
+                p.finishedMaterialNo = row.getStr("销售料号", "宏丰料号", "成品料号");
+                p.productionNo = row.getStr("生产料号");
                 p.seqNo = row.getInt("二级项次", "项次");
                 p.pricingPrice = row.getDecimal("费用");
                 if (p.pricingPrice == null) p.pricingPrice = java.math.BigDecimal.ZERO;

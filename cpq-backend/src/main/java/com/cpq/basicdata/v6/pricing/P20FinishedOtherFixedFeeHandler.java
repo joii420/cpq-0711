@@ -27,7 +27,7 @@ public class P20FinishedOtherFixedFeeHandler implements SheetHandler {
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
-                String code = row.getStr("宏丰料号");
+                String code = row.getStr("销售料号", "宏丰料号");
                 String costType = row.getStr("要素名称");
                 if (code == null || costType == null) {
                     result.recordError(row.rowNo, "宏丰料号/要素名称", "必填项为空");
@@ -40,6 +40,7 @@ public class P20FinishedOtherFixedFeeHandler implements SheetHandler {
                 if (p.pricingPrice == null) p.pricingPrice = java.math.BigDecimal.ZERO;
                 p.currency = row.getStr("币种");
                 p.unit = row.getStr("计价单位");
+                p.productionNo = row.getStr("生产料号");
                 writer.upsert(p);
                 result.successRows++;
                 result.recordWrite("unit_price", 1);

@@ -69,7 +69,7 @@ public class Q06FixedProcessFeeHandler implements SheetHandler {
             }
             MaterialMasterRepository.accNameType(mmAcc, code, inputName, "组成件");
             result.recordWrite("material_master", 1);
-            String finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
+            String finishedMaterialNo = row.getStr("销售料号", "宏丰料号", "成品料号");
             List<Object> key = Arrays.asList(code, finishedMaterialNo);
 
             groupKeyOf.computeIfAbsent(key, k -> {

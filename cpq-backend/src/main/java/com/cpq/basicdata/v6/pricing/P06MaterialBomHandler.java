@@ -39,7 +39,7 @@ public class P06MaterialBomHandler implements SheetHandler {
     private static final List<String> CHILD_CONTENT = List.of(
         "seq_no", "component_no", "operation_no", "component_usage_type",
         "composition_qty", "issue_unit", "base_qty", "scrap_rate", "fixed_scrap",
-        "defect_rate", "calc_type");
+        "defect_rate", "calc_type", "production_no");
 
     @Override
     @Transactional(Transactional.TxType.REQUIRES_NEW)
@@ -51,7 +51,7 @@ public class P06MaterialBomHandler implements SheetHandler {
         Map<String, String[]> compDesc = new LinkedHashMap<>();
         for (SheetRow row : rows) {
             result.totalRows++;
-            String materialNo = row.getStr("宏丰料号");
+            String materialNo = row.getStr("销售料号", "宏丰料号");
             if (materialNo == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
             Integer seq = row.getInt("项次");
             String componentNo = row.getStr("组成料号", "组件料号");
@@ -79,6 +79,7 @@ public class P06MaterialBomHandler implements SheetHandler {
             c.put("fixed_scrap", row.getDecimal("材料固定损耗量", "固定损耗"));
             c.put("defect_rate", row.getDecimal("不良率"));
             c.put("calc_type", row.getStr("计算类型"));
+            c.put("production_no", row.getStr("生产料号"));   // 描述列; material_bom_item 携带, master header 留 NULL
             childByMat.computeIfAbsent(materialNo, k -> new LinkedHashMap<>())
                       .put(Arrays.asList(seq, componentNo), c);   // 去重键 = (项次, 组成料号)
             result.successRows++;

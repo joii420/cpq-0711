@@ -102,7 +102,7 @@ public class P04PricingVersionHandler implements SheetHandler {
             for (SheetRow row : rows) {
                 result.totalRows++;
                 try {
-                    String materialNo = row.getStr("宏丰料号");
+                    String materialNo = row.getStr("销售料号", "宏丰料号");
                     Integer seqNo = row.getInt("项次");
                     String pricingVersionNo = row.getStr("核价版本编号");
                     if (materialNo == null || seqNo == null || pricingVersionNo == null) {
@@ -126,7 +126,7 @@ public class P04PricingVersionHandler implements SheetHandler {
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
-                String materialNo = row.getStr("宏丰料号");
+                String materialNo = row.getStr("销售料号", "宏丰料号");
                 Integer seqNo = row.getInt("项次");
                 String pricingVersionNo = row.getStr("核价版本编号");
                 if (materialNo == null || seqNo == null || pricingVersionNo == null) {

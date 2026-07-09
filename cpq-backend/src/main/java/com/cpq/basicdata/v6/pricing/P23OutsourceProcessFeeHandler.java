@@ -27,7 +27,7 @@ public class P23OutsourceProcessFeeHandler implements SheetHandler {
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
-                String code = row.getStr("宏丰料号");
+                String code = row.getStr("销售料号", "宏丰料号");
                 String operationNo = row.getStr("工序编号");
                 if (code == null || operationNo == null) {
                     result.recordError(row.rowNo, "宏丰料号/工序编号", "必填项为空");
@@ -40,6 +40,7 @@ public class P23OutsourceProcessFeeHandler implements SheetHandler {
                 if (p.pricingPrice == null) p.pricingPrice = java.math.BigDecimal.ZERO;
                 p.currency = row.getStr("币种");
                 p.unit = row.getStr("单位");
+                p.productionNo = row.getStr("生产料号");
                 writer.upsert(p);
                 result.successRows++;
                 result.recordWrite("unit_price", 1);

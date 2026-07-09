@@ -23,20 +23,25 @@ public class ElementRecoveryDiscountRepository {
     @Inject EntityManager em;
 
     public static final String DELIM = "";
-    public static String key(String materialNo, String componentNo) { return materialNo + DELIM + componentNo; }
+    private static String nz(String s) { return s == null ? "" : s; }
+    /** 3 键(material_no, material_part_no, component_no)编码; material_part_no 空归一 ''(与唯一键 COALESCE 一致)。 */
+    public static String key(String materialNo, String materialPartNo, String componentNo) {
+        return nz(materialNo) + DELIM + nz(materialPartNo) + DELIM + nz(componentNo);
+    }
 
     /** 一条更新（recovery_discount 可空——直接赋值，null 会覆盖为 NULL，与原逐行 SET 语义一致）。 */
-    public record Update(String materialNo, String componentNo, BigDecimal recoveryDiscount) {}
+    public record Update(String materialNo, String materialPartNo, String componentNo, BigDecimal recoveryDiscount) {}
 
     /** 原 Q05 逐行 UPDATE（逐字保留，等价基准），返回受影响行数。 */
-    public int updateOne(String customerNo, String materialNo, String componentNo,
+    public int updateOne(String customerNo, String materialNo, String materialPartNo, String componentNo,
                          BigDecimal rd, UUID updatedBy) {
         return em.createNativeQuery(
                 "UPDATE element_bom_item SET recovery_discount = :rd, updated_at = NOW(), updated_by = :u " +
                 "WHERE system_type='QUOTE' AND customer_no=:c AND material_no=:m " +
+                "  AND COALESCE(material_part_no,'') = COALESCE(:mp,'') " +
                 "  AND component_no=:cn AND is_current = TRUE")
             .setParameter("rd", rd).setParameter("u", updatedBy).setParameter("c", customerNo)
-            .setParameter("m", materialNo).setParameter("cn", componentNo)
+            .setParameter("m", materialNo).setParameter("mp", materialPartNo).setParameter("cn", componentNo)
             .executeUpdate();
     }
 
@@ -51,25 +56,31 @@ public class ElementRecoveryDiscountRepository {
         final int CHUNK = 1000;
         for (int start = 0; start < keys.size(); start += CHUNK) {
             List<String[]> chunk = keys.subList(start, Math.min(start + CHUNK, keys.size()));
-            StringBuilder in = new StringBuilder();
+            StringBuilder vals = new StringBuilder();
             for (int i = 0; i < chunk.size(); i++) {
-                if (i > 0) in.append(", ");
-                in.append("(:m").append(i).append(", :n").append(i).append(")");
+                if (i > 0) vals.append(", ");
+                vals.append("(CAST(:m").append(i).append(" AS varchar), CAST(:p").append(i)
+                    .append(" AS varchar), CAST(:n").append(i).append(" AS varchar))");
             }
             var q = em.createNativeQuery(
-                    "SELECT material_no, component_no, count(*) FROM element_bom_item " +
-                    "WHERE system_type='QUOTE' AND customer_no = :c AND is_current = TRUE " +
-                    "  AND (material_no, component_no) IN (" + in + ") " +
-                    "GROUP BY material_no, component_no")
+                    "SELECT ebi.material_no, COALESCE(ebi.material_part_no,''), ebi.component_no, count(*) " +
+                    "FROM element_bom_item ebi " +
+                    "JOIN (VALUES " + vals + ") AS v(material_no, material_part_no, component_no) " +
+                    "  ON ebi.material_no = v.material_no " +
+                    " AND COALESCE(ebi.material_part_no,'') = COALESCE(v.material_part_no,'') " +
+                    " AND ebi.component_no = v.component_no " +
+                    "WHERE ebi.system_type='QUOTE' AND ebi.customer_no = :c AND ebi.is_current = TRUE " +
+                    "GROUP BY ebi.material_no, COALESCE(ebi.material_part_no,''), ebi.component_no")
                 .setParameter("c", customerNo);
             for (int i = 0; i < chunk.size(); i++) {
                 q.setParameter("m" + i, chunk.get(i)[0]);
-                q.setParameter("n" + i, chunk.get(i)[1]);
+                q.setParameter("p" + i, chunk.get(i)[1]);
+                q.setParameter("n" + i, chunk.get(i)[2]);
             }
             @SuppressWarnings("unchecked")
             List<Object[]> rs = q.getResultList();
             for (Object[] r : rs) {
-                out.put(key(String.valueOf(r[0]), String.valueOf(r[1])), ((Number) r[2]).intValue());
+                out.put(key(String.valueOf(r[0]), String.valueOf(r[1]), String.valueOf(r[2])), ((Number) r[3]).intValue());
             }
         }
         return out;
@@ -89,17 +100,21 @@ public class ElementRecoveryDiscountRepository {
             StringBuilder vals = new StringBuilder();
             for (int i = 0; i < chunk.size(); i++) {
                 if (i > 0) vals.append(", ");
-                vals.append("(CAST(:m").append(i).append(" AS varchar), CAST(:n").append(i)
-                    .append(" AS varchar), CAST(:r").append(i).append(" AS numeric))");
+                vals.append("(CAST(:m").append(i).append(" AS varchar), CAST(:p").append(i)
+                    .append(" AS varchar), CAST(:n").append(i).append(" AS varchar), CAST(:r").append(i)
+                    .append(" AS numeric))");
             }
             String sql =
                 "UPDATE element_bom_item AS ebi SET recovery_discount = v.rd, updated_at = NOW(), updated_by = :u " +
-                "FROM (VALUES " + vals + ") AS v(material_no, component_no, rd) " +
+                "FROM (VALUES " + vals + ") AS v(material_no, material_part_no, component_no, rd) " +
                 "WHERE ebi.system_type='QUOTE' AND ebi.customer_no = :c AND ebi.is_current = TRUE " +
-                "  AND ebi.material_no = v.material_no AND ebi.component_no = v.component_no";
+                "  AND ebi.material_no = v.material_no " +
+                "  AND COALESCE(ebi.material_part_no,'') = COALESCE(v.material_part_no,'') " +
+                "  AND ebi.component_no = v.component_no";
             var q = em.createNativeQuery(sql).setParameter("u", updatedBy).setParameter("c", customerNo);
             for (int i = 0; i < chunk.size(); i++) {
                 q.setParameter("m" + i, chunk.get(i).materialNo());
+                q.setParameter("p" + i, chunk.get(i).materialPartNo());
                 q.setParameter("n" + i, chunk.get(i).componentNo());
                 q.setParameter("r" + i, chunk.get(i).recoveryDiscount());
             }

@@ -27,12 +27,13 @@ public class P14PackagingConsumableHandler implements SheetHandler {
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
-                String code = row.getStr("宏丰料号");
+                String code = row.getStr("销售料号", "宏丰料号");
                 if (code == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
                 String versionNo = row.getStr("取用的耗材版本");
                 UnitPrice p = UnitPriceWriter.newRow("PRICING", PricingPriceType.PACKAGING, "包装", versionNo, null, ctx.importedBy);
                 p.code = code;
                 p.finishedMaterialNo = code;
+                p.productionNo = row.getStr("生产料号");
                 p.operationNo = row.getStr("工序编号");
                 p.pricingPrice = row.getDecimal("包装成本单价");
                 if (p.pricingPrice == null) p.pricingPrice = java.math.BigDecimal.ZERO;

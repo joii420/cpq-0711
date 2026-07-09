@@ -28,7 +28,7 @@ public class P22PlatingCostHandler implements SheetHandler {
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
-                String code = row.getStr("宏丰料号");
+                String code = row.getStr("销售料号", "宏丰料号");
                 if (code == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
                 String platingSchemeNo = row.getStr("电镀方案编号");
                 if (platingSchemeNo != null && !platingSchemeNo.isBlank()) {
@@ -45,6 +45,7 @@ public class P22PlatingCostHandler implements SheetHandler {
                 p1.code = code;
                 p1.pricingPrice = processFee != null ? processFee : BigDecimal.ZERO;
                 p1.currency = currency; p1.unit = unit; p1.defectRate = defectRate;
+                p1.productionNo = row.getStr("生产料号");
                 writer.upsert(p1);
                 result.recordWrite("unit_price", 1);
 
@@ -52,6 +53,7 @@ public class P22PlatingCostHandler implements SheetHandler {
                 p2.code = code;
                 p2.pricingPrice = materialFee != null ? materialFee : BigDecimal.ZERO;
                 p2.currency = currency; p2.unit = unit; p2.defectRate = defectRate;
+                p2.productionNo = row.getStr("生产料号");
                 writer.upsert(p2);
                 result.recordWrite("unit_price", 1);
 

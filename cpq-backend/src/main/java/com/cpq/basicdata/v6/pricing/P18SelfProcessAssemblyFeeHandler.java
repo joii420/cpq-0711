@@ -27,7 +27,7 @@ public class P18SelfProcessAssemblyFeeHandler implements SheetHandler {
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
-                String code = row.getStr("宏丰料号");
+                String code = row.getStr("销售料号", "宏丰料号");
                 String operationNo = row.getStr("工序编号");
                 if (code == null || operationNo == null) {
                     result.recordError(row.rowNo, "宏丰料号/工序编号", "必填项为空");
@@ -36,6 +36,7 @@ public class P18SelfProcessAssemblyFeeHandler implements SheetHandler {
                 UnitPrice p = UnitPriceWriter.newRow("PRICING", PricingPriceType.SELF_PROCESS, "自制加工费", null, null, ctx.importedBy);
                 p.code = code;
                 p.finishedMaterialNo = code;
+                p.productionNo = row.getStr("生产料号");
                 p.operationNo = operationNo;
                 p.pricingPrice = row.getDecimal("加工费");
                 if (p.pricingPrice == null) p.pricingPrice = java.math.BigDecimal.ZERO;

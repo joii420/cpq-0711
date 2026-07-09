@@ -28,15 +28,15 @@ public class MaterialCustomerMapRepository implements PanacheRepositoryBase<Mate
                       String customerMaterialName, String customerProductNo,
                       String customerDrawingNo, Integer seqNo, String paymentMethod,
                       String baseCurrency, String quoteCurrency, BigDecimal exchangeRate,
-                      UUID updatedBy) {
+                      String productionNo, UUID updatedBy) {
         String sql =
             "INSERT INTO material_customer_map (system_type, material_no, customer_no, customer_name, " +
             "  customer_material_name, customer_product_no, customer_drawing_no, seq_no, " +
-            "  payment_method, base_currency, quote_currency, exchange_rate, " +
+            "  payment_method, base_currency, quote_currency, exchange_rate, production_no, " +
             "  created_at, updated_at, updated_by) " +
             "VALUES ('PRICING', :materialNo, :customerNo, :customerName, :customerMaterialName, " +
             "  :customerProductNo, :customerDrawingNo, :seqNo, :paymentMethod, " +
-            "  :baseCurrency, :quoteCurrency, :exchangeRate, NOW(), NOW(), :updatedBy) " +
+            "  :baseCurrency, :quoteCurrency, :exchangeRate, :productionNo, NOW(), NOW(), :updatedBy) " +
             "ON CONFLICT (system_type, material_no, customer_no, customer_product_no) DO UPDATE SET " +
             "  customer_name          = COALESCE(EXCLUDED.customer_name,          material_customer_map.customer_name), " +
             "  customer_material_name = COALESCE(EXCLUDED.customer_material_name, material_customer_map.customer_material_name), " +
@@ -46,6 +46,7 @@ public class MaterialCustomerMapRepository implements PanacheRepositoryBase<Mate
             "  base_currency          = COALESCE(EXCLUDED.base_currency,          material_customer_map.base_currency), " +
             "  quote_currency         = COALESCE(EXCLUDED.quote_currency,         material_customer_map.quote_currency), " +
             "  exchange_rate          = COALESCE(EXCLUDED.exchange_rate,          material_customer_map.exchange_rate), " +
+            "  production_no          = COALESCE(EXCLUDED.production_no,          material_customer_map.production_no), " +
             "  updated_at             = NOW(), " +
             "  updated_by             = EXCLUDED.updated_by";
         return em.createNativeQuery(sql)
@@ -60,6 +61,7 @@ public class MaterialCustomerMapRepository implements PanacheRepositoryBase<Mate
             .setParameter("baseCurrency", baseCurrency)
             .setParameter("quoteCurrency", quoteCurrency)
             .setParameter("exchangeRate", exchangeRate)
+            .setParameter("productionNo", productionNo)
             .setParameter("updatedBy", updatedBy)
             .executeUpdate();
     }

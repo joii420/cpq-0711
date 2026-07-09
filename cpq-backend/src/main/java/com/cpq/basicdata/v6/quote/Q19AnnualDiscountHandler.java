@@ -33,7 +33,7 @@ public class Q19AnnualDiscountHandler implements SheetHandler {
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
-                String materialNo = row.getStr("宏丰料号");
+                String materialNo = row.getStr("销售料号", "宏丰料号");
                 Integer order = row.getInt("年降顺序");
                 if (materialNo == null || order == null) {
                     result.recordError(row.rowNo, "宏丰料号/年降顺序", "必填项为空");

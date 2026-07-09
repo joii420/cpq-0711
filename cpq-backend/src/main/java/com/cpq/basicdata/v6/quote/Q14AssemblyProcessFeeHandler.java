@@ -49,7 +49,7 @@ public class Q14AssemblyProcessFeeHandler implements SheetHandler {
         Map<List<Object>, List<Map<String, Object>>> rowsOf = new LinkedHashMap<>();
         for (SheetRow row : rows) {
             result.totalRows++;
-            String materialNo = row.getStr("宏丰料号");
+            String materialNo = row.getStr("销售料号", "宏丰料号");
             String processNo = row.getStr("组装工序", "工序编号");
             if (materialNo == null || processNo == null) {
                 result.recordError(row.rowNo, "宏丰料号/工序编号", "必填项为空");

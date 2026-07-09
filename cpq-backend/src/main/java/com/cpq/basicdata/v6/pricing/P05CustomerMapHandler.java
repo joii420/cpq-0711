@@ -31,11 +31,12 @@ public class P05CustomerMapHandler implements SheetHandler {
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
-                String materialNo = row.getStr("宏丰料号");
+                String materialNo = row.getStr("销售料号", "宏丰料号");
+                String productionNo = row.getStr("生产料号");
                 String customerNo = row.getStr("客户编号");
                 String customerProductNo = row.getStr("客户产品编号");
                 if (materialNo == null || customerNo == null || customerProductNo == null) {
-                    result.recordError(row.rowNo, "宏丰料号/客户编号/客户产品编号", "必填项为空");
+                    result.recordError(row.rowNo, "销售料号/客户编号/客户产品编号", "必填项为空");
                     continue;
                 }
 
@@ -58,6 +59,7 @@ public class P05CustomerMapHandler implements SheetHandler {
                     null,
                     row.getInt("项次"),
                     null, null, null, null,
+                    productionNo,
                     ctx.importedBy);
                 result.successRows++;
                 result.recordWrite("material_customer_map", 1);

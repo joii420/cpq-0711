@@ -45,9 +45,9 @@ public class Q15AssemblyAnnualDiscountHandler implements SheetHandler {
         Map<List<Object>, List<Map<String, Object>>> contentOf = new LinkedHashMap<>();
         for (SheetRow row : rows) {
             result.totalRows++;
-            String code = row.getStr("宏丰料号");
+            String code = row.getStr("销售料号", "宏丰料号");
             if (code == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
-            String finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
+            String finishedMaterialNo = row.getStr("销售料号", "宏丰料号", "成品料号");
             String operationNo = row.getStr("组装工序");
             List<Object> key = Arrays.asList(code, finishedMaterialNo, operationNo);
             groupKeyOf.computeIfAbsent(key, k -> {

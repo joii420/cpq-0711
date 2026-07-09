@@ -32,7 +32,7 @@ public class Q18UnitWeightHandler implements SheetHandler {
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
-                String materialNo = row.getStr("料号", "宏丰料号");
+                String materialNo = row.getStr("销售料号", "料号", "宏丰料号");
                 java.math.BigDecimal unitWeight = row.getDecimal("单重");
                 if (materialNo == null) { result.recordError(row.rowNo, "料号", "为空"); continue; }
                 if (!mmAcc.containsKey(materialNo) || unitWeight != null) mmAcc.put(materialNo, unitWeight);

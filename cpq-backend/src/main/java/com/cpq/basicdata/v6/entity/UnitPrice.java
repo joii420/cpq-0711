@@ -39,6 +39,10 @@ public class UnitPrice extends V6BaseEntity {
     @Column(name = "finished_material_no", length = 20)
     public String finishedMaterialNo;
 
+    /** 生产料号(描述列, 不进唯一键); 由核价各 unit_price 型 handler 读"生产料号"列写入。 */
+    @Column(name = "production_no", length = 32)
+    public String productionNo;
+
     @Column(name = "operation_no", length = 20)
     public String operationNo;
 

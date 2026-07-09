@@ -27,7 +27,7 @@ public class P19FinishedOtherRatioFeeHandler implements SheetHandler {
         for (SheetRow row : rows) {
             result.totalRows++;
             try {
-                String code = row.getStr("宏丰料号");
+                String code = row.getStr("销售料号", "宏丰料号");
                 String costType = row.getStr("要素名称");
                 if (code == null || costType == null) {
                     result.recordError(row.rowNo, "宏丰料号/要素名称", "必填项为空");
@@ -38,6 +38,7 @@ public class P19FinishedOtherRatioFeeHandler implements SheetHandler {
                 p.seqNo = row.getInt("项次");
                 p.costRatio = row.getDecimal("比例");
                 p.pricingPrice = java.math.BigDecimal.ZERO;  // 核价比例费用保持原行为（pricing_price=0），不受报价 D1 改动影响
+                p.productionNo = row.getStr("生产料号");
                 writer.upsert(p);
                 result.successRows++;
                 result.recordWrite("unit_price", 1);

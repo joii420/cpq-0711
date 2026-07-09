@@ -59,7 +59,7 @@ public class Q10SelfProcessFeeHandler implements SheetHandler {
         for (SheetRow row : rows) {
             result.totalRows++;
             String inputName = row.exact("投入料号名称");
-            String finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
+            String finishedMaterialNo = row.getStr("销售料号", "宏丰料号", "成品料号");
             String code;
             try {
                 code = materialNoResolver.resolve(row.exact("投入料号"), inputName, batch);

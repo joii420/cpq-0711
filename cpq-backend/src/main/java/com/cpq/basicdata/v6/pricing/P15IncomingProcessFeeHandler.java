@@ -31,7 +31,8 @@ public class P15IncomingProcessFeeHandler implements SheetHandler {
                 if (code == null) { result.recordError(row.rowNo, "来料料号", "为空"); continue; }
                 UnitPrice p = UnitPriceWriter.newRow("PRICING", PricingPriceType.INCOMING_PROCESS, "来料加工费", null, null, ctx.importedBy);
                 p.code = code;
-                p.finishedMaterialNo = row.getStr("宏丰料号", "成品料号");
+                p.finishedMaterialNo = row.getStr("销售料号", "宏丰料号", "成品料号");
+                p.productionNo = row.getStr("生产料号");
                 p.pricingPrice = row.getDecimal("加工费");
                 if (p.pricingPrice == null) p.pricingPrice = java.math.BigDecimal.ZERO;
                 p.currency = row.getStr("币种");

@@ -5,9 +5,6 @@ import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
 import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
-import com.cpq.basicdata.v6.service.MaterialNoResolver;
-import com.cpq.basicdata.v6.service.MaterialNoUnresolvableException;
-import com.cpq.basicdata.v6.service.QuoteMaterialNoAllocator;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -32,7 +29,6 @@ import java.util.Map;
 public class Q04ElementBomHandler implements SheetHandler {
 
     @Inject VersionedV6Writer writer;
-    @Inject MaterialNoResolver materialNoResolver;
     @Inject MaterialMasterRepository materialMasterRepo;
 
     @org.eclipse.microprofile.config.inject.ConfigProperty(name = "cpq.v6import-setbased-writer", defaultValue = "false")
@@ -48,26 +44,19 @@ public class Q04ElementBomHandler implements SheetHandler {
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
 
-        MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
-        batch.customerNo = ctx.customerNo;
-        batch.yyMm = java.time.YearMonth.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMM"));
-        // §P1-A 料号表 upsert 延后批量：material_no -> [name, type]（首个非空胜）
+        // §P1-A 料号表 upsert 延后批量：material_no -> [name, type]
         Map<String, String[]> mmAcc = new LinkedHashMap<>();
-
-        // 按 material_no 分组；组内按 (seq_no, component_no) 去重（后写覆盖，匹配原 ON CONFLICT 语义）
-        Map<String, Map<List<Object>, Map<String, Object>>> childDedupByMat = new LinkedHashMap<>();
+        // 分组维度 = (material_no=销售料号, material_part_no=材质料号); 组内按(项次,元素)去重。
+        // 报价该 sheet 无投入料号列, 不再走 materialNoResolver 铸号(见 backtask §3.1);
+        // 销售料号的名称由 Q02(客户料号关系)维护, 此处仅登记料号+类型(name=null 不覆盖)。
+        Map<List<String>, Map<List<Object>, Map<String, Object>>> childByKey = new LinkedHashMap<>();
+        Map<List<String>, String[]> keyMeta = new LinkedHashMap<>();
         for (SheetRow row : rows) {
             result.totalRows++;
-            String inputName = row.exact("投入料号名称");
-            String materialNo;
-            try {
-                materialNo = materialNoResolver.resolve(row.exact("投入料号"), inputName, batch);
-            } catch (MaterialNoUnresolvableException ex) {
-                result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
-            } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
-                result.recordError(row.rowNo, "投入料号", "报价料号跨客户串号"); continue;
-            }
-            MaterialMasterRepository.accNameType(mmAcc, materialNo, inputName, "组成件");
+            String materialNo = row.getStr("销售料号");
+            if (materialNo == null) { result.recordError(row.rowNo, "销售料号", "为空"); continue; }
+            String materialPartNo = row.getStr("材质料号");
+            MaterialMasterRepository.accNameType(mmAcc, materialNo, null, "成品");
             result.recordWrite("material_master", 1);
             Integer seq = row.getInt("项次");
             String componentNo = row.getStr("元素");
@@ -78,13 +67,13 @@ public class Q04ElementBomHandler implements SheetHandler {
             c.put("scrap_rate", row.getDecimal("损耗率"));
             c.put("composition_qty", row.getDecimal("毛用量"));
             // issue_unit: 净用量单位非空(trim 后)时优先采用, 否则回退毛用量单位。
-            // getStr 已对空白做 trim→null 归一, 故 != null 即等价于"trim 后非空"。
             String netUnit = row.getStr("净用量单位");
             c.put("issue_unit", netUnit != null ? netUnit : row.getStr("毛用量单位"));
             c.put("base_qty", row.getDecimal("净用量"));
-            childDedupByMat
-                .computeIfAbsent(materialNo, k -> new LinkedHashMap<>())
-                .put(Arrays.asList(seq, componentNo), c);   // 去重键 = (项次, 元素)
+            List<String> gkey = Arrays.asList(materialNo, materialPartNo == null ? "" : materialPartNo);
+            keyMeta.putIfAbsent(gkey, new String[]{materialNo, materialPartNo});
+            childByKey.computeIfAbsent(gkey, k -> new LinkedHashMap<>())
+                      .put(Arrays.asList(seq, componentNo), c);   // 去重键 = (项次, 元素)
             result.successRows++;
         }
 
@@ -99,11 +88,13 @@ public class Q04ElementBomHandler implements SheetHandler {
 
         if (setBased) {
             List<VersionedV6Writer.MasterDetailItem> items = new ArrayList<>();
-            for (Map.Entry<String, Map<List<Object>, Map<String, Object>>> e : childDedupByMat.entrySet()) {
+            for (Map.Entry<List<String>, Map<List<Object>, Map<String, Object>>> e : childByKey.entrySet()) {
+                String[] meta = keyMeta.get(e.getKey());
                 Map<String, Object> masterGk = new LinkedHashMap<>();
                 masterGk.put("system_type", "QUOTE");
                 masterGk.put("customer_no", ctx.customerNo);
-                masterGk.put("material_no", e.getKey());
+                masterGk.put("material_no", meta[0]);
+                masterGk.put("material_part_no", meta[1]);
                 Map<String, Object> childGk = new LinkedHashMap<>(masterGk);
                 List<Map<String, Object>> childRows = new ArrayList<>(e.getValue().values());
                 items.add(new VersionedV6Writer.MasterDetailItem(masterGk, childGk, childRows));
@@ -120,14 +111,15 @@ public class Q04ElementBomHandler implements SheetHandler {
                 result.recordError(0, "_batch_", ex.getMessage());
             }
         } else {
-            for (Map.Entry<String, Map<List<Object>, Map<String, Object>>> e : childDedupByMat.entrySet()) {
-                String materialNo = e.getKey();
+            for (Map.Entry<List<String>, Map<List<Object>, Map<String, Object>>> e : childByKey.entrySet()) {
+                String[] meta = keyMeta.get(e.getKey());
                 List<Map<String, Object>> childRows = new ArrayList<>(e.getValue().values());
                 try {
                     Map<String, Object> masterGk = new LinkedHashMap<>();
                     masterGk.put("system_type", "QUOTE");
                     masterGk.put("customer_no", ctx.customerNo);
-                    masterGk.put("material_no", materialNo);
+                    masterGk.put("material_no", meta[0]);
+                    masterGk.put("material_part_no", meta[1]);
                     Map<String, Object> childGk = new LinkedHashMap<>(masterGk);   // element_bom_item 同身份
                     writer.writeVersionedMasterDetail(
                         "element_bom", "characteristic", masterGk, Map.of("bom_type", "MATERIAL"),
@@ -135,7 +127,7 @@ public class Q04ElementBomHandler implements SheetHandler {
                     result.recordWrite("element_bom", 1);
                     result.recordWrite("element_bom_item", childRows.size());
                 } catch (Exception ex) {
-                    result.recordError(0, "_group_", "material_no=" + materialNo + ": " + ex.getMessage());
+                    result.recordError(0, "_group_", "material_no=" + meta[0] + "/part=" + meta[1] + ": " + ex.getMessage());
                 }
             }
         }

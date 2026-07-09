@@ -69,7 +69,7 @@ public class Q02CustomerMapHandler implements SheetHandler {
         List<ParsedRow> parsed = new ArrayList<>();
         for (SheetRow row : rows) {
             result.totalRows++;
-            String materialNo = row.getStr("报价料号", "宏丰料号");
+            String materialNo = row.getStr("销售料号", "报价料号", "宏丰料号");
             String customerProductNo = row.getStr("客户产品编号");
             if (materialNo == null || customerProductNo == null) {
                 result.recordError(row.rowNo, "报价料号/客户产品编号", "必填项为空");

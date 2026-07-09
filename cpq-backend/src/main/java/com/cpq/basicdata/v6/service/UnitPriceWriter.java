@@ -22,7 +22,7 @@ public class UnitPriceWriter {
     public int upsert(UnitPrice p) {
         String sql =
             "INSERT INTO unit_price (system_type, price_type, version_no, code, name, specification, " +
-            "  dimension, finished_material_no, operation_no, cost_type, seq_no, discount_order, item_seq, plating_scheme_no, " +
+            "  dimension, finished_material_no, production_no, operation_no, cost_type, seq_no, discount_order, item_seq, plating_scheme_no, " +
             "  pricing_price, cost_ratio, market_ref_price, currency, unit, conversion_rate, " +
             "  recovery_discount, life_qty, life_unit, supplier_no, supplier_name, customer_no, " +
             "  customer_name, data_type, source_url, source_name, fetch_rule, premium_fee, " +
@@ -30,7 +30,7 @@ public class UnitPriceWriter {
             "  is_fluctuate_with_material, material_increase_ratio, material_fixed_increase, " +
             "  defect_rate, created_at, updated_at, updated_by) " +
             "VALUES (:systemType, :priceType, :versionNo, :code, :name, :specification, " +
-            "  :dimension, :finishedMaterialNo, :operationNo, :costType, :seqNo, :discountOrder, :itemSeq, :platingSchemeNo, " +
+            "  :dimension, :finishedMaterialNo, :productionNo, :operationNo, :costType, :seqNo, :discountOrder, :itemSeq, :platingSchemeNo, " +
             "  :pricingPrice, :costRatio, :marketRefPrice, :currency, :unit, :conversionRate, " +
             "  :recoveryDiscount, :lifeQty, :lifeUnit, :supplierNo, :supplierName, :customerNo, " +
             "  :customerName, :dataType, :sourceUrl, :sourceName, :fetchRule, :premiumFee, " +
@@ -45,6 +45,7 @@ public class UnitPriceWriter {
             "  name                       = COALESCE(EXCLUDED.name, unit_price.name), " +
             "  specification              = COALESCE(EXCLUDED.specification, unit_price.specification), " +
             "  dimension                  = COALESCE(EXCLUDED.dimension, unit_price.dimension), " +
+            "  production_no              = COALESCE(EXCLUDED.production_no, unit_price.production_no), " +
             "  plating_scheme_no          = COALESCE(EXCLUDED.plating_scheme_no, unit_price.plating_scheme_no), " +
             "  pricing_price              = EXCLUDED.pricing_price, " +
             "  cost_ratio                 = COALESCE(EXCLUDED.cost_ratio, unit_price.cost_ratio), " +
@@ -82,6 +83,7 @@ public class UnitPriceWriter {
             .setParameter("specification", p.specification)
             .setParameter("dimension", p.dimension)
             .setParameter("finishedMaterialNo", p.finishedMaterialNo)
+            .setParameter("productionNo", p.productionNo)
             .setParameter("operationNo", p.operationNo)
             .setParameter("costType", p.costType)
             .setParameter("seqNo", p.seqNo)
