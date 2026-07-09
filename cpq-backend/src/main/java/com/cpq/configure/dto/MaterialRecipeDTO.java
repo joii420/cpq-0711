@@ -1,5 +1,6 @@
 package com.cpq.configure.dto;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -12,6 +13,10 @@ public class MaterialRecipeDTO {
     public String recipeType;
     public String status;
     public Integer sortOrder;
+    /** 创建时间（task-0708 列表新增列，排序依据之一） */
+    public OffsetDateTime createdAt;
+    /** 修改时间（task-0708 列表新增列，排序依据之一） */
+    public OffsetDateTime updatedAt;
     /** Only populated in detail endpoint (GET /{id}); list endpoint leaves it null. */
     public List<MaterialRecipeElementDTO> elements;
     /**

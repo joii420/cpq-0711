@@ -79,16 +79,18 @@ class ElementRecoveryBatchUpdateEquivTest {
     @Transactional
     void batchEqualsSequential() {
         // --- 逐行路径 ---
+        // 注：seed 未设 material_part_no(NULL→COALESCE ''),故全程传 null 即等价中性
+        //    (task-0708 料号语义把键从 2 维扩到 3 维；本等价护栏用统一 null 保持不变)。
         seedNamespace(CS);
-        for (Op op : OPS) repo.updateOne(CS, op.m(), op.cn(), d(op.rd()), USER);
+        for (Op op : OPS) repo.updateOne(CS, op.m(), null, op.cn(), d(op.rd()), USER);
 
         // --- 批量路径(去重末值胜 + countMatches + batchUpdate) ---
         seedNamespace(CB);
         Map<String, Update> dedup = new LinkedHashMap<>();
-        for (Op op : OPS) dedup.put(ElementRecoveryDiscountRepository.key(op.m(), op.cn()),
-                new Update(op.m(), op.cn(), d(op.rd())));
+        for (Op op : OPS) dedup.put(ElementRecoveryDiscountRepository.key(op.m(), null, op.cn()),
+                new Update(op.m(), null, op.cn(), d(op.rd())));
         List<String[]> keys = new ArrayList<>();
-        for (Update u : dedup.values()) keys.add(new String[]{u.materialNo(), u.componentNo()});
+        for (Update u : dedup.values()) keys.add(new String[]{u.materialNo(), u.materialPartNo(), u.componentNo()});
         Map<String, Integer> cnt = repo.countCurrentMatches(CB, keys);
         repo.batchUpdate(CB, new ArrayList<>(dedup.values()), USER);
 
@@ -97,9 +99,9 @@ class ElementRecoveryBatchUpdateEquivTest {
             "批量与逐行 element_bom_item 落库状态应逐位一致");
 
         // --- countMatches = 逐行 updated 计数 ---
-        assertEquals(2, cnt.get(ElementRecoveryDiscountRepository.key("M1", "C1")), "(M1,C1) 多匹配=2");
-        assertEquals(1, cnt.get(ElementRecoveryDiscountRepository.key("M1", "C2")), "(M1,C2)=1");
-        assertNull(cnt.get(ElementRecoveryDiscountRepository.key("M2", "C1")), "(M2,C1) 未匹配 → 不在 map");
+        assertEquals(2, cnt.get(ElementRecoveryDiscountRepository.key("M1", null, "C1")), "(M1,C1) 多匹配=2");
+        assertEquals(1, cnt.get(ElementRecoveryDiscountRepository.key("M1", null, "C2")), "(M1,C2)=1");
+        assertNull(cnt.get(ElementRecoveryDiscountRepository.key("M2", null, "C1")), "(M2,C1) 未匹配 → 不在 map");
 
         // --- 锚定预期 final 值 ---
         assertEquals("M1/A/C1=2.0000;M1/A/C2=NULL;M1/B/C1=2.0000;M1/C/C1=9.0000",
