@@ -40,7 +40,8 @@ public class P05CustomerMapHandler implements SheetHandler {
                     continue;
                 }
 
-                // 1. material_master upsert (name/spec/dimension/old_material_no)
+                // 1. material_master upsert (name/spec/dimension/old_material_no/production_no)
+                //    repair-1 决策A: material_master 作生产料号权威归属; 本 sheet 生产料号列常为空则写 null(由成本 sheet 侧回填)。
                 masterRepo.upsertByMaterialNo(
                     materialNo,
                     row.getStr("品名"),
@@ -48,6 +49,7 @@ public class P05CustomerMapHandler implements SheetHandler {
                     row.getStr("尺寸"),
                     row.getStr("旧料号"),
                     null, null, null, null,
+                    productionNo,
                     ctx.importedBy);
                 result.recordWrite("material_master", 1);
 

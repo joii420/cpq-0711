@@ -8,6 +8,7 @@
 > - **`物料与元素BOM` 例外**：材质料号源列名仍为「物料料号」→ 落 `element_bom.material_part_no`（材质料号，新增列并纳入唯一键 `(system_type, customer_no, material_no, material_part_no, characteristic)`）；`production_no` NULL（该 Sheet 无生产料号列）。同一销售料号下多材质料号各自独立成 BOM/版本，`P07` 分组键改为 `(material_no, material_part_no)`。
 > - **唯一键 & 升版**：恢复到引入 sales_part_no 之前的键结构（迁移 `V315` `DROP COLUMN sales_part_no` + 去唯一索引 `COALESCE(sales_part_no,'')` 后缀），升版 groupKey 按 `material_no`（销售料号）；element_bom 两表额外把 `material_part_no` 纳入唯一键。**V6.2 的 `sales_part_no` 维度整体废弃**（该 spec `docs/superpowers/specs/2026-07-07-核价销售料号维度落库-design.md` 作废）。
 > - `汇总` Sheet **不导入**（无对应 handler，`costing_summary` 由 `CostingSummaryService.compute()` 算出，键 `hf_part_no`，本次不动）。
+> - ⚠️ **护栏（repair-1）**：以下正文逐 Sheet 明细表若与本 V6.3 摘要冲突，**以摘要为准**（material_no=销售料号 / production_no=生产料号 / 组成料号=component_no 语义随 calc_type）；**§正文 172–270 段（客户料号关系/物料BOM/物料与元素BOM 等）随并发 WIP 校正，勿写回 sales_part_no**。
 >
 > **V6.1（2026-06-30）**：补齐 `unit_price.price_type` 细分化（2026-06-30 代码已生效，本文档此前漏更）——原超载大类 `MATERIAL` 在核价写入端废弃，各费用 Sheet 直接写 7 个细分值（材料核价价格=`MATERIAL_PRICE`、包装=`PACKAGING`、来料加工费=`INCOMING_PROCESS`、来料其他费用比例+固定合并=`INCOMING_OTHER`、自制加工费=`SELF_PROCESS`、成品其他比例+固定合并=`FINISHED_OTHER`、其他外加工=`OUTSOURCE_PROCESS`、电镀两条=`PLATING`）；`ELEMENT`（元素核价价格表）/`CONSUMABLE`（生产耗材BOM）已与 Sheet 1:1 **保留不动**；`cost_type` 全程不变。比例/固定不进 price_type，靠 `cost_ratio` vs `pricing_price` 哪列有值区分。规则出处 `docs/superpowers/specs/2026-06-30-pricing-unit-price-source-enum-design.md`（DDL=`V306`，常量类=`PricingPriceType`）。
 
@@ -337,7 +338,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `material_no` | ✅ | 料号 |
+| 销售料号 | `material_no` | ✅ | 主料号（旧名宏丰料号回退） |
+| 生产料号 | `production_no` | ✅ | 描述列，不进唯一键（repair-1 决策A） |
 | 品名 | — | ❌ | 不导入 |
 | 规格 | — | ❌ | 不导入 |
 | 尺寸 | — | ❌ | 不导入 |
@@ -353,7 +355,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `material_no` | ✅ | 料号 |
+| 销售料号 | `material_no` | ✅ | 主料号（旧名宏丰料号回退） |
+| 生产料号 | `production_no` | ✅ | 描述列，不进唯一键（repair-1 决策A） |
 | 工序编号 | `process_no` | ✅ | |
 | 人工标准单价 | `standard_labor_rate` | ✅ | 标准工时单价 |
 | 币种 | `currency` | ✅ | |
@@ -370,7 +373,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `material_no` | ✅ | 料号 |
+| 销售料号 | `material_no` | ✅ | 主料号（旧名宏丰料号回退） |
+| 生产料号 | `production_no` | ✅ | 描述列，不进唯一键（repair-1 决策A） |
 | 品名 | — | ❌ | 不导入 |
 | 规格 | — | ❌ | 不导入 |
 | 尺寸 | — | ❌ | 不导入 |
@@ -392,7 +396,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `material_no` | ✅ | 料号 |
+| 销售料号 | `material_no` | ✅ | 主料号（旧名宏丰料号回退） |
+| 生产料号 | `production_no` | ✅ | 描述列，不进唯一键（repair-1 决策A） |
 | 品名 | — | ❌ | 不导入 |
 | 规格 | — | ❌ | 不导入 |
 | 尺寸 | — | ❌ | 不导入 |
@@ -414,7 +419,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `material_no` | ✅ | 料号 |
+| 销售料号 | `material_no` | ✅ | 主料号（旧名宏丰料号回退） |
+| 生产料号 | `production_no` | ✅ | 描述列，不进唯一键（repair-1 决策A） |
 | 品名 | — | ❌ | 不导入 |
 | 规格 | — | ❌ | 不导入 |
 | 尺寸 | — | ❌ | 不导入 |
@@ -436,7 +442,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `material_no` | ✅ | 料号 |
+| 销售料号 | `material_no` | ✅ | 主料号（旧名宏丰料号回退） |
+| 生产料号 | `production_no` | ✅ | 描述列，不进唯一键（repair-1 决策A） |
 | 品名 | — | ❌ | 不导入 |
 | 规格 | — | ❌ | 不导入 |
 | 尺寸 | — | ❌ | 不导入 |

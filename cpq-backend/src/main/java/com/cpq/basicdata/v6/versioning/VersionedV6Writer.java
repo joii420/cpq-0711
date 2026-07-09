@@ -473,6 +473,7 @@ public class VersionedV6Writer {
             for (Map<String, Object> r : existingChild) childFlip.add(asUuid(r.get("__id")));
             Map<String, Object> master = new LinkedHashMap<>(it.masterGroupKey);
             if (masterFixedColumns != null) master.putAll(masterFixedColumns);
+            if (it.masterContent != null) master.putAll(it.masterContent);   // 每-item 主表描述列(不进版本比较, 如 production_no)
             master.put(masterVersionColumn, newVersion); master.put("is_current", true);
             masterInsert.add(master);
             for (Map<String, Object> row : it.childRows) {
@@ -490,14 +491,20 @@ public class VersionedV6Writer {
         return versionOut;
     }
 
-    /** 批量主从单项入参。 */
+    /** 批量主从单项入参。masterContent = 每-item 主表描述列(可空; 不进 groupKey/版本比较, 如 production_no)。 */
     public static final class MasterDetailItem {
         public final Map<String, Object> masterGroupKey;
         public final Map<String, Object> childGroupKey;
         public final List<Map<String, Object>> childRows;
+        public final Map<String, Object> masterContent;
         public MasterDetailItem(Map<String, Object> masterGroupKey, Map<String, Object> childGroupKey,
                                 List<Map<String, Object>> childRows) {
-            this.masterGroupKey = masterGroupKey; this.childGroupKey = childGroupKey; this.childRows = childRows;
+            this(masterGroupKey, childGroupKey, childRows, null);
+        }
+        public MasterDetailItem(Map<String, Object> masterGroupKey, Map<String, Object> childGroupKey,
+                                List<Map<String, Object>> childRows, Map<String, Object> masterContent) {
+            this.masterGroupKey = masterGroupKey; this.childGroupKey = childGroupKey;
+            this.childRows = childRows; this.masterContent = masterContent;
         }
     }
 

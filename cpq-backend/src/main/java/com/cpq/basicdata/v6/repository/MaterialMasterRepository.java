@@ -46,9 +46,9 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
     public int upsertByMaterialNo(String materialNo, String materialName, String specification,
                                   String dimension, String oldMaterialNo, String materialType,
                                   String usageProperty, BigDecimal unitWeight, String standardUnit,
-                                  UUID updatedBy) {
+                                  String productionNo, UUID updatedBy) {
         return upsertByMaterialNo(materialNo, materialName, specification, dimension, oldMaterialNo,
-            materialType, usageProperty, unitWeight, standardUnit, updatedBy, false);
+            materialType, usageProperty, unitWeight, standardUnit, productionNo, updatedBy, false);
     }
 
     /**
@@ -59,7 +59,7 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
     public int upsertByMaterialNo(String materialNo, String materialName, String specification,
                                   String dimension, String oldMaterialNo, String materialType,
                                   String usageProperty, BigDecimal unitWeight, String standardUnit,
-                                  UUID updatedBy, boolean preserveDescriptive) {
+                                  String productionNo, UUID updatedBy, boolean preserveDescriptive) {
         String nameClause = preserveDescriptive
             ? "COALESCE(material_master.material_name, EXCLUDED.material_name)"
             : "COALESCE(EXCLUDED.material_name, material_master.material_name)";
@@ -68,12 +68,13 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
             : "COALESCE(EXCLUDED.material_type, material_master.material_type)";
         String sql =
             "INSERT INTO material_master (material_no, material_name, specification, dimension, " +
-            "  old_material_no, material_type, usage_property, unit_weight, standard_unit, " +
+            "  old_material_no, material_type, usage_property, unit_weight, standard_unit, production_no, " +
             "  created_at, updated_at, updated_by) " +
             "VALUES (:materialNo, :materialName, :specification, :dimension, " +
-            "  :oldMaterialNo, :materialType, :usageProperty, :unitWeight, :standardUnit, " +
+            "  :oldMaterialNo, :materialType, :usageProperty, :unitWeight, :standardUnit, :productionNo, " +
             "  NOW(), NOW(), :updatedBy) " +
             "ON CONFLICT (material_no) DO UPDATE SET " +
+            "  production_no    = COALESCE(EXCLUDED.production_no,    material_master.production_no), " +
             "  material_name    = " + nameClause + ", " +
             "  material_type    = " + typeClause + ", " +
             "  specification    = COALESCE(EXCLUDED.specification,    material_master.specification), " +
@@ -94,12 +95,18 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
             .setParameter("usageProperty", usageProperty)
             .setParameter("unitWeight", unitWeight)
             .setParameter("standardUnit", standardUnit)
+            .setParameter("productionNo", productionNo)
             .setParameter("updatedBy", updatedBy)
             .executeUpdate();
     }
 
-    /** 批量 upsert 的一行（仅 material_no / material_name / material_type 维度，其余列恒 NULL）。 */
-    public record NameTypeRow(String materialNo, String materialName, String materialType) {}
+    /** 批量 upsert 的一行（material_no / material_name / material_type / production_no 维度，其余列恒 NULL）。
+     *  3 参构造保留兼容既有调用点(productionNo=null); repair-1 主料号登记用 4 参传生产料号。 */
+    public record NameTypeRow(String materialNo, String materialName, String materialType, String productionNo) {
+        public NameTypeRow(String materialNo, String materialName, String materialType) {
+            this(materialNo, materialName, materialType, null);
+        }
+    }
 
     /** 批量 upsert 的一行（仅 material_no / unit_weight 维度，其余列恒 NULL）。 */
     public record WeightRow(String materialNo, BigDecimal unitWeight) {}
@@ -144,13 +151,15 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
                 if (i > 0) vals.append(", ");
                 vals.append("(:m").append(i).append(", :n").append(i)
                     .append(", NULL, NULL, NULL, :t").append(i)
-                    .append(", NULL, NULL, NULL, NOW(), NOW(), :u)");
+                    .append(", NULL, NULL, NULL, :p").append(i)
+                    .append(", NOW(), NOW(), :u)");
             }
             String sql =
                 "INSERT INTO material_master (material_no, material_name, specification, dimension, " +
-                "  old_material_no, material_type, usage_property, unit_weight, standard_unit, " +
+                "  old_material_no, material_type, usage_property, unit_weight, standard_unit, production_no, " +
                 "  created_at, updated_at, updated_by) VALUES " + vals +
                 " ON CONFLICT (material_no) DO UPDATE SET " +
+                "  production_no    = COALESCE(EXCLUDED.production_no,    material_master.production_no), " +
                 "  material_name    = " + nameClause + ", " +
                 "  material_type    = " + typeClause + ", " +
                 "  specification    = COALESCE(EXCLUDED.specification,    material_master.specification), " +
@@ -166,6 +175,7 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
                 q.setParameter("m" + i, chunk.get(i).materialNo());
                 q.setParameter("n" + i, chunk.get(i).materialName());
                 q.setParameter("t" + i, chunk.get(i).materialType());
+                q.setParameter("p" + i, chunk.get(i).productionNo());
             }
             q.setParameter("u", updatedBy);
             q.executeUpdate();

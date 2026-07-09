@@ -39,4 +39,8 @@ public class MaterialMaster extends V6BaseEntity {
 
     @Column(name = "standard_unit", length = 20)
     public String standardUnit;
+
+    /** 生产料号(repair-1 决策A: material_master 作生产料号权威归属; 与销售料号 material_no 1:1, 不进键)。 */
+    @Column(name = "production_no", length = 32)
+    public String productionNo;
 }
