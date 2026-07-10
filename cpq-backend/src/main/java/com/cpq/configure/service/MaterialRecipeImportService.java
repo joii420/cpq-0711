@@ -27,9 +27,11 @@ import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -153,7 +155,7 @@ public class MaterialRecipeImportService {
 
             // 4) 落库（批量）
             if (!passed.isEmpty()) {
-                report.elementMasterUpserted = syncElementMaster(passed);
+                report.elementMasterUpserted = syncElementMaster(passed, report.skipped);
                 int[] counts = upsertMaterials(passed);
                 report.materialsUpserted = counts[0];
                 report.elementRowsInserted = counts[1];
@@ -169,37 +171,67 @@ public class MaterialRecipeImportService {
         return report;
     }
 
-    /** 元素主表批量 upsert：一条 tuple-IN INSERT…ON CONFLICT。返回受影响行数（新增+更新）。 */
-    private int syncElementMaster(List<MatGroup> passed) {
-        LinkedHashMap<String, String> symNo = new LinkedHashMap<>();   // symbol -> elementNo（首个非空胜）
+    /**
+     * 元素主表同步（task-0709 · B5，改按 <b>element_no</b> upsert）：
+     * <ul>
+     *   <li>收集 Excel (element_no, 符号, 中文) 三元组，按 element_no 去重（忽略空编号）。</li>
+     *   <li><b>编号已存在 → DO NOTHING</b>：不回写符号/中文（决策#5，尊重人工维护）。</li>
+     *   <li>新编号 → 用 Excel 符号 + 字典中文新建。</li>
+     *   <li>边界：某新编号的符号与主表已存符号撞（element_code UNIQUE）→ 跳过新建、记 warning（以主表为准）。</li>
+     * </ul>
+     * 返回<b>新建</b>元素行数（编号已存在的不计）。
+     */
+    private int syncElementMaster(List<MatGroup> passed, List<SkippedRow> warnings) {
+        // 1) 按 element_no 去重收集 no -> [symbol, dictName]（忽略空编号）
+        LinkedHashMap<String, String[]> byNo = new LinkedHashMap<>();
         for (MatGroup g : passed) {
             for (String sym : g.elements.keySet()) {
                 String no = g.elementNos.get(sym);
-                symNo.merge(sym, no, (old, cur) -> old != null ? old : cur);
-                symNo.putIfAbsent(sym, no);
+                if (no == null || no.isBlank()) continue;
+                byNo.putIfAbsent(no, new String[]{sym, DICT.getOrDefault(sym, sym)});
             }
         }
-        if (symNo.isEmpty()) return 0;
+        if (byNo.isEmpty()) return 0;
 
-        List<String> syms = new ArrayList<>(symNo.keySet());
-        StringBuilder sb = new StringBuilder("INSERT INTO element (element_code, element_name, element_no) VALUES ");
-        for (int i = 0; i < syms.size(); i++) {
-            if (i > 0) sb.append(", ");
-            sb.append("(:c").append(i).append(", :n").append(i).append(", CAST(:o").append(i).append(" AS varchar))");
+        // 2) 加载主表现有 element_no / element_code
+        @SuppressWarnings("unchecked")
+        List<Object[]> exist = em.createNativeQuery("SELECT element_no, element_code FROM element").getResultList();
+        Set<String> existNos = new HashSet<>();
+        Set<String> existCodes = new HashSet<>();
+        for (Object[] r : exist) {
+            existNos.add((String) r[0]);
+            existCodes.add((String) r[1]);
         }
-        sb.append(" ON CONFLICT (element_code) DO UPDATE SET ")
-          .append("element_no = COALESCE(EXCLUDED.element_no, element.element_no), ")
-          // 仅当原名是"符号占位"(name=code)才回填中文，不覆盖已有中文名
-          .append("element_name = CASE WHEN element.element_name = element.element_code ")
-          .append("THEN EXCLUDED.element_name ELSE element.element_name END, ")
-          .append("updated_at = NOW()");
 
+        // 3) 过滤：编号已存在(不动) + 符号被别的编号占用(以主表为准，记 warning)；其余进新建批
+        List<String[]> toInsert = new ArrayList<>();   // [no, code, name]
+        for (Map.Entry<String, String[]> en : byNo.entrySet()) {
+            String no = en.getKey();
+            String code = en.getValue()[0];
+            String name = en.getValue()[1];
+            if (existNos.contains(no)) continue;                   // 编号已存在 → DO NOTHING
+            if (existCodes.contains(code)) {                        // 符号被别的编号占用 → 以主表为准
+                warnings.add(new SkippedRow(SHEET_ELEM, null,
+                    "元素编号新但符号已被占用(以主表为准，未新建)", "no=" + no + " code=" + code));
+                continue;
+            }
+            toInsert.add(new String[]{no, code, name});
+            existCodes.add(code);                                   // 防同批重复符号
+        }
+        if (toInsert.isEmpty()) return 0;
+
+        // 4) 批量插入新元素（ON CONFLICT (element_no) DO NOTHING 作并发安全网）
+        StringBuilder sb = new StringBuilder("INSERT INTO element (element_no, element_code, element_name) VALUES ");
+        for (int i = 0; i < toInsert.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append("(:o").append(i).append(", :c").append(i).append(", :n").append(i).append(")");
+        }
+        sb.append(" ON CONFLICT (element_no) DO NOTHING");
         Query q = em.createNativeQuery(sb.toString());
-        for (int i = 0; i < syms.size(); i++) {
-            String sym = syms.get(i);
-            q.setParameter("c" + i, sym);
-            q.setParameter("n" + i, DICT.getOrDefault(sym, sym));
-            q.setParameter("o" + i, symNo.get(sym));
+        for (int i = 0; i < toInsert.size(); i++) {
+            q.setParameter("o" + i, toInsert.get(i)[0]);
+            q.setParameter("c" + i, toInsert.get(i)[1]);
+            q.setParameter("n" + i, toInsert.get(i)[2]);
         }
         return q.executeUpdate();
     }
@@ -247,6 +279,7 @@ public class MaterialRecipeImportService {
             for (Map.Entry<String, BigDecimal> e : g.elements.entrySet()) {
                 MaterialRecipeElement el = new MaterialRecipeElement();
                 el.recipeId = rid;
+                el.elementNo = g.elementNos.get(e.getKey());      // task-0709 · B5：权威元素链存 Excel 元素编号
                 el.elementCode = e.getKey();
                 el.elementName = DICT.getOrDefault(e.getKey(), e.getKey());
                 el.defaultPct = e.getValue().multiply(HUNDRED);   // ×100 归一

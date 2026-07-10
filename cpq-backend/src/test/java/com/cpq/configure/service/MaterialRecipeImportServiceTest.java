@@ -91,22 +91,23 @@ public class MaterialRecipeImportServiceTest {
     @Test
     @TestTransaction
     void numericGradeElement_isKept_notSkipped() throws Exception {
-        // R1(2026-07-09)：数字牌号(304)是合法组成项，不再跳过。Cu 0.5 + 304 0.5 = 1.0 正常入库。
+        // R1：数字牌号(如 999)是合法组成项，不作为"纯数字"被跳过。
+        // task-0709 后元素主表按 element_no 判重，用全新符号+编号避免撞现有元素主表(否则触发"符号已占用"warning)。
         byte[] xlsx = buildWorkbook(
-            new String[][]{{"Cu/304", "TST001"}},
+            new String[][]{{"Qq999", "TST001"}},
             new Object[][]{
-                {"Cu/304", "TST001", "Cu", 0.50, "10002"},
-                {"Cu/304", "TST001", "304", 0.50, "304"},
+                {"Qq999", "TST001", "Qq", 0.50, "T99001"},
+                {"Qq999", "TST001", "999", 0.50, "T99002"},
             });
         MaterialImportReportDTO rep = importService.importLibrary(xlsx);
 
         assertEquals(1, rep.materialsUpserted, "含数字牌号的复合材应正常入库");
-        assertTrue(rep.skipped.isEmpty(), "数字牌号 304 不再被跳过");
         List<MaterialRecipeElement> els = elementsOf("TST001");
-        assertEquals(2, els.size(), "Cu + 304 两个元素都入库");
-        MaterialRecipeElement grade = els.stream().filter(e -> "304".equals(e.elementCode)).findFirst().orElseThrow();
-        assertEquals(0, grade.defaultPct.compareTo(new BigDecimal("50")), "304 含量 ×100 = 50");
-        assertEquals("304不锈钢", grade.elementName, "304 回填中文名");
+        assertEquals(2, els.size(), "Qq + 999 两个元素都入库");
+        MaterialRecipeElement grade = els.stream().filter(e -> "999".equals(e.elementCode)).findFirst().orElseThrow();
+        assertEquals(0, grade.defaultPct.compareTo(new BigDecimal("50")), "999 含量 ×100 = 50");
+        assertEquals("T99002", grade.elementNo, "material_recipe_element 存 element_no");
+        assertTrue(rep.skipped.stream().noneMatch(s -> "999".equals(s.raw)), "数字牌号 999 不作为跳过行");
     }
 
     @Test
@@ -229,22 +230,45 @@ public class MaterialRecipeImportServiceTest {
 
     @Test
     @TestTransaction
-    void elementMaster_newSymbolInserted_existingChineseNameNotOverwritten() throws Exception {
+    void elementMaster_byElementNo_existingNotOverwritten_newInserted_mreStoresElementNo() throws Exception {
+        // 预置一个"已有编号"的元素（人工维护的符号+中文），验证导入按 element_no 不回写（决策#5）
+        Element pre = new Element();
+        pre.elementNo = "T70001";
+        pre.elementCode = "Zz";
+        pre.elementName = "手工锌";
+        pre.status = "ACTIVE";
+        pre.createdAt = java.time.OffsetDateTime.now();
+        pre.updatedAt = java.time.OffsetDateTime.now();
+        pre.persist();
+
+        // 导入材质：Zz(编号 T70001 已存在) 0.5 + Ww(编号 T70002 全新) 0.5，Σ=1
         byte[] xlsx = buildWorkbook(
-            new String[][]{{"AgXx", "TST009"}},
+            new String[][]{{"ZzWw", "TST070"}},
             new Object[][]{
-                {"AgXx", "TST009", "Ag", 0.90, "10001"},   // 已 seed(银)
-                {"AgXx", "TST009", "Xx", 0.10, "88888"},   // 字典外新符号
+                {"ZzWw", "TST070", "Zz", 0.50, "T70001"},
+                {"ZzWw", "TST070", "Ww", 0.50, "T70002"},
             });
         importService.importLibrary(xlsx);
 
-        Element ag = Element.find("elementCode", "Ag").firstResult();
-        assertNotNull(ag);
-        assertEquals("银", ag.elementName, "已有中文名不被符号覆盖");
+        // 编号已存在 → 符号/中文不被 Excel 回写
+        Element existing = Element.<Element>find("elementNo", "T70001").firstResult();
+        assertNotNull(existing);
+        assertEquals("Zz", existing.elementCode);
+        assertEquals("手工锌", existing.elementName, "编号已存在→中文不被覆盖");
 
-        Element xx = Element.find("elementCode", "Xx").firstResult();
-        assertNotNull(xx, "字典外新符号应 upsert 进 element");
-        assertEquals("Xx", xx.elementName, "未知符号中文名回退=符号");
+        // 新编号 → 新建（符号 Ww，中文回退=符号）
+        Element created = Element.<Element>find("elementNo", "T70002").firstResult();
+        assertNotNull(created, "新元素编号应被新建");
+        assertEquals("Ww", created.elementCode);
+        assertEquals("Ww", created.elementName, "字典外新符号中文回退=符号");
+
+        // material_recipe_element.element_no 已回填
+        MaterialRecipe r = MaterialRecipe.<MaterialRecipe>find("code", "TST070").firstResult();
+        List<MaterialRecipeElement> els = MaterialRecipeElement.<MaterialRecipeElement>find("recipeId", r.id).list();
+        assertEquals(2, els.size());
+        assertTrue(els.stream().allMatch(e -> e.elementNo != null), "material_recipe_element.element_no 已回填");
+        assertTrue(els.stream().anyMatch(e -> "T70001".equals(e.elementNo)));
+        assertTrue(els.stream().anyMatch(e -> "T70002".equals(e.elementNo)));
     }
 
     // ── 缺 sheet → 400 语义 ──
@@ -295,19 +319,21 @@ public class MaterialRecipeImportServiceTest {
 
         assertEquals(654, rep.totalRows, "材质对应元素数据行=654");
         assertEquals(253, rep.materialsUpserted, "R1: 数字牌号合法→253 落库(65 复合材全部入库)");
-        assertEquals(1, rep.skippedRowCount, "唯一脏数据闸门 Σ≠1 → 仅 1 跳");
-        assertEquals(1, rep.skipped.size());
-        MaterialImportReportDTO.SkippedRow only = rep.skipped.get(0);
-        assertTrue(only.reason.contains("含量合计≠1"), "唯一跳过是材质级 Σ≠1");
-        assertTrue(only.raw != null && only.raw.contains("00242"),
-            "唯一跳过是 WZHF26-25(code=00242)，实际 raw=" + only.raw);
+        // 材质级 Σ≠1 跳过恰 1 条（WZHF26-25 code=00242）。task-0709 后 element 主表按 element_no upsert 可能产生
+        // "符号已被占用" warning（视 DB 中元素编号状态而定），不计入此材质级断言 → 稳健于 DB 状态。
+        java.util.List<MaterialImportReportDTO.SkippedRow> matSkips = rep.skipped.stream()
+            .filter(s -> s.reason != null && s.reason.contains("含量合计≠1"))
+            .collect(java.util.stream.Collectors.toList());
+        assertEquals(1, matSkips.size(), "唯一材质级 Σ≠1 跳过");
+        assertTrue(matSkips.get(0).raw != null && matSkips.get(0).raw.contains("00242"),
+            "唯一跳过是 WZHF26-25(code=00242)，实际 raw=" + matSkips.get(0).raw);
         assertTrue(rep.durationMs < 3000, "真文件导入应 <3s，实际 " + rep.durationMs + "ms");
         assertTrue(rep.elementRowsInserted > 500, "落库元素明细行合理(>500)，实际 " + rep.elementRowsInserted);
 
-        // 数字牌号(304/316/…)一律不在 skipped（R1 推翻纯数字跳过）
+        // 数字牌号(304/316/…)一律不作为材质行被跳过（R1 推翻纯数字跳过；warning raw 为 "no=.. code=.." 不会等于牌号）
         for (String pn : List.of("191", "206", "223", "258", "301", "304", "316", "430", "721")) {
             assertTrue(rep.skipped.stream().noneMatch(s -> pn.equals(s.raw)),
-                "数字牌号 " + pn + " 不应被跳过(R1)");
+                "数字牌号 " + pn + " 不应作为跳过行");
         }
     }
 

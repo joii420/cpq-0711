@@ -22,6 +22,10 @@ public class MaterialRecipeElement extends PanacheEntityBase {
     @Column(name = "recipe_id")
     public UUID recipeId;
 
+    /** 权威元素链 → element.element_no（task-0709 · B2）；element_code/name 为符号锁保证恒一致的快照 */
+    @Column(name = "element_no")
+    public String elementNo;
+
     @Column(name = "element_code")
     public String elementCode;
 
