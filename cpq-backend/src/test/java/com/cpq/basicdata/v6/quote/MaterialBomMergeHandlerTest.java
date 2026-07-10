@@ -77,7 +77,12 @@ class MaterialBomMergeHandlerTest {
         handler.merge(List.of(matRow(1, 1, "TEST-MBM-C1", "0.5")), List.of(), ctx());
         assertEquals(1L, count("SELECT count(*) FROM material_bom WHERE material_no=:m AND is_current=TRUE AND characteristic IS NULL"));
 
-        handler.merge(List.of(matRow(1, 1, "TEST-MBM-C1", "0.5")), List.of(asmRow(1, 1, "TEST-MBM-C1", "1")), ctx());
+        // repair-2 注：第二次 merge 的组成件行改用一个与物料BOM不同的新码(TEST-MBM-C9)，而非复用
+        // "TEST-MBM-C1"。原因：决策 D(architecture-review.md §3.3-2)——组成件料号命中"本次导入
+        // 材质料号集"时恒按材质处理(RECIPE)，若仍复用同一码会被判定为材质料号自身重复出现，
+        // 不再是"新增真组成件"。本测试关心的是"材质only → 新增真组成件 → 主表重分类为
+        // ASSEMBLY + 历史保留"，故用不同码的真组成件保持原测试意图不变。
+        handler.merge(List.of(matRow(1, 1, "TEST-MBM-C1", "0.5")), List.of(asmRow(1, 1, "TEST-MBM-C9", "1")), ctx());
 
         assertEquals(1L, count("SELECT count(*) FROM material_bom WHERE material_no=:m AND is_current=TRUE"));
         assertEquals("ASSEMBLY", em.createNativeQuery(
@@ -200,5 +205,131 @@ class MaterialBomMergeHandlerTest {
         assertNull(r[4], "base_qty 旧字段不再写");
         assertNull(r[5], "issue_unit 旧字段不再写");
         assertEquals("非银点类", r[6], "component_usage_type 应存汉字");
+    }
+
+    // ===== repair-2: 材质料号不入料号表 + characteristic=RECIPE（决策 A/B/C/D）=====
+
+    /** repair-2 专用 component_no 池，避免与上方既有 fixture(TEST-MBM-C1/C2/C3) 的 material_master 写入互相污染。 */
+    @Transactional
+    void cleanupRepair2Master(String... codes) {
+        for (String c : codes) {
+            em.createNativeQuery("DELETE FROM material_master WHERE material_no = :c")
+              .setParameter("c", c).executeUpdate();
+        }
+    }
+
+    private ImportContext ctxWithMatSet(String... matNos) {
+        ImportContext c = ctx();
+        c.sharedCache.put("quoteMaterialNoSet", new java.util.LinkedHashSet<>(List.of(matNos)));
+        return c;
+    }
+
+    @Test
+    void ac123_materialBomRow_isRecipe_rawCode_notRegisteredToMaster() {
+        cleanupRepair2Master("R2-MAT-991");
+        try {
+            handler.merge(List.of(matRow(1, 1, "R2-MAT-991", "0.5")), List.of(), ctx());
+
+            Object[] r = (Object[]) em.createNativeQuery(
+                "SELECT component_no, characteristic FROM material_bom_item WHERE material_no=:m AND is_current=TRUE")
+                .setParameter("m", MAT).getSingleResult();
+            assertEquals("R2-MAT-991", r[0], "AC-3: component_no 应为原始码(未 resolve/铸号)");
+            assertEquals("RECIPE", r[1], "AC-2: 材质料号 characteristic 应为 RECIPE");
+
+            long masterCount = ((Number) em.createNativeQuery(
+                "SELECT count(*) FROM material_master WHERE material_no=:c")
+                .setParameter("c", "R2-MAT-991").getSingleResult()).longValue();
+            assertEquals(0L, masterCount, "AC-1: 材质料号不应登记 material_master");
+        } finally {
+            cleanupRepair2Master("R2-MAT-991");
+        }
+    }
+
+    @Test
+    void ac5_assemblySheetRow_hitsMaterialNoSet_treatedAsRecipe_notRegistered() {
+        cleanupRepair2Master("R2-MAT-992");
+        try {
+            // 决策 D：组成件BOM 里出现的组件码若命中"本次导入材质料号集"(此处直接注入 ctx.sharedCache
+            // 模拟 QuoteImportService 的预扫结果)，应按材质料号处理：原始码 + 不登记 master + RECIPE。
+            ImportContext c = ctxWithMatSet("R2-MAT-992");
+            handler.merge(List.of(), List.of(asmRow(1, 1, "R2-MAT-992", "1")), c);
+
+            Object[] r = (Object[]) em.createNativeQuery(
+                "SELECT component_no, characteristic FROM material_bom_item WHERE material_no=:m AND is_current=TRUE")
+                .setParameter("m", MAT).getSingleResult();
+            assertEquals("R2-MAT-992", r[0], "AC-5: 命中材质料号集的组成件码应保留原始码(不 resolve)");
+            assertEquals("RECIPE", r[1], "AC-5: 命中材质料号集 → characteristic 应为 RECIPE(非 ASSEMBLY)");
+
+            long masterCount = ((Number) em.createNativeQuery(
+                "SELECT count(*) FROM material_master WHERE material_no=:c")
+                .setParameter("c", "R2-MAT-992").getSingleResult()).longValue();
+            assertEquals(0L, masterCount, "AC-5: 命中材质料号集不应登记 material_master");
+
+            // 主表级：无真实 ASSEMBLY 子行 → characteristic/bom_type 仍为 MATERIAL/null(§3.2 解耦)
+            Object[] master = (Object[]) em.createNativeQuery(
+                "SELECT bom_type, characteristic FROM material_bom WHERE material_no=:m AND is_current=TRUE")
+                .setParameter("m", MAT).getSingleResult();
+            assertEquals("MATERIAL", master[0], "AC-5: 无真实组成件时主表 bom_type 应为 MATERIAL");
+            assertNull(master[1], "AC-5: 无真实组成件时主表 characteristic 应为 NULL");
+        } finally {
+            cleanupRepair2Master("R2-MAT-992");
+        }
+    }
+
+    @Test
+    void ac6_assemblySheetRow_realComponent_stillAssembly_registeredAndResolved() {
+        cleanupRepair2Master("R2-REAL-COMP-1");
+        try {
+            // 未命中材质料号集(sharedCache 为空) → 维持原真组成件路径：resolve + 登记 master + ASSEMBLY。
+            handler.merge(List.of(), List.of(asmRow(1, 1, "R2-REAL-COMP-1", "2")), ctx());
+
+            Object[] r = (Object[]) em.createNativeQuery(
+                "SELECT component_no, characteristic FROM material_bom_item WHERE material_no=:m AND is_current=TRUE")
+                .setParameter("m", MAT).getSingleResult();
+            assertEquals("R2-REAL-COMP-1", r[0]);
+            assertEquals("ASSEMBLY", r[1], "AC-6: 真组成件不受影响，仍应为 ASSEMBLY");
+
+            long masterCount = ((Number) em.createNativeQuery(
+                "SELECT count(*) FROM material_master WHERE material_no=:c")
+                .setParameter("c", "R2-REAL-COMP-1").getSingleResult()).longValue();
+            assertEquals(1L, masterCount, "AC-6: 真组成件仍应登记 material_master");
+        } finally {
+            cleanupRepair2Master("R2-REAL-COMP-1");
+        }
+    }
+
+    @Test
+    void ac4_mixedRecipeAndAssembly_perComponentCharacteristic_notOverwritten() {
+        cleanupRepair2Master("R2-MAT-A", "R2-REAL-COMP-2");
+        try {
+            ImportContext c = ctxWithMatSet("R2-MAT-A");
+            handler.merge(
+                List.of(matRow(1, 1, "R2-MAT-A", "0.3")),
+                List.of(asmRow(1, 1, "R2-REAL-COMP-2", "5")),
+                c);
+
+            // 同一 material_no 下应同时存在 RECIPE(R2-MAT-A) 与 ASSEMBLY(R2-REAL-COMP-2) 两类子行，互不覆盖。
+            java.util.List<?> rows = em.createNativeQuery(
+                "SELECT component_no, characteristic FROM material_bom_item " +
+                "WHERE material_no=:m AND is_current=TRUE ORDER BY component_no")
+                .setParameter("m", MAT).getResultList();
+            assertEquals(2, rows.size(), "AC-4: 应有 2 行子行(不撞键)");
+            Object[] row0 = (Object[]) rows.get(0);
+            Object[] row1 = (Object[]) rows.get(1);
+            java.util.Map<String, String> byComp = new java.util.LinkedHashMap<>();
+            byComp.put((String) row0[0], (String) row0[1]);
+            byComp.put((String) row1[0], (String) row1[1]);
+            assertEquals("RECIPE", byComp.get("R2-MAT-A"), "AC-4: 材质料号行应为 RECIPE，不被 ASSEMBLY 覆盖");
+            assertEquals("ASSEMBLY", byComp.get("R2-REAL-COMP-2"), "AC-4: 真组成件行应为 ASSEMBLY");
+
+            // 主表：含真实 ASSEMBLY 子行 → 主表级 ASSEMBLY(现语义不变)
+            Object[] master = (Object[]) em.createNativeQuery(
+                "SELECT bom_type, characteristic FROM material_bom WHERE material_no=:m AND is_current=TRUE")
+                .setParameter("m", MAT).getSingleResult();
+            assertEquals("ASSEMBLY", master[0]);
+            assertEquals("ASSEMBLY", master[1]);
+        } finally {
+            cleanupRepair2Master("R2-MAT-A", "R2-REAL-COMP-2");
+        }
     }
 }
