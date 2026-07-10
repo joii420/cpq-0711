@@ -5,6 +5,7 @@ import V6ProcessCrudTab from './V6ProcessCrudTab';
 import V6BomQueryTab from './V6BomQueryTab';
 import PartVersionPage from '../partversion/PartVersionPage';
 import MaterialRecipeManagement from '../config/MaterialRecipeManagement';
+import ElementManagement from '../config/ElementManagement';
 import ConfigTemplateManagement from '../configtemplate/ConfigTemplateManagement';
 import PricingBasicDataImportDrawer from './PricingBasicDataImportDrawer';
 
@@ -31,6 +32,7 @@ const MasterDataHubPage: React.FC = () => {
           { key: 'part', label: '料号', children: <PartVersionPage /> },
           { key: 'bom', label: 'BOM', children: <V6BomQueryTab /> },
           { key: 'material', label: '材质', children: <MaterialRecipeManagement /> },
+          { key: 'element', label: '元素', children: <ElementManagement /> },
           { key: 'dataTemplate', label: '数据模板', children: <ConfigTemplateManagement /> },
         ]}
       />
