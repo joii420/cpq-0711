@@ -78,7 +78,8 @@ const MaterialRecipeManagement: React.FC = () => {
         <a onClick={(e) => { e.stopPropagation(); openEdit(r.id); }}>{v}</a>
       ),
     },
-    { title: '材质名称', dataIndex: 'symbol', key: 'symbol', width: 140 },
+    { title: '化学式', dataIndex: 'symbol', key: 'symbol', width: 140 },
+    { title: '名称', dataIndex: 'name', key: 'name', width: 160 },
     {
       title: '类型',
       dataIndex: 'recipeType',
@@ -152,7 +153,7 @@ const MaterialRecipeManagement: React.FC = () => {
       extra={
         <Space>
           <Input.Search
-            placeholder="搜索 材质编号 / 材质名称 / 元素"
+            placeholder="搜索 材质编号 / 化学式 / 名称 / 元素"
             allowClear
             style={{ width: 260 }}
             value={keyword}
