@@ -49,6 +49,7 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
       form.setFieldsValue({
         code: editingDetail.code,
         symbol: editingDetail.symbol,
+        name: editingDetail.name,
         recipeType: editingDetail.recipeType,
         sortOrder: editingDetail.sortOrder,
         status: editingDetail.status ?? 'ACTIVE',
@@ -127,8 +128,8 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
       const req: MaterialRecipeUpsertRequest = {
         code: values.code,
         symbol: values.symbol,
-        // task-0708：名称/配比管理 UI 已隐藏，导入/新建统一置 null(DTO 字段保留)
-        name: null,
+        // repair-1：名称可编辑，留空由后端默认=化学式(symbol)；配比仍隐藏置 null
+        name: values.name?.trim() || null,
         specLabel: null,
         recipeType,
         sortOrder: values.sortOrder ?? 100,
@@ -263,8 +264,11 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
           <Form.Item name="code" label="材质编号" rules={[{ required: true, message: '请填写材质编号' }]}>
             <Input placeholder="00300" style={{ width: 160 }} disabled={!!editingDetail} />
           </Form.Item>
-          <Form.Item name="symbol" label="材质名称" rules={[{ required: true, message: '请填写材质名称' }]}>
+          <Form.Item name="symbol" label="化学式" rules={[{ required: true, message: '请填写化学式' }]}>
             <Input placeholder="Ag / AgC3" style={{ width: 160 }} />
+          </Form.Item>
+          <Form.Item name="name" label="名称">
+            <Input placeholder="留空默认=化学式" style={{ width: 180 }} />
           </Form.Item>
           <Form.Item name="recipeType" label="类型" rules={[{ required: true }]}>
             <Select

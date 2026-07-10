@@ -82,7 +82,7 @@ public class MaterialRecipeService {
             "       mr.status, mr.sort_order, mr.created_at, mr.updated_at " +
             "FROM material_recipe mr ");
         if (hasKw) {
-            sql.append("WHERE (mr.code ILIKE :kw OR mr.symbol ILIKE :kw " +
+            sql.append("WHERE (mr.code ILIKE :kw OR mr.symbol ILIKE :kw OR mr.name ILIKE :kw " +
                 "OR EXISTS (SELECT 1 FROM material_recipe_element e " +
                 "           WHERE e.recipe_id = mr.id " +
                 "             AND (e.element_code ILIKE :kw OR e.element_name ILIKE :kw))) ");
@@ -606,7 +606,8 @@ public class MaterialRecipeService {
         MaterialRecipe r = new MaterialRecipe();
         r.code = req.code.trim();
         r.symbol = req.symbol.trim();
-        r.name = req.name == null ? null : req.name.trim();
+        // repair-1：名称为空则默认=化学式(symbol)；填了则用填入值（名称可编辑）
+        r.name = (req.name == null || req.name.isBlank()) ? req.symbol.trim() : req.name.trim();
         r.specLabel = req.specLabel;
         r.recipeType = req.recipeType;
         r.sortOrder = req.sortOrder == null ? 0 : req.sortOrder;
@@ -635,7 +636,8 @@ public class MaterialRecipeService {
 
         // code 保持不变（只读）—— 不从 req 回写
         r.symbol = req.symbol.trim();
-        r.name = req.name == null ? null : req.name.trim();
+        // repair-1：名称为空则默认=化学式(symbol)；填了则用填入值（名称可编辑）
+        r.name = (req.name == null || req.name.isBlank()) ? req.symbol.trim() : req.name.trim();
         r.specLabel = req.specLabel;
         r.recipeType = req.recipeType;
         r.sortOrder = req.sortOrder == null ? r.sortOrder : req.sortOrder;

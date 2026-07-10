@@ -256,7 +256,7 @@ public class MaterialRecipeImportService {
             }
             // 所有字段设置完再 persist 一次：新建=insert（避免字段未就绪的快照）、已存在=脏更新
             r.symbol = g.symbol;
-            r.name = null;                 // 决策#2：导入置 NULL（UI 隐藏、DB 列保留）
+            r.name = g.symbol;             // repair-1：名称默认=化学式(symbol)，两者都展示
             r.specLabel = null;
             r.recipeType = "locked";       // 决策#7：默认标准锁定
             r.status = "ACTIVE";
