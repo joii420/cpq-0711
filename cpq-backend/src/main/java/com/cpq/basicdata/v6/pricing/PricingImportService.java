@@ -50,18 +50,21 @@ public class PricingImportService {
     @Inject P13ProductionConsumableHandler p13;
     @Inject P14PackagingConsumableHandler p14;
     @Inject P15IncomingProcessFeeHandler p15;
-    @Inject P16IncomingOtherRatioFeeHandler p16;
-    @Inject P17IncomingOtherFixedFeeHandler p17;
     @Inject P18SelfProcessAssemblyFeeHandler p18;
-    @Inject P19FinishedOtherRatioFeeHandler p19;
-    @Inject P20FinishedOtherFixedFeeHandler p20;
     @Inject P21PlatingSchemeHandler p21;
     @Inject P22PlatingCostHandler p22;
     @Inject P23OutsourceProcessFeeHandler p23;
 
+    // P16+P17（来料其他费用 比例+固定）与 P19+P20（成品其他费用 比例+固定）同 price_type，
+    // 对同一锚点（finished_material_no / code）是同一个版本组：不能各自独立 writeVersionedGroups
+    // （会互相当"旧组"重升版），改由这两个合并 bean 在编排循环外一次性写入（照搬
+    // MaterialBomMergeHandler 范式，见 QuoteImportService#processImport 的物料BOM合并接线）。
+    @Inject IncomingOtherMergeHandler incomingOtherMerge;   // 合并 P16(比例)+P17(固定)
+    @Inject FinishedOtherMergeHandler finishedOtherMerge;   // 合并 P19(比例)+P20(固定)
+
     private List<SheetHandler> orderedHandlers() {
         return List.of(p24, p05, p03, p04, p06, p07, p01, p02, p08, p09, p10, p11, p12,
-                       p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23);
+                       p13, p14, p15, p18, p21, p22, p23);
     }
 
     public ImportResultDTO importExcel(String fileName, InputStream stream, UUID importedBy) {
@@ -81,6 +84,45 @@ public class PricingImportService {
         long importT0 = System.nanoTime();
         double sumParseMs = 0, sumHandleMs = 0;
         try (XSSFWorkbook wb = parser.open(stream)) {
+            // P16(比例)+P17(固定) 合并单版本组，P19(比例)+P20(固定) 合并单版本组：两对 Sheet
+            // 各自不进 orderedHandlers 循环（避免同 price_type/锚点被各自独立 writeVersionedGroups
+            // 互相当"旧组"重升版），在循环外显式解析 + 调 merge 一次写入（照搬 QuoteImportService
+            // 对 MaterialBomMergeHandler 的接线范式）。
+            {
+                var p16Sheet = wb.getSheet("来料其他费用（比例）");
+                var p17Sheet = wb.getSheet("来料其他固定费用");
+                List<SheetRow> p16Rows = p16Sheet != null ? parser.parseSheet(p16Sheet) : List.of();
+                List<SheetRow> p17Rows = p17Sheet != null ? parser.parseSheet(p17Sheet) : List.of();
+                SheetImportResult r;
+                try {
+                    r = incomingOtherMerge.merge(p16Rows, p17Rows, ctx);
+                } catch (Exception ex) {
+                    Log.error("来料其他费用（比例+固定）合并导入异常", ex);
+                    r = new SheetImportResult("来料其他费用（比例）+来料其他固定费用(合并)");
+                    r.recordError(0, "_sheet_", ex.getMessage());
+                }
+                sheetDtos.add(SheetResultDTO.from(r));
+                totalSuccess += r.successRows;
+                totalFailed += r.failedRows;
+            }
+            {
+                var p19Sheet = wb.getSheet("成品其他比例费用");
+                var p20Sheet = wb.getSheet("成品其他固定费用");
+                List<SheetRow> p19Rows = p19Sheet != null ? parser.parseSheet(p19Sheet) : List.of();
+                List<SheetRow> p20Rows = p20Sheet != null ? parser.parseSheet(p20Sheet) : List.of();
+                SheetImportResult r;
+                try {
+                    r = finishedOtherMerge.merge(p19Rows, p20Rows, ctx);
+                } catch (Exception ex) {
+                    Log.error("成品其他费用（比例+固定）合并导入异常", ex);
+                    r = new SheetImportResult("成品其他比例费用+成品其他固定费用(合并)");
+                    r.recordError(0, "_sheet_", ex.getMessage());
+                }
+                sheetDtos.add(SheetResultDTO.from(r));
+                totalSuccess += r.successRows;
+                totalFailed += r.failedRows;
+            }
+
             for (SheetHandler h : orderedHandlers()) {
                 SheetImportResult r;
                 try {
