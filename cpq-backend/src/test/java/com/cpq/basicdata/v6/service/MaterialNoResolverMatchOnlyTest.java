@@ -22,7 +22,7 @@ class MaterialNoResolverMatchOnlyTest {
           .setParameter("n", NAME).executeUpdate();
     }
     @Transactional void seed() {
-        repo.upsertByMaterialNo("MO-EXIST-1", NAME, null,null,null,"3",null,null,null, null, true);
+        repo.upsertByMaterialNo("MO-EXIST-1", NAME, null,null,null,"3",null,null,null, null, null, true);
     }
     @BeforeEach void before() { cleanup(); }
     @AfterEach  void after()  { cleanup(); }

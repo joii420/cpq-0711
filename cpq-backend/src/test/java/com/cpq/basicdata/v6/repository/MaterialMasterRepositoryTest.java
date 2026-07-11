@@ -32,8 +32,8 @@ class MaterialMasterRepositoryTest {
     @Test
     @Transactional
     void findFirstByMaterialName_returnsLowestMaterialNo() {
-        repo.upsertByMaterialNo(NO_B, N1, null, null, null, "2", null, null, null, null);
-        repo.upsertByMaterialNo(NO_A, N1, null, null, null, "2", null, null, null, null);
+        repo.upsertByMaterialNo(NO_B, N1, null, null, null, "2", null, null, null, null, null);
+        repo.upsertByMaterialNo(NO_A, N1, null, null, null, "2", null, null, null, null, null);
         Optional<MaterialMaster> got = repo.findFirstByMaterialName(N1);
         assertTrue(got.isPresent());
         assertEquals(NO_A, got.get().materialNo, "同名多条取 material_no 升序第一条");
@@ -42,8 +42,8 @@ class MaterialMasterRepositoryTest {
     @Test
     @Transactional
     void upsert_preserveDescriptiveTrue_keepsOldNameAndType() {
-        repo.upsertByMaterialNo("TESTMMR900", "OLD-NAME", null, null, null, "1", null, null, null, null);
-        repo.upsertByMaterialNo("TESTMMR900", "NEW-NAME", null, null, null, "3", null, null, null, null, true);
+        repo.upsertByMaterialNo("TESTMMR900", "OLD-NAME", null, null, null, "1", null, null, null, null, null);
+        repo.upsertByMaterialNo("TESTMMR900", "NEW-NAME", null, null, null, "3", null, null, null, null, null, true);
         MaterialMaster m = repo.findByMaterialNo("TESTMMR900").orElseThrow();
         assertEquals("OLD-NAME", m.materialName);
         assertEquals("1", m.materialType);
@@ -52,8 +52,8 @@ class MaterialMasterRepositoryTest {
     @Test
     @Transactional
     void upsert_default10arg_overwritesNameAndType() {
-        repo.upsertByMaterialNo("TESTMMR901", "OLD-NAME", null, null, null, "1", null, null, null, null);
-        repo.upsertByMaterialNo("TESTMMR901", "NEW-NAME", null, null, null, "3", null, null, null, null);
+        repo.upsertByMaterialNo("TESTMMR901", "OLD-NAME", null, null, null, "1", null, null, null, null, null);
+        repo.upsertByMaterialNo("TESTMMR901", "NEW-NAME", null, null, null, "3", null, null, null, null, null);
         MaterialMaster m = repo.findByMaterialNo("TESTMMR901").orElseThrow();
         assertEquals("NEW-NAME", m.materialName);
         assertEquals("3", m.materialType);
@@ -63,7 +63,7 @@ class MaterialMasterRepositoryTest {
     @Transactional
     void maxNineLeading_emptyReturnsBase_andRespectsExisting() {
         assertEquals(8_999_999_999L, repo.maxNineLeadingMaterialNo());
-        repo.upsertByMaterialNo("9000000005", "TESTMMR-X", null, null, null, "3", null, null, null, null);
+        repo.upsertByMaterialNo("9000000005", "TESTMMR-X", null, null, null, "3", null, null, null, null, null);
         assertEquals(9_000_000_005L, repo.maxNineLeadingMaterialNo());
     }
 }

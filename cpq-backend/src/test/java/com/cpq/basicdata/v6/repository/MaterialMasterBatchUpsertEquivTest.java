@@ -58,7 +58,7 @@ class MaterialMasterBatchUpsertEquivTest {
     /** 预置 X1 已存在行（两命名空间各一），验证 preserve 保留旧值。 */
     private void seedExisting(String prefix) {
         repo.upsertByMaterialNo(prefix + "X1", "Old", null, null, null, "OldT",
-            null, null, null, USER, true);
+            null, null, null, null, USER, true);
     }
 
     private Object[] row(String materialNo) {
@@ -75,7 +75,7 @@ class MaterialMasterBatchUpsertEquivTest {
         seedExisting(SEQ);
         for (Op op : OPS) {
             repo.upsertByMaterialNo(SEQ + op.no(), op.name(), null, null, null, op.type(),
-                null, null, null, USER, true);
+                null, null, null, null, USER, true);
         }
 
         // --- 去重批量路径（首个非空归并，与 handler accMaterialMaster 同规则）---
@@ -118,13 +118,13 @@ class MaterialMasterBatchUpsertEquivTest {
     void batchMaterialNoOnly_equalsSequential() {
         // 预置 M1 已存在行(带 name/type),验证 material-no-only upsert 不动描述列。
         repo.upsertByMaterialNo(MOS + "M1", "Keep", null, null, null, "KeepT",
-            null, null, null, USER, true);
+            null, null, null, null, USER, true);
         repo.upsertByMaterialNo(MOB + "M1", "Keep", null, null, null, "KeepT",
-            null, null, null, USER, true);
+            null, null, null, null, USER, true);
 
-        // --- 逐行路径(Q02 原语义:11 参 preserve=true,全 null 描述列)---
+        // --- 逐行路径(Q02 原语义:12 参 preserve=true,全 null 描述列)---
         for (String no : List.of("M1", "M2", "M3", "M3")) {   // M3 重复
-            repo.upsertByMaterialNo(MOS + no, null, null, null, null, null, null, null, null, USER, true);
+            repo.upsertByMaterialNo(MOS + no, null, null, null, null, null, null, null, null, null, USER, true);
         }
 
         // --- 去重批量路径(LinkedHashSet 去重,与 Q02 handler 同规则)---

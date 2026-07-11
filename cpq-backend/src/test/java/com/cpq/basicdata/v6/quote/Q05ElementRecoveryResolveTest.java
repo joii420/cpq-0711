@@ -31,7 +31,7 @@ class Q05ElementRecoveryResolveTest {
           .setParameter("n", NAME).executeUpdate();
     }
     @Transactional void seed() {
-        repo.upsertByMaterialNo(MAT, NAME, null,null,null,"3",null,null,null, null, true);
+        repo.upsertByMaterialNo(MAT, NAME, null,null,null,"3",null,null,null, null, null, true);
         em.createNativeQuery(
             "INSERT INTO element_bom_item (system_type, customer_no, material_no, component_no, characteristic, " +
             " is_current, created_at, updated_at) VALUES ('QUOTE', :c, :m, 'Ag', '2000', TRUE, NOW(), NOW())")

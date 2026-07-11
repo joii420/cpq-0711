@@ -64,7 +64,7 @@ class MaterialMasterWeightBatchUpsertEquivTest {
     /** 预置 W1 已存在行(带 name/type + weight=5),验证末值非空覆盖 weight 且 name/type 被保留。 */
     private void seedExisting(String prefix) {
         repo.upsertByMaterialNo(prefix + "W1", "WN", null, null, null, "WT",
-            null, d("5"), null, USER);   // 10 参 = preserve=false,与 Q18 同
+            null, d("5"), null, null, USER);   // 11 参 = preserve=false,与 Q18 同
     }
 
     /** 返回 [unit_weight, material_name, material_type]。 */
@@ -78,11 +78,11 @@ class MaterialMasterWeightBatchUpsertEquivTest {
     @Test
     @Transactional
     void batchEqualsSequential_weightLastNonNull() {
-        // --- 逐行路径(Q18 原语义:10 参 preserve=false)---
+        // --- 逐行路径(Q18 原语义:11 参 preserve=false)---
         seedExisting(SEQ);
         for (Op op : OPS) {
             repo.upsertByMaterialNo(SEQ + op.no(), null, null, null, null, null, null,
-                op.w(), null, USER);
+                op.w(), null, null, USER);
         }
 
         // --- 去重批量路径(末值非空胜 + 仅 null 也建行,与 Q18 handler 累积同规则)---
