@@ -1,54 +1,65 @@
 package com.cpq.basicdata.v6.pricing;
 
-import com.cpq.basicdata.v6.entity.UnitPrice;
 import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
-import com.cpq.basicdata.v6.service.UnitPriceWriter;
+import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
-import java.util.List;
+import java.math.BigDecimal;
+import java.util.*;
 
-/** P18 加工费&组装费 → unit_price (PRICING/MATERIAL/自制加工费)。 */
+/** P18 加工费&组装费 → unit_price (PRICING/SELF_PROCESS/自制加工费) 整组版本化。 */
 @ApplicationScoped
 public class P18SelfProcessAssemblyFeeHandler implements SheetHandler {
-
-    @Inject UnitPriceWriter writer;
-
+    @Inject VersionedV6Writer writer;
     @Override public String sheetName() { return "加工费&组装费"; }
+    private static final List<String> CONTENT = List.of("operation_no", "pricing_price", "currency", "unit", "defect_rate");
+    private static final List<String> DESCRIPTOR = List.of("production_no");
+    private static String nz(String s) { return s == null ? "" : s; }
 
     @Override
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
+        // code(销售料号) → operation_no(组内去重键,末值覆盖) → content row
+        Map<String, LinkedHashMap<String, Map<String, Object>>> byCode = new LinkedHashMap<>();
         for (SheetRow row : rows) {
             result.totalRows++;
-            try {
-                String code = row.getStr("销售料号", "宏丰料号");
-                String operationNo = row.getStr("工序编号");
-                if (code == null || operationNo == null) {
-                    result.recordError(row.rowNo, "宏丰料号/工序编号", "必填项为空");
-                    continue;
-                }
-                UnitPrice p = UnitPriceWriter.newRow("PRICING", PricingPriceType.SELF_PROCESS, "自制加工费", null, null, ctx.importedBy);
-                p.code = code;
-                p.finishedMaterialNo = code;
-                p.productionNo = row.getStr("生产料号");
-                p.operationNo = operationNo;
-                p.pricingPrice = row.getDecimal("加工费");
-                if (p.pricingPrice == null) p.pricingPrice = java.math.BigDecimal.ZERO;
-                p.currency = row.getStr("币种");
-                p.unit = row.getStr("计量单位");
-                p.defectRate = row.getDecimal("不良率", "拒收率");
-                writer.upsert(p);
-                result.successRows++;
-                result.recordWrite("unit_price", 1);
-            } catch (Exception e) {
-                result.recordError(row.rowNo, "_row_", e.getMessage());
+            String code = row.getStr("销售料号", "宏丰料号");
+            String operationNo = row.getStr("工序编号");
+            if (code == null || operationNo == null) {
+                result.recordError(row.rowNo, "宏丰料号/工序编号", "必填项为空");
+                continue;
             }
+            Map<String, Object> c = new LinkedHashMap<>();
+            c.put("operation_no", operationNo);
+            BigDecimal price = row.getDecimal("加工费");
+            c.put("pricing_price", price == null ? BigDecimal.ZERO : price);
+            c.put("currency", row.getStr("币种"));
+            c.put("unit", row.getStr("计量单位"));
+            c.put("defect_rate", row.getDecimal("不良率", "拒收率"));
+            c.put("production_no", row.getStr("生产料号"));
+            byCode.computeIfAbsent(code, k -> new LinkedHashMap<>()).put(nz(operationNo), c);
+            result.successRows++;
+        }
+        LinkedHashMap<Map<String, Object>, List<Map<String, Object>>> groups = new LinkedHashMap<>();
+        for (Map.Entry<String, LinkedHashMap<String, Map<String, Object>>> e : byCode.entrySet()) {
+            Map<String, Object> gk = new LinkedHashMap<>();
+            gk.put("system_type", "PRICING");
+            gk.put("price_type", PricingPriceType.SELF_PROCESS);
+            gk.put("cost_type", "自制加工费");
+            gk.put("code", e.getKey());
+            groups.put(gk, new ArrayList<>(e.getValue().values()));
+        }
+        try {
+            writer.writeVersionedGroups("unit_price", "version_no", CONTENT, null, DESCRIPTOR, groups);
+            for (List<Map<String, Object>> g : groups.values()) result.recordWrite("unit_price", g.size());
+        } catch (Exception ex) {
+            result.recordError(0, "_batch_", ex.getMessage());
         }
         return result;
     }
