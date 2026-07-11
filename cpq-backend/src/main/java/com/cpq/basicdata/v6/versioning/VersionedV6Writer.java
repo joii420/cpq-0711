@@ -698,7 +698,22 @@ public class VersionedV6Writer {
         return m;
     }
 
-    /** 规范化：数字用 stripTrailingZeros，其余 toString；null→"" （防 '12' vs '12.0' / null 误判）。 */
+    /**
+     * 规范化：数字用 stripTrailingZeros，其余 toString；null→"" （防 '12' vs '12.0' / null 误判）。
+     *
+     * <p><b>已知限制（tesk-0709 Task 11 E2E 真文件自检发现，2026-07-11）</b>：本方法对 BigDecimal 不做
+     * scale 归一化。若某数值列的 Excel 来源值（公式格 cached 结果，或用户直接输入的高精度小数字面量）
+     * 精度超过其 DB 列声明的 {@code numeric(p,s)} scale，则"本次新解析值(全精度)"与"重导时从库里
+     * load 出来的 existing(已按列 scale 截断)"在此比较字符串上不相等 → 同一份文件重导会被误判"内容
+     * 变化"而错误升版（违反"重导不升版"不变量）。此处**不**在通用层加统一 scale 舍入：本 writer
+     * 横跨约 20 张表、每列 scale 不一（多数 numeric(18,6)，tooling_cost.tooling_unit_price /
+     * exchange_rate_v6.rate 等为 numeric(18,8)），单一全局 scale 常数会对低精度列舍入不足（仍误判）
+     * 或对高精度列舍入过度（掩盖真实变化、导致该丢的版本没升）。**正确修法是各 handler 在构造 content
+     * 前按自己实际写入列的 DB scale 显式 {@code setScale(scale, RoundingMode.HALF_UP)}**（P12
+     * ToolingCostHandler 已按此模式修复 tooling_unit_price→scale 8；P09/P10 已修复 unit_price→scale 6）。
+     * 建议后续对全部 20 个 handler 做一次系统性审计（grep 每个 formula/高精度小数字段 vs 目标列 scale），
+     * 详见 tesk-0709 backtask.md Task 11 交付报告。
+     */
     private static String norm(Object v) {
         if (v == null) return "";
         if (v instanceof BigDecimal bd) return bd.stripTrailingZeros().toPlainString();

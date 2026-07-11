@@ -93,6 +93,14 @@ public class P12ToolingCostHandler implements SheetHandler {
                     result.recordError(row.rowNo, "宏丰料号/工序编号/项次/模具编号", "必填项为空");
                     continue;
                 }
+                // tesk-0709 Task 11 E2E 修复（2026-07-11）：tooling_unit_price 常来自 Excel 公式
+                // （如"单个模具/寿命/单循环产量"），POI 读取的 cached 值是 IEEE-754 double 全精度
+                // （可达 17~18 位有效数字，如 0.013333333333333334），而 DB 列 tooling_cost.tooling_unit_price
+                // 是 numeric(18,8)，落库时会被 Postgres 静默四舍五入到 8 位小数。若不在解析时同步舍入，
+                // "新解析值(全精度)" 与 "重导时从库里读回的 existing(已截断至 8 位)" 在 VersionedV6Writer
+                // 内容比对(norm()/multisetEqual)里恒不相等 → 同文件重导也会误判"内容变化"而升版
+                // （违反§7.4"重导不升版"）。按列的实际精度舍入，让"新解析值"与"落库后重读值"从一开始就一致。
+                if (unitPrice != null) unitPrice = unitPrice.setScale(8, java.math.RoundingMode.HALF_UP);
                 // tooling_unit_price 为 NOT NULL 列：解析不到时兜底 ZERO，保持原裸 SQL 逻辑不变。
                 Row r = new Row(processNo, seqNo, toolingNo,
                     row.getDecimal("单个模具", "工装成本"), row.getLong("寿命"),

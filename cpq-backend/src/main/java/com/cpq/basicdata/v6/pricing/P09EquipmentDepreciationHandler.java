@@ -9,6 +9,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 
 /** P09 设备折旧成本 → production_energy (price_type=DEPRECIATION) 整组版本化。 */
@@ -21,6 +23,17 @@ public class P09EquipmentDepreciationHandler implements SheetHandler {
 
     private static final List<String> CONTENT = List.of("process_no", "unit_price", "currency", "unit");
     private static final List<String> DESCRIPTOR = List.of("production_no");
+
+    /**
+     * tesk-0709 Task 11 E2E 修复（2026-07-11）：真实核价 6.0 测试文件里"折旧单价"列存在超出
+     * production_energy.unit_price(numeric(18,6)) 精度的字面量（如 2.5000000000000002E-6，
+     * POI 按 double 全精度解析出 17~18 位有效数字），DB 落库会被 Postgres 静默四舍五入到 6 位小数。
+     * 解析时不同步舍入 → "新解析值(全精度)" 与 "重导时从库里读回的 existing(已截断至 6 位)" 在
+     * VersionedV6Writer 内容比对里恒不相等 → 同文件重导也会误判"内容变化"而升版（违反§7.4"重导不升版"）。
+     */
+    private static BigDecimal roundToColumnScale(BigDecimal v) {
+        return v == null ? null : v.setScale(6, RoundingMode.HALF_UP);
+    }
 
     @Override
     @Transactional(Transactional.TxType.REQUIRES_NEW)
@@ -37,7 +50,7 @@ public class P09EquipmentDepreciationHandler implements SheetHandler {
             }
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("process_no", processNo);
-            c.put("unit_price", row.getDecimal("折旧单价"));
+            c.put("unit_price", roundToColumnScale(row.getDecimal("折旧单价")));
             c.put("currency", row.getStr("币种"));
             c.put("unit", row.getStr("计量单位"));
             c.put("production_no", row.getStr("生产料号"));   // 描述列

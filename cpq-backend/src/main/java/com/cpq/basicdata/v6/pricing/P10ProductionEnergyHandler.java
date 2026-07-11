@@ -9,6 +9,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 
 /** P10 生产设备能耗 → production_energy (price_type=ENERGY) 整组版本化。 */
@@ -21,6 +23,16 @@ public class P10ProductionEnergyHandler implements SheetHandler {
 
     private static final List<String> CONTENT = List.of("process_no", "unit_price", "currency", "unit");
     private static final List<String> DESCRIPTOR = List.of("production_no");
+
+    /**
+     * tesk-0709 Task 11 E2E 修复（2026-07-11）：同 {@code P09EquipmentDepreciationHandler} 注释——
+     * "生产能耗单价"列存在超出 production_energy.unit_price(numeric(18,6)) 精度的字面量
+     * （如 1.1999999999999999E-3 / 1.4000000000000001E-7），解析时需按列 scale 舍入，避免同文件
+     * 重导被误判"内容变化"而升版（违反§7.4"重导不升版"）。
+     */
+    private static BigDecimal roundToColumnScale(BigDecimal v) {
+        return v == null ? null : v.setScale(6, RoundingMode.HALF_UP);
+    }
 
     @Override
     @Transactional(Transactional.TxType.REQUIRES_NEW)
@@ -37,7 +49,7 @@ public class P10ProductionEnergyHandler implements SheetHandler {
             }
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("process_no", processNo);
-            c.put("unit_price", row.getDecimal("生产能耗单价"));
+            c.put("unit_price", roundToColumnScale(row.getDecimal("生产能耗单价")));
             c.put("currency", row.getStr("币种"));
             c.put("unit", row.getStr("计量单位"));
             c.put("production_no", row.getStr("生产料号"));   // 描述列
