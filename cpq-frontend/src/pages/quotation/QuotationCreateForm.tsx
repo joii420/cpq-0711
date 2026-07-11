@@ -96,8 +96,9 @@ const QuotationCreateForm: React.FC<Props> = ({
       .then((res) => {
         const list: ProductCategory[] = res.data || [];
         setCategories(list);
-        // 默认选中"默认分类"
-        if (!value.categoryId) {
+        // 默认选中"默认分类"——仅新建态。编辑态(readOnly)分类由下面的 effect 从已存模板反查回填,
+        // 不能在这里乱填"默认分类"覆盖真实分类。
+        if (!readOnly && !value.categoryId) {
           const defaultCat = list.find((c) => c.name === '默认分类');
           if (defaultCat) {
             onChange({ ...value, categoryId: defaultCat.id });
@@ -107,6 +108,28 @@ const QuotationCreateForm: React.FC<Props> = ({
       .catch(() => setCategories([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 编辑态回填产品分类:quotation 表头不持久化 category_id(实体/DTO 均无该列),
+  // 但 customer_template_id 已存,且模板本身带 categoryId(模板就是按 category 匹配出来的)→
+  // 从已存模板反查把分类显示回来。否则只读分类下拉空白 + 红色"请选择产品分类",看着像"分类丢了"。
+  // readOnly 守卫确保只在编辑态触发;下游 match/costing effect 在 readOnly 下不会覆盖已锁定的模板。
+  useEffect(() => {
+    if (!readOnly || value.categoryId || !value.customerTemplateId) return;
+    let cancelled = false;
+    templateService
+      .getByIdCached(value.customerTemplateId)
+      .then((tpl: any) => {
+        // getByIdCached 解析后是响应信封,模板在 .data(与全工程 getById().data 取法一致);
+        // 兼容潜在直返模板的形状,两层都试。
+        const catId = (tpl?.data ?? tpl)?.categoryId;
+        if (!cancelled && catId) {
+          onChange({ ...value, categoryId: catId });
+        }
+      })
+      .catch(() => { /* 反查失败则保持空,不影响编辑(校验已不强求 categoryId) */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readOnly, value.customerTemplateId, value.categoryId]);
 
   // 分类变更后自动匹配报价模板
   useEffect(() => {

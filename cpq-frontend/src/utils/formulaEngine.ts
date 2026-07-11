@@ -2,6 +2,8 @@ import Decimal from 'decimal.js';
 import type { GlobalVariableDefinition } from '../services/globalVariableService';
 import { compileGlobalVariableTokenForRow } from '../services/globalVariableService';
 
+export type { GlobalVariableDefinition } from '../services/globalVariableService';
+
 export interface ExpressionToken {
   type: 'field' | 'operator' | 'bracket_open' | 'bracket_close' | 'number' | 'component_subtotal' | 'product_attribute' | 'quotation_field' | 'path' | 'global_variable' | 'previous_row_subtotal' | 'datasource_field' | 'cross_tab_ref' | 'b_field';
   value?: string;

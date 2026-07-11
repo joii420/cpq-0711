@@ -33,6 +33,7 @@ import type { TabDef } from '../../services/tabJoinFormulaService';
 import { parsePredicateText, serializePredicate } from '../../utils/predicateText';
 // BL-0017: 哨兵列键单源（与各 componentSubtotals 装配点一致），避免协议字符串漂移（AP-44）。
 import { AMOUNT_TOTAL_KEY } from '../quotation/tabTotalLines';
+import type { ConditionPredicate } from '../../utils/formulaEngine';
 
 // Re-export TabDef for convenience of tests (they import from this module)
 export type { TabDef };
@@ -943,7 +944,7 @@ export function tokensToDrawerExpression(
           const hostTabDef = tabDefs.find((d) => d.self === true);
           const hostAlias = hostTabDef?.componentName ?? hostTabDef?.alias ?? '';
 
-          const condStr = serializePredicate(token.predicate, { sourceAlias, hostAlias });
+          const condStr = serializePredicate(token.predicate as ConditionPredicate, { sourceAlias, hostAlias });
 
           if (token.targetExpr && token.targetExpr.length > 0) {
             // 行内值表达式回显：field→[source名.列]、b_field→[宿主名.列]

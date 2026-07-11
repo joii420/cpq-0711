@@ -28,7 +28,8 @@ public final class UnitConversion {
         Map.entry("PCS", BigDecimal.ONE),
         Map.entry("KPCS", new BigDecimal("1000")),
         Map.entry("千片", new BigDecimal("1000")),
-        Map.entry("G/PCS", new BigDecimal("0.001"))
+        Map.entry("G/PCS", new BigDecimal("0.001")),
+        Map.entry("G/KPCS", new BigDecimal("0.000001"))
     );
 
     /** 归一化：trim → 去所有内部空格 → 转大写（中文别名原样保留，已在表中）。 */

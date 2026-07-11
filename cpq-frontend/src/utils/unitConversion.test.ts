@@ -11,6 +11,7 @@ describe('factorFor', () => {
     ['KPCS', 1000], ['千片', 1000],
     ['g/PCS', 0.001], ['G/pcs', 0.001],
     [' g / PCS ', 0.001],
+    ['g/KPCS', 0.000001], ['G/kpcs', 0.000001], [' g / KPCS ', 0.000001],
     ['mm', 1], ['', 1], ['  ', 1],
   ];
   it.each(cases)('factorFor(%s) = %d', (unit, expected) => {

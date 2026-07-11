@@ -12,7 +12,7 @@ export interface RowKeyConflictDTO {
   rowIndices: number[];
 }
 
-export const rowKeyOf = (c: RowKeyConflictDTO, i: number): string =>
+export const rowKeyOf = (c: RowKeyConflictDTO, i = 0): string =>
   `${c.lineItemId ?? ''}-${c.componentId ?? ''}-${c.rowKey}-${i}`;
 
 interface Props {

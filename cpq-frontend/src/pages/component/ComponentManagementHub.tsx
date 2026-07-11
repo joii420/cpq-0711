@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Tabs, Button, Drawer, Space } from 'antd';
-import { FunctionOutlined } from '@ant-design/icons';
+import { Tabs } from 'antd';
 import ComponentManagement from './ComponentManagement';
 import DataSourceList from '../datasource/DataSourceList';
 import GlobalVariablePage from '../global-variable/GlobalVariablePage';
@@ -8,17 +7,11 @@ import CostingBomTreeConfigTab from './CostingBomTreeConfigTab';
 
 const ComponentManagementHub: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('component');
-  const [globalVarOpen, setGlobalVarOpen] = useState(false);
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+      <div style={{ marginBottom: 12 }}>
         <h2 style={{ margin: 0 }}>组件管理</h2>
-        <Space>
-          <Button icon={<FunctionOutlined />} onClick={() => setGlobalVarOpen(true)}>
-            全局变量配置
-          </Button>
-        </Space>
       </div>
       <Tabs
         activeKey={activeTab}
@@ -27,19 +20,10 @@ const ComponentManagementHub: React.FC = () => {
         items={[
           { key: 'component', label: '组件', children: <ComponentManagement /> },
           { key: 'datasource', label: '数据源', children: <DataSourceList /> },
+          { key: 'global-variable', label: '全局变量', children: <GlobalVariablePage /> },
           { key: 'costing-bom-tree', label: '核价树配置', children: <CostingBomTreeConfigTab /> },
         ]}
       />
-      <Drawer
-        title="全局变量配置"
-        placement="right"
-        width={1200}
-        open={globalVarOpen}
-        onClose={() => setGlobalVarOpen(false)}
-        destroyOnClose
-      >
-        <GlobalVariablePage />
-      </Drawer>
     </div>
   );
 };

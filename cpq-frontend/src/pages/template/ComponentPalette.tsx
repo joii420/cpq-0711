@@ -20,6 +20,8 @@ interface DirOption {
 
 interface ComponentPaletteProps {
   onAddComponent: (componentId: string, componentName: string) => void;
+  /** 所选组件目录变化时上报给父层，供 Excel 视图下拉按同一目录过滤副本（Bug1）。 */
+  onDirectoryChange?: (dirId: string) => void;
 }
 
 const DraggableComponentCard = ({ comp, type }: { comp: CompItem; type: 'normal' | 'subtotal' | 'excel' }) => {
@@ -53,7 +55,7 @@ const DraggableComponentCard = ({ comp, type }: { comp: CompItem; type: 'normal'
   );
 };
 
-const ComponentPalette: React.FC<ComponentPaletteProps> = ({ onAddComponent: _onAdd }) => {
+const ComponentPalette: React.FC<ComponentPaletteProps> = ({ onAddComponent: _onAdd, onDirectoryChange }) => {
   const [directories, setDirectories] = useState<DirOption[]>([]);
   const [selectedDirId, setSelectedDirId] = useState<string>('');
   const [search, setSearch] = useState('');
@@ -93,6 +95,9 @@ const ComponentPalette: React.FC<ComponentPaletteProps> = ({ onAddComponent: _on
   }, [selectedDirId, search]);
 
   useEffect(() => { loadComponents(); }, [loadComponents]);
+
+  // Bug1：所选目录变化时上报父层，Excel 视图下拉据此只列本目录的 EXCEL 副本。
+  useEffect(() => { if (selectedDirId) onDirectoryChange?.(selectedDirId); }, [selectedDirId]);
 
   const normalComps = components.filter(c => c.componentType === 'NORMAL');
   const excelComps = components.filter(c => c.componentType === 'EXCEL');

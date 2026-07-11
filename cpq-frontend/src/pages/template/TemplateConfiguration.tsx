@@ -48,6 +48,8 @@ const TemplateConfiguration: React.FC = () => {
   const [viewMode, setViewMode] = useState<'detail' | 'simple' | 'excel'>('detail');
   const [centerTab, setCenterTab] = useState<'components' | 'formulas' | 'sql-views'>('components');
   const [excelViewConfig, setExcelViewConfig] = useState<any>(null);
+  // Bug1：左侧调色板当前所选组件目录，下传给 Excel 视图下拉，使其只列本目录的 EXCEL 副本。
+  const [paletteDirId, setPaletteDirId] = useState<string>('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -402,6 +404,7 @@ const TemplateConfiguration: React.FC = () => {
       <div className="tm-left-panel">
         <ComponentPalette
           onAddComponent={isDraft ? handleAddComponent : () => {}}
+          onDirectoryChange={setPaletteDirId}
         />
       </div>
 
@@ -474,6 +477,7 @@ const TemplateConfiguration: React.FC = () => {
                           excelViewConfig={excelViewConfig}
                           onChange={setExcelViewConfig}
                           pendingDropComponentId={droppedExcelComponentId}
+                          directoryId={paletteDirId}
                           productAttributes={productAttrs}
                           componentsSnapshot={availableComponents}
                         />

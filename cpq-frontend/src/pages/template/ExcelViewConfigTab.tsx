@@ -53,6 +53,11 @@ interface Props {
    * 置 null 表示无待处理 drop。
    */
   pendingDropComponentId?: string | null;
+  /**
+   * Bug1：当前组件目录（来自左侧 ComponentPalette 所选目录）。
+   * 非空时下拉只列该目录下的 EXCEL 组件副本，排除全局源 + 别目录副本。
+   */
+  directoryId?: string;
   // 老 props (Caller 仍传, 不再使用)
   productAttributes?: any[];
   componentsSnapshot?: any[];
@@ -107,7 +112,7 @@ function isLegacyBareArray(raw: any): boolean {
   return Array.isArray(parsed) && parsed.length > 0;
 }
 
-const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewConfig, onChange, pendingDropComponentId }) => {
+const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewConfig, onChange, pendingDropComponentId, directoryId }) => {
   const [config, setConfig] = useState<ExcelViewConfigV2>(() => normalizeConfig(excelViewConfig));
   const [saving, setSaving] = useState(false);
   const [excelComponents, setExcelComponents] = useState<ComponentItem[]>([]);
@@ -125,10 +130,12 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
     setConfig(normalizeConfig(excelViewConfig));
   }, [excelViewConfig]);
 
-  // 拉取所有 EXCEL 组件供选择
+  // Bug1：只拉当前组件目录(来自左侧调色板所选目录)下的 EXCEL 组件副本；无目录则空。
+  // 与调色板同口径 componentService.list({directoryId})，从而排除全局源 + 别目录副本。
   useEffect(() => {
+    if (!directoryId) { setExcelComponents([]); return; }
     setLoadingComponents(true);
-    componentService.list({})
+    componentService.list({ directoryId })
       .then((resp: any) => {
         const list: ComponentItem[] = resp?.data ?? resp ?? [];
         const arr = Array.isArray(list) ? list : [];
@@ -136,11 +143,27 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
       })
       .catch(() => setExcelComponents([]))
       .finally(() => setLoadingComponents(false));
-  }, []);
+  }, [directoryId]);
+
+  // Bug1 回归修复：已绑定组件的列定义解析必须独立于"目录过滤候选列表"。
+  // 否则左侧调色板切到别的目录后，绑定组件不在候选里 → selectedComponent=null → 列定义假性清空
+  // （但保存的 excel_component_id 其实没丢，纯显示问题）。按 id 直接 getById，跨目录始终可解析。
+  const [boundComponent, setBoundComponent] = useState<ComponentItem | null>(null);
+  useEffect(() => {
+    const cid = config.excel_component_id;
+    if (!cid) { setBoundComponent(null); return; }
+    let cancelled = false;
+    componentService.getById(cid)
+      .then((resp: any) => { if (!cancelled) setBoundComponent(resp?.data ?? resp ?? null); })
+      .catch(() => { if (!cancelled) setBoundComponent(null); });
+    return () => { cancelled = true; };
+  }, [config.excel_component_id]);
 
   const selectedComponent = useMemo(
-    () => excelComponents.find(c => c.id === config.excel_component_id) || null,
-    [excelComponents, config.excel_component_id],
+    () => (boundComponent && boundComponent.id === config.excel_component_id)
+      ? boundComponent
+      : (excelComponents.find(c => c.id === config.excel_component_id) || null),
+    [boundComponent, excelComponents, config.excel_component_id],
   );
 
   const baseColumns = useMemo(
@@ -284,10 +307,20 @@ const ExcelViewConfigTab: React.FC<Props> = ({ templateId, isDraft, excelViewCon
             value={config.excel_component_id ?? undefined}
             optionFilterProp="label"
             onChange={handleSelectComponent}
-            options={excelComponents.map(c => ({
-              label: `${c.name}${c.code ? `（${c.code}）` : ''}`,
-              value: c.id,
-            }))}
+            options={(() => {
+              const opts = excelComponents.map(c => ({
+                label: `${c.name}${c.code ? `（${c.code}）` : ''}`,
+                value: c.id,
+              }));
+              // 绑定组件若不在当前目录候选里（用户切到别目录浏览），补进选项以正确显示其 label。
+              if (boundComponent && !excelComponents.some(c => c.id === boundComponent.id)) {
+                opts.unshift({
+                  label: `${boundComponent.name}${boundComponent.code ? `（${boundComponent.code}）` : ''}`,
+                  value: boundComponent.id,
+                });
+              }
+              return opts;
+            })()}
           />
           {selectedComponent && (
             <Text type="secondary" style={{ marginLeft: 12, fontSize: 12 }}>

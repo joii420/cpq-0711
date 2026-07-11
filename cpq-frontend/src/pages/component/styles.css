@@ -558,8 +558,9 @@
 .cmm-dir-head:hover { background: #fafafa; }
 .cmm-dir-caret { transition: transform .2s; color: #8c8c8c; font-size: 11px; }
 .cmm-dir.open .cmm-dir-caret { transform: rotate(90deg); }
-.cmm-dir-name { font-weight: 600; font-size: 13px; flex: 1; }
-.cmm-dir-counts { display: flex; gap: 4px; }
+.cmm-dir-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.cmm-dir-name { font-weight: 600; font-size: 13px; }
+.cmm-dir-counts { display: flex; flex-wrap: wrap; gap: 4px; }
 .cmm-dir-acts { display: flex; gap: 0; margin-left: 4px; }
 .cmm-dir-acts .ant-btn { color: #8c8c8c; }
 .cmm-dir-acts .ant-btn:hover { color: #1677ff; background: #f0f5ff; }

@@ -26,6 +26,8 @@ class UnitConversionTest {
         assertEquals(0, new BigDecimal("1000").compareTo(UnitConversion.factorFor("千片")));
         assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("g/PCS")));
         assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("G/pcs")));
+        assertEquals(0, new BigDecimal("0.000001").compareTo(UnitConversion.factorFor("g/KPCS")));
+        assertEquals(0, new BigDecimal("0.000001").compareTo(UnitConversion.factorFor("G/kpcs")));
     }
 
     @Test

@@ -259,6 +259,21 @@ public class ComponentService {
             LOG.warnf("[H1 auto-sync] failed for componentId=%s: %s", id, e.getMessage());
         }
 
+        // Bug3 源→副本同步：EXCEL 源组件保存后，把 excelColumns(含 TAB_JOIN 列的 expression/tabs)
+        // 刷到所有导入副本。副本无显式外键，靠 code 的 __impN 后缀 + 同 base 识别(与
+        // ComponentImportService 同款约定)。模板引用的是副本(Bug1 下拉只列本目录副本)，
+        // 故源改公式必须传导到副本，模板保存/报价渲染才能拿到最新列定义。
+        try {
+            int synced = syncExcelColumnsToImportedCopies(component);
+            if (synced > 0) {
+                LOG.infof("[Excel source-sync] source=%s synced excelColumns to %d imported copies",
+                        component.code, synced);
+            }
+        } catch (Exception e) {
+            // 同步失败不阻断源组件保存；记录警告，副本可由用户重新保存源触发重试。
+            LOG.warnf("[Excel source-sync] failed for componentId=%s: %s", id, e.getMessage());
+        }
+
         return ComponentDTO.from(component);
     }
 
@@ -300,6 +315,46 @@ public class ComponentService {
                     componentId, e.getMessage());
         }
         return ComponentDTO.from(component);
+    }
+
+    /**
+     * 正则：匹配 code 的 __impN 导入副本后缀（与 ComponentImportService.IMP_SUFFIX 同款）。
+     * COMP-0035__imp1 → 命中(base=COMP-0035)；COMP-0035 → 不命中(它是源)。
+     */
+    private static final Pattern IMP_SUFFIX = Pattern.compile("^(.+?)(__imp\\d+)$");
+
+    /** 提取 code 的 base（去掉 __impN 后缀）。COMP-0035__imp1 → COMP-0035；COMP-0035 → COMP-0035。 */
+    private static String extractBase(String code) {
+        if (code == null) return "";
+        Matcher m = IMP_SUFFIX.matcher(code);
+        return m.matches() ? m.group(1) : code;
+    }
+
+    /**
+     * Bug3：把 EXCEL 源组件的 excelColumns 同步到所有导入副本（同 base code 且带 __impN 后缀）。
+     *
+     * <p>纪律（防 AP-40 多实例污染）：仅当被保存组件本身是<b>源</b>（code 无 __impN 后缀）时才向下传导；
+     * 若被保存的是副本则跳过（不反向污染源/兄弟副本）。用 Panache 托管实体逐个赋值，由 Hibernate
+     * 脏检查 flush；不走 firstResult，按 base 精确全匹配。
+     *
+     * @return 被同步的副本数量
+     */
+    private int syncExcelColumnsToImportedCopies(Component source) {
+        if (source == null || !"EXCEL".equals(source.componentType)) return 0;
+        // 被保存的是副本 → 不传导（源→副本单向）
+        if (IMP_SUFFIX.matcher(source.code).matches()) return 0;
+        String base = source.code;
+        List<Component> excelComps = Component.list("componentType", "EXCEL");
+        int cnt = 0;
+        for (Component c : excelComps) {
+            if (c.id.equals(source.id)) continue;
+            if (!IMP_SUFFIX.matcher(c.code).matches()) continue;   // 只刷副本
+            if (!base.equals(extractBase(c.code))) continue;        // 同 base
+            if (java.util.Objects.equals(c.excelColumns, source.excelColumns)) continue; // 无变化跳过
+            c.excelColumns = source.excelColumns;                   // 托管实体，脏检查自动 flush
+            cnt++;
+        }
+        return cnt;
     }
 
     @Transactional

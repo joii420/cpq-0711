@@ -15,6 +15,36 @@ CPQ (Configure, Price, Quote) system for manufacturing/industrial components. Th
 - **Database**: PostgreSQL 16 (JSONB for flexible template/component config)
 - **Export**: Apache POI (Excel), Quarkus Qute (PDF)
 
+## 本地开发服务启动（前后端 + DB）
+
+> dev server 是**全会话/多 worktree 共享**的（见「开发流程规范」的 worktree 共享约束）：先探端口，**已在跑就直接复用，不要重复起**。
+
+**后端（Quarkus dev，端口 8081）**
+```bash
+cd cpq-backend && ./mvnw quarkus:dev
+```
+- 端口 `8081`，绑 `0.0.0.0`；dev 模式带 Live Coding（改 java 自动热重载）。
+- 连远程 PostgreSQL（`jdbc:postgresql://10.177.152.12:5432/cpq_db`）；连接串/凭据默认值见 `cpq-backend/src/main/resources/application.properties`（`${DB_USERNAME:postgres}` / `${DB_PASSWORD:joii5231}`，可用环境变量覆盖）。
+- 启动时 Flyway 自动 `migrate-at-start`；**不要**手工 `psql -f V_xx.sql`（详见「修改后强制自检」）。
+- 首次启动约 6-7s；热重载遇大范围文件变化（如切分支）会重编译，期间 8081 短暂无响应属正常。
+
+**前端（Vite dev，端口 5174）**
+```bash
+cd cpq-frontend && npm run dev
+```
+- 端口 `5174`，绑 `0.0.0.0`；`/api` 经 Vite proxy 转发到后端 `localhost:8081`（浏览器只需开 `http://localhost:5174`）。
+
+**启动/存活自检（两个坑，务必按此判断）**
+```bash
+# ⚠️ 坑1: 本机 shell 常设了 http_proxy=127.0.0.1:7890，curl 访问 localhost 会走代理返 502。
+#        探本机服务一律加 --noproxy '*'。
+# ⚠️ 坑2: 后端未装 smallrye-health，/q/health 返 404 —— 它不是健康探针！
+#        判后端健康看业务端点返 401（应用在跑、鉴权正常）。
+curl -s --noproxy '*' -o /dev/null -w '%{http_code}\n' http://localhost:5174/                 # 前端: 期望 200
+curl -s --noproxy '*' -o /dev/null -w '%{http_code}\n' http://localhost:8081/api/cpq/components # 后端: 期望 401
+```
+- 后端连库确认（可选）：`SELECT state,count(*) FROM pg_stat_activity WHERE datname='cpq_db' GROUP BY state;` 有一批 idle 连接 = 连接池已建。
+
 ## Architecture
 
 Nine business modules with a core data pipeline:
@@ -36,6 +66,7 @@ Templates and components use JSONB storage for flexible field/formula configurat
 - `docs/PRD-v3.md` - Full product requirements with data models, user scenarios, and project plan（功能交付的唯一标准,2026-05-13 起活跃版本）
 - `docs/archive/PRD-v2.8-历史档案.md` - 已废弃的历史 PRD (v1.0~v2.8),仅作变更决策回溯用途,**不再维护**（2026-06-18 由 `docs/PRD.md` 移入 `archive/`）
 - `docs/RECORD.md` - Development record for multi-agent shared memory（开始工作前必须先阅读此文件了解历史上下文）
+- 📋 `BACKLOG.md`（项目根目录） - **spec 评审推迟功能的持久化清单**（新会话第一个开发指令前必读；spec 评审后写入、开发完成后更新状态；规则与格式见本文末「Backlog 自动管理规则」）
 - 🔒 **`docs/三大核心模块基线.md` - 组件管理 / 模板管理 / 报价单渲染 三大核心架构基线（2026-05-21 终态锁定，后续不轻易修改；任何破坏性改动前必读 + 评估 + 走 architect）**
 - `docs/统一智能视图路径方案.md` - 配置驱动方案。**当前版本采用 §2 核心方案（已随 V202 智能视图落地）**；§13（RuntimeContext 上下文字典 + 显式谓词 path + Tab visibleWhen 表达式）为**未来演进方向的备选设计，尚未实施**，不要当成现行终态
 - `docs/反模式.md` - 反模式速查（PR 自检用，新增功能前必读）
@@ -207,3 +238,89 @@ All UI, prototypes, and PRD are in Chinese. Code artifacts (variables, APIs, com
 > "TS 0 错误 ✅；CostingPartDataPage.tsx → Vite 200 ✅；后端 /api/cpq/.. → 401（auth 正常）✅；V77 success=t ✅"
 
 没有这行声明的"完成"=未完成。
+
+# Backlog 自动管理规则
+
+## 核心原则
+所有在 spec 评审中被建议推迟的功能，必须持久化到 `BACKLOG.md` 文件中。
+禁止只在对话中口头提及二期任务，上下文丢失不能成为功能遗漏的理由。
+
+---
+
+## 规则一：评审 Spec 时的强制行为
+
+当我要求你评审任何 spec、PRD、需求文档时，你必须：
+
+1. 完成评审分析后，明确列出**建议推迟的功能点**及推迟理由
+2. 询问我是否采纳这些推迟建议（等待我确认，不要自动写入）
+3. 收到我的确认后，立即创建或更新项目根目录的 `BACKLOG.md`
+4. 每个推迟条目必须包含以下字段：
+   - 功能描述（来源：spec 哪一节/哪个模块）
+   - 推迟原因（复杂度过高 / 依赖未就绪 / 超出本期范围 / 其他）
+   - 优先级（P0 必做 / P1 重要 / P2 可选）
+   - 前置条件（依赖一期的哪个模块或接口完成后才能开始）
+   - 预估规模（S=1-2天 / M=3-5天 / L=1周以上）
+5. 写入完成后，输出 BACKLOG.md 的摘要确认，并告知总计推迟条目数
+
+---
+
+## 规则二：每次新会话启动时的强制行为
+
+每当我在新会话中发出第一个开发任务指令时，你必须先执行以下步骤，再开始任务：
+
+1. 检查项目根目录是否存在 `BACKLOG.md`
+2. 如果存在，读取并列出所有状态为 `[ ]`（待开发）的条目及其优先级
+3. 判断本次任务是否与任何待开发条目相关，并告知我
+4. 如果相关，询问是否一并处理，等待我决策
+5. 如果不相关，简短提示当前 Backlog 中有 N 个待开发条目，然后继续执行我的任务
+
+---
+
+## 规则三：完成开发任务时的强制行为
+
+每次完成一个开发任务后，你必须：
+
+1. 检查本次实现是否覆盖了 BACKLOG.md 中的任何条目
+2. 如果覆盖，将对应条目状态更新为 `[x]`，并在变更记录中追加一行
+3. 检查本次实现是否满足了某些条目的「前置条件」，如果是，更新该条目的前置条件备注为「✅ 已就绪」
+4. 输出一句话收尾摘要，格式为：
+   「Backlog 状态：共 N 条，已完成 X 条，待开发 Y 条，其中 P0 级 Z 条。」
+
+---
+
+## BACKLOG.md 标准格式
+
+每次写入或更新 BACKLOG.md 时，严格遵守以下格式：
+
+```markdown
+# Project Backlog
+
+> 自动维护文件，由 Claude Code 在 spec 评审后写入，开发完成后更新。
+> 开始新任务前请先阅读本文件。
+
+## 状态说明
+- [ ] 待开发
+- [~] 进行中
+- [x] 已完成
+- [-] 已废弃（需注明原因）
+
+---
+
+## 待开发条目
+
+### [模块名称]
+
+- [ ] **功能描述**
+  - 来源：spec §X.X / [章节名]
+  - 推迟原因：
+  - 优先级：P0 / P1 / P2
+  - 前置条件：
+  - 预估规模：S / M / L
+
+---
+
+## 变更记录
+
+| 日期 | 操作 | 条目 | 备注 |
+|------|------|------|------|
+```

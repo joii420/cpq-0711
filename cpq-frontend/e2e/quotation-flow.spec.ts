@@ -66,16 +66,21 @@ async function createMinimalDraftQuotation(sessionCookie: string): Promise<strin
   });
   if (!custRes.ok) throw new Error(`获取客户列表失败: ${custRes.status}`);
   const custBody = await custRes.json();
-  const customerId = custBody.content?.[0]?.id ?? custBody[0]?.id;
+  // 后端统一 ApiResponse 信封 {code,message,data}；data 为分页对象 {content:[...]} 或裸数组。
+  const custData = custBody.data ?? custBody;
+  const custItems = Array.isArray(custData) ? custData : (custData.content ?? []);
+  const customerId = custItems[0]?.id;
   if (!customerId) throw new Error('客户列表为空，无法创建测试报价单');
 
-  // 2) 取报价模板列表，拿第一个 id
-  const tplRes = await fetch('http://localhost:8081/api/cpq/templates?templateKind=QUOTE&page=0&size=1', {
+  // 2) 取报价模板列表，拿第一个已发布的（templateKind 实际枚举值为 QUOTATION，非 QUOTE）
+  const tplRes = await fetch('http://localhost:8081/api/cpq/templates?templateKind=QUOTATION&page=0&size=50', {
     headers: { Cookie: sessionCookie },
   });
   if (!tplRes.ok) throw new Error(`获取模板列表失败: ${tplRes.status}`);
   const tplBody = await tplRes.json();
-  const templateId = tplBody.content?.[0]?.id ?? tplBody[0]?.id;
+  const tplData = tplBody.data ?? tplBody;
+  const tplItems = Array.isArray(tplData) ? tplData : (tplData.content ?? []);
+  const templateId = (tplItems.find((t: any) => t.status === 'PUBLISHED') ?? tplItems[0])?.id;
   if (!templateId) throw new Error('报价模板列表为空，无法创建测试报价单');
 
   // 3) 创建报价单草稿
@@ -97,7 +102,8 @@ async function createMinimalDraftQuotation(sessionCookie: string): Promise<strin
     throw new Error(`创建报价单失败: ${createRes.status} ${errText}`);
   }
   const created = await createRes.json();
-  const id = created.id ?? created.quotationId;
+  const createdData = created.data ?? created;
+  const id = createdData.id ?? createdData.quotationId ?? created.id ?? created.quotationId;
   if (!id) throw new Error(`创建报价单响应中无 id 字段: ${JSON.stringify(created)}`);
   console.log(`[createMinimalDraft] 创建测试报价单成功 id=${id}`);
   return String(id);

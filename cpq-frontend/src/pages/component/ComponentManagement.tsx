@@ -345,8 +345,13 @@ interface ExcelColumn {
   title: string;
   source_type?: string;
   hidden?: boolean;
+  /** @deprecated TAB_JOIN_FORMULA 旧键；现存 expression + tabs，formula 仅兼容旧数据回显 */
   formula?: string;
   fixed_value?: string;
+  /** TAB_JOIN_FORMULA: 表达式（后端 validateTabJoinConfig / TabJoinPlanEvaluator 读此键） */
+  expression?: string;
+  /** TAB_JOIN_FORMULA: 引用页签声明（alias + rowKeyFields），运行时按此对齐明细行 */
+  tabs?: Array<{ alias: string; tabKey?: string; rowKeyFields: string[] }>;
   [k: string]: any;
 }
 
@@ -471,7 +476,11 @@ const ExcelColumnPanel: React.FC<{
               size="small" style={{ width: 150 }} value={col.source_type ?? 'FIXED_VALUE'}
               onChange={(v) => update(idx, {
                 source_type: v,
-                ...(v === 'FIXED_VALUE' ? { formula: undefined } : { fixed_value: undefined }),
+                // 切到固定值：清空连表公式键（含富结构 expression/tabs + legacy formula）；
+                // 切到连表公式：清空固定值。
+                ...(v === 'FIXED_VALUE'
+                  ? { formula: undefined, expression: undefined, tabs: undefined }
+                  : { fixed_value: undefined }),
               })}
               options={[
                 { label: '固定值', value: 'FIXED_VALUE' },
@@ -490,7 +499,7 @@ const ExcelColumnPanel: React.FC<{
             {col.source_type === 'TAB_JOIN_FORMULA' && (
               <Button type="link" size="small" icon={<EditOutlined />} onClick={() => onEditFormula(idx)}
                 style={{ color: '#08979c', fontFamily: 'Consolas, Monaco, monospace', fontSize: 12 }}>
-                {col.formula ? `公式：${col.formula.slice(0, 40)}` : '配置公式'}
+                {(() => { const e = col.expression ?? col.formula; return e ? `公式：${e.slice(0, 40)}` : '配置公式'; })()}
               </Button>
             )}
           </Space>
@@ -734,12 +743,16 @@ const MasterList: React.FC<MasterListProps> = ({
         <div className={`cmm-dir${open ? ' open' : ''}`}>
           <div className="cmm-dir-head" onClick={() => toggleDir(dir.id)}>
             <span className="cmm-dir-caret">▶</span>
-            <span className="cmm-dir-name">📁 {dir.name}</span>
-            <span className="cmm-dir-counts">
-              {counts.tab > 0 && <span className="cmm-pill">页签{counts.tab}</span>}
-              {counts.excel > 0 && <span className="cmm-pill excel">XLS{counts.excel}</span>}
-              {counts.sub > 0 && <span className="cmm-pill sub">小计{counts.sub}</span>}
-            </span>
+            <div className="cmm-dir-title">
+              <span className="cmm-dir-name">📁 {dir.name}</span>
+              {(counts.tab > 0 || counts.excel > 0 || counts.sub > 0) && (
+                <span className="cmm-dir-counts">
+                  {counts.tab > 0 && <span className="cmm-pill">页签{counts.tab}</span>}
+                  {counts.excel > 0 && <span className="cmm-pill excel">XLS{counts.excel}</span>}
+                  {counts.sub > 0 && <span className="cmm-pill sub">小计{counts.sub}</span>}
+                </span>
+              )}
+            </div>
             <span className="cmm-dir-acts">
               <Tooltip title="重命名目录">
                 <Button type="text" size="small" icon={<EditOutlined />}
@@ -1289,7 +1302,7 @@ const ComponentManagement: React.FC = () => {
     const col = excelColumns[idx];
     setFormulaDrawer({
       open: true, formulaKey: null, excelColIndex: idx,
-      column: { expression: col?.formula ?? '' },
+      column: { expression: col?.expression ?? col?.formula ?? '' },
     });
   };
 
@@ -1314,7 +1327,18 @@ const ComponentManagement: React.FC = () => {
       if (idx !== null) {
         setExcelColumns((prev) =>
           prev.map((c, i) =>
-            i === idx ? { ...c, source_type: 'TAB_JOIN_FORMULA', formula: payload.column?.expression ?? '' } : c,
+            i === idx
+              ? {
+                  // 落库富结构：后端 ExcelViewService.validateTabJoinConfig / TabJoinPlanEvaluator
+                  // 均读 expression + tabs，必须完整保留（旧代码误把 expression 改名塞进 formula 且
+                  // 丢掉 tabs → 保存校验"表达式不能为空" + 运行时缺页签声明）。formula 置空（legacy）。
+                  ...c,
+                  source_type: 'TAB_JOIN_FORMULA',
+                  expression: payload.column?.expression ?? '',
+                  tabs: payload.column?.tabs ?? [],
+                  formula: undefined,
+                }
+              : c,
           ),
         );
       }

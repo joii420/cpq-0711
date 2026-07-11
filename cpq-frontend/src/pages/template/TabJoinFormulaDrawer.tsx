@@ -300,10 +300,15 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
       ),
     );
     const tabs = refAliases
-      // 引用串可能是页签名称(优先)或编号(兜底)，与序列化 findTabByRef 同语义
-      .map((a) => tabDefs.find((d) => d.componentName === a) ?? tabDefs.find((d) => d.alias === a))
-      .filter(Boolean)
-      .map((d: any) => ({ alias: d.alias, tabKey: d.tabKey, rowKeyFields: d.rowKeyFields }));
+      // 引用串 a 可能是页签名称(优先)或编号(兜底)，与序列化 findTabByRef 同语义。
+      // 关键(Bug2 续)：tabs[].alias 必须存"表达式里实际用的引用串 a"(如「来料」)，而非 d.alias(组件 code)——
+      // 否则后端 validateTabJoinConfig / TabJoinPlanEvaluator 从表达式解析出的 alias 在 tabs 里查不到，
+      // 报"引用了未声明的页签"且运行时 tabKeyOf.get(alias)=null 取不到数据。页签真身仍由 d.tabKey 定位。
+      .map((a) => {
+        const d = tabDefs.find((x) => x.componentName === a) ?? tabDefs.find((x) => x.alias === a);
+        return d ? { alias: a, tabKey: d.tabKey, rowKeyFields: d.rowKeyFields } : null;
+      })
+      .filter(Boolean);
     return { source_type: 'TAB_JOIN_FORMULA' as const, expression: expr, tabs };
   };
 

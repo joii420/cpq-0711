@@ -8,9 +8,10 @@
 > - **`物料与元素BOM` 例外**：材质料号源列名仍为「物料料号」→ 落 `element_bom.material_part_no`（材质料号，新增列并纳入唯一键 `(system_type, customer_no, material_no, material_part_no, characteristic)`）；`production_no` NULL（该 Sheet 无生产料号列）。同一销售料号下多材质料号各自独立成 BOM/版本，`P07` 分组键改为 `(material_no, material_part_no)`。
 > - **唯一键 & 升版**：恢复到引入 sales_part_no 之前的键结构（迁移 `V315` `DROP COLUMN sales_part_no` + 去唯一索引 `COALESCE(sales_part_no,'')` 后缀），升版 groupKey 按 `material_no`（销售料号）；element_bom 两表额外把 `material_part_no` 纳入唯一键。**V6.2 的 `sales_part_no` 维度整体废弃**（该 spec `docs/superpowers/specs/2026-07-07-核价销售料号维度落库-design.md` 作废）。
 > - `汇总` Sheet **不导入**（无对应 handler，`costing_summary` 由 `CostingSummaryService.compute()` 算出，键 `hf_part_no`，本次不动）。
-> - ⚠️ **护栏（repair-1）**：以下正文逐 Sheet 明细表若与本 V6.3 摘要冲突，**以摘要为准**（material_no=销售料号 / production_no=生产料号 / 组成料号=component_no 语义随 calc_type）；**§正文 172–270 段（客户料号关系/物料BOM/物料与元素BOM 等）随并发 WIP 校正，勿写回 sales_part_no**。
 >
 > **V6.1（2026-06-30）**：补齐 `unit_price.price_type` 细分化（2026-06-30 代码已生效，本文档此前漏更）——原超载大类 `MATERIAL` 在核价写入端废弃，各费用 Sheet 直接写 7 个细分值（材料核价价格=`MATERIAL_PRICE`、包装=`PACKAGING`、来料加工费=`INCOMING_PROCESS`、来料其他费用比例+固定合并=`INCOMING_OTHER`、自制加工费=`SELF_PROCESS`、成品其他比例+固定合并=`FINISHED_OTHER`、其他外加工=`OUTSOURCE_PROCESS`、电镀两条=`PLATING`）；`ELEMENT`（元素核价价格表）/`CONSUMABLE`（生产耗材BOM）已与 Sheet 1:1 **保留不动**；`cost_type` 全程不变。比例/固定不进 price_type，靠 `cost_ratio` vs `pricing_price` 哪列有值区分。规则出处 `docs/superpowers/specs/2026-06-30-pricing-unit-price-source-enum-design.md`（DDL=`V306`，常量类=`PricingPriceType`）。
+>
+> **V6.2（2026-07-07）**：**销售料号（报价料号）贯穿维度并入**——核价 Excel 新增必填列「销售料号」（= 报价料号 `XXXX-YYMMNNNNNN`），原「宏丰料号」列**改名「生产料号」**（落库列 `material_no`/`finished_material_no`/`code` 口径不变，仅表头改名 + handler 兼容读）。19 个"按料号" Sheet 新增落 `sales_part_no` 列并进唯一键 + 升版 groupKey；5 个全局/元素级 Sheet（元素价格/材料价格/汇率/电镀方案/核价版本）不加。**并"一步到位"把费用类 `unit_price`（P13/P14/P15–P20/P22/P23，其中 P15–P20/P23 原为 `V_DEFAULT` 无版本）纳入统一升版（2000 起版 + `is_current` 翻转，忽略 Excel 版本列）**。详见 **§四（销售料号维度）+ §五（统一升版机制）**；术语与三码模型对齐 `docs/superpowers/specs/2026-07-06-报价料号统一-design.md`。
 
 ---
 
@@ -43,6 +44,8 @@
   - [23. 其他外加工成本](#23-其他外加工成本)
   - [24. 单重](#24-单重)
 - [三、通用落库规则](#三通用落库规则)
+- [四、销售料号（报价料号）贯穿维度](#四销售料号报价料号贯穿维度)
+- [五、统一升版机制（一步到位）](#五统一升版机制一步到位)
 
 ---
 
@@ -82,6 +85,10 @@
 | 22 | 电镀成本（材料费） | `unit_price` | `PLATING` | `电镀材料费` |
 | 23 | 其他外加工成本 | `unit_price` | `OUTSOURCE_PROCESS` | `其他加工费` |
 | 24 | 单重 | `material_master` | — | — |
+
+> **V6.2 列变更（适用于下方全部明细表）**：
+> - Excel 原「宏丰料号」列 → 统一改名「**生产料号**」；落库列（`material_no`/`finished_material_no`/`code`）**口径不变**，handler 读列改「生产料号」优先、回退「宏丰料号」（**例外**：Sheet 7「物料与元素BOM」料号列真实表头是「物料料号」，未参与改名，不适用回退）。
+> - 上表第 5、6、7、8、9、10、11、12、13、14、15、16、17、18、19、20、22、23、24 号（19 个"按料号" Sheet）新增必填列「**销售料号**」→ 落 `sales_part_no`，进唯一键 + 升版 groupKey（详见 §四/§五）。第 1、2、3、4、21 号为全局/元素级，**不加**销售料号。
 
 ---
 
@@ -170,7 +177,7 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `material_no` | ✅ | 料号 |
+| 生产料号 | `material_no` | ✅ | 料号 |
 | 品名 | — | ❌ | 不需要导入 |
 | 规格 | — | ❌ | 不需要导入 |
 | 尺寸 | — | ❌ | 不需要导入 |
@@ -194,7 +201,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `material_no` | ✅ | 料号 |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；三码之一（见 §4.4） |
+| 生产料号 | `material_no` | ✅ | 料号 |
 | 品名 | — | ❌ | 不需要导入 |
 | 规格 | — | ❌ | 不需要导入 |
 | 尺寸 | — | ❌ | 不需要导入 |
@@ -208,7 +216,7 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `material_no` | ✅ | 料号（业务唯一） |
+| 生产料号 | `material_no` | ✅ | 料号（业务唯一） |
 | 品名 | `material_name` | ✅ | |
 | 规格 | `specification` | ✅ | |
 | 尺寸 | `dimension` | ✅ | |
@@ -218,7 +226,7 @@
 | 客户名称 | — | ❌ | 不需要导入 |
 | 客户产品编号 | — | ❌ | 不需要导入 |
 
-> 📌 同一 Sheet 同时向两张表落库，宏丰料号为关联键；料号表按 material_no upsert。
+> 📌 同一 Sheet 同时向两张表落库，生产料号为关联键；料号表按 material_no upsert。
 
 ---
 
@@ -234,7 +242,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `material_no` | ✅ | 主件料号 |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键 + 升版 groupKey（见 §四/§五） |
+| 生产料号 | `material_no` | ✅ | 主件料号 |
 
 > 其余头表字段（`bom_type`、`bom_version` 等）由系统写入默认值或另行配置。
 
@@ -242,7 +251,7 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `material_no` | ✅ | 主件料号 |
+| 生产料号 | `material_no` | ✅ | 主件料号 |
 | 项次 | `seq_no` | ✅ | |
 | 组成料号 | `component_no` | ✅ | 组件料号 |
 | 品名 | — | ❌ | 不导入 |
@@ -268,11 +277,11 @@
 
 > ⚠️ 本同步**只影响 `material_master`**，不改变 BOM 树结构——树结构来自 `material_bom_item` 的递归 SQL，与 `material_master` 无关（见 `docs/核价树页签组件配置指南.md`）。收益点正是让树上子件节点的名称/规格/尺寸不再为空。
 
-##### 同步 1 —— 父件（宏丰料号）→ material_master
+##### 同步 1 —— 父件（生产料号）→ material_master
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `material_no` | ✅ | 仅裸登记 `material_no`（本 Sheet 无父件名称列）；不写名称/规格/尺寸 |
+| 生产料号 | `material_no` | ✅ | 仅裸登记 `material_no`（本 Sheet 无父件名称列）；不写名称/规格/尺寸 |
 
 > 📌 父件通常是成品/半成品料号，其 品名/规格/尺寸 由 Sheet 5（客户料号对应关系）或它自身作为别处子件出现时补齐；此处只保证料号行存在，名称为空可接受。
 
@@ -311,6 +320,7 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键 + 升版 groupKey（见 §四/§五） |
 | 物料料号 | `material_no` | ✅ | 主件料号 |
 
 #### → 元素BOM子表（element_bom_item）
@@ -338,8 +348,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 销售料号 | `material_no` | ✅ | 主料号（旧名宏丰料号回退） |
-| 生产料号 | `production_no` | ✅ | 描述列，不进唯一键（repair-1 决策A） |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键 + 升版 groupKey（见 §四/§五） |
+| 生产料号 | `material_no` | ✅ | 料号 |
 | 品名 | — | ❌ | 不导入 |
 | 规格 | — | ❌ | 不导入 |
 | 尺寸 | — | ❌ | 不导入 |
@@ -355,8 +365,7 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 销售料号 | `material_no` | ✅ | 主料号（旧名宏丰料号回退） |
-| 生产料号 | `production_no` | ✅ | 描述列，不进唯一键（repair-1 决策A） |
+| 生产料号 | `material_no` | ✅ | 料号 |
 | 工序编号 | `process_no` | ✅ | |
 | 人工标准单价 | `standard_labor_rate` | ✅ | 标准工时单价 |
 | 币种 | `currency` | ✅ | |
@@ -373,8 +382,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 销售料号 | `material_no` | ✅ | 主料号（旧名宏丰料号回退） |
-| 生产料号 | `production_no` | ✅ | 描述列，不进唯一键（repair-1 决策A） |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键（本表不升版，见 §五 B 类） |
+| 生产料号 | `material_no` | ✅ | 料号 |
 | 品名 | — | ❌ | 不导入 |
 | 规格 | — | ❌ | 不导入 |
 | 尺寸 | — | ❌ | 不导入 |
@@ -396,8 +405,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 销售料号 | `material_no` | ✅ | 主料号（旧名宏丰料号回退） |
-| 生产料号 | `production_no` | ✅ | 描述列，不进唯一键（repair-1 决策A） |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键（本表不升版，见 §五 B 类） |
+| 生产料号 | `material_no` | ✅ | 料号 |
 | 品名 | — | ❌ | 不导入 |
 | 规格 | — | ❌ | 不导入 |
 | 尺寸 | — | ❌ | 不导入 |
@@ -419,8 +428,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 销售料号 | `material_no` | ✅ | 主料号（旧名宏丰料号回退） |
-| 生产料号 | `production_no` | ✅ | 描述列，不进唯一键（repair-1 决策A） |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键（本表不升版，见 §五 B 类） |
+| 生产料号 | `material_no` | ✅ | 料号 |
 | 品名 | — | ❌ | 不导入 |
 | 规格 | — | ❌ | 不导入 |
 | 尺寸 | — | ❌ | 不导入 |
@@ -442,8 +451,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 销售料号 | `material_no` | ✅ | 主料号（旧名宏丰料号回退） |
-| 生产料号 | `production_no` | ✅ | 描述列，不进唯一键（repair-1 决策A） |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键（本表不升版，见 §五 B 类） |
+| 生产料号 | `material_no` | ✅ | 料号 |
 | 品名 | — | ❌ | 不导入 |
 | 规格 | — | ❌ | 不导入 |
 | 尺寸 | — | ❌ | 不导入 |
@@ -475,7 +484,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号（成品料号） | `finished_material_no` | ✅ | 成品料号 |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键 + 升版 groupKey（见 §四/§五） |
+| 生产料号（成品料号） | `finished_material_no` | ✅ | 成品料号 |
 | 品名 | — | ❌ | 不导入 |
 | 规格 | — | ❌ | 不导入 |
 | 尺寸 | — | ❌ | 不导入 |
@@ -503,7 +513,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号（成品料号） | `finished_material_no` | ✅ | 成品料号 |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键 + 升版 groupKey（见 §四/§五） |
+| 生产料号（成品料号） | `finished_material_no` | ✅ | 成品料号 |
 | 品名 | — | ❌ | 不导入 |
 | 规格 | — | ❌ | 不导入 |
 | 尺寸 | — | ❌ | 不导入 |
@@ -531,7 +542,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号（成品料号） | `finished_material_no` | ✅ | 成品料号 |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键 + 升版 groupKey（见 §四/§五） |
+| 生产料号（成品料号） | `finished_material_no` | ✅ | 成品料号 |
 | 项次 | — | ❌ | 不导入 |
 | 来料料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
 | 品名 | — | ❌ | 不导入 |
@@ -558,7 +570,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号（成品料号） | `finished_material_no` | ✅ | 成品料号 |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键 + 升版 groupKey（见 §四/§五） |
+| 生产料号（成品料号） | `finished_material_no` | ✅ | 成品料号 |
 | 一级项次 | — | ❌ | 不导入 |
 | 来料料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
 | 品名 | — | ❌ | 不导入 |
@@ -585,7 +598,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号（成品料号） | `finished_material_no` | ✅ | 成品料号 |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键 + 升版 groupKey（见 §四/§五） |
+| 生产料号（成品料号） | `finished_material_no` | ✅ | 成品料号 |
 | 一级项次 | — | ❌ | 不导入 |
 | 来料料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
 | 品名 | — | ❌ | 不导入 |
@@ -613,7 +627,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号（成品/半成品料号） |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键 + 升版 groupKey（见 §四/§五） |
+| 生产料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号（成品/半成品料号） |
 | 品名 | — | ❌ | 不导入 |
 | 规格 | — | ❌ | 不导入 |
 | 尺寸 | — | ❌ | 不导入 |
@@ -640,7 +655,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键 + 升版 groupKey（见 §四/§五） |
+| 生产料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
 | 品名 | — | ❌ | 不导入 |
 | 规格 | — | ❌ | 不导入 |
 | 尺寸 | — | ❌ | 不导入 |
@@ -665,7 +681,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键 + 升版 groupKey（见 §四/§五） |
+| 生产料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
 | 品名 | — | ❌ | 不导入 |
 | 规格 | — | ❌ | 不导入 |
 | 尺寸 | — | ❌ | 不导入 |
@@ -714,7 +731,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键 + 升版 groupKey（见 §四/§五） |
+| 生产料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
 | 电镀方案编号 | `plating_scheme_no` | ✅ | 不为空时整行跳过不导入 |
 | 版本编号 | `version_no` | ✅ | 价格版本 |
 | 电镀加工费 | `pricing_price` | ✅ | 费用(固定) |
@@ -733,7 +751,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键 + 升版 groupKey（见 §四/§五） |
+| 生产料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
 | 电镀方案编号 | `plating_scheme_no` | ✅ | 不为空时整行跳过不导入 |
 | 版本编号 | `version_no` | ✅ | 价格版本 |
 | 电镀加工费 | — | ❌ | 不导入（归第 1 条记录） |
@@ -758,7 +777,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；进唯一键 + 升版 groupKey（见 §四/§五） |
+| 生产料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
 | 工序编号 | `operation_no` | ✅ | 作业编号 |
 | 工序名称 | — | ❌ | 不导入 |
 | 外加工费用 | `pricing_price` | ✅ | 费用(固定) |
@@ -775,7 +795,8 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `material_no` | ✅ | 料号（业务唯一） |
+| 销售料号 | `sales_part_no` | ✅ | 报价料号（必填）；不落 material_master，登记进 map（见 §4.4） |
+| 生产料号 | `material_no` | ✅ | 料号（业务唯一） |
 | 单重（g/pcs） | `unit_weight` | ✅ | 单重 (g/pcs) |
 
 > 📌 按 `material_no` upsert（存在则更新 `unit_weight`，不存在则插入）。
@@ -792,11 +813,115 @@
 | **布尔字段转换** | 「是否有效」、「是否生效」等文字值统一转换：是→1，否→0，以 TINYINT(1) 存储。 |
 | **固定字段写入** | `system_type`、`price_type`、`cost_type` 等在 Excel 未作为数据列出现的字段，由程序根据 Sheet 来源固定写入，不依赖用户填写。 |
 | **动态 cost_type** | 来料其他费用、来料其他固定费用、成品其他比例/固定费用等 Sheet 中，`cost_type` 取自 Excel 的「要素编号」或「要素名称」列，动态写入，不固定。 |
-| **版本字段** | 各 Sheet 中的「版本」列（价格版本、汇率版本、计算版本等）对应目标表的 `version_no` / `calc_version` 等，按 Sheet 声明的字段名写入。 |
+| **版本字段（V6.2 更新）** | 分两类，详见 §五：① **系统升版**（`material_bom`/`element_bom`/`capacity`/`plating_scheme` + 一步到位新增的费用类 `unit_price` P13/P14/P15–P20/P22/P23）——版本号由 `VersionedV6Writer` 内容指纹比对生成（首版 `2000`、变化 `max+1`、旧组 `is_current=false` 翻转），**忽略 Excel 版本列**。② **Excel 业务版本直存**（价格版本 P01/P02、汇率版本 P03、核价版本 P04、取用的计算版本 P09/P10/P11、模具 P12）——Excel「版本」列直接写 `version_no`/`calc_version`，不系统升版。 |
+| **销售料号维度（V6.2 新增）** | 19 个"按料号" Sheet 的必填「销售料号」→ 落新列 `sales_part_no`，进各表唯一键（末尾追加 `COALESCE(sales_part_no,'')`）+ 系统升版表的 groupKey；核价侧只写文件既有值、**不铸号**。全局 Sheet（P01/P02）落 `unit_price` 时 `sales_part_no=NULL`，靠 `COALESCE` 中性化与费用行不冲突。详见 §四。 |
+| **生产料号改名（V6.2）** | Excel「宏丰料号」列改名「生产料号」；落库列 `material_no`/`finished_material_no`/`code` **不变**；handler 读列「生产料号」优先、回退「宏丰料号」（Sheet 7 用「物料料号」例外）。 |
 | **电镀条件判断** | 「电镀成本」Sheet：当电镀方案编号不为空时，该行整体跳过不导入，由系统根据电镀方案表自动计算结果。 |
 | **一行拆多条** | 「电镀成本」Sheet 每行拆分为两条 `unit_price` 记录（电镀加工费、电镀材料费）；其余 Sheet 一行对应一条记录（或主+子各一条）。 |
 | **多表写入顺序** | 建议写入顺序：料号表 → 料号关系表 → 汇率表 → BOM主表 → BOM子表 → 单价表 → 其余关联表，以保证外键约束。 |
 | **忽略 Sheet** | 「汇总」Sheet 不导入。 |
+
+---
+
+## 四、销售料号（报价料号）贯穿维度
+
+> 2026-07-07 并入；术语与三码模型对齐 `docs/superpowers/specs/2026-07-06-报价料号统一-design.md`（Spec 1）。
+
+### 4.1 术语与列改名对照
+
+| Excel 列 | 语义 | 落库列 |
+|---|---|---|
+| **销售料号**（新增·必填） | = **报价料号** `XXXX-YYMMNNNNNN`，全系统唯一料号，贯穿报价/核价 | 各"按料号"表新增 `sales_part_no` 列 |
+| **生产料号**（原「宏丰料号」改名） | 对接 ERP 的料号（原核价料号主键口径） | 仍落原列 `material_no`/`finished_material_no`/`code`（**列不动，仅表头改名**） |
+| 客户产品编号 | 客户方料号 | `customer_product_no` |
+
+**三码关系**：销售料号(报价料号) ↔ 客户料号 = 1:1；生产料号 ↔ 销售料号 = 1:N。
+
+**四项决策（2026-07-07 确认）**：① 销售料号 = 复合唯一键 + 升版 groupKey 维度；② 生产料号原落库列不动、旁加 `sales_part_no`；③ P05 在 `material_customer_map`（PRICING 行）登记三码；④ 5 个全局/元素级 Sheet 不加。
+
+### 4.2 需新增 `sales_part_no` 列的表（DDL 概要）
+
+```sql
+-- 统一 VARCHAR(32) NULL（报价料号定长 15，留余量；列级可空以兼容共享表全局行）
+ALTER TABLE unit_price        ADD COLUMN sales_part_no VARCHAR(32);   -- 费用行有值；P01/P02 全局行 NULL
+ALTER TABLE material_bom      ADD COLUMN sales_part_no VARCHAR(32);
+ALTER TABLE material_bom_item ADD COLUMN sales_part_no VARCHAR(32);   -- 随主表镜像
+ALTER TABLE element_bom       ADD COLUMN sales_part_no VARCHAR(32);
+ALTER TABLE element_bom_item  ADD COLUMN sales_part_no VARCHAR(32);
+ALTER TABLE capacity          ADD COLUMN sales_part_no VARCHAR(32);
+ALTER TABLE labor_rate        ADD COLUMN sales_part_no VARCHAR(32);
+ALTER TABLE production_energy ADD COLUMN sales_part_no VARCHAR(32);
+ALTER TABLE auxiliary_energy  ADD COLUMN sales_part_no VARCHAR(32);
+ALTER TABLE tooling_cost      ADD COLUMN sales_part_no VARCHAR(32);
+ALTER TABLE material_customer_map ADD COLUMN sales_part_no VARCHAR(32);  -- PRICING 行=销售料号
+```
+
+> `material_master` **不加列**：生产料号↔销售料号=1:N，加列会破坏 1:N；销售↔生产映射由 `material_customer_map` 承载（§4.4）。
+
+### 4.3 逐 Sheet 销售料号落库约定
+
+| Sheet | 目标表 | 销售料号落库列 | 进 uq | 进升版 groupKey | 必填 |
+|---|---|---|:-:|:-:|:-:|
+| P05 宏丰-客户料号 | material_customer_map(PRICING) | `sales_part_no` | 是（三码键，§4.4） | — | ✅ |
+| P06 物料BOM | material_bom(+item) | `sales_part_no`（主表；子表镜像） | 是 | 是 | ✅ |
+| P07 物料与元素BOM | element_bom(+item) | `sales_part_no` | 是 | 是 | ✅ |
+| P08 产能 | capacity(+labor_rate) | `sales_part_no` | 是 | 是 | ✅ |
+| P09 设备折旧成本 | production_energy | `sales_part_no` | 是（合并冲突键） | —（Excel calc_version） | ✅ |
+| P10 生产设备能耗 | production_energy | `sales_part_no` | 是（须与 P09 一致） | — | ✅ |
+| P11 辅助设备能耗 | auxiliary_energy | `sales_part_no` | 是 | — | ✅ |
+| P12 模具工装成本 | tooling_cost | `sales_part_no` | 是 | — | ✅ |
+| P13 生产耗材BOM | unit_price | `sales_part_no` | 是 | **是**（本次系统升版） | ✅ |
+| P14 包装材料BOM | unit_price | `sales_part_no` | 是 | **是**（本次系统升版） | ✅ |
+| P15 来料加工费 | unit_price | `sales_part_no` | 是 | **是**（本次系统升版） | ✅ |
+| P16 来料其他费用(比例) | unit_price | `sales_part_no` | 是 | **是** | ✅ |
+| P17 来料其他固定费用 | unit_price | `sales_part_no` | 是 | **是** | ✅ |
+| P18 加工费&组装费 | unit_price | `sales_part_no` | 是 | **是** | ✅ |
+| P19 成品其他比例费用 | unit_price | `sales_part_no` | 是 | **是** | ✅ |
+| P20 成品其他固定费用 | unit_price | `sales_part_no` | 是 | **是** | ✅ |
+| P22 电镀成本 | unit_price（两条都写） | `sales_part_no` | 是 | **是**（本次系统升版） | ✅ |
+| P23 其他外加工成本 | unit_price | `sales_part_no` | 是 | **是** | ✅ |
+| P24 单重 | material_master + map | material_master **不加列**；销售↔生产登记进 map（幂等） | —/map | — | ✅ |
+
+**不加销售料号的 5 个全局/元素级 Sheet**：P01 元素价格、P02 材料价格、P03 汇率、P21 电镀方案、P04 核价版本（版本登记按生产料号；其料号列同样由「宏丰料号」改名「生产料号」，按 §三 兼容读，落库列不变）。
+
+> 说明：来料系（P15–P17）「来料料号」仍落 `code`（组件），成品生产料号落 `finished_material_no`，销售料号落 `sales_part_no` 并列成品维度；P18–P20/P22/P23 中 `code`=生产料号、`sales_part_no`=销售料号并列。
+
+### 4.4 `material_customer_map` 三码登记（P05 + P24）
+
+P05（`system_type='PRICING'`）一行落三码：销售料号→`sales_part_no`、生产料号→`material_no`、客户产品编号→`customer_product_no`；upsert 冲突键沿用 `(system_type, material_no, customer_no, COALESCE(customer_product_no,''))`，`sales_part_no` 进 `DO UPDATE SET`（COALESCE 回填）。**守卫**：同一 `sales_part_no` 命中不同 `customer_no` → handler `recordError`（跨客户串号，对齐 Spec §7）；同一销售料号对多个生产料号按 1:N 允许。P24 单重仍按生产料号 upsert `material_master.unit_weight`，其销售↔生产 pair 缺失则幂等补登 map。
+
+### 4.5 校验与兼容
+
+- **销售料号必填**：19 个 Sheet 空 → 该行 `recordError("销售料号","必填")`，不落库；5 个全局 Sheet 无此列不校验。
+- **只写不 mint**：核价侧销售料号取自 Excel 文件既有值（报价侧已发号），文件值即权威；参照存在性（是否已在 map 登记）本期**告警不阻断**（数据 Sheet 可能先于 P05 导入）。
+- **生产料号兼容读**：见 §三「生产料号改名」规则。
+
+---
+
+## 五、统一升版机制（一步到位）
+
+> 版本化算法权威在 `com.cpq.basicdata.v6.versioning.VersionedV6Writer` + `docs/table/报价系统版本号统一升版规则-设计方案.md`。本节声明**核价侧各表落哪一类版本口径**及本次"一步到位"变更。
+
+### 5.1 三类版本口径
+
+| 类别 | 机制 | 适用 Sheet/表 |
+|---|---|---|
+| **A · 系统升版** | `VersionedV6Writer` 内容指纹比对 → 复用 / `max+1`(首版 `2000`) / 旧组 `is_current=false` 翻转；**忽略 Excel 版本列**；groupKey **含 `sales_part_no`** | P06 material_bom、P07 element_bom、P08 capacity、P21 plating_scheme（现有）＋ **本次一步到位新增 P13/P14/P15–P20/P22/P23 的 `unit_price` 费用类** |
+| **B · Excel 业务版本直存** | Excel「版本/计算版本」列直接写 `version_no`/`calc_version`，普通 upsert，不系统升版；加 `sales_part_no` 进 uq | P09/P10/P11 能耗折旧（取用的计算版本＝手动选版）、P12 模具 |
+| **C · 全局业务版本（无销售料号）** | 同 B，但无销售料号维度 | P01/P02 价格（价格版本被 P04 核价版本表引用，**必须保留业务版本号**）、P03 汇率、P04 核价版本登记 |
+
+### 5.2 "一步到位"变更（本次落地）
+
+- **P15–P20、P23**（原走 `UnitPriceWriter` 覆盖式 upsert、`version_no` 恒 `V_DEFAULT`、无 `is_current`、无版本历史）→ 改走 `VersionedV6Writer.writeVersionedGroups`，**系统 2000 起版 + `is_current` 翻转**，`V_DEFAULT` 兜底移除。
+- **P13 生产耗材 / P14 包装 / P22 电镀成本**（原读 Excel「取用的耗材版本」/「版本编号」直存）→ 同样改走系统升版，**忽略该 Excel 版本列**（与 P21 电镀方案一致），版本号系统 2000 起版生成。
+- **groupKey**：`(system_type='PRICING', price_type, cost_type, code, COALESCE(finished_material_no,''), COALESCE(operation_no,''), sales_part_no)`——即在《升版规则》§四各 Sheet groupKey 基础上**追加 `sales_part_no`**，实现"同生产料号、不同销售料号各自独立升版、互不翻转 `is_current`"。
+- 系统升版表（A 类）的 groupKey 一律追加 `sales_part_no`：material_bom/element_bom/capacity 亦然。
+
+### 5.3 已知不一致（本次不改，留档）
+
+- **P08 产能 vs P09/P10/P11 能耗**的「取用的计算版本」口径不一致：产能走 A 类系统升版（忽略 Excel），能耗走 B 类直存 Excel。此为历史分叉，本次不改；若要统一须单独立项。
+
+> 决策留档（2026-07-07）：P13 生产耗材 / P14 包装 / P22 电镀成本 已确认**归 A 类系统升版**（忽略 Excel「取用的耗材版本」/「版本编号」列），与费用类一致。
 
 ---
 

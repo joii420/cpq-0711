@@ -8,6 +8,7 @@ const FACTORS: Record<string, number> = {
   '片': 1, 'PCS': 1,
   'KPCS': 1000, '千片': 1000,
   'G/PCS': 0.001,
+  'G/KPCS': 0.000001,
 };
 
 function normalize(unitText: string | null | undefined): string {
