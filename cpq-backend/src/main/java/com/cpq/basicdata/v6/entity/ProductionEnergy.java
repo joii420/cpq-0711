@@ -41,12 +41,6 @@ public class ProductionEnergy extends V6BaseEntity {
     @Column(name = "working_hours", precision = 18, scale = 6)
     public BigDecimal workingHours;
 
-    @Column(name = "energy_unit_price", precision = 18, scale = 6)
-    public BigDecimal energyUnitPrice;
-
-    @Column(name = "depreciation_unit_price", precision = 18, scale = 6)
-    public BigDecimal depreciationUnitPrice;
-
     @Column(name = "currency", length = 10)
     public String currency;
 
@@ -58,4 +52,19 @@ public class ProductionEnergy extends V6BaseEntity {
 
     @Column(name = "calc_version", length = 20)
     public String calcVersion;
+
+    /** ENERGY=能耗 / DEPRECIATION=折旧；与 unitPrice 配合区分来源 sheet。 */
+    @Column(name = "price_type", length = 24)
+    public String priceType;
+
+    /** 版本升级(tesk-0709) 归属系统标记，默认 PRICING。 */
+    @Column(name = "system_type", length = 16)
+    public String systemType;
+
+    /** 单价（按 priceType 区分类型；替代原 energyUnitPrice / depreciationUnitPrice 两列）。 */
+    @Column(name = "unit_price", precision = 18, scale = 6)
+    public BigDecimal unitPrice;
+
+    @Column(name = "is_current")
+    public Boolean isCurrent;
 }
