@@ -33,10 +33,10 @@
 ALTER TABLE production_energy ADD COLUMN IF NOT EXISTS price_type   VARCHAR(24);   -- ENERGY / DEPRECIATION
 ALTER TABLE production_energy ADD COLUMN IF NOT EXISTS system_type  VARCHAR(16) DEFAULT 'PRICING';
 ALTER TABLE production_energy ADD COLUMN IF NOT EXISTS unit_price   NUMERIC;       -- 合并后单价
--- 存量拆分：非空 depreciation_unit_price → 一行 price_type=DEPRECIATION/unit_price=该值；
---           非空 energy_unit_price       → 一行 price_type=ENERGY/unit_price=该值。
--- (测试数据量小；如允许清空重导可跳过拆分，直接清表。二选一，落地注明。)
--- 拆分完成后 DROP 两旧列：
+-- ✅ 存量口径已定稿（需求说明 C14，2026-07-10）：当前为测试环境，采【甲·清空重导】，
+--    不写存量拆分逻辑。加列后直接清表，再由核价 6.0 测试文件重导重建（折旧/能耗各写各行）。
+TRUNCATE TABLE production_energy;
+-- 清表后 DROP 两旧列：
 ALTER TABLE production_energy DROP COLUMN IF EXISTS depreciation_unit_price;
 ALTER TABLE production_energy DROP COLUMN IF EXISTS energy_unit_price;
 -- 重建唯一键：加入 price_type（同料号同工序，折旧/能耗各一行）
