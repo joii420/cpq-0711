@@ -3,6 +3,7 @@ package com.cpq.basicdata.v6.pricing;
 import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.util.DecimalScale;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -59,7 +60,7 @@ public class FinishedOtherMergeHandler {
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("cost_type", costType);
             c.put("seq_no", seqNo);
-            c.put("cost_ratio", row.getDecimal("比例"));
+            c.put("cost_ratio", DecimalScale.at(row.getDecimal("比例"), 4));
             c.put("pricing_price", BigDecimal.ZERO);  // 核价比例费用保持原行为（pricing_price=0）
             c.put("production_no", row.getStr("生产料号"));
 
@@ -77,7 +78,7 @@ public class FinishedOtherMergeHandler {
                 continue;
             }
             Integer seqNo = row.getInt("项次");
-            BigDecimal price = row.getDecimal("费用");
+            BigDecimal price = DecimalScale.at(row.getDecimal("费用"), 6);
 
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("cost_type", costType);

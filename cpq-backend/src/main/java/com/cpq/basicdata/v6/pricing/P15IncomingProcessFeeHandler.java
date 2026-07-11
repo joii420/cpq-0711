@@ -4,6 +4,7 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.util.DecimalScale;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -41,11 +42,11 @@ public class P15IncomingProcessFeeHandler implements SheetHandler {
             }
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("code", incomingCode);
-            BigDecimal price = row.getDecimal("加工费");
+            BigDecimal price = DecimalScale.at(row.getDecimal("加工费"), 6);
             c.put("pricing_price", price == null ? BigDecimal.ZERO : price);
             c.put("currency", row.getStr("币种"));
             c.put("unit", row.getStr("计量单位"));
-            c.put("defect_rate", row.getDecimal("损耗"));
+            c.put("defect_rate", DecimalScale.at(row.getDecimal("损耗"), 4));
             c.put("production_no", row.getStr("生产料号"));
             byFinishedMaterial.computeIfAbsent(finishedMaterialNo, k -> new LinkedHashMap<>())
                 .put(nz(incomingCode), c);

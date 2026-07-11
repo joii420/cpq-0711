@@ -4,6 +4,7 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.util.DecimalScale;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -37,7 +38,7 @@ public class P23OutsourceProcessFeeHandler implements SheetHandler {
             }
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("operation_no", operationNo);
-            BigDecimal price = row.getDecimal("外加工费用");
+            BigDecimal price = DecimalScale.at(row.getDecimal("外加工费用"), 6);
             c.put("pricing_price", price == null ? BigDecimal.ZERO : price);
             c.put("currency", row.getStr("币种"));
             c.put("unit", row.getStr("单位"));

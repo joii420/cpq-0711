@@ -4,6 +4,7 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.util.DecimalScale;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -72,7 +73,7 @@ public class P08CapacityHandler implements SheetHandler {
             capByMat.computeIfAbsent(materialNo, k -> new ArrayList<>()).add(c);
             prodNoByMat.putIfAbsent(materialNo, productionNo);
 
-            BigDecimal laborRate = row.getDecimal("人工标准单价");
+            BigDecimal laborRate = DecimalScale.at(row.getDecimal("人工标准单价"), 6);
             if (laborRate != null) {
                 laborByMat.computeIfAbsent(materialNo, k -> new ArrayList<>())
                           .add(new LaborRow(processNo, laborRate, row.getStr("币种"), row.getStr("计量单位")));

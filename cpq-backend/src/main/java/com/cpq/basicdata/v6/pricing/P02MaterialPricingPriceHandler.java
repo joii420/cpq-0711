@@ -4,6 +4,7 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.util.DecimalScale;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -37,14 +38,14 @@ public class P02MaterialPricingPriceHandler implements SheetHandler {
             String code = row.getStr("材料料号");
             if (code == null) { result.recordError(row.rowNo, "材料料号", "为空"); continue; }
             Map<String, Object> c = new LinkedHashMap<>();
-            c.put("pricing_price", row.getDecimal("核价单价"));
-            c.put("market_ref_price", row.getDecimal("市场参考价"));
+            c.put("pricing_price", DecimalScale.at(row.getDecimal("核价单价"), 6));
+            c.put("market_ref_price", DecimalScale.at(row.getDecimal("市场参考价"), 6));
             c.put("source_url", row.getStr("参考价来源网址", "网址"));
             c.put("source_name", row.getStr("网站名称"));
             c.put("fetch_rule", row.getStr("参考价取用规则", "取用规则"));
             c.put("currency", row.getStr("币种"));
             c.put("unit", row.getStr("计量单位"));
-            c.put("recovery_discount", row.getDecimal("回收折扣"));
+            c.put("recovery_discount", DecimalScale.at(row.getDecimal("回收折扣"), 4));
             byCode.computeIfAbsent(code, k -> new ArrayList<>()).add(c);
             result.successRows++;
         }

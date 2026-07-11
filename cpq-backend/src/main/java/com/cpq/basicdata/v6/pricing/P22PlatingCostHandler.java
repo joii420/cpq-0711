@@ -4,6 +4,7 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.util.DecimalScale;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -54,11 +55,11 @@ public class P22PlatingCostHandler implements SheetHandler {
             if (platingSchemeNo != null && !platingSchemeNo.isBlank()) {
                 result.successRows++; continue;
             }
-            BigDecimal processFee = row.getDecimal("电镀加工费");
-            BigDecimal materialFee = row.getDecimal("电镀材料费");
+            BigDecimal processFee = DecimalScale.at(row.getDecimal("电镀加工费"), 6);
+            BigDecimal materialFee = DecimalScale.at(row.getDecimal("电镀材料费"), 6);
             String currency = row.getStr("货币");
             String unit = row.getStr("计价单位");
-            BigDecimal defectRate = row.getDecimal("不良率");
+            BigDecimal defectRate = DecimalScale.at(row.getDecimal("不良率"), 4);
             String productionNo = row.getStr("生产料号");
 
             LinkedHashMap<String, Map<String, Object>> group =
