@@ -58,12 +58,14 @@ public class VersionedV6Writer {
     private static final Set<String> ALLOWED_TABLES = Set.of(
         "unit_price", "capacity", "plating_scheme",
         "element_bom", "element_bom_item",
-        "material_bom", "material_bom_item");
+        "material_bom", "material_bom_item",
+        "labor_rate", "production_energy", "auxiliary_energy", "tooling_cost", "exchange_rate_v6");
 
     /** 必须按 system_type 维度隔离的表：groupKey 缺 system_type 会导致 flip/版本号跨 QUOTE/PRICING 污染。 */
     private static final Set<String> SYSTEM_TYPE_SCOPED = Set.of(
         "material_bom", "material_bom_item", "element_bom", "element_bom_item",
-        "capacity", "plating_scheme");
+        "capacity", "plating_scheme",
+        "labor_rate", "production_energy", "auxiliary_energy", "tooling_cost");
 
     /** 护栏①：system_type 维度表的 groupKey 必须含 system_type，否则入口直接抛错（防静默跨域污染）。 */
     private static void requireSystemType(String table, Map<String, Object> groupKey) {
@@ -192,14 +194,36 @@ public class VersionedV6Writer {
             String tableName, String versionColumn,
             List<String> contentColumns, List<String> versionTriggerColumns,
             LinkedHashMap<Map<String, Object>, List<Map<String, Object>>> groups) {
+        return writeVersionedGroups(tableName, versionColumn, contentColumns,
+            versionTriggerColumns, List.of(), groups);
+    }
+
+    /**
+     * 批量单表行集版本化，含"描述列"（写入但不参与升版比对）。
+     * 描述列语义：handler 把描述列键值一并塞进 {@code row}（各 group 的行 Map），写入时随 {@link #assembleRow}
+     * 的 {@code all.putAll(row)} 天然落库；比对（{@link #multisetEqual}）只用 contentColumns/triggerCols，
+     * 不含描述列 → 达成"写入但不比对"。descriptorColumns 参数本身仅用于入参校验（safeIdent + 与
+     * contentColumns/groupKey 不重叠），不改变其余逻辑（与 5 参版本逐字一致）。
+     *
+     * @param descriptorColumns 只写入、不参与版本比对的列（如 production_no）；无则传 {@code List.of()}。
+     */
+    public Map<Map<String, Object>, String> writeVersionedGroups(
+            String tableName, String versionColumn,
+            List<String> contentColumns, List<String> versionTriggerColumns,
+            List<String> descriptorColumns,
+            LinkedHashMap<Map<String, Object>, List<Map<String, Object>>> groups) {
 
         if (!ALLOWED_TABLES.contains(tableName)) throw new IllegalArgumentException("表未登记白名单: " + tableName);
         safeIdent(tableName); safeIdent(versionColumn);
         contentColumns.forEach(VersionedV6Writer::safeIdent);
+        descriptorColumns.forEach(VersionedV6Writer::safeIdent);
         if (contentColumns.isEmpty()) throw new IllegalArgumentException("contentColumns 不能为空");
         List<String> triggerCols = (versionTriggerColumns == null) ? contentColumns : versionTriggerColumns;
         if (!new HashSet<>(contentColumns).containsAll(triggerCols))
             throw new IllegalArgumentException("versionTriggerColumns 必须是 contentColumns 子集: " + triggerCols);
+        Set<String> dOverlap = new HashSet<>(descriptorColumns);
+        dOverlap.retainAll(new HashSet<>(contentColumns));
+        if (!dOverlap.isEmpty()) throw new IllegalArgumentException("descriptorColumns 与 contentColumns 重叠: " + dOverlap);
 
         Map<Map<String, Object>, String> versionOut = new LinkedHashMap<>();
         if (groups.isEmpty()) return versionOut;
@@ -213,6 +237,8 @@ public class VersionedV6Writer {
             requireSystemType(tableName, gk);
             Set<String> overlap = new HashSet<>(gk.keySet()); overlap.retainAll(new HashSet<>(contentColumns));
             if (!overlap.isEmpty()) throw new IllegalArgumentException("contentColumns 与 groupKeyColumns 列名重叠: " + overlap);
+            Set<String> dgOverlap = new HashSet<>(gk.keySet()); dgOverlap.retainAll(new HashSet<>(descriptorColumns));
+            if (!dgOverlap.isEmpty()) throw new IllegalArgumentException("descriptorColumns 与 groupKeyColumns 重叠: " + dgOverlap);
             if (e.getValue().isEmpty()) throw new IllegalArgumentException("newRows 为空;整组下线请用专门 API: " + gk);
         }
 
@@ -241,7 +267,10 @@ public class VersionedV6Writer {
             boolean triggerSame = multisetEqual(existing, newRows, triggerCols);
             boolean contentSame = multisetEqual(existing, newRows, contentColumns);
 
-            if (triggerSame && contentSame) {                                  // (a)
+            // (a) 真正完全相同（含无描述列场景）→ 复用版本，不写。
+            // 有描述列时，即便 trigger/content 全同，描述列新值也必须落库（写入但不比对），
+            // 故降级走 (b) 原地更新（同版本号覆盖），不允许静默跳过写入。
+            if (triggerSame && contentSame && descriptorColumns.isEmpty()) {
                 versionOut.put(gk, currentVersionFrom(existing, versionColumn));
                 continue;
             }
