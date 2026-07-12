@@ -93,7 +93,7 @@ const allMenuItems: MenuItem[] = [
       { key: '/config/sel-templates', label: '选配模板管理', roles: ['PRICING_MANAGER', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
     ],
   },
-  { key: '/master-data-hub', icon: <DatabaseOutlined />, label: '主数据维护', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
+  { key: '/master-data-hub', icon: <DatabaseOutlined />, label: '主数据维护', roles: ['SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
   {
     key: '/configurator-hub',
     icon: <ShoppingOutlined />,

@@ -8,6 +8,7 @@ import MaterialRecipeManagement from '../config/MaterialRecipeManagement';
 import ElementManagement from '../config/ElementManagement';
 import ConfigTemplateManagement from '../configtemplate/ConfigTemplateManagement';
 import PricingBasicDataImportDrawer from './PricingBasicDataImportDrawer';
+import PartCostingTab from './part-costing/PartCostingTab';
 
 const MasterDataHubPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('process');
@@ -34,6 +35,7 @@ const MasterDataHubPage: React.FC = () => {
           { key: 'material', label: '材质', children: <MaterialRecipeManagement /> },
           { key: 'element', label: '元素', children: <ElementManagement /> },
           { key: 'dataTemplate', label: '数据模板', children: <ConfigTemplateManagement /> },
+          { key: 'part-costing', label: '料号核价', children: <PartCostingTab /> },
         ]}
       />
       <PricingBasicDataImportDrawer
