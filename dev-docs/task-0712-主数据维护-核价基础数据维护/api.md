@@ -241,7 +241,7 @@ PUT /api/cpq/pricing-basic-data/parts/{materialNo}/sheets/{sheetKey}/rows
 - **轴锁定**：忽略/拒绝 body 内任何 AXIS 列的篡改（materialNo/price_type/system_type 以服务端为准）。
 - **至少留一行**（C5）：`rows` 为空 → `422`（整组下线走专门 API，不在本期）。
 - **来源/操作人**（C11）：写入行 `source='MANUAL'`、`updated_by`=当前用户；升版新组同样。
-- **枚举/主表校验**：`kind=MASTER` 列的值不存在于主表 → `400`（可选：宽松模式仅告警）；`kind=ENUM` 非法值 → `400`。
+- **枚举/主表校验**（严格，无宽松回退）：`kind=MASTER` 列的值不存在于主表 → `400`；`kind=ENUM` 非法值（不在该列 `options` / CHECK 约束枚举内）→ `400` 并指明列；`BOOLEAN` 列非布尔值 → `400`。前端 ENUM 用固定 `options` 下拉、不允许自定义输入（原"未知可输入回退"已于 2026-07-12 撤销）。
 
 ---
 

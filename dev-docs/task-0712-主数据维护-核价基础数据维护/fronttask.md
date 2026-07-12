@@ -59,7 +59,7 @@
 - `NAME`：只读文本，随对应编码列联动刷新（编码变→重取名称；可前端用 lookup 结果缓存或保存后由后端回带）。
 - `SUBDIM` / `VALUE`：editable 时按 `dropdown.kind` 渲染编辑控件：
   - `MASTER`（工序/元素/来料料号）：Ant `Select` 远程搜索 → `GET /lookup/{master}?keyword=`；`labelInValue` 选中同时得 code+name，回填对应 NAME 列。
-  - `ENUM`（币种/单位/计算类型/是否有效/P22电镀费类型）：`Select` 固定 `options`（含 CHECK 约束值），允许 `未知可输入`（`showSearch` + 自定义）。
+  - `ENUM`（币种/单位/计算类型/是否有效/P22电镀费类型）：`Select` 固定 `options`（含 CHECK 约束值），**不允许自定义输入**（严格校验，非法值后端保存时返 400；如需搜索只用 `showSearch` 在既有 options 内过滤，不开放自定义 tag）。
   - `FREE`（要素名称/模具编号/物料BOM组成件，C13）：普通 `Input`/`InputNumber`。
   - 数值列（DECIMAL/NUMBER）：`InputNumber`，保留后端精度（字符串传值，避免浮点误差 — 参照核价精度既往教训）。
 - editable=false：全列纯文本展示。
