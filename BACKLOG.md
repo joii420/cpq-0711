@@ -612,6 +612,32 @@
 
 ---
 
+### [BL-0049] create-quotation 建行失败当前 500 掐整单 → 评估降级为「空单+前端兜底」
+- **优先级**：P2
+- **来源**：task-0712 核价展示修复 最终评审 Important-2
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-12
+- **推迟原因**：本期尊重 spec §5「建单+建行强一致」，materializeLines 在 createQuotation 同事务内；Critical 修复(候选正确框定)后抛错风险已低，且幂等重入可安全重试，暂不改事务模型。
+- **背景**：旧流程 create-quotation 恒建出（可能空）报价单，明细行由前端 autoPopulate 补；新流程把建行塞进强一致事务，materializeLines 抛异常会使整单创建 500 且报价单也不落库（相对旧行为的可用性回归）。
+- **范围**：评估将 materializeLines 移到建单事务提交后（Resource 层 materialize 的 step 0，best-effort try/catch），失败则留空单 + 前端 autoPopulate 兜底（与 Task5 的 backendBuiltLinesRef=false 分支天然衔接）；权衡 §5 原子性 vs 可用性。
+- **依赖**：无。
+- **预估规模**：S（1-2 天）
+- **验收要点**：模拟 materializeLines 抛错 → 报价单仍创建成功（空单）、前端进编辑页 autoPopulate 兜底建行，不 500。
+
+### [BL-0050] create-quotation 降级时前端消费 CommitResult.warnings/cardValuesReady 给用户提示
+- **优先级**：P2
+- **来源**：task-0712 核价展示修复 最终评审 Minor-4
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-12
+- **推迟原因**：后端已回填 warnings/cardValuesReady/costingTreeRows，但前端导入流未读；降级时靠下游失败哨兵占位兜底（不误导），非阻断。
+- **背景**：物化失败时 cardValuesReady=false + warnings 列出料号，用户在创建当下拿不到 toast/banner 提示，只能进编辑/详情页被动看到失败哨兵。
+- **范围**：`QuoteBasicDataImportV6Drawer`/导入流创建成功回调处，若 `data.cardValuesReady===false` 或 `data.warnings?.length` 弹一次 `message.warning` 列出未就绪料号。
+- **依赖**：无。
+- **预估规模**：S（1 天）
+- **验收要点**：降级建单后前端弹 warning 提示，正常建单无多余提示。
+
+---
+
 ## 已完成
 
 ### [DONE 2026-07-09] task_0708 导入报价单/核价单落库料号语义纠偏
