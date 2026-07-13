@@ -211,6 +211,9 @@ const QuotationWizard: React.FC = () => {
   // 基础数据导入流程：autoPopulate 完成后立即触发一次保存草稿，把"已自动加入 N 个产品"
   // 持久化下来，避免用户刷新前丢数据。一次性，避免重复触发。
   const importAutoSavedRef = useRef(false);
+  // task-0712 展示修复：后端 create-quotation 已服务端建行 → 跳过客户端 autoPopulate + import-auto-save，
+  // 避免重复行 / saveDraft 全删全建抹掉后端 snapshot_rows 触发「加载中」回退。
+  const backendBuiltLinesRef = useRef(false);
   // ③ autoSaveDraft 串行化：导入流下 import-auto-save effect 与 lineItems-change effect
   // 会用「不同」payload（driverExpansions 仍在陆续到位）几乎同时触发两次保存；
   // 两条 id=null payload 的后端事务重叠 → 各插 85 行、谁的「删未保留行」都删不到对方 → 170。
@@ -415,6 +418,13 @@ const QuotationWizard: React.FC = () => {
       setLineItems(prev =>
         (isImportFlow && basicItems.length === 0 && prev.length > 0) ? prev : basicItems
       );
+      // task-0712 展示修复：加载到的明细行已带持久化 DB id（后端 create-quotation 服务端建行标志）
+      // → 关闭客户端建行/自动保存，防重复行 + 防 saveDraft 全删全建抹掉后端 snapshot_rows 触发回退。
+      if (isImportFlow && basicItems.length > 0 && basicItems.some((li: any) => !!li.id)) {
+        backendBuiltLinesRef.current = true;
+        wizardAutoPopulatedRef.current = true;
+        importAutoSavedRef.current = true;
+      }
 
       // Async: enrich each lineItem's componentData with fields/formulas from template.
       // 关键：enrich 完成后必须用函数式 setState 合并到当前 state，而不是整体替换。
@@ -787,6 +797,7 @@ const QuotationWizard: React.FC = () => {
   // 报价单明细里看到的就是"投料成本只有 1 行空数据"——driver 展开是异步的，比 setLineItems
   // 慢一拍。先用 driverExpansions 是否覆盖所有期待 key 做闸门。
   useEffect(() => {
+    if (backendBuiltLinesRef.current) return; // task-0712：后端已服务端建行，跳过客户端首存
     if (!isImportFlow) return;
     if (importAutoSavedRef.current) return;
     if (!quotationId) return;
@@ -821,6 +832,7 @@ const QuotationWizard: React.FC = () => {
   // 同时上一段的 import-auto-save effect 会监听 lineItems.length 转正，立即落 DB。
   const wizardAutoPopulatedRef = useRef(false);
   useEffect(() => {
+    if (backendBuiltLinesRef.current) return; // task-0712：后端已服务端建行，跳过客户端 autoPopulate
     if (!isImportFlow) return;
     if (wizardAutoPopulatedRef.current) return;
     if (!customerTemplateId) return;
