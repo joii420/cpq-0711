@@ -5,6 +5,7 @@ import com.cpq.basicdata.v6.dto.ImportResultDTO;
 import com.cpq.basicdata.v6.dto.SheetResultDTO;
 import com.cpq.basicdata.v6.pricing.PricingImportService;
 import com.cpq.basicdata.v6.quote.QuoteImportService;
+import com.cpq.basicdata.v6.service.CreateQuotationMaterializer;
 import com.cpq.basicdata.v6.service.V6QuotationCommitService;
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.exception.BusinessException;
@@ -43,6 +44,7 @@ public class BasicDataImportV6Resource {
     @Inject QuoteImportService quoteService;
     @Inject PricingImportService pricingService;
     @Inject V6QuotationCommitService commitService;
+    @Inject CreateQuotationMaterializer materializer;
     @Inject SessionHelper sessionHelper;
     @Inject org.eclipse.microprofile.context.ManagedExecutor managedExecutor;
 
@@ -122,7 +124,10 @@ public class BasicDataImportV6Resource {
         UUID userId = sessionHelper.getCurrentUserId(httpRequest);
         if (userId == null) throw new BusinessException(401, "未登录");
         try {
-            return ApiResponse.success(commitService.createQuotation(req, userId));
+            V6QuotationCommitService.CommitResult r = commitService.createQuotation(req, userId);
+            // createQuotation @Transactional 已提交 → 明细行对新事务可见。后置物化 REQUIRES_NEW 必须在此之后。
+            materializer.materialize(r);
+            return ApiResponse.success(r);
         } catch (BusinessException be) {
             throw be;
         } catch (Exception e) {
