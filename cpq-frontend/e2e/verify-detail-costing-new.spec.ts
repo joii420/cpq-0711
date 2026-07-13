@@ -33,6 +33,24 @@ async function inspectCosting(page: Page, tag: string) {
   const noData = await page.locator('.qt-no-component-data').count();
   const innerTabs = page.locator('.qt-tab-btn');
   const tabN = await innerTabs.count();
+  // 点开第一个内部页签(配件树)后截图, 供人工确认树状结构(料号/版本系统列 + 缩进 + 折叠箭头)。
+  if (tabN > 0) {
+    await innerTabs.first().click().catch(() => {});
+    await page.waitForTimeout(1000);
+    const card = page.locator('.qt-cost-table').first();
+    await card.screenshot({ path: path.join(SHOT_DIR, `${tag.replace(/[^a-z0-9]/gi, '_')}-tree.png`) }).catch(() => {});
+    // 表头列名(应含 料号/版本 系统列)
+    const headers = await page.locator('.qt-cost-table thead th').allInnerTexts().catch(() => []);
+    console.log(`[${tag}] 配件表头列 = ${JSON.stringify(headers)}`);
+    // 首列缩进 span 宽度(树深度证据: 有 >0 的 padding 说明有层级)
+    const indents = await page.locator('.qt-cost-table tbody tr td:first-child span span[style*="width"]').evaluateAll(
+      els => els.map(e => (e as HTMLElement).style.width).filter(w => w && w !== '0px' && w !== '14px')
+    ).catch(() => []);
+    console.log(`[${tag}] 树缩进(非0非箭头占位)样本 = ${JSON.stringify(indents.slice(0, 10))}`);
+    // 折叠箭头数
+    const arrows = await page.locator('.qt-cost-table tbody tr td:first-child button').count();
+    console.log(`[${tag}] 折叠箭头(可展开父节点)数 = ${arrows}`);
+  }
   let totalRows = 0, totalLoading = 0;
   for (let i = 0; i < tabN; i++) {
     const name = (await innerTabs.nth(i).innerText().catch(() => '')).trim();
