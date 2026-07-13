@@ -480,7 +480,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
           误导为「无组件数据」而非「后端渲染失败」（AP-50）。 */}
       {cardValueFailed ? (
         <div className="qt-no-component-data" style={{ color: '#cf1322' }}>
-          核价数据生成失败{cardValueErrorMsg ? `：${cardValueErrorMsg}` : ''}
+          {isCosting ? '核价' : '报价'}数据生成失败{cardValueErrorMsg ? `：${cardValueErrorMsg}` : ''}
         </div>
       ) : loading ? (
         <div style={{ padding: 24, textAlign: 'center', color: '#999' }}>加载组件结构...</div>
