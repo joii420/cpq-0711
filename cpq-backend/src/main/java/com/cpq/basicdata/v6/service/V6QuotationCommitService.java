@@ -61,13 +61,12 @@ public class V6QuotationCommitService {
         QuotationDTO q = quotationService.create(cq, userId);
         Log.infof("V6 commit: importRecord=%s → quotation=%s", req.importRecordId, q.id);
 
-        // task-0712 展示修复：建单同事务内服务端建明细行（建单+建行强一致，不丢单）。
-        List<UUID> lineIds = materializeService.materializeLines(
-                q.id, req.customerId, req.importRecordId, req.customerTemplateId);
-        Log.infof("V6 commit: 服务端建明细行 %d 条 (quotation=%s)", lineIds.size(), q.id);
-
         // 2. 查本次导入涉及的料号对 (customer_product_no, material_no) — 写入 hfPairs
         //    数据源：V6 material_customer_map，按客户 + import_record.created_at 时间窗 ±2 分钟过滤
+        //    注：此段必须先于 materializeLines 执行 —— CustomerPartCandidateService.listCandidatesV6
+        //    靠读 import_record.metadata 的 v6=true + hfPairs 精确框定「本次导入批次候选」；
+        //    若建行先于 metadata 写入，listCandidatesV6 读不到 v6 标记会静默退化为「客户全历史候选池」，
+        //    建出本次未导入的历史料号行（历史数据丰富的客户上必现）。
         @SuppressWarnings("unchecked")
         List<Object[]> pairs = em.createNativeQuery(
                 "SELECT DISTINCT customer_product_no, material_no FROM material_customer_map " +
@@ -105,6 +104,14 @@ public class V6QuotationCommitService {
         } catch (Exception ex) {
             Log.warnf("V6 commit: 写 hfPairs 到 metadata 失败 (非致命): %s", ex.getMessage());
         }
+
+        // 关键：让同事务内后续 native 查询（listCandidatesV6 的 SELECT metadata）能看见刚写的 metadata。
+        em.flush();
+
+        // task-0712 展示修复：建单同事务内服务端建明细行（建单+建行强一致，不丢单）。
+        List<UUID> lineIds = materializeService.materializeLines(
+                q.id, req.customerId, req.importRecordId, req.customerTemplateId);
+        Log.infof("V6 commit: 服务端建明细行 %d 条 (quotation=%s)", lineIds.size(), q.id);
 
         CommitResult result = new CommitResult(q.id, req.importRecordId, hfPairs.size());
         result.lineItemsCount = lineIds.size();
