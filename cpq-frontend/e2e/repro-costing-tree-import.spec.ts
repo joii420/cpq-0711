@@ -85,8 +85,12 @@ test('复现: 导入建单后进核价单, 核价树是否"加载中"(不手刷)
   await shot(page, 'drawer-step1');
 
   // 2) 选客户 + 上传 xlsx
+  //   客户 select 是 showSearch(optionFilterProp=label)：客户多时选项虚拟化，
+  //   必须先输入搜索词把「罗克韦尔」过滤进视口再点，否则点开即找选项会超时。
   await page.locator('.ant-drawer .ant-select').first().click();
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(300);
+  await page.keyboard.type(CUSTOMER);
+  await page.waitForTimeout(700);
   await page.locator('.ant-select-item-option', { hasText: CUSTOMER }).first().click();
   await page.locator('.ant-drawer input[type=file]').setInputFiles(XLSX);
   await page.waitForTimeout(600);
