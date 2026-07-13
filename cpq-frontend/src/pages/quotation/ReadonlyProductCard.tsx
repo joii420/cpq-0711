@@ -293,6 +293,10 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
     if (!json) return null;
     try { return typeof json === 'string' ? JSON.parse(json) as CardValues : (json as CardValues); } catch { return null; }
   }, [isCosting, lineItem.quoteCardValues, lineItem.costingCardValues]);
+  // task-0712 展示修复：后端整单渲染失败会落 __cardValueFailed 哨兵（含 __errorMsg 原文）。
+  // 只读面显式提示，不误导为「无组件数据」。
+  const cardValueFailed = !!(sideCardValues as any)?.__cardValueFailed;
+  const cardValueErrorMsg = (sideCardValues as any)?.__errorMsg as string | undefined;
   const snapFormulaByComp = useMemo(() => {
     const m = new Map<string, { formula: Map<string, Record<string, any>>; driverRows: Record<string, any>[] }>();
     (sideCardValues?.tabs ?? []).forEach(vt => {
@@ -470,7 +474,15 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
       )}
 
       {/* Component Tabs — 排除 SUBTOTAL */}
-      {loading ? (
+      {/* task-0712 展示修复：本侧卡片值命中失败哨兵时，优先显式红字错误占位，
+          不落入下方 loading/normalComponents 分支 —— 结构快照（costingCardStructure/quoteCardStructure）
+          可能仍加载成功，导致 normalComponents.length > 0 为真，若不在此处拦截会显示空数据的组件页签，
+          误导为「无组件数据」而非「后端渲染失败」（AP-50）。 */}
+      {cardValueFailed ? (
+        <div className="qt-no-component-data" style={{ color: '#cf1322' }}>
+          核价数据生成失败{cardValueErrorMsg ? `：${cardValueErrorMsg}` : ''}
+        </div>
+      ) : loading ? (
         <div style={{ padding: 24, textAlign: 'center', color: '#999' }}>加载组件结构...</div>
       ) : normalComponents.length > 0 ? (
         <div className="qt-tab-section">
