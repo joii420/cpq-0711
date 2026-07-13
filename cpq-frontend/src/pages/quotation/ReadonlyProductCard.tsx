@@ -421,6 +421,25 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
     compSubtotals,
   );
 
+  // task-0712 只读核价树修复：activeDriverExpansion 提升到组件顶层作用域（与编辑页
+  // QuotationStep2.tsx activeDriverExpansion / activeComponentBomTree 同源），
+  // 供表头（BOM 系统列）、表体（树布局/单元格）、表尾（占位对齐）三处共用。
+  const activeLineItemId = (lineItem as any).id || (lineItem as any).tempId || '';
+  const activeDriverKey = activeComp ? driverExpansionKey(
+    activeLineItemId,
+    lineItem.productPartNo || '',
+    activeComp.componentId,
+    customerId,
+    activeComp.dataDriverPath,
+    fieldsOverrideHash(activeComp.fields as any[]),
+  ) : undefined;
+  const activeDriverExpansion = activeDriverKey ? driverExpansions[activeDriverKey] : undefined;
+  // 核价 BOM 递归展开 组件级开关：仅当该组件 baseRows 含 spine 系统列(__sys.nodeId) 才走树+系统列；
+  // 未勾选(bom_recursive_expand=false)组件后端不发系统列 → 此处 false → 普通表渲染。
+  // QUOTE 侧 isCosting 恒 false，零影响（对齐编辑页 2026-07-03 注释）。
+  const activeComponentBomTree = isCosting
+    && !!activeDriverExpansion?.rows?.some((r: any) => r?.__sys?.nodeId !== undefined);
+
   return (
     <div className="qt-product-card">
       <div className="qt-card-header">
@@ -504,6 +523,14 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
               <table className="qt-cost-table">
                 <thead>
                   <tr>
+                    {/* 核价 BOM 递归展开：固定列仅"勾选递归"组件出（数据驱动 activeComponentBomTree），
+                        与编辑页 QuotationStep2.tsx 表头列一致：料号 + 版本。 */}
+                    {activeComponentBomTree && (
+                      <>
+                        <th style={{ minWidth: 120 }}>料号</th>
+                        <th style={{ minWidth: 90 }}>版本</th>
+                      </>
+                    )}
                     {activeComp.fields.map(field => {
                       const w = resolveFieldWidth(field.width);
                       return (
@@ -517,16 +544,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                 <tbody>
                   {(() => {
                     // Bug C 续 (2026-05-20): 与编辑页 ProductCard 对齐 —— 用 driver 行数限制渲染。
-                    const lineItemId = (lineItem as any).id || (lineItem as any).tempId || '';
-                    const activeDriverKey = driverExpansionKey(
-                      lineItemId,
-                      lineItem.productPartNo || '',
-                      activeComp.componentId,
-                      customerId,
-                      activeComp.dataDriverPath,
-                      fieldsOverrideHash(activeComp.fields as any[]),
-                    );
-                    const activeDriverExpansion = driverExpansions[activeDriverKey];
+                    // task-0712: activeDriverExpansion 已提升至组件顶层作用域（表头/表体/表尾共用），此处直接复用外层闭包变量。
                     const s = splitRows(activeComp, activeDriverExpansion as any);
                     const useDriver = s.useDriver;
                     const driverCount = s.driverCount;
@@ -586,7 +604,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         {effectiveCount === 0 && (
                           <tr>
                             <td
-                              colSpan={activeComp.fields.length || 1}
+                              colSpan={(activeComp.fields.length || 1) + (activeComponentBomTree ? 2 : 0)}
                               style={{ textAlign: 'center', color: '#999', padding: '16px 0' }}
                             >
                               暂无数据
@@ -602,11 +620,32 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                               rowBdv: ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined,
                               formulaCache: preComputedCaches[ri] ?? {},
                               formulaErrors: preComputedErrors[ri] ?? {},
+                              // 核价 BOM 递归展开（task-0712）：spine 系统列（仅 COSTING 行有值），
+                              // 与编辑页 QuotationStep2.tsx effectiveRows.__sys 同源。
+                              __sys: ra.expIndex >= 0 ? (activeDriverExpansion!.rows[ra.expIndex] as any)?.__sys : undefined,
                             };
                           });
+                          // 核价 BOM 递归展开（task-0712）：COSTING 侧按 spine 系统列 __parentId→__nodeId 建树
+                          // （不是料号），优先于 treeConfig（对齐编辑页 QuotationStep2.tsx isBomTree 分支）。
+                          // 归一化：根 nodeId='' → '__bomroot__'；根直接子 parentId='' → '__bomroot__'；根自身 parentId=null → null。
+                          const isBomTree = activeComponentBomTree
+                            && descriptors.some(d => (d as any).__sys?.nodeId !== undefined);
                           const treeCfg = activeComp.treeConfig;
                           let ordered = descriptors.map(d => ({ ...d, _depth: 0, _hasChildren: false, _nodeKey: '' }));
-                          if (treeCfg?.idField && treeCfg?.parentField) {
+                          if (isBomTree) {
+                            const normId = (v: any) => (v === '' || v == null) ? '__bomroot__' : String(v);
+                            const keyPrefixBom = activeComp.componentId || activeComp.tabName || 'bomtree';
+                            const laidBom = layoutTreeRows(
+                              descriptors,
+                              (it) => { const sys = (it as any).__sys; return sys?.nodeId === undefined ? null : normId(sys.nodeId); },
+                              (it) => { const sys = (it as any).__sys; return (sys?.parentId == null) ? null : (sys.parentId === '' ? '__bomroot__' : String(sys.parentId)); },
+                              keyPrefixBom,
+                            );
+                            const collapsedBom = treeCollapse.collapsedSet(Object.values(laidBom.nodeKeyByIndex), true);
+                            ordered = laidBom.rows
+                              .filter(r => !isTreeRowHidden(r.originalIndex, laidBom.parentIndexByIndex, laidBom.nodeKeyByIndex, collapsedBom))
+                              .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
+                          } else if (treeCfg?.idField && treeCfg?.parentField) {
                             const idFieldDef = activeComp.fields.find(f => (f.name || (f as any).key) === treeCfg.idField);
                             const parentFieldDef = activeComp.fields.find(f => (f.name || (f as any).key) === treeCfg.parentField);
                             const keyPrefix = activeComp.componentId || activeComp.tabName || 'tree';
@@ -622,8 +661,30 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                               .filter(r => !isTreeRowHidden(r.originalIndex, laid.parentIndexByIndex, laid.nodeKeyByIndex, collapsed))
                               .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
                           }
-                          return ordered.map(({ ri, rawRow, rowBdv, formulaCache, formulaErrors, _depth, _hasChildren, _nodeKey }) => (
+                          return ordered.map(({ ri, rawRow, rowBdv, formulaCache, formulaErrors, _depth, _hasChildren, _nodeKey, __sys }) => {
+                          const bomSys = activeComponentBomTree ? (__sys as import('./useDriverExpansions').BomSysCols | undefined) : undefined;
+                          return (
                           <tr key={ri}>
+                            {/* 核价 BOM 递归展开（task-0712，只读版）：2 系统固定列，料号列承载树缩进/折叠箭头；
+                                只读页无编辑交互，版本列直接文本展示（不用编辑页的 disabled <select>）。 */}
+                            {activeComponentBomTree && (
+                              <>
+                                <td style={bomSys?.isCycle ? { color: '#cf1322' } : undefined}
+                                    title={bomSys?.isCycle ? '该料号存在 BOM 环，已截断展开' : undefined}>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                    <span style={{ display: 'inline-block', width: (_depth ?? 0) * 16 }} />
+                                    {_hasChildren ? (
+                                      <button type="button" onClick={() => treeCollapse.toggle(_nodeKey)}
+                                        style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 10, width: 14, padding: 0, color: '#888' }} title="展开/折叠">
+                                        {treeCollapse.isCollapsed(_nodeKey, true) ? '▶' : '▼'}
+                                      </button>
+                                    ) : (<span style={{ display: 'inline-block', width: 14 }} />)}
+                                    <span>{bomSys?.hfPartNo ?? '—'}</span>
+                                  </span>
+                                </td>
+                                <td>{bomSys?.bomVersion ?? '—'}</td>
+                              </>
+                            )}
                             {activeComp.fields.map((field) => {
                               const key = field.name || '';
                               const showTrace = !!(quotationId && isTraceField(field));
@@ -642,9 +703,14 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                                 isDriverBound: useDriver && ri < driverCount,
                                 configTemplates,
                                 globalVariableDefs,
+                                // 核价 BOM 树行：BASIC_DATA 缺值直接 "—"，不按根料号走 globalPathCache
+                                // （对齐编辑页 QuotationStep2.tsx cellCtx.isBomTreeRow，防子料号行误显根值/"加载中"）。
+                                isBomTreeRow: !!bomSys,
                               };
                               const isFirstField = activeComp.fields[0] === field;
-                              const treeOn = !!(activeComp.treeConfig?.idField && activeComp.treeConfig?.parentField);
+                              // BOM 树激活时缩进已移到系统「料号」列，字段首列不再重复缩进（避免双重缩进）。
+                              const treeOn = !activeComponentBomTree
+                                && !!(activeComp.treeConfig?.idField && activeComp.treeConfig?.parentField);
                               const cellInner = (
                                 <span style={showTrace ? { display: 'inline-flex', alignItems: 'center', gap: 2 } : undefined}>
                                   <ComponentCell
@@ -694,7 +760,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                               );
                             })}
                           </tr>
-                          ));
+                          );
+                          });
                         })()}
                       </>
                     );
@@ -709,6 +776,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                 {activeComp.fields.some(f => f.is_subtotal) && (
                   <tfoot>
                     <tr className="qt-subtotal-row">
+                      {/* 核价 BOM 递归展开：与 2 个系统固定列对齐的占位单元格（仅"勾选递归"组件） */}
+                      {activeComponentBomTree && (<><td /><td /></>)}
                       {activeComp.fields.map((field, fi) => {
                         const colName = field.name || field.key || '';
                         // 单一来源：columnSumsByComp（buildCrossTabRows resolvedRows Σ行）
@@ -737,6 +806,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     {/* 本页签金额合计 = 该页签所有金额列(is_amount&&is_subtotal)之和；无金额列整行隐藏 */}
                     {activeComp.fields.some(f => f.is_amount) && (
                       <tr className="qt-subtotal-row qt-tab-total-row">
+                        {activeComponentBomTree && (<><td /><td /></>)}
                         <td className="qt-subtotal-label-cell">合计</td>
                         <td colSpan={Math.max(1, activeComp.fields.length - 1)} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
                           {/* 本页签金额合计走"其余"高精度 4 位（精度优先）；仅最终产品小计保持 formatCurrency 2 位 */}
