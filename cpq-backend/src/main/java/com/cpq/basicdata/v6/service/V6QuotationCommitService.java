@@ -23,19 +23,34 @@ import java.util.UUID;
  *
  * <p>与 V5 ImportSessionService.commit 同语义，但 hfPairs 数据源改为 V6 表
  * {@code material_customer_map}（按 import_record.created_at 时间窗 + customer 过滤）。
- * <p>报价单本身不在此阶段填 LineItem——LineItem 由前端编辑页 autoPopulate
- * 根据 ?importRecordId=xxx 调 CustomerPartCandidateService 自动生成。
+ * <p>task-0712 展示修复起：本阶段同事务内服务端建明细行（{@link QuotationLineItemMaterializeService}），
+ * 不再依赖前端 autoPopulate。componentData/snapshot_rows/卡片值由 Resource 层后置物化完成。
  */
 @ApplicationScoped
 public class V6QuotationCommitService {
 
     @Inject EntityManager em;
     @Inject QuotationService quotationService;
+    @Inject QuotationLineItemMaterializeService materializeService;
 
     @Transactional
     public CommitResult createQuotation(CreateQuotationFromImportRequest req, UUID userId) {
         ImportRecord rec = ImportRecord.findById(req.importRecordId);
         if (rec == null) throw new RuntimeException("importRecord 不存在: " + req.importRecordId);
+
+        // 幂等重入(Task4 / backtask §4)：同 importRecordId 已建过单且单仍在 → 返回既有，不重复建单/建行。
+        if (rec.quotationId != null) {
+            com.cpq.quotation.entity.Quotation existing =
+                    com.cpq.quotation.entity.Quotation.findById(rec.quotationId);
+            if (existing != null) {
+                CommitResult r = new CommitResult(existing.id, req.importRecordId,
+                        rec.matchedRows == null ? 0 : rec.matchedRows);
+                r.lineItemsCount = (int) com.cpq.quotation.entity.QuotationLineItem
+                        .count("quotationId", existing.id);
+                Log.infof("V6 commit: 幂等重入，返回既有 quotation=%s（%d 行）", existing.id, r.lineItemsCount);
+                return r;
+            }
+        }
 
         // 1. 建报价单（复用 QuotationService.create）
         CreateQuotationRequest cq = new CreateQuotationRequest();
@@ -45,6 +60,11 @@ public class V6QuotationCommitService {
         cq.costingTemplateId = req.costingTemplateId;
         QuotationDTO q = quotationService.create(cq, userId);
         Log.infof("V6 commit: importRecord=%s → quotation=%s", req.importRecordId, q.id);
+
+        // task-0712 展示修复：建单同事务内服务端建明细行（建单+建行强一致，不丢单）。
+        List<UUID> lineIds = materializeService.materializeLines(
+                q.id, req.customerId, req.importRecordId, req.customerTemplateId);
+        Log.infof("V6 commit: 服务端建明细行 %d 条 (quotation=%s)", lineIds.size(), q.id);
 
         // 2. 查本次导入涉及的料号对 (customer_product_no, material_no) — 写入 hfPairs
         //    数据源：V6 material_customer_map，按客户 + import_record.created_at 时间窗 ±2 分钟过滤
@@ -86,13 +106,20 @@ public class V6QuotationCommitService {
             Log.warnf("V6 commit: 写 hfPairs 到 metadata 失败 (非致命): %s", ex.getMessage());
         }
 
-        return new CommitResult(q.id, req.importRecordId, hfPairs.size());
+        CommitResult result = new CommitResult(q.id, req.importRecordId, hfPairs.size());
+        result.lineItemsCount = lineIds.size();
+        return result;
     }
 
     public static class CommitResult {
         public UUID quotationId;
         public UUID importRecordId;
         public int hfPairsCount;
+        // task-0712 展示修复新增（api.md §1）
+        public int lineItemsCount;                      // 服务端已建明细行数
+        public boolean cardValuesReady = false;         // 卡片值全部落库=true；降级=false（Resource 回填）
+        public int costingTreeRows = 0;                 // 本单核价树总节点数（Resource 回填，可选）
+        public java.util.List<String> warnings = new java.util.ArrayList<>();
 
         public CommitResult(UUID quotationId, UUID importRecordId, int hfPairsCount) {
             this.quotationId = quotationId;
