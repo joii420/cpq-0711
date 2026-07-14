@@ -15,8 +15,8 @@
 // 保证增删行时受控输入不错位/不假死。
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useRef, useState } from 'react';
-import { Select, AutoComplete, InputNumber, Input, Button, Spin, Space, Typography } from 'antd';
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Select, AutoComplete, InputNumber, Input, Button, Spin, Typography } from 'antd';
+import { DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { Table } from 'antd';
 import type { ColumnDef, MasterType, SheetRow } from './types';
@@ -155,10 +155,6 @@ const EditableSheetTable: React.FC<EditableSheetTableProps> = ({
 
   const deleteRow = (rid: string) => {
     onChange(rows.filter((r) => ridOf(r) !== rid));
-  };
-
-  const addRow = () => {
-    onChange([...rows, newBlankRow(columns)]);
   };
 
   const renderEditControl = (col: ColumnDef, row: SheetRow) => {
@@ -307,13 +303,6 @@ const EditableSheetTable: React.FC<EditableSheetTableProps> = ({
         pagination={false}
         scroll={{ x: 'max-content' }}
       />
-      {editable && (
-        <Space style={{ marginTop: 12 }}>
-          <Button icon={<PlusOutlined />} onClick={addRow}>
-            新增行
-          </Button>
-        </Space>
-      )}
     </div>
   );
 };

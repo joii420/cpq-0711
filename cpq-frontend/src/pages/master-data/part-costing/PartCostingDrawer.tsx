@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Drawer, Tabs, Select, Button, Space, Tag, Spin, Empty, message, Modal, Typography, Alert,
 } from 'antd';
-import { SaveOutlined, ReloadOutlined } from '@ant-design/icons';
+import { SaveOutlined, ReloadOutlined, PlusOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../../../stores/authStore';
 import EditableSheetTable, { withRowIds, newBlankRow } from './EditableSheetTable';
 import {
@@ -68,6 +68,8 @@ const SheetTabPanel: React.FC<SheetTabPanelProps> = ({
     ? (rowsResult ? rowsResult.isCurrent : false)
     : true; // 空 tab 从零新建 = 当前版语义
   const editable = canEdit && isCurrentSel;
+
+  const handleAddRow = () => setEditRows((rs) => [...rs, newBlankRow(sheet.columns)]);
 
   const loadVersion = useCallback(async (version?: string) => {
     setLoading(true);
@@ -187,28 +189,45 @@ const SheetTabPanel: React.FC<SheetTabPanelProps> = ({
   return (
     <div>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-        {/* 顶部：版本切换 + 只读提示 */}
-        <Space wrap>
-          {hasData ? (
-            <>
-              <Text type="secondary">版本：</Text>
-              <Select
-                style={{ minWidth: 420 }}
-                value={selectedVersion ?? undefined}
-                options={versionOptions}
-                onChange={handleVersionChange}
-                loading={loading}
-                placeholder="选择版本"
-              />
-            </>
-          ) : (
-            <Tag color="default">未配置 · 可从零新建（保存后生成 2000 版）</Tag>
+        {/* 顶部：版本切换 + 只读提示（左） | 新增行 + 保存（右） */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <Space wrap>
+            {hasData ? (
+              <>
+                <Text type="secondary">版本：</Text>
+                <Select
+                  style={{ minWidth: 420 }}
+                  value={selectedVersion ?? undefined}
+                  options={versionOptions}
+                  onChange={handleVersionChange}
+                  loading={loading}
+                  placeholder="选择版本"
+                />
+              </>
+            ) : (
+              <Tag color="default">未配置 · 可从零新建（保存后生成 2000 版）</Tag>
+            )}
+            {hasData && rowsResult && !rowsResult.isCurrent && (
+              <Tag color="orange">历史版本 · 只读</Tag>
+            )}
+            {!canEdit && <Tag color="default">无编辑权 · 只读</Tag>}
+          </Space>
+          {editable && (
+            <Space>
+              <Button icon={<PlusOutlined />} onClick={handleAddRow}>
+                新增行
+              </Button>
+              <Button
+                type="primary"
+                icon={<SaveOutlined />}
+                loading={saving}
+                onClick={handleSave}
+              >
+                保存
+              </Button>
+            </Space>
           )}
-          {hasData && rowsResult && !rowsResult.isCurrent && (
-            <Tag color="orange">历史版本 · 只读</Tag>
-          )}
-          {!canEdit && <Tag color="default">无编辑权 · 只读</Tag>}
-        </Space>
+        </div>
 
         {/* 主从 BOM 主表信息（P06/P07） */}
         {masterInfo && Object.keys(masterInfo).length > 0 && (
@@ -238,20 +257,6 @@ const SheetTabPanel: React.FC<SheetTabPanelProps> = ({
             />
           )}
         </Spin>
-
-        {/* 底部：保存 */}
-        {editable && (
-          <Space>
-            <Button
-              type="primary"
-              icon={<SaveOutlined />}
-              loading={saving}
-              onClick={handleSave}
-            >
-              保存
-            </Button>
-          </Space>
-        )}
       </Space>
     </div>
   );
