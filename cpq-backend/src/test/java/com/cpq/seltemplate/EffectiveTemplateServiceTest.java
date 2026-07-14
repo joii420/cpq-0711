@@ -94,4 +94,22 @@ class EffectiveTemplateServiceTest {
     void missingCustomer() {
         given().when().get(EFF).then().statusCode(400);
     }
+
+    @Test @Order(4)
+    @DisplayName("T4: 客户行业无模板且无 __DEFAULT__ → hasTemplate=false, templateId=null")
+    void noTemplateAtAll() {
+        // 同 T2 的护栏：若共享库已存在真实 __DEFAULT__，本用例无法验证"两者皆无"这一态，跳过而非误删生产数据。
+        Number existingDefaultCount = (Number) em.createNativeQuery(
+                "SELECT count(*) FROM sel_template WHERE industry_code = '__DEFAULT__'")
+            .getSingleResult();
+        Assumptions.assumeTrue(existingDefaultCount.longValue() == 0,
+            "跳过: 库中已有真实__DEFAULT__模板, 无法验证 hasTemplate=false 态");
+
+        // @BeforeEach 已清空 TEST-EFF-% 模板且未创建任何模板；CUST 的 industryCode=IND 无对应模板。
+        given().queryParam("customerNo", CUST).when().get(EFF).then().statusCode(200)
+            .body("data.hasTemplate", equalTo(false))
+            .body("data.templateId", nullValue())
+            .body("data.usedDefault", equalTo(false))
+            .body("data.params", hasSize(0));
+    }
 }
