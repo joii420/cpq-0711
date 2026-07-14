@@ -166,12 +166,13 @@
 ### [BL-0045] 已导入工序码与 process_master 编码体系不相交 → 名称带出为 null
 - **优先级**：P1
 - **来源**：task-0712 主数据维护-核价基础数据维护 验收发现（C8 名称带出）
-- **状态**：**[~] 进行中（2026-07-12 立 childtask-1，spec 评审重构方案后开发中）**
+- **状态**：**[x] 已完成（DONE 2026-07-13，合并 master `efa5224`；childtask-1）**
 - **登记日期**：2026-07-12
-- **方案（终）**：经 spec 评审逐条澄清（5 问），从原 spec 方案 A（导入 upsert 主表、仅工序）**重构为方案 B + (ii)**：主数据先行、**核价导入不写主表**；补齐**四码**名称（工序/元素/材质/料号）——① 工序建**批量导入**（对齐材质库，upsert `process_master`）；② 元素靠材质库导入已落 `element` 主表，不新建；③ 材质走 `material_part_no → material_master.material_recipe_id → material_recipe.name` 两跳 join；④ 料号已被 P05/P06/P24 导入 upsert `material_master`，仅核对。**无需 Flyway**（`uq_process_master_no` 已存在 V218:142）。
-- **文档**：`dev-docs/task-0712-主数据维护-核价基础数据维护/childtask-1/{需求说明,backtask,fronttask,api}.md`（现行基准）；原 spec `docs/superpowers/specs/2026-07-12-核价导入自动补工序主表-design.md` 已标"方案 A 历史留档"。
-- **预估规模**：M
-- **验收要点**：见 childtask-1/需求说明.md §6（AC-1~8）——工序导入 upsert + 幂等；维护页四码名称非 null（材质名两跳、未绑显"未绑定"）；守 B（10 个 P-handler 零改动）。
+- **方案（终）**：经 spec 评审逐条澄清（5 问），从原 spec 方案 A（导入 upsert 主表、仅工序）**重构为方案 B + (ii)**：主数据先行、**核价导入不写主表**；补齐**四码**名称（工序/元素/材质/料号）——① 工序建**批量导入**（对齐材质库，upsert `process_master` `ON CONFLICT DO UPDATE`）；② 元素靠材质库导入已落 `element` 主表，不新建；③ 材质走 `material_part_no → material_master.material_recipe_id → material_recipe.name` 两跳 join；④ 料号已被 P05/P06/P24 导入 upsert `material_master`，仅核对。**无 Flyway**（`uq_process_master_no` 已存在 V218:142）。
+- **交付**：后端 `efa52245`（ProcessMasterImportService/DTO/Resource +import/+template、ColumnDef MASTER_2HOP、PricingSheetRegistry+PricingMaintenanceService 两跳 join）+ 前端 `33d628e`（ProcessMasterImportDrawer、v6MasterDataService、V6ProcessCrudTab 入口、EditableSheetTable 灰字兜底）。技术总监亲验：守 B(无 P-handler/无 Flyway)、前后端信封对齐、独立复跑 tsc 0 错 + 后端 10+1+16 测试全绿、合并后 8081 活体 401/5174 200。
+- **文档**：`dev-docs/task-0712-主数据维护-核价基础数据维护/childtask-1/{需求说明,backtask,fronttask,api}.md`；原 spec 已标"方案 A 历史留档"。
+- **落地后待业务动作（方案 B 主数据先行的必然，非缺陷）**：① 工序名须业务拿真工序 Excel 走新导入端点才落 `process_master`（现 0 个 Z 码）；② 材质名须走「材质管理→绑定料号」补绑（现 `material_master` 绑定率 0/39，全显"未绑定"，PRD §5 非目标）。
+- **遗留（P2）**：导入未做 `process_no`(VARCHAR20)/`process_name`(VARCHAR50) 超长截断校验，超限 DB 层报错；backtask/api 未要求，待评估。
 
 ## P2
 
