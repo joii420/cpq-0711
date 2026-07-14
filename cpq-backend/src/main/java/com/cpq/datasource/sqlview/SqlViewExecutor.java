@@ -187,7 +187,7 @@ public class SqlViewExecutor {
             );
         }
         ComponentSqlView view = viewOpt.get();
-        String sql = buildWrappedSql(column, view.sqlTemplate, predicate, partNos);
+        String sql = buildWrappedSql(column, applyVersionFilter(view.sqlTemplate), predicate, partNos);
         return executeJdbc(sql, ctx, partNos, "path=$" + (isCross ? "$" + componentCode + "." : "") + viewName + "." + column);
     }
 
@@ -206,7 +206,7 @@ public class SqlViewExecutor {
                     + "请在模板 SQL 视图 Tab 新建名为 '" + viewName + "' 的视图。");
         }
         TemplateSqlView view = viewOpt.get();
-        String sql = buildWrappedSql(column, view.sqlTemplate, predicate, partNos);
+        String sql = buildWrappedSql(column, applyVersionFilter(view.sqlTemplate), predicate, partNos);
         return executeJdbc(sql, ctx, partNos,
                 "path=$" + viewName + "." + column + " [template=" + templateId + "]");
     }
@@ -266,7 +266,7 @@ public class SqlViewExecutor {
         ComponentSqlView view = viewOpt.get();
 
         StringBuilder sql = new StringBuilder();
-        sql.append("SELECT * FROM (").append(view.sqlTemplate).append(") inner_q");
+        sql.append("SELECT * FROM (").append(applyVersionFilter(view.sqlTemplate)).append(") inner_q");
 
         List<String> whereParts = new ArrayList<>();
         if (predicate != null && !predicate.isBlank()) {
@@ -433,12 +433,48 @@ public class SqlViewExecutor {
      * 不经过本 {@code SqlViewExecutor}。保留此分支是为将来递归 SQL 若改走 {@code SqlViewExecutor} /
      * 内嵌 {@code $view} 预留（届时 {@code :production_part_nos} 命名参数可复用同一套注入协议），
      * 不是死代码，勿删。
+     *
+     * <p>task-0713 B3：<b>无条件</b>同时注入 {@code :__vfPart / :__vfVer}（供 {@link VersionFilterMacro}
+     * 渲染模式绑定），哪怕当前线程根本没有 {@link CostingTreeVarsContext} 或该组件没有 override ——
+     * 也必须绑定「空数组」而非让占位符落回 {@link #rewriteNamedParams} 的字面量 {@code NULL} 兜底。
+     * 原因：{@code x <> ALL(NULL::text[])} 在 SQL 里求值为 NULL（非真），而
+     * {@code x <> ALL(ARRAY[]::text[])} 求值为 TRUE（空集合上的 ALL 恒真）——两者天差地别。
+     * 若不绑定空数组，任何未显式设置 {@code CostingTreeVarsContext} 的既有调用路径（如
+     * {@code ensureCardValues}/{@code CardSnapshotService#expandFlatDriverBaseRows} 对非树核价模板的
+     * 直接 {@code componentDriverService.expand} 调用）一旦遇到含 {@code :versionFilter} 的 $view，
+     * 会让该视图的 WHERE 谓词整体退化为 SQL NULL、直接返回 0 行——即无覆盖上下文时版本视图整批失明，
+     * 而非按预期退化为 {@code is_current}（AP-31/37/53 同类"看似无关代码路径致视图失明"的新增变体，
+     * 特此重点记录）。
      */
     private void injectCostingTreeVars(Map<String, Object> namedParams) {
         CostingTreeVarsContext.Vars v = CostingTreeVarsContext.get();
-        if (v == null) return;
-        if (v.productionPartNos != null) namedParams.put("production_part_nos", v.productionPartNos);
-        if (v.totalMaterialNo != null)   namedParams.put("total_material_no", v.totalMaterialNo);
+        if (v != null) {
+            if (v.productionPartNos != null) namedParams.put("production_part_nos", v.productionPartNos);
+            if (v.totalMaterialNo != null)   namedParams.put("total_material_no", v.totalMaterialNo);
+        }
+        SqlViewRuntimeContext.Snapshot owner = SqlViewRuntimeContext.get();
+        Map<String, String> ov = java.util.Collections.emptyMap();
+        if (v != null && v.overridesByComponent != null && owner != null && owner.componentId != null) {
+            ov = v.overridesByComponent.getOrDefault(owner.componentId, java.util.Collections.emptyMap());
+        }
+        List<String> vfPart = new ArrayList<>(ov.keySet());
+        List<String> vfVer = new ArrayList<>(vfPart.size());
+        for (String p : vfPart) vfVer.add(ov.get(p));
+        namedParams.put("__vfPart", vfPart);
+        namedParams.put("__vfVer", vfVer);
+    }
+
+    /**
+     * 若 sql_template 含 {@code :versionFilter} 宏，按当前 {@link CostingTreeVarsContext.Mode}
+     * 选择展开形态（LIST→TRUE 放开版本过滤；RENDER/无上下文→按 override 渲染）；不含宏则原样返回
+     * （零开销，绝大多数组件走此分支）。
+     */
+    private String applyVersionFilter(String sqlTemplate) {
+        if (!VersionFilterMacro.containsMacro(sqlTemplate)) return sqlTemplate;
+        CostingTreeVarsContext.Vars v = CostingTreeVarsContext.get();
+        boolean listMode = v != null && v.mode == CostingTreeVarsContext.Mode.LIST;
+        return listMode ? VersionFilterMacro.expandForListing(sqlTemplate)
+                         : VersionFilterMacro.expandForExecution(sqlTemplate);
     }
 
     /** 查 customer.code（按 UUID）。失败返 null（占位符降级为 NULL，视图过滤返 0 行）。 */

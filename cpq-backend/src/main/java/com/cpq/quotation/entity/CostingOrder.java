@@ -57,6 +57,18 @@ public class CostingOrder extends PanacheEntityBase {
     @Column(name = "total_amount", precision = 18, scale = 4)
     public BigDecimal totalAmount;
 
+    // ── task-0713 B5 新增字段（D1 落定：核价侧 live 重算 + 结果缓存回核价单）──────────────
+    // 绝不复用 total_amount（那是含 Step3 折扣的报价总额，语义不同）。
+
+    /** {lineItemId: {costingCardValues, costingExcelValues}}，已应用本单 override 的核价侧渲染缓存。 */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "costing_render", columnDefinition = "jsonb")
+    public String costingRender;
+
+    /** 核价侧单据总价 = Σ 核价成本 subtotal，不含 Step3 折扣。 */
+    @Column(name = "costing_total_amount", precision = 18, scale = 4)
+    public BigDecimal costingTotalAmount;
+
     @Column(name = "reviewed_by")
     public UUID reviewedBy;
 
