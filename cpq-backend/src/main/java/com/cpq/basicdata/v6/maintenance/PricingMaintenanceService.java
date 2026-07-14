@@ -192,7 +192,7 @@ public class PricingMaintenanceService {
         StringBuilder joins = new StringBuilder();
         int ji = 0;
         for (var c : d.columns) {
-            if ("NAME".equals(c.role)) continue;   // 由 MASTER join 提供
+            if ("NAME".equals(c.role)) continue;   // 由 MASTER/MASTER_2HOP join 提供
             selects.add("t." + c.name + " AS " + c.name);
             aliases.add(c.name);
             if (c.dropdown != null && "MASTER".equals(c.dropdown.kind)) {
@@ -202,6 +202,18 @@ public class PricingMaintenanceService {
                      .append(" ON ").append(ja).append(".").append(mst[1]).append(" = t.").append(c.name);
                 selects.add(ja + "." + mst[2] + " AS " + c.dropdown.nameColumn);
                 aliases.add(c.dropdown.nameColumn);
+            } else if (c.dropdown != null && "MASTER_2HOP".equals(c.dropdown.kind)) {
+                // 两跳 join（task-0712 · childtask-1 · B2）：t.<col> → bridgeTable.bridgeKey → bridgeTable.bridgeFk → nameTable.nameTablePk
+                var dd = c.dropdown;
+                String jb = "b" + (ji++);
+                String jn = "n" + (ji++);
+                joins.append(" LEFT JOIN ").append(dd.bridgeTable).append(" ").append(jb)
+                     .append(" ON ").append(jb).append(".").append(dd.bridgeKey).append(" = t.").append(c.name);
+                joins.append(" LEFT JOIN ").append(dd.nameTable).append(" ").append(jn)
+                     .append(" ON ").append(jn).append(".").append(dd.nameTablePk)
+                     .append(" = ").append(jb).append(".").append(dd.bridgeFk);
+                selects.add(jn + "." + dd.nameValueCol + " AS " + dd.nameColumn);
+                aliases.add(dd.nameColumn);
             }
         }
         selects.add("t." + verCol + "::text AS __ver");

@@ -200,7 +200,12 @@ public class PricingSheetRegistry {
             .rowKeys("seq_no", "component_no")
             .scale("content", 6).scale("scrap_rate", 4)
             .columns(
-                ColumnDef.subDimReadonly("material_part_no", "材质料号"),
+                // 材质名两跳 join（task-0712 · childtask-1 · B2）：
+                // material_part_no → material_master.material_recipe_id → material_recipe.name；未绑定→null（前端显示"未绑定"）。
+                ColumnDef.subDimReadonlyTwoHop("material_part_no", "材质料号",
+                    "material_master", "material_no", "material_recipe_id",
+                    "material_recipe", "id", "name", "material_recipe_name"),
+                ColumnDef.nameCol("material_recipe_name", "材质名"),
                 ColumnDef.value("seq_no", "项次", "NUMBER"),
                 ColumnDef.subDimMaster("component_no", "元素代码", "element", "component_name"),
                 ColumnDef.nameCol("component_name", "元素名"),

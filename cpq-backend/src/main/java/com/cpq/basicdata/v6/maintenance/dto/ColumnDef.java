@@ -27,10 +27,20 @@ public final class ColumnDef {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static final class Dropdown {
-        public String kind;          // MASTER / ENUM / FREE
+        public String kind;          // MASTER / ENUM / FREE / MASTER_2HOP
         public String master;        // MASTER 时: process/element/material
         public String nameColumn;    // 联动只读名称列（§4.4.0）
         public List<String> options; // ENUM 时的候选值
+
+        // ── MASTER_2HOP 专用（两跳 join，如 material_part_no → material_master.material_recipe_id → material_recipe.name，
+        //    task-0712 · childtask-1 · B2）：本列的编码值先在 bridgeTable 按 bridgeKey 找一行，再取该行的 bridgeFk
+        //    去 nameTable 按 nameTablePk 关联，取 nameValueCol 作为名称。不进 MASTER map（单跳假设不适用）。──
+        public String bridgeTable;   // 第一跳表，如 material_master
+        public String bridgeKey;     // 第一跳表里与本列编码值比对的列，如 material_no
+        public String bridgeFk;      // 第一跳表指向第二跳表主键的外键列，如 material_recipe_id
+        public String nameTable;     // 第二跳表，如 material_recipe
+        public String nameTablePk;   // 第二跳表主键列，如 id
+        public String nameValueCol;  // 第二跳表里的名称列，如 name
 
         public static Dropdown master(String master, String nameColumn) {
             Dropdown d = new Dropdown();
@@ -45,6 +55,16 @@ public final class ColumnDef {
         public static Dropdown free() {
             Dropdown d = new Dropdown();
             d.kind = "FREE";
+            return d;
+        }
+        public static Dropdown master2Hop(String bridgeTable, String bridgeKey, String bridgeFk,
+                                           String nameTable, String nameTablePk, String nameValueCol,
+                                           String nameColumn) {
+            Dropdown d = new Dropdown();
+            d.kind = "MASTER_2HOP";
+            d.bridgeTable = bridgeTable; d.bridgeKey = bridgeKey; d.bridgeFk = bridgeFk;
+            d.nameTable = nameTable; d.nameTablePk = nameTablePk; d.nameValueCol = nameValueCol;
+            d.nameColumn = nameColumn;
             return d;
         }
     }
@@ -82,6 +102,21 @@ public final class ColumnDef {
      */
     public static ColumnDef subDimReadonly(String name, String label) {
         return of(name, label, "STRING", "SUBDIM", false);
+    }
+
+    /**
+     * 只读子维度列 + 两跳主表 join 带出名称（task-0712 · childtask-1 · B2）。
+     * 用于 material_part_no（材质料号）→ material_master.material_recipe_id → material_recipe.name（材质名）：
+     * 编码本身不进 MASTER 单跳 map（bridgeTable 的匹配列与本列编码同域，但名称在另一张表里，需再跳一次）。
+     * 不参与 {@code validateMasters} 编码存在性校验（kind≠MASTER）。
+     */
+    public static ColumnDef subDimReadonlyTwoHop(String name, String label,
+                                                  String bridgeTable, String bridgeKey, String bridgeFk,
+                                                  String nameTable, String nameTablePk, String nameValueCol,
+                                                  String nameColumn) {
+        ColumnDef c = of(name, label, "STRING", "SUBDIM", false);
+        c.dropdown = Dropdown.master2Hop(bridgeTable, bridgeKey, bridgeFk, nameTable, nameTablePk, nameValueCol, nameColumn);
+        return c;
     }
 
     /** 普通可编辑值列。 */
