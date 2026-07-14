@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>报价单 · 从已有产品添加 — 原型</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#f0f2f5; font-size:13px; color:#303133; }
+.crumb { padding:10px 20px; background:#fff; border-bottom:1px solid #e4e7ed; color:#909399; }
+.crumb b { color:#303133; font-weight:500; }
+.content { flex:1; padding:20px; max-width:1100px; margin:0 auto; }
+.page-card { background:#fff; border-radius:8px; padding:18px 20px; margin-bottom:12px; }
+.page-title { font-size:18px; font-weight:600; margin-bottom:14px; }
+.btn { padding:5px 12px; border:1px solid #dcdfe6; background:#fff; border-radius:4px; cursor:pointer; color:#606266; display:inline-flex; align-items:center; gap:4px; font-size:13px; }
+.btn:hover { color:#409eff; border-color:#c6e2ff; background:#ecf5ff; }
+.btn-primary { background:#1890ff; color:#fff; border-color:#1890ff; }
+.btn-primary:hover { background:#40a9ff; }
+.btn-danger { color:#f56c6c; border-color:#fbc4c4; }
+.btn[disabled] { opacity:.45; cursor:not-allowed; }
+.btn[disabled]:hover { color:#606266; border-color:#dcdfe6; background:#fff; }
+table { width:100%; border-collapse:collapse; }
+th,td { padding:9px 10px; border-bottom:1px solid #f0f0f0; text-align:left; }
+th { background:#fafafa; color:#606266; font-weight:500; }
+tr.sel { background:#e6f7ff; }
+.tag { padding:1px 8px; border-radius:10px; font-size:12px; }
+.tag-green{ background:#f6ffed; color:#52c41a; border:1px solid #b7eb8f; }
+.tag-gray{ background:#f5f5f5; color:#909399; border:1px solid #e4e7ed; }
+
+/* 抽屉 */
+.mask { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; z-index:900; }
+.mask.open{ display:block; }
+.drawer { position:fixed; top:0; right:0; height:100vh; width:960px; background:#fff; box-shadow:-2px 0 8px rgba(0,0,0,.15);
+  transform:translateX(100%); transition:transform .25s; display:flex; flex-direction:column; z-index:901; }
+.drawer.open{ transform:translateX(0); }
+.drawer .dh { padding:14px 18px; border-bottom:1px solid #e4e7ed; font-weight:600; display:flex; justify-content:space-between; align-items:center; font-size:15px; }
+.drawer .dh .dclose { cursor:pointer; color:#909399; font-size:16px; font-weight:400; }
+.drawer .dh .dclose:hover { color:#303133; }
+.drawer .db { flex:1; overflow:auto; padding:16px 18px; }
+.drawer .df { padding:12px 18px; border-top:1px solid #e4e7ed; display:flex; gap:8px; justify-content:flex-end; align-items:center; }
+
+/* 3D 预览（与共享外壳一致） */
+.preview3d { border:1px solid #e4e7ed; border-radius:8px; overflow:hidden; }
+.preview3d .box { aspect-ratio:1/1; background:linear-gradient(135deg,#e6f0ff,#dfe7f5); display:flex; align-items:center; justify-content:center; color:#7a8aa8; font-size:34px; position:relative; }
+.preview3d .box.empty { background:#fafafa; color:#c0c4cc; flex-direction:column; gap:8px; font-size:13px; text-align:center; padding:0 16px; }
+.preview3d .box.empty .icon { font-size:30px; }
+.preview3d .cap { padding:8px 10px; font-size:12.5px; color:#606266; border-top:1px solid #f0f0f0; line-height:1.6; }
+.preview3d .zoom { position:absolute; top:8px; right:8px; padding:3px 9px; font-size:12px; background:#fff; }
+.zoom-tip { position:absolute; left:10px; right:10px; bottom:10px; background:rgba(0,0,0,.72); color:#fff; font-size:12px; padding:7px 10px; border-radius:4px; opacity:0; pointer-events:none; transition:opacity .2s; text-align:center; }
+.zoom-tip.show { opacity:1; }
+
+/* 页面占位区 */
+.mock-product-area { border:1px dashed #dcdfe6; border-radius:6px; padding:16px; background:#fafbfc; margin-bottom:16px; color:#606266; }
+.mock-product-area #productAreaText { font-weight:500; margin-bottom:10px; color:#303133; }
+.mock-row { padding:8px 10px; background:#fff; border:1px solid #f0f0f0; border-radius:4px; margin-bottom:6px; font-size:12.5px; color:#606266; }
+@keyframes rowFlash { from{ background:#f6ffed; border-color:#b7eb8f; } to{ background:#fff; border-color:#f0f0f0; } }
+.mock-row-new { animation: rowFlash 2s ease forwards; }
+
+/* 添加产品下拉 */
+.add-product-wrap { position:relative; display:inline-block; }
+.dropdown-menu { position:absolute; top:calc(100% + 6px); left:0; background:#fff; border:1px solid #e4e7ed; border-radius:4px;
+  box-shadow:0 2px 10px rgba(0,0,0,.12); min-width:190px; display:none; z-index:50; overflow:hidden; }
+.dropdown-menu.open { display:block; }
+.dm-item { padding:9px 14px; cursor:pointer; color:#303133; }
+.dm-item:hover { background:#f5f7fa; }
+.dm-item.disabled { color:#c0c4cc; cursor:not-allowed; background:#fafafa; }
+.dm-item.disabled:hover { background:#fafafa; }
+
+/* 过滤条 */
+.filter-bar { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid #f0f0f0; }
+.f-item { display:flex; flex-direction:column; gap:4px; }
+.f-item label { font-size:12px; color:#909399; }
+.f-item input { padding:5px 8px; border:1px solid #dcdfe6; border-radius:4px; font-size:13px; width:150px; }
+.f-item input:focus { outline:none; border-color:#1890ff; }
+
+/* 左右两栏 */
+.split { display:flex; gap:18px; align-items:flex-start; }
+.list-pane { flex:0 0 62%; max-width:62%; }
+.list-pane table { border:1px solid #f0f0f0; border-radius:4px; overflow:hidden; }
+tr[data-mn] { cursor:pointer; }
+tr[data-mn]:hover { background:#f5f9ff; }
+.preview-pane { flex:1; min-width:0; position:sticky; top:0; }
+.preview-pane .hint { font-size:12px; color:#909399; margin-top:8px; line-height:1.6; }
+.empty-tip { text-align:center; padding:36px 0; color:#909399; }
+.sel-count { margin-right:auto; color:#606266; }
+
+/* Toast（对齐 docs/html 既有原型风格） */
+.toast-stack { position:fixed; top:20px; right:20px; z-index:2000; display:flex; flex-direction:column; gap:8px; }
+.toast { background:#fff; border:1px solid #b7eb8f; border-left:4px solid #52c41a; padding:10px 14px; border-radius:4px;
+  box-shadow:0 4px 12px rgba(0,0,0,.1); font-size:12.5px; min-width:280px; max-width:420px; animation:slideIn .3s ease; }
+.toast.info { border-color:#91caff; border-left-color:#1890ff; }
+@keyframes slideIn { from { transform:translateX(120%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+</style>
+</head>
+<body>
+
+<!-- 简化版报价单 Step2 背景外壳 -->
+<div class="crumb">报价单 / <b>苏州西门子</b> / Step2 添加产品</div>
+<div class="content">
+  <div class="page-card">
+    <div class="page-title">Step 2 · 添加产品</div>
+
+    <div class="mock-product-area">
+      <div id="productAreaText">产品卡片区（占位：已有 2 个产品行）</div>
+      <div id="mockRows">
+        <div class="mock-row">▤ 精密接触片组件 — SP-10105523</div>
+        <div class="mock-row">▤ 铜合金端子座 — SP-10105890</div>
+      </div>
+    </div>
+
+    <div class="add-product-wrap">
+      <button class="btn btn-primary" id="addProductBtn">+ 添加产品 ▾</button>
+      <div class="dropdown-menu" id="addProductMenu">
+        <div class="dm-item" id="menuFromExisting">从已有产品添加</div>
+        <div class="dm-item disabled" title="需已绑报价模板；本原型仅陪衬展示，不可点击">选配添加</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 抽屉：添加产品 — 从已有产品 -->
+<div class="mask" id="mask"></div>
+<div class="drawer" id="drawer">
+  <div class="dh">
+    <span>添加产品 — 从已有产品</span>
+    <span class="dclose" id="drawerClose">✕</span>
+  </div>
+  <div class="db">
+    <div class="filter-bar">
+      <div class="f-item">
+        <label>客户产品编号</label>
+        <input id="fCustomerProductNo" placeholder="如 CP-SIE-2201">
+      </div>
+      <div class="f-item">
+        <label>销售料号</label>
+        <input id="fMaterialNo" placeholder="如 SP-10110001">
+      </div>
+      <div class="f-item">
+        <label>品名</label>
+        <input id="fName" placeholder="如 传动轴">
+      </div>
+      <div class="f-item">
+        <label>规格</label>
+        <input id="fSpec" placeholder="如 Φ20×150mm">
+      </div>
+      <button class="btn btn-primary" id="btnQuery">查询</button>
+      <button class="btn" id="btnReset">重置</button>
+    </div>
+
+    <div class="split">
+      <div class="list-pane">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:36px;"><input type="checkbox" id="checkAll"></th>
+              <th>客户产品编号</th>
+              <th>销售料号</th>
+              <th>品名</th>
+              <th>规格</th>
+              <th>客户物料名</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div class="empty-tip" id="emptyTip" style="display:none;">未查到匹配的产品，请调整过滤条件后重试</div>
+      </div>
+
+      <div class="preview-pane">
+        <div class="preview3d">
+          <div class="box" id="previewBox"></div>
+          <div class="cap" id="previewCap"></div>
+        </div>
+        <div class="hint">单击左侧产品行可切换预览；「⤢ 交互查看」为增强项占位。</div>
+      </div>
+    </div>
+  </div>
+  <div class="df">
+    <div class="sel-count" id="selCount">已选 0 项</div>
+    <button class="btn" id="btnCancel">取消</button>
+    <button class="btn btn-primary" id="btnAdd">加入报价单</button>
+  </div>
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+// ============================================================
+// 演示数据：当前客户（苏州西门子）material_customer_map 已有产品
+// ============================================================
+const PRODUCTS = [
+  { customerProductNo:'CP-SIE-2201', materialNo:'SP-10110001', name:'精密传动轴',   spec:'Φ20×150mm',    customerMaterialName:'西门子传动轴组件A',   has3d:true,  modelFile:'SP-10110001.glb' },
+  { customerProductNo:'CP-SIE-2202', materialNo:'SP-10110002', name:'联轴器法兰盘', spec:'Φ80×30mm',     customerMaterialName:'西门子联轴器法兰',     has3d:true,  modelFile:'SP-10110002.glb' },
+  { customerProductNo:'CP-SIE-2203', materialNo:'SP-10110003', name:'减速箱端盖',   spec:'120×120×15mm', customerMaterialName:'西门子减速箱端盖B',   has3d:false },
+  { customerProductNo:'CP-SIE-2204', materialNo:'SP-10110004', name:'齿轮箱支架',   spec:'200×100×50mm', customerMaterialName:'西门子齿轮箱支架',     has3d:true,  modelFile:'SP-10110004.glb' },
+  { customerProductNo:'CP-SIE-2205', materialNo:'SP-10110005', name:'密封垫片',     spec:'Φ45×2mm',      customerMaterialName:'西门子密封垫片组',     has3d:false },
+  { customerProductNo:'CP-SIE-2206', materialNo:'SP-10110006', name:'轴承座',       spec:'Φ60×80mm',     customerMaterialName:'西门子轴承座总成',     has3d:true,  modelFile:'SP-10110006.glb' },
+  { customerProductNo:'CP-SIE-2207', materialNo:'SP-10110007', name:'电机安装板',   spec:'300×200×10mm', customerMaterialName:'西门子电机安装板',     has3d:false },
+  { customerProductNo:'CP-SIE-2208', materialNo:'SP-10110008', name:'传动带轮',     spec:'Φ150×40mm',    customerMaterialName:'西门子传动带轮',       has3d:true,  modelFile:'SP-10110008.glb' },
+];
+
+let filtered = PRODUCTS.slice();
+let selected = new Set();          // 勾选框多选（驱动"加入报价单"批量）
+let active = PRODUCTS[0].materialNo; // 单击行=当前预览目标
+let addedCount = 2;                // 页面占位区已有产品行数基线
+
+const tbodyEl = document.getElementById('tbody');
+const emptyTipEl = document.getElementById('emptyTip');
+const checkAllEl = document.getElementById('checkAll');
+const selCountEl = document.getElementById('selCount');
+const btnAddEl = document.getElementById('btnAdd');
+const previewBoxEl = document.getElementById('previewBox');
+const previewCapEl = document.getElementById('previewCap');
+
+// ============================================================
+// 渲染：列表
+// ============================================================
+function renderTable(){
+  if(filtered.length === 0){
+    tbodyEl.innerHTML = '';
+    emptyTipEl.style.display = 'block';
+  } else {
+    emptyTipEl.style.display = 'none';
+    tbodyEl.innerHTML = filtered.map(p => `
+      <tr data-mn="${p.materialNo}" class="${p.materialNo === active ? 'sel' : ''}">
+        <td><input type="checkbox" class="row-check" data-mn="${p.materialNo}" ${selected.has(p.materialNo) ? 'checked' : ''}></td>
+        <td>${p.customerProductNo}</td>
+        <td>${p.materialNo}</td>
+        <td>${p.name}</td>
+        <td>${p.spec}</td>
+        <td>${p.customerMaterialName}</td>
+      </tr>
+    `).join('');
+  }
+  updateCheckAllState();
+  updateSelCount();
+}
+
+// 事件委托：行点击=切换预览目标；勾选框点击=多选（互不影响）
+tbodyEl.addEventListener('click', (e) => {
+  const checkbox = e.target.closest('.row-check');
+  if(checkbox){
+    e.stopPropagation();
+    const mn = checkbox.dataset.mn;
+    if(checkbox.checked) selected.add(mn); else selected.delete(mn);
+    updateCheckAllState();
+    updateSelCount();
+    return;
+  }
+  const tr = e.target.closest('tr[data-mn]');
+  if(tr){
+    active = tr.dataset.mn;
+    renderTable();
+    renderPreview();
+  }
+});
+
+checkAllEl.addEventListener('change', () => {
+  if(checkAllEl.checked){
+    filtered.forEach(p => selected.add(p.materialNo));
+  } else {
+    filtered.forEach(p => selected.delete(p.materialNo));
+  }
+  renderTable();
+});
+
+function updateCheckAllState(){
+  if(filtered.length === 0){
+    checkAllEl.checked = false;
+    checkAllEl.indeterminate = false;
+    return;
+  }
+  const allSel = filtered.every(p => selected.has(p.materialNo));
+  const noneSel = filtered.every(p => !selected.has(p.materialNo));
+  checkAllEl.checked = allSel;
+  checkAllEl.indeterminate = !allSel && !noneSel;
+}
+
+function updateSelCount(){
+  selCountEl.textContent = `已选 ${selected.size} 项`;
+  btnAddEl.disabled = selected.size === 0;
+  btnAddEl.title = selected.size === 0 ? '请至少选择一项产品' : '';
+}
+
+// ============================================================
+// 渲染：右侧 3D 预览
+// ============================================================
+function renderPreview(){
+  const p = PRODUCTS.find(x => x.materialNo === active);
+  if(!p){
+    previewBoxEl.className = 'box empty';
+    previewBoxEl.innerHTML = `<div class="icon">🧊</div><div>请选择左侧产品行以预览 3D</div>`;
+    previewCapEl.innerHTML = '';
+    return;
+  }
+  if(p.has3d){
+    previewBoxEl.className = 'box';
+    previewBoxEl.innerHTML = `
+      🧊
+      <button class="btn zoom" onclick="showZoomTip(event)">⤢ 交互查看</button>
+      <div class="zoom-tip" id="zoomTip">（可旋转 3D 模型，增强项）</div>
+    `;
+    previewCapEl.innerHTML = `销售料号: ${p.materialNo}<br>模型: ${p.modelFile}`;
+  } else {
+    previewBoxEl.className = 'box empty';
+    previewBoxEl.innerHTML = `<div class="icon">🚫</div><div>该料号未配置 3D 模型</div>`;
+    previewCapEl.innerHTML = `销售料号: ${p.materialNo}`;
+  }
+}
+
+function showZoomTip(e){
+  e.stopPropagation();
+  const tip = document.getElementById('zoomTip');
+  if(!tip) return;
+  tip.classList.add('show');
+  clearTimeout(window.__zoomTipTimer);
+  window.__zoomTipTimer = setTimeout(() => tip.classList.remove('show'), 2000);
+}
+
+// ============================================================
+// 过滤条：查询 / 重置
+// ============================================================
+function applyFilter(){
+  const cpn = document.getElementById('fCustomerProductNo').value.trim();
+  const mn  = document.getElementById('fMaterialNo').value.trim().toUpperCase();
+  const nm  = document.getElementById('fName').value.trim();
+  const sp  = document.getElementById('fSpec').value.trim().toUpperCase();
+
+  filtered = PRODUCTS.filter(p =>
+    (!cpn || p.customerProductNo.toUpperCase().includes(cpn.toUpperCase())) &&
+    (!mn  || p.materialNo.toUpperCase().includes(mn)) &&
+    (!nm  || p.name.includes(nm)) &&
+    (!sp  || p.spec.toUpperCase().includes(sp))
+  );
+
+  if(filtered.length && !filtered.some(x => x.materialNo === active)){
+    active = filtered[0].materialNo;
+  }
+  renderTable();
+  renderPreview();
+}
+
+document.getElementById('btnQuery').addEventListener('click', applyFilter);
+['fCustomerProductNo','fMaterialNo','fName','fSpec'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', (e) => {
+    if(e.key === 'Enter') applyFilter();
+  });
+});
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  document.getElementById('fCustomerProductNo').value = '';
+  document.getElementById('fMaterialNo').value = '';
+  document.getElementById('fName').value = '';
+  document.getElementById('fSpec').value = '';
+  filtered = PRODUCTS.slice();
+  if(!filtered.some(x => x.materialNo === active)){
+    active = filtered[0].materialNo;
+  }
+  renderTable();
+  renderPreview();
+});
+
+// ============================================================
+// 添加产品 ▾ 下拉
+// ============================================================
+const addProductBtn = document.getElementById('addProductBtn');
+const addProductMenu = document.getElementById('addProductMenu');
+
+addProductBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  addProductMenu.classList.toggle('open');
+});
+addProductMenu.addEventListener('click', (e) => e.stopPropagation());
+document.addEventListener('click', () => addProductMenu.classList.remove('open'));
+
+document.getElementById('menuFromExisting').addEventListener('click', () => {
+  addProductMenu.classList.remove('open');
+  openDrawer();
+});
+
+// ============================================================
+// 抽屉开关
+// ============================================================
+const maskEl = document.getElementById('mask');
+const drawerEl = document.getElementById('drawer');
+
+function openDrawer(){
+  // 每次打开重置为初始态，保证演示可重复
+  filtered = PRODUCTS.slice();
+  selected = new Set();
+  active = PRODUCTS[0].materialNo;
+  document.getElementById('fCustomerProductNo').value = '';
+  document.getElementById('fMaterialNo').value = '';
+  document.getElementById('fName').value = '';
+  document.getElementById('fSpec').value = '';
+  renderTable();
+  renderPreview();
+  maskEl.classList.add('open');
+  drawerEl.classList.add('open');
+}
+
+function closeDrawer(){
+  maskEl.classList.remove('open');
+  drawerEl.classList.remove('open');
+}
+
+document.getElementById('drawerClose').addEventListener('click', closeDrawer);
+document.getElementById('btnCancel').addEventListener('click', closeDrawer);
+maskEl.addEventListener('click', closeDrawer);
+drawerEl.addEventListener('click', (e) => e.stopPropagation());
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'Escape' && drawerEl.classList.contains('open')) closeDrawer();
+});
+
+// ============================================================
+// 加入报价单
+// ============================================================
+btnAddEl.addEventListener('click', () => {
+  if(selected.size === 0) return;
+  const addedProducts = PRODUCTS.filter(p => selected.has(p.materialNo));
+  const n = addedProducts.length;
+  addedCount += n;
+
+  const mockRowsEl = document.getElementById('mockRows');
+  addedProducts.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'mock-row mock-row-new';
+    div.textContent = `▤ ${p.name} — ${p.materialNo}`;
+    mockRowsEl.appendChild(div);
+  });
+  document.getElementById('productAreaText').textContent = `产品卡片区（占位：已有 ${addedCount} 个产品行）`;
+
+  showToast('info', `已加入 ${n} 个产品`);
+  closeDrawer();
+});
+
+// ============================================================
+// Toast
+// ============================================================
+function showToast(level, html){
+  const stack = document.getElementById('toastStack');
+  const t = document.createElement('div');
+  t.className = 'toast ' + level;
+  t.innerHTML = html;
+  stack.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+// ============================================================
+// 初次渲染
+// ============================================================
+renderTable();
+renderPreview();
+</script>
+</body>
+</html>

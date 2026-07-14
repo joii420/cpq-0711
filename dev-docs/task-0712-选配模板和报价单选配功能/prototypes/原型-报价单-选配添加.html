@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>报价单 · 选配添加（明细表） — 原型</title>
+<style>
+/* ===== 0. 全局基础（对齐 UI设计说明 §0 + §5 共享 CSS） ===== */
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#f0f2f5; font-size:13px; color:#303133; }
+.crumb { padding:10px 20px; background:#fff; border-bottom:1px solid #e4e7ed; color:#909399; }
+.crumb b { color:#303133; font-weight:500; }
+.content { flex:1; padding:20px; max-width:1100px; margin:0 auto; }
+.page-card { background:#fff; border-radius:8px; padding:18px 20px; margin-bottom:12px; }
+.btn { padding:5px 12px; border:1px solid #dcdfe6; background:#fff; border-radius:4px; cursor:pointer; color:#606266; display:inline-flex; align-items:center; gap:4px; font-size:13px; }
+.btn:hover { color:#409eff; border-color:#c6e2ff; background:#ecf5ff; }
+.btn-primary { background:#1890ff; color:#fff; border-color:#1890ff; }
+.btn-primary:hover { background:#40a9ff; color:#fff; }
+.btn-danger { color:#f56c6c; border-color:#fbc4c4; }
+.btn[disabled] { opacity:.45; cursor:not-allowed; }
+.btn[disabled]:hover { color:#606266; border-color:#dcdfe6; background:#fff; }
+table { width:100%; border-collapse:collapse; }
+th,td { padding:9px 10px; border-bottom:1px solid #f0f0f0; text-align:left; }
+th { background:#fafafa; color:#606266; font-weight:500; }
+.tag { padding:1px 8px; border-radius:10px; font-size:12px; }
+.tag-green{ background:#f6ffed; color:#52c41a; border:1px solid #b7eb8f; }
+.tag-gray{ background:#f5f5f5; color:#909399; border:1px solid #e4e7ed; }
+.tag-blue{ background:#e6f7ff; color:#1890ff; border:1px solid #91d5ff; }
+
+/* 抽屉 */
+.mask { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; z-index:100; }
+.mask.open{ display:block; }
+.drawer { position:fixed; top:0; right:0; height:100vh; width:960px; max-width:96vw; background:#fff; box-shadow:-2px 0 8px rgba(0,0,0,.15);
+  transform:translateX(100%); transition:transform .25s; display:flex; flex-direction:column; z-index:101; }
+.drawer.open{ transform:translateX(0); }
+.drawer .dh { padding:14px 18px; border-bottom:1px solid #e4e7ed; font-weight:600; display:flex; justify-content:space-between; align-items:center; font-size:15px; }
+.drawer .dh .close-x { cursor:pointer; color:#909399; font-size:18px; font-weight:400; line-height:1; }
+.drawer .dh .close-x:hover { color:#303133; }
+.drawer .db { flex:1; overflow:auto; padding:0; display:flex; flex-direction:column; }
+.drawer .df { padding:12px 18px; border-top:1px solid #e4e7ed; display:flex; gap:12px; justify-content:space-between; align-items:center; }
+.df-actions { display:flex; gap:8px; flex-shrink:0; }
+.footer-hint { font-size:12px; color:#909399; }
+
+/* 3D 预览 */
+.preview3d { border:1px solid #e4e7ed; border-radius:8px; overflow:hidden; background:#fff; }
+.preview3d .box { aspect-ratio:1/1; display:flex; align-items:center; justify-content:center; color:#7a8aa8; font-size:44px; position:relative; transition:background .3s; }
+.preview3d .cap { padding:10px 12px; font-size:12.5px; color:#606266; border-top:1px solid #f0f0f0; }
+.preview3d .cap .sub { color:#909399; font-size:12px; margin-top:2px; }
+.preview3d .zoom { position:absolute; top:8px; right:8px; padding:3px 8px; font-size:12px; background:rgba(255,255,255,.85); }
+.preview3d .zoom-hint { position:absolute; inset:0; background:rgba(0,0,0,.55); color:#fff; display:none; align-items:center; justify-content:center;
+  font-size:12.5px; text-align:center; padding:16px; line-height:1.6; }
+.preview3d .zoom-hint.show { display:flex; }
+.preview3d .badge { position:absolute; top:8px; left:8px; padding:2px 8px; border-radius:10px; font-size:11px; background:rgba(255,255,255,.85); color:#606266; }
+
+/* 演示态切换 segmented */
+.demo-toggle-bar { padding:10px 18px; background:#fffbe6; border-bottom:1px solid #ffe58f; display:flex; align-items:center; gap:10px; font-size:12.5px; color:#8a6d00; flex-shrink:0; }
+.segmented { display:inline-flex; border:1px solid #dcdfe6; border-radius:4px; overflow:hidden; }
+.segmented span { padding:4px 12px; cursor:pointer; color:#606266; background:#fff; user-select:none; }
+.segmented span.active { background:#1890ff; color:#fff; }
+.segmented span:not(:last-child) { border-right:1px solid #dcdfe6; }
+
+/* 空态：缺少模板 */
+.empty-state { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 40px; text-align:center; color:#606266; }
+.empty-state .icon { font-size:52px; margin-bottom:16px; color:#c0c4cc; }
+.empty-state .msg { font-size:14px; line-height:1.8; max-width:460px; margin-bottom:16px; }
+.empty-state a.link { color:#1890ff; cursor:pointer; text-decoration:none; font-weight:500; }
+.empty-state a.link:hover { text-decoration:underline; }
+
+/* ===== 明细表主体（D11） ===== */
+.detail-body { flex:1; display:flex; overflow:hidden; }
+.detail-left { width:62%; padding:20px 24px; overflow:auto; border-right:1px solid #f0f0f0; position:relative; }
+.detail-right { width:38%; padding:20px; overflow:auto; background:#fafbfc; }
+
+.dl-toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.qty-sum { font-size:13px; color:#606266; }
+.qty-sum b { color:#1890ff; font-size:16px; margin-left:2px; }
+
+.detail-table { border:1px solid #f0f0f0; border-radius:6px; overflow:hidden; }
+.detail-table th, .detail-table td { padding:9px 10px; font-size:12.5px; }
+.mat-swatch-sm { display:inline-block; width:14px; height:14px; border-radius:3px; margin-right:6px; vertical-align:-2px; }
+.qty-input { width:56px; padding:4px 6px; border:1px solid #dcdfe6; border-radius:4px; font-size:12.5px; text-align:center; }
+.qty-input:focus { outline:none; border-color:#1890ff; }
+.row-action a { color:#1890ff; cursor:pointer; margin-right:12px; font-size:12.5px; }
+.row-action a:hover { text-decoration:underline; }
+.row-action a.danger { color:#f56c6c; }
+.detail-empty { text-align:center; padding:34px 0; color:#c0c4cc; font-size:12.5px; border:1px dashed #e4e7ed; border-radius:6px; }
+
+/* 组合工艺（D12/D13） */
+.combo-section { margin-top:16px; border:1px solid #91d5ff; border-radius:8px; padding:12px 14px; background:#f5faff; }
+.combo-title { font-size:13px; font-weight:600; margin-bottom:10px; display:flex; align-items:center; gap:8px; color:#303133; }
+.combo-list { display:flex; gap:18px; flex-wrap:wrap; }
+.combo-item { display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px; color:#303133; }
+.combo-hint { margin-top:16px; padding:12px 14px; background:#fafafa; border:1px dashed #e4e7ed; border-radius:8px; color:#c0c4cc; font-size:12.5px; text-align:center; }
+
+/* ===== 新增/编辑材质料号 子框（内层覆盖面板，覆盖 detail-left） ===== */
+.sub-panel { position:absolute; inset:0; background:#fff; z-index:5; display:none; flex-direction:column; box-shadow:-6px 0 16px rgba(0,0,0,.06); }
+.sub-panel.open { display:flex; }
+.sub-header { padding:14px 20px 12px; border-bottom:1px solid #f0f0f0; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
+.sub-header .sp-title { font-size:14px; font-weight:600; }
+.sub-steps { display:flex; padding:12px 20px 0; flex-shrink:0; }
+.sub-step { flex:1; text-align:center; padding-bottom:10px; border-bottom:2px solid #f0f0f0; color:#909399; font-size:12.5px; cursor:pointer; }
+.sub-step.active { color:#1890ff; border-bottom-color:#1890ff; font-weight:600; }
+.sub-step.done { color:#606266; }
+.sub-body { flex:1; overflow:auto; padding:16px 20px; }
+.sub-step-panel .form-desc { font-size:12.5px; color:#909399; margin-bottom:14px; }
+.sub-footer { padding:12px 20px; border-top:1px solid #f0f0f0; display:flex; gap:8px; justify-content:flex-end; flex-shrink:0; }
+
+.mat-filter-input { width:100%; padding:7px 10px; border:1px solid #dcdfe6; border-radius:4px; font-size:13px; margin-bottom:14px; }
+.mat-filter-input:focus { outline:none; border-color:#1890ff; }
+.mat-list { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.mat-opt { border:1.5px solid #e4e7ed; border-radius:8px; padding:12px 8px; text-align:center; cursor:pointer; transition:all .15s; }
+.mat-opt:hover { border-color:#91d5ff; background:#f5faff; }
+.mat-opt.sel { border-color:#1890ff; background:#e6f7ff; }
+.mat-opt .mo-swatch { width:100%; height:34px; border-radius:6px; margin-bottom:6px; }
+.mat-opt .mo-name { font-size:12.5px; font-weight:500; color:#303133; }
+.mat-opt .mo-code { font-size:11px; color:#909399; margin-top:1px; }
+.mat-empty { grid-column:1/-1; text-align:center; padding:34px 0; color:#c0c4cc; font-size:12.5px; }
+
+.element-row { display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid #f5f5f5; }
+.element-row .e-name { width:110px; flex-shrink:0; font-size:13px; color:#303133; }
+.element-row .e-name .e-sym { display:inline-block; width:22px; height:22px; line-height:22px; text-align:center; background:#f0f5ff; color:#1890ff;
+  border-radius:4px; font-weight:600; margin-right:6px; font-size:11.5px; }
+.element-row input[type=number] { width:100px; padding:5px 8px; border:1px solid #dcdfe6; border-radius:4px; font-size:13px; }
+.element-row input[type=number]:focus { outline:none; border-color:#1890ff; }
+.element-row .e-unit { color:#909399; font-size:12.5px; }
+
+.process-check-grid { display:flex; flex-wrap:wrap; gap:12px; }
+.proc-check-item { display:flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid #e4e7ed; border-radius:16px; cursor:pointer; font-size:12.5px; }
+.proc-check-item:hover { border-color:#91d5ff; background:#f5faff; }
+.proc-check-item input { cursor:pointer; }
+.process-order-chips { margin-top:6px; }
+.proc-chip { display:inline-flex; align-items:center; gap:5px; background:#f0f5ff; color:#1890ff; padding:4px 10px; border-radius:12px; font-size:12px; margin:4px 6px 0 0; }
+.proc-chip b { cursor:pointer; font-weight:400; color:#909399; }
+.proc-chip b:hover { color:#f56c6c; }
+
+/* 指纹演示区 */
+.fp-demo { display:flex; align-items:center; gap:10px; font-size:12.5px; min-width:0; flex-wrap:wrap; }
+.fp-tag { padding:3px 10px; border-radius:12px; font-size:12px; white-space:nowrap; }
+.fp-tag b { font-weight:600; }
+.fp-tag.new { background:#f0f5ff; color:#1890ff; border:1px solid #adc6ff; }
+.fp-tag.hit { background:#f6ffed; color:#52c41a; border:1px solid #b7eb8f; }
+
+/* 添加产品下拉（背景外壳） */
+.add-product-wrap { position:relative; display:inline-block; }
+.dropdown-menu { position:absolute; top:calc(100% + 4px); right:0; background:#fff; border:1px solid #e4e7ed; border-radius:6px;
+  box-shadow:0 4px 14px rgba(0,0,0,.12); min-width:200px; padding:4px; display:none; z-index:20; }
+.dropdown-menu.open { display:block; }
+.dropdown-item { padding:9px 14px; border-radius:4px; cursor:pointer; font-size:13px; color:#303133; display:flex; flex-direction:column; gap:1px; }
+.dropdown-item:hover { background:#f5f7fa; }
+.dropdown-item.disabled { color:#c0c4cc; cursor:not-allowed; }
+.dropdown-item.disabled:hover { background:#fff; }
+.dropdown-item .di-sub { font-size:11px; color:#c0c4cc; }
+
+/* 背景：模拟报价单 Step2 */
+.mock-quote-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px; }
+.mock-quote-header .qi { font-size:12.5px; color:#606266; line-height:1.9; }
+.mock-quote-header .qi b { color:#303133; }
+.mock-product-empty { border:1.5px dashed #dcdfe6; border-radius:8px; padding:50px 20px; text-align:center; color:#c0c4cc; font-size:13px; }
+.mock-product-empty .mp-icon { font-size:30px; margin-bottom:10px; }
+.mock-row { padding:8px 10px; background:#fff; border:1px solid #f0f0f0; border-radius:4px; margin-bottom:6px; font-size:12.5px; color:#606266; }
+@keyframes rowFlash { from{ background:#f6ffed; border-color:#b7eb8f; } to{ background:#fff; border-color:#f0f0f0; } }
+.mock-row-new { animation: rowFlash 2s ease forwards; }
+
+/* toast */
+.toast { position:fixed; top:24px; left:50%; transform:translateX(-50%) translateY(-20px); background:#fff; border:1px solid #b7eb8f;
+  border-radius:6px; padding:10px 20px; box-shadow:0 4px 14px rgba(0,0,0,.12); color:#303133; font-size:13px; display:flex; align-items:center; gap:8px;
+  opacity:0; pointer-events:none; transition:all .25s; z-index:200; }
+.toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+.toast .ic { color:#52c41a; font-size:15px; }
+</style>
+</head>
+<body>
+
+<!-- 简化版报价单 Step2 背景外壳（灰底 + 面包屑 + 客户/单号/模板/行业信息条） -->
+<div class="crumb">报价单 / <b>苏州西门子</b> / Step2 添加产品</div>
+<div class="content">
+  <div class="page-card">
+    <div class="mock-quote-header">
+      <div class="qi">
+        客户：<b>苏州西门子工业有限公司</b>　|　报价单号：<b>QT-20260713-0091</b>　|　报价模板：<b>报价模板0608 v1.9</b>　|　所属行业：<b>汽车</b>
+      </div>
+      <div class="add-product-wrap">
+        <button class="btn btn-primary" id="addProductBtn" onclick="toggleAddMenu(event)">+ 添加产品 ▾</button>
+        <div class="dropdown-menu" id="addMenu">
+          <div class="dropdown-item disabled" title="原型未实现，见另一原型文件《原型-报价单-从已有产品添加.html》">
+            从已有产品添加
+            <span class="di-sub">另见对应原型文件</span>
+          </div>
+          <div class="dropdown-item" onclick="openDrawer()">
+            选配添加
+            <span class="di-sub">明细表组合多个材质料号</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mock-product-empty" id="mockEmpty">
+      <div class="mp-icon">📦</div>
+      尚未添加产品，点击右上「+ 添加产品」开始
+    </div>
+    <div id="mockRows" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- 遮罩 + 抽屉 -->
+<div class="mask" id="mask" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="dh">
+    <span>添加产品 — 选配</span>
+    <span class="close-x" onclick="closeDrawer()">✕</span>
+  </div>
+
+  <div class="demo-toggle-bar">
+    ⚙ 评审演示切换（非真实功能）：
+    <div class="segmented">
+      <span id="segHas" class="active" onclick="setDemoMode('has')">有模板</span>
+      <span id="segNone" onclick="setDemoMode('none')">缺少模板</span>
+    </div>
+    <span style="color:#c9a400;">— 用于对照「有效模板解析」两种分支效果</span>
+  </div>
+
+  <div class="db" id="drawerBody">
+
+    <!-- ===== 空态：缺少模板 ===== -->
+    <div class="empty-state" id="emptyState" style="display:none;">
+      <div class="icon">🗂️</div>
+      <div class="msg">
+        缺少选配模板 —— 请先在「配置中心 → 选配模板管理」为该客户所属行业或默认模板配置选配参数。
+      </div>
+      <a class="link" onclick="goConfigCenter()">→ 去配置选配模板</a>
+    </div>
+
+    <!-- ===== 有模板：选配明细表 ===== -->
+    <div class="detail-body" id="mainWrap">
+      <div class="detail-left" id="detailLeft">
+        <div class="dl-toolbar">
+          <button class="btn btn-primary" onclick="openSubPanel()">+ 新增材质料号</button>
+          <div class="qty-sum">数量合计：<b id="qtySumVal">0</b></div>
+        </div>
+
+        <table class="detail-table" id="detailTableWrap" style="display:none;">
+          <thead>
+            <tr>
+              <th style="width:30px;">#</th>
+              <th>材质</th>
+              <th>元素含量</th>
+              <th>工序</th>
+              <th style="width:86px;">数量</th>
+              <th style="width:96px;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="detailTbody"></tbody>
+        </table>
+        <div class="detail-empty" id="detailEmpty">点击「+ 新增材质料号」开始选配</div>
+
+        <!-- 组合工艺：数量合计 ≥ 2 出现（D12/D13） -->
+        <div class="combo-section" id="comboSection" style="display:none;">
+          <div class="combo-title">🔗 组合工艺 <span class="tag tag-blue">数量合计 ≥ 2</span></div>
+          <input class="mat-filter-input" id="comboFilter" placeholder="搜索组合工艺名称，如「焊接」…" oninput="onComboFilterInput(this.value)">
+          <div class="combo-list" id="comboList"></div>
+        </div>
+        <div class="combo-hint" id="comboHint">数量合计 ≥ 2 时需选择组合工艺</div>
+
+        <!-- 新增/编辑材质料号 子框：材质(带过滤) → 元素含量 → 工序 -->
+        <div class="sub-panel" id="subPanel">
+          <div class="sub-header">
+            <span class="sp-title" id="subTitle">新增材质料号</span>
+            <span class="close-x" onclick="cancelSub()">✕</span>
+          </div>
+          <div class="sub-steps">
+            <div class="sub-step active" data-step="1" onclick="goSubStepIfAllowed(1)">① 材质</div>
+            <div class="sub-step" data-step="2" onclick="goSubStepIfAllowed(2)">② 元素含量</div>
+            <div class="sub-step" data-step="3" onclick="goSubStepIfAllowed(3)">③ 工序</div>
+          </div>
+          <div class="sub-body">
+            <div class="sub-step-panel" id="subStepPanel1">
+              <input class="mat-filter-input" id="materialFilter" placeholder="搜索材质名称 / 代号，如「不锈钢」「H62」…" oninput="onMaterialFilterInput(this.value)">
+              <div class="mat-list" id="materialList"></div>
+            </div>
+            <div class="sub-step-panel" id="subStepPanel2" style="display:none;">
+              <div class="form-desc">以下为所选材质 <b id="elemMaterialName2"></b> 派生的元素含量，允许在合理范围内微调</div>
+              <div id="elementList2"></div>
+            </div>
+            <div class="sub-step-panel" id="subStepPanel3" style="display:none;">
+              <div class="form-desc">多选工序，按选中顺序记录加工顺序</div>
+              <input class="mat-filter-input" id="processFilter" placeholder="搜索工序名称，如「车」「电镀」…" oninput="onProcessFilterInput(this.value)">
+              <div class="process-check-grid" id="processCheckGrid"></div>
+              <div class="process-order-chips" id="processOrderChips"></div>
+            </div>
+          </div>
+          <div class="sub-footer">
+            <button class="btn" onclick="cancelSub()">取消</button>
+            <button class="btn" id="subPrevBtn" onclick="subPrev()" disabled>上一步</button>
+            <button class="btn btn-primary" id="subNextBtn" onclick="subNext()">下一步</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-right">
+        <div class="preview3d">
+          <div class="box" id="previewBox">
+            <span class="badge" id="previewBadge" style="display:none;">材质3D</span>
+            <button class="btn zoom" onclick="toggleZoom()">⤢ 交互查看</button>
+            <span id="previewIcon">🧊</span>
+            <div class="zoom-hint" id="zoomHint">可旋转 3D 交互查看<br>（增强项，本原型不支持实际旋转）</div>
+          </div>
+          <div class="cap">
+            <div id="previewTitle">请新增材质料号后预览 3D</div>
+            <div class="sub" id="previewSub"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="df" id="drawerFooter">
+    <div class="fp-demo" id="fpDemo">
+      <span class="fp-tag new" id="fpTag">🆕 将新建选配产品</span>
+      <button class="btn" id="fpToggleBtn" onclick="toggleFingerprint()">🔀 演示：切换为"命中已有料号"</button>
+    </div>
+    <div class="footer-hint" id="footerHint" style="display:none;">当前为「缺少模板」演示态，无法继续选配流程</div>
+    <div class="df-actions">
+      <button class="btn" onclick="closeDrawer()">取消</button>
+      <button class="btn btn-primary" id="btnConfirmAdd" onclick="confirmAddToQuote()">确认加入</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span class="ic">✓</span><span id="toastMsg">已加入选配产品</span></div>
+
+<script>
+/* ===================== 演示数据 ===================== */
+var MATERIALS = [
+  { code:'SS304', name:'不锈钢304', swatch:'#b9c4d1', icon:'🧊', model:'SS304_std.glb', gradient:'linear-gradient(135deg,#dfe9f5,#c3d4ea)',
+    elements:[
+      { sym:'Ni', name:'镍', def:8.00, unit:'%' },
+      { sym:'Cr', name:'铬', def:18.00, unit:'%' },
+      { sym:'C',  name:'碳', def:0.08, unit:'%' }
+    ]},
+  { code:'SS316', name:'不锈钢316', swatch:'#a9b6c8', icon:'🧊', model:'SS316_std.glb', gradient:'linear-gradient(135deg,#dbe6f2,#b7cadf)',
+    elements:[
+      { sym:'Ni', name:'镍', def:10.50, unit:'%' },
+      { sym:'Cr', name:'铬', def:17.00, unit:'%' },
+      { sym:'Mo', name:'钼', def:2.10, unit:'%' }
+    ]},
+  { code:'H62', name:'黄铜H62', swatch:'#e0c68a', icon:'🟨', model:'H62_std.glb', gradient:'linear-gradient(135deg,#f5e8c8,#e0c68a)',
+    elements:[
+      { sym:'Cu', name:'铜', def:62.00, unit:'%' },
+      { sym:'Zn', name:'锌', def:37.70, unit:'%' },
+      { sym:'Pb', name:'铅', def:0.30, unit:'%' }
+    ]},
+  { code:'H65', name:'黄铜H65', swatch:'#e6cf94', icon:'🟨', model:'H65_std.glb', gradient:'linear-gradient(135deg,#f7edd0,#e6cf94)',
+    elements:[
+      { sym:'Cu', name:'铜', def:65.00, unit:'%' },
+      { sym:'Zn', name:'锌', def:34.70, unit:'%' },
+      { sym:'Pb', name:'铅', def:0.30, unit:'%' }
+    ]},
+  { code:'AL6061', name:'铝6061', swatch:'#d5dbe3', icon:'⚪', model:'AL6061_std.glb', gradient:'linear-gradient(135deg,#eef1f5,#d5dbe3)',
+    elements:[
+      { sym:'Mg', name:'镁', def:1.00, unit:'%' },
+      { sym:'Si', name:'硅', def:0.60, unit:'%' },
+      { sym:'Fe', name:'铁', def:0.70, unit:'%' }
+    ]},
+  { code:'AL7075', name:'铝7075', swatch:'#c7ced9', icon:'⚪', model:'AL7075_std.glb', gradient:'linear-gradient(135deg,#e6eaf0,#c7ced9)',
+    elements:[
+      { sym:'Zn', name:'锌', def:5.60, unit:'%' },
+      { sym:'Mg', name:'镁', def:2.50, unit:'%' },
+      { sym:'Cu', name:'铜', def:1.60, unit:'%' }
+    ]},
+  { code:'Q45', name:'45号钢', swatch:'#9aa5b1', icon:'⬛', model:'Q45_std.glb', gradient:'linear-gradient(135deg,#dde2e8,#9aa5b1)',
+    elements:[
+      { sym:'C',  name:'碳', def:0.45, unit:'%' },
+      { sym:'Mn', name:'锰', def:0.65, unit:'%' },
+      { sym:'Si', name:'硅', def:0.28, unit:'%' }
+    ]}
+];
+var PROCESSES = ['车','铣','电镀','热处理','抛光'];
+var COMBO_PROCESSES = ['组装','焊接','铆接','胶合','螺纹连接','热压','激光焊','超声波焊']; // D13: 工序库 process_category=组合工艺 演示数据（D14 过滤演示扩至 8 项）
+
+/* ===================== 状态 ===================== */
+var state = {
+  demoMode: 'has',            // has | none
+  rows: [],                   // { id, materialCode, elements:{sym:val}, process:[...], qty }
+  rowSeq: 1,
+  editingRowId: null,         // null=新增；否则为正在编辑的行 id
+  sub: {                      // 新增/编辑子框内部状态
+    step: 1,                  // 1 材质 / 2 元素含量 / 3 工序
+    materialCode: null,
+    elementValues: {},
+    processSelected: [],
+    filterText: '',
+    processFilterText: ''     // 工序步骤搜索词（D14 推广：仅影响显示，不清已选）
+  },
+  comboSelected: [],
+  comboFilterText: '',        // 组合工艺区搜索词（D14 推广：仅影响显示，不清已选）
+  fingerprintHit: false,
+  previewMaterialCode: null,  // 右侧预览当前跟随的材质
+  zoomOpen: false
+};
+var addedCount = 0; // 背景占位区已加入的选配产品数
+
+/* ===================== 工具函数 ===================== */
+function findMaterial(code){
+  for (var i=0;i<MATERIALS.length;i++){ if (MATERIALS[i].code === code) return MATERIALS[i]; }
+  return null;
+}
+function findRow(id){
+  for (var i=0;i<state.rows.length;i++){ if (state.rows[i].id === id) return state.rows[i]; }
+  return null;
+}
+function qtySum(){
+  var sum = 0;
+  state.rows.forEach(function(r){ sum += (r.qty || 0); });
+  return sum;
+}
+function escapeHtml(s){
+  var d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+
+/* ===================== 添加产品下拉（背景外壳） ===================== */
+function toggleAddMenu(ev){
+  ev.stopPropagation();
+  document.getElementById('addMenu').classList.toggle('open');
+}
+document.addEventListener('click', function(){
+  document.getElementById('addMenu').classList.remove('open');
+});
+
+/* ===================== 抽屉开关 ===================== */
+function openDrawer(){
+  document.getElementById('addMenu').classList.remove('open');
+  resetState();
+  document.getElementById('mask').classList.add('open');
+  document.getElementById('drawer').classList.add('open');
+  render();
+}
+function closeDrawer(){
+  document.getElementById('mask').classList.remove('open');
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('subPanel').classList.remove('open');
+}
+document.addEventListener('keydown', function(e){
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('subPanel').classList.contains('open')){
+    cancelSub();
+  } else if (document.getElementById('drawer').classList.contains('open')){
+    closeDrawer();
+  }
+});
+
+function resetState(){
+  state.demoMode = 'has';
+  document.getElementById('segHas').classList.add('active');
+  document.getElementById('segNone').classList.remove('active');
+  state.rows = [];
+  state.rowSeq = 1;
+  state.editingRowId = null;
+  state.sub = { step:1, materialCode:null, elementValues:{}, processSelected:[], filterText:'', processFilterText:'' };
+  state.comboSelected = [];
+  state.comboFilterText = '';
+  state.fingerprintHit = false;
+  state.previewMaterialCode = null;
+  state.zoomOpen = false;
+  document.getElementById('zoomHint').classList.remove('show');
+  document.getElementById('subPanel').classList.remove('open');
+  document.getElementById('materialFilter').value = '';
+  document.getElementById('processFilter').value = '';
+  document.getElementById('comboFilter').value = '';
+}
+
+/* ===================== 演示态切换：有模板 / 缺少模板 ===================== */
+function setDemoMode(mode){
+  state.demoMode = mode;
+  document.getElementById('segHas').classList.toggle('active', mode === 'has');
+  document.getElementById('segNone').classList.toggle('active', mode === 'none');
+  render();
+}
+function goConfigCenter(){
+  alert('原型演示：将跳转至「配置中心 → 选配模板管理」，为客户所属行业创建/启用选配模板。');
+}
+
+/* ===================== 明细表渲染 ===================== */
+function renderDetailTable(){
+  var tbody = document.getElementById('detailTbody');
+  var wrap = document.getElementById('detailTableWrap');
+  var emptyEl = document.getElementById('detailEmpty');
+
+  if (state.rows.length === 0){
+    tbody.innerHTML = '';
+    wrap.style.display = 'none';
+    emptyEl.style.display = 'block';
+  } else {
+    wrap.style.display = '';
+    emptyEl.style.display = 'none';
+    var html = '';
+    state.rows.forEach(function(r, i){
+      var m = findMaterial(r.materialCode);
+      if (!m) return;
+      var elemSummary = Object.keys(r.elements).map(function(sym){
+        return sym + r.elements[sym].toFixed(2);
+      }).join('/') || '—';
+      var procSummary = r.process.length ? r.process.join('·') : '—';
+      html += '<tr>'
+        + '<td>' + (i+1) + '</td>'
+        + '<td><span class="mat-swatch-sm" style="background:' + m.swatch + ';"></span>' + escapeHtml(m.name)
+        +   '<span style="color:#909399;font-size:11px;margin-left:4px;">' + m.code + '</span></td>'
+        + '<td>' + escapeHtml(elemSummary) + '</td>'
+        + '<td>' + escapeHtml(procSummary) + '</td>'
+        + '<td><input type="number" min="1" step="1" class="qty-input" value="' + r.qty + '" '
+        +   'oninput="onQtyInput(' + r.id + ', this.value)" onblur="onQtyBlur(' + r.id + ', this.value)"></td>'
+        + '<td class="row-action"><a onclick="openSubPanel(' + r.id + ')">编辑</a><a class="danger" onclick="deleteRow(' + r.id + ')">删除</a></td>'
+        + '</tr>';
+    });
+    tbody.innerHTML = html;
+  }
+  document.getElementById('qtySumVal').textContent = qtySum();
+  updateConfirmBtnState();
+}
+
+function onQtyInput(id, val){
+  var row = findRow(id);
+  if (!row) return;
+  var n = parseInt(val, 10);
+  row.qty = isNaN(n) ? 0 : n;
+  document.getElementById('qtySumVal').textContent = qtySum();
+  renderComboSection();
+}
+function onQtyBlur(id, val){
+  var row = findRow(id);
+  if (!row) return;
+  var n = parseInt(val, 10);
+  if (isNaN(n) || n < 1) n = 1;
+  row.qty = n;
+  renderDetailTable();
+  renderComboSection();
+}
+function deleteRow(id){
+  state.rows = state.rows.filter(function(r){ return r.id !== id; });
+  renderDetailTable();
+  renderComboSection();
+}
+function updateConfirmBtnState(){
+  var btn = document.getElementById('btnConfirmAdd');
+  var disabled = state.rows.length === 0;
+  btn.disabled = disabled;
+  btn.title = disabled ? '请至少新增一个材质料号' : '';
+}
+
+/* ===================== 组合工艺（D12/D13，D14 推广：带过滤，过滤只影响显示，不清已选） ===================== */
+function renderComboSection(){
+  var sum = qtySum();
+  var section = document.getElementById('comboSection');
+  var hint = document.getElementById('comboHint');
+  if (sum >= 2){
+    section.style.display = '';
+    hint.style.display = 'none';
+    var q = (state.comboFilterText || '').trim().toLowerCase();
+    var list = COMBO_PROCESSES.filter(function(p){
+      if (!q) return true;
+      return p.toLowerCase().indexOf(q) > -1;
+    });
+    var listEl = document.getElementById('comboList');
+    if (list.length === 0){
+      listEl.innerHTML = '<div class="mat-empty">未找到匹配的组合工艺，请调整搜索词</div>';
+    } else {
+      listEl.innerHTML = list.map(function(p){
+        var checked = state.comboSelected.indexOf(p) > -1;
+        return '<label class="combo-item"><input type="checkbox" ' + (checked ? 'checked' : '')
+          + ' onchange="toggleCombo(\'' + p + '\')"><span>' + p + '</span></label>';
+      }).join('');
+    }
+  } else {
+    section.style.display = 'none';
+    hint.style.display = '';
+    if (state.comboSelected.length){
+      state.comboSelected = []; // 合计跌破 2 时不再适用，清空已选组合工艺
+    }
+  }
+}
+function toggleCombo(p){
+  var idx = state.comboSelected.indexOf(p);
+  if (idx > -1) state.comboSelected.splice(idx, 1);
+  else state.comboSelected.push(p);
+}
+function onComboFilterInput(v){
+  state.comboFilterText = v;
+  renderComboSection();
+}
+
+/* ===================== 新增/编辑材质料号 子框 ===================== */
+function openSubPanel(rowId){
+  if (typeof rowId === 'number'){
+    var row = findRow(rowId);
+    if (!row) return;
+    state.editingRowId = rowId;
+    state.sub.materialCode = row.materialCode;
+    state.sub.elementValues = {};
+    Object.keys(row.elements).forEach(function(sym){ state.sub.elementValues[sym] = row.elements[sym]; });
+    state.sub.processSelected = row.process.slice();
+    document.getElementById('subTitle').textContent = '编辑材质料号';
+    state.previewMaterialCode = row.materialCode;
+  } else {
+    state.editingRowId = null;
+    state.sub.materialCode = null;
+    state.sub.elementValues = {};
+    state.sub.processSelected = [];
+    document.getElementById('subTitle').textContent = '新增材质料号';
+  }
+  state.sub.step = 1;
+  state.sub.filterText = '';
+  state.sub.processFilterText = '';
+  document.getElementById('materialFilter').value = '';
+  document.getElementById('processFilter').value = '';
+  document.getElementById('subPanel').classList.add('open');
+  renderSub();
+  updatePreview();
+}
+function cancelSub(){
+  document.getElementById('subPanel').classList.remove('open');
+}
+
+function goSubStepIfAllowed(step){
+  if (step >= 2 && !state.sub.materialCode) return; // 未选材质不可进入元素含量/工序
+  goSubStep(step);
+}
+function goSubStep(step){
+  state.sub.step = step;
+  renderSub();
+}
+function subPrev(){
+  if (state.sub.step > 1) goSubStep(state.sub.step - 1);
+}
+function subNext(){
+  if (state.sub.step === 1){
+    if (!state.sub.materialCode){ alert('请先选择材质'); return; }
+    goSubStep(2);
+  } else if (state.sub.step === 2){
+    goSubStep(3);
+  } else {
+    confirmSubAdd();
+  }
+}
+
+function renderSub(){
+  var steps = document.querySelectorAll('.sub-step');
+  for (var i=0;i<steps.length;i++){
+    var s = parseInt(steps[i].getAttribute('data-step'), 10);
+    steps[i].classList.toggle('active', s === state.sub.step);
+    steps[i].classList.toggle('done', s < state.sub.step);
+  }
+  document.getElementById('subStepPanel1').style.display = state.sub.step === 1 ? '' : 'none';
+  document.getElementById('subStepPanel2').style.display = state.sub.step === 2 ? '' : 'none';
+  document.getElementById('subStepPanel3').style.display = state.sub.step === 3 ? '' : 'none';
+
+  if (state.sub.step === 1) renderMaterialList();
+  if (state.sub.step === 2) renderElementList2();
+  if (state.sub.step === 3) renderProcessStep2();
+
+  document.getElementById('subPrevBtn').disabled = state.sub.step === 1;
+  document.getElementById('subNextBtn').textContent = state.sub.step === 3 ? '确认添加' : '下一步';
+}
+
+/* --- 子步骤① 材质（D14 带过滤） --- */
+function renderMaterialList(){
+  var q = (state.sub.filterText || '').trim().toLowerCase();
+  var list = MATERIALS.filter(function(m){
+    if (!q) return true;
+    return m.name.toLowerCase().indexOf(q) > -1 || m.code.toLowerCase().indexOf(q) > -1;
+  });
+  var box = document.getElementById('materialList');
+  if (list.length === 0){
+    box.innerHTML = '<div class="mat-empty">未找到匹配的材质，请调整搜索词</div>';
+    return;
+  }
+  box.innerHTML = list.map(function(m){
+    var sel = m.code === state.sub.materialCode;
+    return '<div class="mat-opt' + (sel ? ' sel' : '') + '" onclick="selectMaterialInSub(\'' + m.code + '\')">'
+      + '<div class="mo-swatch" style="background:' + m.swatch + ';"></div>'
+      + '<div class="mo-name">' + m.name + '</div>'
+      + '<div class="mo-code">' + m.code + '</div>'
+      + '</div>';
+  }).join('');
+}
+function onMaterialFilterInput(v){
+  state.sub.filterText = v;
+  renderMaterialList();
+}
+function selectMaterialInSub(code){
+  var changed = state.sub.materialCode !== code;
+  state.sub.materialCode = code;
+  if (changed){
+    var m = findMaterial(code);
+    var vals = {};
+    if (m){ m.elements.forEach(function(e){ vals[e.sym] = e.def; }); }
+    state.sub.elementValues = vals;
+  }
+  state.previewMaterialCode = code;
+  renderMaterialList();
+  updatePreview();
+}
+
+/* --- 子步骤② 元素含量 --- */
+function renderElementList2(){
+  var m = findMaterial(state.sub.materialCode);
+  if (!m) return;
+  document.getElementById('elemMaterialName2').textContent = m.name;
+  document.getElementById('elementList2').innerHTML = m.elements.map(function(e){
+    var v = state.sub.elementValues[e.sym];
+    if (v === undefined) v = e.def;
+    return '<div class="element-row">'
+      + '<div class="e-name"><span class="e-sym">' + e.sym + '</span>' + e.name + '</div>'
+      + '<input type="number" step="0.01" value="' + v + '" onchange="onElementChange2(\'' + e.sym + '\', this.value)">'
+      + '<span class="e-unit">' + e.unit + '</span>'
+      + '</div>';
+  }).join('');
+}
+function onElementChange2(sym, val){
+  state.sub.elementValues[sym] = parseFloat(val) || 0;
+}
+
+/* --- 子步骤③ 工序（D14 推广：带过滤，过滤只影响显示，不清已选） --- */
+function renderProcessStep2(){
+  var q = (state.sub.processFilterText || '').trim().toLowerCase();
+  var list = PROCESSES.filter(function(p){
+    if (!q) return true;
+    return p.toLowerCase().indexOf(q) > -1;
+  });
+  var grid = document.getElementById('processCheckGrid');
+  if (list.length === 0){
+    grid.innerHTML = '<div class="mat-empty">未找到匹配的工序，请调整搜索词</div>';
+  } else {
+    grid.innerHTML = list.map(function(p){
+      var checked = state.sub.processSelected.indexOf(p) > -1;
+      return '<label class="proc-check-item"><input type="checkbox" ' + (checked ? 'checked' : '')
+        + ' onchange="toggleProcessInSub(\'' + p + '\')"><span>' + p + '</span></label>';
+    }).join('');
+  }
+  renderProcessOrderChips();
+}
+function onProcessFilterInput(v){
+  state.sub.processFilterText = v;
+  renderProcessStep2();
+}
+function toggleProcessInSub(p){
+  var idx = state.sub.processSelected.indexOf(p);
+  if (idx > -1) state.sub.processSelected.splice(idx, 1);
+  else state.sub.processSelected.push(p);
+  renderProcessOrderChips();
+}
+function renderProcessOrderChips(){
+  var box = document.getElementById('processOrderChips');
+  if (state.sub.processSelected.length === 0){
+    box.innerHTML = '<div style="color:#c0c4cc;font-size:12px;margin-top:8px;">尚未选择工序</div>';
+    return;
+  }
+  var chips = state.sub.processSelected.map(function(p, i){
+    return '<span class="proc-chip">' + (i+1) + '. ' + p + ' <b onclick="removeProcessFromSub(\'' + p + '\')" title="移除">✕</b></span>';
+  }).join('');
+  box.innerHTML = '<div style="font-size:12px;color:#909399;margin-top:8px;">已选顺序：</div><div>' + chips + '</div>';
+}
+function removeProcessFromSub(p){
+  var idx = state.sub.processSelected.indexOf(p);
+  if (idx > -1) state.sub.processSelected.splice(idx, 1);
+  renderProcessStep2();
+}
+
+/* --- 确认添加/更新一行 --- */
+function confirmSubAdd(){
+  if (!state.sub.materialCode){ alert('请先选择材质'); return; }
+  var elementsCopy = {};
+  Object.keys(state.sub.elementValues).forEach(function(sym){ elementsCopy[sym] = state.sub.elementValues[sym]; });
+  var processCopy = state.sub.processSelected.slice();
+
+  if (state.editingRowId !== null){
+    var row = findRow(state.editingRowId);
+    if (row){
+      row.materialCode = state.sub.materialCode;
+      row.elements = elementsCopy;
+      row.process = processCopy;
+    }
+  } else {
+    state.rows.push({
+      id: state.rowSeq++,
+      materialCode: state.sub.materialCode,
+      elements: elementsCopy,
+      process: processCopy,
+      qty: 1
+    });
+  }
+  document.getElementById('subPanel').classList.remove('open');
+  renderDetailTable();
+  renderComboSection();
+  updatePreview();
+}
+
+/* ===================== 指纹匹配演示区 ===================== */
+function renderFingerprintDemo(){
+  var tag = document.getElementById('fpTag');
+  var btn = document.getElementById('fpToggleBtn');
+  if (state.fingerprintHit){
+    tag.className = 'fp-tag hit';
+    tag.innerHTML = '✅ 匹配到已有销售料号 <b>SP-2048</b>，将带出其内容与 3D';
+    btn.textContent = '🔀 演示：切换为"未命中"';
+  } else {
+    tag.className = 'fp-tag new';
+    tag.textContent = '🆕 将新建选配产品';
+    btn.textContent = '🔀 演示：切换为"命中已有料号"';
+  }
+}
+function toggleFingerprint(){
+  state.fingerprintHit = !state.fingerprintHit;
+  renderFingerprintDemo();
+  updatePreview();
+}
+
+/* ===================== 3D 预览 ===================== */
+function updatePreview(){
+  var box = document.getElementById('previewBox');
+  var badge = document.getElementById('previewBadge');
+  var icon = document.getElementById('previewIcon');
+  var title = document.getElementById('previewTitle');
+  var sub = document.getElementById('previewSub');
+
+  if (state.fingerprintHit){
+    box.style.background = 'linear-gradient(135deg,#e6fff0,#c8f3d8)';
+    badge.style.display = '';
+    badge.textContent = '料号3D';
+    icon.textContent = '📦';
+    title.textContent = '销售料号: SP-2048（命中）';
+    sub.textContent = '模型：SP-2048_v3.glb';
+    return;
+  }
+
+  var m = findMaterial(state.previewMaterialCode);
+  if (!m){
+    box.style.background = '#fafafa';
+    badge.style.display = 'none';
+    icon.textContent = '🧊';
+    title.textContent = '请新增材质料号后预览 3D';
+    sub.textContent = '';
+    return;
+  }
+  box.style.background = m.gradient;
+  badge.style.display = '';
+  badge.textContent = '材质3D';
+  icon.textContent = m.icon;
+  title.textContent = '材质: ' + m.name;
+  sub.textContent = '模型：' + m.model;
+}
+function toggleZoom(){
+  state.zoomOpen = !state.zoomOpen;
+  document.getElementById('zoomHint').classList.toggle('show', state.zoomOpen);
+}
+
+/* ===================== 确认加入报价单 ===================== */
+function confirmAddToQuote(){
+  if (state.rows.length === 0) return;
+  var count = state.rows.length;
+  var msg = state.fingerprintHit
+    ? '已加入选配产品（命中销售料号 SP-2048）'
+    : '已加入选配产品（新建，含 ' + count + ' 个材质料号）';
+  appendMockProductRow();
+  showToast(msg);
+  closeDrawer();
+}
+function appendMockProductRow(){
+  addedCount += 1;
+  document.getElementById('mockEmpty').style.display = 'none';
+  var mockRowsEl = document.getElementById('mockRows');
+  mockRowsEl.style.display = '';
+  var div = document.createElement('div');
+  div.className = 'mock-row mock-row-new';
+  div.textContent = '▤ 选配产品 #' + addedCount + '（' + state.rows.length + ' 个材质料号 · 数量合计 ' + qtySum() + '）'
+    + (state.fingerprintHit ? ' — 命中 SP-2048' : ' — 新建');
+  mockRowsEl.appendChild(div);
+}
+function showToast(msg){
+  var t = document.getElementById('toast');
+  document.getElementById('toastMsg').textContent = msg;
+  t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 2400);
+}
+
+/* ===================== 总渲染 ===================== */
+function render(){
+  var isHas = (state.demoMode === 'has');
+  document.getElementById('emptyState').style.display = isHas ? 'none' : 'flex';
+  document.getElementById('mainWrap').style.display = isHas ? 'flex' : 'none';
+  document.getElementById('fpDemo').style.display = isHas ? 'flex' : 'none';
+  document.getElementById('btnConfirmAdd').style.display = isHas ? '' : 'none';
+  document.getElementById('footerHint').style.display = isHas ? 'none' : '';
+  if (!isHas) return;
+
+  renderDetailTable();
+  renderComboSection();
+  renderFingerprintDemo();
+  updatePreview();
+}
+</script>
+</body>
+</html>

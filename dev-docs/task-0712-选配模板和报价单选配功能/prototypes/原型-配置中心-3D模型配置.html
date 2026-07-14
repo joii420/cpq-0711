@@ -1,0 +1,821 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D 模型配置 - CPQ 配置中心</title>
+<style>
+/* ===== §5 共享基础样式（对齐 UI设计说明.md） ===== */
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#f0f2f5; font-size:13px; color:#303133; }
+.layout { display:flex; min-height:100vh; }
+.sider { width:200px; background:#001529; color:#fff; flex-shrink:0; }
+.sider .logo { padding:16px; font-weight:600; border-bottom:1px solid #1f2d3d; }
+.m-item { padding:9px 16px; color:#a6adb4; cursor:pointer; }
+.m-item:hover,.m-item.active { color:#fff; background:#1f2d3d; }
+.m-sub { padding:6px 16px 6px 32px; color:#a6adb4; cursor:pointer; font-size:12.5px; }
+.m-sub.active { color:#1890ff; background:#000c17; border-left:3px solid #1890ff; padding-left:29px; }
+.main { flex:1; display:flex; flex-direction:column; }
+.crumb { padding:10px 20px; background:#fff; border-bottom:1px solid #e4e7ed; color:#909399; }
+.crumb b { color:#303133; font-weight:500; }
+.content { flex:1; padding:16px 20px; }
+.page-card { background:#fff; border-radius:8px; padding:18px 20px; margin-bottom:12px; }
+.page-title { font-size:18px; font-weight:600; margin-bottom:4px; }
+.page-desc { color:#909399; font-size:12.5px; margin-bottom:14px; }
+.toolbar { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+.btn { padding:5px 12px; border:1px solid #dcdfe6; background:#fff; border-radius:4px; cursor:pointer; color:#606266; display:inline-flex; align-items:center; gap:4px; font-size:13px; }
+.btn:hover { color:#409eff; border-color:#c6e2ff; background:#ecf5ff; }
+.btn-primary { background:#1890ff; color:#fff; border-color:#1890ff; }
+.btn-primary:hover { background:#40a9ff; color:#fff; }
+.btn-danger { color:#f56c6c; border-color:#fbc4c4; }
+.btn-danger:hover { color:#f56c6c; border-color:#f56c6c; background:#fff1f0; }
+.btn[disabled]{ opacity:.45; cursor:not-allowed; }
+.btn[disabled]:hover { color:#606266; border-color:#dcdfe6; background:#fff; }
+.btn-primary[disabled]:hover { color:#fff; border-color:#1890ff; background:#1890ff; }
+table { width:100%; border-collapse:collapse; }
+th,td { padding:9px 10px; border-bottom:1px solid #f0f0f0; text-align:left; }
+th { background:#fafafa; color:#606266; font-weight:500; }
+tr.sel { background:#e6f7ff; }
+.tag { padding:1px 8px; border-radius:10px; font-size:12px; }
+.tag-green{ background:#f6ffed; color:#52c41a; border:1px solid #b7eb8f; }
+.tag-gray{ background:#f5f5f5; color:#909399; border:1px solid #e4e7ed; }
+/* 抽屉 */
+.mask { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; z-index:500; }
+.mask.open{ display:block; }
+.drawer { position:fixed; top:0; right:0; height:100vh; background:#fff; box-shadow:-2px 0 8px rgba(0,0,0,.15);
+  transform:translateX(100%); transition:transform .25s; display:flex; flex-direction:column; z-index:501; }
+.drawer.open{ transform:translateX(0); }
+.drawer .dh { padding:14px 18px; border-bottom:1px solid #e4e7ed; font-weight:600; display:flex; justify-content:space-between; align-items:center; }
+.drawer .dh .dclose { cursor:pointer; color:#909399; font-size:15px; }
+.drawer .dh .dclose:hover { color:#303133; }
+.drawer .db { flex:1; overflow:auto; padding:16px 18px; }
+.drawer .df { padding:12px 18px; border-top:1px solid #e4e7ed; display:flex; gap:8px; justify-content:flex-end; }
+/* 3D 预览 */
+.preview3d { border:1px solid #e4e7ed; border-radius:8px; overflow:hidden; }
+.preview3d .box { aspect-ratio:1/1; background:linear-gradient(135deg,#e6f0ff,#dfe7f5); display:flex; align-items:center; justify-content:center; color:#7a8aa8; font-size:34px; position:relative; }
+.preview3d .cap { padding:8px 10px; font-size:12.5px; color:#606266; border-top:1px solid #f0f0f0; }
+.preview3d .zoom { position:absolute; top:8px; right:8px; background:#fff; border:1px solid #dcdfe6; border-radius:4px; padding:2px 8px; font-size:12px; cursor:pointer; color:#606266; }
+.preview3d .zoom:hover { color:#1890ff; border-color:#91caff; }
+
+/* ===== 本页专属样式 ===== */
+.tabs { display:flex; gap:4px; border-bottom:1px solid #e4e7ed; margin-bottom:14px; }
+.tab-item { padding:8px 18px; cursor:pointer; color:#606266; font-size:13.5px; border-bottom:2px solid transparent; margin-bottom:-1px; user-select:none; }
+.tab-item:hover { color:#1890ff; }
+.tab-item.active { color:#1890ff; border-bottom-color:#1890ff; font-weight:500; }
+
+.sel-count { color:#909399; font-size:12.5px; margin-left:2px; }
+
+.thumb-mini { width:40px; height:40px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:18px; color:#7a8aa8; }
+.thumb-v0{background:linear-gradient(135deg,#e6f0ff,#dfe7f5);}
+.thumb-v1{background:linear-gradient(135deg,#fff1e6,#f5e4df);}
+.thumb-v2{background:linear-gradient(135deg,#e6fff2,#dff5ec);}
+.thumb-v3{background:linear-gradient(135deg,#f5e6ff,#ece0f5);}
+.thumb-v4{background:linear-gradient(135deg,#fff9e6,#f5efdf);}
+
+.link { color:#1890ff; cursor:pointer; text-decoration:none; }
+.link:hover { text-decoration:underline; }
+
+.empty-cell { text-align:center; color:#909399; padding:44px 0; }
+
+/* 禁用按钮 hover 提示原因（对齐"禁止用 return null 隐藏，须 hover 提示"规范） */
+.btn[disabled] { position:relative; }
+.btn[disabled][data-tip]:hover::after {
+  content: attr(data-tip); position:absolute; bottom:130%; left:50%; transform:translateX(-50%);
+  background:#303133; color:#fff; padding:4px 9px; border-radius:4px; font-size:12px; white-space:nowrap; z-index:80;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);
+}
+.btn[disabled][data-tip]:hover::before {
+  content:''; position:absolute; bottom:112%; left:50%; transform:translateX(-50%);
+  border:5px solid transparent; border-top-color:#303133; z-index:80;
+}
+
+/* 表单 */
+.field { margin-bottom:16px; }
+.field label { display:block; margin-bottom:6px; color:#606266; font-size:12.5px; }
+.field label.req::after { content:' *'; color:#f56c6c; }
+.field input[type=text], .field select { width:100%; padding:7px 10px; border:1px solid #dcdfe6; border-radius:4px; font-size:13px; color:#303133; background:#fff; }
+.field input:focus, .field select:focus { outline:none; border-color:#1890ff; }
+.hint { color:#909399; font-size:12px; margin-top:4px; }
+
+.dropzone { border:1.5px dashed #c6d0dc; border-radius:8px; padding:28px 16px; text-align:center; color:#909399; cursor:pointer; transition:.15s; }
+.dropzone:hover, .dropzone.drag { border-color:#1890ff; background:#f5faff; color:#1890ff; }
+.dropzone .dz-icon { font-size:26px; margin-bottom:8px; }
+.file-info { border:1px solid #e4e7ed; border-radius:8px; padding:12px 14px; display:flex; align-items:center; gap:12px; background:#fafcff; }
+.file-info .fi-icon { font-size:26px; }
+.file-info .fi-name { font-weight:500; color:#303133; word-break:break-all; }
+.file-info .fi-meta { color:#909399; font-size:12px; margin-top:2px; }
+.file-info .fi-reset { margin-left:auto; flex-shrink:0; }
+
+.preview-actions { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+.preview-box-wrap { max-width:220px; }
+.preview-box-wrap .box { font-size:30px; }
+
+/* 二次确认（Popconfirm 规范例外：危险动作 Modal 列出所选项） */
+.confirm-mask { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:900; }
+.confirm-mask.open { display:flex; }
+.confirm-box { background:#fff; border-radius:8px; width:440px; max-width:90vw; padding:18px 20px; box-shadow:0 8px 24px rgba(0,0,0,.2); }
+.confirm-title { font-weight:600; font-size:15px; margin-bottom:10px; }
+.confirm-body { color:#606266; font-size:12.5px; max-height:240px; overflow:auto; margin-bottom:16px; line-height:1.7; }
+.confirm-body ul { padding-left:18px; margin-top:6px; }
+.confirm-body li { margin-bottom:4px; }
+.confirm-actions { display:flex; justify-content:flex-end; gap:8px; }
+
+/* 历史版本列表 */
+.hv-item { display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid #f0f0f0; }
+.hv-item:last-child { border-bottom:none; }
+.hv-item .hv-info { flex:1; min-width:0; }
+.hv-item .hv-ver { font-weight:600; display:flex; align-items:center; gap:6px; }
+.hv-item .hv-meta { color:#909399; font-size:12px; margin-top:3px; }
+
+/* 交互查看提示层 */
+.zoom-hint { position:absolute; inset:0; background:rgba(0,0,0,.55); color:#fff; display:flex; align-items:center; justify-content:center; font-size:12.5px; text-align:center; padding:10px; cursor:pointer; }
+
+/* 详情信息 */
+.detail-info { margin-top:14px; }
+.detail-info .di-row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #f5f5f5; font-size:12.5px; }
+.detail-info .di-row .k { color:#909399; }
+.detail-info .di-row .v { color:#303133; }
+.detail-caption { margin-top:10px; font-size:13.5px; font-weight:500; color:#303133; }
+
+/* toast */
+.toast-stack { position:fixed; top:20px; right:20px; z-index:2000; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+.toast { background:#fff; border:1px solid #b7eb8f; border-left:4px solid #52c41a; padding:10px 14px; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,.1); font-size:12.5px; min-width:280px; max-width:400px; animation:slideIn .3s ease; pointer-events:auto; }
+.toast.info { border-color:#91caff; border-left-color:#1890ff; }
+.toast.error { border-color:#fbc4c4; border-left-color:#f56c6c; }
+@keyframes slideIn { from { opacity:0; transform:translateX(30px);} to { opacity:1; transform:translateX(0);} }
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="sider">
+    <div class="logo">CPQ 管理后台</div>
+    <div class="m-item active">配置中心</div>
+    <div class="m-sub">选配模板管理</div>
+    <div class="m-sub active">3D 模型配置</div>
+    <div class="m-sub">材质库管理</div>
+    <div class="m-sub">工序库管理</div>
+    <div class="m-sub">全局变量</div>
+    <div class="m-item">组件管理</div>
+    <div class="m-item">产品卡模板</div>
+    <div class="m-item">报价单</div>
+    <div class="m-item">核价单</div>
+  </div>
+  <div class="main">
+    <div class="crumb">配置中心 / <b>3D 模型配置</b></div>
+    <div class="content">
+      <div class="page-card">
+        <div class="page-title">3D 模型配置</div>
+        <div class="page-desc">按销售料号 / 材质配方维护 3D 模型文件（.glb + 预览图），供报价单「从已有产品添加」「选配添加」两个抽屉实时带出 3D 预览使用。</div>
+
+        <div class="tabs">
+          <div class="tab-item active" data-tab="SALES_PART" onclick="switchTab('SALES_PART')">销售料号模型</div>
+          <div class="tab-item" data-tab="MATERIAL" onclick="switchTab('MATERIAL')">材质模型</div>
+        </div>
+
+        <div class="toolbar">
+          <button class="btn btn-primary" id="btnUpload" onclick="openUploadDrawer()">⬆ 上传模型</button>
+          <button class="btn" id="btnSetCurrent" onclick="handleSetCurrent()" disabled data-tip="请先选择 1 条记录">设为当前版本</button>
+          <button class="btn" id="btnHistory" onclick="openHistoryDrawer()" disabled data-tip="请先选择 1 条记录查看历史版本">查看历史版本</button>
+          <button class="btn btn-danger" id="btnDelete" onclick="handleDeleteClick()" disabled data-tip="请先选择要删除的记录">删除</button>
+          <span class="sel-count" id="selCount"></span>
+        </div>
+
+        <table id="tableSales">
+          <thead>
+            <tr>
+              <th style="width:34px"><input type="checkbox" id="selAllSales" onchange="toggleSelectAll('SALES_PART', this.checked)"></th>
+              <th>销售料号</th>
+              <th>模型名</th>
+              <th>当前版本</th>
+              <th>缩略图</th>
+              <th>大小</th>
+              <th>上传时间</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody id="tbodySales"></tbody>
+        </table>
+
+        <table id="tableMaterial" style="display:none">
+          <thead>
+            <tr>
+              <th style="width:34px"><input type="checkbox" id="selAllMaterial" onchange="toggleSelectAll('MATERIAL', this.checked)"></th>
+              <th>材质配方码</th>
+              <th>材质名</th>
+              <th>模型名</th>
+              <th>当前版本</th>
+              <th>缩略图</th>
+              <th>大小</th>
+              <th>上传时间</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyMaterial"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 上传抽屉 -->
+<div class="mask" id="maskUpload" onclick="closeUploadDrawer()"></div>
+<div class="drawer" id="drawerUpload" style="width:720px">
+  <div class="dh">
+    <span>上传 3D 模型</span>
+    <span class="dclose" onclick="closeUploadDrawer()">✕</span>
+  </div>
+  <div class="db">
+    <div class="field" id="fieldBindSales">
+      <label class="req">绑定销售料号</label>
+      <input type="text" id="bindSalesPart" list="salesPartOptions" placeholder="选择或输入销售料号，如 SP-10086">
+      <datalist id="salesPartOptions"></datalist>
+      <div class="hint">选择已有销售料号将追加新版本；输入未出现过的料号即为该料号首次上传</div>
+    </div>
+    <div class="field" id="fieldBindMaterial" style="display:none">
+      <label class="req">绑定材质配方</label>
+      <input type="text" id="bindMaterial" list="materialOptions" placeholder="选择或输入材质配方，如 不锈钢304">
+      <datalist id="materialOptions"></datalist>
+      <div class="hint">来自材质库 MATERIAL_RECIPE；选择已有材质配方将追加新版本，也可输入新配方名称/编码首次上传</div>
+    </div>
+
+    <div class="field">
+      <label class="req">模型文件（.glb）</label>
+      <div id="glbZoneWrap"></div>
+      <input type="file" id="inputGlb" accept=".glb" style="display:none" onchange="onGlbChange(event)">
+    </div>
+
+    <div class="field">
+      <label>预览图（可选）</label>
+      <div class="preview-actions">
+        <button class="btn" onclick="triggerPreviewSelect()">📷 选择预览图</button>
+        <button class="btn" id="btnAutoShot" disabled data-tip="请先选择模型文件" onclick="handleAutoScreenshot()">🪄 从模型自动截图</button>
+      </div>
+      <input type="file" id="inputPreviewImg" accept="image/*" style="display:none" onchange="onPreviewImgChange(event)">
+      <div class="preview-box-wrap" id="previewBoxWrap"></div>
+    </div>
+
+    <div class="field">
+      <label class="req">模型名</label>
+      <input type="text" id="inputModelName" placeholder="如 阀体_标准型">
+    </div>
+  </div>
+  <div class="df">
+    <button class="btn" onclick="closeUploadDrawer()">取消</button>
+    <button class="btn" onclick="submitUpload(false)">仅上传为历史版本</button>
+    <button class="btn btn-primary" onclick="submitUpload(true)">上传并设为当前</button>
+  </div>
+</div>
+
+<!-- 历史版本抽屉 -->
+<div class="mask" id="maskHistory" onclick="closeHistoryDrawer()"></div>
+<div class="drawer" id="drawerHistory" style="width:480px">
+  <div class="dh">
+    <span id="historyTitle">历史版本</span>
+    <span class="dclose" onclick="closeHistoryDrawer()">✕</span>
+  </div>
+  <div class="db">
+    <div id="historyList"></div>
+  </div>
+  <div class="df">
+    <button class="btn" onclick="closeHistoryDrawer()">关闭</button>
+  </div>
+</div>
+
+<!-- 详情/预览抽屉 -->
+<div class="mask" id="maskDetail" onclick="closeDetailDrawer()"></div>
+<div class="drawer" id="drawerDetail" style="width:480px">
+  <div class="dh">
+    <span>模型详情</span>
+    <span class="dclose" onclick="closeDetailDrawer()">✕</span>
+  </div>
+  <div class="db">
+    <div class="preview3d">
+      <div class="box" id="detailBox"></div>
+      <div class="cap" id="detailCap">—</div>
+    </div>
+    <div class="detail-info" id="detailInfo"></div>
+  </div>
+  <div class="df">
+    <button class="btn" onclick="goToHistoryFromDetail()">查看该对象全部版本</button>
+    <button class="btn btn-primary" onclick="closeDetailDrawer()">关闭</button>
+  </div>
+</div>
+
+<!-- 删除二次确认 -->
+<div class="confirm-mask" id="confirmMask">
+  <div class="confirm-box">
+    <div class="confirm-title">⚠ 删除确认</div>
+    <div class="confirm-body" id="confirmBody"></div>
+    <div class="confirm-actions">
+      <button class="btn" onclick="closeConfirm()">取消</button>
+      <button class="btn btn-danger" onclick="doDelete()">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+// ============================================================
+// 演示数据
+// ============================================================
+const GRADIENTS = [
+  'linear-gradient(135deg,#e6f0ff,#dfe7f5)',
+  'linear-gradient(135deg,#fff1e6,#f5e4df)',
+  'linear-gradient(135deg,#e6fff2,#dff5ec)',
+  'linear-gradient(135deg,#f5e6ff,#ece0f5)',
+  'linear-gradient(135deg,#fff9e6,#f5efdf)'
+];
+
+let salesRows = [
+  {id:1, subjectKey:'SP-10086', modelName:'阀体_标准型',   version:3, sizeMB:2.4, uploadTime:'2026-07-10 14:22', isCurrent:true,  thumbVariant:0},
+  {id:2, subjectKey:'SP-10086', modelName:'阀体_标准型',   version:2, sizeMB:2.1, uploadTime:'2026-06-02 09:10', isCurrent:false, thumbVariant:0},
+  {id:3, subjectKey:'SP-10087', modelName:'弹簧座_加强版', version:1, sizeMB:1.8, uploadTime:'2026-05-28 16:40', isCurrent:true,  thumbVariant:1},
+  {id:4, subjectKey:'SP-20015', modelName:'法兰盘_DN50',   version:2, sizeMB:3.1, uploadTime:'2026-07-01 11:05', isCurrent:true,  thumbVariant:2},
+  {id:5, subjectKey:'SP-20015', modelName:'法兰盘_DN50',   version:1, sizeMB:2.9, uploadTime:'2026-04-15 10:00', isCurrent:false, thumbVariant:2},
+  {id:6, subjectKey:'SP-20033', modelName:'密封圈_耐高温', version:1, sizeMB:0.9, uploadTime:'2026-06-20 08:30', isCurrent:true,  thumbVariant:3}
+];
+
+let materialRows = [
+  {id:101, subjectKey:'MR-SS304',    subjectName:'不锈钢304', modelName:'SS304-材质模型',    version:2, sizeMB:1.6, uploadTime:'2026-07-05 10:12', isCurrent:true,  thumbVariant:0},
+  {id:102, subjectKey:'MR-SS304',    subjectName:'不锈钢304', modelName:'SS304-材质模型',    version:1, sizeMB:1.4, uploadTime:'2026-05-10 09:00', isCurrent:false, thumbVariant:0},
+  {id:103, subjectKey:'MR-H62',      subjectName:'黄铜H62',   modelName:'H62-材质模型',      version:1, sizeMB:1.2, uploadTime:'2026-06-18 15:20', isCurrent:true,  thumbVariant:1},
+  {id:104, subjectKey:'MR-AL6061',   subjectName:'铝6061',    modelName:'AL6061-材质模型',   version:1, sizeMB:1.1, uploadTime:'2026-06-25 13:45', isCurrent:true,  thumbVariant:2},
+  {id:105, subjectKey:'MR-STEEL45',  subjectName:'45号钢',    modelName:'Steel45-材质模型',  version:3, sizeMB:2.0, uploadTime:'2026-07-08 09:50', isCurrent:true,  thumbVariant:3},
+  {id:106, subjectKey:'MR-STEEL45',  subjectName:'45号钢',    modelName:'Steel45-材质模型',  version:2, sizeMB:1.9, uploadTime:'2026-06-01 09:50', isCurrent:false, thumbVariant:3}
+];
+
+const materialCatalog = [
+  {code:'MR-SS304',    name:'不锈钢304'},
+  {code:'MR-SS316',    name:'不锈钢316'},
+  {code:'MR-H62',      name:'黄铜H62'},
+  {code:'MR-H65',      name:'黄铜H65'},
+  {code:'MR-AL6061',   name:'铝6061'},
+  {code:'MR-AL7075',   name:'铝7075'},
+  {code:'MR-STEEL45',  name:'45号钢'},
+  {code:'MR-TI6AL4V',  name:'钛合金TC4'},
+  {code:'MR-PVC',      name:'PVC'}
+];
+
+let nextId = 1000;
+
+const state = { activeTab: 'SALES_PART' };
+let selSales = new Set();
+let selMaterial = new Set();
+let currentDetail = null;
+let currentHistory = null;
+let uploadState = { glb:null, previewMode:'none', previewUrl:null, previewFileName:null };
+
+// ============================================================
+// 工具函数
+// ============================================================
+function getRows(tab){ return tab === 'SALES_PART' ? salesRows : materialRows; }
+function getSelSet(tab){ return tab === 'SALES_PART' ? selSales : selMaterial; }
+function hashVariant(key){
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return h % 5;
+}
+function formatNow(){
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function setBtnDisabled(btn, disabled, tip){
+  if (disabled) { btn.setAttribute('disabled', 'disabled'); if (tip) btn.setAttribute('data-tip', tip); }
+  else { btn.removeAttribute('disabled'); btn.removeAttribute('data-tip'); }
+}
+function showToast(level, text){
+  const stack = document.getElementById('toastStack');
+  const t = document.createElement('div');
+  t.className = 'toast' + (level === 'error' ? ' error' : level === 'info' ? ' info' : '');
+  t.textContent = text;
+  stack.appendChild(t);
+  setTimeout(() => {
+    t.style.transition = 'opacity .3s, transform .3s';
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(30px)';
+    setTimeout(() => t.remove(), 300);
+  }, 3200);
+}
+
+// ============================================================
+// Tab 切换
+// ============================================================
+function switchTab(tab){
+  state.activeTab = tab;
+  document.querySelectorAll('.tab-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  document.getElementById('tableSales').style.display = tab === 'SALES_PART' ? 'table' : 'none';
+  document.getElementById('tableMaterial').style.display = tab === 'MATERIAL' ? 'table' : 'none';
+  renderTable(tab);
+  updateToolbar();
+}
+
+// ============================================================
+// 列表渲染 + 选择
+// ============================================================
+function renderTable(tab){
+  if (tab === 'SALES_PART') renderSalesTable(); else renderMaterialTable();
+}
+
+function renderSalesTable(){
+  const tbody = document.getElementById('tbodySales');
+  if (salesRows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-cell">暂无模型记录，点击「上传模型」新增</td></tr>';
+  } else {
+    tbody.innerHTML = salesRows.map(r => `
+      <tr class="${selSales.has(r.id) ? 'sel' : ''}">
+        <td><input type="checkbox" ${selSales.has(r.id) ? 'checked' : ''} onchange="toggleSelectRow('SALES_PART', ${r.id}, this.checked)"></td>
+        <td><a class="link" onclick="openDetail('SALES_PART', ${r.id})">${r.subjectKey}</a></td>
+        <td>${r.modelName}</td>
+        <td>v${r.version}</td>
+        <td><div class="thumb-mini thumb-v${r.thumbVariant}">🧊</div></td>
+        <td>${r.sizeMB.toFixed(1)}MB</td>
+        <td>${r.uploadTime}</td>
+        <td><span class="tag ${r.isCurrent ? 'tag-green' : 'tag-gray'}">${r.isCurrent ? '当前' : '历史'}</span></td>
+      </tr>`).join('');
+  }
+  const all = document.getElementById('selAllSales');
+  all.checked = salesRows.length > 0 && selSales.size === salesRows.length;
+  all.indeterminate = selSales.size > 0 && selSales.size < salesRows.length;
+}
+
+function renderMaterialTable(){
+  const tbody = document.getElementById('tbodyMaterial');
+  if (materialRows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-cell">暂无模型记录，点击「上传模型」新增</td></tr>';
+  } else {
+    tbody.innerHTML = materialRows.map(r => `
+      <tr class="${selMaterial.has(r.id) ? 'sel' : ''}">
+        <td><input type="checkbox" ${selMaterial.has(r.id) ? 'checked' : ''} onchange="toggleSelectRow('MATERIAL', ${r.id}, this.checked)"></td>
+        <td><a class="link" onclick="openDetail('MATERIAL', ${r.id})">${r.subjectKey}</a></td>
+        <td>${r.subjectName}</td>
+        <td>${r.modelName}</td>
+        <td>v${r.version}</td>
+        <td><div class="thumb-mini thumb-v${r.thumbVariant}">🧊</div></td>
+        <td>${r.sizeMB.toFixed(1)}MB</td>
+        <td>${r.uploadTime}</td>
+        <td><span class="tag ${r.isCurrent ? 'tag-green' : 'tag-gray'}">${r.isCurrent ? '当前' : '历史'}</span></td>
+      </tr>`).join('');
+  }
+  const all = document.getElementById('selAllMaterial');
+  all.checked = materialRows.length > 0 && selMaterial.size === materialRows.length;
+  all.indeterminate = selMaterial.size > 0 && selMaterial.size < materialRows.length;
+}
+
+function toggleSelectRow(tab, id, checked){
+  const set = getSelSet(tab);
+  if (checked) set.add(id); else set.delete(id);
+  renderTable(tab);
+  updateToolbar();
+}
+function toggleSelectAll(tab, checked){
+  const set = getSelSet(tab);
+  set.clear();
+  if (checked) getRows(tab).forEach(r => set.add(r.id));
+  renderTable(tab);
+  updateToolbar();
+}
+
+// ============================================================
+// 工具栏动作（选择驱动）
+// ============================================================
+function updateToolbar(){
+  const set = getSelSet(state.activeTab);
+  const rows = getRows(state.activeTab);
+  const n = set.size;
+  document.getElementById('selCount').textContent = n > 0 ? `已选 ${n} 项` : '';
+
+  const btnSet = document.getElementById('btnSetCurrent');
+  if (n !== 1) {
+    setBtnDisabled(btnSet, true, '请先选择 1 条记录');
+  } else {
+    const row = rows.find(r => r.id === [...set][0]);
+    if (row && row.isCurrent) setBtnDisabled(btnSet, true, '该版本已是当前版本');
+    else setBtnDisabled(btnSet, false);
+  }
+
+  const btnHist = document.getElementById('btnHistory');
+  setBtnDisabled(btnHist, n !== 1, '请先选择 1 条记录查看历史版本');
+
+  const btnDel = document.getElementById('btnDelete');
+  setBtnDisabled(btnDel, n === 0, '请先选择要删除的记录');
+}
+
+function handleSetCurrent(){
+  const set = getSelSet(state.activeTab);
+  if (set.size !== 1) return;
+  const rows = getRows(state.activeTab);
+  const row = rows.find(r => r.id === [...set][0]);
+  if (!row || row.isCurrent) return;
+  rows.forEach(r => { if (r.subjectKey === row.subjectKey) r.isCurrent = false; });
+  row.isCurrent = true;
+  renderTable(state.activeTab);
+  updateToolbar();
+  showToast('success', `已将 ${row.subjectKey} v${row.version} 设为当前版本`);
+}
+
+function handleDeleteClick(){
+  const set = getSelSet(state.activeTab);
+  if (set.size === 0) return;
+  const rows = getRows(state.activeTab);
+  const selectedRows = rows.filter(r => set.has(r.id));
+  const body = document.getElementById('confirmBody');
+  body.innerHTML = `<div>确认删除以下 ${selectedRows.length} 条模型版本记录？删除后不可恢复。</div>` +
+    `<ul>${selectedRows.map(r => `<li>${r.subjectKey}${r.subjectName ? ('／' + r.subjectName) : ''} · ${r.modelName} · v${r.version}${r.isCurrent ? '（当前版本）' : ''}</li>`).join('')}</ul>`;
+  document.getElementById('confirmMask').classList.add('open');
+}
+function closeConfirm(){ document.getElementById('confirmMask').classList.remove('open'); }
+function doDelete(){
+  const tab = state.activeTab;
+  const set = getSelSet(tab);
+  const n = set.size;
+  if (tab === 'SALES_PART') salesRows = salesRows.filter(r => !set.has(r.id));
+  else materialRows = materialRows.filter(r => !set.has(r.id));
+  set.clear();
+  renderTable(tab);
+  updateToolbar();
+  closeConfirm();
+  showToast('success', `已删除 ${n} 条模型版本记录`);
+}
+
+// ============================================================
+// 历史版本抽屉
+// ============================================================
+function openHistoryDrawer(){
+  const set = getSelSet(state.activeTab);
+  if (set.size !== 1) return;
+  const row = getRows(state.activeTab).find(r => r.id === [...set][0]);
+  if (!row) return;
+  openHistoryFor(state.activeTab, row.subjectKey, row.subjectName);
+}
+function openHistoryFor(tab, subjectKey, subjectName){
+  currentHistory = { tab, subjectKey };
+  document.getElementById('historyTitle').textContent = `历史版本 — ${subjectName ? (subjectKey + ' / ' + subjectName) : subjectKey}`;
+  renderHistoryList();
+  document.getElementById('maskHistory').classList.add('open');
+  document.getElementById('drawerHistory').classList.add('open');
+}
+function renderHistoryList(){
+  if (!currentHistory) return;
+  const rows = getRows(currentHistory.tab)
+    .filter(r => r.subjectKey === currentHistory.subjectKey)
+    .slice()
+    .sort((a, b) => b.version - a.version);
+  document.getElementById('historyList').innerHTML = rows.map(r => `
+    <div class="hv-item">
+      <div class="thumb-mini thumb-v${r.thumbVariant}">🧊</div>
+      <div class="hv-info">
+        <div class="hv-ver">v${r.version} <span class="tag ${r.isCurrent ? 'tag-green' : 'tag-gray'}">${r.isCurrent ? '当前' : '历史'}</span></div>
+        <div class="hv-meta">${r.modelName} · ${r.sizeMB.toFixed(1)}MB · ${r.uploadTime}</div>
+      </div>
+      <button class="btn" ${r.isCurrent ? 'disabled data-tip="该版本已是当前版本"' : ''} onclick="setCurrentFromHistory(${r.id})">设为当前</button>
+    </div>`).join('');
+}
+function setCurrentFromHistory(id){
+  const tab = currentHistory.tab;
+  const rows = getRows(tab);
+  const row = rows.find(r => r.id === id);
+  if (!row || row.isCurrent) return;
+  rows.forEach(r => { if (r.subjectKey === row.subjectKey) r.isCurrent = false; });
+  row.isCurrent = true;
+  renderHistoryList();
+  renderTable(tab);
+  updateToolbar();
+  showToast('success', `已将 ${row.subjectKey} v${row.version} 设为当前版本`);
+}
+function closeHistoryDrawer(){
+  document.getElementById('maskHistory').classList.remove('open');
+  document.getElementById('drawerHistory').classList.remove('open');
+}
+
+// ============================================================
+// 详情/预览抽屉
+// ============================================================
+function openDetail(tab, id){
+  const row = getRows(tab).find(r => r.id === id);
+  if (!row) return;
+  currentDetail = { tab, id };
+  const box = document.getElementById('detailBox');
+  box.style.background = GRADIENTS[row.thumbVariant];
+  box.innerHTML = '🧊<div class="zoom" onclick="toggleZoomHint(event)">⤢ 交互查看</div>';
+  document.getElementById('detailCap').textContent = row.modelName;
+  document.getElementById('detailInfo').innerHTML = `
+    <div class="detail-caption">${row.subjectName ? (row.subjectKey + ' · ' + row.subjectName) : row.subjectKey}</div>
+    <div class="di-row"><span class="k">对象类型</span><span class="v">${tab === 'SALES_PART' ? '销售料号' : '材质配方'}</span></div>
+    <div class="di-row"><span class="k">对象键</span><span class="v">${row.subjectKey}</span></div>
+    ${row.subjectName ? `<div class="di-row"><span class="k">材质名</span><span class="v">${row.subjectName}</span></div>` : ''}
+    <div class="di-row"><span class="k">版本</span><span class="v">v${row.version}</span></div>
+    <div class="di-row"><span class="k">文件大小</span><span class="v">${row.sizeMB.toFixed(1)}MB</span></div>
+    <div class="di-row"><span class="k">上传时间</span><span class="v">${row.uploadTime}</span></div>
+    <div class="di-row"><span class="k">状态</span><span class="v"><span class="tag ${row.isCurrent ? 'tag-green' : 'tag-gray'}">${row.isCurrent ? '当前' : '历史'}</span></span></div>
+  `;
+  document.getElementById('maskDetail').classList.add('open');
+  document.getElementById('drawerDetail').classList.add('open');
+}
+function closeDetailDrawer(){
+  document.getElementById('maskDetail').classList.remove('open');
+  document.getElementById('drawerDetail').classList.remove('open');
+}
+function toggleZoomHint(e){
+  e.stopPropagation();
+  const box = document.getElementById('detailBox');
+  const existing = box.querySelector('.zoom-hint');
+  if (existing) { existing.remove(); return; }
+  const hint = document.createElement('div');
+  hint.className = 'zoom-hint';
+  hint.textContent = '（可旋转 3D，增强项）';
+  hint.onclick = (ev) => { ev.stopPropagation(); hint.remove(); };
+  box.appendChild(hint);
+}
+function goToHistoryFromDetail(){
+  if (!currentDetail) return;
+  const row = getRows(currentDetail.tab).find(r => r.id === currentDetail.id);
+  closeDetailDrawer();
+  if (!row) return;
+  openHistoryFor(currentDetail.tab, row.subjectKey, row.subjectName);
+}
+
+// ============================================================
+// 上传抽屉
+// ============================================================
+function populateBindOptions(){
+  const isSales = state.activeTab === 'SALES_PART';
+  document.getElementById('fieldBindSales').style.display = isSales ? 'block' : 'none';
+  document.getElementById('fieldBindMaterial').style.display = isSales ? 'none' : 'block';
+  if (isSales) {
+    const known = Array.from(new Set(salesRows.map(r => r.subjectKey).concat(['SP-10091', 'SP-20041'])));
+    document.getElementById('salesPartOptions').innerHTML = known.map(k => `<option value="${k}">`).join('');
+  } else {
+    document.getElementById('materialOptions').innerHTML =
+      materialCatalog.map(m => `<option value="${m.name}（${m.code}）">`).join('');
+  }
+}
+
+function openUploadDrawer(){
+  populateBindOptions();
+  resetUploadForm();
+  document.getElementById('maskUpload').classList.add('open');
+  document.getElementById('drawerUpload').classList.add('open');
+}
+function closeUploadDrawer(){
+  document.getElementById('maskUpload').classList.remove('open');
+  document.getElementById('drawerUpload').classList.remove('open');
+}
+
+function resetUploadForm(){
+  uploadState = { glb: null, previewMode: 'none', previewUrl: null, previewFileName: null };
+  document.getElementById('bindSalesPart').value = '';
+  document.getElementById('bindMaterial').value = '';
+  document.getElementById('inputModelName').value = '';
+  renderGlbBox();
+  renderPreviewBox();
+  document.getElementById('btnAutoShot').setAttribute('disabled', 'disabled');
+}
+
+function triggerGlbSelect(){ document.getElementById('inputGlb').click(); }
+function onGlbChange(e){ handleGlbFile(e.target.files[0]); e.target.value = ''; }
+function onGlbDragOver(e){ e.preventDefault(); const z = document.getElementById('dzGlb'); if (z) z.classList.add('drag'); }
+function onGlbDragLeave(e){ const z = document.getElementById('dzGlb'); if (z) z.classList.remove('drag'); }
+function onGlbDrop(e){
+  e.preventDefault();
+  const z = document.getElementById('dzGlb'); if (z) z.classList.remove('drag');
+  if (e.dataTransfer.files && e.dataTransfer.files[0]) handleGlbFile(e.dataTransfer.files[0]);
+}
+function handleGlbFile(file){
+  if (!file) return;
+  if (!/\.glb$/i.test(file.name)) { showToast('error', '仅支持 .glb 格式的模型文件'); return; }
+  const sizeMB = file.size / 1024 / 1024;
+  const meshCount = 40 + Math.floor(Math.random() * 160);
+  const vertexK = 10 + Math.floor(Math.random() * 50);
+  uploadState.glb = { name: file.name, sizeMB, meshCount, vertexK };
+  renderGlbBox();
+  const nameInput = document.getElementById('inputModelName');
+  if (!nameInput.value) nameInput.value = file.name.replace(/\.glb$/i, '');
+  document.getElementById('btnAutoShot').removeAttribute('disabled');
+  document.getElementById('btnAutoShot').removeAttribute('data-tip');
+}
+function renderGlbBox(){
+  const zone = document.getElementById('glbZoneWrap');
+  if (uploadState.glb) {
+    const g = uploadState.glb;
+    zone.innerHTML = `
+      <div class="file-info">
+        <div class="fi-icon">📦</div>
+        <div style="flex:1; min-width:0;">
+          <div class="fi-name">已选 ${g.name}</div>
+          <div class="fi-meta">${g.sizeMB.toFixed(1)}MB · mesh ${g.meshCount} · 顶点 ${g.vertexK}k</div>
+        </div>
+        <button class="btn fi-reset" onclick="resetGlb()">重新选择</button>
+      </div>`;
+  } else {
+    zone.innerHTML = `
+      <div class="dropzone" id="dzGlb" onclick="triggerGlbSelect()" ondragover="onGlbDragOver(event)" ondragleave="onGlbDragLeave(event)" ondrop="onGlbDrop(event)">
+        <div class="dz-icon">📦</div>
+        <div>点击选择 或 拖拽 .glb 文件到此处</div>
+        <div class="hint">支持 .glb 格式，建议 &lt; 20MB</div>
+      </div>`;
+  }
+}
+function resetGlb(){
+  uploadState.glb = null;
+  renderGlbBox();
+  document.getElementById('btnAutoShot').setAttribute('disabled', 'disabled');
+  document.getElementById('btnAutoShot').setAttribute('data-tip', '请先选择模型文件');
+  if (uploadState.previewMode === 'auto') {
+    uploadState.previewMode = 'none';
+    uploadState.previewUrl = null;
+    renderPreviewBox();
+  }
+}
+
+function triggerPreviewSelect(){ document.getElementById('inputPreviewImg').click(); }
+function onPreviewImgChange(e){
+  const f = e.target.files[0];
+  if (!f) return;
+  uploadState.previewMode = 'image';
+  uploadState.previewUrl = URL.createObjectURL(f);
+  uploadState.previewFileName = f.name;
+  renderPreviewBox();
+  e.target.value = '';
+}
+function handleAutoScreenshot(){
+  if (!uploadState.glb) { showToast('error', '请先选择模型文件再自动截图'); return; }
+  const wrap = document.getElementById('previewBoxWrap');
+  const box = wrap.querySelector('.box');
+  if (box) box.innerHTML = '<span style="font-size:12px;">生成中…</span>';
+  setTimeout(() => {
+    uploadState.previewMode = 'auto';
+    uploadState.previewUrl = null;
+    renderPreviewBox();
+    showToast('success', '已自动生成预览缩略图');
+  }, 500);
+}
+function renderPreviewBox(){
+  const wrap = document.getElementById('previewBoxWrap');
+  let boxHtml, capHtml;
+  if (uploadState.previewMode === 'image') {
+    boxHtml = `<div class="box" style="background-image:url('${uploadState.previewUrl}');background-size:cover;background-position:center;"></div>`;
+    capHtml = `已选择预览图：${uploadState.previewFileName}`;
+  } else if (uploadState.previewMode === 'auto') {
+    const variant = hashVariant(document.getElementById('inputModelName').value || 'model');
+    boxHtml = `<div class="box" style="background:${GRADIENTS[variant]};">🧊</div>`;
+    capHtml = '自动生成缩略图（模拟截图）';
+  } else {
+    boxHtml = `<div class="box" style="background:#fafafa;color:#c0c4cc;font-size:12px;">未设置预览图</div>`;
+    capHtml = '可选择图片，或点击「从模型自动截图」生成';
+  }
+  wrap.innerHTML = `<div class="preview3d">${boxHtml}<div class="cap">${capHtml}</div></div>`;
+}
+
+function submitUpload(setCurrent){
+  const tab = state.activeTab;
+  let subjectKey, subjectName = null;
+  if (tab === 'SALES_PART') {
+    subjectKey = document.getElementById('bindSalesPart').value.trim();
+    if (!subjectKey) { showToast('error', '请填写绑定的销售料号'); return; }
+  } else {
+    const raw = document.getElementById('bindMaterial').value.trim();
+    if (!raw) { showToast('error', '请填写绑定的材质配方'); return; }
+    const matched = materialCatalog.find(m => raw === `${m.name}（${m.code}）` || raw === m.code || raw === m.name);
+    if (matched) { subjectKey = matched.code; subjectName = matched.name; }
+    else { subjectKey = raw; subjectName = null; }
+  }
+  if (!uploadState.glb) { showToast('error', '请先选择 .glb 模型文件'); return; }
+  const modelName = document.getElementById('inputModelName').value.trim();
+  if (!modelName) { showToast('error', '请填写模型名'); return; }
+
+  const rows = getRows(tab);
+  const existing = rows.filter(r => r.subjectKey === subjectKey);
+  const newVersion = existing.length ? Math.max(...existing.map(r => r.version)) + 1 : 1;
+  if (setCurrent) existing.forEach(r => { r.isCurrent = false; });
+
+  const newRow = {
+    id: nextId++,
+    subjectKey, subjectName,
+    modelName,
+    version: newVersion,
+    sizeMB: uploadState.glb.sizeMB,
+    uploadTime: formatNow(),
+    isCurrent: setCurrent,
+    thumbVariant: hashVariant(subjectKey)
+  };
+  rows.unshift(newRow);
+
+  renderTable(tab);
+  updateToolbar();
+  closeUploadDrawer();
+  showToast('success', `✓ 上传成功：${subjectKey}${subjectName ? '／' + subjectName : ''} · ${modelName} v${newVersion}，已保存为${setCurrent ? '当前版本' : '历史版本'}`);
+}
+
+// ============================================================
+// 初始化
+// ============================================================
+window.addEventListener('DOMContentLoaded', () => {
+  renderTable('SALES_PART');
+  renderTable('MATERIAL');
+  updateToolbar();
+});
+</script>
+</body>
+</html>

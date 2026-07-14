@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>选配模板管理 — CPQ 配置中心</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#f0f2f5; font-size:13px; color:#303133; }
+  .layout { display:flex; min-height:100vh; }
+  .sider { width:200px; background:#001529; color:#fff; flex-shrink:0; }
+  .sider .logo { padding:16px; font-weight:600; border-bottom:1px solid #1f2d3d; font-size:14px; }
+  .m-item { padding:9px 16px; color:#a6adb4; cursor:pointer; }
+  .m-item:hover,.m-item.active { color:#fff; background:#1f2d3d; }
+  .m-sub { padding:6px 16px 6px 32px; color:#a6adb4; cursor:pointer; font-size:12.5px; }
+  .m-sub:hover { color:#fff; }
+  .m-sub.active { color:#1890ff; background:#000c17; border-left:3px solid #1890ff; padding-left:29px; }
+  .main { flex:1; display:flex; flex-direction:column; min-width:0; }
+  .crumb { padding:10px 20px; background:#fff; border-bottom:1px solid #e4e7ed; color:#909399; }
+  .crumb b { color:#303133; font-weight:500; }
+  .content { flex:1; padding:16px 20px; }
+  .page-card { background:#fff; border-radius:8px; padding:18px 20px; margin-bottom:12px; }
+  .page-title { font-size:18px; font-weight:600; margin-bottom:14px; }
+  .toolbar { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .toolbar .spacer { flex:1; }
+  .btn { padding:5px 12px; border:1px solid #dcdfe6; background:#fff; border-radius:4px; cursor:pointer; color:#606266; display:inline-flex; align-items:center; gap:4px; font-size:13px; }
+  .btn:hover { color:#409eff; border-color:#c6e2ff; background:#ecf5ff; }
+  .btn-primary { background:#1890ff; color:#fff; border-color:#1890ff; }
+  .btn-primary:hover { background:#40a9ff; color:#fff; }
+  .btn-danger { color:#f56c6c; border-color:#fbc4c4; }
+  .btn-danger:hover { color:#f56c6c; border-color:#f56c6c; background:#fff1f0; }
+  .btn[disabled]{ opacity:.45; cursor:not-allowed; pointer-events:auto; }
+  .btn[disabled]:hover{ color:#606266; border-color:#dcdfe6; background:#fff; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { padding:9px 10px; border-bottom:1px solid #f0f0f0; text-align:left; }
+  th { background:#fafafa; color:#606266; font-weight:500; }
+  th.wchk, td.wchk { width:40px; }
+  tr.sel { background:#e6f7ff; }
+  tbody tr:hover { background:#fafafa; }
+  tbody tr.sel:hover { background:#dcf3ff; }
+  a.link { color:#1890ff; text-decoration:none; cursor:pointer; }
+  a.link:hover { color:#40a9ff; text-decoration:underline; }
+  .tag { padding:1px 8px; border-radius:10px; font-size:12px; display:inline-block; }
+  .tag-green{ background:#f6ffed; color:#52c41a; border:1px solid #b7eb8f; }
+  .tag-gray{ background:#f5f5f5; color:#909399; border:1px solid #e4e7ed; }
+  .empty-row td { text-align:center; color:#909399; padding:40px 0; }
+  input[type=checkbox] { width:15px; height:15px; accent-color:#1890ff; cursor:pointer; vertical-align:middle; }
+
+  /* 抽屉 */
+  .mask { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; z-index:900; }
+  .mask.open{ display:block; }
+  .drawer { position:fixed; top:0; right:0; height:100vh; width:720px; max-width:96vw; background:#fff; box-shadow:-2px 0 8px rgba(0,0,0,.15);
+    transform:translateX(100%); transition:transform .25s; display:flex; flex-direction:column; z-index:901; }
+  .drawer.open{ transform:translateX(0); }
+  .drawer .dh { padding:14px 18px; border-bottom:1px solid #e4e7ed; font-weight:600; font-size:15px; display:flex; justify-content:space-between; align-items:center; }
+  .drawer .dh .close { cursor:pointer; color:#909399; font-size:18px; line-height:1; padding:2px 6px; border-radius:4px; }
+  .drawer .dh .close:hover { color:#303133; background:#f5f5f5; }
+  .drawer .db { flex:1; overflow:auto; padding:18px 20px; }
+  .drawer .df { padding:12px 18px; border-top:1px solid #e4e7ed; display:flex; gap:8px; }
+
+  /* 表单 */
+  .form-row { margin-bottom:16px; }
+  .form-row label { display:block; margin-bottom:6px; color:#606266; font-size:13px; }
+  .form-row label.req::after { content:' *'; color:#f56c6c; }
+  .form-row input[type=text], .form-row select.sel {
+    width:100%; padding:6px 10px; border:1px solid #dcdfe6; border-radius:4px; font-size:13px; color:#303133; background:#fff; height:32px;
+  }
+  .form-row input[type=text]:focus, .form-row select.sel:focus { outline:none; border-color:#1890ff; }
+  .form-row input[disabled], .form-row select[disabled] { background:#f5f7fa; color:#c0c4cc; cursor:not-allowed; }
+  .form-hint { font-size:12px; color:#c0c4cc; margin-top:4px; }
+  .err-hint { font-size:12px; color:#f56c6c; margin-top:4px; display:none; }
+  .form-row.has-err input, .form-row.has-err select { border-color:#f56c6c; }
+  .form-row.has-err .err-hint { display:block; }
+
+  .seg { display:inline-flex; border:1px solid #dcdfe6; border-radius:4px; overflow:hidden; }
+  .seg button { padding:5px 18px; border:none; background:#fff; cursor:pointer; color:#606266; font-size:13px; }
+  .seg button:not(:last-child) { border-right:1px solid #dcdfe6; }
+  .seg button.active { background:#1890ff; color:#fff; }
+
+  .section-title { font-size:14px; font-weight:600; margin:20px 0 10px; padding-top:4px; border-top:1px dashed #e4e7ed; }
+  .section-title:first-child { border-top:none; padding-top:0; margin-top:0; }
+
+  .param-card { border:1px solid #e4e7ed; border-radius:6px; padding:12px 14px; margin-bottom:10px; transition:all .15s; }
+  .param-card.enabled { border-color:#91caff; background:#f7fbff; }
+  .param-head { display:flex; align-items:center; gap:8px; font-weight:500; cursor:pointer; user-select:none; }
+  .param-head .pname { color:#303133; }
+  .param-mode { font-size:12px; color:#909399; font-weight:400; }
+  .param-desc { margin-top:6px; margin-left:23px; font-size:12.5px; color:#909399; line-height:1.6; }
+
+  /* 多选下拉 */
+  .ms { position:relative; margin-top:8px; margin-left:23px; }
+  .ms.disabled .ms-control { background:#f5f7fa; color:#c0c4cc; cursor:not-allowed; }
+  .ms-control { min-height:32px; border:1px solid #dcdfe6; border-radius:4px; padding:4px 30px 4px 8px; display:flex; flex-wrap:wrap; gap:4px; align-items:center; cursor:pointer; position:relative; background:#fff; }
+  .ms:not(.disabled) .ms-control:hover { border-color:#1890ff; }
+  .ms-tag { background:#f0f5ff; border:1px solid #adc6ff; color:#2f54eb; font-size:12px; padding:1px 6px; border-radius:3px; display:inline-flex; align-items:center; gap:4px; }
+  .ms-tag .x { cursor:pointer; color:#8c9bcf; font-weight:700; }
+  .ms-tag .x:hover { color:#2f54eb; }
+  .ms-placeholder { color:#c0c4cc; font-size:13px; }
+  .ms-arrow { position:absolute; right:8px; top:50%; transform:translateY(-50%); color:#c0c4cc; font-size:11px; pointer-events:none; }
+  .ms-panel { position:absolute; left:0; right:0; top:calc(100% + 4px); background:#fff; border:1px solid #e4e7ed; border-radius:4px; box-shadow:0 2px 8px rgba(0,0,0,.12); z-index:50; max-height:180px; overflow:auto; display:none; }
+  .ms-panel.open { display:block; }
+  .ms-opt { padding:7px 10px; display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; }
+  .ms-opt:hover { background:#f5f7fa; }
+
+  /* 危险确认弹框（居中，仅用于二次确认，符合规范例外） */
+  .cmask { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:1500; }
+  .cmask.open { display:flex; }
+  .cbox { background:#fff; border-radius:8px; width:420px; max-width:90vw; overflow:hidden; box-shadow:0 8px 24px rgba(0,0,0,.2); }
+  .cbox .ch { padding:14px 18px; font-weight:600; border-bottom:1px solid #f0f0f0; display:flex; align-items:center; gap:8px; color:#f56c6c; }
+  .cbox .cb { padding:14px 18px; font-size:13px; color:#606266; max-height:260px; overflow:auto; }
+  .cbox .cb ul { margin-top:8px; padding-left:18px; color:#303133; }
+  .cbox .cb ul li { margin-bottom:4px; }
+  .cbox .cf { padding:12px 18px; border-top:1px solid #f0f0f0; display:flex; justify-content:flex-end; gap:8px; }
+
+  /* toast */
+  .toast { position:fixed; top:24px; left:50%; transform:translate(-50%,-12px); background:#fff; border:1px solid #b7eb8f; color:#389e0d;
+    padding:9px 18px; border-radius:6px; box-shadow:0 4px 16px rgba(0,0,0,.12); font-size:13px; opacity:0; pointer-events:none;
+    transition:all .25s; z-index:2000; display:flex; align-items:center; gap:6px; }
+  .toast.show { opacity:1; transform:translate(-50%,0); }
+  .toast.err { border-color:#fbc4c4; color:#f56c6c; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="sider">
+    <div class="logo">CPQ 配置报价系统</div>
+    <div class="m-item">工作台</div>
+    <div class="m-item">组件管理</div>
+    <div class="m-item">产品卡模板</div>
+    <div class="m-item">报价单</div>
+    <div class="m-item">核价单</div>
+    <div class="m-item active">配置中心</div>
+    <div class="m-sub">材质库管理</div>
+    <div class="m-sub">工序库管理</div>
+    <div class="m-sub active">选配模板管理</div>
+    <div class="m-sub">3D 模型配置</div>
+    <div class="m-sub">全局变量</div>
+    <div class="m-sub">定价策略</div>
+  </div>
+
+  <div class="main">
+    <div class="crumb">配置中心 / <b>选配模板管理</b></div>
+    <div class="content">
+      <div class="page-card">
+        <div class="page-title">选配模板管理</div>
+        <div class="toolbar">
+          <button class="btn" id="btnEdit" onclick="onEditClick()">✎ 编辑</button>
+          <button class="btn" id="btnToggle" onclick="onToggleStatusClick()">⇄ 停用/启用</button>
+          <button class="btn btn-danger" id="btnDelete" onclick="onDeleteClick()">🗑 删除</button>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" onclick="openNew()">＋ 新建模板</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th class="wchk"><input type="checkbox" id="selAllChk" onchange="toggleSelectAll(this.checked)"></th>
+              <th>归属行业</th>
+              <th>模板名</th>
+              <th>启用参数数</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 新建/编辑抽屉 -->
+<div class="mask" id="mask" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="dh">
+    <span id="drawerTitle">新建选配模板</span>
+    <span class="close" onclick="closeDrawer()">✕</span>
+  </div>
+  <div class="db">
+    <div class="section-title">基本信息</div>
+    <div class="form-row" id="rowIndustry">
+      <label class="req">归属行业</label>
+      <select class="sel" id="industrySelect" onchange="onIndustryChange(this.value)"></select>
+      <div class="form-hint">一个行业仅可配置一套选配模板；行业确定后不可修改</div>
+      <div class="err-hint">请选择归属行业</div>
+    </div>
+    <div class="form-row" id="rowName">
+      <label class="req">模板名</label>
+      <input type="text" id="nameInput" placeholder="请输入模板名" oninput="onNameInput(this.value)">
+      <div class="err-hint">请输入模板名</div>
+    </div>
+    <div class="form-row">
+      <label>状态</label>
+      <div class="seg" id="statusSeg">
+        <button type="button" data-v="enabled" onclick="onStatusPick('enabled')">启用</button>
+        <button type="button" data-v="disabled" onclick="onStatusPick('disabled')">停用</button>
+      </div>
+    </div>
+
+    <div class="section-title">选配参数</div>
+
+    <div class="param-card" id="cardMaterial">
+      <div class="param-head" onclick="toggleParam('material')">
+        <input type="checkbox" id="chkMaterial" onclick="event.stopPropagation(); toggleParam('material')">
+        <span class="pname">材质</span>
+        <span class="param-mode">（单选 · single）</span>
+      </div>
+      <div class="param-desc">从材质库限定可选材质；下方多选下拉留空 = 不限，选配时可选任意材质</div>
+      <div class="ms" id="msMaterial">
+        <div class="ms-control" onclick="msToggleOpen('material')">
+          <div class="ms-tags" id="msTagsMaterial"></div>
+          <span class="ms-arrow">▾</span>
+        </div>
+        <div class="ms-panel" id="msPanelMaterial"></div>
+      </div>
+    </div>
+
+    <div class="param-card" id="cardElement">
+      <div class="param-head" onclick="toggleParam('element')">
+        <input type="checkbox" id="chkElement" onclick="event.stopPropagation(); toggleParam('element')">
+        <span class="pname">元素含量</span>
+        <span class="param-mode">（微调 · adjust）</span>
+      </div>
+      <div class="param-desc" id="elementDesc">启用后允许在派生元素含量上微调（选配时列出所选材质派生的元素及含量，可微调数值）</div>
+    </div>
+
+    <div class="param-card" id="cardProcess">
+      <div class="param-head" onclick="toggleParam('process')">
+        <input type="checkbox" id="chkProcess" onclick="event.stopPropagation(); toggleParam('process')">
+        <span class="pname">工序</span>
+        <span class="param-mode">（多选 · multi）</span>
+      </div>
+      <div class="param-desc">从工序库限定可选工序；下方多选下拉留空 = 不限，选配时可任意选择并排序</div>
+      <div class="ms" id="msProcess">
+        <div class="ms-control" onclick="msToggleOpen('process')">
+          <div class="ms-tags" id="msTagsProcess"></div>
+          <span class="ms-arrow">▾</span>
+        </div>
+        <div class="ms-panel" id="msPanelProcess"></div>
+      </div>
+    </div>
+  </div>
+  <div class="df">
+    <button class="btn" style="flex:1" onclick="closeDrawer()">取消</button>
+    <button class="btn btn-primary" style="flex:2" onclick="onSaveClick()">保存</button>
+  </div>
+</div>
+
+<!-- 删除二次确认 -->
+<div class="cmask" id="cmask">
+  <div class="cbox">
+    <div class="ch">⚠ 确认删除选配模板</div>
+    <div class="cb">
+      删除后不可恢复，以下模板将被删除：
+      <ul id="delList"></ul>
+    </div>
+    <div class="cf">
+      <button class="btn" onclick="closeConfirm()">取消</button>
+      <button class="btn btn-danger" onclick="confirmDelete()">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ---------- 数据 ----------
+  var INDUSTRIES = [
+    { code: 'AUTO', name: '汽车' },
+    { code: 'ELEC', name: '电子' },
+    { code: 'HARDWARE', name: '五金' },
+    { code: '__DEFAULT__', name: '默认模板' },
+    { code: '__GLOBAL__', name: '通用组合工艺' }
+  ];
+  var MATERIAL_VALUES = ['不锈钢304', '黄铜H62', '铝6061', '45号钢'];
+  var PROCESS_VALUES = ['车', '铣', '电镀', '热处理', '抛光'];
+
+  function industryName(code) {
+    var f = INDUSTRIES.filter(function (i) { return i.code === code; });
+    return f.length ? f[0].name : code;
+  }
+
+  var templates = [
+    {
+      id: 1, industryCode: '__DEFAULT__', name: '默认选配模板', status: 'enabled',
+      material: { enabled: true, values: [] },
+      element: { enabled: false },
+      process: { enabled: true, values: ['车', '铣'] }
+    },
+    {
+      id: 2, industryCode: 'AUTO', name: '汽车行业选配模板', status: 'enabled',
+      material: { enabled: true, values: ['不锈钢304', '45号钢'] },
+      element: { enabled: true },
+      process: { enabled: true, values: ['车', '铣', '电镀'] }
+    },
+    {
+      id: 3, industryCode: 'ELEC', name: '电子行业选配模板', status: 'disabled',
+      material: { enabled: true, values: ['黄铜H62'] },
+      element: { enabled: false },
+      process: { enabled: false, values: [] }
+    },
+    {
+      id: 4, industryCode: '__GLOBAL__', name: '通用组合工艺模板', status: 'enabled',
+      material: { enabled: false, values: [] },
+      element: { enabled: false },
+      process: { enabled: true, values: ['车', '铣', '电镀', '热处理', '抛光'] }
+    }
+  ];
+  var nextId = 5;
+  var selected = {}; // id -> true
+  var editingId = null; // null = 新建
+  var formState = null;
+  var openMsField = null;
+
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function selectedIds() { return Object.keys(selected).filter(function (k) { return selected[k]; }).map(Number); }
+  function selectedCount() { return selectedIds().length; }
+
+  // ---------- 列表渲染 ----------
+  function renderTable() {
+    var tbody = document.getElementById('tbody');
+    if (templates.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">暂无选配模板，点击右上「+ 新建模板」创建</td></tr>';
+    } else {
+      tbody.innerHTML = templates.map(function (t) {
+        var cnt = [t.material.enabled, t.element.enabled, t.process.enabled].filter(Boolean).length;
+        var statusTag = t.status === 'enabled'
+          ? '<span class="tag tag-green">启用</span>'
+          : '<span class="tag tag-gray">停用</span>';
+        var checked = selected[t.id] ? 'checked' : '';
+        var rowCls = selected[t.id] ? ' class="sel"' : '';
+        return '<tr' + rowCls + ' data-id="' + t.id + '">' +
+          '<td class="wchk"><input type="checkbox" ' + checked + ' onchange="toggleRowSel(' + t.id + ', this.checked)"></td>' +
+          '<td><a class="link" onclick="openEdit(' + t.id + ')">' + industryName(t.industryCode) + '</a></td>' +
+          '<td>' + t.name + '</td>' +
+          '<td>' + cnt + '/3</td>' +
+          '<td>' + statusTag + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+    var selAll = document.getElementById('selAllChk');
+    selAll.checked = templates.length > 0 && selectedCount() === templates.length;
+    updateToolbar();
+  }
+
+  function toggleRowSel(id, checked) {
+    if (checked) selected[id] = true; else delete selected[id];
+    renderTable();
+  }
+
+  function toggleSelectAll(checked) {
+    selected = {};
+    if (checked) templates.forEach(function (t) { selected[t.id] = true; });
+    renderTable();
+  }
+
+  function updateToolbar() {
+    var n = selectedCount();
+    var editBtn = document.getElementById('btnEdit');
+    var toggleBtn = document.getElementById('btnToggle');
+    var delBtn = document.getElementById('btnDelete');
+
+    editBtn.disabled = n !== 1;
+    editBtn.title = n !== 1 ? '请先勾选 1 行需要编辑的模板' : '编辑所选模板';
+
+    toggleBtn.disabled = n === 0;
+    toggleBtn.title = n === 0 ? '请先勾选至少 1 行' : '切换所选 ' + n + ' 个模板的启用/停用状态';
+
+    delBtn.disabled = n === 0;
+    delBtn.title = n === 0 ? '请先勾选至少 1 行' : '删除所选 ' + n + ' 个模板';
+  }
+
+  // ---------- 工具栏动作 ----------
+  function onEditClick() {
+    if (selectedCount() !== 1) return;
+    openEdit(selectedIds()[0]);
+  }
+
+  function onToggleStatusClick() {
+    var n = selectedCount();
+    if (n === 0) return;
+    selectedIds().forEach(function (id) {
+      var t = templates.filter(function (x) { return x.id === id; })[0];
+      if (t) t.status = t.status === 'enabled' ? 'disabled' : 'enabled';
+    });
+    selected = {};
+    renderTable();
+    showToast('已切换 ' + n + ' 个模板的启用/停用状态');
+  }
+
+  function onDeleteClick() {
+    var n = selectedCount();
+    if (n === 0) return;
+    var list = document.getElementById('delList');
+    list.innerHTML = selectedIds().map(function (id) {
+      var t = templates.filter(function (x) { return x.id === id; })[0];
+      return '<li>' + industryName(t.industryCode) + ' — ' + t.name + '</li>';
+    }).join('');
+    document.getElementById('cmask').classList.add('open');
+  }
+
+  function closeConfirm() {
+    document.getElementById('cmask').classList.remove('open');
+  }
+
+  function confirmDelete() {
+    var ids = selectedIds();
+    templates = templates.filter(function (t) { return ids.indexOf(t.id) === -1; });
+    selected = {};
+    closeConfirm();
+    renderTable();
+    showToast('已删除 ' + ids.length + ' 个模板');
+  }
+
+  // ---------- 抽屉：新建/编辑 ----------
+  function openNew() {
+    editingId = null;
+    formState = {
+      industryCode: '', name: '', status: 'enabled',
+      material: { enabled: false, values: [] },
+      element: { enabled: false },
+      process: { enabled: false, values: [] }
+    };
+    document.getElementById('drawerTitle').textContent = '新建选配模板';
+    clearFormErrors();
+    renderForm();
+    openDrawerUI();
+  }
+
+  function openEdit(id) {
+    var t = templates.filter(function (x) { return x.id === id; })[0];
+    if (!t) return;
+    editingId = id;
+    formState = {
+      industryCode: t.industryCode, name: t.name, status: t.status,
+      material: clone(t.material), element: clone(t.element), process: clone(t.process)
+    };
+    document.getElementById('drawerTitle').textContent = '编辑选配模板';
+    clearFormErrors();
+    renderForm();
+    openDrawerUI();
+  }
+
+  function openDrawerUI() {
+    document.getElementById('mask').classList.add('open');
+    document.getElementById('drawer').classList.add('open');
+  }
+
+  function closeDrawer() {
+    document.getElementById('mask').classList.remove('open');
+    document.getElementById('drawer').classList.remove('open');
+    closeAllMsPanels();
+  }
+
+  function clearFormErrors() {
+    document.getElementById('rowIndustry').classList.remove('has-err');
+    document.getElementById('rowName').classList.remove('has-err');
+  }
+
+  function industryOptionsHTML() {
+    if (editingId !== null) {
+      return '<option value="' + formState.industryCode + '">' + industryName(formState.industryCode) + '</option>';
+    }
+    var used = {};
+    templates.forEach(function (t) { used[t.industryCode] = true; });
+    var avail = INDUSTRIES.filter(function (i) { return !used[i.code]; });
+    if (avail.length === 0) {
+      return '<option value="">（所有行业均已配置模板）</option>';
+    }
+    var html = '<option value="">请选择归属行业</option>';
+    html += avail.map(function (i) { return '<option value="' + i.code + '">' + i.name + '</option>'; }).join('');
+    return html;
+  }
+
+  function renderForm() {
+    // 归属行业
+    var sel = document.getElementById('industrySelect');
+    sel.innerHTML = industryOptionsHTML();
+    sel.value = formState.industryCode;
+    sel.disabled = editingId !== null;
+
+    // 模板名
+    document.getElementById('nameInput').value = formState.name;
+
+    // 状态
+    var segBtns = document.querySelectorAll('#statusSeg button');
+    segBtns.forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-v') === formState.status);
+    });
+
+    // 参数卡
+    renderParamCheckbox('material', 'chkMaterial', 'cardMaterial');
+    renderParamCheckbox('element', 'chkElement', 'cardElement');
+    renderParamCheckbox('process', 'chkProcess', 'cardProcess');
+
+    renderMs('material', MATERIAL_VALUES, 'msMaterial', 'msTagsMaterial', 'msPanelMaterial');
+    renderMs('process', PROCESS_VALUES, 'msProcess', 'msTagsProcess', 'msPanelProcess');
+  }
+
+  function renderParamCheckbox(field, chkId, cardId) {
+    var enabled = formState[field].enabled;
+    document.getElementById(chkId).checked = enabled;
+    document.getElementById(cardId).classList.toggle('enabled', enabled);
+  }
+
+  function renderMs(field, values, msId, tagsId, panelId) {
+    var enabled = formState[field].enabled;
+    var msEl = document.getElementById(msId);
+    msEl.classList.toggle('disabled', !enabled);
+
+    var sel = formState[field].values;
+    var tagsHtml = sel.map(function (v) {
+      return '<span class="ms-tag">' + v + '<span class="x" onclick="event.stopPropagation(); msRemoveValue(\'' + field + '\',\'' + v + '\')">✕</span></span>';
+    }).join('');
+    if (sel.length === 0) tagsHtml = '<span class="ms-placeholder">不限（留空 = 不限定可选值）</span>';
+    document.getElementById(tagsId).innerHTML = tagsHtml;
+
+    var panelHtml = values.map(function (v) {
+      var checked = sel.indexOf(v) > -1 ? 'checked' : '';
+      return '<div class="ms-opt" onclick="msToggleValue(\'' + field + '\',\'' + v + '\')">' +
+        '<input type="checkbox" ' + checked + ' onclick="event.preventDefault()">' + v + '</div>';
+    }).join('');
+    document.getElementById(panelId).innerHTML = panelHtml;
+  }
+
+  function toggleParam(field) {
+    formState[field].enabled = !formState[field].enabled;
+    if (!formState[field].enabled && field !== 'element') {
+      formState[field].values = [];
+      if (openMsField === field) closeAllMsPanels();
+    }
+    renderForm();
+  }
+
+  function msToggleOpen(field) {
+    if (!formState[field] || !formState[field].enabled) return;
+    var panelId = field === 'material' ? 'msPanelMaterial' : 'msPanelProcess';
+    var panel = document.getElementById(panelId);
+    var isOpen = panel.classList.contains('open');
+    closeAllMsPanels();
+    if (!isOpen) {
+      panel.classList.add('open');
+      openMsField = field;
+    }
+  }
+
+  function closeAllMsPanels() {
+    document.getElementById('msPanelMaterial').classList.remove('open');
+    document.getElementById('msPanelProcess').classList.remove('open');
+    openMsField = null;
+  }
+
+  function msToggleValue(field, val) {
+    var arr = formState[field].values;
+    var idx = arr.indexOf(val);
+    if (idx > -1) arr.splice(idx, 1); else arr.push(val);
+    var msId = field === 'material' ? 'msMaterial' : 'msProcess';
+    var tagsId = field === 'material' ? 'msTagsMaterial' : 'msTagsProcess';
+    var panelId = field === 'material' ? 'msPanelMaterial' : 'msPanelProcess';
+    var values = field === 'material' ? MATERIAL_VALUES : PROCESS_VALUES;
+    renderMs(field, values, msId, tagsId, panelId);
+    // 保持面板展开
+    document.getElementById(panelId).classList.add('open');
+  }
+
+  function msRemoveValue(field, val) {
+    msToggleValue(field, val);
+  }
+
+  function onIndustryChange(v) {
+    formState.industryCode = v;
+    document.getElementById('rowIndustry').classList.remove('has-err');
+  }
+
+  function onNameInput(v) {
+    formState.name = v;
+    document.getElementById('rowName').classList.remove('has-err');
+  }
+
+  function onStatusPick(v) {
+    formState.status = v;
+    renderForm();
+  }
+
+  function onSaveClick() {
+    var ok = true;
+    if (!formState.industryCode) {
+      document.getElementById('rowIndustry').classList.add('has-err');
+      ok = false;
+    }
+    if (!formState.name || !formState.name.trim()) {
+      document.getElementById('rowName').classList.add('has-err');
+      ok = false;
+    }
+    if (!ok) {
+      showToast('请完整填写归属行业和模板名', 'err');
+      return;
+    }
+
+    if (editingId !== null) {
+      var t = templates.filter(function (x) { return x.id === editingId; })[0];
+      t.name = formState.name.trim();
+      t.status = formState.status;
+      t.material = clone(formState.material);
+      t.element = clone(formState.element);
+      t.process = clone(formState.process);
+    } else {
+      templates.push({
+        id: nextId++,
+        industryCode: formState.industryCode,
+        name: formState.name.trim(),
+        status: formState.status,
+        material: clone(formState.material),
+        element: clone(formState.element),
+        process: clone(formState.process)
+      });
+    }
+    closeDrawer();
+    renderTable();
+    showToast('保存成功');
+  }
+
+  // ---------- toast ----------
+  var toastTimer = null;
+  function showToast(msg, type) {
+    var el = document.getElementById('toast');
+    el.textContent = (type === 'err' ? '✕ ' : '✓ ') + msg;
+    el.classList.remove('err');
+    if (type === 'err') el.classList.add('err');
+    el.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2200);
+  }
+
+  // ---------- 全局事件 ----------
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.ms')) closeAllMsPanels();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      closeConfirm();
+      closeDrawer();
+    }
+  });
+
+  // ---------- 初始化 ----------
+  renderTable();
+</script>
+</body>
+</html>
