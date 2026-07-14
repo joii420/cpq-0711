@@ -464,14 +464,16 @@ class ConfigureProductServiceTest {
             "pn2 应在 reusedHfPartNos: " + resp.reusedHfPartNos);
     }
 
-    // ── case 8: 组合工艺 participating < 2 → IllegalArgumentException ─────────
+    // ── case 8: 组合工艺 participating 为空 → IllegalArgumentException ─────────
 
     /**
-     * case 8: compositeProcesses[0].participatingPartIndexes.size() = 1 < 2
-     * → validateRequest 在 getCustomerIdFromQuotation 之前抛出，无需有效 quotation。
+     * case 8（B2.3 更新，2026-07-14）: 组合工艺参与配件闸门从「&gt;=2」放开为「非空即可」
+     * （backtask B2.3 决策①，为放行"单去重子件 qty≥2 绑组合工艺"场景）。
+     * 本用例改测「participatingPartIndexes 为空列表」仍应拒绝——空闸门未被放开。
+     * validateRequest 在 getCustomerIdFromQuotation 之前抛出，无需有效 quotation。
      */
     @Test
-    void composite_participatingLessThan2_throws() {
+    void composite_participatingEmpty_throws() {
         UUID fakeQuotationId = UUID.randomUUID();
 
         PartRequest p1 = makeCustomPart("AgNi90",
@@ -485,12 +487,42 @@ class ConfigureProductServiceTest {
 
         CompositeProcessRequest cp = new CompositeProcessRequest();
         cp.defCode = "RIVET";
-        cp.participatingPartIndexes = List.of(0);  // only 1, requires >= 2
+        cp.participatingPartIndexes = List.of();  // 空，仍应拒绝
         cp.params = Map.of();
         req.compositeProcesses = List.of(cp);
 
         assertThrows(IllegalArgumentException.class,
             () -> service.configure(fakeQuotationId, req, operatorId()),
-            "participating < 2 应在 validateRequest 中抛 IllegalArgumentException");
+            "participatingPartIndexes 为空应在 validateRequest 中抛 IllegalArgumentException");
+    }
+
+    /**
+     * case 8b（B2.3 新增）: 放开后的正向用例 — 2 个配件的 COMPOSITE 请求，组合工艺只绑定 1 个
+     * participatingPartIndexes（老规则会 400，新规则应放行）。验证 validateRequest 放开生效、
+     * 全链路能正常 configure 成功（非仅"不抛异常"的消极断言）。
+     */
+    @Test
+    @TestTransaction
+    void composite_participatingSingle_nowAllowed_underRelaxedGate() {
+        UUID quotationId = seedQuotationId();
+
+        PartRequest p1 = makeCustomPart("AgNi90",
+            List.of(elem("Ag", "91.5"), elem("Ni", "8.5")), new BigDecimal("10.0"));
+        PartRequest p2 = makeCustomPart("AgCu90",
+            List.of(elem("Ag", "90.0"), elem("Cu", "10.0")), new BigDecimal("11.0"));
+
+        ConfigureProductRequest req = new ConfigureProductRequest();
+        req.productType = "COMPOSITE";
+        req.parts = List.of(p1, p2);
+
+        CompositeProcessRequest cp = new CompositeProcessRequest();
+        cp.defCode = "RIVET";
+        cp.participatingPartIndexes = List.of(0);  // 仅 1 个，老规则 400，新规则放行
+        cp.params = Map.of();
+        req.compositeProcesses = List.of(cp);
+
+        ConfigureProductResponse resp = service.configure(quotationId, req, operatorId());
+        assertEquals(3, resp.lineItems.size(), "1 父 + 2 子 line_items");
+        assertEquals("COMPOSITE", resp.productType, "Σqty=2 应裁决为 COMPOSITE");
     }
 }

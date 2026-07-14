@@ -328,7 +328,9 @@ public class ConfigureProductService {
         // R1: config_fingerprint 传 null — 客户维度发号后同一 material_master 可能被多个客户各自的
         // 报价料号复用，若沿用生产侧全局指纹会撞 uq_material_master_fingerprint 全局唯一索引 → 500。
         insertMaterialMasterV6(hfPartNo, recipe.symbol, pr.unitWeightGrams, recipe.id, null);
-        insertElementBomV6(hfPartNo, customerCode, pr.elements);
+        // B2.1③: material_part_no(材质料号) = recipe.code（材质库编号，如 00001…；task-0708 V318 起
+        // material_recipe.code 即材质库业务键，与 element_bom.material_part_no 同口径，V315 已纳入唯一键）。
+        insertElementBomV6(hfPartNo, customerCode, recipe.code, pr.elements);
         // [选配-材质] mirror(composite_child_materials_mirror)读 material_bom_item
         // (characteristic IS NULL + customer_no + 父料号)。自定义材质料号无 BOM 物料行 → 材质 Tab 空。
         // 补一行"自指物料行",让 mirror 返 1 行 =「选中的材质本身」(material_name 列=component_usage_type
@@ -571,54 +573,97 @@ public class ConfigureProductService {
     }
 
     /**
-     * V6: 元素配比 → element_bom_item。
-     * hf_part_no = material_no = 料号本身；characteristic 固定 '2000'（单版本），
-     * 让 composite_child_elements_mirror 的 MAX(characteristic) per (customer_no, material_no) 命中本料号。
+     * V6（B2 落库改造，backtask §4/B2.1③）: 元素配比 → {@code element_bom}(头) + {@code element_bom_item}(子)。
+     * 等价导入落库（对齐 {@code Q04ElementBomHandler}）：
+     * <ul>
+     *   <li>头/子 groupKey = (system_type=QUOTE, customer_no, material_no=partNo, material_part_no=材质料号)；
+     *       masterVersionColumn=childVersionColumn="characteristic"（由 {@link VersionedV6Writer} 自动分配，
+     *       首次落 "2000"，与原硬编码值等价，但成为真实可递增的版本列）。</li>
+     *   <li>子行额外带 {@code hf_part_no = partNo}（自指）——渲染基线（AP-53）: {@code v_composite_child_elements}
+     *       / {@code composite_child_elements_mirror} 第一分支要求 {@code hf_part_no IS NOT NULL} 直接按渲染
+     *       料号命中，本料号"成品=材质自身"，hf_part_no 与 material_no 同值。</li>
+     *   <li>{@code scrap_rate}/{@code composition_qty}/{@code issue_unit}/{@code base_qty}（§4 doc 对应列）：
+     *       选配阶段 {@link ConfigureProductRequest} 未采集这些字段，留 NULL（不臆造数值，列均可空）。</li>
+     * </ul>
      */
-    void insertElementBomV6(String partNo, String customerCode, List<ElementOverride> elements) {
+    void insertElementBomV6(String partNo, String customerCode, String materialPartNo,
+                            List<ElementOverride> elements) {
         if (customerCode == null || customerCode.isBlank()) return; // 无客户无法满足 customer_no NOT NULL / 渲染过滤
+
+        Map<String, Object> masterGk = new LinkedHashMap<>();
+        masterGk.put("system_type", "QUOTE");
+        masterGk.put("customer_no", customerCode);
+        masterGk.put("material_no", partNo);
+        masterGk.put("material_part_no", materialPartNo);
+
+        Map<String, Object> childGk = new LinkedHashMap<>(masterGk);
+        childGk.put("hf_part_no", partNo);
+
+        List<Map<String, Object>> rows = new ArrayList<>();
         int seq = 1;
         for (ElementOverride eo : elements) {
-            em.createNativeQuery(
-                    "INSERT INTO element_bom_item (system_type, customer_no, hf_part_no, material_no, " +
-                    "characteristic, seq_no, component_no, content) " +
-                    "VALUES ('QUOTE', :cn, :p, :p, '2000', :sq, :code, :pct) " +
-                    "ON CONFLICT DO NOTHING")
-                .setParameter("cn", customerCode)
-                .setParameter("p", partNo)
-                .setParameter("sq", seq++)
-                .setParameter("code", eo.elementCode)
-                .setParameter("pct", eo.pct)
-                .executeUpdate();
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("seq_no", seq++);
+            r.put("component_no", eo.elementCode);
+            r.put("content", eo.pct);
+            r.put("scrap_rate", null);
+            r.put("composition_qty", null);
+            r.put("issue_unit", null);
+            r.put("base_qty", null);
+            rows.add(r);
         }
+
+        versionedWriter.writeVersionedMasterDetail(
+            "element_bom", "characteristic", masterGk, Map.of("bom_type", "MATERIAL"),
+            "element_bom_item", "characteristic", childGk,
+            List.of("seq_no", "component_no", "content", "scrap_rate", "composition_qty", "issue_unit", "base_qty"),
+            rows);
     }
 
     /**
-     * 自定义材质料号补一行 material_bom_item「自指物料行」,使 composite_child_materials_mirror
-     * 返回 1 行 =「选中的材质本身」。
+     * V6（B2 落库改造，backtask §3/B2.1②）: 自定义材质料号的物料BOM → {@code material_bom}(头，本次新增) +
+     * {@code material_bom_item}(子，补全列)，1 行「自指物料行」=「选中的材质本身」。
      *
-     * <p>背景: [选配-材质] mirror 从 material_bom_item(characteristic IS NULL + customer_no + 父料号)
-     * 取物料行 join material_master;mirror 的 material_name 列 = COALESCE(component_usage_type,
-     * mm.material_type, mm.material_name)。自定义材质料号只写了 material_master + element_bom_item,
-     * 无 material_bom_item → 材质 Tab 空(元素含量正常,因其读 element_bom_item)。
+     * <p><b>保持既有渲染语义（backtask 明确要求不臆造复杂 BOM）</b>：SIMPLE 单材质料号的物料构成
+     * 就是「该材质自身」，不展开成分子/工艺路线。[选配-材质] mirror（{@code v_composite_child_materials}/
+     * {@code composite_child_materials_mirror}）从 {@code material_bom_item}(characteristic IS DISTINCT
+     * FROM 'ASSEMBLY' + customer_no + 父料号) 取物料行 join material_master；mirror 的 material_name 列 =
+     * COALESCE(component_usage_type, mm.material_type, ...)。
      *
-     * <p>补的行: material_no=component_no=料号(自指),characteristic=NULL(匹配 mirror),
-     * customer_no=客户,component_usage_type=materialType(recipe.symbol,如 AgSnO₂)→ 材质名称列显示该材质。
-     * 与有料号产品同一组件 / 同一视图 SQL / 同一按行快照存储 → 渲染一致。
-     * 幂等(WHERE NOT EXISTS),复用历史料号也安全。
+     * <p>头表 {@code material_bom}：system_type=QUOTE / customer_no / material_no=partNo /
+     * bom_type=MATERIAL（对齐 {@code MaterialBomMergeHandler} 的 MATERIAL 分支，masterVersionColumn=
+     * "bom_version"，characteristic 不置值 → DB NULL）。
+     *
+     * <p>子表 {@code material_bom_item} 行：seq_no=1 / component_no=partNo(自指) /
+     * component_usage_type=materialType(recipe.symbol，如 AgSnO₂，供材质名称列渲染) /
+     * {@code rough_weight}/{@code net_weight}/{@code weight_unit}/{@code scrap_rate}/{@code defect_rate}
+     * （§3 doc 对应列）：{@link ConfigureProductRequest} 未采集材料毛重/净重/损耗率/不良率，留 NULL
+     * （列均可空，不臆造数值——若业务需要这些值参与核价，需 architect + 业务另行确认取数来源）。
+     *
+     * <p>幂等复用 {@link VersionedV6Writer#writeVersionedMasterDetail} 的内容比对（子行集不变则不升版不写）。
      */
     void insertMaterialBomItemV6(String partNo, String customerCode, String materialType) {
         if (customerCode == null || customerCode.isBlank()) return; // customer_no NOT NULL + mirror 按 customer 过滤
-        em.createNativeQuery(
-                "INSERT INTO material_bom_item (id, system_type, customer_no, material_no, characteristic, " +
-                "seq_no, component_no, component_usage_type, created_at, updated_at) " +
-                "SELECT gen_random_uuid(), 'QUOTE', :cn, :p, NULL, 1, :p, :mt, NOW(), NOW() " +
-                "WHERE NOT EXISTS (SELECT 1 FROM material_bom_item " +
-                "  WHERE material_no = :p AND customer_no = :cn AND system_type = 'QUOTE' AND characteristic IS NULL AND is_current = true)")
-            .setParameter("cn", customerCode)
-            .setParameter("p", partNo)
-            .setParameter("mt", materialType)
-            .executeUpdate();
+
+        Map<String, Object> masterGk = bomGroupKey(customerCode, partNo, "bom_type", "MATERIAL");
+        Map<String, Object> childGk = bomGroupKey(customerCode, partNo, "characteristic", null);
+
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("seq_no", 1);
+        row.put("component_no", partNo);
+        row.put("component_usage_type", materialType);
+        row.put("rough_weight", null);
+        row.put("net_weight", null);
+        row.put("weight_unit", null);
+        row.put("scrap_rate", null);
+        row.put("defect_rate", null);
+
+        versionedWriter.writeVersionedMasterDetail(
+            "material_bom", "bom_version", masterGk, null,
+            "material_bom_item", "bom_version", childGk,
+            List.of("seq_no", "component_no", "component_usage_type",
+                    "rough_weight", "net_weight", "weight_unit", "scrap_rate", "defect_rate"),
+            List.of(row));
     }
 
     /**
@@ -855,10 +900,18 @@ public class ConfigureProductService {
     }
 
     /**
-     * B3: 组合工艺 → capacity（对标导入 §14 组装加工费）。按 COMBO 整组版本化：
+     * B3（B2 落库改造，backtask §14/B2.1⑤）: 组合工艺 → capacity（对标导入 §14 组装加工费）。按 COMBO 整组版本化：
      * 分组键 (material_no=COMBO, resource_group_no=QUOTE_ASSEMBLY)，行集 = 各 def_code。
      * process_no=def_code、process_name=def.name（缺回退 def_code）、production_type=BATCH_FIXED、
-     * currency=CNY、fixed_cost 留 NULL（子项3，单价由 INPUT 层维护）。
+     * currency=CNY。
+     *
+     * <p>§14 doc 对应列 {@code fixed_cost}(固定费)/{@code capacity_unit}(计量单位，⚠️ 实际列名非
+     * {@code unit})/{@code default_defect_rate}(拒收率/不良率)：选配阶段
+     * {@link com.cpq.configure.dto.CompositeProcessRequest} 未采集这些值，留 NULL（单价/单位由后续
+     * INPUT 层或 B6 组合工艺候选收敛任务补齐取值来源，不在本任务臆造）。
+     *
+     * <p>组合工艺候选源（process_master ASSEMBLY 收敛、process_no 口径切换）是 B6 后续任务，
+     * 本任务 process_no/process_name 沿用现役 {@code composite_process_def} 读取机制不变。
      */
     @SuppressWarnings("unchecked")
     void insertCompositeProcessCapacityV6(String parentHfPartNo,
@@ -877,6 +930,9 @@ public class ConfigureProductService {
             r.put("production_type", "BATCH_FIXED");
             r.put("currency", "CNY");
             r.put("seq_no", seq++);
+            r.put("fixed_cost", null);
+            r.put("capacity_unit", null);
+            r.put("default_defect_rate", null);
             rows.add(r);
         }
         Map<String, Object> gk = new LinkedHashMap<>();
@@ -885,7 +941,8 @@ public class ConfigureProductService {
         gk.put("resource_group_no", "QUOTE_ASSEMBLY");
         versionedWriter.writeVersionedGroup(new VersionedGroupSpec(
             "capacity", "calc_version", gk,
-            List.of("process_no", "process_name", "production_type", "currency", "seq_no"), rows));
+            List.of("process_no", "process_name", "production_type", "currency", "seq_no",
+                    "fixed_cost", "capacity_unit", "default_defect_rate"), rows));
     }
 
     /**
@@ -940,7 +997,8 @@ public class ConfigureProductService {
     public ConfigureProductResponse configure(UUID quotationId,
                                               ConfigureProductRequest req,
                                               UUID operatorId) {
-        validateRequest(req);
+        // B2.3: 后端裁决的有效 productType（Σqty 兜底），全程用它分发，不再信 req.productType。
+        String effectiveType = validateRequest(req);
 
         // P4 批2 补丁: 从 quotation 拉 customer_id，传给 resolvePart → insertProcesses
         UUID customerId = getCustomerIdFromQuotation(quotationId);
@@ -963,7 +1021,7 @@ public class ConfigureProductService {
 
         // PASS 2: 组合产品父级
         String parentHfPartNo = null;
-        if ("COMPOSITE".equals(req.productType)) {
+        if ("COMPOSITE".equals(effectiveType)) {
             // 选配 Plan 3b (T5): 生产侧全局指纹发号 → 销售侧客户维度指纹发号 swap（同 T4 SIMPLE）。
             // R6: 组合体也强制 customerCode 非空 — 父报价料号内嵌客户四位码；组合体可能全 existing
             // 子件（未走 resolvePart custom 分支）却仍需为父级发号，故此处独立校验。
@@ -1023,12 +1081,13 @@ public class ConfigureProductService {
         // PASS 3: line_items (解法 B: 传 req.tempId 给 buildLineItems 作 parent line item id)
         UUID tempId = parseUuidOrNull(req.tempId);
         List<Map<String, Object>> lineItems =
-            buildLineItems(quotationId, req, parentHfPartNo, childHfPartNos, tempId);
+            buildLineItems(quotationId, req, parentHfPartNo, childHfPartNos, tempId, effectiveType);
 
         ConfigureProductResponse resp = new ConfigureProductResponse();
         resp.lineItems = lineItems;
         resp.fingerprintMatched = !reused.isEmpty();
         resp.reusedHfPartNos = reused;
+        resp.productType = effectiveType;
         return resp;
     }
 
@@ -1064,7 +1123,26 @@ public class ConfigureProductService {
         return rows.isEmpty() || rows.get(0) == null ? null : rows.get(0).toString();
     }
 
-    void validateRequest(ConfigureProductRequest req) {
+    /**
+     * B2.3（✅ 架构决策1-A 定稿，backtask）: 校验请求 + 按 Σqty 兜底裁决 SIMPLE/COMPOSITE，
+     * 不盲信前端 {@code req.productType}（前后端同口径）。
+     *
+     * <ul>
+     *   <li>Σqty = Σ parts[].quantity（null/&lt;1 兜底为 1，与 {@link #configure} 内 childQtys 同口径）；
+     *       Σqty==1 → SIMPLE；Σqty≥2 → COMPOSITE。</li>
+     *   <li>单行 qty≥2（parts.size()==1 但 Σqty≥2）= 父 COMPOSITE + 1 个去重子件
+     *       composition_qty=qty（D12/D17），不展开成多子件——与 {@code computeComposite} 现役口径 +
+     *       导入 §3 ASSEMBLY 同形，直接复用 {@code configure} 既有 COMPOSITE 分支代码
+     *       （该分支对 N=1 子件天然兼容，无需单独分支）。</li>
+     *   <li>放开两闸门（本决策唯一新增改点）：① COMPOSITE 下限从 parts.size()&gt;=2 改为 Σqty&gt;=2
+     *       （parts.size() 上限 ≤8 保留，指去重子件行数，与 productType 无关全程校验）；
+     *       ② 组合工艺 participatingPartIndexes 硬校验从 &gt;=2 放开为非空即可
+     *       （允许"单去重子件 qty≥2"绑组合工艺，否则单行 qty2 选组合工艺会 400）。</li>
+     * </ul>
+     *
+     * @return 后端裁决后的有效 productType（"SIMPLE" 或 "COMPOSITE"），供 {@link #configure} 后续分发。
+     */
+    String validateRequest(ConfigureProductRequest req) {
         if (req == null) throw new IllegalArgumentException("request body 必填");
         if (!"SIMPLE".equals(req.productType) && !"COMPOSITE".equals(req.productType)) {
             throw new IllegalArgumentException("productType must be SIMPLE or COMPOSITE");
@@ -1072,23 +1150,23 @@ public class ConfigureProductService {
         if (req.parts == null || req.parts.isEmpty()) {
             throw new IllegalArgumentException("parts 必填");
         }
-        if ("SIMPLE".equals(req.productType) && req.parts.size() != 1) {
-            throw new IllegalArgumentException("SIMPLE 时 parts.size = 1");
+        if (req.parts.size() > 8) {
+            throw new IllegalArgumentException("parts.size 上限 8（去重子件行数）");
         }
-        if ("COMPOSITE".equals(req.productType)) {
-            if (req.parts.size() < 2 || req.parts.size() > 8) {
-                throw new IllegalArgumentException("COMPOSITE 时 parts.size ∈ [2,8]");
-            }
-            if (req.compositeProcesses != null) {
-                for (com.cpq.configure.dto.CompositeProcessRequest cp : req.compositeProcesses) {
-                    if (cp.participatingPartIndexes == null
-                            || cp.participatingPartIndexes.size() < 2) {
-                        throw new IllegalArgumentException(
-                            "组合工艺参与配件 < 2: " + cp.defCode);
-                    }
+
+        int totalQty = req.parts.stream()
+            .mapToInt(pr -> (pr.quantity == null || pr.quantity < 1) ? 1 : pr.quantity)
+            .sum();
+        String effectiveType = (totalQty == 1) ? "SIMPLE" : "COMPOSITE";
+
+        if ("COMPOSITE".equals(effectiveType) && req.compositeProcesses != null) {
+            for (com.cpq.configure.dto.CompositeProcessRequest cp : req.compositeProcesses) {
+                if (cp.participatingPartIndexes == null || cp.participatingPartIndexes.isEmpty()) {
+                    throw new IllegalArgumentException("组合工艺参与配件为空: " + cp.defCode);
                 }
             }
         }
+        return effectiveType;
     }
 
     // insertAssemblyBom 已在 Phase 3 移除（V44 mat_bom ASSEMBLY 写入停用）
@@ -1140,28 +1218,24 @@ public class ConfigureProductService {
         return out;
     }
 
-    @SuppressWarnings("unchecked")
-    List<Map<String, Object>> buildLineItems(UUID quotationId,
-                                             ConfigureProductRequest req,
-                                             String parentHfPartNo,
-                                             List<String> childHfPartNos) {
-        return buildLineItems(quotationId, req, parentHfPartNo, childHfPartNos, null);
-    }
-
     /**
-     * 解法 B: 重载版本，支持前端传入 tempId 作为主 line item UUID。
+     * 解法 B: 支持前端传入 tempId 作为主 line item UUID。
      * SIMPLE: tempId = 该唯一 line item 的 id；
      * COMPOSITE: tempId = 父 line item 的 id，子 line item 仍自动生成。
+     *
+     * <p>B2.3: {@code effectiveType} 由 {@link #validateRequest} 按 Σqty 裁决后传入
+     * （不再读 {@code req.productType}，防止前端声明与后端裁决不一致时静默走错分支）。
      */
     @SuppressWarnings("unchecked")
     List<Map<String, Object>> buildLineItems(UUID quotationId,
                                              ConfigureProductRequest req,
                                              String parentHfPartNo,
                                              List<String> childHfPartNos,
-                                             UUID tempId) {
+                                             UUID tempId,
+                                             String effectiveType) {
         List<Map<String, Object>> out = new ArrayList<>();
 
-        if ("SIMPLE".equals(req.productType)) {
+        if ("SIMPLE".equals(effectiveType)) {
             String pn = childHfPartNos.get(0);
             UUID id = insertLineItem(quotationId, pn, null, "SIMPLE", tempId);
             // per-quote 工序：选配工序写报价行专属 quotation_line_process（行已建，满足 FK）
