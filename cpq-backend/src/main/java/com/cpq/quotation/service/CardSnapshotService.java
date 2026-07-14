@@ -1848,8 +1848,10 @@ public class CardSnapshotService {
         return baseRowsByComp;
     }
 
-    /** 从 quote_card_values JSON 提取各组件的 baseRows（componentId → baseRows 数组）。 */
-    private Map<String, ArrayNode> extractBaseRowsByComp(String cardValuesJson) {
+    /** 从 quote_card_values JSON 提取各组件的 baseRows（componentId → baseRows 数组）。
+     * 包级可见（task-0713 B7）：{@code CostingVersionService} 非主树切换时，从核价单缓存的
+     * costingCardValues 里取出「未重查页签」的 baseRows 原样复用，只重跑被切换的那一个组件。 */
+    Map<String, ArrayNode> extractBaseRowsByComp(String cardValuesJson) {
         Map<String, ArrayNode> map = new LinkedHashMap<>();
         if (cardValuesJson == null || cardValuesJson.isBlank()) return map;
         try {
