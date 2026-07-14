@@ -49,9 +49,9 @@
 
 Query（全部可选，服务端 AND 组合、模糊）：`customerProductNo` / `salesPartNo` / `productName` / `spec` / `page` / `size`。
 
-返回 `ApiResponse<PagedResult<ExistingProductDTO>>`：
+返回 `ApiResponse<PageResult<ExistingProductDTO>>`（⚠️ 真实包络类是 `com.cpq.common.dto.PageResult`：`{content, page, size, totalElements, totalPages}`，前端消费 `data.content`/`data.totalElements`，非 items/total）：
 ```jsonc
-{ "success":true, "data":{ "total":128, "items":[
+{ "success":true, "data":{ "totalElements":128, "page":1, "size":20, "totalPages":7, "content":[
   { "materialNo":"SP-10110001",           // 销售料号(=material_customer_map.material_no)
     "customerProductNo":"CPN-8899",        // 客户产品编号
     "productName":"阀体总成",               // 品名(customer_material_name)
@@ -107,7 +107,7 @@ Query（全部可选，服务端 AND 组合、模糊）：`customerProductNo` / 
 > 新表 `model_config` / `model_config_file`（D4，弃旧 `mat_part_model`）。Base：`/api/cpq/model-configs`。
 
 ### 4.1 列表 `GET /model-configs?subjectType=SALES_PART|MATERIAL&keyword=&page=&size=`
-返回 `ApiResponse<PagedResult<ModelConfigDTO>>`：
+返回 `ApiResponse<PageResult<ModelConfigDTO>>`（真实类 `PageResult`：`data.content`/`data.totalElements`，非 items/total）：
 ```jsonc
 { "id":"uuid","subjectType":"MATERIAL","subjectKey":"SS304","subjectLabel":"不锈钢304",
   "version":3,"isCurrent":true,"label":"阀体v3","glbUrl":"/files/..glb","thumbnailUrl":"/files/..png",
