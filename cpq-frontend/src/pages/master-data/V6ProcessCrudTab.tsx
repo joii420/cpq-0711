@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Input, Button, Space, Tag, Typography, Drawer, Form, Switch, InputNumber, message,
 } from 'antd';
-import { ReloadOutlined, SearchOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { ReloadOutlined, SearchOutlined, PlusOutlined, EditOutlined, DeleteOutlined, ImportOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import SelectableTable, { runBatch } from '../../components/SelectableTable';
 import {
@@ -10,6 +10,7 @@ import {
 } from '../../services/v6MasterDataService';
 import type { ProcessMasterDTO, ProcessMasterUpsert } from '../../services/v6MasterDataService';
 import V6ProcessDetailDrawer from './V6ProcessDetailDrawer';
+import ProcessMasterImportDrawer from './ProcessMasterImportDrawer';
 
 const PAGE_SIZE = 20;
 
@@ -30,6 +31,9 @@ const V6ProcessCrudTab: React.FC = () => {
   const [editing, setEditing] = useState<ProcessMasterDTO | null>(null); // null = 新建
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm<ProcessMasterUpsert>();
+
+  // 批量导入抽屉（childtask-1 · F1）
+  const [importOpen, setImportOpen] = useState(false);
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -156,6 +160,7 @@ const V6ProcessCrudTab: React.FC = () => {
       />
       <Button icon={<ReloadOutlined />} onClick={handleRefresh}>刷新</Button>
       <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增工序</Button>
+      <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>导入工序</Button>
     </Space>
   );
 
@@ -208,6 +213,12 @@ const V6ProcessCrudTab: React.FC = () => {
       />
 
       <V6ProcessDetailDrawer open={detailOpen} record={detailRecord} onClose={() => setDetailOpen(false)} />
+
+      <ProcessMasterImportDrawer
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => fetchData(keyword, page)}
+      />
 
       <Drawer
         title={editing ? `编辑工序 · ${editing.processNo}` : '新建工序'}

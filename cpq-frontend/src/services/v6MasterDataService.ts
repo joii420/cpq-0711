@@ -147,6 +147,50 @@ export async function deleteProcess(id: string): Promise<void> {
   await api.delete(`/v6/process-master/${id}`);
 }
 
+// ─── 工序主数据批量导入 / 模板下载（childtask-1 · F1，BL-0045）─────────────────
+
+/** 工序主数据导入结果报告（对应后端 ProcessMasterImportReportDTO） */
+export interface ProcessMasterImportReport {
+  /** xlsx 数据总行数 */
+  totalRows: number;
+  /** 新增行数 */
+  insertedCount: number;
+  /** 覆盖更新行数 */
+  updatedCount: number;
+  /** 跳过行数 */
+  skippedRowCount: number;
+  /** 逐条跳过原因 */
+  skipped: Array<{ row: number; reason: string; raw?: string }>;
+  /** 耗时(ms) */
+  durationMs: number;
+}
+
+/**
+ * POST /v6/process-master/import — 上传 xlsx 批量导入工序主数据(upsert 覆盖)。
+ * 与 ProcessMasterResource 其余端点同为 ApiResponse<T> 包裹，故走 unwrap。
+ */
+export async function importProcesses(file: File): Promise<ProcessMasterImportReport> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await api.post('/v6/process-master/import', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return unwrap<ProcessMasterImportReport>(res);
+}
+
+/**
+ * GET /v6/process-master/import/template — 下载工序导入模板(xlsx blob)。
+ * 模板下载走裸 Response(不经 ApiResponse 包裹)，与 materialRecipeService.downloadTemplate 同约定。
+ */
+export async function downloadProcessTemplate(): Promise<Blob> {
+  const data: any = await api.get('/v6/process-master/import/template', { responseType: 'blob' });
+  return data instanceof Blob
+    ? data
+    : new Blob([data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+}
+
 /** 分页查询 BOM 明细 */
 export async function listBomItems(params: {
   customerNo: string;

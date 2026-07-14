@@ -15,12 +15,14 @@
 // 保证增删行时受控输入不错位/不假死。
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useRef, useState } from 'react';
-import { Select, AutoComplete, InputNumber, Input, Button, Spin, Space } from 'antd';
+import { Select, AutoComplete, InputNumber, Input, Button, Spin, Space, Typography } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { Table } from 'antd';
 import type { ColumnDef, MasterType, SheetRow } from './types';
 import { lookup } from './api';
+
+const { Text } = Typography;
 
 // 单调递增内部行键
 let RID = 1;
@@ -48,6 +50,20 @@ function displayText(v: unknown): string {
   if (v === null || v === undefined || v === '') return '—';
   if (typeof v === 'boolean') return v ? '是' : '否';
   return String(v);
+}
+
+// ── NAME 列灰字兜底（childtask-1 · F2.2）────────────────────────────────────
+// 四码名称列（工序名/元素名/料号名/材质名）统一走此渲染：有值显示灰字原值，
+// 空值显示灰字兜底提示。纯展示、不阻断保存/浏览。
+/** 材质名（未绑 material_recipe_id）提示「未绑定」；其余名称列（未维护对应主表编码）提示「未维护」 */
+export function nameColumnHint(colName: string): string {
+  return colName === 'material_recipe_name' ? '未绑定' : '未维护';
+}
+
+/** 名称列渲染：有值显示灰字原值，空值显示灰字 hint 兜底 */
+export function renderNameOrHint(value: unknown, hint: string): React.ReactNode {
+  const hasValue = value !== null && value !== undefined && value !== '';
+  return <Text type="secondary">{hasValue ? String(value) : hint}</Text>;
 }
 
 // ── MASTER 远程搜索下拉（工序/元素/来料料号）─────────────────────────────────
@@ -248,7 +264,10 @@ const EditableSheetTable: React.FC<EditableSheetTableProps> = ({
       width: cellEditable ? 180 : 140,
       render: (_: unknown, row: SheetRow) => {
         if (!cellEditable) {
-          return <span style={{ color: col.role === 'NAME' ? '#8c8c8c' : undefined }}>{displayText(row[col.name])}</span>;
+          if (col.role === 'NAME') {
+            return renderNameOrHint(row[col.name], nameColumnHint(col.name));
+          }
+          return <span>{displayText(row[col.name])}</span>;
         }
         return renderEditControl(col, row);
       },

@@ -85,8 +85,19 @@ export interface PartOverview {
 }
 
 // ── §4 某组数据行 ────────────────────────────────────────────────────────────
+/**
+ * ELEMENT_BOM sheet 专属已知字段（childtask-1 · F2）：
+ * 后端 readRows 两跳 join `material_part_no → material_master.material_recipe_id → material_recipe.name`
+ * 带出的材质名，随 sheet.columns 的 `nameCol("material_recipe_name","材质名")` 定义一并下发。
+ * 未绑定 material_recipe_id 时为 null（前端渲染灰字「未绑定」，见 EditableSheetTable.renderNameOrHint）。
+ * 其余 sheet 无此字段，值为 undefined。
+ */
+export interface SheetRowKnownFields {
+  material_recipe_name?: string | null;
+}
+
 /** 行数据为动态列结构（列名 → 值）；值均以字符串/原始类型透传，保留后端精度 */
-export type SheetRow = Record<string, unknown>;
+export type SheetRow = SheetRowKnownFields & Record<string, unknown>;
 
 export interface SheetRowsResult {
   sheetKey: string;
