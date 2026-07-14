@@ -35,7 +35,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import { costingOrderService } from '../../services/costingOrderService';
-import type { CostingOrderDetail } from '../../services/costingOrderService';
+import type { CostingOrderDetail, VersionSwitchResult } from '../../services/costingOrderService';
 import { useAuthStore } from '../../stores/authStore';
 import ProductDetailViews from './ProductDetailViews';
 
@@ -48,6 +48,42 @@ const costingStatusConfig: Record<string, { label: string; color: string }> = {
   REJECTED:  { label: '已驳回',  color: 'error'      },
   WITHDRAWN: { label: '已撤回',  color: 'default'    },
 };
+
+/**
+ * task-0713（D1/F1）：报价侧读 frozenDto 原样不变；核价侧改用响应里的 costingRender/costingTotalAmount
+ * 叠加到 frozen 快照上——只覆写每个 lineItem 的 costingCardValues/costingExcelValues 和顶层
+ * costingTotalAmount，报价侧字段（quoteCardValues 等）逐字节不动（守 T2 报价侧隔离）。
+ * costingRender 缺失（后端未就绪/历史单未落缓存）时优雅降级为 frozenDto 里原有的核价字段值，
+ * 不因此报错或清空。
+ */
+function buildFrozenView(d: CostingOrderDetail): any {
+  let parsed: any = null;
+  if (d.frozenDto) {
+    try {
+      parsed = JSON.parse(d.frozenDto);
+    } catch {
+      parsed = null;
+    }
+  }
+  if (!parsed) return null;
+  const renderMap = d.costingRender ?? {};
+  const lineItems = Array.isArray(parsed.lineItems)
+    ? parsed.lineItems.map((li: any) => {
+        const entry = li?.id != null ? renderMap[li.id] : undefined;
+        if (!entry) return li;
+        return {
+          ...li,
+          costingCardValues: entry.costingCardValues ?? li.costingCardValues,
+          costingExcelValues: entry.costingExcelValues ?? li.costingExcelValues,
+        };
+      })
+    : parsed.lineItems;
+  return {
+    ...parsed,
+    lineItems,
+    costingTotalAmount: d.costingTotalAmount ?? parsed.costingTotalAmount,
+  };
+}
 
 const CostingReviewPage: React.FC = () => {
   const { coid } = useParams<{ coid: string }>();
@@ -68,15 +104,7 @@ const CostingReviewPage: React.FC = () => {
       const res = await costingOrderService.getById(coid);
       const d = res.data;
       setDetail(d);
-      if (d.frozenDto) {
-        try {
-          setFrozen(JSON.parse(d.frozenDto));
-        } catch {
-          setFrozen(null);
-        }
-      } else {
-        setFrozen(null);
-      }
+      setFrozen(buildFrozenView(d));
     } catch (e: any) {
       message.error(e?.message || '加载失败');
     } finally {
@@ -93,6 +121,34 @@ const CostingReviewPage: React.FC = () => {
   const canReview =
     ['PRICING_MANAGER', 'SYSTEM_ADMIN'].includes(user?.role ?? '') &&
     detail?.status === 'PENDING';
+
+  /**
+   * task-0713（F4）：版本切换控件可交互 = PENDING + 财务/管理员。
+   * 优先信后端下发的 detail.editable（api.md §1 契约字段）；后端未就绪时前端按同一规则自算兜底，
+   * 与 canReview 同源（两者语义一致：都是"待核价 + 财务/管理员"）。
+   */
+  const editable = detail?.editable ?? canReview;
+
+  /**
+   * task-0713（F3）：版本切换只增量刷新当前卡片 + 单据总价，绝不整单重新 getById（守 AP-31）。
+   * VersionSelectDropdown 切换成功后把 POST version-switch 的响应原样上抛到这里，
+   * 本回调只 REPLACE 命中的那一个 lineItem 的核价字段（AP-51：整体替换，不做 Math.max 累加）。
+   */
+  const handleVersionSwitched = (result: VersionSwitchResult) => {
+    setFrozen((prev: any) => {
+      if (!prev || !Array.isArray(prev.lineItems)) return prev;
+      const lineItems = prev.lineItems.map((li: any) =>
+        li?.id === result.lineItemId
+          ? {
+              ...li,
+              costingCardValues: result.costingCardValues,
+              costingExcelValues: result.costingExcelColumns ?? li.costingExcelValues,
+            }
+          : li,
+      );
+      return { ...prev, lineItems, costingTotalAmount: result.costingTotalAmount ?? prev.costingTotalAmount };
+    });
+  };
 
   /** 审批回联：用 quotationId，不是 costingOrderId */
   const handleApprove = async () => {
@@ -204,7 +260,13 @@ const CostingReviewPage: React.FC = () => {
 
       {/* 产品明细：frozen DTO 存在则走 frozen 模式，否则降级提示 */}
       {frozen ? (
-        <ProductDetailViews quotation={frozen} frozen />
+        <ProductDetailViews
+          quotation={frozen}
+          frozen
+          coid={coid}
+          editable={editable}
+          onVersionSwitched={handleVersionSwitched}
+        />
       ) : (
         <Card>
           <div style={{ textAlign: 'center', padding: 32, color: '#999' }}>

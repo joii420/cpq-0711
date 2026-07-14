@@ -24,6 +24,7 @@ import ReadonlyComparison from './ReadonlyComparison';
 import { usePathFormulaCache } from './usePathFormulaCache';
 import { enrichComponentData } from './enrichComponentData';
 import type { LineItem } from './QuotationStep2';
+import type { VersionSwitchResult } from '../../services/costingOrderService';
 
 const { Text } = Typography;
 
@@ -32,9 +33,17 @@ interface Props {
   locateTarget?: { lineItemId?: string; productPartNo?: string; componentId?: string; seq: number } | null;
   /** 冻结模式：gvDefs 取 quotation.gvDefs，enrich 跳过，QUOTE 分支由 ReadonlyProductCard 内部离线组装 */
   frozen?: boolean;
+  /** task-0713：核价单 ID。仅核价管理（CostingReviewPage）传入，供核价侧版本切换下拉调用接口；
+   *  报价单详情（QuotationDetail）不传，核价侧版本下拉不出现，行为保持现状不变。 */
+  coid?: string;
+  /** task-0713（F4）：= status==='PENDING' && role∈{财务,管理员}，决定核价侧版本下拉是否可交互 */
+  editable?: boolean;
+  /** task-0713（F3）：版本切换成功后的增量回调，由上层（CostingReviewPage）合并到本地状态，
+   *  本组件自身不持有 quotation 状态，只透传。 */
+  onVersionSwitched?: (result: VersionSwitchResult) => void;
 }
 
-const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen }) => {
+const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, coid, editable, onVersionSwitched }) => {
   // ----------------------------------------------------------------
   // 两级视图切换 state
   // ----------------------------------------------------------------
@@ -220,6 +229,9 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen }
                   locateComponentId={isLocateTarget ? locateResolved!.componentId : undefined}
                   locateSeq={isLocateTarget ? locateResolved!.seq : undefined}
                   frozen={frozen}
+                  coid={mainTab === 'costing' ? coid : undefined}
+                  editable={mainTab === 'costing' ? editable : undefined}
+                  onVersionSwitched={onVersionSwitched}
                 />
               </div>
             );
@@ -245,6 +257,25 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen }
                 报价总金额：
                 <Text strong style={{ fontSize: 18, color: '#c00' }}>
                   ¥{Number(quotation.totalAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+                </Text>
+              </Text>
+            </Space>
+          </Col>
+        </Row>
+      )}
+
+      {/* task-0713（F5/3a）：核价侧单据总价 —— 读 costingTotalAmount（Σ核价成本 subtotal，
+          不含 Step3 折扣），与上方报价总金额（含折扣）是两条口径。切换版本后由
+          onVersionSwitched 增量更新 quotation.costingTotalAmount 即时反映，不整单重查。
+          精度守 cpq-decimal-display-policy：对外总额 2 位。 */}
+      {mainTab === 'costing' && viewType === 'card' && (
+        <Row justify="end" style={{ marginTop: 16 }}>
+          <Col>
+            <Space direction="vertical" align="end">
+              <Text style={{ fontSize: 16 }}>
+                核价单据总价：
+                <Text strong style={{ fontSize: 18, color: '#c00' }}>
+                  ¥{Number(quotation.costingTotalAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Text>
               </Text>
             </Space>
