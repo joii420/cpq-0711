@@ -900,18 +900,25 @@ public class ConfigureProductService {
     }
 
     /**
-     * B3（B2 落库改造，backtask §14/B2.1⑤）: 组合工艺 → capacity（对标导入 §14 组装加工费）。按 COMBO 整组版本化：
-     * 分组键 (material_no=COMBO, resource_group_no=QUOTE_ASSEMBLY)，行集 = 各 def_code。
-     * process_no=def_code、process_name=def.name（缺回退 def_code）、production_type=BATCH_FIXED、
-     * currency=CNY。
+     * B3（B2 落库改造，backtask §14/B2.1⑤，B6 架构决策 2-2A 定稿后收敛）: 组合工艺 → capacity
+     * （对标导入 §14 组装加工费）。按 COMBO 整组版本化：分组键
+     * (material_no=COMBO, resource_group_no=QUOTE_ASSEMBLY)，行集 = 各 process_no。
      *
-     * <p>§14 doc 对应列 {@code fixed_cost}(固定费)/{@code capacity_unit}(计量单位，⚠️ 实际列名非
-     * {@code unit})/{@code default_defect_rate}(拒收率/不良率)：选配阶段
-     * {@link com.cpq.configure.dto.CompositeProcessRequest} 未采集这些值，留 NULL（单价/单位由后续
-     * INPUT 层或 B6 组合工艺候选收敛任务补齐取值来源，不在本任务臆造）。
+     * <p><b>标识锚点 = {@code process_master.process_no}</b>（不再是 {@code composite_process_def.code}）：
+     * {@code cp.defCode} 即前端从 {@code GET /composite-processes} 候选选中的
+     * {@code process_master.process_no}（如 MRO-AS-0001），与指纹 CPROC /
+     * {@code quotation_line_composite_process.def_code} 三处（连同候选端点、前端选值共五处）同一标识
+     * （AP-44 精神，PR 自检硬项）。
      *
-     * <p>组合工艺候选源（process_master ASSEMBLY 收敛、process_no 口径切换）是 B6 后续任务，
-     * 本任务 process_no/process_name 沿用现役 {@code composite_process_def} 读取机制不变。
+     * <p>{@code process_name} 读 {@code process_master.process_name}（缺回退 process_no）；
+     * {@code currency} 空兜 CNY；{@code capacity_unit}(⚠️ 非 {@code unit})/{@code default_defect_rate}
+     * 直接透传 {@code process_master}（ASSEMBLY 现网 4 行均空 → 落库为 NULL，与自制加工费口径一致）；
+     * {@code fixed_cost} 留 NULL（单价由后续 INPUT 层维护，选配阶段未采集）。
+     *
+     * <p>未在 process_master(ASSEMBLY) 命中时不在此处 fail-fast（沿用防御式回退：process_name=
+     * process_no、currency=CNY、其余 NULL）——真正的存在性校验由同一事务内的
+     * {@link #insertCompositeProcessesPerQuote} 通过 {@code process_master} 查找兜底，
+     * 非法 defCode 会在那里抛出并回滚本次全部落库（事务原子性，AP-53/B2.4 不变量）。
      */
     @SuppressWarnings("unchecked")
     void insertCompositeProcessCapacityV6(String parentHfPartNo,
@@ -920,19 +927,30 @@ public class ConfigureProductService {
         List<Map<String, Object>> rows = new ArrayList<>();
         int seq = 1;
         for (com.cpq.configure.dto.CompositeProcessRequest cp : cps) {
-            List<Object> nm = em.createNativeQuery(
-                    "SELECT name FROM composite_process_def WHERE code = :c")
+            List<Object[]> pm = em.createNativeQuery(
+                    "SELECT process_name, standard_currency, standard_unit, default_defect_rate " +
+                    "FROM process_master WHERE process_no = :c AND process_category = 'ASSEMBLY'")
                 .setParameter("c", cp.defCode).getResultList();
-            String procName = (!nm.isEmpty() && nm.get(0) != null) ? nm.get(0).toString() : cp.defCode;
+            String procName = cp.defCode;
+            String currency = "CNY";
+            String capacityUnit = null;
+            BigDecimal defectRate = null;
+            if (!pm.isEmpty()) {
+                Object[] m = pm.get(0);
+                if (m[0] != null && !m[0].toString().isBlank()) procName = m[0].toString();
+                if (m[1] != null && !m[1].toString().isBlank()) currency = m[1].toString();
+                if (m[2] != null && !m[2].toString().isBlank()) capacityUnit = m[2].toString();
+                if (m[3] != null) defectRate = new BigDecimal(m[3].toString());
+            }
             Map<String, Object> r = new LinkedHashMap<>();
             r.put("process_no", cp.defCode);
             r.put("process_name", procName);
             r.put("production_type", "BATCH_FIXED");
-            r.put("currency", "CNY");
+            r.put("currency", currency);
             r.put("seq_no", seq++);
             r.put("fixed_cost", null);
-            r.put("capacity_unit", null);
-            r.put("default_defect_rate", null);
+            r.put("capacity_unit", capacityUnit);
+            r.put("default_defect_rate", defectRate);
             rows.add(r);
         }
         Map<String, Object> gk = new LinkedHashMap<>();
@@ -1037,6 +1055,8 @@ public class ConfigureProductService {
             List<Integer> childQtys = req.parts.stream()
                 .map(pr -> (pr.quantity == null || pr.quantity < 1) ? 1 : pr.quantity)
                 .collect(Collectors.toList());
+            // B6: cp.defCode 语义已变为 process_master.process_no（架构决策 2-2A），算法不变，
+            // 仅口径值域变化（CPROC token 现为工序编号，如 MRO-AS-0001）。
             List<String> compositeProcessCodes = req.compositeProcesses == null ? List.of()
                 : req.compositeProcesses.stream().map(cp -> cp.defCode).collect(Collectors.toList());
             var sig = salesFp.computeComposite(salesCtx.customerNo, childHfPartNos, childQtys, compositeProcessCodes);
@@ -1173,10 +1193,30 @@ public class ConfigureProductService {
     // insertCompositeProcesses 已在 Phase 3 移除（V44 mat_composite_process 写入停用）
 
     /**
+     * B6（架构决策 2-2A 定稿）: 校验组合工艺标识存在于工序库 {@code process_master}(ASSEMBLY)，
+     * 取代旧 {@code CompositeProcessDef.findByCodeOrThrow}。非法/不存在 → fail-fast 400，
+     * 与 {@link #insertCompositeProcessCapacityV6} 同处一个事务，命中即整体回滚（B2.4 不变量）。
+     */
+    @SuppressWarnings("unchecked")
+    private void assertAssemblyProcessExists(String processNo) {
+        List<Object> rows = em.createNativeQuery(
+                "SELECT 1 FROM process_master WHERE process_no = :c AND process_category = 'ASSEMBLY'")
+            .setParameter("c", processNo).getResultList();
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException(
+                "组合工艺未找到或非 ASSEMBLY 工序(process_master.process_no): " + processNo);
+        }
+    }
+
+    /**
      * per-quote 组合工艺写入(取代 mat_composite_process 作渲染源)。
      * 把 configure 请求里"参与配件下标"解析成子件料号,写进 quotation_line_composite_process
      * (按 line_item_id 隔离),并返回解析后的步骤列表 —— 供配置响应带回前端,使 saveDraft
      * 全量重建(换 line id)后能从 draft payload 重写,跨保存存活(同 quotation_line_process 机制)。
+     *
+     * <p>B6（架构决策 2-2A 定稿）: 存在性校验由 {@code CompositeProcessDef.findByCodeOrThrow}
+     * 改为 {@link #assertAssemblyProcessExists}（{@code process_master} ASSEMBLY），
+     * {@code def_code} 列语义随之变为"工序编号"（值 = {@code process_master.process_no}）。
      */
     List<Map<String, Object>> insertCompositeProcessesPerQuote(
             UUID lineItemId,
@@ -1188,7 +1228,7 @@ public class ConfigureProductService {
             new com.fasterxml.jackson.databind.ObjectMapper();
         int seq = 1;
         for (com.cpq.configure.dto.CompositeProcessRequest cp : cps) {
-            com.cpq.configure.entity.CompositeProcessDef.findByCodeOrThrow(cp.defCode);
+            assertAssemblyProcessExists(cp.defCode);
             List<String> partsInvolved = cp.participatingPartIndexes.stream()
                 .map(childHfPartNos::get)
                 .collect(Collectors.toList());

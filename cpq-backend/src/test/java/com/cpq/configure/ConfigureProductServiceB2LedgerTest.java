@@ -307,7 +307,9 @@ class ConfigureProductServiceB2LedgerTest {
         req.parts = List.of(p1);
 
         CompositeProcessRequest cp = new CompositeProcessRequest();
-        cp.defCode = "RIVET";
+        // B6（架构决策 2-2A）: defCode = process_master.process_no（ASSEMBLY「总装配」），
+        // 不再是 composite_process_def.code。
+        cp.defCode = "MRO-AS-0001";
         cp.participatingPartIndexes = List.of(0);  // 单去重子件，放开后允许
         cp.params = Map.of();
         req.compositeProcesses = List.of(cp);
@@ -331,6 +333,19 @@ class ConfigureProductServiceB2LedgerTest {
             Map.of("mn", parentPn));
         assertEquals(1, capCount, "capacity 组装加工费行");
 
+        // B6（架构决策 2-2A）五处标识一致（后端四处）: capacity.process_no 必须 = 选中的
+        // process_master.process_no（非旧 composite_process_def.code），process_name 读 process_master。
+        @SuppressWarnings("unchecked")
+        List<Object[]> capRow = em.createNativeQuery(
+                "SELECT process_no, process_name, currency FROM capacity " +
+                "WHERE system_type='QUOTE' AND material_no=:mn " +
+                "AND resource_group_no='QUOTE_ASSEMBLY' AND is_current=true")
+            .setParameter("mn", parentPn).getResultList();
+        assertEquals(1, capRow.size());
+        assertEquals("MRO-AS-0001", capRow.get(0)[0], "capacity.process_no 应 = 选中的 process_master.process_no");
+        assertEquals("总装配", capRow.get(0)[1], "capacity.process_name 应读自 process_master（不再读 composite_process_def）");
+        assertEquals("CNY", capRow.get(0)[2], "process_master ASSEMBLY 现网 currency 空 → 落库兜底 CNY");
+
         // material_bom_item(ASSEMBLY) 恰 1 行，composition_qty=2（非展开 2 行）
         @SuppressWarnings("unchecked")
         List<Object[]> asmRows = em.createNativeQuery(
@@ -347,10 +362,21 @@ class ConfigureProductServiceB2LedgerTest {
         assertEquals(1, materialBomHeaderCount(sq.customerCode(), childPn), "子件 material_bom 头表");
         assertEquals(1, elementBomHeaderCount(sq.customerCode(), childPn, "AgCu85"), "子件 element_bom 头表");
 
-        // 指纹 COMBO=<childPn>:2
+        // 指纹 COMBO=<childPn>:2 + CPROC=<process_no>（B6: CPROC token 值 = process_no）
         String sigText = signatureTextFor(sq.customerCode(), parentPn);
         assertNotNull(sigText);
         assertTrue(sigText.contains("COMBO=" + childPn + ":2"),
             "指纹应含 COMBO=" + childPn + ":2，实际: " + sigText);
+        assertTrue(sigText.contains("CPROC=MRO-AS-0001"),
+            "B6: 指纹 CPROC token 应为 process_master.process_no，实际: " + sigText);
+
+        // quotation_line_composite_process.def_code（B6 后端第四处锚点）应与 capacity.process_no /
+        // 指纹 CPROC 同一值 = process_master.process_no（五处一致，AP-44 精神）。
+        UUID parentLineItemId = (UUID) resp.lineItems.get(0).get("id");
+        String qlcpDefCode = (String) em.createNativeQuery(
+                "SELECT def_code FROM quotation_line_composite_process WHERE line_item_id=:lid")
+            .setParameter("lid", parentLineItemId).getSingleResult();
+        assertEquals("MRO-AS-0001", qlcpDefCode,
+            "quotation_line_composite_process.def_code 应 = process_master.process_no（五处一致）");
     }
 }

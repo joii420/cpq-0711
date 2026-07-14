@@ -1,5 +1,7 @@
 package com.cpq.configure.service;
 
+import com.cpq.basicdata.v6.entity.ProcessMaster;
+import com.cpq.configure.dto.CompositeProcessCandidateDTO;
 import com.cpq.configure.dto.CompositeProcessDefDTO;
 import com.cpq.configure.dto.CompositeProcessUpsertRequest;
 import com.cpq.configure.entity.CompositeProcessDef;
@@ -19,12 +21,37 @@ import java.util.stream.Collectors;
 @ApplicationScoped
 public class CompositeProcessService {
 
+    /** 组合工艺分类值域里代表"组装"的现网实值（DB 实查：无独立 '组合工艺' 枚举）。 */
+    private static final String ASSEMBLY_CATEGORY = "ASSEMBLY";
+
     private static final ObjectMapper OM = new ObjectMapper();
 
     public List<CompositeProcessDefDTO> listActive() {
         return CompositeProcessDef.<CompositeProcessDef>find(
                 "status = 'ACTIVE' ORDER BY sortOrder").list()
             .stream().map(this::toDTO).collect(Collectors.toList());
+    }
+
+    /**
+     * B6（架构决策 2-2A 定稿）: 选配组合工艺候选 — 收敛到工序库
+     * {@code process_master WHERE process_category='ASSEMBLY'}（现网实值，4 行）。
+     * 取代旧 {@link #listActive()} 作为 {@code GET /api/cpq/composite-processes} 的候选源；
+     * {@code composite_process_def} 停止喂给选配候选（表保留给 v0.4，见架构评审.md 决策2）。
+     */
+    public List<CompositeProcessCandidateDTO> listAssemblyCandidates() {
+        return ProcessMaster.<ProcessMaster>find(
+                "processCategory = ?1 ORDER BY processNo", ASSEMBLY_CATEGORY).list()
+            .stream().map(this::toCandidateDTO).collect(Collectors.toList());
+    }
+
+    private CompositeProcessCandidateDTO toCandidateDTO(ProcessMaster pm) {
+        CompositeProcessCandidateDTO dto = new CompositeProcessCandidateDTO();
+        dto.code = pm.processNo;
+        dto.name = pm.processName;
+        dto.currency = pm.standardCurrency;
+        dto.unit = pm.standardUnit;
+        dto.defectRate = pm.defaultDefectRate;
+        return dto;
     }
 
     public CompositeProcessDefDTO getById(UUID id) {

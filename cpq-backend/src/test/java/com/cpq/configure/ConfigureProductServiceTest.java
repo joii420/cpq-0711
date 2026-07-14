@@ -37,7 +37,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * </ul>
  *
  * <p>前提: V164-V174 迁移已全部 success=t；V171 seed 了 12 个 material_recipe；
- *   V172 seed 了 6 个 composite_process_def (含 RIVET)。
+ *   V172 seed 了 6 个 composite_process_def (含 RIVET，仍在库，供 v0.4 保留但不再被本类用例引用)。
+ *   <b>task-0712 B6（架构决策 2-2A）起</b>：组合工艺候选 + 落库校验收敛到工序库
+ *   {@code process_master WHERE process_category='ASSEMBLY'}（现网 4 行，process_no 如
+ *   MRO-AS-0001），本类组合工艺用例均改用该值域（见各用例 {@code cp.defCode}）。
  *
  * <p><b>选配 Plan 3b (2026-07-08)</b>：发号从 partNoProvider(CFG- 前缀) 换成
  * {@code QuoteMaterialNoAllocator.mintAndRegister} → 报价料号格式
@@ -366,7 +369,8 @@ class ConfigureProductServiceTest {
     // ── case 6: 组合产品全新 ─────────────────────────────────────────────────
 
     /**
-     * case 6: COMPOSITE 两个全新配件 + 组合工艺 RIVET
+     * case 6: COMPOSITE 两个全新配件 + 组合工艺 MRO-AS-0001（B6 起 = process_master.process_no，
+     * 非 composite_process_def.code；ASSEMBLY 分类现网 4 行之一"总装配"）
      * → 3 个新 configured material_master (父+2子)、2 条 material_bom_item(ASSEMBLY) 行、
      *   1 条 capacity(QUOTE_ASSEMBLY) 行。
      * V6 单写后：料号身份写 material_master；ASSEMBLY 子件 BOM 写 material_bom_item(characteristic='ASSEMBLY')；
@@ -398,7 +402,7 @@ class ConfigureProductServiceTest {
         req.parts = List.of(p1, p2);
 
         CompositeProcessRequest cp = new CompositeProcessRequest();
-        cp.defCode = "RIVET";
+        cp.defCode = "MRO-AS-0001";  // B6: process_master.process_no（ASSEMBLY「总装配」），非 composite_process_def.code
         cp.participatingPartIndexes = List.of(0, 1);
         cp.params = Map.of("pressure", 5.0, "height", 3.2);
         req.compositeProcesses = List.of(cp);
@@ -486,7 +490,7 @@ class ConfigureProductServiceTest {
         req.parts = List.of(p1, p2);
 
         CompositeProcessRequest cp = new CompositeProcessRequest();
-        cp.defCode = "RIVET";
+        cp.defCode = "MRO-AS-0001";  // B6: process_master.process_no（ASSEMBLY「总装配」），非 composite_process_def.code
         cp.participatingPartIndexes = List.of();  // 空，仍应拒绝
         cp.params = Map.of();
         req.compositeProcesses = List.of(cp);
@@ -516,7 +520,7 @@ class ConfigureProductServiceTest {
         req.parts = List.of(p1, p2);
 
         CompositeProcessRequest cp = new CompositeProcessRequest();
-        cp.defCode = "RIVET";
+        cp.defCode = "MRO-AS-0001";  // B6: process_master.process_no（ASSEMBLY「总装配」），非 composite_process_def.code
         cp.participatingPartIndexes = List.of(0);  // 仅 1 个，老规则 400，新规则放行
         cp.params = Map.of();
         req.compositeProcesses = List.of(cp);

@@ -1,6 +1,7 @@
 package com.cpq.configure.resource;
 
 import com.cpq.common.security.RoleAllowed;
+import com.cpq.configure.dto.CompositeProcessCandidateDTO;
 import com.cpq.configure.dto.CompositeProcessDefDTO;
 import com.cpq.configure.dto.CompositeProcessUpsertRequest;
 import com.cpq.configure.service.CompositeProcessService;
@@ -19,6 +20,18 @@ import jakarta.ws.rs.core.Response;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * 组合工艺端点。
+ *
+ * <p><b>B6（架构决策 2-2A 定稿，task-0712）职责拆分</b>：
+ * <ul>
+ *   <li>{@link #list()} —— 选配候选源，{@code GET /api/cpq/composite-processes}
+ *       改读工序库 {@code process_master}(ASSEMBLY)，标识锚点 = {@code process_no}。</li>
+ *   <li>{@link #getById}/{@link #create}/{@link #update}/{@link #delete} —— 仍管理
+ *       {@code composite_process_def}（表保留给 v0.4 configurator，选配侧不再读它作候选，
+ *       当前无前端管理页引用，保留 CRUD 供后续 v0.4/管理端复用）。</li>
+ * </ul>
+ */
 @Path("/api/cpq/composite-processes")
 @Produces(MediaType.APPLICATION_JSON)
 @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
@@ -27,9 +40,10 @@ public class CompositeProcessResource {
     @Inject
     CompositeProcessService service;
 
+    /** 选配候选：{@code process_master WHERE process_category='ASSEMBLY'}（B6，见类注释）。 */
     @GET
-    public List<CompositeProcessDefDTO> list() {
-        return service.listActive();
+    public List<CompositeProcessCandidateDTO> list() {
+        return service.listAssemblyCandidates();
     }
 
     @GET
