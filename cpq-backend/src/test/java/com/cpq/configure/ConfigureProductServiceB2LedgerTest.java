@@ -2,10 +2,13 @@ package com.cpq.configure;
 
 import com.cpq.configure.dto.*;
 import com.cpq.configure.service.ConfigureProductService;
+import com.cpq.quotation.dto.QuotationDTO;
+import com.cpq.quotation.entity.QuotationLineProcess;
 import io.quarkus.test.TestTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceException;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -88,26 +91,44 @@ class ConfigureProductServiceB2LedgerTest {
         return new SeededQuotation(quotationId, custCode);
     }
 
-    /** 电镀（表面处理类），V4 seed 持久存在，供 processIds 测试用。 */
+    /**
+     * 电镀（表面处理类），process_master 现役工序，供 processNos 测试用。
+     * task-0712 缺口1: 标识锚点已切 process_master.process_no（不再是 process(V4) 表的 UUID）。
+     */
     @SuppressWarnings("unchecked")
-    UUID seedProcessId() {
+    String seedProcessNo() {
         List<Object> rows = em.createNativeQuery(
-                "SELECT id FROM process WHERE code = 'MRO-LP-0001' LIMIT 1")
+                "SELECT process_no FROM process_master WHERE process_no = 'MRO-LP-0001' LIMIT 1")
             .getResultList();
-        if (rows.isEmpty()) throw new IllegalStateException("process MRO-LP-0001 not found — V4 migration must have run");
-        return UUID.fromString(rows.get(0).toString());
+        if (rows.isEmpty()) throw new IllegalStateException("process_master MRO-LP-0001 not found — V267 migration must have run");
+        return rows.get(0).toString();
+    }
+
+    /**
+     * 孤儿工序编号: process_master 存在但 process(V4) 表无对应 code(F2 实证, TP10/TP20)。
+     * task-0712 缺口1 修复前, 这类工序在选配前端会被防御式禁选; 修复后应可正常选中落库。
+     */
+    @SuppressWarnings("unchecked")
+    String seedOrphanProcessNo() {
+        List<Object> rows = em.createNativeQuery(
+                "SELECT process_no FROM process_master WHERE process_no = 'TP10' " +
+                "AND NOT EXISTS (SELECT 1 FROM process p WHERE p.code = process_master.process_no) LIMIT 1")
+            .getResultList();
+        if (rows.isEmpty()) throw new IllegalStateException(
+                "process_master 孤儿工序 TP10 不存在(或已被 process(V4) 收录) — 夹具前提不成立");
+        return rows.get(0).toString();
     }
 
     ElementOverride elem(String code, String pct) {
         return new ElementOverride(code, new BigDecimal(pct));
     }
 
-    PartRequest makeCustomPart(String recipeCode, List<ElementOverride> elems, BigDecimal weight, List<UUID> processIds) {
+    PartRequest makeCustomPart(String recipeCode, List<ElementOverride> elems, BigDecimal weight, List<String> processNos) {
         PartRequest p = new PartRequest();
         p.partMode = "custom";
         p.recipeCode = recipeCode;
         p.elements = elems;
-        p.processIds = processIds != null ? processIds : List.of();
+        p.processNos = processNos != null ? processNos : List.of();
         p.unitWeightGrams = weight;
         p.name = "Test";
         return p;
@@ -166,6 +187,25 @@ class ConfigureProductServiceB2LedgerTest {
             Map.of("mn", materialNo, "mt", materialType));
     }
 
+    /** task-0712 缺口1: quotation_line_process 行(process_no + process_id), 按 line_item_id 查。 */
+    @SuppressWarnings("unchecked")
+    List<Object[]> quotationLineProcessRows(UUID lineItemId) {
+        return em.createNativeQuery(
+                "SELECT process_no, process_id FROM quotation_line_process WHERE line_item_id = :lid")
+            .setParameter("lid", lineItemId).getResultList();
+    }
+
+    /** task-0712 缺口1: unit_price PROCESS 行的 operation_no 集合(校验 = 选中的 process_no)。 */
+    @SuppressWarnings("unchecked")
+    List<String> unitPriceOperationNos(String customerNo, String materialNo) {
+        List<Object> rows = em.createNativeQuery(
+                "SELECT operation_no FROM unit_price WHERE system_type='QUOTE' AND price_type='PROCESS' " +
+                "AND cost_type='自制加工费' AND customer_no=:cn AND code=:mn AND finished_material_no=:mn " +
+                "AND is_current=true ORDER BY seq_no")
+            .setParameter("cn", customerNo).setParameter("mn", materialNo).getResultList();
+        return rows.stream().map(Object::toString).collect(java.util.stream.Collectors.toList());
+    }
+
     /** 渲染基线(AP-53): v_composite_child_materials（选配-材质 mirror 的物理视图，V322 终态）。 */
     @SuppressWarnings("unchecked")
     List<Object[]> queryChildMaterialsView(String hfPartNo) {
@@ -207,7 +247,7 @@ class ConfigureProductServiceB2LedgerTest {
         ConfigureProductRequest req = new ConfigureProductRequest();
         req.productType = "SIMPLE";
         req.parts = List.of(makeCustomPart("AgNi90",
-            List.of(elem("Ag", "91.1"), elem("Ni", "8.9")), new BigDecimal("12.5"), List.of(seedProcessId())));
+            List.of(elem("Ag", "91.1"), elem("Ni", "8.9")), new BigDecimal("12.5"), List.of(seedProcessNo())));
 
         ConfigureProductResponse resp = service.configure(sq.quotationId(), req, operatorId());
         assertEquals("SIMPLE", resp.productType);
@@ -256,12 +296,12 @@ class ConfigureProductServiceB2LedgerTest {
     @TestTransaction
     void simple_resubmitSameConfig_idempotent_noDuplicateLedgerRows() {
         SeededQuotation sq = seedQuotation();
-        UUID processId = seedProcessId();
+        String processNo = seedProcessNo();
 
         ConfigureProductRequest req1 = new ConfigureProductRequest();
         req1.productType = "SIMPLE";
         req1.parts = List.of(makeCustomPart("AgNi95",
-            List.of(elem("Ag", "93.0"), elem("Ni", "7.0")), new BigDecimal("9.0"), List.of(processId)));
+            List.of(elem("Ag", "93.0"), elem("Ni", "7.0")), new BigDecimal("9.0"), List.of(processNo)));
         ConfigureProductResponse r1 = service.configure(sq.quotationId(), req1, operatorId());
         String pn1 = (String) r1.lineItems.get(0).get("productPartNo");
         assertFalse(r1.fingerprintMatched);
@@ -277,7 +317,7 @@ class ConfigureProductServiceB2LedgerTest {
         ConfigureProductRequest req2 = new ConfigureProductRequest();
         req2.productType = "SIMPLE";
         req2.parts = List.of(makeCustomPart("AgNi95",
-            List.of(elem("Ag", "93.0"), elem("Ni", "7.0")), new BigDecimal("99.0"), List.of(processId)));
+            List.of(elem("Ag", "93.0"), elem("Ni", "7.0")), new BigDecimal("99.0"), List.of(processNo)));
         ConfigureProductResponse r2 = service.configure(sq.quotationId(), req2, operatorId());
         String pn2 = (String) r2.lineItems.get(0).get("productPartNo");
 
@@ -378,5 +418,196 @@ class ConfigureProductServiceB2LedgerTest {
             .setParameter("lid", parentLineItemId).getSingleResult();
         assertEquals("MRO-AS-0001", qlcpDefCode,
             "quotation_line_composite_process.def_code 应 = process_master.process_no（五处一致）");
+    }
+
+    // ── task-0712 缺口1: 工序 id 契约修复(方案A) — process_no 全链贯通 ─────────────
+
+    /**
+     * SIMPLE 选含孤儿工序 TP10（process_master 存在但 process(V4) 无对应 code，F2 实证）：
+     * 契约修复前，这类工序在选配前端会被防御式禁选（因 processIds 走 process(V4) UUID 无法解析）；
+     * 修复后 processNos 直锚 process_master，应可正常选中落库，且写入 quotation_line_process.process_no
+     * （process_id 恒 NULL，V336 加法式变体不再靠 process(V4) 转译）。
+     */
+    @Test
+    @TestTransaction
+    void simple_orphanProcessNoTP10_writesProcessNoWithNullProcessId_andUnitPriceOperationNo() {
+        SeededQuotation sq = seedQuotation();
+        String orphanNo = seedOrphanProcessNo();
+        assertEquals("TP10", orphanNo);
+
+        ConfigureProductRequest req = new ConfigureProductRequest();
+        req.productType = "SIMPLE";
+        req.parts = List.of(makeCustomPart("AgNi90",
+            List.of(elem("Ag", "91.1"), elem("Ni", "8.9")), new BigDecimal("12.5"), List.of(orphanNo)));
+
+        ConfigureProductResponse resp = service.configure(sq.quotationId(), req, operatorId());
+        assertEquals("SIMPLE", resp.productType);
+        UUID lineItemId = (UUID) resp.lineItems.get(0).get("id");
+        String pn = (String) resp.lineItems.get(0).get("productPartNo");
+
+        // ④ unit_price.operation_no = process_no（孤儿工序照常直取，不再经 process(V4) 查表）
+        assertEquals(List.of("TP10"), unitPriceOperationNos(sq.customerCode(), pn),
+            "unit_price.operation_no 应 = 选中的 process_no（含孤儿）");
+
+        // quotation_line_process: process_no='TP10' 落值，process_id 为 NULL（新写路径不再填该列）
+        List<Object[]> qlpRows = quotationLineProcessRows(lineItemId);
+        assertEquals(1, qlpRows.size(), "quotation_line_process 恰 1 行");
+        assertEquals("TP10", qlpRows.get(0)[0], "process_no 应落值为选中的孤儿工序编号");
+        assertNull(qlpRows.get(0)[1], "process_id 应为 NULL（V336 加法式变体新写路径不填旧列）");
+
+        // 指纹 PRC=TP10（孤儿工序参与销售指纹时同样直取 process_no，值域不变）
+        String sigText = signatureTextFor(sq.customerCode(), pn);
+        assertNotNull(sigText);
+        assertTrue(sigText.contains("PRC=TP10"), "指纹 PRC token 应为选中的 process_no，实际: " + sigText);
+
+        // ProcessDTO 回显(读回路径): 实体 → DTO 映射应透传 process_no（取代旧 processId UUID）
+        QuotationLineProcess entity = QuotationLineProcess.find("lineItemId", lineItemId).firstResult();
+        assertNotNull(entity);
+        QuotationDTO.ProcessDTO dto = QuotationDTO.ProcessDTO.from(entity);
+        assertEquals("TP10", dto.processNo, "ProcessDTO.processNo 应正确回显选中的工序编号");
+    }
+
+    /**
+     * COMPOSITE 子件各自选独立工序：insertProcessUnitPriceV6 的 operation_no 应 = 子件各自选中的
+     * process_no（与 SIMPLE 路径 insertProcessSimpleUnitPriceV6 同口径，均直取不再经 process(V4)）。
+     */
+    @Test
+    @TestTransaction
+    void composite_childProcessNos_unitPriceOperationNoEqualsProcessNo() {
+        SeededQuotation sq = seedQuotation();
+        String processNo = seedProcessNo();
+
+        PartRequest p1 = makeCustomPart("AgCu85",
+            List.of(elem("Ag", "85.0"), elem("Cu", "15.0")), new BigDecimal("5.0"), List.of(processNo));
+        p1.quantity = 1;
+        PartRequest p2 = makeCustomPart("AgNi90",
+            List.of(elem("Ag", "91.1"), elem("Ni", "8.9")), new BigDecimal("3.0"), List.of(processNo));
+        p2.quantity = 1;
+
+        ConfigureProductRequest req = new ConfigureProductRequest();
+        req.productType = "COMPOSITE";
+        req.parts = List.of(p1, p2);
+
+        CompositeProcessRequest cp = new CompositeProcessRequest();
+        cp.defCode = "MRO-AS-0001";
+        cp.participatingPartIndexes = List.of(0, 1);
+        cp.params = Map.of();
+        req.compositeProcesses = List.of(cp);
+
+        ConfigureProductResponse resp = service.configure(sq.quotationId(), req, operatorId());
+        assertEquals("COMPOSITE", resp.productType);
+        assertEquals(3, resp.lineItems.size(), "1 父 + 2 子 line_items");
+
+        String parentPn = (String) resp.lineItems.get(0).get("productPartNo");
+        String child1Pn = (String) resp.lineItems.get(1).get("productPartNo");
+        String child2Pn = (String) resp.lineItems.get(2).get("productPartNo");
+
+        // insertProcessUnitPriceV6（COMPOSITE 专属：group key finished_material_no=父 COMBO 料号）
+        // 的 operation_no 应 = 子件各自选中的 process_no。
+        List<Object> parentLinkedOps1 = em.createNativeQuery(
+                "SELECT operation_no FROM unit_price WHERE system_type='QUOTE' AND price_type='PROCESS' " +
+                "AND cost_type='自制加工费' AND customer_no=:cn AND code=:code AND finished_material_no=:fmn " +
+                "AND is_current=true ORDER BY seq_no")
+            .setParameter("cn", sq.customerCode()).setParameter("code", child1Pn).setParameter("fmn", parentPn)
+            .getResultList();
+        assertEquals(List.of(processNo), parentLinkedOps1,
+            "insertProcessUnitPriceV6: 子件1(父链接组) operation_no 应 = process_no");
+        List<Object> parentLinkedOps2 = em.createNativeQuery(
+                "SELECT operation_no FROM unit_price WHERE system_type='QUOTE' AND price_type='PROCESS' " +
+                "AND cost_type='自制加工费' AND customer_no=:cn AND code=:code AND finished_material_no=:fmn " +
+                "AND is_current=true ORDER BY seq_no")
+            .setParameter("cn", sq.customerCode()).setParameter("code", child2Pn).setParameter("fmn", parentPn)
+            .getResultList();
+        assertEquals(List.of(processNo), parentLinkedOps2,
+            "insertProcessUnitPriceV6: 子件2(父链接组) operation_no 应 = process_no");
+
+        assertEquals(List.of(processNo), unitPriceOperationNos(sq.customerCode(), child1Pn),
+            "子件1 unit_price.operation_no 应 = 选中的 process_no");
+        assertEquals(List.of(processNo), unitPriceOperationNos(sq.customerCode(), child2Pn),
+            "子件2 unit_price.operation_no 应 = 选中的 process_no");
+
+        UUID child1LineItemId = (UUID) resp.lineItems.get(1).get("id");
+        UUID child2LineItemId = (UUID) resp.lineItems.get(2).get("id");
+        List<Object[]> child1Qlp = quotationLineProcessRows(child1LineItemId);
+        List<Object[]> child2Qlp = quotationLineProcessRows(child2LineItemId);
+        assertEquals(1, child1Qlp.size());
+        assertEquals(processNo, child1Qlp.get(0)[0]);
+        assertNull(child1Qlp.get(0)[1], "process_id 应为 NULL");
+        assertEquals(1, child2Qlp.size());
+        assertEquals(processNo, child2Qlp.get(0)[0]);
+        assertNull(child2Qlp.get(0)[1], "process_id 应为 NULL");
+    }
+
+    /**
+     * 幂等复用：同客户同配置（含工序 processNos）重复提交，quotation_line_process 不重复累加
+     * （每次 configure 走 insertQuotationLineProcesses 先删后插，天然幂等；此处断言资产未累加）。
+     */
+    @Test
+    @TestTransaction
+    void simple_resubmitSameConfig_quotationLineProcessNotAccumulated() {
+        SeededQuotation sq = seedQuotation();
+        String processNo = seedProcessNo();
+
+        ConfigureProductRequest req = new ConfigureProductRequest();
+        req.productType = "SIMPLE";
+        req.parts = List.of(makeCustomPart("AgNi95",
+            List.of(elem("Ag", "93.0"), elem("Ni", "7.0")), new BigDecimal("9.0"), List.of(processNo)));
+        ConfigureProductResponse r1 = service.configure(sq.quotationId(), req, operatorId());
+        UUID lineItemId1 = (UUID) r1.lineItems.get(0).get("id");
+        assertEquals(1, quotationLineProcessRows(lineItemId1).size());
+
+        // 命中复用时 configure 不会再走 buildLineItems(仅返回已有 hfPartNo)，
+        // 这里改用同 lineItemId 二次调 insertQuotationLineProcesses 的真实调用路径:
+        // 直接验证同一 lineItemId 重新走一次 configure 的等价行为(covered by resolvePart 幂等)，
+        // 断言表内该 lineItem 的工序行数仍恰为 1(先删后插不会累加)。
+        ConfigureProductResponse r2 = service.configure(sq.quotationId(), req, operatorId());
+        UUID lineItemId2 = (UUID) r2.lineItems.get(0).get("id");
+        assertTrue(r2.fingerprintMatched);
+        // 命中复用路径不会重建 line_items 表(buildLineItems 仍执行，为新报价行发新 id)，
+        // 新行同样应恰好写 1 条 quotation_line_process。
+        assertEquals(1, quotationLineProcessRows(lineItemId2).size(),
+            "复用命中后新报价行 quotation_line_process 仍应恰 1 条，不因指纹复用而重复累加/残留");
+    }
+
+    /**
+     * V336 迁移验证: quotation_line_process_process_no_fkey 应拒绝不存在于 process_master 的
+     * process_no（DB 级最后一道防线, 兜底 Java 层 fail-fast 校验之外的直接 SQL 写入路径）。
+     */
+    @Test
+    @TestTransaction
+    void quotationLineProcess_fkRejectsNonexistentProcessNo() {
+        SeededQuotation sq = seedQuotation();
+        UUID lineItemId = UUID.randomUUID();
+        em.createNativeQuery(
+                "INSERT INTO quotation_line_item " +
+                "(id, quotation_id, product_part_no_snapshot, composite_type, sort_order, created_at) " +
+                "VALUES (:id, :q, 'FK-TEST-PN', 'SIMPLE', 0, NOW())")
+            .setParameter("id", lineItemId)
+            .setParameter("q", sq.quotationId())
+            .executeUpdate();
+
+        assertThrows(PersistenceException.class, () -> {
+            em.createNativeQuery(
+                    "INSERT INTO quotation_line_process (id, line_item_id, process_no) " +
+                    "VALUES (gen_random_uuid(), :lid, :pn)")
+                .setParameter("lid", lineItemId)
+                // ≤20 字符(process_no 列宽), 确保触发的是 FK 违反而非 varchar 长度截断错误
+                .setParameter("pn", "ZZ-NOTREAL01")
+                .executeUpdate();
+        }, "process_no 未命中 process_master 应被 FK 拒绝(quotation_line_process_process_no_fkey)");
+    }
+
+    /**
+     * V336 迁移 backfill 验证: 存量 162 行(F5 实证)迁移后 process_no 应全部有值，无 NULL 残留。
+     * 只读断言，不依赖本类其它测试写入的数据(@TestTransaction 保证不污染共享 DB)。
+     */
+    @Test
+    @TestTransaction
+    void migration_backfilledRows_haveNoNullProcessNo() {
+        long nullCount = count(
+            "SELECT COUNT(*) FROM quotation_line_process WHERE process_id IS NOT NULL AND process_no IS NULL",
+            Map.of());
+        assertEquals(0, nullCount,
+            "V336 backfill 后, 存量含 process_id 的行不应再有 process_no 为 NULL 的残留");
     }
 }

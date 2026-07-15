@@ -264,12 +264,13 @@ public class QuotationDTO {
 
     public static class ProcessDTO {
         public UUID id;
-        public UUID processId;
+        /** task-0712 缺口1(工序 id 契约修复): process_master.process_no, 取代旧 UUID processId。 */
+        public String processNo;
 
         public static ProcessDTO from(QuotationLineProcess p) {
             ProcessDTO dto = new ProcessDTO();
             dto.id = p.id;
-            dto.processId = p.processId;
+            dto.processNo = p.processNo;
             return dto;
         }
     }

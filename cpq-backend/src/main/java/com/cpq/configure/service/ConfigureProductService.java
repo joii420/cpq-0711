@@ -218,7 +218,7 @@ public class ConfigureProductService {
      * <ul>
      *   <li>existing 路径: 直接验证存在后返回,不动基础表</li>
      *   <li>custom 命中指纹: 复用,不动基础表</li>
-     *   <li>custom 未命中: 新建 mat_part + mat_bom (ELEMENT N 行) + mat_process (若有 processIds)</li>
+     *   <li>custom 未命中: 新建 mat_part + mat_bom (ELEMENT N 行) + mat_process (若有 processNos)</li>
      * </ul>
      *
      * <p>注意: mat_part_version_log 基线行需要 customer_product_no (NOT NULL PK 成员),
@@ -247,8 +247,8 @@ public class ConfigureProductService {
             // (上面的 backfillV6FromV44 仅在 material_master 缺失且 V44 有时才跑,对 V6 原生自定义料号不补。)
             // 这里无条件为当前客户补齐:复制元素行 + 自定义材质料号补自指物料行。幂等。
             backfillV6MaterialsForCustomer(pr.existingHfPartNo, customerCode);
-            // existing 模式无 processIds: 老行为, 直接复用物理对象
-            if (pr.processIds == null || pr.processIds.isEmpty()) {
+            // existing 模式无 processNos: 老行为, 直接复用物理对象
+            if (pr.processNos == null || pr.processNos.isEmpty()) {
                 // hotfix: mat_process 按 customer_id 隔离, 新客户复用老料号时本客户 mat_process 0 行
                 // → ImplicitJoinRewriter 注入 customer_id 谓词查不到 → 工序 Tab 加载中.
                 // 如果当前客户尚无该料号的 mat_process 数据, 从任意已有客户复制一份给当前 customerId.
@@ -257,13 +257,13 @@ public class ConfigureProductService {
                 }
                 return pr.existingHfPartNo;
             }
-            // Bug B 修复: existing+processIds 路径按 quotation_line_item_id 隔离工序。
+            // Bug B 修复: existing+processNos 路径按 quotation_line_item_id 隔离工序。
             // 若前端传了 quotationLineItemId，则仅删/写该 lineItem 专属行，不影响其他 lineItem
             // 或主数据（quotation_line_item_id IS NULL）的工序。
             // 老路径兼容：quotationLineItemId = null → 仅删/写当前 customer 的主数据行（原有行为）。
             // V6 unit_price 版本化写入（覆盖当前 customer 工序）
             // per-lineItem 工序渲染由 insertQuotationLineProcesses 负责，加工费由 unit_price 视图提供
-            insertProcessSimpleUnitPriceV6(pr.existingHfPartNo, pr.processIds, customerCode);
+            insertProcessSimpleUnitPriceV6(pr.existingHfPartNo, pr.processNos, customerCode);
             // 仍返老 hfPartNo, 卡片显示用户选的料号
             return pr.existingHfPartNo;
         }
@@ -319,8 +319,8 @@ public class ConfigureProductService {
         }
 
         // 先赢者：写 V6 unit_price 工序 — 需要 customerCode (NOT NULL，上方已校验非空)
-        if (pr.processIds != null && !pr.processIds.isEmpty()) {
-            insertProcessSimpleUnitPriceV6(hfPartNo, pr.processIds, customerCode);
+        if (pr.processNos != null && !pr.processNos.isEmpty()) {
+            insertProcessSimpleUnitPriceV6(hfPartNo, pr.processNos, customerCode);
         }
 
         // V6 双写（AP-53 续 6 Phase 1）：确保 material_master + element_bom_item 有本料号，
@@ -352,7 +352,7 @@ public class ConfigureProductService {
      * 在 configure 入口一次性组装销售侧客户维度上下文，供 T4/T5 消费。
      *
      * <p>customerCode 为空（quotation 未绑定客户）时跳过模板加载，enabledTypes 留空
-     * （PROCESS 槽位仅按各 part 自身 processIds 是否非空决定，不影响 MATERIAL/ELEMENT 恒定槽位）。
+     * （PROCESS 槽位仅按各 part 自身 processNos 是否非空决定，不影响 MATERIAL/ELEMENT 恒定槽位）。
      */
     private SalesConfigContext buildSalesConfigContext(String customerCode, ConfigureProductRequest req) {
         String yyMm = YearMonth.now().format(DateTimeFormatter.ofPattern("yyMM"));
@@ -391,7 +391,7 @@ public class ConfigureProductService {
      *       天然非空底线，永不坍缩。</li>
      *   <li><b>ELEMENT 恒为槽位</b>（防坍缩底线）— 同上。</li>
      *   <li><b>PROCESS 属可选槽位</b> — 仅当模板 enabled 或用户实际选了工序时才进槽
-     *       （enabledTypes 含 PROCESS 或 pr.processIds 非空）。</li>
+     *       （enabledTypes 含 PROCESS 或 pr.processNos 非空）。</li>
      * </ul>
      * 模板 enabled 集的完整用途（决定落库分发写哪些表）留给 3c。
      */
@@ -419,29 +419,32 @@ public class ConfigureProductService {
         out.add(new EnabledParam("ELEMENT", null, elementPcts, null));
 
         // PROCESS 条件槽位
-        boolean hasProcessIds = pr.processIds != null && !pr.processIds.isEmpty();
-        if (enabledTypes.contains("PROCESS") || hasProcessIds) {
-            out.add(new EnabledParam("PROCESS", null, null, resolveProcessCodes(pr.processIds)));
+        boolean hasProcessNos = pr.processNos != null && !pr.processNos.isEmpty();
+        if (enabledTypes.contains("PROCESS") || hasProcessNos) {
+            out.add(new EnabledParam("PROCESS", null, null, resolveProcessCodes(pr.processNos)));
         }
 
         return out;
     }
 
-    /** processIds(UUID) → process.code 列表，与 {@link #insertProcessSimpleUnitPriceV6} 同查询口径。 */
+    /**
+     * task-0712 缺口1(工序 id 契约修复, 方案A): processNos 恒等返回 + fail-fast 校验存在于
+     * {@code process_master}。取代旧 "processIds(UUID) → SELECT code FROM process WHERE id"
+     * 查表逻辑 —— 标识域已统一为 process_no, 无需再经 process(V4) 表转译(F4: process.code ==
+     * process_master.process_no, F9: process(V4) 是冻结快照, 新导入工序只进 process_master)。
+     */
     @SuppressWarnings("unchecked")
-    private List<String> resolveProcessCodes(List<UUID> processIds) {
-        if (processIds == null || processIds.isEmpty()) return List.of();
-        List<String> codes = new ArrayList<>();
-        for (UUID processId : processIds) {
+    private List<String> resolveProcessCodes(List<String> processNos) {
+        if (processNos == null || processNos.isEmpty()) return List.of();
+        for (String processNo : processNos) {
             List<Object> rows = em.createNativeQuery(
-                    "SELECT code FROM process WHERE id = :id")
-                .setParameter("id", processId).getResultList();
-            if (rows.isEmpty() || rows.get(0) == null) {
-                throw new IllegalArgumentException("工艺不存在: " + processId);
+                    "SELECT 1 FROM process_master WHERE process_no = :pn")
+                .setParameter("pn", processNo).getResultList();
+            if (rows.isEmpty()) {
+                throw new IllegalArgumentException("工序不存在: " + processNo);
             }
-            codes.add(rows.get(0).toString());
         }
-        return codes;
+        return processNos;
     }
 
     void validateCustomPart(PartRequest pr) {
@@ -801,8 +804,10 @@ public class ConfigureProductService {
     /**
      * B2: 工序 → unit_price（自制加工费）。每个配件一组版本化：
      * 分组键 (system_type=QUOTE, price_type=PROCESS, cost_type=自制加工费, customer_no, code=配件料号,
-     * finished_material_no=COMBO)，行集 = 各工序（operation_no=process.code）。pricing_price 留 NULL（子项3）。
+     * finished_material_no=COMBO)，行集 = 各工序（operation_no=process_no，task-0712 缺口1 起直取，
+     * 不再经 process(V4) UUID 转译）。pricing_price 留 NULL（子项3）。
      * currency = process_master.standard_currency（空→CNY）；unit = standard_unit（空→KG，对齐导入存量）。
+     * fail-fast: process_no 未命中 process_master 视为非法工序，抛出而非静默兜默认值。
      */
     @SuppressWarnings("unchecked")
     void insertProcessUnitPriceV6(String parentHfPartNo, String customerCode,
@@ -810,28 +815,22 @@ public class ConfigureProductService {
         if (customerCode == null || customerCode.isBlank()) return;
         for (int i = 0; i < childHfPartNos.size(); i++) {
             PartRequest pr = (parts != null && i < parts.size()) ? parts.get(i) : null;
-            if (pr == null || pr.processIds == null || pr.processIds.isEmpty()) continue;
+            if (pr == null || pr.processNos == null || pr.processNos.isEmpty()) continue;
             String childPn = childHfPartNos.get(i);
             List<Map<String, Object>> rows = new ArrayList<>();
             int seq = 1;
-            for (UUID processId : pr.processIds) {
-                List<Object> codes = em.createNativeQuery(
-                        "SELECT code FROM process WHERE id = :id")
-                    .setParameter("id", processId).getResultList();
-                if (codes.isEmpty() || codes.get(0) == null) {
-                    throw new IllegalArgumentException("工艺不存在: " + processId);
-                }
-                String opNo = codes.get(0).toString();
+            for (String opNo : pr.processNos) {
                 String currency = "CNY";
                 String unit = "KG";
                 List<Object[]> pm = em.createNativeQuery(
                         "SELECT standard_currency, standard_unit FROM process_master WHERE process_no = :c")
                     .setParameter("c", opNo).getResultList();
-                if (!pm.isEmpty()) {
-                    Object[] m = pm.get(0);
-                    if (m[0] != null && !m[0].toString().isBlank()) currency = m[0].toString();
-                    if (m[1] != null && !m[1].toString().isBlank()) unit = m[1].toString();
+                if (pm.isEmpty()) {
+                    throw new IllegalArgumentException("工序不存在: " + opNo);
                 }
+                Object[] m = pm.get(0);
+                if (m[0] != null && !m[0].toString().isBlank()) currency = m[0].toString();
+                if (m[1] != null && !m[1].toString().isBlank()) unit = m[1].toString();
                 Map<String, Object> r = new LinkedHashMap<>();
                 r.put("operation_no", opNo);
                 r.put("seq_no", seq++);
@@ -855,31 +854,27 @@ public class ConfigureProductService {
     /**
      * 2026-06-02 缺口 B：简单料号工序 → V6 unit_price（镜像组合版 insertProcessUnitPriceV6）。
      * 简单料号无父子，group key 的 code = finished_material_no = hfPartNo。
+     * task-0712 缺口1: operation_no = processNo 直取，不再经 process(V4) UUID 转译；
+     * fail-fast: process_no 未命中 process_master 视为非法工序。
      */
     @SuppressWarnings("unchecked")
-    void insertProcessSimpleUnitPriceV6(String hfPartNo, List<UUID> processIds, String customerCode) {
+    void insertProcessSimpleUnitPriceV6(String hfPartNo, List<String> processNos, String customerCode) {
         if (customerCode == null || customerCode.isBlank()) return;
-        if (processIds == null || processIds.isEmpty()) return;
+        if (processNos == null || processNos.isEmpty()) return;
         List<Map<String, Object>> rows = new ArrayList<>();
         int seq = 1;
-        for (UUID processId : processIds) {
-            List<Object> codes = em.createNativeQuery(
-                    "SELECT code FROM process WHERE id = :id")
-                .setParameter("id", processId).getResultList();
-            if (codes.isEmpty() || codes.get(0) == null) {
-                throw new IllegalArgumentException("工艺不存在: " + processId);
-            }
-            String opNo = codes.get(0).toString();
+        for (String opNo : processNos) {
             String currency = "CNY";
             String unit = "KG";
             List<Object[]> pm = em.createNativeQuery(
                     "SELECT standard_currency, standard_unit FROM process_master WHERE process_no = :c")
                 .setParameter("c", opNo).getResultList();
-            if (!pm.isEmpty()) {
-                Object[] m = pm.get(0);
-                if (m[0] != null && !m[0].toString().isBlank()) currency = m[0].toString();
-                if (m[1] != null && !m[1].toString().isBlank()) unit = m[1].toString();
+            if (pm.isEmpty()) {
+                throw new IllegalArgumentException("工序不存在: " + opNo);
             }
+            Object[] m = pm.get(0);
+            if (m[0] != null && !m[0].toString().isBlank()) currency = m[0].toString();
+            if (m[1] != null && !m[1].toString().isBlank()) unit = m[1].toString();
             Map<String, Object> r = new LinkedHashMap<>();
             r.put("operation_no", opNo);
             r.put("seq_no", seq++);
@@ -965,30 +960,40 @@ public class ConfigureProductService {
 
     /**
      * per-quote 工序落库（替代共享 material_bom_item 写法）— 把用户选的工序写进报价行专属的
-     * {@code quotation_line_process}（line_item_id × process_id），由
-     * {@code selopt_line_processes} 视图按 {@code :lineItemId} 过滤渲染到"选配-工序列表"Tab。
+     * {@code quotation_line_process}（line_item_id × process_no）。
+     *
+     * <p>task-0712 缺口1(工序 id 契约修复, 方案A加法式变体, V336): {@code process_no} 取代
+     * {@code process_id} 作为写入列——标识锚点统一为 {@code process_master.process_no}，
+     * FK {@code quotation_line_process_process_no_fkey} → {@code process_master(process_no)}
+     * 兜底拒绝非法工序编号。{@code process_id} 列保留但不再写（新行恒为 NULL），收缩阶段
+     * (合并 master 时)再做删列迁移。
+     *
+     * <p>实测(2026-07-14 架构评审 F8)确认：本表当前无任何 SELECT/视图读取——"选配-工序列表"类
+     * Tab 实际渲染走 {@code v_composite_child_processes} 物理 PG 视图，该视图直接读
+     * {@code unit_price.operation_no}/{@code material_bom_item.operation_no}
+     * （由 {@link #insertProcessSimpleUnitPriceV6}/{@link #insertProcessUnitPriceV6} 写入），
+     * 与本表完全解耦。本表目前是纯粹的 per-quote 工序选择记录(供后续读回/展示用)。
      *
      * <p>per-quote 隔离：只影响当前报价行,不混入导入工序,也不影响别的报价单/基础数据。
      * <ul>
      *   <li>每次按 lineItemId 重建（先删后插），支持重新配置覆盖。</li>
-     *   <li>process_id 直接用 process 字典 UUID（满足 FK quotation_line_process→process）；
-     *       视图侧再 JOIN process_master 取工序中文名。</li>
+     *   <li>process_no 直接写工序编号字符串，不再经 process(V4) UUID 转译。</li>
      *   <li>必须在 line_item 已创建后调用（FK quotation_line_process→quotation_line_item）。</li>
      * </ul>
      * lineItemId 为空（前端未传报价行 id）时跳过：无行维度无法 per-quote 落库。
      */
-    void insertQuotationLineProcesses(UUID lineItemId, List<UUID> processIds) {
+    void insertQuotationLineProcesses(UUID lineItemId, List<String> processNos) {
         if (lineItemId == null) return;
         em.createNativeQuery("DELETE FROM quotation_line_process WHERE line_item_id = :lid")
             .setParameter("lid", lineItemId)
             .executeUpdate();
-        if (processIds == null || processIds.isEmpty()) return;
-        for (UUID processId : processIds) {
+        if (processNos == null || processNos.isEmpty()) return;
+        for (String processNo : processNos) {
             em.createNativeQuery(
-                    "INSERT INTO quotation_line_process (id, line_item_id, process_id) " +
-                    "VALUES (gen_random_uuid(), :lid, :pid)")
+                    "INSERT INTO quotation_line_process (id, line_item_id, process_no) " +
+                    "VALUES (gen_random_uuid(), :lid, :pn)")
                 .setParameter("lid", lineItemId)
-                .setParameter("pid", processId)
+                .setParameter("pn", processNo)
                 .executeUpdate();
         }
     }
@@ -1280,8 +1285,8 @@ public class ConfigureProductService {
             UUID id = insertLineItem(quotationId, pn, null, "SIMPLE", tempId);
             // per-quote 工序：选配工序写报价行专属 quotation_line_process（行已建，满足 FK）
             PartRequest simplePr = (req.parts != null && !req.parts.isEmpty()) ? req.parts.get(0) : null;
-            insertQuotationLineProcesses(id, simplePr != null ? simplePr.processIds : null);
-            out.add(buildLineItemDTO(id, pn, "SIMPLE", null, simplePr != null ? simplePr.processIds : null));
+            insertQuotationLineProcesses(id, simplePr != null ? simplePr.processNos : null);
+            out.add(buildLineItemDTO(id, pn, "SIMPLE", null, simplePr != null ? simplePr.processNos : null));
             return out;
         }
 
@@ -1303,8 +1308,8 @@ public class ConfigureProductService {
             UUID childTempId = (childPr != null) ? parseUuidOrNull(childPr.quotationLineItemId) : null;
             UUID childId = insertLineItem(quotationId, childPn, parentId, "PART", childTempId);
             // per-quote 工序：子件行的选配工序写 quotation_line_process
-            insertQuotationLineProcesses(childId, childPr != null ? childPr.processIds : null);
-            out.add(buildLineItemDTO(childId, childPn, "PART", parentId, childPr != null ? childPr.processIds : null));
+            insertQuotationLineProcesses(childId, childPr != null ? childPr.processNos : null);
+            out.add(buildLineItemDTO(childId, childPn, "PART", parentId, childPr != null ? childPr.processNos : null));
         }
         return out;
     }
@@ -1352,14 +1357,15 @@ public class ConfigureProductService {
     }
 
     Map<String, Object> buildLineItemDTO(UUID id, String hfPartNo,
-                                          String compositeType, UUID parentId, List<UUID> processIds) {
+                                          String compositeType, UUID parentId, List<String> processNos) {
         Map<String, Object> m = new HashMap<>();
         m.put("id", id);
         m.put("productPartNo", hfPartNo);
         m.put("compositeType", compositeType);
         m.put("parentLineItemId", parentId);
-        // 选配工序回传前端,使其能在 saveDraft 回写 quotation_line_process(工序跨保存存活)
-        m.put("processIds", processIds != null ? processIds : java.util.List.of());
+        // task-0712 缺口1: 选配工序回传前端(process_master.process_no 字符串列表，
+        // 取代旧 process(V4) UUID)，使其能在 saveDraft 回写 quotation_line_process(工序跨保存存活)
+        m.put("processNos", processNos != null ? processNos : java.util.List.of());
         return m;
     }
     // T21: configure 主入口 + 组合产品 + buildLineItems — 完成

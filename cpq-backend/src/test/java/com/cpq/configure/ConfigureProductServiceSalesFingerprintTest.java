@@ -114,7 +114,7 @@ class ConfigureProductServiceSalesFingerprintTest {
         p.partMode = "custom";
         p.recipeCode = recipeCode;
         p.elements = elems;
-        p.processIds = List.of();
+        p.processNos = List.of();
         p.unitWeightGrams = weight;
         p.name = "Test";
         return p;
