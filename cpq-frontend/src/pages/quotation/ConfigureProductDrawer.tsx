@@ -10,18 +10,19 @@
  *   api.md §3.3），且**后端按 Σqty 兜底裁决为准**——本组件按 `ConfigureProductResponse.productType`
  *   （而非请求里声明的 productType）消费返回的 `lineItems`，原样追加，不自行按 productType 重算行
  *   （交接方要求：见任务说明"前端必须消费返回的 line_items 原样追加"）。
- * - 材质/工序候选改为模板限定 `selTemplateService.effective(customerNo)`（D6），不再是全量字典。
- * - 指纹匹配挪到整份提交后展示真实结果（而非逐配件"料号匹配"步骤），详见
- *   `configure/SummaryFingerprintPanel.tsx` 头注——已核实 `/lookup-fingerprint` 端点对本功能
- *   新建的材质组合结构性恒返 matched=false，不做误导性的"确认前实时预览"。
+ * - 材质/工序候选改为模板限定 `selTemplateService.effective(customerNo)`（D6），不再是全量字典；
+ *   工序候选 key 直接是 `process_master.process_no`，原样进 `PartRequest.processNos`（task-0712
+ *   缺口1 已根治 process/process_master 双表 UUID 契约缺口，本组件不再需要 UUID 映射/禁选孤儿）。
+ * - 明细表/组合工艺条件变化时防抖调用 `/lookup-fingerprint`（task-0712 缺口2·3a）做确认前实时预览
+ *   （对齐原型 D3），命中时右侧 3D 切到料号 3D；提交后仍以 `ConfigureProductResponse.fingerprintMatched`
+ *   的 toast 兜底最终结果，详见 `configure/SummaryFingerprintPanel.tsx` 头注。
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Drawer, Button, Spin, Tooltip, message } from 'antd';
 import { configureProductService } from '../../services/configureProductService';
 import { selTemplateService } from '../../services/selTemplateService';
 import { materialRecipeService, type MaterialRecipeLite } from '../../services/materialRecipeService';
 import { modelConfigService } from '../../services/modelConfigService';
-import api from '../../services/api';
 import type {
   ProductType, PartRequest, CompositeProcessRequest,
   EffectiveTemplateDTO, SelDetailRow, CompositeSelectionState,
@@ -29,34 +30,58 @@ import type {
 import type { ModelConfigDTO } from '../../types/modelConfig';
 import { genUUID } from '../../utils/uuid';
 import SelDetailTable from './configure/SelDetailTable';
-import AddPartSubDrawer, { type LegacyProcessLite } from './configure/AddPartSubDrawer';
+import AddPartSubDrawer from './configure/AddPartSubDrawer';
 import CompositeProcessSection from './configure/CompositeProcessSection';
 import { Preview3DPanel, FingerprintStatus, type PreviewMode } from './configure/SummaryFingerprintPanel';
 
 interface Props {
   open: boolean;
   quotationId: string;
-  /** 客户编码（`customer.code`），用于 `selTemplateService.effective(customerNo)`（D6）。 */
+  /** 客户编码（`customer.code`），用于 `selTemplateService.effective(customerNo)`（D6）与
+   * `/lookup-fingerprint` 的 customerNo（销售侧客户维度指纹隔离，缺口2·3a 必填）。 */
   customerNo: string | undefined;
   onCancel: () => void;
   onConfirm: (lineItems: any[]) => void;
 }
 
-async function fetchLegacyProcesses(): Promise<LegacyProcessLite[]> {
-  try {
-    const res: any = await api.get('/processes', { params: { status: 'ACTIVE', size: 200 } });
-    const list = Array.isArray(res) ? res : (res?.data ?? res?.content ?? []);
-    return Array.isArray(list) ? list : [];
-  } catch {
-    return [];
-  }
+/** 明细表 Σqty 判定 productType，与后端 `validateRequest`/`lookupFingerprint` 同口径（api.md §3.3）。 */
+function sumQty(rows: SelDetailRow[]): number {
+  return rows.reduce((s, r) => s + (r.quantity || 0), 0);
+}
+
+/** 组装 `parts` + `compositeProcesses`，提交请求（`configureProduct`）与预览请求（`lookupFingerprint`）
+ * 共用同一份构造逻辑，保证两者形态一致（「预览命中」= 「提交命中」的前提）。 */
+function buildPartsReq(
+  rows: SelDetailRow[],
+  compositeSelections: CompositeSelectionState[],
+): { productType: ProductType; parts: PartRequest[]; compositeProcesses?: CompositeProcessRequest[] } {
+  const productType: ProductType = sumQty(rows) >= 2 ? 'COMPOSITE' : 'SIMPLE';
+  const parts: PartRequest[] = rows.map((r) => ({
+    name: r.recipeLabel || r.recipeCode || '',
+    partMode: 'custom',
+    recipeCode: r.recipeCode!,
+    elements: Object.entries(r.elementOverrides).map(([elementCode, pct]) => ({ elementCode, pct: Number(pct) })),
+    processNos: r.processNos.length > 0 ? r.processNos : undefined,
+    unitWeightGrams: r.unitWeightGrams ?? undefined,
+    quantity: r.quantity ?? 1,
+  }));
+  const allPartIdx = rows.map((_, i) => i);
+  const compositeProcesses: CompositeProcessRequest[] = compositeSelections.map((c) => ({
+    defCode: c.defCode,
+    participatingPartIndexes: allPartIdx,
+    params: {},
+  }));
+  return {
+    productType,
+    parts,
+    compositeProcesses: productType === 'COMPOSITE' ? compositeProcesses : undefined,
+  };
 }
 
 const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo, onCancel, onConfirm }) => {
   const [effective, setEffective] = useState<EffectiveTemplateDTO | null>(null);
   const [effectiveLoading, setEffectiveLoading] = useState(false);
   const [materialDict, setMaterialDict] = useState<MaterialRecipeLite[]>([]);
-  const [legacyProcesses, setLegacyProcesses] = useState<LegacyProcessLite[]>([]);
 
   const [rows, setRows] = useState<SelDetailRow[]>([]);
   const [compositeSelections, setCompositeSelections] = useState<CompositeSelectionState[]>([]);
@@ -64,11 +89,17 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
   const [subOpen, setSubOpen] = useState(false);
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
 
+  // 材质预览：跟随最近一次操作的材质（D3/D15，来自 AddPartSubDrawer.onMaterialPreview）。
   const [previewMode, setPreviewMode] = useState<PreviewMode>(null);
   const [previewMaterialCode, setPreviewMaterialCode] = useState<string | null>(null);
   const [previewMaterialLabel, setPreviewMaterialLabel] = useState('');
   const [previewData, setPreviewData] = useState<ModelConfigDTO | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+
+  // 指纹预览（task-0712 缺口2·3a）：明细表/组合工艺条件变化时防抖调用 `/lookup-fingerprint`。
+  const [fingerprintChecking, setFingerprintChecking] = useState(false);
+  const [fingerprintMatched, setFingerprintMatched] = useState(false);
+  const [fingerprintPartNo, setFingerprintPartNo] = useState<string | undefined>(undefined);
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -79,7 +110,6 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
     setEffective(null);
     setEffectiveLoading(false);
     setMaterialDict([]);
-    setLegacyProcesses([]);
     setRows([]);
     setCompositeSelections([]);
     setSubOpen(false);
@@ -89,11 +119,13 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
     setPreviewMaterialLabel('');
     setPreviewData(null);
     setPreviewLoading(false);
+    setFingerprintChecking(false);
+    setFingerprintMatched(false);
+    setFingerprintPartNo(undefined);
     setSubmitting(false);
   };
 
-  // 打开抽屉：重置 + 解析有效模板(D6) + 拉两个 id 反查字典（materialDict / legacyProcesses，见
-  // AddPartSubDrawer 头注坑①②）。
+  // 打开抽屉：重置 + 解析有效模板(D6) + 拉 materialDict 反查字典（见 AddPartSubDrawer 头注坑①）。
   useEffect(() => {
     if (!open) return;
     resetState();
@@ -107,12 +139,10 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
     Promise.all([
       selTemplateService.effective(customerNo),
       materialRecipeService.list(),
-      fetchLegacyProcesses(),
     ])
-      .then(([eff, mats, procs]) => {
+      .then(([eff, mats]) => {
         setEffective(eff);
         setMaterialDict(mats);
-        setLegacyProcesses(procs);
       })
       .catch((e: any) => {
         message.error(e?.message || '加载选配模板失败');
@@ -126,15 +156,54 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
     if (qtySum < 2 && compositeSelections.length > 0) setCompositeSelections([]);
   }, [qtySum, compositeSelections.length]);
 
-  // 3D 预览：跟随最近一次操作的材质实时刷新（D3/D15）；AbortController 丢弃过期响应防闪回旧值。
+  // 指纹预览（task-0712 缺口2·3a，对齐原型 D3「确认前实时🆕新建/✅命中」）：明细表/组合工艺条件
+  // 变化时防抖 500ms 调用 `/lookup-fingerprint`；fingerprintReqSeq 丢弃过期响应（连续编辑时旧请求
+  // 晚到不得覆盖新状态，同 elementReqSeq 惯例见 AddPartSubDrawer.tsx）。
+  const fingerprintReqSeq = useRef(0);
   useEffect(() => {
-    if (!previewMode) { setPreviewData(null); return; }
-    const subjectKey = previewMode === 'material' ? previewMaterialCode : null;
-    if (!subjectKey) { setPreviewData(null); return; }
+    if (rows.length === 0 || !customerNo) {
+      setFingerprintChecking(false);
+      setFingerprintMatched(false);
+      setFingerprintPartNo(undefined);
+      return;
+    }
+    const custNo = customerNo; // 局部 const 供内层闭包窄化（跨闭包对函数参数的 undefined 窄化不稳定）
+    const seq = ++fingerprintReqSeq.current;
+    setFingerprintChecking(true);
+    const timer = window.setTimeout(() => {
+      const { parts, compositeProcesses } = buildPartsReq(rows, compositeSelections);
+      configureProductService
+        .lookupFingerprint({ customerNo: custNo, parts, compositeProcesses })
+        .then((res) => {
+          if (fingerprintReqSeq.current !== seq) return; // 已被更新的编辑取代，丢弃过期响应
+          setFingerprintChecking(false);
+          setFingerprintMatched(!!res.matched);
+          setFingerprintPartNo(res.matched ? (res.matchedPartNo || res.hfPartNo) : undefined);
+        })
+        .catch(() => {
+          if (fingerprintReqSeq.current !== seq) return;
+          setFingerprintChecking(false);
+          setFingerprintMatched(false);
+          setFingerprintPartNo(undefined);
+        });
+    }, 500);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, compositeSelections, customerNo]);
+
+  // 3D 预览：指纹命中已有销售料号时优先切到料号 3D（对齐原型 D3 `fingerprintHit` 分支）；
+  // 否则回落到最近一次操作的材质预览（D3/D15）。
+  const effectivePreviewMode: PreviewMode = fingerprintMatched && fingerprintPartNo ? 'salespart' : previewMode;
+  const effectivePreviewKey: string | null = fingerprintMatched && fingerprintPartNo ? fingerprintPartNo : previewMaterialCode;
+  const effectivePreviewLabel: string = fingerprintMatched && fingerprintPartNo ? '' : previewMaterialLabel;
+
+  // AbortController 丢弃过期响应防闪回旧值。
+  useEffect(() => {
+    if (!effectivePreviewMode || !effectivePreviewKey) { setPreviewData(null); return; }
     const controller = new AbortController();
     setPreviewLoading(true);
     modelConfigService
-      .current({ subjectType: previewMode === 'material' ? 'MATERIAL' : 'SALES_PART', subjectKey }, controller.signal)
+      .current({ subjectType: effectivePreviewMode === 'material' ? 'MATERIAL' : 'SALES_PART', subjectKey: effectivePreviewKey }, controller.signal)
       .then((d) => { if (!controller.signal.aborted) setPreviewData(d); })
       .catch((e: any) => {
         if (controller.signal.aborted || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return;
@@ -142,7 +211,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
       })
       .finally(() => { if (!controller.signal.aborted) setPreviewLoading(false); });
     return () => controller.abort();
-  }, [previewMode, previewMaterialCode]);
+  }, [effectivePreviewMode, effectivePreviewKey]);
 
   const handleAddClick = () => { setEditingRowId(null); setSubOpen(true); };
   const handleEditClick = (rowId: string) => { setEditingRowId(rowId); setSubOpen(true); };
@@ -176,29 +245,19 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
       const tempId = genUUID();
       // Σqty 判定与后端同口径（api.md §3.3，D11+D12）：Σqty==1→SIMPLE；Σqty>=2→COMPOSITE。
       // 后端仍会按 Σqty 兜底裁决（ConfigureProductResponse.productType 可能与此处不同），
-      // 提交后一律按响应值消费 lineItems。
-      const requestProductType: ProductType = qtySum >= 2 ? 'COMPOSITE' : 'SIMPLE';
-      const partsReq: PartRequest[] = rows.map((r) => ({
-        name: r.recipeLabel || r.recipeCode || '',
-        partMode: 'custom',
-        recipeCode: r.recipeCode!,
-        elements: Object.entries(r.elementOverrides).map(([elementCode, pct]) => ({ elementCode, pct: Number(pct) })),
-        processIds: r.processIds.length > 0 ? r.processIds : undefined,
-        unitWeightGrams: r.unitWeightGrams ?? undefined,
+      // 提交后一律按响应值消费 lineItems。与 `/lookup-fingerprint` 预览共用 buildPartsReq，
+      // 仅补提交独有的 quotationLineItemId（工序隔离键）。
+      const { productType: requestProductType, parts: baseParts, compositeProcesses } =
+        buildPartsReq(rows, compositeSelections);
+      const partsReq: PartRequest[] = baseParts.map((p) => ({
+        ...p,
         quotationLineItemId: requestProductType === 'SIMPLE' ? tempId : genUUID(),
-        quantity: r.quantity ?? 1,
-      }));
-      const allPartIdx = rows.map((_, i) => i);
-      const compProcs: CompositeProcessRequest[] = compositeSelections.map((c) => ({
-        defCode: c.defCode,
-        participatingPartIndexes: allPartIdx,
-        params: {},
       }));
       const resp = await configureProductService.configureProduct(quotationId, {
         productType: requestProductType,
         tempId,
         parts: partsReq,
-        compositeProcesses: requestProductType === 'COMPOSITE' ? compProcs : undefined,
+        compositeProcesses,
       });
       if (resp.fingerprintMatched) {
         message.success(`已复用 ${resp.reusedHfPartNos.length} 个料号`);
@@ -226,7 +285,12 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
     }
     return (
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-        <FingerprintStatus rowCount={rows.length} />
+        <FingerprintStatus
+          rowCount={rows.length}
+          checking={fingerprintChecking}
+          matched={fingerprintMatched}
+          matchedPartNo={fingerprintPartNo}
+        />
         <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
           <Button onClick={handleClose}>取消</Button>
           {rows.length === 0 ? (
@@ -240,7 +304,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
       </div>
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveLoading, hasTemplate, rows, submitting]);
+  }, [effectiveLoading, hasTemplate, rows, submitting, fingerprintChecking, fingerprintMatched, fingerprintPartNo]);
 
   return (
     <Drawer
@@ -284,7 +348,6 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
               open={subOpen}
               effective={effective!}
               materialDict={materialDict}
-              legacyProcesses={legacyProcesses}
               editingRow={editingRow}
               onConfirm={handleSubConfirm}
               onCancel={handleSubCancel}
@@ -293,9 +356,9 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
           </div>
           <div style={{ width: '38%', paddingLeft: 20 }}>
             <Preview3DPanel
-              mode={previewMode}
-              materialLabel={previewMaterialLabel}
-              materialCode={previewMaterialCode}
+              mode={effectivePreviewMode}
+              materialLabel={effectivePreviewLabel}
+              materialCode={effectivePreviewKey}
               loading={previewLoading}
               modelData={previewData}
             />

@@ -8,24 +8,21 @@
  * 候选来源（api.md §1.4，D6）：材质/工序候选均来自 `effective.params[MATERIAL|PROCESS].effectiveValues`
  * （模板限定，留空=不限时后端已回填全量），不再是全量字典/`/processes`裸端点。
  *
- * ⚠️ 两个已核实的候选值语义 id/code 映射坑（写代码前用只读子代理 + 真实 DB 查证，非猜测）：
- * 1. MATERIAL `effectiveValues[].key` = `material_recipe.code`（非 UUID id），而元素详情端点
- *    `GET /material-recipes/{id}` 严格要 UUID——故本组件用 `materialDict`(`materialRecipeService.list()`
- *    全量字典，与候选同源 `material_recipe` 表，code 值域是全量字典的严格子集，可放心反查，
- *    已用子代理核实 `SelParamCandidateService` MATERIAL 分支与 `MaterialRecipeResource.list()` 同表)
- *    建 code→id 索引后再调 `materialRecipeService.detail(id)`。
- * 2. PROCESS `effectiveValues[].key` = `process_master.process_no`，而提交用的
- *    `PartRequest.processIds` 后端严格按 `process`(旧表) 的 UUID 处理
- *    (`ConfigureProductService.insertProcessSimpleUnitPriceV6(List<UUID> processIds,...)`
- *    先查 `process.id→code`再查`process_master`)——`process`/`process_master` 是两张无 FK 约束、
- *    历史上仅一次性同步过的独立表（已用子代理 + 真实 DB 核实：43 行 process_master 中 41 行
- *    code 在 process 表能找到，仅 2 行测试数据 TP10/TP20 是孤儿）。故用 `legacyProcesses`(`/processes`
- *    旧字典) 建 code→id 索引；候选里找不到对应 id 的工序（孤儿 process_no）禁选 + tooltip 说明，
- *    不静默跳过也不强行提交非法 UUID（此为前端可控范围内的防御性简化，非后端修复；已在
- *    RECORD.md 中记录为后续可选后端 follow-up：统一 process/process_master 或提交侧改收 process_no）。
+ * ⚠️ 已核实的候选值语义 id/code 映射坑（写代码前用只读子代理 + 真实 DB 查证，非猜测）：
+ * MATERIAL `effectiveValues[].key` = `material_recipe.code`（非 UUID id），而元素详情端点
+ * `GET /material-recipes/{id}` 严格要 UUID——故本组件用 `materialDict`(`materialRecipeService.list()`
+ * 全量字典，与候选同源 `material_recipe` 表，code 值域是全量字典的严格子集，可放心反查，
+ * 已用子代理核实 `SelParamCandidateService` MATERIAL 分支与 `MaterialRecipeResource.list()` 同表)
+ * 建 code→id 索引后再调 `materialRecipeService.detail(id)`。
+ *
+ * PROCESS `effectiveValues[].key` = `process_master.process_no`：F5 落地时提交端 `PartRequest.processIds`
+ * 曾严格按旧 `process`(V4) 表 UUID 处理，前端一度靠 `/processes` 字典反查 + 禁选孤儿 code（TP10/TP20）做
+ * 防御性缝合。**task-0712 缺口1 已在后端根治**（V336 迁移 + `PartRequest.processIds→processNos`）：
+ * `quotation_line_process` 现直接落 `process_no`，孤儿 code 也能正常提交。本组件不再需要
+ * `process`(V4) 字典/UUID 映射/禁选分支，候选 `key`（= process_no）原样即为提交值。
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Input, InputNumber, Empty, Tooltip, Alert, Button, message } from 'antd';
+import { Input, InputNumber, Empty, Alert, Button, message } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import {
   materialRecipeService,
@@ -35,18 +32,10 @@ import {
 import type { EffectiveTemplateDTO, SelDetailRow } from '../../../types/configure';
 import { genUUID } from '../../../utils/uuid';
 
-export interface LegacyProcessLite {
-  id: string;
-  code: string;
-  name: string;
-  categoryName?: string;
-}
-
 interface Props {
   open: boolean;
   effective: EffectiveTemplateDTO;
   materialDict: MaterialRecipeLite[];
-  legacyProcesses: LegacyProcessLite[];
   /** null = 新增；非空 = 编辑该行 */
   editingRow: SelDetailRow | null;
   onConfirm: (row: SelDetailRow) => void;
@@ -67,7 +56,7 @@ function swatchColor(code: string): string {
 }
 
 const AddPartSubDrawer: React.FC<Props> = ({
-  open, effective, materialDict, legacyProcesses, editingRow, onConfirm, onCancel, onMaterialPreview,
+  open, effective, materialDict, editingRow, onConfirm, onCancel, onMaterialPreview,
 }) => {
   const [step, setStep] = useState<SubStep>(1);
   const [materialCode, setMaterialCode] = useState<string | null>(null);
@@ -87,7 +76,7 @@ const AddPartSubDrawer: React.FC<Props> = ({
       setMaterialLabel(editingRow.recipeLabel);
       setElementValues({ ...editingRow.elementOverrides });
       setSelectedProcesses(
-        editingRow.processIds.map((id, i) => ({ id, label: editingRow.processLabels[i] ?? id })),
+        editingRow.processNos.map((no, i) => ({ id: no, label: editingRow.processLabels[i] ?? no })),
       );
       onMaterialPreview(editingRow.recipeCode, editingRow.recipeLabel);
     } else {
@@ -135,12 +124,6 @@ const AddPartSubDrawer: React.FC<Props> = ({
     () => effective.params.find((p) => p.paramTypeCode === 'PROCESS')?.effectiveValues ?? [],
     [effective],
   );
-  const legacyProcessByCode = useMemo(() => {
-    const map = new Map<string, LegacyProcessLite>();
-    legacyProcesses.forEach((p) => map.set(p.code, p));
-    return map;
-  }, [legacyProcesses]);
-
   const filteredMaterials = useMemo(() => {
     const kw = materialFilter.trim().toLowerCase();
     if (!kw) return materialCandidates;
@@ -205,7 +188,7 @@ const AddPartSubDrawer: React.FC<Props> = ({
       recipeCode: materialCode,
       recipeLabel: materialLabel,
       elementOverrides: { ...elementValues },
-      processIds: selectedProcesses.map((p) => p.id),
+      processNos: selectedProcesses.map((p) => p.id),
       processLabels: selectedProcesses.map((p) => p.label),
       quantity: editingRow?.quantity ?? 1,
       unitWeightGrams: editingRow?.unitWeightGrams ?? null,
@@ -343,32 +326,23 @@ const AddPartSubDrawer: React.FC<Props> = ({
             ) : (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 {filteredProcesses.map((c) => {
-                  const legacy = legacyProcessByCode.get(c.key);
-                  const disabled = !legacy;
-                  const checked = legacy ? isProcessSelected(legacy.id) : false;
-                  const item = (
+                  const checked = isProcessSelected(c.key);
+                  return (
                     <label
                       key={c.key}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
-                        border: '1px solid #e4e7ed', borderRadius: 16, fontSize: 12.5,
-                        cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
+                        border: '1px solid #e4e7ed', borderRadius: 16, fontSize: 12.5, cursor: 'pointer',
                       }}
                     >
                       <input
                         type="checkbox"
-                        disabled={disabled}
                         checked={checked}
-                        onChange={() => legacy && toggleProcess(legacy.id, c.label)}
+                        onChange={() => toggleProcess(c.key, c.label)}
                       />
                       <span>{c.label}</span>
                     </label>
                   );
-                  return disabled ? (
-                    <Tooltip key={c.key} title="该工序未在旧工艺台账登记，暂不支持选配提交，请联系管理员维护映射">
-                      {item}
-                    </Tooltip>
-                  ) : item;
                 })}
               </div>
             )}

@@ -15,7 +15,12 @@ export interface PartRequest {
   existingHfPartNo?: string;
   recipeCode?: string;
   elements?: ElementOverride[];
-  processIds?: string[];
+  /**
+   * 工序编号数组（task-0712 缺口1 修复后）：值 = `process_master.process_no`
+   * （选配候选 `effectiveValues[PROCESS].key` 原样透传，命中复用时忽略）。
+   * 不再是 `process`(V4 表) 的 UUID。
+   */
+  processNos?: string[];
   unitWeightGrams?: number;
   /** 工序隔离键：SIMPLE 场景与顶层 tempId 同值，COMPOSITE 场景每个子件独立 UUID */
   quotationLineItemId?: string;
@@ -49,11 +54,19 @@ export interface ConfigureProductResponse {
   productType: ProductType;
 }
 
+/**
+ * P2→P3 之间"确认前"指纹预览请求（task-0712 缺口2·3a）。
+ *
+ * 形态对齐提交端 `ConfigureProductRequest`：customerNo + parts + compositeProcesses，
+ * 与提交端 `configure()` 消费的形状一致——复用同一套指纹计算逻辑，保证
+ * 「预览命中」= 「提交命中」。SIMPLE 场景 `parts` 恰 1 项；COMPOSITE 场景（Σquantity≥2）
+ * `parts` 多项，`compositeProcesses` 可选。
+ */
 export interface LookupFingerprintRequest {
-  productType: ProductType;
-  recipeCode?: string;
-  elements?: ElementOverride[];
-  childHfPartNos?: string[];
+  /** 客户编码（customer.code）。 */
+  customerNo: string;
+  parts: PartRequest[];
+  compositeProcesses?: CompositeProcessRequest[];
 }
 
 export interface LookupFingerprintSnapshot {
@@ -69,7 +82,10 @@ export interface LookupFingerprintSnapshot {
 
 export interface LookupFingerprintResponse {
   matched: boolean;
+  /** 命中的报价料号；与 `matchedPartNo` 同值，二选一读取皆可（后端字段兼容保留）。 */
   hfPartNo?: string;
+  /** 命中的报价料号（task-0712 缺口2·3a 约定字段名）。 */
+  matchedPartNo?: string;
   snapshot?: LookupFingerprintSnapshot;
 }
 
@@ -134,8 +150,9 @@ export interface SelDetailRow {
   recipeLabel: string;
   /** 元素含量覆盖值（elementCode → pct）。 */
   elementOverrides: Record<string, number>;
-  processIds: string[];
-  /** 工序中文名，明细表列表展示用（与 processIds 同序）。 */
+  /** 值 = `process_master.process_no`（选配候选 key 原样存储，见 `PartRequest.processNos`）。 */
+  processNos: string[];
+  /** 工序中文名，明细表列表展示用（与 processNos 同序）。 */
   processLabels: string[];
   /** 默认 1。 */
   quantity: number;

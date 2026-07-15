@@ -1,19 +1,19 @@
 /**
- * SummaryFingerprintPanel — 选配添加·右侧 3D 预览常驻面板 + 底部指纹状态提示条（task-0712 F5，D15）。
+ * SummaryFingerprintPanel — 选配添加·右侧 3D 预览常驻面板 + 底部指纹状态提示条（task-0712 F5，D15；
+ * F5 前端协同收口消费缺口2·3a 后更新）。
  *
  * 拆两个导出组件（对应原型两处不同 DOM 位置，非同一容器）：
- * - `Preview3DPanel`：`.detail-right` 常驻 3D 预览框，跟随最近一次操作的材质实时刷新（D3/D15）。
- * - `FingerprintStatus`：`.df` 底部指纹提示条。
+ * - `Preview3DPanel`：`.detail-right` 常驻 3D 预览框。跟随最近一次操作的材质实时刷新（D3/D15）；
+ *   一旦汇总步指纹预览命中已有销售料号，则切换为该料号的 3D（对齐原型 `renderFingerprintDemo`/
+ *   `updatePreview` 的 `fingerprintHit` 分支：`✅ 匹配到已有销售料号 SP-xxxx` 时预览框标 "料号3D"）。
+ * - `FingerprintStatus`：`.df` 底部指纹提示条。`matched=true` 显示 "✅ 匹配到已有销售料号
+ *   {matchedPartNo}，将带出其内容与 3D"；`matched=false` 显示 "🆕 将新建选配产品"。
  *
- * ⚠️ 已验证的架构限制（未按原型 demo 字面实现"确认前实时命中/新建"切换，非遗漏，是证据支持的
- * 有意简化，详见开发记录）：`POST /configure-product/lookup-fingerprint` 后端实现明确注释
- * "3b 后选配 custom/COMPOSITE 落库的 config_fingerprint 一律为 NULL，故本端点对新选配报价料号
- * 恒返 matched=false"（`ConfigureProductService.java` lookupFingerprint 方法头注 + TODO(3a)），
- * 即该端点对本功能新建的材质组合结构性永远返回"未命中"，据此预览无参考价值、反而可能误导
- * （让用户误以为"确认新建"是权威判定）。真正的客户维度去重在 `POST .../configure-product/
- * quotations/{id}` 提交时通过 `sel_part_signature` 生效（后端文档承认"P2 仅失去实时复用提示，
- * 提交时去重仍生效"，属已知可接受限制）。故本组件只做诚实的中性提示，真实新建/复用结果通过
- * 提交后 `ConfigureProductResponse.fingerprintMatched` 的 toast 呈现（见 ConfigureProductDrawer）。
+ * `POST /configure-product/lookup-fingerprint` 已在缺口2(3a) 完成重写：改查与提交端 `configure()
+ * → resolvePart` 完全同源的销售侧客户维度指纹（`SalesFingerprintCalculator` + `SalesSignatureRepository`），
+ * 不再是旧版"选配落库指纹恒 NULL"的桩实现，保证「预览命中」= 「提交命中」。调用方（`ConfigureProductDrawer`）
+ * 在明细表/组合工艺条件变化时防抖调用本端点做确认前实时预览；提交后仍以
+ * `ConfigureProductResponse.fingerprintMatched` 的 toast 兜底最终结果。
  */
 import React, { useEffect, useState } from 'react';
 import { Tag } from 'antd';
@@ -138,15 +138,33 @@ export const Preview3DPanel: React.FC<Preview3DPanelProps> = ({ mode, materialLa
 
 interface FingerprintStatusProps {
   rowCount: number;
+  /** 防抖后的 `/lookup-fingerprint` 请求是否在途。 */
+  checking: boolean;
+  matched: boolean;
+  matchedPartNo?: string;
 }
 
-export const FingerprintStatus: React.FC<FingerprintStatusProps> = ({ rowCount }) => {
+export const FingerprintStatus: React.FC<FingerprintStatusProps> = ({ rowCount, checking, matched, matchedPartNo }) => {
   if (rowCount === 0) {
     return <span style={{ fontSize: 12.5, color: '#c0c4cc' }}>尚未新增材质料号</span>;
   }
+  if (checking) {
+    return (
+      <Tag color="default" style={{ fontSize: 12, padding: '3px 10px', borderRadius: 12 }}>
+        校验中…
+      </Tag>
+    );
+  }
+  if (matched && matchedPartNo) {
+    return (
+      <Tag color="green" style={{ fontSize: 12, padding: '3px 10px', borderRadius: 12 }}>
+        ✅ 匹配到已有销售料号 {matchedPartNo}，将带出其内容与 3D
+      </Tag>
+    );
+  }
   return (
     <Tag color="blue" style={{ fontSize: 12, padding: '3px 10px', borderRadius: 12 }}>
-      ℹ️ 确认加入后系统将自动判定新建 / 复用已有销售料号
+      🆕 将新建选配产品
     </Tag>
   );
 };
