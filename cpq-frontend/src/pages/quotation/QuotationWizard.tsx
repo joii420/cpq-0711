@@ -1555,9 +1555,16 @@ const QuotationWizard: React.FC = () => {
 
       <AddProductModal
         open={addProductModalOpen}
+        quotationId={quotationId || undefined}
+        customerTemplateId={customerTemplateId}
         onCancel={() => setAddProductModalOpen(false)}
-        onConfirm={(lineItem) => {
-          setLineItemsByUser(prev => [...prev, lineItem]);
+        onConfirm={(newItems) => {
+          // F4：从已有产品添加改为批量多选，去重规则对齐 onAddBatch（同 productPartNo 只保留一份，以现有为准）。
+          setLineItemsByUser((prev) => {
+            const existing = new Set(prev.map((p) => p.productPartNo).filter(Boolean));
+            const deduped = newItems.filter((it) => !it.productPartNo || !existing.has(it.productPartNo));
+            return [...prev, ...deduped];
+          });
           setAddProductModalOpen(false);
         }}
       />

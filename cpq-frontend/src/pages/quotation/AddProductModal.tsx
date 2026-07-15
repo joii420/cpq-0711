@@ -1,648 +1,498 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import type { LineItem, ComponentDataItem, ComponentField, ComponentFormula } from './QuotationStep2';
-import { productService } from '../../services/productService';
-import { processService } from '../../services/processService';
-import { bindingService } from '../../services/bindingService';
+/**
+ * AddProductModal — 报价单 Step2「添加产品 ▾ → 从已有产品添加」抽屉（task-0712 F4）。
+ *
+ * 1:1 复刻 dev-docs/task-0712-选配模板和报价单选配功能/prototypes/原型-报价单-从已有产品添加.html：
+ * 抽屉(960) → 顶部 4 过滤(客户产品编号/销售料号/品名/规格 + 查询/重置) → 左列表(多选+全选) +
+ * 右 3D 预览(单击行切换，无 3D 占位"该料号未配置 3D 模型") → 底部"已选 N 项" + 取消/加入报价单。
+ *
+ * 语义变更（D8，取代旧"三步向导：选产品→选工序→选模板"）：直接加成品销售料号（可多选批量），
+ * 套报价单已绑客户报价模板渲染，不再走材质/工序配置。数据源 material_customer_map，按本报价单
+ * 客户过滤（服务端从 quotation 派生 customer_no，前端不传客户，见 api.md §2.1）。
+ *
+ * 落库：不新建端点（backtask B4 已核对），复用 BulkImportPartsDrawer.buildLineItemFromTemplate
+ * 把 ExistingProductDTO 映射成 LineItem，父组件(QuotationWizard)负责去重追加 + 既有 saveDraft 落库。
+ */
+import React, { useEffect, useState } from 'react';
+import { Drawer, Table, Input, Button, Empty, Tooltip, message } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import type { LineItem } from './QuotationStep2';
+import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
+import { quotationService } from '../../services/quotationService';
 import { templateService } from '../../services/templateService';
-import { genUUID } from '../../utils/uuid';
-import './quotation.css';
+import { modelConfigService } from '../../services/modelConfigService';
+import type { ExistingProductDTO, ExistingProductQueryParams } from '../../types/existingProduct';
+import type { ModelConfigDTO } from '../../types/modelConfig';
 
 export interface AddProductModalProps {
   open: boolean;
+  /** 查候选/3D 都要（api.md §2.1 服务端从 quotation 派生客户）。Step2 打开此抽屉时报价单已创建，恒非空。 */
+  quotationId: string | undefined;
+  /** 已绑定的客户报价模板 id；用于「加入报价单」时展开 LineItem。 */
+  customerTemplateId: string | undefined;
   onCancel: () => void;
-  onConfirm: (lineItem: LineItem) => void;
+  onConfirm: (lineItems: LineItem[]) => void;
 }
 
-// ─── helpers ────────────────────────────────────────────────────────────────
-
-function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
-  if (value == null) return fallback;
-  if (typeof value === 'string') {
-    try {
-      return JSON.parse(value) as T;
-    } catch {
-      return fallback;
-    }
-  }
-  return value;
-}
-
-function extractArray<T>(data: any): T[] {
-  if (Array.isArray(data)) return data as T[];
-  if (data?.content && Array.isArray(data.content)) return data.content as T[];
-  return [];
-}
-
-function buildEmptyRow(fields: ComponentField[]): Record<string, any> {
-  const row: Record<string, any> = { row_index: 0 };
-  for (const f of fields) {
-    if (f.field_type === 'FIXED_VALUE') {
-      row[f.name] = f.content ?? '';
-    } else if (f.field_type === 'FORMULA') {
-      // Formula results are computed on-the-fly — don't pre-store
-    } else if (f.field_type === 'DATA_SOURCE') {
-      row[f.name] = null; // Will be filled by datasource query
-    } else {
-      // INPUT_TEXT/INPUT_NUMBER 故意写 ''：默认值(default_source 实时 / 静态 content)由
-      // inputDefaults.resolveInputDefault 在渲染/计算/快照回填/snapshotRows 动态给出，不在建行写死。
-      row[f.name] = '';
-    }
-  }
-  return row;
-}
-
-// ─── Step-indicator ─────────────────────────────────────────────────────────
-
-const STEP_LABELS = ['选择产品', '选择工序', '选择模板'];
-
-const StepIndicator: React.FC<{ current: number }> = ({ current }) => (
-  <div className="qt-step-indicator">
-    {STEP_LABELS.map((label, i) => {
-      const isDone = i < current;
-      const isActive = i === current;
-      return (
-        <React.Fragment key={i}>
-          {i > 0 && (
-            <div className={`qt-step-connector${isDone ? ' done' : ''}`} />
-          )}
-          <div className="qt-step-item">
-            <div className={`qt-step-dot${isActive ? ' active' : isDone ? ' done' : ''}`}>
-              {isDone ? '✓' : i + 1}
-            </div>
-            <span className={`qt-step-label${isActive ? ' active' : isDone ? ' done' : ''}`}>
-              {label}
-            </span>
-          </div>
-        </React.Fragment>
-      );
-    })}
-  </div>
-);
-
-// ─── Step 1: Select Product ──────────────────────────────────────────────────
-
-const CATEGORIES = [
-  { label: '全部', value: '' },
-  { label: '标准件', value: '标准件' },
-  { label: '定制件', value: '定制件' },
-  { label: '原材料', value: '原材料' },
-];
-
-interface Step1Props {
-  selectedProduct: any | null;
-  onSelect: (product: any) => void;
-}
-
-const Step1: React.FC<Step1Props> = ({ selectedProduct, onSelect }) => {
-  const [category, setCategory] = useState('');
-  const [keyword, setKeyword] = useState('');
-  const [products, setProducts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const loadProducts = useCallback(async (cat: string, kw: string) => {
-    setLoading(true);
-    try {
-      const params: any = { size: 50 };
-      if (cat) params.category = cat;
-      if (kw.trim()) params.keyword = kw.trim();
-      const res = await productService.list(params);
-      setProducts(extractArray(res.data));
-    } catch {
-      setProducts([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadProducts(category, keyword);
-  }, [category, keyword, loadProducts]);
-
-  return (
-    <div className="qt-step-layout">
-      {/* Category sidebar */}
-      <div className="qt-category-sidebar">
-        {CATEGORIES.map(c => (
-          <button
-            key={c.value}
-            type="button"
-            className={`qt-category-btn${category === c.value ? ' active' : ''}`}
-            onClick={() => setCategory(c.value)}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Product grid */}
-      <div className="qt-step-main">
-        <input
-          className="qt-search-bar"
-          type="text"
-          placeholder="搜索产品名称或料号…"
-          value={keyword}
-          onChange={e => setKeyword(e.target.value)}
-        />
-
-        {loading ? (
-          <div className="qt-modal-loading">
-            <div className="qt-spinner" />
-            加载中…
-          </div>
-        ) : products.length === 0 ? (
-          <div className="qt-no-templates">
-            <p style={{ fontSize: 32 }}>📦</p>
-            <p>暂无匹配的产品</p>
-          </div>
-        ) : (
-          <div className="qt-product-grid">
-            {products.map(p => (
-              <div
-                key={p.id}
-                className={`qt-product-option${selectedProduct?.id === p.id ? ' selected' : ''}`}
-                onClick={() => onSelect(p)}
-              >
-                <div className="qt-product-option-name">{p.name || '—'}</div>
-                {p.partNo && <div className="qt-product-option-sku">料号: {p.partNo}</div>}
-                {p.category && (
-                  <span className="qt-category-tag">{p.category}</span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+const EMPTY_FILTERS: ExistingProductQueryParams = {
+  customerProductNo: '',
+  salesPartNo: '',
+  productName: '',
+  spec: '',
 };
 
-// ─── Step 2: Select Processes ────────────────────────────────────────────────
+const PAGE_SIZE = 20;
 
-interface Step2Props {
-  productId: string;
-  selectedProcessIds: string[];
-  onToggle: (id: string) => void;
-}
+const AddProductModal: React.FC<AddProductModalProps> = ({
+  open,
+  quotationId,
+  customerTemplateId,
+  onCancel,
+  onConfirm,
+}) => {
+  const [filters, setFilters] = useState<ExistingProductQueryParams>(EMPTY_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState<ExistingProductQueryParams>({});
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
 
-const Step2: React.FC<Step2Props> = ({ productId, selectedProcessIds, onToggle }) => {
-  const [boundProcessIds, setBoundProcessIds] = useState<string[]>([]);
-  const [allProcesses, setAllProcesses] = useState<any[]>([]);
+  const [list, setList] = useState<ExistingProductDTO[]>([]);
   const [loading, setLoading] = useState(false);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+  const [activeRow, setActiveRow] = useState<ExistingProductDTO | null>(null);
 
-  useEffect(() => {
-    const fetch = async () => {
-      setLoading(true);
-      try {
-        const [boundRes, allRes] = await Promise.all([
-          processService.getProductProcesses(productId),
-          processService.listAll(),
-        ]);
+  const [preview, setPreview] = useState<ModelConfigDTO | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [zoomHint, setZoomHint] = useState(false);
 
-        // Extract bound process IDs — may come as array of IDs or array of objects
-        const rawBound: any[] = extractArray(boundRes.data);
-        const ids = rawBound.map((item: any) => {
-          if (typeof item === 'string') return item;
-          return item.processId || item.id || '';
-        }).filter(Boolean);
-        setBoundProcessIds(ids);
-
-        setAllProcesses(extractArray(allRes.data));
-      } catch {
-        setBoundProcessIds([]);
-        setAllProcesses([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetch();
-  }, [productId]);
-
-  if (loading) {
-    return (
-      <div className="qt-modal-loading">
-        <div className="qt-spinner" />
-        加载工序数据…
-      </div>
-    );
-  }
-
-  // Filter to bound processes only
-  const boundProcesses = allProcesses.filter(p => boundProcessIds.includes(p.id));
-
-  if (boundProcesses.length === 0) {
-    return (
-      <div className="qt-skip-notice">
-        <p style={{ fontSize: 32 }}>⚙️</p>
-        <p>该产品未配置任何工序</p>
-        <p style={{ fontSize: 13 }}>可直接跳过此步骤，继续选择模板</p>
-      </div>
-    );
-  }
-
-  // Group by category
-  const grouped: Record<string, any[]> = {};
-  for (const p of boundProcesses) {
-    const cat = p.category || '其他';
-    if (!grouped[cat]) grouped[cat] = [];
-    grouped[cat].push(p);
-  }
-
-  return (
-    <div>
-      {Object.entries(grouped).map(([cat, procs]) => (
-        <div key={cat} className="qt-process-group">
-          <div className="qt-process-group-title">{cat}</div>
-          <div className="qt-process-grid">
-            {procs.map(proc => {
-              const isSelected = selectedProcessIds.includes(proc.id);
-              return (
-                <div
-                  key={proc.id}
-                  className={`qt-process-option${isSelected ? ' selected' : ''}`}
-                  onClick={() => onToggle(proc.id)}
-                >
-                  <div className="qt-process-checkbox">
-                    {isSelected && '✓'}
-                  </div>
-                  <div className="qt-process-info">
-                    <div className="qt-process-name">{proc.name || proc.processName || '—'}</div>
-                    {proc.description && (
-                      <div className="qt-process-desc">{proc.description}</div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-// ─── Step 3: Select Template ─────────────────────────────────────────────────
-
-const GRADIENT_ICONS = [
-  { bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', icon: '📋' },
-  { bg: 'linear-gradient(135deg, #f6d365 0%, #fda085 100%)', icon: '📄' },
-  { bg: 'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)', icon: '📝' },
-  { bg: 'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)', icon: '🗂' },
-];
-
-interface Step3Props {
-  productId: string;
-  processIds: string[];
-  selectedTemplateId: string | null;
-  onSelect: (template: any) => void;
-}
-
-const Step3: React.FC<Step3Props> = ({ productId, processIds, selectedTemplateId, onSelect }) => {
-  const [templates, setTemplates] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    const fetch = async () => {
-      setLoading(true);
-      try {
-        const res = await bindingService.matchTemplates(productId, processIds);
-        const bindings: any[] = extractArray(res.data);
-
-        if (bindings.length === 0) {
-          setTemplates([]);
-          return;
-        }
-
-        // Load template details for each binding
-        const details = await Promise.all(
-          bindings.map(async (b: any) => {
-            const tId = b.templateId || b.template_id || b.id;
-            if (!tId) return null;
-            try {
-              const tRes = await templateService.getById(tId);
-              return tRes.data || null;
-            } catch {
-              return null;
-            }
-          })
-        );
-
-        setTemplates(details.filter(Boolean));
-      } catch {
-        setTemplates([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetch();
-  }, [productId, processIds]);
-
-  if (loading) {
-    return (
-      <div className="qt-modal-loading">
-        <div className="qt-spinner" />
-        加载模板数据…
-      </div>
-    );
-  }
-
-  if (templates.length === 0) {
-    return (
-      <div className="qt-no-templates">
-        <p style={{ fontSize: 32 }}>📭</p>
-        <p>当前工序组合暂未配置报价模板</p>
-        <p style={{ fontSize: 13, color: '#a0aec0' }}>请联系管理员配置对应的模板绑定</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="qt-template-grid">
-      {templates.map((tmpl, idx) => {
-        const iconStyle = GRADIENT_ICONS[idx % GRADIENT_ICONS.length];
-        const isSelected = selectedTemplateId === tmpl.id;
-        return (
-          <div
-            key={tmpl.id}
-            className={`qt-template-option${isSelected ? ' selected' : ''}`}
-            onClick={() => onSelect(tmpl)}
-          >
-            <div
-              className="qt-template-icon"
-              style={{ background: iconStyle.bg }}
-            >
-              {iconStyle.icon}
-            </div>
-            <div className="qt-template-info">
-              <div className="qt-template-name">{tmpl.name || '未命名模板'}</div>
-              {tmpl.version && (
-                <div className="qt-template-version">版本: {tmpl.version}</div>
-              )}
-              {tmpl.description && (
-                <div className="qt-template-desc">{tmpl.description}</div>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-// ─── Main Component ──────────────────────────────────────────────────────────
-
-const AddProductModal: React.FC<AddProductModalProps> = ({ open, onCancel, onConfirm }) => {
-  const [step, setStep] = useState(0);
-  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
-  const [selectedProcessIds, setSelectedProcessIds] = useState<string[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
   const [confirming, setConfirming] = useState(false);
 
-  // Reset state when modal opens
+  // 每次打开重置为初始态（对齐原型 openDrawer()：过滤条 + 选中态 + 预览目标全部重置）。
   useEffect(() => {
-    if (open) {
-      setStep(0);
-      setSelectedProduct(null);
-      setSelectedProcessIds([]);
-      setSelectedTemplate(null);
-      setConfirming(false);
-    }
+    if (!open) return;
+    setFilters(EMPTY_FILTERS);
+    setAppliedFilters({});
+    setPage(0);
+    setSelectedRowKeys([]);
+    setActiveRow(null);
+    setZoomHint(false);
   }, [open]);
 
-  const toggleProcess = (id: string) => {
-    setSelectedProcessIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
+  // 拉列表：打开 / 过滤条件变化 / 翻页 时查询。
+  useEffect(() => {
+    if (!open || !quotationId) return;
+    let cancelled = false;
+    setLoading(true);
+    quotationService
+      .listExistingProducts(quotationId, { ...appliedFilters, page, size: PAGE_SIZE })
+      .then((res) => {
+        if (cancelled) return;
+        const content = res.content || [];
+        setList(content);
+        setTotal(res.totalElements || 0);
+        // 若当前预览目标不在新结果集中（切换过滤/翻页），回退到结果首行；对齐原型 applyFilter()。
+        setActiveRow((prev) => {
+          if (prev && content.some((p) => p.materialNo === prev.materialNo)) return prev;
+          return content[0] ?? null;
+        });
+      })
+      .catch((e: any) => {
+        if (cancelled) return;
+        message.error(e?.message || '加载已有产品列表失败');
+        setList([]);
+        setTotal(0);
+        setActiveRow(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, quotationId, appliedFilters, page]);
+
+  // 右侧 3D 预览：随 activeRow(销售料号) 切换，实时查 model-configs/current（D3/D15）。
+  // 防抖/取消：连续切行时用 AbortController 丢弃过期响应，避免预览图闪回旧值。
+  useEffect(() => {
+    setZoomHint(false);
+    if (!activeRow) {
+      setPreview(null);
+      setPreviewLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setPreviewLoading(true);
+    modelConfigService
+      .current({ subjectType: 'SALES_PART', subjectKey: activeRow.materialNo }, controller.signal)
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setPreview(data);
+      })
+      .catch((e: any) => {
+        if (controller.signal.aborted || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return;
+        setPreview(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPreviewLoading(false);
+      });
+    return () => controller.abort();
+  }, [activeRow]);
+
+  const handleQuery = () => {
+    setPage(0);
+    setAppliedFilters({ ...filters });
   };
 
-  const handleNext = () => {
-    if (step < 2) setStep(s => s + 1);
+  const handleReset = () => {
+    setFilters(EMPTY_FILTERS);
+    setPage(0);
+    setAppliedFilters({});
   };
 
-  const handlePrev = () => {
-    if (step > 0) setStep(s => s - 1);
+  const handleFilterKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleQuery();
   };
 
   const handleConfirm = async () => {
-    if (!selectedProduct || !selectedTemplate) return;
+    if (selectedRowKeys.length === 0) return;
+    if (!customerTemplateId) {
+      message.error('当前报价单未绑定客户报价模板，无法加入产品');
+      return;
+    }
     setConfirming(true);
     try {
-      // Load full template detail
-      const res = await templateService.getById(selectedTemplate.id);
-      const tmpl = res.data;
-
-      // Parse componentsSnapshot (may be string or array)
-      const componentsSnapshot: any[] = parseJson(tmpl.componentsSnapshot, []);
-
-      // Parse productAttributes (may be string or array)
-      const productAttrs: any[] = parseJson(tmpl.productAttributes, []);
-      const productAttributes: LineItem['productAttributes'] = productAttrs.map((attr: any) => ({
-        name: attr.name || attr.key || attr.fieldKey || '',
-        field_type: attr.field_type || attr.fieldType || 'TEXT',
-        required: attr.required ?? false,
-        default_value: attr.default_value ?? attr.defaultValue,
-        source: attr.source,
-      }));
-
-      // Build initial productAttributeValues from productAttributes
-      // Auto-fill product built-in attributes from selected product data
-      const productAttributeValues: Record<string, any> = {};
-      for (const attr of productAttributes) {
-        if (!attr.name) continue;
-        const source = (attr as any).source;
-        if (source === 'PRODUCT_SPEC') {
-          productAttributeValues[attr.name] = selectedProduct.specification || '';
-        } else if (source === 'PRODUCT_CATEGORY') {
-          const categoryMap: Record<string, string> = { STANDARD: '标准件', CUSTOM: '定制件', RAW_MATERIAL: '原材料' };
-          productAttributeValues[attr.name] = categoryMap[selectedProduct.category] || selectedProduct.category || '';
-        } else if (source === 'PRODUCT_TAGS') {
-          const tags = Array.isArray(selectedProduct.tags) ? selectedProduct.tags : [];
-          productAttributeValues[attr.name] = tags.join(', ');
-        } else if (source === 'PRODUCT_DRAWING_NO') {
-          productAttributeValues[attr.name] = selectedProduct.drawingNo || '';
-        } else if (source === 'PRODUCT_DIMENSION') {
-          productAttributeValues[attr.name] = selectedProduct.dimension || '';
-        } else if (source === 'PRODUCT_MATERIAL') {
-          productAttributeValues[attr.name] = selectedProduct.material || '';
-        } else {
-          productAttributeValues[attr.name] = attr.default_value ?? '';
-        }
-      }
-
-      // Build componentData — preserve full field structure
-      const componentData: ComponentDataItem[] = componentsSnapshot.map((comp: any) => {
-        const fields: ComponentField[] = (comp.fields || []).map((f: any) => ({
-          name: f.name || f.key || f.fieldKey || '',
-          field_type: normalizeFieldType(f.field_type || f.type || f.fieldType || ''),
-          content: f.content,
-          is_amount: f.is_amount,
-          is_subtotal: f.is_subtotal,
-          formula_name: f.formula_name,
-          datasource_binding: f.datasource_binding,
-          sort_order: f.sort_order,
-          unit_source_field: f.unit_source_field,
-          label: f.label || f.fieldLabel || f.name || '',
-          key: f.name || f.key || f.fieldKey || '',
-        }));
-
-        const formulas: ComponentFormula[] = (comp.formulas || []).map((fm: any) => ({
-          name: fm.name || fm.fieldKey || fm.key || '',
-          expression: Array.isArray(fm.expression) ? fm.expression : [],
-          result_type: fm.result_type,
-        }));
-
-        // Build initial rows: preset rows (marked as fixed) + one empty row if no presets
-        const presetRows: any[] = comp.preset_rows || comp.presetRows || [];
-        const initialRows = presetRows.length > 0
-          ? presetRows.map((pr: any, ri: number) => ({
-              ...buildEmptyRow(fields),
-              ...pr,
-              _preset: true,
-              row_index: ri,
-            }))
-          : [buildEmptyRow(fields)];
-
-        // Load formula assignments from snapshot (template-level binding)
-        const rawFa = comp.formula_assignments || comp.formulaAssignments || {};
-        const formulaAssignments: Record<string, string> = typeof rawFa === 'string'
-          ? JSON.parse(rawFa) : rawFa;
-
-        const compType = comp.component_type || comp.componentType || 'NORMAL';
-
-        return {
-          componentId: comp.component_id || comp.componentId || '',
-          componentCode: comp.component_code || comp.componentCode || '',
-          componentType: compType,
-          tabName: comp.tab_name || comp.tabName || comp.name || 'Tab',
-          fields,
-          formulas,
-          formulaAssignments,
-          rows: compType !== 'NORMAL' ? [] : initialRows,
-          subtotal: 0,
-        };
-      });
-
-      // Parse subtotal formula (token array) from template
-      const subtotalFormula: any[] = parseJson(
-        tmpl.subtotalFormula || tmpl.subtotal_formula,
-        []
+      const tplRes = await templateService.getById(customerTemplateId);
+      const tmpl = tplRes.data;
+      const selected = list.filter((p) => selectedRowKeys.includes(p.materialNo));
+      const lineItems = selected.map((p) =>
+        buildLineItemFromTemplate(tmpl, {
+          partNo: p.materialNo,
+          partName: p.productName || p.customerMaterialName || p.materialNo,
+          customerProductNo: p.customerProductNo || undefined,
+          customerPartName: p.customerMaterialName || undefined,
+          customerSpecific: false,
+        }),
       );
-
-      const lineItem: LineItem = {
-        // Bug B (2026-05-20): 新建 lineItem 时生成 tempId，用于 driverExpansionKey lineItemId 维度
-        tempId: genUUID(),
-        productId: selectedProduct.id,
-        productName: selectedProduct.name || '',
-        productPartNo: selectedProduct.partNo || '',
-        templateId: tmpl.id,
-        templateName: tmpl.name + (tmpl.version ? ` ${tmpl.version}` : ''),
-        productAttributeValues,
-        productAttributes,
-        componentData,
-        subtotal: 0,
-        subtotalFormula,
-      };
-
-      onConfirm(lineItem);
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error('AddProductModal: failed to build line item', e);
+      onConfirm(lineItems);
+      message.success(`已加入 ${lineItems.length} 个产品`);
+    } catch (e: any) {
+      message.error(e?.message || '加入报价单失败');
     } finally {
       setConfirming(false);
     }
   };
 
-  const canNext =
-    (step === 0 && selectedProduct != null) ||
-    step === 1 || // can always advance from step 2 (skip processes)
-    (step === 2 && selectedTemplate != null);
+  const columns: ColumnsType<ExistingProductDTO> = [
+    {
+      title: '客户产品编号',
+      dataIndex: 'customerProductNo',
+      key: 'customerProductNo',
+      render: (v: string | null) => v || '—',
+    },
+    { title: '销售料号', dataIndex: 'materialNo', key: 'materialNo' },
+    { title: '品名', dataIndex: 'productName', key: 'productName', render: (v: string | null) => v || '—' },
+    { title: '规格', dataIndex: 'spec', key: 'spec', render: (v: string | null) => v || '—' },
+    {
+      title: '客户物料名',
+      dataIndex: 'customerMaterialName',
+      key: 'customerMaterialName',
+      render: (v: string | null) => v || '—',
+    },
+  ];
 
-  const isStep2NextDisabled = step === 2 && !selectedTemplate;
+  const renderPreviewBox = () => {
+    if (!activeRow) {
+      return (
+        <div
+          style={{
+            aspectRatio: '1/1',
+            background: '#fafafa',
+            color: '#c0c4cc',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            fontSize: 13,
+            textAlign: 'center',
+            padding: '0 16px',
+          }}
+        >
+          <div style={{ fontSize: 30 }}>🧊</div>
+          <div>请选择左侧产品行以预览 3D</div>
+        </div>
+      );
+    }
+    if (previewLoading) {
+      return (
+        <div
+          style={{
+            aspectRatio: '1/1',
+            background: '#fafafa',
+            color: '#c0c4cc',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            fontSize: 13,
+          }}
+        >
+          <div style={{ fontSize: 30 }}>🧊</div>
+          <div>加载中…</div>
+        </div>
+      );
+    }
+    if (preview) {
+      return (
+        <div
+          style={{
+            aspectRatio: '1/1',
+            background: preview.thumbnailUrl
+              ? `url(${preview.thumbnailUrl}) center/cover no-repeat`
+              : 'linear-gradient(135deg,#e6f0ff,#dfe7f5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#7a8aa8',
+            fontSize: 34,
+            position: 'relative',
+          }}
+        >
+          {!preview.thumbnailUrl && '🧊'}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setZoomHint(true);
+              window.setTimeout(() => setZoomHint(false), 2000);
+            }}
+            style={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              padding: '3px 9px',
+              fontSize: 12,
+              background: '#fff',
+              border: '1px solid #dcdfe6',
+              borderRadius: 4,
+              cursor: 'pointer',
+              color: '#606266',
+            }}
+          >
+            ⤢ 交互查看
+          </button>
+          <div
+            style={{
+              position: 'absolute',
+              left: 10,
+              right: 10,
+              bottom: 10,
+              background: 'rgba(0,0,0,.72)',
+              color: '#fff',
+              fontSize: 12,
+              padding: '7px 10px',
+              borderRadius: 4,
+              opacity: zoomHint ? 1 : 0,
+              pointerEvents: 'none',
+              transition: 'opacity .2s',
+              textAlign: 'center',
+            }}
+          >
+            （可旋转 3D 模型，增强项）
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div
+        style={{
+          aspectRatio: '1/1',
+          background: '#fafafa',
+          color: '#c0c4cc',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          fontSize: 13,
+          textAlign: 'center',
+          padding: '0 16px',
+        }}
+      >
+        <div style={{ fontSize: 30 }}>🚫</div>
+        <div>该料号未配置 3D 模型</div>
+      </div>
+    );
+  };
 
-  if (!open) return null;
+  const renderPreviewCap = () => {
+    if (!activeRow) return null;
+    if (preview) {
+      return (
+        <>
+          销售料号: {activeRow.materialNo}
+          <br />
+          模型: {preview.label || '—'}
+        </>
+      );
+    }
+    return <>销售料号: {activeRow.materialNo}</>;
+  };
 
   return (
-    <div className="qt-modal-overlay" onClick={e => { if (e.target === e.currentTarget) onCancel(); }}>
-      <div className="qt-modal-container">
-        {/* Header */}
-        <div className="qt-modal-header">
-          <span className="qt-modal-title">添加产品</span>
-          <button type="button" className="qt-modal-close" onClick={onCancel}>✕</button>
-        </div>
-
-        {/* Step indicator */}
-        <StepIndicator current={step} />
-
-        {/* Body */}
-        <div className="qt-modal-body">
-          {step === 0 && (
-            <Step1
-              selectedProduct={selectedProduct}
-              onSelect={setSelectedProduct}
-            />
-          )}
-          {step === 1 && selectedProduct && (
-            <Step2
-              productId={selectedProduct.id}
-              selectedProcessIds={selectedProcessIds}
-              onToggle={toggleProcess}
-            />
-          )}
-          {step === 2 && selectedProduct && (
-            <Step3
-              productId={selectedProduct.id}
-              processIds={selectedProcessIds}
-              selectedTemplateId={selectedTemplate?.id ?? null}
-              onSelect={setSelectedTemplate}
-            />
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="qt-modal-footer">
-          <button type="button" className="qt-btn qt-btn-default" onClick={onCancel}>
+    <Drawer
+      title="添加产品 — 从已有产品"
+      placement="right"
+      width={960}
+      open={open}
+      onClose={onCancel}
+      destroyOnClose
+      footer={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ marginRight: 'auto', color: '#606266' }}>已选 {selectedRowKeys.length} 项</div>
+          <Button onClick={onCancel} disabled={confirming}>
             取消
-          </button>
-          {step > 0 && (
-            <button type="button" className="qt-btn qt-btn-default" onClick={handlePrev}>
-              上一步
-            </button>
+          </Button>
+          {selectedRowKeys.length === 0 ? (
+            <Tooltip title="请至少选择一项产品">
+              <Button type="primary" disabled>
+                加入报价单
+              </Button>
+            </Tooltip>
+          ) : (
+            <Button type="primary" loading={confirming} onClick={handleConfirm}>
+              加入报价单
+            </Button>
           )}
-          {step < 2 && (
-            <button
-              type="button"
-              className="qt-btn qt-btn-primary"
-              onClick={handleNext}
-              disabled={!canNext}
+        </div>
+      }
+    >
+      {/* 过滤条 */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          alignItems: 'flex-end',
+          flexWrap: 'wrap',
+          marginBottom: 16,
+          paddingBottom: 16,
+          borderBottom: '1px solid #f0f0f0',
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={{ fontSize: 12, color: '#909399' }}>客户产品编号</label>
+          <Input
+            style={{ width: 150 }}
+            placeholder="如 CP-SIE-2201"
+            value={filters.customerProductNo}
+            onChange={(e) => setFilters((f) => ({ ...f, customerProductNo: e.target.value }))}
+            onKeyDown={handleFilterKeyDown}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={{ fontSize: 12, color: '#909399' }}>销售料号</label>
+          <Input
+            style={{ width: 150 }}
+            placeholder="如 SP-10110001"
+            value={filters.salesPartNo}
+            onChange={(e) => setFilters((f) => ({ ...f, salesPartNo: e.target.value }))}
+            onKeyDown={handleFilterKeyDown}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={{ fontSize: 12, color: '#909399' }}>品名</label>
+          <Input
+            style={{ width: 150 }}
+            placeholder="如 传动轴"
+            value={filters.productName}
+            onChange={(e) => setFilters((f) => ({ ...f, productName: e.target.value }))}
+            onKeyDown={handleFilterKeyDown}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={{ fontSize: 12, color: '#909399' }}>规格</label>
+          <Input
+            style={{ width: 150 }}
+            placeholder="如 Φ20×150mm"
+            value={filters.spec}
+            onChange={(e) => setFilters((f) => ({ ...f, spec: e.target.value }))}
+            onKeyDown={handleFilterKeyDown}
+          />
+        </div>
+        <Button type="primary" onClick={handleQuery}>
+          查询
+        </Button>
+        <Button onClick={handleReset}>重置</Button>
+      </div>
+
+      {/* 左列表 + 右 3D 预览 */}
+      <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
+        <div style={{ flex: '0 0 62%', maxWidth: '62%', minWidth: 0 }}>
+          <div style={{ border: '1px solid #f0f0f0', borderRadius: 4, overflow: 'hidden' }}>
+            <Table<ExistingProductDTO>
+              rowKey="materialNo"
+              size="small"
+              loading={loading}
+              columns={columns}
+              dataSource={list}
+              pagination={
+                total > PAGE_SIZE
+                  ? {
+                      current: page + 1,
+                      pageSize: PAGE_SIZE,
+                      total,
+                      size: 'small',
+                      showSizeChanger: false,
+                      onChange: (p) => setPage(p - 1),
+                    }
+                  : false
+              }
+              rowSelection={{
+                selectedRowKeys,
+                onChange: (keys) => setSelectedRowKeys(keys as string[]),
+                preserveSelectedRowKeys: true,
+              }}
+              onRow={(record) => ({
+                onClick: () => setActiveRow(record),
+                style: {
+                  cursor: 'pointer',
+                  background: activeRow?.materialNo === record.materialNo ? '#e6f7ff' : undefined,
+                },
+              })}
+              locale={{
+                emptyText: (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="未查到匹配的产品，请调整过滤条件后重试"
+                    style={{ padding: '36px 0' }}
+                  />
+                ),
+              }}
+            />
+          </div>
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ border: '1px solid #e4e7ed', borderRadius: 8, overflow: 'hidden' }}>
+            {renderPreviewBox()}
+            <div
+              style={{
+                padding: '8px 10px',
+                fontSize: 12.5,
+                color: '#606266',
+                borderTop: '1px solid #f0f0f0',
+                lineHeight: 1.6,
+              }}
             >
-              下一步
-            </button>
-          )}
-          {step === 2 && (
-            <button
-              type="button"
-              className={`qt-btn qt-btn-success`}
-              onClick={handleConfirm}
-              disabled={isStep2NextDisabled || confirming}
-            >
-              {confirming ? '处理中…' : '确认添加'}
-            </button>
-          )}
+              {renderPreviewCap()}
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: '#909399', marginTop: 8, lineHeight: 1.6 }}>
+            单击左侧产品行可切换预览；「⤢ 交互查看」为增强项占位。
+          </div>
         </div>
       </div>
-    </div>
+    </Drawer>
   );
 };
-
-// ─── Utility ─────────────────────────────────────────────────────────────────
-
-function normalizeFieldType(raw: string): 'FIXED_VALUE' | 'DATA_SOURCE' | 'INPUT' | 'INPUT_TEXT' | 'INPUT_NUMBER' | 'FORMULA' {
-  const t = (raw || '').toUpperCase();
-  if (t === 'FORMULA') return 'FORMULA';
-  if (t === 'FIXED_VALUE' || t === 'FIXED') return 'FIXED_VALUE';
-  if (t === 'DATA_SOURCE') return 'DATA_SOURCE';
-  if (t === 'INPUT_TEXT') return 'INPUT_TEXT';
-  if (t === 'INPUT_NUMBER') return 'INPUT_NUMBER';
-  return 'INPUT_TEXT';
-}
 
 export default AddProductModal;
