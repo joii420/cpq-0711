@@ -5,6 +5,7 @@ import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.entity.CostingBomTreeConfig;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.datasource.sqlview.CostingTreeVarsContext;
+import com.cpq.datasource.sqlview.VersionFilterMacro;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -77,10 +78,23 @@ public class CostingTreeRenderService {
      * @return {@code lineItemId → (componentId(字符串) → baseRows)}；无有效料号种子时返回空 Map。
      */
     public Map<UUID, Map<String, ArrayNode>> render(UUID templateId, List<QuotationLineItem> lineItems) {
+        return render(templateId, lineItems, null);
+    }
+
+    /**
+     * task-0713 B3 版本感知重载：{@code overridesByComponent} 非空时，对含 {@code :versionFilter}
+     * 宏的组件 $view / 主树递归 SQL 应用该核价单已保存的版本 override（componentId → partNo →
+     * viewVersion）。{@code null}/空 = 零行为变化（宏展开后 override 数组为空 → 恒退化为
+     * {@code is_current}，与两参重载逐位等价）。
+     */
+    public Map<UUID, Map<String, ArrayNode>> render(UUID templateId, List<QuotationLineItem> lineItems,
+                                                     Map<UUID, Map<String, String>> overridesByComponent) {
         Map<UUID, Map<String, ArrayNode>> out = new LinkedHashMap<>();
         if (lineItems == null || lineItems.isEmpty()) {
             return out;
         }
+        Map<UUID, Map<String, String>> overrides =
+                (overridesByComponent != null) ? overridesByComponent : java.util.Collections.emptyMap();
 
         // ① 整单料号种子 + root_no -> lineItemId 反查（同料号可能被多个 line item 共用）
         LinkedHashSet<String> seed = new LinkedHashSet<>();
@@ -97,24 +111,8 @@ public class CostingTreeRenderService {
             return out;
         }
 
-        // ② 全局生效的递归 SQL 配置
-        CostingBomTreeConfig cfg = CostingBomTreeConfig.findActive();
-        if (cfg == null) {
-            throw new BusinessException(400, "未配置生效的核价树递归 SQL（costing_bom_tree_config 无 isActive=true 记录）");
-        }
-
-        List<CostingTreeNode> rows;
-        CostingTreeVarsContext.set(new CostingTreeVarsContext.Vars(new ArrayList<>(seed), null));
-        try {
-            rows = queryRecursive(cfg.sqlTemplate, new ArrayList<>(seed));
-        } finally {
-            CostingTreeVarsContext.clear();
-        }
-
-        // ③ 纯函数分组建树
-        CostingTreeGrouping.Result g = CostingTreeGrouping.group(rows);
-
-        // ④ 模板 driver 组件清单（照抄 CardSnapshotService#expandTemplateDriverBaseRows 的既有查询）
+        // ②-pre 模板 driver 组件清单（提前到递归查询之前，供「主树」组件 override 查找 + §④ 复用，
+        // 避免重复查询）。照抄 CardSnapshotService#expandTemplateDriverBaseRows 的既有查询。
         @SuppressWarnings("unchecked")
         List<Object[]> driverComps = em.createNativeQuery(
                         "SELECT DISTINCT c.id, c.bom_recursive_expand FROM template_component tc " +
@@ -122,11 +120,41 @@ public class CostingTreeRenderService {
                                 "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
                 .setParameter("tid", templateId)
                 .getResultList();
+        UUID treeComponentId = null;
+        for (Object[] dc : driverComps) {
+            if (dc != null && dc[0] != null && (dc[1] instanceof Boolean b) && b) {
+                treeComponentId = UUID.fromString(dc[0].toString());
+                break;
+            }
+        }
+        Map<String, String> treeOverrides = (treeComponentId != null)
+                ? overrides.getOrDefault(treeComponentId, java.util.Collections.emptyMap())
+                : java.util.Collections.emptyMap();
 
-        // 每个 driver 组件跑一次其 $view，按 material_no 分桶；同时记录哪些组件是树页签。
+        // ② 全局生效的递归 SQL 配置
+        CostingBomTreeConfig cfg = CostingBomTreeConfig.findActive();
+        if (cfg == null) {
+            throw new BusinessException(400, "未配置生效的核价树递归 SQL（costing_bom_tree_config 无 isActive=true 记录）");
+        }
+
+        List<CostingTreeNode> rows;
+        CostingTreeVarsContext.set(new CostingTreeVarsContext.Vars(new ArrayList<>(seed), null, overrides));
+        try {
+            rows = queryRecursive(cfg.sqlTemplate, new ArrayList<>(seed), treeOverrides);
+        } finally {
+            CostingTreeVarsContext.clear();
+        }
+
+        // ③ 纯函数分组建树
+        CostingTreeGrouping.Result g = CostingTreeGrouping.group(rows);
+
+        // ④ 每个 driver 组件跑一次其 $view，按 material_no 分桶；同时记录哪些组件是树页签。
+        // CostingTreeVarsContext 携带整卡 overridesByComponent，SqlViewExecutor 按当前
+        // SqlViewRuntimeContext.componentId 在绑定期精确解析出「这一个组件」的 override 切片
+        // （见 SqlViewExecutor#injectCostingTreeVars），故此处仍可一次 set/clear 覆盖整个循环。
         Map<String, Map<String, List<ExpandDriverResponse.Row>>> rowsByCompThenMaterial = new LinkedHashMap<>();
         Set<String> treeTabCompIds = new HashSet<>();
-        CostingTreeVarsContext.set(new CostingTreeVarsContext.Vars(null, g.totalMaterialNo));
+        CostingTreeVarsContext.set(new CostingTreeVarsContext.Vars(null, g.totalMaterialNo, overrides));
         try {
             for (Object[] dc : driverComps) {
                 if (dc == null || dc[0] == null) {
@@ -250,25 +278,59 @@ public class CostingTreeRenderService {
         return (parentNo == null ? "" : parentNo) + EDGE_SEP + (materialNo == null ? "" : materialNo);
     }
 
+    /** 递归 SQL 支持的占位符（按出现顺序绑定，见 {@link #queryRecursive}）。 */
+    private static final java.util.regex.Pattern TREE_PARAM =
+            java.util.regex.Pattern.compile(":(production_part_nos|__vfPart|__vfVer)\\b");
+
     /**
-     * 递归 SQL 直接 JDBC 执行。契约里唯一的绑定变量是 {@code :production_part_nos}（text[]），但递归
-     * CTE 常见写法会在 SQL 里多次引用同一变量（如 base case + recursive case 各引用一次）。S3 修复
-     * （2026-07）：按 {@code :production_part_nos} 的<b>出现次数</b>逐个 {@code ?} 占位符绑定同一个
-     * text[] 数组，而非只绑第 1 个（原实现遇 ≥2 次引用会 "parameter index out of range"）。
+     * 递归 SQL 直接 JDBC 执行。契约里的绑定变量是 {@code :production_part_nos}（text[]，递归 CTE 常见
+     * 写法会在 SQL 里多次引用同一变量，如 base case + recursive case 各引用一次），task-0713 B3 起还
+     * 支持 {@code :versionFilter(...)} 宏展开后的 {@code :__vfPart / :__vfVer}（同样可能多次出现，
+     * 例如本表版本列的展示子查询 + 主 JOIN 谓词各一次）。S3 修复（2026-07）确立的「按出现次数逐个绑定」
+     * 范式在此扩展为<b>按出现顺序</b>逐个绑定（3 种占位符可能交替出现，不能像单占位符那样按类型分组
+     * 批量绑定，否则位置错位）。
+     *
+     * @param treeOverrides 「主树」组件（{@code bom_recursive_expand=true}）在本核价单的 override
+     *                      （parentPartNo → viewVersion）；null/空 = 零覆盖，宏展开后恒退化为
+     *                      is_current（与未接入版本切换前逐位等价）。
      */
-    private List<CostingTreeNode> queryRecursive(String sqlTemplate, List<String> seed) {
-        int occurrences = 0;
-        for (int idx = 0; (idx = sqlTemplate.indexOf(":production_part_nos", idx)) >= 0; idx += ":production_part_nos".length()) {
-            occurrences++;
+    private List<CostingTreeNode> queryRecursive(String sqlTemplate, List<String> seed,
+                                                  Map<String, String> treeOverrides) {
+        String expanded = VersionFilterMacro.containsMacro(sqlTemplate)
+                ? VersionFilterMacro.expandForExecution(sqlTemplate) : sqlTemplate;
+
+        List<String> vfPart = new ArrayList<>();
+        List<String> vfVer = new ArrayList<>();
+        if (treeOverrides != null) {
+            for (Map.Entry<String, String> e : treeOverrides.entrySet()) {
+                vfPart.add(e.getKey());
+                vfVer.add(e.getValue());
+            }
         }
-        String sql = "SELECT root_no, material_no, bom_version, parent_no, node_path FROM (" +
-                sqlTemplate.replace(":production_part_nos", "?") + ") q";
+
+        java.util.regex.Matcher m = TREE_PARAM.matcher(expanded);
+        StringBuilder rewritten = new StringBuilder();
+        List<String> order = new ArrayList<>();
+        int lastEnd = 0;
+        while (m.find()) {
+            rewritten.append(expanded, lastEnd, m.start()).append('?');
+            order.add(m.group(1));
+            lastEnd = m.end();
+        }
+        rewritten.append(expanded, lastEnd, expanded.length());
+
+        String sql = "SELECT root_no, material_no, bom_version, parent_no, node_path FROM (" + rewritten + ") q";
         List<CostingTreeNode> out = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-            java.sql.Array arr = conn.createArrayOf("text", seed.toArray());
-            for (int i = 1; i <= occurrences; i++) {
-                ps.setArray(i, arr);
+            java.sql.Array seedArr = conn.createArrayOf("text", seed.toArray());
+            java.sql.Array partArr = conn.createArrayOf("text", vfPart.toArray());
+            java.sql.Array verArr = conn.createArrayOf("text", vfVer.toArray());
+            for (int i = 0; i < order.size(); i++) {
+                String name = order.get(i);
+                java.sql.Array arr = "production_part_nos".equals(name) ? seedArr
+                        : "__vfPart".equals(name) ? partArr : verArr;
+                ps.setArray(i + 1, arr);
             }
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {

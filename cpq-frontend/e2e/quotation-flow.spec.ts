@@ -23,6 +23,10 @@ const __dirnameLocal = path.dirname(__filename);
 const SHOT_DIR = path.join(__dirnameLocal, 'screenshots');
 fs.mkdirSync(SHOT_DIR, { recursive: true });
 
+// task-0713 E2E 验收：支持 PW_BACKEND_URL 覆盖（临时后端场景），未设置时保持既有默认 8081，
+// 不影响本文件在常规环境下的运行。
+const BACKEND_URL = process.env.PW_BACKEND_URL || 'http://localhost:8081';
+
 let shotIdx = 0;
 async function shot(page: Page, name: string) {
   const file = path.join(SHOT_DIR, `qf-${String(++shotIdx).padStart(2, '0')}-${name}.png`);
@@ -61,7 +65,7 @@ async function selectByLabel(page: Page, label: string, search: string, optionTe
  */
 async function createMinimalDraftQuotation(sessionCookie: string): Promise<string> {
   // 1) 取客户列表，拿第一个客户 id
-  const custRes = await fetch('http://localhost:8081/api/cpq/customers?page=0&size=1', {
+  const custRes = await fetch(`${BACKEND_URL}/api/cpq/customers?page=0&size=1`, {
     headers: { Cookie: sessionCookie },
   });
   if (!custRes.ok) throw new Error(`获取客户列表失败: ${custRes.status}`);
@@ -73,7 +77,7 @@ async function createMinimalDraftQuotation(sessionCookie: string): Promise<strin
   if (!customerId) throw new Error('客户列表为空，无法创建测试报价单');
 
   // 2) 取报价模板列表，拿第一个已发布的（templateKind 实际枚举值为 QUOTATION，非 QUOTE）
-  const tplRes = await fetch('http://localhost:8081/api/cpq/templates?templateKind=QUOTATION&page=0&size=50', {
+  const tplRes = await fetch(`${BACKEND_URL}/api/cpq/templates?templateKind=QUOTATION&page=0&size=50`, {
     headers: { Cookie: sessionCookie },
   });
   if (!tplRes.ok) throw new Error(`获取模板列表失败: ${tplRes.status}`);
@@ -89,7 +93,7 @@ async function createMinimalDraftQuotation(sessionCookie: string): Promise<strin
     customerId,
     templateId,
   };
-  const createRes = await fetch('http://localhost:8081/api/cpq/quotations', {
+  const createRes = await fetch(`${BACKEND_URL}/api/cpq/quotations`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -113,7 +117,7 @@ async function createMinimalDraftQuotation(sessionCookie: string): Promise<strin
  * 从当前页面 context 中提取 session cookie 字符串（用于直连 API）
  */
 async function extractSessionCookie(page: Page): Promise<string> {
-  const cookies = await page.context().cookies('http://localhost:8081');
+  const cookies = await page.context().cookies(BACKEND_URL);
   return cookies.map(c => `${c.name}=${c.value}`).join('; ');
 }
 

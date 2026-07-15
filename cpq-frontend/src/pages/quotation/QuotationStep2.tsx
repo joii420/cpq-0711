@@ -2294,6 +2294,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           {/* Active Tab Content */}
           {activeComponent && activeComponent.fields && (
             <div>
+              <div className="qt-cost-table-wrap">
               <table className="qt-cost-table">
                 <thead>
                   <tr>
@@ -2545,14 +2546,17 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                   })().map(({ row, rowIndex, realRowIndex, rowKey, basicDataValues, driverRow, isDriverBound, isManualRow: isManualRowFlag, isListFormulaBound, formulaCache, formulaErrors, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey, _isDupKey }) => {
                     const bomSys = activeComponentBomTree ? (__sys as import('./useDriverExpansions').BomSysCols | undefined) : undefined;
                     return (
-                    <tr key={rowIndex}
+                    // AP-54: React key 必须用稳定行标识 rowKey(撞键行经 #序号 消歧唯一)，
+                    // 不能用位置下标 rowIndex —— 否则删中间行时 React 按位置复用 DOM，
+                    // 受控 input 值粘在原节点上跨行错位("看着删了末行"+字段值串行, 反复删还搅乱 row_data)。
+                    <tr key={rowKey}
                         data-rowkey-dup={_isDupKey ? '1' : undefined}
                         title={_isDupKey ? '行键重复：与同组件其他行组合键冲突，提交前需修正' : undefined}
                         style={{
                           ...((row._preset || isDriverBound) ? { background: '#fafafa' } : {}),
                           ...(_isDupKey ? { background: '#fff1f0', boxShadow: 'inset 3px 0 0 #ff4d4f' } : {}),
                         }}>
-                      {/* 核价 BOM 递归展开：3 系统固定列单元格（仅"勾选递归"组件），料号列承载树缩进/折叠箭头 */}
+                      {/* 核价 BOM 递归展开：2 系统固定列单元格（料号 + 版本；父料号 2026-07-03 隐藏），料号列承载树缩进/折叠箭头 */}
                       {activeComponentBomTree && (
                         <>
                           <td style={bomSys?.isCycle ? { color: '#cf1322' } : undefined}
@@ -2729,8 +2733,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                 {activeComponent.fields.some(f => f.is_subtotal) && (
                   <tfoot>
                     <tr className="qt-subtotal-row">
-                      {/* 核价 BOM 递归展开：与 3 系统固定列对齐的占位单元格（仅"勾选递归"组件） */}
-                      {activeComponentBomTree && (<><td /><td /><td /></>)}
+                      {/* 核价 BOM 递归展开：与 2 系统固定列（料号 + 版本）对齐的占位单元格（仅"勾选递归"组件） */}
+                      {activeComponentBomTree && (<><td /><td /></>)}
                       {activeComponent.fields.map((field, fi) => {
                         const colName = field.name || field.key || '';
                         // 单一来源：columnSumsByComp（buildCrossTabRows resolvedRows Σ行）
@@ -2760,7 +2764,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     {/* 本页签金额合计 = 该页签所有金额列(is_amount&&is_subtotal)之和；无金额列整行隐藏 */}
                     {activeComponent.fields.some(f => f.is_amount) && (
                       <tr className="qt-subtotal-row qt-tab-total-row">
-                        {activeComponentBomTree && (<><td /><td /><td /></>)}
+                        {activeComponentBomTree && (<><td /><td /></>)}
                         <td className="qt-subtotal-label-cell">合计</td>
                         <td colSpan={activeComponent.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
                           {/* 本页签金额合计走"其余"高精度 4 位（精度优先）；仅最终产品小计保持 formatCurrency 2 位 */}
@@ -2771,6 +2775,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                   </tfoot>
                 )}
               </table>
+              </div>
               <button
                 className="qt-add-row-btn"
                 type="button"

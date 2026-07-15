@@ -3034,6 +3034,28 @@ public class QuotationService {
         d.frozenDto          = co.frozenDto;
         d.createdAt          = co.enteredCostingAt;
         d.reviewedAt         = co.reviewedAt;
+
+        // ── task-0713 B5：核价侧渲染缓存 + 单据总价 + override 列表 + editable ──────────
+        // 打开永远读缓存，不 on-open 重算（守 BL-0010）：costing_render/costing_total_amount
+        // 直接读列，不触发任何 V6 查询/expand。
+        if (co.costingRender != null && !co.costingRender.isBlank()) {
+            try {
+                d.costingRender = MAPPER.readTree(co.costingRender);
+            } catch (Exception e) {
+                LOG.warnf("[costing-order] costingRender 解析失败 coid=%s: %s", co.id, e.getMessage());
+            }
+        }
+        d.costingTotalAmount = co.costingTotalAmount;
+        java.util.List<com.cpq.quotation.entity.CostingOrderVersionOverride> overrides =
+                com.cpq.quotation.entity.CostingOrderVersionOverride.findByCostingOrder(co.id);
+        d.versionOverrides = new java.util.ArrayList<>();
+        for (com.cpq.quotation.entity.CostingOrderVersionOverride ov : overrides) {
+            d.versionOverrides.add(new com.cpq.quotation.dto.CostingOrderDetailDTO.VersionOverrideItem(
+                    ov.componentId.toString(), ov.partNo, ov.viewVersion));
+        }
+        // 角色已由 CostingOrderResource 的 @RoleAllowed({"PRICING_MANAGER","SYSTEM_ADMIN"}) 端点门禁保证，
+        // 此处只需判断状态。
+        d.editable = "PENDING".equals(co.status);
         return d;
     }
 }

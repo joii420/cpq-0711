@@ -139,6 +139,15 @@
   color: white;
 }
 
+/* 核价/报价页签表格横向滚动包裹：列多时在卡片内横向滚动，不再顶宽卡片/页面、不裁左侧；
+   列少时 .qt-cost-table 的 width:100% 仍填满容器 → 双向自适应。编辑页 + 详情页共用。 */
+.qt-cost-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .qt-cost-table {
   width: 100%;
   border-collapse: collapse;

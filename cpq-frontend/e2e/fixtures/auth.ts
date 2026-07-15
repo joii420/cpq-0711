@@ -7,9 +7,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * 后端接口地址（直连，不经过前端代理）
+ * 后端接口地址（直连，不经过前端代理）。
+ * task-0713 E2E 验收：支持 PW_BACKEND_URL 覆盖（临时后端场景），未设置时保持既有默认。
  */
-const BACKEND_URL = 'http://localhost:8081';
+const BACKEND_URL = process.env.PW_BACKEND_URL || 'http://localhost:8081';
 
 /** 预存 storageState 文件目录（由 global-setup.ts 在测试前创建） */
 const AUTH_DIR = path.join(__dirname, '..', '.auth');
