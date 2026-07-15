@@ -520,6 +520,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
 
           {activeComp && activeComp.fields && (
             <div>
+              <div className="qt-cost-table-wrap">
               <table className="qt-cost-table">
                 <thead>
                   <tr>
@@ -817,6 +818,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                   </tfoot>
                 )}
               </table>
+              </div>
             </div>
           )}
         </div>
