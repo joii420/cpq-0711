@@ -1,7 +1,5 @@
 package com.cpq.configure.service;
 
-import com.cpq.configure.FingerprintCalculator;
-import com.cpq.configure.FingerprintCalculator.ElementInput;
 import com.cpq.configure.SalesFingerprintCalculator;
 import com.cpq.configure.SalesFingerprintCalculator.ElementPct;
 import com.cpq.configure.SalesFingerprintCalculator.EnabledParam;
@@ -71,9 +69,6 @@ public class ConfigureProductService {
     EntityManager em;
 
     @Inject
-    FingerprintCalculator fingerprintCalc;
-
-    @Inject
     PartNoProvider partNoProvider;
 
     @Inject
@@ -101,71 +96,123 @@ public class ConfigureProductService {
     com.cpq.configure.service.SalesSignatureRepository sigRepo;
 
     // ───────────────────────────────────────────────────────────────────────
-    // T19: lookup-fingerprint 端点
+    // T19 → task-0712 缺口2(3a): lookup-fingerprint 端点
     // ───────────────────────────────────────────────────────────────────────
 
     /**
-     * 抽屉 P2 完成时调用 — 算指纹查 DB, 命中则返回已有料号 + 快照,未命中返回 matched=false.
+     * 抽屉 P2 完成时调用 — 算<b>销售侧客户维度指纹</b>查 {@code sel_part_signature}, 命中则返回已有
+     * 报价料号 + 快照,未命中返回 matched=false. 还原原型"确认前实时🆕新建/✅命中 SP-xxxx"。
      *
-     * <p><b>选配 Plan 3b (T6) 端点处置决策 = 方案 (b) 过渡</b>（集成设计 §4.3）：
-     * 本端点仍查生产侧全局指纹 {@code material_master.config_fingerprint}
-     * （见 {@link #lookupHfByFingerprint}）。3b 后选配 custom/COMPOSITE 落库的
-     * {@code config_fingerprint} 一律为 NULL（R1，客户维度报价料号不进生产侧全局去重），
-     * 故本端点对<b>新选配报价料号恒返 matched=false</b>，只可能命中历史 CFG- 料号。
+     * <p><b>task-0712 缺口2(3a) 定稿</b>：取代 T19 遗留的「查生产侧全局指纹 {@code
+     * material_master.config_fingerprint}」桩实现（3b 后选配落库该列恒为 NULL，桩对新选配恒返
+     * matched=false，见本方法历史 TODO(3a)）。3a 起改查与提交端 {@code configure() → resolvePart}
+     * <b>完全同源</b>的销售侧客户维度指纹（{@link SalesFingerprintCalculator} + {@link
+     * SalesSignatureRepository}），保证「预览命中」= 「提交命中」，不再产生误导性的恒 false。
      *
-     * <p>影响可接受：P2 仅失去「实时复用提示」，真正的客户维度去重在提交时
-     * （{@code configure → resolvePart} 的销售指纹 {@code sel_part_signature} lookup）仍生效，
-     * 同客户同选配提交时会命中复用同一报价料号、不重复落库。
+     * <p><b>入参形态对齐提交端</b> {@link ConfigureProductRequest}：{@code customerNo + parts +
+     * compositeProcesses}，复用 {@link #projectEnabledParams} 投影 + {@link #effectiveEnabledTypes}
+     * 客户模板 enabled 集判定，与 {@link #buildSalesConfigContext} 同一套逻辑（非重造）。
      *
-     * <p>TODO(3a)：若要恢复 P2 实时「客户维度复用提示」，需前端 P2 在
-     * {@link LookupFingerprintRequest} 携带 customerNo，本端点改查
-     * {@code SalesSignatureRepository.lookup(customerNo, "v1", 销售指纹)}
-     * （与提交时去重同源）。当前 3b 为后端专属、未改前端请求契约，故先 (b) 过渡。
+     * <p><b>SIMPLE/COMPOSITE 判定</b>：与 {@link #validateRequest} 同口径 —— Σ{@code
+     * parts[].quantity}（null/&lt;1 兜底 1）＝1 时 SIMPLE，否则 COMPOSITE。
+     *
+     * <p><b>COMPOSITE 必须无副作用</b>（不可 mint 料号）：先对每个子件按 partMode 分别求「若提交会
+     * 得到的料号」——
+     * <ul>
+     *   <li>{@code existing} 子件：已知存在，直接取 {@code existingHfPartNo}（与 {@link #resolvePart}
+     *       existing 分支同语义：existing 从不参与销售指纹计算，直接复用用户选中的料号）；</li>
+     *   <li>{@code custom} 子件：算其 SIMPLE 销售指纹 → {@code sigRepo.lookup} <b>只查不铸</b>
+     *       （不调用 {@code quoteAllocator.mintAndRegister} / {@code sigRepo.insertOrReadExisting}）。
+     *       未命中 = 提交时会新建该子件 → 整个组合父级必是新组合（父指纹里会出现一个之前不存在的
+     *       子件号）→ <b>直接早退 matched=false</b>，不再往下算父指纹（无需查，父级一定新建）。</li>
+     * </ul>
+     * 全部子件都解析出「已存在的料号」后，才用这些料号 + 装配数量 + 组合工艺组父级指纹查
+     * {@code sel_part_signature}（同 {@link #configure} PASS 2 的父级判复用算法）。
+     *
+     * <p><b>事务</b>：全程只读（{@code sigRepo.lookup} 为纯 SELECT，非 {@code
+     * insertOrReadExisting}）；显式 {@code @Transactional} 仅为保证 EntityManager/Panache 查询
+     * 在有效事务上下文中执行，不产生任何写操作。
      */
+    @jakarta.transaction.Transactional
     public LookupFingerprintResponse lookupFingerprint(LookupFingerprintRequest req) {
-        if (req == null || req.productType == null) {
-            throw new IllegalArgumentException("productType is required");
+        if (req == null) {
+            throw new IllegalArgumentException("request body 必填");
+        }
+        if (req.customerNo == null || req.customerNo.isBlank()) {
+            throw new IllegalArgumentException("lookup-fingerprint: customerNo 必填(3a 销售侧客户维度指纹预览)");
+        }
+        if (req.parts == null || req.parts.isEmpty()) {
+            throw new IllegalArgumentException("lookup-fingerprint: parts 必填");
         }
 
-        String fp;
-        if ("SIMPLE".equals(req.productType)) {
-            if (req.recipeCode == null || req.elements == null || req.elements.isEmpty()) {
-                throw new IllegalArgumentException("SIMPLE: recipeCode + elements required");
-            }
-            List<ElementInput> elems = req.elements.stream()
-                .map(e -> new ElementInput(e.elementCode, e.pct))
-                .collect(Collectors.toList());
-            // lookup 端点不关心 processIds 维度, 仍按 2-arg 老形态查询 (兼容老 fingerprint)
-            fp = fingerprintCalc.simpleFingerprint(req.recipeCode, elems);
-        } else if ("COMPOSITE".equals(req.productType)) {
-            if (req.childHfPartNos == null || req.childHfPartNos.size() < 2) {
-                throw new IllegalArgumentException("COMPOSITE: childHfPartNos size >= 2");
-            }
-            fp = fingerprintCalc.compositeFingerprint(req.childHfPartNos);
-        } else {
-            throw new IllegalArgumentException("Unknown productType: " + req.productType);
-        }
+        int totalQty = req.parts.stream()
+            .mapToInt(pr -> (pr.quantity == null || pr.quantity < 1) ? 1 : pr.quantity)
+            .sum();
+        boolean isComposite = totalQty >= 2;
 
-        String hfPartNo = lookupHfByFingerprint(fp);
+        Set<String> enabledTypes = effectiveEnabledTypes(req.customerNo);
         LookupFingerprintResponse resp = new LookupFingerprintResponse();
-        if (hfPartNo == null) {
+
+        if (!isComposite) {
+            String matched = lookupResolvedPartNo(req.customerNo, req.parts.get(0), enabledTypes);
+            if (matched == null) {
+                resp.matched = false;
+                return resp;
+            }
+            resp.matched = true;
+            resp.hfPartNo = matched;
+            resp.matchedPartNo = matched;
+            resp.snapshot = buildSnapshot(matched);
+            return resp;
+        }
+
+        // COMPOSITE：逐子件只查不铸；任一子件未命中 = 提交时将新建该子件 → 组合体必新建，早退。
+        List<String> childQuotePartNos = new ArrayList<>();
+        List<Integer> childQtys = new ArrayList<>();
+        for (PartRequest pr : req.parts) {
+            String childPn = lookupResolvedPartNo(req.customerNo, pr, enabledTypes);
+            if (childPn == null) {
+                resp.matched = false;
+                return resp;
+            }
+            childQuotePartNos.add(childPn);
+            childQtys.add((pr.quantity == null || pr.quantity < 1) ? 1 : pr.quantity);
+        }
+
+        List<String> compositeProcessCodes = req.compositeProcesses == null ? List.of()
+            : req.compositeProcesses.stream().map(cp -> cp.defCode).collect(Collectors.toList());
+        var parentSig = salesFp.computeComposite(req.customerNo, childQuotePartNos, childQtys, compositeProcessCodes);
+        String parentHit = sigRepo.lookup(req.customerNo, SalesFingerprintCalculator.STRUCTURE_VERSION, parentSig.hash());
+        if (parentHit == null) {
             resp.matched = false;
             return resp;
         }
         resp.matched = true;
-        resp.hfPartNo = hfPartNo;
-        resp.snapshot = buildSnapshot(hfPartNo);
+        resp.hfPartNo = parentHit;
+        resp.matchedPartNo = parentHit;
+        resp.snapshot = buildSnapshot(parentHit);
         return resp;
     }
 
-    @SuppressWarnings("unchecked")
-    String lookupHfByFingerprint(String fp) {
-        // 2026-06-02 指纹权威切 V6：material_master.config_fingerprint 全局唯一（uq_material_master_fingerprint）
-        List<Object> rows = em.createNativeQuery(
-                "SELECT material_no FROM material_master WHERE config_fingerprint = :fp")
-            .setParameter("fp", fp)
-            .getResultList();
-        return rows.isEmpty() ? null : (String) rows.get(0);
+    /**
+     * 单个配件「若提交会得到的料号」的只读解析 —— {@link #resolvePart} 的无副作用镜像版本，
+     * 供 {@link #lookupFingerprint} 3a 预览专用。existing 直接取用户选中料号；custom 只算指纹 +
+     * 查表，命中返命中号，未命中返回 {@code null}（不 mint、不落库、不登记签名）。
+     */
+    private String lookupResolvedPartNo(String customerNo, PartRequest pr, Set<String> enabledTypes) {
+        if ("existing".equals(pr.partMode)) {
+            if (pr.existingHfPartNo == null || pr.existingHfPartNo.isBlank()) {
+                throw new IllegalArgumentException("existing 模式 existingHfPartNo 必填");
+            }
+            return pr.existingHfPartNo;
+        }
+        if (!"custom".equals(pr.partMode)) {
+            throw new IllegalArgumentException("partMode must be 'existing' or 'custom': " + pr.partMode);
+        }
+        validateCustomPart(pr);
+        List<EnabledParam> enabledParams = projectEnabledParams(pr, enabledTypes);
+        var sig = salesFp.computeSimple(customerNo, enabledParams);
+        return sigRepo.lookup(customerNo, SalesFingerprintCalculator.STRUCTURE_VERSION, sig.hash());
     }
 
     @SuppressWarnings("unchecked")
@@ -357,13 +404,7 @@ public class ConfigureProductService {
     private SalesConfigContext buildSalesConfigContext(String customerCode, ConfigureProductRequest req) {
         String yyMm = YearMonth.now().format(DateTimeFormatter.ofPattern("yyMM"));
 
-        Set<String> enabledTypes = new HashSet<>();
-        if (customerCode != null && !customerCode.isBlank()) {
-            EffectiveTemplateDTO eff = effectiveTemplateService.getEffective(customerCode);
-            for (EffectiveTemplateDTO.Param p : eff.params) {
-                enabledTypes.add(p.paramTypeCode);
-            }
-        }
+        Set<String> enabledTypes = effectiveEnabledTypes(customerCode);
 
         Map<PartRequest, List<EnabledParam>> byPart = new IdentityHashMap<>();
         if (req.parts != null) {
@@ -378,6 +419,23 @@ public class ConfigureProductService {
         }
 
         return new SalesConfigContext(customerCode, yyMm, SalesFingerprintCalculator.STRUCTURE_VERSION, byPart);
+    }
+
+    /**
+     * 客户维度 enabled 参数类型集（{@code sel_param_type.code} 集合）—— 由
+     * {@link #buildSalesConfigContext}（提交端 configure）与 {@link #lookupFingerprint}（3a 预览端）
+     * 共用，保证两端「PROCESS 是否为槽位」的判定同口径。customerCode 为空（quotation 未绑定客户 /
+     * 预览请求未带客户码场景理论不该发生，上游各自校验非空）时返回空集。
+     */
+    private Set<String> effectiveEnabledTypes(String customerCode) {
+        Set<String> enabledTypes = new HashSet<>();
+        if (customerCode != null && !customerCode.isBlank()) {
+            EffectiveTemplateDTO eff = effectiveTemplateService.getEffective(customerCode);
+            for (EffectiveTemplateDTO.Param p : eff.params) {
+                enabledTypes.add(p.paramTypeCode);
+            }
+        }
+        return enabledTypes;
     }
 
     /**
