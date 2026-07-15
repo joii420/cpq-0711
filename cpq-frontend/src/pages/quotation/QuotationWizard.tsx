@@ -1572,6 +1572,7 @@ const QuotationWizard: React.FC = () => {
       <ConfigureProductDrawer
         open={configureDrawerOpen}
         quotationId={quotationId || ''}
+        customerNo={selectedCustomer?.code}
         onCancel={() => setConfigureDrawerOpen(false)}
         onConfirm={onConfigureConfirm}
       />

@@ -1,307 +1,209 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Drawer, Button, Steps, message, notification } from 'antd';
+/**
+ * ConfigureProductDrawer — 报价单 Step2「添加产品 ▾ → 选配添加」抽屉（task-0712 F5 重构，D11）。
+ *
+ * 1:1 复刻 dev-docs/task-0712-选配模板和报价单选配功能/prototypes/原型-报价单-选配添加.html：
+ * 打开即解析有效模板(D6) → 无模板空态 / 有模板进单屏明细表（左：明细表+新增子框+组合工艺条件区，
+ * 右：3D 预览常驻）→ 底部指纹状态提示 + 取消/确认加入。
+ *
+ * 整体模型变化（对齐 fronttask.md F5 §5.1，取代旧 globalStep×subStep 逐配件向导）：
+ * - 不再预选产品类型：`productType` 由明细表 Σqty 实时判定（Σqty==1→SIMPLE，≥2→COMPOSITE，
+ *   api.md §3.3），且**后端按 Σqty 兜底裁决为准**——本组件按 `ConfigureProductResponse.productType`
+ *   （而非请求里声明的 productType）消费返回的 `lineItems`，原样追加，不自行按 productType 重算行
+ *   （交接方要求：见任务说明"前端必须消费返回的 line_items 原样追加"）。
+ * - 材质/工序候选改为模板限定 `selTemplateService.effective(customerNo)`（D6），不再是全量字典。
+ * - 指纹匹配挪到整份提交后展示真实结果（而非逐配件"料号匹配"步骤），详见
+ *   `configure/SummaryFingerprintPanel.tsx` 头注——已核实 `/lookup-fingerprint` 端点对本功能
+ *   新建的材质组合结构性恒返 matched=false，不做误导性的"确认前实时预览"。
+ */
+import React, { useEffect, useMemo, useState } from 'react';
+import { Drawer, Button, Spin, Tooltip, message } from 'antd';
 import { configureProductService } from '../../services/configureProductService';
+import { selTemplateService } from '../../services/selTemplateService';
+import { materialRecipeService, type MaterialRecipeLite } from '../../services/materialRecipeService';
+import { modelConfigService } from '../../services/modelConfigService';
+import api from '../../services/api';
 import type {
-  ProductType, PartMode, PartRequest, CompositeProcessRequest,
-  LookupFingerprintSnapshot,
+  ProductType, PartRequest, CompositeProcessRequest,
+  EffectiveTemplateDTO, SelDetailRow, CompositeSelectionState,
 } from '../../types/configure';
-import Step0ProductType from './configure/Step0ProductType';
-import Step1SearchPart from './configure/Step1SearchPart';
-import Step2Material from './configure/Step2Material';
-import Step3Process from './configure/Step3Process';
-import Step4CompositeProcess from './configure/Step4CompositeProcess';
-import StepAccessoryQuantity from './configure/StepAccessoryQuantity';
-import AccessoryProgressBar from './configure/AccessoryProgressBar';
-import Step5Summary from './configure/Step5Summary';
+import type { ModelConfigDTO } from '../../types/modelConfig';
 import { genUUID } from '../../utils/uuid';
-
-export interface PartState {
-  name: string;
-  partMode: PartMode | null;
-  selectedHfPartNo: string | null;
-  selectedRecipeCode: string | null;
-  selectedRecipeSymbol: string | null;
-  elementOverrides: { [code: string]: number };
-  matLocked: boolean;
-  processIds: string[];
-  unitWeightGrams: number | null;
-  reusedFromExisting: { hfPartNo: string; snapshot?: LookupFingerprintSnapshot } | null;
-  quantity: number;
-}
-
-export interface CompositeProcessAdded {
-  defCode: string;
-  participatingPartIndexes: number[];
-  params: Record<string, any>;
-}
+import SelDetailTable from './configure/SelDetailTable';
+import AddPartSubDrawer, { type LegacyProcessLite } from './configure/AddPartSubDrawer';
+import CompositeProcessSection from './configure/CompositeProcessSection';
+import { Preview3DPanel, FingerprintStatus, type PreviewMode } from './configure/SummaryFingerprintPanel';
 
 interface Props {
   open: boolean;
   quotationId: string;
+  /** 客户编码（`customer.code`），用于 `selTemplateService.effective(customerNo)`（D6）。 */
+  customerNo: string | undefined;
   onCancel: () => void;
   onConfirm: (lineItems: any[]) => void;
 }
 
-const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, onConfirm }) => {
-  const [globalStep, setGlobalStep] = useState<0 | 1 | 2 | 3 | 4>(0);
-  const [subStep, setSubStep] = useState<0 | 1 | 2>(0);
-  const [productType, setProductType] = useState<ProductType>('SIMPLE');
-  const [initPartCount, setInitPartCount] = useState(2);
-  const [parts, setParts] = useState<PartState[]>([]);
-  const [ci, setCi] = useState(0);
-  const [furthestCi, setFurthestCi] = useState(0);
-  const [addedCProcs, setAddedCProcs] = useState<CompositeProcessAdded[]>([]);
+async function fetchLegacyProcesses(): Promise<LegacyProcessLite[]> {
+  try {
+    const res: any = await api.get('/processes', { params: { status: 'ACTIVE', size: 200 } });
+    const list = Array.isArray(res) ? res : (res?.data ?? res?.content ?? []);
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo, onCancel, onConfirm }) => {
+  const [effective, setEffective] = useState<EffectiveTemplateDTO | null>(null);
+  const [effectiveLoading, setEffectiveLoading] = useState(false);
+  const [materialDict, setMaterialDict] = useState<MaterialRecipeLite[]>([]);
+  const [legacyProcesses, setLegacyProcesses] = useState<LegacyProcessLite[]>([]);
+
+  const [rows, setRows] = useState<SelDetailRow[]>([]);
+  const [compositeSelections, setCompositeSelections] = useState<CompositeSelectionState[]>([]);
+
+  const [subOpen, setSubOpen] = useState(false);
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
+
+  const [previewMode, setPreviewMode] = useState<PreviewMode>(null);
+  const [previewMaterialCode, setPreviewMaterialCode] = useState<string | null>(null);
+  const [previewMaterialLabel, setPreviewMaterialLabel] = useState('');
+  const [previewData, setPreviewData] = useState<ModelConfigDTO | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
   const [submitting, setSubmitting] = useState(false);
 
-  const updateCurrentPart = useCallback((patch: Partial<PartState>) => {
-    setParts(prev => prev.map((p, i) => (i === ci ? { ...p, ...patch } : p)));
-  }, [ci]);
+  const qtySum = rows.reduce((s, r) => s + (r.quantity || 0), 0);
+  const editingRow = editingRowId ? rows.find((r) => r.rowId === editingRowId) ?? null : null;
 
-  const updatePart = useCallback((idx: number, patch: Partial<PartState>) => {
-    setParts(prev => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
-  }, []);
-
-  const initParts = useCallback((type: ProductType, n: number): PartState[] => {
-    const count = type === 'COMPOSITE' ? n : 1;
-    return Array.from({ length: count }, (_, i) => ({
-      name: type === 'COMPOSITE' ? `配件 ${i + 1}` : '产品',
-      partMode: null,
-      selectedHfPartNo: null,
-      selectedRecipeCode: null,
-      selectedRecipeSymbol: null,
-      elementOverrides: {},
-      matLocked: false,
-      processIds: [],
-      unitWeightGrams: null,
-      reusedFromExisting: null,
-      quantity: 1,
-    }));
-  }, []);
-
-  // 自定义路径配件的"完整性"校验:返回 null=OK,字符串=失败原因(单条 toast 内容)
-  const validateCustomPart = (p: PartState, label: string): string | null => {
-    if (p.partMode !== 'custom') return null;
-    if (!p.selectedRecipeCode) return `${label}:请先选择材质`;
-    const sum = Object.values(p.elementOverrides).reduce((a, b) => a + (Number(b) || 0), 0);
-    if (Math.abs(sum - 100) > 0.01) {
-      return `${label}:元素含量之和 ${sum.toFixed(2)}%,必须 = 100%`;
-    }
-    return null;
+  const resetState = () => {
+    setEffective(null);
+    setEffectiveLoading(false);
+    setMaterialDict([]);
+    setLegacyProcesses([]);
+    setRows([]);
+    setCompositeSelections([]);
+    setSubOpen(false);
+    setEditingRowId(null);
+    setPreviewMode(null);
+    setPreviewMaterialCode(null);
+    setPreviewMaterialLabel('');
+    setPreviewData(null);
+    setPreviewLoading(false);
+    setSubmitting(false);
   };
 
-  /**
-   * 指纹检查 — 仅提示, 不阻塞流程.
-   *
-   * 2026-05-19 设计调整 (用户选择 "默认不跳, 只提示发现重复料号, 已可继续选工序"):
-   *   - 命中匹配时弹 notification.info (非阻塞), 默认 wizard 继续走 subStep=2 选工序
-   *   - notification 里给一个 "复用此料号 (跳过工序)" 的快捷按钮 — 用户主动点击才走老分支
-   *   - 与之前 Modal.confirm 比: 不再 "默认跳过工序" — 工序选择是默认路径
-   *
-   * 函数总返回 false (= 不打断 goNext, 让外层继续 setSubStep(2)).
-   */
-  const checkFingerprintAndAdvance = useCallback(async (): Promise<boolean> => {
-    const cur = parts[ci];
-    if (!cur || cur.partMode !== 'custom' || !cur.selectedRecipeCode) return false;
-    const elements = Object.entries(cur.elementOverrides).map(([elementCode, pct]) => ({
-      elementCode,
-      pct: Number(pct),
-    }));
-    try {
-      const resp = await configureProductService.lookupFingerprint({
-        productType: 'SIMPLE',
-        recipeCode: cur.selectedRecipeCode,
-        elements,
-      });
-      if (resp.matched && resp.hfPartNo) {
-        const key = `fingerprint-match-${ci}`;
-        /**
-         * 复用现有料号 — 仅锁定料号身份(hfPartNo + 材质 + 元素), 工序仍走 subStep=2 让用户选.
-         *
-         * 2026-05-19 设计调整: 工序是"报价单层选择", 不是料号身份的一部分.
-         *   点击此按钮 ≠ 跳过工序; 而是:
-         *     - partMode 切到 'existing' (告诉后端用老 hfPartNo)
-         *     - selectedHfPartNo 设到匹配的料号
-         *     - reusedFromExisting 留作 UI 展示标记 + Step3Process 预填工序的种子
-         *     - 继续 subStep=2 (工序选择, 预填该料号现有工序作为起点)
-         *     - 提交时后端走 resolvePart `existing+processIds` 分支:
-         *       保留老 hfPartNo, 用用户选的工序覆盖**当前客户**的 mat_process
-         */
-        const reuseExistingPart = () => {
-          updateCurrentPart({
-            partMode: 'existing',
-            selectedHfPartNo: resp.hfPartNo!,
-            matLocked: true,
-            reusedFromExisting: { hfPartNo: resp.hfPartNo!, snapshot: resp.snapshot },
-          });
-          // 继续 subStep=2 工序选择 — 不跳!
-          setSubStep(2);
-          notification.destroy(key);
-        };
-        notification.info({
-          key,
-          message: '发现重复料号',
-          description: (
-            <div>
-              <p style={{ marginBottom: 4 }}>
-                系统已存在材质+元素完全相同的料号: <code>{resp.hfPartNo}</code>
-              </p>
-              <p style={{ marginBottom: 4, fontSize: 12, color: '#666' }}>
-                参考工序: {resp.snapshot?.processes?.map(p => p.processCode).join(' → ') || '无'}
-                {resp.snapshot?.unitWeightGrams != null && ` · 单重: ${resp.snapshot.unitWeightGrams} g/件`}
-              </p>
-              <p style={{ margin: 0, fontSize: 12, color: '#666' }}>
-                工序为本报价单的工艺路径,与料号身份分离 — 复用料号后您仍可在下一步选/改工序.
-              </p>
-            </div>
-          ),
-          btn: (
-            <Button type="primary" size="small" onClick={reuseExistingPart}>
-              复用此料号 → 继续选工序
-            </Button>
-          ),
-          duration: 0,
-          placement: 'topRight',
-        });
-      }
-    } catch (e: any) {
-      message.warning('指纹查询失败,继续走未命中流程');
-    }
-    // 总返 false — 让 goNext 继续 setSubStep(2) 进工序选择
-    return false;
-  }, [parts, ci, productType, updateCurrentPart]);
-
-  // 清理残留的指纹 notification.
-  // ⚠ 故意不依赖 subStep — notification 恰好在 goNext() 把 subStep 1→2 的同一 tick 里弹出,
-  // 若把 subStep 放进 deps, 上一轮 effect 的 cleanup 会在 subStep 切换时立即销毁刚弹出的 notification
-  // (用户看到的"一闪即灭"). 只在 ci 切换 / globalStep 跳转 / 组件卸载 时清.
+  // 打开抽屉：重置 + 解析有效模板(D6) + 拉两个 id 反查字典（materialDict / legacyProcesses，见
+  // AddPartSubDrawer 头注坑①②）。
   useEffect(() => {
-    const key = `fingerprint-match-${ci}`;
-    return () => {
-      notification.destroy(key);
-    };
-  }, [ci, globalStep]);
-
-  const goNext = useCallback(async () => {
-    if (globalStep === 0) {
-      setParts(initParts(productType, initPartCount));
-      setCi(0);
-      setFurthestCi(0);
-      setSubStep(0);
-      setGlobalStep(1);
+    if (!open) return;
+    resetState();
+    if (!customerNo) {
+      // 无客户上下文（理论不可达，QuotationStep2 Dropdown 已按 customerTemplateId 兜底）——
+      // 双保险：视同无模板空态,不崩溃。
+      setEffective({ customerNo: '', usedDefault: false, hasTemplate: false, params: [] });
       return;
     }
-    if (globalStep === 1) {
-      if (subStep === 0) { setSubStep(1); return; }
-      if (subStep === 1) {
-        const cur = parts[ci];
-        const partLabel = productType === 'COMPOSITE' ? `配件 ${ci + 1}` : '产品';
-        const err = cur ? validateCustomPart(cur, partLabel) : null;
-        if (err) { message.warning(err); return; }
-        const matched = await checkFingerprintAndAdvance();
-        if (matched) return;
-        setSubStep(2);
-        return;
-      }
-      if (subStep === 2) {
-        if (ci < parts.length - 1) {
-          const next = ci + 1;
-          setCi(next);
-          setFurthestCi(prev => Math.max(prev, next));
-          setSubStep(0);
-          return;
-        }
-        setFurthestCi(parts.length);
-        if (productType === 'COMPOSITE') { setGlobalStep(2); return; }
-        setGlobalStep(4);
-        return;
-      }
-    }
-    if (globalStep === 2) {
-      const bad = parts.findIndex(p => !p.quantity || p.quantity < 1);
-      if (bad >= 0) { message.warning(`${parts[bad].name}: 数量必须 ≥ 1`); return; }
-      setGlobalStep(3);
-      return;
-    }
-    if (globalStep === 3) { setGlobalStep(4); return; }
-    if (globalStep === 4) { await submitConfigure(); }
-  }, [globalStep, subStep, productType, parts, ci, initPartCount, checkFingerprintAndAdvance, initParts]);
+    setEffectiveLoading(true);
+    Promise.all([
+      selTemplateService.effective(customerNo),
+      materialRecipeService.list(),
+      fetchLegacyProcesses(),
+    ])
+      .then(([eff, mats, procs]) => {
+        setEffective(eff);
+        setMaterialDict(mats);
+        setLegacyProcesses(procs);
+      })
+      .catch((e: any) => {
+        message.error(e?.message || '加载选配模板失败');
+        setEffective({ customerNo, usedDefault: false, hasTemplate: false, params: [] });
+      })
+      .finally(() => setEffectiveLoading(false));
+  }, [open, customerNo]);
 
-  const goPrev = useCallback(() => {
-    if (globalStep === 4) {
-      if (productType === 'COMPOSITE') setGlobalStep(3);
-      else { setSubStep(2); setCi(0); setGlobalStep(1); }
-      return;
-    }
-    if (globalStep === 3) { setGlobalStep(2); return; }
-    if (globalStep === 2) {
-      setCi(parts.length - 1);
-      setSubStep(2);
-      setGlobalStep(1);
-      return;
-    }
-    if (globalStep === 1) {
-      if (subStep > 0) { setSubStep((subStep - 1) as 0 | 1); return; }
-      if (ci > 0) { setCi(ci - 1); setSubStep(2); return; }
-      setGlobalStep(0);
-    }
-  }, [globalStep, subStep, ci, parts.length, productType]);
+  // Σqty 跌破 2 时组合工艺不再适用，清空已选（对齐原型 renderComboSection 行为）。
+  useEffect(() => {
+    if (qtySum < 2 && compositeSelections.length > 0) setCompositeSelections([]);
+  }, [qtySum, compositeSelections.length]);
 
-  const jumpToPart = useCallback((idx: number) => {
-    if (idx === ci) return;
-    if (idx >= furthestCi) return;
-    setCi(idx);
-    setSubStep(0);
-  }, [ci, furthestCi]);
+  // 3D 预览：跟随最近一次操作的材质实时刷新（D3/D15）；AbortController 丢弃过期响应防闪回旧值。
+  useEffect(() => {
+    if (!previewMode) { setPreviewData(null); return; }
+    const subjectKey = previewMode === 'material' ? previewMaterialCode : null;
+    if (!subjectKey) { setPreviewData(null); return; }
+    const controller = new AbortController();
+    setPreviewLoading(true);
+    modelConfigService
+      .current({ subjectType: previewMode === 'material' ? 'MATERIAL' : 'SALES_PART', subjectKey }, controller.signal)
+      .then((d) => { if (!controller.signal.aborted) setPreviewData(d); })
+      .catch((e: any) => {
+        if (controller.signal.aborted || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return;
+        setPreviewData(null);
+      })
+      .finally(() => { if (!controller.signal.aborted) setPreviewLoading(false); });
+    return () => controller.abort();
+  }, [previewMode, previewMaterialCode]);
 
-  const submitConfigure = async () => {
-    // 提交前最后一道防线:全量配件逐个扫,任一不合规则列原因不发请求
-    for (let i = 0; i < parts.length; i++) {
-      const label = productType === 'COMPOSITE' ? `配件 ${i + 1}` : '产品';
-      const err = validateCustomPart(parts[i], label);
-      if (err) { message.warning(err); return; }
-    }
+  const handleAddClick = () => { setEditingRowId(null); setSubOpen(true); };
+  const handleEditClick = (rowId: string) => { setEditingRowId(rowId); setSubOpen(true); };
+  const handleDeleteRow = (rowId: string) => setRows((prev) => prev.filter((r) => r.rowId !== rowId));
+  const handleQuantityChange = (rowId: string, qty: number) =>
+    setRows((prev) => prev.map((r) => (r.rowId === rowId ? { ...r, quantity: qty } : r)));
+
+  const handleSubConfirm = (row: SelDetailRow) => {
+    setRows((prev) => {
+      const idx = prev.findIndex((r) => r.rowId === row.rowId);
+      if (idx >= 0) { const next = [...prev]; next[idx] = row; return next; }
+      return [...prev, row];
+    });
+    setSubOpen(false);
+    setEditingRowId(null);
+  };
+  const handleSubCancel = () => { setSubOpen(false); setEditingRowId(null); };
+  const handleMaterialPreview = (code: string | null, label: string) => {
+    setPreviewMode(code ? 'material' : previewMode);
+    setPreviewMaterialCode(code);
+    setPreviewMaterialLabel(label);
+  };
+
+  const handleClose = () => { resetState(); onCancel(); };
+
+  const submit = async () => {
+    if (rows.length === 0) return;
+    if (!quotationId) { message.error('报价单尚未创建，无法选配'); return; }
     setSubmitting(true);
     try {
-      // 生成顶层 tempId（主 lineItem.id UUID），SIMPLE/COMPOSITE 共用
       const tempId = genUUID();
-      const partsReq: PartRequest[] = parts.map(p => ({
-        name: p.name,
-        partMode: p.partMode!,
-        existingHfPartNo: p.partMode === 'existing' ? p.selectedHfPartNo! : undefined,
-        recipeCode: p.partMode === 'custom' ? p.selectedRecipeCode! : undefined,
-        elements: p.partMode === 'custom'
-          ? Object.entries(p.elementOverrides).map(([elementCode, pct]) => ({ elementCode, pct: Number(pct) }))
-          : undefined,
-        // hotfix: existing 模式 + processIds 非空时也要传给后端 — 物质相同但工序不同 = 不同商品,
-        // 后端 ConfigureProductService.resolvePart 在 existing+processIds 分支会生成新 hfPartNo
-        processIds: (
-          (p.partMode === 'custom' && !p.reusedFromExisting) ||
-          (p.partMode === 'existing' && p.processIds && p.processIds.length > 0)
-        ) ? p.processIds : undefined,
-        unitWeightGrams: (p.partMode === 'custom' && !p.reusedFromExisting && p.unitWeightGrams !== null)
-          ? p.unitWeightGrams
-          : undefined,
-        // SIMPLE: 与顶层 tempId 同值；COMPOSITE: 每个子件独立 UUID（工序隔离键）
-        quotationLineItemId: productType === 'SIMPLE' ? tempId : genUUID(),
-        quantity: p.quantity ?? 1,
+      // Σqty 判定与后端同口径（api.md §3.3，D11+D12）：Σqty==1→SIMPLE；Σqty>=2→COMPOSITE。
+      // 后端仍会按 Σqty 兜底裁决（ConfigureProductResponse.productType 可能与此处不同），
+      // 提交后一律按响应值消费 lineItems。
+      const requestProductType: ProductType = qtySum >= 2 ? 'COMPOSITE' : 'SIMPLE';
+      const partsReq: PartRequest[] = rows.map((r) => ({
+        name: r.recipeLabel || r.recipeCode || '',
+        partMode: 'custom',
+        recipeCode: r.recipeCode!,
+        elements: Object.entries(r.elementOverrides).map(([elementCode, pct]) => ({ elementCode, pct: Number(pct) })),
+        processIds: r.processIds.length > 0 ? r.processIds : undefined,
+        unitWeightGrams: r.unitWeightGrams ?? undefined,
+        quotationLineItemId: requestProductType === 'SIMPLE' ? tempId : genUUID(),
+        quantity: r.quantity ?? 1,
       }));
-      // 需求#2: 组合工艺统一为「全部配件参与 + 空参数」，覆盖 addedCProcs 里的旧字段
-      const allPartIdx = parts.map((_, i) => i);
-      const compProcs: CompositeProcessRequest[] = addedCProcs.map(a => ({
-        defCode: a.defCode,
+      const allPartIdx = rows.map((_, i) => i);
+      const compProcs: CompositeProcessRequest[] = compositeSelections.map((c) => ({
+        defCode: c.defCode,
         participatingPartIndexes: allPartIdx,
         params: {},
       }));
       const resp = await configureProductService.configureProduct(quotationId, {
-        productType,
+        productType: requestProductType,
         tempId,
         parts: partsReq,
-        compositeProcesses: productType === 'COMPOSITE' ? compProcs : undefined,
+        compositeProcesses: requestProductType === 'COMPOSITE' ? compProcs : undefined,
       });
       if (resp.fingerprintMatched) {
         message.success(`已复用 ${resp.reusedHfPartNos.length} 个料号`);
       } else {
-        message.success('选配成功');
+        message.success('已加入选配产品');
       }
       onConfirm(resp.lineItems);
       resetState();
@@ -312,98 +214,96 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, onCancel, 
     }
   };
 
-  const resetState = () => {
-    setGlobalStep(0);
-    setSubStep(0);
-    setProductType('SIMPLE');
-    setInitPartCount(2);
-    setParts([]);
-    setCi(0);
-    setFurthestCi(0);
-    setAddedCProcs([]);
-  };
+  const hasTemplate = !!effective?.hasTemplate;
 
-  const stepLabels = productType === 'COMPOSITE'
-    ? ['产品类型', `配件选配 ×${parts.length || initPartCount}`, '配件数量', '组合工艺', '完成选配']
-    : ['产品类型', '料号匹配', '材质选配', '工序选择', '完成选配'];
-  const activeIdx = productType === 'COMPOSITE'
-    ? globalStep
-    : (globalStep === 0 ? 0 : globalStep === 4 ? 4 : subStep + 1);
+  const footer = useMemo(() => {
+    if (effectiveLoading || !hasTemplate) {
+      return (
+        <div style={{ textAlign: 'right' }}>
+          <Button onClick={handleClose}>取消</Button>
+        </div>
+      );
+    }
+    return (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+        <FingerprintStatus rowCount={rows.length} />
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <Button onClick={handleClose}>取消</Button>
+          {rows.length === 0 ? (
+            <Tooltip title="请至少新增一个材质料号">
+              <Button type="primary" disabled>确认加入</Button>
+            </Tooltip>
+          ) : (
+            <Button type="primary" loading={submitting} onClick={submit}>确认加入</Button>
+          )}
+        </div>
+      </div>
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveLoading, hasTemplate, rows, submitting]);
 
   return (
     <Drawer
       title="添加产品 — 选配"
       open={open}
-      onClose={() => { resetState(); onCancel(); }}
+      onClose={handleClose}
       width={960}
       placement="right"
-      maskClosable={false}
-      keyboard={false}
       destroyOnClose
-      footer={
-        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}>
-          <Button onClick={() => { resetState(); onCancel(); }}>取消</Button>
-          <div>
-            {globalStep > 0 && (
-              <Button onClick={goPrev} style={{ marginRight: 8 }}>
-                上一步
-              </Button>
-            )}
-            <Button type="primary" onClick={goNext} loading={submitting}>
-              {globalStep === 4 ? '确认添加' : '下一步'}
-            </Button>
+      footer={footer}
+    >
+      {effectiveLoading ? (
+        <div style={{ textAlign: 'center', padding: '80px 0' }}>
+          <Spin size="large" />
+        </div>
+      ) : !hasTemplate ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 40px', textAlign: 'center', color: '#606266', minHeight: 420 }}>
+          <div style={{ fontSize: 52, marginBottom: 16, color: '#c0c4cc' }}>🗂️</div>
+          <div style={{ fontSize: 14, lineHeight: 1.8, maxWidth: 460, marginBottom: 16 }}>
+            缺少选配模板 —— 请先在「配置中心 → 选配模板管理」为该客户所属行业或默认模板配置选配参数。
+          </div>
+          <a
+            style={{ color: '#1890ff', cursor: 'pointer', fontWeight: 500 }}
+            onClick={() => window.open('/config/sel-templates', '_blank')}
+          >
+            → 去配置选配模板
+          </a>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', minHeight: 520 }}>
+          <div style={{ width: '62%', paddingRight: 20, borderRight: '1px solid #f0f0f0', position: 'relative' }}>
+            <SelDetailTable
+              rows={rows}
+              onAdd={handleAddClick}
+              onEdit={handleEditClick}
+              onDelete={handleDeleteRow}
+              onQuantityChange={handleQuantityChange}
+            />
+            <CompositeProcessSection sumQty={qtySum} selections={compositeSelections} onChange={setCompositeSelections} />
+            <AddPartSubDrawer
+              open={subOpen}
+              effective={effective!}
+              materialDict={materialDict}
+              legacyProcesses={legacyProcesses}
+              editingRow={editingRow}
+              onConfirm={handleSubConfirm}
+              onCancel={handleSubCancel}
+              onMaterialPreview={handleMaterialPreview}
+            />
+          </div>
+          <div style={{ width: '38%', paddingLeft: 20 }}>
+            <Preview3DPanel
+              mode={previewMode}
+              materialLabel={previewMaterialLabel}
+              materialCode={previewMaterialCode}
+              loading={previewLoading}
+              modelData={previewData}
+            />
+            <div style={{ fontSize: 12, color: '#909399', marginTop: 8, lineHeight: 1.6 }}>
+              选材质后实时预览材质 3D；「⤢ 交互查看」为增强项占位。
+            </div>
           </div>
         </div>
-      }
-    >
-      <Steps
-        current={activeIdx}
-        items={stepLabels.map(l => ({ title: l }))}
-        style={{ marginBottom: 24 }}
-      />
-
-      {globalStep === 0 && (
-        <Step0ProductType
-          productType={productType}
-          onChangeType={setProductType}
-          initPartCount={initPartCount}
-          onChangePartCount={setInitPartCount}
-        />
-      )}
-
-      {globalStep === 1 && parts[ci] && (
-        <>
-          <AccessoryProgressBar
-            parts={parts}
-            currentIndex={ci}
-            furthestIndex={furthestCi}
-            onJump={jumpToPart}
-          />
-          {subStep === 0 && <Step1SearchPart part={parts[ci]} onUpdate={updateCurrentPart} />}
-          {subStep === 1 && <Step2Material part={parts[ci]} onUpdate={updateCurrentPart} />}
-          {subStep === 2 && <Step3Process part={parts[ci]} onUpdate={updateCurrentPart} />}
-        </>
-      )}
-
-      {globalStep === 2 && (
-        <StepAccessoryQuantity parts={parts} onUpdatePart={updatePart} />
-      )}
-
-      {globalStep === 3 && (
-        <Step4CompositeProcess
-          parts={parts}
-          addedCProcs={addedCProcs}
-          onChangeAdded={setAddedCProcs}
-        />
-      )}
-
-      {globalStep === 4 && (
-        <Step5Summary
-          productType={productType}
-          parts={parts}
-          addedCProcs={addedCProcs}
-          onUpdatePart={updatePart}
-        />
       )}
     </Drawer>
   );
