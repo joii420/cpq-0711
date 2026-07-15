@@ -536,19 +536,21 @@ public class QuotationService {
                     }
 
                     // Save processes
-                    if (liDraft.processIds != null) {
-                        for (UUID processId : liDraft.processIds) {
+                    // task-0712 缺口1 遗留涟漪修复: process_no 全链贯通(与 ConfigureProductService.
+                    // insertQuotationLineProcesses 同口径), 取代旧 process_id(process V4 UUID) 写法。
+                    if (liDraft.processNos != null) {
+                        for (String processNo : liDraft.processNos) {
                             QuotationLineProcess lp = new QuotationLineProcess();
                             lp.lineItemId = li.id;
-                            lp.processId = processId;
+                            lp.processNo = processNo;
                             lp.persist();
                         }
                     }
 
                     // 导入来源行:无用户工序时,从该料号基础工序(material_bom_item.operation_no)
-                    // seed 本行 quotation_line_process(operation_no → process.id),使 [选配-工序列表]
+                    // seed 本行 quotation_line_process(operation_no 即 process_no),使 [选配-工序列表]
                     // 与选配产品渲染一致。仅 seedProcessesFromBase=true 的导入行触发(选配路径不设,保持"没选=空")。
-                    boolean noProcs = (liDraft.processIds == null || liDraft.processIds.isEmpty());
+                    boolean noProcs = (liDraft.processNos == null || liDraft.processNos.isEmpty());
                     if (noProcs && Boolean.TRUE.equals(liDraft.seedProcessesFromBase)
                             && li.productPartNoSnapshot != null && !li.productPartNoSnapshot.isBlank()) {
                         try {
@@ -556,13 +558,16 @@ public class QuotationService {
                                     .setParameter("cid", q.customerId)
                                     .getResultStream().findFirst().orElse(null);
                             if (ccObj != null) {
+                                // process_master 取代 process(V4, 冻结快照) 作 JOIN 目标: 选配落库的
+                                // 孤儿工序(如 TP10)只进 process_master, 不进 process(V4), 若仍 JOIN 旧表
+                                // 会漏 seed(F9, 见 ConfigureProductService#resolveProcessCodes 注释)。
                                 em.createNativeQuery(
-                                        "INSERT INTO quotation_line_process (id, line_item_id, process_id) " +
-                                        "SELECT gen_random_uuid(), :lid, p.id FROM (" +
+                                        "INSERT INTO quotation_line_process (id, line_item_id, process_no) " +
+                                        "SELECT gen_random_uuid(), :lid, pm.process_no FROM (" +
                                         "  SELECT DISTINCT operation_no FROM material_bom_item " +
                                         "  WHERE system_type='QUOTE' AND customer_no=:cc AND material_no=:part " +
                                         "    AND characteristic='ASSEMBLY' AND operation_no IS NOT NULL AND is_current = true" +
-                                        ") ops JOIN process p ON p.code = ops.operation_no")
+                                        ") ops JOIN process_master pm ON pm.process_no = ops.operation_no")
                                     .setParameter("lid", li.id)
                                     .setParameter("cc", ccObj.toString())
                                     .setParameter("part", li.productPartNoSnapshot)
@@ -1527,7 +1532,9 @@ public class QuotationService {
             for (QuotationLineProcess srcP : QuotationLineProcess.<QuotationLineProcess>list("lineItemId = ?1", srcLi.id)) {
                 QuotationLineProcess newP = new QuotationLineProcess();
                 newP.lineItemId = newLi.id;
-                newP.processId = srcP.processId;
+                // task-0712 缺口1 遗留涟漪修复: 复制 process_no(权威列); process_id 是遗留列,
+                // 新写路径统一不再填(与 ConfigureProductService/saveDraft 同口径)。
+                newP.processNo = srcP.processNo;
                 newP.persist();
             }
 
@@ -2149,18 +2156,19 @@ public class QuotationService {
 
             if (liDraft.subtotal != null) total = total.add(liDraft.subtotal);
 
-            // processIds（低频，逐行 persist，无性能收益集合化）
-            if (liDraft.processIds != null) {
-                for (UUID processId : liDraft.processIds) {
+            // processNos（低频，逐行 persist，无性能收益集合化）
+            // task-0712 缺口1 遗留涟漪修复: process_no 全链贯通, 取代旧 process_id(process V4 UUID)。
+            if (liDraft.processNos != null) {
+                for (String processNo : liDraft.processNos) {
                     QuotationLineProcess lp = new QuotationLineProcess();
                     lp.lineItemId = li.id;
-                    lp.processId = processId;
+                    lp.processNo = processNo;
                     lp.persist();
                 }
             }
 
             // E3 收集：seedProcessesFromBase 行
-            boolean noProcs = (liDraft.processIds == null || liDraft.processIds.isEmpty());
+            boolean noProcs = (liDraft.processNos == null || liDraft.processNos.isEmpty());
             if (noProcs && Boolean.TRUE.equals(liDraft.seedProcessesFromBase)
                     && li.productPartNoSnapshot != null && !li.productPartNoSnapshot.isBlank()) {
                 seedProcLines.put(li.id, li.productPartNoSnapshot);
@@ -2298,9 +2306,11 @@ public class QuotationService {
                     }
                     String[] partArr = partList.toArray(new String[0]);
 
+                    // process_master 取代 process(V4, 冻结快照) 作 JOIN 目标: 选配落库的孤儿工序
+                    // (如 TP10)只进 process_master, 不进 process(V4)(F9)。
                     em.createNativeQuery(
-                            "INSERT INTO quotation_line_process (id, line_item_id, process_id) " +
-                            "SELECT gen_random_uuid(), kv.lid::uuid, p.id " +
+                            "INSERT INTO quotation_line_process (id, line_item_id, process_no) " +
+                            "SELECT gen_random_uuid(), kv.lid::uuid, pm.process_no " +
                             "FROM ( " +
                             "  SELECT unnest(CAST(:lids AS text[]))::uuid AS lid, unnest(CAST(:parts AS text[])) AS part_no " +
                             ") kv " +
@@ -2310,7 +2320,7 @@ public class QuotationService {
                             "    AND characteristic='ASSEMBLY' AND operation_no IS NOT NULL AND is_current = true " +
                             "    AND material_no = ANY(CAST(:parts_arr AS text[])) " +
                             ") bom ON bom.material_no = kv.part_no " +
-                            "JOIN process p ON p.code = bom.operation_no")
+                            "JOIN process_master pm ON pm.process_no = bom.operation_no")
                         .setParameter("lids", lidStrArr)
                         .setParameter("parts", partArr)
                         .setParameter("cc", customerCode)

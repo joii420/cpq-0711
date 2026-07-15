@@ -62,7 +62,13 @@ public class SaveDraftRequest {
         public String productAttributeValues;
         public BigDecimal subtotal;
         public Integer sortOrder;
-        public List<UUID> processIds;
+        /**
+         * task-0712 缺口1 遗留涟漪修复: 工序编号(process_master.process_no), 取代旧 UUID processIds。
+         * saveDraft 每次都全量重建 quotation_line_process(先删后按此列表重插, 见 QuotationService
+         * #processBatchStage1 / 逐行回落路径), 必须与 ConfigureProductService.insertQuotationLineProcesses
+         * 同口径写 process_no, 否则前端回传空值会导致选配时已落库的工序在下一次 saveDraft 被静默清空。
+         */
+        public List<String> processNos;
         public List<ComponentDataDraft> componentData;
         /** V169 选配组合产品关系标识 SIMPLE / COMPOSITE / PART (saveDraft 全量重建时必须透传保留) */
         public String compositeType;
@@ -75,7 +81,7 @@ public class SaveDraftRequest {
         /**
          * 加产品整份快照 Phase 后续:导入来源标记。
          * 前端 BulkImportPartsDrawer 对"从基础数据导入加入报价单"的行设 true →
-         * saveDraft 在该行无 processIds 时,从该料号基础工序(material_bom_item.operation_no)
+         * saveDraft 在该行无 processNos 时,从该料号基础工序(material_bom_item.operation_no)
          * seed 本行 quotation_line_process,使 [选配-工序列表] 与选配产品渲染一致。
          * 选配路径不设(保持"选配没选工序=空")。
          */

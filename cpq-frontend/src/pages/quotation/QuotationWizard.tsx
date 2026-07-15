@@ -378,9 +378,10 @@ const QuotationWizard: React.FC = () => {
         productAttributeValues: rawAttrs,
         componentData: li.componentData || [],
         subtotal: li.subtotal || 0,
-        // 工序回读:从 GET 的 processes 填 processIds,使 saveDraft 能回写 quotation_line_process
-        // (选配/导入工序跨保存存活,刷新后不丢)。
-        processIds: Array.isArray(li.processes) ? li.processes.map((p: any) => p.processId).filter(Boolean) : [],
+        // 工序回读:从 GET 的 processes 填 processNos,使 saveDraft 能回写 quotation_line_process
+        // (选配/导入工序跨保存存活,刷新后不丢)。task-0712 缺口1 遗留涟漪修复:后端 ProcessDTO 已把
+        // processId(UUID) 改 processNo(process_master.process_no 字符串),这里同步跟读。
+        processNos: Array.isArray(li.processes) ? li.processes.map((p: any) => p.processNo).filter(Boolean) : [],
         // 选配-组合工艺 per-quote:GET 回读步骤,带到本行供 saveDraft 透传(跨保存存活)
         compositeProcesses: Array.isArray(li.compositeProcesses) ? li.compositeProcesses : [],
         // 料号版本锁定 (后端 DTO 已带, 用于产品卡片版本 Tag 显示)
@@ -918,8 +919,10 @@ const QuotationWizard: React.FC = () => {
         subtotal: computeProductSubtotalSafe(li, driverExpansions, customerIdValue),
         sortOrder: idx,
         // 选配/回读的工序回传:后端 saveDraft 据此回写 quotation_line_process(工序跨保存存活)。
-        // 导入行此处为空(不携带 processIds),改由 seedProcessesFromBase 让后端从基础工序 seed。
-        processIds: Array.isArray((li as any).processIds) ? (li as any).processIds : [],
+        // 导入行此处为空(不携带 processNos),改由 seedProcessesFromBase 让后端从基础工序 seed。
+        // task-0712 缺口1 遗留涟漪修复:后端 SaveDraftRequest.LineItemDraft.processIds(UUID)
+        // 已改 processNos(process_master.process_no 字符串),字段名同步跟读, 类型仍与后端匹配。
+        processNos: Array.isArray((li as any).processNos) ? (li as any).processNos : [],
         // 选配-组合工艺 per-quote:透传步骤,后端 saveDraft 据此重写(换 line id 后存活)
         compositeProcesses: Array.isArray((li as any).compositeProcesses) ? (li as any).compositeProcesses : [],
         // 导入来源标记透传:后端 saveDraft 据此从基础工序 seed 本行 quotation_line_process
@@ -1281,9 +1284,10 @@ const QuotationWizard: React.FC = () => {
         // 保留 compositeType + parentLineItemId 让渲染层 filter PART 子卡片 (A 修复)
         compositeType: li.compositeType,
         parentLineItemId: li.parentLineItemId,
-        // 选配工序回传:后端 buildLineItemDTO 透传 processIds,带到 lineItem 上,
+        // 选配工序回传:后端 buildLineItemDTO 透传 processNos,带到 lineItem 上,
         // 使 saveDraft 能回写 quotation_line_process(选配工序跨保存存活)。
-        processIds: Array.isArray(li.processIds) ? li.processIds : [],
+        // task-0712 缺口1 遗留涟漪修复:configure 响应 key 已从 processIds(UUID) 改 processNos(字符串)。
+        processNos: Array.isArray(li.processNos) ? li.processNos : [],
         // 选配-组合工艺 per-quote:从 configure 响应带回步骤,供 saveDraft 透传存活
         compositeProcesses: Array.isArray(li.compositeProcesses) ? li.compositeProcesses : [],
       }) as LineItem;
