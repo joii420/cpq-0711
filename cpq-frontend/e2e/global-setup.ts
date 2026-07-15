@@ -19,8 +19,10 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const BASE_URL = 'http://localhost:5174';
-const BACKEND_URL = 'http://localhost:8081';
+// task-0713 E2E 验收：支持 PW_BASE_URL/PW_BACKEND_URL 覆盖（临时 Vite + 临时后端场景），
+// 未设置时保持既有默认，不影响其他任务/常规运行。
+const BASE_URL = process.env.PW_BASE_URL || 'http://localhost:5174';
+const BACKEND_URL = process.env.PW_BACKEND_URL || 'http://localhost:8081';
 const AUTH_DIR = path.join(__dirname, '.auth');
 
 async function isBackendAvailable(): Promise<boolean> {

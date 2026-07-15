@@ -4,6 +4,10 @@ import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.quotation.dto.CostingOrderDetailDTO;
 import com.cpq.quotation.dto.CostingOrderListItemDTO;
+import com.cpq.quotation.dto.VersionOptionsResponseDTO;
+import com.cpq.quotation.dto.VersionSwitchRequest;
+import com.cpq.quotation.dto.VersionSwitchResponseDTO;
+import com.cpq.quotation.service.CostingVersionService;
 import com.cpq.quotation.service.QuotationService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -33,6 +37,9 @@ public class CostingOrderResource {
     @Inject
     QuotationService quotationService;
 
+    @Inject
+    CostingVersionService costingVersionService;
+
     /**
      * 核价管理列表。
      *
@@ -58,5 +65,29 @@ public class CostingOrderResource {
     @Path("/{coid}")
     public ApiResponse<CostingOrderDetailDTO> getOne(@PathParam("coid") UUID coid) {
         return ApiResponse.success(quotationService.getCostingOrderById(coid));
+    }
+
+    /**
+     * task-0713 B6：查询某料号在某页签的可选版本（下拉数据源，api.md §2）。
+     */
+    @GET
+    @Path("/{coid}/version-options")
+    public ApiResponse<VersionOptionsResponseDTO> versionOptions(
+            @PathParam("coid") UUID coid,
+            @QueryParam("lineItemId") UUID lineItemId,
+            @QueryParam("componentId") UUID componentId,
+            @QueryParam("partNo") String partNo) {
+        return ApiResponse.success(costingVersionService.listVersionOptions(coid, lineItemId, componentId, partNo));
+    }
+
+    /**
+     * task-0713 B7：切换版本（核心写操作，api.md §3）。仅 PENDING 核价单可切
+     * （角色已由本类 {@code @RoleAllowed} 门禁保证）。
+     */
+    @POST
+    @Path("/{coid}/version-switch")
+    public ApiResponse<VersionSwitchResponseDTO> versionSwitch(
+            @PathParam("coid") UUID coid, VersionSwitchRequest body) {
+        return ApiResponse.success(costingVersionService.switchVersion(coid, body));
     }
 }

@@ -10,7 +10,9 @@ export default defineConfig({
   workers: 1,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'report' }]],
   use: {
-    baseURL: 'http://localhost:5174',
+    // task-0713 E2E 验收：支持 PW_BASE_URL 覆盖（临时 Vite + 临时后端场景），
+    // 未设置时保持既有默认 5174，不影响其他任务/常规运行。
+    baseURL: process.env.PW_BASE_URL || 'http://localhost:5174',
     headless: true,
     viewport: { width: 1600, height: 1000 },
     locale: 'zh-CN',

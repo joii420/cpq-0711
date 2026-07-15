@@ -17,6 +17,8 @@ import type { GlobalVariableDefinition } from '../../services/globalVariableServ
 import { sumTabColumns } from './tabTotalLines';
 import { formatNumber } from '../../utils/formatNumber';
 import { resolveFieldWidth } from '../component/types';
+import VersionSelectDropdown from './VersionSelectDropdown';
+import type { VersionSwitchResult } from '../../services/costingOrderService';
 import './quotation.css';
 
 /** Readonly product card for quotation detail page */
@@ -67,6 +69,13 @@ interface ReadonlyProductCardProps {
    * COSTING 分支本就离线，frozen 对其无影响。
    */
   frozen?: boolean;
+  /** task-0713：核价单 ID。仅 CostingReviewPage（mainTab==='costing'）传入；报价单视图不传，
+   *  版本下拉不出现，QUOTE 分支渲染逻辑一行不改。 */
+  coid?: string;
+  /** task-0713（F4）：= PENDING + 财务/管理员，决定版本下拉是否可交互（false 时纯文本只读展示）。 */
+  editable?: boolean;
+  /** task-0713（F3）：版本切换成功后的增量回调，上抛给 CostingReviewPage 合并到本地状态。 */
+  onVersionSwitched?: (result: VersionSwitchResult) => void;
 }
 
 function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
@@ -177,6 +186,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   locateComponentId,
   locateSeq,
   frozen,
+  coid,
+  editable,
+  onVersionSwitched,
 }) => {
   const side = sideProp ?? 'QUOTE';
   const isCosting = side === 'COSTING';
@@ -439,6 +451,12 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   // QUOTE 侧 isCosting 恒 false，零影响（对齐编辑页 2026-07-03 注释）。
   const activeComponentBomTree = isCosting
     && !!activeDriverExpansion?.rows?.some((r: any) => r?.__sys?.nodeId !== undefined);
+  // task-0713（D2/F2）：非主树页签版本下拉的组件级开关——仅当该组件驱动行的原始 $view 输出
+  // 含约定列 view_version（前端只认这一个键名）才出下拉；树页签走上面 bomSys.bomVersion，
+  // 两者互斥（树页签恒 !activeComponentBomTree 为 false）。无 view_version 列的组件/全局费率类
+  // 不受影响（对齐 api.md §0 "前端只认 view_version 这一个键名"）。
+  const activeComponentVersionable = isCosting && !activeComponentBomTree
+    && !!activeDriverExpansion?.rows?.some((r: any) => r?.driverRow?.view_version != null);
 
   return (
     <div className="qt-product-card">
@@ -532,6 +550,10 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         <th style={{ minWidth: 90 }}>版本</th>
                       </>
                     )}
+                    {/* task-0713（F2）：非树页签版本系统列，仅该组件驱动行含 view_version 时出现 */}
+                    {activeComponentVersionable && (
+                      <th style={{ minWidth: 90 }}>版本</th>
+                    )}
                     {activeComp.fields.map(field => {
                       const w = resolveFieldWidth(field.width);
                       return (
@@ -605,7 +627,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         {effectiveCount === 0 && (
                           <tr>
                             <td
-                              colSpan={(activeComp.fields.length || 1) + (activeComponentBomTree ? 2 : 0)}
+                              colSpan={(activeComp.fields.length || 1) + (activeComponentBomTree ? 2 : 0) + (activeComponentVersionable ? 1 : 0)}
                               style={{ textAlign: 'center', color: '#999', padding: '16px 0' }}
                             >
                               暂无数据
@@ -615,6 +637,10 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         {(() => {
                           const descriptors = Array.from({ length: effectiveCount }, (_, ri) => {
                             const ra = rowAt(ri, activeComp, s);
+                            // task-0713（F2）：非树页签版本/料号——取本行驱动展开的原始 $view 行
+                            // （driverRow，与 __sys 同一来源，早于 __ 前缀重打包），只在
+                            // activeComponentVersionable 时有意义，其余场景恒 undefined、零影响。
+                            const driverRowRaw = ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined;
                             return {
                               ri,
                               rawRow: ra.row,
@@ -624,6 +650,12 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                               // 核价 BOM 递归展开（task-0712）：spine 系统列（仅 COSTING 行有值），
                               // 与编辑页 QuotationStep2.tsx effectiveRows.__sys 同源。
                               __sys: ra.expIndex >= 0 ? (activeDriverExpansion!.rows[ra.expIndex] as any)?.__sys : undefined,
+                              __viewVersion: driverRowRaw?.view_version ?? null,
+                              // ⚠️ 集成待确认：api.md 未定死非树行的"料号"列约定键名（后端各 $view 现状不一，
+                              // 见 task-0713 前端调查）。按 task-0708 语义（销售料号=material_no）优先取
+                              // material_no，其余为兜底候选，后端落地 B4 后需与实际列名核对。
+                              __rowPartNo: driverRowRaw?.material_no ?? driverRowRaw?.hf_part_no
+                                ?? driverRowRaw?.sales_part_no ?? driverRowRaw?.partNo ?? null,
                             };
                           });
                           // 核价 BOM 递归展开（task-0712）：COSTING 侧按 spine 系统列 __parentId→__nodeId 建树
@@ -662,8 +694,28 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                               .filter(r => !isTreeRowHidden(r.originalIndex, laid.parentIndexByIndex, laid.nodeKeyByIndex, collapsed))
                               .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
                           }
-                          return ordered.map(({ ri, rawRow, rowBdv, formulaCache, formulaErrors, _depth, _hasChildren, _nodeKey, __sys }) => {
+                          // task-0713（F2 非树页签）：按销售料号做"相邻行分组"，组内首行 rowSpan 覆盖
+                          // 整组、共享一个下拉；同组其余行不渲染该 <td>（标准 HTML rowSpan 用法）。
+                          // 仅 activeComponentVersionable 时计算，其余场景数组恒为空、零开销。
+                          const versionGroupInfo: Array<{ isGroupStart: boolean; rowSpan: number }> = [];
+                          if (activeComponentVersionable) {
+                            for (let oi = 0; oi < ordered.length; oi++) {
+                              const cur = (ordered[oi] as any).__rowPartNo;
+                              const prev = oi > 0 ? (ordered[oi - 1] as any).__rowPartNo : undefined;
+                              if (oi === 0 || cur !== prev) {
+                                let span = 1;
+                                while (oi + span < ordered.length && (ordered[oi + span] as any).__rowPartNo === cur) span++;
+                                versionGroupInfo[oi] = { isGroupStart: true, rowSpan: span };
+                              } else {
+                                versionGroupInfo[oi] = { isGroupStart: false, rowSpan: 0 };
+                              }
+                            }
+                          }
+                          return ordered.map(({ ri, rawRow, rowBdv, formulaCache, formulaErrors, _depth, _hasChildren, _nodeKey, __sys, __viewVersion, __rowPartNo }, oi) => {
                           const bomSys = activeComponentBomTree ? (__sys as import('./useDriverExpansions').BomSysCols | undefined) : undefined;
+                          // task-0713（F2/F4）：树页签版本切换 —— 仅 COSTING + 有 coid + 该节点有料号时可下拉；
+                          // editable=false 时纯文本只读展示（不显示交互控件，同下方非树分支同款判断）。
+                          const canSwitchTreeVersion = isCosting && !!coid && !!bomSys?.hfPartNo;
                           return (
                           <tr key={ri}>
                             {/* 核价 BOM 递归展开（task-0712，只读版）：2 系统固定列，料号列承载树缩进/折叠箭头；
@@ -683,8 +735,39 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                                     <span>{bomSys?.hfPartNo ?? '—'}</span>
                                   </span>
                                 </td>
-                                <td>{bomSys?.bomVersion ?? '—'}</td>
+                                <td>
+                                  {/* task-0713（F2/F3/F4）：主树版本切换——editable 时下拉，否则纯文本 */}
+                                  {canSwitchTreeVersion && editable ? (
+                                    <VersionSelectDropdown
+                                      coid={coid!}
+                                      lineItemId={activeLineItemId}
+                                      componentId={activeComp.componentId}
+                                      partNo={bomSys!.hfPartNo!}
+                                      currentVersion={bomSys?.bomVersion ?? null}
+                                      onSwitched={onVersionSwitched}
+                                    />
+                                  ) : (
+                                    bomSys?.bomVersion ?? '—'
+                                  )}
+                                </td>
                               </>
+                            )}
+                            {/* task-0713（F2 非树页签）：组内首行渲染共享下拉，rowSpan 覆盖整组；组内其余行不渲染此列 */}
+                            {activeComponentVersionable && versionGroupInfo[oi]?.isGroupStart && (
+                              <td rowSpan={versionGroupInfo[oi].rowSpan} style={{ verticalAlign: 'top' }}>
+                                {isCosting && !!coid && __rowPartNo != null && editable ? (
+                                  <VersionSelectDropdown
+                                    coid={coid}
+                                    lineItemId={activeLineItemId}
+                                    componentId={activeComp.componentId}
+                                    partNo={String(__rowPartNo)}
+                                    currentVersion={__viewVersion != null ? String(__viewVersion) : null}
+                                    onSwitched={onVersionSwitched}
+                                  />
+                                ) : (
+                                  __viewVersion != null ? String(__viewVersion) : '—'
+                                )}
+                              </td>
                             )}
                             {activeComp.fields.map((field) => {
                               const key = field.name || '';
@@ -779,6 +862,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     <tr className="qt-subtotal-row">
                       {/* 核价 BOM 递归展开：与 2 个系统固定列对齐的占位单元格（仅"勾选递归"组件） */}
                       {activeComponentBomTree && (<><td /><td /></>)}
+                      {/* task-0713：与非树版本系统列对齐的占位单元格 */}
+                      {activeComponentVersionable && <td />}
                       {activeComp.fields.map((field, fi) => {
                         const colName = field.name || field.key || '';
                         // 单一来源：columnSumsByComp（buildCrossTabRows resolvedRows Σ行）
@@ -808,6 +893,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     {activeComp.fields.some(f => f.is_amount) && (
                       <tr className="qt-subtotal-row qt-tab-total-row">
                         {activeComponentBomTree && (<><td /><td /></>)}
+                        {activeComponentVersionable && <td />}
                         <td className="qt-subtotal-label-cell">合计</td>
                         <td colSpan={Math.max(1, activeComp.fields.length - 1)} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
                           {/* 本页签金额合计走"其余"高精度 4 位（精度优先）；仅最终产品小计保持 formatCurrency 2 位 */}

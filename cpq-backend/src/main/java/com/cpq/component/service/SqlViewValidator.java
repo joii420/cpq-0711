@@ -131,13 +131,20 @@ public class SqlViewValidator {
                     "占位符前缀 :__sk 为 spineKeys 宏保留，请勿在 SQL 模板中自定义");
         }
 
-        // 3.6 展开 :spineKeys(...) 宏为校验形（ARRAY[]::text[] 字面量，无命名占位符），
+        // 3.5b 保留 __vf* 前缀（task-0713 versionFilter 宏内部占位符，禁止作者自定义）
+        if (Pattern.compile("(?<!:):__vf", Pattern.CASE_INSENSITIVE).matcher(sqlTemplate).find()) {
+            return DryRunSqlViewResponse.fail(
+                    "占位符前缀 :__vf 为 versionFilter 宏保留，请勿在 SQL 模板中自定义");
+        }
+
+        // 3.6 展开 :spineKeys(...) / :versionFilter(...) 宏为校验形（无命名占位符），
         //     供后续占位符提取 + EXPLAIN dry-run；存储仍保留原始含宏 sql_template。
         String forValidation;
         try {
             forValidation = com.cpq.datasource.sqlview.SpineKeysMacro.expandForValidation(sqlTemplate);
+            forValidation = com.cpq.datasource.sqlview.VersionFilterMacro.expandForValidation(forValidation);
         } catch (IllegalArgumentException e) {
-            return DryRunSqlViewResponse.fail("spineKeys 宏语法错误：" + e.getMessage());
+            return DryRunSqlViewResponse.fail("宏语法错误：" + e.getMessage());
         }
 
         // 4. 提取占位符清单
