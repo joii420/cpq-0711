@@ -53,6 +53,35 @@ class CostingVersionServiceTest {
         assumeTrue("PENDING".equals(d.status), "夹具核价单需为 PENDING（可能已被其它并发会话核价通过/驳回）");
     }
 
+    /** T7.1：非 PENDING 核价单切版本必须 403，且不落 override（用真实 REJECTED 单验证状态门禁）。 */
+    @Test
+    void t3_nonPendingCostingOrder_switchVersion_returns403() {
+        UUID nonPendingCoid = null;
+        String status = null;
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT id, status FROM costing_order WHERE status IN ('REJECTED','APPROVED','WITHDRAWN') LIMIT 1")
+                .getResultList();
+        if (!rows.isEmpty()) {
+            nonPendingCoid = (UUID) rows.get(0)[0];
+            status = (String) rows.get(0)[1];
+        }
+        assumeTrue(nonPendingCoid != null, "共享库需要至少一张非 PENDING 核价单");
+
+        VersionSwitchRequest req = new VersionSwitchRequest();
+        req.lineItemId = LINE_ITEM_ID;      // 门禁在业务校验之前触发，具体 line/component 是否存在不影响本用例
+        req.componentId = TREE_COMPONENT_ID;
+        req.partNo = ROOT_PART_NO;
+        req.viewVersion = "9999";
+
+        UUID finalCoid = nonPendingCoid;
+        com.cpq.common.exception.BusinessException ex = assertThrows(
+                com.cpq.common.exception.BusinessException.class,
+                () -> costingVersionService.switchVersion(finalCoid, req),
+                "非 PENDING(实际=" + status + ") 核价单切版本应抛 BusinessException(403)");
+        assertEquals(403, ex.getCode(), "错误码应为 403");
+    }
+
     @Test
     void t1_versionOptions_listsDescendingAndCurrentIsIsCurrent() {
         assumeFixtureIntact();
