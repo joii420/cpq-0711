@@ -27,6 +27,9 @@ public class SelTemplateResource {
 
     @GET
     @Path("/effective")
+    // task-0712 F1 发现: 选配添加抽屉由 SALES_REP 调用解析有效模板, 需方法级放开
+    // (类级仅 PRICING/SALES_MANAGER/SYSTEM_ADMIN); 对齐 ConfigureProductResource / ModelConfigResource#current 运行端口径。
+    @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
     public ApiResponse<com.cpq.seltemplate.dto.EffectiveTemplateDTO> effective(
             @QueryParam("customerNo") String customerNo) {
         if (customerNo == null || customerNo.isBlank())
