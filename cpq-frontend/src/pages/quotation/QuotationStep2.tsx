@@ -1654,8 +1654,13 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     });
   };
 
-  // Task 8 / Phase 1(2026-07-14): driver 默认行永久删除 —— 乐观墓碑 + 服务端权威投影原子重灌两存储 + 失败回滚。
-  // pendingDeleteRef:在「乐观墓碑 → 服务端响应」窗口内抑制 bake effect 按错位下标写 comp.rows(唯一的窗口内污染源)。
+  // Task 8 / Phase 1(2026-07-14 删错行) + 2026-07-15 消闪:driver 默认行永久删除 ——
+  // **不做乐观追加墓碑**,只等服务端权威投影一次原子重灌。
+  // 为何去乐观:乐观加墓碑会让 buildSnapshotExpansions 立刻把展开过滤成 N-1、而 comp.rows 仍 N →
+  //   rowAt 按下标错配 → 渲染出瞬时错位(闪一下"刷了一遍页签数据"),再被服务端投影纠正。去乐观后
+  //   在途期间显示保持原 N 行不变(与展开同 N,对齐),投影到达时一次过渡到 N-1,单次干净、无闪。
+  // 代价:少了"立即消失"的即时感,用 message.loading 反馈在途(~一次往返)。
+  // pendingDeleteRef:在途窗口抑制 bake effect 按下标写 comp.rows(防在途重渲染污染)。
   const pendingDeleteRef = useRef<Set<string>>(new Set());
   const handleDeleteDriverRow = async (componentId: string, effKey: string, driverRowData: Record<string, any>) => {
     const lid = (item as any).id as string | undefined;
@@ -1665,35 +1670,17 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     }
     const rkf = rowKeyFieldsByComp.get(componentId) ?? [];
     const fp = rowFingerprint(rkf, driverRowData ?? {});
-    // 进入删除在途窗口:抑制该组件 bake 写回(窗口内 expansion 已 N-1 但 comp.rows 仍 N,按下标 bake 会搅坏)
     pendingDeleteRef.current.add(componentId);
-    // 乐观更新：本地追加墓碑 → buildSnapshotExpansions 立即过滤该行
-    onUpdate((prevItem: LineItem) => ({
-      componentData: prevItem.componentData.map(c => {
-        if (c.componentId !== componentId) return c;
-        let arr: Tombstone[] = [];
-        try { const p = JSON.parse((c as any).deletedRowKeys ?? '[]'); if (Array.isArray(p)) arr = p; } catch { arr = []; }
-        if (!arr.some(t => t?.effKey === effKey && t?.fp === fp)) arr = [...arr, { effKey, fp }];
-        return { ...c, deletedRowKeys: JSON.stringify(arr) };
-      }),
-    }));
+    const hide = message.loading('删除中…', 0);
     try {
       const res = await quotationService.deleteDriverRow(quotationId, lid, componentId, effKey, fp);
-      // 服务端权威投影:原子替换 comp.rows(materialized N-1)+deletedRowKeys+quoteCardValues,恢复两存储对齐
+      // 服务端权威投影:一次原子替换 comp.rows(materialized N-1)+deletedRowKeys+quoteExcel/时间戳 → 单次过渡对齐,无瞬时闪烁。
       applyQuoteProjection((res as any)?.data);
     } catch (e: any) {
       message.error(`删除失败: ${e?.message ?? e}`);
-      // 失败回滚：移除刚追加的墓碑
-      onUpdate((prevItem: LineItem) => ({
-        componentData: prevItem.componentData.map(c => {
-          if (c.componentId !== componentId) return c;
-          let arr: Tombstone[] = [];
-          try { const p = JSON.parse((c as any).deletedRowKeys ?? '[]'); if (Array.isArray(p)) arr = p; } catch { arr = []; }
-          return { ...c, deletedRowKeys: JSON.stringify(arr.filter(t => !(t?.effKey === effKey && t?.fp === fp))) };
-        }),
-      }));
+      // 无乐观更新 → 无需回滚(删除失败时该行本就还在,显示不变)。
     } finally {
-      // 出窗口:重灌已把 comp.rows 拉回 N-1 与展开对齐,此后 bake 落到对的行,解除抑制。
+      hide();
       pendingDeleteRef.current.delete(componentId);
     }
   };
