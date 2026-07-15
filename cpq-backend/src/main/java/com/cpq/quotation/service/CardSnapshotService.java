@@ -2156,6 +2156,78 @@ public class CardSnapshotService {
     }
 
     /**
+     * 删除 / 恢复 driver 行后重算并投影（Phase 1 止血，方案 D）。
+     *
+     * <p>问题：{@code refreshQuoteCardValues} 只组装 {@code quote_card_values}（墓碑过滤 N-1），
+     * <b>不物化 {@code row_data}</b> → 前端 {@code buildSnapshotExpansions}（读 quoteCardValues.baseRows，过滤 N-1）
+     * 与 {@code comp.rows}（读未过滤 row_data，仍 N）行数错位 → {@code rowAt} 按下标硬配 → 删错行 + 受控输入
+     * 按错位下标写回逐帧搅坏（详见 dev-docs/task-删除行删错架构重构/设计方案.md L1/L2/L4）。
+     *
+     * <p>本方法在墓碑变更后：① 组装 quoteCardValues（墓碑过滤）② <b>物化 row_data（同墓碑 → N-1，与前端
+     * 展开同序，两存储恢复对齐）</b> ③ 返回整单投影（{@code quoteCardValues/quoteExcelValues/quoteValuesAt}
+     * 同 {@link #editCardValue} + 额外 {@code componentData}[{componentId,rowData,deletedRowKeys,subtotal}]），
+     * 供前端原子重灌 {@code comp.rows} / {@code deletedRowKeys} / {@code quoteCardValues}，消除 desync 窗口。
+     *
+     * <p>仅 {@code DRAFT}；失败返 {@code null}（端点据此不回灌，前端保留乐观墓碑兜底）。核价两列不参与。
+     */
+    @Transactional
+    public java.util.Map<String, Object> refreshQuoteProjection(UUID lineItemId) {
+        if (lineItemId == null) return null;
+        try {
+            QuotationLineItem li = QuotationLineItem.findById(lineItemId);
+            if (li == null) return null;
+            Quotation q = Quotation.findById(li.quotationId);
+            if (q == null || q.customerTemplateId == null || !"DRAFT".equals(q.status)) return null;
+            JsonNode snapshot = loadComponentsSnapshot(q.customerTemplateId);
+            if (snapshot == null) return null;
+
+            // 关键：用「已存 baseRows」(extractBaseRowsByComp,与前端算墓碑 fp 同源)而非重 expand。
+            // 墓碑 fp = 前端对 quoteCardValues.baseRows[i].driverRow 算的指纹;若这里重 expand 得到不同的
+            // driverRow,keepMask 的 fp 匹配不上 → 不过滤(删不掉行)。对齐 editCardValue 的取数口径。
+            Map<String, ArrayNode> baseRowsByComp = extractBaseRowsByComp(li.quoteCardValues);
+            Map<String, ArrayNode> oldEdits = extractEditRowsByComp(li.quoteCardValues);
+            Map<String, ArrayNode> mergedEdits =
+                mergeRowDataInputsIntoEdits(snapshot, baseRowsByComp, oldEdits, li.id);
+            Map<String, List<DeletedRowKeys.Tombstone>> delByComp = loadTombstonesByComp(li.id);
+
+            // 组装 quoteCardValues（墓碑过滤）+ 物化 row_data（同墓碑 → N-1，与前端展开同序）
+            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp);
+            li.quoteCardValues = MAPPER.writeValueAsString(root);
+            materializeWholeLineRowData(li, snapshot, baseRowsByComp, mergedEdits, delByComp);
+
+            // flush 落库(quoteCardValues 脏写 + materialize REQUIRES_NEW row_data)后 clear，按 id 重读托管实体
+            em.flush();
+            em.clear();
+            QuotationLineItem liM = QuotationLineItem.findById(lineItemId);
+            if (liM == null) return null;
+            liM.quoteValuesAt = OffsetDateTime.now();
+
+            java.util.Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("quoteCardValues", liM.quoteCardValues);
+            resp.put("quoteExcelValues", liM.quoteExcelValues);
+            resp.put("quoteValuesAt", liM.quoteValuesAt != null ? liM.quoteValuesAt.toString() : null);
+            // componentData 投影：供前端原子替换 comp.rows(materialized N-1) + deletedRowKeys(权威)
+            List<java.util.Map<String, Object>> comps = new ArrayList<>();
+            for (com.cpq.quotation.entity.QuotationLineComponentData cd :
+                    com.cpq.quotation.entity.QuotationLineComponentData
+                        .<com.cpq.quotation.entity.QuotationLineComponentData>list(
+                            "lineItemId = ?1 ORDER BY sortOrder, id", liM.id)) {
+                java.util.Map<String, Object> c = new LinkedHashMap<>();
+                c.put("componentId", cd.componentId != null ? cd.componentId.toString() : null);
+                c.put("rowData", cd.rowData);
+                c.put("deletedRowKeys", cd.deletedRowKeys);
+                c.put("subtotal", cd.subtotal);
+                comps.add(c);
+            }
+            resp.put("componentData", comps);
+            return resp;
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] refreshQuoteProjection failed li=%s: %s", lineItemId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * 失焦同步核心：按组件拓扑序把<b>整行所有非 SUBTOTAL 组件</b>的 row_data 用真实公式引擎重物化并落库，
      * 使 Excel 视图（只读 row_data、对 NORMAL 组件仅列求和不重算 FORMULA 叶子）随卡片编辑即时刷新，
      * <b>含跨页签依赖</b>（如「来料.材料成本」引用「元素」列小计 —— 编辑「元素.单价」后「来料」也随之重物化）。

@@ -52,5 +52,9 @@ export function keepRow(
   deleted: Tombstone[] | undefined | null,
 ): boolean {
   if (!deleted || deleted.length === 0) return true;
-  return !deleted.some((t) => t.effKey === effKey && t.fp === fp);
+  // 2026-07-14 删错行修复：按 fp(内容指纹)单键匹配,弃 effKey 双命中。
+  // effKey 由 computeRowKey 算,前后端对同一行可不一致(前端 driverRow['料件']=null → 索引兜底"0",
+  // 服务端经字段定义解析成内容"AgNi11#-Ⅰ")→ 双命中因 effKey 对不上而漏删。fp 前后端逐字节一致,可靠。
+  // effKey 形参保留仅为调用兼容。与后端 DeletedRowKeys.keepMask 语义严格对齐。
+  return !deleted.some((t) => t.fp === fp);
 }
