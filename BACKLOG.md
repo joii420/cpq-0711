@@ -152,7 +152,7 @@
 ### [BL-0031] 选配「工序」落 V6 承载表 + mirror 视图（选配模板方案前置·architect 级）
 - **优先级**：P1
 - **来源**：`docs/superpowers/specs/2026-07-06-选配模板方案-design.md` §2/§9 + 架构复核（`docs/反模式.md` AP-53 续6）
-- **状态**：TODO（未排期，architect 级）
+- **状态**：✅ **已由 task-0712 实质解决（2026-07-15，master `d02b7fe`）**——选配工序落 `unit_price`（`price_type=PROCESS`/`cost_type=自制加工费`，B2 完整落库）+ 组合工艺落 `capacity`（组装加工费，B6）；标识统一到 `process_master.process_no`（缺口1 加法式方案A，V336）；渲染走物理视图 `v_composite_child_processes`（读 `unit_price.operation_no`）。按 `material_no`(=销售料号 V315) 维度落库，与 BL-0031 目标一致。**未新建"专用工序承载表"**（用 unit_price 承载，符合《报价系统Excel导入落库方案》§10），如需独立表另评估，否则可关闭。
 - **登记日期**：2026-07-07
 - **推迟原因**：AP-53 续6 已标"工序在 V6 侧无承载表、需新建业务表 + mirror UNION，走 architect"；若一期强做则范围过大。
 - **背景**：选配方案把"工序"列为一期固定参数，但 V6 侧尚无工序落库承载表（现役选配 Phase1 只落料号+元素+子件）。产品卡片工序 Tab 依赖按 `sales_part_no` 落库 + mirror 视图取数。
@@ -186,6 +186,17 @@
 - **依赖**：BL-0017 落地（哨兵键 Σamount 口径已生效）。
 - **预估规模**：S（1-2 天，lint 部分）
 - **验收要点**：零金额列页签被 `[页签(总计)]` 引用时配置期有明确警告；若 PM 要回退，回退仅作用于该场景、不影响正常金额页签。
+
+### [BL-0057]（技术债）task-0712 选配工序 `quotation_line_process` 收缩迁移：删 `process_id` 列 + 换主 FK 到 `process_master`
+- **优先级**：P2
+- **来源**：task-0712 缺口1 工序 id 契约修复（架构评审.md「工序 id 契约修复设计」方案 A）；实现取**加法式变体**（迁移 V336）
+- **状态**：TODO（延后，待所有选配相关并发会话/分支收束）
+- **登记日期**：2026-07-15
+- **推迟原因**：V336 用加法式（加 `process_no` + FK→`process_master` + 放开 `process_id` NOT NULL，**保留** `process_id` 列/旧 FK），因 `process_id` 列被共享 8081(master 实体映射) 及其它并发 worktree 会话引用，`DROP COLUMN` 会致其 Hibernate 映射失效崩溃。功能已完整（选配写 `process_no`、`process_id` 留 NULL），收缩纯属清理。
+- **前置条件**：所有引用 `quotation_line_process.process_id` 的并发分支合并/收束；确认无进程再依赖旧列。
+- **范围**：新迁移 `DROP COLUMN process_id` + 删旧 `quotation_line_process_process_id_fkey`；`QuotationLineProcess` 实体删 `processId` 字段。
+- **预估规模**：S（1-2 天，含并发协调）
+- **验收要点**：删列后选配/编辑/saveDraft 工序落库读取全走 `process_no` 无回归；无进程因缺 `process_id` 列崩溃。
 
 ### [BL-0020]（技术债）config 路径 `[页签.列]` 经 FormulaCalculationService 只读裸 code 的粗化
 - **优先级**：P2
@@ -675,6 +686,26 @@
 - **依赖**：无。**预估规模**：S。
 - **验收要点**：两测试在当前 master 复绿、保留确定性护栏。
 
+### [BL-0055] 报价单删除行 Phase 2：内容指纹身份（uniqFp）根治重复行"连删"
+- **优先级**：P2
+- **来源**：删除删错行 Phase 1 交付后重评估（2026-07-15）
+- **状态**：TODO（依赖 partno 专项，暂缓）
+- **登记日期**：2026-07-15
+- **背景**：Phase 1（commit `9245555`）已把墓碑匹配从 effKey+fp 双命中改为 **fp 内容身份单键**（真根因=前后端 computeRowKey 算的 effKey 不一致），删除删对行、值不串、多次重渲染稳定。**唯一残留**=字节级完全重复行 fp 相同 → 删一个"连删"同 fp 行（实测：删 AgNi → 两 AgNi 都删、两 H65 保留）。而重复行的**唯一来源** = `element_bom_item` 销售号+生产号双重登记（见 [[BL-0035]]/partno 暂搁专项）。设计文档 `dev-docs/task-删除行删错架构重构/设计方案.md` 的 Phase 2（uniqFp 加 `#序号` + editRows/formulaResults/React-key/写回 统一身份 + 向后兼容读）可精确只删重复对里的一个。
+- **范围**：**若 partno 数据修好（消除重复行）→ 大概率可不做**；否则按设计文档 T2.0~T2.5（spike→后端契约→前端契约→写回退耦→只读页→E2E）。删除侧已由 fp-match 覆盖，可缩到只做**编辑侧 + Excel 只读快照同源**。
+- **依赖**：**partno 专项（消除重复行数据源）——建议先做，做完再评估本项是否还需要**。**预估规模**：L（全量）/ M（缩到编辑侧）。
+- **验收要点**：重复行删一个只删一个；editRows/formulaResults/React-key/写回全走统一身份；存量墓碑向后兼容读。
+
+### [BL-0056] 报价单编辑页 driver INPUT 编辑落库存疑（需真人复现定性）
+- **优先级**：P1（若属实 = 编辑数据丢失，需先确认真伪）
+- **来源**：Phase 2 影响面实测（2026-07-15）顺带发现
+- **状态**：TODO（需真人手动复现）
+- **登记日期**：2026-07-15
+- **背景**：合成 E2E（Playwright `fill`+`blur`）编辑 c4d9b1dc（QT-20260713-1963）来料 row1 的「加工费」→88.88：**卡片正确显示 + 公式（材料成本）更新**（本地算、落对行、无混行），但 **DB `row_data` 仍 0.04326、`quote_card_values.editRows` 空** → 编辑未落库（刷新会丢）。可能：①Playwright `fill/blur` 没完全驱动 `EditableCellInput` 的 onBlur→onCommitBlur→`handleSnapshotCellEdit`（QuotationStep2 L2675-2676，`useSnapEdit` 门控）提交流（**测试假象**）；②既有编辑持久化 gap（`editQuoteCardValue` 静默失败被 catch 吞 / autosave `skipRowsWithSnapshot` 跳过快照行）。**与本次删除修复（Phase 1）无关**（编辑路径 handleSnapshotCellEdit/editCardValue/autosave 一字未改）。
+- **范围**：真人手动改一个 driver INPUT 值 → **刷新页面看是否还在**。若丢：查 `handleSnapshotCellEdit`(L1934) 是否被调、`editQuoteCardValue` 是否返 null、autosave 是否跳过快照行。
+- **依赖**：无。**预估规模**：S（复现+定性）；修复规模视根因定。
+- **验收要点**：编辑 driver INPUT 值刷新后仍在（editRows 或 row_data 落库）。
+
 ---
 
 ## 已完成
@@ -683,5 +714,12 @@
 - **交付**：master 提交 `4ce28a3`(feat) / `8d61cc0`(P24单重) / `257b8cd`(TC-B1) / `8767d87`(文档) / `1f47c9c`(record) + 迁移 `V315`。
 - **验收**：测试报告全项 PASS（schema 终态 / 报价核价 material_no=销售料号 / element_bom 撞键一票否决 / is_current 唯一不累加 / 契约零变更 / 前端零改动）；R1/R4 转 [[BL-0038]]。
 - **未并入本次（另立项）**：[[BL-0035]] 生产料号 BNF 重定向、[[BL-0036]] mat_part 退役、[[BL-0037]] V6 查询页标签校正。
+
+### [DONE 2026-07-15] task-0712 选配模板 + 报价单选配功能
+- **交付**：master `d02b7fe`（origin 已推）。后端6/6（B5 model_config 新表 V330 / B1 选配模板 / B2 选配落库改造六处齐全 / B6 组合工艺收敛 process_master ASSEMBLY / B3 已有产品端点 F005 过滤 / B4 加入链路复用）+ 前端 F1-F5（1:1 复刻原型：选配模板管理页 / 3D模型配置页 / 从已有产品添加 / 选配添加明细表）。
+- **缺口补后端**：缺口1 工序 id 契约（加法式方案A，process_no 全链，V336）、缺口2 lookup-fingerprint 3a（确认前实时预览、与提交端同源零副作用）；F5 协同去兜底。
+- **Critical 修复**：选配工序首存被 saveDraft 全删全建静默清空的 data-loss bug（gap1 漏跟 process_no，被 grep=ugrep 二进制坑掩盖，见 [[cpq-grep-ugrep-binary-pitfall]]）；V336 迁移改幂等（共享 DB churn 安全）。
+- **验收**：后端服务测试全绿（六处齐全/幂等/N+1/指纹零副作用/孤儿 TP10 均独立复跑真绿）；F6 E2E 临时服务跑通——quotation-flow 回归 pass（渲染未破坏 '加载中'=0）+ 选配 SIMPLE/COMPOSITE 冒烟 pass；33 张截图为证。
+- **关闭/关联**：[[BL-0031]] 由本次实质解决（工序落 unit_price/自制加工费 + v_composite_child_processes mirror）；收缩迁移转 [[BL-0057]]；F6 发现 2 个既有 bug（QuotationCreateForm stale closure / TC-F1F2 夹具漂移）另立项。
 
 （暂无）
