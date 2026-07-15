@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Drawer, Form, Input, Select, Button, message, Tag, Checkbox } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Card, Drawer, Form, Input, Select, Segmented, Button, message, Tag, Checkbox } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SwapOutlined } from '@ant-design/icons';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
 import { selTemplateService } from '../../services/selTemplateService';
 import { industryService } from '../../services/industryService';
@@ -52,11 +52,38 @@ const STATUS_OPTIONS = [
   { value: 'INACTIVE', label: '停用' },
 ];
 
+// 参数 valueMode 的中文标注，拼成原型「（单选 · single）」样式
+const VALUE_MODE_LABEL: Record<ParamTypeRow['valueMode'], string> = {
+  single: '单选',
+  multi: '多选',
+  adjust: '微调',
+};
+
+// 参数说明文案（对照原型 .param-desc 逐字复刻；未知参数码走通用兜底）
+const PARAM_DESC: Record<string, string> = {
+  MATERIAL: '从材质库限定可选材质；下方多选下拉留空 = 不限，选配时可选任意材质',
+  ELEMENT: '启用后允许在派生元素含量上微调（选配时列出所选材质派生的元素及含量，可微调数值）',
+  PROCESS: '从工序库限定可选工序；下方多选下拉留空 = 不限，选配时可任意选择并排序',
+};
+
+const paramDescFor = (pt: ParamTypeRow): string =>
+  PARAM_DESC[pt.code] ?? (pt.valueMode === 'adjust'
+    ? '启用后允许在派生数值上微调'
+    : '下方多选下拉留空 = 不限，选配时可任意选择');
+
 // 保留行业码：不在 industry 表里，靠约定码区分（选配运行时/Plan 3 会读取）
 const RESERVED_INDUSTRIES = [
   { code: '__DEFAULT__', name: '默认模板' },
   { code: '__GLOBAL__', name: '通用组合工艺' },
 ];
+
+const sectionTitleStyle = (first?: boolean): React.CSSProperties => ({
+  fontSize: 14,
+  fontWeight: 600,
+  margin: first ? '0 0 10px' : '20px 0 10px',
+  paddingTop: first ? 0 : 4,
+  borderTop: first ? 'none' : '1px dashed #e4e7ed',
+});
 
 const SelTemplateManagement: React.FC = () => {
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
@@ -79,10 +106,21 @@ const SelTemplateManagement: React.FC = () => {
     return map;
   }, [industries]);
 
+  // 下拉展示：原型不在选项文案里附加行业码，仅显示中文名
   const industryOptions = useMemo(() => ([
     ...industries.map((i) => ({ value: i.code, label: i.name })),
-    ...RESERVED_INDUSTRIES.map((r) => ({ value: r.code, label: `${r.name} (${r.code})` })),
+    ...RESERVED_INDUSTRIES.map((r) => ({ value: r.code, label: r.name })),
   ]), [industries]);
+
+  // 新建时排除已配置模板的行业（D7 一行业一套；对照原型 industryOptionsHTML() 的 avail 过滤）
+  const usedIndustryCodes = useMemo(
+    () => new Set(templates.map((t) => t.industryCode)),
+    [templates],
+  );
+  const createIndustryOptions = useMemo(
+    () => industryOptions.filter((o) => !usedIndustryCodes.has(o.value)),
+    [industryOptions, usedIndustryCodes],
+  );
 
   const sortedParamTypes = useMemo(
     () => [...paramTypes].sort((a, b) => a.sortOrder - b.sortOrder),
@@ -177,6 +215,22 @@ const SelTemplateManagement: React.FC = () => {
     }
   };
 
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    setEditing(null);
+  };
+
+  // 组装完整 items payload（补齐未出现的参数类型为「未启用」，避免全量替换语义下静默丢配置）
+  const buildItemsPayload = (existing: TemplateItemDTO[]): TemplateItemDTO[] =>
+    sortedParamTypes.map((pt) => {
+      const found = existing.find((it) => it.paramTypeCode === pt.code);
+      return {
+        paramTypeCode: pt.code,
+        enabled: found?.enabled ?? false,
+        allowedValues: pt.valueMode === 'adjust' ? [] : (found?.allowedValues ?? []),
+      };
+    });
+
   const handleSave = async (values: any) => {
     try {
       const items = sortedParamTypes.map((pt) => ({
@@ -190,19 +244,22 @@ const SelTemplateManagement: React.FC = () => {
         status: values.status,
         items,
       });
-      message.success(editing ? '更新成功' : '创建成功');
-      setDrawerOpen(false);
-      setEditing(null);
+      message.success('保存成功');
+      closeDrawer();
       fetchTemplates();
     } catch (err: any) {
       message.error(err.message);
     }
   };
 
+  const handleSaveFailed = () => {
+    message.error('请完整填写归属行业和模板名');
+  };
+
   // 列定义 —— 行业列作为主入口（点击打开编辑 Drawer），行内不放动作按钮
   const columns = [
     {
-      title: '行业', dataIndex: 'industryCode', key: 'industryCode',
+      title: '归属行业', dataIndex: 'industryCode', key: 'industryCode',
       render: (code: string, record: TemplateRow) => (
         <a onClick={(e) => { e.stopPropagation(); openEdit(record); }} style={{ fontWeight: 500 }}>
           {industryNameMap[code] ?? code}
@@ -212,7 +269,11 @@ const SelTemplateManagement: React.FC = () => {
     { title: '模板名', dataIndex: 'name', key: 'name' },
     {
       title: '启用参数数', key: 'enabledCount',
-      render: (_: any, record: TemplateRow) => record.items.filter((i) => i.enabled).length,
+      render: (_: any, record: TemplateRow) => {
+        const total = sortedParamTypes.length || record.items.length || 3;
+        const enabled = record.items.filter((i) => i.enabled).length;
+        return `${enabled}/${total}`;
+      },
     },
     {
       title: '状态', dataIndex: 'status', key: 'status',
@@ -228,6 +289,24 @@ const SelTemplateManagement: React.FC = () => {
       icon: <EditOutlined />,
       enabledWhen: (sel) => (sel.length === 1 ? true : '编辑一次只能选一行'),
       onClick: (sel) => openEdit(sel[0]),
+    },
+    {
+      key: 'toggle-status',
+      label: '停用/启用',
+      icon: <SwapOutlined />,
+      enabledWhen: (sel) => sel.length > 0,
+      onClick: async (sel) => {
+        await runBatch(sel, (r) => selTemplateService.upsert({
+          industryCode: r.industryCode,
+          name: r.name,
+          status: r.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
+          items: buildItemsPayload(r.items),
+        }), {
+          rowLabel: (r) => `${industryNameMap[r.industryCode] ?? r.industryCode} - ${r.name}`,
+          successMsg: `已切换 ${sel.length} 个模板的启用/停用状态`,
+        });
+        fetchTemplates();
+      },
     },
     {
       key: 'delete',
@@ -247,91 +326,127 @@ const SelTemplateManagement: React.FC = () => {
     },
   ];
 
-  const toolbar = (
-    <>
-      <div />
-      <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建模板</Button>
-    </>
-  );
-
   return (
-    <div>
+    <Card
+      title="选配模板管理"
+      extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建模板</Button>}
+    >
       <SelectableTable<TemplateRow>
         rowKey="id"
         columns={columns}
         dataSource={templates}
         loading={loading}
-        toolbar={toolbar}
+        pagination={false}
         actions={actions}
         rowLabel={(r) => `${industryNameMap[r.industryCode] ?? r.industryCode} - ${r.name}`}
+        locale={{
+          emptyText: (
+            <div style={{ padding: '40px 0', color: '#909399' }}>
+              暂无选配模板，点击右上「+ 新建模板」创建
+            </div>
+          ),
+        }}
       />
 
       <Drawer
         title={editing ? '编辑选配模板' : '新建选配模板'}
         open={drawerOpen}
-        onClose={() => { setDrawerOpen(false); setEditing(null); }}
+        onClose={closeDrawer}
         width={720}
         destroyOnClose
+        footer={
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button style={{ flex: 1 }} onClick={closeDrawer}>取消</Button>
+            <Button type="primary" style={{ flex: 2 }} onClick={() => form.submit()}>保存</Button>
+          </div>
+        }
       >
-        <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="industryCode" label="行业"
-            rules={[{ required: true, message: '请选择行业' }]}>
+        <Form form={form} layout="vertical" onFinish={handleSave} onFinishFailed={handleSaveFailed}>
+          <div style={sectionTitleStyle(true)}>基本信息</div>
+          <Form.Item
+            name="industryCode"
+            label="归属行业"
+            rules={[{ required: true, message: '请选择归属行业' }]}
+            extra="一个行业仅可配置一套选配模板；行业确定后不可修改"
+          >
             <Select
-              options={industryOptions}
+              options={editing ? industryOptions : createIndustryOptions}
               disabled={!!editing}
               showSearch
               optionFilterProp="label"
-              placeholder="请选择行业（一行业一套模板）"
+              placeholder="请选择归属行业"
+              notFoundContent="所有行业均已配置模板"
             />
           </Form.Item>
           <Form.Item name="name" label="模板名"
             rules={[{ required: true, message: '请输入模板名' }]}>
-            <Input maxLength={100} />
+            <Input maxLength={100} placeholder="请输入模板名" />
           </Form.Item>
           <Form.Item name="status" label="状态">
-            <Select options={STATUS_OPTIONS} />
+            <Segmented options={STATUS_OPTIONS} />
           </Form.Item>
 
-          <div style={{ marginBottom: 8, fontWeight: 500 }}>选配参数</div>
+          <div style={sectionTitleStyle()}>选配参数</div>
           {sortedParamTypes.map((pt) => {
             const state = itemsState[pt.code] ?? { enabled: false, allowedValues: [] };
             const isAdjust = pt.valueMode === 'adjust';
             return (
-              <div key={pt.code} style={{ border: '1px solid #f0f0f0', borderRadius: 6, padding: 12, marginBottom: 12 }}>
+              <div
+                key={pt.code}
+                style={{
+                  border: `1px solid ${state.enabled ? '#91caff' : '#e4e7ed'}`,
+                  background: state.enabled ? '#f7fbff' : '#fff',
+                  borderRadius: 6,
+                  padding: '12px 14px',
+                  marginBottom: 10,
+                  transition: 'all .15s',
+                }}
+              >
                 <Checkbox
                   checked={state.enabled}
-                  onChange={(e) => setItemsState((prev) => ({ ...prev, [pt.code]: { ...state, enabled: e.target.checked } }))}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setItemsState((prev) => ({
+                      ...prev,
+                      [pt.code]: {
+                        enabled: checked,
+                        // 取消勾选时清空已限定值（元素含量无 allowedValues 概念，不受影响）
+                        allowedValues: checked || isAdjust ? state.allowedValues : [],
+                      },
+                    }));
+                  }}
                 >
-                  {pt.name}
+                  <span>{pt.name}</span>
+                  <span style={{ fontSize: 12, color: '#909399', fontWeight: 400, marginLeft: 4 }}>
+                    （{VALUE_MODE_LABEL[pt.valueMode] ?? pt.valueMode} · {pt.valueMode}）
+                  </span>
                 </Checkbox>
-                {isAdjust ? (
-                  <div style={{ marginTop: 8, color: '#8c8c8c', fontSize: 12 }}>
-                    启用后允许在派生元素含量上微调
+
+                <div style={{ marginLeft: 24 }}>
+                  <div style={{ marginTop: 6, marginBottom: isAdjust ? 0 : 8, fontSize: 12.5, color: '#909399', lineHeight: 1.6 }}>
+                    {paramDescFor(pt)}
                   </div>
-                ) : (
-                  <Select
-                    mode="multiple"
-                    allowClear
-                    style={{ width: '100%', marginTop: 8 }}
-                    placeholder="不限（留空 = 不限制可选值）"
-                    disabled={!state.enabled}
-                    loading={!!candidatesLoading[pt.code]}
-                    value={state.allowedValues}
-                    onDropdownVisibleChange={(open) => { if (open) ensureCandidatesFor(pt.code); }}
-                    options={(candidatesCache[pt.code] ?? []).map((c) => ({ value: c.key, label: c.label }))}
-                    onChange={(vals) => setItemsState((prev) => ({ ...prev, [pt.code]: { ...state, allowedValues: vals as string[] } }))}
-                  />
-                )}
+                  {!isAdjust && (
+                    <Select
+                      mode="multiple"
+                      allowClear
+                      style={{ width: '100%' }}
+                      placeholder="不限（留空 = 不限定可选值）"
+                      disabled={!state.enabled}
+                      loading={!!candidatesLoading[pt.code]}
+                      value={state.allowedValues}
+                      onDropdownVisibleChange={(open) => { if (open) ensureCandidatesFor(pt.code); }}
+                      options={(candidatesCache[pt.code] ?? []).map((c) => ({ value: c.key, label: c.label }))}
+                      onChange={(vals) => setItemsState((prev) => ({ ...prev, [pt.code]: { ...state, allowedValues: vals as string[] } }))}
+                    />
+                  )}
+                </div>
               </div>
             );
           })}
-
-          <div style={{ marginTop: 24 }}>
-            <Button type="primary" htmlType="submit" block>保存</Button>
-          </div>
         </Form>
       </Drawer>
-    </div>
+    </Card>
   );
 };
 
