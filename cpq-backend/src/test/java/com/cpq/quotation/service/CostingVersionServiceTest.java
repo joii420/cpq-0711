@@ -85,7 +85,11 @@ class CostingVersionServiceTest {
         assertNotNull(resp.costingCardValues, "重算后核价卡片值不应为空");
         assertTrue(resp.affectedTabs != null && !resp.affectedTabs.isEmpty(),
                 "主树切应有受影响页签列表（该 line 全部 driver 组件）");
+        // 3a 总价联动（技术总监返修单核心断言）：SUBTOTAL 组件（核价小计）公式必须真正求值非 0，
+        // 不能停在 CostingSubtotalUtil 找不到 componentType/subtotal 字段而恒 0 的假绿状态。
         assertNotNull(resp.costingTotalAmount);
+        assertTrue(resp.costingTotalAmount.compareTo(java.math.BigDecimal.ZERO) > 0,
+                "override 到 2000 后 costingTotalAmount 必须 > 0，实际=" + resp.costingTotalAmount);
 
         JsonNode respTree = MAPPER.readTree(resp.costingCardValues);
         int afterRowsFromResp = treeTabRowCountFromCardValues(respTree, TREE_COMPONENT_ID.toString());
@@ -122,6 +126,21 @@ class CostingVersionServiceTest {
         int backRows = treeTabRowCountFromCardValues(backTree, TREE_COMPONENT_ID.toString());
         assertEquals(11, backRows,
                 "切回 2001 后应恢复 6 子件形态（1根+6子+4孙=11 行）");
+
+        // 3a 总价联动：2000(8子件) 与 2001(6子件) 的 costingTotalAmount 必须都 > 0 且互不相等
+        // （子件集合真的变了，成本必然跟着变——不是恰好都算出同一个假值）。"配件"公式=数量*5 按
+        // 子件行累加，子件多的 2000 应严格高于子件少的 2001。
+        assertNotNull(respBack.costingTotalAmount);
+        assertTrue(respBack.costingTotalAmount.compareTo(java.math.BigDecimal.ZERO) > 0,
+                "切回 2001 后 costingTotalAmount 必须 > 0，实际=" + respBack.costingTotalAmount);
+        assertNotEquals(0, resp.costingTotalAmount.compareTo(respBack.costingTotalAmount),
+                "2000 与 2001 的 costingTotalAmount 必须不相等：2000=" + resp.costingTotalAmount
+                        + " 2001=" + respBack.costingTotalAmount);
+        assertTrue(resp.costingTotalAmount.compareTo(respBack.costingTotalAmount) > 0,
+                "子件更多的 2000(" + resp.costingTotalAmount + ") 成本应高于子件更少的 2001("
+                        + respBack.costingTotalAmount + ")");
+        System.out.println("[CostingVersionServiceTest] costingTotalAmount: 2000=" + resp.costingTotalAmount
+                + " 2001=" + respBack.costingTotalAmount);
 
         // frozen_dto 在两次切换后仍逐字节不变（报价侧完全隔离，T2.2 核心断言）
         String frozenAfter = (String) em.createNativeQuery(

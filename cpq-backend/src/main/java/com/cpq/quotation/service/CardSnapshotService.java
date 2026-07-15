@@ -1584,7 +1584,8 @@ public class CardSnapshotService {
         //    因此 delByComp 对 SUBTOTAL tab 无意义（传 null → 不过滤）。
         for (JsonNode tab : snapshot) {
             String cid = tab.path("componentId").asText("");
-            if ("EXCEL".equals(tab.path("componentType").asText("NORMAL"))) continue;
+            String tabType = tab.path("componentType").asText("NORMAL");
+            if ("EXCEL".equals(tabType)) continue;
             if (tabNodeById.containsKey(cid)) continue; // 已在拓扑序里算过
             ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, MAPPER.createArrayNode());
             ArrayNode editRows = filteredEdit.getOrDefault(cid, MAPPER.createArrayNode());
@@ -1598,6 +1599,35 @@ public class CardSnapshotService {
             // SUBTOTAL tab 不回填列小计：其 is_subtotal 列由组件级聚合公式(component_subtotal token)决定，
             // 不能从 resolvedRows 重算覆盖（评审 #1）。列小计回填仅针对 NORMAL 组件的 cross_tab 列。
             // SUBTOTAL 行不并入 crossTabRows（不可被 cross_tab_ref 引用）
+            //
+            // task-0713 返修（技术总监 live 验收发现）：SUBTOTAL 组件（如"核价-总公式(CNY)"/"汇总"）
+            // 恒 0 driver 行（无 data_driver_path），上面的 formulaCalculator.calculate 对 0 基础行
+            // 必然 0 结果，且本 tab 的 cid/code/tabName 从未写入 componentSubtotals（PASS1 只登记
+            // NORMAL tab，见上方循环的 componentType!=NORMAL 跳过）——buildTabNode 读 componentSubtotals
+            // 拿不到值，subtotal 字段整个被省略，导致 CostingSubtotalUtil 之类的下游读不到"总公式"结果。
+            // 镜像报价侧 ComponentDataEffectiveRows#evaluateSubtotalFormula 的同款做法：取该组件首个
+            // 公式表达式，用已经积累了全部 NORMAL tab 值的 componentSubtotals 当上下文求值，再登记回
+            // componentSubtotals（cid/code/tabName 三键），buildTabNode 沿用既有查找逻辑即可原样命中，
+            // 不改 buildTabNode 调用签名。
+            if ("SUBTOTAL".equals(tabType)) {
+                JsonNode formulas = tab.path("formulas");
+                if (formulas.isArray() && formulas.size() > 0) {
+                    JsonNode expr = formulas.get(0).path("expression");
+                    if (expr.isArray() && expr.size() > 0) {
+                        FormulaCalculator.RowContext subCtx = new FormulaCalculator.RowContext();
+                        subCtx.componentSubtotals = componentSubtotals;
+                        java.math.BigDecimal evaluated = formulaCalculator.evaluateExpression(expr, subCtx);
+                        if (evaluated != null) {
+                            double v = evaluated.doubleValue();
+                            String subCode = tab.path("componentCode").asText(null);
+                            String subTabName = tab.path("tabName").asText("");
+                            if (!cid.isBlank()) componentSubtotals.put(cid, v);
+                            if (subCode != null && !subCode.isBlank()) componentSubtotals.put(subCode, v);
+                            if (!subTabName.isBlank()) componentSubtotals.put(subTabName, v);
+                        }
+                    }
+                }
+            }
             tabNodeById.put(cid, buildTabNode(tab, cid, baseRows, editRows, formulaResults,
                 resolved, componentSubtotals));
         }
@@ -1617,6 +1647,9 @@ public class CardSnapshotService {
         ObjectNode tabNode = MAPPER.createObjectNode();
         tabNode.put("componentId", cid);
         tabNode.put("tabName", tab.path("tabName").asText(""));
+        // task-0713 返修：输出补 componentType（原缺失，导致下游无法区分 NORMAL/SUBTOTAL/EXCEL tab）。
+        // 纯新增字段，不改动既有任何字段的取值。
+        tabNode.put("componentType", tab.path("componentType").asText("NORMAL"));
         tabNode.set("baseRows", baseRows);
         tabNode.set("editRows", editRows); // 加产品/核价 → 空；草稿重刷 → 保留的编辑
         tabNode.set("formulaResults", formulaResults);
