@@ -53,6 +53,7 @@ import PartVersionPage from '../pages/partversion/PartVersionPage';
 import MaterialRecipeManagement from '../pages/config/MaterialRecipeManagement';
 import ConfigTemplateManagement from '../pages/configtemplate/ConfigTemplateManagement';
 import SelTemplateManagement from '../pages/config/SelTemplateManagement';
+import ModelConfigManagement from '../pages/config/ModelConfigManagement';
 
 // v0.4 3D 选配 — P0+P1+P2 端到端骨架
 import FeatureLibraryList from '../pages/feature-library/FeatureLibraryList';
@@ -129,6 +130,7 @@ const router = createBrowserRouter([
       { path: 'config/material-recipes', element: <MaterialRecipeManagement /> },
       { path: 'config/config-templates', element: <ConfigTemplateManagement /> },
       { path: 'config/sel-templates', element: <SelTemplateManagement /> },
+      { path: 'config/model-configs', element: <ModelConfigManagement /> },
 
       // v0.4 3D 选配 — 销售路径
       { path: 'configurator/start', element: <ConfiguratorStartPage /> },
