@@ -267,8 +267,11 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
       {/* task-0713（F5/3a）：核价侧单据总价 —— 读 costingTotalAmount（Σ核价成本 subtotal，
           不含 Step3 折扣），与上方报价总金额（含折扣）是两条口径。切换版本后由
           onVersionSwitched 增量更新 quotation.costingTotalAmount 即时反映，不整单重查。
-          精度守 cpq-decimal-display-policy：对外总额 2 位。 */}
-      {mainTab === 'costing' && viewType === 'card' && (
+          精度守 cpq-decimal-display-policy：对外总额 2 位。
+          coid 门控：只有核价管理场景（CostingReviewPage 传入 coid）才显示本行；
+          报价管理详情（QuotationDetail 不传 coid）没有 costing_order 语境，
+          costingTotalAmount 无意义（会显示误导性的 ¥0.00），故不渲染。 */}
+      {!!coid && mainTab === 'costing' && viewType === 'card' && (
         <Row justify="end" style={{ marginTop: 16 }}>
           <Col>
             <Space direction="vertical" align="end">
