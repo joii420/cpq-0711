@@ -3,7 +3,7 @@ import { Card, Tag, InputNumber, Descriptions } from 'antd';
 import { CheckCircleFilled } from '@ant-design/icons';
 import type { ProductType } from '../../../types/configure';
 import type { PartState, CompositeProcessAdded } from '../ConfigureProductDrawer';
-import { compositeProcessService, type CompositeProcessDef } from '../../../services/compositeProcessService';
+import { compositeProcessService, type CompositeProcessCandidateDTO } from '../../../services/compositeProcessService';
 
 interface Props {
   productType: ProductType;
@@ -13,7 +13,7 @@ interface Props {
 }
 
 const Step5Summary: React.FC<Props> = ({ productType, parts, addedCProcs, onUpdatePart }) => {
-  const [cpDefs, setCpDefs] = useState<CompositeProcessDef[]>([]);
+  const [cpDefs, setCpDefs] = useState<CompositeProcessCandidateDTO[]>([]);
 
   useEffect(() => {
     if (productType !== 'COMPOSITE' || addedCProcs.length === 0) return;

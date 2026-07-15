@@ -1,4 +1,5 @@
 import api from './api';
+import type { ExistingProductDTO, ExistingProductQueryParams, PageResult } from '../types/existingProduct';
 
 // ─── 报价单整份快照类型（Phase 2）─────────────────────────────────────────────
 // 报价单级 4 份结构快照（getById 顶层，JsonNode → 已解析对象）；
@@ -123,6 +124,19 @@ export const quotationService = {
     api.get('/quotations/customer-part-candidates', {
       params: importRecordId ? { customerId, importRecordId } : { customerId },
     }) as Promise<any>,
+  /**
+   * F4「从已有产品添加」— GET /quotations/{quotationId}/existing-products（api.md §2.1，task-0712 B3）。
+   * 数据源 material_customer_map，服务端从 quotation 派生 customer_no 过滤（前端不传客户）；
+   * 4 个查询参数全可选、AND 组合、模糊匹配。已内部解开 ApiResponse 信封，直接返回 PageResult
+   * （与 `selTemplateService.effective` 同惯例，见该方法注释；调用方不需要再 `.then(res => res.data)`）。
+   */
+  listExistingProducts: async (
+    quotationId: string,
+    params: ExistingProductQueryParams,
+  ): Promise<PageResult<ExistingProductDTO>> => {
+    const res: any = await api.get(`/quotations/${quotationId}/existing-products`, { params });
+    return (res && typeof res === 'object' && 'data' in res ? res.data : res) as PageResult<ExistingProductDTO>;
+  },
   create: (data: any) => api.post('/quotations', data) as Promise<any>,
   saveDraft: (id: string, data: any) => api.put(`/quotations/${id}/draft`, data) as Promise<any>,
   /** lazy-cardvalues：懒算并落库整单卡片值。warm 与打开兜底复用。返回 { data: QuotationDTO(含 cardValuesWarming) }。 */

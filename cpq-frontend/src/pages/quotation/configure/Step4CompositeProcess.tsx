@@ -3,7 +3,7 @@ import { Card, Button, Tag, Input, Empty } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import {
   compositeProcessService,
-  type CompositeProcessDef,
+  type CompositeProcessCandidateDTO,
 } from '../../../services/compositeProcessService';
 import type { PartState, CompositeProcessAdded } from '../ConfigureProductDrawer';
 
@@ -21,7 +21,7 @@ interface Props {
  * 需求 #3：组合工艺库卡片显示编码，并支持按编码/名称模糊搜索。
  */
 const Step4CompositeProcess: React.FC<Props> = ({ parts, addedCProcs, onChangeAdded }) => {
-  const [defs, setDefs] = useState<CompositeProcessDef[]>([]);
+  const [defs, setDefs] = useState<CompositeProcessCandidateDTO[]>([]);
   const [q, setQ] = useState('');
 
   useEffect(() => {
@@ -32,7 +32,7 @@ const Step4CompositeProcess: React.FC<Props> = ({ parts, addedCProcs, onChangeAd
 
   const isAdded = (code: string) => addedCProcs.some(a => a.defCode === code);
 
-  const add = (def: CompositeProcessDef) => {
+  const add = (def: CompositeProcessCandidateDTO) => {
     if (isAdded(def.code)) return;
     const all = parts.map((_, i) => i);
     onChangeAdded([
@@ -67,7 +67,7 @@ const Step4CompositeProcess: React.FC<Props> = ({ parts, addedCProcs, onChangeAd
             ? <Empty description="无匹配工艺" />
             : filtered.map(def => (
                 <Card
-                  key={def.id}
+                  key={def.code}
                   size="small"
                   style={{
                     marginBottom: 8,
@@ -77,12 +77,11 @@ const Step4CompositeProcess: React.FC<Props> = ({ parts, addedCProcs, onChangeAd
                   onClick={() => add(def)}
                 >
                   <div>
-                    <span style={{ fontSize: 18 }}>{def.icon}</span> <b>{def.name}</b>
+                    <b>{def.name}</b>
                   </div>
                   <div style={{ marginTop: 4 }}>
                     <Tag color="blue">{def.code}</Tag>
                   </div>
-                  <div style={{ color: '#888', fontSize: 11, marginTop: 4 }}>{def.description}</div>
                   {isAdded(def.code) && <Tag color="green" style={{ marginTop: 6 }}>已添加</Tag>}
                 </Card>
               ))}
@@ -105,7 +104,7 @@ const Step4CompositeProcess: React.FC<Props> = ({ parts, addedCProcs, onChangeAd
                 style={{ marginBottom: 12, background: '#f9f8ff' }}
                 title={
                   <>
-                    <span style={{ fontSize: 16 }}>{def?.icon}</span> {def?.name ?? a.defCode}{' '}
+                    {def?.name ?? a.defCode}{' '}
                     {def && <Tag color="blue">{def.code}</Tag>}
                   </>
                 }
