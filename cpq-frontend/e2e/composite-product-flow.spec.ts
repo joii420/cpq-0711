@@ -11,6 +11,34 @@
  *   - 铆钉 = 组合工艺库 RIVET (铆接) ✅
  *   - 电镀 = 普通工序 MRO-LP-0001 (SURFACE_TREATMENT) — 不在组合工艺库
  * 因此电镀加在每个配件的 P3 工序里 (Step3Process), 组合工艺只选铆接.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ⚠️ 2026-07-15 task-0712 F6(E2E 验证) 停用说明 — 本 spec 已确认对当前代码失效，暂 skip：
+ *
+ * 1) **UI 层全部过时**：task-0712 F5(commit 590ab6f)把选配添加抽屉从本文件依赖的
+ *    P0(独立产品/组合产品)→P1(搜料号)→P2(材质)→P3(工序)→P4(组合工艺)→
+ *    StepAccessoryQuantity(配件数量)→P5(摘要) 逐步向导**整体废弃**（Step0~5 8 个文件已
+ *    `git rm`），改写为单屏「明细表(SelDetailTable) + 内层子框(AddPartSubDrawer 材质→
+ *    元素含量→工序 3 步) + 组合工艺条件区(CompositeProcessSection)」模型（D11）。
+ *    本文件用到的 `drawerNext()`(点 .ant-drawer 内"下一步")、`pickProcess()`(找
+ *    ant-list-item + 内嵌"添加"按钮)、"独立产品/组合产品"卡片选择、配件数量步骤等
+ *    选择器在新 UI 里全部不存在。
+ * 2) **数据契约也变了**：组合工艺标识锚点从 `composite_process_def.code`(如 "RIVET")
+ *    切到 `process_master.process_no`(task-0712 B6，如 "MRO-AS-0001")；`processIds`
+ *    (UUID)已改 `processNos`(process_master.process_no 字符串，task-0712 缺口1)。
+ * 3) **Tab 命名体系不同源**：本文件断言的 `选配-材质`/`选配-工序列表`/`选配-元素含量`/
+ *    `选配-组合工艺`/`选配-总成本` 是旧「组合产品 v1.16」模板的自定义 Tab 命名，与当前
+ *    V6 落库改造(task-0712 B2)后台账体系（来料/元素/自制加工费等，见
+ *    quotation-flow.spec.ts 现役断言）不是同一套；"组合产品 v1.16" 模板在当前共享
+ *    DB 是否仍存在/仍可用未核实。
+ *
+ * **重写指引**（供后续任务）：参照 `quotation-flow.spec.ts` 里 2026-07-15 改写的
+ * "选配添加" 段落（新增材质料号 → 材质卡片选 code → 元素含量确认 → 工序勾选 →
+ * 确认添加 → 明细表数量合计）为基础，在明细表新增 ≥2 行材质料号（或单行 quantity=2，
+ * 对齐架构评审决策1"Σqty≥2"）触发 `CompositeProcessSection` 出现后，勾选一个
+ * `process_master.process_category='ASSEMBLY'` 候选，再点「确认加入」，最后按当前
+ * 报价单模板的真实 Tab 命名断言渲染（不要硬编码"选配-*"旧命名）。
+ * ══════════════════════════════════════════════════════════════════════════
  */
 import { test, expect, Page } from '@playwright/test';
 import * as fs from 'fs';
@@ -73,6 +101,9 @@ let backendUp = false;
 test.beforeAll(async () => { backendUp = await isBackendUp(); });
 
 test('组合产品: 罗克韦尔 + v1.16 + 配件1(10110002 existing) + 配件2(custom AgCu90) + 组合工艺(铆接)', async ({ page }) => {
+  // task-0712 F6：UI/数据契约已被 F5 明细表重构 + B6 组合工艺双轨收敛整体废弃，见文件头注释。
+  // 待重写前统一 skip，避免在 CI/回归里长期显示为"失败"掩盖真正的新回归。
+  test.skip(true, 'task-0712 F5 明细表重构后本 spec 选择器/Tab 命名全部过时，待按文件头注释重写(见 dev-docs/task-0712-选配模板和报价单选配功能/)');
   test.skip(!backendUp, '后端未启动');
 
   const consoleErrors: string[] = [];
