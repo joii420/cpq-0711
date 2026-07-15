@@ -635,6 +635,46 @@
 - **预估规模**：S（1 天）
 - **验收要点**：降级建单后前端弹 warning 提示，正常建单无多余提示。
 
+### [BL-0051] task-0713 收尾：`:spineKeys` 死代码清理
+- **优先级**：P2
+- **来源**：task-0713 backtask B8（计划内可选，本期跳过）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-14
+- **背景**：`SpineKeysMacro`/`SpineKeysContext` 已确认死代码（`SqlViewExecutor` 侧从未读取、纯 no-op）；task-0713 用 `CostingTreeVarsContext`+`VersionFilterMacro` 取代。B8 清理与新宏解耦、低风险，本期未做。
+- **范围**：删 `SpineKeysMacro`/`SpineKeysContext` 及残留引用（`zpj_view` 等 $view 里的 `:spineKeys` 文本 V334 已被 versionFilter 改造）。
+- **依赖**：无。**预估规模**：S。
+- **验收要点**：删后核价树渲染无变化、E2E 绿。
+
+### [BL-0052] task-0713：`CostingSubtotalUtil` 模板缺 SUBTOTAL 组件时静默返 0 → 是否显式报错
+- **优先级**：P2
+- **来源**：task-0713 3a 返修实现期披露
+- **状态**：TODO（待 PM 裁决）
+- **登记日期**：2026-07-14
+- **背景**：`CostingSubtotalUtil.extractUnitSubtotal` 对「找不到 SUBTOTAL 组件 / 公式为空」静默返 ZERO（不抛错不 warn）。若未来某核价模板忘配 SUBTOTAL 组件，单据总价会悄悄变 0 而非报错——当前是有意的宽松兜底。
+- **范围**：若要「配置缺失显式可见」，加配置期 lint / 渲染期 warn。
+- **依赖**：无。**预估规模**：S。
+- **验收要点**：核价模板缺 SUBTOTAL 组件时有明确提示，不再静默 0。
+
+### [BL-0053] task-0713：版本切换扩到其余核价模板克隆副本 + DELETE override 端点
+- **优先级**：P2
+- **来源**：task-0713 backtask 已知限制
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-14
+- **背景**：本期只精确改了 7 个已核实的 `component_sql_view` 物理行（"BOM树演示-核价模板"5 件套 + pj/ys_view）；其余克隆副本（如"核价模板0603"）$view 未加 `view_version`+`versionFilter`，暂不支持版本切换。DELETE override 端点（api.md §5 标可选）未实现（用「切回 is_current 版本」代替）。
+- **范围**：给需版本切换的其余核价模板 $view 加约定列+宏（机制通用、平台零改动）；按需实现 DELETE override 端点。
+- **依赖**：无。**预估规模**：S-M。
+- **验收要点**：目标核价模板的 $view 输出 view_version 即可版本切换；DELETE 复位生效（若实现）。
+
+### [BL-0054] task-0713 连带：`GoldenCardValuesEquivTest` golden 常量重校准
+- **优先级**：P2
+- **来源**：task-0713 后端回归排查（金标准 hash 漂移）
+- **状态**：TODO（需 golden owner 重新捕获，非 task-0713 引入 bug）
+- **登记日期**：2026-07-14
+- **背景**：task-0713 给 `buildTabNode` 加 `componentType` + 让 SUBTOTAL tab 真出 subtotal（修 3a）+ 顺手修 `zpj_view` bug（"子配件"页签从恒空变真实出数据），使核价卡片值**合法变化** → `GoldenCardValuesEquivTest`/`NonRecursiveCostingBucketEquivTest` golden hash 漂移。经临时回退验证：漂移是「值合法变化」非回归，且 golden 常量本就已过期（与 [[cpq-golden-cardvalues-preexisting-drift]] 一致）。**未擅改 golden 常量**，留 owner 复核重捕获。
+- **范围**：golden owner 确认新基线正确后回填常量（或改用对数据漂移不敏感的锚单/夹具）。
+- **依赖**：无。**预估规模**：S。
+- **验收要点**：两测试在当前 master 复绿、保留确定性护栏。
+
 ---
 
 ## 已完成
