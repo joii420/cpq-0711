@@ -1629,7 +1629,34 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     }));
   };
 
-  // Task 8: driver 默认行永久删除 —— 乐观本地更新 + 端点持久化 + 失败回滚
+  // 用服务端 删除/恢复 投影原子重灌:替换 comp.rows(materialized N-1)+deletedRowKeys(权威)+quoteCardValues/excel/时间戳。
+  // 这是 Phase 1(2026-07-14 删错行修复)止血核心:后端返回墓碑过滤+物化后的整单投影,前端整段替换两存储 →
+  // comp.rows 与 buildSnapshotExpansions 展开恢复同序对齐,消除「快照过滤但 row_data 未过滤」的双存储 desync。
+  const applyQuoteProjection = (data: any) => {
+    if (!data) return;
+    const compArr: any[] | undefined = Array.isArray(data.componentData) ? data.componentData : undefined;
+    onUpdate((prevItem: LineItem) => {
+      const patch: Partial<LineItem> = {};
+      if (data.quoteCardValues) (patch as any).quoteCardValues = data.quoteCardValues;
+      if (data.quoteExcelValues) (patch as any).quoteExcelValues = data.quoteExcelValues;
+      if (data.quoteValuesAt) (patch as any).quoteValuesAt = data.quoteValuesAt;
+      if (compArr) {
+        const byId = new Map(compArr.map(c => [String(c.componentId), c]));
+        patch.componentData = prevItem.componentData.map(c => {
+          const proj = c.componentId ? byId.get(String(c.componentId)) : undefined;
+          if (!proj) return c;
+          let rows = c.rows;
+          try { const parsed = JSON.parse(proj.rowData ?? '[]'); if (Array.isArray(parsed)) rows = parsed; } catch { /* 解析失败保留旧 rows */ }
+          return { ...c, rows, deletedRowKeys: proj.deletedRowKeys ?? (c as any).deletedRowKeys };
+        });
+      }
+      return patch;
+    });
+  };
+
+  // Task 8 / Phase 1(2026-07-14): driver 默认行永久删除 —— 乐观墓碑 + 服务端权威投影原子重灌两存储 + 失败回滚。
+  // pendingDeleteRef:在「乐观墓碑 → 服务端响应」窗口内抑制 bake effect 按错位下标写 comp.rows(唯一的窗口内污染源)。
+  const pendingDeleteRef = useRef<Set<string>>(new Set());
   const handleDeleteDriverRow = async (componentId: string, effKey: string, driverRowData: Record<string, any>) => {
     const lid = (item as any).id as string | undefined;
     if (!quotationId || !lid) {
@@ -1638,6 +1665,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     }
     const rkf = rowKeyFieldsByComp.get(componentId) ?? [];
     const fp = rowFingerprint(rkf, driverRowData ?? {});
+    // 进入删除在途窗口:抑制该组件 bake 写回(窗口内 expansion 已 N-1 但 comp.rows 仍 N,按下标 bake 会搅坏)
+    pendingDeleteRef.current.add(componentId);
     // 乐观更新：本地追加墓碑 → buildSnapshotExpansions 立即过滤该行
     onUpdate((prevItem: LineItem) => ({
       componentData: prevItem.componentData.map(c => {
@@ -1649,7 +1678,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       }),
     }));
     try {
-      await quotationService.deleteDriverRow(quotationId, lid, componentId, effKey, fp);
+      const res = await quotationService.deleteDriverRow(quotationId, lid, componentId, effKey, fp);
+      // 服务端权威投影:原子替换 comp.rows(materialized N-1)+deletedRowKeys+quoteCardValues,恢复两存储对齐
+      applyQuoteProjection((res as any)?.data);
     } catch (e: any) {
       message.error(`删除失败: ${e?.message ?? e}`);
       // 失败回滚：移除刚追加的墓碑
@@ -1661,6 +1692,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           return { ...c, deletedRowKeys: JSON.stringify(arr.filter(t => !(t?.effKey === effKey && t?.fp === fp))) };
         }),
       }));
+    } finally {
+      // 出窗口:重灌已把 comp.rows 拉回 N-1 与展开对齐,此后 bake 落到对的行,解除抑制。
+      pendingDeleteRef.current.delete(componentId);
     }
   };
 
@@ -1717,6 +1751,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     const writes: Array<{ componentId: string; ri: number; key: string; value: any }> = [];
     item.componentData.forEach((comp) => {
       if (!comp.componentId || !Array.isArray(comp.fields)) return;
+      // 删除在途窗口:抑制 bake 写回。此时 expansion 已 N-1 而 comp.rows 仍 N,按下标 bake 会把
+      // expansion[ri] 的默认值烘进错位 comp.rows[ri] → 逐帧搅坏。服务端投影重灌后解除,再 bake 落对行。
+      if (pendingDeleteRef.current.has(comp.componentId)) return;
       const expKey = driverExpansionKey(
         lineItemId, item.productPartNo, comp.componentId, customerId,
         comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]),

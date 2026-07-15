@@ -588,7 +588,7 @@ public class QuotationResource {
      */
     @POST
     @Path("/{qid}/line-items/{lid}/delete-driver-row")
-    public ApiResponse<Void> deleteDriverRow(@PathParam("qid") UUID qid, @PathParam("lid") UUID lid,
+    public ApiResponse<Map<String, Object>> deleteDriverRow(@PathParam("qid") UUID qid, @PathParam("lid") UUID lid,
             Map<String, Object> body) {
         if (body == null || body.get("componentId") == null || body.get("effKey") == null) {
             throw new BusinessException(400, "componentId 和 effKey 不能为空");
@@ -596,8 +596,10 @@ public class QuotationResource {
         UUID componentId = UUID.fromString(body.get("componentId").toString());
         String effKey = String.valueOf(body.get("effKey"));
         String fp = String.valueOf(body.getOrDefault("fp", ""));
+        // Phase 1：tx1 写墓碑提交 → tx2 读已提交墓碑重算+物化 row_data(N-1)+返回整单投影，
+        // 供前端原子重灌 comp.rows/deletedRowKeys/quoteCardValues，消除「快照过滤但 row_data 未过滤」的删错行。
         quotationService.deleteDriverRow(lid, componentId, effKey, fp);
-        return ApiResponse.success(null);
+        return ApiResponse.success(cardSnapshotService.refreshQuoteProjection(lid));
     }
 
     /**
@@ -607,13 +609,14 @@ public class QuotationResource {
      */
     @POST
     @Path("/{qid}/line-items/{lid}/restore-driver-rows")
-    public ApiResponse<Void> restoreDriverRows(@PathParam("qid") UUID qid, @PathParam("lid") UUID lid,
+    public ApiResponse<Map<String, Object>> restoreDriverRows(@PathParam("qid") UUID qid, @PathParam("lid") UUID lid,
             Map<String, Object> body) {
         if (body == null || body.get("componentId") == null) {
             throw new BusinessException(400, "componentId 不能为空");
         }
         UUID componentId = UUID.fromString(body.get("componentId").toString());
+        // Phase 1：tx1 清墓碑 → tx2 重算+物化+投影，同 deleteDriverRow。
         quotationService.restoreAllDriverRows(lid, componentId);
-        return ApiResponse.success(null);
+        return ApiResponse.success(cardSnapshotService.refreshQuoteProjection(lid));
     }
 }

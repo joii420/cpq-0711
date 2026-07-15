@@ -95,29 +95,30 @@ public final class DeletedRowKeys {
     }
 
     /**
-     * effKey 与 fp 双命中过滤，返回逐行 keep 掩码。
+     * 按 fp（内容指纹）单键过滤，返回逐行 keep 掩码。
      *
-     * <p>实现：用嵌套 Map&lt;effKey, Set&lt;fp&gt;&gt; 存储墓碑，独立双字段比较，
-     * 消除字符串拼接的理论碰撞（与前端 some(t=&gt;t.effKey===ek&amp;&amp;t.fp===fp) 语义等价）。
+     * <p><b>2026-07-14 删错行修复</b>：原实现按 effKey+fp 双命中，但 effKey 由 computeRowKey 算，
+     * 前端与服务端对同一行可不一致（driverRow 值在 {@code _料件} 下、rowKeyField 名为 {@code 料件} 时，
+     * 前端解析失败退化成索引 "0"、服务端经字段定义解析成内容 "AgNi11#-Ⅰ"）→ 双命中的 effKey 对不上
+     * → 墓碑在服务端匹配失败 → 删不掉行（前端只靠乐观态显示删了、且错位）。
+     * <p>fp 是 driverRow 内容派生、前后端 {@code rowFingerprint} 逐字节一致的可靠身份（设计文档：
+     * 「fp 本就唯一，uniqFp ≈ fp」），故改按 fp 单键匹配。effKeys 参数保留仅为签名兼容，不再参与匹配。
+     * <p>边界：字节级完全重复的两行 fp 相同 → 删一个会连删（此场景身份本就不可区分；Phase 2 的
+     * uniqFp 若引入 #序号再细分）。
      *
-     * @param effKeys 各行的 effKey（与 fps 等长）
-     * @param fps     各行的指纹（与 effKeys 等长）
+     * @param effKeys 各行 effKey（保留兼容，不参与匹配）
+     * @param fps     各行指纹
      * @param deleted 墓碑列表
-     * @return keep[i]=true 表示第 i 行保留，false 表示被删除
+     * @return keep[i]=true 保留，false 删除
      */
     public static boolean[] keepMask(List<String> effKeys, List<String> fps, List<Tombstone> deleted) {
-        // 构建 Map<effKey, Set<fp>> 索引
-        Map<String, Set<String>> index = new HashMap<>();
+        Set<String> delFps = new HashSet<>();
         for (Tombstone t : deleted) {
-            index.computeIfAbsent(t.effKey(), k -> new HashSet<>()).add(t.fp());
+            if (t.fp() != null) delFps.add(t.fp());
         }
-        boolean[] keep = new boolean[effKeys.size()];
-        for (int i = 0; i < effKeys.size(); i++) {
-            String ek = effKeys.get(i);
-            String fp = fps.get(i);
-            Set<String> fpSet = index.get(ek);
-            // 双命中：effKey 命中 AND fp 命中 → 删除（keep=false）
-            keep[i] = fpSet == null || !fpSet.contains(fp);
+        boolean[] keep = new boolean[fps.size()];
+        for (int i = 0; i < fps.size(); i++) {
+            keep[i] = !delFps.contains(fps.get(i));  // fp 命中 → 删除
         }
         return keep;
     }

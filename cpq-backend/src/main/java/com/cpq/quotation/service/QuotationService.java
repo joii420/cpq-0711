@@ -2856,6 +2856,9 @@ public class QuotationService {
     // driver 默认行墓碑管理（deletable-driver-rows）
     // ──────────────────────────────────────────────
 
+    // Phase 1(2026-07-14 删错行修复)：本方法只在独立事务里写墓碑并提交（tx1）；重算+物化+投影由 Resource
+    // 随后单独调 cardSnapshotService.refreshQuoteProjection(tx2)，读已提交墓碑。拆两事务是因为：同事务里
+    // 「先写托管 cd 墓碑 → 再 em.clear() 重读」会把未 flush 的墓碑写丢/或 flush 失败标记 tx rollback-only → 整单回滚。
     @Transactional
     public void deleteDriverRow(UUID lineItemId, UUID componentId, String effKey, String fp) {
         QuotationLineComponentData cd = QuotationLineComponentData
@@ -2886,8 +2889,10 @@ public class QuotationService {
         } catch (Exception e) {
             throw new BusinessException(500, "deleted_row_keys 更新失败: " + e.getMessage());
         }
-        QuotationLineItem li = QuotationLineItem.findById(lineItemId);
-        if (li != null) cardSnapshotService.refreshQuoteCardValues(li, true);
+        // 关键：flush 把墓碑写库。refreshQuoteProjection 的 loadTombstonesByComp 用原生 SQL 读 deleted_row_keys,
+        // 原生查询不触发 Hibernate auto-flush → 不 flush 会读到空墓碑 → assemble/materialize 都不过滤(删不掉行)。
+        cd.persistAndFlush();
+        // 只写墓碑。重算+物化+投影交给 Resource 调 refreshQuoteProjection。
     }
 
     @Transactional
@@ -2896,8 +2901,8 @@ public class QuotationService {
             .find("lineItemId = ?1 and componentId = ?2", lineItemId, componentId).firstResult();
         if (cd == null) return;
         cd.deletedRowKeys = "[]";
-        QuotationLineItem li = QuotationLineItem.findById(lineItemId);
-        if (li != null) cardSnapshotService.refreshQuoteCardValues(li, true);
+        cd.persistAndFlush();  // 同 deleteDriverRow：flush 墓碑写库,使后续原生查询读到清空后的墓碑。
+        // 只清墓碑。投影交给 Resource 调 refreshQuoteProjection。
     }
 
     // ── 核价管理列表 ──────────────────────────────────────────────────────────────
