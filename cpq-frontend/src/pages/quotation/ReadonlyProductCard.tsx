@@ -909,7 +909,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
           )}
         </div>
       ) : (
-        <div className="qt-no-component-data">��无组件数据</div>
+        <div className="qt-no-component-data">暂无组件数据</div>
       )}
 
       {/* 卡片底部只保留「产品小计」；各页签小计在各自页签内（本页签金额合计行）。 */}
