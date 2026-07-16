@@ -41,6 +41,15 @@ class CostingVersionServiceTest {
     private static final UUID TREE_COMPONENT_ID = UUID.fromString("428c5db8-9604-4d14-ab70-361ac0f34e7f");
     private static final String ROOT_PART_NO = "S-3120014539";
 
+    // ── repair-071501 夹具：非树元素页签切版本（Bug2 复现）──────────────────────────────
+    // 截图核价单 HJ-20260715-0584（产品 S-3120014539），元素组件 wl_ys_bom_view，元素料号
+    // S-2120011658 有 characteristic 2000/2001（V333 T0.2 造）。非树切换走 buildMixedBaseRows，
+    // 该路径此前把新行 basicDataValues 置空 {} → 元素字段(BASIC_DATA)全解析失败显示「—」。
+    private static final UUID ELEM_COID = UUID.fromString("af4d1c84-e979-4434-9ad0-b5e35c09145e");
+    private static final UUID ELEM_LINE_ITEM_ID = UUID.fromString("70bc1007-39c5-4c10-9dfe-e5e80a8d16c2");
+    private static final UUID ELEM_COMPONENT_ID = UUID.fromString("33fee28a-699a-467c-a48c-99a6a5482c6d");
+    private static final String ELEM_PART_NO = "S-2120011658";
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Inject QuotationService quotationService;
@@ -176,6 +185,62 @@ class CostingVersionServiceTest {
                         "SELECT frozen_dto::text FROM costing_order WHERE id=:id")
                 .setParameter("id", COID).getSingleResult();
         assertEquals(frozenBefore, frozenAfter, "版本切换前后 frozen_dto 必须逐字节相同（报价侧隔离）");
+    }
+
+    /**
+     * repair-071501（Bug2）：非树元素页签切版本后，新行必须携带非空 basicDataValues。
+     *
+     * <p>元素组件字段均为 BASIC_DATA（basic_data_path=$wl_ys_bom_view.列），单元格从
+     * basicDataValues 取值。修复前 {@code buildMixedBaseRows} 把新行 basicDataValues 置空 {}，
+     * 导致切换后整组元素行所有列（含销售料号）显示「—」。修复 = expandRows 保留完整 Row，
+     * 新行 basicDataValues 直接来自 ExpandDriverResponse.Row（与初次渲染同口径）。
+     */
+    @Test
+    void t4_nonTreeElementSwitch_freshRowsCarryBasicDataValues() throws Exception {
+        // 夹具完整性防护（并发漂移）：该单需仍为 PENDING
+        CostingOrderDetailDTO d = quotationService.getCostingOrderById(ELEM_COID);
+        assumeTrue(d != null && "PENDING".equals(d.status),
+                "夹具核价单 HJ-20260715-0584 需为 PENDING（可能被其它会话核价/漂移）");
+
+        // ⚠️ 有意「单次 switch、且不在本请求内先调 listVersionOptions」：DataLoader 是 @RequestScoped，
+        //    其 resultCache 按 $view path 为 key、不含 versionFilter mode/override 维度；@QuarkusTest
+        //    里 listVersionOptions(LIST→TRUE) 与 switchVersion(RENDER) 共享同一 request scope 会让
+        //    RENDER expand 命中 LIST 缓存返回全版本（测试假象，非生产 bug——生产两者是分开的 HTTP 请求、
+        //    各自独立 DataLoader）。见 repair-071501 报告「发现的遗留问题」+ BL-0055。此处单次 RENDER
+        //    expand，request cache 干净，真实反映生产单请求切换行为。
+        VersionSwitchRequest req = new VersionSwitchRequest();
+        req.lineItemId = ELEM_LINE_ITEM_ID;
+        req.componentId = ELEM_COMPONENT_ID;
+        req.partNo = ELEM_PART_NO;
+        req.viewVersion = "2001"; // = 该料号 is_current，与用户原始 override 一致；切后落回干净单版本状态
+        VersionSwitchResponseDTO resp = costingVersionService.switchVersion(ELEM_COID, req);
+        assertNotNull(resp.costingCardValues, "非树切换后核价卡片值不应为空");
+
+        JsonNode cv = MAPPER.readTree(resp.costingCardValues);
+        JsonNode elemTab = null;
+        for (JsonNode tab : cv.path("tabs")) {
+            if (ELEM_COMPONENT_ID.toString().equals(tab.path("componentId").asText(""))) { elemTab = tab; break; }
+        }
+        assertNotNull(elemTab, "核价卡片值须含元素页签 componentId=" + ELEM_COMPONENT_ID);
+
+        int checked = 0;
+        for (JsonNode br : elemTab.path("baseRows")) {
+            String mn = br.path("driverRow").path("material_no").asText("");
+            if (!ELEM_PART_NO.equals(mn)) continue;
+            checked++;
+            // ① 版本纯净：切到 2001 后该料号不得残留其它版本行（drop 清旧 + fresh 单版本）
+            assertEquals("2001", br.path("driverRow").path("view_version").asText(""),
+                    ELEM_PART_NO + " 切到 2001 后不应残留其它版本行，行=" + br);
+            // ② basicDataValues 非空（repair-071501 Bug2 修复主断言）：修复前置空 {} → 元素字段
+            //    (BASIC_DATA basic_data_path=$wl_ys_bom_view.列) 全解析失败显示「—」。
+            JsonNode bdv = br.path("basicDataValues");
+            assertTrue(bdv.isObject() && bdv.size() > 0,
+                    "Bug2 回归：切换后的元素行 basicDataValues 不能为空 {}（BASIC_DATA 字段取数源），行=" + br);
+            assertFalse(br.path("driverRow").path("content").isMissingNode(), "元素行应含 content 列");
+        }
+        assertTrue(checked >= 1, "应至少校验到一行 " + ELEM_PART_NO + " 的元素行（实际 " + checked + "）");
+        System.out.println("[CostingVersionServiceTest] t4 非树元素切→2001：" + ELEM_PART_NO
+                + " 元素行 " + checked + " 行全为 2001 且 basicDataValues 非空 ✅");
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

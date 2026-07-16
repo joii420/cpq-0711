@@ -706,6 +706,17 @@
 - **依赖**：无。**预估规模**：S（复现+定性）；修复规模视根因定。
 - **验收要点**：编辑 driver INPUT 值刷新后仍在（editRows 或 row_data 落库）。
 
+### [BL-0058]（技术债）`DataLoader.resultCache` 缺 versionFilter（mode/override）维度 → 同请求内同 `$view` 的 LIST/RENDER expand 串号
+- **优先级**：P2（生产影响低；非阻断）
+- **来源**：repair-071501 排查核价单版本切换 Bug2 时顺带发现（2026-07-15）
+- **状态**：TODO
+- **登记日期**：2026-07-15
+- **背景**：`DataLoader` 为 `@RequestScoped`，`resultCache` 按 `$view` 归一化 path 为 key、**不含 versionFilter 的 mode/override 维度**（AP-37 / [[cpq-sqlview-cache-key-needs-component-dim]] 同族"缺维度缓存串号"）。同一请求内对同一 `$view` 先 LIST 模式 expand（`:versionFilter`→`TRUE` 返全版本）再 RENDER 模式 expand（按 override 渲染）时，第二次命中第一次缓存 → 返回全版本混版。
+- **生产影响 = 低**：`switchVersion` 生产是独立 HTTP 请求（每请求新 `@RequestScoped DataLoader`、单请求内该 `$view` 只 expand 一次）→ 无串号、版本过滤正确（用户 live 数据实为干净单版本，已印证）。仅 `listVersionOptions` 端点自身一个请求内 LIST→RENDER 连查同 path，会让"当前版本高亮 `currentVersion`"在**无 override 兜底时**可能取错版本（纯高亮、不影响实际切换；有 override 时 currentVersion 读 override 表不受影响）。`@QuarkusTest` 因两次服务调用共享同一 request scope 会放大成"混版"（测试假象）。
+- **范围**：`DataLoader.resultCache` key 增加 versionFilter 维度（override 指纹 + mode）；或 `listVersionOptions` 两次 expand 之间清 resultCache。触及核价渲染取数缓存核心（AP-37 高风险区 + `docs/三大核心模块基线.md`），需单独评审。
+- **依赖**：无。**预估规模**：M（含 AP-37 回归验证）。
+- **验收要点**：同请求内同 `$view` 先 LIST 后 RENDER，RENDER 结果按 override/is_current 正确过滤、不返全版本；`listVersionOptions` 无 override 时 currentVersion 取到真实 is_current 版本。
+
 ---
 
 ## 已完成
