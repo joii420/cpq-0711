@@ -103,18 +103,18 @@ public class CostingVersionService {
                 if (r[1] instanceof Boolean b && b) isCurrentVersion = v;
             }
         } else {
-            List<Map<String, Object>> listRows = expandRows(componentId, customerId, partNo, null, CostingTreeVarsContext.Mode.LIST);
-            for (Map<String, Object> row : listRows) {
-                String mn = partNoOf(row);
+            List<ExpandDriverResponse.Row> listRows = expandRows(componentId, customerId, partNo, null, CostingTreeVarsContext.Mode.LIST);
+            for (ExpandDriverResponse.Row row : listRows) {
+                String mn = partNoOf(row.driverRow);
                 if (mn == null || !mn.equals(partNo)) continue;
-                Object vv = row.get("view_version");
+                Object vv = row.driverRow.get("view_version");
                 if (vv != null) options.add(vv.toString());
             }
-            List<Map<String, Object>> curRows = expandRows(componentId, customerId, partNo, Map.of(), CostingTreeVarsContext.Mode.RENDER);
-            for (Map<String, Object> row : curRows) {
-                String mn = partNoOf(row);
+            List<ExpandDriverResponse.Row> curRows = expandRows(componentId, customerId, partNo, Map.of(), CostingTreeVarsContext.Mode.RENDER);
+            for (ExpandDriverResponse.Row row : curRows) {
+                String mn = partNoOf(row.driverRow);
                 if (mn == null || !mn.equals(partNo)) continue;
-                Object vv = row.get("view_version");
+                Object vv = row.driverRow.get("view_version");
                 if (vv != null) { isCurrentVersion = vv.toString(); break; }
             }
         }
@@ -284,7 +284,7 @@ public class CostingVersionService {
             baseRowsByComp = new LinkedHashMap<>();
         }
 
-        List<Map<String, Object>> freshRows = expandRows(componentId, q.customerId, partNo,
+        List<ExpandDriverResponse.Row> freshRows = expandRows(componentId, q.customerId, partNo,
                 overridesByComponent, CostingTreeVarsContext.Mode.RENDER);
 
         String cidStr = componentId.toString();
@@ -297,12 +297,19 @@ public class CostingVersionService {
                 merged.add(rowNode);
             }
         }
-        for (Map<String, Object> r : freshRows) {
-            String mn = partNoOf(r);
+        for (ExpandDriverResponse.Row r : freshRows) {
+            String mn = partNoOf(r.driverRow);
             if (!partNo.equals(mn)) continue; // 整视图取回后，只取本次切换的 partNo 那组新行
             ObjectNode rowNode = MAPPER.createObjectNode();
-            rowNode.set("driverRow", MAPPER.valueToTree(r));
-            rowNode.set("basicDataValues", MAPPER.createObjectNode());
+            rowNode.set("driverRow", MAPPER.valueToTree(r.driverRow));
+            // ★ repair-071501（Bug2 切换后全「—」根因）：新行必须携带 expand 管线已算好的
+            //   basicDataValues（key = {$view.列} path token），不能置空。核价页签字段多为
+            //   BASIC_DATA（basic_data_path=$view.列），单元格从 basicDataValues 取值；
+            //   置空 {} → 所有 BASIC_DATA 单元格解析失败显示「—」。与初次渲染
+            //   （CardSnapshotService:1338-1342 snapshotRowNode）同一口径：driverRow+basicDataValues
+            //   均直接来自 ExpandDriverResponse.Row。
+            rowNode.set("basicDataValues",
+                    r.basicDataValues != null ? MAPPER.valueToTree(r.basicDataValues) : MAPPER.createObjectNode());
             merged.add(rowNode);
         }
         baseRowsByComp.put(cidStr, merged);
@@ -323,17 +330,19 @@ public class CostingVersionService {
      * Java 侧用 {@link #partNoOf(Map)}（hf_part_no 优先、退化 material_no）二次过滤兜底，双重防线。
      * 全程<b>一次</b>远程查询（禁 N+1 只约束查询次数，不约束单次返回行数）。
      */
-    private List<Map<String, Object>> expandRows(UUID componentId, UUID customerId, String partNo,
+    private List<ExpandDriverResponse.Row> expandRows(UUID componentId, UUID customerId, String partNo,
                                                    Map<UUID, Map<String, String>> overridesByComponent,
                                                    CostingTreeVarsContext.Mode mode) {
         CostingTreeVarsContext.set(new CostingTreeVarsContext.Vars(
                 null, List.of(partNo), overridesByComponent, mode));
         try {
             ExpandDriverResponse resp = componentDriverService.expandUncached(componentId, customerId);
-            List<Map<String, Object>> out = new ArrayList<>();
+            // 返回完整 Row（driverRow + basicDataValues），basicDataValues 是 BASIC_DATA 字段
+            // 单元格取数的唯一来源，非树切换的 buildMixedBaseRows 必须原样保留（repair-071501 Bug2）。
+            List<ExpandDriverResponse.Row> out = new ArrayList<>();
             if (resp != null && resp.rows != null) {
                 for (ExpandDriverResponse.Row row : resp.rows) {
-                    if (row != null && row.driverRow != null) out.add(row.driverRow);
+                    if (row != null && row.driverRow != null) out.add(row);
                 }
             }
             return out;

@@ -546,13 +546,16 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         与编辑页 QuotationStep2.tsx 表头列一致：料号 + 版本。 */}
                     {activeComponentBomTree && (
                       <>
-                        <th style={{ minWidth: 120 }}>料号</th>
-                        <th style={{ minWidth: 90 }}>版本</th>
+                        {/* repair-071501（Bug1 版本列过宽）：系统列必须给显式 width，否则在
+                            table-layout:auto + width:100% 下会独吞全部剩余水平空间被撑爆
+                            （字段列都有显式 width，无 width 列成唯一 slack 吸收者）。 */}
+                        <th style={{ width: 130, minWidth: 120 }}>料号</th>
+                        <th style={{ width: 100, minWidth: 90 }}>版本</th>
                       </>
                     )}
                     {/* task-0713（F2）：非树页签版本系统列，仅该组件驱动行含 view_version 时出现 */}
                     {activeComponentVersionable && (
-                      <th style={{ minWidth: 90 }}>版本</th>
+                      <th style={{ width: 100, minWidth: 90 }}>版本</th>
                     )}
                     {activeComp.fields.map(field => {
                       const w = resolveFieldWidth(field.width);
@@ -735,7 +738,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                                     <span>{bomSys?.hfPartNo ?? '—'}</span>
                                   </span>
                                 </td>
-                                <td>
+                                <td style={{ width: 100 }}>
                                   {/* task-0713（F2/F3/F4）：主树版本切换——editable 时下拉，否则纯文本 */}
                                   {canSwitchTreeVersion && editable ? (
                                     <VersionSelectDropdown
@@ -754,7 +757,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                             )}
                             {/* task-0713（F2 非树页签）：组内首行渲染共享下拉，rowSpan 覆盖整组；组内其余行不渲染此列 */}
                             {activeComponentVersionable && versionGroupInfo[oi]?.isGroupStart && (
-                              <td rowSpan={versionGroupInfo[oi].rowSpan} style={{ verticalAlign: 'top' }}>
+                              <td rowSpan={versionGroupInfo[oi].rowSpan} style={{ verticalAlign: 'top', width: 100 }}>
                                 {isCosting && !!coid && __rowPartNo != null && editable ? (
                                   <VersionSelectDropdown
                                     coid={coid}
