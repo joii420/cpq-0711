@@ -169,12 +169,21 @@ if (tpl == null) { out.hasTemplate = false; return out; }  // 报错提示（前
 
 ---
 
-## B5. 报价单创建 commit — categoryId 权威来源（api.md §5）
+## B5. 报价单创建 commit — categoryId 一致性审计（api.md §5，2026-07-16 订正）
 
-- 定位 `import-session/{id}/commit` 的服务实现（`ImportSession*Service` / `QuotationService.create` 链路）。
-- 在匹配报价/核价模板、创建报价单处，**用 `customer.product_category_id` 作为 categoryId 权威**，不信前端传值（前端仍会传同一值，但服务端以客户为准）。
-- 产品分类**不持久化到 quotation**（现状保持）；固化 `customer_template_id`/`costing_card_template_id`。
-- 若现有 commit 直接用前端 `categoryId` 且无客户校验：改为 `UUID categoryId = customer.productCategoryId;`（或断言等于前端传值，不等则以客户为准并 warn）。
+> **实测**：`ImportSessionService.commit()` 里 `categoryId` 是死字段——模板 id 由前端在调 commit **前**用 `match-customer-quote`/核价 list 预匹配好塞进请求体，commit **不匹配模板**。故不做"覆盖模板/重匹配"（越界 + 破坏 MIXED 手选语义）。"以客户为准"由前端只读锁定保证（fronttask F3）。
+
+- 在 `ImportSessionService.commit()` 取 `session.customerId` 后，查一次 `Customer`，仅做防御性审计（不改任何持久化）：
+  ```java
+  Customer customer = Customer.findById(session.customerId);
+  if (customer != null && req.categoryId != null
+          && !req.categoryId.equals(customer.productCategoryId)) {
+      LOG.warnf("commit categoryId mismatch: frontend=%s authoritative=%s customerId=%s",
+                req.categoryId, customer.productCategoryId, session.customerId);
+  }
+  ```
+- 平行路径 `basic-data-import/v6/quote`（`V6QuotationCommitService`）的 `categoryId` 同为死字段，前端未接，**不改**。
+- 产品分类**不持久化到 quotation**；固化 `customer_template_id`/`costing_card_template_id`。
 
 ---
 

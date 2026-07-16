@@ -26,9 +26,9 @@ public class SelTemplateService {
         return assemble(t);
     }
 
-    /** 按行业取模板（选配运行时/Plan 3 会用）。无则返回 null。 */
-    public SelTemplateDTO getByIndustry(String industryCode) {
-        SelTemplate t = SelTemplate.find("industryCode", industryCode).firstResult();
+    /** 按产品分类取模板（选配运行时/Plan 3 会用）。无则返回 null。 */
+    public SelTemplateDTO getByCategory(UUID productCategoryId) {
+        SelTemplate t = SelTemplate.find("productCategoryId", productCategoryId).firstResult();
         return t == null ? null : assemble(t);
     }
 
@@ -50,11 +50,15 @@ public class SelTemplateService {
 
     @Transactional
     public SelTemplateDTO upsert(SelTemplateUpsertRequest req) {
-        // 一行业一套：按 industryCode 找既有，有则更新，无则新建
-        SelTemplate t = SelTemplate.find("industryCode", req.industryCode).firstResult();
+        // api.md §1.1: productCategoryId 必须为存在的 product_category.id，不存在报 400
+        if (com.cpq.basicdata.entity.ProductCategory.findById(req.productCategoryId) == null) {
+            throw new BusinessException(400, "产品分类不存在: " + req.productCategoryId);
+        }
+        // 一产品分类一套：按 productCategoryId 找既有，有则更新，无则新建
+        SelTemplate t = SelTemplate.find("productCategoryId", req.productCategoryId).firstResult();
         if (t == null) {
             t = new SelTemplate();
-            t.industryCode = req.industryCode;
+            t.productCategoryId = req.productCategoryId;
         }
         t.name = req.name;
         if (req.status != null && !req.status.isBlank()) t.status = req.status;

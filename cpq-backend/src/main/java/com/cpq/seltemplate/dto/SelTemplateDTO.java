@@ -8,7 +8,9 @@ import java.util.UUID;
 
 public class SelTemplateDTO {
     public UUID id;
-    public String industryCode, name, status;
+    // task-0712 update-071501: 换轴为产品分类维度（原行业码字段已删除）；不返 productCategoryName(D5)
+    public UUID productCategoryId;
+    public String name, status;
     public Integer version;
     public OffsetDateTime createdAt, updatedAt;
     public List<Item> items = new ArrayList<>();
@@ -22,7 +24,7 @@ public class SelTemplateDTO {
 
     public static SelTemplateDTO from(SelTemplate t) {
         SelTemplateDTO d = new SelTemplateDTO();
-        d.id = t.id; d.industryCode = t.industryCode; d.name = t.name;
+        d.id = t.id; d.productCategoryId = t.productCategoryId; d.name = t.name;
         d.status = t.status; d.version = t.version;
         d.createdAt = t.createdAt; d.updatedAt = t.updatedAt;
         return d;

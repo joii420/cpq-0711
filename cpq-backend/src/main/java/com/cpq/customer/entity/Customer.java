@@ -30,6 +30,9 @@ public class Customer extends PanacheEntityBase {
     @Column(name = "industry_code", length = 50)
     public String industryCode;
 
+    @Column(name = "product_category_id", nullable = false)
+    public UUID productCategoryId;
+
     @Column(length = 100)
     public String region;
 

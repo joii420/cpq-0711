@@ -18,6 +18,7 @@ public class CustomerDTO {
     public String level;
     public String industry;
     public String industryCode;
+    public UUID productCategoryId;   // task-0712 update-071501; 不返 productCategoryName(D5，前端自行按 product-categories 列表映射)
     public String region;
     public String address;
     public BigDecimal accumulatedAmount;
@@ -40,6 +41,7 @@ public class CustomerDTO {
         dto.level = customer.level;
         dto.industry = customer.industry;
         dto.industryCode = customer.industryCode;
+        dto.productCategoryId = customer.productCategoryId;
         dto.region = customer.region;
         dto.address = customer.address;
         dto.accumulatedAmount = customer.accumulatedAmount;

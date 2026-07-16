@@ -1,5 +1,6 @@
 package com.cpq.customer.service;
 
+import com.cpq.basicdata.entity.ProductCategory;
 import com.cpq.common.dto.PageResult;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.customer.dto.ContactDTO;
@@ -115,6 +116,10 @@ public class CustomerService {
         customer.level = request.level != null ? request.level : "STANDARD";
         customer.industry = request.industry;
         customer.industryCode = request.industryCode;
+        // task-0712 update-071501 D3: 产品分类必填非空; 前端保证必选，后端兜底"默认分类"防漏传
+        customer.productCategoryId = request.productCategoryId != null
+                ? request.productCategoryId
+                : resolveDefaultCategoryId();
         customer.region = request.region;
         customer.address = request.address;
         customer.creditLimit = request.creditLimit;
@@ -156,6 +161,8 @@ public class CustomerService {
         if (request.level != null) customer.level = request.level;
         if (request.industry != null) customer.industry = request.industry;
         if (request.industryCode != null) customer.industryCode = request.industryCode;
+        // task-0712 update-071501 D4: 客户建后允许改绑产品分类; 改绑不追溯已有报价单(表头不持久化 categoryId)
+        if (request.productCategoryId != null) customer.productCategoryId = request.productCategoryId;
         if (request.region != null) customer.region = request.region;
         if (request.address != null) customer.address = request.address;
         if (request.creditLimit != null) customer.creditLimit = request.creditLimit;
@@ -215,5 +222,14 @@ public class CustomerService {
     private String generateCode() {
         Long seq = (Long) em.createNativeQuery("SELECT nextval('customer_code_seq')").getSingleResult();
         return String.format("CUST-%04d", seq);
+    }
+
+    // task-0712 update-071501 D3: 客户产品分类必填非空的兜底来源；同名"默认分类"迁移已保障 seed 存在(V337)
+    private UUID resolveDefaultCategoryId() {
+        ProductCategory pc = ProductCategory.find("name", "默认分类").firstResult();
+        if (pc == null) {
+            throw new BusinessException(500, "系统缺少「默认分类」，请先在产品分类维护中创建");
+        }
+        return pc.id;
     }
 }

@@ -1,5 +1,7 @@
 package com.cpq.seltemplate.service;
 
+import com.cpq.basicdata.entity.ProductCategory;
+import com.cpq.common.exception.BusinessException;
 import com.cpq.customer.entity.Customer;
 import com.cpq.seltemplate.dto.EffectiveTemplateDTO;
 import com.cpq.seltemplate.dto.ParamCandidateDTO;
@@ -10,36 +12,38 @@ import jakarta.inject.Inject;
 
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class EffectiveTemplateService {
-
-    public static final String DEFAULT_INDUSTRY = "__DEFAULT__";
 
     @Inject SelTemplateService selTemplateService;
     @Inject SelParamCandidateService candidateService;
 
     /**
      * 解析某客户(业务码)的有效选配模板：
-     * 客户所属行业 → 行业模板；无则回退 __DEFAULT__；再无则 hasTemplate=false。
+     * 客户所属产品分类 → 该分类模板；无则回退"默认分类"模板；再无则 hasTemplate=false。
      * 每个 enabled 参数的 effectiveValues = 候选值 ∩ 模板 allowedValues（allowedValues 空=全部候选）。
+     *
+     * task-0712 update-071501 D10: 原 __DEFAULT__ 哨兵换成真实的 name='默认分类' 产品分类，兜底链逻辑不变。
      */
     public EffectiveTemplateDTO getEffective(String customerNo) {
         EffectiveTemplateDTO out = new EffectiveTemplateDTO();
         out.customerNo = customerNo;
 
         Customer customer = Customer.find("code", customerNo).firstResult();
-        String industryCode = customer == null ? null : customer.industryCode;
+        UUID categoryId = customer == null ? null : customer.productCategoryId;
 
         SelTemplateDTO tpl = null;
-        if (industryCode != null && !industryCode.isBlank()) {
-            tpl = selTemplateService.getByIndustry(industryCode);
-            if (tpl != null) { out.resolvedIndustryCode = industryCode; out.usedDefault = false; }
+        if (categoryId != null) {
+            tpl = selTemplateService.getByCategory(categoryId);
+            if (tpl != null) { out.resolvedCategoryId = categoryId; out.usedDefault = false; }
         }
         if (tpl == null) {
-            tpl = selTemplateService.getByIndustry(DEFAULT_INDUSTRY);
-            if (tpl != null) { out.resolvedIndustryCode = DEFAULT_INDUSTRY; out.usedDefault = true; }
+            UUID defaultCategoryId = resolveDefaultCategoryId();
+            tpl = selTemplateService.getByCategory(defaultCategoryId);
+            if (tpl != null) { out.resolvedCategoryId = defaultCategoryId; out.usedDefault = true; }
         }
         if (tpl == null) {
             out.hasTemplate = false;
@@ -68,5 +72,14 @@ public class EffectiveTemplateService {
             out.params.add(p);
         }
         return out;
+    }
+
+    // task-0712 update-071501: 兜底"默认分类"来源，逻辑同 CustomerService#resolveDefaultCategoryId
+    private UUID resolveDefaultCategoryId() {
+        ProductCategory pc = ProductCategory.find("name", "默认分类").firstResult();
+        if (pc == null) {
+            throw new BusinessException(500, "系统缺少「默认分类」，请先在产品分类维护中创建");
+        }
+        return pc.id;
     }
 }

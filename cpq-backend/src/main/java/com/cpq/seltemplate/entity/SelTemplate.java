@@ -9,7 +9,8 @@ import java.util.UUID;
 @Table(name = "sel_template")
 public class SelTemplate extends PanacheEntityBase {
     @Id @GeneratedValue public UUID id;
-    @Column(name = "industry_code", nullable = false, unique = true, length = 50) public String industryCode;
+    // task-0712 update-071501: 换轴 industry_code(String) -> product_category_id(UUID)，一产品分类一套(UNIQUE)
+    @Column(name = "product_category_id", nullable = false, unique = true) public UUID productCategoryId;
     @Column(nullable = false, length = 100) public String name;
     @Column(nullable = false, length = 20) public String status = "ACTIVE";
     @Version @Column(nullable = false) public Integer version = 0;
