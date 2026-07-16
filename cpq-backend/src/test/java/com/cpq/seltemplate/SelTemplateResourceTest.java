@@ -168,4 +168,21 @@ class SelTemplateResourceTest {
             .getSingleResult();
         Assertions.assertEquals(0L, valueCount.longValue());
     }
+
+    @Test @Order(7)
+    @DisplayName("T7: upsert productCategoryId 不存在 → 400（SelTemplateService 存在性校验分支）")
+    void upsertNonExistentCategory400() {
+        String bogusCategoryId = UUID.randomUUID().toString();
+        String body = "{\"productCategoryId\":\"" + bogusCategoryId + "\",\"name\":\"不存在的分类\",\"items\":[]}";
+        given().contentType("application/json").body(body)
+            .when().post(TPL).then().statusCode(400);
+    }
+
+    @Test @Order(8)
+    @DisplayName("T8: upsert 漏传 productCategoryId → 400（@NotNull）")
+    void upsertMissingCategoryId400() {
+        String body = "{\"name\":\"缺分类\",\"items\":[]}";
+        given().contentType("application/json").body(body)
+            .when().post(TPL).then().statusCode(400);
+    }
 }

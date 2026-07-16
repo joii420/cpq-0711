@@ -1,7 +1,6 @@
 package com.cpq.seltemplate.service;
 
 import com.cpq.basicdata.entity.ProductCategory;
-import com.cpq.common.exception.BusinessException;
 import com.cpq.customer.entity.Customer;
 import com.cpq.seltemplate.dto.EffectiveTemplateDTO;
 import com.cpq.seltemplate.dto.ParamCandidateDTO;
@@ -41,7 +40,7 @@ public class EffectiveTemplateService {
             if (tpl != null) { out.resolvedCategoryId = categoryId; out.usedDefault = false; }
         }
         if (tpl == null) {
-            UUID defaultCategoryId = resolveDefaultCategoryId();
+            UUID defaultCategoryId = ProductCategory.requireDefaultId();
             tpl = selTemplateService.getByCategory(defaultCategoryId);
             if (tpl != null) { out.resolvedCategoryId = defaultCategoryId; out.usedDefault = true; }
         }
@@ -72,14 +71,5 @@ public class EffectiveTemplateService {
             out.params.add(p);
         }
         return out;
-    }
-
-    // task-0712 update-071501: 兜底"默认分类"来源，逻辑同 CustomerService#resolveDefaultCategoryId
-    private UUID resolveDefaultCategoryId() {
-        ProductCategory pc = ProductCategory.find("name", "默认分类").firstResult();
-        if (pc == null) {
-            throw new BusinessException(500, "系统缺少「默认分类」，请先在产品分类维护中创建");
-        }
-        return pc.id;
     }
 }

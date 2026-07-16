@@ -119,7 +119,7 @@ public class CustomerService {
         // task-0712 update-071501 D3: 产品分类必填非空; 前端保证必选，后端兜底"默认分类"防漏传
         customer.productCategoryId = request.productCategoryId != null
                 ? request.productCategoryId
-                : resolveDefaultCategoryId();
+                : ProductCategory.requireDefaultId();
         customer.region = request.region;
         customer.address = request.address;
         customer.creditLimit = request.creditLimit;
@@ -222,14 +222,5 @@ public class CustomerService {
     private String generateCode() {
         Long seq = (Long) em.createNativeQuery("SELECT nextval('customer_code_seq')").getSingleResult();
         return String.format("CUST-%04d", seq);
-    }
-
-    // task-0712 update-071501 D3: 客户产品分类必填非空的兜底来源；同名"默认分类"迁移已保障 seed 存在(V337)
-    private UUID resolveDefaultCategoryId() {
-        ProductCategory pc = ProductCategory.find("name", "默认分类").firstResult();
-        if (pc == null) {
-            throw new BusinessException(500, "系统缺少「默认分类」，请先在产品分类维护中创建");
-        }
-        return pc.id;
     }
 }

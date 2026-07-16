@@ -1,5 +1,6 @@
 package com.cpq.seltemplate.service;
 
+import com.cpq.basicdata.entity.ProductCategory;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.seltemplate.dto.SelTemplateDTO;
 import com.cpq.seltemplate.dto.SelTemplateUpsertRequest;
@@ -51,7 +52,7 @@ public class SelTemplateService {
     @Transactional
     public SelTemplateDTO upsert(SelTemplateUpsertRequest req) {
         // api.md §1.1: productCategoryId 必须为存在的 product_category.id，不存在报 400
-        if (com.cpq.basicdata.entity.ProductCategory.findById(req.productCategoryId) == null) {
+        if (ProductCategory.findById(req.productCategoryId) == null) {
             throw new BusinessException(400, "产品分类不存在: " + req.productCategoryId);
         }
         // 一产品分类一套：按 productCategoryId 找既有，有则更新，无则新建
