@@ -50,8 +50,9 @@ UPDATE customer
    SET product_category_id = (SELECT id FROM product_category WHERE name = '默认分类' LIMIT 1)
  WHERE product_category_id IS NULL;
 
--- 3) 置非空约束（backfill 后）
-ALTER TABLE customer ALTER COLUMN product_category_id SET NOT NULL;
+-- 3) 不加 DB NOT NULL（方案B，2026-07-16 定）：业务非空由「前端必填 + CustomerService.create 兜底默认分类 + 上面 backfill」三重应用层保证；
+--    DB 保持可空，避免给全后端 ~31 个无关测试的 customer 夹具（未带此列）引入 NOT NULL 违反。
+--    EffectiveTemplateService 对 productCategoryId==null 有默认分类兜底，业务读取安全。
 -- 软引用：按项目惯例不加物理 FK（应用层校验）
 ```
 

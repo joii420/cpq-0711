@@ -117,14 +117,15 @@
   "contacts": [ /* 不变 */ ]
 }
 ```
-- **必填**：前端保证必选（默认"默认分类"）；**后端兜底**：若 `productCategoryId` 为空 → 自动填 `name='默认分类'` 的 id（保证"不能空"，D3）。
+- **必填（业务语义）**：前端保证必选（默认"默认分类"）；**后端兜底**：若 `productCategoryId` 为空 → 自动填 `name='默认分类'` 的 id（保证"不能空"，D3）。
+- **DB 列可空（方案B，2026-07-16）**：`customer.product_category_id` 不加 DB `NOT NULL`；"不能空"由上述应用层三重保证（前端必填 + create 兜底 + 迁移 backfill）。见 `优化需求说明.md §9.7`。
 
 ### 3.2 `PUT /api/cpq/customers/{id}` — 更新
 - 请求体同上增 `productCategoryId`；**可改**（D4）：`if (productCategoryId != null) customer.productCategoryId = ...`。
 - 改绑不追溯已有报价单（D4）。
 
 ### 3.3 `GET /api/cpq/customers` / `GET /api/cpq/customers/{id}`
-- `CustomerDTO` 增 `productCategoryId`（UUID，可空仅存量未 backfill 时）。
+- `CustomerDTO` 增 `productCategoryId`（UUID；DB 列不加 NOT NULL，方案B；业务路径永非空）。
 - **不返** `productCategoryName`（D5 列表不展示；编辑表单前端用 product-categories 列表映射名）。
 - list 保持单查 `CustomerDTO.from`，**不得**为分类名引入 N+1。
 
