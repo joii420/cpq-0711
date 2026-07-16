@@ -1,12 +1,20 @@
 import api from './api';
 import type { EffectiveTemplateDTO } from '../types/configure';
 
+/** `POST /sel-templates` upsert 请求体（api.md §1.1）；归属维度 = 客户产品分类（task-0712 换轴）。 */
+export interface SelTemplateUpsertRequest {
+  productCategoryId: string;
+  name: string;
+  status?: string;
+  items: Array<{ paramTypeCode: string; enabled: boolean; allowedValues: string[] }>;
+}
+
 export const selTemplateService = {
   listParamTypes: () => api.get('/sel-param-types') as Promise<any>,
   candidates: (code: string) => api.get(`/sel-param-types/${code}/candidates`) as Promise<any>,
   list: () => api.get('/sel-templates') as Promise<any>,
   getById: (id: string) => api.get(`/sel-templates/${id}`) as Promise<any>,
-  upsert: (data: any) => api.post('/sel-templates', data) as Promise<any>,
+  upsert: (data: SelTemplateUpsertRequest) => api.post('/sel-templates', data) as Promise<any>,
   delete: (id: string) => api.delete(`/sel-templates/${id}`) as Promise<any>,
   /**
    * GET /sel-templates/effective?customerNo= — 有效模板解析（api.md §1.4，D6）。

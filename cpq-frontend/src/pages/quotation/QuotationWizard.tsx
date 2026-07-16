@@ -1504,6 +1504,9 @@ const QuotationWizard: React.FC = () => {
           <QuotationCreateForm
             customerId={selectedCustomer.id}
             customerName={selectedCustomer.name}
+            // task-0712: 产品分类由客户绑定带出；仅新建态(quotationId 为空)生效——
+            // 编辑已有报价单时分类要从已存模板反查，不能被客户当前绑定值覆盖(D4)。
+            lockedCategoryId={quotationId ? undefined : selectedCustomer.productCategoryId}
             value={step1FormValue}
             onChange={(v: QuotationFormValue) => {
               // 1. React state 是受控组件的唯一真相源 - 必须先 setState 才能让 input 显示新值

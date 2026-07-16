@@ -6,6 +6,7 @@ import {
 import { PlusOutlined, DeleteOutlined, EditOutlined, StopOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
 import { customerService } from '../../services/customerService';
 import { industryService } from '../../services/industryService';
+import { productCategoryService, type ProductCategory } from '../../services/productCategoryService';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
 
 const { Text } = Typography;
@@ -43,9 +44,14 @@ const CustomerManagement: React.FC = () => {
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [currentCustomerId, setCurrentCustomerId] = useState<string | null>(null);
   const [industries, setIndustries] = useState<{ code: string; name: string }[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
 
   useEffect(() => {
     industryService.listActive().then(res => setIndustries(res?.data ?? [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    productCategoryService.list('ACTIVE').then(res => setCategories(res?.data ?? [])).catch(() => {});
   }, []);
 
   const fetchData = async () => {
@@ -89,6 +95,7 @@ const CustomerManagement: React.FC = () => {
           name: editingCustomer.name,
           level: editingCustomer.level,
           industryCode: editingCustomer.industryCode,
+          productCategoryId: editingCustomer.productCategoryId,
           region: editingCustomer.region,
           address: editingCustomer.address,
           creditLimit: editingCustomer.creditLimit,
@@ -97,9 +104,24 @@ const CustomerManagement: React.FC = () => {
         });
       }, 50);
     } else if (drawerOpen && !editingCustomer) {
-      setTimeout(() => form.resetFields(), 50);
+      setTimeout(() => {
+        form.resetFields();
+        const def = categories.find(c => c.name === '默认分类');
+        if (def) form.setFieldsValue({ productCategoryId: def.id });
+      }, 50);
     }
   }, [drawerOpen, editingCustomer]);
+
+  // 新建客户时若 categories 尚未加载完成（时序竞态），加载完成后补默认分类；不覆盖用户已选值
+  useEffect(() => {
+    if (drawerOpen && !editingCustomer && categories.length > 0) {
+      const current = form.getFieldValue('productCategoryId');
+      if (!current) {
+        const def = categories.find(c => c.name === '默认分类');
+        if (def) form.setFieldsValue({ productCategoryId: def.id });
+      }
+    }
+  }, [categories, drawerOpen, editingCustomer]);
 
   const handleSave = async (values: any) => {
     try {
@@ -397,6 +419,15 @@ const CustomerManagement: React.FC = () => {
               showSearch
               optionFilterProp="label"
               options={industries.map(i => ({ value: i.code, label: `${i.name}（${i.code}）` }))}
+            />
+          </Form.Item>
+          <Form.Item name="productCategoryId" label="产品分类"
+            rules={[{ required: true, message: '请选择产品分类' }]}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              placeholder="请选择产品分类"
+              options={categories.map(c => ({ value: c.id, label: c.name }))}
             />
           </Form.Item>
           <Form.Item name="region" label="所属区域">

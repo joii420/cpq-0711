@@ -41,6 +41,7 @@ interface Props {
 interface CustomerOption {
   id: string;
   name: string;
+  productCategoryId?: string;
 }
 
 interface CommitResultDTO {
@@ -92,7 +93,7 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
       .list({ page: 0, size: 200 })
       .then((r: any) => {
         const list: any[] = r.data?.content ?? r.data ?? [];
-        setCustomers(list.map((c: any) => ({ id: c.id, name: c.name })));
+        setCustomers(list.map((c: any) => ({ id: c.id, name: c.name, productCategoryId: c.productCategoryId })));
       })
       .catch(() => message.error('加载客户列表失败'))
       .finally(() => setCustomersLoading(false));
@@ -100,6 +101,12 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
 
   const customerName = useMemo(
     () => customers.find((c) => c.id === customerId)?.name ?? '',
+    [customers, customerId],
+  );
+
+  // task-0712: 产品分类由客户绑定带出，锁定 QuotationCreateForm 的分类下拉
+  const customerCategoryId = useMemo(
+    () => customers.find((c) => c.id === customerId)?.productCategoryId,
     [customers, customerId],
   );
 
@@ -400,6 +407,7 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
           <QuotationCreateForm
             customerId={customerId}
             customerName={customerName}
+            lockedCategoryId={customerCategoryId}
             value={createForm}
             onChange={setCreateForm}
             onValidityChange={setFormValid}

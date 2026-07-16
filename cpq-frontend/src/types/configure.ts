@@ -127,8 +127,8 @@ export interface EffectiveTemplateParam {
 /** `GET /sel-templates/effective?customerNo=` 响应（api.md §1.4）。选配添加抽屉打开即调（D6）。 */
 export interface EffectiveTemplateDTO {
   customerNo: string;
-  /** 实际命中的模板行业码（可能是具体行业 / __DEFAULT__）；无模板时可能为空。 */
-  resolvedIndustryCode?: string;
+  /** 实际命中的模板所属产品分类 id（UUID；可能是客户分类 / 默认分类兜底）；无模板时可能为空。 */
+  resolvedCategoryId?: string;
   /** true = 回退到 __DEFAULT__ 通用模板。 */
   usedDefault: boolean;
   templateId?: string;
