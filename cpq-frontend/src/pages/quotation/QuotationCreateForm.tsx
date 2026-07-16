@@ -88,13 +88,19 @@ const QuotationCreateForm: React.FC<Props> = ({
   const [costingTemplates, setCostingTemplates] = useState<CostingCardTemplate[]>([]);
   const [loadingCosting, setLoadingCosting] = useState(false);
 
-  // 初始化：默认报价单名称
+  // 初始化：默认报价单名称 + 产品分类锁定值，合并进一个 effect 一次性 onChange。
+  // 原因(质量评审 Important#1)：两个 effect 若分开各自基于挂载时的 stale `value` 调一次整对象
+  // onChange，同一批次里后触发的会用 stale value 展开覆盖掉前一个的 patch —— 换轴后
+  // lockedCategoryId 主流程恒存在，会稳定复现"自动报价单名被清空"。合并成单 effect 一次 patch
+  // 消除竞态。readOnly(编辑已有报价单)时不种 lockedCategoryId：已有单的分类要从"已存模板反查"
+  // (见下面的 effect)得到，不能被客户的*当前*绑定值覆盖(D4：客户改绑分类不追溯已有报价单)。
   useEffect(() => {
-    if (customerName && !value.name) {
-      onChange({ ...value, name: `${customerName} 报价单` });
-    }
+    const patch: Partial<QuotationFormValue> = {};
+    if (customerName && !value.name) patch.name = `${customerName} 报价单`;
+    if (!readOnly && lockedCategoryId && value.categoryId !== lockedCategoryId) patch.categoryId = lockedCategoryId;
+    if (Object.keys(patch).length) onChange({ ...value, ...patch });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerName]);
+  }, [customerName, lockedCategoryId, readOnly]);
 
   // 拉取产品分类列表（仅用于把 categoryId 显示成分类名；task-0712 起分类不再前端手选/自动预选，
   // 一律由父组件按客户绑定值通过 lockedCategoryId 带出）
@@ -107,16 +113,6 @@ const QuotationCreateForm: React.FC<Props> = ({
       .catch(() => setCategories([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // task-0712: 产品分类由客户绑定带出并锁定 —— lockedCategoryId 变化时同步进 categoryId。
-  // readOnly(编辑已有报价单)时不生效：已有单的分类要从"已存模板反查"(见上面的 effect)得到，
-  // 不能被客户的*当前*绑定值覆盖(D4：客户改绑分类不追溯已有报价单)。
-  useEffect(() => {
-    if (!readOnly && lockedCategoryId && value.categoryId !== lockedCategoryId) {
-      onChange({ ...value, categoryId: lockedCategoryId });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lockedCategoryId, readOnly]);
 
   // 编辑态回填产品分类:quotation 表头不持久化 category_id(实体/DTO 均无该列),
   // 但 customer_template_id 已存,且模板本身带 categoryId(模板就是按 category 匹配出来的)→

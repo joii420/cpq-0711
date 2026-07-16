@@ -324,7 +324,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 40px', textAlign: 'center', color: '#606266', minHeight: 420 }}>
           <div style={{ fontSize: 52, marginBottom: 16, color: '#c0c4cc' }}>🗂️</div>
           <div style={{ fontSize: 14, lineHeight: 1.8, maxWidth: 460, marginBottom: 16 }}>
-            缺少选配模板 —— 请先在「配置中心 → 选配模板管理」为该客户所属行业或默认模板配置选配参数。
+            缺少选配模板 —— 请先在「配置中心 → 选配模板管理」为该客户所属产品分类或默认分类配置选配参数。
           </div>
           <a
             style={{ color: '#1890ff', cursor: 'pointer', fontWeight: 500 }}
