@@ -68,7 +68,9 @@ const allMenuItems: MenuItem[] = [
     label: '报价中心',
     roles: ALL_ROLES,
     children: [
-      { key: '/quotations', label: '报价单管理', roles: ALL_ROLES },
+      // 财务(PRICING_MANAGER)关闭报价单管理(2026-07-17)——菜单隐藏 + 路由 RoleGuard 双保险；
+      // 财务经核价管理进入，报价单详情页(/quotations/:id)仍可从核价工作台跳转查看。
+      { key: '/quotations', label: '报价单管理', roles: ['SALES_REP', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
       { key: '/costing-summary', label: '核价管理', roles: ['PRICING_MANAGER', 'SYSTEM_ADMIN'] },
     ],
   },
