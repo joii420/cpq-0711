@@ -62,6 +62,43 @@ class CostingVersionServiceTest {
         assumeTrue("PENDING".equals(d.status), "夹具核价单需为 PENDING（可能已被其它并发会话核价通过/驳回）");
     }
 
+    // ── repair-0590：非树切到"该料号没有的版本" → 400 拒绝 + 料号不消失 + override 不落库 ──
+    private static final UUID DIAG_COID = UUID.fromString("8c434c65-1f0c-4fe5-b5df-8b93e6a174d4");
+    private static final UUID DIAG_LINE = UUID.fromString("30d2c1e2-20db-4cfe-809f-3efa27486055");
+    private static final UUID DIAG_CONSUM_COMP = UUID.fromString("f94b12c4-b0c8-4fc2-9489-20f7972852fd");
+
+    /**
+     * repair-0590（料号消失无法恢复 根因）：把非树料号切到一个"它没有数据的版本"必须被拒绝(400)、
+     * override 不落库(回滚)、料号原样保留——不能像修复前那样删旧行+无新行补致料号从页签消失。
+     * 夹具用真实单 HJ-20260717-0590 的生产耗材组件；S-3120014539 有 2000/2001/2002，切到不存在的 9999。
+     */
+    @Test
+    void switchToNonexistentVersion_rejected_overrideNotPersisted() {
+        CostingOrderDetailDTO d = quotationService.getCostingOrderById(DIAG_COID);
+        assumeTrue(d != null && "PENDING".equals(d.status),
+                "夹具核价单 HJ-20260717-0590 需为 PENDING（可能被并发核价/漂移）");
+
+        VersionSwitchRequest req = new VersionSwitchRequest();
+        req.lineItemId = DIAG_LINE;
+        req.componentId = DIAG_CONSUM_COMP;
+        req.partNo = "S-3120014539";
+        req.viewVersion = "9999";   // 不存在的版本
+        com.cpq.common.exception.BusinessException ex = assertThrows(
+                com.cpq.common.exception.BusinessException.class,
+                () -> costingVersionService.switchVersion(DIAG_COID, req),
+                "切到该料号没有的版本应被拒绝");
+        assertEquals(400, ex.getCode(), "应 400（该版本非此料号可选版本）");
+
+        // override 未落库（@Transactional 回滚）
+        em.clear();
+        Number cnt = (Number) em.createNativeQuery(
+                "SELECT count(*) FROM costing_order_version_override WHERE costing_order_id=:c " +
+                "AND component_id=:cid AND part_no='S-3120014539' AND view_version='9999'")
+                .setParameter("c", DIAG_COID).setParameter("cid", DIAG_CONSUM_COMP).getSingleResult();
+        assertEquals(0L, cnt.longValue(), "非法切换的 override 不应落库（已回滚）");
+    }
+
+
     /** T7.1：非 PENDING 核价单切版本必须 403，且不落 override（用真实 REJECTED 单验证状态门禁）。 */
     @Test
     void t3_nonPendingCostingOrder_switchVersion_returns403() {
@@ -197,8 +234,14 @@ class CostingVersionServiceTest {
      */
     @Test
     void t4_nonTreeElementSwitch_freshRowsCarryBasicDataValues() throws Exception {
-        // 夹具完整性防护（并发漂移）：该单需仍为 PENDING
-        CostingOrderDetailDTO d = quotationService.getCostingOrderById(ELEM_COID);
+        // 夹具完整性防护（并发漂移）：该单需仍为 PENDING；单已被删（getById 抛 404）时也跳过而非报错。
+        CostingOrderDetailDTO d;
+        try {
+            d = quotationService.getCostingOrderById(ELEM_COID);
+        } catch (com.cpq.common.exception.BusinessException ex) {
+            assumeTrue(false, "夹具核价单 HJ-20260715-0584 已不存在（被删/漂移），跳过");
+            return;
+        }
         assumeTrue(d != null && "PENDING".equals(d.status),
                 "夹具核价单 HJ-20260715-0584 需为 PENDING（可能被其它会话核价/漂移）");
 

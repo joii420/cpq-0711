@@ -287,6 +287,21 @@ public class CostingVersionService {
         List<ExpandDriverResponse.Row> freshRows = expandRows(componentId, q.customerId, partNo,
                 overridesByComponent, CostingTreeVarsContext.Mode.RENDER);
 
+        // ★ repair-0590（料号切到"它没有的版本"后消失且不可恢复 = 本次根因）：
+        //   切换料号的重查若 0 行，说明该 viewVersion 对此料号无数据（= 非该料号的可选版本，
+        //   api.md §6 本应 400）。若继续（删旧行 + 无新行补），料号会从页签彻底消失，且 override
+        //   已落库 → 每次渲染恒 0 行 → 无下拉可切回 → 永久丢失。故直接抛 400 中止：switchVersion 的
+        //   @Transactional 回滚刚 upsert 的 override，料号原样保留；前端 message.error 提示（不静默）。
+        boolean anyForPart = false;
+        for (ExpandDriverResponse.Row r : freshRows) {
+            if (partNo.equals(partNoOf(r.driverRow))) { anyForPart = true; break; }
+        }
+        if (!anyForPart) {
+            String badVer = overridesByComponent.getOrDefault(componentId, java.util.Map.of()).get(partNo);
+            throw new BusinessException(400, "料号 " + partNo + " 不存在版本 " + badVer
+                    + " 的数据，无法切换到该版本（该版本非此料号的可选版本，切换将导致料号消失，已阻止）");
+        }
+
         String cidStr = componentId.toString();
         ArrayNode merged = MAPPER.createArrayNode();
         ArrayNode old = baseRowsByComp.get(cidStr);
