@@ -39,8 +39,13 @@ public class ExistingProductService {
         int safePage = Math.max(page, 0);
         int safeSize = size <= 0 ? 20 : size;
 
+        // A 方案(2026-07-16):列表也纳入选配发号产品(customer_product_no 尚为 NULL,但已在 sel_part_signature 登记),
+        // 前端按 source='CONFIGURED' 标「选配」。仍排除既无客户产品号又非选配登记的纯占位行(旧 F005 只保真产品,
+        // 现放宽为「真产品 OR 选配登记」)。
         StringBuilder where = new StringBuilder(
-                "mcm.system_type = 'QUOTE' AND mcm.customer_no = :customerNo AND mcm.customer_product_no IS NOT NULL");
+                "mcm.system_type = 'QUOTE' AND mcm.customer_no = :customerNo " +
+                "AND (mcm.customer_product_no IS NOT NULL " +
+                "     OR EXISTS (SELECT 1 FROM sel_part_signature sps WHERE sps.quote_part_no = mcm.material_no AND sps.customer_no = mcm.customer_no))");
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("customerNo", customerNo);
 
@@ -71,9 +76,12 @@ public class ExistingProductService {
 
         // ── 分页数据（1 条 SQL，两 LEFT JOIN 一次带出规格 + 3D，禁逐行查） ──
         Query dataQuery = em.createNativeQuery(
-                "SELECT mcm.material_no, mcm.customer_product_no, mcm.customer_material_name, " +
+                "SELECT mcm.material_no, mcm.customer_product_no, " +
+                "       COALESCE(NULLIF(mcm.customer_material_name,''), mm.material_name, mm.material_type, mcm.material_no) AS product_name, " +
                 "       COALESCE(NULLIF(mm.specification,''), mm.dimension) AS spec, " +
-                "       (model3d.id IS NOT NULL) AS has3d, model3d.thumbnail_url " +
+                "       (model3d.id IS NOT NULL) AS has3d, model3d.thumbnail_url, " +
+                "       CASE WHEN mcm.customer_product_no IS NULL THEN 'CONFIGURED' ELSE 'EXISTING' END AS source, " +
+                "       (SELECT sps.product_type FROM sel_part_signature sps WHERE sps.quote_part_no = mcm.material_no AND sps.customer_no = mcm.customer_no ORDER BY sps.created_at DESC LIMIT 1) AS config_product_type " +
                 "FROM material_customer_map mcm " +
                 "LEFT JOIN material_master mm ON mm.material_no = mcm.material_no " +
                 "LEFT JOIN model_config model3d " +
@@ -92,11 +100,13 @@ public class ExistingProductService {
             ExistingProductDTO dto = new ExistingProductDTO();
             dto.materialNo = (String) r[0];
             dto.customerProductNo = (String) r[1];
+            dto.productName = (String) r[2]; // COALESCE 兜底名(客户物料名→材质名→材质类型→料号),选配产品无客户名时也有可读名
             dto.customerMaterialName = (String) r[2];
-            dto.productName = (String) r[2]; // 同源 customer_material_name（api.md §2.1 注释）
             dto.spec = (String) r[3];
             dto.has3d = r[4] != null && (Boolean) r[4];
             dto.thumbnailUrl = (String) r[5];
+            dto.source = (String) r[6];            // EXISTING(真·已有,有客户产品号) | CONFIGURED(选配发号)
+            dto.configProductType = (String) r[7]; // SIMPLE | COMPOSITE(仅选配产品), 非选配为 null
             content.add(dto);
         }
         return new PageResult<>(content, safePage, safeSize, total);

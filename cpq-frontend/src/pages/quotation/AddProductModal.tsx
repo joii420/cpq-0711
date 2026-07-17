@@ -13,7 +13,7 @@
  * 把 ExistingProductDTO 映射成 LineItem，父组件(QuotationWizard)负责去重追加 + 既有 saveDraft 落库。
  */
 import React, { useEffect, useState } from 'react';
-import { Drawer, Table, Input, Button, Empty, Tooltip, message } from 'antd';
+import { Drawer, Table, Input, Button, Empty, Tooltip, message, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { LineItem } from './QuotationStep2';
 import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
@@ -181,6 +181,15 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
   };
 
   const columns: ColumnsType<ExistingProductDTO> = [
+    {
+      title: '来源',
+      dataIndex: 'source',
+      key: 'source',
+      width: 96,
+      render: (v: string | null, row: ExistingProductDTO) => v === 'CONFIGURED'
+        ? <Tag color="purple">选配{row.configProductType === 'COMPOSITE' ? '·组合' : row.configProductType === 'SIMPLE' ? '·单件' : ''}</Tag>
+        : <Tag>已有</Tag>,
+    },
     {
       title: '客户产品编号',
       dataIndex: 'customerProductNo',

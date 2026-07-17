@@ -36,4 +36,14 @@ public class ExistingProductDTO {
 
     /** 3D 缩略图 URL；无则 null。 */
     public String thumbnailUrl;
+
+    /**
+     * 来源（A 方案 2026-07-16）：{@code EXISTING}=真·已有产品（有客户产品号，导入建立）；
+     * {@code CONFIGURED}=选配发号产品（customer_product_no 待导入分配，已在 sel_part_signature 登记）。
+     * 前端据此标「选配」。
+     */
+    public String source;
+
+    /** 选配产品类型：{@code SIMPLE} | {@code COMPOSITE}（仅 source=CONFIGURED 有值），非选配为 null。 */
+    public String configProductType;
 }

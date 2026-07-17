@@ -17,7 +17,7 @@ export interface PageResult<T> {
 export interface ExistingProductDTO {
   /** 销售料号（= material_customer_map.material_no）。 */
   materialNo: string;
-  /** 客户产品编号。占位行（选配发号副作用，customer_product_no=NULL）已在服务层过滤（F005），前端恒非空。 */
+  /** 客户产品编号。选配发号产品此列为 NULL（客户产品号待导入分配）；真·已有产品非空。 */
   customerProductNo?: string | null;
   /** 品名（= customer_material_name）。 */
   productName?: string | null;
@@ -29,6 +29,10 @@ export interface ExistingProductDTO {
   has3d: boolean;
   /** 3D 缩略图 URL；无则 null。 */
   thumbnailUrl?: string | null;
+  /** 来源（A 方案）：EXISTING=真·已有产品（有客户产品号）；CONFIGURED=选配发号（客户产品号待导入分配）。 */
+  source?: 'EXISTING' | 'CONFIGURED' | string | null;
+  /** 选配产品类型：SIMPLE | COMPOSITE（仅 source=CONFIGURED 有值）。 */
+  configProductType?: string | null;
 }
 
 /** `GET /quotations/{quotationId}/existing-products` 查询参数（全部可选，服务端 AND 组合、模糊匹配）。 */
