@@ -341,13 +341,19 @@ const QuotationWizard: React.FC = () => {
     }
     setCustomerTemplateId(q.customerTemplateId || undefined);
     setCostingCardTemplateId(q.costingCardTemplateId || undefined);
-    // 把已有报价单的 4 字段回灌到 Step1 React state, 让编辑模式下「选择模板」Card 显示已存值
-    setStep1FormValue({
+    // 把已有报价单的 4 字段回灌到 Step1 React state, 让编辑模式下「选择模板」Card 显示已存值。
+    // categoryId 修复(2026-07-16 QT-20260714-1982): quotation 表头不持久化 category_id(DTO 恒缺该字段),
+    // 编辑态分类由 QuotationCreateForm 从已存模板反查异步回填。本函数会被重复调用
+    // (dev StrictMode 双跑 loadQuotation / ensureCardValues warm 后二次回灌),若整组覆盖会抹掉已回填分类;
+    // 且当覆盖与回填 onChange 落在同一 React 批次时,中间态从未 commit → 回填 effect 的
+    // deps(value.categoryId: undefined→undefined)不变化 → 不再重跑 → 分类永久空白、模板区整体不渲染。
+    // 函数式更新按 setState 队列顺序读 prev,同批次碰撞也能保住回填值;DTO 将来若真带 categoryId 仍以 DTO 优先。
+    setStep1FormValue(prev => ({
       name: q.name || '',
-      categoryId: q.categoryId || undefined,
+      categoryId: q.categoryId || prev.categoryId,
       customerTemplateId: q.customerTemplateId || undefined,
       costingTemplateId: q.costingCardTemplateId || undefined,
-    });
+    }));
     if (q.lineItems) {
       // Build basic lineItems first, then enrich componentData from template snapshots
       const basicItems: LineItem[] = q.lineItems.map((li: any) => {

@@ -1,6 +1,6 @@
 // V6 导入向导 Step 3 — 创建报价单表单（复用组件，无 Drawer 壳）
 // 从 BasicDataImportV5ToQuotation.tsx 的 CreateQuotationDrawer 表单部分抽出
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Form,
@@ -87,6 +87,10 @@ const QuotationCreateForm: React.FC<Props> = ({
   const [matching, setMatching] = useState(false);
   const [costingTemplates, setCostingTemplates] = useState<CostingCardTemplate[]>([]);
   const [loadingCosting, setLoadingCosting] = useState(false);
+  // 供异步回调读取"最新一次渲染的 value"：effect 闭包里的 value 在 Promise 落地时可能已过期,
+  // 用它整组展开回写会把期间的其它字段(如用户正输入的名称/其它 effect 的补丁)抹回旧值(stale-closure 家族)。
+  const valueRef = useRef(value);
+  valueRef.current = value;
 
   // 初始化：默认报价单名称 + 产品分类锁定值，合并进一个 effect 一次性 onChange。
   // 原因(质量评审 Important#1)：两个 effect 若分开各自基于挂载时的 stale `value` 调一次整对象
@@ -128,7 +132,8 @@ const QuotationCreateForm: React.FC<Props> = ({
         // 兼容潜在直返模板的形状,两层都试。
         const catId = (tpl?.data ?? tpl)?.categoryId;
         if (!cancelled && catId) {
-          onChange({ ...value, categoryId: catId });
+          // 用 valueRef 取最新 value:反查是异步的,effect 闭包的 value 可能已过期(见 valueRef 注释)
+          onChange({ ...valueRef.current, categoryId: catId });
         }
       })
       .catch(() => { /* 反查失败则保持空,不影响编辑(校验已不强求 categoryId) */ });
