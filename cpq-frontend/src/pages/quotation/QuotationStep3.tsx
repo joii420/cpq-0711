@@ -6,8 +6,10 @@
  *   - 用户手填折扣率 → computeLineDiscount 按产品小计公式重算折后小计 / 折扣金额 / 行合计
  *   - 删除旧的后端阶梯引擎按钮和 callBackendCalculate
  *   - grandDiscount 直接 Σ lineDiscountAmount（computeLineDiscount 返回值已含 ×年用量）
+ *   - 初始物化（2026-07-16）：进入本步即对所有可见行跑 recomputeRow——修「原小计(单价)初始显示 0，
+ *     改年用量才刷新」；顺带给未设置的年用量落默认值 1。经 onSilentUpdate 程序化写入，不触发 autosave。
  */
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Card, Table, InputNumber, Select, Typography, Tag, Alert, Space } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { LineItem } from './QuotationStep2';
@@ -23,6 +25,8 @@ interface Props {
   driverExpansions?: DriverExpansionMap;
   customerId?: string;
   onUpdate: (updater: (prev: LineItem[]) => LineItem[]) => void;
+  /** 程序化写 lineItems 的通道（不置 userEditedRef → 不触发 autosave，Wizard Plan A）；初始物化专用。缺省退回 onUpdate。 */
+  onSilentUpdate?: (updater: (prev: LineItem[]) => LineItem[]) => void;
 }
 
 const QuotationStep3: React.FC<Props> = ({
@@ -32,6 +36,7 @@ const QuotationStep3: React.FC<Props> = ({
   driverExpansions,
   customerId,
   onUpdate,
+  onSilentUpdate,
 }) => {
   // 过滤掉 PART 子件（与 Step2 一致，只展示父级）
   const visibleItems = useMemo(
@@ -64,6 +69,38 @@ const QuotationStep3: React.FC<Props> = ({
       }),
     );
   };
+
+  // 初始物化（修「原小计(单价)进入 Step3 显示 0，改年用量才刷新」）：
+  // 2f021bb2 V2 重做丢了初始化——recomputeRow 原来只在 patchRow(用户编辑)时跑，进入本步时
+  // lineUnitPrice 未算、渲染回退 li.subtotal（未保存前为 0）。此 effect 在挂载 / driverExpansions
+  // 就绪 / 行集变化（enrich/编辑）时对所有可见行跑同一 recomputeRow，并给未设置（null/undefined）
+  // 的年用量落默认值 1（显式填过的 0 保留不动）。
+  // 纪律：走 onSilentUpdate（程序化 setLineItems，不置 userEditedRef）——初始化不是用户编辑，
+  // 不得触发 autosave（Wizard Plan A）；无变化时逐行保留原引用、整体返回 prev，防 effect 自循环。
+  useEffect(() => {
+    const update = onSilentUpdate ?? onUpdate;
+    update(prev => {
+      let changed = false;
+      const next = prev.map(li => {
+        if (li.compositeType === 'PART') return li;
+        try {
+          const seeded = li.annualVolume == null ? { ...li, annualVolume: 1 } : li;
+          const patch = recomputeRow(seeded);
+          const dirty =
+            seeded !== li ||
+            (Object.keys(patch) as Array<keyof LineItem>).some(k => seeded[k] !== patch[k]);
+          if (!dirty) return li;
+          changed = true;
+          return { ...seeded, ...patch };
+        } catch {
+          return li; // 单行计算异常不阻断其余行
+        }
+      });
+      return changed ? next : prev;
+    });
+    // recomputeRow 闭包读 driverExpansions/customerId；lineItems 引用变化(enrich/编辑)也需重物化
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driverExpansions, customerId, lineItems]);
 
   const columns: ColumnsType<LineItem> = [
     {
@@ -160,16 +197,8 @@ const QuotationStep3: React.FC<Props> = ({
         <Text strong style={{ color: '#0958d9' }}>{formatCurrency(li.lineTotalAmount ?? 0, baseCurrency)}</Text>
       ),
     },
-    {
-      title: '规则',
-      key: 'rule',
-      width: 110,
-      render: (_v, li) => (
-        li.discountRuleCode
-          ? <Tag color="blue" style={{ fontSize: 10 }}>{li.discountRuleCode}</Tag>
-          : <Text type="secondary" style={{ fontSize: 11 }}>未匹配</Text>
-      ),
-    },
+    // 「规则」列暂时移除（2026-07-16 需求）：折扣规则引擎未接通，列里恒显示「未匹配」无信息量。
+    // discountRuleCode 字段及 round-trip 链路保留，规则引擎接通后把列加回即可。
   ];
 
   const grandOriginal = visibleItems.reduce(
@@ -218,7 +247,7 @@ const QuotationStep3: React.FC<Props> = ({
             pagination={false}
             size="small"
             bordered
-            scroll={{ x: 1280 }}
+            scroll={{ x: 1190 }}
           />
 
           <div

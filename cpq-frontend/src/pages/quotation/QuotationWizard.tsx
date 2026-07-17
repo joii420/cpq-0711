@@ -302,7 +302,9 @@ const QuotationWizard: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lineItems, quotationId]);
 
-  // Step3 初始化逻辑已移入 QuotationStep3 组件内部（D6 强刷 lineUnitPrice = subtotal）
+  // Step3 初始化（初始物化 recomputeRow + 年用量默认 1）由 QuotationStep3 内部 effect 完成，
+  // 经 onSilentUpdate（下方 renderStep3 接线到程序化 setLineItems）写入——不置 userEditedRef，
+  // 不触发 autosave（Plan A 纪律：程序化写入不算用户编辑）。
   // 旧的整单折扣自动计算 effect 已废弃（V1 行级折扣由 Step3 组件处理）
 
   const applyQuotationData = (q: any) => {
@@ -1594,6 +1596,8 @@ const QuotationWizard: React.FC = () => {
       driverExpansions={driverExpansions}
       customerId={customerIdValue}
       onUpdate={(updater) => setLineItemsByUser(prev => updater(prev))}
+      // 初始物化专用通道：程序化 setLineItems（不置 userEditedRef → 不触发 autosave，Plan A）
+      onSilentUpdate={(updater) => setLineItems(prev => updater(prev))}
     />
   );
 
