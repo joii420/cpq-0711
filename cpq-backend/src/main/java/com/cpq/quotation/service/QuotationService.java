@@ -197,9 +197,17 @@ public class QuotationService {
     /** Phase 2: 把 quotation_view_structure 的四份结构填进 DTO(渲染脱钩, 创建即冻)。 */
     private void populateViewStructures(QuotationDTO dto, UUID quotationId) {
         var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        for (com.cpq.quotation.entity.QuotationViewStructure s :
-                com.cpq.quotation.entity.QuotationViewStructure
-                    .<com.cpq.quotation.entity.QuotationViewStructure>list("quotationId", quotationId)) {
+        java.util.List<com.cpq.quotation.entity.QuotationViewStructure> rows =
+                com.cpq.quotation.entity.QuotationViewStructure.list("quotationId", quotationId);
+        // 自愈(2026-07-16 QT-2024):选配加产品(configureProduct)时若报价单模板尚未绑定,ensureStructure
+        // 建了空 → quotation_view_structure 4 份结构缺失 → 详情页 COSTING(依赖冻结 COSTING_CARD 结构)
+        // 显示"暂无组件数据",而编辑页(走实时 componentData)正常。此处按需补建(ensureStructure 幂等,
+        // 仅在完全缺失时触发一次;此时模板已绑),自愈存量脏单 + 未来选配单。
+        if (rows.isEmpty()) {
+            try { cardSnapshotService.ensureStructure(quotationId); } catch (Exception ignore) { /* best-effort,不阻断详情 */ }
+            rows = com.cpq.quotation.entity.QuotationViewStructure.list("quotationId", quotationId);
+        }
+        for (com.cpq.quotation.entity.QuotationViewStructure s : rows) {
             if (s.structure == null) continue;
             try {
                 var node = mapper.readTree(s.structure);

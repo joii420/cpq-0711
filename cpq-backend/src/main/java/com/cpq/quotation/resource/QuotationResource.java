@@ -122,6 +122,11 @@ public class QuotationResource {
         long _p0 = System.nanoTime();
         QuotationDTO dto = quotationService.saveDraft(id, request);
         long _s1 = (System.nanoTime() - _p0) / 1_000_000;
+        // 自愈根治(2026-07-16 QT-2024):saveDraft 已绑定报价单模板(customer/costing_card_template_id)并提交。
+        // 选配加产品(configureProduct)时其 ensureStructure 可能早于模板绑定(三模板按产品分类轴自动匹配) → 建了空;
+        // 此处模板已 flush,幂等补建缺失的 quotation_view_structure(4 份结构),否则详情页 COSTING 依赖冻结
+        // COSTING_CARD 结构 → "暂无组件数据"(编辑页走实时 componentData 不受影响)。best-effort,不阻断保存。
+        try { cardSnapshotService.ensureStructure(id); } catch (Exception ignore) { /* 结构快照尽力而为 */ }
         // saveDraft 已提交,按新行重快照(降级:失败不影响保存)
         long _p1 = System.nanoTime();
         try {
