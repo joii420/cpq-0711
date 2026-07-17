@@ -8,7 +8,7 @@
  *
  * 反 AP-50：本组件只负责"选版本 + 报告结果"，不持有/不派生任何渲染数据。
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Select, Spin, message } from 'antd';
 import { costingOrderService } from '../../services/costingOrderService';
 import type { VersionSwitchResult } from '../../services/costingOrderService';
@@ -40,6 +40,16 @@ const VersionSelectDropdown: React.FC<VersionSelectDropdownProps> = ({
   const [switching, setSwitching] = useState(false);
   // null = 尚未拉取过；[] = 拉取过但为空（无 view_version 列/无其他版本）
   const [options, setOptions] = useState<string[] | null>(null);
+
+  // ★ repair-0590（下拉给了料号它没有的版本 根因）：options 用 useState 且 loadOptions 只加载一次
+  //   (if options !== null return)。父组件按渲染下标(<tr key={ri}>)标识行，切换后行序变化时 React 会
+  //   复用同一 VersionSelectDropdown 实例——partNo prop 更新了但 options state 仍是上一个料号的旧列表，
+  //   于是给本料号提供它根本没有的版本(如把 S-3120014539 的 [2002,2001,2000] 沿用到只有 [2000] 的
+  //   S-3111320636)，用户一选就切到不存在的版本、被后端拒绝/(修复前)导致料号消失。
+  //   身份维度(coid/lineItemId/componentId/partNo)任一变化即重置 options，强制按当前料号重新拉取。
+  useEffect(() => {
+    setOptions(null);
+  }, [coid, lineItemId, componentId, partNo]);
 
   const loadOptions = async () => {
     if (options !== null || loadingOptions) return;
