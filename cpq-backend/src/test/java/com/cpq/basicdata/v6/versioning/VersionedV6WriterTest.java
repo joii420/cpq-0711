@@ -291,4 +291,49 @@ class VersionedV6WriterTest {
         r.put("composition_qty", new java.math.BigDecimal(qty));
         return r;
     }
+
+    /**
+     * 回归（主/子版本失步撞键）：主表停在旧版本、子表被外部裸 SQL 升到更高版本（模拟 V333 测试数据只升
+     * 子表未升主表）时，升版号必须取 {@code max(主表 max, 子表 max)+1}，不能只按主表 max+1（会算出子表
+     * 已占用的版本号 → 插子表撞 uq_material_bom_item）。主/子一同升到同一新版本。
+     */
+    @Test @Transactional
+    void masterBehindChild_bumpsAboveChildMax_noCollision() {
+        java.util.LinkedHashMap<String,Object> masterGk = new java.util.LinkedHashMap<>();
+        masterGk.put("system_type","QUOTE"); masterGk.put("customer_no",MBV_CUST);
+        masterGk.put("material_no",MBV_MAT); masterGk.put("bom_type","MATERIAL");
+        masterGk.put("characteristic", null);
+        java.util.LinkedHashMap<String,Object> childGk = new java.util.LinkedHashMap<>();
+        childGk.put("system_type","QUOTE"); childGk.put("customer_no",MBV_CUST);
+        childGk.put("material_no",MBV_MAT); childGk.put("characteristic", null);
+        List<String> content = List.of("seq_no","component_no","composition_qty");
+
+        // 1) 首版：主 2000 + 子 2000
+        writer.writeVersionedMasterDetail("material_bom","bom_version",masterGk,Map.of(),
+            "material_bom_item","bom_version",childGk,content, List.of(childRow(1,"C1","1")));
+
+        // 2) 模拟失步：裸 SQL 把子表升到 2001（主表不动、仍 2000 current）
+        em.createNativeQuery("UPDATE material_bom_item SET is_current=false WHERE material_no=:m AND is_current=true")
+          .setParameter("m", MBV_MAT).executeUpdate();
+        em.createNativeQuery("INSERT INTO material_bom_item "
+            + "(system_type,customer_no,material_no,characteristic,bom_version,seq_no,component_no,composition_qty,is_current) "
+            + "VALUES ('QUOTE',:c,:m,NULL,'2001',1,'C1',1,true)")
+          .setParameter("c", MBV_CUST).setParameter("m", MBV_MAT).executeUpdate();
+        assertEquals("2000", String.valueOf(em.createNativeQuery(
+            "SELECT bom_version FROM material_bom WHERE material_no=:m AND is_current=true LIMIT 1")
+            .setParameter("m", MBV_MAT).getSingleResult()), "前置：主表仍停在 2000（模拟 V333 失步）");
+
+        // 3) 内容变触发升版：修复前会算 2001 → 插子表 @2001 撞既有 2001 → duplicate key；
+        //    修复后取 max(主2000,子2001)+1=2002，不抛、主子一同升到 2002。
+        String v = writer.writeVersionedMasterDetail("material_bom","bom_version",masterGk,Map.of(),
+            "material_bom_item","bom_version",childGk,content, List.of(childRow(1,"C1","2")));
+        assertEquals("2002", v, "主/子一同升到 max(主2000,子2001)+1=2002，不复用子表已占用的 2001");
+
+        assertEquals(1L, ((Number) em.createNativeQuery(
+            "SELECT count(*) FROM material_bom_item WHERE material_no=:m AND is_current=true AND bom_version='2002'")
+            .setParameter("m", MBV_MAT).getSingleResult()).longValue(), "子表 current 升到 2002");
+        assertEquals(1L, ((Number) em.createNativeQuery(
+            "SELECT count(*) FROM material_bom WHERE material_no=:m AND is_current=true AND bom_version='2002'")
+            .setParameter("m", MBV_MAT).getSingleResult()).longValue(), "主表 current 一同升到 2002");
+    }
 }

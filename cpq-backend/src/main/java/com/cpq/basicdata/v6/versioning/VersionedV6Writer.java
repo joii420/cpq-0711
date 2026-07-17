@@ -484,6 +484,12 @@ public class VersionedV6Writer {
             loadCurrentByPrefix(childTable, childVersionColumn, cPrefix, cGkCols, childContentColumns);   // 1 RT
         Map<List<String>, Integer> maxVer =
             maxVersionByPrefix(masterTable, masterVersionColumn, mPrefix, mGkCols);                       // 1 RT
+        // 主/子版本号一同升级：升版号取「主表 MAX 与 子表 MAX 的较大值」+1（不只看主表）。
+        // 背景：正常导入主子总是一起写、版本同步，但外部裸 SQL(如测试数据迁移)可能只升子表不升主表，
+        // 导致主表 max 落后于子表已有版本；若只按主表 max+1 会算出一个子表已占用的版本号 → 插子表撞
+        // uq_material_bom_item。取两表 max 保证新版本严格高于两边任一历史版本，主子同步升到同一新版。
+        Map<List<String>, Integer> childMaxVer =
+            maxVersionByPrefix(childTable, childVersionColumn, cPrefix, cGkCols);                         // 1 RT
 
         List<UUID> masterFlip = new ArrayList<>(), childFlip = new ArrayList<>();
         List<Map<String, Object>> masterInsert = new ArrayList<>(), childInsert = new ArrayList<>();
@@ -496,8 +502,8 @@ public class VersionedV6Writer {
                 versionOut.put(it.masterGroupKey, currentVersionFrom(em0, masterVersionColumn));
                 continue;
             }
-            Integer mx = maxVer.get(mKey);
-            String newVersion = (mx == null) ? "2000" : String.valueOf(mx + 1);
+            Integer effMax = maxNullable(maxVer.get(mKey), childMaxVer.get(cKey));
+            String newVersion = (effMax == null) ? "2000" : String.valueOf(effMax + 1);
             for (Map<String, Object> r : curMaster.getOrDefault(mKey, List.of())) masterFlip.add(asUuid(r.get("__id")));
             for (Map<String, Object> r : existingChild) childFlip.add(asUuid(r.get("__id")));
             Map<String, Object> master = new LinkedHashMap<>(it.masterGroupKey);
@@ -593,8 +599,14 @@ public class VersionedV6Writer {
             return currentVersionOf(masterTable, masterVersionColumn, masterGroupKey);  // 完全不写库（决策①）
         }
 
-        // 2. 升版号 = 主表版本列全历史 max+1（V1 等非数字被忽略，首版 2000）
-        String newVersion = nextVersionOf(masterTable, masterVersionColumn, masterGroupKey);
+        // 2. 升版号 = 「主表 max 与 子表 max 的较大值」+1（主/子一同升级，防主表版本落后于子表已有
+        //    版本时算出子表已占用的版本号 → 插子表 uq 冲突；V1 等非数字被忽略，首版 2000）。
+        //    childVersionColumn==null（无版本列子表 upsert 路径，现无调用方）时子表无版本可比，仅取主表。
+        Integer childMax = (childVersionColumn != null)
+            ? maxNumericVersion(childTable, childVersionColumn, childGroupKey) : null;
+        Integer effMax = maxNullable(
+            maxNumericVersion(masterTable, masterVersionColumn, masterGroupKey), childMax);
+        String newVersion = (effMax == null) ? "2000" : String.valueOf(effMax + 1);
 
         // 3. 主 + 子旧组下线（NULL 安全）
         flip(masterTable, masterGroupKey);
@@ -732,8 +744,8 @@ public class VersionedV6Writer {
         return r.isEmpty() ? "2000" : String.valueOf(r.get(0));
     }
 
-    /** max(数字版本)+1；无数字版本则 "2000"。非数字版本值（'V_DEFAULT'/'V1' 等）被正则过滤。 */
-    private String nextVersionOf(String table, String versionColumn, Map<String, Object> groupKey) {
+    /** 该 groupKey 下版本列的数字 MAX（非数字版本值如 'V_DEFAULT'/'V1' 被正则忽略）；无数字版本返 null。 */
+    private Integer maxNumericVersion(String table, String versionColumn, Map<String, Object> groupKey) {
         long t0 = System.nanoTime();
         Query q = em.createNativeQuery(
             "SELECT MAX(CASE WHEN " + versionColumn + " ~ '^[0-9]+$' THEN "
@@ -742,7 +754,20 @@ public class VersionedV6Writer {
         bindWhere(q, groupKey);
         Object max = q.getSingleResult();
         Profile p = PROFILE.get(); p.verN++; p.verNs += System.nanoTime() - t0;
-        return (max == null) ? "2000" : String.valueOf(((Number) max).intValue() + 1);
+        return (max == null) ? null : ((Number) max).intValue();
+    }
+
+    /** max(数字版本)+1；无数字版本则 "2000"。非数字版本值（'V_DEFAULT'/'V1' 等）被正则过滤。 */
+    private String nextVersionOf(String table, String versionColumn, Map<String, Object> groupKey) {
+        Integer max = maxNumericVersion(table, versionColumn, groupKey);
+        return (max == null) ? "2000" : String.valueOf(max + 1);
+    }
+
+    /** 两个可空数字版本号的较大值（null 视为"无版本"）；两者均 null 返 null。用于"主/子一同升级"取两表 max。 */
+    private static Integer maxNullable(Integer a, Integer b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return Math.max(a, b);
     }
 
     /** 旧组整体下线：UPDATE ... SET is_current=FALSE WHERE <groupKey> AND is_current=TRUE。 */
