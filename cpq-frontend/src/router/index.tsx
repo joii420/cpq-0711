@@ -2,6 +2,7 @@ import React from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import MainLayout from '../layouts/MainLayout';
 import AuthGuard from './AuthGuard';
+import RoleGuard from './RoleGuard';
 import Login from '../pages/Login';
 import Dashboard from '../pages/Dashboard';
 import ChangePassword from '../pages/ChangePassword';
@@ -69,6 +70,10 @@ import ConfiguratorSharesPage from '../pages/configurator/ConfiguratorSharesPage
 import CustomerLeadList from '../pages/customer-lead/CustomerLeadList';
 import PartModelList from '../pages/part-model/PartModelList';
 
+// 报价单管理（列表/新建/编辑）可访问角色——财务(PRICING_MANAGER)已移除(2026-07-17)，
+// 与 MainLayout 菜单项 roles 保持一致；详情页 /quotations/:id 不在此列（核价工作台跳转依赖）。
+const QUOTATION_MGMT_ROLES = ['SALES_REP', 'SALES_MANAGER', 'SYSTEM_ADMIN'];
+
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
   // 公网客户自助选配（无 AuthGuard）
@@ -104,10 +109,13 @@ const router = createBrowserRouter([
       { path: 'template-bindings', element: <ProductTemplateBinding /> },
       { path: 'template-comparison', element: <TemplateComparison /> },
       { path: 'pricing', element: <PricingStrategy /> },
-      { path: 'quotations', element: <QuotationList /> },
-      { path: 'quotations/new', element: <QuotationWizard /> },
+      // 报价单管理对财务(PRICING_MANAGER)关闭(2026-07-17)：列表/新建/编辑三个入口挡路由级；
+      // 详情页保留——核价工作台(CostingOrderListPage)跳 /quotations/:id 审阅报价，属财务职能。
+      // 后端 QuotationResource 类级 @RoleAllowed 保留 PRICING_MANAGER(costing-approve/reject + 详情读取依赖)。
+      { path: 'quotations', element: <RoleGuard roles={QUOTATION_MGMT_ROLES}><QuotationList /></RoleGuard> },
+      { path: 'quotations/new', element: <RoleGuard roles={QUOTATION_MGMT_ROLES}><QuotationWizard /></RoleGuard> },
       { path: 'quotations/:id', element: <QuotationDetail /> },
-      { path: 'quotations/:id/edit', element: <QuotationWizard /> },
+      { path: 'quotations/:id/edit', element: <RoleGuard roles={QUOTATION_MGMT_ROLES}><QuotationWizard /></RoleGuard> },
       { path: 'costing-orders/:coid/review', element: <CostingReviewPage /> },
       { path: 'materials', element: <InternalMaterialManagement /> },
       { path: 'import-history', element: <ImportHistoryList /> },
