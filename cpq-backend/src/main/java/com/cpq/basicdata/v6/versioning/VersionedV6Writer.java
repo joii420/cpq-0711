@@ -250,8 +250,12 @@ public class VersionedV6Writer {
             throw new IllegalStateException(
                 "批量写入要求至少一个跨组恒定的 groupKey 列(如 system_type)作锁/加载前缀: " + gkCols);
         advisoryLockPrefix(tableName, constPrefix);                                                  // 1 RT
+        // 同时加载 descriptor 列：升版/原地更新时用于「以上一版为底，未提供的 descriptor(如 production_no)
+        // 从上一版继承」——production_no 是料号级属性，用户只改工序/单价时不该因文件某格空而丢生产料号。
+        List<String> loadCols = new ArrayList<>(contentColumns);
+        for (String d : descriptorColumns) if (!loadCols.contains(d)) loadCols.add(d);
         Map<List<String>, List<Map<String, Object>>> curByGk =
-            loadCurrentByPrefix(tableName, versionColumn, constPrefix, gkCols, contentColumns);      // 1 RT
+            loadCurrentByPrefix(tableName, versionColumn, constPrefix, gkCols, loadCols);            // 1 RT
         Map<List<String>, Integer> maxVerByGk =
             maxVersionByPrefix(tableName, versionColumn, constPrefix, gkCols);                       // 1 RT
 
@@ -274,17 +278,21 @@ public class VersionedV6Writer {
                 versionOut.put(gk, currentVersionFrom(existing, versionColumn));
                 continue;
             }
+            // 上一版同组各 descriptor 首个非空值：文件新行该 descriptor 为空时据此继承（文件给了非空=用户改动优先）。
+            Map<String, Object> prevDesc = carryOverDescriptors(existing, descriptorColumns);
             if (triggerSame) {                                                 // (b) 原地更新
                 String cur = currentVersionFrom(existing, versionColumn);
                 for (Map<String, Object> r : existing) deleteIds.add(asUuid(r.get("__id")));
-                for (Map<String, Object> row : newRows) toInsert.add(assembleRow(gk, row, versionColumn, cur));
+                for (Map<String, Object> row : newRows)
+                    toInsert.add(assembleRow(gk, applyDescriptorCarryOver(row, descriptorColumns, prevDesc), versionColumn, cur));
                 versionOut.put(gk, cur);
                 continue;
             }
             Integer mx = maxVerByGk.get(key);                                  // (c) 升版
             String newVersion = (mx == null) ? "2000" : String.valueOf(mx + 1);
             if (!existing.isEmpty()) for (Map<String, Object> r : existing) flipIds.add(asUuid(r.get("__id")));
-            for (Map<String, Object> row : newRows) toInsert.add(assembleRow(gk, row, versionColumn, newVersion));
+            for (Map<String, Object> row : newRows)
+                toInsert.add(assembleRow(gk, applyDescriptorCarryOver(row, descriptorColumns, prevDesc), versionColumn, newVersion));
             versionOut.put(gk, newVersion);
         }
 
@@ -407,6 +415,37 @@ public class VersionedV6Writer {
         all.put(versionColumn, version);
         all.put("is_current", true);
         return all;
+    }
+
+    /** 上一版本同组各 descriptor 列的"首个非空"值（供升版/原地更新继承未改动的 descriptor，如 production_no）。 */
+    private static Map<String, Object> carryOverDescriptors(List<Map<String, Object>> existing, List<String> descriptorColumns) {
+        Map<String, Object> out = new HashMap<>();
+        if (descriptorColumns.isEmpty() || existing.isEmpty()) return out;
+        for (String d : descriptorColumns) {
+            for (Map<String, Object> r : existing) {
+                Object v = r.get(d);
+                if (v != null && !String.valueOf(v).isBlank()) { out.put(d, v); break; }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * "复制上一版本 + 仅更新变更字段"：文件新行某 descriptor 列为空/空白时，从上一版同组值 {@code prev} 继承；
+     * 文件给了非空值则原样保留（用户改动优先）。仅作用于 descriptor 列，内容列不受影响（内容列以导入为准、驱动升版判定）。
+     */
+    private static Map<String, Object> applyDescriptorCarryOver(
+            Map<String, Object> row, List<String> descriptorColumns, Map<String, Object> prev) {
+        if (descriptorColumns.isEmpty() || prev.isEmpty()) return row;
+        Map<String, Object> merged = null;
+        for (String d : descriptorColumns) {
+            Object v = row.get(d);
+            if ((v == null || String.valueOf(v).isBlank()) && prev.get(d) != null) {
+                if (merged == null) merged = new LinkedHashMap<>(row);
+                merged.put(d, prev.get(d));
+            }
+        }
+        return (merged == null) ? row : merged;
     }
     private void flipByIds(String table, List<UUID> ids) {
         long t0 = System.nanoTime();
