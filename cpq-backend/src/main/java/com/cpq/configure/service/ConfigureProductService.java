@@ -378,11 +378,11 @@ public class ConfigureProductService {
         // B2.1③: material_part_no(材质料号) = recipe.code（材质库编号，如 00001…；task-0708 V318 起
         // material_recipe.code 即材质库业务键，与 element_bom.material_part_no 同口径，V315 已纳入唯一键）。
         insertElementBomV6(hfPartNo, customerCode, recipe.code, pr.elements);
-        // [选配-材质] mirror(composite_child_materials_mirror)读 material_bom_item
-        // (characteristic IS NULL + customer_no + 父料号)。自定义材质料号无 BOM 物料行 → 材质 Tab 空。
-        // 补一行"自指物料行",让 mirror 返 1 行 =「选中的材质本身」(material_name 列=component_usage_type
-        // =recipe.symbol,如 AgSnO₂),与有料号产品同一组件/同一视图 SQL/同一按行快照存储 → 渲染一致。
-        insertMaterialBomItemV6(hfPartNo, customerCode, recipe.symbol);
+        // [选配-材质] mirror(v_composite_child_materials)读 material_bom_item(characteristic IS NULL +
+        // customer_no + 父料号)。补一行材质行让 mirror 返 1 行 =「选中的材质」。对齐报价导入
+        // (MaterialBomMergeHandler 读「材质料号」列存 component_no): component_no=材质料号(recipe.code,如 991)、
+        // component_usage_type=材质名(recipe.symbol,如 AgSnO₂)。material_no 仍=销售料号(父)。
+        insertMaterialBomItemV6(hfPartNo, customerCode, recipe.code, recipe.symbol);
 
         // mat_part_version_log 基线行: PK (customer_product_no NOT NULL, hf_part_no, version)
         // configure 阶段无 customer_product_no (客户产品号在数据导入后才存在)
@@ -695,7 +695,8 @@ public class ConfigureProductService {
      * bom_type=MATERIAL（对齐 {@code MaterialBomMergeHandler} 的 MATERIAL 分支，masterVersionColumn=
      * "bom_version"，characteristic 不置值 → DB NULL）。
      *
-     * <p>子表 {@code material_bom_item} 行：seq_no=1 / component_no=partNo(自指) /
+     * <p>子表 {@code material_bom_item} 行：seq_no=1 / component_no=materialCode(材质料号 recipe.code，对齐
+     * 报价导入 MaterialBomMergeHandler 的「材质料号」列，非销售料号自指) /
      * component_usage_type=materialType(recipe.symbol，如 AgSnO₂，供材质名称列渲染) /
      * {@code rough_weight}/{@code net_weight}/{@code weight_unit}/{@code scrap_rate}/{@code defect_rate}
      * （§3 doc 对应列）：{@link ConfigureProductRequest} 未采集材料毛重/净重/损耗率/不良率，留 NULL
@@ -703,7 +704,7 @@ public class ConfigureProductService {
      *
      * <p>幂等复用 {@link VersionedV6Writer#writeVersionedMasterDetail} 的内容比对（子行集不变则不升版不写）。
      */
-    void insertMaterialBomItemV6(String partNo, String customerCode, String materialType) {
+    void insertMaterialBomItemV6(String partNo, String customerCode, String materialCode, String materialType) {
         if (customerCode == null || customerCode.isBlank()) return; // customer_no NOT NULL + mirror 按 customer 过滤
 
         Map<String, Object> masterGk = bomGroupKey(customerCode, partNo, "bom_type", "MATERIAL");
@@ -711,7 +712,10 @@ public class ConfigureProductService {
 
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("seq_no", 1);
-        row.put("component_no", partNo);
+        // 2026-07-16 对齐导入(MaterialBomMergeHandler MATERIAL 分支): 材质行 component_no = 材质料号(recipe.code),
+        // 不再存销售料号自指 —— 与 element_bom_item.material_part_no / mc_view+v_composite 的 mr.code=component_no
+        // JOIN 一致(否则视图 chemical_symbol/recipe_id 落空 + ys_view 元素 JOIN 失配)。
+        row.put("component_no", materialCode);
         row.put("component_usage_type", materialType);
         row.put("rough_weight", null);
         row.put("net_weight", null);
@@ -756,10 +760,10 @@ public class ConfigureProductService {
             .setParameter("cn", customerCode)
             .setParameter("p", partNo)
             .executeUpdate();
-        // 2) 材质: 自定义材质料号补自指物料行(取 recipe.symbol 作 material_name)
+        // 2) 材质: 自定义材质料号补材质行(component_no=材质料号 recipe.code 对齐导入, component_usage_type=recipe.symbol 作 material_name)
         em.createNativeQuery(
                 "INSERT INTO material_bom_item (id, system_type, customer_no, material_no, characteristic, seq_no, component_no, component_usage_type, created_at, updated_at) " +
-                "SELECT gen_random_uuid(), 'QUOTE', :cn, mm.material_no, NULL, 1, mm.material_no, COALESCE(mr.symbol, mm.material_type), NOW(), NOW() " +
+                "SELECT gen_random_uuid(), 'QUOTE', :cn, mm.material_no, NULL, 1, COALESCE(mr.code, mm.material_no), COALESCE(mr.symbol, mm.material_type), NOW(), NOW() " +
                 "FROM material_master mm LEFT JOIN material_recipe mr ON mr.id = mm.material_recipe_id " +
                 "WHERE mm.material_no = :p AND mm.material_recipe_id IS NOT NULL " +
                 "  AND NOT EXISTS (SELECT 1 FROM material_bom_item t WHERE t.material_no = :p AND t.customer_no = :cn AND t.system_type = 'QUOTE' AND t.characteristic IS NULL AND t.is_current = true)")
