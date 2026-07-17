@@ -51,7 +51,7 @@ const { Panel } = Collapse;
 // ────────────────────────────────────────────────
 interface BasicDataImportV5WizardProps {
   open: boolean;
-  customers: { id: string; name: string }[];
+  customers: { id: string; name: string; productCategoryId?: string }[];
   defaultCustomerId?: string;
   onClose: () => void;
   onSuccess?: (quotationId: string, customerId: string) => void;
@@ -471,6 +471,7 @@ const BasicDataImportV5Wizard: React.FC<BasicDataImportV5WizardProps> = ({
       <QuotationCreateForm
         customerId={customerId}
         customerName={customer?.name ?? ''}
+        lockedCategoryId={customer?.productCategoryId}
         value={createForm}
         onChange={setCreateForm}
         onValidityChange={setFormValid}

@@ -117,14 +117,15 @@
   "contacts": [ /* 不变 */ ]
 }
 ```
-- **必填**：前端保证必选（默认"默认分类"）；**后端兜底**：若 `productCategoryId` 为空 → 自动填 `name='默认分类'` 的 id（保证"不能空"，D3）。
+- **必填（业务语义）**：前端保证必选（默认"默认分类"）；**后端兜底**：若 `productCategoryId` 为空 → 自动填 `name='默认分类'` 的 id（保证"不能空"，D3）。
+- **DB 列可空（方案B，2026-07-16）**：`customer.product_category_id` 不加 DB `NOT NULL`；"不能空"由上述应用层三重保证（前端必填 + create 兜底 + 迁移 backfill）。见 `优化需求说明.md §9.7`。
 
 ### 3.2 `PUT /api/cpq/customers/{id}` — 更新
 - 请求体同上增 `productCategoryId`；**可改**（D4）：`if (productCategoryId != null) customer.productCategoryId = ...`。
 - 改绑不追溯已有报价单（D4）。
 
 ### 3.3 `GET /api/cpq/customers` / `GET /api/cpq/customers/{id}`
-- `CustomerDTO` 增 `productCategoryId`（UUID，可空仅存量未 backfill 时）。
+- `CustomerDTO` 增 `productCategoryId`（UUID；DB 列不加 NOT NULL，方案B；业务路径永非空）。
 - **不返** `productCategoryName`（D5 列表不展示；编辑表单前端用 product-categories 列表映射名）。
 - list 保持单查 `CustomerDTO.from`，**不得**为分类名引入 N+1。
 
@@ -142,13 +143,16 @@
 
 ---
 
-## 5. 报价单创建 commit（categoryId 权威来源）🟡
+## 5. 报价单创建 commit（categoryId：前端只读锁定 + 后端审计）🟡
 
 ### `POST /api/cpq/import-session/{sessionId}/commit`
 请求体保持：`{ name, categoryId, customerTemplateId, costingTemplateId }`。
 
-- **语义强化（后端）**：`categoryId` **以 `customer.product_category_id` 为权威**——后端在匹配/创建报价单时，用**客户绑定的产品分类**，不信前端传值（防前端漏改/篡改）。前端仍会传（从客户带出的同一值），但服务端以客户为准。
-- **产品分类不持久化到 `quotation`**（现状保持）；最终固化的是 `customer_template_id` / `costing_card_template_id`。
+> **架构订正（2026-07-16，实测 `ImportSessionService.commit`）**：commit **不在服务端重新匹配模板**——`customerTemplateId`/`costingTemplateId` 是前端在调 commit **之前**用 `(customerId, categoryId)` 调 `match-customer-quote` / 核价 list 预匹配好、直接塞进请求体的；commit 里 `categoryId` 是**透传字段**（下游不消费、不持久化）。原"commit 用 categoryId 匹配模板"的假设不成立。
+
+- **"以客户为准"的真实落点在前端**：`categoryId` 由客户绑定只读带出（fronttask F3），用户改不了 → 预匹配用的就是客户产品分类。
+- **后端 commit 仅做防御性一致性审计**：查一次 `Customer`（`session.customerId`，无 N+1），若 `req.categoryId != customer.productCategoryId` 则 `LOG.warn` 留痕；**不覆盖模板、不改持久化、不重匹配**（重匹配会破坏 MIXED 多模板下用户的手选语义，且越出"只做换轴"边界）。
+- 产品分类不持久化到 `quotation`；最终固化 `customer_template_id` / `costing_card_template_id`。
 
 ---
 

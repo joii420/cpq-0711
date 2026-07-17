@@ -64,6 +64,11 @@ interface Props {
   customerTemplateHint?: string;
   /** 核价模板自动带出来源提示 */
   costingTemplateHint?: string;
+  /**
+   * task-0712 update-071501: 产品分类改由客户绑定带出，不再手选（D3/D4）。
+   * 父组件从所选客户的 `productCategoryId` 传入；传入后分类下拉只读展示、不可改。
+   */
+  lockedCategoryId?: string;
 }
 
 const QuotationCreateForm: React.FC<Props> = ({
@@ -75,6 +80,7 @@ const QuotationCreateForm: React.FC<Props> = ({
   readOnly = false,
   customerTemplateHint,
   costingTemplateHint,
+  lockedCategoryId,
 }) => {
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
@@ -82,28 +88,27 @@ const QuotationCreateForm: React.FC<Props> = ({
   const [costingTemplates, setCostingTemplates] = useState<CostingCardTemplate[]>([]);
   const [loadingCosting, setLoadingCosting] = useState(false);
 
-  // 初始化：默认报价单名称
+  // 初始化：默认报价单名称 + 产品分类锁定值，合并进一个 effect 一次性 onChange。
+  // 原因(质量评审 Important#1)：两个 effect 若分开各自基于挂载时的 stale `value` 调一次整对象
+  // onChange，同一批次里后触发的会用 stale value 展开覆盖掉前一个的 patch —— 换轴后
+  // lockedCategoryId 主流程恒存在，会稳定复现"自动报价单名被清空"。合并成单 effect 一次 patch
+  // 消除竞态。readOnly(编辑已有报价单)时不种 lockedCategoryId：已有单的分类要从"已存模板反查"
+  // (见下面的 effect)得到，不能被客户的*当前*绑定值覆盖(D4：客户改绑分类不追溯已有报价单)。
   useEffect(() => {
-    if (customerName && !value.name) {
-      onChange({ ...value, name: `${customerName} 报价单` });
-    }
+    const patch: Partial<QuotationFormValue> = {};
+    if (customerName && !value.name) patch.name = `${customerName} 报价单`;
+    if (!readOnly && lockedCategoryId && value.categoryId !== lockedCategoryId) patch.categoryId = lockedCategoryId;
+    if (Object.keys(patch).length) onChange({ ...value, ...patch });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerName]);
+  }, [customerName, lockedCategoryId, readOnly]);
 
-  // 拉取产品分类列表
+  // 拉取产品分类列表（仅用于把 categoryId 显示成分类名；task-0712 起分类不再前端手选/自动预选，
+  // 一律由父组件按客户绑定值通过 lockedCategoryId 带出）
   useEffect(() => {
     productCategoryService.list('ACTIVE')
       .then((res) => {
         const list: ProductCategory[] = res.data || [];
         setCategories(list);
-        // 默认选中"默认分类"——仅新建态。编辑态(readOnly)分类由下面的 effect 从已存模板反查回填,
-        // 不能在这里乱填"默认分类"覆盖真实分类。
-        if (!readOnly && !value.categoryId) {
-          const defaultCat = list.find((c) => c.name === '默认分类');
-          if (defaultCat) {
-            onChange({ ...value, categoryId: defaultCat.id });
-          }
-        }
       })
       .catch(() => setCategories([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -298,11 +303,13 @@ const QuotationCreateForm: React.FC<Props> = ({
         />
       )}
 
-      {/* 产品分类 */}
+      {/* 产品分类 — task-0712: 由客户绑定带出，lockedCategoryId 存在时只读展示，不可手选 */}
       <Form.Item
         label="产品分类"
         required
-        tooltip="选择后系统自动匹配「客户专属模板」(如有) → 「通用模板」(兜底)"
+        tooltip={lockedCategoryId
+          ? '产品分类由客户绑定决定，如需变更请到客户管理修改客户所属产品分类'
+          : '选择后系统自动匹配「客户专属模板」(如有) → 「通用模板」(兜底)'}
         validateStatus={!value.categoryId ? 'error' : ''}
         help={!value.categoryId ? '请选择产品分类' : undefined}
       >
@@ -310,11 +317,11 @@ const QuotationCreateForm: React.FC<Props> = ({
           options={categories.map((c) => ({ value: c.id, label: c.name }))}
           placeholder="请选择产品分类"
           value={value.categoryId}
-          onChange={(v) => onChange({ ...value, categoryId: v })}
-          allowClear
-          showSearch
+          onChange={lockedCategoryId ? undefined : (v) => onChange({ ...value, categoryId: v })}
+          allowClear={!lockedCategoryId}
+          showSearch={!lockedCategoryId}
           optionFilterProp="label"
-          disabled={readOnly}
+          disabled={readOnly || !!lockedCategoryId}
         />
       </Form.Item>
 

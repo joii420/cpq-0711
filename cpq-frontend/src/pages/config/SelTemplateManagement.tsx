@@ -3,7 +3,7 @@ import { Card, Drawer, Form, Input, Select, Segmented, Button, message, Tag, Che
 import { PlusOutlined, EditOutlined, DeleteOutlined, SwapOutlined } from '@ant-design/icons';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
 import { selTemplateService } from '../../services/selTemplateService';
-import { industryService } from '../../services/industryService';
+import { productCategoryService, type ProductCategory } from '../../services/productCategoryService';
 
 interface ParamTypeRow {
   code: string;
@@ -28,18 +28,11 @@ interface TemplateItemDTO {
 
 interface TemplateRow {
   id: string;
-  industryCode: string;
+  productCategoryId: string;
   name: string;
   status: string;
   version?: number;
   items: TemplateItemDTO[];
-}
-
-interface IndustryOption {
-  id: string;
-  code: string;
-  name: string;
-  status: string;
 }
 
 interface ItemState {
@@ -71,12 +64,6 @@ const paramDescFor = (pt: ParamTypeRow): string =>
     ? '启用后允许在派生数值上微调'
     : '下方多选下拉留空 = 不限，选配时可任意选择');
 
-// 保留行业码：不在 industry 表里，靠约定码区分（选配运行时/Plan 3 会读取）
-const RESERVED_INDUSTRIES = [
-  { code: '__DEFAULT__', name: '默认模板' },
-  { code: '__GLOBAL__', name: '通用组合工艺' },
-];
-
 const sectionTitleStyle = (first?: boolean): React.CSSProperties => ({
   fontSize: 14,
   fontWeight: 600,
@@ -88,7 +75,7 @@ const sectionTitleStyle = (first?: boolean): React.CSSProperties => ({
 const SelTemplateManagement: React.FC = () => {
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [paramTypes, setParamTypes] = useState<ParamTypeRow[]>([]);
-  const [industries, setIndustries] = useState<IndustryOption[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [loading, setLoading] = useState(false);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -99,27 +86,26 @@ const SelTemplateManagement: React.FC = () => {
   const [candidatesCache, setCandidatesCache] = useState<Record<string, CandidateOption[]>>({});
   const [candidatesLoading, setCandidatesLoading] = useState<Record<string, boolean>>({});
 
-  const industryNameMap = useMemo(() => {
+  const categoryNameMap = useMemo(() => {
     const map: Record<string, string> = {};
-    industries.forEach((i) => { map[i.code] = i.name; });
-    RESERVED_INDUSTRIES.forEach((r) => { map[r.code] = r.name; });
+    categories.forEach((c) => { map[c.id] = c.name; });
     return map;
-  }, [industries]);
+  }, [categories]);
 
-  // 下拉展示：原型不在选项文案里附加行业码，仅显示中文名
-  const industryOptions = useMemo(() => ([
-    ...industries.map((i) => ({ value: i.code, label: i.name })),
-    ...RESERVED_INDUSTRIES.map((r) => ({ value: r.code, label: r.name })),
-  ]), [industries]);
+  // 下拉展示：原型不在选项文案里附加编码，仅显示中文名
+  const categoryOptions = useMemo(
+    () => categories.map((c) => ({ value: c.id, label: c.name })),
+    [categories],
+  );
 
-  // 新建时排除已配置模板的行业（D7 一行业一套；对照原型 industryOptionsHTML() 的 avail 过滤）
-  const usedIndustryCodes = useMemo(
-    () => new Set(templates.map((t) => t.industryCode)),
+  // 新建时排除已配置模板的产品分类（D7/D10 一分类一套；对照原型 industryOptionsHTML() 的 avail 过滤）
+  const usedCategoryIds = useMemo(
+    () => new Set(templates.map((t) => t.productCategoryId)),
     [templates],
   );
-  const createIndustryOptions = useMemo(
-    () => industryOptions.filter((o) => !usedIndustryCodes.has(o.value)),
-    [industryOptions, usedIndustryCodes],
+  const createCategoryOptions = useMemo(
+    () => categoryOptions.filter((o) => !usedCategoryIds.has(o.value)),
+    [categoryOptions, usedCategoryIds],
   );
 
   const sortedParamTypes = useMemo(
@@ -148,10 +134,10 @@ const SelTemplateManagement: React.FC = () => {
     }
   };
 
-  const fetchIndustries = async () => {
+  const fetchCategories = async () => {
     try {
-      const res = await industryService.listActive();
-      setIndustries(res?.data ?? []);
+      const res = await productCategoryService.list('ACTIVE');
+      setCategories(res?.data ?? []);
     } catch (err: any) {
       message.error(err.message);
     }
@@ -160,7 +146,7 @@ const SelTemplateManagement: React.FC = () => {
   useEffect(() => {
     fetchTemplates();
     fetchParamTypes();
-    fetchIndustries();
+    fetchCategories();
   }, []);
 
   const ensureCandidatesFor = async (code: string) => {
@@ -208,7 +194,7 @@ const SelTemplateManagement: React.FC = () => {
       });
       setItemsState(init);
       setEditing(detail);
-      form.setFieldsValue({ industryCode: detail.industryCode, name: detail.name, status: detail.status });
+      form.setFieldsValue({ productCategoryId: detail.productCategoryId, name: detail.name, status: detail.status });
       setDrawerOpen(true);
     } catch (err: any) {
       message.error(err.message);
@@ -239,7 +225,7 @@ const SelTemplateManagement: React.FC = () => {
         allowedValues: pt.valueMode === 'adjust' ? [] : (itemsState[pt.code]?.allowedValues ?? []),
       }));
       await selTemplateService.upsert({
-        industryCode: values.industryCode,
+        productCategoryId: values.productCategoryId,
         name: values.name,
         status: values.status,
         items,
@@ -253,16 +239,16 @@ const SelTemplateManagement: React.FC = () => {
   };
 
   const handleSaveFailed = () => {
-    message.error('请完整填写归属行业和模板名');
+    message.error('请完整填写产品分类和模板名');
   };
 
-  // 列定义 —— 行业列作为主入口（点击打开编辑 Drawer），行内不放动作按钮
+  // 列定义 —— 产品分类列作为主入口（点击打开编辑 Drawer），行内不放动作按钮
   const columns = [
     {
-      title: '归属行业', dataIndex: 'industryCode', key: 'industryCode',
-      render: (code: string, record: TemplateRow) => (
+      title: '产品分类', dataIndex: 'productCategoryId', key: 'productCategoryId',
+      render: (id: string, record: TemplateRow) => (
         <a onClick={(e) => { e.stopPropagation(); openEdit(record); }} style={{ fontWeight: 500 }}>
-          {industryNameMap[code] ?? code}
+          {categoryNameMap[id] ?? id}
         </a>
       ),
     },
@@ -297,12 +283,12 @@ const SelTemplateManagement: React.FC = () => {
       enabledWhen: (sel) => sel.length > 0,
       onClick: async (sel) => {
         await runBatch(sel, (r) => selTemplateService.upsert({
-          industryCode: r.industryCode,
+          productCategoryId: r.productCategoryId,
           name: r.name,
           status: r.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
           items: buildItemsPayload(r.items),
         }), {
-          rowLabel: (r) => `${industryNameMap[r.industryCode] ?? r.industryCode} - ${r.name}`,
+          rowLabel: (r) => `${categoryNameMap[r.productCategoryId] ?? r.productCategoryId} - ${r.name}`,
           successMsg: `已切换 ${sel.length} 个模板的启用/停用状态`,
         });
         fetchTemplates();
@@ -316,10 +302,10 @@ const SelTemplateManagement: React.FC = () => {
       enabledWhen: (sel) => sel.length > 0,
       needsConfirm: true,
       confirmTitle: '确认删除选中的 {N} 个选配模板？',
-      confirmDescription: '⚠️ 删除后该行业将不再有专属选配模板，选配运行时会回退到默认模板（如有）。',
+      confirmDescription: '⚠️ 删除后该产品分类将不再有专属选配模板，选配运行时会回退到默认模板（如有）。',
       onClick: async (sel) => {
         await runBatch(sel, (r) => selTemplateService.delete(r.id), {
-          rowLabel: (r) => `${industryNameMap[r.industryCode] ?? r.industryCode} - ${r.name}`,
+          rowLabel: (r) => `${categoryNameMap[r.productCategoryId] ?? r.productCategoryId} - ${r.name}`,
         });
         fetchTemplates();
       },
@@ -338,7 +324,7 @@ const SelTemplateManagement: React.FC = () => {
         loading={loading}
         pagination={false}
         actions={actions}
-        rowLabel={(r) => `${industryNameMap[r.industryCode] ?? r.industryCode} - ${r.name}`}
+        rowLabel={(r) => `${categoryNameMap[r.productCategoryId] ?? r.productCategoryId} - ${r.name}`}
         locale={{
           emptyText: (
             <div style={{ padding: '40px 0', color: '#909399' }}>
@@ -364,18 +350,18 @@ const SelTemplateManagement: React.FC = () => {
         <Form form={form} layout="vertical" onFinish={handleSave} onFinishFailed={handleSaveFailed}>
           <div style={sectionTitleStyle(true)}>基本信息</div>
           <Form.Item
-            name="industryCode"
-            label="归属行业"
-            rules={[{ required: true, message: '请选择归属行业' }]}
-            extra="一个行业仅可配置一套选配模板；行业确定后不可修改"
+            name="productCategoryId"
+            label="产品分类"
+            rules={[{ required: true, message: '请选择产品分类' }]}
+            extra="一个产品分类仅可配置一套选配模板；产品分类确定后不可修改"
           >
             <Select
-              options={editing ? industryOptions : createIndustryOptions}
+              options={editing ? categoryOptions : createCategoryOptions}
               disabled={!!editing}
               showSearch
               optionFilterProp="label"
-              placeholder="请选择归属行业"
-              notFoundContent="所有行业均已配置模板"
+              placeholder="请选择产品分类"
+              notFoundContent="所有产品分类均已配置模板"
             />
           </Form.Item>
           <Form.Item name="name" label="模板名"

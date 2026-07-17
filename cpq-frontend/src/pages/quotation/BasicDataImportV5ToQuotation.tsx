@@ -19,6 +19,7 @@ import { customerService } from '../../services/customerService';
 interface Customer {
   id: string;
   name: string;
+  productCategoryId?: string;
 }
 
 interface Props {
@@ -38,7 +39,7 @@ const BasicDataImportV5ToQuotation: React.FC<Props> = ({ open, onClose }) => {
       .list({ page: 0, size: 200 })
       .then((r: any) => {
         const list: any[] = r.data?.content ?? r.data ?? [];
-        setCustomers(list.map((c: any) => ({ id: c.id, name: c.name })));
+        setCustomers(list.map((c: any) => ({ id: c.id, name: c.name, productCategoryId: c.productCategoryId })));
       })
       .catch(() => {
         message.error('加载客户列表失败');

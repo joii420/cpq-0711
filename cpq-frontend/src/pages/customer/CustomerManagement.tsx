@@ -6,6 +6,7 @@ import {
 import { PlusOutlined, DeleteOutlined, EditOutlined, StopOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
 import { customerService } from '../../services/customerService';
 import { industryService } from '../../services/industryService';
+import { productCategoryService, type ProductCategory } from '../../services/productCategoryService';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
 
 const { Text } = Typography;
@@ -43,9 +44,14 @@ const CustomerManagement: React.FC = () => {
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [currentCustomerId, setCurrentCustomerId] = useState<string | null>(null);
   const [industries, setIndustries] = useState<{ code: string; name: string }[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
 
   useEffect(() => {
     industryService.listActive().then(res => setIndustries(res?.data ?? [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    productCategoryService.list('ACTIVE').then(res => setCategories(res?.data ?? [])).catch(() => {});
   }, []);
 
   const fetchData = async () => {
@@ -89,6 +95,7 @@ const CustomerManagement: React.FC = () => {
           name: editingCustomer.name,
           level: editingCustomer.level,
           industryCode: editingCustomer.industryCode,
+          productCategoryId: editingCustomer.productCategoryId,
           region: editingCustomer.region,
           address: editingCustomer.address,
           creditLimit: editingCustomer.creditLimit,
@@ -100,6 +107,26 @@ const CustomerManagement: React.FC = () => {
       setTimeout(() => form.resetFields(), 50);
     }
   }, [drawerOpen, editingCustomer]);
+
+  // 新建客户默认分类种子（质量评审 Minor#2+#3）：唯一职责收敛到本 effect ——
+  // 覆盖"打开时 categories 已加载"和"打开时未加载、稍后到位"两种时序，且用 `!current`
+  // 守卫不覆盖用户已选值。原挂载 effect 里另一份重复种子逻辑已删除（曾在 setTimeout 闭包里
+  // 读可变 categories 却未入依赖，属 eslint-disable 陷阱，且与本 effect 双写冗余）。
+  // 60ms 延时是必须的、不是随意值：上面 effect 里"新建"分支的 form.resetFields() 延时 50ms 执行；
+  // 若本 effect 不晚于它写入（例如同步写或延时更短），会出现"categories 已预加载"这一常见路径下
+  // 本 effect 先种下默认分类 → resetFields() 随后把刚写的值连同其它字段一并清空 → 默认分类种子
+  // 100% 被吞掉的时序 bug（推导自代码走查，故显式延后到 resetFields 之后再读/写，而非二者同批同步执行）。
+  useEffect(() => {
+    if (!drawerOpen || editingCustomer || categories.length === 0) return;
+    const timer = setTimeout(() => {
+      const current = form.getFieldValue('productCategoryId');
+      if (!current) {
+        const def = categories.find(c => c.name === '默认分类');
+        if (def) form.setFieldsValue({ productCategoryId: def.id });
+      }
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [categories, drawerOpen, editingCustomer]);
 
   const handleSave = async (values: any) => {
     try {
@@ -397,6 +424,15 @@ const CustomerManagement: React.FC = () => {
               showSearch
               optionFilterProp="label"
               options={industries.map(i => ({ value: i.code, label: `${i.name}（${i.code}）` }))}
+            />
+          </Form.Item>
+          <Form.Item name="productCategoryId" label="产品分类"
+            rules={[{ required: true, message: '请选择产品分类' }]}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              placeholder="请选择产品分类"
+              options={categories.map(c => ({ value: c.id, label: c.name }))}
             />
           </Form.Item>
           <Form.Item name="region" label="所属区域">

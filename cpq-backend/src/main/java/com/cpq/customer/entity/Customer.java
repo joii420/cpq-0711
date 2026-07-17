@@ -30,6 +30,11 @@ public class Customer extends PanacheEntityBase {
     @Column(name = "industry_code", length = 50)
     public String industryCode;
 
+    // Tier2 方案B(2026-07-16 裁决): DB 列不加 NOT NULL(避免波及 ~31 个无关既有测试的
+    // customer native SQL 夹具)；业务非空由前端必填 + CustomerService.create 兜底 + backfill 三重应用层保证。
+    @Column(name = "product_category_id")
+    public UUID productCategoryId;
+
     @Column(length = 100)
     public String region;
 

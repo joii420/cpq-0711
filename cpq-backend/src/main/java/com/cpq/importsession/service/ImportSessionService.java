@@ -8,6 +8,7 @@ import com.cpq.importsession.dto.DiffPayloadDTO;
 import com.cpq.importsession.dto.UploadResultDTO;
 import com.cpq.importsession.entity.ImportSession;
 import com.cpq.importsession.entity.ImportSessionDecision;
+import com.cpq.customer.entity.Customer;
 import com.cpq.importexcel.parser.ParsedBasicData;
 import com.cpq.quotation.dto.CreateQuotationRequest;
 import com.cpq.quotation.dto.QuotationDTO;
@@ -159,6 +160,20 @@ public class ImportSessionService {
     @Transactional
     public CommitResult commit(UUID sessionId, CommitRequest req, UUID userId) {
         ImportSession session = requireSession(sessionId, "PENDING");
+
+        // task-0712 update-071501 B5: categoryId 一致性审计（弱版本，技术总监 2026-07-16 订正裁决）。
+        // 实测 req.categoryId 在本方法内是死字段——customerTemplateId/costingTemplateId 已由前端在
+        // commit 前用 match-customer-quote/核价 list 预匹配好塞进请求体，commit 本身不匹配模板，
+        // 故不做"覆盖模板/重匹配"（越界 D13 + 会破坏 MIXED 多模板下用户手选语义）。
+        // "以客户为准"的权威性由前端只读锁定保证（fronttask F3）；此处仅防御性审计留痕，不改任何持久化。
+        // req.categoryId==null 时无需查库（代码评审 #4：null 守卫提到 Customer.findById 之前）。
+        if (req.categoryId != null) {
+            Customer commitCustomer = Customer.findById(session.customerId);
+            if (commitCustomer != null && !req.categoryId.equals(commitCustomer.productCategoryId)) {
+                LOG.warnf("commit categoryId mismatch: frontend=%s authoritative=%s customerId=%s",
+                        req.categoryId, commitCustomer.productCategoryId, session.customerId);
+            }
+        }
 
         // 1. 加载所有 PART_VERSION 决策
         @SuppressWarnings("unchecked")
