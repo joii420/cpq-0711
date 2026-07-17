@@ -64,12 +64,15 @@ const statusMap: Record<string, { label: string; color: string }> = {
 };
 
 // Re-export for draft payload — uses the real formula engine
+// 双口径修复(2026-07-17): computeProductSubtotal 兜底路径已升级完整口径(PASS1+buildCrossTabRows),
+// gvDefs 从调用方(组件内 state)传入与渲染层同源——否则含全局变量 token 的公式按 0 兜底。
 function computeProductSubtotalSafe(
   li: LineItem,
   driverExpansions?: import('./useDriverExpansions').DriverExpansionMap,
   customerId?: string,
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
 ): number {
-  return computeProductSubtotal(li, driverExpansions, customerId);
+  return computeProductSubtotal(li, driverExpansions, customerId, undefined, globalVariableDefs);
 }
 
 const QuotationWizard: React.FC = () => {
@@ -918,7 +921,7 @@ const QuotationWizard: React.FC = () => {
         // → 跳过 part_version_locked 查询 → 卡片版本号停在 2000 + 读路径丢版本过滤 → BOM 重复显示。
         customerPartNo: (li as any).customerPartNo || (li as any).customerProductNo || null,
         productAttributeValues: JSON.stringify(li.productAttributeValues || {}),
-        subtotal: computeProductSubtotalSafe(li, driverExpansions, customerIdValue),
+        subtotal: computeProductSubtotalSafe(li, driverExpansions, customerIdValue, gvDefs),
         sortOrder: idx,
         // 选配/回读的工序回传:后端 saveDraft 据此回写 quotation_line_process(工序跨保存存活)。
         // 导入行此处为空(不携带 processNos),改由 seedProcessesFromBase 让后端从基础工序 seed。
@@ -1598,6 +1601,7 @@ const QuotationWizard: React.FC = () => {
       onUpdate={(updater) => setLineItemsByUser(prev => updater(prev))}
       // 初始物化专用通道：程序化 setLineItems（不置 userEditedRef → 不触发 autosave，Plan A）
       onSilentUpdate={(updater) => setLineItems(prev => updater(prev))}
+      globalVariableDefs={gvDefs}
     />
   );
 

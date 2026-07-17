@@ -1196,12 +1196,18 @@ function computeTabSubtotal(
 
 /**
  * PASS1：遍历 NORMAL 组件，按 componentId/componentCode/tabName 三键登记各页签小计。
- * 折扣重算时可单独调用此函数取得 map，再缩放后代入 evalProductSubtotalFromSubtotals。
+ * ⚠️ 纯 PASS1 口径：computeAllFormulas 不带 crossTabRows/previousRowValues —— cross_tab_ref
+ * 跨页签 SUM 一律 0、二阶列/行间累加缺失。**需要与卡片渲染同值的消费点（折扣/保存/导出）
+ * 一律用下方 getComponentSubtotalsFull**；本函数仅作 buildCrossTabRows 的"前期状态"输入
+ * （buildExcelSnapshot Step1 即此用法）。
+ * @param globalVariableDefs 全局变量定义表——与渲染层 PASS1（ProductCard 内联装配）对齐；
+ *   缺省时含全局变量 token 的公式按 0 兜底（旧行为）。
  */
 export function getComponentSubtotals(
   item: LineItem,
   driverExpansions?: import('./useDriverExpansions').DriverExpansionMap,
   customerId?: string,
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
 ): Record<string, number> {
   const componentSubtotals: Record<string, number> = {};
   if (!item.componentData) return componentSubtotals;
@@ -1224,6 +1230,7 @@ export function getComponentSubtotals(
     // 不然落到全局 path cache 第一项 / 当 0 算（产品小计 156.80 vs 列小计 750.80 的根因）
     const byCol = computeTabSubtotalsByColumn(
       comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp),
+      globalVariableDefs,
     );
     let subtotal = 0;
     for (const [colName, colVal] of Object.entries(byCol)) {
@@ -1243,6 +1250,41 @@ export function getComponentSubtotals(
     componentSubtotals[`${comp.tabName}#${AMOUNT_TOTAL_KEY}`] = amountTotal;
   }
   return componentSubtotals;
+}
+
+/**
+ * 组件小计 map（**完整口径** = 与卡片渲染同值）：PASS1（上方 getComponentSubtotals）→
+ * PASS2 buildCrossTabRows 按拓扑序逐组件算 resolvedRows（cross_tab_ref 跨页签聚合 /
+ * 二阶列两阶段 / previous_row 串行 / 单位换算 canonical），经 subtotalsFromResolvedRows
+ * 把真值列小计（含 __amount_total__ 哨兵键）回填。与渲染层 ProductCard 内联装配点
+ * （PASS1 → buildCrossTabRows）完全同序同口径。
+ *
+ * 双口径修复（2026-07-17，QT-20260716-2033 原小计 67.16 vs 卡片 122.16）：Step3 折扣与
+ * saveDraft payload 的 subtotal 此前只用 PASS1（cross_tab 公式列贡献 0 → 产品小计偏小），
+ * 渲染层早经 B3（precomputedSubtotals）修正但这两处一直没接上——现统一走本函数。
+ * buildExcelSnapshot 不改：它内部已自带同一 PASS1→PASS2 链（等价口径）。
+ */
+export function getComponentSubtotalsFull(
+  item: LineItem,
+  driverExpansions?: import('./useDriverExpansions').DriverExpansionMap,
+  customerId?: string,
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+): Record<string, number> {
+  const subs = getComponentSubtotals(item, driverExpansions, customerId, globalVariableDefs);
+  if (!item.componentData) return subs;
+  const partNo = item.productPartNo;
+  // lookupExpansion 与 PASS1 / 渲染层同源同维度（lineItemId+partNo+componentId+customerId+driverPath+fieldsHash）
+  const lookupExpansion = (comp: ComponentDataItem) => {
+    if (!driverExpansions || !partNo || !comp.componentId) return undefined;
+    const lineItemId = (item as any).id || (item as any).tempId || '';
+    const k = driverExpansionKey(lineItemId, partNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
+    return driverExpansions[k];
+  };
+  // try/catch 兜底：单据数据异常时保留 PASS1 结果，不崩折扣/保存链路。
+  try {
+    buildCrossTabRows(item.componentData, subs, partNo, lookupExpansion, globalVariableDefs);
+  } catch { /* 回填失败 → 退回 PASS1 口径 */ }
+  return subs;
 }
 
 /**
@@ -1302,20 +1344,22 @@ function computeProductSubtotal(
   driverExpansions?: import('./useDriverExpansions').DriverExpansionMap,
   customerId?: string,
   // B3: 调用方已完成 PASS1+PASS2(buildCrossTabRows 回填后)的 allComponentSubtotals。
-  // 提供时直接用（跳过函数内 PASS1 重算），消除双口径（cross_tab 列/二阶列小计与渲染行同源）。
-  // 不提供时退化为旧 PASS1 重算行为（兜底，向后兼容）。
+  // 提供时直接用（跳过函数内重算），消除双口径（cross_tab 列/二阶列小计与渲染行同源）。
   precomputedSubtotals?: Record<string, number>,
+  // 双口径修复(2026-07-17): 兜底路径改走完整口径, gvDefs 与渲染层同源传入（wizard 的 gvDefs）。
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
 ): number {
   if (!item.componentData || item.componentData.length === 0) return item.subtotal || 0;
 
   if (precomputedSubtotals) {
-    // B3: 用调用方传入的（buildCrossTabRows 回填后）已修正小计，跳过 PASS1 重算。
+    // B3: 用调用方传入的（buildCrossTabRows 回填后）已修正小计，跳过重算。
     // 消除"产品小计 PASS1 不含 crossTabRows → cross_tab 列贡献 0"的双口径。
     return evalProductSubtotalFromSubtotals(item, precomputedSubtotals);
   }
 
-  // Compute NORMAL component subtotals first (PASS1: 无 crossTabRows，cross_tab 列小计为 0)
-  const componentSubtotals = getComponentSubtotals(item, driverExpansions, customerId);
+  // 双口径修复(2026-07-17, QT-20260716-2033): 兜底路径原为纯 PASS1（cross_tab 列贡献 0），
+  // saveDraft payload 的 subtotal 经此偏小落库（67.16 vs 卡片 122.16）——改走完整口径。
+  const componentSubtotals = getComponentSubtotalsFull(item, driverExpansions, customerId, globalVariableDefs);
   return evalProductSubtotalFromSubtotals(item, componentSubtotals);
 }
 
