@@ -1,6 +1,7 @@
 import type { LineItem } from './QuotationStep2';
-import { getComponentSubtotals, evalProductSubtotalFromSubtotals } from './QuotationStep2';
+import { getComponentSubtotalsFull, evalProductSubtotalFromSubtotals } from './QuotationStep2';
 import type { DriverExpansionMap } from './useDriverExpansions';
+import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 
 export interface DiscountSourceOption {
   value: string;
@@ -57,7 +58,12 @@ export interface LineDiscountResult {
  * - source='SUBTOTAL'：整单价打折 → discounted = original * (1 - rate/100)
  * - source=`component_code#列名`：把该列小计缩放后代回公式重算。
  *   evaluateExpression 解析 component_subtotal token 时优先用 `component_code#列名` 键，
- *   故只需缩放 scaled[source] 即命中（getComponentSubtotals 已写入该列键）。
+ *   故只需缩放 scaled[source] 即命中（getComponentSubtotalsFull 已写入该列键）。
+ *
+ * 双口径修复（2026-07-17，QT-20260716-2033 原小计 67.16 vs 卡片 122.16）：改走
+ * getComponentSubtotalsFull（PASS1+buildCrossTabRows 回填）——此前只走 PASS1，
+ * cross_tab_ref 公式列（如 来料·材料成本 = SUM(元素行 用量×单价)）贡献为 0，
+ * Step3 原小计/折扣基数与卡片渲染不一致。gvDefs 由调用方（Step3 ← wizard）同源传入。
  */
 export function computeLineDiscount(
   item: LineItem,
@@ -66,8 +72,9 @@ export function computeLineDiscount(
   source: string,
   ratePct: number,
   annualVolume: number,
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
 ): LineDiscountResult {
-  const subs = getComponentSubtotals(item, driverExpansions, customerId);
+  const subs = getComponentSubtotalsFull(item, driverExpansions, customerId, globalVariableDefs);
   const s0 = evalProductSubtotalFromSubtotals(item, subs);
   const r = Math.max(0, Math.min(100, ratePct || 0));
   const scale = 1 - r / 100;

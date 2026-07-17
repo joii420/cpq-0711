@@ -37,14 +37,25 @@ public class LineDiscountService {
      *
      * <p>计算口径：
      * <ul>
-     *   <li>S0 = 无折扣产品小计（subtotalWithDiscount(..., null, 1.0)）</li>
+     *   <li>S0 = li.subtotal（前端完整口径落库值，见下方双口径修复注释）；缺失时引擎重算兜底</li>
      *   <li>scale = 1 - discountRateApplied/100（null→0 → scale=1.0）</li>
      *   <li>source=null/""/SUBTOTAL → S1=S0*scale，base=S0</li>
-     *   <li>source=页签code → S1=subtotalWithDiscount(..., source, scale)，base=该页签列和</li>
+     *   <li>source=页签code → S1 = S0 × (引擎折后/引擎折前)（比例映射），base=该页签列和</li>
      *   <li>lineUnitPrice=S0，lineFinalPrice=S1，discountBaseAmount=base</li>
      *   <li>lineDiscountAmount=(S0-S1)*annualVolume，lineTotalAmount=S1*annualVolume</li>
      *   <li>全部 setScale(4, HALF_UP)</li>
      * </ul>
+     *
+     * <p><b>双口径修复（2026-07-17，QT-20260716-2033 提交口径 67.16 vs 卡片 122.16）</b>：
+     * 本服务旧 S0 = 引擎 subtotalWithDiscount = SUBTOTAL 公式对 columnSums(row_data) 求值——
+     * 但 cross_tab_ref 公式列（如 来料.材料成本 = SUM(元素行 用量×单价)）的真值不落 row_data
+     * （恒 0/空），S0 系统性偏小，提交时会用错值覆写前端已存的正确 9 字段。
+     * 现 S0 优先采信 {@code li.subtotal}：saveDraft 每次全量保存都由前端完整口径
+     * （PASS1+buildCrossTabRows，与卡片渲染同值）重算落库，非 stale；草稿期 totalAmount
+     * 本就 Σ 前端 subtotal，口径一致。引擎重算仅作 li.subtotal 缺失（老单/异常）时的兜底。
+     * 按列折扣场景 S1 用「引擎折后/折前比例 × S0」映射——引擎内自洽，但 cross_tab 列在
+     * row_data 无真值时该列折扣比例=1（折扣不生效）；根治=引擎行值改读卡片值快照
+     * resolvedRows（见 BACKLOG BL-0059）。
      */
     public void recompute(QuotationLineItem li) {
         List<QuotationLineComponentData> cdList =
@@ -52,13 +63,15 @@ public class LineDiscountService {
         Map<UUID, ComponentDataEffectiveRows.Meta> metaById = loadMetas(cdList);
         UUID subtotalCid = findSubtotalComponentId(metaById);
 
-        // S0：无折扣产品小计
+        // S0：无折扣产品小计 —— 优先前端完整口径落库值（见类注释），缺失才引擎重算兜底。
         BigDecimal s0;
-        if (subtotalCid != null) {
+        if (li.subtotal != null) {
+            s0 = li.subtotal;
+        } else if (subtotalCid != null) {
             s0 = ComponentDataEffectiveRows.subtotalWithDiscount(
                 cdList, metaById, subtotalCid, formulaCalculator, null, 1.0);
         } else {
-            s0 = li.subtotal != null ? li.subtotal : BigDecimal.ZERO;
+            s0 = BigDecimal.ZERO;
         }
         s0 = s0.setScale(4, RoundingMode.HALF_UP);
 
@@ -75,9 +88,16 @@ public class LineDiscountService {
             s1 = s0.multiply(BigDecimal.valueOf(scale));
             base = s0;
         } else if (subtotalCid != null) {
-            // 页签折扣：仅对 source 页签的列和乘 scale，再重算 SUBTOTAL 公式
-            s1 = ComponentDataEffectiveRows.subtotalWithDiscount(
+            // 页签折扣：引擎算「折后/折前」比例（引擎内自洽），映射到权威 S0 上。
+            // ⚠️已知限制（BL-0059）：cross_tab 公式列在 row_data 无真值 → 该列比例=1（折扣不生效），
+            // 与修复前行为一致不更糟；S0/行合计已是正确口径。
+            BigDecimal e0 = ComponentDataEffectiveRows.subtotalWithDiscount(
+                cdList, metaById, subtotalCid, formulaCalculator, null, 1.0);
+            BigDecimal e1 = ComponentDataEffectiveRows.subtotalWithDiscount(
                 cdList, metaById, subtotalCid, formulaCalculator, source, scale);
+            s1 = e0.signum() != 0
+                ? s0.multiply(e1).divide(e0, 8, RoundingMode.HALF_UP)
+                : s0;
             base = discountBaseOf(cdList, metaById, source);
         } else {
             // 没有 SUBTOTAL 组件且指定了页签折扣 → 兜底不折

@@ -27,6 +27,8 @@ interface Props {
   onUpdate: (updater: (prev: LineItem[]) => LineItem[]) => void;
   /** 程序化写 lineItems 的通道（不置 userEditedRef → 不触发 autosave，Wizard Plan A）；初始物化专用。缺省退回 onUpdate。 */
   onSilentUpdate?: (updater: (prev: LineItem[]) => LineItem[]) => void;
+  /** 全局变量定义表（wizard 的 gvDefs）——computeLineDiscount 完整口径求值需与渲染层同源。 */
+  globalVariableDefs?: Record<string, import('../../services/globalVariableService').GlobalVariableDefinition>;
 }
 
 const QuotationStep3: React.FC<Props> = ({
@@ -37,6 +39,7 @@ const QuotationStep3: React.FC<Props> = ({
   customerId,
   onUpdate,
   onSilentUpdate,
+  globalVariableDefs,
 }) => {
   // 过滤掉 PART 子件（与 Step2 一致，只展示父级）
   const visibleItems = useMemo(
@@ -49,7 +52,7 @@ const QuotationStep3: React.FC<Props> = ({
     const source = li.discountSource ?? 'SUBTOTAL';
     const rate = li.discountRateApplied ?? 0;
     const qty = li.annualVolume ?? 0;
-    const d = computeLineDiscount(li, driverExpansions, customerId, source, rate, qty);
+    const d = computeLineDiscount(li, driverExpansions, customerId, source, rate, qty, globalVariableDefs);
     return {
       lineUnitPrice: d.original,
       discountBaseAmount: d.discountBaseAmount,
