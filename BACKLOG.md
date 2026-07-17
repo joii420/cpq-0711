@@ -717,6 +717,16 @@
 - **依赖**：无。**预估规模**：M（含 AP-37 回归验证）。
 - **验收要点**：同请求内同 `$view` 先 LIST 后 RENDER，RENDER 结果按 override/is_current 正确过滤、不返全版本；`listVersionOptions` 无 override 时 currentVersion 取到真实 is_current 版本。
 
+### [BL-0059] 按列折扣的后端提交重算：cross_tab 公式列折扣不生效（引擎行值缺真值）
+- **优先级**：P1（按列折扣 + cross_tab 模板组合场景折扣静默失效；整体折扣 SUBTOTAL 源不受影响）
+- **来源**：subtotal-fix-071701 全链路口径统一（2026-07-17，QT-20260716-2033 排查）已知限制
+- **状态**：TODO
+- **登记日期**：2026-07-17
+- **背景**：`LineDiscountService.recompute` 的按列折扣 S1 依赖 `ComponentDataEffectiveRows.computeScaled` 的 Pass1 `columnSums(row_data)`——但 cross_tab_ref 公式列（如 来料.材料成本 = SUM(元素行 用量×单价)）的真值不落 `row_data`（实测恒 0）→ 缩放该列无效果（折扣比例=1）。本次修复已把 S0/行合计对齐前端完整口径（S0 采信 li.subtotal + 比例映射），按列折扣残留此限制（与修复前一致、不更糟）。
+- **范围**：提交链路引擎行值改读卡片值快照（`quote_card_values.tabs[].resolvedRows` 列和，后端 CardSnapshotService 物化时已含 cross_tab 对称逻辑），与 `row_data`（手动行真相源）按列 merge（公式列取快照、输入列取 row_data）；submit 前需 `ensureCardValues` 保证快照非 NULL。注意 [[quote-card-values-excludes-manual-input-rows]]（qcv 不含手动行）的合并语义。
+- **依赖**：无（quote_card_values 物化链路已就绪）。**预估规模**：M。
+- **验收要点**：按列折扣（如 来料#材料成本 打 9 折）提交后 lineFinalPrice 与前端 Step3 显示一致；整体折扣与无折扣提交回归不变。
+
 ---
 
 ## 已完成
