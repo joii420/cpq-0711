@@ -30,7 +30,11 @@ class VersionedV6WriterTest {
           .setParameter("m2", MBV_MAT).executeUpdate();
         em.createNativeQuery("DELETE FROM material_bom WHERE material_no = :m2")
           .setParameter("m2", MBV_MAT).executeUpdate();
+        em.createNativeQuery("DELETE FROM unit_price WHERE code = :cc")
+          .setParameter("cc", CONSUM_CODE).executeUpdate();
     }
+
+    static final String CONSUM_CODE = "TEST-DESC-CONSUM-01";
 
     @BeforeEach void before() { cleanup(); }
     @AfterEach  void after()  { cleanup(); }
@@ -335,5 +339,48 @@ class VersionedV6WriterTest {
         assertEquals(1L, ((Number) em.createNativeQuery(
             "SELECT count(*) FROM material_bom WHERE material_no=:m AND is_current=true AND bom_version='2002'")
             .setParameter("m", MBV_MAT).getSingleResult()).longValue(), "主表 current 一同升到 2002");
+    }
+
+    // ===== descriptor 列(如 production_no)升版继承："复制上一版 + 仅更新变更字段" =====
+
+    /** 生产耗材式写入：unit_price(PRICING/CONSUMABLE/耗材) 组，descriptor=production_no。 */
+    private String writeConsumable(java.util.List<Map<String,Object>> rows) {
+        java.util.LinkedHashMap<Map<String,Object>, java.util.List<Map<String,Object>>> groups = new java.util.LinkedHashMap<>();
+        java.util.LinkedHashMap<String,Object> gk = new java.util.LinkedHashMap<>();
+        gk.put("system_type","PRICING"); gk.put("price_type","CONSUMABLE");
+        gk.put("cost_type","耗材"); gk.put("code", CONSUM_CODE);
+        groups.put(gk, rows);
+        return writer.writeVersionedGroups("unit_price","version_no",
+            List.of("operation_no","pricing_price","currency","unit"), null,
+            List.of("production_no"), groups).values().iterator().next();
+    }
+    private Map<String,Object> consumRow(String op, String price, String prodNo) {
+        java.util.LinkedHashMap<String,Object> m = new java.util.LinkedHashMap<>();
+        m.put("operation_no", op); m.put("pricing_price", new java.math.BigDecimal(price));
+        m.put("currency","CNY"); m.put("unit","KG"); m.put("production_no", prodNo);
+        return m;
+    }
+
+    /**
+     * 升版时文件未提供的 descriptor(production_no)从上一版继承（复现用户报的生产耗材场景：
+     * 2001 某行「生产料号」空 → 应继承上一版 3120014539，而非落空显示「—」）。
+     */
+    @Test @Transactional
+    void descriptorCarriesOverFromPreviousVersion_onBump() {
+        // v1(2000): 两行都带 production_no=P1
+        String v1 = writeConsumable(List.of(consumRow("OP1","1.0","P1"), consumRow("OP2","2.0","P1")));
+        assertEquals("2000", v1);
+        // v2 升版: OP1 单价变(触发升版) + 新增 OP3 且 production_no 空 → 应继承上一版 P1
+        String v2 = writeConsumable(List.of(consumRow("OP1","9.0","P1"), consumRow("OP3","3.0", null)));
+        assertEquals("2001", v2, "内容变触发升版");
+        String op3prod = String.valueOf(em.createNativeQuery(
+            "SELECT production_no FROM unit_price WHERE code=:c AND operation_no='OP3' AND is_current=true")
+            .setParameter("c", CONSUM_CODE).getSingleResult());
+        assertEquals("P1", op3prod, "升版时文件未提供的 production_no 应从上一版继承(不落空)");
+        // 文件给了非空值的行保持文件值(用户改动优先)
+        String op1prod = String.valueOf(em.createNativeQuery(
+            "SELECT production_no FROM unit_price WHERE code=:c AND operation_no='OP1' AND is_current=true")
+            .setParameter("c", CONSUM_CODE).getSingleResult());
+        assertEquals("P1", op1prod, "文件提供的 production_no 原样保留");
     }
 }
