@@ -28,6 +28,8 @@ class Q06FixedProcessFeeHandlerTest {
     @Transactional
     void cleanup() {
         em.createNativeQuery("DELETE FROM unit_price WHERE code = :c").setParameter("c", CODE).executeUpdate();
+        em.createNativeQuery("DELETE FROM material_customer_map WHERE material_no = :c AND system_type='QUOTE'")
+          .setParameter("c", CODE).executeUpdate();
     }
 
     @BeforeEach void before() { cleanup(); }
@@ -83,29 +85,33 @@ class Q06FixedProcessFeeHandlerTest {
     }
 
     /**
-     * 新契约（报价料号统一 Spec1 §7 跨客户守卫，2026-07 终审 Blocker-1 修复对齐 spec §2.1）：
-     * 「投入料号」在通道②（文件里显式给值）语义已升级为全局报价料号，同一字面量不能分属两个客户。
-     * 原用例故意让 C1/C2 复用同一 CODE 来验证 unit_price 版本隔离（"各自独立成功"），在新语义下这
-     * 本身就是非法的跨客户串号场景。
-     *
-     * <p><b>spec §2.1 要求 per-row 降级、不得整表/整批回滚</b>：跨客户异常必须在 handler 内
-     * per-row catch 后 {@code recordError} 跳过该行，其余行照常入库，handle() 正常返回而非抛出——
-     * 断言改为：C2 那一行被记为失败（错误信息含冲突的报价料号），C1 已落库数据不受影响，
-     * C2 因唯一的一行被跳过而没有任何 unit_price 落库（但 handle() 本身不抛异常）。
+     * task-0717 更新：原「报价料号统一 Spec1 §7 跨客户守卫」测试（{@code crossCustomer_isolated}）
+     * 断言的是「投入料号」走通道②（resolve()+登记 material_customer_map 全局报价料号）时的跨客户
+     * 串号拒绝语义。task-0717 把 Q06~Q10 的「投入料号」扩围为 RECIPE 模型（=材质料号，用户已确认
+     * 与材质料号是同一字段）：原始码不 resolve/不铸号/不登记 material_customer_map，等价于共享
+     * 材质库引用——天然允许跨客户复用同一字面量。这正是 task-0717 要解决的问题本身（通用材质号如
+     * 991 不该被首个客户永久占号，导致其它客户再导报"跨客户串号"）。
+     * <p>新断言：C1/C2 各自用同一 CODE 应各自独立成功入库、互不冲突，且都不登记
+     * material_customer_map（QUOTE）。
      */
     @Test
-    void crossCustomer_isolated() {
-        handler.handle(List.of(row(1, "10", "0.1")), ctx("C1"));
+    void sameCodeAcrossCustomers_bothSucceedIndependently_noCrossCustomerGuard() {
+        SheetImportResult r1 = handler.handle(List.of(row(1, "10", "0.1")), ctx("C1"));
+        SheetImportResult r2 = handler.handle(List.of(row(1, "99", "0.9")), ctx("C2"));
 
-        SheetImportResult result = handler.handle(List.of(row(1, "99", "0.9")), ctx("C2"));
+        assertEquals(1, r1.successRows, "C1 应正常成功");
+        assertEquals(0, r1.failedRows);
+        assertEquals(1, r2.successRows, "C2 复用同一材质料号应独立成功（非跨客户串号）");
+        assertEquals(0, r2.failedRows);
 
-        assertEquals(1, result.failedRows, "C2 复用 C1 已登记的报价料号 → 应记为失败行（per-row 跳过，非整批异常）");
-        assertEquals(0, result.successRows);
-        assertEquals(1, result.errors.size());
-        assertTrue(result.errors.get(0).message.contains("跨客户"),
-            "错误信息应含跨客户: " + result.errors.get(0).message);
-        assertEquals(1L, count("C1", "is_current=true"), "C1 数据不受影响");
+        assertEquals(1L, count("C1", "is_current=true"), "C1 独立落库一行");
+        assertEquals(1L, count("C2", "is_current=true"), "C2 独立落库一行，与 C1 互不冲突");
         assertEquals("2000", currentVersion("C1"));
-        assertNull(currentVersion("C2"), "C2 唯一一行被跳过，不应落库");
+        assertEquals("2000", currentVersion("C2"));
+
+        long mcmCount = ((Number) em.createNativeQuery(
+            "SELECT count(*) FROM material_customer_map WHERE material_no=:c AND system_type='QUOTE'")
+            .setParameter("c", CODE).getSingleResult()).longValue();
+        assertEquals(0L, mcmCount, "投入料号（材质）不应登记 material_customer_map");
     }
 }

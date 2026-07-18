@@ -203,10 +203,15 @@ class QuoteMaterialNoIntegrationTest {
         assertEquals(cust, reg[1]);
     }
 
-    // ===== 6. Q07 费用 handler 同样发报价料号 =====
+    // ===== 6. Q07「投入料号」task-0717 扩围为 RECIPE 模型，不再铸报价料号 =====
 
+    /**
+     * task-0717 更新：原「投入料号空 + 名称有值 → 按名铸造报价料号并登记 material_customer_map(QUOTE)」
+     * 路径已移除——Q07 的「投入料号」扩围为 RECIPE 模型（=材质料号，与 Q06/Q08/Q09/Q10 同构），
+     * 恒不 resolve/不铸号/不登记；投入料号为空直接记为该行错误，不再有按名兜底铸号通路。
+     */
     @Test
-    void q07_unnumberedIncomingMaterial_mintsQuoteMaterialNo() {
+    void q07_blankIncomingMaterialNo_recordsError_noLongerMints() {
         String cust = "QMNI-C6";
         Map<String, String> m = new LinkedHashMap<>();
         m.put("要素名称", "QMNI测试要素");
@@ -218,19 +223,16 @@ class QuoteMaterialNoIntegrationTest {
         m.put("货币", "RMB");
         m.put("计价单位", "PCS");
 
-        q07Handler.handle(List.of(new SheetRow(1, m)), ctx(cust));
+        SheetImportResult r = q07Handler.handle(List.of(new SheetRow(1, m)), ctx(cust));
 
-        String code = (String) em.createNativeQuery(
-            "SELECT code FROM unit_price WHERE system_type='QUOTE' AND customer_no=:c " +
-            "AND price_type='INCOMING_MATERIAL_OTHER' AND is_current=TRUE")
-            .setParameter("c", cust).getSingleResult();
-        assertTrue(code.matches("^\\d{4}-\\d{4}\\d{6}$"),
-            "无号来料应被铸造为报价料号格式，实际=" + code);
+        assertEquals(1, r.failedRows, "投入料号为空应记为失败行（不再按名铸号）");
+        assertEquals(0, r.successRows);
 
-        String regSystemType = (String) em.createNativeQuery(
-            "SELECT system_type FROM material_customer_map WHERE material_no=:m")
-            .setParameter("m", code).getSingleResult();
-        assertEquals("QUOTE", regSystemType);
+        long upCount = ((Number) em.createNativeQuery(
+            "SELECT count(*) FROM unit_price WHERE system_type='QUOTE' AND customer_no=:c " +
+            "AND price_type='INCOMING_MATERIAL_OTHER'")
+            .setParameter("c", cust).getSingleResult()).longValue();
+        assertEquals(0L, upCount, "失败行不应写入 unit_price");
     }
 
     // ===== 8. 跨客户报价料号经 dev handler(MaterialBomMergeHandler) 优雅降级：per-row 跳过、sheet 不回滚 =====

@@ -4,10 +4,6 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
-import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
-import com.cpq.basicdata.v6.service.MaterialNoResolver;
-import com.cpq.basicdata.v6.service.MaterialNoUnresolvableException;
-import com.cpq.basicdata.v6.service.QuoteMaterialNoAllocator;
 import com.cpq.basicdata.v6.versioning.VersionedGroupSpec;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -32,8 +28,6 @@ import java.util.Set;
 public class Q10SelfProcessFeeHandler implements SheetHandler {
 
     @Inject VersionedV6Writer writer;
-    @Inject MaterialNoResolver materialNoResolver;
-    @Inject MaterialMasterRepository materialMasterRepo;
 
     @org.eclipse.microprofile.config.inject.ConfigProperty(name = "cpq.v6import-setbased-writer", defaultValue = "false")
     boolean setBased;
@@ -49,38 +43,31 @@ public class Q10SelfProcessFeeHandler implements SheetHandler {
         SheetImportResult result = new SheetImportResult(sheetName());
         Map<List<Object>, Map<String, Object>> groupKeyOf = new LinkedHashMap<>();
         Map<List<Object>, List<Map<String, Object>>> contentOf = new LinkedHashMap<>();
-        MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
-        batch.customerNo = ctx.customerNo;
-        batch.yyMm = java.time.YearMonth.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMM"));
-        Map<String, String[]> mmAcc = new LinkedHashMap<>();   // §P1-A 料号表延后批量(首个非空胜)
         // §10 规则3 fail-fast：已用「宏丰料号」兜底过 code 的成品集合（本次导入内）。
         // unit_price 唯一键不含 operation_no → 同一成品多条无投入料号行会塌缩撞键，故只允许一条。
         Set<String> noInputFallbackFinished = new HashSet<>();
         for (SheetRow row : rows) {
             result.totalRows++;
-            String inputName = row.exact("投入料号名称");
+            // task-0717 扩围:投入料号=材质料号,恒按材质处理——原始码作 code,不 resolve/不铸号、
+            // 不登记 material_customer_map、不登记 material_master(名走 material_recipe 兜底)。
+            // §10 规则3 保留：投入料号为空是既有业务功能（整体加工费兜底成品料号），不受本次扩围影响，
+            // 触发条件从「resolve() 抛异常」改为直接判断 raw.isBlank()（不再依赖已删除的按名 resolve/铸号机制）。
+            String raw = row.exact("投入料号");
             String finishedMaterialNo = row.getStr("销售料号", "宏丰料号", "成品料号");
             String code;
-            try {
-                code = materialNoResolver.resolve(row.exact("投入料号"), inputName, batch);
-            } catch (MaterialNoUnresolvableException ex) {
-                // §10 规则3：投入料号 + 投入料号名称都空 → code 兜底为宏丰料号(成品料号)，
-                // 语义为「针对该成品整体的自制加工费」（非针对具体投入件）。
+            if (raw != null && !raw.isBlank()) {
+                code = raw;                          // 投入料号=材质,原始码,不 resolve/不铸号/不登记
+            } else {
                 if (finishedMaterialNo == null) {
-                    result.recordError(row.rowNo, "投入料号",
-                        "投入料号、投入料号名称、宏丰料号均为空，无法确定料号"); continue;
+                    result.recordError(row.rowNo, "投入料号", "投入料号、宏丰料号均为空,无法确定料号"); continue;
                 }
                 if (!noInputFallbackFinished.add(finishedMaterialNo)) {
                     result.recordError(row.rowNo, "投入料号",
-                        "成品 " + finishedMaterialNo + " 存在多条无投入料号的自制加工费，数据非法"); continue;
+                        "成品 " + finishedMaterialNo + " 存在多条无投入料号的自制加工费,数据非法"); continue;
                 }
                 code = finishedMaterialNo;
-            } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
-                result.recordError(row.rowNo, "投入料号", "报价料号跨客户串号"); continue;
             }
-            final String resolvedCode = code;   // catch 可重新赋值 → lambda 捕获需 final 副本
-            MaterialMasterRepository.accNameType(mmAcc, resolvedCode, inputName, "组成件");
-            result.recordWrite("material_master", 1);
+            final String resolvedCode = code;        // 保留,下游 lambda 捕获用
             String operationNo = row.getStr("工序编号");
             List<Object> key = Arrays.asList(resolvedCode, finishedMaterialNo, operationNo);
             groupKeyOf.computeIfAbsent(key, k -> {
@@ -103,15 +90,6 @@ public class Q10SelfProcessFeeHandler implements SheetHandler {
             contentOf.computeIfAbsent(key, k -> new ArrayList<>()).add(c);
             result.successRows++;
         }
-        // §P1-A 料号表：一次批量 upsert（去重后；preserve=true 与原逐行等价），置于版本化写入之前。
-        if (!mmAcc.isEmpty()) {
-            List<MaterialMasterRepository.NameTypeRow> mmRows = new ArrayList<>(mmAcc.size());
-            for (Map.Entry<String, String[]> me : mmAcc.entrySet()) {
-                mmRows.add(new MaterialMasterRepository.NameTypeRow(me.getKey(), me.getValue()[0], me.getValue()[1]));
-            }
-            materialMasterRepo.upsertBatchNameType(mmRows, ctx.importedBy, true);
-        }
-
         if (setBased) {
             LinkedHashMap<Map<String, Object>, List<Map<String, Object>>> groups = new LinkedHashMap<>();
             for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet())

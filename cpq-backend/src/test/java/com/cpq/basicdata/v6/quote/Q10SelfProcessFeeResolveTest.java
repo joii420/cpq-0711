@@ -58,14 +58,19 @@ class Q10SelfProcessFeeResolveTest {
         return rows.stream().findFirst().map(Object::toString).orElse(null);
     }
 
+    /**
+     * task-0717 更新：原「投入料号空 + 名称有值 → 按名匹配/铸号并登记 material_master」路径已移除
+     * （Q06~Q10 的「投入料号」扩围为 RECIPE 模型 = 材质料号，恒不 resolve/不铸号/不登记）。
+     * 投入料号为空时统一走 §10 规则3 成品料号兜底，不再区分是否填了「投入料号名称」——
+     * 名称字段本身不再参与 code 判断。
+     */
     @Test
-    void emptyCodeWithName_generatesRegistersAndUsesAsCode() {
+    void emptyCodeWithName_fallsBackToFinishedMaterialNo_noLongerMints() {
         SheetImportResult r = handler.handle(List.of(row(null, NAME)), ctx());
         assertEquals(0, r.failedRows);
-        assertEquals(1L, masterCount(NAME), "新料件登记进料号表(type=3)");
-        String generated = upCode();
-        assertNotNull(generated, "生成号回填为 unit_price.code");
-        assertTrue(generated.matches("^\\d{4}-\\d{10}$"), "生成号需为报价料号格式(XXXX-YYMMNNNNNN)，实得: " + generated);
+        assertEquals(1, r.successRows);
+        assertEquals(0L, masterCount(NAME), "投入料号名称不再参与按名铸号/登记 material_master");
+        assertEquals(FIN, upCode(), "投入料号为空应兜底为成品料号（§10 规则3 保留）");
     }
 
     @Test
