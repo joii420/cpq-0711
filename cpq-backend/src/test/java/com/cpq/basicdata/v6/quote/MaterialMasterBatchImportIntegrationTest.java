@@ -22,12 +22,20 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * P1-A 集成护栏 + 往返度量。把一份 <b>受控合成 workbook</b>（显式 {@code TESTP1A*} 料号，不触发按名生成 →
  * 完全可按前缀清理、无全局 material_master 污染）经 <b>真实</b> {@link QuoteImportService#processImport}
- * 跑通三类批量 upsert：
+ * 跑通批量 upsert：
  * <ul>
- *   <li>类① name/type（来料回收折扣 Q09 → {@code upsertBatchNameType}，首个非空胜）</li>
  *   <li>类② unit_weight（单重 Q18 → {@code upsertBatchWithWeight}，末值非空胜 + 仅 null 也建行）</li>
  *   <li>类③ 仅 material_no（客户料号关系 Q02 → {@code upsertBatchMaterialNoOnly}）</li>
  * </ul>
+ * <p><b>task-0717 repair-2 更新</b>：原还含"类① name/type（来料回收折扣 Q09 →
+ * {@code upsertBatchNameType}，首个非空胜）"。repair-2 决策扩围（Q06~Q10 投入料号恒按材质，
+ * 见 {@link Q09IncomingRecoveryHandler}）后，Q09 的"投入料号"列固化为材质料号语义——原始码直接
+ * 作 unit_price 的 code，<b>不再</b> resolve/不再登记 material_master（材质名走 material_recipe
+ * 兜底，见该 handler 类注释）。故 E 组（来料回收折扣）不再贡献 material_master 行，本集成测试
+ * 的"类① name/type upsert"覆盖已转移到 {@code AssemblyBomMaterialSyncTest}
+ * （组成件BOM 未命中材质集时仍走 {@code accMaterialMaster}→{@code upsertBatchNameType}），
+ * 本测试保留 E 组 sheet 仅用于继续验证 unit_price 写入 + JDBC 往返度量，不再断言其贡献
+ * material_master 行数。
  *
  * <p>验证：① 导入 SUCCESS；② 连跑两次 material_master/customer_map 落库 md5 一致（确定性 / 幂等重导）；
  * ③ 用 Hibernate {@link Statistics#getPrepareStatementCount()} 度量整条 processImport 的真实 JDBC 往返数。
@@ -215,8 +223,11 @@ class MaterialMasterBatchImportIntegrationTest {
 
         String md5Run1 = footprintMd5();
         long mmRows = countMaterialMasterFootprint();
-        // material_master 期望 = W(N)+WNULL(1) ∪ E(N) ∪ P(N) = 3N+1 个不同料号（前缀互不重叠）
-        assertEquals(3L * N + 1, mmRows, "material_master TESTP1A 行数应=3N+1");
+        // material_master 期望 = W(N)+WNULL(1) ∪ P(N) = 2N+1 个不同料号（前缀互不重叠）。
+        // task-0717 repair-2 更新：E 组(来料回收折扣/Q09)"投入料号"列已固化为材质料号语义，
+        // 不再 resolve/不再登记 material_master（见 Q09IncomingRecoveryHandler 类注释 + 上方类级 javadoc），
+        // 故不再计入 material_master 行数（旧断言 3N+1 含 E(N) 对应 repair-2 前旧语义）。
+        assertEquals(2L * N + 1, mmRows, "material_master TESTP1A 行数应=2N+1（W+WNULL ∪ P；E 组 repair-2 后不再登记 master）");
 
         // --- run 2（幂等重导，验确定性）---
         runImport(user, bytes);

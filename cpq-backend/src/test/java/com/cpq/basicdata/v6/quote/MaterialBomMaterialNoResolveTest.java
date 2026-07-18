@@ -56,12 +56,37 @@ class MaterialBomMaterialNoResolveTest {
             "WHERE material_no=:m AND is_current=TRUE").setParameter("m", MAT).getSingleResult().toString();
     }
 
+    /**
+     * task-0717 repair-2 更新：本用例原断言"投入料号空+名称有值→按名匹配/生成报价料号，
+     * BOM 子行用生成号"，对应 repair-2 前旧语义（彼时物料BOM 组件列走
+     * {@code materialNoResolver.resolve()}，名称可作为落库依据按名生成内部料号）。
+     *
+     * <p>repair-2（决策 A/B）后物料BOM 的组件列恒定语义为"材质料号"——直接引用材质库
+     * （{@code material_recipe}），只认 Excel 原始码（"投入料号"/"材质料号"两列任一非空即用），
+     * 不再 resolve/不再按名生成料号。本用例按新语义拆成两点重写：①给出材质料号原始码的行 →
+     * 子行 component_no 原样落库为该原始码，且不登记 material_master（mat 分支从不写 master）；
+     * ②料号列（投入料号/材质料号）全空 → 记 recordError("材质料号","为空")，整行跳过、不落
+     * material_bom_item（不再有"按名生成"兜底路径）。
+     */
     @Test
-    void emptyNoWithName_generatesAndBomChildUsesGeneratedNo() {
-        SheetImportResult r = handler.merge(List.of(matRow(1, null, "RSV-GEN-1")), List.of(), ctx());
+    void rawMaterialCode_childUsesRawCode_notRegisteredToMaster() {
+        SheetImportResult r = handler.merge(List.of(matRow(1, "RSV-RAW-001", "RSV-GEN-1")), List.of(), ctx());
         assertEquals(0, r.failedRows);
-        assertEquals(1L, masterCount("RSV-GEN-1"), "名称未命中→生成新料号写料号表");
-        assertTrue(childComponentNos().matches("^\\d{4}-\\d{10}$"), "BOM 子行 component_no = 生成的报价料号(XXXX-YYMMNNNNNN)，实得: " + childComponentNos());
+        assertEquals("RSV-RAW-001", childComponentNos(), "BOM 子行 component_no 应原样为 Excel 材质料号原始码");
+        assertEquals(0L, masterCount("RSV-GEN-1"), "材质料号不登记 material_master（mat 分支不再 upsert，与是否给名称无关）");
+    }
+
+    @Test
+    void emptyMaterialCode_recordsError_notLandedToBomItem() {
+        SheetImportResult r = handler.merge(List.of(matRow(1, null, "RSV-GEN-1")), List.of(), ctx());
+        assertEquals(1, r.failedRows, "投入料号/材质料号均空应记为失败行");
+        assertEquals(1, r.errors.size());
+        assertTrue(r.errors.get(0).message.contains("为空"),
+            "错误信息应含「为空」，实际=" + r.errors.get(0).message);
+        assertEquals(0L, ((Number) em.createNativeQuery(
+                "SELECT count(*) FROM material_bom_item WHERE material_no=:m")
+                .setParameter("m", MAT).getSingleResult()).longValue(),
+            "空材质料号行不应落 material_bom_item（不再按名生成兜底）");
     }
 
     @Test
