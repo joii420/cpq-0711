@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>报价单比对视图 · 高保真原型</title>
+<style>
+  /* ========== 基础重置 & AntD 视觉基准 ========== */
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:#f0f2f5;
+    color:rgba(0,0,0,.88);
+    font-size:13px;
+    line-height:1.5715;
+  }
+  input[type=radio], input[type=checkbox] { accent-color:#1677ff; cursor:pointer; }
+
+  .app-shell { max-width:1440px; margin:0 auto; background:#fff; min-height:100vh; box-shadow:0 0 0 1px #f0f0f0; }
+
+  /* ========== 顶部面包屑 ========== */
+  .crumb { padding:10px 24px; font-size:12.5px; color:rgba(0,0,0,.45); border-bottom:1px solid #f0f0f0; }
+  .crumb b { color:rgba(0,0,0,.88); font-weight:500; }
+
+  /* ========== 报价单/核价单/比对视图 Tab 栏 ========== */
+  .page-tabs { display:flex; padding:0 24px; border-bottom:1px solid #f0f0f0; background:#fff; }
+  .page-tab {
+    padding:12px 20px; cursor:pointer; color:rgba(0,0,0,.65); position:relative; font-size:14px; user-select:none;
+  }
+  .page-tab:hover { color:#1677ff; }
+  .page-tab.active { color:#1677ff; font-weight:500; }
+  .page-tab.active::after {
+    content:''; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:#1677ff; border-radius:2px;
+  }
+
+  /* ========== 原型演示说明条（非真实功能，仅用于本原型演示三种模式） ========== */
+  .demo-banner {
+    margin:16px 24px 0; padding:8px 14px; background:#e6f4ff; border:1px dashed #91caff; border-radius:6px;
+    font-size:12.5px; color:#0958d9; display:flex; align-items:center; gap:8px;
+  }
+  .demo-banner .badge { background:#1677ff; color:#fff; padding:1px 8px; border-radius:10px; font-size:11px; flex-shrink:0; }
+
+  .viewpoint-switcher {
+    margin:12px 24px; padding:10px 16px; background:#fafafa; border:1px solid #f0f0f0; border-radius:6px;
+    font-size:13px; display:flex; align-items:center; gap:24px; flex-wrap:wrap;
+  }
+  .vs-label { color:rgba(0,0,0,.65); font-weight:500; }
+  .cq-radio, .cq-checkbox { display:inline-flex; align-items:center; gap:6px; cursor:pointer; color:rgba(0,0,0,.88); }
+  .vs-sep { width:1px; height:16px; background:#e0e0e0; }
+
+  /* ========== 比对视图内容区 ========== */
+  .compare-panel { padding:4px 0 24px; }
+
+  .cq-toolbar { display:flex; align-items:center; gap:16px; margin:0 24px 14px; flex-wrap:wrap; }
+
+  .cq-btn {
+    padding:5px 16px; border-radius:6px; border:1px solid #d9d9d9; background:#fff; font-size:14px;
+    cursor:pointer; color:rgba(0,0,0,.88); transition:all .2s; white-space:nowrap;
+  }
+  .cq-btn:hover { color:#4096ff; border-color:#4096ff; }
+  .cq-btn-primary { background:#1677ff; border-color:#1677ff; color:#fff; }
+  .cq-btn-primary:hover { background:#4096ff; border-color:#4096ff; color:#fff; }
+  .cq-btn-sm { padding:2px 10px; font-size:12px; }
+
+  .cq-switch-group { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:rgba(0,0,0,.88); }
+  .cq-switch {
+    width:36px; height:20px; border-radius:10px; background:rgba(0,0,0,.25);
+    display:inline-block; position:relative; cursor:pointer; transition:background .2s; flex-shrink:0;
+  }
+  .cq-switch.on { background:#1677ff; }
+  .cq-switch-handle {
+    position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff;
+    transition:left .2s; box-shadow:0 2px 4px rgba(0,0,0,.2);
+  }
+  .cq-switch.on .cq-switch-handle { left:18px; }
+
+  .cq-search {
+    display:flex; align-items:center; border:1px solid #d9d9d9; border-radius:6px; padding:4px 10px;
+    width:240px; margin-left:auto; background:#fff;
+  }
+  .cq-search:focus-within { border-color:#4096ff; box-shadow:0 0 0 2px rgba(22,119,255,.1); }
+  .cq-search-icon { color:rgba(0,0,0,.35); font-size:13px; }
+  .cq-search input { border:none; outline:none; flex:1; font-size:13px; margin-left:6px; background:transparent; }
+
+  .cq-meta { margin:0 24px 10px; font-size:12.5px; color:rgba(0,0,0,.45); }
+
+  /* ========== 比对主表 ========== */
+  .cq-table-wrap { margin:0 24px; overflow-x:auto; border:1px solid #f0f0f0; border-radius:6px; }
+  table.cq-table { border-collapse:collapse; width:100%; font-size:13px; min-width:760px; }
+  .cq-table th, .cq-table td { border:1px solid #f0f0f0; padding:8px 12px; text-align:left; vertical-align:middle; }
+  .cq-table thead th { background:#fafafa; font-weight:500; color:rgba(0,0,0,.88); white-space:nowrap; }
+
+  .part-no-cell { font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace; font-weight:500; white-space:nowrap; }
+  .side-label-cell { color:rgba(0,0,0,.65); font-size:12.5px; white-space:nowrap; }
+  .cq-row-diff .side-label-cell { font-weight:600; color:rgba(0,0,0,.88); }
+  .cq-row-diff td { background:#fbfbfb; }
+
+  .block-start td { border-top:2px solid #e4e4e4; }
+
+  .cq-row-muted td { background:#fafafa !important; color:#bbb !important; }
+
+  .cell-empty { color:#bbb; }
+  /* 差异格整格填色：高优先级压过 .cq-row-diff td 的浅底色，红/橙一眼可辨 */
+  .cq-row-diff td.cell-diff-red { background:#ff4d4f; color:#fff; font-weight:600; }
+  .cq-row-diff td.cell-diff-orange { background:#fa8c16; color:#fff; font-weight:600; }
+
+  .cq-tag-orange {
+    display:inline-block; background:#fff7e6; color:#d46b08; border:1px solid #ffd591; border-radius:4px;
+    padding:0 6px; font-size:11px; margin-left:6px; line-height:18px;
+  }
+
+  /* 列头 */
+  .col-head-top { display:flex; align-items:flex-start; gap:6px; }
+  .col-head-label { flex:1; white-space:normal; line-height:1.6; font-size:12.5px; font-weight:500; min-width:150px; }
+  .col-head-actions { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+  .col-head-icon { cursor:pointer; color:rgba(0,0,0,.35); font-size:13px; }
+  .col-head-icon:hover { color:#1677ff; }
+  .col-head-icon.close:hover { color:#f5222d; }
+  .col-head-threshold { margin-top:6px; font-size:11px; color:#8c8c8c; font-weight:400; }
+  .default-badge { display:inline-block; background:#f0f0f0; color:#666; font-size:10px; padding:0 5px; border-radius:3px; margin-left:2px; font-weight:400; vertical-align:1px; }
+
+  /* ========== 分页 ========== */
+  .cq-pagination { display:flex; align-items:center; justify-content:flex-end; gap:6px; margin:14px 24px 0; font-size:13px; color:rgba(0,0,0,.65); flex-wrap:wrap; }
+  .cq-page-total { margin-right:auto; color:rgba(0,0,0,.45); font-size:12.5px; }
+  .cq-page-btn {
+    min-width:28px; height:28px; border:1px solid #d9d9d9; border-radius:6px; background:#fff;
+    display:inline-flex; align-items:center; justify-content:center; cursor:pointer; padding:0 6px; color:rgba(0,0,0,.88);
+  }
+  .cq-page-btn:hover:not([disabled]) { color:#1677ff; border-color:#1677ff; }
+  .cq-page-btn.active { border-color:#1677ff; color:#1677ff; background:#e6f4ff; }
+  .cq-page-btn[disabled] { cursor:not-allowed; color:rgba(0,0,0,.25); }
+  .cq-page-size-select { margin-left:8px; padding:4px 8px; border:1px solid #d9d9d9; border-radius:6px; color:rgba(0,0,0,.88); background:#fff; }
+
+  /* ========== 抽屉（新增比对） ========== */
+  .cq-drawer-mask {
+    position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; justify-content:flex-end; z-index:1000;
+  }
+  .cq-drawer-mask.show { display:flex; }
+  .cq-drawer {
+    width:960px; max-width:96vw; background:#fff; height:100%; box-shadow:-6px 0 16px rgba(0,0,0,.12);
+    display:flex; flex-direction:column; transform:translateX(100%); transition:transform .25s ease;
+  }
+  .cq-drawer-mask.show .cq-drawer { transform:translateX(0); }
+  .cq-drawer-header {
+    padding:16px 24px; border-bottom:1px solid #f0f0f0; display:flex; justify-content:space-between; align-items:center;
+    font-size:16px; font-weight:600; color:rgba(0,0,0,.88);
+  }
+  .cq-drawer-close { border:none; background:none; font-size:16px; cursor:pointer; color:rgba(0,0,0,.45); }
+  .cq-drawer-close:hover { color:rgba(0,0,0,.88); }
+  .cq-drawer-body { padding:20px 24px; flex:1; overflow-y:auto; }
+  .cq-form-section-title {
+    font-size:13px; font-weight:600; color:rgba(0,0,0,.85); margin:20px 0 10px; padding-bottom:6px; border-bottom:1px solid #f5f5f5;
+  }
+  .cq-form-section-title:first-child { margin-top:0; }
+  .cq-form-item { margin-bottom:14px; }
+  .cq-form-item label { display:block; font-size:13px; color:rgba(0,0,0,.65); margin-bottom:6px; }
+  .cq-form-item select, .cq-form-item input[type=number] {
+    width:100%; padding:6px 10px; border:1px solid #d9d9d9; border-radius:6px; font-size:13px; color:rgba(0,0,0,.88); background:#fff;
+  }
+  .cq-form-item select:focus, .cq-form-item input:focus { outline:none; border-color:#4096ff; box-shadow:0 0 0 2px rgba(22,119,255,.1); }
+  .cq-form-hint { font-size:12px; color:#8c8c8c; margin-top:8px; line-height:1.6; }
+  .cq-drawer-footer { padding:12px 24px; border-top:1px solid #f0f0f0; display:flex; justify-content:flex-end; gap:8px; }
+
+  /* ========== 连线配置抽屉（v2：新增比对列） ========== */
+  .cq-link-body { display:flex; flex-direction:column; gap:16px; }
+  .cq-link-columns {
+    position:relative; display:flex; border:1px solid #f0f0f0; border-radius:6px; height:380px; flex-shrink:0;
+  }
+  .cq-link-col { flex:1; min-width:0; display:flex; flex-direction:column; }
+  .cq-link-col-quote { border-right:1px solid #f0f0f0; }
+  .cq-link-col-costing { border-left:1px solid #f0f0f0; }
+  .cq-link-mid-gap { width:72px; flex-shrink:0; }
+  .cq-link-col-title {
+    padding:8px 12px; font-size:12.5px; font-weight:600; color:rgba(0,0,0,.65); background:#fafafa;
+    border-bottom:1px solid #f0f0f0; flex-shrink:0;
+  }
+  .cq-link-col-scroll { flex:1; overflow-y:auto; padding:4px 0; }
+  /* 页签分组头：蓝色带 + 左强调条，明确区分「页签」类目 */
+  .cq-link-group-title {
+    margin:7px 8px 3px; padding:5px 10px; font-size:12px; font-weight:600;
+    color:#1554ad; background:#f0f5ff; border-left:3px solid #1677ff; border-radius:4px;
+  }
+  .cq-link-node {
+    display:flex; align-items:center; gap:8px; padding:5px 12px 5px 22px; font-size:12.5px; color:rgba(0,0,0,.88);
+    cursor:pointer; user-select:none;
+  }
+  .cq-link-node:hover { background:#e6f4ff; }
+  .cq-link-col-quote .cq-link-node { justify-content:space-between; }
+  /* 核价侧：port 放内侧(左缘)，标签右对齐 → 连线只走中间空隙，不穿过标签 */
+  .cq-link-col-costing .cq-link-node { justify-content:space-between; padding:5px 22px 5px 12px; }
+  .cq-link-col-costing .cq-link-node-label { text-align:right; }
+  .cq-link-node-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* 字段小计：绿点标识；页签合计：橙点 + 橙字，突出"聚合值" */
+  .cq-link-node-label::before {
+    content:''; display:inline-block; width:6px; height:6px; border-radius:50%;
+    background:#52c41a; margin-right:6px; vertical-align:1px; flex-shrink:0;
+  }
+  .cq-link-node.is-total .cq-link-node-label { color:#d46b08; font-weight:600; }
+  .cq-link-node.is-total .cq-link-node-label::before { background:#fa8c16; }
+  .cq-link-port {
+    width:10px; height:10px; border-radius:50%; border:2px solid #1677ff; background:#fff; flex-shrink:0;
+    box-sizing:border-box; transition:all .15s;
+  }
+  .cq-link-port.connected { background:#1677ff; }
+  .cq-link-port.pending { background:#1677ff; transform:scale(1.4); box-shadow:0 0 0 3px rgba(22,119,255,.2); }
+  .cq-link-svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .cq-link-path { stroke:#1677ff; stroke-width:2; opacity:.7; pointer-events:stroke; cursor:pointer; }
+  .cq-link-path.cq-link-path-hi { stroke:#fa8c16; stroke-width:3; opacity:1; }
+  .cq-link-pairs-section { flex-shrink:0; }
+  .cq-link-pairs-list { max-height:160px; overflow-y:auto; border:1px solid #f0f0f0; border-radius:6px; }
+  .cq-link-pair-row {
+    display:flex; align-items:center; gap:10px; padding:6px 12px; font-size:12.5px; color:rgba(0,0,0,.88);
+    border-bottom:1px solid #f5f5f5; transition:background .15s;
+  }
+  .cq-link-pair-row:last-child { border-bottom:none; }
+  .cq-link-row-hi { background:#fff7e6; }
+  .cq-link-pair-desc { flex:1; min-width:0; }
+  .cq-link-pair-threshold { display:flex; align-items:center; gap:4px; font-size:12px; color:rgba(0,0,0,.45); flex-shrink:0; }
+  .cq-link-threshold-input { width:64px; padding:2px 6px; border:1px solid #d9d9d9; border-radius:4px; font-size:12px; }
+  .cq-link-threshold-input:focus { outline:none; border-color:#4096ff; box-shadow:0 0 0 2px rgba(22,119,255,.1); }
+  .cq-link-pair-del { cursor:pointer; color:rgba(0,0,0,.35); font-size:13px; flex-shrink:0; }
+  .cq-link-pair-del:hover { color:#f5222d; }
+  .cq-link-empty-hint { text-align:center; color:#bbb; padding:16px 0; font-size:12.5px; border:1px dashed #e0e0e0; border-radius:6px; }
+
+  /* ========== 阈值小气泡（列头设置图标） ========== */
+  .cq-popover {
+    position:fixed; background:#fff; border:1px solid #f0f0f0; border-radius:6px;
+    box-shadow:0 6px 16px rgba(0,0,0,.12); padding:10px 12px; z-index:1100; width:180px; display:none;
+  }
+  .cq-popover-title { font-size:12px; color:rgba(0,0,0,.65); margin-bottom:6px; }
+  .cq-popover input { width:100%; padding:4px 8px; border:1px solid #d9d9d9; border-radius:4px; margin-bottom:8px; font-size:13px; }
+  .cq-popover-actions { display:flex; justify-content:flex-end; gap:6px; }
+
+  /* ========== 轻提示 toast ========== */
+  .cq-toast { position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:2000; display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .cq-toast-item {
+    background:#fff; border-radius:6px; box-shadow:0 3px 6px -4px rgba(0,0,0,.12),0 6px 16px 0 rgba(0,0,0,.08);
+    padding:9px 16px; font-size:13px; color:rgba(0,0,0,.88); animation:cqFadeIn .2s;
+  }
+  @keyframes cqFadeIn { from{ opacity:0; transform:translateY(-8px);} to{ opacity:1; transform:translateY(0);} }
+
+  .empty-hint { text-align:center; color:#bbb; padding:48px 0; }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <div class="crumb">报价中心 / 报价单管理 / <b>Q-2026-0512 · 上海某化工厂</b></div>
+
+  <!-- 报价单 | 核价单 | 比对视图 -->
+  <div class="page-tabs">
+    <div class="page-tab" data-tab="quote">报价单</div>
+    <div class="page-tab" data-tab="costing">核价单</div>
+    <div class="page-tab active" data-tab="compare">比对视图</div>
+  </div>
+
+  <!-- 原型演示说明（非真实功能） -->
+  <div class="demo-banner">
+    <span class="badge">原型演示</span>
+    <span>下方「视角切换」用于本原型演示销售入口 / 财务入口 / 详情页(只读) 三种模式的差异，并非报价单实际功能入口。</span>
+  </div>
+
+  <div class="viewpoint-switcher">
+    <span class="vs-label">视角切换：</span>
+    <label class="cq-radio"><input type="radio" name="entry" value="sales" checked> 销售入口（报价单编辑页）</label>
+    <label class="cq-radio"><input type="radio" name="entry" value="finance"> 财务入口（核价单页面）</label>
+    <span class="vs-sep"></span>
+    <label class="cq-checkbox"><input type="checkbox" id="readonlyToggle"> 详情页（只读）</label>
+  </div>
+
+  <div class="compare-panel">
+
+    <!-- 工具栏 -->
+    <div class="cq-toolbar">
+      <button class="cq-btn cq-btn-primary" id="btnAddCompare">+ 新增比对</button>
+      <span class="cq-switch-group">
+        差异料号
+        <span class="cq-switch" id="diffSwitch"><span class="cq-switch-handle"></span></span>
+      </span>
+      <div class="cq-search">
+        <span class="cq-search-icon">🔍</span>
+        <input type="text" id="filterInput" placeholder="输入销售料号过滤">
+      </div>
+    </div>
+
+    <div class="cq-meta" id="cqMeta"></div>
+
+    <!-- 主表 -->
+    <div class="cq-table-wrap">
+      <table class="cq-table" id="compareTable">
+        <thead id="compareThead"></thead>
+        <tbody id="compareTbody"></tbody>
+      </table>
+    </div>
+
+    <!-- 分页 -->
+    <div class="cq-pagination" id="pagination"></div>
+
+  </div>
+</div>
+
+<!-- 新增比对 抽屉：连线配置 v2 -->
+<div class="cq-drawer-mask" id="drawerMask">
+  <div class="cq-drawer">
+    <div class="cq-drawer-header">
+      <span>新增比对列 · 连线配置</span>
+      <button class="cq-drawer-close" id="drawerCloseBtn">✕</button>
+    </div>
+    <div class="cq-drawer-body cq-link-body">
+      <div class="cq-link-columns" id="linkColumns">
+        <div class="cq-link-col cq-link-col-quote">
+          <div class="cq-link-col-title">报价单页签</div>
+          <div class="cq-link-col-scroll" id="linkColQuoteScroll"></div>
+        </div>
+        <div class="cq-link-mid-gap"></div>
+        <div class="cq-link-col cq-link-col-costing">
+          <div class="cq-link-col-title">核价单页签</div>
+          <div class="cq-link-col-scroll" id="linkColCostingScroll"></div>
+        </div>
+        <svg class="cq-link-svg" id="linkSvg"></svg>
+      </div>
+
+      <div class="cq-link-pairs-section">
+        <div class="cq-form-section-title">已配对清单</div>
+        <div class="cq-link-pairs-list" id="linkPairsList"></div>
+        <div class="cq-link-empty-hint" id="linkPairsEmpty">点击左侧报价节点，再点击右侧核价节点，完成一对连线</div>
+      </div>
+
+      <div class="cq-form-hint">差异值(报价 − 核价) &lt; 阈值 标橙；&lt; 0 固定标红（红线全局固定，不可配置）。每条配对可单独设置阈值，默认 0。</div>
+    </div>
+    <div class="cq-drawer-footer">
+      <button class="cq-btn" id="drawerCancelBtn">取消</button>
+      <button class="cq-btn cq-btn-primary" id="drawerConfirmBtn">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 阈值设置小气泡 -->
+<div class="cq-popover" id="thresholdPopover">
+  <div class="cq-popover-title">设置差异阈值</div>
+  <input type="number" id="thresholdPopoverInput">
+  <div class="cq-popover-actions">
+    <button class="cq-btn cq-btn-sm" id="thPopCancel">取消</button>
+    <button class="cq-btn cq-btn-primary cq-btn-sm" id="thPopOk">确定</button>
+  </div>
+</div>
+
+<!-- 轻提示 -->
+<div class="cq-toast" id="toast"></div>
+
+<script>
+/* =========================================================================
+ * 报价单比对视图 —— 高保真原型（纯前端静态演示，vanilla JS，无外部依赖）
+ * 数据全部为写死的演示数据，用于向业务方展示交互与视觉效果，非真实取数。
+ * ========================================================================= */
+
+/* ---------- 1. 演示数据：销售料号 × 三套取值(默认列 / 阈值0用户列 / 阈值500用户列) ---------- */
+const PART_NOS = [
+  '3120018220','3120018221','3120018222','3120018223','3120018224',
+  '3120018225','3120018226','3120018227','3120018228','3120018229',
+  '3120018230','3120018231','3120018232','3120018233',
+];
+// BOTH=双边都有 / QUOTE_ONLY=仅报价侧有 / COSTING_ONLY=仅核价侧有
+const PRESENCE = [
+  'BOTH','BOTH','BOTH','QUOTE_ONLY','COSTING_ONLY',
+  'BOTH','BOTH','BOTH','BOTH','BOTH',
+  'BOTH','BOTH','BOTH','BOTH',
+];
+// [报价值, 核价值]，null 表示该侧本就没有数据（配合 presence 使用）
+const DEFAULT_VALS = [
+  [15500,14500],[12000,12800],[20000,15000],[9800,null],[null,11200],
+  [8800,8800],[17600,18600],[13400,12000],[9600,9600],[21000,19500],
+  [15800,16800],[11200,10500],[18300,17000],[14200,15200],
+];
+const THR0_VALS = [
+  [8000,7500],[6000,6100],[9000,8000],[4200,null],[null,5200],
+  [5000,4800],[7200,7000],[6100,6300],[4400,4400],[9500,9500],
+  [7300,7300],[5300,5450],[8100,8100],[6700,6500],
+];
+const THR500_VALS = [
+  [3000,2700],[2000,1600],[2500,2500],[1500,null],[null,1800],
+  [2100,1500],[2900,2900],[2600,2300],[1900,1300],[3200,2600],
+  [2700,2400],[2200,2100],[3100,2500],[2400,2000],
+];
+
+const ALL_PARTS = PART_NOS.map((no, i) => ({
+  idx: i,
+  partNo: no,
+  presence: PRESENCE[i],
+  default: { q: DEFAULT_VALS[i][0], c: DEFAULT_VALS[i][1] },
+  thr0:    { q: THR0_VALS[i][0],    c: THR0_VALS[i][1] },
+  thr500:  { q: THR500_VALS[i][0],  c: THR500_VALS[i][1] },
+}));
+
+/* ---------- 2. 页签目录（供「新增比对」抽屉下拉使用） ---------- */
+const QUOTE_TAB_SUBTOTALS = {
+  '投料':   ['材料小计','辅料小计'],
+  '回料':   ['回料抵扣小计'],
+  '加工':   ['工时小计','加工费小计'],
+  '表面处理': ['处理费小计'],
+  '包装':   ['包装费小计'],
+};
+const COSTING_TAB_SUBTOTALS = {
+  '投料成本':   ['材料费小计','辅料费小计'],
+  '回料成本':   ['回料抵扣费小计'],
+  '加工成本':   ['工时费小计','加工费小计'],
+  '表面处理成本': ['处理费小计'],
+  '包装成本':   ['包装费小计'],
+};
+const TAB_TOTAL_OPTION = '页签合计';
+
+/* ---------- 3. 比对列定义：默认列(锁定) + 报价单编辑页/核价单页面 各自预置的用户列 ---------- */
+function makeDefaultColumn(bucket) {
+  return { id: bucket + '-default', kind: 'default', threshold: 0, dataKey: 'default', locked: true };
+}
+const columnsByBucket = {
+  sales: [
+    makeDefaultColumn('sales'),
+    { id:'sales-c1', kind:'user', quoteTab:'投料', quoteVal:'材料小计', costingTab:'投料成本', costingVal:'材料费小计', threshold:0,   dataKey:'thr0' },
+    { id:'sales-c2', kind:'user', quoteTab:'加工', quoteVal:'工时小计', costingTab:'加工成本', costingVal:'工时费小计', threshold:500, dataKey:'thr500' },
+  ],
+  finance: [
+    makeDefaultColumn('finance'),
+    { id:'fin-c1', kind:'user', quoteTab:'包装',   quoteVal:'包装费小计', costingTab:'包装成本',   costingVal:'包装费小计', threshold:0,   dataKey:'thr0' },
+    { id:'fin-c2', kind:'user', quoteTab:'表面处理', quoteVal:'处理费小计', costingTab:'表面处理成本', costingVal:'处理费小计', threshold:500, dataKey:'thr500' },
+  ],
+};
+
+/* ---------- 4. 全局状态 ---------- */
+const state = {
+  entry: 'sales',      // sales(销售入口) | finance(财务入口)
+  readonly: false,     // 详情页(只读)
+  onlyDiff: false,      // 差异料号前置
+  filterText: '',
+  page: 1,
+  pageSize: 10,
+  extraSeq: 0,          // 抽屉新增列的取值序号（用于生成演示数据）
+};
+
+/* ---------- 5. 取值 & 差异计算 ---------- */
+function genExtraDataset(idx, n) {
+  // 用于「新增比对」抽屉动态添加的列：确定性伪随机，保证同一列多次渲染取值不变
+  const base = 3000 + idx * 150 + n * 80;
+  const wobble = ((idx * 17 + n * 29) % 15) - 7; // -7..7
+  const diff = wobble * 130;                     // 约 -910..910
+  return { q: base, c: base - diff };
+}
+
+function getValue(part, col, side) {
+  if (side === 'quote' && part.presence === 'COSTING_ONLY') return undefined;
+  if (side === 'costing' && part.presence === 'QUOTE_ONLY') return undefined;
+  let ds;
+  if (col.dataKey === 'default') ds = part.default;
+  else if (col.dataKey === 'thr0') ds = part.thr0;
+  else if (col.dataKey === 'thr500') ds = part.thr500;
+  else if (col.dataKey && col.dataKey.indexOf('extra-') === 0) {
+    const n = parseInt(col.dataKey.split('-')[1], 10);
+    ds = genExtraDataset(part.idx, n);
+  }
+  if (!ds) return undefined;
+  const v = side === 'quote' ? ds.q : ds.c;
+  return (v === null || v === undefined) ? undefined : v;
+}
+
+function computeDiffFlag(part, columns) {
+  // 2=单边料号(最高优先级) 1=存在橙/红着色 0=无差异
+  if (part.presence !== 'BOTH') return 2;
+  for (const col of columns) {
+    const q = getValue(part, col, 'quote');
+    const c = getValue(part, col, 'costing');
+    if (q === undefined || c === undefined) continue;
+    const diff = q - c;
+    if (diff < 0 || diff < col.threshold) return 1;
+  }
+  return 0;
+}
+
+function formatNum(v) {
+  if (v === undefined || v === null) return '<span class="cell-empty">—</span>';
+  return v.toLocaleString();
+}
+
+// 比对值显示格式：在末尾"小计"/"合计"前插入间隔点，如 "加工费小计" -> "加工费·小计"、"页签合计" -> "页签·合计"
+function formatVal(val) {
+  return String(val == null ? '' : val).replace(/(小计|合计)$/, '·$1');
+}
+
+/* ---------- 6. 渲染：页签栏 ---------- */
+document.querySelectorAll('.page-tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    if (tab.dataset.tab !== 'compare') {
+      showToast('本原型仅演示「比对视图」交互');
+      return;
+    }
+  });
+});
+
+/* ---------- 7. 渲染：视角切换 ---------- */
+document.querySelectorAll('input[name=entry]').forEach((radio) => {
+  radio.addEventListener('change', (e) => {
+    state.entry = e.target.value;
+    state.page = 1;
+    render();
+  });
+});
+document.getElementById('readonlyToggle').addEventListener('change', (e) => {
+  state.readonly = e.target.checked;
+  if (state.readonly) closeDrawer();
+  render();
+});
+
+/* ---------- 8. 工具栏交互 ---------- */
+document.getElementById('btnAddCompare').addEventListener('click', () => {
+  if (state.readonly) return; // 只读模式下按钮已隐藏，双保险
+  openDrawer();
+});
+document.getElementById('diffSwitch').addEventListener('click', function () {
+  state.onlyDiff = !state.onlyDiff;
+  this.classList.toggle('on', state.onlyDiff);
+  state.page = 1;
+  render();
+});
+document.getElementById('filterInput').addEventListener('input', (e) => {
+  state.filterText = e.target.value.trim();
+  state.page = 1;
+  render();
+});
+
+/* ---------- 9. 主渲染函数 ---------- */
+function render() {
+  const columns = columnsByBucket[state.entry];
+
+  renderHeader(columns);
+
+  let parts = ALL_PARTS.filter((p) => p.partNo.indexOf(state.filterText) !== -1);
+  parts.forEach((p) => { p._flag = computeDiffFlag(p, columns); });
+
+  if (state.onlyDiff) {
+    parts = parts.slice().sort((a, b) => b._flag - a._flag); // Array.sort 稳定排序，同优先级保持原顺序
+  }
+
+  const total = parts.length;
+  const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
+  if (state.page > totalPages) state.page = totalPages;
+
+  const start = (state.page - 1) * state.pageSize;
+  const pageParts = parts.slice(start, start + state.pageSize);
+
+  renderBody(pageParts, columns);
+  renderPagination(total, totalPages);
+
+  document.getElementById('btnAddCompare').style.display = state.readonly ? 'none' : '';
+  document.getElementById('cqMeta').textContent =
+    '共 ' + total + ' 个销售料号，' + columns.length + ' 个比对列' +
+    (state.readonly ? '（只读：仅展示当前入口已保存的比对配置）' : '');
+}
+
+function renderHeader(columns) {
+  const thead = document.getElementById('compareThead');
+  let html = '<tr>';
+  html += '<th style="width:170px;">销售料号</th>';
+  html += '<th style="width:96px;">口径</th>';
+  columns.forEach((col) => { html += '<th style="min-width:210px;">' + renderColHeadInner(col) + '</th>'; });
+  html += '</tr>';
+  thead.innerHTML = html;
+
+  thead.querySelectorAll('.col-head-icon.gear').forEach((el) => {
+    el.addEventListener('click', (e) => { e.stopPropagation(); openThresholdPopover(el.dataset.col, el); });
+  });
+  thead.querySelectorAll('.col-head-icon.close').forEach((el) => {
+    el.addEventListener('click', (e) => { e.stopPropagation(); removeColumn(el.dataset.col); });
+  });
+}
+
+function renderColHeadInner(col) {
+  const gearIcon = state.readonly ? '' :
+    '<span class="col-head-icon gear" data-col="' + col.id + '" title="设置差异阈值">⚙</span>';
+
+  if (col.kind === 'default') {
+    return '<div class="col-head-top">' +
+      '<span class="col-head-label">🔒 产品卡片总计<span class="default-badge">默认</span></span>' +
+      '<span class="col-head-actions">' + gearIcon + '</span>' +
+      '</div>' +
+      '<div class="col-head-threshold">阈值 ' + col.threshold + '</div>';
+  }
+
+  const closeIcon = state.readonly ? '' :
+    '<span class="col-head-icon close" data-col="' + col.id + '" title="删除该列">✕</span>';
+
+  return '<div class="col-head-top">' +
+    '<span class="col-head-label">报价：' + col.quoteTab + '·' + formatVal(col.quoteVal) + '<br>核价：' + col.costingTab + '·' + formatVal(col.costingVal) + '</span>' +
+    '<span class="col-head-actions">' + gearIcon + closeIcon + '</span>' +
+    '</div>' +
+    '<div class="col-head-threshold">阈值 ' + col.threshold + '</div>';
+}
+
+function renderBody(pageParts, columns) {
+  const tbody = document.getElementById('compareTbody');
+  if (!pageParts.length) {
+    tbody.innerHTML = '<tr><td colspan="' + (columns.length + 2) + '" class="empty-hint">暂无匹配的销售料号</td></tr>';
+    return;
+  }
+  // 5 行改 3 行：报价页签名/核价页签名已在列头展示，块内不再重复标题行
+  const ROW_TYPES = ['q-data', 'c-data', 'diff'];
+  const ROW_LABELS = { 'q-data': '报价', 'c-data': '核价', 'diff': '差异' };
+
+  let html = '';
+  pageParts.forEach((part) => {
+    ROW_TYPES.forEach((rowType, i) => {
+      const isMuted =
+        (rowType.indexOf('q-') === 0 && part.presence === 'COSTING_ONLY') ||
+        (rowType.indexOf('c-') === 0 && part.presence === 'QUOTE_ONLY');
+      const trClass = [
+        isMuted ? 'cq-row-muted' : '',
+        rowType === 'diff' ? 'cq-row-diff' : '',
+        i === 0 ? 'block-start' : '',
+      ].filter(Boolean).join(' ');
+
+      html += '<tr class="' + trClass + '">';
+      if (i === 0) {
+        const tag = part.presence !== 'BOTH'
+          ? '<span class="cq-tag-orange">' + (part.presence === 'QUOTE_ONLY' ? '仅报价' : '仅核价') + '</span>'
+          : '';
+        html += '<td rowspan="3" class="part-no-cell">' + part.partNo + tag + '</td>';
+      }
+      html += '<td class="side-label-cell">' + ROW_LABELS[rowType] + '</td>';
+      columns.forEach((col) => { html += renderDataCell(part, col, rowType); });
+      html += '</tr>';
+    });
+  });
+  tbody.innerHTML = html;
+}
+
+function renderDataCell(part, col, rowType) {
+  if (rowType === 'q-data') return '<td>' + formatNum(getValue(part, col, 'quote')) + '</td>';
+  if (rowType === 'c-data') return '<td>' + formatNum(getValue(part, col, 'costing')) + '</td>';
+
+  // 差异行
+  if (part.presence !== 'BOTH') return '<td class="cell-empty">—</td>';
+  const q = getValue(part, col, 'quote');
+  const c = getValue(part, col, 'costing');
+  if (q === undefined || c === undefined) return '<td class="cell-empty">—</td>';
+  const diff = q - c;
+  let cls = '';
+  if (diff < 0) cls = 'cell-diff-red';
+  else if (diff < col.threshold) cls = 'cell-diff-orange';
+  return '<td class="' + cls + '">' + (diff > 0 ? '+' : '') + diff.toLocaleString() + '</td>';
+}
+
+/* ---------- 10. 分页 ---------- */
+function renderPagination(total, totalPages) {
+  const el = document.getElementById('pagination');
+  let html = '<span class="cq-page-total">共 ' + total + ' 个料号</span>';
+  html += '<button class="cq-page-btn" data-page="prev"' + (state.page <= 1 ? ' disabled' : '') + '>‹</button>';
+  for (let i = 1; i <= totalPages; i++) {
+    html += '<button class="cq-page-btn' + (i === state.page ? ' active' : '') + '" data-page="' + i + '">' + i + '</button>';
+  }
+  html += '<button class="cq-page-btn" data-page="next"' + (state.page >= totalPages ? ' disabled' : '') + '>›</button>';
+  html += '<select class="cq-page-size-select" id="pageSizeSelect">' +
+    [10, 20, 50].map((n) => '<option value="' + n + '"' + (state.pageSize === n ? ' selected' : '') + '>' + n + ' 条/页</option>').join('') +
+    '</select>';
+  el.innerHTML = html;
+
+  el.querySelectorAll('.cq-page-btn[data-page]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const p = btn.dataset.page;
+      if (p === 'prev') state.page = Math.max(1, state.page - 1);
+      else if (p === 'next') state.page = Math.min(totalPages, state.page + 1);
+      else state.page = parseInt(p, 10);
+      render();
+    });
+  });
+  document.getElementById('pageSizeSelect').addEventListener('change', (e) => {
+    state.pageSize = parseInt(e.target.value, 10);
+    state.page = 1;
+    render();
+  });
+}
+
+/* ---------- 11. 阈值气泡（列头设置图标） ---------- */
+const thresholdPopover = document.getElementById('thresholdPopover');
+function openThresholdPopover(colId, anchorEl) {
+  const columns = columnsByBucket[state.entry];
+  const col = columns.find((c) => c.id === colId);
+  if (!col) return;
+  thresholdPopover.dataset.colId = colId;
+  document.getElementById('thresholdPopoverInput').value = col.threshold;
+  const rect = anchorEl.getBoundingClientRect();
+  const top = rect.bottom + 6;
+  const left = Math.min(rect.left, window.innerWidth - 196);
+  thresholdPopover.style.top = top + 'px';
+  thresholdPopover.style.left = Math.max(8, left) + 'px';
+  thresholdPopover.style.display = 'block';
+}
+document.getElementById('thPopOk').addEventListener('click', () => {
+  const colId = thresholdPopover.dataset.colId;
+  const val = parseFloat(document.getElementById('thresholdPopoverInput').value);
+  const col = columnsByBucket[state.entry].find((c) => c.id === colId);
+  if (col && !isNaN(val)) col.threshold = val;
+  thresholdPopover.style.display = 'none';
+  render();
+  showToast('阈值已更新', 'success');
+});
+document.getElementById('thPopCancel').addEventListener('click', () => { thresholdPopover.style.display = 'none'; });
+document.addEventListener('click', (e) => {
+  if (thresholdPopover.style.display === 'block' &&
+      !thresholdPopover.contains(e.target) &&
+      !e.target.classList.contains('gear')) {
+    thresholdPopover.style.display = 'none';
+  }
+});
+
+/* ---------- 12. 删除列 ---------- */
+function removeColumn(colId) {
+  const columns = columnsByBucket[state.entry];
+  const idx = columns.findIndex((c) => c.id === colId);
+  if (idx < 0 || columns[idx].locked) return; // 默认列不可删（双保险，UI 上本就不渲染删除图标）
+  columns.splice(idx, 1);
+  render();
+  showToast('已删除比对列', 'success');
+}
+
+/* ---------- 13. 新增比对 抽屉：连线配置（点击式连线，非拖拽） ---------- */
+const drawerMask = document.getElementById('drawerMask');
+const cqDrawerEl = drawerMask.querySelector('.cq-drawer');
+const linkSvg = document.getElementById('linkSvg');
+
+let linkPairs = [];       // 已配对清单 [{id,quoteTab,quoteVal,costingTab,costingVal,threshold}]
+let linkPending = null;   // 待连接端 {side:'quote'|'costing', tab, val} | null
+let linkPairSeq = 0;
+const linkPortEls = {};   // key(side::tab::val) -> port DOM 元素
+
+function linkKey(side, tab, val) { return side + '::' + tab + '::' + val; }
+
+// 重建左右两列节点树（报价页签 / 核价页签，每个页签下各字段小计 + 页签合计 均为可连接节点）
+function buildLinkColumns() {
+  Object.keys(linkPortEls).forEach((k) => delete linkPortEls[k]);
+
+  const quoteScroll = document.getElementById('linkColQuoteScroll');
+  let qHtml = '';
+  Object.keys(QUOTE_TAB_SUBTOTALS).forEach((tab) => {
+    qHtml += '<div class="cq-link-group-title">▸ ' + tab + '</div>';
+    QUOTE_TAB_SUBTOTALS[tab].concat([TAB_TOTAL_OPTION]).forEach((val) => {
+      qHtml += '<div class="cq-link-node' + (val === TAB_TOTAL_OPTION ? ' is-total' : '') + '" data-side="quote" data-tab="' + tab + '" data-val="' + val + '">' +
+        '<span class="cq-link-node-label">' + formatVal(val) + '</span>' +
+        '<span class="cq-link-port" data-key="' + linkKey('quote', tab, val) + '"></span>' +
+        '</div>';
+    });
+  });
+  quoteScroll.innerHTML = qHtml;
+
+  const costingScroll = document.getElementById('linkColCostingScroll');
+  let cHtml = '';
+  Object.keys(COSTING_TAB_SUBTOTALS).forEach((tab) => {
+    cHtml += '<div class="cq-link-group-title">▸ ' + tab + '</div>';
+    COSTING_TAB_SUBTOTALS[tab].concat([TAB_TOTAL_OPTION]).forEach((val) => {
+      cHtml += '<div class="cq-link-node' + (val === TAB_TOTAL_OPTION ? ' is-total' : '') + '" data-side="costing" data-tab="' + tab + '" data-val="' + val + '">' +
+        '<span class="cq-link-port" data-key="' + linkKey('costing', tab, val) + '"></span>' +
+        '<span class="cq-link-node-label">' + formatVal(val) + '</span>' +
+        '</div>';
+    });
+  });
+  costingScroll.innerHTML = cHtml;
+
+  // 整个节点行都可点击（不必精确点中 10px 的 port 圆点），仍视为点击该节点的 port
+  quoteScroll.querySelectorAll('.cq-link-node').forEach((node) => {
+    node.addEventListener('click', () => handlePortClick(node.dataset.side, node.dataset.tab, node.dataset.val));
+  });
+  costingScroll.querySelectorAll('.cq-link-node').forEach((node) => {
+    node.addEventListener('click', () => handlePortClick(node.dataset.side, node.dataset.tab, node.dataset.val));
+  });
+  quoteScroll.querySelectorAll('.cq-link-port').forEach((p) => { linkPortEls[p.dataset.key] = p; });
+  costingScroll.querySelectorAll('.cq-link-port').forEach((p) => { linkPortEls[p.dataset.key] = p; });
+
+  updatePortStates();
+}
+
+// 点击节点 port 的核心状态机：
+// 1) 无待连接端 -> 记为待连接
+// 2) 待连接端与本次点击同侧 -> 更新待连接端（允许改主意）
+// 3) 待连接端与本次点击异侧 -> 生成正式连线，清空待连接态
+function handlePortClick(side, tab, val) {
+  if (!linkPending) {
+    linkPending = { side, tab, val };
+    updatePortStates();
+    return;
+  }
+  if (linkPending.side === side) {
+    linkPending = { side, tab, val };
+    updatePortStates();
+    return;
+  }
+  const quoteSide = side === 'quote' ? { tab, val } : linkPending;
+  const costingSide = side === 'costing' ? { tab, val } : linkPending;
+  linkPairSeq += 1;
+  linkPairs.push({
+    id: 'pair-' + linkPairSeq,
+    quoteTab: quoteSide.tab, quoteVal: quoteSide.val,
+    costingTab: costingSide.tab, costingVal: costingSide.val,
+    threshold: 0,
+  });
+  linkPending = null;
+  updatePortStates();
+  renderLinkPairsList();
+  drawLinkLines();
+}
+
+function updatePortStates() {
+  Object.keys(linkPortEls).forEach((key) => { linkPortEls[key].classList.remove('connected', 'pending'); });
+  linkPairs.forEach((pair) => {
+    const qEl = linkPortEls[linkKey('quote', pair.quoteTab, pair.quoteVal)];
+    const cEl = linkPortEls[linkKey('costing', pair.costingTab, pair.costingVal)];
+    if (qEl) qEl.classList.add('connected');
+    if (cEl) cEl.classList.add('connected');
+  });
+  if (linkPending) {
+    const el = linkPortEls[linkKey(linkPending.side, linkPending.tab, linkPending.val)];
+    if (el) el.classList.add('pending');
+  }
+}
+
+function renderLinkPairsList() {
+  const listEl = document.getElementById('linkPairsList');
+  const emptyEl = document.getElementById('linkPairsEmpty');
+  if (!linkPairs.length) {
+    listEl.innerHTML = '';
+    emptyEl.style.display = '';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  listEl.innerHTML = linkPairs.map((pair) =>
+    '<div class="cq-link-pair-row" data-pair-id="' + pair.id + '">' +
+      '<span class="cq-link-pair-desc">报价：' + pair.quoteTab + '·' + formatVal(pair.quoteVal) + ' ↔ 核价：' + pair.costingTab + '·' + formatVal(pair.costingVal) + '</span>' +
+      '<span class="cq-link-pair-threshold">阈值 <input type="number" class="cq-link-threshold-input" data-pair-id="' + pair.id + '" value="' + pair.threshold + '"></span>' +
+      '<span class="cq-link-pair-del" data-pair-id="' + pair.id + '" title="删除该配对">✕</span>' +
+    '</div>'
+  ).join('');
+
+  listEl.querySelectorAll('.cq-link-pair-row').forEach((row) => {
+    row.addEventListener('mouseenter', () => highlightPairPath(row.dataset.pairId, true));
+    row.addEventListener('mouseleave', () => highlightPairPath(row.dataset.pairId, false));
+  });
+  listEl.querySelectorAll('.cq-link-threshold-input').forEach((inp) => {
+    inp.addEventListener('click', (e) => e.stopPropagation());
+    inp.addEventListener('input', (e) => {
+      const pair = linkPairs.find((p) => p.id === e.target.dataset.pairId);
+      if (pair) pair.threshold = parseFloat(e.target.value) || 0;
+    });
+  });
+  listEl.querySelectorAll('.cq-link-pair-del').forEach((del) => {
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeLinkPair(del.dataset.pairId);
+    });
+  });
+}
+
+function removeLinkPair(pairId) {
+  const idx = linkPairs.findIndex((p) => p.id === pairId);
+  if (idx < 0) return;
+  linkPairs.splice(idx, 1);
+  updatePortStates();
+  renderLinkPairsList();
+  drawLinkLines();
+}
+
+// 依据左右 port 的 getBoundingClientRect() 相对 SVG 重新计算并重绘全部曲线
+function drawLinkLines() {
+  if (!linkSvg) return;
+  const svgRect = linkSvg.getBoundingClientRect();
+  if (!svgRect.width || !svgRect.height) return;
+  linkSvg.setAttribute('width', svgRect.width);
+  linkSvg.setAttribute('height', svgRect.height);
+  linkSvg.setAttribute('viewBox', '0 0 ' + svgRect.width + ' ' + svgRect.height);
+
+  linkSvg.innerHTML = linkPairs.map((pair) => {
+    const qEl = linkPortEls[linkKey('quote', pair.quoteTab, pair.quoteVal)];
+    const cEl = linkPortEls[linkKey('costing', pair.costingTab, pair.costingVal)];
+    if (!qEl || !cEl) return '';
+    const qr = qEl.getBoundingClientRect();
+    const cr = cEl.getBoundingClientRect();
+    const x1 = qr.left + qr.width / 2 - svgRect.left;
+    const y1 = qr.top + qr.height / 2 - svgRect.top;
+    const x2 = cr.left + cr.width / 2 - svgRect.left;
+    const y2 = cr.top + cr.height / 2 - svgRect.top;
+    const dx = x2 - x1;
+    const c1x = x1 + dx * 0.4, c1y = y1;
+    const c2x = x2 - dx * 0.4, c2y = y2;
+    const d = 'M ' + x1 + ' ' + y1 + ' C ' + c1x + ' ' + c1y + ', ' + c2x + ' ' + c2y + ', ' + x2 + ' ' + y2;
+    return '<path d="' + d + '" data-pair-id="' + pair.id + '" class="cq-link-path" fill="none"></path>';
+  }).join('');
+
+  linkSvg.querySelectorAll('.cq-link-path').forEach((path) => {
+    path.addEventListener('mouseenter', () => highlightPairPath(path.dataset.pairId, true));
+    path.addEventListener('mouseleave', () => highlightPairPath(path.dataset.pairId, false));
+    path.addEventListener('click', () => {
+      const row = document.querySelector('.cq-link-pair-row[data-pair-id="' + path.dataset.pairId + '"]');
+      if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      flashPairRow(path.dataset.pairId);
+    });
+  });
+}
+
+function highlightPairPath(pairId, on) {
+  const path = linkSvg.querySelector('.cq-link-path[data-pair-id="' + pairId + '"]');
+  if (path) path.classList.toggle('cq-link-path-hi', on);
+  const row = document.querySelector('.cq-link-pair-row[data-pair-id="' + pairId + '"]');
+  if (row) row.classList.toggle('cq-link-row-hi', on);
+}
+
+function flashPairRow(pairId) {
+  const row = document.querySelector('.cq-link-pair-row[data-pair-id="' + pairId + '"]');
+  if (!row) return;
+  row.classList.add('cq-link-row-hi');
+  setTimeout(() => row.classList.remove('cq-link-row-hi'), 900);
+}
+
+// 重绘时机：左右列滚动 / 窗口 resize / 抽屉打开动画结束
+document.getElementById('linkColQuoteScroll').addEventListener('scroll', () => drawLinkLines());
+document.getElementById('linkColCostingScroll').addEventListener('scroll', () => drawLinkLines());
+window.addEventListener('resize', () => { if (drawerMask.classList.contains('show')) drawLinkLines(); });
+cqDrawerEl.addEventListener('transitionend', (e) => {
+  if (e.propertyName === 'transform' && drawerMask.classList.contains('show')) drawLinkLines();
+});
+
+function openDrawer() {
+  linkPairs = [];
+  linkPending = null;
+  linkPairSeq = 0;
+  buildLinkColumns();
+  renderLinkPairsList();
+  drawerMask.classList.add('show');
+  requestAnimationFrame(() => drawLinkLines());
+}
+function closeDrawer() { drawerMask.classList.remove('show'); }
+
+document.getElementById('drawerCloseBtn').addEventListener('click', closeDrawer);
+document.getElementById('drawerCancelBtn').addEventListener('click', closeDrawer);
+drawerMask.addEventListener('click', (e) => { if (e.target === drawerMask) closeDrawer(); });
+
+document.getElementById('drawerConfirmBtn').addEventListener('click', () => {
+  if (!linkPairs.length) { showToast('请先连线配置至少一对'); return; }
+  linkPairs.forEach((pair) => {
+    state.extraSeq += 1;
+    columnsByBucket[state.entry].push({
+      id: state.entry + '-custom-' + Date.now() + '-' + state.extraSeq,
+      kind: 'user',
+      quoteTab: pair.quoteTab, quoteVal: pair.quoteVal,
+      costingTab: pair.costingTab, costingVal: pair.costingVal,
+      threshold: pair.threshold,
+      dataKey: 'extra-' + state.extraSeq,
+    }); // 逐条追加到末尾，复用原 genExtraDataset 的 dataKey 递增序号逻辑
+  });
+  const addedCount = linkPairs.length;
+  closeDrawer();
+  render();
+  showToast('已添加 ' + addedCount + ' 个比对列', 'success');
+});
+
+/* ---------- 14. 轻提示 ---------- */
+function showToast(msg, type) {
+  const container = document.getElementById('toast');
+  const item = document.createElement('div');
+  item.className = 'cq-toast-item';
+  item.textContent = (type === 'success' ? '✅ ' : 'ℹ️ ') + msg;
+  container.appendChild(item);
+  setTimeout(() => { item.remove(); }, 2000);
+}
+
+/* ---------- 15. 初始渲染 ---------- */
+render();
+</script>
+</body>
+</html>
