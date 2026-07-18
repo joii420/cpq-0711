@@ -74,11 +74,11 @@ class Q13ComponentRecipeHandlerTest {
         return new SheetRow(1, o);
     }
 
+    /** getSingleResult()：命中分支若意外写出重复行/0 行会直接炸出来，而非静默只看第一行。 */
     private String upCode() {
-        List<?> r = em.createNativeQuery(
+        return String.valueOf(em.createNativeQuery(
             "SELECT code FROM unit_price WHERE customer_no=:c AND finished_material_no=:f AND is_current=TRUE")
-            .setParameter("c", CUST).setParameter("f", FIN).getResultList();
-        return r.isEmpty() ? null : String.valueOf(r.get(0));
+            .setParameter("c", CUST).setParameter("f", FIN).getSingleResult());
     }
 
     private long masterCount(String materialNo) {

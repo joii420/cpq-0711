@@ -16,9 +16,11 @@ import jakarta.transaction.Transactional;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Q13 组成件其他费用 → unit_price (price=COMPONENT_OTHER, cost=要素名称动态)。
@@ -52,17 +54,17 @@ public class Q13ComponentOtherFeeHandler implements SheetHandler {
         batch.customerNo = ctx.customerNo;
         batch.yyMm = java.time.YearMonth.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMM"));
         Map<String, String[]> mmAcc = new LinkedHashMap<>();   // §P1-A 料号表延后批量(首个非空胜)
+        // repair-2 决策 D：组成件料号命中"本次导入材质料号集"(物料BOM ∪ 物料与元素BOM 的材质料号) →
+        // 按材质料号处理(原始码/不 resolve/不登记 master)；否则维持原真组成件 resolve 路径
+        // （与 MaterialBomMergeHandler 组成件BOM 分支同款判定，见该文件 §3.3-2）。ctx.sharedCache 循环内不变，取一次即可。
+        @SuppressWarnings("unchecked")
+        Set<String> matNoSet = (Set<String>) ctx.sharedCache.getOrDefault(
+            "quoteMaterialNoSet", Collections.emptySet());
         for (SheetRow row : rows) {
             result.totalRows++;
             String costType = row.getStr("要素名称");
             if (costType == null) { result.recordError(row.rowNo, "要素名称", "为空"); continue; }
             String componentName = row.exact("组成件名称");
-            // repair-2 决策 D：组成件料号命中"本次导入材质料号集"(物料BOM ∪ 物料与元素BOM 的材质料号) →
-            // 按材质料号处理(原始码/不 resolve/不登记 master)；否则维持原真组成件 resolve 路径
-            // （与 MaterialBomMergeHandler 组成件BOM 分支同款判定，见该文件 §3.3-2）。
-            @SuppressWarnings("unchecked")
-            java.util.Set<String> matNoSet = (java.util.Set<String>) ctx.sharedCache.getOrDefault(
-                "quoteMaterialNoSet", java.util.Collections.emptySet());
             String rawComp = row.exact("组成件料号");
             String code;
             if (rawComp != null && matNoSet.contains(rawComp)) {
