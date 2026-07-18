@@ -20,7 +20,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 报价料号统一 Spec 1 · Task 5 集成测试：Q02（报价客户料号登记改走 QUOTE）+ P05（核价维持 PRICING）+
- * 8 个发号 handler（BatchState 注入 customerNo/yyMm 后能正常铸造报价料号）。
+ * 发号 handler（BatchState 注入 customerNo/yyMm 后能正常铸造报价料号）。
+ * <p>task-0717 后更新：Q06~Q10 的「投入料号」列已扩围为 RECIPE 模型（=材质料号），恒取原始码，
+ * 不再铸号（不再适用于本类描述的发号语义）。
  *
  * <p>测试客户/料号一律用 {@code QMNI-} 前缀，避免与其它测试/存量数据串号。
  */

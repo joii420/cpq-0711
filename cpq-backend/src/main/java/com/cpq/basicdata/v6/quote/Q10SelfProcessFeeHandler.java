@@ -59,11 +59,11 @@ public class Q10SelfProcessFeeHandler implements SheetHandler {
                 code = raw;                          // 投入料号=材质,原始码,不 resolve/不铸号/不登记
             } else {
                 if (finishedMaterialNo == null) {
-                    result.recordError(row.rowNo, "投入料号", "投入料号、宏丰料号均为空,无法确定料号"); continue;
+                    result.recordError(row.rowNo, "投入料号", "投入料号、宏丰料号均为空，无法确定料号"); continue;
                 }
                 if (!noInputFallbackFinished.add(finishedMaterialNo)) {
                     result.recordError(row.rowNo, "投入料号",
-                        "成品 " + finishedMaterialNo + " 存在多条无投入料号的自制加工费,数据非法"); continue;
+                        "成品 " + finishedMaterialNo + " 存在多条无投入料号的自制加工费，数据非法"); continue;
                 }
                 code = finishedMaterialNo;
             }
