@@ -110,6 +110,25 @@ public class QuoteImportService {
                 var asmSheet = wb.getSheet("组成件BOM");
                 List<SheetRow> matRows = matSheet != null ? parser.parseSheet(matSheet) : List.of();
                 List<SheetRow> asmRows = asmSheet != null ? parser.parseSheet(asmSheet) : List.of();
+
+                // repair-2 决策 D 前置：merge() 组成件分支要判定"是否命中本次导入材质料号集"，
+                // 集合 = 物料BOM.材质料号 ∪ 物料与元素BOM(Q04源).材质料号，且必须在 merge() 之前收集齐
+                // （merge() 早于 Q04，见架构评审 §4.1）。放 ctx.sharedCache，key="quoteMaterialNoSet"。
+                java.util.Set<String> quoteMaterialNoSet = new java.util.LinkedHashSet<>();
+                for (SheetRow row : matRows) {
+                    String v = row.exact("材质料号");
+                    if (v == null) v = row.exact("投入料号");   // 兼容旧文件字段名(V3 前)
+                    if (v != null) quoteMaterialNoSet.add(v);
+                }
+                var q04Sheet = wb.getSheet("物料与元素BOM");
+                if (q04Sheet != null) {
+                    for (SheetRow row : parser.parseSheet(q04Sheet)) {
+                        String v = row.getStr("材质料号");
+                        if (v != null) quoteMaterialNoSet.add(v);
+                    }
+                }
+                ctx.sharedCache.put("quoteMaterialNoSet", quoteMaterialNoSet);
+
                 double parseMs = (System.nanoTime() - parseT0) / 1e6;
                 com.cpq.basicdata.v6.versioning.VersionedV6Writer.profile().reset();
                 long mergeT0 = System.nanoTime();
