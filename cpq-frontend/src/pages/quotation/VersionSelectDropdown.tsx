@@ -109,6 +109,18 @@ const VersionSelectDropdown: React.FC<VersionSelectDropdownProps> = ({
         if (v) loadOptions();
       }}
       notFoundContent={loadingOptions ? <Spin size="small" /> : '无可选版本'}
+      // 展开后异步拉版本列表期间，用居中 Spin 整体替换弹层内容，
+      // 避免先显示「当前版本」单项占位、加载完成再瞬间撑开成完整列表的突兀观感。
+      // 保留 selectOptions（含 currentVersion 占位）供选中框 label 正常显示、无 console 告警。
+      popupRender={(menu) =>
+        loadingOptions ? (
+          <div style={{ padding: 12, textAlign: 'center' }}>
+            <Spin size="small" />
+          </div>
+        ) : (
+          menu
+        )
+      }
       options={selectOptions}
       onChange={handleChange}
       onClick={(e) => e.stopPropagation()}
