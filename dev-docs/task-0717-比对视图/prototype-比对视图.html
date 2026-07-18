@@ -175,11 +175,17 @@
     border-bottom:1px solid #f0f0f0; flex-shrink:0;
   }
   .cq-link-col-scroll { flex:1; overflow-y:auto; padding:4px 0; }
-  /* 页签分组头：蓝色带 + 左强调条，明确区分「页签」类目 */
+  /* 页签分组头：蓝色带 + 左强调条，明确区分「页签」类目；可点击折叠 */
   .cq-link-group-title {
+    display:flex; align-items:center; gap:6px;
     margin:7px 8px 3px; padding:5px 10px; font-size:12px; font-weight:600;
     color:#1554ad; background:#f0f5ff; border-left:3px solid #1677ff; border-radius:4px;
+    cursor:pointer; user-select:none;
   }
+  .cq-link-group-title:hover { background:#e0ecff; }
+  .cq-link-group-arrow { display:inline-block; transition:transform .15s; font-size:10px; flex-shrink:0; }
+  .cq-link-group.collapsed .cq-link-group-arrow { transform:rotate(-90deg); }
+  .cq-link-group.collapsed .cq-link-group-nodes { display:none; }
   .cq-link-node {
     display:flex; align-items:center; gap:8px; padding:5px 12px 5px 22px; font-size:12.5px; color:rgba(0,0,0,.88);
     cursor:pointer; user-select:none;
@@ -206,6 +212,8 @@
   .cq-link-svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   .cq-link-path { stroke:#1677ff; stroke-width:2; opacity:.7; pointer-events:stroke; cursor:pointer; }
   .cq-link-path.cq-link-path-hi { stroke:#fa8c16; stroke-width:3; opacity:1; }
+  /* 端点所在页签被折叠 → 连线锚到页签标题、显示为虚线（连线不丢、仍指向该页签） */
+  .cq-link-path.collapsed-anchor { stroke-dasharray:5 4; opacity:.45; }
   .cq-link-pairs-section { flex-shrink:0; }
   .cq-link-pairs-list { max-height:160px; overflow-y:auto; border:1px solid #f0f0f0; border-radius:6px; }
   .cq-link-pair-row {
@@ -730,50 +738,63 @@ let linkPairs = [];       // 已配对清单 [{id,quoteTab,quoteVal,costingTab,c
 let linkPending = null;   // 待连接端 {side:'quote'|'costing', tab, val} | null
 let linkPairSeq = 0;
 const linkPortEls = {};   // key(side::tab::val) -> port DOM 元素
+const linkGroupEls = {};  // key(side::tab) -> 分组标题 DOM（折叠时连线锚到此）
+let linkCollapsed = new Set(); // 已折叠分组 key(side::tab)
 
 function linkKey(side, tab, val) { return side + '::' + tab + '::' + val; }
 
 // 重建左右两列节点树（报价页签 / 核价页签，每个页签下各字段小计 + 页签合计 均为可连接节点）
 function buildLinkColumns() {
   Object.keys(linkPortEls).forEach((k) => delete linkPortEls[k]);
+  Object.keys(linkGroupEls).forEach((k) => delete linkGroupEls[k]);
+
+  // 单个页签分组：可折叠标题(箭头) + 节点容器（节点=各字段小计 + 页签合计）
+  function groupHtml(side, tab, subs) {
+    const collapsed = linkCollapsed.has(side + '::' + tab);
+    const nodes = subs.concat([TAB_TOTAL_OPTION]).map((val) => {
+      const portSpan = '<span class="cq-link-port" data-key="' + linkKey(side, tab, val) + '"></span>';
+      const labelSpan = '<span class="cq-link-node-label">' + formatVal(val) + '</span>';
+      const inner = side === 'quote' ? (labelSpan + portSpan) : (portSpan + labelSpan); // 核价 port 在内侧
+      return '<div class="cq-link-node' + (val === TAB_TOTAL_OPTION ? ' is-total' : '') +
+        '" data-side="' + side + '" data-tab="' + tab + '" data-val="' + val + '">' + inner + '</div>';
+    }).join('');
+    return '<div class="cq-link-group' + (collapsed ? ' collapsed' : '') + '">' +
+      '<div class="cq-link-group-title" data-side="' + side + '" data-tab="' + tab + '">' +
+        '<span class="cq-link-group-arrow">▾</span><span>' + tab + '</span>' +
+      '</div>' +
+      '<div class="cq-link-group-nodes">' + nodes + '</div>' +
+    '</div>';
+  }
 
   const quoteScroll = document.getElementById('linkColQuoteScroll');
-  let qHtml = '';
-  Object.keys(QUOTE_TAB_SUBTOTALS).forEach((tab) => {
-    qHtml += '<div class="cq-link-group-title">▸ ' + tab + '</div>';
-    QUOTE_TAB_SUBTOTALS[tab].concat([TAB_TOTAL_OPTION]).forEach((val) => {
-      qHtml += '<div class="cq-link-node' + (val === TAB_TOTAL_OPTION ? ' is-total' : '') + '" data-side="quote" data-tab="' + tab + '" data-val="' + val + '">' +
-        '<span class="cq-link-node-label">' + formatVal(val) + '</span>' +
-        '<span class="cq-link-port" data-key="' + linkKey('quote', tab, val) + '"></span>' +
-        '</div>';
-    });
-  });
-  quoteScroll.innerHTML = qHtml;
-
+  quoteScroll.innerHTML = Object.keys(QUOTE_TAB_SUBTOTALS)
+    .map((tab) => groupHtml('quote', tab, QUOTE_TAB_SUBTOTALS[tab])).join('');
   const costingScroll = document.getElementById('linkColCostingScroll');
-  let cHtml = '';
-  Object.keys(COSTING_TAB_SUBTOTALS).forEach((tab) => {
-    cHtml += '<div class="cq-link-group-title">▸ ' + tab + '</div>';
-    COSTING_TAB_SUBTOTALS[tab].concat([TAB_TOTAL_OPTION]).forEach((val) => {
-      cHtml += '<div class="cq-link-node' + (val === TAB_TOTAL_OPTION ? ' is-total' : '') + '" data-side="costing" data-tab="' + tab + '" data-val="' + val + '">' +
-        '<span class="cq-link-port" data-key="' + linkKey('costing', tab, val) + '"></span>' +
-        '<span class="cq-link-node-label">' + formatVal(val) + '</span>' +
-        '</div>';
+  costingScroll.innerHTML = Object.keys(COSTING_TAB_SUBTOTALS)
+    .map((tab) => groupHtml('costing', tab, COSTING_TAB_SUBTOTALS[tab])).join('');
+
+  [quoteScroll, costingScroll].forEach((scroll) => {
+    // 整个节点行都可点击（不必精确点中 10px 的 port 圆点）
+    scroll.querySelectorAll('.cq-link-node').forEach((node) => {
+      node.addEventListener('click', () => handlePortClick(node.dataset.side, node.dataset.tab, node.dataset.val));
+    });
+    scroll.querySelectorAll('.cq-link-port').forEach((p) => { linkPortEls[p.dataset.key] = p; });
+    scroll.querySelectorAll('.cq-link-group-title').forEach((t) => {
+      linkGroupEls[t.dataset.side + '::' + t.dataset.tab] = t;
+      t.addEventListener('click', () => toggleLinkGroup(t.dataset.side, t.dataset.tab));
     });
   });
-  costingScroll.innerHTML = cHtml;
-
-  // 整个节点行都可点击（不必精确点中 10px 的 port 圆点），仍视为点击该节点的 port
-  quoteScroll.querySelectorAll('.cq-link-node').forEach((node) => {
-    node.addEventListener('click', () => handlePortClick(node.dataset.side, node.dataset.tab, node.dataset.val));
-  });
-  costingScroll.querySelectorAll('.cq-link-node').forEach((node) => {
-    node.addEventListener('click', () => handlePortClick(node.dataset.side, node.dataset.tab, node.dataset.val));
-  });
-  quoteScroll.querySelectorAll('.cq-link-port').forEach((p) => { linkPortEls[p.dataset.key] = p; });
-  costingScroll.querySelectorAll('.cq-link-port').forEach((p) => { linkPortEls[p.dataset.key] = p; });
 
   updatePortStates();
+}
+
+// 折叠/展开某页签分组：切类 + 重绘连线（节点显隐后位置变化，连线需重算/改锚点）
+function toggleLinkGroup(side, tab) {
+  const gkey = side + '::' + tab;
+  if (linkCollapsed.has(gkey)) linkCollapsed.delete(gkey); else linkCollapsed.add(gkey);
+  const titleEl = linkGroupEls[gkey];
+  if (titleEl && titleEl.parentElement) titleEl.parentElement.classList.toggle('collapsed', linkCollapsed.has(gkey));
+  drawLinkLines();
 }
 
 // 点击节点 port 的核心状态机：
@@ -865,7 +886,25 @@ function removeLinkPair(pairId) {
   drawLinkLines();
 }
 
-// 依据左右 port 的 getBoundingClientRect() 相对 SVG 重新计算并重绘全部曲线
+// 解析连线端点：节点可见→port 中心；节点在折叠分组内(隐藏)→锚到该分组标题内侧边缘(连线仍指向该页签)
+function resolveLinkAnchor(side, tab, val, svgRect) {
+  const el = linkPortEls[linkKey(side, tab, val)];
+  if (el && el.offsetParent !== null) {
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) {
+      return { x: r.left + r.width / 2 - svgRect.left, y: r.top + r.height / 2 - svgRect.top, hidden: false };
+    }
+  }
+  const g = linkGroupEls[side + '::' + tab];
+  if (g) {
+    const r = g.getBoundingClientRect();
+    const edgeX = side === 'quote' ? r.right - 6 : r.left + 6; // 内侧边缘
+    return { x: edgeX - svgRect.left, y: r.top + r.height / 2 - svgRect.top, hidden: true };
+  }
+  return null;
+}
+
+// 依据左右端点 rect 相对 SVG 重新计算并重绘全部曲线
 function drawLinkLines() {
   if (!linkSvg) return;
   const svgRect = linkSvg.getBoundingClientRect();
@@ -875,20 +914,15 @@ function drawLinkLines() {
   linkSvg.setAttribute('viewBox', '0 0 ' + svgRect.width + ' ' + svgRect.height);
 
   linkSvg.innerHTML = linkPairs.map((pair) => {
-    const qEl = linkPortEls[linkKey('quote', pair.quoteTab, pair.quoteVal)];
-    const cEl = linkPortEls[linkKey('costing', pair.costingTab, pair.costingVal)];
-    if (!qEl || !cEl) return '';
-    const qr = qEl.getBoundingClientRect();
-    const cr = cEl.getBoundingClientRect();
-    const x1 = qr.left + qr.width / 2 - svgRect.left;
-    const y1 = qr.top + qr.height / 2 - svgRect.top;
-    const x2 = cr.left + cr.width / 2 - svgRect.left;
-    const y2 = cr.top + cr.height / 2 - svgRect.top;
-    const dx = x2 - x1;
-    const c1x = x1 + dx * 0.4, c1y = y1;
-    const c2x = x2 - dx * 0.4, c2y = y2;
-    const d = 'M ' + x1 + ' ' + y1 + ' C ' + c1x + ' ' + c1y + ', ' + c2x + ' ' + c2y + ', ' + x2 + ' ' + y2;
-    return '<path d="' + d + '" data-pair-id="' + pair.id + '" class="cq-link-path" fill="none"></path>';
+    const a = resolveLinkAnchor('quote', pair.quoteTab, pair.quoteVal, svgRect);
+    const b = resolveLinkAnchor('costing', pair.costingTab, pair.costingVal, svgRect);
+    if (!a || !b) return '';
+    const dx = b.x - a.x;
+    const c1x = a.x + dx * 0.4, c1y = a.y;
+    const c2x = b.x - dx * 0.4, c2y = b.y;
+    const d = 'M ' + a.x + ' ' + a.y + ' C ' + c1x + ' ' + c1y + ', ' + c2x + ' ' + c2y + ', ' + b.x + ' ' + b.y;
+    const cls = 'cq-link-path' + ((a.hidden || b.hidden) ? ' collapsed-anchor' : '');
+    return '<path d="' + d + '" data-pair-id="' + pair.id + '" class="' + cls + '" fill="none"></path>';
   }).join('');
 
   linkSvg.querySelectorAll('.cq-link-path').forEach((path) => {
@@ -928,6 +962,7 @@ function openDrawer() {
   linkPairs = [];
   linkPending = null;
   linkPairSeq = 0;
+  linkCollapsed = new Set();
   buildLinkColumns();
   renderLinkPairsList();
   drawerMask.classList.add('show');
