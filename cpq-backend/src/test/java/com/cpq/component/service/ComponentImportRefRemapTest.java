@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <ul>
  *   <li>TC-1：A 引用 B（cross_tab_ref.source = B原id）→ 导入后 A副本.formulas 指向 B副本新id</li>
  *   <li>TC-2：A 引用 B（component_subtotal.component_code = B原code）→ 导入后 A副本 指向 B副本 finalCode</li>
- *   <li>TC-3：RENAME 策略下 B 被重命名为 B__imp1 → A副本 component_subtotal.code 指向 B__imp1</li>
+ *   <li>TC-3：RENAME 策略下 B 被重命名为系统顺序号 COMP-#### → A副本 component_subtotal.code 指向新 code</li>
  *   <li>TC-4：老 bundle（Item.id=null）→ UUID 类引用保持原样（codeMap 仍可映射）</li>
  *   <li>TC-5：SKIP 策略跳过 B → A副本 formulas 保留原引用（B未导入，无法重映射）</li>
  * </ul>
@@ -213,7 +213,7 @@ class ComponentImportRefRemapTest {
                     item(origIdB, conflictCode, "组件B", "[]")
             );
 
-            // RENAME 策略：B 与已有组件冲突 → 被重命名为 conflictCode__imp1
+            // RENAME 策略：B 与已有组件冲突 → 被重命名为系统顺序号 COMP-####（方案A，不再是 __impN）
             ImportCommitResult result = importService.commit(targetDirId, bundle, "RENAME", true);
             assertEquals(2, result.createdCount, "A 和 B（重命名后）都应被创建");
 
@@ -224,7 +224,8 @@ class ComponentImportRefRemapTest {
                     .findFirst()
                     .orElse(null);
             assertNotNull(finalCodeB, "B副本应在结果中");
-            assertTrue(finalCodeB.contains("__imp"), "B应被重命名，finalCode 应含 __imp，实际: " + finalCodeB);
+            assertFalse(finalCodeB.contains("__imp"), "B应被重命名为系统顺序号(不再带 __imp)，实际: " + finalCodeB);
+            assertTrue(finalCodeB.matches("^COMP-\\d{4,}$"), "B重命名 code 应为系统顺序号 COMP-####，实际: " + finalCodeB);
 
             // 查询 A副本 formulas
             String newIdA = findComponentIdByOrigCode(result, codeA);
@@ -373,6 +374,72 @@ class ComponentImportRefRemapTest {
                     .executeUpdate();
             em.createNativeQuery("DELETE FROM component_directory WHERE id = :id")
                     .setParameter("id", dummyDirId2)
+                    .executeUpdate();
+            utx.commit();
+        }
+    }
+
+    // ── TC-6：RENAME 冲突分配系统顺序编号 COMP-####（不再是 __impN）──────────
+
+    @Test
+    @Order(6)
+    @DisplayName("TC-6: RENAME冲突应分配系统顺序号COMP-####，不带__imp后缀")
+    void renameConflict_assignsSequentialCode_notImpSuffix() throws Exception {
+        String origIdB = UUID.randomUUID().toString();
+        String conflictCode = "COMP-G3TC6-CONFLICT-" + targetDirId.toString().substring(0, 8);
+
+        // 先占用 conflictCode，使导入产生冲突 → RENAME
+        utx.begin();
+        em.joinTransaction();
+        UUID dummyDirId = UUID.randomUUID();
+        em.createNativeQuery(
+                "INSERT INTO component_directory(id, name, sort_order, created_at) " +
+                "VALUES (:id, 'DummyDir6', 0, NOW())")
+                .setParameter("id", dummyDirId)
+                .executeUpdate();
+        em.createNativeQuery(
+                "INSERT INTO component(id, directory_id, name, code, column_count, fields, formulas, excel_columns, component_type, status, created_at, updated_at) " +
+                "VALUES (:id, :dir, 'Conflict组件', :code, 0, '[]', '[]', '[]', 'NORMAL', 'ACTIVE', NOW(), NOW())")
+                .setParameter("id", UUID.randomUUID())
+                .setParameter("dir", dummyDirId)
+                .setParameter("code", conflictCode)
+                .executeUpdate();
+        utx.commit();
+
+        try {
+            ComponentExportBundle bundle = buildBundle(
+                    item(origIdB, conflictCode, "组件B", "[]")
+            );
+            ImportCommitResult result = importService.commit(targetDirId, bundle, "RENAME", true);
+            assertEquals(1, result.createdCount, "冲突组件应被重命名后创建");
+
+            String finalCodeB = result.created.stream()
+                    .filter(ci -> conflictCode.equals(ci.originalCode))
+                    .map(ci -> ci.finalCode)
+                    .findFirst()
+                    .orElse(null);
+            assertNotNull(finalCodeB, "B副本应在结果中");
+            assertFalse(finalCodeB.contains("__imp"),
+                    "冲突重命名不应再带 __imp 后缀，实际: " + finalCodeB);
+            assertTrue(finalCodeB.matches("^COMP-\\d{4,}$"),
+                    "重命名 code 应为系统顺序号 COMP-####，实际: " + finalCodeB);
+            assertNotEquals(conflictCode, finalCodeB, "重命名后 code 应不同于原冲突 code");
+
+            // 顺序号应确实唯一落库
+            Number cnt = (Number) em.createNativeQuery(
+                    "SELECT count(*) FROM component WHERE code = :c")
+                    .setParameter("c", finalCodeB)
+                    .getSingleResult();
+            assertEquals(1L, cnt.longValue(), "顺序号 code 应唯一存在");
+
+        } finally {
+            utx.begin();
+            em.joinTransaction();
+            em.createNativeQuery("DELETE FROM component WHERE directory_id = :dir")
+                    .setParameter("dir", dummyDirId)
+                    .executeUpdate();
+            em.createNativeQuery("DELETE FROM component_directory WHERE id = :id")
+                    .setParameter("id", dummyDirId)
                     .executeUpdate();
             utx.commit();
         }

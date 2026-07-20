@@ -99,9 +99,6 @@ public class ComponentImportService {
             if (it.code != null) bundleCodes.add(it.code);
         }
         Set<String> existing = queryExistingCodes(bundleCodes);
-        // reserved = 现有 DB code ∪ bundle 内所有 code ∪ 已分配的新 code
-        Set<String> reserved = new HashSet<>(existing);
-        reserved.addAll(bundleCodes);
 
         List<ImportPreviewResult.ComponentPlan> plans = new ArrayList<>();
         int create = 0, rename = 0, skip = 0, conflicts = 0;
@@ -121,9 +118,8 @@ public class ComponentImportService {
                     case "SKIP" -> { p.action = "SKIP"; skip++; }
                     case "ABORT" -> { p.action = "ABORT"; }
                     default -> { // RENAME
-                        String nc = nextFreeCode(it.code, reserved);
-                        reserved.add(nc);
-                        p.newCode = nc;
+                        // 预览只读、可重复调用，不消耗序列；真实顺序编号在导入(commit)时才分配。
+                        p.newCode = "（导入时自动分配）";
                         p.action = "RENAME";
                         rename++;
                     }
@@ -198,9 +194,6 @@ public class ComponentImportService {
             throw new BusinessException(409, "存在 " + conflicts + " 个 code 冲突,ABORT 策略下整体中止");
         }
 
-        Set<String> reserved = new HashSet<>(existing);
-        reserved.addAll(bundleCodes);
-
         ImportCommitResult result = new ImportCommitResult();
         result.targetDirectoryId = targetDirId.toString();
         result.targetDirectoryName = dir.name;
@@ -229,8 +222,7 @@ public class ComponentImportService {
             String finalCode = it.code;
             boolean renamed = false;
             if (conflict && policy.equals("RENAME")) {
-                finalCode = nextFreeCode(it.code, reserved);
-                reserved.add(finalCode);
+                finalCode = nextSequentialComponentCode();
                 renamed = true;
             }
 
@@ -341,19 +333,16 @@ public class ComponentImportService {
     }
 
     /**
-     * 找下一个不冲突的新 code:base__imp1 / __imp2 ...
-     * 必须同时避开:① reserved(本批次已占用/bundle 自身 code) ② **数据库现有 code**
-     * (含此前导入产生的 __impN —— 否则会与库内已存在的重命名 code 撞 component_code_key)。
+     * 取系统组件编号序列的下一个值，格式 COMP-####（与「新建组件」同源，走 component_code_seq）。
+     * 序列全局唯一且单调递增，天生不撞库内既有 code，无需 reserved 防撞循环。
+     *
+     * <p>导入冲突(RENAME)时用此分配干净顺序编号，取代历史上的 {@code base__impN} 后缀
+     * （方案 A，2026-07-20；见 docs/superpowers/specs/2026-07-20-导入组件顺序编号-design.md）。
+     * 存量 {@code __impN} 副本不受影响（{@code IMP_SUFFIX} 解析仍保留）。
      */
-    private String nextFreeCode(String base, Set<String> reserved) {
-        for (int i = 1; i < 10000; i++) {
-            String candidate = base + "__imp" + i;
-            if (reserved.contains(candidate)) continue;
-            if (countNative("SELECT count(*) FROM component WHERE code = :c", candidate) == 0) {
-                return candidate;
-            }
-        }
-        return base + "__imp" + UUID.randomUUID().toString().substring(0, 8);
+    private String nextSequentialComponentCode() {
+        Long seq = (Long) em.createNativeQuery("SELECT nextval('component_code_seq')").getSingleResult();
+        return String.format("COMP-%04d", seq);
     }
 
     @SuppressWarnings("unchecked")
