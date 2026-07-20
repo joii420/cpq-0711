@@ -63,9 +63,11 @@ class TemplateCrossTabValidateTest {
         formulas.put(b, formulasReferencing(missing)); // B 引一个不在卡片的源
 
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> svc.validateCrossTabRefs(compIds, formulas));
+                () -> svc.validateCrossTabRefs(compIds, formulas, Map.of()));
         assertTrue(ex.getMessage().contains("不在本卡片"), "应提示源组件不在本卡片: " + ex.getMessage());
         assertTrue(ex.getMessage().contains(missing), "应包含缺失的源组件 id");
+        // 可读性增强：消息须定位到具体消费公式（token 的 name=f），不再只吐裸 UUID
+        assertTrue(ex.getMessage().contains("公式"), "应定位到具体公式: " + ex.getMessage());
     }
 
     @Test
@@ -78,7 +80,7 @@ class TemplateCrossTabValidateTest {
         formulas.put(b, formulasReferencing(a)); // B 依赖 A → 环
 
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> svc.validateCrossTabRefs(compIds, formulas));
+                () -> svc.validateCrossTabRefs(compIds, formulas, Map.of()));
         assertTrue(ex.getMessage().contains("循环引用"), "应提示循环引用: " + ex.getMessage());
     }
 
@@ -91,7 +93,7 @@ class TemplateCrossTabValidateTest {
         formulas.put(a, noFormulas());
         formulas.put(b, formulasReferencing(a)); // B 引 A，A 存在，无环
 
-        assertDoesNotThrow(() -> svc.validateCrossTabRefs(compIds, formulas));
+        assertDoesNotThrow(() -> svc.validateCrossTabRefs(compIds, formulas, Map.of()));
     }
 
     @Test
@@ -100,6 +102,6 @@ class TemplateCrossTabValidateTest {
         List<String> compIds = List.of(a);
         Map<String, JsonNode> formulas = new LinkedHashMap<>();
         formulas.put(a, noFormulas());
-        assertDoesNotThrow(() -> svc.validateCrossTabRefs(compIds, formulas));
+        assertDoesNotThrow(() -> svc.validateCrossTabRefs(compIds, formulas, Map.of()));
     }
 }

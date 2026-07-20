@@ -251,14 +251,17 @@ public class TemplateService {
         {
             List<String> compIds = new ArrayList<>();
             Map<String, JsonNode> formulasByCompId = new LinkedHashMap<>();
+            Map<String, String> namesById = new LinkedHashMap<>();
             for (TemplateComponent tc : tcs) {
                 Component comp = Component.findById(tc.componentId);
                 if (comp == null) continue;
                 String cid = comp.id.toString();
                 compIds.add(cid);
                 formulasByCompId.put(cid, parseJsonNode(comp.formulas));
+                namesById.put(cid, comp.name + (comp.code != null && !comp.code.isBlank()
+                        ? " (" + comp.code + ")" : ""));
             }
-            validateCrossTabRefs(compIds, formulasByCompId);
+            validateCrossTabRefs(compIds, formulasByCompId, namesById);
         }
 
         // 阶段 2: 冻结 component_sql_view 闭包到 template.sql_views_snapshot
@@ -931,19 +934,71 @@ public class TemplateService {
      * @param compIds          本卡片所有成员组件标识（componentId 字符串, 按出现顺序）
      * @param formulasByCompId componentId → 该组件 formulas JsonNode([{expression:[token...]}])
      */
-    void validateCrossTabRefs(List<String> compIds, Map<String, JsonNode> formulasByCompId) {
+    void validateCrossTabRefs(List<String> compIds, Map<String, JsonNode> formulasByCompId,
+                              Map<String, String> namesById) {
         Map<String, Set<String>> deps = new LinkedHashMap<>();
         for (String cid : compIds) {
             JsonNode formulas = formulasByCompId.get(cid);
             Set<String> refs = CrossTabComponentOrder.extractSourceRefs(formulas);
             for (String src : refs) {
                 if (!compIds.contains(src)) {
-                    throw new BusinessException(400, "跨页签引用的源组件不在本卡片: " + src);
+                    throw new BusinessException(400,
+                            buildCrossTabMissingMessage(cid, src, formulas, namesById));
                 }
             }
             deps.put(cid, refs);
         }
         CrossTabComponentOrder.topoOrder(compIds, deps); // 成环抛 BusinessException
+    }
+
+    /**
+     * 组装"跨页签引用的源组件不在本卡片"的可读诊断：定位到具体消费页签 + 公式名 + 源页签名称，
+     * 并给出修复指引。名称解析全部取自内存（{@code namesById} 或 token 的 {@code sourceLabel}），
+     * <b>不打 DB</b>，以便 {@link #validateCrossTabRefs} 仍可被纯单元测试直接驱动。
+     *
+     * <p>保留关键词「不在本卡片」与源组件 id 原文（既有测试/告警契约）。
+     *
+     * @param cid       持有该悬空引用的卡片内组件 id（消费方页签）
+     * @param src       被引用但不在卡片内的源组件 id
+     * @param formulas  cid 组件的 formulas 节点（用于定位公式名 + sourceLabel）
+     * @param namesById 卡片内组件 id → "名称 (CODE)" 显示名（源组件不在卡片内，通常查不到）
+     */
+    private static String buildCrossTabMissingMessage(String cid, String src, JsonNode formulas,
+                                                      Map<String, String> namesById) {
+        String consumerName = (namesById != null) ? namesById.getOrDefault(cid, cid) : cid;
+        String formulaName = null;
+        String sourceLabel = null;
+        if (formulas != null && formulas.isArray()) {
+            outer:
+            for (JsonNode f : formulas) {
+                JsonNode expr = f.path("expression");
+                if (!expr.isArray()) continue;
+                for (JsonNode tk : expr) {
+                    if ("cross_tab_ref".equals(tk.path("type").asText())
+                            && src.equals(tk.path("source").asText())) {
+                        formulaName = f.path("name").asText(null);
+                        sourceLabel = tk.path("sourceLabel").asText(null);
+                        break outer;
+                    }
+                }
+            }
+        }
+        String sourceName = (sourceLabel != null && !sourceLabel.isBlank())
+                ? sourceLabel
+                : (namesById != null ? namesById.get(src) : null);
+
+        StringBuilder msg = new StringBuilder();
+        msg.append("页签「").append(consumerName).append("」");
+        if (formulaName != null && !formulaName.isBlank()) {
+            msg.append("的公式「").append(formulaName).append("」");
+        }
+        msg.append("引用了另一个页签");
+        if (sourceName != null && !sourceName.isBlank()) {
+            msg.append("「").append(sourceName).append("」");
+        }
+        msg.append("的数据，但该源页签不在本卡片内。请把该源页签组件加入本模板卡片，")
+           .append("或删除/改写这条跨页签引用后再发布。（缺失源组件 id: ").append(src).append("）");
+        return msg.toString();
     }
 
     private JsonNode parseJsonNode(String json) {
