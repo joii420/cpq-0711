@@ -20,7 +20,7 @@ import { globalVariableService } from '../../services/globalVariableService';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 import ReadonlyProductCard from './ReadonlyProductCard';
 import ReadonlyExcelView from './ReadonlyExcelView';
-import ReadonlyComparison from './ReadonlyComparison';
+import ComparisonBoard from './ComparisonBoard';
 import { usePathFormulaCache } from './usePathFormulaCache';
 import { enrichComponentData } from './enrichComponentData';
 import type { LineItem } from './QuotationStep2';
@@ -44,6 +44,18 @@ interface Props {
 }
 
 const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, coid, editable, onVersionSwitched }) => {
+  // ----------------------------------------------------------------
+  // task-0717：比对视图（ComparisonBoard）桶 / 只读判定。
+  // 本组件被两个调用方共用：
+  //   - QuotationDetail（报价单详情，销售只读）：不传 coid → bucket=SALES，恒 readonly（详情页不可配置）。
+  //   - CostingReviewPage（核价单页面，财务）：传 coid → bucket=FINANCE，readonly = !editable
+  //     （editable = PENDING + 财务/管理员，即"核价单页面（财务，可配置）"；非 editable 时即
+  //     "核价单详情（财务只读）"——两种场景由同一 editable 语义自然覆盖，无需拆出独立入口）。
+  // 两处 comparison 数据口径都读冻结快照（frozen=true，见 api.md §2 优雅降级为 live）。
+  // ----------------------------------------------------------------
+  const comparisonBucket: 'SALES' | 'FINANCE' = coid ? 'FINANCE' : 'SALES';
+  const comparisonReadonly = coid ? !editable : true;
+
   // ----------------------------------------------------------------
   // 两级视图切换 state
   // ----------------------------------------------------------------
@@ -196,11 +208,11 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
       {visible.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 32, color: '#999' }}>暂无产品</div>
       ) : mainTab === 'comparison' ? (
-        <ReadonlyComparison
+        <ComparisonBoard
           quotationId={quotation.id}
-          lineItems={visible}
-          quoteColumns={quotation.quoteExcelColumns}
-          costingColumns={quotation.costingExcelColumns}
+          bucket={comparisonBucket}
+          readonly={comparisonReadonly}
+          frozen
         />
       ) : viewType === 'excel' ? (
         <ReadonlyExcelView

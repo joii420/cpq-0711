@@ -13,7 +13,7 @@ import type { DriftDetectionResult } from '../../types/quotation-drift';
 import { quotationDriftService } from '../../services/quotationDriftService';
 import { useAuthStore } from '../../stores/authStore';
 import LinkedExcelView from './LinkedExcelView';
-import ComparisonView from './ComparisonView';
+import ComparisonBoard from './ComparisonBoard';
 import { datasourceService } from '../../services/datasourceService';
 import { materialMappingService } from '../../services/materialMappingService';
 import ElementPriceHint from './components/ElementPriceHint';
@@ -3501,14 +3501,8 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       </div>
 
       {mainTab === 'comparison' && quotationId ? (
-        <ComparisonView
-          quotationId={quotationId}
-          customerId={customerId}
-          quoteTemplateId={customerTemplateId}
-          costingTemplateId={costingCardTemplateId}
-          quoteLineItems={quoteLineItems}
-          costingLineItems={costingLineItems}
-        />
+        // task-0717：报价单编辑页（销售入口）— 可配置比对视图。SALES 桶、编辑态（frozen=false）。
+        <ComparisonBoard quotationId={quotationId} bucket="SALES" readonly={false} frozen={false} />
       ) : mainTab === 'costing' && viewType === 'excel' && quotationId ? (
         // 核价单 — Excel 视图（V73/V74 起按 linkedTemplateId 反查 costing_template 渲染）：
         // 入口 = 报价单的 costingCardTemplateId（核价模板）→ 反查 linked_template_id 命中的 Excel 模板
