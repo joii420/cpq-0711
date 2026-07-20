@@ -560,6 +560,8 @@ interface MasterListProps {
   checkedIds: string[];
   searchKeyword: string;
   onSearchChange: (v: string) => void;
+  showDisabled: boolean;
+  onShowDisabledChange: (v: boolean) => void;
   onSelect: (comp: ComponentItem, dir: DirectoryNode) => void;
   onToggleCheck: (id: string) => void;
   onCreate: (dirId?: string, type?: ComponentType) => void;
@@ -573,6 +575,7 @@ interface MasterListProps {
 
 const MasterList: React.FC<MasterListProps> = ({
   directories, loading, selectedId, checkedIds, searchKeyword, onSearchChange,
+  showDisabled, onShowDisabledChange,
   onSelect, onToggleCheck, onCreate, onBatchToggleStatus, onBatchDelete, onRefresh,
   draftCount, onSaveAllDrafts, draftIds,
 }) => {
@@ -807,6 +810,14 @@ const MasterList: React.FC<MasterListProps> = ({
           <Button size="small" icon={<FolderAddOutlined />} onClick={openCreateDir}>
             新建目录
           </Button>
+        </div>
+        <div className="cmm-row" style={{ marginTop: 4 }}>
+          <Checkbox
+            checked={showDisabled}
+            onChange={(e) => onShowDisabledChange(e.target.checked)}
+          >
+            <span style={{ fontSize: 12 }}>显示停用</span>
+          </Checkbox>
         </div>
         {/* 批量动作工具栏：选择驱动启用 + 危险动作 Modal 列项二次确认（runBatch 聚合部分失败） */}
         <div className="cmm-row">
@@ -1046,6 +1057,8 @@ const ComponentManagement: React.FC = () => {
   // Left list selection (checkboxes) + search
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
   const [searchKeyword, setSearchKeyword] = useState('');
+  const [showDisabled, setShowDisabled] = useState(false);
+  const showDisabledRef = useRef(false);
 
   // DataSource modal
   const [dsModalVisible, setDsModalVisible] = useState(false);
@@ -1074,8 +1087,11 @@ const ComponentManagement: React.FC = () => {
   const loadTree = useCallback(async (keyword?: string) => {
     setLoadingTree(true);
     try {
-      const params = keyword ? { keyword } : undefined;
-      const res = await componentService.listDirectories(params);
+      const params: { keyword?: string; includeDisabled?: boolean } = {};
+      if (keyword) params.keyword = keyword;
+      if (showDisabledRef.current) params.includeDisabled = true;
+      const res = await componentService.listDirectories(
+        Object.keys(params).length ? params : undefined);
       setDirectories(res.data || []);
     } catch (e: unknown) {
       const err = e as { message?: string };
@@ -1084,6 +1100,12 @@ const ComponentManagement: React.FC = () => {
       setLoadingTree(false);
     }
   }, []);
+
+  const handleShowDisabledChange = useCallback((v: boolean) => {
+    showDisabledRef.current = v;
+    setShowDisabled(v);
+    loadTree(searchKeyword || undefined);
+  }, [loadTree, searchKeyword]);
 
   useEffect(() => {
     loadTree();
@@ -1522,6 +1544,8 @@ const ComponentManagement: React.FC = () => {
         checkedIds={checkedIds}
         searchKeyword={searchKeyword}
         onSearchChange={setSearchKeyword}
+        showDisabled={showDisabled}
+        onShowDisabledChange={handleShowDisabledChange}
         onSelect={handleSelectComponent}
         onToggleCheck={toggleCheck}
         onCreate={openCreate}

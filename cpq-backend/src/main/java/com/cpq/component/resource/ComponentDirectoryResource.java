@@ -76,8 +76,10 @@ public class ComponentDirectoryResource {
     }
 
     @GET
-    public ApiResponse<List<ComponentDirectoryDTO>> tree(@QueryParam("keyword") String keyword) {
-        return ApiResponse.success(directoryService.listTree(keyword));
+    public ApiResponse<List<ComponentDirectoryDTO>> tree(
+            @QueryParam("keyword") String keyword,
+            @QueryParam("includeDisabled") @DefaultValue("false") boolean includeDisabled) {
+        return ApiResponse.success(directoryService.listTree(keyword, includeDisabled));
     }
 
     @POST

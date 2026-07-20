@@ -18,16 +18,23 @@ public class ComponentDirectoryService {
     private static final Logger LOG = Logger.getLogger(ComponentDirectoryService.class);
 
     public List<ComponentDirectoryDTO> listTree() {
-        return buildTree(null);
+        return buildTree(null, false);
     }
 
     public List<ComponentDirectoryDTO> listTree(String keyword) {
-        return buildTree(keyword);
+        return buildTree(keyword, false);
     }
 
-    private List<ComponentDirectoryDTO> buildTree(String keyword) {
+    public List<ComponentDirectoryDTO> listTree(String keyword, boolean includeDisabled) {
+        return buildTree(keyword, includeDisabled);
+    }
+
+    private List<ComponentDirectoryDTO> buildTree(String keyword, boolean includeDisabled) {
         List<ComponentDirectory> allDirs = ComponentDirectory.listAll();
-        List<Component> allComponents = Component.list("ORDER BY createdAt ASC");
+        // 默认(includeDisabled=false)在查询层就排除 DISABLED（停用）组件；勾选「显示停用」才查全部。
+        List<Component> allComponents = includeDisabled
+                ? Component.list("ORDER BY createdAt ASC")
+                : Component.list("status <> ?1 ORDER BY createdAt ASC", "DISABLED");
 
         // Filter by keyword if provided
         if (keyword != null && !keyword.isBlank()) {

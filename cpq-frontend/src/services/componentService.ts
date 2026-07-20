@@ -84,7 +84,7 @@ export async function batchExpandDriver(
 // ──────────────────────────────────────────────────────────────────
 
 export const componentService = {
-  listDirectories: (params?: { keyword?: string }) => api.get('/component-directories', { params }) as Promise<any>,
+  listDirectories: (params?: { keyword?: string; includeDisabled?: boolean }) => api.get('/component-directories', { params }) as Promise<any>,
   createDirectory: (data: any) => api.post('/component-directories', data) as Promise<any>,
   updateDirectory: (id: string, data: any) => api.put(`/component-directories/${id}`, data) as Promise<any>,
   deleteDirectory: (id: string) => api.delete(`/component-directories/${id}`) as Promise<any>,
