@@ -737,6 +737,38 @@
 - **依赖**：task-0717 比对视图本期功能（前后端）落地。
 - **预估规模**：M（3-5 天）
 - **验收要点**：导出的 Excel 与页面比对视图逐值/着色一致；单边料号标注正确；不触碰旧 tag 导出回归（`CostingComparisonResourceTest` 仍绿）。
+### [BL-0061] 核价（PRICING）侧 handler 料号语义对齐 RECIPE 模型
+- **优先级**：P1
+- **来源**：task-0717 投入料号扩围 RECIPE 收尾自查——本次只改了报价（QUOTE）侧 Q06-Q10/Q13 handler + 报价/核价视图品名兜底，**核价侧导入 handler 本身未动**
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-18
+- **背景**：并发分支 `feat/pricing-sales-part-no` 仍在用旧口径写 `sales_part_no`，核价（PRICING）侧对应投入/材质料号的 handler 尚未按本次报价侧确立的"投入料号=材质料号→恒按材质、原始码、不进 material_customer_map/不登记 material_master"语义对齐，存在报价/核价两侧行为不一致的风险（核价侧材质料号仍可能被当真实组件 resolve+登记，重蹈报价侧修复前的"跨客户串号"覆辙）。
+- **范围**：核对核价侧对应 Sheet 的 handler（核价 24 Sheet 体系中来料/自制加工费/组成件其他费用等同构 Sheet），按本次报价侧 Q06-Q10/Q13 的模式做等价改造；需先与 `feat/pricing-sales-part-no` 分支的口径冲突理清（[[cpq-shared-flyway-history-churn]] 类并发风险，见历史记忆 task0708-partno-semantics-delivered）。
+- **依赖**：`feat/pricing-sales-part-no` 分支归属 / 合并状态需先明确（当前架构疑似冲突，用户暂搁）。
+- **预估规模**：M（3-5 天，含核价侧对应 handler 数量核实 + 测试）。
+- **验收要点**：核价侧材质料号导入不再触发跨客户串号类错误；核价侧 unit_price/material_bom_item 等落库 code 为原始材质料号；不进 material_customer_map(PRICING)/material_master。
+
+### [BL-0062] material_customer_map 存量组件级脏占号行清理（RECIPE 模型下已无害）
+- **优先级**：P2
+- **来源**：task-0717 投入料号扩围 RECIPE 收尾自查（repair-2 已确认无需 DELETE 迁移）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-18
+- **背景**：repair-2 + task-0717 落地后，投入/材质料号统一走原始码路径，不再新增 `material_customer_map` 占号行；但历史遗留约 31 行组件级脏占号行（材质料号被当年旧逻辑误登记为客户专属料号映射）仍残留在共享 DB。architect 已证这批行属"只写不读"（RECIPE 模型下渲染/校验均不再读它们），当前对功能无害，故本次不做 DELETE 迁移。
+- **范围**：评估是否值得专门清理（存量数据整洁度 vs 改动风险），若清理需先 SELECT 精确圈定这 31 行（区别于合法的真实组件料号映射）再 DELETE，且需在报价/核价双视图跑一遍回归确认零影响。
+- **依赖**：无。
+- **预估规模**：S（1-2 天，主要成本在圈定+回归验证）。
+- **验收要点**：清理后 `material_customer_map` 不再含材质料号误登记行；报价/核价渲染、导入回归无变化。
+
+### [BL-0063] material_recipe 缺库告警：材质料号缺配方时料件名仍空
+- **优先级**：P2
+- **来源**：task-0717 投入料号扩围 RECIPE 收尾自查（14 视图品名兜底 V341/V342 的已知边界情况）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-18
+- **背景**：本次给 10 个报价侧 + 4 个核价侧视图的 `_料件`/组件名列加了 `COALESCE(material_master.name, material_recipe.name)` 兜底，解决了"材质料号不在 material_master 时品名显示为空"的问题——但前提是该材质料号必须在 `material_recipe` 表里已建库。若某材质料号在 `material_recipe` 里也缺失（配方库未覆盖该牌号），兜底仍会落空、料件名列继续显示空白，且当前导入/渲染链路对此**不告警**，只能人工肉眼发现"这行料件名是空的"。
+- **范围**：导入或渲染时对"材质料号在 material_bom_item/element_bom_item 出现，但 material_master 与 material_recipe 均无对应行"的情况做告警（导入侧 `recordError`/软告警，或渲染侧标记"缺配方"提示），避免静默空白误导业务判断为"数据正常但恰好没名字"。
+- **依赖**：无。
+- **预估规模**：S-M（视告警落地在导入侧还是渲染侧而定）。
+- **验收要点**：材质料号缺配方时，导入结果或详情页有明确"缺配方/未知材质"提示，而非单纯空白料件名列。
 
 ---
 

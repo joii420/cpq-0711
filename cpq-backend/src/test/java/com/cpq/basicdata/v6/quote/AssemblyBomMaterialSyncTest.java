@@ -73,6 +73,12 @@ class AssemblyBomMaterialSyncTest {
             .setParameter("m", MAT).setParameter("c", compNo).getResultList();
         return r.isEmpty() ? null : (r.get(0) == null ? null : String.valueOf(r.get(0)));
     }
+    private String characteristicOf(String compNo) {
+        var r = em.createNativeQuery(
+            "SELECT characteristic FROM material_bom_item WHERE material_no=:m AND component_no=:c AND is_current=TRUE")
+            .setParameter("m", MAT).setParameter("c", compNo).getResultList();
+        return r.isEmpty() ? null : (r.get(0) == null ? null : String.valueOf(r.get(0)));
+    }
 
     @Test
     void newComponent_materialTypeIsAssemblyLabel() {
@@ -87,13 +93,30 @@ class AssemblyBomMaterialSyncTest {
         assertEquals("1", typeOf("ASM-EXIST"), "已存在保留原 type，不被改成「组成件」（决策 #6）");
     }
 
+    /**
+     * task-0717 repair-2 更新：本用例原断言"物料BOM 先写 material_master(type=§3 汉字类型)，
+     * 组成件侧 preserve 不覆盖" —— 对应 repair-2 前旧语义（彼时物料BOM 组件列走
+     * {@code materialNoResolver.resolve()}，会 upsert material_master）。
+     *
+     * <p>repair-2（决策 A/B/C）后物料BOM 的组件列恒定语义为"材质料号"——直接引用材质库
+     * （{@code material_recipe}），只认原始码，<b>不再登记 material_master</b>；同时组成件侧
+     * 命中"本次导入材质料号集"（决策 D，{@code ctx.sharedCache["quoteMaterialNoSet"]}）时同样
+     * 按材质处理，也不落 material_master。故 §3+§12 交叉料件（同一 component_no 既出现在
+     * 物料BOM 又出现在组成件BOM）在新语义下 material_master 应始终为空（typeOf 返 null）。
+     *
+     * <p>本用例保留原意图"验证跨材质/组成件正确处理"，改验证两点：①material_master 不登记
+     * （typeOf 返 null）；②material_bom_item 里该 component_no 的 characteristic='RECIPE'
+     * （决策 C：材质料号恒 RECIPE，即使它同时出现在组成件BOM 里、命中材质集后也被归一为 RECIPE）。
+     */
     @Test
-    void crossing_materialKeepsSection3ChineseType() {
+    void crossing_materialNotRegisteredToMaster_childCharacteristicIsRecipe() {
         handler.merge(
             List.of(matRow(1, "ASM-CROSS", "ASM-C1", "2.非银点类")),
             List.of(asmRow(1, "ASM-CROSS", "ASM-C1", "OP1", null)),
             ctx());
-        assertEquals("非银点类", typeOf("ASM-CROSS"), "交叉料件保留 §3 汉字类型（物料BOM 先写，组成件 preserve 不覆盖）");
+        assertNull(typeOf("ASM-CROSS"), "repair-2 后材质料号不登记 material_master，typeOf 应为 null");
+        assertEquals("RECIPE", characteristicOf("ASM-CROSS"),
+            "跨材质/组成件交叉料件命中材质集后按材质处理，material_bom_item.characteristic 应归一为 RECIPE");
     }
 
     @Test

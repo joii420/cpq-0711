@@ -16,9 +16,11 @@ import jakarta.transaction.Transactional;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Q13 组成件其他费用 → unit_price (price=COMPONENT_OTHER, cost=要素名称动态)。
@@ -52,21 +54,32 @@ public class Q13ComponentOtherFeeHandler implements SheetHandler {
         batch.customerNo = ctx.customerNo;
         batch.yyMm = java.time.YearMonth.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMM"));
         Map<String, String[]> mmAcc = new LinkedHashMap<>();   // §P1-A 料号表延后批量(首个非空胜)
+        // repair-2 决策 D：组成件料号命中"本次导入材质料号集"(物料BOM ∪ 物料与元素BOM 的材质料号) →
+        // 按材质料号处理(原始码/不 resolve/不登记 master)；否则维持原真组成件 resolve 路径
+        // （与 MaterialBomMergeHandler 组成件BOM 分支同款判定，见该文件 §3.3-2）。ctx.sharedCache 循环内不变，取一次即可。
+        @SuppressWarnings("unchecked")
+        Set<String> matNoSet = (Set<String>) ctx.sharedCache.getOrDefault(
+            "quoteMaterialNoSet", Collections.emptySet());
         for (SheetRow row : rows) {
             result.totalRows++;
             String costType = row.getStr("要素名称");
             if (costType == null) { result.recordError(row.rowNo, "要素名称", "为空"); continue; }
             String componentName = row.exact("组成件名称");
+            String rawComp = row.exact("组成件料号");
             String code;
-            try {
-                code = materialNoResolver.resolve(row.exact("组成件料号"), componentName, batch);
-            } catch (MaterialNoUnresolvableException ex) {
-                result.recordError(row.rowNo, "组成件料号", "料号与名称均为空"); continue;
-            } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
-                result.recordError(row.rowNo, "组成件料号", "报价料号跨客户串号"); continue;
+            if (rawComp != null && matNoSet.contains(rawComp)) {
+                code = rawComp;   // 命中材质料号集 → 按材质：原始码，不 resolve/不登记 master
+            } else {
+                try {
+                    code = materialNoResolver.resolve(rawComp, componentName, batch);
+                } catch (MaterialNoUnresolvableException ex) {
+                    result.recordError(row.rowNo, "组成件料号", "料号与名称均为空"); continue;
+                } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
+                    result.recordError(row.rowNo, "组成件料号", "报价料号跨客户串号"); continue;
+                }
+                MaterialMasterRepository.accNameType(mmAcc, code, componentName, "组成件");
+                result.recordWrite("material_master", 1);
             }
-            MaterialMasterRepository.accNameType(mmAcc, code, componentName, "组成件");
-            result.recordWrite("material_master", 1);
             String finishedMaterialNo = row.getStr("销售料号", "宏丰料号", "成品料号");
             String operationNo = row.getStr("工序编号");
             String supplierNo = row.getStr("供应商编号");

@@ -58,6 +58,12 @@ public class MaterialBomMergeHandler {
         batch.customerNo = ctx.customerNo;
         batch.yyMm = java.time.YearMonth.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMM"));
 
+        // repair-2 决策 D：本次导入材质料号集（QuoteImportService 在 merge() 前预扫填入；
+        // 本地取可变副本，缺失时(如单测直调 merge())安全退化为空集，不影响原有行为）。
+        @SuppressWarnings("unchecked")
+        Set<String> sharedMatNoSet = (Set<String>) ctx.sharedCache.get("quoteMaterialNoSet");
+        Set<String> matNoSet = sharedMatNoSet != null ? new LinkedHashSet<>(sharedMatNoSet) : new LinkedHashSet<>();
+
         Map<String, Map<String, Map<String, Object>>> matByMat = new LinkedHashMap<>();
         Map<String, Map<String, Map<String, Object>>> asmByMat = new LinkedHashMap<>();
 
@@ -73,21 +79,13 @@ public class MaterialBomMergeHandler {
             String componentUsageType = row.getStr("产出料号类型");
             // 报价 V3 物料BOM 组件列是「材质料号/材质料号名称」(无投入料号列); 兼容旧文件的「投入料号」。
             // 用 exact 精确键读取(getStr contains 会命中"…名称"列); 料号空回退材质料号、名称空回退材质料号名称。
-            String componentName = row.exact("投入料号名称");
-            if (componentName == null) componentName = row.exact("材质料号名称");
-            String componentNo;
-            try {
-                String rawComponent = row.exact("投入料号");
-                if (rawComponent == null) rawComponent = row.exact("材质料号");
-                componentNo = materialNoResolver.resolve(rawComponent, componentName, batch);
-            } catch (MaterialNoUnresolvableException ex) {
-                result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
-            } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
-                result.recordError(row.rowNo, "投入料号", "报价料号跨客户串号"); continue;
-            }
-            // material_master：产出料号类型只存汉字（labelOnly）。延后批量 upsert（见 mmAcc）。
-            accMaterialMaster(mmAcc, componentNo, componentName, labelOnly(componentUsageType));
-            result.recordWrite("material_master", 1);
+            // repair-2 决策 A/B：物料BOM 的组件恒为材质料号 —— 直接引用材质库(material_recipe)，
+            // 不 resolve/不铸报价料号、不登记 material_master；component_no 存 Excel 原始码。
+            String rawComponent = row.exact("投入料号");
+            if (rawComponent == null) rawComponent = row.exact("材质料号");
+            if (rawComponent == null) { result.recordError(row.rowNo, "材质料号", "为空"); continue; }
+            String componentNo = rawComponent;
+            matNoSet.add(componentNo);   // 冗余安全：即使预扫漏收，本行内即时补入集合(§4.1 备注)
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("seq_no", row.getInt("项次"));
             c.put("component_no", componentNo);
@@ -97,6 +95,7 @@ public class MaterialBomMergeHandler {
             c.put("weight_unit",  row.getStr("重量单位"));
             c.put("scrap_rate", row.getDecimal("损耗率"));
             c.put("defect_rate", row.getDecimal("不良率"));
+            c.put("characteristic", "RECIPE");   // 决策 C：材质料号恒 RECIPE
             matByMat.computeIfAbsent(materialNo, k -> new LinkedHashMap<>())
                     .put(String.valueOf(componentNo), c);
             result.successRows++;
@@ -108,17 +107,28 @@ public class MaterialBomMergeHandler {
             if (materialNo == null) { result.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
             if (isCfg(materialNo)) { result.recordError(row.rowNo, "宏丰料号", "禁止导入系统生成料号(CFG- 前缀): " + materialNo); continue; }
             String componentName = row.getStr("组成件名称");
+            String rawAssemblyComponent = row.exact("组成件料号");
+            // 决策 D：组成件料号命中"本次导入材质料号集"(物料BOM ∪ 物料与元素BOM 的材质料号) →
+            // 按材质料号处理(原始码/不登记 master/RECIPE)，不再 resolve/铸号；否则维持原真组成件路径。
+            boolean isMaterialHit = rawAssemblyComponent != null && matNoSet.contains(rawAssemblyComponent);
             String componentNo;
-            try {
-                componentNo = materialNoResolver.resolve(row.exact("组成件料号"), componentName, batch);
-            } catch (MaterialNoUnresolvableException ex) {
-                result.recordError(row.rowNo, "组成件料号", "料号与名称均为空"); continue;
-            } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
-                result.recordError(row.rowNo, "组成件料号", "报价料号跨客户串号"); continue;
+            String childCharacteristic;
+            if (isMaterialHit) {
+                componentNo = rawAssemblyComponent;
+                childCharacteristic = "RECIPE";
+            } else {
+                try {
+                    componentNo = materialNoResolver.resolve(rawAssemblyComponent, componentName, batch);
+                } catch (MaterialNoUnresolvableException ex) {
+                    result.recordError(row.rowNo, "组成件料号", "料号与名称均为空"); continue;
+                } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
+                    result.recordError(row.rowNo, "组成件料号", "报价料号跨客户串号"); continue;
+                }
+                // §12 料号表同步：组成件 material_type 固定存汉字「组成件」，已存在保留原值（preserveDescriptive=true）。延后批量。
+                accMaterialMaster(mmAcc, componentNo, componentName, "组成件");
+                result.recordWrite("material_master", 1);
+                childCharacteristic = "ASSEMBLY";
             }
-            // §12 料号表同步：组成件 material_type 固定存汉字「组成件」，已存在保留原值（preserveDescriptive=true）。延后批量。
-            accMaterialMaster(mmAcc, componentNo, componentName, "组成件");
-            result.recordWrite("material_master", 1);
 
             // 工序回填（决策 #5）：工序编号空 + 组装工序(工序名称)有值 → 按名取第一条 process_no
             String operationNo = row.getStr("工序编号");
@@ -137,6 +147,7 @@ public class MaterialBomMergeHandler {
             c.put("component_no", componentNo);
             c.put("composition_qty", row.getDecimal("组成数量"));
             c.put("issue_unit", row.getStr("组成单位"));
+            c.put("characteristic", childCharacteristic);
             asmByMat.computeIfAbsent(materialNo, k -> new LinkedHashMap<>())
                     .put(String.valueOf(componentNo), c);
             result.successRows++;
@@ -165,9 +176,6 @@ public class MaterialBomMergeHandler {
             for (String materialNo : allMats) {
                 Map<String, Map<String, Object>> matChild = matByMat.getOrDefault(materialNo, Map.of());
                 Map<String, Map<String, Object>> asmChild = asmByMat.getOrDefault(materialNo, Map.of());
-                boolean isAssembly = !asmChild.isEmpty();
-                String targetChar = isAssembly ? "ASSEMBLY" : null;
-                String bomType = isAssembly ? "ASSEMBLY" : "MATERIAL";
 
                 Map<String, Map<String, Object>> merged = new LinkedHashMap<>();
                 for (Map.Entry<String, Map<String, Object>> e : matChild.entrySet()) {
@@ -179,8 +187,20 @@ public class MaterialBomMergeHandler {
                         if (f.getValue() != null) tgt.put(f.getKey(), f.getValue());
                     }
                 }
+                // 决策 D 兜底(§3.3-2)：命中"本次导入材质料号集"的 component_no 归并后恒定 RECIPE，
+                // 防止极端场景下 asm 侧覆盖 mat 侧的 RECIPE 标记（正常路径下两侧本就一致，此为防御性兜底）。
+                for (Map.Entry<String, Map<String, Object>> e : merged.entrySet()) {
+                    if (matNoSet.contains(e.getKey())) {
+                        e.getValue().put("characteristic", "RECIPE");
+                    }
+                }
                 List<Map<String, Object>> childRows = new ArrayList<>(merged.values());
-                for (var r : childRows) r.put("characteristic", targetChar);
+
+                // 主表级 characteristic/bom_type：按"归并后是否含真实 ASSEMBLY 子行"判定(§3.2)，
+                // 与子行 per-component characteristic 解耦——子行各自携带自己的 characteristic(见上)。
+                boolean isAssembly = childRows.stream().anyMatch(r -> "ASSEMBLY".equals(r.get("characteristic")));
+                String targetChar = isAssembly ? "ASSEMBLY" : null;
+                String bomType = isAssembly ? "ASSEMBLY" : "MATERIAL";
 
                 Map<String, Object> masterGk = new LinkedHashMap<>();
                 masterGk.put("system_type", "QUOTE");
@@ -215,9 +235,6 @@ public class MaterialBomMergeHandler {
                 try {
                     Map<String, Map<String, Object>> matChild = matByMat.getOrDefault(materialNo, Map.of());
                     Map<String, Map<String, Object>> asmChild = asmByMat.getOrDefault(materialNo, Map.of());
-                    boolean isAssembly = !asmChild.isEmpty();
-                    String targetChar = isAssembly ? "ASSEMBLY" : null;
-                    String bomType = isAssembly ? "ASSEMBLY" : "MATERIAL";
 
                     Map<String, Map<String, Object>> merged = new LinkedHashMap<>();
                     for (Map.Entry<String, Map<String, Object>> e : matChild.entrySet()) {
@@ -229,12 +246,21 @@ public class MaterialBomMergeHandler {
                             if (f.getValue() != null) tgt.put(f.getKey(), f.getValue());
                         }
                     }
+                    // 决策 D 兜底(§3.3-2)：命中材质料号集的 component_no 归并后恒定 RECIPE(防御性兜底)。
+                    for (Map.Entry<String, Map<String, Object>> e : merged.entrySet()) {
+                        if (matNoSet.contains(e.getKey())) {
+                            e.getValue().put("characteristic", "RECIPE");
+                        }
+                    }
                     List<Map<String, Object>> childRows = new ArrayList<>(merged.values());
 
-                    // 把 bom_type/characteristic 写入每个子行（insertRowGeneric 会 putAll(row)）。
-                    // 注意：characteristic 不加入 CHILD_CONTENT（不参与 multisetEqual 内容比较，
-                    // 避免 NULL→ASSEMBLY 时被误判为组成件内容变化）。
-                    for (var r : childRows) r.put("characteristic", targetChar);
+                    // per-component characteristic：每个子行已在构建阶段(matByMat/asmByMat)携带自身
+                    // characteristic（RECIPE/ASSEMBLY），此处不再整体覆盖（决策 C，替代原 master 级强制赋值）。
+                    // characteristic 不加入 CHILD_CONTENT（不参与 multisetEqual 内容比较，
+                    // 避免历史 NULL→ASSEMBLY/RECIPE 迁移被误判为内容变化触发空升版）。
+                    boolean isAssembly = childRows.stream().anyMatch(r -> "ASSEMBLY".equals(r.get("characteristic")));
+                    String targetChar = isAssembly ? "ASSEMBLY" : null;
+                    String bomType = isAssembly ? "ASSEMBLY" : "MATERIAL";
 
                     // 分组键收敛为 system_type+customer_no+material_no（单料号单序列）。
                     // bom_type/characteristic 降为 masterFixedColumns（固定写入列，不参与版本分组）。

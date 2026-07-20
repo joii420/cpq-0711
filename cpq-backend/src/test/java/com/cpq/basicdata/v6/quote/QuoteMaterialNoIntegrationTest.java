@@ -20,7 +20,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 报价料号统一 Spec 1 · Task 5 集成测试：Q02（报价客户料号登记改走 QUOTE）+ P05（核价维持 PRICING）+
- * 8 个发号 handler（BatchState 注入 customerNo/yyMm 后能正常铸造报价料号）。
+ * 发号 handler（BatchState 注入 customerNo/yyMm 后能正常铸造报价料号）。
+ * <p>task-0717 后更新：Q06~Q10 的「投入料号」列已扩围为 RECIPE 模型（=材质料号），恒取原始码，
+ * 不再铸号（不再适用于本类描述的发号语义）。
  *
  * <p>测试客户/料号一律用 {@code QMNI-} 前缀，避免与其它测试/存量数据串号。
  */
@@ -172,10 +174,22 @@ class QuoteMaterialNoIntegrationTest {
         assertEquals("CPN-A", row[1], "跨客户导入不应覆盖 customer_product_no");
     }
 
-    // ===== 5. BOM 无号组件发报价料号 =====
+    // ===== 5. 物料BOM 材质料号为空 → repair-2 后不再铸报价料号，改记错误跳过整行 =====
 
+    /**
+     * task-0717 repair-2 更新：本用例原断言"物料BOM 里一个无编号(有名无号)的材质组件 →
+     * 铸造报价料号并落库"，对应旧语义——彼时物料BOM 组件列走 {@code materialNoResolver.resolve()}，
+     * 料号空+名称有值会按名匹配/铸造报价料号。
+     *
+     * <p>repair-2（决策 A/B/C）后物料BOM 的组件列恒定语义为"材质料号"——直接引用材质库
+     * ({@code material_recipe})，只认原始码，不再 resolve/不再按名铸号（材质库场景下"名称"不构成
+     * 可靠的落库依据——材质需要精确 code 才能对上材质库配方，无法像真组成件那样临时铸个内部料号
+     * 兜底）。{@link MaterialBomMergeHandler} 对应分支已改为：料号(投入料号/材质料号列)为空即
+     * {@code recordError("材质料号", "为空")} 直接跳过该行，不落 {@code material_bom_item}、不铸号。
+     * 本用例按新语义重写，验证"空材质料号 → 报错跳过、不铸号、不落库"这一路径确实生效。
+     */
     @Test
-    void materialBomMerge_unnumberedComponent_mintsQuoteMaterialNo() {
+    void materialBomMerge_unnumberedComponent_recordsError_noLongerMints() {
         String cust = "QMNI-C5";
         String parentMat = "QMNI-PARENT1";
         Map<String, String> m = new LinkedHashMap<>();
@@ -187,26 +201,31 @@ class QuoteMaterialNoIntegrationTest {
         m.put("材料毛重", "1.0");
         m.put("重量单位", "KG");
 
-        materialBomMergeHandler.merge(List.of(new SheetRow(1, m)), List.of(), ctx(cust));
+        SheetImportResult result = materialBomMergeHandler.merge(
+            List.of(new SheetRow(1, m)), List.of(), ctx(cust));
 
-        String componentNo = (String) em.createNativeQuery(
-            "SELECT component_no FROM material_bom_item WHERE material_no=:m AND is_current=TRUE")
-            .setParameter("m", parentMat).getSingleResult();
-        assertTrue(componentNo.matches("^\\d{4}-\\d{4}\\d{6}$"),
-            "无号组件应被铸造为报价料号格式，实际=" + componentNo);
-        assertFalse(componentNo.startsWith("9"), "不应是旧 9 字头生成路径");
+        assertEquals(1, result.totalRows);
+        assertEquals(1, result.failedRows, "材质料号为空应记为失败行（不再按名铸号）");
+        assertEquals(0, result.successRows);
+        assertEquals(1, result.errors.size());
+        assertTrue(result.errors.get(0).message.contains("为空"),
+            "错误信息应含「为空」，实际=" + result.errors.get(0).message);
 
-        Object[] reg = (Object[]) em.createNativeQuery(
-            "SELECT system_type, customer_no FROM material_customer_map WHERE material_no=:m")
-            .setParameter("m", componentNo).getSingleResult();
-        assertEquals("QUOTE", reg[0], "铸造的报价料号应已登记 QUOTE 行");
-        assertEquals(cust, reg[1]);
+        long bomItemCount = ((Number) em.createNativeQuery(
+            "SELECT count(*) FROM material_bom_item WHERE material_no=:m")
+            .setParameter("m", parentMat).getSingleResult()).longValue();
+        assertEquals(0L, bomItemCount, "空材质料号行不应落 material_bom_item（不铸号、不入库）");
     }
 
-    // ===== 6. Q07 费用 handler 同样发报价料号 =====
+    // ===== 6. Q07「投入料号」task-0717 扩围为 RECIPE 模型，不再铸报价料号 =====
 
+    /**
+     * task-0717 更新：原「投入料号空 + 名称有值 → 按名铸造报价料号并登记 material_customer_map(QUOTE)」
+     * 路径已移除——Q07 的「投入料号」扩围为 RECIPE 模型（=材质料号，与 Q06/Q08/Q09/Q10 同构），
+     * 恒不 resolve/不铸号/不登记；投入料号为空直接记为该行错误，不再有按名兜底铸号通路。
+     */
     @Test
-    void q07_unnumberedIncomingMaterial_mintsQuoteMaterialNo() {
+    void q07_blankIncomingMaterialNo_recordsError_noLongerMints() {
         String cust = "QMNI-C6";
         Map<String, String> m = new LinkedHashMap<>();
         m.put("要素名称", "QMNI测试要素");
@@ -218,19 +237,16 @@ class QuoteMaterialNoIntegrationTest {
         m.put("货币", "RMB");
         m.put("计价单位", "PCS");
 
-        q07Handler.handle(List.of(new SheetRow(1, m)), ctx(cust));
+        SheetImportResult r = q07Handler.handle(List.of(new SheetRow(1, m)), ctx(cust));
 
-        String code = (String) em.createNativeQuery(
-            "SELECT code FROM unit_price WHERE system_type='QUOTE' AND customer_no=:c " +
-            "AND price_type='INCOMING_MATERIAL_OTHER' AND is_current=TRUE")
-            .setParameter("c", cust).getSingleResult();
-        assertTrue(code.matches("^\\d{4}-\\d{4}\\d{6}$"),
-            "无号来料应被铸造为报价料号格式，实际=" + code);
+        assertEquals(1, r.failedRows, "投入料号为空应记为失败行（不再按名铸号）");
+        assertEquals(0, r.successRows);
 
-        String regSystemType = (String) em.createNativeQuery(
-            "SELECT system_type FROM material_customer_map WHERE material_no=:m")
-            .setParameter("m", code).getSingleResult();
-        assertEquals("QUOTE", regSystemType);
+        long upCount = ((Number) em.createNativeQuery(
+            "SELECT count(*) FROM unit_price WHERE system_type='QUOTE' AND customer_no=:c " +
+            "AND price_type='INCOMING_MATERIAL_OTHER'")
+            .setParameter("c", cust).getSingleResult()).longValue();
+        assertEquals(0L, upCount, "失败行不应写入 unit_price");
     }
 
     // ===== 8. 跨客户报价料号经 dev handler(MaterialBomMergeHandler) 优雅降级：per-row 跳过、sheet 不回滚 =====
