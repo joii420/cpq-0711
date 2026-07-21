@@ -389,4 +389,43 @@ class MaterialBomMergeHandlerTest {
         assertTrue(r.failedRows >= 1, "组成类型非法值应拒导");
         assertEquals(0L, count("SELECT count(*) FROM material_bom_item WHERE material_no=:m"));
     }
+
+    /**
+     * 静默失败回归：仅「组成类型」变化、其余列全同。
+     * characteristic 若不在 CHILD_CONTENT，multisetEqual 判"无变化"→ 完全不写库 → 改动静默丢失。
+     */
+    @Test
+    void componentKindChange_partToOutsourced_isDetectedAsContentChange() {
+        cleanupRepair2Master("TRI-CHG-1");
+        try {
+            handler.merge(List.of(), List.of(asmRowKind(1, 1, "TRI-CHG-1", "1", "零件")), ctx());
+            assertEquals("ASSEMBLY", currentChildCharacteristic());
+
+            handler.merge(List.of(), List.of(asmRowKind(1, 1, "TRI-CHG-1", "1", "外购件")), ctx());
+            assertEquals("OUTSOURCED", currentChildCharacteristic(),
+                "characteristic 必须在 CHILD_CONTENT 内，否则内容比较判'无变化'而完全不写库");
+        } finally {
+            cleanupRepair2Master("TRI-CHG-1");
+        }
+    }
+
+    /**
+     * 只有外购件子行的料号，主表仍应判 ASSEMBLY，
+     * 使走主表 characteristic 的 ll_view(来料) 能捞到它。
+     */
+    @Test
+    void outsourcedOnly_masterStillAssembly() {
+        cleanupRepair2Master("TRI-OUT-ONLY");
+        try {
+            handler.merge(List.of(), List.of(asmRowKind(1, 1, "TRI-OUT-ONLY", "1", "外购件")), ctx());
+
+            Object[] master = (Object[]) em.createNativeQuery(
+                "SELECT bom_type, characteristic FROM material_bom WHERE material_no=:m AND is_current=TRUE")
+                .setParameter("m", MAT).getSingleResult();
+            assertEquals("ASSEMBLY", master[0], "纯外购件料号 bom_type 应为 ASSEMBLY");
+            assertEquals("ASSEMBLY", master[1], "纯外购件料号主表 characteristic 应为 ASSEMBLY");
+        } finally {
+            cleanupRepair2Master("TRI-OUT-ONLY");
+        }
+    }
 }

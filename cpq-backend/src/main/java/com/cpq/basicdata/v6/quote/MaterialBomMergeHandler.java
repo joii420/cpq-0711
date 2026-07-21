@@ -48,7 +48,10 @@ public class MaterialBomMergeHandler {
         "seq_no", "component_no", "component_usage_type", "composition_qty",
         "base_qty", "issue_unit", "scrap_rate", "defect_rate",
         "operation_no", "item_seq",
-        "rough_weight", "net_weight", "weight_unit");
+        "rough_weight", "net_weight", "weight_unit",
+        // 三态统一：必须参与内容比较，否则仅「组成类型」变化时
+        // multisetEqual 判"无变化"→ 完全不写库（静默失败）。
+        "characteristic");
 
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public SheetImportResult merge(List<SheetRow> materialRows, List<SheetRow> assemblyRows, ImportContext ctx) {
@@ -208,9 +211,10 @@ public class MaterialBomMergeHandler {
                 }
                 List<Map<String, Object>> childRows = new ArrayList<>(merged.values());
 
-                // 主表级 characteristic/bom_type：按"归并后是否含真实 ASSEMBLY 子行"判定(§3.2)，
-                // 与子行 per-component characteristic 解耦——子行各自携带自己的 characteristic(见上)。
-                boolean isAssembly = childRows.stream().anyMatch(r -> "ASSEMBLY".equals(r.get("characteristic")));
+                // 主表级 characteristic/bom_type：按"归并后是否含真实组成件子行"判定(§3.2)。
+                // 三态统一：外购件(OUTSOURCED)同样算组成件，使纯外购件料号仍被 ll_view(走主表)捞到。
+                boolean isAssembly = childRows.stream().anyMatch(r ->
+                    "ASSEMBLY".equals(r.get("characteristic")) || "OUTSOURCED".equals(r.get("characteristic")));
                 String targetChar = isAssembly ? "ASSEMBLY" : null;
                 String bomType = isAssembly ? "ASSEMBLY" : "MATERIAL";
 
@@ -267,10 +271,12 @@ public class MaterialBomMergeHandler {
                     List<Map<String, Object>> childRows = new ArrayList<>(merged.values());
 
                     // per-component characteristic：每个子行已在构建阶段(matByMat/asmByMat)携带自身
-                    // characteristic（RECIPE/ASSEMBLY），此处不再整体覆盖（决策 C，替代原 master 级强制赋值）。
-                    // characteristic 不加入 CHILD_CONTENT（不参与 multisetEqual 内容比较，
-                    // 避免历史 NULL→ASSEMBLY/RECIPE 迁移被误判为内容变化触发空升版）。
-                    boolean isAssembly = childRows.stream().anyMatch(r -> "ASSEMBLY".equals(r.get("characteristic")));
+                    // characteristic（RECIPE/ASSEMBLY/OUTSOURCED），此处不再整体覆盖（决策 C）。
+                    // 三态统一后 characteristic **已加入** CHILD_CONTENT：存量 NULL 由 V344 迁移一次性回填，
+                    // 原先"怕 NULL→新值触发空升版"的顾虑消失；反之若不纳入，
+                    // 仅「组成类型」变化会被判为无内容变化而静默丢失。
+                    boolean isAssembly = childRows.stream().anyMatch(r ->
+                        "ASSEMBLY".equals(r.get("characteristic")) || "OUTSOURCED".equals(r.get("characteristic")));
                     String targetChar = isAssembly ? "ASSEMBLY" : null;
                     String bomType = isAssembly ? "ASSEMBLY" : "MATERIAL";
 
