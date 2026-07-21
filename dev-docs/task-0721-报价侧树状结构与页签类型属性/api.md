@@ -77,8 +77,12 @@ BOM | 材质元素 | 零件 | 外购件 | 主件
 | `外购件` | 该页签料号为外购件 |
 | `主件` | 成品 = 树根 |
 
-> 注意：`tabType` 与既有的 `bomRecursiveExpand`（组件级树开关）是**两个独立字段**。
-> `tabType=BOM` 表达业务语义，`bomRecursiveExpand` 控制渲染行为。二者的一致性校验见 `backtask.md` B4。
+> **2026-07-21 裁决（Q1）**：`tabType='BOM'` 是「该页签是否按树渲染」的**唯一判据**。
+> 保存时后端**自动同步** `bomRecursiveExpand`（`BOM` → true；改为其他值 → false）。
+> 前端**不需要**单独暴露 `bomRecursiveExpand` 开关给报价侧用户。
+>
+> ⚠️ 若目标组件**已被 COSTING 模板引用**，改为 `tabType='BOM'` 须**阻断并返回 400** ——
+> 该开关是组件级全局开关，会把核价模板一并改成树渲染（违反 AC-10）。
 
 **响应**：组件对象中回带 `tabType`。
 
@@ -152,7 +156,8 @@ POST /api/cpq/quotations/{quotationId}/line-items/{lineItemId}/tree/add-leaf
 3. 按 §4.3 规则二判定 `partNo` 的类型：
    - 命中「主件」页签 → **400**（成品不能作为他人叶子挂入）
    - 零命中 → **400**（该料号不是有效的报价产品）
-   - 命中 ≥2 个页签 → **409**，返回冲突页签列表供用户裁决
+   - 命中 ≥2 个**不同类型**页签 → **409**，返回冲突页签列表供用户裁决
+     （命中多个**同类型**页签**不算冲突**，类型无歧义，正常判定 —— 2026-07-21 裁决 Q3）
 4. 生成系统列并插入 `snapshot_rows`（插入位置：宿主节点行组的最后一行之后）
 
 **成功响应**：
@@ -245,6 +250,9 @@ POST /api/cpq/quotations/{quotationId}/line-items/{lineItemId}/tree/delete
   "previewToken": "..."         // 预览接口返回的令牌，防止预览与执行之间数据漂移
 }
 ```
+
+> **`previewToken` 机制**（2026-07-21 裁决 Q6）：token = 「该 line item 当前树结构 + 墓碑状态」的**内容 hash**。
+> 预览接口生成并返回，执行接口重算比对，不一致 → 409 要求重新预览。
 
 **后端处理**：
 

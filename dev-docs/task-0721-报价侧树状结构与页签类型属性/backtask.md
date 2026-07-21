@@ -103,10 +103,14 @@ SELECT usage, is_active, name FROM costing_bom_tree_config;                  -- 
 物化写 `snapshot_rows` 时，按组件分流：
 
 ```
-组件 bom_recursive_expand = true  →  走 BomTreeRenderService.render(报价模板, lines, usage=QUOTE)
-                                      spine 行 + 系统列写入 snapshot_rows
-组件 bom_recursive_expand = false →  现状不变（平铺）
+组件 tab_type = 'BOM'  →  走 BomTreeRenderService.render(报价模板, lines, usage=QUOTE)
+                           spine 行 + 系统列写入 snapshot_rows
+其他                   →  现状不变（平铺）
 ```
+
+> **2026-07-21 裁决（Q1）**：路由判据是 **`tab_type='BOM'`**，不是 `bom_recursive_expand`。
+> 后者由 B4 在保存组件时自动同步，是实现细节，不作为渲染路由的判断依据。
+> 判据请**收口到单一方法**（如 `isTreeTab(component)`），全链路只此一处判断。
 
 写入的系统列（**纯加法，不改表结构**）：
 
@@ -140,9 +144,15 @@ __nodeId / __parentId / __lvl / __hfPartNo / __parentNo / __bomVersion / __nodeT
 
 1. 实体加 `tabType` 字段，保存接口透传
 2. **值域强校验**（5 类）：`BOM` / `材质元素` / `零件` / `外购件` / `主件`，非法值抛 400
-3. `tabType` 与既有 `bomRecursiveExpand` 的**一致性校验**：
-   - `tabType = BOM` 但 `bomRecursiveExpand = false` → 保存期 warn（不阻断，允许过渡）
-   - 二者是独立字段：`tabType` 表达业务语义，`bomRecursiveExpand` 控制渲染行为
+3. **`tabType` 与 `bomRecursiveExpand` 自动联动**（2026-07-21 裁决 Q1，取代原「仅 warn」方案）：
+   - 保存组件时，`tabType = 'BOM'` → 后端**自动置** `bomRecursiveExpand = true`
+   - `tabType` 从 `BOM` 改为其他值 → 自动置 `bomRecursiveExpand = false`
+   - 用户只配「页签类型」一个字段，不需要理解两者关系
+
+> ⚠️ **配置约束（必须在保存期校验并提示）**：`bomRecursiveExpand` 是**组件级全局开关**，
+> 同一组件被多模板共用时一开全生效。现网 3 个开启该开关的组件共 34 处引用**全在 COSTING 模板**。
+> 若用户把一个**已被 COSTING 模板引用**的组件改为 `tabType='BOM'`，必须**阻断并提示**
+> （会把核价模板一并改成树渲染，违反 AC-10 零回归）。报价侧树页签应新建专用组件。
 
 **验收**：五个值域全部能存能读；非法值 400；组件详情接口回带 `tabType`
 
@@ -160,10 +170,15 @@ __nodeId / __parentId / __lvl / __hfPartNo / __parentNo / __bomVersion / __nodeT
 |---|---|---|
 | 1 | 料号出现在 `tabType=材质元素` 的页签 | 材质 |
 | 2 | 料号出现在 `tabType=零件` 的页签 | 零件 |
-| 3 | 未出现在零件页签，但其**下级挂有材质** | 零件（结构推导） |
+| 3 | 未出现在零件页签，但其**直接子节点**挂有材质 | 零件（结构推导） |
 | 4 | 料号出现在 `tabType=外购件` 的页签 | 外购件 |
 | 5 | 料号出现在 `tabType=主件` 的页签 | **错误**（成品不可作他人叶子） |
 | 6 | 零命中 | **错误**（非有效报价产品） |
+
+> **2026-07-21 裁决**：
+> - 规则 3 **只看直接子节点**（Q4），不做任意深度子孙检索 —— 否则几乎所有中间节点都会命中
+> - 规则 5 与规则 6 是**两条独立分支、两种不同错误文案**（Q2），不要合并
+> - **冲突粒度**（Q3）：只有命中**不同类型**页签才返回 409；同一料号命中多个**同类型**页签不算冲突，正常判定
 
 **要点**：
 
@@ -231,6 +246,10 @@ __nodeType = <判定结果>
 ### B7.2 执行删除
 
 1. 校验 `previewToken`（树在预览后变化 → 409）
+   - **机制**（2026-07-21 裁决 Q6）：token = 「该 line item 当前树结构 + 墓碑状态」的内容 hash。
+     执行删除时重算并比对，不一致返回 409
+   - **级联触发范围**（Q5）：只有 `tab_type='BOM'` 树页签内的删除触发级联判定；
+     其余页签的行删除是普通删除，不反向影响树
 2. **重新计算影响面，不信任前端传来的结果**
 3. 写墓碑（**一律标记删除，不物理删除**）：
    - 树节点 → `quotation_line_item.deleted_tree_nodes`
