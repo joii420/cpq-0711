@@ -140,6 +140,14 @@ public class QuotationLineItem extends PanacheEntityBase {
     @Column(name = "parent_line_item_id")
     public UUID parentLineItemId;
 
+    /**
+     * task-0721 B7：BOM 树节点级墓碑（剪枝）。JSON 字符串数组 {@code ["<nodeId>", ...]}。
+     * 树页签渲染时按 {@code __nodeId} 前缀匹配隐藏整枝（跨该报价行所有树页签联动）。
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "deleted_tree_nodes")
+    public String deletedTreeNodes;
+
     @Column(name = "created_at", nullable = false)
     public OffsetDateTime createdAt;
 

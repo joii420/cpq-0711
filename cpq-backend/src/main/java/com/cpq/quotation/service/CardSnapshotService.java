@@ -1087,10 +1087,17 @@ public class CardSnapshotService {
             }
 
             // 3. 预构建每个组件的 baseRows（按 componentId）
+            // task-0721 B7/B11：剪枝节点(quotation_line_item.deleted_tree_nodes)按 __nodeId 前缀匹配
+            // 隐藏整枝——跨该行所有树页签联动(prefix 匹配天然跨组件生效，因 nodeId 命名空间对同一
+            // line item 的所有树页签共享)。非树行(无 __nodeId)不受影响。小计与前端展示同源：两者都读
+            // 这份已剪枝的 baseRowsByComp，不会各读各的（AP-22 族纪律）。
+            List<String> prunedNodeIds = parsePrunedNodeIds(li.deletedTreeNodes);
             Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
             for (JsonNode tab : snapshot) {
                 String cid = tab.path("componentId").asText("");
-                baseRowsByComp.put(cid, buildBaseRowsFromSnapshotRows(snapByCompId.get(cid), cid));
+                ArrayNode rows = buildBaseRowsFromSnapshotRows(snapByCompId.get(cid), cid);
+                if (!prunedNodeIds.isEmpty()) rows = filterPrunedTreeRows(rows, prunedNodeIds);
+                baseRowsByComp.put(cid, rows);
             }
 
             // 4. 组装 tabs（Task 3: 填 formulaResults，加产品时 editRows 恒空；报价侧传真实墓碑）
@@ -1310,20 +1317,81 @@ public class CardSnapshotService {
     // Task 3 — formulaResults 填充（2 遍：先齐跨 tab componentSubtotals，再逐 tab calculate）
     // =========================================================================
 
-    /** 从 snapshot_rows JSON 反序列化为 baseRows ArrayNode（[{driverRow,basicDataValues}]）。 */
+    /**
+     * 从 snapshot_rows JSON 反序列化为 baseRows ArrayNode（[{driverRow,basicDataValues, ...系统列}]）。
+     *
+     * <p><b>task-0721 B3</b>：树页签行携带 {@code __nodeId/__parentId/__lvl/__hfPartNo/__parentNo/
+     * __bomVersion/__nodeType} 等系统列（{@code BomTreeRenderService.treeRowNode} 写入，与
+     * {@code driverRow}/{@code basicDataValues} 同级）。原实现经窄 POJO
+     * {@code List<ExpandDriverResponse.Row>}（仅声明这两个字段）反序列化——Jackson 默认
+     * {@code FAIL_ON_UNKNOWN_PROPERTIES=true}，遇到额外的 {@code __xxx} 顶层字段会直接抛异常，
+     * 被下方 catch 吞掉后返回<b>空</b> baseRows（AP-31 型静默失败：树页签渲染出全空白）。
+     * 改为通用 {@link JsonNode} 解析 + 逐行 deep copy，系统列随 JSON 原样透传（"纯加法"，
+     * backtask B3 要点）。对既有平铺组件（JSON 恒为 {@code [{"driverRow":..,"basicDataValues":..}]}，
+     * 无额外字段）产出与原实现逐位相同，零回归。
+     */
     private ArrayNode buildBaseRowsFromSnapshotRows(String rowsJson, String componentId) {
         ArrayNode baseRows = MAPPER.createArrayNode();
         if (rowsJson == null || rowsJson.isBlank()) return baseRows;
         try {
-            List<ExpandDriverResponse.Row> rows = MAPPER.readValue(
-                rowsJson, new TypeReference<List<ExpandDriverResponse.Row>>() {});
-            if (rows != null) {
-                for (ExpandDriverResponse.Row row : rows) baseRows.add(rowToNode(row));
+            JsonNode parsed = MAPPER.readTree(rowsJson);
+            if (parsed != null && parsed.isArray()) {
+                for (JsonNode n : parsed) {
+                    ObjectNode rowNode = n.isObject() ? ((ObjectNode) n).deepCopy() : MAPPER.createObjectNode();
+                    if (!rowNode.has("driverRow") || rowNode.get("driverRow").isNull()) {
+                        rowNode.set("driverRow", MAPPER.createObjectNode());
+                    }
+                    if (!rowNode.has("basicDataValues") || rowNode.get("basicDataValues").isNull()) {
+                        rowNode.set("basicDataValues", MAPPER.createObjectNode());
+                    }
+                    baseRows.add(rowNode);
+                }
             }
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] buildBaseRows deserialize failed comp=%s: %s", componentId, e.getMessage());
         }
         return baseRows;
+    }
+
+    /** task-0721 B7：解析 {@code quotation_line_item.deleted_tree_nodes}（JSON 字符串数组）。 */
+    private static List<String> parsePrunedNodeIds(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            JsonNode arr = MAPPER.readTree(json);
+            if (!arr.isArray() || arr.isEmpty()) return List.of();
+            List<String> out = new ArrayList<>(arr.size());
+            for (JsonNode n : arr) {
+                String s = n.asText("");
+                if (!s.isBlank()) out.add(s);
+            }
+            return out;
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    /**
+     * task-0721 B7/B11：按 {@code __nodeId} 前缀匹配剔除被剪枝的树节点行（该节点自身 + 全部子孙）。
+     * 非树行（无 {@code __nodeId}）原样保留。前端展示（此处）与后端小计（同一份 baseRowsByComp
+     * 流入 {@code assembleTabsWithFormulaResults}）共享同一过滤结果，天然同源，不会各读各的。
+     */
+    private static ArrayNode filterPrunedTreeRows(ArrayNode rows, List<String> prunedNodeIds) {
+        if (rows == null || rows.isEmpty() || prunedNodeIds == null || prunedNodeIds.isEmpty()) return rows;
+        ArrayNode out = MAPPER.createArrayNode();
+        for (JsonNode row : rows) {
+            JsonNode nodeIdNode = row.get("__nodeId");
+            if (nodeIdNode == null || nodeIdNode.isNull()) {
+                out.add(row); // 非树行,不受剪枝影响
+                continue;
+            }
+            String nodeId = nodeIdNode.asText("");
+            boolean pruned = false;
+            for (String p : prunedNodeIds) {
+                if (nodeId.equals(p) || nodeId.startsWith(p + "/")) { pruned = true; break; }
+            }
+            if (!pruned) out.add(row);
+        }
+        return out;
     }
 
     /** 把 expand 返回的 Row 列表转 baseRows ArrayNode。 */
