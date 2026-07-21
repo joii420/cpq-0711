@@ -57,6 +57,22 @@ class MaterialBomMergeHandlerTest {
         return ((Number) em.createNativeQuery(sql).setParameter("m", MAT).getSingleResult()).longValue();
     }
 
+    /** 带「组成类型」的组成件行夹具（三态统一）。kind 传 null 表示该列缺失。 */
+    private SheetRow asmRowKind(int rowNo, int seq, String comp, String qty, String kind) {
+        Map<String, String> m = new HashMap<>();
+        m.put("宏丰料号", MAT); m.put("项次（一级）", String.valueOf(seq));
+        m.put("组成件料号", comp); m.put("组成数量", qty); m.put("组成单位", "PCS");
+        if (kind != null) m.put("组成类型", kind);
+        return new SheetRow(rowNo, m);
+    }
+
+    /** 取当前生效子行的 characteristic（断言唯一行时用）。 */
+    private String currentChildCharacteristic() {
+        return (String) em.createNativeQuery(
+            "SELECT characteristic FROM material_bom_item WHERE material_no=:m AND is_current=TRUE")
+            .setParameter("m", MAT).getSingleResult();
+    }
+
     @Test
     void sameMaterialInBothSheets_collapsesToOneAssemblyCurrentRow() {
         handler.merge(
@@ -331,5 +347,46 @@ class MaterialBomMergeHandlerTest {
         } finally {
             cleanupRepair2Master("R2-MAT-A", "R2-REAL-COMP-2");
         }
+    }
+
+    // ===== 三态统一 =====
+
+    @Test
+    void componentKind_零件_mapsToAssembly() {
+        cleanupRepair2Master("TRI-PART-1");
+        try {
+            handler.merge(List.of(), List.of(asmRowKind(1, 1, "TRI-PART-1", "1", "零件")), ctx());
+            assertEquals("ASSEMBLY", currentChildCharacteristic(), "组成类型=零件 → ASSEMBLY");
+        } finally {
+            cleanupRepair2Master("TRI-PART-1");
+        }
+    }
+
+    @Test
+    void componentKind_外购件_mapsToOutsourced() {
+        cleanupRepair2Master("TRI-OUT-1");
+        try {
+            handler.merge(List.of(), List.of(asmRowKind(1, 1, "TRI-OUT-1", "1", "外购件")), ctx());
+            assertEquals("OUTSOURCED", currentChildCharacteristic(), "组成类型=外购件 → OUTSOURCED");
+        } finally {
+            cleanupRepair2Master("TRI-OUT-1");
+        }
+    }
+
+    @Test
+    void componentKind_missing_rejectsRow() {
+        SheetImportResult r = handler.merge(
+            List.of(), List.of(asmRowKind(1, 1, "TRI-MISS-1", "1", null)), ctx());
+        assertTrue(r.failedRows >= 1, "组成类型列缺失应拒导");
+        assertEquals(0L, count("SELECT count(*) FROM material_bom_item WHERE material_no=:m"),
+            "拒导行不应落库");
+    }
+
+    @Test
+    void componentKind_illegalValue_rejectsRow() {
+        SheetImportResult r = handler.merge(
+            List.of(), List.of(asmRowKind(1, 1, "TRI-BAD-1", "1", "半成品")), ctx());
+        assertTrue(r.failedRows >= 1, "组成类型非法值应拒导");
+        assertEquals(0L, count("SELECT count(*) FROM material_bom_item WHERE material_no=:m"));
     }
 }

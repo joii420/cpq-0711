@@ -108,27 +108,39 @@ public class MaterialBomMergeHandler {
             if (isCfg(materialNo)) { result.recordError(row.rowNo, "宏丰料号", "禁止导入系统生成料号(CFG- 前缀): " + materialNo); continue; }
             String componentName = row.getStr("组成件名称");
             String rawAssemblyComponent = row.exact("组成件料号");
-            // 决策 D：组成件料号命中"本次导入材质料号集"(物料BOM ∪ 物料与元素BOM 的材质料号) →
-            // 按材质料号处理(原始码/不登记 master/RECIPE)，不再 resolve/铸号；否则维持原真组成件路径。
-            boolean isMaterialHit = rawAssemblyComponent != null && matNoSet.contains(rawAssemblyComponent);
-            String componentNo;
-            String childCharacteristic;
-            if (isMaterialHit) {
-                componentNo = rawAssemblyComponent;
-                childCharacteristic = "RECIPE";
-            } else {
-                try {
-                    componentNo = materialNoResolver.resolve(rawAssemblyComponent, componentName, batch);
-                } catch (MaterialNoUnresolvableException ex) {
-                    result.recordError(row.rowNo, "组成件料号", "料号与名称均为空"); continue;
-                } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
-                    result.recordError(row.rowNo, "组成件料号", "报价料号跨客户串号"); continue;
-                }
-                // §12 料号表同步：组成件 material_type 固定存汉字「组成件」，已存在保留原值（preserveDescriptive=true）。延后批量。
-                accMaterialMaster(mmAcc, componentNo, componentName, "组成件");
-                result.recordWrite("material_master", 1);
-                childCharacteristic = "ASSEMBLY";
+
+            // 三态统一：「组成类型」必填，值域 {零件, 外购件}。
+            // exact() 对"整列缺失"与"单元格为空"均返 null，两者都按拒导处理。
+            String compKind = row.exact("组成类型");
+            String childCharacteristic = kindToCharacteristic(compKind);
+            if (childCharacteristic == null) {
+                result.recordError(row.rowNo, "组成类型",
+                    compKind == null ? "为空或该列缺失(必填，值域: 零件/外购件)"
+                                     : "非法值: " + compKind + "(值域: 零件/外购件)");
+                continue;
             }
+
+            // 决策 D 冲突：料号命中"本次导入材质料号集"说明它是材质料号，
+            // 而「组成类型」值域不含材质 → 语义矛盾，拒导该行。
+            // repair-2 的防线仍有效(材质料号不会被铸报价料号/不登记 material_master)，
+            // 只是从"静默纠正为 RECIPE"变为"显式报错"。
+            if (rawAssemblyComponent != null && matNoSet.contains(rawAssemblyComponent)) {
+                result.recordError(row.rowNo, "组成件料号",
+                    "该料号是本次导入的材质料号，不能出现在组成件BOM(组成类型=" + compKind + ")");
+                continue;
+            }
+
+            String componentNo;
+            try {
+                componentNo = materialNoResolver.resolve(rawAssemblyComponent, componentName, batch);
+            } catch (MaterialNoUnresolvableException ex) {
+                result.recordError(row.rowNo, "组成件料号", "料号与名称均为空"); continue;
+            } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
+                result.recordError(row.rowNo, "组成件料号", "报价料号跨客户串号"); continue;
+            }
+            // §12 料号表同步：组成件 material_type 固定存汉字「组成件」，已存在保留原值（preserveDescriptive=true）。延后批量。
+            accMaterialMaster(mmAcc, componentNo, componentName, "组成件");
+            result.recordWrite("material_master", 1);
 
             // 工序回填（决策 #5）：工序编号空 + 组装工序(工序名称)有值 → 按名取第一条 process_no
             String operationNo = row.getStr("工序编号");
@@ -290,6 +302,18 @@ public class MaterialBomMergeHandler {
 
     private static boolean isCfg(String materialNo) {
         return materialNo != null && materialNo.startsWith("CFG-");
+    }
+
+    /**
+     * 「组成类型」→ characteristic 映射（三态统一）。
+     * 值域仅 {零件, 外购件}；null / 空 / 非法值统一返回 null，由调用方按拒导处理。
+     */
+    static String kindToCharacteristic(String kind) {
+        if (kind == null) return null;
+        String t = kind.trim();
+        if ("零件".equals(t))   return "ASSEMBLY";
+        if ("外购件".equals(t)) return "OUTSOURCED";
+        return null;
     }
 
     /**
