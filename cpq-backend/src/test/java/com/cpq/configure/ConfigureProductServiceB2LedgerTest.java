@@ -155,7 +155,8 @@ class ConfigureProductServiceB2LedgerTest {
     long materialBomItemSelfRowCount(String customerNo, String materialNo) {
         return count(
             "SELECT COUNT(*) FROM material_bom_item WHERE system_type='QUOTE' AND customer_no=:cn " +
-            "AND material_no=:mn AND characteristic IS NULL AND is_current=true",
+            // 三态统一(2026-07-20)：选配材质行 characteristic 由 NULL 改写 'RECIPE'。
+            "AND material_no=:mn AND characteristic = 'RECIPE' AND is_current=true",
             Map.of("cn", customerNo, "mn", materialNo));
     }
 
@@ -258,17 +259,19 @@ class ConfigureProductServiceB2LedgerTest {
 
         // ② material_bom(头) + material_bom_item(子)
         assertEquals(1, materialBomHeaderCount(sq.customerCode(), pn), "② material_bom 头表行");
-        assertEquals(1, materialBomItemSelfRowCount(sq.customerCode(), pn), "② material_bom_item 自指子行");
+        assertEquals(1, materialBomItemSelfRowCount(sq.customerCode(), pn), "② material_bom_item 材质子行");
         @SuppressWarnings("unchecked")
         List<Object[]> bomItemRows = em.createNativeQuery(
                 "SELECT seq_no, component_no, component_usage_type FROM material_bom_item " +
                 "WHERE system_type='QUOTE' AND customer_no=:cn AND material_no=:mn " +
-                "AND characteristic IS NULL AND is_current=true")
+                "AND characteristic = 'RECIPE' AND is_current=true")   // 三态统一：材质行 = RECIPE
             .setParameter("cn", sq.customerCode()).setParameter("mn", pn).getResultList();
         assertEquals(1, bomItemRows.size());
         Object[] bomRow = bomItemRows.get(0);
         assertEquals(1, ((Number) bomRow[0]).intValue(), "seq_no=1");
-        assertEquals(pn, bomRow[1], "component_no 自指=partNo");
+        // 2026-07-16 起 component_no 存材质料号(recipe.code)而非销售料号自指——对齐报价导入，
+        // 否则 mr.code=component_no 的 JOIN 失配（见 ConfigureProductService#insertMaterialBomItemV6 注释）。
+        assertEquals("AgNi90", bomRow[1], "component_no=材质料号(recipe.code)");
         assertEquals("AgNi", bomRow[2], "component_usage_type=recipe.symbol");
 
         // ③ element_bom(头) + element_bom_item(子)
@@ -281,7 +284,8 @@ class ConfigureProductServiceB2LedgerTest {
         // ⑤+⑥ 渲染基线(AP-53)：两个镜像视图对应的物理 PG 视图仍正确渲染
         List<Object[]> matView = queryChildMaterialsView(pn);
         assertEquals(1, matView.size(), "v_composite_child_materials 应返回本料号自身 1 行: " + matView);
-        assertEquals(pn, matView.get(0)[0], "child_hf_part_no 自指");
+        // v_composite_child_materials.child_hf_part_no = asy.component_no，同上 2026-07-16 改动后为材质料号。
+        assertEquals("AgNi90", matView.get(0)[0], "child_hf_part_no=材质料号(recipe.code)");
         assertEquals("AgNi", matView.get(0)[1], "material_name 列取 component_usage_type=recipe.symbol");
 
         List<Object[]> eleView = queryChildElementsView(pn);

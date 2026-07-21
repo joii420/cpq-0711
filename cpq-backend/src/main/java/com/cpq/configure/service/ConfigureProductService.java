@@ -1,5 +1,6 @@
 package com.cpq.configure.service;
 
+import com.cpq.basicdata.v6.BomCharacteristic;
 import com.cpq.configure.SalesFingerprintCalculator;
 import com.cpq.configure.SalesFingerprintCalculator.ElementPct;
 import com.cpq.configure.SalesFingerprintCalculator.EnabledParam;
@@ -378,8 +379,9 @@ public class ConfigureProductService {
         // B2.1③: material_part_no(材质料号) = recipe.code（材质库编号，如 00001…；task-0708 V318 起
         // material_recipe.code 即材质库业务键，与 element_bom.material_part_no 同口径，V315 已纳入唯一键）。
         insertElementBomV6(hfPartNo, customerCode, recipe.code, pr.elements);
-        // [选配-材质] mirror(v_composite_child_materials)读 material_bom_item(characteristic IS NULL +
-        // customer_no + 父料号)。补一行材质行让 mirror 返 1 行 =「选中的材质」。对齐报价导入
+        // [选配-材质] mirror(v_composite_child_materials)读 material_bom_item(characteristic
+        // IS DISTINCT FROM 'ASSEMBLY' + customer_no + 父料号；三态统一后本行写 RECIPE，仍命中该谓词)。
+        // 补一行材质行让 mirror 返 1 行 =「选中的材质」。对齐报价导入
         // (MaterialBomMergeHandler 读「材质料号」列存 component_no): component_no=材质料号(recipe.code,如 991)、
         // component_usage_type=材质名(recipe.symbol,如 AgSnO₂)。material_no 仍=销售料号(父)。
         insertMaterialBomItemV6(hfPartNo, customerCode, recipe.code, recipe.symbol);
@@ -708,7 +710,10 @@ public class ConfigureProductService {
         if (customerCode == null || customerCode.isBlank()) return; // customer_no NOT NULL + mirror 按 customer 过滤
 
         Map<String, Object> masterGk = bomGroupKey(customerCode, partNo, "bom_type", "MATERIAL");
-        Map<String, Object> childGk = bomGroupKey(customerCode, partNo, "characteristic", null);
+        // 三态统一(2026-07-20)：这里写的是**材质行**(component_no=材质料号 recipe.code)，characteristic 应为
+        // RECIPE 而非 NULL。V344 已把存量 QUOTE NULL 行回填成 RECIPE，故 gk 用 RECIPE 正好匹配已迁移数据；
+        // 若继续用 null，flip/loadCurrentGroup 按 IS NOT DISTINCT FROM NULL 将匹配不到任何行 → 双 current。
+        Map<String, Object> childGk = bomGroupKey(customerCode, partNo, "characteristic", BomCharacteristic.RECIPE);
 
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("seq_no", 1);
@@ -763,10 +768,12 @@ public class ConfigureProductService {
         // 2) 材质: 自定义材质料号补材质行(component_no=材质料号 recipe.code 对齐导入, component_usage_type=recipe.symbol 作 material_name)
         em.createNativeQuery(
                 "INSERT INTO material_bom_item (id, system_type, customer_no, material_no, characteristic, seq_no, component_no, component_usage_type, created_at, updated_at) " +
-                "SELECT gen_random_uuid(), 'QUOTE', :cn, mm.material_no, NULL, 1, COALESCE(mr.code, mm.material_no), COALESCE(mr.symbol, mm.material_type), NOW(), NOW() " +
+                // 三态统一：材质行 characteristic='RECIPE'（原写 NULL）；判重守卫同步改 = 'RECIPE'，
+                // 否则 V344 回填后 IS NULL 恒不命中 → 守卫失效 → 重复插入。
+                "SELECT gen_random_uuid(), 'QUOTE', :cn, mm.material_no, 'RECIPE', 1, COALESCE(mr.code, mm.material_no), COALESCE(mr.symbol, mm.material_type), NOW(), NOW() " +
                 "FROM material_master mm LEFT JOIN material_recipe mr ON mr.id = mm.material_recipe_id " +
                 "WHERE mm.material_no = :p AND mm.material_recipe_id IS NOT NULL " +
-                "  AND NOT EXISTS (SELECT 1 FROM material_bom_item t WHERE t.material_no = :p AND t.customer_no = :cn AND t.system_type = 'QUOTE' AND t.characteristic IS NULL AND t.is_current = true)")
+                "  AND NOT EXISTS (SELECT 1 FROM material_bom_item t WHERE t.material_no = :p AND t.customer_no = :cn AND t.system_type = 'QUOTE' AND t.characteristic = 'RECIPE' AND t.is_current = true)")
             .setParameter("cn", customerCode)
             .setParameter("p", partNo)
             .executeUpdate();
@@ -831,7 +838,8 @@ public class ConfigureProductService {
             "material_bom", "bom_version",
             bomGroupKey(customerCode, parentHfPartNo, "bom_type", "MATERIAL"), null,
             "material_bom_item", "bom_version",
-            bomGroupKey(customerCode, parentHfPartNo, "characteristic", null),
+            // 三态统一：材质行 characteristic=RECIPE（同 insertMaterialBomItemV6，理由见该处注释）。
+            bomGroupKey(customerCode, parentHfPartNo, "characteristic", BomCharacteristic.RECIPE),
             List.of("seq_no", "component_no", "component_usage_type"), materialRows);
     }
 
@@ -842,7 +850,7 @@ public class ConfigureProductService {
         gk.put("system_type", "QUOTE");
         gk.put("customer_no", customerCode);
         gk.put("material_no", materialNo);
-        gk.put(distinguishCol, distinguishVal);   // characteristic=NULL 时 writer 用 IS NOT DISTINCT FROM 安全匹配
+        gk.put(distinguishCol, distinguishVal);   // 值可空；writer 用 IS NOT DISTINCT FROM 做 NULL 安全匹配
         return gk;
     }
 
@@ -851,8 +859,10 @@ public class ConfigureProductService {
     String readChildMaterialUsageType(String childPartNo, String customerCode) {
         List<Object> r = em.createNativeQuery(
                 "SELECT component_usage_type FROM material_bom_item " +
+                // 三态统一：材质行判定由 characteristic IS NULL 改为 = 'RECIPE'
+                // （V344 已把存量 QUOTE NULL 行全部回填，IS NULL 现在恒空 → 材质名会静默降级到兜底）。
                 "WHERE material_no = :p AND customer_no = :cn AND system_type = 'QUOTE' " +
-                "  AND characteristic IS NULL AND is_current = true LIMIT 1")
+                "  AND characteristic = 'RECIPE' AND is_current = true LIMIT 1")
             .setParameter("p", childPartNo).setParameter("cn", customerCode).getResultList();
         if (!r.isEmpty() && r.get(0) != null && !r.get(0).toString().isBlank()) return r.get(0).toString();
         List<Object> r2 = em.createNativeQuery(
