@@ -1,5 +1,6 @@
 package com.cpq.basicdata.v6.pricing;
 
+import com.cpq.basicdata.v6.BomCharacteristic;
 import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
@@ -92,7 +93,7 @@ public class P06MaterialBomHandler implements SheetHandler {
             c.put("production_no", prodNo);       // 描述列; material_bom_item 携带 + master 主行也写(见下)
             // 三态统一：核价侧判别列由 calc_type 收敛到 characteristic。
             // '元素' → RECIPE(材质)；其余(含 '材料' 与 null) → ASSEMBLY(组成件)。
-            c.put("characteristic", "元素".equals(calcType) ? "RECIPE" : "ASSEMBLY");
+            c.put("characteristic", BomCharacteristic.fromCalcType(calcType));
             childByMat.computeIfAbsent(materialNo, k -> new LinkedHashMap<>())
                       .put(Arrays.asList(seq, componentNo), c);   // 去重键 = (项次, 组成料号)
             result.successRows++;

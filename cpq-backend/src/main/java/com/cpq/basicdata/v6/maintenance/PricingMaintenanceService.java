@@ -1,5 +1,6 @@
 package com.cpq.basicdata.v6.maintenance;
 
+import com.cpq.basicdata.v6.BomCharacteristic;
 import com.cpq.basicdata.v6.maintenance.dto.*;
 import com.cpq.basicdata.v6.util.DecimalScale;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
@@ -416,6 +417,10 @@ public class PricingMaintenanceService {
         String prodNo = null;
         for (Map<String, Object> fr : req.rows) {
             Map<String, Object> row = extractContentRow(d, fr);   // childContent 含 production_no
+            // 三态统一：characteristic 由 calc_type 派生，与 P06MaterialBomHandler 同源（BomCharacteristic）。
+            // 它在 contentColumns 里参与版本比对，但不是用户输入列（无 ColumnDef），
+            // extractContentRow 取到的恒为 null，必须在此覆盖。
+            row.put("characteristic", BomCharacteristic.fromCalcType(row.get("calc_type")));
             childRows.add(row);
             if (prodNo == null && row.get("production_no") != null) prodNo = String.valueOf(row.get("production_no"));
         }

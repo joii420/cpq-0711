@@ -157,17 +157,20 @@ public class PricingSheetRegistry {
 
         // ============ BOM 组（主从版本化，2 组）============
 
-        // 9) 物料BOM — 对应 P06MaterialBomHandler（CHILD_CONTENT 行39-42；master gk 行99-103；production_no 在 childContent+masterFixed）
+        // 9) 物料BOM — 对应 P06MaterialBomHandler（CHILD_CONTENT/production_no 在 childContent+masterFixed，与 handler 严格同源）
         reg(PricingSheetDef.builder("MATERIAL_BOM", "物料BOM", "BOM", 9)
             .table("material_bom", "bom_version", "material_no")
             .fixedGk("customer_no", "_GLOBAL_").fixedGk("bom_type", "MATERIAL")
             .masterDetail("material_bom_item", "bom_version")
-            .childFixedGk("customer_no", "_GLOBAL_").childFixedGk("characteristic", null)
+            .childFixedGk("customer_no", "_GLOBAL_")
             .masterDescriptors("production_no")   // 主表 production_no（per-material，不进版本比对）
             .descriptors()                         // 子表无独立 descriptor：production_no 在 childContent（参与比对，同 handler）
             .content("seq_no", "component_no", "operation_no", "component_usage_type",
                      "composition_qty", "issue_unit", "base_qty", "scrap_rate", "fixed_scrap",
-                     "defect_rate", "calc_type", "production_no")
+                     "defect_rate", "calc_type", "production_no",
+                     // 三态统一：与 P06 CHILD_CONTENT 严格同源。characteristic 由 calc_type 派生
+                     // (saveMaterialBom 内)，不是用户输入列，故无对应 ColumnDef。
+                     "characteristic")
             .rowKeys("seq_no", "component_no")
             .scale("composition_qty", 6).scale("base_qty", 6).scale("scrap_rate", 4)
             .scale("fixed_scrap", 6).scale("defect_rate", 4)

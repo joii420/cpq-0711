@@ -361,6 +361,46 @@ class PricingMaintenanceServiceTest {
         assertEquals("2001", r1.version, "子表整批改应升主表 bom_version");
     }
 
+    /**
+     * 三态统一回归（Critical 修复）：PricingSheetRegistry.childFixedGk 曾遗留
+     * characteristic=null，V344 回填后 gk 恒匹配 0 行 → 维护路径读空表 + 保存产生双 current。
+     * 覆盖：①保存后能读回（gk 不再被卡住）②派生正确（calc_type→characteristic）③连存两次无双 current。
+     */
+    @Test void materialBom_characteristic_derivedAndReadable_noDoubleCurrent() {
+        var v0 = List.of(
+            row("seq_no", 1, "component_no", "C-A", "operation_no", "TP10", "composition_qty", "2.0", "calc_type", "材料", "production_no", "PROD-1"),
+            row("seq_no", 2, "component_no", "EL-01", "operation_no", "TP10", "composition_qty", "1.0", "calc_type", "元素", "production_no", "PROD-1"));
+        SaveGroupResult r0 = service.saveGroup(MAT, "MATERIAL_BOM", req(null, v0), UID);
+        assertEquals("CREATED", r0.result);
+        assertEquals("2000", r0.version);
+
+        // ① 读回：维护路径 gk（childFixedGk 不再含 characteristic）应能看到刚保存的 2 行，不是空表。
+        RowsDTO dto = service.readRows(MAT, "MATERIAL_BOM", null);
+        assertEquals(2, dto.rows.size(), "childGk 不应再被 characteristic=null 卡成空表");
+
+        // ② 派生正确：calc_type='元素' → RECIPE；calc_type='材料'（含缺省）→ ASSEMBLY。
+        long recipeRows = ((Number) em.createNativeQuery(
+            "SELECT count(*) FROM material_bom_item WHERE material_no=:m AND is_current=true AND calc_type='元素' AND characteristic='RECIPE'")
+            .setParameter("m", MAT).getSingleResult()).longValue();
+        assertEquals(1L, recipeRows, "calc_type=元素 应派生 characteristic=RECIPE");
+        long assemblyRows = ((Number) em.createNativeQuery(
+            "SELECT count(*) FROM material_bom_item WHERE material_no=:m AND is_current=true AND calc_type='材料' AND characteristic='ASSEMBLY'")
+            .setParameter("m", MAT).getSingleResult()).longValue();
+        assertEquals(1L, assemblyRows, "calc_type=材料 应派生 characteristic=ASSEMBLY");
+        long nullCharacteristic = ((Number) em.createNativeQuery(
+            "SELECT count(*) FROM material_bom_item WHERE material_no=:m AND is_current=true AND characteristic IS NULL")
+            .setParameter("m", MAT).getSingleResult()).longValue();
+        assertEquals(0L, nullCharacteristic, "保存路径不应再写出 characteristic=NULL 的行（cz_view='RECIPE' 谓词捞不到）");
+
+        // ③ 不产生双 current：内容不变原样重存，is_current=true 的子行数不应翻倍。
+        SaveGroupResult r1 = service.saveGroup(MAT, "MATERIAL_BOM", req("2000", v0), UID);
+        assertEquals("UNCHANGED", r1.result, "内容未变应 UNCHANGED，不应因 gk 匹配不到旧行而误判全新组");
+        long curRows = ((Number) em.createNativeQuery(
+            "SELECT count(*) FROM material_bom_item WHERE material_no=:m AND is_current=true")
+            .setParameter("m", MAT).getSingleResult()).longValue();
+        assertEquals(2L, curRows, "重存不应产生双 current（旧行未被下线导致的行数翻倍）");
+    }
+
     @Test void readRows_currentAndEditable() {
         service.saveGroup(MAT, "SELF_PROCESS",
             req(null, List.of(row("operation_no", "TP10", "pricing_price", "1.5", "currency", "CNY", "unit", "PCS", "defect_rate", "0.02"))), UID);
