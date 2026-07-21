@@ -174,6 +174,20 @@
 - **落地后待业务动作（方案 B 主数据先行的必然，非缺陷）**：① 工序名须业务拿真工序 Excel 走新导入端点才落 `process_master`（现 0 个 Z 码）；② 材质名须走「材质管理→绑定料号」补绑（现 `material_master` 绑定率 0/39，全显"未绑定"，PRD §5 非目标）。
 - **遗留（P2）**：导入未做 `process_no`(VARCHAR20)/`process_name`(VARCHAR50) 超长截断校验，超限 DB 层报错；backtask/api 未要求，待评估。
 
+### [BL-0064] 外购件（`characteristic='OUTSOURCED'`）的渲染归属 —— 三态统一的展示侧兑现
+- **优先级**：P1
+- **来源**：`docs/superpowers/specs/2026-07-20-material-bom-item-characteristic-三态统一-design.md` §9.1（本期明确不做下游）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-20
+- **背景**：本期把 `material_bom_item.characteristic` 统一为 `RECIPE`/`ASSEMBLY`/`OUTSOURCED` 三态，业务在报价侧「组成件BOM」sheet 的新增列「组成类型」里区分零件 / 外购件。但**下游视图本期零改动**，导致数据层区分了、展示层没兑现：
+  - `zpj_view`（子配件）子表谓词 `characteristic = 'ASSEMBLY'` → 外购件**不显示**；
+  - `ll_view`（来料）子表 join **不过滤 characteristic**，只按 `material_no` 关联，叠加本期主表推导改动（含 OUTSOURCED 子行 → 主表判 `ASSEMBLY`）→ 外购件**会混在「来料」页签里显示，但与零件视觉上无法区分**（`ll_view` 不输出 `characteristic` 列，其「类型」列取的是 `component_usage_type` 映射：银点类/非银点类/组成件，与三态无关）。
+  - 净效果：业务填了"外购件"，在报价单上看不出区别。**本期已确认接受此取舍。**
+- **范围**（三选一，二期定）：① `ll_view` 增加一列输出 `characteristic` 的中文映射（改动最小，只动视图 SQL + 组件字段配置）；② `zpj_view` 放宽为 `IN ('ASSEMBLY','OUTSOURCED')`，外购件并入子配件页签；③ 新开独立视图 + 组件 + 模板绑定，外购件单独成页签。
+- **依赖**：本期（三态统一 + V344 迁移）交付。
+- **预估规模**：S（方案①②）/ M（方案③）
+- **验收要点**：报价单上外购件行可与零件行明确区分；不产生重复行（守 AP-22「X (共N项)」族）；改动视图后按 CLAUDE.md「视图 DROP CASCADE / 重建后必须重启 Quarkus」执行。
+
 ## P2
 
 ### [BL-0019] 零金额列页签 `[页签(总计)]`=0 的配置期 lint 警告 + 回退裁决

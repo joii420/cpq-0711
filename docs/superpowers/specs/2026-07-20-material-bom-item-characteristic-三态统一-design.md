@@ -253,8 +253,30 @@ if (multisetEqual(existingChild, childRows, childContentColumns)) {
 
 ## 9. 本期不做（转 Backlog）
 
-- **`OUTSOURCED` 的渲染归属**：`zpj_view`（子配件）谓词维持 `= 'ASSEMBLY'`，外购件行导入后**存得下但不显示**。二期决定是并入子配件页签（`IN ('ASSEMBLY','OUTSOURCED')`）还是新开独立视图 + 组件 + 模板绑定。
-  - 优先级：P1｜前置条件：本期交付｜预估规模：S（并入）/ M（独立页签）
+### 9.1 `OUTSOURCED` 的渲染归属
+
+**本期下游视图零改动**，外购件行的实际可见性如下（已核实视图模板，非推测）：
+
+| 页签 | 视图 | 子表谓词 | 外购件行 |
+|---|---|---|---|
+| 子配件 | `zpj_view` QUOTE 分支 | `characteristic = 'ASSEMBLY'` | ❌ 不显示 |
+| 来料 | `ll_view` | 子表 join **不过滤 characteristic**，仅按 `material_no` 关联 | ✅ **会显示** |
+
+> ⚠️ **已知取舍（业务须知）**：`ll_view` 捞的是"主表判为 `ASSEMBLY` 的料号下**全部** `is_current` 子行"，
+> 不区分三态；叠加 §4.2-3 的主表推导改动后，纯外购件料号也会命中。
+> 因此外购件**会混在「来料」页签里，且与零件在视觉上无法区分**——
+> `ll_view` 不输出 `characteristic` 列，其「类型」列取的是 `component_usage_type`
+> 的映射（银点类/非银点类/组成件），与本次的三态无关。
+>
+> 净效果：业务在 Excel 里区分了"零件 vs 外购件"，数据层正确落库，
+> 但**报价单展示上看不出区别**。已确认本期接受。
+
+二期方案（三选一）：
+- `ll_view` 增加一列输出 `characteristic` 的中文映射（改动最小）
+- `zpj_view` 放宽为 `IN ('ASSEMBLY','OUTSOURCED')`，外购件并入子配件页签
+- 新开独立视图 + 组件 + 模板绑定，外购件单独成页签
+
+优先级：P1｜前置条件：本期交付｜预估规模：S（前两案）/ M（独立页签）
 
 ---
 
@@ -266,7 +288,13 @@ if (multisetEqual(existingChild, childRows, childContentColumns)) {
 - `cpq-backend/.../quote/MaterialBomMergeHandler.java`
 - `cpq-backend/src/main/resources/db/migration/V344__unify_material_bom_item_characteristic.sql`
 - `component_sql_view` 中 `cz_view` 的核价分支模板（随 V344 迁移一并 UPDATE）
-- 报价侧「组成件BOM」Excel 模板文件（新增列）
+
+**不在本次代码交付范围**：
+
+- 报价侧「组成件BOM」Excel 模板文件的「组成类型」列 —— **由业务侧提供新模板**。
+  开发侧只负责解析器按 §3 读取该列并校验；模板文件本身不由本次改动产出。
+  ⚠️ 上线依赖：业务新模板未到位前，报价侧组成件BOM **全部无法导入**（§8-3 严格路线），
+  故本期上线需与业务确认新模板就绪时点。
 
 **自检项**：
 
