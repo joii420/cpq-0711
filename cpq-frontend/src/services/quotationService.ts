@@ -116,6 +116,53 @@ export interface LineItemSnapshotValues {
   costingExcelValues?: string | null;
 }
 
+// ─── task-0721：报价侧 BOM 树上编辑（加叶子 / 删除预览+执行）── api.md §3-§5 ─────────────
+
+export interface TreeAddLeafResult {
+  nodeId: string;
+  nodeType: string;
+  /** 整单卡片值（JSON 字符串），前端直接回灌，不二次拉取 */
+  quoteCardValues: string;
+}
+
+export interface TreeDeleteNodePreview {
+  nodeId: string;
+  partNo: string;
+  lvl: number;
+}
+
+export interface TreeDeleteCascadeRow {
+  rowKey: string;
+  partNo: string;
+  summary: string;
+}
+
+export interface TreeDeleteCascadeTab {
+  componentId: string;
+  tabName: string;
+  rows: TreeDeleteCascadeRow[];
+}
+
+export interface TreeDeleteRetainedPart {
+  partNo: string;
+  remainingOccurrences: number;
+  reason: string;
+}
+
+export interface TreeDeletePreviewResult {
+  /** 执行删除时须回传，防预览与执行之间数据漂移（api.md §5） */
+  previewToken: string;
+  treeNodes: TreeDeleteNodePreview[];
+  cascadeTabs: TreeDeleteCascadeTab[];
+  retainedParts: TreeDeleteRetainedPart[];
+}
+
+export interface TreeDeleteExecResult {
+  deletedNodeIds: string[];
+  cascadeDeletedRowKeys: Record<string, string[]>;
+  quoteCardValues: string;
+}
+
 export const quotationService = {
   list: (params: any) => api.get('/quotations', { params }) as Promise<any>,
   getById: (id: string) => api.get(`/quotations/${id}`) as Promise<any>,
@@ -207,4 +254,20 @@ export const quotationService = {
     api.post(`/quotations/${qid}/line-items/${lid}/delete-driver-row`, { componentId, effKey, fp }) as Promise<any>,
   restoreDriverRows: (qid: string, lid: string, componentId: string) =>
     api.post(`/quotations/${qid}/line-items/${lid}/restore-driver-rows`, { componentId }) as Promise<any>,
+
+  // task-0721 F4/F5：报价侧 BOM 树上编辑（api.md §3-§5）。
+  // 类型判定 / 级联影响面计算均在后端（架构红线，前端不得自行实现），
+  // 前端仅负责发起请求 + 用返回的 quoteCardValues 直接回灌（不二次拉取）。
+  addTreeLeaf: (qid: string, lid: string, body: { componentId: string; hostNodeId: string; partNo: string }) =>
+    api.post(`/quotations/${qid}/line-items/${lid}/tree/add-leaf`, body) as Promise<any>,
+  previewTreeDelete: (
+    qid: string,
+    lid: string,
+    body: { componentId: string; mode: 'PRUNE' | 'ROW'; nodeId: string; rowKey?: string },
+  ) => api.post(`/quotations/${qid}/line-items/${lid}/tree/delete-preview`, body) as Promise<any>,
+  executeTreeDelete: (
+    qid: string,
+    lid: string,
+    body: { componentId: string; mode: 'PRUNE' | 'ROW'; nodeId: string; rowKey?: string; previewToken: string },
+  ) => api.post(`/quotations/${qid}/line-items/${lid}/tree/delete`, body) as Promise<any>,
 };

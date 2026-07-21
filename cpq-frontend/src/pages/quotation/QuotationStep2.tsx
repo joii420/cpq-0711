@@ -35,6 +35,8 @@ import { useTreeCollapse } from './useTreeCollapse';
 import { splitRows, rowAt, isManualRow } from './manualRows';
 import { resolveInputDefault, resolveInputDefaultForBake } from './inputDefaults';
 import { resolveFieldWidth } from '../component/types';
+import BomTreeAddLeafDrawer from './BomTreeAddLeafDrawer';
+import BomTreeDeleteConfirmDrawer from './BomTreeDeleteConfirmDrawer';
 import './quotation.css';
 
 // 与 QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard 中的同名函数保持完全对齐。
@@ -1503,12 +1505,15 @@ export function buildSnapshotExpansions(
           // 与 buildSnapshotExpansions 过滤口径、后端 resolvedRows/formulaResults 键完全一致。
           // COSTING 侧 uniqFull=null → __effKey=undefined，渲染层不使用（守 AP-41 隔离）。
           __effKey: uniqFull ? uniqFull[i] : undefined,
-          // 核价 BOM 递归展开（P1）：透传 spine 系统列（__ 前缀），供 COSTING 卡片渲染固定列 + 建树。
-          // 报价侧快照无 __* 字段 → __sys 各项 undefined，渲染层据此不注入（守 AP-41 隔离）。
+          // BOM 递归展开：透传 spine 系统列（__ 前缀），供卡片渲染固定列 + 建树。
+          // task-0721 F1：本提取无侧别判断（COSTING/QUOTE 通用）——只要该组件的 baseRow
+          // 带 __nodeId 就注入 __sys，纯数据驱动。缺 __* 字段的普通快照行 → __sys 仍 undefined
+          // （守 AP-41 隔离，报价侧未接后端 B3 前该字段恒缺失，行为零变化）。
           __sys: (br && br.__nodeId !== undefined) ? {
             nodeId: br.__nodeId, parentId: br.__parentId, lvl: br.__lvl,
             hfPartNo: br.__hfPartNo, parentNo: br.__parentNo,
             bomVersion: br.__bomVersion, isCycle: br.__isCycle,
+            nodeType: br.__nodeType ?? null,
           } : undefined,
         })),
       };
@@ -1738,6 +1743,30 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         return { ...comp, rows: [...comp.rows, emptyRow] };
       }),
     }));
+  };
+
+  // ─── task-0721 F4/F5：BOM 树上编辑（加叶子 / 删除预览+执行） ──────────────────────
+  // 两个 Drawer 均只回灌 quoteCardValues（后端整单卡片值，api.md §3/§5 约定），不二次拉取。
+  // buildSnapshotExpansions 依赖 lineItems 的 useMemo 会因 quoteCardValues 变化自动重算 driverExpansions。
+  const [addLeafReq, setAddLeafReq] = useState<
+    { componentId: string; hostNodeId: string; hostNodeType?: string | null } | null
+  >(null);
+  const openAddLeaf = (componentId: string, hostNodeId: string, hostNodeType?: string | null) =>
+    setAddLeafReq({ componentId, hostNodeId, hostNodeType });
+  const closeAddLeaf = () => setAddLeafReq(null);
+
+  const [treeDeleteReq, setTreeDeleteReq] = useState<
+    { componentId: string; mode: 'PRUNE' | 'ROW'; nodeId: string; rowKey?: string } | null
+  >(null);
+  const openTreeDelete = (mode: 'PRUNE' | 'ROW', componentId: string, nodeId: string, rowKey: string | undefined) =>
+    setTreeDeleteReq({ componentId, mode, nodeId, rowKey });
+  const closeTreeDelete = () => setTreeDeleteReq(null);
+
+  // 两个 Drawer 共用的回灌函数：直接替换 item.quoteCardValues（不动 componentData 结构），
+  // 与 applyQuoteProjection 同一 onUpdate 通路，走 handleUpdateQuoteLineItem → onUpdateLineItem 合并。
+  const applyTreeQuoteCardValues = (quoteCardValues: string) => {
+    if (!quoteCardValues) return;
+    onUpdate({ quoteCardValues } as Partial<LineItem>);
   };
 
   // Functional row update: reads latest state from parent, only patches one field.
@@ -2106,10 +2135,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     return driverExpansions?.[key];
   })();
 
-  // 核价 BOM 递归展开 组件级开关：仅当该组件 baseRows 含 spine 系统列(__sys.nodeId) 才走树+系统列；
+  // BOM 递归展开 组件级开关：仅当该组件 baseRows 含 spine 系统列(__sys.nodeId) 才走树+系统列；
   // 未勾选(bom_recursive_expand=false)组件后端不发系统列 → 此处 false → 普通表渲染。数据驱动，无需额外 flag。
-  const activeComponentBomTree = cardSide === 'COSTING'
-    && !!activeDriverExpansion?.rows?.some((r: any) => r?.__sys?.nodeId !== undefined);
+  // task-0721 F1：去掉 cardSide === 'COSTING' 闸门 —— 报价侧接后端 B3 后 baseRows 同样带 __sys.nodeId，
+  // 数据驱动天然生效；后端未接前该判断恒 false（报价侧快照无 __* 字段），渲染零变化。
+  const activeComponentBomTree =
+    !!activeDriverExpansion?.rows?.some((r: any) => r?.__sys?.nodeId !== undefined);
 
   // Compute cross-component subtotals for formula evaluation in the active tab
   // Key by componentId (UUID), componentCode, and tabName for maximum compatibility
@@ -2588,14 +2619,23 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         keyPrefixBom,
                       );
                       const collapsedBom = treeCollapse.collapsedSet(Object.values(laidBom.nodeKeyByIndex), true);
+                      // task-0721 F3.4：剪枝入口仅在「节点主行」显示 —— treeTable.ts:25「同 id 多行 →
+                      // 第一条声明者胜」，故本节点的首个出现即结构主行(承载折叠箭头/子树)，后续同 id 行
+                      // 是同 depth 的业务数据兄弟行。用 seen set 标记 laidBom.rows 遍历中每个 nodeKey
+                      // 首次出现的那一行为 _isPrimaryNode，不改 treeTable.ts。
+                      const seenBomNodeKey = new Set<string>();
                       return laidBom.rows
                         .filter(r => !isTreeRowHidden(r.originalIndex, laidBom.parentIndexByIndex, laidBom.nodeKeyByIndex, collapsedBom))
-                        .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
+                        .map(r => {
+                          const isPrimary = !seenBomNodeKey.has(r.nodeKey);
+                          seenBomNodeKey.add(r.nodeKey);
+                          return { ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey, _isPrimaryNode: isPrimary };
+                        });
                     }
                     const treeCfg = activeComponent.treeConfig;
                     if (!treeCfg?.idField || !treeCfg?.parentField) {
                       // 非树表:原样平铺(行为零变化)
-                      return withCache.map((r) => ({ ...r, _depth: 0, _hasChildren: false, _nodeKey: '' }));
+                      return withCache.map((r) => ({ ...r, _depth: 0, _hasChildren: false, _nodeKey: '', _isPrimaryNode: true }));
                     }
                     const idFieldDef = activeComponent.fields.find(f => (f.name || (f as any).key) === treeCfg.idField);
                     const parentFieldDef = activeComponent.fields.find(f => (f.name || (f as any).key) === treeCfg.parentField);
@@ -2610,8 +2650,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     const collapsed = treeCollapse.collapsedSet(Object.values(laid.nodeKeyByIndex), defExp);
                     return laid.rows
                       .filter(r => !isTreeRowHidden(r.originalIndex, laid.parentIndexByIndex, laid.nodeKeyByIndex, collapsed))
-                      .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey }));
-                  })().map(({ row, rowIndex, realRowIndex, rowKey, basicDataValues, driverRow, isDriverBound, isManualRow: isManualRowFlag, isListFormulaBound, formulaCache, formulaErrors, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey, _isDupKey }) => {
+                      .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey, _isPrimaryNode: true }));
+                  })().map(({ row, rowIndex, realRowIndex, rowKey, basicDataValues, driverRow, isDriverBound, isManualRow: isManualRowFlag, isListFormulaBound, formulaCache, formulaErrors, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey, _isDupKey, _isPrimaryNode }) => {
                     const bomSys = activeComponentBomTree ? (__sys as import('./useDriverExpansions').BomSysCols | undefined) : undefined;
                     return (
                     // AP-54: React key 必须用稳定行标识 rowKey(撞键行经 #序号 消歧唯一)，
@@ -2637,6 +2677,15 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                                   {treeCollapse.isCollapsed(_nodeKey, true) ? '▶' : '▼'}
                                 </button>
                               ) : (<span style={{ display: 'inline-block', width: 14 }} />)}
+                              {/* task-0721 F3.4：剪枝入口 —— 区别于行删除 ×，仅节点主行显示；仅报价侧可编辑 */}
+                              {cardSide === 'QUOTE' && _isPrimaryNode && bomSys?.nodeId && (
+                                <button type="button"
+                                  onClick={() => openTreeDelete('PRUNE', activeComponent.componentId!, bomSys.nodeId!, undefined)}
+                                  style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 12, padding: 0, color: '#fa8c16' }}
+                                  title="剪掉该节点及其子树（将弹窗确认级联影响，跨页签联动删除）">
+                                  ✂
+                                </button>
+                              )}
                               <span>{bomSys?.hfPartNo ?? '—'}</span>
                             </span>
                           </td>
@@ -2758,15 +2807,46 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           </td>
                         );
                       })}
-                      <td style={{ textAlign: 'center' }}>
+                      <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        {/* task-0721 F3.3：加叶子入口 —— 每行前显示，与 × 对应；仅报价侧可编辑。
+                            置灰规则：宿主节点类型为 材质/外购件 时禁用（api.md §3 步骤2）。
+                            用 <span> 而非 disabled <button> 承载禁用态，保证 hover 原因始终可见
+                            （disabled 原生 button 在部分浏览器下不触发 title，违反列表操作规范）。 */}
+                        {cardSide === 'QUOTE' && bomSys?.nodeId && (() => {
+                          const addLeafDisabledReason =
+                            bomSys.nodeType === '材质' ? '材质节点不可再添加下级'
+                            : bomSys.nodeType === '外购件' ? '外购件节点不可再添加下级'
+                            : null;
+                          return addLeafDisabledReason ? (
+                            <span title={addLeafDisabledReason}
+                              style={{ display: 'inline-block', color: '#d9d9d9', fontSize: 14, padding: '0 4px', cursor: 'not-allowed' }}>
+                              ＋
+                            </span>
+                          ) : (
+                            <button type="button"
+                              onClick={() => openAddLeaf(activeComponent.componentId!, bomSys.nodeId!, bomSys.nodeType)}
+                              style={{ background: 'none', border: 'none', color: '#1677ff', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}
+                              title="在此节点下新增叶子料号">
+                              ＋
+                            </button>
+                          );
+                        })()}
                         {row._preset ? (
                           <span title="固定行，不可删除" style={{ color: '#ccc', fontSize: 12, cursor: 'default' }}>🔒</span>
                         ) : isDriverBound ? (
                           cardSide === 'QUOTE' ? (
-                            <button type="button"
-                              onClick={() => handleDeleteDriverRow(activeComponent.componentId, rowKey, driverRow ?? {})}
-                              style={{ background: 'none', border: 'none', color: '#ff4d4f', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}
-                              title="删除行（永久，刷新/重算后不再出现）">✕</button>
+                            bomSys?.nodeId ? (
+                              // task-0721 F5：BOM 树行删除必须先过预览弹窗（跨页签级联），不再直接调 handleDeleteDriverRow。
+                              <button type="button"
+                                onClick={() => openTreeDelete('ROW', activeComponent.componentId!, bomSys.nodeId!, rowKey)}
+                                style={{ background: 'none', border: 'none', color: '#ff4d4f', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}
+                                title="删除行（将弹窗确认级联影响后再执行）">✕</button>
+                            ) : (
+                              <button type="button"
+                                onClick={() => handleDeleteDriverRow(activeComponent.componentId, rowKey, driverRow ?? {})}
+                                style={{ background: 'none', border: 'none', color: '#ff4d4f', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}
+                                title="删除行（永久，刷新/重算后不再出现）">✕</button>
+                            )
                           ) : (
                             <span title="基础数据自动展开行（核价侧不可删）" style={{ color: '#ccc', fontSize: 12, cursor: 'default' }}>🔗</span>
                           )
@@ -2844,13 +2924,17 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                 )}
               </table>
               </div>
-              <button
-                className="qt-add-row-btn"
-                type="button"
-                onClick={() => handleAddRow(activeComponentDataIndex)}
-              >
-                + 添加行
-              </button>
+              {/* task-0721：BOM 树页签的新增走行内「＋」加叶子（挂到指定宿主节点，走后端类型判定+级联），
+                  通用「+ 添加行」是无 nodeId 关联的自由追加行，会在树上变成游离根节点，故树页签隐藏此入口。 */}
+              {!activeComponentBomTree && (
+                <button
+                  className="qt-add-row-btn"
+                  type="button"
+                  onClick={() => handleAddRow(activeComponentDataIndex)}
+                >
+                  + 添加行
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -2878,6 +2962,22 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       </div>
       </>
       )}
+
+      {/* task-0721 F4/F5：BOM 树上编辑 —— 加叶子 / 删除确认（仅报价侧渲染树时才可能触发 open） */}
+      <BomTreeAddLeafDrawer
+        item={item}
+        quotationId={quotationId}
+        request={addLeafReq}
+        onClose={closeAddLeaf}
+        onApplied={applyTreeQuoteCardValues}
+      />
+      <BomTreeDeleteConfirmDrawer
+        item={item}
+        quotationId={quotationId}
+        request={treeDeleteReq}
+        onClose={closeTreeDelete}
+        onApplied={applyTreeQuoteCardValues}
+      />
     </div>
   );
 };

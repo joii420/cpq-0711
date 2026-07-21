@@ -48,6 +48,13 @@ export interface ComponentItem {
   /** 核价 BOM 递归展开开关(默认 true,仅核价侧生效;与 treeConfig 正交) */
   bomRecursiveExpand?: boolean;
   /**
+   * task-0721 F2：页签类型属性(可空,存量组件无此属性)。
+   * 声明该页签的料号列/料号名称列所属的业务语义,供后端树上加叶子的类型判定链使用(§4.3 规则二)。
+   * 2026-07-21 契约变更：与 bomRecursiveExpand 后端联动派生(选 BOM → bomRecursiveExpand 自动置 true；
+   * 其余值/清空 → 自动置 false)，前端只维护 tabType 一个字段，不再单独暴露 bomRecursiveExpand 开关。
+   */
+  tabType?: 'BOM' | '材质元素' | '零件' | '外购件' | '主件';
+  /**
    * Task 3.1: EXCEL 组件持有的列定义(JSON 数组字符串).
    * 仅 componentType==='EXCEL' 的组件非空; 模板 Excel 视图通过 excel_component_id 引用本字段 + column_overrides 合并.
    * 数组元素形如 { col_key, title, source_type, hidden, formula, ... }.

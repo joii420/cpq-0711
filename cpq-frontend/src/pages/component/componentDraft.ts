@@ -7,6 +7,8 @@ export interface DraftSnapshot {
   rowKeyFields: string[];
   excelColumns: any[];
   bomRecursiveExpand: boolean;
+  /** task-0721 F2：页签类型属性草稿(可空) */
+  tabType?: string;
 }
 
 export interface DraftEnvelope {
@@ -40,6 +42,7 @@ export function buildDraftSnapshot(input: {
   rowKeyFields: string[];
   excelColumns: any[];
   bomRecursiveExpand: boolean;
+  tabType?: string;
 }): DraftSnapshot {
   return {
     fields: stripFieldKeys(input.fields),
@@ -48,6 +51,7 @@ export function buildDraftSnapshot(input: {
     rowKeyFields: input.rowKeyFields ?? [],
     excelColumns: input.excelColumns ?? [],
     bomRecursiveExpand: !!input.bomRecursiveExpand,
+    tabType: input.tabType,
   };
 }
 
