@@ -51,6 +51,7 @@ class MaterialBomMergeHandlerTest {
         Map<String, String> m = new HashMap<>();
         m.put("宏丰料号", MAT); m.put("项次（一级）", String.valueOf(seq));
         m.put("组成件料号", comp); m.put("组成数量", qty); m.put("组成单位", "PCS");
+        m.put("组成类型", "零件");   // 三态统一：该列必填，默认零件以保持原测试语义(ASSEMBLY)
         return new SheetRow(rowNo, m);
     }
     private long count(String sql) {
@@ -137,6 +138,7 @@ class MaterialBomMergeHandlerTest {
         Map<String, String> m = new java.util.LinkedHashMap<>();
         m.put("宏丰料号", MAT2); m.put("项次（一级）", String.valueOf(seq));
         m.put("组成件料号", comp); m.put("组成数量", qty); m.put("组成单位", "PCS");
+        m.put("组成类型", "零件");   // 三态统一：该列必填
         return new SheetRow(seq, m);
     }
     private String currentBomVersion2() {
@@ -262,31 +264,25 @@ class MaterialBomMergeHandlerTest {
     }
 
     @Test
-    void ac5_assemblySheetRow_hitsMaterialNoSet_treatedAsRecipe_notRegistered() {
+    void ac5_assemblySheetRow_hitsMaterialNoSet_isRejected() {
         cleanupRepair2Master("R2-MAT-992");
         try {
-            // 决策 D：组成件BOM 里出现的组件码若命中"本次导入材质料号集"(此处直接注入 ctx.sharedCache
-            // 模拟 QuoteImportService 的预扫结果)，应按材质料号处理：原始码 + 不登记 master + RECIPE。
+            // 三态统一：组成件BOM 里出现的组件码若命中"本次导入材质料号集"，
+            // 与「组成类型」值域(零件/外购件)语义矛盾 → 拒导该行。
+            // 原 repair-2 行为是静默纠正为 RECIPE；现改为显式报错，防线等价但可见。
             ImportContext c = ctxWithMatSet("R2-MAT-992");
-            handler.merge(List.of(), List.of(asmRow(1, 1, "R2-MAT-992", "1")), c);
+            SheetImportResult r = handler.merge(
+                List.of(), List.of(asmRow(1, 1, "R2-MAT-992", "1")), c);
 
-            Object[] r = (Object[]) em.createNativeQuery(
-                "SELECT component_no, characteristic FROM material_bom_item WHERE material_no=:m AND is_current=TRUE")
-                .setParameter("m", MAT).getSingleResult();
-            assertEquals("R2-MAT-992", r[0], "AC-5: 命中材质料号集的组成件码应保留原始码(不 resolve)");
-            assertEquals("RECIPE", r[1], "AC-5: 命中材质料号集 → characteristic 应为 RECIPE(非 ASSEMBLY)");
+            assertTrue(r.failedRows >= 1, "命中材质料号集的组成件行应被拒导");
+            assertEquals(0L, count("SELECT count(*) FROM material_bom_item WHERE material_no=:m"),
+                "拒导行不应落库");
 
             long masterCount = ((Number) em.createNativeQuery(
                 "SELECT count(*) FROM material_master WHERE material_no=:c")
                 .setParameter("c", "R2-MAT-992").getSingleResult()).longValue();
-            assertEquals(0L, masterCount, "AC-5: 命中材质料号集不应登记 material_master");
-
-            // 主表级：无真实 ASSEMBLY 子行 → characteristic/bom_type 仍为 MATERIAL/null(§3.2 解耦)
-            Object[] master = (Object[]) em.createNativeQuery(
-                "SELECT bom_type, characteristic FROM material_bom WHERE material_no=:m AND is_current=TRUE")
-                .setParameter("m", MAT).getSingleResult();
-            assertEquals("MATERIAL", master[0], "AC-5: 无真实组成件时主表 bom_type 应为 MATERIAL");
-            assertNull(master[1], "AC-5: 无真实组成件时主表 characteristic 应为 NULL");
+            assertEquals(0L, masterCount,
+                "repair-2 防线仍有效: 材质料号不得登记 material_master(森萨塔跨客户串号根因)");
         } finally {
             cleanupRepair2Master("R2-MAT-992");
         }
