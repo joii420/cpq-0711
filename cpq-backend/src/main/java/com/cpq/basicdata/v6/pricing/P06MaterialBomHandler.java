@@ -39,7 +39,10 @@ public class P06MaterialBomHandler implements SheetHandler {
     private static final List<String> CHILD_CONTENT = List.of(
         "seq_no", "component_no", "operation_no", "component_usage_type",
         "composition_qty", "issue_unit", "base_qty", "scrap_rate", "fixed_scrap",
-        "defect_rate", "calc_type", "production_no");
+        "defect_rate", "calc_type", "production_no",
+        // 三态统一：必须参与内容比较，否则 calc_type 未变而 characteristic 变时
+        // multisetEqual 判"无变化"→ 完全不写库（风险 A）。
+        "characteristic");
 
     @Override
     @Transactional(Transactional.TxType.REQUIRES_NEW)
@@ -87,6 +90,9 @@ public class P06MaterialBomHandler implements SheetHandler {
             c.put("defect_rate", row.getDecimal("不良率"));
             c.put("calc_type", calcType);        // 决策B: 语义靠 calc_type 区分(材料=销售料号 / 元素=材质编号), component_no 存原值
             c.put("production_no", prodNo);       // 描述列; material_bom_item 携带 + master 主行也写(见下)
+            // 三态统一：核价侧判别列由 calc_type 收敛到 characteristic。
+            // '元素' → RECIPE(材质)；其余(含 '材料' 与 null) → ASSEMBLY(组成件)。
+            c.put("characteristic", "元素".equals(calcType) ? "RECIPE" : "ASSEMBLY");
             childByMat.computeIfAbsent(materialNo, k -> new LinkedHashMap<>())
                       .put(Arrays.asList(seq, componentNo), c);   // 去重键 = (项次, 组成料号)
             result.successRows++;
@@ -105,7 +111,9 @@ public class P06MaterialBomHandler implements SheetHandler {
                 childGk.put("system_type", "PRICING");
                 childGk.put("customer_no", PRICING_CUSTOMER);
                 childGk.put("material_no", materialNo);
-                childGk.put("characteristic", null);
+                // 三态统一：characteristic 降为 per-row 内容列，不再作分组键。
+                // 若保留，迁移后 loadCurrentGroup/flip 按 IS NOT DISTINCT FROM NULL 过滤将
+                // 匹配不到任何行 → 旧行不被下线 → 双 current（风险 B）。
                 List<Map<String, Object>> childRows = new ArrayList<>(e.getValue().values());
                 // repair-1 决策A: material_bom 主表也写 production_no(per-material, 经 masterContent; 不进版本比较)。
                 Map<String, Object> masterContent = new LinkedHashMap<>();
@@ -137,7 +145,6 @@ public class P06MaterialBomHandler implements SheetHandler {
                     childGk.put("system_type", "PRICING");
                     childGk.put("customer_no", PRICING_CUSTOMER);
                     childGk.put("material_no", materialNo);
-                    childGk.put("characteristic", null);
                     Map<String, Object> masterFixed = new LinkedHashMap<>();  // repair-1: 主表 production_no(逐组可变)
                     masterFixed.put("production_no", prodNoByMat.get(materialNo));
                     writer.writeVersionedMasterDetail(
