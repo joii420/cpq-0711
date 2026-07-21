@@ -67,6 +67,30 @@ class MaterialBomMergeHandlerTest {
         return new SheetRow(rowNo, m);
     }
 
+    /** 可自定义「组成类型」表头名的夹具（测列名容错）。header 传 null 表示不放该列。 */
+    private SheetRow asmRowKindHeader(int rowNo, int seq, String comp, String qty, String header, String kind) {
+        Map<String, String> m = new HashMap<>();
+        m.put("宏丰料号", MAT); m.put("项次（一级）", String.valueOf(seq));
+        m.put("组成件料号", comp); m.put("组成数量", qty); m.put("组成单位", "PCS");
+        if (header != null) m.put(header, kind);
+        return new SheetRow(rowNo, m);
+    }
+
+    /**
+     * 「说明列 + 真实列」共存、且说明列排在真实列之前的夹具（测列序敏感场景）。
+     * 用 LinkedHashMap 保留插入顺序（HashMap 无序，测不出"谁排前面"）。
+     */
+    private SheetRow asmRowKindDescBeforeReal(int rowNo, int seq, String comp, String qty,
+                                               String descHeader, String descVal,
+                                               String realHeader, String realVal) {
+        Map<String, String> m = new java.util.LinkedHashMap<>();
+        m.put("宏丰料号", MAT); m.put("项次（一级）", String.valueOf(seq));
+        m.put("组成件料号", comp); m.put("组成数量", qty); m.put("组成单位", "PCS");
+        m.put(descHeader, descVal);   // 说明列先 put（排前面）
+        m.put(realHeader, realVal);   // 真实列后 put（排后面）
+        return new SheetRow(rowNo, m);
+    }
+
     /** 取当前生效子行的 characteristic（断言唯一行时用）。 */
     private String currentChildCharacteristic() {
         return (String) em.createNativeQuery(
@@ -422,6 +446,69 @@ class MaterialBomMergeHandlerTest {
             assertEquals("ASSEMBLY", master[1], "纯外购件料号主表 characteristic 应为 ASSEMBLY");
         } finally {
             cleanupRepair2Master("TRI-OUT-ONLY");
+        }
+    }
+
+    // ===== 列名容错：exact 未命中回退 exactOrBracketed（精确名或紧跟括号的后缀名）=====
+
+    @Test
+    void componentKind_bracketSuffixHeader_isRecognizedViaFallback() {
+        cleanupRepair2Master("TRI-HDR-1");
+        try {
+            handler.merge(List.of(),
+                List.of(asmRowKindHeader(1, 1, "TRI-HDR-1", "1", "组成类型（零件/外购件）", "外购件")),
+                ctx());
+            assertEquals("OUTSOURCED", currentChildCharacteristic(),
+                "括号后缀表头「组成类型（零件/外购件）」应被 exactOrBracketed 识别");
+        } finally {
+            cleanupRepair2Master("TRI-HDR-1");
+        }
+    }
+
+    @Test
+    void componentKind_fullWidthSpace_isStrippedNotRejected() {
+        cleanupRepair2Master("TRI-FWSP-1");
+        try {
+            handler.merge(List.of(),
+                List.of(asmRowKindHeader(1, 1, "TRI-FWSP-1", "1", "组成类型", "零件　")),
+                ctx());
+            assertEquals("ASSEMBLY", currentChildCharacteristic(),
+                "尾随全角空格(U+3000)应被 strip() 清掉，不应被判非法值拒导");
+        } finally {
+            cleanupRepair2Master("TRI-FWSP-1");
+        }
+    }
+
+    @Test
+    void componentKind_onlyDescriptionColumn_stillRejected() {
+        // 只放「组成类型说明」列（无「组成类型」列），验证 exactOrBracketed 不会把说明列误当正主
+        // ——「组成类型」后紧跟的是"说"而非括号，天然被排除；这正是当初选用 exact() 的理由得以保留。
+        SheetImportResult r = handler.merge(List.of(),
+            List.of(asmRowKindHeader(1, 1, "TRI-DESC-1", "1", "组成类型说明", "零件")),
+            ctx());
+        assertTrue(r.failedRows >= 1, "只放说明列时应仍拒导（不得被回退逻辑误命中）");
+        assertEquals(0L, count("SELECT count(*) FROM material_bom_item WHERE material_no=:m"),
+            "拒导行不应落库");
+    }
+
+    @Test
+    void componentKind_descriptionColumnBeforeRealColumn_doesNotSilentlyMisread() {
+        // 更危险的场景：「组成类型说明」(值=零件) 与「组成类型（零件/外购件）」(值=外购件) 同时存在，
+        // 且说明列排在真实列**之前**。若回退逻辑用 contains 按列序取首个命中，会静默取到说明列的
+        // 「零件」而非真实列的「外购件」——比整表拒导更危险(错误落库而非可见报错)。
+        // exactOrBracketed 只认精确名或"基名+左括号"的后缀，说明列("组成类型"+"说")天然不命中，
+        // 故无论列序如何，都应正确落到真实列的值 OUTSOURCED。
+        cleanupRepair2Master("TRI-ORDER-1");
+        try {
+            handler.merge(List.of(),
+                List.of(asmRowKindDescBeforeReal(1, 1, "TRI-ORDER-1", "1",
+                    "组成类型说明", "零件",
+                    "组成类型（零件/外购件）", "外购件")),
+                ctx());
+            assertEquals("OUTSOURCED", currentChildCharacteristic(),
+                "说明列排在真实列前也不应被误读；应正确取真实列的值 OUTSOURCED，而非说明列的 零件(ASSEMBLY)");
+        } finally {
+            cleanupRepair2Master("TRI-ORDER-1");
         }
     }
 }

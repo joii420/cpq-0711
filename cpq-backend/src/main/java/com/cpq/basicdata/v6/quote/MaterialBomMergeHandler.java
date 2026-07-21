@@ -113,8 +113,10 @@ public class MaterialBomMergeHandler {
             String rawAssemblyComponent = row.exact("组成件料号");
 
             // 三态统一：「组成类型」必填，值域 {零件, 外购件}。
-            // exact() 对"整列缺失"与"单元格为空"均返 null，两者都按拒导处理。
-            String compKind = row.exact("组成类型");
+            // 用 exactOrBracketed 而非 getStr：模板惯用括号后缀（「组成类型（零件/外购件）」）需兼容，
+            // 但 getStr 的 contains 会命中「组成类型说明」这类旁列，且按列序返回首个命中 —
+            // 旁列排在真实列前时会静默取错值，比拒导更危险。
+            String compKind = row.exactOrBracketed("组成类型");
             String childCharacteristic = kindToCharacteristic(compKind);
             if (childCharacteristic == null) {
                 result.recordError(row.rowNo, "组成类型",
@@ -316,7 +318,8 @@ public class MaterialBomMergeHandler {
      */
     static String kindToCharacteristic(String kind) {
         if (kind == null) return null;
-        String t = kind.trim();
+        // strip() 而非 trim()：trim 只清 <= U+0020，清不掉 Excel 常见的全角空格 U+3000。
+        String t = kind.strip();
         if ("零件".equals(t))   return "ASSEMBLY";
         if ("外购件".equals(t)) return "OUTSOURCED";
         return null;

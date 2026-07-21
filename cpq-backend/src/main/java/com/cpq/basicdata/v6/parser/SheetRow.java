@@ -64,6 +64,31 @@ public class SheetRow {
         return (v == null || v.isBlank()) ? null : v.trim();
     }
 
+    /**
+     * 按**精确表头**或**「基名+括号后缀」**读取单元格值，空白→null、strip。
+     *
+     * <p>介于 {@link #exact} 与 {@link #getStr} 之间的中间强度匹配：本项目模板惯用括号后缀
+     * （如「宏丰料号（成品料号）」「项次（一级）」），但 {@link #getStr} 的 contains 太宽——
+     * 会命中「X说明」这类同前缀的旁列，且 {@code getStr} 按列序返回首个命中，
+     * 若旁列排在真实列之前会**静默取错值**（比拒导更危险）。
+     *
+     * <p>本方法只接受 {@code header.equals(base)} 或 {@code header} 以 {@code base} 开头
+     * 且紧随一个左括号（全角「（」或半角「(」）。故「组成类型（零件/外购件）」命中，
+     * 「组成类型说明」不命中。按列序返回首个命中列。
+     */
+    public String exactOrBracketed(String base) {
+        for (String[] hc : ordered) {
+            String header = hc[0];
+            if (header.equals(base)
+                    || (header.length() > base.length() && header.startsWith(base)
+                        && (header.charAt(base.length()) == '（' || header.charAt(base.length()) == '('))) {
+                String v = hc[1];
+                return (v == null || v.isBlank()) ? null : v.strip();
+            }
+        }
+        return null;
+    }
+
     /** 取第 n 个（1-based）表头 contains(name) 的列值；不足 n 个返 null。 */
     public String getStrNth(String name, int n) {
         int count = 0;
