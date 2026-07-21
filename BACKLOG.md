@@ -184,6 +184,17 @@
   - `ll_view`（来料）子表 join **不过滤 characteristic**，只按 `material_no` 关联，叠加本期主表推导改动（含 OUTSOURCED 子行 → 主表判 `ASSEMBLY`）→ 外购件**会混在「来料」页签里显示，但与零件视觉上无法区分**（`ll_view` 不输出 `characteristic` 列，其「类型」列取的是 `component_usage_type` 映射：银点类/非银点类/组成件，与三态无关）。
   - 净效果：业务填了"外购件"，在报价单上看不出区别。**本期已确认接受此取舍。**
 - **范围**（三选一，二期定）：① `ll_view` 增加一列输出 `characteristic` 的中文映射（改动最小，只动视图 SQL + 组件字段配置）；② `zpj_view` 放宽为 `IN ('ASSEMBLY','OUTSOURCED')`，外购件并入子配件页签；③ 新开独立视图 + 组件 + 模板绑定，外购件单独成页签。
+- **二期必须一并评估的下游消费点全清单**（2026-07-20 穷举 `material_bom_item` × `characteristic` 得出，均硬编码 `= 'ASSEMBLY'` 故当前排除 OUTSOURCED）：
+
+  | 位置 | 谓词 | 二期待定 |
+  |---|---|---|
+  | `zpj_view`（子配件，QUOTE 分支）| `characteristic = 'ASSEMBLY'` | 视方案而定 |
+  | `QuotationService.java:577` | `characteristic='ASSEMBLY' AND operation_no IS NOT NULL` | 需业务确认：外购件带组装工序时是否计入 |
+  | `QuotationService.java:2328` | 同上 | 同上 |
+  | `ConfigureSnapshotService.java:524` | `mbi.characteristic='ASSEMBLY' AND mbi.component_no IS NOT NULL` | 需业务确认 |
+  | `ll_view`（来料）| 走**主表** characteristic，子表 join 不过滤 | 已因主表推导纳入 OUTSOURCED 而生效（混显） |
+
+  > **写入点已穷举为 4 个且本期全部收敛完毕**（`P06MaterialBomHandler` / `MaterialBomMergeHandler` / `PricingSheetRegistry`+`PricingMaintenanceService` / `ConfigureProductService`），二期不需要再找写入侧。`MaterialBomItemRepository:25` 用 `COALESCE(characteristic,'')=COALESCE(?4,'')` 参数化，无硬编码假设。
 - **依赖**：本期（三态统一 + V344 迁移）交付。
 - **预估规模**：S（方案①②）/ M（方案③）
 - **验收要点**：报价单上外购件行可与零件行明确区分；不产生重复行（守 AP-22「X (共N项)」族）；改动视图后按 CLAUDE.md「视图 DROP CASCADE / 重建后必须重启 Quarkus」执行。
