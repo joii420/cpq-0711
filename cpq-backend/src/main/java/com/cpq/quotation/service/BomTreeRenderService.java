@@ -4,7 +4,7 @@ import com.cpq.common.exception.BusinessException;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.entity.CostingBomTreeConfig;
 import com.cpq.component.service.ComponentDriverService;
-import com.cpq.datasource.sqlview.CostingTreeVarsContext;
+import com.cpq.datasource.sqlview.BomTreeVarsContext;
 import com.cpq.datasource.sqlview.VersionFilterMacro;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -56,9 +56,9 @@ import java.util.UUID;
  * 树页签 = 勾了 {@code bom_recursive_expand} 的组件。
  */
 @ApplicationScoped
-public class CostingTreeRenderService {
+public class BomTreeRenderService {
 
-    private static final Logger LOG = Logger.getLogger(CostingTreeRenderService.class);
+    private static final Logger LOG = Logger.getLogger(BomTreeRenderService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Inject
@@ -86,9 +86,25 @@ public class CostingTreeRenderService {
      * 宏的组件 $view / 主树递归 SQL 应用该核价单已保存的版本 override（componentId → partNo →
      * viewVersion）。{@code null}/空 = 零行为变化（宏展开后 override 数组为空 → 恒退化为
      * {@code is_current}，与两参重载逐位等价）。
+     *
+     * <p>task-0721 B2：委派 4 参重载，{@code usage} 固定传 {@code "COSTING"}——<b>核价侧全部既有
+     * 调用点零改动，行为逐位不变</b>（AC-10 零回归门禁）。报价侧新调用点须显式调 4 参重载传
+     * {@code "QUOTE"}（见 {@code ConfigureSnapshotService}）。
      */
     public Map<UUID, Map<String, ArrayNode>> render(UUID templateId, List<QuotationLineItem> lineItems,
                                                      Map<UUID, Map<String, String>> overridesByComponent) {
+        return render(templateId, lineItems, overridesByComponent, "COSTING");
+    }
+
+    /**
+     * task-0721 B2：4 参重载 —— {@code usage} 决定按哪个维度取生效的递归 SQL 配置
+     * （{@link CostingBomTreeConfig#findActive(String)}）。{@code QUOTE}=报价侧独立配置口径；
+     * {@code COSTING}=核价侧现役配置（与改造前 {@code findActive()} 逐位等价，因存量配置已
+     * {@code DEFAULT 'COSTING'} 迁移，见 V346）。
+     */
+    public Map<UUID, Map<String, ArrayNode>> render(UUID templateId, List<QuotationLineItem> lineItems,
+                                                     Map<UUID, Map<String, String>> overridesByComponent,
+                                                     String usage) {
         Map<UUID, Map<String, ArrayNode>> out = new LinkedHashMap<>();
         if (lineItems == null || lineItems.isEmpty()) {
             return out;
@@ -131,30 +147,32 @@ public class CostingTreeRenderService {
                 ? overrides.getOrDefault(treeComponentId, java.util.Collections.emptyMap())
                 : java.util.Collections.emptyMap();
 
-        // ② 全局生效的递归 SQL 配置
-        CostingBomTreeConfig cfg = CostingBomTreeConfig.findActive();
+        // ② 当前 usage 维度生效的递归 SQL 配置（task-0721 B2：按 usage 取，核价/报价互不干扰）
+        String effUsage = (usage == null || usage.isBlank()) ? "COSTING" : usage;
+        CostingBomTreeConfig cfg = CostingBomTreeConfig.findActive(effUsage);
         if (cfg == null) {
-            throw new BusinessException(400, "未配置生效的核价树递归 SQL（costing_bom_tree_config 无 isActive=true 记录）");
+            throw new BusinessException(400, "未配置生效的" + ("QUOTE".equals(effUsage) ? "报价" : "核价")
+                    + "树递归 SQL（costing_bom_tree_config 无 usage=" + effUsage + " 且 isActive=true 记录）");
         }
 
         List<CostingTreeNode> rows;
-        CostingTreeVarsContext.set(new CostingTreeVarsContext.Vars(new ArrayList<>(seed), null, overrides));
+        BomTreeVarsContext.set(new BomTreeVarsContext.Vars(new ArrayList<>(seed), null, overrides));
         try {
             rows = queryRecursive(cfg.sqlTemplate, new ArrayList<>(seed), treeOverrides);
         } finally {
-            CostingTreeVarsContext.clear();
+            BomTreeVarsContext.clear();
         }
 
         // ③ 纯函数分组建树
         CostingTreeGrouping.Result g = CostingTreeGrouping.group(rows);
 
         // ④ 每个 driver 组件跑一次其 $view，按 material_no 分桶；同时记录哪些组件是树页签。
-        // CostingTreeVarsContext 携带整卡 overridesByComponent，SqlViewExecutor 按当前
+        // BomTreeVarsContext 携带整卡 overridesByComponent，SqlViewExecutor 按当前
         // SqlViewRuntimeContext.componentId 在绑定期精确解析出「这一个组件」的 override 切片
         // （见 SqlViewExecutor#injectCostingTreeVars），故此处仍可一次 set/clear 覆盖整个循环。
         Map<String, Map<String, List<ExpandDriverResponse.Row>>> rowsByCompThenMaterial = new LinkedHashMap<>();
         Set<String> treeTabCompIds = new HashSet<>();
-        CostingTreeVarsContext.set(new CostingTreeVarsContext.Vars(null, g.totalMaterialNo, overrides));
+        BomTreeVarsContext.set(new BomTreeVarsContext.Vars(null, g.totalMaterialNo, overrides));
         try {
             for (Object[] dc : driverComps) {
                 if (dc == null || dc[0] == null) {
@@ -171,7 +189,7 @@ public class CostingTreeRenderService {
                 Map<String, List<ExpandDriverResponse.Row>> byKey = new LinkedHashMap<>();
                 try {
                     // 见类注释「跑组件 $view 的入口」说明：customerId/partNo/partVersion/lineItemId 全传 null，
-                    // 让 SqlViewExecutor 从 CostingTreeVarsContext 拿 :total_material_no 收窄，
+                    // 让 SqlViewExecutor 从 BomTreeVarsContext 拿 :total_material_no 收窄，
                     // 不再靠 partNo/lineItemId 维度过滤（这条 $view 对整单只跑一次）。
                     // 用 expandUncached（Task 3.1 事项A）而非 expand：9-arg expand 的 expandCache key
                     // 不含 :total_material_no 维度（customerId/partNo/partVersion 全传 null → key 恒定），
@@ -222,7 +240,7 @@ public class CostingTreeRenderService {
                 rowsByCompThenMaterial.put(cidStr, byKey);
             }
         } finally {
-            CostingTreeVarsContext.clear();
+            BomTreeVarsContext.clear();
         }
 
         // ⑤ 逐卡逐组件装 baseRows

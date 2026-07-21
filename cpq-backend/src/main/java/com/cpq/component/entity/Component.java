@@ -75,6 +75,17 @@ public class Component extends PanacheEntityBase {
     @Column(name = "bom_recursive_expand", nullable = false)
     public Boolean bomRecursiveExpand = false;
 
+    /**
+     * task-0721 B4：页签类型属性（可选）。值域 5 类：{@code BOM}(树状页签,结构角色) /
+     * {@code 材质元素} / {@code 零件} / {@code 外购件} / {@code 主件}(成品=树根)。
+     * 用于报价侧 BOM 树上「加叶子」时的类型判定（{@code BomNodeTypeResolver}）——料号出现在
+     * 哪个类型的页签即推导为该类型。与 {@code bomRecursiveExpand}（控制渲染行为）是独立字段：
+     * {@code tabType=BOM} 表达业务语义，不等价于 {@code bomRecursiveExpand=true}（两者一致性
+     * 校验见 {@code ComponentService#validateTabType}，仅告警不阻断）。
+     */
+    @Column(name = "tab_type", length = 16)
+    public String tabType;
+
     @Column(name = "created_at", nullable = false)
     public OffsetDateTime createdAt;
 

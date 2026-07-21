@@ -44,6 +44,22 @@ public class ComponentService {
         java.util.Set.of("NORMAL", "SUBTOTAL", "EXCEL");
 
     /**
+     * task-0721 B4：页签类型属性值域（5 类，需求说明 §4.3 规则一）。
+     * BOM=树状页签(结构角色)；材质元素/零件/外购件=对应 characteristic 三态；主件=成品/树根。
+     */
+    public static final java.util.Set<String> VALID_TAB_TYPES =
+        java.util.Set.of("BOM", "材质元素", "零件", "外购件", "主件");
+
+    /** tabType 非法值 → 400；null/blank 视为未配置，放行。 */
+    public static void assertValidTabType(String tabType) {
+        if (tabType == null || tabType.isBlank()) return;
+        if (!VALID_TAB_TYPES.contains(tabType)) {
+            throw new BusinessException(400, "Invalid tabType: " + tabType +
+                ". Must be one of: " + VALID_TAB_TYPES);
+        }
+    }
+
+    /**
      * C1/C3 共用: default_source.path 视图路径解析正则。
      *
      * <p>匹配两种形态：

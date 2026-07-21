@@ -428,18 +428,18 @@ public class SqlViewExecutor {
     /**
      * 若当前线程有核价树变量上下文，注入 :production_part_nos / :total_material_no 两个 text[]。
      *
-     * <p>S4（2026-07）：{@code v.productionPartNos} 分支当前不会被 {@code CostingTreeRenderService
+     * <p>S4（2026-07）：{@code v.productionPartNos} 分支当前不会被 {@code BomTreeRenderService
      * #queryRecursive} 触发——递归 SQL 走裸 JDBC（{@code PreparedStatement} 直接拼 {@code ?} 绑参），
      * 不经过本 {@code SqlViewExecutor}。保留此分支是为将来递归 SQL 若改走 {@code SqlViewExecutor} /
      * 内嵌 {@code $view} 预留（届时 {@code :production_part_nos} 命名参数可复用同一套注入协议），
      * 不是死代码，勿删。
      *
      * <p>task-0713 B3：<b>无条件</b>同时注入 {@code :__vfPart / :__vfVer}（供 {@link VersionFilterMacro}
-     * 渲染模式绑定），哪怕当前线程根本没有 {@link CostingTreeVarsContext} 或该组件没有 override ——
+     * 渲染模式绑定），哪怕当前线程根本没有 {@link BomTreeVarsContext} 或该组件没有 override ——
      * 也必须绑定「空数组」而非让占位符落回 {@link #rewriteNamedParams} 的字面量 {@code NULL} 兜底。
      * 原因：{@code x <> ALL(NULL::text[])} 在 SQL 里求值为 NULL（非真），而
      * {@code x <> ALL(ARRAY[]::text[])} 求值为 TRUE（空集合上的 ALL 恒真）——两者天差地别。
-     * 若不绑定空数组，任何未显式设置 {@code CostingTreeVarsContext} 的既有调用路径（如
+     * 若不绑定空数组，任何未显式设置 {@code BomTreeVarsContext} 的既有调用路径（如
      * {@code ensureCardValues}/{@code CardSnapshotService#expandFlatDriverBaseRows} 对非树核价模板的
      * 直接 {@code componentDriverService.expand} 调用）一旦遇到含 {@code :versionFilter} 的 $view，
      * 会让该视图的 WHERE 谓词整体退化为 SQL NULL、直接返回 0 行——即无覆盖上下文时版本视图整批失明，
@@ -447,7 +447,7 @@ public class SqlViewExecutor {
      * 特此重点记录）。
      */
     private void injectCostingTreeVars(Map<String, Object> namedParams) {
-        CostingTreeVarsContext.Vars v = CostingTreeVarsContext.get();
+        BomTreeVarsContext.Vars v = BomTreeVarsContext.get();
         if (v != null) {
             if (v.productionPartNos != null) namedParams.put("production_part_nos", v.productionPartNos);
             if (v.totalMaterialNo != null)   namedParams.put("total_material_no", v.totalMaterialNo);
@@ -465,14 +465,14 @@ public class SqlViewExecutor {
     }
 
     /**
-     * 若 sql_template 含 {@code :versionFilter} 宏，按当前 {@link CostingTreeVarsContext.Mode}
+     * 若 sql_template 含 {@code :versionFilter} 宏，按当前 {@link BomTreeVarsContext.Mode}
      * 选择展开形态（LIST→TRUE 放开版本过滤；RENDER/无上下文→按 override 渲染）；不含宏则原样返回
      * （零开销，绝大多数组件走此分支）。
      */
     private String applyVersionFilter(String sqlTemplate) {
         if (!VersionFilterMacro.containsMacro(sqlTemplate)) return sqlTemplate;
-        CostingTreeVarsContext.Vars v = CostingTreeVarsContext.get();
-        boolean listMode = v != null && v.mode == CostingTreeVarsContext.Mode.LIST;
+        BomTreeVarsContext.Vars v = BomTreeVarsContext.get();
+        boolean listMode = v != null && v.mode == BomTreeVarsContext.Mode.LIST;
         return listMode ? VersionFilterMacro.expandForListing(sqlTemplate)
                          : VersionFilterMacro.expandForExecution(sqlTemplate);
     }

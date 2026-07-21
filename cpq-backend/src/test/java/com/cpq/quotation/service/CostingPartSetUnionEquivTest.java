@@ -39,7 +39,7 @@ class CostingPartSetUnionEquivTest {
     Pick pickSmallestCostingQuotation() {
         // 本测试是 P2-C4 时代产物，只测「非树页签平铺路径」下 unionByComp 预取 vs 逐行 expandForPartSet
         // 的等价性 + 往返查询数下降。2026-07 buildCostingCardValues 加了正确性兜底后，树页签模板
-        // 无论传不传 unionByComp 都统一走 costingTreeRenderService.render()（忽略 unionByComp），
+        // 无论传不传 unionByComp 都统一走 bomTreeRenderService.render()（忽略 unionByComp），
         // 会让 roundTripReduction_unionVsPerRow 的 "NEW < OLD" 语义失真（两路都 render 同样次数）。
         // 排除含树页签的模板，让候选范围回到本测试原始设计前提（纯 driver 平铺 expand）。
         @SuppressWarnings("unchecked")

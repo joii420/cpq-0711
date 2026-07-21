@@ -31,4 +31,10 @@ public class CreateComponentRequest {
 
     /** EXCEL 类型组件的列配置 JSON（数组），Task 1.1 新增字段 */
     public String excelColumns;
+
+    /**
+     * task-0721 B4：页签类型属性(可选)。值域 5 类：BOM / 材质元素 / 零件 / 外购件 / 主件。
+     * null = 未配置(不阻断)；非法值 400。
+     */
+    public String tabType;
 }

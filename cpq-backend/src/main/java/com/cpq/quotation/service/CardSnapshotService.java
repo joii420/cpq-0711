@@ -100,7 +100,7 @@ public class CardSnapshotService {
 
     /** 核价树渲染重构（Task 3.1）：整单一次递归+分组，替代旧引擎逐 li closure+expand（仅含树页签模板走此路）。 */
     @Inject
-    CostingTreeRenderService costingTreeRenderService;
+    BomTreeRenderService bomTreeRenderService;
 
     /** 自注入：触发 REQUIRES_NEW 代理拦截器 */
     @Inject
@@ -491,14 +491,14 @@ public class CardSnapshotService {
         if (lines.isEmpty()) return;
         com.cpq.formula.dataloader.QuotationIdContext.set(quotationId);
         try {
-            // Task 3.1 事项B：核价模板含树页签 → 整单一次调 CostingTreeRenderService.render，
+            // Task 3.1 事项B：核价模板含树页签 → 整单一次调 BomTreeRenderService.render，
             // 逐 li 复用其结果（buildCostingCardValues 内部按 precomputedBaseRows!=null 跳过旧引擎 closure+expand）；
             // 不含树页签 → treeBaseRowsByLine 恒空 map，下方 getOrDefault 恒 null → 逐 li 走老路径，零破坏。
             Map<UUID, Map<String, ArrayNode>> treeBaseRowsByLine = java.util.Collections.emptyMap();
             String costingRenderError = null;   // BL-0030:整单核价树渲染失败原文 → 落带消息失败哨兵,前端显式提示
             if (q.costingCardTemplateId != null && templateHasTreeTab(q.costingCardTemplateId)) {
                 try {
-                    treeBaseRowsByLine = costingTreeRenderService.render(q.costingCardTemplateId, lines);
+                    treeBaseRowsByLine = bomTreeRenderService.render(q.costingCardTemplateId, lines);
                 } catch (Exception e) {
                     // 不上抛(否则整单快照 500 + 全 NULL → 前端无限「加载中…」);逐 li 落带原文的失败哨兵。
                     costingRenderError = "核价渲染失败: " + e.getMessage();
@@ -612,10 +612,10 @@ public class CardSnapshotService {
                 // （precomputedBaseRows 恒 null）→ 含树页签模板会走旧引擎，与批量路径（
                 // snapshotNewLinesCardValues / importexcel 批量路径）算出的 nodeId 不一致，且 Task 5.2
                 // 删旧引擎后本路径会直接崩。与批量层同款接法：整单（此处单元素列表）先调
-                // CostingTreeRenderService.render 拿 precomputedBaseRows，再传给七参重载。
+                // BomTreeRenderService.render 拿 precomputedBaseRows，再传给七参重载。
                 Map<String, ArrayNode> precomputed = null;
                 if (templateHasTreeTab(q.costingCardTemplateId)) {
-                    precomputed = costingTreeRenderService
+                    precomputed = bomTreeRenderService
                         .render(q.costingCardTemplateId, java.util.List.of(managed))
                         .get(managed.id);
                 }
@@ -756,7 +756,7 @@ public class CardSnapshotService {
      * <p><b>硬切换清理（Task 5.2）</b>：原 recursive 分支({@code eligibleForBomUnion} + BOM 闭包 union)
      * 与 spineKeys-flat 分支({@code eligibleForSpineKeysFlatBucket}）已删除——recursive 组件所在的
      * 核价模板必含树页签，{@code buildCostingCardValues} 对这类模板恒用
-     * {@link CostingTreeRenderService} 的 {@code precomputedBaseRows}、完全不读本方法产出的
+     * {@link BomTreeRenderService} 的 {@code precomputedBaseRows}、完全不读本方法产出的
      * {@code unionByComp}（见该方法 precomputedBaseRows!=null 分支），故原 recursive 分支的计算结果
      * 100% 从未被下游消费；spineKeys 分支依赖的 {@code SpineKeysContext.get()} 在
      * {@link com.cpq.datasource.sqlview.SqlViewExecutor} 侧从未被读取（Task 1.1 起注入已断开），
@@ -770,7 +770,7 @@ public class CardSnapshotService {
         Quotation q = Quotation.findById(quotationId);
         if (q == null || q.costingCardTemplateId == null) return unionByComp;
 
-        // 树模板恒由 CostingTreeRenderService 整单渲染(见类注释),完全不消费本方法产出的 unionByComp;
+        // 树模板恒由 BomTreeRenderService 整单渲染(见类注释),完全不消费本方法产出的 unionByComp;
         // 且其非树 driver 组件(如「元素」)的新契约 $view 输出 material_no、不含 hf_part_no,用旧
         // expandForPartSet(外层注入 hf_part_no = ANY(:hfPartNos))预取会撞
         // "column inner_q.hf_part_no does not exist" 抛错 → 中止整个 ensureCardValues → 核价快照
@@ -778,7 +778,7 @@ public class CardSnapshotService {
         if (templateHasTreeTab(q.costingCardTemplateId)) return unionByComp;
 
         // 核价模板的全部 driver 组件清单(整单一次)。Phase 2-2'：非递归无行维度组件(COMP-0021/22/23 类)
-        // 是唯一还会命中合桶的类别(递归组件恒由 CostingTreeRenderService 整单渲染,见类注释)。
+        // 是唯一还会命中合桶的类别(递归组件恒由 BomTreeRenderService 整单渲染,见类注释)。
         @SuppressWarnings("unchecked")
         List<Object> driverComps = em.createNativeQuery(
             "SELECT DISTINCT c.id FROM template_component tc JOIN component c ON c.id = tc.component_id " +
@@ -835,10 +835,10 @@ public class CardSnapshotService {
         List<QuotationLineItem> lines = QuotationLineItem.list("quotationId", quotationId);
         // P2-C4: 整单一次 union 预取(把核价 driver 远程查从 N×M_rec 压到 M_rec);null/空=逐行兜底。
         Map<UUID, Map<String, ExpandDriverResponse>> unionByComp = precomputeCostingDriverUnion(quotationId);
-        // Task 3.1 事项B：含树页签 → 整单一次调 CostingTreeRenderService.render；不含 → 恒空 map，逐 li 走老路径。
+        // Task 3.1 事项B：含树页签 → 整单一次调 BomTreeRenderService.render；不含 → 恒空 map，逐 li 走老路径。
         Map<UUID, Map<String, ArrayNode>> treeBaseRowsByLine = java.util.Collections.emptyMap();
         if (templateHasTreeTab(q.costingCardTemplateId)) {
-            treeBaseRowsByLine = costingTreeRenderService.render(q.costingCardTemplateId, lines);
+            treeBaseRowsByLine = bomTreeRenderService.render(q.costingCardTemplateId, lines);
         }
         for (QuotationLineItem li : lines) {
             try {
@@ -1112,7 +1112,7 @@ public class CardSnapshotService {
     // =========================================================================
 
     /** 进程级缓存：templateId → 该核价模板下是否存在树页签组件（bom_recursive_expand=true）。
-     * 供批量层判定走 {@link CostingTreeRenderService}（含树页签）还是非树页签平铺路径
+     * 供批量层判定走 {@link BomTreeRenderService}（含树页签）还是非树页签平铺路径
      * （{@link #expandFlatDriverBaseRows}）。模板组件挂载改动频率低，TTL 30s
      * （与既有 expandCache 同量级）足够新鲜度，避免每批次重查。 */
     private final com.github.benmanes.caffeine.cache.Cache<UUID, Boolean> treeTabCache =
@@ -1167,11 +1167,11 @@ public class CardSnapshotService {
     /**
      * 七参重载（Task 3.1 事项B + 正确性兜底）：{@code baseRowsByComp} 来源三分支——
      * <ol>
-     *   <li>{@code precomputedBaseRows != null}：批量层已整单调过 {@link CostingTreeRenderService#render}
+     *   <li>{@code precomputedBaseRows != null}：批量层已整单调过 {@link BomTreeRenderService#render}
      *       并按 lineItemId 拆好，直接复用（最优路径，不重复 render）。</li>
      *   <li>{@code precomputedBaseRows == null} 且 {@link #templateHasTreeTab} 为真：说明调用方（未接线的
      *       入口 / 单测）没有预先 render，但该模板确实含树页签 —— 不能静默退化到平铺路径丢树结构，
-     *       就地单行调 {@code costingTreeRenderService.render(costingTemplateId, List.of(li))} 兜底
+     *       就地单行调 {@code bomTreeRenderService.render(costingTemplateId, List.of(li))} 兜底
      *       （与 {@link #snapshotCostingSideOnly} 的单行兜底同款做法）。render 无结果时退化为空 map，不抛。</li>
      *   <li>{@code templateHasTreeTab} 为假：非树页签平铺路径（{@link #expandFlatDriverBaseRows}）。</li>
      * </ol>
@@ -1203,13 +1203,13 @@ public class CardSnapshotService {
 
             Map<String, ArrayNode> baseRowsByComp;
             if (precomputedBaseRows != null) {
-                // 含树页签：批量层已整单调 CostingTreeRenderService 渲染好，直接用（最优路径，不重复 render）。
+                // 含树页签：批量层已整单调 BomTreeRenderService 渲染好，直接用（最优路径，不重复 render）。
                 baseRowsByComp = precomputedBaseRows;
             } else if (templateHasTreeTab(costingTemplateId)) {
                 // 安全兜底：未接线的调用入口（或单测）没传 precomputedBaseRows，但该模板确实含树页签 ——
-                // 不能静默退化到平铺路径（会丢树结构）。就地单行调 CostingTreeRenderService.render，
+                // 不能静默退化到平铺路径（会丢树结构）。就地单行调 BomTreeRenderService.render，
                 // 与 snapshotCostingSideOnly 的单行兜底同款做法。render 失败/无结果 → 退化为空 map（不抛）。
-                Map<String, ArrayNode> fb = costingTreeRenderService
+                Map<String, ArrayNode> fb = bomTreeRenderService
                     .render(costingTemplateId, java.util.List.of(li))
                     .get(li.id);
                 baseRowsByComp = (fb != null) ? fb : new LinkedHashMap<>();
@@ -1817,7 +1817,7 @@ public class CardSnapshotService {
      *
      * <p>调用前提：{@code templateId} 对应模板<b>不含树页签组件</b>
      * （{@link #templateHasTreeTab(UUID)} == false）——含树页签的模板恒由
-     * {@link CostingTreeRenderService} 整单渲染出 {@code precomputedBaseRows}，
+     * {@link BomTreeRenderService} 整单渲染出 {@code precomputedBaseRows}，
      * {@link #buildCostingCardValues} 只在 {@code precomputedBaseRows == null} 时才调用本方法。
      * 报价侧（{@link #refreshQuoteCardValues}/{@link #dryRunTokenRows}）恒不含树页签组件，
      * 亦复用本方法（{@code unionByComp}/{@code driverCompsPrefetch} 传 null）。

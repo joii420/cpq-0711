@@ -288,7 +288,7 @@ public class ComponentDriverService {
     /**
      * Task 3.1 事项A（核价树渲染专用）：跳过 {@code expandCache} 的读写。
      *
-     * <p>背景：{@link CostingTreeRenderService} 对每个 driver 组件整单只跑一次 {@code expand(compId, customerId,
+     * <p>背景：{@link BomTreeRenderService} 对每个 driver 组件整单只跑一次 {@code expand(compId, customerId,
      * null, null, ...)}（customerId 之外全部传 null），落到 {@link #cacheKey} 的缓存 key 恒为
      * {@code "componentId:customerId:_:_"}——<b>不含 {@code :total_material_no} 维度</b>。30 秒 TTL 内对同一
      * 组件、不同报价单/不同料号集合的调用会命中上一次缓存的错行（AP-37 型缺维度缓存 bug，见
