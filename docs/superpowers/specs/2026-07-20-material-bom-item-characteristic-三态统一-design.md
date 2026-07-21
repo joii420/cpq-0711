@@ -153,6 +153,26 @@ WHERE system_type = 'QUOTE' AND characteristic IS NULL AND component_no IS NOT N
 
 ### 5.3 命中表交叉校正（QUOTE 侧，洗净 5 行脏数据）
 
+⚠️ **唯一索引约束（2026-07-20 实测发现）**：`uq_material_bom_item` 含 `COALESCE(characteristic,'')`：
+
+```
+UNIQUE (system_type, customer_no, material_no, COALESCE(characteristic,''),
+        COALESCE(bom_version,''), COALESCE(seq_no,0),
+        COALESCE(component_no,''), COALESCE(part_no,''))
+```
+
+存量有 **3 组历史重复行**——同一 component 同时出现在物料BOM 与组成件BOM，在 `MaterialBomMergeHandler` 归并逻辑上线前被写成两行，靠 `characteristic` 不同（`''` vs `ASSEMBLY`）才不撞键：
+
+| material_no | seq | component_no | 物料BOM 行 | 组成件BOM 行 |
+|---|---|---|---|---|
+| 0317-2607000006 | 1 | 0317-2607000005 | usage_type=Ag | 用量 2.0 |
+| 0363-2607000009 | 1 | 0363-2607000007 | usage_type=AgCu | 用量 1.0 |
+| 0363-2607000009 | 2 | 0363-2607000008 | usage_type=AgNi | 用量 1.0 |
+
+若无差别地做交叉校正，这 3 组的 NULL 行会被校正成 `ASSEMBLY`，与兄弟行同键 → **V344 唯一键冲突、迁移失败**。
+
+**规则（已确认）**：交叉校正**只作用于"唯一键去掉 characteristic 后无兄弟行"的行**。有兄弟行的保持步骤 2 的规则回填结果（NULL→RECIPE），与兄弟行的 `ASSEMBLY` 天然区分开。
+
 ```sql
 UPDATE material_bom_item i SET characteristic =
   CASE
@@ -160,13 +180,32 @@ UPDATE material_bom_item i SET characteristic =
     WHEN EXISTS (SELECT 1 FROM material_master m WHERE m.material_no = i.component_no) THEN 'ASSEMBLY'
     ELSE i.characteristic
   END
-WHERE i.system_type = 'QUOTE' AND i.component_no IS NOT NULL
-  AND i.characteristic <> 'OUTSOURCED';   -- 外购件不参与校正（存量为 0，防御性）
+WHERE i.system_type = 'QUOTE'
+  AND i.component_no IS NOT NULL
+  AND i.characteristic IS DISTINCT FROM 'OUTSOURCED'   -- 外购件不参与校正（存量为 0，防御性）
+  -- 有兄弟行者跳过：校正会使其与兄弟行同键，撞 uq_material_bom_item
+  AND NOT EXISTS (
+    SELECT 1 FROM material_bom_item j
+    WHERE j.id <> i.id
+      AND j.system_type = i.system_type
+      AND j.customer_no = i.customer_no
+      AND j.material_no = i.material_no
+      AND COALESCE(j.bom_version, '') = COALESCE(i.bom_version, '')
+      AND COALESCE(j.seq_no, 0)       = COALESCE(i.seq_no, 0)
+      AND COALESCE(j.component_no, '')= COALESCE(i.component_no, '')
+      AND COALESCE(j.part_no, '')     = COALESCE(i.part_no, '')
+  );
 ```
 
-洗净的 5 行：
-- 2 行 `S-3120014539` 的 `991`/`992`：标着 `ASSEMBLY` 但在材质库 → 改 `RECIPE`
-- 3 行 `0317-2607000005`/`0363-2607000007`/`0363-2607000008`：标着 `NULL` 但在料号主档 → 改 `ASSEMBLY`
+实际洗净 2 行（已实测验证该规则不误伤应洗的脏数据）：
+- `S-3120014539` 的 `991`/`992`：标着 `ASSEMBLY` 但在材质库 → 改 `RECIPE`
+
+保持规则回填结果的 3 行（有兄弟行，不校正）：
+- `0317-2607000005`/`0363-2607000007`/`0363-2607000008` 的物料BOM 行 → 保持 `RECIPE`
+
+> 副作用：这 3 个 component 会同时以 `RECIPE`（物料BOM 行）和 `ASSEMBLY`（组成件BOM 行）存在，
+> 在材质页签与子配件页签各出现一次。这是**存量历史重复行的固有形态**，非本次引入；
+> 用现行 merge handler 重导该客户数据即自动归并为单行。
 
 ### 5.4 排除项
 
@@ -181,15 +220,24 @@ WHERE component_no IS NOT NULL AND characteristic IS NULL;   -- 期望 0
 
 -- 期望分布（全量，含历史版本行）：
 --   PRICING RECIPE=8  / ASSEMBLY=43
---   QUOTE   RECIPE=31 / ASSEMBLY=14
+--   QUOTE   RECIPE=34 / ASSEMBLY=11
 SELECT system_type, characteristic, count(*) FROM material_bom_item
 WHERE component_no IS NOT NULL GROUP BY 1,2 ORDER BY 1,2;
 
 -- 期望分布（仅 is_current=t，决定页签实际渲染行数）：
 --   PRICING RECIPE=5  / ASSEMBLY=18
---   QUOTE   RECIPE=27 / ASSEMBLY=14
+--   QUOTE   RECIPE=30 / ASSEMBLY=11
 SELECT system_type, characteristic, count(*) FROM material_bom_item
 WHERE component_no IS NOT NULL AND is_current GROUP BY 1,2 ORDER BY 1,2;
+
+-- 期望 0：迁移不得引入唯一键冲突（uq_material_bom_item 含 COALESCE(characteristic,'')）
+SELECT count(*) AS 撞键组数 FROM (
+  SELECT 1 FROM material_bom_item WHERE component_no IS NOT NULL
+  GROUP BY system_type, customer_no, material_no, COALESCE(characteristic,''),
+           COALESCE(bom_version,''), COALESCE(seq_no,0),
+           COALESCE(component_no,''), COALESCE(part_no,'')
+  HAVING count(*) > 1
+) t;
 ```
 
 ---

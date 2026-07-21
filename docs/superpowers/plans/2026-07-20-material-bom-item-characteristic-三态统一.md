@@ -770,9 +770,13 @@ WHERE system_type = 'QUOTE'
   AND component_no IS NOT NULL;
 
 -- ── 步骤 3: 命中表交叉校正（spec §5.3，仅报价侧）──
--- 洗净 5 行已知脏数据：
---   2 行标 ASSEMBLY 但在材质库（S-3120014539 的 991/992）→ RECIPE
---   3 行标 NULL 但在料号主档（0317-2607000005 等）→ ASSEMBLY
+-- ⚠️ uq_material_bom_item 含 COALESCE(characteristic,'')。存量有 3 组历史重复行
+--   （同一 component 同时在物料BOM 与组成件BOM，归并逻辑上线前写成两行，
+--     靠 characteristic 不同才不撞键：0317-2607000006/1、0363-2607000009/1、0363-2607000009/2）。
+--   若无差别校正，NULL 行会被校正成 ASSEMBLY 与兄弟行同键 → 唯一键冲突、迁移失败。
+-- 规则：交叉校正只作用于"唯一键去掉 characteristic 后无兄弟行"的行；
+--   有兄弟行者保持步骤 2 的 RECIPE，与兄弟行的 ASSEMBLY 天然区分。
+-- 实际洗净 2 行：S-3120014539 的 991/992（标 ASSEMBLY 但在材质库）→ RECIPE。
 -- OUTSOURCED 不参与校正（存量为 0，防御性排除，避免误翻新导入的外购件行）。
 UPDATE material_bom_item i
 SET characteristic = CASE
@@ -782,7 +786,18 @@ SET characteristic = CASE
   END
 WHERE i.system_type = 'QUOTE'
   AND i.component_no IS NOT NULL
-  AND i.characteristic IS DISTINCT FROM 'OUTSOURCED';
+  AND i.characteristic IS DISTINCT FROM 'OUTSOURCED'
+  AND NOT EXISTS (
+    SELECT 1 FROM material_bom_item j
+    WHERE j.id <> i.id
+      AND j.system_type = i.system_type
+      AND j.customer_no = i.customer_no
+      AND j.material_no = i.material_no
+      AND COALESCE(j.bom_version, '')  = COALESCE(i.bom_version, '')
+      AND COALESCE(j.seq_no, 0)        = COALESCE(i.seq_no, 0)
+      AND COALESCE(j.component_no, '') = COALESCE(i.component_no, '')
+      AND COALESCE(j.part_no, '')      = COALESCE(i.part_no, '')
+  );
 
 -- 注：component_no IS NULL 的空壳历史行（is_current=f）不参与迁移，characteristic 保持 NULL（spec §5.4）。
 
@@ -880,13 +895,22 @@ PGPASSWORD=joii5231 psql -h 10.177.152.12 -U postgres -d cpq_db -c "
 SELECT count(*) AS 残留NULL FROM material_bom_item
 WHERE component_no IS NOT NULL AND characteristic IS NULL;
 
--- 期望（全量）：PRICING RECIPE=8 / ASSEMBLY=43；QUOTE RECIPE=31 / ASSEMBLY=14
+-- 期望（全量）：PRICING RECIPE=8 / ASSEMBLY=43；QUOTE RECIPE=34 / ASSEMBLY=11
 SELECT system_type, characteristic, count(*) FROM material_bom_item
 WHERE component_no IS NOT NULL GROUP BY 1,2 ORDER BY 1,2;
 
--- 期望（is_current=t）：PRICING RECIPE=5 / ASSEMBLY=18；QUOTE RECIPE=27 / ASSEMBLY=14
+-- 期望（is_current=t）：PRICING RECIPE=5 / ASSEMBLY=18；QUOTE RECIPE=30 / ASSEMBLY=11
 SELECT system_type, characteristic, count(*) FROM material_bom_item
 WHERE component_no IS NOT NULL AND is_current GROUP BY 1,2 ORDER BY 1,2;
+
+-- 期望 0：迁移不得引入唯一键冲突（uq_material_bom_item 含 COALESCE(characteristic,'')）
+SELECT count(*) AS 撞键组数 FROM (
+  SELECT 1 FROM material_bom_item WHERE component_no IS NOT NULL
+  GROUP BY system_type, customer_no, material_no, COALESCE(characteristic,''),
+           COALESCE(bom_version,''), COALESCE(seq_no,0),
+           COALESCE(component_no,''), COALESCE(part_no,'')
+  HAVING count(*) > 1
+) t;
 
 -- 期望：总行数 = Task 5 Step 2 基线 - 11
 SELECT count(*) AS 迁移后总行数 FROM material_bom_item;
@@ -986,8 +1010,9 @@ git branch -d feat/bom-item-characteristic-tristate
 
 - [ ] V344 `success=t`
 - [ ] 残留 NULL = 0（`component_no` 非空口径）
-- [ ] 全量分布：PRICING RECIPE=8 / ASSEMBLY=43；QUOTE RECIPE=31 / ASSEMBLY=14
-- [ ] 当前行分布：PRICING RECIPE=5 / ASSEMBLY=18；QUOTE RECIPE=27 / ASSEMBLY=14
+- [ ] 全量分布：PRICING RECIPE=8 / ASSEMBLY=43；QUOTE RECIPE=34 / ASSEMBLY=11
+- [ ] 当前行分布：PRICING RECIPE=5 / ASSEMBLY=18；QUOTE RECIPE=30 / ASSEMBLY=11
+- [ ] 唯一键撞键组数 = 0（`uq_material_bom_item` 含 `COALESCE(characteristic,'')`）
 - [ ] 总行数差 = 11（仅删除，无意外增减）
 - [ ] 双 current 组数与迁移前基线一致（A/B 对比，非绝对 0）
 - [ ] Quarkus 重启后 `/api/cpq/components` → 401
