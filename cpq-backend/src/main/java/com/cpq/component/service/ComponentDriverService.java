@@ -100,6 +100,38 @@ public class ComponentDriverService {
     }
 
     /**
+     * task-0721 B9：构建缓存 key（5-arg，含 {@code totalMaterialNoHash} 维度）。
+     *
+     * <p>背景：{@link BomTreeVarsContext} 携带的 {@code :total_material_no}（整单/整卡 BOM 料号并集）
+     * 会影响 SQL 视图查询结果（视图内可直接引用该占位符收窄结果），但原 4-arg {@link #cacheKey}
+     * 不含该维度——两个产品的 BOM 料号集合不同时，同一组件的 expand 结果在 30s TTL 内会互相串号
+     * （AP-37 型缺维度缓存 bug）。此为<b>核价侧现存隐患</b>，报价侧接入树渲染后调用面扩大会放大暴露面。
+     *
+     * <p>{@code totalMaterialNoHash} 为 null/blank → 退化为与 4-arg 重载相同的 key（向后兼容，
+     * 未设置 {@link BomTreeVarsContext} 的既有调用路径零变化）。
+     */
+    public static String cacheKey(UUID componentId, UUID customerId, String partNo, Integer partVersion,
+                                   String totalMaterialNoHash) {
+        return cacheKey(componentId, customerId, partNo, partVersion)
+                + ":tmn" + (totalMaterialNoHash != null && !totalMaterialNoHash.isBlank() ? totalMaterialNoHash : "_");
+    }
+
+    /**
+     * task-0721 B9：从当前线程 {@link com.cpq.datasource.sqlview.BomTreeVarsContext} 计算
+     * {@code total_material_no} 内容 hash（供 {@link #cacheKey} 第 5 参）。无上下文 / 无该维度 → null
+     * （key 退化为不含该维度，与改造前行为一致）。
+     *
+     * <p>用<b>内容 hash</b>而非集合大小/引用地址——集合内容相同即可复用缓存（不因对象实例不同而
+     * 误判串号），集合内容不同则 hash 大概率不同（碰撞概率可接受，缓存 key 而非安全用途）。
+     */
+    private static String currentTotalMaterialNoHash() {
+        com.cpq.datasource.sqlview.BomTreeVarsContext.Vars v =
+                com.cpq.datasource.sqlview.BomTreeVarsContext.get();
+        if (v == null || v.totalMaterialNo == null || v.totalMaterialNo.isEmpty()) return null;
+        return Integer.toHexString(v.totalMaterialNo.hashCode());
+    }
+
+    /**
      * 清空所有缓存条目。在基础数据导入事务提交后调用，让新数据立即可见�?
      */
     public void evictAll() {
@@ -320,7 +352,10 @@ public class ComponentDriverService {
         String childTag = (childLineItemIds != null && !childLineItemIds.isEmpty())
                 ? ":cld" + Integer.toHexString(childLineItemIds.hashCode())
                 : "";
-        String key = cacheKey(componentId, customerId, partNo, partVersion) + overrideTag + lineItemTag + childTag;
+        // task-0721 B9：total_material_no 维度补齐 —— 同一组件在不同 BOM 料号集合(不同产品/报价单)
+        // 下的 expand 结果不应共享缓存条目(该视图 SQL 可能直接引用 :total_material_no 收窄结果)。
+        String key = cacheKey(componentId, customerId, partNo, partVersion, currentTotalMaterialNoHash())
+                + overrideTag + lineItemTag + childTag;
         // 调试捕获 SQL 时旁路缓存读取, 强制重算以触发 SqlViewExecutor 记录最终 SQL。skipCache=true(核价树渲染)同样旁路。
         ExpandDriverResponse cached = (skipCache || com.cpq.datasource.sqlview.SqlDebugContext.isActive())
                 ? null : expandCache.getIfPresent(key);

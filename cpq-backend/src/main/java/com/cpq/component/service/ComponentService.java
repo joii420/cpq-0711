@@ -6,6 +6,7 @@ import com.cpq.component.dto.CreateComponentRequest;
 import com.cpq.component.entity.Component;
 import com.cpq.component.entity.ComponentSqlView;
 import com.cpq.component.repository.ComponentSqlViewRepository;
+import com.cpq.quotation.service.BomTreeRenderService;
 import com.cpq.template.service.TemplateService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -56,6 +57,50 @@ public class ComponentService {
         if (!VALID_TAB_TYPES.contains(tabType)) {
             throw new BusinessException(400, "Invalid tabType: " + tabType +
                 ". Must be one of: " + VALID_TAB_TYPES);
+        }
+    }
+
+    /**
+     * task-0721 B4：页签类型属性写入编排。{@code requestedTabType == null} → 不变（既有字段独立更新
+     * 逻辑照旧）。非 null 时：① 值域校验；② {@code tabType="BOM"} 时先跑 COSTING 模板反向护栏
+     * （见 {@link #assertNotReferencedByCostingTemplate}）；③ 与 {@code bomRecursiveExpand} 自动同步
+     * （2026-07-21 裁决 Q1："BOM"→true，其他值→false；仅是兼容既有 UI/查询的实现细节，
+     * <b>不参与</b>报价侧树渲染路由判断——路由判据是 {@link BomTreeRenderService#isQuoteTreeTabType}）。
+     */
+    private void applyTabType(Component component, String requestedTabType) {
+        if (requestedTabType == null) return; // 未传 = 不变，既有 bomRecursiveExpand 手动设置保留
+        assertValidTabType(requestedTabType);
+        String normalized = requestedTabType.isBlank() ? null : requestedTabType;
+        if (BomTreeRenderService.isQuoteTreeTabType(normalized)) {
+            assertNotReferencedByCostingTemplate(component.id);
+            component.bomRecursiveExpand = Boolean.TRUE;
+        } else {
+            component.bomRecursiveExpand = Boolean.FALSE;
+        }
+        component.tabType = normalized;
+    }
+
+    /**
+     * task-0721 B4 强制护栏（2026-07-21 业务方裁决）：{@code bomRecursiveExpand} 是组件级全局开关，
+     * 同一组件被多模板共用时一开全生效。现网实查：3 个开启该开关的组件
+     * （COMP-0021__imp1__imp1 / COMP-0039 / COMP-0042）共 34 处模板引用，<b>全部在 COSTING 模板</b>。
+     *
+     * <p>若该组件已被<b>任一</b> COSTING（{@code template.templateKind='COSTING'}）模板引用，
+     * 禁止把 {@code tabType} 改为 {@code BOM}（树渲染）——否则会把这些核价模板一并改成树渲染，
+     * 直接违反 AC-10 核价零回归门禁。报价侧树页签应<b>新建专用组件</b>，不复用核价侧已有树组件。
+     */
+    private void assertNotReferencedByCostingTemplate(UUID componentId) {
+        if (componentId == null) return; // 新建流程尚无 id，不存在既有模板引用，护栏天然不触发
+        Number count = (Number) em.createNativeQuery(
+                "SELECT count(*) FROM template_component tc " +
+                "JOIN template t ON t.id = tc.template_id " +
+                "WHERE tc.component_id = :cid AND t.template_kind = 'COSTING'")
+            .setParameter("cid", componentId)
+            .getSingleResult();
+        if (count != null && count.longValue() > 0) {
+            throw new BusinessException(400, "该组件已被 " + count.longValue() +
+                " 处核价(COSTING)模板引用，不能设为 BOM 树页签——会把这些核价模板一并改成树渲染，" +
+                "破坏核价侧零回归。报价侧树页签请新建专用组件。");
         }
     }
 
@@ -167,6 +212,9 @@ public class ComponentService {
         component.treeConfig = request.treeConfig != null ? toJsonRaw(request.treeConfig) : null;
         // 核价 BOM 递归展开开关(默认 false:勾选才递归)
         component.bomRecursiveExpand = request.bomRecursiveExpand != null ? request.bomRecursiveExpand : Boolean.FALSE;
+        // task-0721 B4：页签类型属性(校验 + COSTING 模板反向护栏 + 与 bomRecursiveExpand 自动同步；
+        // 传值时覆盖上一行手动设置的 bomRecursiveExpand)。新建流程尚无 id,反向护栏天然不触发。
+        applyTabType(component, request.tabType);
 
         // 行键校验（新建路径：硬拦）
         validateRowKeyConfig(component.dataDriverPath, component.fields, component.rowKeyFields, true);
@@ -256,6 +304,9 @@ public class ComponentService {
         if (request.bomRecursiveExpand != null) {
             component.bomRecursiveExpand = request.bomRecursiveExpand;
         }
+        // task-0721 B4：页签类型属性(校验 + COSTING 模板反向护栏 + 与 bomRecursiveExpand 自动同步；
+        // 传值时覆盖上面手动设置的 bomRecursiveExpand)。
+        applyTabType(component, request.tabType);
 
         // 行键校验（更新路径：软校验，违规只告警不阻断）
         validateRowKeyConfig(component.dataDriverPath, component.fields, component.rowKeyFields, false);

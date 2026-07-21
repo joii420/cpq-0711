@@ -27,6 +27,12 @@ public class GlobalExceptionMapper {
                             Map.of("conflicts", rce.getConflicts())))
                     .build();
         }
+        if (e instanceof TreeConflictException tce) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(),
+                            Map.of("conflictTabs", tce.getConflictTabs())))
+                    .build();
+        }
         return Response.status(e.getCode())
                 .entity(ApiResponse.error(e.getCode(), e.getMessage()))
                 .build();

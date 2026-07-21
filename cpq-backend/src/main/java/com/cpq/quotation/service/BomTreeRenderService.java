@@ -71,6 +71,25 @@ public class BomTreeRenderService {
     ComponentDriverService componentDriverService;
 
     /**
+     * task-0721 B3/B4/B6/B7 单一收口点（2026-07-21 业务方裁决 Q1）：判定某组件是否为
+     * 「报价侧 BOM 树页签」。
+     *
+     * <p><b>判据 = {@code component.tabType == "BOM"}</b>，与既有 {@code bomRecursiveExpand}
+     * （核价侧递归展开开关）<b>无关</b>——后者是组件级全局开关，同一组件被多模板共用时一开全生效；
+     * B4 保存组件时会按 {@code tabType} 自动同步 {@code bomRecursiveExpand}（{@code tabType="BOM"}
+     * → 置 true；改为其他值 → 置 false），但那只是实现细节 / 兼容既有 UI 展示，<b>不参与本判断</b>。
+     *
+     * <p>全链路（B3 物化路由 / B6 加叶子 / B7 删除级联）只应调用本方法判定"是否走树渲染"，
+     * 不要在别处散落重复的 {@code "BOM".equals(...)} / {@code bomRecursiveExpand} 判断。
+     *
+     * <p>核价侧路由判据不受影响：{@code CardSnapshotService#templateHasTreeTab} 仍按
+     * {@code bomRecursiveExpand=true} 判定（核价侧现有行为逐位不变，AC-10 零回归门禁）。
+     */
+    public static boolean isQuoteTreeTabType(String tabType) {
+        return "BOM".equals(tabType);
+    }
+
+    /**
      * 整单渲染入口。
      *
      * @param templateId 本组 line items 共用的模板 ID（见类注释「单模板假设」）
