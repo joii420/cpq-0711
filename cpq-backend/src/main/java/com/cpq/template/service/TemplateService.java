@@ -240,6 +240,15 @@ public class TemplateService {
                 entry.put("tree_config", (comp.treeConfig != null && !comp.treeConfig.isBlank())
                         ? parseJsonObject(comp.treeConfig) : null);
                 entry.put("formula_assignments", parseJsonObject(tc.formulaAssignments));
+                // task-0721 补录(2026-07-22)：页签类型属性随组件冻进 snapshot(无 template 级 override，
+                // 与 tree_config 同款处理)。此前遗漏——违反"改 snapshot 必须同时改 3 层"纪律；
+                // 当前运行期渲染逻辑(ConfigureSnapshotService/BomTreeRenderService/
+                // overlayTreeTabsFromFrozenSnapshot)均直接查活的 component 表，不读这里，
+                // 故本次补录不改变任何现有运行期行为，纯粹补正确性缺口供未来消费方使用。
+                entry.put("tab_type", comp.tabType);
+                entry.put("part_no_field", comp.partNoField);
+                entry.put("part_name_field", comp.partNameField);
+                entry.put("bom_recursive_expand", comp.bomRecursiveExpand);
                 snapshot.add(entry);
             }
         }
@@ -379,6 +388,11 @@ public class TemplateService {
                 entry.put("excelColumns", parseJsonArray(comp.excelColumns));
                 entry.put("componentName", comp.name);
                 entry.put("componentCode", comp.code);
+                // task-0721 补录(2026-07-22)：页签类型属性随组件平台级更新同步(无 template 级 override)
+                entry.put("tab_type", comp.tabType);
+                entry.put("part_no_field", comp.partNoField);
+                entry.put("part_name_field", comp.partNameField);
+                entry.put("bom_recursive_expand", comp.bomRecursiveExpand);
                 touched = true;
             }
             if (touched) {
@@ -709,6 +723,11 @@ public class TemplateService {
                         ? tc.dataDriverPathOverride : comp.dataDriverPath;
                 entry.put("data_driver_path", effectiveDriverPath);
                 entry.put("formula_assignments", parseJsonObject(tc.formulaAssignments));
+                // task-0721 补录(2026-07-22)：与 publish()/refreshSnapshotsByComponent 的 snapshot entry 对齐
+                entry.put("tab_type", comp.tabType);
+                entry.put("part_no_field", comp.partNoField);
+                entry.put("part_name_field", comp.partNameField);
+                entry.put("bom_recursive_expand", comp.bomRecursiveExpand);
                 snapshot.add(entry);
             }
         }

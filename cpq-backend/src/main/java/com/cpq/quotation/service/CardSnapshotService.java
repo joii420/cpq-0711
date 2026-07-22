@@ -1888,14 +1888,22 @@ public class CardSnapshotService {
      * {@link BomTreeRenderService} 整单渲染出 {@code precomputedBaseRows}，
      * {@link #buildCostingCardValues} 只在 {@code precomputedBaseRows == null} 时才调用本方法。
      *
-     * <p><b>报价侧（task-0721 起，2026-07-21 修正）</b>：{@link #refreshQuoteCardValues}/
+     * <p><b>报价侧（task-0721 起，2026-07-22 二次修正）</b>：{@link #refreshQuoteCardValues}/
      * {@link #dryRunTokenRows} 复用本方法（{@code unionByComp}/{@code driverCompsPrefetch} 传 null）
      * ——⚠️此前文档曾断言"报价侧恒不含树页签组件"，task-0721 引入 {@code tab_type='BOM'} 报价侧树页签
-     * 后该假设已不成立：本方法对树组件仍会按本行料号做单值平铺展开，因树组件 $view 的
-     * {@code hf_part_no} 语义是"边的子件料号"而非产品根料号，恒 0 行匹配，产出错误的空 baseRows。
-     * 两处调用方均已在调用本方法后紧跟 {@code overlayTreeTabsFromFrozenSnapshot(...)} 覆盖树组件
-     * 条目为其已冻结的 {@code snapshot_rows}（无树页签模板则该覆盖调用 no-op）——本方法自身不感知
-     * 树页签、不做任何修改，靠调用方兜底，避免破坏核价侧既有调用前提。
+     * 后该假设已不成立。<b>本方法现直接跳过 {@code tab_type='BOM'} 的树组件</b>（不 put 任何条目到
+     * {@code baseRowsByComp}）——原因有二：①树组件按本行料号做单值平铺展开语义上就是错的（树组件
+     * $view 的 {@code hf_part_no} 语义是"边的子件料号"而非产品根料号，恒 0 行匹配）；②2026-07-22
+     * 真实事故实证：若树组件 $view 本身查询报错（如列名/表结构不匹配），
+     * {@code componentDriverService.expand} 抛出的异常会在此处被 catch 且置空条目——但 PostgreSQL
+     * 层面该 SQL 错误已把<b>当前事务</b>置于 aborted 状态（"current transaction is aborted"），
+     * 调用方紧随其后的 {@code overlayTreeTabsFromFrozenSnapshot(...)}（同一事务内的另一条 SQL）
+     * 会连带失败，导致整个 {@code refreshQuoteCardValues} 抛异常、外层 catch 吞掉、
+     * {@code quote_card_values} 保留旧值不更新（症状：树 tab 卡在物化时的行数，不再随加叶子/剪枝
+     * 等操作后的最新 {@code snapshot_rows} 更新）。跳过树组件 = 从根源上不让它有机会执行可能出错的
+     * 查询、不占用/污染刷新事务，把"树页签渲染"完全交给调用方紧随其后的
+     * {@code overlayTreeTabsFromFrozenSnapshot(...)}（无树页签模板 → 该覆盖调用查 0 条 → no-op，
+     * 零回归）。
      *
      * <p>{@code unionByComp}（{@link #precomputeCostingDriverUnion} 整单按 partNo 预取）与
      * {@code driverCompsPrefetch}（整单一次查 driver 组件清单）两个性能分支与 closure 无关，照抄保留。
@@ -1910,12 +1918,14 @@ public class CardSnapshotService {
 
         List<Object[]> driverComps;
         if (driverCompsPrefetch != null) {
-            driverComps = driverCompsPrefetch;          // F4：命中预取,0 往返
+            driverComps = driverCompsPrefetch;          // F4：命中预取,0 往返（2 列，见下方 dc.length 兜底）
         } else {
             DRIVER_COMPS_QUERY_COUNT.incrementAndGet();
             @SuppressWarnings("unchecked")
             List<Object[]> queried = em.createNativeQuery(
-                "SELECT DISTINCT c.id, c.bom_recursive_expand FROM template_component tc " +
+                // task-0721 二次修正：加 c.tab_type 第 3 列，供下方跳过 tab_type='BOM' 树组件
+                // （见类方法注释——树组件不该在这里跑 live $view，交给调用方 overlayTreeTabsFromFrozenSnapshot）。
+                "SELECT DISTINCT c.id, c.bom_recursive_expand, c.tab_type FROM template_component tc " +
                 "JOIN component c ON c.id = tc.component_id " +
                 "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
                 .setParameter("tid", templateId)
@@ -1928,6 +1938,11 @@ public class CardSnapshotService {
         try {
             for (Object[] dc : driverComps) {
                 if (dc == null || dc[0] == null) continue;
+                // task-0721 二次修正：tab_type='BOM' 树组件整体跳过，不跑 live $view（不 put 任何条目，
+                // 交给调用方 overlayTreeTabsFromFrozenSnapshot 用已冻结的 snapshot_rows 填充）。
+                // dc.length 兜底：driverCompsPrefetch 传入的旧 2 列数组（核价侧既有调用点）天然跳过本判断，
+                // 该调用点从不会含树组件（templateHasTreeTab 已在上游拦截），零回归。
+                if (dc.length > 2 && "BOM".equals(dc[2])) continue;
                 String cidStr = dc[0].toString();
                 UUID compId = UUID.fromString(cidStr);
                 try {
