@@ -75,6 +75,10 @@ public class QuotationResource {
     @Inject
     jakarta.persistence.EntityManager em;
 
+    /** task-0721 报价升版逻辑 B6：核价通过两段式——预览。 */
+    @Inject
+    com.cpq.quotation.service.backfill.QuoteBackfillPreviewService quoteBackfillPreviewService;
+
     @GET
     public ApiResponse<PageResult<QuotationDTO>> list(
             @QueryParam("page") @DefaultValue("0") int page,
@@ -331,13 +335,29 @@ public class QuotationResource {
         return ApiResponse.success(quotationService.reject(id, comment, currentUserId));
     }
 
+    /**
+     * task-0721 报价升版逻辑 B6：核价通过前的回填影响预览（api.md §1.1）。只读、无副作用、幂等。
+     */
+    @GET
+    @Path("/{id}/costing-approve/preview")
+    @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
+    public ApiResponse<com.cpq.quotation.dto.backfill.BackfillPreviewDTO> costingApprovePreview(
+            @PathParam("id") UUID id) {
+        return ApiResponse.success(quoteBackfillPreviewService.preview(id));
+    }
+
+    /**
+     * task-0721 报价升版逻辑 B5/B6：核价通过（两段式，api.md §1.2）。{@code previewToken} 必填——
+     * 老调用方（不带 token）直接 400，强制先调预览接口；token 与提交时重算不一致 → 409。
+     */
     @POST
     @Path("/{id}/costing-approve")
     @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
     public ApiResponse<QuotationDTO> costingApprove(@PathParam("id") UUID id, Map<String, String> body, @Context HttpServerRequest request) {
         UUID uid = sessionHelper.getCurrentUserIdOrFallback(request);
         String comment = body != null ? body.get("comment") : null;
-        return ApiResponse.success(quotationService.costingApprove(id, comment, uid));
+        String previewToken = body != null ? body.get("previewToken") : null;
+        return ApiResponse.success(quotationService.costingApprove(id, comment, uid, previewToken));
     }
 
     @POST

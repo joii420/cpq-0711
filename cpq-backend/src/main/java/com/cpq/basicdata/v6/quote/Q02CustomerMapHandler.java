@@ -120,7 +120,8 @@ public class Q02CustomerMapHandler implements SheetHandler {
             writeRow(pr, ctx, result, mmAcc);
         }
         if (!mmAcc.isEmpty()) {
-            materialMasterRepo.upsertBatchMaterialNoOnly(new ArrayList<>(mmAcc), ctx.importedBy);
+            // task-0721 B9：pending 模式暂存。
+            materialMasterRepo.upsertBatchMaterialNoOnly(new ArrayList<>(mmAcc), ctx.importedBy, ctx.pendingQuotationId);
         }
         return result;
     }

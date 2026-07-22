@@ -72,10 +72,13 @@ public class CustomerPartCandidateService {
             "       ON m.material_no = p.material_no " +
             "      AND m.customer_no = (SELECT code FROM customer WHERE id = :customerId) " +
             "      AND m.system_type = 'QUOTE' " +
+            "      AND m.pending_quotation_id IS NULL " +
             "LEFT JOIN internal_material im " +
             "       ON im.material_no = p.material_no " +
+            // task-0721 B7 闸门：未审核报价单占用的料号不出现在候选里（单表谓词，零 N+1，AC-4）。
             "WHERE p.material_no IN (SELECT material_no FROM material_customer_map " +
-            "                        WHERE system_type = 'QUOTE' AND customer_product_no IS NOT NULL) " +
+            "                        WHERE system_type = 'QUOTE' AND customer_product_no IS NOT NULL " +
+            "                          AND pending_quotation_id IS NULL) " +
             "ORDER BY (m.id IS NOT NULL) DESC, p.material_no ASC";
 
         var query = em.createNativeQuery(sql).setParameter("customerId", customerId);
@@ -168,6 +171,9 @@ public class CustomerPartCandidateService {
             "       ON m.material_no = p.material_no " +
             "      AND m.customer_no = (SELECT code FROM customer WHERE id = :customerId) " +
             "      AND m.system_type = 'QUOTE' " +
+            // task-0721 B7：customer_specific 判定不应被「同客户下其它未审核报价单」的 pending
+            // 占号行误判为 true（防御性一致性；本查询本身已按 hfSet 精确框定"本批导入"，主 WHERE 不受影响）。
+            "      AND m.pending_quotation_id IS NULL " +
             "LEFT JOIN internal_material im " +
             "       ON im.material_no = p.material_no " +
             "WHERE p.material_no IN :hfs " +

@@ -179,7 +179,8 @@ public class MaterialBomMergeHandler {
                 mmRows.add(new MaterialMasterRepository.NameTypeRow(
                     e.getKey(), e.getValue()[0], e.getValue()[1]));
             }
-            materialMasterRepo.upsertBatchNameType(mmRows, ctx.importedBy, true);
+            // task-0721 B9：pending 模式暂存。
+            materialMasterRepo.upsertBatchNameType(mmRows, ctx.importedBy, true, ctx.pendingQuotationId);
         }
 
         Set<String> allMats = new LinkedHashSet<>();

@@ -83,7 +83,8 @@ public class Q04ElementBomHandler implements SheetHandler {
             for (Map.Entry<String, String[]> me : mmAcc.entrySet()) {
                 mmRows.add(new MaterialMasterRepository.NameTypeRow(me.getKey(), me.getValue()[0], me.getValue()[1]));
             }
-            materialMasterRepo.upsertBatchNameType(mmRows, ctx.importedBy, true);
+            // task-0721 B9：pending 模式暂存。
+            materialMasterRepo.upsertBatchNameType(mmRows, ctx.importedBy, true, ctx.pendingQuotationId);
         }
 
         if (setBased) {

@@ -98,6 +98,13 @@ public class QuotationDTO {
     /** lazy-cardvalues：warm 在飞（未取到单飞锁）时为 true，前端据此显示 spinner/稍后重试。默认 false。 */
     public boolean cardValuesWarming = false;
 
+    /**
+     * task-0721 报价升版逻辑 B5：核价通过回填摘要（api.md §1.2 响应体 {@code backfill} 字段）。
+     * 仅 {@code costingApprove} 端点响应时非 null，其余端点/场景恒 null（Jackson 默认序列化为
+     * 不出现，不影响其它读接口契约）。
+     */
+    public com.cpq.quotation.service.backfill.QuoteBackfillService.Summary backfill;
+
     public static QuotationDTO from(Quotation q) {
         QuotationDTO dto = new QuotationDTO();
         dto.id = q.id;

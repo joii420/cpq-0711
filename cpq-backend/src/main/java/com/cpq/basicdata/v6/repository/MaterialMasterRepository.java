@@ -243,4 +243,145 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
         for (String no : materialNos) rows.add(new NameTypeRow(no, null, null));
         upsertBatchNameType(rows, updatedBy, true);
     }
+
+    // =========================================================================
+    // task-0721 B9：主档暂存（方案甲）—— pendingQuotationId 非 null 时改写暂存表，
+    // 不直接落 material_master；核价通过时（B5）再 promoteStaging 覆盖式 upsert 进正式表。
+    // 三个批量方法各加一个 pendingQuotationId 重载，call site 只需多传一个参数即可切换。
+    // =========================================================================
+
+    /** {@link #upsertBatchNameType(java.util.List, UUID, boolean)} 的 pending 感知重载：
+     *  {@code pendingQuotationId==null} 时逐字节委派原方法（零回归）；非 null 时写暂存表，
+     *  不落 material_master。 */
+    public void upsertBatchNameType(java.util.List<NameTypeRow> rows, UUID updatedBy,
+                                    boolean preserveDescriptive, UUID pendingQuotationId) {
+        if (pendingQuotationId == null) {
+            upsertBatchNameType(rows, updatedBy, preserveDescriptive);
+            return;
+        }
+        if (rows == null || rows.isEmpty()) return;
+        for (NameTypeRow r : rows) {
+            stageOne(pendingQuotationId, r.materialNo(), r.materialName(), null, null, null,
+                r.materialType(), null, null, null, r.productionNo(), updatedBy);
+        }
+    }
+
+    /** {@link #upsertBatchWithWeight(java.util.List, UUID)} 的 pending 感知重载。 */
+    public void upsertBatchWithWeight(java.util.List<WeightRow> rows, UUID updatedBy, UUID pendingQuotationId) {
+        if (pendingQuotationId == null) {
+            upsertBatchWithWeight(rows, updatedBy);
+            return;
+        }
+        if (rows == null || rows.isEmpty()) return;
+        for (WeightRow r : rows) {
+            stageOne(pendingQuotationId, r.materialNo(), null, null, null, null,
+                null, null, r.unitWeight(), null, null, updatedBy);
+        }
+    }
+
+    /** {@link #upsertBatchMaterialNoOnly(java.util.List, UUID)} 的 pending 感知重载。 */
+    public void upsertBatchMaterialNoOnly(java.util.List<String> materialNos, UUID updatedBy, UUID pendingQuotationId) {
+        if (pendingQuotationId == null) {
+            upsertBatchMaterialNoOnly(materialNos, updatedBy);
+            return;
+        }
+        if (materialNos == null || materialNos.isEmpty()) return;
+        for (String no : materialNos) {
+            stageOne(pendingQuotationId, no, null, null, null, null, null, null, null, null, null, updatedBy);
+        }
+    }
+
+    /**
+     * 暂存一条主档变更（upsert 进 {@code pending_material_master_staging}，键=(quotation_id, material_no)）。
+     * 描述性列（name/type/specification/dimension/old_material_no/usage_property/standard_unit/production_no）
+     * 采用 <b>本单内首个非空胜</b>（{@code COALESCE(staging.现值, EXCLUDED.新值)}，对齐现网 5 处调用点
+     * 里 4 处的 {@code preserveDescriptive=true} 语义）；{@code unit_weight} 采用 <b>末值非空胜</b>
+     * （{@code COALESCE(EXCLUDED.新值, staging.现值)}，对齐 Q18 单重覆盖语义）。
+     */
+    private void stageOne(UUID quotationId, String materialNo, String materialName, String specification,
+                          String dimension, String oldMaterialNo, String materialType, String usageProperty,
+                          BigDecimal unitWeight, String standardUnit, String productionNo, UUID updatedBy) {
+        if (quotationId == null || materialNo == null || materialNo.isBlank()) return;
+        String sql =
+            "INSERT INTO pending_material_master_staging (quotation_id, material_no, material_name, " +
+            "  specification, dimension, old_material_no, material_type, usage_property, unit_weight, " +
+            "  standard_unit, production_no, created_at, updated_at, updated_by) " +
+            "VALUES (:qid, :materialNo, :materialName, :specification, :dimension, :oldMaterialNo, " +
+            "  :materialType, :usageProperty, :unitWeight, :standardUnit, :productionNo, NOW(), NOW(), :updatedBy) " +
+            "ON CONFLICT (quotation_id, material_no) DO UPDATE SET " +
+            "  material_name    = COALESCE(pending_material_master_staging.material_name,    EXCLUDED.material_name), " +
+            "  specification    = COALESCE(pending_material_master_staging.specification,    EXCLUDED.specification), " +
+            "  dimension        = COALESCE(pending_material_master_staging.dimension,        EXCLUDED.dimension), " +
+            "  old_material_no  = COALESCE(pending_material_master_staging.old_material_no,  EXCLUDED.old_material_no), " +
+            "  material_type    = COALESCE(pending_material_master_staging.material_type,    EXCLUDED.material_type), " +
+            "  usage_property   = COALESCE(pending_material_master_staging.usage_property,   EXCLUDED.usage_property), " +
+            "  standard_unit    = COALESCE(pending_material_master_staging.standard_unit,    EXCLUDED.standard_unit), " +
+            "  production_no    = COALESCE(pending_material_master_staging.production_no,    EXCLUDED.production_no), " +
+            "  unit_weight      = COALESCE(EXCLUDED.unit_weight,      pending_material_master_staging.unit_weight), " +
+            "  updated_at       = NOW(), " +
+            "  updated_by       = EXCLUDED.updated_by";
+        em.createNativeQuery(sql)
+            .setParameter("qid", quotationId)
+            .setParameter("materialNo", materialNo)
+            .setParameter("materialName", materialName)
+            .setParameter("specification", specification)
+            .setParameter("dimension", dimension)
+            .setParameter("oldMaterialNo", oldMaterialNo)
+            .setParameter("materialType", materialType)
+            .setParameter("usageProperty", usageProperty)
+            .setParameter("unitWeight", unitWeight)
+            .setParameter("standardUnit", standardUnit)
+            .setParameter("productionNo", productionNo)
+            .setParameter("updatedBy", updatedBy)
+            .executeUpdate();
+    }
+
+    /** 暂存记录（B5/B6 读取用于回填/预览）。 */
+    public record StagedRow(String materialNo, String materialName, String specification, String dimension,
+                            String oldMaterialNo, String materialType, String usageProperty,
+                            BigDecimal unitWeight, String standardUnit, String productionNo) {}
+
+    /** 一次性读出该报价单全部暂存主档变更（B5/B6 用，一次 IN 查，非逐行）。 */
+    @SuppressWarnings("unchecked")
+    public java.util.List<StagedRow> listStaging(UUID quotationId) {
+        if (quotationId == null) return java.util.List.of();
+        java.util.List<Object[]> rows = em.createNativeQuery(
+                "SELECT material_no, material_name, specification, dimension, old_material_no, " +
+                "       material_type, usage_property, unit_weight, standard_unit, production_no " +
+                "FROM pending_material_master_staging WHERE quotation_id = :qid")
+            .setParameter("qid", quotationId)
+            .getResultList();
+        java.util.List<StagedRow> out = new java.util.ArrayList<>(rows.size());
+        for (Object[] r : rows) {
+            out.add(new StagedRow((String) r[0], (String) r[1], (String) r[2], (String) r[3], (String) r[4],
+                (String) r[5], (String) r[6], (BigDecimal) r[7], (String) r[8], (String) r[9]));
+        }
+        return out;
+    }
+
+    /**
+     * B5/B9：核价通过时把该报价单全部暂存主档变更覆盖式 upsert 进 {@code material_master}
+     * （{@code preserveDescriptive=true}，与现网 5 处直写调用点的既有语义一致——已存在的描述性
+     * 字段不被空值/其它客户批次覆盖；本方法不清理暂存行，由调用方（{@code QuoteBackfillService}）
+     * 在同事务内统一清理，避免部分成功部分残留）。
+     *
+     * @return 已 promote 的料号数
+     */
+    public int promoteStaging(UUID quotationId, UUID updatedBy) {
+        java.util.List<StagedRow> staged = listStaging(quotationId);
+        for (StagedRow s : staged) {
+            upsertByMaterialNo(s.materialNo(), s.materialName(), s.specification(), s.dimension(),
+                s.oldMaterialNo(), s.materialType(), s.usageProperty(), s.unitWeight(), s.standardUnit(),
+                s.productionNo(), updatedBy, true);
+        }
+        return staged.size();
+    }
+
+    /** B8：报价单删除/重导前清理该单全部主档暂存（与 7 张版本化表 pending 行同生命周期）。 */
+    public void clearStaging(UUID quotationId) {
+        if (quotationId == null) return;
+        em.createNativeQuery("DELETE FROM pending_material_master_staging WHERE quotation_id = :qid")
+            .setParameter("qid", quotationId)
+            .executeUpdate();
+    }
 }

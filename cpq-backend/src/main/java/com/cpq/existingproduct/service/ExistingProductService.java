@@ -42,8 +42,11 @@ public class ExistingProductService {
         // A 方案(2026-07-16):列表也纳入选配发号产品(customer_product_no 尚为 NULL,但已在 sel_part_signature 登记),
         // 前端按 source='CONFIGURED' 标「选配」。仍排除既无客户产品号又非选配登记的纯占位行(旧 F005 只保真产品,
         // 现放宽为「真产品 OR 选配登记」)。
+        // task-0721 B7 闸门：未审核（pending_quotation_id 非空）的报价单料号一律不出现，
+        // 无论是真实客户产品号还是选配发号登记（单表谓词，零 N+1，AC-4/AC-16）。
         StringBuilder where = new StringBuilder(
                 "mcm.system_type = 'QUOTE' AND mcm.customer_no = :customerNo " +
+                "AND mcm.pending_quotation_id IS NULL " +
                 "AND (mcm.customer_product_no IS NOT NULL " +
                 "     OR EXISTS (SELECT 1 FROM sel_part_signature sps WHERE sps.quote_part_no = mcm.material_no AND sps.customer_no = mcm.customer_no))");
         Map<String, Object> params = new LinkedHashMap<>();

@@ -315,9 +315,14 @@ public class BomTreeRenderService {
         return (parentNo == null ? "" : parentNo) + EDGE_SEP + (materialNo == null ? "" : materialNo);
     }
 
-    /** 递归 SQL 支持的占位符（按出现顺序绑定，见 {@link #queryRecursive}）。 */
+    /**
+     * 递归 SQL 支持的占位符（按出现顺序绑定，见 {@link #queryRecursive}）。task-0721 B4 追加
+     * {@code pq}（{@link com.cpq.datasource.sqlview.QuotePendingRewriter#PENDING_PARAM}，pending
+     * 感知表替换注入的命名参数）——与 {@code production_part_nos}/{@code __vfPart}/{@code __vfVer}
+     * 一样按<b>出现顺序</b>绑定，而非按类型分组批量绑定（3+1 种占位符可能交替出现）。
+     */
     private static final java.util.regex.Pattern TREE_PARAM =
-            java.util.regex.Pattern.compile(":(production_part_nos|__vfPart|__vfVer)\\b");
+            java.util.regex.Pattern.compile(":(production_part_nos|__vfPart|__vfVer|pq)\\b");
 
     /**
      * 递归 SQL 直接 JDBC 执行。契约里的绑定变量是 {@code :production_part_nos}（text[]，递归 CTE 常见
@@ -331,20 +336,25 @@ public class BomTreeRenderService {
      *                      （parentPartNo → viewVersion）；null/空 = 零覆盖，宏展开后恒退化为
      *                      is_current（与未接入版本切换前逐位等价）。
      *
-     * <p><b>TODO(task-0721-报价升版逻辑 B4，与树任务对齐)</b>：本方法走裸 JDBC，不经过
+     * <p><b>task-0721 B4（与树任务协同，已接线）</b>：本方法走裸 JDBC，不经过
      * {@link com.cpq.datasource.sqlview.SqlViewExecutor}，故报价升版逻辑 B3 的
-     * {@link com.cpq.datasource.sqlview.QuotePendingRewriter} pending 感知改写（表替换 + 遮蔽 +
-     * {@code __v6_id} 锚点注入）<b>未覆盖本递归 CTE 本身</b>——若递归 SQL 直接查询白名单表
-     * （{@code material_bom_item}/{@code element_bom_item} 等）且需要在报价单 DRAFT 态看到本单
-     * pending 行、或将树节点自身回填（B5），需与树任务工程师协同：在 {@code expanded} 拼接前对
-     * 递归 CTE 的基表引用同样跑一遍表替换（注意递归 CTE 通常有 base case + recursive case 两处
-     * 自引用，逐处替换）。
-     * <p>已确认<b>不需要改动</b>的部分：树节点的"业务行"侧（{@link #treeRowNode} 调用的
-     * {@link #rowNodeFrom}）直接透传 {@code ExpandDriverResponse.Row.driverRow}（与
-     * {@code CardSnapshotService#rowToNode} 同款 {@code MAPPER.valueToTree} 全量直通，无白名单过滤）——
-     * 该业务行本身若来自走 {@code $view} 的 {@code data_driver_path}，其 {@code __v6_id} 已经随
-     * B3 的 {@code SqlViewExecutor.executeAllRows} 自动带出、原样落入 {@code snapshot_rows}，
-     * 不需要额外接线（这也是本类唯一与 B4 直接相关、且已天然满足的部分）。
+     * {@link com.cpq.datasource.sqlview.QuotePendingRewriter} pending 感知表替换<b>不会自动覆盖</b>
+     * 本递归 CTE——本方法现已在"报价单 + 非冻结态"上下文下（与
+     * {@code SqlViewExecutor.applyPendingRewrite} 完全同款的门槛判定：
+     * {@code owner.quotationId != null && !owner.isQuotationFrozen()}）对 {@code expanded} 整体
+     * 跑一遍 {@code QuotePendingRewriter.rewrite}，让递归 CTE 的 base case + recursive case 里
+     * 对白名单表（{@code material_bom_item} 等）的<b>每一处</b>引用都换成 pending 感知子查询——
+     * 否则一个全新产品（官方 BOM 全无、只有本单 pending）在物化期会因递归闭包查不到任何 pending
+     * 行而整棵树 0 节点渲染，AC-2「本单可见」失败。改写产生的 {@code :pq} 占位符纳入
+     * {@link #TREE_PARAM} 按出现顺序绑定为标量 uuid（而非数组）。
+     * <p>递归 CTE 本身（spine：root_no/material_no/bom_version/parent_no/node_path）<b>不需要</b>
+     * 额外注入 {@code __v6_id} 锚点——它只是结构定位（哪个节点挂哪个父），不是可回填的业务行；
+     * 真正需要回填锚点的是各树页签"业务行"侧（{@link #treeRowNode} 透传的
+     * {@code ExpandDriverResponse.Row.driverRow}），那条路径走 {@code $view} → 已经随 B3 的
+     * {@code SqlViewExecutor.executeAllRows} 自动带出 {@code __v6_id}、原样落入
+     * {@code snapshot_rows}，不需要在本方法内重复处理。
+     * <p>核价侧（usage=COSTING）/无 quotationId 上下文/已提交冻结报价单：门槛判定为 false，
+     * {@code expanded} 原样执行，零回归（AC-17/AC-10）。
      */
     private List<CostingTreeNode> queryRecursive(String sqlTemplate, List<String> seed,
                                                   Map<String, String> treeOverrides) {
@@ -360,44 +370,74 @@ public class BomTreeRenderService {
             }
         }
 
-        java.util.regex.Matcher m = TREE_PARAM.matcher(expanded);
-        StringBuilder rewritten = new StringBuilder();
-        List<String> order = new ArrayList<>();
-        int lastEnd = 0;
-        while (m.find()) {
-            rewritten.append(expanded, lastEnd, m.start()).append('?');
-            order.add(m.group(1));
-            lastEnd = m.end();
-        }
-        rewritten.append(expanded, lastEnd, expanded.length());
-
-        String sql = "SELECT root_no, material_no, bom_version, parent_no, node_path FROM (" + rewritten + ") q";
         List<CostingTreeNode> out = new ArrayList<>();
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            java.sql.Array seedArr = conn.createArrayOf("text", seed.toArray());
-            java.sql.Array partArr = conn.createArrayOf("text", vfPart.toArray());
-            java.sql.Array verArr = conn.createArrayOf("text", vfVer.toArray());
-            for (int i = 0; i < order.size(); i++) {
-                String name = order.get(i);
-                java.sql.Array arr = "production_part_nos".equals(name) ? seedArr
-                        : "__vfPart".equals(name) ? partArr : verArr;
-                ps.setArray(i + 1, arr);
+        try (Connection conn = dataSource.getConnection()) {
+            java.util.UUID pendingQuotationId = resolvePendingOwner();
+            String withPending = expanded;
+            if (pendingQuotationId != null) {
+                try {
+                    com.cpq.datasource.sqlview.QuotePendingRewriter.Result rw =
+                        com.cpq.datasource.sqlview.QuotePendingRewriter.rewrite(expanded, conn);
+                    withPending = rw.sql;
+                } catch (Exception ex) {
+                    LOG.warnf("[costing-tree] pending 感知改写失败，递归 SQL 原样执行（本单 pending 行可能不可见）: %s",
+                        ex.getMessage());
+                }
             }
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    out.add(new CostingTreeNode(
-                            rs.getString("root_no"),
-                            rs.getString("material_no"),
-                            rs.getString("bom_version"),
-                            rs.getString("parent_no"),
-                            rs.getString("node_path")));
+
+            java.util.regex.Matcher m = TREE_PARAM.matcher(withPending);
+            StringBuilder rewritten = new StringBuilder();
+            List<String> order = new ArrayList<>();
+            int lastEnd = 0;
+            while (m.find()) {
+                rewritten.append(withPending, lastEnd, m.start()).append('?');
+                order.add(m.group(1));
+                lastEnd = m.end();
+            }
+            rewritten.append(withPending, lastEnd, withPending.length());
+
+            String sql = "SELECT root_no, material_no, bom_version, parent_no, node_path FROM (" + rewritten + ") q";
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                java.sql.Array seedArr = conn.createArrayOf("text", seed.toArray());
+                java.sql.Array partArr = conn.createArrayOf("text", vfPart.toArray());
+                java.sql.Array verArr = conn.createArrayOf("text", vfVer.toArray());
+                for (int i = 0; i < order.size(); i++) {
+                    String name = order.get(i);
+                    if ("pq".equals(name)) {
+                        ps.setObject(i + 1, pendingQuotationId);
+                        continue;
+                    }
+                    java.sql.Array arr = "production_part_nos".equals(name) ? seedArr
+                            : "__vfPart".equals(name) ? partArr : verArr;
+                    ps.setArray(i + 1, arr);
+                }
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        out.add(new CostingTreeNode(
+                                rs.getString("root_no"),
+                                rs.getString("material_no"),
+                                rs.getString("bom_version"),
+                                rs.getString("parent_no"),
+                                rs.getString("node_path")));
+                    }
                 }
             }
         } catch (Exception e) {
             throw new BusinessException(500, "核价树递归 SQL 执行失败: " + e.getMessage());
         }
         return out;
+    }
+
+    /**
+     * task-0721 B4：与 {@code SqlViewExecutor.applyPendingRewrite} 完全同款的门槛判定——
+     * 报价单上下文 + 非冻结态 → 返回本单 quotationId（改写生效）；核价侧/无上下文/已冻结 → null
+     * （不改写，零回归）。
+     */
+    private java.util.UUID resolvePendingOwner() {
+        com.cpq.datasource.sqlview.SqlViewRuntimeContext.Snapshot owner =
+            com.cpq.datasource.sqlview.SqlViewRuntimeContext.get();
+        if (owner == null || owner.quotationId == null || owner.isQuotationFrozen()) return null;
+        return owner.quotationId;
     }
 
     // ─── baseRow 装配纯函数（结构对齐 CardSnapshotService#rowToNode / #spineRowNode） ───

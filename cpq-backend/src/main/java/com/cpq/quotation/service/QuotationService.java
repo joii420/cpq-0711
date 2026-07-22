@@ -92,9 +92,20 @@ public class QuotationService {
     @Inject
     CostingFreezeService costingFreezeService;
 
-    /** task-0721 B8（2026-07-21 补录）：反向校验——已有子节点的料号禁止加入材质元素/外购件页签。 */
+    /** task-0721 B8（2026-07-21 补录，树任务）：反向校验——已有子节点的料号禁止加入材质元素/外购件页签。 */
     @Inject
     QuotationTreeService quotationTreeService;
+
+    /** task-0721 报价升版逻辑 B8/B9：报价单删除时清理主档暂存（{@link #cleanupPendingV6Data}）。 */
+    @Inject
+    com.cpq.basicdata.v6.repository.MaterialMasterRepository materialMasterRepository;
+
+    /** task-0721 报价升版逻辑 B5/B6/B7：核价通过两段式回填（preview → approve）。 */
+    @Inject
+    com.cpq.quotation.service.backfill.QuoteBackfillService quoteBackfillService;
+
+    @Inject
+    com.cpq.quotation.service.backfill.QuoteBackfillPreviewService quoteBackfillPreviewService;
 
     private static final java.util.Set<String> VALID_QUOTATION_STATUSES = java.util.Set.of(
             "DRAFT", "SUBMITTED", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "EXPIRED", "CANCELLED", "COSTING_REJECTED"
@@ -1352,12 +1363,42 @@ public class QuotationService {
         return u != null && ("PRICING_MANAGER".equals(u.role) || "SYSTEM_ADMIN".equals(u.role));
     }
 
+    /**
+     * 兼容/内部入口：不校验 previewToken，直接回填（既有测试/内部调用点沿用此签名，零回归）。
+     * <b>真实 API 表面</b>是下方 4 参重载（{@code previewToken} 必填，见 api.md §1.2），由
+     * {@code QuotationResource} 独家调用，强制走"先预览再提交"两段式。
+     */
     @Transactional
     public QuotationDTO costingApprove(UUID id, String comment, UUID currentUserId) {
+        return doCostingApprove(id, comment, currentUserId);
+    }
+
+    /**
+     * task-0721 报价升版逻辑 B5/B6：两段式核价通过（api.md §1.2）。
+     * @param previewToken 必填；重算当前有效状态 hash 与之比对，不一致 → 409（预览后数据漂移）。
+     */
+    @Transactional
+    public QuotationDTO costingApprove(UUID id, String comment, UUID currentUserId, String previewToken) {
+        if (previewToken == null || previewToken.isBlank()) {
+            throw new BusinessException(400, "previewToken 缺失，请先调用回填影响预览接口");
+        }
+        if (!quoteBackfillPreviewService.verifyToken(id, previewToken)) {
+            throw new BusinessException(409, "报价数据在预览后发生变化，请重新预览");
+        }
+        return doCostingApprove(id, comment, currentUserId);
+    }
+
+    private QuotationDTO doCostingApprove(UUID id, String comment, UUID currentUserId) {
         Quotation q = Quotation.findById(id);
         if (q == null) throw new BusinessException(404, "Quotation not found: " + id);
         if (!"SUBMITTED".equals(q.status)) throw new BusinessException(400, "仅待核价(SUBMITTED)可核价通过");
         if (!isFinanceOrAdmin(currentUserId)) throw new BusinessException(403, "仅财务/管理员可核价");
+
+        // task-0721 B5：回填 7 张表升版 + B9 主档促升 + B7 占号表闸门翻转 + 本单 pending 残留清理，
+        // 与状态机翻转同一事务（失败整体回滚，报价单保持 SUBMITTED，pending 保留可重试，backtask B5.4）。
+        com.cpq.quotation.service.backfill.QuoteBackfillService.Summary backfillSummary =
+            quoteBackfillService.execute(id, currentUserId);
+
         q.status = "APPROVED";
         CostingOrder coApprove = CostingOrder.findActiveByQuotation(id);
         if (coApprove != null) {
@@ -1366,12 +1407,20 @@ public class QuotationService {
             coApprove.reviewedAt = java.time.OffsetDateTime.now();
         }
         writeApproval(id, currentUserId, "COSTING_APPROVED", comment);
-        LOG.infof("Costing approved quotation id=%s by=%s", id, currentUserId);
+        LOG.infof("Costing approved quotation id=%s by=%s backfill(groups=%d,added=%d,deleted=%d,changed=%d)",
+            id, currentUserId, backfillSummary.versionedGroups, backfillSummary.addedRows,
+            backfillSummary.deletedRows, backfillSummary.changedRows);
         QuotationDTO dto = QuotationDTO.from(q);
         dto.lineItems = loadLineItems(id);
+        dto.backfill = backfillSummary;
         return dto;
     }
 
+    /**
+     * task-0721 B8 状态机：驳回<b>不清理</b>本单 pending 行/主档暂存——销售改完重交（再次导入）时
+     * 由 {@code QuoteImportService}/各 Q*Handler 的"同 pending_quotation_id 先清后写"逻辑覆盖旧
+     * pending（B2 已含），驳回本身只是状态流转，无需在此额外处理 V6 数据。
+     */
     @Transactional
     public QuotationDTO costingReject(UUID id, String reason, UUID currentUserId) {
         Quotation q = Quotation.findById(id);
@@ -1404,6 +1453,11 @@ public class QuotationService {
         a.persist();
     }
 
+    /**
+     * task-0721 B8 状态机：撤回<b>不回滚</b>已回填的 V6 数据（需求说明 §4.3 规则七"撤回已通过：不回滚
+     * （避免抽走下游已引用的新版本数据）"）。已 APPROVED 撤回时，B5 的回填早已在核价通过那一刻完成，
+     * 7 张表 pending 行也已清理，此处除了状态流转（回 DRAFT）外，故意不做任何 V6 层面的补偿/逆操作。
+     */
     @Transactional
     public QuotationDTO withdraw(UUID id, UUID currentUserId) {
         Quotation q = Quotation.findById(id);
@@ -1710,9 +1764,32 @@ public class QuotationService {
         em.createNativeQuery("UPDATE import_record SET quotation_id = NULL WHERE quotation_id = :qid")
                 .setParameter("qid", id)
                 .executeUpdate();
+        // task-0721 B8 状态机：报价单删除级联清理本单 pending 数据（未生效过，无保留价值）。
+        // 只有 DRAFT 才能走到这（above guard），DRAFT 单可能已导入过、留有 pending 行/暂存主档。
+        cleanupPendingV6Data(id);
         // costing_sheet has ON DELETE CASCADE (V30) — auto-deleted with quotation
         q.delete();
         LOG.infof("Deleted quotation id=%s number=%s", id, q.quotationNumber);
+    }
+
+    /**
+     * task-0721 B8：清理该报价单在 7 张版本化表 + 占号表 material_customer_map 的全部 pending 行，
+     * 以及 material_master 主档暂存（B9）。用于报价单删除（本单从未生效过，pending 无保留价值）。
+     * 与 {@code QuoteImportService}/{@code V6QuotationCommitService} 的 pending 表清单同源
+     * （8 表字面量重复，见 {@code V6QuotationCommitService.PENDING_TABLES} 注释：分属不同包各自
+     * private，重复的耦合成本低于抽共享工具类）。
+     */
+    private static final java.util.List<String> B8_PENDING_TABLES = java.util.List.of(
+        "unit_price", "material_bom", "material_bom_item", "element_bom", "element_bom_item",
+        "capacity", "plating_scheme", "material_customer_map");
+
+    private void cleanupPendingV6Data(UUID quotationId) {
+        for (String table : B8_PENDING_TABLES) {
+            em.createNativeQuery("DELETE FROM " + table + " WHERE pending_quotation_id = :qid")
+              .setParameter("qid", quotationId)
+              .executeUpdate();
+        }
+        materialMasterRepository.clearStaging(quotationId);
     }
 
     @Transactional
