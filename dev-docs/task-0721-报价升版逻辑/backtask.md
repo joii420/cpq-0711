@@ -173,6 +173,11 @@ SELECT count(*) FROM unit_price WHERE is_current AND pending_quotation_id IS NUL
 - 计算列（`colToBase` 无归属）跳过。
 - 新增行轴列合成：`system_type='QUOTE'`、`customer_no`=本单客户、`material_no`=该行料号、`characteristic`=页签类型映射（`材质元素→RECIPE`/`零件→ASSEMBLY`/`外购件→OUTSOURCED`，来自树任务 `tab_type`）、父链来自树 `__parentNo`。未暴露可空列 NULL 或从同组代表行继承。
 
+> **两条回填路径（按 pending 组是否被报价单渲染/编辑区分，重要）**：
+> - **有 snapshot 表征**（该组在某页签渲染/可编辑）→ 走 B5.3 重建有效行集 + `VersionedV6Writer` 升版（改值/增/删）。电镀**费用** `unit_price(price_type=PLATING)` 走此路（轴含 customer_no+code=料号，按料号回填）。
+> - **无 snapshot 表征**（导入了但当前无任何报价模板渲染 —— 现网 `plating_scheme` 即此情形）→ **不重建**（空 `newRows` 会被写入器 I1 拒绝），直接 **flip**：`UPDATE 表 SET is_current=true, pending_quotation_id=NULL WHERE pending_quotation_id=:pq`，并按 `pending_supersedes` 把被取代的旧 current 降 `false`。
+> - 两路终态一致：通过后该组 = 报价单最终态（编辑过）或导入态（未编辑）。**`plating_scheme` 轴=`scheme_no`（复用 Q16 spec），全局升版为接受设计，不做按客户/料号隔离**（V44 `plating_plan`/`plating_fee` 已废弃、不纳入）。
+
 ### B5.3 交 VersionedV6Writer 升版
 - 每组构造 `VersionedGroupSpec`（**正式模式**，`pendingQuotationId=null`）：`groupKeyColumns`=该组轴、`contentColumns`=该表既有内容列（**复用对应 Handler 的声明**，勿另立口径，防 AP-52 语义错配）、`newRows`=B5.1 有效行集映射结果。
 - 调 `writeVersionedGroup` / `writeVersionedMasterDetail` → 升版、`is_current=true`、旧组 `is_current=false` 留存。
@@ -250,7 +255,7 @@ SELECT count(*) FROM unit_price WHERE pending_quotation_id=:pq;                -
    期望 `passed` + `'加载中' final count = 0` + 全 Tab `'加载中'=0`。
    ⚠️ 干净 master 该 spec 恒 3 失败（夹具缺产品分类，见记忆 task0712）——判回归须与打主仓 A/B 同型对比，勿误归因。
 5. **回填端到端**：导入→物化(pending 可见)→他单隔离→核价通过(升版+闸门)→新单引用一致（AC-8）全链路手验 + SQL 断言。
-   - **含 `plating_scheme` 跨客户专项（AC-18）**：客户A 改电镀方案 S 未通过前，客户B 新建单引用同 `scheme_no` 拿旧版（`WHERE scheme_no=:s AND is_current AND pending_quotation_id IS NULL` 仍为旧版本、行数不翻倍）；A 通过后 B 下次引用拿新版。此表轴无 `customer_no`，pending 隔离全靠 `pending_quotation_id`，务必单独断言。
+   - **含 `plating_scheme` 电镀方案（AC-18）**：轴=`scheme_no`，**全局升版为接受设计**（非跨客户隔离）。断言：①导入后新方案 pending（`is_current=false`），未审核前 `WHERE scheme_no=:s AND is_current AND pending_quotation_id IS NULL` 仍为旧版本；②核价通过后按 `scheme_no` 升版，新版本全局 `is_current=true`、旧版 `false` 留存；③已提交单读 snapshot 冻结不变。当前无报价模板渲染 `plating_scheme` → 走 B5「无 snapshot 表征」的 flip 路径，务必单独断言 flip 正确（pending→current + `pending_supersedes` 降旧版）。
 6. **核价侧零回归**（AC-17）：一张 PRICING 侧核价单渲染逐位与改动前对比。
 
 > **完成宣告必须含「已自检」声明行**（TS/编译/Flyway/E2E/SQL 断言逐项 ✅），否则视为未完成。
