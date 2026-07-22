@@ -227,7 +227,7 @@ public class ExcelViewService {
      * {@code __nodeId} 过滤有效行求值（CARD_FORMULA 按节点聚合；空节点列 → null）。
      *
      * <p>两条渲染面（产品卡片 / Excel 视图）共用同一套 {@code __nodeId}（由新管线
-     * {@code CostingTreeRenderService} 按 {@code node_path} 派生，写入快照 {@code baseRows}），
+     * {@code BomTreeRenderService} 按 {@code node_path} 派生，写入快照 {@code baseRows}），
      * 逐节点一致，不再各算各的。
      *
      * <p>仅核价侧调用（{@code cardValuesJson} = costingCardValues）。返回 N 行（= 快照树页签的
@@ -278,7 +278,7 @@ public class ExcelViewService {
      * 不再依赖 {@code BomClosureService} 现算闭包。
      *
      * <p>树页签判定：{@code tabs[].baseRows[]} 中任一行顶层带 {@code __nodeId} 键即为树页签
-     * （{@code CostingTreeRenderService#treeRowNode} 写入的系统列直接挂在行顶层，非嵌套于
+     * （{@code BomTreeRenderService#treeRowNode} 写入的系统列直接挂在行顶层，非嵌套于
      * {@code driverRow} 内）。模板最多一棵树（Task 5.1 会加保存态校验），本方法只取第一个命中的树页签。
      *
      * <p>同一 {@code __nodeId} 可能因业务行 &gt;1 而重复出现（树页签一节点可对多条业务行），

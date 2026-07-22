@@ -169,6 +169,11 @@ export function buildComponentDataFromTemplate(tmpl: any): ComponentDataItem[] {
       dataDriverPath: comp.data_driver_path || comp.dataDriverPath || undefined,
       rows: compType !== 'NORMAL' ? [] : initialRows,
       subtotal: 0,
+      // task-0721 F2：页签类型属性 + 料号列标识透传（新建产品首次加入报价单场景；
+      // 后续保存/刷新会走 enrichComponentData，以 snapshot 为权威覆盖此处初值）
+      tabType: comp.tab_type || comp.tabType || undefined,
+      partNoField: comp.part_no_field || comp.partNoField || undefined,
+      partNameField: comp.part_name_field || comp.partNameField || undefined,
     };
   });
 }

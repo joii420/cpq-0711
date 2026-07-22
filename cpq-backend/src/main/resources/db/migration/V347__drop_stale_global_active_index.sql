@@ -1,0 +1,14 @@
+-- V347: task-0721 B1 补丁 —— 删除已被 usage 维度分区索引取代的全局唯一索引。
+--
+-- 背景（自测发现）：V307 建的 ux_cbt_active（ON costing_bom_tree_config(is_active) WHERE is_active）
+-- 是"全局同一时刻最多一条 active"的老约束。V346 新增 uq_bom_tree_config_active_per_usage
+-- （按 usage 分区）后，两个索引同时存在 —— 老索引仍然生效，导致激活任何一条 QUOTE 配置时，
+-- 只要 COSTING 侧已有一条 active（现网恒有 BOMV2），INSERT/UPDATE 就会撞 ux_cbt_active
+-- 报 "duplicate key value violates unique constraint" 500 错误。
+--
+-- 自测复现：POST .../costing-bom-tree-config 建一条 usage=QUOTE 配置后 activate，
+-- 500 + ux_cbt_active 唯一键冲突（Key (is_active)=(t) already exists）。
+--
+-- 修复：老索引语义已被新分区索引完全覆盖（且更精确），直接删除，不影响现役 COSTING 配置
+-- （BOMV2 的 is_active=true 由新索引继续保障"同 usage 至多一条"）。
+DROP INDEX IF EXISTS ux_cbt_active;

@@ -14,9 +14,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link CostingTreeRenderService} 的行装配纯函数单测（不碰 DB，仅测 treeRowNode/flatRowNode）。
+ * {@link BomTreeRenderService} 的行装配纯函数单测（不碰 DB，仅测 treeRowNode/flatRowNode）。
  */
-class CostingTreeRenderServiceTest {
+class BomTreeRenderServiceTest {
 
     private ExpandDriverResponse.Row bizRow(String materialNo, Object cost) {
         ExpandDriverResponse.Row r = new ExpandDriverResponse.Row();
@@ -35,7 +35,7 @@ class CostingTreeRenderServiceTest {
         node.parentId = "P1";
         node.lvl = 2;
 
-        ObjectNode row = CostingTreeRenderService.treeRowNode(node, bizRow("A", new BigDecimal("100")));
+        ObjectNode row = BomTreeRenderService.treeRowNode(node, bizRow("A", new BigDecimal("100")));
 
         // 系统列
         assertEquals("P1/A", row.get("__nodeId").asText());
@@ -59,7 +59,7 @@ class CostingTreeRenderServiceTest {
         node.parentId = "P1";
         node.lvl = 2;
 
-        ObjectNode row = CostingTreeRenderService.treeRowNode(node, null);
+        ObjectNode row = BomTreeRenderService.treeRowNode(node, null);
 
         // 系统列仍在
         assertEquals("P1/B", row.get("__nodeId").asText());
@@ -84,14 +84,14 @@ class CostingTreeRenderServiceTest {
         root.parentId = null;
         root.lvl = 1;
 
-        ObjectNode row = CostingTreeRenderService.treeRowNode(root, bizRow("P1", new BigDecimal("1")));
+        ObjectNode row = BomTreeRenderService.treeRowNode(root, bizRow("P1", new BigDecimal("1")));
         assertTrue(row.get("__parentId").isNull());
         assertTrue(row.get("__parentNo").isNull());
     }
 
     @Test
     void flatRowNodeHasNoSystemCols() {
-        ObjectNode row = CostingTreeRenderService.flatRowNode(bizRow("A", new BigDecimal("5")));
+        ObjectNode row = BomTreeRenderService.flatRowNode(bizRow("A", new BigDecimal("5")));
         assertEquals("A", row.get("driverRow").get("material_no").asText());
         assertFalse(row.has("__nodeId"));
         assertFalse(row.has("__lvl"));
@@ -100,19 +100,19 @@ class CostingTreeRenderServiceTest {
     @Test
     void edgeKeyDistinguishesParentAndHandlesNullRoot() {
         // 同一子件挂不同父 → 不同边键(树页签消重/不挂错父的基础)
-        assertNotEquals(CostingTreeRenderService.edgeKey("P1", "A"),
-                        CostingTreeRenderService.edgeKey("P2", "A"));
+        assertNotEquals(BomTreeRenderService.edgeKey("P1", "A"),
+                        BomTreeRenderService.edgeKey("P2", "A"));
         // 同一条边 → 同键
-        assertEquals(CostingTreeRenderService.edgeKey("P1", "A"),
-                     CostingTreeRenderService.edgeKey("P1", "A"));
+        assertEquals(BomTreeRenderService.edgeKey("P1", "A"),
+                     BomTreeRenderService.edgeKey("P1", "A"));
         // 根节点父件 null → 空串占位,不与真实父件键相等
-        assertNotEquals(CostingTreeRenderService.edgeKey(null, "P1"),
-                        CostingTreeRenderService.edgeKey("X", "P1"));
+        assertNotEquals(BomTreeRenderService.edgeKey(null, "P1"),
+                        BomTreeRenderService.edgeKey("X", "P1"));
         // 不同子件同父 → 不同键
-        assertNotEquals(CostingTreeRenderService.edgeKey("P1", "A"),
-                        CostingTreeRenderService.edgeKey("P1", "B"));
+        assertNotEquals(BomTreeRenderService.edgeKey("P1", "A"),
+                        BomTreeRenderService.edgeKey("P1", "B"));
         // 边界:拼接不产生歧义(P1|A ≠ P|1A 之类)—— 靠 U+0001 分隔
-        assertNotEquals(CostingTreeRenderService.edgeKey("P1", "A"),
-                        CostingTreeRenderService.edgeKey("P", "1A"));
+        assertNotEquals(BomTreeRenderService.edgeKey("P1", "A"),
+                        BomTreeRenderService.edgeKey("P", "1A"));
     }
 }

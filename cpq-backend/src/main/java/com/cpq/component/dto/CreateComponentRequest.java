@@ -31,4 +31,19 @@ public class CreateComponentRequest {
 
     /** EXCEL 类型组件的列配置 JSON（数组），Task 1.1 新增字段 */
     public String excelColumns;
+
+    /**
+     * task-0721 B4：页签类型属性(可选)。值域 5 类：BOM / 材质元素 / 零件 / 外购件 / 主件。
+     * null = 未配置(不阻断)；非法值 400。
+     */
+    public String tabType;
+
+    /**
+     * task-0721（2026-07-21 补录）：该页签「料号列」对应的字段名（本组件 fields[].name 中的一个）。
+     * 树页签(tabType=BOM)可不配；非树页签(材质元素/零件/外购件/主件)保存期强制要求，否则 400。
+     */
+    public String partNoField;
+
+    /** task-0721（2026-07-21 补录）：该页签「料号名称列」对应的字段名，可空。 */
+    public String partNameField;
 }

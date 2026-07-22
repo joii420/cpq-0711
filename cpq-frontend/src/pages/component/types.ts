@@ -48,6 +48,23 @@ export interface ComponentItem {
   /** 核价 BOM 递归展开开关(默认 true,仅核价侧生效;与 treeConfig 正交) */
   bomRecursiveExpand?: boolean;
   /**
+   * task-0721 F2：页签类型属性(可空,存量组件无此属性)。
+   * 声明该页签的料号列/料号名称列所属的业务语义,供后端树上加叶子的类型判定链使用(§4.3 规则二)。
+   * 2026-07-21 契约变更：与 bomRecursiveExpand 后端联动派生(选 BOM → bomRecursiveExpand 自动置 true；
+   * 其余值/清空 → 自动置 false)，前端只维护 tabType 一个字段，不再单独暴露 bomRecursiveExpand 开关。
+   */
+  tabType?: 'BOM' | '材质元素' | '零件' | '外购件' | '主件';
+  /**
+   * task-0721 F2（2026-07-21 补充，需求说明 §4.3 规则一）：该页签哪个字段是料号列。
+   * 从该组件已有字段中选（取字段 name，不是自由输入）。类型判定与加叶子候选料号采集
+   * 依据此字段显式取值，不靠字段名/label 含"料号"启发式猜测。
+   * BOM 树页签（tabType=BOM）可不配（取系统列 __hfPartNo）；
+   * 非树页签（材质元素/零件/外购件/主件）必填，否则该页签不参与类型判定匹配。
+   */
+  partNoField?: string;
+  /** task-0721 F2：该页签哪个字段是料号名称列（从字段中选，可空）。 */
+  partNameField?: string;
+  /**
    * Task 3.1: EXCEL 组件持有的列定义(JSON 数组字符串).
    * 仅 componentType==='EXCEL' 的组件非空; 模板 Excel 视图通过 excel_component_id 引用本字段 + column_overrides 合并.
    * 数组元素形如 { col_key, title, source_type, hidden, formula, ... }.

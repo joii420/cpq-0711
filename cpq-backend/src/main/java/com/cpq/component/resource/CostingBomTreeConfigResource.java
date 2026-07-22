@@ -24,20 +24,22 @@ public class CostingBomTreeConfigResource {
     @Inject
     CostingBomTreeConfigService service;
 
+    /** task-0721 B2：usage 查询参数（QUOTE/COSTING），不传 = 返回全部（api.md §2.1 向后兼容）。 */
     @GET
-    public ApiResponse<List<CostingBomTreeConfig>> list() {
-        return ApiResponse.success(service.list());
+    public ApiResponse<List<CostingBomTreeConfig>> list(@QueryParam("usage") String usage) {
+        return ApiResponse.success(service.list(usage));
     }
 
+    /** task-0721 B2：请求体新增 usage 字段（api.md §2.2，未传 = 兜底 COSTING，与列默认值一致）。 */
     @POST
     public ApiResponse<CostingBomTreeConfig> create(Map<String, String> body) {
-        return ApiResponse.success(service.create(body.get("name"), body.get("sqlTemplate")));
+        return ApiResponse.success(service.create(body.get("name"), body.get("sqlTemplate"), body.get("usage")));
     }
 
     @PUT
     @Path("/{id}")
     public ApiResponse<CostingBomTreeConfig> update(@PathParam("id") UUID id, Map<String, String> body) {
-        return ApiResponse.success(service.update(id, body.get("name"), body.get("sqlTemplate")));
+        return ApiResponse.success(service.update(id, body.get("name"), body.get("sqlTemplate"), body.get("usage")));
     }
 
     @POST
