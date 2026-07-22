@@ -60,6 +60,7 @@ public class MaterialBomMergeHandler {
         MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
         batch.customerNo = ctx.customerNo;
         batch.yyMm = java.time.YearMonth.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMM"));
+        batch.pendingQuotationId = ctx.pendingQuotationId;   // task-0721 B2：mcm 占号行随本单 pending
 
         // repair-2 决策 D：本次导入材质料号集（QuoteImportService 在 merge() 前预扫填入；
         // 本地取可变副本，缺失时(如单测直调 merge())安全退化为空集，不影响原有行为）。
@@ -239,7 +240,7 @@ public class MaterialBomMergeHandler {
                 try {
                     writer.writeVersionedMasterDetails(
                         "material_bom", "bom_version", p.getKey(),
-                        "material_bom_item", "bom_version", CHILD_CONTENT, items);
+                        "material_bom_item", "bom_version", CHILD_CONTENT, items, ctx.pendingQuotationId);
                     for (VersionedV6Writer.MasterDetailItem it : items) {
                         result.recordWrite("material_bom", 1);
                         result.recordWrite("material_bom_item", it.childRows.size());
@@ -297,7 +298,7 @@ public class MaterialBomMergeHandler {
                     childGk.put("material_no", materialNo);
                     writer.writeVersionedMasterDetail(
                         "material_bom", "bom_version", masterGk, masterFixed,
-                        "material_bom_item", "bom_version", childGk, CHILD_CONTENT, childRows);
+                        "material_bom_item", "bom_version", childGk, CHILD_CONTENT, childRows, ctx.pendingQuotationId);
                     result.recordWrite("material_bom", 1);
                     result.recordWrite("material_bom_item", childRows.size());
                 } catch (Exception ex) {

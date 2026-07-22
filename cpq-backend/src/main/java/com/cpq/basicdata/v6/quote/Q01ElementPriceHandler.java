@@ -71,7 +71,7 @@ public class Q01ElementPriceHandler implements SheetHandler {
             for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet())
                 groups.put(groupKeyOf.get(e.getKey()), e.getValue());
             try {
-                writer.writeVersionedGroups("unit_price", "version_no", CONTENT, null, groups);
+                writer.writeVersionedGroups("unit_price", "version_no", CONTENT, null, List.of(), groups, ctx.pendingQuotationId);
                 for (List<Map<String, Object>> groupRows : groups.values())
                     result.recordWrite("unit_price", groupRows.size());
             } catch (Exception ex) {
@@ -81,7 +81,7 @@ public class Q01ElementPriceHandler implements SheetHandler {
             for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet()) {
                 try {
                     writer.writeVersionedGroup(new VersionedGroupSpec(
-                        "unit_price", "version_no", groupKeyOf.get(e.getKey()), CONTENT, e.getValue()));
+                        "unit_price", "version_no", groupKeyOf.get(e.getKey()), CONTENT, e.getValue(), null, ctx.pendingQuotationId));
                     result.recordWrite("unit_price", e.getValue().size());
                 } catch (Exception ex) {
                     result.recordError(0, "_group_", ex.getMessage());

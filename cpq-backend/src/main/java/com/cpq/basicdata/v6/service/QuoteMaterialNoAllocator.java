@@ -5,6 +5,8 @@ import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 
+import java.util.UUID;
+
 @ApplicationScoped
 public class QuoteMaterialNoAllocator {
 
@@ -30,9 +32,20 @@ public class QuoteMaterialNoAllocator {
             .setParameter("c", customerNo).getSingleResult();
     }
 
-    /** 铸新报价料号 + 登记 material_customer_map QUOTE 行（组件行，customer_product_no/production_no=NULL）。 */
+    /** 铸新报价料号 + 登记 material_customer_map QUOTE 行（组件行，customer_product_no/production_no=NULL）。
+     *  @deprecated 未传 pendingQuotationId 的旧签名（选配 3D 配置器等非 Excel 导入路径沿用，语义不变、
+     *  立即全局生效）；task-0721 B2 Excel 导入路径请用 {@link #mintAndRegister(String, String, UUID)}。 */
     @Transactional
     public String mintAndRegister(String customerNo, String yyMm) {
+        return mintAndRegister(customerNo, yyMm, null);
+    }
+
+    /**
+     * task-0721 B2：pending 归属重载 —— {@code pendingQuotationId} 非 null 时新占号行落
+     * {@code pending_quotation_id=本单}（延迟生效，闸门/AC-4 前不可被其它报价单引用；见 backtask B2 mcm 段）。
+     */
+    @Transactional
+    public String mintAndRegister(String customerNo, String yyMm, UUID pendingQuotationId) {
         String code = getOrAllocateCustomerCode(customerNo);
         int serial = ((Number) em.createNativeQuery(
             "INSERT INTO quote_material_no_seq(customer_code, year_month, last_serial) VALUES(:code,:ym,1) " +
@@ -41,9 +54,9 @@ public class QuoteMaterialNoAllocator {
         if (serial > 999999) throw new IllegalStateException("单客户单月流水溢出(>999999): " + code + "-" + yyMm);
         String report = code + "-" + yyMm + String.format("%06d", serial);
         em.createNativeQuery(
-            "INSERT INTO material_customer_map(system_type, material_no, customer_no, customer_product_no, production_no, created_at, updated_at) " +
-            "VALUES ('QUOTE', :m, :c, NULL, NULL, NOW(), NOW()) ON CONFLICT (material_no) WHERE system_type='QUOTE' DO NOTHING")
-            .setParameter("m", report).setParameter("c", customerNo).executeUpdate();
+            "INSERT INTO material_customer_map(system_type, material_no, customer_no, customer_product_no, production_no, pending_quotation_id, created_at, updated_at) " +
+            "VALUES ('QUOTE', :m, :c, NULL, NULL, :pq, NOW(), NOW()) ON CONFLICT (material_no) WHERE system_type='QUOTE' DO NOTHING")
+            .setParameter("m", report).setParameter("c", customerNo).setParameter("pq", pendingQuotationId).executeUpdate();
         return report;
     }
 
@@ -60,12 +73,24 @@ public class QuoteMaterialNoAllocator {
      * 该异常发生在 INSERT ON CONFLICT DO NOTHING 已成功之后（无 SQL 层 abort），标记为
      * dontRollbackOn 后仅跳过"标记 rollback-only"这一步，不影响别的行的 DB 写入正确性。
      */
+    /** @deprecated 未传 pendingQuotationId 的旧签名；task-0721 B2 Excel 导入路径请用
+     *  {@link #ensureRegistered(String, String, UUID)}。 */
     @Transactional(dontRollbackOn = CrossCustomerQuoteNoException.class)
     public void ensureRegistered(String customerNo, String quoteNo) {
+        ensureRegistered(customerNo, quoteNo, null);
+    }
+
+    /**
+     * task-0721 B2：pending 归属重载 —— 首次登记（`rows>0`，即 ON CONFLICT DO NOTHING 未命中已有行）时
+     * 落 {@code pending_quotation_id=本单}；命中已有行（跨客户串号判定）不改动其 pending 归属
+     * （沿用既有行的生效状态，不因"引用一下"就把已生效行拉回 pending）。
+     */
+    @Transactional(dontRollbackOn = CrossCustomerQuoteNoException.class)
+    public void ensureRegistered(String customerNo, String quoteNo, UUID pendingQuotationId) {
         int rows = em.createNativeQuery(
-            "INSERT INTO material_customer_map(system_type, material_no, customer_no, customer_product_no, production_no, created_at, updated_at) " +
-            "VALUES ('QUOTE', :m, :c, NULL, NULL, NOW(), NOW()) ON CONFLICT (material_no) WHERE system_type='QUOTE' DO NOTHING")
-            .setParameter("m", quoteNo).setParameter("c", customerNo).executeUpdate();
+            "INSERT INTO material_customer_map(system_type, material_no, customer_no, customer_product_no, production_no, pending_quotation_id, created_at, updated_at) " +
+            "VALUES ('QUOTE', :m, :c, NULL, NULL, :pq, NOW(), NOW()) ON CONFLICT (material_no) WHERE system_type='QUOTE' DO NOTHING")
+            .setParameter("m", quoteNo).setParameter("c", customerNo).setParameter("pq", pendingQuotationId).executeUpdate();
         if (rows == 0) {
             String owner = (String) em.createNativeQuery(
                 "SELECT customer_no FROM material_customer_map WHERE material_no=:m AND system_type='QUOTE'")

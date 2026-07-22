@@ -187,7 +187,7 @@ public class SqlViewExecutor {
             );
         }
         ComponentSqlView view = viewOpt.get();
-        String sql = buildWrappedSql(column, applyVersionFilter(view.sqlTemplate), predicate, partNos);
+        String sql = buildWrappedSql(column, applyPendingRewrite(applyVersionFilter(view.sqlTemplate)), predicate, partNos);
         return executeJdbc(sql, ctx, partNos, "path=$" + (isCross ? "$" + componentCode + "." : "") + viewName + "." + column);
     }
 
@@ -206,7 +206,7 @@ public class SqlViewExecutor {
                     + "请在模板 SQL 视图 Tab 新建名为 '" + viewName + "' 的视图。");
         }
         TemplateSqlView view = viewOpt.get();
-        String sql = buildWrappedSql(column, applyVersionFilter(view.sqlTemplate), predicate, partNos);
+        String sql = buildWrappedSql(column, applyPendingRewrite(applyVersionFilter(view.sqlTemplate)), predicate, partNos);
         return executeJdbc(sql, ctx, partNos,
                 "path=$" + viewName + "." + column + " [template=" + templateId + "]");
     }
@@ -266,7 +266,7 @@ public class SqlViewExecutor {
         ComponentSqlView view = viewOpt.get();
 
         StringBuilder sql = new StringBuilder();
-        sql.append("SELECT * FROM (").append(applyVersionFilter(view.sqlTemplate)).append(") inner_q");
+        sql.append("SELECT * FROM (").append(applyPendingRewrite(applyVersionFilter(view.sqlTemplate))).append(") inner_q");
 
         List<String> whereParts = new ArrayList<>();
         if (predicate != null && !predicate.isBlank()) {
@@ -285,6 +285,7 @@ public class SqlViewExecutor {
             namedParams.put("hfPartNos", partNos);
         }
         injectCostingTreeVars(namedParams);
+        injectPendingParam(namedParams);
         String expandedSql = sql.toString();
         RewrittenSql rewritten = rewriteNamedParams(expandedSql, namedParams);
         SqlDebugContext.record(rewritten.sql, rewritten.params);
@@ -358,6 +359,7 @@ public class SqlViewExecutor {
             namedParams.put("hfPartNos", partNos);
         }
         injectCostingTreeVars(namedParams);
+        injectPendingParam(namedParams);
         String expandedSql = sql;
         RewrittenSql rewritten = rewriteNamedParams(expandedSql, namedParams);
         SqlDebugContext.record(rewritten.sql, rewritten.params);
@@ -475,6 +477,39 @@ public class SqlViewExecutor {
         boolean listMode = v != null && v.mode == CostingTreeVarsContext.Mode.LIST;
         return listMode ? VersionFilterMacro.expandForListing(sqlTemplate)
                          : VersionFilterMacro.expandForExecution(sqlTemplate);
+    }
+
+    /**
+     * task-0721 报价数据版本升级 · B3.2 —— pending 感知改写接缝。
+     *
+     * <p>仅当当前线程上下文是「报价单 + 非冻结态」时启用（{@code quotationId != null &&
+     * !isQuotationFrozen()}）：核价侧/无 quotationId 上下文/已提交冻结报价单一律原样返回
+     * （AC-17 核价侧零回归 + AC-10 已建单不受影响）。挂在 {@link #applyVersionFilter} 之后调用
+     * （先版本宏、后 pending 替换，backtask B3.2）。
+     *
+     * <p>改写失败（如白名单表列元数据解析异常）安全降级为原始模板——本单会看不到 pending 数据
+     * （退化为跟未开启本功能一样），但不影响查询正确性；真正的结构性问题由启动期
+     * {@link QuoteViewValidationService} fail-fast 拦在应用起不来那一步，运行时理论不会再触发这里的降级。
+     */
+    private String applyPendingRewrite(String sqlTemplate) {
+        SqlViewRuntimeContext.Snapshot owner = SqlViewRuntimeContext.get();
+        if (owner.quotationId == null || owner.isQuotationFrozen()) return sqlTemplate;
+        try (Connection conn = dataSource.getConnection()) {
+            QuotePendingRewriter.Result r = QuotePendingRewriter.rewrite(sqlTemplate, conn);
+            return r.sql;
+        } catch (Exception e) {
+            LOG.warnf("[SqlViewExecutor] pending 改写失败，安全降级为原始模板（本次渲染看不到 pending 数据）: %s",
+                e.getMessage());
+            return sqlTemplate;
+        }
+    }
+
+    /** 若当前是「报价单 + 非冻结态」上下文，补充 {@code :pq} 命名占位符（{@link QuotePendingRewriter#PENDING_PARAM}）。 */
+    private void injectPendingParam(Map<String, Object> namedParams) {
+        SqlViewRuntimeContext.Snapshot owner = SqlViewRuntimeContext.get();
+        if (owner.quotationId != null && !owner.isQuotationFrozen()) {
+            namedParams.put(QuotePendingRewriter.PENDING_PARAM, owner.quotationId);
+        }
     }
 
     /** 查 customer.code（按 UUID）。失败返 null（占位符降级为 NULL，视图过滤返 0 行）。 */

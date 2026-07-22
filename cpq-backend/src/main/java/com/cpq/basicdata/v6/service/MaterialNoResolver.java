@@ -8,6 +8,7 @@ import jakarta.inject.Inject;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * 料号解析器（规则单一归处，决策 #1~#4/#10/#11）。
@@ -29,6 +30,9 @@ public class MaterialNoResolver {
         /** 发号所需：客户号 + 年月（YYMM），由各 handler 在 new BatchState 时注入。 */
         public String customerNo;
         public String yyMm;
+        /** task-0721 B2：本次导入的 pending 归属 key（见 {@link com.cpq.basicdata.v6.parser.ImportContext#pendingQuotationId}）；
+         *  null=现状正式登记（非报价导入路径，如选配 3D 配置器仍走此语义，不受影响）。 */
+        public UUID pendingQuotationId;
     }
 
     /**
@@ -38,7 +42,7 @@ public class MaterialNoResolver {
     public String resolve(String materialNo, String materialName, BatchState state) {
         String no = trimToNull(materialNo);
         if (no != null) {
-            allocator.ensureRegistered(state.customerNo, no);
+            allocator.ensureRegistered(state.customerNo, no, state.pendingQuotationId);
             return no;
         }
 
@@ -57,7 +61,7 @@ public class MaterialNoResolver {
             return existingNo;
         }
 
-        String minted = allocator.mintAndRegister(state.customerNo, state.yyMm);
+        String minted = allocator.mintAndRegister(state.customerNo, state.yyMm, state.pendingQuotationId);
         state.nameToNo.put(name, minted);
         return minted;
     }

@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 /** V6 §2 料号-客户映射。业务键 (material_no, customer_no, customer_product_no) UNIQUE。 */
 @Entity
@@ -43,4 +44,8 @@ public class MaterialCustomerMap extends V6BaseEntity {
 
     @Column(name = "exchange_rate", precision = 18, scale = 8)
     public BigDecimal exchangeRate;
+
+    /** task-0721 B1：本行(占号)归属的未审核报价单（NULL=已审核通过；非 NULL=该报价单私有 pending 占号）。 */
+    @Column(name = "pending_quotation_id")
+    public UUID pendingQuotationId;
 }

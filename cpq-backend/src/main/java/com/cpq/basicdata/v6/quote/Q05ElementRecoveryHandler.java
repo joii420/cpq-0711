@@ -78,8 +78,8 @@ public class Q05ElementRecoveryHandler implements SheetHandler {
             List<String[]> distinctKeys = new ArrayList<>();
             for (Update u : dedup.values()) distinctKeys.add(new String[]{u.materialNo(), u.materialPartNo(), u.componentNo()});
 
-            Map<String, Integer> matchCount = repo.countCurrentMatches(ctx.customerNo, distinctKeys);
-            repo.batchUpdate(ctx.customerNo, new ArrayList<>(dedup.values()), ctx.importedBy);
+            Map<String, Integer> matchCount = repo.countCurrentMatches(ctx.customerNo, distinctKeys, ctx.pendingQuotationId);
+            repo.batchUpdate(ctx.customerNo, new ArrayList<>(dedup.values()), ctx.importedBy, ctx.pendingQuotationId);
 
             // §P2-Q05 阶段3：逐行报告(与原逐行 updated==0 错误 / successRows / recordWrite 计数逐位一致)。
             for (ValidRow vr : valid) {

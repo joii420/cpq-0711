@@ -3,10 +3,13 @@ package com.cpq.basicdata.v6.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 /** V6 §12 零件单价表（元素/材料/组成件/零件/耗材 5 类）。 */
 @Entity
@@ -145,4 +148,13 @@ public class UnitPrice extends V6BaseEntity {
 
     @Column(name = "defect_rate", precision = 10, scale = 4)
     public BigDecimal defectRate;
+
+    /** task-0721 B1：本行归属的未审核报价单（NULL=正式/历史；非 NULL=该报价单私有 pending 草稿）。 */
+    @Column(name = "pending_quotation_id")
+    public UUID pendingQuotationId;
+
+    /** task-0721 B1：pending 行点名它取代的旧 current 行 id 集合（供 B3 视图改写"遮蔽"用）。 */
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "pending_supersedes")
+    public UUID[] pendingSupersedes;
 }

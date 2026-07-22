@@ -76,7 +76,7 @@ public class Q16PlatingSchemeHandler implements SheetHandler {
                 groups.put(gk, e.getValue());
             }
             try {
-                writer.writeVersionedGroups("plating_scheme", "scheme_version", CONTENT, null, groups);
+                writer.writeVersionedGroups("plating_scheme", "scheme_version", CONTENT, null, List.of(), groups, ctx.pendingQuotationId);
                 for (List<Map<String, Object>> groupRows : groups.values())
                     result.recordWrite("plating_scheme", groupRows.size());
             } catch (Exception ex) {
@@ -89,7 +89,7 @@ public class Q16PlatingSchemeHandler implements SheetHandler {
                     gk.put("system_type", "QUOTE");
                     gk.put("scheme_no", e.getKey());
                     writer.writeVersionedGroup(new VersionedGroupSpec(
-                        "plating_scheme", "scheme_version", gk, CONTENT, e.getValue()));
+                        "plating_scheme", "scheme_version", gk, CONTENT, e.getValue(), null, ctx.pendingQuotationId));
                     result.recordWrite("plating_scheme", e.getValue().size());
                 } catch (Exception ex) {
                     result.recordError(0, "_group_", "scheme_no=" + e.getKey() + ": " + ex.getMessage());

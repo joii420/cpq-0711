@@ -102,7 +102,7 @@ public class Q04ElementBomHandler implements SheetHandler {
             try {
                 writer.writeVersionedMasterDetails("element_bom", "characteristic",
                     Map.of("bom_type", "MATERIAL"), "element_bom_item", "characteristic",
-                    CHILD_CONTENT, items);
+                    CHILD_CONTENT, items, ctx.pendingQuotationId);
                 for (VersionedV6Writer.MasterDetailItem it : items) {
                     result.recordWrite("element_bom", 1);
                     result.recordWrite("element_bom_item", it.childRows.size());
@@ -123,7 +123,7 @@ public class Q04ElementBomHandler implements SheetHandler {
                     Map<String, Object> childGk = new LinkedHashMap<>(masterGk);   // element_bom_item 同身份
                     writer.writeVersionedMasterDetail(
                         "element_bom", "characteristic", masterGk, Map.of("bom_type", "MATERIAL"),
-                        "element_bom_item", "characteristic", childGk, CHILD_CONTENT, childRows);
+                        "element_bom_item", "characteristic", childGk, CHILD_CONTENT, childRows, ctx.pendingQuotationId);
                     result.recordWrite("element_bom", 1);
                     result.recordWrite("element_bom_item", childRows.size());
                 } catch (Exception ex) {

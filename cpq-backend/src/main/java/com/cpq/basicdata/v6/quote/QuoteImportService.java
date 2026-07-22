@@ -88,6 +88,11 @@ public class QuoteImportService {
         ctx.systemType = "QUOTE";
         ctx.importedBy = importedBy;
         ctx.importRecordId = recordId;
+        // task-0721 B2：报价基础数据导入发生在「创建报价单」之前（此刻无 quotationId），
+        // 先用 importRecordId 作为临时 pending 归属 key 落库；createQuotation 时"过户"为真实
+        // quotationId（见 V6QuotationCommitService#repointPendingOwnership）。
+        ctx.pendingQuotationId = recordId;
+        clearPreviousPending(recordId);   // 重导覆盖（backtask B2 第 4 点）：先清本单上一次 pending 残留
 
         ImportResultDTO out = new ImportResultDTO();
         out.importRecordId = recordId;
@@ -210,6 +215,26 @@ public class QuoteImportService {
         out.status = totalFailed == 0 ? "SUCCESS" : (totalSuccess > 0 ? "PARTIAL" : "FAILED");
         finalizeImportRecord(recordId, out, sheetDtos);
     }
+
+    /**
+     * task-0721 B2：重导覆盖 —— 同一 pending 归属 key（此刻 = importRecordId；createQuotation 后
+     * = quotationId，见 backtask B2 第 4 点）再次导入前，先清掉 7 张版本化表 + 占号表里属于它的旧
+     * pending 残留行，再走本次 pending 写入。当前 UI 流程每次上传都会铸新 importRecordId（不存在
+     * "同一 importRecordId 再导一次"的真实调用路径），此清理对首次导入是 no-op（0 行），为未来
+     * 若开放"报价单创建前多次重传同一草稿"预留正确性保障，零风险。
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public void clearPreviousPending(UUID pendingQuotationId) {
+        for (String table : PENDING_TABLES) {
+            em.createNativeQuery("DELETE FROM " + table + " WHERE pending_quotation_id = :pq")
+              .setParameter("pq", pendingQuotationId).executeUpdate();
+        }
+    }
+
+    /** 7 张版本化表 + 占号表（task-0721 B1 pending 列覆盖范围，见 V349 迁移）。 */
+    private static final List<String> PENDING_TABLES = List.of(
+        "unit_price", "material_bom", "material_bom_item", "element_bom", "element_bom_item",
+        "capacity", "plating_scheme", "material_customer_map");
 
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public UUID createImportRecord(UUID customerId, String fileName, UUID importedBy) {

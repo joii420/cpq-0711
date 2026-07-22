@@ -108,6 +108,13 @@ public class V6QuotationCommitService {
         // 关键：让同事务内后续 native 查询（listCandidatesV6 的 SELECT metadata）能看见刚写的 metadata。
         em.flush();
 
+        // task-0721 B2：pending 归属"过户"——报价基础数据导入(QuoteImportService.processImport)
+        // 发生在建单之前，当时无 quotationId 可用，暂用 importRecordId 当 pending 归属 key 落库
+        // （见 ImportContext#pendingQuotationId javadoc）。此刻真实 quotationId 已产生，同事务内把
+        // 7 张表 + 占号表里 pending_quotation_id=importRecordId 的行统一改为 pending_quotation_id=q.id，
+        // 与 B3（SqlViewRuntimeContext.quotationId 驱动的视图改写）/B4（快照回填）的 owner key 对齐。
+        repointPendingOwnership(req.importRecordId, q.id);
+
         // task-0712 展示修复：建单同事务内服务端建明细行（建单+建行强一致，不丢单）。
         List<UUID> lineIds = materializeService.materializeLines(
                 q.id, req.customerId, req.importRecordId, req.customerTemplateId);
@@ -117,6 +124,26 @@ public class V6QuotationCommitService {
         result.lineItemsCount = lineIds.size();
         return result;
     }
+
+    /**
+     * task-0721 B2：把 7 张版本化表 + 占号表里 {@code pending_quotation_id = importRecordId} 的行
+     * 全部改为 {@code pending_quotation_id = quotationId}（单表 UPDATE，无 N+1，同调用方事务内）。
+     * importRecordId == quotationId（理论不会发生，两者来自不同序列）时天然 no-op。
+     */
+    private void repointPendingOwnership(UUID importRecordId, UUID quotationId) {
+        if (importRecordId == null || quotationId == null || importRecordId.equals(quotationId)) return;
+        for (String table : PENDING_TABLES) {
+            em.createNativeQuery("UPDATE " + table + " SET pending_quotation_id = :qid WHERE pending_quotation_id = :rid")
+              .setParameter("qid", quotationId).setParameter("rid", importRecordId).executeUpdate();
+        }
+    }
+
+    /** 7 张版本化表 + 占号表（task-0721 B1 pending 列覆盖范围，见 V349 迁移；与
+     *  {@link com.cpq.basicdata.v6.quote.QuoteImportService#PENDING_TABLES} 保持同源清单，未抽公共常量
+     *  是因两者分属不同包且各自 private，重复 8 行字面量的耦合成本低于抽共享工具类）。 */
+    private static final List<String> PENDING_TABLES = List.of(
+        "unit_price", "material_bom", "material_bom_item", "element_bom", "element_bom_item",
+        "capacity", "plating_scheme", "material_customer_map");
 
     public static class CommitResult {
         public UUID quotationId;

@@ -143,9 +143,26 @@ public class VersionedV6Writer {
         boolean triggerSame = multisetEqual(existing, spec.newRows, triggerCols);
         boolean contentSame = multisetEqual(existing, spec.newRows, spec.contentColumns);
 
-        // 2) 触发列与全内容都未变 → 完全相同，复用版本，不写
+        // 2) 触发列与全内容都未变 → 完全相同，复用版本，不写（pending/正式两模式共用：
+        //    没有任何差异就没有必要造一个 pending 影子组，直接可见当前正式组即代表本单状态）
         if (triggerSame && contentSame) {
             return currentVersionOf(spec.tableName, spec.versionColumn, spec.groupKeyColumns);
+        }
+
+        // task-0721 B2：pending 模式 —— 任何差异（触发列或非触发列）都必须走"新版本号 + 不动现有行"，
+        // 不能像正式模式分支 3 那样删当前组原地复用版本号：pending 行不可物理删除/翻转别人正在读的
+        // 官方 current 组（他单隔离），且 uq_* 唯一键普遍把版本列纳入键（如 uq_unit_price 含
+        // version_no），复用同一版本号会与仍然健在的官方 current 行撞唯一键。
+        if (spec.pendingQuotationId != null) {
+            String newVersion = nextVersionOf(spec.tableName, spec.versionColumn, spec.groupKeyColumns);
+            String supersedes = uuidArrayLiteral(existingIds(existing));
+            List<Map<String, Object>> toInsert = new ArrayList<>();
+            for (Map<String, Object> row : spec.newRows) {
+                toInsert.add(assembleRowPending(spec.groupKeyColumns, row, spec.versionColumn,
+                    newVersion, spec.pendingQuotationId, supersedes));
+            }
+            insertRowsBatched(spec.tableName, toInsert);
+            return newVersion;
         }
 
         // 3) 仅非触发列(金额/辅助字段)变化 → 原地更新当前组值，版本号不变、不升版
@@ -195,7 +212,7 @@ public class VersionedV6Writer {
             List<String> contentColumns, List<String> versionTriggerColumns,
             LinkedHashMap<Map<String, Object>, List<Map<String, Object>>> groups) {
         return writeVersionedGroups(tableName, versionColumn, contentColumns,
-            versionTriggerColumns, List.of(), groups);
+            versionTriggerColumns, List.of(), groups, null);
     }
 
     /**
@@ -212,6 +229,25 @@ public class VersionedV6Writer {
             List<String> contentColumns, List<String> versionTriggerColumns,
             List<String> descriptorColumns,
             LinkedHashMap<Map<String, Object>, List<Map<String, Object>>> groups) {
+        return writeVersionedGroups(tableName, versionColumn, contentColumns,
+            versionTriggerColumns, descriptorColumns, groups, null);
+    }
+
+    /**
+     * task-0721 B2：pending 模式重载 —— {@code pendingQuotationId} 非 null 时，本批**任何有差异的组**
+     * （触发列或非触发列变化）一律新版本号 + {@code is_current=false} + {@code pending_quotation_id}
+     * 落库，**不 flip、不 delete** 任何现有正式 current 行（他单隔离；uq_* 唯一键含版本列，pending 行
+     * 不能复用现有版本号，见 {@link #writeVersionedGroup} 同款分支注释）。{@code pending_supersedes}
+     * = 本组现有 current 行 id 集合，供 B3 视图改写"遮蔽"用。
+     *
+     * @param pendingQuotationId null=现状正式写入（本方法逐字等价于 6 参版本）；非 null=pending 模式。
+     */
+    public Map<Map<String, Object>, String> writeVersionedGroups(
+            String tableName, String versionColumn,
+            List<String> contentColumns, List<String> versionTriggerColumns,
+            List<String> descriptorColumns,
+            LinkedHashMap<Map<String, Object>, List<Map<String, Object>>> groups,
+            UUID pendingQuotationId) {
 
         if (!ALLOWED_TABLES.contains(tableName)) throw new IllegalArgumentException("表未登记白名单: " + tableName);
         safeIdent(tableName); safeIdent(versionColumn);
@@ -280,6 +316,21 @@ public class VersionedV6Writer {
             }
             // 上一版同组各 descriptor 首个非空值：文件新行该 descriptor 为空时据此继承（文件给了非空=用户改动优先）。
             Map<String, Object> prevDesc = carryOverDescriptors(existing, descriptorColumns);
+
+            // task-0721 B2：pending 模式 —— 任何差异（含仅 descriptor 变化）都不能走下面的 (b) 原地更新
+            // （物理删除现有 current 行，破坏他单隔离 + 版本号复用会撞 uq_* 唯一键），统一按"升版 + 不
+            // 触碰现有行"写 pending 影子组。
+            if (pendingQuotationId != null) {
+                Integer mx = maxVerByGk.get(key);
+                String newVersion = (mx == null) ? "2000" : String.valueOf(mx + 1);
+                String supersedes = uuidArrayLiteral(existingIds(existing));
+                for (Map<String, Object> row : newRows)
+                    toInsert.add(assembleRowPending(gk, applyDescriptorCarryOver(row, descriptorColumns, prevDesc),
+                        versionColumn, newVersion, pendingQuotationId, supersedes));
+                versionOut.put(gk, newVersion);
+                continue;
+            }
+
             if (triggerSame) {                                                 // (b) 原地更新
                 String cur = currentVersionFrom(existing, versionColumn);
                 for (Map<String, Object> r : existing) deleteIds.add(asUuid(r.get("__id")));
@@ -479,6 +530,22 @@ public class VersionedV6Writer {
             String masterTable, String masterVersionColumn, Map<String, ?> masterFixedColumns,
             String childTable, String childVersionColumn, List<String> childContentColumns,
             List<MasterDetailItem> items) {
+        return writeVersionedMasterDetails(masterTable, masterVersionColumn, masterFixedColumns,
+            childTable, childVersionColumn, childContentColumns, items, null);
+    }
+
+    /**
+     * task-0721 B2：pending 模式重载 —— {@code pendingQuotationId} 非 null 时，本批任一 item 若子表内容
+     * 有差异，主 + 子行一律新版本号 + {@code is_current=false} + {@code pending_quotation_id} 落库，
+     * **不 flip** 现有正式 current 主/子行（他单隔离）。{@code pending_supersedes} 分别 = 本组现有主表
+     * 行 id 集合 / 现有子表行 id 集合。
+     *
+     * @param pendingQuotationId null=现状正式写入（本方法逐字等价于 7 参版本）；非 null=pending 模式。
+     */
+    public Map<Map<String, Object>, String> writeVersionedMasterDetails(
+            String masterTable, String masterVersionColumn, Map<String, ?> masterFixedColumns,
+            String childTable, String childVersionColumn, List<String> childContentColumns,
+            List<MasterDetailItem> items, UUID pendingQuotationId) {
 
         if (!ALLOWED_TABLES.contains(masterTable) || !ALLOWED_TABLES.contains(childTable))
             throw new IllegalArgumentException("表未登记白名单: " + masterTable + " / " + childTable);
@@ -543,7 +610,26 @@ public class VersionedV6Writer {
             }
             Integer effMax = maxNullable(maxVer.get(mKey), childMaxVer.get(cKey));
             String newVersion = (effMax == null) ? "2000" : String.valueOf(effMax + 1);
-            for (Map<String, Object> r : curMaster.getOrDefault(mKey, List.of())) masterFlip.add(asUuid(r.get("__id")));
+            List<Map<String, Object>> existingMaster = curMaster.getOrDefault(mKey, List.of());
+
+            if (pendingQuotationId != null) {
+                // task-0721 B2：pending 模式 —— 不 flip，master/child 均落 pending 影子行。
+                String masterSupersedes = uuidArrayLiteral(existingIds(existingMaster));
+                String childSupersedes = uuidArrayLiteral(existingIds(existingChild));
+                Map<String, Object> masterRow = new LinkedHashMap<>();
+                if (masterFixedColumns != null) masterRow.putAll(masterFixedColumns);
+                if (it.masterContent != null) masterRow.putAll(it.masterContent);
+                masterInsert.add(assembleRowPending(it.masterGroupKey, masterRow, masterVersionColumn,
+                    newVersion, pendingQuotationId, masterSupersedes));
+                for (Map<String, Object> row : it.childRows) {
+                    childInsert.add(assembleRowPending(it.childGroupKey, row, childVersionColumn,
+                        newVersion, pendingQuotationId, childSupersedes));
+                }
+                versionOut.put(it.masterGroupKey, newVersion);
+                continue;
+            }
+
+            for (Map<String, Object> r : existingMaster) masterFlip.add(asUuid(r.get("__id")));
             for (Map<String, Object> r : existingChild) childFlip.add(asUuid(r.get("__id")));
             Map<String, Object> master = new LinkedHashMap<>(it.masterGroupKey);
             if (masterFixedColumns != null) master.putAll(masterFixedColumns);
@@ -605,7 +691,25 @@ public class VersionedV6Writer {
             String childTable, String childVersionColumn,
             Map<String, Object> childGroupKey, List<String> childContentColumns,
             List<Map<String, Object>> childRows) {
+        return writeVersionedMasterDetail(masterTable, masterVersionColumn, masterGroupKey, masterFixedColumns,
+            childTable, childVersionColumn, childGroupKey, childContentColumns, childRows, null);
+    }
 
+    /**
+     * task-0721 B2：pending 模式重载 —— {@code pendingQuotationId} 非 null 时子表内容有差异即新版本号 +
+     * {@code is_current=false} + {@code pending_quotation_id} 落主/子行，**不 flip**（他单隔离）。仅支持
+     * {@code childVersionColumn != null}（与批量版 {@link #writeVersionedMasterDetails} 同限制）。
+     */
+    public String writeVersionedMasterDetail(
+            String masterTable, String masterVersionColumn,
+            Map<String, Object> masterGroupKey, Map<String, ?> masterFixedColumns,
+            String childTable, String childVersionColumn,
+            Map<String, Object> childGroupKey, List<String> childContentColumns,
+            List<Map<String, Object>> childRows, UUID pendingQuotationId) {
+
+        if (pendingQuotationId != null && childVersionColumn == null) {
+            throw new IllegalArgumentException("pending 模式仅支持 childVersionColumn != null（多版本保留）: " + childTable);
+        }
         PROFILE.get().groups++;
         if (!ALLOWED_TABLES.contains(masterTable) || !ALLOWED_TABLES.contains(childTable)) {
             throw new IllegalArgumentException("表未登记白名单: " + masterTable + " / " + childTable);
@@ -646,6 +750,24 @@ public class VersionedV6Writer {
         Integer effMax = maxNullable(
             maxNumericVersion(masterTable, masterVersionColumn, masterGroupKey), childMax);
         String newVersion = (effMax == null) ? "2000" : String.valueOf(effMax + 1);
+
+        // task-0721 B2：pending 模式 —— 不 flip 现有 current 主/子行（他单隔离），主/子新行落
+        // is_current=false + pending_quotation_id + pending_supersedes（现有 current 行 id 集合）。
+        if (pendingQuotationId != null) {
+            String masterSupersedes = uuidArrayLiteral(loadCurrentIds(masterTable, masterGroupKey));
+            String childSupersedes = uuidArrayLiteral(loadCurrentIds(childTable, childGroupKey));
+            Map<String, Object> masterContent = new LinkedHashMap<>();
+            if (masterFixedColumns != null) masterContent.putAll(masterFixedColumns);
+            insertRowGeneric(masterTable, assembleRowPending(masterGroupKey, masterContent, masterVersionColumn,
+                newVersion, pendingQuotationId, masterSupersedes));
+            List<Map<String, Object>> childToInsert = new ArrayList<>();
+            for (Map<String, Object> row : childRows) {
+                childToInsert.add(assembleRowPending(childGroupKey, row, childVersionColumn,
+                    newVersion, pendingQuotationId, childSupersedes));
+            }
+            insertRowsBatched(childTable, childToInsert);
+            return newVersion;
+        }
 
         // 3. 主 + 子旧组下线（NULL 安全）
         flip(masterTable, masterGroupKey);
@@ -711,11 +833,20 @@ public class VersionedV6Writer {
         Profile p = PROFILE.get(); p.lockN++; p.lockNs += System.nanoTime() - t0;
     }
 
+    /**
+     * 加载当前生效组（is_current=TRUE，天然等价于 pending_quotation_id IS NULL —— pending 行恒
+     * is_current=false，见类头不变量）。附带 {@code __id}（task-0721 B2：pending 模式据此算
+     * {@code pending_supersedes}）；既有调用方（{@link #multisetEqual}/{@link #tally}）只按
+     * {@code contentColumns} 显式取值，多出的 {@code __id} 键不影响比对语义。
+     */
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> loadCurrentGroup(
             String table, Map<String, Object> groupKey, List<String> contentColumns) {
         long t0 = System.nanoTime();
-        String cols = String.join(", ", contentColumns);
+        LinkedHashSet<String> selSet = new LinkedHashSet<>();
+        selSet.add("id"); selSet.addAll(contentColumns);
+        List<String> selCols = new ArrayList<>(selSet);
+        String cols = String.join(", ", selCols);
         Query q = em.createNativeQuery(
             "SELECT " + cols + " FROM " + table
                 + " WHERE " + whereClause(groupKey) + " AND is_current = TRUE");
@@ -724,13 +855,74 @@ public class VersionedV6Writer {
         Profile pf = PROFILE.get(); pf.loadN++; pf.loadNs += System.nanoTime() - t0;
         List<Map<String, Object>> out = new ArrayList<>();
         for (Object r : raw) {
-            Object[] arr = (contentColumns.size() == 1) ? new Object[]{r} : (Object[]) r;
+            Object[] arr = (selCols.size() == 1) ? new Object[]{r} : (Object[]) r;
             Map<String, Object> m = new LinkedHashMap<>();
-            for (int i = 0; i < contentColumns.size(); i++) m.put(contentColumns.get(i), arr[i]);
+            for (int i = 0; i < selCols.size(); i++) {
+                String c = selCols.get(i);
+                m.put(c.equals("id") ? "__id" : c, arr[i]);
+            }
             out.add(m);
         }
         return out;
     }
+
+    /** 该 groupKey 下现有 current 行的 id 集合（供单条 {@link #writeVersionedMasterDetail} pending 分支
+     *  组装 pending_supersedes；{@link #loadCurrentGroup}/{@link #loadCurrentByPrefix} 批量路径已各自
+     *  内联携带 __id，不需要这个独立查询）。 */
+    @SuppressWarnings("unchecked")
+    private List<UUID> loadCurrentIds(String table, Map<String, Object> groupKey) {
+        long t0 = System.nanoTime();
+        Query q = em.createNativeQuery(
+            "SELECT id FROM " + table + " WHERE " + whereClause(groupKey) + " AND is_current = TRUE");
+        bindWhere(q, groupKey);
+        List<Object> raw = q.getResultList();
+        Profile pf = PROFILE.get(); pf.loadN++; pf.loadNs += System.nanoTime() - t0;
+        List<UUID> out = new ArrayList<>(raw.size());
+        for (Object r : raw) out.add(asUuid(r));
+        return out;
+    }
+
+    /** Postgres uuid[] 数组字面量（{@code "{u1,u2}"}），配合插入 SQL 里的 {@code CAST(:vN AS uuid[])}
+     *  绑定为纯文本参数（见 {@link #insertRowGeneric}/{@link #insertRowsBatched} 的 PENDING_ARRAY_COLUMNS
+     *  特判）——避免依赖 Hibernate 对 {@code UUID[]} 的隐式 JDBC 数组绑定（本类全程走
+     *  {@code EntityManager.createNativeQuery} 动态列插入，无法安全拿到 java.sql.Connection 走
+     *  {@code createArrayOf}）。ids 为空/null 时返回 null（不写 supersedes，即"纯新增，不遮蔽任何行"）。 */
+    private static String uuidArrayLiteral(List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) return null;
+        StringBuilder sb = new StringBuilder("{");
+        for (int i = 0; i < ids.size(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append(ids.get(i));
+        }
+        return sb.append('}').toString();
+    }
+
+    /** 从 loadCurrentGroup/loadCurrentByPrefix 的行集合里取 {@code __id} 列表（供 pending_supersedes）。 */
+    private static List<UUID> existingIds(List<Map<String, Object>> existing) {
+        List<UUID> ids = new ArrayList<>(existing.size());
+        for (Map<String, Object> r : existing) {
+            Object v = r.get("__id");
+            if (v != null) ids.add(asUuid(v));
+        }
+        return ids;
+    }
+
+    /** 组装 pending 行：is_current=false + pending_quotation_id=pq (+ pending_supersedes，若有)。
+     *  与 {@link #assembleRow}（正式模式）对称，供批量/单组写入共用。 */
+    private static Map<String, Object> assembleRowPending(
+            Map<String, Object> gk, Map<String, Object> row, String versionColumn, String version,
+            UUID pendingQuotationId, String supersedesLiteral) {
+        Map<String, Object> all = new LinkedHashMap<>(gk);
+        all.putAll(row);
+        all.put(versionColumn, version);
+        all.put("is_current", false);
+        all.put("pending_quotation_id", pendingQuotationId);
+        if (supersedesLiteral != null) all.put("pending_supersedes", supersedesLiteral);
+        return all;
+    }
+
+    /** 需要 {@code CAST(:vN AS uuid[])} 而非裸 {@code :vN} 绑定的列（见 {@link #uuidArrayLiteral}）。 */
+    private static final Set<String> UUID_ARRAY_COLUMNS = Set.of("pending_supersedes");
 
     /** 行数 + contentColumns 规范化 multiset 全等（与顺序无关，避免单列排序在重复值下误判）。 */
     private boolean multisetEqual(List<Map<String, Object>> a, List<Map<String, Object>> b, List<String> cols) {
@@ -849,7 +1041,11 @@ public class VersionedV6Writer {
         cols.forEach(VersionedV6Writer::safeIdent);
         String colSql = String.join(", ", cols);
         StringBuilder ph = new StringBuilder();
-        for (int i = 0; i < cols.size(); i++) { if (i > 0) ph.append(", "); ph.append(":v").append(i); }
+        for (int i = 0; i < cols.size(); i++) {
+            if (i > 0) ph.append(", ");
+            ph.append(":v").append(i);
+            if (UUID_ARRAY_COLUMNS.contains(cols.get(i))) ph.append("::uuid[]");
+        }
         Query q = em.createNativeQuery(
             "INSERT INTO " + table + " (" + colSql + ") VALUES (" + ph + ")");
         for (int i = 0; i < cols.size(); i++) q.setParameter("v" + i, all.get(cols.get(i)));
@@ -886,6 +1082,7 @@ public class VersionedV6Writer {
                     for (int ci = 0; ci < cols.size(); ci++) {
                         if (ci > 0) vals.append(", ");
                         vals.append(":v").append(p++);
+                        if (UUID_ARRAY_COLUMNS.contains(cols.get(ci))) vals.append("::uuid[]");
                     }
                     vals.append(")");
                 }

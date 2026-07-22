@@ -293,6 +293,21 @@ public class CostingTreeRenderService {
      * @param treeOverrides 「主树」组件（{@code bom_recursive_expand=true}）在本核价单的 override
      *                      （parentPartNo → viewVersion）；null/空 = 零覆盖，宏展开后恒退化为
      *                      is_current（与未接入版本切换前逐位等价）。
+     *
+     * <p><b>TODO(task-0721-报价升版逻辑 B4，与树任务对齐)</b>：本方法走裸 JDBC，不经过
+     * {@link com.cpq.datasource.sqlview.SqlViewExecutor}，故报价升版逻辑 B3 的
+     * {@link com.cpq.datasource.sqlview.QuotePendingRewriter} pending 感知改写（表替换 + 遮蔽 +
+     * {@code __v6_id} 锚点注入）<b>未覆盖本递归 CTE 本身</b>——若递归 SQL 直接查询白名单表
+     * （{@code material_bom_item}/{@code element_bom_item} 等）且需要在报价单 DRAFT 态看到本单
+     * pending 行、或将树节点自身回填（B5），需与树任务工程师协同：在 {@code expanded} 拼接前对
+     * 递归 CTE 的基表引用同样跑一遍表替换（注意递归 CTE 通常有 base case + recursive case 两处
+     * 自引用，逐处替换）。
+     * <p>已确认<b>不需要改动</b>的部分：树节点的"业务行"侧（{@link #treeRowNode} 调用的
+     * {@link #rowNodeFrom}）直接透传 {@code ExpandDriverResponse.Row.driverRow}（与
+     * {@code CardSnapshotService#rowToNode} 同款 {@code MAPPER.valueToTree} 全量直通，无白名单过滤）——
+     * 该业务行本身若来自走 {@code $view} 的 {@code data_driver_path}，其 {@code __v6_id} 已经随
+     * B3 的 {@code SqlViewExecutor.executeAllRows} 自动带出、原样落入 {@code snapshot_rows}，
+     * 不需要额外接线（这也是本类唯一与 B4 直接相关、且已天然满足的部分）。
      */
     private List<CostingTreeNode> queryRecursive(String sqlTemplate, List<String> seed,
                                                   Map<String, String> treeOverrides) {

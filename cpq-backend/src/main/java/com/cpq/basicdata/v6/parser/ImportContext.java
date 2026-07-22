@@ -20,6 +20,18 @@ public class ImportContext {
     public UUID importRecordId;
 
     /**
+     * task-0721 B2：本次导入的 pending 归属 key（延迟生效）。
+     *
+     * <p>报价基础数据导入发生在「创建报价单」之前（{@code BasicDataImportV6Resource.importQuote} 只有
+     * {@code importRecordId}，此刻尚无 quotationId），故此处先用 {@code importRecordId} 作为临时 pending
+     * 归属 key 落库（{@code QuoteImportService.processImport} 里赋值 = importRecordId）；等
+     * {@code V6QuotationCommitService.createQuotation} 真正建出 Quotation 后，在同一事务内把 8 张表
+     * {@code pending_quotation_id = importRecordId} 的行统一"过户"改写为真实 quotationId
+     * （见该类 {@code repointPendingOwnership}）。核价侧（PRICING）导入永远不设此字段（null=现状不变）。
+     */
+    public UUID pendingQuotationId;
+
+    /**
      * SheetHandler 之间的共享缓存（如已写 material_master 的料号集，避免重复 upsert）。
      * key 形如 "writtenMaterialNos" / "elementBomCharCache"，约定由 Handler 自管理。
      */

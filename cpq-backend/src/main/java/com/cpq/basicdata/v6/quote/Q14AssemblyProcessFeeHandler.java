@@ -81,7 +81,7 @@ public class Q14AssemblyProcessFeeHandler implements SheetHandler {
             for (Map.Entry<List<Object>, List<Map<String, Object>>> e : rowsOf.entrySet())
                 groups.put(groupKeyOf.get(e.getKey()), e.getValue());
             try {
-                writer.writeVersionedGroups("capacity", "calc_version", CONTENT, VERSION_TRIGGER, groups);
+                writer.writeVersionedGroups("capacity", "calc_version", CONTENT, VERSION_TRIGGER, List.of(), groups, ctx.pendingQuotationId);
                 for (List<Map<String, Object>> groupRows : groups.values())
                     result.recordWrite("capacity", groupRows.size());
             } catch (Exception ex) {
@@ -92,7 +92,7 @@ public class Q14AssemblyProcessFeeHandler implements SheetHandler {
                 try {
                     writer.writeVersionedGroup(new VersionedGroupSpec(
                         "capacity", "calc_version", groupKeyOf.get(e.getKey()),
-                        CONTENT, e.getValue(), VERSION_TRIGGER));
+                        CONTENT, e.getValue(), VERSION_TRIGGER, ctx.pendingQuotationId));
                     result.recordWrite("capacity", e.getValue().size());
                 } catch (Exception ex) {
                     result.recordError(0, "_group_", ex.getMessage());

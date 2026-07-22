@@ -3,9 +3,12 @@ package com.cpq.basicdata.v6.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 /** V6 §6 元素BOM子表（比 material_bom_item 多 content 含量字段）。 */
 @Entity
@@ -144,4 +147,13 @@ public class ElementBomItem extends V6BaseEntity {
 
     @Column(name = "recovery_unit", length = 20)
     public String recoveryUnit;
+
+    /** task-0721 B1：本行归属的未审核报价单（NULL=正式/历史；非 NULL=该报价单私有 pending 草稿）。 */
+    @Column(name = "pending_quotation_id")
+    public UUID pendingQuotationId;
+
+    /** task-0721 B1：pending 行点名它取代的旧 current 行 id 集合（供 B3 视图改写"遮蔽"用）。 */
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "pending_supersedes")
+    public UUID[] pendingSupersedes;
 }

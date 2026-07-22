@@ -53,12 +53,17 @@ public class Q02CustomerMapHandler implements SheetHandler {
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
-        // ① replace-per-customer：本 sheet 是该客户客户料号映射的权威全集。
-        // 仅当有数据行时先清掉该客户旧的 QUOTE 客户料号映射行（不动 PRICING 行/组件登记行），
-        // 避免上一次（含脏数据）导入残留的多余 customer_product_no 在候选查询里扇出（77→85 bug）。
-        // 空 sheet 不删，防止误清（缺该 sheet 的部分导入不触发本 handler）。
+        // ① replace-per-customer：本 sheet 是权威全集。
+        // task-0721 B2：pendingQuotationId 非 null（真实 Excel 导入路径）时改按 pq 收窄清理范围——
+        // 只清本单自己上一次(同 pq)导入残留的 pending 映射行(重导覆盖，backtask B2 第 4 点)，不再整
+        // 客户清空(会误删该客户其它已审核/其它报价单的 pending 行，破坏他单隔离 AC-3)。
+        // pendingQuotationId 为 null（无 pending 上下文的调用方，如既有单测/未来非报价导入路径）时
+        // 回退旧行为：整客户清空，保持向后兼容零回归（Q02CustomerMapReplaceTest 固化）。
+        // 空 sheet 不删，防止误清(缺该 sheet 的部分导入不触发本 handler)。
         if (ctx.customerNo != null && !ctx.customerNo.isBlank() && !rows.isEmpty()) {
-            int removed = repo.deleteQuoteMappingsByCustomerNo(ctx.customerNo);
+            int removed = ctx.pendingQuotationId != null
+                ? repo.deleteQuotePendingMappingsByCustomerNo(ctx.customerNo, ctx.pendingQuotationId)
+                : repo.deleteQuoteMappingsByCustomerNo(ctx.customerNo);
             result.recordWrite("material_customer_map.deleted", removed);
         }
         // §P1-A 成品料号 material_master 同步延后批量：去重后一次 upsertBatchMaterialNoOnly。
@@ -160,7 +165,7 @@ public class Q02CustomerMapHandler implements SheetHandler {
                 null);
             int affected;
             try {
-                affected = repo.upsertQuote(mapRow, ctx.importedBy);
+                affected = repo.upsertQuote(mapRow, ctx.importedBy, ctx.pendingQuotationId);
             } catch (RuntimeException e) {
                 if (isUniqueViolation(e)) {
                     // 不应发生：见类注释 + 本方法 javadoc。这里不能 recordError 后静默继续——

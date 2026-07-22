@@ -198,16 +198,28 @@ public class MaterialCustomerMapRepository implements PanacheRepositoryBase<Mate
      * 若同 customer_no + customer_product_no 已绑定到另一个 material_no（撞
      * uq_mcm_quote_cust_prod），本方法未把该索引纳入 ON CONFLICT target，会直接抛 unique_violation，
      * 由调用方 per-row try/catch。
+     *
+     * @deprecated 未传 pendingQuotationId 的旧签名；task-0721 B2 Excel 导入路径请用
+     * {@link #upsertQuote(MapRow, UUID, UUID)}。
      */
     public int upsertQuote(MapRow r, UUID updatedBy) {
+        return upsertQuote(r, updatedBy, null);
+    }
+
+    /**
+     * task-0721 B2：pending 归属重载 —— {@code pending_quotation_id} 直接 SET（非 COALESCE）：
+     * 本次导入以本单为准显式过户（同客户重导/多批同一料号时新 pq 生效，语义与 customer_product_no
+     * 的"直接 SET"一致）。
+     */
+    public int upsertQuote(MapRow r, UUID updatedBy, UUID pendingQuotationId) {
         String sql =
             "INSERT INTO material_customer_map (system_type, material_no, customer_no, customer_name, " +
             "  customer_material_name, customer_product_no, customer_drawing_no, seq_no, " +
-            "  payment_method, base_currency, quote_currency, exchange_rate, production_no, " +
+            "  payment_method, base_currency, quote_currency, exchange_rate, production_no, pending_quotation_id, " +
             "  created_at, updated_at, updated_by) " +
             "VALUES ('QUOTE', :materialNo, :customerNo, :customerName, :customerMaterialName, " +
             "  :customerProductNo, :customerDrawingNo, :seqNo, :paymentMethod, " +
-            "  :baseCurrency, :quoteCurrency, :exchangeRate, :productionNo, NOW(), NOW(), :updatedBy) " +
+            "  :baseCurrency, :quoteCurrency, :exchangeRate, :productionNo, :pendingQuotationId, NOW(), NOW(), :updatedBy) " +
             "ON CONFLICT (material_no) WHERE system_type='QUOTE' DO UPDATE SET " +
             "  customer_product_no     = EXCLUDED.customer_product_no, " +
             "  customer_name           = COALESCE(EXCLUDED.customer_name,          material_customer_map.customer_name), " +
@@ -219,6 +231,7 @@ public class MaterialCustomerMapRepository implements PanacheRepositoryBase<Mate
             "  quote_currency          = COALESCE(EXCLUDED.quote_currency,         material_customer_map.quote_currency), " +
             "  exchange_rate           = COALESCE(EXCLUDED.exchange_rate,          material_customer_map.exchange_rate), " +
             "  production_no           = COALESCE(EXCLUDED.production_no,          material_customer_map.production_no), " +
+            "  pending_quotation_id    = EXCLUDED.pending_quotation_id, " +
             "  updated_at              = NOW(), " +
             "  updated_by              = EXCLUDED.updated_by " +
             "WHERE material_customer_map.customer_no = EXCLUDED.customer_no";
@@ -235,6 +248,7 @@ public class MaterialCustomerMapRepository implements PanacheRepositoryBase<Mate
             .setParameter("quoteCurrency", r.quoteCurrency)
             .setParameter("exchangeRate", r.exchangeRate)
             .setParameter("productionNo", r.productionNo)
+            .setParameter("pendingQuotationId", pendingQuotationId)
             .setParameter("updatedBy", updatedBy)
             .executeUpdate();
     }
@@ -251,11 +265,29 @@ public class MaterialCustomerMapRepository implements PanacheRepositoryBase<Mate
     }
 
     /** Q02 replace-per-customer 专用：只删该客户 QUOTE 侧「客户料号映射行」(customer_product_no 非空)，
-     *  不动 PRICING 行、也不动组件登记行(customer_product_no IS NULL)。 */
+     *  不动 PRICING 行、也不动组件登记行(customer_product_no IS NULL)。
+     *  @deprecated task-0721 B2 起：全量按客户删会误删该客户"其它已审核/其它 pending 报价单"的映射行
+     *  （破坏他单隔离，AC-3）。Excel 导入路径请改用 {@link #deleteQuotePendingMappingsByCustomerNo}
+     *  （只清本单自己上一次 pending 残留，"重导覆盖"语义见 backtask B2 第 4 点）。 */
     public int deleteQuoteMappingsByCustomerNo(String customerNo) {
         return em.createNativeQuery(
                 "DELETE FROM material_customer_map WHERE customer_no=:c AND system_type='QUOTE' AND customer_product_no IS NOT NULL")
             .setParameter("c", customerNo)
+            .executeUpdate();
+    }
+
+    /**
+     * task-0721 B2：Q02 replace-per-customer 的 pending 安全版 —— 只删「本单(pendingQuotationId)自己」
+     * 上一次导入残留的 pending 客户料号映射行，不触碰该客户其它已审核（pending_quotation_id IS NULL）
+     * 或其它报价单的 pending 行（他单隔离，AC-3）。同 sheet 重导（同一 pendingQuotationId 再次导入）前
+     * 调用本方法清栈，语义与 backtask B2 第 4 点"同 pending_quotation_id 再次导入前先 DELETE"一致。
+     */
+    public int deleteQuotePendingMappingsByCustomerNo(String customerNo, UUID pendingQuotationId) {
+        return em.createNativeQuery(
+                "DELETE FROM material_customer_map WHERE customer_no=:c AND system_type='QUOTE' " +
+                "  AND customer_product_no IS NOT NULL AND pending_quotation_id = :pq")
+            .setParameter("c", customerNo)
+            .setParameter("pq", pendingQuotationId)
             .executeUpdate();
     }
 }

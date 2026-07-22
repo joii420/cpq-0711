@@ -53,6 +53,7 @@ public class Q13ComponentOtherFeeHandler implements SheetHandler {
         MaterialNoResolver.BatchState batch = new MaterialNoResolver.BatchState();
         batch.customerNo = ctx.customerNo;
         batch.yyMm = java.time.YearMonth.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMM"));
+        batch.pendingQuotationId = ctx.pendingQuotationId;   // task-0721 B2：mcm 占号行随本单 pending
         Map<String, String[]> mmAcc = new LinkedHashMap<>();   // §P1-A 料号表延后批量(首个非空胜)
         // repair-2 决策 D：组成件料号命中"本次导入材质料号集"(物料BOM ∪ 物料与元素BOM 的材质料号) →
         // 按材质料号处理(原始码/不 resolve/不登记 master)；否则维持原真组成件 resolve 路径
@@ -118,7 +119,7 @@ public class Q13ComponentOtherFeeHandler implements SheetHandler {
             for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet())
                 groups.put(groupKeyOf.get(e.getKey()), e.getValue());
             try {
-                writer.writeVersionedGroups("unit_price", "version_no", CONTENT, null, groups);
+                writer.writeVersionedGroups("unit_price", "version_no", CONTENT, null, List.of(), groups, ctx.pendingQuotationId);
                 for (List<Map<String, Object>> groupRows : groups.values())
                     result.recordWrite("unit_price", groupRows.size());
             } catch (Exception ex) {
@@ -128,7 +129,7 @@ public class Q13ComponentOtherFeeHandler implements SheetHandler {
             for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet()) {
                 try {
                     writer.writeVersionedGroup(new VersionedGroupSpec(
-                        "unit_price", "version_no", groupKeyOf.get(e.getKey()), CONTENT, e.getValue()));
+                        "unit_price", "version_no", groupKeyOf.get(e.getKey()), CONTENT, e.getValue(), null, ctx.pendingQuotationId));
                     result.recordWrite("unit_price", e.getValue().size());
                 } catch (Exception ex) {
                     result.recordError(0, "_group_", ex.getMessage());
