@@ -17,6 +17,42 @@ export interface BomLeafCandidate {
   sourceTabName: string;
 }
 
+function normStr(v: any): string | null {
+  if (v == null || v === '') return null;
+  if (Array.isArray(v)) return v.length > 0 ? normStr(v[0]) : null;
+  if (typeof v === 'object') return null;
+  const s = String(v).trim();
+  return s === '' ? null : s;
+}
+
+/**
+ * 按 partNoField 字段定义解析该行的料号值。
+ *
+ * 2026-07-21 真实 fixture 验证发现：`resolveTreeKey`（treeTable.ts）只认两种历史机制
+ * （`field_type==='BASIC_DATA'`+`basic_data_path`，或 `DATA_SOURCE`+`datasource_binding.type==='BNF_PATH'`），
+ * 不认 V190 统一默认值来源 `default_source.type==='BASIC_DATA'`——而 task-0721 材质页签 fixture
+ * 的"料号"字段恰好是 `field_type: 'INPUT_TEXT'` + `default_source: {type:'BASIC_DATA', path:...}`，
+ * 命中 resolveTreeKey 的口径外，落到它的最终兜底 `row[field.name]`（driverRow 实际 key 带 `_` 前缀，
+ * 如 `_料号`，与字段 name「料号」不同名）→ 恒返回 null，候选采集不到该页签数据。
+ * 本函数不改 treeTable.ts（该文件与树布局共用，不属于本次改动范围），只在本文件内先补上
+ * default_source.BASIC_DATA 分支，再退回 resolveTreeKey 覆盖其余历史机制，两者互补。
+ */
+function resolvePartNoValue(
+  field: ComponentField,
+  driverRow: Record<string, any>,
+  basicDataValues: Record<string, any> | undefined,
+): string | null {
+  const dsPath = field.default_source?.type === 'BASIC_DATA' ? field.default_source.path : undefined;
+  if (dsPath && basicDataValues) {
+    const lk = bnfDriverLookupKey(dsPath);
+    if (Object.prototype.hasOwnProperty.call(basicDataValues, lk)) {
+      const got = normStr(basicDataValues[lk]);
+      if (got != null) return got;
+    }
+  }
+  return resolveTreeKey(field, driverRow, basicDataValues, bnfDriverLookupKey);
+}
+
 /**
  * 遍历 item.quoteCardValues 各页签(tabs)已渲染的 baseRows，抽取料号并按值去重。
  *
@@ -55,7 +91,7 @@ export function collectBomLeafCandidates(item: LineItem): BomLeafCandidate[] {
         // 树页签系统列最权威，与 partNoField 是否配置无关
         partNo = String(br.__hfPartNo);
       } else if (partNoFieldDef) {
-        partNo = resolveTreeKey(partNoFieldDef, br?.driverRow ?? {}, br?.basicDataValues, bnfDriverLookupKey);
+        partNo = resolvePartNoValue(partNoFieldDef, br?.driverRow ?? {}, br?.basicDataValues);
       }
       // 无 __hfPartNo 且未配置 partNoField 的页签：不产出候选（该页签未参与类型判定匹配）
       if (!partNo || seen.has(partNo)) continue;
