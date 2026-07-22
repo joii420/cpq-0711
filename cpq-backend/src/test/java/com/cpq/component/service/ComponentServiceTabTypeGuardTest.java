@@ -54,9 +54,63 @@ class ComponentServiceTabTypeGuardTest {
         for (String tt : List.of("BOM", "材质元素", "零件", "外购件", "主件")) {
             CreateComponentRequest req = minimalRequest("测试组件-" + tt);
             req.tabType = tt;
+            if (!"BOM".equals(tt)) req.partNoField = "料号"; // 非树页签必须配 partNoField
             ComponentDTO dto = svc.create(req);
             assertEquals(tt, dto.tabType, "tabType=" + tt + " 应能存能读");
         }
+    }
+
+    // ── task-0721（2026-07-21 补录）：part_no_field / part_name_field ──────────
+
+    @Test
+    @TestTransaction
+    void restrictedTabType_missingPartNoField_rejects400() {
+        for (String tt : List.of("材质元素", "零件", "外购件", "主件")) {
+            CreateComponentRequest req = minimalRequest("测试组件-缺料号列-" + tt);
+            req.tabType = tt;
+            BusinessException ex = assertThrows(BusinessException.class, () -> svc.create(req),
+                    "tabType=" + tt + " 缺 partNoField 应 400");
+            assertEquals(400, ex.getCode());
+            assertTrue(ex.getMessage().contains("partNoField"), ex.getMessage());
+        }
+    }
+
+    @Test
+    @TestTransaction
+    void bomTabType_doesNotRequirePartNoField() {
+        CreateComponentRequest req = minimalRequest("测试组件-BOM无需料号列");
+        req.tabType = "BOM";
+        ComponentDTO dto = svc.create(req); // 不传 partNoField，不应 400
+        assertEquals("BOM", dto.tabType);
+        assertNull(dto.partNoField);
+    }
+
+    @Test
+    @TestTransaction
+    void restrictedTabType_withPartNoField_savesAndReadsBack() {
+        CreateComponentRequest req = minimalRequest("测试组件-带料号列");
+        req.tabType = "材质元素";
+        req.partNoField = "料号";
+        req.partNameField = "料号名称";
+        ComponentDTO dto = svc.create(req);
+        assertEquals("料号", dto.partNoField);
+        assertEquals("料号名称", dto.partNameField);
+    }
+
+    @Test
+    @TestTransaction
+    void updateOnlyPartNoField_stillValidatedAgainstExistingTabType() {
+        // 先建一条 tabType=材质元素 + partNoField=料号 的合法组件
+        CreateComponentRequest req = minimalRequest("测试组件-仅改料号列");
+        req.tabType = "材质元素";
+        req.partNoField = "料号";
+        ComponentDTO dto = svc.create(req);
+
+        // 之后的更新只想把 partNoField 清空(空串)、不碰 tabType → 仍应按"材质元素需要 partNoField"校验拦截
+        CreateComponentRequest upd = minimalRequest("测试组件-仅改料号列");
+        upd.partNoField = ""; // 显式清空
+        BusinessException ex = assertThrows(BusinessException.class, () -> svc.update(dto.id, upd));
+        assertEquals(400, ex.getCode());
     }
 
     @Test
@@ -78,6 +132,7 @@ class ComponentServiceTabTypeGuardTest {
 
         CreateComponentRequest upd = minimalRequest("测试组件-BOM转零件");
         upd.tabType = "零件";
+        upd.partNoField = "料号"; // 零件类型需要 partNoField
         ComponentDTO updated = svc.update(created.id, upd);
         assertFalse(updated.bomRecursiveExpand, "tabType 改为非 BOM 应自动同步 bomRecursiveExpand=false");
     }

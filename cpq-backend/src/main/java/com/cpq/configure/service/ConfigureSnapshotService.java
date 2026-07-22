@@ -71,6 +71,10 @@ public class ConfigureSnapshotService {
     @Inject
     BomNodeTypeResolver bomNodeTypeResolver;
 
+    /** task-0721（2026-07-21 补录）：按 partNoField 显式解析料号列，供类型判定命中收集用。 */
+    @Inject
+    com.cpq.quotation.service.FormulaCalculator formulaCalculator;
+
     /** 自注入:用于触发 REQUIRES_NEW 拦截器(同 bean 内自调用不经代理则拦截器失效)。 */
     @Inject
     ConfigureSnapshotService self;
@@ -81,6 +85,10 @@ public class ConfigureSnapshotService {
         public String driverPath;
         /** task-0721 B4：页签类型属性（BOM/材质元素/零件/外购件/主件/null）。 */
         public String tabType;
+        /** task-0721（2026-07-21 补录）：该页签「料号列」字段名（tabType=BOM 可为 null）。 */
+        public String partNoField;
+        /** 该组件 fields JSON（供 partNoField 解析用，FormulaCalculator.computeRowKey 需要）。 */
+        public String fields;
     }
 
     /**
@@ -392,11 +400,20 @@ public class ConfigureSnapshotService {
                             }
                             List<ExpandDriverResponse.Row> rows = (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
                             // task-0721 B5：本组件若挂了「材质元素/零件/外购件/主件」类型属性，把本行渲染出的
-                            // material_no 并入本行的类型判定上下文(供 Pass 2 树页签 __nodeType 结构推导用)。
-                            if (treeTypeCtx != null && comp.tabType != null) {
+                            // 料号（按 comp.partNoField 显式取值，2026-07-21 补录：禁止按字段名启发式猜测）
+                            // 并入本行的类型判定上下文(供 Pass 2 树页签 __nodeType 结构推导用)。
+                            if (treeTypeCtx != null && comp.tabType != null && comp.partNoField != null
+                                    && !comp.partNoField.isBlank()) {
+                                JsonNode compFieldsNode = parseFieldsJsonSafe(comp.fields);
+                                JsonNode rkf = MAPPER.createArrayNode().add(comp.partNoField);
                                 for (ExpandDriverResponse.Row row : rows) {
-                                    String mn = extractMaterialNo(row != null ? row.driverRow : null);
-                                    if (mn != null) treeTypeCtx.addHit(comp.tabType, mn);
+                                    if (row == null) continue;
+                                    JsonNode driverRowNode = MAPPER.valueToTree(
+                                            row.driverRow != null ? row.driverRow : Map.of());
+                                    JsonNode basicDataNode = MAPPER.valueToTree(
+                                            row.basicDataValues != null ? row.basicDataValues : Map.of());
+                                    String mn = formulaCalculator.computeRowKey(rkf, compFieldsNode, driverRowNode, basicDataNode);
+                                    if (mn != null && !mn.isBlank()) treeTypeCtx.addHit(comp.tabType, mn);
                                 }
                             }
                             // writeValueAsString 序列化 = 深拷贝（AP-37 可变共享面保护：各行独立 JSON 字符串）
@@ -585,27 +602,18 @@ public class ConfigureSnapshotService {
     // =========================================================================
 
     /**
-     * 从 driver 行提取「料号」列。约定：优先 {@code material_no}（与 {@link BomTreeRenderService}
-     * /递归 SQL 契约同一列名），缺失时回退 {@code hf_part_no}（AP-53 常见的宏丰料号列约定）。
-     * 两者皆无 → null（该行不参与类型判定命中统计）。
+     * task-0721（2026-07-21 补录）：把 fields JSON 字符串安全解析为 {@link JsonNode}
+     * （供 {@link com.cpq.quotation.service.FormulaCalculator#computeRowKey} 按 partNoField 解析用）。
+     * 解析失败 → 空数组（等价"该组件无字段定义"，computeRowKey 内部会因取不到值而返回 null，不抛异常）。
      */
-    private static String extractMaterialNo(Map<String, Object> driverRow) {
-        if (driverRow == null) return null;
-        Object mn = driverRow.get("material_no");
-        if (mn != null && !mn.toString().isBlank()) return mn.toString();
-        Object hf = driverRow.get("hf_part_no");
-        if (hf != null && !hf.toString().isBlank()) return hf.toString();
-        return null;
-    }
-
-    /** JsonNode 版本（树页签行是 ArrayNode/ObjectNode，非 Map），供 {@link #injectNodeTypes} 使用。 */
-    private static String extractMaterialNo(JsonNode driverRow) {
-        if (driverRow == null) return null;
-        String mn = driverRow.path("material_no").asText(null);
-        if (mn != null && !mn.isBlank()) return mn;
-        String hf = driverRow.path("hf_part_no").asText(null);
-        if (hf != null && !hf.isBlank()) return hf;
-        return null;
+    private static JsonNode parseFieldsJsonSafe(String fieldsJson) {
+        if (fieldsJson == null || fieldsJson.isBlank()) return MAPPER.createArrayNode();
+        try {
+            JsonNode n = MAPPER.readTree(fieldsJson);
+            return n != null && n.isArray() ? n : MAPPER.createArrayNode();
+        } catch (Exception e) {
+            return MAPPER.createArrayNode();
+        }
     }
 
     /**
@@ -627,18 +635,19 @@ public class ConfigureSnapshotService {
     /**
      * 逐行判定 {@code __nodeType} 并写入（B5 宽松解析：无法确定 → 显式 null = "未判定"，不阻断物化，
      * api.md §0.2）。就地 mutate {@code rows} 中的 ObjectNode（本方法调用时机在序列化前，安全）。
+     *
+     * <p>树节点自身的料号身份取 {@code __hfPartNo}（{@link BomTreeRenderService#treeRowNode} 写入的
+     * 权威系统列，来自递归 SQL 的 node_path，与该 Tab 具体挂了什么业务字段无关）——<b>不</b>按
+     * {@code partNoField} 解析，因为 {@code partNoField} 是"非树页签的料号列配置"，树页签本身
+     * 不要求配置它（api.md §1）。
      */
     private void injectNodeTypes(ArrayNode rows, BomNodeTypeResolver.TabHitContext ctx) {
         if (rows == null || ctx == null) return;
         for (JsonNode row : rows) {
             if (!(row instanceof ObjectNode obj)) continue;
-            String materialNo = extractMaterialNo(row.path("driverRow"));
-            if (materialNo == null) {
-                String hf = row.path("__hfPartNo").isNull() ? null : row.path("__hfPartNo").asText(null);
-                materialNo = (hf != null && !hf.isBlank()) ? hf : null;
-            }
+            String materialNo = row.path("__hfPartNo").isNull() ? null : row.path("__hfPartNo").asText(null);
             BomNodeTypeResolver.Resolution resolution =
-                    materialNo != null ? bomNodeTypeResolver.resolveLenient(materialNo, ctx) : null;
+                    materialNo != null && !materialNo.isBlank() ? bomNodeTypeResolver.resolveLenient(materialNo, ctx) : null;
             if (resolution != null) {
                 obj.put("__nodeType", resolution.nodeType);
             } else {
@@ -675,8 +684,11 @@ public class ConfigureSnapshotService {
         // 按 template_component 取 live driver 组件(live component id,expand 可直接加载)
         // driver_path 用于判定组合父级该"聚合子件"(composite_child_*_mirror)还是"父级展开"($zcj_bom 子配件清单)
         // task-0721 B3：附带 c.tab_type，供 BomTreeRenderService.isQuoteTreeTabType 单一收口点路由判断。
+        // task-0721（2026-07-21 补录）：附带 c.part_no_field/c.fields，供类型判定命中收集按料号列
+        // 显式取值（不再按字段名启发式猜测）。
         List<Object[]> rows = em.createNativeQuery(
-                "SELECT DISTINCT c.id, c.name, c.data_driver_path, c.tab_type FROM quotation q " +
+                "SELECT DISTINCT c.id, c.name, c.data_driver_path, c.tab_type, c.part_no_field, c.fields " +
+                "FROM quotation q " +
                 "JOIN template_component tc ON tc.template_id = q.customer_template_id " +
                 "JOIN component c ON c.id = tc.component_id " +
                 "WHERE q.id = :q AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
@@ -689,6 +701,8 @@ public class ConfigureSnapshotService {
             dc.name = r[1] != null ? r[1].toString() : null;
             dc.driverPath = r[2] != null ? r[2].toString() : null;
             dc.tabType = r[3] != null ? r[3].toString() : null;
+            dc.partNoField = r[4] != null ? r[4].toString() : null;
+            dc.fields = r[5] != null ? r[5].toString() : "[]";
             out.add(dc);
         }
         return out;

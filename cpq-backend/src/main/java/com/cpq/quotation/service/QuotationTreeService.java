@@ -60,13 +60,15 @@ public class QuotationTreeService {
         String tabType;
         String fields;
         String rowKeyFields;
+        /** task-0721（2026-07-21 补录）：该页签「料号列」字段名（tabType=BOM 可为 null）。 */
+        String partNoField;
     }
 
-    /** 该 line item 所属报价模板的全部组件元数据（id/tabType/fields/rowKeyFields）。 */
+    /** 该 line item 所属报价模板的全部组件元数据（id/tabType/fields/rowKeyFields/partNoField）。 */
     @SuppressWarnings("unchecked")
     private List<CompMeta> loadTemplateComponents(UUID lineItemId) {
         List<Object[]> rows = em.createNativeQuery(
-                "SELECT c.id, c.tab_type, c.fields, c.row_key_fields FROM quotation_line_item li " +
+                "SELECT c.id, c.tab_type, c.fields, c.row_key_fields, c.part_no_field FROM quotation_line_item li " +
                 "JOIN quotation q ON q.id = li.quotation_id " +
                 "JOIN template_component tc ON tc.template_id = q.customer_template_id " +
                 "JOIN component c ON c.id = tc.component_id " +
@@ -80,6 +82,7 @@ public class QuotationTreeService {
             m.tabType = r[1] != null ? r[1].toString() : null;
             m.fields = r[2] != null ? r[2].toString() : "[]";
             m.rowKeyFields = r[3] != null ? r[3].toString() : null;
+            m.partNoField = r[4] != null ? r[4].toString() : null;
             out.add(m);
         }
         return out;
@@ -111,14 +114,29 @@ public class QuotationTreeService {
         }
     }
 
-    private static String extractMaterialNo(JsonNode row) {
-        if (row == null) return null;
-        JsonNode driverRow = row.path("driverRow");
-        String mn = driverRow.path("material_no").asText(null);
-        if (mn != null && !mn.isBlank()) return mn;
-        String hf = row.path("__hfPartNo").isNull() ? null : row.path("__hfPartNo").asText(null);
-        if (hf != null && !hf.isBlank()) return hf;
-        return null;
+    /**
+     * task-0721（2026-07-21 补录）：按组件 {@code partNoField} 显式解析该行的料号（不按字段名猜测）。
+     * {@code cm.partNoField} 缺失（非树页签未配置，理论上已被 B4 保存期校验拦住，此处防御）→ 返回 null，
+     * 该行不参与命中/匹配。委托 {@link FormulaCalculator#computeRowKey} 的"直读 driverRow 优先，
+     * 否则按字段 defaultSource 解析"链路，与行键计算同一套解析口径。
+     */
+    /** 包级可见（供 {@code QuotationTreeServicePartNoFieldTest} 纯单测，无需 DB/CDI）。 */
+    String extractMaterialNoByField(JsonNode row, CompMeta cm) {
+        if (row == null || cm == null || cm.partNoField == null || cm.partNoField.isBlank()) return null;
+        JsonNode fieldsNode = parseFieldsJsonSafe(cm.fields);
+        JsonNode rkf = MAPPER.createArrayNode().add(cm.partNoField);
+        String mn = formulaCalculator.computeRowKey(rkf, fieldsNode, row.path("driverRow"), row.path("basicDataValues"));
+        return (mn != null && !mn.isBlank()) ? mn : null;
+    }
+
+    private static JsonNode parseFieldsJsonSafe(String fieldsJson) {
+        if (fieldsJson == null || fieldsJson.isBlank()) return MAPPER.createArrayNode();
+        try {
+            JsonNode n = MAPPER.readTree(fieldsJson);
+            return n != null && n.isArray() ? n : MAPPER.createArrayNode();
+        } catch (Exception e) {
+            return MAPPER.createArrayNode();
+        }
     }
 
     // =========================================================================
@@ -157,7 +175,7 @@ public class QuotationTreeService {
                 }
             } else if (cm.tabType != null && !cm.tabType.isBlank()) {
                 for (JsonNode row : rows) {
-                    String mn = extractMaterialNo(row);
+                    String mn = extractMaterialNoByField(row, cm);
                     if (mn == null) continue;
                     b.ctx.addHit(cm.tabType, mn);
                     b.sourceComponentByMaterialNo.putIfAbsent(mn, cm.id);
@@ -286,6 +304,15 @@ public class QuotationTreeService {
     // B7.1 — 删除影响面预览
     // =========================================================================
 
+    /**
+     * task-0721 B7 自测发现（2026-07-21）：本方法此前缺 {@code @Transactional}，纯只读也必须标注——
+     * 否则在"同一 CDI bean 实例内、无外层事务边界"连续调用场景下（本类端到端测试即复现该场景：
+     * previewDelete → executeDelete → previewDelete 三连call），Hibernate 持久化上下文可能跨调用
+     * 复用同一份 L1 缓存的 {@link QuotationLineItem} 实体，读到 exec 提交前的旧 {@code deletedTreeNodes}
+     * 值（级联计算据此漏判"已剪枝"的兄弟节点，误把已无残余 occurrence 的料号算成"仍保留"）。加
+     * {@code @Transactional} 让每次调用都在独立事务边界内取得新鲜持久化上下文，读到最新提交值。
+     */
+    @Transactional
     public Map<String, Object> previewDelete(UUID quotationId, UUID lineItemId, UUID componentId,
                                               String mode, String nodeId, String rowKey) {
         QuotationLineItem li = loadLineItem(quotationId, lineItemId);
@@ -325,7 +352,7 @@ public class QuotationTreeService {
                 ArrayNode rows = parseRows((String) data[0]);
                 List<Map<String, Object>> matchedRows = new ArrayList<>();
                 for (JsonNode row : rows) {
-                    String mn = extractMaterialNo(row);
+                    String mn = extractMaterialNoByField(row, cm);
                     if (mn == null || !result.cascadeMaterials.contains(mn)) continue;
                     Map<String, Object> rr = new LinkedHashMap<>();
                     rr.put("rowKey", mn); // 简化:以 material_no 作行标识(单料号单行页签场景下唯一)
@@ -441,7 +468,7 @@ public class QuotationTreeService {
                 List<String> rowKeyFieldNames = parseRowKeyFieldNames(cm.rowKeyFields);
                 List<String> keysForThisComp = new ArrayList<>();
                 for (JsonNode row : rows) {
-                    String mn = extractMaterialNo(row);
+                    String mn = extractMaterialNoByField(row, cm);
                     if (mn == null || !result.cascadeMaterials.contains(mn)) continue;
                     String fp = DeletedRowKeys.rowFingerprint(rowKeyFieldNames, row.path("driverRow"));
                     appendRowTombstone(lineItemId, cm.id, mn, fp);
@@ -624,21 +651,82 @@ public class QuotationTreeService {
      * @param lineItemId    所属报价行（用于加载该行的树结构，判断 partNo 是否已有子节点）
      */
     public void assertCanAddToRestrictedTab(String targetTabType, String partNo, UUID lineItemId) {
+        assertCanAddToRestrictedTab(targetTabType, partNo == null ? List.of() : List.of(partNo), lineItemId);
+    }
+
+    /**
+     * 批量版本（task-0721 saveDraft 接线用，2026-07-21 补录）：一次 {@link #buildHitContext} 校验
+     * 多个料号，避免同一 lineItem 的一次保存里对同一 tab 内 N 行逐行重建树上下文（N 次冗余 DB 查询）。
+     * 命中任一料号即抛异常（文案含具体是哪个料号），不逐个收集"全部违规清单"（保持与既有加叶子/反向
+     * 校验同款"第一个错误即拦"语义，简单可预期）。
+     *
+     * @param targetTabType 目标页签的 tabType（仅「材质元素」「外购件」两类触发校验，其余直接放行）
+     * @param partNos       待添加/待保留的料号集合（saveDraft 场景 = 该 tab 本次保存的全部行的料号）
+     * @param lineItemId    所属报价行（用于加载该行的树结构，判断 partNo 是否已有子节点）
+     */
+    public void assertCanAddToRestrictedTab(String targetTabType, List<String> partNos, UUID lineItemId) {
         if (!"材质元素".equals(targetTabType) && !"外购件".equals(targetTabType)) return; // 只约束这两类
-        if (partNo == null || partNo.isBlank() || lineItemId == null) return;
+        if (partNos == null || partNos.isEmpty() || lineItemId == null) return;
 
         HitContextBundle b = buildHitContext(lineItemId);
-        for (String treeCidStr : b.treeRowsByComp.keySet()) {
-            ArrayNode rows = b.treeRowsByComp.get(treeCidStr);
-            boolean hasChild = false;
+        if (b.treeRowsByComp.isEmpty()) return; // 该行尚无树结构(如首次物化前的新行)，无从校验，放行
+
+        // 预先收集"有子节点的料号"集合(跨全部树页签合并)，一次遍历树行，避免对每个 partNo 各扫一遍树。
+        Set<String> partNosWithChildren = new LinkedHashSet<>();
+        for (ArrayNode rows : b.treeRowsByComp.values()) {
             for (JsonNode row : rows) {
                 String parentNo = row.path("__parentNo").isNull() ? null : row.path("__parentNo").asText(null);
-                if (partNo.equals(parentNo)) { hasChild = true; break; }
+                if (parentNo != null && !parentNo.isBlank()) partNosWithChildren.add(parentNo);
             }
-            if (hasChild) {
+        }
+        for (String partNo : partNos) {
+            if (partNo == null || partNo.isBlank()) continue;
+            if (partNosWithChildren.contains(partNo)) {
                 throw new BusinessException(400,
                         "该料号在 BOM 树上已有下级，不能添加到「" + targetTabType + "」页签");
             }
         }
+    }
+
+    /**
+     * task-0721（2026-07-21 补录）：saveDraft / 组件行编辑接线入口 —— 校验一个组件本次保存的
+     * "扁平"行数据（{@code quotation_line_component_data.row_data} 的 JSON 形状：
+     * 每行 = {@code {fieldName: value, ...}}，字段名直接做 key，<b>不是</b> {@code snapshot_rows}
+     * 的嵌套 {@code {driverRow, basicDataValues}} 结构，故不复用 {@link #extractMaterialNoByField}）。
+     *
+     * <p>该组件不是 {@code tabType∈{材质元素,外购件}} → 直接放行（无需查库）。
+     *
+     * @param componentId  该 tab 的组件 id
+     * @param flatRowsJson {@code row_data} 原始 JSON 字符串（saveDraft 请求携带的 {@code ComponentDataDraft.rowData}）
+     * @param lineItemId   所属报价行
+     */
+    public void assertCanAddRowsToRestrictedTab(UUID componentId, String flatRowsJson, UUID lineItemId) {
+        if (componentId == null || flatRowsJson == null || flatRowsJson.isBlank() || lineItemId == null) return;
+        Object[] meta = loadSingleComponentTabMeta(componentId);
+        if (meta == null) return;
+        String tabType = meta[0] != null ? meta[0].toString() : null;
+        if (!"材质元素".equals(tabType) && !"外购件".equals(tabType)) return; // 快速放行,避免无谓解析
+        String partNoField = meta[1] != null ? meta[1].toString() : null;
+        if (partNoField == null || partNoField.isBlank()) return; // 未配置(理论已被 B4 保存期校验拦住,此处防御)
+
+        ArrayNode rows = parseRows(flatRowsJson);
+        List<String> partNos = new ArrayList<>();
+        for (JsonNode row : rows) {
+            JsonNode v = row.path(partNoField);
+            if (v.isMissingNode() || v.isNull()) continue;
+            String mn = v.asText(null);
+            if (mn != null && !mn.isBlank()) partNos.add(mn);
+        }
+        assertCanAddToRestrictedTab(tabType, partNos, lineItemId);
+    }
+
+    /** {@code component} 表单行查询：{@code [tab_type, part_no_field]}；不存在 → null。 */
+    @SuppressWarnings("unchecked")
+    private Object[] loadSingleComponentTabMeta(UUID componentId) {
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT tab_type, part_no_field FROM component WHERE id = :cid")
+                .setParameter("cid", componentId)
+                .getResultList();
+        return rows.isEmpty() ? null : rows.get(0);
     }
 }

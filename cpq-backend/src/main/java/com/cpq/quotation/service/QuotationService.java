@@ -92,6 +92,10 @@ public class QuotationService {
     @Inject
     CostingFreezeService costingFreezeService;
 
+    /** task-0721 B8（2026-07-21 补录）：反向校验——已有子节点的料号禁止加入材质元素/外购件页签。 */
+    @Inject
+    QuotationTreeService quotationTreeService;
+
     private static final java.util.Set<String> VALID_QUOTATION_STATUSES = java.util.Set.of(
             "DRAFT", "SUBMITTED", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "EXPIRED", "CANCELLED", "COSTING_REJECTED"
     );
@@ -610,6 +614,11 @@ public class QuotationService {
                     }
 
                     // Save component data
+                    // task-0721 B8（2026-07-21 补录）：收集本行"材质元素/外购件"类型页签的行数据，
+                    // 待本行全部 componentData（含树页签自身）落库+flush 后再校验，避免同一 line 内
+                    // 原生查询（buildHitContext）读到"部分 componentData 已 persist、部分还没"的中间态
+                    // ——尤其树页签若排在数组靠后位置，此刻它的 snapshot_rows 还未回填。
+                    List<Object[]> pendingRestrictedChecks = new ArrayList<>();
                     if (liDraft.componentData != null) {
                         for (int j = 0; j < liDraft.componentData.size(); j++) {
                             SaveDraftRequest.ComponentDataDraft cdDraft = liDraft.componentData.get(j);
@@ -617,6 +626,9 @@ public class QuotationService {
                             cd.lineItemId = li.id;
                             cd.componentId = cdDraft.componentId;
                             cd.tabName = cdDraft.tabName;
+                            if (cdDraft.rowData != null && cdDraft.componentId != null) {
+                                pendingRestrictedChecks.add(new Object[]{ cdDraft.componentId, cdDraft.rowData });
+                            }
                             if (cdDraft.rowData != null) cd.rowData = cdDraft.rowData;
                             if (cdDraft.subtotal != null) cd.subtotal = cdDraft.subtotal;
                             cd.sortOrder = cdDraft.sortOrder != null ? cdDraft.sortOrder : j;
@@ -629,6 +641,15 @@ public class QuotationService {
                                     ? preservedSnapshots.get(cdDraft.componentId) : null;
                             if (preservedSr != null) cd.snapshotRows = preservedSr;
                             cd.persist();
+                        }
+                    }
+                    // task-0721 B8：本行 componentData 全部落库后再校验（flush 保证 QuotationTreeService
+                    // 的原生查询能读到刚 persist 的行，含树页签 snapshot_rows）。命中即 400 中止整次 saveDraft。
+                    if (!pendingRestrictedChecks.isEmpty()) {
+                        em.flush();
+                        for (Object[] pending : pendingRestrictedChecks) {
+                            quotationTreeService.assertCanAddRowsToRestrictedTab(
+                                    (UUID) pending[0], (String) pending[1], li.id);
                         }
                     }
                 }
@@ -2209,12 +2230,18 @@ public class QuotationService {
                         allTombstones.getOrDefault(li.id, java.util.Collections.emptyMap());
                 java.util.Map<java.util.UUID, String> snapshotsForLine =
                         allSnapshots.getOrDefault(li.id, java.util.Collections.emptyMap());
+                // task-0721 B8（2026-07-21 补录）：同款"先收集、本行落库+flush 后再校验"纪律（见 §2.0 段落
+                // 逐行路径同名注释）——避免树页签 snapshot_rows 尚未回填时原生查询读到中间态。
+                List<Object[]> pendingRestrictedChecks = new ArrayList<>();
                 for (int j = 0; j < liDraft.componentData.size(); j++) {
                     SaveDraftRequest.ComponentDataDraft cdDraft = liDraft.componentData.get(j);
                     QuotationLineComponentData cd = new QuotationLineComponentData();
                     cd.lineItemId = li.id;
                     cd.componentId = cdDraft.componentId;
                     cd.tabName = cdDraft.tabName;
+                    if (cdDraft.rowData != null && cdDraft.componentId != null) {
+                        pendingRestrictedChecks.add(new Object[]{ cdDraft.componentId, cdDraft.rowData });
+                    }
                     if (cdDraft.rowData != null) cd.rowData = cdDraft.rowData;
                     if (cdDraft.subtotal != null) cd.subtotal = cdDraft.subtotal;
                     cd.sortOrder = cdDraft.sortOrder != null ? cdDraft.sortOrder : j;
@@ -2225,6 +2252,13 @@ public class QuotationService {
                             ? snapshotsForLine.get(cdDraft.componentId) : null;
                     if (preservedSr != null) cd.snapshotRows = preservedSr;
                     cd.persist();
+                }
+                if (!pendingRestrictedChecks.isEmpty()) {
+                    em.flush();
+                    for (Object[] pending : pendingRestrictedChecks) {
+                        quotationTreeService.assertCanAddRowsToRestrictedTab(
+                                (UUID) pending[0], (String) pending[1], li.id);
+                    }
                 }
             }
         } // end main loop
