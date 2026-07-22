@@ -250,6 +250,7 @@ SELECT count(*) FROM unit_price WHERE pending_quotation_id=:pq;                -
    期望 `passed` + `'加载中' final count = 0` + 全 Tab `'加载中'=0`。
    ⚠️ 干净 master 该 spec 恒 3 失败（夹具缺产品分类，见记忆 task0712）——判回归须与打主仓 A/B 同型对比，勿误归因。
 5. **回填端到端**：导入→物化(pending 可见)→他单隔离→核价通过(升版+闸门)→新单引用一致（AC-8）全链路手验 + SQL 断言。
+   - **含 `plating_scheme` 跨客户专项（AC-18）**：客户A 改电镀方案 S 未通过前，客户B 新建单引用同 `scheme_no` 拿旧版（`WHERE scheme_no=:s AND is_current AND pending_quotation_id IS NULL` 仍为旧版本、行数不翻倍）；A 通过后 B 下次引用拿新版。此表轴无 `customer_no`，pending 隔离全靠 `pending_quotation_id`，务必单独断言。
 6. **核价侧零回归**（AC-17）：一张 PRICING 侧核价单渲染逐位与改动前对比。
 
 > **完成宣告必须含「已自检」声明行**（TS/编译/Flyway/E2E/SQL 断言逐项 ✅），否则视为未完成。
