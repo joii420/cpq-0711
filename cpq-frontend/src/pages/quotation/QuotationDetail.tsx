@@ -505,12 +505,17 @@ const QuotationDetail: React.FC = () => {
               {/* ----------------------------------------------------------------
                   撤回：SUBMITTED / COSTING_REJECTED / APPROVED 均可；
                   创建人（salesRepId）或管理员（SYSTEM_ADMIN / PRICING_MANAGER）可操作
+                  task-0721（F3）：APPROVED 撤回补一句「已回填生效的基础数据不会回退」（规则七）
               ---------------------------------------------------------------- */}
               {['SUBMITTED', 'COSTING_REJECTED', 'APPROVED'].includes(status) &&
                 (user?.id === quotation.salesRepId ||
                   ['SYSTEM_ADMIN', 'PRICING_MANAGER'].includes(user?.role ?? '')) && (
                 <Popconfirm
-                  title="撤回后报价单将回到草稿状态，需重新提交审批。是否继续？"
+                  title={
+                    status === 'APPROVED'
+                      ? '撤回仅使报价单回到可编辑，已回填生效的基础数据不会回退。是否继续？'
+                      : '撤回后报价单将回到草稿状态，需重新提交审批。是否继续？'
+                  }
                   onConfirm={handleWithdraw}
                   okText="确认撤回"
                   cancelText="取消"

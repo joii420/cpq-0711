@@ -2,7 +2,8 @@
  * 核价管理列表（Phase 1 — 财务核价入口）
  *
  * 列出所有进入核价流程的报价单，财务人员在此页面执行核价通过/驳回。
- * 工具栏动作：进入核价（单选）/ 核价通过（批量）/ 驳回（批量，需填理由）
+ * 工具栏动作：进入核价（单选）/ 核价通过（恒禁用，task-0721 方案甲——回填不可逆全局操作，
+ * 必须逐单进详情页看回填影响预览后再通过）/ 驳回（批量，需填理由）
  */
 import React, { useEffect, useState } from 'react';
 import {
@@ -158,20 +159,12 @@ const CostingOrderListPage: React.FC = () => {
       key: 'approve',
       label: '核价通过',
       icon: <CheckOutlined />,
-      enabledWhen: (rows) => {
-        if (rows.length === 0) return false;
-        if (!rows.every(isPendingCosting)) return '所选项必须均处于"待核价"状态';
-        return true;
-      },
-      needsConfirm: true,
-      confirmTitle: '确认核价通过所选 {N} 个核价单？',
-      onClick: async (rows) => {
-        await runBatch(
-          rows,
-          (r) => costingOrderService.approve(r.quotationId).then(() => undefined),
-          { rowLabel: (r) => `${r.quotationNumber} ${r.customerName}`, successMsg: '核价通过成功' },
-        );
-        load();
+      // task-0721（技术总监裁决·方案甲）：批量核价通过恒禁用——回填基础数据是不可逆全局操作，
+      // 必须逐单进入详情页看回填影响预览（F1 CostingApprovePreviewDrawer）后再通过。
+      // 按 docs/列表操作规范.md：enabledWhen 恒返回禁用原因字符串，不用 `return null` 隐藏按钮。
+      enabledWhen: () => '批量核价通过已禁用：回填基础数据为不可逆全局操作，请逐单进入详情页确认回填影响后通过',
+      onClick: () => {
+        // 按钮恒禁用，SelectableTable 对禁用态按钮不派发 click，这里不会被调用。
       },
     },
     {

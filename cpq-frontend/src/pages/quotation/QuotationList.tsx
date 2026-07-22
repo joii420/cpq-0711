@@ -170,7 +170,9 @@ const QuotationList: React.FC = () => {
       },
       needsConfirm: true,
       confirmTitle: '撤回 {N} 个报价单？',
-      confirmDescription: '撤回后报价单回到草稿状态，需重新提交审批。',
+      // task-0721（F3）：批量撤回可能混选「已审核」项，静态文案补一句规则七提示（SelectableTable
+      // 的 confirmDescription 是静态字符串，不按行区分状态，故合并为一句通用说明）。
+      confirmDescription: '撤回后报价单回到草稿状态，需重新提交审批；若所选项中含「已审核」状态，其已回填生效的基础数据不会回退。',
       onClick: async (rows) => {
         await runBatch(rows, (r: any) => quotationService.withdraw(r.id).then(() => undefined), {
           rowLabel: (r: any) => `${r.quotationNumber} ${r.name}`,

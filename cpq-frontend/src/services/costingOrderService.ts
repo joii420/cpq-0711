@@ -79,6 +79,57 @@ export interface VersionSwitchResult {
   affectedTabs: string[];
 }
 
+/**
+ * task-0721（api.md §1.1）：核价通过 preview 汇总——将升版 N 组 / 新增 X / 删除 Y / 改值 Z。
+ */
+export interface CostingApprovePreviewSummary {
+  versionedGroups: number;
+  addedRows: number;
+  deletedRows: number;
+  changedRows: number;
+}
+
+/** task-0721（api.md §1.1）：一行变更明细。ADD 无 __v6_id；changes 为 {列: [旧, 新]}。 */
+export interface CostingApprovePreviewRow {
+  op: 'CHANGE' | 'ADD' | 'DELETE';
+  __v6_id: string | null;
+  /** op=CHANGE 时带，{列名: [旧值, 新值]} */
+  changes?: Record<string, [string, string]>;
+  /** op=ADD / DELETE 时带，该行的值 */
+  values?: Record<string, string>;
+}
+
+/** task-0721（api.md §1.1）：一个 V6 目标表分组（按 groupKey 轴聚合的一次升版）。 */
+export interface CostingApprovePreviewGroup {
+  /** V6 目标表名（如 unit_price） */
+  table: string;
+  /** 报价单页签展示名（如 电镀费） */
+  tabName: string;
+  /** 轴摘要，键值对形式，纯展示用 */
+  groupKey: Record<string, string>;
+  /** 旧版本号，无则 null=首版 */
+  versionFrom: string | null;
+  versionTo: string;
+  /** true=全局共享表（如电镀方案），前端需重点标注「影响所有客户」 */
+  isGlobalShared: boolean;
+  rows: CostingApprovePreviewRow[];
+}
+
+/** task-0721（api.md §1.1）：GET costing-approve/preview 响应体。只读、无副作用、幂等。 */
+export interface CostingApprovePreviewResult {
+  quotationId: string;
+  /** 影响清单内容 hash，提交时须原样带回；预览后数据漂移会致提交 409 */
+  previewToken: string;
+  summary: CostingApprovePreviewSummary;
+  groups: CostingApprovePreviewGroup[];
+}
+
+/** task-0721（api.md §1.2）：POST costing-approve 成功响应，除 QuotationDTO 字段外额外带 backfill 汇总。 */
+export interface CostingApproveResult {
+  backfill?: CostingApprovePreviewSummary;
+  [key: string]: unknown;
+}
+
 const base = '/costing-orders';
 
 export const costingOrderService = {
@@ -94,8 +145,20 @@ export const costingOrderService = {
   getById: (coid: string): Promise<{ data: CostingOrderDetail }> =>
     api.get(`${base}/${coid}`) as Promise<{ data: CostingOrderDetail }>,
 
-  approve: (quotationId: string, comment?: string): Promise<{ data: unknown }> =>
-    api.post(`/quotations/${quotationId}/costing-approve`, { comment }) as Promise<{ data: unknown }>,
+  /**
+   * task-0721（api.md §1.1）：核价通过前置预览——只读、无副作用、幂等。
+   * 拿到的 previewToken 必须原样带回 approve()，否则后端 400（强制先预览）。
+   */
+  previewApprove: (quotationId: string): Promise<{ data: CostingApprovePreviewResult }> =>
+    api.get(`/quotations/${quotationId}/costing-approve/preview`) as Promise<{ data: CostingApprovePreviewResult }>,
+
+  /**
+   * task-0721（api.md §1.2）：核价通过并回填，两段式提交，previewToken 必填。
+   * 若预览后数据发生漂移，后端返 409（message=报价数据在预览后发生变化，请重新预览），
+   * 调用方需重新 previewApprove 拿新 token 后重试（CostingApprovePreviewDrawer 内已处理）。
+   */
+  approve: (quotationId: string, previewToken: string, comment?: string): Promise<{ data: CostingApproveResult }> =>
+    api.post(`/quotations/${quotationId}/costing-approve`, { comment, previewToken }) as Promise<{ data: CostingApproveResult }>,
 
   reject: (quotationId: string, comment: string): Promise<{ data: unknown }> =>
     api.post(`/quotations/${quotationId}/costing-reject`, { comment }) as Promise<{ data: unknown }>,

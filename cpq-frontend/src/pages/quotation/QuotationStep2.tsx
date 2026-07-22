@@ -3333,9 +3333,11 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   // 「刷新基础数据」按钮处理：调后端 refreshCardSnapshot 重算快照，再整页重载
   const handleRefreshSnapshot = () => {
     if (!quotationId) return;
+    // task-0721（F2）：二次确认，避免用户误以为「打开就变了」——
+    // 刷新会拉最新已审核（核价通过后回填）版本的基础数据；已删除行可能因 driver 重查而重新出现。
     Modal.confirm({
       title: '刷新基础数据',
-      content: '将按最新基础数据重算本报价单（公式重算、driver 行重查）。已删行的编辑会丢失；模板结构不会变化。确认刷新？',
+      content: '刷新后本单基础数据将更新为最新已审核版本，未提交的本单编辑保留；已删除的行可能重新出现，模板结构不会变化。是否继续？',
       okText: '刷新',
       cancelText: '取消',
       onOk: async () => {

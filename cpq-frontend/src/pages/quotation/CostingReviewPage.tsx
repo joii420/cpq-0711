@@ -35,9 +35,10 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import { costingOrderService } from '../../services/costingOrderService';
-import type { CostingOrderDetail, VersionSwitchResult } from '../../services/costingOrderService';
+import type { CostingOrderDetail, VersionSwitchResult, CostingApproveResult } from '../../services/costingOrderService';
 import { useAuthStore } from '../../stores/authStore';
 import ProductDetailViews from './ProductDetailViews';
+import CostingApprovePreviewDrawer from './CostingApprovePreviewDrawer';
 
 const { Title, Text } = Typography;
 
@@ -96,6 +97,8 @@ const CostingReviewPage: React.FC = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [rejectDrawerOpen, setRejectDrawerOpen] = useState(false);
   const [rejectForm] = Form.useForm();
+  // task-0721（F1）：核价通过改两段式——先预览抽屉，确认后带 previewToken 提交
+  const [approvePreviewOpen, setApprovePreviewOpen] = useState(false);
 
   const loadDetail = async () => {
     if (!coid) return;
@@ -150,19 +153,19 @@ const CostingReviewPage: React.FC = () => {
     });
   };
 
-  /** 审批回联：用 quotationId，不是 costingOrderId */
-  const handleApprove = async () => {
+  /**
+   * task-0721（F1）：核价通过改两段式——点击按钮不再直接提交，先打开预览抽屉
+   * （抽屉内部自行调 GET .../costing-approve/preview 拿 previewToken + 影响清单）。
+   * 审批回联：用 quotationId，不是 costingOrderId。
+   */
+  const handleApprove = () => {
     if (!detail?.quotationId) return;
-    setActionLoading(true);
-    try {
-      await costingOrderService.approve(detail.quotationId);
-      message.success('核价通过');
-      navigate('/costing-summary');
-    } catch (e: any) {
-      message.error(e?.message || '操作失败');
-    } finally {
-      setActionLoading(false);
-    }
+    setApprovePreviewOpen(true);
+  };
+
+  /** 抽屉内确认通过并提交成功后的回调——沿用原 handleApprove 的成功态收尾 */
+  const handleApproved = (_result: CostingApproveResult) => {
+    navigate('/costing-summary');
   };
 
   const handleReject = async (values: { comment: string }) => {
@@ -311,6 +314,14 @@ const CostingReviewPage: React.FC = () => {
           </Form.Item>
         </Form>
       </Drawer>
+
+      {/* 核价通过预览 Drawer（task-0721 F1） */}
+      <CostingApprovePreviewDrawer
+        open={approvePreviewOpen}
+        quotationId={detail.quotationId}
+        onClose={() => setApprovePreviewOpen(false)}
+        onApproved={handleApproved}
+      />
     </div>
   );
 };
