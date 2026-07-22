@@ -159,11 +159,18 @@ SELECT count(*) FROM unit_price WHERE is_current AND pending_quotation_id IS NUL
 
 **新建** `QuoteBackfillService`，被 `QuotationService.costingApprove` 在事务内调用。
 
+> **Q2（依赖顺序，测试评审 2026-07-21）**：B4 树递归路径锚点 + B5 读 `__manual`/`__nodeId`/`deleted_tree_nodes`/`tab_type→characteristic` **依赖姊妹「报价侧树状结构」任务先合并**（它定义这些字段协议）。**推荐合并顺序：树任务 → 本任务**。若本波实现时树任务尚未合并：先把**平铺页签路径**（`_origin:'manual'` 新增 / `deleted_row_keys` 墓碑 / `unit_price` 等，全部独立于树任务）完整实现并测通，树页签相关分支（`__manual`/`deleted_tree_nodes`）behind 同一 `__v6_id` 锚点用 TODO 桩标注、待树任务合并后接。
+>
+> **Q3（读模型确认，测试评审 2026-07-21）**：本设计确为「两阶段读」——**物化期（B3/B4）视图只读 V6 pending 原值 → 写进 `snapshot_rows`**；用户编辑落 `snapshot_rows`（V6 不动）；**核价通过（B5）读 `snapshot_rows` 有效值 → 回填 V6**。测试对 AC-2（本单可见=pending 原值渲染）与 AC-5（回填=snapshot 编辑值）的断言点按此理解成立，无需重写。
+
 ### B5.1 收集有效行集
 - 读该报价单所有 line item 的 `quotation_line_component_data`（`snapshot_rows` + `row_data` + `deleted_row_keys` + 树墓碑 `deleted_tree_nodes`）。**一次 IN 查整单**（复用 `CardSnapshotService` 的 `compDataByLine` 预取模式，禁逐行）。
 - 每页签 → 目标 V6 组：
   - 有 `__v6_id` 的行 = 改值候选（取用户最终值）。
-  - `__manual=true` 无 `__v6_id` = 新增行。
+  - **无 `__v6_id` 且是用户手工新增行 = 新增行**。⚠️ **Q1（测试评审确认的真 bug，2026-07-21）**：手工新增行有**两套并存标记**，**必须都认，漏一套则该类新增行核价通过后悬空、永远回填不进 V6 且不易发现**：
+    1. **平铺页签**（现网既有）：`_origin === 'manual'`，用 `cpq-frontend/src/pages/quotation/manualRows.ts` 的 `isManualRow(row)` 判定（`QuotationStep2.tsx:1737` `handleAddRow` 产生）。
+    2. **树页签叶子**（树任务新增）：`__manual === true`（`__nodeId = <宿主>/__manual_<uuid>`）。
+    → B5 判据统一为 `无 __v6_id && (isManualRow(row) || row.__manual === true)`。后端读快照时两个键都要检查。
   - 被 `deleted_row_keys`/`deleted_tree_nodes` 命中 = 墓碑（排除出有效集）。
   - spine 空行（无业务数据的骨架）= 排除。
 - **DAG 去重**：按 V6 身份（`material_bom_item`=父 material_no+component_no+seq 等）去重，不按树 occurrence。
@@ -172,11 +179,14 @@ SELECT count(*) FROM unit_price WHERE is_current AND pending_quotation_id IS NUL
 - 复用 B3 的 `colToBase`（输出列→表.列）。对每个可回写列，把 `snapshot_rows` 里该列的值映射到 V6 物理列。
 - 计算列（`colToBase` 无归属）跳过。
 - 新增行轴列合成：`system_type='QUOTE'`、`customer_no`=本单客户、`material_no`=该行料号、`characteristic`=页签类型映射（`材质元素→RECIPE`/`零件→ASSEMBLY`/`外购件→OUTSOURCED`，来自树任务 `tab_type`）、父链来自树 `__parentNo`。未暴露可空列 NULL 或从同组代表行继承。
+- **Q6（测试评审，2026-07-21）新增料号补主档**：手工新增行若引用的料号在 `material_master` 不存在（全新料号），仅回填 BOM/单价 V6 行会导致下游 `material_master` JOIN（品名/规格）出空。回填时在 B9 同事务对该料号 upsert 一条 `material_master` stub：`material_no`=料号，`material_name`=用户填的名称（取自该页签 `part_name_field` 对应列）或兜底=料号本身；其余列留 NULL。已存在则不覆盖。
 
-> **两条回填路径（按 pending 组是否被报价单渲染/编辑区分，重要）**：
-> - **有 snapshot 表征**（该组在某页签渲染/可编辑）→ 走 B5.3 重建有效行集 + `VersionedV6Writer` 升版（改值/增/删）。电镀**费用** `unit_price(price_type=PLATING)` 走此路（轴含 customer_no+code=料号，按料号回填）。
-> - **无 snapshot 表征**（导入了但当前无任何报价模板渲染 —— 现网 `plating_scheme` 即此情形）→ **不重建**（空 `newRows` 会被写入器 I1 拒绝），直接 **flip**：`UPDATE 表 SET is_current=true, pending_quotation_id=NULL WHERE pending_quotation_id=:pq`，并按 `pending_supersedes` 把被取代的旧 current 降 `false`。
-> - 两路终态一致：通过后该组 = 报价单最终态（编辑过）或导入态（未编辑）。**`plating_scheme` 轴=`scheme_no`（复用 Q16 spec），全局升版为接受设计，不做按客户/料号隔离**（V44 `plating_plan`/`plating_fee` 已废弃、不纳入）。
+> **三条回填路径（按 pending 组的 snapshot 表征状态区分，重要 —— Q5 明确边界，2026-07-21）**：
+> - **路径①·有表征且有效行 ≥1**（该组在某页签渲染/可编辑、通过后仍留 ≥1 行）→ 走 B5.3 重建有效行集 + `VersionedV6Writer` 升版（改值/增/删）。电镀**费用** `unit_price(price_type=PLATING)` 走此路（轴含 customer_no+code=料号，按料号回填）。
+> - **路径②·无表征**（导入了但当前无任何报价模板渲染 —— 现网 `plating_scheme` 即此情形）→ **不重建**（空 `newRows` 会被写入器 I1 拒绝），直接 **flip**：`UPDATE 表 SET is_current=true, pending_quotation_id=NULL WHERE pending_quotation_id=:pq`，并按 `pending_supersedes` 把被取代的旧 current 降 `false`。
+> - **路径③·有表征但有效行 =0（Q5 边界：用户把整组行删空）** → **不能**喂空 `newRows` 给写入器（I1 拒绝），也**不是** flip。走**整组下线**：把该组当前 `is_current=true` 行（含本单 pending 取代的旧 current）全部降 `is_current=false`，不写新版本；`DELETE ... WHERE pending_quotation_id=:pq` 清 pending。语义 = 「该料号本组数据被清空」，符合丙「下次引用一致」（下次引用该组渲染 0 行）。
+>   - ⚠️ 注意：**树页签**按规则四永远保留 ≥1 骨架空行（不会触发路径③）；**平铺页签**用户可 `handleDeleteRow` 删到 0 行 → 会触发路径③。两者行为不同，务必区分「spine 骨架空行(排除、不算有效行)」与「整组被删空(触发路径③下线)」。
+> - 三路终态一致于丙语义：通过后该组 = 报价单最终态（编辑过/删空）或导入态（未编辑）。**`plating_scheme` 轴=`scheme_no`（复用 Q16 spec），全局升版为接受设计，不做按客户/料号隔离**（V44 `plating_plan`/`plating_fee` 已废弃、不纳入）。
 
 ### B5.3 交 VersionedV6Writer 升版
 - 每组构造 `VersionedGroupSpec`（**正式模式**，`pendingQuotationId=null`）：`groupKeyColumns`=该组轴、`contentColumns`=该表既有内容列（**复用对应 Handler 的声明**，勿另立口径，防 AP-52 语义错配）、`newRows`=B5.1 有效行集映射结果。
@@ -201,10 +211,11 @@ SELECT count(*) FROM unit_price WHERE pending_quotation_id=:pq;                -
 **新建** `QuoteBackfillPreviewService`。
 - `preview(quotationId)`：跑 B5.1+B5.2 的**只读** dry-run（不写库），产出 api.md §1.1 结构。
 - `previewToken` = 对**规范化影响清单**（组+行+op+值，稳定排序后 JSON）算 SHA-256。
+- **Q4（测试评审，2026-07-21）token 必须确定性**：token 是**报价单当前有效状态的纯函数**——规范化时按固定顺序排序（表名→groupKey→op→`__v6_id`/行身份→列名），数值归一（`stripTrailingZeros`，对齐写入器比对口径），NULL 稳定序列化。**同一未变状态两次 `preview` 必须得到同一 token**（幂等），否则会误报 409。409 只应在「预览与提交之间报价单有效状态真的变了」时触发。
 - `costingApprove` 入口先重算 token 比对，不一致抛 409（api.md §1.2）。
 - **性能**：dry-run 与真回填共用同一收集逻辑，避免两套。整单一次聚合，无 N+1。
 
-**自检**：预览后手动改一条 `snapshot_rows` → 提交应 409。
+**自检**：①同状态连调两次 preview → token 相同（幂等，不误报）；②预览后手动改一条 `snapshot_rows` → 提交应 409。
 
 ---
 
