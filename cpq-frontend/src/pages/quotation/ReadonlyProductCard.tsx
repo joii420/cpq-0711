@@ -446,11 +446,12 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
     fieldsOverrideHash(activeComp.fields as any[]),
   ) : undefined;
   const activeDriverExpansion = activeDriverKey ? driverExpansions[activeDriverKey] : undefined;
-  // 核价 BOM 递归展开 组件级开关：仅当该组件 baseRows 含 spine 系统列(__sys.nodeId) 才走树+系统列；
+  // BOM 递归展开 组件级开关：仅当该组件 baseRows 含 spine 系统列(__sys.nodeId) 才走树+系统列；
   // 未勾选(bom_recursive_expand=false)组件后端不发系统列 → 此处 false → 普通表渲染。
-  // QUOTE 侧 isCosting 恒 false，零影响（对齐编辑页 2026-07-03 注释）。
-  const activeComponentBomTree = isCosting
-    && !!activeDriverExpansion?.rows?.some((r: any) => r?.__sys?.nodeId !== undefined);
+  // task-0721 F1（AP-50 同步）：去掉 isCosting 闸门，与编辑页 QuotationStep2.tsx 同款改法 ——
+  // 报价侧接后端 B3 后 baseRows 同样带 __sys.nodeId，数据驱动天然生效；接入前恒 false，零变化。
+  const activeComponentBomTree =
+    !!activeDriverExpansion?.rows?.some((r: any) => r?.__sys?.nodeId !== undefined);
   // task-0713（D2/F2）：非主树页签版本下拉的组件级开关——仅当该组件驱动行的原始 $view 输出
   // 含约定列 view_version（前端只认这一个键名）才出下拉；树页签走上面 bomSys.bomVersion，
   // 两者互斥（树页签恒 !activeComponentBomTree 为 false）。无 view_version 列的组件/全局费率类

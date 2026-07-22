@@ -3,7 +3,7 @@ package com.cpq.quotation.service;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
-import com.cpq.datasource.sqlview.CostingTreeVarsContext;
+import com.cpq.datasource.sqlview.BomTreeVarsContext;
 import com.cpq.quotation.dto.VersionOptionsResponseDTO;
 import com.cpq.quotation.dto.VersionSwitchRequest;
 import com.cpq.quotation.dto.VersionSwitchResponseDTO;
@@ -59,7 +59,7 @@ public class CostingVersionService {
     CardSnapshotService cardSnapshotService;
 
     @Inject
-    CostingTreeRenderService costingTreeRenderService;
+    BomTreeRenderService bomTreeRenderService;
 
     // =========================================================================
     // B6：版本下拉（列出模式）
@@ -103,14 +103,14 @@ public class CostingVersionService {
                 if (r[1] instanceof Boolean b && b) isCurrentVersion = v;
             }
         } else {
-            List<ExpandDriverResponse.Row> listRows = expandRows(componentId, customerId, partNo, null, CostingTreeVarsContext.Mode.LIST);
+            List<ExpandDriverResponse.Row> listRows = expandRows(componentId, customerId, partNo, null, BomTreeVarsContext.Mode.LIST);
             for (ExpandDriverResponse.Row row : listRows) {
                 String mn = partNoOf(row.driverRow);
                 if (mn == null || !mn.equals(partNo)) continue;
                 Object vv = row.driverRow.get("view_version");
                 if (vv != null) options.add(vv.toString());
             }
-            List<ExpandDriverResponse.Row> curRows = expandRows(componentId, customerId, partNo, Map.of(), CostingTreeVarsContext.Mode.RENDER);
+            List<ExpandDriverResponse.Row> curRows = expandRows(componentId, customerId, partNo, Map.of(), BomTreeVarsContext.Mode.RENDER);
             for (ExpandDriverResponse.Row row : curRows) {
                 String mn = partNoOf(row.driverRow);
                 if (mn == null || !mn.equals(partNo)) continue;
@@ -206,7 +206,7 @@ public class CostingVersionService {
         if (isTreeComponent) {
             // 主树切：该 line 各 driver 组件跑一次 $view（整卡重查），远程查询次数与料号数无关。
             Map<UUID, Map<String, ArrayNode>> rendered =
-                    costingTreeRenderService.render(templateId, List.of(li), overridesByComponent);
+                    bomTreeRenderService.render(templateId, List.of(li), overridesByComponent);
             baseRowsByComp = rendered.getOrDefault(li.id, new LinkedHashMap<>());
             affectedTabs.addAll(driverComponentIdsOf(templateId));
         } else {
@@ -285,7 +285,7 @@ public class CostingVersionService {
         }
 
         List<ExpandDriverResponse.Row> freshRows = expandRows(componentId, q.customerId, partNo,
-                overridesByComponent, CostingTreeVarsContext.Mode.RENDER);
+                overridesByComponent, BomTreeVarsContext.Mode.RENDER);
 
         // ★ repair-0590（料号切到"它没有的版本"后消失且不可恢复 = 本次根因）：
         //   切换料号的重查若 0 行，说明该 viewVersion 对此料号无数据（= 非该料号的可选版本，
@@ -332,7 +332,7 @@ public class CostingVersionService {
     }
 
     /**
-     * 统一走 CostingTreeVarsContext + {@link ComponentDriverService#expandUncached} 的取行入口
+     * 统一走 BomTreeVarsContext + {@link ComponentDriverService#expandUncached} 的取行入口
      * （跳过 30s 缓存，见类注释）。<b>不</b>在 SQL 层用 {@code hf_part_no = ANY(:hfPartNos)} 收窄——
      * 组件 $view 的「本行归属料号」列名并不统一（cz_view/gx_view/zh_view 输出 {@code hf_part_no}；
      * pj_view/zpj_view 树组件、部分 ys_view 副本只输出 {@code material_no}，没有 {@code hf_part_no}
@@ -340,15 +340,15 @@ public class CostingVersionService {
      *
      * <p>改用 {@code :total_material_no} 收窄（传 {@code [partNo]} 单元素数组）：pj_view 这类树
      * 组件的 $view 本身就要求 {@code component_no = ANY(:total_material_no)}（否则整表 0 行，见
-     * {@code CostingTreeRenderService} 同款契约），不传会让树组件的下拉/切换查询恒 0 行；对不引用
+     * {@code BomTreeRenderService} 同款契约），不传会让树组件的下拉/切换查询恒 0 行；对不引用
      * {@code :total_material_no} 的普通组件此参数无副作用（占位符未出现，安全忽略）。取回后仍在
      * Java 侧用 {@link #partNoOf(Map)}（hf_part_no 优先、退化 material_no）二次过滤兜底，双重防线。
      * 全程<b>一次</b>远程查询（禁 N+1 只约束查询次数，不约束单次返回行数）。
      */
     private List<ExpandDriverResponse.Row> expandRows(UUID componentId, UUID customerId, String partNo,
                                                    Map<UUID, Map<String, String>> overridesByComponent,
-                                                   CostingTreeVarsContext.Mode mode) {
-        CostingTreeVarsContext.set(new CostingTreeVarsContext.Vars(
+                                                   BomTreeVarsContext.Mode mode) {
+        BomTreeVarsContext.set(new BomTreeVarsContext.Vars(
                 null, List.of(partNo), overridesByComponent, mode));
         try {
             ExpandDriverResponse resp = componentDriverService.expandUncached(componentId, customerId);
@@ -362,7 +362,7 @@ public class CostingVersionService {
             }
             return out;
         } finally {
-            CostingTreeVarsContext.clear();
+            BomTreeVarsContext.clear();
         }
     }
 

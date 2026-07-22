@@ -102,7 +102,7 @@ public final class VersionFilterMacro {
      * 命中 override 数组 → 取该版本；否则（料号键不在 override 数组内）→ 落回 is_current。
      *
      * <p>数组绑定占位符固定为 {@code :__vfPart::text[]} / {@code :__vfVer::text[]}
-     * （与 {@link SqlViewExecutor} 注入 & {@code CostingTreeRenderService} 递归 SQL 占位符出现次数
+     * （与 {@link SqlViewExecutor} 注入 & {@code BomTreeRenderService} 递归 SQL 占位符出现次数
      * 绑定约定一致）。空数组时：{@code EXISTS(unnest(空,空))} 恒假 + {@code x <> ALL(空数组)} 恒真
      * → 整体退化为 {@code is_current}，与未接入版本切换前行为等价（零回归）。
      */

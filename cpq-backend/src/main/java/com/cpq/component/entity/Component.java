@@ -75,6 +75,31 @@ public class Component extends PanacheEntityBase {
     @Column(name = "bom_recursive_expand", nullable = false)
     public Boolean bomRecursiveExpand = false;
 
+    /**
+     * task-0721 B4：页签类型属性（可选）。值域 5 类：{@code BOM}(树状页签,结构角色) /
+     * {@code 材质元素} / {@code 零件} / {@code 外购件} / {@code 主件}(成品=树根)。
+     * 用于报价侧 BOM 树上「加叶子」时的类型判定（{@code BomNodeTypeResolver}）——料号出现在
+     * 哪个类型的页签即推导为该类型。与 {@code bomRecursiveExpand}（控制渲染行为）是独立字段：
+     * {@code tabType=BOM} 表达业务语义，不等价于 {@code bomRecursiveExpand=true}（两者一致性
+     * 校验见 {@code ComponentService#validateTabType}，仅告警不阻断）。
+     */
+    @Column(name = "tab_type", length = 16)
+    public String tabType;
+
+    /**
+     * task-0721（2026-07-21 补录）：该页签哪个字段是「料号列」（取值 = 本组件 {@code fields[].name}
+     * 中的一个）。类型判定（{@code BomNodeTypeResolver}）与加叶子候选料号采集**必须依据此字段显式取值，
+     * 禁止按字段名启发式猜测**（如"字段名含料号"）。树页签（{@code tabType=BOM}）料号取系统列
+     * {@code __hfPartNo}，本字段可不配；非树页签（材质元素/零件/外购件/主件）保存期强制要求配置
+     * （见 {@code ComponentService#applyTabType}），否则该页签不参与类型判定匹配。
+     */
+    @Column(name = "part_no_field", length = 100)
+    public String partNoField;
+
+    /** task-0721（2026-07-21 补录）：该页签哪个字段是「料号名称列」（可空，语义同上）。 */
+    @Column(name = "part_name_field", length = 100)
+    public String partNameField;
+
     @Column(name = "created_at", nullable = false)
     public OffsetDateTime createdAt;
 

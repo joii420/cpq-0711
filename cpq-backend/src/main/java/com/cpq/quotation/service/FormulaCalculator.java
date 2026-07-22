@@ -784,11 +784,31 @@ public class FormulaCalculator {
 
         // 行键唯一化预扫(撞键→#序号)：先算全部 raw effKey 再消歧，保证 editRows 逐行绑定(修末值×行数塌缩)。
         // 与前端 buildUniqueRowKeys / 快照 / CardSnapshotService 同序同口径。
+        //
+        // task-0721 B10（树上行键含节点维度）：树上同一料号可能出现在多个节点（DAG 重复子件，
+        // 如现网实例 3110520789 同挂 2120011658/2120011659 两个父件下），若行键仅按
+        // rowKeyFields 计算内容值，两个节点的同料号行会撞出相同 rawKey → uniquifyRowKeys 只能靠
+        // "#序号"消歧，序号又依赖数组顺序，一旦顺序因刷新/位置变化就会错位删/改错节点的行。
+        // 故行键 = __nodeId ⊕ rowKeyFields 计算值，节点维度天然消歧，#序号退化为"真撞键"兜底。
+        //
+        // 生效条件仅限报价侧树页签：baseRow 携带 __nodeId（BomTreeRenderService.treeRowNode 写入，
+        // 仅树页签有此列）且 deleted != null（报价侧信号——buildCardValues 传真实墓碑 Map，即使
+        // 空列表也非 null；核价侧 buildCostingCardValues 四参入口固定传 delByComp=null，spec §3.7
+        // 隔离）。核价侧 baseRows 同样携带 __nodeId（同一渲染引擎），但 deleted==null 时本分支不生效
+        // → effKey 计算与改造前逐位相同 → AC-10 核价侧零回归门禁不受影响。
         List<String> rawKeys = new ArrayList<>();
         int pre = 0;
         for (JsonNode baseRow : baseRows) {
             String rk = computeRowKey(rowKeyFields, fields, baseRow.path("driverRow"), baseRow.path("basicDataValues"));
-            rawKeys.add((rk != null && !rk.isEmpty()) ? rk : String.valueOf(pre));
+            String base = (rk != null && !rk.isEmpty()) ? rk : String.valueOf(pre);
+            JsonNode nodeIdNode = baseRow.get("__nodeId");
+            if (deleted != null && nodeIdNode != null && !nodeIdNode.isNull()) {
+                String nodeId = nodeIdNode.asText("");
+                if (!nodeId.isEmpty()) {
+                    base = nodeId + "::" + base;
+                }
+            }
+            rawKeys.add(base);
             pre++;
         }
         List<String> effKeys = uniquifyRowKeys(rawKeys);

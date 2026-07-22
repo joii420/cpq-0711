@@ -6,6 +6,7 @@ import com.cpq.component.dto.CreateComponentRequest;
 import com.cpq.component.entity.Component;
 import com.cpq.component.entity.ComponentSqlView;
 import com.cpq.component.repository.ComponentSqlViewRepository;
+import com.cpq.quotation.service.BomTreeRenderService;
 import com.cpq.template.service.TemplateService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -42,6 +43,104 @@ public class ComponentService {
 
     public static final java.util.Set<String> VALID_COMPONENT_TYPES =
         java.util.Set.of("NORMAL", "SUBTOTAL", "EXCEL");
+
+    /**
+     * task-0721 B4：页签类型属性值域（5 类，需求说明 §4.3 规则一）。
+     * BOM=树状页签(结构角色)；材质元素/零件/外购件=对应 characteristic 三态；主件=成品/树根。
+     */
+    public static final java.util.Set<String> VALID_TAB_TYPES =
+        java.util.Set.of("BOM", "材质元素", "零件", "外购件", "主件");
+
+    /** tabType 非法值 → 400；null/blank 视为未配置，放行。 */
+    public static void assertValidTabType(String tabType) {
+        if (tabType == null || tabType.isBlank()) return;
+        if (!VALID_TAB_TYPES.contains(tabType)) {
+            throw new BusinessException(400, "Invalid tabType: " + tabType +
+                ". Must be one of: " + VALID_TAB_TYPES);
+        }
+    }
+
+    /**
+     * task-0721（2026-07-21 补录）：这 4 类 tabType 是"物料语义"页签，类型判定
+     * （{@code BomNodeTypeResolver}）与加叶子候选料号采集依赖其料号列，故保存期强制要求
+     * {@code partNoField}。{@code BOM}（树页签）料号取系统列 {@code __hfPartNo}，不在此列。
+     */
+    private static final java.util.Set<String> TAB_TYPES_REQUIRE_PART_NO_FIELD =
+        java.util.Set.of("材质元素", "零件", "外购件", "主件");
+
+    /**
+     * task-0721 B4：页签类型属性写入编排。{@code requestedTabType == null} → tabType 本身不变（既有
+     * {@code bomRecursiveExpand} 手动设置保留），但仍按【当前生效的 tabType + 本次合并后的 partNoField】
+     * 校验料号列要求（见 {@link #assertPartNoFieldRequirement}）。{@code requestedTabType} 非 null 时：
+     * ① 值域校验；② {@code tabType="BOM"} 时先跑 COSTING 模板反向护栏（见
+     * {@link #assertNotReferencedByCostingTemplate}）；③ 与 {@code bomRecursiveExpand} 自动同步
+     * （2026-07-21 裁决 Q1："BOM"→true，其他值→false；仅是兼容既有 UI/查询的实现细节，
+     * <b>不参与</b>报价侧树渲染路由判断——路由判据是 {@link BomTreeRenderService#isQuoteTreeTabType}）。
+     *
+     * @param requestedPartNoField   非 null → 覆盖 {@code component.partNoField}（空串=清空）
+     * @param requestedPartNameField 非 null → 覆盖 {@code component.partNameField}（空串=清空）
+     */
+    private void applyTabType(Component component, String requestedTabType,
+                              String requestedPartNoField, String requestedPartNameField) {
+        if (requestedPartNoField != null) {
+            component.partNoField = requestedPartNoField.isBlank() ? null : requestedPartNoField;
+        }
+        if (requestedPartNameField != null) {
+            component.partNameField = requestedPartNameField.isBlank() ? null : requestedPartNameField;
+        }
+
+        if (requestedTabType != null) {
+            assertValidTabType(requestedTabType);
+            String normalized = requestedTabType.isBlank() ? null : requestedTabType;
+            if (BomTreeRenderService.isQuoteTreeTabType(normalized)) {
+                assertNotReferencedByCostingTemplate(component.id);
+                component.bomRecursiveExpand = Boolean.TRUE;
+            } else {
+                component.bomRecursiveExpand = Boolean.FALSE;
+            }
+            component.tabType = normalized;
+        }
+
+        assertPartNoFieldRequirement(component.tabType, component.partNoField);
+    }
+
+    /**
+     * task-0721（2026-07-21 补录）：{@code tabType ∈ {材质元素,零件,外购件,主件}} 但缺
+     * {@code partNoField} → 400（api.md §1）。校验对象是【本次保存后生效的最终状态】，
+     * 而非仅本次请求携带的字段——即便本次请求只改了别的字段、未碰 tabType/partNoField，
+     * 只要合并后仍处于"要求料号列但缺失"的非法状态就拦，不放过存量脏数据继续演化。
+     */
+    private static void assertPartNoFieldRequirement(String tabType, String partNoField) {
+        if (tabType == null || !TAB_TYPES_REQUIRE_PART_NO_FIELD.contains(tabType)) return;
+        if (partNoField == null || partNoField.isBlank()) {
+            throw new BusinessException(400,
+                "tabType=" + tabType + " 必须配置 partNoField（该页签的料号列字段名），否则该页签无法参与类型判定匹配");
+        }
+    }
+
+    /**
+     * task-0721 B4 强制护栏（2026-07-21 业务方裁决）：{@code bomRecursiveExpand} 是组件级全局开关，
+     * 同一组件被多模板共用时一开全生效。现网实查：3 个开启该开关的组件
+     * （COMP-0021__imp1__imp1 / COMP-0039 / COMP-0042）共 34 处模板引用，<b>全部在 COSTING 模板</b>。
+     *
+     * <p>若该组件已被<b>任一</b> COSTING（{@code template.templateKind='COSTING'}）模板引用，
+     * 禁止把 {@code tabType} 改为 {@code BOM}（树渲染）——否则会把这些核价模板一并改成树渲染，
+     * 直接违反 AC-10 核价零回归门禁。报价侧树页签应<b>新建专用组件</b>，不复用核价侧已有树组件。
+     */
+    private void assertNotReferencedByCostingTemplate(UUID componentId) {
+        if (componentId == null) return; // 新建流程尚无 id，不存在既有模板引用，护栏天然不触发
+        Number count = (Number) em.createNativeQuery(
+                "SELECT count(*) FROM template_component tc " +
+                "JOIN template t ON t.id = tc.template_id " +
+                "WHERE tc.component_id = :cid AND t.template_kind = 'COSTING'")
+            .setParameter("cid", componentId)
+            .getSingleResult();
+        if (count != null && count.longValue() > 0) {
+            throw new BusinessException(400, "该组件已被 " + count.longValue() +
+                " 处核价(COSTING)模板引用，不能设为 BOM 树页签——会把这些核价模板一并改成树渲染，" +
+                "破坏核价侧零回归。报价侧树页签请新建专用组件。");
+        }
+    }
 
     /**
      * C1/C3 共用: default_source.path 视图路径解析正则。
@@ -151,6 +250,10 @@ public class ComponentService {
         component.treeConfig = request.treeConfig != null ? toJsonRaw(request.treeConfig) : null;
         // 核价 BOM 递归展开开关(默认 false:勾选才递归)
         component.bomRecursiveExpand = request.bomRecursiveExpand != null ? request.bomRecursiveExpand : Boolean.FALSE;
+        // task-0721 B4：页签类型属性(校验 + COSTING 模板反向护栏 + 与 bomRecursiveExpand 自动同步；
+        // 传值时覆盖上一行手动设置的 bomRecursiveExpand)。新建流程尚无 id,反向护栏天然不触发。
+        // task-0721（补录）：一并写入 partNoField/partNameField + 校验"限定 tabType 必须配 partNoField"。
+        applyTabType(component, request.tabType, request.partNoField, request.partNameField);
 
         // 行键校验（新建路径：硬拦）
         validateRowKeyConfig(component.dataDriverPath, component.fields, component.rowKeyFields, true);
@@ -240,6 +343,11 @@ public class ComponentService {
         if (request.bomRecursiveExpand != null) {
             component.bomRecursiveExpand = request.bomRecursiveExpand;
         }
+        // task-0721 B4：页签类型属性(校验 + COSTING 模板反向护栏 + 与 bomRecursiveExpand 自动同步；
+        // 传值时覆盖上面手动设置的 bomRecursiveExpand)。
+        // task-0721（补录）：一并写入 partNoField/partNameField + 校验"限定 tabType 必须配 partNoField"
+        // ——校验对象是合并后的最终状态,即便本次只改 partNoField 不改 tabType 也会校验。
+        applyTabType(component, request.tabType, request.partNoField, request.partNameField);
 
         // 行键校验（更新路径：软校验，违规只告警不阻断）
         validateRowKeyConfig(component.dataDriverPath, component.fields, component.rowKeyFields, false);

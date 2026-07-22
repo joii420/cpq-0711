@@ -31,6 +31,14 @@ public class CostingBomTreeConfig extends PanacheEntityBase {
     @Column(name = "is_active", nullable = false)
     public boolean isActive = false;
 
+    /**
+     * task-0721 B2：递归 SQL 配置的用途维度 —— {@code QUOTE}(报价侧) / {@code COSTING}(核价侧,默认)。
+     * 每个 usage 至多一条 {@code isActive=true}（DB 部分唯一索引 {@code uq_bom_tree_config_active_per_usage}
+     * 按 usage 分别约束，见 V346）。
+     */
+    @Column(nullable = false, length = 16)
+    public String usage = "COSTING";
+
     @Column(name = "created_at", nullable = false)
     public OffsetDateTime createdAt;
 
@@ -51,8 +59,14 @@ public class CostingBomTreeConfig extends PanacheEntityBase {
         updatedAt = OffsetDateTime.now();
     }
 
-    /** 当前全局生效配置；无 → null。 */
-    public static CostingBomTreeConfig findActive() {
-        return find("isActive = true").firstResult();
+    /**
+     * 当前生效配置（按 usage 维度）；无 → null。
+     *
+     * <p>task-0721 B2：原全局唯一 active 改为「每个 usage 至多一条」。核价侧调用方传
+     * {@code "COSTING"}（行为逐位不变，因存量配置迁移时已 {@code DEFAULT 'COSTING'}）；
+     * 报价侧调用方传 {@code "QUOTE"}。
+     */
+    public static CostingBomTreeConfig findActive(String usage) {
+        return find("isActive = true and usage = ?1", usage).firstResult();
     }
 }

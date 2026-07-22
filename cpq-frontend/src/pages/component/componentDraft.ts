@@ -7,6 +7,11 @@ export interface DraftSnapshot {
   rowKeyFields: string[];
   excelColumns: any[];
   bomRecursiveExpand: boolean;
+  /** task-0721 F2：页签类型属性草稿(可空) */
+  tabType?: string;
+  /** task-0721 F2（2026-07-21 补充）：料号列/料号名称列字段名草稿(可空) */
+  partNoField?: string;
+  partNameField?: string;
 }
 
 export interface DraftEnvelope {
@@ -40,6 +45,9 @@ export function buildDraftSnapshot(input: {
   rowKeyFields: string[];
   excelColumns: any[];
   bomRecursiveExpand: boolean;
+  tabType?: string;
+  partNoField?: string;
+  partNameField?: string;
 }): DraftSnapshot {
   return {
     fields: stripFieldKeys(input.fields),
@@ -48,6 +56,9 @@ export function buildDraftSnapshot(input: {
     rowKeyFields: input.rowKeyFields ?? [],
     excelColumns: input.excelColumns ?? [],
     bomRecursiveExpand: !!input.bomRecursiveExpand,
+    tabType: input.tabType,
+    partNoField: input.partNoField,
+    partNameField: input.partNameField,
   };
 }
 

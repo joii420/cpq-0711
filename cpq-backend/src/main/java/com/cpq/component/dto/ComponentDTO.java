@@ -28,6 +28,12 @@ public class ComponentDTO {
     public Map<String, Object> treeConfig;
     /** 核价 BOM 递归展开开关(默认 true,仅核价侧生效;与 treeConfig 正交) */
     public Boolean bomRecursiveExpand;
+    /** task-0721 B4：页签类型属性(可选)。值域 5 类：BOM / 材质元素 / 零件 / 外购件 / 主件。 */
+    public String tabType;
+    /** task-0721（2026-07-21 补录）：该页签「料号列」字段名。 */
+    public String partNoField;
+    /** task-0721（2026-07-21 补录）：该页签「料号名称列」字段名，可空。 */
+    public String partNameField;
     public String status;
     /** EXCEL 类型组件的列配置 JSON（数组），Task 1.1 新增字段 */
     public String excelColumns;
@@ -53,6 +59,9 @@ public class ComponentDTO {
         dto.rowKeyFields = parseStringList(component.rowKeyFields);
         dto.treeConfig = parseJsonObject(component.treeConfig);
         dto.bomRecursiveExpand = component.bomRecursiveExpand != null ? component.bomRecursiveExpand : Boolean.FALSE;
+        dto.tabType = component.tabType;
+        dto.partNoField = component.partNoField;
+        dto.partNameField = component.partNameField;
         dto.excelColumns = component.excelColumns;
         return dto;
     }

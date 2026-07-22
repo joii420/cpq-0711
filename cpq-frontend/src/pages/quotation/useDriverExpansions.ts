@@ -20,7 +20,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { batchExpandDriver } from '../../services/componentService';
 import type { LineItem } from './QuotationStep2';
 
-/** 核价 BOM 递归展开（P1）spine 系统列；仅 COSTING 快照行携带，报价侧 undefined。 */
+/** BOM spine 系统列；核价侧 + 报价侧（task-0721）快照行均可携带，普通快照行 undefined。 */
 export interface BomSysCols {
   nodeId?: string;
   parentId?: string | null;
@@ -29,6 +29,12 @@ export interface BomSysCols {
   parentNo?: string | null;
   bomVersion?: string | null;
   isCycle?: boolean;
+  /**
+   * task-0721 F1/F3：节点业务类型（后端物化时按判定链算好写入）。
+   * '材质' | '零件' | '外购件' | '主件' | null(未判定)。前端仅用于「+」按钮置灰判断，
+   * 不在前端重新实现类型判定逻辑（架构红线）。
+   */
+  nodeType?: string | null;
 }
 
 export interface DriverRow {

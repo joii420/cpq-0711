@@ -972,7 +972,30 @@ const ComponentManagement: React.FC = () => {
   const [excelColumns, setExcelColumns] = useState<ExcelColumn[]>([]);
   const [dataDriverPath, setDataDriverPath] = useState<string>('');
   const [rowKeyFields, setRowKeyFields] = useState<string[]>([]);
+  // task-0721（2026-07-21 契约变更）：bomRecursiveExpand 改由后端按 tabType 自动派生，
+  // 前端不再展示该开关、也不再随保存提交它——此状态仅供 buildDraftSnapshot 保持类型兼容
+  // (草稿快照结构/既有单测未变)，只读镜像加载值，不接受用户输入，不影响任何渲染判断。
   const [bomRecursiveExpand, setBomRecursiveExpand] = useState<boolean>(false);
+  // task-0721 F2：页签类型属性(可空;5 类值域 BOM/材质元素/零件/外购件/主件)。
+  // 2026-07-21 起与 bomRecursiveExpand 后端联动派生(选 BOM → true；其余 → false)，
+  // 前端只维护这一个字段，不再单独暴露渲染开关。
+  const [tabType, setTabType] = useState<string | undefined>(undefined);
+  // task-0721 F2（2026-07-21 补充，需求说明 §4.3 规则一）：料号列/料号名称列字段名。
+  // 从该组件已有字段(fields state)中选，不是自由输入；非树页签(tabType∈{材质元素,零件,外购件,主件})必填。
+  const [partNoField, setPartNoField] = useState<string | undefined>(undefined);
+  const [partNameField, setPartNameField] = useState<string | undefined>(undefined);
+  // 「料号列」/「料号名称列」下拉的候选项 —— 来自当前编辑态 fields(不是自由输入)，按 name 去重。
+  const fieldNameOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const opts: { value: string; label: string }[] = [];
+    for (const f of fields) {
+      const name = f.name?.trim();
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      opts.push({ value: name, label: f.label || name });
+    }
+    return opts;
+  }, [fields]);
   const [rowKeyCandidates, setRowKeyCandidates] = useState<
     Record<string, import('./types').RowKeyCandidate>
   >({});
@@ -1017,7 +1040,11 @@ const ComponentManagement: React.FC = () => {
           payload.excelColumns = JSON.stringify(s.excelColumns ?? []);
         } else if (fresh.componentType === 'NORMAL') {
           payload.rowKeyFields = (s.rowKeyFields ?? []).length > 0 ? s.rowKeyFields : undefined;
-          payload.bomRecursiveExpand = s.bomRecursiveExpand;
+          // task-0721（2026-07-21 契约变更）：bomRecursiveExpand 不再由前端提交——后端按 tabType
+          // 自动派生(BOM→true，其余→false)，前端提交陈旧本地态会覆盖后端的自动派生结果。
+          payload.tabType = s.tabType;
+          payload.partNoField = s.partNoField;
+          payload.partNameField = s.partNameField;
         }
         await componentService.update(d.componentId, payload);
         clearDraft(d.componentId);
@@ -1050,9 +1077,10 @@ const ComponentManagement: React.FC = () => {
       : rowKeyFields;
     scheduleSave(buildDraftSnapshot({
       fields, formulas, dataDriverPath, rowKeyFields: draftRowKeyFields, excelColumns, bomRecursiveExpand,
+      tabType, partNoField, partNameField,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields, formulas, dataDriverPath, rowKeyFields, excelColumns, bomRecursiveExpand]);
+  }, [fields, formulas, dataDriverPath, rowKeyFields, excelColumns, bomRecursiveExpand, tabType, partNoField, partNameField]);
 
   // Left list selection (checkboxes) + search
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
@@ -1192,6 +1220,9 @@ const ComponentManagement: React.FC = () => {
       setDataDriverPath(loaded.dataDriverPath ?? '');
       setRowKeyFields(loaded.rowKeyFields ?? []);
       setBomRecursiveExpand((loaded as any).bomRecursiveExpand === true); // 默认关
+      setTabType((loaded as any).tabType ?? undefined);
+      setPartNoField((loaded as any).partNoField ?? undefined);
+      setPartNameField((loaded as any).partNameField ?? undefined);
 
       // ── 草稿自动恢复 ──
       const draft = readDraft(loaded.id);
@@ -1205,6 +1236,9 @@ const ComponentManagement: React.FC = () => {
           setExcelColumns(draft.snapshot.excelColumns ?? []);
           setRowKeyFields(draft.snapshot.rowKeyFields ?? []);
           setBomRecursiveExpand(!!draft.snapshot.bomRecursiveExpand);
+          setTabType(draft.snapshot.tabType ?? undefined);
+          setPartNoField(draft.snapshot.partNoField ?? undefined);
+          setPartNameField(draft.snapshot.partNameField ?? undefined);
           setDraftBanner({ kind: 'restored', componentId: loaded.id });
         } else {
           setDraftBanner({ kind: 'stale', componentId: loaded.id });
@@ -1231,6 +1265,18 @@ const ComponentManagement: React.FC = () => {
   // Save component
   const handleSave = async () => {
     if (!selectedComponent) return;
+    // task-0721 F2（2026-07-21 补充，需求说明 §4.3 规则一）：非树页签(材质元素/零件/外购件/主件)
+    // 必须配 partNoField，否则该页签不参与类型判定匹配。后端保存期也会校验(400)，
+    // 这里做前端先行校验只为更快反馈，不替代后端权威判定。
+    if (
+      selectedComponent.componentType === 'NORMAL'
+      && tabType
+      && tabType !== 'BOM'
+      && !partNoField
+    ) {
+      message.error(`页签类型「${tabType}」必须选择「料号列」，否则该页签不参与树上加叶子的类型判定`);
+      return;
+    }
     setSaving(true);
     try {
       const cleanFields = fields.map(({ key: _k, ...rest }) => rest);
@@ -1248,7 +1294,12 @@ const ComponentManagement: React.FC = () => {
           rowKeyFields, selectedComponent.rowKeyFields, rowKeyCandidates,
         );
         payload.rowKeyFields = finalRowKeyFields.length > 0 ? finalRowKeyFields : undefined;
-        payload.bomRecursiveExpand = bomRecursiveExpand;
+        // task-0721（2026-07-21 契约变更）：bomRecursiveExpand 不再由前端提交——后端按 tabType
+        // 自动派生(BOM→true，其余→false)，前端提交陈旧本地态会覆盖后端的自动派生结果，
+        // 正是"配了页签类型=BOM 却因未勾另一开关而看不到树"这类 bug 的成因。
+        payload.tabType = tabType;
+        payload.partNoField = partNoField;
+        payload.partNameField = partNameField;
       }
       await componentService.update(selectedComponent.id, payload);
       message.success('保存成功');
@@ -1260,7 +1311,8 @@ const ComponentManagement: React.FC = () => {
       setSelectedComponent(res.data);
     } catch (e: unknown) {
       const err = e as { message?: string };
-      message.error('保存失败: ' + (err.message ?? ''));
+      // task-0721：后端 400（如"组件已被核价模板引用，无法设为 BOM 类型"）须完整展示，不吞成通用「保存失败」。
+      message.error(err.message || '保存失败');
     } finally {
       setSaving(false);
     }
@@ -1574,14 +1626,53 @@ const ComponentManagement: React.FC = () => {
               </Tag>
               <div className="cmm-acts">
                 {componentType === 'NORMAL' && (
-                  <Tooltip title="勾选=核价时按 material_bom_item 闭包递归展开子料号；不勾=按根料号普通取数。仅核价侧生效。">
-                    <Checkbox
-                      checked={bomRecursiveExpand}
-                      onChange={(e) => setBomRecursiveExpand(e.target.checked)}
-                    >
-                      核价树
-                    </Checkbox>
-                  </Tooltip>
+                  <>
+                    {/* task-0721 F2（2026-07-21 契约变更）：用户只配「页签类型」一个字段——
+                        选 BOM 时后端自动置 bomRecursiveExpand=true，改为其他值/清空自动置 false。
+                        前端不再单独暴露 bomRecursiveExpand 开关（用户不需要理解两个字段的关系），
+                        也不再随保存请求提交该字段，避免用陈旧本地态覆盖后端的自动派生结果。 */}
+                    <Tooltip title="页签类型：BOM = 树状页签(选中后核价/报价按 BOM 树渲染)；材质元素/零件/外购件 = 该页签料号的业务语义(供树上加叶子类型判定用)；主件 = 成品/树根。可空(存量组件无此属性)。若组件已被核价模板引用，改为 BOM 可能返回 400（该组件已被核价模板引用，无法设为 BOM 类型）。">
+                      <Select
+                        allowClear
+                        placeholder="页签类型"
+                        style={{ width: 120 }}
+                        value={tabType}
+                        onChange={(v) => setTabType(v)}
+                        options={[
+                          { value: 'BOM', label: 'BOM' },
+                          { value: '材质元素', label: '材质元素' },
+                          { value: '零件', label: '零件' },
+                          { value: '外购件', label: '外购件' },
+                          { value: '主件', label: '主件' },
+                        ]}
+                      />
+                    </Tooltip>
+                    {/* task-0721 F2（2026-07-21 补充，需求说明 §4.3 规则一）：料号列/料号名称列标识——
+                        从该组件已有字段(fields state)中选，不是自由输入。类型判定与加叶子候选料号采集
+                        依据这两个字段显式取值，不再靠字段名/label 含"料号"启发式猜测。
+                        树页签(tabType=BOM)可不配(取系统列 __hfPartNo)；非树页签必须配 partNoField。 */}
+                    <Tooltip title={tabType && tabType !== 'BOM' ? '该页签哪个字段是料号列（必填——树上加叶子的类型判定依据此列取值）' : '该页签哪个字段是料号列（BOM 树页签可不配，取系统列料号）'}>
+                      <Select
+                        allowClear
+                        placeholder="料号列"
+                        style={{ width: 120 }}
+                        status={(tabType && tabType !== 'BOM' && !partNoField) ? 'error' : undefined}
+                        value={partNoField}
+                        onChange={(v) => setPartNoField(v)}
+                        options={fieldNameOptions}
+                      />
+                    </Tooltip>
+                    <Tooltip title="该页签哪个字段是料号名称列（可空）">
+                      <Select
+                        allowClear
+                        placeholder="料号名称列"
+                        style={{ width: 120 }}
+                        value={partNameField}
+                        onChange={(v) => setPartNameField(v)}
+                        options={fieldNameOptions}
+                      />
+                    </Tooltip>
+                  </>
                 )}
                 <Button size="small" onClick={() => setGuideOpen(true)}>配置帮助</Button>
                 <Button type="primary" size="small" loading={saving} onClick={handleSave}>保存</Button>
@@ -1607,6 +1698,9 @@ const ComponentManagement: React.FC = () => {
                           setExcelColumns(d.snapshot.excelColumns ?? []);
                           setRowKeyFields(d.snapshot.rowKeyFields ?? []);
                           setBomRecursiveExpand(!!d.snapshot.bomRecursiveExpand);
+                          setTabType(d.snapshot.tabType ?? undefined);
+                          setPartNoField(d.snapshot.partNoField ?? undefined);
+                          setPartNameField(d.snapshot.partNameField ?? undefined);
                           setDraftBanner({ kind: 'restored', componentId: selectedComponent.id });
                         }
                       }}>仍恢复草稿</Button>

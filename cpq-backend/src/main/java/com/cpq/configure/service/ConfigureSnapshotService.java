@@ -3,12 +3,16 @@ package com.cpq.configure.service;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.formula.dataloader.QuotationIdContext;
+import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.rowkey.DeletedRowKeys;
+import com.cpq.quotation.service.BomNodeTypeResolver;
+import com.cpq.quotation.service.BomTreeRenderService;
 import com.cpq.quotation.service.CrossTabComponentOrder;
 import com.cpq.quotation.service.RowDataMaterializer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -59,6 +63,18 @@ public class ConfigureSnapshotService {
     @Inject
     RowDataMaterializer rowDataMaterializer;
 
+    /** task-0721 B3：报价侧 BOM 树整单渲染引擎（usage=QUOTE）。 */
+    @Inject
+    BomTreeRenderService bomTreeRenderService;
+
+    /** task-0721 B5：树节点类型判定服务。 */
+    @Inject
+    BomNodeTypeResolver bomNodeTypeResolver;
+
+    /** task-0721（2026-07-21 补录）：按 partNoField 显式解析料号列，供类型判定命中收集用。 */
+    @Inject
+    com.cpq.quotation.service.FormulaCalculator formulaCalculator;
+
     /** 自注入:用于触发 REQUIRES_NEW 拦截器(同 bean 内自调用不经代理则拦截器失效)。 */
     @Inject
     ConfigureSnapshotService self;
@@ -67,6 +83,12 @@ public class ConfigureSnapshotService {
         public UUID id;
         public String name;
         public String driverPath;
+        /** task-0721 B4：页签类型属性（BOM/材质元素/零件/外购件/主件/null）。 */
+        public String tabType;
+        /** task-0721（2026-07-21 补录）：该页签「料号列」字段名（tabType=BOM 可为 null）。 */
+        public String partNoField;
+        /** 该组件 fields JSON（供 partNoField 解析用，FormulaCalculator.computeRowKey 需要）。 */
+        public String fields;
     }
 
     /**
@@ -289,6 +311,48 @@ public class ConfigureSnapshotService {
                                 ? precomputeQuoteDriverBuckets(quotationId, customerId, comps, lineItems)
                                 : Map.of();
 
+                // task-0721 B3：树页签(tab_type='BOM') → 整单一次调 BomTreeRenderService.render(usage=QUOTE)，
+                // 逐 line 复用其 spine + 系统列结果（treeBaseRowsByLine.get(lineItemId).get(compIdStr)）。
+                // 单一路由收口点：BomTreeRenderService.isQuoteTreeTabType（判据 tab_type='BOM'，
+                // 与 bomRecursiveExpand 解耦——2026-07-21 裁决 Q1）。不含树页签的模板 treeComps 恒空，
+                // 下方 getOrDefault 恒查不到 → 逐行走既有平铺路径，零改动零回归。
+                List<DriverComp> treeComps = new ArrayList<>();
+                for (DriverComp dc : comps) {
+                    if (BomTreeRenderService.isQuoteTreeTabType(dc.tabType)) treeComps.add(dc);
+                }
+                Map<UUID, Map<String, ArrayNode>> treeBaseRowsByLine = java.util.Collections.emptyMap();
+                // BL-0030 同款失败哨兵：render 异常不上抛(否则整单快照失败 → 前端无限"加载中…")，
+                // 落带原文的失败哨兵行，仅影响树页签本身；同行其它(非树)组件独立展开，不受牵连。
+                String treeRenderError = null;
+                if (!treeComps.isEmpty() && anyNeedsExpand) {
+                    UUID customerTemplateId = self.loadCustomerTemplateId(quotationId);
+                    if (customerTemplateId != null) {
+                        List<QuotationLineItem> liteLines = new ArrayList<>();
+                        for (Map<String, Object> li : lineItems) {
+                            UUID lid = asUuid(li.get("id"));
+                            Object pnObj = li.get("productPartNo");
+                            String pn = pnObj != null ? pnObj.toString() : null;
+                            if (lid == null || pn == null || pn.isBlank()) continue;
+                            // 轻量携带体：BomTreeRenderService.render 只读 id/productPartNoSnapshot 两个字段，
+                            // 不需要托管实体/持久化上下文。
+                            QuotationLineItem lite = new QuotationLineItem();
+                            lite.id = lid;
+                            lite.productPartNoSnapshot = pn;
+                            liteLines.add(lite);
+                        }
+                        if (!liteLines.isEmpty()) {
+                            try {
+                                treeBaseRowsByLine = bomTreeRenderService.render(
+                                        customerTemplateId, liteLines, null, "QUOTE");
+                            } catch (Exception e) {
+                                treeRenderError = e.getMessage();
+                                LOG.errorf("[add-snapshot] quotation=%s 报价树整单渲染失败 → 落失败哨兵透出前端: %s",
+                                        quotationId, e.getMessage());
+                            }
+                        }
+                    }
+                }
+
                 for (Map<String, Object> li : lineItems) {
                     UUID lineItemId = asUuid(li.get("id"));
                     String partNo = li.get("productPartNo") != null ? li.get("productPartNo").toString() : null;
@@ -309,7 +373,13 @@ public class ConfigureSnapshotService {
                     Map<UUID, String> snapByComp = new LinkedHashMap<>();
                     // Phase 1: 收集整行 SnapRow，循环末一次批量写（ON=batch，OFF=逐行）
                     List<SnapRow> snapRowBatch = batchWriteEnabled ? new ArrayList<>() : null;
+                    // task-0721 B5：本行的页签命中上下文(仅含树页签时才建,纯逻辑对象,建了也不影响非树行为)。
+                    BomNodeTypeResolver.TabHitContext treeTypeCtx =
+                            treeComps.isEmpty() ? null : new BomNodeTypeResolver.TabHitContext();
+
+                    // Pass 1：既有平铺组件展开逻辑(逐位不变) —— 跳过树页签(tab_type='BOM'，Pass 2 单独处理)。
                     for (DriverComp comp : comps) {
+                        if (BomTreeRenderService.isQuoteTreeTabType(comp.tabType)) continue;
                         try {
                             ExpandDriverResponse exp;
                             Map<String, ExpandDriverResponse> bucket = buckets.get(comp.id);
@@ -329,6 +399,23 @@ public class ConfigureSnapshotService {
                                         comp.id, customerId, partNo, null, null, null, lineItemId, compositeType);
                             }
                             List<ExpandDriverResponse.Row> rows = (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
+                            // task-0721 B5：本组件若挂了「材质元素/零件/外购件/主件」类型属性，把本行渲染出的
+                            // 料号（按 comp.partNoField 显式取值，2026-07-21 补录：禁止按字段名启发式猜测）
+                            // 并入本行的类型判定上下文(供 Pass 2 树页签 __nodeType 结构推导用)。
+                            if (treeTypeCtx != null && comp.tabType != null && comp.partNoField != null
+                                    && !comp.partNoField.isBlank()) {
+                                JsonNode compFieldsNode = parseFieldsJsonSafe(comp.fields);
+                                JsonNode rkf = MAPPER.createArrayNode().add(comp.partNoField);
+                                for (ExpandDriverResponse.Row row : rows) {
+                                    if (row == null) continue;
+                                    JsonNode driverRowNode = MAPPER.valueToTree(
+                                            row.driverRow != null ? row.driverRow : Map.of());
+                                    JsonNode basicDataNode = MAPPER.valueToTree(
+                                            row.basicDataValues != null ? row.basicDataValues : Map.of());
+                                    String mn = formulaCalculator.computeRowKey(rkf, compFieldsNode, driverRowNode, basicDataNode);
+                                    if (mn != null && !mn.isBlank()) treeTypeCtx.addHit(comp.tabType, mn);
+                                }
+                            }
                             // writeValueAsString 序列化 = 深拷贝（AP-37 可变共享面保护：各行独立 JSON 字符串）
                             String rowsJson = MAPPER.writeValueAsString(rows);
                             if (batchWriteEnabled) {
@@ -341,6 +428,45 @@ public class ConfigureSnapshotService {
                             snapByComp.put(comp.id, rowsJson);
                         } catch (Exception e) {
                             LOG.warnf("[add-snapshot] line=%s comp=%s 跳过: %s", lineItemId, comp.id, e.getMessage());
+                        }
+                    }
+
+                    // Pass 2（task-0721 B3/B5）：树页签(tab_type='BOM') —— 用 BomTreeRenderService 整单渲染
+                    // 好的 spine 结果(precomputed baseRows)，不再逐行 expand。__nodeType 在此一次算好写入
+                    // （不留给前端算，backtask B3 要点）。先统一收集全部树组件的父子边（规则三结构推导用），
+                    // 再逐组件注入 __nodeType，保证同行内多棵"树 Tab"共享同一份类型判定上下文。
+                    if (!treeComps.isEmpty()) {
+                        Map<String, ArrayNode> treeRowsByComp = new LinkedHashMap<>();
+                        for (DriverComp comp : treeComps) {
+                            ArrayNode rows;
+                            if (treeRenderError != null) {
+                                rows = buildTreeRenderErrorSentinel(treeRenderError);
+                            } else {
+                                ArrayNode precomputed = treeBaseRowsByLine
+                                        .getOrDefault(lineItemId, Map.of())
+                                        .get(comp.id.toString());
+                                rows = precomputed != null ? precomputed : MAPPER.createArrayNode();
+                                addChildEdgesFromTreeRows(rows, treeTypeCtx);
+                            }
+                            treeRowsByComp.put(comp.id.toString(), rows);
+                        }
+                        for (DriverComp comp : treeComps) {
+                            try {
+                                ArrayNode rows = treeRowsByComp.get(comp.id.toString());
+                                if (treeRenderError == null) {
+                                    injectNodeTypes(rows, treeTypeCtx);
+                                }
+                                String rowsJson = MAPPER.writeValueAsString(rows);
+                                if (batchWriteEnabled) {
+                                    snapRowBatch.add(new SnapRow(comp.id, comp.name, rowsJson));
+                                } else {
+                                    self.writeSnapshot(lineItemId, comp.id, comp.name, rowsJson);
+                                }
+                                snapByComp.put(comp.id, rowsJson);
+                            } catch (Exception e) {
+                                LOG.warnf("[add-snapshot] line=%s tree-comp=%s 跳过: %s",
+                                        lineItemId, comp.id, e.getMessage());
+                            }
                         }
                     }
                     // Phase 1: 整行一次批量写（N×M×1 → N×1 REQUIRES_NEW）。
@@ -437,6 +563,11 @@ public class ConfigureSnapshotService {
 
         for (DriverComp comp : comps) {
             try {
+                // task-0721 B3：树页签(tab_type='BOM')不进合桶——其行由 BomTreeRenderService 整单渲染
+                // (spine + 边键匹配)提供，不是简单的按 partNo 展开，合桶逻辑对它无意义且会被丢弃浪费。
+                if (BomTreeRenderService.isQuoteTreeTabType(comp.tabType)) {
+                    continue;
+                }
                 if (!componentDriverService.eligibleForQuoteBucket(comp.id)) {
                     // 不 eligible（含 lineItemId/spineKeys/composite/EXCEL）→ 不进 buckets，调用方逐行回落
                     continue;
@@ -466,6 +597,79 @@ public class ConfigureSnapshotService {
         return r;
     }
 
+    // =========================================================================
+    // task-0721 B3/B5 — 树页签物化辅助（提取料号 / 父子边收集 / __nodeType 注入 / 失败哨兵）
+    // =========================================================================
+
+    /**
+     * task-0721（2026-07-21 补录）：把 fields JSON 字符串安全解析为 {@link JsonNode}
+     * （供 {@link com.cpq.quotation.service.FormulaCalculator#computeRowKey} 按 partNoField 解析用）。
+     * 解析失败 → 空数组（等价"该组件无字段定义"，computeRowKey 内部会因取不到值而返回 null，不抛异常）。
+     */
+    private static JsonNode parseFieldsJsonSafe(String fieldsJson) {
+        if (fieldsJson == null || fieldsJson.isBlank()) return MAPPER.createArrayNode();
+        try {
+            JsonNode n = MAPPER.readTree(fieldsJson);
+            return n != null && n.isArray() ? n : MAPPER.createArrayNode();
+        } catch (Exception e) {
+            return MAPPER.createArrayNode();
+        }
+    }
+
+    /**
+     * 从一个树页签组件的 precomputed baseRows（{@link BomTreeRenderService#treeRowNode} 产出）收集
+     * 父子边（{@code __parentNo} → {@code __hfPartNo}）到类型判定上下文，供规则三（直接子节点结构推导）。
+     * 多个树组件的 spine 边应完全相同（同一 line item 只有一棵 spine），重复调用安全（Set 去重）。
+     */
+    private static void addChildEdgesFromTreeRows(ArrayNode rows, BomNodeTypeResolver.TabHitContext ctx) {
+        if (rows == null || ctx == null) return;
+        for (JsonNode row : rows) {
+            String parentNo = row.path("__parentNo").isNull() ? null : row.path("__parentNo").asText(null);
+            String hfPartNo = row.path("__hfPartNo").isNull() ? null : row.path("__hfPartNo").asText(null);
+            if (parentNo != null && !parentNo.isBlank() && hfPartNo != null && !hfPartNo.isBlank()) {
+                ctx.addChild(parentNo, hfPartNo);
+            }
+        }
+    }
+
+    /**
+     * 逐行判定 {@code __nodeType} 并写入（B5 宽松解析：无法确定 → 显式 null = "未判定"，不阻断物化，
+     * api.md §0.2）。就地 mutate {@code rows} 中的 ObjectNode（本方法调用时机在序列化前，安全）。
+     *
+     * <p>树节点自身的料号身份取 {@code __hfPartNo}（{@link BomTreeRenderService#treeRowNode} 写入的
+     * 权威系统列，来自递归 SQL 的 node_path，与该 Tab 具体挂了什么业务字段无关）——<b>不</b>按
+     * {@code partNoField} 解析，因为 {@code partNoField} 是"非树页签的料号列配置"，树页签本身
+     * 不要求配置它（api.md §1）。
+     */
+    private void injectNodeTypes(ArrayNode rows, BomNodeTypeResolver.TabHitContext ctx) {
+        if (rows == null || ctx == null) return;
+        for (JsonNode row : rows) {
+            if (!(row instanceof ObjectNode obj)) continue;
+            String materialNo = row.path("__hfPartNo").isNull() ? null : row.path("__hfPartNo").asText(null);
+            BomNodeTypeResolver.Resolution resolution =
+                    materialNo != null && !materialNo.isBlank() ? bomNodeTypeResolver.resolveLenient(materialNo, ctx) : null;
+            if (resolution != null) {
+                obj.put("__nodeType", resolution.nodeType);
+            } else {
+                obj.putNull("__nodeType");
+            }
+        }
+    }
+
+    /**
+     * BL-0030 同款失败哨兵：{@link BomTreeRenderService#render} 整单渲染失败时，树页签落一个
+     * 带原文错误信息的单行（业务列留空），供前端显式展示，而不是让整单快照 500 / 前端无限"加载中…"。
+     */
+    private ArrayNode buildTreeRenderErrorSentinel(String message) {
+        ArrayNode arr = MAPPER.createArrayNode();
+        ObjectNode row = arr.addObject();
+        row.set("driverRow", MAPPER.createObjectNode());
+        row.set("basicDataValues", MAPPER.createObjectNode());
+        row.put("__renderError", "报价树渲染失败: " + (message != null ? message : "未知错误"));
+        row.putNull("__nodeType");
+        return arr;
+    }
+
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     @SuppressWarnings("unchecked")
     public UUID loadCustomerId(UUID quotationId) {
@@ -479,8 +683,12 @@ public class ConfigureSnapshotService {
     public List<DriverComp> loadDriverComponents(UUID quotationId) {
         // 按 template_component 取 live driver 组件(live component id,expand 可直接加载)
         // driver_path 用于判定组合父级该"聚合子件"(composite_child_*_mirror)还是"父级展开"($zcj_bom 子配件清单)
+        // task-0721 B3：附带 c.tab_type，供 BomTreeRenderService.isQuoteTreeTabType 单一收口点路由判断。
+        // task-0721（2026-07-21 补录）：附带 c.part_no_field/c.fields，供类型判定命中收集按料号列
+        // 显式取值（不再按字段名启发式猜测）。
         List<Object[]> rows = em.createNativeQuery(
-                "SELECT DISTINCT c.id, c.name, c.data_driver_path FROM quotation q " +
+                "SELECT DISTINCT c.id, c.name, c.data_driver_path, c.tab_type, c.part_no_field, c.fields " +
+                "FROM quotation q " +
                 "JOIN template_component tc ON tc.template_id = q.customer_template_id " +
                 "JOIN component c ON c.id = tc.component_id " +
                 "WHERE q.id = :q AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
@@ -492,9 +700,21 @@ public class ConfigureSnapshotService {
             dc.id = UUID.fromString(r[0].toString());
             dc.name = r[1] != null ? r[1].toString() : null;
             dc.driverPath = r[2] != null ? r[2].toString() : null;
+            dc.tabType = r[3] != null ? r[3].toString() : null;
+            dc.partNoField = r[4] != null ? r[4].toString() : null;
+            dc.fields = r[5] != null ? r[5].toString() : "[]";
             out.add(dc);
         }
         return out;
+    }
+
+    /** task-0721 B3：本报价单的报价（customer）模板 id，供 {@link BomTreeRenderService#render} 用。 */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @SuppressWarnings("unchecked")
+    public UUID loadCustomerTemplateId(UUID quotationId) {
+        List<Object> r = em.createNativeQuery("SELECT customer_template_id FROM quotation WHERE id = :q")
+                .setParameter("q", quotationId).getResultList();
+        return r.isEmpty() || r.get(0) == null ? null : UUID.fromString(r.get(0).toString());
     }
 
     /**

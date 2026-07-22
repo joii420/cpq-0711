@@ -6,7 +6,7 @@ import java.util.UUID;
 
 /** 新核价管线的两个料号数组变量(线程级)。取代 SpineKeysContext。
  * task-0713 B3 扩展：携带 {@code :versionFilter} 宏所需的 override map + 渲染/列出模式。 */
-public final class CostingTreeVarsContext {
+public final class BomTreeVarsContext {
 
     /** RENDER=按 override 渲染指定版本(否则 is_current)；LIST=放开版本过滤(供下拉收集 distinct)。 */
     public enum Mode { RENDER, LIST }
@@ -40,5 +40,5 @@ public final class CostingTreeVarsContext {
     public static void set(Vars v) { TL.set(v); }
     public static Vars get() { return TL.get(); }
     public static void clear() { TL.remove(); }
-    private CostingTreeVarsContext() {}
+    private BomTreeVarsContext() {}
 }
