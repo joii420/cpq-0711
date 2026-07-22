@@ -11,6 +11,7 @@ import com.cpq.configure.service.ConfigureSnapshotService;
 import com.cpq.quotation.dto.CreateQuotationRequest;
 import com.cpq.quotation.dto.QuotationDTO;
 import com.cpq.quotation.dto.SaveDraftRequest;
+import com.cpq.quotation.entity.Quotation;
 import com.cpq.template.dto.CreateTemplateRequest;
 import com.cpq.template.dto.PublishRequest;
 import com.cpq.template.dto.TemplateDTO;
@@ -291,6 +292,63 @@ class Task0721PersistentFixtureBuilder {
         System.out.println("DAG: 3120018220 -> {2120011658, 2120011659} -> 3110520789(双亲2occ) "
                 + "-> {2101110225(料11), 2111410069(料12)}(各2occ)");
         System.out.println("=====================================================");
+    }
+
+    /**
+     * task-0721 收尾修复回归验证 —— 复现委托方真实渲染验收抓到的阻断级 bug：
+     * 对已建好的持久化 fixture（quotationId 硬编码，与交付清单一致）调用
+     * {@code POST /api/cpq/quotations/{id}/refresh-card-snapshot} 同一入口
+     * （{@link CardSnapshotService#refreshDraftQuoteCards}），复现前必须先确认「BOM树」tab
+     * 会被错误清空（修复前的证据），修复后必须保持 17 行 + 系统列不丢。
+     *
+     * <p>默认 SKIP（同款 {@code -Dtask0721.build.fixture=true} 开关，与持久化 fixture 共用同一防误跑闸门，
+     * 因为本测试依赖持久化 fixture 已存在于共享库）。
+     */
+    @Test
+    @DisplayName("回归验证：refresh-card-snapshot 后「BOM树」tab baseRows 仍保留 17 行 + 系统列")
+    void refreshCardSnapshot_treeTabSurvives() throws Exception {
+        Assumptions.assumeTrue(Boolean.getBoolean("task0721.build.fixture"),
+                "依赖持久化 fixture 已存在，默认跳过。需要验证时显式传 -Dtask0721.build.fixture=true");
+
+        UUID quotationId = UUID.fromString("1f8c146d-20cd-438b-9b4a-53a98f3cbdb9");
+        UUID lineItemId = UUID.fromString("303c5789-ed9d-483e-96b0-d6b1d42fa986");
+
+        // 前置确认：fixture 存在（若已被 B12 清理，本测试应明确失败而非误判）
+        Quotation q = Quotation.findById(quotationId);
+        assertNotNull(q, "持久化 fixture 报价单不存在——是否已被 B12 清理？请先重跑 buildPersistentFixture");
+
+        // 复现委托方的确切步骤：调用 refresh-card-snapshot 同一后端方法(与 REST 端点逐位相同)
+        int refreshed = cardSnapshotService.refreshDraftQuoteCards(quotationId);
+        assertEquals(1, refreshed, "该草稿报价单应恰好重刷 1 行");
+
+        // 与 GET /api/cpq/quotations/{id} 完全同一入口读取
+        em.clear();
+        QuotationDTO dto = quotationService.getById(quotationId);
+        QuotationDTO.LineItemDTO lineDto = dto.lineItems.stream()
+                .filter(x -> lineItemId.equals(x.id)).findFirst().orElse(null);
+        assertNotNull(lineDto, "刷新后应仍能查到该产品线");
+        assertNotNull(lineDto.quoteCardValues, "quoteCardValues 不应为 null");
+
+        JsonNode cardValues = M.readTree(lineDto.quoteCardValues);
+        JsonNode treeTab = null;
+        for (JsonNode tab : cardValues.path("tabs")) {
+            if ("BOM树".equals(tab.path("tabName").asText(""))) { treeTab = tab; break; }
+        }
+        assertNotNull(treeTab, "quoteCardValues.tabs 应含「BOM树」页签");
+        JsonNode baseRows = treeTab.path("baseRows");
+        assertTrue(baseRows.isArray(), "「BOM树」baseRows 应为数组");
+        assertTrue(baseRows.size() >= 17,
+                "refresh-card-snapshot 后「BOM树」baseRows 应仍 >= 17 行(委托方复现的 bug 是变成 0)，实际="
+                        + baseRows.size());
+        int withSystemCols = 0;
+        for (JsonNode row : baseRows) {
+            if (row.has("__nodeId") && row.has("__parentId") && row.has("__nodeType")) withSystemCols++;
+        }
+        assertEquals(baseRows.size(), withSystemCols,
+                "每行都应带 __nodeId/__parentId/__nodeType，实际只有 " + withSystemCols + "/" + baseRows.size());
+
+        System.out.println("[T0721-REFRESH-FIX] refresh-card-snapshot 后 BOM树 baseRows="
+                + baseRows.size() + " 全部带系统列 ✅");
     }
 
     private static Map<String, Object> fieldOf(String name, String fieldType, String path) {

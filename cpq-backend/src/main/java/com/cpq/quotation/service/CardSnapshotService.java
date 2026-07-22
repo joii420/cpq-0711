@@ -1883,12 +1883,19 @@ public class CardSnapshotService {
      * <b>非递归分支</b>剥离而来，去掉 closure/spine 依赖）。逐核价 driver 组件按根料号单值展开
      * （无系统列，等同报价侧取数）。
      *
-     * <p>调用前提：{@code templateId} 对应模板<b>不含树页签组件</b>
+     * <p><b>核价侧调用前提</b>：{@code templateId} 对应模板<b>不含树页签组件</b>
      * （{@link #templateHasTreeTab(UUID)} == false）——含树页签的模板恒由
      * {@link BomTreeRenderService} 整单渲染出 {@code precomputedBaseRows}，
      * {@link #buildCostingCardValues} 只在 {@code precomputedBaseRows == null} 时才调用本方法。
-     * 报价侧（{@link #refreshQuoteCardValues}/{@link #dryRunTokenRows}）恒不含树页签组件，
-     * 亦复用本方法（{@code unionByComp}/{@code driverCompsPrefetch} 传 null）。
+     *
+     * <p><b>报价侧（task-0721 起，2026-07-21 修正）</b>：{@link #refreshQuoteCardValues}/
+     * {@link #dryRunTokenRows} 复用本方法（{@code unionByComp}/{@code driverCompsPrefetch} 传 null）
+     * ——⚠️此前文档曾断言"报价侧恒不含树页签组件"，task-0721 引入 {@code tab_type='BOM'} 报价侧树页签
+     * 后该假设已不成立：本方法对树组件仍会按本行料号做单值平铺展开，因树组件 $view 的
+     * {@code hf_part_no} 语义是"边的子件料号"而非产品根料号，恒 0 行匹配，产出错误的空 baseRows。
+     * 两处调用方均已在调用本方法后紧跟 {@code overlayTreeTabsFromFrozenSnapshot(...)} 覆盖树组件
+     * 条目为其已冻结的 {@code snapshot_rows}（无树页签模板则该覆盖调用 no-op）——本方法自身不感知
+     * 树页签、不做任何修改，靠调用方兜底，避免破坏核价侧既有调用前提。
      *
      * <p>{@code unionByComp}（{@link #precomputeCostingDriverUnion} 整单按 partNo 预取）与
      * {@code driverCompsPrefetch}（整单一次查 driver 组件清单）两个性能分支与 closure 无关，照抄保留。
@@ -1947,6 +1954,52 @@ public class CardSnapshotService {
             QuotationIdContext.clear();
         }
         return baseRowsByComp;
+    }
+
+    /**
+     * task-0721 收尾修复（委托方真实渲染验收抓到的阻断级 bug）：{@link #expandFlatDriverBaseRows} 类注释
+     * 里"报价侧（{@link #refreshQuoteCardValues}/{@link #dryRunTokenRows}）恒不含树页签组件"是
+     * task-0721 之前的假设——task-0721 引入 {@code tab_type='BOM'} 报价侧树页签后该假设不再成立。
+     * 该方法对树组件仍会走"按本行 partNo 单值平铺展开"（{@code componentDriverService.expand}
+     * 以 {@code hf_part_no = ANY([productPartNo])} 过滤），但树组件 $view 的 {@code hf_part_no} 语义是
+     * "边的子件料号"，产品根料号从不会是任何 BOM 行的子件 → 恒 0 行匹配，覆盖掉
+     * {@link BomTreeRenderService} 首次物化时冻结写入的正确 spine，症状 = UI 打开正常、点「刷新
+     * 基础数据」/调 {@code POST .../refresh-card-snapshot} 后树页签变空。
+     *
+     * <p>修法对齐 B1 冻结不变量（"报价侧树在物化阶段产生并冻结，不随基础数据变动漂移"——与
+     * {@link com.cpq.component.service.CostingBomTreeConfigService#invalidateRenderedCardValues}
+     * 对 {@code QUOTE} usage 的处理同一哲学）：树页签组件不参与实时展开，直接读取该组件<b>当前已
+     * 持久化的</b> {@code snapshot_rows}（上次物化 / 加叶子 / 删除操作冻结的最新状态），走与
+     * {@link #buildCardValues} 完全相同的解析函数 {@link #buildBaseRowsFromSnapshotRows}
+     * （保留全部 {@code __*} 系统列，不窄化为 {@link ExpandDriverResponse.Row}）。
+     *
+     * <p>在调用方 {@code expandFlatDriverBaseRows(...)} 返回后立即调用本方法覆盖树组件条目
+     * （树组件在 {@code expandFlatDriverBaseRows} 里产出的 0 行/无效行会被本方法的正确值替换）。
+     * 非树模板（无 {@code tab_type='BOM'} 组件）→ 查询立即返回空列表，方法整体 no-op，零回归。
+     */
+    private void overlayTreeTabsFromFrozenSnapshot(UUID templateId, UUID lineItemId,
+                                                    Map<String, ArrayNode> baseRowsByComp) {
+        if (templateId == null || lineItemId == null) return;
+        @SuppressWarnings("unchecked")
+        List<Object> treeCompIds = em.createNativeQuery(
+                "SELECT DISTINCT c.id FROM template_component tc JOIN component c ON c.id = tc.component_id " +
+                "WHERE tc.template_id = :tid AND c.tab_type = 'BOM'")
+                .setParameter("tid", templateId)
+                .getResultList();
+        if (treeCompIds.isEmpty()) return;
+        for (Object idObj : treeCompIds) {
+            if (idObj == null) continue;
+            String cidStr = idObj.toString();
+            UUID cid = UUID.fromString(cidStr);
+            @SuppressWarnings("unchecked")
+            List<Object> rows = em.createNativeQuery(
+                    "SELECT snapshot_rows::text FROM quotation_line_component_data " +
+                    "WHERE line_item_id = :lid AND component_id = :cid")
+                    .setParameter("lid", lineItemId).setParameter("cid", cid)
+                    .getResultList();
+            String rowsJson = rows.isEmpty() ? null : (String) rows.get(0);
+            baseRowsByComp.put(cidStr, buildBaseRowsFromSnapshotRows(rowsJson, cidStr));
+        }
     }
 
     /** 从 quote_card_values JSON 提取各组件的 baseRows（componentId → baseRows 数组）。
@@ -2051,9 +2104,12 @@ public class CardSnapshotService {
             JsonNode snapshot = loadComponentsSnapshot(q.customerTemplateId);
             if (snapshot == null) return;
 
-            // 1. 重查基础值（报价模板 driver 组件 expand 种子；报价侧恒不含树页签组件，走平铺路径）
+            // 1. 重查基础值（报价模板 driver 组件 expand 种子；非树页签走平铺实时展开）
             Map<String, ArrayNode> baseRowsByComp =
                 expandFlatDriverBaseRows(q.customerTemplateId, managed, q.customerId, q.id, null, null);
+            // 1.5 task-0721 收尾修复：树页签（tab_type='BOM'）不走实时展开——覆盖为该组件当前已冻结的
+            // snapshot_rows（见 overlayTreeTabsFromFrozenSnapshot 方法注释；无树页签的模板 no-op）。
+            overlayTreeTabsFromFrozenSnapshot(q.customerTemplateId, managed.id, baseRowsByComp);
 
             // 2. 旧 editRows（按 rowKey 对齐保留）
             Map<String, ArrayNode> oldEdits = extractEditRowsByComp(managed.quoteCardValues);
@@ -2598,6 +2654,9 @@ public class CardSnapshotService {
         // 1. baseRows 展开 + editRows 合并（与 refreshQuoteCardValues 同源）
         Map<String, ArrayNode> baseRowsByComp =
             expandFlatDriverBaseRows(q.customerTemplateId, li, q.customerId, q.id, null, null);
+        // task-0721 收尾修复：树页签（tab_type='BOM'）不走实时展开，覆盖为已冻结 snapshot_rows
+        // （与 refreshQuoteCardValues 同一处理，见 overlayTreeTabsFromFrozenSnapshot 方法注释）。
+        overlayTreeTabsFromFrozenSnapshot(q.customerTemplateId, li.id, baseRowsByComp);
         Map<String, ArrayNode> oldEdits = extractEditRowsByComp(li.quoteCardValues);
         Map<String, ArrayNode> mergedEdits =
             mergeRowDataInputsIntoEdits(snapshot, baseRowsByComp, oldEdits, li.id);
