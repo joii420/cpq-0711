@@ -105,14 +105,16 @@ test('报价侧 BOM 树渲染：固定列 + 17 行 + 缩进 + 折叠 + DAG + 加
   expect(entered, '应能进入报价单 BOM 树页签').toBe(true);
   await shot(page, 'tree-tab');
 
-  // 固定列——按当前真实实现断言（2 列：料号 + 版本；父料号已隐藏，见文件头注释）
+  // 固定列——报价侧（task-0721 2026-07-22 裁决）只出「料号」一列：
+  // 报价树无版本切换语义，版本列仅核价侧保留；父料号历来隐藏（见文件头注释）。
   const headers = await tableHeaders(page);
   console.log('[QBT] BOM树表头:', JSON.stringify(headers));
   expect(headers[0], '第1列=料号').toBe('料号');
-  expect(headers[1], '第2列=版本').toBe('版本');
-  // 版本列现状是 disabled <select>（非纯文本）——与任务清单期望不同，如实记录，不在此断言"非 select"。
+  // 报价侧不应出现「版本」列（核价侧才有）
+  expect(headers, '报价树表头不含「版本」列').not.toContain('版本');
+  // 报价侧树内不应有版本 disabled select 占位（那是核价侧的版本切换占位）
   const verSelect = page.locator('.qt-cost-table tbody select[disabled]');
-  expect(await verSelect.count(), '版本列现状为 disabled select 占位').toBeGreaterThanOrEqual(1);
+  expect(await verSelect.count(), '报价侧树无版本下拉占位').toBe(0);
 
   // 行数 = 17（spine occurrence）
   const rows = page.locator('.qt-cost-table tbody tr');
