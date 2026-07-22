@@ -39,6 +39,14 @@ export interface CardStructureTab {
   treeConfig?: { idField: string; parentField: string; defaultExpanded?: boolean };
   fields: CardStructureField[];
   formulas?: Array<{ name: string; expression: any[] }>;
+  /**
+   * task-0721 F2：页签类型属性 + 料号列标识（需求说明 §4.3 规则一，2026-07-21 补充）。
+   * BOM 树页签的料号取系统列 __hfPartNo，partNoField 可空；非树页签须配 partNoField。
+   * 后端 CardSnapshotService 尚未把这三个字段回填进结构快照前，恒为 undefined（等价于历史行为）。
+   */
+  tabType?: string;
+  partNoField?: string;
+  partNameField?: string;
 }
 
 export interface CardStructure {

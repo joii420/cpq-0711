@@ -17,17 +17,13 @@ export interface BomLeafCandidate {
   sourceTabName: string;
 }
 
-/** 字段是否为"料号"列的启发式判定：字段名/显示名含"料号"（现役配置的通用命名习惯，
- *  BOM 树系统列固定表头即为"料号"，非树页签沿用同一命名约定）。 */
-function isPartNoField(field: ComponentField): boolean {
-  const label = String(field.label || field.name || '');
-  return label.includes('料号');
-}
-
 /**
  * 遍历 item.quoteCardValues 各页签(tabs)已渲染的 baseRows，抽取料号并按值去重。
- * 优先取 BOM 系统列 __hfPartNo（该页签本身是树页签时最权威）；否则按"料号"字段名
- * 匹配该页签字段定义，用 resolveTreeKey 解析（同建树取值口径，兼容 BASIC_DATA / DATA_SOURCE.BNF_PATH / 普通行值）。
+ *
+ * 2026-07-21 更正（需求说明 §4.3 规则一）：料号列**依据组件配置的 `partNoField` 显式取值，
+ * 不靠字段名/label 含"料号"启发式猜测**——原实现的猜测法已确认为洞，业务已裁决补显式配置。
+ * - 树页签（`comp.tabType==='BOM'`，或行本身带系统列）取 `__hfPartNo`，`partNoField` 可不配。
+ * - 非树页签必须配 `partNoField`；未配置的页签本函数不产出候选（与后端「不参与类型判定匹配」一致）。
  */
 export function collectBomLeafCandidates(item: LineItem): BomLeafCandidate[] {
   const seen = new Set<string>();
@@ -45,15 +41,23 @@ export function collectBomLeafCandidates(item: LineItem): BomLeafCandidate[] {
     if (!cid) continue;
     const comp = item.componentData?.find((c) => c.componentId === cid);
     if (!comp || comp.componentType === 'SUBTOTAL') continue;
-    const partNoField = (comp.fields as ComponentField[] | undefined)?.find(isPartNoField);
+    // 显式取列：comp.partNoField 是字段 name，从该页签自身字段定义里找对应 field 用于 resolveTreeKey 求值。
+    const partNoFieldName = comp.partNoField;
+    const partNoFieldDef = partNoFieldName
+      ? (comp.fields as ComponentField[] | undefined)?.find(
+          (f) => (f.name || (f as any).key) === partNoFieldName,
+        )
+      : undefined;
     const baseRows: any[] = Array.isArray(vtab.baseRows) ? vtab.baseRows : [];
     for (const br of baseRows) {
       let partNo: string | null = null;
       if (br?.__hfPartNo) {
+        // 树页签系统列最权威，与 partNoField 是否配置无关
         partNo = String(br.__hfPartNo);
-      } else if (partNoField) {
-        partNo = resolveTreeKey(partNoField, br?.driverRow ?? {}, br?.basicDataValues, bnfDriverLookupKey);
+      } else if (partNoFieldDef) {
+        partNo = resolveTreeKey(partNoFieldDef, br?.driverRow ?? {}, br?.basicDataValues, bnfDriverLookupKey);
       }
+      // 无 __hfPartNo 且未配置 partNoField 的页签：不产出候选（该页签未参与类型判定匹配）
       if (!partNo || seen.has(partNo)) continue;
       seen.add(partNo);
       out.push({ partNo, sourceComponentId: cid, sourceTabName: comp.tabName });

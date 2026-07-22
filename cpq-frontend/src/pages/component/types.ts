@@ -55,6 +55,16 @@ export interface ComponentItem {
    */
   tabType?: 'BOM' | '材质元素' | '零件' | '外购件' | '主件';
   /**
+   * task-0721 F2（2026-07-21 补充，需求说明 §4.3 规则一）：该页签哪个字段是料号列。
+   * 从该组件已有字段中选（取字段 name，不是自由输入）。类型判定与加叶子候选料号采集
+   * 依据此字段显式取值，不靠字段名/label 含"料号"启发式猜测。
+   * BOM 树页签（tabType=BOM）可不配（取系统列 __hfPartNo）；
+   * 非树页签（材质元素/零件/外购件/主件）必填，否则该页签不参与类型判定匹配。
+   */
+  partNoField?: string;
+  /** task-0721 F2：该页签哪个字段是料号名称列（从字段中选，可空）。 */
+  partNameField?: string;
+  /**
    * Task 3.1: EXCEL 组件持有的列定义(JSON 数组字符串).
    * 仅 componentType==='EXCEL' 的组件非空; 模板 Excel 视图通过 excel_component_id 引用本字段 + column_overrides 合并.
    * 数组元素形如 { col_key, title, source_type, hidden, formula, ... }.

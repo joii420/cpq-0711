@@ -201,6 +201,10 @@ export async function enrichComponentData(
         // 未透传时刷新/重进编辑后 comp.deletedRowKeys===undefined，
         // buildSnapshotExpansions QUOTE 过滤 no-op → 被删行重现。
         deletedRowKeys: saved.deletedRowKeys,
+        // task-0721 F2：页签类型属性 + 料号列标识（结构性字段，以 snapshot 为权威，兼容 snake/camel）
+        tabType: snapshotComp.tab_type || snapshotComp.tabType || undefined,
+        partNoField: snapshotComp.part_no_field || snapshotComp.partNoField || undefined,
+        partNameField: snapshotComp.part_name_field || snapshotComp.partNameField || undefined,
       } as ComponentDataItem;
     });
   } catch {
@@ -304,6 +308,10 @@ export function buildComponentDataFromStructure(
       // 未透传时刷新/重进编辑后 comp.deletedRowKeys===undefined，
       // buildSnapshotExpansions QUOTE 过滤 no-op → 被删行重现。
       deletedRowKeys: saved.deletedRowKeys,
+      // task-0721 F2：页签类型属性 + 料号列标识（结构快照 v2 camelCase；后端未回填前恒 undefined）
+      tabType: (tab as any).tabType || undefined,
+      partNoField: (tab as any).partNoField || undefined,
+      partNameField: (tab as any).partNameField || undefined,
     } as ComponentDataItem;
   });
 }

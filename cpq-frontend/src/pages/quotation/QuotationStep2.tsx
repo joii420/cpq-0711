@@ -143,6 +143,15 @@ export interface ComponentDataItem {
   treeConfig?: import('../component/types').TreeConfig;
   /** driver 默认行墓碑数组 JSON（[{effKey,fp}]）；前端按此过滤被删行。来自后端 ComponentDataDTO.deletedRowKeys。*/
   deletedRowKeys?: string;
+  /**
+   * task-0721 F2（2026-07-21 补充，需求说明 §4.3 规则一）：页签类型属性 + 料号列标识透传。
+   * 树页签（tabType='BOM'）取系统列 __hfPartNo 不需要 partNoField；非树页签的加叶子候选料号
+   * 采集（bomTreeLeaf.ts）依据 partNoField 显式取值，不靠字段名启发式猜测。
+   * 后端 CardSnapshotService 尚未把这三个字段回填进结构快照/模板快照前，恒为 undefined。
+   */
+  tabType?: string;
+  partNoField?: string;
+  partNameField?: string;
 }
 
 export interface LineItem {
