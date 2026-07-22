@@ -94,21 +94,25 @@ public class QuoteBackfillService {
         }
     }
 
-    /** 路径②：无 snapshot 表征的纯 pending 组——直接 flip is_current + 按 pending_supersedes 降旧版。 */
+    /** 路径②：无 snapshot 表征的纯 pending 组——按 pending_supersedes 先降旧版，再 flip is_current。
+     *  task-0721 Bug B 修复：必须先用 pending_supersedes 降级旧官方 current 行，再清
+     *  pending_quotation_id——原顺序先清空该列会导致降级旧版本的子查询
+     *  {@code WHERE pending_quotation_id = :qid} 命中不到本行（已被上一条 UPDATE 清空），
+     *  子查询恒空，旧组永远不会被降级，造成同组两行 is_current=true 并存。 */
     private void executeFlip(QuoteBackfillPlan.GroupChange g, UUID quotationId) {
-        runUpdate("UPDATE " + g.table + " SET is_current = true, pending_quotation_id = NULL " +
-                "WHERE pending_quotation_id = :qid AND " + axisWhere(g.groupKeyAxis), quotationId, g.groupKeyAxis);
         runUpdate("UPDATE " + g.table + " SET is_current = false " +
                 "WHERE id IN (SELECT unnest(pending_supersedes) FROM " + g.table + " " +
                 "WHERE pending_quotation_id = :qid AND " + axisWhere(g.groupKeyAxis) + ")", quotationId, g.groupKeyAxis);
+        runUpdate("UPDATE " + g.table + " SET is_current = true, pending_quotation_id = NULL " +
+                "WHERE pending_quotation_id = :qid AND " + axisWhere(g.groupKeyAxis), quotationId, g.groupKeyAxis);
         if (g.masterDetail) {
             QuoteTableAxis.Spec spec = QuoteTableAxis.of(g.table);
             String masterTable = spec.master.masterTable;
-            runUpdate("UPDATE " + masterTable + " SET is_current = true, pending_quotation_id = NULL " +
-                    "WHERE pending_quotation_id = :qid AND " + axisWhere(g.groupKeyAxis), quotationId, g.groupKeyAxis);
             runUpdate("UPDATE " + masterTable + " SET is_current = false " +
                     "WHERE id IN (SELECT unnest(pending_supersedes) FROM " + masterTable + " " +
                     "WHERE pending_quotation_id = :qid AND " + axisWhere(g.groupKeyAxis) + ")", quotationId, g.groupKeyAxis);
+            runUpdate("UPDATE " + masterTable + " SET is_current = true, pending_quotation_id = NULL " +
+                    "WHERE pending_quotation_id = :qid AND " + axisWhere(g.groupKeyAxis), quotationId, g.groupKeyAxis);
         }
     }
 

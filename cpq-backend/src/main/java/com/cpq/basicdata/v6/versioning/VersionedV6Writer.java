@@ -1043,8 +1043,14 @@ public class VersionedV6Writer {
         StringBuilder ph = new StringBuilder();
         for (int i = 0; i < cols.size(); i++) {
             if (i > 0) ph.append(", ");
-            ph.append(":v").append(i);
-            if (UUID_ARRAY_COLUMNS.contains(cols.get(i))) ph.append("::uuid[]");
+            // task-0721 Bug C 修复：`:vN::uuid[]` 会被 Hibernate 命名参数解析器整段吞成参数名
+            // `vN::uuid`（UnknownParameterException: No parameter named ':vN'）。改用不与占位符
+            // 粘连的 CAST(:vN AS uuid[])，Hibernate 能干净识别出 `:vN` 这一个参数名。
+            if (UUID_ARRAY_COLUMNS.contains(cols.get(i))) {
+                ph.append("CAST(:v").append(i).append(" AS uuid[])");
+            } else {
+                ph.append(":v").append(i);
+            }
         }
         Query q = em.createNativeQuery(
             "INSERT INTO " + table + " (" + colSql + ") VALUES (" + ph + ")");
@@ -1081,8 +1087,13 @@ public class VersionedV6Writer {
                     vals.append("(");
                     for (int ci = 0; ci < cols.size(); ci++) {
                         if (ci > 0) vals.append(", ");
-                        vals.append(":v").append(p++);
-                        if (UUID_ARRAY_COLUMNS.contains(cols.get(ci))) vals.append("::uuid[]");
+                        // 同上（insertRowGeneric）：CAST(:vN AS uuid[]) 而非 :vN::uuid[]，防止 Hibernate
+                        // 命名参数解析器把 "vN::uuid" 整段当成参数名。
+                        if (UUID_ARRAY_COLUMNS.contains(cols.get(ci))) {
+                            vals.append("CAST(:v").append(p++).append(" AS uuid[])");
+                        } else {
+                            vals.append(":v").append(p++);
+                        }
                     }
                     vals.append(")");
                 }

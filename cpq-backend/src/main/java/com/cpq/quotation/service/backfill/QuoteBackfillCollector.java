@@ -555,7 +555,14 @@ public class QuoteBackfillCollector {
     }
 
     private static UUID asUuid(Object v) {
-        return (v instanceof UUID u) ? u : UUID.fromString(String.valueOf(v));
+        if (v instanceof UUID u) return u;
+        // task-0721 Bug A 修复：driverRow.get("__v6_id") 返回的是 JsonNode（通常 TextNode）。
+        // String.valueOf(JsonNode) 等价 JsonNode.toString()，对 TextNode 会带外层引号
+        // （如 "\"6a3d...\""，38 字符），UUID.fromString 解析报 "UUID string too large"。
+        // 必须先用 .asText() 取裸字符串值，再解析为 UUID。覆盖全部 4 处调用点
+        // （253/263/314/341 行 asUuid(driverRow.get("__v6_id"))）。
+        if (v instanceof JsonNode n) return UUID.fromString(n.asText());
+        return UUID.fromString(String.valueOf(v));
     }
 
     private static JsonNode parseArray(String json) {
