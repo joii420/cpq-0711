@@ -66,6 +66,15 @@ class QuoteBomTreeEndToEndTest {
     private UUID quoteConfigId, treeComponentId, materialComponentId, templateId,
             treeViewId, matViewId, tcTreeId, tcMatId, quotationId, lineItemId;
 
+    /**
+     * task-0721 收尾：委托方已在共享库建了一份【持久化】usage=QUOTE 递归配置(TASK0721-QUOTE-BOMV2克隆，
+     * 供 UI 验收，不清理)，与本类原假设"QUOTE usage 全局无 active 行"冲突——{@code uq_bom_tree_config_active_per_usage}
+     * 每 usage 至多一条 active，本类若直接插入自己的 active 行会撞唯一约束。
+     * 修法：建自己的行前，先记录并暂时下线任何已存在的 QUOTE active 行，@AfterEach 里删完自己的行后
+     * 原样恢复（不删除/不篡改持久化 fixture 内容，只是"临时借道"）。
+     */
+    private UUID preExistingActiveQuoteConfigId;
+
     @AfterEach
     void cleanup() {
         QuarkusTransaction.requiringNew().run(() -> {
@@ -91,6 +100,11 @@ class QuoteBomTreeEndToEndTest {
             em.createNativeQuery("DELETE FROM component WHERE code LIKE :p").setParameter("p", TAG + "%").executeUpdate();
             em.createNativeQuery("DELETE FROM template WHERE name LIKE :p").setParameter("p", TAG + "%").executeUpdate();
             em.createNativeQuery("DELETE FROM costing_bom_tree_config WHERE name LIKE :p").setParameter("p", TAG + "%").executeUpdate();
+            // 恢复"借道"前已存在的 QUOTE active 行(如持久化验收 fixture)，不留篡改痕迹
+            if (preExistingActiveQuoteConfigId != null) {
+                em.createNativeQuery("UPDATE costing_bom_tree_config SET is_active = true WHERE id = :id")
+                        .setParameter("id", preExistingActiveQuoteConfigId).executeUpdate();
+            }
         });
     }
 
@@ -118,7 +132,18 @@ class QuoteBomTreeEndToEndTest {
     /** 建 fixture：QUOTE 递归配置 + 树组件 + 材质元素组件 + 模板 + 报价单 + 报价行。 */
     private void buildFixture() {
         QuarkusTransaction.requiringNew().run(() -> {
-            // ① QUOTE usage 递归 SQL 配置(合成边表,不碰 material_bom_item) + 激活
+            // ① QUOTE usage 递归 SQL 配置(合成边表,不碰 material_bom_item) + 激活。
+            // 借道前先暂时下线任何已存在的 QUOTE active 行(如持久化验收 fixture)，@AfterEach 里恢复。
+            @SuppressWarnings("unchecked")
+            List<Object> existingActive = em.createNativeQuery(
+                    "SELECT id FROM costing_bom_tree_config WHERE usage = 'QUOTE' AND is_active = true")
+                    .getResultList();
+            if (!existingActive.isEmpty()) {
+                preExistingActiveQuoteConfigId = toUUID(existingActive.get(0));
+                em.createNativeQuery("UPDATE costing_bom_tree_config SET is_active = false WHERE id = :id")
+                        .setParameter("id", preExistingActiveQuoteConfigId).executeUpdate();
+            }
+
             Object[] cfg = new Object[1];
             em.createNativeQuery(
                     "INSERT INTO costing_bom_tree_config (id, name, sql_template, is_active, usage, created_at, updated_at) " +
