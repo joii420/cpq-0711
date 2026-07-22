@@ -2406,12 +2406,13 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
               <table className="qt-cost-table">
                 <thead>
                   <tr>
-                    {/* 核价 BOM 递归展开：固定列仅"勾选递归"组件出（数据驱动 activeComponentBomTree）。
-                        按约定只显示「料号 / 版本」两列；父料号(__parentNo)仅用于建父子层级,不单独成列(2026-07-03 隐藏)。 */}
+                    {/* BOM 递归展开固定列（数据驱动 activeComponentBomTree）：核价侧「料号 / 版本」两列；
+                        报价侧（task-0721）不需要版本列——报价树无版本切换语义，仅出「料号」一列。
+                        父料号(__parentNo)两侧均只用于建父子层级,不单独成列(2026-07-03 隐藏)。 */}
                     {activeComponentBomTree && (
                       <>
                         <th style={{ minWidth: 120 }}>料号</th>
-                        <th style={{ minWidth: 90 }}>版本</th>
+                        {cardSide === 'COSTING' && <th style={{ minWidth: 90 }}>版本</th>}
                       </>
                     )}
                     {activeComponent.fields.map(field => {
@@ -2699,14 +2700,17 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                             </span>
                           </td>
                           {/* 父料号列已隐藏(仅用于建层级,不成列);保留 __parentNo 数据用于树父子关系 */}
-                          <td>
-                            {/* 版本下拉占位：P1 仅展示当前版本，不可切换（版本切换二期开放） */}
-                            <select value={bomSys?.bomVersion ?? ''} disabled
-                                    title="版本切换二期开放（P2）"
-                                    style={{ width: '100%', minWidth: 70, color: '#555', background: '#f5f5f5', cursor: 'not-allowed' }}>
-                              <option value={bomSys?.bomVersion ?? ''}>{bomSys?.bomVersion ?? '—'}</option>
-                            </select>
-                          </td>
+                          {/* 版本列：仅核价侧出（版本切换语义）；报价侧（task-0721）不出版本列。 */}
+                          {cardSide === 'COSTING' && (
+                            <td>
+                              {/* 版本下拉占位：P1 仅展示当前版本，不可切换（版本切换二期开放） */}
+                              <select value={bomSys?.bomVersion ?? ''} disabled
+                                      title="版本切换二期开放（P2）"
+                                      style={{ width: '100%', minWidth: 70, color: '#555', background: '#f5f5f5', cursor: 'not-allowed' }}>
+                                <option value={bomSys?.bomVersion ?? ''}>{bomSys?.bomVersion ?? '—'}</option>
+                              </select>
+                            </td>
+                          )}
                         </>
                       )}
                       {activeComponent.fields.map(field => {
@@ -2890,8 +2894,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                 {activeComponent.fields.some(f => f.is_subtotal) && (
                   <tfoot>
                     <tr className="qt-subtotal-row">
-                      {/* 核价 BOM 递归展开：与 2 系统固定列（料号 + 版本）对齐的占位单元格（仅"勾选递归"组件） */}
-                      {activeComponentBomTree && (<><td /><td /></>)}
+                      {/* BOM 递归展开：与系统固定列对齐的占位单元格（核价=料号+版本 2 格；报价=仅料号 1 格）。 */}
+                      {activeComponentBomTree && (<><td />{cardSide === 'COSTING' && <td />}</>)}
                       {activeComponent.fields.map((field, fi) => {
                         const colName = field.name || field.key || '';
                         // 单一来源：columnSumsByComp（buildCrossTabRows resolvedRows Σ行）
