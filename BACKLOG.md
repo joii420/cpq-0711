@@ -23,7 +23,7 @@
   3. **[P1] 料号版本锁定恒为默认 2000** —— `mat_customer_part_mapping.current_version` 冻结致 `part_version_locked` **35/35 = 2000**。空库实测 `GET /part-version/{cpn}/{hf}` 返 `currentVersion:2000`——**2000 是无匹配行时的设计默认值**，故 mcm 冻结/为空时每个料号静默拿 2000，使下游版本切换/版本抽屉即便修好也无数据可用。
   4. **[P2·硬失败可见] 料号版本切换 / 版本抽屉** —— 切到 v>2000 抛「版本不在历史中」；`mat_part_version_log` 冻结 44 行。空库实测 switch→404（非 500，可见错误）。
   5. **[P2] 元素价格下拉选项陈旧** —— `available-elements` 读 `mat_bom`(bom_type=ELEMENT) 返 20 个冻结元素名，V6 新增 4 个元素不在列表。空库实测返 `[]`（graceful）。
-     > 🔧 **2026-07-22：本子项已纳入 [[task-0722 元素价格策略]] 范围**（`dev-docs/task-0722-元素价格策略/backtask.md` B7）——`ElementPriceService.listAvailableElements()` 改读 `element` 主表 ACTIVE 元素。task-0722 交付后本子项可勾销，其余 1~4 子项不受影响。
+     > ✅ **2026-07-23 已闭合**：由 task-0722 元素价格策略交付（已合并 master）——`ElementPriceService.listAvailableElements()` 已从废弃的 `mat_bom` 改读 `element` 主表 ACTIVE 元素。**本子项勾销**，其余 1~4 子项不受影响、仍待排期。
 - **两个必须澄清的边界（避免误导修复工时）**：
   - **报价/核价渲染主链路是干净的**：全库扫描组件 `data_driver_path`/`fields`/`formulas`/`excel_columns` + `component_sql_view.sql_template` + 模板快照，**live config 零引用 `mat_*`**（唯一违规 `dp_view`/COMP-0078 电镀费未挂任何模板，爆炸半径 0）。损害全在**从未迁移的辅助元数据/版本功能**，非渲染主线。
   - **`SchemaContext.defaultContext()`(`:143-151`) 的 10 个 BNF 逻辑名全指向 V44**（元素BOM/来料BOM/组成件BOM→mat_bom、生产料号→mat_part、工序资料→mat_process、料号费用→mat_fee、客户料号对应→mat_customer_part_mapping 等），但配置层**点号语法 `逻辑名.列` 实际引用 0 命中**（11 个配置载体全扫过）——是**潜伏陷阱**（谁新配一个 `元素BOM.xxx` 字段即静默读冻结表），非正在发生的故障。此即 [[BL-0035]] 的运行时现状。
