@@ -414,7 +414,7 @@ Apache POI 生成 4 列表头（`元素符号*` / `单价*` / `货币` / `计价
 
 | 组件 | 侧 | 改动 |
 |------|----|------|
-| `COMP-0029` | 报价（QUOTE） | 视图加 `LEFT JOIN f_customer_element_price(:customerCode, :priceBaseDate)`，输出 `单价/货币/计价单位` 三个中文别名；三个字段配 `default_source`（`INPUT_*` 类型**不变**）；`required_variables` = `["customerCode","priceBaseDate"]` |
+| `COMP-0029` | 报价（QUOTE） | 视图加 `LEFT JOIN f_customer_element_price(:customerCode, :priceBaseDate)`，输出 **`单价`/`货币` 两个**中文别名；这**两个**字段配 `default_source`（`INPUT_*` 类型**不变**）；`required_variables` = `["customerCode","priceBaseDate"]`<br>⛔ **「计价单位」字段不绑、不动**——它是 BOM 发料单位（`ebi.issue_unit`），被「毛用量」「净用量」通过 `unit_source_field` 引用参与单位换算，改指价格的 `元/kg` 会让换算读到非法 token（详见 §11.10.1 与配置规则 Step 1 红框） |
 | `COMP-0040` | 核价（PRICING） | 同上但 **传字面量 `'_GLOBAL_'`**；`单价` 取数由 `global_variable_value(COST_ELEMENT)` 改为 `cep.unit_price`；`required_variables` = `["priceBaseDate"]`；**WHERE 里不要加 `customer_no` 条件** |
 
 **🚫 三个高频错误**（规则文档 §3 硬约束）：
