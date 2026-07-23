@@ -14,6 +14,7 @@
 | 响应信封 | **裸 DTO / 裸数组，无 `{code,data,msg}` 包装**（对齐现有 `ElementResource` 等既有端点） |
 | 鉴权 | `Authorization: Bearer <token>`；方法级 `@RoleAllowed`，见 §9 权限矩阵 |
 | 错误 | 抛 `BusinessException(status, message)`，由既有全局 mapper 转成 `{"message":"..."}`；`400` 参数非法 / `404` 不存在 / `409` 唯一冲突 |
+| **边界状态码细则**（2026-07-22 测试用例评审补定） | ① **路径参数** `{id}` 指向不存在的记录 → `404`；② **请求体/查询参数**里的引用型 ID（如 `sourceId`）指向不存在或非启用记录 → **`400`**（属参数校验失败，不是资源不存在）；③ 字段超长（如 `sourceName` > 128）→ `400` 并提示具体字段与上限；④ `customerNo` **大小写敏感**，按字面精确匹配（`_GLOBAL_` 必须全大写）；⑤ 元素例外**不允许**指向已停用（`status<>'ACTIVE'`）的元素 → `400` |
 | 日期 | `LocalDate` 序列化为 `"2026-07-22"`；时间戳 `OffsetDateTime` 为 ISO-8601 |
 | 金额 | `BigDecimal`，**保留 4 位小数**（对齐 `cpq-decimal-display-policy`：计算列 4 位） |
 | 分页 | 请求 `page`（0 基）+ `size`；响应 `{content:[], totalElements, page, size}` |
