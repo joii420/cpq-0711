@@ -5,6 +5,7 @@ import type {
   AvailableElementDTO,
   ManualPriceEntryRequest,
 } from '../types/element-price';
+import type { ElementLatestPriceDTO } from '../types/element-price-strategy';
 
 // Mock 开关
 const USE_MOCK = import.meta.env.VITE_USE_MOCK_ELEMENT_PRICE === 'true';
@@ -109,5 +110,17 @@ export const elementPriceService = {
       return MOCK_AVAILABLE_ELEMENTS;
     }
     return api.get<AvailableElementDTO[]>('/element-prices/available-elements') as unknown as Promise<AvailableElementDTO[]>;
+  },
+
+  // ────────────────────────────────────────────────────────────────
+  // task-0722 新增 · 元素抽屉「各源最新价格」区块用
+  // GET /api/cpq/element-price/latest-by-source?elementCode=Cu（api.md §4.1）
+  // 每个有过价格记录的源返回一行；已停用的源照常返回，前端按 sourceStatus 置灰标注。
+  // ────────────────────────────────────────────────────────────────
+
+  /** 某元素在各价格源下的最新价（元素编辑抽屉·仅编辑态调用） */
+  listLatestBySource: async (elementCode: string): Promise<ElementLatestPriceDTO[]> => {
+    const res = await api.get('/element-price/latest-by-source', { params: { elementCode } });
+    return (res as unknown as ElementLatestPriceDTO[]) ?? [];
   },
 };

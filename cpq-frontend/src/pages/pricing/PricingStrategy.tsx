@@ -4,10 +4,23 @@ import {
   Form, InputNumber, DatePicker, Select, Popconfirm, message, Alert,
   Typography, Divider,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, StopOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, StopOutlined, CheckCircleOutlined, GlobalOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { customerService } from '../../services/customerService';
 import { pricingService } from '../../services/pricingService';
+import { GLOBAL_CUSTOMER_NO } from '../../types/element-price-strategy';
+import ElementPriceStrategyTab from './element-strategy/ElementPriceStrategyTab';
+
+/**
+ * task-0722 · F6.2：定价策略页客户列表顶部固定「全局（核价成本口径）」项。
+ * 不是真实客户记录，不参与客户搜索与分页；选中它 selectedCustomer.code = '_GLOBAL_'。
+ */
+const GLOBAL_CUSTOMER_ITEM = {
+  id: GLOBAL_CUSTOMER_NO,
+  code: GLOBAL_CUSTOMER_NO,
+  name: '全局（核价成本口径）',
+  isGlobal: true as const,
+};
 
 const { Sider, Content } = Layout;
 const { Search } = Input;
@@ -43,6 +56,8 @@ const PricingStrategy: React.FC = () => {
   const [editingStrategy, setEditingStrategy] = useState<any>(null);
   const [form] = Form.useForm();
   const [rules, setRules] = useState<any[]>([]);
+  // task-0722 · F6.1：右侧内容区新增 Tab；选中「全局」时「折扣策略」Tab 不显示，强制落到「元素价格策略」
+  const [activeMainTab, setActiveMainTab] = useState<'discount' | 'element'>('discount');
 
   // Load customers
   const fetchCustomers = async (page = 0, keyword = '', level = '') => {
@@ -80,12 +95,18 @@ const PricingStrategy: React.FC = () => {
   }, [levelFilter]);
 
   useEffect(() => {
-    if (selectedCustomer) {
+    // 全局项(_GLOBAL_)不是真实客户，折扣策略无意义，不查
+    if (selectedCustomer && !selectedCustomer.isGlobal) {
       fetchStrategies(selectedCustomer.id);
     } else {
       setStrategies([]);
     }
   }, [selectedCustomer]);
+
+  // 切换客户时重置到默认 Tab；选中全局项时「折扣策略」Tab 不存在，强制落到「元素价格策略」
+  useEffect(() => {
+    setActiveMainTab(selectedCustomer?.isGlobal ? 'element' : 'discount');
+  }, [selectedCustomer?.id]);
 
   const activeCount = strategies.filter(s => s.status === 'ACTIVE').length;
 
@@ -259,6 +280,25 @@ const PricingStrategy: React.FC = () => {
             size="small"
           />
         </div>
+
+        {/* task-0722 · F6.2：全局（核价成本口径）固定项 —— _GLOBAL_ 策略的唯一配置入口，不参与搜索与分页 */}
+        <div
+          onClick={() => setSelectedCustomer(GLOBAL_CUSTOMER_ITEM)}
+          style={{
+            cursor: 'pointer',
+            padding: '10px 16px',
+            background: '#f9f0ff',
+            borderLeft: selectedCustomer?.isGlobal ? '3px solid #722ed1' : '3px solid transparent',
+            borderBottom: '1px solid #f0f0f0',
+          }}
+        >
+          <div style={{ fontWeight: 500 }}><GlobalOutlined /> 全局（核价成本口径）</div>
+          <div>
+            <Tag color="purple" style={{ marginTop: 2, fontSize: 11 }}>_GLOBAL_</Tag>
+            <Text type="secondary" style={{ fontSize: 11 }}>核价单取用</Text>
+          </div>
+        </div>
+
         <Tabs
           size="small"
           activeKey={levelFilter}
@@ -311,123 +351,158 @@ const PricingStrategy: React.FC = () => {
           </div>
         ) : (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <div>
-                <Text strong style={{ fontSize: 16 }}>{selectedCustomer.name}</Text>
-                <Tag color={levelMap[selectedCustomer.level]?.color} style={{ marginLeft: 8 }}>
-                  {levelMap[selectedCustomer.level]?.label || selectedCustomer.level}
-                </Tag>
+                {selectedCustomer.isGlobal ? (
+                  <Text strong style={{ fontSize: 16 }}><GlobalOutlined /> {selectedCustomer.name}</Text>
+                ) : (
+                  <>
+                    <Text strong style={{ fontSize: 16 }}>{selectedCustomer.name}</Text>
+                    <Tag color={levelMap[selectedCustomer.level]?.color} style={{ marginLeft: 8 }}>
+                      {levelMap[selectedCustomer.level]?.label || selectedCustomer.level}
+                    </Tag>
+                  </>
+                )}
               </div>
-              <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
-                新建策略
-              </Button>
             </div>
 
-            {activeCount > 0 && (
-              <Alert
-                type="info"
-                message={`当前有 ${activeCount} 条生效策略`}
-                style={{ marginBottom: 16 }}
-                showIcon
-              />
-            )}
+            {/* task-0722 · F6.1：新增「元素价格策略」Tab；原「折扣策略」内容原样搬入第一个 Tab。
+                选中全局项时不显示「折扣策略」Tab（折扣是客户维度概念，用条件渲染 items，非 disabled）。 */}
+            <Tabs
+              activeKey={activeMainTab}
+              onChange={(k) => setActiveMainTab(k as 'discount' | 'element')}
+              items={[
+                ...(selectedCustomer.isGlobal ? [] : [{
+                  key: 'discount',
+                  label: '折扣策略',
+                  children: (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+                        <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+                          新建策略
+                        </Button>
+                      </div>
 
-            {strategies.length === 0 && !loadingStrategies ? (
-              <div style={{ textAlign: 'center', color: '#999', paddingTop: 60 }}>
-                暂无定价策略，点击"新建策略"开始配置
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {strategies.map(s => (
-                  <Card
-                    key={s.id}
-                    size="small"
-                    loading={loadingStrategies}
-                    title={
-                      <Space>
-                        <Text strong>{s.name}</Text>
-                        <Tag color={statusMap[s.status]?.color}>
-                          {statusMap[s.status]?.label || s.status}
-                        </Tag>
-                        <Text type="secondary" style={{ fontSize: 12 }}>优先级: {s.priority}</Text>
-                      </Space>
-                    }
-                    extra={
-                      <Space>
-                        <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(s)}>
-                          编辑
-                        </Button>
-                        <Button
-                          size="small"
-                          icon={s.status === 'ACTIVE' ? <StopOutlined /> : <CheckCircleOutlined />}
-                          onClick={() => handleToggleStatus(s)}
-                        >
-                          {s.status === 'ACTIVE' ? '禁用' : '启用'}
-                        </Button>
-                        <Popconfirm
-                          title="确认删除此策略？"
-                          onConfirm={() => handleDelete(s.id)}
-                          okText="删除"
-                          cancelText="取消"
-                        >
-                          <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
-                        </Popconfirm>
-                      </Space>
-                    }
-                  >
-                    <div style={{ display: 'flex', gap: 24, marginBottom: s.rules?.length > 0 ? 12 : 0, flexWrap: 'wrap' }}>
-                      <div>
-                        <Text type="secondary">基础折扣: </Text>
-                        <Text strong>{s.baseDiscount}%</Text>
-                      </div>
-                      <div>
-                        <Text type="secondary">最小订单金额: </Text>
-                        <Text>¥{Number(s.minOrderAmount || 0).toLocaleString()}</Text>
-                      </div>
-                      {s.effectiveDate && (
-                        <div>
-                          <Text type="secondary">有效期: </Text>
-                          <Text>{s.effectiveDate} ~ {s.expirationDate || '无限'}</Text>
+                      {activeCount > 0 && (
+                        <Alert
+                          type="info"
+                          message={`当前有 ${activeCount} 条生效策略`}
+                          style={{ marginBottom: 16 }}
+                          showIcon
+                        />
+                      )}
+
+                      {strategies.length === 0 && !loadingStrategies ? (
+                        <div style={{ textAlign: 'center', color: '#999', paddingTop: 60 }}>
+                          暂无定价策略，点击"新建策略"开始配置
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                          {strategies.map(s => (
+                            <Card
+                              key={s.id}
+                              size="small"
+                              loading={loadingStrategies}
+                              title={
+                                <Space>
+                                  <Text strong>{s.name}</Text>
+                                  <Tag color={statusMap[s.status]?.color}>
+                                    {statusMap[s.status]?.label || s.status}
+                                  </Tag>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>优先级: {s.priority}</Text>
+                                </Space>
+                              }
+                              extra={
+                                <Space>
+                                  <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(s)}>
+                                    编辑
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    icon={s.status === 'ACTIVE' ? <StopOutlined /> : <CheckCircleOutlined />}
+                                    onClick={() => handleToggleStatus(s)}
+                                  >
+                                    {s.status === 'ACTIVE' ? '禁用' : '启用'}
+                                  </Button>
+                                  <Popconfirm
+                                    title="确认删除此策略？"
+                                    onConfirm={() => handleDelete(s.id)}
+                                    okText="删除"
+                                    cancelText="取消"
+                                  >
+                                    <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+                                  </Popconfirm>
+                                </Space>
+                              }
+                            >
+                              <div style={{ display: 'flex', gap: 24, marginBottom: s.rules?.length > 0 ? 12 : 0, flexWrap: 'wrap' }}>
+                                <div>
+                                  <Text type="secondary">基础折扣: </Text>
+                                  <Text strong>{s.baseDiscount}%</Text>
+                                </div>
+                                <div>
+                                  <Text type="secondary">最小订单金额: </Text>
+                                  <Text>¥{Number(s.minOrderAmount || 0).toLocaleString()}</Text>
+                                </div>
+                                {s.effectiveDate && (
+                                  <div>
+                                    <Text type="secondary">有效期: </Text>
+                                    <Text>{s.effectiveDate} ~ {s.expirationDate || '无限'}</Text>
+                                  </div>
+                                )}
+                              </div>
+
+                              {s.rules && s.rules.length > 0 && (
+                                <>
+                                  <Divider style={{ margin: '8px 0' }} />
+                                  <Table
+                                    size="small"
+                                    dataSource={s.rules}
+                                    rowKey="id"
+                                    pagination={false}
+                                    columns={[
+                                      {
+                                        title: '起订金额',
+                                        dataIndex: 'thresholdAmount',
+                                        render: v => `¥${Number(v).toLocaleString()}`,
+                                      },
+                                      {
+                                        title: '折扣率',
+                                        dataIndex: 'discountRate',
+                                        render: v => `${v}%`,
+                                      },
+                                      {
+                                        title: '规则类型',
+                                        dataIndex: 'ruleType',
+                                        render: v => v === 'BULK_DISCOUNT' ? '批量折扣' : v === 'AMOUNT_DISCOUNT' ? '金额折扣' : v,
+                                      },
+                                      {
+                                        title: '排序',
+                                        dataIndex: 'sortOrder',
+                                      },
+                                    ]}
+                                  />
+                                </>
+                              )}
+                            </Card>
+                          ))}
                         </div>
                       )}
-                    </div>
-
-                    {s.rules && s.rules.length > 0 && (
-                      <>
-                        <Divider style={{ margin: '8px 0' }} />
-                        <Table
-                          size="small"
-                          dataSource={s.rules}
-                          rowKey="id"
-                          pagination={false}
-                          columns={[
-                            {
-                              title: '起订金额',
-                              dataIndex: 'thresholdAmount',
-                              render: v => `¥${Number(v).toLocaleString()}`,
-                            },
-                            {
-                              title: '折扣率',
-                              dataIndex: 'discountRate',
-                              render: v => `${v}%`,
-                            },
-                            {
-                              title: '规则类型',
-                              dataIndex: 'ruleType',
-                              render: v => v === 'BULK_DISCOUNT' ? '批量折扣' : v === 'AMOUNT_DISCOUNT' ? '金额折扣' : v,
-                            },
-                            {
-                              title: '排序',
-                              dataIndex: 'sortOrder',
-                            },
-                          ]}
-                        />
-                      </>
-                    )}
-                  </Card>
-                ))}
-              </div>
-            )}
+                    </>
+                  ),
+                }]),
+                {
+                  key: 'element',
+                  label: '元素价格策略',
+                  children: (
+                    <ElementPriceStrategyTab
+                      customerNo={selectedCustomer.isGlobal ? GLOBAL_CUSTOMER_NO : selectedCustomer.code}
+                      customerLabel={selectedCustomer.name}
+                    />
+                  ),
+                },
+              ]}
+            />
           </>
         )}
       </Content>

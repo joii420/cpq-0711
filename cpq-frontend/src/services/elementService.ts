@@ -16,6 +16,12 @@ export interface ElementItem {
   codeLocked: boolean;      // true → 禁用符号输入
   createdAt?: string;
   updatedAt?: string;
+  /**
+   * 最后修改时间（task-0722 · api.md §4.2 新增）
+   * = MAX(element.updated_at, 该元素所有价格记录的 updated_at)，查询时取较大值，不反写 element.updated_at。
+   * 列表默认排序：启用优先 → 本字段倒序。
+   */
+  lastModifiedAt?: string;
 }
 
 export interface ElementUpsertRequest {
