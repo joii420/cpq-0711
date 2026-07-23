@@ -46,4 +46,10 @@ public class CreateComponentRequest {
 
     /** task-0721（2026-07-21 补录）：该页签「料号名称列」对应的字段名，可空。 */
     public String partNameField;
+
+    /**
+     * task-0722：多行页签「行排序列」字段名（本组件 fields[].name 之一），可空。
+     * 设置后快照按该字段数字感知升序排列；null=不改（更新时）/ 不排（新建时）。
+     */
+    public String sortField;
 }

@@ -89,6 +89,8 @@ public class ConfigureSnapshotService {
         public String partNoField;
         /** 该组件 fields JSON（供 partNoField 解析用，FormulaCalculator.computeRowKey 需要）。 */
         public String fields;
+        /** task-0722：多行页签「行排序列」字段名（可空，快照按其数字感知升序排列）。 */
+        public String sortField;
     }
 
     /**
@@ -399,6 +401,10 @@ public class ConfigureSnapshotService {
                                         comp.id, customerId, partNo, null, null, null, lineItemId, compositeType);
                             }
                             List<ExpandDriverResponse.Row> rows = (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
+                            // task-0722：组件级 sort_field → 按该列对 driver 行数字感知升序排列(平铺页签)。
+                            // 视图 ORDER BY 在报价单 pending 改写管线下会被丢弃(SELECT* 外壳无外层排序),故排序落此处。
+                            // 返回排序后的新副本(AP-37：绝不原地改 exp.rows 共享缓存引用)。
+                            rows = sortRowsBySortField(rows, comp);
                             // task-0721 B5：本组件若挂了「材质元素/零件/外购件/主件」类型属性，把本行渲染出的
                             // 料号（按 comp.partNoField 显式取值，2026-07-21 补录：禁止按字段名启发式猜测）
                             // 并入本行的类型判定上下文(供 Pass 2 树页签 __nodeType 结构推导用)。
@@ -616,6 +622,70 @@ public class ConfigureSnapshotService {
         }
     }
 
+    // ───────────── task-0722：组件级 sort_field 行排序 ─────────────
+
+    /**
+     * 按组件 {@code sort_field} 对 driver 行做数字感知升序排序，返回<b>新副本</b>。
+     * <ul>
+     *   <li>树页签(tab_type=BOM)按树序渲染，不排；</li>
+     *   <li>{@code sort_field} 未配 / 行数 &lt; 2 / 解析不到对应列 → 原样返回；</li>
+     *   <li><b>绝不原地改</b> {@code rows}（可能是 expand 缓存的共享引用，AP-37 可变共享面）。</li>
+     * </ul>
+     */
+    static List<ExpandDriverResponse.Row> sortRowsBySortField(List<ExpandDriverResponse.Row> rows, DriverComp comp) {
+        if (rows == null || rows.size() < 2 || comp == null
+                || comp.sortField == null || comp.sortField.isBlank()) return rows;
+        if (BomTreeRenderService.isQuoteTreeTabType(comp.tabType)) return rows; // 树序为准
+        String col = resolveDriverColumn(comp.sortField, comp.fields);
+        if (col == null) return rows;
+        List<ExpandDriverResponse.Row> sorted = new ArrayList<>(rows);
+        final String key = col;
+        sorted.sort(java.util.Comparator.comparing(
+                r -> (r != null && r.driverRow != null) ? r.driverRow.get(key) : null,
+                ConfigureSnapshotService::compareNumericAware));
+        return sorted;
+    }
+
+    /** 字段名 → driver 行的列 key：查 fields JSON 里 name 匹配项的 default_source.path（或 basic_data_path）末段。 */
+    static String resolveDriverColumn(String fieldName, String fieldsJson) {
+        if (fieldName == null || fieldName.isBlank()) return null;
+        try {
+            JsonNode arr = MAPPER.readTree(fieldsJson == null ? "[]" : fieldsJson);
+            if (arr == null || !arr.isArray()) return null;
+            for (JsonNode f : arr) {
+                if (!fieldName.equals(f.path("name").asText(null))) continue;
+                String path = null;
+                JsonNode ds = f.get("default_source");
+                if (ds != null && ds.hasNonNull("path")) path = ds.get("path").asText();
+                if ((path == null || path.isBlank()) && f.hasNonNull("basic_data_path")) {
+                    path = f.get("basic_data_path").asText();
+                }
+                if (path == null || path.isBlank()) return null;
+                int dot = path.lastIndexOf('.');
+                return dot >= 0 ? path.substring(dot + 1) : path;
+            }
+        } catch (Exception ignore) { /* 解析失败 → 不排 */ }
+        return null;
+    }
+
+    /** 数字感知比较：两值都可解析为数字 → 按数字；否则按字符串；null 殿后。 */
+    static int compareNumericAware(Object a, Object b) {
+        if (a == null && b == null) return 0;
+        if (a == null) return 1;   // null 排最后
+        if (b == null) return -1;
+        Double da = tryNum(a), db = tryNum(b);
+        if (da != null && db != null) return Double.compare(da, db);
+        return a.toString().compareTo(b.toString());
+    }
+
+    private static Double tryNum(Object o) {
+        if (o instanceof Number n) return n.doubleValue();
+        if (o == null) return null;
+        String s = o.toString().trim();
+        if (s.isEmpty()) return null;
+        try { return Double.parseDouble(s); } catch (Exception e) { return null; }
+    }
+
     /**
      * 从一个树页签组件的 precomputed baseRows（{@link BomTreeRenderService#treeRowNode} 产出）收集
      * 父子边（{@code __parentNo} → {@code __hfPartNo}）到类型判定上下文，供规则三（直接子节点结构推导）。
@@ -687,7 +757,7 @@ public class ConfigureSnapshotService {
         // task-0721（2026-07-21 补录）：附带 c.part_no_field/c.fields，供类型判定命中收集按料号列
         // 显式取值（不再按字段名启发式猜测）。
         List<Object[]> rows = em.createNativeQuery(
-                "SELECT DISTINCT c.id, c.name, c.data_driver_path, c.tab_type, c.part_no_field, c.fields " +
+                "SELECT DISTINCT c.id, c.name, c.data_driver_path, c.tab_type, c.part_no_field, c.fields, c.sort_field " +
                 "FROM quotation q " +
                 "JOIN template_component tc ON tc.template_id = q.customer_template_id " +
                 "JOIN component c ON c.id = tc.component_id " +
@@ -703,6 +773,7 @@ public class ConfigureSnapshotService {
             dc.tabType = r[3] != null ? r[3].toString() : null;
             dc.partNoField = r[4] != null ? r[4].toString() : null;
             dc.fields = r[5] != null ? r[5].toString() : "[]";
+            dc.sortField = r[6] != null ? r[6].toString() : null;
             out.add(dc);
         }
         return out;
