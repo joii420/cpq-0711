@@ -26,7 +26,8 @@ function normStr(v: any): string | null {
 }
 
 /**
- * 按 partNoField 字段定义解析该行的料号值。
+ * 按字段定义解析该行的字符串取值——通用于 partNoField 与 partNameField（2026-07-23 起
+ * 两者取值口径完全一致，只是字段配置不同，故合用一个解析函数，不重复实现）。
  *
  * 2026-07-21 真实 fixture 验证发现：`resolveTreeKey`（treeTable.ts）只认两种历史机制
  * （`field_type==='BASIC_DATA'`+`basic_data_path`，或 `DATA_SOURCE`+`datasource_binding.type==='BNF_PATH'`），
@@ -37,7 +38,7 @@ function normStr(v: any): string | null {
  * 本函数不改 treeTable.ts（该文件与树布局共用，不属于本次改动范围），只在本文件内先补上
  * default_source.BASIC_DATA 分支，再退回 resolveTreeKey 覆盖其余历史机制，两者互补。
  */
-function resolvePartNoValue(
+function resolveFieldStringValue(
   field: ComponentField,
   driverRow: Record<string, any>,
   basicDataValues: Record<string, any> | undefined,
@@ -53,13 +54,27 @@ function resolvePartNoValue(
   return resolveTreeKey(field, driverRow, basicDataValues, bnfDriverLookupKey);
 }
 
+/** 从组件字段定义里按字段 name 查找对应 field（partNoField/partNameField 存的是字段 name）。 */
+function findFieldByName(
+  fields: ComponentField[] | undefined,
+  fieldName: string | undefined,
+): ComponentField | undefined {
+  if (!fieldName) return undefined;
+  return fields?.find((f) => (f.name || (f as any).key) === fieldName);
+}
+
 /**
- * 遍历 item.quoteCardValues 各页签(tabs)已渲染的 baseRows，抽取料号并按值去重。
+ * 遍历 item.quoteCardValues 各页签(tabs)已渲染的 baseRows，抽取匹配标识值并按值去重。
  *
- * 2026-07-21 更正（需求说明 §4.3 规则一）：料号列**依据组件配置的 `partNoField` 显式取值，
- * 不靠字段名/label 含"料号"启发式猜测**——原实现的猜测法已确认为洞，业务已裁决补显式配置。
- * - 树页签（`comp.tabType==='BOM'`，或行本身带系统列）取 `__hfPartNo`，`partNoField` 可不配。
- * - 非树页签必须配 `partNoField`；未配置的页签本函数不产出候选（与后端「不参与类型判定匹配」一致）。
+ * 2026-07-21 更正（需求说明 §4.3 规则一）：标识列**依据组件显式配置取值，不靠字段名/label
+ * 含"料号"启发式猜测**——原实现的猜测法已确认为洞，业务已裁决补显式配置。
+ *
+ * 2026-07-23 修订（匹配标识放宽）：非树页签的标识不一定是料号，也可能是名称（如"外购件/费用"类
+ * 页签用"料件名称=组成件1"而无料号列）。取值口径改为 **partNoField 优先，为空则 partNameField 兜底**：
+ * - 树页签（`comp.tabType==='BOM'`，或行本身带系统列）取 `__hfPartNo`，两列均可不配。
+ * - 非树页签：先试 partNoField，取不到值再试 partNameField；两者都未配置/都取不到值的页签
+ *   不产出候选（与后端「不参与类型判定匹配」一致）。
+ * - 候选列表因此可能混合料号值与名称值，均为纯字符串，后端按同一口径比对（不做料号↔名称映射）。
  */
 export function collectBomLeafCandidates(item: LineItem): BomLeafCandidate[] {
   const seen = new Set<string>();
@@ -77,26 +92,27 @@ export function collectBomLeafCandidates(item: LineItem): BomLeafCandidate[] {
     if (!cid) continue;
     const comp = item.componentData?.find((c) => c.componentId === cid);
     if (!comp || comp.componentType === 'SUBTOTAL') continue;
-    // 显式取列：comp.partNoField 是字段 name，从该页签自身字段定义里找对应 field 用于 resolveTreeKey 求值。
-    const partNoFieldName = comp.partNoField;
-    const partNoFieldDef = partNoFieldName
-      ? (comp.fields as ComponentField[] | undefined)?.find(
-          (f) => (f.name || (f as any).key) === partNoFieldName,
-        )
-      : undefined;
+    const partNoFieldDef = findFieldByName(comp.fields as ComponentField[] | undefined, comp.partNoField);
+    const partNameFieldDef = findFieldByName(comp.fields as ComponentField[] | undefined, comp.partNameField);
     const baseRows: any[] = Array.isArray(vtab.baseRows) ? vtab.baseRows : [];
     for (const br of baseRows) {
-      let partNo: string | null = null;
+      let identity: string | null = null;
       if (br?.__hfPartNo) {
-        // 树页签系统列最权威，与 partNoField 是否配置无关
-        partNo = String(br.__hfPartNo);
-      } else if (partNoFieldDef) {
-        partNo = resolvePartNoValue(partNoFieldDef, br?.driverRow ?? {}, br?.basicDataValues);
+        // 树页签系统列最权威，与 partNoField/partNameField 是否配置无关
+        identity = String(br.__hfPartNo);
+      } else {
+        // 非树页签：料号列优先，取不到再退名称列兜底（与后端判定口径一致）
+        if (partNoFieldDef) {
+          identity = resolveFieldStringValue(partNoFieldDef, br?.driverRow ?? {}, br?.basicDataValues);
+        }
+        if (identity == null && partNameFieldDef) {
+          identity = resolveFieldStringValue(partNameFieldDef, br?.driverRow ?? {}, br?.basicDataValues);
+        }
       }
-      // 无 __hfPartNo 且未配置 partNoField 的页签：不产出候选（该页签未参与类型判定匹配）
-      if (!partNo || seen.has(partNo)) continue;
-      seen.add(partNo);
-      out.push({ partNo, sourceComponentId: cid, sourceTabName: comp.tabName });
+      // 无 __hfPartNo 且 partNoField/partNameField 均未配置或取不到值的页签：不产出候选
+      if (!identity || seen.has(identity)) continue;
+      seen.add(identity);
+      out.push({ partNo: identity, sourceComponentId: cid, sourceTabName: comp.tabName });
     }
   }
   return out;

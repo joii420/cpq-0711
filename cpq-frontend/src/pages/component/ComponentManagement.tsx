@@ -1276,16 +1276,19 @@ const ComponentManagement: React.FC = () => {
   // Save component
   const handleSave = async () => {
     if (!selectedComponent) return;
-    // task-0721 F2（2026-07-21 补充，需求说明 §4.3 规则一）：非树页签(材质元素/零件/外购件/主件)
-    // 必须配 partNoField，否则该页签不参与类型判定匹配。后端保存期也会校验(400)，
+    // task-0721 F2（2026-07-23 修订，需求说明 §4.3 规则一「匹配标识放宽」）：非树页签
+    // (材质元素/零件/外购件/主件) 的匹配标识不一定是料号，也可能是名称（如「外购件/费用」类
+    // 页签用"料件名称=组成件1"而无料号列）——放宽为 partNoField 或 partNameField 至少配一个，
+    // 否则该页签既标了类型却无任何可匹配标识，等于白标。后端保存期也会校验(400)，
     // 这里做前端先行校验只为更快反馈，不替代后端权威判定。
     if (
       selectedComponent.componentType === 'NORMAL'
       && tabType
       && tabType !== 'BOM'
       && !partNoField
+      && !partNameField
     ) {
-      message.error(`页签类型「${tabType}」必须选择「料号列」，否则该页签不参与树上加叶子的类型判定`);
+      message.error(`页签类型「${tabType}」需配置「料号列」或「名称列」至少一个作为匹配标识`);
       return;
     }
     setSaving(true);
@@ -1658,31 +1661,41 @@ const ComponentManagement: React.FC = () => {
                         ]}
                       />
                     </Tooltip>
-                    {/* task-0721 F2（2026-07-21 补充，需求说明 §4.3 规则一）：料号列/料号名称列标识——
-                        从该组件已有字段(fields state)中选，不是自由输入。类型判定与加叶子候选料号采集
-                        依据这两个字段显式取值，不再靠字段名/label 含"料号"启发式猜测。
-                        树页签(tabType=BOM)可不配(取系统列 __hfPartNo)；非树页签必须配 partNoField。 */}
-                    <Tooltip title={tabType && tabType !== 'BOM' ? '该页签哪个字段是料号列（必填——树上加叶子的类型判定依据此列取值）' : '该页签哪个字段是料号列（BOM 树页签可不配，取系统列料号）'}>
-                      <Select
-                        allowClear
-                        placeholder="料号列"
-                        style={{ width: 120 }}
-                        status={(tabType && tabType !== 'BOM' && !partNoField) ? 'error' : undefined}
-                        value={partNoField}
-                        onChange={(v) => setPartNoField(v)}
-                        options={fieldNameOptions}
-                      />
-                    </Tooltip>
-                    <Tooltip title="该页签哪个字段是料号名称列（可空）">
-                      <Select
-                        allowClear
-                        placeholder="料号名称列"
-                        style={{ width: 120 }}
-                        value={partNameField}
-                        onChange={(v) => setPartNameField(v)}
-                        options={fieldNameOptions}
-                      />
-                    </Tooltip>
+                    {/* task-0721 F2（2026-07-23 修订，需求说明 §4.3 规则一「匹配标识放宽」）：
+                        料号列/名称列标识——从该组件已有字段(fields state)中选，不是自由输入。
+                        类型判定与加叶子候选采集依据这两个字段显式取值，不再靠字段名/label
+                        含"料号"启发式猜测。树页签(tabType=BOM)两列均可不配(取系统列 __hfPartNo)；
+                        非树页签"料号列或名称列至少配一个"即可——不是必须配料号列（有些页签只有
+                        名称没有料号，如"外购件/费用"类页签用"料件名称=组成件1"标识）。 */}
+                    {(() => {
+                      const identityMissing = !!tabType && tabType !== 'BOM' && !partNoField && !partNameField;
+                      return (
+                        <>
+                          <Tooltip title={tabType && tabType !== 'BOM' ? '该页签哪个字段是料号列（与「名称列」至少配一个作为匹配标识）' : '该页签哪个字段是料号列（BOM 树页签可不配，取系统列料号）'}>
+                            <Select
+                              allowClear
+                              placeholder="料号列"
+                              style={{ width: 120 }}
+                              status={identityMissing ? 'error' : undefined}
+                              value={partNoField}
+                              onChange={(v) => setPartNoField(v)}
+                              options={fieldNameOptions}
+                            />
+                          </Tooltip>
+                          <Tooltip title={tabType && tabType !== 'BOM' ? '该页签哪个字段是料号名称列（与「料号列」至少配一个作为匹配标识；有些页签只有名称没有料号，可只配这个）' : '该页签哪个字段是料号名称列（可空）'}>
+                            <Select
+                              allowClear
+                              placeholder="名称列"
+                              style={{ width: 120 }}
+                              status={identityMissing ? 'error' : undefined}
+                              value={partNameField}
+                              onChange={(v) => setPartNameField(v)}
+                              options={fieldNameOptions}
+                            />
+                          </Tooltip>
+                        </>
+                      );
+                    })()}
                   </>
                 )}
                 <Button size="small" onClick={() => setGuideOpen(true)}>配置帮助</Button>
