@@ -19,7 +19,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeSet;
 import java.util.UUID;
 
 /**
@@ -138,10 +137,11 @@ public class PriceTableService {
         dto.sourceId = sourceId;
         dto.sourceName = lookupSourceName(sourceId);
 
-        // dates = 区间内实际有数据的日期（升序），不是整段区间的全部日期
-        TreeSet<LocalDate> dateSet = new TreeSet<>();
-        for (Object[] r : rows) dateSet.add(toLocalDate(r[2]));
-        dto.dates = new ArrayList<>(dateSet);
+        // dates = 请求区间 [effFrom, effTo] 内的每一天（升序、稠密），不是"只含有数据的那些天"。
+        // 缺失天由下方 prices 初始化为 null 兜底（api.md §3.2 / backtask B6，2026-07-23 稀疏→稠密返修）。
+        List<LocalDate> denseDates = new ArrayList<>();
+        for (LocalDate d = effFrom; !d.isAfter(effTo); d = d.plusDays(1)) denseDates.add(d);
+        dto.dates = denseDates;
         Map<LocalDate, Integer> dateIdx = new LinkedHashMap<>();
         int idx = 0;
         for (LocalDate d : dto.dates) dateIdx.put(d, idx++);

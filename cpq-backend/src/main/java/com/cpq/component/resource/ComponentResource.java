@@ -310,14 +310,19 @@ public class ComponentResource {
         }
 
         // ── Phase 2:按 bucket key 分组,可合的一次 expandMulti,不可合的逐 task expand ──
-        // bucketKey = componentId|customerId|partVersion|effectiveDriverPath|fieldsHash[|lineItemId 视图含 :lineItemId 时]
+        // bucketKey = componentId|customerId|partVersion|effectiveDriverPath|fieldsHash|quotationId[|lineItemId 视图含 :lineItemId 时]
+        // 🔒 quotationId 维度(task-0722 返修项3,2026-07-23):防御性加固——真实调用方
+        //    useDriverExpansions(lineItems, customerId, quotationId) 每 hook 实例绑死一个 quotationId,
+        //    当前不可达同批混单;但一旦其余维度相同、quotationId 不同的 task 混入同一请求(如未来"多单对比视图"),
+        //    不加此维度会被合桶后只用 pivot 的 quotationId 求值一次(如 :priceBaseDate),其余 task 静默拿到别单的取价结果。
         Map<String, List<Integer>> buckets = new LinkedHashMap<>();
         Map<String, String> bucketDriverPath = new HashMap<>();
         for (int idx : phase2) {
             Task t = req.tasks.get(idx);
             String dp = componentDriverService.resolveEffectiveDriverPath(t.componentId, t.overrideDataDriverPath);
             String fieldsTag = t.overrideFieldsJson == null ? "" : Integer.toHexString(t.overrideFieldsJson.hashCode());
-            String key = t.componentId + "|" + t.customerId + "|" + t.partVersion + "|" + dp + "|" + fieldsTag;
+            String key = t.componentId + "|" + t.customerId + "|" + t.partVersion + "|" + dp + "|" + fieldsTag
+                    + "|q=" + (t.quotationId == null ? "" : t.quotationId);
             if (componentDriverService.viewUsesLineItemId(t.componentId, dp)) {
                 key += "|li=" + (t.lineItemId == null ? "" : t.lineItemId);
             }
