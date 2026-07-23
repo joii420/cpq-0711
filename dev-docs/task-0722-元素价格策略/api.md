@@ -377,6 +377,8 @@ POST /api/cpq/element-price/strategies/simulate
 | rawValue | 取值结果（× 系数 + 加价**之前**） |
 | finalPrice | 最终单价 = `rawValue × factor + premium`；无价时 `null` |
 | sampleDays | 参与计算的**有价天数**（`LATEST` 恒为 1 或 0） |
+
+> **契约澄清（2026-07-22）**：`SimulateRowDTO` **不含"命中日期"字段**。原型屏 6 对 `LATEST` 行示意的「07-21 单日」文案属**示意性绘制**，实现按契约渲染为「N 天有价」即可，**不算实现偏差**。若后续确需展示命中日期，须先改本契约再实现。
 | hasPrice | `false` 时前端整行标黄、最终单价显示「无价」 |
 
 > **只读、不落库**（§11.14C）。返回全部**已配到策略**的启用元素；未被任何策略覆盖的元素不返回。
