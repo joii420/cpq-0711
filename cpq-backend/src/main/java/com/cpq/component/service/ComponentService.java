@@ -254,6 +254,8 @@ public class ComponentService {
         // 传值时覆盖上一行手动设置的 bomRecursiveExpand)。新建流程尚无 id,反向护栏天然不触发。
         // task-0721（补录）：一并写入 partNoField/partNameField + 校验"限定 tabType 必须配 partNoField"。
         applyTabType(component, request.tabType, request.partNoField, request.partNameField);
+        // task-0722：行排序列(可空)。非 null 时覆盖(空串=清空)。
+        if (request.sortField != null) component.sortField = request.sortField.isBlank() ? null : request.sortField;
 
         // 行键校验（新建路径：硬拦）
         validateRowKeyConfig(component.dataDriverPath, component.fields, component.rowKeyFields, true);
@@ -348,6 +350,8 @@ public class ComponentService {
         // task-0721（补录）：一并写入 partNoField/partNameField + 校验"限定 tabType 必须配 partNoField"
         // ——校验对象是合并后的最终状态,即便本次只改 partNoField 不改 tabType 也会校验。
         applyTabType(component, request.tabType, request.partNoField, request.partNameField);
+        // task-0722：行排序列(可空)。非 null 时覆盖(空串=清空)。
+        if (request.sortField != null) component.sortField = request.sortField.isBlank() ? null : request.sortField;
 
         // 行键校验（更新路径：软校验，违规只告警不阻断）
         validateRowKeyConfig(component.dataDriverPath, component.fields, component.rowKeyFields, false);

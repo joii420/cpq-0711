@@ -7,6 +7,35 @@
 
 ---
 
+## P0
+
+### [BL-0069] `mat_*`（V44）废弃表「已断供仍被读」故障族 —— 5 条实证失效路径
+- **优先级**：P0（其中漂移检测假阴性破坏的是安全属性，最高）
+- **来源**：2026-07-21「废弃表检查」会话——用户就新库部署脚本为何仍建 `mat_*` 表发起排查，三路审计（代码消费方 / 视图配置 / 数据痕迹）+ 技术总监亲验 SQL + 临时后端空库实测。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-21
+- **推迟原因**：本会话任务是部署脚本澄清，非修复；这批是代码缺陷（非脏数据），修复牵动漂移检测/报价加载/料号版本三块，需独立立项。**但严重性已超出常规 backlog，建议尽快排期**。
+- **背景（核心事实）**：`mat_*` 系表**自 2026-06-02 起停止写入**（实测 max(created_at)：`mat_bom`/`mat_part`=06-02，`mat_fee`/`mat_plating_*`/`mat_customer_part_mapping`=05-20~22，`*_staging`=05-15）；新数据全部经 V6 路径写 `material_*`/`element_*`/`unit_price`（今日 07-20 仍在写）。**凡仍 READ `mat_*` 的功能，读到的都是 6 月初的冻结快照；6 月后新增料号在老表中根本不存在。** 现役 82 个料号中 `mat_part` 只有 2 个（97.6% 盲区），`mat_part.unit_weight` 对全部 264 行均为 NULL。
+- **⚠️ 与既有条目关系**：这是 [[BL-0035]]（生产料号 BNF 重定向）与 [[BL-0036]]（mat_part 退役）在**运行时层面的实证后果清单**——那两条是"架构级重构"视角，本条是"哪些用户可见功能此刻已错"视角。修 BL-0036 可根治，但周期以多周计；本条的 P0/P1 子项应先做点状止血。
+- **已验证的 5 条失效路径**（技术总监亲验 SQL + 07-19 构建 jar 空库实测）：
+  1. **[P0·安全属性] 漂移检测假阴性** —— `DriftDetectionService.collectReferencedVersions()`(`:121`) 写死采集 `mat_process`/`mat_fee`/`mat_plating_fee` 三张冻结表。实测 **7 月 13 张报价单 `referenced_versions` 全为 NULL（13/13）** → `detect()` 恒返 `hasDrift=false`。系统**主动告诉用户"基础数据未变化"，实则查的是两个月没动的表**，静默、无日志、无告警。修复面小（改采集源为 V6 版本列），价值最高。
+  2. **[P1] 报价卡片客户料号三字段恒空** —— `QuotationService.loadLineItems`(`:2491`) 读 `mat_customer_part_mapping` 的 customer_part_name/product_no/drawing_no。实测**现役 35 报价行 0/35 命中 V44，同键 V6 `material_customer_map` 命中 19/35**。讽刺：紧邻的 `hfPartInfo` 块（`:2540`）**有** `internal_material→material_master` fallback，客户映射块**没有**，一行之隔的不对称。
+  3. **[P1] 料号版本锁定恒为默认 2000** —— `mat_customer_part_mapping.current_version` 冻结致 `part_version_locked` **35/35 = 2000**。空库实测 `GET /part-version/{cpn}/{hf}` 返 `currentVersion:2000`——**2000 是无匹配行时的设计默认值**，故 mcm 冻结/为空时每个料号静默拿 2000，使下游版本切换/版本抽屉即便修好也无数据可用。
+  4. **[P2·硬失败可见] 料号版本切换 / 版本抽屉** —— 切到 v>2000 抛「版本不在历史中」；`mat_part_version_log` 冻结 44 行。空库实测 switch→404（非 500，可见错误）。
+  5. **[P2] 元素价格下拉选项陈旧** —— `available-elements` 读 `mat_bom`(bom_type=ELEMENT) 返 20 个冻结元素名，V6 新增 4 个元素不在列表。空库实测返 `[]`（graceful）。
+     > 🔧 **2026-07-22：本子项已纳入 [[task-0722 元素价格策略]] 范围**（`dev-docs/task-0722-元素价格策略/backtask.md` B7）——`ElementPriceService.listAvailableElements()` 改读 `element` 主表 ACTIVE 元素。task-0722 交付后本子项可勾销，其余 1~4 子项不受影响。
+- **两个必须澄清的边界（避免误导修复工时）**：
+  - **报价/核价渲染主链路是干净的**：全库扫描组件 `data_driver_path`/`fields`/`formulas`/`excel_columns` + `component_sql_view.sql_template` + 模板快照，**live config 零引用 `mat_*`**（唯一违规 `dp_view`/COMP-0078 电镀费未挂任何模板，爆炸半径 0）。损害全在**从未迁移的辅助元数据/版本功能**，非渲染主线。
+  - **`SchemaContext.defaultContext()`(`:143-151`) 的 10 个 BNF 逻辑名全指向 V44**（元素BOM/来料BOM/组成件BOM→mat_bom、生产料号→mat_part、工序资料→mat_process、料号费用→mat_fee、客户料号对应→mat_customer_part_mapping 等），但配置层**点号语法 `逻辑名.列` 实际引用 0 命中**（11 个配置载体全扫过）——是**潜伏陷阱**（谁新配一个 `元素BOM.xxx` 字段即静默读冻结表），非正在发生的故障。此即 [[BL-0035]] 的运行时现状。
+  - `v_costing_summary_full` 恒 0 行**不能全归因 mat_***：其主轴 `costing_summary` 空表根因是"本开发库无人创建过核价汇总单"（`CostingSummaryService` 有正常 persist 路径），非写入链路损坏；6 个 PUBLISHED 模板（3 default）各绑 15~18 列于它，功能被使用时取数是否正常**尚未实测**，另行确认。
+- **对新库部署的影响**：新库 `mat_*` 全空，故上述 1/2/3/5 在生产会**原样复现且更彻底**（漂移恒 false、客户料号恒空、版本恒 2000、`v_part_material_recipe` 直接返 0 行）。**这批是代码缺陷会带到生产，不是老库脏数据。** 部署脚本仍须建这些表（规范 `docs/方案制定前必读.md:69`「V44 老表保留、可读不可写」+ 4 视图硬依赖 + 33 条 `basic_data_config` 仍指向它们），删表会直接 500——退役是 BL-0036 的多周工程，非部署可顺手做。
+- **范围**：子项 1（漂移采集源迁 V6）优先独立止血；子项 2（客户料号块补 V6 fallback，抄 hfPartInfo 现成范式）；子项 3/4/5 依赖 mcm/version_log 迁 V6，与 [[BL-0036]] 合并推进更稳。
+- **依赖**：子项 1/2 可独立做（V6 表已有等价数据）；子项 3/4/5 依赖 [[BL-0036]] 的 mcm/version_log 迁移。
+- **预估规模**：子项 1 = S（1-2 天）；子项 2 = S；子项 3/4/5 随 [[BL-0036]] = L。
+- **验收要点**：①漂移检测对 V6 基础数据变更能真报 `hasDrift=true`，7 月存量报价单 `referenced_versions` 非空；②报价卡片客户料号三字段对现役料号非空；③版本锁定反映真实版本非恒 2000；④回归无静默取空/取零。
+
+---
+
 ## P1
 
 ### [BL-0001] 报价提交行键冲突的「编辑期实时预检 + 红点标记」（第二期）

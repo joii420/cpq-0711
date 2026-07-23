@@ -100,6 +100,15 @@ public class Component extends PanacheEntityBase {
     @Column(name = "part_name_field", length = 100)
     public String partNameField;
 
+    /**
+     * task-0722：多行页签「行排序列」（可空）。值 = 本组件 {@code fields[].name} 之一。
+     * 设置后快照组装层按该字段对 driver 行做数字感知升序排列（数字段数字序、文本段字典序）；
+     * null = 保持 driver 返回序（不排）。用于让 项次/序号 之类列稳定按数字正序显示——
+     * 视图 ORDER BY 在报价单 pending 改写管线下会被丢弃，故排序落在快照层。树页签(BOM)按树序不受此约束。
+     */
+    @Column(name = "sort_field", length = 120)
+    public String sortField;
+
     @Column(name = "created_at", nullable = false)
     public OffsetDateTime createdAt;
 
