@@ -34,6 +34,8 @@ public class ComponentDTO {
     public String partNoField;
     /** task-0721（2026-07-21 补录）：该页签「料号名称列」字段名，可空。 */
     public String partNameField;
+    /** task-0722：多行页签「行排序列」字段名，可空。 */
+    public String sortField;
     public String status;
     /** EXCEL 类型组件的列配置 JSON（数组），Task 1.1 新增字段 */
     public String excelColumns;
@@ -62,6 +64,7 @@ public class ComponentDTO {
         dto.tabType = component.tabType;
         dto.partNoField = component.partNoField;
         dto.partNameField = component.partNameField;
+        dto.sortField = component.sortField;
         dto.excelColumns = component.excelColumns;
         return dto;
     }
