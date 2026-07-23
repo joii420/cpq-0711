@@ -354,8 +354,16 @@ public class ComponentDriverService {
                 : "";
         // task-0721 B9：total_material_no 维度补齐 —— 同一组件在不同 BOM 料号集合(不同产品/报价单)
         // 下的 expand 结果不应共享缓存条目(该视图 SQL 可能直接引用 :total_material_no 收窄结果)。
+        // task-0722 B3：quotationId 维度补齐 —— :priceBaseDate（取价基准日 = 报价单创建日期，见
+        // SqlViewExecutor#enrichPriceBaseDate）依赖 quotationId 求值。lineItemId 非空时已天然按报价单隔离
+        // （每个 lineItem 唯一属于一张报价单），但部分调用路径（如 ConfigureSnapshotService 的
+        // precomputeQuoteDriverBuckets 走 4-arg expand，不带 lineItemId）没有该维度——同客户同料号、
+        // 不同创建日期的两张报价单在 30s TTL 内会命中同一缓存条目，导致 A 单算出的元素单价被 B 单复用
+        // （元素价格策略"缓存串价"最高风险项）。此处兜底补齐：quotationId 存在即入 key。
+        UUID _qid = com.cpq.formula.dataloader.QuotationIdContext.get();
+        String qidTag = (_qid != null) ? ":q" + _qid.toString().replace("-", "") : "";
         String key = cacheKey(componentId, customerId, partNo, partVersion, currentTotalMaterialNoHash())
-                + overrideTag + lineItemTag + childTag;
+                + overrideTag + lineItemTag + childTag + qidTag;
         // 调试捕获 SQL 时旁路缓存读取, 强制重算以触发 SqlViewExecutor 记录最终 SQL。skipCache=true(核价树渲染)同样旁路。
         ExpandDriverResponse cached = (skipCache || com.cpq.datasource.sqlview.SqlDebugContext.isActive())
                 ? null : expandCache.getIfPresent(key);

@@ -29,22 +29,27 @@ public class ElementService {
 
     /**
      * GET /elements?keyword= — 列表 + referencedCount + 排序。
-     * 单条 SQL：LEFT JOIN material_recipe_element（按 element_no）聚合被引用数，禁 N+1。
-     * 排序：启用优先 → 修改时间倒序 → 创建时间倒序。返回全状态。
+     * 单条 SQL：LEFT JOIN material_recipe_element（按 element_no）聚合被引用数，
+     * LEFT JOIN 价格记录 MAX(updated_at)（按 element_code=element_daily_price.element_name）算 lastModifiedAt，禁 N+1。
+     * 排序（task-0722 · B7.2 改）：启用优先 → lastModifiedAt 倒序（价格导入也算一次"修改"，§11.14B）。返回全状态。
      */
     @SuppressWarnings("unchecked")
     public List<ElementDTO> list(String keyword) {
         boolean hasKw = keyword != null && !keyword.isBlank();
         StringBuilder sql = new StringBuilder(
             "SELECT e.id, e.element_no, e.element_code, e.element_name, e.status, " +
-            "       e.created_at, e.updated_at, COUNT(mre.id) AS ref_count " +
+            "       e.created_at, e.updated_at, COUNT(DISTINCT mre.id) AS ref_count, " +
+            "       GREATEST(e.updated_at, MAX(p.mx_updated_at)) AS last_modified_at " +
             "FROM element e " +
-            "LEFT JOIN material_recipe_element mre ON mre.element_no = e.element_no ");
+            "LEFT JOIN material_recipe_element mre ON mre.element_no = e.element_no " +
+            "LEFT JOIN (SELECT element_name, MAX(updated_at) mx_updated_at " +
+            "           FROM element_daily_price GROUP BY element_name) p " +
+            "       ON p.element_name = e.element_code ");
         if (hasKw) {
             sql.append("WHERE (e.element_no ILIKE :kw OR e.element_code ILIKE :kw OR e.element_name ILIKE :kw) ");
         }
         sql.append("GROUP BY e.id, e.element_no, e.element_code, e.element_name, e.status, e.created_at, e.updated_at ")
-           .append("ORDER BY (e.status = 'ACTIVE') DESC, e.updated_at DESC, e.created_at DESC");
+           .append("ORDER BY (e.status = 'ACTIVE') DESC, GREATEST(e.updated_at, MAX(p.mx_updated_at)) DESC");
 
         var q = em.createNativeQuery(sql.toString());
         if (hasKw) q.setParameter("kw", "%" + keyword.trim() + "%");
@@ -62,6 +67,7 @@ public class ElementService {
             d.updatedAt = toOffsetDateTime(r[6]);
             d.referencedCount = ((Number) r[7]).longValue();
             d.codeLocked = d.referencedCount > 0;
+            d.lastModifiedAt = toOffsetDateTime(r[8]);
             out.add(d);
         }
         return out;
@@ -156,6 +162,8 @@ public class ElementService {
         d.codeLocked = refCount > 0;
         d.createdAt = e.createdAt;
         d.updatedAt = e.updatedAt;
+        // create/update 单条响应不聚合价格记录，退化为 element.updatedAt（list() 才做完整 GREATEST 聚合）
+        d.lastModifiedAt = e.updatedAt;
         return d;
     }
 
