@@ -263,8 +263,14 @@ public class DataLoader {
                 : (lineIdObj != null ? UUID.fromString(lineIdObj.toString()) : null);
         try {
             RuntimeContext ctx = new RuntimeContext();
-            if (customerId != null) {
-                ctx.quotation = new RuntimeContext.QuotationContext(null, customerId);
+            // task-0722 B4:多值入口(合桶专用)此前 quotationId 硬编码 null，导致
+            // enrichPriceBaseDate 拿不到 quotationId、priceBaseDate 回退成 LocalDate.now()——
+            // 任何触发合桶的批量 expand 都用"今天"而非"报价单创建日"取价(§11.2 要求的基准日语义失效)。
+            // 与单值入口(本类上方 loadByPath 5-arg，约第 196~198 行)对齐，同样从 QuotationIdContext
+            // 读取当前请求/task 绑定的 quotationId。
+            final UUID _qid = QuotationIdContext.get();
+            if (customerId != null || _qid != null) {
+                ctx.quotation = new RuntimeContext.QuotationContext(_qid, customerId);
             }
             if (viewLineItemId != null) {
                 // 防御性:正常 bucket-merge 不会带 lineItemId(否则视图按 lineItemId 过滤合不了桶),
