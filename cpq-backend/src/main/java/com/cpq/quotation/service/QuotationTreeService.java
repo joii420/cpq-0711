@@ -62,13 +62,17 @@ public class QuotationTreeService {
         String rowKeyFields;
         /** task-0721（2026-07-21 补录）：该页签「料号列」字段名（tabType=BOM 可为 null）。 */
         String partNoField;
+        /** task-0721（2026-07-23 补录，匹配标识放宽）：该页签「名称列」字段名——partNoField 为空时的
+         * 兜底标识列（如「外购件/费用」类页签无料号列，只用「料件名称」做标识）。 */
+        String partNameField;
     }
 
-    /** 该 line item 所属报价模板的全部组件元数据（id/tabType/fields/rowKeyFields/partNoField）。 */
+    /** 该 line item 所属报价模板的全部组件元数据（id/tabType/fields/rowKeyFields/partNoField/partNameField）。 */
     @SuppressWarnings("unchecked")
     private List<CompMeta> loadTemplateComponents(UUID lineItemId) {
         List<Object[]> rows = em.createNativeQuery(
-                "SELECT c.id, c.tab_type, c.fields, c.row_key_fields, c.part_no_field FROM quotation_line_item li " +
+                "SELECT c.id, c.tab_type, c.fields, c.row_key_fields, c.part_no_field, c.part_name_field " +
+                "FROM quotation_line_item li " +
                 "JOIN quotation q ON q.id = li.quotation_id " +
                 "JOIN template_component tc ON tc.template_id = q.customer_template_id " +
                 "JOIN component c ON c.id = tc.component_id " +
@@ -83,6 +87,7 @@ public class QuotationTreeService {
             m.fields = r[2] != null ? r[2].toString() : "[]";
             m.rowKeyFields = r[3] != null ? r[3].toString() : null;
             m.partNoField = r[4] != null ? r[4].toString() : null;
+            m.partNameField = r[5] != null ? r[5].toString() : null;
             out.add(m);
         }
         return out;
@@ -115,16 +120,23 @@ public class QuotationTreeService {
     }
 
     /**
-     * task-0721（2026-07-21 补录）：按组件 {@code partNoField} 显式解析该行的料号（不按字段名猜测）。
-     * {@code cm.partNoField} 缺失（非树页签未配置，理论上已被 B4 保存期校验拦住，此处防御）→ 返回 null，
-     * 该行不参与命中/匹配。委托 {@link FormulaCalculator#computeRowKey} 的"直读 driverRow 优先，
-     * 否则按字段 defaultSource 解析"链路，与行键计算同一套解析口径。
+     * task-0721（2026-07-21 补录，2026-07-23 放宽）：按组件「标识列」显式解析该行的标识值（不按字段名
+     * 猜测）——优先 {@code partNoField}（取料号值），为空则回落 {@code partNameField}（取名称值，如
+     * 「外购件/费用」类无料号列的页签用「组成件1」这样的名称做标识）。两者均缺失（非树页签未配置，
+     * 理论上已被 B4 保存期校验拦住，此处防御）→ 返回 null，该行不参与命中/匹配。委托
+     * {@link FormulaCalculator#computeRowKey} 的"直读 driverRow 优先，否则按字段 defaultSource 解析"
+     * 链路，与行键计算同一套解析口径。类型判定即"候选值是否出现在某类型页签的标识列取值集合"的
+     * 字符串比对——候选值本身可能是料号也可能是名称，比对时不区分语义。
      */
     /** 包级可见（供 {@code QuotationTreeServicePartNoFieldTest} 纯单测，无需 DB/CDI）。 */
     String extractMaterialNoByField(JsonNode row, CompMeta cm) {
-        if (row == null || cm == null || cm.partNoField == null || cm.partNoField.isBlank()) return null;
+        if (row == null || cm == null) return null;
+        String identifierField = (cm.partNoField != null && !cm.partNoField.isBlank())
+                ? cm.partNoField
+                : cm.partNameField;
+        if (identifierField == null || identifierField.isBlank()) return null;
         JsonNode fieldsNode = parseFieldsJsonSafe(cm.fields);
-        JsonNode rkf = MAPPER.createArrayNode().add(cm.partNoField);
+        JsonNode rkf = MAPPER.createArrayNode().add(identifierField);
         String mn = formulaCalculator.computeRowKey(rkf, fieldsNode, row.path("driverRow"), row.path("basicDataValues"));
         return (mn != null && !mn.isBlank()) ? mn : null;
     }
@@ -707,12 +719,21 @@ public class QuotationTreeService {
         String tabType = meta[0] != null ? meta[0].toString() : null;
         if (!"材质元素".equals(tabType) && !"外购件".equals(tabType)) return; // 快速放行,避免无谓解析
         String partNoField = meta[1] != null ? meta[1].toString() : null;
-        if (partNoField == null || partNoField.isBlank()) return; // 未配置(理论已被 B4 保存期校验拦住,此处防御)
+        String partNameField = meta[2] != null ? meta[2].toString() : null;
+        // task-0721（2026-07-23 放宽）：料号列优先，名称列兜底；两者皆缺失才防御性放行
+        // (理论已被 B4 保存期校验拦住——类型页签必须配至少一个标识列)。
+        boolean noField = partNoField == null || partNoField.isBlank();
+        boolean noNameField = partNameField == null || partNameField.isBlank();
+        if (noField && noNameField) return;
 
         ArrayNode rows = parseRows(flatRowsJson);
         List<String> partNos = new ArrayList<>();
         for (JsonNode row : rows) {
-            JsonNode v = row.path(partNoField);
+            JsonNode v = noField ? row.path(partNameField) : row.path(partNoField);
+            if ((v.isMissingNode() || v.isNull()) && !noField && !noNameField) {
+                // 配了料号列但本行料号列缺值 → 回落名称列取值(与 extractMaterialNoByField 同一优先级)
+                v = row.path(partNameField);
+            }
             if (v.isMissingNode() || v.isNull()) continue;
             String mn = v.asText(null);
             if (mn != null && !mn.isBlank()) partNos.add(mn);
@@ -720,11 +741,11 @@ public class QuotationTreeService {
         assertCanAddToRestrictedTab(tabType, partNos, lineItemId);
     }
 
-    /** {@code component} 表单行查询：{@code [tab_type, part_no_field]}；不存在 → null。 */
+    /** {@code component} 表单行查询：{@code [tab_type, part_no_field, part_name_field]}；不存在 → null。 */
     @SuppressWarnings("unchecked")
     private Object[] loadSingleComponentTabMeta(UUID componentId) {
         List<Object[]> rows = em.createNativeQuery(
-                "SELECT tab_type, part_no_field FROM component WHERE id = :cid")
+                "SELECT tab_type, part_no_field, part_name_field FROM component WHERE id = :cid")
                 .setParameter("cid", componentId)
                 .getResultList();
         return rows.isEmpty() ? null : rows.get(0);

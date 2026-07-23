@@ -60,18 +60,37 @@ class ComponentServiceTabTypeGuardTest {
         }
     }
 
-    // ── task-0721（2026-07-21 补录）：part_no_field / part_name_field ──────────
+    // ── task-0721（2026-07-21 补录，2026-07-23 放宽为"料号列或名称列至少一个"）：
+    //    part_no_field / part_name_field ──────────
 
     @Test
     @TestTransaction
-    void restrictedTabType_missingPartNoField_rejects400() {
+    void restrictedTabType_missingBothIdentifierFields_rejects400() {
         for (String tt : List.of("材质元素", "零件", "外购件", "主件")) {
-            CreateComponentRequest req = minimalRequest("测试组件-缺料号列-" + tt);
+            CreateComponentRequest req = minimalRequest("测试组件-缺标识列-" + tt);
             req.tabType = tt;
             BusinessException ex = assertThrows(BusinessException.class, () -> svc.create(req),
-                    "tabType=" + tt + " 缺 partNoField 应 400");
+                    "tabType=" + tt + " 料号列/名称列均缺应 400");
             assertEquals(400, ex.getCode());
-            assertTrue(ex.getMessage().contains("partNoField"), ex.getMessage());
+            assertTrue(ex.getMessage().contains("料号列或名称列"), ex.getMessage());
+        }
+    }
+
+    /**
+     * 2026-07-23 修订核心用例：只配 {@code partNameField}（不配 partNoField）应能正常保存——
+     * 对齐委托方截图场景（「外购件/费用」类页签只有「料件名称」列，没有料号列）。
+     */
+    @Test
+    @TestTransaction
+    void restrictedTabType_withOnlyPartNameField_savesSuccessfully() {
+        for (String tt : List.of("材质元素", "零件", "外购件", "主件")) {
+            CreateComponentRequest req = minimalRequest("测试组件-仅名称列-" + tt);
+            req.tabType = tt;
+            req.partNameField = "料件名称"; // 不设 partNoField
+            ComponentDTO dto = svc.create(req);
+            assertEquals(tt, dto.tabType, "tabType=" + tt + " 仅配 partNameField 应能保存成功(不 400)");
+            assertNull(dto.partNoField, "partNoField 未配置应保持 null");
+            assertEquals("料件名称", dto.partNameField);
         }
     }
 

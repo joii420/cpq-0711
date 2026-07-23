@@ -87,7 +87,10 @@ public class ConfigureSnapshotService {
         public String tabType;
         /** task-0721（2026-07-21 补录）：该页签「料号列」字段名（tabType=BOM 可为 null）。 */
         public String partNoField;
-        /** 该组件 fields JSON（供 partNoField 解析用，FormulaCalculator.computeRowKey 需要）。 */
+        /** task-0721（2026-07-23 补录，匹配标识放宽）：该页签「名称列」字段名——partNoField 为空时的
+         * 兜底标识列（如「外购件/费用」类页签无料号列，只用「料件名称」做标识）。 */
+        public String partNameField;
+        /** 该组件 fields JSON（供 partNoField/partNameField 解析用，FormulaCalculator.computeRowKey 需要）。 */
         public String fields;
         /** task-0722：多行页签「行排序列」字段名（可空，快照按其数字感知升序排列）。 */
         public String sortField;
@@ -406,12 +409,17 @@ public class ConfigureSnapshotService {
                             // 返回排序后的新副本(AP-37：绝不原地改 exp.rows 共享缓存引用)。
                             rows = sortRowsBySortField(rows, comp);
                             // task-0721 B5：本组件若挂了「材质元素/零件/外购件/主件」类型属性，把本行渲染出的
-                            // 料号（按 comp.partNoField 显式取值，2026-07-21 补录：禁止按字段名启发式猜测）
+                            // 标识值（按 comp.partNoField 显式取值，为空则回落 comp.partNameField——
+                            // 2026-07-21 补录：禁止按字段名启发式猜测；2026-07-23 放宽：料号列优先，
+                            // 名称列兜底，如「外购件/费用」类页签无料号列只用「料件名称」做标识）
                             // 并入本行的类型判定上下文(供 Pass 2 树页签 __nodeType 结构推导用)。
-                            if (treeTypeCtx != null && comp.tabType != null && comp.partNoField != null
-                                    && !comp.partNoField.isBlank()) {
+                            String identifierField = (comp.partNoField != null && !comp.partNoField.isBlank())
+                                    ? comp.partNoField
+                                    : comp.partNameField;
+                            if (treeTypeCtx != null && comp.tabType != null && identifierField != null
+                                    && !identifierField.isBlank()) {
                                 JsonNode compFieldsNode = parseFieldsJsonSafe(comp.fields);
-                                JsonNode rkf = MAPPER.createArrayNode().add(comp.partNoField);
+                                JsonNode rkf = MAPPER.createArrayNode().add(identifierField);
                                 for (ExpandDriverResponse.Row row : rows) {
                                     if (row == null) continue;
                                     JsonNode driverRowNode = MAPPER.valueToTree(
@@ -754,10 +762,12 @@ public class ConfigureSnapshotService {
         // 按 template_component 取 live driver 组件(live component id,expand 可直接加载)
         // driver_path 用于判定组合父级该"聚合子件"(composite_child_*_mirror)还是"父级展开"($zcj_bom 子配件清单)
         // task-0721 B3：附带 c.tab_type，供 BomTreeRenderService.isQuoteTreeTabType 单一收口点路由判断。
-        // task-0721（2026-07-21 补录）：附带 c.part_no_field/c.fields，供类型判定命中收集按料号列
-        // 显式取值（不再按字段名启发式猜测）。
+        // task-0721（2026-07-21 补录，2026-07-23 补 part_name_field）：附带 c.part_no_field/
+        // c.part_name_field/c.fields，供类型判定命中收集按"标识列"显式取值（料号列优先，名称列兜底；
+        // 不再按字段名启发式猜测）。
         List<Object[]> rows = em.createNativeQuery(
-                "SELECT DISTINCT c.id, c.name, c.data_driver_path, c.tab_type, c.part_no_field, c.fields, c.sort_field " +
+                "SELECT DISTINCT c.id, c.name, c.data_driver_path, c.tab_type, c.part_no_field, c.fields, " +
+                "c.sort_field, c.part_name_field " +
                 "FROM quotation q " +
                 "JOIN template_component tc ON tc.template_id = q.customer_template_id " +
                 "JOIN component c ON c.id = tc.component_id " +
@@ -774,6 +784,7 @@ public class ConfigureSnapshotService {
             dc.partNoField = r[4] != null ? r[4].toString() : null;
             dc.fields = r[5] != null ? r[5].toString() : "[]";
             dc.sortField = r[6] != null ? r[6].toString() : null;
+            dc.partNameField = r[7] != null ? r[7].toString() : null;
             out.add(dc);
         }
         return out;

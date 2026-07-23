@@ -2,6 +2,7 @@ package com.cpq.quotation.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -27,8 +28,13 @@ class QuotationTreeServicePartNoFieldTest {
     }
 
     private QuotationTreeService.CompMeta compMeta(String partNoField, String fieldsJson) {
+        return compMeta(partNoField, null, fieldsJson);
+    }
+
+    private QuotationTreeService.CompMeta compMeta(String partNoField, String partNameField, String fieldsJson) {
         QuotationTreeService.CompMeta cm = new QuotationTreeService.CompMeta();
         cm.partNoField = partNoField;
+        cm.partNameField = partNameField;
         cm.fields = fieldsJson;
         return cm;
     }
@@ -74,5 +80,46 @@ class QuotationTreeServicePartNoFieldTest {
         QuotationTreeService svc = newService();
         QuotationTreeService.CompMeta cm = compMeta("料号", "[]");
         assertNull(svc.extractMaterialNoByField(null, cm));
+    }
+
+    // ── 2026-07-23 修订：匹配标识放宽为"料号列 或 名称列" ──────────────────────────
+
+    @Test
+    @DisplayName("2026-07-23 放宽：partNoField 未配置(null)，回落 partNameField 取值(如「外购件/费用」类页签)")
+    void nameFieldFallback_resolvesByPartNameField_whenPartNoFieldNull() {
+        // 场景对齐委托方截图：「料件=组成件1」「要素=材料费」，无料号列，只有「料件名称」列
+        QuotationTreeService svc = newService();
+        String row = "{\"driverRow\":{\"料件名称\":\"组成件1\",\"要素\":\"材料费\"},\"basicDataValues\":{}}";
+        QuotationTreeService.CompMeta cm = compMeta(null, "料件名称", "[]");
+        assertEquals("组成件1", svc.extractMaterialNoByField(j(row), cm),
+                "partNoField 未配置时应回落 partNameField 取值");
+    }
+
+    @Test
+    @DisplayName("2026-07-23 放宽：partNoField 是空白字符串(非 null)，同样回落 partNameField")
+    void nameFieldFallback_resolvesByPartNameField_whenPartNoFieldBlank() {
+        QuotationTreeService svc = newService();
+        String row = "{\"driverRow\":{\"料件名称\":\"组成件2\"},\"basicDataValues\":{}}";
+        QuotationTreeService.CompMeta cm = compMeta("   ", "料件名称", "[]");
+        assertEquals("组成件2", svc.extractMaterialNoByField(j(row), cm));
+    }
+
+    @Test
+    @DisplayName("2026-07-23 放宽：两者都配置时 partNoField 优先（料号列优先，名称列兜底）")
+    void partNoFieldTakesPriorityOverPartNameField_whenBothConfigured() {
+        QuotationTreeService svc = newService();
+        String row = "{\"driverRow\":{\"料号\":\"P001\",\"料件名称\":\"组成件3\"},\"basicDataValues\":{}}";
+        QuotationTreeService.CompMeta cm = compMeta("料号", "料件名称", "[]");
+        assertEquals("P001", svc.extractMaterialNoByField(j(row), cm),
+                "两者都配置且料号列取值成功时，应优先用料号列的值，不应误用名称列");
+    }
+
+    @Test
+    @DisplayName("2026-07-23 放宽：两者都缺失(null)才最终返回 null（防御分支，理论已被保存期 400 拦住）")
+    void bothFieldsMissing_returnsNull() {
+        QuotationTreeService svc = newService();
+        String row = "{\"driverRow\":{\"料号\":\"P001\"},\"basicDataValues\":{}}";
+        QuotationTreeService.CompMeta cm = compMeta(null, null, "[]");
+        assertNull(svc.extractMaterialNoByField(j(row), cm));
     }
 }

@@ -61,20 +61,24 @@ public class ComponentService {
     }
 
     /**
-     * task-0721（2026-07-21 补录）：这 4 类 tabType 是"物料语义"页签，类型判定
-     * （{@code BomNodeTypeResolver}）与加叶子候选料号采集依赖其料号列，故保存期强制要求
-     * {@code partNoField}。{@code BOM}（树页签）料号取系统列 {@code __hfPartNo}，不在此列。
+     * task-0721（2026-07-21 补录，2026-07-23 放宽）：这 4 类 tabType 是"物料语义"页签，类型判定
+     * （{@code BomNodeTypeResolver}）与加叶子候选料号采集依赖其"标识列"取值，故保存期强制要求
+     * {@code partNoField} 或 {@code partNameField} 至少配一个。{@code BOM}（树页签）料件标识取系统列
+     * {@code __hfPartNo}，不在此列。
+     *
+     * <p>**2026-07-23 修订背景**：部分页签（如「外购件/费用」类）没有料号列，只用「料件名称」
+     * （如「组成件1」）做标识，此前"必须配 part_no_field"过严会把这类页签堵死。
      */
     private static final java.util.Set<String> TAB_TYPES_REQUIRE_PART_NO_FIELD =
         java.util.Set.of("材质元素", "零件", "外购件", "主件");
 
     /**
      * task-0721 B4：页签类型属性写入编排。{@code requestedTabType == null} → tabType 本身不变（既有
-     * {@code bomRecursiveExpand} 手动设置保留），但仍按【当前生效的 tabType + 本次合并后的 partNoField】
-     * 校验料号列要求（见 {@link #assertPartNoFieldRequirement}）。{@code requestedTabType} 非 null 时：
-     * ① 值域校验；② {@code tabType="BOM"} 时先跑 COSTING 模板反向护栏（见
-     * {@link #assertNotReferencedByCostingTemplate}）；③ 与 {@code bomRecursiveExpand} 自动同步
-     * （2026-07-21 裁决 Q1："BOM"→true，其他值→false；仅是兼容既有 UI/查询的实现细节，
+     * {@code bomRecursiveExpand} 手动设置保留），但仍按【当前生效的 tabType + 本次合并后的
+     * partNoField/partNameField】校验标识列要求（见 {@link #assertPartNoFieldRequirement}）。
+     * {@code requestedTabType} 非 null 时：① 值域校验；② {@code tabType="BOM"} 时先跑 COSTING 模板
+     * 反向护栏（见 {@link #assertNotReferencedByCostingTemplate}）；③ 与 {@code bomRecursiveExpand}
+     * 自动同步（2026-07-21 裁决 Q1："BOM"→true，其他值→false；仅是兼容既有 UI/查询的实现细节，
      * <b>不参与</b>报价侧树渲染路由判断——路由判据是 {@link BomTreeRenderService#isQuoteTreeTabType}）。
      *
      * @param requestedPartNoField   非 null → 覆盖 {@code component.partNoField}（空串=清空）
@@ -101,20 +105,23 @@ public class ComponentService {
             component.tabType = normalized;
         }
 
-        assertPartNoFieldRequirement(component.tabType, component.partNoField);
+        assertPartNoFieldRequirement(component.tabType, component.partNoField, component.partNameField);
     }
 
     /**
-     * task-0721（2026-07-21 补录）：{@code tabType ∈ {材质元素,零件,外购件,主件}} 但缺
-     * {@code partNoField} → 400（api.md §1）。校验对象是【本次保存后生效的最终状态】，
-     * 而非仅本次请求携带的字段——即便本次请求只改了别的字段、未碰 tabType/partNoField，
-     * 只要合并后仍处于"要求料号列但缺失"的非法状态就拦，不放过存量脏数据继续演化。
+     * task-0721（2026-07-21 补录，2026-07-23 放宽为"料号列或名称列至少一个"）：
+     * {@code tabType ∈ {材质元素,零件,外购件,主件}} 但 {@code partNoField}/{@code partNameField}
+     * 均缺 → 400（api.md §1 / 需求说明 §4.3 规则一 2026-07-23 修订）。校验对象是【本次保存后生效的
+     * 最终状态】，而非仅本次请求携带的字段——即便本次请求只改了别的字段、未碰 tabType/两个标识列，
+     * 只要合并后仍处于"要求标识列但两者皆缺"的非法状态就拦，不放过存量脏数据继续演化。
      */
-    private static void assertPartNoFieldRequirement(String tabType, String partNoField) {
+    private static void assertPartNoFieldRequirement(String tabType, String partNoField, String partNameField) {
         if (tabType == null || !TAB_TYPES_REQUIRE_PART_NO_FIELD.contains(tabType)) return;
-        if (partNoField == null || partNoField.isBlank()) {
+        boolean noField = partNoField == null || partNoField.isBlank();
+        boolean noNameField = partNameField == null || partNameField.isBlank();
+        if (noField && noNameField) {
             throw new BusinessException(400,
-                "tabType=" + tabType + " 必须配置 partNoField（该页签的料号列字段名），否则该页签无法参与类型判定匹配");
+                "tabType=" + tabType + " 类型页签必须配置料号列或名称列至少一个作为匹配标识，否则该页签无法参与类型判定匹配");
         }
     }
 
