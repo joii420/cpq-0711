@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>元素单价维护与价格策略 · 页面原型 v1 (task-0722)</title>
+<style>
+:root{
+  --blue:#1677ff; --blue-1:#e6f4ff; --blue-b:#91caff;
+  --green:#52c41a; --green-1:#f6ffed; --green-b:#b7eb8f;
+  --gold:#faad14; --gold-1:#fffbe6; --gold-b:#ffe58f;
+  --red:#ff4d4f; --red-1:#fff2f0; --red-b:#ffccc7;
+  --purple:#722ed1; --purple-1:#f9f0ff;
+  --text:rgba(0,0,0,.88); --text2:rgba(0,0,0,.65); --text3:rgba(0,0,0,.45);
+  --border:#d9d9d9; --split:#f0f0f0; --bg:#f5f5f5; --head:#fafafa;
+}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+     font-size:14px;color:var(--text);background:var(--bg);line-height:1.5715;}
+
+/* ---------- 外壳 ---------- */
+.wrap{display:flex;min-height:100vh;}
+.nav{width:230px;flex:none;background:#001529;color:rgba(255,255,255,.85);padding:0 0 40px;position:sticky;top:0;height:100vh;overflow:auto;}
+.nav h1{font-size:14px;color:#fff;margin:0;padding:18px 16px 6px;font-weight:600;letter-spacing:.5px;}
+.nav .sub{font-size:12px;color:rgba(255,255,255,.45);padding:0 16px 14px;line-height:1.6;}
+.nav a{display:block;padding:10px 16px;color:rgba(255,255,255,.72);text-decoration:none;font-size:13px;border-left:3px solid transparent;}
+.nav a:hover{color:#fff;background:rgba(255,255,255,.06);}
+.nav a.on{color:#fff;background:var(--blue);border-left-color:#fff;}
+.nav .grp{font-size:11px;color:rgba(255,255,255,.35);padding:14px 16px 6px;letter-spacing:1px;}
+.main{flex:1;min-width:0;padding:20px 24px 80px;}
+
+/* ---------- 通用 antd 拟真 ---------- */
+.card{background:#fff;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,.03);margin-bottom:20px;}
+.card-head{padding:14px 20px;border-bottom:1px solid var(--split);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.card-title{font-size:16px;font-weight:600;}
+.card-body{padding:16px 20px 20px;}
+.btn{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 15px;border:1px solid var(--border);background:#fff;border-radius:6px;
+     font-size:14px;color:var(--text);cursor:pointer;white-space:nowrap;}
+.btn:hover{color:var(--blue);border-color:var(--blue);}
+.btn.pri{background:var(--blue);border-color:var(--blue);color:#fff;}
+.btn.pri:hover{background:#4096ff;border-color:#4096ff;color:#fff;}
+.btn.dgr{color:var(--red);border-color:#ffa39e;}
+.btn.dgr:hover{background:var(--red);color:#fff;border-color:var(--red);}
+.btn.sm{height:24px;padding:0 8px;font-size:12px;border-radius:4px;}
+.btn.dis{color:rgba(0,0,0,.25);border-color:var(--border);background:rgba(0,0,0,.04);cursor:not-allowed;}
+.btn.dis:hover{color:rgba(0,0,0,.25);border-color:var(--border);}
+.btn.lnk{border:none;background:none;color:var(--blue);padding:0 4px;height:auto;}
+.ipt,.sel{height:32px;padding:4px 11px;border:1px solid var(--border);border-radius:6px;background:#fff;font-size:14px;color:var(--text);width:100%;}
+.ipt::placeholder{color:rgba(0,0,0,.25);}
+.sel{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 4.5L6 8.5L10 4.5' stroke='rgba(0,0,0,.25)' stroke-width='1.4' fill='none'/></svg>");
+     background-repeat:no-repeat;background-position:right 8px center;background-size:12px;padding-right:26px;}
+.ipt:focus,.sel:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 2px rgba(5,145,255,.1);}
+.ipt.ro{background:#f5f5f5;color:var(--text3);}
+.tag{display:inline-block;padding:0 7px;height:22px;line-height:20px;border-radius:4px;font-size:12px;border:1px solid;}
+.tag.b{color:var(--blue);background:var(--blue-1);border-color:var(--blue-b);}
+.tag.g{color:#389e0d;background:var(--green-1);border-color:var(--green-b);}
+.tag.o{color:#d46b08;background:var(--gold-1);border-color:var(--gold-b);}
+.tag.r{color:#cf1322;background:var(--red-1);border-color:var(--red-b);}
+.tag.p{color:var(--purple);background:var(--purple-1);border-color:#d3adf7;}
+.tag.d{color:var(--text2);background:var(--head);border-color:var(--border);}
+table{width:100%;border-collapse:collapse;font-size:14px;}
+th{background:var(--head);text-align:left;font-weight:600;color:var(--text);padding:11px 12px;border-bottom:1px solid var(--split);white-space:nowrap;}
+td{padding:11px 12px;border-bottom:1px solid var(--split);color:var(--text);vertical-align:middle;}
+tbody tr:hover td{background:#fafafa;}
+tbody tr.sel-row td{background:var(--blue-1);}
+.tbl-wrap{border:1px solid var(--split);border-radius:8px;overflow:hidden;}
+.tbl-scroll{overflow-x:auto;}
+.num{text-align:right;font-variant-numeric:tabular-nums;}
+.ck{width:16px;height:16px;border:1px solid var(--border);border-radius:4px;display:inline-block;vertical-align:-3px;background:#fff;}
+.ck.on{background:var(--blue);border-color:var(--blue);position:relative;}
+.ck.on::after{content:"";position:absolute;left:5px;top:2px;width:4px;height:8px;border:2px solid #fff;border-top:0;border-left:0;transform:rotate(45deg);}
+.toolbar{display:flex;gap:8px;align-items:center;padding:0 0 12px;flex-wrap:wrap;}
+.toolbar .cnt{color:var(--text3);font-size:13px;margin-left:4px;}
+.alert{border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;display:flex;gap:9px;align-items:flex-start;line-height:1.7;}
+.alert.i{background:var(--blue-1);border:1px solid var(--blue-b);}
+.alert.s{background:var(--green-1);border:1px solid var(--green-b);}
+.alert.w{background:var(--gold-1);border:1px solid var(--gold-b);}
+.alert.e{background:var(--red-1);border:1px solid var(--red-b);}
+.alert .ic{flex:none;font-size:14px;line-height:1.5;}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--split);margin-bottom:16px;}
+.tabs div{padding:11px 16px;cursor:pointer;color:var(--text2);position:relative;font-size:14px;}
+.tabs div.on{color:var(--blue);font-weight:500;}
+.tabs div.on::after{content:"";position:absolute;left:16px;right:16px;bottom:-1px;height:2px;background:var(--blue);}
+.form-row{display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;}
+.fi{flex:1;min-width:150px;}
+.fi label{display:block;font-size:14px;margin-bottom:6px;color:var(--text);}
+.fi label .req{color:var(--red);margin-right:3px;}
+.fi .hint{font-size:12px;color:var(--text3);margin-top:5px;line-height:1.6;}
+.divider{height:1px;background:var(--split);margin:20px 0;}
+.divider.txt{display:flex;align-items:center;gap:12px;background:none;height:auto;color:var(--text2);font-size:14px;font-weight:500;margin:24px 0 14px;}
+.divider.txt::before,.divider.txt::after{content:"";flex:1;height:1px;background:var(--split);}
+.divider.txt::before{flex:0 0 8px;}
+
+/* ---------- 抽屉拟真 ---------- */
+.drawer{background:#fff;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.08);margin-bottom:20px;overflow:hidden;border:1px solid var(--split);}
+.drawer.w480{max-width:480px;} .drawer.w720{max-width:720px;} .drawer.w960{max-width:960px;} .drawer.w1200{max-width:1200px;}
+.dr-head{padding:16px 24px;border-bottom:1px solid var(--split);display:flex;align-items:center;justify-content:space-between;}
+.dr-head .t{font-size:16px;font-weight:600;}
+.dr-head .x{color:var(--text3);cursor:pointer;font-size:16px;}
+.dr-body{padding:20px 24px;}
+.dr-foot{padding:12px 24px;border-top:1px solid var(--split);display:flex;justify-content:flex-end;gap:8px;background:#fff;}
+.dr-tip{font-size:12px;color:var(--text3);background:var(--head);border:1px dashed var(--border);border-radius:6px;padding:3px 10px;display:inline-block;margin-bottom:14px;}
+
+/* ---------- 说明批注 ---------- */
+.note{background:#fffbe6;border-left:3px solid var(--gold);border-radius:0 6px 6px 0;padding:10px 14px;font-size:13px;color:#874d00;margin:0 0 18px;line-height:1.8;}
+.note b{color:#613400;}
+.note code{background:#fff;border:1px solid var(--gold-b);border-radius:3px;padding:0 5px;font-family:"SF Mono",Consolas,monospace;font-size:12px;}
+.note ul{margin:6px 0 0;padding-left:20px;}
+.screen{margin-bottom:52px;scroll-margin-top:12px;}
+.screen > h2{font-size:20px;margin:0 0 4px;display:flex;align-items:center;gap:10px;}
+.screen > h2 .no{background:var(--blue);color:#fff;font-size:13px;width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none;}
+.screen > .path{color:var(--text3);font-size:13px;margin:0 0 16px 36px;}
+.upload{border:1px dashed var(--border);border-radius:8px;background:#fafafa;padding:28px 20px;text-align:center;color:var(--text2);cursor:pointer;}
+.upload:hover{border-color:var(--blue);}
+.upload .big{font-size:26px;color:var(--blue);margin-bottom:8px;}
+.upload .m{font-size:14px;color:var(--text);} .upload .s{font-size:12px;color:var(--text3);margin-top:5px;}
+.file-row{display:flex;align-items:center;gap:8px;border:1px solid var(--split);border-radius:6px;padding:8px 12px;margin-top:10px;font-size:13px;}
+.mini{font-size:12px;color:var(--text3);}
+.src-cell{display:inline-flex;align-items:center;gap:4px;}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;}
+.dot.off{background:var(--border);}
+.kbd{font-family:"SF Mono",Consolas,monospace;font-size:12px;background:var(--head);border:1px solid var(--split);border-radius:3px;padding:1px 5px;}
+.auto-val{position:relative;display:inline-flex;align-items:center;gap:5px;}
+.auto-val .badge{font-size:11px;color:var(--blue);background:var(--blue-1);border:1px solid var(--blue-b);border-radius:3px;padding:0 4px;line-height:16px;cursor:help;}
+.cell-ipt{height:28px;border:1px solid var(--split);border-radius:4px;padding:2px 8px;width:96px;text-align:right;font-size:13px;font-variant-numeric:tabular-nums;background:#fff;}
+.cell-ipt.empty{border-color:var(--gold-b);background:var(--gold-1);}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--text2);margin-top:12px;}
+.legend span{display:inline-flex;align-items:center;gap:5px;}
+.sider-cust{width:240px;flex:none;border-right:1px solid var(--split);}
+.cust-item{padding:10px 14px;border-left:3px solid transparent;cursor:pointer;}
+.cust-item:hover{background:#fafafa;}
+.cust-item.on{background:var(--blue-1);border-left-color:var(--blue);}
+.cust-item .n{font-weight:500;}
+.matrix-th{position:sticky;left:0;background:var(--head);z-index:2;}
+.matrix-td{position:sticky;left:0;background:#fff;z-index:1;font-weight:500;}
+tbody tr:hover .matrix-td{background:#fafafa;}
+@media (max-width:1100px){ .nav{display:none;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<nav class="nav">
+  <h1>元素单价维护与价格策略</h1>
+  <div class="sub">task-0722 · 页面原型 v1<br>2026-07-22</div>
+  <div class="grp">主数据维护 · 元素</div>
+  <a href="#s1" class="on">① 元素管理页（入口）</a>
+  <a href="#s1b">①-B 元素抽屉 · 各源最新价</a>
+  <a href="#s2">② 价格源管理</a>
+  <a href="#s3">③ 价格导入</a>
+  <a href="#s4">④ 元素价格表</a>
+  <div class="grp">定价管理</div>
+  <a href="#s5">⑤ 元素价格策略</a>
+  <a href="#s5b">⑤-B 策略变更历史</a>
+  <a href="#s6">⑥ 策略试算</a>
+  <div class="grp">效果</div>
+  <a href="#s7">⑦ 报价单取价效果</a>
+  <a href="#s8">⑧ 核价单取价效果</a>
+</nav>
+
+<div class="main">
+
+<!-- ============ 屏 1 ============ -->
+<section class="screen" id="s1">
+  <h2><span class="no">1</span>元素管理页 —— 三个新入口</h2>
+  <div class="path">主数据维护 → 元素</div>
+  <div class="note">
+    <b>改动说明</b>：在现有元素管理页的右上角操作区，新增 <b>3 个按钮</b>（价格源管理 / 价格导入 / 元素价格表），
+    其余部分（表格列、工具栏动作、搜索框、新建元素）<b>完全不动</b>。
+    <ul>
+      <li><b>主列表不加价格列</b> —— 一个元素在多个源下各有各的价，单列说不清是哪个源的。价格改到<b>元素抽屉</b>里按源逐行展示（见下方屏 1-B）。</li>
+      <li><b>「创建时间」列改为「最后修改时间」</b>（原有的「修改时间」列合并进来，两列并一列）：<b>导入该元素的价格也算一次修改</b>。
+        列表默认按该时间<b>倒序</b>，最近动过的元素排在最前。</li>
+      <li>三个新按钮的可见性沿用本页现有权限（销售经理 / 财务核价 / 系统管理员）。</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">元素管理</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input class="ipt" style="width:240px" placeholder="搜索 元素编号 / 符号 / 中文名">
+        <button class="btn">🔗 价格源管理</button>
+        <button class="btn">📥 价格导入</button>
+        <button class="btn">📊 元素价格表</button>
+        <button class="btn pri">＋ 新建元素</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="toolbar">
+        <button class="btn dis">✎ 编辑</button>
+        <button class="btn dis">⊘ 停用</button>
+        <span class="cnt">未选择</span>
+      </div>
+      <div class="tbl-wrap tbl-scroll">
+        <table>
+          <thead><tr>
+            <th style="width:44px"><span class="ck"></span></th>
+            <th>元素编号</th><th>符号</th><th>中文名</th>
+            <th>被引用材质数</th><th>状态</th><th>最后修改时间 ↓</th>
+          </tr></thead>
+          <tbody>
+            <tr><td><span class="ck"></span></td><td><a href="#" style="color:var(--blue)">10001</a></td><td>Ag 🔒</td><td>银</td>
+                <td><span class="tag b">12</span></td><td><span class="tag g">启用</span></td><td class="mini">2026-07-22 09:12</td></tr>
+            <tr class="sel-row"><td><span class="ck on"></span></td><td><a href="#" style="color:var(--blue)">10002</a></td><td>Cu 🔒</td><td>铜</td>
+                <td><span class="tag b">9</span></td><td><span class="tag g">启用</span></td><td class="mini">2026-07-22 09:12</td></tr>
+            <tr><td><span class="ck"></span></td><td><a href="#" style="color:var(--blue)">10005</a></td><td>Ni</td><td>镍</td>
+                <td><span class="tag b">3</span></td><td><span class="tag g">启用</span></td><td class="mini">2026-07-19 08:58</td></tr>
+            <tr><td><span class="ck"></span></td><td><a href="#" style="color:var(--blue)">10039</a></td><td>301</td><td>301不锈钢</td>
+                <td><span class="tag b">4</span></td><td><span class="tag g">启用</span></td><td class="mini">2026-07-11 16:44</td></tr>
+            <tr><td><span class="ck"></span></td><td><a href="#" style="color:var(--blue)">10004</a></td><td>Sn</td><td>锡</td>
+                <td><span class="tag d">0</span></td><td><span class="tag g">启用</span></td><td class="mini">2026-05-12 09:31</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider txt" id="s1b">屏 1-B：元素抽屉（编辑态）—— 各源最新价格</div>
+  <div class="note">
+    <b>这是本轮修正</b>：价格从主列表移到元素抽屉里。抽屉下半部新增「各源最新价格」区块，<b>一行一个源</b>，
+    这样"哪个源、哪天、多少钱"一目了然。
+    <ul>
+      <li><b>只在编辑态显示</b>（新建元素时该区块不出现，因为还没有价格）。</li>
+      <li>只读展示，<b>不在这里录价</b> —— 录价统一走「价格导入」，保证有源、有日期、有批次记录。</li>
+      <li>已停用的源仍显示历史价，但整行置灰并标「源已停用」。</li>
+      <li>抽屉宽度由现有 520 调整为 <b>640</b>，容纳价格表格。</li>
+    </ul>
+  </div>
+
+  <div class="drawer" style="max-width:640px">
+    <div class="dr-head"><div class="t">编辑元素: 10002</div><div class="x">✕</div></div>
+    <div class="dr-body">
+      <div class="form-row"><div class="fi"><label><span class="req">*</span>元素编号</label>
+        <input class="ipt ro" value="10002" readonly><div class="hint">业务主键，创建后不可修改</div></div></div>
+      <div class="form-row"><div class="fi"><label><span class="req">*</span>符号</label>
+        <input class="ipt ro" value="Cu" readonly><div class="hint">🔒 已被 9 个材质引用，符号不可修改</div></div></div>
+      <div class="form-row"><div class="fi"><label><span class="req">*</span>中文名</label>
+        <input class="ipt" value="铜"></div></div>
+      <div class="form-row"><div class="fi" style="max-width:200px"><label>状态</label>
+        <select class="sel"><option>启用</option><option>停用</option></select></div></div>
+
+      <div class="divider txt" style="margin:22px 0 12px">各源最新价格</div>
+      <div class="tbl-wrap tbl-scroll">
+        <table>
+          <thead><tr><th>价格源</th><th>最新价</th><th>货币</th><th>计价单位</th><th>价格日期</th></tr></thead>
+          <tbody>
+            <tr><td>上海有色网</td><td class="num"><b>74.50</b></td><td>CNY</td><td>元/kg</td><td>2026-07-21</td></tr>
+            <tr><td>长江有色金属网</td><td class="num"><b>74.90</b></td><td>CNY</td><td>元/kg</td><td>2026-07-21</td></tr>
+            <tr><td>供应商报价</td><td class="num"><b>76.20</b></td><td>CNY</td><td>元/kg</td><td>2026-06-30</td></tr>
+            <tr style="color:var(--text3)"><td>某停用源 <span class="tag d" style="height:18px;line-height:16px;font-size:11px">源已停用</span></td>
+                <td class="num">73.10</td><td>CNY</td><td>元/kg</td><td>2026-05-28</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mini" style="margin-top:10px">该元素在 4 个源下有价格记录。价格录入统一走「价格导入」，此处只读。</div>
+
+      <div class="alert w" style="margin-top:14px"><span class="ic">!</span>
+        <div>若某元素<b>一个源都没有价格</b>，此区块显示空态：「该元素暂无任何价格记录，请通过『价格导入』录入」。</div></div>
+    </div>
+    <div class="dr-foot"><button class="btn">取消</button><button class="btn pri">保存</button></div>
+  </div>
+</section>
+
+<!-- ============ 屏 2 ============ -->
+<section class="screen" id="s2">
+  <h2><span class="no">2</span>价格源管理（抽屉 720px）</h2>
+  <div class="path">元素管理 → 价格源管理</div>
+  <div class="note">
+    <b>本期不做自动抓价</b>（澄清 §11.13）：网址只作人工参考记录，价格一律靠 Excel 导入。<br>
+    停用的源：<b>不再可被新策略/新导入选择</b>，但历史价格与历史报价单照常显示。
+  </div>
+
+  <div class="drawer w720">
+    <div class="dr-head"><div><div class="t">价格源管理</div><div class="mini" style="margin-top:2px">维护元素行情的来源渠道</div></div><div class="x">✕</div></div>
+    <div class="dr-body">
+      <div class="toolbar">
+        <button class="btn pri">＋ 新建源</button>
+        <button class="btn dis">✎ 编辑</button>
+        <button class="btn dis">⊘ 停用</button>
+        <span class="cnt">未选择</span>
+      </div>
+      <div class="tbl-wrap tbl-scroll">
+        <table>
+          <thead><tr>
+            <th style="width:44px"><span class="ck"></span></th>
+            <th>源名称</th><th>网址</th><th>类型</th><th>备注</th><th>状态</th>
+          </tr></thead>
+          <tbody>
+            <tr><td><span class="ck"></span></td><td><a href="#" style="color:var(--blue)">上海有色网</a></td>
+                <td class="mini">https://www.smm.cn/</td><td><span class="tag d">手工录入</span></td><td class="mini">现货均价</td>
+                <td><span class="src-cell"><span class="dot"></span>启用</span></td></tr>
+            <tr><td><span class="ck"></span></td><td><a href="#" style="color:var(--blue)">长江有色金属网</a></td>
+                <td class="mini">https://www.ccmn.cn/</td><td><span class="tag d">手工录入</span></td><td class="mini">长江现货</td>
+                <td><span class="src-cell"><span class="dot"></span>启用</span></td></tr>
+            <tr><td><span class="ck"></span></td><td><a href="#" style="color:var(--blue)">供应商报价</a></td>
+                <td class="mini">—</td><td><span class="tag d">手工录入</span></td><td class="mini">A 类供应商月度报价</td>
+                <td><span class="src-cell"><span class="dot"></span>启用</span></td></tr>
+            <tr style="color:var(--text3)"><td><span class="ck"></span></td><td>某停用源</td>
+                <td class="mini">—</td><td><span class="tag d">手工录入</span></td><td class="mini">2026-06 起停用</td>
+                <td><span class="src-cell"><span class="dot off"></span>停用</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="divider txt">新建 / 编辑源（第二层抽屉 480px）</div>
+      <div class="drawer w480" style="margin:0;box-shadow:none;">
+        <div class="dr-head"><div class="t">新建价格源</div><div class="x">✕</div></div>
+        <div class="dr-body">
+          <div class="form-row"><div class="fi"><label><span class="req">*</span>源名称</label>
+            <input class="ipt" placeholder="如：上海有色网"><div class="hint">同名 + 同网址不可重复</div></div></div>
+          <div class="form-row"><div class="fi"><label>网址</label>
+            <input class="ipt" placeholder="https://"><div class="hint">仅作参考记录，系统不会自动访问</div></div></div>
+          <div class="form-row"><div class="fi"><label>备注</label><input class="ipt" placeholder="如：现货均价 / 含税"></div></div>
+          <div class="form-row"><div class="fi"><label>状态</label>
+            <select class="sel"><option>启用</option><option>停用</option></select></div></div>
+        </div>
+        <div class="dr-foot"><button class="btn">取消</button><button class="btn pri">保存</button></div>
+      </div>
+    </div>
+    <div class="dr-foot"><button class="btn">关闭</button></div>
+  </div>
+</section>
+
+<!-- ============ 屏 3 ============ -->
+<section class="screen" id="s3">
+  <h2><span class="no">3</span>价格导入（抽屉 720px）</h2>
+  <div class="path">元素管理 → 价格导入</div>
+  <div class="note">
+    <b>一次导入 = 一个源 × 一个日期 × N 个元素</b>（澄清 §11.3）。日期与源在抽屉上选，<b>Excel 里不带日期列</b>。<br>
+    同一「源 + 日期 + 元素」重复导入 <b>直接覆盖</b> 旧值并记录修改人（§11.16）。
+  </div>
+
+  <div class="drawer w720">
+    <div class="dr-head"><div class="t">价格导入</div><div class="x">✕</div></div>
+    <div class="dr-body">
+      <div class="form-row">
+        <div class="fi"><label><span class="req">*</span>价格源</label>
+          <select class="sel"><option>上海有色网</option><option>长江有色金属网</option><option>供应商报价</option></select>
+          <div class="hint">只列出「启用」状态的源</div></div>
+        <div class="fi"><label><span class="req">*</span>价格日期</label>
+          <input class="ipt" value="2026-07-22" type="date">
+          <div class="hint">本次文件里所有价格都记为这一天</div></div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="font-weight:500">上传价格文件</div>
+        <button class="btn sm">⬇ 下载导入模板</button>
+      </div>
+      <div class="upload">
+        <div class="big">⬆</div>
+        <div class="m">点击或拖拽 Excel 文件到此区域</div>
+        <div class="s">支持 .xlsx / .xls，单次不超过 5MB</div>
+      </div>
+      <div class="file-row"><span>📄</span><span>元素价格_20260722.xlsx</span><span class="mini">18.4 KB</span>
+        <span style="flex:1"></span><button class="btn lnk">移除</button></div>
+
+      <div class="dr-tip" style="margin-top:14px">模板列：<span class="kbd">元素符号*</span> <span class="kbd">单价*</span> <span class="kbd">货币</span> <span class="kbd">计价单位</span>　·　元素符号须在「元素管理」里已存在且为启用状态</div>
+
+      <div class="divider txt">导入结果</div>
+      <div class="alert s"><span class="ic">✔</span>
+        <div><b>导入完成</b>：新增 <b>3</b> 条，覆盖 <b>2</b> 条，失败 <b>1</b> 条。<br>
+        <span class="mini">源：上海有色网　日期：2026-07-22　操作人：张三　耗时 0.4s</span></div></div>
+
+      <div class="tbl-wrap tbl-scroll">
+        <table>
+          <thead><tr><th style="width:60px">行号</th><th>元素符号</th><th>单价</th><th>货币</th><th>计价单位</th><th>结果</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>2</td><td>Ag</td><td class="num">5,820.00</td><td>CNY</td><td>元/kg</td><td><span class="tag o">覆盖</span></td><td class="mini">原值 5,795.00 → 5,820.00</td></tr>
+            <tr><td>3</td><td>Cu</td><td class="num">74.50</td><td>CNY</td><td>元/kg</td><td><span class="tag o">覆盖</span></td><td class="mini">原值 74.20 → 74.50</td></tr>
+            <tr><td>4</td><td>Ni</td><td class="num">132.80</td><td>CNY</td><td>元/kg</td><td><span class="tag g">新增</span></td><td class="mini">—</td></tr>
+            <tr><td>5</td><td>Sn</td><td class="num">218.00</td><td>CNY</td><td>元/kg</td><td><span class="tag g">新增</span></td><td class="mini">—</td></tr>
+            <tr><td>6</td><td>301</td><td class="num">21.60</td><td>CNY</td><td>元/kg</td><td><span class="tag g">新增</span></td><td class="mini">—</td></tr>
+            <tr style="background:var(--red-1)"><td>7</td><td>Auu</td><td class="num">452.00</td><td>CNY</td><td>元/g</td><td><span class="tag r">失败</span></td><td style="color:#cf1322">元素符号「Auu」在元素管理中不存在</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mini" style="margin-top:10px">失败行不影响其他行入库；修正后可重新导入（会走覆盖逻辑）。</div>
+    </div>
+    <div class="dr-foot"><button class="btn">关闭</button><button class="btn pri">开始导入</button></div>
+  </div>
+</section>
+
+<!-- ============ 屏 4 ============ -->
+<section class="screen" id="s4">
+  <h2><span class="no">4</span>元素价格表（抽屉 1200px · 两个 Tab）</h2>
+  <div class="path">元素管理 → 元素价格表</div>
+  <div class="note">
+    按项目规范用<b>抽屉</b>而非弹窗（原需求写"弹窗"）。两个 Tab 都支持<b>导出 Excel</b>，导出内容 = 当前筛选结果（澄清 §11.14）。
+  </div>
+
+  <div class="drawer w1200">
+    <div class="dr-head"><div class="t">元素价格表</div><div class="x">✕</div></div>
+    <div class="dr-body">
+      <div class="tabs"><div class="on">明细</div><div>矩阵</div></div>
+
+      <div class="form-row" style="align-items:flex-end">
+        <div class="fi" style="max-width:200px"><label>价格源</label><select class="sel"><option>全部</option><option>上海有色网</option><option>长江有色金属网</option></select></div>
+        <div class="fi" style="max-width:290px"><label>日期区间</label>
+          <div style="display:flex;gap:6px;align-items:center"><input class="ipt" type="date" value="2026-06-23"><span class="mini">至</span><input class="ipt" type="date" value="2026-07-22"></div></div>
+        <div class="fi" style="max-width:220px"><label>元素</label><input class="ipt" placeholder="符号或中文名"></div>
+        <div class="fi" style="max-width:200px;flex:none"><button class="btn pri">查询</button> <button class="btn">重置</button></div>
+        <div style="flex:1"></div>
+        <div style="flex:none"><button class="btn">⬇ 导出 Excel</button></div>
+      </div>
+
+      <div class="tbl-wrap tbl-scroll">
+        <table>
+          <thead><tr><th>元素符号</th><th>中文名</th><th>价格日期</th><th>价格源</th><th>单价</th><th>货币</th><th>计价单位</th><th>录入人</th><th>录入时间</th></tr></thead>
+          <tbody>
+            <tr><td>Ag</td><td>银</td><td>2026-07-21</td><td>上海有色网</td><td class="num">5,820.00</td><td>CNY</td><td>元/kg</td><td>张三</td><td class="mini">07-22 09:12</td></tr>
+            <tr><td>Ag</td><td>银</td><td>2026-07-20</td><td>上海有色网</td><td class="num">5,795.00</td><td>CNY</td><td>元/kg</td><td>张三</td><td class="mini">07-21 09:05</td></tr>
+            <tr><td>Ag</td><td>银</td><td>2026-07-21</td><td>长江有色金属网</td><td class="num">5,833.00</td><td>CNY</td><td>元/kg</td><td>李四</td><td class="mini">07-22 09:40</td></tr>
+            <tr><td>Cu</td><td>铜</td><td>2026-07-21</td><td>上海有色网</td><td class="num">74.50</td><td>CNY</td><td>元/kg</td><td>张三</td><td class="mini">07-22 09:12</td></tr>
+            <tr><td>Cu</td><td>铜</td><td>2026-07-20</td><td>上海有色网</td><td class="num">74.20</td><td>CNY</td><td>元/kg</td><td>张三</td><td class="mini">07-21 09:05</td></tr>
+            <tr><td>Ni</td><td>镍</td><td>2026-07-18</td><td>上海有色网</td><td class="num">132.80</td><td>CNY</td><td>元/kg</td><td>张三</td><td class="mini">07-19 08:58</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:12px;" class="mini">
+        共 1,284 条　·　<span class="btn sm">‹</span> <span class="btn sm pri">1</span> <span class="btn sm">2</span> <span class="btn sm">3</span> <span class="btn sm">›</span>　·　每页 20 条
+      </div>
+
+      <div class="divider txt">Tab 2：矩阵（行=元素，列=日期）</div>
+      <div class="alert w"><span class="ic">!</span><div>矩阵视图日期跨度<b>默认最近 30 天、最长 90 天</b>；超出会提示收窄区间，避免列数爆炸。<br>
+        矩阵必须先选定<b>单一价格源</b>（否则同一天多个源的价格无法在一格里表示）。</div></div>
+      <div class="form-row" style="align-items:flex-end">
+        <div class="fi" style="max-width:200px"><label><span class="req">*</span>价格源</label><select class="sel"><option>上海有色网</option></select></div>
+        <div class="fi" style="max-width:290px"><label>日期区间</label>
+          <div style="display:flex;gap:6px;align-items:center"><input class="ipt" type="date" value="2026-07-16"><span class="mini">至</span><input class="ipt" type="date" value="2026-07-22"></div></div>
+        <div class="fi" style="max-width:220px"><label>元素</label><input class="ipt" placeholder="符号或中文名"></div>
+        <div class="fi" style="flex:none"><button class="btn pri">查询</button></div>
+        <div style="flex:1"></div><div style="flex:none"><button class="btn">⬇ 导出 Excel</button></div>
+      </div>
+      <div class="tbl-wrap tbl-scroll">
+        <table>
+          <thead><tr><th class="matrix-th">元素</th><th>07-16</th><th>07-17</th><th>07-18</th><th>07-19</th><th>07-20</th><th>07-21</th><th>07-22</th></tr></thead>
+          <tbody>
+            <tr><td class="matrix-td">Ag 银</td><td class="num">5,740</td><td class="num">5,762</td><td class="num">5,758</td><td class="num" style="color:var(--text3)">—</td><td class="num">5,795</td><td class="num">5,820</td><td class="num" style="color:var(--text3)">—</td></tr>
+            <tr><td class="matrix-td">Cu 铜</td><td class="num">73.80</td><td class="num">74.05</td><td class="num">74.10</td><td class="num" style="color:var(--text3)">—</td><td class="num">74.20</td><td class="num">74.50</td><td class="num" style="color:var(--text3)">—</td></tr>
+            <tr><td class="matrix-td">Ni 镍</td><td class="num">131.20</td><td class="num">131.90</td><td class="num">132.80</td><td class="num" style="color:var(--text3)">—</td><td class="num" style="color:var(--text3)">—</td><td class="num" style="color:var(--text3)">—</td><td class="num" style="color:var(--text3)">—</td></tr>
+            <tr><td class="matrix-td">301 不锈钢</td><td class="num">21.40</td><td class="num">21.45</td><td class="num">21.50</td><td class="num" style="color:var(--text3)">—</td><td class="num">21.55</td><td class="num">21.60</td><td class="num" style="color:var(--text3)">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mini" style="margin-top:10px">「—」= 当天该源无价格记录（周末 / 未录入）。</div>
+    </div>
+    <div class="dr-foot"><button class="btn">关闭</button></div>
+  </div>
+</section>
+
+<!-- ============ 屏 5 ============ -->
+<section class="screen" id="s5">
+  <h2><span class="no">5</span>元素价格策略（定价策略页新增 Tab）</h2>
+  <div class="path">定价管理 → 定价策略 → 选中客户 → 元素价格策略</div>
+  <div class="note">
+    <b>沿用现有页面骨架</b>：左侧客户列表不动，右侧内容区新增一个 Tab 页签。原有「折扣策略」内容原样放在第一个 Tab。<br>
+    策略两层（澄清 §11.1）：<b>客户级默认</b>（一条，管所有元素）+ <b>元素级例外</b>（按需，覆盖默认）。取值优先级 = 例外 &gt; 默认 &gt; 留空。
+    <ul>
+      <li>🌐 <b>客户列表顶部固定一个「全局（核价成本口径）」项</b>（§11.11E）—— 这是 <code>_GLOBAL_</code> 策略的唯一配置入口。
+        核价侧只认它，不看报价单归属客户；不给这个入口，核价单就永远无价。</li>
+      <li>该项<b>不参与客户搜索与分页</b>，视觉上用紫色底 + 分隔线与真实客户区分。</li>
+      <li>选中它时右侧内容与客户完全同构（默认策略 + 元素例外 + 试算），但<b>「折扣策略」Tab 不显示</b>——折扣是客户维度概念，全局无意义。</li>
+    </ul>
+  </div>
+
+  <div class="card" style="padding:0;overflow:hidden;">
+    <div style="display:flex;min-height:620px;">
+      <div class="sider-cust">
+        <div style="padding:12px 14px;border-bottom:1px solid var(--split)"><input class="ipt" placeholder="搜索客户"></div>
+        <!-- _GLOBAL_ 固定项：核价成本口径。不参与搜索/分页 -->
+        <div class="cust-item" style="background:var(--purple-1);border-bottom:1px solid var(--split);">
+          <div class="n">🌐 全局（核价成本口径）</div>
+          <div><span class="tag p">_GLOBAL_</span> <span class="mini">核价单取用</span></div>
+        </div>
+        <div class="cust-item"><div class="n">苏州西门子</div><div><span class="tag b">A 类</span> <span class="mini">CUST-1042</span></div></div>
+        <div class="cust-item on"><div class="n">罗克韦尔（中国）</div><div><span class="tag b">A 类</span> <span class="mini">CUST-1269</span></div></div>
+        <div class="cust-item"><div class="n">西安中熔</div><div><span class="tag o">B 类</span> <span class="mini">CUST-1305</span></div></div>
+        <div class="cust-item"><div class="n">森萨塔科技</div><div><span class="tag b">A 类</span> <span class="mini">CUST-1188</span></div></div>
+      </div>
+
+      <div style="flex:1;padding:20px 24px;min-width:0;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div><span style="font-size:16px;font-weight:600">罗克韦尔（中国）</span> <span class="tag b" style="margin-left:6px">A 类</span></div>
+        </div>
+        <div class="tabs"><div>折扣策略</div><div class="on">元素价格策略</div></div>
+
+        <!-- Tab 级操作条：试算入口 -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:12px;flex-wrap:wrap;">
+          <div class="mini">取值优先级：<b style="color:var(--purple)">元素例外</b> &gt; <b style="color:var(--blue)">客户默认</b> &gt; 留空（销售手填）</div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn">🕘 变更历史</button>
+            <button class="btn">🧮 策略试算</button>
+          </div>
+        </div>
+
+        <!-- 客户级默认 -->
+        <div class="card" style="box-shadow:none;border:1px solid var(--split);margin-bottom:18px;">
+          <div class="card-head" style="padding:12px 16px;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span style="font-weight:600">客户级默认策略</span>
+              <span class="tag g">已生效</span>
+              <span class="mini">最后变更 2026-07-22 10:15 · 张三</span></div>
+            <div style="display:flex;gap:8px;"><button class="btn sm pri">保存</button></div>
+          </div>
+          <div class="card-body" style="padding:16px;">
+            <div class="form-row">
+              <div class="fi" style="max-width:220px"><label><span class="req">*</span>价格源</label>
+                <select class="sel"><option>上海有色网</option><option>长江有色金属网</option><option>供应商报价</option></select>
+                <div class="hint">必填，只能选一个</div></div>
+              <div class="fi" style="max-width:190px"><label><span class="req">*</span>取值方式</label>
+                <select class="sel"><option>窗口内平均值</option><option>最新一条价</option><option>窗口内最高值</option><option>窗口内最低值</option></select></div>
+              <div class="fi" style="max-width:210px"><label><span class="req">*</span>窗口</label>
+                <div style="display:flex;gap:6px"><span class="mini" style="line-height:32px">最近</span>
+                  <input class="ipt" value="30" style="width:70px;text-align:right">
+                  <select class="sel" style="width:80px"><option>天</option><option>周</option><option>月</option><option>年</option></select></div>
+                <div class="hint">取值方式为「最新一条价」时本项灰置</div></div>
+              <div class="fi" style="max-width:130px"><label>系数</label><input class="ipt" value="1.05" style="text-align:right"><div class="hint">默认 1</div></div>
+              <div class="fi" style="max-width:130px"><label>加价</label><input class="ipt" value="2.00" style="text-align:right"><div class="hint">默认 0</div></div>
+            </div>
+            <div class="alert i" style="margin-bottom:0"><span class="ic">ⓘ</span>
+              <div>最终单价 = <b>取值结果 × 系数 + 加价</b>（先乘后加）。<br>
+              基准日 = <b>报价单的创建日期</b>，不是今天 —— 同一张单以后重开，价格不会自己变。</div></div>
+          </div>
+        </div>
+
+        <!-- 元素级例外 -->
+        <div class="card" style="box-shadow:none;border:1px solid var(--split);margin-bottom:0;">
+          <div class="card-head" style="padding:12px 16px;">
+            <div style="display:flex;align-items:center;gap:8px;"><span style="font-weight:600">元素级例外</span>
+              <span class="mini">对个别元素覆盖上面的默认规则</span></div>
+            <div><button class="btn sm pri">＋ 新增例外</button></div>
+          </div>
+          <div class="card-body" style="padding:16px;">
+            <div class="toolbar"><button class="btn dis">✎ 编辑</button><button class="btn dis">🗑 删除</button><span class="cnt">未选择</span></div>
+            <div class="tbl-wrap tbl-scroll">
+              <table>
+                <thead><tr><th style="width:44px"><span class="ck"></span></th><th>元素</th><th>价格源</th><th>取值方式</th><th>窗口</th><th>系数</th><th>加价</th><th>最后变更时间</th><th>变更用户</th></tr></thead>
+                <tbody>
+                  <tr><td><span class="ck"></span></td><td>Ag <span class="mini">银</span></td><td>上海有色网</td>
+                      <td><span class="tag p">最新一条价</span></td><td class="mini">—</td><td class="num">1.00</td><td class="num">0.00</td>
+                      <td class="mini">2026-07-22 10:15</td><td class="mini">张三</td></tr>
+                  <tr><td><span class="ck"></span></td><td>Cu <span class="mini">铜</span></td><td>长江有色金属网</td>
+                      <td><span class="tag p">窗口内最高值</span></td><td class="mini">最近 7 天</td><td class="num">1.00</td><td class="num">0.00</td>
+                      <td class="mini">2026-07-22 10:18</td><td class="mini">李四</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="mini" style="margin-top:10px">未列在此处的元素，一律走上方「客户级默认策略」。</div>
+          </div>
+        </div>
+
+        <div class="alert w" style="margin-top:18px"><span class="ic">!</span>
+          <div><b>没配策略的客户</b>：报价单元素单价<b>留空</b>，由销售手填（与今天行为一致）。系统<b>不设</b>全局默认策略，避免"没配却拿到一个不知哪来的价"。</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider txt" id="s5b">屏 5-B：价格策略变更历史（抽屉 960px）</div>
+  <div class="note">
+    <b>业务方 2026-07-22 提出的新增需求</b>：价格策略直接决定报价金额，改一个系数全线报价跟着变，必须留痕可追溯。
+    <ul>
+      <li><b>记录范围</b>：客户级默认策略 + 元素级例外的<b>新建 / 修改 / 删除</b>，以及 <code>_GLOBAL_</code> 全局策略的同类变更。</li>
+      <li><b>存快照、展示差异</b>：库里每次变更存一份完整策略快照，界面上自动比对相邻两版、只显示<b>变了哪几项（旧值 → 新值）</b>，不用人工对照。</li>
+      <li><b>入口</b>：「元素价格策略」Tab 右上角「🕘 变更历史」按钮（与「策略试算」并排）。</li>
+      <li><b>最后变更时间 / 变更用户</b>同时显示在两处：默认策略卡片头部、元素例外表格的两个新列。</li>
+      <li>只读，不提供在此处编辑。</li>
+    </ul>
+  </div>
+
+  <div class="drawer w960">
+    <div class="dr-head">
+      <div><div class="t">价格策略变更历史 · 罗克韦尔（中国）</div>
+        <div class="mini" style="margin-top:2px">含客户级默认策略与全部元素级例外的变更留痕</div></div>
+      <div class="x">✕</div>
+    </div>
+    <div class="dr-body">
+      <div class="form-row" style="align-items:flex-end">
+        <div class="fi" style="max-width:200px"><label>变更对象</label>
+          <select class="sel"><option>全部</option><option>客户级默认策略</option><option>元素例外 · Ag</option><option>元素例外 · Cu</option></select></div>
+        <div class="fi" style="max-width:290px"><label>变更时间</label>
+          <div style="display:flex;gap:6px;align-items:center"><input class="ipt" type="date" value="2026-06-22"><span class="mini">至</span><input class="ipt" type="date" value="2026-07-22"></div></div>
+        <div class="fi" style="max-width:170px"><label>变更用户</label><input class="ipt" placeholder="姓名"></div>
+        <div class="fi" style="flex:none"><button class="btn pri">查询</button> <button class="btn">重置</button></div>
+      </div>
+
+      <div class="tbl-wrap tbl-scroll">
+        <table>
+          <thead><tr><th style="width:150px">变更时间</th><th style="width:90px">变更用户</th><th style="width:150px">变更对象</th>
+            <th style="width:76px">操作</th><th>变更内容</th></tr></thead>
+          <tbody>
+            <tr><td class="mini">2026-07-22 10:18</td><td>李四</td><td>元素例外 · Cu 铜</td>
+                <td><span class="tag b">新建</span></td>
+                <td class="mini" style="line-height:1.9">
+                  价格源：<b>长江有色金属网</b><br>取值方式：<b>窗口内最高值</b>　窗口：<b>最近 7 天</b><br>系数：<b>1.00</b>　加价：<b>0.00</b></td></tr>
+            <tr><td class="mini">2026-07-22 10:15</td><td>张三</td><td>客户级默认策略</td>
+                <td><span class="tag o">修改</span></td>
+                <td class="mini" style="line-height:1.9">
+                  取值方式：<span style="color:var(--text3)">窗口内平均值</span> → <b>窗口内平均值</b> <span class="mini">(未变)</span><br>
+                  系数：<span style="color:var(--text3)">1.00</span> → <b style="color:#d46b08">1.05</b><br>
+                  加价：<span style="color:var(--text3)">0.00</span> → <b style="color:#d46b08">2.00</b></td></tr>
+            <tr><td class="mini">2026-07-22 10:15</td><td>张三</td><td>元素例外 · Ag 银</td>
+                <td><span class="tag b">新建</span></td>
+                <td class="mini" style="line-height:1.9">
+                  价格源：<b>上海有色网</b><br>取值方式：<b>最新一条价</b>　窗口：<b>—</b><br>系数：<b>1.00</b>　加价：<b>0.00</b></td></tr>
+            <tr><td class="mini">2026-07-05 14:32</td><td>张三</td><td>元素例外 · Ni 镍</td>
+                <td><span class="tag r">删除</span></td>
+                <td class="mini" style="line-height:1.9">删除前：上海有色网 · 窗口内最低值 · 最近 14 天 · ×1.00 +0.00</td></tr>
+            <tr><td class="mini">2026-06-28 09:07</td><td>王五</td><td>客户级默认策略</td>
+                <td><span class="tag o">修改</span></td>
+                <td class="mini" style="line-height:1.9">
+                  窗口：<span style="color:var(--text3)">最近 60 天</span> → <b style="color:#d46b08">最近 30 天</b></td></tr>
+            <tr><td class="mini">2026-06-22 16:40</td><td>王五</td><td>客户级默认策略</td>
+                <td><span class="tag b">新建</span></td>
+                <td class="mini" style="line-height:1.9">
+                  价格源：<b>上海有色网</b><br>取值方式：<b>窗口内平均值</b>　窗口：<b>最近 60 天</b><br>系数：<b>1.00</b>　加价：<b>0.00</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:12px;" class="mini">
+        共 6 条　·　<span class="btn sm pri">1</span>　·　每页 20 条
+      </div>
+
+      <div class="alert i" style="margin-top:14px"><span class="ic">ⓘ</span>
+        <div><b>「修改」行只列出真正变化的项</b>（如上面 10:15 那条只有系数与加价变了）。
+          未变的项默认不展示，图中「取值方式(未变)」一行仅为示意对照，实现时不显示。</div></div>
+    </div>
+    <div class="dr-foot"><button class="btn">关闭</button></div>
+  </div>
+</section>
+
+<!-- ============ 屏 6 ============ -->
+<section class="screen" id="s6">
+  <h2><span class="no">6</span>策略试算（抽屉 720px）</h2>
+  <div class="path">定价管理 → 定价策略 → 选中客户 → 元素价格策略 Tab → 右上角「🧮 策略试算」</div>
+  <div class="note">
+    <b>入口位置（本轮确定）</b>：挂在<b>「元素价格策略」Tab 内容区右上角</b>，与"取值优先级"说明同一行。
+    <ul>
+      <li>不挂在「客户级默认策略」卡片头上 —— 试算算的是<b>默认 + 例外合并后的最终结果</b>（结果表里"命中规则"列会标明每个元素走的是例外还是默认），挂在默认卡片里会让人误以为只试算那一条。</li>
+      <li>试算按<b>当前页面上的配置</b>算（含尚未保存的改动），可以"先试算、满意了再保存"。</li>
+      <li>试算<b>只读、不落库</b>，纯计算预览。</li>
+    </ul>
+    <b>为什么要这个</b>：策略是"窗口 + 取值方式 + 系数加价"的组合，光看配置看不出最终多少钱。试算让维护人在保存前后都能<b>用指定基准日当场验算</b>，也是验收时最直接的核对工具（对应验收要点 §11.21#5）。
+  </div>
+
+  <div class="drawer w720">
+    <div class="dr-head"><div><div class="t">策略试算 · 罗克韦尔（中国）</div><div class="mini" style="margin-top:2px">按当前策略配置，模拟指定基准日的取价结果</div></div><div class="x">✕</div></div>
+    <div class="dr-body">
+      <div class="form-row" style="align-items:flex-end">
+        <div class="fi" style="max-width:220px"><label>基准日</label><input class="ipt" type="date" value="2026-07-22">
+          <div class="hint">实际报价时 = 报价单创建日期</div></div>
+        <div class="fi" style="flex:none"><button class="btn pri">🧮 试算</button></div>
+      </div>
+      <div class="tbl-wrap tbl-scroll">
+        <table>
+          <thead><tr><th>元素</th><th>命中规则</th><th>源</th><th>取值方式</th><th>取值结果</th><th>× 系数</th><th>+ 加价</th><th>最终单价</th><th>参与天数</th></tr></thead>
+          <tbody>
+            <tr><td>Ag 银</td><td><span class="tag p">元素例外</span></td><td>上海有色网</td><td>最新一条价</td>
+                <td class="num">5,820.00</td><td class="num">1.00</td><td class="num">0.00</td><td class="num"><b>5,820.00</b></td><td class="mini">07-21 单日</td></tr>
+            <tr><td>Cu 铜</td><td><span class="tag p">元素例外</span></td><td>长江有色金属网</td><td>近 7 天最高</td>
+                <td class="num">74.90</td><td class="num">1.00</td><td class="num">0.00</td><td class="num"><b>74.90</b></td><td class="mini">5 天有价</td></tr>
+            <tr><td>Ni 镍</td><td><span class="tag b">客户默认</span></td><td>上海有色网</td><td>近 30 天平均</td>
+                <td class="num">131.63</td><td class="num">1.05</td><td class="num">2.00</td><td class="num"><b>140.21</b></td><td class="mini">18 天有价</td></tr>
+            <tr><td>301 不锈钢</td><td><span class="tag b">客户默认</span></td><td>上海有色网</td><td>近 30 天平均</td>
+                <td class="num">21.48</td><td class="num">1.05</td><td class="num">2.00</td><td class="num"><b>24.55</b></td><td class="mini">21 天有价</td></tr>
+            <tr style="background:var(--gold-1)"><td>Sn 锡</td><td><span class="tag b">客户默认</span></td><td>上海有色网</td><td>近 30 天平均</td>
+                <td class="num" style="color:var(--text3)">—</td><td class="num" style="color:var(--text3)">—</td><td class="num" style="color:var(--text3)">—</td>
+                <td style="color:#d46b08"><b>无价</b></td><td class="mini">窗口内 0 天有价</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="alert w" style="margin-top:14px"><span class="ic">!</span>
+        <div>标黄行 = 策略窗口内一条价格都没有 → 报价单上该元素单价<b>留空</b>，销售手填。<b>不会</b>往窗口外找旧价顶上（澄清 §11.5）。</div></div>
+    </div>
+    <div class="dr-foot"><button class="btn">关闭</button></div>
+  </div>
+</section>
+
+<!-- ============ 屏 7 ============ -->
+<section class="screen" id="s7">
+  <h2><span class="no">7</span>报价单取价效果（元素页签）</h2>
+  <div class="path">报价单 → 第 2 步 产品卡片 → 元素 页签</div>
+  <div class="note">
+    <b>渲染层零改动</b>：「单价」列仍是可输入的数字列，只是从"空着让人填"变成"自动带出默认值、仍可改"。
+    因此<b>不触发字段类型联动协议（AP-44 的 17 个检查点）</b>，前端不需要改任何渲染代码，只改组件字段的取数配置。
+    <ul>
+      <li><b>报价单前端零改动</b>（2026-07-22 第 6 轮裁决）：角标 / 已改标记 / 取价明细 / 无价黄底<b>全部砍掉</b>，
+        本期只改组件字段的取数配置，不动任何渲染代码。</li>
+      <li>有价的元素自动带出单价（销售仍可改）；取不到价的元素<b>就是空格</b>，与今天完全一样，销售照常手填 —— <b>零退步</b>。</li>
+      <li>「哪些元素缺价」这个信息的真正需求方是<b>价格维护员而非销售</b>，已由<b>策略试算</b>（屏 6，无价行标黄 + 显示「无价」）满足，
+        不必在报价单里再做一遍。</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div><span class="card-title">10110002</span> <span class="mini" style="margin-left:8px">罗克韦尔（中国）　报价单 QT-20260722-0031　单据日期 2026-07-22</span></div>
+      <div><span class="tag b">草稿</span></div>
+    </div>
+    <div class="card-body">
+      <div class="tabs" style="margin-bottom:14px">
+        <div>投料</div><div class="on">元素</div><div>回料</div><div>加工</div><div>表面处理</div><div>包装</div><div>费用</div><div>小计</div>
+      </div>
+      <div class="tbl-wrap tbl-scroll">
+        <table>
+          <thead><tr><th>料件</th><th>序号</th><th>元素</th><th>含量</th><th>单价</th><th>货币</th><th>计价单位</th><th>损耗率</th><th>毛用量</th><th>净用量</th><th>回收折扣</th></tr></thead>
+          <tbody>
+            <tr><td>AgNi11#-Ⅰ</td><td>1</td><td>Ag</td><td class="num">89.00</td>
+                <td><input class="cell-ipt" value="5820.0000"></td>
+                <td>CNY</td><td>元/kg</td><td class="num">3.00</td><td class="num">0.0412</td><td class="num">0.0400</td><td class="num">0.95</td></tr>
+            <tr><td>AgNi11#-Ⅰ</td><td>2</td><td>Ni</td><td class="num">11.00</td>
+                <td><input class="cell-ipt" value="140.2100"></td>
+                <td>CNY</td><td>元/kg</td><td class="num">3.00</td><td class="num">0.0051</td><td class="num">0.0049</td><td class="num">0.95</td></tr>
+            <tr><td>C1100-Ⅱ</td><td>1</td><td>Cu</td><td class="num">100.00</td>
+                <td><input class="cell-ipt" value="76.5000"></td>
+                <td>CNY</td><td>元/kg</td><td class="num">2.00</td><td class="num">0.2210</td><td class="num">0.2167</td><td class="num">0.90</td></tr>
+            <tr><td>SUS301-Ⅲ</td><td>1</td><td>Sn</td><td class="num">100.00</td>
+                <td><input class="cell-ipt"></td>
+                <td>CNY</td><td>元/kg</td><td class="num">2.00</td><td class="num">0.0180</td><td class="num">0.0176</td><td class="num">0.90</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mini" style="margin-top:10px">
+        Sn 那行没取到价（该元素在策略窗口内无价格），<b>就是普通空格</b>，与今天行为一致，销售手填即可。
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ============ 屏 8 ============ -->
+<section class="screen" id="s8">
+  <h2><span class="no">8</span>核价单取价效果（元素页签）</h2>
+  <div class="path">核价单 / 核价工作台 → 元素 页签</div>
+  <div class="note">
+    <b>核价走 <code>_GLOBAL_</code> 全局策略，与报价侧口径不同</b>（§11.11，第 5 轮评审改写）。
+    <ul>
+      <li><b>实测事实</b>：核价侧数据全部挂在 <code>customer_no='_GLOBAL_'</code> 下（<code>element_bom_item</code> 的 PRICING 行 26/26），
+        是全局成本口径、不分客户。故现有核价视图没有客户过滤<b>不是遗漏、是设计</b>。</li>
+      <li><b>业务含义</b>：成本归成本、售价归售价，两者差额即毛利。同一料号不因客户不同而核出不同成本。</li>
+      <li>因此<b>报价侧与核价侧的元素单价可以不同 —— 这是预期特性，不是 bug</b>。</li>
+      <li>未配 <code>_GLOBAL_</code> 策略时，核价元素单价全空（不回退到报价单客户的策略）。</li>
+      <li><b>这是一处替换</b>：核价元素单价原取自全局变量 <code>COST_ELEMENT</code>（不分客户、不分日期的固定值），
+        现改接价格表函数并传字面量 <code>'_GLOBAL_'</code>。旧全局变量数据保留不删，作回滚退路。</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="card-head"><div><span class="card-title">10110002</span> <span class="mini" style="margin-left:8px">核价视图　CO-20260722-0018</span></div><div><span class="tag o">待核价</span></div></div>
+    <div class="card-body">
+      <div class="tabs" style="margin-bottom:14px"><div>物料BOM</div><div class="on">元素</div><div>工序</div><div>费用</div><div>汇总</div></div>
+      <div class="tbl-wrap tbl-scroll">
+        <table>
+          <thead><tr><th>料号</th><th>序号</th><th>元素</th><th>含量</th><th>单价</th><th>单位</th><th>版本</th></tr></thead>
+          <tbody>
+            <tr><td>AgNi11#-Ⅰ</td><td>1</td><td>Ag</td><td class="num">89.00</td>
+                <td class="num">5,820.0000</td><td>元/kg</td><td class="mini">2001</td></tr>
+            <tr><td>AgNi11#-Ⅰ</td><td>2</td><td>Ni</td><td class="num">11.00</td>
+                <td class="num">140.2100</td><td>元/kg</td><td class="mini">2001</td></tr>
+            <tr><td>C1100-Ⅱ</td><td>1</td><td>Cu</td><td class="num">100.00</td>
+                <td class="num">74.9000</td><td>元/kg</td><td class="mini">2001</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="alert i" style="margin-top:14px"><span class="ic">ⓘ</span>
+        <div>核价侧 JOIN 时传<b>字面量 <code>'_GLOBAL_'</code></b>，不传 <code>:customerCode</code>，
+        视图 WHERE 里也<b>不要</b>加客户过滤（加了会因 <code>_GLOBAL_ ≠ CUST-xxxx</code> 一行都查不到）。<br>
+        核价侧不需要客户上下文，因此<b>天然无跨客户串价风险</b>。<br>
+        🔒 <b>建表约束</b>：策略表客户维度必须用 <code>customer_no VARCHAR</code>，
+        <b>禁止</b>用 <code>customer_id UUID</code> 外键 —— 否则 <code>_GLOBAL_</code> 无处安放。</div></div>
+    </div>
+  </div>
+</section>
+
+<div class="card">
+  <div class="card-head"><div class="card-title">原型定稿确认清单</div></div>
+  <div class="card-body">
+    <table>
+      <thead><tr><th style="width:56px">屏</th><th>页面</th><th>形态</th><th>关键点</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>元素管理页</td><td>现有页 + 3 按钮（列表不动）</td><td>入口收敛在元素 Tab，不新增菜单</td></tr>
+        <tr><td>1-B</td><td>元素抽屉（编辑态）</td><td>现有抽屉 520 → 640 + 价格区块</td><td>各源最新价一行一源，只读；录价统一走导入</td></tr>
+        <tr><td colspan="4" style="background:var(--gold-1);color:#874d00">
+          <b>2026-07-22 范围裁决</b>：报价单角标 / 已改标记 / 取价明细 Popover / 页签红点 / 各类导出辅助按钮
+          （距今天数、查看历史、变更类型小字、价格条数列、导出失败明细、导出试算结果）<b>全部砍掉</b>；
+          仅保留「无价黄底空格 + 提示」一项视觉增补。</td></tr>
+        <tr><td>2</td><td>价格源管理</td><td>抽屉 720（含二层新建抽屉 480）</td><td>不做爬虫，网址仅参考；停用不影响历史</td></tr>
+        <tr><td>3</td><td>价格导入</td><td>抽屉 720</td><td>源+日期在抽屉选；重复导入覆盖；结果三分类回显</td></tr>
+        <tr><td>4</td><td>元素价格表</td><td>抽屉 1200，两 Tab</td><td>明细可多源；矩阵须单源 + 限跨度；均可导出</td></tr>
+        <tr><td>5</td><td>元素价格策略</td><td>定价策略页新增 Tab</td><td>客户级默认 + 元素级例外两层；例外优先；客户列表顶部固定 _GLOBAL_ 项</td></tr>
+        <tr><td>5-B</td><td>策略变更历史</td><td>抽屉 960</td><td>存快照展示差异；含默认策略与元素例外的增改删；只读</td></tr>
+        <tr><td>6</td><td>策略试算</td><td>抽屉 720</td><td>保存前后可验算；无价行显式标黄</td></tr>
+        <tr><td>7</td><td>报价单元素页签</td><td>现有卡片，零渲染改动</td><td>自动带出可改；三态角标：策略 / 已改 / 无价</td></tr>
+        <tr><td>8</td><td>核价单元素页签</td><td>现有卡片，零渲染改动</td><td>与报价同值；替换 COST_ELEMENT 取数</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</div>
+</div>
+
+<script>
+// 导航高亮 + 平滑滚动
+const links=[...document.querySelectorAll('.nav a')];
+links.forEach(a=>a.addEventListener('click',()=>{links.forEach(x=>x.classList.remove('on'));a.classList.add('on');}));
+const secs=[...document.querySelectorAll('.screen')];
+window.addEventListener('scroll',()=>{
+  let cur=secs[0];
+  for(const s of secs){ if(s.getBoundingClientRect().top<=120) cur=s; }
+  links.forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+cur.id));
+},{passive:true});
+// Tab / 复选框 / 客户项 的点选反馈（纯演示）
+document.querySelectorAll('.tabs').forEach(g=>g.querySelectorAll('div').forEach(t=>
+  t.addEventListener('click',()=>{g.querySelectorAll('div').forEach(x=>x.classList.remove('on'));t.classList.add('on');})));
+document.querySelectorAll('.ck').forEach(c=>c.addEventListener('click',e=>{e.stopPropagation();c.classList.toggle('on');
+  const tr=c.closest('tr'); if(tr) tr.classList.toggle('sel-row',c.classList.contains('on'));}));
+document.querySelectorAll('.cust-item').forEach(i=>i.addEventListener('click',()=>{
+  document.querySelectorAll('.cust-item').forEach(x=>x.classList.remove('on'));i.classList.add('on');}));
+</script>
+</body>
+</html>
