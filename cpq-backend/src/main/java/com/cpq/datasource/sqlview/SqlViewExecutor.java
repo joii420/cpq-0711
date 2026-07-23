@@ -16,6 +16,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -281,6 +283,7 @@ public class SqlViewExecutor {
 
         Map<String, Object> namedParams = new HashMap<>(ctx.toNamedParams());
         enrichCustomerCode(namedParams);
+        enrichPriceBaseDate(namedParams);
         if (partNos != null && !partNos.isEmpty()) {
             namedParams.put("hfPartNos", partNos);
         }
@@ -355,6 +358,7 @@ public class SqlViewExecutor {
                                                     String logContext) {
         Map<String, Object> namedParams = new HashMap<>(ctx.toNamedParams());
         enrichCustomerCode(namedParams);
+        enrichPriceBaseDate(namedParams);
         if (partNos != null && !partNos.isEmpty()) {
             namedParams.put("hfPartNos", partNos);
         }
@@ -425,6 +429,61 @@ public class SqlViewExecutor {
                 namedParams.put("customerCode", code);
             }
         }
+    }
+
+    /**
+     * 进程级缓存：quotationId → 报价单创建日期（task-0722 §11.2 取价基准日）。
+     * created_at 不可变，缓存安全（与 customerCodeCache 同款模式）。
+     */
+    private final Map<UUID, LocalDate> priceBaseDateCache = new ConcurrentHashMap<>();
+
+    /**
+     * 补充 {@code :priceBaseDate} 命名占位符（task-0722 元素价格策略）。
+     *
+     * <p>基准日 = 该报价单的创建日期（需求 §11.2）；无 quotationId 上下文（配置期预览 / 策略试算）
+     * 回退为当天。quotation 表无独立"单据日期"列，取 {@code created_at::date}。
+     *
+     * <p><b>取值来源（与 {@link #enrichCustomerCode} 同款"读 namedParams 而非 SqlViewRuntimeContext"模式，
+     * 而非按 backtask 字面描述读 {@link SqlViewRuntimeContext#get()}.quotationId）</b>：
+     * {@link com.cpq.component.service.ComponentDriverService#expand} 系列方法（COMP-0029/COMP-0040
+     * 走 data_driver_path 的驱动展开主链路）调用 {@code SqlViewRuntimeContext.setNested(componentId, null,
+     * null, null)}，quotationId 参数硬编码传 null——这意味着组件 driver 展开路径下
+     * {@code SqlViewRuntimeContext.get().quotationId} 恒为 null，若直接读它 priceBaseDate 会永远回退今天，
+     * 起不到"基准日=报价单创建日"的效果（§11.2 的核心诉求落空）。
+     *
+     * <p>真正贯穿 driver 展开链路的是 {@link QuotationIdContext}（ThreadLocal，由
+     * {@code ComponentResource.batchExpand} / {@code CardSnapshotService} / {@code ConfigureSnapshotService}
+     * 在渲染入口 set），经 {@code DataLoader.loadByPath} 读出后塞进
+     * {@code RuntimeContext.quotation.id} → {@code ctx.toNamedParams()} 自动暴露为
+     * {@code namedParams.get("quotationId")}——与 {@code :customerId}/{@code :customerCode} 完全同一条
+     * 注入管线。因此本方法与 {@link #enrichCustomerCode} 一样从 {@code namedParams} 取值，而不是另开一条
+     * 依赖 {@link SqlViewRuntimeContext} 的通路。
+     */
+    private void enrichPriceBaseDate(Map<String, Object> namedParams) {
+        if (namedParams.containsKey("priceBaseDate")) return;   // 上层显式给了则不覆盖
+        Object qidObj = namedParams.get("quotationId");
+        UUID qid = (qidObj instanceof UUID u) ? u : null;
+        LocalDate d = (qid == null) ? LocalDate.now()
+                                     : priceBaseDateCache.computeIfAbsent(qid, this::queryQuotationDate);
+        namedParams.put("priceBaseDate", d);
+    }
+
+    /** 查报价单创建日期（按 UUID）。失败/无记录时回退今天，不抛异常打断取价链路。 */
+    private LocalDate queryQuotationDate(UUID quotationId) {
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement("SELECT created_at FROM quotation WHERE id = ?")) {
+            ps.setObject(1, quotationId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    OffsetDateTime odt = rs.getObject(1, OffsetDateTime.class);
+                    if (odt != null) return odt.toLocalDate();
+                }
+            }
+        } catch (Exception e) {
+            LOG.warnf("[SqlViewExecutor] 解析报价单创建日期失败 id=%s，priceBaseDate 回退今天: %s",
+                    quotationId, e.getMessage());
+        }
+        return LocalDate.now();
     }
 
     /**

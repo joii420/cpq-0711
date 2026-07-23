@@ -179,18 +179,20 @@ public class ElementPriceService {
     // -------------------------------------------------------------------------
 
     /**
-     * Returns distinct element names from mat_bom where bom_type='ELEMENT'.
+     * Returns element symbols (element_code) from the {@code element} master table (status=ACTIVE).
      * This list is used by the frontend for dropdown selection when filling element prices.
+     *
+     * <p>task-0722 · B7（闭合 BL-0069#5）：{@code mat_bom} 自 2026-06-02 起已停写（AP-53），
+     * 原实现读取该已废弃表会返回陈旧/空结果；改读 {@code element} 主表（元素字典，V316 起的现役表）。
      */
     @Transactional(Transactional.TxType.SUPPORTS)
     public List<String> listAvailableElements() {
         @SuppressWarnings("unchecked")
         List<String> names = em.createNativeQuery(
-                "SELECT DISTINCT element_name " +
-                "FROM mat_bom " +
-                "WHERE bom_type = 'ELEMENT' " +
-                "  AND element_name IS NOT NULL " +
-                "ORDER BY element_name")
+                "SELECT element_code " +
+                "FROM element " +
+                "WHERE status = 'ACTIVE' " +
+                "ORDER BY element_code")
                 .getResultList();
         return names;
     }

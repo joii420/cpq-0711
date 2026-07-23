@@ -17,4 +17,10 @@ public class ElementDTO {
     public boolean codeLocked;      // referencedCount>0 → true（前端据此禁用符号输入框）
     public OffsetDateTime createdAt;
     public OffsetDateTime updatedAt;
+
+    /**
+     * 最后修改时间（task-0722 · B7.2）= MAX(element.updated_at, 该元素所有价格记录的 updated_at)。
+     * 查询时取较大值，不反写 element.updated_at（§11.14B）。价格导入也算一次"修改"。
+     */
+    public OffsetDateTime lastModifiedAt;
 }

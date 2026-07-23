@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Drawer, Form, Input, Select, Button, Space, message } from 'antd';
+import { Drawer, Form, Input, Select, Button, Space, message, Table, Tag, Divider, Alert, Spin } from 'antd';
 import {
   elementService,
   type ElementItem,
   type ElementUpsertRequest,
 } from '../../services/elementService';
+import { elementPriceService } from '../../services/elementPriceService';
+import type { ElementLatestPriceDTO } from '../../types/element-price-strategy';
 
 interface Props {
   open: boolean;
@@ -13,12 +15,19 @@ interface Props {
   onSaved: () => void;
 }
 
+/** 数字 4 位小数展示（对齐 cpq-decimal-display-policy：计算/取数列 4 位） */
+const fmtPrice = (v: number) => v.toFixed(4);
+
 const ElementEditDrawer: React.FC<Props> = ({ open, editing, onClose, onSaved }) => {
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const isCreating = !editing;
   // 被引用元素的符号锁定：禁用输入 + tooltip 说明
   const codeLocked = !!editing && editing.codeLocked;
+
+  // task-0722 · F2：各源最新价格（仅编辑态展示，只读）
+  const [latestPrices, setLatestPrices] = useState<ElementLatestPriceDTO[]>([]);
+  const [latestLoading, setLatestLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -29,9 +38,15 @@ const ElementEditDrawer: React.FC<Props> = ({ open, editing, onClose, onSaved })
         elementName: editing.elementName,
         status: editing.status ?? 'ACTIVE',
       });
+      setLatestLoading(true);
+      elementPriceService.listLatestBySource(editing.elementCode)
+        .then(setLatestPrices)
+        .catch((e: any) => message.error(e?.message ?? '各源最新价格加载失败'))
+        .finally(() => setLatestLoading(false));
     } else {
       form.resetFields();
       form.setFieldsValue({ status: 'ACTIVE' });
+      setLatestPrices([]);
     }
   }, [open, editing, form]);
 
@@ -71,7 +86,7 @@ const ElementEditDrawer: React.FC<Props> = ({ open, editing, onClose, onSaved })
       title={editing ? `编辑元素: ${editing.elementNo}` : '新建元素'}
       open={open}
       onClose={onClose}
-      width={520}
+      width={640}
       placement="right"
       maskClosable={false}
       destroyOnClose
@@ -126,6 +141,54 @@ const ElementEditDrawer: React.FC<Props> = ({ open, editing, onClose, onSaved })
           </Form.Item>
         )}
       </Form>
+
+      {/* task-0722 · F2：各源最新价格 —— 仅编辑态展示，只读，不在此录价（录价统一走「价格导入」） */}
+      {editing && (
+        <>
+          <Divider orientation="left" orientationMargin={0} style={{ margin: '22px 0 12px', fontSize: 14 }}>
+            各源最新价格
+          </Divider>
+          {latestLoading ? (
+            <div style={{ textAlign: 'center', padding: '16px 0' }}><Spin /></div>
+          ) : latestPrices.length === 0 ? (
+            <Alert type="warning" showIcon message="该元素暂无任何价格记录，请通过『价格导入』录入" />
+          ) : (
+            <>
+              <Table<ElementLatestPriceDTO>
+                size="small"
+                rowKey="sourceId"
+                pagination={false}
+                dataSource={latestPrices}
+                columns={[
+                  {
+                    title: '价格源',
+                    dataIndex: 'sourceName',
+                    render: (v: string, r) => (
+                      <Space size={4}>
+                        <span>{v}</span>
+                        {r.sourceStatus === 'DISABLED' && <Tag color="default">源已停用</Tag>}
+                      </Space>
+                    ),
+                  },
+                  {
+                    title: '最新价',
+                    dataIndex: 'price',
+                    align: 'right' as const,
+                    render: (v: number) => <b>{fmtPrice(v)}</b>,
+                  },
+                  { title: '货币', dataIndex: 'currency' },
+                  { title: '计价单位', dataIndex: 'priceUnit' },
+                  { title: '价格日期', dataIndex: 'priceDate' },
+                ]}
+                onRow={(r) => (r.sourceStatus === 'DISABLED' ? { style: { color: 'rgba(0,0,0,.45)' } } : {})}
+              />
+              <div style={{ marginTop: 10, fontSize: 12, color: 'rgba(0,0,0,.45)' }}>
+                该元素在 {latestPrices.length} 个源下有价格记录。价格录入统一走「价格导入」，此处只读。
+              </div>
+            </>
+          )}
+        </>
+      )}
     </Drawer>
   );
 };

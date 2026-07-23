@@ -1,11 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Card, Tag, Button, Space, Input, Tooltip, message } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, LockOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined, EditOutlined, DeleteOutlined, LockOutlined,
+  LinkOutlined, ImportOutlined, TableOutlined,
+} from '@ant-design/icons';
 import dayjs from 'dayjs';
 import SelectableTable, { runBatch } from '../../components/SelectableTable';
 import type { ToolbarAction } from '../../components/SelectableTable';
 import { elementService, type ElementItem } from '../../services/elementService';
 import ElementEditDrawer from './ElementEditDrawer';
+import PriceSourceManagerDrawer from '../element-price/PriceSourceManagerDrawer';
+import PriceImportDrawer from '../element-price/PriceImportDrawer';
+import ElementPriceTableDrawer from '../element-price/ElementPriceTableDrawer';
 
 /** 时间格式化 YYYY-MM-DD HH:mm；空值回退 '—' */
 const fmtTime = (v?: string) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '—');
@@ -17,6 +23,11 @@ const ElementManagement: React.FC = () => {
   const [editing, setEditing] = useState<ElementItem | null>(null);
   const [keyword, setKeyword] = useState('');
   const debounceRef = useRef<number | undefined>(undefined);
+
+  // task-0722 · F1：3 个新入口（价格源管理 / 价格导入 / 元素价格表）
+  const [sourceManagerOpen, setSourceManagerOpen] = useState(false);
+  const [priceImportOpen, setPriceImportOpen] = useState(false);
+  const [priceTableOpen, setPriceTableOpen] = useState(false);
 
   // 排序由后端定(启用优先→改时倒序→建时倒序)，前端不本地 sort。
   const refresh = async (kw?: string) => {
@@ -87,17 +98,13 @@ const ElementManagement: React.FC = () => {
       ),
     },
     {
-      title: '创建时间',
-      dataIndex: 'createdAt',
-      key: 'createdAt',
-      width: 150,
-      render: (v?: string) => fmtTime(v),
-    },
-    {
-      title: '修改时间',
-      dataIndex: 'updatedAt',
-      key: 'updatedAt',
-      width: 150,
+      // task-0722 · F1：「创建时间」+「修改时间」合并为「最后修改时间」
+      // = MAX(元素主档 updated_at, 该元素所有价格记录的 updated_at)，价格导入也算一次修改（api.md §4.2）。
+      // 排序由后端定(启用优先→本字段倒序)，前端不本地 sort。
+      title: '最后修改时间',
+      dataIndex: 'lastModifiedAt',
+      key: 'lastModifiedAt',
+      width: 160,
       render: (v?: string) => fmtTime(v),
     },
   ];
@@ -147,6 +154,16 @@ const ElementManagement: React.FC = () => {
             onChange={(e) => onKeywordChange(e.target.value)}
             onSearch={(v) => refresh(v.trim() || undefined)}
           />
+          {/* task-0722 · F1：3 个新入口，可见性沿用本页现有权限，不新增权限判断 */}
+          <Button icon={<LinkOutlined />} onClick={() => setSourceManagerOpen(true)}>
+            价格源管理
+          </Button>
+          <Button icon={<ImportOutlined />} onClick={() => setPriceImportOpen(true)}>
+            价格导入
+          </Button>
+          <Button icon={<TableOutlined />} onClick={() => setPriceTableOpen(true)}>
+            元素价格表
+          </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
             新建元素
           </Button>
@@ -167,6 +184,19 @@ const ElementManagement: React.FC = () => {
         editing={editing}
         onClose={() => setDrawerOpen(false)}
         onSaved={() => { setDrawerOpen(false); refresh(); }}
+      />
+      <PriceSourceManagerDrawer
+        open={sourceManagerOpen}
+        onClose={() => setSourceManagerOpen(false)}
+      />
+      <PriceImportDrawer
+        open={priceImportOpen}
+        onClose={() => setPriceImportOpen(false)}
+        onImported={() => refresh(keyword.trim() || undefined)}
+      />
+      <ElementPriceTableDrawer
+        open={priceTableOpen}
+        onClose={() => setPriceTableOpen(false)}
       />
     </Card>
   );

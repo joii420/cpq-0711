@@ -14,6 +14,7 @@
 | 响应信封 | **裸 DTO / 裸数组，无 `{code,data,msg}` 包装**（对齐现有 `ElementResource` 等既有端点） |
 | 鉴权 | `Authorization: Bearer <token>`；方法级 `@RoleAllowed`，见 §9 权限矩阵 |
 | 错误 | 抛 `BusinessException(status, message)`，由既有全局 mapper 转成 `{"message":"..."}`；`400` 参数非法 / `404` 不存在 / `409` 唯一冲突 |
+| **边界状态码细则**（2026-07-22 测试用例评审补定） | ① **路径参数** `{id}` 指向不存在的记录 → `404`；② **请求体/查询参数**里的引用型 ID（如 `sourceId`）指向不存在或非启用记录 → **`400`**（属参数校验失败，不是资源不存在）；③ 字段超长（如 `sourceName` > 128）→ `400` 并提示具体字段与上限；④ `customerNo` **大小写敏感**，按字面精确匹配（`_GLOBAL_` 必须全大写）；⑤ 元素例外**不允许**指向已停用（`status<>'ACTIVE'`）的元素 → `400` |
 | 日期 | `LocalDate` 序列化为 `"2026-07-22"`；时间戳 `OffsetDateTime` 为 ISO-8601 |
 | 金额 | `BigDecimal`，**保留 4 位小数**（对齐 `cpq-decimal-display-policy`：计算列 4 位） |
 | 分页 | 请求 `page`（0 基）+ `size`；响应 `{content:[], totalElements, page, size}` |
@@ -376,6 +377,8 @@ POST /api/cpq/element-price/strategies/simulate
 | rawValue | 取值结果（× 系数 + 加价**之前**） |
 | finalPrice | 最终单价 = `rawValue × factor + premium`；无价时 `null` |
 | sampleDays | 参与计算的**有价天数**（`LATEST` 恒为 1 或 0） |
+
+> **契约澄清（2026-07-22）**：`SimulateRowDTO` **不含"命中日期"字段**。原型屏 6 对 `LATEST` 行示意的「07-21 单日」文案属**示意性绘制**，实现按契约渲染为「N 天有价」即可，**不算实现偏差**。若后续确需展示命中日期，须先改本契约再实现。
 | hasPrice | `false` 时前端整行标黄、最终单价显示「无价」 |
 
 > **只读、不落库**（§11.14C）。返回全部**已配到策略**的启用元素；未被任何策略覆盖的元素不返回。

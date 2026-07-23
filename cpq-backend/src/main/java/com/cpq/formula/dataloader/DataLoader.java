@@ -179,14 +179,21 @@ public class DataLoader {
                     com.cpq.datasource.sqlview.SqlViewRuntimeContext.get();
             final String _ownerTag = (_own != null ? _own.componentId : null) + "/"
                     + (_own != null ? _own.templateId : null);
+            // task-0722 B3：quotationId 维度补齐——本方法虽是 @RequestScoped，但 ComponentResource.batchExpand
+            // 单次 HTTP 请求内可对不同 task 各自 QuotationIdContext.set(t.quotationId)（同请求处理多张报价单的
+            // task），resultCache 是该请求内共享的单个 Map；key 若不含 quotationId，同 (path,partNo,customerId,
+            // lineItem,owner) 但不同 quotationId 的两次调用会互相复用缓存值——:priceBaseDate 等按 quotationId
+            // 求值的占位符会串号（PriceBaseDateCacheIsolationTest 实测复现）。此处提前读取一次，同时用于 key 与
+            // 下方 lambda 内的 ctx 绑定，语义不变、只补维度。
+            final UUID _quotIdForKey = QuotationIdContext.get();
             return resultCache.computeIfAbsent(
                     normalizedPath + "::" + partNo + "::" + customerId + "::" + viewLineItemId
-                            + "::" + _ownerTag, key -> {
+                            + "::" + _ownerTag + "::" + _quotIdForKey, key -> {
                 try {
                     RuntimeContext ctx = new RuntimeContext();
                     // 统一协议:从 ThreadLocal 拿 quotationId,绑到 ctx.quotation.id
                     // → RuntimeContext.toNamedParams() 自动暴露 :quotationId 给所有 mirror 视图使用
-                    UUID quotIdSv = QuotationIdContext.get();
+                    UUID quotIdSv = _quotIdForKey;
                     if (customerId != null || quotIdSv != null) {
                         ctx.quotation = new RuntimeContext.QuotationContext(quotIdSv, customerId);
                     }
@@ -256,8 +263,14 @@ public class DataLoader {
                 : (lineIdObj != null ? UUID.fromString(lineIdObj.toString()) : null);
         try {
             RuntimeContext ctx = new RuntimeContext();
-            if (customerId != null) {
-                ctx.quotation = new RuntimeContext.QuotationContext(null, customerId);
+            // task-0722 B4:多值入口(合桶专用)此前 quotationId 硬编码 null，导致
+            // enrichPriceBaseDate 拿不到 quotationId、priceBaseDate 回退成 LocalDate.now()——
+            // 任何触发合桶的批量 expand 都用"今天"而非"报价单创建日"取价(§11.2 要求的基准日语义失效)。
+            // 与单值入口(本类上方 loadByPath 5-arg，约第 196~198 行)对齐，同样从 QuotationIdContext
+            // 读取当前请求/task 绑定的 quotationId。
+            final UUID _qid = QuotationIdContext.get();
+            if (customerId != null || _qid != null) {
+                ctx.quotation = new RuntimeContext.QuotationContext(_qid, customerId);
             }
             if (viewLineItemId != null) {
                 // 防御性:正常 bucket-merge 不会带 lineItemId(否则视图按 lineItemId 过滤合不了桶),
