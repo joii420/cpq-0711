@@ -2411,7 +2411,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         父料号(__parentNo)两侧均只用于建父子层级,不单独成列(2026-07-03 隐藏)。 */}
                     {activeComponentBomTree && (
                       <>
-                        <th style={{ minWidth: 120 }}>料号</th>
+                        {/* 料号列按内容自适应宽度（task-0721 2026-07-22）：width:1 + nowrap 使列收缩到
+                            料号+树缩进的最小内容宽，不再贪婪吸走整行剩余宽度，剩余宽由业务列分摊。 */}
+                        <th style={{ width: 1, whiteSpace: 'nowrap' }}>料号</th>
                         {cardSide === 'COSTING' && <th style={{ minWidth: 90 }}>版本</th>}
                       </>
                     )}
@@ -2677,7 +2679,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       {/* 核价 BOM 递归展开：2 系统固定列单元格（料号 + 版本；父料号 2026-07-03 隐藏），料号列承载树缩进/折叠箭头 */}
                       {activeComponentBomTree && (
                         <>
-                          <td style={bomSys?.isCycle ? { color: '#cf1322' } : undefined}
+                          <td style={{ whiteSpace: 'nowrap', ...(bomSys?.isCycle ? { color: '#cf1322' } : {}) }}
                               title={bomSys?.isCycle ? '该料号存在 BOM 环，已截断展开' : undefined}>
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                               <span style={{ display: 'inline-block', width: (_depth ?? 0) * 16 }} />
