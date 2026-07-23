@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Input, Select } from 'antd';
+import { Input, Select, Tag } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { useDraggable } from '@dnd-kit/core';
 import { componentService } from '../../services/componentService';
+import { TAB_TYPE_COLOR } from '../component/types';
 import './styles.css';
 
 interface CompItem {
@@ -11,6 +12,12 @@ interface CompItem {
   code: string;
   componentType: string;
   formulas?: any[];
+  /**
+   * task-0721：页签类型属性，纯展示（卡片最右侧 Tag）。数据来源 componentService.list()
+   * 直读组件管理 REST 接口（ComponentDTO），字段名是 camelCase `tabType`——
+   * 与走模板 componentsSnapshot(JSONB, snake_case `tab_type`) 的 TabComponentArea 不同源，勿混用。
+   */
+  tabType?: string;
 }
 
 interface DirOption {
@@ -47,8 +54,19 @@ const DraggableComponentCard = ({ comp, type }: { comp: CompItem; type: 'normal'
       {...attributes}
       className={`tm-component-item${typeClass}`}
     >
-      <div style={{ fontWeight: 600, fontSize: 12 }}>
-        {prefix}{comp.name}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+        <div style={{ fontWeight: 600, fontSize: 12 }}>
+          {prefix}{comp.name}
+        </div>
+        {/* task-0721：页签类型属性(tabType)纯展示，卡片最右侧；无编辑入口(编辑走组件管理表单) */}
+        {comp.tabType && (
+          <Tag
+            color={TAB_TYPE_COLOR[comp.tabType]}
+            style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 10, lineHeight: '14px', padding: '0 4px' }}
+          >
+            {comp.tabType}
+          </Tag>
+        )}
       </div>
       <div className="tm-component-item-sub">{comp.code}</div>
     </div>

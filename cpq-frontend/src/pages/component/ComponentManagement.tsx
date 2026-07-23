@@ -25,7 +25,7 @@ import { componentService } from '../../services/componentService';
 import { datasourceService } from '../../services/datasourceService';
 import { tabJoinFormulaService, type TabDef } from '../../services/tabJoinFormulaService';
 import type { DirectoryNode, ComponentItem, FieldItem, ComponentType, FormulaItem, FormulaToken } from './types';
-import { newFormulaRow } from './types';
+import { newFormulaRow, TAB_TYPE_COLOR } from './types';
 import FieldConfigTable from './FieldConfigTable';
 import ComponentImportDrawer from './ComponentImportDrawer';
 import ConfigGuideDrawer from './ConfigGuideDrawer';
@@ -701,7 +701,18 @@ const MasterList: React.FC<MasterListProps> = ({
             <span style={{ fontSize: 10, marginLeft: 6, opacity: 0.85 }}>（已停用）</span>
           )}
         </div>
-        <div className="cmm-c-code">{comp.code}</div>
+        <div className="cmm-c-code">
+          {comp.code}
+          {/* task-0721：页签类型属性(tabType)纯展示，不加编辑入口——编辑走 F2 组件详情表单 */}
+          {comp.tabType && (
+            <Tag
+              color={TAB_TYPE_COLOR[comp.tabType]}
+              style={{ marginLeft: 6, fontSize: 10, lineHeight: '14px', padding: '0 4px' }}
+            >
+              {comp.tabType}
+            </Tag>
+          )}
+        </div>
       </div>
     );
   };

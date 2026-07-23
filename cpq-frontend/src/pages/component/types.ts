@@ -11,6 +11,19 @@ export interface DirectoryNode {
 
 export type ComponentType = 'NORMAL' | 'SUBTOTAL' | 'EXCEL';
 
+/**
+ * task-0721：页签类型属性(tabType)的展示颜色映射，供组件列表(ComponentManagement.tsx)
+ * 与模板管理组件卡片(ComponentPalette.tsx)共享，保证两处展示一致。
+ * BOM 是结构页签，用主色最醒目；其余按业务语义分色，无强制含义，仅供快速目视区分。
+ */
+export const TAB_TYPE_COLOR: Record<string, string> = {
+  BOM: 'blue',
+  材质元素: 'green',
+  零件: 'default',
+  外购件: 'orange',
+  主件: 'purple',
+};
+
 export interface TreeConfig {
   /** 本行 ID 列字段 key(= 字段 name,如「料号」) */
   idField: string;
