@@ -1,0 +1,800 @@
+{
+  "bundleVersion": "1.0",
+  "exportedAt": "2026-07-19T19:05:59.438445372-07:00",
+  "source": {
+    "directoryId": "acf3f8a2-5ac2-4ecd-b8fc-ca525bdc4397",
+    "directoryName": "西安中熔"
+  },
+  "components": [
+    {
+      "id": "c56b6eb5-f2b2-46ba-a141-77c3821a0858",
+      "code": "COMP-0062",
+      "name": "产品",
+      "componentType": "NORMAL",
+      "columnCount": 4,
+      "status": "ACTIVE",
+      "dataDriverPath": "$cp_view",
+      "rowKeyFields": [
+        "销售料号"
+      ],
+      "fields": [
+        {
+          "name": "客户料号名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 0,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cp_view._客户料号名称",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "客户产品编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 1,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cp_view._客户产品编号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 2,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cp_view._销售料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "报价货币",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 3,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cp_view._报价货币",
+            "type": "BASIC_DATA"
+          }
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "cp_view",
+          "sqlTemplate": "SELECT\n  mm.material_no AS hf_part_no,\n  mm.material_no AS _销售料号,\n  mcm.customer_material_name AS _客户料号名称,\n  mcm.customer_product_no AS _客户产品编号,\n  mcm.quote_currency AS _报价货币\nFROM material_master mm\nLEFT JOIN material_customer_map mcm\n  ON mcm.material_no = mm.material_no AND mcm.customer_no = :customerCode",
+          "declaredColumns": [
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_销售料号",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_客户料号名称",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_客户产品编号",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_报价货币",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "customerCode"
+          ],
+          "scope": "COMPONENT",
+          "description": "产品 取数视图（西安中熔）"
+        }
+      ]
+    },
+    {
+      "id": "7521d0f4-4ab0-4620-8a9d-f5216e5bed1d",
+      "code": "COMP-0064",
+      "name": "加工费",
+      "componentType": "NORMAL",
+      "columnCount": 5,
+      "status": "ACTIVE",
+      "dataDriverPath": "$pf_view",
+      "rowKeyFields": [
+        "销售料号",
+        "项次",
+        "要素名称"
+      ],
+      "fields": [
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 0,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$pf_view._销售料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 1,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$pf_view._项次",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "要素名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 2,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$pf_view._要素名称",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "单价",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 3,
+          "is_subtotal": true,
+          "default_source": {
+            "path": "$pf_view._单价",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 4,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$pf_view._单位",
+            "type": "BASIC_DATA"
+          }
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "pf_view",
+          "sqlTemplate": "SELECT\n  up.finished_material_no AS hf_part_no,\n  up.finished_material_no AS _销售料号,\n  up.seq_no AS _项次,\n  COALESCE(pm.process_name, up.operation_no) AS _要素名称,\n  up.pricing_price AS _单价,\n  up.unit AS _单位\nFROM unit_price up\n  LEFT JOIN process_master pm ON pm.process_no = up.operation_no\nWHERE up.system_type = 'QUOTE' AND up.price_type = 'PROCESS' AND up.is_current = true\n  AND up.customer_no = :customerCode\nORDER BY up.seq_no",
+          "declaredColumns": [
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_销售料号",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_项次",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "_要素名称",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_单价",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_单位",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "customerCode"
+          ],
+          "scope": "COMPONENT",
+          "description": "加工费 取数视图 — 要素名称=工序名称(process_master.process_name via process_no=operation_no; 兜底operation_no), 替代统称cost_type"
+        }
+      ]
+    },
+    {
+      "id": "f104ae66-3c3b-45b6-9883-ee7101ed365f",
+      "code": "COMP-0063",
+      "name": "材料成本",
+      "componentType": "NORMAL",
+      "columnCount": 9,
+      "status": "ACTIVE",
+      "dataDriverPath": "$mc_view",
+      "rowKeyFields": [
+        "销售料号",
+        "元素",
+        "材质"
+      ],
+      "fields": [
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 0,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._销售料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "材质",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 1,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._材质",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 2,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._项次",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "元素",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 3,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._元素",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "损耗率%",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 4,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._损耗率",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "毛重",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 5,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._毛重",
+            "type": "BASIC_DATA"
+          },
+          "unit_source_field": "毛用量单位"
+        },
+        {
+          "name": "毛用量单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 6,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._毛用量单位",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "元素单价",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 7,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._元素单价",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "材料成本",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "FORMULA",
+          "is_subtotal": true,
+          "formula_name": "材料成本公式"
+        }
+      ],
+      "formulas": [
+        {
+          "name": "材料成本公式",
+          "expression": [
+            {
+              "type": "field",
+              "value": "毛重"
+            },
+            {
+              "type": "operator",
+              "value": "*"
+            },
+            {
+              "type": "field",
+              "value": "元素单价"
+            }
+          ],
+          "result_type": "NUMBER"
+        }
+      ],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "mc_view",
+          "sqlTemplate": "SELECT\n  ebi.material_no AS hf_part_no,\n  ebi.material_no AS _销售料号,\n  COALESCE(mr.name, mm2.material_name) AS _材质,\n  ebi.seq_no AS _项次,\n  ebi.component_no AS _元素,\n  ebi.scrap_rate AS _损耗率,\n  ebi.composition_qty AS _毛重,\n  ebi.issue_unit AS _毛用量单位,\n  up.pricing_price AS _元素单价\nFROM element_bom_item ebi\n  LEFT JOIN material_recipe mr  ON mr.code = ebi.material_part_no\n  LEFT JOIN material_master mm2 ON mm2.material_no = ebi.material_part_no\n  LEFT JOIN unit_price up ON up.code = ebi.component_no AND up.price_type = 'ELEMENT'\n       AND up.is_current AND up.customer_no = ebi.customer_no\nWHERE ebi.system_type = 'QUOTE' AND ebi.is_current AND ebi.customer_no = :customerCode\nORDER BY ebi.material_no, ebi.material_part_no, ebi.seq_no",
+          "declaredColumns": [
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_销售料号",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_材质",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_项次",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "_元素",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_损耗率",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_毛重",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_毛用量单位",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_元素单价",
+              "dataType": "numeric",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "customerCode"
+          ],
+          "scope": "COMPONENT",
+          "description": "材料成本 取数视图 — 材质料号感知(一号多材质区分): 材质取 element_bom_item.material_part_no→recipe.name(master兜底), ORDER BY material_part_no"
+        }
+      ]
+    },
+    {
+      "id": "18b5f6ce-0503-4c26-96d2-c3ece6a083da",
+      "code": "COMP-0065",
+      "name": "小计1",
+      "componentType": "SUBTOTAL",
+      "columnCount": 0,
+      "status": "ACTIVE",
+      "dataDriverPath": null,
+      "rowKeyFields": null,
+      "fields": [],
+      "formulas": [
+        {
+          "name": "公式1",
+          "expression": [
+            {
+              "type": "component_subtotal",
+              "label": "材料成本",
+              "value": "__amount_total__",
+              "tab_name": "__amount_total__",
+              "is_tab_total": true,
+              "component_code": "COMP-0063"
+            },
+            {
+              "type": "operator",
+              "value": "+"
+            },
+            {
+              "type": "component_subtotal",
+              "label": "加工费",
+              "value": "__amount_total__",
+              "tab_name": "__amount_total__",
+              "is_tab_total": true,
+              "component_code": "COMP-0064"
+            }
+          ],
+          "result_type": "NUMBER"
+        }
+      ],
+      "excelColumns": [],
+      "sqlViews": []
+    },
+    {
+      "id": "998d6128-ab71-41cb-b0c1-0d10e07484e9",
+      "code": "COMP-0066",
+      "name": "材料费",
+      "componentType": "NORMAL",
+      "columnCount": 9,
+      "status": "ACTIVE",
+      "dataDriverPath": "$cl_view",
+      "rowKeyFields": [
+        "销售料号",
+        "元素",
+        "材质"
+      ],
+      "fields": [
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cl_view._销售料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "材质",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cl_view._材质",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cl_view._项次",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "元素",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cl_view._元素",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "损耗率",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cl_view._损耗率",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "毛重",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cl_view._毛重",
+            "type": "BASIC_DATA"
+          },
+          "unit_source_field": "单位"
+        },
+        {
+          "name": "单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cl_view._毛用量单位",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "元素单价",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cl_view._元素单价",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "元素成本",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "FORMULA",
+          "is_subtotal": true,
+          "formula_name": "元素成本公式"
+        }
+      ],
+      "formulas": [
+        {
+          "name": "元素成本公式",
+          "expression": [
+            {
+              "agg": "NONE",
+              "type": "cross_tab_ref",
+              "match": [
+                {
+                  "a": "销售料号",
+                  "b": "销售料号"
+                },
+                {
+                  "a": "元素",
+                  "b": "元素"
+                }
+              ],
+              "source": "f104ae66-3c3b-45b6-9883-ee7101ed365f",
+              "target": "毛重",
+              "sourceLabel": "材料成本"
+            },
+            {
+              "type": "operator",
+              "value": "*"
+            },
+            {
+              "agg": "NONE",
+              "type": "cross_tab_ref",
+              "match": [
+                {
+                  "a": "销售料号",
+                  "b": "销售料号"
+                },
+                {
+                  "a": "元素",
+                  "b": "元素"
+                }
+              ],
+              "source": "f104ae66-3c3b-45b6-9883-ee7101ed365f",
+              "target": "元素单价",
+              "sourceLabel": "材料成本"
+            },
+            {
+              "type": "operator",
+              "value": "*"
+            },
+            {
+              "type": "bracket_open"
+            },
+            {
+              "type": "number",
+              "value": "1"
+            },
+            {
+              "type": "operator",
+              "value": "+"
+            },
+            {
+              "agg": "NONE",
+              "type": "cross_tab_ref",
+              "match": [
+                {
+                  "a": "销售料号",
+                  "b": "销售料号"
+                },
+                {
+                  "a": "元素",
+                  "b": "元素"
+                }
+              ],
+              "source": "f104ae66-3c3b-45b6-9883-ee7101ed365f",
+              "target": "损耗率%",
+              "sourceLabel": "材料成本"
+            },
+            {
+              "type": "bracket_close"
+            }
+          ],
+          "result_type": "NUMBER"
+        }
+      ],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "cl_view",
+          "sqlTemplate": "SELECT\n  ebi.material_no AS hf_part_no,\n  ebi.material_no AS _销售料号,\n  COALESCE(mr.name, mm2.material_name) AS _材质,\n  ebi.seq_no AS _项次,\n  ebi.component_no AS _元素,\n  ebi.scrap_rate AS _损耗率,\n  ebi.composition_qty AS _毛重,\n  ebi.issue_unit AS _毛用量单位,\n  up.pricing_price AS _元素单价\nFROM element_bom_item ebi\n  LEFT JOIN material_recipe mr  ON mr.code = ebi.material_part_no\n  LEFT JOIN material_master mm2 ON mm2.material_no = ebi.material_part_no\n  LEFT JOIN unit_price up ON up.code = ebi.component_no AND up.price_type = 'ELEMENT'\n       AND up.is_current AND up.customer_no = ebi.customer_no\nWHERE ebi.system_type = 'QUOTE' AND ebi.is_current AND ebi.customer_no = :customerCode\nORDER BY ebi.material_no, ebi.material_part_no, ebi.seq_no",
+          "declaredColumns": [
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_销售料号",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_材质",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_项次",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "_元素",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_损耗率",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_毛重",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_毛用量单位",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_元素单价",
+              "dataType": "numeric",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "customerCode"
+          ],
+          "scope": "COMPONENT",
+          "description": "材料成本 取数视图 — 材质料号感知(一号多材质区分): 材质取 element_bom_item.material_part_no→recipe.name(master兜底), ORDER BY material_part_no"
+        }
+      ]
+    },
+    {
+      "id": "0f4ec4d0-3bf9-4056-8e35-9b79f8544124",
+      "code": "COMP-0067",
+      "name": "小计2",
+      "componentType": "SUBTOTAL",
+      "columnCount": 0,
+      "status": "ACTIVE",
+      "dataDriverPath": null,
+      "rowKeyFields": null,
+      "fields": [],
+      "formulas": [
+        {
+          "name": "公式1",
+          "expression": [
+            {
+              "type": "component_subtotal",
+              "label": "材料费",
+              "value": "__amount_total__",
+              "tab_name": "__amount_total__",
+              "is_tab_total": true,
+              "component_code": "COMP-0066"
+            },
+            {
+              "type": "operator",
+              "value": "+"
+            },
+            {
+              "type": "component_subtotal",
+              "label": "加工费",
+              "value": "__amount_total__",
+              "tab_name": "__amount_total__",
+              "is_tab_total": true,
+              "component_code": "COMP-0064"
+            }
+          ],
+          "result_type": "NUMBER"
+        }
+      ],
+      "excelColumns": [],
+      "sqlViews": []
+    }
+  ],
+  "dependencies": {
+    "globalVariables": [],
+    "datasources": []
+  },
+  "checksum": "sha256:a7a4ae88120981a1d3bb2e715aea6f8cfae664413d257b1c3f743f9a87a58ea6"
+}

@@ -1,0 +1,648 @@
+<title>CPQ 前端 UI 排版布局审查报告</title>
+<style>
+  :root{
+    --font-sans:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Segoe UI",system-ui,-apple-system,sans-serif;
+    --font-mono:"SFMono-Regular","JetBrains Mono","Cascadia Code",ui-monospace,Consolas,"Liberation Mono",monospace;
+    /* light tokens */
+    --bg:#f6f7f9; --surface:#ffffff; --surface-2:#f1f3f7; --surface-3:#eaedf3;
+    --ink:#191c27; --ink-2:#4b5266; --ink-3:#878ea1;
+    --line:#e3e6ee; --line-2:#d3d8e3;
+    --accent:#5257cc; --accent-bright:#667eea; --accent-soft:#eef0fc; --accent-line:#c9cdf5;
+    --p0:#c5374d; --p0-soft:#fbecef; --p0-line:#eec2ca;
+    --p1:#a86e0c; --p1-soft:#fbf2df; --p1-line:#ecd7a8;
+    --p2:#556d8c; --p2-soft:#eef2f7; --p2-line:#cdd8e6;
+    --good:#3f8f6b;
+    --shadow:0 1px 2px rgba(20,25,40,.04),0 6px 22px rgba(20,25,40,.06);
+    --shadow-lift:0 2px 6px rgba(20,25,40,.06),0 14px 40px rgba(20,25,40,.10);
+    --radius:14px; --radius-sm:9px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0e1117; --surface:#161a22; --surface-2:#1c212b; --surface-3:#232935;
+      --ink:#e8eaf1; --ink-2:#a6adbe; --ink-3:#6d7589;
+      --line:#262c39; --line-2:#323a49;
+      --accent:#9296f2; --accent-bright:#7c81ee; --accent-soft:#1b1f31; --accent-line:#343a63;
+      --p0:#ef6f83; --p0-soft:#2a1a1e; --p0-line:#5a2d36;
+      --p1:#e0ab48; --p1-soft:#2a2314; --p1-line:#574522;
+      --p2:#93a8c6; --p2-soft:#191f29; --p2-line:#31404f;
+      --good:#63c397;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 22px rgba(0,0,0,.35);
+      --shadow-lift:0 2px 6px rgba(0,0,0,.4),0 16px 44px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f7f9; --surface:#ffffff; --surface-2:#f1f3f7; --surface-3:#eaedf3;
+    --ink:#191c27; --ink-2:#4b5266; --ink-3:#878ea1;
+    --line:#e3e6ee; --line-2:#d3d8e3;
+    --accent:#5257cc; --accent-bright:#667eea; --accent-soft:#eef0fc; --accent-line:#c9cdf5;
+    --p0:#c5374d; --p0-soft:#fbecef; --p0-line:#eec2ca;
+    --p1:#a86e0c; --p1-soft:#fbf2df; --p1-line:#ecd7a8;
+    --p2:#556d8c; --p2-soft:#eef2f7; --p2-line:#cdd8e6;
+    --good:#3f8f6b;
+    --shadow:0 1px 2px rgba(20,25,40,.04),0 6px 22px rgba(20,25,40,.06);
+    --shadow-lift:0 2px 6px rgba(20,25,40,.06),0 14px 40px rgba(20,25,40,.10);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0e1117; --surface:#161a22; --surface-2:#1c212b; --surface-3:#232935;
+    --ink:#e8eaf1; --ink-2:#a6adbe; --ink-3:#6d7589;
+    --line:#262c39; --line-2:#323a49;
+    --accent:#9296f2; --accent-bright:#7c81ee; --accent-soft:#1b1f31; --accent-line:#343a63;
+    --p0:#ef6f83; --p0-soft:#2a1a1e; --p0-line:#5a2d36;
+    --p1:#e0ab48; --p1-soft:#2a2314; --p1-line:#574522;
+    --p2:#93a8c6; --p2-soft:#191f29; --p2-line:#31404f;
+    --good:#63c397;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 22px rgba(0,0,0,.35);
+    --shadow-lift:0 2px 6px rgba(0,0,0,.4),0 16px 44px rgba(0,0,0,.5);
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans);
+    font-size:15px;line-height:1.68;-webkit-font-smoothing:antialiased;letter-spacing:.01em}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code,.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+  .wrap{max-width:1100px;margin:0 auto;padding:0 28px}
+  @media (max-width:640px){.wrap{padding:0 18px}}
+
+  /* ── eyebrow / labels ── */
+  .eyebrow{font-family:var(--font-mono);font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--ink-3);font-weight:600}
+
+  /* ── sticky topnav ── */
+  .topbar{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg) 86%,transparent);
+    backdrop-filter:saturate(1.4) blur(10px);border-bottom:1px solid var(--line)}
+  .topbar-inner{display:flex;align-items:center;gap:18px;height:52px;overflow-x:auto;scrollbar-width:none}
+  .topbar-inner::-webkit-scrollbar{display:none}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:13.5px;white-space:nowrap;color:var(--ink)}
+  .brand .dot{width:11px;height:11px;border-radius:50%;background:var(--accent-bright);
+    box-shadow:0 0 0 3px var(--accent-soft)}
+  .topnav{display:flex;gap:2px;margin-left:auto}
+  .topnav a{font-size:12.5px;color:var(--ink-2);padding:6px 11px;border-radius:7px;white-space:nowrap;font-weight:500}
+  .topnav a:hover{background:var(--surface-2);color:var(--ink);text-decoration:none}
+
+  /* ── masthead ── */
+  .masthead{padding:64px 0 40px}
+  .kicker{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:22px}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+    padding:4px 10px;border-radius:999px;border:1px solid var(--line-2);color:var(--ink-2);background:var(--surface)}
+  h1.title{font-size:clamp(30px,5vw,46px);line-height:1.12;margin:0 0 20px;font-weight:750;
+    letter-spacing:-.01em;text-wrap:balance;color:var(--ink)}
+  h1.title .u{color:var(--accent);border-bottom:3px solid var(--accent-line);padding-bottom:1px}
+  .deck{font-size:clamp(17px,2.3vw,21px);line-height:1.5;color:var(--ink-2);max-width:60ch;font-weight:450}
+  .deck b{color:var(--ink);font-weight:650}
+  .meta-row{display:flex;flex-wrap:wrap;gap:26px;margin-top:30px;padding-top:22px;border-top:1px solid var(--line)}
+  .meta{display:flex;flex-direction:column;gap:3px}
+  .meta .k{font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+  .meta .v{font-size:14px;color:var(--ink);font-weight:600}
+  .meta .v.mono{font-variant-numeric:tabular-nums}
+
+  .designnote{margin-top:26px;display:flex;gap:12px;align-items:flex-start;padding:13px 16px;border-radius:var(--radius-sm);
+    background:var(--accent-soft);border:1px solid var(--accent-line);max-width:70ch}
+  .designnote .sw{width:38px;height:38px;border-radius:8px;background:var(--accent-bright);flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-mono);font-size:9.5px;font-weight:700;letter-spacing:.02em}
+  .designnote p{margin:0;font-size:13px;line-height:1.55;color:var(--ink-2)}
+  .designnote b{color:var(--ink)}
+
+  /* ── section scaffolding ── */
+  section{padding:44px 0;border-top:1px solid var(--line)}
+  .sec-head{margin-bottom:30px}
+  .sec-head h2{font-size:clamp(22px,3vw,30px);margin:8px 0 8px;font-weight:720;letter-spacing:-.01em;color:var(--ink);text-wrap:balance}
+  .sec-head p{margin:0;color:var(--ink-2);font-size:15px;max-width:72ch}
+
+  /* ── pain cards ── */
+  .pain{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media (max-width:820px){.pain{grid-template-columns:1fr}}
+  .pcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px;
+    box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .pcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--p0)}
+  .pcard .lab{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--p0);font-weight:700}
+  .pcard h3{margin:11px 0 8px;font-size:17px;font-weight:680;color:var(--ink);line-height:1.35}
+  .pcard p{margin:0;font-size:13.5px;color:var(--ink-2);line-height:1.6}
+  .pcard .big{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:34px;font-weight:700;
+    color:var(--ink);line-height:1;margin:2px 0 4px;letter-spacing:-.02em}
+
+  /* ── metrics tiles ── */
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:8px}
+  .tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:16px 16px 15px}
+  .tile .n{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:27px;font-weight:700;
+    letter-spacing:-.02em;color:var(--ink);line-height:1}
+  .tile .n.warn{color:var(--p0)}
+  .tile .l{font-size:12px;color:var(--ink-2);margin-top:7px;line-height:1.4}
+  .tile .s{font-size:11px;color:var(--ink-3);margin-top:3px}
+
+  /* ── severity legend + filter ── */
+  .sevbar{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin-bottom:24px}
+  .sevbar .hint{font-size:12.5px;color:var(--ink-3);margin-right:2px}
+  .sev-btn{cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600;padding:5px 12px;border-radius:999px;
+    border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2);display:inline-flex;align-items:center;gap:7px;transition:all .15s}
+  .sev-btn .cnt{font-family:var(--font-mono);font-size:11px;opacity:.7}
+  .sev-btn[aria-pressed="true"]{border-color:var(--accent);color:var(--ink);background:var(--accent-soft)}
+  .sev-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .sev-dot{width:9px;height:9px;border-radius:50%}
+  .d0{background:var(--p0)} .d1{background:var(--p1)} .d2{background:var(--p2)}
+
+  /* ── theme cards ── */
+  .themes{display:flex;flex-direction:column;gap:13px}
+  .tcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:0;
+    box-shadow:var(--shadow);overflow:hidden;display:grid;grid-template-columns:5px 1fr;transition:box-shadow .18s,transform .18s,opacity .2s}
+  .tcard:hover{box-shadow:var(--shadow-lift)}
+  .tcard[data-dim="1"]{opacity:.28;filter:saturate(.5)}
+  .tcard .stripe{background:var(--p2)}
+  .tcard[data-sev="P0"] .stripe{background:var(--p0)}
+  .tcard[data-sev="P1"] .stripe{background:var(--p1)}
+  .tcard[data-sev="P2"] .stripe{background:var(--p2)}
+  .tcard .body{padding:20px 22px}
+  .tcard .top{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .tnum{font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--ink-3);padding-top:3px;min-width:22px}
+  .tcard h3{margin:0;font-size:17.5px;font-weight:680;color:var(--ink);line-height:1.35;flex:1;min-width:200px}
+  .pill{font-size:11px;font-weight:700;letter-spacing:.04em;padding:3px 9px;border-radius:6px;font-family:var(--font-mono);white-space:nowrap}
+  .pill.P0{color:var(--p0);background:var(--p0-soft);border:1px solid var(--p0-line)}
+  .pill.P1{color:var(--p1);background:var(--p1-soft);border:1px solid var(--p1-line)}
+  .pill.P2{color:var(--p2);background:var(--p2-soft);border:1px solid var(--p2-line)}
+  .tcard .ev{margin:13px 0 0;font-size:13.5px;color:var(--ink-2);line-height:1.62}
+  .tcard .fix{margin:12px 0 0;padding:11px 14px;background:var(--surface-2);border-radius:var(--radius-sm);
+    font-size:13px;color:var(--ink-2);line-height:1.55}
+  .tcard .fix b{color:var(--good);font-weight:650}
+  .tcard .ev b{color:var(--ink);font-weight:600}
+  kbd,.tag{font-family:var(--font-mono);font-size:.86em;background:var(--surface-3);color:var(--ink);
+    padding:1px 6px;border-radius:5px;border:1px solid var(--line);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  /* ── module scorecards ── */
+  .mods{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  @media (max-width:820px){.mods{grid-template-columns:1fr}}
+  .mcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;box-shadow:var(--shadow)}
+  .mcard .mh{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .mcard h3{margin:0;font-size:16px;font-weight:680;color:var(--ink)}
+  .counts{display:flex;gap:5px}
+  .cnt-chip{font-family:var(--font-mono);font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;font-variant-numeric:tabular-nums}
+  .cnt-chip.c0{color:var(--p0);background:var(--p0-soft);border:1px solid var(--p0-line)}
+  .cnt-chip.c1{color:var(--p1);background:var(--p1-soft);border:1px solid var(--p1-line)}
+  .cnt-chip.c2{color:var(--p2);background:var(--p2-soft);border:1px solid var(--p2-line)}
+  .cnt-chip.z{opacity:.4}
+  .mcard .imp{margin:13px 0 14px;font-size:13px;color:var(--ink-2);line-height:1.58}
+  .mcard ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+  .mcard li{display:grid;grid-template-columns:auto 1fr;gap:9px;font-size:12.5px;color:var(--ink-2);line-height:1.5;align-items:start}
+  .mcard li .p{margin-top:1px}
+  .minp{font-family:var(--font-mono);font-size:9.5px;font-weight:700;padding:2px 5px;border-radius:5px;letter-spacing:.02em}
+  .minp.P0{color:var(--p0);background:var(--p0-soft)} .minp.P1{color:var(--p1);background:var(--p1-soft)} .minp.P2{color:var(--p2);background:var(--p2-soft)}
+
+  /* ── roadmap ── */
+  .road{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;counter-reset:phase}
+  @media (max-width:820px){.road{grid-template-columns:1fr}}
+  .phase{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px;box-shadow:var(--shadow);position:relative}
+  .phase .ph{display:flex;align-items:center;gap:11px;margin-bottom:6px}
+  .phase .pn{font-family:var(--font-mono);font-size:13px;font-weight:700;width:30px;height:30px;border-radius:8px;
+    display:flex;align-items:center;justify-content:center;background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent-line)}
+  .phase h3{margin:0;font-size:15.5px;font-weight:680;color:var(--ink)}
+  .phase .goal{font-size:12px;color:var(--ink-3);margin:0 0 14px}
+  .phase ol{margin:0;padding-left:19px;display:flex;flex-direction:column;gap:9px}
+  .phase li{font-size:13px;color:var(--ink-2);line-height:1.5}
+  .phase li b{color:var(--ink);font-weight:600}
+  .phase .tagrow{margin-top:14px;padding-top:13px;border-top:1px dashed var(--line-2)}
+
+  /* ── data table (appendix) ── */
+  .tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;min-width:520px;font-size:13px}
+  thead th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);
+    font-weight:700;padding:13px 16px;border-bottom:1px solid var(--line-2);background:var(--surface-2);white-space:nowrap}
+  tbody td{padding:11px 16px;border-bottom:1px solid var(--line);color:var(--ink-2);vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  tbody td.num{font-family:var(--font-mono);font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600;white-space:nowrap}
+  tbody td.num.warn{color:var(--p0)}
+  tbody td.first{color:var(--ink);font-weight:550}
+
+  .callout{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);
+    border-radius:var(--radius-sm);padding:16px 20px;margin-top:18px;box-shadow:var(--shadow)}
+  .callout p{margin:0;font-size:13.5px;color:var(--ink-2);line-height:1.6}
+  .callout b{color:var(--ink)}
+  .bench{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .bench .b{font-size:12.5px;padding:6px 12px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);color:var(--ink-2)}
+  .bench .b b{color:var(--good);font-weight:650}
+
+  footer{padding:40px 0 64px;border-top:1px solid var(--line);color:var(--ink-3);font-size:12.5px;line-height:1.7}
+  footer b{color:var(--ink-2)}
+  .lede{font-size:clamp(19px,2.6vw,25px);line-height:1.5;font-weight:550;color:var(--ink);max-width:60ch;text-wrap:balance}
+  .lede em{color:var(--accent);font-style:normal;font-weight:650}
+</style>
+
+<div class="topbar">
+  <div class="wrap topbar-inner">
+    <span class="brand"><span class="dot"></span>CPQ · UI 排版审查</span>
+    <nav class="topnav">
+      <a href="#summary">摘要</a>
+      <a href="#systemic">系统性问题</a>
+      <a href="#modules">分模块</a>
+      <a href="#roadmap">修复路线</a>
+      <a href="#metrics">量化度量</a>
+    </nav>
+  </div>
+</div>
+
+<header class="masthead wrap">
+  <div class="kicker">
+    <span class="eyebrow">UI / UX Audit</span>
+    <span class="chip">React + Ant Design 5</span>
+    <span class="chip">176 个操作页面</span>
+    <span class="chip">仅排版/布局/交互 · 不改功能</span>
+  </div>
+  <h1 class="title">CPQ 前端<span class="u">排版布局</span>审查报告</h1>
+  <p class="deck">功能骨架扎实、交互打磨很深，但<b>「视觉体系」是全站最大欠账</b>——问题几乎全是「规范执行不彻底」与「缺一层 design token 收敛」，而非「不懂规范」。一轮纯样式层重构即可显著拉齐观感，风险极低。</p>
+
+  <div class="meta-row">
+    <div class="meta"><span class="k">Date</span><span class="v mono">2026-07-15</span></div>
+    <div class="meta"><span class="k">Method</span><span class="v">骨架亲审 + 8 模块并行代码级审查</span></div>
+    <div class="meta"><span class="k">Findings</span><span class="v mono">~190 条 · 带 file:line</span></div>
+    <div class="meta"><span class="k">P0 硬伤</span><span class="v mono">14 项</span></div>
+  </div>
+
+  <div class="designnote">
+    <div class="sw">#667eea</div>
+    <p><b>关于这份报告自己的设计：</b>它刻意<b>从头到尾只用一个强调色</b>——正是代码库里那个被设为主色、却「形同虚设」的 <span class="tag">#667eea</span>。严重度 P0 / P1 / P2 才用红 / 琥珀 / 钢蓝三档语义色。换句话说，这份报告在<b>示范</b>它所要求的那套克制。</p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ── SUMMARY ── -->
+  <section id="summary">
+    <div class="sec-head">
+      <span class="eyebrow">Executive Summary</span>
+      <h2>三件最痛的事</h2>
+      <p>从 ~190 条明细里归纳，下面三条是最刺眼、最伤「专业观感」的系统级事实。它们彼此独立、各自可单独整改。</p>
+    </div>
+
+    <div class="pain">
+      <div class="pcard">
+        <span class="lab">规范失守 · P0</span>
+        <h3>两条自家写进 CLAUDE.md 的强制规范大面积失守</h3>
+        <p>①「表单/向导一律 Drawer、禁止 Modal」——<b>36 个文件</b>仍用 Modal，约 15 处承载表单/三步向导。②「列表用 SelectableTable、行内不放动作」——大量列表仍是裸 <span class="tag">&lt;Table&gt;</span> + 行内动作，<b>全站仅 1 个页面遵守</b>。二者正是 PR 评审强制项。</p>
+      </div>
+      <div class="pcard">
+        <span class="lab">色彩失控 · P1</span>
+        <h3>品牌主色 #667eea 形同虚设</h3>
+        <p><span class="big">1272</span><p style="margin:0">处硬编码 hex，其中 <b>63 处</b>仍是 AntD 蓝 <span class="tag">#1677ff</span>，还混入 Element-Plus / Material / Chakra 三套外来色板。「金额合计」这一核心语义在报价链路 <b>5 个屏出现 5 种强调色</b>。</p></p>
+      </div>
+      <div class="pcard">
+        <span class="lab">首页 · P1</span>
+        <h3>工作台是调试残留</h3>
+        <p>每个用户登录后第一眼的 <span class="tag">Dashboard.tsx</span>，全页只有一张 <span class="tag">maxWidth:400</span> 的 "System Health" 卡片，混入英文 <b>Status / Service</b> 与硬编码绿 <span class="tag">#48bb78</span>，且未复用已有的 StatCard。</p>
+      </div>
+    </div>
+
+    <div class="metrics" style="margin-top:16px">
+      <div class="tile"><div class="n warn">2457</div><div class="l">内联 <span class="mono">style={'{{}}'}</span></div><div class="s">无 design token 层</div></div>
+      <div class="tile"><div class="n warn">1272</div><div class="l">硬编码 hex 颜色</div><div class="s">散落在 tsx</div></div>
+      <div class="tile"><div class="n warn">36</div><div class="l">文件用 Modal</div><div class="s">约 15 处违规</div></div>
+      <div class="tile"><div class="n warn">~40</div><div class="l">文件 emoji 当图标</div><div class="s">含侧栏菜单 / 主 CTA</div></div>
+      <div class="tile"><div class="n warn">0 / 0</div><div class="l">面包屑 / PageHeader</div><div class="s">无「我在哪」导航</div></div>
+      <div class="tile"><div class="n">32<span style="font-size:15px;color:var(--ink-3)"> / 176</span></div><div class="l">页面有标题</div><div class="s">144 页无标题</div></div>
+      <div class="tile"><div class="n">19<span style="font-size:15px;color:var(--ink-3)"> / 70</span></div><div class="l">宽表配横向滚动</div><div class="s">溢出兜底不足</div></div>
+      <div class="tile"><div class="n warn">17+</div><div class="l">种抽屉宽度</div><div class="s">规范仅 4 档</div></div>
+    </div>
+  </section>
+
+  <!-- ── SYSTEMIC ── -->
+  <section id="systemic">
+    <div class="sec-head">
+      <span class="eyebrow">Systemic Themes · 11</span>
+      <h2>系统性问题（按修复杠杆排序）</h2>
+      <p>这一节是报告核心。下面 11 个主题是从明细里归纳出的「共因」——<b>修一个主题 = 一次性拉齐几十个页面</b>。建议优先按主题批量整改，而非逐页打补丁。</p>
+    </div>
+
+    <div class="sevbar" role="group" aria-label="按严重度筛选">
+      <span class="hint">按严重度筛选：</span>
+      <button class="sev-btn" data-filter="all" aria-pressed="true">全部 <span class="cnt">11</span></button>
+      <button class="sev-btn" data-filter="P0" aria-pressed="false"><span class="sev-dot d0"></span>P0 阻碍 <span class="cnt">2</span></button>
+      <button class="sev-btn" data-filter="P1" aria-pressed="false"><span class="sev-dot d1"></span>P1 明显 <span class="cnt">6</span></button>
+      <button class="sev-btn" data-filter="P2" aria-pressed="false"><span class="sev-dot d2"></span>P2 打磨 <span class="cnt">3</span></button>
+    </div>
+
+    <div class="themes" id="themeList">
+
+      <article class="tcard" data-sev="P0">
+        <div class="stripe"></div>
+        <div class="body">
+          <div class="top"><span class="tnum">01</span><h3>弹窗规范失守：Modal 承载表单/向导（应为 Drawer）</h3><span class="pill P0">P0</span></div>
+          <p class="ev">CLAUDE.md 明文："新建/编辑表单、详情、多步骤向导、批量导入一律用右侧抽屉，不再用居中 Modal"。实际 <b>36 个文件</b>含 Modal，其中承载表单/向导的违规点至少 15 处：<span class="tag">DataSourceModal</span> 三步向导、<span class="tag">ProductTemplateBinding</span> 两步向导、<span class="tag">ConfiguratorPage</span> 三步提交、<span class="tag">PricingStrategy</span>、<span class="tag">ProductManagement</span> 导入、<span class="tag">CustomerLeadList</span> 审核、<span class="tag">ApprovalRule/Department/Region</span>……</p>
+          <div class="fix"><b>整改 →</b> 抽 FormDrawer / WizardDrawer / ImportDrawer 三个共享壳批量迁移；Modal 仅保留 <span class="tag">Modal.confirm</span> 危险二次确认与 SelectableTable 批量确认（规范许可）。</div>
+        </div>
+      </article>
+
+      <article class="tcard" data-sev="P0">
+        <div class="stripe"></div>
+        <div class="body">
+          <div class="top"><span class="tnum">02</span><h3>列表规范失守：裸 Table + 行内动作按钮</h3><span class="pill P0">P0</span></div>
+          <p class="ev">「行内不放动作按钮，变更/危险动作上提工具栏；统一 SelectableTable」是强制规范。实际大量列表仍是裸 <span class="tag">&lt;Table&gt;</span> + 行内 <b>编辑/停用/删除/解绑/重置密码</b>：客户线索、模板绑定（行内 Switch+删除）、公式表、配置器全列表、系统各管理页……<b>全站仅 <span class="tag">ApprovalRuleManagement</span> 一个页面遵守</b>。</p>
+          <div class="fix"><b>整改 →</b> 迁 SelectableTable，动作上提工具栏并声明 <span class="tag">enabledWhen(rows)</span>；危险动作走列出所选项的二次确认。</div>
+        </div>
+      </article>
+
+      <article class="tcard" data-sev="P1">
+        <div class="stripe"></div>
+        <div class="body">
+          <div class="top"><span class="tnum">03</span><h3>色彩体系失控：主色形同虚设 + 多套外来色板混入</h3><span class="pill P1">P1</span></div>
+          <p class="ev">主色 <span class="tag">#667eea</span>（紫）只活在 Login 渐变与少数卡片；真正的 CTA/选中态/金额强调却散落 AntD 蓝 <span class="tag">#1677ff</span>（39 文件 63 处）。混入 <b>Element-Plus 灰阶</b>（#909399/#606266/#303133）、<b>Material</b>（#1976d2/#4caf50）、<b>Chakra</b>（#e53e3e/#48bb78）三套色板。组件簇同页并存三套蓝、模板簇四套蓝、危险色三写法。「金额合计」5 屏 5 色。</p>
+          <div class="fix"><b>整改 →</b> 定义语义 token（<span class="tag">--cpq-primary:#667eea</span>、colorSuccess/Error、单一「金额强调色」），全站 grep 替换硬编码 hex。<b>覆盖面最广、性价比最高的一项。</b></div>
+        </div>
+      </article>
+
+      <article class="tcard" data-sev="P1">
+        <div class="stripe"></div>
+        <div class="body">
+          <div class="top"><span class="tnum">04</span><h3>emoji 当结构性图标</h3><span class="pill P1">P1</span></div>
+          <p class="ev">约 <b>40 个文件</b>用 emoji 充当导航/按钮/状态图标，与 Ant Design 线性 SVG 割裂、跨 OS 字形不稳、读屏无语义：侧栏菜单 <span class="tag">🛒 3D 选配 · 📋 · 🎯 · 🔗 · 📩</span>、主 CTA <span class="tag">💾 保存模板</span>、<span class="tag">CostingPartData</span> 图标 + emoji <b>双图标叠加</b>、客户线索 📩⏳✅🚫、报价视图切换 Segmented 📝📊📈。</p>
+          <div class="fix"><b>整改 →</b> 结构性图标全部换 <span class="tag">@ant-design/icons</span>；emoji 仅作正文装饰性辅助。</div>
+        </div>
+      </article>
+
+      <article class="tcard" data-sev="P1">
+        <div class="stripe"></div>
+        <div class="body">
+          <div class="top"><span class="tnum">05</span><h3>内联样式 + 魔数泛滥，无 design token 层</h3><span class="pill P1">P1</span></div>
+          <p class="ev">全站 <b>2457 处</b>内联 <span class="tag">style={'{{}}'}</span>、<b>1272 处</b>硬编码 hex、大量非阶梯字号（<span class="tag">fontSize:10.5/11.5/12.5</span>，低于 12px 可读下限且亚像素模糊）、脆弱的负边距与视口硬算（<span class="tag">margin:-24px</span>、<span class="tag">calc(100vh-112px)</span>——头部高度一变即错位，横跨组件/模板/定价多簇）。</p>
+          <div class="fix"><b>整改 →</b> 抽公共色/字号/间距 token 与 CSS class，内联仅保留一次性布局；字号归整到 12/13/14 阶梯。</div>
+        </div>
+      </article>
+
+      <article class="tcard" data-sev="P1">
+        <div class="stripe"></div>
+        <div class="body">
+          <div class="top"><span class="tnum">06</span><h3>缺「我在哪」导航：0 面包屑 / 0 PageHeader / 标题层级乱</h3><span class="pill P1">P1</span></div>
+          <p class="ev">全站 <span class="tag">Breadcrumb</span>=0、<span class="tag">PageHeader</span>=0；176 页仅 <b>32 页有标题</b>（144 页无标题）。有标题的层级也不一：主标题散落 <span class="tag">level={4}</span>（20 处）与 <span class="tag">level={5}</span>（21 处），还有裸 <span class="tag">&lt;h2&gt;</span>，无统一规则、无 h1。Header 顶栏左侧完全空置。Hub 页双标题冗余（同屏两个「产品管理」）。</p>
+          <div class="fix"><b>整改 →</b> 约定统一页头组件（标题 <span class="tag">level={4}</span> + 副标题 + 面包屑）；Hub/Tab 子页去重复标题与外层 padding。</div>
+        </div>
+      </article>
+
+      <article class="tcard" data-sev="P1">
+        <div class="stripe"></div>
+        <div class="body">
+          <div class="top"><span class="tnum">07</span><h3>数字/金额列不右对齐、不等宽 + 精度口径不一</h3><span class="pill P1">P1</span></div>
+          <p class="ev">数值列（单价/损耗率/年用量/折扣率/含量%）在核价、报价、主数据、定价多簇<b>普遍左对齐、非 tabular-nums</b>，无法按小数点纵向扫读。<span class="tag">ElementPriceCenterPage</span> 是全站唯一做对的样板。金额精度打架：<span class="tag">toLocaleString()</span> 无小数 vs <span class="tag">formatCurrency</span> 2 位；货币码 <span class="tag">RMB</span> 与 <span class="tag">CNY</span> 混用。</p>
+          <div class="fix"><b>整改 →</b> 数值列统一 <span class="tag">align:right</span> + tabular-nums；对外金额统一 formatCurrency（2 位）；货币码统一 CNY。</div>
+        </div>
+      </article>
+
+      <article class="tcard" data-sev="P2">
+        <div class="stripe"></div>
+        <div class="body">
+          <div class="top"><span class="tnum">08</span><h3>抽屉宽度不成体系</h3><span class="pill P2">P2</span></div>
+          <p class="ev">规范建议 480 / 720 / 960 / 1200 四档，实际散落 <b>420/520/560/580/600/640/680/760/780/840/900/920/1000/1080/1100</b> 共 17+ 种。近半数抽屉宽度是随手拍的非标值，同类抽屉宽窄不一。</p>
+          <div class="fix"><b>整改 →</b> 归并到四档标准宽度。</div>
+        </div>
+      </article>
+
+      <article class="tcard" data-sev="P2">
+        <div class="stripe"></div>
+        <div class="body">
+          <div class="top"><span class="tnum">09</span><h3>无障碍普遍薄弱</h3><span class="pill P2">P2</span></div>
+          <p class="ev"><b>icon-only 按钮缺 aria-label/title</b> 遍布（排序 ↑↓、删除、拖拽柄）。<b>原生控件绕过设计系统</b>：<span class="tag">&lt;input type=checkbox&gt;</span>、原生 <span class="tag">&lt;select&gt;</span>、原生 <span class="tag">&lt;table&gt;</span>、自绘勾选框 <span class="tag">div.cmm-chk</span>——均无焦点环/键盘/读屏语义。<b>纯颜色/纯 emoji 传达状态</b>；低对比灰 #bfbfbf/#ccc（≈1.6:1）；拖拽加组件无键盘替代。</p>
+          <div class="fix"><b>整改 →</b> 补 aria/Tooltip；原生控件换 AntD 组件；低对比灰提到 ≥#8c8c8c；状态补图标/文字。<span style="color:var(--p1)">合规诉求下可上升 P1。</span></div>
+        </div>
+      </article>
+
+      <article class="tcard" data-sev="P2">
+        <div class="stripe"></div>
+        <div class="body">
+          <div class="top"><span class="tnum">10</span><h3>加载/空态不统一、工程细节泄漏</h3><span class="pill P2">P2</span></div>
+          <p class="ev">裸 <span class="tag">&lt;Spin/&gt;</span>（无居中缩左上）反复出现；<span class="tag">&lt;Spin tip&gt;</span> 在 AntD v5 独立使用<b>失效</b>（4 处）；纯文字「加载中...」无骨架；<span class="tag">CostingPartDataPage</span> 出现「顶部大 Empty + 下方空 Tab」<b>双重空态</b>。工程细节泄漏给用户：Alert 暴露 <span class="tag">VITE_USE_MOCK_MASTER_DATA</span>、message 里字面显示 <span class="tag">&lt;br/&gt;</span>、原样渲染反引号。</p>
+          <div class="fix"><b>整改 →</b> 统一居中 Spin / Skeleton / <span class="tag">&lt;Empty&gt;</span>；修 v5 Spin tip；技术细节仅进日志。</div>
+        </div>
+      </article>
+
+      <article class="tcard" data-sev="P2">
+        <div class="stripe"></div>
+        <div class="body">
+          <div class="top"><span class="tnum">11</span><h3>新老两代代码并存（原型直转 vs 现行规范）</h3><span class="pill P2">P2</span></div>
+          <p class="ev"><b>现行规范基线（可作标杆）</b>：system / system-monitor / system-config / change-log 四组、核价 master-data 主流程。<b>原型直转重灾区</b>：configurator（3D 选配）+ feature-library（emoji + 魔数 + #1890ff/#52c41a + 主 CTA 一律染绿 + mock「后端待实现」控件暴露给用户）、ModelConfig（Element-Plus 色板）、报价 qt-* 卡片（Material/Chakra）。<b>死代码污染一致性</b>：ComponentTree/HeaderPreview/CrossTabRefDrawer/ImportExcelModal 均 0 引用。</p>
+          <div class="fix"><b>整改 →</b> 以 system 簇为基线做一致性清扫，并清理死代码；<span class="tag">AddProductModal</span> 实现已是 Drawer，重命名消除误导。</div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ── MODULES ── -->
+  <section id="modules">
+    <div class="sec-head">
+      <span class="eyebrow">By Module · 9 Clusters</span>
+      <h2>分模块记分卡</h2>
+      <p>8 个业务模块簇并行审查 + 骨架层亲审。每张卡给出该模块的严重度分布、一句整体印象、以及领头的 P0/P1 挑刺项。<b>逐条带行号的完整工单</b>见仓库 Markdown 版报告。</p>
+    </div>
+
+    <div class="mods">
+
+      <div class="mcard">
+        <div class="mh"><h3>骨架层 · MainLayout / App / CSS</h3>
+          <div class="counts"><span class="cnt-chip c0 z">P0 0</span><span class="cnt-chip c1">P1 5</span><span class="cnt-chip c2">P2 2</span></div></div>
+        <p class="imp">地基决定全局：主色未在 ConfigProvider 收敛、3D 菜单用 emoji、侧栏不可折叠、Header 左侧空置无面包屑。</p>
+        <ul>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>侧栏 <span class="tag">width=220</span> 固定、不可折叠，窄屏无收起</span></li>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>Header 左侧空置，无当前页标题 / 面包屑</span></li>
+          <li><span class="p"><span class="minp P2">P2</span></span><span>Hub 子路由下菜单不高亮（<span class="tag">selectedKeys</span> 精确匹配）</span></li>
+        </ul>
+      </div>
+
+      <div class="mcard">
+        <div class="mh"><h3>登录 / 工作台 / 共享组件</h3>
+          <div class="counts"><span class="cnt-chip c0 z">P0 0</span><span class="cnt-chip c1">P1 5</span><span class="cnt-chip c2">P2 16</span></div></div>
+        <p class="imp">典型「多来源调色板拼贴」：主色只在 Login 渐变，CTA/选中/StatCard 却散落多种蓝与 Element-UI 灰阶。鉴权四页缺共享 AuthLayout。</p>
+        <ul>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>工作台混入英文 Status/Service + 硬编码绿，未复用 StatCard</span></li>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>StatCard 主色硬编码 <span class="tag">#1890ff</span>（第三种游离蓝）；副文字号 10.5px</span></li>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>Login 紫渐变 vs 忘记/重置密码扁平灰，同流程背景突变</span></li>
+        </ul>
+      </div>
+
+      <div class="mcard">
+        <div class="mh"><h3>报价单模块</h3>
+          <div class="counts"><span class="cnt-chip c0 z">P0 0</span><span class="cnt-chip c1">P1 6</span><span class="cnt-chip c2">P2 12</span></div></div>
+        <p class="imp">功能密度极高、交互打磨深，但视觉体系是最大欠账：qt-* 手写卡片用 Material/Chakra 色板，「金额合计」5 屏 5 色，编辑态与详情态同名控件不对齐。</p>
+        <ul>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>「金额合计」同语义 5 种强调色（#0958d9/#c00/#1890ff/#667eea/#1677ff）</span></li>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>金额精度口径不一（toLocaleString 无小数 vs formatCurrency 2 位）</span></li>
+          <li><span class="p"><span class="minp P2">P2</span></span><span>向导不能点已完成步跳转；末步主 CTA 位置漂移</span></li>
+        </ul>
+      </div>
+
+      <div class="mcard">
+        <div class="mh"><h3>核价模块</h3>
+          <div class="counts"><span class="cnt-chip c0">P0 1</span><span class="cnt-chip c1">P1 7</span><span class="cnt-chip c2">P2 12</span></div></div>
+        <p class="imp">骨架规整（列表 SelectableTable、状态机 Tag、runBatch 到位）。两处硬伤：新建仍用 Modal、金额列几乎全不右对齐（ElementPrice 是唯一样板，反衬欠账）。</p>
+        <ul>
+          <li><span class="p"><span class="minp P0">P0</span></span><span><span class="tag">CostingTemplateList</span> 新建 Excel 模板表单用 Modal</span></li>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>金额/数值列整片左对齐、精度不一；宽表未配 scroll</span></li>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>ManualPrice 抽屉主操作在顶部 extra，与其它抽屉底部 footer 不一</span></li>
+        </ul>
+      </div>
+
+      <div class="mcard">
+        <div class="mh"><h3>组件管理模块</h3>
+          <div class="counts"><span class="cnt-chip c0">P0 1</span><span class="cnt-chip c1">P1 6</span><span class="cnt-chip c2">P2 11</span></div></div>
+        <p class="imp">功能完备但明显跨两代设计。规范迁移只做了一半：三步向导仍 Modal、HTTP_API 配置 Modal/Drawer 双实现；三套主蓝并存 + 一批 0 引用死代码。</p>
+        <ul>
+          <li><span class="p"><span class="minp P0">P0</span></span><span><span class="tag">DataSourceModal</span> 三步向导用 Modal（DATA_SOURCE 活跃入口）</span></li>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>字段配置表 13 列无横向滚动，窄屏挤压换行</span></li>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>ComponentTree/HeaderPreview 等 0 引用死代码携反规范实现</span></li>
+        </ul>
+      </div>
+
+      <div class="mcard">
+        <div class="mh"><h3>模板管理模块</h3>
+          <div class="counts"><span class="cnt-chip c0">P0 2</span><span class="cnt-chip c1">P1 8</span><span class="cnt-chip c2">P2 12</span></div></div>
+        <p class="imp">问题最密集的模块。弹窗与列表两条强制规范成片违反；主色失控最刺眼（品牌紫 + 三种蓝各占一角）；内联样式与 magic number 遍布。</p>
+        <ul>
+          <li><span class="p"><span class="minp P0">P0</span></span><span><span class="tag">ProductTemplateBinding</span> 两步向导用 Modal + 绑定表行内 Switch/删除</span></li>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>四套蓝并存（#667eea/#1976d2/#1890ff/#1677ff）</span></li>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>主 CTA <span class="tag">💾 保存模板</span> 是 emoji + 裸 button，与「发布」争焦</span></li>
+        </ul>
+      </div>
+
+      <div class="mcard">
+        <div class="mh"><h3>主数据 / 基础数据 / 导入</h3>
+          <div class="counts"><span class="cnt-chip c0 z">P0 0</span><span class="cnt-chip c1">P1 8</span><span class="cnt-chip c2">P2 27</span></div></div>
+        <p class="imp">AntD 5 + SelectableTable 底子规范。最大短板是一致性：抽屉宽度六七个非标档、同一「状态」概念一处 Select 一处自由文本、emoji + 原生 input/select/table 绕过设计系统。</p>
+        <ul>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>basicdata / GlobalVariable 仍用 Modal 承载表单</span></li>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>GlobalVariable 用原生 <span class="tag">&lt;select&gt;</span>；PartModel 用原生 checkbox + 满屏 emoji</span></li>
+          <li><span class="p"><span class="minp P2">P2</span></span><span>三个主数据浏览入口概念冗余；<span class="tag">Spin tip</span> v5 失效</span></li>
+        </ul>
+      </div>
+
+      <div class="mcard">
+        <div class="mh"><h3>客户 / 定价 / 产品 / 配置</h3>
+          <div class="counts"><span class="cnt-chip c0">P0 5</span><span class="cnt-chip c1">P1 12</span><span class="cnt-chip c2">P2 13</span></div></div>
+        <p class="imp">新老两代规范并存最割裂的一簇：Element/Material 配置族已合规，而线索/定价/映射/产品导入弹窗仍停在「Modal 表单 + 行内动作」旧写法，构成 5 处 P0。</p>
+        <ul>
+          <li><span class="p"><span class="minp P0">P0</span></span><span>映射/定价/产品导入/线索审核 4 处 Modal 表单 + 客户线索裸 Table 行内动作</span></li>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>ModelConfig 整套 Element-Plus 灰阶色板 + 手写星号</span></li>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>搜索/主按钮位置两套流派（Card extra vs toolbar）</span></li>
+        </ul>
+      </div>
+
+      <div class="mcard">
+        <div class="mh"><h3>3D 选配 / 特征库 / 系统管理</h3>
+          <div class="counts"><span class="cnt-chip c0">P0 5</span><span class="cnt-chip c1">P1 8</span><span class="cnt-chip c2">P2 10</span></div></div>
+        <p class="imp">明显分裂两代：system 四组是成熟基线（标杆）；configurator + feature-library 是原型直转——emoji 图标、硬编码色、主 CTA 一律染绿、mock 控件暴露。两条强制规范几乎全簇失守。</p>
+        <ul>
+          <li><span class="p"><span class="minp P0">P0</span></span><span>提交/分享/绑定/审批/部门/区域 6+ 处 Modal 表单/向导</span></li>
+          <li><span class="p"><span class="minp P0">P0</span></span><span>约 8 个列表行内 <span class="tag">&lt;a&gt;</span> 动作（仅 ApprovalRule 合规）</span></li>
+          <li><span class="p"><span class="minp P1">P1</span></span><span>主操作强改绿 <span class="tag">#52c41a</span> 覆盖 primary，主次混乱</span></li>
+        </ul>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── ROADMAP ── -->
+  <section id="roadmap">
+    <div class="sec-head">
+      <span class="eyebrow">Remediation Roadmap</span>
+      <h2>三阶段修复路线（均不改功能）</h2>
+      <p>「先补强制规范硬伤 → 再做 token 化收敛 → 最后打磨」。每阶段独立可交付、独立可回归。</p>
+    </div>
+
+    <div class="road">
+      <div class="phase">
+        <div class="ph"><span class="pn">1</span><h3>清偿规范硬伤</h3></div>
+        <p class="goal">P0 · PR 评审强制项</p>
+        <ol>
+          <li><b>Modal → Drawer</b>：抽三个共享壳，迁约 15 处表单/向导</li>
+          <li><b>裸 Table → SelectableTable</b>：迁约 8+ 处列表，动作上提 + enabledWhen</li>
+          <li><b>删死代码</b>：ComponentTree / HeaderPreview / CrossTabRefDrawer / ImportExcelModal</li>
+          <li><b>重做首页</b>：Dashboard 换成真正的工作台</li>
+        </ol>
+        <div class="tagrow"><span class="chip" style="font-size:11.5px">⚠ 触及协议级文件时跑 Playwright E2E 复测</span></div>
+      </div>
+
+      <div class="phase">
+        <div class="ph"><span class="pn">2</span><h3>Design token 收敛</h3></div>
+        <p class="goal">P1 · 覆盖面最广 · 性价比最高</p>
+        <ol>
+          <li><b>主色 token</b>：<span class="tag">--cpq-primary:#667eea</span>，grep 替换 63 处蓝 + 三套外来色板</li>
+          <li><b>金额</b>：单一强调色 + 数值列右对齐 tabular-nums + formatCurrency 2 位</li>
+          <li><b>emoji → AntD 图标</b>（~40 文件）</li>
+          <li><b>抽屉宽度归四档</b>（480/720/960/1200）</li>
+          <li><b>统一页头 + 面包屑 + 标题层级</b>（主标题 level=4）</li>
+          <li><b>加载/空态统一</b>（居中 Spin / Skeleton / Empty）</li>
+        </ol>
+      </div>
+
+      <div class="phase">
+        <div class="ph"><span class="pn">3</span><h3>无障碍与响应式打磨</h3></div>
+        <p class="goal">P2 · 收尾</p>
+        <ol>
+          <li>icon-only 补 aria/Tooltip；原生控件换 AntD 组件</li>
+          <li>低对比灰提到 ≥#8c8c8c；纯色/纯 emoji 状态补图标</li>
+          <li>字号魔数归 12/13/14；脆弱布局改 flex</li>
+          <li>全屏配置器补断点；宽表补 <span class="tag">scroll={'{{x}}'}</span></li>
+          <li>侧栏加 collapsible；Hub 子路由高亮修正</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── METRICS ── -->
+  <section id="metrics">
+    <div class="sec-head">
+      <span class="eyebrow">Appendix · Whole-Repo Scan</span>
+      <h2>量化度量</h2>
+      <p>全库 <span class="tag">cpq-frontend/src</span> 扫描结果，用于佐证系统性判断。</p>
+    </div>
+
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>度量</th><th>数值</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td class="first">页面 .tsx（非 test）</td><td class="num">176</td><td>src/pages 下</td></tr>
+          <tr><td class="first">内联 style={'{{}}'}</td><td class="num warn">2457</td><td>无 design token 层</td></tr>
+          <tr><td class="first">硬编码 hex 颜色</td><td class="num warn">1272</td><td>分布在 tsx</td></tr>
+          <tr><td class="first">硬编码 AntD 蓝 #1677ff/#1890ff</td><td class="num warn">63 / 39 文件</td><td>与主色 #667eea 冲突</td></tr>
+          <tr><td class="first">用 Modal 的文件</td><td class="num warn">36</td><td>约 15 处承载表单/向导（违规）</td></tr>
+          <tr><td class="first">emoji 当图标的文件</td><td class="num warn">~40</td><td>含侧栏菜单、主 CTA</td></tr>
+          <tr><td class="first">Breadcrumb / PageHeader</td><td class="num warn">0 / 0</td><td>无「我在哪」导航</td></tr>
+          <tr><td class="first">有页面标题的页面</td><td class="num">32 / 176</td><td>144 页无标题</td></tr>
+          <tr><td class="first">主标题层级分布</td><td class="num">L4:20 · L5:21</td><td>无统一规则、无 h1</td></tr>
+          <tr><td class="first">含 Table / 配 scroll={'{{x}}'}</td><td class="num">70 / 19</td><td>宽表横向溢出兜底不足</td></tr>
+          <tr><td class="first">抽屉宽度取值种类</td><td class="num warn">17+ 种</td><td>规范仅 4 档</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <p><b>可作「收敛标杆」的现行规范页面 —</b> 整改时以它们为参照，而非另起一套：</p>
+      <div class="bench">
+        <span class="b"><b>系统簇</b> system / monitor / config / change-log</span>
+        <span class="b"><b>核价</b> master-data 主流程</span>
+        <span class="b"><b>ElementPriceCenterPage</b> 数值右对齐唯一样板</span>
+        <span class="b"><b>组件</b> SqlViewConfigDrawer 渐进式</span>
+        <span class="b"><b>报价</b> 详情页已全迁 Drawer</span>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="wrap">
+  <p class="lede" style="margin-bottom:22px">问题几乎全是<em>「规范执行不彻底」</em>，而非「不懂规范」。<br>一轮定向的纯样式层重构即可显著拉齐观感。</p>
+  <p><b>范围声明：</b>本报告仅覆盖排版 / 布局 / 交互 / 一致性 / 无障碍层面，不含功能性 bug 与业务逻辑评估；所有条目均可在不改动数据与计算逻辑的前提下整改。<br>
+  <b>完整工单：</b>逐条带 file:line 的 ~190 条明细见仓库 <span class="tag">dev-docs/task-0715-UI排版审查/UI排版布局审查报告.md</span>。</p>
+</footer>
+
+<script>
+  (function(){
+    var btns = Array.prototype.slice.call(document.querySelectorAll('.sev-btn'));
+    var cards = Array.prototype.slice.call(document.querySelectorAll('#themeList .tcard'));
+    btns.forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var f = btn.getAttribute('data-filter');
+        btns.forEach(function(b){ b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
+        cards.forEach(function(c){
+          var match = (f === 'all') || (c.getAttribute('data-sev') === f);
+          c.setAttribute('data-dim', match ? '0' : '1');
+        });
+      });
+    });
+  })();
+</script>
