@@ -380,9 +380,9 @@ DELETE FROM element_price_source WHERE source_name LIKE 'TEST-EDPL-0724-%';
    `PriceTableService.listDetail`（明细 Tab 查询）应加 `WHERE edp.source_id IS NOT NULL`，让存量 v1 脏数据（`source_id IS NULL` 的 MANUAL 行）**结构性不出现**在新入口，而非依赖"其 `price_date` 恰好落在默认窗口之外"的巧合。理由：需求 §6 明确要求"不展示"，且一条没有源的价出现在明细列表会让用户困惑。
    → **验收核对**：TC-REG-07 必须验证该脏数据行**不出现**在 `GET /prices`（即使不传 `from/to`、即使其 `price_date` 落入窗口）；若后端 `listDetail` 未加此过滤，判为**未达标，要求后端补**。
 
-2. **`GET /prices/history` 的 `size` 上限 200 越界处理** —— 【裁决：截断为 200，不报 400】
-   传 `size>200` 时后端取 `min(size,200)`（分页保护，截断比拒绝友好）。
-   → **验收核对**：TC-HIST-13 验证 `size=300` 返回 ≤200 条且 HTTP `200`，不是 `400`。
+2. **`GET /prices/history` 的 `size` 上限 200 越界处理** —— 【裁决：越界重置默认 20，不报 400】
+   传 `size<=0 或 >200` 时后端重置为默认 `20`（**已核实后端如此实现**，`PriceTableService:52/327` `if (size<=0||size>200) size=20`，与 `listDetail` 既有风格一致；技术总监从既有风格对齐，不强推「截断 200」）。
+   → **验收核对**：TC-HIST-13 验证 `size=300` 返回 ≤200 条（实为 20）且 HTTP `200`，不是 `400`。
 
 3. **（技术总监补测）Jackson `FAIL_ON_UNKNOWN_PROPERTIES` 实际行为** —— 见 §5#1 + TC-UPD-08/12。
    api.md 断言"多传键字段被 Jackson 直接丢弃"依赖 Quarkus 默认关闭该 feature。技术总监亲验后端时**必查** `application.properties` 无 `quarkus.jackson.fail-on-unknown-properties=true`，并实测 TC-UPD-08 返 `200` 而非 `400 Unrecognized field`。
