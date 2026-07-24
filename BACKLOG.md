@@ -230,6 +230,50 @@
 
 ## P2
 
+### [BL-0070] Q04/Q05 元素BOM 相关测试 fixture 用 stale 列名（pre-existing 坏测试）
+- **优先级**：P2
+- **来源**：task-0709/update-0723 报价导入模板 0723 适配 · 技术总监交付验收（2026-07-23）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-23
+- **背景**：`Q04ElementBomHandlerTest` / `Q04ElementBomResolveTest` / `Q05ElementRecoveryHandlerTest` / `Q05ElementRecoveryResolveTest` 的 fixture 仍用 `m.put("投入料号", MAT)`，而对应 handler 早已改读「销售料号」/「材质料号」→ 读不到值、测试恒失败。**在 master 上即已如此，非 update-0723 引入**（`git diff master` 实证本次对这些文件零业务逻辑改动，仅补 `@Transactional` 适配 MANDATORY 传播）。
+- **范围**：把 fixture 的列名对齐现役 handler 的读取键（销售料号 / 材质料号）。
+- **依赖**：无。
+- **预估规模**：S
+- **验收要点**：4 个测试类转绿；不改 handler 业务逻辑。
+
+### [BL-0071] 报价导入异步调度固定开销（内部 elapsed 与外部实测 250~900ms gap）+ 千行级性能未测
+- **优先级**：P2
+- **来源**：task-0709/update-0723 U8 性能返修（2026-07-23）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-23
+- **背景**：U8「百行内端到端 < 2s」已通过 `writeAll` 进度写入均匀分桶节流达标（17 次远程往返→2 次，实测端到端 ~1.5s）。但诊断中发现 `managedExecutor.runAsync(...)`（生产 `BasicDataImportV6Resource` 同款异步派发）在内部 `[v6import] QUOTE TOTAL` 与外部实测 elapsed 之间存在 **250~900ms、方差很大**的 gap（疑 `@ActivateRequestContext` / executor 调度 / `finalizeImportRecord` 等固定开销），超出本次「只降低 updateProgress 往返」的授权范围未展开。另：本次性能仅验证黄金样例（约 25 行）量级，**千行级客户文件未实测**。
+- **范围**：① 若未来需要更紧的性能余量，定位并压缩异步派发固定开销；② 用真实千行级客户文件（如西安中熔/森萨塔）实测导入耗时，确认线性可扩展、不超时不 OOM。
+- **依赖**：无。
+- **预估规模**：M
+- **验收要点**：gap 收敛且方差降低；千行级文件导入成功且耗时线性。
+
+### [BL-0072] `clearPreviousPending` 未覆盖 `pending_material_master_staging`（重导覆盖遗留孤儿行）
+- **优先级**：P2
+- **来源**：task-0709/update-0723 测试用例设计风险点 R3（2026-07-23）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-23
+- **背景**：`QuoteImportService.PENDING_TABLES`（8 张：`unit_price/material_bom/material_bom_item/element_bom/element_bom_item/capacity/plating_scheme/material_customer_map`）**不含** `pending_material_master_staging`。重导覆盖场景下，若新文件相比旧文件「减少」了某个只凭名称发号的料号，旧 staging 行会成为孤儿残留（不影响本次导入正确性，但 promote 时可能带入多余料号）。
+- **范围**：评估是否把 `pending_material_master_staging` 纳入 `clearPreviousPending`（注意其键是 `quotation_id + material_no`，与其余 8 表的 `pending_quotation_id` 列名不同）。
+- **依赖**：task-0721 pending 机制。
+- **预估规模**：S
+- **验收要点**：重导覆盖后 staging 的料号集与新文件一致，无孤儿行。
+
+### [BL-0073] `quotation_line_process` 工序反填 SQL 未按 `pending_quotation_id` 过滤
+- **优先级**：P2（待评估）
+- **来源**：task-0709/update-0723 测试用例设计风险点 R5（2026-07-23）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-23
+- **背景**：`QuotationService:590` / `:2437` 的工序 seed SQL 只按 `system_type/customer_no/material_no/characteristic='ASSEMBLY'/operation_no IS NOT NULL/is_current=true` 过滤，**不看 `pending_quotation_id`**。这符合 V6「customer × material 全局共享、非按报价单隔离」的既有设计，但在 task-0721 pending 隔离语义下，是否应收窄到本单 pending 范围需要业务确认（update-0723 已实测该 seed 在 pending 阶段能正常取到数据，功能不受影响）。
+- **范围**：与业务确认工序反填的隔离口径；如需收窄则加 pending 维度。
+- **依赖**：task-0721 报价升版逻辑。
+- **预估规模**：S
+- **验收要点**：明确并固化该 SQL 在 pending / 正式两种场景的预期行为。
+
 ### [BL-0019] 零金额列页签 `[页签(总计)]`=0 的配置期 lint 警告 + 回退裁决
 - **优先级**：P2
 - **来源**：`docs/superpowers/specs/2026-06-30-BL0017-tabtotal-amount-sum-impl.md` §7 风险 5 / §9 范围外；实现 spec 评审「零金额列语义」
