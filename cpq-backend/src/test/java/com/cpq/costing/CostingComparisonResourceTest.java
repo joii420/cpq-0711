@@ -1,7 +1,5 @@
 package com.cpq.costing;
 
-import com.cpq.costing.entity.CostingSheet;
-import com.cpq.costing.entity.CostingTemplate;
 import com.cpq.quotation.entity.Quotation;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.RestAssured;
@@ -12,7 +10,6 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.*;
 
 import java.math.BigDecimal;
-import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
@@ -39,7 +36,6 @@ class CostingComparisonResourceTest {
     EntityManager em;
 
     private static UUID quotationId;
-    private static UUID costingSheetId;
 
     @BeforeEach
     @Transactional
@@ -73,16 +69,6 @@ class CostingComparisonResourceTest {
                 .extract().path("data.id");
         quotationId = UUID.fromString(qId);
 
-        // 直接 persist 一个 LIVE 状态 CostingSheet（最小：rows 为空数组，total_cost=100）
-        CostingSheet cs = new CostingSheet();
-        cs.quotationId = quotationId;
-        cs.rows = "[{\"hf_part_no\":\"TEST-001\",\"cells\":{\"A\":\"TEST-001\",\"B\":100}}]";
-        cs.totalCost = new BigDecimal("100");
-        cs.status = "LIVE";
-        em.persist(cs);
-        em.flush();
-        costingSheetId = cs.id;
-
         // 同时设置 quotation.totalAmount 让 comparison 能拿到客户报价值
         Quotation q = em.find(Quotation.class, quotationId);
         if (q != null) {
@@ -92,40 +78,8 @@ class CostingComparisonResourceTest {
         }
     }
 
-    // ------------------------------------------------------------------
-    // COST-SHEET-01: 核价表查询返回 columns + rows + totalCost 结构
-    // ------------------------------------------------------------------
-    @Test
-    @Order(1)
-    @DisplayName("COST-SHEET-01: GET /quotations/{id}/costing-sheet 返回结构")
-    void getCostingSheet_returnsStructure() {
-        RestAssured.given()
-                .when()
-                    .get("/api/cpq/quotations/" + quotationId + "/costing-sheet")
-                .then()
-                    .statusCode(200)
-                    .body("code", equalTo(200))
-                    .body("data", notNullValue())
-                    .body("data.quotationId", equalTo(quotationId.toString()))
-                    .body("data.status", equalTo("LIVE"))
-                    .body("data.rows", notNullValue())
-                    .body("data.totalCost", anyOf(equalTo(100), equalTo(100.0f), equalTo("100")));
-    }
-
-    // ------------------------------------------------------------------
-    // COST-SHEET-02: 不存在的报价单核价表返 404
-    // ------------------------------------------------------------------
-    @Test
-    @Order(2)
-    @DisplayName("COST-SHEET-02: 不存在的报价单 → 404")
-    void getCostingSheet_nonexistent_returns404() {
-        UUID fakeId = UUID.randomUUID();
-        RestAssured.given()
-                .when()
-                    .get("/api/cpq/quotations/" + fakeId + "/costing-sheet")
-                .then()
-                    .statusCode(404);
-    }
+    // task-0723 B6: 旧核价引擎退役 — COST-SHEET-01/02 (GET .../costing-sheet 端点测试) 已删除，
+    // 该端点已下线。比对视图 (COST-COMPARE-*) 是独立活功能，保留。
 
     // ------------------------------------------------------------------
     // COST-COMPARE-03: 比对视图返回结构

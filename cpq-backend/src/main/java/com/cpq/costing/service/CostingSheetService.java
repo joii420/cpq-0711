@@ -1,10 +1,7 @@
 package com.cpq.costing.service;
 
 import com.cpq.basicdata.entity.ComparisonTag;
-import com.cpq.common.exception.BusinessException;
 import com.cpq.costing.dto.ComparisonDTO;
-import com.cpq.costing.dto.CostingSheetDTO;
-import com.cpq.costing.entity.CostingSheet;
 import com.cpq.costing.entity.CostingTemplate;
 import com.cpq.formula.EvaluationContext;
 import com.cpq.formula.FormulaEngine;
@@ -39,20 +36,8 @@ public class CostingSheetService {
     @Inject
     DataLoader dataLoader;
 
-    public CostingSheetDTO getByQuotation(UUID quotationId) {
-        CostingSheet s = CostingSheet.find("quotationId = ?1", quotationId).firstResult();
-        if (s == null) {
-            // 反 AP-12（懒资源硬 404）：DRAFT 报价单尚未生成核价表行很常见，
-            // 不应让前端 viewMode=costing 切换时整页报错。返回空骨架 DTO，让 UI 显示
-            // "尚未配置核价表"或初始化按钮。同模块 buildComparison 已经是空 DTO 兜底。
-            CostingSheetDTO empty = new CostingSheetDTO();
-            empty.quotationId = quotationId;
-            empty.rows = List.of();
-            empty.columns = List.of();
-            return empty;
-        }
-        return CostingSheetDTO.from(s);
-    }
+    // task-0723 B6: 旧核价引擎退役 — getByQuotation() 已删除 (costing_sheet 表 0 行,
+    // GET /{id}/costing-sheet 端点随之下线; buildComparison 走独立求值路径不依赖此表)。
 
     /**
      * 比对视图：实时按 Excel 模板对每个 lineItem 求值, 按列的 comparison_tag 聚合.

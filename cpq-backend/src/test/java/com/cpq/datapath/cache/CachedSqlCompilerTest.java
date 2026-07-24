@@ -30,8 +30,10 @@ class CachedSqlCompilerTest {
     @Test
     @DisplayName("同一 AST + 相同 schema 版本：第二次应命中 SQL 缓存")
     void sameAstAndVersion_hitsCache() {
+        // task-0723 B7.2: SchemaContext.defaultContext() 已删除 "元素BOM" 等 8 条指向废弃表的
+        // 中文逻辑名映射；改用仍受支持的 ASCII 物理表路径，不影响本测试验证的缓存命中行为本身。
         SchemaContext ctx = SchemaContext.defaultContext();   // version = "v1"
-        PathExpression ast = pathParser.parse("元素BOM[元素='Ag'].组成含量");
+        PathExpression ast = pathParser.parse("mat_bom[element_name='Ag'].composition_pct");
 
         SqlAndParams s1 = sqlCompiler.compile(ast, ctx);
         SqlAndParams s2 = sqlCompiler.compile(ast, ctx);
@@ -103,8 +105,9 @@ class CachedSqlCompilerTest {
     @Test
     @DisplayName("缓存命中时返回的 SQL 内容与首次编译结果完全一致")
     void cachedSql_contentMatchesOriginal() {
+        // task-0723 B7.2: 同上，改用 ASCII 物理表路径替代已删除的 "元素BOM" 中文逻辑名映射。
         SchemaContext ctx = SchemaContext.defaultContext();
-        PathExpression ast = pathParser.parse("元素BOM[元素='Ag'].组成含量");
+        PathExpression ast = pathParser.parse("mat_bom[element_name='Ag'].composition_pct");
 
         SqlAndParams first  = sqlCompiler.compile(ast, ctx);
         SqlAndParams second = sqlCompiler.compile(ast, ctx);

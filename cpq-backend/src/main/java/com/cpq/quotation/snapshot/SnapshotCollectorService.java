@@ -6,7 +6,6 @@ import com.cpq.globalvariable.GlobalVariableService;
 import com.cpq.quotation.entity.QuotationLineComponentData;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.refdata.GlobalVariableDataLoader;
-import com.cpq.quotation.service.DriftDetectionService;
 import com.cpq.template.entity.TemplateGlobalVariableBinding;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,9 +40,6 @@ public class SnapshotCollectorService {
 
     @Inject
     EntityManager em;
-
-    @Inject
-    DriftDetectionService driftDetectionService;
 
     /**
      * Task 3.1: 模板配置快照冻结"解析后的合并列定义"（而非裸 excel_view_config 指针），
@@ -309,12 +305,14 @@ public class SnapshotCollectorService {
             }
             if (!platingMap.isEmpty()) snapshot.put("plating_plan", platingMap);
 
-            // mat_customer_part_mapping — 按 customerId + hf_part_no 查询
+            // task-0723 B4: mat_customer_part_mapping（冻结）→ material_customer_map（V6）。
+            // 全键严格匹配 (customer.code, material_no)，不做仅料号降级（防跨客户串号，见 B2/需求说明 Q5）。
             if (customerId != null) {
                 Map<String, Object> mappingMap = new LinkedHashMap<>();
                 List<Object[]> mappingRows = em.createNativeQuery(
-                        "SELECT hf_part_no, customer_part_no, customer_part_name FROM mat_customer_part_mapping" +
-                        " WHERE customer_id = :cid AND hf_part_no = ANY(:partNos)")
+                        "SELECT v.material_no, v.customer_product_no, v.customer_material_name " +
+                        "FROM material_customer_map v JOIN customer c ON c.code = v.customer_no " +
+                        "WHERE c.id = :cid AND v.material_no = ANY(:partNos)")
                         .setParameter("cid", customerId)
                         .setParameter("partNos", partNos.toArray(new String[0]))
                         .getResultList();

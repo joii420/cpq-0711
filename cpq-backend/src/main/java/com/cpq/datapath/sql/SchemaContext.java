@@ -137,29 +137,17 @@ public class SchemaContext {
      * X.3 阶段会替换为从 BasicDataConfig 动态加载的版本。
      */
     public static SchemaContext defaultContext() {
+        // task-0723 B7.2：删除 8 条指向废弃 mat_* / plating_plan 表的中文逻辑名映射
+        // （元素BOM/来料BOM/组成件BOM/生产料号/工序资料/料号费用/客户料号对应/电镀方案）及其
+        // columnMapping。删除后若仍有配置引用这些逻辑名，resolveTable/resolveColumn 直接返回
+        // Optional.empty() → 上层抛「未知逻辑名」显式报错（潜伏陷阱变显式报错，配置层实测 0 命中）。
+        // 保留：电镀费用→plating_fee（V6 活表）、汇率→exchange_rate、客户税率→customer_tax。
         return builder()
                 .version("v1")
                 // 中文 Sheet 名 → 物理表名
-                .tableMapping("元素BOM",    "mat_bom")
-                .tableMapping("来料BOM",    "mat_bom")
-                .tableMapping("组成件BOM",  "mat_bom")
-                .tableMapping("生产料号",    "mat_part")
-                .tableMapping("工序资料",    "mat_process")
-                .tableMapping("电镀方案",    "plating_plan")
-                .tableMapping("料号费用",    "mat_fee")
                 .tableMapping("电镀费用",    "plating_fee")
-                .tableMapping("客户料号对应", "mat_customer_part_mapping")
                 .tableMapping("汇率",       "exchange_rate")
                 .tableMapping("客户税率",    "customer_tax")
-                // 常用字段中文→物理列名
-                .columnMapping("元素BOM", "元素",      "element_name")
-                .columnMapping("元素BOM", "组成含量",   "composition_pct")
-                .columnMapping("元素BOM", "组成含量(%)", "composition_pct")
-                .columnMapping("来料BOM", "来料料号",    "input_material_no")
-                .columnMapping("来料BOM", "来料名称",    "input_material_name")
-                .columnMapping("生产料号", "料号",       "part_no")
-                .columnMapping("生产料号", "料号名称",    "part_name")
-                .columnMapping("生产料号", "单重",       "unit_weight")
                 .build();
     }
 }

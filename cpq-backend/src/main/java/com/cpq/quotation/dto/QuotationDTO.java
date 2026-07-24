@@ -1,7 +1,6 @@
 package com.cpq.quotation.dto;
 
 import com.cpq.quotation.entity.*;
-import com.cpq.quotation.service.DriftDetectionService.RefVersionEntry;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -81,19 +80,8 @@ public class QuotationDTO {
     public List<LineItemDTO> lineItems;
     public List<ApprovalDTO> approvalHistory;
 
-    // ---- v5.1 §6.6 DRAFT 漂移检测字段（仅 DRAFT 状态 getById 时填充）----
-
-    /**
-     * referencedVersions 快照（反序列化后）：表名 → 业务键 → RefVersionEntry{version, recordId}。
-     * D-3：升级为含 recordId 的结构，前端 SnapshotTab 可直接用 recordId 调版本对比 API。
-     */
-    public Map<String, Map<String, RefVersionEntry>> referencedVersions;
-
-    /** 是否存在漂移（仅 DRAFT 状态）*/
-    public boolean hasDrift;
-
-    /** 漂移明细列表（hasDrift=true 时非空）*/
-    public List<DriftedRecordDTO> driftedRecords;
+    // task-0723 B1: 漂移检测整体下线 — referencedVersions/hasDrift/driftedRecords 字段已删除
+    // (referenced_versions 列在 quotation 实体保留，历史兼容，但恒不再被解析/填充)。
 
     /** lazy-cardvalues：warm 在飞（未取到单飞锁）时为 true，前端据此显示 spinner/稍后重试。默认 false。 */
     public boolean cardValuesWarming = false;

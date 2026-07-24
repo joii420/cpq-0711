@@ -59,10 +59,12 @@ class CachedSchemaContextProviderTest {
         assertEquals("v2", v2.getVersion());
 
         // v1 entry 可以从 builder 方法直接解析表
-        assertTrue(v1.resolveTable("元素BOM").isPresent());
+        // task-0723 B7.2: "元素BOM" 等 8 条指向废弃表的逻辑名映射已从 defaultContext() 删除，
+        // 改用仍保留的 "电镀费用"（→ plating_fee，V6 活表）验证同样的解析行为。
+        assertTrue(v1.resolveTable("电镀费用").isPresent());
         // v2 entry 只含 mat_part 映射
         assertTrue(v2.resolveTable("mat_part").isPresent());
-        assertFalse(v2.resolveTable("元素BOM").isPresent());
+        assertFalse(v2.resolveTable("电镀费用").isPresent());
     }
 
     // ── 4. invalidate 后 loader 重新调用 ─────────────────────────────────

@@ -11,17 +11,11 @@ import com.cpq.engine.discount.DiscountResult;
 import com.cpq.formula.FormulaError;
 import com.cpq.formula.calculator.DerivedAttributeCalculatorV5;
 import com.cpq.basicdata.entity.DerivedAttribute;
-import com.cpq.importexcel.dto.ImportResultDTO;
-import com.cpq.importexcel.entity.ImportRecord;
-import com.cpq.importexcel.service.BasicDataImportServiceV5;
 import com.cpq.product.entity.Product;
 import com.cpq.quotation.dto.CreateQuotationRequest;
-import com.cpq.quotation.dto.DriftedRecordDTO;
 import com.cpq.quotation.dto.QuotationDTO;
 import com.cpq.quotation.dto.SaveDraftRequest;
 import com.cpq.quotation.entity.*;
-import com.cpq.quotation.service.DriftDetectionService;
-import com.cpq.quotation.service.DriftDetectionService.DriftDetectionResult;
 import com.cpq.quotation.snapshot.FieldTraceDTO;
 import com.cpq.quotation.snapshot.SnapshotCollectorService;
 import com.cpq.quotation.snapshot.SnapshotCollectorService.SubmissionSnapshot;
@@ -34,8 +28,6 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
-
-import java.io.InputStream;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -59,9 +51,6 @@ public class QuotationService {
     ApprovalRoutingService approvalRoutingService;
 
     @Inject
-    DriftDetectionService driftDetectionService;
-
-    @Inject
     DerivedAttributeCalculatorV5 derivedAttributeCalculatorV5;
 
     @Inject
@@ -69,9 +58,6 @@ public class QuotationService {
 
     @Inject
     com.cpq.quotation.service.rowkey.RowKeyUniquenessService rowKeyUniquenessService;
-
-    @Inject
-    BasicDataImportServiceV5 basicDataImportServiceV5;
 
     /** 阶段 2: 组件 SQL 视图冻结服务（SUBMITTED 时调 snapshotForComponents 写 quotation_component_sql_snapshot） */
     @Inject
@@ -165,11 +151,6 @@ public class QuotationService {
         dto.lineItems = loadLineItems(id);
         dto.approvalHistory = loadApprovalHistory(id);
 
-        // v5.1 §6.6 DRAFT 漂移检测：仅 DRAFT 状态触发
-        if ("DRAFT".equals(q.status)) {
-            populateDriftInfo(dto, q);
-        }
-
         // Phase 2 渲染脱钩: 报价单级 4 份结构快照(从 quotation_view_structure 读填充)
         populateViewStructures(dto, id);
 
@@ -234,26 +215,6 @@ public class QuotationService {
                 }
             } catch (Exception ignore) { /* 结构缺失/损坏 → 该份为 null, 不阻断 */ }
         }
-    }
-
-    /**
-     * 填充漂移检测信息到 DTO。
-     * D-3：referencedVersions 反序列化为新格式 Map&lt;table, Map&lt;bk, RefVersionEntry&gt;&gt;。
-     */
-    private void populateDriftInfo(QuotationDTO dto, Quotation q) {
-        // D-3：反序列化 referencedVersions 到 DTO（兼容旧格式 int + 新格式 object）
-        if (q.referencedVersions != null && !q.referencedVersions.isBlank()) {
-            try {
-                dto.referencedVersions = driftDetectionService.parseReferencedVersions(q.referencedVersions);
-            } catch (Exception e) {
-                LOG.warnf("Failed to deserialize referencedVersions for quotation=%s: %s", q.id, e.getMessage());
-            }
-        }
-
-        // 漂移检测
-        DriftDetectionResult result = driftDetectionService.detect(q.referencedVersions);
-        dto.hasDrift = result.hasDrift();
-        dto.driftedRecords = result.driftedRecords();
     }
 
     @Transactional
@@ -416,7 +377,6 @@ public class QuotationService {
                 for (QuotationLineItem ex : existingLines) existingById.put(ex.id, ex);
                 java.util.Set<java.util.UUID> keptIds = new java.util.HashSet<>();
                 BigDecimal total = BigDecimal.ZERO;
-                Set<String> collectedPartNos = new LinkedHashSet<>();
                 // V169 二阶段 parent_line_item_id 重建用: index → 行 UUID 的映射(复用行=原 id, 新行=新 id)
                 java.util.UUID[] newIdsByIndex = new java.util.UUID[request.lineItems.size()];
 
@@ -501,30 +461,14 @@ public class QuotationService {
                     li.costingCardValues = null;
                     newIdsByIndex[i] = li.id;  // V169 二阶段父子关系重建用
 
-                    // 料号版本管理 (S5): 拷贝 mat_customer_part_mapping.current_version → part_version_locked
-                    // 业务功能不变 — 仅写入 line_item 的版本快照, 读路径仍按旧方式工作
-                    if (li.customerPartNo != null && !li.customerPartNo.isBlank()
-                            && li.productPartNoSnapshot != null && !li.productPartNoSnapshot.isBlank()) {
-                        try {
-                            Object cur = em.createNativeQuery(
-                                    "SELECT current_version FROM mat_customer_part_mapping " +
-                                    "WHERE customer_product_no = :cpn AND hf_part_no = :hf LIMIT 1")
-                                    .setParameter("cpn", li.customerPartNo)
-                                    .setParameter("hf", li.productPartNoSnapshot)
-                                    .getResultList().stream().findFirst().orElse(null);
-                            if (cur != null) {
-                                li.partVersionLocked = ((Number) cur).intValue();
-                            }
-                        } catch (Exception e) {
-                            // 失败保留默认 2000, 不阻塞报价单创建
-                        }
-                    }
+                    // task-0723 B3: 料号版本族整族下线 — 原 S5 块拷贝 mat_customer_part_mapping.current_version
+                    // → part_version_locked，该表 current_version 从未被真实升版（恒 2000），已随
+                    // PartVersionService/import-session 一并退役。part_version_locked 列保留但不再写入。
 
-                    // 收集 partNo 供版本快照（通过 Product 查询 HF 料号）
+                    // 通过 Product 查询 HF 料号，同步快照列
                     if (liDraft.productId != null) {
                         Product product = Product.findById(liDraft.productId);
                         if (product != null && product.partNo != null) {
-                            collectedPartNos.add(product.partNo);
                             // 把 productPartNo / productName 同步到快照列，
                             // 这样即便后续 product 行被改、被删，列表 DTO 仍能给出料号。
                             li.productPartNoSnapshot = product.partNo;
@@ -691,13 +635,6 @@ public class QuotationService {
                         .executeUpdate();
                 }
 
-                // v5.1 §6.6 收集版本快照
-                if (!collectedPartNos.isEmpty()) {
-                    String versionsJson = driftDetectionService.collectReferencedVersions(
-                            q.customerId, new ArrayList<>(collectedPartNos));
-                    q.referencedVersions = versionsJson;
-                    LOG.debugf("Recorded referencedVersions for quotation=%s partNos=%s", q.id, collectedPartNos);
-                }
             } // end per-row path
         }
 
@@ -706,91 +643,6 @@ public class QuotationService {
         QuotationDTO dto = QuotationDTO.from(q);
         dto.lineItems = loadLineItems(id);
 
-        // 漂移信息（saveDraft 后返回最新状态）
-        populateDriftInfo(dto, q);
-
-        return dto;
-    }
-
-    /**
-     * 记录/更新 DRAFT 报价单的 referenced_versions 快照（不重算公式）。
-     * 仅在创建时或手动刷新前调用。
-     */
-    @Transactional
-    public QuotationDTO recordReferencedVersions(UUID quotationId) {
-        Quotation q = Quotation.findById(quotationId);
-        if (q == null) throw new BusinessException(404, "Quotation not found: " + quotationId);
-        if (!"DRAFT".equals(q.status)) throw new BusinessException(400, "只有 DRAFT 状态的报价单可更新版本快照");
-
-        List<String> partNos = collectPartNosFromLineItems(quotationId);
-        if (!partNos.isEmpty()) {
-            q.referencedVersions = driftDetectionService.collectReferencedVersions(q.customerId, partNos);
-        }
-        q.persist();
-
-        QuotationDTO dto = QuotationDTO.from(q);
-        populateDriftInfo(dto, q);
-        return dto;
-    }
-
-    /**
-     * 用户接受漂移后：重新计算公式 + 更新 referenced_versions 为当前版本。
-     *
-     * @param quotationId   报价单 ID
-     * @param currentUserId 当前操作用户（需为 SALES_REP）
-     */
-    @Transactional
-    public QuotationDTO refreshVersions(UUID quotationId, UUID currentUserId) {
-        Quotation q = Quotation.findById(quotationId);
-        if (q == null) throw new BusinessException(404, "Quotation not found: " + quotationId);
-        // v5.1 §10 卫语句：SUBMITTED 报价单不允许刷新版本（快照已冻结）
-        if ("SUBMITTED".equals(q.status)) throw new BusinessException(409, "SUBMITTED 报价不可刷新版本");
-        if (!"DRAFT".equals(q.status)) throw new BusinessException(400, "只有 DRAFT 状态的报价单可刷新版本");
-
-        // 权限校验：仅 SALES_REP（或 SYSTEM_ADMIN）可调用
-        if (currentUserId != null) {
-            User user = User.findById(currentUserId);
-            if (user == null || (!"SALES_REP".equals(user.role) && !"SYSTEM_ADMIN".equals(user.role))) {
-                throw new BusinessException(403, "仅销售代表（SALES_REP）可刷新报价版本");
-            }
-        }
-
-        List<String> partNos = collectPartNosFromLineItems(quotationId);
-
-        // 重新计算公式
-        List<QuotationLineItem> lineItems = QuotationLineItem.list("quotationId = ?1 ORDER BY sortOrder ASC", quotationId);
-        for (QuotationLineItem li : lineItems) {
-            if (li.productId == null) continue;
-            Product product = Product.findById(li.productId);
-            if (product == null || product.partNo == null) continue;
-            try {
-                List<DerivedAttribute> derivedAttrs = loadDerivedAttributes(product.partNo);
-                if (!derivedAttrs.isEmpty()) {
-                    Map<String, Object> calcResults = derivedAttributeCalculatorV5.calculate(
-                            q.customerId, product.partNo, derivedAttrs);
-                    if (!calcResults.isEmpty()) {
-                        li.productAttributeValues = mergeFormulaResults(li.productAttributeValues, calcResults);
-                    }
-                    logFormulaErrors(calcResults, q.id, product.partNo);
-                }
-            } catch (Exception e) {
-                LOG.warnf("refreshVersions formula failed quotation=%s partNo=%s: %s",
-                        q.id, product.partNo, e.getMessage());
-            }
-        }
-
-        // 更新版本快照为当前 current 版本
-        if (!partNos.isEmpty()) {
-            q.referencedVersions = driftDetectionService.collectReferencedVersions(q.customerId, partNos);
-        }
-        q.persist();
-        em.flush();
-
-        LOG.infof("refreshVersions done for quotation=%s", quotationId);
-
-        QuotationDTO dto = QuotationDTO.from(q);
-        dto.lineItems = loadLineItems(quotationId);
-        populateDriftInfo(dto, q);
         return dto;
     }
 
@@ -1937,28 +1789,10 @@ public class QuotationService {
 
         QuotationDTO dto = QuotationDTO.from(q);
         dto.lineItems = loadLineItems(id);
-        populateDriftInfo(dto, q);
         return dto;
     }
 
     // --- Private helpers ---
-
-    /**
-     * 从 QuotationLineItem 中收集本报价单涉及的所有 hf_part_no。
-     */
-    private List<String> collectPartNosFromLineItems(UUID quotationId) {
-        List<QuotationLineItem> items = QuotationLineItem.list("quotationId = ?1", quotationId);
-        Set<String> partNos = new LinkedHashSet<>();
-        for (QuotationLineItem li : items) {
-            if (li.productId != null) {
-                Product product = Product.findById(li.productId);
-                if (product != null && product.partNo != null) {
-                    partNos.add(product.partNo);
-                }
-            }
-        }
-        return new ArrayList<>(partNos);
-    }
 
     /**
      * 加载指定料号对应的衍生属性列表（按 sortOrder 排序）。
@@ -2157,10 +1991,6 @@ public class QuotationService {
         }
 
         // ── 主循环：persist 行实体 + 子表 ────────────────────────────────────────────────────
-        // E2 收集：需要版本查询的 (cpn, hf) 对 → lineItem 回填
-        // key = cpn + " " + hf（零字节分隔，两字段均不含此字符）
-        java.util.Map<String, List<QuotationLineItem>> cpnHfToLines = new java.util.LinkedHashMap<>();
-
         // E3 收集：需要 seed 工序的 (lineItemId → partNo) 对
         java.util.Map<java.util.UUID, String> seedProcLines = new java.util.LinkedHashMap<>();
 
@@ -2170,7 +2000,6 @@ public class QuotationService {
         java.util.List<String> derivedAttrPartNos = new java.util.ArrayList<>();
 
         BigDecimal total = BigDecimal.ZERO;
-        Set<String> collectedPartNos = new LinkedHashSet<>();
         java.util.UUID[] newIdsByIndex = new java.util.UUID[request.lineItems.size()];
         com.fasterxml.jackson.databind.ObjectMapper cpOm = new com.fasterxml.jackson.databind.ObjectMapper();
 
@@ -2220,39 +2049,12 @@ public class QuotationService {
             li.costingCardValues = null;
             newIdsByIndex[i] = li.id;
 
-            // E2 收集：有 cpn + hf 才加入批量版本查
-            if (li.customerPartNo != null && !li.customerPartNo.isBlank()
-                    && li.productPartNoSnapshot != null && !li.productPartNoSnapshot.isBlank()) {
-                String key = li.customerPartNo + " " + li.productPartNoSnapshot;
-                cpnHfToLines.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(li);
-            }
-
             // Product 查询：填充 productPartNoSnapshot / productNameSnapshot，收集 partNo
             if (liDraft.productId != null) {
                 Product product = Product.findById(liDraft.productId);
                 if (product != null && product.partNo != null) {
-                    collectedPartNos.add(product.partNo);
                     li.productPartNoSnapshot = product.partNo;
                     li.productNameSnapshot = product.name;
-                    // E2：product 覆盖了 productPartNoSnapshot，需要重新更新 E2 收集 key
-                    // 先移除原来按旧 snapshot 加的条目，再按新 snapshot 重新加
-                    if (li.customerPartNo != null && !li.customerPartNo.isBlank()) {
-                        // 移除旧 key（如果存在且 hf 字段刚被 product 覆盖）
-                        String oldHf = liDraft.productPartNo != null && !liDraft.productPartNo.isBlank()
-                                ? liDraft.productPartNo : null;
-                        if (oldHf != null && !oldHf.equals(product.partNo)) {
-                            String oldKey = li.customerPartNo + " " + oldHf;
-                            List<QuotationLineItem> oldList = cpnHfToLines.get(oldKey);
-                            if (oldList != null) {
-                                oldList.remove(li);
-                                if (oldList.isEmpty()) cpnHfToLines.remove(oldKey);
-                            }
-                        }
-                        // 加入新 key
-                        String newKey = li.customerPartNo + " " + product.partNo;
-                        cpnHfToLines.computeIfAbsent(newKey, k -> new java.util.ArrayList<>()).add(li);
-                    }
-
                     // E4 收集：有 derivedAttrs 的行
                     // 注意：这里只收集，实际计算在循环结束后批量处理
                     derivedAttrLines.add(li);
@@ -2339,42 +2141,6 @@ public class QuotationService {
                 }
             }
         } // end main loop
-
-        // ── E2 批量版本查询 ────────────────────────────────────────────────────────────────────
-        // 一次 IN 查询，按 (cpn, hf) 回填 partVersionLocked
-        if (!cpnHfToLines.isEmpty()) {
-            try {
-                // 构造 (cpn, hf) 对列表
-                java.util.List<String> cpns = new java.util.ArrayList<>();
-                java.util.List<String> hfs = new java.util.ArrayList<>();
-                for (String key : cpnHfToLines.keySet()) {
-                    int sep = key.indexOf(' ');
-                    cpns.add(key.substring(0, sep));
-                    hfs.add(key.substring(sep + 1));
-                }
-                // PostgreSQL：(cpn, hf) IN (...) 写法；用 unnest 两个数组 JOIN 方式最稳健
-                List<Object[]> versionRows = em.createNativeQuery(
-                        "SELECT m.customer_product_no, m.hf_part_no, m.current_version " +
-                        "FROM mat_customer_part_mapping m " +
-                        "JOIN (SELECT unnest(CAST(:cpns AS text[])) AS cpn, unnest(CAST(:hfs AS text[])) AS hf) pairs " +
-                        "  ON m.customer_product_no = pairs.cpn AND m.hf_part_no = pairs.hf")
-                    .setParameter("cpns", cpns.toArray(new String[0]))
-                    .setParameter("hfs", hfs.toArray(new String[0]))
-                    .getResultList();
-                for (Object[] row : versionRows) {
-                    String cpn = (String) row[0];
-                    String hf  = (String) row[1];
-                    int ver = ((Number) row[2]).intValue();
-                    String key = cpn + " " + hf;
-                    List<QuotationLineItem> lis = cpnHfToLines.get(key);
-                    if (lis != null) {
-                        for (QuotationLineItem lx : lis) lx.partVersionLocked = ver;
-                    }
-                }
-            } catch (Exception e) {
-                LOG.warnf("[batch-E2] mat_customer_part_mapping 批量版本查询失败(降级): %s", e.getMessage());
-            }
-        }
 
         // ── E4 derivedAttr 批量计算 + 末尾统一 flush ─────────────────────────────────────────
         // 公式纯函数；去掉 per-row flush，循环结束后统一一次 flush。
@@ -2497,13 +2263,6 @@ public class QuotationService {
             }
         }
 
-        // ── 收集版本快照（v5.1 §6.6） ─────────────────────────────────────────────────────────
-        if (!collectedPartNos.isEmpty()) {
-            String versionsJson = driftDetectionService.collectReferencedVersions(
-                    q.customerId, new ArrayList<>(collectedPartNos));
-            q.referencedVersions = versionsJson;
-            LOG.debugf("Recorded referencedVersions for quotation=%s partNos=%s", quotationId, collectedPartNos);
-        }
     }
 
     private void deleteLineItems(UUID quotationId) {
@@ -2528,65 +2287,17 @@ public class QuotationService {
                 }).collect(Collectors.toList());
     }
 
-    /**
-     * QIMP-V5-REIMPORT-15/16: 重新导入报价单的基础数据。
-     *
-     * <p>业务规则:
-     * <ul>
-     *   <li>仅 DRAFT 状态可重导；其他状态返回 400</li>
-     *   <li>复用 BasicDataImportServiceV5 的 parse + 写入逻辑</li>
-     *   <li>创建新 ImportRecord 并关联到 quotation_id</li>
-     *   <li>line_items 全量替换（先删旧的）</li>
-     *   <li>重置漂移检测（清空 referenced_versions，强制重新采集）</li>
-     * </ul>
-     *
-     * @param id     报价单 ID
-     * @param stream Excel 文件输入流
-     * @param userId 当前操作用户 ID
-     * @return 导入结果 DTO
-     */
-    @Transactional
-    public ImportResultDTO reimportBasicData(UUID id, InputStream stream, UUID userId) {
-        Quotation q = Quotation.findById(id);
-        if (q == null) {
-            throw new BusinessException(404, "Quotation not found: " + id);
-        }
-        if (!"DRAFT".equals(q.status)) {
-            throw new BusinessException(400, "已提交报价单不可重新导入，请先撤回");
-        }
-
-        // Delete existing line items (cascade to child tables)
-        deleteLineItems(id);
-
-        // Reset referenced versions to force drift re-detection after reimport
-        q.referencedVersions = null;
-        em.flush();
-
-        // Run V5 import against the quotation's customer
-        ImportResultDTO result = basicDataImportServiceV5.importBasicDataV5(stream, q.customerId, userId);
-
-        // Associate the newly created ImportRecord with this quotation
-        if (result.importRecordId != null) {
-            ImportRecord rec = ImportRecord.findById(result.importRecordId);
-            if (rec != null) {
-                rec.quotationId = id;
-                // No explicit persist needed — Panache entity is already managed
-            }
-        }
-
-        LOG.infof("reimportBasicData done for quotation=%s customerId=%s importRecord=%s status=%s",
-                id, q.customerId, result.importRecordId, result.status);
-
-        return result;
-    }
+    // task-0723 B5: V5/import-session 死链路退役 — reimportBasicData 已删除
+    // (依赖的 BasicDataImportServiceV5 已整体退役, basicdata.v6 是唯一正式导入路径)。
 
     private List<QuotationDTO.LineItemDTO> loadLineItems(UUID quotationId) {
         List<QuotationLineItem> items = QuotationLineItem.list("quotationId = ?1 ORDER BY sortOrder ASC", quotationId);
         if (items.isEmpty()) return List.of();
 
-        // 一次性按 (customerId, hf_part_no) 批量查 mat_customer_part_mapping，避免 N+1。
+        // task-0723 B2: 一次性按 (customer.code, material_no) 批量查 V6 material_customer_map，避免 N+1。
         // customerId 来自 quotation；hf_part_no 列表来自 lineItems 的 product_part_no_snapshot
         // 或 product 表反查。前端"客户视角"展示这两个字段（PRD：产品卡片显示客户料号名称 + 客户产品编号）
+        // 全键严格匹配 (customer.code, material_no)，不做仅料号降级（防跨客户串号，见需求说明 Q5）。
         UUID customerId = items.get(0).quotationId == null ? null : (Quotation.findById(quotationId) instanceof Quotation q ? q.customerId : null);
         Map<String, Object[]> customerMappingByHfPartNo = new HashMap<>();
         Map<String, Object[]> matPartByHfPartNo = new HashMap<>();
@@ -2600,9 +2311,9 @@ public class QuotationService {
         if (customerId != null && !hfPartNos.isEmpty()) {
             @SuppressWarnings("unchecked")
             List<Object[]> rows = em.createNativeQuery(
-                    "SELECT hf_part_no, customer_part_name, customer_product_no, customer_drawing_no " +
-                    "FROM mat_customer_part_mapping " +
-                    "WHERE customer_id = :cid AND hf_part_no IN (:pns)")
+                    "SELECT v.material_no, v.customer_material_name, v.customer_product_no, v.customer_drawing_no " +
+                    "FROM material_customer_map v JOIN customer c ON c.code = v.customer_no " +
+                    "WHERE c.id = :cid AND v.material_no IN (:pns)")
                     .setParameter("cid", customerId)
                     .setParameter("pns", hfPartNos)
                     .getResultList();
@@ -2794,52 +2505,9 @@ public class QuotationService {
         return null;
     }
 
-    /**
-     * 料号版本管理 (新需求): 更改某 line_item 的 part_version_locked.
-     * 仅 DRAFT 态可改; 目标版本必须在 mat_part_version_log 历史中存在 (v2000 是基线, 永远合法).
-     */
-    @Transactional
-    public String updateLineItemPartVersion(UUID quotationId, UUID lineItemId, int newVersion) {
-        Quotation q = Quotation.findById(quotationId);
-        if (q == null) {
-            throw new BusinessException(404, "Quotation not found: " + quotationId);
-        }
-        if (!"DRAFT".equals(q.status)) {
-            throw new BusinessException(400, "只有草稿状态的报价单可以切换料号版本");
-        }
-        QuotationLineItem li = QuotationLineItem.findById(lineItemId);
-        if (li == null || !quotationId.equals(li.quotationId)) {
-            throw new BusinessException(404, "Line item not found in this quotation: " + lineItemId);
-        }
-        if (li.customerPartNo == null || li.customerPartNo.isBlank()
-                || li.productPartNoSnapshot == null || li.productPartNoSnapshot.isBlank()) {
-            throw new BusinessException(400,
-                    "该行缺少 customer_product_no 或 hf_part_no, 无法切换版本");
-        }
-        if (newVersion < 2000) {
-            throw new BusinessException(400, "Invalid version: " + newVersion);
-        }
-        if (newVersion > 2000) {
-            Object exists = em.createNativeQuery(
-                    "SELECT 1 FROM mat_part_version_log " +
-                    "WHERE customer_product_no = :cpn AND hf_part_no = :hf AND version = :v")
-                    .setParameter("cpn", li.customerPartNo)
-                    .setParameter("hf", li.productPartNoSnapshot)
-                    .setParameter("v", newVersion)
-                    .getResultList().stream().findFirst().orElse(null);
-            if (exists == null) {
-                throw new BusinessException(400, "版本 v" + newVersion + " 不在 ("
-                        + li.customerPartNo + ", " + li.productPartNoSnapshot + ") 的历史中");
-            }
-        }
-        li.partVersionLocked = newVersion;
-        li.persist();
-        // V6: 版本切换后重算整单所有 line_item 的 excel_view_snapshot
-        excelViewService.regenerateAllSnapshots(quotationId);
-        // 重读切换的 line_item 拿最新 snapshot 返给前端立即渲染
-        QuotationLineItem refreshed = QuotationLineItem.findById(lineItemId);
-        return refreshed != null ? refreshed.excelViewSnapshot : null;
-    }
+    // task-0723 B3: 料号版本族整族下线 — updateLineItemPartVersion 已删除
+    // (part_version_locked 138/138=2000 从未生效, mat_part_version_log 随
+    // PartVersionService 一并退役; part_version_locked 列保留但不再可写)。
 
     /**
      * Admin heal: 把所有 quotation_line_component_data 的 tab_name 重写为模板 snapshot 权威值,

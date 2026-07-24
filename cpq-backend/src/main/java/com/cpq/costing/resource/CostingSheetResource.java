@@ -4,7 +4,6 @@ import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.costing.dto.ComparisonDTO;
 import com.cpq.costing.dto.ComparisonExportRequest;
-import com.cpq.costing.dto.CostingSheetDTO;
 import com.cpq.costing.service.ComparisonExportService;
 import com.cpq.costing.service.CostingSheetService;
 import jakarta.inject.Inject;
@@ -25,12 +24,7 @@ public class CostingSheetResource {
     @Inject
     ComparisonExportService comparisonExportService;
 
-    @GET
-    @Path("/{id}/costing-sheet")
-    @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
-    public ApiResponse<CostingSheetDTO> getCostingSheet(@PathParam("id") UUID quotationId) {
-        return ApiResponse.success(service.getByQuotation(quotationId));
-    }
+    // task-0723 B6: 旧核价引擎退役 — getCostingSheet() 端点已删除 (GET /{id}/costing-sheet, 421 死代码)。
 
     @GET
     @Path("/{id}/comparison")

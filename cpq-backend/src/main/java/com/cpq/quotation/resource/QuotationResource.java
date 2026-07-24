@@ -5,7 +5,6 @@ import com.cpq.common.dto.PageResult;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.common.security.SessionHelper;
-import com.cpq.importexcel.dto.ImportResultDTO;
 import com.cpq.quotation.dto.CreateQuotationRequest;
 import com.cpq.quotation.dto.ExcelDryRunRequest;
 import com.cpq.quotation.dto.QuotationDTO;
@@ -16,8 +15,6 @@ import com.cpq.quotation.service.QuotationExportService;
 import com.cpq.quotation.service.CustomerPartCandidateService;
 import com.cpq.quotation.service.QuotationService;
 import com.cpq.quotation.dto.CustomerPartCandidateDTO;
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.List;
 import com.cpq.quotation.snapshot.FieldTraceDTO;
@@ -29,8 +26,6 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import org.jboss.resteasy.reactive.RestForm;
-import org.jboss.resteasy.reactive.multipart.FileUpload;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -146,33 +141,6 @@ public class QuotationResource {
         LOG.debugf("[draft-profile] id=%s total=%dms | S1.saveDraft=%dms S2.snapshotRows=%dms",
                 id, _s1 + _s2, _s1, _s2);
         return ApiResponse.success(dto);
-    }
-
-    /**
-     * 料号版本管理: 切换某 line_item 的 part_version_locked. 仅 DRAFT 态可改.
-     */
-    @PUT
-    @Path("/{id}/line-items/{lineItemId}/part-version")
-    public ApiResponse<Map<String, Object>> updateLineItemPartVersion(
-            @PathParam("id") UUID id,
-            @PathParam("lineItemId") UUID lineItemId,
-            Map<String, Object> body) {
-        if (body == null || body.get("version") == null) {
-            throw new com.cpq.common.exception.BusinessException(400, "version 不能为空");
-        }
-        int version;
-        try {
-            version = Integer.parseInt(body.get("version").toString());
-        } catch (NumberFormatException e) {
-            throw new com.cpq.common.exception.BusinessException(400, "version must be an integer");
-        }
-        String snapshot = quotationService.updateLineItemPartVersion(id, lineItemId, version);
-        Map<String, Object> resp = new HashMap<>();
-        resp.put("quotationId", id);
-        resp.put("lineItemId", lineItemId);
-        resp.put("partVersionLocked", version);
-        resp.put("excelViewSnapshot", snapshot);  // V6: 让前端立即按新版本数据渲染卡片
-        return ApiResponse.success(resp);
     }
 
     /**
@@ -550,19 +518,6 @@ public class QuotationResource {
         return ApiResponse.success(quotationService.accept(id, currentUserId));
     }
 
-    /**
-     * v5.1 §6.6 DRAFT 漂移检测：用户接受漂移后重新计算公式 + 更新 referenced_versions。
-     *
-     * <p>权限：仅 SALES_REP（或 SYSTEM_ADMIN）可调用；SALES_MANAGER 无操作权限。
-     */
-    @POST
-    @Path("/{id}/refresh-versions")
-    public ApiResponse<QuotationDTO> refreshVersions(@PathParam("id") UUID id,
-                                                      @Context HttpServerRequest request) {
-        UUID currentUserId = sessionHelper.getCurrentUserIdOrFallback(request);
-        return ApiResponse.success(quotationService.refreshVersions(id, currentUserId));
-    }
-
     @POST
     @Path("/{id}/reject-by-customer")
     public ApiResponse<QuotationDTO> rejectByCustomer(@PathParam("id") UUID id, Map<String, String> body,
@@ -572,35 +527,8 @@ public class QuotationResource {
         return ApiResponse.success(quotationService.rejectByCustomer(id, comment, currentUserId));
     }
 
-    /**
-     * QIMP-V5-REIMPORT-15/16: 重新导入报价单基础数据（仅 DRAFT 状态可用）。
-     *
-     * <p>Request (multipart/form-data):
-     *   - file: 新的 Excel 文件（.xlsx）
-     *
-     * <p>Response: ImportResultDTO（含 importRecordId、status、totalRows 等）
-     */
-    @POST
-    @Path("/{id}/reimport-basic-data")
-    @Consumes(MediaType.MULTIPART_FORM_DATA)
-    @RoleAllowed({"SALES_REP", "SALES_MANAGER", "SYSTEM_ADMIN"})
-    public ApiResponse<ImportResultDTO> reimportBasicData(
-            @PathParam("id") UUID id,
-            @RestForm("file") FileUpload file,
-            @Context HttpServerRequest request) {
-        if (file == null) {
-            throw new BusinessException(400, "file 不能为空");
-        }
-        UUID userId = sessionHelper.getCurrentUserIdOrFallback(request);
-        try (InputStream is = Files.newInputStream(file.uploadedFile())) {
-            ImportResultDTO result = quotationService.reimportBasicData(id, is, userId);
-            return ApiResponse.success(result);
-        } catch (BusinessException be) {
-            throw be;
-        } catch (Exception e) {
-            throw new BusinessException(400, "重新导入基础数据失败: " + e.getMessage());
-        }
-    }
+    // task-0723 B5: V5/import-session 死链路退役 — reimportBasicData 端点已删除
+    // (依赖的 BasicDataImportServiceV5 已整体退役, basicdata.v6 是唯一正式导入路径)。
 
     // ──────────────────────────────────────────────
     // driver 默认行墓碑端点（deletable-driver-rows）

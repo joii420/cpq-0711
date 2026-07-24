@@ -72,17 +72,19 @@ class CachePrewarmServiceTest {
     @Test
     @DisplayName("prewarm 返回正确的 total 与 succeeded 计数")
     void prewarm_returnsCorrectSummary() {
+        // task-0723 B7.2: "元素BOM" 已从 defaultContext() 删除（指向废弃 mat_bom 表的中文逻辑名），
+        // 改用仍保留的 "电镀费用"（→ plating_fee，V6 活表）验证同样的 3-路径全成功场景。
         List<String> paths = List.of(
                 "mat_part.part_no",
                 "mat_bom.element_name",
-                "元素BOM[元素='Ag'].组成含量"
+                "电镀费用.plating_process_fee"
         );
         CachePrewarmService.PrewarmResult result = prewarmService.prewarm(paths);
 
         assertEquals(3, result.total());
         // 3 条路径均可解析，但 SQL 可能因 schema 映射而失败；
         // succeeded 计数：AST 成功即算（即使 SQL 失败也不计入 failed）
-        // 实际上 mat_part.part_no / mat_bom.element_name / 元素BOM.组成含量 都在 defaultContext 中有映射
+        // 实际上 mat_part.part_no / mat_bom.element_name / 电镀费用.plating_process_fee 都在 defaultContext 中有映射
         assertEquals(3, result.succeeded());
         assertTrue(result.failed().isEmpty());
     }
