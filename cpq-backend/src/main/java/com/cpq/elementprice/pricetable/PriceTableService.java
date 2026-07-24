@@ -2,6 +2,8 @@ package com.cpq.elementprice.pricetable;
 
 import com.cpq.common.dto.PageResult;
 import com.cpq.common.exception.BusinessException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -13,21 +15,28 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
- * 价格表查询服务（task-0722 · B6，契约见 api.md §3）+ B7.1 各源最新价。
+ * 价格表查询服务（task-0722 · B6，契约见 api.md §3）+ B7.1 各源最新价 + update-0724 · B5 变更历史。
  */
 @ApplicationScoped
 public class PriceTableService {
 
     private static final long MAX_MATRIX_SPAN_DAYS = 90;
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Inject
     EntityManager em;
@@ -59,7 +68,8 @@ public class PriceTableService {
 
         Query dataQ = em.createNativeQuery(
                 "SELECT edp.element_name, e.element_name, edp.price_date, edp.source_id, s.source_name, s.status, " +
-                "       edp.raw_price, edp.currency, edp.price_unit, u.full_name, edp.updated_at" +
+                "       edp.raw_price, edp.currency, edp.price_unit, u.full_name, edp.updated_at, " +
+                "       edp.id, edp.fetch_status" +          // ← update-0724 · B3：新增两列追加到末尾，前面列顺序一格不动
                 fromClause + where +
                 " ORDER BY edp.price_date DESC, edp.element_name ASC" +
                 " LIMIT :limit OFFSET :offset");
@@ -94,7 +104,30 @@ public class PriceTableService {
         d.priceUnit = (String) r[8];
         d.operatorName = (String) r[9];
         d.updatedAt = toOffsetDateTime(r[10]);
+        d.id = r[11] != null ? (UUID) r[11] : null;       // ← update-0724 · B3：末尾追加下标，不动前面
+        d.fetchStatus = (String) r[12];
         return d;
+    }
+
+    // ──────────────────────────────── update-0724 · B4：按 id 取单行 ────────────────────────────────
+
+    /** 按 id 精确取单行完整 DTO（供 {@link PriceMaintenanceService} 写操作后返回结果用）。不存在返回 null。*/
+    @Transactional(Transactional.TxType.SUPPORTS)
+    public ElementPriceRowDTO findById(UUID id) {
+        String fromClause =
+                " FROM element_daily_price edp " +
+                " LEFT JOIN element e ON e.element_code = edp.element_name " +
+                " LEFT JOIN element_price_source s ON s.id = edp.source_id " +
+                " LEFT JOIN \"user\" u ON u.id = edp.updated_by ";
+        Query q = em.createNativeQuery(
+                "SELECT edp.element_name, e.element_name, edp.price_date, edp.source_id, s.source_name, s.status, " +
+                "       edp.raw_price, edp.currency, edp.price_unit, u.full_name, edp.updated_at, " +
+                "       edp.id, edp.fetch_status" +
+                fromClause + " WHERE edp.id = :id");
+        q.setParameter("id", id);
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = q.getResultList();
+        return rows.isEmpty() ? null : mapDetailRow(rows.get(0));
     }
 
     // ──────────────────────────────── 3.2 矩阵 ────────────────────────────────
@@ -276,6 +309,212 @@ public class PriceTableService {
             String bn = b.sourceName == null ? "" : b.sourceName;
             return an.compareTo(bn);
         });
+        return out;
+    }
+
+    // ──────────────────────────────── update-0724 · B5 变更历史 ────────────────────────────────
+
+    /**
+     * 变更历史查询（契约见 api.md §5）。算法比照 {@code StrategyService.listHistory}，
+     * 但价格日志无客户维度，不能照抄"全表 load"——先用 SQL 把候选集收敛到匹配筛选条件的
+     * "价格身份"，再取这些身份的完整时间线（diff 需要完整时间线，不能先按 changed_at 截断），
+     * 窗口过滤留到拍平后再做（与策略侧一致）。
+     */
+    @Transactional(Transactional.TxType.SUPPORTS)
+    public PageResult<PriceHistoryDTO> listHistory(UUID sourceId, LocalDate from, LocalDate to,
+                                                     String keyword, int page, int size) {
+        if (page < 0) page = 0;
+        if (size <= 0 || size > 200) size = 20;
+        boolean hasKw = keyword != null && !keyword.isBlank();
+
+        // to 是 date 但 changed_at 是 timestamptz：用 changed_at < (to+1天) 表达"含当天"，不用 <= to（会漏当天 00:00 之后的记录）。
+        OffsetDateTime fromTs = from != null ? from.atStartOfDay().atOffset(ZoneOffset.UTC) : null;
+        OffsetDateTime toExclusiveTs = to != null ? to.plusDays(1).atStartOfDay().atOffset(ZoneOffset.UTC) : null;
+
+        StringBuilder hitWhere = new StringBuilder(" WHERE 1=1 ");
+        if (sourceId != null) hitWhere.append(" AND l2.source_id = :sourceId ");
+        if (fromTs != null) hitWhere.append(" AND l2.changed_at >= :fromTs ");
+        if (toExclusiveTs != null) hitWhere.append(" AND l2.changed_at < :toExclusiveTs ");
+        if (hasKw) hitWhere.append(" AND (l2.element_name ILIKE :kw OR e.element_name ILIKE :kw) ");
+
+        String sql =
+                "SELECT l.id, l.element_name, l.source_id, l.price_date, l.action, l.snapshot::text, " +
+                "       l.changed_at, l.changed_by_name " +
+                "FROM element_daily_price_log l " +
+                "JOIN ( " +
+                "  SELECT DISTINCT l2.element_name, COALESCE(l2.source_id::text,'') AS sid, l2.price_date " +
+                "  FROM element_daily_price_log l2 " +
+                "  LEFT JOIN element e ON e.element_code = l2.element_name " +
+                hitWhere +
+                ") hit " +
+                "  ON hit.element_name = l.element_name " +
+                " AND hit.sid = COALESCE(l.source_id::text,'') " +
+                " AND hit.price_date = l.price_date " +
+                "ORDER BY l.element_name, COALESCE(l.source_id::text,''), l.price_date, l.changed_at ASC";
+
+        Query q = em.createNativeQuery(sql);
+        if (sourceId != null) q.setParameter("sourceId", sourceId);
+        if (fromTs != null) q.setParameter("fromTs", fromTs);
+        if (toExclusiveTs != null) q.setParameter("toExclusiveTs", toExclusiveTs);
+        if (hasKw) q.setParameter("kw", "%" + keyword.trim() + "%");
+
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = q.getResultList();
+
+        // 分组：按"价格身份" = (element_name, COALESCE(source_id,''), price_date)；
+        // SQL 已按该键 + changed_at ASC 排序，同组行在结果集中连续，无需再排序。
+        LinkedHashMap<String, List<Object[]>> groups = new LinkedHashMap<>();
+        for (Object[] r : rows) {
+            String elementCode = (String) r[1];
+            UUID sid = r[2] != null ? (UUID) r[2] : null;
+            LocalDate pd = toLocalDate(r[3]);
+            String gk = elementCode + "||" + (sid != null ? sid.toString() : "") + "||" + pd;
+            groups.computeIfAbsent(gk, k -> new ArrayList<>()).add(r);
+        }
+
+        List<String> codes = rows.stream().map(r -> (String) r[1]).distinct().collect(Collectors.toList());
+        List<UUID> sourceIds = rows.stream().map(r -> r[2] != null ? (UUID) r[2] : null)
+                .filter(Objects::nonNull).distinct().collect(Collectors.toList());
+        Map<String, String> elementNames = loadElementNamesForCodes(codes);
+        Map<UUID, String> sourceNames = loadSourceNamesForIds(sourceIds);
+
+        List<PriceHistoryDTO> diffed = new ArrayList<>();
+        for (List<Object[]> group : groups.values()) {
+            JsonNode prevSnap = null;
+            for (Object[] r : group) {
+                UUID id = (UUID) r[0];
+                String elementCode = (String) r[1];
+                UUID sid = r[2] != null ? (UUID) r[2] : null;
+                LocalDate priceDate = toLocalDate(r[3]);
+                String action = (String) r[4];
+                String snapshotText = (String) r[5];
+                OffsetDateTime changedAt = toOffsetDateTime(r[6]);
+                String changedByName = (String) r[7];
+
+                JsonNode snap = parseSnapshot(snapshotText);
+                PriceHistoryDTO dto = new PriceHistoryDTO();
+                dto.id = id;
+                dto.changedAt = changedAt;
+                dto.changedByName = changedByName;
+                dto.action = action;
+                dto.elementCode = elementCode;
+                dto.elementName = elementNames.getOrDefault(elementCode, elementCode);
+                dto.sourceId = sid;
+                dto.sourceName = sid != null ? sourceNames.get(sid) : null;
+                dto.priceDate = priceDate;
+                dto.targetLabel = buildHistoryTargetLabel(elementCode, dto.elementName, dto.sourceName, priceDate);
+                dto.snapshot = snap;
+                dto.changes = ("UPDATE".equals(action) && prevSnap != null)
+                        ? diffPriceSnapshots(prevSnap, snap) : new ArrayList<>();
+                diffed.add(dto);
+
+                prevSnap = "DELETE".equals(action) ? null : snap;
+            }
+        }
+
+        List<PriceHistoryDTO> filtered = diffed.stream()
+                .filter(d -> fromTs == null || !d.changedAt.isBefore(fromTs))
+                .filter(d -> toExclusiveTs == null || d.changedAt.isBefore(toExclusiveTs))
+                .sorted((a, b) -> b.changedAt.compareTo(a.changedAt))
+                .collect(Collectors.toList());
+
+        long total = filtered.size();
+        int fromIdx = Math.min(page * size, filtered.size());
+        int toIdx = Math.min(fromIdx + size, filtered.size());
+        return new PageResult<>(filtered.subList(fromIdx, toIdx), page, size, total);
+    }
+
+    private String buildHistoryTargetLabel(String elementCode, String elementName, String sourceName, LocalDate priceDate) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(elementCode);
+        if (elementName != null && !elementName.equals(elementCode)) sb.append(" ").append(elementName);
+        sb.append(" · ").append(sourceName != null ? sourceName : "—");
+        sb.append(" · ").append(priceDate != null ? priceDate.toString() : "—");
+        return sb.toString();
+    }
+
+    private List<PriceChangeDTO> diffPriceSnapshots(JsonNode prev, JsonNode curr) {
+        List<PriceChangeDTO> changes = new ArrayList<>();
+        String prevPrice = decimalOrNull(prev, "price");
+        String currPrice = decimalOrNull(curr, "price");
+        if (!Objects.equals(prevPrice, currPrice)) {
+            changes.add(new PriceChangeDTO("price", "单价", prevPrice, currPrice));
+        }
+        String prevCur = textOrNull(prev, "currency");
+        String currCur = textOrNull(curr, "currency");
+        if (!Objects.equals(prevCur, currCur)) {
+            changes.add(new PriceChangeDTO("currency", "货币", prevCur, currCur));
+        }
+        String prevUnit = textOrNull(prev, "priceUnit");
+        String currUnit = textOrNull(curr, "priceUnit");
+        if (!Objects.equals(prevUnit, currUnit)) {
+            changes.add(new PriceChangeDTO("priceUnit", "计价单位", prevUnit, currUnit));
+        }
+        String prevStatus = textOrNull(prev, "fetchStatus");
+        String currStatus = textOrNull(curr, "fetchStatus");
+        if (!Objects.equals(prevStatus, currStatus)) {
+            changes.add(new PriceChangeDTO("fetchStatus", "数据来源", fetchStatusLabel(prevStatus), fetchStatusLabel(currStatus)));
+        }
+        return changes;
+    }
+
+    private String fetchStatusLabel(String s) {
+        if (s == null) return null;
+        return switch (s) {
+            case "MANUAL" -> "手工";
+            case "IMPORT" -> "导入";
+            case "SUCCESS" -> "自动抓取成功";
+            case "FAILED" -> "自动抓取失败";
+            default -> s;
+        };
+    }
+
+    private String textOrNull(JsonNode n, String field) {
+        if (n == null) return null;
+        JsonNode v = n.get(field);
+        return (v == null || v.isNull()) ? null : v.asText();
+    }
+
+    private String decimalOrNull(JsonNode n, String field) {
+        if (n == null) return null;
+        JsonNode v = n.get(field);
+        if (v == null || v.isNull()) return null;
+        try {
+            return new BigDecimal(v.asText()).setScale(4, RoundingMode.HALF_UP).toPlainString();
+        } catch (Exception e) {
+            return v.asText();
+        }
+    }
+
+    private JsonNode parseSnapshot(String json) {
+        try {
+            return MAPPER.readTree(json);
+        } catch (Exception e) {
+            return MAPPER.createObjectNode();
+        }
+    }
+
+    private Map<String, String> loadElementNamesForCodes(List<String> codes) {
+        if (codes.isEmpty()) return Map.of();
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT element_code, element_name FROM element WHERE element_code IN (:codes)")
+                .setParameter("codes", codes)
+                .getResultList();
+        Map<String, String> out = new HashMap<>();
+        for (Object[] r : rows) out.put((String) r[0], (String) r[1]);
+        return out;
+    }
+
+    private Map<UUID, String> loadSourceNamesForIds(List<UUID> ids) {
+        if (ids.isEmpty()) return Map.of();
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT id, source_name FROM element_price_source WHERE id IN (:ids)")
+                .setParameter("ids", ids)
+                .getResultList();
+        Map<UUID, String> out = new HashMap<>();
+        for (Object[] r : rows) out.put((UUID) r[0], (String) r[1]);
         return out;
     }
 
