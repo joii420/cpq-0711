@@ -1,33 +1,8 @@
-// 版本管理 — 共享 TypeScript 类型定义
-// 对应后端 /api/cpq/versioning/* 和 /api/cpq/change-log/* 接口
-
-export interface VersionHistoryItemDTO {
-  tableName: string;
-  recordId: string;
-  version: number;
-  isCurrent: boolean;
-  businessKey: Record<string, any>;
-  customerId: string;
-  hfPartNo: string;
-  updatedAt: string;
-  updatedBy: string;
-  updatedByName: string;
-}
-
-export interface FieldDiff {
-  fieldName: string;
-  fieldLabel?: string;
-  valueA: any;
-  valueB: any;
-  sameValue: boolean;
-}
-
-export interface VersionCompareDTO {
-  tableName: string;
-  recordA: VersionHistoryItemDTO;
-  recordB: VersionHistoryItemDTO;
-  fieldDiffs: FieldDiff[];
-}
+// 变更日志 — 共享 TypeScript 类型定义
+// 对应后端 /api/cpq/change-log/* 接口
+// task-0723：原「版本管理」(/api/cpq/versioning/*) 专属类型 VersionHistoryItemDTO / FieldDiff /
+// VersionCompareDTO / VersionHistoryPageDTO 已随「料号版本历史对比」功能一并下线并移除，
+// 本文件只保留 change-log 侧仍在用的类型。
 
 export interface ChangeLogEntryDTO {
   id: string;
@@ -47,13 +22,6 @@ export interface ChangeLogEntryDTO {
   changedBy: string;
   changedByName?: string;
   importRecordId?: string;
-}
-
-export interface VersionHistoryPageDTO {
-  items: VersionHistoryItemDTO[];
-  page: number;
-  size: number;
-  total: number;
 }
 
 export interface ChangeLogPageDTO {

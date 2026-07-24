@@ -40,7 +40,6 @@ import ComparisonTagManagement from '../pages/basicdata/ComparisonTagManagement'
 import CostingOrderListPage from '../pages/costingorder/CostingOrderListPage';
 import MasterDataPage from '../pages/master-data/MasterDataPage';
 import MasterDataTableViewerPage from '../pages/master-data/MasterDataTableViewerPage';
-import VersionHistoryPage from '../pages/master-data/VersionHistoryPage';
 import ChangeLogCenterPage from '../pages/change-log/ChangeLogCenterPage';
 import GlobalVariablePage from '../pages/global-variable/GlobalVariablePage';
 import SystemConfigPage from '../pages/system-config/SystemConfigPage';
@@ -118,7 +117,6 @@ const router = createBrowserRouter([
       { path: 'comparison-tags', element: <ComparisonTagManagement /> },
       { path: 'costing-summary', element: <CostingOrderListPage /> },
       { path: 'master-data', element: <MasterDataPage /> },
-      { path: 'master-data/history', element: <VersionHistoryPage /> },
       { path: 'master-data/viewer', element: <MasterDataTableViewerPage /> },
       { path: 'change-log', element: <ChangeLogCenterPage /> },
       { path: 'global-variables', element: <GlobalVariablePage /> },

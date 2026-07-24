@@ -6,15 +6,16 @@
 //   - elementActualPrices（元素实际单价）
 //   - formulaDefinitions（公式定义）
 //   - masterDataSnapshot（主数据快照）
-// 每个面板顶部可触发"对比当前数据"Drawer（VersionCompareDrawer）
+// task-0723：「对比当前数据」触发器（VersionCompareDrawer / versioningService，对应已下线的
+// 「料号版本历史对比」功能）已摘除，本 Tab 只保留 4 面板的只读展示主体。
 // ============================================================
 
-import React, { useState } from 'react';
+import React from 'react';
 import {
-  Collapse, Table, Tag, Button, Space, Typography, Empty,
-  Descriptions, Spin, Alert, message as antMessage,
+  Collapse, Table, Tag, Space, Typography, Empty,
+  Descriptions, Spin, Alert,
 } from 'antd';
-import { SwapOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined } from '@ant-design/icons';
 import type {
   SubmissionSnapshot,
   ReferencedVersionEntry,
@@ -22,10 +23,6 @@ import type {
   FormulaDefinitionEntry,
   MasterDataSnapshotEntry,
 } from '../../../types/quotation-snapshot';
-
-// VersionCompareDrawer 已交付（Phase 3 #14-16）
-import VersionCompareDrawer from '../../master-data/VersionCompareDrawer';
-import { versioningService } from '../../../services/versioningService';
 
 const { Text, Paragraph } = Typography;
 
@@ -110,60 +107,6 @@ function parseReferencedVersions(raw: any): ParsedRefVersion[] {
 }
 
 const SnapshotTab: React.FC<SnapshotTabProps> = ({ snapshot, loading }) => {
-  const [compareDrawerOpen, setCompareDrawerOpen] = useState(false);
-  const [compareTarget, setCompareTarget] = useState<{
-    tableName: string;
-    recordIdA: string;
-    recordIdB: string;
-    versionA: number;
-    versionB: number;
-  } | null>(null);
-  const [compareLoading, setCompareLoading] = useState<string | null>(null); // key = `${tableName}-${businessKey}`
-
-  /**
-   * 点击"对比当前数据"：
-   * 1. 从 parsedEntry.recordId 取快照时的 recordId（recordIdA）
-   * 2. 查 listHistory 找 isCurrent=true 的记录作为 recordIdB
-   * 3. 打开 VersionCompareDrawer
-   */
-  const openCompare = async (entry: ParsedRefVersion) => {
-    const loadKey = `${entry.tableName}-${entry.businessKey}`;
-
-    if (entry.recordId === null) {
-      antMessage.warning('快照数据缺失 recordId，无法对比');
-      return;
-    }
-
-    setCompareLoading(loadKey);
-    try {
-      // 查询同表同业务键的当前记录
-      const history = await versioningService.listHistory({
-        tableName: entry.tableName,
-        page: 0,
-        size: 50,
-      });
-      const currentRecord = history.items.find((item) => item.isCurrent === true);
-
-      if (!currentRecord) {
-        antMessage.warning('找不到当前版本记录，无法对比');
-        return;
-      }
-
-      setCompareTarget({
-        tableName: entry.tableName,
-        recordIdA: entry.recordId,
-        recordIdB: currentRecord.recordId,
-        versionA: typeof entry.version === 'number' ? entry.version : parseInt(String(entry.version).replace(/\D/g, '')) || 0,
-        versionB: currentRecord.version,
-      });
-      setCompareDrawerOpen(true);
-    } catch {
-      antMessage.error('获取当前版本失败，请稍后重试');
-    } finally {
-      setCompareLoading(null);
-    }
-  };
-
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: 60 }}>
@@ -191,28 +134,6 @@ const SnapshotTab: React.FC<SnapshotTabProps> = ({ snapshot, loading }) => {
       render: (v: string | number) => <Tag color="blue">{v}</Tag> },
     { title: '说明', dataIndex: 'displayName', key: 'displayName', width: 160,
       render: (v: string) => v || '-' },
-    {
-      title: '操作',
-      key: 'action',
-      width: 120,
-      render: (_: any, record: ParsedRefVersion) => {
-        const loadKey = `${record.tableName}-${record.businessKey}`;
-        const isLoading = compareLoading === loadKey;
-        if (record.recordId === null) {
-          return <Text type="secondary" style={{ fontSize: 12 }}>缺失 recordId</Text>;
-        }
-        return (
-          <Button
-            size="small"
-            icon={<SwapOutlined />}
-            loading={isLoading}
-            onClick={() => openCompare(record)}
-          >
-            对比
-          </Button>
-        );
-      },
-    },
   ];
 
   // ---------- 2. 元素实际单价 ----------
@@ -248,26 +169,6 @@ const SnapshotTab: React.FC<SnapshotTabProps> = ({ snapshot, loading }) => {
       ) },
   ];
 
-  // 面板级对比按钮（元素单价 / 公式 / 主数据用，不含 recordId 逻辑）
-  const panelHeaderExtra = (tableName: string) => (
-    <Button
-      size="small"
-      icon={<SwapOutlined />}
-      onClick={(e) => {
-        e.stopPropagation();
-        // 对于没有 recordId 的面板，尝试从 parsedRefVersions 中找第一条匹配的
-        const entry = parsedRefVersions.find((r) => r.tableName === tableName);
-        if (entry) {
-          openCompare(entry);
-        } else {
-          antMessage.warning('该面板暂无可对比的引用版本记录');
-        }
-      }}
-    >
-      对比当前数据
-    </Button>
-  );
-
   return (
     <div style={{ padding: '8px 0' }}>
       {/* 快照时间 */}
@@ -295,7 +196,7 @@ const SnapshotTab: React.FC<SnapshotTabProps> = ({ snapshot, loading }) => {
         defaultActiveKey={['referencedVersions']}
         style={{ background: '#fff' }}
       >
-        {/* Panel 1：引用版本（每条记录独立对比按钮） */}
+        {/* Panel 1：引用版本 */}
         <Collapse.Panel
           key="referencedVersions"
           header={
@@ -327,7 +228,6 @@ const SnapshotTab: React.FC<SnapshotTabProps> = ({ snapshot, loading }) => {
               <Tag>{elemPrices.length} 条</Tag>
             </Space>
           }
-          extra={panelHeaderExtra('element_price')}
         >
           {elemPrices.length === 0 ? (
             <Empty description="无元素单价数据" />
@@ -351,7 +251,6 @@ const SnapshotTab: React.FC<SnapshotTabProps> = ({ snapshot, loading }) => {
               <Tag>{formulaDefs.length} 条</Tag>
             </Space>
           }
-          extra={panelHeaderExtra('formula')}
         >
           {formulaDefs.length === 0 ? (
             <Empty description="无公式定义数据" />
@@ -410,7 +309,6 @@ const SnapshotTab: React.FC<SnapshotTabProps> = ({ snapshot, loading }) => {
               <Tag>{masterData.length} 条</Tag>
             </Space>
           }
-          extra={panelHeaderExtra('mat_fee')}
         >
           {masterData.length === 0 ? (
             <Empty description="无主数据快照" />
@@ -425,19 +323,6 @@ const SnapshotTab: React.FC<SnapshotTabProps> = ({ snapshot, loading }) => {
           )}
         </Collapse.Panel>
       </Collapse>
-
-      {/* 版本对比 Drawer */}
-      {compareTarget && (
-        <VersionCompareDrawer
-          open={compareDrawerOpen}
-          tableName={compareTarget.tableName}
-          recordIdA={compareTarget.recordIdA}
-          recordIdB={compareTarget.recordIdB}
-          versionA={compareTarget.versionA}
-          versionB={compareTarget.versionB}
-          onClose={() => { setCompareDrawerOpen(false); setCompareTarget(null); }}
-        />
-      )}
     </div>
   );
 };
