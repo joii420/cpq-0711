@@ -279,7 +279,8 @@ DELETE FROM element_price_source WHERE source_name LIKE 'TEST-EDPL-0724-%';
 | TC-HIST-10 | 只读 | 无 | 尝试 `POST`/`PUT`/`DELETE` `/prices/history` | 均不存在（`404`/`405`），接口只读 | API |
 | TC-HIST-11 | U11#2 反向 | 打开「变更历史」Tab | 查看整个 Tab | **无**任何"回滚到此版本"按钮/入口，纯只读展示 | UI 走查 |
 | TC-HIST-12 | U6（复用筛选） | 打开「变更历史」Tab | 对比筛选控件与明细 Tab | 三个控件（源/日期区间/元素）复用同一套组件；日期标签文案为**"变更时间"**而非"日期区间"（区分与明细 Tab 的语义差异） | UI |
-| TC-HIST-13 | 分页 | 构造 ≥25 条历史记录（§1.5） | `GET /prices/history`（默认）及 `size=200`/`size=300` | 默认 `size=20` 生效分页正确；`size=300`（超上限 200）的处理方式（截断为 200 还是 `400`）需实测确认，文档未明确规定，记入待观察项 | API |
+| TC-HIST-13 | 分页 | 构造 ≥25 条历史记录（§1.5） | `GET /prices/history`（默认）及 `size=200`/`size=300` | 默认 `size=20` 生效分页正确；`size=300`（超上限 200）按 §4 裁决**截断为 200**（返回 ≤200 条 + HTTP `200`，非 `400`） | API |
+| TC-HIST-14 | **B5 前序窗口外 🔴（技术总监补测）** | 同一价格身份构造两条日志：先 `POST` 建价（CREATE，`changed_at=T1`），隔一会再 `PUT` 改单价（UPDATE，`changed_at=T2`） | `GET /prices/history?from=<T1 与 T2 之间某刻>&to=<今天>` 使 CREATE 落在筛选窗口外、UPDATE 落在窗口内 | UPDATE 记录的 `changes` **正确算出**（`price` 旧→新），而非因前序 CREATE 的 snapshot 被 `changed_at` 过滤掉而误判为"首条"→`changes` 算成空/全量。验证 backtask B5 第二步"故意不带 `changed_at` 过滤取完整时间线"确实生效 | API |
 
 ### 2.7 v1 元素价格中心下线彻底性（TC-V1）—— 对应验收 12/13
 
@@ -371,15 +372,20 @@ DELETE FROM element_price_source WHERE source_name LIKE 'TEST-EDPL-0724-%';
 
 ---
 
-## 4. 待澄清项（文档定义不够清楚，需 PM/技术总监补充）
+## 4. 待澄清项 —— 技术总监已裁决（2026-07-23）
 
-1. **§6"不展示于新入口"的落地方式未在 `backtask.md`/`api.md` 中给出具体过滤规则**——当前 `PriceTableService.listDetail` 的 `SELECT` 未见任何针对 `source_id IS NULL` 的排除条件，需求文档也未要求新增该过滤。"不展示"究竟是：
-   - (a) 隐含的自然结果（v1 脏数据的 `price_date` 大概率落在默认 30 天窗口之外，查不到只是巧合）；还是
-   - (b) 需要显式加一条 `WHERE source_id IS NOT NULL` 过滤规则？
+> 以下 2 项为测试工程师提出的需求歧义，技术总监审核测试用例时一并裁决，作为验收口径（进技术总监亲验后端的核对清单）。
 
-   已设计 TC-REG-07 用现网真实的 1 行残留数据验证当前行为，若该行 `price_date` 恰好落入默认窗口而被展示出来，需要回头找 PM/技术总监确认是否要补一条显式过滤。
+1. **§6"不展示于新入口"的落地方式** —— 【裁决：显式过滤，不靠巧合】
+   `PriceTableService.listDetail`（明细 Tab 查询）应加 `WHERE edp.source_id IS NOT NULL`，让存量 v1 脏数据（`source_id IS NULL` 的 MANUAL 行）**结构性不出现**在新入口，而非依赖"其 `price_date` 恰好落在默认窗口之外"的巧合。理由：需求 §6 明确要求"不展示"，且一条没有源的价出现在明细列表会让用户困惑。
+   → **验收核对**：TC-REG-07 必须验证该脏数据行**不出现**在 `GET /prices`（即使不传 `from/to`、即使其 `price_date` 落入窗口）；若后端 `listDetail` 未加此过滤，判为**未达标，要求后端补**。
 
-2. **`GET /prices/history` 的 `size` 上限 200 越界处理方式未明确**——api.md 只写"上限 200"，未说明传 `size=300` 时是截断还是 `400` 拒绝。已设计 TC-HIST-13 留待实测阶段观察，若无强制处理（既不截断也不拒绝，直接查 300 条）需要回头定规则。
+2. **`GET /prices/history` 的 `size` 上限 200 越界处理** —— 【裁决：截断为 200，不报 400】
+   传 `size>200` 时后端取 `min(size,200)`（分页保护，截断比拒绝友好）。
+   → **验收核对**：TC-HIST-13 验证 `size=300` 返回 ≤200 条且 HTTP `200`，不是 `400`。
+
+3. **（技术总监补测）Jackson `FAIL_ON_UNKNOWN_PROPERTIES` 实际行为** —— 见 §5#1 + TC-UPD-08/12。
+   api.md 断言"多传键字段被 Jackson 直接丢弃"依赖 Quarkus 默认关闭该 feature。技术总监亲验后端时**必查** `application.properties` 无 `quarkus.jackson.fail-on-unknown-properties=true`，并实测 TC-UPD-08 返 `200` 而非 `400 Unrecognized field`。
 
 ---
 
