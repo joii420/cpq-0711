@@ -151,7 +151,7 @@ const ElementEditDrawer: React.FC<Props> = ({ open, editing, onClose, onSaved })
           {latestLoading ? (
             <div style={{ textAlign: 'center', padding: '16px 0' }}><Spin /></div>
           ) : latestPrices.length === 0 ? (
-            <Alert type="warning" showIcon message="该元素暂无任何价格记录，请通过『价格导入』录入" />
+            <Alert type="warning" showIcon message="暂无价格数据，可在「📊 元素价格表」中导入或手工新建" />
           ) : (
             <>
               <Table<ElementLatestPriceDTO>

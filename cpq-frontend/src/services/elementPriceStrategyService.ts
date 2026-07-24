@@ -13,6 +13,9 @@ import type {
   SimulateRequest,
   SimulateRowDTO,
   StrategyHistoryDTO,
+  CreatePriceRequest,
+  UpdatePriceRequest,
+  PriceHistoryDTO,
 } from '../types/element-price-strategy';
 
 /**
@@ -103,6 +106,35 @@ export const elementPriceStrategyService = {
   async exportMatrix(params: { sourceId: string; from?: string; to?: string; keyword?: string }): Promise<Blob> {
     const data = await api.get(`${BASE}/prices/matrix/export`, { params, responseType: 'blob' });
     return asBlob(data, XLSX_MIME);
+  },
+
+  // ── §1/§2/§3 手工维护（update-0724；同挂 PriceTableResource，不包 ApiResponse） ──
+
+  /** POST /element-price/prices — 409 = 该元素在该源该日期已存在价格 */
+  async createPrice(req: CreatePriceRequest): Promise<ElementPriceRowDTO> {
+    return (await api.post(`${BASE}/prices`, req)) as unknown as ElementPriceRowDTO;
+  },
+
+  /** PUT /element-price/prices/{id} — 请求体不含键字段，键锁定由后端硬保证 */
+  async updatePrice(id: string, req: UpdatePriceRequest): Promise<ElementPriceRowDTO> {
+    return (await api.put(`${BASE}/prices/${encodeURIComponent(id)}`, req)) as unknown as ElementPriceRowDTO;
+  },
+
+  /** DELETE /element-price/prices/{id} — 204 No Content，无批量端点，前端逐条调用 + runBatch 聚合 */
+  async deletePrice(id: string): Promise<void> {
+    await api.delete(`${BASE}/prices/${encodeURIComponent(id)}`);
+  },
+
+  /** GET /element-price/prices/history — 筛选口径与明细 Tab 一致，但日期区间过滤的是 changedAt 而非 priceDate */
+  async listPriceHistory(params: {
+    sourceId?: string;
+    from?: string;
+    to?: string;
+    keyword?: string;
+    page?: number;
+    size?: number;
+  }): Promise<PageResult<PriceHistoryDTO>> {
+    return (await api.get(`${BASE}/prices/history`, { params })) as unknown as PageResult<PriceHistoryDTO>;
   },
 
   // ── §5 价格策略 ──

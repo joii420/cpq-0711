@@ -1,11 +1,15 @@
 import api from './api';
 import type { ElementLatestPriceDTO } from '../types/element-price-strategy';
 
-// task-0723: 旧「元素价格中心」(ElementPriceCenterPage / ManualPriceEntryDrawer / ElementPriceHint)
-// 已随其页面一并下线 —— getReference / listHistory / upsertManual / listAvailableElements 及其
-// mock 数据、依赖的 ../types/element-price 类型全部随之移除（均已 0 调用方）。
-// 只保留 task-0722 新增的 listLatestBySource，供 ElementEditDrawer（活跃·元素管理）调用。
-
+/**
+ * 元素价格 · 「各源最新价格」只读查询服务
+ *
+ * ⚠️ update-0724 · F5：v1「元素价格中心」整体下线 —— 本文件原有的
+ * getReference / listHistory / upsertManual / listAvailableElements 四个方法
+ * （对接已下线的 /api/cpq/element-prices/** 复数端点）已删除，不留休眠代码。
+ * 仅保留 listLatestBySource（对接活跃端点 /api/cpq/element-price/latest-by-source，单数命名空间）。
+ * （task-0723 亦下线了 ElementPriceHint 等 v1 元素价格中心 UI，与此口径一致。）
+ */
 export const elementPriceService = {
   // ────────────────────────────────────────────────────────────────
   // task-0722 新增 · 元素抽屉「各源最新价格」区块用

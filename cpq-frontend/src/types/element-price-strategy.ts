@@ -14,6 +14,7 @@ export type SourceStatus = 'ACTIVE' | 'DISABLED';
 export type ImportRowResult = 'CREATED' | 'UPDATED' | 'FAILED';
 export type HitRule = 'EXCEPTION' | 'DEFAULT';
 export type HistoryAction = 'CREATE' | 'UPDATE' | 'DELETE';
+export type PriceFetchStatus = 'SUCCESS' | 'FAILED' | 'MANUAL' | 'IMPORT';
 
 export const METHOD_LABEL: Record<PriceMethod, string> = {
   LATEST: '最新一条价',
@@ -79,6 +80,8 @@ export interface PriceImportResultDTO {
 // ── §3 价格表查询 ──
 
 export interface ElementPriceRowDTO {
+  /** element_daily_price.id —— rowKey / PUT / DELETE 定位用（update-0724 · api.md §4 新增） */
+  id: string;
   elementCode: string;
   elementName: string;
   priceDate: string;
@@ -88,6 +91,8 @@ export interface ElementPriceRowDTO {
   price: number;
   currency: string;
   priceUnit: string;
+  /** 数据来源（update-0724 · api.md §4 新增） */
+  fetchStatus: PriceFetchStatus;
   operatorName: string;
   updatedAt: string;
 }
@@ -97,6 +102,48 @@ export interface PageResult<T> {
   totalElements: number;
   page: number;
   size: number;
+}
+
+// ── §1/§2/§3 手工维护（update-0724） ──
+
+export interface CreatePriceRequest {
+  elementCode: string;
+  sourceId: string;
+  /** yyyy-MM-dd */
+  priceDate: string;
+  price: number;
+  currency: string;
+  priceUnit: string;
+}
+
+/** 注意：故意不含 elementCode / sourceId / priceDate —— 键锁定由后端硬保证（api.md §2） */
+export interface UpdatePriceRequest {
+  price: number;
+  currency: string;
+  priceUnit: string;
+}
+
+export interface PriceChangeDTO {
+  field: string;
+  fieldLabel: string;
+  oldValue: string;
+  newValue: string;
+}
+
+export interface PriceHistoryDTO {
+  id: string;
+  changedAt: string;
+  changedByName: string;
+  action: HistoryAction;
+  elementCode: string;
+  elementName: string;
+  sourceId: string | null;
+  sourceName: string | null;
+  priceDate: string;
+  targetLabel: string;
+  /** 仅 UPDATE 非空 */
+  changes: PriceChangeDTO[];
+  snapshot: Record<string, unknown>;
 }
 
 export interface PriceMatrixRowDTO {

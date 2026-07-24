@@ -3,12 +3,20 @@ package com.cpq.elementprice.pricetable;
 import com.cpq.common.dto.PageResult;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.common.security.RoleAllowed;
+import com.cpq.common.security.SessionHelper;
+import io.vertx.core.http.HttpServerRequest;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
@@ -19,7 +27,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 价格表查询端点（task-0722 · B6，契约见 api.md §3）+ B7.1 各源最新价（§4.1）。
+ * 价格表查询端点（task-0722 · B6，契约见 api.md §3）+ B7.1 各源最新价（§4.1）
+ * + update-0724 · B6 价格手工维护（新建/修改/删除/变更历史，契约见 api.md §1~§3、§5）。
  */
 @Path("/api/cpq/element-price")
 @Produces(MediaType.APPLICATION_JSON)
@@ -28,6 +37,15 @@ public class PriceTableResource {
 
     @Inject
     PriceTableService service;
+
+    @Inject
+    PriceMaintenanceService maintenanceService;
+
+    @Inject
+    SessionHelper sessionHelper;
+
+    @Context
+    HttpServerRequest httpRequest;
 
     @GET
     @Path("/prices")
@@ -79,6 +97,45 @@ public class PriceTableResource {
     @Path("/latest-by-source")
     public List<ElementLatestPriceDTO> latestBySource(@QueryParam("elementCode") String elementCode) {
         return service.latestBySource(elementCode);
+    }
+
+    // ──────────────────────────── update-0724 · B6：手工维护 4 端点 ────────────────────────────
+
+    @POST
+    @Path("/prices")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response create(CreatePriceRequest req) {
+        UUID userId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
+        ElementPriceRowDTO dto = maintenanceService.create(req, userId);
+        return Response.status(Response.Status.CREATED).entity(dto).build();
+    }
+
+    @PUT
+    @Path("/prices/{id}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public ElementPriceRowDTO update(@PathParam("id") UUID id, UpdatePriceRequest req) {
+        UUID userId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
+        return maintenanceService.update(id, req, userId);
+    }
+
+    @DELETE
+    @Path("/prices/{id}")
+    public Response delete(@PathParam("id") UUID id) {
+        UUID userId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
+        maintenanceService.delete(id, userId);
+        return Response.noContent().build();
+    }
+
+    @GET
+    @Path("/prices/history")
+    public PageResult<PriceHistoryDTO> history(
+            @QueryParam("sourceId") UUID sourceId,
+            @QueryParam("from") String fromStr,
+            @QueryParam("to") String toStr,
+            @QueryParam("keyword") String keyword,
+            @QueryParam("page") @DefaultValue("0") int page,
+            @QueryParam("size") @DefaultValue("20") int size) {
+        return service.listHistory(sourceId, parseDate(fromStr, "from"), parseDate(toStr, "to"), keyword, page, size);
     }
 
     // ── helpers ──

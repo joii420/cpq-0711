@@ -2714,6 +2714,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           field.field_type === 'DATA_SOURCE' &&
                           field.is_required &&
                           row[key] == null;
+
                         const cellCtx: CellContext = {
                           basicDataValues,
                           pathCacheState: pathCacheState ?? {},

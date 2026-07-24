@@ -153,6 +153,8 @@ Content-Type: multipart/form-data
 
 ## 3. 价格表查询
 
+> 📌 **update-0724 增量**：价格表**不再只读**——新增手工新建 `POST /prices`、修改 `PUT /prices/{id}`、删除 `DELETE /prices/{id}`、变更历史 `GET /prices/history` 四个端点，契约详见 `update-0724-元素价格手工维护/api.md`。以下为 task-0722 的只读查询端点。
+
 ### 3.1 明细
 
 ```
