@@ -41,7 +41,7 @@ public class Q14AssemblyProcessFeeHandler implements SheetHandler {
     private static final List<String> VERSION_TRIGGER = List.of("process_no", "seq_no");
 
     @Override
-    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @Transactional(Transactional.TxType.MANDATORY)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
         // 按料号聚合：同一料号的所有工序行汇总成一组（料号级整组升版）

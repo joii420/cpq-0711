@@ -51,6 +51,7 @@ class Q05ElementRecoveryHandlerTest {
         return r.isEmpty() || r.get(0) == null ? null : new BigDecimal(r.get(0).toString());
     }
 
+    @Transactional
     @Test void update_currentVersionRow() {
         q04.handle(List.of(bomRow("Ag", "75")), ctx());
         int before = 0;
@@ -59,6 +60,7 @@ class Q05ElementRecoveryHandlerTest {
         assertEquals(0, new BigDecimal("0.3").compareTo(currentDiscount("Ag")), "is_current 行 recovery_discount 被更新");
     }
 
+    @Transactional
     @Test void onlyTouchesCurrent_notOldVersion() {
         q04.handle(List.of(bomRow("Ag", "75")), ctx());           // characteristic 2000
         q04.handle(List.of(bomRow("Ag", "70")), ctx());           // 升版 → 2001 current, 2000 下线

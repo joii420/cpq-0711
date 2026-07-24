@@ -69,6 +69,7 @@ class IncomingMaterialRecipeHandlerTest {
         return new SheetRow(rowNo, m);
     }
 
+    @Transactional
     @Test
     void q06_inputMaterialNo_rawCode_notResolvedNotRegistered() {
         q06.handle(List.of(q06Row(1)), ctx());
@@ -89,6 +90,7 @@ class IncomingMaterialRecipeHandlerTest {
         assertEquals(0L, mcmCount, "投入料号（材质）不应登记 material_customer_map（QUOTE）");
     }
 
+    @Transactional
     @Test
     void q10_blankInputMaterialNo_fallsBackToFinishedMaterialNo() {
         // §10 规则3：投入料号 / 投入料号名称均不填 → 兜底为成品料号（整体加工费），

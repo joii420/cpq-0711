@@ -37,7 +37,7 @@ public class Q16PlatingSchemeHandler implements SheetHandler {
         "plating_thickness", "plating_requirement", "element_usage", "source_url", "source_name", "fetch_rule");
 
     @Override
-    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @Transactional(Transactional.TxType.MANDATORY)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
         Map<String, List<Map<String, Object>>> contentOf = new LinkedHashMap<>();

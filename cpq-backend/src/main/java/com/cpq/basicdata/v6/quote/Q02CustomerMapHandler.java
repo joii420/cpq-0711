@@ -50,7 +50,7 @@ public class Q02CustomerMapHandler implements SheetHandler {
     @Override public String sheetName() { return "客户料号与宏丰料号的关系"; }
 
     @Override
-    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @Transactional(Transactional.TxType.MANDATORY)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
         // ① replace-per-customer：本 sheet 是权威全集。

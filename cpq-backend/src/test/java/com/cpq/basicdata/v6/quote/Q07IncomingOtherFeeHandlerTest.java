@@ -47,6 +47,7 @@ class Q07IncomingOtherFeeHandlerTest {
             .setParameter("c", CODE).getSingleResult()).longValue();
     }
 
+    @Transactional
     @Test void importTwice_idempotent_costTypeStored() {
         handler.handle(List.of(row(1, "10")), ctx());
         handler.handle(List.of(row(1, "10")), ctx());
@@ -57,6 +58,7 @@ class Q07IncomingOtherFeeHandlerTest {
             .setParameter("c", CODE).getSingleResult();
         assertEquals(1L, n.longValue(), "动态 cost_type 应落库为'运费'");
     }
+    @Transactional
     @Test void changeValue_bumps() {
         handler.handle(List.of(row(1, "10")), ctx());
         handler.handle(List.of(row(1, "88")), ctx());

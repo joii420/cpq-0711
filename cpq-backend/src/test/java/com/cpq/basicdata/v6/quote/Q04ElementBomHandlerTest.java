@@ -63,6 +63,7 @@ class Q04ElementBomHandlerTest {
             + (extra == null ? "" : " AND " + extra)).setParameter("m", MAT).getSingleResult()).longValue();
     }
 
+    @Transactional
     @Test void importTwice_idempotent() {
         handler.handle(List.of(row(1, "Ag", "75"), row(2, "Ni", "25")), ctx());
         handler.handle(List.of(row(1, "Ag", "75"), row(2, "Ni", "25")), ctx());
@@ -70,6 +71,7 @@ class Q04ElementBomHandlerTest {
         assertEquals(2L, childCount("is_current=true"));
         assertEquals(2L, childCount(null));
     }
+    @Transactional
     @Test void changeChild_bumps_keepsMultiVersion() {
         handler.handle(List.of(row(1, "Ag", "75"), row(2, "Ni", "25")), ctx());
         handler.handle(List.of(row(1, "Ag", "70"), row(2, "Ni", "30")), ctx());
@@ -82,6 +84,7 @@ class Q04ElementBomHandlerTest {
      * 净用量单位非空替换毛用量单位 → issue_unit 真值表（仅 element_bom_item / 报价导入）。
      * 一次导入多元素，每个元素覆盖一种组合，互不串扰（去重键 = 项次+元素）。
      */
+    @Transactional
     @Test void issueUnit_netUnitOverridesGrossUnit_truthTable() {
         handler.handle(List.of(
             rowUnits(1, "Ag", "PCS", "KG"),   // 毛非空 + 净非空 → 净优先

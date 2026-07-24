@@ -42,7 +42,7 @@ public class Q05ElementRecoveryHandler implements SheetHandler {
     private record ValidRow(int rowNo, String materialNo, String materialPartNo, String componentNo, BigDecimal rd) {}
 
     @Override
-    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @Transactional(Transactional.TxType.MANDATORY)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
 

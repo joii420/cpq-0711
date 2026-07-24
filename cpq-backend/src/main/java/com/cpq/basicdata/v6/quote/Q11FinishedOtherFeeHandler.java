@@ -36,7 +36,7 @@ public class Q11FinishedOtherFeeHandler implements SheetHandler {
         "seq_no", "pricing_price", "cost_ratio", "currency", "unit");
 
     @Override
-    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @Transactional(Transactional.TxType.MANDATORY)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
         Map<List<Object>, Map<String, Object>> groupKeyOf = new LinkedHashMap<>();

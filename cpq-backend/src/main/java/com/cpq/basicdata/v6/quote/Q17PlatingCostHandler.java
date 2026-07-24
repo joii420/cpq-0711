@@ -41,7 +41,7 @@ public class Q17PlatingCostHandler implements SheetHandler {
     private static final List<String> CONTENT = List.of("pricing_price", "currency", "unit", "defect_rate");
 
     @Override
-    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @Transactional(Transactional.TxType.MANDATORY)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
         // key=(cost_type, code) → (groupKey map, content rows)

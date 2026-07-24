@@ -47,12 +47,14 @@ class Q11FinishedOtherFeeHandlerTest {
             .setParameter("c", CODE).getSingleResult()).longValue();
     }
 
+    @Transactional
     @Test void importTwice_idempotent() {
         handler.handle(List.of(row(1, "10"), row(2, "20")), ctx());
         handler.handle(List.of(row(1, "10"), row(2, "20")), ctx());
         assertEquals("2000", version());
         assertEquals(2L, total());
     }
+    @Transactional
     @Test void changeValue_bumps() {
         handler.handle(List.of(row(1, "10"), row(2, "20")), ctx());
         handler.handle(List.of(row(1, "10"), row(2, "77")), ctx());

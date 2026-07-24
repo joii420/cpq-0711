@@ -23,7 +23,7 @@ public class Q18UnitWeightHandler implements SheetHandler {
     @Override public String sheetName() { return "单重"; }
 
     @Override
-    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @Transactional(Transactional.TxType.MANDATORY)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
         // §P1-A unit_weight 延后批量：material_no -> 末值非空胜（仅 null 权重也保留以建行），

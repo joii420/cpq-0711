@@ -24,7 +24,7 @@ public class Q19AnnualDiscountHandler implements SheetHandler {
     @Override public String sheetName() { return "年降系数"; }
 
     @Override
-    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @Transactional(Transactional.TxType.MANDATORY)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
         // §P1-Q19 延后批量：按冲突键 (material_no, discount_order) 去重 + 末值非空胜（逐字段），

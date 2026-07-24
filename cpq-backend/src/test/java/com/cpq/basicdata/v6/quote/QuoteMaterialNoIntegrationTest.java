@@ -21,8 +21,10 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * 报价料号统一 Spec 1 · Task 5 集成测试：Q02（报价客户料号登记改走 QUOTE）+ P05（核价维持 PRICING）+
  * 发号 handler（BatchState 注入 customerNo/yyMm 后能正常铸造报价料号）。
- * <p>task-0717 后更新：Q06~Q10 的「投入料号」列已扩围为 RECIPE 模型（=材质料号），恒取原始码，
- * 不再铸号（不再适用于本类描述的发号语义）。
+ * <p>update-0723 B3/B5 后更新：物料BOM/来料三表的「投入料号」类型改由
+ * {@code PartTypeInferenceService} 推断（材质/零件/外购件三态），不再恒为材质；
+ * 有码沿用原始码，只有名称时按推断类型补名称反查（材质查 material_recipe，零件/外购件走
+ * {@code MaterialNoResolver} 按名查/发号）。
  *
  * <p>测试客户/料号一律用 {@code QMNI-} 前缀，避免与其它测试/存量数据串号。
  */
@@ -91,6 +93,7 @@ class QuoteMaterialNoIntegrationTest {
 
     // ===== 1. Q02 写 QUOTE =====
 
+    @Transactional
     @Test
     void q02_writesQuoteSystemType() {
         String cust = "QMNI-C1";
@@ -110,6 +113,7 @@ class QuoteMaterialNoIntegrationTest {
 
     // ===== 2. Q02 relabel（报价料号 优先 / 宏丰料号 回退） =====
 
+    @Transactional
     @Test
     void q02_relabel_readsQuoteHeaderOrFallsBackToHongfengHeader() {
         String cust = "QMNI-C2";
@@ -128,6 +132,7 @@ class QuoteMaterialNoIntegrationTest {
 
     // ===== 3. Q02 replace 收窄：只删 QUOTE+客户料号映射行 =====
 
+    @Transactional
     @Test
     void q02_replace_onlyNarrowsQuoteCustomerProductRows() {
         String cust = "QMNI-C3";
@@ -148,6 +153,7 @@ class QuoteMaterialNoIntegrationTest {
 
     // ===== 4. Q02 跨客户串号 =====
 
+    @Transactional
     @Test
     void q02_crossCustomerCollision_recordsErrorAndDoesNotOverwrite() {
         String custA = "QMNI-C4A", custB = "QMNI-C4B";
@@ -174,58 +180,68 @@ class QuoteMaterialNoIntegrationTest {
         assertEquals("CPN-A", row[1], "跨客户导入不应覆盖 customer_product_no");
     }
 
-    // ===== 5. 物料BOM 材质料号为空 → repair-2 后不再铸报价料号，改记错误跳过整行 =====
+    // ===== 5. 物料BOM 材质料号为空+名称未在 material_recipe 命中 → 记错误跳过整行（U2） =====
 
     /**
-     * task-0717 repair-2 更新：本用例原断言"物料BOM 里一个无编号(有名无号)的材质组件 →
-     * 铸造报价料号并落库"，对应旧语义——彼时物料BOM 组件列走 {@code materialNoResolver.resolve()}，
-     * 料号空+名称有值会按名匹配/铸造报价料号。
-     *
-     * <p>repair-2（决策 A/B/C）后物料BOM 的组件列恒定语义为"材质料号"——直接引用材质库
-     * ({@code material_recipe})，只认原始码，不再 resolve/不再按名铸号（材质库场景下"名称"不构成
-     * 可靠的落库依据——材质需要精确 code 才能对上材质库配方，无法像真组成件那样临时铸个内部料号
-     * 兜底）。{@link MaterialBomMergeHandler} 对应分支已改为：料号(投入料号/材质料号列)为空即
-     * {@code recordError("材质料号", "为空")} 直接跳过该行，不落 {@code material_bom_item}、不铸号。
-     * 本用例按新语义重写，验证"空材质料号 → 报错跳过、不铸号、不落库"这一路径确实生效。
+     * update-0723 B3 更新：物料BOM 投入料号类型改由 {@code PartTypeInferenceService} 推断，不再
+     * 恒为材质。本用例显式建 RECIPE 权威索引（该名称命中「物料与元素BOM」权威集）使该行定型为
+     * 材质，验证 U2「材质缺库」路径：料号空+名称在 material_recipe 查无 → 报错「未找到材质」，
+     * 不落 material_bom_item、不铸号（材质分支从不 resolve/不铸号，即使名称本身不可用于生成）。
      */
+    @Transactional
     @Test
-    void materialBomMerge_unnumberedComponent_recordsError_noLongerMints() {
+    void materialBomMerge_recipeTypeUnnamedInRecipe_recordsError_noLongerMints() {
         String cust = "QMNI-C5";
         String parentMat = "QMNI-PARENT1";
+        String ghostRecipeName = "QMNI试制组件-GHOST";
+
+        ImportContext ctx = ctx(cust);
+        Map<String, String> elemRow = new LinkedHashMap<>();
+        elemRow.put("销售料号", parentMat);
+        elemRow.put("材质料号名称", ghostRecipeName);
+        ctx.sharedCache.put("partTypeIndex", partTypeIndexFor(elemRow));
+
         Map<String, String> m = new LinkedHashMap<>();
         m.put("宏丰料号", parentMat);
         m.put("项次", "1");
         m.put("投入料号", "");
-        m.put("投入料号名称", "QMNI试制组件");
+        m.put("投入料号名称", ghostRecipeName);
         m.put("产出料号类型", "2.非银点类");
         m.put("材料毛重", "1.0");
         m.put("重量单位", "KG");
 
-        SheetImportResult result = materialBomMergeHandler.merge(
-            List.of(new SheetRow(1, m)), List.of(), ctx(cust));
+        SheetImportResult result = materialBomMergeHandler.merge(List.of(new SheetRow(1, m)), ctx);
 
         assertEquals(1, result.totalRows);
-        assertEquals(1, result.failedRows, "材质料号为空应记为失败行（不再按名铸号）");
+        assertEquals(1, result.failedRows, "材质定型但 material_recipe 查无应记为失败行（不再按名铸号，U2）");
         assertEquals(0, result.successRows);
         assertEquals(1, result.errors.size());
-        assertTrue(result.errors.get(0).message.contains("为空"),
-            "错误信息应含「为空」，实际=" + result.errors.get(0).message);
+        assertTrue(result.errors.get(0).message.contains("未找到材质"),
+            "错误信息应含「未找到材质」，实际=" + result.errors.get(0).message);
 
         long bomItemCount = ((Number) em.createNativeQuery(
             "SELECT count(*) FROM material_bom_item WHERE material_no=:m")
             .setParameter("m", parentMat).getSingleResult()).longValue();
-        assertEquals(0L, bomItemCount, "空材质料号行不应落 material_bom_item（不铸号、不入库）");
+        assertEquals(0L, bomItemCount, "材质缺库行不应落 material_bom_item（不铸号、不入库）");
     }
 
-    // ===== 6. Q07「投入料号」task-0717 扩围为 RECIPE 模型，不再铸报价料号 =====
+    private com.cpq.basicdata.v6.service.PartTypeInferenceService.TypeIndex partTypeIndexFor(Map<String, String> elemRow) {
+        return partTypeInferenceService.buildIndex(Map.of("物料与元素BOM", List.of(new SheetRow(1, elemRow))));
+    }
+
+    @Inject com.cpq.basicdata.v6.service.PartTypeInferenceService partTypeInferenceService;
+
+    // ===== 6. Q07「投入料号」update-0723 B5（U10）：只有名称时按推断类型补名称反查 =====
 
     /**
-     * task-0717 更新：原「投入料号空 + 名称有值 → 按名铸造报价料号并登记 material_customer_map(QUOTE)」
-     * 路径已移除——Q07 的「投入料号」扩围为 RECIPE 模型（=材质料号，与 Q06/Q08/Q09/Q10 同构），
-     * 恒不 resolve/不铸号/不登记；投入料号为空直接记为该行错误，不再有按名兜底铸号通路。
+     * update-0723 B5（U10）更新：Q06/Q07/Q09 的「投入料号」不再恒为材质原始码——有码沿用原始码
+     * （行为不变）；只有名称时，先用 {@code PartTypeInferenceService} 推断类型，材质走
+     * material_recipe 按名查码（查无报错），零件/外购件走 {@code MaterialNoResolver}（按名查/发号）。
+     * 本用例覆盖「只有名称 + 未命中任一权威 sheet(默认兜底零件)」→ 应成功铸号入库（而非报错）。
      */
+    @Transactional
     @Test
-    void q07_blankIncomingMaterialNo_recordsError_noLongerMints() {
+    void q07_nameOnly_defaultAssembly_mintsAndSucceeds() {
         String cust = "QMNI-C6";
         Map<String, String> m = new LinkedHashMap<>();
         m.put("要素名称", "QMNI测试要素");
@@ -239,57 +255,78 @@ class QuoteMaterialNoIntegrationTest {
 
         SheetImportResult r = q07Handler.handle(List.of(new SheetRow(1, m)), ctx(cust));
 
-        assertEquals(1, r.failedRows, "投入料号为空应记为失败行（不再按名铸号）");
-        assertEquals(0, r.successRows);
+        assertEquals(0, r.failedRows, "只有名称+默认兜底零件应成功铸号，不再报错");
+        assertEquals(1, r.successRows);
 
         long upCount = ((Number) em.createNativeQuery(
             "SELECT count(*) FROM unit_price WHERE system_type='QUOTE' AND customer_no=:c " +
             "AND price_type='INCOMING_MATERIAL_OTHER'")
             .setParameter("c", cust).getSingleResult()).longValue();
-        assertEquals(0L, upCount, "失败行不应写入 unit_price");
+        assertEquals(1L, upCount, "成功行应写入 unit_price");
+
+        long masterCount = ((Number) em.createNativeQuery(
+            "SELECT count(*) FROM material_master WHERE material_name=:n AND material_type='零件'")
+            .setParameter("n", "QMNI试制来料").getSingleResult()).longValue();
+        assertEquals(1L, masterCount, "铸号后应登记 material_master(material_type=零件)");
+    }
+
+    /** 料号与名称均为空：仍应报错（U10 未改变这一必填其一约束）。 */
+    @Transactional
+    @Test
+    void q07_bothBlank_recordsError() {
+        String cust = "QMNI-C6B";
+        Map<String, String> m = new LinkedHashMap<>();
+        m.put("要素名称", "QMNI测试要素2");
+        m.put("投入料号", "");
+        m.put("投入料号名称", "");
+        m.put("宏丰料号", "QMNI-FIN-0002");
+        m.put("项次", "1");
+        m.put("值", "10");
+
+        SheetImportResult r = q07Handler.handle(List.of(new SheetRow(1, m)), ctx(cust));
+        assertEquals(1, r.failedRows, "料号与名称均为空应记为失败行");
+        assertEquals(0, r.successRows);
     }
 
     // ===== 8. 跨客户报价料号经 dev handler(MaterialBomMergeHandler) 优雅降级：per-row 跳过、sheet 不回滚 =====
 
+    @Transactional
     @Test
     void materialBomMerge_crossCustomerComponentNo_recordsErrorAndSkipsRowOnly() {
         String custA = "QMNI-C8A", custB = "QMNI-C8B";
 
-        // 1) 客户 A 先铸造一个报价料号 R（登记归属 custA）。
+        // 1) 客户 A 先铸造一个报价料号 R（登记归属 custA）。投入料号列不建 typeIndex → 默认零件
+        //    ASSEMBLY 兜底（update-0723 B3：单表三态，无号有名走 resolve() 铸号）。
         String parentA = "QMNI-PARENT8A";
         Map<String, String> a1 = new LinkedHashMap<>();
         a1.put("宏丰料号", parentA);
-        a1.put("项次（一级）", "1");
-        a1.put("组成件料号", "");
-        a1.put("组成件名称", "QMNI试制组件8A");
+        a1.put("项次", "1");
+        a1.put("投入料号", "");
+        a1.put("投入料号名称", "QMNI试制组件8A");
         a1.put("组成数量", "1");
-        a1.put("组成单位", "PCS");
-        materialBomMergeHandler.merge(List.of(), List.of(new SheetRow(1, a1)), ctx(custA));
+        materialBomMergeHandler.merge(List.of(new SheetRow(1, a1)), ctx(custA));
 
         String r = (String) em.createNativeQuery(
             "SELECT component_no FROM material_bom_item WHERE material_no=:m AND is_current=TRUE")
             .setParameter("m", parentA).getSingleResult();
         assertTrue(r.matches("^\\d{4}-\\d{4}\\d{6}$"), "R 应为铸造的报价料号，实际=" + r);
 
-        // 2) 客户 B 的一张 sheet，两行：第一行组成件料号=R（跨客户串号）、第二行正常（无号有名，可 mint）。
+        // 2) 客户 B 的一张 sheet，两行：第一行投入料号=R（跨客户串号）、第二行正常（无号有名，可 mint）。
         String parentB = "QMNI-PARENT8B";
         Map<String, String> b1 = new LinkedHashMap<>();
         b1.put("宏丰料号", parentB);
-        b1.put("项次（一级）", "1");
-        b1.put("组成件料号", r);
-        b1.put("组成件名称", "");
+        b1.put("项次", "1");
+        b1.put("投入料号", r);
         b1.put("组成数量", "1");
-        b1.put("组成单位", "PCS");
         Map<String, String> b2 = new LinkedHashMap<>();
         b2.put("宏丰料号", parentB);
-        b2.put("项次（一级）", "2");
-        b2.put("组成件料号", "");
-        b2.put("组成件名称", "QMNI试制组件8B");
+        b2.put("项次", "2");
+        b2.put("投入料号", "");
+        b2.put("投入料号名称", "QMNI试制组件8B");
         b2.put("组成数量", "2");
-        b2.put("组成单位", "PCS");
 
         SheetImportResult result = materialBomMergeHandler.merge(
-            List.of(), List.of(new SheetRow(1, b1), new SheetRow(2, b2)), ctx(custB));
+            List.of(new SheetRow(1, b1), new SheetRow(2, b2)), ctx(custB));
 
         // sheet 不整体回滚：两行都被计入 totalRows，只有第 1 行失败，第 2 行成功。
         assertEquals(2, result.totalRows);
@@ -317,6 +354,7 @@ class QuoteMaterialNoIntegrationTest {
 
     // ===== 7. P05 写 PRICING =====
 
+    @Transactional
     @Test
     void p05_writesPricingSystemType() {
         String cust = "QMNI-P05C1";

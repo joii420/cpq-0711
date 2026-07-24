@@ -52,6 +52,7 @@ class Q04ElementBomResolveTest {
         return rows.isEmpty() ? null : String.valueOf(rows.get(0));
     }
 
+    @Transactional
     @Test
     void emptyNoWithName_generatesRegistersAndUsesAsMaterialNo() {
         SheetImportResult r = handler.handle(List.of(row(null, NAME, "Ag")), ctx());
@@ -65,6 +66,7 @@ class Q04ElementBomResolveTest {
         assertEquals("组成件", type, "material_type 统一写汉字「组成件」(对齐 master §12 约定)");
     }
 
+    @Transactional
     @Test
     void emptyNoAndEmptyName_recordsError() {
         SheetImportResult r = handler.handle(List.of(row(null, null, "Ag")), ctx());

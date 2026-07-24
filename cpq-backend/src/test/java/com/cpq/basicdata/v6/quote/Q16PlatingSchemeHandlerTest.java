@@ -48,12 +48,14 @@ class Q16PlatingSchemeHandlerTest {
             .setParameter("s", SCH).getSingleResult()).longValue();
     }
 
+    @Transactional
     @Test void importTwice_idempotent_ignoreExcelVersion() {
         handler.handle(List.of(row(1, "5", "V5"), row(2, "8", "V5")), ctx());
         handler.handle(List.of(row(1, "5", "V5"), row(2, "8", "V5")), ctx());
         assertEquals("2000", version(), "scheme_version 系统生成, 忽略 Excel 'V5'");
         assertEquals(2L, total());
     }
+    @Transactional
     @Test void changeRow_bumps() {
         handler.handle(List.of(row(1, "5", null), row(2, "8", null)), ctx());
         handler.handle(List.of(row(1, "5", null), row(2, "9", null)), ctx());

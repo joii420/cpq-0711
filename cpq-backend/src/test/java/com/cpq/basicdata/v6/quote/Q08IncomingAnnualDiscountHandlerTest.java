@@ -48,12 +48,14 @@ class Q08IncomingAnnualDiscountHandlerTest {
             .setParameter("c", CODE).getSingleResult()).longValue();
     }
 
+    @Transactional
     @Test void importTwice_idempotent() {
         handler.handle(List.of(row(1, "0.95"), row(2, "0.90")), ctx());
         handler.handle(List.of(row(1, "0.95"), row(2, "0.90")), ctx());
         assertEquals("2000", version());
         assertEquals(2L, total());
     }
+    @Transactional
     @Test void changeValue_bumps() {
         handler.handle(List.of(row(1, "0.95"), row(2, "0.90")), ctx());
         handler.handle(List.of(row(1, "0.95"), row(2, "0.80")), ctx());
