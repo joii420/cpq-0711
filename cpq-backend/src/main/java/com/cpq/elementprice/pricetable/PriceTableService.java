@@ -52,7 +52,10 @@ public class PriceTableService {
         if (size <= 0 || size > 200) size = 20;
         boolean hasKw = keyword != null && !keyword.isBlank();
 
-        StringBuilder where = new StringBuilder(" WHERE edp.price_date BETWEEN :from AND :to ");
+        // U-裁决(技术总监 2026-07-23 补)：排除 v1 存量脏数据（source_id IS NULL，
+        // 当年 upsertManual 恒写 NULL 源，需求 §6「不展示于新入口」）。
+        // 新建/编辑要求 sourceId 必填（U2），故新数据永不会命中该条件；仅过滤历史脏行。
+        StringBuilder where = new StringBuilder(" WHERE edp.price_date BETWEEN :from AND :to AND edp.source_id IS NOT NULL ");
         if (sourceId != null) where.append(" AND edp.source_id = :sourceId ");
         if (hasKw) where.append(" AND (edp.element_name ILIKE :kw OR e.element_name ILIKE :kw) ");
 
