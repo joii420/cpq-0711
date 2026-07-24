@@ -50,6 +50,7 @@ class Q17PlatingCostHandlerTest {
             .setParameter("c", CODE).getSingleResult()).longValue();
     }
 
+    @Transactional
     @Test void importTwice_idempotent_twoCostTypes_ignoreExcelVersion() {
         handler.handle(List.of(row("5", "3", "V99", null)), ctx());
         handler.handle(List.of(row("5", "3", "V99", null)), ctx());
@@ -58,6 +59,7 @@ class Q17PlatingCostHandlerTest {
         assertEquals(2L, total(), "一行拆两条, 导两遍不翻倍");
     }
 
+    @Transactional
     @Test void changeOneFee_bumpsOnlyThatCostType() {
         handler.handle(List.of(row("5", "3", null, null)), ctx());
         handler.handle(List.of(row("9", "3", null, null)), ctx());   // 仅改加工费
@@ -66,6 +68,7 @@ class Q17PlatingCostHandlerTest {
         assertEquals(3L, total(), "加工费 2 行(2000下线+2001生效) + 材料费 1 行");
     }
 
+    @Transactional
     @Test void platingSchemeNo_skipsRow() {
         handler.handle(List.of(row("5", "3", null, "SCHEME-1")), ctx());
         assertEquals(0L, total(), "有电镀方案编号 → 整行跳过, 不写 unit_price");

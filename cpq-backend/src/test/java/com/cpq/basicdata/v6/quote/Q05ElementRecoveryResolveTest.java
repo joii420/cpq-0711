@@ -57,6 +57,7 @@ class Q05ElementRecoveryResolveTest {
             .setParameter("c", CUST).setParameter("m", MAT).getSingleResult();
     }
 
+    @Transactional
     @Test
     void emptyNoMatchedByName_updatesExisting_noGenerate() {
         seed();
@@ -68,6 +69,7 @@ class Q05ElementRecoveryResolveTest {
         assertEquals(0L, gen, "更新型只匹配不生成");
     }
 
+    @Transactional
     @Test
     void emptyNoUnmatchedName_recordsError() {
         seed();

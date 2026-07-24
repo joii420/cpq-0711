@@ -1,10 +1,13 @@
 package com.cpq.basicdata.v6.service;
 
 import com.cpq.basicdata.v6.entity.MaterialMaster;
+import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -33,6 +36,29 @@ public class MaterialNoResolver {
         /** task-0721 B2：本次导入的 pending 归属 key（见 {@link com.cpq.basicdata.v6.parser.ImportContext#pendingQuotationId}）；
          *  null=现状正式登记（非报价导入路径，如选配 3D 配置器仍走此语义，不受影响）。 */
         public UUID pendingQuotationId;
+    }
+
+    /**
+     * update-0723 R2（协调方 2026-07-23 补充口径）：取本次导入<b>全 handler 共享</b>的
+     * {@link BatchState}（由 {@code QuoteImportService} 在 Phase 2 开始前建好、
+     * 用 {@code PartTypeInferenceService.TypeIndex#seedBatchState} 预灌批量级名称→料号种子，
+     * 存入 {@code ImportContext.sharedCache["materialNoBatchState"]}）。
+     *
+     * <p>不共享会导致：同一物理件在 A 表只给码、在 B 表只给名时，两次 {@link #resolve} 各自的
+     * {@code nameToNo} 缓存互不可见 + B 表的按名 DB 查询命中不到 A 表（该导入还没提交/未 promote
+     * 进 material_master 正表的）新码，从而对同一物理件铸出两个不同料号（重号）。
+     *
+     * <p>单测直调 handler（不经过 {@code QuoteImportService}，{@code sharedCache} 无此 key）时
+     * 兜底新建一个"仅本次调用有效"的 BatchState，不写回 ctx，各测互不污染。
+     */
+    public static BatchState batchStateFor(ImportContext ctx) {
+        Object shared = ctx.sharedCache.get("materialNoBatchState");
+        if (shared instanceof BatchState bs) return bs;
+        BatchState fresh = new BatchState();
+        fresh.customerNo = ctx.customerNo;
+        fresh.yyMm = YearMonth.now().format(DateTimeFormatter.ofPattern("yyMM"));
+        fresh.pendingQuotationId = ctx.pendingQuotationId;
+        return fresh;
     }
 
     /**

@@ -52,6 +52,7 @@ class Q14AssemblyProcessFeeHandlerTest {
             .setParameter("m", MAT).getSingleResult()).longValue();
     }
 
+    @Transactional
     @Test void importTwice_idempotent_isEffectiveTrue() {
         handler.handle(List.of(row("OP14", 1, "100")), ctx());
         handler.handle(List.of(row("OP14", 1, "100")), ctx());
@@ -62,6 +63,7 @@ class Q14AssemblyProcessFeeHandlerTest {
             .setParameter("m", MAT).getSingleResult();
         assertEquals(1L, eff.longValue(), "is_effective=true 保全");
     }
+    @Transactional
     @Test void changeFeeOnly_inPlace_noBump() {
         handler.handle(List.of(row("OP14", 1, "100")), ctx());
         handler.handle(List.of(row("OP14", 1, "200")), ctx());
@@ -69,6 +71,7 @@ class Q14AssemblyProcessFeeHandlerTest {
         assertEquals(1L, total(), "原地更新,无历史堆积");
     }
 
+    @Transactional
     @Test void changeProcessCode_bumps() {
         handler.handle(List.of(row("Z350", 1, "20")), ctx());
         handler.handle(List.of(row("Z400", 1, "20")), ctx());
@@ -77,6 +80,7 @@ class Q14AssemblyProcessFeeHandlerTest {
         assertEquals(2L, total(), "旧版保留为历史");
     }
 
+    @Transactional
     @Test void changeProcessCount_bumps_oldGroupRetired() {
         handler.handle(List.of(row("Z350", 1, "20"), row("Z029", 2, "14")), ctx());
         assertEquals(2L, current(), "首版 2 工序");

@@ -38,7 +38,7 @@ public class Q15AssemblyAnnualDiscountHandler implements SheetHandler {
         "discount_order", "cost_ratio", "pricing_price", "currency", "unit");
 
     @Override
-    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @Transactional(Transactional.TxType.MANDATORY)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
         Map<List<Object>, Map<String, Object>> groupKeyOf = new LinkedHashMap<>();

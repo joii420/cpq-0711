@@ -66,6 +66,7 @@ class Q02CustomerMapReplaceTest {
                 .setParameter("c", CUST).getSingleResult()).longValue();
     }
 
+    @Transactional
     @Test
     void reimport_clean_file_removes_stale_rows() {
         // 第一次脏导入：3 个不同报价料号，各自挂一个客户产品编号
@@ -84,6 +85,7 @@ class Q02CustomerMapReplaceTest {
      * 本用例用完全相同的批次连续 handle 两次，断言第二次远快于 60s 完成且数据正确落库，
      * 证明单事务 + 内存去重方案已根治该死锁（而非只是恰好没撞上）。
      */
+    @Transactional
     @Test
     void reimport_identical_batch_completes_without_deadlock() {
         List<SheetRow> rows = List.of(row(1, HF_A, "CPN-A"), row(2, HF_B, "CPN-B"), row(3, HF_C, "CPN-C"));
@@ -110,6 +112,7 @@ class Q02CustomerMapReplaceTest {
      * {@code MaterialMasterBatchImportIntegrationTest} 的 P1 dup 场景），已回退，改为此用例
      * 固化"不报错、后行生效"的正确契约。
      */
+    @Transactional
     @Test
     void duplicateMaterialNoWithinSheet_lastRowWinsWithoutError() {
         SheetImportResult r = handler.handle(List.of(
@@ -132,6 +135,7 @@ class Q02CustomerMapReplaceTest {
      * target，若不预先去重，第二条 INSERT 会直接抛 DB 层 unique_violation，把单事务整体
      * 毒成 aborted。必须在写库前就消灭这种冲突。
      */
+    @Transactional
     @Test
     void dedup_duplicateCustomerProductNoWithinSheet_recordsErrorAndKeepsLastRow() {
         SheetImportResult r = handler.handle(List.of(
@@ -156,6 +160,7 @@ class Q02CustomerMapReplaceTest {
      * 改为单事务直连之后仍应正常工作——该分支本就不是异常路径（0 行受影响不是 exception），
      * 单事务内天然安全，不依赖子事务隔离。
      */
+    @Transactional
     @Test
     void crossCustomerGuard_stillRecordsErrorUnderSingleTransaction() {
         String otherCust = CUST + "-OTHER";

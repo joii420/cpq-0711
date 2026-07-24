@@ -40,7 +40,7 @@ public class Q04ElementBomHandler implements SheetHandler {
         "seq_no", "component_no", "content", "scrap_rate", "composition_qty", "issue_unit", "base_qty");
 
     @Override
-    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @Transactional(Transactional.TxType.MANDATORY)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
 

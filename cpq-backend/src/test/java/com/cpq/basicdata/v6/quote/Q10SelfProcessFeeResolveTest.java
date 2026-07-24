@@ -64,6 +64,7 @@ class Q10SelfProcessFeeResolveTest {
      * 投入料号为空时统一走 §10 规则3 成品料号兜底，不再区分是否填了「投入料号名称」——
      * 名称字段本身不再参与 code 判断。
      */
+    @Transactional
     @Test
     void emptyCodeWithName_fallsBackToFinishedMaterialNo_noLongerMints() {
         SheetImportResult r = handler.handle(List.of(row(null, NAME)), ctx());
@@ -73,6 +74,7 @@ class Q10SelfProcessFeeResolveTest {
         assertEquals(FIN, upCode(), "投入料号为空应兜底为成品料号（§10 规则3 保留）");
     }
 
+    @Transactional
     @Test
     void emptyCodeAndEmptyName_fallbackToFinishedMaterialNo() {
         // §10 规则3：投入料号 + 名称都空 → code 兜底为宏丰料号（针对成品整体的自制加工费）
@@ -82,6 +84,7 @@ class Q10SelfProcessFeeResolveTest {
         assertEquals(FIN, upCode(), "code 兜底为宏丰料号");
     }
 
+    @Transactional
     @Test
     void emptyCodeNameAndFinished_recordsError() {
         // 投入料号 + 名称 + 宏丰料号 全空 → 无从确定 code，拒绝该行
@@ -90,6 +93,7 @@ class Q10SelfProcessFeeResolveTest {
         assertNull(upCode());
     }
 
+    @Transactional
     @Test
     void duplicateNoInputSameFinished_secondRejected() {
         // fail-fast：同一成品多条无投入料号加工费（工序不同）→ 第二条判非法拒绝，避免唯一键塌缩

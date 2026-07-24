@@ -65,6 +65,7 @@ class Q06FixedProcessFeeHandlerTest {
         return ((Number) em.createNativeQuery("SELECT count(*) FROM unit_price WHERE " + w).getSingleResult()).longValue();
     }
 
+    @Transactional
     @Test
     void importTwice_idempotent() {
         handler.handle(List.of(row(1, "10", "0.1"), row(2, "20", "0.2")), ctx("C1"));
@@ -74,6 +75,7 @@ class Q06FixedProcessFeeHandlerTest {
         assertEquals(2L, count("C1", null), "导两遍不翻倍");
     }
 
+    @Transactional
     @Test
     void changeValue_bumpsAndFlips() {
         handler.handle(List.of(row(1, "10", "0.1"), row(2, "20", "0.2")), ctx("C1"));
@@ -94,6 +96,7 @@ class Q06FixedProcessFeeHandlerTest {
      * <p>新断言：C1/C2 各自用同一 CODE 应各自独立成功入库、互不冲突，且都不登记
      * material_customer_map（QUOTE）。
      */
+    @Transactional
     @Test
     void sameCodeAcrossCustomers_bothSucceedIndependently_noCrossCustomerGuard() {
         SheetImportResult r1 = handler.handle(List.of(row(1, "10", "0.1")), ctx("C1"));

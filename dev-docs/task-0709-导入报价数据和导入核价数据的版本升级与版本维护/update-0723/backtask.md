@@ -96,7 +96,13 @@ InferResult infer(String rawPartNo, String rawName)
 - material_recipe / material_master 的库内兜底**必须批量**：Phase 1 先收集所有「三 sheet 未命中」的料号 + 名称候选，**一次** `SELECT code,name FROM material_recipe WHERE status='ACTIVE'`（表小，全量拉进内存 Set）+ **一次** `SELECT material_no,material_name,material_type FROM material_master WHERE material_no IN (...) OR material_name IN (...)`（或全量，视表规模，工程师实测后定；本地表约数百行可全量）。
 - 严禁在 per-row 循环里查库。
 
-**验收**：单测覆盖 4 条判定路径 + 冲突拦截；`infer` 无逐行查库（日志/断点确认批量）。
+### 3.5 ⚠️ R2 · 名称→料号解析必须跨 handler 统一（防同件重号）
+
+**测试复核发现的正确性风险**：`MaterialNoResolver.resolve()` 按名称查的是 `material_master` **正表**（`findFirstByMaterialName`），而导入期料号写进 `pending_material_master_staging`（未 promote）。若同一物理件在 sheet A 只填名称、在 sheet B 以「有料号」形式出现（写 staging 未入正表），两处解析互不可见、各 handler 的 `BatchState.nameToNo` 缓存又不共享 → **同一件被分配两个不同料号（重号）**。
+
+**要求**：Phase 1 预扫时**统一建立「名称→料号」映射**（把三权威 sheet + 各 sheet 的 (料号,名称) 对收敛成一张 batch 级 `nameToNo`），Phase 2 所有 handler 解析名称→料号时**共享这一张表**，不各查各的正表。`PartTypeInferenceService` 除类型外，一并承担「名称→权威料号」解析（命中权威 sheet 的名称直接返回其料号）。B10 用 TC-U1-16/17（同名跨 sheet 一致性）验证不重号。
+
+**验收**：单测覆盖 4 条判定路径 + 冲突拦截；`infer` 无逐行查库（日志/断点确认批量）；同名跨 sheet 解析出**同一** component_no。
 
 ---
 
@@ -196,7 +202,14 @@ InferResult infer(String rawPartNo, String rawName)
 
 **存量**：`material_type='组成件'` 旧行**不迁移**（U3 / §6）。`upsertBatchNameType(preserve=true)` 语义下，已存在行保留旧值 —— 注意：这会导致存量「组成件」行不被覆盖为新值。若需求方要求新导入覆盖旧「组成件」为准确类型，需将该字段改 `preserve=false`（**默认保持 preserve=true，存量不动**，符合 §6；B10 验证新料号写对即可）。
 
-**验收**：新料号 `W-1001` → material_type=「外购件」；`S-80011` → 「零件」。
+> **⚠️ R1（技术总监复核 · 铁的事实，必读）**：导入期 `ctx.pendingQuotationId = importRecordId` **恒非空**，故 `MaterialMasterRepository.upsertBatchNameType(rows, updatedBy, preserve, pendingQuotationId)` 走 `stageOne()` 写 **`pending_material_master_staging`（键 = quotation_id + material_no）**，**不写 `material_master` 正表**（正表由核价审批通过后 `promoteStaging` 落地）。
+> - **禁止**为了让 `material_master` 有值而绕过 pending 写正表 —— 那会破坏 task-0721 的 pending 隔离语义（AC-3/AC-4）。
+> - 你要做的只是把 material_type 的**取值**从「组成件」改为「零件/外购件」，落点仍是 staging，写入通道不变。
+
+**验收（改查 staging，勿查正表）**：
+- `SELECT material_type FROM pending_material_master_staging WHERE quotation_id=:pendingQuotationId AND material_no='W-1001'` = 「外购件」；`'S-80011'` = 「零件」。
+- 反向确认：`SELECT count(*) FROM material_master WHERE material_no IN ('W-1001','S-80011')` 仍为 0（导入期不落正表）。
+- 材质料号 `991/992` 既不进 material_master 也不进 staging。
 
 ---
 
@@ -278,7 +291,7 @@ Phase 1 `QuoteImportValidator` 逐 sheet 校验，全部收集不中断：
 
 1. 正常导入 → `status=SUCCESS`，无 PARTIAL。
 2. `material_bom_item`：三态正确（B3 验收）、`operation_no` 反填（B4）、`composition_qty`/`issue_unit` 正确（B3）。
-3. `material_master.material_type` 新料号 = 零件/外购件（B6）。
+3. **料号登记落 staging（R1）**：`pending_material_master_staging`（quotation_id=pendingQuotationId）新料号 material_type = 零件/外购件；`material_master` 正表**不**落新料号（B6）。
 4. **整单回滚**：构造错误文件 → `FAILED` + 各表 `count(*)` 校验前后一致（B8/B9）。
 5. 创建报价单 → 编辑页渲染子件/单位/工序正常（AP-53 视图链路 `$view`）。
 

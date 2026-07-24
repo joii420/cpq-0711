@@ -4,6 +4,13 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
+import com.cpq.basicdata.v6.service.MaterialNoResolver;
+import com.cpq.basicdata.v6.service.MaterialNoUnresolvableException;
+import com.cpq.basicdata.v6.service.PartTypeInferenceService;
+import com.cpq.basicdata.v6.service.PartTypeInferenceService.InferResult;
+import com.cpq.basicdata.v6.service.PartTypeInferenceService.TypeIndex;
+import com.cpq.basicdata.v6.service.QuoteMaterialNoAllocator;
 import com.cpq.basicdata.v6.versioning.VersionedGroupSpec;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -21,11 +28,16 @@ import java.util.Map;
  *
  * <p>版本化（Task 3）：groupKey=(QUOTE, customer_no, MATERIAL, cost_type=要素名称, code, finished_material_no)，
  * content=[seq_no, pricing_price, cost_ratio, currency, unit]。cost_type 随行动态。
+ * <p>update-0723 B5（U10）：有码沿用原始码（不 resolve，行为不变）；只有名称时补名称反查——按
+ * {@link TypeIndex} 推断类型，材质走 material_recipe 按名查码（查无报错「未找到材质」），
+ * 零件/外购件走 {@link MaterialNoResolver}（按名查 material_master 或发号，共享全导入 BatchState，R2）。
  */
 @ApplicationScoped
 public class Q07IncomingOtherFeeHandler implements SheetHandler {
 
     @Inject VersionedV6Writer writer;
+    @Inject MaterialNoResolver materialNoResolver;
+    @Inject MaterialMasterRepository materialMasterRepo;
 
     @org.eclipse.microprofile.config.inject.ConfigProperty(name = "cpq.v6import-setbased-writer", defaultValue = "false")
     boolean setBased;
@@ -36,20 +48,49 @@ public class Q07IncomingOtherFeeHandler implements SheetHandler {
         "seq_no", "pricing_price", "cost_ratio", "currency", "unit");
 
     @Override
-    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @Transactional(Transactional.TxType.MANDATORY)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
+        TypeIndex typeIndex = (TypeIndex) ctx.sharedCache.get("partTypeIndex");
+        MaterialNoResolver.BatchState batch = MaterialNoResolver.batchStateFor(ctx);
+        Map<String, String[]> mmAcc = new LinkedHashMap<>();
         Map<List<Object>, Map<String, Object>> groupKeyOf = new LinkedHashMap<>();
         Map<List<Object>, List<Map<String, Object>>> contentOf = new LinkedHashMap<>();
         for (SheetRow row : rows) {
             result.totalRows++;
             String costType = row.getStr("要素名称");
             if (costType == null) { result.recordError(row.rowNo, "要素名称", "为空"); continue; }
-            // task-0717 扩围:投入料号=材质料号,恒按材质处理——原始码作 code,不 resolve/不铸号、
-            // 不登记 material_customer_map、不登记 material_master(名走 material_recipe 兜底)。
             String raw = row.exact("投入料号");
-            if (raw == null || raw.isBlank()) { result.recordError(row.rowNo, "投入料号", "为空"); continue; }
-            String code = raw;
+            String rawName = row.exact("投入料号名称");
+            if ((raw == null || raw.isBlank()) && (rawName == null || rawName.isBlank())) {
+                result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
+            }
+            String code;
+            if (raw != null && !raw.isBlank()) {
+                code = raw;   // 有码：沿用原始码，不 resolve/不铸号（行为不变）
+            } else {
+                InferResult infer = typeIndex != null ? typeIndex.infer(null, rawName)
+                    : new InferResult(PartTypeInferenceService.ASSEMBLY, PartTypeInferenceService.Source.DEFAULT);
+                String characteristic = infer.characteristic();
+                if (PartTypeInferenceService.RECIPE.equals(characteristic)) {
+                    code = typeIndex.resolveRecipeCode(null, rawName);
+                    if (code == null) {
+                        result.recordError(row.rowNo, "投入料号名称", "未找到材质「" + rawName + "」");
+                        continue;
+                    }
+                } else {
+                    try {
+                        code = materialNoResolver.resolve(null, rawName, batch);
+                    } catch (MaterialNoUnresolvableException ex) {
+                        result.recordError(row.rowNo, "投入料号名称", "料号与名称均为空"); continue;
+                    } catch (QuoteMaterialNoAllocator.CrossCustomerQuoteNoException ex) {
+                        result.recordError(row.rowNo, "投入料号名称", "报价料号跨客户串号"); continue;
+                    }
+                    String materialType = PartTypeInferenceService.OUTSOURCED.equals(characteristic) ? "外购件" : "零件";
+                    MaterialMasterRepository.accNameType(mmAcc, code, rawName, materialType);
+                    result.recordWrite("material_master", 1);
+                }
+            }
             String finishedMaterialNo = row.getStr("销售料号", "宏丰料号", "成品料号");
             List<Object> key = Arrays.asList(costType, code, finishedMaterialNo);
             groupKeyOf.computeIfAbsent(key, k -> {
@@ -71,6 +112,15 @@ public class Q07IncomingOtherFeeHandler implements SheetHandler {
             contentOf.computeIfAbsent(key, k -> new ArrayList<>()).add(c);
             result.successRows++;
         }
+
+        if (!mmAcc.isEmpty()) {
+            List<MaterialMasterRepository.NameTypeRow> mmRows = new ArrayList<>(mmAcc.size());
+            for (Map.Entry<String, String[]> e : mmAcc.entrySet()) {
+                mmRows.add(new MaterialMasterRepository.NameTypeRow(e.getKey(), e.getValue()[0], e.getValue()[1]));
+            }
+            materialMasterRepo.upsertBatchNameType(mmRows, ctx.importedBy, true, ctx.pendingQuotationId);
+        }
+
         if (setBased) {
             LinkedHashMap<Map<String, Object>, List<Map<String, Object>>> groups = new LinkedHashMap<>();
             for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet())

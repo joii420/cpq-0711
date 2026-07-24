@@ -46,12 +46,14 @@ class Q09IncomingRecoveryHandlerTest {
             .setParameter("c", CODE).getSingleResult()).longValue();
     }
 
+    @Transactional
     @Test void importTwice_idempotent() {
         handler.handle(List.of(row("0.5")), ctx());
         handler.handle(List.of(row("0.5")), ctx());
         assertEquals("2000", version());
         assertEquals(1L, total());
     }
+    @Transactional
     @Test void changeValue_bumps() {
         handler.handle(List.of(row("0.5")), ctx());
         handler.handle(List.of(row("0.7")), ctx());

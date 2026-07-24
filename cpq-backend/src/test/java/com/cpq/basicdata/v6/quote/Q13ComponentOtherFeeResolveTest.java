@@ -60,6 +60,7 @@ class Q13ComponentOtherFeeResolveTest {
         return list.stream().findFirst().map(Object::toString).orElse(null);
     }
 
+    @Transactional
     @Test
     void emptyComponentNoWithName_generatesRegistersAndUsesAsCode() {
         SheetImportResult r = handler.handle(List.of(row(null, NAME, "包装费")), ctx());
@@ -70,6 +71,7 @@ class Q13ComponentOtherFeeResolveTest {
         assertTrue(generated.matches("^\\d{4}-\\d{10}$"), "生成号需为报价料号格式(XXXX-YYMMNNNNNN)，实得: " + generated);
     }
 
+    @Transactional
     @Test
     void emptyCostType_recordsError_noRegister() {
         SheetImportResult r = handler.handle(List.of(row(null, NAME, null)), ctx());

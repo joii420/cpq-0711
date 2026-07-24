@@ -2,6 +2,7 @@ package com.cpq.basicdata.v6.quote;
 
 import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.service.PartTypeInferenceService;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -14,21 +15,24 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** C5：同一 Excel 连导两次，第二次按名称命中第一次生成的号，不再新增（决策 #2/#3）。 */
+/** C5：同一 Excel 连导两次，第二次不应重复升版/重复落库（决策 #2/#3，update-0723 B3 单表改造后沿用）。 */
 @QuarkusTest
 class MaterialNoImportIdempotencyTest {
 
     @Inject MaterialBomMergeHandler handler;
+    @Inject PartTypeInferenceService typeInferenceService;
     @Inject EntityManager em;
 
-    static final String CUST = "TSTIDEM0615";
-    static final String MAT  = "TESTIDEM0615";
+    static final String CUST = "TSTIDEM0723";
+    static final String MAT  = "TESTIDEM0723";
+    /** 真实存在于 material_recipe 的材质料号（见 dev-docs 黄金样例）。 */
+    static final String RECIPE_991 = "991";
+    static final String RECIPE_992 = "992";
 
     @Transactional
     void cleanup() {
         em.createNativeQuery("DELETE FROM material_bom_item WHERE material_no=:m").setParameter("m", MAT).executeUpdate();
         em.createNativeQuery("DELETE FROM material_bom WHERE material_no=:m").setParameter("m", MAT).executeUpdate();
-        em.createNativeQuery("DELETE FROM material_master WHERE material_no LIKE '9%' OR material_name LIKE 'IDEM-%'").executeUpdate();
     }
     @BeforeEach void before() { cleanup(); }
     @AfterEach  void after()  { cleanup(); }
@@ -37,10 +41,10 @@ class MaterialNoImportIdempotencyTest {
         ImportContext c = new ImportContext();
         c.customerNo = CUST; c.systemType = "QUOTE"; c.importedBy = null; return c;
     }
-    /** repair-2 后物料BOM 组件列恒为材质料号原始码（"投入料号"/"材质料号"任一非空即用），不再按名 resolve/生成。 */
+    /** 单 sheet 物料BOM 行：投入料号=材质料号原始码（不建 partTypeIndex 时命中 material_recipe 库内兜底=RECIPE）。 */
     private SheetRow matRow(int seq, String code) {
         Map<String, String> m = new LinkedHashMap<>();
-        m.put("宏丰料号", MAT); m.put("项次", String.valueOf(seq));
+        m.put("销售料号", MAT); m.put("项次", String.valueOf(seq));
         m.put("投入料号", code); m.put("产出料号类型", "2.非银点类");
         m.put("材料毛重", "1.0"); m.put("重量单位", "KG");
         return new SheetRow(seq, m);
@@ -64,36 +68,39 @@ class MaterialNoImportIdempotencyTest {
     }
 
     /**
-     * task-0717 repair-2 更新：本用例原前提"投入料号空+名称有值 → 首次按名生成 2 个报价料号，
-     * 第二次按名命中不新增"，对应 repair-2 前旧语义（彼时物料BOM 组件列走
-     * {@code materialNoResolver.resolve()}，按名生成/命中内部料号）。
-     *
-     * <p>repair-2（决策 A/B）后物料BOM 组件列恒为材质料号原始码，不再 resolve/不再按名生成——
-     * "幂等"这一有价值的覆盖点改为验证：同一份 Excel（给出材质料号原始码，不涉及铸号）连续导入
-     * 两次，第二次不产生新的 material_bom/material_bom_item 版本（VersionedV6Writer
-     * 的 multisetEqual 命中 → 直接复用旧版本号不写库，见 writeVersionedMasterDetail 步骤 1）、
-     * 不产生重复的 material_bom_item 行（总行数含历史应保持不变，而非仅 is_current 行数不变——
-     * 若误升版，旧版本会被 flip 但保留，总行数会翻倍，仅看 is_current 计数掩盖不了这种情况）、
-     * 也不新增 material_master 料号（mat 分支从不写 master，与是否重复导入无关）。
+     * 材质料号 991/992 是 material_recipe 库内已存在的真实码。显式建 RECIPE 权威索引（比依赖
+     * handler 的 typeIndex==null 默认零件兜底更贴近真实导入路径——Phase1 校验器总会先建好
+     * typeIndex 再进 Phase2 写入，见 {@code QuoteImportService#processImport}）。
      */
+    @Transactional
     @Test
     void reimportSameExcel_noNewBomVersionOrDuplicateRows() {
-        handler.merge(List.of(matRow(1, "IDEM-A001"), matRow(2, "IDEM-B001")), List.of(), ctx());
+        ImportContext ctx = ctx();
+        // 显式建 RECIPE 权威索引（比依赖 null 兜底更贴近真实导入路径：Phase1 总会建好 typeIndex）。
+        Map<String, String> elemRowA = new LinkedHashMap<>();
+        elemRowA.put("销售料号", MAT); elemRowA.put("材质料号", RECIPE_991);
+        Map<String, String> elemRowB = new LinkedHashMap<>();
+        elemRowB.put("销售料号", MAT); elemRowB.put("材质料号", RECIPE_992);
+        ctx.sharedCache.put("partTypeIndex", typeInferenceService.buildIndex(
+            Map.of("物料与元素BOM", List.of(new SheetRow(1, elemRowA), new SheetRow(2, elemRowB)))));
+
+        handler.merge(List.of(matRow(1, RECIPE_991), matRow(2, RECIPE_992)), ctx);
         List<String> firstComponentNos = currentComponentNos();
-        assertEquals(List.of("IDEM-A001", "IDEM-B001"), firstComponentNos, "首次导入子行按材质料号原始码落库");
+        assertEquals(List.of(RECIPE_991, RECIPE_992), firstComponentNos, "首次导入子行按材质料号原始码落库");
         String firstVersion = currentBomVersion();
         assertNotNull(firstVersion, "首次导入应产生一个 bom_version");
         long firstTotalRows = totalBomItemRowCount();
         assertEquals(2L, firstTotalRows);
 
-        handler.merge(List.of(matRow(1, "IDEM-A001"), matRow(2, "IDEM-B001")), List.of(), ctx());
+        handler.merge(List.of(matRow(1, RECIPE_991), matRow(2, RECIPE_992)), ctx);
         assertEquals(firstVersion, currentBomVersion(),
             "内容完全相同的重复导入不应升版（VersionedV6Writer multisetEqual 命中→复用旧版本不写库）");
         assertEquals(firstComponentNos, currentComponentNos(), "重复导入不改变当前生效子行集合");
         assertEquals(firstTotalRows, totalBomItemRowCount(), "重复导入不产生新版本/不产生重复行（幂等）");
         assertEquals(0L, ((Number) em.createNativeQuery(
-                "SELECT count(*) FROM material_master WHERE material_no IN ('IDEM-A001','IDEM-B001')")
+                "SELECT count(*) FROM material_master WHERE material_no IN (:a,:b)")
+                .setParameter("a", RECIPE_991).setParameter("b", RECIPE_992)
                 .getSingleResult()).longValue(),
-            "材质料号不登记 material_master（mat 分支不写 master，与是否重复导入无关）");
+            "材质料号不登记 material_master（RECIPE 分支不写 master，与是否重复导入无关）");
     }
 }
