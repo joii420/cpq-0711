@@ -56,8 +56,6 @@ const PricingStrategy: React.FC = () => {
   const [editingStrategy, setEditingStrategy] = useState<any>(null);
   const [form] = Form.useForm();
   const [rules, setRules] = useState<any[]>([]);
-  // task-0722 · F6.1：右侧内容区新增 Tab；选中「全局」时「折扣策略」Tab 不显示，强制落到「元素价格策略」
-  const [activeMainTab, setActiveMainTab] = useState<'discount' | 'element'>('discount');
 
   // Load customers
   const fetchCustomers = async (page = 0, keyword = '', level = '') => {
@@ -103,10 +101,6 @@ const PricingStrategy: React.FC = () => {
     }
   }, [selectedCustomer]);
 
-  // 切换客户时重置到默认 Tab；选中全局项时「折扣策略」Tab 不存在，强制落到「元素价格策略」
-  useEffect(() => {
-    setActiveMainTab(selectedCustomer?.isGlobal ? 'element' : 'discount');
-  }, [selectedCustomer?.id]);
 
   const activeCount = strategies.filter(s => s.status === 'ACTIVE').length;
 
@@ -366,142 +360,15 @@ const PricingStrategy: React.FC = () => {
               </div>
             </div>
 
-            {/* task-0722 · F6.1：新增「元素价格策略」Tab；原「折扣策略」内容原样搬入第一个 Tab。
-                选中全局项时不显示「折扣策略」Tab（折扣是客户维度概念，用条件渲染 items，非 disabled）。 */}
-            <Tabs
-              activeKey={activeMainTab}
-              onChange={(k) => setActiveMainTab(k as 'discount' | 'element')}
-              items={[
-                ...(selectedCustomer.isGlobal ? [] : [{
-                  key: 'discount',
-                  label: '折扣策略',
-                  children: (
-                    <>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-                        <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
-                          新建策略
-                        </Button>
-                      </div>
-
-                      {activeCount > 0 && (
-                        <Alert
-                          type="info"
-                          message={`当前有 ${activeCount} 条生效策略`}
-                          style={{ marginBottom: 16 }}
-                          showIcon
-                        />
-                      )}
-
-                      {strategies.length === 0 && !loadingStrategies ? (
-                        <div style={{ textAlign: 'center', color: '#999', paddingTop: 60 }}>
-                          暂无定价策略，点击"新建策略"开始配置
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                          {strategies.map(s => (
-                            <Card
-                              key={s.id}
-                              size="small"
-                              loading={loadingStrategies}
-                              title={
-                                <Space>
-                                  <Text strong>{s.name}</Text>
-                                  <Tag color={statusMap[s.status]?.color}>
-                                    {statusMap[s.status]?.label || s.status}
-                                  </Tag>
-                                  <Text type="secondary" style={{ fontSize: 12 }}>优先级: {s.priority}</Text>
-                                </Space>
-                              }
-                              extra={
-                                <Space>
-                                  <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(s)}>
-                                    编辑
-                                  </Button>
-                                  <Button
-                                    size="small"
-                                    icon={s.status === 'ACTIVE' ? <StopOutlined /> : <CheckCircleOutlined />}
-                                    onClick={() => handleToggleStatus(s)}
-                                  >
-                                    {s.status === 'ACTIVE' ? '禁用' : '启用'}
-                                  </Button>
-                                  <Popconfirm
-                                    title="确认删除此策略？"
-                                    onConfirm={() => handleDelete(s.id)}
-                                    okText="删除"
-                                    cancelText="取消"
-                                  >
-                                    <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
-                                  </Popconfirm>
-                                </Space>
-                              }
-                            >
-                              <div style={{ display: 'flex', gap: 24, marginBottom: s.rules?.length > 0 ? 12 : 0, flexWrap: 'wrap' }}>
-                                <div>
-                                  <Text type="secondary">基础折扣: </Text>
-                                  <Text strong>{s.baseDiscount}%</Text>
-                                </div>
-                                <div>
-                                  <Text type="secondary">最小订单金额: </Text>
-                                  <Text>¥{Number(s.minOrderAmount || 0).toLocaleString()}</Text>
-                                </div>
-                                {s.effectiveDate && (
-                                  <div>
-                                    <Text type="secondary">有效期: </Text>
-                                    <Text>{s.effectiveDate} ~ {s.expirationDate || '无限'}</Text>
-                                  </div>
-                                )}
-                              </div>
-
-                              {s.rules && s.rules.length > 0 && (
-                                <>
-                                  <Divider style={{ margin: '8px 0' }} />
-                                  <Table
-                                    size="small"
-                                    dataSource={s.rules}
-                                    rowKey="id"
-                                    pagination={false}
-                                    columns={[
-                                      {
-                                        title: '起订金额',
-                                        dataIndex: 'thresholdAmount',
-                                        render: v => `¥${Number(v).toLocaleString()}`,
-                                      },
-                                      {
-                                        title: '折扣率',
-                                        dataIndex: 'discountRate',
-                                        render: v => `${v}%`,
-                                      },
-                                      {
-                                        title: '规则类型',
-                                        dataIndex: 'ruleType',
-                                        render: v => v === 'BULK_DISCOUNT' ? '批量折扣' : v === 'AMOUNT_DISCOUNT' ? '金额折扣' : v,
-                                      },
-                                      {
-                                        title: '排序',
-                                        dataIndex: 'sortOrder',
-                                      },
-                                    ]}
-                                  />
-                                </>
-                              )}
-                            </Card>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  ),
-                }]),
-                {
-                  key: 'element',
-                  label: '元素价格策略',
-                  children: (
-                    <ElementPriceStrategyTab
-                      customerNo={selectedCustomer.isGlobal ? GLOBAL_CUSTOMER_NO : selectedCustomer.code}
-                      customerLabel={selectedCustomer.name}
-                    />
-                  ),
-                },
-              ]}
+            {/* task-0722 follow-up (2026-07-23)：「折扣策略」Tab 已下线。
+                其配置的客户级折扣(pricing_strategy)在当前报价流程已不生效——触发入口
+                handleCalculateDiscount 无调用方、JavaDiscountCalculationService 仅被测试引用，
+                报价折扣现走 Step3 逐行 LineDiscountService。故不再展示「折扣策略」Tab，
+                直接渲染「元素价格策略」。折扣相关前端逻辑/后端端点/pricing_strategy 表数据
+                均保留未删(死代码，可逆)，如需恢复见 git 历史。 */}
+            <ElementPriceStrategyTab
+              customerNo={selectedCustomer.isGlobal ? GLOBAL_CUSTOMER_NO : selectedCustomer.code}
+              customerLabel={selectedCustomer.name}
             />
           </>
         )}
