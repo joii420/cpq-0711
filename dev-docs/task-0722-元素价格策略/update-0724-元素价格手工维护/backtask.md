@@ -126,14 +126,22 @@ public UUID id;            // element_daily_price.id
 public String fetchStatus; // SUCCESS / FAILED / MANUAL / IMPORT
 ```
 
-**2) `PriceTableService.listDetail` 的 SELECT 补两列**（`:61-62` 附近）
+**2) `PriceTableService.listDetail` 的 SELECT 补两列**（`:61` 起的 native SQL；映射方法 `mapDetailRow` 在 `:84`）
+
+⚠️ **该方法是 native query + 按下标取值的 `Object[]` 映射**。在 SELECT **开头或中间**插列会让后续所有 `r[i]` 下标整体位移，`mapDetailRow` 每一行都要跟着改，漏一处就是全列错位（不报编译错）。
+
+**正确做法：两个新列一律追加到现有 SELECT 的末尾，前面已有列顺序一格不动**，`mapDetailRow` 只在末尾多取两个下标：
 
 ```java
-"SELECT edp.id, edp.element_name, e.element_name, edp.price_date, edp.source_id, s.source_name, s.status, " +
-"       edp.raw_price, edp.currency, edp.price_unit, edp.fetch_status, u.full_name, edp.updated_at" +
+// 现有 SELECT（:61）保持原样，仅在最后追加两列：
+"...  edp.raw_price, edp.currency, edp.price_unit, u.full_name, edp.updated_at, " +
+"     edp.id, edp.fetch_status "          // ← 新增两列放最后
+// mapDetailRow(:84) 对应在末尾追加（n = 追加前的列数）：
+//   dto.id          = (UUID)   r[n];
+//   dto.fetchStatus = (String) r[n + 1];
 ```
 
-⚠️ **该方法用的是 native query + 按下标取值的 `Object[]` 映射**。加列会让**后续所有列的下标整体位移**——必须逐个核对映射代码，漏改一处就是全列错位（且不报编译错）。建议把新列**加在末尾**以最小化位移，或加完后逐字段打印一行验证。
+> ⚠️ 已核实：现役 `:61` SELECT 首列是 `edp.element_name`（元素符号，落 DTO 的 `elementCode`），第 2 列 `e.element_name` 是**中文名**（落 DTO 的 `elementName`）。**不要**把 `edp.id` 插到最前——那正是"整体位移"最严重的写法。
 
 **3) 导出复用同一路径**
 
