@@ -3,7 +3,6 @@ import { Tabs, Button, Space } from 'antd';
 import { ImportOutlined } from '@ant-design/icons';
 import V6ProcessCrudTab from './V6ProcessCrudTab';
 import V6BomQueryTab from './V6BomQueryTab';
-import PartVersionPage from '../partversion/PartVersionPage';
 import MaterialRecipeManagement from '../config/MaterialRecipeManagement';
 import ElementManagement from '../config/ElementManagement';
 import ConfigTemplateManagement from '../configtemplate/ConfigTemplateManagement';
@@ -30,7 +29,6 @@ const MasterDataHubPage: React.FC = () => {
         destroyInactiveTabPane
         items={[
           { key: 'process', label: '工序', children: <V6ProcessCrudTab /> },
-          { key: 'part', label: '料号', children: <PartVersionPage /> },
           { key: 'bom', label: 'BOM', children: <V6BomQueryTab /> },
           { key: 'material', label: '材质', children: <MaterialRecipeManagement /> },
           { key: 'element', label: '元素', children: <ElementManagement /> },

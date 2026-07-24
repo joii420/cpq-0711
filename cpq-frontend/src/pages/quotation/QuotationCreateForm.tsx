@@ -1,5 +1,5 @@
 // V6 导入向导 Step 3 — 创建报价单表单（复用组件，无 Drawer 壳）
-// 从 BasicDataImportV5ToQuotation.tsx 的 CreateQuotationDrawer 表单部分抽出
+// 由 QuotationWizard / QuoteBasicDataImportV6Drawer 共用
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,

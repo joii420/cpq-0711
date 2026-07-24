@@ -9,14 +9,10 @@ import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOver
 import { extractSourceRefs, topoOrderComponents } from './crossTabOrder';
 import { useConfigTemplates, type ConfigTemplateMap } from './useConfigTemplates';
 import { evaluateCondition } from '../../utils/conditionEngine';
-import type { DriftDetectionResult } from '../../types/quotation-drift';
-import { quotationDriftService } from '../../services/quotationDriftService';
-import { useAuthStore } from '../../stores/authStore';
 import LinkedExcelView from './LinkedExcelView';
 import ComparisonBoard from './ComparisonBoard';
 import { datasourceService } from '../../services/datasourceService';
 import { materialMappingService } from '../../services/materialMappingService';
-import ElementPriceHint from './components/ElementPriceHint';
 import ComponentCell from './components/ComponentCell';
 import type { CellContext } from './components/ComponentCell';
 import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
@@ -254,16 +250,12 @@ export interface QuotationStep2Props {
   onAddBatch?: (newItems: LineItem[]) => void;
   customerId?: string;
   quotationId?: string;
-  /** 已绑定的客户报价模板 ID(BasicDataImportV5ToQuotation 创建时写入 quotation) */
+  /** 已绑定的客户报价模板 ID(创建报价单时写入 quotation) */
   customerTemplateId?: string;
   /** V72：核价模板 ID(template 表 templateKind='COSTING')。
    *  「核价单」视图的产品卡片按这套组件渲染；与 customerTemplateId 同等地位，但用于不同视图。 */
   costingCardTemplateId?: string;
-  /** 报价漂移检测结果(来自报价单 getById 返回的 driftDetection 字段) */
-  driftDetection?: DriftDetectionResult;
-  /** 刷新报价单后的回调(用于横幅版本漂移刷新按钮) */
-  onRefreshQuotation?: () => void;
-  /** 纯重载回调：仅重新 getById+applyData，不触发版本漂移刷新（「刷新基础数据」按钮专用） */
+  /** 纯重载回调：仅重新 getById+applyData（「刷新基础数据」按钮专用） */
   onReloadQuotation?: () => void | Promise<void>;
   /** 当前报价单状态（来自后端 quotation.status），用于控制「刷新基础数据」按钮仅 DRAFT 可见 */
   quotationStatus?: string;
@@ -2722,15 +2714,6 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           field.field_type === 'DATA_SOURCE' &&
                           field.is_required &&
                           row[key] == null;
-                        // ElementPriceHint: INPUT_NUMBER 类型元素单价字段的特殊提示（编辑页专属）
-                        const elementName: string | undefined = row.element_name || undefined;
-                        const isUnitPriceField =
-                          field.is_amount === true ||
-                          key === 'unit_price' ||
-                          key === 'element_actual_unit_price';
-                        const showElementHint = !!(elementName && isUnitPriceField
-                          && (field.field_type === 'INPUT_NUMBER' || field.field_type === 'INPUT'));
-
                         const cellCtx: CellContext = {
                           basicDataValues,
                           pathCacheState: pathCacheState ?? {},
@@ -2774,19 +2757,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           // Phase 1 手动行标记(供后续 Task 7 ComponentCell 消费)
                           isManualRow: isManualRowFlag,
                         };
-                        const cellInner = showElementHint ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'nowrap' }}>
-                            <ComponentCell
-                              field={field}
-                              row={row}
-                              rowIndex={realRowIndex}
-                              fieldKey={key}
-                              readonly={false}
-                              context={cellCtx}
-                            />
-                            <ElementPriceHint elementName={elementName!} />
-                          </div>
-                        ) : (
+                        const cellInner = (
                           <ComponentCell
                             field={field}
                             row={row}
@@ -3010,8 +2981,6 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   onUpdateLineItem,
   customerId,
   quotationId,
-  driftDetection,
-  onRefreshQuotation,
   onReloadQuotation,
   quotationStatus,
   quoteCardStructure,
@@ -3049,7 +3018,6 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locateTarget?.seq]);
-  const [refreshing, setRefreshing] = useState(false);
   const [refreshingSnapshot, setRefreshingSnapshot] = useState(false);
   // autoPopulating state 保留 — UI(空状态文案、loading)仍在用,但实际触发已移除。
   // 父组件 QuotationWizard 已接管 autoPopulate(L631-668),Step2 内的重复实现会导致
@@ -3059,8 +3027,6 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   const [autoPopulating, _setAutoPopulating] = useState(false);
   // 留个 setter 给可能的外部场景(目前未用); _setAutoPopulating 命名以表示有意未消费 var-warn
   void _setAutoPopulating;
-  const { user } = useAuthStore();
-  const isSalesRep = user?.role === 'SALES_REP';
 
   // 动态 key 全局变量定义字典 — 供 formulaEngine 运行时 path 重写使用
   // 空 map = 动态 key token 兜底 0 (旧行为); list() 失败时同样兜底 0 不影响静态 key 场景
@@ -3431,20 +3397,6 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
     ...configTemplatesCosting,
   }), [configTemplatesQuote, configTemplatesCosting]);
 
-  const handleRefreshVersions = async () => {
-    if (!quotationId) return;
-    setRefreshing(true);
-    try {
-      await quotationDriftService.refreshVersions(quotationId);
-      message.success('已更新至最新版本基础数据');
-      onRefreshQuotation?.();
-    } catch {
-      message.error('刷新版本失败，请稍后重试');
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
   // 「刷新基础数据」按钮处理：调后端 refreshCardSnapshot 重算快照，再整页重载
   const handleRefreshSnapshot = () => {
     if (!quotationId) return;
@@ -3493,39 +3445,8 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   }, [viewType, mainTab, quotationId, lineItems]);
   void ensuringExcel;
 
-  // 构建漂移横幅文案
-  const buildDriftMessage = () => {
-    if (!driftDetection?.driftedRecords?.length) return '基础数据已更新，部分版本已过期';
-    const parts = driftDetection.driftedRecords.map((r) =>
-      r.displayMessage || `${r.tableName} 升至 v${r.currentVersion}，原 v${r.referencedVersion} 已过期`
-    );
-    return `基础数据已更新（${parts.join('；')}）`;
-  };
-
   return (
     <div>
-      {/* 漂移横幅 */}
-      {driftDetection?.hasDrift && (
-        <Alert
-          type="warning"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message={buildDriftMessage()}
-          action={
-            isSalesRep ? (
-              <Button
-                size="small"
-                type="primary"
-                loading={refreshing}
-                onClick={handleRefreshVersions}
-              >
-                使用最新版本
-              </Button>
-            ) : undefined
-          }
-        />
-      )}
-
       {/* Step Header — 两级 tab：mainTab 左、viewType 右；comparison 模式隐藏右侧 */}
       <div className="qt-step2-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>

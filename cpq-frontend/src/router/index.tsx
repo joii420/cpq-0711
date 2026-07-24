@@ -37,20 +37,15 @@ import InternalMaterialManagement from '../pages/material/InternalMaterialManage
 import ImportHistoryList from '../pages/importconfig/ImportHistoryList';
 import ProductCategoryManagement from '../pages/basicdata/ProductCategoryManagement';
 import ComparisonTagManagement from '../pages/basicdata/ComparisonTagManagement';
-import CostingTemplateList from '../pages/costing/CostingTemplateList';
-import CostingTemplateConfig from '../pages/costing/CostingTemplateConfig';
-import CostingPartDataPage from '../pages/costingpart/CostingPartDataPage';
 import CostingOrderListPage from '../pages/costingorder/CostingOrderListPage';
 import MasterDataPage from '../pages/master-data/MasterDataPage';
 import MasterDataTableViewerPage from '../pages/master-data/MasterDataTableViewerPage';
 import VersionHistoryPage from '../pages/master-data/VersionHistoryPage';
 import ChangeLogCenterPage from '../pages/change-log/ChangeLogCenterPage';
-import ElementPriceCenterPage from '../pages/element-price/ElementPriceCenterPage';
 import GlobalVariablePage from '../pages/global-variable/GlobalVariablePage';
 import SystemConfigPage from '../pages/system-config/SystemConfigPage';
 import LockMonitorPage from '../pages/system-monitor/LockMonitorPage';
 import DdlExtensionPage from '../pages/system-monitor/DdlExtensionPage';
-import PartVersionPage from '../pages/partversion/PartVersionPage';
 import MaterialRecipeManagement from '../pages/config/MaterialRecipeManagement';
 import ConfigTemplateManagement from '../pages/configtemplate/ConfigTemplateManagement';
 import SelTemplateManagement from '../pages/config/SelTemplateManagement';
@@ -121,20 +116,15 @@ const router = createBrowserRouter([
       { path: 'import-history', element: <ImportHistoryList /> },
       { path: 'product-categories', element: <ProductCategoryManagement /> },
       { path: 'comparison-tags', element: <ComparisonTagManagement /> },
-      { path: 'costing-templates', element: <CostingTemplateList /> },
-      { path: 'costing-templates/:id', element: <CostingTemplateConfig /> },
-      { path: 'costing-part-data', element: <CostingPartDataPage /> },
       { path: 'costing-summary', element: <CostingOrderListPage /> },
       { path: 'master-data', element: <MasterDataPage /> },
       { path: 'master-data/history', element: <VersionHistoryPage /> },
       { path: 'master-data/viewer', element: <MasterDataTableViewerPage /> },
       { path: 'change-log', element: <ChangeLogCenterPage /> },
-      { path: 'element-price-center', element: <ElementPriceCenterPage /> },
       { path: 'global-variables', element: <GlobalVariablePage /> },
       { path: 'system-config', element: <SystemConfigPage /> },
       { path: 'system-monitor/locks', element: <LockMonitorPage /> },
       { path: 'system-monitor/ddl-extension', element: <DdlExtensionPage /> },
-      { path: 'part-versions', element: <PartVersionPage /> },
       { path: 'config/material-recipes', element: <MaterialRecipeManagement /> },
       { path: 'config/config-templates', element: <ConfigTemplateManagement /> },
       { path: 'config/sel-templates', element: <SelTemplateManagement /> },

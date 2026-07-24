@@ -3,11 +3,10 @@ import {
   Table, Button, Select, Card, Space, Tag, Drawer, Descriptions,
   DatePicker, message, Typography,
 } from 'antd';
-import { DownloadOutlined, EyeOutlined, CloudUploadOutlined } from '@ant-design/icons';
+import { DownloadOutlined, EyeOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { importService } from '../../services/importService';
 import { customerService } from '../../services/customerService';
-import BasicDataImportV5Wizard from '../quotation/BasicDataImportV5Wizard';
 
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
@@ -31,8 +30,6 @@ const ImportHistoryList: React.FC = () => {
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [detailRecord, setDetailRecord] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  // V5 增强导入向导
-  const [v5WizardOpen, setV5WizardOpen] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -137,15 +134,6 @@ const ImportHistoryList: React.FC = () => {
   return (
     <Card
       title="导入历史"
-      extra={
-        <Button
-          type="primary"
-          icon={<CloudUploadOutlined />}
-          onClick={() => setV5WizardOpen(true)}
-        >
-          V5 增强导入
-        </Button>
-      }
     >
       <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <Select
@@ -237,18 +225,6 @@ const ImportHistoryList: React.FC = () => {
           </Descriptions>
         ) : null}
       </Drawer>
-
-      {/* V5 增强导入向导 */}
-      <BasicDataImportV5Wizard
-        open={v5WizardOpen}
-        customers={customers.map((c: any) => ({ id: c.id, name: c.name }))}
-        onClose={() => setV5WizardOpen(false)}
-        onSuccess={(recordId) => {
-          setV5WizardOpen(false);
-          message.success(`导入成功，记录 ID：${recordId}`);
-          fetchData();
-        }}
-      />
     </Card>
   );
 };

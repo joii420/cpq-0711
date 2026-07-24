@@ -1,4 +1,8 @@
-import api from './api';
+// task-0723: 旧「核价模板」CRUD 服务(costingTemplateService 对象 + /costing-templates/** 端点)已随
+// CostingTemplateList/CostingTemplateConfig 页面一并下线(17/17 零绑定)。
+// 本文件只保留 CostingTemplateColumn 类型 —— 它是 Excel 视图列配置的共享类型，
+// 被 LinkedExcelView / ReadonlyExcelView / QuotationWizard / quotationService / buildExcelSnapshot /
+// comparisonModel / excelCellFormat / use*ExcelRows 等活跃渲染链路广泛引用，不可删。
 
 export interface CostingTemplateColumn {
   col_key: string;
@@ -20,50 +24,3 @@ export interface CostingTemplateColumn {
   };
 }
 
-export interface CostingTemplate {
-  id: string;
-  seriesId: string;
-  name: string;
-  isDefault: boolean;
-  version: string;
-  status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
-  description?: string;
-  columns: string;              // JSON
-  referencedVariables: string;  // JSON
-  // V73：关联到「模板配置」中的具体模板（template.id），V74 起本字段是默认 Excel 模板的唯一性维度
-  linkedTemplateId?: string;
-  linkedTemplateName?: string;
-  linkedTemplateKind?: 'QUOTATION' | 'COSTING';
-  linkedTemplateVersion?: string;
-  createdBy?: string;
-  publishedAt?: string;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export const costingTemplateService = {
-  // V74：移除 categoryId 入参 —— Excel 模板按 linkedTemplateId 调用
-  list: (params?: { status?: string; linkedTemplateId?: string }) =>
-    api.get('/costing-templates', { params }) as Promise<{ data: CostingTemplate[] }>,
-  getById: (id: string) =>
-    api.get(`/costing-templates/${id}`) as Promise<{ data: CostingTemplate }>,
-  create: (data: any) =>
-    api.post('/costing-templates', data) as Promise<{ data: CostingTemplate }>,
-  update: (id: string, data: any) =>
-    api.put(`/costing-templates/${id}`, data) as Promise<{ data: CostingTemplate }>,
-  delete: (id: string) =>
-    api.delete(`/costing-templates/${id}`) as Promise<{ data: void }>,
-  publish: (id: string) =>
-    api.post(`/costing-templates/${id}/publish`) as Promise<{ data: CostingTemplate }>,
-  archive: (id: string) =>
-    api.post(`/costing-templates/${id}/archive`) as Promise<{ data: CostingTemplate }>,
-  // 已归档 / 已发布 → 派生新草稿（同 series，复制 columns / linked_template / description）
-  createNewDraft: (id: string) =>
-    api.post(`/costing-templates/${id}/new-draft`) as Promise<{ data: CostingTemplate }>,
-  // V73：设置/清除关联模板（templateId 为 undefined/null 表示清除）
-  setLinkedTemplate: (id: string, templateId?: string | null) =>
-    api.put(`/costing-templates/${id}/linked-template`,
-      undefined,
-      { params: templateId ? { templateId } : {} }
-    ) as Promise<{ data: CostingTemplate }>,
-};

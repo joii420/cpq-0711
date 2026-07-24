@@ -5,9 +5,24 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { templateService } from '../../services/templateService';
-import type { CostingTemplate, CostingTemplateColumn } from '../../services/costingTemplateService';
+import type { CostingTemplateColumn } from '../../services/costingTemplateService';
 import { batchEvaluate, buildEvalKey } from '../../services/formulaService';
 import type { LineItem } from './QuotationStep2';
+
+/**
+ * task-0723：旧「核价模板」CRUD 类型 CostingTemplate 已随 costingTemplateService 下线。
+ * 本 hook 实际只赋值 id + columns(JSON string)；name/version/isDefault/status 在旧类型上是必填字段，
+ * 但此处从未真正赋值过(旧代码靠 `as CostingTemplate` 绕过类型检查，运行时一直是 undefined) ——
+ * 改为本地最小形状，字段按真实赋值情况标可选，保持与之前完全一致的运行时行为(LinkedExcelView 展示 Tag 时仍是 undefined)。
+ */
+interface LinkedExcelTemplateShape {
+  id: string;
+  columns: string;
+  name?: string;
+  version?: string;
+  isDefault?: boolean;
+  status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+}
 
 /** BNF path cache key: `${partNo}::${path}` */
 export const pathCacheKey = (partNo: string, path: string) => `${partNo}::${path}`;
@@ -51,7 +66,7 @@ export interface UseLinkedExcelRowsParams {
 export interface UseLinkedExcelRowsResult {
   rows: LinkedExcelRow[];
   parsedColumns: CostingTemplateColumn[];
-  excelTemplate: CostingTemplate | null;
+  excelTemplate: LinkedExcelTemplateShape | null;
   loading: boolean;
   error: string | null;
   /**
@@ -176,7 +191,7 @@ export function formatPathValue(v: any): any {
 
 export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedExcelRowsResult {
   const { linkedTemplateId, lineItems, customerId, templateId, quotationContext, quotationId, quotationStatus } = params;
-  const [excelTemplate, setExcelTemplate] = useState<CostingTemplate | null>(null);
+  const [excelTemplate, setExcelTemplate] = useState<LinkedExcelTemplateShape | null>(null);
   const [configShape, setConfigShape] = useState<'v2' | 'legacy' | 'empty'>('empty');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -212,7 +227,7 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
         setExcelTemplate({
           id: linkedTemplateId,
           columns: JSON.stringify(cols),
-        } as CostingTemplate);
+        });
       })
       .catch((e: any) => setError(e?.message ?? '加载 Excel 视图配置失败'))
       .finally(() => setLoading(false));

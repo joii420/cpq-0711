@@ -10,12 +10,10 @@ import {
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { quotationService } from '../../services/quotationService';
-import { quotationDriftService } from '../../services/quotationDriftService';
 import { quotationSnapshotService } from '../../services/quotationSnapshotService';
 import { customerService } from '../../services/customerService';
 import QuotationStep2, { computeProductSubtotal, computeAllFormulas, buildSnapshotExpansions, EMPTY_LINEITEMS } from './QuotationStep2';
 import QuotationStep3 from './QuotationStep3';
-import type { DriftDetectionResult } from '../../types/quotation-drift';
 import type { LineItem, ComponentDataItem } from './QuotationStep2';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
 import { safeSetLocalDraft } from './draftCache';
@@ -1179,7 +1177,7 @@ const QuotationWizard: React.FC = () => {
       await handleSaveDraft();
       await quotationSnapshotService.submit(quotationId);
       message.success('报价单已提交审批');
-      // Reload to get updated status and driftDetection
+      // Reload to get updated status
       await loadQuotation(quotationId);
     } catch (e: any) {
       const conflicts = e?.payload?.conflicts;
@@ -1197,17 +1195,6 @@ const QuotationWizard: React.FC = () => {
     setLocateTarget({ lineItemId: c.lineItemId, productPartNo: c.productPartNo, componentId: c.componentId, seq: locateSeqRef.current });
     setConflictDrawerOpen(false);
     setCurrentStep(1);
-  };
-
-  const handleRefreshDrift = async () => {
-    if (!quotationId) return;
-    try {
-      await quotationDriftService.refreshVersions(quotationId);
-      message.success('已更新至最新版本基础数据');
-      await loadQuotation(quotationId);
-    } catch (e: any) {
-      message.error(e.message || '刷新版本失败，请稍后重试');
-    }
   };
 
   const handleCalculateDiscount = async () => {
@@ -1562,8 +1549,6 @@ const QuotationWizard: React.FC = () => {
         quotationId={quotationId || undefined}
         customerTemplateId={customerTemplateId}
         costingCardTemplateId={costingCardTemplateId}
-        driftDetection={(quotation?.driftDetection as DriftDetectionResult) || undefined}
-        onRefreshQuotation={handleRefreshDrift}
         onReloadQuotation={() => loadQuotation(quotationId!)}
         quotationStatus={quotation?.status}
         quoteCardStructure={quotation?.quoteCardStructure ?? null}
