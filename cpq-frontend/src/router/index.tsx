@@ -45,7 +45,6 @@ import MasterDataPage from '../pages/master-data/MasterDataPage';
 import MasterDataTableViewerPage from '../pages/master-data/MasterDataTableViewerPage';
 import VersionHistoryPage from '../pages/master-data/VersionHistoryPage';
 import ChangeLogCenterPage from '../pages/change-log/ChangeLogCenterPage';
-import ElementPriceCenterPage from '../pages/element-price/ElementPriceCenterPage';
 import GlobalVariablePage from '../pages/global-variable/GlobalVariablePage';
 import SystemConfigPage from '../pages/system-config/SystemConfigPage';
 import LockMonitorPage from '../pages/system-monitor/LockMonitorPage';
@@ -129,7 +128,6 @@ const router = createBrowserRouter([
       { path: 'master-data/history', element: <VersionHistoryPage /> },
       { path: 'master-data/viewer', element: <MasterDataTableViewerPage /> },
       { path: 'change-log', element: <ChangeLogCenterPage /> },
-      { path: 'element-price-center', element: <ElementPriceCenterPage /> },
       { path: 'global-variables', element: <GlobalVariablePage /> },
       { path: 'system-config', element: <SystemConfigPage /> },
       { path: 'system-monitor/locks', element: <LockMonitorPage /> },

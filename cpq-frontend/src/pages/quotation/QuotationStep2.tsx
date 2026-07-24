@@ -16,7 +16,6 @@ import LinkedExcelView from './LinkedExcelView';
 import ComparisonBoard from './ComparisonBoard';
 import { datasourceService } from '../../services/datasourceService';
 import { materialMappingService } from '../../services/materialMappingService';
-import ElementPriceHint from './components/ElementPriceHint';
 import ComponentCell from './components/ComponentCell';
 import type { CellContext } from './components/ComponentCell';
 import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
@@ -2722,14 +2721,6 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           field.field_type === 'DATA_SOURCE' &&
                           field.is_required &&
                           row[key] == null;
-                        // ElementPriceHint: INPUT_NUMBER 类型元素单价字段的特殊提示（编辑页专属）
-                        const elementName: string | undefined = row.element_name || undefined;
-                        const isUnitPriceField =
-                          field.is_amount === true ||
-                          key === 'unit_price' ||
-                          key === 'element_actual_unit_price';
-                        const showElementHint = !!(elementName && isUnitPriceField
-                          && (field.field_type === 'INPUT_NUMBER' || field.field_type === 'INPUT'));
 
                         const cellCtx: CellContext = {
                           basicDataValues,
@@ -2774,19 +2765,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           // Phase 1 手动行标记(供后续 Task 7 ComponentCell 消费)
                           isManualRow: isManualRowFlag,
                         };
-                        const cellInner = showElementHint ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'nowrap' }}>
-                            <ComponentCell
-                              field={field}
-                              row={row}
-                              rowIndex={realRowIndex}
-                              fieldKey={key}
-                              readonly={false}
-                              context={cellCtx}
-                            />
-                            <ElementPriceHint elementName={elementName!} />
-                          </div>
-                        ) : (
+                        const cellInner = (
                           <ComponentCell
                             field={field}
                             row={row}
