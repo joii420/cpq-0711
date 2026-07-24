@@ -234,6 +234,17 @@ public class ComponentImportService {
             c.columnCount = it.columnCount == null ? 0 : it.columnCount;
             c.status = it.status == null ? "ACTIVE" : it.status;
             c.dataDriverPath = it.dataDriverPath;
+            // 恢复行键（导出端早期遗漏；多行可编辑组件缺行键会导致渲染撞键/editRows 塌缩）
+            if (it.rowKeyFields != null && it.rowKeyFields.isArray() && it.rowKeyFields.size() > 0) {
+                c.rowKeyFields = nodeToJson(it.rowKeyFields);
+            }
+            // task-0721 页签类型属性：tabType/partNoField/partNameField；BOM 树页签自动同步 bomRecursiveExpand
+            c.tabType = it.tabType;
+            c.partNoField = it.partNoField;
+            c.partNameField = it.partNameField;
+            if ("BOM".equals(it.tabType)) {
+                c.bomRecursiveExpand = Boolean.TRUE;
+            }
             c.fields = nodeToJson(it.fields);
             c.formulas = nodeToJson(it.formulas);
             // excel_columns 列 NOT NULL；nodeToJson 已把 null/缺失 → "[]"

@@ -62,6 +62,13 @@ public class ComponentExportService {
             item.columnCount = c.columnCount;
             item.status = c.status;
             item.dataDriverPath = c.dataDriverPath;
+            // task-0721 页签类型属性
+            item.tabType = c.tabType;
+            item.partNoField = c.partNoField;
+            item.partNameField = c.partNameField;
+            // 行键(多行可编辑组件的行唯一键)：源为空则保持 null，不落空数组
+            item.rowKeyFields = (c.rowKeyFields == null || c.rowKeyFields.isBlank())
+                    ? null : readJson(c.rowKeyFields);
             item.fields = readJson(c.fields);
             item.formulas = readJson(c.formulas);
             item.excelColumns = readJson(c.excelColumns);

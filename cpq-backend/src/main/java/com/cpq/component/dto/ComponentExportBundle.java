@@ -40,6 +40,14 @@ public class ComponentExportBundle {
         public Integer columnCount;
         public String status;
         public String dataDriverPath;
+        /** task-0721 页签类型属性：tabType(BOM/材质元素/零件/外购件/主件) + 料号列/料号名称列。
+         *  导入端须一并恢复,否则类型判定/加叶子失据。老 bundle 无此字段=null。 */
+        public String tabType;
+        public String partNoField;
+        public String partNameField;
+        /** 行键字段名列表(原 row_key_fields JSONB)。多行可编辑组件的行唯一键；
+         *  导入端须一并恢复,否则导入后行键丢失→多材质/多工序等场景撞键。老 bundle 无此字段=null。 */
+        public JsonNode rowKeyFields;
         /** 字段定义(原 JSONB,内嵌为真实 JSON 节点)。 */
         public JsonNode fields;
         /** 公式定义(原 JSONB)。 */
