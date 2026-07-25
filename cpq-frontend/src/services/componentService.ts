@@ -13,6 +13,13 @@ export interface BatchExpandTask {
    * 用于后端按 lineItemId 隔离同 partNo 多行的展开结果，防止 cache 互相覆盖。
    */
   lineItemId?: string | null;
+  /**
+   * task-0725: 该 task 所属业务侧，供后端决定是否为本次展开打开报价侧 pending 可见域
+   * （QuotePendingScope.open）。'QUOTE' = 报价侧渲染；'COSTING' = 核价侧渲染，不开启
+   * pending 可见域。老后端未识别该字段时按 'COSTING' 兜底（保守），不影响兼容性。
+   * 仅进请求体，不进任何前端缓存键（driverExpansionKey 不含此维度，见 useDriverExpansions.ts）。
+   */
+  usage?: 'QUOTE' | 'COSTING';
 }
 
 export interface BatchExpandResultItem {

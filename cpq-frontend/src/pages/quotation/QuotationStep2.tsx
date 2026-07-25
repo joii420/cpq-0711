@@ -3359,9 +3359,9 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
     }
   }, [costingSnapshotPending]);
   // 2026-05-19 修: useDriverExpansions 返 {cache, invalidate} 而非纯 Map; 必须解构 .cache
-  const { cache: driverExpansionsQuote } = useDriverExpansions(useSnapQuote ? EMPTY_LINEITEMS : lineItems, customerId, quotationId);
+  const { cache: driverExpansionsQuote } = useDriverExpansions(useSnapQuote ? EMPTY_LINEITEMS : lineItems, customerId, quotationId, 'QUOTE');
   // 核价单卡片所需的展开（按 costingTemplate 视图下的 componentData 收集）
-  const { cache: driverExpansionsCosting } = useDriverExpansions(useSnapCosting ? EMPTY_LINEITEMS : costingLineItems, customerId, quotationId);
+  const { cache: driverExpansionsCosting } = useDriverExpansions(useSnapCosting ? EMPTY_LINEITEMS : costingLineItems, customerId, quotationId, 'COSTING');
   // 快照模式: 从行级值快照构造 expansions(键与渲染查找一致)
   // rowKeyFieldsByComp 供 buildSnapshotExpansions 过滤墓碑行(AP-54)；与 ProductCard 内同口径。
   const pageRowKeyFieldsByQuote = React.useMemo(() => {

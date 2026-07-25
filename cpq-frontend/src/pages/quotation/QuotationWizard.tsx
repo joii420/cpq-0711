@@ -131,8 +131,10 @@ const QuotationWizard: React.FC = () => {
   // 与 batch-expand 完全同源(快照本就由它生成), 行编辑值仍取自 cd.rows, 故 snapshotRows 输出不变、
   // 编辑往返存活不受影响(E2E 守护)。新增产品(无快照)时 useSnapAll=false 自动回退实时 batch-expand。
   const useSnapAll = lineItems.length > 0 && lineItems.every(li => !!li.quoteCardValues);
+  // 本 hook 实例喂的是 lineItems（报价侧行）而非 costingLineItems，与下方
+  // buildSnapshotExpansions(lineItems, 'QUOTE', ...) 同源 —— 恒为 QUOTE 侧。
   const { cache: driverExpansionsLive, invalidate: invalidateDriverExpansions } =
-    useDriverExpansions(useSnapAll ? EMPTY_LINEITEMS : lineItems, customerIdValue, quotationId ?? undefined);
+    useDriverExpansions(useSnapAll ? EMPTY_LINEITEMS : lineItems, customerIdValue, quotationId ?? undefined, 'QUOTE');
   // rowKeyFieldsByComp 供 buildSnapshotExpansions 按墓碑过滤（AP-54）；来自顶层结构快照。
   const rowKeyFieldsByComp = React.useMemo(() => {
     const m = new Map<string, string[]>();
