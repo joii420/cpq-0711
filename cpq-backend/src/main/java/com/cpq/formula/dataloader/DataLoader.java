@@ -87,13 +87,18 @@ public class DataLoader {
 
         // 阶段 2: $ 前缀走 SqlViewExecutor 旁路（无上下文版本）
         if (sqlViewExecutor.isSqlViewPath(normalizedPath)) {
-            return resultCache.computeIfAbsent(normalizedPath, p -> {
+            // task-0725 T2（评审 BLOCKER）：该分支 key 原只有 normalizedPath 一项，粒度最粗——
+            // 报价侧（scope 开）与核价侧（scope 关）对同一 $view 路径的调用会命中同一 resultCache
+            // 条目，核价侧直接拿到报价侧改写后、含 pending 行的结果（AP-37 型跨侧串号，见 backtask
+            // T2 评审补充 1）。scopedCacheKey 并入 QuotePendingScope.cacheTag() 后，两侧各自落到
+            // 不同 key，互不污染；scope 关闭态 cacheTag()=="" ⟹ key 与改动前逐字相同。
+            return resultCache.computeIfAbsent(scopedCacheKey(normalizedPath), k -> {
                 try {
                     RuntimeContext emptyCtx = new RuntimeContext();
                     return CompletableFuture.completedFuture(
-                            sqlViewExecutor.execute(p, emptyCtx, null));
+                            sqlViewExecutor.execute(normalizedPath, emptyCtx, null));
                 } catch (Exception e) {
-                    LOG.warnf("DataLoader sql-view failed for path='%s': %s", p, e.getMessage());
+                    LOG.warnf("DataLoader sql-view failed for path='%s': %s", normalizedPath, e.getMessage());
                     CompletableFuture<List<Map<String, Object>>> failed = new CompletableFuture<>();
                     failed.completeExceptionally(e);
                     return failed;
@@ -101,7 +106,24 @@ public class DataLoader {
             });
         }
 
-        return resultCache.computeIfAbsent(normalizedPath, this::executeQuery);
+        // task-0725 T2：本分支（非 $view 的 BNF 路径，走 CachedPathParser/CachedSqlCompiler 直接编译
+        // 物理表 SQL）当前不经过 QuotePendingRewriter（该改写只发生在 SqlViewExecutor 内，仅对 $view
+        // 路径生效），故本分支结果本身不因 pending 可见域开/关而不同。加 scopedCacheKey 是防御性的
+        // ——resultCache 是本请求内跨全部 loadByPath 重载共享的单个 Map，统一入口可避免未来任何一侧
+        // 逻辑变化时出现遗漏；scope 关闭态 cacheTag()=="" 时 key 与改动前逐字相同，无实际行为变化。
+        return resultCache.computeIfAbsent(scopedCacheKey(normalizedPath), k -> executeQuery(normalizedPath));
+    }
+
+    /**
+     * task-0725 T2：把 pending 可见域标签（{@link com.cpq.datasource.sqlview.QuotePendingScope#cacheTag()}）
+     * 并入 {@link #resultCache} key 的统一入口——供 {@code loadByPath} 的 3 个进缓存分支复用（1-arg
+     * {@code $} 视图分支 / 1-arg 非视图分支 / 5-arg {@code $} 视图分支）。scope 关闭态下
+     * {@code cacheTag()==""}，返回值与改动前（裸 key）逐字相同；scope 打开态下两侧 key 不同，
+     * 消除同一报价单内报价侧/核价侧共用同一 {@code DataLoader} 实例导致的跨侧缓存串号
+     * （{@code CreateQuotationMaterializer:41/43} 在同一请求线程内先跑报价再跑核价）。
+     */
+    static String scopedCacheKey(String rawKey) {
+        return rawKey + com.cpq.datasource.sqlview.QuotePendingScope.cacheTag();
     }
 
     /**
@@ -186,9 +208,12 @@ public class DataLoader {
             // 求值的占位符会串号（PriceBaseDateCacheIsolationTest 实测复现）。此处提前读取一次，同时用于 key 与
             // 下方 lambda 内的 ctx 绑定，语义不变、只补维度。
             final UUID _quotIdForKey = QuotationIdContext.get();
+            // task-0725 T2：并入 scopedCacheKey（pending 可见域标签），理由同 1-arg 重载的 $view 分支
+            // ——同一报价单内报价侧/核价侧这 6 维逐字相同（templateId 两侧皆 null，quotationId 同一张
+            // 单），必须靠独立的 pending 标签维度区分，不能复用 _quotIdForKey（两侧同值）。
             return resultCache.computeIfAbsent(
-                    normalizedPath + "::" + partNo + "::" + customerId + "::" + viewLineItemId
-                            + "::" + _ownerTag + "::" + _quotIdForKey, key -> {
+                    scopedCacheKey(normalizedPath + "::" + partNo + "::" + customerId + "::" + viewLineItemId
+                            + "::" + _ownerTag + "::" + _quotIdForKey), key -> {
                 try {
                     RuntimeContext ctx = new RuntimeContext();
                     // 统一协议:从 ThreadLocal 拿 quotationId,绑到 ctx.quotation.id

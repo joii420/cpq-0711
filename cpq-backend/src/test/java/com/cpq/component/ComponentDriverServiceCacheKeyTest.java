@@ -2,6 +2,7 @@ package com.cpq.component;
 
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.datasource.sqlview.BomTreeVarsContext;
+import com.cpq.datasource.sqlview.QuotePendingScope;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -23,12 +24,26 @@ class ComponentDriverServiceCacheKeyTest {
     @AfterEach
     void clearCtx() {
         BomTreeVarsContext.clear();
+        QuotePendingScope.restore(null);
     }
 
     private static String currentTotalMaterialNoHash() throws Exception {
         Method m = ComponentDriverService.class.getDeclaredMethod("currentTotalMaterialNoHash");
         m.setAccessible(true);
         return (String) m.invoke(null);
+    }
+
+    /**
+     * task-0725 T2：反射调用 {@code expand()} 内联 key 拼接抽取出的私有静态方法
+     * {@code buildExtraCacheTags(overrideTag, lineItemTag, childTag, qidTag)}——固化
+     * override/lineItem/child/qid 四个既有标签 + {@link QuotePendingScope#cacheTag()} 的拼接顺序。
+     */
+    private static String buildExtraCacheTags(String overrideTag, String lineItemTag,
+                                               String childTag, String qidTag) throws Exception {
+        Method m = ComponentDriverService.class.getDeclaredMethod(
+                "buildExtraCacheTags", String.class, String.class, String.class, String.class);
+        m.setAccessible(true);
+        return (String) m.invoke(null, overrideTag, lineItemTag, childTag, qidTag);
     }
 
     @Test
@@ -90,5 +105,55 @@ class ComponentDriverServiceCacheKeyTest {
     void currentTotalMaterialNoHash_emptyList_returnsNull() throws Exception {
         BomTreeVarsContext.set(new BomTreeVarsContext.Vars(null, List.of()));
         assertNull(currentTotalMaterialNoHash(), "空料号集合应退化为 null(与未设置上下文一致)");
+    }
+
+    // ─────────────────── task-0725 T2：pending 可见域缓存维度 ───────────────────
+
+    @Test
+    void buildExtraCacheTags_scopeClosed_matchesPreChangeFormat() throws Exception {
+        // 关闭态：QuotePendingScope.cacheTag()=="" ⟹ 四个既有标签原样拼接，逐字等于改动前
+        // （expand() 内联版本原为 overrideTag + lineItemTag + childTag + qidTag，无第 5 项）。
+        String result = buildExtraCacheTags("", "", "", "");
+        assertEquals("", result);
+
+        String withTags = buildExtraCacheTags(":ovabc", ":li123", ":cld456", ":q789");
+        assertEquals(":ovabc:li123:cld456:q789", withTags,
+                "关闭态下拼接结果必须与改动前（无 pending 维度）逐字相同");
+    }
+
+    @Test
+    void buildExtraCacheTags_scopeOpenVsClosed_differ() throws Exception {
+        String closed = buildExtraCacheTags(":ovabc", ":li123", ":cld456", ":q789");
+        UUID qid = UUID.randomUUID();
+        UUID prev = QuotePendingScope.open(qid, "DRAFT");
+        try {
+            String open = buildExtraCacheTags(":ovabc", ":li123", ":cld456", ":q789");
+            assertNotEquals(closed, open, "scope 开/关下 ComponentDriverService 的 cache key 必须不同");
+            assertTrue(open.startsWith(closed), "既有四个标签必须原样保留在前缀，pending 标签只追加在末尾");
+            assertTrue(open.contains(qid.toString().replace("-", "")));
+        } finally {
+            QuotePendingScope.restore(prev);
+        }
+    }
+
+    @Test
+    void buildExtraCacheTags_cannotBeConfusedWithQidTag() throws Exception {
+        // 回归防呆：qidTag（":q<qid>"）与 pending 标签（":pq<qid>"）即便 qid 相同也不能合并——
+        // 报价侧与核价侧的 _qid 是同一个值，必须靠独立维度区分。此测试用同一个 qid 分别构造
+        // qidTag 与 pending 标签，断言两者在最终字符串中都完整出现且不是同一段。
+        UUID qid = UUID.randomUUID();
+        String qidHex = qid.toString().replace("-", "");
+        String qidTag = ":q" + qidHex;
+        UUID prev = QuotePendingScope.open(qid, "DRAFT");
+        try {
+            String result = buildExtraCacheTags("", "", "", qidTag);
+            String expectedPendingTag = ":pq" + qidHex;
+            assertTrue(result.contains(qidTag), "qidTag 段必须保留");
+            assertTrue(result.contains(expectedPendingTag), "pending 标签段必须独立存在");
+            assertEquals(qidTag + expectedPendingTag, result,
+                    "两个维度必须都出现且互不覆盖（顺序：既有四标签在前，pending 标签在最后）");
+        } finally {
+            QuotePendingScope.restore(prev);
+        }
     }
 }

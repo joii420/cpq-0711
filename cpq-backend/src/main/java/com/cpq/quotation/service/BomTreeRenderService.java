@@ -385,7 +385,16 @@ public class BomTreeRenderService {
                 }
             }
 
-            java.util.regex.Matcher m = TREE_PARAM.matcher(withPending);
+            // task-0725 根因 2：定位前先 mask 屏蔽注释/字面量，避免树配置注释里写到
+            // :production_part_nos / :pq / :__vfPart / :__vfVer 时被误当占位符替换成 ?（pgjdbc
+            // 会忽略注释内的 ?，导致 order.size() 与 pgjdbc 实际占位符数错位）。⚠️ 屏蔽/匹配必须继续
+            // 作用在 withPending（pending 改写之后），不是 expanded —— T2 生效后 pending 改写会在
+            // withPending 里生成大量合法的 :pq token（QuotePendingRewriter:229/235/236），挪到
+            // expanded 上匹配会导致这些合法 :pq 绑不上。mask() 保留原文长度与换行，masked 文本上的
+            // start()/end() 可直接映射回 withPending 的同一偏移量，写入 rewritten 的仍是 withPending
+            // 原文内容。
+            String maskedForTreeParams = com.cpq.datasource.sqlview.SqlTextMask.mask(withPending);
+            java.util.regex.Matcher m = TREE_PARAM.matcher(maskedForTreeParams);
             StringBuilder rewritten = new StringBuilder();
             List<String> order = new ArrayList<>();
             int lastEnd = 0;
@@ -432,12 +441,17 @@ public class BomTreeRenderService {
      * task-0721 B4：与 {@code SqlViewExecutor.applyPendingRewrite} 完全同款的门槛判定——
      * 报价单上下文 + 非冻结态 → 返回本单 quotationId（改写生效）；核价侧/无上下文/已冻结 → null
      * （不改写，零回归）。
+     *
+     * <p>task-0725 T2：改读 {@link com.cpq.datasource.sqlview.QuotePendingScope#pendingOwner()}
+     * （原读 {@code SqlViewRuntimeContext}——而 {@code ConfigureSnapshotService:350} 调
+     * {@code render()} 那一刻从未有任何 {@code setNested} 发生过，driver 的 {@code setNested} 在更
+     * 内层的 {@code ComponentDriverService.expandUncached→expand}，故原实现恒返回 null，这是报价树侧
+     * 独立于「组件页签」的第二个断点）。{@code QuotePendingScope.pendingOwner()} 已内建冻结判定
+     * （非 null ⟹ 非冻结），门槛判定与 {@code SqlViewExecutor.applyPendingRewrite} 完全同款，
+     * 消费方（本方法）不得再判 frozen。
      */
     private java.util.UUID resolvePendingOwner() {
-        com.cpq.datasource.sqlview.SqlViewRuntimeContext.Snapshot owner =
-            com.cpq.datasource.sqlview.SqlViewRuntimeContext.get();
-        if (owner == null || owner.quotationId == null || owner.isQuotationFrozen()) return null;
-        return owner.quotationId;
+        return com.cpq.datasource.sqlview.QuotePendingScope.pendingOwner();
     }
 
     // ─── baseRow 装配纯函数（结构对齐 CardSnapshotService#rowToNode / #spineRowNode） ───

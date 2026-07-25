@@ -103,36 +103,14 @@ public final class QuotePendingRewriter {
     /**
      * 屏蔽字符串字面量 / 行注释 / 块注释为等长空白（换行符原样保留，保证行号/偏移量不变），
      * 供 token 定位用；实际替换仍作用于原始文本（偏移量对齐）。
+     *
+     * <p>task-0725 根因 2：实现已抽到 {@link SqlTextMask#mask(String)}（同一屏蔽语义需要跨包共用，
+     * 见 {@code SqlViewValidator} / {@code BomTreeRenderService} 两个站点），本方法保留仅为了不改动
+     * 既有单测（{@code QuotePendingRewriterTest}）里对 package-private {@code mask} 的隐式依赖面，
+     * 纯委派，无自有逻辑。
      */
     static String mask(String sql) {
-        StringBuilder out = new StringBuilder(sql.length());
-        int i = 0, n = sql.length();
-        while (i < n) {
-            char c = sql.charAt(i);
-            if (c == '\'') {
-                out.append(' ');
-                i++;
-                while (i < n) {
-                    char d = sql.charAt(i);
-                    if (d == '\'') {
-                        if (i + 1 < n && sql.charAt(i + 1) == '\'') { out.append("  "); i += 2; continue; }
-                        out.append(' '); i++; break;
-                    }
-                    out.append(d == '\n' ? '\n' : ' '); i++;
-                }
-            } else if (c == '-' && i + 1 < n && sql.charAt(i + 1) == '-') {
-                while (i < n && sql.charAt(i) != '\n') { out.append(' '); i++; }
-            } else if (c == '/' && i + 1 < n && sql.charAt(i + 1) == '*') {
-                out.append("  "); i += 2;
-                while (i + 1 < n && !(sql.charAt(i) == '*' && sql.charAt(i + 1) == '/')) {
-                    out.append(sql.charAt(i) == '\n' ? '\n' : ' '); i++;
-                }
-                if (i + 1 < n) { out.append("  "); i += 2; } else { i = n; }
-            } else {
-                out.append(c); i++;
-            }
-        }
-        return out.toString();
+        return SqlTextMask.mask(sql);
     }
 
     static Set<String> cteNames(String masked) {

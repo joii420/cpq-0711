@@ -1,6 +1,7 @@
 package com.cpq.component.service;
 
 import com.cpq.component.dto.DryRunSqlViewResponse;
+import com.cpq.datasource.sqlview.SqlTextMask;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -118,21 +119,27 @@ public class SqlViewValidator {
             );
         }
 
+        // task-0725 根因 2：3 / 3.5 / 3.5b 都是对裸 sqlTemplate 做 :xxx token 存在性检查——
+        // 若不先屏蔽注释/字面量，作者在注释里写 :hfPartNo / :__sk / :__vf 说明文字也会被当命中，
+        // 导致保存被硬拒（与 SqlViewExecutor 的执行链路误识是同一个坑：docs/方案制定前必读.md
+        // 「同类正则误识坑」——只修执行链路会造成校验/执行两条通路不一致）。
+        String maskedSqlTemplate = SqlTextMask.mask(sqlTemplate);
+
         // 3. 禁用 :hfPartNo 标量占位符
-        if (FORBIDDEN_PARAM_HF_PART_NO.matcher(sqlTemplate).find()) {
+        if (FORBIDDEN_PARAM_HF_PART_NO.matcher(maskedSqlTemplate).find()) {
             return DryRunSqlViewResponse.fail(
                     "禁止使用 :hfPartNo 标量占位符（料号 batch 由外层注入；批量请使用 :hfPartNos 数组形式）"
             );
         }
 
         // 3.5 保留 __sk* 前缀（spineKeys 宏内部占位符，禁止作者自定义）
-        if (Pattern.compile("(?<!:):__sk", Pattern.CASE_INSENSITIVE).matcher(sqlTemplate).find()) {
+        if (Pattern.compile("(?<!:):__sk", Pattern.CASE_INSENSITIVE).matcher(maskedSqlTemplate).find()) {
             return DryRunSqlViewResponse.fail(
                     "占位符前缀 :__sk 为 spineKeys 宏保留，请勿在 SQL 模板中自定义");
         }
 
         // 3.5b 保留 __vf* 前缀（task-0713 versionFilter 宏内部占位符，禁止作者自定义）
-        if (Pattern.compile("(?<!:):__vf", Pattern.CASE_INSENSITIVE).matcher(sqlTemplate).find()) {
+        if (Pattern.compile("(?<!:):__vf", Pattern.CASE_INSENSITIVE).matcher(maskedSqlTemplate).find()) {
             return DryRunSqlViewResponse.fail(
                     "占位符前缀 :__vf 为 versionFilter 宏保留，请勿在 SQL 模板中自定义");
         }
@@ -181,10 +188,14 @@ public class SqlViewValidator {
 
     /**
      * 提取所有 :xxx 命名占位符（去重，保持出现顺序）。
+     *
+     * <p>task-0725 根因 2：先 {@link SqlTextMask#mask(String)} 屏蔽注释/字面量再扫描，与
+     * {@code SqlViewExecutor.extractNamedParams} 同源同语义——两条通路（dry-run 校验 vs 执行）对
+     * 同一 SQL 必须产出完全一致的占位符清单，否则会出现「dry-run 报错但实际能跑」或反过来的不一致。
      */
     public List<String> extractNamedParams(String sql) {
         Set<String> result = new LinkedHashSet<>();
-        Matcher m = NAMED_PARAM.matcher(sql);
+        Matcher m = NAMED_PARAM.matcher(SqlTextMask.mask(sql));
         while (m.find()) {
             result.add(m.group(1));
         }
@@ -194,6 +205,14 @@ public class SqlViewValidator {
     /**
      * 把 :xxx 命名占位符替换为 NULL（用于 dry-run；EXPLAIN 时谓词常量化也能通过）。
      * <p>替换正则同样加 (?<!:) 负 lookbehind 避免误伤 PG `::cast`（如 ::uuid → :uuid 被替换 → NULL:NULL 语法错）。
+     *
+     * <p>task-0725 根因 2 评审结论（backtask T1 「:204 字面量替换 | 无害，不必改」）：本方法故意<b>不</b>
+     * 加 mask 屏蔽。{@code params} 已由 {@link #extractNamedParams} 在 masked 文本上过滤过（不含注释/字面量
+     * 内的占位符名），这里只是把 {@code sql} 里所有该名字的字面 {@code :name} token（不论在不在注释里）
+     * 替换成字面量值，直接拼进最终 SQL 文本——不涉及按位置计数的顺序绑定，即使注释里恰好也出现同名 token
+     * 被一并替换，也只是注释内容多了段文字，不影响 EXPLAIN 语法合法性，更不会造成"Java 侧绑定数 ≠
+     * pgjdbc 占位符数"（因为这条路径根本不用 PreparedStatement 的位置参数，见下方 probe.executeQuery()
+     * 无 setObject 调用）。
      */
     private String bindWithNullPlaceholders(String sql, List<String> params) {
         String result = sql;
@@ -206,7 +225,23 @@ public class SqlViewValidator {
         return result;
     }
 
-    /** 简单去 SQL 注释（-- 行注释 + /* 块注释）+ 多空白合一。 */
+    /**
+     * 简单去 SQL 注释（-- 行注释 + /* 块注释）+ 多空白合一。
+     *
+     * <p>task-0725 根因 2 评审结论（backtask T1 站点 5 「:209-214 stripCommentsAndWhitespace | 第三套
+     * 注释处理实现 | 评估是否一并收口到 SqlTextMask（可选）」）：<b>本次未收口，维持独立实现</b>。理由：
+     * <ol>
+     *   <li>用途窄——仅供 step 1「必须以 SELECT/WITH 开头」的前缀判断用，与本次修复的命名占位符
+     *       误识别问题（{@code NAMED_PARAM} 系列）无关，不在 T1 缺陷范围内；</li>
+     *   <li>行为不等价——本实现不屏蔽字符串字面量，字面量里出现 {@code --} 会被误当行注释起点截断
+     *       （预置的潜在缺陷）；{@link SqlTextMask#mask} 会正确跳过字面量内容。若替换会静默改变
+     *       "SQL 以 SELECT/WITH 开头"判断在这类边界输入下的结果，违反 backtask「若收口须保证其现有
+     *       语义不变」的前置条件，贸然合并存在无法用「保持现有语义」自证的风险；</li>
+     *   <li>本方法只用于 trim 后判前缀，SqlTextMask 是为偏移量对齐的 token 定位设计（更重），用在这里
+     *       是杀鸡用牛刀且需要额外验证。</li>
+     * </ol>
+     * 建议作为独立小任务登记 BACKLOG（P2/S），有专人验证等价性后再合并。
+     */
     private String stripCommentsAndWhitespace(String sql) {
         String noBlockComments = sql.replaceAll("(?s)/\\*.*?\\*/", " ");
         String noLineComments = noBlockComments.replaceAll("--[^\\n]*", " ");
