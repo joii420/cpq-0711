@@ -219,13 +219,43 @@ public final class QuotePendingRewriter {
     private record Edit(int start, int end, String replacement) {}
 
     /**
-     * 改写入口。
+     * 改写入口（等价 {@code rewrite(sqlTemplate, conn, true)}，保留既有调用方 2 参签名不变）。
      *
      * @param sqlTemplate 组件/模板 sql_template 原文
      * @param conn        取列元数据用的连接（不执行业务查询，不修改数据）
      * @return 改写结果；模板未命中任何白名单表时 {@code anchorInjected=false}，sql 原样返回
      */
     public static Result rewrite(String sqlTemplate, Connection conn) throws SQLException {
+        return rewrite(sqlTemplate, conn, true);
+    }
+
+    /**
+     * task-0725 T3 收尾修复：{@code injectAnchor=false} 时跳过"主位表探测 + {@code __v6_id} 锚点插入"整段
+     * （表替换/遮蔽逻辑不受影响，仍对全部白名单表命中生效）。
+     *
+     * <p><b>根因</b>：主位表探测的 fallback 分支（"顶层没有则退化为<b>任意深度</b>第一个 FROM"）按<b>文本
+     * 出现顺序</b>取第一个 FROM，未区分该 FROM 是否位于 SELECT 列表内的相关子查询（如
+     * {@code (SELECT sd.bom_version FROM material_bom_item sd WHERE ...) AS bom_version}）。递归 CTE
+     * （如 {@link com.cpq.quotation.service.BomTreeRenderService#queryRecursive}
+     * 使用的 {@code costing_bom_tree_config.sql_template}）常见把此类相关子查询写在 SELECT 列表最前面、
+     * 早于该分支真正的行来源 FROM（如 {@code FROM material_bom_item ch JOIN bom b ON ...}）——此时会
+     * 误将子查询内的 FROM 当主位，把 {@code <alias>.id AS __v6_id,} 插进一个"只能返回单列"的标量子查询
+     * SELECT 列表，产生 Postgres {@code subquery must return only one column}（2026-07-25 端到端实测复现，
+     * 见 task-0725 dev-docs）。
+     *
+     * <p><b>为什么安全跳过</b>：{@link BomTreeRenderService} 的递归 CTE spine（root_no/material_no/
+     * bom_version/parent_no/node_path）本就<b>不需要</b> {@code __v6_id} 锚点——它只做结构定位，不是可
+     * 回填的业务行（真正需要锚点回填的树页签"业务行"侧走 {@code $view}，走 {@link SqlViewExecutor} 的
+     * 2 参 {@code rewrite} 独立注入，不受影响）；且 {@code queryRecursive} 的最终外层查询显式
+     * {@code SELECT root_no, material_no, bom_version, parent_no, node_path FROM (...) q} 只按列名取 5 列，
+     * 即使不注入锚点也不影响既有列输出。
+     *
+     * <p>2 参重载（{@link SqlViewExecutor}/{@code QuoteBackfillColumnMapper}/
+     * {@code QuoteViewValidationService} 三个既有调用方）逐位不变，本参数默认值仍是 {@code true}。
+     *
+     * @param injectAnchor false = 跳过主位探测与锚点插入（仅做表替换 + 遮蔽）；true = 原行为
+     */
+    public static Result rewrite(String sqlTemplate, Connection conn, boolean injectAnchor) throws SQLException {
         String masked = mask(sqlTemplate);
         Set<String> ctes = cteNames(masked);
         List<TableMatch> matches = findTableTokens(masked, ctes);
@@ -237,7 +267,7 @@ public final class QuotePendingRewriter {
         // 顶层存在 UNION/INTERSECT/EXCEPT 时不确定主位（多分支列位置不天然对齐，安全降级不注入锚点）。
         boolean setOp = hasTopLevelSetOp(masked);
         TableMatch primary = null;
-        if (!setOp) {
+        if (injectAnchor && !setOp) {
             for (TableMatch mt : matches) {
                 if ("FROM".equals(mt.keyword) && depthAt(masked, mt.start) == 0) { primary = mt; break; }
             }

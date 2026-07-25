@@ -3,6 +3,7 @@ package com.cpq.quotation.service;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.configure.service.ConfigureSnapshotService;
+import com.cpq.datasource.sqlview.QuotePendingScope;
 import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
@@ -671,8 +672,17 @@ public class CardSnapshotService {
                 if (managed == null) continue;
                 boolean changed = false;
                 if (managed.quoteExcelValues == null && q.customerTemplateId != null) {
-                    managed.quoteExcelValues = safeCall(() ->
-                        buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
+                    // task-0725 T3-P4：报价侧 pending 可见域。ensureExcelValues 报价/核价分支共用本方法体
+                    // （同一 for 循环内相邻 if，见下方 costingExcelValues 分支）——只在报价分支内 open/restore，
+                    // 不得整方法/整循环包裹，否则核价分支（q.costingCardTemplateId）会被污染（破 AC-17）。
+                    // 需求方决策（问题 5）：页面产品卡页签与 Excel 视图/导出口径须一致。
+                    UUID _pqPrev = QuotePendingScope.open(quotationId, q.status);
+                    try {
+                        managed.quoteExcelValues = safeCall(() ->
+                            buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
+                    } finally {
+                        QuotePendingScope.restore(_pqPrev);
+                    }
                     changed = true;
                 }
                 if (managed.costingExcelValues == null && q.costingCardTemplateId != null) {
@@ -2116,41 +2126,49 @@ public class CardSnapshotService {
             Quotation q = Quotation.findById(managed.quotationId);
             if (q == null || q.customerTemplateId == null) return;
 
-            JsonNode snapshot = loadComponentsSnapshot(q.customerTemplateId);
-            if (snapshot == null) return;
+            // task-0725 T3-P2：报价侧 pending 可见域，包住下方 expandFlatDriverBaseRows（:2124）。
+            // 覆盖「刷新基础数据」按钮入口（refreshDraftQuoteCards → 本方法 force=true）。
+            // status 从 q.status 取；open() 内建冻结判定，非 DRAFT 时 pendingOwner()=null（AC-10）。
+            UUID _pqPrev = QuotePendingScope.open(q.id, q.status);
+            try {
+                JsonNode snapshot = loadComponentsSnapshot(q.customerTemplateId);
+                if (snapshot == null) return;
 
-            // 1. 重查基础值（报价模板 driver 组件 expand 种子；非树页签走平铺实时展开）
-            Map<String, ArrayNode> baseRowsByComp =
-                expandFlatDriverBaseRows(q.customerTemplateId, managed, q.customerId, q.id, null, null);
-            // 1.5 task-0721 收尾修复：树页签（tab_type='BOM'）不走实时展开——覆盖为该组件当前已冻结的
-            // snapshot_rows（见 overlayTreeTabsFromFrozenSnapshot 方法注释；无树页签的模板 no-op）。
-            overlayTreeTabsFromFrozenSnapshot(q.customerTemplateId, managed.id, baseRowsByComp);
+                // 1. 重查基础值（报价模板 driver 组件 expand 种子；非树页签走平铺实时展开）
+                Map<String, ArrayNode> baseRowsByComp =
+                    expandFlatDriverBaseRows(q.customerTemplateId, managed, q.customerId, q.id, null, null);
+                // 1.5 task-0721 收尾修复：树页签（tab_type='BOM'）不走实时展开——覆盖为该组件当前已冻结的
+                // snapshot_rows（见 overlayTreeTabsFromFrozenSnapshot 方法注释；无树页签的模板 no-op）。
+                overlayTreeTabsFromFrozenSnapshot(q.customerTemplateId, managed.id, baseRowsByComp);
 
-            // 2. 旧 editRows（按 rowKey 对齐保留）
-            Map<String, ArrayNode> oldEdits = extractEditRowsByComp(managed.quoteCardValues);
+                // 2. 旧 editRows（按 rowKey 对齐保留）
+                Map<String, ArrayNode> oldEdits = extractEditRowsByComp(managed.quoteCardValues);
 
-            // 2.5 (2026-06-02 修复 报价卡片 FORMULA 单元格读陈旧 formulaResults=0): 把 row_data
-            //     (autosave 持久化的当前 INPUT 值, 与前端渲染 comp.rows 同源) 按 rowKey 合并进 editRows，
-            //     让重算的 formulaResults 用当前 单价 等输入。否则 INPUT 仅在 editQuoteCardValue 写过的行
-            //     进 editRows，autosave 写 row_data 但 editQuoteCardValue 漏的行 formulaResults 缺输入算 0，
-            //     单元格(快照优先)读 0 而列小计(前端实时)正确 → 不一致。详见 RECORD 2026-06-02。
-            Map<String, ArrayNode> mergedEdits =
-                mergeRowDataInputsIntoEdits(snapshot, baseRowsByComp, oldEdits, managed.id);
+                // 2.5 (2026-06-02 修复 报价卡片 FORMULA 单元格读陈旧 formulaResults=0): 把 row_data
+                //     (autosave 持久化的当前 INPUT 值, 与前端渲染 comp.rows 同源) 按 rowKey 合并进 editRows，
+                //     让重算的 formulaResults 用当前 单价 等输入。否则 INPUT 仅在 editQuoteCardValue 写过的行
+                //     进 editRows，autosave 写 row_data 但 editQuoteCardValue 漏的行 formulaResults 缺输入算 0，
+                //     单元格(快照优先)读 0 而列小计(前端实时)正确 → 不一致。详见 RECORD 2026-06-02。
+                Map<String, ArrayNode> mergedEdits =
+                    mergeRowDataInputsIntoEdits(snapshot, baseRowsByComp, oldEdits, managed.id);
 
-            // 2.6. 查各组件 deleted_row_keys 墓碑（报价侧需过滤永久删除的 driver 默认行）
-            Map<String, List<DeletedRowKeys.Tombstone>> delByComp = loadTombstonesByComp(managed.id);
+                // 2.6. 查各组件 deleted_row_keys 墓碑（报价侧需过滤永久删除的 driver 默认行）
+                Map<String, List<DeletedRowKeys.Tombstone>> delByComp = loadTombstonesByComp(managed.id);
 
-            // 3. 组装新 quote_card_values（保留编辑 + 重算 formulaResults；报价侧传真实墓碑）
-            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp);
-            managed.quoteCardValues = MAPPER.writeValueAsString(root);
+                // 3. 组装新 quote_card_values（保留编辑 + 重算 formulaResults；报价侧传真实墓碑）
+                ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp);
+                managed.quoteCardValues = MAPPER.writeValueAsString(root);
 
-            // 4. 报价 Excel 值前端权威（buildExcelSnapshot + saveDraft），此处不再后端重算。
-            // Phase6 (2026-06-21) 退役：原 buildExcelValues 重算已删除；
-            // quote_excel_values 唯一写入源 = saveDraft（前端值） + snapshotLineValues（==null bootstrap 兜底）。
+                // 4. 报价 Excel 值前端权威（buildExcelSnapshot + saveDraft），此处不再后端重算。
+                // Phase6 (2026-06-21) 退役：原 buildExcelValues 重算已删除；
+                // quote_excel_values 唯一写入源 = saveDraft（前端值） + snapshotLineValues（==null bootstrap 兜底）。
 
-            // 5. 更新报价侧时间戳
-            managed.quoteValuesAt = OffsetDateTime.now();
-            // 核价两列：物理不参与本次 UPDATE
+                // 5. 更新报价侧时间戳
+                managed.quoteValuesAt = OffsetDateTime.now();
+                // 核价两列：物理不参与本次 UPDATE
+            } finally {
+                QuotePendingScope.restore(_pqPrev);
+            }
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] refreshQuoteCardValues failed li=%s: %s", li.id, e.getMessage());
         }
@@ -2661,23 +2679,30 @@ public class CardSnapshotService {
             throw new IllegalStateException("quotation / customerTemplateId 缺失 li=" + lineItemId);
         }
 
-        JsonNode snapshot = loadComponentsSnapshot(q.customerTemplateId);
-        if (snapshot == null || !snapshot.isArray()) {
-            throw new IllegalStateException("模板 components_snapshot 缺失 tid=" + q.customerTemplateId);
+        // task-0725 T3-P2：报价侧 pending 可见域，包住下方 expandFlatDriverBaseRows（:2679 原行号）。
+        // dryRunTokenRows 恒走 q.customerTemplateId（报价侧公式 dry-run 预览），无核价对等入口。
+        UUID _pqPrev = QuotePendingScope.open(q.id, q.status);
+        try {
+            JsonNode snapshot = loadComponentsSnapshot(q.customerTemplateId);
+            if (snapshot == null || !snapshot.isArray()) {
+                throw new IllegalStateException("模板 components_snapshot 缺失 tid=" + q.customerTemplateId);
+            }
+
+            // 1. baseRows 展开 + editRows 合并（与 refreshQuoteCardValues 同源）
+            Map<String, ArrayNode> baseRowsByComp =
+                expandFlatDriverBaseRows(q.customerTemplateId, li, q.customerId, q.id, null, null);
+            // task-0721 收尾修复：树页签（tab_type='BOM'）不走实时展开，覆盖为已冻结 snapshot_rows
+            // （与 refreshQuoteCardValues 同一处理，见 overlayTreeTabsFromFrozenSnapshot 方法注释）。
+            overlayTreeTabsFromFrozenSnapshot(q.customerTemplateId, li.id, baseRowsByComp);
+            Map<String, ArrayNode> oldEdits = extractEditRowsByComp(li.quoteCardValues);
+            Map<String, ArrayNode> mergedEdits =
+                mergeRowDataInputsIntoEdits(snapshot, baseRowsByComp, oldEdits, li.id);
+
+            return dryRunTokenRowsCore(snapshot, hostComponentId, draftTokens, draftSelfRowKeyFields,
+                baseRowsByComp, mergedEdits);
+        } finally {
+            QuotePendingScope.restore(_pqPrev);
         }
-
-        // 1. baseRows 展开 + editRows 合并（与 refreshQuoteCardValues 同源）
-        Map<String, ArrayNode> baseRowsByComp =
-            expandFlatDriverBaseRows(q.customerTemplateId, li, q.customerId, q.id, null, null);
-        // task-0721 收尾修复：树页签（tab_type='BOM'）不走实时展开，覆盖为已冻结 snapshot_rows
-        // （与 refreshQuoteCardValues 同一处理，见 overlayTreeTabsFromFrozenSnapshot 方法注释）。
-        overlayTreeTabsFromFrozenSnapshot(q.customerTemplateId, li.id, baseRowsByComp);
-        Map<String, ArrayNode> oldEdits = extractEditRowsByComp(li.quoteCardValues);
-        Map<String, ArrayNode> mergedEdits =
-            mergeRowDataInputsIntoEdits(snapshot, baseRowsByComp, oldEdits, li.id);
-
-        return dryRunTokenRowsCore(snapshot, hostComponentId, draftTokens, draftSelfRowKeyFields,
-            baseRowsByComp, mergedEdits);
     }
 
     /**

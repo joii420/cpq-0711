@@ -376,8 +376,12 @@ public class BomTreeRenderService {
             String withPending = expanded;
             if (pendingQuotationId != null) {
                 try {
+                    // task-0725 T3 收尾修复：injectAnchor=false —— 递归 CTE spine 不需要 __v6_id 锚点
+                    // （见 QuotePendingRewriter#rewrite(sql,conn,injectAnchor) javadoc），且该锚点探测的
+                    // fallback 启发式在此类 SQL 上会误伤 SELECT 列表内的相关子查询，产生
+                    // "subquery must return only one column"（2026-07-25 端到端实测复现）。
                     com.cpq.datasource.sqlview.QuotePendingRewriter.Result rw =
-                        com.cpq.datasource.sqlview.QuotePendingRewriter.rewrite(expanded, conn);
+                        com.cpq.datasource.sqlview.QuotePendingRewriter.rewrite(expanded, conn, false);
                     withPending = rw.sql;
                 } catch (Exception ex) {
                     LOG.warnf("[costing-tree] pending 感知改写失败，递归 SQL 原样执行（本单 pending 行可能不可见）: %s",

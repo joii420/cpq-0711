@@ -75,5 +75,18 @@ public class BatchExpandDriverRequest {
          * 不再需要 :lineItemId 标量。空可兼容旧前端(老协议路径继续工作)。
          */
         public UUID quotationId;
+
+        /**
+         * task-0725：该 task 所属业务侧（可选）。{@code "QUOTE"} = 报价侧渲染，允许打开本单
+         * pending 可见域（{@code QuotePendingScope.open}）；{@code "COSTING"} = 核价侧渲染，
+         * 不开启。
+         *
+         * <p><b>缺省 / 非法值一律按 {@code "COSTING"} 兜底</b>（不抛错，不导致整批失败）——
+         * 保证老前端零行为变化，未知调用方不会意外获得 pending 可见性。判定实现见
+         * {@code ComponentResource#isQuoteUsage(String)}。
+         *
+         * <p>见 {@code dev-docs/task-0725-.../api.md §2.2}。
+         */
+        public String usage;
     }
 }

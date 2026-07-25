@@ -14,8 +14,10 @@ import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.component.service.ComponentImportService;
 import com.cpq.component.service.ComponentService;
+import com.cpq.datasource.sqlview.QuotePendingScope;
 import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.formula.dataloader.SnapshotRowsContext;
+import com.cpq.quotation.entity.Quotation;
 import com.cpq.template.service.TemplateService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -26,6 +28,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -215,6 +218,10 @@ public class ComponentResource {
                 System.getProperty("cpq.batch-expand-bucket",
                     System.getenv().getOrDefault("CPQ_BATCH_EXPAND_BUCKET", "true")));
 
+        // task-0725 T3-P3：批量预取 usage=QUOTE 的 task 所涉及报价单状态（一次 IN 查，避免逐 task N+1）。
+        // usage 缺省/非法/COSTING 的 task 不收集（本就不会调 QuotePendingScope.open，省一次 DB 往返）。
+        Map<UUID, String> quoteStatusById = prefetchQuoteStatuses(req.tasks);
+
         // ── P0(2026-06-26):批量预载 snapshot,杜绝 Phase 1 每 task 一次 SELECT snapshot_rows(N+1)──
         //   收集所有 task 的 lineItemId,一次 IN 查全部 snapshot_rows 塞 ThreadLocal;expand 的 snapshot-read
         //   命中上下文即用、不再逐 task 查库(一单 600+ task 全有快照时:600+ 次远程往返 → 1 次 IN)。
@@ -236,7 +243,8 @@ public class ComponentResource {
         long _prefetchMs = (System.nanoTime() - _bp0) / 1_000_000;
         try {
             long _bp1 = System.nanoTime();
-            ApiResponse<BatchExpandDriverResponse> out = doBatchExpandPhases(req, resp, bucketEnabled, debugSql);
+            ApiResponse<BatchExpandDriverResponse> out =
+                    doBatchExpandPhases(req, resp, bucketEnabled, debugSql, quoteStatusById);
             // phase1 命中数(driverPath=snapshot)vs phase2(实时 expand)= 诊断 batch-expand 慢在快照读还是实时展开
             int _snapHit = 0;
             for (Result r : resp.results) if (r != null && r.data != null && "snapshot".equals(r.data.driverPath)) _snapHit++;
@@ -251,7 +259,7 @@ public class ComponentResource {
 
     private ApiResponse<BatchExpandDriverResponse> doBatchExpandPhases(
             BatchExpandDriverRequest req, BatchExpandDriverResponse resp,
-            boolean bucketEnabled, boolean debugSql) {
+            boolean bucketEnabled, boolean debugSql, Map<UUID, String> quoteStatusById) {
         // ── Phase 1:每个 task 先试 snapshot,命中直返;未命中收集进 Phase 2 候选 ──
         List<Integer> phase2 = new ArrayList<>();
         for (int i = 0; i < req.tasks.size(); i++) {
@@ -259,6 +267,12 @@ public class ComponentResource {
             Result r = resp.results.get(i);
             try {
                 QuotationIdContext.set(t.quotationId);
+                // task-0725 T3-P3：按 task.usage 决定是否打开报价侧 pending 可见域。usage 缺省/非法
+                // 一律不 open（isQuoteUsage 兜底 false），核价侧 task 逐位不受影响（AC-17）。
+                boolean _pqOpened = isQuoteUsage(t.usage);
+                UUID _pqPrev = _pqOpened
+                        ? QuotePendingScope.open(t.quotationId, quoteStatusById.get(t.quotationId))
+                        : null;
                 try {
                     boolean hasContext = (t.overrideDataDriverPath != null && !t.overrideDataDriverPath.isBlank())
                             || (t.overrideFieldsJson != null && !t.overrideFieldsJson.isBlank())
@@ -294,6 +308,7 @@ public class ComponentResource {
                     }
                     phase2.add(i);
                 } finally {
+                    if (_pqOpened) QuotePendingScope.restore(_pqPrev);
                     QuotationIdContext.clear();
                 }
             } catch (Exception e) {
@@ -310,11 +325,15 @@ public class ComponentResource {
         }
 
         // ── Phase 2:按 bucket key 分组,可合的一次 expandMulti,不可合的逐 task expand ──
-        // bucketKey = componentId|customerId|partVersion|effectiveDriverPath|fieldsHash|quotationId[|lineItemId 视图含 :lineItemId 时]
+        // bucketKey = componentId|customerId|partVersion|effectiveDriverPath|fieldsHash|usage|quotationId[|lineItemId 视图含 :lineItemId 时]
         // 🔒 quotationId 维度(task-0722 返修项3,2026-07-23):防御性加固——真实调用方
         //    useDriverExpansions(lineItems, customerId, quotationId) 每 hook 实例绑死一个 quotationId,
         //    当前不可达同批混单;但一旦其余维度相同、quotationId 不同的 task 混入同一请求(如未来"多单对比视图"),
         //    不加此维度会被合桶后只用 pivot 的 quotationId 求值一次(如 :priceBaseDate),其余 task 静默拿到别单的取价结果。
+        // 🔴 usage 维度(task-0725 T3-P3,评审 HIGH):报价/核价永不合并——同批次「其余维度全同、仅 usage 不同」
+        //    的两个 task（api.md §2.3 混合示例）若不分桶，canMerge 成立时整桶只 expandMulti 一次、pending 可见域
+        //    只能按 pivot 开一次，混桶内必有一侧拿到错误可见性。usage 缺省/非法一律归一化为 "COSTING"（与
+        //    isQuoteUsage 判定同一套兜底），garbage 值不会额外裂桶。
         Map<String, List<Integer>> buckets = new LinkedHashMap<>();
         Map<String, String> bucketDriverPath = new HashMap<>();
         for (int idx : phase2) {
@@ -322,6 +341,7 @@ public class ComponentResource {
             String dp = componentDriverService.resolveEffectiveDriverPath(t.componentId, t.overrideDataDriverPath);
             String fieldsTag = t.overrideFieldsJson == null ? "" : Integer.toHexString(t.overrideFieldsJson.hashCode());
             String key = t.componentId + "|" + t.customerId + "|" + t.partVersion + "|" + dp + "|" + fieldsTag
+                    + "|u=" + usageTag(t.usage)
                     + "|q=" + (t.quotationId == null ? "" : t.quotationId);
             if (componentDriverService.viewUsesLineItemId(t.componentId, dp)) {
                 key += "|li=" + (t.lineItemId == null ? "" : t.lineItemId);
@@ -347,7 +367,7 @@ public class ComponentResource {
                 for (int idx : idxs) {
                     Task t = req.tasks.get(idx);
                     Result r = resp.results.get(idx);
-                    runSingleTask(t, r);
+                    runSingleTask(t, r, quoteStatusById);
                 }
                 long _ms = (System.nanoTime() - _bktStart) / 1_000_000;
                 LOG.debugf("[be-bucket] comp=%s dp=%s merged=false tasks=%d lineItemIdView=%b ms=%d",
@@ -365,12 +385,19 @@ public class ComponentResource {
                 // 桶内同一 quotationId(同一 batch-expand 请求里所有 task 同单)→ 设到 ThreadLocal
                 // 让 mirror 视图能用 :quotationId(统一协议)
                 QuotationIdContext.set(pivot.quotationId);
+                // task-0725 T3-P3：桶内 usage 已随 bucketKey 统一（|u= 维度），pivot.usage 代表整桶。
+                // 按 pivot 是否 QUOTE 决定是否打开 pending 可见域，与 Phase 1/runSingleTask 同款判定。
+                boolean _pqOpened = isQuoteUsage(pivot.usage);
+                UUID _pqPrev = _pqOpened
+                        ? QuotePendingScope.open(pivot.quotationId, quoteStatusById.get(pivot.quotationId))
+                        : null;
                 Map<String, ExpandDriverResponse> merged;
                 try {
                     merged = componentDriverService.expandMulti(
                             pivot.componentId, pivot.customerId, partNos, pivot.partVersion,
                             pivot.overrideDataDriverPath, pivot.overrideFieldsJson);
                 } finally {
+                    if (_pqOpened) QuotePendingScope.restore(_pqPrev);
                     QuotationIdContext.clear();
                 }
                 for (int idx : idxs) {
@@ -394,7 +421,7 @@ public class ComponentResource {
                 for (int idx : idxs) {
                     Task t = req.tasks.get(idx);
                     Result r = resp.results.get(idx);
-                    runSingleTask(t, r);
+                    runSingleTask(t, r, quoteStatusById);
                 }
             }
         }
@@ -402,9 +429,14 @@ public class ComponentResource {
     }
 
     /** Phase 2 桶不可合时的单 task 跑(同原 batchExpand 逻辑),包 QuotationIdContext 让视图能用 :quotationId。 */
-    private void runSingleTask(Task t, Result r) {
+    private void runSingleTask(Task t, Result r, Map<UUID, String> quoteStatusById) {
         try {
             QuotationIdContext.set(t.quotationId);
+            // task-0725 T3-P3：按 task.usage 决定是否打开报价侧 pending 可见域（同 Phase 1 判定）。
+            boolean _pqOpened = isQuoteUsage(t.usage);
+            UUID _pqPrev = _pqOpened
+                    ? QuotePendingScope.open(t.quotationId, quoteStatusById.get(t.quotationId))
+                    : null;
             try {
                 boolean hasContext = (t.overrideDataDriverPath != null && !t.overrideDataDriverPath.isBlank())
                         || (t.overrideFieldsJson != null && !t.overrideFieldsJson.isBlank())
@@ -421,6 +453,7 @@ public class ComponentResource {
                 }
                 r.status = "OK";
             } finally {
+                if (_pqOpened) QuotePendingScope.restore(_pqPrev);
                 QuotationIdContext.clear();
             }
         } catch (Exception e) {
@@ -428,6 +461,38 @@ public class ComponentResource {
             r.error = e.getMessage();
             LOG.warnf("batch-expand[single] task %s failed: %s", r.key, e.getMessage());
         }
+    }
+
+    /**
+     * task-0725 T3-P3：{@code task.usage} 归一化判定。{@code "QUOTE"}（大小写不敏感）→ true；
+     * 缺省 / 非法值（含 {@code "COSTING"}）→ false（不开 pending 可见域，见 api.md §2.2 不变式）。
+     */
+    private static boolean isQuoteUsage(String usage) {
+        return "QUOTE".equalsIgnoreCase(usage);
+    }
+
+    /** task-0725 T3-P3：bucketKey 用的归一化侧别标签（garbage usage 一律并入 "COSTING" 桶，不额外裂桶）。 */
+    private static String usageTag(String usage) {
+        return isQuoteUsage(usage) ? "QUOTE" : "COSTING";
+    }
+
+    /**
+     * task-0725 T3-P3：批量预取 usage=QUOTE 的 task 所涉及报价单状态（一次 IN 查，供
+     * {@link QuotePendingScope#open} 冻结判定用）。usage 非 QUOTE 的 task 不贡献 quotationId
+     * （即使其余维度相同，也不会被误开 pending 域）。
+     */
+    private Map<UUID, String> prefetchQuoteStatuses(List<Task> tasks) {
+        if (tasks == null || tasks.isEmpty()) return Map.of();
+        Set<UUID> ids = new LinkedHashSet<>();
+        for (Task t : tasks) {
+            if (isQuoteUsage(t.usage) && t.quotationId != null) ids.add(t.quotationId);
+        }
+        if (ids.isEmpty()) return Map.of();
+        Map<UUID, String> out = new HashMap<>();
+        for (Quotation q : Quotation.<Quotation>list("id in ?1", new ArrayList<>(ids))) {
+            out.put(q.id, q.status);
+        }
+        return out;
     }
 
     /**
