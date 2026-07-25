@@ -242,6 +242,8 @@ public class ComponentImportService {
             c.tabType = it.tabType;
             c.partNoField = it.partNoField;
             c.partNameField = it.partNameField;
+            // task-0722 行排序列
+            c.sortField = it.sortField;
             if ("BOM".equals(it.tabType)) {
                 c.bomRecursiveExpand = Boolean.TRUE;
             }

@@ -45,6 +45,9 @@ public class ComponentExportBundle {
         public String tabType;
         public String partNoField;
         public String partNameField;
+        /** task-0722：多行页签「行排序列」字段名(原 sort_field)。导入端须一并恢复,
+         *  否则导入后行排序丢失→项次/序号不按数字正序。老 bundle 无此字段=null。 */
+        public String sortField;
         /** 行键字段名列表(原 row_key_fields JSONB)。多行可编辑组件的行唯一键；
          *  导入端须一并恢复,否则导入后行键丢失→多材质/多工序等场景撞键。老 bundle 无此字段=null。 */
         public JsonNode rowKeyFields;

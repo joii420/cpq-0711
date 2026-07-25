@@ -66,6 +66,8 @@ public class ComponentExportService {
             item.tabType = c.tabType;
             item.partNoField = c.partNoField;
             item.partNameField = c.partNameField;
+            // task-0722 行排序列
+            item.sortField = c.sortField;
             // 行键(多行可编辑组件的行唯一键)：源为空则保持 null，不落空数组
             item.rowKeyFields = (c.rowKeyFields == null || c.rowKeyFields.isBlank())
                     ? null : readJson(c.rowKeyFields);
