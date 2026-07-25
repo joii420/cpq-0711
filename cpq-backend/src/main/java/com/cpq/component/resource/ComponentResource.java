@@ -298,7 +298,12 @@ public class ComponentResource {
                     //   FIX 1(2026-06-26):原先调 expandWithSnapshot,miss 时它会做一次真展开、结果又因 driverPath≠"snapshot"
                     //   被丢弃、塞进 Phase 2(导入 616 task 全 miss = 18.6s 纯白干,Phase 2 再合桶算一遍)。改用 tryReadSnapshot:
                     //   miss 返 null、不实时展开 → 直接 phase2.add。Phase 2 产出不变(BatchExpandBucketEquivTest 守)。
-                    if (hasContext) {
+                    //   BUG-1(2026-07-25):quotation_line_component_data.snapshot_rows 是报价侧专属快照表
+                    //   (只由 ConfigureSnapshotService / QuotationTreeService 写)。tryReadSnapshot 本身完全不看
+                    //   usage/QuotePendingScope——COSTING task 命中即会拿到报价侧 pending 数据 + __v6_id 锚点,
+                    //   破 AC-17。故只在 usage=QUOTE 时才允许窥探快照;COSTING/非法/缺省一律跳过窥探直接进 Phase 2
+                    //   走真实展开(此时 scope 关闭,不含 pending 行/__v6_id)。
+                    if (hasContext && isQuoteUsage(t.usage)) {
                         ExpandDriverResponse snap = componentDriverService.tryReadSnapshot(t.componentId, t.lineItemId);
                         if (snap != null) {
                             r.data = snap;
@@ -444,10 +449,21 @@ public class ComponentResource {
                         || t.compositeType != null
                         || (t.childLineItemIds != null && !t.childLineItemIds.isEmpty());
                 if (hasContext) {
-                    r.data = componentDriverService.expandWithSnapshot(
-                        t.componentId, t.customerId, t.partNo, t.partVersion,
-                        t.overrideDataDriverPath, t.overrideFieldsJson, t.lineItemId, t.compositeType,
-                        t.childLineItemIds);
+                    // BUG-1(2026-07-25):expandWithSnapshot 内部第一步就是 tryReadSnapshot——读的是同一张
+                    // 报价侧专属快照表(quotation_line_component_data.snapshot_rows,只由 ConfigureSnapshotService/
+                    // QuotationTreeService 写)。COSTING task 落到这条不可合桶路径(view 含 :lineItemId 或 task 单独成桶)
+                    // 时若仍调 expandWithSnapshot,命中即拿到报价侧 pending 数据 + __v6_id 锚点,破 AC-17。
+                    // 只有 usage=QUOTE 才允许用快照;COSTING/非法/缺省一律改调不读快照的 9 参 expand 重载,强制走
+                    // 实时展开(scope 关闭 → 无 pending 行、无 __v6_id)。
+                    r.data = isQuoteUsage(t.usage)
+                        ? componentDriverService.expandWithSnapshot(
+                            t.componentId, t.customerId, t.partNo, t.partVersion,
+                            t.overrideDataDriverPath, t.overrideFieldsJson, t.lineItemId, t.compositeType,
+                            t.childLineItemIds)
+                        : componentDriverService.expand(
+                            t.componentId, t.customerId, t.partNo, t.partVersion,
+                            t.overrideDataDriverPath, t.overrideFieldsJson, t.lineItemId, t.compositeType,
+                            t.childLineItemIds);
                 } else {
                     r.data = componentDriverService.expand(t.componentId, t.customerId, t.partNo, t.partVersion);
                 }
