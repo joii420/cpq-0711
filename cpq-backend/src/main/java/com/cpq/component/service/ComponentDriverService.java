@@ -132,6 +132,21 @@ public class ComponentDriverService {
     }
 
     /**
+     * task-0725 T2：{@code expand()} 内联 key 拼接抽取（可测试性）——把 override/lineItem/child/qid
+     * 四个既有标签 + pending 可见域标签（{@link com.cpq.datasource.sqlview.QuotePendingScope#cacheTag()}）
+     * 的拼接顺序固化为纯函数，供单测在不跑真实 DB-backed {@code expand()} 的前提下验证 pending 维度
+     * 已并入最终 key。与旧版 {@code expand()} 内联拼接逐位等价（仅为可测试性抽取，不改变顺序/内容）；
+     * scope 关闭态下 {@code QuotePendingScope.cacheTag()==""} ⟹ 本方法返回值与改动前逐字相同。
+     *
+     * <p>⚠️ 不能用 {@code qidTag} 兼任 pending 维度——报价侧与核价侧的 {@code _qid} 是同一个值，
+     * {@code qidTag} 无法区分两侧；必须是独立的 {@code QuotePendingScope.cacheTag()} 维度。
+     */
+    private static String buildExtraCacheTags(String overrideTag, String lineItemTag, String childTag, String qidTag) {
+        return overrideTag + lineItemTag + childTag + qidTag
+                + com.cpq.datasource.sqlview.QuotePendingScope.cacheTag();
+    }
+
+    /**
      * 清空所有缓存条目。在基础数据导入事务提交后调用，让新数据立即可见�?
      */
     public void evictAll() {
@@ -338,8 +353,20 @@ public class ComponentDriverService {
         // 阶段 3: 设 SqlViewRuntimeContext ThreadLocal，让 BNF path $xxx 引用能拿到 currentComponentId
         // （quotation/template 上下文留 null，本入口只知道 componentId 维度；
         // QuotationService.submit / 渲染期上层可进一步 setNested 补 quotationId+status）
+        //
+        // task-0725 T2（根因 1）：quotationId 改从 QuotePendingScope.pendingOwner() 取——它是「已判定
+        // 完毕」的 pending 归属，仅由报价侧渲染入口 open()（T3 接线，本类不调用 open()）。
+        // ⚠️ 第 4 参 quotationStatus 恒传 null，不得传真实 status：
+        //   pendingOwner() 已保证「非 null ⟹ 非冻结」，故 isQuotationFrozen()=false，此值同时满足两个
+        //   下游消费者的正确性：
+        //   ① SqlViewExecutor:555 门槛 `owner.quotationId!=null && !owner.isQuotationFrozen()` 成立
+        //      （本次修复目标 —— pending 感知改写生效）
+        //   ② ComponentSqlViewService:379「冻结态读 quotation_component_sql_snapshot」分支在本链路
+        //      保持休眠（传真实 status 会点亮它 → 已提交单的视图 SQL 来源从 component_sql_view
+        //      静默切到 quotation_component_sql_snapshot，属超范围的静默行为变更）
+        UUID _pq = com.cpq.datasource.sqlview.QuotePendingScope.pendingOwner();
         com.cpq.datasource.sqlview.SqlViewRuntimeContext.Snapshot _prevSqlViewCtx =
-                com.cpq.datasource.sqlview.SqlViewRuntimeContext.setNested(componentId, null, null, null);
+                com.cpq.datasource.sqlview.SqlViewRuntimeContext.setNested(componentId, null, _pq, null);
         try {
         // cache key �?override 哈希避免不同 snapshot 共享 cache 串号
         // Bug B: �?lineItemId 维度，防止同 partNo 不同 lineItem 的工�?cache 串行
@@ -363,7 +390,7 @@ public class ComponentDriverService {
         UUID _qid = com.cpq.formula.dataloader.QuotationIdContext.get();
         String qidTag = (_qid != null) ? ":q" + _qid.toString().replace("-", "") : "";
         String key = cacheKey(componentId, customerId, partNo, partVersion, currentTotalMaterialNoHash())
-                + overrideTag + lineItemTag + childTag + qidTag;
+                + buildExtraCacheTags(overrideTag, lineItemTag, childTag, qidTag);
         // 调试捕获 SQL 时旁路缓存读取, 强制重算以触发 SqlViewExecutor 记录最终 SQL。skipCache=true(核价树渲染)同样旁路。
         ExpandDriverResponse cached = (skipCache || com.cpq.datasource.sqlview.SqlDebugContext.isActive())
                 ? null : expandCache.getIfPresent(key);
@@ -639,8 +666,12 @@ public class ComponentDriverService {
     public Map<String, ExpandDriverResponse> expandMulti(
             UUID componentId, UUID customerId, List<String> partNos,
             Integer partVersion, String overrideDataDriverPath, String overrideFieldsJson) {
+        // task-0725 T2：同上方私有 expand() 的 quotationId/quotationStatus 传播不变量
+        // （pendingOwner() 非 null ⟹ 非冻结，status 恒传 null 同时满足 SqlViewExecutor:555 门槛
+        // 与 ComponentSqlViewService:379 休眠分支两个消费者的正确性，见该方法内的详细注释）。
+        UUID _pq = com.cpq.datasource.sqlview.QuotePendingScope.pendingOwner();
         com.cpq.datasource.sqlview.SqlViewRuntimeContext.Snapshot _prev =
-                com.cpq.datasource.sqlview.SqlViewRuntimeContext.setNested(componentId, null, null, null);
+                com.cpq.datasource.sqlview.SqlViewRuntimeContext.setNested(componentId, null, _pq, null);
         try {
             Map<String, ExpandDriverResponse> resultByPart = new java.util.LinkedHashMap<>();
             if (partNos == null || partNos.isEmpty()) return resultByPart;

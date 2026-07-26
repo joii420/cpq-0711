@@ -282,7 +282,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   //   无错误、无串值（AP-38 驱动行 0 时已有 "—" 兜底）。
   const useSnap = !!(isCosting ? lineItem.costingCardValues : lineItem.quoteCardValues);
   const { cache: liveExpansions } = useDriverExpansions(
-    useSnap ? EMPTY_LINEITEMS : (lineItemsForDriver as any), customerId, quotationId);
+    useSnap ? EMPTY_LINEITEMS : (lineItemsForDriver as any), customerId, quotationId,
+    isCosting ? 'COSTING' : 'QUOTE');
   // rowKeyFieldsByComp 须先于 snapExpansions 构建（snapExpansions 依赖它做墓碑过滤 AP-54）
   // COSTING/QUOTE 两侧各读自己的结构，绝不串源。
   const rowKeyFieldsByComp = useMemo(() => {

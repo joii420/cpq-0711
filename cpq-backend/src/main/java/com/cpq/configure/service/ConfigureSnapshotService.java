@@ -2,6 +2,7 @@ package com.cpq.configure.service;
 
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
+import com.cpq.datasource.sqlview.QuotePendingScope;
 import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.rowkey.DeletedRowKeys;
@@ -270,6 +271,13 @@ public class ConfigureSnapshotService {
                 //   :quotationId + :customerCode + 外层 :hfPartNos
                 // 自适应 SIMPLE / COMPOSITE 语义(视图内 UNION ALL),Java 不再按 driverPath 判定聚合。
             QuotationIdContext.set(quotationId);
+            // task-0725 T3-P1：报价侧 pending 可见域主战场。覆盖建单/加产品/saveDraft/从基础刷新/报价树
+            // （render(…,"QUOTE") 在 :350-351，位于本 try 块内）。status 从 quotation 表取，quotationId
+            // 未知报价单/冻结态时 open() 内建判定存 null，与修复前逐位相同（AC-10）。
+            // 🔴 AC-17：本方法只服务报价侧（customer_template_id 驱动），核价侧走 CardSnapshotService 的
+            // 独立方法，不共用本 open()。
+            String _status = self.loadQuotationStatus(quotationId);
+            UUID _pqPrev = QuotePendingScope.open(quotationId, _status);
             try {
                 // 物化所需:模板 components_snapshot(含各 tab 的 componentCode/fields/formulas)。一次加载,逐行复用。
                 JsonNode componentsSnapshot = self.loadComponentsSnapshot(quotationId);
@@ -532,6 +540,7 @@ public class ConfigureSnapshotService {
                     }
                 }
             } finally {
+                QuotePendingScope.restore(_pqPrev);
                 QuotationIdContext.clear();
             }
         } catch (Exception e) {
@@ -754,6 +763,18 @@ public class ConfigureSnapshotService {
         List<Object> r = em.createNativeQuery("SELECT customer_id FROM quotation WHERE id = :q")
                 .setParameter("q", quotationId).getResultList();
         return r.isEmpty() || r.get(0) == null ? null : UUID.fromString(r.get(0).toString());
+    }
+
+    /**
+     * task-0725 T3-P1：供 {@link QuotePendingScope#open} 冻结判定用。查不到（quotationId 非法/已删除）
+     * 时返回 null → open() 视作「无报价单上下文」存 null，等价不打开（安全兜底）。
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @SuppressWarnings("unchecked")
+    public String loadQuotationStatus(UUID quotationId) {
+        List<Object> r = em.createNativeQuery("SELECT status FROM quotation WHERE id = :q")
+                .setParameter("q", quotationId).getResultList();
+        return r.isEmpty() || r.get(0) == null ? null : r.get(0).toString();
     }
 
     @Transactional(Transactional.TxType.REQUIRES_NEW)

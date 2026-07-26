@@ -162,6 +162,14 @@ export function useDriverExpansions(
    * 老调用者(详情页等)不传时,后端走老协议(:lineItemId 标量),向后兼容。
    */
   quotationId?: string,
+  /**
+   * task-0725: 本次展开所属业务侧,透传到每个 batchExpand task(tasks[].usage),
+   * 供后端决定是否为该 task 打开报价侧 pending 可见域(QuotePendingScope.open)。
+   * 'QUOTE' = 报价侧产品卡,允许看见本单 pending 数据;'COSTING' = 核价侧产品卡,不开启。
+   * 报价侧与核价侧各自持有独立的 hook 实例(独立 useState cache),故此参数只影响
+   * 请求体、不影响本 hook 内部任何缓存 key(driverExpansionKey 不含 usage 维度)。
+   */
+  usage: 'QUOTE' | 'COSTING',
 ): UseDriverExpansionsResult {
   const [cache, setCache] = useState<DriverExpansionMap>({});
   // cacheRef 与 cache state 保持同步，effect 内读 ref 避免闭包过期引发二次触发
@@ -344,6 +352,9 @@ export function useDriverExpansions(
       // 让所有 mirror 视图统一靠 (:quotationId + :customerCode + :hfPartNos) 三参数跑,
       // 不再有视图单独用 :lineItemId 标量(空时后端走老兼容路径)
       quotationId: quotationId || null,
+      // task-0725: 业务侧标记,后端据此决定是否为本 task 打开报价侧 pending 可见域。
+      // 只进请求体,不进本 hook 的缓存 key(driverExpansionKey 不含此维度)。
+      usage,
     }));
 
     // 2026-05-19 fix: 用 task index 直接对应 result index, 不再用 batchKey map.
@@ -440,8 +451,11 @@ export function useDriverExpansions(
     return () => controller.abort();
 
     // tasks 已 dedupe；cache 读 ref 不入依赖；customerId 是原始依赖
+    // usage: QuotationStep2/QuotationWizard 两处传字面量常量(不随渲染变化)；
+    // ReadonlyProductCard 传 `side` 派生值，会随用户切换报价/核价视图而改变，
+    // 纳入 deps 保证该值变化时按 exhaustive-deps 规则重新求值(不会引入误报错误的 usage)。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, customerId, quotationId]);
+  }, [tasks, customerId, quotationId, usage]);
 
   return { cache, invalidate };
 }

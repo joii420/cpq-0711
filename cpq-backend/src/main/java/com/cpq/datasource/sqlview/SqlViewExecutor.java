@@ -598,11 +598,20 @@ public class SqlViewExecutor {
      * 把 SQL 中所有 {@code :xxx} 命名占位符替换为 {@code ?}，按出现顺序收集对应值。
      *
      * <p>注意：未在 namedParams 中提供的占位符会被替换为 NULL（保留语义合法但运行时可能查不到行）。
+     *
+     * <p>task-0725 根因 2：定位前先 {@link SqlTextMask#mask(String)} 屏蔽字符串字面量 / {@code --}
+     * 行注释 / {@code /* *&#47;} 块注释，避免注释里写的 {@code :customerCode} 等 token 被误当占位符
+     * 替换成 {@code ?}——pgjdbc 会忽略注释内的 {@code ?}，导致 Java 侧绑定数 > pgjdbc 认到的占位符数，
+     * 抛 {@code The column index is out of range}（已复现于 {@code cp_view}/{@code bom_view}）。
+     * {@code mask()} 保留原文长度与换行，故在 masked 文本上找到的 {@code start()}/{@code end()} 可以
+     * 直接映射回原文 {@code sql} 的同一偏移量——真正写入 {@code out} 的仍是原文内容（含注释原样文字），
+     * 只是不再把注释内的 {@code :xxx} 当作占位符消费。
      */
     private RewrittenSql rewriteNamedParams(String sql, Map<String, Object> namedParams) {
+        String masked = SqlTextMask.mask(sql);
         StringBuilder out = new StringBuilder();
         List<Object> params = new ArrayList<>();
-        Matcher m = NAMED_PARAM.matcher(sql);
+        Matcher m = NAMED_PARAM.matcher(masked);
         int lastEnd = 0;
         while (m.find()) {
             out.append(sql, lastEnd, m.start());
@@ -623,10 +632,13 @@ public class SqlViewExecutor {
 
     /**
      * 提取所有 :xxx 占位符（去重，保持顺序）。供 dry-run / 诊断使用。
+     *
+     * <p>task-0725 根因 2：同 {@link #rewriteNamedParams} 一样先 mask 再扫描，注释/字面量内的 token
+     * 不计入。
      */
     public List<String> extractNamedParams(String sql) {
         Set<String> seen = new LinkedHashSet<>();
-        Matcher m = NAMED_PARAM.matcher(sql);
+        Matcher m = NAMED_PARAM.matcher(SqlTextMask.mask(sql));
         while (m.find()) seen.add(m.group(1));
         return new ArrayList<>(seen);
     }
