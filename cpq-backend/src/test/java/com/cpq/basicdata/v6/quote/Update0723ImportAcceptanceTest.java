@@ -95,6 +95,10 @@ class Update0723ImportAcceptanceTest {
             // create-quotation 已把 8 张表 pending_quotation_id 从 goldenRecordId 过户为 goldenQuotationId，
             // 这些行是版本化表的"新当前版本"，按类头注释策略保留，不删。
         }
+        // repair-0726：material_master 不在"版本化表保留新版本"这条策略里——它没有版本历史，
+        // 是本测试类唯一让 S-80011/W-1001 出现在正表的来源，测试结束必须清空，见
+        // resetGoldenComponentMasterRows() javadoc（否则下一次运行会读到本次遗留的悬空 pending 标记）。
+        resetGoldenComponentMasterRows();
     }
 
     @Transactional
@@ -103,13 +107,33 @@ class Update0723ImportAcceptanceTest {
         for (String t : List.of("material_bom_item", "material_bom", "unit_price", "material_customer_map")) {
             em.createNativeQuery("DELETE FROM " + t + " WHERE customer_no LIKE 'UPD0723-%'").executeUpdate();
         }
-        em.createNativeQuery("DELETE FROM pending_material_master_staging WHERE material_no LIKE 'UPD0723-%'")
-          .executeUpdate();
+        // repair-0726：pending_material_master_staging 已 DROP（V362）。旧版本这里要单独清一张暂存表；
+        // 现在 material_master 正表本身就是"暂存位"（行级 pending_quotation_id 标记），下面这一行
+        // material_master 删除已经把原暂存表要清的对象一并覆盖，无需再查一张不存在的表。
         em.createNativeQuery("DELETE FROM material_master WHERE material_no LIKE 'UPD0723-%'").executeUpdate();
         if (rollbackRecordId != null) {
             em.createNativeQuery("DELETE FROM import_record WHERE id=:r")
               .setParameter("r", rollbackRecordId).executeUpdate();
         }
+    }
+
+    /**
+     * repair-0726：S-80011/W-1001 是本测试类复用的"既有黄金料号"。旧机制下它们永远不会出现在
+     * material_master 正表（只有核价通过才 promote，而本测试从不核价通过），所以原断言可以放心
+     * assert count=0。新机制下导入会直接把它们写进正表（带 pending 标记）——第一次跑本测试就会
+     * 真实创建这两行；但 material_master 用 material_no 做全局唯一键、没有版本历史，一旦创建，
+     * ON CONFLICT 分支就再也不会改动它们的 pending_quotation_id（"已存在的正式行不降级 / 已属别单
+     * 不被抢占"是刻意的生产不变量，见 MaterialMasterRepository#upsertByMaterialNo javadoc）——
+     * 也就是说如果不在每次运行前后主动清空，第二次及以后运行会读到上一次运行残留的陈旧
+     * pending_quotation_id（甚至是已经被删掉的旧 quotationId，形成悬空引用），导致"本次导入应带
+     * 本次 importRecordId 标记"这类断言在重跑时失败。用原生 DELETE 强制清零，模拟"这两个料号从未
+     * 出现在正表过"这个测试原本就依赖的前提——material_master 没有任何表对它 FK 引用（已用
+     * information_schema 核实），删除安全。
+     */
+    @Transactional
+    void resetGoldenComponentMasterRows() {
+        em.createNativeQuery("DELETE FROM material_master WHERE material_no IN ('S-80011','W-1001')")
+          .executeUpdate();
     }
 
     // ===== 通用查询 helper =====
@@ -151,6 +175,8 @@ class Update0723ImportAcceptanceTest {
 
     @Test
     void goldenTemplate_fullImport_endToEndAcceptance() throws Exception {
+        // repair-0726：先清掉上一次运行残留的悬空 pending 标记，见 resetGoldenComponentMasterRows() javadoc。
+        resetGoldenComponentMasterRows();
         UUID customerId = anyCustomerId(GOLDEN_CUSTOMER_NO);
         UUID user = anyUserId();
         byte[] bytes = Files.readAllBytes(GOLDEN_XLSX);
@@ -215,22 +241,25 @@ class Update0723ImportAcceptanceTest {
             "AND component_no='W-1001' AND pending_quotation_id=:p",
             "c", GOLDEN_CUSTOMER_NO, "p", goldenRecordId), "W-1001 issue_unit 应兜底 PCS（TC-U5-05）");
 
-        // ---- R1/B6/TC-U2-04/05、TC-U3-01/02：落库矩阵 —— 落 staging，不落 material_master 正表 ----
+        // ---- R1/B6/TC-U2-04/05、TC-U3-01/02：落库矩阵 —— repair-0726 后暂存表已 DROP（V362），
+        // 落库位置从 pending_material_master_staging 迁移为 material_master 正表 + 行级
+        // pending_quotation_id 标记；断言随之从"查 staging 表"改为"查正表 + 标记列"。----
         assertEquals("零件", str(
-            "SELECT material_type FROM pending_material_master_staging WHERE quotation_id=:p AND material_no='S-80011'",
-            "p", goldenRecordId), "S-80011 material_type 应='零件'（B6/TC-U3-01, 查 staging 非正表 R1）");
+            "SELECT material_type FROM material_master WHERE pending_quotation_id=:p AND material_no='S-80011'",
+            "p", goldenRecordId), "S-80011 material_type 应='零件'（B6/TC-U3-01）");
         assertEquals("外购件", str(
-            "SELECT material_type FROM pending_material_master_staging WHERE quotation_id=:p AND material_no='W-1001'",
-            "p", goldenRecordId), "W-1001 material_type 应='外购件'（B6/TC-U3-02, 查 staging 非正表 R1）");
-        // 反向确认：material_master 正表本次导入不应新增这两个料号（核价审批通过前不落正表）。
-        // （历史遗留：material_master 里此二料号此前从未被任何流程 promote 过，故直接断言=0 即可。）
-        assertEquals(0L, count(
-            "SELECT count(*) FROM material_master WHERE material_no IN ('S-80011','W-1001')"),
-            "R1：material_master 正表本次导入不应落 S-80011/W-1001（核价审批前不 promote）");
-        // 材质 991/992 不进 material_master 也不进 staging（TC-U3-03）。
-        assertEquals(0L, count(
-            "SELECT count(*) FROM pending_material_master_staging WHERE quotation_id=:p AND material_no IN ('991','992')",
-            "p", goldenRecordId), "TC-U3-03：材质 991/992 不应进 staging");
+            "SELECT material_type FROM material_master WHERE pending_quotation_id=:p AND material_no='W-1001'",
+            "p", goldenRecordId), "W-1001 material_type 应='外购件'（B6/TC-U3-02）");
+        // repair-0726 语义变化：原断言"material_master 正表本次导入不应新增这两个料号"在新机制下
+        // 不再成立——新机制就是要让 BOM 料件类投入料号直接落正表，这正是本 repair 的验收目标，
+        // 继续断言=0 会让这条用例变成"反向验收本 repair 要修的 bug"。改为断言"已落正表 且 仍带本单
+        // pending 标记"（尚未核价通过转正，即 pending_quotation_id = importRecordId，不是 NULL）。
+        assertEquals(2L, count(
+            "SELECT count(*) FROM material_master WHERE material_no IN ('S-80011','W-1001') AND pending_quotation_id=:p",
+            "p", goldenRecordId),
+            "R1（repair-0726 新口径）：S-80011/W-1001 应已直落 material_master 正表，且带本单 pending 标记");
+        // 材质 991/992 不进 material_master（RECIPE 材质不登记主档，语义不变；staging 表已不存在，
+        // 故不再需要"也不进 staging"这半句断言）（TC-U3-03）。
         assertEquals(0L, count(
             "SELECT count(*) FROM material_master WHERE material_no IN ('991','992')"),
             "TC-U3-03：材质 991/992 不应进 material_master 正表");
@@ -321,10 +350,15 @@ class Update0723ImportAcceptanceTest {
             "计数应保持导入前基线，实际 before=" + java.util.Arrays.toString(before) +
             " after=" + java.util.Arrays.toString(after));
 
-        long stagingCount = count(
-            "SELECT count(*) FROM pending_material_master_staging WHERE quotation_id=:p", "p", rollbackRecordId);
-        assertEquals(0L, stagingCount,
-            "整单回滚应零写库：pending_material_master_staging(本次 recordId) 应=0（bomMerge/单重 写入的暂存也应回滚）");
+        // repair-0726：暂存表已 DROP，查询目标改为 material_master 正表 + 本次 pending 标记——
+        // 单重 handler（Q18UnitWeightHandler）在 Phase1 就会尝试给 mainB 建一条 pending 料号行，
+        // Phase2 失败必须连它也一起回滚，否则 mainB 会孤零零地"活"在正表里，成为一条脱离整单
+        // 上下文的孤儿 pending 行（旧断言校验的正是这同一件事，只是查询表换了）。
+        long pendingMasterCount = count(
+            "SELECT count(*) FROM material_master WHERE pending_quotation_id=:p", "p", rollbackRecordId);
+        assertEquals(0L, pendingMasterCount,
+            "整单回滚应零写库：material_master(pending_quotation_id=本次 recordId) 应=0" +
+            "（单重 handler 写入的 pending 料号也应回滚，取代原 pending_material_master_staging 断言）");
 
         // 具体验证 bomMerge 本应写入的 material_bom_item(mainB/subB) 确实不存在（而非仅计数巧合为 0）
         assertEquals(0L, count(
@@ -342,8 +376,8 @@ class Update0723ImportAcceptanceTest {
             "m", xcustToken);
         assertEquals(ownerA, ownerOfToken, "客户 A 对 xcustToken 的既有归属不应被本次失败导入影响");
 
-        Log.infof("[update0723-test] TC-U6-04 整单回滚验证通过：status=%s, before=%s, after=%s, staging=%d",
-            status, java.util.Arrays.toString(before), java.util.Arrays.toString(after), stagingCount);
+        Log.infof("[update0723-test] TC-U6-04 整单回滚验证通过：status=%s, before=%s, after=%s, pendingMaster=%d",
+            status, java.util.Arrays.toString(before), java.util.Arrays.toString(after), pendingMasterCount);
     }
 
     /** [material_bom, material_bom_item, unit_price, material_customer_map] 按 customer_no 计数快照。 */

@@ -341,12 +341,13 @@ class MaterialBomMergeHandlerTest {
 
     @Transactional
     void cleanupMasterRow(String... codes) {
+        // repair-0726：pending_material_master_staging 已 DROP（V362）；该表原来独立存放的"暂存"行
+        // 现在就是 material_master 正表里 pending_quotation_id 非空的行，上面 material_master 的
+        // DELETE 已经把这部分一并覆盖，无需再查一张不存在的表。
         for (String c : codes) {
             em.createNativeQuery("DELETE FROM material_master WHERE material_no = :c")
               .setParameter("c", c).executeUpdate();
             em.createNativeQuery("DELETE FROM material_customer_map WHERE material_no = :c")
-              .setParameter("c", c).executeUpdate();
-            em.createNativeQuery("DELETE FROM pending_material_master_staging WHERE material_no = :c")
               .setParameter("c", c).executeUpdate();
         }
     }
