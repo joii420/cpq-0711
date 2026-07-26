@@ -219,7 +219,7 @@ public class QuoteBackfillCollector {
             }
         }
 
-        plan.materialMasterStaging = materialMasterRepo.listStaging(quotationId);
+        plan.materialMasterPending = materialMasterRepo.listPending(quotationId);
         collectNewMaterialStubs(plan);
         return plan;
     }

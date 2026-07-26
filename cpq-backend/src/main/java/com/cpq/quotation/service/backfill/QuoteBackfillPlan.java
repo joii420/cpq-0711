@@ -16,8 +16,11 @@ public final class QuoteBackfillPlan {
 
     public final UUID quotationId;
     public final List<GroupChange> groups = new ArrayList<>();
-    /** B9：本单暂存的主档变更（原样透传给 promote，不在此重复解析）。 */
-    public List<MaterialMasterRepository.StagedRow> materialMasterStaging = List.of();
+    /** repair-0726 B6：本单 pending 的主档料号行——供 {@code QuoteBackfillPreviewService} 计算
+     *  预览 token（execute 阶段的实际转正改由 {@code MaterialMasterRepository#flipPending} 按
+     *  quotationId 整单 UPDATE，不再逐行消费本字段）。字段名/形状沿用 task-0721 B9 暂存表时代的
+     *  StagedRow，避免连锁改动。 */
+    public List<MaterialMasterRepository.StagedRow> materialMasterPending = List.of();
     /** Q6：需要补建 material_master stub 的全新料号 → 兜底名称。 */
     public final Map<String, String> newMaterialStubs = new LinkedHashMap<>();
 

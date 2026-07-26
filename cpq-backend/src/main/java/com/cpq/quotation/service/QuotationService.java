@@ -1626,10 +1626,14 @@ public class QuotationService {
 
     /**
      * task-0721 B8：清理该报价单在 7 张版本化表 + 占号表 material_customer_map 的全部 pending 行，
-     * 以及 material_master 主档暂存（B9）。用于报价单删除（本单从未生效过，pending 无保留价值）。
-     * 与 {@code QuoteImportService}/{@code V6QuotationCommitService} 的 pending 表清单同源
-     * （8 表字面量重复，见 {@code V6QuotationCommitService.PENDING_TABLES} 注释：分属不同包各自
-     * private，重复的耦合成本低于抽共享工具类）。
+     * 以及 material_master 的 pending 料号（repair-0726 B3，带引用守卫）。用于报价单删除（本单从未
+     * 生效过，pending 无保留价值）。与 {@code QuoteImportService}/{@code V6QuotationCommitService}
+     * 的 pending 表清单同源（8 表字面量重复，见 {@code V6QuotationCommitService.PENDING_TABLES}
+     * 注释：分属不同包各自 private，重复的耦合成本低于抽共享工具类）。
+     *
+     * <p>repair-0726 B3 顺序铁律：必须先删 8 张 V6 表的 pending 行，再删料号行——否则本单自己的
+     * material_bom_item 会把 {@link com.cpq.basicdata.v6.repository.MaterialMasterRepository#deletePendingWithGuard} 的引用守卫
+     * 顶住，料号永远回收不掉。
      */
     private static final java.util.List<String> B8_PENDING_TABLES = java.util.List.of(
         "unit_price", "material_bom", "material_bom_item", "element_bom", "element_bom_item",
@@ -1641,7 +1645,7 @@ public class QuotationService {
               .setParameter("qid", quotationId)
               .executeUpdate();
         }
-        materialMasterRepository.clearStaging(quotationId);
+        materialMasterRepository.deletePendingWithGuard(quotationId);
     }
 
     @Transactional

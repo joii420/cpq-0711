@@ -138,12 +138,15 @@ public class V6QuotationCommitService {
         }
     }
 
-    /** 7 张版本化表 + 占号表（task-0721 B1 pending 列覆盖范围，见 V349 迁移；与
+    /** 7 张版本化表 + 占号表 + material_master（repair-0726 B3 并入；过户是同列名 UPDATE，
+     *  语义与另外 8 张表一致，可安全并入同一循环——与删除场景不同，删除需要引用守卫，
+     *  不能放进这张字面量清单，见 {@code QuoteImportService#clearPreviousPending}/
+     *  {@code QuotationService#cleanupPendingV6Data}）。与
      *  {@link com.cpq.basicdata.v6.quote.QuoteImportService#PENDING_TABLES} 保持同源清单，未抽公共常量
-     *  是因两者分属不同包且各自 private，重复 8 行字面量的耦合成本低于抽共享工具类）。 */
+     *  是因两者分属不同包且各自 private，重复 9 行字面量的耦合成本低于抽共享工具类）。 */
     private static final List<String> PENDING_TABLES = List.of(
         "unit_price", "material_bom", "material_bom_item", "element_bom", "element_bom_item",
-        "capacity", "plating_scheme", "material_customer_map");
+        "capacity", "plating_scheme", "material_customer_map", "material_master");
 
     public static class CommitResult {
         public UUID quotationId;

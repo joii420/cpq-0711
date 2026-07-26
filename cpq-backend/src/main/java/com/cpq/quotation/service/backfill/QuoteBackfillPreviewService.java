@@ -150,7 +150,7 @@ public class QuoteBackfillPreviewService {
         }
         // 主档暂存 + 新料号 stub 也纳入 token（影响回填结果的一部分状态）。
         List<String> stagingKeys = new ArrayList<>();
-        for (var s : plan.materialMasterStaging) stagingKeys.add(canonStaged(s));
+        for (var s : plan.materialMasterPending) stagingKeys.add(canonStaged(s));
         Collections.sort(stagingKeys);
         sb.append("#staging=").append(String.join(",", stagingKeys));
         List<String> stubKeys = new ArrayList<>(plan.newMaterialStubs.keySet());

@@ -7,6 +7,7 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
 import com.cpq.importexcel.entity.ImportRecord;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.control.ActivateRequestContext;
@@ -60,6 +61,7 @@ public class QuoteImportService {
     @Inject Q16PlatingSchemeHandler q16;         // 电镀方案
     @Inject Q17PlatingCostHandler q17;           // 电镀费用
     @Inject Q19AnnualDiscountHandler q19;        // 年降系数
+    @Inject MaterialMasterRepository materialMasterRepo; // repair-0726 B3：重导清理带引用守卫的 pending 料号
 
     /** 写入顺序：物料BOM 三态合并须早于依赖其落库结果的 sheet（如 Q05 更新 element_bom_item 依赖 Q04 先写）。 */
     private List<SheetHandler> orderedHandlers() {
@@ -264,6 +266,11 @@ public class QuoteImportService {
      * pending 残留行，再走本次 pending 写入。当前 UI 流程每次上传都会铸新 importRecordId（不存在
      * "同一 importRecordId 再导一次"的真实调用路径），此清理对首次导入是 no-op（0 行），为未来
      * 若开放"报价单创建前多次重传同一草稿"预留正确性保障，零风险。
+     *
+     * <p>repair-0726 B3：8 表 DELETE 后追加 material_master pending 料号清理（带引用守卫，
+     * 见 {@link MaterialMasterRepository#deletePendingWithGuard}）。<b>顺序铁律</b>：必须先删
+     * 8 张 V6 表的 pending 行，再删料号行——否则本单自己的 material_bom_item 会把守卫顶住，
+     * 料号永远回收不掉。同时关闭 BACKLOG BL-0072（原 clearPreviousPending 未覆盖暂存表孤儿行）。
      */
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void clearPreviousPending(UUID pendingQuotationId) {
@@ -271,6 +278,7 @@ public class QuoteImportService {
             em.createNativeQuery("DELETE FROM " + table + " WHERE pending_quotation_id = :pq")
               .setParameter("pq", pendingQuotationId).executeUpdate();
         }
+        materialMasterRepo.deletePendingWithGuard(pendingQuotationId);
     }
 
     /** 7 张版本化表 + 占号表（task-0721 B1 pending 列覆盖范围，见 V349 迁移）。 */
