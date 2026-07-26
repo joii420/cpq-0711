@@ -255,7 +255,7 @@
 ### [BL-0072] `clearPreviousPending` 未覆盖 `pending_material_master_staging`（重导覆盖遗留孤儿行）
 - **优先级**：P2
 - **来源**：task-0709/update-0723 测试用例设计风险点 R3（2026-07-23）
-- **状态**：TODO（未排期）
+- **状态**：[x] **已关闭（2026-07-26，repair-0726 随暂存表退役天然解决）**——V362 已 `DROP TABLE pending_material_master_staging`，孤儿行的载体不复存在；同时 `QuoteImportService.clearPreviousPending` 在 8 表 DELETE 后补调 `materialMasterRepo.deletePendingWithGuard(pq)`，重导覆盖时会带引用守卫回收本单旧 pending 料号行。
 - **登记日期**：2026-07-23
 - **背景**：`QuoteImportService.PENDING_TABLES`（8 张：`unit_price/material_bom/material_bom_item/element_bom/element_bom_item/capacity/plating_scheme/material_customer_map`）**不含** `pending_material_master_staging`。重导覆盖场景下，若新文件相比旧文件「减少」了某个只凭名称发号的料号，旧 staging 行会成为孤儿残留（不影响本次导入正确性，但 promote 时可能带入多余料号）。
 - **范围**：评估是否把 `pending_material_master_staging` 纳入 `clearPreviousPending`（注意其键是 `quotation_id + material_no`，与其余 8 表的 `pending_quotation_id` 列名不同）。
@@ -273,6 +273,40 @@
 - **依赖**：task-0721 报价升版逻辑。
 - **预估规模**：S
 - **验收要点**：明确并固化该 SQL 在 pending / 正式两种场景的预期行为。
+
+### [BL-0074] 跨单复用 pending 料号后无转正路径（孤儿 pending 标记）
+- **优先级**：P1
+- **来源**：repair-0726 代码质量评审 I2/I4（2026-07-26）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-26
+- **背景**：`material_master` 改为行级 `pending_quotation_id` 标记后，`MaterialNoResolver.resolve` 按名查重**不加 pending 谓词**（防重号，需求方 Q5 裁决），因此报价单 B 会复用在途报价单 A 新建的 pending 料号；而 upsert 的 `ON CONFLICT` 刻意不写该列（不抢占），行仍归属 A。后果：**B 核价通过时 `flipPending(B)` 匹配不到该行**，料号继续挂 A 的标记 → 主数据列表永久不可见（B4 过滤）；若 A 随后被删，引用守卫会拦下（B 的数据在引用它），标记指向一张已不存在的报价单，**无任何代码路径能再清除**。已实测复现：删单时守卫拦下 2 条并打出 WARN 日志（`QuotationService.cleanupPendingV6Data`），这是目前唯一的可观测信号。
+- **第二条触发路径（更常见，2026-07-26 最终评审补充）**：**建单前重复导入**同一张单 —— 上传得 R1（料号落行、`pq=R1`）→ 用户改文件重传得 R2 → R2 命中 `ON CONFLICT`、按设计不改写 `pending_quotation_id`，行仍归 R1 → `clearPreviousPending(R2)` 只清 R2 → `repointPendingOwnership(R2→Q)` 只搬 R2 的行 → `flipPending(Q)` 匹配不到。R1 是 `import_record` **不是 `quotation`**，删单路径永远不会触发，标记**永久无法清除**（渲染不受影响，无谓词；仅主数据列表永久不可见）。janitor 方案须把 `import_record` 也纳入「归属方是否存在」的判定。
+- **范围**：需产品决策「共享 pending 料号归谁」——候选：①被引用时改挂新单（re-tag）；②任一引用方核价通过即转正（flip-on-reference）；③定期 janitor 扫描 `pending_quotation_id` 指向不存在报价单的行并转正/清标记。
+- **依赖**：repair-0726 已落地（WARN 日志已提供检出手段）。
+- **预估规模**：S（janitor 兜底）/ M（re-tag 或 flip-on-reference 需改生命周期语义）
+- **验收要点**：不存在 `pending_quotation_id` 指向已删报价单的行；跨单复用场景下料号能随任一引用方核价通过而转正。
+
+### [BL-0075]（技术债）`MaterialMasterRepository` 位置性 NULL 填充 + 长参数列表
+- **优先级**：P2
+- **来源**：repair-0726 代码质量评审 Q1/Q2（2026-07-26）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-26
+- **背景**：三个批量 upsert 各自手工 StringBuilder 拼多行 VALUES，靠**位置性 `NULL` 占位**对齐列清单（如 `(:m0, :n0, NULL, NULL, NULL, :t0, NULL, NULL, NULL, :p0, NOW(), NOW(), :u, :pq)`）。加一列要改 3 方法 × 3 处（列清单 / VALUES 模板 / 参数绑定）= 9 点；且**同类型列错位是静默数据损坏**（`material_type` 落进 `usage_property`，都是 varchar，PG 不报错），只有列数不匹配才会报错。repair-0726 加 `pending_quotation_id` 之所以安全，只因它加在**末尾**。另 `upsertByMaterialNo` 有 7 个连续 `String` 参数，相邻位置互换可编译通过（`QuoteBackfillService` 的调用点 12 个实参里 8 个是字面量 `null`）。
+- **范围**：①利用 PG 的 `EXCLUDED` 对**未列出列**同样可见（取默认值 NULL）这一语义，把 `upsertBatchNameType` 的列清单从 14 列瘦到 8 列、`upsertBatchWithWeight` 从 13 列瘦到 6 列，消灭全部位置性 NULL；②抽 `private static String onConflictSet(boolean preserveDescriptive)` 共享 SET 子句，下次加列扇出从 9 点降到 3 点；③视情况把长参数列表换成参数对象/record。
+- **依赖**：无。**注意**：这是会改 SQL 文本的重构，必须配套「与改动前逐位等价」的回归证据（参考 `MaterialMasterBatchUpsertEquivTest` 的既有等价性测试范式）；前提假设是 `material_master` 不会有列带非 NULL DEFAULT。
+- **预估规模**：S（①②）/ M（含③）
+- **验收要点**：三个批量方法 SQL 无位置性 NULL 占位；等价性测试证明与重构前逐位一致。
+
+### [BL-0076]（测试债）repair-0726 接线层回归测试缺口
+- **优先级**：P2
+- **来源**：repair-0726 最终整体评审 M-5（2026-07-26）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-26
+- **背景**：repair-0726 的 repo 层有 `MaterialMasterPendingTest` 8 个用例（写入语义/不降级/不抢占/引用守卫/排序）覆盖扎实，但**接线层**四处目前只有手工全链路验收（RECORD 的 AC-2/3/6）背书，无自动化回归：①`MaterialMasterCrudService.list` 的 `pendingQuotationId is null` 过滤（B4）；②Q02 销售料号补 `material_type='零件'`（B5）；③`repointPendingOwnership` 把 `material_master` 纳入过户循环（建单过户）；④**`QuoteBackfillService.execute` 中 `flipPending` 先于 `cleanupPending` 且后者的 8 表清单不含 `material_master`** —— 第 ④ 项正是 backtask 点名「本任务最容易写错的一处」（写错会把刚转正的行删掉），恰恰没有测试锁死。
+- **范围**：优先补 ④（一条针对 `QuoteBackfillService.execute` 的集成测试，断言核价通过后料号行仍在且 `pending_quotation_id IS NULL`）；②可用 handler 级测试低成本覆盖；①③视投入决定。
+- **依赖**：无。注意本地 docker 库缺 `CUST-1269` 等共享 dev 库夹具，写测试时别依赖它们。
+- **预估规模**：S
+- **验收要点**：把 `material_master` 误加进 `QuoteBackfillService.PENDING_TABLES`、或把 `flipPending` 挪到 `cleanupPending` 之后时，测试必须失败。
 
 ### [BL-0019] 零金额列页签 `[页签(总计)]`=0 的配置期 lint 警告 + 回退裁决
 - **优先级**：P2
@@ -935,3 +969,10 @@
 - **关闭/关联**：[[BL-0031]] 由本次实质解决（工序落 unit_price/自制加工费 + v_composite_child_processes mirror）；收缩迁移转 [[BL-0057]]；F6 发现 2 个既有 bug（QuotationCreateForm stale closure / TC-F1F2 夹具漂移）另立项。
 
 （暂无）
+
+### [DONE 2026-07-26] repair-0726 BOM 中料件类投入料号没有落库（机制替换：暂存表 → 行级 pending 标记）
+- **交付**：worktree 分支 `worktree-repair-0726-material-master-pending` 提交 `8c784cef`(V362) / `f615fd89`(V362 评审修订) / `12da6626`+`8fd259fd`(B2+B3+B6) / `81daaa9c`(B2/B3/B6 评审修订) / `aab46481`(B4+B5) / `98cb8aed`(B7 测试) + 迁移 `V362`。
+- **验收**：AC-1~AC-8 全链路实测通过（导入即落正表 / 建单过户 / 核价通过转正 / 删单双向守卫 / 渲染可见 / 列表隔离 / 二次导入不重号 / 迁移 success=t 且暂存表已 DROP）；AC-9 回归 175 tests，12 项失败经逐条判定均为 pre-existing 环境缺口（本地库缺 991/992 材质、缺组件 zh_view、缺核价单 fixture、CostingComparisonResourceTest 既有 401 鉴权缺口）。
+- **关闭**：[[BL-0072]]（暂存表退役 + clearPreviousPending 补带守卫回收）。
+- **新登记技术债**：[[BL-0074]] 跨单复用 pending 料号无转正路径（P1）、[[BL-0075]] MaterialMasterRepository 位置性 NULL 填充与长参数列表（P2）。
+- **方案纠偏**：原 backtask「删单必须先删 8 表后删料号，否则守卫顶住」经单测实证**不成立**（守卫 `<> :qid` 已排除本单自己的 pending 行）；真正的不变量是该子句本身，注释已改写并警示。

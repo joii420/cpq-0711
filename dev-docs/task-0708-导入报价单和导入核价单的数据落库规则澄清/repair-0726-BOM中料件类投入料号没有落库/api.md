@@ -65,7 +65,8 @@
 | 报价单删除 | `DELETE /api/cpq/quotations/{id}` | 除清 8 表 pending 行外，回收本单 pending 料号行（带引用守卫：被其它单引用的不删） |
 | 重复导入覆盖 | 同导入端点 | 清理本单旧 pending 料号行（关闭 BACKLOG BL-0072 的孤儿行问题） |
 
-> ⚠️ 对前端的唯一提示：**核价通过接口的 409（previewToken 失效）语义不变**。若集成测试中发现预览后提交必现 409，属后端 `listPending` 未加 `ORDER BY material_no` 的实现缺陷（backtask §7 已列为强制项），应回报后端而非前端重试。
+> ⚠️ 对前端的唯一提示：**核价通过接口的 409（previewToken 失效）语义不变**。若集成测试中发现预览后提交必现 409，应回报后端而非前端重试。
+> **（2026-07-26 更正）** 原文把 409 归因于「`listPending` 未加 `ORDER BY material_no`」，该因果**不成立**：`QuoteBackfillPreviewService` 对 canonical 串已做 `Collections.sort`，token 本就与结果集顺序无关。`ORDER BY material_no` 保留只为原生查询结果确定性。真出现必现 409 需另行定位（数据在预览与提交之间确有变化，或 canonical 序列化口径被改动）。
 
 ---
 

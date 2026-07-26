@@ -115,7 +115,7 @@ public class Q13ComponentOtherFeeHandler implements SheetHandler {
             for (Map.Entry<String, String[]> me : mmAcc.entrySet()) {
                 mmRows.add(new MaterialMasterRepository.NameTypeRow(me.getKey(), me.getValue()[0], me.getValue()[1]));
             }
-            // task-0721 B9：pending 模式暂存。
+            // repair-0726 B2：pendingQuotationId 非空时直落正表并打行级 pending 标记（不再改道暂存表）。
             materialMasterRepo.upsertBatchNameType(mmRows, ctx.importedBy, true, ctx.pendingQuotationId);
         }
 

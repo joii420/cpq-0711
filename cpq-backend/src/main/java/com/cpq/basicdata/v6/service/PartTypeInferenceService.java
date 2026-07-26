@@ -79,9 +79,11 @@ public class PartTypeInferenceService {
          * sheet 的某行若<b>同行</b>同时给出了料号与名称，记 name→code（首个非空胜）。
          * 供 {@link #seedBatchState} 灌进共享 {@link MaterialNoResolver.BatchState}，
          * 使"同一物理件在 A 表只给码、在 B 表只给名"时，B 表能直接复用 A 表行里揭示的码，
-         * 而不是各 handler 各自查 {@code material_master} 正表（正表查不到本次导入刚 stage 的新码，
-         * R1：pendingQuotationId 非空时注册走 {@code pending_material_master_staging}，不进正表）
-         * 导致同一物理件被二次发号（重号）。
+         * 而不是各 handler 各自查 {@code material_master} 正表重新发号——同一事务内，本次导入
+         * 刚写入的新码（即便带 pending_quotation_id 标记）仍在正表里，理论上可查到；此处仍用批量级
+         * 种子是为了避免每行都发一次查询（性能），并覆盖"同一 handler 内先出现的行尚未 flush"的窗口。
+         * repair-0726：pendingQuotationId 非空时已改为直落正表 + 行级 pending_quotation_id 标记，
+         * 不再改道 {@code pending_material_master_staging}（该表已随 V362 迁移退役）。
          */
         private final Map<String, String> nameToCodeSeed = new LinkedHashMap<>();
 

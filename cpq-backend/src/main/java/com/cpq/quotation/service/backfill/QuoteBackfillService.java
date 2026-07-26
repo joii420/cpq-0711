@@ -63,8 +63,8 @@ public class QuoteBackfillService {
             }
         }
 
-        // B9：主档暂存 → 覆盖式 upsert 进 material_master（preserveDescriptive=true，见 repo 注释）。
-        materialMasterRepo.promoteStaging(quotationId, currentUserId);
+        // repair-0726 B3：核价通过 → 本单 pending 料号转正（已直落正表，无需再覆盖式 upsert）。
+        materialMasterRepo.flipPending(quotationId);
         // Q6：ADD 行引入的全新料号补 stub（已存在则不覆盖，upsertByMaterialNo preserveDescriptive=true 天然满足）。
         for (Map.Entry<String, String> e : plan.newMaterialStubs.entrySet()) {
             materialMasterRepo.upsertByMaterialNo(e.getKey(), e.getValue(), null, null, null, null, null,
@@ -74,8 +74,8 @@ public class QuoteBackfillService {
         // B7：占号表 pending → approved（与回填同事务，不会出现"数据生效但产品还看不见"的中间态）。
         flipMaterialCustomerMap(quotationId);
 
-        // 清理：本单在 8 张 pending 表 + 主档暂存表的残留行（升版/flip/offline 已产生正式行，
-        // pending 草稿使命完成）。
+        // 清理：本单在 8 张 pending 表的残留行（升版/flip/offline 已产生正式行，pending 草稿使命
+        // 完成）。material_master 不在此列——它已被上面的 flipPending 转正，见 cleanupPending 注释。
         cleanupPending(quotationId);
 
         return summary;
@@ -137,13 +137,15 @@ public class QuoteBackfillService {
             .executeUpdate();
     }
 
+    /** repair-0726 B3：material_master 不在此清理——本单 pending 料号已被上面的
+     *  {@code flipPending} 转正（pending_quotation_id 清为 NULL），此处若再对它做 DELETE 语义
+     *  的清理会把刚转正的正式行删掉。8 张表清单继续保持 material_master 不在其中。 */
     private void cleanupPending(UUID quotationId) {
         for (String table : PENDING_TABLES) {
             em.createNativeQuery("DELETE FROM " + table + " WHERE pending_quotation_id = :qid")
                 .setParameter("qid", quotationId)
                 .executeUpdate();
         }
-        materialMasterRepo.clearStaging(quotationId);
     }
 
     /** 组轴 NULL 安全 WHERE 片段：{@code col IS NOT DISTINCT FROM :ax_col AND ...}。 */

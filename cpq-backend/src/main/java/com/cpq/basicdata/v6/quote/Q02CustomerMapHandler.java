@@ -66,7 +66,7 @@ public class Q02CustomerMapHandler implements SheetHandler {
                 : repo.deleteQuoteMappingsByCustomerNo(ctx.customerNo);
             result.recordWrite("material_customer_map.deleted", removed);
         }
-        // §P1-A 成品料号 material_master 同步延后批量：去重后一次 upsertBatchMaterialNoOnly。
+        // §P1-A 成品料号 material_master 同步延后批量：去重后一次 upsertBatchNameType(见文末 B5 补 material_type)。
         LinkedHashSet<String> mmAcc = new LinkedHashSet<>();
 
         // ②-0 逐行必填项校验 + relabel 读列，提取去重用的 key（报价料号 / 客户产品编号）。
@@ -120,8 +120,15 @@ public class Q02CustomerMapHandler implements SheetHandler {
             writeRow(pr, ctx, result, mmAcc);
         }
         if (!mmAcc.isEmpty()) {
-            // task-0721 B9：pending 模式暂存。
-            materialMasterRepo.upsertBatchMaterialNoOnly(new ArrayList<>(mmAcc), ctx.importedBy, ctx.pendingQuotationId);
+            // repair-0726 B5：销售料号(成品/主件)按 PartTypeInferenceService 权威口径存储类型=「零件」
+            // (ASSEMBLY)，之前 upsertBatchMaterialNoOnly 只写 material_no、material_type 恒空。
+            // 名称仍传 null——本 sheet「客户料号名称」列属客户维度语义，不是料件品名，不能顺手写进
+            // material_name。preserveDescriptive=true：已有类型不被覆盖(已知类型比推断兜底权威)。
+            List<MaterialMasterRepository.NameTypeRow> mmRows = new ArrayList<>(mmAcc.size());
+            for (String no : mmAcc) {
+                mmRows.add(new MaterialMasterRepository.NameTypeRow(no, null, "零件"));
+            }
+            materialMasterRepo.upsertBatchNameType(mmRows, ctx.importedBy, true, ctx.pendingQuotationId);
         }
         return result;
     }
