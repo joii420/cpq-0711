@@ -40,7 +40,7 @@
 ```sql
 -- ① 加列 + 部分索引
 ALTER TABLE material_master ADD COLUMN pending_quotation_id UUID NULL;
-CREATE INDEX ix_mm_pending ON material_master(pending_quotation_id) WHERE pending_quotation_id IS NOT NULL;
+CREATE INDEX ix_material_master_pending ON material_master(pending_quotation_id) WHERE pending_quotation_id IS NOT NULL;
 COMMENT ON COLUMN material_master.pending_quotation_id IS
   'repair-0726：该行由哪张未核准报价单新建（导入期=importRecordId，建单后=quotationId）；NULL=已生效的正式料号';
 
