@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 /** V6 §1 料号主表。业务键 material_no UNIQUE。 */
 @Entity
@@ -43,4 +44,10 @@ public class MaterialMaster extends V6BaseEntity {
     /** 生产料号(repair-1 决策A: material_master 作生产料号权威归属; 与销售料号 material_no 1:1, 不进键)。 */
     @Column(name = "production_no", length = 32)
     public String productionNo;
+
+    /** repair-0726 B1(V362)：非 null = 该料号由某未核准报价单首次带入、尚未核价通过转正，
+     *  正表内的"暂存"标记(取代已退役的 pending_material_master_staging)。
+     *  CRUD 层(见 {@code MaterialMasterCrudService}) 不写此字段、DTO 不暴露(接口零变化)。 */
+    @Column(name = "pending_quotation_id")
+    public UUID pendingQuotationId;
 }

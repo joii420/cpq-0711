@@ -28,7 +28,9 @@ import java.util.stream.Collectors;
 public class MaterialMasterCrudService {
 
     public PageResult<MaterialMasterDTO> list(int page, int size, String keyword) {
-        StringBuilder where = new StringBuilder("1=1");
+        // repair-0726 B4：主数据列表口径 = 只看正式料号，暂存(pending)行不可见(核价通过转正后才出现)。
+        // count 与 find 必须共用同一个 where 字符串，否则 total 与实际返回条数不符(反模式已知坑)。
+        StringBuilder where = new StringBuilder("pendingQuotationId is null");
         Map<String, Object> params = new HashMap<>();
         if (keyword != null && !keyword.isBlank()) {
             where.append(" AND (LOWER(materialNo) LIKE :kw OR LOWER(materialName) LIKE :kw)");
