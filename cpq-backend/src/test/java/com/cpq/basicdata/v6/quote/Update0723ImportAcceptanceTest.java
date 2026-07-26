@@ -360,6 +360,17 @@ class Update0723ImportAcceptanceTest {
             "整单回滚应零写库：material_master(pending_quotation_id=本次 recordId) 应=0" +
             "（单重 handler 写入的 pending 料号也应回滚，取代原 pending_material_master_staging 断言）");
 
+        // 评审加固（H1）：上面按 pending_quotation_id 计数的断言有个盲区——ON CONFLICT 刻意永不写
+        // pending_quotation_id，所以如果上一轮测试的清理没跑完、残留了同名旧行（mainB/subB），
+        // 本次哪怕真的漏写了库，那条漏写也只会命中已存在的残留行走 UPDATE 分支 → 标记仍是 NULL，
+        // 上面那条按标记计数的断言就会"空洞为真"（不是因为零写库，而是因为漏写的行被残留行接住了）。
+        // 旧的暂存表断言没有这个洞——暂存表键含每次新铸的 quotation_id，残留行不会串味。
+        // 这里再按 material_no 直接断言零行，把"漏写"和"残留掩盖漏写"两种情况都盖住。
+        assertEquals(0L, count(
+            "SELECT count(*) FROM material_master WHERE material_no IN (:a,:b)", "a", mainB, "b", subB),
+            "整单回滚应零写库：material_master 不应留下本次的 mainB/subB 料号行" +
+            "（按 material_no 直接查，绕开 pending_quotation_id 计数在残留行场景下可能空洞为真的盲区）");
+
         // 具体验证 bomMerge 本应写入的 material_bom_item(mainB/subB) 确实不存在（而非仅计数巧合为 0）
         assertEquals(0L, count(
             "SELECT count(*) FROM material_bom_item WHERE material_no=:m", "m", mainB));

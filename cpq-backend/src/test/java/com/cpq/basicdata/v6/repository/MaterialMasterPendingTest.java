@@ -186,6 +186,14 @@ class MaterialMasterPendingTest {
         em.clear();
         var after = repo.findByMaterialNo(materialNo).orElseThrow();
         assertEquals(ownerQid, after.pendingQuotationId, "已属别单 pending 的行不应被本次 upsert 抢占归属");
+
+        // 评审加固（H2）：正向对照——上面只验证了"归属没被抢占"，但没验证 upsert 真的作用到了这一行。
+        // materialName 起初是 NULL，preserveDescriptive=true 的语义是"仅空才回填"，所以这次 upsert
+        // 应该把名称/类型填进去；如果没有这条断言，即使 upsert 变成了 no-op（比如误传了错的 material_no、
+        // 或 SQL 写错导致完全没生效），上面两条断言照样会绿——因为它们只看 pendingQuotationId 没变，
+        // 从不检查 upsert 是否真的发生过。
+        assertEquals("别单改的名称", after.materialName, "别单那次 upsert 应该真的生效（正向对照，防 upsert 变 no-op 时假绿）");
+        assertEquals("别单改的类型", after.materialType, "同上：类型也应被这次 upsert 填入");
     }
 
     /** T3：引用守卫 —— 料号被别单的 material_bom_item.component_no 引用时，deletePendingWithGuard 不删该行、返回 0。 */
