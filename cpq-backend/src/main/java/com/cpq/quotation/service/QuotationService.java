@@ -82,7 +82,8 @@ public class QuotationService {
     @Inject
     QuotationTreeService quotationTreeService;
 
-    /** task-0721 报价升版逻辑 B8/B9：报价单删除时清理主档暂存（{@link #cleanupPendingV6Data}）。 */
+    /** task-0721 报价升版逻辑 B8（repair-0726 B3 迁移为带引用守卫的 pending 料号回收）：
+     *  报价单删除时清理本单 pending 料号（{@link #cleanupPendingV6Data}）。 */
     @Inject
     com.cpq.basicdata.v6.repository.MaterialMasterRepository materialMasterRepository;
 
@@ -1269,7 +1270,7 @@ public class QuotationService {
     }
 
     /**
-     * task-0721 B8 状态机：驳回<b>不清理</b>本单 pending 行/主档暂存——销售改完重交（再次导入）时
+     * task-0721 B8 状态机：驳回<b>不清理</b>本单 pending 行/pending 料号——销售改完重交（再次导入）时
      * 由 {@code QuoteImportService}/各 Q*Handler 的"同 pending_quotation_id 先清后写"逻辑覆盖旧
      * pending（B2 已含），驳回本身只是状态流转，无需在此额外处理 V6 数据。
      */
@@ -1617,7 +1618,7 @@ public class QuotationService {
                 .setParameter("qid", id)
                 .executeUpdate();
         // task-0721 B8 状态机：报价单删除级联清理本单 pending 数据（未生效过，无保留价值）。
-        // 只有 DRAFT 才能走到这（above guard），DRAFT 单可能已导入过、留有 pending 行/暂存主档。
+        // 只有 DRAFT 才能走到这（above guard），DRAFT 单可能已导入过、留有 pending 行/pending 料号。
         cleanupPendingV6Data(id);
         // costing_sheet has ON DELETE CASCADE (V30) — auto-deleted with quotation
         q.delete();
@@ -1631,9 +1632,11 @@ public class QuotationService {
      * 的 pending 表清单同源（8 表字面量重复，见 {@code V6QuotationCommitService.PENDING_TABLES}
      * 注释：分属不同包各自 private，重复的耦合成本低于抽共享工具类）。
      *
-     * <p>repair-0726 B3 顺序铁律：必须先删 8 张 V6 表的 pending 行，再删料号行——否则本单自己的
-     * material_bom_item 会把 {@link com.cpq.basicdata.v6.repository.MaterialMasterRepository#deletePendingWithGuard} 的引用守卫
-     * 顶住，料号永远回收不掉。
+     * <p>repair-0726 B3：{@link com.cpq.basicdata.v6.repository.MaterialMasterRepository#deletePendingWithGuard}
+     * 的引用守卫刻意排除本单自己的 pending 行（{@code <> :qid}），因此本方法内 8 表 DELETE 与料号回收
+     * 的先后顺序<b>不影响正确性</b>——代码保持"先 8 表、后料号"仅为直观，非必需。⚠️ <b>不要移除守卫里的
+     * {@code <> :qid}</b>：一旦移除，本单自己的 material_bom_item 就会顶住守卫，届时"先删 8 表、后删
+     * 料号"才真正成为铁律。
      */
     private static final java.util.List<String> B8_PENDING_TABLES = java.util.List.of(
         "unit_price", "material_bom", "material_bom_item", "element_bom", "element_bom_item",
@@ -1645,7 +1648,13 @@ public class QuotationService {
               .setParameter("qid", quotationId)
               .executeUpdate();
         }
-        materialMasterRepository.deletePendingWithGuard(quotationId);
+        int deleted = materialMasterRepository.deletePendingWithGuard(quotationId);
+        int survivors = materialMasterRepository.listPending(quotationId).size();
+        if (survivors > 0) {
+            LOG.warnf("cleanupPendingV6Data: material_master pending 引用守卫拦下 %d 条（本次已删 %d 条），"
+                + "quotationId=%s（报价单即将被删除）——这些行仍被其它 pending/正式数据引用，"
+                + "pending_quotation_id 标记会指向一个已不存在的报价单，需人工核查引用方", survivors, deleted, quotationId);
+        }
     }
 
     @Transactional

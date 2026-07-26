@@ -47,7 +47,8 @@ public class Q18UnitWeightHandler implements SheetHandler {
             for (Map.Entry<String, java.math.BigDecimal> me : mmAcc.entrySet()) {
                 mmRows.add(new MaterialMasterRepository.WeightRow(me.getKey(), me.getValue()));
             }
-            // task-0721 B9：pending 模式暂存，核价通过时才覆盖式 upsert 进 material_master。
+            // repair-0726 B2：pendingQuotationId 非空时直落正表并打行级 pending 标记
+            // （不再改道暂存表）；核价通过时 flipPending 转正，不改其余列。
             repo.upsertBatchWithWeight(mmRows, ctx.importedBy, ctx.pendingQuotationId);
         }
         return result;

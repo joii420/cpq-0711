@@ -148,11 +148,16 @@ public class QuoteBackfillPreviewService {
                   .append(canonMap(r.newValues)).append(';');
             }
         }
-        // 主档暂存 + 新料号 stub 也纳入 token（影响回填结果的一部分状态）。
-        List<String> stagingKeys = new ArrayList<>();
-        for (var s : plan.materialMasterPending) stagingKeys.add(canonStaged(s));
-        Collections.sort(stagingKeys);
-        sb.append("#staging=").append(String.join(",", stagingKeys));
+        // repair-0726 B6：material_master 的 pending 料号行 + 新料号 stub 也纳入 token（影响回填
+        // 结果的一部分状态）。数据源已从暂存表迁移到 material_master.pending_quotation_id 行
+        // （见 QuoteBackfillCollector#collect → listPending），此处仅是本地变量/注释措辞跟进。
+        List<String> pendingMaterialKeys = new ArrayList<>();
+        for (var s : plan.materialMasterPending) pendingMaterialKeys.add(canonStaged(s));
+        Collections.sort(pendingMaterialKeys);
+        // ⚠️ token 标签 "#staging=" 刻意不随字段/变量改名同步更新：token 是已发布给前端的预览凭证，
+        // 改标签文本会让所有在途 preview token 与重算结果不一致 → 部署后用户手上的旧 token 提交时
+        // 全部误报 409。不要"顺手"把它改成 "#pending=" 之类看起来更一致的名字。
+        sb.append("#staging=").append(String.join(",", pendingMaterialKeys));
         List<String> stubKeys = new ArrayList<>(plan.newMaterialStubs.keySet());
         Collections.sort(stubKeys);
         sb.append("#stubs=").append(String.join(",", stubKeys));

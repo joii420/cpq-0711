@@ -142,8 +142,10 @@ public class V6QuotationCommitService {
      *  语义与另外 8 张表一致，可安全并入同一循环——与删除场景不同，删除需要引用守卫，
      *  不能放进这张字面量清单，见 {@code QuoteImportService#clearPreviousPending}/
      *  {@code QuotationService#cleanupPendingV6Data}）。与
-     *  {@link com.cpq.basicdata.v6.quote.QuoteImportService#PENDING_TABLES} 保持同源清单，未抽公共常量
-     *  是因两者分属不同包且各自 private，重复 9 行字面量的耦合成本低于抽共享工具类）。 */
+     *  {@link com.cpq.basicdata.v6.quote.QuoteImportService#PENDING_TABLES} <b>同源但故意不等长</b>
+     *  （本清单 9 项 vs 导入侧删除清单 8 项）：material_master 只并入这里的过户 UPDATE，不并入删除
+     *  ——删除需要引用守卫，两清单不该"顺手对齐成一样长"。未抽公共常量是因两者分属不同包且各自
+     *  private，重复字面量的耦合成本低于抽共享工具类。 */
     private static final List<String> PENDING_TABLES = List.of(
         "unit_price", "material_bom", "material_bom_item", "element_bom", "element_bom_item",
         "capacity", "plating_scheme", "material_customer_map", "material_master");

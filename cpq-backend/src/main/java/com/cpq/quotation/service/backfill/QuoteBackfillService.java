@@ -74,8 +74,8 @@ public class QuoteBackfillService {
         // B7：占号表 pending → approved（与回填同事务，不会出现"数据生效但产品还看不见"的中间态）。
         flipMaterialCustomerMap(quotationId);
 
-        // 清理：本单在 8 张 pending 表 + 主档暂存表的残留行（升版/flip/offline 已产生正式行，
-        // pending 草稿使命完成）。
+        // 清理：本单在 8 张 pending 表的残留行（升版/flip/offline 已产生正式行，pending 草稿使命
+        // 完成）。material_master 不在此列——它已被上面的 flipPending 转正，见 cleanupPending 注释。
         cleanupPending(quotationId);
 
         return summary;

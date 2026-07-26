@@ -71,6 +71,11 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
 
     /**
      * repair-0726 B2：Upsert material_master by material_no（pending 感知核心实现）。
+     * <b>当前无外部调用方</b>——单行 pending 写入场景实际由三个批量方法（upsertBatchNameType/
+     * upsertBatchWithWeight/upsertBatchMaterialNoOnly）承担，12 参重载恒以
+     * {@code pendingQuotationId=null} 委托到本方法。保留此重载是为了让 upsertByMaterialNo 与三个
+     * 批量方法保持同构（都存在"pending 感知核心 + null 委托壳"的形状），以备未来出现单行 pending
+     * 写入场景，不代表当前存在一条活的单行 pending 路径。
      * @param preserveDescriptive true=已存在则保留旧 material_name/material_type（仅空才回填）；
      *                            false=非空覆盖（现状语义）。其余列恒为非空覆盖。
      * @param pendingQuotationId 仅在 INSERT 分支生效——料号首次出现时打上该未核准报价单归属；
@@ -96,6 +101,7 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
             "VALUES (:materialNo, :materialName, :specification, :dimension, " +
             "  :oldMaterialNo, :materialType, :usageProperty, :unitWeight, :standardUnit, :productionNo, " +
             "  NOW(), NOW(), :updatedBy, :pq) " +
+            // 故意不写 pending_quotation_id：已存在的正式行不降级、已属别单 pending 的行不被抢占。
             "ON CONFLICT (material_no) DO UPDATE SET " +
             "  production_no    = COALESCE(EXCLUDED.production_no,    material_master.production_no), " +
             "  material_name    = " + nameClause + ", " +
@@ -108,7 +114,6 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
             "  standard_unit    = COALESCE(EXCLUDED.standard_unit,    material_master.standard_unit), " +
             "  updated_at       = NOW(), " +
             "  updated_by       = EXCLUDED.updated_by";
-            // 故意不写 pending_quotation_id：已存在的正式行不降级、已属别单 pending 的行不被抢占。
         return em.createNativeQuery(sql)
             .setParameter("materialNo", materialNo)
             .setParameter("materialName", materialName)
@@ -195,6 +200,7 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
                 "INSERT INTO material_master (material_no, material_name, specification, dimension, " +
                 "  old_material_no, material_type, usage_property, unit_weight, standard_unit, production_no, " +
                 "  created_at, updated_at, updated_by, pending_quotation_id) VALUES " + vals +
+                // 故意不写 pending_quotation_id：已存在的正式行不降级、已属别单 pending 的行不被抢占。
                 " ON CONFLICT (material_no) DO UPDATE SET " +
                 "  production_no    = COALESCE(EXCLUDED.production_no,    material_master.production_no), " +
                 "  material_name    = " + nameClause + ", " +
@@ -207,7 +213,6 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
                 "  standard_unit    = COALESCE(EXCLUDED.standard_unit,    material_master.standard_unit), " +
                 "  updated_at       = NOW(), " +
                 "  updated_by       = EXCLUDED.updated_by";
-                // 故意不写 pending_quotation_id：已存在的正式行不降级、已属别单 pending 的行不被抢占。
             var q = em.createNativeQuery(sql);
             for (int i = 0; i < chunk.size(); i++) {
                 q.setParameter("m" + i, chunk.get(i).materialNo());
@@ -258,6 +263,7 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
                 "INSERT INTO material_master (material_no, material_name, specification, dimension, " +
                 "  old_material_no, material_type, usage_property, unit_weight, standard_unit, " +
                 "  created_at, updated_at, updated_by, pending_quotation_id) VALUES " + vals +
+                // 故意不写 pending_quotation_id：已存在的正式行不降级、已属别单 pending 的行不被抢占。
                 " ON CONFLICT (material_no) DO UPDATE SET " +
                 "  material_name    = COALESCE(EXCLUDED.material_name,    material_master.material_name), " +
                 "  material_type    = COALESCE(EXCLUDED.material_type,    material_master.material_type), " +
@@ -269,7 +275,6 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
                 "  standard_unit    = COALESCE(EXCLUDED.standard_unit,    material_master.standard_unit), " +
                 "  updated_at       = NOW(), " +
                 "  updated_by       = EXCLUDED.updated_by";
-                // 故意不写 pending_quotation_id：已存在的正式行不降级、已属别单 pending 的行不被抢占。
             var q = em.createNativeQuery(sql);
             for (int i = 0; i < chunk.size(); i++) {
                 q.setParameter("m" + i, chunk.get(i).materialNo());
@@ -325,10 +330,14 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
     }
 
     /**
-     * repair-0726 B2.2/B2.3：重导覆盖 / 删单回收——删除本单 pending 料号行，带引用守卫：
-     * 只要该料号还被本单之外的任何数据（正式行，或别单 pending 行）引用，就不删。
-     * 引用面：{@code material_bom_item.component_no}（BOM 子件）、{@code material_bom.material_no}
-     * （BOM 母件）、{@code material_customer_map.material_no}（客户映射）。
+     * repair-0726 B2.2/B2.3：重导覆盖 / 删单回收——删除本单 pending 料号行，带引用守卫。
+     * 只查 3 处引用（不是全表扫描"任何数据"）：料件类料号只可能作为
+     * {@code material_bom_item.component_no}（BOM 子件）出现；成品/主件料号必伴随
+     * {@code material_bom.material_no}（BOM 母件）或 {@code material_customer_map.material_no}
+     * （客户映射/占号行）。其余带 material_no 的 pending 表（element_bom / element_bom_item /
+     * capacity / unit_price…）在本语义下不构成独立引用，未纳入检查。
+     * <b>新增第 9 张 pending 表时需重新评估此清单是否仍然够用。</b>
+     * 每处检查都排除本单自己的 pending 行（{@code <> :qid}）——见调用方 javadoc 的顺序说明。
      * 返回删除行数。
      */
     public int deletePendingWithGuard(UUID quotationId) {
@@ -358,8 +367,9 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
     /**
      * repair-0726 B2.2/B6：一次性读出该报价单全部 pending 主档行（替代 task-0721 B9 的
      * {@code listStaging}，供回填预览/执行读取）。<b>固定 {@code ORDER BY material_no}</b>——
-     * 预览 token 由 canonical 序列化算出，若排序不稳定会导致同一业务状态在不同请求间产出不同
-     * token，用户预览后提交报 409。
+     * 确定性排序：token 计算侧（{@code QuoteBackfillPreviewService}）已对 canonical 字符串做
+     * {@code Collections.sort}，token 本身不依赖这里的顺序；此处排序只是不让原生查询结果集顺序
+     * 随 PG 执行计划漂移，属良好实践而非 token 正确性的必要条件。
      */
     @SuppressWarnings("unchecked")
     public List<StagedRow> listPending(UUID quotationId) {

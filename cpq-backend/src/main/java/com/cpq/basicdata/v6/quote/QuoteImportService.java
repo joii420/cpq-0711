@@ -268,9 +268,11 @@ public class QuoteImportService {
      * 若开放"报价单创建前多次重传同一草稿"预留正确性保障，零风险。
      *
      * <p>repair-0726 B3：8 表 DELETE 后追加 material_master pending 料号清理（带引用守卫，
-     * 见 {@link MaterialMasterRepository#deletePendingWithGuard}）。<b>顺序铁律</b>：必须先删
-     * 8 张 V6 表的 pending 行，再删料号行——否则本单自己的 material_bom_item 会把守卫顶住，
-     * 料号永远回收不掉。同时关闭 BACKLOG BL-0072（原 clearPreviousPending 未覆盖暂存表孤儿行）。
+     * 见 {@link MaterialMasterRepository#deletePendingWithGuard}）。守卫刻意排除本单自己的
+     * pending 行（{@code <> :qid}），因此本方法内 8 表 DELETE 与料号回收的先后顺序<b>不影响正确性</b>
+     * ——代码保持"先 8 表、后料号"仅为直观，非必需。⚠️ <b>不要移除守卫里的 {@code <> :qid}</b>：
+     * 一旦移除，本单自己的 material_bom_item 就会顶住守卫，届时"先删 8 表、后删料号"才真正成为铁律。
+     * 同时关闭 BACKLOG BL-0072（原 clearPreviousPending 未覆盖暂存表孤儿行）。
      */
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void clearPreviousPending(UUID pendingQuotationId) {
@@ -278,10 +280,21 @@ public class QuoteImportService {
             em.createNativeQuery("DELETE FROM " + table + " WHERE pending_quotation_id = :pq")
               .setParameter("pq", pendingQuotationId).executeUpdate();
         }
-        materialMasterRepo.deletePendingWithGuard(pendingQuotationId);
+        int deleted = materialMasterRepo.deletePendingWithGuard(pendingQuotationId);
+        int survivors = materialMasterRepo.listPending(pendingQuotationId).size();
+        if (survivors > 0) {
+            Log.warnf("QuoteImportService.clearPreviousPending: material_master pending 引用守卫拦下 %d 条"
+                + "（本次已删 %d 条），quotationId=%s——这些行仍被其它 pending/正式数据引用，"
+                + "pending_quotation_id 标记暂时无法回收，需人工核查引用方", survivors, deleted, pendingQuotationId);
+        }
     }
 
-    /** 7 张版本化表 + 占号表（task-0721 B1 pending 列覆盖范围，见 V349 迁移）。 */
+    /** 7 张版本化表 + 占号表（task-0721 B1 pending 列覆盖范围，见 V349 迁移）。<b>material_master
+     *  故意不在这张清单里</b>——它的删除必须走带引用守卫的
+     *  {@link MaterialMasterRepository#deletePendingWithGuard}，不能跟这 8 张表一样无脑
+     *  DELETE（会删掉仍被引用的料号）。与
+     *  {@link com.cpq.basicdata.v6.service.V6QuotationCommitService#PENDING_TABLES} 同源但
+     *  故意不等长（8 vs 9）：过户是同列名 UPDATE 可以并列 material_master，删除不行。 */
     private static final List<String> PENDING_TABLES = List.of(
         "unit_price", "material_bom", "material_bom_item", "element_bom", "element_bom_item",
         "capacity", "plating_scheme", "material_customer_map");
