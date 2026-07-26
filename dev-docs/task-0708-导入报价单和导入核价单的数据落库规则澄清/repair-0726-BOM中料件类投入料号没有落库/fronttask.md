@@ -59,7 +59,8 @@
 
 - 路径：报价单 → 核价 → 通过（先 `GET .../costing-approve/preview`，再 `POST .../costing-approve`）
 - 验证：预览正常返回、提交成功、状态正确翻转
-- 判定：**不应出现 409**。若预览后立即提交必现 409 → 后端 `listPending` 漏了 `ORDER BY material_no`（backtask §7 强制项），回报后端，**不要在前端加重试**
+- 判定：**不应出现 409**。若预览后立即提交必现 409 → 回报后端定位，**不要在前端加重试**
+  - （2026-07-26 更正）原文把 409 归因于 `listPending` 缺 `ORDER BY material_no`，该因果不成立 —— token 侧已 `Collections.sort`，与结果集顺序无关。详见 `api.md` §3 更正说明
 
 ### FR-5 报价单删除
 

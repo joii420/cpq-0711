@@ -160,7 +160,12 @@ WHERE mm.pending_quotation_id = :qid
 | `QuoteBackfillService.java:146`（`cleanupPending`） | `clearStaging(quotationId)` | **删掉这行** —— 核价通过路径已由 `flipPending` 转正，再删就把刚转正的行删了。⚠️ 这是本任务最容易写错的一处 |
 | `QuotationService.java:1638 cleanupPendingV6Data` | 8 表 DELETE + `clearStaging` | 8 表 DELETE **在前**，`deletePendingWithGuard(quotationId)` **在后** |
 
-> 🔴 **顺序铁律**：`cleanupPendingV6Data` 必须先删 8 张 V6 表的 pending 行，再删料号行 —— 否则本单自己的 `material_bom_item` 会把守卫顶住，料号永远回收不掉。B7 要有专门单测锁死这个顺序。
+> 🔴 ~~**顺序铁律**：`cleanupPendingV6Data` 必须先删 8 张 V6 表的 pending 行，再删料号行 —— 否则本单自己的 `material_bom_item` 会把守卫顶住，料号永远回收不掉。B7 要有专门单测锁死这个顺序。~~
+>
+> ⚠️ **【2026-07-26 实施纠偏】上面这条已被证伪，不要照它写代码。** 守卫的 `AND (x.pending_quotation_id IS NULL OR x.pending_quotation_id <> :qid)` 已排除本单自己的 pending 行 —— 本单的 `material_bom_item` **不会**顶住守卫，删除顺序对正确性无影响。
+> **真正的承重墙是 `<> :qid` 子句本身**：移除它，顺序才会变成铁律。
+> 实证：`MaterialMasterPendingTest#t4_deletePendingWithGuard_ownQuotationReferenceDoesNotBlockRecycling`（故意保留本单自己的引用行不删，回收仍成功 `deleted==1`）。
+> 代码注释见 `QuotationService.java#cleanupPendingV6Data` / `QuoteImportService.java#clearPreviousPending`。代码里的删除顺序保持「先 8 表后料号」不变（数据卫生，非正确性要求）。
 
 > 📌 `V6QuotationCommitService` / `QuoteImportService` / `QuotationService` / `QuoteBackfillService` 各自持有一份 8 表字面量清单（原注释说明「分属不同包各自 private，重复的耦合成本低于抽共享工具类」）。本次沿用该风格，但**四处都要改到**，不要漏。`material_master` 是否放进字面量清单由你判断：过户可以放（UPDATE 语义相同），删除**不能放**（需要守卫，必须走 repo 方法）。
 

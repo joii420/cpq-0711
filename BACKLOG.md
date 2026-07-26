@@ -280,6 +280,7 @@
 - **状态**：TODO（未排期）
 - **登记日期**：2026-07-26
 - **背景**：`material_master` 改为行级 `pending_quotation_id` 标记后，`MaterialNoResolver.resolve` 按名查重**不加 pending 谓词**（防重号，需求方 Q5 裁决），因此报价单 B 会复用在途报价单 A 新建的 pending 料号；而 upsert 的 `ON CONFLICT` 刻意不写该列（不抢占），行仍归属 A。后果：**B 核价通过时 `flipPending(B)` 匹配不到该行**，料号继续挂 A 的标记 → 主数据列表永久不可见（B4 过滤）；若 A 随后被删，引用守卫会拦下（B 的数据在引用它），标记指向一张已不存在的报价单，**无任何代码路径能再清除**。已实测复现：删单时守卫拦下 2 条并打出 WARN 日志（`QuotationService.cleanupPendingV6Data`），这是目前唯一的可观测信号。
+- **第二条触发路径（更常见，2026-07-26 最终评审补充）**：**建单前重复导入**同一张单 —— 上传得 R1（料号落行、`pq=R1`）→ 用户改文件重传得 R2 → R2 命中 `ON CONFLICT`、按设计不改写 `pending_quotation_id`，行仍归 R1 → `clearPreviousPending(R2)` 只清 R2 → `repointPendingOwnership(R2→Q)` 只搬 R2 的行 → `flipPending(Q)` 匹配不到。R1 是 `import_record` **不是 `quotation`**，删单路径永远不会触发，标记**永久无法清除**（渲染不受影响，无谓词；仅主数据列表永久不可见）。janitor 方案须把 `import_record` 也纳入「归属方是否存在」的判定。
 - **范围**：需产品决策「共享 pending 料号归谁」——候选：①被引用时改挂新单（re-tag）；②任一引用方核价通过即转正（flip-on-reference）；③定期 janitor 扫描 `pending_quotation_id` 指向不存在报价单的行并转正/清标记。
 - **依赖**：repair-0726 已落地（WARN 日志已提供检出手段）。
 - **预估规模**：S（janitor 兜底）/ M（re-tag 或 flip-on-reference 需改生命周期语义）
@@ -295,6 +296,17 @@
 - **依赖**：无。**注意**：这是会改 SQL 文本的重构，必须配套「与改动前逐位等价」的回归证据（参考 `MaterialMasterBatchUpsertEquivTest` 的既有等价性测试范式）；前提假设是 `material_master` 不会有列带非 NULL DEFAULT。
 - **预估规模**：S（①②）/ M（含③）
 - **验收要点**：三个批量方法 SQL 无位置性 NULL 占位；等价性测试证明与重构前逐位一致。
+
+### [BL-0076]（测试债）repair-0726 接线层回归测试缺口
+- **优先级**：P2
+- **来源**：repair-0726 最终整体评审 M-5（2026-07-26）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-26
+- **背景**：repair-0726 的 repo 层有 `MaterialMasterPendingTest` 8 个用例（写入语义/不降级/不抢占/引用守卫/排序）覆盖扎实，但**接线层**四处目前只有手工全链路验收（RECORD 的 AC-2/3/6）背书，无自动化回归：①`MaterialMasterCrudService.list` 的 `pendingQuotationId is null` 过滤（B4）；②Q02 销售料号补 `material_type='零件'`（B5）；③`repointPendingOwnership` 把 `material_master` 纳入过户循环（建单过户）；④**`QuoteBackfillService.execute` 中 `flipPending` 先于 `cleanupPending` 且后者的 8 表清单不含 `material_master`** —— 第 ④ 项正是 backtask 点名「本任务最容易写错的一处」（写错会把刚转正的行删掉），恰恰没有测试锁死。
+- **范围**：优先补 ④（一条针对 `QuoteBackfillService.execute` 的集成测试，断言核价通过后料号行仍在且 `pending_quotation_id IS NULL`）；②可用 handler 级测试低成本覆盖；①③视投入决定。
+- **依赖**：无。注意本地 docker 库缺 `CUST-1269` 等共享 dev 库夹具，写测试时别依赖它们。
+- **预估规模**：S
+- **验收要点**：把 `material_master` 误加进 `QuoteBackfillService.PENDING_TABLES`、或把 `flipPending` 挪到 `cleanupPending` 之后时，测试必须失败。
 
 ### [BL-0019] 零金额列页签 `[页签(总计)]`=0 的配置期 lint 警告 + 回退裁决
 - **优先级**：P2

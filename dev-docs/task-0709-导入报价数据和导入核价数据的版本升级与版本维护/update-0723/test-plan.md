@@ -1,3 +1,6 @@
+> 🚨 **【2026-07-26 失效提示】本文中所有针对 `pending_material_master_staging` 的 SQL 已不可执行** —— repair-0726 已用「`material_master` 正表 + 行级 `pending_quotation_id` 标记」替代暂存表机制，迁移 `V362` 已 `DROP TABLE pending_material_master_staging`。
+> 重跑本测试计划时，请把相关查询改为 `SELECT ... FROM material_master WHERE pending_quotation_id = :qid`。口径见 `dev-docs/task-0708-导入报价单和导入核价单的数据落库规则澄清/repair-0726-BOM中料件类投入料号没有落库/需求说明.md`。
+
 # 测试用例设计文档 · update-0723 报价导入模板0723适配
 
 > 状态：**仅用例设计，不写测试代码、不执行**（后端开发中）。
