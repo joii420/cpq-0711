@@ -83,6 +83,9 @@ ORDER BY ...
 （2026-07-22 罗克韦尔来料树事故）
 
 - **背景**：DRAFT 报价单渲染时，框架 `QuotePendingRewriter` 会把版本化白名单表（`unit_price` / `material_bom_item` / `material_master` / `capacity` 等有 `pending_quotation_id` 列的表）**整表 token 替换成带 `:pq` 的子查询**，让 pending（待生效）行也被看到。
+- ⏱ **生效时间线（重要，2026-07-25 task-0725）**：上述机制**在 task-0725 之前，对报价侧的驱动展开链路是失效的** —— `ComponentDriverService` / `ConfigureSnapshotService` 都没往 `SqlViewRuntimeContext` 写 `quotationId`（driver 一进来就被覆盖成 null），`SqlViewExecutor:555` 的改写门槛**恒关**，四个页签因此返 0 行、报价树只渲光根。task-0725 用 `QuotePendingScope` 窄作用域接通后**才真正全链路生效**。
+  - **对配置者的含义**：① DRAFT 报价单现在**能看到本单导入的待生效（pending）数据**，这是预期行为，不是脏数据；② 以前"碰巧没暴露"的视图写法，现在会真正进入 pending 改写路径，本节及 §3.7 的坑要按新前提重新审视；③ 冻结态（`SUBMITTED`/`APPROVED`/`PUBLISHED`）**不开域**，此时数据已转正为 `is_current=true`，普通过滤即可见。
+  - **核价侧不受影响**：核价链路结构性地不调用 `QuotePendingScope.open()`，`cacheTag()` 关闭态返空串，核价缓存 key 逐字不变。
 - **坑**：当版本化表写成 `LEFT JOIN unit_price up ON ... AND up.is_current=true`（`is_current` 在 **JOIN ON 复合条件**里）时，pending 改写会产出**参数错位的畸形 SQL**，运行期报 `The column index is out of range: N, number of columns: M`（driver 执行失败，静默返 0 行 / 节点数据全空）。dry-run（EXPLAIN，无 pending 上下文）**照样通过**，只在真实渲染暴露。
 - **规避**：把该 `LEFT JOIN <版本化表>` 改成**相关标量子查询**取值——子查询 WHERE 里带 `is_current` 是安全的（同 `NOT EXISTS` 子查询）：
 
@@ -104,3 +107,22 @@ LEFT JOIN unit_price up ON up.finished_material_no=x.material_no AND up.code=x.c
 
 - DRAFT 渲染时 `QuotePendingRewriter` 把视图包成带锚点列的复杂子查询、执行器再套 `SELECT * FROM (...) inner_q`（**无外层 ORDER BY**）→ 视图里写的 `ORDER BY` PostgreSQL **不保证透传**，多行页签会按 driver 返回序（常见倒序）显示。视图 `ORDER BY` **只对已提交 / 冻结**报价单有效。
 - **正解**：给组件设 `sort_field`（= 本组件 `fields[].name` 之一，如「项次」「序号」），快照组装层（`ConfigureSnapshotService`）按**数字感知升序**排（数字段数字序、文本段字典序），DRAFT + 冻结都稳；树页签（`tabType=BOM`）按树序不受其约束。**配法与已配清单见 `4-页签属性与树.md §4.2`。**
+
+---
+
+## 3.7 ✅ SQL 注释里可以写 `:命名参数`（框架已屏蔽，2026-07-25 起）
+
+**结论先行：在视图 SQL 与树递归 SQL 的注释里书写 `:customerCode` / `:total_material_no` / `:production_part_nos` / `:pq` 等命名参数做文档说明，是安全的正当写法，无需规避。**
+
+- **曾经的坑**（task-0725 根因 2）：占位符替换用正则扫 `:name`，**不识别 `--` 行注释 / `/* */` 块注释 / 字符串字面量** → 注释里的命名参数也被替换成 `?` 并追加一个绑定值，而 pgjdbc 解析时会忽略注释内的 `?` ⇒ **Java 侧绑定数 > pgjdbc 认到的占位符数** ⇒ 运行期报 `The column index is out of range: N, number of columns: M`，driver 静默返 0 行。实测 `bom_view`：Java 绑 3 个（`total_material_no` ×3，其中 **1 个在注释里**）/ pgjdbc 认 2 个 → 必失败。
+- **已修**：抽出 `SqlTextMask.mask()`（把字面量/行注释/块注释屏蔽为**等长空白**、保留换行，故偏移量对齐、替换仍作用于原文），并在**全部 4 条链路**接入：
+
+  | 链路 | 站点 | 作用 |
+  |---|---|---|
+  | 视图执行 | `SqlViewExecutor.rewriteNamedParams` | 运行期占位符替换 |
+  | 视图保存校验 | `SqlViewValidator` | dry-run 与 `required_variables` 采集 |
+  | pending 改写 | `QuotePendingRewriter` | 白名单表 token 定位 |
+  | 树递归 SQL | `BomTreeRenderService`（`TREE_PARAM`） | `:production_part_nos`/`:pq`/`:__vfPart`/`:__vfVer` 绑定 |
+
+- ⚠️ **已作废的旧约束**：`docs/RECORD.md` 2026-07-25「树递归SQL配置」条目里的「注释里**禁写** `:production_part_nos/:pq/:__vfPart/:__vfVer`」**不再适用**（该条已就地划删除线）。同理，历史上因此症状被"规避"掉的写法，可以按可读性自由回改。
+- **仍然成立的**：`::` 强制类型转换不受影响（正则本就排除）；注释**不能**用来"注释掉"一段含真实占位符的 SQL 后指望参数计数自动对上——屏蔽的语义是「注释内的 token 不参与绑定」，这正是所需行为。

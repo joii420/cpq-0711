@@ -25,7 +25,7 @@
 | **`组件模板.xlsx`** | 🟡 自描述配置模板（用户填 字段名+tabType，勾角色/接价格策略，备注大白话） | 用户 / Agent |
 | `1-总则与工作流.md` | 4 问工作流 + 料号列绑定值铁律 + 交付方式 | 两侧 |
 | `2-组件与字段.md` | 组件模型 / field_type / default_source / rowKeyFields / `_` 前缀别名 | 两侧 |
-| `3-SQL视图.md` | `$view` 机制 / hf_part_no / 禁表 / 中文别名 / 缓存 key / pending 改写坑 | 两侧 |
+| `3-SQL视图.md` | `$view` 机制 / hf_part_no / 禁表 / 中文别名 / 缓存 key / pending 改写坑 + 生效时间线 / 注释可写命名参数 | 两侧 |
 | `4-页签属性与树.md` | tabType / partNoField / partNameField / sort_field / 树契约 | 两侧 |
 | `5-公式与Excel列.md` | 公式引擎 / 字段类型联动(AP-44) / Excel 列 | 两侧 |
 | `报价侧.md` | `:customerCode` / material_no 料号键 / 树可选 / V6 映射 / 组件配方大全 / ConfigureSnapshotService | 报价 |
