@@ -742,7 +742,9 @@ class QuoteBackfillFlatAcceptanceTest {
         assertEquals(1, p.rowByIdQueries, "只涉及 1 张表(unit_price)，按 __v6_id 批量回查应恰好 1 条 SQL");
         assertTrue(p.baseRowQueries <= 2,
             "基底行集装载对 1 张表最多 2 条 SQL(pending一次+current补查一次)，与轴/料号数量无关，实际=" + p.baseRowQueries);
-        assertTrue(p.labelResolveQueries <= 2,
-            "B4 品名/客户名解析各批量 1 条 SQL，与涉及产品数无关，实际=" + p.labelResolveQueries);
+        // repair-0727 验收 Bug-2 修复：新增 resolveQuotationCustomer（报价单自身客户，1 条 SQL）
+        // 供产品卡片客户名解析用，预算从 <=2 上调到 <=3——仍是与产品/组数量无关的固定次数，不是 N+1。
+        assertTrue(p.labelResolveQueries <= 3,
+            "B4 品名/客户名/报价单客户解析共 <=3 条批量 SQL，与涉及产品数无关，实际=" + p.labelResolveQueries);
     }
 }

@@ -83,6 +83,10 @@ public class QuoteBackfillPreviewService {
         }
         Map<String, String> materialNames = labelResolver.resolveMaterialNames(materialNos);
         Map<String, String> customerNames = labelResolver.resolveCustomerNames(customerNos);
+        // repair-0727 验收 Bug-2 修复：一张报价单只属于一个客户，产品卡片的客户信息必须从报价单
+        // 自身解析，不能从组轴推——capacity 表轴是 (system_type, material_no, resource_group_no)，
+        // 根本没有 customer_no 列，若继续从轴推会把同一产品因"这个组轴上没有客户"拆成另一张卡。
+        QuotationCustomer quotationCustomer = resolveQuotationCustomer(plan.quotationId);
 
         Map<String, BackfillProductDTO> productByKey = new LinkedHashMap<>();
         Set<String> affectedProducts = new LinkedHashSet<>();
@@ -152,15 +156,15 @@ public class QuoteBackfillPreviewService {
             int idx = dto.groups.size() - 1;
 
             if (productNo != null) {
-                String custNo = g.groupKeyAxis.get("customer_no") == null ? null
-                    : String.valueOf(g.groupKeyAxis.get("customer_no"));
-                String key = productNo + "|" + custNo;
-                BackfillProductDTO pd = productByKey.computeIfAbsent(key, k -> {
+                // repair-0727 Bug-2：聚合 key 只用 productNo（不再拼 customerNo）——同一产品不会因为
+                // 某些组的轴天然不含 customer_no（如 capacity）而被拆成两张卡片。products.length 与
+                // summary.affectedProducts 必须恒相等，见下方 for 循环后的断言。
+                BackfillProductDTO pd = productByKey.computeIfAbsent(productNo, k -> {
                     BackfillProductDTO p = new BackfillProductDTO();
                     p.productNo = productNo;
                     p.productName = materialNames.get(productNo);
-                    p.customerNo = custNo;
-                    p.customerName = custNo == null ? null : customerNames.get(custNo);
+                    p.customerNo = quotationCustomer.customerNo();
+                    p.customerName = quotationCustomer.customerName();
                     dto.products.add(p);
                     return p;
                 });
@@ -171,8 +175,30 @@ public class QuoteBackfillPreviewService {
             }
         }
         dto.summary.affectedProducts = affectedProducts.size();
+        // repair-0727 Bug-2 不变式：products[] 按 productNo 去重聚合，affectedProducts 也是 productNo
+        // 去重计数——二者必须恒相等，否则财务端"产品数"文案与实际卡片数对不上（本身就是矛盾数据）。
+        if (dto.products.size() != dto.summary.affectedProducts) {
+            throw new IllegalStateException("[quote-backfill-preview] 不变式违反：products.length(" +
+                dto.products.size() + ") != summary.affectedProducts(" + dto.summary.affectedProducts +
+                ")，quotationId=" + plan.quotationId);
+        }
         dto.previewToken = computeToken(plan);
         return dto;
+    }
+
+    /** 报价单自身的客户编号/客户名（一张报价单只属于一个客户，repair-0727 Bug-2 修复）。 */
+    private record QuotationCustomer(String customerNo, String customerName) {}
+
+    @SuppressWarnings("unchecked")
+    private QuotationCustomer resolveQuotationCustomer(UUID quotationId) {
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT c.code, c.name FROM quotation q JOIN customer c ON c.id = q.customer_id WHERE q.id = :qid")
+            .setParameter("qid", quotationId)
+            .getResultList();
+        QuoteBackfillCollector.profile().labelResolveQueries++;
+        if (rows.isEmpty()) return new QuotationCustomer(null, null);
+        Object[] r = rows.get(0);
+        return new QuotationCustomer(r[0] == null ? null : String.valueOf(r[0]), r[1] == null ? null : String.valueOf(r[1]));
     }
 
     /** CHANGE 取 oldValues(基底)⊕newValues(diff) 合并后的"当前身份"；ADD 取 newValues；DELETE 取 oldValues。 */

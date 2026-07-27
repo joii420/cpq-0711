@@ -351,24 +351,36 @@ public class QuoteBackfillCollector {
         }
 
         // ── Phase C：扫描"本单 pending 但无任何页签渲染表征"的组（路径②，零成本 FLIP）──
+        // repair-0727 验收 Bug-1 修复：executeFlip 按轴直改确实不需要 effectiveNewRows，但预览侧
+        // 需要真实行数（financial 看到"0 行→0 行"会误以为整组不动，实际会转正 1~N 行——与 D4 同类
+        // 失信，只是方向相反）。pendingAxisCounts 用 GROUP BY 一次性拿到"轴→行数"，仍是每表 1 条
+        // SQL（不比原先的 DISTINCT 查询多一条），不逐组/逐行查，禁 N+1。行内容本身对 FLIP 预览无
+        // 意义（只展示数量，不展示逐行 diff），用不可变空 Map 占位即可，不做无谓的整行拉取。
         for (String table : QuoteTableAxis.SCAN_TABLES) {
             QuoteTableAxis.Spec spec = QuoteTableAxis.of(table);
-            List<Map<String, Object>> pendingGroups = distinctPendingAxis(table, spec.axisColumns, quotationId);
+            Map<Map<String, Object>, Long> pendingCounts = pendingAxisCounts(table, spec.axisColumns, quotationId);
             Set<Map<String, Object>> visited = visitedAxis.getOrDefault(table, Set.of());
             Map<Map<String, Object>, QuoteBackfillPlan.GroupChange> groups =
                 groupsByTable.computeIfAbsent(table, k -> new LinkedHashMap<>());
-            for (Map<String, Object> axis : pendingGroups) {
+            for (Map.Entry<Map<String, Object>, Long> e : pendingCounts.entrySet()) {
+                Map<String, Object> axis = e.getKey();
                 if (visited.contains(axis)) continue; // 已被页签渲染表征，走上面 B3.1/B3.2，跳过
+                int count = e.getValue() == null ? 0 : e.getValue().intValue();
                 QuoteBackfillPlan.GroupChange gc = new QuoteBackfillPlan.GroupChange();
                 gc.table = table;
                 gc.tabName = null;
                 gc.groupKeyAxis = axis;
                 gc.isGlobalShared = "plating_scheme".equals(table);
                 gc.route = QuoteBackfillPlan.Route.FLIP;
-                gc.baseSource = "PENDING"; // Phase C 定义即"纯 pending 组"，未逐行拉取（executeFlip 按轴直改，无需 effectiveNewRows）
+                gc.baseSource = "PENDING"; // Phase C 定义即"纯 pending 组"
                 gc.contentColumns = spec.contentColumns;
                 gc.masterDetail = spec.master != null;
                 if (spec.master != null) gc.masterTable = spec.master.masterTable;
+                // 占位行（内容为空 Map，仅供 .size() 反映真实行数）：executeFlip 不读这两个字段，
+                // 只有 QuoteBackfillPreviewService 的 baseRowCount/resultRowCount 消费它们。
+                List<Map<String, Object>> placeholders = Collections.nCopies(count, Map.of());
+                gc.baseRows = placeholders;
+                gc.effectiveNewRows.addAll(placeholders);
                 groups.put(axis, gc);
             }
         }
@@ -729,23 +741,27 @@ public class QuoteBackfillCollector {
         return out;
     }
 
-    /** 该表本单 pending 行按轴列去重后的组清单（DISTINCT，1 条 SQL，无 N+1）。 */
-    private List<Map<String, Object>> distinctPendingAxis(String table, List<String> axisColumns, UUID quotationId) {
-        List<Map<String, Object>> out = new ArrayList<>();
+    /**
+     * repair-0727 验收 Bug-1 修复：该表本单 pending 行按轴列分组的「轴 → 行数」（GROUP BY + COUNT，
+     * 1 条 SQL，无 N+1）。取代原 {@code distinctPendingAxis}（只 DISTINCT 不计数）——Phase C 的
+     * FLIP 组预览需要真实行数，不能永远显示 0（financial 会误以为整组不动，实为将转正 1~N 行）。
+     */
+    private Map<Map<String, Object>, Long> pendingAxisCounts(String table, List<String> axisColumns, UUID quotationId) {
+        Map<Map<String, Object>, Long> out = new LinkedHashMap<>();
         String cols = String.join(", ", axisColumns);
         try (Connection conn = dataSource.getConnection();
              java.sql.PreparedStatement ps = conn.prepareStatement(
-                 "SELECT DISTINCT " + cols + " FROM " + table + " WHERE pending_quotation_id = ?")) {
+                 "SELECT " + cols + ", COUNT(*) FROM " + table + " WHERE pending_quotation_id = ? GROUP BY " + cols)) {
             ps.setObject(1, quotationId);
             try (java.sql.ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     Map<String, Object> axis = new LinkedHashMap<>();
                     for (int i = 0; i < axisColumns.size(); i++) axis.put(axisColumns.get(i), rs.getObject(i + 1));
-                    out.add(axis);
+                    out.put(axis, rs.getLong(axisColumns.size() + 1));
                 }
             }
         } catch (Exception e) {
-            LOG.warnf("[quote-backfill] distinctPendingAxis(%s) 失败: %s", table, e.getMessage());
+            LOG.warnf("[quote-backfill] pendingAxisCounts(%s) 失败: %s", table, e.getMessage());
         } finally {
             PROFILE.get().pendingAxisScanQueries++;
         }
