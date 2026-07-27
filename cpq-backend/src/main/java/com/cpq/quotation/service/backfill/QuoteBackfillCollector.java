@@ -358,14 +358,15 @@ public class QuoteBackfillCollector {
         // 意义（只展示数量，不展示逐行 diff），用不可变空 Map 占位即可，不做无谓的整行拉取。
         for (String table : QuoteTableAxis.SCAN_TABLES) {
             QuoteTableAxis.Spec spec = QuoteTableAxis.of(table);
-            Map<Map<String, Object>, Long> pendingCounts = pendingAxisCounts(table, spec.axisColumns, quotationId);
+            Map<Map<String, Object>, PendingAxisInfo> pendingCounts =
+                pendingAxisCounts(table, spec.axisColumns, spec.versionColumn, quotationId);
             Set<Map<String, Object>> visited = visitedAxis.getOrDefault(table, Set.of());
             Map<Map<String, Object>, QuoteBackfillPlan.GroupChange> groups =
                 groupsByTable.computeIfAbsent(table, k -> new LinkedHashMap<>());
-            for (Map.Entry<Map<String, Object>, Long> e : pendingCounts.entrySet()) {
+            for (Map.Entry<Map<String, Object>, PendingAxisInfo> e : pendingCounts.entrySet()) {
                 Map<String, Object> axis = e.getKey();
                 if (visited.contains(axis)) continue; // 已被页签渲染表征，走上面 B3.1/B3.2，跳过
-                int count = e.getValue() == null ? 0 : e.getValue().intValue();
+                int count = (int) e.getValue().count();
                 QuoteBackfillPlan.GroupChange gc = new QuoteBackfillPlan.GroupChange();
                 gc.table = table;
                 gc.tabName = null;
@@ -373,6 +374,10 @@ public class QuoteBackfillCollector {
                 gc.isGlobalShared = "plating_scheme".equals(table);
                 gc.route = QuoteBackfillPlan.Route.FLIP;
                 gc.baseSource = "PENDING"; // Phase C 定义即"纯 pending 组"
+                // 验收 Bug-1 follow-up：本单 pending 行本身带版本号（如 "2008"），不能让预览显示
+                // "版本 None→None"。为 null 的兜底（DB 里该列真的没写值的极端情形）留给
+                // QuoteBackfillPreviewService 的展示层处理（转成"首次生效"文案），此处如实传递。
+                gc.versionFrom = e.getValue().version();
                 gc.contentColumns = spec.contentColumns;
                 gc.masterDetail = spec.master != null;
                 if (spec.master != null) gc.masterTable = spec.master.masterTable;
@@ -741,23 +746,34 @@ public class QuoteBackfillCollector {
         return out;
     }
 
+    /** 一个 Phase C 组的批量统计结果：真实行数 + 组内代表版本号（同组同批 pending 理应同版本）。 */
+    record PendingAxisInfo(long count, String version) {}
+
     /**
-     * repair-0727 验收 Bug-1 修复：该表本单 pending 行按轴列分组的「轴 → 行数」（GROUP BY + COUNT，
-     * 1 条 SQL，无 N+1）。取代原 {@code distinctPendingAxis}（只 DISTINCT 不计数）——Phase C 的
-     * FLIP 组预览需要真实行数，不能永远显示 0（financial 会误以为整组不动，实为将转正 1~N 行）。
+     * repair-0727 验收 Bug-1 修复：该表本单 pending 行按轴列分组的「轴 → 行数 + 代表版本号」
+     * （GROUP BY + COUNT + MAX(版本列)，仍 1 条 SQL，无 N+1）。取代原 {@code distinctPendingAxis}
+     * （只 DISTINCT 不计数）——Phase C 的 FLIP 组预览需要真实行数，不能永远显示 0（financial 会
+     * 误以为整组不动，实为将转正 1~N 行）；版本号同理不能恒为 null 显示成"版本 None→None"
+     * （验收 Bug-1 follow-up）。MAX() 只是"任取组内一致值"的手段——同一批 pending 行本就应是
+     * 同一次导入产生的同一版本号，取 MAX/MIN 结果相同；version_no/calc_version 是数字字符串，
+     * MAX 按字典序也不影响同值场景。
      */
-    private Map<Map<String, Object>, Long> pendingAxisCounts(String table, List<String> axisColumns, UUID quotationId) {
-        Map<Map<String, Object>, Long> out = new LinkedHashMap<>();
+    private Map<Map<String, Object>, PendingAxisInfo> pendingAxisCounts(String table, List<String> axisColumns,
+                                                                         String versionColumn, UUID quotationId) {
+        Map<Map<String, Object>, PendingAxisInfo> out = new LinkedHashMap<>();
         String cols = String.join(", ", axisColumns);
         try (Connection conn = dataSource.getConnection();
              java.sql.PreparedStatement ps = conn.prepareStatement(
-                 "SELECT " + cols + ", COUNT(*) FROM " + table + " WHERE pending_quotation_id = ? GROUP BY " + cols)) {
+                 "SELECT " + cols + ", COUNT(*), MAX(" + versionColumn + ") FROM " + table +
+                 " WHERE pending_quotation_id = ? GROUP BY " + cols)) {
             ps.setObject(1, quotationId);
             try (java.sql.ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     Map<String, Object> axis = new LinkedHashMap<>();
                     for (int i = 0; i < axisColumns.size(); i++) axis.put(axisColumns.get(i), rs.getObject(i + 1));
-                    out.put(axis, rs.getLong(axisColumns.size() + 1));
+                    long count = rs.getLong(axisColumns.size() + 1);
+                    String version = rs.getString(axisColumns.size() + 2);
+                    out.put(axis, new PendingAxisInfo(count, version));
                 }
             }
         } catch (Exception e) {

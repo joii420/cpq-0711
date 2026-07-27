@@ -69,13 +69,22 @@ public class QuoteBackfillPreviewService {
             .thenComparing(g -> canonAxis(g.groupKeyAxis)));
 
         // ── repair-0727 B4：批量收集料号/客户号，一次性解析品名/客户名（AC-R8 禁 N+1）──
+        // 验收「财务读不懂」二轮修复 · 项④：轴列里所有"料号形态"的列（code/material_part_no 等，
+        // 不只是 productNo 和行内 component_no）都要纳入批量解析集合，否则像 unit_price.code
+        // 这种在 Phase C（无 rowChanges）组里出现、又不等于 productNo 的编号永远解析不到名字。
         Set<String> materialNos = new LinkedHashSet<>();
         Set<String> customerNos = new LinkedHashSet<>();
+        Set<String> resourceGroupNos = new LinkedHashSet<>();
         for (QuoteBackfillPlan.GroupChange g : sorted) {
             String productNo = QuoteTableAxis.productNoOf(g.table, g.groupKeyAxis);
             if (productNo != null) materialNos.add(productNo);
             Object cn = g.groupKeyAxis.get("customer_no");
             if (cn != null) customerNos.add(String.valueOf(cn));
+            for (Map.Entry<String, Object> e : g.groupKeyAxis.entrySet()) {
+                if (e.getValue() == null) continue;
+                if (isMaterialAxisColumn(e.getKey())) materialNos.add(String.valueOf(e.getValue()));
+                if ("resource_group_no".equals(e.getKey())) resourceGroupNos.add(String.valueOf(e.getValue()));
+            }
             for (QuoteBackfillPlan.RowChange rc : g.rowChanges) {
                 Object compNo = rowIdentity(rc).get("component_no");
                 if (compNo != null) materialNos.add(String.valueOf(compNo));
@@ -83,6 +92,7 @@ public class QuoteBackfillPreviewService {
         }
         Map<String, String> materialNames = labelResolver.resolveMaterialNames(materialNos);
         Map<String, String> customerNames = labelResolver.resolveCustomerNames(customerNos);
+        Map<String, String> resourceGroupNames = labelResolver.resolveResourceGroupNames(resourceGroupNos);
         // repair-0727 验收 Bug-2 修复：一张报价单只属于一个客户，产品卡片的客户信息必须从报价单
         // 自身解析，不能从组轴推——capacity 表轴是 (system_type, material_no, resource_group_no)，
         // 根本没有 customer_no 列，若继续从轴推会把同一产品因"这个组轴上没有客户"拆成另一张卡。
@@ -104,8 +114,13 @@ public class QuoteBackfillPreviewService {
             gd.tabName = g.tabName;
             gd.groupKey = g.groupKeyAxis;
             gd.isGlobalShared = g.isGlobalShared;
-            gd.versionFrom = g.versionFrom;
-            gd.versionTo = computeVersionTo(g);
+            // 验收「财务读不懂」二轮修复 · 项⑤：版本号不能显示成"None"——null 只在两种情形下合法
+            // 出现：①真的是首个版本（versionFrom）；②整组下线、不产生新版本（OFFLINE 的
+            // versionTo）。①要换成"首次生效"文案；②维持 null（前端/调用方按"无新版本"处理，不能
+            // 也套用"首次生效"，语义相反）。
+            gd.versionFrom = g.versionFrom == null ? "首次生效" : g.versionFrom;
+            String versionTo = computeVersionTo(g);
+            gd.versionTo = (versionTo == null && g.route != QuoteBackfillPlan.Route.OFFLINE) ? "首次生效" : versionTo;
             gd.route = g.route.name();
             gd.baseSource = g.baseSource;
             gd.baseRowCount = g.baseRows.size();
@@ -115,7 +130,7 @@ public class QuoteBackfillPreviewService {
             String productNo = QuoteTableAxis.productNoOf(g.table, g.groupKeyAxis);
             gd.productNo = productNo;
             gd.productName = productNo == null ? null : materialNames.get(productNo);
-            gd.axisLabels = buildAxisLabels(g, materialNames, customerNames);
+            gd.axisLabels = buildAxisLabels(g, materialNames, customerNames, resourceGroupNames);
 
             for (QuoteBackfillPlan.RowChange rc : g.rowChanges) {
                 BackfillRowDTO rd = new BackfillRowDTO();
@@ -210,24 +225,56 @@ public class QuoteBackfillPreviewService {
         return merged;
     }
 
+    /**
+     * 验收「财务读不懂」二轮修复。逐项对应：
+     * <ol>
+     *   <li>{@code system_type} 报价侧恒为 QUOTE，零信息量的系统词，直接不输出。</li>
+     *   <li>{@code price_type} 翻中文；若翻译结果与同组 {@code cost_type} 语义重复（如"来料加工"⊂
+     *       "来料加工费"）则整条丢弃，只留 cost_type，避免并排啰嗦。</li>
+     *   <li>空值轴列（如 {@code supplier_no=null}）直接跳过，不出现 "—" 占位噪音。</li>
+     *   <li>{@code code}（及其它"料号形态"列）批量解析名称随值展示；{@code resource_group_no}
+     *       同理批量解析资源组名，没有的话至少 {@link BackfillLabelResolver#columnLabel} 已经给了
+     *       "资源组代码"标签，不会不知道这是什么。</li>
+     * </ol>
+     */
     private List<BackfillGroupDTO.AxisLabel> buildAxisLabels(QuoteBackfillPlan.GroupChange g,
-            Map<String, String> materialNames, Map<String, String> customerNames) {
+            Map<String, String> materialNames, Map<String, String> customerNames,
+            Map<String, String> resourceGroupNames) {
         List<BackfillGroupDTO.AxisLabel> out = new ArrayList<>();
+        Object costTypeVal = g.groupKeyAxis.get("cost_type");
+        String costTypeStr = costTypeVal == null ? null : String.valueOf(costTypeVal);
+
         for (Map.Entry<String, Object> e : g.groupKeyAxis.entrySet()) {
             String col = e.getKey();
             Object val = e.getValue();
+            if ("system_type".equals(col)) continue; // 项①
+            if (val == null) continue; // 项③
+            String valStr = String.valueOf(val);
+
+            if ("price_type".equals(col)) {
+                String translated = labelResolver.priceTypeLabel(valStr);
+                if (BackfillLabelResolver.isRedundantWithCostType(translated, costTypeStr)) continue; // 项②
+                BackfillGroupDTO.AxisLabel al = new BackfillGroupDTO.AxisLabel();
+                al.column = col;
+                al.value = val;
+                al.label = labelResolver.columnLabel(col, g.columnAliases);
+                al.display = translated;
+                out.add(al);
+                continue;
+            }
+
             BackfillGroupDTO.AxisLabel al = new BackfillGroupDTO.AxisLabel();
             al.column = col;
             al.value = val;
             al.label = labelResolver.columnLabel(col, g.columnAliases);
-            String valStr = val == null ? null : String.valueOf(val);
-            if (valStr == null) {
-                al.display = "—";
-            } else if ("customer_no".equals(col)) {
+            if ("customer_no".equals(col)) {
                 String name = customerNames.get(valStr);
                 al.display = name != null ? name + "（" + valStr + "）" : valStr;
-            } else if (isMaterialAxisColumn(col)) {
+            } else if (isMaterialAxisColumn(col)) { // 项④：code/material_no/finished_material_no/material_part_no
                 String name = materialNames.get(valStr);
+                al.display = name != null ? valStr + " " + name : valStr;
+            } else if ("resource_group_no".equals(col)) { // 项④：capacity 资源组
+                String name = resourceGroupNames.get(valStr);
                 al.display = name != null ? valStr + " " + name : valStr;
             } else {
                 al.display = valStr;

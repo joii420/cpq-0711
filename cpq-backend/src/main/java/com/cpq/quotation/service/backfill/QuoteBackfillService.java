@@ -147,9 +147,26 @@ public class QuoteBackfillService {
             .executeUpdate();
     }
 
-    /** repair-0726 B3：material_master 不在此清理——本单 pending 料号已被上面的
-     *  {@code flipPending} 转正（pending_quotation_id 清为 NULL），此处若再对它做 DELETE 语义
-     *  的清理会把刚转正的正式行删掉。8 张表清单继续保持 material_master 不在其中。 */
+    /**
+     * repair-0726 B3：material_master 不在此清理——本单 pending 料号已被上面的
+     * {@code flipPending} 转正（pending_quotation_id 清为 NULL），此处若再对它做 DELETE 语义
+     * 的清理会把刚转正的正式行删掉。8 张表清单继续保持 material_master 不在其中。
+     *
+     * <p><b>repair-0727 验收澄清（技术总监裁决，避免后人再怀疑一次）</b>：这里对本单在 8 张表里
+     * 残留的 pending 行做<b>物理删除</b>，不区分该行是「被 REBUILD 消费掉的基底行」「被墓碑显式
+     * 删除的行」还是「FLIP/OFFLINE 路径未被写入器碰过的行」——三种情形处理方式统一，理由是：
+     * 这些行<b>从未 {@code is_current=true} 过</b>，只是本单一次导入产生的草稿，物理删除它们没有
+     * 丢失任何"曾经生效"的数据，正是需求说明 §规则七/AC-13"删单级联删 pending"同一套语义在这里的
+     * 延伸（删单是整批级联删，这里是回填成功后的批量清理，对象都是"从未生效过的纯 pending 行"）。
+     *
+     * <p>与之相对、真正需要"降 {@code is_current=false} 物理留存可审计"的是需求说明 §规则四"墓碑行"
+     * 讲的<b>老版本</b>——那指的是被本单 {@code pending_supersedes} 指针点名的<b>曾经 is_current=true
+     * 的官方行</b>（同款语义见
+     * {@code com.cpq.datasource.sqlview.QuotePendingRewriterOfficialVisibilityAndSupersedesTest}；
+     * {@code QuoteBackfillFlatAcceptanceTest#deleteRoute_tombstonedRowExcluded_oldRowPhysicallyRetained}
+     * 里断言留存的是 {@code delOfficial} 而不是 {@code delPending}）——这条规则只保护"曾经真实生效过"
+     * 的行，不适用于本方法清理的这批"从未生效过"的草稿行，两者不是同一件事，不要混为一谈。
+     */
     private void cleanupPending(UUID quotationId) {
         for (String table : PENDING_TABLES) {
             em.createNativeQuery("DELETE FROM " + table + " WHERE pending_quotation_id = :qid")
