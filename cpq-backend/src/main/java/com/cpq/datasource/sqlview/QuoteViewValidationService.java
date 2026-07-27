@@ -152,42 +152,72 @@ public class QuoteViewValidationService {
         if (!r.anchorInjected) {
             return new CheckOutcome(false, true, null); // 不适用：主位非白名单/无命中，非失败
         }
-        // 负 lookbehind (?<!:) 排除 PG "::cast" 语法（如 ::uuid/::text）——与
-        // SqlViewExecutor.NAMED_PARAM 的排除规则一致，否则 "::uuid" 里的第二个冒号会被误当命名占位符，
-        // 替换后留下悬空单冒号导致 SQL 语法错误。
-        String bound = ("SELECT * FROM (" + r.sql + ") _outer LIMIT 0")
-            .replaceAll("(?<!:):pq\\b", "'" + UUID.randomUUID() + "'::uuid");
-        // 其余 :xxx 命名占位符（customerId/customerCode/hfPartNos 等）批量替换为 NULL 字面量，
-        // 与 SqlViewExecutor.rewriteNamedParams 的"未绑定占位符→NULL"安全降级语义一致，
-        // 仅用于 LIMIT 0 语法/元数据探测，不依赖具体业务值。
-        bound = bound.replaceAll("(?<!:):[A-Za-z_][A-Za-z0-9_]*\\b", "NULL");
+        // 整体可执行性校验（沿用原逻辑）：跑一遍完整改写后 SQL（含 set-op 场景的全部分支），
+        // 捕获语法级问题（如分支间列数不对齐——历史 jg_view/mc_view/wg_view 的 CTE 内 UNION
+        // 曾因此类问题踩坑，见 QuotePendingRewriterTest 相关注释）。
+        String bound = bindProbe(r.sql);
         try (PreparedStatement ps = conn.prepareStatement(bound);
              ResultSet rs = ps.executeQuery()) {
-            ResultSetMetaData meta = rs.getMetaData();
-            boolean found = false;
-            for (int i = 1; i <= meta.getColumnCount(); i++) {
-                if ("__v6_id".equalsIgnoreCase(meta.getColumnLabel(i))) {
-                    found = true;
-                    if (meta instanceof PgResultSetMetaData pgMeta) {
-                        String baseTable = pgMeta.getBaseTableName(i);
-                        String baseColumn = pgMeta.getBaseColumnName(i);
-                        if (!QuotePendingRewriter.WHITELIST_TABLES.contains(baseTable)) {
-                            return new CheckOutcome(true, false,
-                                "改写后 __v6_id 基表越白名单: " + baseTable);
-                        }
-                        if (!"id".equalsIgnoreCase(baseColumn)) {
-                            return new CheckOutcome(true, false,
-                                "改写后 __v6_id 基列非 id: " + baseColumn);
-                        }
-                    }
-                }
-            }
-            if (!found) {
-                return new CheckOutcome(true, false, "改写后追不到 __v6_id 锚点列");
+            if (r.primaryBranchSql == null) {
+                // 非 set-op：直接在整体探测结果上做锚点基表/基列元数据校验（原有行为不变）。
+                CheckOutcome outcome = verifyAnchorMetadata(rs.getMetaData());
+                if (outcome != null) return outcome;
             }
         } catch (Exception e) {
             return new CheckOutcome(true, false, "LIMIT 0 执行失败: " + e.getMessage());
         }
+
+        if (r.primaryBranchSql != null) {
+            // repair-0727 B1/B2：顶层集合运算——pgjdbc 对整体 UNION/INTERSECT/EXCEPT 结果的输出列
+            // 不返回 getBaseTableName（结果列是集合运算节点的投影，不再对应单一物理表列），锚点元数据
+            // 必须单独探测主位分支（第一个成功注入真实锚点的分支），与 QuoteBackfillColumnMapper（B2）
+            // 同一技术、同一口径。
+            String branchBound = bindProbe(r.primaryBranchSql);
+            try (PreparedStatement ps2 = conn.prepareStatement(branchBound);
+                 ResultSet rs2 = ps2.executeQuery()) {
+                CheckOutcome outcome = verifyAnchorMetadata(rs2.getMetaData());
+                if (outcome != null) return outcome;
+            } catch (Exception e) {
+                return new CheckOutcome(true, false, "主位分支 LIMIT 0 执行失败: " + e.getMessage());
+            }
+        }
         return new CheckOutcome(true, true, null);
+    }
+
+    /** {@code SELECT * FROM (<sql>) _outer LIMIT 0} 探测语句 + 命名占位符安全降级绑定（探测通用）。 */
+    private static String bindProbe(String sql) {
+        // 负 lookbehind (?<!:) 排除 PG "::cast" 语法（如 ::uuid/::text）——与
+        // SqlViewExecutor.NAMED_PARAM 的排除规则一致，否则 "::uuid" 里的第二个冒号会被误当命名占位符，
+        // 替换后留下悬空单冒号导致 SQL 语法错误。
+        String bound = ("SELECT * FROM (" + sql + ") _outer LIMIT 0")
+            .replaceAll("(?<!:):pq\\b", "'" + UUID.randomUUID() + "'::uuid");
+        // 其余 :xxx 命名占位符（customerId/customerCode/hfPartNos 等）批量替换为 NULL 字面量，
+        // 与 SqlViewExecutor.rewriteNamedParams 的"未绑定占位符→NULL"安全降级语义一致，
+        // 仅用于 LIMIT 0 语法/元数据探测，不依赖具体业务值。
+        return bound.replaceAll("(?<!:):[A-Za-z_][A-Za-z0-9_]*\\b", "NULL");
+    }
+
+    /** 在探测结果元数据上校验 {@code __v6_id} 列存在且基表/基列命中白名单；通过返回 null，否则返回失败结果。 */
+    private CheckOutcome verifyAnchorMetadata(ResultSetMetaData meta) throws Exception {
+        boolean found = false;
+        for (int i = 1; i <= meta.getColumnCount(); i++) {
+            if ("__v6_id".equalsIgnoreCase(meta.getColumnLabel(i))) {
+                found = true;
+                if (meta instanceof PgResultSetMetaData pgMeta) {
+                    String baseTable = pgMeta.getBaseTableName(i);
+                    String baseColumn = pgMeta.getBaseColumnName(i);
+                    if (!QuotePendingRewriter.WHITELIST_TABLES.contains(baseTable)) {
+                        return new CheckOutcome(true, false, "改写后 __v6_id 基表越白名单: " + baseTable);
+                    }
+                    if (!"id".equalsIgnoreCase(baseColumn)) {
+                        return new CheckOutcome(true, false, "改写后 __v6_id 基列非 id: " + baseColumn);
+                    }
+                }
+            }
+        }
+        if (!found) {
+            return new CheckOutcome(true, false, "改写后追不到 __v6_id 锚点列");
+        }
+        return null;
     }
 }

@@ -2,11 +2,13 @@ package com.cpq.quotation.service.backfill;
 
 import com.cpq.quotation.dto.backfill.BackfillGroupDTO;
 import com.cpq.quotation.dto.backfill.BackfillPreviewDTO;
+import com.cpq.quotation.dto.backfill.BackfillProductDTO;
 import com.cpq.quotation.dto.backfill.BackfillRowDTO;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
+import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -14,20 +16,34 @@ import java.security.MessageDigest;
 import java.util.*;
 
 /**
- * task-0721 报价数据版本升级 · B6 —— 回填影响预览 + previewToken。
+ * task-0721 报价数据版本升级 · B6 + repair-0727 B4（修 D4 预览失真 + D5 预览无语义）—— 回填影响预览
+ * + previewToken。
  *
  * <p>只读 dry-run：与 {@link QuoteBackfillService#execute} 共用同一个 {@link QuoteBackfillCollector}，
  * 不写库（backtask B6"性能：dry-run 与真回填共用同一收集逻辑，避免两套"）。
+ *
+ * <p><b>如实性（D4，repair-0727）</b>：collector 已改 patch 语义（基底行集 ⊕ 列级 patch ⊖ 墓碑 ⊕ 新增），
+ * {@link QuoteBackfillPlan.GroupChange#rowChanges} 里出现的都是<b>真实差异</b>行（CHANGE 只在 patch
+ * 造成实际值变化时才产出，NOOP 组已被收集器整组过滤不会到达这里）——本类不再需要像 task-0721 时代
+ * 那样自己重新逐列 diff、也不再有"零差异组不展示"的过滤需求：{@link QuoteBackfillCollector#collect}
+ * 产出的 {@code plan.groups} 本身就已是"确有变化"的组全集，直接渲染即可。
+ *
+ * <p><b>业务语义化（D5，repair-0727）</b>：按产品聚合（{@link #productNoOf}）+ 中文标签
+ * （{@link BackfillLabelResolver}）+ 料号/客户号批量解析品名/客户名（AC-R8 禁 N+1）。
  *
  * <p><b>previewToken 确定性</b>（需求说明 §12 Q4）：token 是"报价单当前有效状态"的纯函数——
  * 固定排序（表名 → groupKey 规范串 → op → 行身份）+ 数值归一（{@code stripTrailingZeros}，
  * 对齐 {@code VersionedV6Writer#norm} 的比对口径）+ NULL 稳定序列化（{@code "∅"}）。
  * 同一未变状态两次 {@link #preview} 必须得到同一 token；409 只应在预览与提交之间数据真的变了时触发。
+ * <b>算法本身 repair-0727 不动</b>（api.md §2：部署瞬间在途 token 会 409，属预期，写进发布说明）。
  */
 @ApplicationScoped
 public class QuoteBackfillPreviewService {
 
+    private static final Logger LOG = Logger.getLogger(QuoteBackfillPreviewService.class);
+
     @Inject QuoteBackfillCollector collector;
+    @Inject BackfillLabelResolver labelResolver;
     @Inject EntityManager em;
 
     @Transactional(Transactional.TxType.SUPPORTS)
@@ -52,36 +68,95 @@ public class QuoteBackfillPreviewService {
         sorted.sort(Comparator.comparing((QuoteBackfillPlan.GroupChange g) -> g.table)
             .thenComparing(g -> canonAxis(g.groupKeyAxis)));
 
+        // ── repair-0727 B4：批量收集料号/客户号，一次性解析品名/客户名（AC-R8 禁 N+1）──
+        // 验收「财务读不懂」二轮修复 · 项④：轴列里所有"料号形态"的列（code/material_part_no 等，
+        // 不只是 productNo 和行内 component_no）都要纳入批量解析集合，否则像 unit_price.code
+        // 这种在 Phase C（无 rowChanges）组里出现、又不等于 productNo 的编号永远解析不到名字。
+        Set<String> materialNos = new LinkedHashSet<>();
+        Set<String> customerNos = new LinkedHashSet<>();
+        Set<String> resourceGroupNos = new LinkedHashSet<>();
         for (QuoteBackfillPlan.GroupChange g : sorted) {
+            String productNo = QuoteTableAxis.productNoOf(g.table, g.groupKeyAxis);
+            if (productNo != null) materialNos.add(productNo);
+            Object cn = g.groupKeyAxis.get("customer_no");
+            if (cn != null) customerNos.add(String.valueOf(cn));
+            for (Map.Entry<String, Object> e : g.groupKeyAxis.entrySet()) {
+                if (e.getValue() == null) continue;
+                if (isMaterialAxisColumn(e.getKey())) materialNos.add(String.valueOf(e.getValue()));
+                if ("resource_group_no".equals(e.getKey())) resourceGroupNos.add(String.valueOf(e.getValue()));
+            }
+            for (QuoteBackfillPlan.RowChange rc : g.rowChanges) {
+                Object compNo = rowIdentity(rc).get("component_no");
+                if (compNo != null) materialNos.add(String.valueOf(compNo));
+            }
+        }
+        Map<String, String> materialNames = labelResolver.resolveMaterialNames(materialNos);
+        Map<String, String> customerNames = labelResolver.resolveCustomerNames(customerNos);
+        Map<String, String> resourceGroupNames = labelResolver.resolveResourceGroupNames(resourceGroupNos);
+        // repair-0727 验收 Bug-2 修复：一张报价单只属于一个客户，产品卡片的客户信息必须从报价单
+        // 自身解析，不能从组轴推——capacity 表轴是 (system_type, material_no, resource_group_no)，
+        // 根本没有 customer_no 列，若继续从轴推会把同一产品因"这个组轴上没有客户"拆成另一张卡。
+        QuotationCustomer quotationCustomer = resolveQuotationCustomer(plan.quotationId);
+
+        Map<String, BackfillProductDTO> productByKey = new LinkedHashMap<>();
+        Set<String> affectedProducts = new LinkedHashSet<>();
+
+        for (QuoteBackfillPlan.GroupChange g : sorted) {
+            // repair-0727 B4：defense-in-depth——不变式已在 QuoteBackfillCollector.determineRoute 硬校验
+            // （抛异常），这里只是第二道防线，出现即记 ERROR 但不中断预览渲染。
+            if (g.route == QuoteBackfillPlan.Route.REBUILD && g.rowChanges.isEmpty()) {
+                LOG.errorf("[quote-backfill-preview] 不变式违反：route=REBUILD 但 rowChanges 为空，" +
+                    "table=%s axis=%s（repair-0727 裁决①，理论不该出现，请排查 collector）", g.table, g.groupKeyAxis);
+            }
+
             BackfillGroupDTO gd = new BackfillGroupDTO();
             gd.table = g.table;
             gd.tabName = g.tabName;
             gd.groupKey = g.groupKeyAxis;
             gd.isGlobalShared = g.isGlobalShared;
-            gd.versionFrom = g.versionFrom;
-            gd.versionTo = computeVersionTo(g);
+            // 验收「财务读不懂」二轮修复 · 项⑤：版本号不能显示成"None"——null 只在两种情形下合法
+            // 出现：①真的是首个版本（versionFrom）；②整组下线、不产生新版本（OFFLINE 的
+            // versionTo）。①要换成"首次生效"文案；②维持 null（前端/调用方按"无新版本"处理，不能
+            // 也套用"首次生效"，语义相反）。
+            gd.versionFrom = g.versionFrom == null ? "首次生效" : g.versionFrom;
+            String versionTo = computeVersionTo(g);
+            gd.versionTo = (versionTo == null && g.route != QuoteBackfillPlan.Route.OFFLINE) ? "首次生效" : versionTo;
+            gd.route = g.route.name();
+            gd.baseSource = g.baseSource;
+            gd.baseRowCount = g.baseRows.size();
+            gd.resultRowCount = g.effectiveNewRows.size();
+            gd.categoryLabel = labelResolver.categoryLabel(g.table);
 
-            List<QuoteBackfillPlan.RowChange> rowsSorted = new ArrayList<>(g.rowChanges);
-            rowsSorted.sort(Comparator.comparing((QuoteBackfillPlan.RowChange r) -> r.op)
-                .thenComparing(r -> r.v6Id == null ? "" : r.v6Id.toString())
-                .thenComparing(r -> canonMap(r.newValues)));
+            String productNo = QuoteTableAxis.productNoOf(g.table, g.groupKeyAxis);
+            gd.productNo = productNo;
+            gd.productName = productNo == null ? null : materialNames.get(productNo);
+            gd.axisLabels = buildAxisLabels(g, materialNames, customerNames, resourceGroupNames);
 
-            for (QuoteBackfillPlan.RowChange rc : rowsSorted) {
+            for (QuoteBackfillPlan.RowChange rc : g.rowChanges) {
                 BackfillRowDTO rd = new BackfillRowDTO();
                 rd.op = rc.op;
                 rd.v6Id = rc.v6Id;
+                rd.conflict = rc.conflict;
+                rd.rowLabel = labelResolver.rowLabel(g.table, rowIdentity(rc), materialNames);
+
                 if ("CHANGE".equals(rc.op)) {
                     for (Map.Entry<String, Object> e : rc.newValues.entrySet()) {
-                        Object oldV = rc.oldValues.get(e.getKey());
-                        if (!Objects.equals(norm(oldV), norm(e.getValue()))) {
-                            rd.changes.put(e.getKey(), new Object[]{oldV, e.getValue()});
-                        }
+                        BackfillRowDTO.ChangeEntry ce = new BackfillRowDTO.ChangeEntry();
+                        ce.column = e.getKey();
+                        ce.label = labelResolver.columnLabel(e.getKey(), g.columnAliases);
+                        ce.oldValue = rc.oldValues.get(e.getKey());
+                        ce.newValue = e.getValue();
+                        rd.changes.add(ce);
                     }
-                    if (rd.changes.isEmpty()) continue; // 内容完全一致——不计入预览行/摘要，避免误报"改值"
-                } else if ("ADD".equals(rc.op)) {
-                    rd.values.putAll(rc.newValues);
-                } else { // DELETE
-                    rd.values.putAll(rc.oldValues);
+                } else {
+                    Map<String, Object> src = "ADD".equals(rc.op) ? rc.newValues : rc.oldValues;
+                    for (Map.Entry<String, Object> e : src.entrySet()) {
+                        BackfillRowDTO.ValueEntry ve = new BackfillRowDTO.ValueEntry();
+                        ve.column = e.getKey();
+                        ve.label = labelResolver.columnLabel(e.getKey(), g.columnAliases);
+                        ve.value = e.getValue();
+                        rd.values.add(ve);
+                    }
                 }
                 gd.rows.add(rd);
                 switch (rc.op) {
@@ -90,13 +165,128 @@ public class QuoteBackfillPreviewService {
                     case "CHANGE" -> dto.summary.changedRows++;
                 }
             }
-            if (!gd.rows.isEmpty() || g.route != QuoteBackfillPlan.Route.REBUILD) {
-                dto.summary.versionedGroups++;
-                dto.groups.add(gd);
+
+            dto.summary.versionedGroups++;
+            dto.groups.add(gd);
+            int idx = dto.groups.size() - 1;
+
+            if (productNo != null) {
+                // repair-0727 Bug-2：聚合 key 只用 productNo（不再拼 customerNo）——同一产品不会因为
+                // 某些组的轴天然不含 customer_no（如 capacity）而被拆成两张卡片。products.length 与
+                // summary.affectedProducts 必须恒相等，见下方 for 循环后的断言。
+                BackfillProductDTO pd = productByKey.computeIfAbsent(productNo, k -> {
+                    BackfillProductDTO p = new BackfillProductDTO();
+                    p.productNo = productNo;
+                    p.productName = materialNames.get(productNo);
+                    p.customerNo = quotationCustomer.customerNo();
+                    p.customerName = quotationCustomer.customerName();
+                    dto.products.add(p);
+                    return p;
+                });
+                pd.groupIndexes.add(idx);
+                affectedProducts.add(productNo);
+            } else {
+                dto.globalShared.groupIndexes.add(idx);
             }
+        }
+        dto.summary.affectedProducts = affectedProducts.size();
+        // repair-0727 Bug-2 不变式：products[] 按 productNo 去重聚合，affectedProducts 也是 productNo
+        // 去重计数——二者必须恒相等，否则财务端"产品数"文案与实际卡片数对不上（本身就是矛盾数据）。
+        if (dto.products.size() != dto.summary.affectedProducts) {
+            throw new IllegalStateException("[quote-backfill-preview] 不变式违反：products.length(" +
+                dto.products.size() + ") != summary.affectedProducts(" + dto.summary.affectedProducts +
+                ")，quotationId=" + plan.quotationId);
         }
         dto.previewToken = computeToken(plan);
         return dto;
+    }
+
+    /** 报价单自身的客户编号/客户名（一张报价单只属于一个客户，repair-0727 Bug-2 修复）。 */
+    private record QuotationCustomer(String customerNo, String customerName) {}
+
+    @SuppressWarnings("unchecked")
+    private QuotationCustomer resolveQuotationCustomer(UUID quotationId) {
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT c.code, c.name FROM quotation q JOIN customer c ON c.id = q.customer_id WHERE q.id = :qid")
+            .setParameter("qid", quotationId)
+            .getResultList();
+        QuoteBackfillCollector.profile().labelResolveQueries++;
+        if (rows.isEmpty()) return new QuotationCustomer(null, null);
+        Object[] r = rows.get(0);
+        return new QuotationCustomer(r[0] == null ? null : String.valueOf(r[0]), r[1] == null ? null : String.valueOf(r[1]));
+    }
+
+    /** CHANGE 取 oldValues(基底)⊕newValues(diff) 合并后的"当前身份"；ADD 取 newValues；DELETE 取 oldValues。 */
+    private static Map<String, Object> rowIdentity(QuoteBackfillPlan.RowChange rc) {
+        if ("ADD".equals(rc.op)) return rc.newValues;
+        if ("DELETE".equals(rc.op)) return rc.oldValues;
+        Map<String, Object> merged = new LinkedHashMap<>(rc.oldValues);
+        merged.putAll(rc.newValues);
+        return merged;
+    }
+
+    /**
+     * 验收「财务读不懂」二轮修复。逐项对应：
+     * <ol>
+     *   <li>{@code system_type} 报价侧恒为 QUOTE，零信息量的系统词，直接不输出。</li>
+     *   <li>{@code price_type} 翻中文；若翻译结果与同组 {@code cost_type} 语义重复（如"来料加工"⊂
+     *       "来料加工费"）则整条丢弃，只留 cost_type，避免并排啰嗦。</li>
+     *   <li>空值轴列（如 {@code supplier_no=null}）直接跳过，不出现 "—" 占位噪音。</li>
+     *   <li>{@code code}（及其它"料号形态"列）批量解析名称随值展示；{@code resource_group_no}
+     *       同理批量解析资源组名，没有的话至少 {@link BackfillLabelResolver#columnLabel} 已经给了
+     *       "资源组代码"标签，不会不知道这是什么。</li>
+     * </ol>
+     */
+    private List<BackfillGroupDTO.AxisLabel> buildAxisLabels(QuoteBackfillPlan.GroupChange g,
+            Map<String, String> materialNames, Map<String, String> customerNames,
+            Map<String, String> resourceGroupNames) {
+        List<BackfillGroupDTO.AxisLabel> out = new ArrayList<>();
+        Object costTypeVal = g.groupKeyAxis.get("cost_type");
+        String costTypeStr = costTypeVal == null ? null : String.valueOf(costTypeVal);
+
+        for (Map.Entry<String, Object> e : g.groupKeyAxis.entrySet()) {
+            String col = e.getKey();
+            Object val = e.getValue();
+            if ("system_type".equals(col)) continue; // 项①
+            if (val == null) continue; // 项③
+            String valStr = String.valueOf(val);
+
+            if ("price_type".equals(col)) {
+                String translated = labelResolver.priceTypeLabel(valStr);
+                if (BackfillLabelResolver.isRedundantWithCostType(translated, costTypeStr)) continue; // 项②
+                BackfillGroupDTO.AxisLabel al = new BackfillGroupDTO.AxisLabel();
+                al.column = col;
+                al.value = val;
+                al.label = labelResolver.columnLabel(col, g.columnAliases);
+                al.display = translated;
+                out.add(al);
+                continue;
+            }
+
+            BackfillGroupDTO.AxisLabel al = new BackfillGroupDTO.AxisLabel();
+            al.column = col;
+            al.value = val;
+            al.label = labelResolver.columnLabel(col, g.columnAliases);
+            if ("customer_no".equals(col)) {
+                String name = customerNames.get(valStr);
+                al.display = name != null ? name + "（" + valStr + "）" : valStr;
+            } else if (isMaterialAxisColumn(col)) { // 项④：code/material_no/finished_material_no/material_part_no
+                String name = materialNames.get(valStr);
+                al.display = name != null ? valStr + " " + name : valStr;
+            } else if ("resource_group_no".equals(col)) { // 项④：capacity 资源组
+                String name = resourceGroupNames.get(valStr);
+                al.display = name != null ? valStr + " " + name : valStr;
+            } else {
+                al.display = valStr;
+            }
+            out.add(al);
+        }
+        return out;
+    }
+
+    private static boolean isMaterialAxisColumn(String col) {
+        return "material_no".equals(col) || "finished_material_no".equals(col)
+            || "code".equals(col) || "material_part_no".equals(col);
     }
 
     /** 只读复刻 {@code VersionedV6Writer} 的"max(数字版本)+1"逻辑，供预览展示 versionTo（不写库）。 */
@@ -128,7 +318,7 @@ public class QuoteBackfillPreviewService {
         return true;
     }
 
-    // ── previewToken 计算：固定排序 + 数值归一 + NULL 稳定序列化，SHA-256 ──
+    // ── previewToken 计算：固定排序 + 数值归一 + NULL 稳定序列化，SHA-256（repair-0727 不动算法本身）──
 
     private String computeToken(QuoteBackfillPlan plan) {
         List<QuoteBackfillPlan.GroupChange> sorted = new ArrayList<>(plan.groups);

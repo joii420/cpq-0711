@@ -81,22 +81,57 @@ export interface VersionSwitchResult {
 
 /**
  * task-0721（api.md §1.1）：核价通过 preview 汇总——将升版 N 组 / 新增 X / 删除 Y / 改值 Z。
+ * repair-0727（api.md §1.1）：新增 affectedProducts——涉及产品数（groups 里 productNo 去重，null 不计）。
  */
 export interface CostingApprovePreviewSummary {
   versionedGroups: number;
   addedRows: number;
   deletedRows: number;
   changedRows: number;
+  /** repair-0727 新增 */
+  affectedProducts: number;
 }
 
-/** task-0721（api.md §1.1）：一行变更明细。ADD 无 __v6_id；changes 为 {列: [旧, 新]}。 */
+/** repair-0727（api.md §1.2）：行级列差异，取代旧 Record<col,[old,new]> 结构，带中文列名。 */
+export interface CostingApprovePreviewChange {
+  column: string;
+  label: string;
+  oldValue: string | null;
+  newValue: string | null;
+}
+
+/** repair-0727（api.md §1.2）：ADD/DELETE 行的列值，带中文列名。 */
+export interface CostingApprovePreviewValue {
+  column: string;
+  label: string;
+  value: string | null;
+}
+
+/**
+ * task-0721（api.md §1.1）：一行变更明细。ADD 无 __v6_id。
+ * repair-0727（api.md §1.2）：changes/values 由对象改为数组；新增 rowLabel（该行业务身份）/ conflict（多页签冲突取先到值）。
+ * 破坏性变更：旧 Record<col,[old,new]> 形状已废弃，后端不再兼容旧形状（同批次发布，无外部消费方）。
+ */
 export interface CostingApprovePreviewRow {
   op: 'CHANGE' | 'ADD' | 'DELETE';
   __v6_id: string | null;
-  /** op=CHANGE 时带，{列名: [旧值, 新值]} */
-  changes?: Record<string, [string, string]>;
-  /** op=ADD / DELETE 时带，该行的值 */
-  values?: Record<string, string>;
+  /** repair-0727 新增：该行业务身份，前端直接展示（如「组成件 W-1001（外购件）」） */
+  rowLabel?: string;
+  /** repair-0727 新增：同列被多页签 patch 且值不同 */
+  conflict?: boolean;
+  /** op=CHANGE 时带 */
+  changes?: CostingApprovePreviewChange[];
+  /** op=ADD / DELETE 时带 */
+  values?: CostingApprovePreviewValue[];
+}
+
+/** repair-0727（api.md §1.1）：轴的人类可读表达，替代原始 V6 物理轴串给财务看。 */
+export interface CostingApprovePreviewAxisLabel {
+  column: string;
+  label: string;
+  value: string;
+  /** 拼好的展示文案，如「苏州西门子（CUST-0001）」「S-3120014539 接触片组件」 */
+  display: string;
 }
 
 /** task-0721（api.md §1.1）：一个 V6 目标表分组（按 groupKey 轴聚合的一次升版）。 */
@@ -113,6 +148,37 @@ export interface CostingApprovePreviewGroup {
   /** true=全局共享表（如电镀方案），前端需重点标注「影响所有客户」 */
   isGlobalShared: boolean;
   rows: CostingApprovePreviewRow[];
+
+  // ── repair-0727 新增字段（api.md §1.1） ──
+  /** 产品归属料号，无产品维度（如 plating_scheme）为 null，此时归入 globalShared */
+  productNo?: string | null;
+  productName?: string | null;
+  /** 业务类别中文名（BOM 组成 / 材质元素构成 / 单价 / 工时产能 / 电镀方案） */
+  categoryLabel?: string;
+  /** patch 语义下该组走的路径 */
+  route?: 'REBUILD' | 'FLIP' | 'OFFLINE';
+  /** 基底行来源 */
+  baseSource?: 'PENDING' | 'CURRENT' | 'NONE';
+  /** 基底行数 */
+  baseRowCount?: number;
+  /** 通过后该组行数（预期值） */
+  resultRowCount?: number;
+  /** 轴的人类可读表达 */
+  axisLabels?: CostingApprovePreviewAxisLabel[];
+}
+
+/** repair-0727（api.md §1.1）：按产品聚合的视图，groupIndexes 指向 groups 数组下标（避免重复传输）。 */
+export interface CostingApprovePreviewProduct {
+  productNo: string;
+  productName: string | null;
+  customerNo: string;
+  customerName: string | null;
+  groupIndexes: number[];
+}
+
+/** repair-0727（api.md §1.1）：无产品维度的全局共享组（当前仅 plating_scheme）。 */
+export interface CostingApprovePreviewGlobalShared {
+  groupIndexes: number[];
 }
 
 /** task-0721（api.md §1.1）：GET costing-approve/preview 响应体。只读、无副作用、幂等。 */
@@ -121,6 +187,10 @@ export interface CostingApprovePreviewResult {
   /** 影响清单内容 hash，提交时须原样带回；预览后数据漂移会致提交 409 */
   previewToken: string;
   summary: CostingApprovePreviewSummary;
+  /** repair-0727 新增：按产品聚合的主视图，渲染以此为主，groups 仍保留作为数据源 */
+  products: CostingApprovePreviewProduct[];
+  /** repair-0727 新增：无产品维度的全局共享组视图 */
+  globalShared: CostingApprovePreviewGlobalShared;
   groups: CostingApprovePreviewGroup[];
 }
 
