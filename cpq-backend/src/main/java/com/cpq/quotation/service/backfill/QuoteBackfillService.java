@@ -36,6 +36,8 @@ public class QuoteBackfillService {
 
     public static final class Summary {
         public int versionedGroups, addedRows, deletedRows, changedRows;
+        /** repair-0727 B4（api.md §2）：涉及产品数，与预览 {@code summary.affectedProducts} 同口径。 */
+        public int affectedProducts;
     }
 
     /**
@@ -46,12 +48,19 @@ public class QuoteBackfillService {
     public Summary execute(UUID quotationId, UUID currentUserId) {
         QuoteBackfillPlan plan = collector.collect(quotationId);
         Summary summary = new Summary();
+        java.util.Set<String> affectedProducts = new java.util.LinkedHashSet<>();
 
         for (QuoteBackfillPlan.GroupChange g : plan.groups) {
+            String productNo = QuoteTableAxis.productNoOf(g.table, g.groupKeyAxis);
+            if (productNo != null) affectedProducts.add(productNo);
             switch (g.route) {
                 case REBUILD -> { executeRebuild(g); summary.versionedGroups++; }
                 case FLIP -> { executeFlip(g, quotationId); summary.versionedGroups++; }
                 case OFFLINE -> { executeOffline(g, quotationId); summary.versionedGroups++; }
+                // repair-0727 裁决①：NOOP 组在 QuoteBackfillCollector.collect() 里已被整组过滤，
+                // 永远不会出现在 plan.groups 里；这里显式列出空分支只为防御未来有人绕过收集器
+                // 直接塞 NOOP 进 plan（不写库、不计入摘要，语义上等价于"什么都不做"）。
+                case NOOP -> { }
             }
             for (QuoteBackfillPlan.RowChange rc : g.rowChanges) {
                 switch (rc.op) {
@@ -62,6 +71,7 @@ public class QuoteBackfillService {
                 }
             }
         }
+        summary.affectedProducts = affectedProducts.size();
 
         // repair-0726 B3：核价通过 → 本单 pending 料号转正（已直落正表，无需再覆盖式 upsert）。
         materialMasterRepo.flipPending(quotationId);

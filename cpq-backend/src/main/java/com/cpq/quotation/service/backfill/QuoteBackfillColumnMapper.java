@@ -77,10 +77,16 @@ public final class QuoteBackfillColumnMapper {
             QuotePendingRewriter.Result rw = QuotePendingRewriter.rewrite(withVersionFilter, conn);
             if (!rw.anchorInjected) return NOT_BACKFILLABLE;
 
+            // repair-0727 B2：顶层集合运算视图（rw.primaryBranchSql 非空）改探测"第一个含白名单表的
+            // 分支"单独的 LIMIT 0——pgjdbc 对整体 UNION/INTERSECT/EXCEPT 结果的输出列不返回
+            // getBaseTableName（结果列是集合运算节点的投影，不再对应单一物理表列），直接探测 rw.sql
+            // 整体必然全空；SQL 语义保证分支间列位置对齐，故单分支映射对整视图成立（backtask B2）。
+            String probeTarget = rw.primaryBranchSql != null ? rw.primaryBranchSql : rw.sql;
+
             // LIMIT 0 探测：:pq 绑随机 uuid（占位，不影响列元数据），其余 :xxx 命名占位符 → NULL
             // （与 QuoteViewValidationService.checkOne / SqlViewExecutor.rewriteNamedParams 的
             // "未绑定占位符安全降级"约定一致，仅用于元数据探测，不依赖具体业务值）。
-            String bound = ("SELECT * FROM (" + rw.sql + ") _outer LIMIT 0")
+            String bound = ("SELECT * FROM (" + probeTarget + ") _outer LIMIT 0")
                 .replaceAll("(?<!:):pq\\b", "'" + UUID.randomUUID() + "'::uuid")
                 .replaceAll("(?<!:):[A-Za-z_][A-Za-z0-9_]*\\b", "NULL");
 

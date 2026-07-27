@@ -26,8 +26,14 @@ public final class QuoteBackfillPlan {
 
     public QuoteBackfillPlan(UUID quotationId) { this.quotationId = quotationId; }
 
-    /** 三条回填路径（backtask B5.2「三条回填路径」）。 */
-    public enum Route { REBUILD, FLIP, OFFLINE }
+    /**
+     * 四条回填路径（repair-0727 技术总监裁决①：在原三条 REBUILD/FLIP/OFFLINE 基础上新增 NOOP）。
+     *
+     * <p>{@code NOOP}：基底来自 CURRENT 且无 CHANGE/ADD/DELETE（页签把正式行渲染出来但一字未改——
+     * 报价单"从已有产品添加、未导入未编辑"是常见场景）。NOOP 组整组跳过：不进 {@link #groups}，
+     * 不调 {@code VersionedV6Writer}，不计入 {@code summary.versionedGroups}，不出现在预览里。
+     */
+    public enum Route { REBUILD, FLIP, OFFLINE, NOOP }
 
     /** 单行变更（CHANGE/ADD/DELETE），供预览逐行展示 + execute 组装 newRows。 */
     public static final class RowChange {
@@ -37,6 +43,9 @@ public final class QuoteBackfillPlan {
         public Map<String, Object> newValues = new LinkedHashMap<>();
         /** 物理列 → 旧值（CHANGE/DELETE 展示用；从当前 DB pending/current 行读出）。 */
         public Map<String, Object> oldValues = new LinkedHashMap<>();
+        /** repair-0727 B3.2：同一 (v6Id, 列) 被多个页签同时 patch 且值不同——按 sortOrder 先到先得，
+         *  本字段标注该行存在被丢弃的冲突 patch，供预览提示（api.md §1.2 {@code rows[].conflict}）。 */
+        public boolean conflict;
     }
 
     /** 一个（表 → V6 组）的完整变更。 */
@@ -51,7 +60,15 @@ public final class QuoteBackfillPlan {
         public List<String> contentColumns = List.of();
         public List<String> versionTriggerColumns; // nullable
 
-        /** REBUILD 路径：交给 writer 的有效行集（物理列 → 值，已含 groupKeyAxis 外的所有内容列）。 */
+        /** repair-0727 B3.1：基底行集（权威来源=DB，非页签），预览/断言用；REBUILD 路径同时是
+         *  {@link #effectiveNewRows} 的遍历主轴。 */
+        public List<Map<String, Object>> baseRows = List.of();
+        /** repair-0727 B3.1：基底行来源——{@code PENDING}（本单 pending 行）/ {@code CURRENT}
+         *  （该组 is_current 正式行）/ {@code NONE}（两者皆无，纯新增组）。 */
+        public String baseSource = "NONE";
+
+        /** REBUILD 路径：交给 writer 的有效行集（物理列 → 值，已含 groupKeyAxis 外的所有内容列）。
+         *  repair-0727 patch 语义下 = 基底行（含未被任何页签 patch 的行）⊕ 列级 patch ⊖ 墓碑 ⊕ 新增。 */
         public final List<Map<String, Object>> effectiveNewRows = new ArrayList<>();
 
         /** 主从表标记（material_bom_item/element_bom_item 子表）。 */
@@ -59,7 +76,12 @@ public final class QuoteBackfillPlan {
         public String masterTable;
         public Map<String, Object> masterFixedColumns = Map.of();
 
-        /** 预览展示：逐行 CHANGE/ADD/DELETE 分类。 */
+        /** 预览展示：逐行 CHANGE/ADD/DELETE 分类（仅记录"有实际差异"的行——patch 命中但值未变不计入）。 */
         public final List<RowChange> rowChanges = new ArrayList<>();
+
+        /** repair-0727 B4：物理列 → 页签列别名（去前导 {@code _}），供 {@code BackfillLabelResolver}
+         *  一级中文标签查找用——来自触达本组的组件 {@code $view} 的 {@code colToBase} 反查（用户本就
+         *  自己配的中文列名，比静态字典更准），先到先得（多个页签touch同表时，保留第一个）。 */
+        public final Map<String, String> columnAliases = new LinkedHashMap<>();
     }
 }

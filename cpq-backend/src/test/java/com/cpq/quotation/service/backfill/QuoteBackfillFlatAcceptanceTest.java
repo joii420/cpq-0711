@@ -168,13 +168,20 @@ class QuoteBackfillFlatAcceptanceTest {
 
     private void writeComponentData(UUID lineItemId, UUID componentId, String tabName,
                                      String snapshotRowsJson, String rowDataJson, String deletedRowKeysJson) {
+        writeComponentData(lineItemId, componentId, tabName, snapshotRowsJson, rowDataJson, deletedRowKeysJson, 0);
+    }
+
+    /** repair-0727 B3.2：带 sortOrder 的重载，供多页签 patch 冲突仲裁测试用。 */
+    private void writeComponentData(UUID lineItemId, UUID componentId, String tabName,
+                                     String snapshotRowsJson, String rowDataJson, String deletedRowKeysJson,
+                                     int sortOrder) {
         em.createNativeQuery(
                 "INSERT INTO quotation_line_component_data " +
-                "(id, line_item_id, component_id, tab_name, snapshot_rows, row_data, deleted_row_keys, created_at) " +
-                "VALUES (:id, :lid, :cid, :tab, CAST(:sr AS jsonb), CAST(:rd AS jsonb), CAST(:drk AS jsonb), now())")
+                "(id, line_item_id, component_id, tab_name, snapshot_rows, row_data, deleted_row_keys, sort_order, created_at) " +
+                "VALUES (:id, :lid, :cid, :tab, CAST(:sr AS jsonb), CAST(:rd AS jsonb), CAST(:drk AS jsonb), :so, now())")
             .setParameter("id", UUID.randomUUID()).setParameter("lid", lineItemId).setParameter("cid", componentId)
             .setParameter("tab", tabName).setParameter("sr", snapshotRowsJson).setParameter("rd", rowDataJson)
-            .setParameter("drk", deletedRowKeysJson)
+            .setParameter("drk", deletedRowKeysJson).setParameter("so", sortOrder)
             .executeUpdate();
     }
 
@@ -534,5 +541,208 @@ class QuoteBackfillFlatAcceptanceTest {
             () -> quotationService.costingApprove(quotationId, "ok", finance, null),
             "previewToken 缺失应 400（AC-12 结构性校验：提交面必须携带 token）");
         assertEquals(400, ex.getCode());
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // repair-0727 裁决①：NOOP 第四路径 —— 基底来自 CURRENT 且无 CHANGE/ADD/DELETE
+    // （报价单"从已有产品添加、未导入未编辑"的常见场景：页签把正式行渲染出来但一字未改）
+    // ══════════════════════════════════════════════════════════════════════
+
+    @Test
+    @TestTransaction
+    void noopRoute_baseFromCurrentNoActualChange_groupSkippedEntirely() {
+        UUID customerId = resolveCustomerId();
+        UUID salesRepId = resolveUserId();
+        UUID finance = financeUserId();
+        assumeTrue(customerId != null, "需要共享 DB 中存在 customer 行");
+        String customerNo = customerCodeOf(customerId);
+        String priceType = "PROCESS";
+        String materialNo = "NOP" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+
+        UUID componentId = newFlatUnitPriceComponent("NOOP");
+        UUID quotationId = newQuotation(customerId, salesRepId, "SUBMITTED");
+        UUID lineItemId = newLineItem(quotationId, materialNo);
+
+        // 无 pending：只有正式 current 行——模拟"从已有产品添加"，本单从未导入/编辑过这张单据。
+        UUID officialRowId = insertUnitPrice(priceType, customerNo, materialNo, 1,
+            new BigDecimal("1.20"), "2000", true, null);
+
+        // driverRow.__v6_id 指向正式行；row_data 与基底值完全一致（页签只是渲染出来，用户一字未改）。
+        String snapshotRows = "[{\"driverRow\":{\"hf_part_no\":\"" + materialNo + "\",\"_销售料号\":\"" + materialNo +
+            "\",\"_项次\":1,\"_单价\":1.20,\"_单位\":\"元\",\"__v6_id\":\"" + officialRowId + "\"}}]";
+        String rowData = "[{\"_销售料号\":\"" + materialNo + "\",\"_项次\":1,\"_单价\":1.20,\"_单位\":\"元\"}]";
+        writeComponentData(lineItemId, componentId, "工序费用", snapshotRows, rowData, "[]");
+
+        BackfillPreviewDTO preview = previewService.preview(quotationId);
+        assertEquals(0, preview.summary.versionedGroups, "NOOP 组不应计入预览摘要（裁决①）");
+        assertEquals(0, preview.summary.changedRows);
+        assertTrue(preview.groups.stream().noneMatch(g -> "unit_price".equals(g.table)
+                && materialNo.equals(String.valueOf(g.groupKey.get("finished_material_no")))),
+            "NOOP 组不应出现在预览 groups 里（裁决①：整组跳过）");
+
+        QuoteBackfillService.Summary summary = backfillService.execute(quotationId, finance);
+        assertEquals(0, summary.versionedGroups, "NOOP 组不应计入 execute 摘要");
+        assertEquals(0, summary.changedRows);
+        assertEquals(0, summary.affectedProducts, "NOOP 组不产生任何数据变更，不应计入 affectedProducts");
+
+        Object[] row = (Object[]) em.createNativeQuery(
+                "SELECT version_no, is_current FROM unit_price WHERE id = :id")
+            .setParameter("id", officialRowId).getSingleResult();
+        assertEquals("2000", row[0], "NOOP 不应产生任何新版本，version_no 应原样保留");
+        assertEquals(Boolean.TRUE, row[1]);
+
+        long totalRowsForGroup = ((Number) em.createNativeQuery(
+                "SELECT count(*) FROM unit_price WHERE price_type = :pt AND customer_no = :cn AND finished_material_no = :mn")
+            .setParameter("pt", priceType).setParameter("cn", customerNo).setParameter("mn", materialNo)
+            .getSingleResult()).longValue();
+        assertEquals(1L, totalRowsForGroup, "NOOP 不应写出任何新行（回填服务不调 writer）");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // repair-0727 B3.2：多页签同列冲突 —— 按组件 sortOrder 先到先得 + conflict 标注
+    // ══════════════════════════════════════════════════════════════════════
+
+    @Test
+    @TestTransaction
+    void multiTabConflict_samePatchColumnDifferentValue_firstSortOrderWins() {
+        UUID customerId = resolveCustomerId();
+        UUID salesRepId = resolveUserId();
+        UUID finance = financeUserId();
+        assumeTrue(customerId != null, "需要共享 DB 中存在 customer 行");
+        String customerNo = customerCodeOf(customerId);
+        String priceType = "PROCESS";
+        String materialNo = "CFL" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+
+        UUID compA = newFlatUnitPriceComponent("CFLA"); // sortOrder=0（先到）
+        UUID compB = newFlatUnitPriceComponent("CFLB"); // sortOrder=1（后到，值应被丢弃）
+        UUID quotationId = newQuotation(customerId, salesRepId, "SUBMITTED");
+        UUID lineItemId = newLineItem(quotationId, materialNo);
+
+        UUID officialRowId = insertUnitPrice(priceType, customerNo, materialNo, 1, new BigDecimal("1.00"), "2000", true, null);
+        UUID pendingRowId = insertUnitPrice(priceType, customerNo, materialNo, 1, new BigDecimal("1.00"), "2001", false, quotationId, officialRowId);
+
+        String snapshot = "[{\"driverRow\":{\"hf_part_no\":\"" + materialNo + "\",\"_销售料号\":\"" + materialNo +
+            "\",\"_项次\":1,\"_单价\":1.00,\"_单位\":\"元\",\"__v6_id\":\"" + pendingRowId + "\"}}]";
+        String rowDataA = "[{\"_销售料号\":\"" + materialNo + "\",\"_项次\":1,\"_单价\":1.35,\"_单位\":\"元\"}]"; // 应生效
+        String rowDataB = "[{\"_销售料号\":\"" + materialNo + "\",\"_项次\":1,\"_单价\":1.50,\"_单位\":\"元\"}]"; // 应被丢弃
+        writeComponentData(lineItemId, compA, "工序费用A", snapshot, rowDataA, "[]", 0);
+        writeComponentData(lineItemId, compB, "工序费用B", snapshot, rowDataB, "[]", 1);
+
+        BackfillPreviewDTO preview = previewService.preview(quotationId);
+        var group = preview.groups.stream().filter(g -> "unit_price".equals(g.table)).findFirst().orElse(null);
+        assertNotNull(group, "应有 1 个 unit_price 组");
+        assertEquals(1, group.rows.size(), "同一行被两页签表征应仍只产出 1 条 rowChange（不重复）");
+        assertTrue(group.rows.get(0).conflict, "预览应标注该行存在多页签 patch 冲突");
+        var priceChange = group.rows.get(0).changes.stream()
+            .filter(c -> "pricing_price".equals(c.column)).findFirst().orElse(null);
+        assertNotNull(priceChange);
+        assertEquals(0, new BigDecimal("1.35").compareTo(new BigDecimal(String.valueOf(priceChange.newValue))),
+            "预览应展示先到先得的胜出值 1.35");
+
+        backfillService.execute(quotationId, finance);
+        BigDecimal finalPrice = currentPrice(priceType, customerNo, materialNo);
+        assertEquals(0, new BigDecimal("1.35").compareTo(finalPrice),
+            "sortOrder 更小(先到)的页签A应胜出，最终值应是 1.35 而非页签B的 1.50");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // repair-0727 B4：预览业务语义化（categoryLabel/productNo/axisLabels/products 聚合）
+    // ══════════════════════════════════════════════════════════════════════
+
+    @Test
+    @TestTransaction
+    void preview_businessSemantics_categoryLabelProductNoAxisLabelsAndProductAggregation() {
+        UUID customerId = resolveCustomerId();
+        UUID salesRepId = resolveUserId();
+        assumeTrue(customerId != null, "需要共享 DB 中存在 customer 行");
+        String customerNo = customerCodeOf(customerId);
+        String priceType = "PROCESS";
+        String materialNo = "SEM" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+
+        UUID componentId = newFlatUnitPriceComponent("SEM");
+        UUID quotationId = newQuotation(customerId, salesRepId, "SUBMITTED");
+        UUID lineItemId = newLineItem(quotationId, materialNo);
+
+        UUID officialRowId = insertUnitPrice(priceType, customerNo, materialNo, 1, new BigDecimal("1.00"), "2000", true, null);
+        UUID pendingRowId = insertUnitPrice(priceType, customerNo, materialNo, 1, new BigDecimal("1.00"), "2001", false, quotationId, officialRowId);
+        String snapshotRows = "[{\"driverRow\":{\"hf_part_no\":\"" + materialNo + "\",\"_销售料号\":\"" + materialNo +
+            "\",\"_项次\":1,\"_单价\":1.00,\"_单位\":\"元\",\"__v6_id\":\"" + pendingRowId + "\"}}]";
+        String rowData = "[{\"_销售料号\":\"" + materialNo + "\",\"_项次\":1,\"_单价\":1.66,\"_单位\":\"元\"}]";
+        writeComponentData(lineItemId, componentId, "工序费用", snapshotRows, rowData, "[]");
+
+        BackfillPreviewDTO preview = previewService.preview(quotationId);
+        var group = preview.groups.stream().filter(g -> "unit_price".equals(g.table)).findFirst().orElse(null);
+        assertNotNull(group);
+        assertEquals("单价", group.categoryLabel, "unit_price 组的业务类别中文名应是「单价」");
+        assertEquals(materialNo, group.productNo, "unit_price 的 productNo 应取轴 finished_material_no");
+        assertEquals("REBUILD", group.route);
+        assertFalse(group.axisLabels.isEmpty(), "轴应有人类可读表达");
+        var customerAxis = group.axisLabels.stream().filter(a -> "customer_no".equals(a.column)).findFirst().orElse(null);
+        assertNotNull(customerAxis, "轴应含 customer_no");
+        assertEquals("客户", customerAxis.label);
+        assertNotNull(customerAxis.display, "客户轴 display 不应为空");
+
+        assertEquals(1, preview.summary.affectedProducts, "应识别到 1 个涉及产品");
+        assertFalse(preview.products.isEmpty(), "应有按产品聚合的条目");
+        var product = preview.products.stream().filter(p -> materialNo.equals(p.productNo)).findFirst().orElse(null);
+        assertNotNull(product, "products[] 应包含本次涉及的产品");
+        assertFalse(product.groupIndexes.isEmpty());
+        BackfillGroupDTOAssertHelper.assertGroupIndexValid(preview, product.groupIndexes.get(0), "unit_price");
+
+        var change = group.rows.get(0).changes.stream()
+            .filter(c -> "pricing_price".equals(c.column)).findFirst().orElse(null);
+        assertNotNull(change);
+        assertEquals("单价", change.label, "pricing_price 应有中文标签（一级 colToBase 反查或二级静态字典）");
+        assertNotNull(group.rows.get(0).rowLabel, "行应有业务身份短语");
+    }
+
+    /** 小工具：断言 products[].groupIndexes 指回的 groups[] 下标确实是期望的表。 */
+    private static final class BackfillGroupDTOAssertHelper {
+        static void assertGroupIndexValid(BackfillPreviewDTO preview, int idx, String expectedTable) {
+            assertTrue(idx >= 0 && idx < preview.groups.size(), "groupIndexes 下标越界");
+            assertEquals(expectedTable, preview.groups.get(idx).table);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // repair-0727 AC-R8：DB 往返计数（禁 N+1）——基底行集装载每表最多 2 条 SQL
+    // ══════════════════════════════════════════════════════════════════════
+
+    @Test
+    @TestTransaction
+    void noNPlusOne_baseRowQueriesBoundedPerTable() {
+        UUID customerId = resolveCustomerId();
+        UUID salesRepId = resolveUserId();
+        assumeTrue(customerId != null, "需要共享 DB 中存在 customer 行");
+        String customerNo = customerCodeOf(customerId);
+        String priceType = "PROCESS";
+
+        UUID componentId = newFlatUnitPriceComponent("N1");
+        UUID quotationId = newQuotation(customerId, salesRepId, "SUBMITTED");
+
+        // 3 个不同料号、各 1 条 pending 行，都挂在同一张表（unit_price）——AC-R8 要求装载基底行集
+        // 仍是"每表最多 2 条 SQL"，不随料号数（轴数）线性增长成 N+1。
+        for (int i = 0; i < 3; i++) {
+            String materialNo = "N1M" + i + "_" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+            UUID lineItemId = newLineItem(quotationId, materialNo);
+            UUID officialRowId = insertUnitPrice(priceType, customerNo, materialNo, 1, new BigDecimal("1.00"), "2000", true, null);
+            UUID pendingRowId = insertUnitPrice(priceType, customerNo, materialNo, 1, new BigDecimal("1.00"), "2001", false, quotationId, officialRowId);
+            String snapshotRows = "[{\"driverRow\":{\"hf_part_no\":\"" + materialNo + "\",\"_销售料号\":\"" + materialNo +
+                "\",\"_项次\":1,\"_单价\":1.00,\"_单位\":\"元\",\"__v6_id\":\"" + pendingRowId + "\"}}]";
+            String rowData = "[{\"_销售料号\":\"" + materialNo + "\",\"_项次\":1,\"_单价\":" + (2 + i) + ".00,\"_单位\":\"元\"}]";
+            writeComponentData(lineItemId, componentId, "工序费用", snapshotRows, rowData, "[]");
+        }
+
+        QuoteBackfillCollector.profile().reset();
+        BackfillPreviewDTO preview = previewService.preview(quotationId);
+        QuoteBackfillCollector.Profile p = QuoteBackfillCollector.profile();
+
+        assertEquals(3, preview.summary.changedRows, "应识别到 3 个料号各 1 行改值，实际=" + preview.summary.changedRows);
+        assertEquals(1, p.compDataQueries, "Phase A 应恰好 1 条整单批量查询");
+        assertEquals(1, p.rowByIdQueries, "只涉及 1 张表(unit_price)，按 __v6_id 批量回查应恰好 1 条 SQL");
+        assertTrue(p.baseRowQueries <= 2,
+            "基底行集装载对 1 张表最多 2 条 SQL(pending一次+current补查一次)，与轴/料号数量无关，实际=" + p.baseRowQueries);
+        assertTrue(p.labelResolveQueries <= 2,
+            "B4 品名/客户名解析各批量 1 条 SQL，与涉及产品数无关，实际=" + p.labelResolveQueries);
     }
 }

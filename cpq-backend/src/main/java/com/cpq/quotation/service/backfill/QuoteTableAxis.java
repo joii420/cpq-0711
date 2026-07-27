@@ -134,4 +134,25 @@ final class QuoteTableAxis {
     /** 路径②/③扫描对象：单表或"子表代表主从组"的 7 张受管表清单（子表齐全即代表整组，主表不单独扫描）。 */
     static final List<String> SCAN_TABLES = List.of(
         "unit_price", "material_bom_item", "element_bom_item", "capacity", "plating_scheme");
+
+    /**
+     * repair-0727 B4（backtask B4 §2 产品归属推导）+ execute() 摘要 {@code affectedProducts} 复用同一口径：
+     * <ul>
+     *   <li>{@code material_bom_item}/{@code element_bom_item}/{@code capacity} → 轴 {@code material_no}</li>
+     *   <li>{@code unit_price} → 轴 {@code finished_material_no}，为空兜底 {@code code}</li>
+     *   <li>{@code plating_scheme}（及其它未登记表）→ {@code null}（归"全局共享"分区）</li>
+     * </ul>
+     */
+    static String productNoOf(String table, java.util.Map<String, Object> axis) {
+        Object v;
+        switch (table) {
+            case "material_bom_item", "element_bom_item", "capacity" -> v = axis.get("material_no");
+            case "unit_price" -> {
+                v = axis.get("finished_material_no");
+                if (v == null) v = axis.get("code");
+            }
+            default -> v = null;
+        }
+        return v == null ? null : String.valueOf(v);
+    }
 }

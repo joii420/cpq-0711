@@ -128,7 +128,8 @@ class QuotePendingRewriterTest {
         }
     }
 
-    /** UNION ALL 真实模板（其他费用组件 qt_view）：两分支都是 unit_price，列位置不天然对齐 → 安全降级。 */
+    /** UNION ALL 真实模板（其他费用组件 qt_view）：两分支都是 unit_price（repair-0727 B1：逐分支独立
+     *  注入锚点，不再整体降级）。 */
     private static final String UNION_VIEW =
         "SELECT code hf_part_no, seq_no 项次, cost_type 要素, pricing_price 费用\n" +
         "FROM unit_price up\n" +
@@ -138,21 +139,123 @@ class QuotePendingRewriterTest {
         "FROM unit_price up\n" +
         "WHERE system_type = 'QUOTE' AND price_type = 'INCOMING_MATERIAL_OTHER' AND is_current = true";
 
+    /**
+     * repair-0727 B1：两分支都命中白名单表 unit_price——不再整体安全降级，逐分支各自注入真实
+     * {@code __v6_id} 锚点。取代原 {@code unionAll_safeDegrade_noAnchor_butTablesStillTouched}
+     * （旧断言"UNION 恒不可回填"已被 D3 修复推翻，见需求说明 §1.3 D3 / §3.2）。
+     */
     @Test
-    void unionAll_safeDegrade_noAnchor_butTablesStillTouched() throws Exception {
+    void unionAll_bothBranchesWhitelisted_anchorInjectedPerBranch() throws Exception {
         try (Connection conn = dataSource.getConnection()) {
             QuotePendingRewriter.Result r = QuotePendingRewriter.rewrite(UNION_VIEW, conn);
-            assertFalse(r.anchorInjected, "UNION ALL 多分支列位置不天然对齐，应安全降级不注入锚点");
-            // 表替换（pending 可见性）仍应对两个分支都生效，即使不参与回填。
+            assertTrue(r.anchorInjected, "repair-0727 B1：两分支都命中白名单表，应逐分支注入真实锚点，不再整体降级");
+            assertEquals("unit_price", r.primaryTable);
+            assertEquals("up", r.primaryAlias, "主位应取第一个（按分支出现顺序）成功注入真实锚点的分支");
+            assertNotNull(r.primaryBranchSql, "set-op 视图应暴露主位分支独立 SQL，供单分支 LIMIT 0 元数据探测");
+            // 表替换（pending 可见性）仍应对两个分支都生效。
             assertTrue(r.sql.contains("pending_quotation_id"), "UNION 两分支的 unit_price 仍应做表替换以保 pending 可见性");
-            // LIMIT 0 应能正常执行（两分支列数仍然对齐，未被破坏）。
+            assertEquals(2, countOccurrences(r.sql, ".id AS " + QuotePendingRewriter.ANCHOR_COLUMN),
+                "两分支都应各自注入一份真实锚点，实际 sql=\n" + r.sql);
+            // 整体 LIMIT 0 应能正常执行（两分支各新增一列 __v6_id，列数仍然对齐）。
             try (PreparedStatement ps = conn.prepareStatement(
                     ("SELECT * FROM (" + r.sql + ") _outer LIMIT 0").replaceAll("(?<!:):pq\\b",
                         "'" + UUID.randomUUID() + "'::uuid"));
                  ResultSet rs = ps.executeQuery()) {
                 assertNotNull(rs.getMetaData());
             }
+            // 整体探测拿不到基表元数据（pgjdbc 对 UNION 结果不传播 base table）——必须探测主位分支本身
+            // （B2/QuoteViewValidationService 同一技术），验证它才是"真的"命中 unit_price.id。
+            try (PreparedStatement ps = conn.prepareStatement(
+                    ("SELECT * FROM (" + r.primaryBranchSql + ") _outer LIMIT 0").replaceAll("(?<!:):pq\\b",
+                        "'" + UUID.randomUUID() + "'::uuid"));
+                 ResultSet rs = ps.executeQuery()) {
+                ResultSetMetaData meta = rs.getMetaData();
+                boolean found = false;
+                for (int i = 1; i <= meta.getColumnCount(); i++) {
+                    if ("__v6_id".equalsIgnoreCase(meta.getColumnLabel(i)) && meta instanceof PgResultSetMetaData pgMeta) {
+                        found = true;
+                        assertEquals("unit_price", pgMeta.getBaseTableName(i));
+                        assertEquals("id", pgMeta.getBaseColumnName(i));
+                    }
+                }
+                assertTrue(found, "主位分支单独探测应能看到 __v6_id 列");
+            }
         }
+    }
+
+    /** 第二分支非白名单表（真实 bom_view 形状，D3 复现场景）：分支1 material_bom_item(白名单)
+     *  UNION ALL 分支2 material_master(非白名单)。 */
+    private static final String SECOND_BRANCH_NON_WHITELIST_VIEW =
+        "SELECT mbi.component_no AS material_no, mbi.material_no AS parent_no\n" +
+        "FROM material_bom_item mbi\n" +
+        "WHERE mbi.system_type = 'QUOTE' AND mbi.is_current AND mbi.component_no = ANY(:total_material_no)\n" +
+        "UNION ALL\n" +
+        "SELECT mm.material_no, NULL::text\n" +
+        "FROM material_master mm\n" +
+        "WHERE mm.material_no = ANY(:total_material_no)";
+
+    @Test
+    void secondBranchNonWhitelist_anchorInjectedOnlyForWhitelistedBranch() throws Exception {
+        try (Connection conn = dataSource.getConnection()) {
+            QuotePendingRewriter.Result r = QuotePendingRewriter.rewrite(SECOND_BRANCH_NON_WHITELIST_VIEW, conn);
+            assertTrue(r.anchorInjected, "第一分支命中白名单表 material_bom_item，整视图应可回填（D3 场景）");
+            assertEquals("material_bom_item", r.primaryTable);
+            assertEquals("mbi", r.primaryAlias);
+            assertEquals(1, countOccurrences(r.sql, ".id AS " + QuotePendingRewriter.ANCHOR_COLUMN),
+                "只有分支1应注入真实锚点，实际 sql=\n" + r.sql);
+            assertTrue(r.sql.contains("NULL::uuid AS " + QuotePendingRewriter.ANCHOR_COLUMN),
+                "非白名单分支应注入 NULL::uuid 占位，保持列数对齐");
+            try (PreparedStatement ps = conn.prepareStatement(
+                    ("SELECT * FROM (" + r.sql + ") _outer LIMIT 0")
+                        .replaceAll("(?<!:):total_material_no\\b", "ARRAY[]::text[]")
+                        .replaceAll("(?<!:):pq\\b", "'" + UUID.randomUUID() + "'::uuid"));
+                 ResultSet rs = ps.executeQuery()) {
+                assertEquals(3, rs.getMetaData().getColumnCount(),
+                    "两分支列数应对齐(material_no, parent_no, __v6_id)");
+            }
+        }
+    }
+
+    /** 三分支：alias(分支1) / 裸表名(分支2) / GROUP BY(分支3) 各一，验证逐分支独立判定
+     *  （repair-0727 B1 backtask 自检矩阵：双分支/三分支、分支带别名/裸表名、第二分支非白名单、分支含 GROUP BY）。 */
+    private static final String THREE_BRANCH_VIEW =
+        "SELECT up.code, up.pricing_price AS val FROM unit_price up\n" +
+        "WHERE up.system_type = 'QUOTE' AND up.price_type = 'PROCESS' AND up.is_current = true\n" +
+        "UNION ALL\n" +
+        "SELECT code, pricing_price AS val FROM unit_price\n" +
+        "WHERE system_type = 'QUOTE' AND price_type = 'PART' AND is_current = true\n" +
+        "UNION ALL\n" +
+        "SELECT code, max(pricing_price) AS val FROM unit_price\n" +
+        "WHERE system_type = 'QUOTE' AND price_type = 'ELEMENT' AND is_current = true\n" +
+        "GROUP BY code";
+
+    @Test
+    void threeBranch_aliasBareTableAndGroupBy_perBranchIndependentJudgement() throws Exception {
+        try (Connection conn = dataSource.getConnection()) {
+            QuotePendingRewriter.Result r = QuotePendingRewriter.rewrite(THREE_BRANCH_VIEW, conn);
+            assertTrue(r.anchorInjected);
+            assertEquals("unit_price", r.primaryTable);
+            assertEquals("up", r.primaryAlias, "主位应取第一个成功注入真实锚点的分支（带别名的分支1）");
+            // 分支1(别名 up)/分支2(裸表名，兜底用表名自身作别名) 应各注入真实锚点；
+            // 分支3(GROUP BY) 即便命中白名单表也应恒 NULL::uuid（聚合结果一行对应多源行）。
+            assertEquals(2, countOccurrences(r.sql, ".id AS " + QuotePendingRewriter.ANCHOR_COLUMN),
+                "分支1/2 应各注入真实锚点，分支3(GROUP BY)不应有真实锚点，实际 sql=\n" + r.sql);
+            assertTrue(r.sql.contains("NULL::uuid AS " + QuotePendingRewriter.ANCHOR_COLUMN),
+                "GROUP BY 分支应注入 NULL::uuid 占位");
+            try (PreparedStatement ps = conn.prepareStatement(
+                    ("SELECT * FROM (" + r.sql + ") _outer LIMIT 0").replaceAll("(?<!:):pq\\b",
+                        "'" + UUID.randomUUID() + "'::uuid"));
+                 ResultSet rs = ps.executeQuery()) {
+                assertEquals(3, rs.getMetaData().getColumnCount(), "三分支列数应一致对齐(code, val, __v6_id)");
+            }
+        }
+    }
+
+    private static long countOccurrences(String haystack, String needle) {
+        long count = 0;
+        int idx = 0;
+        while ((idx = haystack.indexOf(needle, idx)) >= 0) { count++; idx += needle.length(); }
+        return count;
     }
 
     /** GROUP BY 聚合真实模板（电镀成本组件 dj_view）：一行对应多条源行，裸 id 引用非法且无意义 → 安全降级。 */
