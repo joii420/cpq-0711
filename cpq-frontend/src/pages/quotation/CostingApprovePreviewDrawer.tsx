@@ -98,11 +98,18 @@ type SectionItem = NonNullable<CollapseProps['items']>[number] & { defaultOpen: 
 const isFlipNoChange = (g: CostingApprovePreviewGroup) => g.route === 'FLIP' && (g.rows?.length ?? 0) === 0;
 
 /** 一个 group 渲染为一个可折叠分节：类别中文名 + 版本迁移 + 行数迁移 + 轴人类可读表达。 */
-const buildSectionItem = (g: CostingApprovePreviewGroup, keyPrefix: string): SectionItem => {
+const buildSectionItem = (
+  g: CostingApprovePreviewGroup,
+  keyPrefix: string,
+  groupIndex: number,
+): SectionItem => {
   const flipNoChange = isFlipNoChange(g);
   const rowCount = g.rows?.length ?? 0;
   return {
-    key: `${keyPrefix}::${g.table}`,
+    // ⚠️ key 必须带全局组下标：同一产品卡里完全可能有多个同表组（例如一个产品下
+    //    两条不同材质料号的 element_bom_item），只用 `前缀::表名` 会撞 key，
+    //    React 报 "two children with the same key"、折叠态还会互相串。
+    key: `${keyPrefix}::${groupIndex}`,
     label: (
       <Space wrap size={6}>
         <Text strong type={flipNoChange ? 'secondary' : undefined}>
@@ -116,7 +123,9 @@ const buildSectionItem = (g: CostingApprovePreviewGroup, keyPrefix: string): Sec
         </Text>
         {!!g.axisLabels?.length && (
           <Text type="secondary" style={{ fontSize: 12 }}>
-            {g.axisLabels.map((a) => a.display).join('，')}
+            {/* 带上中文 label：display 有时只是裸代码（资源组 QUOTE_ASSEMBLY、供应商 1），
+                只 join display 会让财务看到一串不知所云的 token。label 已由后端给全。 */}
+            {g.axisLabels.map((a) => (a.label ? `${a.label}：${a.display}` : a.display)).join('　')}
           </Text>
         )}
         {flipNoChange && (
@@ -143,10 +152,10 @@ const sectionCollapse = (items: SectionItem[]): React.ReactNode => (
 /** 产品卡片：卡头 = 产品料号 + 品名 + 客户名；卡内按 group（业务类别）分节。 */
 const ProductCard: React.FC<{ product: CostingApprovePreviewProduct; groups: CostingApprovePreviewGroup[] }> = ({ product, groups }) => {
   const productGroups = (product.groupIndexes ?? [])
-    .map((i) => groups[i])
-    .filter((g): g is CostingApprovePreviewGroup => !!g);
+    .map((i) => ({ g: groups[i], i }))
+    .filter((x): x is { g: CostingApprovePreviewGroup; i: number } => !!x.g);
   if (productGroups.length === 0) return null;
-  const items = productGroups.map((g) => buildSectionItem(g, `${product.productNo}-${product.customerNo}`));
+  const items = productGroups.map(({ g, i }) => buildSectionItem(g, `p-${product.productNo}`, i));
   return (
     <Card
       size="small"
@@ -167,10 +176,10 @@ const ProductCard: React.FC<{ product: CostingApprovePreviewProduct; groups: Cos
 /** 全局共享变更区：无产品维度的表（如电镀方案），红色警示——一改影响所有客户。 */
 const GlobalSharedCard: React.FC<{ globalShared: CostingApprovePreviewGlobalShared; groups: CostingApprovePreviewGroup[] }> = ({ globalShared, groups }) => {
   const sharedGroups = (globalShared.groupIndexes ?? [])
-    .map((i) => groups[i])
-    .filter((g): g is CostingApprovePreviewGroup => !!g);
+    .map((i) => ({ g: groups[i], i }))
+    .filter((x): x is { g: CostingApprovePreviewGroup; i: number } => !!x.g);
   if (sharedGroups.length === 0) return null;
-  const items = sharedGroups.map((g) => buildSectionItem(g, 'global-shared'));
+  const items = sharedGroups.map(({ g, i }) => buildSectionItem(g, 'global-shared', i));
   return (
     <Card
       size="small"
@@ -250,7 +259,9 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({ open, quotationId, comme
     ...products.flatMap((p) => p.groupIndexes ?? []),
     ...(globalShared?.groupIndexes ?? []),
   ]);
-  const orphanGroups = groups.filter((_, idx) => !coveredIndexes.has(idx));
+  const orphanGroups = groups
+    .map((g, idx) => ({ g, idx }))
+    .filter(({ idx }) => !coveredIndexes.has(idx));
 
   return (
     <Drawer
@@ -320,7 +331,7 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({ open, quotationId, comme
                   style={{ marginBottom: 16, borderColor: '#faad14' }}
                   title={<Tag color="orange">未归类变更</Tag>}
                 >
-                  {sectionCollapse(orphanGroups.map((g) => buildSectionItem(g, 'orphan')))}
+                  {sectionCollapse(orphanGroups.map(({ g, idx }) => buildSectionItem(g, 'orphan', idx)))}
                 </Card>
               )}
             </>
