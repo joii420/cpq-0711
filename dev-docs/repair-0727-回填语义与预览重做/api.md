@@ -48,7 +48,7 @@
       "productNo": "S-3120014539",
       "productName": "接触片组件",
       "categoryLabel": "BOM 组成",              // 业务类别中文名
-      "route": "REBUILD",                       // REBUILD / FLIP / OFFLINE
+      "route": "REBUILD",                       // REBUILD / FLIP / OFFLINE（NOOP 组不下发，见下）
       "baseSource": "PENDING",                  // PENDING / CURRENT / NONE（基底行来源）
       "baseRowCount": 4,                        // 基底行数
       "resultRowCount": 4,                      // 通过后该组行数（预期值）
@@ -80,7 +80,12 @@
 
 > **破坏性**：`changes` / `values` 由对象改为数组 —— 前端 `CostingApprovePreviewDrawer.tsx` 与 `costingOrderService.ts` 类型须同步改（F1/F2）。后端不保留旧形状（同批次发布，无外部消费方）。
 
-### 1.3 兼容策略
+### 1.3 `route=NOOP` 的组不下发（2026-07-27 裁决①）
+
+「引用已有产品、没导入也没编辑」的组判定为 `NOOP`：**不进 `groups`、不计入 `summary.versionedGroups`**。
+财务看到的每一组都必然对应一次真实写入，避免「列了 12 组其实什么都没发生」这种噪音——这正是本次事故里预览失信的另一半。
+
+### 1.4 兼容策略
 
 - `groups` 数组**保留且顺序稳定**（按 table → 轴规范串排序，与 token 计算同序），`products[].groupIndexes` 引用其下标。
 - 前端渲染以 `products` + `globalShared` 为主视图；`groups` 作为数据源。

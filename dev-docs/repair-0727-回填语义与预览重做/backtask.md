@@ -84,10 +84,24 @@ for 基底行 r:
 ### B3.3 路径判定改写
 
 ```
-effectiveNewRows.isEmpty()                              → OFFLINE
-基底来自 pending && 无 CHANGE/ADD/DELETE                 → FLIP
-其余                                                    → REBUILD
+effectiveNewRows.isEmpty()                                    → OFFLINE
+无 CHANGE/ADD/DELETE && baseSource == PENDING                 → FLIP
+无 CHANGE/ADD/DELETE && baseSource == CURRENT                 → NOOP   ← 裁决①新增
+其余                                                          → REBUILD
 ```
+
+**裁决①（2026-07-27，技术总监答测试工程师未决问题 1）**：新增第四条路径 `NOOP`。
+- 触发场景：报价单只是「引用已有产品」、没导入也没编辑，页签把正式 current 行渲染出来了但一个字没改。这在真实业务里很常见。
+- 处理：**整组跳过，不调写入器、不进 `summary.versionedGroups`、不进预览 `groups`**。
+- 理由：`VersionedV6Writer.writeVersionedGroup` 在新行集与当前组 multiset 相等时本就短路复用版本号（`triggerSame && contentSame → return currentVersionOf`），不会浪费版本号；但仍会拿 advisory lock + 跑 2~3 条查询，且会让 B4 的「REBUILD 且零 rowChanges」告警误报。显式 NOOP 更便宜也更诚实。
+- **由此得到一条不变式（写成断言，别只写注释）**：`route == REBUILD ⇒ rowChanges 非空`。三种零变更情形已分别被 OFFLINE/FLIP/NOOP 吃掉，REBUILD 再出现空 rowChanges 就是收集器有 bug。
+
+**裁决②（答未决问题 2 · 多 tab 重叠表征同一行会不会撞 `uq_material_bom_item`）**：不会，且必须实现成不会。
+- `effectiveNewRows` **以基底行为主轴、按基底行 `id` 一一对应**：页签表征只提供「列值」，**永远不产生行**。
+- 因此同一基底行被 N 个页签表征时，先把 N 份 patch 合成**一个** patch map（同列冲突走 B3.2 的先到先得 + `conflict=true`），再套到那一行上，输出仍是 1 行。
+- 实现上禁止「遍历 candidate 生成行」的写法（那正是 D1 的形状）。这条要有单测覆盖（对应 `BND-05`）。
+
+**裁决③（答未决问题 3 · AC-R8 怎么数 SQL）**：不新造 SQL 拦截基础设施，**照抄本仓已有的 `VersionedV6Writer.Profile` 范式** —— 在回填收集/预览路径加一个 ThreadLocal 计数器（各类 DB 往返分别计数 + 可 reset/读取），测试直接读计数断言。纯计数、不改行为，与项目既有埋点约定一致。
 - Phase C（纯 pending 无页签表征）仍产出 FLIP，逻辑不变。
 - OFFLINE 判据由「页签行集为空」变为「基底行被墓碑删空」——**注意 Q5 语义**（平铺页签删到 0 行=整组下线）仍成立，因为墓碑齐全时基底会被删空。
 
