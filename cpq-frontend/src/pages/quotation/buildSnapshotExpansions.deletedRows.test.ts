@@ -164,6 +164,53 @@ describe('buildSnapshotExpansions 墓碑过滤', () => {
     expect(expansion!.rowCount).toBe(3);
   });
 
+  // ── repair-0727 改动 B：nodeId 维度（api.md §2.2 / F2） ─────────────────────
+
+  it('两行同 fp 不同 __nodeId + 带 nodeId 的墓碑 → 只过滤 1 行（另一行同料号挂另一父仍保留）', () => {
+    // 模拟 992 挂两父场景：driverRow 内容完全相同（同 fp），仅树结构位置（__nodeId）不同。
+    const rowP = { ...makeBaseRow('992', 1), __nodeId: 'S-3120014539/992' };
+    const rowQ = { ...makeBaseRow('992', 1), __nodeId: 'S-80011/992' };
+    const fpShared = rowFingerprint(ROW_KEY_FIELDS, rowP.driverRow);
+
+    // 墓碑：nodeId 精确指向 rowP 那一次 occurrence
+    const tomb = JSON.stringify([{ effKey: '992', fp: fpShared, nodeId: 'S-3120014539/992' }]);
+    const item = makeLineItem([rowP, rowQ], tomb);
+    const rowKeyFieldsByComp = new Map([[COMP_ID, ROW_KEY_FIELDS]]);
+    const map = buildSnapshotExpansions([item], 'QUOTE', CUSTOMER_ID, rowKeyFieldsByComp);
+    const expansion = Object.values(map)[0]!;
+
+    // 只删 1 行，另一行（挂 S-80011 的那次 occurrence）保留
+    expect(expansion.rowCount).toBe(1);
+    expect(expansion.rows).toHaveLength(1);
+    expect((expansion.rows[0] as any).__sys?.nodeId).toBe('S-80011/992');
+  });
+
+  it('旧墓碑（无 nodeId）× 两行同 fp 不同 __nodeId → 退化 fp 单键，两行都删（存量兼容，AP-54 已知边界）', () => {
+    const rowP = { ...makeBaseRow('992', 1), __nodeId: 'S-3120014539/992' };
+    const rowQ = { ...makeBaseRow('992', 1), __nodeId: 'S-80011/992' };
+    const fpShared = rowFingerprint(ROW_KEY_FIELDS, rowP.driverRow);
+
+    // 旧墓碑：无 nodeId 字段
+    const tomb = JSON.stringify([{ effKey: '992', fp: fpShared }]);
+    const item = makeLineItem([rowP, rowQ], tomb);
+    const rowKeyFieldsByComp = new Map([[COMP_ID, ROW_KEY_FIELDS]]);
+    const map = buildSnapshotExpansions([item], 'QUOTE', CUSTOMER_ID, rowKeyFieldsByComp);
+    const expansion = Object.values(map)[0]!;
+
+    expect(expansion.rowCount).toBe(0);
+  });
+
+  it('非树行（无 __nodeId）不受影响：普通墓碑过滤逐字节不变', () => {
+    const item = makeLineItem([rowA, rowB, rowC], JSON.stringify([{ effKey: 'P2', fp: fpB }]));
+    const rowKeyFieldsByComp = new Map([[COMP_ID, ROW_KEY_FIELDS]]);
+    const map = buildSnapshotExpansions([item], 'QUOTE', CUSTOMER_ID, rowKeyFieldsByComp);
+    const expansion = Object.values(map)[0]!;
+
+    expect(expansion.rowCount).toBe(2);
+    const driverRows = expansion.rows.map((r: any) => r.driverRow['料件']);
+    expect(driverRows).toEqual(['P1', 'P3']);
+  });
+
   it('deletedRowKeys 不进 driverExpansionKey（key 与是否删行无关）', () => {
     // 同一 item，有无墓碑，key 应相同
     const itemNoTomb = makeLineItem([rowA, rowB, rowC]);

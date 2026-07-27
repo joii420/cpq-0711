@@ -1490,8 +1490,11 @@ export function buildSnapshotExpansions(
         }
         if (tombs.length > 0 && uniqFull) {
           // 步骤：按墓碑双命中(完整集 effKey + fp)过滤，保留 (br, 原始下标)
+          // repair-0727 改动 B（api.md §2.2）：树行再叠 nodeId 维度 —— br.__nodeId 取自 baseRow
+          // 顶层系统列（不在 driverRow 内，见 QuotationTreeService:600-604）。非树行 br.__nodeId
+          // 恒为 undefined → keepRow 内 !nodeId 恒真 → 退化 fp 单键，逐字节不变（守 AP-41 隔离）。
           kept = kept.filter(({ br, i }) =>
-            keepRow(uniqFull[i], rowFingerprint(rkfForSide, br?.driverRow ?? {}), tombs));
+            keepRow(uniqFull[i], rowFingerprint(rkfForSide, br?.driverRow ?? {}), tombs, br?.__nodeId));
         }
       }
 
@@ -1763,11 +1766,26 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     setTreeDeleteReq({ componentId, mode, nodeId, rowKey });
   const closeTreeDelete = () => setTreeDeleteReq(null);
 
-  // 两个 Drawer 共用的回灌函数：直接替换 item.quoteCardValues（不动 componentData 结构），
+  // 加叶子 Drawer 专用回灌函数：直接替换 item.quoteCardValues（不动 componentData 结构），
   // 与 applyQuoteProjection 同一 onUpdate 通路，走 handleUpdateQuoteLineItem → onUpdateLineItem 合并。
+  // 加叶子改的是 snapshot_rows（baseRows 直接变），回灌 quoteCardValues 即可见，不涉及墓碑投影。
   const applyTreeQuoteCardValues = (quoteCardValues: string) => {
     if (!quoteCardValues) return;
     onUpdate({ quoteCardValues } as Partial<LineItem>);
+  };
+
+  // repair-0727 改动 A（F3.2）：树删除确认 Drawer 专用回灌函数 —— 与 applyTreeQuoteCardValues
+  // 不同，这里接收整个响应体（api.md §1.2 新契约）。有 componentData（DRAFT 单据）→ 走与
+  // handleDeleteDriverRow 同一条服务端权威投影通路 applyQuoteProjection，原子重灌
+  // rows + deletedRowKeys + quoteCardValues，删除当帧生效（解症状①）。
+  // 无 componentData（非 DRAFT，服务端按约定不回传）→ 回落旧行为，只 patch quoteCardValues。
+  const applyTreeDeleteResult = (data: any) => {
+    if (!data) return;
+    if (Array.isArray(data.componentData)) {
+      applyQuoteProjection(data);
+    } else if (data.quoteCardValues) {
+      onUpdate({ quoteCardValues: data.quoteCardValues } as Partial<LineItem>);
+    }
   };
 
   // Functional row update: reads latest state from parent, only patches one field.
@@ -2663,6 +2681,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     // 受控 input 值粘在原节点上跨行错位("看着删了末行"+字段值串行, 反复删还搅乱 row_data)。
                     <tr key={rowKey}
                         data-rowkey-dup={_isDupKey ? '1' : undefined}
+                        // repair-0727 测试可用性属性（技术总监批准，非业务渲染）：树行的 nodeId 唯一标识
+                        // 一次 occurrence（同料号挂不同父时，料号文本相同但 nodeId 不同）。E2E 靠料号文本
+                        // 定位只能拿到 .first()，加此属性后可用 [data-node-id="..."] 精确点击目标那一条。
+                        data-node-id={bomSys?.nodeId ?? undefined}
                         title={_isDupKey ? '行键重复：与同组件其他行组合键冲突，提交前需修正' : undefined}
                         style={{
                           ...((row._preset || isDriverBound) ? { background: '#fafafa' } : {}),
@@ -2963,7 +2985,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         quotationId={quotationId}
         request={treeDeleteReq}
         onClose={closeTreeDelete}
-        onApplied={applyTreeQuoteCardValues}
+        onApplied={applyTreeDeleteResult}
+        onBeforeConfirm={(cid) => pendingDeleteRef.current.add(cid)}
+        onAfterConfirm={(cid) => pendingDeleteRef.current.delete(cid)}
       />
     </div>
   );
