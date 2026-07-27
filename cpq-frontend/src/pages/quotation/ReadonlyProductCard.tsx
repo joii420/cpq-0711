@@ -6,7 +6,7 @@ import { useDriverExpansions, driverExpansionKey, fieldsOverrideHash, bnfDriverL
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { splitRows, rowAt } from './manualRows';
 import { useTreeCollapse } from './useTreeCollapse';
-import { computeRowKey, buildUniqueRowKeys } from './useCardSnapshots';
+import { computeRowKey, buildUniqueRowKeys, getByKeyWithLegacyFallback } from './useCardSnapshots';
 import type { CardStructure, CardValues } from '../../services/quotationService';
 import { useConfigTemplates } from './useConfigTemplates';
 import { usePathFormulaCache } from './usePathFormulaCache';
@@ -592,17 +592,23 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                       // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
                       let prevRowValues: Record<string, number | null> | undefined = undefined;
                       // 撞键消歧：详情/核价侧也按组件成批算唯一 rowKey（与编辑页 + 后端一致）。
+                      // repair-0727 F0：QUOTE 侧（!isCosting）树行加 nodeId 前缀，对齐后端 B0
+                      // buildRawRowKeys；roLegacyUniqRowKeys 并行算旧口径（无前缀），供下方 snapFormula
+                      // 查表未命中新键时回退，兼容改造前写入的存量单据。COSTING 侧两者逐字节相同。
+                      const roUniqRowKeyTuples = useSnap
+                        ? Array.from({ length: effectiveCount }, (_, ri) => {
+                            const ra = rowAt(ri, activeComp, s);
+                            const drv = (ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined) ?? activeSnap?.driverRows[ri] ?? ra.row;
+                            const bdv = ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
+                            const nodeId = ra.expIndex >= 0 ? (activeDriverExpansion!.rows[ra.expIndex] as any)?.__sys?.nodeId : undefined;
+                            return { driverRow: drv, basicDataValues: bdv, __nodeId: nodeId };
+                          })
+                        : [];
                       const roUniqRowKeys = useSnap
-                        ? buildUniqueRowKeys(
-                            activeComp.fields,
-                            activeRowKeyFields,
-                            Array.from({ length: effectiveCount }, (_, ri) => {
-                              const ra = rowAt(ri, activeComp, s);
-                              const drv = (ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined) ?? activeSnap?.driverRows[ri] ?? ra.row;
-                              const bdv = ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
-                              return { driverRow: drv, basicDataValues: bdv };
-                            }),
-                          )
+                        ? buildUniqueRowKeys(activeComp.fields, activeRowKeyFields, roUniqRowKeyTuples, !isCosting)
+                        : [];
+                      const roLegacyUniqRowKeys = useSnap
+                        ? buildUniqueRowKeys(activeComp.fields, activeRowKeyFields, roUniqRowKeyTuples)
                         : [];
                       for (let ri = 0; ri < effectiveCount; ri++) {
                         const ra = rowAt(ri, activeComp, s);
@@ -610,7 +616,11 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         const rowBdv = ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
                         // Phase4 Task4: 优先读快照 formulaResults[rowKey](真零计算, 与编辑页 AP-50 同源), 缺时 computeAllFormulas 兜底。
                         const rowKey = useSnap ? (roUniqRowKeys[ri] ?? String(ri)) : String(ri);
-                        const snapFormula = useSnap ? activeSnap?.formula.get(rowKey) : undefined;
+                        // F0：新键未命中时按同一行位置的旧口径键回退（存量单据兼容）。
+                        const legacyRowKey = useSnap ? (roLegacyUniqRowKeys[ri] ?? String(ri)) : String(ri);
+                        const snapFormula = useSnap
+                          ? getByKeyWithLegacyFallback(activeSnap?.formula, rowKey, legacyRowKey)
+                          : undefined;
                         const errForRow: Record<string, string> = {};
                         const cache: Record<string, number | null> = (snapFormula && Object.keys(snapFormula).length > 0)
                           ? (snapFormula as Record<string, number | null>)

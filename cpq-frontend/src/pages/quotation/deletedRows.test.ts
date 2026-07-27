@@ -19,11 +19,17 @@ describe('deletedRows', () => {
       .toBe(['P1', '7.12', 'P1'].join(''));
   });
 
-  it('keepRow 双命中才删', () => {
+  // 订正说明（2026-07-26，repair-0727）：本用例原名"keepRow 双命中才删"，断言的是
+  // 2026-07-14 fp 单键改造之前的 effKey+fp 双命中语义（改造前 K1/fpB 因 effKey 不命中而应保留）。
+  // 该断言在当前实现下已恒为 false（第 3 条曾长期处于 failing 状态，与本次改动无关，
+  // 是遗留下来的过时断言）。现行契约（deletedRows.ts keepRow 注释 + api.md §2.2）：
+  // effKey 形参不参与匹配，只按 fp 单键判定（不传 nodeId 时）；藉本次改这份文件的匹配契约
+  // 之机一并订正为正确断言，并改用准确的用例名。
+  it('keepRow 按 fp 单键匹配，effKey 不参与判断（2026-07-14 起）', () => {
     const del: Tombstone[] = [{ effKey: 'K2', fp: 'fpB' }];
-    expect(keepRow('K2', 'fpA', del)).toBe(true);   // effKey 命中 fp 不命中
-    expect(keepRow('K2', 'fpB', del)).toBe(false);  // 双命中
-    expect(keepRow('K1', 'fpB', del)).toBe(true);
+    expect(keepRow('K2', 'fpA', del)).toBe(true);   // fp 不命中 → 保留
+    expect(keepRow('K2', 'fpB', del)).toBe(false);  // fp 命中 → 删除
+    expect(keepRow('K1', 'fpB', del)).toBe(false);  // fp 命中（即便 effKey 不同）→ 仍删除
   });
 
   // 额外夹具 1：撞键删中间剩余键不变

@@ -114,15 +114,24 @@ describe('buildSnapshotExpansions 墓碑过滤', () => {
     expect(driverRows[1]).toBe('P3');
   });
 
-  it('effKey 命中但 fp 不同 → 不删（双命中才删）', () => {
-    // 墓碑里 fp 是 rowA 的 fp，但 effKey 是 P2 → 不命中
+  // 订正说明（2026-07-26，repair-0727）：本用例原名"effKey 命中但 fp 不同 → 不删（双命中才删）"，
+  // 断言的是 2026-07-14 fp 单键改造之前的 effKey+fp 双命中语义（当时 P2/fpA 组合因两个键分属
+  // 不同行、凑不齐双命中而应保留全部 3 行）。该断言在当前实现下已恒为 false（rowCount 实际是 2，
+  // 与本次改动无关，是遗留下来的过时断言）。现行契约（keepRow 只按 fp 单键匹配，effKey 不参与）：
+  // 墓碑 fp=fpA 与 rowA 的真实 fp 相同 → rowA 被删 → rowCount=2。藉本次改这份文件的过滤契约
+  // 之机一并订正为正确断言，并改用准确的用例名。
+  it('墓碑按 fp 单键匹配，effKey 不参与判断（2026-07-14 起）', () => {
+    // 墓碑 fp 与 rowA 的真实 fp 相同（effKey 字段本身已不参与匹配，此处 'P2' 只是历史遗留占位）
     const tomb = JSON.stringify([{ effKey: 'P2', fp: fpA }]);
     const item = makeLineItem([rowA, rowB, rowC], tomb);
     const rowKeyFieldsByComp = new Map([[COMP_ID, ROW_KEY_FIELDS]]);
     const map = buildSnapshotExpansions([item], 'QUOTE', CUSTOMER_ID, rowKeyFieldsByComp);
 
     const expansion = Object.values(map)[0];
-    expect(expansion!.rowCount).toBe(3);
+    expect(expansion!.rowCount).toBe(2);
+    // rowA（fp===fpA）被删；rowB/rowC 保留
+    const driverRows = expansion!.rows.map((r: any) => r.driverRow['料件']);
+    expect(driverRows).toEqual(['P2', 'P3']);
   });
 
   it('COSTING 侧绝不过滤（spec §3.7 隔离）', () => {
