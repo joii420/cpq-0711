@@ -126,3 +126,95 @@ LEFT JOIN unit_price up ON up.finished_material_no=x.material_no AND up.code=x.c
 
 - ⚠️ **已作废的旧约束**：`docs/RECORD.md` 2026-07-25「树递归SQL配置」条目里的「注释里**禁写** `:production_part_nos/:pq/:__vfPart/:__vfVer`」**不再适用**（该条已就地划删除线）。同理，历史上因此症状被"规避"掉的写法，可以按可读性自由回改。
 - **仍然成立的**：`::` 强制类型转换不受影响（正则本就排除）；注释**不能**用来"注释掉"一段含真实占位符的 SQL 后指望参数计数自动对上——屏蔽的语义是「注释内的 token 不参与绑定」，这正是所需行为。
+
+---
+
+## 3.8 🌳 BOM 闭包取数：让**子件**的数据进入平铺页签（task-0726）
+
+### 3.8.1 什么时候需要
+
+平铺页签默认只取「**直接挂在本行产品料号下**」的数据——因为框架对报价行隐式注入 `hf_part_no = <本行产品料号>`。于是**子件的材质/外购件/加工费全部取不到**。
+
+> 真实事故（2026-07-26，罗克韦尔 `QT-20260726-0008`）：BOM 树能看到 `S-3120014539 → S-80011 → 00002(AgC3)`，但材料成本页签只有主件的 `00137`/`992` 两行，子件材质 `00002` **完全不出现**。业务口径要求「子件的材质/外购件/零件都要进对应页签」。
+
+**判据**：该页签展示的是「整个产品结构的成本构成」→ 需要闭包；该页签展示的是「本产品自身属性」（如"产品"页签）→ **不要**闭包，否则会串入子件信息。
+
+### 3.8.2 标准写法（可直接复制）
+
+在视图前面加一段闭包 CTE，`hf_part_no` 改输出**闭包根料号**，让框架的外层注入去筛：
+
+```sql
+WITH RECURSIVE bom_closure AS (
+  SELECT DISTINCT b.material_no AS root_no, b.material_no AS node_no, 0 AS lvl
+  FROM material_bom_item b
+  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode
+  UNION ALL
+  SELECT c.root_no, b.component_no, c.lvl + 1
+  FROM bom_closure c
+    JOIN material_bom_item b ON b.material_no = c.node_no
+  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode
+    AND c.lvl < 10                          -- 深度上限，防环
+)
+SELECT
+  COALESCE(cl.root_no, ebi.material_no) AS hf_part_no,   -- 驱动键 = 闭包根料号（兜底见铁律2）
+  ebi.material_part_no AS _料号,
+  ...
+  ebi.material_no      AS _归属料号,                      -- 强烈建议：见 §3.8.4
+FROM element_bom_item ebi                                 -- ★ 白名单表必须在顶层 FROM（铁律1）
+  LEFT JOIN bom_closure cl ON cl.node_no = ebi.material_no
+  LEFT JOIN ...
+WHERE ebi.system_type = 'QUOTE' AND ebi.is_current AND ebi.customer_no = :customerCode
+ORDER BY COALESCE(cl.lvl, 0), ebi.material_no, ebi.seq_no
+```
+
+换页签只需替换顶层表与 JOIN 键：
+
+| 页签类型 | 顶层白名单表 | 闭包 JOIN 键 |
+|---|---|---|
+| 材质元素（材料成本） | `element_bom_item ebi` | `cl.node_no = ebi.material_no` |
+| 外购件 | `material_bom_item mbi` | `cl.node_no = mbi.material_no` |
+| 零件（加工费） | `unit_price up` | `cl.node_no = up.finished_material_no` |
+
+### 3.8.3 两条铁律（漏一条必出事）
+
+**🔒 铁律 1：白名单表必须出现在顶层 `FROM`，不能写成 `FROM bom_closure JOIN <白名单表>`**
+
+顶层 `FROM bom_closure` 是 CTE、不在白名单 → `QuotePendingRewriter` 的主位表探测退化为「任意深度第一个 FROM」→ 选中**递归 CTE base case 里**的表 → `__v6_id` 锚点插进 base case → UNION 两侧列数不等：
+
+```
+anchorInjected=true  primaryTable=material_bom_item   ← 选错了
+ERROR: each UNION query must have the same number of columns
+```
+
+写对之后：`primaryTable=element_bom_item`，锚点落在顶层 SELECT，正常。**与 task-0725「递归 CTE 锚点注入」是同源问题。**
+
+**🔒 铁律 2：必须 `LEFT JOIN` + `COALESCE(cl.root_no, <本表料号>)` 兜底**
+
+`bom_closure` 的 base case 来自 `material_bom_item`，所以**没有任何 BOM 行的单料产品根本不在闭包里**。若写成 `JOIN`（内连接）或直接取 `cl.root_no`，这类产品的页签会**整个变空白**——一个比原问题更严重的回归。
+
+### 3.8.4 建议输出 `_归属料号`
+
+闭包会把不同来源的行拉到同一页签，**同一料号可能出现多行**。实测案例：
+
+| 料号 | 名称 | 组成数量 | 归属料号 |
+|---|---|---|---|
+| W-1001 | 组成件1 | 2 | S-3120014539（主件） |
+| W-1001 | 组成件1 | 3 | **S-80011（子件）** |
+
+两行的料号与名称**完全相同**，只有数量和归属不同。不输出归属料号的话用户无法分辨，会当成脏数据。
+
+⚠️ 若把归属料号做成可见字段，**必须同步把它加进组件的 `rowKeyFields`**，否则行键撞键 → 编辑串行、末值塌缩（见 `2-组件与字段.md` 行键唯一性规则）。
+
+### 3.8.5 已知代价
+
+- **性能**：CTE 对该客户**所有根料号**做全闭包展开，再靠外层 `hf_part_no` 筛。小数据量无感，**BOM 量大的生产库需实测**。框架层若将来提供「本单闭包料号集合注入」（`:hfPartNos` 管道已存在，见 `dev-docs/task-0726-*/需求说明.md`），本节写法可整体退役。
+- **口径重复**：BOM 树页签走 `costing_bom_tree_config` 递归、本节走视图内递归，两套实现需人工保持一致（如 `characteristic` 过滤口径）。
+
+### 3.8.6 落地清单（2026-07-26 · 罗克韦尔「报价系统模板0723」）
+
+| 组件 | 视图 | 效果（`QT-20260726-0008`） |
+|---|---|---|
+| COMP-0027 材料成本 | `mc_view` | 2 行 → **4 行**（+ 子件 `00002` 的 Ag/C） |
+| COMP-0028 外购件成本 | `wg_view` | 1 行 → **2 行**（+ 子件下的 `W-1001`） |
+| COMP-0029 加工费 | `jg_view` | 1 行 → **2 行**（+ 子件自身工序 `Z381`） |
+| （对照）产品 | — | 1 行 → **1 行**，未受影响 ✅ |
