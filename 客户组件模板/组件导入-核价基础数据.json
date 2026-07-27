@@ -1,0 +1,3289 @@
+{
+  "bundleVersion": "1.0",
+  "exportedAt": "2026-07-26T19:19:22.212254145-07:00",
+  "source": {
+    "directoryId": null,
+    "directoryName": "核价基础数据"
+  },
+  "components": [
+    {
+      "id": "86178a6a-7c32-4713-8319-c91d009f8f31",
+      "code": "COMP-0048",
+      "name": "物料BOM",
+      "componentType": "NORMAL",
+      "columnCount": 19,
+      "status": "ACTIVE",
+      "dataDriverPath": "$wl_bom_view",
+      "tabType": "BOM",
+      "partNoField": "组成料号",
+      "partNameField": "品名",
+      "sortField": "项次",
+      "rowKeyFields": [
+        "销售料号",
+        "组成料号"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.parent_no"
+        },
+        {
+          "name": "项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.seq_no"
+        },
+        {
+          "name": "组成料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.material_no"
+        },
+        {
+          "name": "品名",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.material_name"
+        },
+        {
+          "name": "规格",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.specification"
+        },
+        {
+          "name": "尺寸",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.dimension"
+        },
+        {
+          "name": "工序编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.operation_no"
+        },
+        {
+          "name": "工序名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.process_name"
+        },
+        {
+          "name": "使用特性",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.feature_mgmt"
+        },
+        {
+          "name": "组成用量",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.composition_qty"
+        },
+        {
+          "name": "组成用量单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.issue_unit"
+        },
+        {
+          "name": "底数",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.base_qty"
+        },
+        {
+          "name": "底数单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.base_unit"
+        },
+        {
+          "name": "材料损耗率(%)",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.scrap_rate"
+        },
+        {
+          "name": "材料固定损耗量",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.fixed_scrap"
+        },
+        {
+          "name": "不良率(%)",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.defect_rate"
+        },
+        {
+          "name": "计算类型",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.calc_type"
+        },
+        {
+          "name": "单重(g/pcs)",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_bom_view.unit_weight"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "wl_bom_view",
+          "sqlTemplate": "select\n  mbt.material_no        as parent_no,\n  mbt.component_no       as material_no,\n  mbt.component_no       as hf_part_no,\n  mbt.bom_version        as view_version,\n  mbt.production_no      as production_no,\n  mbt.seq_no             as seq_no,\n  coalesce(mm.material_name, mr.name) as material_name,\n  mm.specification       as specification,\n  mm.dimension           as dimension,\n  mbt.operation_no       as operation_no,\n  pm.process_name        as process_name,\n  mbt.feature_mgmt       as feature_mgmt,\n  mbt.composition_qty    as composition_qty,\n  mbt.issue_unit         as issue_unit,\n  mbt.base_qty           as base_qty,\n  mbt.issue_unit         as base_unit,\n  mbt.scrap_rate         as scrap_rate,\n  mbt.fixed_scrap        as fixed_scrap,\n  mbt.defect_rate        as defect_rate,\n  mbt.calc_type          as calc_type,\n  mm.unit_weight         as unit_weight\nfrom material_bom_item mbt\nleft join material_master mm on mm.material_no = mbt.component_no\nleft join material_recipe mr on mr.code = mbt.component_no\nleft join process_master pm on pm.process_no = mbt.operation_no\nwhere mbt.system_type = 'PRICING'\n  and mbt.customer_no = '_GLOBAL_'\n  and :versionFilter(mbt.is_current, mbt.bom_version, mbt.material_no)\n  and mbt.component_no = ANY(:total_material_no)\norder by mbt.seq_no",
+          "declaredColumns": [
+            {
+              "name": "parent_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "production_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "seq_no",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "material_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "specification",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "dimension",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "operation_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "process_name",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "feature_mgmt",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "composition_qty",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "issue_unit",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "base_qty",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "base_unit",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "scrap_rate",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "fixed_scrap",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "defect_rate",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "calc_type",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "unit_weight",
+              "dataType": "numeric",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "total_material_no"
+          ],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 物料BOM"
+        }
+      ]
+    },
+    {
+      "id": "18665945-8973-40dd-8c6e-e6230029b74b",
+      "code": "COMP-0049",
+      "name": "物料与元素BOM",
+      "componentType": "NORMAL",
+      "columnCount": 9,
+      "status": "ACTIVE",
+      "dataDriverPath": "$wl_ys_bom_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": "项次",
+      "rowKeyFields": [
+        "销售料号",
+        "材质料号",
+        "元素代码"
+      ],
+      "fields": [
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_ys_bom_view.material_no"
+        },
+        {
+          "name": "材质料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_ys_bom_view.material_part_no"
+        },
+        {
+          "name": "品名",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_ys_bom_view.material_name"
+        },
+        {
+          "name": "规格",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_ys_bom_view.specification"
+        },
+        {
+          "name": "尺寸",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_ys_bom_view.dimension"
+        },
+        {
+          "name": "项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_ys_bom_view.seq_no"
+        },
+        {
+          "name": "元素代码",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_ys_bom_view.component_no"
+        },
+        {
+          "name": "组成含量(%)",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_ys_bom_view.content"
+        },
+        {
+          "name": "损耗率(%)",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wl_ys_bom_view.scrap_rate"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "wl_ys_bom_view",
+          "sqlTemplate": "select\n  ebi.material_no        as material_no,\n  ebi.material_no        as hf_part_no,\n  ebi.material_part_no   as material_part_no,\n  coalesce(mr.name, mi.material_name) as material_name,\n  mi.specification       as specification,\n  mi.dimension           as dimension,\n  ebi.seq_no             as seq_no,\n  ebi.component_no       as component_no,\n  ebi.content            as content,\n  ebi.scrap_rate         as scrap_rate\nfrom element_bom_item ebi\nleft join material_master mi on mi.material_no = ebi.material_part_no\nleft join material_recipe mr on mr.code = ebi.material_part_no\nwhere ebi.system_type = 'PRICING'\n  and ebi.is_current = true\norder by ebi.seq_no",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "material_part_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "material_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "specification",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "dimension",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "seq_no",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "component_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "content",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "scrap_rate",
+              "dataType": "numeric",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 物料与元素BOM"
+        }
+      ]
+    },
+    {
+      "id": "b5628d83-0bf5-4d11-8426-c3b123e57002",
+      "code": "COMP-0050",
+      "name": "产能",
+      "componentType": "NORMAL",
+      "columnCount": 11,
+      "status": "ACTIVE",
+      "dataDriverPath": "$cn_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": null,
+      "rowKeyFields": [
+        "销售料号",
+        "工序编号"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cn_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cn_view.material_no"
+        },
+        {
+          "name": "品名",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cn_view.material_name"
+        },
+        {
+          "name": "规格",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cn_view.specification"
+        },
+        {
+          "name": "尺寸",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cn_view.dimension"
+        },
+        {
+          "name": "工序编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cn_view.process_no"
+        },
+        {
+          "name": "工序名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cn_view.process_name"
+        },
+        {
+          "name": "人工标准单价",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cn_view.standard_labor_rate"
+        },
+        {
+          "name": "币种",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cn_view.currency"
+        },
+        {
+          "name": "计量单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cn_view.unit"
+        },
+        {
+          "name": "取用的计算版本",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cn_view.view_version"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "cn_view",
+          "sqlTemplate": "select\n  lr.material_no          as material_no,\n  lr.material_no          as hf_part_no,\n  lr.version_no           as view_version,\n  lr.production_no        as production_no,\n  mm.material_name        as material_name,\n  mm.specification        as specification,\n  mm.dimension            as dimension,\n  lr.process_no           as process_no,\n  coalesce(pm.process_name, lr.process_name) as process_name,\n  lr.standard_labor_rate  as standard_labor_rate,\n  lr.currency             as currency,\n  lr.unit                 as unit\nfrom labor_rate lr\nleft join material_master mm on mm.material_no = lr.material_no\nleft join process_master pm on pm.process_no = lr.process_no\nwhere lr.system_type = 'PRICING'\n  and :versionFilter(lr.is_current, lr.version_no, lr.material_no)",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "production_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "material_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "specification",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "dimension",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "process_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "process_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "standard_labor_rate",
+              "dataType": "numeric",
+              "nullable": false
+            },
+            {
+              "name": "currency",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "unit",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 产能"
+        }
+      ]
+    },
+    {
+      "id": "bb7ad00e-df2b-42e0-b219-4448942c5e5e",
+      "code": "COMP-0051",
+      "name": "设备折旧成本",
+      "componentType": "NORMAL",
+      "columnCount": 11,
+      "status": "ACTIVE",
+      "dataDriverPath": "$zj_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": null,
+      "rowKeyFields": [
+        "销售料号",
+        "工序编号"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$zj_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$zj_view.material_no"
+        },
+        {
+          "name": "品名",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$zj_view.material_name"
+        },
+        {
+          "name": "规格",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$zj_view.specification"
+        },
+        {
+          "name": "尺寸",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$zj_view.dimension"
+        },
+        {
+          "name": "工序编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$zj_view.process_no"
+        },
+        {
+          "name": "工序名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$zj_view.process_name"
+        },
+        {
+          "name": "折旧单价",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$zj_view.unit_price"
+        },
+        {
+          "name": "币种",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$zj_view.currency"
+        },
+        {
+          "name": "计量单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$zj_view.unit"
+        },
+        {
+          "name": "取用的计算版本",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$zj_view.view_version"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "zj_view",
+          "sqlTemplate": "select\n  pe.material_no      as material_no,\n  pe.material_no      as hf_part_no,\n  pe.calc_version     as view_version,\n  pe.production_no    as production_no,\n  coalesce(pe.material_name, mm.material_name)  as material_name,\n  coalesce(pe.specification, mm.specification)  as specification,\n  coalesce(pe.dimension, mm.dimension)          as dimension,\n  pe.process_no       as process_no,\n  coalesce(pm.process_name, pe.process_name)    as process_name,\n  pe.unit_price       as unit_price,\n  pe.currency         as currency,\n  pe.unit             as unit\nfrom production_energy pe\nleft join material_master mm on mm.material_no = pe.material_no\nleft join process_master pm on pm.process_no = pe.process_no\nwhere pe.system_type = 'PRICING'\n  and pe.price_type = 'DEPRECIATION'\n  and :versionFilter(pe.is_current, pe.calc_version, pe.material_no)",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "production_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "material_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "specification",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "dimension",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "process_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "process_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "unit_price",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "currency",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "unit",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 设备折旧成本"
+        }
+      ]
+    },
+    {
+      "id": "d80b2376-0254-4d7d-815a-a1f3c1ff8a06",
+      "code": "COMP-0052",
+      "name": "生产设备能耗",
+      "componentType": "NORMAL",
+      "columnCount": 11,
+      "status": "ACTIVE",
+      "dataDriverPath": "$nh_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": null,
+      "rowKeyFields": [
+        "销售料号",
+        "工序编号"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$nh_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$nh_view.material_no"
+        },
+        {
+          "name": "品名",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$nh_view.material_name"
+        },
+        {
+          "name": "规格",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$nh_view.specification"
+        },
+        {
+          "name": "尺寸",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$nh_view.dimension"
+        },
+        {
+          "name": "工序编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$nh_view.process_no"
+        },
+        {
+          "name": "工序名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$nh_view.process_name"
+        },
+        {
+          "name": "生产能耗单价",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$nh_view.unit_price"
+        },
+        {
+          "name": "币种",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$nh_view.currency"
+        },
+        {
+          "name": "计量单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$nh_view.unit"
+        },
+        {
+          "name": "取用的计算版本",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$nh_view.view_version"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "nh_view",
+          "sqlTemplate": "select\n  pe.material_no      as material_no,\n  pe.material_no      as hf_part_no,\n  pe.calc_version     as view_version,\n  pe.production_no    as production_no,\n  coalesce(pe.material_name, mm.material_name)  as material_name,\n  coalesce(pe.specification, mm.specification)  as specification,\n  coalesce(pe.dimension, mm.dimension)          as dimension,\n  pe.process_no       as process_no,\n  coalesce(pm.process_name, pe.process_name)    as process_name,\n  pe.unit_price       as unit_price,\n  pe.currency         as currency,\n  pe.unit             as unit\nfrom production_energy pe\nleft join material_master mm on mm.material_no = pe.material_no\nleft join process_master pm on pm.process_no = pe.process_no\nwhere pe.system_type = 'PRICING'\n  and pe.price_type = 'ENERGY'\n  and :versionFilter(pe.is_current, pe.calc_version, pe.material_no)",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "production_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "material_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "specification",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "dimension",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "process_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "process_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "unit_price",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "currency",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "unit",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 生产设备能耗"
+        }
+      ]
+    },
+    {
+      "id": "89f6748f-ac46-4c2e-94ea-5dfc12be4ae3",
+      "code": "COMP-0053",
+      "name": "辅助设备能耗",
+      "componentType": "NORMAL",
+      "columnCount": 11,
+      "status": "ACTIVE",
+      "dataDriverPath": "$aux_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": null,
+      "rowKeyFields": [
+        "销售料号",
+        "工序编号"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$aux_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$aux_view.material_no"
+        },
+        {
+          "name": "品名",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$aux_view.material_name"
+        },
+        {
+          "name": "规格",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$aux_view.specification"
+        },
+        {
+          "name": "尺寸",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$aux_view.dimension"
+        },
+        {
+          "name": "工序编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$aux_view.process_no"
+        },
+        {
+          "name": "工序名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$aux_view.process_name"
+        },
+        {
+          "name": "非生产能耗单价",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$aux_view.non_production_energy_price"
+        },
+        {
+          "name": "币种",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$aux_view.currency"
+        },
+        {
+          "name": "计量单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$aux_view.unit"
+        },
+        {
+          "name": "取用的计算版本",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$aux_view.view_version"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "aux_view",
+          "sqlTemplate": "select\n  ae.material_no    as material_no,\n  ae.material_no    as hf_part_no,\n  ae.calc_version   as view_version,\n  ae.production_no  as production_no,\n  coalesce(ae.material_name, mm.material_name)  as material_name,\n  coalesce(ae.specification, mm.specification)  as specification,\n  coalesce(ae.dimension, mm.dimension)          as dimension,\n  ae.process_no     as process_no,\n  coalesce(pm.process_name, ae.process_name)    as process_name,\n  ae.non_production_energy_price as non_production_energy_price,\n  ae.currency       as currency,\n  ae.unit           as unit\nfrom auxiliary_energy ae\nleft join material_master mm on mm.material_no = ae.material_no\nleft join process_master pm on pm.process_no = ae.process_no\nwhere ae.system_type = 'PRICING'\n  and :versionFilter(ae.is_current, ae.calc_version, ae.material_no)",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "production_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "material_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "specification",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "dimension",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "process_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "process_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "non_production_energy_price",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "currency",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "unit",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 辅助设备能耗"
+        }
+      ]
+    },
+    {
+      "id": "9b142491-2dc8-49d6-ad64-b234630988d1",
+      "code": "COMP-0054",
+      "name": "模具工装成本",
+      "componentType": "NORMAL",
+      "columnCount": 16,
+      "status": "ACTIVE",
+      "dataDriverPath": "$tool_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": "项次",
+      "rowKeyFields": [
+        "销售料号",
+        "工序编号",
+        "项次"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.material_no"
+        },
+        {
+          "name": "品名",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.material_name"
+        },
+        {
+          "name": "规格",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.specification"
+        },
+        {
+          "name": "尺寸",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.dimension"
+        },
+        {
+          "name": "工序编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.process_no"
+        },
+        {
+          "name": "工序名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.process_name"
+        },
+        {
+          "name": "项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.seq_no"
+        },
+        {
+          "name": "模具台账/工装编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.tooling_no"
+        },
+        {
+          "name": "单个模具/工装成本",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.tooling_unit_cost"
+        },
+        {
+          "name": "寿命(次)",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.tool_life"
+        },
+        {
+          "name": "单循环产量",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.cycle_output"
+        },
+        {
+          "name": "模具工装成本单价",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.tooling_unit_price"
+        },
+        {
+          "name": "币种",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.currency"
+        },
+        {
+          "name": "计量单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.unit"
+        },
+        {
+          "name": "是否有效",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$tool_view.is_effective"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "tool_view",
+          "sqlTemplate": "select\n  tc.material_no        as material_no,\n  tc.material_no        as hf_part_no,\n  tc.calc_version       as view_version,\n  tc.production_no      as production_no,\n  coalesce(tc.material_name, mm.material_name)  as material_name,\n  coalesce(tc.specification, mm.specification)  as specification,\n  coalesce(tc.dimension, mm.dimension)          as dimension,\n  tc.process_no         as process_no,\n  coalesce(pm.process_name, tc.process_name)    as process_name,\n  tc.seq_no             as seq_no,\n  tc.tooling_no         as tooling_no,\n  tc.tooling_unit_cost  as tooling_unit_cost,\n  tc.tool_life          as tool_life,\n  tc.cycle_output       as cycle_output,\n  tc.tooling_unit_price as tooling_unit_price,\n  tc.currency           as currency,\n  tc.unit               as unit,\n  tc.is_effective       as is_effective\nfrom tooling_cost tc\nleft join material_master mm on mm.material_no = tc.material_no\nleft join process_master pm on pm.process_no = tc.process_no\nwhere tc.system_type = 'PRICING'\n  and :versionFilter(tc.is_current, tc.calc_version, tc.material_no)\norder by tc.seq_no",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "production_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "material_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "specification",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "dimension",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "process_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "process_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "seq_no",
+              "dataType": "int4",
+              "nullable": false
+            },
+            {
+              "name": "tooling_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "tooling_unit_cost",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "tool_life",
+              "dataType": "int8",
+              "nullable": true
+            },
+            {
+              "name": "cycle_output",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "tooling_unit_price",
+              "dataType": "numeric",
+              "nullable": false
+            },
+            {
+              "name": "currency",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "unit",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "is_effective",
+              "dataType": "bool",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 模具工装成本"
+        }
+      ]
+    },
+    {
+      "id": "2989a0b4-51d0-441a-affe-6914a26efb49",
+      "code": "COMP-0055",
+      "name": "生产耗材BOM",
+      "componentType": "NORMAL",
+      "columnCount": 11,
+      "status": "ACTIVE",
+      "dataDriverPath": "$xh_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": null,
+      "rowKeyFields": [
+        "销售料号",
+        "工序编号"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$xh_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$xh_view.material_no"
+        },
+        {
+          "name": "品名",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$xh_view.material_name"
+        },
+        {
+          "name": "规格",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$xh_view.specification"
+        },
+        {
+          "name": "尺寸",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$xh_view.dimension"
+        },
+        {
+          "name": "工序编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$xh_view.operation_no"
+        },
+        {
+          "name": "工序名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$xh_view.process_name"
+        },
+        {
+          "name": "耗材成本单价",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$xh_view.pricing_price"
+        },
+        {
+          "name": "币种",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$xh_view.currency"
+        },
+        {
+          "name": "计量单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$xh_view.unit"
+        },
+        {
+          "name": "取用的耗材版本",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$xh_view.view_version"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "xh_view",
+          "sqlTemplate": "select\n  up.code           as material_no,\n  up.code           as hf_part_no,\n  up.version_no     as view_version,\n  up.production_no  as production_no,\n  mm.material_name  as material_name,\n  mm.specification  as specification,\n  mm.dimension      as dimension,\n  up.operation_no   as operation_no,\n  pm.process_name   as process_name,\n  up.pricing_price  as pricing_price,\n  up.currency       as currency,\n  up.unit           as unit\nfrom unit_price up\nleft join material_master mm on mm.material_no = up.code\nleft join process_master pm on pm.process_no = up.operation_no\nwhere up.system_type = 'PRICING'\n  and up.price_type = 'CONSUMABLE'\n  and :versionFilter(up.is_current, up.version_no, up.code)",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "production_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "material_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "specification",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "dimension",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "operation_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "process_name",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "pricing_price",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "currency",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "unit",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 生产耗材BOM"
+        }
+      ]
+    },
+    {
+      "id": "bbbf326c-d9bc-47ac-87cc-fc4636e3e555",
+      "code": "COMP-0056",
+      "name": "包装材料BOM",
+      "componentType": "NORMAL",
+      "columnCount": 11,
+      "status": "ACTIVE",
+      "dataDriverPath": "$bz_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": null,
+      "rowKeyFields": [
+        "销售料号",
+        "工序编号"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$bz_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$bz_view.material_no"
+        },
+        {
+          "name": "品名",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$bz_view.material_name"
+        },
+        {
+          "name": "规格",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$bz_view.specification"
+        },
+        {
+          "name": "尺寸",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$bz_view.dimension"
+        },
+        {
+          "name": "工序编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$bz_view.operation_no"
+        },
+        {
+          "name": "工序名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$bz_view.process_name"
+        },
+        {
+          "name": "包装成本单价",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$bz_view.pricing_price"
+        },
+        {
+          "name": "币种",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$bz_view.currency"
+        },
+        {
+          "name": "计量单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$bz_view.unit"
+        },
+        {
+          "name": "取用的耗材版本",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$bz_view.view_version"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "bz_view",
+          "sqlTemplate": "select\n  up.code           as material_no,\n  up.code           as hf_part_no,\n  up.version_no     as view_version,\n  up.production_no  as production_no,\n  mm.material_name  as material_name,\n  mm.specification  as specification,\n  mm.dimension      as dimension,\n  up.operation_no   as operation_no,\n  pm.process_name   as process_name,\n  up.pricing_price  as pricing_price,\n  up.currency       as currency,\n  up.unit           as unit\nfrom unit_price up\nleft join material_master mm on mm.material_no = up.code\nleft join process_master pm on pm.process_no = up.operation_no\nwhere up.system_type = 'PRICING'\n  and up.price_type = 'PACKAGING'\n  and :versionFilter(up.is_current, up.version_no, up.code)",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "production_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "material_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "specification",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "dimension",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "operation_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "process_name",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "pricing_price",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "currency",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "unit",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 包装材料BOM"
+        }
+      ]
+    },
+    {
+      "id": "5b60bd91-7fc8-41bb-8a38-d4ea7891aa06",
+      "code": "COMP-0057",
+      "name": "来料加工费",
+      "componentType": "NORMAL",
+      "columnCount": 10,
+      "status": "ACTIVE",
+      "dataDriverPath": "$lljg_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": null,
+      "rowKeyFields": [
+        "销售料号",
+        "来料料号"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$lljg_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$lljg_view.material_no"
+        },
+        {
+          "name": "来料料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$lljg_view.incoming_material_no"
+        },
+        {
+          "name": "品名",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$lljg_view.material_name"
+        },
+        {
+          "name": "规格",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$lljg_view.specification"
+        },
+        {
+          "name": "尺寸",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$lljg_view.dimension"
+        },
+        {
+          "name": "加工费",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$lljg_view.pricing_price"
+        },
+        {
+          "name": "币种",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$lljg_view.currency"
+        },
+        {
+          "name": "计量单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$lljg_view.unit"
+        },
+        {
+          "name": "损耗(%)",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$lljg_view.defect_rate"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "lljg_view",
+          "sqlTemplate": "select\n  up.finished_material_no as material_no,\n  up.finished_material_no as hf_part_no,\n  up.version_no           as view_version,\n  up.production_no        as production_no,\n  up.code                 as incoming_material_no,\n  coalesce(mi.material_name, mr.name) as material_name,\n  mi.specification        as specification,\n  mi.dimension            as dimension,\n  up.pricing_price        as pricing_price,\n  up.currency             as currency,\n  up.unit                 as unit,\n  up.defect_rate          as defect_rate\nfrom unit_price up\nleft join material_master mi on mi.material_no = up.code\nleft join material_recipe mr on mr.code = up.code\nwhere up.system_type = 'PRICING'\n  and up.price_type = 'INCOMING_PROCESS'\n  and :versionFilter(up.is_current, up.version_no, up.finished_material_no)",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "production_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "incoming_material_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "material_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "specification",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "dimension",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "pricing_price",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "currency",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "unit",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "defect_rate",
+              "dataType": "numeric",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 来料加工费"
+        }
+      ]
+    },
+    {
+      "id": "276ba592-0995-4bc6-b4fd-11ae2e314b59",
+      "code": "COMP-0058",
+      "name": "来料其他费用",
+      "componentType": "NORMAL",
+      "columnCount": 9,
+      "status": "ACTIVE",
+      "dataDriverPath": "$llbl_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": "二级项次",
+      "rowKeyFields": [
+        "销售料号",
+        "来料料号",
+        "要素编号",
+        "二级项次"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llbl_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llbl_view.material_no"
+        },
+        {
+          "name": "来料料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llbl_view.incoming_material_no"
+        },
+        {
+          "name": "品名",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llbl_view.material_name"
+        },
+        {
+          "name": "规格",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llbl_view.specification"
+        },
+        {
+          "name": "尺寸",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llbl_view.dimension"
+        },
+        {
+          "name": "二级项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llbl_view.seq_no"
+        },
+        {
+          "name": "要素编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llbl_view.cost_type"
+        },
+        {
+          "name": "比例(%)",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llbl_view.cost_ratio"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "llbl_view",
+          "sqlTemplate": "select\n  up.finished_material_no as material_no,\n  up.finished_material_no as hf_part_no,\n  up.version_no           as view_version,\n  up.production_no        as production_no,\n  up.code                 as incoming_material_no,\n  coalesce(mi.material_name, mr.name) as material_name,\n  mi.specification        as specification,\n  mi.dimension            as dimension,\n  up.seq_no               as seq_no,\n  up.cost_type            as cost_type,\n  up.cost_ratio           as cost_ratio\nfrom unit_price up\nleft join material_master mi on mi.material_no = up.code\nleft join material_recipe mr on mr.code = up.code\nwhere up.system_type = 'PRICING'\n  and up.price_type = 'INCOMING_OTHER'\n  and up.cost_ratio is not null\n  and :versionFilter(up.is_current, up.version_no, up.finished_material_no)\norder by up.seq_no",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "production_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "incoming_material_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "material_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "specification",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "dimension",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "seq_no",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "cost_type",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "cost_ratio",
+              "dataType": "numeric",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 来料其他费用"
+        }
+      ]
+    },
+    {
+      "id": "7dc9da21-d57c-4170-9db3-b570d1e56ca0",
+      "code": "COMP-0059",
+      "name": "来料其他固定费用",
+      "componentType": "NORMAL",
+      "columnCount": 11,
+      "status": "ACTIVE",
+      "dataDriverPath": "$llgd_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": "二级项次",
+      "rowKeyFields": [
+        "销售料号",
+        "来料料号",
+        "要素名称",
+        "二级项次"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llgd_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llgd_view.material_no"
+        },
+        {
+          "name": "来料料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llgd_view.incoming_material_no"
+        },
+        {
+          "name": "品名",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llgd_view.material_name"
+        },
+        {
+          "name": "规格",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llgd_view.specification"
+        },
+        {
+          "name": "尺寸",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llgd_view.dimension"
+        },
+        {
+          "name": "二级项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llgd_view.seq_no"
+        },
+        {
+          "name": "要素名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llgd_view.cost_type"
+        },
+        {
+          "name": "费用",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llgd_view.pricing_price"
+        },
+        {
+          "name": "币种",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llgd_view.currency"
+        },
+        {
+          "name": "计价单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$llgd_view.unit"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "llgd_view",
+          "sqlTemplate": "select\n  up.finished_material_no as material_no,\n  up.finished_material_no as hf_part_no,\n  up.version_no           as view_version,\n  up.production_no        as production_no,\n  up.code                 as incoming_material_no,\n  coalesce(mi.material_name, mr.name) as material_name,\n  mi.specification        as specification,\n  mi.dimension            as dimension,\n  up.seq_no               as seq_no,\n  up.cost_type            as cost_type,\n  up.pricing_price        as pricing_price,\n  up.currency             as currency,\n  up.unit                 as unit\nfrom unit_price up\nleft join material_master mi on mi.material_no = up.code\nleft join material_recipe mr on mr.code = up.code\nwhere up.system_type = 'PRICING'\n  and up.price_type = 'INCOMING_OTHER'\n  and up.cost_ratio is null\n  and :versionFilter(up.is_current, up.version_no, up.finished_material_no)\norder by up.seq_no",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "production_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "incoming_material_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "material_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "specification",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "dimension",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "seq_no",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "cost_type",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "pricing_price",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "currency",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "unit",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 来料其他固定费用"
+        }
+      ]
+    },
+    {
+      "id": "79206922-a777-4356-9090-75a7153390f1",
+      "code": "COMP-0060",
+      "name": "加工费&组装费",
+      "componentType": "NORMAL",
+      "columnCount": 11,
+      "status": "ACTIVE",
+      "dataDriverPath": "$jgf_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": null,
+      "rowKeyFields": [
+        "销售料号",
+        "工序编号"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$jgf_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$jgf_view.material_no"
+        },
+        {
+          "name": "品名",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$jgf_view.material_name"
+        },
+        {
+          "name": "规格",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$jgf_view.specification"
+        },
+        {
+          "name": "尺寸",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$jgf_view.dimension"
+        },
+        {
+          "name": "工序编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$jgf_view.operation_no"
+        },
+        {
+          "name": "工序名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$jgf_view.process_name"
+        },
+        {
+          "name": "加工费",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$jgf_view.pricing_price"
+        },
+        {
+          "name": "币种",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$jgf_view.currency"
+        },
+        {
+          "name": "计量单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$jgf_view.unit"
+        },
+        {
+          "name": "不良率/拒收率(%)",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$jgf_view.defect_rate"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "jgf_view",
+          "sqlTemplate": "select\n  up.code           as material_no,\n  up.code           as hf_part_no,\n  up.version_no     as view_version,\n  up.production_no  as production_no,\n  mm.material_name  as material_name,\n  mm.specification  as specification,\n  mm.dimension      as dimension,\n  up.operation_no   as operation_no,\n  pm.process_name   as process_name,\n  up.pricing_price  as pricing_price,\n  up.currency       as currency,\n  up.unit           as unit,\n  up.defect_rate    as defect_rate\nfrom unit_price up\nleft join material_master mm on mm.material_no = up.code\nleft join process_master pm on pm.process_no = up.operation_no\nwhere up.system_type = 'PRICING'\n  and up.price_type = 'SELF_PROCESS'\n  and :versionFilter(up.is_current, up.version_no, up.code)",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "production_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "material_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "specification",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "dimension",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "operation_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "process_name",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "pricing_price",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "currency",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "unit",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "defect_rate",
+              "dataType": "numeric",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 加工费&组装费"
+        }
+      ]
+    },
+    {
+      "id": "f241bff8-dad6-4020-9faf-98047a46b3af",
+      "code": "COMP-0061",
+      "name": "成品其他比例费用",
+      "componentType": "NORMAL",
+      "columnCount": 8,
+      "status": "ACTIVE",
+      "dataDriverPath": "$cpbl_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": "项次",
+      "rowKeyFields": [
+        "销售料号",
+        "项次",
+        "要素名称"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpbl_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpbl_view.material_no"
+        },
+        {
+          "name": "品名",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpbl_view.material_name"
+        },
+        {
+          "name": "规格",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpbl_view.specification"
+        },
+        {
+          "name": "尺寸",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpbl_view.dimension"
+        },
+        {
+          "name": "项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpbl_view.seq_no"
+        },
+        {
+          "name": "要素名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpbl_view.cost_type"
+        },
+        {
+          "name": "比例(%)",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpbl_view.cost_ratio"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "cpbl_view",
+          "sqlTemplate": "select\n  up.code           as material_no,\n  up.code           as hf_part_no,\n  up.version_no     as view_version,\n  up.production_no  as production_no,\n  mm.material_name  as material_name,\n  mm.specification  as specification,\n  mm.dimension      as dimension,\n  up.seq_no         as seq_no,\n  up.cost_type      as cost_type,\n  up.cost_ratio     as cost_ratio\nfrom unit_price up\nleft join material_master mm on mm.material_no = up.code\nwhere up.system_type = 'PRICING'\n  and up.price_type = 'FINISHED_OTHER'\n  and up.cost_ratio is not null\n  and :versionFilter(up.is_current, up.version_no, up.code)\norder by up.seq_no",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "production_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "material_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "specification",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "dimension",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "seq_no",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "cost_type",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "cost_ratio",
+              "dataType": "numeric",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 成品其他比例费用"
+        }
+      ]
+    },
+    {
+      "id": "ab385455-677e-4199-9ea7-aa407c6f99fc",
+      "code": "COMP-0062",
+      "name": "成品其他固定费用",
+      "componentType": "NORMAL",
+      "columnCount": 10,
+      "status": "ACTIVE",
+      "dataDriverPath": "$cpgd_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": "项次",
+      "rowKeyFields": [
+        "销售料号",
+        "项次",
+        "要素名称"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpgd_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpgd_view.material_no"
+        },
+        {
+          "name": "品名",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpgd_view.material_name"
+        },
+        {
+          "name": "规格",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpgd_view.specification"
+        },
+        {
+          "name": "尺寸",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpgd_view.dimension"
+        },
+        {
+          "name": "项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpgd_view.seq_no"
+        },
+        {
+          "name": "要素名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpgd_view.cost_type"
+        },
+        {
+          "name": "费用",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpgd_view.pricing_price"
+        },
+        {
+          "name": "币种",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpgd_view.currency"
+        },
+        {
+          "name": "计价单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$cpgd_view.unit"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "cpgd_view",
+          "sqlTemplate": "select\n  up.code           as material_no,\n  up.code           as hf_part_no,\n  up.version_no     as view_version,\n  up.production_no  as production_no,\n  mm.material_name  as material_name,\n  mm.specification  as specification,\n  mm.dimension      as dimension,\n  up.seq_no         as seq_no,\n  up.cost_type      as cost_type,\n  up.pricing_price  as pricing_price,\n  up.currency       as currency,\n  up.unit           as unit\nfrom unit_price up\nleft join material_master mm on mm.material_no = up.code\nwhere up.system_type = 'PRICING'\n  and up.price_type = 'FINISHED_OTHER'\n  and up.cost_ratio is null\n  and :versionFilter(up.is_current, up.version_no, up.code)\norder by up.seq_no",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "production_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "material_name",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "specification",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "dimension",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "seq_no",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "cost_type",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "pricing_price",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "currency",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "unit",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 成品其他固定费用"
+        }
+      ]
+    },
+    {
+      "id": "4ef2831a-4b29-45ee-aafb-ee88d039751b",
+      "code": "COMP-0063",
+      "name": "电镀成本",
+      "componentType": "NORMAL",
+      "columnCount": 9,
+      "status": "ACTIVE",
+      "dataDriverPath": "$dj_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": null,
+      "rowKeyFields": [
+        "销售料号",
+        "电镀方案编号"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$dj_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$dj_view.material_no"
+        },
+        {
+          "name": "电镀方案编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$dj_view.plating_scheme_no"
+        },
+        {
+          "name": "版本编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$dj_view.view_version"
+        },
+        {
+          "name": "电镀加工费",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$dj_view.plating_proc_fee"
+        },
+        {
+          "name": "电镀材料费",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$dj_view.plating_mat_fee"
+        },
+        {
+          "name": "货币",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$dj_view.currency"
+        },
+        {
+          "name": "计价单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$dj_view.unit"
+        },
+        {
+          "name": "不良率(%)",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$dj_view.defect_rate"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "dj_view",
+          "sqlTemplate": "select\n  up.code              as material_no,\n  up.code              as hf_part_no,\n  up.version_no        as view_version,\n  max(up.production_no) as production_no,\n  up.plating_scheme_no as plating_scheme_no,\n  max(case when up.cost_type = '电镀加工费' then up.pricing_price end) as plating_proc_fee,\n  max(case when up.cost_type = '电镀材料费' then up.pricing_price end) as plating_mat_fee,\n  max(up.currency)     as currency,\n  max(up.unit)         as unit,\n  max(up.defect_rate)  as defect_rate\nfrom unit_price up\nwhere up.system_type = 'PRICING'\n  and up.price_type = 'PLATING'\n  and :versionFilter(up.is_current, up.version_no, up.code)\ngroup by up.code, up.version_no, up.plating_scheme_no",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "production_no",
+              "dataType": "text",
+              "nullable": true
+            },
+            {
+              "name": "plating_scheme_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "plating_proc_fee",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "plating_mat_fee",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "currency",
+              "dataType": "text",
+              "nullable": true
+            },
+            {
+              "name": "unit",
+              "dataType": "text",
+              "nullable": true
+            },
+            {
+              "name": "defect_rate",
+              "dataType": "numeric",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 电镀成本"
+        }
+      ]
+    },
+    {
+      "id": "c555fa52-e55f-4b3a-8663-0312cea8bcac",
+      "code": "COMP-0064",
+      "name": "其他外加工成本",
+      "componentType": "NORMAL",
+      "columnCount": 7,
+      "status": "ACTIVE",
+      "dataDriverPath": "$wjg_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": null,
+      "rowKeyFields": [
+        "销售料号",
+        "工序编号"
+      ],
+      "fields": [
+        {
+          "name": "生产料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wjg_view.production_no"
+        },
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wjg_view.material_no"
+        },
+        {
+          "name": "工序编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wjg_view.operation_no"
+        },
+        {
+          "name": "工序名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wjg_view.process_name"
+        },
+        {
+          "name": "外加工费用",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wjg_view.pricing_price"
+        },
+        {
+          "name": "币种",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wjg_view.currency"
+        },
+        {
+          "name": "单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "BASIC_DATA",
+          "is_subtotal": false,
+          "basic_data_path": "$wjg_view.unit"
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "wjg_view",
+          "sqlTemplate": "select\n  up.code           as material_no,\n  up.code           as hf_part_no,\n  up.version_no     as view_version,\n  up.production_no  as production_no,\n  up.operation_no   as operation_no,\n  pm.process_name   as process_name,\n  up.pricing_price  as pricing_price,\n  up.currency       as currency,\n  up.unit           as unit\nfrom unit_price up\nleft join process_master pm on pm.process_no = up.operation_no\nwhere up.system_type = 'PRICING'\n  and up.price_type = 'OUTSOURCE_PROCESS'\n  and :versionFilter(up.is_current, up.version_no, up.code)",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "view_version",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "production_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "operation_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "process_name",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "pricing_price",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "currency",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "unit",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": "核价基础数据 · 其他外加工成本"
+        }
+      ]
+    }
+  ],
+  "dependencies": {
+    "globalVariables": [],
+    "datasources": []
+  },
+  "checksum": "sha256:228b9ce6439ed183dda217ff8fe450d68f443dd88d291977ab3cc18620850944"
+}
