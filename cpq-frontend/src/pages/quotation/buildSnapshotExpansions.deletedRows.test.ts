@@ -114,15 +114,24 @@ describe('buildSnapshotExpansions 墓碑过滤', () => {
     expect(driverRows[1]).toBe('P3');
   });
 
-  it('effKey 命中但 fp 不同 → 不删（双命中才删）', () => {
-    // 墓碑里 fp 是 rowA 的 fp，但 effKey 是 P2 → 不命中
+  // 订正说明（2026-07-26，repair-0727）：本用例原名"effKey 命中但 fp 不同 → 不删（双命中才删）"，
+  // 断言的是 2026-07-14 fp 单键改造之前的 effKey+fp 双命中语义（当时 P2/fpA 组合因两个键分属
+  // 不同行、凑不齐双命中而应保留全部 3 行）。该断言在当前实现下已恒为 false（rowCount 实际是 2，
+  // 与本次改动无关，是遗留下来的过时断言）。现行契约（keepRow 只按 fp 单键匹配，effKey 不参与）：
+  // 墓碑 fp=fpA 与 rowA 的真实 fp 相同 → rowA 被删 → rowCount=2。藉本次改这份文件的过滤契约
+  // 之机一并订正为正确断言，并改用准确的用例名。
+  it('墓碑按 fp 单键匹配，effKey 不参与判断（2026-07-14 起）', () => {
+    // 墓碑 fp 与 rowA 的真实 fp 相同（effKey 字段本身已不参与匹配，此处 'P2' 只是历史遗留占位）
     const tomb = JSON.stringify([{ effKey: 'P2', fp: fpA }]);
     const item = makeLineItem([rowA, rowB, rowC], tomb);
     const rowKeyFieldsByComp = new Map([[COMP_ID, ROW_KEY_FIELDS]]);
     const map = buildSnapshotExpansions([item], 'QUOTE', CUSTOMER_ID, rowKeyFieldsByComp);
 
     const expansion = Object.values(map)[0];
-    expect(expansion!.rowCount).toBe(3);
+    expect(expansion!.rowCount).toBe(2);
+    // rowA（fp===fpA）被删；rowB/rowC 保留
+    const driverRows = expansion!.rows.map((r: any) => r.driverRow['料件']);
+    expect(driverRows).toEqual(['P2', 'P3']);
   });
 
   it('COSTING 侧绝不过滤（spec §3.7 隔离）', () => {
@@ -162,6 +171,53 @@ describe('buildSnapshotExpansions 墓碑过滤', () => {
     // 无 rowKeyFieldsByComp → rkf=[] → buildUniqueRowKeys 返回行号 → effKey='0','1','2'
     // 墓碑里是 'P2'，不会匹配 '0','1','2' → 不删任何行
     expect(expansion!.rowCount).toBe(3);
+  });
+
+  // ── repair-0727 改动 B：nodeId 维度（api.md §2.2 / F2） ─────────────────────
+
+  it('两行同 fp 不同 __nodeId + 带 nodeId 的墓碑 → 只过滤 1 行（另一行同料号挂另一父仍保留）', () => {
+    // 模拟 992 挂两父场景：driverRow 内容完全相同（同 fp），仅树结构位置（__nodeId）不同。
+    const rowP = { ...makeBaseRow('992', 1), __nodeId: 'S-3120014539/992' };
+    const rowQ = { ...makeBaseRow('992', 1), __nodeId: 'S-80011/992' };
+    const fpShared = rowFingerprint(ROW_KEY_FIELDS, rowP.driverRow);
+
+    // 墓碑：nodeId 精确指向 rowP 那一次 occurrence
+    const tomb = JSON.stringify([{ effKey: '992', fp: fpShared, nodeId: 'S-3120014539/992' }]);
+    const item = makeLineItem([rowP, rowQ], tomb);
+    const rowKeyFieldsByComp = new Map([[COMP_ID, ROW_KEY_FIELDS]]);
+    const map = buildSnapshotExpansions([item], 'QUOTE', CUSTOMER_ID, rowKeyFieldsByComp);
+    const expansion = Object.values(map)[0]!;
+
+    // 只删 1 行，另一行（挂 S-80011 的那次 occurrence）保留
+    expect(expansion.rowCount).toBe(1);
+    expect(expansion.rows).toHaveLength(1);
+    expect((expansion.rows[0] as any).__sys?.nodeId).toBe('S-80011/992');
+  });
+
+  it('旧墓碑（无 nodeId）× 两行同 fp 不同 __nodeId → 退化 fp 单键，两行都删（存量兼容，AP-54 已知边界）', () => {
+    const rowP = { ...makeBaseRow('992', 1), __nodeId: 'S-3120014539/992' };
+    const rowQ = { ...makeBaseRow('992', 1), __nodeId: 'S-80011/992' };
+    const fpShared = rowFingerprint(ROW_KEY_FIELDS, rowP.driverRow);
+
+    // 旧墓碑：无 nodeId 字段
+    const tomb = JSON.stringify([{ effKey: '992', fp: fpShared }]);
+    const item = makeLineItem([rowP, rowQ], tomb);
+    const rowKeyFieldsByComp = new Map([[COMP_ID, ROW_KEY_FIELDS]]);
+    const map = buildSnapshotExpansions([item], 'QUOTE', CUSTOMER_ID, rowKeyFieldsByComp);
+    const expansion = Object.values(map)[0]!;
+
+    expect(expansion.rowCount).toBe(0);
+  });
+
+  it('非树行（无 __nodeId）不受影响：普通墓碑过滤逐字节不变', () => {
+    const item = makeLineItem([rowA, rowB, rowC], JSON.stringify([{ effKey: 'P2', fp: fpB }]));
+    const rowKeyFieldsByComp = new Map([[COMP_ID, ROW_KEY_FIELDS]]);
+    const map = buildSnapshotExpansions([item], 'QUOTE', CUSTOMER_ID, rowKeyFieldsByComp);
+    const expansion = Object.values(map)[0]!;
+
+    expect(expansion.rowCount).toBe(2);
+    const driverRows = expansion.rows.map((r: any) => r.driverRow['料件']);
+    expect(driverRows).toEqual(['P1', 'P3']);
   });
 
   it('deletedRowKeys 不进 driverExpansionKey（key 与是否删行无关）', () => {

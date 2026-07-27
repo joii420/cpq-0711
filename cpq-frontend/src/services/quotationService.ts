@@ -165,10 +165,21 @@ export interface TreeDeletePreviewResult {
   retainedParts: TreeDeleteRetainedPart[];
 }
 
+/** repair-0727 改动 A（api.md §1.2）：树删除执行端点新增 componentData 权威投影，
+ * 与既有 delete-driver-row 响应契约逐字段对齐；componentData/quoteExcelValues/quoteValuesAt
+ * 仅 DRAFT 单据返回（非 DRAFT 时前端须回落到只 patch quoteCardValues 的旧行为）。 */
 export interface TreeDeleteExecResult {
   deletedNodeIds: string[];
   cascadeDeletedRowKeys: Record<string, string[]>;
   quoteCardValues: string;
+  quoteExcelValues?: string | null;
+  quoteValuesAt?: string | null;
+  componentData?: Array<{
+    componentId: string;
+    rowData: string;
+    deletedRowKeys: string;
+    subtotal: number;
+  }>;
 }
 
 export const quotationService = {

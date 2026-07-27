@@ -19,11 +19,17 @@ describe('deletedRows', () => {
       .toBe(['P1', '7.12', 'P1'].join(''));
   });
 
-  it('keepRow 双命中才删', () => {
+  // 订正说明（2026-07-26，repair-0727）：本用例原名"keepRow 双命中才删"，断言的是
+  // 2026-07-14 fp 单键改造之前的 effKey+fp 双命中语义（改造前 K1/fpB 因 effKey 不命中而应保留）。
+  // 该断言在当前实现下已恒为 false（第 3 条曾长期处于 failing 状态，与本次改动无关，
+  // 是遗留下来的过时断言）。现行契约（deletedRows.ts keepRow 注释 + api.md §2.2）：
+  // effKey 形参不参与匹配，只按 fp 单键判定（不传 nodeId 时）；藉本次改这份文件的匹配契约
+  // 之机一并订正为正确断言，并改用准确的用例名。
+  it('keepRow 按 fp 单键匹配，effKey 不参与判断（2026-07-14 起）', () => {
     const del: Tombstone[] = [{ effKey: 'K2', fp: 'fpB' }];
-    expect(keepRow('K2', 'fpA', del)).toBe(true);   // effKey 命中 fp 不命中
-    expect(keepRow('K2', 'fpB', del)).toBe(false);  // 双命中
-    expect(keepRow('K1', 'fpB', del)).toBe(true);
+    expect(keepRow('K2', 'fpA', del)).toBe(true);   // fp 不命中 → 保留
+    expect(keepRow('K2', 'fpB', del)).toBe(false);  // fp 命中 → 删除
+    expect(keepRow('K1', 'fpB', del)).toBe(false);  // fp 命中（即便 effKey 不同）→ 仍删除
   });
 
   // 额外夹具 1：撞键删中间剩余键不变
@@ -46,5 +52,41 @@ describe('deletedRows', () => {
 
     expect(oldFp).not.toBe(newFp);
     expect(keepRow('P1', newFp, tombstones)).toBe(true);
+  });
+
+  // ── repair-0727 改动 B：nodeId 维度（api.md §2.2） ────────────────────────────
+
+  it('新墓碑区分同 fp 不同 nodeId：只删 nodeId 命中的那一行，另一行保留', () => {
+    // 992 挂两父：S-3120014539 / S-80011，driverRow 内容假设完全相同(同 fp) —— 树行真实场景中
+    // driverRow 本身可能已含 parent_no 列区分 fp（§11.2 实测），但本用例专门模拟"driverRow 相同、
+    // 仅结构位置不同"的边界场景，验证 nodeId 维度独立生效。
+    const fp = 'fp-992';
+    const tomb: Tombstone = { effKey: 'S-3120014539/992::4', fp, nodeId: 'S-3120014539/992' };
+    // 命中：fp 相同 + nodeId 相同 → 删
+    expect(keepRow('any', fp, [tomb], 'S-3120014539/992')).toBe(false);
+    // 不命中：fp 相同但 nodeId 不同（另一个父）→ 保留
+    expect(keepRow('any', fp, [tomb], 'S-80011/992')).toBe(true);
+  });
+
+  it('旧墓碑（无 nodeId）× 树行：退化为 fp 单键，存量单据行为不变', () => {
+    const fp = 'fp-legacy';
+    const tomb: Tombstone = { effKey: 'K', fp }; // 无 nodeId（存量墓碑）
+    // 即便调用方传了 nodeId，旧墓碑无 nodeId → 退化 fp 单键，命中即删
+    expect(keepRow('K', fp, [tomb], 'S-80011/992')).toBe(false);
+    expect(keepRow('K', fp, [tomb], undefined)).toBe(false);
+  });
+
+  it('任意墓碑 × 非树行（调用方不传 nodeId）：fp 单键，逐字节不变', () => {
+    const fp = 'fp-flat';
+    // 墓碑本身带 nodeId（例如误写），但非树行调用方不传 nodeId → 仍按 fp 单键命中
+    const tomb: Tombstone = { effKey: 'K', fp, nodeId: 'S-3120014539/992' };
+    expect(keepRow('K', fp, [tomb])).toBe(false); // 不传 nodeId，旧签名兼容
+    expect(keepRow('K', fp, [tomb], null)).toBe(false); // 显式 null 同样退化
+  });
+
+  it('新墓碑 × 非树行：fp 命中即删（!nodeId 分支覆盖调用方未传）', () => {
+    const fp = 'fp-mix';
+    const tomb: Tombstone = { effKey: 'K', fp, nodeId: 'S-3120014539/992' };
+    expect(keepRow('K', fp, [tomb])).toBe(false);
   });
 });

@@ -460,17 +460,23 @@ public class QuotationTreeService {
             li.deletedTreeNodes = MAPPER.valueToTree(merged).toString();
         } else {
             // ROW：只标记该具体行（树组件自身 deleted_row_keys），节点本身不从树上消失（AC-6 退化为空行）。
+            // repair-0727 B3.1：墓碑带上被删节点的 nodeId（api.md §2.2 nodeId 维度）。
+            //
+            // 2026-07-26 技术总监裁决 10.6（修正）：effKey 兼容字段不得再手工拼
+            // "nodeId + "::" + rowKey"——B0 对齐后，前端传来的 rowKey(即 __effKey) 本身已经是
+            // "nodeId::内容键" 格式（与 FormulaCalculator.buildRawRowKeys 产出的口径一致），
+            // 再拼一次会写出 "nodeId::nodeId::base" 双重前缀。直接原样使用请求 rowKey。
             CompMeta treeComp = findCompMeta(b, componentId);
             if (treeComp != null) {
-                String fp = computeRowFpForNode(treeRows, nodeId, treeComp);
+                String fp = computeRowFpForNode(treeRows, nodeId, rowKey, treeComp);
                 if (fp != null) {
-                    appendRowTombstone(lineItemId, componentId, nodeId + "::" + rowKey, fp);
+                    appendRowTombstone(lineItemId, componentId, rowKey, fp, nodeId);
                 }
             }
             deletedNodeIds.add(nodeId); // 语义：本次操作确认作废的节点(仅该行，非整枝)
         }
 
-        // 级联行 → 各组件 deleted_row_keys
+        // 级联行 → 各组件 deleted_row_keys（非树页签，nodeId 传 null 保持 fp 单键语义，见 B3.1）
         if (!result.cascadeMaterials.isEmpty()) {
             for (CompMeta cm : b.comps) {
                 if (BomTreeRenderService.isQuoteTreeTabType(cm.tabType)) continue;
@@ -483,7 +489,7 @@ public class QuotationTreeService {
                     String mn = extractMaterialNoByField(row, cm);
                     if (mn == null || !result.cascadeMaterials.contains(mn)) continue;
                     String fp = DeletedRowKeys.rowFingerprint(rowKeyFieldNames, row.path("driverRow"));
-                    appendRowTombstone(lineItemId, cm.id, mn, fp);
+                    appendRowTombstone(lineItemId, cm.id, mn, fp, null);
                     keysForThisComp.add(mn);
                 }
                 if (!keysForThisComp.isEmpty()) {
@@ -492,7 +498,30 @@ public class QuotationTreeService {
             }
         }
 
-        // ④ 重算小计与卡片值
+        // ④ 重算小计与卡片值（本方法事务内，与改动前逐字节一致）。
+        //
+        // repair-0727 B3.2/B3.3 补物化 row_data + 补 componentData 投影（实测 ①-b）——
+        //
+        // **性能事故复盘（务必读完再改）**：最初实现在本方法（本 @Transactional 事务）内，紧接着
+        // snapshotQuoteSideOnly 之后同步调用 refreshQuoteProjection/materializeRowDataAndProject，
+        // 在 DAG 级联删除场景（QuoteBomTreeEndToEndTest#b7_dagCascade_realEndpoints）实测撞 JTA 60s
+        // 事务超时（ARJUNA016102 The transaction is not active）。根因：materializeWholeLineRowData
+        // → ConfigureSnapshotService#materializeLineRowData → writeRowData 是 REQUIRES_NEW（另开一个
+        // DB 连接/事务写 quotation_line_component_data.row_data），而本方法上面 ①②③ 已经在**同一个
+        // 未提交事务**里用原生 UPDATE 写过同一张表的同一行（deleted_row_keys/snapshot_rows）—— 同一行
+        // 被本事务持有写锁的情况下，REQUIRES_NEW 的另一个连接尝试 UPDATE 同一行会被阻塞，等到本方法
+        // 自己都返回不了（本事务不提交，锁不释放）→ 互相等待直到 JTA reaper 60s 超时强杀。
+        //
+        // 与 delete-driver-row 端点对照（QuotationResource.deleteDriverRow / restoreDriverRows 现成
+        // 写法，注释原文"tx1 写墓碑提交 → tx2 读已提交墓碑重算+物化"）：那里把"写墓碑"与"重算+物化"
+        // 拆成两次**独立**的 @Transactional 方法调用（Resource 层未包外层事务，两次调用天然是两个
+        // 独立事务，tx1 先提交，tx2 才开始，不会锁互等）。
+        //
+        // 故本方法**只做①②③④(写墓碑+quoteCardValues重算)，物化+componentData 投影挪到 Resource 层**
+        // （QuotationTreeResource#deleteExecute），在本方法的事务提交之后，作为第二个独立事务调用
+        // CardSnapshotService#materializeRowDataAndProject——与 delete-driver-row 同一模式，不重复
+        // 踩坑。PRUNE 剪枝已经在①③里正确落进 li.deletedTreeNodes / li.quoteCardValues（本方法事务内
+        // 完整提交），第二个事务里 materializeRowDataAndProject 读到的是已提交的新鲜值，行为仍正确。
         cardSnapshotService.snapshotQuoteSideOnly(li, q);
 
         Map<String, Object> resp = new LinkedHashMap<>();
@@ -502,8 +531,11 @@ public class QuotationTreeService {
         return resp;
     }
 
-    /** 追加一条行墓碑到指定组件的 deleted_row_keys（与既有 delete-driver-row 端点同一存储格式）。 */
-    private void appendRowTombstone(UUID lineItemId, UUID componentId, String effKey, String fp) {
+    /** 追加一条行墓碑到指定组件的 deleted_row_keys（与既有 delete-driver-row 端点同一存储格式）。
+     * repair-0727 B3.1：{@code nodeId} 可空——树组件 ROW 删除传被删节点 nodeId，级联到非树页签的
+     * 行传 null（保持 fp 单键语义，api.md §2.2）。判重条件从"fp 相同"改为"fp 相同 且 nodeId 相同"
+     * （二者均可为 null；null==null 视为相同），避免同 fp 不同 nodeId 的两条墓碑被误判重复而漏写。 */
+    private void appendRowTombstone(UUID lineItemId, UUID componentId, String effKey, String fp, String nodeId) {
         try {
             @SuppressWarnings("unchecked")
             List<Object> existing = em.createNativeQuery(
@@ -513,14 +545,17 @@ public class QuotationTreeService {
                     DeletedRowKeys.parse(!existing.isEmpty() && existing.get(0) != null ? existing.get(0).toString() : null));
             boolean already = false;
             for (DeletedRowKeys.Tombstone t : tombstones) {
-                if (fp != null && fp.equals(t.fp())) { already = true; break; }
+                boolean fpMatch = fp != null && fp.equals(t.fp());
+                boolean nodeIdMatch = java.util.Objects.equals(nodeId, t.nodeId());
+                if (fpMatch && nodeIdMatch) { already = true; break; }
             }
-            if (!already) tombstones.add(new DeletedRowKeys.Tombstone(effKey, fp));
+            if (!already) tombstones.add(new DeletedRowKeys.Tombstone(effKey, fp, nodeId));
             var arr = MAPPER.createArrayNode();
             for (DeletedRowKeys.Tombstone t : tombstones) {
                 var o = arr.addObject();
                 o.put("effKey", t.effKey());
                 o.put("fp", t.fp());
+                if (t.nodeId() != null) o.put("nodeId", t.nodeId());
             }
             em.createNativeQuery(
                     "UPDATE quotation_line_component_data SET deleted_row_keys = CAST(:v AS jsonb) " +
@@ -533,16 +568,45 @@ public class QuotationTreeService {
         }
     }
 
-    /** ROW 模式：在树组件行集合中找到 nodeId 对应行，算其 fp（供墓碑写入）。 */
-    private String computeRowFpForNode(ArrayNode treeRows, String nodeId, CompMeta treeComp) {
+    /**
+     * ROW 模式：在树组件行集合中找到 nodeId 对应行，算其 fp（供墓碑写入）。
+     *
+     * <p>repair-0727 B4：同一 {@code nodeId} 下可能有 >1 条业务行（driver 视图对同一树位置返回多行），
+     * 原实现"永远取第一条匹配"，删第 2 行会算出第 1 行的 fp → 删错行。本次最小修复：
+     * 该 nodeId 下恰 1 行 → 行为不变；>1 行 → 用请求里的 {@code rowKey}（前端 __effKey）在 B0
+     * 对齐后的 effKey 算法（{@link FormulaCalculator#buildRawRowKeys}，与 computeRows /
+     * buildResolvedRows / RowDataMaterializer 同一份口径）算出的候选中精确定位；仍无法定位（算不出
+     * / 不匹配）→ 退回第一条并 {@code LOG.warn}（Q6 尚未定性，此处只兜底不新增契约字段）。
+     *
+     * <p>包级可见（供 {@code QuotationTreeServiceRowFpForNodeTest} 纯单测，无需 DB/CDI，同包直连）。
+     */
+    String computeRowFpForNode(ArrayNode treeRows, String nodeId, String rowKey, CompMeta treeComp) {
         List<String> rkfNames = parseRowKeyFieldNames(treeComp.rowKeyFields);
+        List<JsonNode> matches = new ArrayList<>();
         for (JsonNode row : treeRows) {
             String nid = row.path("__nodeId").isNull() ? null : row.path("__nodeId").asText(null);
-            if (nodeId.equals(nid)) {
+            if (nodeId.equals(nid)) matches.add(row);
+        }
+        if (matches.isEmpty()) return null;
+        if (matches.size() == 1) {
+            return DeletedRowKeys.rowFingerprint(rkfNames, matches.get(0).path("driverRow"));
+        }
+        // >1 行：B0 对齐后的 effKey 算法（全量 treeRows 唯一化，与渲染/物化同源）定位与请求 rowKey 相等的那条
+        JsonNode fieldsNode = parseFieldsJsonSafe(treeComp.fields);
+        JsonNode rowKeyFieldsNode = MAPPER.valueToTree(rkfNames);
+        List<String> rawKeys = formulaCalculator.buildRawRowKeys(rowKeyFieldsNode, fieldsNode, treeRows, List.of());
+        List<String> effKeys = FormulaCalculator.uniquifyRowKeys(rawKeys);
+        for (int i = 0; i < treeRows.size(); i++) {
+            JsonNode row = treeRows.get(i);
+            String nid = row.path("__nodeId").isNull() ? null : row.path("__nodeId").asText(null);
+            if (!nodeId.equals(nid)) continue;
+            if (rowKey != null && rowKey.equals(effKeys.get(i))) {
                 return DeletedRowKeys.rowFingerprint(rkfNames, row.path("driverRow"));
             }
         }
-        return null;
+        LOG.warnf("[quotation-tree] computeRowFpForNode: nodeId=%s 下 %d 条同节点行，rowKey=%s 未命中任何候选" +
+                " effKey=%s，退回第一条(Q6 待定性)", nodeId, matches.size(), rowKey, effKeys);
+        return DeletedRowKeys.rowFingerprint(rkfNames, matches.get(0).path("driverRow"));
     }
 
     private static List<String> parseRowKeyFieldNames(String rowKeyFieldsJson) {

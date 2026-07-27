@@ -14,7 +14,7 @@
  *   最终以 "" join（无分隔符）
  */
 
-export type Tombstone = { effKey: string; fp: string };
+export type Tombstone = { effKey: string; fp: string; nodeId?: string };
 
 function canon(v: unknown): string {
   if (v === null || v === undefined) return '∅';
@@ -50,11 +50,18 @@ export function keepRow(
   effKey: string,
   fp: string,
   deleted: Tombstone[] | undefined | null,
+  nodeId?: string | null,
 ): boolean {
   if (!deleted || deleted.length === 0) return true;
   // 2026-07-14 删错行修复：按 fp(内容指纹)单键匹配,弃 effKey 双命中。
   // effKey 由 computeRowKey 算,前后端对同一行可不一致(前端 driverRow['料件']=null → 索引兜底"0",
   // 服务端经字段定义解析成内容"AgNi11#-Ⅰ")→ 双命中因 effKey 对不上而漏删。fp 前后端逐字节一致,可靠。
   // effKey 形参保留仅为调用兼容。与后端 DeletedRowKeys.keepMask 语义严格对齐。
-  return !deleted.some((t) => t.fp === fp);
+  //
+  // repair-0727 改动 B（api.md §2.2）：nodeId 维度，树页签墓碑加 nodeId + fp 双命中，解 BL-0055
+  // "同料号挂不同父" 连删问题。规则（前后端逐字节对齐）：
+  //   一行被判删 ⟺ 存在墓碑 t 满足 t.fp === fp 且 (!t.nodeId || !nodeId || t.nodeId === nodeId)
+  // - 墓碑无 nodeId（旧数据）或调用方未传 nodeId（非树行）→ 退化为 fp 单键，逐字节不变。
+  // - 墓碑与行都有 nodeId 且不相等 → 不命中（即使 fp 相同也不删，区分同 fp 不同 occurrence）。
+  return !deleted.some((t) => t.fp === fp && (!t.nodeId || !nodeId || t.nodeId === nodeId));
 }

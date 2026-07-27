@@ -26,10 +26,23 @@ interface Props {
   quotationId?: string;
   request: BomTreeDeleteRequest | null;
   onClose: () => void;
-  onApplied: (quoteCardValues: string) => void;
+  /**
+   * repair-0727 改动 A（api.md §1.2）：整个响应体交给上层，而非只取 quoteCardValues。
+   * 上层按 data.componentData 是否存在决定走权威投影 applyQuoteProjection 还是回落旧行为
+   * （非 DRAFT 单据服务端不返回 componentData）。
+   */
+  onApplied: (data: any) => void;
+  /**
+   * F3.3 在途窗口保护（对齐 handleDeleteDriverRow 既有路径）：请求发起前调用，
+   * 上层把 componentId 加入 pendingDeleteRef，抑制 bake effect 在 N vs N-1 错位期间
+   * 按下标误写 comp.rows。可选 —— 未传则不做保护（向后兼容旧调用点）。
+   */
+  onBeforeConfirm?: (componentId: string) => void;
+  /** 请求结束（成功或失败）后调用，上层从 pendingDeleteRef 移除 componentId，解除抑制。 */
+  onAfterConfirm?: (componentId: string) => void;
 }
 
-const BomTreeDeleteConfirmDrawer: React.FC<Props> = ({ item, quotationId, request, onClose, onApplied }) => {
+const BomTreeDeleteConfirmDrawer: React.FC<Props> = ({ item, quotationId, request, onClose, onApplied, onBeforeConfirm, onAfterConfirm }) => {
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<TreeDeletePreviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +90,9 @@ const BomTreeDeleteConfirmDrawer: React.FC<Props> = ({ item, quotationId, reques
   const handleConfirm = async () => {
     if (!request || !preview || !quotationId || !lineItemId) return;
     setConfirming(true);
+    // F3.3：请求发起前标记在途，抑制父级 bake effect 在 N vs N-1 错位期间误写 comp.rows
+    // （与 handleDeleteDriverRow 同款保护，对齐既有删除路径）。
+    onBeforeConfirm?.(request.componentId);
     try {
       const res = await quotationService.executeTreeDelete(quotationId, lineItemId, {
         componentId: request.componentId,
@@ -86,7 +102,9 @@ const BomTreeDeleteConfirmDrawer: React.FC<Props> = ({ item, quotationId, reques
         previewToken: preview.previewToken,
       });
       const data = (res as any)?.data;
-      if (data?.quoteCardValues) onApplied(data.quoteCardValues);
+      // repair-0727 改动 A：整个响应体交给上层（含新增 componentData 权威投影），
+      // 不再只取 quoteCardValues 单字段 —— 那正是症状①"删除后须刷新才消失"的契约缺口。
+      if (data) onApplied(data);
       message.success(request.mode === 'PRUNE' ? '已剪枝并同步级联删除' : '已删除该行');
       handleClose();
     } catch (e: unknown) {
@@ -100,6 +118,7 @@ const BomTreeDeleteConfirmDrawer: React.FC<Props> = ({ item, quotationId, reques
       }
     } finally {
       setConfirming(false);
+      onAfterConfirm?.(request.componentId);
     }
   };
 

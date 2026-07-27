@@ -150,16 +150,54 @@ export function uniquifyRowKeys(keys: string[]): string[] {
   });
 }
 
-/** 按组件 baseRows 成批算 rowKey 并唯一化。序号按 baseRows 数组序（与后端同序）。 */
+/**
+ * 按组件 baseRows 成批算 rowKey 并唯一化。序号按 baseRows 数组序（与后端同序）。
+ *
+ * repair-0727 F0：`applyNodePrefix` 对齐后端 `FormulaCalculator#buildRawRowKeys` 的单一口径
+ * —— 后端在「报价侧信号」（`deleted != null`，即使空列表）且该行顶层携带非空 `__nodeId`
+ * （树页签行）时，以 `nodeId + "::" + 内容键` 作为最终 rawKey（节点维度天然消歧 DAG 重复子件）。
+ * 前端等价信号 = 调用方显式传 `applyNodePrefix=true`（由调用方按自己的 side==='QUOTE' 上下文判断，
+ * 与后端 `deleted != null` 语义对齐）；`baseRows[i].__nodeId` 缺失/为空则不加前缀。
+ *
+ * **不传第 4 参（或传 false）时，逐字节维持旧行为**（核价侧 / 非树行 / 未接入 F0 的历史调用点零影响）。
+ *
+ * 加前缀发生在 `uniquifyRowKeys` 之前 —— 即先拼 `nodeId::base`，再对拼接后的完整字符串做撞键消歧，
+ * 与后端顺序一致（先加前缀、后唯一化），确保 `#N` 消歧序号在两侧算出相同结果。
+ */
 export function buildUniqueRowKeys(
   fields: any[] | undefined,
   rowKeyFields: string[] | undefined | null,
-  baseRows: Array<{ driverRow?: Record<string, any>; basicDataValues?: Record<string, any> }> | undefined,
+  baseRows: Array<{ driverRow?: Record<string, any>; basicDataValues?: Record<string, any>; __nodeId?: string | null }> | undefined,
+  applyNodePrefix?: boolean,
 ): string[] {
-  const raw = (baseRows ?? []).map((br, i) =>
-    computeRowKey(fields, rowKeyFields, br?.driverRow, i, br?.basicDataValues),
-  );
+  const raw = (baseRows ?? []).map((br, i) => {
+    const base = computeRowKey(fields, rowKeyFields, br?.driverRow, i, br?.basicDataValues);
+    const nodeId = applyNodePrefix ? br?.__nodeId : undefined;
+    return nodeId ? `${nodeId}::${base}` : base;
+  });
   return uniquifyRowKeys(raw);
+}
+
+/**
+ * repair-0727 F0：查表旧键回退。新键（树行可能带 `nodeId::` 前缀）未命中时，用调用方并行算出的
+ * 旧口径键（不传 `applyNodePrefix`，逐字节等于改造前的 `buildUniqueRowKeys` 产物）再查一次。
+ *
+ * 兼容存量单据：`editRows`（用户编辑，前端写入时用当时的 rowKey 存）与 `formulaResults`
+ * （后端计算结果，仅在下次重算前维持旧值）在 B0/F0 落地前写入的条目都是不带前缀的旧键，
+ * 不加回退会让历史编辑值 / 尚未重算的公式结果全部读不到（存量单据"编辑值消失"）。
+ *
+ * `legacyKey === key`（非树行 / 无 nodeId）时不重复查第二次。
+ */
+export function getByKeyWithLegacyFallback<T>(
+  map: Map<string, T> | undefined,
+  key: string,
+  legacyKey?: string,
+): T | undefined {
+  if (!map) return undefined;
+  const hit = map.get(key);
+  if (hit !== undefined) return hit;
+  if (legacyKey !== undefined && legacyKey !== key) return map.get(legacyKey);
+  return undefined;
 }
 
 function safeParse<T>(json: string | null | undefined): T | null {
@@ -228,10 +266,17 @@ export function useCardSnapshots(
     for (const t of (values?.tabs ?? [])) valByComp.set(t.componentId, t);
 
     // 每组件唯一化 rowKey 表（撞键消歧）：rowKeyOf/getCell 按下标取，保证与写路径 + 后端一致。
+    // repair-0727 F0：QUOTE 侧树行加 nodeId 前缀（对齐后端 buildRawRowKeys）；同时并行算一份
+    // legacyKeysByComp（不加前缀，逐字节等于改造前产物），供 getCell 查 editRows/formulaResults
+    // 未命中时按同一行位置回退，兼容改造前写入的存量单据（旧键）。COSTING 侧两份表逐字节相同
+    // （applyNodePrefix=false 时行为不变），回退恒等价于直接命中，零副作用。
+    const applyNodePrefix = side === 'QUOTE';
     const uniqKeysByComp = new Map<string, string[]>();
+    const legacyKeysByComp = new Map<string, string[]>();
     for (const t of tabs) {
       const vt = valByComp.get(t.componentId);
-      uniqKeysByComp.set(t.componentId, buildUniqueRowKeys(t.fields, t.rowKeyFields, vt?.baseRows));
+      uniqKeysByComp.set(t.componentId, buildUniqueRowKeys(t.fields, t.rowKeyFields, vt?.baseRows, applyNodePrefix));
+      legacyKeysByComp.set(t.componentId, buildUniqueRowKeys(t.fields, t.rowKeyFields, vt?.baseRows));
     }
 
     const rowKeyOf = (componentId: string, rowIndex: number): string => {
@@ -255,9 +300,12 @@ export function useCardSnapshots(
       const baseRow = vt.baseRows?.[rowIndex];
       const rk = (uniqKeysByComp.get(componentId)?.[rowIndex])
         ?? computeRowKey(st.fields, st.rowKeyFields, baseRow?.driverRow, rowIndex, baseRow?.basicDataValues);
+      // F0：旧键回退 —— 未命中新键（可能带 nodeId 前缀）时按同一行位置试旧键。
+      const legacyRk = legacyKeysByComp.get(componentId)?.[rowIndex];
 
       // 1. 编辑覆盖
-      const editVals = findKeyedValues(vt.editRows, rk);
+      let editVals = findKeyedValues(vt.editRows, rk);
+      if (!editVals && legacyRk !== undefined && legacyRk !== rk) editVals = findKeyedValues(vt.editRows, legacyRk);
       if (editVals && !isEmpty(editVals[fieldName])) return editVals[fieldName];
 
       if (!field) {
@@ -268,7 +316,8 @@ export function useCardSnapshots(
       // 2. 按字段类型
       switch (field.fieldType) {
         case 'FORMULA': {
-          const fr = findKeyedValues(vt.formulaResults, rk);
+          let fr = findKeyedValues(vt.formulaResults, rk);
+          if (!fr && legacyRk !== undefined && legacyRk !== rk) fr = findKeyedValues(vt.formulaResults, legacyRk);
           return fr ? fr[fieldName] : undefined;
         }
         case 'BASIC_DATA': {
