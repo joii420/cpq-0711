@@ -90,4 +90,61 @@ class DeletedRowKeysTest {
         );
         assertTrue(mask[0], "fp 不同时，即使 effKey 相同，新行不应被误删（漂移防护）");
     }
+
+    // =========================================================================
+    // repair-0727 B1 —— nodeId 维度单测（api.md §2.2）
+    // =========================================================================
+
+    /** 新墓碑(含 nodeId) × 两条同 fp 不同 nodeId 的行 → 只删匹配的那条。 */
+    @Test
+    void keepMaskWithNodeId_sameContentDifferentNode_deletesOnlyMatchingNode() {
+        // 两行内容(fp)完全相同(DAG 重复子件，driverRow 一致)，分别挂两个不同节点
+        var deleted = List.of(new DeletedRowKeys.Tombstone("992", "fp_992", "S-3120014539/992"));
+        boolean[] mask = DeletedRowKeys.keepMask(
+            List.of("992", "992"),
+            List.of("fp_992", "fp_992"),
+            List.of("S-3120014539/992", "S-80011/992"),
+            deleted);
+        assertArrayEquals(new boolean[]{false, true}, mask,
+            "只有 nodeId 命中(S-3120014539/992)的那条被删，另一节点(S-80011/992)保留");
+    }
+
+    /** 旧墓碑(无 nodeId) × 同上两行 → 两条都删（证明退化行为保持，BL-0055 已知残留边界）。 */
+    @Test
+    void keepMaskWithoutNodeId_sameContentDifferentNode_deletesBoth() {
+        // 旧格式墓碑：nodeId=null（2-arg 构造）
+        var deleted = List.of(new DeletedRowKeys.Tombstone("992", "fp_992"));
+        boolean[] mask = DeletedRowKeys.keepMask(
+            List.of("992", "992"),
+            List.of("fp_992", "fp_992"),
+            List.of("S-3120014539/992", "S-80011/992"),
+            deleted);
+        assertArrayEquals(new boolean[]{false, false}, mask,
+            "旧墓碑无 nodeId → 退化 fp 单键匹配，两条同 fp 的行都判删（改造前逐字节行为）");
+    }
+
+    /** 非树行（nodeId=null）× 新墓碑（带 nodeId）→ 仍按 fp 匹配，不受 nodeId 维度影响。 */
+    @Test
+    void keepMaskWithNodeId_nonTreeRow_matchesByFpOnly() {
+        var deleted = List.of(new DeletedRowKeys.Tombstone("K1", "fpA", "some-node-id"));
+        boolean[] mask = DeletedRowKeys.keepMask(
+            List.of("K1"),
+            List.of("fpA"),
+            java.util.Collections.singletonList(null), // 非树行：row.__nodeId == null
+            deleted);
+        assertArrayEquals(new boolean[]{false}, mask,
+            "非树行(无 __nodeId) × 带 nodeId 的墓碑 → 按 api.md 规则(row.nodeId 为空即满足)仍应命中删除");
+    }
+
+    /** nodeIds 传 null(整体) 等价于旧 3 参重载：全部按 fp 单键匹配。 */
+    @Test
+    void keepMaskNullNodeIdsList_equivalentToLegacyThreeArgOverload() {
+        var deleted = List.of(new DeletedRowKeys.Tombstone("992", "fp_992", "S-3120014539/992"));
+        boolean[] mask4 = DeletedRowKeys.keepMask(
+            List.of("992", "992"), List.of("fp_992", "fp_992"), null, deleted);
+        boolean[] mask3 = DeletedRowKeys.keepMask(
+            List.of("992", "992"), List.of("fp_992", "fp_992"), deleted);
+        assertArrayEquals(mask3, mask4, "nodeIds=null 的 4 参调用必须与 3 参旧重载逐位一致");
+        assertArrayEquals(new boolean[]{false, false}, mask4);
+    }
 }

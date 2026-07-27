@@ -796,30 +796,22 @@ public class FormulaCalculator {
         // 空列表也非 null；核价侧 buildCostingCardValues 四参入口固定传 delByComp=null，spec §3.7
         // 隔离）。核价侧 baseRows 同样携带 __nodeId（同一渲染引擎），但 deleted==null 时本分支不生效
         // → effKey 计算与改造前逐位相同 → AC-10 核价侧零回归门禁不受影响。
-        List<String> rawKeys = new ArrayList<>();
-        int pre = 0;
-        for (JsonNode baseRow : baseRows) {
-            String rk = computeRowKey(rowKeyFields, fields, baseRow.path("driverRow"), baseRow.path("basicDataValues"));
-            String base = (rk != null && !rk.isEmpty()) ? rk : String.valueOf(pre);
-            JsonNode nodeIdNode = baseRow.get("__nodeId");
-            if (deleted != null && nodeIdNode != null && !nodeIdNode.isNull()) {
-                String nodeId = nodeIdNode.asText("");
-                if (!nodeId.isEmpty()) {
-                    base = nodeId + "::" + base;
-                }
-            }
-            rawKeys.add(base);
-            pre++;
-        }
+        List<String> rawKeys = buildRawRowKeys(rowKeyFields, fields, baseRows, deleted);
         List<String> effKeys = uniquifyRowKeys(rawKeys);
 
-        // driver 默认行永久删除：先唯一化(上方)，再按墓碑双命中过滤；fps 用完整 baseRows 计算（守头号不变量）。
-        // keep==null 表示不过滤（deleted 为 null/空 → 核价侧及所有旧调用方零影响）。
+        // driver 默认行永久删除：先唯一化(上方)，再按墓碑双命中过滤；fps/nodeIds 用完整 baseRows 计算
+        // （守头号不变量）。keep==null 表示不过滤（deleted 为 null/空 → 核价侧及所有旧调用方零影响）。
+        // repair-0727 B2：nodeIds 逐行从 baseRow 顶层 __nodeId 取值（不在 driverRow 里）。
         boolean[] keep = null;
         if (deleted != null && !deleted.isEmpty()) {
             List<String> fps = new ArrayList<>(baseRows.size());
-            for (JsonNode br : baseRows) fps.add(DeletedRowKeys.rowFingerprint(rowKeyFieldNames, br.path("driverRow")));
-            keep = DeletedRowKeys.keepMask(effKeys, fps, deleted);
+            List<String> nodeIds = new ArrayList<>(baseRows.size());
+            for (JsonNode br : baseRows) {
+                fps.add(DeletedRowKeys.rowFingerprint(rowKeyFieldNames, br.path("driverRow")));
+                JsonNode nid = br.get("__nodeId");
+                nodeIds.add((nid != null && !nid.isNull()) ? nid.asText(null) : null);
+            }
+            keep = DeletedRowKeys.keepMask(effKeys, fps, nodeIds, deleted);
         }
 
         // 公式字段拓扑序（依赖先算），与前端 computeAllFormulas 一致
@@ -956,6 +948,52 @@ public class FormulaCalculator {
         // 全部 key 段为空 → null，让调用方按行号兜底，避免 "||" 假键导致行冲突
         if (!any) return null;
         return String.join("||", parts);
+    }
+
+    /**
+     * repair-0727 B0：树行 raw effKey 的<b>单一口径</b>产出方法 —— 原先本逻辑内联在
+     * {@code computeRows} 里，{@link CardSnapshotService#buildResolvedRows} 与
+     * {@link RowDataMaterializer} 各自又抄了一份「不带 nodeId 前缀」的旧版本，三处逐渐漂移
+     * （B10 只改了 computeRows 这一处）。B0 核查证实：树页签 + FORMULA 列 + 报价侧信号
+     * （{@code deleted != null}）时，未对齐的两处会拿着不同的 key 去 {@code frByKey}/{@code editByKey}
+     * 查表，逐行 miss，FORMULA 叶子列静默丢失（不报错，只是取不到值）——见
+     * {@code EffKeyNodeIdAlignmentTest}。
+     *
+     * <p>三处（computeRows / buildResolvedRows / RowDataMaterializer）<b>必须</b>调用本方法产出
+     * 同一份 rawKeys，禁止再各自重算。
+     *
+     * <p>规则（task-0721 B10 定义，本次只是抽取共用，规则本身不变）：rawKey = 按
+     * {@link #computeRowKey(JsonNode, JsonNode, JsonNode, JsonNode)} 算出的内容键（空 → 行号兜底）；
+     * 若 {@code deleted != null}（报价侧信号，哪怕空列表）且该行顶层携带非空 {@code __nodeId}
+     * （树页签行），则以 {@code nodeId + "::" + 内容键} 作为最终 rawKey（节点维度天然消歧 DAG
+     * 重复子件，避免仅靠 {@link #uniquifyRowKeys} 的 {@code #序号} 消歧受数组顺序影响错位）。
+     * 核价侧固定传 {@code deleted=null} → 本分支不生效，行为与改造前逐位相同（AC-10 零回归）。
+     *
+     * @param rowKeyFields rowKeyFields 节点（行键字段名数组）
+     * @param fields       组件字段定义（供 computeRowKey 字段感知解析）
+     * @param baseRows     完整 driver 展开集（未过滤）
+     * @param deleted      墓碑列表（null=核价侧信号；非 null 含空列表=报价侧信号）
+     * @return 与 baseRows 等长、未唯一化的 rawKey 列表（调用方再喂 {@link #uniquifyRowKeys}）
+     */
+    public List<String> buildRawRowKeys(JsonNode rowKeyFields, JsonNode fields, JsonNode baseRows,
+                                         List<DeletedRowKeys.Tombstone> deleted) {
+        List<String> rawKeys = new ArrayList<>();
+        if (baseRows == null || !baseRows.isArray()) return rawKeys;
+        int pre = 0;
+        for (JsonNode baseRow : baseRows) {
+            String rk = computeRowKey(rowKeyFields, fields, baseRow.path("driverRow"), baseRow.path("basicDataValues"));
+            String base = (rk != null && !rk.isEmpty()) ? rk : String.valueOf(pre);
+            JsonNode nodeIdNode = baseRow.get("__nodeId");
+            if (deleted != null && nodeIdNode != null && !nodeIdNode.isNull()) {
+                String nodeId = nodeIdNode.asText("");
+                if (!nodeId.isEmpty()) {
+                    base = nodeId + "::" + base;
+                }
+            }
+            rawKeys.add(base);
+            pre++;
+        }
+        return rawKeys;
     }
 
     /**

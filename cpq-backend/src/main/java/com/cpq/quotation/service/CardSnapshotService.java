@@ -1363,27 +1363,21 @@ public class CardSnapshotService {
         return baseRows;
     }
 
-    /** task-0721 B7：解析 {@code quotation_line_item.deleted_tree_nodes}（JSON 字符串数组）。 */
+    /**
+     * task-0721 B7：解析 {@code quotation_line_item.deleted_tree_nodes}（JSON 字符串数组）。
+     * repair-0727 B5：委托 {@link com.cpq.quotation.rowkey.PrunedTreeNodes#parse}（提取为可复用 static
+     * 工具，供 {@code RowKeyUniquenessService} 同源复用，避免各读各的，行为逐字节不变）。
+     */
     private static List<String> parsePrunedNodeIds(String json) {
-        if (json == null || json.isBlank()) return List.of();
-        try {
-            JsonNode arr = MAPPER.readTree(json);
-            if (!arr.isArray() || arr.isEmpty()) return List.of();
-            List<String> out = new ArrayList<>(arr.size());
-            for (JsonNode n : arr) {
-                String s = n.asText("");
-                if (!s.isBlank()) out.add(s);
-            }
-            return out;
-        } catch (Exception e) {
-            return List.of();
-        }
+        return com.cpq.quotation.rowkey.PrunedTreeNodes.parse(json);
     }
 
     /**
      * task-0721 B7/B11：按 {@code __nodeId} 前缀匹配剔除被剪枝的树节点行（该节点自身 + 全部子孙）。
      * 非树行（无 {@code __nodeId}）原样保留。前端展示（此处）与后端小计（同一份 baseRowsByComp
      * 流入 {@code assembleTabsWithFormulaResults}）共享同一过滤结果，天然同源，不会各读各的。
+     * repair-0727 B5：命中判断委托 {@link com.cpq.quotation.rowkey.PrunedTreeNodes#isPruned}
+     * （同一份前缀匹配实现，供 {@code RowKeyUniquenessService} 复用，行为逐字节不变）。
      */
     private static ArrayNode filterPrunedTreeRows(ArrayNode rows, List<String> prunedNodeIds) {
         if (rows == null || rows.isEmpty() || prunedNodeIds == null || prunedNodeIds.isEmpty()) return rows;
@@ -1395,11 +1389,7 @@ public class CardSnapshotService {
                 continue;
             }
             String nodeId = nodeIdNode.asText("");
-            boolean pruned = false;
-            for (String p : prunedNodeIds) {
-                if (nodeId.equals(p) || nodeId.startsWith(p + "/")) { pruned = true; break; }
-            }
-            if (!pruned) out.add(row);
+            if (!com.cpq.quotation.rowkey.PrunedTreeNodes.isPruned(nodeId, prunedNodeIds)) out.add(row);
         }
         return out;
     }
@@ -1796,23 +1786,30 @@ public class CardSnapshotService {
         for (JsonNode fr : formulaResults) frByKey.put(fr.path("rowKey").asText(""), fr.path("values"));
         Map<String, JsonNode> edByKey = new LinkedHashMap<>();
         for (JsonNode er : editRows) edByKey.put(er.path("rowKey").asText(""), er.path("values"));
-        // 行键唯一化预扫（撞键→#序号），与 FormulaCalculator.computeRows / 前端 / editRows 存储键一致
-        List<String> rawKeys = new ArrayList<>();
-        int pk = 0;
-        for (JsonNode br : baseRows) {
-            String rk0 = formulaCalculator.computeRowKey(rowKeyFields, fieldsDef, br.path("driverRow"), br.path("basicDataValues"));
-            rawKeys.add((rk0 != null && !rk0.isEmpty()) ? rk0 : String.valueOf(pk));
-            pk++;
-        }
+        // repair-0727 B0：行键唯一化预扫改走 FormulaCalculator.buildRawRowKeys 单一口径（与
+        // computeRows / RowDataMaterializer 三处对齐），不再各自重算 —— 修复树页签 FORMULA 叶子
+        // 列因 effKey 漂移取不到值的 bug（EffKeyNodeIdAlignmentTest 证实）。
+        List<String> rawKeys = formulaCalculator.buildRawRowKeys(rowKeyFields, fieldsDef, baseRows, deleted);
         List<String> uniqKeys = FormulaCalculator.uniquifyRowKeys(rawKeys);
+        // 存量兼容：旧键（不带 __nodeId 前缀）用于 edByKey/frByKey 回退查找，兼容改造前写入的
+        // editRows.rowKey（前端 useCardSnapshots.buildUniqueRowKeys 尚未加前缀，见 F-1 #4）。
+        // 仅当 deleted!=null 时新旧口径可能分叉才需要计算；deleted==null 时 uniqKeys 本身即旧键。
+        List<String> legacyKeys = (deleted != null)
+            ? FormulaCalculator.uniquifyRowKeys(formulaCalculator.buildRawRowKeys(rowKeyFields, fieldsDef, baseRows, null))
+            : uniqKeys;
 
         // driver 默认行永久删除：先唯一化(上方)，再按墓碑双命中过滤；fps 用完整 baseRows 计算（守头号不变量）。
         // keep==null 表示不过滤（deleted 为 null/空 → 核价侧及旧路径零影响）。
         boolean[] keep = null;
         if (deleted != null && !deleted.isEmpty()) {
             List<String> fps = new ArrayList<>(baseRows.size());
-            for (JsonNode br : baseRows) fps.add(DeletedRowKeys.rowFingerprint(rowKeyFieldNames, br.path("driverRow")));
-            keep = DeletedRowKeys.keepMask(uniqKeys, fps, deleted);
+            List<String> nodeIds = new ArrayList<>(baseRows.size());
+            for (JsonNode br : baseRows) {
+                fps.add(DeletedRowKeys.rowFingerprint(rowKeyFieldNames, br.path("driverRow")));
+                JsonNode nid = br.get("__nodeId");
+                nodeIds.add((nid != null && !nid.isNull()) ? nid.asText(null) : null);
+            }
+            keep = DeletedRowKeys.keepMask(uniqKeys, fps, nodeIds, deleted);
         }
 
         List<Map<String, Object>> out = new ArrayList<>();
@@ -1825,7 +1822,9 @@ public class CardSnapshotService {
             JsonNode basicDataValues = br.path("basicDataValues");
             String rowKey = uniqKeys.get(ri);
             JsonNode editValues = edByKey.get(rowKey);
+            if (editValues == null) editValues = edByKey.get(legacyKeys.get(ri)); // 存量兼容回退
             JsonNode formulaValues = frByKey.get(rowKey);
+            if (formulaValues == null) formulaValues = frByKey.get(legacyKeys.get(ri)); // 存量兼容回退
             Map<String, Object> resolvedRow = formulaCalculator.resolveRowByFieldName(
                 fieldsDef, driverRow, basicDataValues, editValues, formulaValues);
             // P2-B 核价 Excel 树：透传 spine 节点身份，供 Excel 按 __nodeId 过滤本节点有效行
@@ -2329,6 +2328,53 @@ public class CardSnapshotService {
      */
     @Transactional
     public java.util.Map<String, Object> refreshQuoteProjection(UUID lineItemId) {
+        return materializeAndProject(lineItemId, true);
+    }
+
+    /**
+     * repair-0727 B3.2 — 树删除专用变体：<b>只物化 row_data + 出 componentData 投影，不重算
+     * quoteCardValues</b>。
+     *
+     * <p><b>为什么需要这个变体（性能事故复盘）</b>：{@code QuotationTreeService#executeDelete}
+     * 在调用本方法前已经跑过一次 {@link #snapshotQuoteSideOnly}——那是一次<b>全量</b>重建
+     * （从 fresh {@code snapshot_rows} + fresh {@code deletedTreeNodes} + fresh
+     * {@code deleted_row_keys} 出发，PRUNE/ROW 两种模式都正确），此时 {@code li.quoteCardValues}
+     * 已经是新鲜且正确的。若接着再调 {@link #refreshQuoteProjection}（它内部还会把
+     * {@code assembleTabsWithFormulaResults} 重跑一遍产出**逐值等价**的 {@code quoteCardValues}），
+     * 等于同一份公式重算白做了两次。首次实现按"直接调用 refreshQuoteProjection"上线后，
+     * 在 DAG 级联删除场景实测触发 60s+ 超时（{@code QuoteBomTreeEndToEndTest#b7_dagCascade_realEndpoints}
+     * 抛 {@code ARJUNA016102 The transaction is not active}，即 JTA 事务超时后再提交）。
+     * 本方法跳过冗余的 {@code assembleTabsWithFormulaResults} 重算，只做"物化 row_data + 组装
+     * componentData"，把树删除的额外开销降到"必要的那一半"。
+     *
+     * <p>仅 {@code DRAFT}；失败返回 {@code null}（调用方据此不带 {@code componentData}，回落旧契约）。
+     */
+    @Transactional
+    public java.util.Map<String, Object> materializeRowDataAndProject(UUID lineItemId) {
+        return materializeAndProject(lineItemId, false);
+    }
+
+    /**
+     * 删除 / 恢复 driver 行后重算并投影（Phase 1 止血，方案 D）。
+     *
+     * <p>问题：{@code refreshQuoteCardValues} 只组装 {@code quote_card_values}（墓碑过滤 N-1），
+     * <b>不物化 {@code row_data}</b> → 前端 {@code buildSnapshotExpansions}（读 quoteCardValues.baseRows，过滤 N-1）
+     * 与 {@code comp.rows}（读未过滤 row_data，仍 N）行数错位 → {@code rowAt} 按下标硬配 → 删错行 + 受控输入
+     * 按错位下标写回逐帧搅坏（详见 dev-docs/task-删除行删错架构重构/设计方案.md L1/L2/L4）。
+     *
+     * <p>本方法在墓碑变更后：① 组装 quoteCardValues（墓碑过滤，可选，见 {@code rebuildQuoteCardValues}）
+     * ② <b>物化 row_data（同墓碑 → N-1，与前端展开同序，两存储恢复对齐）</b> ③ 返回整单投影
+     * （{@code quoteCardValues/quoteExcelValues/quoteValuesAt} 同 {@link #editCardValue} + 额外
+     * {@code componentData}[{componentId,rowData,deletedRowKeys,subtotal}]），供前端原子重灌
+     * {@code comp.rows} / {@code deletedRowKeys} / {@code quoteCardValues}，消除 desync 窗口。
+     *
+     * <p>仅 {@code DRAFT}；失败返 {@code null}（端点据此不回灌，前端保留乐观墓碑兜底）。核价两列不参与。
+     *
+     * @param rebuildQuoteCardValues true=既有 {@code delete-driver-row} 路径（{@code li.quoteCardValues}
+     *                                可能已过期，需要重算）；false=repair-0727 树删除路径（调用方保证
+     *                                {@code li.quoteCardValues} 已是本次操作后的新鲜值，跳过重算避免冗余）
+     */
+    private java.util.Map<String, Object> materializeAndProject(UUID lineItemId, boolean rebuildQuoteCardValues) {
         if (lineItemId == null) return null;
         try {
             QuotationLineItem li = QuotationLineItem.findById(lineItemId);
@@ -2347,12 +2393,14 @@ public class CardSnapshotService {
                 mergeRowDataInputsIntoEdits(snapshot, baseRowsByComp, oldEdits, li.id);
             Map<String, List<DeletedRowKeys.Tombstone>> delByComp = loadTombstonesByComp(li.id);
 
-            // 组装 quoteCardValues（墓碑过滤）+ 物化 row_data（同墓碑 → N-1，与前端展开同序）
-            ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp);
-            li.quoteCardValues = MAPPER.writeValueAsString(root);
+            if (rebuildQuoteCardValues) {
+                // 组装 quoteCardValues（墓碑过滤）+ 物化 row_data（同墓碑 → N-1，与前端展开同序）
+                ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp);
+                li.quoteCardValues = MAPPER.writeValueAsString(root);
+            }
             materializeWholeLineRowData(li, snapshot, baseRowsByComp, mergedEdits, delByComp);
 
-            // flush 落库(quoteCardValues 脏写 + materialize REQUIRES_NEW row_data)后 clear，按 id 重读托管实体
+            // flush 落库(quoteCardValues 脏写[若有] + materialize REQUIRES_NEW row_data)后 clear，按 id 重读托管实体
             em.flush();
             em.clear();
             QuotationLineItem liM = QuotationLineItem.findById(lineItemId);
@@ -2379,7 +2427,8 @@ public class CardSnapshotService {
             resp.put("componentData", comps);
             return resp;
         } catch (Exception e) {
-            LOG.warnf("[card-snapshot] refreshQuoteProjection failed li=%s: %s", lineItemId, e.getMessage());
+            LOG.warnf("[card-snapshot] materializeAndProject(rebuild=%s) failed li=%s: %s",
+                rebuildQuoteCardValues, lineItemId, e.getMessage());
             return null;
         }
     }

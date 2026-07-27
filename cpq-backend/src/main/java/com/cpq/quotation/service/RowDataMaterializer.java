@@ -170,17 +170,19 @@ public class RowDataMaterializer {
             if (rk != null) frByKey.put(rk, fr.path("values"));
         }
 
-        // ③ 复算与 calculate 内部逐字节一致的 effKeys（rawKey → uniquify），用于：
+        // ③ repair-0727 B0：复算与 calculate 内部单一口径对齐的 effKeys（FormulaCalculator
+        //    #buildRawRowKeys → uniquify），用于：
         //    (a) 按 effKey 取本行 editValues 喂 resolveRowByFieldName（INPUT 列反映编辑）；
         //    (b) 按 effKey 命中 frByKey 取 FORMULA 叶子值。
-        List<String> rawKeys = new ArrayList<>(baseRows.size());
-        for (int i = 0; i < baseRows.size(); i++) {
-            JsonNode br = baseRows.get(i);
-            String rk = formulaCalculator.computeRowKey(
-                    rowKeyFields, fields, br.path("driverRow"), br.path("basicDataValues"));
-            rawKeys.add((rk != null && !rk.isEmpty()) ? rk : String.valueOf(i));
-        }
+        //    此前本处未走 nodeId 前缀分支、与 calculate 的 formulaResults[].rowKey 漂移，导致树页签
+        //    FORMULA 叶子列在 row_data 里静默丢失（EffKeyNodeIdAlignmentTest 证实，B0 核查结论）。
+        List<String> rawKeys = formulaCalculator.buildRawRowKeys(rowKeyFields, fields, baseRows, deleted);
         List<String> effKeys = FormulaCalculator.uniquifyRowKeys(rawKeys);
+        // 存量兼容：旧键（不带 __nodeId 前缀）用于 editByKey/frByKey 回退查找，兼容改造前写入的
+        // editRows.rowKey（前端尚未加前缀）。deleted==null 时 effKeys 本身即旧键，无需重算。
+        List<String> legacyKeys = (deleted != null)
+            ? FormulaCalculator.uniquifyRowKeys(formulaCalculator.buildRawRowKeys(rowKeyFields, fields, baseRows, null))
+            : effKeys;
 
         // editRows 按 rowKey 索引（取本行 editValues）。
         Map<String, JsonNode> editByKey = new HashMap<>();
@@ -189,14 +191,18 @@ public class RowDataMaterializer {
             if (rk != null) editByKey.put(rk, er.path("values"));
         }
 
-        // ④ 墓碑过滤掩码（与 calculate 内部口径一致：唯一化后按指纹双命中剔除整行；fps 用完整 baseRows）。
+        // ④ 墓碑过滤掩码（与 calculate 内部口径一致：唯一化后按指纹[+nodeId]双命中剔除整行；
+        //    fps/nodeIds 用完整 baseRows）。
         boolean[] keep = null;
         if (deleted != null && !deleted.isEmpty()) {
             List<String> fps = new ArrayList<>(baseRows.size());
+            List<String> nodeIds = new ArrayList<>(baseRows.size());
             for (JsonNode br : baseRows) {
                 fps.add(DeletedRowKeys.rowFingerprint(rowKeyFieldNames, br.path("driverRow")));
+                JsonNode nid = br.get("__nodeId");
+                nodeIds.add((nid != null && !nid.isNull()) ? nid.asText(null) : null);
             }
-            keep = DeletedRowKeys.keepMask(effKeys, fps, deleted);
+            keep = DeletedRowKeys.keepMask(effKeys, fps, nodeIds, deleted);
         }
 
         // ⑤ 扁平解析输出。迭代完整 baseRows（行数权威，AP-51），按 keep 跳过删除行；
@@ -209,7 +215,9 @@ public class RowDataMaterializer {
             JsonNode basicDataValues = br.path("basicDataValues");
             String effKey = effKeys.get(i);
             JsonNode editValues = editByKey.get(effKey);   // 本行编辑（INPUT 列覆盖），可空
+            if (editValues == null) editValues = editByKey.get(legacyKeys.get(i)); // 存量兼容回退
             JsonNode frValues = frByKey.get(effKey);       // 本行已算 FORMULA 叶子，可空
+            if (frValues == null) frValues = frByKey.get(legacyKeys.get(i)); // 存量兼容回退
 
             // 扁平解析：FORMULA 取已算 values；INPUT 取 editValues 优先（→ driverRow → default_source）。
             Map<String, Object> resolved = formulaCalculator.resolveRowByFieldName(

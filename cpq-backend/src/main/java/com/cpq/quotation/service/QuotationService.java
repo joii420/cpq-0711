@@ -728,11 +728,13 @@ public class QuotationService {
                 com.cpq.quotation.entity.QuotationLineComponentData.list("lineItemId", li.id);
             for (com.cpq.quotation.entity.QuotationLineComponentData cd : cds) {
                 if (cd.componentId == null) continue;
+                // repair-0727 B5.1：补 deletedRowKeys（行墓碑），供 collectConflicts 判重前过滤已删行（P0）
                 comps.add(new com.cpq.quotation.service.rowkey.RowKeyUniquenessService.CompRows(
-                    cd.componentId.toString(), cd.snapshotRows, cd.rowData));
+                    cd.componentId.toString(), cd.snapshotRows, cd.rowData, cd.deletedRowKeys));
             }
+            // repair-0727 B5.1：补 li.deletedTreeNodes（剪枝墓碑），供 collectConflicts 判重前过滤已剪枝节点
             rowsForCheck.add(new com.cpq.quotation.service.rowkey.RowKeyUniquenessService.LineItemComps(
-                li.id.toString(), productName, li.productPartNoSnapshot, comps));
+                li.id.toString(), productName, li.productPartNoSnapshot, li.deletedTreeNodes, comps));
         }
         java.util.List<com.cpq.quotation.service.rowkey.RowKeyConflictDTO> conflicts =
             rowKeyUniquenessService.collectConflicts(quoteCardStructureJson, rowsForCheck);
