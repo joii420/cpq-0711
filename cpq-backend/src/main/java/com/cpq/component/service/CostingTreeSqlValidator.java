@@ -1,5 +1,6 @@
 package com.cpq.component.service;
 
+import com.cpq.datasource.sqlview.VersionFilterMacro;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -45,7 +46,13 @@ public class CostingTreeSqlValidator {
         if (!sql.contains(":production_part_nos")) {
             return new Result(false, "递归 SQL 必须引用 :production_part_nos");
         }
-        String probe = "SELECT * FROM (" + sql.replace(":production_part_nos", "ARRAY[]::text[]") + ") q LIMIT 0";
+        String forValidation;
+        try {
+            forValidation = VersionFilterMacro.expandForValidation(sql);
+        } catch (IllegalArgumentException e) {
+            return new Result(false, "递归 SQL 的 :versionFilter 宏语法错误: " + e.getMessage());
+        }
+        String probe = "SELECT * FROM (" + forValidation.replace(":production_part_nos", "ARRAY[]::text[]") + ") q LIMIT 0";
         try (Connection c = dataSource.getConnection();
              PreparedStatement ps = c.prepareStatement(probe);
              ResultSet rs = ps.executeQuery()) {
