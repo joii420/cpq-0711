@@ -1046,3 +1046,27 @@
 - **登记日期**：2026-07-27
 - **背景**：「导入后当场删掉某行、从未核价通过过」这类纯 pending 行会被 `cleanupPending` 物理清除，事后完全查不到曾经存在过。这符合 §7 状态机既定语义（删单级联删 pending）、**不是 bug**，但若财务/审计有追溯诉求需另立方案（如 pending 操作流水表）。
 - **验收要点**：由 PM 裁决是否需要；需要则设计 pending 生命周期审计
+
+### [BL-0083] pending 架构下重复导入使版本号无界累积（`writeVersionedGroup` 短路失效）
+- **优先级**：P1（数据膨胀 + 使一整类验收断言失去证伪能力）
+- **来源**：repair-0727-process-no 验收阶段发现，技术总监用 `created_at` 时序做 A/B 归因确认
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-27
+- **背景（实证）**：task-0721 B2 起 `QuoteImportService.java:97` 无条件 `ctx.pendingQuotationId = recordId`，故报价 V6 导入写 `capacity`/`unit_price` 等 7 张版本化表时**恒为 `is_current=false` + 带 pending**。而 `VersionedV6Writer.writeVersionedGroup` 的"触发列与内容都未变→复用旧版本号不写"短路判断依赖 `existing` 查询（`WHERE is_current=TRUE`）——**pending 行永远查不到 existing，短路永不生效**。后果：**重复导入同一份内容完全未变的 Excel，`calc_version` 每次都 +1**。
+  实测：`capacity` 的 `S-3120014539 / QUOTE_ASSEMBLY` 在 2026-07-27~28 两天内从 20 行涨到 54 行、版本 2000→2026（27 个版本）。**关键佐证**：2000~2008 这 9 个版本产生于本次改动之前，其间 `process_no` 恒为「焊接」从未变化，仍然逐次升版 —— 证明与 `VERSION_TRIGGER` 无关，纯由 pending 机制导致。
+- **衍生影响（测试方法论，已在 repair-0727 踩到）**：凡对报价 V6 导入结果写 `WHERE is_current` 的验收断言**都测不到新导入的数据**，会变成"真空通过"（无论代码对错都 PASS）。repair-0727 的 AC-6b（双 current）即因此失去证伪能力，AC-8 断言②（再导不升版）则直接不可达成、已废止。**后续任何报价导入相关的验收标准，断言必须走 `WHERE pending_quotation_id = <recordId>` 或模拟 `QuotePendingRewriter` 的 `:pq` 改写**。
+- **范围**：①让 `existing` 查询在 pending 模式下按 `pending_quotation_id` 作用域查找，使"内容未变不升版"短路重新生效；②评估存量版本行清理策略；③把上述断言口径写进 `docs/E2E测试方法.md` 或 `docs/方案制定前必读.md`。
+- **依赖**：需先与 task-0721 的 pending 生命周期设计对齐（`repointPendingOwnership` / `cleanupPending`），不宜单点改写入器。
+- **预估规模**：M（含版本行为回归 + 存量评估）
+- **验收要点**：①同一份未变 Excel 连导 3 次，`calc_version` 不再增长；②内容确有变化时仍正常升版；③官方态（`is_current=true`）行为逐字节不变。
+
+### [BL-0084] 「组装加工费」组件（`$zz_view`）未被任何模板引用，功能备而不用
+- **优先级**：P2（不是缺陷，是配置缺口；但会让该页签的改动无法被验证）
+- **来源**：repair-0727-process-no 验收阶段发现（AC-7 无法做真实 UI 验证），技术总监查库确认
+- **状态**：TODO（待 PM/业务确认是否需要配置）
+- **登记日期**：2026-07-27
+- **背景（实测）**：`component_sql_view.sql_view_name='zz_view'` 对应组件「组装加工费」（`f170b0a8`，状态 ACTIVE）在 `template_component` 中**绑定 0 个模板**；对照 `jg_view`（「加工费」组件）绑 2 个已发布模板。因此报价单 UI 上根本不存在「组装加工费」页签，`zz_view` 的取名口径改动（repair-0727 已把它对齐为 `pm.process_name → c.process_name → c.process_no`）当前不会被任何用户看到。
+- **影响**：①该页签的任何渲染改动都只能靠 SQL 层验证，无法走真实 UI；②`capacity` 的 `QUOTE_ASSEMBLY` 数据已在正常落库，但业务侧看不到。
+- **范围**：由 PM/业务确认「组装加工费」是否应作为页签出现在报价模板中；若是，走 rule-0724 配置流程绑定到相应客户模板。
+- **依赖**：无。**预估规模**：S（纯配置）
+- **验收要点**：绑定后打开报价单能看到组装加工费页签，「工序」列显示工序名称（非编号）。
