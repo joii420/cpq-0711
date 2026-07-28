@@ -18,6 +18,15 @@ import java.util.*;
 public class P23OutsourceProcessFeeHandler implements SheetHandler {
     @Inject VersionedV6Writer writer;
     @Override public String sheetName() { return "其他外加工成本"; }
+
+    /**
+     * 模板表头（task-0728 · B4）：逐列抄自权威导入文件的第 1 行，<b>列序原样保留</b>——
+     * {@code SheetRow.getStr} 按「列序 + contains」匹配，换序会读错列。
+     */
+    private static final List<String> TEMPLATE_HEADERS = List.of(
+        "生产料号", "销售料号", "工序编号", "工序名称", "外加工费用", "币种", "单位");
+
+    @Override public List<String> templateHeaders() { return TEMPLATE_HEADERS; }
     private static final List<String> CONTENT = List.of("operation_no", "pricing_price", "currency", "unit");
     private static final List<String> DESCRIPTOR = List.of("production_no");
     private static String nz(String s) { return s == null ? "" : s; }

@@ -27,16 +27,34 @@ public class ProcessMasterReadService {
     /**
      * 分页查询工序主数据。
      *
+     * <p>兼容重载（{@code SelParamCandidateService} 等既有调用方）：等价于不传任何排序 / 过滤参数。
+     *
      * @param page    从 0 开始
      * @param size    每页条数（最大 200，超过抛 400）
      * @param keyword 可为 null，不过滤
      */
     @Transactional(Transactional.TxType.SUPPORTS)
     public PageResult<ProcessMasterDTO> list(int page, int size, String keyword) {
+        return list(page, size, keyword, null, null, null, null);
+    }
+
+    /**
+     * 分页查询工序主数据 + 排序 + 过滤（task-0728 · api.md A2）。
+     *
+     * <p>count 与分页取自同一个 {@code PanacheQuery}，过滤条件对两者天然同步。
+     *
+     * @param sortBy          排序字段，见 {@code ProcessMasterRepository.SORT_WHITELIST}；非法值回退默认序
+     * @param sortOrder       {@code asc}（默认） / {@code desc}
+     * @param isOutsource     null=全部；true=外协；false=自制（{@code is_outsource IS NULL} 两侧都不出现）
+     * @param processCategory null / 空白=全部；否则精确匹配
+     */
+    @Transactional(Transactional.TxType.SUPPORTS)
+    public PageResult<ProcessMasterDTO> list(int page, int size, String keyword, String sortBy,
+                                             String sortOrder, Boolean isOutsource, String processCategory) {
         if (size > 200) {
             throw new BusinessException(400, "INVALID_PAGE_SIZE: size 不能超过 200");
         }
-        var query = repository.search(keyword);
+        var query = repository.search(keyword, sortBy, sortOrder, isOutsource, processCategory);
         long total = query.count();
         List<ProcessMasterDTO> content = query.page(Page.of(page, size))
                 .list()
@@ -44,6 +62,12 @@ public class ProcessMasterReadService {
                 .map(ProcessMasterDTO::from)
                 .collect(Collectors.toList());
         return new PageResult<>(content, page, size, total);
+    }
+
+    /** 工序分类去重列表（task-0728 · api.md A3），供过滤下拉取选项。空表返回 {@code []}。 */
+    @Transactional(Transactional.TxType.SUPPORTS)
+    public List<String> listCategories() {
+        return repository.listDistinctCategories();
     }
 
     /** 新建工序: processNo 必填且唯一; processName 必填。 */

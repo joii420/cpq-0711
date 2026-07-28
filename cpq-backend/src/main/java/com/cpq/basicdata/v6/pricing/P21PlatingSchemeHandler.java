@@ -32,6 +32,15 @@ public class P21PlatingSchemeHandler implements SheetHandler {
 
     @Override public String sheetName() { return "电镀方案"; }
 
+    /**
+     * 模板表头（task-0728 · B4）：逐列抄自权威导入文件的第 1 行，<b>列序原样保留</b>——
+     * {@code SheetRow.getStr} 按「列序 + contains」匹配，换序会读错列。
+     */
+    private static final List<String> TEMPLATE_HEADERS = List.of(
+        "方案编号", "版本", "项次", "电镀元素名称", "电镀面积（cm2）", "镀层厚度（μm）", "电镀要求", "密度（g/cm3）");
+
+    @Override public List<String> templateHeaders() { return TEMPLATE_HEADERS; }
+
     private static final List<String> CONTENT = List.of(
         "seq_no", "plating_element", "plating_method", "surface_area", "plating_area",
         "plating_thickness", "plating_requirement", "density", "element_usage");

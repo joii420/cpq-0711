@@ -24,6 +24,15 @@ public class P01ElementPricingPriceHandler implements SheetHandler {
 
     @Override public String sheetName() { return "元素核价价格表"; }
 
+    /**
+     * 模板表头（task-0728 · B4）：逐列抄自权威导入文件的第 1 行，<b>列序原样保留</b>——
+     * {@code SheetRow.getStr} 按「列序 + contains」匹配，换序会读错列。
+     */
+    private static final List<String> TEMPLATE_HEADERS = List.of(
+        "元素代码", "核价单价", "市场参考价", "参考价来源网址", "网站名称", "参考价取用规则", "币种", "计量单位", "回收折扣（%）", "元素价格版本");
+
+    @Override public List<String> templateHeaders() { return TEMPLATE_HEADERS; }
+
     private static final List<String> CONTENT = List.of(
         "pricing_price", "market_ref_price", "source_url", "source_name",
         "fetch_rule", "currency", "unit", "recovery_discount");

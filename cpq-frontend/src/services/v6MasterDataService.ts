@@ -108,14 +108,44 @@ export interface MaterialBomItemDTO {
 // 业务侧需要再解一层 .data 才能拿到真实 payload（与 boundGlobalVariableService / changeLogService 惯用法一致）
 const unwrap = <T>(r: any): T => (r && typeof r === 'object' && 'data' in r ? (r.data as T) : (r as T));
 
-/** 分页查询工序主数据 */
+/** 工序列表排序白名单（task-0728 · api.md A2）。取值必须与后端白名单 key 逐字一致。 */
+export type ProcessSortBy =
+  | 'processNo'
+  | 'processName'
+  | 'processCategory'
+  | 'isOutsource'
+  | 'standardCurrency'
+  | 'standardUnit'
+  | 'defaultDefectRate'
+  | 'updatedAt';
+
+/**
+ * 分页查询工序主数据。
+ *
+ * task-0728 · api.md A2：新增 `sortBy` / `sortOrder` / `isOutsource` / `processCategory` 四个**可选**参数（加法式）。
+ * ⚠️ `page` 为 **0-based**（与料号核价 A1 的 1-based 不同），调用方负责 -1。
+ */
 export async function listProcesses(params: {
   keyword?: string;
   page?: number;
   size?: number;
+  sortBy?: ProcessSortBy;
+  sortOrder?: 'asc' | 'desc';
+  isOutsource?: boolean;
+  processCategory?: string;
 }): Promise<PageResult<ProcessMasterDTO>> {
   const res = await api.get('/v6/process-master', { params });
   return unwrap<PageResult<ProcessMasterDTO>>(res);
+}
+
+/**
+ * 工序分类去重列表（task-0728 · api.md A3），供「工序分类」过滤下拉取选项。
+ * 不能靠前端从当前页去重 —— 当前页只有 20 行，会漏掉其它页才出现的分类。
+ * 空表时后端返 `[]`（不是 null）。
+ */
+export async function listProcessCategories(): Promise<string[]> {
+  const res = await api.get('/v6/process-master/categories');
+  return unwrap<string[]>(res) ?? [];
 }
 
 // ─── 工序主数据 CRUD（新建/编辑/删除）────────────────────────────────────────

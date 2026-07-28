@@ -108,6 +108,20 @@ export const basicDataImportV6Service = {
     return (res.data ?? res) as ImportResultDTO;
   },
 
+  /**
+   * GET /basic-data-import/v6/pricing/template — 下载核价基础数据 24 Sheet 空模板（task-0728 · A4）。
+   * 模板下载走裸 Response（不经 ApiResponse 包裹），与 v6MasterDataService.downloadProcessTemplate
+   * / materialRecipeService.downloadTemplate 同约定；非 Blob 时兜底包一层。
+   */
+  async downloadPricingTemplate(): Promise<Blob> {
+    const data: any = await api.get(`${BASE}/pricing/template`, { responseType: 'blob' });
+    return data instanceof Blob
+      ? data
+      : new Blob([data], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
+  },
+
   /** 查询导入记录详情。 */
   async getResult(recordId: string): Promise<Record<string, unknown>> {
     const res: any = await api.get(`${BASE}/${recordId}`);

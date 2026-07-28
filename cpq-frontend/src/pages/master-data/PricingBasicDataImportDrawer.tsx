@@ -1,4 +1,4 @@
-import { InboxOutlined, ReloadOutlined } from '@ant-design/icons';
+import { DownloadOutlined } from '@ant-design/icons';
 import {
   Alert,
   Button,
@@ -9,18 +9,17 @@ import {
   Table,
   Tag,
   Typography,
-  Upload,
 } from 'antd';
 import type { UploadFile, UploadProps } from 'antd/es/upload/interface';
 import { useEffect, useMemo, useState } from 'react';
 
+import CompactUploadDragger from '../../components/CompactUploadDragger';
 import {
   basicDataImportV6Service,
   type ImportResultDTO,
   type SheetResultDTO,
 } from '../../services/basicDataImportV6Service';
 
-const { Dragger } = Upload;
 const { Text } = Typography;
 
 interface Props {
@@ -31,6 +30,7 @@ interface Props {
 export default function PricingBasicDataImportDrawer({ open, onClose }: Props) {
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [result, setResult] = useState<ImportResultDTO | null>(null);
 
   useEffect(() => {
@@ -47,6 +47,26 @@ export default function PricingBasicDataImportDrawer({ open, onClose }: Props) {
       return false;
     },
     onRemove: () => setFileList([]),
+  };
+
+  /** 下载 24 Sheet 空模板（task-0728 · A4）。 */
+  const handleDownloadTemplate = async () => {
+    setDownloading(true);
+    try {
+      const blob = await basicDataImportV6Service.downloadPricingTemplate();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'pricing_basic_data_template.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      message.error('模板下载失败，请稍后重试');
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -99,30 +119,45 @@ export default function PricingBasicDataImportDrawer({ open, onClose }: Props) {
       open={open}
       onClose={onClose}
       destroyOnClose
-      extra={
-        <Space>
-          <Button onClick={() => { setResult(null); setFileList([]); }}>
-            <ReloadOutlined /> 重置
-          </Button>
-          <Button type="primary" onClick={handleSubmit} loading={submitting}
-                  disabled={fileList.length === 0}>
-            开始导入
-          </Button>
-        </Space>
+      footer={
+        <div style={{ textAlign: 'right' }}>
+          <Space>
+            <Button onClick={() => { setResult(null); setFileList([]); }}>重置</Button>
+            <Button type="primary" onClick={handleSubmit} loading={submitting}
+                    disabled={fileList.length === 0}>
+              开始导入
+            </Button>
+          </Space>
+        </div>
       }
     >
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Alert
           type="info"
           showIcon
-          message="核价基础数据为全局数据，无客户上下文。`宏丰-客户料号对应关系` Sheet 的 customer_no 从 Excel 行读取。"
+          message="导入说明"
+          description={
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+              <div>
+                核价基础数据为全局数据，无客户上下文。`宏丰-客户料号对应关系` Sheet 的 customer_no 从 Excel 行读取。
+              </div>
+              <Button
+                icon={<DownloadOutlined />}
+                loading={downloading}
+                onClick={handleDownloadTemplate}
+                style={{ flex: 'none' }}
+              >
+                下载模板
+              </Button>
+            </div>
+          }
         />
 
-        <Dragger {...draggerProps}>
-          <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-          <p className="ant-upload-text">点击或拖拽 .xlsx 文件到此区域</p>
-          <p className="ant-upload-hint">24 Sheet 核价基础数据 / 单文件</p>
-        </Dragger>
+        <CompactUploadDragger
+          {...draggerProps}
+          text="点击或拖拽 .xlsx 文件到此区域"
+          hint="24 Sheet 核价基础数据 / 单文件"
+        />
 
         {result && (
           <>

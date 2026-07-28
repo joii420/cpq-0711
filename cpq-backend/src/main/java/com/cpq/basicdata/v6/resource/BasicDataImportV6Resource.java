@@ -4,6 +4,7 @@ import com.cpq.basicdata.v6.dto.CreateQuotationFromImportRequest;
 import com.cpq.basicdata.v6.dto.ImportResultDTO;
 import com.cpq.basicdata.v6.dto.SheetResultDTO;
 import com.cpq.basicdata.v6.pricing.PricingImportService;
+import com.cpq.basicdata.v6.pricing.PricingTemplateService;
 import com.cpq.basicdata.v6.quote.QuoteImportService;
 import com.cpq.basicdata.v6.service.CreateQuotationMaterializer;
 import com.cpq.basicdata.v6.service.V6QuotationCommitService;
@@ -18,6 +19,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 
@@ -43,6 +45,7 @@ public class BasicDataImportV6Resource {
 
     @Inject QuoteImportService quoteService;
     @Inject PricingImportService pricingService;
+    @Inject PricingTemplateService pricingTemplateService;
     @Inject V6QuotationCommitService commitService;
     @Inject CreateQuotationMaterializer materializer;
     @Inject SessionHelper sessionHelper;
@@ -107,6 +110,26 @@ public class BasicDataImportV6Resource {
         } catch (Exception e) {
             throw new BusinessException(500, "核价基础数据导入失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * GET /basic-data-import/v6/pricing/template — 下载核价基础数据 24 Sheet 空模板
+     * （task-0728 · api.md A4）。
+     *
+     * <p>权限：登录即可（四角色），与 {@code v6/process-master/import/template}、
+     * {@code material-recipes/import/template} 对齐 —— 下载空模板无副作用，故比导入端点
+     * （{@code SALES_MANAGER}/{@code SYSTEM_ADMIN}）宽。
+     * <p>响应体是裸 xlsx 字节流，不包 {@code ApiResponse}（与另两个模板下载端点同约定）。
+     */
+    @GET
+    @Path("/pricing/template")
+    @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
+    public Response pricingTemplate() {
+        byte[] xlsx = pricingTemplateService.generateTemplate();
+        return Response.ok(xlsx)
+            .header("Content-Disposition", "attachment; filename=\"pricing_basic_data_template.xlsx\"")
+            .build();
     }
 
     /**

@@ -35,6 +35,15 @@ public class P22PlatingCostHandler implements SheetHandler {
 
     @Override public String sheetName() { return "电镀成本"; }
 
+    /**
+     * 模板表头（task-0728 · B4）：逐列抄自权威导入文件的第 1 行，<b>列序原样保留</b>——
+     * {@code SheetRow.getStr} 按「列序 + contains」匹配，换序会读错列。
+     */
+    private static final List<String> TEMPLATE_HEADERS = List.of(
+        "生产料号", "销售料号", "电镀方案编号", "版本编号", "电镀加工费", "电镀材料费", "货币", "计价单位", "不良率（%）");
+
+    @Override public List<String> templateHeaders() { return TEMPLATE_HEADERS; }
+
     private static final List<String> CONTENT = List.of(
         "cost_type", "pricing_price", "currency", "unit", "defect_rate");
     private static final List<String> DESCRIPTOR = List.of("production_no");

@@ -20,6 +20,7 @@ import org.jboss.resteasy.reactive.multipart.FileUpload;
 
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -45,19 +46,45 @@ public class ProcessMasterResource {
     HttpServerRequest httpRequest;
 
     /**
-     * 分页查询工序主数据列表，支持 processNo / processName 模糊搜索。
+     * 分页查询工序主数据列表，支持 processNo / processName 模糊搜索 + 排序 + 过滤。
      *
-     * @param page    页码，从 0 开始（默认 0）
-     * @param size    每页条数（默认 20，最大 200）
-     * @param keyword 关键字，可为空
+     * <p>task-0728 · api.md A2：{@code sortBy} / {@code sortOrder} / {@code isOutsource} /
+     * {@code processCategory} 四个参数全部可选，不传时行为与改造前一致。非法 sortBy 不报错，
+     * 由 service 回退默认序（api.md §6），故此处不做校验、直接透传。
+     *
+     * @param page            页码，从 0 开始（默认 0）
+     * @param size            每页条数（默认 20，最大 200）
+     * @param keyword         关键字，可为空
+     * @param sortBy          排序字段（白名单外忽略）
+     * @param sortOrder       asc / desc
+     * @param isOutsource     true=外协、false=自制、不传=全部
+     * @param processCategory 工序分类精确匹配，取值来自 {@code GET /categories}
      */
     @GET
     @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
     public ApiResponse<PageResult<ProcessMasterDTO>> list(
             @QueryParam("page") @DefaultValue("0") int page,
             @QueryParam("size") @DefaultValue("20") int size,
-            @QueryParam("keyword") String keyword) {
-        return ApiResponse.success(service.list(page, size, keyword));
+            @QueryParam("keyword") String keyword,
+            @QueryParam("sortBy") String sortBy,
+            @QueryParam("sortOrder") @DefaultValue("asc") String sortOrder,
+            @QueryParam("isOutsource") Boolean isOutsource,
+            @QueryParam("processCategory") String processCategory) {
+        return ApiResponse.success(
+            service.list(page, size, keyword, sortBy, sortOrder, isOutsource, processCategory));
+    }
+
+    /**
+     * GET /v6/process-master/categories — 工序分类去重列表（task-0728 · api.md A3）。
+     *
+     * <p>供「工序分类」过滤下拉取选项：当前页只有 20 行，前端自行去重会漏掉其它页的分类。
+     * 空表返回 {@code []}（不是 null）。
+     */
+    @GET
+    @Path("/categories")
+    @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
+    public ApiResponse<List<String>> categories() {
+        return ApiResponse.success(service.listCategories());
     }
 
     /**

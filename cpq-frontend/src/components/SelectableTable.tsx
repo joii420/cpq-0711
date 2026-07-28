@@ -78,6 +78,13 @@ export interface SelectableTableProps<T extends object> {
   scroll?: TableProps<T>['scroll'];
   /** Antd Table locale 透传（如 emptyText 自定义） */
   locale?: TableProps<T>['locale'];
+  /**
+   * Antd Table onChange 透传（task-0728）——**服务端排序页签必需**：
+   * 受控 `column.sortOrder` 时只能靠这个回调拿到用户点表头的动作。
+   * 调用方务必用第 4 个参数 `extra.action` 区分 'sort' / 'paginate' / 'filter'，
+   * 翻页仍交给 `pagination.onChange`，否则排序处理里的 setPage(1) 会把翻页顶回第 1 页。
+   */
+  onChange?: TableProps<T>['onChange'];
 }
 
 function getRowKey<T>(r: T, rowKey: SelectableTableProps<T extends object ? T : never>['rowKey']): React.Key {
@@ -99,6 +106,7 @@ function SelectableTable<T extends object>(props: SelectableTableProps<T>) {
     getCheckboxProps,
     scroll,
     locale,
+    onChange,
   } = props;
 
   const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
@@ -232,6 +240,7 @@ function SelectableTable<T extends object>(props: SelectableTableProps<T>) {
         size={size}
         scroll={scroll}
         locale={locale}
+        onChange={onChange}
         rowSelection={{
           selectedRowKeys: selectedKeys,
           onChange: (keys) => setSelectedKeys(keys),

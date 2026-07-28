@@ -3,9 +3,10 @@ import {
   Drawer, Upload, Button, Space, Typography, Alert, Table, Divider, message,
   Select, DatePicker,
 } from 'antd';
-import { UploadOutlined, DownloadOutlined, InboxOutlined } from '@ant-design/icons';
+import { DownloadOutlined } from '@ant-design/icons';
 import type { UploadFile } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
+import CompactUploadDragger from '../../components/CompactUploadDragger';
 import { elementPriceStrategyService } from '../../services/elementPriceStrategyService';
 import type { PriceSourceDTO, PriceImportResultDTO, PriceImportRowDTO } from '../../types/element-price-strategy';
 
@@ -89,19 +90,27 @@ const PriceImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) => {
     CREATED: '新增', UPDATED: '覆盖', FAILED: '失败',
   };
 
+  /** 重置：清空已选文件与导入结果（task-0728 · F6 footer 统一；价格源/日期为导入参数，不清） */
+  const handleReset = () => {
+    setSelectedFile(null);
+    setResult(null);
+  };
+
   return (
     <Drawer
       title="价格导入"
       open={open}
       onClose={onClose}
-      width={720}
+      width={840}
       placement="right"
       destroyOnClose
       footer={
         <div style={{ textAlign: 'right' }}>
           <Space>
-            <Button onClick={onClose}>关闭</Button>
-            <Button type="primary" loading={importing} onClick={handleImport}>开始导入</Button>
+            <Button onClick={handleReset}>重置</Button>
+            <Button type="primary" loading={importing} disabled={!selectedFile} onClick={handleImport}>
+              开始导入
+            </Button>
           </Space>
         </div>
       }
@@ -127,13 +136,33 @@ const PriceImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) => {
 
       <Divider />
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <div style={{ fontWeight: 500 }}>上传价格文件</div>
-        <Button size="small" icon={<DownloadOutlined />} loading={downloading} onClick={handleDownloadTemplate}>
-          下载导入模板
-        </Button>
-      </div>
-      <Upload.Dragger
+      <div style={{ fontWeight: 500, marginBottom: 10 }}>上传价格文件</div>
+
+      {/* 说明 Alert：左＝原说明文案，右上角＝下载模板（task-0728 · F6 四段式统一） */}
+      <Alert
+        style={{ marginBottom: 16 }}
+        type="info"
+        showIcon
+        message="导入说明"
+        description={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <span style={{ fontSize: 12 }}>
+              模板列：<Text code>元素符号*</Text> <Text code>单价*</Text> <Text code>货币</Text> <Text code>计价单位</Text>
+              　·　元素符号须在「元素管理」里已存在且为启用状态
+            </span>
+            <Button
+              icon={<DownloadOutlined />}
+              loading={downloading}
+              onClick={handleDownloadTemplate}
+              style={{ flex: 'none' }}
+            >
+              下载模板
+            </Button>
+          </div>
+        }
+      />
+
+      <CompactUploadDragger
         accept=".xlsx,.xls"
         maxCount={1}
         multiple={false}
@@ -149,21 +178,8 @@ const PriceImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) => {
         }}
         onRemove={() => { setSelectedFile(null); return true; }}
         disabled={importing}
-      >
-        <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-        <p className="ant-upload-text">点击或拖拽 Excel 文件到此区域</p>
-        <p className="ant-upload-hint">支持 .xlsx / .xls，单次不超过 5MB</p>
-      </Upload.Dragger>
-
-      <Alert
-        style={{ marginTop: 14 }}
-        type="info"
-        message={
-          <span style={{ fontSize: 12 }}>
-            模板列：<Text code>元素符号*</Text> <Text code>单价*</Text> <Text code>货币</Text> <Text code>计价单位</Text>
-            　·　元素符号须在「元素管理」里已存在且为启用状态
-          </span>
-        }
+        text="点击或拖拽 Excel 文件到此区域"
+        hint="支持 .xlsx / .xls，单次不超过 5MB"
       />
 
       {result && (
