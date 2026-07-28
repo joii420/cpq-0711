@@ -25,6 +25,15 @@ public class P04PricingVersionHandler implements SheetHandler {
 
     @Override public String sheetName() { return "核价版本"; }
 
+    /**
+     * 模板表头（task-0728 · B4）：逐列抄自权威导入文件的第 1 行，<b>列序原样保留</b>——
+     * {@code SheetRow.getStr} 按「列序 + contains」匹配，换序会读错列。
+     */
+    private static final List<String> TEMPLATE_HEADERS = List.of(
+        "销售料号", "品名", "规格", "尺寸", "项次", "核价版本编号", "核价版本名称", "元素价格版本", "材料价格版本", "汇率价格版本", "是否生效");
+
+    @Override public List<String> templateHeaders() { return TEMPLATE_HEADERS; }
+
     private static final class Row {
         final String materialNo, pricingVersionNo, pricingVersionName,
                 elementPriceVersion, materialPriceVersion, exchangeRateVersion;

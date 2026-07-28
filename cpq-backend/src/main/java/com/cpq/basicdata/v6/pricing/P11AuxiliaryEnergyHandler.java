@@ -20,6 +20,15 @@ public class P11AuxiliaryEnergyHandler implements SheetHandler {
 
     @Override public String sheetName() { return "辅助设备能耗"; }
 
+    /**
+     * 模板表头（task-0728 · B4）：逐列抄自权威导入文件的第 1 行，<b>列序原样保留</b>——
+     * {@code SheetRow.getStr} 按「列序 + contains」匹配，换序会读错列。
+     */
+    private static final List<String> TEMPLATE_HEADERS = List.of(
+        "生产料号", "销售料号", "品名", "规格", "尺寸", "工序编号", "工序名称", "非生产能耗单价", "币种", "计量单位", "取用的计算版本", "是否有效");
+
+    @Override public List<String> templateHeaders() { return TEMPLATE_HEADERS; }
+
     private static final List<String> CONTENT = List.of("process_no", "non_production_energy_price", "currency", "unit");
     private static final List<String> DESCRIPTOR = List.of("production_no");
 

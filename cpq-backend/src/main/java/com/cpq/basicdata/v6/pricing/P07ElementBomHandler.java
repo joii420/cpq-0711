@@ -33,6 +33,15 @@ public class P07ElementBomHandler implements SheetHandler {
 
     @Override public String sheetName() { return "物料与元素BOM"; }
 
+    /**
+     * 模板表头（task-0728 · B4）：逐列抄自权威导入文件的第 1 行，<b>列序原样保留</b>——
+     * {@code SheetRow.getStr} 按「列序 + contains」匹配，换序会读错列。
+     */
+    private static final List<String> TEMPLATE_HEADERS = List.of(
+        "销售料号", "材质料号", "品名", "规格", "尺寸", "项次", "元素代码", "组成含量（%）", "损耗率（%）");
+
+    @Override public List<String> templateHeaders() { return TEMPLATE_HEADERS; }
+
     private static final List<String> CHILD_CONTENT = List.of(
         "seq_no", "component_no", "content", "scrap_rate");
 

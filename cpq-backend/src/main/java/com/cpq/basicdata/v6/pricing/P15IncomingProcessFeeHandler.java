@@ -22,6 +22,15 @@ import java.util.*;
 public class P15IncomingProcessFeeHandler implements SheetHandler {
     @Inject VersionedV6Writer writer;
     @Override public String sheetName() { return "来料加工费"; }
+
+    /**
+     * 模板表头（task-0728 · B4）：逐列抄自权威导入文件的第 1 行，<b>列序原样保留</b>——
+     * {@code SheetRow.getStr} 按「列序 + contains」匹配，换序会读错列。
+     */
+    private static final List<String> TEMPLATE_HEADERS = List.of(
+        "生产料号", "销售料号", "项次", "来料料号", "品名", "规格", "尺寸", "加工费", "币种", "计量单位", "损耗（%）");
+
+    @Override public List<String> templateHeaders() { return TEMPLATE_HEADERS; }
     private static final List<String> CONTENT = List.of("code", "pricing_price", "currency", "unit", "defect_rate");
     private static final List<String> DESCRIPTOR = List.of("production_no");
     private static String nz(String s) { return s == null ? "" : s; }

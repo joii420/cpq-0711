@@ -28,15 +28,23 @@ public class PricingBasicDataMaintenanceResource {
 
     @Context HttpServerRequest httpRequest;
 
-    /** §1 有核价数据的销售料号列表（搜索 + 分页）。 */
+    /**
+     * §1 有核价数据的销售料号列表（搜索 + 分页 + 排序 + 配置状态过滤）。
+     *
+     * <p>task-0728 · api.md A1：{@code sortBy} / {@code sortOrder} / {@code configured} 三个参数全部可选，
+     * 不传时行为与改造前一致。非法值不报错，由 service 回退默认序（api.md §6 容错约定），故此处不做校验。
+     */
     @GET
     @Path("/parts")
     @RoleAllowed({"SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
     public ApiResponse<PartListPage> parts(
             @QueryParam("keyword") String keyword,
             @QueryParam("page") @DefaultValue("1") int page,
-            @QueryParam("size") @DefaultValue("20") int size) {
-        return ApiResponse.success(service.listParts(keyword, page, size));
+            @QueryParam("size") @DefaultValue("20") int size,
+            @QueryParam("sortBy") String sortBy,
+            @QueryParam("sortOrder") @DefaultValue("asc") String sortOrder,
+            @QueryParam("configured") Boolean configured) {
+        return ApiResponse.success(service.listParts(keyword, page, size, sortBy, sortOrder, configured));
     }
 
     /** §2 16 组列定义元数据（前端可缓存）。data 包成 {"sheets":[...]}（api.md §2）。 */

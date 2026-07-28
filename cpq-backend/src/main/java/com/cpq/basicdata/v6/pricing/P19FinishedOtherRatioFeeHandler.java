@@ -20,6 +20,15 @@ public class P19FinishedOtherRatioFeeHandler implements SheetHandler {
 
     @Override public String sheetName() { return "成品其他比例费用"; }
 
+    /**
+     * 模板表头（task-0728 · B4）：逐列抄自权威导入文件的第 1 行，<b>列序原样保留</b>——
+     * {@code SheetRow.getStr} 按「列序 + contains」匹配，换序会读错列。
+     */
+    private static final List<String> TEMPLATE_HEADERS = List.of(
+        "生产料号", "销售料号", "品名", "规格", "尺寸", "项次", "要素编号", "要素名称", "比例（%）");
+
+    @Override public List<String> templateHeaders() { return TEMPLATE_HEADERS; }
+
     @Override
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {

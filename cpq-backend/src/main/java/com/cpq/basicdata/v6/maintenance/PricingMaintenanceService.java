@@ -39,14 +39,83 @@ public class PricingMaintenanceService {
     // ==================================================================
     // §1 料号列表：有核价数据的销售料号
     // ==================================================================
-    public PartListPage listParts(String keyword, int page, int size) {
+
+    /**
+     * 排序白名单（task-0728 · api.md A1）：{@code sortBy} → **已存在的投影别名**
+     * （{@code a.*} 来自 UNION 聚合子查询、{@code mm.*} 来自 LEFT JOIN）。
+     *
+     * <p><b>纪律</b>：{@code sortBy} 原串**永不**进 SQL —— 一律 Map 查表，命中取映射值、
+     * 未命中回退 {@link #PARTS_DEFAULT_ORDER}（不报错，见 api.md §6）。
+     */
+    private static final Map<String, String> PARTS_SORT_WHITELIST = Map.of(
+        "materialName",    "mm.material_name",
+        "materialNo",      "a.mno",
+        "specification",   "mm.specification",
+        "dimension",       "mm.dimension",
+        "configuredCount", "a.c",
+        "lastUpdatedAt",   "a.u");
+
+    /** 默认序（sortBy 为空或非白名单）：与 task-0728 改造前逐字一致。 */
+    private static final String PARTS_DEFAULT_ORDER = " ORDER BY a.u DESC NULLS LAST, a.mno";
+
+    /** 关键字条件：**裸 OR**，与其它条件 AND 连接时必须整体加括号（见 {@link #andWhere}）。 */
+    private static final String PARTS_KEYWORD_PREDICATE =
+        "a.mno ILIKE :kw OR COALESCE(mm.material_name,'') ILIKE :kw";
+
+    /**
+     * 把 predicate 列表拼成 WHERE 子句。
+     *
+     * <ul>
+     *   <li>0 个 → 空串；</li>
+     *   <li>1 个 → 原样输出（没有 AND 连接 ⇒ 不需要括号；同时保证「不传新参数时 SQL 与改造前逐字相同」）；</li>
+     *   <li>≥2 个 → <b>每个 predicate 各自加一层括号</b>再用 AND 连接。</li>
+     * </ul>
+     *
+     * <p>括号是硬要求：关键字条件是裸 {@code A OR B}，直接 {@code A OR B AND C} 会因
+     * AND 优先级高于 OR 被解析成 {@code A OR (B AND C)} —— 过滤静默失效（结果变多）。
+     * 逐个加括号而不是只给关键字加，是为了让规则与 predicate 内容无关，后续新增条件不会重蹈覆辙。
+     */
+    static String andWhere(List<String> preds) {
+        if (preds.isEmpty()) return "";
+        if (preds.size() == 1) return " WHERE " + preds.get(0);
+        StringBuilder sb = new StringBuilder(" WHERE ");
+        for (int i = 0; i < preds.size(); i++) {
+            if (i > 0) sb.append(" AND ");
+            sb.append('(').append(preds.get(i)).append(')');
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 料号列表（task-0728 · api.md A1）。
+     *
+     * @param sortBy     排序字段，见 {@link #PARTS_SORT_WHITELIST}；null / 非白名单 → 默认序
+     * @param sortOrder  {@code asc}（默认） / {@code desc}，大小写不敏感
+     * @param configured {@code TRUE}=只看已配齐（{@code configuredCount >= totalSheets}）、
+     *                   {@code FALSE}=只看未配齐、{@code null}=全部
+     */
+    public PartListPage listParts(String keyword, int page, int size,
+                                  String sortBy, String sortOrder, Boolean configured) {
         int pg = Math.max(1, page);
         int sz = Math.min(Math.max(1, size), 200);
         String cfg = partsCfgUnion();
         boolean hasKw = keyword != null && !keyword.isBlank();
-        String kwClause = hasKw
-            ? " WHERE a.mno ILIKE :kw OR COALESCE(mm.material_name,'') ILIKE :kw"
-            : "";
+        // totalSheets 与 DTO 的 it.totalSheets 同源（registry.all().size()），不写死数字。
+        int totalSheets = registry.all().size();
+
+        // 过滤 predicate 收集：count 与 page 是两条独立 SQL，必须用同一份 whereClause + 同一份绑定。
+        List<String> preds = new ArrayList<>(2);
+        if (hasKw) preds.add(PARTS_KEYWORD_PREDICATE);
+        if (configured != null) preds.add(configured ? "a.c >= :totalSheets" : "a.c < :totalSheets");
+        String kwClause = andWhere(preds);
+
+        String orderBy = PARTS_DEFAULT_ORDER;
+        String sortCol = (sortBy == null) ? null : PARTS_SORT_WHITELIST.get(sortBy);
+        if (sortCol != null) {
+            String dir = "desc".equalsIgnoreCase(sortOrder) ? "DESC" : "ASC";
+            // 尾部固定追加 a.mno 作稳定次序键，避免同值行在翻页间跳动（api.md A1 排序语义）。
+            orderBy = " ORDER BY " + sortCol + " " + dir + " NULLS LAST, a.mno";
+        }
 
         // total（去重料号数）
         String countSql =
@@ -57,6 +126,7 @@ public class PricingMaintenanceService {
             ") t";
         Query cq = em.createNativeQuery(countSql);
         if (hasKw) cq.setParameter("kw", "%" + keyword.trim() + "%");
+        if (configured != null) cq.setParameter("totalSheets", totalSheets);
         long total = ((Number) cq.getSingleResult()).longValue();
 
         String pageSql =
@@ -64,10 +134,11 @@ public class PricingMaintenanceService {
             "  SELECT mno, COUNT(DISTINCT sk) c, MAX(uat) u FROM (" + cfg +
             "  ) cfg WHERE mno IS NOT NULL GROUP BY mno) a" +
             "  LEFT JOIN material_master mm ON mm.material_no = a.mno" + kwClause +
-            " ORDER BY a.u DESC NULLS LAST, a.mno" +
+            orderBy +
             " LIMIT :lim OFFSET :off";
         Query pq = em.createNativeQuery(pageSql);
         if (hasKw) pq.setParameter("kw", "%" + keyword.trim() + "%");
+        if (configured != null) pq.setParameter("totalSheets", totalSheets);
         pq.setParameter("lim", sz);
         pq.setParameter("off", (long) (pg - 1) * sz);
 

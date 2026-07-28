@@ -19,6 +19,15 @@ public class P24UnitWeightHandler implements SheetHandler {
 
     @Override public String sheetName() { return "单重"; }
 
+    /**
+     * 模板表头（task-0728 · B4）：逐列抄自权威导入文件的第 1 行，<b>列序原样保留</b>——
+     * {@code SheetRow.getStr} 按「列序 + contains」匹配，换序会读错列。
+     */
+    private static final List<String> TEMPLATE_HEADERS = List.of(
+        "生产料号", "销售料号", "单重（g/pcs）");
+
+    @Override public List<String> templateHeaders() { return TEMPLATE_HEADERS; }
+
     @Override
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
