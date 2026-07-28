@@ -154,6 +154,27 @@ private void validateAssemblyProcess(List<SheetRow> rows, ProcessNoResolver.Inde
   ```
 
   若该料号有多道都失败，文案列出全部失败的工序名（顿号分隔）。`recordError` 的 `rowNo` 取该料号第一条失败行的行号，`column` 取 `"组装工序"`。
+
+- **⚠️ 计数口径（技术总监 2026-07-27 补充裁决，原文未锁死，不许自行假设）**：
+
+  "组级拒绝"的准确语义是**整个料号作废**，因此对一个判定失败的料号：
+
+  | 字段 | 取值 | 说明 |
+  |---|---|---|
+  | `errors` | **只加 1 条**（聚合消息） | 避免同料号刷屏 |
+  | `failedRows` | **= 该料号在本 sheet 的全部行数** | **包括本来能解析成功的那些行** —— 组级拒绝下它们也不落库，必须算失败 |
+  | `successRows` | **不含该料号任何行** | |
+
+  举例：料号 A 有 3 行（`焊接`✅ / `点胶`❌ / `抛光`❌）→ `errors` 1 条（文案含"点胶、抛光"）、`failedRows += 3`、`successRows += 0`。
+
+  **为什么**：保持 `totalRows == successRows + failedRows` 自洽。若 `failedRows` 只按"失败料号数=1"计，导入报告会显示"总 3 行 / 成功 0 / 失败 1"，凭空少 2 行，业务看着像 bug。
+
+  **实现提示**：`SheetImportResult.recordError()` 每调一次 `failedRows++`。要达成上表，调 **1 次** `recordError`（写聚合消息）后，再手动补齐 `r.failedRows += (该料号行数 - 1)`（`failedRows` 是 public 字段，无需改 `SheetImportResult` 类）。
+
+- **⚠️ 必填校验的文案必须与"未登记"分支可区分（技术总监补充裁决）**：
+
+  `销售料号` 为空 / `组装工序` 为空 → **沿用既有文案**（`column="宏丰料号/工序编号"`、`msg="必填项为空"`，照抄 `Q14:55`），**不要**并入聚合文案。
+  "根本没填" 与 "填了但主数据里查不到" 是两种失败原因，导入报告必须能让业务区分：前者去改 Excel，后者去补主数据。
 - **不变量**：绝不允许出现「该料号部分工序落库、部分被丢弃」。由于 Phase 1 拦截即整单失败，此不变量天然成立 —— **但不要因此在 Phase 2 再补一层"跳过坏行"的逻辑**，那会破坏它。
 
 #### T2.4 `validateAssemblyAnnualDiscount`（组装加工费年降）
