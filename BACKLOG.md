@@ -1046,3 +1046,39 @@
 - **登记日期**：2026-07-27
 - **背景**：「导入后当场删掉某行、从未核价通过过」这类纯 pending 行会被 `cleanupPending` 物理清除，事后完全查不到曾经存在过。这符合 §7 状态机既定语义（删单级联删 pending）、**不是 bug**，但若财务/审计有追溯诉求需另立方案（如 pending 操作流水表）。
 - **验收要点**：由 PM 裁决是否需要；需要则设计 pending 生命周期审计
+
+### [BL-0083] 全项目 tsc 自检命令空转 —— `-p tsconfig.json` 检查 0 个文件
+- **优先级**：P1（破坏的是质量门禁本身：历史所有「TS 0 错误 ✅」声明都没真正检查过代码）
+- **来源**：task-0728 主数据维护版式优化（前端工程师发现，技术总监实测复核）
+- **状态**：TODO（未排期；**改 CLAUDE.md 需用户拍板**）
+- **登记日期**：2026-07-27
+- **背景（实测）**：`CLAUDE.md`「修改后强制自检」第 1 条与各任务 fronttask 抄写的 `cd cpq-frontend && npx tsc --noEmit -p tsconfig.json` 是**空转命令**。`tsconfig.json` 是 `{"files": [], "references": [./tsconfig.app.json, ./tsconfig.node.json]}` 的 solution 文件，**不带 `-b` 时 tsc 不下钻子项目** —— 实测 `--listFiles | wc -l` = **0**，恒返回退出码 0。
+- **正确命令**：`npx tsc --noEmit -p tsconfig.app.json`（实测 2444 个文件）；`tsconfig.node.json` 另跑（0 错误）。或用 `tsc -b`（`npm run build` 用的就是它，故 build 是真检查的，只有"自检"这一步是空的）。
+- **暴露出的既有存量**：真实检查跑出 master 上 **2 个既有类型错误** —— ① `src/pages/config/ElementEditDrawer.tsx:148` `Divider orientation="left"` 不匹配 antd v6 收窄后的 `Orientation` 类型（antd 6 升级欠账）；② `src/pages/quotation/useDriverExpansions.ts:172` TS1016 必选参数 `usage` 跟在可选参数之后（**协议级文件**，改动触发 E2E 全套）。
+- **范围**：① 改 `CLAUDE.md`「修改后强制自检」第 1 条为 `-p tsconfig.app.json`（一处改，全项目后续任务受益）；② 清掉上述 2 个存量错误（`useDriverExpansions.ts` 需按 AP-44/E2E 规范走）；③ 可选：加一条 CI/pre-commit 防回归。
+- **依赖**：无。**预估规模**：S（①几分钟；②含 E2E 约 1 天）
+- **验收要点**：新命令能真实报出注入的类型错误（可故意写一处验证）；2 个存量错误清零；后续任务的「已自检」声明具备实际效力。
+
+### [BL-0084] 全站分页页大小显示英文 `20 / page`（antd v6 Pagination 未拿到 zhCN locale）
+- **优先级**：P2（纯文案，不影响功能；但中文系统里显眼）
+- **来源**：task-0728（F3/F4 实现方发现，技术总监 A/B 复核 + 根因排查）
+- **状态**：TODO（未排期，**根因未定位**）
+- **登记日期**：2026-07-27
+- **背景（实测）**：凡开启 `showSizeChanger` 的列表，页大小下拉显示 `10 / page`、`20 / page` 而非 `10 条/页`。`rc-pagination` 的 label 模板是 `${value} ${locale.items_per_page}`，英文 locale 的 `items_per_page` 恰为 `/ page` ⇒ 说明 `antd/lib/pagination/Pagination.js` 里 `useLocale('Pagination', en_US)` **回退到了英文兜底**。
+- **已排除的可能**：`App.tsx` 的 `ConfigProvider locale={zhCN}` 配置正确且包住 `RouterProvider`；`main.tsx` 无第二个 ConfigProvider；`node_modules` 无重复 antd；`antd/locale/zh_CN` 顶层确有 `Pagination.items_per_page = "条/页"`；Vite `optimizeDeps.include: ['antd','antd/locale/zh_CN']` 强制同构预构建后**问题依旧**（故非 ESM 双实例）。
+- **A/B 证据**：共享 5174（master 代码）与 task-0728 分支（5250）在同一页面均为 `共 1 条 1 20 / page` —— **全站既有，非任何单个任务引入**。注意「共 N 条」是中文（那是各页自己传的 `showTotal` 函数），只有 antd 自带文案是英文。
+- **范围**：定位 antd 6.3.5 下 Pagination locale 未生效的真因（疑与 v6 的 locale context 实现变化有关）；修法二选一 —— ① 全局根治（改 ConfigProvider 用法或升级 antd）；② 兜底：在 `listConventions.ts#commonPagination` 显式传 `locale: { items_per_page: '条/页' }`（**注意：局部修会造成"主数据维护中文、其它页英文"的新不一致，除非同步铺开全站**）。
+- **依赖**：无。**预估规模**：S（若为已知 antd issue）/ M（需深挖）
+- **验收要点**：全站开启 `showSizeChanger` 的列表统一显示「N 条/页」；不引入 ConfigProvider 层面的回归。
+
+### [BL-0085] P16「来料其他费用（比例）」sheet 名与真实客户文件不符 → 该 sheet 数据从未被导入
+- **优先级**：P1（静默数据缺失：导入看似成功，该 sheet 内容全丢）
+- **来源**：task-0728 B4（核价 24 Sheet 模板生成时，实现方比对权威导入文件发现）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-07-27
+- **背景**：`P16IncomingOtherRatioFeeHandler.sheetName()` 返回 **「来料其他费用（比例）」**，而权威导入文件（`docs/table/核价测试数据/核价系统功能基础数据功能结构所需字段（导入版本)-新版.xlsx` 及 `-自洽`/`-罗克韦尔` 各变体）里该 sheet 实际叫 **「来料其他费用」**。`PricingImportService` 用 `wb.getSheet(h.sheetName())` **精确匹配** ⇒ 取不到 sheet ⇒ 跳过 ⇒ **现网客户文件里这个 sheet 的数据从来没被导进去过**，且导入报告不报错（按"sheet 不存在"静默跳过）。
+- **注**：task-0728 新增的模板下载端点用 handler 名生成，**自洽（下载的模板能导回去）**，但与客户手上那份文件对不上 —— 修 sheet 名时须同步确认模板与客户文件两侧。
+- **顺带记录（同批发现，均既有）**：① `P16`/`P17` 的 `getInt("二级项次","项次")` 因 contains 语义 + 一级列排在前，会**先命中「一级项次」**；② `PricingImportService` 里 4 个 merge sheet 名仍是硬编码字面量，与 `P16/P17/P19/P20` 的 `sheetName()` 重复（task-0728 用 `PricingHandlerCatalog` 单点登记 + 双向断言锁住同源性，但未消除重复）。
+- **范围**：核对全部 24 个 handler 的 `sheetName()` 与真实客户文件逐一对齐（不止 P16）；决定是改 handler 名还是加别名匹配；给"sheet 未命中"加显式告警（不再静默跳过）。
+- **依赖**：无（但属导入链路，改动需回归 `PricingVersioningImportE2ETest` 等）。**预估规模**：M
+- **验收要点**：用真实客户文件导入，24 个 sheet 全部被消费（报告里逐个可见）；任何未命中的 sheet 在报告中显式列出而非静默跳过。
