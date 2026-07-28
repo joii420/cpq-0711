@@ -1341,13 +1341,18 @@ public class FormulaCalculator {
     private static class FormulaField {
         final String name;
         final JsonNode expression;          // 单一模式：表达式；条件模式：null
+        final String formulaName;           // 单一模式：表达式所属公式名（仅用于环定位提示）
         final List<CondRule> rules;         // 条件模式：有序规则；单一模式：null
         final JsonNode defaultExpression;   // 条件模式：默认公式表达式
-        FormulaField(String name, JsonNode expression) {
-            this.name = name; this.expression = expression; this.rules = null; this.defaultExpression = null;
+        final String defaultFormulaName;    // 条件模式：默认公式名（仅用于环定位提示）
+        FormulaField(String name, JsonNode expression, String formulaName) {
+            this.name = name; this.expression = expression; this.formulaName = formulaName;
+            this.rules = null; this.defaultExpression = null; this.defaultFormulaName = null;
         }
-        FormulaField(String name, List<CondRule> rules, JsonNode defaultExpression) {
-            this.name = name; this.expression = null; this.rules = rules; this.defaultExpression = defaultExpression;
+        FormulaField(String name, List<CondRule> rules, JsonNode defaultExpression, String defaultFormulaName) {
+            this.name = name; this.expression = null; this.formulaName = null;
+            this.rules = rules; this.defaultExpression = defaultExpression;
+            this.defaultFormulaName = defaultFormulaName;
         }
         boolean isConditional() { return rules != null; }
     }
@@ -1356,7 +1361,12 @@ public class FormulaCalculator {
     private static class CondRule {
         final JsonNode when;        // CondTree
         final JsonNode expression;  // 命中后执行的公式表达式
-        CondRule(JsonNode when, JsonNode expression) { this.when = when; this.expression = expression; }
+        final String formulaName;   // 命中公式名（仅用于环定位提示）
+        final int ruleIndex;        // 在 conditional_formula.rules 中的原始序号（1-based，用于定位提示）
+        CondRule(JsonNode when, JsonNode expression, String formulaName, int ruleIndex) {
+            this.when = when; this.expression = expression;
+            this.formulaName = formulaName; this.ruleIndex = ruleIndex;
+        }
     }
 
     private List<FormulaField> collectFormulaFields(JsonNode fields, JsonNode formulas,
@@ -1372,15 +1382,19 @@ public class FormulaCalculator {
                 if (cf.isObject() && cf.path("rules").isArray()) {
                     // Plan 3a 条件模式（优先级最高）
                     List<CondRule> rules = new ArrayList<>();
+                    int ruleIdx = 0;
                     for (JsonNode rule : cf.path("rules")) {
-                        JsonNode expr = exprOfFormula(formulas, rule.path("formula").asText(null));
-                        if (expr != null) rules.add(new CondRule(rule.path("when"), expr));
+                        ruleIdx++;   // 1-based 原始序号：解析不到的规则被跳过也不影响后续编号
+                        String rfName = rule.path("formula").asText(null);
+                        JsonNode expr = exprOfFormula(formulas, rfName);
+                        if (expr != null) rules.add(new CondRule(rule.path("when"), expr, rfName, ruleIdx));
                     }
-                    JsonNode defExpr = exprOfFormula(formulas, cf.path("default").asText(null));
-                    out.add(new FormulaField(name, rules, defExpr));
+                    String defName = cf.path("default").asText(null);
+                    JsonNode defExpr = exprOfFormula(formulas, defName);
+                    out.add(new FormulaField(name, rules, defExpr, defName));
                 } else {
-                    JsonNode expr = resolveFormulaExpression(f, name, fields, formulas, formulaAssignments, fullIdx);
-                    if (expr != null) out.add(new FormulaField(name, expr));
+                    ResolvedFormula rf = resolveFormula(f, name, fields, formulas, formulaAssignments, fullIdx);
+                    if (rf != null) out.add(new FormulaField(name, rf.expression(), rf.name()));
                 }
             }
             fullIdx++;
@@ -1434,6 +1448,9 @@ public class FormulaCalculator {
         return null;
     }
 
+    /** 解析结果：命中的公式名（用于环定位提示）+ 其表达式。 */
+    private record ResolvedFormula(String name, JsonNode expression) {}
+
     /**
      * port resolveFormula: 0.field.formula_name 显式 1.formula_assignments[完整字段下标]
      * 2.exact name 3.positional。
@@ -1441,8 +1458,8 @@ public class FormulaCalculator {
      * <p><b>注意</b>：formula_assignments 的 key 是字段在<b>完整 fields 数组</b>中的下标
      * （非 FORMULA-only 位置），与前端 {@code comp.fields.indexOf(field)} 一致。
      */
-    private JsonNode resolveFormulaExpression(JsonNode field, String fieldName, JsonNode fields,
-                                              JsonNode formulas, JsonNode formulaAssignments, int fullFieldIndex) {
+    private ResolvedFormula resolveFormula(JsonNode field, String fieldName, JsonNode fields,
+                                           JsonNode formulas, JsonNode formulaAssignments, int fullFieldIndex) {
         if (formulas == null || !formulas.isArray()) return null;
 
         // 0. 显式 formula_name 绑定（最高优先；绑定了但找不到 → null 不 fallback）
@@ -1450,7 +1467,7 @@ public class FormulaCalculator {
             : field.path("formulaName").asText(null);
         if (formulaName != null && !formulaName.isEmpty()) {
             JsonNode found = findFormulaByName(formulas, formulaName);
-            return found != null ? found.path("expression") : null;
+            return found != null ? new ResolvedFormula(formulaName, found.path("expression")) : null;
         }
 
         // 1. 模板级 formula_assignments[完整字段下标] → 公式名
@@ -1460,19 +1477,20 @@ public class FormulaCalculator {
                 String assignedName = assigned.asText("");
                 if (!assignedName.isEmpty()) {
                     JsonNode found = findFormulaByName(formulas, assignedName);
-                    if (found != null) return found.path("expression");
+                    if (found != null) return new ResolvedFormula(assignedName, found.path("expression"));
                 }
             }
         }
 
         // 2. 字段名 == 公式名
         JsonNode byName = findFormulaByName(formulas, fieldName);
-        if (byName != null) return byName.path("expression");
+        if (byName != null) return new ResolvedFormula(fieldName, byName.path("expression"));
 
         // 3. positional fallback（FORMULA 字段在 fields 中的相对位置）
         int posIdx = formulaFieldPosition(fields, fieldName);
         if (posIdx >= 0 && posIdx < formulas.size()) {
-            return formulas.get(posIdx).path("expression");
+            JsonNode fm = formulas.get(posIdx);
+            return new ResolvedFormula(fm.path("name").asText(""), fm.path("expression"));
         }
         return null;
     }
@@ -1494,35 +1512,72 @@ public class FormulaCalculator {
         return -1;
     }
 
-    /** 把表达式里 type==field 且属公式字段名的 token 加入依赖列表。Plan 3a。 */
-    private void addExprFieldDeps(JsonNode expr, java.util.Set<String> nameSet, List<String> acc) {
+    /** 公式字段依赖边：依赖目标 + 该引用出现的位置（用于循环引用定位提示）。 */
+    private record DepEdge(String to, String via) {}
+
+    private static String nzFormula(String s) { return s == null || s.isEmpty() ? "未命名公式" : s; }
+
+    /** 把表达式里 type==field 且属公式字段名的 token 收成依赖边。Plan 3a。 */
+    private void addExprFieldDeps(JsonNode expr, java.util.Set<String> nameSet, List<DepEdge> acc, String via) {
         if (expr == null || !expr.isArray()) return;
         for (JsonNode t : expr) {
             if ("field".equals(t.path("type").asText(""))) {
                 String v = t.path("value").asText("");
-                if (nameSet.contains(v)) acc.add(v);
+                if (nameSet.contains(v)) acc.add(new DepEdge(v, via));
             }
         }
     }
 
-    /** 构建公式字段依赖图（并集依赖：条件树列 ∪ 候选公式列）。Plan 3a/3c 共用。 */
-    private Map<String, List<String>> buildFormulaDeps(List<FormulaField> formulaFields, java.util.Set<String> nameSet) {
-        Map<String, List<String>> deps = new LinkedHashMap<>();
+    /**
+     * 构建带来源位置的依赖边（并集依赖：条件树列 ∪ 各分支公式列）。
+     *
+     * <p>同一依赖可能由多个位置产生（如各分支都引用同一字段），此处<b>刻意保留重复</b>——
+     * 定位提示要能列出全部引用位置。去重在 {@link #buildFormulaDeps} 做。
+     */
+    private Map<String, List<DepEdge>> buildFormulaDepEdges(List<FormulaField> formulaFields,
+                                                           java.util.Set<String> nameSet) {
+        Map<String, List<DepEdge>> out = new LinkedHashMap<>();
         for (FormulaField ff : formulaFields) {
-            List<String> d = new ArrayList<>();
+            List<DepEdge> edges = new ArrayList<>();
             if (ff.isConditional()) {
                 for (CondRule r : ff.rules) {
+                    String tag = "条件规则" + r.ruleIndex;
                     for (String c : com.cpq.formula.CondTreeEvaluator.columns(r.when))
-                        if (nameSet.contains(c)) d.add(c);
-                    addExprFieldDeps(r.expression, nameSet, d);
+                        if (nameSet.contains(c)) edges.add(new DepEdge(c, tag + "的判断条件"));
+                    addExprFieldDeps(r.expression, nameSet, edges,
+                        tag + "命中的公式「" + nzFormula(r.formulaName) + "」");
                 }
-                addExprFieldDeps(ff.defaultExpression, nameSet, d);
+                addExprFieldDeps(ff.defaultExpression, nameSet, edges,
+                    "条件默认公式「" + nzFormula(ff.defaultFormulaName) + "」");
             } else {
-                addExprFieldDeps(ff.expression, nameSet, d);
+                addExprFieldDeps(ff.expression, nameSet, edges, "公式「" + nzFormula(ff.formulaName) + "」");
             }
-            deps.put(ff.name, d);
+            out.put(ff.name, edges);
+        }
+        return out;
+    }
+
+    /** 边表 → 去重邻接表。 */
+    private Map<String, List<String>> dedupeEdges(Map<String, List<DepEdge>> edges) {
+        Map<String, List<String>> deps = new LinkedHashMap<>();
+        for (Map.Entry<String, List<DepEdge>> e : edges.entrySet()) {
+            java.util.Set<String> uniq = new java.util.LinkedHashSet<>();
+            for (DepEdge de : e.getValue()) uniq.add(de.to());
+            deps.put(e.getKey(), new ArrayList<>(uniq));
         }
         return deps;
+    }
+
+    /**
+     * 构建公式字段依赖图（并集依赖：条件树列 ∪ 候选公式列）。Plan 3a/3c 共用。
+     *
+     * <p><b>必须去重</b>：条件公式的多个分支常引用同一个公式字段（如各分支都 {@code + [来料包装费]}）。
+     * 若保留重复，下游 Kahn 消解按 {@code contains()} 判定、每个前驱只减 1，入度永远归不了零——
+     * {@link #cyclicFormulaNodes} 会误报循环引用，{@link #topoOrder} 会把该节点错甩进「环兜底」
+     * 尾部追加路径导致算序错乱。2026-07-28 COMP-0112「物料成本」即此故障。
+     */
+    private Map<String, List<String>> buildFormulaDeps(List<FormulaField> formulaFields, java.util.Set<String> nameSet) {
+        return dedupeEdges(buildFormulaDepEdges(formulaFields, nameSet));
     }
 
     /** Plan 3c：返回构成环的公式字段名（空 = 无环）。复用并集依赖图（含条件依赖）。 */
@@ -1547,6 +1602,119 @@ public class FormulaCalculator {
         List<String> cyclic = new ArrayList<>();
         for (FormulaField ff : ffs) if (indeg.get(ff.name) > 0) cyclic.add(ff.name);
         return cyclic;
+    }
+
+    /**
+     * 返回每个循环引用的<b>可定位</b>描述（空 = 无环）。
+     *
+     * <p>与 {@link #cyclicFormulaNodes} 的区别：只点名真正落在环上的字段（不含"仅依赖了环"的
+     * 无辜下游节点），并对环上每条边说明该引用出自哪个字段的哪条公式 / 哪条条件规则，
+     * 让配置员不必逐条公式翻找。格式：
+     * <pre>
+     * 「物料成本」→「来料管理费」→「物料成本」
+     *       ·「物料成本」的 条件规则1命中的公式「非银点类材料成本公式」 中引用了 [来料管理费]
+     *       ·「来料管理费」的 公式「来料管理费取值公式」 中引用了 [物料成本]
+     * </pre>
+     */
+    public List<String> describeFormulaCycles(JsonNode fields, JsonNode formulas) {
+        List<FormulaField> ffs = collectFormulaFields(fields, formulas, null);
+        java.util.Set<String> nameSet = new java.util.HashSet<>();
+        for (FormulaField ff : ffs) nameSet.add(ff.name);
+        Map<String, List<DepEdge>> edges = buildFormulaDepEdges(ffs, nameSet);
+        Map<String, List<String>> deps = dedupeEdges(edges);
+
+        List<String> nodes = new ArrayList<>();
+        for (FormulaField ff : ffs) nodes.add(ff.name);
+
+        List<String> out = new ArrayList<>();
+        for (java.util.Set<String> scc : stronglyConnected(nodes, deps)) {
+            boolean hasCycle = scc.size() > 1;
+            if (!hasCycle) {
+                String only = scc.iterator().next();
+                hasCycle = deps.getOrDefault(only, List.of()).contains(only);   // 自引用
+            }
+            if (!hasCycle) continue;
+            List<String> path = cyclePathIn(scc, deps);
+            if (!path.isEmpty()) out.add(renderCycle(path, edges));
+        }
+        return out;
+    }
+
+    /** 环路径 + 每条边的引用位置，渲染成可读文本。 */
+    private String renderCycle(List<String> path, Map<String, List<DepEdge>> edges) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < path.size(); i++) {
+            if (i > 0) sb.append(" → ");
+            sb.append("「").append(path.get(i)).append("」");
+        }
+        for (int i = 0; i + 1 < path.size(); i++) {
+            String from = path.get(i), to = path.get(i + 1);
+            java.util.Set<String> vias = new java.util.LinkedHashSet<>();
+            for (DepEdge de : edges.getOrDefault(from, List.of()))
+                if (de.to().equals(to)) vias.add(de.via());
+            sb.append("\n      ·「").append(from).append("」的 ")
+              .append(vias.isEmpty() ? "公式" : String.join(" / ", vias))
+              .append(" 中引用了 [").append(to).append("]");
+        }
+        return sb.toString();
+    }
+
+    /** Tarjan 强连通分量（节点 = 公式字段，规模很小，递归安全）。 */
+    private List<java.util.Set<String>> stronglyConnected(List<String> nodes, Map<String, List<String>> deps) {
+        Map<String, Integer> index = new HashMap<>(), low = new HashMap<>();
+        java.util.Deque<String> stack = new java.util.ArrayDeque<>();
+        java.util.Set<String> onStack = new java.util.HashSet<>();
+        int[] counter = {0};
+        List<java.util.Set<String>> out = new ArrayList<>();
+        for (String n : nodes)
+            if (!index.containsKey(n)) sccVisit(n, deps, index, low, stack, onStack, counter, out);
+        return out;
+    }
+
+    private void sccVisit(String v, Map<String, List<String>> deps,
+                          Map<String, Integer> index, Map<String, Integer> low,
+                          java.util.Deque<String> stack, java.util.Set<String> onStack,
+                          int[] counter, List<java.util.Set<String>> out) {
+        index.put(v, counter[0]); low.put(v, counter[0]); counter[0]++;
+        stack.push(v); onStack.add(v);
+        for (String w : deps.getOrDefault(v, List.of())) {
+            if (!index.containsKey(w)) {
+                sccVisit(w, deps, index, low, stack, onStack, counter, out);
+                low.put(v, Math.min(low.get(v), low.get(w)));
+            } else if (onStack.contains(w)) {
+                low.put(v, Math.min(low.get(v), index.get(w)));
+            }
+        }
+        if (low.get(v).equals(index.get(v))) {
+            java.util.Set<String> comp = new java.util.LinkedHashSet<>();
+            String w;
+            do { w = stack.pop(); onStack.remove(w); comp.add(w); } while (!w.equals(v));
+            out.add(comp);
+        }
+    }
+
+    /** 在强连通分量内找一条闭合环路径（首尾同名）。 */
+    private List<String> cyclePathIn(java.util.Set<String> scc, Map<String, List<String>> deps) {
+        String start = scc.iterator().next();
+        List<String> path = new ArrayList<>();
+        return dfsBackTo(start, start, scc, deps, new java.util.LinkedHashSet<>(), path) ? path : List.of();
+    }
+
+    private boolean dfsBackTo(String cur, String target, java.util.Set<String> scc,
+                              Map<String, List<String>> deps,
+                              java.util.LinkedHashSet<String> path, List<String> out) {
+        path.add(cur);
+        for (String nxt : deps.getOrDefault(cur, List.of())) {
+            if (!scc.contains(nxt)) continue;
+            if (nxt.equals(target)) {
+                out.addAll(path); out.add(target);   // 闭合
+                return true;
+            }
+            if (path.contains(nxt)) continue;
+            if (dfsBackTo(nxt, target, scc, deps, path, out)) return true;
+        }
+        path.remove(cur);
+        return false;
     }
 
     private List<String> topoOrder(List<FormulaField> formulaFields) {

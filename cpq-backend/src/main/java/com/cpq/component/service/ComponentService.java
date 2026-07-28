@@ -749,9 +749,24 @@ public class ComponentService {
             }
         }
         // Plan 3c：硬环检测（含条件依赖）。转 JsonNode 复用引擎依赖图(buildFormulaDeps)。
+        // 提示必须可定位：报环路径 + 每条边出自哪条公式 / 哪条条件规则，否则配置员只拿到一个
+        // 字段名，得逐条公式翻找（2026-07-28 COMP-0112 反馈）。
         com.fasterxml.jackson.databind.ObjectMapper cycMapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        List<String> cyclic = new com.cpq.quotation.service.FormulaCalculator()
-            .cyclicFormulaNodes(cycMapper.valueToTree(fields), cycMapper.valueToTree(formulas));
+        com.fasterxml.jackson.databind.JsonNode fieldsNode = cycMapper.valueToTree(fields);
+        com.fasterxml.jackson.databind.JsonNode formulasNode = cycMapper.valueToTree(formulas);
+        com.cpq.quotation.service.FormulaCalculator cycCalc = new com.cpq.quotation.service.FormulaCalculator();
+        List<String> cycles = cycCalc.describeFormulaCycles(fieldsNode, formulasNode);
+        if (!cycles.isEmpty()) {
+            StringBuilder sb = new StringBuilder("公式存在循环引用（")
+                .append(cycles.size()).append(" 处），请按以下位置检查：");
+            for (int i = 0; i < cycles.size(); i++) {
+                sb.append("\n  ").append(i + 1).append(". ").append(cycles.get(i));
+            }
+            throw new BusinessException(sb.toString());
+        }
+        // 兜底：描述器万一提取不出环路径，也绝不能放过环——放过 → topoOrder 落进「环兜底」
+        // 尾部追加路径 → 依赖未算先算的静默错值（比报错更难发现）。
+        List<String> cyclic = cycCalc.cyclicFormulaNodes(fieldsNode, formulasNode);
         if (!cyclic.isEmpty()) {
             throw new BusinessException("公式存在循环引用: " + String.join(", ", cyclic));
         }

@@ -9,6 +9,7 @@ import {
   Space,
   Tag,
   message,
+  notification,
   Select,
   Switch,
   Table,
@@ -35,6 +36,28 @@ import { tokensToDrawerExpression } from './formulaSerialize';
 import { SortableTable, DragHandle } from '../../components/SortableTable';
 import { runBatch } from '../../components/SelectableTable';
 import './styles.css';
+
+/**
+ * 保存失败提示。
+ *
+ * 后端对「循环引用」这类错误会回多行结构化文案（环路径 + 每条边出自哪条公式/哪条条件规则），
+ * 而 message.error 会把换行折叠成一行且 3s 后自动消失——配置员来不及照着去定位。
+ * 故多行文案改用常驻 notification（UI 规范「轻量即时反馈」例外之一），单行仍走 message。
+ */
+const showSaveError = (msg: string) => {
+  if (!msg.includes('\n')) {
+    message.error(msg);
+    return;
+  }
+  notification.error({
+    message: '保存失败',
+    description: (
+      <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.8, wordBreak: 'break-word' }}>{msg}</div>
+    ),
+    duration: 0,          // 不自动关闭：用户需要照着提示逐条改配置
+    style: { width: 520 },
+  });
+};
 
 // ---- DataSource binding modal (two-step) ----
 interface DsItem {
@@ -1326,7 +1349,7 @@ const ComponentManagement: React.FC = () => {
     } catch (e: unknown) {
       const err = e as { message?: string };
       // task-0721：后端 400（如"组件已被核价模板引用，无法设为 BOM 类型"）须完整展示，不吞成通用「保存失败」。
-      message.error(err.message || '保存失败');
+      showSaveError(err.message || '保存失败');
     } finally {
       setSaving(false);
     }

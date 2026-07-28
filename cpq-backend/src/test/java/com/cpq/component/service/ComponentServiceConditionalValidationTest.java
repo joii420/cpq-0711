@@ -67,6 +67,52 @@ class ComponentServiceConditionalValidationTest {
         assertTrue(ex.getMessage().contains("循环引用"), ex.getMessage());
     }
 
+    /**
+     * 回归（2026-07-28，COMP-0112）：条件公式两个分支引用同一个 FORMULA 字段是合法 DAG。
+     * 修复前并集依赖不去重 → Kahn 入度归不了零 → 误报「循环引用: 物料成本」。
+     */
+    @Test
+    void sharedDepAcrossConditionalBranches_passes() {
+        var fields = List.<Map<String, Object>>of(
+            Map.of("name", "来料管理费", "field_type", "FORMULA", "formula_name", "来料管理费取值公式"),
+            Map.of("name", "来料包装费", "field_type", "FORMULA", "formula_name", "来料包装费取值公式"),
+            formulaField("物料成本", Map.of(
+                "rules", List.of(Map.of("when", emptyWhen(), "formula", "非银点类材料成本公式")),
+                "default", "银点材料成本公式")));
+        var formulas = List.<Map<String, Object>>of(
+            Map.of("name", "来料管理费取值公式", "expression", List.of()),
+            Map.of("name", "来料包装费取值公式", "expression", List.of()),
+            // 两个分支都引用 [来料包装费]
+            Map.of("name", "银点材料成本公式", "expression",
+                List.of(Map.of("type", "field", "value", "来料包装费"))),
+            Map.of("name", "非银点类材料成本公式", "expression", List.of(
+                Map.of("type", "field", "value", "来料管理费"),
+                Map.of("type", "field", "value", "来料包装费"))));
+        assertDoesNotThrow(() -> svc.validateFormulas(fields, formulas));
+    }
+
+    /** 真环报错须点明环路径与引用位置（公式名 / 条件规则），否则配置员无从定位。 */
+    @Test
+    void cycleMessage_containsLocation() {
+        var fields = List.<Map<String, Object>>of(
+            Map.of("name", "来料管理费", "field_type", "FORMULA", "formula_name", "来料管理费取值公式"),
+            formulaField("物料成本", Map.of(
+                "rules", List.of(Map.of("when", emptyWhen(), "formula", "非银点类材料成本公式")),
+                "default", "银点材料成本公式")));
+        var formulas = List.<Map<String, Object>>of(
+            Map.of("name", "来料管理费取值公式", "expression",
+                List.of(Map.of("type", "field", "value", "物料成本"))),
+            Map.of("name", "银点材料成本公式", "expression", List.of()),
+            Map.of("name", "非银点类材料成本公式", "expression",
+                List.of(Map.of("type", "field", "value", "来料管理费"))));
+        BusinessException ex = assertThrows(BusinessException.class, () -> svc.validateFormulas(fields, formulas));
+        String m = ex.getMessage();
+        assertTrue(m.contains("循环引用"), m);
+        assertTrue(m.contains("条件规则1命中的公式「非银点类材料成本公式」"), "缺条件规则定位：" + m);
+        assertTrue(m.contains("公式「来料管理费取值公式」"), "缺公式名定位：" + m);
+        assertTrue(m.contains("引用了 [物料成本]"), "缺被引用字段：" + m);
+    }
+
     @Test
     void conditionCycle_throws() {
         // A 的条件引用 B(列)，B 的公式引用 A → 并集依赖成环。
