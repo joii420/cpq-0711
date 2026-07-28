@@ -22,11 +22,32 @@ const BASE = '/pricing-basic-data';
 const unwrap = <T>(r: any): T =>
   r && typeof r === 'object' && 'data' in r ? (r.data as T) : (r as T);
 
-/** §1 料号列表（有核价数据的销售料号） */
+/**
+ * §1 料号列表（有核价数据的销售料号）
+ *
+ * task-0728 · api.md A1：新增 `sortBy` / `sortOrder` / `configured` 三个**可选**参数（加法式）。
+ * - `page` 为 **1-based**（注意与工序列表 A2 的 0-based 不同）；
+ * - `sortBy` 只能取白名单值（见 PartCostingTab 的 SORT_KEY_MAP），非法值后端忽略并回退默认序；
+ * - `sortOrder` 仅在 `sortBy` 有值时才有意义；
+ * - `configured`：true＝已配齐、false＝未配齐、undefined＝全部。
+ *
+ * axios 默认会丢弃值为 `undefined` 的 params（不会序列化成空串），故此处直接透传即可。
+ */
+export type PartSortBy =
+  | 'materialName'
+  | 'materialNo'
+  | 'specification'
+  | 'dimension'
+  | 'configuredCount'
+  | 'lastUpdatedAt';
+
 export async function listParts(params: {
   keyword?: string;
   page?: number;
   size?: number;
+  sortBy?: PartSortBy;
+  sortOrder?: 'asc' | 'desc';
+  configured?: boolean;
 }): Promise<PartListResult> {
   const res = await api.get(`${BASE}/parts`, { params });
   return unwrap<PartListResult>(res);

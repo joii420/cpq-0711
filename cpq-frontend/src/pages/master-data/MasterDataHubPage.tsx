@@ -1,44 +1,37 @@
 import React, { useState } from 'react';
-import { Tabs, Button, Space } from 'antd';
-import { ImportOutlined } from '@ant-design/icons';
+import { Tabs } from 'antd';
 import V6ProcessCrudTab from './V6ProcessCrudTab';
-import V6BomQueryTab from './V6BomQueryTab';
 import MaterialRecipeManagement from '../config/MaterialRecipeManagement';
 import ElementManagement from '../config/ElementManagement';
-import ConfigTemplateManagement from '../configtemplate/ConfigTemplateManagement';
-import PricingBasicDataImportDrawer from './PricingBasicDataImportDrawer';
 import PartCostingTab from './part-costing/PartCostingTab';
 
+/**
+ * 主数据维护壳页（task-0728 · F1）
+ *
+ * - 页签固定 4 项，顺序：料号核价 → 材质 → 元素 → 工序，默认停在「料号核价」。
+ * - 原「BOM」「数据模板」两个页签已摘除入口；
+ *   ⚠️ 对应组件文件 `V6BomQueryTab.tsx` / `../configtemplate/ConfigTemplateManagement.tsx` **保留不删**，日后可挂回。
+ * - 原顶部「导入核价数据」按钮 + PricingBasicDataImportDrawer 已移入「料号核价」页签内部（F2），
+ *   壳页顶部只留标题。
+ */
 const MasterDataHubPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<string>('process');
-  const [pricingImportOpen, setPricingImportOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>('part-costing');
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+      <div style={{ marginBottom: 12 }}>
         <h2 style={{ margin: 0 }}>主数据维护</h2>
-        <Space>
-          <Button type="primary" icon={<ImportOutlined />} onClick={() => setPricingImportOpen(true)}>
-            导入核价数据
-          </Button>
-        </Space>
       </div>
       <Tabs
         activeKey={activeTab}
         onChange={setActiveTab}
         destroyInactiveTabPane
         items={[
-          { key: 'process', label: '工序', children: <V6ProcessCrudTab /> },
-          { key: 'bom', label: 'BOM', children: <V6BomQueryTab /> },
+          { key: 'part-costing', label: '料号核价', children: <PartCostingTab /> },
           { key: 'material', label: '材质', children: <MaterialRecipeManagement /> },
           { key: 'element', label: '元素', children: <ElementManagement /> },
-          { key: 'dataTemplate', label: '数据模板', children: <ConfigTemplateManagement /> },
-          { key: 'part-costing', label: '料号核价', children: <PartCostingTab /> },
+          { key: 'process', label: '工序', children: <V6ProcessCrudTab /> },
         ]}
-      />
-      <PricingBasicDataImportDrawer
-        open={pricingImportOpen}
-        onClose={() => setPricingImportOpen(false)}
       />
     </div>
   );

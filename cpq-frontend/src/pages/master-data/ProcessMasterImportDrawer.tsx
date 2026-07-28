@@ -5,10 +5,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useEffect, useState } from 'react';
 import {
-  Drawer, Upload, Button, Space, Typography, Alert, Table, Divider, message,
+  Drawer, Button, Space, Typography, Alert, Table, Divider, message,
 } from 'antd';
-import { UploadOutlined, DownloadOutlined, InboxOutlined } from '@ant-design/icons';
+import { DownloadOutlined } from '@ant-design/icons';
 import type { UploadFile } from 'antd';
+import CompactUploadDragger from '../../components/CompactUploadDragger';
 import {
   importProcesses,
   downloadProcessTemplate,
@@ -87,30 +88,46 @@ const ProcessMasterImportDrawer: React.FC<Props> = ({ open, onClose, onImported 
     onImported?.();
   };
 
+  /** 重置：清空已选文件与导入报告（task-0728 · F6 footer 统一） */
+  const handleReset = () => {
+    setSelectedFile(null);
+    setReport(null);
+  };
+
   return (
     <Drawer
       title="导入工序主数据"
       placement="right"
-      width={720}
+      width={840}
       open={open}
       onClose={onClose}
       destroyOnClose
       footer={
-        report ? (
-          <div style={{ textAlign: 'right' }}>
-            <Button type="primary" onClick={handleDone}>完成</Button>
-          </div>
-        ) : null
+        <div style={{ textAlign: 'right' }}>
+          <Space>
+            <Button onClick={handleReset}>重置</Button>
+            <Button
+              type={report ? 'default' : 'primary'}
+              loading={importing}
+              disabled={!selectedFile}
+              onClick={handleImport}
+            >
+              {importing ? '导入中…' : '开始导入'}
+            </Button>
+            {report && <Button type="primary" onClick={handleDone}>完成</Button>}
+          </Space>
+        </div>
       }
     >
       {/* 1. 模板下载区 */}
       <Alert
+        style={{ marginBottom: 16 }}
         type="info"
         showIcon
         message="导入说明"
         description={
-          <div>
-            <Paragraph style={{ marginBottom: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <Paragraph style={{ marginBottom: 0 }}>
               首个 sheet 按中文列名读取，<Text strong>【工序编号】</Text> 与 <Text strong>【工序名称】</Text> 两列必填，
               其余列（工序类别/是否外协/标准币种/标准单位/默认不良率）选填；
               写入语义为 <Text strong>覆盖更新</Text>（同工序编号重导会刷新名称）。
@@ -119,17 +136,16 @@ const ProcessMasterImportDrawer: React.FC<Props> = ({ open, onClose, onImported 
               icon={<DownloadOutlined />}
               loading={downloading}
               onClick={handleDownloadTemplate}
+              style={{ flex: 'none' }}
             >
-              下载导入模板
+              下载模板
             </Button>
           </div>
         }
       />
 
-      <Divider />
-
       {/* 2. 上传区 */}
-      <Upload.Dragger
+      <CompactUploadDragger
         accept=".xlsx"
         maxCount={1}
         multiple={false}
@@ -141,23 +157,9 @@ const ProcessMasterImportDrawer: React.FC<Props> = ({ open, onClose, onImported 
         }}
         onRemove={() => { setSelectedFile(null); return true; }}
         disabled={importing}
-      >
-        <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-        <p className="ant-upload-text">点击或拖拽 .xlsx 工序主数据文件到此处</p>
-        <p className="ant-upload-hint">仅支持单个 .xlsx 文件</p>
-      </Upload.Dragger>
-
-      <div style={{ marginTop: 16 }}>
-        <Button
-          type="primary"
-          icon={<UploadOutlined />}
-          loading={importing}
-          disabled={!selectedFile}
-          onClick={handleImport}
-        >
-          {importing ? '导入中…' : '开始导入'}
-        </Button>
-      </div>
+        text="点击或拖拽 .xlsx 工序主数据文件到此处"
+        hint="仅支持单个 .xlsx 文件"
+      />
 
       {/* 3. 结果报告区 */}
       {report && (

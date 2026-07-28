@@ -46,7 +46,6 @@ import SystemConfigPage from '../pages/system-config/SystemConfigPage';
 import LockMonitorPage from '../pages/system-monitor/LockMonitorPage';
 import DdlExtensionPage from '../pages/system-monitor/DdlExtensionPage';
 import MaterialRecipeManagement from '../pages/config/MaterialRecipeManagement';
-import ConfigTemplateManagement from '../pages/configtemplate/ConfigTemplateManagement';
 import SelTemplateManagement from '../pages/config/SelTemplateManagement';
 import ModelConfigManagement from '../pages/config/ModelConfigManagement';
 
@@ -124,7 +123,8 @@ const router = createBrowserRouter([
       { path: 'system-monitor/locks', element: <LockMonitorPage /> },
       { path: 'system-monitor/ddl-extension', element: <DdlExtensionPage /> },
       { path: 'config/material-recipes', element: <MaterialRecipeManagement /> },
-      { path: 'config/config-templates', element: <ConfigTemplateManagement /> },
+      // task-0728 F7：'config/config-templates'（数据模板）路由已下线。
+      // 页面组件 pages/configtemplate/ConfigTemplateManagement.tsx 保留不删（D4），日后可挂回。
       { path: 'config/sel-templates', element: <SelTemplateManagement /> },
       { path: 'config/model-configs', element: <ModelConfigManagement /> },
 

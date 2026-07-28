@@ -1,0 +1,67 @@
+/**
+ * CompactUploadDragger —— 紧凑横排上传框（task-0728 · F0-2）
+ *
+ * 为什么必须用 CSS 而不是内联 style：
+ *   antd 的 Dragger 把 `padding: token.padding`(16px) 打在内层 `.ant-upload.ant-upload-btn` 上
+ *   （见 antd/es/upload/style/dragger.js），该节点由 antd 内部渲染，外部拿不到 style 入口
+ *   （`styles.trigger` 只作用于外层 `.ant-upload-drag`）。
+ *
+ * 选择器为什么写这么长：
+ *   antd cssinjs 生成的规则形如 `.css-hash.ant-upload-wrapper .ant-upload-drag .ant-upload`（0-4-0），
+ *   这里用 5 个 class（0-5-0）压过它，避免依赖样式表注入顺序。
+ *
+ * DOM 结构（antd v6）：
+ *   span.ant-upload-wrapper.compact-upload-dragger   ← className 落在这里
+ *     div.ant-upload.ant-upload-drag
+ *       span.ant-upload.ant-upload-btn               ← 16px 内边距在这里，下面清零
+ *         div.ant-upload-drag-container              ← display:table-cell
+ *           div.cud-body                             ← 自己控制 padding: 14px 16px
+ *     div.ant-upload-list                            ← 已选文件名 + 移除按钮，是拖拽区的兄弟节点，不受上面影响
+ */
+
+.compact-upload-dragger.ant-upload-wrapper .ant-upload-drag .ant-upload.ant-upload-btn {
+  padding: 0;
+}
+
+/**
+ * 高度必须按内容自适应（task-0728 · F6 实测补充）
+ *
+ * antd 给 `.ant-upload-drag` 写死了 `height: 100%`。当 Dragger 直接落在 `.ant-drawer-body`
+ * （flex:1 → 有确定高度）之下时，百分比高度可解析，拖拽框会被撑满整个抽屉正文。
+ * 这是既有问题，不是本组件引入的 —— 改造前主仓 HEAD 的「导入工序主数据」抽屉实测同样是 895px，
+ * 只是当时框内是 44px 图标 + 两行文案，看起来"本来就该那么大"。
+ * 紧凑框把内容压到 68px 后若不解掉这条，视觉上完全看不出变紧凑（验收标准 25）。
+ *
+ * 选择器 0-4-0，压过 antd 的 `.css-hash.ant-upload-wrapper .ant-upload-drag`（0-3-0），
+ * 不依赖样式表注入顺序。
+ */
+.compact-upload-dragger.ant-upload-wrapper .ant-upload.ant-upload-drag {
+  height: auto;
+}
+
+/* 图标与两行文案同一行横排；整体在拖拽区内居中，文案自身左对齐（拖拽区默认 text-align:center） */
+.compact-upload-dragger .cud-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 14px 16px;
+  text-align: left;
+}
+
+.compact-upload-dragger .cud-icon {
+  display: flex;
+  font-size: 22px;
+  line-height: 1;
+}
+
+/* 显式写死 line-height，使整体高度不随外层继承的行高漂移（目标：约 64~68px，改造前约 180px） */
+.compact-upload-dragger .cud-text {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.compact-upload-dragger .cud-hint {
+  font-size: 12px;
+  line-height: 18px;
+}
