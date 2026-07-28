@@ -133,6 +133,8 @@ public class QuoteImportService {
         }
         ctx.sharedCache.put("partTypeIndex", vo.typeIndex);
         ctx.sharedCache.put("selfProcessOperationNo", vo.selfProcessOperationNo);
+        // repair-0727：组装工序 Phase 1 解析结果，供 Q14/Q15 handler 直接取回落库，不再重复解析/查库。
+        ctx.sharedCache.put("assemblyProcessNo", vo.assemblyProcessNo);
         // R2（协调方 2026-07-23 补充口径）：全 handler 共享一个 MaterialNoResolver.BatchState，
         // 并用 Phase 1 收集的批量级名称→料号种子预灌，防止同一物理件跨 sheet 被二次发号（重号）。
         com.cpq.basicdata.v6.service.MaterialNoResolver.BatchState sharedBatch =

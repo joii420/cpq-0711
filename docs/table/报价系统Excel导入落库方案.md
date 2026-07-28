@@ -1,6 +1,8 @@
 # 报价系统基础数据 Excel 导入落库方案
 
-> 版本：V3.4 | 日期：2026-07-08
+> 版本：V3.5 | 日期：2026-07-27
+>
+> **V3.5（2026-07-27，repair-0727）· 组装工序编号/名称解析**：§14「组装加工费」与 §15「组装加工费年降」的「组装工序」列此前**未做工序解析**，业务填的工序名称被原样写入编号列（`capacity.process_no`/`unit_price.operation_no`），`process_name` 恒 NULL；本次改为 Phase 1（`QuoteImportValidator`）经新增 `ProcessNoResolver` 反查 `process_master`（先按编号精确匹配、再按名称精确匹配，同名多条取 `process_no` 升序第一条并记日志），解析成功才落真编号 + 规范名称，解析不到则整单导入失败（fail-fast，不写库）。详见下方 §14/§15 与需求文档 `dev-docs/task-0708-导入报价单和导入核价单的数据落库规则澄清/repair-0727-工序编号与工序名称落库优化/需求文档.md`。
 >
 > **V3.4（2026-07-08）· 销售料号主料号口径 + 材质料号**：报价 V3 各 Sheet 主料号列统一为 **`销售料号`**（已无「宏丰料号」/「报价料号」列）——各 Q* handler 主料号/成品料号读列改为 `row.getStr("销售料号", <旧名回退>)` 落 `material_no`/`finished_material_no`/`code`。
 > - **材质料号**：`物料BOM`/`物料与元素BOM`/`元素回收折扣` 含 `材质料号` 列 → 落 `element_bom.material_part_no`（新增列并纳入唯一键，与核价侧同口径）；`物料BOM`（MaterialBomMergeHandler）组件列由 `投入料号` 回退 `材质料号`（名称 `投入料号名称` 回退 `材质料号名称`），仍走 §1.5 按名发号。
@@ -524,13 +526,16 @@
 |-----------|-----------|:-------:|---------|
 | 宏丰料号 | `material_no` | ✅ | 料号 |
 | 项次 | `seq_no` | ✅ | |
-| 组装工序 | `process_no` | ✅ | 工序编号（取工序编号对应值） |
+| 组装工序 | `process_no` | ✅ | **工序编号**（经解析，见下方 📌） |
+| 组装工序 | `process_name` | ✅ | **工序名称**（repair-0727 新增落库，经解析取 `process_master` 规范名） |
 | 组装加工费 | `fixed_cost` | ✅ | 费用(固定) |
 | 货币 | `currency` | ✅ | 币种 |
 | 计价单位 | `unit` | ✅ | 计量单位 |
 | 拒收率/不良率（%） | `default_defect_rate` | ✅ | 默认不良率(%) |
 
-> 📌 组装加工费落入 `capacity` 表（产能表），通过 `process_no` 关联工序；拒收率/不良率写入 `default_defect_rate`。
+> 📌 组装加工费落入 `capacity` 表（产能表）；拒收率/不良率写入 `default_defect_rate`。
+>
+> 📌 **组装工序解析规则（repair-0727，2026-07-27）**：Excel「组装工序」列业务既可能填工序名称、也可能填工序编号，导入 Phase 1（`QuoteImportValidator.validateAssemblyProcess`，经 `ProcessNoResolver`）按**两段匹配**反查 `process_master`：① 原始值先按 `process_no` 精确匹配；② 未命中再按 `process_name` 精确匹配（同名多条取 `process_no` 升序第一条，并记 `Log.warn` 留痕全部候选）。解析成功才落 `(process_no, process_name)`；**解析不到 → Phase 1 拦截，整份 Excel 导入失败**（不是"该行跳过"，也不是"该 sheet 部分失败"），错误按**销售料号聚合**上报（同料号多道工序未登记只报一条，文案含全部未登记工序名）。`process_name` 是内容列（`CONTENT`），不进 `VERSION_TRIGGER`（仍为 `process_no` + `seq_no`）——工序改名走原地更新，不触发 `capacity` 升版。旧版本（本次改动前）`process_no` 直接写 Excel 原文、`process_name` 恒 NULL，属已废止的错误落库语义，历史脏数据不迁移，重导即覆盖。
 
 ---
 
@@ -549,7 +554,7 @@
 |-----------|-----------|:-------:|---------|
 | 宏丰料号（成品料号） | `finished_material_no` | ✅ | 成品料号 |
 | 项次 | `seq_no` | ✅ | 序号 |
-| 组装工序 | `operation_no` | ✅ | 作业编号（工序编号） |
+| 组装工序 | `operation_no` | ✅ | **作业编号**（经解析，见下方 📌；允许为空） |
 | 年降顺序 | `discount_order` | ✅ | 序号（年降顺序） |
 | 年降系数（%） | `cost_ratio` | ✅ | 比例 |
 | 单次固定年降值 | `pricing_price` | ✅ | 费用(固定) |
@@ -558,6 +563,10 @@
 | 降价次数 | — | ❌ | 不导入 |
 
 > 📌 `price_type=COMPONENT_REDUCTION`，`cost_type=年降系数` 固定写入；年降系数（%）与单次固定年降值二选一填写。客户编号由系统自动提供；降价次数不导入。
+>
+> 📌 **组装工序解析规则（repair-0727，2026-07-27）**：与 §14 同一套 `ProcessNoResolver` 两段匹配（`QuoteImportValidator.validateAssemblyAnnualDiscount`），差异有二：① 本表**不写工序名称**（`unit_price` 无该列，且 `COMPONENT_REDUCTION` 当前无 SQL 视图消费名称，不为此加列）；② 「组装工序」列**允许为空**（`operation_no` 允许 NULL）——为空则跳过解析、不记错；只有「填了但解析不到」才按销售料号聚合报错、整单拦截。
+>
+> ⚠️ **升级时序约束**：`operation_no` 是 `unit_price` 版本化 `groupKey` 的一部分（不像 §14 `process_no` 只在 `CONTENT`/`VERSION_TRIGGER`）。本次改动把该列的取值从「Excel 原文（可能是中文名）」换成「真编号」，若在改动上线**前**已导入过一次「组装加工费年降」产生了 `COMPONENT_REDUCTION` 数据，上线后重导会因 `operation_no` 变化被当成全新组、老组 `is_current` 不会自动切走（双 current）——本次改动上线时 `COMPONENT_REDUCTION` 实测为 0 行，故无迁移成本；若届时已有数据须先手工下线老组（`UPDATE unit_price SET is_current=false WHERE price_type='COMPONENT_REDUCTION' AND is_current AND operation_no !~ '^[A-Z]'` 之类的清理，视实际编号规则调整）。
 
 ---
 
