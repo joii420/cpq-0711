@@ -4,6 +4,7 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.service.ProcessNoResolver;
 import com.cpq.basicdata.v6.versioning.VersionedGroupSpec;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -22,6 +23,12 @@ import java.util.Map;
  * <p>版本化：groupKey=(material_no, resource_group_no=QUOTE_ASSEMBLY)，料号级整组升版。
  * <p>升版触发列：process_no + seq_no（工序编码/项次变化才升版）；金额/货币/计价单位/拒收率原地更新不升版。
  * <p>同料号多工序行汇总成一组 newRows，整体写入 capacity。
+ *
+ * <p>repair-0727：「组装工序」列的原始值（工序编号或名称）已在 Phase 1
+ * （{@link QuoteImportValidator#validateAssemblyProcess}）解析为真工序编号 + 规范名称，
+ * 本 handler 只从 {@code ctx.sharedCache["assemblyProcessNo"]} 取回已解析结果落库，
+ * <b>不再重复解析、不再查库</b>。取不到（理论上不可能，Phase 1 已全量拦截）按兜底纪律
+ * {@code recordError}，触发 {@link QuoteImportService#writeAll} 整单回滚。
  */
 @ApplicationScoped
 public class Q14AssemblyProcessFeeHandler implements SheetHandler {
@@ -34,25 +41,36 @@ public class Q14AssemblyProcessFeeHandler implements SheetHandler {
     @Override public String sheetName() { return "组装加工费"; }
 
     private static final List<String> CONTENT = List.of(
-        "process_no", "seq_no", "production_type", "fixed_cost",
+        "process_no", "process_name", "seq_no", "production_type", "fixed_cost",
         "currency", "capacity_unit", "default_defect_rate", "is_effective");
 
-    /** 升版触发列：仅工序编码 + 项次(数量)变化才升版；金额/货币/计价单位/拒收率原地更新。 */
+    /** 升版触发列：仅工序编码 + 项次(数量)变化才升版；process_name 是内容列，改名走原地更新不升版。 */
     private static final List<String> VERSION_TRIGGER = List.of("process_no", "seq_no");
 
     @Override
     @Transactional(Transactional.TxType.MANDATORY)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
+        @SuppressWarnings("unchecked")
+        Map<List<String>, ProcessNoResolver.Resolved> assemblyProcessNo =
+            (Map<List<String>, ProcessNoResolver.Resolved>) ctx.sharedCache.get("assemblyProcessNo");
         // 按料号聚合：同一料号的所有工序行汇总成一组（料号级整组升版）
         Map<List<Object>, Map<String, Object>> groupKeyOf = new LinkedHashMap<>();
         Map<List<Object>, List<Map<String, Object>>> rowsOf = new LinkedHashMap<>();
         for (SheetRow row : rows) {
             result.totalRows++;
             String materialNo = row.getStr("销售料号", "宏丰料号");
-            String processNo = row.getStr("组装工序", "工序编号");
-            if (materialNo == null || processNo == null) {
+            String rawProcess = row.getStr("组装工序", "工序编号");
+            if (materialNo == null || rawProcess == null) {
                 result.recordError(row.rowNo, "宏丰料号/工序编号", "必填项为空");
+                continue;
+            }
+            ProcessNoResolver.Resolved resolved = assemblyProcessNo == null ? null
+                : assemblyProcessNo.get(List.of("组装加工费", materialNo.strip(), rawProcess.strip()));
+            if (resolved == null) {
+                result.recordError(row.rowNo, "组装工序",
+                    "工序「" + rawProcess + "」未在 Phase 1 解析结果中找到（Phase 1 理论上已全量拦截，"
+                        + "此处出现属竞态/数据不一致），导入中止");
                 continue;
             }
             String resourceGroupNo = "QUOTE_ASSEMBLY";
@@ -65,7 +83,8 @@ public class Q14AssemblyProcessFeeHandler implements SheetHandler {
                 return g;
             });
             Map<String, Object> c = new LinkedHashMap<>();
-            c.put("process_no", processNo);
+            c.put("process_no", resolved.processNo());
+            c.put("process_name", resolved.processName());
             c.put("seq_no", row.getInt("项次"));
             c.put("production_type", "BATCH_FIXED");
             c.put("fixed_cost", row.getDecimal("组装加工费"));
