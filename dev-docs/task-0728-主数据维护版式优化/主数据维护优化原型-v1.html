@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>主数据维护 · 优化原型 v1</title>
+<style>
+  :root{
+    --primary:#1677ff; --primary-hover:#4096ff; --primary-bg:#e6f4ff; --primary-border:#91caff;
+    --text:rgba(0,0,0,.88); --text-2:rgba(0,0,0,.65); --text-3:rgba(0,0,0,.45);
+    --border:#d9d9d9; --split:#f0f0f0; --fill:#fafafa;
+    --green:#52c41a; --green-bg:#f6ffed; --green-bd:#b7eb8f;
+    --orange:#fa8c16; --orange-bg:#fff7e6; --orange-bd:#ffd591;
+    --red:#ff4d4f; --red-bg:#fff2f0; --red-bd:#ffccc7;
+    --radius:6px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:24px 24px 80px;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:14px; line-height:1.5715; color:var(--text); background:#f5f5f5;
+  }
+  .wrap{max-width:1280px;margin:0 auto}
+
+  /* ── 页面级说明 ─────────────────────────────── */
+  .doc-head{background:#fff;border-radius:8px;padding:20px 24px;margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .doc-head h1{margin:0 0 6px;font-size:22px;font-weight:600}
+  .doc-head .sub{color:var(--text-3);font-size:13px}
+  .req-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .req{display:inline-flex;align-items:center;gap:6px;background:var(--fill);border:1px solid var(--split);
+       border-radius:20px;padding:4px 12px 4px 4px;font-size:12px;color:var(--text-2)}
+  .req b{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;
+        background:var(--primary);color:#fff;font-size:11px;font-weight:600}
+
+  /* ── 模式切换 ───────────────────────────────── */
+  .switcher{display:flex;gap:0;background:#fff;border:1px solid var(--border);border-radius:var(--radius);
+            overflow:hidden;width:fit-content;margin-bottom:16px}
+  .switcher button{border:0;background:#fff;padding:7px 20px;font-size:14px;cursor:pointer;color:var(--text-2);
+                   border-right:1px solid var(--border);font-family:inherit}
+  .switcher button:last-child{border-right:0}
+  .switcher button.on{background:var(--primary);color:#fff}
+
+  /* ── 应用外壳 ───────────────────────────────── */
+  .app{background:#fff;border-radius:8px;padding:20px 24px 24px;box-shadow:0 1px 2px rgba(0,0,0,.04);position:relative}
+  .page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .page-head h2{margin:0;font-size:18px;font-weight:600}
+
+  /* ── Tabs ───────────────────────────────────── */
+  .tabs{display:flex;gap:0;border-bottom:1px solid var(--split);margin-bottom:16px;position:relative}
+  .tab{padding:12px 0;margin-right:32px;cursor:pointer;color:var(--text);font-size:14px;position:relative;white-space:nowrap}
+  .tab.on{color:var(--primary);font-weight:500}
+  .tab.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--primary)}
+  .tab.ghost{color:var(--text-3);text-decoration:line-through}
+
+  /* ── 工具栏 ─────────────────────────────────── */
+  .toolbar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .toolbar .left,.toolbar .right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+  .inp{height:32px;border:1px solid var(--border);border-radius:var(--radius);padding:0 11px;display:flex;
+       align-items:center;gap:6px;background:#fff;color:var(--text-3);font-size:14px}
+  .inp.search{width:280px}
+  .inp.filter{min-width:150px;justify-content:space-between;color:var(--text)}
+  .inp .ph{color:var(--text-3)}
+
+  .btn{height:32px;border:1px solid var(--border);border-radius:var(--radius);background:#fff;color:var(--text);
+       padding:0 15px;display:inline-flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;white-space:nowrap;
+       font-family:inherit}
+  .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+  .btn.danger{color:var(--red);border-color:var(--red)}
+  .btn.dis{color:rgba(0,0,0,.25);background:var(--fill);border-color:var(--border);cursor:not-allowed}
+  .btn.sm{height:26px;padding:0 10px;font-size:13px}
+  .btn.link{border:0;background:transparent;color:var(--primary);padding:0 6px}
+
+  /* ── 动作条 ─────────────────────────────────── */
+  .actionbar{padding:8px 12px;background:var(--fill);border:1px solid var(--split);border-radius:var(--radius);
+             margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .actionbar .hint{color:var(--text-3);font-size:13px;margin-right:8px}
+  .actionbar .spacer{flex:1}
+
+  /* ── 表格 ───────────────────────────────────── */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{background:var(--fill);text-align:left;padding:10px 12px;font-weight:600;color:var(--text);
+           border-bottom:1px solid var(--split);white-space:nowrap}
+  tbody td{padding:9px 12px;border-bottom:1px solid var(--split);color:var(--text);white-space:nowrap}
+  tbody tr:hover{background:#fafafa}
+  .chk{width:40px}
+  .chk i{display:inline-block;width:15px;height:15px;border:1px solid var(--border);border-radius:3px;vertical-align:-2px}
+
+  /* 可排序表头 */
+  th.srt{cursor:pointer;user-select:none}
+  th.srt:hover{background:#f0f0f0}
+  .sorter{display:inline-flex;flex-direction:column;gap:2px;margin-left:6px;vertical-align:1px}
+  .sorter i{width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent}
+  .sorter i.up{border-bottom:5px solid #bfbfbf}
+  .sorter i.dn{border-top:5px solid #bfbfbf}
+  .sorter.asc i.up{border-bottom-color:var(--primary)}
+  .sorter.desc i.dn{border-top-color:var(--primary)}
+  th.srt.on{color:var(--primary)}
+  a.cell{color:var(--primary);text-decoration:none;cursor:pointer}
+  .muted{color:var(--text-3)}
+
+  .tag{display:inline-block;padding:0 7px;height:20px;line-height:19px;border-radius:4px;font-size:12px;border:1px solid}
+  .tag.green{background:var(--green-bg);border-color:var(--green-bd);color:#389e0d}
+  .tag.blue{background:var(--primary-bg);border-color:var(--primary-border);color:#0958d9}
+  .tag.orange{background:var(--orange-bg);border-color:var(--orange-bd);color:#d46b08}
+  .tag.red{background:var(--red-bg);border-color:var(--red-bd);color:#cf1322}
+  .tag.grey{background:var(--fill);border-color:var(--border);color:var(--text-2)}
+
+  /* ── 分页 ───────────────────────────────────── */
+  .pager{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:16px;font-size:13px;color:var(--text-2)}
+  .pg{min-width:32px;height:32px;border:1px solid var(--border);border-radius:var(--radius);background:#fff;
+      display:inline-flex;align-items:center;justify-content:center;padding:0 8px;cursor:pointer}
+  .pg.on{border-color:var(--primary);color:var(--primary)}
+  .pg.arrow{color:var(--text-3)}
+
+  /* ── 标注 ───────────────────────────────────── */
+  .anno{position:relative}
+  .badge{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;
+         background:#fa541c;color:#fff;font-size:11px;font-weight:700;margin-left:6px;vertical-align:2px;
+         box-shadow:0 0 0 2px #fff}
+  .callout{border-left:3px solid var(--primary);background:var(--primary-bg);padding:8px 12px;border-radius:0 4px 4px 0;
+           font-size:13px;color:var(--text-2);margin:12px 0}
+  .callout.warn{border-left-color:var(--orange);background:var(--orange-bg)}
+  .callout b{color:var(--text)}
+
+  /* ── 抽屉演示 ───────────────────────────────── */
+  .drawer-demo{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px}
+  @media(max-width:900px){.drawer-demo{grid-template-columns:1fr}}
+  .drawer{border:1px solid var(--split);border-radius:8px;overflow:hidden;background:#fff}
+  .drawer.before{opacity:.85}
+  .drawer-hd{padding:14px 16px;border-bottom:1px solid var(--split);display:flex;justify-content:space-between;align-items:center}
+  .drawer-hd .t{font-size:15px;font-weight:600}
+  .drawer-bd{padding:16px}
+  .drawer-ft{padding:10px 16px;border-top:1px solid var(--split);display:flex;justify-content:flex-end;gap:8px;background:#fff}
+  .tagline{display:inline-block;font-size:11px;padding:1px 8px;border-radius:10px;font-weight:600}
+  .tagline.bad{background:var(--red-bg);color:#cf1322;border:1px solid var(--red-bd)}
+  .tagline.good{background:var(--green-bg);color:#389e0d;border:1px solid var(--green-bd)}
+
+  .alert{border:1px solid var(--primary-border);background:var(--primary-bg);border-radius:var(--radius);padding:10px 12px;
+         font-size:13px;color:var(--text-2);display:flex;gap:8px;align-items:flex-start}
+  .alert .ico{color:var(--primary);font-size:14px;line-height:1.4}
+  .alert-body{flex:1}
+  .alert-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+
+  /* Dragger 前后 */
+  .dragger{border:1px dashed var(--border);border-radius:8px;background:var(--fill);text-align:center;cursor:pointer}
+  .dragger.big{padding:38px 16px}
+  .dragger.big .ic{font-size:44px;color:var(--primary);line-height:1}
+  .dragger.big .t1{margin:14px 0 6px;font-size:15px}
+  .dragger.big .t2{font-size:13px;color:var(--text-3)}
+  .dragger.small{padding:14px 16px;display:flex;align-items:center;justify-content:center;gap:12px;text-align:left}
+  .dragger.small .ic{font-size:22px;color:var(--primary)}
+  .dragger.small .t1{font-size:14px}
+  .dragger.small .t2{font-size:12px;color:var(--text-3)}
+  .hgt{font-size:11px;color:var(--text-3);margin-top:6px;text-align:right}
+
+  /* ── 章节 ───────────────────────────────────── */
+  .section{background:#fff;border-radius:8px;padding:20px 24px;margin-top:16px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .section > h3{margin:0 0 4px;font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .section > .desc{color:var(--text-3);font-size:13px;margin-bottom:16px}
+
+  .spec-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  .spec-table th{background:var(--fill);padding:8px 12px;text-align:left;border:1px solid var(--split);font-weight:600}
+  .spec-table td{padding:8px 12px;border:1px solid var(--split);vertical-align:top;white-space:normal}
+  .spec-table code{background:var(--fill);padding:1px 5px;border-radius:3px;font-size:12px;
+                   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+  .todo{border:1px solid var(--orange-bd);background:var(--orange-bg);border-radius:var(--radius);padding:12px 16px;margin-top:8px}
+  .todo ol{margin:8px 0 0;padding-left:20px}
+  .todo li{margin-bottom:8px;font-size:13px;color:var(--text-2)}
+  .todo li b{color:var(--text)}
+  .hide{display:none !important}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="doc-head">
+    <h1>主数据维护 · 优化原型 <span style="font-size:13px;font-weight:400;color:var(--text-3)">v1 · 2026-07-27</span></h1>
+    <div class="sub">页面：<code style="background:#fafafa;padding:1px 5px;border-radius:3px">/master-data-hub</code> · <code style="background:#fafafa;padding:1px 5px;border-radius:3px">MasterDataHubPage.tsx</code>　　橙色数字标记 = 对应需求条目</div>
+    <div class="req-list">
+      <span class="req"><b>1</b> 移除 BOM / 数据模板页签</span>
+      <span class="req"><b>2</b> 排序：料号核价→材质→元素→工序</span>
+      <span class="req"><b>3</b> 每个页签加分页</span>
+      <span class="req"><b>4</b> 搜索/过滤/分页/按钮统一</span>
+      <span class="req"><b>5</b> 导入抽屉：缩小文件框 + 统一模板按钮</span>
+      <span class="req"><b>6</b> 「导入核价数据」移入料号核价页签</span>
+      <span class="req"><b>7</b> 列标题点击切换升序/降序</span>
+    </div>
+  </div>
+
+  <div class="switcher">
+    <button id="btnAfter" class="on" onclick="setMode('after')">改造后（提案）</button>
+    <button id="btnBefore" onclick="setMode('before')">改造前（现状）</button>
+  </div>
+
+  <!-- ══════════════ 改造后 ══════════════ -->
+  <div id="viewAfter">
+    <div class="app">
+      <div class="page-head">
+        <h2>主数据维护</h2>
+        <div style="font-size:12px;color:var(--text-3)">
+          顶部原「导入核价数据」按钮已移走 <span class="badge">6</span>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <div class="tab on" data-t="part"   onclick="setTab('part')">料号核价</div>
+        <div class="tab"    data-t="mat"    onclick="setTab('mat')">材质</div>
+        <div class="tab"    data-t="ele"    onclick="setTab('ele')">元素</div>
+        <div class="tab"    data-t="proc"   onclick="setTab('proc')">工序</div>
+        <div style="margin-left:auto;align-self:center;font-size:12px;color:var(--text-3)">
+          4 个页签，顺序固定 <span class="badge">1</span><span class="badge">2</span>
+        </div>
+      </div>
+
+      <!-- ── 料号核价 ── -->
+      <div class="pane" id="pane-part">
+        <div class="toolbar">
+          <div class="left">
+            <div class="inp search">🔍 <span class="ph">搜索 料号 / 品名</span></div>
+            <div class="inp filter"><span>配置状态：全部</span><span class="muted">▾</span></div>
+          </div>
+          <div class="right">
+            <button class="btn">↻ 刷新</button>
+            <button class="btn primary">⤓ 导入核价数据 <span class="badge">6</span></button>
+          </div>
+        </div>
+
+        <div class="callout">
+          <b>为什么这里没有动作条：</b>料号核价是「点行进抽屉」的 Master-Detail 纯查看页，属《列表操作规范》例外白名单，不加多选与批量动作 —— 这是<b>有意的差异</b>，其余三个页签统一带动作条。
+        </div>
+
+        <table>
+          <thead><tr>
+            <th class="srt">品名<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">料号<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">规格<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">尺寸<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">已配置<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt on">最近更新<span class="sorter desc"><i class="up"></i><i class="dn"></i></span></th>
+          </tr></thead>
+          <tbody>
+            <tr><td><a class="cell">银点触头 AgNi11</a></td><td>3110520789</td><td>Φ3.0×1.2</td><td>3.0/1.2</td><td><span class="tag green">17/17</span></td><td class="muted">2026-07-26 14:22:07</td></tr>
+            <tr><td><a class="cell">铆钉 H65</a></td><td>4141111115</td><td>Φ2.5</td><td>2.5/0.8</td><td><span class="tag blue">12/17</span></td><td class="muted">2026-07-25 09:41:33</td></tr>
+            <tr><td><a class="cell">簧片组件</a></td><td>1922000031</td><td>—</td><td>—</td><td><span class="tag blue">8/17</span></td><td class="muted">2026-07-24 17:05:12</td></tr>
+            <tr><td><a class="cell">接线端子</a></td><td>2010030044</td><td>M4</td><td>—</td><td><span class="tag green">17/17</span></td><td class="muted">2026-07-23 11:38:50</td></tr>
+          </tbody>
+        </table>
+        <div class="pager">
+          <span>共 82 条</span>
+          <span class="pg arrow">‹</span><span class="pg on">1</span><span class="pg">2</span><span class="pg">3</span>
+          <span class="pg">4</span><span class="pg">5</span><span class="pg arrow">›</span>
+          <span class="pg">20 条/页 ▾</span>
+          <span class="badge">3</span><span class="badge">4</span>
+        </div>
+      </div>
+
+      <!-- ── 材质 ── -->
+      <div class="pane hide" id="pane-mat">
+        <div class="toolbar">
+          <div class="left">
+            <div class="inp search">🔍 <span class="ph">搜索 材质编号 / 化学式 / 名称 / 元素</span></div>
+            <div class="inp filter"><span>类型：全部</span><span class="muted">▾</span></div>
+            <div class="inp filter"><span>状态：全部</span><span class="muted">▾</span></div>
+          </div>
+          <div class="right">
+            <button class="btn">↻ 刷新</button>
+            <button class="btn">⤓ 导入材质库</button>
+            <button class="btn primary">＋ 新建材质</button>
+          </div>
+        </div>
+
+        <div class="callout">
+          <b>本页签的三处变化：</b>① 去掉外层 Card 与「材质管理」标题（与页签名重复）；② 搜索框从右上角移到工具栏左侧，宽度 260→280；③ 导入按钮图标由 <code>UploadOutlined</code> 统一为 <code>ImportOutlined</code>，并补「刷新」。
+        </div>
+
+        <div class="actionbar">
+          <span class="hint">未选择行</span>
+          <button class="btn sm dis">✎ 编辑</button>
+          <span class="spacer"></span>
+          <button class="btn sm dis">🗑 停用</button>
+        </div>
+
+        <table>
+          <thead><tr>
+            <th class="chk"><i></i></th>
+            <th class="srt">材质编号<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">化学式<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">名称<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">类型<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">状态<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">创建时间<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt on">修改时间<span class="sorter desc"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">排序<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="chk"><i></i></td><td><a class="cell">MT-0001</a></td><td>AgNi11</td><td>银镍 11</td><td><span class="tag green">含量可调</span></td><td><span class="tag green">启用</span></td><td class="muted">2026-07-08 10:12</td><td class="muted">2026-07-22 16:40</td><td>1</td></tr>
+            <tr><td class="chk"><i></i></td><td><a class="cell">MT-0002</a></td><td>H65</td><td>黄铜 H65</td><td><span class="tag red">标准锁定</span></td><td><span class="tag green">启用</span></td><td class="muted">2026-07-08 10:12</td><td class="muted">2026-07-19 09:03</td><td>2</td></tr>
+            <tr><td class="chk"><i></i></td><td><a class="cell">MT-0003</a></td><td>AgCdO12</td><td>银氧化镉 12</td><td><span class="tag orange">部分可调</span></td><td><span class="tag green">启用</span></td><td class="muted">2026-07-09 14:20</td><td class="muted">2026-07-09 14:20</td><td>3</td></tr>
+            <tr><td class="chk"><i></i></td><td><a class="cell">MT-0004</a></td><td>Cu-ETP</td><td>紫铜</td><td><span class="tag red">标准锁定</span></td><td><span class="tag grey">停用</span></td><td class="muted">2026-07-10 08:55</td><td class="muted">2026-07-18 13:11</td><td>4</td></tr>
+          </tbody>
+        </table>
+        <div class="pager">
+          <span>共 39 条</span>
+          <span class="pg arrow">‹</span><span class="pg on">1</span><span class="pg">2</span><span class="pg arrow">›</span>
+          <span class="pg">20 条/页 ▾</span>
+          <span class="badge">3</span>
+        </div>
+      </div>
+
+      <!-- ── 元素 ── -->
+      <div class="pane hide" id="pane-ele">
+        <div class="toolbar">
+          <div class="left">
+            <div class="inp search">🔍 <span class="ph">搜索 元素编号 / 符号 / 中文名</span></div>
+            <div class="inp filter"><span>状态：全部</span><span class="muted">▾</span></div>
+          </div>
+          <div class="right">
+            <button class="btn">元素价格 ▾</button>
+            <button class="btn">↻ 刷新</button>
+            <button class="btn primary">＋ 新建元素</button>
+          </div>
+        </div>
+
+        <div class="callout">
+          <b>本页签按钮从 4 个收敛为 3 个：</b>「价格源管理 / 价格导入 / 元素价格表」三个次级入口挤在标题栏且与主动作同级，改为收进「元素价格 ▾」下拉菜单，工具栏节奏与其余页签一致。展开后仍是这三项，功能不减。
+        </div>
+
+        <div class="actionbar">
+          <span class="hint">未选择行</span>
+          <button class="btn sm dis">✎ 编辑</button>
+          <span class="spacer"></span>
+          <button class="btn sm dis">🗑 停用</button>
+        </div>
+
+        <table>
+          <thead><tr>
+            <th class="chk"><i></i></th>
+            <th class="srt">元素编号<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">符号<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">中文名<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt on">被引用材质数<span class="sorter asc"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">状态<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">最后修改时间<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="chk"><i></i></td><td><a class="cell">EL-0001</a></td><td>Ag 🔒</td><td>银</td><td><span class="tag blue">12</span></td><td><span class="tag green">启用</span></td><td class="muted">2026-07-23 15:02</td></tr>
+            <tr><td class="chk"><i></i></td><td><a class="cell">EL-0002</a></td><td>Ni 🔒</td><td>镍</td><td><span class="tag blue">7</span></td><td><span class="tag green">启用</span></td><td class="muted">2026-07-23 15:02</td></tr>
+            <tr><td class="chk"><i></i></td><td><a class="cell">EL-0003</a></td><td>Cu</td><td>铜</td><td><span class="tag blue">9</span></td><td><span class="tag green">启用</span></td><td class="muted">2026-07-20 11:44</td></tr>
+            <tr><td class="chk"><i></i></td><td><a class="cell">EL-0004</a></td><td>Zn</td><td>锌</td><td><span class="tag grey">0</span></td><td><span class="tag grey">停用</span></td><td class="muted">2026-07-14 09:30</td></tr>
+          </tbody>
+        </table>
+        <div class="pager">
+          <span>共 24 条</span>
+          <span class="pg arrow">‹</span><span class="pg on">1</span><span class="pg">2</span><span class="pg arrow">›</span>
+          <span class="pg">20 条/页 ▾</span>
+          <span class="badge">3</span>
+        </div>
+      </div>
+
+      <!-- ── 工序 ── -->
+      <div class="pane hide" id="pane-proc">
+        <div class="toolbar">
+          <div class="left">
+            <div class="inp search">🔍 <span class="ph">搜索 工序编号 / 名称</span></div>
+            <div class="inp filter"><span>是否外协：全部</span><span class="muted">▾</span></div>
+            <div class="inp filter"><span>工序分类：全部</span><span class="muted">▾</span></div>
+          </div>
+          <div class="right">
+            <button class="btn">↻ 刷新</button>
+            <button class="btn">⤓ 导入工序</button>
+            <button class="btn primary">＋ 新增工序</button>
+          </div>
+        </div>
+
+        <div class="callout">
+          <b>本页签变化最小</b>（统一规范就是以它为基线）：搜索框 240→280px；分页补上「20 条/页 ▾」页大小切换（现在写死 20 且不可改）；按钮顺序调整为 刷新 → 导入 → 新增。
+        </div>
+
+        <div class="actionbar">
+          <span class="hint">未选择行</span>
+          <button class="btn sm dis">✎ 编辑</button>
+          <span class="spacer"></span>
+          <button class="btn sm dis">🗑 删除</button>
+        </div>
+
+        <table>
+          <thead><tr>
+            <th class="chk"><i></i></th>
+            <th class="srt on">工序编号<span class="sorter asc"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">工序名称<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">工序分类<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">是否外协<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">标准货币<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">标准单位<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">默认不良率<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+            <th class="srt">更新时间<span class="sorter"><i class="up"></i><i class="dn"></i></span></th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="chk"><i></i></td><td><a class="cell">Z0010</a></td><td>冲压</td><td>制造</td><td><span class="tag grey">自制</span></td><td>CNY</td><td>PCS</td><td>0.02</td><td class="muted">2026-07-22 10:15</td></tr>
+            <tr><td class="chk"><i></i></td><td><a class="cell">Z0020</a></td><td>电镀</td><td>电镀</td><td><span class="tag orange">外协</span></td><td>CNY</td><td>KG</td><td>0.01</td><td class="muted">2026-07-22 10:15</td></tr>
+            <tr><td class="chk"><i></i></td><td><a class="cell">Z0030</a></td><td>组装</td><td>组装</td><td><span class="tag grey">自制</span></td><td>CNY</td><td>PCS</td><td>0.005</td><td class="muted">2026-07-21 16:48</td></tr>
+            <tr><td class="chk"><i></i></td><td><a class="cell">Z0040</a></td><td>清洗</td><td>清洗</td><td><span class="tag grey">自制</span></td><td>CNY</td><td>PCS</td><td>—</td><td class="muted">2026-07-21 16:48</td></tr>
+          </tbody>
+        </table>
+        <div class="pager">
+          <span>共 36 条</span>
+          <span class="pg arrow">‹</span><span class="pg on">1</span><span class="pg">2</span><span class="pg arrow">›</span>
+          <span class="pg">20 条/页 ▾</span>
+          <span class="badge">3</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ 改造前 ══════════════ -->
+  <div id="viewBefore" class="hide">
+    <div class="app">
+      <div class="page-head">
+        <h2>主数据维护</h2>
+        <button class="btn primary">⤓ 导入核价数据 <span class="badge">6</span></button>
+      </div>
+      <div class="tabs">
+        <div class="tab on">工序</div>
+        <div class="tab ghost">BOM <span class="badge">1</span></div>
+        <div class="tab">材质</div>
+        <div class="tab">元素</div>
+        <div class="tab ghost">数据模板 <span class="badge">1</span></div>
+        <div class="tab">料号核价</div>
+        <div style="margin-left:auto;align-self:center;font-size:12px;color:var(--text-3)">6 个页签，顺序随开发时间堆叠 <span class="badge">2</span></div>
+      </div>
+
+      <div class="callout warn">
+        <b>现状的四处不一致：</b>①「材质 / 元素」套 Card 外壳且搜索框在<b>右上角</b>，「工序 / 料号核价」搜索框在<b>左上角</b>；② 搜索框宽度 240 / 260 / 320 三种；③「材质 / 元素」<b>完全没有分页</b>（一次性渲染全量），「工序」固定 20 条且不能改页大小；④ 导入按钮图标 <code>UploadOutlined</code> / <code>ImportOutlined</code> 混用，「元素」标题栏并排 4 个按钮；
+        ⑤ 四个页签<b>没有任何一列可以点击排序</b> <span class="badge">7</span>，只能靠后端写死的默认序。
+      </div>
+
+      <div style="border:1px solid var(--split);border-radius:8px;padding:0;overflow:hidden;margin-bottom:16px">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--split);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <b style="font-size:15px">材质管理</b>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div class="inp" style="width:260px">🔍 <span class="ph">搜索 材质编号 / 化学式 / 名称 / 元素</span></div>
+            <button class="btn">↑ 导入材质库</button>
+            <button class="btn primary">＋ 新建材质</button>
+          </div>
+        </div>
+        <div style="padding:16px">
+          <div class="actionbar"><span class="hint">未选择行</span><button class="btn sm dis">✎ 编辑</button><span class="spacer"></span><button class="btn sm dis">🗑 停用</button></div>
+          <table>
+            <thead><tr><th class="chk"><i></i></th><th>材质编号</th><th>化学式</th><th>名称</th><th>类型</th><th>状态</th><th>创建时间</th><th>修改时间</th><th>排序</th></tr></thead>
+            <tbody>
+              <tr><td class="chk"><i></i></td><td><a class="cell">MT-0001</a></td><td>AgNi11</td><td>银镍 11</td><td><span class="tag green">含量可调</span></td><td><span class="tag green">启用</span></td><td class="muted">2026-07-08 10:12</td><td class="muted">2026-07-22 16:40</td><td>1</td></tr>
+              <tr><td class="chk"><i></i></td><td><a class="cell">MT-0002</a></td><td>H65</td><td>黄铜 H65</td><td><span class="tag red">标准锁定</span></td><td><span class="tag green">启用</span></td><td class="muted">2026-07-08 10:12</td><td class="muted">2026-07-19 09:03</td><td>2</td></tr>
+              <tr><td colspan="9" style="text-align:center;color:var(--text-3);padding:14px">… 一次性渲染全部 39 行，无分页 <span class="badge">3</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="border:1px solid var(--split);border-radius:8px;overflow:hidden">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--split);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <b style="font-size:15px">元素管理</b>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div class="inp" style="width:260px">🔍 <span class="ph">搜索 元素编号 / 符号 / 中文名</span></div>
+            <button class="btn">🔗 价格源管理</button>
+            <button class="btn">⤓ 价格导入</button>
+            <button class="btn">▤ 元素价格表</button>
+            <button class="btn primary">＋ 新建元素</button>
+          </div>
+        </div>
+        <div style="padding:16px;color:var(--text-3);font-size:13px">
+          标题栏并排 4 个按钮 + 搜索框，窄屏必然换行 <span class="badge">4</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ 导入抽屉 ══════════════ -->
+  <div class="section">
+    <h3>导入抽屉统一改造 <span class="badge">5</span></h3>
+    <div class="desc">
+      涉及 4 个抽屉：<code>PricingBasicDataImportDrawer</code>（核价数据）、<code>ProcessMasterImportDrawer</code>（工序）、
+      <code>MaterialImportDrawer</code>（材质库）、<code>PriceImportDrawer</code>（元素价格）。
+      下面用「工序导入」作范例，四个抽屉套同一骨架。
+    </div>
+
+    <div class="drawer-demo">
+      <!-- before -->
+      <div class="drawer before">
+        <div class="drawer-hd"><span class="t">导入工序主数据</span><span class="tagline bad">改造前</span></div>
+        <div class="drawer-bd">
+          <div class="alert">
+            <span class="ico">ⓘ</span>
+            <div class="alert-body">
+              <div style="margin-bottom:8px"><b>导入说明</b><br>首个 sheet 按中文列名读取，<b>【工序编号】</b>与<b>【工序名称】</b>两列必填，其余选填；写入语义为<b>覆盖更新</b>。</div>
+              <button class="btn">⤓ 下载导入模板</button>
+              <div style="font-size:12px;color:#cf1322;margin-top:6px">按钮埋在说明文字里，四个抽屉位置各不相同</div>
+            </div>
+          </div>
+          <div style="height:1px;background:var(--split);margin:16px 0"></div>
+          <div class="dragger big">
+            <div class="ic">⬒</div>
+            <div class="t1">点击或拖拽 .xlsx 工序主数据文件到此处</div>
+            <div class="t2">仅支持单个 .xlsx 文件</div>
+          </div>
+          <div class="hgt">高度 ≈ 180px，占满首屏</div>
+          <div style="margin-top:16px"><button class="btn primary">↑ 开始导入</button></div>
+          <div style="font-size:12px;color:#cf1322;margin-top:6px">「开始导入」在正文里；核价数据抽屉却放在标题栏 extra —— 位置不统一</div>
+        </div>
+      </div>
+
+      <!-- after -->
+      <div class="drawer">
+        <div class="drawer-hd"><span class="t">导入工序主数据</span><span class="tagline good">改造后</span></div>
+        <div class="drawer-bd">
+          <div class="alert">
+            <span class="ico">ⓘ</span>
+            <div class="alert-body">
+              <div class="alert-row">
+                <div><b>导入说明</b><br>首个 sheet 按中文列名读取，<b>【工序编号】</b>与<b>【工序名称】</b>两列必填，其余选填；写入语义为<b>覆盖更新</b>。</div>
+                <button class="btn" style="flex:none">⤓ 下载模板</button>
+              </div>
+            </div>
+          </div>
+          <div style="height:12px"></div>
+          <div class="dragger small">
+            <span class="ic">⬒</span>
+            <div>
+              <div class="t1">点击或拖拽 <b>.xlsx</b> 文件到此处</div>
+              <div class="t2">仅支持单个文件</div>
+            </div>
+          </div>
+          <div class="hgt">高度 ≈ 64px（-64%），结果报告不必滚动就能看到</div>
+
+          <div style="height:16px"></div>
+          <div class="alert" style="border-color:var(--green-bd);background:var(--green-bg)">
+            <span class="ico" style="color:#389e0d">✓</span>
+            <div class="alert-body">
+              共 <b>36</b> 行　新增 <b>4</b> 条　更新 <b>32</b> 条　跳过 <b>0</b> 行　耗时 <b>412</b> ms
+            </div>
+          </div>
+        </div>
+        <div class="drawer-ft">
+          <button class="btn">重置</button>
+          <button class="btn primary">开始导入</button>
+        </div>
+      </div>
+    </div>
+
+    <table class="spec-table">
+      <thead><tr><th style="width:130px">统一项</th><th style="width:38%">改造前（四个抽屉各不相同）</th><th>改造后（统一）</th></tr></thead>
+      <tbody>
+        <tr><td>抽屉宽度</td><td>核价数据 840 / 其余 720</td><td>统一 <code>840</code></td></tr>
+        <tr><td>下载模板按钮</td><td>埋在说明 Alert 的正文段落里；核价数据抽屉<b>根本没有</b></td><td><code>default</code> 按钮 + <code>DownloadOutlined</code>，固定在说明 Alert <b>右上角</b>；文案统一为「下载模板」。<b>核价数据抽屉由后端新增模板下载端点补齐</b>，四个抽屉都有此按钮</td></tr>
+        <tr><td>文件选择框</td><td>Dragger 默认尺寸，图标 44px + 两行文案，高约 180px</td><td>紧凑横排：图标 22px 与文案同一行，高约 <b>64px</b></td></tr>
+        <tr><td>「开始导入」</td><td>工序/材质在正文；核价数据在标题栏 extra</td><td>统一放 Drawer <code>footer</code> 右下角，左边配「重置」</td></tr>
+        <tr><td>结果报告</td><td>结构已基本一致（Alert 汇总 + 明细表）</td><td>沿用现结构，不改</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ══════════════ 统一规范 ══════════════ -->
+  <div class="section">
+    <h3>统一规范速查 <span class="badge">4</span></h3>
+    <div class="desc">以「工序」页签为基线，四个页签同一套骨架；后续新增主数据页签也照此实现。</div>
+
+    <table class="spec-table">
+      <thead><tr><th style="width:120px">区域</th><th>规范</th></tr></thead>
+      <tbody>
+        <tr><td>外壳</td><td>不套 <code>Card</code>、不写页内标题（页签名即标题）。现「材质管理」「元素管理」两个 Card 拆掉。</td></tr>
+        <tr><td>工具栏</td><td>一行两组：<b>左＝查询</b>（搜索框 <code>280px</code> → 过滤下拉，各 <code>150px</code> 起）；<b>右＝动作</b>（次级下拉 → 刷新 → 导入 → 新建）。<code>flex</code> + <code>wrap</code>，窄屏自动折行。</td></tr>
+        <tr><td>搜索框</td><td>统一 <code>Input.Search</code>、宽 <code>280px</code>、<code>allowClear</code>、防抖 <b>300ms</b>、占位文案格式「搜索 字段A / 字段B」。</td></tr>
+        <tr><td>过滤下拉</td><td><code>Select</code> + <code>allowClear</code>，占位「维度名：全部」。料号核价＝配置状态；材质＝类型 + 状态；元素＝状态；工序＝是否外协 + 工序分类。与搜索合并成一次查询。</td></tr>
+        <tr><td>按钮</td><td>新建＝<code>primary</code> + <code>PlusOutlined</code>（永远最右）；导入＝<code>default</code> + <code>ImportOutlined</code>（统一图标，材质页现用 <code>UploadOutlined</code>）；刷新＝<code>default</code> + <code>ReloadOutlined</code>；次级功能收进下拉。</td></tr>
+        <tr><td>动作条</td><td>沿用 <code>SelectableTable</code> 选择驱动条（编辑靠左、危险动作靠右、禁用带 tooltip 原因）。<b>料号核价除外</b>（例外白名单）。</td></tr>
+        <tr><td>表格</td><td><code>size="small"</code>；首列为主入口链接（点击进详情/编辑抽屉）；空值统一渲染 <code>—</code>。</td></tr>
+        <tr><td>分页</td><td>右下角；<code>showTotal</code> 显示「共 N 条」；<code>showSizeChanger</code> 页大小 <code>10 / 20 / 50 / 100</code>，默认 <b>20</b>；搜索或过滤变化后重置到第 1 页。</td></tr>
+        <tr><td>列排序 <span class="badge">7</span></td><td>每个数据列表头可点，<b>三态循环</b>：升序 → 降序 → 取消（回默认序）；当前排序列表头文字变蓝、对应三角高亮。同一时刻只有一列生效（单列排序）。详见下一节。</td></tr>
+      </tbody>
+    </table>
+
+    <table class="spec-table" style="margin-top:16px">
+      <thead><tr><th style="width:110px">页签</th><th style="width:150px">分页实现</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>料号核价</td><td>服务端（已有）</td><td>后端已支持 <code>page/size</code>，仅补过滤参数。</td></tr>
+        <tr><td>工序</td><td>服务端（已有）</td><td>后端已支持 <code>page/size</code>，前端解开写死的 <code>PAGE_SIZE=20</code>、打开 <code>showSizeChanger</code>。</td></tr>
+        <tr><td>材质</td><td><b>前端分页（新增）</b></td><td>现役 39 条，后端 <code>list</code> 返全量。用 Table 内置分页即可，<b>不改后端</b>。</td></tr>
+        <tr><td>元素</td><td><b>前端分页（新增）</b></td><td>现役 24 条，同上。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ══════════════ 列排序 ══════════════ -->
+  <div class="section">
+    <h3>列排序 <span class="badge">7</span></h3>
+    <div class="desc">
+      四个页签的每个数据列表头都可点击。交互沿用 Ant Design <code>Table</code> 默认三态：
+      <b>第一次点＝升序</b><span class="sorter asc" style="vertical-align:0"><i class="up"></i><i class="dn"></i></span>　→
+      <b>第二次点＝降序</b><span class="sorter desc" style="vertical-align:0"><i class="up"></i><i class="dn"></i></span>　→
+      <b>第三次点＝取消</b><span class="sorter" style="vertical-align:0"><i class="up"></i><i class="dn"></i></span>（回到该页签的默认排序）。
+      同一时刻只有一列生效；勾选列不可排序。
+    </div>
+
+    <div class="callout warn">
+      <b>⚠️ 这条需求会拉上后端：</b>服务端分页的页签，排序<b>必须由数据库做</b>。
+      如果只在前端排当前这一页的 20 行，用户点「料号↑」看到的是「第 1 页那 20 条里最小的」而不是「全部 82 条里最小的」——
+      这是<b>看起来能用、其实是错的</b>，属静默错误，不能这么做。
+    </div>
+
+    <table class="spec-table">
+      <thead><tr><th style="width:110px">页签</th><th style="width:150px">排序实现</th><th style="width:120px">要不要改后端</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>材质</td><td>前端排序</td><td><span class="tag green">不用</span></td><td>全量 39 条已在内存，Table <code>sorter</code> 函数即可。</td></tr>
+        <tr><td>元素</td><td>前端排序</td><td><span class="tag green">不用</span></td><td>全量 24 条，同上。</td></tr>
+        <tr><td>料号核价</td><td>服务端排序</td><td><span class="tag orange">要</span></td><td>列表接口加 <code>sortBy</code> + <code>sortOrder</code> 两个参数，<code>ORDER BY</code> 走<b>字段白名单</b>（防注入）；前端 <code>sorter: true</code> 受控、切页保持排序。</td></tr>
+        <tr><td>工序</td><td>服务端排序</td><td><span class="tag orange">要</span></td><td>同上，改 <code>ProcessMasterResource</code> 列表端点。</td></tr>
+      </tbody>
+    </table>
+
+    <table class="spec-table" style="margin-top:16px">
+      <thead><tr><th style="width:110px">页签</th><th style="width:190px">默认排序（第三次点击回到这里）</th><th>不参与排序的列</th></tr></thead>
+      <tbody>
+        <tr><td>料号核价</td><td>最近更新 ↓</td><td>无</td></tr>
+        <tr><td>材质</td><td>启用优先 → 修改时间 ↓ → 创建时间 ↓（现有后端口径，不变）</td><td>无</td></tr>
+        <tr><td>元素</td><td>启用优先 → 最后修改时间 ↓（现有后端口径，不变）</td><td>无</td></tr>
+        <tr><td>工序</td><td>工序编号 ↑</td><td>无</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <b>两个细节：</b>① 排序状态<b>不跨页签保留</b>，切走再切回恢复默认序；② 排序变化后<b>回到第 1 页</b>（与搜索/过滤一致）；③ 中文列（品名、名称、工序名称等）按数据库默认排序规则走，不额外做拼音排序 —— 如果业务要按拼音排，得单独提。
+    </div>
+  </div>
+
+  <!-- ══════════════ 待确认 ══════════════ -->
+  <div class="section">
+    <h3>已拍板的 6 项决策</h3>
+    <div class="desc">2026-07-27 逐项确认，作为实现依据。</div>
+    <table class="spec-table">
+      <thead><tr><th style="width:150px">议题</th><th style="width:44%">决策</th><th>影响</th></tr></thead>
+      <tbody>
+        <tr><td>核价数据导入模板</td><td><b>后端新增模板下载端点</b></td><td>新写生成 24 个空 Sheet（含中文表头）的接口，四个导入抽屉都有「下载模板」按钮</td></tr>
+        <tr><td>列排序范围</td><td><b>后端加排序参数，四页签一致</b></td><td>料号核价 / 工序两个列表接口加 <code>sortBy</code>+<code>sortOrder</code>，<code>ORDER BY</code> 走字段白名单；材质 / 元素走前端排序</td></tr>
+        <tr><td>元素页签按钮</td><td><b>三个价格入口收进「元素价格 ▾」下拉</b></td><td>工具栏只剩 [元素价格▾] [刷新] [＋新建元素]</td></tr>
+        <tr><td>数据模板去向</td><td><b>连路由一起下线</b></td><td>移除页签 + 移除 <code>/config/config-templates</code> 路由注册；<code>ConfigTemplateManagement.tsx</code> 组件文件保留</td></tr>
+        <tr><td>过滤维度</td><td><b>照原型</b></td><td>料号核价＝配置状态；材质＝类型+状态；元素＝状态；工序＝是否外协+工序分类</td></tr>
+        <tr><td>导入抽屉宽度</td><td><b>全部统一 840px</b></td><td>工序 / 材质 / 元素价格三个抽屉由 720 → 840</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+function setMode(m){
+  document.getElementById('viewAfter').classList.toggle('hide', m!=='after');
+  document.getElementById('viewBefore').classList.toggle('hide', m!=='before');
+  document.getElementById('btnAfter').classList.toggle('on', m==='after');
+  document.getElementById('btnBefore').classList.toggle('on', m==='before');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function setTab(t){
+  document.querySelectorAll('#viewAfter .tab').forEach(function(el){
+    el.classList.toggle('on', el.dataset.t===t);
+  });
+  ['part','mat','ele','proc'].forEach(function(k){
+    document.getElementById('pane-'+k).classList.toggle('hide', k!==t);
+  });
+}
+</script>
+</body>
+</html>
