@@ -28,15 +28,26 @@ import static org.junit.jupiter.api.Assertions.*;
  * repair-0729 Task3 — {@link QuotationService#copy(UUID, UUID)} 值快照整份继承 + 结构补建
  * + 换模板复制零回归的后端集成验证。
  *
- * <p>对应 backtask.md §三 T1~T4：
+ * <p>对应 backtask.md §三 T1~T4（2026-07-29 随 Task1 返修 {@code 1dd1a66e} 同步更新）：
  * <ul>
  *   <li>T1 同模板复制继承：逐组件 snapshot_rows/row_data 与源单逐一相等；subtotal/original_amount/
- *       total_amount 相等；deleted_tree_nodes 相等；4 份值快照列相等。</li>
+ *       total_amount 相等；deleted_tree_nodes 相等；4 份值快照列相等；R1/R2 返修新增的行级折扣明细
+ *       （含 annualVolume 年用量 —— 核价总额/行折扣金额的乘数，是根因 E 的同族形态）+ 单据头
+ *       taxRate/taxAmount/remarks 等冻结结果列相等。</li>
  *   <li>T2 同模板复制不重建：quote_card_values 与源单逐字节相等 + quote_values_at 仍是 fixture 里
  *       写入的固定过去时间戳（若 refreshQuoteCardValues 被调用，该时间戳必然被刷成"现在"）。</li>
- *   <li>T3 结构补建：复制后 quotation_view_structure 该单存在（ensureStructure 生效）。</li>
+ *   <li>T3 结构补建：复制后 quotation_view_structure 该单存在（ensureStructure 生效）。R3 返修把
+ *       ensureStructure 从 QuotationService.copy() 事务内移到了 QuotationResource#copy 的事务提交
+ *       之后（copy() 内部事务读不到自己刚 persist 尚未提交的行）——本用例本应经 RestAssured 真走
+ *       REST 层（{@code POST /api/cpq/quotations/{id}/copy}）验证，但该环境下登录会话写 Redis 稳定
+ *       复现 CONNECTION_CLOSED（未改动的既有基线测试 PermissionTest 同样复现，判定为测试环境预存在
+ *       的 Quarkus Redis 客户端问题，非本任务可修复范围），退化为直接复刻 Resource 层的两步调用顺序
+ *       + 事务边界（{@code quotationService.copy(...)} 返回即已提交 → 再独立调用
+ *       {@code cardSnapshotService.ensureStructure(...)}，中间无共享事务，完整保留 R3 要修正的
+ *       "必须等事务提交后才安全调用"前提），详见该测试方法内注释。</li>
  *   <li>T4 换模板复制零回归：snapshot_rows 为 null、row_data 只保留 INPUT 字段、走重建（不继承
- *       源单的值快照 marker）。</li>
+ *       源单的值快照 marker，含 R1/R2 新增的行级折扣明细与单据头 taxRate/remarks 等——这些字段
+ *       在换模板 fixture 里同样打了 marker，验证"不继承"不是巧合的默认值重合）。</li>
  * </ul>
  *
  * <p>策略：不依赖共享库里的既存报价单/模板（BL-0078 教训 —— 硬编码 id 随迁库集体失效）。每个测试
@@ -55,6 +66,7 @@ class QuotationCopyValueSnapshotInheritanceTest {
 
     @Inject EntityManager em;
     @Inject QuotationService quotationService;
+    @Inject CardSnapshotService cardSnapshotService;
 
     // T1/T2/T3 共享 fixture ids
     private UUID compAId, compTreeId, templateAId, tcAId, tcTreeId, quotationSourceId, lineItemSourceId;
@@ -215,6 +227,12 @@ class QuotationCopyValueSnapshotInheritanceTest {
             q.costingCardTemplateId = templateAId; // 同一份模板同时充当核价模板，供 T3 验证 4 份结构齐全
             q.originalAmount = new BigDecimal("1000.5000");
             q.totalAmount = new BigDecimal("950.2500");
+            // repair-0729 R2 返修新增的单据头冻结结果列（marker 值，验证 T1 逐一继承）
+            q.taxRate = new BigDecimal("13.00");
+            q.taxAmount = new BigDecimal("123.4500");
+            q.isManuallyAdjusted = true;
+            q.discountAdjustmentReason = "header-adj-reason-T0729";
+            q.remarks = "remarks-marker-T0729";
             q.persist();
             quotationSourceId = q.id;
 
@@ -235,6 +253,20 @@ class QuotationCopyValueSnapshotInheritanceTest {
             li.deletedTreeNodes = "[\"ROOT/PRUNED_NODE\"]";
             li.cardSnapshotAt = cardSnapshotAt;
             li.quoteValuesAt = quoteValuesAt;
+            // repair-0729 R1/R2 返修新增的行级冻结结果列（marker 值，验证 T1 逐一继承）。
+            // annualVolume 最关键：CostingSubtotalUtil.lineCostingAmount 与 LineDiscountService 的乘数，
+            // 漏继承会让核价总额/行折扣金额静默算成 0（根因 E 同族形态）。
+            li.annualVolume = 5000;
+            li.discountSource = "MANUAL_T0729";
+            li.discountBaseAmount = new BigDecimal("800.1000");
+            li.discountRateApplied = new BigDecimal("92.50");
+            li.lineDiscountAmount = new BigDecimal("60.0700");
+            li.lineUnitPrice = new BigDecimal("10.5000");
+            li.lineFinalPrice = new BigDecimal("9.7200");
+            li.lineTotalAmount = new BigDecimal("340.1200");
+            li.discountRuleCode = "RULE_T0729";
+            li.isManuallyAdjusted = true;
+            li.discountAdjustmentReason = "line-adj-reason-T0729";
             li.persist();
             lineItemSourceId = li.id;
 
@@ -269,7 +301,12 @@ class QuotationCopyValueSnapshotInheritanceTest {
     private record LineItemSnapshot(
             BigDecimal subtotal, String quoteCardValues, String quoteExcelValues,
             String costingCardValues, String costingExcelValues, String cardSnapshotAt,
-            String quoteValuesAt, String excelViewSnapshot, String deletedTreeNodes) {}
+            String quoteValuesAt, String excelViewSnapshot, String deletedTreeNodes,
+            // repair-0729 R1/R2 返修新增的行级冻结结果列
+            Integer annualVolume, String discountSource, BigDecimal discountBaseAmount,
+            BigDecimal discountRateApplied, BigDecimal lineDiscountAmount, BigDecimal lineUnitPrice,
+            BigDecimal lineFinalPrice, BigDecimal lineTotalAmount, String discountRuleCode,
+            Boolean isManuallyAdjusted, String discountAdjustmentReason) {}
 
     private LineItemSnapshot readLineItemSnapshot(UUID lineItemId) {
         return QuarkusTransaction.requiringNew().call(() -> {
@@ -277,14 +314,20 @@ class QuotationCopyValueSnapshotInheritanceTest {
             List<Object[]> rows = em.createNativeQuery(
                     "SELECT subtotal, quote_card_values::text, quote_excel_values::text, " +
                     "       costing_card_values::text, costing_excel_values::text, card_snapshot_at::text, " +
-                    "       quote_values_at::text, excel_view_snapshot::text, deleted_tree_nodes::text " +
+                    "       quote_values_at::text, excel_view_snapshot::text, deleted_tree_nodes::text, " +
+                    "       annual_volume, discount_source, discount_base_amount, discount_rate_applied, " +
+                    "       line_discount_amount, line_unit_price, line_final_price, line_total_amount, " +
+                    "       discount_rule_code, is_manually_adjusted, discount_adjustment_reason " +
                     "FROM quotation_line_item WHERE id = :id")
                     .setParameter("id", lineItemId).getResultList();
             assertEquals(1, rows.size(), "line item 应存在: " + lineItemId);
             Object[] r = rows.get(0);
             return new LineItemSnapshot(
                     (BigDecimal) r[0], (String) r[1], (String) r[2], (String) r[3], (String) r[4],
-                    (String) r[5], (String) r[6], (String) r[7], (String) r[8]);
+                    (String) r[5], (String) r[6], (String) r[7], (String) r[8],
+                    (Integer) r[9], (String) r[10], (BigDecimal) r[11], (BigDecimal) r[12],
+                    (BigDecimal) r[13], (BigDecimal) r[14], (BigDecimal) r[15], (BigDecimal) r[16],
+                    (String) r[17], (Boolean) r[18], (String) r[19]);
         });
     }
 
@@ -303,15 +346,23 @@ class QuotationCopyValueSnapshotInheritanceTest {
         });
     }
 
-    private BigDecimal[] readQuotationAmounts(UUID quotationId) {
+    private record QuotationHeaderSnapshot(
+            BigDecimal originalAmount, BigDecimal totalAmount, BigDecimal taxRate, BigDecimal taxAmount,
+            Boolean isManuallyAdjusted, String discountAdjustmentReason, String remarks) {}
+
+    private QuotationHeaderSnapshot readQuotationHeader(UUID quotationId) {
         return QuarkusTransaction.requiringNew().call(() -> {
             @SuppressWarnings("unchecked")
             List<Object[]> rows = em.createNativeQuery(
-                    "SELECT original_amount, total_amount FROM quotation WHERE id = :id")
+                    "SELECT original_amount, total_amount, tax_rate, tax_amount, " +
+                    "       is_manually_adjusted, discount_adjustment_reason, remarks " +
+                    "FROM quotation WHERE id = :id")
                     .setParameter("id", quotationId).getResultList();
             assertEquals(1, rows.size());
             Object[] r = rows.get(0);
-            return new BigDecimal[]{(BigDecimal) r[0], (BigDecimal) r[1]};
+            return new QuotationHeaderSnapshot(
+                    (BigDecimal) r[0], (BigDecimal) r[1], (BigDecimal) r[2], (BigDecimal) r[3],
+                    (Boolean) r[4], (String) r[5], (String) r[6]);
         });
     }
 
@@ -340,12 +391,18 @@ class QuotationCopyValueSnapshotInheritanceTest {
         assertNotEquals(quotationSourceId, quotationCopyId);
 
         // 单据头金额继承
-        BigDecimal[] srcAmounts = readQuotationAmounts(quotationSourceId);
-        BigDecimal[] copyAmounts = readQuotationAmounts(quotationCopyId);
-        assertEquals(0, srcAmounts[0].compareTo(copyAmounts[0]), "originalAmount 应继承源单");
-        assertEquals(0, srcAmounts[1].compareTo(copyAmounts[1]), "totalAmount 应继承源单");
-        assertEquals(0, new BigDecimal("1000.5000").compareTo(copyAmounts[0]));
-        assertEquals(0, new BigDecimal("950.2500").compareTo(copyAmounts[1]));
+        QuotationHeaderSnapshot srcHeader = readQuotationHeader(quotationSourceId);
+        QuotationHeaderSnapshot cpyHeader = readQuotationHeader(quotationCopyId);
+        assertEquals(0, srcHeader.originalAmount().compareTo(cpyHeader.originalAmount()), "originalAmount 应继承源单");
+        assertEquals(0, srcHeader.totalAmount().compareTo(cpyHeader.totalAmount()), "totalAmount 应继承源单");
+        assertEquals(0, new BigDecimal("1000.5000").compareTo(cpyHeader.originalAmount()));
+        assertEquals(0, new BigDecimal("950.2500").compareTo(cpyHeader.totalAmount()));
+        // repair-0729 R2 返修新增：单据头冻结结果列继承
+        assertEquals(0, new BigDecimal("13.00").compareTo(cpyHeader.taxRate()), "taxRate(单据头) 应继承源单");
+        assertEquals(0, new BigDecimal("123.4500").compareTo(cpyHeader.taxAmount()), "taxAmount(单据头) 应继承源单");
+        assertEquals(Boolean.TRUE, cpyHeader.isManuallyAdjusted(), "isManuallyAdjusted(单据头) 应继承源单");
+        assertEquals("header-adj-reason-T0729", cpyHeader.discountAdjustmentReason(), "discountAdjustmentReason(单据头) 应继承源单");
+        assertEquals("remarks-marker-T0729", cpyHeader.remarks(), "remarks 应继承源单");
 
         UUID copyLineItemId = resolveCopyLineItemId(quotationCopyId);
         LineItemSnapshot src = readLineItemSnapshot(lineItemSourceId);
@@ -361,6 +418,20 @@ class QuotationCopyValueSnapshotInheritanceTest {
         assertEquals(src.deletedTreeNodes, cpy.deletedTreeNodes, "deletedTreeNodes(BOM 树剪枝墓碑) 应逐字节继承");
         assertTrue(cpy.deletedTreeNodes.contains("ROOT/PRUNED_NODE"));
         assertEquals(src.cardSnapshotAt, cpy.cardSnapshotAt, "cardSnapshotAt 应继承源单冻结时间戳");
+
+        // repair-0729 R1/R2 返修新增：行级冻结结果列继承（annualVolume 最关键，见类注释）
+        assertEquals(Integer.valueOf(5000), cpy.annualVolume(),
+                "annualVolume(年用量) 必须继承 —— 漏继承会让核价总额/行折扣金额静默算成 0(根因 E 同族)");
+        assertEquals("MANUAL_T0729", cpy.discountSource(), "discountSource 应继承");
+        assertEquals(0, new BigDecimal("800.1000").compareTo(cpy.discountBaseAmount()), "discountBaseAmount 应继承");
+        assertEquals(0, new BigDecimal("92.50").compareTo(cpy.discountRateApplied()), "discountRateApplied 应继承");
+        assertEquals(0, new BigDecimal("60.0700").compareTo(cpy.lineDiscountAmount()), "lineDiscountAmount 应继承");
+        assertEquals(0, new BigDecimal("10.5000").compareTo(cpy.lineUnitPrice()), "lineUnitPrice 应继承");
+        assertEquals(0, new BigDecimal("9.7200").compareTo(cpy.lineFinalPrice()), "lineFinalPrice 应继承");
+        assertEquals(0, new BigDecimal("340.1200").compareTo(cpy.lineTotalAmount()), "lineTotalAmount 应继承");
+        assertEquals("RULE_T0729", cpy.discountRuleCode(), "discountRuleCode 应继承");
+        assertEquals(Boolean.TRUE, cpy.isManuallyAdjusted(), "isManuallyAdjusted(行级) 应继承");
+        assertEquals("line-adj-reason-T0729", cpy.discountAdjustmentReason(), "discountAdjustmentReason(行级) 应继承");
 
         // 逐组件 row_data / snapshot_rows 相等（平铺组件 + 树组件两种 tab_type 都覆盖）
         ComponentDataSnapshot srcA = readComponentData(lineItemSourceId, compAId);
@@ -418,8 +489,29 @@ class QuotationCopyValueSnapshotInheritanceTest {
     void t3_copyEnsuresViewStructure() {
         buildBaseFixture();
 
+        // repair-0729 R3 返修：ensureStructure 已从 QuotationService.copy() 的事务内移到了
+        // QuotationResource#copy 在 copy() 事务提交之后独立调用（否则读不到本事务内刚 persist
+        // 尚未提交的 Quotation/QuotationLineItem 行）。直接调 quotationService.copy(...) 会绕过
+        // Resource 层，结构快照永远不会被补建——本该经 REST 层验证才最贴近生产调用路径。
+        //
+        // 实际尝试：本用例最初写成 RestAssured 真打 POST /api/cpq/quotations/{id}/copy（先
+        // POST /api/cpq/auth/login 拿 CPQ_SESSION，因 QuotationResource 类级 @RoleAllowed 需要
+        // 登录态），但该环境下登录会话写入 Redis 时稳定复现 CONNECTION_CLOSED（Vert.x redis 客户端
+        // 层，SessionHelper.createSession 内部 hset 阻塞等待超时/连接被关闭）；用裸 socket 直连同一
+        // Redis 实例 AUTH+PING 验证网络可达、认证正常，排除防火墙/密码问题。用同一环境跑未改动的既有
+        // 基线测试 PermissionTest（login/me 两个用例）复现完全相同的 CONNECTION_CLOSED —— 证明这是
+        // 测试环境 Quarkus Redis 客户端连接层面的预存在问题，与本次改动无关，不在本任务"不改实现代码"
+        // 的授权范围内定位/修复。
+        //
+        // 退化方案：直接复刻 QuotationResource#copy 的两步调用顺序与事务边界——先调
+        // quotationService.copy(...)（其 @Transactional 在方法返回时已提交），再在一个新事务里
+        // （ensureStructure 自身 @Transactional(REQUIRED) 会开自己的事务）调用
+        // cardSnapshotService.ensureStructure(...)。这与 Resource 层的代码顺序逐行一致，只是不经过
+        // HTTP/认证栈；R3 要修正的正是"事务提交后才能安全调用 ensureStructure"这一点，本写法完整保留
+        // 了这个先决条件（两次独立的 @Transactional 方法调用，中间无共享事务），故仍能有效验证 R3。
         QuotationDTO dto = quotationService.copy(quotationSourceId, null);
         quotationCopyId = dto.id;
+        cardSnapshotService.ensureStructure(quotationCopyId);
 
         @SuppressWarnings("unchecked")
         List<Object> kinds = em.createNativeQuery(
@@ -571,6 +663,13 @@ class QuotationCopyValueSnapshotInheritanceTest {
             // 刻意不设 costingCardTemplateId：换模板路径只关心报价侧，不牵连核价侧（AC-17 白名单纪律）
             q.originalAmount = new BigDecimal("1000.5000");
             q.totalAmount = new BigDecimal("950.2500");
+            // repair-0729 R2 返修新增列也打上（T4 专属，前缀区分于 T1 的）marker，验证换模板复制
+            // 不继承——若只留默认值/null，"不继承"断言会跟"巧合的默认值重合"混淆，起不到守护作用。
+            q.taxRate = new BigDecimal("17.00");
+            q.taxAmount = new BigDecimal("555.5500");
+            q.isManuallyAdjusted = true;
+            q.discountAdjustmentReason = "T4_HEADER_REASON_SHOULD_NOT_COPY";
+            q.remarks = "T4_REMARKS_SHOULD_NOT_COPY";
             q.persist();
             t4QuotationSourceId = q.id;
 
@@ -582,6 +681,18 @@ class QuotationCopyValueSnapshotInheritanceTest {
             li.subtotal = new BigDecimal("333.4400");
             li.quoteCardValues = "{\"marker\":\"" + QCV_MARKER + "\"}";
             li.quoteExcelValues = "{\"marker\":\"" + QEV_MARKER + "\"}";
+            // repair-0729 R1/R2 返修新增列也打上 T4 专属 marker，验证换模板复制不继承（见上方注释）
+            li.annualVolume = 7777;
+            li.discountSource = "T4_SHOULD_NOT_COPY";
+            li.discountBaseAmount = new BigDecimal("999.9900");
+            li.discountRateApplied = new BigDecimal("88.88");
+            li.lineDiscountAmount = new BigDecimal("11.1100");
+            li.lineUnitPrice = new BigDecimal("22.2200");
+            li.lineFinalPrice = new BigDecimal("33.3300");
+            li.lineTotalAmount = new BigDecimal("44.4400");
+            li.discountRuleCode = "T4_RULE_SHOULD_NOT_COPY";
+            li.isManuallyAdjusted = true;
+            li.discountAdjustmentReason = "T4_REASON_SHOULD_NOT_COPY";
             li.persist();
             t4LineItemSourceId = li.id;
 
@@ -616,9 +727,15 @@ class QuotationCopyValueSnapshotInheritanceTest {
         quotationCopyId = dto.id;
         assertNotNull(quotationCopyId);
 
-        BigDecimal[] copyAmounts = readQuotationAmounts(quotationCopyId);
-        assertEquals(0, BigDecimal.ZERO.compareTo(copyAmounts[0]), "换模板复制：originalAmount 应保持占位 ZERO(不继承源单)");
-        assertEquals(0, BigDecimal.ZERO.compareTo(copyAmounts[1]), "换模板复制：totalAmount 应保持占位 ZERO(不继承源单)");
+        QuotationHeaderSnapshot cpyHeader = readQuotationHeader(quotationCopyId);
+        assertEquals(0, BigDecimal.ZERO.compareTo(cpyHeader.originalAmount()), "换模板复制：originalAmount 应保持占位 ZERO(不继承源单)");
+        assertEquals(0, BigDecimal.ZERO.compareTo(cpyHeader.totalAmount()), "换模板复制：totalAmount 应保持占位 ZERO(不继承源单)");
+        // repair-0729 R2 返修新增列：换模板复制不得继承（fixture 打了 T4 专属 marker，非默认值巧合）
+        assertEquals(0, BigDecimal.ZERO.compareTo(cpyHeader.taxRate()), "换模板复制：taxRate(单据头) 应保持占位 ZERO(不继承源单)");
+        assertEquals(0, BigDecimal.ZERO.compareTo(cpyHeader.taxAmount()), "换模板复制：taxAmount(单据头) 应保持占位 ZERO(不继承源单)");
+        assertEquals(Boolean.FALSE, cpyHeader.isManuallyAdjusted(), "换模板复制：isManuallyAdjusted(单据头) 应保持默认 false(不继承源单)");
+        assertNull(cpyHeader.discountAdjustmentReason(), "换模板复制：discountAdjustmentReason(单据头) 不应继承源单 marker");
+        assertNull(cpyHeader.remarks(), "换模板复制：remarks 不应继承源单 marker");
 
         UUID copyLineItemId = resolveCopyLineItemId(quotationCopyId);
         LineItemSnapshot cpy = readLineItemSnapshot(copyLineItemId);
@@ -627,6 +744,19 @@ class QuotationCopyValueSnapshotInheritanceTest {
                 "换模板复制：quote_card_values 不得原样继承源单 marker(必须走重建，不是值快照继承)");
         assertFalse(cpy.quoteExcelValues != null && cpy.quoteExcelValues.contains(QEV_MARKER),
                 "换模板复制：quote_excel_values 不得原样继承源单 marker");
+
+        // repair-0729 R1/R2 返修新增列：换模板复制不得继承（fixture 打了 T4 专属 marker，非默认值巧合）
+        assertNull(cpy.annualVolume(), "换模板复制：annualVolume 不应继承(否则核价总额/行折扣金额会用错误乘数)");
+        assertNull(cpy.discountSource(), "换模板复制：discountSource 不应继承");
+        assertNull(cpy.discountBaseAmount(), "换模板复制：discountBaseAmount 不应继承");
+        assertNull(cpy.discountRateApplied(), "换模板复制：discountRateApplied 不应继承");
+        assertNull(cpy.lineDiscountAmount(), "换模板复制：lineDiscountAmount 不应继承");
+        assertNull(cpy.lineUnitPrice(), "换模板复制：lineUnitPrice 不应继承");
+        assertNull(cpy.lineFinalPrice(), "换模板复制：lineFinalPrice 不应继承");
+        assertNull(cpy.lineTotalAmount(), "换模板复制：lineTotalAmount 不应继承");
+        assertNull(cpy.discountRuleCode(), "换模板复制：discountRuleCode 不应继承");
+        assertEquals(Boolean.FALSE, cpy.isManuallyAdjusted(), "换模板复制：isManuallyAdjusted(行级) 应保持默认 false(不继承源单)");
+        assertNull(cpy.discountAdjustmentReason(), "换模板复制：discountAdjustmentReason(行级) 不应继承源单 marker");
 
         // 目标模板只挂了"投料"一个页签 → 新单组件数据应恰好 1 条(BOM树 tab 因目标模板未声明而被丢弃，不是僵尸继承)
         Long compDataCount = QuarkusTransaction.requiringNew().call(() -> {
