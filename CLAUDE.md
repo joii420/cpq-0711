@@ -21,10 +21,19 @@ CPQ (Configure, Price, Quote) system for manufacturing/industrial components. Th
 
 **后端（Quarkus dev，端口 8081）**
 ```bash
-cd cpq-backend && ./mvnw quarkus:dev
+cd cpq-backend && ./mvnw quarkus:dev -Dquarkus.profile=jh
 ```
 - 端口 `8081`，绑 `0.0.0.0`；dev 模式带 Live Coding（改 java 自动热重载）。
-- 连远程 PostgreSQL（`jdbc:postgresql://10.177.152.12:5432/cpq_db`）；连接串/凭据默认值见 `cpq-backend/src/main/resources/application.properties`（`${DB_USERNAME:postgres}` / `${DB_PASSWORD:joii5231}`，可用环境变量覆盖）。
+- 🚨 **必须带 `-Dquarkus.profile=jh`**。三个 profile 指向**不同的库**，不带 profile 会连到另一套测试库，症状是「改动/数据看不到效果」且可能污染他人环境：
+
+  | profile | 主机 / 库 | 用途 |
+  |---------|----------|------|
+  | **`jh`** | **`localhost:5432/cpq_db`**（本机 docker PG16） | ✅ **当前开发环境，日常开发用这个** |
+  | 默认（不带 `-Dquarkus.profile`） | `10.177.152.12:5432/`**`cpq_db_0724`** | ⚠️ 另一个开发测试库 |
+  | `test` | `10.177.152.12:5432/cpq_db` | 测试 |
+
+- 凭据 `${DB_USERNAME:postgres}` / `${DB_PASSWORD:joii5231}`，可用环境变量覆盖；各 profile 配置见 `cpq-backend/src/main/resources/application-<profile>.properties`。
+- 连库自检：`PGPASSWORD=joii5231 psql -h localhost -U postgres -d cpq_db -c '\conninfo'`
 - 启动时 Flyway 自动 `migrate-at-start`；**不要**手工 `psql -f V_xx.sql`（详见「修改后强制自检」）。
 - 首次启动约 6-7s；热重载遇大范围文件变化（如切分支）会重编译，期间 8081 短暂无响应属正常。
 
