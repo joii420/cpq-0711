@@ -26,9 +26,13 @@ public final class UnitConversion {
         Map.entry("T", new BigDecimal("1000")),
         Map.entry("片", BigDecimal.ONE),
         Map.entry("PCS", BigDecimal.ONE),
-        Map.entry("KPCS", new BigDecimal("1000")),
-        Map.entry("千片", new BigDecimal("1000")),
+        // KPCS / 千片：按「每千片 → 每片」的分母口径 ÷1000（2026-07-28 业务修订，原为 ×1000）。
+        // 中英别名必须同值，否则同一行写「KPCS」与写「千片」结果相差 100 万倍。
+        Map.entry("KPCS", new BigDecimal("0.001")),
+        Map.entry("千片", new BigDecimal("0.001")),
         Map.entry("G/PCS", new BigDecimal("0.001")),
+        // KG/KPCS 与 G/PCS 数学等价：1 kg/千片 = 1000g/1000片 = 1 g/片，故同为 0.001。
+        Map.entry("KG/KPCS", new BigDecimal("0.001")),
         Map.entry("G/KPCS", new BigDecimal("0.000001"))
     );
 

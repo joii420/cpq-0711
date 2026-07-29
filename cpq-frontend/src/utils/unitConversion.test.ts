@@ -8,9 +8,12 @@ describe('factorFor', () => {
     ['千克', 1], ['KG', 1], ['kG', 1],
     ['吨', 1000], ['t', 1000],
     ['片', 1], ['pcs', 1],
-    ['KPCS', 1000], ['千片', 1000],
+    // KPCS / 千片：2026-07-28 业务修订为「每千片 → 每片」÷1000（原 ×1000）。中英别名必须同值。
+    ['KPCS', 0.001], ['kpcs', 0.001], ['千片', 0.001],
     ['g/PCS', 0.001], ['G/pcs', 0.001],
     [' g / PCS ', 0.001],
+    // KG/KPCS 与 G/PCS 数学等价（1 kg/千片 = 1 g/片）。
+    ['KG/KPCS', 0.001], ['kg/kpcs', 0.001], [' kg / KPCS ', 0.001],
     ['g/KPCS', 0.000001], ['G/kpcs', 0.000001], [' g / KPCS ', 0.000001],
     ['mm', 1], ['', 1], ['  ', 1],
   ];
@@ -20,6 +23,16 @@ describe('factorFor', () => {
   it('null/undefined → 1', () => {
     expect(factorFor(undefined)).toBe(1);
     expect(factorFor(null as any)).toBe(1);
+  });
+
+  // 中英别名必须同系数，否则同一行换个写法结果就变（KPCS/千片 相差 100 万倍是最易踩的坑）
+  it.each([['KPCS', '千片'], ['KG', '千克'], ['G', '克'], ['T', '吨'], ['PCS', '片']])(
+    '别名一致：%s === %s', (en, zh) => {
+      expect(factorFor(en)).toBe(factorFor(zh));
+    });
+
+  it('KG/KPCS 与 G/PCS 数学等价', () => {
+    expect(factorFor('KG/KPCS')).toBe(factorFor('G/PCS'));
   });
 });
 

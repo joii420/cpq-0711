@@ -22,12 +22,29 @@ class UnitConversionTest {
         assertEquals(0, new BigDecimal("1000").compareTo(UnitConversion.factorFor("t")));
         assertEquals(0, BigDecimal.ONE.compareTo(UnitConversion.factorFor("片")));
         assertEquals(0, BigDecimal.ONE.compareTo(UnitConversion.factorFor("pcs")));
-        assertEquals(0, new BigDecimal("1000").compareTo(UnitConversion.factorFor("KPCS")));
-        assertEquals(0, new BigDecimal("1000").compareTo(UnitConversion.factorFor("千片")));
+        // KPCS / 千片：2026-07-28 业务修订为「每千片 → 每片」÷1000（原 ×1000）。中英别名必须同值。
+        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("KPCS")));
+        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("kpcs")));
+        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("千片")));
         assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("g/PCS")));
         assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("G/pcs")));
+        // KG/KPCS 与 G/PCS 数学等价（1 kg/千片 = 1 g/片），系数必须相等。
+        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("KG/KPCS")));
+        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("kg/kpcs")));
+        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor(" kg / KPCS ")));
+        assertEquals(0, UnitConversion.factorFor("KG/KPCS").compareTo(UnitConversion.factorFor("G/PCS")));
         assertEquals(0, new BigDecimal("0.000001").compareTo(UnitConversion.factorFor("g/KPCS")));
         assertEquals(0, new BigDecimal("0.000001").compareTo(UnitConversion.factorFor("G/kpcs")));
+    }
+
+    /** 中英别名必须同系数，否则同一行换个写法结果就变（KPCS/千片 相差 100 万倍是最易踩的坑）。 */
+    @Test
+    void factorFor_aliasPairs_areConsistent() {
+        assertEquals(0, UnitConversion.factorFor("KPCS").compareTo(UnitConversion.factorFor("千片")));
+        assertEquals(0, UnitConversion.factorFor("KG").compareTo(UnitConversion.factorFor("千克")));
+        assertEquals(0, UnitConversion.factorFor("G").compareTo(UnitConversion.factorFor("克")));
+        assertEquals(0, UnitConversion.factorFor("T").compareTo(UnitConversion.factorFor("吨")));
+        assertEquals(0, UnitConversion.factorFor("PCS").compareTo(UnitConversion.factorFor("片")));
     }
 
     @Test
