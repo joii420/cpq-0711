@@ -8,6 +8,7 @@ import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.rowkey.DeletedRowKeys;
 import com.cpq.quotation.service.BomNodeTypeResolver;
 import com.cpq.quotation.service.BomTreeRenderService;
+import com.cpq.quotation.service.CardSnapshotService;
 import com.cpq.quotation.service.CrossTabComponentOrder;
 import com.cpq.quotation.service.RowDataMaterializer;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -314,6 +315,25 @@ public class ConfigureSnapshotService {
                     anyNeedsExpand = true;   // 非增量(强制刷新)或无 byLine → 全行 expand,保原行为
                 }
 
+                // repair-0729 Task2（空覆盖护栏，AP-60 同族不变量）：整单一次预取现有 snapshot_rows
+                // （componentId 维度），供下方两处真正写入点判断"待写空值 + 库内现值非空"时跳过覆盖。
+                // 优先复用刚算好的 byLine（saveDraft 增量热路径零额外开销）；byLine==null（加产品/强制
+                // 刷新非增量路径）且确有行需要 expand 时单独查一次（整单 1 次 IN 查，非热路径可接受）；
+                // anyNeedsExpand=false（全行跳过 expand）时不查，省一次往返。
+                Map<UUID, Map<UUID, String>> existingSnapshotByLine;
+                if (byLine != null) {
+                    existingSnapshotByLine = byLine;
+                } else if (anyNeedsExpand) {
+                    java.util.List<UUID> allLineIdsForGuard = new java.util.ArrayList<>();
+                    for (Map<String, Object> li : lineItems) {
+                        UUID lid = asUuid(li.get("id"));
+                        if (lid != null) allLineIdsForGuard.add(lid);
+                    }
+                    existingSnapshotByLine = self.loadSnapshotRowsByLines(allLineIdsForGuard);
+                } else {
+                    existingSnapshotByLine = Map.of();
+                }
+
                 // 清 driver 进程缓存(30s TTL),保冷跑语义——仅在确需 expand 时(否则跳过这次 evict)。
                 if (anyNeedsExpand) componentDriverService.evictAll();
 
@@ -440,14 +460,27 @@ public class ConfigureSnapshotService {
                             }
                             // writeValueAsString 序列化 = 深拷贝（AP-37 可变共享面保护：各行独立 JSON 字符串）
                             String rowsJson = MAPPER.writeValueAsString(rows);
-                            if (batchWriteEnabled) {
-                                // 收集到批次，循环结束后统一写
-                                snapRowBatch.add(new SnapRow(comp.id, comp.name, rowsJson));
+                            // repair-0729 Task2（空覆盖护栏，AP-60 同族不变量）：待写值为空且库内现值
+                            // 非空 → 跳过本组件的写入（不进批次/不调 writeSnapshot），保留库内旧值；
+                            // snapByComp 也回填旧值，保证下游 row_data 物化与库内实际持久化一致。
+                            String existingRowsJson = existingSnapshotByLine
+                                    .getOrDefault(lineItemId, Map.of()).get(comp.id);
+                            if (isEmptyRowsJson(rowsJson) && !isEmptyRowsJson(existingRowsJson)) {
+                                LOG.warnf("[add-snapshot] EMPTY_OVERWRITE_BLOCKED line=%s comp=%s(%s): " +
+                                        "重查得到空结果, 库内已有非空 snapshot_rows, 跳过覆盖写入(保留旧值)",
+                                        lineItemId, comp.id, comp.name);
+                                CardSnapshotService.EMPTY_OVERWRITE_BLOCKED_COUNT.incrementAndGet();
+                                snapByComp.put(comp.id, existingRowsJson);
                             } else {
-                                // kill switch OFF：保持原逐行写
-                                self.writeSnapshot(lineItemId, comp.id, comp.name, rowsJson);
+                                if (batchWriteEnabled) {
+                                    // 收集到批次，循环结束后统一写
+                                    snapRowBatch.add(new SnapRow(comp.id, comp.name, rowsJson));
+                                } else {
+                                    // kill switch OFF：保持原逐行写
+                                    self.writeSnapshot(lineItemId, comp.id, comp.name, rowsJson);
+                                }
+                                snapByComp.put(comp.id, rowsJson);
                             }
-                            snapByComp.put(comp.id, rowsJson);
                         } catch (Exception e) {
                             LOG.warnf("[add-snapshot] line=%s comp=%s 跳过: %s", lineItemId, comp.id, e.getMessage());
                         }
@@ -479,12 +512,25 @@ public class ConfigureSnapshotService {
                                     injectNodeTypes(rows, treeTypeCtx);
                                 }
                                 String rowsJson = MAPPER.writeValueAsString(rows);
-                                if (batchWriteEnabled) {
-                                    snapRowBatch.add(new SnapRow(comp.id, comp.name, rowsJson));
+                                // repair-0729 Task2（空覆盖护栏，AP-60 同族不变量）：同 Pass 1，待写值为空
+                                // 且库内现值非空 → 跳过写入保留旧值（树渲染失败已有独立哨兵 buildTreeRenderErrorSentinel
+                                // 兜底，不是空数组，不会误触发本护栏）。
+                                String existingRowsJson = existingSnapshotByLine
+                                        .getOrDefault(lineItemId, Map.of()).get(comp.id);
+                                if (isEmptyRowsJson(rowsJson) && !isEmptyRowsJson(existingRowsJson)) {
+                                    LOG.warnf("[add-snapshot] EMPTY_OVERWRITE_BLOCKED line=%s tree-comp=%s(%s): " +
+                                            "重查得到空结果, 库内已有非空 snapshot_rows, 跳过覆盖写入(保留旧值)",
+                                            lineItemId, comp.id, comp.name);
+                                    CardSnapshotService.EMPTY_OVERWRITE_BLOCKED_COUNT.incrementAndGet();
+                                    snapByComp.put(comp.id, existingRowsJson);
                                 } else {
-                                    self.writeSnapshot(lineItemId, comp.id, comp.name, rowsJson);
+                                    if (batchWriteEnabled) {
+                                        snapRowBatch.add(new SnapRow(comp.id, comp.name, rowsJson));
+                                    } else {
+                                        self.writeSnapshot(lineItemId, comp.id, comp.name, rowsJson);
+                                    }
+                                    snapByComp.put(comp.id, rowsJson);
                                 }
-                                snapByComp.put(comp.id, rowsJson);
                             } catch (Exception e) {
                                 LOG.warnf("[add-snapshot] line=%s tree-comp=%s 跳过: %s",
                                         lineItemId, comp.id, e.getMessage());
@@ -618,6 +664,22 @@ public class ConfigureSnapshotService {
         r.rows = new ArrayList<>();
         r.rowCount = 0;
         return r;
+    }
+
+    /**
+     * repair-0729 Task2（空覆盖护栏）：判断一份 snapshot_rows JSON 是否为空
+     * （{@code null}、空白字符串、JSON {@code null}、或空数组 {@code []}）。
+     * 解析失败（脏 JSON）保守按"非空"处理，不拦截该次写入——护栏只拦"确认为空"的结果，
+     * 不改变既有的异常/降级行为。
+     */
+    static boolean isEmptyRowsJson(String json) {
+        if (json == null || json.isBlank()) return true;
+        try {
+            JsonNode node = MAPPER.readTree(json);
+            return node == null || node.isNull() || (node.isArray() && node.isEmpty());
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     // =========================================================================

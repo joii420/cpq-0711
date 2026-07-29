@@ -2140,6 +2140,28 @@ public class CardSnapshotService {
                 // snapshot_rows（见 overlayTreeTabsFromFrozenSnapshot 方法注释；无树页签的模板 no-op）。
                 overlayTreeTabsFromFrozenSnapshot(q.customerTemplateId, managed.id, baseRowsByComp);
 
+                // 1.6 repair-0729 Task2（空覆盖护栏，AP-60 同族不变量）：本次重查（expand + 树覆盖）
+                // 对某组件产出的新 baseRows 若为空，而库内已持久化的旧 quote_card_values 中该组件的
+                // baseRows 非空 → 判定为「一次重查空结果」，不得覆盖已持久化的非空数据。命中时把旧
+                // baseRows 放回 baseRowsByComp，继续走正常组装（不改变后续流程结构）；新旧都空 / 新值
+                // 非空 → 不动，正常更新。
+                Map<String, ArrayNode> oldBaseRowsByComp = extractBaseRowsByComp(managed.quoteCardValues);
+                for (Map.Entry<String, ArrayNode> oldEntry : oldBaseRowsByComp.entrySet()) {
+                    String guardCid = oldEntry.getKey();
+                    ArrayNode oldRows = oldEntry.getValue();
+                    int oldRowCount = oldRows == null ? 0 : oldRows.size();
+                    if (oldRowCount == 0) continue;
+                    ArrayNode newRows = baseRowsByComp.get(guardCid);
+                    int newRowCount = newRows == null ? 0 : newRows.size();
+                    if (newRowCount == 0) {
+                        LOG.warnf("[card-snapshot] EMPTY_OVERWRITE_BLOCKED lineItemId=%s componentId=%s " +
+                                "oldRowCount=%d: 重查得到空结果, 已持久化的旧 baseRows 非空, 拦截覆盖(保留旧值)",
+                                managed.id, guardCid, oldRowCount);
+                        EMPTY_OVERWRITE_BLOCKED_COUNT.incrementAndGet();
+                        baseRowsByComp.put(guardCid, oldRows);
+                    }
+                }
+
                 // 2. 旧 editRows（按 rowKey 对齐保留）
                 Map<String, ArrayNode> oldEdits = extractEditRowsByComp(managed.quoteCardValues);
 
@@ -2545,6 +2567,10 @@ public class CardSnapshotService {
 
     /** F1 可观测性：row_key_fields 单行查执行次数(整单首存应由 ~2550 降到 0,全部命中预取)。供测试断言/监控。 */
     public static final java.util.concurrent.atomic.AtomicLong ROW_KEY_FIELDS_QUERY_COUNT =
+        new java.util.concurrent.atomic.AtomicLong();
+
+    /** repair-0729：被护栏拦下的「空覆盖非空」次数（供测试断言/监控）。 */
+    public static final java.util.concurrent.atomic.AtomicLong EMPTY_OVERWRITE_BLOCKED_COUNT =
         new java.util.concurrent.atomic.AtomicLong();
 
     /** F4 可观测性：driver 组件清单查执行次数(整单首存应由 ~170 降到 0,全部命中预取)。供测试断言/监控。 */

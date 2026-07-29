@@ -358,7 +358,12 @@ public class QuotationResource {
         if (body != null && body.get("templateId") != null && !body.get("templateId").toString().isBlank()) {
             templateId = UUID.fromString(body.get("templateId").toString());
         }
-        return ApiResponse.success(quotationService.copy(id, templateId));
+        QuotationDTO dto = quotationService.copy(id, templateId);
+        // repair-0729 R3: 结构快照补建须在 quotationService.copy() 的事务提交之后独立调用——
+        // 口径与上面 saveDraft(:128) 一致（本 Resource 类无 @Transactional）；提前到 copy()
+        // 内部会加入其事务，读不到刚 persist 尚未提交的行，且 auto-flush 异常会污染整个复制事务。
+        try { cardSnapshotService.ensureStructure(dto.id); } catch (Exception ignore) { /* 结构快照尽力而为 */ }
+        return ApiResponse.success(dto);
     }
 
     @DELETE
