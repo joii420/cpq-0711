@@ -1394,6 +1394,9 @@ public class QuotationService {
         if (source == null) throw new BusinessException(404, "Quotation not found: " + id);
 
         UUID newTemplateId = (templateId != null) ? templateId : source.customerTemplateId;
+        // repair-0729: 同模板复制 = 值快照整份继承（复制冻结结果而非换 id 重新取数）；
+        // 换模板复制保持原「重建」路径不变。单据头 + 行级快照 + 组件数据均按此开关分流。
+        boolean sameTemplate = newTemplateId != null && newTemplateId.equals(source.customerTemplateId);
 
         // 读新模板页签输入字段（用于 row_data 迁移）
         java.util.List<TabFields> newTabs;
@@ -1428,10 +1431,12 @@ public class QuotationService {
         copy.expiryDate = LocalDate.now().plusDays(30);
         copy.paymentTerms = source.paymentTerms;
         copy.deliveryCycle = source.deliveryCycle;
-        copy.originalAmount = BigDecimal.ZERO;   // 占位：换模板后金额由编辑/重算回填，避免列表显示源模板陈旧金额
+        // repair-0729: 同模板复制继承源单金额（值快照整份继承，非重算）；换模板仍按原占位逻辑，
+        // 由编辑/重算回填，避免列表显示源模板陈旧金额。
+        copy.originalAmount = sameTemplate ? source.originalAmount : BigDecimal.ZERO;
         copy.systemDiscountRate = source.systemDiscountRate;
         copy.finalDiscountRate = source.finalDiscountRate;
-        copy.totalAmount = BigDecimal.ZERO;       // 同上
+        copy.totalAmount = sameTemplate ? source.totalAmount : BigDecimal.ZERO;
         copy.sourceQuotationId = source.id;
         copy.snapshotCustomerName = source.snapshotCustomerName;
         copy.snapshotCustomerLevel = source.snapshotCustomerLevel;
@@ -1455,14 +1460,28 @@ public class QuotationService {
             newLi.productNameSnapshot = srcLi.productNameSnapshot;
             newLi.productPartNoSnapshot = srcLi.productPartNoSnapshot;
             newLi.productAttributeValues = srcLi.productAttributeValues;
-            newLi.subtotal = java.math.BigDecimal.ZERO;
             newLi.systemDiscountRate = srcLi.systemDiscountRate;
             newLi.finalDiscountRate = srcLi.finalDiscountRate;
             newLi.sortOrder = srcLi.sortOrder;
             newLi.customerPartNo = srcLi.customerPartNo;
             newLi.partVersionLocked = srcLi.partVersionLocked;
             newLi.compositeType = srcLi.compositeType;
-            // parentLineItemId 稍后重映射；4 份值快照列留空（重建）
+            // parentLineItemId 稍后重映射。
+            // repair-0729: 同模板复制 = 值快照整份继承（含 BOM 树墓碑 deletedTreeNodes，
+            // 否则源单已剪掉的枝会在新单复活）；换模板复制保持原「留空待重建」逻辑不变。
+            if (sameTemplate) {
+                newLi.subtotal = srcLi.subtotal;
+                newLi.quoteCardValues = srcLi.quoteCardValues;
+                newLi.quoteExcelValues = srcLi.quoteExcelValues;
+                newLi.costingCardValues = srcLi.costingCardValues;
+                newLi.costingExcelValues = srcLi.costingExcelValues;
+                newLi.cardSnapshotAt = srcLi.cardSnapshotAt;
+                newLi.quoteValuesAt = srcLi.quoteValuesAt;
+                newLi.excelViewSnapshot = srcLi.excelViewSnapshot;
+                newLi.deletedTreeNodes = srcLi.deletedTreeNodes;
+            } else {
+                newLi.subtotal = java.math.BigDecimal.ZERO;
+            }
             newLi.persist();
             lineIdMap.put(srcLi.id, newLi.id);
             newItems.add(newLi);
@@ -1476,7 +1495,6 @@ public class QuotationService {
                 newP.persist();
             }
 
-            boolean sameTemplate = newTemplateId != null && newTemplateId.equals(source.customerTemplateId);
             migrateAndCreateComponentData(srcLi.id, newLi.id, newTabs, sameTemplate);
         }
 
@@ -1486,22 +1504,40 @@ public class QuotationService {
             if (srcParent != null) newItems.get(i).parentLineItemId = lineIdMap.get(srcParent);
         }
 
-        // 4. 用新模板重建报价侧 4 份快照（driver 重展开 + 合并迁移 row_data 输入 + 重算公式）
-        for (QuotationLineItem newLi : newItems) {
-            cardSnapshotService.refreshQuoteCardValues(newLi);
-        }
-        if (copy.costingCardTemplateId != null) {
-            cardSnapshotService.refreshCostingCardValues(copy.id);
+        // 4. 报价侧 4 份快照：换模板 = 重建（driver 重展开 + 合并迁移 row_data 输入 + 重算公式）；
+        //    同模板 = repair-0729 值快照整份继承路径，**显式跳过重算**——重算会在新单的 pending
+        //    可见域（QuotePendingScope.open(copy.id)）下重查 SQL，把刚继承的正确值刷成空
+        //    （本 bug 根因 A：本单私有 pending 数据不迁移，新单 id 下查不到源单 pending）。
+        //    不依赖 refreshQuoteCardValues 内部 force=false + cardSnapshotAt!=null 的短路 no-op，
+        //    显式跳过避免后人改动短路条件时静默回归。
+        if (!sameTemplate) {
+            for (QuotationLineItem newLi : newItems) {
+                cardSnapshotService.refreshQuoteCardValues(newLi);
+            }
+            if (copy.costingCardTemplateId != null) {
+                cardSnapshotService.refreshCostingCardValues(copy.id);
+            }
         }
 
-        LOG.infof("Copied quotation id=%s -> id=%s number=%s template=%s",
-                id, copy.id, copy.quotationNumber, newTemplateId);
+        // 5. 补建结构快照（quotation_view_structure 4 份）。口径与 QuotationResource#saveDraft 一致：
+        //    幂等、best-effort，失败不阻断复制。修的是"copy 不建结构快照 → 详情页核价侧
+        //    『暂无组件数据』"。换模板/同模板两条路径都需要。
+        try { cardSnapshotService.ensureStructure(copy.id); } catch (Exception ignore) { /* 结构快照尽力而为 */ }
+
+        LOG.infof("Copied quotation id=%s -> id=%s number=%s template=%s sameTemplate=%s",
+                id, copy.id, copy.quotationNumber, newTemplateId, sameTemplate);
         QuotationDTO dto = QuotationDTO.from(copy);
         dto.lineItems = loadLineItems(copy.id);
         return dto;
     }
 
-    /** 按新模板页签建 QuotationLineComponentData，row_data 仅迁移 INPUT 字段（先 componentId 后 tabName 配对）。 */
+    /**
+     * 按新模板页签建 QuotationLineComponentData。
+     * 换模板复制：row_data 仅迁移 INPUT 字段（先 componentId 后 tabName 配对），snapshot_rows 留空待重建。
+     * repair-0729 同模板复制：row_data / snapshot_rows / subtotal 整份继承源页签（值快照继承，
+     * 不走 mapInputRowData 的 INPUT 过滤——那会丢掉 __nodeId 等系统列和非 INPUT 值，
+     * 也是 BOM 树 spine 数据的唯一来源，BOM 页签不参与实时展开，只从这里读冻结树）。
+     */
     private void migrateAndCreateComponentData(UUID srcLineItemId, UUID newLineItemId,
                                                java.util.List<TabFields> newTabs, boolean sameTemplate) {
         List<QuotationLineComponentData> srcData =
@@ -1516,18 +1552,24 @@ public class QuotationService {
         for (TabFields tab : newTabs) {
             QuotationLineComponentData match = byCompId.get(tab.componentId);
             if (match == null) match = byTabName.get(tab.tabName);
-            String migratedRowData = (match == null)
-                    ? "[]"
-                    : mapInputRowData(match.rowData, tab.inputFieldNames, MAPPER);
 
             QuotationLineComponentData newCd = new QuotationLineComponentData();
             newCd.lineItemId = newLineItemId;
             newCd.componentId = (tab.componentId == null || tab.componentId.isEmpty())
                     ? null : UUID.fromString(tab.componentId);
             newCd.tabName = tab.tabName;
-            newCd.rowData = migratedRowData;
-            newCd.snapshotRows = null;
-            newCd.subtotal = java.math.BigDecimal.ZERO;
+            if (sameTemplate) {
+                // 值快照整份继承：match==null（源单缺该页签）时仍走兜底，不能空指针。
+                newCd.rowData = (match == null) ? "[]" : match.rowData;
+                newCd.snapshotRows = (match == null) ? null : match.snapshotRows;
+                newCd.subtotal = (match == null) ? java.math.BigDecimal.ZERO : match.subtotal;
+            } else {
+                newCd.rowData = (match == null)
+                        ? "[]"
+                        : mapInputRowData(match.rowData, tab.inputFieldNames, MAPPER);
+                newCd.snapshotRows = null;
+                newCd.subtotal = java.math.BigDecimal.ZERO;
+            }
             newCd.sortOrder = sort++;
             // driver 默认行墓碑：同模板复制按 componentId 原样拷贝（源集/effKey/fp 不变,墓碑仍匹配）；
             // 换模板复制清空（换模板后 driver/源集/effKey 全变,旧墓碑必失配 → 会误删新行）。
