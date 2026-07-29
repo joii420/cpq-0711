@@ -110,9 +110,12 @@
 ### [BL-0005] 第二期前置：版本感知 BOM 闭包展开（让切版本真正重算子料号）
 - **优先级**：P1
 - **来源**：`docs/superpowers/specs/2026-06-29-核价管理财务核价工作台-design.md` §0/§9（第二期前置工程）；cpq-architect 评审 B-1 + 主线穿透核验
-- **状态**：TODO（未排期）
+- **状态**：⚠️ **TODO（未排期）—— 但前提已过期，排期前必须先重新评估（2026-07-29 复核）**
 - **登记日期**：2026-06-29
-- **背景**：核价工作台"财务切料号版本→重算子料号"在当前引擎**不生效**——`BomClosureService.CLOSURE_SQL` 硬编码 `is_current=true`（`:71/:88`）、`compute()` 在 P1 显式忽略 `versionOverrides`（`:120-124`）；核价卡片 `expandTemplateDriverBaseRows` 传 `partVersion=null`（`CardSnapshotService.java:1631`）→ `ComponentDriverService.expand:402` `set(null)` 清空版本上下文。
+- **⚠️ 2026-07-29 复核结论（task-0729 技术方案期查证）**：本条描述的**根因载体已不存在** —— **`BomClosureService.java` 文件已被删除**（`find` 零命中），随 `task-0723 B3「料号版本族整族下线」`一并退役。
+  - **更重要的是：本条想要的能力看起来已被别的路径实现了。** `docs/RECORD.md` 2026-07-26（V363 条目）记载：核价侧 BOM 树递归 SQL **保留 `:versionFilter` 宏**，`BomTreeRenderService.queryRecursive:361` 对含宏模板调 `VersionFilterMacro.expandForExecution` 展开成 `:__vfPart`/`:__vfVer` **双数组谓词**，**空 override 时退化为 `is_current` 零回归**；实测 seed 展开 **20 节点 / 2 根 / 4 层**。注释明确它是「**task-0713 核价单版本切换作用到 BOM 主树的唯一通道**」—— 这正是本条要的"版本感知 BOM 闭包"。
+  - **⚠️ 未复测**：以上为读 RECORD + 查文件存在性得出，**没有实机验证**。排期前请先做最小验证（给某料号造两个版本，确认经 `versionFilter` 重算后子料号集合/值真变）。若成立，**本条可关闭**，[[BL-0006]] 的前置随之解除。
+- ~~**背景**：核价工作台"财务切料号版本→重算子料号"在当前引擎**不生效**——`BomClosureService.CLOSURE_SQL` 硬编码 `is_current=true`（`:71/:88`）、`compute()` 在 P1 显式忽略 `versionOverrides`（`:120-124`）；核价卡片 `expandTemplateDriverBaseRows` 传 `partVersion=null`（`CardSnapshotService.java:1631`）→ `ComponentDriverService.expand:402` `set(null)` 清空版本上下文。~~（**上述行号与符号均已失效**，仅作历史追溯）
 - **范围**：让 BOM 闭包支持按 `bom_version` 逐层迭代展开（注释所言"P2 走 Java 逐层迭代"）；把 `partVersion` 透传进核价卡片 expand 链路。先做最小验证（给某料号造两个版本，确认重算后子料号集合/值真变）。
 - **依赖**：无（独立后端工程，是 BL-0006 的前置）。
 - **预估规模**：L（1 周以上）
@@ -121,12 +124,17 @@
 ### [BL-0006] 第二期：核价单切版本调价主体（财务调价能力）
 - **优先级**：P1
 - **来源**：spec §9（第二期大纲）+ 12 轮 brainstorming 核心诉求"调价是常态"
-- **状态**：TODO（未排期）
+- **状态**：TODO（未排期）— 🔒 **2026-07-29 业务方裁定：后续单独立项，明确不并入 task-0729**（详见本条末尾；它切的是**料号 BOM 版本**，与 task-0729 的**元素价格版本**是两条不同的轴）
 - **登记日期**：2026-06-29
 - **背景**：第一期只做只读复核+审批，财务**不能调价**。本条补上财务切版本调价：另存核价单版本、记录变更、单据总价随之重算，**不动报价单冻结快照**。
 - **范围**：新增 `costing_order_revision`（追加）+ `costing_order_line_snapshot`（逐行核价快照 + part_version_locked）；核价专用切版本端点（只重算核价侧改动卡片 + 单据总价 + 写 revision，允许 SUBMITTED+财务，不调 regenerateAllSnapshots）；并发 `SELECT FOR UPDATE costing_order`+seq 序列防竞态（评审 M-1）；line_snapshot 加 FK（M-4）；可编辑工作台外壳 `CostingReviewCardContainer`（持 lineItem state+角色门+切版本入口，内层仍纯只读 `ReadonlyProductCard` 反 AP-50，M-x1）+ 复活 `PartVersionDrawer`；单据总价口径锁定（含/不含 Step3 折扣，倾向复用 `lineDiscountService.recompute`，M-5）。
-- **依赖**：**BL-0005（版本感知 BOM 闭包）必须先就绪。**
+- **依赖**：~~**BL-0005（版本感知 BOM 闭包）必须先就绪。**~~ → **2026-07-29 复核：该前置可能已由 `VersionFilterMacro` 满足**（见 [[BL-0005]] 的复核结论，**未复测**）。排期前先验 BL-0005，成立则本条前置解除。
 - **预估规模**：L
+- **🔒 2026-07-29 业务方裁定（task-0729 澄清期）**：**本条后续单独立项，明确不并入 task-0729。**
+  - **两条不同的版本轴，别混**：本条切的是**料号 BOM 版本**（`part_version` / `bom_version`）；task-0729 做的是**元素价格版本**（客户 × 一次调价 → 料号版本指针）。两者**无依赖关系**。
+  - **由此产生的 task-0729 硬约束**（见 `dev-docs/task-0729-客户价格调整策略和价格版本/需求说明.md` §11.12 #16 + `AGENT-交接.md` §4.6 #20）：task-0729 期间**不得**新建 `costing_order_revision` / `costing_order_line_snapshot`，**不得**改动 `:versionFilter` 宏与 `VersionFilterMacro`，`costing_order` frozen 快照**逐字节不动**（裁决 42 保持不变）。
+  - **⚠️ 做本条时必须先解决命名二义**：届时"料号版本"会**同时**指 **BOM 版本**（本条）与**价格版本**（task-0729），且两者都会出现在核价界面上。task-0729 期间无此问题（`part_version` 族已由 task-0723 B3 整族下线，该词当前无占用），但本条一落地就会撞上。建议在本条的 spec 阶段就把 UI 措辞与字段命名钉死，**不出现裸的"版本"**。
+  - 另注：本条原范围里的 `part_version_locked` 已随 task-0723 B3 停止写入（列保留），实现前需重新确认版本来源。
 - **验收要点**：财务切某料号版本→该卡片子料号/值 + 单据总价按新版本重算、写入核价单新 revision；报价单原始快照不变；重提延续最新 revision（spec §6.4）；并发切版本不丢改动（连跑两次结果一致）。
 
 ### [BL-0007] 第二期：核价单覆盖读取层下沉（B-3，对外以核价单为准）
@@ -524,7 +532,10 @@
 ### [BL-0016] 切料号版本后失效卡片值（lazy 模型 staleness gap）
 - **优先级**：P2
 - **来源**：`docs/superpowers/specs/2026-06-29-lazy-card-values-design.md` 实现期 Task 4 代码评审 Important（范围外观察）
-- **状态**：TODO（未排期）
+- **状态**：🔻 **[-] 实质失效（2026-07-29 复核）** —— 本条描述的代码**已不存在**
+- **⚠️ 2026-07-29 复核结论（task-0729 技术方案期查证）**：本条的核心对象 **`QuotationService.updateLineItemPartVersion` 已被删除**（`QuotationService.java:2624` 注释：`task-0723 B3: 料号版本族整族下线 — updateLineItemPartVersion 已删除`），同期 `regenerateAllSnapshots` 亦删除（`ExcelViewService.java:584` 同款注释），`PartVersionService` / 前端 `PartVersionDrawer` 均已退役，`part_version_locked` 列保留但**不再写入**。**故本条描述的 staleness gap 已无载体。**
+  - **不要直接关闭**：若日后 [[BL-0006]] 落地并重新引入"切版本"入口，**同款失效缺口会再次出现**（切版本改了行却不置空 `quoteCardValues`/`costingCardValues`，lazy 模型下 `ensureCardValues` 只按 `IS NULL` 重选）。建议**降级为 [[BL-0006]] 的实现期检查项**而非独立条目。
+  - **与 task-0729 无关**：task-0729 的"升版"走**元素价格版本**轴，其卡片值失效由 `需求说明.md` §11.15.2 的重算通道 S3~S5 显式处理，不依赖本条。
 - **登记日期**：2026-06-29
 - **推迟原因**：超出本期（saveDraft 重建）范围；且**当前潜在**——按 [[BL-0005]] 切版本引擎尚未生效（`BomClosureService` 硬编码 `is_current`、核价 expand 传 `partVersion=null`），故切版本暂不改变卡片值相关数据，staleness 暂不显现。第二期版本切换真生效后必须补。
 - **背景**：`QuotationService.updateLineItemPartVersion`（`:2632`，`li.persist()` `:2667` + `regenerateAllSnapshots`）改动行但**不置空** `quoteCardValues/costingCardValues`。lazy 模型下 `ensureCardValues` 只按 `IS NULL` 重选 → 切版本后卡片值非 NULL 不被重选 → 打开仍显示切版本前的陈旧卡片值。
