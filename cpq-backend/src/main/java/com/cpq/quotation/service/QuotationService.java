@@ -1384,9 +1384,13 @@ public class QuotationService {
     }
 
     /**
-     * 复制报价单。templateId 非空 → 换模板：新单 customerTemplateId=templateId，
-     * 行项目页签按新模板重建，仅迁移用户输入值(INPUT 类型，按字段名)，driver/公式由新模板重算。
-     * templateId 为空 → 沿用源 customerTemplateId（同模板复制，同样走重建流程修正历史缺陷）。
+     * 复制报价单。templateId 非空且与源单模板不同 → 换模板：新单 customerTemplateId=templateId，
+     * 行项目页签按新模板重建，仅迁移用户输入值(INPUT 类型，按字段名)，driver/公式由新模板重算，
+     * 金额/值快照/结构快照占位待编辑或重算回填。
+     * templateId 为空或等于源单模板 → 同模板复制（repair-0729）：值快照整份继承（单据头金额、
+     * 行级 4 份值快照 + 折扣明细、组件数据 row_data/snapshot_rows/subtotal），显式跳过
+     * refreshQuoteCardValues/refreshCostingCardValues 重算——新单 id 下查不到源单私有 pending
+     * 数据，重算会把刚继承的正确值刷成空（本 bug 根因 A）。
      */
     @Transactional
     public QuotationDTO copy(UUID id, UUID templateId) {
@@ -1437,6 +1441,17 @@ public class QuotationService {
         copy.systemDiscountRate = source.systemDiscountRate;
         copy.finalDiscountRate = source.finalDiscountRate;
         copy.totalAmount = sameTemplate ? source.totalAmount : BigDecimal.ZERO;
+        if (sameTemplate) {
+            // repair-0729 R2: 冻结结果整份继承，避免"头部金额已继承、税额/折扣理由缺位"的不一致态——
+            // 用户不重跑 Step3 直接提交时，submit 权威重算会用缺位值覆盖头部金额。
+            // 不继承 referencedVersions(漂移检测基线)/submissionSnapshot/importBatchId/
+            // assignedApproverId（语义上本就不该复制，另见 BACKLOG）。
+            copy.taxRate = source.taxRate;
+            copy.taxAmount = source.taxAmount;
+            copy.isManuallyAdjusted = source.isManuallyAdjusted;
+            copy.discountAdjustmentReason = source.discountAdjustmentReason;
+            copy.remarks = source.remarks;
+        }
         copy.sourceQuotationId = source.id;
         copy.snapshotCustomerName = source.snapshotCustomerName;
         copy.snapshotCustomerLevel = source.snapshotCustomerLevel;
@@ -1468,7 +1483,11 @@ public class QuotationService {
             newLi.compositeType = srcLi.compositeType;
             // parentLineItemId 稍后重映射。
             // repair-0729: 同模板复制 = 值快照整份继承（含 BOM 树墓碑 deletedTreeNodes，
-            // 否则源单已剪掉的枝会在新单复活）；换模板复制保持原「留空待重建」逻辑不变。
+            // 否则源单已剪掉的枝会在新单复活；含 annualVolume 年用量——它是
+            // CostingSubtotalUtil.lineCostingAmount / LineDiscountService 两条金额链路的
+            // 乘数，漏继承会让核价总额与行折扣金额静默算成 0，是根因 E 的同族形态；
+            // 含折扣明细列，避免"头部金额已继承、行级折扣明细全空"的不一致态）；
+            // 换模板复制保持原「留空待重建」逻辑不变。
             if (sameTemplate) {
                 newLi.subtotal = srcLi.subtotal;
                 newLi.quoteCardValues = srcLi.quoteCardValues;
@@ -1479,8 +1498,19 @@ public class QuotationService {
                 newLi.quoteValuesAt = srcLi.quoteValuesAt;
                 newLi.excelViewSnapshot = srcLi.excelViewSnapshot;
                 newLi.deletedTreeNodes = srcLi.deletedTreeNodes;
+                newLi.annualVolume = srcLi.annualVolume;
+                newLi.discountSource = srcLi.discountSource;
+                newLi.discountBaseAmount = srcLi.discountBaseAmount;
+                newLi.discountRateApplied = srcLi.discountRateApplied;
+                newLi.lineDiscountAmount = srcLi.lineDiscountAmount;
+                newLi.lineUnitPrice = srcLi.lineUnitPrice;
+                newLi.lineFinalPrice = srcLi.lineFinalPrice;
+                newLi.lineTotalAmount = srcLi.lineTotalAmount;
+                newLi.discountRuleCode = srcLi.discountRuleCode;
+                newLi.isManuallyAdjusted = srcLi.isManuallyAdjusted;
+                newLi.discountAdjustmentReason = srcLi.discountAdjustmentReason;
             } else {
-                newLi.subtotal = java.math.BigDecimal.ZERO;
+                newLi.subtotal = BigDecimal.ZERO;
             }
             newLi.persist();
             lineIdMap.put(srcLi.id, newLi.id);
@@ -1519,10 +1549,15 @@ public class QuotationService {
             }
         }
 
-        // 5. 补建结构快照（quotation_view_structure 4 份）。口径与 QuotationResource#saveDraft 一致：
-        //    幂等、best-effort，失败不阻断复制。修的是"copy 不建结构快照 → 详情页核价侧
-        //    『暂无组件数据』"。换模板/同模板两条路径都需要。
-        try { cardSnapshotService.ensureStructure(copy.id); } catch (Exception ignore) { /* 结构快照尽力而为 */ }
+        // repair-0729 R3: 结构快照补建（quotation_view_structure 4 份）**不在这里做**。
+        // ensureStructure 是 @Transactional(REQUIRED)，若在此调用会加入本方法的事务；copy()
+        // 刚 persist 的 Quotation/QuotationLineItem 行此刻仍只在本事务内可见，把 ensureStructure
+        // 挪到独立事务（哪怕是 REQUIRES_NEW）在 commit 前调用也读不到这些行——必须等本方法的
+        // @Transactional 边界提交之后才能安全调用。按 QuotationResource#saveDraft 同一口径
+        // （该 Resource 类无 @Transactional），由 QuotationResource#copy 在
+        // quotationService.copy(...) 返回（即事务已提交）之后再调用 ensureStructure，
+        // 避免 auto-flush 异常污染本方法的事务（污染会导致 copy 整体在 commit 处失败于一个
+        // 与复制本身无关的、被吞掉细节的 500）。
 
         LOG.infof("Copied quotation id=%s -> id=%s number=%s template=%s sameTemplate=%s",
                 id, copy.id, copy.quotationNumber, newTemplateId, sameTemplate);
@@ -1544,14 +1579,26 @@ public class QuotationService {
                 QuotationLineComponentData.list("lineItemId = ?1", srcLineItemId);
         java.util.Map<String, QuotationLineComponentData> byCompId = new java.util.HashMap<>();
         java.util.Map<String, QuotationLineComponentData> byTabName = new java.util.HashMap<>();
+        java.util.Set<QuotationLineComponentData> matched = new java.util.HashSet<>();
         for (QuotationLineComponentData cd : srcData) {
-            if (cd.componentId != null) byCompId.put(cd.componentId.toString(), cd);
+            if (cd.componentId != null) {
+                // R5 M-2（AP-40 族防御）：同 componentId 多页签是单键映射，后者会覆盖前者。
+                // 当前库内 0 例，仅加可观测告警，不改匹配算法——本次把继承范围从"仅 INPUT 值"
+                // 扩到整份 snapshot_rows，一旦出现重复 cid，污染面会从个别输入格升级为整页签串号。
+                if (byCompId.containsKey(cd.componentId.toString())) {
+                    LOG.warnf("copy: lineItemId=%s componentId=%s 对应多个源页签(tabName=%s 与已存在的一份重复)，" +
+                                    "按 HashMap 覆盖语义只会继承最后一条，可能丢失页签数据",
+                            srcLineItemId, cd.componentId, cd.tabName);
+                }
+                byCompId.put(cd.componentId.toString(), cd);
+            }
             if (cd.tabName != null) byTabName.put(cd.tabName, cd);
         }
         int sort = 0;
         for (TabFields tab : newTabs) {
             QuotationLineComponentData match = byCompId.get(tab.componentId);
             if (match == null) match = byTabName.get(tab.tabName);
+            if (match != null) matched.add(match);
 
             QuotationLineComponentData newCd = new QuotationLineComponentData();
             newCd.lineItemId = newLineItemId;
@@ -1560,15 +1607,17 @@ public class QuotationService {
             newCd.tabName = tab.tabName;
             if (sameTemplate) {
                 // 值快照整份继承：match==null（源单缺该页签）时仍走兜底，不能空指针。
+                // R5 M-1：quotation_line_component_data.snapshot_at 是 DB 列但实体未映射，
+                // 继承后新行该列为 NULL 而 snapshot_rows 非空——已核实无消费者，审计断链已知，不阻断。
                 newCd.rowData = (match == null) ? "[]" : match.rowData;
                 newCd.snapshotRows = (match == null) ? null : match.snapshotRows;
-                newCd.subtotal = (match == null) ? java.math.BigDecimal.ZERO : match.subtotal;
+                newCd.subtotal = (match == null) ? BigDecimal.ZERO : match.subtotal;
             } else {
                 newCd.rowData = (match == null)
                         ? "[]"
                         : mapInputRowData(match.rowData, tab.inputFieldNames, MAPPER);
                 newCd.snapshotRows = null;
-                newCd.subtotal = java.math.BigDecimal.ZERO;
+                newCd.subtotal = BigDecimal.ZERO;
             }
             newCd.sortOrder = sort++;
             // driver 默认行墓碑：同模板复制按 componentId 原样拷贝（源集/effKey/fp 不变,墓碑仍匹配）；
@@ -1576,6 +1625,16 @@ public class QuotationService {
             newCd.deletedRowKeys = (sameTemplate && match != null && match.deletedRowKeys != null)
                     ? match.deletedRowKeys : "[]";
             newCd.persist();
+        }
+        // R5 M-3：newTabs（目标模板快照）是主轴，源单独有、目标模板未声明的页签会被静默丢弃。
+        // 仅加可观测告警，不改变现有"以模板为准"的行为。
+        int unmatchedCount = 0;
+        for (QuotationLineComponentData cd : srcData) {
+            if (!matched.contains(cd)) unmatchedCount++;
+        }
+        if (unmatchedCount > 0) {
+            LOG.warnf("copy: lineItemId=%s 源单有 %d 个组件页签未被目标模板任何 tab 匹配到，将被静默丢弃",
+                    srcLineItemId, unmatchedCount);
         }
     }
 
