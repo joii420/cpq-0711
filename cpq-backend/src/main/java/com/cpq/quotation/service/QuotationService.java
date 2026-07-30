@@ -237,6 +237,8 @@ public class QuotationService {
         q.expectedCloseDate = request.expectedCloseDate;
         // 客户报价模板:由前端按 (customerId + categoryId) 通过 match-customer-quote 匹配后传入
         if (request.customerTemplateId != null) q.customerTemplateId = request.customerTemplateId;
+        // task-0729: 建单时的产品分类落库，前端传什么存什么，不做二次推导（守 D4）。
+        q.productCategoryId = request.categoryId;
         q.status = "DRAFT";
         q.expiryDate = LocalDate.now().plusDays(30);
 
@@ -340,6 +342,8 @@ public class QuotationService {
         // "用户先选 → next 触发 saveDraft → 后续再调整"链路.
         if (request.customerTemplateId != null) q.customerTemplateId = request.customerTemplateId;
         if (request.costingCardTemplateId != null) q.costingCardTemplateId = request.costingCardTemplateId;
+        // task-0729: 仅当非 null 才覆盖 — null 不清空已存分类（旧前端/异常 payload 兜底）。
+        if (request.categoryId != null) q.productCategoryId = request.categoryId;
 
         // Pricing overrides
         if (request.finalDiscountRate != null) {

@@ -34,6 +34,12 @@ public class SaveDraftRequest {
     public UUID customerTemplateId;
     public UUID costingCardTemplateId;
 
+    /**
+     * task-0729: 建单时的产品分类。仅当非 null 时才覆盖 quotation.product_category_id
+     * ——null 不清空已有值（前端旧版本 / 异常 payload 不该抹掉已存分类），见 QuotationService#saveDraft。
+     */
+    public UUID categoryId;
+
     // Line items
     public List<LineItemDraft> lineItems;
 

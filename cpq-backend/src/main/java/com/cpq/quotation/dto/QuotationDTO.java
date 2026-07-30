@@ -60,6 +60,13 @@ public class QuotationDTO {
     public UUID customerTemplateId;
 
     /**
+     * task-0729：建单时的产品分类（字段名故意叫 categoryId 而非 productCategoryId，
+     * 与前端 QuotationWizard 的 `q.categoryId || prev.categoryId` 回填逻辑对齐）。
+     * 存量单为 null 时，前端回落到「从 customerTemplateId 反查模板分类」兜底。
+     */
+    public UUID categoryId;
+
+    /**
      * V72：核价模板（template 表里 template_kind='COSTING' 的模板）。
      * 由「创建报价单」抽屉按 (categoryId + customerId) 匹配后写入；
      * 「核价单」视图据此渲染产品卡片的核价模板。
@@ -125,6 +132,7 @@ public class QuotationDTO {
         dto.sourceQuotationId = q.sourceQuotationId;
         dto.assignedApproverId = q.assignedApproverId;
         dto.customerTemplateId = q.customerTemplateId;
+        dto.categoryId = q.productCategoryId;
         dto.costingCardTemplateId = q.costingCardTemplateId;
         dto.remarks = q.remarks;
         dto.snapshotCustomerName = q.snapshotCustomerName;

@@ -105,6 +105,15 @@ public class Quotation extends PanacheEntityBase {
     @Column(name = "customer_template_id")
     public UUID customerTemplateId;
 
+    /**
+     * task-0729: 建单时的产品分类（前端匹配模板用的一次性参数，落库后成为一等数据）。
+     * 建单时前端传什么就存什么，后端不做二次推导（不反查客户绑定），避免与 D4
+     * （客户改绑分类不追溯已有报价单）冲突。存量单本列为 NULL，前端回落到
+     * 「从 customer_template_id 反查模板分类」兜底。
+     */
+    @Column(name = "product_category_id")
+    public UUID productCategoryId;
+
     // V72：核价模板（template 表里 template_kind='COSTING' 的那条）→ 用于「核价单」视图的产品卡片渲染
     @Column(name = "costing_card_template_id")
     public UUID costingCardTemplateId;

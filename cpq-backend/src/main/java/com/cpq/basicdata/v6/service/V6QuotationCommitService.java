@@ -58,6 +58,9 @@ public class V6QuotationCommitService {
         cq.name = req.name;
         cq.customerTemplateId = req.customerTemplateId;
         cq.costingTemplateId = req.costingTemplateId;
+        // task-0729: 导入建单路径的产品分类落库 —— req.categoryId 早已存在，只差透传这一行；
+        // 落库本身由 QuotationService#create 里的 q.productCategoryId = request.categoryId 完成。
+        cq.categoryId = req.categoryId;
         QuotationDTO q = quotationService.create(cq, userId);
         Log.infof("V6 commit: importRecord=%s → quotation=%s", req.importRecordId, q.id);
 

@@ -34,6 +34,13 @@ public class CreateQuotationRequest {
     public UUID customerTemplateId;
 
     /**
+     * task-0729: 建单时的产品分类，前端传什么存什么，后端不做二次推导
+     * （不反查客户绑定，避免与 D4「客户改绑分类不追溯已有报价单」冲突）。
+     * 字段名故意叫 categoryId（对齐 QuotationDTO.categoryId / 前端回填协议）。
+     */
+    public UUID categoryId;
+
+    /**
      * 核价模板 ID（双模板体系第二条，V72 起改为指向 template 表里 template_kind='COSTING' 的模板）。
      * 由前端在「创建报价单」抽屉按 (categoryId + customerId) 匹配「模板配置」中已发布的核价模板。
      * 后端会校验：模板存在、status='PUBLISHED'、template_kind='COSTING'，写入 quotation.costing_card_template_id。
