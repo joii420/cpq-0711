@@ -906,6 +906,9 @@ const QuotationWizard: React.FC = () => {
       // 否则回退 form values (与 onChange setFieldsValue 双轨保险).
       customerTemplateId: customerTemplateId ?? values.customerTemplateId ?? null,
       costingCardTemplateId: costingCardTemplateId ?? values.costingCardTemplateId ?? null,
+      // task-0729: 编辑期分类随草稿一并落库（后端仅当非 null 时才覆盖，不带该字段/为 undefined
+      // 时不会清空已存值——见 SaveDraftRequest 覆盖语义）。
+      categoryId: step1FormValue.categoryId,
       lineItems: lineItems.map((li, idx) => ({
         // 2026-06-01: 回传已存在行的 line id → 后端按 id UPSERT(就地更新, 不换 UUID)。
         //   id 稳定后 payload 含 id 也不会 churn(去重正常), 且 editQuoteCardValue 不再撞已删 id。
@@ -1111,6 +1114,9 @@ const QuotationWizard: React.FC = () => {
         stage: form.getFieldValue('stage'),
         projectName: form.getFieldValue('projectName'),
         expectedCloseDate: form.getFieldValue('expectedCloseDate')?.format('YYYY-MM-DD'),
+        // task-0729: 建单时把当前产品分类落库（此前压根没发，编辑页只能靠模板反查，
+        // 模板未绑定/分类为空时永久空白）。
+        categoryId: step1FormValue.categoryId,
       });
       const newId = res.data.id;
       setQuotationId(newId);

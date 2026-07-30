@@ -316,7 +316,11 @@ const QuotationCreateForm: React.FC<Props> = ({
           ? '产品分类由客户绑定决定，如需变更请到客户管理修改客户所属产品分类'
           : '选择后系统自动匹配「客户专属模板」(如有) → 「通用模板」(兜底)'}
         validateStatus={!value.categoryId ? 'error' : ''}
-        help={!value.categoryId ? '请选择产品分类' : undefined}
+        help={!value.categoryId
+          ? (readOnly && !value.customerTemplateId
+            ? '该报价单未绑定报价模板，无法带出产品分类'
+            : '请选择产品分类')
+          : undefined}
       >
         <Select
           options={categories.map((c) => ({ value: c.id, label: c.name }))}
