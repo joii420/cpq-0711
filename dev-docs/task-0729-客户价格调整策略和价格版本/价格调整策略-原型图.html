@@ -179,6 +179,8 @@ td .dt.down{color:var(--green);}
   <a href="#s6">屏6 更新执行进度</a>
   <div class="grp">报价单</div>
   <a href="#s7">屏7 价格版本轨迹</a>
+  <div class="grp">组件管理</div>
+  <a href="#scfg">屏8 组件配置 · 元素列绑定</a>
   <div class="grp">对照</div>
   <a href="#s8">裁决速查 44+4 条</a>
   <a href="#s9">明确不做清单</a>
@@ -291,7 +293,7 @@ td .dt.down{color:var(--green);}
           <span class="card-title">调价策略 · 苏州西门子</span>
           <div style="display:flex;gap:10px;align-items:center">
             <span style="font-size:12px;color:var(--text3)">最后变更 2026-07-28 14:22 · 李财务</span>
-            <button class="btn sm">🕘 变更历史</button>
+            <button class="btn sm">🕘 变更历史</button><span class="tag b" style="font-size:11px">本期做</span>
             <button class="btn sm pri">⚡ 立即生成一次</button>
           </div>
         </div>
@@ -331,7 +333,7 @@ td .dt.down{color:var(--green);}
             <div class="field">
               <label>下次执行</label>
               <span class="inp w100 dis" id="nextRun">2026-08-05 18:00</span>
-              <div class="hint">系统每 15 分钟扫描一次，错过时刻也会补跑，同一周期点只生成一次。</div>
+              <div class="hint">系统<b>每分钟</b>扫描一次（D4：执行时刻精确到分，<s>每 15 分钟</s> / <s>每日一次</s> 两种旧写法均已废弃），错过时刻也会补跑，同一周期点只生成一次。</div>
             </div>
           </div>
 
@@ -383,10 +385,28 @@ td .dt.down{color:var(--green);}
             </div>
           </div>
 
-          <h3 class="sec">比对列配置（本客户专属 · 决定审核时看哪些差异）</h3>
+          <h3 class="sec">比对列配置（按<b>客户 × 模板系列</b>各一份 · 决定审核时看哪些差异）</h3>
+
+          <div class="alert w" style="margin-bottom:10px"><div>
+            🔄 <b>2026-07-29 改判（裁决 43 → §11.5.4）</b>：原定「配置<b>按客户</b>一份」<b>落不了地</b> —— 比对列存的是 <code>componentId</code>，而
+            <b><code>componentId</code> 属于模板、不属于客户</b>。实测罗克韦尔 <b>5 个模板 / 3 个模板系列 / 同名组件「材料成本」3 个不同 componentId</b>。
+            按客户存一份 → 只对得上一个模板，其余整列落 <code>STALE</code>，而 <b><code>STALE</code> 不计入 <code>breached_count</code></b> →
+            待办池显示「✓ 全通过」<b style="color:var(--red)">实际根本没算（静默漏红）</b>。
+            <br>👉 改为 <b>按「客户 × 模板系列」各一份</b>。<b>按系列不按具体模板</b>：同系列各版本共享同一批组件，升版本自动沿用、无需重配。
+          </div></div>
+
+          <div class="toolbar" style="gap:10px;align-items:center;margin-bottom:10px">
+            <span style="font-size:12px;color:var(--text3)">模板系列</span>
+            <span class="inp" style="width:230px">罗克韦尔模板1（最新 v1.0）<i class="sel-arrow">▾</i></span>
+            <span class="tag n">该客户共 3 个系列 / 5 个模板</span>
+            <span class="tag b">新</span>
+            <span class="sp" style="flex:1"></span>
+            <span class="hint" style="margin:0">切换系列 = 切换另一份配置</span>
+          </div>
+
           <div class="sub-panel">
             <div class="sub-hd">
-              <span class="sub-title">比对列</span>
+              <span class="sub-title">比对列 · 罗克韦尔模板1</span>
               <span class="sub-meta">已配 3 列 · 复用报价单比对视图的连线配置 · <a class="link">⚙ 配置比对列</a></span>
             </div>
             <div class="tbl-wrap" style="border:0;border-radius:0"><table>
@@ -397,9 +417,10 @@ td .dt.down{color:var(--green);}
               <tr><td>3</td><td>加工费</td><td>加工 · 工序费合计</td><td>加工成本 · 页签合计</td><td class="num">0</td><td>—</td></tr>
             </table></div>
             <div class="sub-ft">
-              <span class="hint" style="margin:0">配置<b>按客户一份</b>（裁决 43），改一次对该客户全部料号的审核生效；新客户默认只有「产品总价」一列。
-              着色规则复用 task-0717：差异 &lt; 阈值 <span class="tag o" style="font-size:11px">橙</span>、差异 &lt; 0 <span class="tag r" style="font-size:11px">红</span>；<b>任一列跌破即整行标红</b>（裁决 44）。<br>
-              🔒 <b>本区块是比对列的唯一配置入口</b>（审核抽屉内只读展示，不给改口径）。<b>保存后立即重算该客户全部「待处理」料号的预算</b>并刷新待办池标色；<b>已通过 / 已驳回的料号不重算</b> —— 它们的审核依据必须保持可追溯。</span>
+              <span class="hint" style="margin:0">配置<b>按「客户 × 模板系列」各一份</b>（§11.5.4 改判裁决 43），改一次对<b>该系列下</b>全部料号的审核生效；未配过的组合默认只有「产品总价」一列。
+              <br>📌 <b>默认列跨模板天然通用</b> —— 「产品总价」取 SUBTOTAL 页签值、<b>不依赖 componentId</b>，所以没配过的模板系列至少能算出总价，不会整行空白。只有自定义列（<code>kind=TAB_PAIR</code>）才绑 componentId。
+              <br>着色规则复用 task-0717：差异 &lt; 阈值 <span class="tag o" style="font-size:11px">橙</span>、差异 &lt; 0 <span class="tag r" style="font-size:11px">红</span>；<b>任一列跌破即整行标红</b>（裁决 44）。<br>
+              🔒 <b>本区块是比对列的唯一配置入口</b>（审核抽屉内只读展示，不给改口径）。<b>保存后立即重算「该客户 × 该系列」下「待处理」料号的预算</b>并刷新待办池标色（<b>其他系列的料号不受影响</b>）；<b>已通过 / 已驳回的料号不重算</b> —— 它们的审核依据必须保持可追溯。</span>
             </div>
           </div>
 
@@ -577,7 +598,7 @@ td .dt.down{color:var(--green);}
         <tr><td>2</td><td><b>职责与策略启用状态重复</b></td>
             <td>策略停用 → 不生成版本 → 无料号进待办池 → 指针永不推进 → 该客户<b>天然不参与本机制</b>。"是否参与"已被策略启用状态完整表达，勾选框无剩余职责。</td></tr>
         <tr><td>3</td><td><b>与裁决 31 实现路径不咬合</b></td>
-            <td>取价切换发生在 <code>f_material_element_price</code> + 6 个 <code>mc_view</code> 的函数/视图层，而 <code>mc_view</code> 是<b>模板级共享</b>的（一个视图服务该模板全部单据）。勾选框只能在取价函数内按客户查 flag，那就等价于"客户是否参与"，绕回第 2 条。</td></tr>
+            <td>取价切换发生在 <code>f_material_element_price</code> + 报价侧 <code>mc_view</code> 的函数/视图层，而 <code>mc_view</code> 是<b>模板级共享</b>的（一个视图服务该模板全部单据）。勾选框只能在取价函数内按客户查 flag，那就等价于"客户是否参与"，绕回第 2 条。</td></tr>
         <tr><td>4</td><td><b>业务上无存在空间</b></td>
             <td>料号升版时，存量活单是<b>被强制更新</b>的（裁决 9 / 12，不问勾选框）。存量单已改新价、新单却仍用旧价，这个状态无论如何说不通 —— <b>"生成版本但不用于取价"的中间态根本不成立</b>。</td></tr>
       </table></div>
@@ -645,10 +666,10 @@ td .dt.down{color:var(--green);}
         <button class="btn pri">通过并升版（2）</button>
         <button class="btn dgr">驳回</button>
         <button class="btn off">打开比对视图<span class="tip">需选中且仅选中 1 个料号</span></button>
-        <button class="btn">导出</button>
         <span class="sp"></span>
         <span style="font-size:13px;color:var(--text3)">已选 2 项</span>
       </div>
+      <div class="hint" style="margin:-6px 0 10px">🆕 <b>「导出」已删除</b>（E9：正文零覆盖，记入不做清单 #17）。异步更新的失败/冲突项去<b>定价管理 →「更新任务」</b>页重试（E7，§11.6.3.1）—— 屏 6 抽屉是一次性的，关掉就回不去。</div>
 
       <div class="tbl-wrap"><table>
         <tr>
@@ -760,7 +781,9 @@ td .dt.down{color:var(--green);}
     <ul>
       <li><b>一个料号一行</b>（客户 × 料号），跨客户汇成一个待办池（裁决 28）。核心列「当前版本 → 目标版本」：通过即推进，驳回则停在原版（末行 ZR-10091 即是）。</li>
       <li><b>报价侧与核价侧都显示「现 → 调整后」</b>（裁决 16 改判 + 41）：本期升版两侧都重走公式，核价成本同样会变，因此毛利判断是<b>真实的</b>，不再有"涨价时毛利被高估"的问题。</li>
-      <li><b>「比对状态」是跨客户列表的统一列</b>（裁决 43）：不同客户配的比对列不同，列表无法动态出列，故只回传汇总标记 <span class="tag g">✓ N 列全通过</span> / <span class="tag r">🔴N 🟠M / X列</span>；<b>点料号进抽屉才按该客户配置展开全部比对列</b>。<br>
+      <li><b>「比对状态」是跨客户列表的统一列</b>（裁决 43）：不同客户配的比对列不同，列表无法动态出列，故只回传汇总标记 <span class="tag g">✓ N 列全通过</span> / <span class="tag r">🔴N 🟠M / X列</span>；<b>点料号进抽屉才按该料号所属「客户 × 模板系列」的配置展开全部比对列</b>。<br>
+      🔑 <b>怎么定位到那份配置</b>（§11.5.4）：料号 → 最近一张活单（裁决 33）→ 该单 <code>customer_template_id</code> → 其 <code>template_series_id</code> → 查配置。该系列的 <code>template_series_id</code> 在预算阶段已冗余进 <code>material_price_review</code>，列表不必每行三跳反查。<br>
+      ⚠️ <b>同一客户的不同料号可能落在不同模板系列上</b> —— 待办池是跨客户<b>也跨模板</b>的，这正是配置维度必须带模板系列的原因。<br>
       标记<b>把红与橙分开计数</b>（旧写法「2/3 列跌破」把两者混为一谈，而它们在裁决 44 里处置不同）：<span class="tag r" style="font-size:11px">🔴红</span> = 差异 &lt; 0，已卖穿成本；<span class="tag o" style="font-size:11px">🟠橙</span> = 0 ≤ 差异 &lt; 阈值，没亏但未达预期。</li>
       <li>🚨 <b>整行标红的判定 = 「任一比对列 status=RED」，不是「产品总价差异 &lt; 0」</b>（裁决 44）。这两者<b>不等价</b>，实现时极易写错成后者。<br>
       <b>看第 5 行 <span class="mono">10120240</span> 镀银铜带</b>：列表上产品总价差异 <b>+4.05</b>、毛利率 <b>9.2%</b>，两个数都健康；但该客户配的「投料材料」那一列已经卖穿 → <b>整行照样标红</b>。<b>这一行是本列表最关键的样例</b>，前端与验收都必须覆盖它，否则「任一列跌破」这条规则形同虚设。</li>
@@ -857,7 +880,7 @@ td .dt.down{color:var(--green);}
       </table></div>
       <div class="alert i" style="margin-top:10px">
         <div><b>比对列由用户自选</b>（裁决 43）：默认只有「产品总价」一列；可用与 task-0717 比对视图<b>相同的连线配置</b>再加任意「报价侧页签指标 ↔ 核价侧页签指标」比对列，每列独立设阈值。
-        <b>任一列跌破即整行标红</b>（裁决 44）。配置<b>按客户一份</b>，改一次对该客户全部料号生效。</div>
+        <b>任一列跌破即整行标红</b>（裁决 44）。配置<b>按「客户 × 模板系列」各一份</b>（§11.5.4 改判裁决 43，<s>按客户一份</s> 已作废），改一次对<b>该系列下</b>全部料号生效。</div>
       </div>
 
       <h3 class="sec">三、逐单明细（判断依据 = 最近一张单，其余仅作参考）</h3>
@@ -910,8 +933,8 @@ td .dt.down{color:var(--green);}
       <li>三段递进对应财务的思考顺序：<b>① 为什么变</b>（两侧元素价各自涨跌 + 对单价影响）→ <b>② 比对结果</b>（按客户配置的全部比对列）→ <b>③ 具体到哪张单</b>（逐单 + 直达比对视图）。</li>
       <li>区块一用<b>双色分组表头</b>把报价侧/核价侧分开：两侧价不同是设计（成本 vs 售价），但同源于一个版本快照，可复现（裁决 41）。</li>
       <li>区块二的三列示例演示了<b>三种着色状态</b>：跌破（差异 &lt; 0，红）、低于阈值（差异 &lt; threshold，橙）、正常（绿）—— 复用 task-0717 双色规则。</li>
-      <li>顶部「比对列配置」在本抽屉内<b>只读展示</b>，<b>不提供修改入口</b> —— 唯一配置入口在「定价策略 → 价格调整策略 Tab → 比对列配置」（裁决 43，配置按客户一份，复用 task-0717 的连线配置抽屉）。<br>
-      <b>理由</b>：改比对列 = 改审核的判断标准，且按既定规则会<b>立即重算该客户全部待处理料号的预算</b>；若允许在审核抽屉里顺手改，财务正在看的这一屏数据会当场变化，审核依据不可追溯。</li>
+      <li>顶部「比对列配置」在本抽屉内<b>只读展示</b>，<b>不提供修改入口</b> —— 唯一配置入口在「定价策略 → 价格调整策略 Tab → 比对列配置」（裁决 43；配置维度 = <b>客户 × 模板系列</b>，§11.5.4 改判；复用 task-0717 的连线配置抽屉）。<br>
+      <b>理由</b>：改比对列 = 改审核的判断标准，且按既定规则会<b>立即重算「该客户 × 该模板系列」下待处理料号的预算</b>；若允许在审核抽屉里顺手改，财务正在看的这一屏数据会当场变化，审核依据不可追溯。</li>
       <li>区块二的数据<b>直接读预算落库值</b>（<code>material_price_review_column</code>），不在打开抽屉时实时算 —— 否则会出现「列表汇总说 🔴1 🟠1、抽屉实时算出 🔴1」这类自相矛盾，破坏裁决 41 的「预算与实际逐位一致、可复现」。</li>
       <li>驳回 = 该料号本次<b>不升版</b>，报价侧与核价侧均保持原样；<b>下一期版本重新评估</b>（裁决 27）。驳回必填原因。</li>
     </ul>
@@ -949,7 +972,7 @@ td .dt.down{color:var(--green);}
           <tr><th>状态</th><th class="num">单数</th><th>说明</th></tr>
           <tr><td><span class="tag g">已审批</span></td><td class="num">5</td><td>更新后<b>状态不变</b>，仅留价格版本痕迹（裁决 13）</td></tr>
           <tr><td><span class="tag b">已提交</span></td><td class="num">2</td><td>同上</td></tr>
-          <tr><td><span class="tag n">草稿</span></td><td class="num">1</td><td>草稿同样更新；若重算期间该单被改动，判为<b>冲突</b>并标记可重试（乐观时间戳，P0-②）</td></tr>
+          <tr><td><span class="tag n">草稿</span></td><td class="num">1</td><td>草稿同样更新；若重算期间该单被改动，判为<b>冲突</b>并标记可重试（行级 <code>row_version</code> 乐观并发，P0-②）</td></tr>
         </table></div>
 
         <div class="alert w" style="margin-top:14px">
@@ -966,8 +989,8 @@ td .dt.down{color:var(--green);}
   <div class="note">
     <b>设计说明</b>
     <ul>
-      <li>裁决 25 定的是"通过即更新"，但动作前必须<b>把代价亮出来</b>：几个料号、版本怎么推进、几张单、按状态分布、有没有跌破毛利线。（⚠️ 不含"会被跳过的单"—— 系统无编辑锁，无法在动作前预知哪张单会冲突；冲突只能在执行期由乐观时间戳发现，见下条与裁决 32）</li>
-      <li>系统<b>没有报价单编辑锁</b>（实测 quotation 表零 lock 列），故改用<b>乐观时间戳</b>（P0-②）：更新前记 updated_at，写回时再比一次，不一致 → 判为「单已被改动」标记冲突可重试，不覆盖销售在途改动。</li>
+      <li>裁决 25 定的是"通过即更新"，但动作前必须<b>把代价亮出来</b>：几个料号、版本怎么推进、几张单、按状态分布、有没有跌破毛利线。（⚠️ 不含"会被跳过的单"—— 系统无编辑锁，无法在动作前预知哪张单会冲突；冲突只能在执行期由行级 <code>row_version</code> 比对发现，见下条与裁决 32）</li>
+      <li>系统<b>没有报价单编辑锁</b>（实测 quotation 表零 lock 列），故改用<b>行级 <code>row_version</code> 乐观并发</b>（P0-②，F1 终版）：写回时带 <code>WHERE ... AND row_version = :seen</code>，受影响行数为 0 → 判为「单已被改动」标记冲突可重试，不覆盖销售在途改动。<br><b style="color:var(--red)">⚠️ 2026-07-29 两次更正</b>：① <s>用 <code>updated_at</code> 做水位线</s> —— 销售最常见的编辑路径全都不 bump 它；② <s>改用 JPA <code>@Version</code></s> —— <code>snapshot_rows</code>/<code>row_data</code> 现存写入口 100% 原生 SQL，原生 UPDATE 不 bump 也不校验 <code>@Version</code>。详见需求说明 §11.15.5.2。</li>
       <li>这是本方案里<b>唯一</b>使用 Modal 的地方 —— <code>docs/列表操作规范.md</code> 明确「危险动作走 Modal 列出所选项二次确认」，其余交互一律 Drawer。</li>
     </ul>
   </div>
@@ -1009,7 +1032,7 @@ td .dt.down{color:var(--green);}
         <tr class="warn"><td class="mono">QT-20260726-0008</td><td class="mono">10110037</td><td><span class="tag r">失败</span></td>
             <td class="num">54,300.00</td><td class="num">—</td><td class="num">3.1s</td><td>行键冲突：料号 10110037 存在重复行，请先在单内修正</td></tr>
         <tr><td class="mono">QT-20260728-0002</td><td class="mono">10110002</td><td><span class="tag o">冲突</span></td>
-            <td class="num">12,450.00</td><td class="num">—</td><td class="num">—</td><td>重算期间该单被 王销售 改动（updated_at 变化），未写回，可重试</td></tr>
+            <td class="num">12,450.00</td><td class="num">—</td><td class="num">—</td><td>重算期间该行被 王销售 改动（<b>写回时 <code>row_version</code> 不匹配、受影响行数 0</b>），未写回，可重试</td></tr>
         <tr><td class="mono">QT-20260728-0006</td><td class="mono">10110037</td><td><span class="tag b">进行中</span></td>
             <td class="num">31,900.00</td><td class="num">—</td><td class="num">—</td><td>重算快照中…</td></tr>
       </table></div>
@@ -1116,6 +1139,250 @@ td .dt.down{color:var(--green);}
   </div>
 </div>
 
+<!-- ============ 屏 8 组件配置 · 元素列绑定 ============ -->
+<div class="screen" id="scfg">
+  <div class="screen-hd">
+    <span class="screen-no">屏 8</span><span class="screen-title">组件配置 · 元素列与元素单价列绑定</span>
+    <span class="screen-path">组件管理 → 选中组件 → 顶部工具栏（现有「页签类型 / 料号列 / 名称列」右侧新增）</span>
+  </div>
+
+  <div class="alert w">
+    <div><b>为什么需要这一屏</b>：升版时系统要做两件事 —— ①<b>改哪一列</b>（元素单价）②<b>改哪几行</b>（值 = <code>Ag</code> 的那些行）。
+    原技术方案（§11.15.3）打算<b>运行期正则解析视图 SQL</b> 反推这两列，<b>2026-07-29 已推翻</b>：SQL 是自由文本，
+    <code>COALESCE(cep.unit_price,0) AS 单价</code>、<code>ON ebi.component_no = cep.element_code</code>（左右写反）、多条件 JOIN、带引号列名
+    都会让正则抓空或抓错，<b>且失败全是静默的</b>（价格纹丝不动 / 改到别的字段，都不报错）。<b>价格必须严格一致，不能赌解析。</b></div>
+  </div>
+
+  <div class="note">
+    <b>做法：沿用组件已有的"角色字段"模式，不发明新机制。</b>
+    <ul>
+      <li>组件上本来就有 <b class="mono">partNoField</b>（料号列）/ <b class="mono">partNameField</b>（名称列）/ <b class="mono">sortField</b>（排序列）/ <b class="mono">rowKeyFields</b>（行键）—— 全都是<b>显式指定某字段扮演什么角色</b>，而不是解析 SQL 猜的。本期新增的三项是同一层、同一套模式的延伸。</li>
+      <li>🔒 <b>必须放在组件级（与 <span class="mono">partNoField</span> 平级），不能放在字段的 config JSON 里</b> —— 后者按 <b>AP-44</b> 属于"加新 config 键"，会触发 <b>17 个协议检查点</b>的联动排查，而前端渲染层根本不消费这三项。放组件级：同样的收益，绕开 AP-44，需求说明 §3「不触发 AP-44」的结论得以保留。</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">组件编辑器 · 材料成本（罗克韦尔）</span>
+      <span class="tag n">componentType = NORMAL · dataDriverPath = $mc_view</span>
+    </div>
+    <div class="card-body">
+
+      <div class="toolbar" style="flex-wrap:wrap;gap:10px 12px;align-items:center;margin-bottom:4px">
+        <span style="font-size:12px;color:var(--text3)">页签类型</span>
+        <span class="inp" style="width:120px">材质元素<i class="sel-arrow">▾</i></span>
+        <span style="font-size:12px;color:var(--text3)">料号列</span>
+        <span class="inp" style="width:120px">料号<i class="sel-arrow">▾</i></span>
+        <span style="font-size:12px;color:var(--text3)">名称列</span>
+        <span class="inp ph" style="width:120px">未配置<i class="sel-arrow">▾</i></span>
+
+        <span style="width:1px;height:24px;background:var(--split);margin:0 4px"></span>
+
+        <span style="font-size:12px;color:var(--blue)"><b>元素列</b></span>
+        <span class="inp" style="width:120px;border-color:var(--blue-b)">元素<i class="sel-arrow">▾</i></span>
+        <span style="font-size:12px;color:var(--blue)"><b>元素单价列</b></span>
+        <span class="inp" style="width:130px;border-color:var(--blue-b)">元素单价<i class="sel-arrow">▾</i></span>
+        <span style="font-size:12px;color:var(--text3)">货币列</span>
+        <span class="inp ph" style="width:120px">未输出<i class="sel-arrow">▾</i></span>
+        <span class="tag b">新增 3 项</span>
+
+        <span class="sp" style="flex:1"></span>
+        <button class="btn sm">配置帮助</button>
+        <button class="btn sm pri">保存</button>
+      </div>
+      <div class="hint" style="margin-bottom:14px">
+        三个下拉的候选项<b>只来自该组件已有字段</b>（与「料号列 / 名称列」同源，不是自由输入）。
+        <b>货币列可空</b> —— 视图没输出货币列时留空，升版只改单价、不动货币。
+      </div>
+
+      <h3 class="sec">组件字段（9 个）· 角色标注</h3>
+      <div class="tbl-wrap"><table>
+        <tr>
+          <th style="width:130px">字段名</th>
+          <th style="width:140px">字段类型</th>
+          <th style="width:190px">取数路径</th>
+          <th>角色</th>
+        </tr>
+        <tr><td><b>料号</b></td><td class="mono">INPUT_TEXT</td><td class="mono">$mc_view._料号</td><td><span class="tag g">料号列</span> <span class="tag n">行键</span></td></tr>
+        <tr><td><b>材质</b></td><td class="mono">INPUT_TEXT</td><td class="mono">$mc_view._材质</td><td><span class="tag n">行键</span></td></tr>
+        <tr><td>项次</td><td class="mono">INPUT_NUMBER</td><td class="mono">$mc_view._项次</td><td>—</td></tr>
+        <tr style="background:var(--blue-1)">
+          <td><b>元素</b></td><td class="mono">INPUT_TEXT</td><td class="mono">$mc_view._元素</td>
+          <td><span class="tag b">元素列</span> <span class="tag n">行键</span>
+            <span class="dt">升版时读这一列的值（<code>Ag</code>/<code>Cu</code>）去匹配版本明细的 <code>element_code</code></span></td>
+        </tr>
+        <tr><td>组成含量(%)</td><td class="mono">INPUT_NUMBER</td><td class="mono">$mc_view._组成含量</td><td>—</td></tr>
+        <tr><td>损耗率%</td><td class="mono">INPUT_NUMBER</td><td class="mono">$mc_view._损耗率</td><td>—</td></tr>
+        <tr><td>毛重</td><td class="mono">INPUT_NUMBER</td><td class="mono">$mc_view._毛重</td><td><span class="tag o">销售常手改</span> <span class="dt">升版<b>不得</b>误伤（验收 #29）</span></td></tr>
+        <tr><td>毛用量单位</td><td class="mono">INPUT_TEXT</td><td class="mono">$mc_view._毛用量单位</td><td>—</td></tr>
+        <tr style="background:var(--blue-1)">
+          <td><b>元素单价</b></td><td class="mono">INPUT_NUMBER</td><td class="mono">$mc_view.元素单价</td>
+          <td><span class="tag b">元素单价列</span>
+            <span class="dt">升版时<b>只改这一个键</b>（S3）+ 只清这一个键的手工值（S4）</span></td>
+        </tr>
+      </table></div>
+      <div class="hint">
+        注意两类列的命名前缀<b>不一样</b>：driver 列带下划线（<code class="mono">_元素</code>），价格策略列<b>不带</b>（<code class="mono">元素单价</code>）——
+        这是配置规范「价格策略列别名逐字、不加 <code>_</code>」的约定。<b>正因为规则不统一，才更不能靠列名猜。</b>
+      </div>
+    </div>
+  </div>
+
+  <h3 class="sec">保存时的三种状态</h3>
+
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-head"><span class="card-title">状态 A · 配全了 → 正常保存</span><span class="tag g">通过</span></div>
+    <div class="card-body">
+      <div class="alert s" style="margin:0"><div>✅ 已保存。该组件已接入价格版本机制：元素列 = <b>元素</b>，元素单价列 = <b>元素单价</b>，货币列 = 未配置。</div></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-head"><span class="card-title">状态 B · 视图接了取价函数但没配全 → 拦下不让保存</span><span class="tag r">阻断</span></div>
+    <div class="card-body">
+      <div class="toolbar" style="gap:10px;align-items:center;margin-bottom:10px">
+        <span style="font-size:12px;color:var(--red)"><b>元素列</b></span>
+        <span class="inp ph" style="width:120px;border-color:var(--red-b);background:var(--red-1)">未配置<i class="sel-arrow">▾</i></span>
+        <span style="font-size:12px;color:var(--text3)">元素单价列</span>
+        <span class="inp" style="width:130px">元素单价<i class="sel-arrow">▾</i></span>
+      </div>
+      <div class="alert e" style="margin:0"><div>
+        ❌ <b>保存失败</b>：该组件的视图 <code class="mono">mc_view</code> 接入了取价函数 <code class="mono">f_customer_element_price</code>，
+        必须同时指定「<b>元素列</b>」与「<b>元素单价列</b>」，否则该客户的报价单<b>升版时会静默改不到价</b>。
+      </div></div>
+      <div class="hint">
+        这就是显式配置相对正则的核心收益：<b>误判从"运行期静默失效"提前成"配置期拦下报错"</b>。
+        校验触发条件 = SQL 里检测到取价函数；<b>没接取价函数的组件三项留空、不校验</b>（绝大多数组件属于此类）。
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-head"><span class="card-title">状态 C · 存量组件迁移 → 自动推导预填，人工确认</span><span class="tag b">迁移期</span></div>
+    <div class="card-body">
+      <div class="alert i" style="margin:0"><div>
+        💡 已根据视图 SQL <b>自动推导</b>并预填：元素列 = <b>元素</b>（取自 <code class="mono">ON cep.element_code = ebi.component_no</code> → <code class="mono">AS _元素</code>），
+        元素单价列 = <b>元素单价</b>（取自 <code class="mono">cep.unit_price AS 元素单价</code>），货币列 = <b>视图未输出</b>。
+        <b>请确认后保存。</b>
+      </div></div>
+      <div class="hint">
+        正则<b>不废弃，降级为三个辅助角色</b>：① 迁移期自动推导预填，存量组件不用人工一个个配；② 保存期做上面状态 B 的校验；
+        ③ <b>运行期完全不用</b> —— 升版直接读这三个配置项。<b>推导错了有人工确认这一关兜住，不会像原方案那样一次推错、固化下来永远错。</b>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><span class="card-title">可选强化 · 元素列一致性体检</span><span class="tag p">建议做</span></div>
+    <div class="card-body">
+      <div class="tbl-wrap"><table>
+        <tr><th style="width:150px">元素列取样值</th><th style="width:130px">元素主表比对</th><th>结论</th></tr>
+        <tr><td class="mono">Ag</td><td><span class="tag g">✓ 命中</span></td><td>element_no 10001 · element_name 银</td></tr>
+        <tr><td class="mono">Cu</td><td><span class="tag g">✓ 命中</span></td><td>element_no 10002 · element_name 铜</td></tr>
+        <tr><td class="mono">Ni</td><td><span class="tag g">✓ 命中</span></td><td>element_no 10005 · element_name 镍</td></tr>
+        <tr style="background:var(--gold-1)"><td class="mono">301</td><td><span class="tag o">⚠ 未命中</span></td><td>不在元素主表 <code>element_code</code> 中 —— 可能是材质编码而非元素，请确认该行是否应参与调价</td></tr>
+      </table></div>
+      <div class="hint">
+        保存组件时拿元素列<b>实际取几行真实数据</b>，逐个到元素主表 <code class="mono">element</code> 的 <code class="mono">element_code</code> 里找。
+        这能把"元素列里混进了非元素编码"「销售手动行填了中文名<b>银</b>而不是 <code>Ag</code>」这类问题，从<b>运行期静默不生效</b>提前到<b>配置期就看见</b>。
+        <b>不做也不影响正确性</b>，属加分项。
+      </div>
+    </div>
+  </div>
+
+  <h3 class="sec">配了这三项之后 · 报价单里这两列长什么样</h3>
+
+  <div class="alert e" style="max-width:none"><div>
+    <b>为什么这两列要变只读</b>：销售用一个<b>升版前打开的页面</b>点保存，会把新价<b style="color:var(--red)">静默退回旧价</b>（保存成功、不报错）——
+    driver 行经 <code>mergeRowDataInputsIntoEdits</code> 把前端旧价提升成手改值（<code>editRows</code> 优先级最高），
+    手动行的值<b>就是</b> <code>row_data</code>、前端提交什么就是什么。
+    <br>🚨 <b>F1 的 <code>row_version</code> 只防「升版覆盖销售」，「销售覆盖升版」原本完全没守。</b>
+    解法 = <b>清单内元素的单价列只读 + 三时机幂等归位</b>（需求说明 §11.15.2.5）。
+  </div></div>
+
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-head"><span class="card-title">规则 · 可编辑性只看「元素在不在调价清单」，不看行类型</span></div>
+    <div class="card-body">
+      <div class="tbl-wrap"><table>
+        <tr><th style="width:120px">行类型</th><th style="width:150px">元素</th><th style="width:110px">元素列</th><th>元素单价列</th></tr>
+        <tr><td>driver 行</td><td class="mono">Ag <span class="tag b" style="font-size:11px">在清单</span></td>
+            <td><span class="tag n">只读</span><span class="dt">来自 BOM，要改去改 BOM</span></td>
+            <td><b>5,450.00</b> <span class="tag b" style="font-size:11px">🔒V26080501</span> <span class="dt">只读文本 + 版本徽标</span></td></tr>
+        <tr><td>driver 行</td><td class="mono">301 <span class="tag n" style="font-size:11px">不在清单</span></td>
+            <td><span class="tag n">只读</span></td>
+            <td><span class="inp" style="width:110px">12.80</span> <span class="dt">可编辑，同现状</span></td></tr>
+        <tr style="background:var(--blue-1)"><td><b>手动行</b></td><td><span class="inp" style="width:90px">Ag</span> <span class="tag b" style="font-size:11px">在清单</span></td>
+            <td><span class="tag g">可编辑</span><span class="dt">销售的意图输入</span></td>
+            <td><b>5,450.00</b> <span class="tag b" style="font-size:11px">🔒V26080501</span> <span class="dt"><b>自动带出、只读</b> —— 与 driver 行一视同仁</span></td></tr>
+        <tr style="background:var(--blue-1)"><td><b>手动行</b></td><td><span class="inp" style="width:90px">301</span> <span class="tag n" style="font-size:11px">不在清单</span></td>
+            <td><span class="tag g">可编辑</span></td>
+            <td><span class="inp" style="width:110px">&nbsp;</span> <span class="dt">可编辑，销售自填</span></td></tr>
+      </table></div>
+      <div class="hint">
+        ⚠️ <b>判定不附加「且指针有值」这个条件</b>。若加上，后台一升版销售面前的输入框就会突然变只读 —— <b>那本身就是一种"陈旧页面"问题</b>，且无法向用户解释。
+        指针为空时价格来自 task-0722 实时算，<b>同样是系统给的</b>，销售没有正当理由改。
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-head"><span class="card-title">手动行 · 元素 ↔ 单价 联动时序</span><span class="tag b">新</span></div>
+    <div class="card-body">
+      <div class="tbl-wrap"><table>
+        <tr><th style="width:44px">#</th><th style="width:180px">操作</th><th style="width:150px">元素列</th><th>元素单价列</th></tr>
+        <tr><td>①</td><td>点「新增行」</td><td><span class="inp ph" style="width:100px">&nbsp;</span></td>
+            <td><span style="color:var(--text3)">—</span> <span class="dt"><b>只读</b> + 占位「请先填写元素」<br>（若默认可编辑，销售先填价再填元素 → 价被自动带出的值覆盖 → "我刚填的怎么没了"）</span></td></tr>
+        <tr><td>②</td><td>填 <code>Ag</code>（在清单）</td><td><span class="inp" style="width:100px">Ag</span></td>
+            <td><b>5,450.00</b> <span class="tag b" style="font-size:11px">🔒V26080501</span> <span class="dt">自动带出 + 转只读</span></td></tr>
+        <tr><td>③</td><td>改成 <code>301</code>（不在清单）</td><td><span class="inp" style="width:100px">301</span></td>
+            <td><span class="inp" style="width:110px">&nbsp;</span> <span class="dt">解锁可编辑，且原值 <b style="color:var(--red)">必须清空</b> —— 留着就变成 301 的错价，而且是个看起来很合理的错价，最难查</span></td></tr>
+        <tr><td>④</td><td>改成 <code>Cu</code>（在清单）</td><td><span class="inp" style="width:100px">Cu</span></td>
+            <td><b>6,120.00</b> <span class="tag b" style="font-size:11px">🔒V26080501</span> <span class="dt">带出 <b>Cu</b> 的版本价（不是 Ag 的）</span></td></tr>
+      </table></div>
+      <div class="hint">
+        链路<b>零新增 API</b>：填完元素失焦 → 已有的 <code>onCellBlur</code> → 已有的 <code>PUT /line-items/{id}/quote-card-edit</code> →
+        后端归位 → 该端点<b>本来就返回</b> <code>quoteCardValues</code> 供前端就地刷新（AP-50）。
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><span class="card-title">归位动作 · 三个时机同一段代码</span><span class="tag p">幂等</span></div>
+    <div class="card-body">
+      <div class="tbl-wrap"><table>
+        <tr><th style="width:130px">时机</th><th style="width:220px">入口</th><th>作用</th></tr>
+        <tr><td>升版</td><td class="mono">MaterialVersionUpgradeService</td><td>新价生效（S3a/S3b 本体）</td></tr>
+        <tr><td>保存</td><td class="mono">saveDraft</td><td><b>纠正陈旧页面提交的旧价</b></td></tr>
+        <tr><td>单元格失焦</td><td class="mono">quote-card-edit</td><td>销售填完元素，单价即时带出</td></tr>
+      </table></div>
+      <div class="hint">
+        <b>归位 = 把「取价优先级表」幂等地物化到每一行的价格列上</b>（需求说明 §11.4.1）：元素∉清单→不动；∈清单且指针有值→写版本价；∈清单且指针为空→写实时算价。
+        <b>并在 ∈清单 的所有情形下清除该行价格列的手工值</b>（注意：清除条件<b>不看指针</b>，与写入条件不同，实现时别合并成一个 <code>if</code>）。
+        <br>🔒 <b>保存流程里的插入位置不可变通</b>：必须在 <code>row_data</code>/<code>snapshot_rows</code> 落库<b>之后</b>（否则被前端值覆盖）、在 <code>cardValues</code> 重算<b>之前</b>（否则算的是旧价）。
+        <br>🚨 <b>手动行不在 <code>snapshot_rows</code> 里</b> —— 原 S3 只写它，碰不到手动行，故拆 S3a/S3b。且<b>禁止靠下标区分两类行</b>（"手动行在尾部"只是前端纪律，非结构保证，AP-54 同族），必须按 <code>_origin==='manual'</code> 判定。
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>设计说明</b>
+    <ul>
+      <li>🔑 <b>匹配口径是 <code>element_code</code>（<code>Ag</code>），不是 <code>element_name</code>（银）、也不是 <code>element_no</code>（10001）。</b>
+        元素主表三个标识并存，而整条价格链路（<code class="mono">element_bom_item.component_no</code> / <code class="mono">element_price_strategy.element_code</code> / 视图 JOIN 条件）用的都是中间那个。
+        这一点不是本期新定的 —— 现有视图 <code class="mono">ON cep.element_code = ebi.component_no</code> 已经这么接了，本期只是把它<b>显式化</b>。</li>
+      <li><b>同一个元素在一张卡片里是多行，不是一行。</b> 行键要「料号 + 材质 + 元素」三个才唯一，说明 BOM 闭包展开出的<b>不同子件料号 × 不同材质</b>里都可能含 Ag。
+        升版是「把<b>所有</b>元素 = Ag 的行都改一遍」，S3 说的"按 rowKey 对齐"<b>不是一对一</b>，照一对一实现会漏改。</li>
+      <li><b>销售改过元素列 → 按改后的值匹配</b>（2026-07-29 裁定）。读的是有效值（<code class="mono">editRows</code> 优先），不是原始 driver 值。
+        与 S4 自洽：S4 只清价格字段一个键、不碰元素字段，所以销售改的 <code>Cu</code> 会保留，下次升版仍按 <code>Cu</code> 匹配，两次结果一致。
+        <b>反过来若 S4 顺手清了元素字段，就会出现"这次按 Cu、下次退回 Ag"的漂移。</b></li>
+      <li><b>销售手工加的行同样按元素列匹配、同样改单价</b>（2026-07-29 裁定）。匹配不上的行不动 —— 与 §11.4.1「清单外元素走实时算」自洽。
+        采纳显式配置 + 保存期校验后，<b>不做运行期的"银→Ag"兜底换算</b>：配置期已能拦住，运行期再猜一层反而多一个不确定行为。</li>
+      <li><b>配组件时这两项要问用户，不能替他猜</b> —— 与既有的「页签类型 / 料号列 / 料号名称列 / 行键」四项必问同级，
+        配置入口 Runbook（<code class="mono">dev-docs/rule-0724-组件模板配置/AGENT-配置入口.md</code>）必问项由 <b>4 项扩为 6 项</b>。</li>
+    </ul>
+  </div>
+</div>
+
 <!-- ============ 裁决速查 ============ -->
 <div class="screen" id="s8">
   <div class="screen-hd"><span class="screen-no">对照</span><span class="screen-title">裁决速查（44 条澄清 + 4 条补充）</span></div>
@@ -1131,7 +1398,7 @@ td .dt.down{color:var(--green);}
       <tr><td>6</td><td>触发</td><td>定时（周期 + 策略内配置的执行时刻）+「立即生成一次」手动</td><td>屏 1</td></tr>
       <tr><td>7</td><td>版本内容</td><td>全量快照，期期起版（无变动也生成）</td><td>屏 3 / 4</td></tr>
       <tr><td>8</td><td>审核</td><td>只读审核；通过 / 驳回（填原因）；改价回源头重出一版</td><td>屏 4</td></tr>
-      <tr style="background:var(--red-1)"><td>9</td><td>影响面单位<br><span class="tag r" style="font-size:11px">已改判</span></td><td><s style="color:var(--text3)">按报价单勾选</s> → <b>按料号审核升版</b>；通过后自动更新该料号在<b>全部活单</b>（草稿/已提交/已审批，排除已过期已作废）中的数据。<s style="color:var(--text3)">正被编辑的单跳过</s> → <b style="color:var(--red)">该半句已随裁决 32 作废</b>：系统无编辑锁，改为**乐观时间戳**，重算期间被改动的单标记为<b>冲突</b>可重试（不是"跳过"）</td><td>屏 3 / 5</td></tr>
+      <tr style="background:var(--red-1)"><td>9</td><td>影响面单位<br><span class="tag r" style="font-size:11px">已改判</span></td><td><s style="color:var(--text3)">按报价单勾选</s> → <b>按料号审核升版</b>；通过后自动更新该料号在<b>全部活单</b>（草稿/已提交/已审批，排除已过期已作废）中的数据。<s style="color:var(--text3)">正被编辑的单跳过</s> → <b style="color:var(--red)">该半句已随裁决 32 作废</b>：系统无编辑锁，改为<b>行级 <code>row_version</code> 乐观并发</b>（F1 终版），重算期间被改动的行标记为<b>冲突</b>可重试（不是"跳过"）</td><td>屏 3 / 5</td></tr>
       <tr style="background:var(--red-1)"><td>10</td><td>毛利粒度<br><span class="tag r" style="font-size:11px">已改判</span></td><td><s style="color:var(--text3)">单据级汇总</s> → <b>料号级</b>：该料号最终报价 vs 该料号最终核价（取最近一张单）。细节仍走 task-0717 比对视图</td><td>屏 3 / 4</td></tr>
       <tr><td>11</td><td>毛利预警线</td><td>客户级配置，<b>默认 0</b>（卖穿成本必红）；作用于<b>料号级毛利</b>（元素行显示最差料号是否跌破），只提醒不阻断</td><td>屏 1 / 3 / 5</td></tr>
       <tr style="background:var(--red-1)"><td>12</td><td>更新动作<br><span class="tag r" style="font-size:11px">已改判</span></td><td><s style="color:var(--text3)">勾报价单一键更新</s> → <b>料号通过即升版并更新</b>：只重算该料号的产品卡片，<b>其余料号逐字节不动</b>（已实证：卡片值按 line_item 分离、行折扣逐行独立、折扣率不随总额跳档）；更新前先存整单快照为一个 R 版本</td><td>屏 5 / 6 / 7</td></tr>
@@ -1145,15 +1412,15 @@ td .dt.down{color:var(--green);}
       <tr><td>20</td><td>策略条数</td><td>一客户一条</td><td>屏 1</td></tr>
       <tr style="background:var(--red-1)"><td>21</td><td>双开关<br><span class="tag r" style="font-size:11px">已作废</span></td><td><s style="color:var(--text3)">策略启用状态管生成；勾选框管新单取价，互不绑定</s> → <b>改为单开关</b>（2026-07-29）：<b>策略启用状态是唯一客户级开关</b>，新单取价由料号版本指针决定（裁决 35）</td><td>屏 1 / 屏 2（废除说明）</td></tr>
       <tr style="background:#f9f0ff"><td>31</td><td>取价函数改造<br><span class="tag p" style="font-size:11px">P0</span></td>
-        <td>新建 <code>f_material_element_price(customer_no)</code> 返回 <code>(material_no, element_code, unit_price…)</code>，按每个料号的版本指针取价；<b>6 个 mc_view 的 JOIN 加 <code>AND cep.material_no = ebi.material_no</code></b>（视图内本就有 material_no 列）。旧函数保留，未启用版本管理的客户零变化、可随时回滚</td><td>后端 / 配置迁移</td></tr>
+        <td>新建 <code>f_material_element_price(customer_no)</code> 返回 <code>(material_no, element_code, unit_price…)</code>，按每个料号的版本指针取价；<b style="color:var(--red)">⚠️ 2026-07-29 更正</b>：<s>6 个 mc_view 的 JOIN 加 <code>AND cep.material_no = ebi.material_no</code></s> —— 闭包形态下 <code>ebi.material_no</code> 是<b>子件料号</b>，照此写会让子件不吃版本（静默）。<b>JOIN 键必须与该视图 <code>hf_part_no</code> 输出表达式逐字一致</b>，两形态并存禁止统一替换；且<b>只迁报价侧</b>，数量"6 个"未核实（前置验证 P1）。旧函数保留，未启用版本管理的客户零变化、可随时回滚</td><td>后端 / 配置迁移</td></tr>
       <tr style="background:#f9f0ff"><td>32</td><td>编辑冲突保护<br><span class="tag p" style="font-size:11px">P0</span></td>
-        <td>系统<b>无报价单编辑锁</b>（实测 quotation 表零 lock 列），改用<b>乐观时间戳</b>：更新前记 <code>updated_at</code>，写回时再比一次，不一致 → 标记<b>冲突</b>可重试，不覆盖销售在途改动。不新建锁表、不改销售编辑流程</td><td>屏 5 / 6</td></tr>
+        <td>系统<b>无报价单编辑锁</b>（实测 quotation 表零 lock 列），改用<b>行级 <code>row_version</code></b>（F1 终版）：写回带 <code>WHERE ... AND row_version = :seen</code>，受影响行数 0 → 标记<b>冲突</b>可重试，不覆盖销售在途。<b style="color:var(--red)">⚠️ <s>updated_at 乐观时间戳</s> 与 <s>JPA @Version</s> 均已作废</b>，见需求说明 §11.15.5.2。不新建锁表、不改销售编辑流程</td><td>屏 5 / 6</td></tr>
       <tr style="background:#f9f0ff"><td>33</td><td>「最近一张单」定义</td><td>按<b>建单日期</b>倒序取首张<b>活单</b>（含草稿）。建单日期不因编辑而变，判断依据可复现；草稿代表最新报价意图</td><td>屏 3 / 4</td></tr>
       <tr style="background:var(--red-1)"><td>34</td><td>比对口径<br><span class="tag r" style="font-size:11px">已扩充</span></td><td><s style="color:var(--text3)">只比毛利率</s> → <b>比对项可由用户自选</b>（裁决 43）：默认列 = <b>产品总价</b>（单价级 SUBTOTAL 页签值，与 task-0717 <code>productTotal</code> 同口径同算法）；可另加任意「报价侧页签指标 ↔ 核价侧页签指标」比对列。毛利率仍由产品总价列派生</td><td>屏 3 / 4</td></tr>
       <tr style="background:#f9f0ff"><td>35</td><td>取价唯一口径<br><span class="tag b" style="font-size:11px">已升格</span></td><td><b>料号版本指针权威</b>：指针<b>有值</b> → 用该版本价；指针<b>为空</b> → task-0722 实时算。避免"存量单已新价、新建单反而旧价"的分裂。<br><b>2026-07-29 升格为唯一取价口径</b> —— 原句"勾选框只决定该客户是否参与本机制"随勾选框废除而作废；"是否参与"改由<b>策略启用状态</b>单独表达（裁决 3 / 4 / 21 作废，见屏 2）</td><td>屏 1 / 总览</td></tr>
       <tr style="background:#f9f0ff"><td>36</td><td>组合/选配产品</td><td>以 <code>line_item</code> 的销售料号（<b>父件</b>）为升版单位，子件跟随一起重算。与"一个 line_item = 一个产品卡片 = 一个升版单位"的模型一致</td><td>屏 3 / 6</td></tr>
       <tr style="background:#fff1f0"><td>37</td><td>手工值处置<br><span class="tag r" style="font-size:11px">有代价</span></td>
-        <td><b>直接覆盖</b>，一切以版本价为准（系统本就不记录哪些值被手改过，见 task-0722 §11.14D#8）。<b>补偿措施</b>：完成通知里提示销售"此前手工调整可能已被覆盖，请复核"</td><td>屏 5 / 6</td></tr>
+        <td><b>直接覆盖</b>，一切以版本价为准。<b style="color:var(--red)">⚠️ 2026-07-29 更正</b>：<s>系统本就不记录哪些值被手改过</s> —— <b>事实相反</b>，系统不但记录手改还让它优先级最高（<code>CardEffectiveRows:13-15</code>），<b>必须靠 S4 按列主动清除才能实现覆盖</b>（只删价格键，毛重等其他手改字段保留）。<b>补偿措施</b>：完成通知里提示销售"此前手工调整可能已被覆盖，请复核"</td><td>屏 5 / 6</td></tr>
       <tr style="background:#f9f0ff"><td>38</td><td>快照保留</td><td>存<b>整单</b> <code>quote_card_values</code> + <code>snapshot_rows</code>（与现有快照同构，切版预览直接渲染）；<b>永久保留</b>不清理。<span style="color:var(--text3)">须配套库体积监控，大单单份快照可达 MB 级</span></td><td>屏 7</td></tr>
       <tr style="background:#f9f0ff"><td>39</td><td>0 变动料号</td><td>相关元素价与上一版逐个相同的料号<b>不进待办池</b>（无事可审），版本明细里仍有记录可查</td><td>屏 3</td></tr>
       <tr style="background:#f9f0ff"><td>40</td><td>版本指针作用域</td><td><code>客户 × 料号</code>，<b>仅报价侧</b>（<code>system_type='QUOTE'</code>）；核价侧 <code>_GLOBAL_</code> 不参与（裁决 16），表结构不预留 system_type 列</td><td>后端</td></tr>
@@ -1162,7 +1429,7 @@ td .dt.down{color:var(--green);}
       <tr style="background:#e6fffb"><td>42</td><td>核价单冻结隔离</td>
         <td>只重算<b>报价单内</b>的核价卡片值（<code>quotation_line_item.costing_card_values</code>）；task-0713 已交付的<b>核价单 <code>costing_order</code> frozen 快照逐字节不动</b>，已审批的核价结论保持可追溯</td><td>屏 6</td></tr>
       <tr style="background:#e6fffb"><td>43</td><td>比对列可配置</td>
-        <td>复用 task-0717 的 <code>ColumnDef</code> schema（<code>kind=PRODUCT_TOTAL|TAB_PAIR</code> + 每列独立 <code>threshold</code> + 报价侧/核价侧 componentId·metric）与配置抽屉交互。<b>配置按客户一份</b>；新客户未配时默认只有「产品总价」一列。<br><b>跨客户待办池的列冲突解法</b>：列表页固定列（产品总价 + 比对状态汇总标记），<b>抽屉内按该客户配置展开全部比对列</b></td><td>屏 1 / 3 / 4</td></tr>
+        <td>复用 task-0717 的 <code>ColumnDef</code> schema（<code>kind=PRODUCT_TOTAL|TAB_PAIR</code> + 每列独立 <code>threshold</code> + 报价侧/核价侧 componentId·metric）与配置抽屉交互。<b style="color:var(--red)">⚠️ 已改判</b>：<s>配置按客户一份</s> → <b>按「客户 × 模板系列」各一份</b>（§11.5.4 —— componentId 属于模板不属于客户，按客户存一份会静默漏红）；新组合未配时默认只有「产品总价」一列（该列不依赖 componentId，跨模板通用）。<br><b>跨客户待办池的列冲突解法</b>：列表页固定列（产品总价 + 比对状态汇总标记），<b>抽屉内按该客户配置展开全部比对列</b></td><td>屏 1 / 3 / 4</td></tr>
       <tr style="background:#e6fffb"><td>44</td><td>预警着色</td>
         <td><b>任一比对列跌破即整行标红</b>；每列按自己的 <code>threshold</code> 双色（差异 &lt; 阈值橙、差异 &lt; 0 红，复用 task-0717 规则）。客户毛利预警线作用于产品总价列</td><td>屏 3 / 4</td></tr>
       <tr style="background:var(--gold-1)"><td>补1</td><td>待审版本堆积</td><td>同客户同时只允许一个待处理版本；<b>见裁决 27</b>（新版生成即把旧版整体作废，未处理料号随之失效）</td><td>屏 1 / 3</td></tr>
@@ -1171,7 +1438,7 @@ td .dt.down{color:var(--green);}
       <tr style="background:var(--red-1)"><td>23</td><td>判断依据口径<br><span class="tag r" style="font-size:11px">已改判</span></td><td><s style="color:var(--text3)">取毛利最差的那张单</s> → 取该料号<b>最近一张报价单</b>（代表当前报价水平），列上标出单号与日期；其余历史单在抽屉里一并列出<b>仅作参考、不参与判断</b></td><td>屏 3 / 4</td></tr>
       <tr style="background:var(--cyan-1)"><td>24</td><td>版本粒度</td><td>报价单内为<b>整单快照版本</b> <span class="mono">R</span>：每次更新（哪怕只动一个料号）产生一版，轨迹表加「本次更新料号」列</td><td>屏 7</td></tr>
       <tr style="background:var(--cyan-1)"><td>25</td><td>更新触发</td><td><b>通过即更新</b>：点通过时先弹确认亮出影响面（N 个料号 → M 张单，按状态分组、含跌破预警线提示），确认后异步执行</td><td>屏 5 / 6</td></tr>
-      <tr style="background:var(--cyan-1)"><td>26</td><td>更新范围</td><td>全部活单（草稿/已提交/已审批），排除已过期已作废；<s style="color:var(--text3)">正被销售编辑的单跳过而非覆盖</s> → <b style="color:var(--red)">随裁决 32 更正</b>：无编辑锁故无法"跳过"，改为<b>乐观时间戳</b> —— 重算期间 <code>updated_at</code> 变化的单标记<b>冲突</b>、不写回、可重试，销售改动不丢失</td><td>屏 5 / 6</td></tr>
+      <tr style="background:var(--cyan-1)"><td>26</td><td>更新范围</td><td>全部活单（草稿/已提交/已审批），排除已过期已作废；<s style="color:var(--text3)">正被销售编辑的单跳过而非覆盖</s> → <b style="color:var(--red)">随裁决 32 更正</b>：无编辑锁故无法"跳过"，改为<b>行级 <code>row_version</code></b>（F1 终版）—— 写回时 <code>row_version</code> 对不上的行标记<b>冲突</b>、不写回、可重试，销售改动不丢失</td><td>屏 5 / 6</td></tr>
       <tr style="background:var(--cyan-1)"><td>27</td><td>版本交替</td><td>新版生成即把上一版<b>整体作废</b>，未处理料号随之失效（新版重新评估）；<b>已通过并执行的更新不回滚</b></td><td>屏 1 / 3</td></tr>
       <tr style="background:var(--cyan-1)"><td>28</td><td>审核页形态</td><td>主列表 = <b>跨客户的料号待办池</b>（非版本列表），核心列为「当前版本 → 目标版本」；筛选客户/版本/料号/只看跌破预警线</td><td>屏 3</td></tr>
       <tr style="background:var(--cyan-1)"><td>29</td><td>升版原子性</td><td>料号升版 = 该料号<b>全部相关元素</b>一次性切到本期版价，不存在"只切一个元素"的中间态；因此预算值与通过后的实际结果<b>逐位一致</b></td><td>屏 4</td></tr>
@@ -1200,8 +1467,8 @@ td .dt.down{color:var(--green);}
       <tr><td>8</td><td>版本回滚到指定历史版本</td><td>与 task-0722 §11.14F.5 一致：仅查看留痕，不做回滚</td></tr>
       <tr><td>9</td><td>报价单总额作为调价合理性依据</td><td><b>2026-07-29 修正</b>：总额里混着多料号/数量/折扣，只能作参考展示，不作判断依据（裁决 10）</td></tr>
       <tr><td>10</td><td>销售自助调价 / 销售配置预警线</td><td>裁决 18：全部收给财务</td></tr>
-      <tr><td>11</td><td>报价单编辑锁</td><td>裁决 32：系统本就没有编辑锁（实测 <code>quotation</code> 表零 lock 列），改用<b>乐观时间戳</b>，<b>不新建锁机制</b></td></tr>
-      <tr><td>12</td><td>手工值保护 / 已改标记 / 恢复策略价</td><td>裁决 37：升版一律<b>直接覆盖</b>，系统不记录哪些值被手改过；仅在完成通知里提示销售复核</td></tr>
+      <tr><td>11</td><td>报价单编辑锁</td><td>裁决 32：系统本就没有编辑锁（实测 <code>quotation</code> 表零 lock 列），改用<b>行级 <code>row_version</code> 乐观并发列</b>（F1 终版），<b>不新建锁机制</b></td></tr>
+      <tr><td>12</td><td>手工值保护 / 已改标记 / 恢复策略价</td><td>裁决 37：升版一律<b>直接覆盖</b>（靠 S4 按列清除实现，<s>系统不记录手改</s> 已证伪）；仅在完成通知里提示销售复核</td></tr>
       <tr><td>13</td><td>待办池列表按客户<b>动态出比对列</b></td><td>裁决 43：跨客户列表列无法统一 → 列表固定列 + 汇总标记，明细在抽屉内按该客户配置展开</td></tr>
       <tr><td>14</td><td>把客户策略价用于核价侧</td><td>§11.8.1：会让成本随客户不同而不同，<b>破坏成本口径</b>；核价侧只能用 <code>_GLOBAL_</code></td></tr>
       <tr style="background:var(--red-1)"><td>15</td><td>🗑 <b>「是否优先使用客户价格调整策略」勾选框</b>，及任何"新单是否用版本价"的<b>独立开关</b></td><td><b>2026-07-29 废除</b>（§11.4.2）：与裁决 35「料号版本指针权威」直接冲突，职责已被<b>策略启用状态</b>完全覆盖。<b>元素价格策略 Tab 本期零改动</b>；数据模型<b>不得</b>为其预留列</td></tr>

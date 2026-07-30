@@ -132,7 +132,7 @@
 - **预估规模**：L
 - **🔒 2026-07-29 业务方裁定（task-0729 澄清期）**：**本条后续单独立项，明确不并入 task-0729。**
   - **两条不同的版本轴，别混**：本条切的是**料号 BOM 版本**（`part_version` / `bom_version`）；task-0729 做的是**元素价格版本**（客户 × 一次调价 → 料号版本指针）。两者**无依赖关系**。
-  - **由此产生的 task-0729 硬约束**（见 `dev-docs/task-0729-客户价格调整策略和价格版本/需求说明.md` §11.12 #16 + `AGENT-交接.md` §4.6 #20）：task-0729 期间**不得**新建 `costing_order_revision` / `costing_order_line_snapshot`，**不得**改动 `:versionFilter` 宏与 `VersionFilterMacro`，`costing_order` frozen 快照**逐字节不动**（裁决 42 保持不变）。
+  - **由此产生的 task-0729 硬约束**（见 `dev-docs/task-0729-客户价格调整策略和价格版本/需求说明.md` §11.12 #16 + 同文件 §12.2 范围纪律 #22）：task-0729 期间**不得**新建 `costing_order_revision` / `costing_order_line_snapshot`，**不得**改动 `:versionFilter` 宏与 `VersionFilterMacro`，`costing_order` frozen 快照**逐字节不动**（裁决 42 保持不变）。
   - **⚠️ 做本条时必须先解决命名二义**：届时"料号版本"会**同时**指 **BOM 版本**（本条）与**价格版本**（task-0729），且两者都会出现在核价界面上。task-0729 期间无此问题（`part_version` 族已由 task-0723 B3 整族下线，该词当前无占用），但本条一落地就会撞上。建议在本条的 spec 阶段就把 UI 措辞与字段命名钉死，**不出现裸的"版本"**。
   - 另注：本条原范围里的 `part_version_locked` 已随 task-0723 B3 停止写入（列保留），实现前需重新确认版本来源。
 - **验收要点**：财务切某料号版本→该卡片子料号/值 + 单据总价按新版本重算、写入核价单新 revision；报价单原始快照不变；重提延续最新 revision（spec §6.4）；并发切版本不丢改动（连跑两次结果一致）。
