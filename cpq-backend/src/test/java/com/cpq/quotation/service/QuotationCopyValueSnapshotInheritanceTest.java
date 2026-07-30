@@ -579,11 +579,13 @@ class QuotationCopyValueSnapshotInheritanceTest {
             t4TcTreeId = tcTree.id;
 
             // 目标模板 B：只挂"投料"一个页签，且只声明"数量"为 INPUT 字段("备注"不声明 → 换模板迁移应被过滤掉)
+            // task-0729: 换模板复制是"新绑定"，服务层不变量要求目标模板 PUBLISHED（status=DRAFT 会被
+            // QuotationService#validateTemplateBinding 拒绝 400）；只改 status，不改其余 fixture 语义。
             Template tplB = new Template();
             tplB.templateSeriesId = UUID.randomUUID();
             tplB.name = TAG + "-T4模板B";
             tplB.templateKind = "QUOTATION";
-            tplB.status = "DRAFT";
+            tplB.status = "PUBLISHED";
             tplB.createdAt = OffsetDateTime.now();
             tplB.updatedAt = OffsetDateTime.now();
             tplB.persist();

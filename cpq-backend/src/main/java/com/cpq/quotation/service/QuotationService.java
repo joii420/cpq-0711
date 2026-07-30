@@ -218,6 +218,41 @@ public class QuotationService {
         }
     }
 
+    /**
+     * task-0729: 模板绑定的服务层不变量（存在 / 类型 / 状态），create / saveDraft / copy 三入口共用。
+     * 语义（已裁定，逐字实现，不得改，见 dev-docs/task-0729-模板绑定状态校验/需求与实现计划.md §二）：
+     *   1. templateId == null        → 直接返回（保持既有"null 不覆盖"语义，不是绑定动作）
+     *   2. 模板不存在                 → 400
+     *   3. 模板类型 != expectedKind   → 400
+     *   4. templateId == currentValue → 放行（维持原绑定，不是新绑定 —— 归档模板的历史草稿单仍需能 saveDraft）
+     *   5. 模板 status != PUBLISHED  → 400
+     *
+     * @param templateId   待绑定的模板 id（null 表示本次调用未传该字段，不触发校验）
+     * @param expectedKind 期望的 template_kind（"QUOTATION" / "COSTING"）；模板本身 kind 为空按 QUOTATION 兜底
+     *                     （对齐 TemplateService 新建默认值口径）
+     * @param currentValue 该字段在库内/源单上的当前值，用于豁免"值未变化"的重复绑定（§2.2）
+     */
+    private void validateTemplateBinding(UUID templateId, String expectedKind, UUID currentValue) {
+        if (templateId == null) return;
+        com.cpq.template.entity.Template tpl = com.cpq.template.entity.Template.findById(templateId);
+        if (tpl == null) {
+            throw new BusinessException(400, "模板不存在：templateId=" + templateId);
+        }
+        String actualKind = (tpl.templateKind == null || tpl.templateKind.isBlank()) ? "QUOTATION" : tpl.templateKind;
+        if (!expectedKind.equals(actualKind)) {
+            throw new BusinessException(400,
+                    "模板类型不匹配：templateId=" + templateId + "，期望 templateKind=" + expectedKind + "，实际=" + actualKind);
+        }
+        if (templateId.equals(currentValue)) {
+            // 维持原绑定，不是新绑定 —— 豁免状态校验（防止模板归档后历史单据被锁死，§2.2）
+            return;
+        }
+        if (!"PUBLISHED".equals(tpl.status)) {
+            throw new BusinessException(400,
+                    "模板未发布，无法绑定：templateId=" + templateId + "，期望 status=PUBLISHED，实际=" + tpl.status);
+        }
+    }
+
     @Transactional
     public QuotationDTO create(CreateQuotationRequest request, UUID salesRepId) {
         Quotation q = new Quotation();
@@ -236,7 +271,11 @@ public class QuotationService {
         if (request.stage != null) q.stage = request.stage;
         q.expectedCloseDate = request.expectedCloseDate;
         // 客户报价模板:由前端按 (customerId + categoryId) 通过 match-customer-quote 匹配后传入
-        if (request.customerTemplateId != null) q.customerTemplateId = request.customerTemplateId;
+        // task-0729: 新建无原值 currentValue=null ⇒ 一律严格校验 存在/类型=QUOTATION/status=PUBLISHED。
+        if (request.customerTemplateId != null) {
+            validateTemplateBinding(request.customerTemplateId, "QUOTATION", null);
+            q.customerTemplateId = request.customerTemplateId;
+        }
         // task-0729: 建单时的产品分类落库，前端传什么存什么，不做二次推导（守 D4）。
         q.productCategoryId = request.categoryId;
         q.status = "DRAFT";
@@ -258,21 +297,13 @@ public class QuotationService {
 
         // V72：双模板体系——核价模板从 template 表（template_kind='COSTING'）取，写入 quotation.costing_card_template_id。
         // 不再创建空 costing_sheet（那是 Excel 模板配置的职责，独立体系）。
+        // task-0729: 新建无原值 currentValue=null ⇒ 一律严格校验 存在/类型=COSTING/status=PUBLISHED；
+        // 行为变更（§2.4）：查不到模板原为 warn+静默忽略，现改为 400（静默忽略会让用户误以为绑上了）。
         if (request.costingTemplateId != null) {
-            com.cpq.template.entity.Template tpl = com.cpq.template.entity.Template.findById(request.costingTemplateId);
-            if (tpl == null) {
-                LOG.warnf("Quotation create: ignore non-existent costing card template id=%s", request.costingTemplateId);
-            } else if (!"COSTING".equals(tpl.templateKind)) {
-                throw new BusinessException(400,
-                        "选中的核价模板 templateKind 不是 COSTING：id=" + tpl.id + ", kind=" + tpl.templateKind);
-            } else if (!"PUBLISHED".equals(tpl.status)) {
-                throw new BusinessException(400,
-                        "选中的核价模板未发布（status=" + tpl.status + "），无法用于新建报价单");
-            } else {
-                q.costingCardTemplateId = tpl.id;
-                q.persist();
-                LOG.infof("Quotation %s bound costing card template %s (%s)", q.id, tpl.id, tpl.name);
-            }
+            validateTemplateBinding(request.costingTemplateId, "COSTING", null);
+            q.costingCardTemplateId = request.costingTemplateId;
+            q.persist();
+            LOG.infof("Quotation %s bound costing card template %s", q.id, request.costingTemplateId);
         }
 
         return QuotationDTO.from(q);
@@ -340,8 +371,16 @@ public class QuotationService {
         // 2026-05-18: 报价模板 / 核价模板 — 透传到 quotation header, 让刷新页面后 Step1 能带出.
         // 仅在 quotation 未已生成态下允许写入(对应前端 readOnly 锁定逻辑); DRAFT 阶段允许覆盖以兼容
         // "用户先选 → next 触发 saveDraft → 后续再调整"链路.
-        if (request.customerTemplateId != null) q.customerTemplateId = request.customerTemplateId;
-        if (request.costingCardTemplateId != null) q.costingCardTemplateId = request.costingCardTemplateId;
+        // task-0729: currentValue 取库内现值 —— 维持原绑定(值未变)豁免状态校验，防止模板归档后
+        // 历史草稿单无法保存（§2.2 防回归核心；前端每次保存都会回传同一个 templateId）。
+        if (request.customerTemplateId != null) {
+            validateTemplateBinding(request.customerTemplateId, "QUOTATION", q.customerTemplateId);
+            q.customerTemplateId = request.customerTemplateId;
+        }
+        if (request.costingCardTemplateId != null) {
+            validateTemplateBinding(request.costingCardTemplateId, "COSTING", q.costingCardTemplateId);
+            q.costingCardTemplateId = request.costingCardTemplateId;
+        }
         // task-0729: 仅当非 null 才覆盖 — null 不清空已存分类（旧前端/异常 payload 兜底）。
         if (request.categoryId != null) q.productCategoryId = request.categoryId;
 
@@ -1402,6 +1441,10 @@ public class QuotationService {
         if (source == null) throw new BusinessException(404, "Quotation not found: " + id);
 
         UUID newTemplateId = (templateId != null) ? templateId : source.customerTemplateId;
+        // task-0729: currentValue = source.customerTemplateId —— 同模板复制(含 templateId==null)天然
+        // 相等 ⇒ 豁免状态校验(源模板已归档也能复制)；换模板 ⇒ 严格要求新模板 PUBLISHED。
+        // costingCardTemplateId 在下方 :=source.costingCardTemplateId 是延续既有绑定而非新绑定，不加校验。
+        validateTemplateBinding(newTemplateId, "QUOTATION", source.customerTemplateId);
         // repair-0729: 同模板复制 = 值快照整份继承（复制冻结结果而非换 id 重新取数）；
         // 换模板复制保持原「重建」路径不变。单据头 + 行级快照 + 组件数据均按此开关分流。
         boolean sameTemplate = newTemplateId != null && newTemplateId.equals(source.customerTemplateId);
