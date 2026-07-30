@@ -21,19 +21,21 @@ CPQ (Configure, Price, Quote) system for manufacturing/industrial components. Th
 
 **后端（Quarkus dev，端口 8081）**
 ```bash
-cd cpq-backend && ./mvnw quarkus:dev -Dquarkus.profile=jh
+cd cpq-backend && ./mvnw quarkus:dev
 ```
 - 端口 `8081`，绑 `0.0.0.0`；dev 模式带 Live Coding（改 java 自动热重载）。
-- 🚨 **必须带 `-Dquarkus.profile=jh`**。三个 profile 指向**不同的库**，不带 profile 会连到另一套测试库，症状是「改动/数据看不到效果」且可能污染他人环境：
+- ✅ **当前本地开发环境不加 profile 参数**，走默认 profile → `10.177.152.12:5432/cpq_db_0724`。
+- ⚠️ 三个 profile 指向**不同的库**。库选错的症状是「改动/数据看不到效果」，且可能污染他人环境：
 
   | profile | 主机 / 库 | 用途 |
   |---------|----------|------|
-  | **`jh`** | **`localhost:5432/cpq_db`**（本机 docker PG16） | ✅ **当前开发环境，日常开发用这个** |
-  | 默认（不带 `-Dquarkus.profile`） | `10.177.152.12:5432/`**`cpq_db_0724`** | ⚠️ 另一个开发测试库 |
-  | `test` | `10.177.152.12:5432/cpq_db` | 测试 |
+  | **默认（不带 `-Dquarkus.profile`）** | **`10.177.152.12:5432/cpq_db_0724`** | ✅ **当前开发环境，日常开发用这个** |
+  | `jh` | `localhost:5432/cpq_db`（本机 docker PG16） | 备用本地库，当前不使用 |
+  | `test` | `10.177.152.12:5432/cpq_db` | 后端自动化测试（`mvnw test` 走这个，与 dev 库不同——写集成测试时注意） |
 
 - 凭据 `${DB_USERNAME:postgres}` / `${DB_PASSWORD:joii5231}`，可用环境变量覆盖；各 profile 配置见 `cpq-backend/src/main/resources/application-<profile>.properties`。
-- 连库自检：`PGPASSWORD=joii5231 psql -h localhost -U postgres -d cpq_db -c '\conninfo'`
+- 连库自检：`PGPASSWORD=joii5231 psql -h 10.177.152.12 -U postgres -d cpq_db_0724 -c '\conninfo'`
+- **确认 8081 实际连的哪个库**（不确定时用这招，比读配置可靠）：比对 `GET /api/cpq/quotations?page=1&size=1` 返回的 `totalElements` 与各库 `SELECT count(*) FROM quotation` —— 数字对上就是那个库。
 - 启动时 Flyway 自动 `migrate-at-start`；**不要**手工 `psql -f V_xx.sql`（详见「修改后强制自检」）。
 - 首次启动约 6-7s；热重载遇大范围文件变化（如切分支）会重编译，期间 8081 短暂无响应属正常。
 
