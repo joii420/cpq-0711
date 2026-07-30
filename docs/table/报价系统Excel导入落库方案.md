@@ -1,6 +1,8 @@
 # 报价系统基础数据 Excel 导入落库方案
 
-> 版本：V3.5 | 日期：2026-07-27
+> 版本：V3.6 | 日期：2026-07-30
+>
+> **V3.6（2026-07-30，task-0730）· §9 来料回收折扣新增 项次/值/货币/计价单位 四列**：`项次→seq_no`（不必填不补号，空即 NULL）、`值→pricing_price`、`货币→currency`、`计价单位→unit`；「值」与「回收折扣（%）」**并存但必填其一**（Phase 1 拦截）；同一 `(成品料号, 投入料号, COALESCE(项次,0))` 的重复行走**组内 upsert 末值胜**，不再撞唯一键报错。`CONTENT` 同步扩为 `[seq_no, cost_ratio, pricing_price, currency, unit]`（漏加会导致「只改值不改折扣%」被静默吞掉）。**顺带修正本节两处历史漂移**：主料号列名早已由「宏丰料号」改为「销售料号」（代码有回退兼容）；投入料号的名称反查规则已被 update-0723 U10 覆盖（材质走 `material_recipe`、查无即报错，只有零件/外购件才发号）。零 DDL、零 Flyway 迁移。
 >
 > **V3.5（2026-07-27，repair-0727）· 组装工序编号/名称解析**：§14「组装加工费」与 §15「组装加工费年降」的「组装工序」列此前**未做工序解析**，业务填的工序名称被原样写入编号列（`capacity.process_no`/`unit_price.operation_no`），`process_name` 恒 NULL；本次改为 Phase 1（`QuoteImportValidator`）经新增 `ProcessNoResolver` 反查 `process_master`（先按编号精确匹配、再按名称精确匹配，同名多条取 `process_no` 升序第一条并记日志），解析成功才落真编号 + 规范名称，解析不到则整单导入失败（fail-fast，不写库）。详见下方 §14/§15 与需求文档 `dev-docs/task-0708-导入报价单和导入核价单的数据落库规则澄清/repair-0727-工序编号与工序名称落库优化/需求文档.md`。
 >
@@ -332,7 +334,10 @@
 
 ### 9. 来料回收折扣
 
-> ✅ **2026-06-17 实现**：本 Sheet「投入料号/组成件料号」为空+名称有值时，按名称匹配料号表 / 匹配不到自动生成 9 字头料号并登记料号表(material_type=组成件)，再回填键列继续落库；§5 为更新型仅匹配不生成（详见 `docs/superpowers/plans/2026-06-17-quote-import-materialno-autogen-extend.md`）。
+> ✅ **投入料号取值（update-0723 U10 现行口径，已取代 2026-06-17 老规则）**：
+> ① 投入料号**有值** → 原样沿用（不 resolve、不铸号）；
+> ② 料号空 + 名称有值 → 先按 `TypeIndex` 推断类型：**材质**走 `material_recipe` 按名查码，**查无即报错「未找到材质」**（不发号）；**零件/外购件**走 `MaterialNoResolver` 按名匹配 `material_master`，匹配不到才自动生成 9 字头料号，并 upsert `material_master(material_type=零件/外购件)`；
+> ③ 料号与名称**都空** → 拒绝该行。
 
 **目标表：** `unit_price`
 
@@ -345,13 +350,32 @@
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号（成品料号） | `finished_material_no` | ✅ | 成品料号 |
-| 项次 | `—` | ❌ | 不导入 |
-| 投入料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
-| 投入料号名称 | — | ❌ | 不导入 |
-| 回收折扣（%） | `cost_ratio` | ✅ | 比例 |
+| 销售料号（成品料号） | `finished_material_no` | ✅ | 成品料号（旧列名 `宏丰料号`/`成品料号` 仍兼容回退） |
+| 项次 | `seq_no` | ✅ | **不必填、不补号**：有值即存，空即 NULL |
+| 投入料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号；为空时按「投入料号名称」反查/发号（见下） |
+| 投入料号名称 | — | ❌ | 不落 `unit_price`；仅在投入料号为空时作反查依据，并 upsert `material_master` |
+| 回收折扣（%） | `cost_ratio` | ✅ | 比例。与「值」**并存**，但二者**必填其一** |
+| 值 | `pricing_price` | ✅ | 费用(固定)。与「回收折扣（%）」**并存**，但二者**必填其一** |
+| 货币 | `currency` | ✅ | 币种 |
+| 计价单位 | `unit` | ✅ | 计量单位（表头写 `单位` 亦可匹配） |
 
 > 📌 `cost_type=回收折扣`，`price_type=INCOMING_MATERIAL_RECYCLE` 固定写入；客户编号由系统自动提供。
+
+#### 值 / 回收折扣（%）的并存与必填其一（task-0730）
+
+两列**可以同时有值**（不是二选一互斥），但**不得同时为空** —— Phase 1 `QuoteImportValidator.validateIncoming(..., requireValueOrRatio=true)` 零写库拦截，报错 `值/回收折扣（%）: 必填其一，不能同时为空`；`Q09IncomingRecoveryHandler` 内同款兜底，保证 handler 被直接调用（单测/其它编排）时语义一致。另两张来料表（来料固定加工费 / 来料其他费用）**不受此规则约束**（金额列语义不同）。
+
+#### 项次与组内 upsert（末值胜，task-0730）
+
+`seq_no` 已在 `uq_unit_price` 13 维内（`COALESCE(seq_no,0)`），故它决定「同一 (成品料号, 投入料号) 下能否存多行」：
+
+- **项次不同** → 各自成行，同组多条并存。
+- **项次相同（含都留空）** → **组内 upsert：后行覆盖前行，只落最后一条，不报唯一键冲突**。
+  去重键 = `COALESCE(seq_no, 0)`，精确镜像 uq 表达式 —— **NULL 与 0 视为同一键**（否则「项次留空的多行」仍会撞 uq）。
+  该手法对齐核价侧 `IncomingOtherMergeHandler` 的 EXCLUDED 覆盖语义；注意 `VersionedV6Writer.insertRowsBatched` 是**裸 INSERT 无 ON CONFLICT**，故去重必须在 handler 侧完成。
+- 被覆盖的行仍计入 `successRows`（行本身合法，只是被合并），写入计数按去重后行数统计。
+
+> ⚠️ 跨次导入不需要额外处理：版本化写入器本身就是「整组比对 → 复用版本 / 原地更新 / 升版」，天然具备 upsert 语义。需要 handler 侧去重的只有**同一批次组内**的重复行。
 
 ---
 

@@ -179,4 +179,61 @@ class QuoteImportValidatorTest {
         // Q14 与 Q15 各自的 key 空间以 sheetName 首段区分，不应互相串号。
         assertNull(out.assemblyProcessNo.get(List.of("组装加工费", "TEST-QIV-MAT-4", PROC_NO)));
     }
+
+    // ============ task-0730：来料回收折扣「值 / 回收折扣（%）」必填其一（Phase 1 零写库拦截） ============
+
+    private static Map<String, String> recycleRow(String ratio, String value) {
+        Map<String, String> m = new LinkedHashMap<>();
+        m.put("销售料号", "TEST-QIV-MAT-R");
+        m.put("投入料号", "TEST-QIV-IN-R");
+        if (ratio != null) m.put("回收折扣（%）", ratio);
+        if (value != null) m.put("值", value);
+        return m;
+    }
+
+    /** 两者同时为空 → Phase 1 直接拦下（整单不进写入阶段）。 */
+    @Test
+    void incomingRecycle_bothValueAndRatioBlank_rejectedInPhase1() {
+        Map<String, List<SheetRow>> sheets =
+            Map.of("来料回收折扣", List.of(row(1, recycleRow(null, null))));
+
+        QuoteImportValidator.Outcome out = validator.validate(sheets, ctx());
+
+        assertTrue(out.hasErrors());
+        var r = out.bySheet.get("来料回收折扣");
+        assertEquals(1, r.totalRows);
+        assertEquals(0, r.successRows);
+        assertEquals(1, r.failedRows);
+        assertTrue(r.errors.stream().anyMatch(e ->
+            "值/回收折扣（%）".equals(e.column) && e.message.contains("必填其一")),
+            "错误须指明是「值/回收折扣（%）」必填其一");
+    }
+
+    /** 只填其一、或两者并存，都合法。 */
+    @Test
+    void incomingRecycle_eitherOrBoth_accepted() {
+        Map<String, List<SheetRow>> sheets = Map.of("来料回收折扣", List.of(
+            row(1, recycleRow("20", null)),     // 只有折扣%
+            row(2, recycleRow(null, "3.5")),    // 只有值
+            row(3, recycleRow("20", "3.5"))));  // 并存
+
+        QuoteImportValidator.Outcome out = validator.validate(sheets, ctx());
+
+        assertFalse(out.hasErrors());
+        assertEquals(3, out.bySheet.get("来料回收折扣").successRows);
+    }
+
+    /** 隔壁两张来料表不受影响（requireValueOrRatio=false）：金额列全空仍放行。 */
+    @Test
+    void otherIncomingSheets_unaffectedByValueOrRatioRule() {
+        Map<String, String> m = new LinkedHashMap<>();
+        m.put("销售料号", "TEST-QIV-MAT-R2");
+        m.put("投入料号", "TEST-QIV-IN-R2");
+        Map<String, List<SheetRow>> sheets = Map.of("来料其他费用", List.of(row(1, m)));
+
+        QuoteImportValidator.Outcome out = validator.validate(sheets, ctx());
+
+        assertFalse(out.hasErrors(), "来料其他费用不受新规则约束");
+        assertEquals(1, out.bySheet.get("来料其他费用").successRows);
+    }
 }

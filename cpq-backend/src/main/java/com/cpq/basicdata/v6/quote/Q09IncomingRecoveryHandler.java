@@ -17,6 +17,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -27,10 +28,24 @@ import java.util.Map;
  * Q09 来料回收折扣 → unit_price (price=INCOMING_MATERIAL_RECYCLE, cost=回收折扣)。
  *
  * <p>版本化（Task 3）：groupKey=(QUOTE, customer_no, MATERIAL, 回收折扣, code, finished_material_no)，
- * content=[cost_ratio]。无 seq_no（§9 项次不导入）。
+ * content=[seq_no, cost_ratio, pricing_price, currency, unit]。
  * <p>update-0723 B5（U10）：有码沿用原始码（不 resolve，行为不变）；只有名称时补名称反查——按
  * {@link TypeIndex} 推断类型，材质走 material_recipe 按名查码（查无报错「未找到材质」），
  * 零件/外购件走 {@link MaterialNoResolver}（按名查 material_master 或发号，共享全导入 BatchState，R2）。
+ *
+ * <p><b>task-0730：新增 项次 / 值 / 货币 / 计价单位 四列</b>
+ * <ul>
+ *   <li>{@code 项次 → seq_no}：<b>不必填、不补号</b>——空即 NULL 落库。</li>
+ *   <li>{@code 值 → pricing_price} 与 {@code 回收折扣（%） → cost_ratio} <b>并存</b>（可同时有值），
+ *       但<b>必填其一</b>：两者皆空即拒绝该行（Phase 1 {@code QuoteImportValidator} 已预检，此处
+ *       同款兜底，保证 handler 被直接调用时语义一致）。</li>
+ *   <li><b>组内 upsert（末值胜）</b>：去重键 = {@code COALESCE(seq_no, 0)}，精确镜像
+ *       {@code uq_unit_price} 在本组内退化后的维度（version_no/code/finished_material_no/
+ *       customer_no/cost_type 组内恒定，supplier_no/operation_no/discount_order/item_seq/
+ *       effective_date 恒未设置=NULL）。同键后行覆盖前行、只落一条，<b>不报唯一键冲突</b>——
+ *       对齐 {@code IncomingOtherMergeHandler} 的 EXCLUDED 覆盖语义。注意 NULL 与 0 视为同一键
+ *       （与 uq 的 COALESCE 表达式一致），否则"项次留空多行"仍会撞键。</li>
+ * </ul>
  */
 @ApplicationScoped
 public class Q09IncomingRecoveryHandler implements SheetHandler {
@@ -44,7 +59,13 @@ public class Q09IncomingRecoveryHandler implements SheetHandler {
 
     @Override public String sheetName() { return "来料回收折扣"; }
 
-    private static final List<String> CONTENT = List.of("cost_ratio");
+    private static final List<String> CONTENT =
+        List.of("seq_no", "cost_ratio", "pricing_price", "currency", "unit");
+
+    /** 组内去重键：镜像 {@code uq_unit_price} 的 {@code COALESCE(seq_no,0)}——NULL 与 0 同键。 */
+    private static Integer dedupKey(Integer seqNo) {
+        return seqNo == null ? Integer.valueOf(0) : seqNo;
+    }
 
     @Override
     @Transactional(Transactional.TxType.MANDATORY)
@@ -54,13 +75,20 @@ public class Q09IncomingRecoveryHandler implements SheetHandler {
         MaterialNoResolver.BatchState batch = MaterialNoResolver.batchStateFor(ctx);
         Map<String, String[]> mmAcc = new LinkedHashMap<>();
         Map<List<Object>, Map<String, Object>> groupKeyOf = new LinkedHashMap<>();
-        Map<List<Object>, List<Map<String, Object>>> contentOf = new LinkedHashMap<>();
+        // 组 → (去重键 COALESCE(seq_no,0) → content 行)；同键后行覆盖前行（末值胜 = 组内 upsert）
+        Map<List<Object>, LinkedHashMap<Integer, Map<String, Object>>> contentOf = new LinkedHashMap<>();
         for (SheetRow row : rows) {
             result.totalRows++;
             String raw = row.exact("投入料号");
             String rawName = row.exact("投入料号名称");
             if ((raw == null || raw.isBlank()) && (rawName == null || rawName.isBlank())) {
                 result.recordError(row.rowNo, "投入料号", "料号与名称均为空"); continue;
+            }
+            // task-0730：值与回收折扣（%）必填其一（并存允许，同时为空拒绝）。Phase 1 已预检，此处兜底。
+            BigDecimal costRatio = row.getDecimal("回收折扣");
+            BigDecimal pricingPrice = row.getDecimal("值");
+            if (costRatio == null && pricingPrice == null) {
+                result.recordError(row.rowNo, "值/回收折扣（%）", "必填其一，不能同时为空"); continue;
             }
             String code;
             if (raw != null && !raw.isBlank()) {
@@ -100,9 +128,15 @@ public class Q09IncomingRecoveryHandler implements SheetHandler {
                 g.put("finished_material_no", finishedMaterialNo);
                 return g;
             });
+            Integer seqNo = row.getInt("项次");            // 不必填、不补号：空即 NULL
             Map<String, Object> c = new LinkedHashMap<>();
-            c.put("cost_ratio", row.getDecimal("回收折扣"));
-            contentOf.computeIfAbsent(key, k -> new ArrayList<>()).add(c);
+            c.put("seq_no", seqNo);
+            c.put("cost_ratio", costRatio);
+            c.put("pricing_price", pricingPrice);
+            c.put("currency", row.getStr("货币"));
+            c.put("unit", row.getStr("计价单位", "单位"));
+            // 末值胜：同 (code, finished_material_no, COALESCE(seq_no,0)) 的后行覆盖前行
+            contentOf.computeIfAbsent(key, k -> new LinkedHashMap<>()).put(dedupKey(seqNo), c);
             result.successRows++;
         }
 
@@ -116,8 +150,8 @@ public class Q09IncomingRecoveryHandler implements SheetHandler {
 
         if (setBased) {
             LinkedHashMap<Map<String, Object>, List<Map<String, Object>>> groups = new LinkedHashMap<>();
-            for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet())
-                groups.put(groupKeyOf.get(e.getKey()), e.getValue());
+            for (Map.Entry<List<Object>, LinkedHashMap<Integer, Map<String, Object>>> e : contentOf.entrySet())
+                groups.put(groupKeyOf.get(e.getKey()), new ArrayList<>(e.getValue().values()));
             try {
                 writer.writeVersionedGroups("unit_price", "version_no", CONTENT, null, List.of(), groups, ctx.pendingQuotationId);
                 for (List<Map<String, Object>> groupRows : groups.values())
@@ -126,11 +160,12 @@ public class Q09IncomingRecoveryHandler implements SheetHandler {
                 result.recordError(0, "_batch_", ex.getMessage());
             }
         } else {
-            for (Map.Entry<List<Object>, List<Map<String, Object>>> e : contentOf.entrySet()) {
+            for (Map.Entry<List<Object>, LinkedHashMap<Integer, Map<String, Object>>> e : contentOf.entrySet()) {
+                List<Map<String, Object>> newRows = new ArrayList<>(e.getValue().values());
                 try {
                     writer.writeVersionedGroup(new VersionedGroupSpec(
-                        "unit_price", "version_no", groupKeyOf.get(e.getKey()), CONTENT, e.getValue(), null, ctx.pendingQuotationId));
-                    result.recordWrite("unit_price", e.getValue().size());
+                        "unit_price", "version_no", groupKeyOf.get(e.getKey()), CONTENT, newRows, null, ctx.pendingQuotationId));
+                    result.recordWrite("unit_price", newRows.size());
                 } catch (Exception ex) {
                     result.recordError(0, "_group_", ex.getMessage());
                 }

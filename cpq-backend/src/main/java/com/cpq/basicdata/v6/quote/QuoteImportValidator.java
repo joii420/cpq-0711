@@ -82,9 +82,10 @@ public class QuoteImportValidator {
         validateElementBom(sheetsByName.getOrDefault("物料与元素BOM", List.of()), out);
         validateSelfProcessFee(sheetsByName.getOrDefault("自制加工费", List.of()), out);
         validateComponentOtherFee(sheetsByName.getOrDefault("组成件其他费用", List.of()), out);
-        validateIncoming("来料固定加工费", sheetsByName.getOrDefault("来料固定加工费", List.of()), idx, out);
-        validateIncoming("来料其他费用", sheetsByName.getOrDefault("来料其他费用", List.of()), idx, out);
-        validateIncoming("来料回收折扣", sheetsByName.getOrDefault("来料回收折扣", List.of()), idx, out);
+        validateIncoming("来料固定加工费", sheetsByName.getOrDefault("来料固定加工费", List.of()), idx, out, false);
+        validateIncoming("来料其他费用", sheetsByName.getOrDefault("来料其他费用", List.of()), idx, out, false);
+        // task-0730：来料回收折扣新增「值」列，与「回收折扣（%）」并存但必填其一。
+        validateIncoming("来料回收折扣", sheetsByName.getOrDefault("来料回收折扣", List.of()), idx, out, true);
         validateCustomerMap(sheetsByName.getOrDefault("客户料号与宏丰料号的关系", List.of()), out);
 
         // repair-0727：组装工序解析结果索引只建一次（process_master 全表载入内存，AC-11 性能要求），
@@ -187,7 +188,15 @@ public class QuoteImportValidator {
         }
     }
 
-    private void validateIncoming(String sheetName, List<SheetRow> rows, TypeIndex idx, Outcome out) {
+    /**
+     * 来料三表共用的 Phase 1 校验。
+     *
+     * @param requireValueOrRatio task-0730：为 true 时额外要求「值」与「回收折扣（%）」<b>必填其一</b>
+     *        （两者可并存，但不得同时为空）。仅「来料回收折扣」传 true——另两张表的金额列语义不同
+     *        （基准值 / 要素值），沿用各自既有校验，不受影响。
+     */
+    private void validateIncoming(String sheetName, List<SheetRow> rows, TypeIndex idx, Outcome out,
+                                  boolean requireValueOrRatio) {
         SheetImportResult r = result(out, sheetName);
         for (SheetRow row : rows) {
             r.totalRows++;
@@ -207,6 +216,12 @@ public class QuoteImportValidator {
                     r.recordError(row.rowNo, "投入料号名称", "未找到材质「" + rawName + "」");
                     continue;
                 }
+            }
+            // task-0730：值 / 回收折扣（%）必填其一（可并存，不可同时为空）。
+            if (requireValueOrRatio
+                    && row.getDecimal("回收折扣") == null && row.getDecimal("值") == null) {
+                r.recordError(row.rowNo, "值/回收折扣（%）", "必填其一，不能同时为空");
+                continue;
             }
             r.successRows++;
         }
