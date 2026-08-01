@@ -1577,8 +1577,13 @@ public class CardSnapshotService {
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
                 rkfByComp.get(cid), baseRows, editRows, componentSubtotals, deleted, rkfNames,
                 rowCache, cid.isBlank() ? null : cid);
-            double sub = 0.0;
-            for (java.math.BigDecimal v : byCol.values()) sub += v.doubleValue();
+            // task-0801 B4-2（技术总监验收补漏）：累加过程必须 BigDecimal 精确，只在写回
+            // componentSubtotals（Map<String,Double>，链路一约定承载类型不变）时才 doubleValue()。
+            // 原写法 `double sub = 0.0; sub += v.doubleValue();` 是 double 累加，与本文件
+            // backfillSubtotalsFromResolved（:2996/3004）已改的写法不一致——同一语义两种实现。
+            java.math.BigDecimal subBd = java.math.BigDecimal.ZERO;
+            for (java.math.BigDecimal v : byCol.values()) subBd = subBd.add(v);
+            double sub = subBd.doubleValue();
             String code = tab.path("componentCode").asText(null);
             String tabName = tab.path("tabName").asText("");
             if (!cid.isBlank()) componentSubtotals.put(cid, sub);
