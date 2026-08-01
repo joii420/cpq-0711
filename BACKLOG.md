@@ -1174,3 +1174,19 @@
 - **风险**：极高——触及报价渲染主链路 + AP-44 协议面 + 全量历史数据迁移。须独立立项，不可夹带。
 - **预估规模**：L
 - **验收要点**：改字段名不再影响任何已有报价单渲染；冻结单改名限制可解除。
+
+### [BL-0091] 两个 dry-run 端点自 2026-08-01 起无前端调用方，待统一清理
+- **优先级**：P2
+- **来源**：task-0801 页签连表公式配置优化（澄清 C4）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-01
+- **背景**：task-0801 移除了公式抽屉的试算功能，`POST /components/{id}/dry-run`、
+  `POST /components/{id}/dry-run-token`、`GET /components/{id}/sample-cards` 三个端点
+  **前端已全部停调**，后端按裁决原样保留（不删、不标 @Deprecated）。
+- **⚠️ 清理前必读**：`dry-run-token` 背后的 `CardSnapshotService.dryRunTokenRows` 挂着
+  `CardSnapshotDryRunParityTest`（断言「试算逐行值 == 渲染逐行值」，实际保护**渲染路径**正确性），
+  且被 `QuotePendingScopeOpenWhitelistTest` 列入 pending 域开放白名单。**删端点前必须先给渲染路径
+  补等价的 parity 断言**，否则会静默削弱渲染侧保障。
+- **范围**：确认无其他消费方后，删端点 + `ComponentSampleCardService` 对应方法，并保留/改写 parity 测试。
+- **依赖**：无。**预估规模**：S
+- **验收要点**：①端点删除后全工程零引用；②渲染路径的 parity 保障不弱于清理前。
