@@ -316,6 +316,39 @@
 - **预估规模**：M
 - **验收要点**：①同一张单在草稿态与提交后，列表金额**不跳变**；②列表金额 = 报价单内对应指标 = 导出金额；③每个金额列的语义在代码注释与 `api.md` 中各有且仅有一种说法。
 
+### [BL-0092] 报价单删除时不清占号 → `material_customer_map.pending_quotation_id` 悬空，料号被永久锁死
+- **优先级**：P1（用户可见功能全灭：「从已有产品添加」对**所有客户**返回空）
+- **来源**：task-0801 测试工程师修 E2E fixture 时探测发现，技术总监亲验 SQL 确认根因
+- **状态**：TODO（数据已临时清理，**代码缺陷未修**）
+- **登记日期**：2026-08-01
+- **背景（已实证）**：
+  - 占号写入：新建报价单时向 `material_customer_map` 写 `pending_quotation_id` 占住料号；
+  - 占号清理：**只有一处** —— `QuoteBackfillService.java:145`
+    `UPDATE material_customer_map SET pending_quotation_id = NULL WHERE pending_quotation_id = :qid`，
+    走的是**报价单审批转正**路径；
+  - **报价单被删除时没有任何地方清占号** → `pending_quotation_id` 指向一个已不存在的 `quotation.id`，形成悬空引用，该料号**被永久锁死**。
+- **用户可见后果**：`ExistingProductService` 的查询条件是 `system_type='QUOTE' AND pending_quotation_id IS NULL`。
+  2026-08-01 实测：全库 `system_type='QUOTE'` 仅 3 行，**可用行数 = 0**（3 行全部被悬空引用锁住，
+  分别指向 `9928116f-...`(7/27) 与 `6bc9a6b7-...`(8/01)，两个 quotation 均查无此单）。
+  即 **「添加产品 → 从已有产品添加」对任何客户、任何模板都返回空**，UI 显示"未查到匹配的产品"。
+  叠加 `sel_template` 表 0 行（选配子系统全灭），Step2 的两条加产品路径当时**全部不可用**。
+- **已做的临时处置（不是修复）**：2026-08-01 经需求方授权，技术总监执行数据清理并留备份表 `mcm_pending_backup_20260801`：
+  ```sql
+  UPDATE material_customer_map SET pending_quotation_id = NULL
+  WHERE pending_quotation_id IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM quotation q WHERE q.id = material_customer_map.pending_quotation_id);
+  -- UPDATE 3 → QUOTE 可用行数 0 → 3
+  ```
+  **这只解了当下的数据死锁，代码缺陷仍在** —— 再删一次报价单就会再产生悬空占号。
+- **范围**：
+  1. 报价单删除路径（含级联删除、撤回、作废等所有会让 `quotation` 行消失的路径）必须同步清占号；
+  2. 评估是否给 `pending_quotation_id` 加外键约束 + `ON DELETE SET NULL`，从 schema 层根治（需先确认无跨库/异步写入场景）；
+  3. 加一个兜底清理（启动时或定时）：清除所有指向不存在报价单的悬空占号；
+  4. 同步检查 `material_master`、`QuoteBackfillService:116/124` 涉及的其它带 `pending_quotation_id` 的 V6 表是否有同样问题（`MaterialMasterRepository.java:326` 也有一处清理逻辑，须一并核对触发条件）。
+- **依赖**：无
+- **预估规模**：S（点状修）～ M（含 schema 约束与全表兜底）
+- **验收要点**：①删除一张有占号的报价单后，其占用的料号立即可被「从已有产品添加」选到；②全库不存在悬空 `pending_quotation_id`；③其它带该字段的表同口径核对通过。
+
 ## P2
 
 ### [BL-0070] Q04/Q05 元素BOM 相关测试 fixture 用 stale 列名（pre-existing 坏测试）
@@ -1235,7 +1268,17 @@
 ### [BL-0095] 测试库 `cpq_db` 的 V366 撞号 + 脚本丢失，导致所有 `@QuarkusTest` 起不来
 - **优先级**：P1（阻断全部后端集成测试，不阻断纯单测）
 - **来源**：task-0801 后端守卫 B2 第二次执行时暴露，技术总监 A/B 归因确认 pre-existing
-- **状态**：TODO（未排期）
+- **状态**：✅ **已解决（2026-08-01，由 task-0801「公式计算精度优化」合并时顺带修复）**
+  - 处置：把该任务的 `V366__widen_amount_columns_to_scale6.sql` 改号为 **V367**（dev 库 366 槽位已被
+    并发会话的 `V366__task0729_costing_element_price_field.sql` 占用且已 `success=t`，按
+    「已应用到共享库的迁移禁止改号」原则改本任务这一支）；同步 `DELETE` 掉 test 库
+    `flyway_schema_history` 里改号后成孤儿的 366 记录。
+  - 过程中另发现同型坑：`target/classes/db/migration/` 残留改名前的 V366 编译产物
+    （Maven 不清理 target 孤儿文件），Flyway 从 classpath 同时扫到新旧两份、连续应用 2 次，
+    test 库一度出现 366/367 两条同名记录 —— 已删残留 + 清重复记录。
+  - 验证：test 库 `WHERE version='366'` 返 **0 行**；Flyway `Schema "public" is up to date`；
+    `FormulaCalculationTest`（`@QuarkusTest`）5/5 绿，证明 Quarkus 能正常启动。
+  - 参见 commit `700531d5`。
 - **登记日期**：2026-08-01
 - **现象**：任何 `@QuarkusTest`（如 `CardSnapshotDryRunParityTest`）启动即抛
   `org.flywaydb.core.api.exception.FlywayValidateException: Validate failed: Migrations have failed validation`
