@@ -71,8 +71,8 @@
 export const DISPLAY_SCALE = 6;
 /** 除法中间精度。 */
 export const DIVISION_SCALE = 12;
-/** payload 规范化位数 —— 注意不是 6，理由见 Task F5。 */
-export const PAYLOAD_NORMALIZE_SCALE = 10;
+/** payload 规范化：按**有效数字**而非小数位数，理由见 Task F5（这是唯一正确的做法，别改成 toFixed）。 */
+export const PAYLOAD_SIGNIFICANT_DIGITS = 15;
 
 /** 任意值 → Decimal（null/空/非数字 → 0），唯一转换入口。 */
 export function toDecimal(v: unknown): Decimal;
@@ -245,24 +245,53 @@ export function roundToDisplay(v: Decimal | number): number;
 `QuotationWizard.tsx:42-52`：递归把 payload 里**所有** `number` 压成 `Number(v.toFixed(4))`，
 注释目的是"消除 live↔snap 求值浮点尾差，保证 payload 去重稳定"。
 
-### 坑
-它是**一刀切**的 —— 不区分计算列与取数列。
-如果简单改成 `toFixed(6)`，**8 位小数的取数列（如工装单价 `P12ToolingCostHandler` 写 8 位）
-在保存草稿时会被压到 6 位**，直接违反 AC-8（取数列必须保持原精度）。
+### 坑一：一刀切会压坏取数列
+它**不区分计算列与取数列**。技术总监实测开发库的取数列真实精度：
 
-### 正确改法
-把位数改为 `PAYLOAD_NORMALIZE_SCALE = 10`（**不是 6**）：
+```
+production_energy.unit_price      → 12 位小数（如 0.070000000000）  ← 最危险的一档
+tooling_cost.tooling_unit_price   → 8 位小数（如 0.01500000）
+unit_price.pricing_price          → 6 位小数
+```
 
-- **10 位足以消除浮点尾差**（尾差在 1e-15 量级），保住原函数的去重稳定性目的；
-- **10 位不伤取数列**（现网最高精度是 8 位）；
-- **计算值不会因此变成 10 位落库** —— 后端在落库边界统一 `PrecisionPolicy.round()` 到 6 位
-  （`backtask.md` Task B5），前端发 10 位、后端落 6 位，结果一致；
-- 取数列后端**不规整**（类别 B），因此保持 8 位原值，AC-8 达成。
+改成 `toFixed(6)` 会把 12 位压到 6 位，直接违反 AC-8。
+
+### 坑二：把位数调高也不对 —— 会暴露浮点噪声
+```js
+(98765431.2).toFixed(14)   // "98765431.19999999552965"  ← 噪声被暴露而非消除
+(0.07).toFixed(14)         // "0.07000000000000"          ← 小值没问题
+```
+按**小数位数**一刀切，在"小值高精度（12 位小数）+ 大值低精度（亿级金额）"并存时是**根本矛盾**：
+位数低了压坏取数列，位数高了暴露噪声。
+
+### 正确改法：按有效数字规整，不按小数位数
+
+用 `toPrecision(15)`（15 位有效数字 = double 的可靠精度上限）替代 `toFixed(N)`：
+
+```ts
+export const PAYLOAD_SIGNIFICANT_DIGITS = 15;
+export function normalizeNumber(v: number): number {
+  return Number.isFinite(v) ? Number(v.toPrecision(PAYLOAD_SIGNIFICANT_DIGITS)) : v;
+}
+```
+
+同时满足三个目标：
+```js
+Number((0.30000000000000004).toPrecision(15))  // 0.3        ← 消除浮点尾差 ✅
+Number((0.070000000000).toPrecision(15))       // 0.07       ← 12 位取数列不被压 ✅
+Number((98765431.2).toPrecision(15))           // 98765431.2 ← 亿级金额无噪声 ✅
+Number((0.015).toPrecision(15))                // 0.015      ← 8 位取数列 ✅
+```
+
+计算值不会因此变成 15 位落库 —— 后端在落库边界统一规整到 6 位（`backtask.md` Task B5）；
+取数列后端**不规整**（类别 B），因此原样保留，AC-8 达成。前端发 15 位有效数字、后端落 6 位，
+这是**约定好的不对称，不是 bug**。
 
 ### 必须做
-- 常量放 `precision.ts` 的 `PAYLOAD_NORMALIZE_SCALE`，**不要**在 `QuotationWizard.tsx` 里写字面量；
-- 更新该函数的注释，写清"为什么是 10 而不是 6"（否则下一个人会"顺手统一成 6"把取数列压坏）；
-- 加一条单测：payload 中 8 位小数的取数值经过规范化后**仍是 8 位**。
+- 常量与 `normalizeNumber()` 放 `precision.ts`，**不要**在 `QuotationWizard.tsx` 里写字面量；
+- 注释写清"**为什么是有效数字 15 而不是小数位数 N**"，并列出上面两条反例
+  —— 否则下一个人会"顺手改回 toFixed"把取数列压坏或把噪声放出来；
+- 单测覆盖上面 4 条验证 + 一条「12 位小数取数值经规范化后仍是 12 位」。
 
 ---
 
@@ -275,7 +304,7 @@ export function roundToDisplay(v: Decimal | number): number;
 | **T3 链路二基线** | 单价 6 位 × 年用量 50 万 × 20 行 → 整单合计第 6 位正确 | AC-14 |
 | **T4 链路一基线** | 6 层嵌套（元素行→列小计→页签合计→产品小计）结果 = 一次性精确计算 | AC-13 |
 | **T5 常量锁定** | `DISPLAY_SCALE === 6`；`formatNumber` 兜底 = 6 | AC-16 |
-| **T6 类别隔离** | 8 位取数值经 `normalizeDraftPayloadNumbers` 后仍 8 位；费率仍 2 位 | AC-8/AC-9 |
+| **T6 类别隔离** | **12 位**取数值（`production_energy.unit_price` 样本）经 `normalizeDraftPayloadNumbers` 后仍 12 位；8 位取数值仍 8 位；费率仍 2 位 | AC-8/AC-9 |
 | **T7 语义不变** | 除零 → 0；null 按 0；非法表达式 → null；全角运算符；一元负号；优先级 | R-5 |
 | **T8 显示格式** | 至多 6 位去尾零：`0.0774→"0.0774"`、`5→"5"`、`0.0000005→"0.000001"` | AC-1/AC-2 |
 
@@ -383,4 +412,4 @@ curl -s --noproxy '*' -o /dev/null -w '%{http_code}\n' http://localhost:5174/   
 | 黄金用例 | 前后端**各自实现**、**共用同一份期望值**（`api.md` §5.2）；任一端不符即缺陷 |
 | 接口 | **结构不变**，你不需要改任何请求体；若后端提出要把数值改成字符串，**先找技术总监**，不要私下答应 |
 | 联调 | 同一张单：前端显示值 / API 响应值 / DB 落库值 / 导出文件值**四处逐字节相同**（AC-15） |
-| payload 位数 | 前端发 10 位（Task F5），后端落库规整 6 位 —— 这是**约定好的不对称**，不是 bug |
+| payload 精度 | 前端发 15 位**有效数字**（Task F5，非小数位数），后端落库规整 6 位 —— 这是**约定好的不对称**，不是 bug |

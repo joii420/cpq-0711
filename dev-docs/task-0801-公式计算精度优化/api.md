@@ -22,6 +22,11 @@
 |------|------|---------|---------|
 | **A. 计算值** | 公式求值结果、各级小计与合计、折扣金额 | 字段 `field_type` ∈ {FORMULA, LIST_FORMULA, TAB_JOIN, CARD_FORMULA}，或 `is_subtotal = true`，或属于 §3 金额字段清单 | **至多 6 位小数，HALF_UP，去掉末尾 0** |
 | **B. 取数值** | 直接从基础资料 / 数据源 / SQL 视图读出的原始值 | `field_type` ∈ {DATA_SOURCE, BASIC_DATA}，或 `basic_data_path` 非空 | **保持库中原精度，不做任何规整** |
+
+> **取数列真实精度（2026-08-01 实测开发库，设计与测试都以此为准）**：
+> `production_energy.unit_price` = **12 位小数**（最高一档）、`tooling_cost.tooling_unit_price` = 8 位、
+> `unit_price.pricing_price` = 6 位。任何"一刀切按小数位数规整"的方案都必须能容纳 **12 位**，
+> 否则违反 AC-8。前端 payload 规范化因此改为**按 15 位有效数字**（`fronttask.md` Task F5）。
 | **C. 输入值** | 用户手工录入或系统配置的费率 | `field_type` ∈ {INPUT_NUMBER, FIXED_VALUE}，以及折扣率 / 税率字段 | **保持现状不变**（费率 2 位） |
 
 ### 1.2 "至多 6 位去尾零"的精确定义
@@ -150,7 +155,7 @@ null / 空             → 显示占位 "—"，JSON 中为 null
 | `rowData` / `snapshotRows` 内数值 | JSONB | 无 scale 约束 | 写入前按 6 位规整 | A / B 按字段类型分别处理 |
 
 > ⚠️ JSONB 内的数值**必须按字段类型区分**：计算列规整 6 位，取数列保持原值。
-> 不能对整个 JSONB 一刀切规整，否则会把 8 位小数的取数列压坏（违反 §1.1 类别 B）。
+> 不能对整个 JSONB 一刀切规整，否则会把**最高 12 位小数**的取数列压坏（违反 §1.1 类别 B）。
 
 ### 3.4 核价级（`costing_order`）
 
