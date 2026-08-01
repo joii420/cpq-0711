@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tag, Tooltip, Typography, Space, Button } from 'antd';
+import { Tag, Tooltip, Typography, Space } from 'antd';
 import type { TabDef } from '../../../services/tabJoinFormulaService';
 import { comparable } from '../../component/formulaSerialize';
 
@@ -19,22 +19,14 @@ export function tabComparable(selfRowKeyFields: string[], sourceRowKeyFields: st
 // ──────────────────────────────────────────────
 interface Props {
   tabDefs: TabDef[];
-  /** 保留字段：本组件当前渲染逻辑未消费，仅为兼容既有调用方（TabJoinFormulaDrawer）签名 */
-  expression?: string;
   onInsert: (token: string) => void;
-  /**
-   * task-0801 F4/F5 衔接约定：本批次（F4）「清空表达式」按钮仍留在本组件内，
-   * F5 阶段会把它挪到右栏 FormulaEditorPanel，届时此 prop 从本组件移除。
-   * 本批次不得删除该 prop —— TabJoinFormulaDrawer 仍在传它。
-   */
-  onClearExpression?: () => void;
   selfRowKeyFields?: string[];
 }
 
 // ──────────────────────────────────────────────
 // 主组件
 // ──────────────────────────────────────────────
-const TabFieldMatrix: React.FC<Props> = ({ tabDefs, onInsert, onClearExpression, selfRowKeyFields }) => {
+const TabFieldMatrix: React.FC<Props> = ({ tabDefs, onInsert, selfRowKeyFields }) => {
   if (tabDefs.length === 0) {
     return (
       <div style={{ padding: '12px 0', color: '#8a909a', fontSize: 12 }}>
@@ -60,11 +52,6 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, onInsert, onClearExpression,
           宿主行键 <Text strong style={{ color: '#722ed1' }}>[{(selfRowKeyFields ?? []).join(' + ') || '—'}]</Text>
           ；明细点击即插；更细页签明细需自行套 SUM/AVG 等聚合函数（或写 SUM(宿主列 * 细页签列) 行级聚合），否则一行命中多行报错；不可比页签仅整页签小计可用。
         </span>
-        {onClearExpression && (
-          <Button size="small" onClick={onClearExpression}>
-            清空表达式
-          </Button>
-        )}
       </div>
 
       {/* 页签卡片列表（上下卡片结构：头部页签名+行键徽标 / 体部 chip 换行） */}

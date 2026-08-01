@@ -10,8 +10,6 @@ interface Props {
   tabDefs: TabDef[];
   selfRowKeyFields?: string[];
   onInsert: (token: string) => void;
-  /** F4 批次先透传给 TabFieldMatrix；F5 会把「清空表达式」按钮挪到右栏后改走此 prop */
-  onClearExpression?: () => void;
 }
 
 // ──────────────────────────────────────────────
@@ -54,7 +52,7 @@ function filterTabDefs(tabDefs: TabDef[], keyword: string): TabDef[] {
 // ──────────────────────────────────────────────
 // 主组件：左栏整体 = 标题行 + 搜索框 + 宿主行键状态条（由 TabFieldMatrix 内部渲染）+ 页签卡片列表
 // ──────────────────────────────────────────────
-const TabFieldPanel: React.FC<Props> = ({ tabDefs, selfRowKeyFields, onInsert, onClearExpression }) => {
+const TabFieldPanel: React.FC<Props> = ({ tabDefs, selfRowKeyFields, onInsert }) => {
   const [keyword, setKeyword] = useState('');
 
   const filtered = useMemo(() => filterTabDefs(tabDefs, keyword), [tabDefs, keyword]);
@@ -90,7 +88,6 @@ const TabFieldPanel: React.FC<Props> = ({ tabDefs, selfRowKeyFields, onInsert, o
           tabDefs={filtered}
           selfRowKeyFields={selfRowKeyFields}
           onInsert={onInsert}
-          onClearExpression={onClearExpression}
         />
       )}
     </div>
