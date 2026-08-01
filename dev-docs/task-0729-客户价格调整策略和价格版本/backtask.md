@@ -222,7 +222,23 @@ NORMAL  ⟸ 其余
 | 1 | `productAttributes` 传空 map → `product_attribute` token 恒取 0（`CardSnapshotService` 调 `FormulaCalculator.calculate` 时第 9 参为 `new HashMap<>()`） | 从 line item / 模板 snapshot 的 `productAttributes` + `productAttributeValues` 构造 NUMBER 型 map 注入（对齐前端 `QuotationStep2.tsx:1302-1307` / `evalProductSubtotalFromSubtotals`） | **当前库 0 使用**（0 组件引用、0 模板配 schema）→ 纯防御 |
 | 2 | `${key}#__amount_total__` 哨兵键未登记 → `[页签(总计)]` 公式两端不等值 | 🔒 **搬既有做法，不新写**：`ComponentDataEffectiveRows.java:198-199` 已实现（`code#__amount_total__` / `name#__amount_total__` = Σ金额列(`is_amount`)），把同一逻辑接进 `CardSnapshotService.backfillSubtotalsFromResolved` 那条路径 | **5 个报价模板 + 核价模板1 全在用**，涉 26 张单 → 真实影响 |
 
-⚠️ 注意 `CardSnapshotService:1806` 已有「不得让 `__amount_total__` 泄漏进 `subtotalByColumn`」的排除逻辑 —— **补登记后这行必须保留**，否则污染快照 + golden 漂移。
+#### 🔴 这处口径差的来历：**BL-0017 的遗漏路径**（2026-08-01 查明，读前务必知道）
+
+`__amount_total__` 哨兵键机制**不是本期发明的** —— 它是 **BL-0017**（`[页签(总计)]` 口径对齐 Σ金额列）的产物，**已于 2026-06-30 落地合并 master（commit `e6c53db`，方案 A′ 加性哨兵键，不动裸键、不动求值器）**。
+
+当时落地了**两条**登记路径，**漏了第三条**：
+
+| 路径 | 哨兵键 | 证据 |
+|------|--------|------|
+| `ComponentDataEffectiveRows`（`LineDiscountService` 用） | ✅ **已登记** | `:198-199` `componentSubtotals.put(meta.code + "#" + AMOUNT_TOTAL_KEY, amountTotal)` |
+| `ConfigureSnapshotService`（配置快照用） | ✅ **已登记** | `:1332` 引用 `AMOUNT_TOTAL_KEY` |
+| 🔴 **`CardSnapshotService`（算 `quote_card_values`，本期 S6 要用的正是它）** | ❌ **只做了"防泄漏排除"，没有登记** | `:1806` 只有 `if (AMOUNT_TOTAL_KEY.equals(col)) continue;`（BL-0017 记录里称此为"计划外新增的 byColNode 排除哨兵"），全类**无任何 put** |
+
+**所以本期不是"给后端从零加能力"，而是把 BL-0017 已经做对的事补到它漏掉的第三条路径上。** 实现时**照抄 `ComponentDataEffectiveRows:180-199` 的口径**（Σ `is_amount` 列、含按列折扣缩放语义），不要自创。
+
+⚠️ 🔒 **`CardSnapshotService:1806` 的排除逻辑必须保留** —— 补登记后哨兵键会真的出现在 `componentSubtotals` 里，若泄漏进 `subtotalByColumn` 会污染快照 + 造成 golden 漂移（BL-0017 当初就是为此加的这行）。
+
+📌 **关联但不在本期**：`BL-0018`（存量已塌缩 `[页签(总计)]` 公式的批量恢复）状态 **BLOCKED**（token 字节级同形，脚本无法安全区分意图），**本期不碰**。若对拍清单里出现"公式本身是塌缩态"导致的差异，如实标注归因到 BL-0018，**不要顺手迁移存量公式**。
 
 #### B8.2 🔒 交付物：《SUBTOTAL 双端对拍清单》
 
