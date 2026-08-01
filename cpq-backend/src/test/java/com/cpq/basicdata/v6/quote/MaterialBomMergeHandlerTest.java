@@ -339,6 +339,95 @@ class MaterialBomMergeHandlerTest {
         }
     }
 
+    // ===== 材质占比（material_ratio，可选列，小数口径 0.3=30%）=====
+
+    /** 带「材质占比」列的物料BOM行（ratio=null 表示该行不填该列）。 */
+    private SheetRow bomRowWithRatio(int rowNo, int seq, String materialNo, String rawNo, String ratio) {
+        Map<String, String> m = new HashMap<>();
+        m.put("销售料号", materialNo); m.put("项次", String.valueOf(seq));
+        m.put("投入料号", rawNo);
+        m.put("产出料号类型", "2.非银点类");
+        m.put("材料毛重", "0.5"); m.put("重量单位", "KG");
+        if (ratio != null) m.put("材质占比", ratio);
+        return new SheetRow(rowNo, m);
+    }
+
+    private java.math.BigDecimal currentMaterialRatio(String componentNo) {
+        return (java.math.BigDecimal) em.createNativeQuery(
+            "SELECT material_ratio FROM material_bom_item WHERE material_no=:m AND component_no=:c AND is_current=TRUE")
+            .setParameter("m", MAT).setParameter("c", componentNo).getSingleResult();
+    }
+
+    @Transactional
+    @Test
+    void materialRatio_recipeRow_isMapped() {
+        cleanupMasterRow(RECIPE_991);
+        try {
+            SheetImportResult r = handler.merge(
+                List.of(bomRowWithRatio(1, 1, MAT, RECIPE_991, "0.3")), ctxWithRealIndex());
+            assertEquals(0, r.failedRows);
+            java.math.BigDecimal v = currentMaterialRatio(RECIPE_991);
+            assertNotNull(v, "材质行的「材质占比」应落 material_ratio");
+            assertEquals(0, new java.math.BigDecimal("0.3").compareTo(v), "小数口径原值落库（0.3=30%）");
+        } finally {
+            cleanupMasterRow(RECIPE_991);
+        }
+    }
+
+    @Transactional
+    @Test
+    void materialRatio_blank_isNull_optionalColumn() {
+        cleanupMasterRow(RECIPE_991);
+        try {
+            // 非必填：不填该列应正常导入并落 NULL，不报错、不兜底成 0。
+            SheetImportResult r = handler.merge(
+                List.of(bomRowWithRatio(1, 1, MAT, RECIPE_991, null)), ctxWithRealIndex());
+            assertEquals(0, r.failedRows, "「材质占比」非必填，留空不应拒导");
+            assertNull(currentMaterialRatio(RECIPE_991), "留空应落 NULL，不兜底成 0");
+        } finally {
+            cleanupMasterRow(RECIPE_991);
+        }
+    }
+
+    @Transactional
+    @Test
+    void materialRatio_nonRecipeRow_forcedNull() {
+        cleanupMasterRow("TEST-MBM-RATIO1");
+        try {
+            // 零件行（默认兜底 ASSEMBLY）即使误填「材质占比」也显式置 NULL —— 该列仅材质行有业务含义。
+            SheetImportResult r = handler.merge(
+                List.of(bomRowWithRatio(1, 1, MAT, "TEST-MBM-RATIO1", "0.42")), ctx());
+            assertEquals(0, r.failedRows);
+            assertNull(currentMaterialRatio("TEST-MBM-RATIO1"), "零件/外购件行的材质占比应恒 NULL");
+        } finally {
+            cleanupMasterRow("TEST-MBM-RATIO1");
+        }
+    }
+
+    @Transactional
+    @Test
+    void materialRatio_changeOnly_bumpsVersion() {
+        try {
+            cleanup2();
+            handler.merge(List.of(bomRowWithRatio(1, 1, MAT2, RECIPE_991, "0.3")), ctx2());
+            assertEquals("2000", currentBomVersion2(), "首次写入应为 v2000");
+
+            // 仅「材质占比」变化：必须被 CHILD_CONTENT 认到 → 升版。
+            // 若 CHILD_CONTENT 漏了 material_ratio，multisetEqual 会判"无变化" → 整组不写库（静默丢数据）。
+            handler.merge(List.of(bomRowWithRatio(1, 1, MAT2, RECIPE_991, "0.55")), ctx2());
+            assertEquals("2001", currentBomVersion2(),
+                "仅「材质占比」变化也应升版（CHILD_CONTENT 必须含 material_ratio）");
+
+            java.math.BigDecimal v = (java.math.BigDecimal) em.createNativeQuery(
+                "SELECT material_ratio FROM material_bom_item WHERE system_type='QUOTE' AND customer_no=:cn " +
+                "AND material_no=:mn AND is_current=TRUE")
+                .setParameter("cn", CUST2).setParameter("mn", MAT2).getSingleResult();
+            assertEquals(0, new java.math.BigDecimal("0.55").compareTo(v), "当前版本应是新值");
+        } finally {
+            cleanup2();
+        }
+    }
+
     @Transactional
     void cleanupMasterRow(String... codes) {
         // repair-0726：pending_material_master_staging 已 DROP（V362）；该表原来独立存放的"暂存"行

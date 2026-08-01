@@ -65,6 +65,7 @@ public class BackfillLabelResolver {
         m.put("production_no", "生产料号");
         // 材质元素
         m.put("content", "含量");
+        m.put("material_ratio", "材质占比");
         m.put("material_part_no", "材质料号");
         m.put("hf_part_no", "料号");
         // 单价

@@ -171,6 +171,16 @@
 | 重量单位 | `weight_unit` | ✅ | 重量单位 |
 | 损耗率（%） | `scrap_rate` | ✅ | |
 | 不良率（%） | `defect_rate` | ✅ | |
+| 材质占比 | `material_ratio` | ✅ | **非必填**；小数口径（`0.3` = 30%），与 `element_bom_item.content`（组成含量）同口径同精度 `numeric(18,6)`。**仅材质行有效**：`characteristic='RECIPE'` 时取 Excel 值，零件/外购件行由 handler 显式置 NULL（防非材质行误填污染）。列由 V365 新增 |
+
+> 📌 **「材质占比」为什么是新增列而不是复用既有列**（2026-07-31，V365）：`material_bom_item` 50+ 列中，`composition_qty`（组成数量）/`base_qty`（底数）/`scrap_rate`/`defect_rate` 均已被 handler 占用；`upper_limit_pct`/`lower_limit_pct` 虽全表无值，但语义是 ERP 标准「用量上下限 %」，复用即语义错配（AP-52），故新增独立列。
+>
+> ⚠️ **改这列必须同步 3 处**（漏一处即静默失效）：
+> 1. `MaterialBomMergeHandler.CHILD_CONTENT` —— 不含该列时，「只改材质占比」会被 `multisetEqual` 判成无变化 → 整组不写库、不升版（静默丢数据）；
+> 2. `QuoteTableAxis.MATERIAL_BOM_ITEM.contentColumns` —— 不含该列时，报价单回填 / pending→正式投影会把该列抹成 NULL；
+> 3. `BackfillLabelResolver.COLUMN_LABELS` —— 不含该列时，回填预览显示英文列名。
+>
+> 库层**不加** CHECK 约束：「同一销售料号下多材质占比合计 = 1」在非必填前提下无法强制（部分行为空时约束必然误伤），该校验属业务/公式层。核价侧 `P06MaterialBomHandler` 不写该列，PRICING 行恒 NULL。
 
 ---
 

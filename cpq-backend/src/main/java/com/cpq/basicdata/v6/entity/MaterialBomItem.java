@@ -69,6 +69,10 @@ public class MaterialBomItem extends V6BaseEntity {
     @Column(name = "weight_unit", length = 20)
     public String weightUnit;
 
+    /** 材质占比(小数口径，0.3=30%)；报价侧物料BOM 材质行(characteristic=RECIPE)可选填。 */
+    @Column(name = "material_ratio", precision = 18, scale = 6)
+    public BigDecimal materialRatio;
+
     @Column(name = "component_usage_type", length = 100)
     public String componentUsageType;
 

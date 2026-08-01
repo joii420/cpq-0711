@@ -61,6 +61,8 @@ public class MaterialBomMergeHandler implements SheetHandler {
         "base_qty", "issue_unit", "scrap_rate", "defect_rate",
         "operation_no", "item_seq",
         "rough_weight", "net_weight", "weight_unit",
+        // 材质占比：必须参与内容比较，否则「只改占比」会被 multisetEqual 判成无变化 → 整组不写库（静默丢数据）。
+        "material_ratio",
         "characteristic");
 
     @Override
@@ -154,6 +156,10 @@ public class MaterialBomMergeHandler implements SheetHandler {
             c.put("issue_unit", PartTypeInferenceService.RECIPE.equals(characteristic) ? weightUnit : "PCS");
             c.put("scrap_rate", row.getDecimal("损耗率"));
             c.put("defect_rate", row.getDecimal("不良率"));
+            // 材质占比（可选列，小数口径 0.3=30%）：仅材质行有业务含义，零件/外购件行显式置 NULL，
+            // 防止业务在非材质行误填污染数据。
+            c.put("material_ratio", PartTypeInferenceService.RECIPE.equals(characteristic)
+                ? row.getDecimal("材质占比") : null);
             c.put("operation_no", operationNo);
             c.put("characteristic", characteristic);
             childByMat.computeIfAbsent(materialNo, k -> new LinkedHashMap<>())

@@ -99,7 +99,7 @@ final class QuoteTableAxis {
             "main_substitute", "attached_part", "ecn_no", "use_qty_formula", "qty_formula", "scrap_rate_type",
             "is_backflush", "is_customer_supply", "defect_rate", "calc_type", "recovery_discount",
             "recovery_currency", "recovery_unit", "rough_weight", "net_weight", "weight_unit",
-            "production_no", "characteristic"),
+            "production_no", "material_ratio", "characteristic"),
         new MasterSpec("material_bom", "bom_version", List.of("bom_type", "characteristic")));
 
     static final Spec ELEMENT_BOM_ITEM = new Spec("element_bom_item", "characteristic", List.of(
