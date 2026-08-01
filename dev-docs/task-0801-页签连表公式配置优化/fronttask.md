@@ -267,7 +267,9 @@ interface Props {
 - 「清空表达式」按钮**移出**本组件 → 到右栏（Task F5）。相应地 `onClearExpression` prop 从 `TabFieldMatrix` 移除。
 - `tabComparable()` **保持同路径导出**（`tabFieldMatrix.test.ts` 依赖）。
 
-**完成判据**：`npx vitest run src/pages/template/tabjoin/tabFieldMatrix.test.ts` 全绿；用 `核价模板1`（35 页签）目测卡片不再挤压长字段名。
+**完成判据**：`npx vitest run src/pages/template/tabjoin/tabFieldMatrix.test.ts` 全绿；用**组件目录「核价模板」**（同目录 18 个 ACTIVE 组件，本库最大目录）目测卡片不再挤压长字段名。
+
+> ⚠️ **测试数据口径（2026-08-01 更正，见需求说明 §11.1 F3）**：本抽屉左栏页签集 = `ComponentTabDefService.tabDefsForComponent` 按 **`directoryId` 取同目录 ACTIVE 组件**，**与模板无关**。任务书初稿引用的「核价模板1 有 35 页签」是模板级口径，**作废**。验证一律用**组件目录**维度：核价模板 18 / 施耐德-1-BUG 11 / 施耐德-1 8 / 罗克韦尔 7。
 
 ---
 
