@@ -631,6 +631,21 @@ export function expressionToTokens(
             if (selfComponentId && td.componentId === selfComponentId) {
               // 宿主自身列 → b_field
               targetExpr.push({ type: 'b_field', value: col });
+            } else if ((td.subtotalCols ?? []).includes(col)) {
+              // 跨组件小计列 = 整列总计标量，与行无关 → component_subtotal（与顶层同源，见本文件
+              // "跨组件小计列引用(无总计) → component_subtotal(整列总计标量)" 分支）。
+              // 关键：**不进 srcTabsSeen** —— 标量不参与 N≥2 的行键两两可比校验。否则与宿主行键
+              // 互不包含的页签（如 产品[销售料号] vs 物料[料件]）会被误判「行键不可比」而无法保存，
+              // 造成"同一个 [产品.税率] 写在 SUM 外放行、写进 SUM 就拒"的口径分裂。
+              // 求值侧两端均已就绪：前端 formulaEngine.evalRowExpr 透传 componentSubtotals 给
+              // evaluateExpression；后端 FormulaCalculator 的 C1 sub 透传 ctx.componentSubtotals。
+              targetExpr.push({
+                type: 'component_subtotal',
+                value: col,
+                tab_name: col,
+                component_code: td.alias,
+                label: `${td.componentName ?? td.alias}·${col}`,
+              });
             } else {
               // 细/兄弟 source 列 → field；记录 source componentId 供多 source 校验
               if (!srcTabSeenIds.has(td.componentId)) {
@@ -1011,6 +1026,16 @@ export function tokensToDrawerExpression(
                   case 'bracket_open': return '(';
                   case 'bracket_close': return ')';
                   case 'path': return `{${te.path ?? ''}}`;
+                  case 'component_subtotal': {
+                    // 与顶层 component_subtotal 回显同口径（见本文件顶层同名 case）：
+                    // 按 component_code=alias 查页签名，查不到回退 code；is_tab_total / 空列名 → (总计) 形式。
+                    // 缺这个分支会走 default 吞掉 token，回显出 "SUM([A.x] *)" 这种残缺串，
+                    // 用户再保存即静默丢乘数 —— 故此分支是数据安全项，不是显示美化。
+                    const csCode = te.component_code ?? '';
+                    const csLabel = tabDefs.find((d) => d.alias === csCode)?.componentName ?? csCode;
+                    const csCol = te.value ?? '';
+                    return te.is_tab_total || !csCol ? `[${csLabel}(总计)]` : `[${csLabel}.${csCol}]`;
+                  }
                   case 'cross_tab_ref': {
                     // projectToHostKey=true → KSUM 子 token，回显为 K<AGG>(...)
                     if (te.projectToHostKey) {

@@ -1078,6 +1078,84 @@ describe('expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT)', () =>
 });
 
 // ─────────────────────────────────────────────
+// E2 · SUM 内跨组件小计列引用 → component_subtotal（标量，免行键）
+//   顶层早有此规则（见 E1 describe）：跨组件小计列 = 整列总计标量，与行无关，
+//   不需要与宿主行键对齐。但 FN body 解析此前无条件把该页签推进 srcTabsSeen，
+//   于是与宿主行键不可比的页签（产品[销售料号] vs 物料[料件]）被 N≥2 两两可比
+//   校验拦下，报「行键不可比」而无法保存 —— 顶层放行、SUM 内拒绝的口径分裂。
+//   fixtures 取自 cpq_db_0724 真实配置（COMP-0032 物料 / COMP-0133 材料成本 /
+//   COMP-0135 产品，税率与管理费 is_subtotal=true）。
+// ─────────────────────────────────────────────
+describe('E2 — SUM 内跨组件小计列免行键（component_subtotal）', () => {
+  const hostWL: TabDef = {
+    alias: 'COMP-0032', tabKey: 't-wl', componentId: 'cid-wl', componentName: '物料',
+    rowKeyFields: ['料件'], detailFields: ['来料加工费', '材料净重'], subtotalCols: [],
+  };
+  const mc: TabDef = {
+    alias: 'COMP-0133', tabKey: 't-mc', componentId: 'cid-mc', componentName: '材料成本',
+    rowKeyFields: ['销售料号', '元素', '料件'], detailFields: ['元素单价', '组成含量'], subtotalCols: [],
+  };
+  const prod: TabDef = {
+    alias: 'COMP-0135', tabKey: 't-prod', componentId: 'cid-prod', componentName: '产品',
+    rowKeyFields: ['销售料号'], detailFields: ['数量'], subtotalCols: ['税率', '管理费'],
+  };
+  const defs = [hostWL, mc, prod];
+  const RKF = ['料件'];
+
+  it('SUM 内 [产品.税率]（小计列，行键与宿主互不包含）→ 不报错', () => {
+    expect(() =>
+      expressionToTokens('SUM([材料成本.元素单价] * [产品.税率])', defs, RKF, 'cid-wl'),
+    ).not.toThrow();
+  });
+
+  it('小计列落进 targetExpr 为 component_subtotal，且不污染 source/sources', () => {
+    const t = expressionToTokens('SUM([材料成本.元素单价] * [产品.税率])', defs, RKF, 'cid-wl');
+    expect(t).toHaveLength(1);
+    // 产品页签不进 srcTabsSeen → 仍是单 source（材料成本），不写 sources
+    expect(t[0]).toMatchObject({ type: 'cross_tab_ref', source: 'cid-mc', agg: 'SUM' });
+    expect((t[0] as any).sources).toBeUndefined();
+    expect(t[0].targetExpr).toEqual([
+      { type: 'field', value: '元素单价', source: 'cid-mc' },
+      { type: 'operator', value: '*' },
+      {
+        type: 'component_subtotal',
+        value: '税率',
+        tab_name: '税率',
+        component_code: 'COMP-0135',
+        label: '产品·税率',
+      },
+    ]);
+  });
+
+  it('宿主自身的小计列不受影响：仍走 b_field（同行值，非整列总计）', () => {
+    const hostWithSub: TabDef = { ...hostWL, subtotalCols: ['材料净重'] };
+    const t = expressionToTokens(
+      'SUM([材料成本.元素单价] * [物料.材料净重])', [hostWithSub, mc, prod], RKF, 'cid-wl',
+    );
+    expect(t[0].targetExpr).toEqual([
+      { type: 'field', value: '元素单价', source: 'cid-mc' },
+      { type: 'operator', value: '*' },
+      { type: 'b_field', value: '材料净重' },
+    ]);
+  });
+
+  it('回归：SUM 内引用产品的明细列 [产品.数量] → 仍报行键不可比', () => {
+    expect(() =>
+      expressionToTokens('SUM([材料成本.元素单价] * [产品.数量])', defs, RKF, 'cid-wl'),
+    ).toThrow(/不可比|行键|KSUM/);
+  });
+
+  it('round-trip：回显归一后再解析仍稳定', () => {
+    const t = expressionToTokens('SUM([材料成本.元素单价] * [产品.税率])', defs, RKF, 'cid-wl');
+    const back = tokensToDrawerExpression(t, defs, 'cid-wl');
+    expect(back.replace(/\s+/g, ' ').trim()).toBe('SUM([材料成本.元素单价] * [产品.税率])');
+    const t2 = expressionToTokens(back, defs, RKF, 'cid-wl');
+    expect(tokensToDrawerExpression(t2, defs, 'cid-wl').replace(/\s+/g, ' ').trim())
+      .toBe('SUM([材料成本.元素单价] * [产品.税率])');
+  });
+});
+
+// ─────────────────────────────────────────────
 // 用页签名称(componentName)作公式标识：插入/解析/回显都用中文名而非编号(alias)
 //   名称优先、编号兜底(旧公式兼容)；token 内部(source=componentId、component_code=alias)不变
 // ─────────────────────────────────────────────

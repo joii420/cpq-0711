@@ -155,6 +155,36 @@ class FormulaCalculatorCrossTabTest {
     }
 
     /**
+     * E2（2026-07-31）：targetExpr 内嵌 component_subtotal —— 前端「SUM 内跨组件小计列免行键」
+     * 修复产出的新 token 形状，后端必须能求值。
+     *
+     * <p>真实场景：宿主 物料[料件]，公式 SUM([材料成本.元素单价] * [产品.税率])。
+     * 「税率」是产品页签的 is_subtotal 列 → 整列总计标量，产品行键[销售料号]与宿主[料件]
+     * 互不包含也应可用（标量与行无关，不参与行键对齐）。
+     *
+     * <p>本用例锁定 C1 上下文透传（sub.componentSubtotals = ctx.componentSubtotals）：
+     * 若该透传被移除，逐行求值会取不到小计键而塌成 0，断言 6.78 → 0 立即失败。
+     */
+    @Test void targetExpr_sum_withComponentSubtotalScalar() throws Exception {
+        var aRows = List.<Map<String, Object>>of(
+            Map.of("料件", "P1", "元素单价", "2"),
+            Map.of("料件", "P1", "元素单价", "4"));
+        FormulaCalculator.RowContext c = new FormulaCalculator.RowContext();
+        c.currentRowRaw.put("料件", "P1");
+        c.crossTabRows.put("MC", aRows);
+        // 列小计键口径 "${component_code}#${value}"（与前端 formulaSerialize 产出的 token 对齐）
+        c.componentSubtotals.put("COMP-0135#税率", 1.13);
+        var tok = om.readTree("[{\"type\":\"cross_tab_ref\",\"source\":\"MC\",\"agg\":\"SUM\","
+            + "\"match\":[{\"a\":\"料件\",\"b\":\"料件\"}],"
+            + "\"targetExpr\":[{\"type\":\"field\",\"value\":\"元素单价\"},"
+            + "{\"type\":\"operator\",\"value\":\"*\"},"
+            + "{\"type\":\"component_subtotal\",\"value\":\"税率\",\"tab_name\":\"税率\","
+            + "\"component_code\":\"COMP-0135\"}]}]");
+        // 逐行：2*1.13 + 4*1.13 = 6.78（标量对每一驱动行广播同一值）
+        assertEquals(0, new java.math.BigDecimal("6.7800").compareTo(calc.evaluateExpression(tok, c)));
+    }
+
+    /**
      * 回归（spec 2026-06-13）：宿主字段 料件(INPUT_TEXT) 经 default_source.BASIC_DATA 绑定到驱动列
      * $ll_view._料件 —— driverRow 只有 _料件，没有 料件。calculate 必须把 default_source 解析进
      * currentRowRaw[料件]，cross_tab_ref match[料件=料件] 才能命中源行 → SUM 目标列。
