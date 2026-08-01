@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tag, Tooltip, Typography, Space, Button } from 'antd';
+import { Tag, Tooltip, Typography, Space } from 'antd';
 import type { TabDef } from '../../../services/tabJoinFormulaService';
 import { comparable } from '../../component/formulaSerialize';
 
@@ -19,16 +19,14 @@ export function tabComparable(selfRowKeyFields: string[], sourceRowKeyFields: st
 // ──────────────────────────────────────────────
 interface Props {
   tabDefs: TabDef[];
-  expression: string;
   onInsert: (token: string) => void;
-  onClearExpression?: () => void;
   selfRowKeyFields?: string[];
 }
 
 // ──────────────────────────────────────────────
 // 主组件
 // ──────────────────────────────────────────────
-const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClearExpression, selfRowKeyFields }) => {
+const TabFieldMatrix: React.FC<Props> = ({ tabDefs, onInsert, selfRowKeyFields }) => {
   if (tabDefs.length === 0) {
     return (
       <div style={{ padding: '12px 0', color: '#8a909a', fontSize: 12 }}>
@@ -54,23 +52,11 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
           宿主行键 <Text strong style={{ color: '#722ed1' }}>[{(selfRowKeyFields ?? []).join(' + ') || '—'}]</Text>
           ；明细点击即插；更细页签明细需自行套 SUM/AVG 等聚合函数（或写 SUM(宿主列 * 细页签列) 行级聚合），否则一行命中多行报错；不可比页签仅整页签小计可用。
         </span>
-        {onClearExpression && (
-          <Button size="small" onClick={onClearExpression}>
-            清空表达式
-          </Button>
-        )}
       </div>
 
-      {/* 矩阵区域 */}
-      <div
-        style={{
-          border: '1px solid #e5e7eb',
-          borderRadius: 8,
-          overflow: 'hidden',
-          marginTop: 4,
-        }}
-      >
-        {tabDefs.map((def, idx) => {
+      {/* 页签卡片列表（上下卡片结构：头部页签名+行键徽标 / 体部 chip 换行） */}
+      <div>
+        {tabDefs.map((def) => {
           const selfRKF = selfRowKeyFields ?? [];
           const isComparable = tabComparable(selfRKF, def.rowKeyFields ?? []);
           const sourceFiner = isComparable && (def.rowKeyFields ?? []).length > selfRKF.length;
@@ -81,24 +67,23 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
             <div
               key={def.tabKey ?? def.alias}
               style={{
-                display: 'flex',
-                alignItems: 'stretch',
-                borderBottom: idx < tabDefs.length - 1 ? '1px solid #e5e7eb' : 'none',
+                border: '1px solid #eef0f2',
+                borderRadius: 8,
+                marginBottom: 10,
+                overflow: 'hidden',
                 background: isComparable ? '#fff' : '#fafafa',
               }}
             >
-              {/* 左侧：页签名 + 行键徽标 */}
+              {/* 卡片头部：页签名（左）+ 行键徽标（右） */}
               <div
                 style={{
-                  flexShrink: 0,
-                  width: 160,
-                  background: '#f7f9fc',
-                  borderRight: '1px solid #e5e7eb',
-                  padding: '10px 12px',
                   display: 'flex',
-                  flexDirection: 'column',
-                  gap: 5,
-                  justifyContent: 'center',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '8px 11px',
+                  background: '#fafbfc',
+                  borderBottom: '1px solid #eef0f2',
+                  gap: 10,
                 }}
               >
                 <span style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.3 }}>
@@ -112,28 +97,26 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                 <span
                   style={{
                     fontSize: 11,
-                    background: '#f9f0ff',
-                    color: '#722ed1',
-                    border: '1px solid #efdbff',
-                    borderRadius: 4,
-                    padding: '1px 6px',
-                    alignSelf: 'flex-start',
+                    color: '#5b6b7c',
+                    background: '#eef4ff',
+                    border: '1px solid #d6e4ff',
+                    borderRadius: 10,
+                    padding: '1px 8px',
                     whiteSpace: 'nowrap',
+                    flexShrink: 0,
                   }}
                 >
                   行键: {def.rowKeyFields.join(' + ')}
                 </span>
               </div>
 
-              {/* 右侧：三组字段 chip */}
+              {/* 卡片体部：明细 / 小计列 / 页签总计三组，chip 换行 */}
               <div
                 style={{
-                  flex: 1,
                   padding: '9px 11px',
                   display: 'flex',
-                  gap: 7,
                   flexWrap: 'wrap',
-                  alignItems: 'flex-start',
+                  gap: 7,
                 }}
               >
                 {/* 明细组 */}
@@ -184,7 +167,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                     wrap
                     style={{
                       gap: 6,
-                      marginLeft: 10,
+                      marginLeft: 8,
                       paddingLeft: 10,
                       borderLeft: '1px dashed #e5e7eb',
                     }}
@@ -217,7 +200,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                   wrap
                   style={{
                     gap: 6,
-                    marginLeft: 10,
+                    marginLeft: 8,
                     paddingLeft: 10,
                     borderLeft: '1px dashed #e5e7eb',
                   }}

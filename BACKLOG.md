@@ -1195,3 +1195,66 @@
 - **风险**：极高——触及报价渲染主链路 + AP-44 协议面 + 全量历史数据迁移。须独立立项，不可夹带。
 - **预估规模**：L
 - **验收要点**：改字段名不再影响任何已有报价单渲染；冻结单改名限制可解除。
+
+### [BL-0093] 两个 dry-run 端点自 2026-08-01 起无前端调用方，待统一清理
+- **优先级**：P2
+- **来源**：task-0801 页签连表公式配置优化（澄清 C4）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-01
+- **背景**：task-0801 移除了公式抽屉的试算功能，`POST /components/{id}/dry-run`、
+  `POST /components/{id}/dry-run-token`、`GET /components/{id}/sample-cards` 三个端点
+  **前端已全部停调**，后端按裁决原样保留（不删、不标 @Deprecated）。
+- **⚠️ 清理前必读**：`dry-run-token` 背后的 `CardSnapshotService.dryRunTokenRows` 挂着
+  `CardSnapshotDryRunParityTest`（断言「试算逐行值 == 渲染逐行值」，实际保护**渲染路径**正确性），
+  且被 `QuotePendingScopeOpenWhitelistTest` 列入 pending 域开放白名单。**删端点前必须先给渲染路径
+  补等价的 parity 断言**，否则会静默削弱渲染侧保障。
+- **范围**：确认无其他消费方后，删端点 + `ComponentSampleCardService` 对应方法，并保留/改写 parity 测试。
+- **依赖**：无。**预估规模**：S
+- **验收要点**：①端点删除后全工程零引用；②渲染路径的 parity 保障不弱于清理前。
+
+### [BL-0094] `QuotePendingScopeOpenWhitelistTest` 恒红 —— 安全护栏的报警能力已失效
+- **优先级**：P1（破坏的是安全属性的**信号能力**，非功能本身；且污染所有人的回归判断）
+- **来源**：task-0801 后端守卫任务 B2 执行时暴露，技术总监做 A/B 归因后确认为 pre-existing
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-01
+- **背景（已实证）**：`QuotePendingScopeOpenWhitelistTest.openCallSites_fileLevelWhitelist_exactMatch`
+  用 `content.contains("QuotePendingScope.open(")` 做**纯文本**匹配，未排除注释与字符串字面量。
+  `QuotationService.java:1586` 有一句中文注释含该字样（`repair-0729` commit `40badf08` 引入，2026-07-28），
+  被误判为"未授权开 pending 可见域"，导致断言失败。
+  **确认为纯假阳性**：该文件全文仅此 1 处命中，且**根本没有 import `QuotePendingScope`**，不可能有真实调用。
+- **A/B 归因**：主仓 master（`3e25809c`，零 task-0801 改动）上同一断言、同一实际命中集合同样失败 → pre-existing，与 task-0801 无关。
+- **⚠️ 真正的危害（比失败本身严重）**：
+  1. 该测试是 pending 可见域的**安全护栏**（注释原文：「多出的文件 = 有人在未授权位置开了 pending 可见域（可能破坏 AC-17）」）。
+     它现在**恒红**，此后若真出现未授权调用，表现仍是"红变红"，**没有人能从信号上区分** —— 护栏事实上已停止工作。
+  2. 任何人跑全量 `mvnw test` 都会拿到 `BUILD FAILURE`，使"改动是否引入回归"的判断被迫依赖人工 A/B，成本高且易误判
+     （与 [[BL-0078]] 的 E2E 夹具失效同型危害）。
+- **范围**：把文本匹配改为**排除注释与字符串字面量**后再扫（或改用语法级扫描 / AST）；修好后确认白名单回到 3 个文件精确相等。
+- **依赖**：无。**预估规模**：S
+- **验收要点**：①当前 master 上该测试转绿；②人为在某个非白名单文件里加一处**真实** `QuotePendingScope.open(` 调用，测试必须失败（护栏有效性正向验证）；③人为加一句含该字样的注释，测试必须仍绿（假阳性已消除）。
+
+### [BL-0095] 测试库 `cpq_db` 的 V366 撞号 + 脚本丢失，导致所有 `@QuarkusTest` 起不来
+- **优先级**：P1（阻断全部后端集成测试，不阻断纯单测）
+- **来源**：task-0801 后端守卫 B2 第二次执行时暴露，技术总监 A/B 归因确认 pre-existing
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-01
+- **现象**：任何 `@QuarkusTest`（如 `CardSnapshotDryRunParityTest`）启动即抛
+  `org.flywaydb.core.api.exception.FlywayValidateException: Validate failed: Migrations have failed validation`
+  → `Failed to start quarkus`。纯单元测试（如 `TabJoinPlanEvaluator*Test`，不启 Quarkus）不受影响，仍全绿。
+- **根因（实测）**：**两个会话都占用了 V366 版本号**，且测试库记录的那个脚本已不在任何工作区：
+
+  | 位置 | V366 是什么 |
+  |---|---|
+  | 测试库 `cpq_db`.`flyway_schema_history` | `V366__widen_amount_columns_to_scale6.sql`（success=t，已应用） |
+  | 主工作区 | `V366__task0729_costing_element_price_field.sql`（**git 未跟踪**，另一任务的文件） |
+  | 各 worktree | 两个都没有（worktree 是干净 checkout，带不走未跟踪文件） |
+
+  Flyway 在 classpath 找不到 history 里记录的 `V366__widen_amount_columns_to_scale6.sql` → validate 失败。
+- **A/B 归因**：主仓 master（零 task-0801 改动）跑 `CardSnapshotDryRunParityTest` **同样失败、同样异常** → pre-existing。
+- **⚠️ 处置纪律**：**不要**擅自改共享测试库已应用的迁移记录，也**不要**删除他人未跟踪的迁移文件
+  （见历史教训：已应用到共享库的迁移禁改名改号；删 untracked 孤儿迁移会让 8081 重启 validate 挂）。
+  正确修法二选一：①找回 `V366__widen_amount_columns_to_scale6.sql` 并提交进版本库；
+  ②与占号的另一方协商重排版本号后，同步修正 `flyway_schema_history`。**须由知情人处理，不是顺手能做的。**
+- **关联**：与 [[BL-0094]] 同属"回归验证能力被环境问题侵蚀"一类——一个让白名单测试恒红，一个让集成测试全起不来，
+  合并效果是**后端回归网基本失效**，每次改动都要靠人工 A/B 归因，成本高且易误判。建议一并排期。
+- **依赖**：无。**预估规模**：S（定位已完成，剩下是协调与执行）
+- **验收要点**：①`@QuarkusTest` 能正常启动；②`flyway_schema_history` 与版本库中的迁移文件一一对应，无孤儿记录。

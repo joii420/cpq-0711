@@ -267,7 +267,9 @@ interface Props {
 - 「清空表达式」按钮**移出**本组件 → 到右栏（Task F5）。相应地 `onClearExpression` prop 从 `TabFieldMatrix` 移除。
 - `tabComparable()` **保持同路径导出**（`tabFieldMatrix.test.ts` 依赖）。
 
-**完成判据**：`npx vitest run src/pages/template/tabjoin/tabFieldMatrix.test.ts` 全绿；用 `核价模板1`（35 页签）目测卡片不再挤压长字段名。
+**完成判据**：`npx vitest run src/pages/template/tabjoin/tabFieldMatrix.test.ts` 全绿；用**组件目录「核价模板」**（同目录 18 个 ACTIVE 组件，本库最大目录）目测卡片不再挤压长字段名。
+
+> ⚠️ **测试数据口径（2026-08-01 更正，见需求说明 §11.1 F3）**：本抽屉左栏页签集 = `ComponentTabDefService.tabDefsForComponent` 按 **`directoryId` 取同目录 ACTIVE 组件**，**与模板无关**。任务书初稿引用的「核价模板1 有 35 页签」是模板级口径，**作废**。验证一律用**组件目录**维度：核价模板 18 / 施耐德-1-BUG 11 / 施耐德-1 8 / 罗克韦尔 7。
 
 ---
 
@@ -321,6 +323,35 @@ props 建议：`{ expression, onChange, tabDefs, selfRowKeyFields, enforceMappab
 
 - 登录：`admin` / `Admin@2026`。**已知坑**：E2E 反复跑可能把 admin 置为 `INACTIVE`，登录失败时用 SQL 改回 `ACTIVE` 再跑。
 - 入口路径：组件管理页 → 选一个 **NORMAL** 组件 → 公式列表 → 点「编辑/添加」开抽屉。选择器约定见 `docs/E2E测试方法.md`。
+
+> ✅ **以下 selector 已由技术总监在真实浏览器跑通（2026-08-01，F2 验收时实测），直接复用，不要重新摸索**：
+> ```ts
+> // 登录（API 直登，比走 UI 快且稳）
+> await page.request.post('/api/cpq/auth/login', { data: { username: 'admin', password: 'Admin@2026' } });
+> // 进组件管理页 → 搜索 → 点卡片
+> await page.goto('/components');
+> await page.getByPlaceholder('🔍 搜索组件名 / 编码').fill('COMP-0088');
+> await page.locator('.cmm-card').filter({ hasText: 'COMP-0088' }).first().click();
+> // 开公式抽屉
+> await page.getByRole('tab', { name: '公式' }).click();
+> await page.getByRole('button', { name: '添加公式' }).click();
+> await page.locator('.ant-table-tbody tr').last().getByRole('button', { name: '配置' }).click();
+> const drawer = page.locator('.ant-drawer').filter({ hasText: '配置页签连表公式' }).last();
+> // 公式框与括号 span
+> const editor = drawer.locator('.tabjoin-formula-rich-input');
+> editor.locator('span.par');      // 括号（class 含 p0~p3 深度色）
+> editor.locator('.parHit');       // 配对高亮（光标停括号旁时应恰为 2 个）
+> editor.locator('span.parErr');   // 未闭合/多余括号
+> ```
+> 🚨 **保存按钮的坑**：antd 会把**双字按钮**文本渲染成「保 存」（中间插一个空格），因此
+> `getByRole('button', { name: '保存' })` **永远匹配不到**（会超时 15s 而非报错，极易误判成功能 bug）。
+> 定位保存按钮请用 **`drawer.locator('button.ant-btn-primary')`**。同理「取 消」也带空格。
+>
+> **已实测通过的断言样例**（F2 验收实跑输出，可作为 F6 的期望值参考）：
+> - 输入 `((((1))))` → `span.par` 的 class 依次为 `p0 p1 p2 p3 p3 p2 p1 p0`
+> - 光标停在第 3 个 `(` 后 → `.parHit` 数量 **恰为 2**，`data-paren-idx` 为一对配对下标
+> - 输入 `SUM([投料.金额]` → `span.parErr` 数量 **1**，且 `button.ant-btn-primary` 的 `isDisabled()` 为 **true**
+> - 输入 `SUM([投料.金额])` → 光标移到 `(` 后 → 连打 `0123456789` → `textContent` 为 `SUM(0123456789投料·金额)`（**10 字符按序落在 `(` 之后、引用块之前**，这是 AC-12 的判定）
 - 本 spec **不依赖报价单夹具**，因此不受 BL-0078「E2E 夹具集体失效」影响 —— 若你发现它依赖了某张具体报价单，说明入口走错了。
 - 运行：`npx playwright test --config=e2e/playwright.config.ts e2e/tabjoin-formula-drawer.spec.ts --reporter=list`
 
@@ -343,7 +374,10 @@ curl -s --noproxy '*' -o /dev/null -w '%{http_code}\n' \
 # 对 TabFieldPanel.tsx / FormulaEditorPanel.tsx / TabFieldMatrix.tsx / FormulaRichInput.tsx 重复
 
 # ③ 单测全绿（含既有用例，一个都不能挂）
-npx vitest run src/pages/template/
+#    ⚠️ 必须带上 formulaSerialize.test.ts —— 它在 src/pages/component/ 下，不在 template 目录里，
+#       但它是本次改动的强相关回归面（公式串解析）。只跑 src/pages/template/ 会漏掉 182 条断言。
+npx vitest run src/pages/template/ src/pages/component/formulaSerialize.test.ts
+#    基线（技术总监实测）：批 1（F1+F3）完成后 = 6 files / 248 tests 全绿。只能升不能降。
 
 # ④ 死代码清零
 /usr/bin/grep -rn "sampleCardsByComponent\|dryRunByComponent\|dryRunToken\|SampleCardPicker\|试算" cpq-frontend/src/pages/template cpq-frontend/src/services
