@@ -1154,6 +1154,18 @@ public class CardSnapshotService {
      *
      * @return tabs 数组；无冻结结构 / 形状异常 / 读取失败 → {@code null}（调用方回退模板快照）
      */
+    /**
+     * 报价侧算值的**唯一配置源入口**：优先建单时冻结的结构，缺失回退模板快照。
+     *
+     * <p>报价侧所有算值路径（首次物化 / 草稿刷新 / 单元格编辑 / 存草稿投影 / 公式试算）
+     * 必须经此取配置，否则就会重演「一条路径读冻结结构、另一条读会自动刷新的模板快照」
+     * 导致的同卡双值（卡片小计 214 vs 报价总额 14）。新增算值路径时一并接这里。
+     */
+    private JsonNode loadQuoteTabsForValues(UUID quotationId, UUID templateId) {
+        JsonNode frozen = loadFrozenQuoteTabs(quotationId);
+        return frozen != null ? frozen : loadComponentsSnapshot(templateId);
+    }
+
     private JsonNode loadFrozenQuoteTabs(UUID quotationId) {
         if (quotationId == null) return null;
         try {
@@ -2180,7 +2192,7 @@ public class CardSnapshotService {
             // status 从 q.status 取；open() 内建冻结判定，非 DRAFT 时 pendingOwner()=null（AC-10）。
             UUID _pqPrev = QuotePendingScope.open(q.id, q.status);
             try {
-                JsonNode snapshot = loadComponentsSnapshot(q.customerTemplateId);
+                JsonNode snapshot = loadQuoteTabsForValues(q.id, q.customerTemplateId);
                 if (snapshot == null) return;
 
                 // 1. 重查基础值（报价模板 driver 组件 expand 种子；非树页签走平铺实时展开）
@@ -2311,7 +2323,7 @@ public class CardSnapshotService {
             if (q == null || q.customerTemplateId == null) return null;
             if (!"DRAFT".equals(q.status)) return null; // 仅草稿态可编辑
 
-            JsonNode snapshot = loadComponentsSnapshot(q.customerTemplateId);
+            JsonNode snapshot = loadQuoteTabsForValues(q.id, q.customerTemplateId);
             if (snapshot == null) return null;
 
             // 从已存快照重建 baseRows + editRows（不重新 expand，编辑只动 editRows）
@@ -2453,7 +2465,7 @@ public class CardSnapshotService {
             if (li == null) return null;
             Quotation q = Quotation.findById(li.quotationId);
             if (q == null || q.customerTemplateId == null || !"DRAFT".equals(q.status)) return null;
-            JsonNode snapshot = loadComponentsSnapshot(q.customerTemplateId);
+            JsonNode snapshot = loadQuoteTabsForValues(q.id, q.customerTemplateId);
             if (snapshot == null) return null;
 
             // 关键：用「已存 baseRows」(extractBaseRowsByComp,与前端算墓碑 fp 同源)而非重 expand。
@@ -2808,7 +2820,7 @@ public class CardSnapshotService {
         // dryRunTokenRows 恒走 q.customerTemplateId（报价侧公式 dry-run 预览），无核价对等入口。
         UUID _pqPrev = QuotePendingScope.open(q.id, q.status);
         try {
-            JsonNode snapshot = loadComponentsSnapshot(q.customerTemplateId);
+            JsonNode snapshot = loadQuoteTabsForValues(q.id, q.customerTemplateId);
             if (snapshot == null || !snapshot.isArray()) {
                 throw new IllegalStateException("模板 components_snapshot 缺失 tid=" + q.customerTemplateId);
             }
