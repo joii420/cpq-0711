@@ -273,6 +273,14 @@ public class CardSnapshotService {
                     tabNode.putArray("rowKeyFields");
                 }
 
+                // formula_assignments：公式指派（列名 → 公式名）。buildCardValues 走冻结结构算值时
+                // FormulaCalculator.calculate 的第 3 参直接读它，缺了则该 tab 所有指派公式失效（列恒空）。
+                // 键名保持 snake_case 与模板 snapshot 一致——FormulaCalculator 按此名读取，不做双读。
+                JsonNode fa = tab.path("formula_assignments");
+                if (fa != null && fa.isObject()) {
+                    tabNode.set("formula_assignments", fa.deepCopy());
+                }
+
                 // fields 映射（snapshot 用 field_type，结构用 fieldType；AP-39 datasource_binding 保留）
                 ArrayNode fieldsNode = tabNode.putArray("fields");
                 for (JsonNode f : tab.path("fields")) {
@@ -1060,16 +1068,27 @@ public class CardSnapshotService {
     String buildCardValues(QuotationLineItem li, UUID templateId, CardValuesPrefetch prefetch) {
         if (li == null || li.id == null || templateId == null) return null;
         try {
-            // 1. 模板 components_snapshot（tab 顺序 + componentId）—— prefetch 命中复用已解析，否则逐行读+解析
-            JsonNode snapshot = (prefetch != null) ? prefetch.templateSnapshotById.get(templateId) : null;
+            // 1. 配置源：**优先用建单时冻结的 quotation_view_structure**（严格冻结语义）。
+            //
+            //    为什么不能直接用 template.components_snapshot：结构创建即冻（68fed021「草稿默认冻结」），
+            //    前端渲染与它算 li.subtotal 全读这份冻结结构；而模板快照会随组件保存自动刷新
+            //    （ComponentService → refreshSnapshotsByComponent）。两者一旦分叉——例如给组件新加
+            //    conditional_formula——就会出现「后端按新配置算出卡片小计 214、前端按冻结配置算出
+            //    总额 14」这种同卡双值。配置源归一到冻结结构后，两侧恒等。
+            //
+            //    冻结结构缺失（首次组装尚未 ensureStructure / 历史单）→ 回退模板快照（旧行为，零破坏）。
+            JsonNode snapshot = loadFrozenQuoteTabs(li.quotationId);
             if (snapshot == null) {
-                @SuppressWarnings("unchecked")
-                var tmplRows = em.createNativeQuery(
-                    "SELECT components_snapshot FROM template WHERE id = :tid")
-                    .setParameter("tid", templateId)
-                    .getResultList();
-                if (tmplRows.isEmpty() || tmplRows.get(0) == null) return null;
-                snapshot = MAPPER.readTree(tmplRows.get(0).toString());
+                snapshot = (prefetch != null) ? prefetch.templateSnapshotById.get(templateId) : null;
+                if (snapshot == null) {
+                    @SuppressWarnings("unchecked")
+                    var tmplRows = em.createNativeQuery(
+                        "SELECT components_snapshot FROM template WHERE id = :tid")
+                        .setParameter("tid", templateId)
+                        .getResultList();
+                    if (tmplRows.isEmpty() || tmplRows.get(0) == null) return null;
+                    snapshot = MAPPER.readTree(tmplRows.get(0).toString());
+                }
             }
             if (snapshot == null || !snapshot.isArray()) return null;
 
@@ -1120,6 +1139,37 @@ public class CardSnapshotService {
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] buildCardValues failed li=%s tmpl=%s: %s",
                 li.id, templateId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 读建单时冻结的报价卡结构的 {@code tabs} 数组，供 {@link #buildCardValues} 按冻结配置算值。
+     *
+     * <p><b>为什么可以直接喂给 FormulaCalculator</b>：结构是 camelCase 投影（{@code fieldType} /
+     * {@code isSubtotal} / {@code conditionalFormula} …），而 FormulaCalculator 的 field 访问器
+     * 全部 camelCase + snake_case 双读（见其「field 访问器」段），tab 级只消费
+     * {@code componentId / componentCode / componentType / tabName / fields / formulas /
+     * formula_assignments} 七个键，结构侧均已搬运。
+     *
+     * @return tabs 数组；无冻结结构 / 形状异常 / 读取失败 → {@code null}（调用方回退模板快照）
+     */
+    private JsonNode loadFrozenQuoteTabs(UUID quotationId) {
+        if (quotationId == null) return null;
+        try {
+            @SuppressWarnings("unchecked")
+            var rows = em.createNativeQuery(
+                "SELECT structure FROM quotation_view_structure " +
+                "WHERE quotation_id = :qid AND view_kind = :kind")
+                .setParameter("qid", quotationId)
+                .setParameter("kind", "QUOTE_CARD")
+                .getResultList();
+            if (rows.isEmpty() || rows.get(0) == null) return null;
+            JsonNode tabs = MAPPER.readTree(rows.get(0).toString()).path("tabs");
+            return tabs.isArray() ? tabs : null;
+        } catch (Exception e) {
+            // 读不到不阻断算值：回退模板快照（与本方法引入前的行为一致）
+            LOG.warnf("[card-snapshot] loadFrozenQuoteTabs failed q=%s: %s", quotationId, e.getMessage());
             return null;
         }
     }
