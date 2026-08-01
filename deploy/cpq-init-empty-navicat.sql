@@ -7,6 +7,12 @@
 --       · V362: 退役暂存表 pending_material_master_staging(连同其 pkey/唯一约束/索引一并删除)
 --       · V363: 补 costing_bom_tree_config 双侧递归 SQL 种子(COSTING/QUOTE 各 1 条 active)
 --                基线仍停在 362 —— V363 幂等, 连 Quarkus 时会再跑一次并自愈(脚本漏配也能补回)
+-- 同步: 2026-07-31  已增量同步 V364 / V365 两处加列(同 V363 处理: 基线仍停在 362, 两者均
+--                   ADD COLUMN IF NOT EXISTS, 连 Quarkus 时重跑幂等自愈)
+--       · V364: quotation 增列 product_category_id uuid(建单时的产品分类, 不追溯客户改绑)
+--       · V365: material_bom_item 增列 material_ratio numeric(18,6)(材质占比, 小数口径 0.3=30%,
+--                仅材质行 characteristic='RECIPE' 有值)
+--       · 内网无 Flyway 时, 这两列的等价增量脚本见 deploy/2026-07-31-quotation-product-category-and-material-ratio.sql
 -- 内容: 128 业务活表 + flyway_schema_history + 3 活视图 + 4 函数 + 1 个 admin 用户
 --       + 2 条 BOM 树递归 SQL 配置(唯一的业务配置种子, 见文件末尾)
 -- 不含: task-0723 的 _drop 废弃表/视图、Flyway 历史迁移记录(仅留 1 行 baseline)、业务数据
@@ -1621,6 +1627,7 @@ CREATE TABLE public.material_bom_item (
     production_no character varying(32),
     pending_quotation_id uuid,
     pending_supersedes uuid[],
+    material_ratio numeric(18,6),
     CONSTRAINT chk_material_bom_item_system_type CHECK (((system_type)::text = ANY (ARRAY[('QUOTE'::character varying)::text, ('PRICING'::character varying)::text, ('BOTH'::character varying)::text])))
 );
 
@@ -2472,6 +2479,7 @@ CREATE TABLE public.quotation (
     submission_snapshot jsonb,
     costing_card_template_id uuid,
     bound_global_variables_snapshot jsonb DEFAULT '[]'::jsonb NOT NULL,
+    product_category_id uuid,
     CONSTRAINT chk_q_priority CHECK (((priority)::text = ANY (ARRAY[('HIGH'::character varying)::text, ('MEDIUM'::character varying)::text, ('LOW'::character varying)::text]))),
     CONSTRAINT chk_q_stage CHECK (((stage)::text = ANY (ARRAY[('INITIAL_CONTACT'::character varying)::text, ('REQUIREMENT_CONFIRMATION'::character varying)::text, ('QUOTING'::character varying)::text, ('NEGOTIATION'::character varying)::text]))),
     CONSTRAINT chk_q_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'SUBMITTED'::character varying, 'APPROVED'::character varying, 'SENT'::character varying, 'ACCEPTED'::character varying, 'REJECTED'::character varying, 'EXPIRED'::character varying, 'CANCELLED'::character varying, 'COSTING_REJECTED'::character varying])::text[]))),
