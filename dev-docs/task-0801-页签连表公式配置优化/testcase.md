@@ -472,16 +472,16 @@
 - **⚠️ 关键约束（技术总监裁决 2026-08-01，务必遵守，避免后续执行者误判）**：
   - backtask B2 **必须在前端交付后再跑一次**，用于跟"改版前基线"做前后对比，这才是本条真正的回归证据。
   - **当前已跑的那一次只是"改版前基线"**，不得单独作为"回归通过"的证据引用——因为改版前基线通过不代表前端改动后不会破坏东西，两次都要跑、都要看。
-  - **已知基线结果**（后端工程师已跑过一次，技术总监转述）：task-0801 相关 **21 个测试全绿**；`QuotePendingScopeOpenWhitelistTest` 有 1 处失败，技术总监已做 A/B 归因为 **pre-existing**（与本任务无关），已登记 **BL-0092**，**不计入本任务判定**。执行者看到这条失败**不要**误认为是本次改动引入的回归。
+  - **已知基线结果**（后端工程师已跑过一次，技术总监转述）：task-0801 相关 **21 个测试全绿**；`QuotePendingScopeOpenWhitelistTest` 有 1 处失败，技术总监已做 A/B 归因为 **pre-existing**（与本任务无关），已登记 **BL-0094**，**不计入本任务判定**。执行者看到这条失败**不要**误认为是本次改动引入的回归。
 - **步骤**：
   ```bash
   cd cpq-backend
   ./mvnw test -Dtest='TabJoinPlanEvaluator*Test,CardSnapshotDryRunParityTest,QuotePendingScopeOpenWhitelistTest' -q
   ```
   前端 Task F1~F6 交付、PR 合并前，**再跑一次**同一命令，与「改版前基线」的结果逐条对比。
-- **预期**：改版后结果与改版前基线**一致或更好**——`TabJoinPlanEvaluator*Test` + `CardSnapshotDryRunParityTest` 全绿（本次后端零代码改动，理论上必然通过）；`QuotePendingScopeOpenWhitelistTest` 允许仍是 BL-0092 那 1 处已知失败（不算回归），但**不能出现新的、BL-0092 之外的失败**。
+- **预期**：改版后结果与改版前基线**一致或更好**——`TabJoinPlanEvaluator*Test` + `CardSnapshotDryRunParityTest` 全绿（本次后端零代码改动，理论上必然通过）；`QuotePendingScopeOpenWhitelistTest` 允许仍是 BL-0094 那 1 处已知失败（不算回归），但**不能出现新的、BL-0094 之外的失败**。
 - **判定方式**：mvn test
-- **当前可执行性**：现在可执行一半（**改版前基线已由后端工程师跑过**：21 绿 + 1 处已归因 BL-0092 的 pre-existing 失败，本文档未亲自重跑此基线，数据来自技术总监转述，非本测试工程师亲测）；**改版后对比待前端交付后执行**，届时由 backtask B2 或测试工程师任一方补跑均可，但必须是"改版后"这一次，不能只拿改版前那次充数
+- **当前可执行性**：现在可执行一半（**改版前基线已由后端工程师跑过**：21 绿 + 1 处已归因 BL-0094 的 pre-existing 失败，本文档未亲自重跑此基线，数据来自技术总监转述，非本测试工程师亲测）；**改版后对比待前端交付后执行**，届时由 backtask B2 或测试工程师任一方补跑均可，但必须是"改版后"这一次，不能只拿改版前那次充数
 
 ---
 
@@ -544,7 +544,7 @@ cpq-frontend/src/pages/template/TabJoinFormulaDrawer.tsx:458: ...dryRunByCompone
 cpq-frontend/src/pages/template/TabJoinFormulaDrawer.tsx:469: ...dryRunToken(...)
 cpq-frontend/src/pages/template/tabjoin/SampleCardPicker.tsx:19: ...sampleCardsByComponent(...)
 ```
-与需求 §1 B1 表格核实结论一致（`TabJoinPlanEvaluator` 仅 `ExcelViewService` 一个调用方；三端点仍在；前端目前仍有调用，待前端改版后清零）。BACKLOG 已登记 `BL-0091`（master commit `ba566696`，backtask B4 已完成）。
+与需求 §1 B1 表格核实结论一致（`TabJoinPlanEvaluator` 仅 `ExcelViewService` 一个调用方；三端点仍在；前端目前仍有调用，待前端改版后清零）。BACKLOG 已登记 `BL-0093`（master commit `ba566696`，backtask B4 已完成）。
 
 ### 4.6 后端端点 401 基线（对应 TC-38）
 
@@ -619,7 +619,7 @@ dry-run-token  -> 401
 
 4. **TC-40（后端测试回归）我未实际执行**：backtask.md 把这条明确列为后端工程师任务 B2，我判断由后端工程师在其任务清单内执行更符合职责边界（避免测试工程师和后端工程师各跑一遍 `mvnw test` 浪费 CI 时间），仅在本文档登记为回归项。如果技术总监要求测试工程师独立复核（不依赖后端自报），我可以随时补跑，请明确是否需要。
 
-   > **技术总监裁决**：维持你的判断，后端工程师执行，你不重复跑。但补一条关键约束：后端 B2 **必须在前端交付后再跑一次**做前后对比，当前已跑的那次只是**改版前基线**，不得作为回归证据引用。后端工程师已跑过一次基线，结果：task-0801 相关 21 个测试全绿；`QuotePendingScopeOpenWhitelistTest` 失败已由我 A/B 归因为 pre-existing，登记为 **BL-0092**，与本任务无关，**不计入本任务判定**。已按此要求更新 TC-40（见 §3.11），避免后续执行者误判。
+   > **技术总监裁决**：维持你的判断，后端工程师执行，你不重复跑。但补一条关键约束：后端 B2 **必须在前端交付后再跑一次**做前后对比，当前已跑的那次只是**改版前基线**，不得作为回归证据引用。后端工程师已跑过一次基线，结果：task-0801 相关 21 个测试全绿；`QuotePendingScopeOpenWhitelistTest` 失败已由我 A/B 归因为 pre-existing，登记为 **BL-0094**，与本任务无关，**不计入本任务判定**。已按此要求更新 TC-40（见 §3.11），避免后续执行者误判。
 
 ---
 
@@ -628,7 +628,7 @@ dry-run-token  -> 401
 - 用例总数：**43 条**（TC-01 ~ TC-40 + 2026-08-01 技术总监裁决后补齐的 TC-04b / TC-04c / TC-23b 共 3 条，含 4 条不占 AC 编号的补充用例 TC-37~TC-40）
 - AC 覆盖：**22 / 22 条全覆盖**（AC-1 ~ AC-22 每条至少 1 条用例，AC-16 覆盖最密集共 7 条；AC-4 由原来的 1 条间接引用补强为 3 条 TC-04b/TC-04c/TC-31；AC-19 由 3 条补强为 4 条含 A/B 对照 TC-23b）
 - §6 覆盖缺口清单原 4 处缺口（①AC-4 基础用例 ②AC-16 数据口径 ③AC-6 双层滚动断言 ④AC-19 A/B 对照）**本轮已全部补齐/裁决闭环**，缺口清单当前无遗留项
-- 现在可执行且已实测：TC-07（部分/基线）、TC-21（硬判定部分/基线）、TC-33（部分/基线）、TC-35、TC-37、TC-38（共 6 条已跑出真实基线数据，详见 §4）；TC-40 的"改版前基线"已由后端工程师跑出（技术总监转述：21 绿 + 1 处 BL-0092 pre-existing 失败），但非本测试工程师亲测，故仍计入"待执行"
+- 现在可执行且已实测：TC-07（部分/基线）、TC-21（硬判定部分/基线）、TC-33（部分/基线）、TC-35、TC-37、TC-38（共 6 条已跑出真实基线数据，详见 §4）；TC-40 的"改版前基线"已由后端工程师跑出（技术总监转述：21 绿 + 1 处 BL-0094 pre-existing 失败），但非本测试工程师亲测，故仍计入"待执行"
 - 待前端交付后执行：其余 37 条（含 TC-40 的"改版后对比"待后端工程师执行，未占用测试工程师执行位）
 
 ---
@@ -683,8 +683,8 @@ dry-run-token  -> 401
 
 | 问题 | 影响 | 归因 |
 |---|---|---|
-| [[BL-0092]] `QuotePendingScopeOpenWhitelistTest` 恒红 | 后端白名单测试失败 | master 上同样失败；注释文本被纯文本匹配误判 |
-| [[BL-0093]] 测试库 V366 撞号 | **所有 `@QuarkusTest` 起不来**（`FlywayValidateException`） | master 上同样失败；两个会话都占用 V366 且 history 记录的脚本不在任何工作区 |
+| [[BL-0094]] `QuotePendingScopeOpenWhitelistTest` 恒红 | 后端白名单测试失败 | master 上同样失败；注释文本被纯文本匹配误判 |
+| [[BL-0095]] 测试库 V366 撞号 | **所有 `@QuarkusTest` 起不来**（`FlywayValidateException`） | master 上同样失败；两个会话都占用 V366 且 history 记录的脚本不在任何工作区 |
 | E2E global-setup 中 alice/bob 认证超时 | 不影响本任务（本 spec 用 API 直登 admin） | 既有夹具问题，与 [[BL-0078]] 同源 |
 
 **后端纯单测不受影响**：`TabJoinPlanEvaluator` 三个测试类 **20 个全绿**。
