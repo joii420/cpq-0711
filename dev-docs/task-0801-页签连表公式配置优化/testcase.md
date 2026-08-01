@@ -630,3 +630,61 @@ dry-run-token  -> 401
 - §6 覆盖缺口清单原 4 处缺口（①AC-4 基础用例 ②AC-16 数据口径 ③AC-6 双层滚动断言 ④AC-19 A/B 对照）**本轮已全部补齐/裁决闭环**，缺口清单当前无遗留项
 - 现在可执行且已实测：TC-07（部分/基线）、TC-21（硬判定部分/基线）、TC-33（部分/基线）、TC-35、TC-37、TC-38（共 6 条已跑出真实基线数据，详见 §4）；TC-40 的"改版前基线"已由后端工程师跑出（技术总监转述：21 绿 + 1 处 BL-0092 pre-existing 失败），但非本测试工程师亲测，故仍计入"待执行"
 - 待前端交付后执行：其余 37 条（含 TC-40 的"改版后对比"待后端工程师执行，未占用测试工程师执行位）
+
+---
+
+## 9. 🔬 执行结果（2026-08-01，技术总监实测）
+
+> 执行环境：worktree 临时 vite（端口 5225，跑的是本分支代码，**非**主工作区共享的 5174）+ 系统 Chrome + Playwright。
+> 后端 8081 / DB `cpq_db_0724` 共享。所有数字均为真实运行输出，非推断。
+
+### 9.1 AC 执行汇总（22/22）
+
+| AC | 结果 | 关键实测证据 |
+|---|---|---|
+| AC-1 | ✅ PASS | @1920 两栏 `638.391px / 881.594px` = **42.0% : 58.0%**；两栏 `overflow:auto`、`maxHeight:842.4px`(=78vh) |
+| AC-2 | ✅ PASS | TC-02 长字段名（COMP-0054 模具工装成本）不挤压 |
+| AC-3 | ✅ PASS | 先输 `1+` 再点 chip → `1+汇率`，token 落光标处 |
+| AC-4 | ✅ PASS | 置灰 chip **87 个**、`cursor:not-allowed`、点击不插入；hover 提示原文完整：`行键 [销售料号+组成料号] 与宿主 [销售料号+工序编号] 不可比；可改用「物料BOM(总计)」` |
+| AC-5 | ✅ PASS | Drawer 内 `试算\|dryRun\|SampleCard` grep **0 命中**（`/usr/bin/grep -a` 复核）；NORMAL/EXCEL/SUBTOTAL 三类 UI 均无试算文案 |
+| AC-6 | ✅ PASS | 空态 **188**（minHeight170+padding）→ 300字符 188（保持最小）→ 1200字符 **306**（自动增高）→ 4000字符 **358** 封顶（content 340+padding16+border2），`scrollHeight 952 > clientHeight 356` 内部滚动；封顶后 SUMIF 折叠标题**仍可滚到**（无双层滚动死区） |
+| AC-7 | ✅ PASS | `((((1))))` → class 序列 **p0 p1 p2 p3 p3 p2 p1 p0** |
+| AC-8 | ✅ PASS | 光标停括号旁 → `.parHit` **恰 2 个**，`data-paren-idx=[2,6]` |
+| AC-9 | ✅ PASS | `SUM([投料.金额]` → `parErr` 1 个 + 保存按钮 `disabled=true` |
+| AC-10 | ✅ PASS | **存量公式实证**：`[组装加工费(总计)]` 所在公式括号 span **6 个、错误 0**，`(总计)` 未参与计数；另 TC-14 构造用例亦通过 |
+| AC-11 | ✅ PASS | TC-15 `{}` 路径块内圆括号不计数（UI 层）+ `scanParens` 单测 |
+| AC-12 | ✅ PASS | 在 `(` 后连打 10 字符 → `SUM(0123456789投料·金额)`，落在引用块**之前** |
+| AC-13 | ⚠️ **部分 PASS** | composition 事件序列期间 **DOM 未被拆毁、0 pageerror**（`composingRef` 门控生效）。**真实操作系统输入法候选框行为无法在无头环境自动化**，建议上线前人工点一次 |
+| AC-14 | ✅ PASS | 组件 `c616b06f`「管理费」：回显 6 个引用块顺序正确；保存后 `updated_at` **01:29:08 → 11:13:48**（证明真落库）、md5 仍 `5a55096dd360e8db9432eb8f339f8d17`、formulas 列**逐字节一致** |
+| AC-15 | ✅ PASS | `tsc --noEmit` 0 错误；5 个改动 `.tsx` 经 worktree 临时 vite transform 均 **200** |
+| AC-16 | ✅ PASS | 未搜索 **18** 卡（= 目录真实规模）；规则①搜「物料BOM」→1 卡 chip 全留(20)；规则②搜「工序编号」→10 卡、产能卡排除总计后仅剩「工序编号」；规则③无匹配→0 卡 + 占位文案；清空→恢复 18 卡；搜索态置灰与 Tooltip 不变 |
+| AC-17 | ✅ PASS | 非搜索态插入 `设备折旧成本·折旧单价` == 搜索态插入 `设备折旧成本·折旧单价`，**逐字一致** |
+| AC-18 | ✅ PASS | @1920 宽 **1520**；@1366 宽 1257(=92vw)、**2 栏**、无横向滚动；@1000 **降 1 栏**、无横向滚动 |
+| AC-19 | ✅ PASS | EXCEL(COMP-0099) SUMIF 区 **0**、SUBTOTAL(COMP-0098) **1**、NORMAL(COMP-0088) 插入成功 `SUMIF(材料成本·料号 = 'X', 材料成本·项次)`；三类均 0 pageerror。**TC-23b A/B 对照**：同一不可比引用 `[BOM.净重]` 在 EXCEL 下背景 `rgb(230,244,255)`（蓝、不标红）、在 NORMAL 下 `rgb(255,241,240)`+文字 `rgb(207,19,34)`（红）→ `enforceMappable` 分支正确 |
+| AC-20 | ✅ PASS | `vitest run src/pages/template/ + formulaSerialize.test.ts` → **6 files / 248 tests** 全绿 |
+| AC-21 | ✅ PASS | `formulaBracketCheck.test.ts` **20 passed**（原 13 条原样 + 新增 7 条 `scanParens` 场景） |
+| AC-22 | ✅ PASS | `e2e/tabjoin-formula-drawer.spec.ts` **2 passed** |
+
+### 9.2 ⚠️ 用例自身的缺陷（4 处，均非产品问题）
+
+执行期发现并已修正。**记录在此以免后人重复踩坑**：
+
+| # | 用例 | 现象 | 真因 | 处置 |
+|---|---|---|---|---|
+| 1 | TC-04b / TC-31 | hover 后 `.ant-tooltip-inner` 文本为空 → 误判「Tooltip 丢失」 | **antd v5 走 CSS-in-JS**，`.ant-tooltip-inner` 匹配不到（实测 count=0），但 `.ant-tooltip` 节点存在且文本完整 | 改用 `.ant-tooltip` 整节点文本 + 真实鼠标轨迹触发 hover。**A/B 复核**：master 上同样 `count=0`，证明与本次改动无关 |
+| 2 | TC-26 | 断言「命中明细 chip 数 == 1」，实际 2（含 `产能(总计)`） | locator 抓到整个卡片体（含总计组），而 §4.2.5 规定总计 chip 在规则②下**必须保留**（TC-27 专验此条）→ **用例自相矛盾** | 断言前排除 `(总计)` chip |
+| 3 | TC-09 | 断言「5 行后高度 > 空态」，实际相等（均 188） | `minHeight:170`，5 行×24px=120px **撑不破最小高度** → 不增高才是对的 | 改用 300/1200/4000 字符三档测量，验证「保持最小 → 增高 → 封顶+内部滚动」 |
+| 4 | TC-22 | 选下拉项 15s 超时，元素 resolved 到 `<div title="BOM">` | `.ant-select-item-option` **全局匹配**，抓到上一个已隐藏下拉的残留项 | 限定 `.ant-select-dropdown:not(.ant-select-dropdown-hidden)` 内选择 |
+
+> 🚨 **教训**：这 4 处若直接采信用例的 FAIL，会向上误报 4 个并不存在的产品缺陷。
+> **任何 FAIL 都必须先区分「产品坏了」与「用例写错了」**，手段是 A/B（同脚本打改版前后两个环境）+ 读断言逻辑，不能只看红绿。
+
+### 9.3 环境类问题（与本任务无关，已登记 BACKLOG）
+
+| 问题 | 影响 | 归因 |
+|---|---|---|
+| [[BL-0092]] `QuotePendingScopeOpenWhitelistTest` 恒红 | 后端白名单测试失败 | master 上同样失败；注释文本被纯文本匹配误判 |
+| [[BL-0093]] 测试库 V366 撞号 | **所有 `@QuarkusTest` 起不来**（`FlywayValidateException`） | master 上同样失败；两个会话都占用 V366 且 history 记录的脚本不在任何工作区 |
+| E2E global-setup 中 alice/bob 认证超时 | 不影响本任务（本 spec 用 API 直登 admin） | 既有夹具问题，与 [[BL-0078]] 同源 |
+
+**后端纯单测不受影响**：`TabJoinPlanEvaluator` 三个测试类 **20 个全绿**。
