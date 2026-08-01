@@ -52,6 +52,7 @@
 |---|---|
 | `field_type` | 见 §3.3 推导表（用户不填，你推） |
 | `is_amount` | 金额/费用/单价 列 = `true`（`content="0"`；汇率 `content="1"`） |
+| `is_subtotal` | **R7 联动（2026-07-27）**：`is_amount=true` 且**语义可沿行累加**（费用/金额/成本/加工费）→ **一并 `true`**；**单价/汇率/费率等单位量纲的金额 → 保持 `false`**（累加无业务含义，会污染页签合计与 `component_subtotal`）。判据：*该列各行相加是不是有含义的钱数？* 详见 `2-组件与字段.md` R7 |
 | 别名（视图 SELECT）| 业务列 `_字段名`（如 `_销售料号`）；**唯 `hf_part_no` 驱动键不加 `_`**；**唯 接价格策略的 单价/货币 别名 = 字段名逐字、不加 `_`**（硬约束） |
 | `default_source.path` | 报价：`$view._字段名`（价格策略列 `$view.字段名`）；核价：改用 `basic_data_path` |
 | 数据来源（写进 SQL）| 见 §3.5 tabType→V6 映射；「备注」「接价格策略」覆盖 |
@@ -62,7 +63,7 @@
 | 字段名特征 | field_type |
 |---|---|
 | 料号/编号/名称/规格/单位/货币/工序/要素/类型 | `INPUT_TEXT` |
-| 量/率/%/重/单价/费用/金额/厚度/汇率/数量/项次/序号 | `INPUT_NUMBER`（金额性 `is_amount=true`） |
+| 量/率/%/重/单价/费用/金额/厚度/汇率/数量/项次/序号 | `INPUT_NUMBER`（金额性 `is_amount=true`，再按 R7 判 `is_subtotal`） |
 | 备注写「手填/无源」 | `INPUT_*` 无 `default_source`（`content` 给默认） |
 | 备注写「公式/合计/小计」 | `FORMULA` |
 
@@ -93,13 +94,18 @@
 ### 3.5 数据来源映射（tabType → V6 表.列，标准字段）
 
 - **主件（$cp_view，`material_master`+`material_customer_map`）**：销售料号=`mm.material_no`(=hf_part_no)、客户料号名称=`mcm.customer_material_name`、客户产品编号=`mcm.customer_product_no`、报价货币=`mcm.quote_currency`、单位=`mm.standard_unit`、汇率=`mcm.exchange_rate`。
-- **材质元素（$mc_view，`element_bom_item`）**：销售料号=`ebi.material_no`(=hf_part_no)、材质=`COALESCE(mr.name,mm2.material_name)` via `ebi.material_part_no`（**一号多材质：逐行取，禁子查询聚合；材质进行键**）、〔材质料号=`ebi.material_part_no`——**模板有这列才出成 `_材质料号` 可见列**；没有就只当 JOIN 键 + `ORDER BY` 键用〕、项次=`ebi.seq_no`、元素=`ebi.component_no`、组成含量=`ebi.content`、损耗率=`ebi.scrap_rate`、毛重=`ebi.composition_qty`、毛用量单位=`ebi.issue_unit`（⛔BOM发料单位，被毛重 `unit_source_field` 引用做 g→KG，勿改指价格单位）、**元素单价/货币 见 §3.6**。
+- **材质元素（$mc_view，`element_bom_item`）**：销售料号=`ebi.material_no`(=hf_part_no)、材质=`COALESCE(mr.name,mm2.material_name)` via `ebi.material_part_no`（**一号多材质：逐行取，禁子查询聚合；材质进行键**）、〔材质料号=`ebi.material_part_no`——**模板有这列才出成 `_材质料号` 可见列**；没有就只当 JOIN 键 + `ORDER BY` 键用〕、项次=`ebi.seq_no`、元素=`ebi.component_no`、组成含量=`ebi.content`、损耗率=`ebi.scrap_rate`、毛重=`ebi.composition_qty`、毛用量单位=`ebi.issue_unit`（⛔BOM发料单位，被毛重 `unit_source_field` 引用做 g→KG，勿改指价格单位）、**元素单价/货币 见 §3.6**、〔产出类型=**`material_bom_item.component_usage_type`** 经相关标量子查询按 `(material_no, component_no=ebi.material_part_no)` 取——🚨**禁绑 `ebi.component_usage_type`**，`element_bom_item` 上的同名列无写入路径、恒为空；详见 `报价侧.md §7.2.1`〕。
 - **零件·加工费（$jg_view，`unit_price` price_type='PROCESS'）**：hf_part_no=`up.finished_material_no`(按成品收窄本行)、料号=`up.code`(零件料号)、工序=`COALESCE(pm.process_name, up.operation_no)`（`process_master` via `process_no=operation_no`）、单价=`up.pricing_price`、单位=`up.unit`、项次=`up.seq_no`。
 - **外购件（$wg_view，`material_bom_item` characteristic='OUTSOURCED'）**：销售料号=`mbi.material_no`(=hf_part_no)、〔组成件料号=`mbi.component_no`——**模板有这列才出可见列**，没有就只当取名 JOIN 键〕、组成件名称=`COALESCE(mm.material_name, mr.name)` via component_no、组成数量=`mbi.composition_qty`、组成单位=`mbi.issue_unit`。
 - **BOM 树（树契约，见 §4.2）**：视图输出 `material_no`(子)/`parent_no`(父)，走 `costing_bom_tree_config`。
 - **费用类（tabType 空，`unit_price` OTHER/PLATING）**：hf_part_no=`code`/`finished_material_no`、要素=`cost_type`、费用=`pricing_price`。
 
 > 未在表内的字段 = 非标准 → 看「备注」；仍不明 → 问用户（业务白话）。
+
+> 🚨 **同名列陷阱（2026-07-28 施耐德-1 实证，绑错一次）**：**列名对得上 ≠ 该列有数据**。同一个列名常在多张 V6 表上并存，但**只有一张有写入路径**——典型：`component_usage_type` 同时长在 `material_bom_item`（有 3 个写点）和 `element_bom_item`（**0 个写点，恒 NULL**）上。绑错**不报错、dry-run 过、expand-driver 也正常**，只是这列永远空。
+> **落笔前两步必查**（见 §6 自检第 2 项）：① `grep -rn "<列名>" cpq-backend/src/main/java --include=*.java` 找到写它的 handler，**确认它写的目标表就是你要绑的那张** ② 查库非空率。
+
+
 
 ### 3.6 元素单价接价格策略（字段勾「接价格策略」时）
 
@@ -151,10 +157,20 @@
 ## 6. 自检（宣告完成前必跑）
 
 0. **字段与模板列 1:1**：组件 `fields[]` 逐条对得上 sheet 的列，**没有凭空新增的列**（尤其别为 `partNoField` 造料号列，§3.4）；视图 SELECT 输出列与字段一一对应，无没人绑的死列。
-1. 每个 `$view` PUT 返 200（dry-run 过）。
-2. `refresh-snapshot`（`POST /configure-product/quotations/{id}/refresh-snapshot`）后查 `quotation_line_component_data.snapshot_rows`：各页签行数对、料号/单价出数、树页签父子挂接、多行页签按 sort_field 正序。
-3. 元素单价接价格策略：有价出数 / 无价返 NULL（不是 0、不掉行）/ 换没配策略客户行数不变。
-4. 字段类型未改 → 不触发 AP-44；改了 ConfigureSnapshotService/ComponentService 等协议文件才跑 E2E。
+1. **金额/小计成对自检（R7）**：列出所有 `is_amount=true` 的字段，逐个确认 `is_subtotal` —— 可累加的（费用/金额/成本/加工费）必须 `true`，单位量纲的（单价/汇率/费率）必须 `false`。**漏勾** = 页签合计少算该列；**错勾单价** = 页签合计被单价之和污染。两种都不报错、只体现为金额不对，必须逐条看。
+2. **每个绑定列必须有写入路径（"列名对得上 ≠ 有数据"）**：对视图里每个非平凡的 V6 列，逐个确认它**真的会被写**——
+   ```bash
+   # ① 谁写它？确认目标表 = 你绑的那张表（同名列常跨表并存，只有一张有写点）
+   /usr/bin/grep -rn "<列名>" cpq-backend/src/main/java --include=*.java
+   # ② 非空率：全 0 要追问是「数据没填」还是「根本没人写」——后者是配置错，必须改绑
+   psql ... -c "SELECT count(*) FILTER (WHERE <列> IS NOT NULL) AS 有值, count(*) AS 总行 FROM <表>;"
+   ```
+   两者**结论不同处理**：无写点 → **改绑到真正有写点的那张表**（配置错）；有写点但全空 → 数据缺口，配置照旧 + 在交付说明里写明。
+   ⚠️ 这类错**全程静默**：不报编译错、`$view` dry-run 照过、`expand-driver` 照常返回，只是该列永远空白。反面教材见 `报价侧.md §7.2.1`（`ebi.component_usage_type`）。
+3. 每个 `$view` PUT 返 200（dry-run 过）。
+4. `refresh-snapshot`（`POST /configure-product/quotations/{id}/refresh-snapshot`）后查 `quotation_line_component_data.snapshot_rows`：各页签行数对、料号/单价出数、树页签父子挂接、多行页签按 sort_field 正序。
+5. 元素单价接价格策略：有价出数 / 无价返 NULL（不是 0、不掉行）/ 换没配策略客户行数不变。
+6. 字段类型未改 → 不触发 AP-44；改了 ConfigureSnapshotService/ComponentService 等协议文件才跑 E2E。
 
 ## 7. 详细规则索引
 

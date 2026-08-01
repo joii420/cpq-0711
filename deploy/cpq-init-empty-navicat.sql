@@ -2,8 +2,15 @@
 -- CPQ 测试数据库 · 全空 Schema + 仅 admin 用户
 -- ------------------------------------------------------------
 -- 生成: 2026-07-24  源库 cpq_db (task-0723 废弃表清理后的活表结构)
--- 内容: 129 活表 + 3 活视图 + 4 函数 + 仅 1 个 admin 用户
--- 不含: task-0723 的 _drop 废弃表/视图、Flyway 迁移记录、任何业务数据
+-- 同步: 2026-07-26  已增量同步至 Flyway V362(基线号同步上调为 362), 与 cpq_db_0724 表/列全等
+--       · V362: material_master 增列 pending_quotation_id + 部分索引 ix_material_master_pending
+--       · V362: 退役暂存表 pending_material_master_staging(连同其 pkey/唯一约束/索引一并删除)
+--       · V363: 补 costing_bom_tree_config 双侧递归 SQL 种子(COSTING/QUOTE 各 1 条 active)
+--                基线仍停在 362 —— V363 幂等, 连 Quarkus 时会再跑一次并自愈(脚本漏配也能补回)
+-- 内容: 128 业务活表 + flyway_schema_history + 3 活视图 + 4 函数 + 1 个 admin 用户
+--       + 2 条 BOM 树递归 SQL 配置(唯一的业务配置种子, 见文件末尾)
+-- 不含: task-0723 的 _drop 废弃表/视图、Flyway 历史迁移记录(仅留 1 行 baseline)、业务数据
+--       (报价单/料号/BOM/模板等一律不含)
 -- admin 登录: 用户名 admin  /  密码 Admin@2026
 -- ------------------------------------------------------------
 -- Navicat 导入步骤:
@@ -1666,7 +1673,8 @@ CREATE TABLE public.material_master (
     updated_by uuid,
     material_recipe_id uuid,
     config_fingerprint character varying(80),
-    production_no character varying(32)
+    production_no character varying(32),
+    pending_quotation_id uuid
 );
 
 
@@ -1861,29 +1869,6 @@ CREATE TABLE public.password_reset_token (
     expires_at timestamp(6) with time zone NOT NULL,
     used_at timestamp(6) with time zone,
     created_at timestamp(6) with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: pending_material_master_staging; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.pending_material_master_staging (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    quotation_id uuid NOT NULL,
-    material_no character varying(20) NOT NULL,
-    material_name character varying(100),
-    specification character varying(100),
-    dimension character varying(100),
-    old_material_no character varying(50),
-    material_type character varying(50),
-    usage_property character varying(50),
-    unit_weight numeric(18,6),
-    standard_unit character varying(20),
-    production_no character varying(32),
-    created_at timestamp(6) with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp(6) with time zone DEFAULT now() NOT NULL,
-    updated_by uuid
 );
 
 
@@ -3943,14 +3928,6 @@ ALTER TABLE ONLY public.password_reset_token
 
 
 --
--- Name: pending_material_master_staging pending_material_master_staging_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.pending_material_master_staging
-    ADD CONSTRAINT pending_material_master_staging_pkey PRIMARY KEY (id);
-
-
---
 -- Name: plating_fee plating_fee_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4540,14 +4517,6 @@ ALTER TABLE ONLY public.element
 
 ALTER TABLE ONLY public.import_mapping_template
     ADD CONSTRAINT uq_excel_template_mapping UNIQUE (excel_template_id, template_id);
-
-
---
--- Name: pending_material_master_staging uq_pmm_staging_quotation_material; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.pending_material_master_staging
-    ADD CONSTRAINT uq_pmm_staging_quotation_material UNIQUE (quotation_id, material_no);
 
 
 --
@@ -6124,6 +6093,13 @@ CREATE INDEX ix_material_bom_pending ON public.material_bom USING btree (pending
 
 
 --
+-- Name: ix_material_master_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_material_master_pending ON public.material_master USING btree (pending_quotation_id) WHERE (pending_quotation_id IS NOT NULL);
+
+
+--
 -- Name: ix_mcm_pending; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6135,13 +6111,6 @@ CREATE INDEX ix_mcm_pending ON public.material_customer_map USING btree (pending
 --
 
 CREATE INDEX ix_plating_scheme_pending ON public.plating_scheme USING btree (pending_quotation_id) WHERE (pending_quotation_id IS NOT NULL);
-
-
---
--- Name: ix_pmm_staging_quotation; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_pmm_staging_quotation ON public.pending_material_master_staging USING btree (quotation_id);
 
 
 --
@@ -7442,8 +7411,83 @@ INSERT INTO public."user" VALUES ('d1e1147c-a639-4156-aeac-9f938a65ad05', 'admin
 
 
 -- ============================================================
--- Flyway 基线记录 (V361)
--- 新库带此 baseline: 连 Quarkus 时 flyway 跳过 V1~V361 历史重放, 只跑 V362+ 新迁移
+-- BOM 树递归 SQL 配置 (双侧各 1 条 active) —— 与 Flyway V363 同源
+-- ------------------------------------------------------------
+-- 该表全库原无 INSERT 迁移种子, 配置只活在 DB 里, 是 task-0725 根因③(环境重建即丢)。
+-- 此处随建库脚本带上, 使「导完脚本尚未连 Quarkus」的库也已可渲染 BOM 树。
+-- 幂等: WHERE NOT EXISTS 守卫; 与 V363 重复应用互不冲突(基线停在 362, V363 仍会跑并自愈)。
+-- 口径: COSTING = system_type PRICING + customer_no _GLOBAL_ + versionFilter 宏(版本感知,
+--       走 API 保存会被 dry-run 校验打回, 只能经迁移/直连改);
+--       QUOTE = system_type QUOTE + is_current + 客户口径自根传播。
+-- 注: 此处用标准单引号转义而非美元引号, 规避 Navicat 解析中断(与文件末尾函数体同一考量)。
+-- ============================================================
+INSERT INTO public.costing_bom_tree_config (name, "usage", is_active, sql_template)
+SELECT '核价BOM树-PRICING口径v1(versionFilter 版本感知)', 'COSTING', true, 'WITH RECURSIVE bom AS (
+  SELECT
+    p::text                                        AS root_no,
+    p::text                                        AS material_no,
+    (SELECT bv.bom_version::text
+       FROM material_bom_item bv
+      WHERE bv.material_no = p
+        AND bv.customer_no = ''_GLOBAL_''
+        AND bv.system_type = ''PRICING''
+        AND :versionFilter(bv.is_current, bv.bom_version, bv.material_no)
+      LIMIT 1)                                     AS bom_version,
+    NULL::text                                     AS parent_no,
+    p::text                                        AS node_path
+  FROM unnest(:production_part_nos) AS p
+
+  UNION ALL
+
+  SELECT
+    b.root_no,
+    ch.component_no::text                          AS material_no,
+    (SELECT bv.bom_version::text
+       FROM material_bom_item bv
+      WHERE bv.material_no = ch.component_no
+        AND bv.customer_no = ''_GLOBAL_''
+        AND bv.system_type = ''PRICING''
+        AND :versionFilter(bv.is_current, bv.bom_version, bv.material_no)
+      LIMIT 1)                                     AS bom_version,
+    ch.material_no::text                           AS parent_no,
+    (b.node_path || ''/'' || ch.component_no)::text  AS node_path
+  FROM material_bom_item ch
+  JOIN bom b ON ch.material_no = b.material_no
+  WHERE ch.customer_no  = ''_GLOBAL_''
+    AND ch.system_type  = ''PRICING''
+    AND :versionFilter(ch.is_current, ch.bom_version, ch.material_no)
+    AND ch.component_no IS NOT NULL
+) CYCLE material_no SET is_cyc USING cyc_path
+SELECT root_no, material_no, bom_version, parent_no, node_path
+FROM bom'
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.costing_bom_tree_config WHERE "usage" = 'COSTING' AND is_active
+);
+
+INSERT INTO public.costing_bom_tree_config (name, "usage", is_active, sql_template)
+SELECT '报价BOM树-QUOTE口径v1', 'QUOTE', true, 'WITH RECURSIVE bom AS (
+  SELECT p::text AS root_no, p::text AS material_no,
+    (SELECT bv.bom_version::text FROM material_bom_item bv WHERE bv.material_no=p AND bv.system_type=''QUOTE'' AND bv.is_current LIMIT 1) AS bom_version,
+    NULL::text AS parent_no, p::text AS node_path,
+    (SELECT bc.customer_no FROM material_bom_item bc WHERE bc.material_no=p AND bc.system_type=''QUOTE'' AND bc.is_current ORDER BY bc.customer_no LIMIT 1) AS _cust
+  FROM unnest(:production_part_nos) AS p
+  UNION ALL
+  SELECT b.root_no, ch.component_no::text,
+    (SELECT bv.bom_version::text FROM material_bom_item bv WHERE bv.material_no=ch.component_no AND bv.system_type=''QUOTE'' AND bv.is_current LIMIT 1),
+    ch.material_no::text, (b.node_path||''/''||ch.component_no)::text, b._cust
+  FROM material_bom_item ch JOIN bom b ON ch.material_no=b.material_no AND ch.customer_no=b._cust
+  WHERE ch.system_type=''QUOTE'' AND ch.is_current AND ch.component_no IS NOT NULL
+) CYCLE material_no SET is_cyc USING cyc_path
+SELECT root_no, material_no, bom_version, parent_no, node_path FROM bom'
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.costing_bom_tree_config WHERE "usage" = 'QUOTE' AND is_active
+);
+
+-- ============================================================
+-- Flyway 基线记录 (V362)
+-- 新库带此 baseline: 连 Quarkus 时 flyway 跳过 V1~V362 历史重放, 只跑 V363+ 新迁移
+-- ⚠️ 本脚本的表结构已含 V362(material_master.pending_quotation_id + 暂存表退役),
+--    基线号必须 >= 362, 否则 Quarkus 启动会重放 V362 并因"列已存在"而失败
 -- ============================================================
 CREATE TABLE public.flyway_schema_history (
     installed_rank integer NOT NULL,
@@ -7461,7 +7505,7 @@ CREATE TABLE public.flyway_schema_history (
 CREATE INDEX flyway_schema_history_s_idx ON public.flyway_schema_history USING btree (success);
 INSERT INTO public.flyway_schema_history
   (installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success)
-VALUES (1, '361', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', NULL, 'baseline', now(), 0, true);
+VALUES (1, '362', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', NULL, 'baseline', now(), 0, true);
 
 
 -- ============================================================
@@ -7472,3 +7516,6 @@ VALUES (1, '361', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', 
 -- SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public';     -- 期望 4
 -- SELECT username, role FROM "user";                                                                       -- 期望仅 admin / SYSTEM_ADMIN
 -- SELECT count(*) FROM "user";                                                                             -- 期望 1
+-- SELECT "usage", is_active, length(sql_template) FROM costing_bom_tree_config ORDER BY "usage";           -- 期望 COSTING/QUOTE 各 1 行 t，长度 1586/1063
+-- SELECT md5(sql_template) FROM costing_bom_tree_config WHERE "usage"='COSTING' AND is_active;             -- 期望 784e51ed0f9584261d97b388924b2f2c
+-- SELECT md5(sql_template) FROM costing_bom_tree_config WHERE "usage"='QUOTE'   AND is_active;             -- 期望 0b8e458ad3a4ce544c78020e03ba850b

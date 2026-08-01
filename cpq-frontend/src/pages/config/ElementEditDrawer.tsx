@@ -145,7 +145,8 @@ const ElementEditDrawer: React.FC<Props> = ({ open, editing, onClose, onSaved })
       {/* task-0722 · F2：各源最新价格 —— 仅编辑态展示，只读，不在此录价（录价统一走「价格导入」） */}
       {editing && (
         <>
-          <Divider orientation="left" orientationMargin={0} style={{ margin: '22px 0 12px', fontSize: 14 }}>
+          {/* antd v6：标题位置由 titlePlacement 承担，orientation 已收窄为 'horizontal' | 'vertical' */}
+          <Divider titlePlacement="left" orientationMargin={0} style={{ margin: '22px 0 12px', fontSize: 14 }}>
             各源最新价格
           </Divider>
           {latestLoading ? (

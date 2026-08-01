@@ -2315,7 +2315,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                 }}
                 title="点击查看生产料号详情"
               >
-                生产料号: {item.productPartNo}
+                料号: {item.productPartNo}
               </span>
             </Popover>
           )}

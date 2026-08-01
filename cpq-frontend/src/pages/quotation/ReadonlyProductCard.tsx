@@ -486,7 +486,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
               className="qt-sku-badge"
               style={{ background: '#e6f4ff', color: '#0958d9', border: '1px solid #91caff' }}
             >
-              生产料号: {lineItem.productPartNo}
+              料号: {lineItem.productPartNo}
             </span>
           )}
           {lineItem.snapshot?.productCategory && (

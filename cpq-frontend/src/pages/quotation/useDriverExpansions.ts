@@ -155,13 +155,16 @@ export interface UseDriverExpansionsResult {
 
 export function useDriverExpansions(
   lineItems: LineItem[],
-  customerId?: string,
+  // 下面两个参数写成 `string | undefined` 而非 `?:`,是为了让末位的 usage 保持「必传」:
+  // TS1016 不允许必选参数排在可选参数之后。语义不变(仍可传 undefined),但调用方
+  // 必须显式占位,从而杜绝漏传 usage 导致 pending 可见域被静默按默认值放开。
+  customerId: string | undefined,
   /**
    * 当前报价单 id(2026-05-30 统一渲染协议新增)。
    * 透传到 batchExpand task,后端绑成 :quotationId 让所有 mirror 视图统一使用。
-   * 老调用者(详情页等)不传时,后端走老协议(:lineItemId 标量),向后兼容。
+   * 老调用者(详情页等)传 undefined 时,后端走老协议(:lineItemId 标量),向后兼容。
    */
-  quotationId?: string,
+  quotationId: string | undefined,
   /**
    * task-0725: 本次展开所属业务侧,透传到每个 batchExpand task(tasks[].usage),
    * 供后端决定是否为该 task 打开报价侧 pending 可见域(QuotePendingScope.open)。

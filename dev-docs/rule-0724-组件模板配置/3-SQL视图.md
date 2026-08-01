@@ -148,12 +148,14 @@ WITH RECURSIVE bom_closure AS (
   SELECT DISTINCT b.material_no AS root_no, b.material_no AS node_no, 0 AS lvl
   FROM material_bom_item b
   WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode
-  UNION ALL
+  UNION                                     -- ⚠️ UNION 不是 UNION ALL（铁律3）
   SELECT c.root_no, b.component_no, c.lvl + 1
   FROM bom_closure c
     JOIN material_bom_item b ON b.material_no = c.node_no
   WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode
     AND c.lvl < 10                          -- 深度上限，防环
+), bom_closure_d AS (                       -- ⚠️ (root,node) 唯一化（铁律3）
+  SELECT root_no, node_no, MIN(lvl) AS lvl FROM bom_closure GROUP BY root_no, node_no
 )
 SELECT
   COALESCE(cl.root_no, ebi.material_no) AS hf_part_no,   -- 驱动键 = 闭包根料号（兜底见铁律2）
@@ -161,7 +163,7 @@ SELECT
   ...
   ebi.material_no      AS _归属料号,                      -- 强烈建议：见 §3.8.4
 FROM element_bom_item ebi                                 -- ★ 白名单表必须在顶层 FROM（铁律1）
-  LEFT JOIN bom_closure cl ON cl.node_no = ebi.material_no
+  LEFT JOIN bom_closure_d cl ON cl.node_no = ebi.material_no
   LEFT JOIN ...
 WHERE ebi.system_type = 'QUOTE' AND ebi.is_current AND ebi.customer_no = :customerCode
 ORDER BY COALESCE(cl.lvl, 0), ebi.material_no, ebi.seq_no
@@ -175,7 +177,7 @@ ORDER BY COALESCE(cl.lvl, 0), ebi.material_no, ebi.seq_no
 | 外购件 | `material_bom_item mbi` | `cl.node_no = mbi.material_no` |
 | 零件（加工费） | `unit_price up` | `cl.node_no = up.finished_material_no` |
 
-### 3.8.3 两条铁律（漏一条必出事）
+### 3.8.3 三条铁律（漏一条必出事）
 
 **🔒 铁律 1：白名单表必须出现在顶层 `FROM`，不能写成 `FROM bom_closure JOIN <白名单表>`**
 
@@ -192,6 +194,21 @@ ERROR: each UNION query must have the same number of columns
 
 `bom_closure` 的 base case 来自 `material_bom_item`，所以**没有任何 BOM 行的单料产品根本不在闭包里**。若写成 `JOIN`（内连接）或直接取 `cl.root_no`，这类产品的页签会**整个变空白**——一个比原问题更严重的回归。
 
+**🔒 铁律 3：闭包必须对 `(root_no, node_no)` 去重 —— 递归用 `UNION`（非 `UNION ALL`）+ 再加一层 `bom_closure_d` 聚合**（2026-07-26 实测补，原 §3.8.2 写法有此缺陷）
+
+`material_bom_item` 里**同一对父子经常并存多条边**（现网实证：`0363-2607000009 → 0363-2607000007` 同时有 `characteristic='RECIPE'` 和 `'ASSEMBLY'` 各一行）。闭包按边递归 ⇒ 同一 `(root,node)` 产生 N 条路径 ⇒ `LEFT JOIN bom_closure` 把数据行**成倍复制**：
+
+```
+-- 未去重（旧写法）：材料成本 root=0363-2607000009 → 8 行（每行重复 2 次）
+-- 去重后         ：4 行 ✅（Ag/Cu 来自 …07，Ag/Ni 来自 …08）
+```
+
+危害不止"多几行"：**页签小计直接翻倍**（成本算错，静默无报错）；深 BOM 里重复边逐层相乘还会让闭包行数指数膨胀。
+- 递归段用 `UNION` 消掉同层重复路径（顺带防环）；
+- 再加 `bom_closure_d AS (SELECT root_no,node_no,MIN(lvl) lvl FROM bom_closure GROUP BY root_no,node_no)`，消掉**跨层**多路径；数据页签一律 `LEFT JOIN bom_closure_d`。
+- 加第二个 CTE **不破铁律 1**：顶层 `FROM` 仍是白名单表，实测框架照常把谓词包成 `... ) inner_q WHERE inner_q.hf_part_no = ANY(?)`，锚点注入正常。
+- ⚠️ **`costing_bom_tree_config` 的树递归 SQL 有同源风险**（重复边 → 树里同一子件出现两次），另行核。
+
 ### 3.8.4 建议输出 `_归属料号`
 
 闭包会把不同来源的行拉到同一页签，**同一料号可能出现多行**。实测案例：
@@ -204,6 +221,30 @@ ERROR: each UNION query must have the same number of columns
 两行的料号与名称**完全相同**，只有数量和归属不同。不输出归属料号的话用户无法分辨，会当成脏数据。
 
 ⚠️ 若把归属料号做成可见字段，**必须同步把它加进组件的 `rowKeyFields`**，否则行键撞键 → 编辑串行、末值塌缩（见 `2-组件与字段.md` 行键唯一性规则）。
+
+### 3.8.4b 🔴 铁律 4：接价格策略时，JOIN 键必须与 `hf_part_no` 输出表达式**逐字一致**（task-0729）
+
+> 2026-07-29 立。**只在"取价函数带料号维度"之后才适用** —— 即 task-0729 的 `f_material_element_price` 落地后。
+> 现行 `f_customer_element_price(:customerCode, :priceBaseDate)` 无料号维度，JOIN 只按元素符号，不受本条约束。
+
+新取价函数按 `(客户, 料号)` 查版本指针，所以 JOIN 要带料号条件。**照直觉写 `AND cep.material_no = ebi.material_no` 在闭包形态下是错的**：
+
+| 视图形态 | `hf_part_no` 输出表达式 | `ebi.material_no` 的语义 |
+|---|---|---|
+| **平铺** | `ebi.material_no AS hf_part_no` | 本行料号 ✅ |
+| **BOM 闭包**（§3.8） | `COALESCE(cl.root_no, ebi.material_no) AS hf_part_no` | **归属料号 —— 子件行上就是子件料号** ❌ |
+
+版本指针只挂在**父件（line_item 销售料号）**上 → 闭包出来的子件行 JOIN 不中 → **子件元素价不吃版本**，静默打破"升版原子性"。
+
+```sql
+ON  cep.element_code = ebi.component_no
+AND cep.material_no  = COALESCE(cl.root_no, ebi.material_no)   -- 闭包形态
+AND cep.material_no  = ebi.material_no                          -- 平铺形态
+```
+
+🚨 **两种形态并存 → 迁移脚本必须逐视图按各自 `hf_part_no` 表达式改写，禁止统一字符串替换。**
+
+**配套（task-0729 §11.15.3）**：接价格策略的组件还须配齐组件级三项 `element_code_field` / `element_price_field` / `element_currency_field`，且**取价函数别名固定为 `cep`**。见 `AGENT-配置入口.md §3.6.1`。
 
 ### 3.8.5 已知代价
 
@@ -218,3 +259,15 @@ ERROR: each UNION query must have the same number of columns
 | COMP-0028 外购件成本 | `wg_view` | 1 行 → **2 行**（+ 子件下的 `W-1001`） |
 | COMP-0029 加工费 | `jg_view` | 1 行 → **2 行**（+ 子件自身工序 `Z381`） |
 | （对照）产品 | — | 1 行 → **1 行**，未受影响 ✅ |
+
+> ⚠️ **上表三个视图落库时用的是未去重版本（无铁律 3）**：`cpq_db_0724` 当时数据每对父子只有一条边故未暴露，但换成有 `RECIPE`+`ASSEMBLY` 双边的数据（旧库 `cpq_db` CUST-1269 实测）行数会翻倍。**这三个组件的 `sql_template` 需按铁律 3 补去重**；`客户组件模板/组件导入-罗克韦尔.json`（2026-07-26 晚版）已内置去重写法，重导即可。
+
+### 3.8.7 闭包 × pending 改写：为什么闭包对「待审核数据」也成立（2026-07-26 实测）
+
+报价侧基础数据**导入后先是 pending**（`is_current=false` + `pending_quotation_id=<本单>`），审核转正才 `is_current=true`（§3.6 生效时间线）。闭包 CTE 里写的是 `WHERE b.is_current`，看上去会把 pending 数据挡在闭包外 —— **实际不会**：
+
+- `QuotePendingRewriter.rewrite` 遍历 `findTableTokens` 命中的**每一个**白名单表 token（`FROM`/`JOIN`，**不分嵌套深度**）做整表替换，并把 `is_current` 列重定义为 `(t.is_current OR t.pending_quotation_id = :pq)`。故闭包 CTE 内的 `material_bom_item`（base case 的 `FROM` 与递归段的 `JOIN`）**一并开域**，pending BOM 边照样进闭包 ⇒ 子件数据照常进平铺页签。
+- **不要**为了"看见 pending"去掉闭包里的 `is_current` —— 改写后它正是开域开关，去掉反而会让**非本单的历史版本**全涌进来。
+- 深度只影响**锚点注入**：主位表探测只认 `depth==0` 的 `FROM`，且 `hasTopLevelSetOp` / `hasGroupByAtDepth` 只在**顶层**判降级。所以铁律 3 引入的 `UNION`（在 CTE 内，depth 1）和 `bom_closure_d` 的 `GROUP BY`（depth 1）**都不会**触发"安全降级、不注入 `__v6_id`"。⚠️ 反过来，**顶层**写 `UNION`（如 BOM 树视图的"边 + 根分支"写法）会让 `anchorInjected=false` → 该页签只读展示、不参与 B5 回填，这是设计内的安全降级。
+
+**实测**（DRAFT 单 `2168c574` / `S-3120014539`，按改写器算法原样模拟）：材料成本 4 行（主件 H65/Cu + AgNi11#-Ⅰ/Ag ＋ **子件 `S-80011` 的 AgC3 的 Ag/C**）、加工费 2 行（Z380 + 子件 Z381）、外购件成本 2 行（同名「组成件1」数量 2/3，靠归属料号列区分）；元素单价接价格策略出 1850/118478，无价元素留 `NULL` 且不掉行。
