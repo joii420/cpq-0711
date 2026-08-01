@@ -345,7 +345,10 @@ curl -s --noproxy '*' -o /dev/null -w '%{http_code}\n' \
 # 对 TabFieldPanel.tsx / FormulaEditorPanel.tsx / TabFieldMatrix.tsx / FormulaRichInput.tsx 重复
 
 # ③ 单测全绿（含既有用例，一个都不能挂）
-npx vitest run src/pages/template/
+#    ⚠️ 必须带上 formulaSerialize.test.ts —— 它在 src/pages/component/ 下，不在 template 目录里，
+#       但它是本次改动的强相关回归面（公式串解析）。只跑 src/pages/template/ 会漏掉 182 条断言。
+npx vitest run src/pages/template/ src/pages/component/formulaSerialize.test.ts
+#    基线（技术总监实测）：批 1（F1+F3）完成后 = 6 files / 248 tests 全绿。只能升不能降。
 
 # ④ 死代码清零
 /usr/bin/grep -rn "sampleCardsByComponent\|dryRunByComponent\|dryRunToken\|SampleCardPicker\|试算" cpq-frontend/src/pages/template cpq-frontend/src/services
