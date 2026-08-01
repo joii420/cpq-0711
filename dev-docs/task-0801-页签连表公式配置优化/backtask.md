@@ -51,9 +51,13 @@
 # ② 3 个端点的定义位置仍在（期望：ComponentTabJoinResource 中 3 处 @Path 命中）
 /usr/bin/grep -n "@Path" cpq-backend/src/main/java/com/cpq/component/resource/ComponentTabJoinResource.java
 
-# ③ 前端确无残留调用（期望：零命中）
+# ③ 前端确无残留调用
 /usr/bin/grep -rn "sampleCardsByComponent\|dryRunByComponent\|dryRunToken" cpq-frontend/src
 ```
+
+> ⚠️ **命令③ 的期望值取决于时机**：
+> - **前端进场前**（本任务书下发时）：**必然非零命中**（4 处：service 3 个方法 + Drawer 2 处调用 + SampleCardPicker 1 处）。这是**改动前基线**，不是零改动结论被推翻，照实记录即可。
+> - **前端交付后**：期望**零命中**。届时技术总监会要求重跑本条作为 Task F3 的验收证据。
 
 > ⚠️ 本环境 `grep` 是 `ugrep -I`，会把中文注释多的大源文件**静默判为二进制返空**。凡据 grep 空结果下「无引用」结论，**必须用 `/usr/bin/grep -a` 复核一次**（已知教训，见记忆 `cpq-grep-ugrep-binary-pitfall`）。
 
