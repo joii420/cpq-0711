@@ -19,8 +19,14 @@ export function tabComparable(selfRowKeyFields: string[], sourceRowKeyFields: st
 // ──────────────────────────────────────────────
 interface Props {
   tabDefs: TabDef[];
-  expression: string;
+  /** 保留字段：本组件当前渲染逻辑未消费，仅为兼容既有调用方（TabJoinFormulaDrawer）签名 */
+  expression?: string;
   onInsert: (token: string) => void;
+  /**
+   * task-0801 F4/F5 衔接约定：本批次（F4）「清空表达式」按钮仍留在本组件内，
+   * F5 阶段会把它挪到右栏 FormulaEditorPanel，届时此 prop 从本组件移除。
+   * 本批次不得删除该 prop —— TabJoinFormulaDrawer 仍在传它。
+   */
   onClearExpression?: () => void;
   selfRowKeyFields?: string[];
 }
@@ -28,7 +34,7 @@ interface Props {
 // ──────────────────────────────────────────────
 // 主组件
 // ──────────────────────────────────────────────
-const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClearExpression, selfRowKeyFields }) => {
+const TabFieldMatrix: React.FC<Props> = ({ tabDefs, onInsert, onClearExpression, selfRowKeyFields }) => {
   if (tabDefs.length === 0) {
     return (
       <div style={{ padding: '12px 0', color: '#8a909a', fontSize: 12 }}>
@@ -61,16 +67,9 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
         )}
       </div>
 
-      {/* 矩阵区域 */}
-      <div
-        style={{
-          border: '1px solid #e5e7eb',
-          borderRadius: 8,
-          overflow: 'hidden',
-          marginTop: 4,
-        }}
-      >
-        {tabDefs.map((def, idx) => {
+      {/* 页签卡片列表（上下卡片结构：头部页签名+行键徽标 / 体部 chip 换行） */}
+      <div>
+        {tabDefs.map((def) => {
           const selfRKF = selfRowKeyFields ?? [];
           const isComparable = tabComparable(selfRKF, def.rowKeyFields ?? []);
           const sourceFiner = isComparable && (def.rowKeyFields ?? []).length > selfRKF.length;
@@ -81,24 +80,23 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
             <div
               key={def.tabKey ?? def.alias}
               style={{
-                display: 'flex',
-                alignItems: 'stretch',
-                borderBottom: idx < tabDefs.length - 1 ? '1px solid #e5e7eb' : 'none',
+                border: '1px solid #eef0f2',
+                borderRadius: 8,
+                marginBottom: 10,
+                overflow: 'hidden',
                 background: isComparable ? '#fff' : '#fafafa',
               }}
             >
-              {/* 左侧：页签名 + 行键徽标 */}
+              {/* 卡片头部：页签名（左）+ 行键徽标（右） */}
               <div
                 style={{
-                  flexShrink: 0,
-                  width: 160,
-                  background: '#f7f9fc',
-                  borderRight: '1px solid #e5e7eb',
-                  padding: '10px 12px',
                   display: 'flex',
-                  flexDirection: 'column',
-                  gap: 5,
-                  justifyContent: 'center',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '8px 11px',
+                  background: '#fafbfc',
+                  borderBottom: '1px solid #eef0f2',
+                  gap: 10,
                 }}
               >
                 <span style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.3 }}>
@@ -112,28 +110,26 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                 <span
                   style={{
                     fontSize: 11,
-                    background: '#f9f0ff',
-                    color: '#722ed1',
-                    border: '1px solid #efdbff',
-                    borderRadius: 4,
-                    padding: '1px 6px',
-                    alignSelf: 'flex-start',
+                    color: '#5b6b7c',
+                    background: '#eef4ff',
+                    border: '1px solid #d6e4ff',
+                    borderRadius: 10,
+                    padding: '1px 8px',
                     whiteSpace: 'nowrap',
+                    flexShrink: 0,
                   }}
                 >
                   行键: {def.rowKeyFields.join(' + ')}
                 </span>
               </div>
 
-              {/* 右侧：三组字段 chip */}
+              {/* 卡片体部：明细 / 小计列 / 页签总计三组，chip 换行 */}
               <div
                 style={{
-                  flex: 1,
                   padding: '9px 11px',
                   display: 'flex',
-                  gap: 7,
                   flexWrap: 'wrap',
-                  alignItems: 'flex-start',
+                  gap: 7,
                 }}
               >
                 {/* 明细组 */}
@@ -184,7 +180,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                     wrap
                     style={{
                       gap: 6,
-                      marginLeft: 10,
+                      marginLeft: 8,
                       paddingLeft: 10,
                       borderLeft: '1px dashed #e5e7eb',
                     }}
@@ -217,7 +213,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, expression, onInsert, onClea
                   wrap
                   style={{
                     gap: 6,
-                    marginLeft: 10,
+                    marginLeft: 8,
                     paddingLeft: 10,
                     borderLeft: '1px dashed #e5e7eb',
                   }}
