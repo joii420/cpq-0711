@@ -97,10 +97,11 @@ describe('formulaEngine - missing and zero values', () => {
 
   it('division by zero field → returns 0 (engine catches error)', () => {
     const tokens = [field('A'), op('/'), field('B')];
-    // B missing → 0, division by 0 → Infinity → Decimal catches
+    // B missing → 0, division by 0.
+    // task-0801：evaluateArithmetic 对除以 0 有确定性契约（G-9）—— 恒返回 0，不再依赖
+    // decimal.js 对 Infinity 的隐式兼容；断言收紧为精确值（原 [Infinity, 0] 宽松断言已可收紧）。
     const result = evaluateExpression(tokens, { A: 100 });
-    // Decimal.js handles Infinity → should not crash
-    expect([Infinity, 0]).toContain(result);
+    expect(result).toBe(0);
   });
 });
 
@@ -127,9 +128,12 @@ describe('formulaEngine - decimal precision', () => {
     expect(evaluateExpression(tokens, {})).toBe(0.3);
   });
 
-  it('rounds to 4 decimal places', () => {
+  it('task-0801: 不再中途 4 位截断 —— 除法走 DIVISION_SCALE(12) 位中间精度，非 4 位', () => {
+    // [语义变化，非 bug]：evaluateExpression 内部 toDecimalPlaces(4) 已随 task-0801 移除
+    // （中间不截断，见 formulaEngine.ts:584 注释）；除法本身仍受 evaluateArithmetic 的
+    // DIVISION_SCALE(12) 位中间精度约束（12 个 3），而不是无限精度、也不再是旧的 4 位。
     const tokens = [num('1'), op('/'), num('3')];
-    expect(evaluateExpression(tokens, {})).toBe(0.3333);
+    expect(evaluateExpression(tokens, {})).toBe(0.333333333333);
   });
 
   it('large numbers maintain precision', () => {

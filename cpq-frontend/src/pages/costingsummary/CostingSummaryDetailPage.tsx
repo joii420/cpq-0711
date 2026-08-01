@@ -21,6 +21,7 @@ import {
   type CostingSummary, type CostingSummaryOverride, type CostingSummaryResult,
 } from '../../services/costingSummaryService';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
+import { formatNumber } from '../../utils/formatNumber';
 
 const { Title, Text } = Typography;
 
@@ -229,9 +230,10 @@ const CostingSummaryDetailPage: React.FC = () => {
                   <Row gutter={[16, 16]}>
                     {results.map(r => (
                       <Col span={6} key={r.metricCode}>
+                        {/* task-0801：不再固定 4 位 toFixed，改走 formatNumber（6 位去尾零兜底），核价侧同口径 */}
                         <Statistic
                           title={r.metricLabel || r.metricCode}
-                          value={r.value != null ? Number(r.value).toFixed(4) : '-'}
+                          value={r.value != null ? (formatNumber(r.value, { isComputed: true }) ?? '-') : '-'}
                           suffix={r.currency}
                         />
                         <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>

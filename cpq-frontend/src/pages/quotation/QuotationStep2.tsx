@@ -24,6 +24,7 @@ import { applyUnitConversion, factorFor } from '../../utils/unitConversion';
 import { formatNumber } from '../../utils/formatNumber';
 import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns, sumAmountFromByCol, AMOUNT_TOTAL_KEY } from './tabTotalLines';
+import { sumDecimal, roundToDisplay } from '../../utils/precision';
 import { isCardValueFailed, getCardValueError } from './cardValueFailed';
 import { templateService } from '../../services/templateService';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
@@ -865,8 +866,12 @@ function componentKeys(comp: ComponentDataItem): string[] {
 }
 
 /**
- * 对 rows 应用 canonical 单位换算后，按 colFilter 选出目标列，逐列 Σ 行（typeof==='number'&&isFinite），
- * 结果 4dp 舍入（与后端 setScale(4,HALF_UP) 对齐）。返回 { colName → sum } Map。
+ * 对 rows 应用 canonical 单位换算后，按 colFilter 选出目标列，逐列 Σ 行（typeof==='number'&&isFinite）。
+ * 返回 { colName → sum } Map。
+ *
+ * task-0801：累加改十进制精确（sumDecimal），**不再 round4 中途截断** —— 链路一（单页签列小计，
+ * 量级 ≤10⁶）内部精确算，结果保持 number 承载，呈现精度由显示层 formatNumber（兜底 6 位）负责；
+ * 与后端 setScale(4,HALF_UP) 对齐的旧口径已随 task-0801 全面改为 6 位，不在此中途规整。
  *
  * 调用方：
  *   buildColumnSumsByComp → colFilter = is_subtotal || field_type ∈ {INPUT_NUMBER,FORMULA,DATA_SOURCE}
@@ -877,7 +882,6 @@ function sumColumnsCanonical(
   rows: Array<Record<string, any>>,
   colFilter: (f: ComponentField) => boolean,
 ): Record<string, number> {
-  const round4 = (x: number) => Math.round(x * 1e4) / 1e4;
   const targetFields = fields.filter(colFilter);
   const result: Record<string, number> = {};
   if (targetFields.length === 0) return result;
@@ -886,7 +890,7 @@ function sumColumnsCanonical(
   for (const f of targetFields) {
     const colName: string = f.name || (f as any).key || '';
     if (!colName) continue;
-    let sum = 0;
+    const values: number[] = [];
     for (const row of convRows) {
       const v = row[colName];
       // INPUT_NUMBER 等输入列在 resolvedRow 里是原始字符串（输入框写 "12"），
@@ -894,9 +898,9 @@ function sumColumnsCanonical(
       // 否则字符串被 typeof==='number' 丢成 0 → 输入列小计恒 0、改输入不变）。
       // 公式/小计列已是数字，走 number 分支不变。空/非数字 → NaN → 跳过（计 0）。
       const n = typeof v === 'number' ? v : parseFloat(v);
-      if (isFinite(n)) sum += n;
+      if (isFinite(n)) values.push(n);
     }
-    result[colName] = round4(sum);
+    result[colName] = sumDecimal(values).toNumber();
   }
   return result;
 }
@@ -1076,30 +1080,29 @@ export function subtotalsFromResolvedRows(
   rows: Array<Record<string, any>>,
   allComponentSubtotals: Record<string, number>,
 ): void {
-  // sumColumnsCanonical 内部已做 is_subtotal 过滤、applyUnitConversion canonical 换算、4dp 舍入。
+  // sumColumnsCanonical 内部已做 is_subtotal 过滤、applyUnitConversion canonical 换算，
+  // 十进制精确累加（task-0801：不再中途 4dp 舍入）。
   // 若无 is_subtotal 列，colSums 为空对象，下方循环不执行（与原有 early-return 语义一致）。
   const colSums = sumColumnsCanonical(comp.fields ?? [], rows, (f) => !!f.is_subtotal);
   if (Object.keys(colSums).length === 0) return;
 
   const keys = componentKeys(comp);
-  const round4 = (x: number) => Math.round(x * 1e4) / 1e4;
 
   // 写入 `key#colName` 键；同时累加 totalForComp（与后端 backfillSubtotalsFromResolved 对齐）
-  let totalForComp = 0;
+  // task-0801：Σ colVal 改十进制精确累加（sumDecimal），不再 round4 中途截断。
   for (const [colName, colVal] of Object.entries(colSums)) {
     for (const k of keys) {
       allComponentSubtotals[`${k}#${colName}`] = colVal;
     }
-    totalForComp += colVal;
   }
-  totalForComp = round4(totalForComp);
+  const totalForComp = sumDecimal(Object.values(colSums)).toNumber();
   // 总小计键（与 PASS1 的 componentSubtotals[comp.tabName] 对齐）—— 裸键 = Σ所有 is_subtotal 列（不变）。
   for (const k of keys) {
     allComponentSubtotals[k] = totalForComp;
   }
   // BL-0017：哨兵列键 = Σ金额列（按 resolvedRows colSums 过滤 is_amount），专供 `[页签(总计)]`。
   // 必须在此 PASS2 回填（卡片视图权威值），否则 PASS1 的哨兵键会与裸键回填不同步。
-  const amountTotalResolved = round4(sumAmountFromByCol(comp.fields, colSums));
+  const amountTotalResolved = sumAmountFromByCol(comp.fields, colSums);
   for (const k of keys) {
     allComponentSubtotals[`${k}#${AMOUNT_TOTAL_KEY}`] = amountTotalResolved;
   }
@@ -1192,9 +1195,8 @@ function computeTabSubtotal(
   // Plan 2-核心：委托按列求和后取所有小计列之和（单小计列时 = 原行为）。
   const byCol = computeTabSubtotalsByColumn(
     comp, allComponentSubtotals, quotationFields, pathCache, partNo, driverExpansion, globalVariableDefs);
-  let sum = 0;
-  for (const v of Object.values(byCol)) sum += v;
-  return sum;
+  // task-0801：Σ 列小计改十进制精确累加（sumDecimal），不再 number `+=` 链式累加。
+  return sumDecimal(Object.values(byCol)).toNumber();
 }
 
 /**
@@ -1235,13 +1237,13 @@ export function getComponentSubtotals(
       comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp),
       globalVariableDefs,
     );
-    let subtotal = 0;
     for (const [colName, colVal] of Object.entries(byCol)) {
-      subtotal += colVal;
       if (comp.componentId) componentSubtotals[`${comp.componentId}#${colName}`] = colVal;
       if (comp.componentCode) componentSubtotals[`${comp.componentCode}#${colName}`] = colVal;
       componentSubtotals[`${comp.tabName}#${colName}`] = colVal;
     }
+    // task-0801：Σ 列小计改十进制精确累加（sumDecimal），不再 number `+=` 链式累加。
+    const subtotal = sumDecimal(Object.values(byCol)).toNumber();
     // 裸键 = Σ所有 is_subtotal 列（不变，专供 previous_row_subtotal / 产品小计兜底 / 折扣）。
     if (comp.componentId) componentSubtotals[comp.componentId] = subtotal;
     if (comp.componentCode) componentSubtotals[comp.componentCode] = subtotal;
@@ -2109,9 +2111,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     });
   }, [item.componentData, executeDsQuery]);
 
-  // 金额显示：统一走 formatNumber（计算口径 2 位），保留 ¥ 前缀与空值兜底 ¥0
+  // 金额显示：统一走 formatNumber（task-0801：不再固定 2 位，走 DISPLAY_SCALE=6 兜底去尾零），
+  // 保留 ¥ 前缀与空值兜底 ¥0。
   const formatCurrency = (val: number) =>
-    `¥ ${formatNumber(val || 0, { isComputed: true, decimals: 2 }) ?? '0'}`;
+    `¥ ${formatNumber(val || 0, { isComputed: true }) ?? '0'}`;
 
   // 2026-05-17 WYSIWYG 原则: 模板配几个组件就显示几个 Tab.
   // 2026-05-19 (方案 A 用户决议, 推翻同日 QT-1409 的"自动隐藏空 Tab"策略):
@@ -2932,7 +2935,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         if (isNumericCol && colName && colName in colSums) {
                           const v = colSums[colName] ?? 0;
                           // ¥ 仅当 is_amount===true；其他数值列（含管理费/利润等 is_subtotal 但非金额列）纯数字
-                          // C2：小计为计算值 → formatNumber 计算口径（未配 decimals 兜底 2 位），金额列加 ¥ 前缀
+                          // C2：小计为计算值 → formatNumber 计算口径（未配 decimals 兜底 6 位去尾零，task-0801），金额列加 ¥ 前缀
                           const plain = v === 0 ? '0' : (formatNumber(v, { isComputed: true }) ?? '—');
                           const text = field.is_amount === true ? `¥ ${plain}` : plain;
                           return (
@@ -2954,7 +2957,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         {activeComponentBomTree && (<><td /><td /></>)}
                         <td className="qt-subtotal-label-cell">合计</td>
                         <td colSpan={activeComponent.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
-                          {/* 本页签金额合计走"其余"高精度 4 位（精度优先）；仅最终产品小计保持 formatCurrency 2 位 */}
+                          {/* task-0801：全口径统一 6 位去尾零（formatNumber 兜底），产品小计/页签合计不再分叉 2 位 vs 4 位 */}
                           {`¥ ${formatNumber(sumTabColumns(activeComponent as any, allComponentSubtotals), { isComputed: true }) ?? '0'}`}
                         </td>
                       </tr>

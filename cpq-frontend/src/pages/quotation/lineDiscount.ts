@@ -2,6 +2,7 @@ import type { LineItem } from './QuotationStep2';
 import { getComponentSubtotalsFull, evalProductSubtotalFromSubtotals } from './QuotationStep2';
 import type { DriverExpansionMap } from './useDriverExpansions';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
+import { toDecimal, roundToDisplay } from '../../utils/precision';
 
 export interface DiscountSourceOption {
   value: string;
@@ -94,14 +95,25 @@ export function computeLineDiscount(
     s1 = evalProductSubtotalFromSubtotals(item, scaled);
   }
 
-  const round4 = (n: number) => Math.round(n * 10000) / 10000;
+  // task-0801 附加修复（不在 fronttask.md F3 原始清单内，属实现期发现并追加处理，见交付说明）：
+  // s1 * qty / (s0-s1) * qty 是「折后单价 × 年用量」—— fronttask.md §1 明确定义的链路二危险操作
+  // 本身（单价 × 几十万件），产出的 lineTotalAmount/lineDiscountAmount 正是 QuotationStep3.tsx
+  // grandDiscount/grandTotal 两个 reduce 直接求和的源头。原 round4(n*qty) 用 number 乘法 + 4 位
+  // 四舍五入，在此改用 Decimal 全程精确运算，并把落库/呈现边界精度从 4 位统一到 DISPLAY_SCALE(6)
+  // ——与本任务全局精度口径对齐（旧 4 位口径已作废，见 formatNumber.ts 头部注释）。
+  // s0/base/s1（原始与折后产品小计，单件级）本身量级 ≤10⁶ 属链路一，来自
+  // evalProductSubtotalFromSubtotals（未改动），此处仅对 ×qty 这一危险步骤做 Decimal 化。
+  const qtyDec = toDecimal(qty);
+  const s0Dec = toDecimal(s0);
+  const s1Dec = toDecimal(s1);
+  const baseDec = toDecimal(base);
   return {
-    original: round4(s0),
-    discounted: round4(s1),
-    discountBaseAmount: round4(base),
-    lineDiscountAmount: round4((s0 - s1) * qty),
-    lineFinalPrice: round4(s1),
-    lineTotalAmount: round4(s1 * qty),
+    original: roundToDisplay(s0Dec),
+    discounted: roundToDisplay(s1Dec),
+    discountBaseAmount: roundToDisplay(baseDec),
+    lineDiscountAmount: roundToDisplay(s0Dec.minus(s1Dec).times(qtyDec)),
+    lineFinalPrice: roundToDisplay(s1Dec),
+    lineTotalAmount: roundToDisplay(s1Dec.times(qtyDec)),
   };
 }
 
