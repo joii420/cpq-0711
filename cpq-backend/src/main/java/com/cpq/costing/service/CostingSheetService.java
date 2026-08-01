@@ -1,6 +1,7 @@
 package com.cpq.costing.service;
 
 import com.cpq.basicdata.entity.ComparisonTag;
+import com.cpq.common.DecimalJexl;
 import com.cpq.costing.dto.ComparisonDTO;
 import com.cpq.costing.entity.CostingTemplate;
 import com.cpq.formula.EvaluationContext;
@@ -263,17 +264,20 @@ public class CostingSheetService {
         StringBuffer sb = new StringBuffer();
         while (m.find()) {
             BigDecimal v = toDecimal(cellValues.get(m.group(1)));
-            m.appendReplacement(sb, v == null ? "0" : v.toPlainString());
+            // task-0801 B3："B" 后缀（JEXL BigDecimal 字面量语法），否则仍按 Double 解析（R-3）。
+            m.appendReplacement(sb, (v == null ? "0" : v.toPlainString()) + "B");
         }
         m.appendTail(sb);
         String resolved = sb.toString();
-        // 安全校验: 只允许数字 + 运算符 + 括号 + 空白
-        if (!resolved.matches("[\\d+\\-*/().\\s]*")) {
+        // 安全校验: 只允许数字 + 运算符 + 括号 + 空白 + BigDecimal 字面量后缀 B/b
+        if (!resolved.matches("[\\d+\\-*/().\\sBb]*")) {
             return null;
         }
         try {
-            org.apache.commons.jexl3.JexlEngine jexl = new org.apache.commons.jexl3.JexlBuilder().strict(false).silent(true).create();
+            // task-0801 B3（求值点 #6）：DecimalJexl.newEngine() 统一配 BigDecimal 算术。
+            org.apache.commons.jexl3.JexlEngine jexl = DecimalJexl.newEngine();
             Object r = jexl.createExpression(resolved).evaluate(new org.apache.commons.jexl3.MapContext());
+            if (r instanceof BigDecimal bd) return bd;
             if (r instanceof Number n) return new BigDecimal(n.toString());
             return null;
         } catch (Exception e) {

@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 
 /**
  * task-0713 B5/B7 共享工具：从核价卡片值 JSON（{@link CardSnapshotService#buildCostingCardValues}
@@ -40,10 +39,13 @@ final class CostingSubtotalUtil {
         return BigDecimal.ZERO;
     }
 
-    /** 单件核价成本 × 年用量，4 位小数四舍五入。 */
+    /**
+     * 单件核价成本 × 年用量（链路二起点：产品小计 × 年用量，可冲到亿级）。
+     * task-0801 B4：不再 setScale(4) 截断，全精度返回，呈现边界由调用方统一规整到 6 位。
+     */
     static BigDecimal lineCostingAmount(String costingCardValuesJson, Integer annualVolume) {
         BigDecimal unit = extractUnitSubtotal(costingCardValuesJson);
         int qty = annualVolume != null ? annualVolume : 0;
-        return unit.multiply(BigDecimal.valueOf(qty)).setScale(4, RoundingMode.HALF_UP);
+        return unit.multiply(BigDecimal.valueOf(qty));
     }
 }

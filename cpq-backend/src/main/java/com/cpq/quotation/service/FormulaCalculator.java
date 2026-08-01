@@ -1,5 +1,6 @@
 package com.cpq.quotation.service;
 
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.quotation.rowkey.DeletedRowKeys;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -8,7 +9,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -39,7 +39,8 @@ import java.util.Map;
 public class FormulaCalculator {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final BigDecimal ZERO4 = BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+    // task-0801 B2：十进制化 —— 不再带 scale(4)，避免把 4 位截断传染给整条求值链（呈现边界由 B5 统一规整到 6 位）。
+    private static final BigDecimal ZERO = BigDecimal.ZERO;
 
     private final com.cpq.formula.predicate.ConditionPredicateEvaluator predicateEval =
             new com.cpq.formula.predicate.ConditionPredicateEvaluator();
@@ -75,18 +76,20 @@ public class FormulaCalculator {
     // ======================================================================
 
     public BigDecimal evaluateExpression(JsonNode tokens, RowContext ctx) {
-        if (tokens == null || !tokens.isArray() || tokens.size() == 0) return ZERO4;
+        if (tokens == null || !tokens.isArray() || tokens.size() == 0) return ZERO;
         RowContext c = ctx != null ? ctx : new RowContext();
         try {
             StringBuilder expr = new StringBuilder();
             for (JsonNode token : tokens) {
                 appendToken(expr, token, c);
             }
-            double result = new ArithParser(expr.toString()).parse();
-            if (Double.isNaN(result) || Double.isInfinite(result)) return ZERO4; // 除零/非有限 → 0
-            return BigDecimal.valueOf(result).setScale(4, RoundingMode.HALF_UP);
+            // task-0801 B2：ArithParser 全程 BigDecimal 精确运算，此处不再 setScale(4) 截断
+            // （呈现边界由调用方 / B5 统一规整到 6 位）。除零语义由 ArithParser 内部经
+            // PrecisionPolicy.divide() 兜底为 ZERO（不抛异常，api.md G-9），故此处不再需要
+            // Double.isNaN/isInfinite 判断。
+            return new ArithParser(expr.toString()).parse();
         } catch (Exception e) {
-            return ZERO4; // 解析异常 → 0（对齐前端 try/catch）
+            return ZERO; // 解析异常 → 0（对齐前端 try/catch）
         }
     }
 
@@ -203,10 +206,14 @@ public class FormulaCalculator {
             case "cross_tab_ref": {
                 Object v = evalCrossTab(token, ctx);
                 if (v == null) {
-                    // I-2: KAVG/KMAX/KMIN 空集 → null → 注入非法表达式 → 外层 try/catch → 0
-                    // 对齐前端 `expr += '(null.x)'` 行为
-                    expr.append("(0/0)");  // 触发 ArithParser 除零 → Double.isInfinite → ZERO4
-                    break;
+                    // I-2: KAVG/KMAX/KMIN 空集 → null → 直接抛异常 → 外层 try/catch → 整表达式塌 0
+                    // 对齐前端 `expr += '(null.x)'` 行为。
+                    // task-0801 B2 十进制化后注意：原实现注入字面量 "(0/0)"，依赖 double 除零产生
+                    // NaN 再由 evaluateExpression 的 Double.isNaN 检测触发降级；BigDecimal 化后
+                    // 除零改由 PrecisionPolicy.divide() 优雅返回 ZERO（不抛异常，api.md G-9），
+                    // "(0/0)" 这条路已不再能触发降级 —— 故直接 throw，与下面 FormulaErrorMarker
+                    // 分支手法一致，语义（整表达式塌 0）完全不变。
+                    throw new IllegalStateException("cross_tab_ref empty aggregate (I-2 KAVG/KMAX/KMIN)");
                 }
                 if (v instanceof FormulaErrorMarker) {
                     throw new IllegalStateException("cross_tab_ref multi/non-numeric");
@@ -320,23 +327,29 @@ public class FormulaCalculator {
             return java.math.BigDecimal.ZERO;
         }
 
-        List<Double> nums = new ArrayList<>(hits.size());
+        // task-0801 B4-2（审计追加发现）：原实现 toNumber()（→Double）逐项收集后再
+        // nums.stream().mapToDouble().sum()/average()/max()/min() 是双重转换 + double 累加
+        // （BigDecimal targetRowValue → double → 再累加 → BigDecimal.valueOf 包回），SUM 多项时
+        // 会在 double 二进制精度上产生可见误差（如 2.26+4.52 不精确等于 6.78）。旧代码靠
+        // evaluateExpression 顶层 setScale(4) 掩盖，B2 去掉该截断后原样冒出。改走 BigDecimal
+        // 全程收集 + PrecisionPolicy 累加/除法，MAX/MIN 直接按 BigDecimal 比较选值。
+        List<BigDecimal> nums = new ArrayList<>(hits.size());
         for (Map<String, Object> h : hits) {
             Object rv = targetRowValue(h, token, ctx);
             if (rv instanceof FormulaErrorMarker) return ERR;  // 多 source 广播 multiSrcHitErr
-            Double n = toNumber(rv);
+            BigDecimal n = toBigNumber(rv);
             if (n == null) return ERR;
             nums.add(n);
         }
-        double r;
         switch (agg) {
-            case "SUM": r = nums.stream().mapToDouble(Double::doubleValue).sum(); break;
-            case "AVG": r = nums.stream().mapToDouble(Double::doubleValue).average().orElse(0); break;  // 死分支保留
-            case "MAX": r = nums.stream().mapToDouble(Double::doubleValue).max().orElse(0); break;
-            case "MIN": r = nums.stream().mapToDouble(Double::doubleValue).min().orElse(0); break;
+            case "SUM": return PrecisionPolicy.sum(nums);
+            case "AVG": return nums.isEmpty() ? BigDecimal.ZERO
+                : PrecisionPolicy.sum(nums).divide(BigDecimal.valueOf(nums.size()),
+                    PrecisionPolicy.DIVISION_SCALE, java.math.RoundingMode.HALF_UP);  // 死分支保留
+            case "MAX": return nums.stream().max(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
+            case "MIN": return nums.stream().min(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
             default: return ERR;
         }
-        return java.math.BigDecimal.valueOf(r);
     }
 
     /**
@@ -568,9 +581,8 @@ public class FormulaCalculator {
         // Plan 2-核心：委托按列计算后求所有小计列之和（单小计列时 = 原行为）。
         Map<String, BigDecimal> byCol = computeTabSubtotalsByColumn(
             fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows, componentSubtotals);
-        BigDecimal sum = ZERO4;
-        for (BigDecimal v : byCol.values()) sum = sum.add(v);
-        return sum.setScale(4, RoundingMode.HALF_UP);
+        // task-0801 B2：BigDecimal 精确累加，不再 setScale(4) 截断（呈现边界由 B5 统一规整）。
+        return PrecisionPolicy.sum(byCol.values());
     }
 
     /** 逐列求和：每个 is_subtotal 列 → 该列各行结果之和。Plan 2-核心：多小计列。零破坏：旧签名不过滤。 */
@@ -615,16 +627,19 @@ public class FormulaCalculator {
             componentSubtotals, new HashMap<>(), new HashMap<>(), Map.of(), deleted, rowKeyFieldNames,
             cache, cacheKey);
         for (String sf : subtotalFields) {
-            double sum = 0.0;
+            // task-0801 B2：累加过程改 BigDecimal 精确求和（原 double += 几十行累加会有中间误差），
+            // 不再 setScale(4) 截断；仅在写回 out（BigDecimal 结果 map，供 componentSubtotals
+            // 落值/公式引用）时保留全精度，呈现边界由 B5 统一规整。
+            BigDecimal sum = BigDecimal.ZERO;
             for (RowResult rr : rows) {
                 // FORMULA 字段优先取 formulaValues；INPUT_NUMBER/FIXED_VALUE/BASIC_DATA 等
                 // 输入型字段的值在 fieldValues 里，formulaValues 中无此键，回退读 fieldValues。
                 Double v = rr.formulaValues.containsKey(sf)
                     ? rr.formulaValues.get(sf)
                     : rr.fieldValues.get(sf);
-                if (v != null) sum += v;
+                if (v != null) sum = sum.add(PrecisionPolicy.of(v.doubleValue()));
             }
-            out.put(sf, BigDecimal.valueOf(sum).setScale(4, RoundingMode.HALF_UP));
+            out.put(sf, sum);
         }
         return out;
     }
@@ -1900,6 +1915,36 @@ public class FormulaCalculator {
         return null;
     }
 
+    /**
+     * Object/JsonNode → BigDecimal（数字直取精确转换；字符串走 BigDecimal 精确解析；数组/列表取
+     * 首值递归；否则 null）。task-0801 B4-2：供 evalCrossTab 聚合（SUM/AVG/MAX/MIN）使用，
+     * 避免先转 Double 再做 double 累加的双重转换损耗（见 evalCrossTab 聚合分支注释）。
+     */
+    private BigDecimal toBigNumber(Object o) {
+        if (o == null) return null;
+        if (o instanceof BigDecimal bd) return bd;
+        if (o instanceof Number n) return PrecisionPolicy.of(n);
+        if (o instanceof String s) {
+            String t = s.trim();
+            if (t.isEmpty()) return null;
+            try { return new BigDecimal(t); } catch (Exception e) { return null; }
+        }
+        if (o instanceof JsonNode n) {
+            if (n.isNull() || n.isMissingNode()) return null;
+            if (n.isNumber()) return n.decimalValue();
+            if (n.isTextual()) {
+                try { return new BigDecimal(n.textValue().trim()); } catch (Exception e) { return null; }
+            }
+            if (n.isArray()) return n.size() == 0 ? null : toBigNumber(n.get(0));
+            return null;
+        }
+        if (o instanceof List) {
+            List<?> l = (List<?>) o;
+            return l.isEmpty() ? null : toBigNumber(l.get(0));
+        }
+        return null;
+    }
+
     /** Object/JsonNode → Double（数字直取；字符串 parseFloat；数组/列表取首值递归；否则 null）。 */
     private Double toNumber(Object o) {
         if (o == null) return null;
@@ -1955,7 +2000,9 @@ public class FormulaCalculator {
     }
 
     // ======================================================================
-    // 算术串求值（递归下降，double；复刻 new Function('return (expr)')）
+    // 算术串求值（递归下降，task-0801 B2 十进制化：BigDecimal；
+    // 只换数值类型，运算符优先级/一元负号/全角转换/递归结构与改造前逐行对齐，
+    // 复刻 new Function('return (expr)')）
     // ======================================================================
 
     private static class ArithParser {
@@ -1964,8 +2011,8 @@ public class FormulaCalculator {
 
         ArithParser(String s) { this.s = s; }
 
-        double parse() {
-            double v = expr();
+        BigDecimal parse() {
+            BigDecimal v = expr();
             skip();
             if (i < s.length()) throw new RuntimeException("trailing: " + s.substring(i));
             return v;
@@ -1973,41 +2020,45 @@ public class FormulaCalculator {
 
         private void skip() { while (i < s.length() && s.charAt(i) == ' ') i++; }
 
-        private double expr() {
-            double v = term();
+        private BigDecimal expr() {
+            BigDecimal v = term();
             while (true) {
                 skip();
                 if (i < s.length() && (s.charAt(i) == '+' || s.charAt(i) == '-')) {
                     char op = s.charAt(i++);
-                    double r = term();
-                    v = op == '+' ? v + r : v - r;
+                    BigDecimal r = term();
+                    // +/- 精确无损（不设 MathContext；十进制加减本就不产生舍入）
+                    v = op == '+' ? v.add(r) : v.subtract(r);
                 } else break;
             }
             return v;
         }
 
-        private double term() {
-            double v = factor();
+        private BigDecimal term() {
+            BigDecimal v = factor();
             while (true) {
                 skip();
                 if (i < s.length() && (s.charAt(i) == '*' || s.charAt(i) == '/')) {
                     char op = s.charAt(i++);
-                    double r = factor();
-                    v = op == '*' ? v * r : v / r;
+                    BigDecimal r = factor();
+                    // * 用 MathContext 约束精度/防 scale 无限增长；/ 走 PrecisionPolicy.divide()
+                    // （12 位中间精度 + 除零优雅返 0，语义对齐 api.md G-9，不抛异常）。
+                    v = op == '*' ? v.multiply(r, PrecisionPolicy.MC)
+                                  : PrecisionPolicy.divide(v, r);
                 } else break;
             }
             return v;
         }
 
-        private double factor() {
+        private BigDecimal factor() {
             skip();
             if (i >= s.length()) throw new RuntimeException("unexpected eof");
             char c = s.charAt(i);
             if (c == '+') { i++; return factor(); }
-            if (c == '-') { i++; return -factor(); }
+            if (c == '-') { i++; return factor().negate(); }
             if (c == '(') {
                 i++;
-                double v = expr();
+                BigDecimal v = expr();
                 skip();
                 if (i >= s.length() || s.charAt(i) != ')') throw new RuntimeException("missing )");
                 i++;
@@ -2016,12 +2067,13 @@ public class FormulaCalculator {
             return number();
         }
 
-        private double number() {
+        private BigDecimal number() {
             skip();
             int start = i;
             while (i < s.length() && (Character.isDigit(s.charAt(i)) || s.charAt(i) == '.')) i++;
             if (i == start) throw new RuntimeException("expected number at " + i);
-            return Double.parseDouble(s.substring(start, i));
+            // BigDecimal(String) 十进制精确解析，无 double 中转，无精度损失。
+            return new BigDecimal(s.substring(start, i));
         }
     }
 }

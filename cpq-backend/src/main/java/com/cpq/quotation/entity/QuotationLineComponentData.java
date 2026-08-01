@@ -38,7 +38,8 @@ public class QuotationLineComponentData extends PanacheEntityBase {
     @Column(name = "deleted_row_keys", columnDefinition = "jsonb")
     public String deletedRowKeys = "[]";
 
-    @Column(precision = 18, scale = 4)
+    // task-0801 B7：precision/scale 18,4 → 20,6（V366）。
+    @Column(precision = 20, scale = 6)
     public BigDecimal subtotal = BigDecimal.ZERO;
 
     @Column(name = "sort_order")

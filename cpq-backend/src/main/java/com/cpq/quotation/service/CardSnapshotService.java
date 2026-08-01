@@ -2976,32 +2976,32 @@ public class CardSnapshotService {
             rowsForSum.add(com.cpq.engine.unit.UnitConversion.convertObjectRow(fields, r));
         }
 
-        double totalSum = 0.0;
+        // task-0801 B4-2：累加过程改 BigDecimal 精确求和（原 double += 几十行累加会有中间误差，
+        // 且中途 setScale(4) 截断），只在写回 componentSubtotals（Map<String,Double>，链路一约定
+        // 承载类型不变，见 dev-docs/task-0801-公式计算精度优化/backtask.md §1）时才 .doubleValue()。
+        java.math.BigDecimal totalSum = java.math.BigDecimal.ZERO;
         for (String col : subtotalFields) {
-            double colSum = 0.0;
+            java.math.BigDecimal colSum = java.math.BigDecimal.ZERO;
             for (Map<String, Object> row : rowsForSum) {
                 Object val = row.get(col);
                 if (val == null) continue;
-                double d;
+                java.math.BigDecimal d;
                 if (val instanceof Number n) {
-                    d = n.doubleValue();
+                    d = com.cpq.common.PrecisionPolicy.of(n);
                 } else {
-                    try { d = Double.parseDouble(val.toString()); } catch (NumberFormatException ignore) { continue; }
+                    try { d = new java.math.BigDecimal(val.toString().trim()); } catch (NumberFormatException ignore) { continue; }
                 }
-                colSum += d;
+                colSum = colSum.add(d);
             }
-            java.math.BigDecimal rounded =
-                java.math.BigDecimal.valueOf(colSum).setScale(4, java.math.RoundingMode.HALF_UP);
-            double roundedDouble = rounded.doubleValue();
+            double colSumDouble = colSum.doubleValue();
             // 写 per-column 键（三种 key 形式，与 PASS1 写法对称）
-            if (!cid.isBlank()) componentSubtotals.put(cid + "#" + col, roundedDouble);
-            if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + col, roundedDouble);
-            componentSubtotals.put(tabName + "#" + col, roundedDouble);
-            totalSum += roundedDouble;
+            if (!cid.isBlank()) componentSubtotals.put(cid + "#" + col, colSumDouble);
+            if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + col, colSumDouble);
+            componentSubtotals.put(tabName + "#" + col, colSumDouble);
+            totalSum = totalSum.add(colSum);
         }
         // 回填总小计（= 所有 is_subtotal 列之和，与 PASS1 computeTabSubtotalsByColumn 逻辑对称）
-        double roundedTotal = java.math.BigDecimal.valueOf(totalSum)
-            .setScale(4, java.math.RoundingMode.HALF_UP).doubleValue();
+        double roundedTotal = totalSum.doubleValue();
         if (!cid.isBlank()) componentSubtotals.put(cid, roundedTotal);
         if (code != null && !code.isBlank()) componentSubtotals.put(code, roundedTotal);
         componentSubtotals.put(tabName, roundedTotal);

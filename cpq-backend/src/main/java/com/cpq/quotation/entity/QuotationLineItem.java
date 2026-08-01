@@ -36,7 +36,8 @@ public class QuotationLineItem extends PanacheEntityBase {
     @Column(name = "product_attribute_values", columnDefinition = "jsonb")
     public String productAttributeValues = "{}";
 
-    @Column(precision = 18, scale = 4)
+    // task-0801 B7：precision/scale 18,4 → 20,6（V366）。
+    @Column(precision = 20, scale = 6)
     public BigDecimal subtotal = BigDecimal.ZERO;
 
     @Column(name = "system_discount_rate", precision = 5, scale = 2)
@@ -61,22 +62,24 @@ public class QuotationLineItem extends PanacheEntityBase {
     @Column(name = "discount_source", length = 64)
     public String discountSource;
 
-    @Column(name = "discount_base_amount", precision = 18, scale = 4)
+    // task-0801 B7：以下 5 个金额列 precision/scale 18,4 → 20,6（V366）；
+    // discount_rate_applied 是折扣率（class C 输入值），精度不变。
+    @Column(name = "discount_base_amount", precision = 20, scale = 6)
     public BigDecimal discountBaseAmount;
 
     @Column(name = "discount_rate_applied", precision = 5, scale = 2)
     public BigDecimal discountRateApplied;
 
-    @Column(name = "line_discount_amount", precision = 18, scale = 4)
+    @Column(name = "line_discount_amount", precision = 20, scale = 6)
     public BigDecimal lineDiscountAmount;
 
-    @Column(name = "line_unit_price", precision = 18, scale = 4)
+    @Column(name = "line_unit_price", precision = 20, scale = 6)
     public BigDecimal lineUnitPrice;
 
-    @Column(name = "line_final_price", precision = 18, scale = 4)
+    @Column(name = "line_final_price", precision = 20, scale = 6)
     public BigDecimal lineFinalPrice;
 
-    @Column(name = "line_total_amount", precision = 18, scale = 4)
+    @Column(name = "line_total_amount", precision = 20, scale = 6)
     public BigDecimal lineTotalAmount;
 
     @Column(name = "discount_rule_code", length = 64)

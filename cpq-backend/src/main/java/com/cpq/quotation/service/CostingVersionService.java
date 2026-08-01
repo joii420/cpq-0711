@@ -1,5 +1,6 @@
 package com.cpq.quotation.service;
 
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
@@ -24,7 +25,6 @@ import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -441,6 +441,7 @@ public class CostingVersionService {
             String cardValues = entry != null ? entry.costingCardValues : null;
             total = total.add(CostingSubtotalUtil.lineCostingAmount(cardValues, li.annualVolume));
         }
-        return total.setScale(4, RoundingMode.HALF_UP);
+        // task-0801 B5：落库边界（写 costing_order.costing_total_amount）统一规整到 6 位。
+        return PrecisionPolicy.round(total);
     }
 }

@@ -1313,20 +1313,25 @@ public class ConfigureSnapshotService {
                                            Map<String, Double> componentSubtotals,
                                            java.util.Set<String> amountCols) {
         if (rows == null) return;
-        Map<String, Double> colSums = new LinkedHashMap<>();
+        // task-0801 B4-2（审计发现，与 CardSnapshotService#backfillSubtotalsFromResolved 同一
+        // 根因的孪生方法）：累加过程改 BigDecimal 精确求和（原 double merge 几十行累加会有中间
+        // 误差），只在写回 componentSubtotals（Map<String,Double>，链路一约定承载类型不变）时才
+        // .doubleValue()。
+        Map<String, java.math.BigDecimal> colSums = new LinkedHashMap<>();
         for (Map<String, Object> row : rows) {
             if (row == null) continue;
             for (Map.Entry<String, Object> en : row.entrySet()) {
                 if (en.getValue() instanceof Number n) {
-                    colSums.merge(en.getKey(), n.doubleValue(), Double::sum);
+                    colSums.merge(en.getKey(), com.cpq.common.PrecisionPolicy.of(n), java.math.BigDecimal::add);
                 }
             }
         }
         double amountTotal = 0.0;
-        for (Map.Entry<String, Double> e : colSums.entrySet()) {
-            if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + e.getKey(), e.getValue());
-            if (tabName != null && !tabName.isBlank()) componentSubtotals.put(tabName + "#" + e.getKey(), e.getValue());
-            if (amountCols != null && amountCols.contains(e.getKey())) amountTotal += e.getValue();
+        for (Map.Entry<String, java.math.BigDecimal> e : colSums.entrySet()) {
+            double v = e.getValue().doubleValue();
+            if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + e.getKey(), v);
+            if (tabName != null && !tabName.isBlank()) componentSubtotals.put(tabName + "#" + e.getKey(), v);
+            if (amountCols != null && amountCols.contains(e.getKey())) amountTotal += v;
         }
         // BL-0017 哨兵键(加性,不动裸键):code#__amount_total__ / tabName#__amount_total__ = Σ金额列。
         String akey = com.cpq.quotation.service.card.ComponentDataEffectiveRows.AMOUNT_TOTAL_KEY;

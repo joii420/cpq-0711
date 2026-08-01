@@ -1,5 +1,7 @@
 package com.cpq.engine.formula;
 
+import com.cpq.common.DecimalJexl;
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.globalvariable.GlobalVariableService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,7 +13,6 @@ import org.apache.commons.jexl3.*;
 import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,12 +23,10 @@ public class FormulaCalculationService {
 
     private static final Logger LOG = Logger.getLogger(FormulaCalculationService.class);
 
-    private final JexlEngine jexl = new JexlBuilder()
-            .strict(false)
-            .silent(true)
-            // P3(2026-06-26 perf):缓存已解析表达式(AST),避免逐行重复 parse;不改求值语义。
-            .cache(512)
-            .create();
+    // task-0801 B3（求值点 #1）：DecimalJexl.newEngine() 统一配 BigDecimal 算术
+    // （MathContext + DIVISION_SCALE），并配合 buildJexlExpression 数字字面量 "B" 后缀
+    // （见 toNumericString / component_subtotal / global_variable / number 各分支）修复 R-3。
+    private final JexlEngine jexl = DecimalJexl.newEngine();
 
     @Inject
     ObjectMapper objectMapper;
@@ -182,13 +181,15 @@ public class FormulaCalculationService {
                     expr.append(")");
                     break;
                 case "number":
-                    expr.append(value);
+                    // task-0801 B3：数字字面量追加 "B" 后缀（JEXL BigDecimal 字面量语法），
+                    // 否则仍按 Double 解析，与已加 B 后缀的其它 token 混算时精度不对齐（R-3）。
+                    expr.append(value).append('B');
                     break;
                 case "component_subtotal":
                     String compCode = (String) token.get("component_code");
                     BigDecimal subtotal = componentSubtotals != null && compCode != null
                             ? componentSubtotals.getOrDefault(compCode, BigDecimal.ZERO) : BigDecimal.ZERO;
-                    expr.append(subtotal.toPlainString());
+                    expr.append(subtotal.toPlainString()).append('B');
                     break;
                 case "product_attribute":
                     String attrName = (String) token.get("attribute_name");
@@ -200,7 +201,7 @@ public class FormulaCalculationService {
                     // V104: 注册表查 def → 解 key → 取值. globalVariableService 由 CDI 注入,
                     // 通过 @Inject Instance 懒求 (避免循环依赖, 公式包不强依赖 globalvariable 包)
                     BigDecimal gvVal = resolveGlobalVariable(token, rowData);
-                    expr.append(gvVal != null ? gvVal.toPlainString() : "0");
+                    expr.append(gvVal != null ? gvVal.toPlainString() : "0").append('B');
                     break;
                 case "datasource_field":
                     // K1: 引用同行 DATA_SOURCE 字段的解析结果. token.name = 字段名,
@@ -223,8 +224,13 @@ public class FormulaCalculationService {
             JexlExpression jexlExpr = jexl.createExpression(expression);
             JexlContext context = new MapContext();
             Object result = jexlExpr.evaluate(context);
+            // task-0801 B3 Step3：引擎已配 BigDecimal 算术，result 通常直接是 BigDecimal；
+            // 优先直接强转，避免多一次字符串往返；不再 setScale(4) 截断（呈现边界由 B5 统一规整）。
+            if (result instanceof BigDecimal bd) {
+                return bd;
+            }
             if (result instanceof Number) {
-                return new BigDecimal(result.toString()).setScale(4, RoundingMode.HALF_UP);
+                return PrecisionPolicy.of(result);
             }
             return BigDecimal.ZERO;
         } catch (Exception e) {
@@ -234,12 +240,14 @@ public class FormulaCalculationService {
     }
 
     private String toNumericString(Object val) {
-        if (val == null) return "0";
-        if (val instanceof Number) return val.toString();
+        // task-0801 B3：数字字面量追加 "B" 后缀（JEXL BigDecimal 字面量语法，见 DecimalJexl），
+        // 否则仍按 Double 解析（R-3）。
+        if (val == null) return "0B";
+        if (val instanceof Number) return val.toString() + "B";
         try {
-            return new BigDecimal(val.toString()).toPlainString();
+            return new BigDecimal(val.toString()).toPlainString() + "B";
         } catch (NumberFormatException e) {
-            return "0";
+            return "0B";
         }
     }
 

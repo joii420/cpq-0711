@@ -1,5 +1,6 @@
 package com.cpq.quotation.service;
 
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.common.dto.PageResult;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.customer.entity.Customer;
@@ -660,8 +661,11 @@ public class QuotationService {
                     ex.delete();
                 }
 
-                q.originalAmount = total;
-                q.totalAmount = total.multiply(q.finalDiscountRate).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+                // task-0801 B4/B5：除法中间精度 4→12（PrecisionPolicy.DIVISION_SCALE），
+                // 落库边界（originalAmount/totalAmount）统一 PrecisionPolicy.round() 规整到 6 位。
+                q.originalAmount = PrecisionPolicy.round(total);
+                q.totalAmount = PrecisionPolicy.round(total.multiply(q.finalDiscountRate)
+                        .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
 
                 // V169 二阶段父子关系重建: 按 tempParentIndex 把 PART 子件 UPDATE 指向新父 UUID
                 for (int i = 0; i < request.lineItems.size(); i++) {
@@ -698,12 +702,15 @@ public class QuotationService {
         }
 
         DiscountResult result = discountCalculationService.calculate(q.customerId, originalAmount);
-        q.originalAmount = originalAmount;
+        // task-0801 B5：落库边界统一 PrecisionPolicy.round() 规整到 6 位。
+        q.originalAmount = PrecisionPolicy.round(originalAmount);
         q.systemDiscountRate = result.discountRate;
         if (!Boolean.TRUE.equals(q.isManuallyAdjusted)) {
             q.finalDiscountRate = result.discountRate;
         }
-        q.totalAmount = originalAmount.multiply(q.finalDiscountRate).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+        // task-0801 B4：除法中间精度 4→12（PrecisionPolicy.DIVISION_SCALE）。
+        q.totalAmount = PrecisionPolicy.round(originalAmount.multiply(q.finalDiscountRate)
+                .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
 
         LOG.infof("Calculated discount for quotation id=%s rate=%s rule=%s", id, result.discountRate, result.matchedRuleName);
         return QuotationDTO.from(q);
@@ -847,7 +854,8 @@ public class QuotationService {
             lineDiscountService.recompute(li);
             if (li.lineTotalAmount != null) lineSum = lineSum.add(li.lineTotalAmount);
         }
-        q.totalAmount = lineSum.setScale(4, java.math.RoundingMode.HALF_UP);
+        // task-0801 B5：落库边界 —— PrecisionPolicy.round() 规整到 6 位（原 setScale(4)）。
+        q.totalAmount = PrecisionPolicy.round(lineSum);
 
         // 进入财务核价: 每次提交都建新核价单（累积模式），冻结 DTO+gvDefs，并发时 409。
         costingFreezeService.createForSubmission(id, userId);
@@ -1938,12 +1946,14 @@ public class QuotationService {
         }
 
         // Refresh totalAmount based on current line item subtotals and discount
-        q.originalAmount = total;
+        // task-0801 B4/B5：除法中间精度 4→12（PrecisionPolicy.DIVISION_SCALE），落库边界统一
+        // PrecisionPolicy.round() 规整到 6 位。
+        q.originalAmount = PrecisionPolicy.round(total);
         if (q.finalDiscountRate != null) {
-            q.totalAmount = total.multiply(q.finalDiscountRate)
-                    .divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+            q.totalAmount = PrecisionPolicy.round(total.multiply(q.finalDiscountRate)
+                    .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
         } else {
-            q.totalAmount = total;
+            q.totalAmount = PrecisionPolicy.round(total);
         }
         em.flush();
 
@@ -2381,8 +2391,11 @@ public class QuotationService {
         }
 
         // ── 更新总额 ───────────────────────────────────────────────────────────────────────────
-        q.originalAmount = total;
-        q.totalAmount = total.multiply(q.finalDiscountRate).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+        // task-0801 B4/B5：除法中间精度 4→12（PrecisionPolicy.DIVISION_SCALE），
+        // 落库边界（originalAmount/totalAmount）统一 PrecisionPolicy.round() 规整到 6 位。
+        q.originalAmount = PrecisionPolicy.round(total);
+        q.totalAmount = PrecisionPolicy.round(total.multiply(q.finalDiscountRate)
+                .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
 
         // ── E5 V169 父子关系批量 UPDATE ────────────────────────────────────────────────────────
         // 原逐行：per-child UPDATE quotation_line_item SET parent_line_item_id = :pid WHERE id = :cid。

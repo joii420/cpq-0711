@@ -1,5 +1,6 @@
 package com.cpq.formula;
 
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.formula.function.FunctionRegistry;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -62,11 +63,16 @@ public class FormulaEngine {
 
     public FormulaEngine() {
         // JEXL3 严格模式 OFF（避免 null 引用中止），silent OFF（错误可见）
+        // task-0801 B3（求值点 #2）：arithmetic 配 PrecisionPolicy 的 MathContext + DIVISION_SCALE。
+        // 本引擎的 {path} 取值走 buildJexlContext 把 DataLoader 解析结果（Postgres numeric 列 →
+        // BigDecimal）直接绑定为 JexlContext 变量（非文本拼接），故路径引用天然精确；本项主要
+        // 修正含 BigDecimal 变量与用户手写字面量常量混算（如 `{x}*100`）时的除法中间精度。
         this.jexl = new JexlBuilder()
                 .silent(false)
                 .strict(false)
                 // P3(2026-06-26 perf):缓存已解析表达式(AST),避免逐行重复 parse;不改求值语义。
                 .cache(512)
+                .arithmetic(new JexlArithmetic(false, PrecisionPolicy.MC, PrecisionPolicy.DIVISION_SCALE))
                 .create();
     }
 

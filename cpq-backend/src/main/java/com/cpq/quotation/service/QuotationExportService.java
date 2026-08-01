@@ -158,27 +158,27 @@ public class QuotationExportService {
                     // 单价
                     Cell unitPriceCell = dataRow.createCell(col++);
                     unitPriceCell.setCellStyle(amountStyle);
-                    if (li.lineUnitPrice != null) unitPriceCell.setCellValue(li.lineUnitPrice.doubleValue());
+                    if (li.lineUnitPrice != null) writeAmountCell(unitPriceCell, li.lineUnitPrice);
                     // 折扣金额
                     Cell discAmtCell = dataRow.createCell(col++);
                     discAmtCell.setCellStyle(amountStyle);
-                    if (li.lineDiscountAmount != null) discAmtCell.setCellValue(li.lineDiscountAmount.doubleValue());
+                    if (li.lineDiscountAmount != null) writeAmountCell(discAmtCell, li.lineDiscountAmount);
                     // 折后单价
                     Cell finalUnitCell = dataRow.createCell(col++);
                     finalUnitCell.setCellStyle(amountStyle);
-                    if (li.lineFinalPrice != null) finalUnitCell.setCellValue(li.lineFinalPrice.doubleValue());
+                    if (li.lineFinalPrice != null) writeAmountCell(finalUnitCell, li.lineFinalPrice);
                     // 行合计
                     Cell lineTotalCell = dataRow.createCell(col++);
                     lineTotalCell.setCellStyle(amountStyle);
                     BigDecimal lineTotal = li.lineTotalAmount != null ? li.lineTotalAmount
                             : (li.subtotal != null ? li.subtotal : BigDecimal.ZERO);
-                    lineTotalCell.setCellValue(lineTotal.doubleValue());
+                    writeAmountCell(lineTotalCell, lineTotal);
                     grandTotal = grandTotal.add(lineTotal);
                 } else {
                     Cell subtotalCell = dataRow.createCell(col++);
                     subtotalCell.setCellStyle(amountStyle);
                     if (li.subtotal != null) {
-                        subtotalCell.setCellValue(li.subtotal.doubleValue());
+                        writeAmountCell(subtotalCell, li.subtotal);
                         grandTotal = grandTotal.add(li.subtotal);
                     }
                 }
@@ -190,7 +190,7 @@ public class QuotationExportService {
         // Totals
         Row origRow = sheet.createRow(row++);
         origRow.createCell(col - 2).setCellValue("原价合计:");
-        origRow.createCell(col - 1).setCellValue(q.originalAmount != null ? q.originalAmount.doubleValue() : 0);
+        writeAmountCell(origRow.createCell(col - 1), q.originalAmount != null ? q.originalAmount : BigDecimal.ZERO);
 
         if (showDiscount) {
             Row discRow = sheet.createRow(row++);
@@ -203,8 +203,21 @@ public class QuotationExportService {
         totalLabel.setCellValue("报价总金额:");
         totalLabel.setCellStyle(boldStyle);
         Cell totalCell = totalRow.createCell(col - 1);
-        totalCell.setCellValue(q.totalAmount != null ? q.totalAmount.doubleValue() : 0);
+        writeAmountCell(totalCell, q.totalAmount != null ? q.totalAmount : BigDecimal.ZERO);
         totalCell.setCellStyle(amountStyle);
+    }
+
+    /**
+     * task-0801 B6：POI 数值单元格只保证 15 位有效数字（IEEE754 double）；亿级金额（9 位整数 +
+     * 6 位小数 = 15 位）正好触顶。有效数字超限改写字符串保精度（与
+     * {@code ExcelViewService#writeAmountCellValue} 同一处理约定，宁可失去可计算性也不静默丢精度）。
+     */
+    private static void writeAmountCell(Cell cell, BigDecimal v) {
+        if (v.stripTrailingZeros().precision() > 15) {
+            cell.setCellValue(v.toPlainString());
+        } else {
+            cell.setCellValue(v.doubleValue());
+        }
     }
 
     private void createRawDataSheet(XSSFWorkbook workbook, QuotationDTO q) {
@@ -230,7 +243,7 @@ public class QuotationExportService {
                         Row dataRow = sheet.createRow(row++);
                         dataRow.createCell(0).setCellValue(li.id != null ? li.id.toString() : "");
                         dataRow.createCell(1).setCellValue(cd.tabName != null ? cd.tabName : "");
-                        dataRow.createCell(2).setCellValue(cd.subtotal != null ? cd.subtotal.doubleValue() : 0);
+                        writeAmountCell(dataRow.createCell(2), cd.subtotal != null ? cd.subtotal : BigDecimal.ZERO);
                         dataRow.createCell(3).setCellValue(cd.rowData != null ? cd.rowData : "");
                     }
                 }
@@ -258,10 +271,13 @@ public class QuotationExportService {
         }).toList();
     }
 
-    /** 格式化金额为 2 位小数字符串，null 返回 "0.00" */
+    /**
+     * 格式化金额字符串：task-0801 B6 起改用 {@link NumberFormatUtil#format} 统一口径
+     * （至多 {@link com.cpq.common.PrecisionPolicy#DISPLAY_SCALE} 位、HALF_UP、去尾零），
+     * 与卡片/API/Excel 显示同一套精度契约；null 返回 "0"（原固定 2 位 "0.00" 已废弃）。
+     */
     private static String formatAmount(BigDecimal v) {
-        if (v == null) return "0.00";
-        return v.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+        return v == null ? "0" : NumberFormatUtil.format(v, null, true);
     }
 
     private String getStatusLabel(String status) {
@@ -335,7 +351,9 @@ public class QuotationExportService {
     private CellStyle createAmountStyle(XSSFWorkbook wb) {
         CellStyle style = wb.createCellStyle();
         DataFormat format = wb.createDataFormat();
-        style.setDataFormat(format.getFormat("#,##0.00"));
+        // task-0801 B6：显示口径由固定 2 位改至多 6 位去尾零（"#" 而非 "0"，得到去末尾 0 语义），
+        // 与 UI / API 精度契约一致（PrecisionPolicy.DISPLAY_SCALE=6）。
+        style.setDataFormat(format.getFormat("#,##0.######"));
         style.setAlignment(HorizontalAlignment.RIGHT);
         return style;
     }
@@ -377,9 +395,11 @@ public class QuotationExportService {
             this.contactEmail = nvl(q.contactEmail);
             this.paymentTerms = nvl(q.paymentTerms);
             this.deliveryCycle = q.deliveryCycle != null ? q.deliveryCycle.toString() : "";
-            this.originalAmount = q.originalAmount != null ? q.originalAmount.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() : "0.00";
+            // task-0801 B6：金额由固定 2 位改 NumberFormatUtil 统一口径（至多 6 位，HALF_UP，去尾零）；
+            // 默认值 "0.00" → "0"。折扣率（class C 输入值）精度不变。
+            this.originalAmount = formatAmount(q.originalAmount);
             this.finalDiscountRate = q.finalDiscountRate != null ? q.finalDiscountRate.toPlainString() : "100";
-            this.totalAmount = q.totalAmount != null ? q.totalAmount.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() : "0.00";
+            this.totalAmount = formatAmount(q.totalAmount);
         }
 
         private static String nvl(String s) { return s != null ? s : ""; }
