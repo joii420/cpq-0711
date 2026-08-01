@@ -1,0 +1,575 @@
+<meta charset="utf-8">
+<title>页签连表公式抽屉 · 布局优化原型 v1</title>
+<style>
+  :root{
+    --blue:#1677ff; --border:#d9d9d9; --bg:#f5f7fa; --text:#1f2329; --sub:#8a909a;
+    --panel:#fff; --radius:6px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1680px;margin:0 auto;padding:24px 20px 60px}
+  h1{font-size:20px;margin:0 0 4px}
+  .lead{color:var(--sub);font-size:13px;margin:0 0 18px}
+
+  .diff{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
+  .diff .item{background:var(--panel);border:1px solid #e8eaed;border-radius:8px;padding:12px 14px}
+  .diff .n{display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:50%;
+    background:var(--blue);color:#fff;font-size:12px;font-weight:700;margin-right:6px}
+  .diff .t{font-weight:600;font-size:13px}
+  .diff .o{color:#cf1322;font-size:12px;margin-top:6px}
+  .diff .w{color:#389e0d;font-size:12px}
+  .badge-eval{background:#f9f0ff;border-color:#d3adf7}
+
+  /* ── 模拟抽屉 ── */
+  .drawer{background:var(--panel);border:1px solid #e8eaed;border-radius:10px;overflow:hidden;
+    box-shadow:0 6px 24px rgba(0,0,0,.06)}
+  .dhead{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #f0f0f0}
+  .dtitle{font-size:16px;font-weight:600}
+  .dhead .right{display:flex;gap:8px;align-items:center}
+  .wtag{font-size:12px;color:var(--sub);margin-right:6px}
+  .btn{height:30px;padding:0 14px;border:1px solid var(--border);border-radius:var(--radius);background:#fff;
+    cursor:pointer;font-size:13px}
+  .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+
+  .dbody{display:grid;grid-template-columns:minmax(430px,42fr) minmax(520px,58fr);min-height:560px}
+  .left{border-right:1px solid #f0f0f0;padding:14px 16px;overflow:auto;max-height:78vh}
+  .right{padding:14px 16px;overflow:auto;max-height:78vh}
+  .secTitle{font-size:12px;color:var(--sub);font-weight:600;margin:0 0 8px}
+
+  /* ── 左：页签字段矩阵 ── */
+  .tab{border:1px solid #eef0f2;border-radius:8px;margin-bottom:10px;overflow:hidden}
+  .tab .thead{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:8px 11px;background:#fafbfc;border-bottom:1px solid #eef0f2}
+  .tab .tname{font-weight:600;font-size:13px}
+  .tab .rk{font-size:11px;color:#5b6b7c;background:#eef4ff;border:1px solid #d6e4ff;border-radius:10px;padding:1px 8px;white-space:nowrap}
+  .tab .tbody{padding:9px 11px;display:flex;flex-wrap:wrap;gap:7px;align-items:flex-start}
+  .grp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .grp+.grp{margin-left:8px;padding-left:10px;border-left:1px dashed #e5e7eb}
+  .glabel{font-size:11px;color:var(--sub)}
+  .chip{font-size:12px;padding:3px 9px;border-radius:4px;background:#fff;border:1px solid #91caff;cursor:pointer;user-select:none}
+  .chip:hover{filter:brightness(.97)}
+  .chip.self{border-color:#d3adf7;color:#722ed1}
+  .chip.sub{border-color:#ffd591;color:#fa8c16;border-style:dashed}
+  .chip.total{border-color:#b7eb8f;color:#389e0d;border-style:dashed}
+  .chip.off{border-color:#f0f0f0;background:#fafafa;color:#bfbfbf;cursor:not-allowed}
+
+  /* ── 右：公式区 ── */
+  .exprLabel{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px}
+  .exprLabel b{font-size:13px}
+  .hint{font-size:12px;color:var(--sub)}
+  #editor{
+    min-height:170px;max-height:340px;overflow:auto;
+    border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;background:#fff;
+    font:13px/26px "SF Mono",Consolas,Monaco,monospace;outline:none;overflow-wrap:anywhere;
+  }
+  #editor:focus{border-color:var(--blue);box-shadow:0 0 0 2px rgba(22,119,255,.1)}
+  #editor:empty::before{content:attr(data-placeholder);color:#bfbfbf}
+  .blk{border-radius:4px;padding:0 5px;margin:0 1px;font-size:13px;white-space:nowrap;user-select:none;cursor:default}
+  .blk.blue{background:#e6f4ff;border:1px solid #91caff;color:#0958d9}
+  .blk.yellow{background:#fffbe6;border:1px solid #ffd591;color:#d46b08}
+  .blk.green{background:#f6ffed;border:1px solid #b7eb8f;color:#389e0d}
+  .blk.red{background:#fff1f0;border:1px solid #ffa39e;color:#cf1322}
+  .blk.purple{background:#f9f0ff;border:1px solid #d3adf7;color:#722ed1}
+  .par{font-weight:800}
+  .p0{color:#d4820a} .p1{color:#7d3ac1} .p2{color:#0a9396} .p3{color:#c2185b}
+  .parErr{color:#cf1322;text-decoration:wavy underline #cf1322;text-underline-offset:3px}
+  .parHit{background:#fff3cd;border-radius:3px}
+
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:8px;font-size:12px;color:var(--sub);align-items:center}
+  .legend .k{display:inline-flex;align-items:center;gap:5px}
+  .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+
+  .bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:12px}
+  .bar .lb{font-size:12px;color:var(--sub);margin-right:2px}
+  .op{height:26px;min-width:30px;padding:0 9px;border:1px solid var(--border);border-radius:4px;background:#fff;
+    cursor:pointer;font:600 13px/1 monospace}
+  .fn{height:26px;padding:0 10px;border:1px solid #ffd591;color:#fa8c16;border-radius:4px;background:#fff;cursor:pointer;font-size:12px}
+  .cf{height:26px;padding:0 10px;border:1px solid #d3adf7;color:#722ed1;border-radius:4px;background:#fff;cursor:pointer;font-size:12px}
+
+  .rules{margin-top:12px;padding:9px 12px;background:#fffbe6;border:1px solid #ffe58f;border-radius:var(--radius);
+    font-size:12px;color:#874d00;line-height:1.8}
+  .rules code{background:#fff;border:1px solid #ffe58f;border-radius:3px;padding:0 4px}
+  .fold{margin-top:12px;border:1px dashed #d3adf7;border-radius:var(--radius);padding:9px 12px;color:#722ed1;
+    font-size:13px;cursor:pointer;background:#fcfaff}
+
+  .note{margin-top:26px;background:var(--panel);border:1px solid #e8eaed;border-radius:8px;padding:16px 18px}
+  .note h2{font-size:15px;margin:0 0 10px}
+  .note h3{font-size:13px;margin:16px 0 6px}
+  table{border-collapse:collapse;width:100%;font-size:13px;margin-top:6px}
+  th,td{border:1px solid #eef0f2;padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#fafbfc;font-weight:600;white-space:nowrap}
+  .ok{color:#389e0d;font-weight:600}
+  .warn{color:#d46b08;font-weight:600}
+  .bad{color:#cf1322;font-weight:600}
+  .q{background:#fff7e6;border:1px solid #ffd591;border-radius:8px;padding:14px 16px;margin-top:22px}
+  .q h2{font-size:15px;margin:0 0 8px;color:#874d00}
+  .q ol{margin:0;padding-left:20px;color:#874d00;font-size:13px;line-height:1.9}
+  @media (max-width:1100px){ .dbody{grid-template-columns:1fr} .diff{grid-template-columns:repeat(2,1fr)} }
+</style>
+
+<div class="wrap">
+  <h1>「配置页签连表公式」抽屉 · 布局优化原型 v1</h1>
+  <p class="lead">可交互原型：左侧字段可点击插入、公式框可直接打字、括号配对实时着色。对应 <code>TabJoinFormulaDrawer.tsx</code></p>
+
+  <div class="diff">
+    <div class="item">
+      <div class="t"><span class="n">1</span>左右分栏 + 加宽</div>
+      <div class="o">现状：width 1100，纯上下堆叠，字段矩阵在最底部，写公式要来回滚动</div>
+      <div class="w">改为：1520，左=页签与字段 / 右=公式配置，两栏各自滚动</div>
+    </div>
+    <div class="item">
+      <div class="t"><span class="n">2</span>移除试算</div>
+      <div class="o">现状：顶部蓝色试算条（样本卡选择器 + 试算按钮 + 结果表）</div>
+      <div class="w">改为：整条移除，腾出的高度给公式框</div>
+    </div>
+    <div class="item">
+      <div class="t"><span class="n">3</span>公式框加高 + 自撑</div>
+      <div class="o">现状：min-height 52px（约两行），长公式要在窄条里滚</div>
+      <div class="w">改为：min 170 / max 340，随内容自动增高，超出才滚</div>
+    </div>
+    <div class="item badge-eval">
+      <div class="t"><span class="n">4</span>配对着色 <span class="warn">（评估见页底）</span></div>
+      <div class="o">现状：括号只有「不平衡」一句文字报错，看不出哪一对</div>
+      <div class="w">方案：括号按嵌套深度配色 + 光标处高亮同一对 + 未闭合标红</div>
+    </div>
+  </div>
+
+  <!-- ── 模拟抽屉 ── -->
+  <div class="drawer">
+    <div class="dhead">
+      <div class="dtitle">配置页签连表公式</div>
+      <div class="right">
+        <span class="wtag">width 1100 → <b>1520</b></span>
+        <button class="btn">取消</button>
+        <button class="btn primary">保存</button>
+      </div>
+    </div>
+
+    <div class="dbody">
+      <!-- 左栏 -->
+      <div class="left">
+        <div class="secTitle">页签组件与可选字段　<span style="font-weight:400">点击插入到右侧公式 · 行键不可比的明细置灰</span></div>
+
+        <div class="tab">
+          <div class="thead"><span class="tname">投料</span><span class="rk">行键: 料号 + 材质</span></div>
+          <div class="tbody">
+            <div class="grp"><span class="glabel">明细</span>
+              <span class="chip" data-tk="[投料.金额]">金额</span>
+              <span class="chip" data-tk="[投料.数量]">数量</span>
+              <span class="chip" data-tk="[投料.单价]">单价</span>
+            </div>
+            <div class="grp"><span class="glabel">小计列</span>
+              <span class="chip sub" data-tk="[投料.金额小计]">金额小计(小计)</span>
+            </div>
+            <div class="grp"><span class="glabel">页签总计</span>
+              <span class="chip total" data-tk="[投料(总计)]">投料(总计)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab">
+          <div class="thead"><span class="tname">加工</span><span class="rk">行键: 料号 + 工序</span></div>
+          <div class="tbody">
+            <div class="grp"><span class="glabel">明细</span>
+              <span class="chip" data-tk="[加工.工时]">工时</span>
+              <span class="chip" data-tk="[加工.费率]">费率</span>
+            </div>
+            <div class="grp"><span class="glabel">页签总计</span>
+              <span class="chip total" data-tk="[加工(总计)]">加工(总计)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab">
+          <div class="thead"><span class="tname">回料</span><span class="rk">行键: 批次</span></div>
+          <div class="tbody">
+            <div class="grp"><span class="glabel">明细</span>
+              <span class="chip off" title="行键 [批次] 与宿主 [料号+材质] 不可比；可改用「回料(总计)」">回收额</span>
+              <span class="chip off" title="行键不可比">折扣率</span>
+            </div>
+            <div class="grp"><span class="glabel">页签总计</span>
+              <span class="chip total" data-tk="[回料(总计)]">回料(总计)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab">
+          <div class="thead"><span class="tname" style="color:#722ed1">本页签（宿主）</span><span class="rk">行键: 料号 + 材质</span></div>
+          <div class="tbody">
+            <div class="grp"><span class="glabel" style="color:#722ed1">明细(本页签·同行)</span>
+              <span class="chip self" data-tk="[数量]">数量</span>
+              <span class="chip self" data-tk="[毛重]">毛重</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右栏 -->
+      <div class="right">
+        <div class="exprLabel">
+          <b>公式表达式</b>
+          <span class="hint" id="stat"></span>
+        </div>
+        <div class="hint" style="margin-bottom:6px">
+          列来源：页签连表公式 · 单卡片单值 · 行键自动对齐(全外连·缺补0) · 明细默认按对齐行求和
+        </div>
+
+        <div id="editor" contenteditable="true" spellcheck="false"
+             data-placeholder="例:[投料.金额] * [加工.工时] + [回料(总计)]"></div>
+
+        <div class="legend">
+          <span class="k"><b>块底色 = 引用语义</b></span>
+          <span class="k"><i class="sw" style="background:#e6f4ff;border:1px solid #91caff"></i>跨页签明细</span>
+          <span class="k"><i class="sw" style="background:#fffbe6;border:1px solid #ffd591"></i>小计列</span>
+          <span class="k"><i class="sw" style="background:#f6ffed;border:1px solid #b7eb8f"></i>页签总计</span>
+          <span class="k"><i class="sw" style="background:#f9f0ff;border:1px solid #d3adf7"></i>宿主自身</span>
+          <span class="k"><i class="sw" style="background:#fff1f0;border:1px solid #ffa39e"></i>非法引用</span>
+        </div>
+        <div class="legend" style="margin-top:4px">
+          <span class="k"><b>括号字色 = 配对深度</b></span>
+          <span class="k"><span class="par p0">( )</span> 第1层</span>
+          <span class="k"><span class="par p1">( )</span> 第2层</span>
+          <span class="k"><span class="par p2">( )</span> 第3层</span>
+          <span class="k"><span class="par parErr">(</span> 未闭合</span>
+          <span class="k" style="color:#874d00">光标停在括号上 → 同一对加黄底</span>
+        </div>
+
+        <div class="bar">
+          <span class="lb">运算符</span>
+          <button class="op" data-ins="+">+</button>
+          <button class="op" data-ins="-">-</button>
+          <button class="op" data-ins="*">*</button>
+          <button class="op" data-ins="/">/</button>
+          <button class="op" data-ins="(">(</button>
+          <button class="op" data-ins=")">)</button>
+        </div>
+        <div class="bar">
+          <span class="lb">函数</span>
+          <button class="fn" data-ins="SUM()" data-back="1">SUM</button>
+          <button class="fn" data-ins="AVG()" data-back="1">AVG</button>
+          <button class="fn" data-ins="MIN()" data-back="1">MIN</button>
+          <button class="fn" data-ins="MAX()" data-back="1">MAX</button>
+          <button class="fn" data-ins="COUNT()" data-back="1">COUNT</button>
+          <span class="lb" style="margin-left:6px">条件聚合</span>
+          <button class="cf" data-ins="SUMIF()" data-back="1">SUMIF</button>
+          <button class="cf" data-ins="COUNTIF()" data-back="1">COUNTIF</button>
+        </div>
+
+        <div class="rules">
+          明细字段默认按对齐行自动求和；套 <code>AVG/MIN/MAX/COUNT</code> 改聚合方式。
+          引用格式：<code>[页签名称.字段名]</code> 或 <code>[页签名称(总计)]</code>。<br>
+          <b>行级聚合（粗 host × 细 source）</b>：<code>SUM([宿主别名.列] * [细页签.列])</code> —— 按行键对齐后逐行算，再按宿主行键聚合。
+        </div>
+
+        <div class="fold">▸ 展开 SUMIF 条件聚合（按条件过滤后聚合）　<span style="color:#8a909a;font-size:12px">— 位置不变，折叠态放右栏底部</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 第 4 点评估 ── -->
+  <div class="note">
+    <h2>第 4 点「一对一对加色彩区分」·  可行性评估</h2>
+
+    <p style="font-size:13px;margin:0 0 4px">
+      先说结论：<span class="ok">可以做，且成本低</span>（现有 <code>FormulaRichInput</code> 已是 contentEditable + 自绘 DOM，不需要引入编辑器库）。
+      但<b>有一个必须先避开的冲突</b>。
+    </p>
+
+    <h3>⚠️ 冲突：颜色这个"通道"已经被占满了</h3>
+    <p style="font-size:13px;margin:0">
+      公式里的 <code>[引用]</code> 块<b>现在就是彩色的</b>，而且 5 种颜色都已承载「这个引用合不合法」的语义
+      （见 <code>formulaSerialize.ts · classifyRefSegment</code>）：
+    </p>
+    <table>
+      <tr><th>现有颜色</th><th>含义</th><th>触发条件</th></tr>
+      <tr><td><span class="blk blue">蓝</span></td><td>普通跨页签明细引用</td><td>默认合法路径</td></tr>
+      <tr><td><span class="blk yellow">黄</span></td><td>小计列</td><td>字段 ∈ subtotalCols</td></tr>
+      <tr><td><span class="blk green">绿</span></td><td>页签总计</td><td><code>[X(总计)]</code></td></tr>
+      <tr><td><span class="blk purple">紫</span></td><td>宿主自身字段</td><td>tabDef.self</td></tr>
+      <tr><td><span class="blk red">红</span></td><td><b>非法</b>：页签/字段查不到、行键不可比、KSUM 内引宿主列</td><td>校验失败</td></tr>
+    </table>
+    <p style="font-size:13px">
+      所以<b class="bad">不能</b>再把「配对关系」也画到块底色上 —— 否则用户看到红色，分不清是"引用非法"还是"某一对的配色"。
+    </p>
+
+    <h3>✅ 建议方案：只给括号字符上色，不动块底色</h3>
+    <table>
+      <tr><th>维度</th><th>做法</th></tr>
+      <tr><td>着色对象</td><td>只作用于 <code>(</code> <code>)</code> 这些<b>文本字符</b>（加粗 + 字色按嵌套深度轮转），块引用仍是<b>底色方块</b></td></tr>
+      <tr><td>为什么不撞车</td><td>两者视觉通道不同：块 = 有边框的<b>底色方块</b>，括号 = 无背景的<b>粗体字符</b>。上方原型里可以直接对照看</td></tr>
+      <tr><td>光标联动</td><td>光标停在某个括号旁 → 它和配对的另一半同时加黄底，一眼看出配到哪</td></tr>
+      <tr><td>错误提示</td><td>未闭合 / 多余的括号 → 红色 + 波浪线，替代现在那句干巴巴的「括号不平衡」文字</td></tr>
+      <tr><td>实现成本</td><td><span class="ok">低</span>。<code>renderInto</code> 里对非块文本节点扫一遍括号即可；已有 <code>formulaBracketCheck.ts</code> 的平衡校验可复用其判定</td></tr>
+      <tr><td>风险</td><td><span class="warn">中低</span>。改的是渲染层，<b>不碰 token 序列化</b>，公式语义与保存结果不受影响；但要保证重渲染不打断光标（该组件已有 <code>caretOffset/restoreCaret</code> 机制，沿用即可）</td></tr>
+    </table>
+
+    <h3>另一种可能的理解（如果我理解错了请指出）</h3>
+    <p style="font-size:13px;margin:0">
+      「一对一对」如果指的是<b>把同一个页签的多个引用染成同一色</b>（例如所有 <code>[投料.*]</code> 都是橙色），
+      那就<span class="bad">与现有语义直接冲突</span> —— 它会覆盖掉"红=非法"这条最重要的提示。
+      真要做，得先把合法性提示改走别的通道（如块右上角小图标 / 下划线波浪），代价明显变大。
+      <b>我按前一种理解（括号配对）做了上面的原型</b>，你定稿时说一声即可。
+    </p>
+  </div>
+
+  <div class="q">
+    <h2>需要你定稿的点</h2>
+    <ol>
+      <li><b>左右比例</b>：目前 42% : 58%（左字段 / 右公式）。字段名长的客户可能要 45:55，可调。</li>
+      <li><b>抽屉宽度</b>：1520px。如果常在 1366 宽屏笔记本上用，建议改 <code>90vw</code> 自适应。</li>
+      <li><b>规则提示那块黄色说明</b>：现在常驻右栏底部，占约 100px。是否改成默认折叠、点「?」再展开？</li>
+      <li><b>SUMIF 构造器</b>：仍留右栏底部折叠（展开后较高，会把公式框顶上去）。是否改为独立弹层？</li>
+      <li><b>第 4 点</b>：确认是「括号配对着色」还是别的含义。</li>
+      <li><b>试算移除</b>：确认整条移除（含样本卡选择器与逐行结果表），后端 dry-run 端点保留不动。</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+(function(){
+  var editor = document.getElementById('editor');
+  var stat = document.getElementById('stat');
+
+  // ── 模拟 tabDefs：用于判断引用块的颜色语义（与 classifyRefSegment 同口径的极简版）
+  var TABS = {
+    '投料': {rk:['料号','材质'], detail:['金额','数量','单价'], sub:['金额小计'], comparable:true},
+    '加工': {rk:['料号','工序'], detail:['工时','费率'], sub:[], comparable:true},
+    '回料': {rk:['批次'], detail:['回收额','折扣率'], sub:[], comparable:false}
+  };
+  var SELF_FIELDS = ['数量','毛重'];
+
+  function classify(body){
+    // [X(总计)]
+    var m = body.match(/^(.+)\(总计\)$/);
+    if (m) return TABS[m[1].trim()] ? 'green' : 'red';
+    if (body.indexOf('.') < 0) {
+      return SELF_FIELDS.indexOf(body.trim()) >= 0 ? 'purple' : 'red';   // 宿主自身字段
+    }
+    var i = body.indexOf('.');
+    var tab = body.slice(0,i).trim(), field = body.slice(i+1).trim();
+    var def = TABS[tab];
+    if (!def) return 'red';
+    if (def.sub.indexOf(field) >= 0) return 'yellow';
+    if (def.detail.indexOf(field) < 0) return 'red';
+    if (!def.comparable) return 'red';                                    // 行键不可比
+    return 'blue';
+  }
+
+  // ── 把 raw 字符串切成 [块] 与 文本 两类
+  function segment(str){
+    var segs = [], buf = '', i = 0;
+    while (i < str.length){
+      var ch = str[i];
+      if (ch === '['){
+        var end = str.indexOf(']', i);
+        if (end > i){
+          if (buf) { segs.push({t:'text', raw:buf}); buf=''; }
+          var raw = str.slice(i, end+1);
+          segs.push({t:'blk', raw:raw, body:raw.slice(1,-1)});
+          i = end+1; continue;
+        }
+      }
+      buf += ch; i++;
+    }
+    if (buf) segs.push({t:'text', raw:buf});
+    return segs;
+  }
+
+  // ── 括号配对：返回 索引->{depth, id, err} 映射（只扫文本段里的括号）
+  function pairParens(segs){
+    var stack = [], info = {}, id = 0, pos = 0;
+    segs.forEach(function(s, si){
+      if (s.t === 'blk'){ pos += s.raw.length; return; }
+      for (var k=0;k<s.raw.length;k++){
+        var c = s.raw[k];
+        if (c === '('){
+          var rec = {seg:si, off:k, depth:stack.length, id:id++, err:false};
+          info[si+':'+k] = rec; stack.push(rec);
+        } else if (c === ')'){
+          var open = stack.pop();
+          if (!open){ info[si+':'+k] = {seg:si, off:k, depth:0, id:-1, err:true}; }
+          else { info[si+':'+k] = {seg:si, off:k, depth:open.depth, id:open.id, err:false}; }
+        }
+      }
+      pos += s.raw.length;
+    });
+    stack.forEach(function(r){ r.err = true; });          // 未闭合的开括号
+    return info;
+  }
+
+  function readBack(root){
+    var out = '';
+    root.childNodes.forEach(function(n){
+      if (n.nodeType === 3) out += n.textContent || '';
+      else if (n.nodeType === 1){
+        var raw = n.getAttribute('data-raw');
+        if (raw != null) out += raw;
+        else if (n.tagName !== 'BR') out += readBack(n);
+      }
+    });
+    return out;
+  }
+  function caretOffset(root){
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return readBack(root).length;
+    var r = sel.getRangeAt(0).cloneRange(), pre = r.cloneRange();
+    pre.selectNodeContents(root); pre.setEnd(r.endContainer, r.endOffset);
+    var tmp = document.createElement('div'); tmp.appendChild(pre.cloneContents());
+    return readBack(tmp).length;
+  }
+  function restoreCaret(root, offset){
+    var sel = window.getSelection(); if (!sel) return;
+    var acc = 0, done = false;
+    Array.prototype.forEach.call(root.childNodes, function(n){
+      if (done) return;
+      if (n.nodeType === 3){
+        var len = (n.textContent||'').length;
+        if (offset <= acc + len){
+          var r = document.createRange();
+          r.setStart(n, Math.max(0, offset-acc)); r.collapse(true);
+          sel.removeAllRanges(); sel.addRange(r); done = true; return;
+        }
+        acc += len;
+      } else if (n.nodeType === 1){
+        var raw = n.getAttribute('data-raw') || '';
+        if (offset <= acc){
+          var r2 = document.createRange();
+          r2.setStartBefore(n); r2.collapse(true);
+          sel.removeAllRanges(); sel.addRange(r2); done = true; return;
+        }
+        acc += raw.length;
+      }
+    });
+    if (!done){
+      var r3 = document.createRange();
+      r3.selectNodeContents(root); r3.collapse(false);
+      sel.removeAllRanges(); sel.addRange(r3);
+    }
+  }
+
+  var PAL = ['p0','p1','p2','p3'];
+
+  function render(str, caret){
+    var segs = segment(str);
+    var pinfo = pairParens(segs);
+
+    // 光标所在括号 → 高亮同 id 的一对
+    var hitId = null;
+    if (caret != null){
+      var acc = 0;
+      outer:
+      for (var si=0; si<segs.length; si++){
+        var s = segs[si];
+        if (s.t === 'blk'){ acc += s.raw.length; continue; }
+        for (var k=0;k<s.raw.length;k++){
+          var c = s.raw[k];
+          if (c === '(' || c === ')'){
+            // 光标紧邻该括号左右
+            if (caret === acc + k || caret === acc + k + 1){
+              var rec = pinfo[si+':'+k];
+              if (rec && !rec.err && rec.id >= 0){ hitId = rec.id; break outer; }
+            }
+          }
+        }
+        acc += s.raw.length;
+      }
+    }
+
+    editor.innerHTML = '';
+    segs.forEach(function(s, si){
+      if (s.t === 'blk'){
+        var sp = document.createElement('span');
+        sp.className = 'blk ' + classify(s.body);
+        sp.setAttribute('contenteditable','false');
+        sp.setAttribute('data-raw', s.raw);
+        sp.textContent = s.body;
+        editor.appendChild(sp);
+        return;
+      }
+      // 文本段：逐字符，括号单独包 span
+      var run = '';
+      function flush(){ if (run){ editor.appendChild(document.createTextNode(run)); run=''; } }
+      for (var k=0;k<s.raw.length;k++){
+        var c = s.raw[k];
+        if (c === '(' || c === ')'){
+          flush();
+          var rec = pinfo[si+':'+k] || {};
+          var sp2 = document.createElement('span');
+          sp2.className = 'par ' + (rec.err ? 'parErr' : PAL[rec.depth % PAL.length])
+                        + (hitId != null && rec.id === hitId ? ' parHit' : '');
+          sp2.textContent = c;
+          editor.appendChild(sp2);
+        } else run += c;
+      }
+      flush();
+    });
+    if (caret != null) restoreCaret(editor, caret);
+
+    // 状态行
+    var open = 0, bad = false;
+    for (var key in pinfo){ if (pinfo[key].err) bad = true; }
+    segs.forEach(function(s){ if (s.t==='text'){ for (var k=0;k<s.raw.length;k++){ if (s.raw[k]==='(') open++; if (s.raw[k]===')') open--; } } });
+    if (bad || open !== 0){
+      stat.innerHTML = '<span style="color:#cf1322">● 括号不匹配</span>';
+    } else {
+      var n = str.length;
+      stat.innerHTML = n ? '<span style="color:#389e0d">● 括号匹配</span>' : '';
+    }
+  }
+
+  function sync(){
+    var off = caretOffset(editor);
+    render(readBack(editor), off);
+  }
+
+  editor.addEventListener('input', sync);
+  editor.addEventListener('click', sync);
+  editor.addEventListener('keyup', function(e){
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].indexOf(e.key) >= 0) sync();
+  });
+  editor.addEventListener('paste', function(e){
+    e.preventDefault();
+    document.execCommand('insertText', false, (e.clipboardData||window.clipboardData).getData('text/plain'));
+  });
+  // 退格删整块
+  editor.addEventListener('keydown', function(e){
+    if (e.key !== 'Backspace') return;
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
+    var r = sel.getRangeAt(0), prev = null;
+    if (r.startContainer.nodeType === 3 && r.startOffset === 0) prev = r.startContainer.previousSibling;
+    else if (r.startContainer === editor) prev = editor.childNodes[r.startOffset-1] || null;
+    if (prev && prev.nodeType === 1 && prev.getAttribute('data-raw') != null){
+      e.preventDefault(); prev.remove(); sync();
+    }
+  });
+
+  function insert(text, back){
+    editor.focus();
+    var sel = window.getSelection();
+    if (!sel.rangeCount || !editor.contains(sel.getRangeAt(0).startContainer)){
+      var r = document.createRange(); r.selectNodeContents(editor); r.collapse(false);
+      sel.removeAllRanges(); sel.addRange(r);
+    }
+    document.execCommand('insertText', false, text);
+    var off = Math.max(0, caretOffset(editor) - (back||0));
+    render(readBack(editor), off);
+  }
+
+  document.querySelectorAll('.chip[data-tk]').forEach(function(el){
+    el.addEventListener('click', function(){ insert(el.getAttribute('data-tk'), 0); });
+  });
+  document.querySelectorAll('[data-ins]').forEach(function(el){
+    el.addEventListener('click', function(){
+      insert(el.getAttribute('data-ins'), parseInt(el.getAttribute('data-back')||'0',10));
+    });
+  });
+  document.querySelector('.fold').addEventListener('click', function(){
+    alert('原型占位：展开后是现有的 SUMIF 条件聚合构造器（源页签 / 条件行 / 值字段 / 插入按钮）');
+  });
+
+  // 初始示例：故意留一个未闭合括号，方便直接看到红色波浪线
+  render('SUM([投料.金额] * [加工.工时]) + AVG(([回料(总计)] - [数量]) * (1 - [投料.单价])', null);
+})();
+</script>
