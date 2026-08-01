@@ -110,9 +110,15 @@ f_material_element_price(p_customer_no TEXT, p_base_date DATE)
 2. **不要改 `f_customer_element_price` 的签名**（硬约束 11）—— 它被 7 个视图在用，改签名 = 强制一次性全量迁移且无法回滚。
 3. **必须返回 `currency`**：现行 `mc_view` 同时输出 `cep.unit_price AS 单价` 与 `cep.currency AS 货币`，新函数不返回 currency 会让报价单「货币」列被清空（§11.15.6 缺口 B6）。
 
-**视图迁移范围**（E12 改判：**两侧都迁**）
-- **报价侧**：实测 **7 个** `mc_view`（`SELECT count(*) FROM component_sql_view WHERE sql_template ILIKE '%f_customer_element_price%'` = 7，全属「材料成本」组件）
-- **核价侧**：`物料与元素BOM` 组件视图（由技术总监提供的 Flyway 脚本落，见 B7 说明）
+**视图迁移范围**（E12 改判：**两侧都迁**）→ 🔄 **2026-08-01 更新为 8 个**
+
+| 侧 | 视图 | 形态 | 切新函数时的 JOIN 键 |
+|---|---|---|---|
+| 报价侧 | **7 个** `mc_view`（全属「材料成本」组件） | 平铺 **与** 闭包**并存** | 逐视图按各自 `hf_part_no` 表达式：`ebi.material_no` 或 `COALESCE(cl.root_no, ebi.material_no)` |
+| 核价侧 | **1 个** `wl_ys_bom_view`（COMP-0049「物料与元素BOM」） | **平铺**（`ebi.material_no AS hf_part_no`） | `AND cep.material_no = ebi.material_no` |
+
+> ✅ **核价侧那 1 个已由技术总监接好 `f_customer_element_price`**（`V366__task0729_costing_element_price_field.sql`，已 `success=t`，实测取价通）。
+> 🔒 **B2 要做的是把这 8 个统一切到 `f_material_element_price` 并补 `material_no` JOIN 条件** —— 核价视图当前只按 `element_code` JOIN，因为现有 `f_customer_element_price` **不返回 `material_no`**（签名只有 element_code/unit_price/currency/price_unit）。新函数返回 `material_no` 后必须补上，否则料号维度失效。
 
 🔴 **JOIN 键铁律（§11.15.4.2，最容易静默失败的一处）**
 
@@ -352,6 +358,20 @@ Set<String> ACTIVE_STATUSES = Set.of("DRAFT","SUBMITTED","APPROVED","REJECTED","
 - 可选强化：元素列一致性体检（取真实数据逐个到 `element.element_code` 找，找不到警告）。
 
 > 📌 **本块只做代码。核价 `物料与元素BOM` 组件的实际配置由技术总监提供 Flyway 迁移脚本**（E14-6），后端工程师**不碰配置数据**。
+> ✅ **已完成**：`V366__task0729_costing_element_price_field.sql`（worktree commit `681dfa18`，DB 已 `success=t`）。
+> 🔒 **B7 的迁移期预填必须覆盖 COMP-0049，期望值写死如下**（不要靠推导碰运气，推错了是静默失败）：
+>
+> | 组件 | `element_code_field` | `element_price_field` | `element_currency_field` |
+> |---|---|---|---|
+> | **COMP-0049**（核价·物料与元素BOM） | `元素代码` | `元素单价` | *(空)* |
+> | COMP-0021 / COMP-0027 / COMP-0102（报价·材料成本） | `元素` | `元素单价` | *(空)* |
+>
+> ⚠️ 报价侧 3 个组件的值**必须由推导算法自己算出来并与上表一致** —— 那是验收 #32④「存量组件走迁移后三项已自动预填且值正确」的被测对象，**不要手工写死**。核价侧 COMP-0049 因字段名不同（`元素代码` 而非 `元素`），是推导算法的**反例样本**，务必确认能推对。
+
+**⚠️ 主仓有一份 untracked 的 V366 副本（不要删）**
+
+技术总监为在共享 dev server 上验证，把 V366 copy 了一份到**主仓** `cpq-backend/src/main/resources/db/migration/`（未跟踪）。因 V366 已进共享 DB 的 `flyway_schema_history`，**删掉这份副本会让下次 Quarkus 重启 Flyway validate 失败**（教训：V311/V322 孤儿迁移）。
+🔒 **正确处置：一直留着，直到本分支合并 master 的那一刻 —— 先删副本、立即 `git merge` 把正式版本带回来，中间不要重启 Quarkus。**
 
 **验收归属**：#32
 
