@@ -343,13 +343,29 @@ class MaterialBomMergeHandlerTest {
 
     /** 带「材质占比」列的物料BOM行（ratio=null 表示该行不填该列）。 */
     private SheetRow bomRowWithRatio(int rowNo, int seq, String materialNo, String rawNo, String ratio) {
+        return bomRowWithHeaders(rowNo, seq, materialNo, rawNo, "材质占比", ratio, "产出料号类型", "2.非银点类");
+    }
+
+    /**
+     * 物料BOM行，占比列与产出类型列的<b>表头写法可指定</b>。
+     * 两列各自都有两种客户实际在用的写法（见 handler 的别名常量），本类用它逐种验收。
+     */
+    private SheetRow bomRowWithHeaders(int rowNo, int seq, String materialNo, String rawNo,
+                                       String ratioHeader, String ratio,
+                                       String usageHeader, String usage) {
         Map<String, String> m = new HashMap<>();
         m.put("销售料号", materialNo); m.put("项次", String.valueOf(seq));
         m.put("投入料号", rawNo);
-        m.put("产出料号类型", "2.非银点类");
+        if (usage != null) m.put(usageHeader, usage);
         m.put("材料毛重", "0.5"); m.put("重量单位", "KG");
-        if (ratio != null) m.put("材质占比", ratio);
+        if (ratio != null) m.put(ratioHeader, ratio);
         return new SheetRow(rowNo, m);
+    }
+
+    private String currentUsageType(String componentNo) {
+        return (String) em.createNativeQuery(
+            "SELECT component_usage_type FROM material_bom_item WHERE material_no=:m AND component_no=:c AND is_current=TRUE")
+            .setParameter("m", MAT).setParameter("c", componentNo).getSingleResult();
     }
 
     private java.math.BigDecimal currentMaterialRatio(String componentNo) {
@@ -425,6 +441,55 @@ class MaterialBomMergeHandlerTest {
             assertEquals(0, new java.math.BigDecimal("0.55").compareTo(v), "当前版本应是新值");
         } finally {
             cleanup2();
+        }
+    }
+
+    // ===== 表头别名：占比列「材质占比 / 材料占比」、产出类型列「产出料号类型 / 产出类型」 =====
+    // 背景（2026-08-01）：V365 落地时导入器只认「材质占比」，而组件卡片列名 / SQL 视图别名 /
+    // 配置文档里同一个概念叫「材料占比」。客户按后者在导入 sheet 里加列 → SheetRow 的 contains
+    // 匹配不上 → 静默按"没填"处理（不报错、不计失败行），整列丢数。产出类型同理有两种写法。
+    // 属 AP-52「语义错配 + 契约不对齐」族，故两列都按别名兼容。
+
+    @Transactional
+    @Test
+    void materialRatio_aliasHeaderCailiao_isMapped() {
+        cleanupMasterRow(RECIPE_991);
+        try {
+            SheetImportResult r = handler.merge(List.of(bomRowWithHeaders(
+                1, 1, MAT, RECIPE_991, "材料占比", "0.3", "产出料号类型", "2.非银点类")), ctxWithRealIndex());
+            assertEquals(0, r.failedRows);
+            java.math.BigDecimal v = currentMaterialRatio(RECIPE_991);
+            assertNotNull(v, "表头写「材料占比」也应落 material_ratio（别名兼容，不得静默丢数）");
+            assertEquals(0, new java.math.BigDecimal("0.3").compareTo(v), "小数口径原值落库");
+        } finally {
+            cleanupMasterRow(RECIPE_991);
+        }
+    }
+
+    @Transactional
+    @Test
+    void componentUsageType_canonicalHeader_isMapped() {
+        cleanupMasterRow(RECIPE_991);
+        try {
+            handler.merge(List.of(bomRowWithHeaders(
+                1, 1, MAT, RECIPE_991, "材质占比", null, "产出料号类型", "1.银点类")), ctxWithRealIndex());
+            assertEquals("银点类", currentUsageType(RECIPE_991), "「产出料号类型」落 component_usage_type（前导编号被剥离）");
+        } finally {
+            cleanupMasterRow(RECIPE_991);
+        }
+    }
+
+    @Transactional
+    @Test
+    void componentUsageType_aliasHeaderShortForm_isMapped() {
+        cleanupMasterRow(RECIPE_991);
+        try {
+            handler.merge(List.of(bomRowWithHeaders(
+                1, 1, MAT, RECIPE_991, "材质占比", null, "产出类型", "1.银点类")), ctxWithRealIndex());
+            assertEquals("银点类", currentUsageType(RECIPE_991),
+                "表头写「产出类型」也应落 component_usage_type（别名兼容）");
+        } finally {
+            cleanupMasterRow(RECIPE_991);
         }
     }
 

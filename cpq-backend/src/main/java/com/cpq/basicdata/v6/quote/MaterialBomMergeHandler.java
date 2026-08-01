@@ -65,6 +65,21 @@ public class MaterialBomMergeHandler implements SheetHandler {
         "material_ratio",
         "characteristic");
 
+    /**
+     * 「材质占比」列的可接受表头写法。
+     *
+     * <p>同一个概念在本项目的不同产物里有两种叫法：导入 sheet 与配置文档写「材质占比」（语义更准，
+     * 只有材质行有意义），而组件卡片列名 / SQL 视图输出别名 {@code _材料占比} 写「材料占比」。
+     * 客户按后者在导入 sheet 里加列时，{@link SheetRow#getStr} 的 contains 匹配不上，会
+     * <b>静默</b>按"没填"处理——不报错、不计失败行、整列丢数（2026-08-01 实测）。故两种都认。
+     *
+     * <p>顺序即优先级：一份 sheet 同时存在两列时，按<b>列序</b>取首个命中的（见 {@code SheetRow#getStr}）。
+     */
+    private static final String[] MATERIAL_RATIO_HEADERS = {"材质占比", "材料占比"};
+
+    /** 「产出料号类型」列的可接受表头写法（同上，卡片列名叫「产出类型」）。 */
+    private static final String[] USAGE_TYPE_HEADERS = {"产出料号类型", "产出类型"};
+
     @Override
     @Transactional(Transactional.TxType.MANDATORY)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
@@ -147,7 +162,7 @@ public class MaterialBomMergeHandler implements SheetHandler {
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("seq_no", row.getInt("项次"));
             c.put("component_no", componentNo);
-            c.put("component_usage_type", labelOnly(row.getStr("产出料号类型")));
+            c.put("component_usage_type", labelOnly(row.getStr(USAGE_TYPE_HEADERS)));
             c.put("composition_qty", row.getDecimal("组成数量"));
             c.put("rough_weight", row.getDecimal("材料毛重", "毛重"));
             c.put("net_weight",   row.getDecimal("材料净重", "净重"));
@@ -157,9 +172,9 @@ public class MaterialBomMergeHandler implements SheetHandler {
             c.put("scrap_rate", row.getDecimal("损耗率"));
             c.put("defect_rate", row.getDecimal("不良率"));
             // 材质占比（可选列，小数口径 0.3=30%）：仅材质行有业务含义，零件/外购件行显式置 NULL，
-            // 防止业务在非材质行误填污染数据。
+            // 防止业务在非材质行误填污染数据。表头两种写法都认，见 MATERIAL_RATIO_HEADERS。
             c.put("material_ratio", PartTypeInferenceService.RECIPE.equals(characteristic)
-                ? row.getDecimal("材质占比") : null);
+                ? row.getDecimal(MATERIAL_RATIO_HEADERS) : null);
             c.put("operation_no", operationNo);
             c.put("characteristic", characteristic);
             childByMat.computeIfAbsent(materialNo, k -> new LinkedHashMap<>())

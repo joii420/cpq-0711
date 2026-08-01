@@ -165,13 +165,26 @@
 | 项次 | `seq_no` | ✅ | |
 | 投入料号 | `component_no` | ✅ | 组件料号 |
 | 投入料号名称 | — | ❌ | 不导入 |
-| 产出料号类型 | `component_usage_type` | ✅ | 只存汉字（剥离"N."编号）：银点类 / 非银点类 / 组成件 / 边角料 |
+| 产出料号类型<br>*（或写「产出类型」）* | `component_usage_type` | ✅ | 只存汉字（剥离"N."编号）：银点类 / 非银点类 / 组成件 / 边角料。表头两种写法都认，见本节末「表头别名」 |
 | 材料毛重 | `rough_weight` | ✅ | 毛重                                    |
 | 材料净重 | `net_weight` | ✅ | 净重 |
 | 重量单位 | `weight_unit` | ✅ | 重量单位 |
 | 损耗率（%） | `scrap_rate` | ✅ | |
 | 不良率（%） | `defect_rate` | ✅ | |
-| 材质占比 | `material_ratio` | ✅ | **非必填**；小数口径（`0.3` = 30%），与 `element_bom_item.content`（组成含量）同口径同精度 `numeric(18,6)`。**仅材质行有效**：`characteristic='RECIPE'` 时取 Excel 值，零件/外购件行由 handler 显式置 NULL（防非材质行误填污染）。列由 V365 新增 |
+| 材质占比<br>*（或写「材料占比」）* | `material_ratio` | ✅ | **非必填**；小数口径（`0.3` = 30%），与 `element_bom_item.content`（组成含量）同口径同精度 `numeric(18,6)`。**仅材质行有效**：`characteristic='RECIPE'` 时取 Excel 值，零件/外购件行由 handler 显式置 NULL（防非材质行误填污染）。列由 V365 新增。表头两种写法都认，见下 |
+
+> 🔤 **表头别名（2026-08-01）**：上表这两列各接受两种写法，是**两个互相独立的字段**，不要互相代替：
+>
+> | 导入 sheet 表头（任一） | 落库列 | 组件卡片列名 | 取值规则 |
+> |---|---|---|---|
+> | `材质占比` / `材料占比` | `material_ratio` | 材料占比 | 仅材质行（RECIPE）取值 |
+> | `产出料号类型` / `产出类型` | `component_usage_type` | 产出类型 | 三态都取，剥离前导"N." |
+>
+> 别名常量在 `MaterialBomMergeHandler.MATERIAL_RATIO_HEADERS` / `USAGE_TYPE_HEADERS`。
+> **为什么要兼容**：同一概念在导入模板/文档里叫「材质占比」，在卡片列名与 SQL 视图别名 `_材料占比`
+> 里叫「材料占比」。客户按后者加列时 `SheetRow.getStr` 的 contains 匹配不上 →
+> **静默按"没填"处理**（不报错、不计失败行、整列丢数，2026-08-01 A/B 实测）。属 AP-52 族。
+> 匹配是 contains 且按**列序**取首个命中，故一份 sheet 里两种写法都出现时以左边那列为准。
 
 > 📌 **「材质占比」为什么是新增列而不是复用既有列**（2026-07-31，V365）：`material_bom_item` 50+ 列中，`composition_qty`（组成数量）/`base_qty`（底数）/`scrap_rate`/`defect_rate` 均已被 handler 占用；`upper_limit_pct`/`lower_limit_pct` 虽全表无值，但语义是 ERP 标准「用量上下限 %」，复用即语义错配（AP-52），故新增独立列。
 >
