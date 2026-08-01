@@ -1210,3 +1210,30 @@
 - **范围**：把文本匹配改为**排除注释与字符串字面量**后再扫（或改用语法级扫描 / AST）；修好后确认白名单回到 3 个文件精确相等。
 - **依赖**：无。**预估规模**：S
 - **验收要点**：①当前 master 上该测试转绿；②人为在某个非白名单文件里加一处**真实** `QuotePendingScope.open(` 调用，测试必须失败（护栏有效性正向验证）；③人为加一句含该字样的注释，测试必须仍绿（假阳性已消除）。
+
+### [BL-0093] 测试库 `cpq_db` 的 V366 撞号 + 脚本丢失，导致所有 `@QuarkusTest` 起不来
+- **优先级**：P1（阻断全部后端集成测试，不阻断纯单测）
+- **来源**：task-0801 后端守卫 B2 第二次执行时暴露，技术总监 A/B 归因确认 pre-existing
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-01
+- **现象**：任何 `@QuarkusTest`（如 `CardSnapshotDryRunParityTest`）启动即抛
+  `org.flywaydb.core.api.exception.FlywayValidateException: Validate failed: Migrations have failed validation`
+  → `Failed to start quarkus`。纯单元测试（如 `TabJoinPlanEvaluator*Test`，不启 Quarkus）不受影响，仍全绿。
+- **根因（实测）**：**两个会话都占用了 V366 版本号**，且测试库记录的那个脚本已不在任何工作区：
+
+  | 位置 | V366 是什么 |
+  |---|---|
+  | 测试库 `cpq_db`.`flyway_schema_history` | `V366__widen_amount_columns_to_scale6.sql`（success=t，已应用） |
+  | 主工作区 | `V366__task0729_costing_element_price_field.sql`（**git 未跟踪**，另一任务的文件） |
+  | 各 worktree | 两个都没有（worktree 是干净 checkout，带不走未跟踪文件） |
+
+  Flyway 在 classpath 找不到 history 里记录的 `V366__widen_amount_columns_to_scale6.sql` → validate 失败。
+- **A/B 归因**：主仓 master（零 task-0801 改动）跑 `CardSnapshotDryRunParityTest` **同样失败、同样异常** → pre-existing。
+- **⚠️ 处置纪律**：**不要**擅自改共享测试库已应用的迁移记录，也**不要**删除他人未跟踪的迁移文件
+  （见历史教训：已应用到共享库的迁移禁改名改号；删 untracked 孤儿迁移会让 8081 重启 validate 挂）。
+  正确修法二选一：①找回 `V366__widen_amount_columns_to_scale6.sql` 并提交进版本库；
+  ②与占号的另一方协商重排版本号后，同步修正 `flyway_schema_history`。**须由知情人处理，不是顺手能做的。**
+- **关联**：与 [[BL-0092]] 同属"回归验证能力被环境问题侵蚀"一类——一个让白名单测试恒红，一个让集成测试全起不来，
+  合并效果是**后端回归网基本失效**，每次改动都要靠人工 A/B 归因，成本高且易误判。建议一并排期。
+- **依赖**：无。**预估规模**：S（定位已完成，剩下是协调与执行）
+- **验收要点**：①`@QuarkusTest` 能正常启动；②`flyway_schema_history` 与版本库中的迁移文件一一对应，无孤儿记录。
