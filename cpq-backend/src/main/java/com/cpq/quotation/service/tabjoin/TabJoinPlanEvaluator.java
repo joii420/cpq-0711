@@ -158,7 +158,8 @@ public class TabJoinPlanEvaluator {
             int close = matchParen(expr, open);
             String inner = expr.substring(open + 1, close);
             out.append(expr, i, fnStart);
-            out.append(reduceAggS(fn, inner, rows, scalars).toPlainString());
+            // task-0801 B3："B" 后缀（JEXL BigDecimal 字面量语法），否则仍按 Double 解析（R-3）。
+            out.append(reduceAggS(fn, inner, rows, scalars).toPlainString()).append('B');
             i = close + 1;
         }
         return out.toString();
@@ -172,8 +173,10 @@ public class TabJoinPlanEvaluator {
             case "SUM" -> vals.stream().reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
             case "COUNT" -> java.math.BigDecimal.valueOf(vals.size());
             case "AVG" -> vals.isEmpty() ? java.math.BigDecimal.ZERO
+                // task-0801 B4：除法中间精度 10→12（PrecisionPolicy.DIVISION_SCALE，统一口径）。
                 : vals.stream().reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add)
-                      .divide(java.math.BigDecimal.valueOf(vals.size()), 10, java.math.RoundingMode.HALF_UP);
+                      .divide(java.math.BigDecimal.valueOf(vals.size()),
+                              com.cpq.common.PrecisionPolicy.DIVISION_SCALE, java.math.RoundingMode.HALF_UP);
             case "MIN" -> vals.stream().min(java.math.BigDecimal::compareTo).orElse(java.math.BigDecimal.ZERO);
             case "MAX" -> vals.stream().max(java.math.BigDecimal::compareTo).orElse(java.math.BigDecimal.ZERO);
             default -> java.math.BigDecimal.ZERO;
@@ -192,7 +195,9 @@ public class TabJoinPlanEvaluator {
             Tok tok = parseTok(m.group(1));
             String lit;
             if (tok.total()) {
-                java.math.BigDecimal s = scalars.get(tok.raw()); lit = s != null ? s.toPlainString() : "0";
+                // task-0801 B3："B" 后缀（JEXL BigDecimal 字面量语法），否则仍按 Double 解析（R-3）。
+                java.math.BigDecimal s = scalars.get(tok.raw());
+                lit = (s != null ? s.toPlainString() : "0") + "B";
             } else lit = numLit(row.get(tok.raw()));
             m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(lit));
         }
@@ -220,10 +225,11 @@ public class TabJoinPlanEvaluator {
         return s.length() - 1;
     }
 
+    /** task-0801 B3："B" 后缀（JEXL BigDecimal 字面量语法），否则仍按 Double 解析（R-3）。 */
     private String numLit(Object v) {
-        if (v == null) return "0";
-        try { return new java.math.BigDecimal(v.toString().trim()).toPlainString(); }
-        catch (Exception e) { return "0"; }
+        if (v == null) return "0B";
+        try { return new java.math.BigDecimal(v.toString().trim()).toPlainString() + "B"; }
+        catch (Exception e) { return "0B"; }
     }
 
     private java.math.BigDecimal toBig(Object v) {

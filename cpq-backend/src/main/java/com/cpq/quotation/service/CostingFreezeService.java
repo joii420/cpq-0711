@@ -1,5 +1,6 @@
 package com.cpq.quotation.service;
 
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.globalvariable.GlobalVariableDefinition;
 import com.cpq.globalvariable.GlobalVariableService;
@@ -16,7 +17,6 @@ import jakarta.persistence.PersistenceException;
 import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.List;
 import java.util.UUID;
 
@@ -163,7 +163,8 @@ public class CostingFreezeService {
             if (li == null) continue;
             total = total.add(CostingSubtotalUtil.lineCostingAmount(li.costingCardValues, li.annualVolume));
         }
-        return total.setScale(4, java.math.RoundingMode.HALF_UP);
+        // task-0801 B5：落库边界（写 costing_order.costing_total_amount）统一规整到 6 位。
+        return PrecisionPolicy.round(total);
     }
 
     /**

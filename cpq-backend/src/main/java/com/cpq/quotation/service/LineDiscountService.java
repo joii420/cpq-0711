@@ -1,5 +1,6 @@
 package com.cpq.quotation.service;
 
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.component.entity.Component;
 import com.cpq.quotation.entity.QuotationLineComponentData;
 import com.cpq.quotation.entity.QuotationLineItem;
@@ -43,7 +44,8 @@ public class LineDiscountService {
      *   <li>source=页签code → S1 = S0 × (引擎折后/引擎折前)（比例映射），base=该页签列和</li>
      *   <li>lineUnitPrice=S0，lineFinalPrice=S1，discountBaseAmount=base</li>
      *   <li>lineDiscountAmount=(S0-S1)*annualVolume，lineTotalAmount=S1*annualVolume</li>
-     *   <li>全部 setScale(4, HALF_UP)</li>
+     *   <li>中间过程（S0/S1/base）全程 BigDecimal 不截断；落库前统一 {@code PrecisionPolicy.round()}
+     *       规整到 6 位（task-0801 B4/B5：链路二 lineDiscountAmount/lineTotalAmount 禁止中间截断）</li>
      * </ul>
      *
      * <p><b>双口径修复（2026-07-17，QT-20260716-2033 提交口径 67.16 vs 卡片 122.16）</b>：
@@ -73,11 +75,12 @@ public class LineDiscountService {
         } else {
             s0 = BigDecimal.ZERO;
         }
-        s0 = s0.setScale(4, RoundingMode.HALF_UP);
+        // task-0801 B4：不再 setScale(4) 截断，S0 保留全精度参与后续链路二运算。
 
-        // 折扣系数
+        // 折扣系数：BigDecimal 精确计算（原 double 中转会在与 s0 相乘时把误差带入链路二金额）。
         BigDecimal rate = li.discountRateApplied != null ? li.discountRateApplied : BigDecimal.ZERO;
-        double scale = 1.0 - rate.doubleValue() / 100.0;
+        BigDecimal scale = BigDecimal.ONE.subtract(
+            rate.divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
         String source = li.discountSource;
 
         // S1 + base
@@ -85,7 +88,7 @@ public class LineDiscountService {
         BigDecimal base;
         if (source == null || source.isBlank() || SUBTOTAL_SOURCE.equals(source)) {
             // 整体折扣：对产品小计整体乘 scale
-            s1 = s0.multiply(BigDecimal.valueOf(scale));
+            s1 = s0.multiply(scale);
             base = s0;
         } else if (subtotalCid != null) {
             // 页签折扣：引擎算「折后/折前」比例（引擎内自洽），映射到权威 S0 上。
@@ -94,9 +97,10 @@ public class LineDiscountService {
             BigDecimal e0 = ComponentDataEffectiveRows.subtotalWithDiscount(
                 cdList, metaById, subtotalCid, formulaCalculator, null, 1.0);
             BigDecimal e1 = ComponentDataEffectiveRows.subtotalWithDiscount(
-                cdList, metaById, subtotalCid, formulaCalculator, source, scale);
+                cdList, metaById, subtotalCid, formulaCalculator, source, scale.doubleValue());
             s1 = e0.signum() != 0
-                ? s0.multiply(e1).divide(e0, 8, RoundingMode.HALF_UP)
+                // task-0801 B4：除法中间精度 8→12（PrecisionPolicy.DIVISION_SCALE），不再是落库边界。
+                ? s0.multiply(e1).divide(e0, PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP)
                 : s0;
             base = discountBaseOf(cdList, metaById, source);
         } else {
@@ -104,16 +108,17 @@ public class LineDiscountService {
             s1 = s0;
             base = BigDecimal.ZERO;
         }
-        s1 = s1.setScale(4, RoundingMode.HALF_UP);
+        // task-0801 B4：不再 setScale(4) 截断，S1 保留全精度参与后续链路二运算。
 
         int qty = li.annualVolume != null ? li.annualVolume : 0;
         BigDecimal q = BigDecimal.valueOf(qty);
 
-        li.lineUnitPrice      = s0;
-        li.discountBaseAmount = base.setScale(4, RoundingMode.HALF_UP);
-        li.lineFinalPrice     = s1;
-        li.lineDiscountAmount = s0.subtract(s1).multiply(q).setScale(4, RoundingMode.HALF_UP);
-        li.lineTotalAmount    = s1.multiply(q).setScale(4, RoundingMode.HALF_UP);
+        // task-0801 B5：落库边界 —— 5 个金额字段赋值前统一 PrecisionPolicy.round()（规整到 6 位）。
+        li.lineUnitPrice      = PrecisionPolicy.round(s0);
+        li.discountBaseAmount = PrecisionPolicy.round(base);
+        li.lineFinalPrice     = PrecisionPolicy.round(s1);
+        li.lineDiscountAmount = PrecisionPolicy.round(s0.subtract(s1).multiply(q));
+        li.lineTotalAmount    = PrecisionPolicy.round(s1.multiply(q));
     }
 
     // -------------------------------------------------------------------------

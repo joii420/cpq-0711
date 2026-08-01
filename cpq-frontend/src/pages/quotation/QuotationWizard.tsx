@@ -34,14 +34,24 @@ import { buildExcelSnapshot } from './buildExcelSnapshot';
 // lazy-cardvalues：纯判定函数抽到小模块(便于单测,不拉本文件重依赖),运行时由此 import 复用。
 import { shouldWarmCardValues } from './cardValuesWarm';
 import RowKeyConflictDrawer, { type RowKeyConflictDTO } from './RowKeyConflictDrawer';
+import { normalizeNumber, toDecimal, roundToDisplay } from '../../utils/precision';
+import { formatNumber } from '../../utils/formatNumber';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
 
-/** 递归把所有数值规范化为 4 位定点,消除 live↔snap 求值浮点尾差,保证 payload 去重稳定。 */
+/**
+ * 递归把 payload 里所有 number 按有效数字规范化（normalizeNumber，见 precision.ts），
+ * 消除 live↔snap 求值浮点尾差,保证 payload 去重稳定。
+ *
+ * task-0801（2026-08-01，二次修订）：原实现 `Number(v.toFixed(4))` 按小数位数一刀切压所有数值，
+ * 会把 8~12 位小数的取数列（工装单价、production_energy.unit_price 等）压坏，违反 AC-8。
+ * 改为调用 `normalizeNumber`（按有效数字 15 位，而非小数位数）—— 详细原因（含反例）见
+ * precision.ts 的 PAYLOAD_SIGNIFICANT_DIGITS 注释，**不要在此处改回 toFixed(N) 按小数位数规整**。
+ */
 export function normalizeDraftPayloadNumbers<T>(payload: T): T {
   const norm = (v: any): any => {
-    if (typeof v === 'number') return Number.isFinite(v) ? Number(v.toFixed(4)) : v;
+    if (typeof v === 'number') return normalizeNumber(v);
     if (Array.isArray(v)) return v.map(norm);
     if (v && typeof v === 'object') {
       const o: any = {};
@@ -1207,7 +1217,13 @@ const QuotationWizard: React.FC = () => {
 
   const handleCalculateDiscount = async () => {
     if (!quotationId) return;
-    const originalAmount = lineItems.reduce((sum, li) => sum + computeProductSubtotal(li, driverExpansions, customerIdValue), 0);
+    // task-0801（链路二）：Σ 各行产品小计改十进制精确累加，不再 number `+=`。
+    const originalAmount = roundToDisplay(
+      lineItems.reduce(
+        (sum, li) => sum.plus(toDecimal(computeProductSubtotal(li, driverExpansions, customerIdValue))),
+        toDecimal(0),
+      ),
+    );
     if (originalAmount <= 0) {
       message.warning('没有可计算的金额');
       return;
@@ -1626,9 +1642,16 @@ const QuotationWizard: React.FC = () => {
   );
 
   const renderStep5 = () => {
-    const originalAmount = lineItems.reduce((sum, li) => sum + computeProductSubtotal(li, driverExpansions, customerIdValue), 0);
+    // task-0801（链路二）：Σ 各行产品小计改十进制精确累加；折扣率相乘同样走 Decimal（下游是
+    // 已聚合的大额合计，避免再引入 number 运算误差）。
+    const originalAmount = roundToDisplay(
+      lineItems.reduce(
+        (sum, li) => sum.plus(toDecimal(computeProductSubtotal(li, driverExpansions, customerIdValue))),
+        toDecimal(0),
+      ),
+    );
     const discountRate = form.getFieldValue('finalDiscountRate') || quotation?.finalDiscountRate || 100;
-    const totalAmount = originalAmount * discountRate / 100;
+    const totalAmount = roundToDisplay(toDecimal(originalAmount).times(toDecimal(discountRate)).dividedBy(100));
     const isDraft = !quotation || quotation.status === 'DRAFT';
 
     return (
@@ -1661,14 +1684,15 @@ const QuotationWizard: React.FC = () => {
             columns={[
               { title: '产品名称', dataIndex: 'productName' },
               { title: '产品料号', dataIndex: 'productPartNo' },
-              { title: '小计', dataIndex: 'subtotal', render: (v: number) => `¥${(v || 0).toLocaleString()}` },
+              // task-0801：不再固定 toLocaleString()（默认最多 3 位），走 formatNumber 6 位去尾零兜底
+              { title: '小计', dataIndex: 'subtotal', render: (v: number) => `¥${formatNumber(v || 0, { isComputed: true }) ?? '0'}` },
             ]}
             summary={() => (
               <Table.Summary>
                 <Table.Summary.Row>
                   <Table.Summary.Cell index={0} colSpan={2}><Text strong>合计</Text></Table.Summary.Cell>
                   <Table.Summary.Cell index={1}>
-                    <Text strong>¥{originalAmount.toLocaleString()}</Text>
+                    <Text strong>¥{formatNumber(originalAmount, { isComputed: true }) ?? '0'}</Text>
                   </Table.Summary.Cell>
                 </Table.Summary.Row>
               </Table.Summary>
@@ -1678,10 +1702,10 @@ const QuotationWizard: React.FC = () => {
 
         <Card title="定价" size="small" style={{ marginTop: 16 }}>
           <Descriptions column={2} bordered size="small">
-            <Descriptions.Item label="原始总金额">¥{originalAmount.toLocaleString()}</Descriptions.Item>
+            <Descriptions.Item label="原始总金额">¥{formatNumber(originalAmount, { isComputed: true }) ?? '0'}</Descriptions.Item>
             <Descriptions.Item label="折扣率">{discountRate}%</Descriptions.Item>
             <Descriptions.Item label="最终总金额">
-              <Text strong style={{ color: '#1890ff', fontSize: 16 }}>¥{totalAmount.toLocaleString()}</Text>
+              <Text strong style={{ color: '#1890ff', fontSize: 16 }}>¥{formatNumber(totalAmount, { isComputed: true }) ?? '0'}</Text>
             </Descriptions.Item>
           </Descriptions>
         </Card>

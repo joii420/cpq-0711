@@ -141,9 +141,9 @@ public final class ComponentDataEffectiveRows {
             computeScaled(cdList, metaById, Map.of(), fc, discountCode, discountScale);
         CardEffectiveRows.TabRows tr = subtotalComponentId != null
             ? tabs.get(subtotalComponentId.toString()) : null;
+        // task-0801 B4：不再 setScale(4) 截断（链路二起点，呈现边界由调用方统一规整）。
         BigDecimal s = tr != null ? tr.subtotal : null;
-        return s != null ? s.setScale(4, java.math.RoundingMode.HALF_UP)
-                         : java.math.BigDecimal.ZERO.setScale(4);
+        return s != null ? s : java.math.BigDecimal.ZERO;
     }
 
     /**
@@ -189,7 +189,11 @@ public final class ComponentDataEffectiveRows {
                         || discountCode.equals(meta.name + SUBTOTAL_KEY_SEP + e.getKey())
                         || discountCode.equals(meta.code)
                         || discountCode.equals(meta.name));
-                    if (hit) v = v * discountScale;
+                    // task-0801 B4-2（审计追加发现）：原 `v * discountScale` 是裸 double 乘法，
+                    // 3*0.8 这类值在 double 二进制下不精确（≈2.4000000000000004）；旧代码靠
+                    // evaluateExpression 末尾 setScale(4) 掩盖，B2 去掉该截断后会原样冒出到结果里。
+                    // 单次求值须十进制精确（§1 链路一纪律）：改用 BigDecimal 乘法算完再转回 double。
+                    if (hit) v = e.getValue().multiply(java.math.BigDecimal.valueOf(discountScale)).doubleValue();
                     if (meta.code != null) componentSubtotals.put(meta.code + SUBTOTAL_KEY_SEP + e.getKey(), v);
                     if (meta.name != null) componentSubtotals.put(meta.name + SUBTOTAL_KEY_SEP + e.getKey(), v);
                     if (meta.amountCols.contains(e.getKey())) amountTotal += v;

@@ -132,8 +132,10 @@ function buildFormulaCache(
   return caches;
 }
 
+// task-0801（AP-50：详情页须与编辑页 QuotationStep2.formatCurrency 同口径）：不再固定 2 位
+// toLocaleString，改走 formatNumber（DISPLAY_SCALE=6 兜底去尾零）。
 const formatCurrency = (val: number) =>
-  `¥ ${(val || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  `¥ ${formatNumber(val || 0, { isComputed: true }) ?? '0'}`;
 
 /** 单元格值格式化 — V197 同 QuotationStep2.formatPathValue 同款逻辑, 支持 JSONB 包装对象 */
 const formatCellValue = (v: any): string => {
@@ -889,8 +891,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         if (isNumericCol && colName && colName in colSums) {
                           const v = colSums[colName] ?? 0;
                           // ¥ 仅当 is_amount===true；其他数值列（含管理费/利润等 is_subtotal 但非金额列）纯数字
-                          // C2：金额列 = ¥ + 通用精度（与其它小计列同款 4 位去末尾 0，仅多 ¥ 前缀）
-                          const plain = v === 0 ? '0' : parseFloat(v.toFixed(4)).toString();
+                          // C2：金额列 = ¥ + 通用精度（task-0801：改走 formatNumber DISPLAY_SCALE=6
+                          // 去尾零兜底，与编辑页 QuotationStep2 同款同口径，AP-50）
+                          const plain = v === 0 ? '0' : (formatNumber(v, { isComputed: true }) ?? '0');
                           const text = field.is_amount === true ? `¥ ${plain}` : plain;
                           return (
                             <td key={colName || fi} className="qt-subtotal-cell" style={field.is_amount === true ? undefined : { color: '#595959' }}>
@@ -911,7 +914,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         {activeComponentVersionable && <td />}
                         <td className="qt-subtotal-label-cell">合计</td>
                         <td colSpan={Math.max(1, activeComp.fields.length - 1)} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
-                          {/* 本页签金额合计走"其余"高精度 4 位（精度优先）；仅最终产品小计保持 formatCurrency 2 位 */}
+                          {/* task-0801：全口径统一 6 位去尾零（formatNumber 兜底），产品小计/页签合计不再分叉 2 位 vs 4 位 */}
                           {`¥ ${formatNumber(sumTabColumns(activeComp as any, compSubtotals), { isComputed: true }) ?? '0'}`}
                         </td>
                       </tr>

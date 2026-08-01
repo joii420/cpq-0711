@@ -1,6 +1,6 @@
-import Decimal from 'decimal.js';
 import type { GlobalVariableDefinition } from '../services/globalVariableService';
 import { compileGlobalVariableTokenForRow } from '../services/globalVariableService';
+import { evaluateArithmetic } from './precision';
 
 export type { GlobalVariableDefinition } from '../services/globalVariableService';
 
@@ -581,15 +581,12 @@ export function evaluateExpression(
     }
   }
 
-  try {
-    // Use Function constructor instead of eval for slightly better practice
-    // Safe: we built the expression ourselves from controlled tokens
-    const fn = new Function(`return (${expr})`);
-    const result = new Decimal(fn());
-    return result.toDecimalPlaces(4).toNumber();
-  } catch {
-    return 0;
-  }
+  // task-0801：十进制精确求值，替代 new Function（不再 eval 任意 JS，退化为纯算术解析器，
+  // 更安全）。不再 toDecimalPlaces(4) 中途截断 —— 返回值可能带较长小数，这是预期行为
+  // （中间不截断），由显示层 formatNumber（兜底 DISPLAY_SCALE=6）与 payload 规范化在边界处理。
+  // 本求值点对外承诺"始终返回 number"（不返回 null）：非法表达式沿用旧 catch→0 兜底语义。
+  const result = evaluateArithmetic(expr);
+  return result === null ? 0 : result.toNumber();
 }
 
 export function isWithinTolerance(frontendValue: number, backendValue: number, tolerance = 0.01): boolean {
@@ -694,18 +691,15 @@ export function evaluateListFormulaString(
     return numericToStr(v);
   });
 
-  // 3. 仅允许数字/运算符/括号/小数点/空格
+  // 3. 仅允许数字/运算符/括号/小数点/空格（安全防线，task-0801 不改）
   if (!/^[\d+\-*/().\s]*$/.test(expr)) {
     return null;
   }
 
-  try {
-    const fn = new Function(`return (${expr})`);
-    const result = new Decimal(fn());
-    return result.toDecimalPlaces(4).toNumber();
-  } catch {
-    return null;
-  }
+  // task-0801：十进制精确求值，替代 new Function。不再 toDecimalPlaces(4) 中途截断
+  // （中间不截断，由显示层/payload 规范化在边界处理）。非法表达式沿用既有约定返回 null。
+  const result = evaluateArithmetic(expr);
+  return result === null ? null : result.toNumber();
 }
 
 function numericToStr(v: any): string {

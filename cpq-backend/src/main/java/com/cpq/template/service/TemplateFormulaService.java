@@ -1,5 +1,6 @@
 package com.cpq.template.service;
 
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.component.entity.Component;
 import com.cpq.formula.EvaluationContext;
@@ -101,6 +102,8 @@ public class TemplateFormulaService {
      * 由于 RowFunctions 是内部控制类，使用 JexlPermissions.UNRESTRICTED 放开限制，
      * 允许调用 _fn.ABS / _fn.NULLIF / _fn.COALESCE / _fn.IF 等方法。
      */
+    // task-0801 B3（求值点 #3）：arithmetic 配 PrecisionPolicy 的 MathContext + DIVISION_SCALE，
+    // 配合 toNumericLiteral() / @变量替换处数字字面量追加 "B" 后缀（R-3）。
     private final JexlEngine rowJexl = new JexlBuilder()
             .silent(true)
             .strict(false)
@@ -108,6 +111,7 @@ public class TemplateFormulaService {
             // P3(2026-06-26 perf):缓存已解析表达式。首存逐行 Excel 快照对同模板同公式重复 createExpression
             // (170 行 ×N 列),无 cache 时每次重新 parse JEXL → 占首存 S3 大头。cache 只缓存 AST,不改求值语义。
             .cache(512)
+            .arithmetic(new org.apache.commons.jexl3.JexlArithmetic(false, PrecisionPolicy.MC, PrecisionPolicy.DIVISION_SCALE))
             .create();
 
     @Inject
@@ -608,7 +612,7 @@ public class TemplateFormulaService {
                 m.appendReplacement(sb, Matcher.quoteReplacement(literal));
             } else if (byName.containsKey(ref)) {
                 // 应该已在 cache，但未 cached（拓扑序问题）
-                m.appendReplacement(sb, "0");
+                m.appendReplacement(sb, "0B");
                 LOG.warnf("[Stage2] Formula reference '%s' not yet cached, using 0", ref);
             } else {
                 // col_key fallback: 从 viewCols 中找 VARIABLE 列路径取值
@@ -627,7 +631,8 @@ public class TemplateFormulaService {
         while (gm.find()) {
             String varName = gm.group(1);
             BigDecimal gv = resolveGlobalVariable(varName);
-            String literal = gv != null ? gv.toPlainString() : "0";
+            // task-0801 B3："B" 后缀（同 toNumericLiteral 理由，R-3）。
+            String literal = (gv != null ? gv.toPlainString() : "0") + "B";
             gm.appendReplacement(sb2, Matcher.quoteReplacement(literal));
             LOG.debugf("[Stage2] @%s → %s", varName, literal);
         }
@@ -667,7 +672,9 @@ public class TemplateFormulaService {
             }
             String argsContent = expression.substring(openParen + 1, closeParen);
             BigDecimal aggResult = executeOverFunction(funcName, argsContent, customerId, partNo);
-            result.append(aggResult != null ? aggResult.toPlainString() : "0");
+            // task-0801 B3："B" 后缀（同 toNumericLiteral 理由，R-3）—— 此结果随后继续流经
+            // [名称]/@变量替换，最终喂给 formulaEngine.evaluate()，字面量必须走 BigDecimal 语法。
+            result.append(aggResult != null ? aggResult.toPlainString() : "0").append('B');
             pos = closeParen + 1;
         }
         result.append(expression.substring(pos));
@@ -1531,18 +1538,22 @@ public class TemplateFormulaService {
 
     private String strOrNull(Object v) { return v == null ? null : v.toString(); }
 
-    /** 把 Object 转为数值字面量字符串（用于表达式替换） */
+    /**
+     * 把 Object 转为数值字面量字符串（用于表达式替换）。
+     * task-0801 B3：追加 "B" 后缀（JEXL BigDecimal 字面量语法），否则该字面量仍按 Double 解析，
+     * 与本方法喂给 {@code formulaEngine.evaluate()} 的其它 BigDecimal 值混算时精度不对齐（R-3）。
+     */
     private String toNumericLiteral(Object v) {
-        if (v == null) return "0";
-        if (v instanceof FormulaError) return "0";
-        if (v instanceof BigDecimal bd) return bd.toPlainString();
-        if (v instanceof Number n) return new BigDecimal(n.toString()).toPlainString();
+        if (v == null) return "0B";
+        if (v instanceof FormulaError) return "0B";
+        if (v instanceof BigDecimal bd) return bd.toPlainString() + "B";
+        if (v instanceof Number n) return new BigDecimal(n.toString()).toPlainString() + "B";
         String s = v.toString().trim();
         try {
             new BigDecimal(s);
-            return s;
+            return s + "B";
         } catch (NumberFormatException e) {
-            return "0";
+            return "0B";
         }
     }
 

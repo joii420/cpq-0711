@@ -15,6 +15,8 @@ import type { ColumnsType } from 'antd/es/table';
 import type { LineItem } from './QuotationStep2';
 import type { DriverExpansionMap } from './useDriverExpansions';
 import { computeLineDiscount, extractDiscountSources, patchVisibleLineItem } from './lineDiscount';
+import { toDecimal, roundToDisplay } from '../../utils/precision';
+import { formatNumber } from '../../utils/formatNumber';
 
 const { Text } = Typography;
 
@@ -204,18 +206,23 @@ const QuotationStep3: React.FC<Props> = ({
     // discountRuleCode 字段及 round-trip 链路保留，规则引擎接通后把列加回即可。
   ];
 
-  const grandOriginal = visibleItems.reduce(
-    (sum, li) => sum + (li.lineUnitPrice ?? li.subtotal ?? 0) * (li.annualVolume ?? 0),
-    0,
+  // task-0801（链路二，最高优先级）：单价 × 年用量（可达几十万件）再跨行累加 = 亿级金额，
+  // 15 位有效数字已达 double 极限 —— 全程 Decimal，禁止中途 .toNumber()/隐式 number 运算，
+  // 只在最终展示时 roundToDisplay（DISPLAY_SCALE=6）。禁止参照旧写法用 number `*`/`+=`。
+  const grandOriginal = roundToDisplay(
+    visibleItems.reduce(
+      (sum, li) => sum.plus(
+        toDecimal(li.lineUnitPrice ?? li.subtotal ?? 0).times(toDecimal(li.annualVolume ?? 0)),
+      ),
+      toDecimal(0),
+    ),
   );
-  // computeLineDiscount 返回的 lineDiscountAmount 已含 ×年用量，直接求和
-  const grandDiscount = visibleItems.reduce(
-    (sum, li) => sum + (li.lineDiscountAmount ?? 0),
-    0,
+  // computeLineDiscount 返回的 lineDiscountAmount 已含 ×年用量，直接求和（仍需全程 Decimal）
+  const grandDiscount = roundToDisplay(
+    visibleItems.reduce((sum, li) => sum.plus(toDecimal(li.lineDiscountAmount ?? 0)), toDecimal(0)),
   );
-  const grandTotal = visibleItems.reduce(
-    (sum, li) => sum + (li.lineTotalAmount ?? 0),
-    0,
+  const grandTotal = roundToDisplay(
+    visibleItems.reduce((sum, li) => sum.plus(toDecimal(li.lineTotalAmount ?? 0)), toDecimal(0)),
   );
 
   return (
@@ -282,9 +289,11 @@ const QuotationStep3: React.FC<Props> = ({
   );
 };
 
+// task-0801：不再固定 2 位 toLocaleString，改走 formatNumber（DISPLAY_SCALE=6 兜底去尾零），
+// 保留原有货币符号选择逻辑（CNY ¥ / USD $ / 其它币种代码前缀）。
 function formatCurrency(value: number, currency: string): string {
   const symbol = currency === 'CNY' ? '¥' : currency === 'USD' ? '$' : `${currency} `;
-  return `${symbol}${(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${symbol}${formatNumber(value || 0, { isComputed: true }) ?? '0'}`;
 }
 
 export default QuotationStep3;

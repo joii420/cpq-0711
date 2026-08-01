@@ -15,6 +15,7 @@ import { useAuthStore } from '../../stores/authStore';
 import QuoteBasicDataImportV6Drawer from './QuoteBasicDataImportV6Drawer';
 import CopyQuotationDrawer from './CopyQuotationDrawer';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
+import { formatNumber } from '../../utils/formatNumber';
 
 const { Search } = Input;
 
@@ -95,7 +96,10 @@ const QuotationList: React.FC = () => {
     },
     {
       title: '总金额', dataIndex: 'totalAmount', key: 'totalAmount', width: 130,
-      render: (v: number) => v != null ? `¥${Number(v).toLocaleString()}` : '-',
+      // task-0801（AC-5）：原 toLocaleString() 默认最多 3 位小数，与详情页 2/4 位不一致，
+      // 是"列表与详情对不上"里属于精度的那部分——只改精度、不改列/不改名，改走 formatNumber
+      // （DISPLAY_SCALE=6 兜底），保留 ¥ 前缀与 '-' 空值兜底。
+      render: (v: number) => v != null ? `¥${formatNumber(v, { isComputed: true }) ?? '0'}` : '-',
     },
     { title: '到期日', dataIndex: 'expiryDate', key: 'expiryDate', width: 120 },
   ];

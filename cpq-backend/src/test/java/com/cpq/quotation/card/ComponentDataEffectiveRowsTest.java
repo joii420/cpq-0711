@@ -85,8 +85,9 @@ class ComponentDataEffectiveRowsTest {
 
         BigDecimal productSubtotal = out.get(ST).subtotal;
         assertNotNull(productSubtotal);
-        // 0.0774 + 0 + 0.08 + 0.067074 = 0.224474（FormulaCalculator 四舍五入到 4 位 → 0.2245）
-        assertEquals(0, new BigDecimal("0.2245").compareTo(productSubtotal),
+        // 0.0774 + 0 + 0.08 + 0.067074 = 0.224474（task-0801 起 FormulaCalculator 不再内部 setScale(4)
+        // 截断，保留全精度；呈现边界才规整到 6 位，本例全精度本就 ≤6 位小数，规整前后一致）
+        assertEquals(0, new BigDecimal("0.224474").compareTo(productSubtotal),
             "实际=" + productSubtotal);
     }
 

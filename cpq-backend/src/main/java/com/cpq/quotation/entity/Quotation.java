@@ -63,7 +63,8 @@ public class Quotation extends PanacheEntityBase {
     @Column(nullable = false, length = 20)
     public String status = "DRAFT";
 
-    @Column(name = "total_amount", precision = 18, scale = 4)
+    // task-0801 B7：precision/scale 18,4 → 20,6（V366），呈现精度统一 6 位。
+    @Column(name = "total_amount", precision = 20, scale = 6)
     public BigDecimal totalAmount = BigDecimal.ZERO;
 
     @Column(name = "expiry_date")
@@ -75,7 +76,8 @@ public class Quotation extends PanacheEntityBase {
     @Column(name = "delivery_cycle")
     public Integer deliveryCycle;
 
-    @Column(name = "original_amount", precision = 18, scale = 4)
+    // task-0801 B7：precision/scale 18,4 → 20,6（V366）。
+    @Column(name = "original_amount", precision = 20, scale = 6)
     public BigDecimal originalAmount = BigDecimal.ZERO;
 
     @Column(name = "system_discount_rate", precision = 5, scale = 2)
@@ -90,7 +92,8 @@ public class Quotation extends PanacheEntityBase {
     @Column(name = "tax_rate", precision = 5, scale = 2, nullable = false)
     public BigDecimal taxRate = BigDecimal.ZERO;
 
-    @Column(name = "tax_amount", precision = 18, scale = 4, nullable = false)
+    // task-0801 B7：precision/scale 18,4 → 20,6（V366）。
+    @Column(name = "tax_amount", precision = 20, scale = 6, nullable = false)
     public BigDecimal taxAmount = BigDecimal.ZERO;
 
     @Column(name = "is_manually_adjusted")

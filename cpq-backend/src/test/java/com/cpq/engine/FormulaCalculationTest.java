@@ -117,4 +117,24 @@ class FormulaCalculationTest {
         assertFalse(formulaService.validateConsistency(
                 new BigDecimal("100.02"), new BigDecimal("100.000")));
     }
+
+    /**
+     * task-0801 B8 T2（求值点 #1 — FormulaCalculationService）：0.1+0.2 必须十进制精确 = 0.3。
+     * 若只配了 MathContext 没给数字字面量加 "B" 后缀，JEXL 仍按 Double 解析两个字面量，
+     * 结果会是 0.30000000000000004（R-3 未修复），本用例专门堵这个漏点。
+     */
+    @Test
+    @Order(5)
+    void t0801_decimalPrecision_pointOneplusPointTwo() {
+        String subtotalFormula = """
+            [
+                {"type": "number", "value": "0.1"},
+                {"type": "operator", "value": "+"},
+                {"type": "number", "value": "0.2"}
+            ]
+            """;
+        BigDecimal result = formulaService.calculateProductSubtotal(subtotalFormula, new HashMap<>(), null);
+        assertEquals(0, new BigDecimal("0.3").compareTo(result),
+            "0.1+0.2 必须精确等于 0.3，实际=" + result);
+    }
 }

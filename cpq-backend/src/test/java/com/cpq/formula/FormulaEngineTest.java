@@ -198,6 +198,26 @@ class FormulaEngineTest {
         assertInstanceOf(FormulaError.class, result);
     }
 
+    /**
+     * task-0801 B8 T2（求值点 #2 — FormulaEngine）：0.1+0.2 必须十进制精确 = 0.3。
+     * 本引擎的 {@code {path}} 取值 / binding 已按 BigDecimal 绑定为 JexlContext 变量（非文本
+     * 拼接），故直接构造 binding 复现生产用法（对齐 fe03 的 binding 用法），而非传纯字面量文本
+     * （纯字面量文本走 JEXL 语法层解析为 Double，属已知的、与本引擎架构无关的残余边界，见
+     * dev-docs/task-0801-公式计算精度优化/backtask.md 交付说明）。
+     */
+    @Test
+    void t0801_decimalPrecision_pointOnePlusPointTwo() {
+        EvaluationContext ctx = EvaluationContext.builder()
+                .dataLoader(mockDataLoader)
+                .binding("a", new BigDecimal("0.1"))
+                .binding("b", new BigDecimal("0.2"))
+                .build();
+        Object result = engine.evaluate("a + b", ctx);
+        assertInstanceOf(BigDecimal.class, result);
+        assertEquals(0, ((BigDecimal) result).compareTo(new BigDecimal("0.3")),
+            "0.1+0.2 必须精确等于 0.3，实际=" + result);
+    }
+
     // ── 工具方法 ─────────────────────────────────────────────────────────────
 
     /** 通过反射注入私有字段（CDI 注入在非容器测试中不可用）。 */

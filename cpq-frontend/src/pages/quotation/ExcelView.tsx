@@ -10,6 +10,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Spin, message, Tag } from 'antd';
 import { templateService } from '../../services/templateService';
 import type { LineItem } from './QuotationStep2';
+import { evaluateArithmetic, roundToDisplay } from '../../utils/precision';
 
 interface ViewColumn {
   col_key: string;
@@ -60,16 +61,12 @@ function computeExcelFormula(
     expr = expr.replace(bareRef, String(val ?? 0));
   }
 
-  try {
-    // eslint-disable-next-line no-new-func
-    const result = new Function('return ' + expr)();
-    if (typeof result === 'number' && isFinite(result)) {
-      return Math.round(result * 10000) / 10000;
-    }
-    return result ?? '#ERR';
-  } catch {
-    return '#ERR';
-  }
+  // task-0801：十进制精确求值，替代 new Function（不再 eval 任意 JS，更安全）。
+  // 本函数返回值直接 String() 渲染进单元格（无下游 formatNumber 层），
+  // 求值 + 显示在此合一，故按呈现精度（DISPLAY_SCALE=6）在此边界规整（F4 显示口径），
+  // 不像 formulaEngine.ts 的两个纯求值点那样把截断完全下放给显示层。
+  const parsed = evaluateArithmetic(expr);
+  return parsed !== null ? roundToDisplay(parsed) : '#ERR';
 }
 
 // ─── Cell value resolution ────────────────────────────────────────────────────
