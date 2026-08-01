@@ -207,7 +207,7 @@ td .dt.down{color:var(--green);}
       <div class="flow-step">
         <div class="who">财务配置</div>
         <div class="t">① 客户调价策略</div>
-        <div class="d">周期 + 执行时刻 + 料号范围 + 参与元素 + 毛利预警线</div>
+        <div class="d">周期 + 执行时刻 + 料号范围 + 参与元素 + 成本差额预警线</div>
       </div>
       <div class="flow-step">
         <div class="who">系统自动</div>
@@ -304,9 +304,9 @@ td .dt.down{color:var(--green);}
               <div class="hint">停用后不再自动生成版本；已生成的版本与已生效的价格不受影响。</div>
             </div>
             <div class="field">
-              <label><span class="req">*</span>毛利预警线</label>
-              <span class="inp" style="width:120px">0</span> <span style="margin-left:6px">%</span>
-              <div class="hint">默认 <b>0</b> —— 某<b>料号</b>调整后报价低于该料号核价成本（毛利为负）即预警标红。可上调（如 15）。只提醒，不阻断审核通过。</div>
+              <label><span class="req">*</span>成本差额预警线</label>
+              <span class="inp" style="width:120px">0</span> <span style="margin-left:6px">元</span>
+              <div class="hint">🔄 <b>E13（2026-07-30）</b>：审核 = 并排显示<b>报价侧成本价、核价侧成本价</b>看<b>差额</b>，<b>不算毛利率</b>。本线是<b>成本差额金额阈值</b>（与比对列 <code>threshold</code> 同量纲，<s>百分比</s> 已改金额）：报价侧成本 − 核价侧成本 &lt; 本值即标红。默认 <b>0</b>（差额&lt;0，即报价侧成本低于核价侧成本，说明报价侧漏算成本）。只提醒，不阻断。</div>
             </div>
           </div>
 
@@ -411,7 +411,7 @@ td .dt.down{color:var(--green);}
             <div class="tbl-wrap" style="border:0;border-radius:0"><table>
               <tr><th>#</th><th>比对列</th><th>报价侧</th><th>核价侧</th><th class="num">阈值</th><th>说明</th></tr>
               <tr><td>1</td><td><b>产品总价</b> <span class="tag b" style="font-size:11px">默认列</span></td>
-                  <td>产品卡片总计</td><td>产品卡片总计</td><td class="num">0</td><td>不可删除，毛利率由它派生</td></tr>
+                  <td>产品卡片总计</td><td>产品卡片总计</td><td class="num">0</td><td>不可删除，成本差额由它派生</td></tr>
               <tr><td>2</td><td>投料材料</td><td>投料 · 材料小计</td><td>材料成本 · 页签合计</td><td class="num">2.00</td><td>—</td></tr>
               <tr><td>3</td><td>加工费</td><td>加工 · 工序费合计</td><td>加工成本 · 页签合计</td><td class="num">0</td><td>—</td></tr>
             </table></div>
@@ -684,7 +684,7 @@ td .dt.down{color:var(--green);}
           <th style="width:40px"><i class="box"></i></th>
           <th>客户</th><th>销售料号</th><th>料号名称</th><th>当前版本 → 目标版本</th>
           <th class="num">报价侧 现→调整后</th><th class="num">核价侧 现→调整后</th>
-          <th class="num">差异（调整后）</th><th class="num">毛利率（调整后）</th>
+          <th class="num">差异（调整后）</th><th class="num">成本差额（调整后）</th>
           <th>比对状态</th><th>判断依据单（最近）</th><th class="num">涉及单</th><th>待处理</th>
         </tr>
         <tr class="sel">
@@ -794,7 +794,7 @@ td .dt.down{color:var(--green);}
       ⚠️ <b>同一客户的不同料号可能落在不同模板系列上</b> —— 待办池是跨客户<b>也跨模板</b>的，这正是配置维度必须带模板系列的原因。<br>
       标记<b>把红与橙分开计数</b>（旧写法「2/3 列跌破」把两者混为一谈，而它们在裁决 44 里处置不同）：<span class="tag r" style="font-size:11px">🔴红</span> = 差异 &lt; 0，已卖穿成本；<span class="tag o" style="font-size:11px">🟠橙</span> = 0 ≤ 差异 &lt; 阈值，没亏但未达预期。</li>
       <li>🚨 <b>整行标红的判定 = 「任一比对列 status=RED」，不是「产品总价差异 &lt; 0」</b>（裁决 44）。这两者<b>不等价</b>，实现时极易写错成后者。<br>
-      <b>看第 5 行 <span class="mono">10120240</span> 镀银铜带</b>：列表上产品总价差异 <b>+4.05</b>、毛利率 <b>9.2%</b>，两个数都健康；但该客户配的「投料材料」那一列已经卖穿 → <b>整行照样标红</b>。<b>这一行是本列表最关键的样例</b>，前端与验收都必须覆盖它，否则「任一列跌破」这条规则形同虚设。</li>
+      <b>看第 5 行 <span class="mono">10120240</span> 镀银铜带</b>：列表上产品总价<b>成本差额 +4.05</b>（报价侧成本高于核价侧，健康）；但该客户配的「投料材料」那一列已经卖穿 → <b>整行照样标红</b>。<b>这一行是本列表最关键的样例</b>，前端与验收都必须覆盖它，否则「任一列跌破」这条规则形同虚设。</li>
       <li>罗克韦尔 <span class="mono">RW-22014</span> 那行：两侧价<b>都在跌</b>，差异仍为负 —— 说明该料号本来就在亏，调价救不回来，属于要单独谈价的料号。</li>
       <li><b>标色数据来自预算落库、不是列表实时算</b>：预算阶段已把该客户<b>每一个比对列</b>的差异与 status 逐列落库（<code>material_price_review_column</code>），并在审核记录上冗余 <code>breached_count / amber_count / column_count</code> 供列表直读 —— 列表标红无需 JOIN、无 N+1，抽屉打开也是纯读库，从而保证<b>列表汇总数与抽屉明细逐位对得上</b>（裁决 41「预算与实际可复现」）。</li>
       <li><b>本期价格毫无变动的料号不进待办池</b>（裁决 39）：无事可审；版本明细里仍有记录可查。</li>
@@ -888,7 +888,7 @@ td .dt.down{color:var(--green);}
       <div class="tbl-wrap"><table>
         <tr><th>报价单号</th><th>建单日期</th><th>状态</th><th>销售</th>
             <th class="num">报价侧 现→调整后</th><th class="num">核价侧 现→调整后</th>
-            <th class="num">差异（调整后）</th><th class="num">毛利率（调整后）</th><th>操作</th></tr>
+            <th class="num">差异（调整后）</th><th class="num">成本差额（调整后）</th><th>操作</th></tr>
         <tr class="warn">
           <td class="mono">QT-20260728-0002 <span class="tag b" style="font-size:11px">判断依据</span></td><td>2026-07-28</td>
           <td><span class="tag b">已提交</span></td><td>王销售</td>
@@ -957,12 +957,12 @@ td .dt.down{color:var(--green);}
       </div>
       <div class="drawer-bd">
         <div class="alert e">
-          <div>其中料号 <span class="mono">10110037</span>（银触点 B 型）调整后毛利率 <b>-4.1%</b>，跌破客户预警线 0%。仍要继续吗？</div>
+          <div>其中料号 <span class="mono">10110037</span>（银触点 B 型）调整后<b>成本差额 -4.10 元</b>（报价侧成本低于核价侧），跌破客户预警线 0。仍要继续吗？</div>
         </div>
 
         <div style="font-size:13px;margin-bottom:8px">本次将通过并升版 <b>2</b> 个料号，更新 <b>8</b> 张报价单中的该料号产品：</div>
         <div class="tbl-wrap" style="margin-bottom:14px"><table>
-          <tr><th>料号</th><th>名称</th><th>版本升级</th><th class="num">调整后毛利率</th><th class="num">影响单数</th></tr>
+          <tr><th>料号</th><th>名称</th><th>版本升级</th><th class="num">调整后成本差额</th><th class="num">影响单数</th></tr>
           <tr><td class="mono">10110002</td><td>银触点 A 型</td><td class="mono">V26070501 → V26080501</td><td class="num">17.7%</td><td class="num">5</td></tr>
           <tr class="warn"><td class="mono">10110037</td><td>银触点 B 型</td><td class="mono">V26070501 → V26080501</td>
               <td class="num" style="color:var(--red);font-weight:600">-4.1%</td><td class="num">3</td></tr>
@@ -1406,7 +1406,7 @@ td .dt.down{color:var(--green);}
       <tr><td>8</td><td>审核</td><td>只读审核；通过 / 驳回（填原因）；改价回源头重出一版</td><td>屏 4</td></tr>
       <tr style="background:var(--red-1)"><td>9</td><td>影响面单位<br><span class="tag r" style="font-size:11px">已改判</span></td><td><s style="color:var(--text3)">按报价单勾选</s> → <b>按料号审核升版</b>；通过后自动更新该料号在<b>全部活单</b>（草稿/已提交/已审批，排除已过期已作废）中的数据。<s style="color:var(--text3)">正被编辑的单跳过</s> → <b style="color:var(--red)">该半句已随裁决 32 作废</b>：系统无编辑锁，改为<b>行级 <code>row_version</code> 乐观并发</b>（F1 终版），重算期间被改动的行标记为<b>冲突</b>可重试（不是"跳过"）</td><td>屏 3 / 5</td></tr>
       <tr style="background:var(--red-1)"><td>10</td><td>毛利粒度<br><span class="tag r" style="font-size:11px">已改判</span></td><td><s style="color:var(--text3)">单据级汇总</s> → <b>料号级</b>：该料号最终报价 vs 该料号最终核价（取最近一张单）。细节仍走 task-0717 比对视图</td><td>屏 3 / 4</td></tr>
-      <tr><td>11</td><td>毛利预警线</td><td>客户级配置，<b>默认 0</b>（卖穿成本必红）；作用于<b>料号级毛利</b>（元素行显示最差料号是否跌破），只提醒不阻断</td><td>屏 1 / 3 / 5</td></tr>
+      <tr><td>11</td><td>成本差额预警线</td><td>客户级配置，<b>默认 0</b>（卖穿成本必红）；作用于<b>料号级毛利</b>（元素行显示最差料号是否跌破），只提醒不阻断</td><td>屏 1 / 3 / 5</td></tr>
       <tr style="background:var(--red-1)"><td>12</td><td>更新动作<br><span class="tag r" style="font-size:11px">已改判</span></td><td><s style="color:var(--text3)">勾报价单一键更新</s> → <b>料号通过即升版并更新</b>：只重算该料号的产品卡片，<b>其余料号逐字节不动</b>（已实证：卡片值按 line_item 分离、行折扣逐行独立、折扣率不随总额跳档）；更新前先存整单快照为一个 R 版本</td><td>屏 5 / 6 / 7</td></tr>
       <tr><td>13</td><td>已审批单状态</td><td>状态不变，只留「<span class="mono">R26072601</span>→<span class="mono">R26080501</span> · 执行人 · 时间」痕迹</td><td>屏 7</td></tr>
       <tr><td>14</td><td>单内切版本</td><td>只读预览，不落库</td><td>屏 7</td></tr>
@@ -1437,7 +1437,7 @@ td .dt.down{color:var(--green);}
       <tr style="background:#e6fffb"><td>43</td><td>比对列可配置</td>
         <td>复用 task-0717 的 <code>ColumnDef</code> schema（<code>kind=PRODUCT_TOTAL|TAB_PAIR</code> + 每列独立 <code>threshold</code> + 报价侧/核价侧 componentId·metric）与配置抽屉交互。<b style="color:var(--red)">⚠️ 已改判</b>：<s>配置按客户一份</s> → <b>按「客户 × 模板系列」各一份</b>（§11.5.4 —— componentId 属于模板不属于客户，按客户存一份会静默漏红）；新组合未配时默认只有「产品总价」一列（该列不依赖 componentId，跨模板通用）。<br><b>跨客户待办池的列冲突解法</b>：列表页固定列（产品总价 + 比对状态汇总标记），<b>抽屉内按该客户配置展开全部比对列</b></td><td>屏 1 / 3 / 4</td></tr>
       <tr style="background:#e6fffb"><td>44</td><td>预警着色</td>
-        <td><b>任一比对列跌破即整行标红</b>；每列按自己的 <code>threshold</code> 双色（差异 &lt; 阈值橙、差异 &lt; 0 红，复用 task-0717 规则）。客户毛利预警线作用于产品总价列</td><td>屏 3 / 4</td></tr>
+        <td><b>任一比对列跌破即整行标红</b>；每列按自己的 <code>threshold</code> 双色（差异 &lt; 阈值橙、差异 &lt; 0 红，复用 task-0717 规则）。客户成本差额预警线作用于产品总价列</td><td>屏 3 / 4</td></tr>
       <tr style="background:var(--gold-1)"><td>补1</td><td>待审版本堆积</td><td>同客户同时只允许一个待处理版本；<b>见裁决 27</b>（新版生成即把旧版整体作废，未处理料号随之失效）</td><td>屏 1 / 3</td></tr>
       <tr style="background:var(--gold-1)"><td>补2</td><td>「每月第几周」口径</td><td>做成「第 N 周 + 星期几」两个参数</td><td>屏 1</td></tr>
       <tr style="background:var(--cyan-1)"><td>22</td><td>审核与升版单位</td><td><b>料号</b>：系统生成元素价格版本作为数据源，财务逐料号审核；通过 → <b>该料号版本指针推进</b>到本期版并更新其在所有活单中的数据，未通过 → 停在原版、报价不动。版本状态由料号处理进度派生（如"12 个料号，已通过 8"）</td><td>屏 3</td></tr>
