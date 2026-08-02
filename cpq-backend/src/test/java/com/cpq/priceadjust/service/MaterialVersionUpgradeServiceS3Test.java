@@ -1,6 +1,8 @@
 package com.cpq.priceadjust.service;
 
 import com.cpq.priceadjust.dto.ElementPrice;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -10,13 +12,15 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * task-0729 B0 · S3a（driver 行 → snapshot_rows）+ S3b（手动行 → row_data）单元测试。
+ * task-0729 B0 · S3a（driver 行 → snapshot_rows）+ S3b/S4b（row_data 手动行改新价/非手动行清陈旧价）+
+ * S4a（quote_card_values.editRows 清陈旧价）单元测试。
  *
  * <p>自建 quotation + line_item + component + component_data 全套测试数据，测后清理。
  * 通过 {@code POST /admin/.../task0729-b0-upgrade-preview} 已用真实生产数据
@@ -82,8 +86,11 @@ class MaterialVersionUpgradeServiceS3Test {
         boolean conflict = outcome.conflict;
 
         assertFalse(conflict, "首次写入不应冲突");
-        // 2 条 Ag(snapshot_rows) + 1 条 Cu(snapshot_rows) + 1 条 manual Ag(row_data) = 4
-        assertEquals(4, rowsChanged, "两条 Ag(snapshot_rows) + 一条 Cu(snapshot_rows) + 一条 manual Ag(row_data)");
+        // 2 条 Ag(snapshot_rows,S3a) + 1 条 Cu(snapshot_rows,S3a) + 1 条 manual Ag(row_data,S3b)
+        // + 1 条非 manual Ag(row_data,S4b 清价) = 5
+        assertEquals(5, rowsChanged,
+            "两条 Ag(snapshot_rows,S3a) + 一条 Cu(snapshot_rows,S3a) + 一条 manual Ag(row_data,S3b 改新价)" +
+            " + 一条非 manual Ag(row_data,S4b 清陈旧价)");
 
         // 重新读库校验
         Object[] row = (Object[]) em.createNativeQuery(
@@ -119,19 +126,112 @@ class MaterialVersionUpgradeServiceS3Test {
         assertEquals(2, agHit, "同一元素多行(BOM 闭包同元素不同材质) 必须逐行全改，不能只改第一条命中就停");
 
         var rowDataArr = M.readTree(rowData);
-        boolean manualHit = false;
+        boolean manualHit = false, nonManualHit = false;
         for (var r : rowDataArr) {
             if ("manual".equals(r.path("_origin").asText(""))) {
+                // S3b：手动行按元素值命中，直接改新价
                 assertEquals("Ag", r.path("元素").asText());
                 assertEquals(999999.0, r.path("元素单价").asDouble(), 0.01, "手动行按元素值命中应改价");
                 manualHit = true;
             } else {
-                // 非 manual 的 row_data 条目本次 S3b 不处理，必须保持原值
-                assertEquals(118478.0, r.path("元素单价").asDouble(), 0.01,
-                    "非 manual 的 row_data 条目不应被 S3b 触碰（那是 S4b 的范围，本次未实现）");
+                // S4b：非 manual 行 = 驱动行 autosave 持久化的当前值，元素命中版本明细 →
+                // 价格键必须被【删除】（不是覆盖成新值），元素字段本身不受影响（验收 #34）。
+                assertFalse(r.has("元素单价"),
+                    "非 manual 的 row_data 条目命中版本明细后，价格键应被 S4b 删除而非保留旧值/覆盖新值");
+                assertEquals("Ag", r.path("元素").asText(), "S4b 不得清元素字段（验收 #34）");
+                nonManualHit = true;
             }
         }
         assertTrue(manualHit, "manual 行必须被找到并处理");
+        assertTrue(nonManualHit, "非 manual 行必须被找到并清价（S4b）");
+    }
+
+    /**
+     * S4a：quote_card_values.editRows 里价格承载 tab 的价格键必须被清（元素命中版本明细的行），
+     * 🔒 但同一 editRow 里若还手改过「毛重」，毛重必须原样保留（验收 #29 要求同时断言"单价被覆盖"
+     * 和"毛重仍在"）；🔒 元素字段本身不得被清（验收 #34）；元素不在版本明细里的 editRow 不动。
+     */
+    @Test
+    @Transactional
+    void cleanEditRowOverrides_onlyRemovesPriceKey_keepsOtherManualEdits() {
+        // 复用类字段 componentId/quotationId/lineItemId（而非局部变量）——这样现有 @AfterEach
+        // 的清理逻辑能自动覆盖本测试新建的数据，不需要另写一套清理。
+        componentId = UUID.randomUUID();
+        String fieldsJson = "[{\"name\":\"元素\",\"field_type\":\"INPUT_TEXT\"}]";
+        em.createNativeQuery(
+                "INSERT INTO component (id, name, code, fields, formulas, element_code_field, " +
+                "element_price_field, element_currency_field) " +
+                "VALUES (:id, 'S4a测试组件', :code, CAST(:fields AS jsonb), '[]', '元素', '元素单价', NULL)")
+            .setParameter("id", componentId).setParameter("code", "TEST-S4A-" + componentId)
+            .setParameter("fields", fieldsJson)
+            .executeUpdate();
+
+        UUID anyCustomerId = (UUID) em.createNativeQuery("SELECT id FROM customer LIMIT 1").getSingleResult();
+        UUID anyUserId = (UUID) em.createNativeQuery("SELECT id FROM \"user\" LIMIT 1").getSingleResult();
+        quotationId = UUID.randomUUID();
+        em.createNativeQuery(
+                "INSERT INTO quotation (id, quotation_number, customer_id, name, sales_rep_id, status, created_at, updated_at) " +
+                "VALUES (:id, :no, :cust, 'S4a测试单', :rep, 'DRAFT', now(), now())")
+            .setParameter("id", quotationId).setParameter("no", "TEST-S4A-" + quotationId)
+            .setParameter("cust", anyCustomerId).setParameter("rep", anyUserId)
+            .executeUpdate();
+
+        lineItemId = UUID.randomUUID();
+        // quote_card_values：一个价格承载 tab，含 3 条 editRow ——
+        //   row1：元素=Ag(在版本明细里)，手改过 元素单价 + 毛重 → 单价应被清，毛重应保留
+        //   row2：元素=Foo(不在版本明细里) → 整条不动
+        //   row3：没有元素字段（历史遗留/未合并过 row_data 的编辑）→ 对不上，不动
+        String cardValuesJson = "{\"tabs\":[{\"componentId\":\"" + componentId + "\",\"componentCode\":\"TEST-S4A\"," +
+            "\"tabName\":\"材料成本\",\"editRows\":[" +
+            "{\"rowKey\":\"r1\",\"values\":{\"元素\":\"Ag\",\"元素单价\":999,\"毛重\":88.8}}," +
+            "{\"rowKey\":\"r2\",\"values\":{\"元素\":\"Foo\",\"元素单价\":5}}," +
+            "{\"rowKey\":\"r3\",\"values\":{\"损耗率\":1.2}}" +
+            "]}]}";
+        em.createNativeQuery(
+                "INSERT INTO quotation_line_item (id, quotation_id, subtotal, quote_card_values, created_at) " +
+                "VALUES (:id, :qid, 0, CAST(:cv AS jsonb), now())")
+            .setParameter("id", lineItemId).setParameter("qid", quotationId).setParameter("cv", cardValuesJson)
+            .executeUpdate();
+
+        com.cpq.quotation.entity.QuotationLineItem li =
+            com.cpq.quotation.entity.QuotationLineItem.findById(lineItemId);
+        assertNotNull(li);
+
+        var pbc = new com.cpq.priceadjust.dto.UpgradeResult.PriceBearingComponent(
+            componentId.toString(), "TEST-S4A", "材料成本", "元素", "元素单价", null);
+        Map<String, ElementPrice> versionPrices = new LinkedHashMap<>();
+        versionPrices.put("Ag", new ElementPrice(new BigDecimal("999999.0000"), "EUR"));
+        // 注意：Foo 故意不给价，验证"元素不在版本明细里 → 不动"
+
+        int cleaned = svc.cleanEditRowOverrides(li, List.of(pbc), versionPrices);
+        assertEquals(1, cleaned, "只有 row1(元素=Ag，在版本明细里) 应被清理");
+
+        JsonNode root;
+        try {
+            root = new ObjectMapper().readTree(li.quoteCardValues);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        JsonNode editRows = root.path("tabs").get(0).path("editRows");
+
+        JsonNode r1 = findByRowKey(editRows, "r1");
+        assertFalse(r1.path("values").has("元素单价"), "row1 单价键必须被清");
+        assertEquals(88.8, r1.path("values").path("毛重").asDouble(), 0.01, "row1 毛重必须原样保留（验收 #29）");
+        assertEquals("Ag", r1.path("values").path("元素").asText(), "row1 元素字段不得被清（验收 #34）");
+
+        JsonNode r2 = findByRowKey(editRows, "r2");
+        assertEquals(5.0, r2.path("values").path("元素单价").asDouble(), 0.01,
+            "row2 元素=Foo 不在版本明细里，整条不动");
+
+        JsonNode r3 = findByRowKey(editRows, "r3");
+        assertEquals(1.2, r3.path("values").path("损耗率").asDouble(), 0.01, "row3 无元素字段，对不上不动");
+    }
+
+    private JsonNode findByRowKey(JsonNode editRows, String rowKey) {
+        for (JsonNode er : editRows) {
+            if (rowKey.equals(er.path("rowKey").asText())) return er;
+        }
+        throw new AssertionError("未找到 rowKey=" + rowKey);
     }
 
     @Transactional

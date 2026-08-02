@@ -31,12 +31,14 @@ import java.util.UUID;
  * S3a/S3b 字段级写回 snapshot_rows/row_data → S4a/S4b 清手工值 → S5 重算卡片
  * （报价侧+核价侧）→ S6 写回行金额 → S7 失效导出快照 → S8 聚合单据。
  *
- * <p>🔒 <b>本次提交实现 S1 + S2 + S3a + S3b</b>（版本价读取 + 价格承载组件定位 + 字段级写回
- * snapshot_rows/row_data）。S0（L3 守卫）/S4~S8 留待后续提交按同一节奏逐步补齐。
- * S4（清手工值）未实现前，若某行在报价单 {@code quote_card_values.editRows} 里被销售手工
- * 改过单价，S3a/S3b 写的新价目前<b>不能</b>保证在渲染层"赢"（那要等 S4 清掉手改覆盖 + S5 重算才闭环）——
- * 本次提交只保证 {@code snapshot_rows}/{@code row_data} 这两个持久化底座已经是新价，
- * 这正是验收 #28（升版不被 saveDraft 回滚）依赖的关键前提。
+ * <p>🔒 <b>本次提交实现 S1 + S2 + S3a + S3b + S4a + S4b</b>（版本价读取 + 价格承载组件定位 +
+ * 字段级写回 snapshot_rows/row_data + 清理 editRows/row_data 里的陈旧手改价格）。
+ * S0（L3 守卫）/S5~S8 留待后续提交按同一节奏逐步补齐。
+ * S5（重算卡片）未实现前，{@code quote_card_values} 本身还没有用新价重新组装——
+ * 本次提交保证的是 {@code snapshot_rows}/{@code row_data} 这两个持久化底座已经是新价、
+ * 且陈旧手改覆盖已清空，这正是验收 #28（升版不被 saveDraft 回滚）与验收 #29（手工值按列清除，
+ * 元素/毛重等其它键不受影响）依赖的关键前提；S5 跑起来后 {@code quote_card_values} 会自然反映新价
+ * （因为它读的正是这两处已经改好的底座）。
  *
  * <p><b>dryRun</b>：语义为"整个事务最终回滚，不真正提交"，不是"跳过写库步骤"——
  * S3a/S3b 无论 dryRun 与否都会执行真实的（事务内）UPDATE，这样后续 S5（重算卡片，未实现）
@@ -136,7 +138,8 @@ public class MaterialVersionUpgradeService {
             return result;
         }
 
-        // ---- S3a + S3b：逐价格承载组件，字段级写回 snapshot_rows（driver 行）+ row_data（手动行）。
+        // ---- S3a + S3b + S4b：逐价格承载组件，字段级写回 snapshot_rows（driver 行）+
+        //      row_data（手动行改新价 + 非手动行清陈旧价）。
         int totalRowsChanged = 0;
         List<String> perComponentSummary = new ArrayList<>();
         for (UpgradeResult.PriceBearingComponent pbc : priceBearing) {
@@ -155,23 +158,94 @@ public class MaterialVersionUpgradeService {
             perComponentSummary.add(pbc.componentCode + "=" + outcome.rowsChanged);
         }
 
-        // ---- S4~S8：留待后续提交按同一节奏逐步补齐（见类头注释）。
+        // ---- S4a：清 quote_card_values.editRows 里价格承载 tab 的价格键（销售在渲染层单元格
+        //      手改过的陈旧覆盖值）。挂在 quotation_line_item 而不是 quotation_line_component_data，
+        //      故不走 row_version 乐观锁（li 是本事务内的托管实体，随 upgrade() 整体事务一起提交/回滚）。
+        int editRowsCleaned = cleanEditRowOverrides(li, priceBearing, versionPrices);
+
+        // ---- S5~S8：留待后续提交按同一节奏逐步补齐（见类头注释）。
         result.status = UpgradeResult.Status.SKIPPED;
         result.message = String.format(
-            "S1~S3 完成：版本价 %d 条，价格承载组件 %d 个，snapshot_rows/row_data 共改写 %d 行（%s）；" +
-            "S4~S8（清手工值/重算卡片/写回金额/失效导出/聚合单据）尚未实现",
-            versionPrices.size(), priceBearing.size(), totalRowsChanged, String.join(", ", perComponentSummary));
+            "S1~S4 完成：版本价 %d 条，价格承载组件 %d 个，snapshot_rows/row_data 共改写 %d 行（%s），" +
+            "editRows 清理 %d 条；S5~S8（重算卡片/写回金额/失效导出/聚合单据）尚未实现",
+            versionPrices.size(), priceBearing.size(), totalRowsChanged, String.join(", ", perComponentSummary),
+            editRowsCleaned);
 
-        // dryRun：本次 S3a/S3b 的 UPDATE 已在当前事务内真实执行（供未来 S5 在同事务内读到新价做预算），
+        // dryRun：本次 S3/S4 的写入已在当前事务内真实执行（供未来 S5 在同事务内读到新价做预算），
         // 但整个事务在方法返回前标记 rollback-only，DB 最终不落任何痕迹。
         if (dryRun) {
             txRegistry.setRollbackOnly();
         }
 
-        LOG.infof("[b0-upgrade] li=%s quotation=%s S1~S3 完成：versionPrices=%d priceBearingComponents=%d " +
-                "rowsChanged=%d dryRun=%b (S4~S8 待补齐)",
-            lineItemId, q.quotationNumber, versionPrices.size(), priceBearing.size(), totalRowsChanged, dryRun);
+        LOG.infof("[b0-upgrade] li=%s quotation=%s S1~S4 完成：versionPrices=%d priceBearingComponents=%d " +
+                "rowsChanged=%d editRowsCleaned=%d dryRun=%b (S5~S8 待补齐)",
+            lineItemId, q.quotationNumber, versionPrices.size(), priceBearing.size(), totalRowsChanged,
+            editRowsCleaned, dryRun);
         return result;
+    }
+
+    /**
+     * S4a：清 {@code quotation_line_item.quote_card_values} 里各 tab 的 {@code editRows}
+     * 中价格承载组件那部分的价格/货币键（销售在报价卡片单元格里手改过的陈旧覆盖值）。
+     *
+     * <p>editRows 条目形如 {@code {rowKey, values:{字段名: 值, ...}}}——{@code values} 是否含
+     * 元素字段取决于该行历史上是否被 {@code mergeRowDataInputsIntoEdits} 合并过 row_data 全量值
+     * （常见情形）。🔒 本方法按该 editRow 自身 {@code values} 里的元素字段值匹配 {@code element_code}，
+     * <b>对不上就跳过、不清</b>——不做"价格承载 tab 的 editRows 一律清空"这种粗粒度处理，避免误伤
+     * "元素不在本次升版范围内"的手改值（对齐 S3b/S4b「对不上就不动」的同一纪律，验收 #35 同族）。
+     * 🔒 只删价格/货币两个键，不清元素字段本身（验收 #34）；其余手改字段（如同一 editRow 里若还
+     * 手改过毛重）原样保留。
+     *
+     * @return 实际清理的 editRow 条目数（跨所有价格承载 tab 汇总，调试/日志用）。
+     */
+    int cleanEditRowOverrides(QuotationLineItem li, List<UpgradeResult.PriceBearingComponent> priceBearing,
+                               Map<String, ElementPrice> versionPrices) {
+        if (li.quoteCardValues == null || li.quoteCardValues.isBlank()) return 0;
+        Map<String, UpgradeResult.PriceBearingComponent> byComponentId = new LinkedHashMap<>();
+        for (UpgradeResult.PriceBearingComponent pbc : priceBearing) byComponentId.put(pbc.componentId, pbc);
+
+        JsonNode root;
+        try {
+            root = MAPPER.readTree(li.quoteCardValues);
+        } catch (Exception e) {
+            LOG.warnf("[b0-upgrade] cleanEditRowOverrides: quote_card_values 解析失败 li=%s: %s", li.id, e.getMessage());
+            return 0;
+        }
+        JsonNode tabs = root.path("tabs");
+        if (!tabs.isArray()) return 0;
+
+        int cleaned = 0;
+        boolean touched = false;
+        for (JsonNode tab : tabs) {
+            String cid = tab.path("componentId").asText("");
+            UpgradeResult.PriceBearingComponent pbc = byComponentId.get(cid);
+            if (pbc == null) continue; // 不是本次升版涉及的价格承载组件，不动
+            JsonNode editRows = tab.path("editRows");
+            if (!editRows.isArray()) continue;
+            for (JsonNode er : editRows) {
+                JsonNode valuesNode = er.path("values");
+                if (!(valuesNode instanceof ObjectNode)) continue;
+                ObjectNode values = (ObjectNode) valuesNode;
+                JsonNode ecNode = values.get(pbc.elementCodeField);
+                if (ecNode == null || ecNode.isNull()) continue; // 该 editRow 没带元素字段，对不上就不动
+                if (!versionPrices.containsKey(ecNode.asText())) continue; // 元素不在本次升版范围内，不动
+                boolean removedAny = values.remove(pbc.elementPriceField) != null;
+                if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank()) {
+                    removedAny = (values.remove(pbc.elementCurrencyField) != null) || removedAny;
+                }
+                if (removedAny) { cleaned++; touched = true; }
+            }
+        }
+
+        if (touched) {
+            try {
+                li.quoteCardValues = MAPPER.writeValueAsString(root);
+            } catch (Exception e) {
+                LOG.warnf("[b0-upgrade] cleanEditRowOverrides: 序列化失败 li=%s: %s", li.id, e.getMessage());
+                return 0;
+            }
+        }
+        return cleaned;
     }
 
     /** S3a/S3b 单组件写回结果：改了几行、是否触发 row_version 冲突。 */
@@ -185,18 +259,20 @@ public class MaterialVersionUpgradeService {
     }
 
     /**
-     * S3a + S3b：对一个价格承载组件的 {@code quotation_line_component_data} 行，
-     * 字段级改写 {@code snapshot_rows}（driver 行，S3a）与 {@code row_data}（手动行，S3b），
-     * 合并成一次带 {@code row_version} 乐观锁的原生 SQL UPDATE。
+     * S3a + S3b + S4b：对一个价格承载组件的 {@code quotation_line_component_data} 行，
+     * 字段级改写 {@code snapshot_rows}（driver 行，S3a）与 {@code row_data}
+     * （手动行改新价 S3b + 非手动行清陈旧价 S4b），合并成一次带 {@code row_version} 乐观锁的
+     * 原生 SQL UPDATE。（S4a 清 {@code quote_card_values.editRows} 在 {@link #upgrade} 里单独处理，
+     * 因为那部分数据挂在 {@code quotation_line_item} 而不是这张表。）
      *
      * <p>🚨 S3a 遍历<b>全部</b> snapshot_rows——行键=「料号+材质+元素」三元组，同一元素跨不同子件/
      * 不同材质必然多行（BOM 闭包展开的不同子件/不同材质都可能含同一元素，如 Ag），本方法逐行独立
      * 判定是否命中版本价，<b>不是</b>找到第一条匹配就停、也不是遇到匹配就 return（那会静默漏改
      * 其余同元素行，验收 #33 专测）。
      *
-     * <p>🚨 S3b 只处理 {@code row_data} 里 {@code _origin === 'manual'} 的手动行——显式判定，
-     * 不靠下标区分（"手动行恒在尾部"只是前端纪律，不是结构保证，AP-54 同族）。按该行**元素列的值**
-     * 匹配 {@code element_code}，对不上就不动（不做名称→编码兜底，验收 #35）。
+     * <p>🚨 S3b/S4b 按 {@code row_data} 里 {@code _origin === 'manual'} 显式判定手动行 vs 非手动行——
+     * 不靠下标区分（"手动行恒在尾部"只是前端纪律，不是结构保证，AP-54 同族）。两者都按该行**元素列的
+     * 值**匹配 {@code element_code}，对不上就不动（不做名称→编码兜底，验收 #35）。
      */
     RowUpdateOutcome upgradeComponentRows(UUID lineItemId, UpgradeResult.PriceBearingComponent pbc,
                                                    Map<String, ElementPrice> versionPrices) {
@@ -253,22 +329,36 @@ public class MaterialVersionUpgradeService {
             changed++;
         }
 
-        // ---- S3b：手动行（row_data），🚨 只处理 _origin === 'manual'。
+        // ---- S3b（手动行改新价）+ S4b（非手动行清手工陈旧价）合并一次遍历 row_data。
+        // row_data 无论手动行还是驱动行的 autosave 持久化当前值，都是「字段名→值」平铺结构
+        // （RowDataMaterializer 产物），元素编码统一按字段名直接取值，无需 resolveRowByFieldName。
         for (JsonNode rd : rowData) {
             if (!(rd instanceof ObjectNode)) continue;
-            ObjectNode manualRow = (ObjectNode) rd;
-            if (!"manual".equals(manualRow.path("_origin").asText(""))) continue; // 显式判定，不靠下标
+            ObjectNode dataRow = (ObjectNode) rd;
+            // 🚨 手动行判定：显式按 _origin === 'manual'，不靠下标区分
+            // （"手动行恒在尾部"只是前端纪律不是结构保证，AP-54 同族）。
+            boolean isManual = "manual".equals(dataRow.path("_origin").asText(""));
 
-            // row_data 是物化后的「字段名→值」平铺结构（RowDataMaterializer 产物），
-            // 元素编码直接按字段名取值，无需 resolveRowByFieldName。
-            JsonNode ecNode = manualRow.get(pbc.elementCodeField);
-            if (ecNode == null || ecNode.isNull()) continue; // 对不上就不动
+            JsonNode ecNode = dataRow.get(pbc.elementCodeField);
+            if (ecNode == null || ecNode.isNull()) continue; // 对不上就不动（S3b/S4b 共同前提，验收 #35）
             ElementPrice ep = versionPrices.get(ecNode.asText());
-            if (ep == null) continue; // 不做名称→编码兜底（验收 #35）
+            if (ep == null) continue; // 元素不在本版明细里，不动——既不改价也不清价
 
-            if (ep.price != null) manualRow.put(pbc.elementPriceField, ep.price);
-            if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank() && ep.currency != null) {
-                manualRow.put(pbc.elementCurrencyField, ep.currency);
+            if (isManual) {
+                // S3b：手动行按元素值命中，直接改新价（不做名称→编码兜底）。
+                if (ep.price != null) dataRow.put(pbc.elementPriceField, ep.price);
+                if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank() && ep.currency != null) {
+                    dataRow.put(pbc.elementCurrencyField, ep.currency);
+                }
+            } else {
+                // S4b：非手动行 = 驱动行 autosave 持久化的当前输入值快照，可能含销售手改过的陈旧
+                // 单价（mergeRowDataInputsIntoEdits 会把它合并进 editRows 抢占渲染）。🔒 只删价格
+                // 字段这一个键（+货币键，若配置），不是覆盖成新值；其余手改字段（毛重/损耗率等）
+                // 原样保留；🔒 不得清元素字段（否则两次升版结果漂移，验收 #34）。
+                dataRow.remove(pbc.elementPriceField);
+                if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank()) {
+                    dataRow.remove(pbc.elementCurrencyField);
+                }
             }
             changed++;
         }
