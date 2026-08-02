@@ -890,12 +890,13 @@ public class CardSnapshotService {
         if (li == null) return;
         Quotation q = Quotation.findById(li.quotationId);
         if (q == null || q.costingCardTemplateId == null) return;
-        Map<String, ArrayNode> precomputed = null;
+        Map<String, ArrayNode> precomputedTmp = null;
         if (templateHasTreeTab(q.costingCardTemplateId)) {
             Map<UUID, Map<String, ArrayNode>> rendered =
                 bomTreeRenderService.render(q.costingCardTemplateId, java.util.List.of(li));
-            precomputed = rendered.get(li.id);
+            precomputedTmp = rendered.get(li.id);
         }
+        final Map<String, ArrayNode> precomputed = precomputedTmp;
         li.costingCardValues = safeCall(() ->
             buildCostingCardValues(li, q.costingCardTemplateId, q.customerId, q.id, null, null, precomputed));
         LOG.infof("[card-snapshot] refreshCostingCardValuesForLine done li=%s", lineItemId);

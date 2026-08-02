@@ -2,6 +2,8 @@ package com.cpq.quotation.resource;
 
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.security.RoleAllowed;
+import com.cpq.priceadjust.dto.UpgradeResult;
+import com.cpq.priceadjust.service.MaterialVersionUpgradeService;
 import com.cpq.quotation.service.CardSnapshotService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -10,6 +12,7 @@ import org.jboss.logging.Logger;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 报价单运维管理端点（SYSTEM_ADMIN 专用）。
@@ -30,6 +33,9 @@ public class QuotationAdminResource {
 
     @Inject
     CardSnapshotService cardSnapshotService;
+
+    @Inject
+    MaterialVersionUpgradeService materialVersionUpgradeService;
 
     /**
      * 存量 DRAFT 草稿迁移：清掉 quote_card_values 里的 #ERROR 脏值（D1）。
@@ -70,5 +76,21 @@ public class QuotationAdminResource {
     public ApiResponse<List<Map<String, Object>>> task0729SubtotalReconcile() {
         LOG.info("[admin] task0729-subtotal-reconcile called (read-only)");
         return ApiResponse.success(cardSnapshotService.reconcileQuoteSubtotalsForTask0729B8());
+    }
+
+    /**
+     * task-0729 B0：{@code MaterialVersionUpgradeService.upgrade} 验证入口（临时，B0 开发期用）。
+     * 目前只实现 S1+S2，恒不写库；{@code dryRun} 透传但当前无实际写库分支可区分。
+     */
+    @POST
+    @Path("/task0729-b0-upgrade-preview")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<UpgradeResult> task0729B0UpgradePreview(
+            @QueryParam("lineItemId") String lineItemId,
+            @QueryParam("targetVersionId") String targetVersionId,
+            @QueryParam("dryRun") @DefaultValue("true") boolean dryRun) {
+        UpgradeResult r = materialVersionUpgradeService.upgrade(
+            UUID.fromString(lineItemId), UUID.fromString(targetVersionId), dryRun);
+        return ApiResponse.success(r);
     }
 }
