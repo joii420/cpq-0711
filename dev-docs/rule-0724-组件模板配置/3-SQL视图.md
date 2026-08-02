@@ -224,8 +224,8 @@ ERROR: each UNION query must have the same number of columns
 
 ### 3.8.4b 🔴 铁律 4：接价格策略时，JOIN 键必须与 `hf_part_no` 输出表达式**逐字一致**（task-0729）
 
-> 2026-07-29 立。**只在"取价函数带料号维度"之后才适用** —— 即 task-0729 的 `f_material_element_price` 落地后。
-> 现行 `f_customer_element_price(:customerCode, :priceBaseDate)` 无料号维度，JOIN 只按元素符号，不受本条约束。
+> 2026-07-29 立，**2026-08-01（V369）已落地生效**：`f_material_element_price(customer_no, base_date)` 已建函数（内置 fallback 回落 `f_customer_element_price`），报价侧 7 个 `mc_view` + 核价侧 `wl_ys_bom_view`（COMP-0049）**均已切换**到新函数并按本条铁律逐视图改写 JOIN 键。
+> 现行 `f_customer_element_price(:customerCode, :priceBaseDate)` 本身**签名未变、仍在用**（作为新函数内部的 fallback 分支），**新配组件一律直接对接 `f_material_element_price`**，不要再照抄旧函数的 JOIN 写法（无料号维度）。报价侧配方细节见 `报价侧.md §5.2.2`。
 
 新取价函数按 `(客户, 料号)` 查版本指针，所以 JOIN 要带料号条件。**照直觉写 `AND cep.material_no = ebi.material_no` 在闭包形态下是错的**：
 
