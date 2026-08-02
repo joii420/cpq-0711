@@ -34,6 +34,7 @@ import { buildExcelSnapshot } from './buildExcelSnapshot';
 // lazy-cardvalues：纯判定函数抽到小模块(便于单测,不拉本文件重依赖),运行时由此 import 复用。
 import { shouldWarmCardValues } from './cardValuesWarm';
 import RowKeyConflictDrawer, { type RowKeyConflictDTO } from './RowKeyConflictDrawer';
+import QuotationPriceRevisionsDrawer from './QuotationPriceRevisionsDrawer';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
@@ -82,6 +83,8 @@ const QuotationWizard: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [quotation, setQuotation] = useState<any>(null);
   const [quotationId, setQuotationId] = useState<string | null>(id || null);
+  // task-0729 屏 7：价格版本抽屉，全角色可见只读（api.md §0.1）；未建单（quotationId 为空）时不显示入口
+  const [priceRevisionsOpen, setPriceRevisionsOpen] = useState(false);
 
   // Step 1 data
   const [customers, setCustomers] = useState<any[]>([]);
@@ -1733,6 +1736,10 @@ const QuotationWizard: React.FC = () => {
         }
         extra={
           <Space>
+            {/* task-0729 屏 7：价格版本，仅已建单（有 quotationId）时可用 */}
+            {quotationId && (
+              <Button onClick={() => setPriceRevisionsOpen(true)}>价格版本</Button>
+            )}
             {quotationId && (
               <Button icon={<SaveOutlined />} loading={saving} disabled={saving} onClick={() => handleSaveDraft()}>
                 保存草稿
@@ -1786,6 +1793,11 @@ const QuotationWizard: React.FC = () => {
         conflicts={rowKeyConflicts}
         onLocate={handleLocateConflict}
         onClose={() => setConflictDrawerOpen(false)}
+      />
+      <QuotationPriceRevisionsDrawer
+        open={priceRevisionsOpen}
+        quotationId={quotationId}
+        onClose={() => setPriceRevisionsOpen(false)}
       />
     </Spin>
   );

@@ -17,6 +17,7 @@ import { useAuthStore } from '../../stores/authStore';
 import CopyQuotationDrawer from './CopyQuotationDrawer';
 import RowKeyConflictDrawer, { type RowKeyConflictDTO } from './RowKeyConflictDrawer';
 import ProductDetailViews from './ProductDetailViews';
+import QuotationPriceRevisionsDrawer from './QuotationPriceRevisionsDrawer';
 import SnapshotTab from './components/SnapshotTab';
 import BoundGlobalVariablesTab from './components/BoundGlobalVariablesTab';
 import type { SubmissionSnapshot } from '../../types/quotation-snapshot';
@@ -58,6 +59,8 @@ const QuotationDetail: React.FC = () => {
   const [emailDrawerOpen, setEmailDrawerOpen] = useState(false);
   const [extendDrawerOpen, setExtendDrawerOpen] = useState(false);
   const [rejectDrawerOpen, setRejectDrawerOpen] = useState(false);
+  // task-0729 屏 7：价格版本抽屉，全角色可见只读（api.md §0.1）
+  const [priceRevisionsOpen, setPriceRevisionsOpen] = useState(false);
 
   // Form instances
   const [emailForm] = Form.useForm();
@@ -525,6 +528,8 @@ const QuotationDetail: React.FC = () => {
               )}
 
               {/* 通用操作 */}
+              {/* task-0729 屏 7：价格版本，全角色可见（销售只读，api.md §0.1），不受本单状态限制 */}
+              <Button onClick={() => setPriceRevisionsOpen(true)}>价格版本</Button>
               <Button icon={<CopyOutlined />} onClick={handleCopy}>复制</Button>
               <Button icon={<FilePdfOutlined />} onClick={() => setPdfDrawerOpen(true)}>导出PDF</Button>
               <Button icon={<FileExcelOutlined />} onClick={() => setExcelDrawerOpen(true)}>导出Excel</Button>
@@ -742,6 +747,12 @@ const QuotationDetail: React.FC = () => {
             navigate(`/quotations/${res.data.id}/edit`);
           } catch (e: any) { message.error(e.message); }
         }}
+      />
+
+      <QuotationPriceRevisionsDrawer
+        open={priceRevisionsOpen}
+        quotationId={id ?? null}
+        onClose={() => setPriceRevisionsOpen(false)}
       />
 
       <RowKeyConflictDrawer
