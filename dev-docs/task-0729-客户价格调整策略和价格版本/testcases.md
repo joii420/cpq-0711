@@ -1367,4 +1367,254 @@ END $$;
 
 ---
 
-**本批（#41~#50）交回，等待下一批指令续写 #51 及以后。**
+---
+
+### #51　元素停用不静默解锁：已停用元素仍在清单里、屏 1 可见并标「已停用」、照常参与调价、单价列仍只读
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测 + 前端自测（`backtask.md` §2.1 + `fronttask.md` §12.1，双侧各自独立自测） | API 测试 + SQL 断言 |
+
+**前置数据**：`CUST-0001` 元素清单已含 `Ag`（参与调价），料号 X 的 driver 行含 `Ag`（`__priceLocked=true`）。
+
+**执行步骤**
+1. `UPDATE element SET status='INACTIVE' WHERE element_code='Ag'`（模拟元素主数据停用；元素只能停用不能删）。
+2. `GET /price-adjust/strategies/CUST-0001/elements`，核对 `Ag` 那一行。
+3. `SELECT count(*) FROM customer_price_adjust_element WHERE strategy_id=... AND element_code='Ag'`。
+4. 生成新版本，确认 `Ag` 照常出现在 `element_price_version_item` 且正常计价。
+5. 查询料号 X 的 driver 行单价列可编辑性标记。
+
+**断言（机械可判定）**
+- 🔒 步骤 3：`= 1`（`Ag` **仍在**清单，未被系统自动移出）。
+- 🔒 步骤 2：响应中 `Ag` 那一行 `elementEnabled=false`，且**默认查询（`includeDisabled=true`）就能看到**（不是必须额外传参才可见，防止"现只列启用元素，财务看不到就无从自查"这个原文明确点出的问题）。
+- 🔒 步骤 4：`element_price_version_item` 里 `Ag` 一条正常记录（`no_price` 视实际取价结果而定，但**不应**因元素停用而被跳过/标记异常）。
+- 🔒 🔒 **核心断言**：步骤 5，料号 X 的 `Ag` 行 `__priceLocked` **仍 = `true`**（只读状态**不因元素停用而静默解锁**——这是本条要防的具体实现错误：把"停用"误判成"从清单移出"从而触发可编辑性联动）。
+
+**证据形式**：停用前后 `customer_price_adjust_element` 记录数；`GET .../elements` 响应（`elementEnabled` 字段）；X 行 `__priceLocked` 前后对比。
+
+---
+
+### #52　更新失败可找回：关闭抽屉后仍能从「更新任务」菜单找到批次；屏 7 显式标「尚未更新」而非新版本号；通知含失败项
+
+| 归属 | 测试层级 |
+|---|---|
+| 跨端(后端主导)（`backtask.md` §2.2 + `fronttask.md` §12.2） | API 测试 + SQL 断言 |
+
+**前置数据**：料号 Y 涉及 3 张单，构造其中 2 张走 #16 的冲突手法（人为制造 `row_version` 不匹配）使升版执行时落 `FAILED`/`CONFLICT`，第 3 张正常 `SUCCESS`。
+
+**执行步骤**
+1. `POST /reviews/approve` 通过 Y，等待 job 跑完（`status` 应为 `PARTIAL`）。
+2. **模拟"关闭抽屉"**：不再轮询该 `jobId`（前端行为，API 层面等价于"不再调用 `GET /jobs/{jobId}`"），间隔一段时间后再次调用。
+3. `GET /price-adjust/jobs?customerNo=CUST-0001`（"更新任务"常驻页列表），定位该批次。
+4. `GET /price-adjust/jobs/{jobId}/items?status=FAILED`，对失败项分别单条重试与批量重试。
+5. `GET /api/cpq/quotations/{那2张失败单的id}/price-revisions`，核对料号 Y 在 `materialVersions` 里的 `state`。
+
+**断言（机械可判定）**
+- 🔒 步骤 3：**间隔任意长时间后依然能查到该批次**（`jobId` 持久存在，不因"没人盯着"就消失或需要重新触发）。
+- 🔒 步骤 4：2 条失败明细可见（`errorCode`/`errorMessage`），单条重试与批量重试均返回正常受理响应（非 404/410）。
+- 🔒 🔒 **核心断言**：步骤 5，那 2 张失败单的 `materialVersions` 中料号 Y **`state="NOT_UPDATED"`**，且渲染文案（若已实现）应为「尚未更新」，**绝不能**直接显示成已推进的新版本号——这条判定必须读 `material_price_update_job_item`（而非只读 `material_price_version_ref` 指针，指针早已推进到新版但这 2 张单的卡片其实还是旧价）。
+- 🔒 完成通知（若通知系统已就绪，查 `NotificationService` 对应记录）内容**同时包含**成功数与失败数，不能只报成功。
+
+**证据形式**：`jobId` 持久查询记录；重试前后 `job_item` 状态；`price-revisions` 响应中 `state="NOT_UPDATED"` 的具体条目；通知内容记录。
+
+---
+
+### #53　初版定型：建单即建初版（未定型）→ 跟随编辑变化 → 首次升版定型（内容=升版前状态，此后不变）→ 同 V 版第二次升版不影响初版 → 未定型期间 `snapshot` 为 NULL → 定型时物化双侧
+
+| 归属 | 测试层级 |
+|---|---|
+| 跨端(后端主导)（`backtask.md` §2.2 + `fronttask.md` §12.2） | SQL 断言 |
+
+**前置数据**：新建一张单，含料号 E、F 两个（均在调价范围+元素清单内）。
+
+**执行步骤**
+1. 首次保存（已有产品行）后，立即查询 `quotation_price_revision`。
+2. 改数量、加一个手动行，再次保存，重新查询。
+3. 生成版本 `V1`，`POST /reviews/approve` 通过 **E**（首次升版）。
+4. 立即再改一次单（改数量），确认初版不受影响。
+5. 同一 `V1` 内，再通过 **F**（并入同一 `R`，同 #17 场景）。
+6. 全程核对 `snapshot`（`quote_card_values`/`costing_card_values`/`snapshot_rows`）是否为 NULL 的时间点。
+
+**断言（机械可判定）**
+- 🔒 ①：`SELECT count(*) FROM quotation_price_revision WHERE quotation_id=... AND based_version_id IS NULL` **= 1**（初版立即出现），`sealed=false`。
+- 🔒 ⑤ **核心断言（性能纪律，容易漏）**：步骤 1、2 两次查询，初版记录的 `quote_card_values`/`costing_card_values`/`snapshot_rows` **全部为 `NULL`**（未定型期间不物化）。
+- 🔒 ②：虽然 `snapshot` 是 NULL，但屏 7 渲染时**取该单当前值**（服务端 `snapshot IS NULL` 时的 fallback，若已有对应接口可直接断言渲染结果 = 单据当前值，两次编辑后的渲染结果应各自不同，体现"跟随编辑变化"的等价效果）。
+- 🔒 ③ 🔒 **核心断言**：步骤 3 首次升版后，初版记录**转为 `sealed=true`**，此刻**才**物化 `snapshot`（非 NULL），内容 = **升版前**（也就是步骤 2 编辑后、升版前）的最后状态。
+- 🔒 步骤 4：再次改单后，初版记录的 `snapshot` **不变**（`sealed=true` 后不再跟随编辑）。
+- 🔒 ④ 🔒 **核心断言**：步骤 5（F 升版，并入同一 `R`）后，初版记录**仍然不变**（`sealed` 记录只在"首次升版"这一刻物化一次，后续同 `V` 版内其他料号的升版不影响它）。
+- 🔒 ⑥：步骤 3 定型时物化的 `snapshot` 同时含 `quote_card_values` **与** `costing_card_values`（双侧，不是只存报价侧）。
+
+**证据形式**：6 个时间点的 `quotation_price_revision`（初版那一行）完整查询输出，标注每次的 `sealed`/`snapshot` 状态。
+
+---
+
+### #54　调价策略变更留痕：改料号范围/元素清单/预警线/比对列配置 → 变更历史可查时间/变更人/变更前后内容
+
+| 归属 | 测试层级 |
+|---|---|
+| 前端自测（历史 Drawer 渲染，`fronttask.md` §12.1）+ 后端自测（`customer_price_adjust_strategy_log` 落库，虽 `backtask.md` §2.1 未单列，按实际职责补测） | API 测试 + SQL 断言 |
+
+**前置数据**：`CUST-0001` 已有策略主体。
+
+**执行步骤**：依次执行 4 类变更各一次：① `PUT .../materials`（改料号范围）；② `PUT .../elements`（改元素清单）；③ `PUT .../strategies/CUST-0001`（改 `costDiffThreshold`）；④ `PUT .../comparison-columns`（改比对列配置）。每次变更后立即 `GET .../logs`。
+
+**断言（机械可判定）**
+- 🔒 每次变更后，`SELECT count(*) FROM customer_price_adjust_strategy_log WHERE strategy_id=... ORDER BY changed_at DESC LIMIT 1` **新增 1 条**，`change_type` 分别对应 `MATERIAL_SCOPE`/`ELEMENT_LIST`/`STRATEGY`/`COMPARISON_COLUMN`（或等价枚举）。
+- 🔒 每条记录的 `before_snapshot`/`after_snapshot` **内容与实际变更前后值一致**（如 ③ 的 `before_snapshot.costDiffThreshold` = 变更前的值、`after_snapshot.costDiffThreshold` = 变更后的值，逐字段核对）。
+- 🔒 `changed_by`/`changed_by_name`/`changed_at` 均非空，且 `changed_by` 与本次操作的实际用户 id 一致。
+- 🔒 前端「🕘 变更历史」Drawer（若已交付）渲染出这 4 条记录，人工/E2E 核对文案摘要（`summary` 字段）语义可读。
+
+**证据形式**：4 次变更各自的 `logs` 查询响应；变更前后值与 `before/after_snapshot` 的逐字段对比。
+
+---
+
+### #55　🔴 切版预览双侧都是历史值（核心）：报价侧与核价侧同为 R1 当时原貌，不得报价正常、核价读当前值
+
+| 归属 | 测试层级 |
+|---|---|
+| **技术总监亲验**（`backtask.md` §2.3 + `fronttask.md` §12.3，与 #14 #21 #28 #40 #41 #64 并列） | API 测试 + SQL 断言 |
+
+**🚨 本条专防"报价侧看着完全正常"的最隐蔽失败模式**：若实现是"报价侧读快照、核价侧读当前值"，报价侧的所有断言都会通过（结构、数量、金额全对），只有**核价侧**的数值会悄悄跟着当前状态漂移——必须专门验证核价侧，不能因为报价侧对了就认为整条通过。
+
+**前置数据（严格按顺序构造）**
+1. 建单，含料号 A、B、C。
+2. 生成版本并通过 A 的升版 → 产生 `R1`（内容 = 升版后状态，含 A/B/C）。**记录 `R1` 此刻的核价侧数值**（`costing_card_values` 中某具体元素成本字段，如 `Ag` 材料成本，取一个精确值 `X1`）。
+3. **销售在 `R1` 之后做三件事**：① 改 A 的数量；② 删除 B 这一行；③ 新增一个手动行 D。
+4. 生成第二版并通过（可以是同一料号 A 再次升版，或另一料号），此时该单核价侧 `Ag` 的成本因价格变化已不同于 `X1`（记为 `X2`，`X2 ≠ X1`——**必须确保这个差值真实存在**，否则本条测不出"核价侧到底读的是哪份数据"）→ 产生 `R2`。
+
+**执行步骤**
+1. `GET /api/cpq/quotations/{quotationId}/price-revisions/{R1的revisionId}/preview`。
+2. 核对返回的 `lineItems` 结构（料号列表、数量）与 `costingCardValues` 中的 `Ag` 成本字段。
+3. 同时查询该单**当前**（非预览）的 `costing_card_values`，取同一字段现值 `X_current`。
+
+**断言（机械可判定）**
+- 🔒 报价侧（基本项）：`lineItems` 含 A（数量 = **升版后、编辑前**的原始值，不是编辑后的新数量）、B（**存在**，不是已被删除的状态）、**不含** D（D 是编辑后加的，`R1` 时还不存在）。
+- 🔒 🔒 **核价侧核心断言**：响应中 `costingCardValues` 的 `Ag` 成本字段 **= `X1`**（`R1` 当时值），**绝不能 = `X_current`**（当前值）或 `X2`（这两个都是"编辑/再升版之后"才有的数，出现即判定为本条失败）。
+- 🔒 若 `X1 = X2`（构造时价格恰好没变化，判别力不足）：本条判定**测试设计需返工**，必须重新构造让两次的价格确有差异，不接受"凑巧一样所以测不出但也算过"这种结论。
+- 🔒 预览态毛利对照数（若有对应的成本差额展示字段）与 `R1` 生效时刻财务本应看到的数（用 `material_price_review_column` 若当时留有痕迹，或用离线按 `R1` 快照重新计算的值）**逐位一致**。
+
+**证据形式**：`R1`/`R2` 构造过程的完整时间线记录；预览响应中 `costingCardValues.Ag` 与当前值 `X_current`、`R1` 原值 `X1` 的三方对比表（必须三个数字都摆出来才有说服力）。
+
+---
+
+### #56　结构变化下的涨跌对齐：`R1`→`R2` 结构不同（删 B 加 D）不得报错或错位对齐
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（涨跌计算）+ 前端（"已移除"/"本期新增"渲染，标注待屏 7 交付后执行） | API 测试 + SQL 断言 |
+
+**前置数据**：复用 #55 场景——`R1` 含 A/B/C，`R2` 含 A/C/D（B 被删、D 新增）。
+
+**执行步骤**：`GET /api/cpq/quotations/{quotationId}/price-revisions`，核对轨迹表涨跌对比数据结构（该端点或专门的版本对比端点应输出逐料号的涨跌信息）。
+
+**断言（机械可判定）**
+- 🔒 接口响应 `200`（**不报错**，即便 `R1`/`R2` 行数不同——`3 行 vs 3 行`但成分不同，若实现按下标位置对齐会直接崩或算出无意义的结果，本条验证接口层面不崩溃且语义正确）。
+- 🔒 A、C：两版都有，正常给出涨跌数据（价格变化的百分比/金额，具体取决于两版间该料号是否发生价格变动）。
+- 🔒 B：标记为**「已移除」**（如 `trend="REMOVED"` 或等价字段），**不参与**涨跌计算（不应出现一个"B 涨了/跌了 xx%"这种无意义的数字）。
+- 🔒 D：标记为**「本期新增」**（`trend="NEW"`），**不算**涨跌（D 在 `R1` 时不存在，没有"上一次的价"可比）。
+- 🔒 断言方式**必须按料号级对齐**（`materialNo` 做 key 关联两版，而不是按数组下标位置对齐）——若实现按下标对齐，`R1[1]=B` 与 `R2[1]=C` 位置错位比较会产生完全错误的"涨跌"，此断言通过数据结构层面直接可判定实现是否按料号对齐。
+
+**证据形式**：接口响应 JSON（A/B/C/D 四个料号各自的 `trend` 标记与涨跌数值）。
+
+---
+
+### #57　🔴 改配置四项都触发重算：比对列/预警线/元素清单/料号范围 —— 每一项保存后 `待处理` 料号预算刷新，`已通过`/`已驳回` 不动
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1，硬约束级条目，专防"只有比对列触发重算"） | API 测试 + SQL 断言（🔒 E14-3 异步，断言须轮询 `budget_status`） |
+
+**前置数据**：`CUST-0001` 下 4 个 `PENDING` 待处理料号（P1~P4，均 `budget_status=READY`），另 1 个 `APPROVED` 料号 Q 作对照。
+
+**执行步骤（四轮独立执行，每轮改一项、其余不动，逐轮验证）**
+1. **轮 1**：`PUT .../comparison-columns`（改 P1 所属系列的比对列阈值）→ 轮询 P1 的 `budget_status` 直到回到 `READY`，核对 `material_price_review_column` 是否按新阈值重新着色。
+2. **轮 2**：`PUT /price-adjust/strategies/CUST-0001 {costDiffThreshold: <新值>}` → 轮询 P2 的 `budget_status`，核对产品总价列着色是否按新阈值刷新。
+3. **轮 3**：`PUT .../elements`（增/减一个参与调价元素）→ 轮询 P3，核对其调整后报价是否因元素清单变化而重新计算。
+4. **轮 4**：`PUT .../materials`（增/减料号范围）→ 轮询 P4，核对其待办池归属状态是否按新范围调整。
+
+**断言（机械可判定，四轮独立缺一不可）**
+- 🔒 🔒 **每一轮**（不只是"比对列"那一轮）：对应的 `Pn.budget_status` 都经历了重算流程（进入过非 `READY` 中间态，或至少最终值与改配置前不同），且改动生效后的 `material_price_review_column`/预算值**确实反映新配置**——**专防"只有 §1 那种改动触发重算，改 §2/§3/§4 保存成功、变更历史有记录，待办池却纹丝不动"**这个典型漏洞。
+- 🔒 **全程 Q（`APPROVED`）在 4 轮改动中 `budget_status`/`material_price_review_column` 内容均不变**（md5 或逐字段核对，四轮各自独立验证一次，共 4 次对照）。
+- 🔒 轮 4（料号范围）额外核对：若 P4 被移出范围，其 `PENDING` 记录应转为"已作废（移出范围）"退出待办池；若新增料号进范围且有价格变动，应新纳入待办池并算出预算（覆盖 §11.5.3(5) 提到的料号范围特殊处置）。
+
+**证据形式**：4 轮各自的改动前后 `budget_status` 轮询记录 + `material_price_review_column` 内容对比；Q 的 4 次不变性对照记录。
+
+---
+
+### #58　手动取消勾选元素弹确认：明示「N 张存量单该元素单价列将解锁为可编辑」；确认后出清单且单价列恢复可编辑
+
+| 归属 | 测试层级 |
+|---|---|
+| 跨端(后端主导)（`backtask.md` §2.2 + `fronttask.md` §12.2，同时 §12.1 前端自测确认弹窗渲染） | API 测试 + E2E(Playwright) |
+
+**前置数据**：`CUST-0001` 元素清单含 `Cu`，若干 driver 行元素为 `Cu` 且当前 `__priceLocked=true`。
+
+**执行步骤**
+1. `PUT .../elements {elementCodes: [不含Cu的新清单], confirmUnselect: false}`。
+2. 核对响应，取 `unlockedQuotationCount`。
+3. Playwright（若前端已交付）：在屏 1 元素矩阵取消勾选 `Cu`，观察弹窗文案。
+4. `PUT .../elements {elementCodes: [...], confirmUnselect: true}` 确认提交。
+5. 重新查询之前含 `Cu` 的 driver 行的 `__priceLocked` 标记。
+
+**断言（机械可判定）**
+- 🔒 步骤 1：响应 **`409`**，`code="UNSELECT_NEEDS_CONFIRM"`，`removedElementCodes` 含 `Cu`，`unlockedQuotationCount` 为一个 **> 0** 的具体整数（等于实际含 `Cu` 且当前只读的存量单行数）。
+- 🔒 步骤 3（若已交付）：弹窗文案含「该元素将退出调价机制，N 张存量单上它的单价列将解锁为可编辑」的等价表述，`N` = 步骤 2 的 `unlockedQuotationCount`。
+- 🔒 步骤 4：`200`，`SELECT count(*) FROM customer_price_adjust_element WHERE element_code='Cu'` **= 0**（已出清单）。
+- 🔒 🔒 **核心断言**：步骤 5，之前含 `Cu` 的 driver 行 `__priceLocked` **变为 `false`**（恢复可编辑），且不需要额外任何操作触发（取消勾选保存后即时生效，或至少下一次归位/查询时立即体现）。
+
+**证据形式**：4 个步骤的 API 响应；取消勾选前后目标行 `__priceLocked` 对比；弹窗截图（若前端已交付）。
+
+---
+
+### #59　🔴 归位作用域三条件：范围外料号不误锁 / 手改值不被清 / 「未参与调价」是真的；策略停用后范围内料号也恢复可编辑
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1，E11 断链 4 核心条目） | SQL 断言 |
+
+**前置数据**：`CUST-0001` 策略 `materialScopeMode='SPECIFIED'`，指定料号范围恰好 3 个（不含料号 G）。料号 G 的 BOM 含 `Ag`（`Ag` 在元素清单内，但 G 不在指定范围内）。料号 H 在指定的 3 个范围内，BOM 同样含 `Ag`。
+
+**执行步骤**
+1. 查询 G、H 两个料号的 driver 行 `__priceLocked` 标记。
+2. 对 G 的 `Ag` 行直接手改单价（模拟销售自填，因为它可编辑），执行一次 `saveDraft`（触发归位流程）。
+3. 生成版本并升版（若 G 因不在范围内根本不会进待办池，此步针对范围内的对照料号），检查 G 的手改值是否被清除。
+4. 查询 G 在 `GET /price-revisions` 的 `materialVersions` 里的 `state`。
+5. **反向对照**：H 的 `Ag` 行确认 `__priceLocked=true`，手改值（若强行 SQL 构造）会在下次 `saveDraft` 归位时被清除。
+6. **策略停用**：`PUT .../strategies/CUST-0001 {enabled:false}`，重新查询 H 的 `Ag` 行。
+
+**断言（机械可判定）**
+- 🔒 ① G 的 `Ag` 行：`__priceLocked=false`（**未被误锁**，尽管元素 `Ag` 本身在清单里，但料号不在范围内）。
+- 🔒 🔒 ② G 的手改值：步骤 2 的手改单价，在步骤 3（无论是否有其他料号升版）**始终保留**，`saveDraft` 归位**不清除**它（归位作用域三条件不满足，G 一个字节都不碰）。
+- 🔒 ③ G 在 `materialVersions` 里 `state="NOT_PARTICIPATING"`，且这**是真的**（不是掩盖了实际参与但显示错的假象——因为 ①② 已经证明 G 确实完全没被本机制碰过）。
+- 🔒 反向：H 的 `Ag` 行 `__priceLocked=true`（照常只读+归位，与 G 形成对照）。
+- 🔒 🔒 步骤 6（策略停用）：H 的 `Ag` 行 `__priceLocked` **变为 `false`**（策略停用后，范围内料号的单价列也恢复可编辑——三条件之③"策略启用"不再成立）。
+
+**证据形式**：G/H 两个料号的 `__priceLocked` 全程对比表；G 手改值在多次归位触发点前后的具体数值；策略停用前后 H 的状态对比。
+
+---
+
+### #60　🔴 归位实时算基准日 = 建单日：从未升版的单，实时算价用建单日而非执行当天；跨天多次保存值不变
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1，E11 断链 3 核心条目，补 #45 幂等的盲区——#45 只保证"同一天多次保存不变"，本条保证"跨天也不变"） | SQL 断言 |
+
+**前置数据**（参照 #9/#36 手法直接 `INSERT` 造数）：一张单 `created_at='2026-07-20'`，料号 I 从未升版（`material_price_version_ref` 无该料号记录，指针为空），`Ag` ∈ 调价清单。
+
+**执行步骤**
+1. **计算参照值**：直接调用取价函数/视图，显式传 `p_base_date='2026-07-20'`（该单创建日），得到「按 7-20 算的实时价」`P_0720`。
+2. 同样显式传 `p_base_date=<今天日期>`，得到「按今天算的实时价」`P_today`。
+3. ⚠️ **前置判别力检查**：若 `P_0720 = P_today`（该期间 `Ag` 日价恰好没变过），本条**判别力不足**，需人为在 `element_daily_price` 里为 `Ag` 造两个不同日期的不同日价（如 7-20 一个价、今天前后另一个价），确保 `P_0720 ≠ P_today` 才继续。
+4. 对该单执行一次 `saveDraft`（触发归位实时算分支，因指针为空），查询归位结果单价。
+5. 间隔（模拟"跨天"，若无法真实跨天等待，改为**在断言逻辑上**确认归位读取的 `base_date` 参数固定取自 `quotation.created_at::date`、与"执行时刻的系统当前日期"无关——即读代码/日志确认调用取价时传入的 `p_base_date` 值，而不依赖真的等到第二天）再执行一次 `saveDraft`。
+
+**断言（机械可判定）**
+- 🔒 🔒 **核心断言**：步骤 4 归位结果单价 **= `P_0720`**（按建单日算），**≠ `P_today`**（不是按执行当天算）——这是本条唯一要证明的事。
+- 🔒 步骤 5：两次 `saveDraft`（无论测试脚本实际执行的系统时间是否跨天）归位结果单价**始终相同 = `P_0720`**，且日志/参数记录显示归位调用取价时传入的 `p_base_date` **固定 = `2026-07-20`**（读 `quotation.created_at::date`，不读 `LocalDate.now()`）。
+- 🔒 若发现归位调用传入的 `p_base_date` 是执行时刻的当前日期：判定为**该失败模式命中**——一张从未经审核的单，销售每保存一次价格就按当天日价漂移，绕开了活单白名单的审核约束。
+
+**证据形式**：`P_0720`/`P_today` 两个参照值的计算过程；两次 `saveDraft` 归位结果对比；归位调用取价函数时 `p_base_date` 参数的日志/走查记录。
+
+---
+
+**本批（#51~#60）交回，等待下一批指令续写 #61 及以后。**
