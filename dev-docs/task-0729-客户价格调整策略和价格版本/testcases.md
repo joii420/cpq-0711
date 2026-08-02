@@ -829,4 +829,277 @@ ORDER BY li.created_at DESC;
 
 ---
 
-**本批（#21~#30）交回，等待下一批指令续写 #31 及以后。**
+---
+
+### #31　🔴 子件吃版本（最容易测不出来）：父件料号升版后，闭包展开出的子件行元素单价同样切到本版价
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | SQL 断言 |
+
+**🔒 必须用 `S-80011` 构造**——已实测 QUOTE 侧 `material_bom_item` 只有 2 条父子关系：`S-3120014539`（**无子件**）与 `S-80011 → 00002`；用 `S-3120014539` 测闭包视图只返父件自己 2 行，**根本测不出子件行**。
+
+**前置数据（已核实真实结构）**
+- 罗克韦尔**模板2**（`customer_template_id=9e2e6ef3-3865-4e90-a509-803761b6e837`）与**模板3**（`7fd29ac2-…`/`1badebec-…`/`0317efe5-…`，三个版本共享 `componentId=a91f5aaa-7a09-452a-aa42-777e71fc736e`）的「材料成本」组件走**闭包形态** `mc_view`（已用 `sql_template ILIKE '%bom_closure%'` 查实，且用 `template_component` 反查确认这两个系列绑定的正是闭包版 `mc_view`）；**模板1 是平铺形态，不能用来测本条**。
+- `S-80011` 当前（`is_current=true`）在 `element_bom_item` 里只有它自己名下的 2 行（`characteristic=2003`：`Ag`/`C`），**子件 `00002` 目前没有任何 `element_bom_item` 行**——需要新插入才能让闭包视图真正展开出"子件行"：
+  ```sql
+  INSERT INTO element_bom_item
+    (id, system_type, customer_no, material_no, characteristic, component_no, seq_no,
+     composition_qty, issue_unit, hf_part_no, is_current, material_part_no, created_at, updated_at)
+  VALUES
+    (gen_random_uuid(), 'QUOTE', 'CUST-0001', '00002', 'RECIPE', 'Ag', 1,
+     0.02, 'g/KPCS', NULL, true, '00002', now(), now());
+  ```
+- 用真实"新增产品"流程（而非手工拼 `snapshot_rows`）把 `S-80011` 加进一张 `CUST-0001` 的报价单（`customer_template_id=7fd29ac2-b2d3-48b4-8e31-9b107ae9eedd`，模板3 v1.0），保存草稿，让 driver expand 走真实闭包 SQL——此时该行「材料成本」组件应展开出**2 行 `Ag`**：一行归属 `S-80011` 自己（`characteristic=2003`），一行归属子件 `00002`（刚插入的那行）。
+- `CUST-0001` 调价范围含 `S-80011`，元素清单含 `Ag`，生成版本 `V1`（`Ag` 新价，取一个明确区别于当前取价结果的值，如 `220000.0000`）。
+
+**执行步骤**
+1. 升版前：`SELECT snapshot_rows FROM quotation_line_component_data WHERE line_item_id=... AND component_id='a91f5aaa-7a09-452a-aa42-777e71fc736e'`，确认确实有 2 行 `元素=Ag`（一行 `_归属料号=S-80011`、一行 `_归属料号=00002`，字段名依实际视图输出列而定）。
+2. `POST /reviews/approve` 通过 `S-80011`，等待完成。
+3. 升版后重新查询该行 `snapshot_rows`。
+
+**断言（机械可判定）**
+- 🔒 升版前：2 行 `Ag` 单价均为升版前旧价（一致，佐证两行确实读的同一个取价函数结果）。
+- 🔒 🔒 **核心断言**：升版后，`jsonb_path_query_array` 提取该组件 `snapshot_rows` 中**所有** `元素=Ag` 的行的单价字段，结果集**每一个值都 = 220000.0000**——**特别是归属子件 `00002` 的那一行**（这正是本条要防的"JOIN 键写成 `cep.material_no = ebi.material_no` 导致子件行 JOIN 不中、静默不吃版本"的失败模式；若该子件行单价仍是旧价，判定为失败，需定位 JOIN 键是否与 `hf_part_no` 表达式逐字一致）。
+
+**证据形式**：升版前后 `snapshot_rows` 的完整 JSON（标注两行分别的"归属料号"与单价）；新插入 `element_bom_item` 子件行的 SQL 记录。
+
+---
+
+### #32　元素列显式绑定 + 保存期校验：三下拉候选受限 / 缺配拒绝保存 / 未接取价函数可空保存 / 存量组件迁移预填正确
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1）+ 前端自测（`fronttask.md` §12.1，三下拉渲染） | 单元测试 + API 测试 |
+
+**前置数据**：真实组件——`COMP-0049`（核价「物料与元素BOM」，V366 已配）；报价侧「材料成本」组件 `COMP-0021`/`COMP-0027`/`COMP-0102`（对应 `componentId` 需先按名称查出，`SELECT id, name, code FROM component WHERE code IN ('COMP-0021','COMP-0027','COMP-0102')`）；另找 1 个**未接取价函数**的普通组件（如「加工费」`jg_view` 系列任一）。
+
+**执行步骤**
+1. **①** `GET /api/cpq/components/{COMP-0021的id}`（或前端组件编辑器），核对候选下拉的取值集合。
+2. **②** `PUT /api/cpq/components/{id}` 对一个**接了取价函数**（`sqlTemplate` 含 `f_material_element_price`/`f_customer_element_price`）但 `elementCodeField` 留空的组件提交保存。
+3. **③** `PUT /api/cpq/components/{未接取价函数组件id}`，三项全留空提交保存。
+4. **④** 查询三个报价侧组件与 `COMP-0049` 迁移后的落库值。
+
+**断言（机械可判定）**
+- 🔒 ①：三个下拉（`elementCodeField`/`elementPriceField`/`elementCurrencyField`）候选**只来自该组件已有字段**（`fieldNameOptions`，与该组件 `fields` 表已定义的字段名集合逐一比对，不包含任何该组件没有的字段名）。
+- 🔒 ②：响应 **`400`**，`code="COMPONENT_ELEMENT_BINDING_REQUIRED"`，`missingFields` 含 `elementCodeField`（**不是** `200` 静默保存、也不是只给警告不拦截）；`SELECT element_code_field FROM component WHERE id=...` 保存前后**不变**（校验失败不落库）。
+- 🔒 ③：响应 `200`，三项均落库为 `NULL`，保存成功。
+- 🔒 🔒 **④ 核心断言（迁移预填正确性，防"迁移把料号列/名称列以外的三项忘配"）**：
+  - `SELECT element_code_field, element_price_field, element_currency_field FROM component WHERE id=(COMP-0049的id)` **= `('元素代码','元素单价',NULL)`**（**注意字段名叫「元素代码」不是「元素」**，这是推导算法的反例样本，专防"逐客户列名不同、禁止靠约定列名猜"被写死成"元素"这个常见值）。
+  - `COMP-0021`/`COMP-0027`/`COMP-0102` 三个的 `element_code_field/element_price_field` **必须是推导算法自己算出来的**（`= ('元素','元素单价',NULL)`），🔒 **验收执行者不得直接断言这个值是"应该等于元素/元素单价"就算过**——必须额外确认这三个值**不是**测试脚本或运维手工写死的（走查迁移脚本/`GET .../element-binding-suggest` 的 `confidence` 字段应为 `HIGH`），否则测的是"我手写的断言对不对"而不是"推导算法对不对"。
+
+**证据形式**：①下拉候选列表与组件 `fields` 定义的对比；②③两次 `PUT` 的响应与前后 `SELECT`；④四个组件的落库值 + `element-binding-suggest` 响应（含 `confidence`/`alias`）。
+
+---
+
+### #33　🔴 多行同元素全覆盖：父件 + ≥2 子件、多行元素同为 Ag → 升版后每一行都切到本版价
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | SQL 断言 |
+
+**前置数据**：在 #31 基础上**再加一个子件**（真实数据只有 1 个子件 `00002`，需再合成 1 个才能凑够"≥2 子件"）：
+```sql
+-- 第二个子件关系（纯测试用途，material_bom_item 无外键约束限制新增合成节点）
+INSERT INTO material_bom_item (id, material_no, component_no, characteristic, customer_no, system_type, is_current)
+VALUES (gen_random_uuid(), 'S-80011', '00003', 'RECIPE', 'CUST-0001', 'QUOTE', true);
+
+INSERT INTO element_bom_item
+  (id, system_type, customer_no, material_no, characteristic, component_no, seq_no,
+   composition_qty, issue_unit, is_current, material_part_no, created_at, updated_at)
+VALUES
+  (gen_random_uuid(), 'QUOTE', 'CUST-0001', '00003', 'RECIPE', 'Ag', 1,
+   0.015, 'g/KPCS', true, '00003', now(), now());
+```
+此时 `S-80011` 的闭包展开应含 **3 行 `Ag`**：父件自己（`characteristic=2003`）+ 子件 `00002` + 子件 `00003`（跨不同料号，行键「料号+材质+元素」三元组天然不同）。同一版本 `V1`（`Ag` 新价 `220000`）。
+
+**执行步骤**
+1. 重新保存/刷新该行，确认 `snapshot_rows` 里确实出现 3 行 `Ag`。
+2. `POST /reviews/approve` 通过，等待完成。
+3. 升版后查询该行全部 `Ag` 行。
+
+**断言（机械可判定）**
+- 🔒 升版前：3 行 `Ag` 分属 3 个不同"归属料号"（`S-80011`/`00002`/`00003`），单价均为旧价。
+- 🔒 🔒 **核心断言**：升版后，`jsonb_path_query_array` 提取的 3 行 `Ag` 单价**全部 = 220000.0000**，**逐行验证，不允许只查第一条**（本条专防"按 rowKey 对齐"被实现成一对一——若实现只更新了数组第一个匹配到的 `Ag` 行，其余两行会静默漏改，此断言要求 `count(distinct 单价) = 1 AND 该值 = 220000.0000 AND 命中行数 = 3`）。
+
+**证据形式**：升版前后 3 行 `Ag` 完整 JSON 数据（含各自归属料号与单价）；`jsonb_path_query_array` 查询与结果计数。
+
+---
+
+### #34　销售改过元素列 → 按改后的值匹配；S4 不清元素键；再升版一次结果仍按改后值（不漂移）
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | SQL 断言 |
+
+**⚠️ 范围收窄说明**：driver 行的元素列已按 §11.15.2.6(2) 改为**只读**（值来自 BOM 基础数据），销售改不了；本条"坑3"的适用范围**收窄到手动行**——手动行元素列本就可编辑，是唯一还存在"销售改过元素列"这个动作的地方。
+
+**前置数据**：某报价单手动新增一行，元素列填 `Ag`（∈清单），此时单价应自动带出 `Ag` 版本价；销售随后把元素改为 `Cu`（同样 ∈清单，直接 SQL 构造该行 `row_data` 里 `_origin='manual'` 且元素字段 `= 'Cu'`，模拟"改元素后自动带出 Cu 价"的落库结果）。生成版本 `V1`（`Cu` 新价，如 `1900.0000`，明确区别于当前取价 `Cu=1850.0000`）。
+
+**执行步骤**
+1. 升版前确认该手动行：元素字段 `= 'Cu'`，单价 = 改元素时带出的 `Cu` 当期价（非 `Ag` 的价）。
+2. `POST /reviews/approve` 通过，等待完成。
+3. 查询该行升版后的元素字段与单价字段。
+4. 🔒 **再升版一次**：生成新版本 `V2`（`Cu` 再涨一次，如 `1950.0000`），再次通过，再次查询。
+
+**断言（机械可判定）**
+- 🔒 步骤 3：该行**取的是本版 `Cu` 价**（`1900.0000`），**不是** `Ag` 的价；元素字段**仍 = `'Cu'`**（S4 只清价格键，未被连带清空/重置回 `Ag`）。
+- 🔒 🔒 **核心断言（防漂移）**：步骤 4（第二次升版）后，该行单价 **= 1950.0000**（`Cu` 的新版价），元素字段**仍 = `'Cu'`**——**不允许**出现"这次 `Cu`、下次退回 `Ag`"的漂移。此断言必须真的执行第二次升版，不能只做一次就收工。
+
+**证据形式**：升版前 / 第一次升版后 / 第二次升版后三个时点的行数据（元素字段 + 单价字段）对比表。
+
+---
+
+### #35　手动行同样吃版本：元素填 `Ag` → 单价=本版价；元素填不对应 `element_code` 的值 → 该行不动
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | SQL 断言 |
+
+**前置数据**（复用已实测的真实无价/非元素编码样本，避免自己再去核实哪个元素无价）：
+- 手动行 A：元素 = `Ag`（∈清单，有本期价）。
+- 手动行 B：元素 = `银`（中文名，**不对应** `element_code`——元素编码是 `Ag` 不是"银"，走"不做名称→编码兜底"规则）。
+- 手动行 C：元素 = `Ni`（已实测：调价元素清单外或取价函数返回 NULL 的样本，视 `CUST-0001` 元素清单勾选情况而定；若 `Ni` 本次未勾入清单，等价覆盖"元素不在清单"分支）。
+- 手动行 D（可选加固）：元素 = `301`（已实测：非元素主表编码，取价函数对它返 NULL）。
+均直接 SQL 构造 `row_data`（`_origin='manual'`），令 B/C/D 三行升版前单价保持某个"手改初值"（如 `100.00`），便于观察是否被动过。生成版本 `V1`（`Ag` 新价）。
+
+**执行步骤**：`POST /reviews/approve` 通过后，逐行查询升版后的单价字段。
+
+**断言（机械可判定）**
+- 🔒 手动行 A：单价 **= 本版价**（同前几条的精确值断言方式）。
+- 🔒 手动行 B（`银`）：单价 **仍 = 100.00**（升版前手改初值），**一个字节不变**——"银"对不上 `element_code='Ag'`，不做名称兜底换算。
+- 🔒 手动行 C（`Ni`）：若 `Ni` 不在本次调价清单/取价结果为 NULL，单价 **仍 = 100.00**（不动）。
+- 🔒 手动行 D（`301`）：单价 **仍 = 100.00**（不动，`301` 不是有效元素编码）。
+
+**证据形式**：4 行升版前后单价对比表；`CUST-0001` 当次调价元素清单内容（确认 `Ni` 是否在列，避免误判）。
+
+---
+
+### #36　无活单料号自动锁版（D5）：不进待办池 / 指针照样推进 / 此后新建单取本期版本价；反例外——曾被驳回的不适用自动推进
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | SQL 断言 |
+
+**🔒 口径依据 E14-2**：「活单」= 5 个可更新状态（`DRAFT`/`SUBMITTED`/`APPROVED`/`REJECTED`/`COSTING_REJECTED`）。某料号只存在于 `SENT`/`ACCEPTED`/`EXPIRED`/`CANCELLED` 单中，**视同不在任何活单**，走 D5。
+
+**前置数据**（参照 #9 的直接 `INSERT` 造数手法）
+- 料号 P（`M-D5-NORMAL`）：只造 1 张 `status='SENT'` 的单含该料号（`chk_q_status` 已确认 `SENT` 是合法枚举值），**不造**任何 5 态活单。
+- 料号 Q（`M-D5-REJECTED`）：先在**上一版** `V0` 里把 Q 走一遍 `POST /reviews/reject`（产生一条 `REJECTED` 记录），随后确保 Q 同样**不在任何活单**中（只留一张 `SENT`/`ACCEPTED` 单或干脆没有单）。
+- P、Q 均在 `CUST-0001` 调价范围与元素清单内。生成新版本 `V1`（元素价较 `V0` 有变化）。
+
+**执行步骤**
+1. `V1` 生成后，分别查询 P、Q 是否进入待办池、指针指向。
+2. 对 P：以该料号新建一张 `DRAFT` 单（走真实建单流程或参照 #9 的 INSERT 手法），查询其 driver 行取到的元素单价。
+3. 对 Q：同样查询其待办池状态与指针。
+
+**断言（机械可判定）**
+- 🔒 P：`SELECT count(*) FROM material_price_review WHERE version_id=(V1的id) AND material_no='M-D5-NORMAL'` **= 0**（不进池）；`SELECT version_id FROM material_price_version_ref WHERE material_no='M-D5-NORMAL'` **= V1的id**（指针照样推进，不经财务点头）。
+- 🔒 P 步骤 2：新建单的该行元素单价 **= `V1` 版本价**（不是当天实时算价、也不是 `V0` 的旧价）——验证"此后新建含该料号的单，取价用本期版本价"。
+- 🔒 🔒 **反例外核心断言**：Q **不进 `V1` 待办池**（同 P），但 `material_price_version_ref` 里 Q 的 `version_id` **仍 = `V0` 的 id（不变）**——**不适用**自动推进，与 P 形成对照（P 会推进、Q 不会，唯一区别是 Q"曾被驳回"）。
+
+**证据形式**：P/Q 两条 `material_price_review`/`material_price_version_ref` 查询输出对比；P 的新建单取价结果查询。
+
+---
+
+### #37　提交凭证不被升版污染：`submission_snapshot` 逐字节不变；字段追溯页出现标注
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1）。⚠️ "字段追溯页标注"若对应 UI/字段尚未实现，本条 UI 部分标注待开发后执行，`submission_snapshot` 逐字节不变的 SQL 断言现在可执行 | SQL 断言 |
+
+**前置数据**：复用真实数据 —— `QT-20260726-0018`（`status='SUBMITTED'`，`submission_snapshot` 应已非空，需先 `SELECT submission_snapshot IS NOT NULL FROM quotation WHERE quotation_number='QT-20260726-0018'` 确认；若为空则另找/另造一张已提交单）。该单料号 `S-3120014539` 纳入调价范围+元素清单，生成版本并通过升版。
+
+**执行步骤**
+1. 升版前：`SELECT md5(submission_snapshot::text) FROM quotation WHERE quotation_number='QT-20260726-0018'`。
+2. `POST /reviews/approve` 通过，等待完成。
+3. 升版后重新执行步骤 1 查询；额外 `GET /api/cpq/quotations/{id}`（或专门的字段追溯端点，若存在）查看是否出现"该单曾发生价格升版，本快照为提交时状态"的等价标注字段。
+
+**断言（机械可判定）**
+- 🔒 步骤 1 与步骤 3 的 md5 **完全相同**（`submission_snapshot` 逐字节不变——它是审批凭证，事后不因升版刷新）。
+- 🔒 若追溯页/字段已实现：响应中出现对应标注字段且内容语义正确（人工确认文案含"价格升版"字样）；**若尚未实现**：本子项标注「待前端/后端追溯页交付后执行」，不影响 `submission_snapshot` 逐字节不变这一核心断言的独立通过。
+
+**证据形式**：升版前后 `submission_snapshot` md5 对比；追溯页响应（若已实现）。
+
+---
+
+### #38　🔴 一客户多模板不漏红（核心 · 只测单模板客户发现不了）：系列甲配置不影响系列乙；系列乙差异<0 同样必须标红
+
+| 归属 | 测试层级 |
+|---|---|
+| 跨端(后端主导)（`backtask.md` §2.1 + §2.2）。⚠️ 待办池/抽屉 UI 断言标注「待屏 3/4 交付后执行」，本批做 API/SQL 层 | API 测试 + SQL 断言 |
+
+**前置数据**：用罗克韦尔真实 **3 个系列**——系列甲=`a91209e6-743b-4ebe-9ede-5b2737077674`（模板1，「材料成本」`componentId=6800cdd5-…-4997`）、系列乙=`61363e67-e8a0-4cb0-943c-79f29f6f0dcb`（模板2）。**只给系列甲配一条自定义比对列**（`quoteComponentId=6800cdd5-…`）。构造两个待办料号：X 的最近一张活单用模板1（走系列甲），Y 的最近一张活单用模板2（走系列乙，**不配置**，应落默认列）。令 Y 的默认「产品总价」列 `diffAdjusted < 0`。
+
+**执行步骤**
+1. `GET /reviews/{X的reviewId}`，核对 `comparisonColumns`。
+2. `GET /reviews/{Y的reviewId}`，核对 `comparisonColumns`。
+3. 查询 Y 的待办池汇总标记。
+4. 追加：给**系列乙**也配一条自定义列，重新查询 Y。
+
+**断言（机械可判定）**
+- 🔒 X：`comparisonColumns` 含系列甲配置的自定义列，且该列 `status` 按其 `diffAdjusted` 正确着色。
+- 🔒 🔒 **核心断言（Y 不受影响）**：Y 的 `comparisonColumns` **只含默认「产品总价」列**（`kind=PRODUCT_TOTAL`），**不出现**系列甲那条自定义列；该产品总价列 `status` **不是 `STALE`**（`STALE` 专指"配置过但 componentId 解析失败"，Y 属于"系列乙从未配置过"，应直接走默认列分支，**不产生 STALE**）。
+- 🔒 Y 步骤 3：待办池标记 = `🔴1 / 1列`（产品总价本身 `<0` → `RED`），`rowRed=true`，**不得**因为"配置在系列甲、Y 找不到系列乙的配置"而误显示 `✓ 1列全通过`（这正是 §11.5.4 改判前的静默漏红失败模式，本条断言直接命中）。
+- 🔒 步骤 4：给系列乙配上自定义列后，Y 的 `comparisonColumns` 出现该新列并正确着色（证明"未配置→落默认列"与"配置后→按配置走"两个分支都对，不是靠 `STALE` 掩盖了配置缺失）。
+
+**证据形式**：X/Y 两次 `GET /reviews/{reviewId}` 响应 JSON 并排对比；Y 的待办池标记字符串；系列乙配置前后 Y 的响应 diff。
+
+---
+
+### #39　模板升版本不用重配：`componentId` 不变，配好的比对列自动沿用，无需重配
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | API 测试 + SQL 断言 |
+
+**前置数据**：系列丙 = `c7705bcc-eebc-4479-a78d-f2ff69e7650e`（模板3，**三个版本 `v1.0`/`v1.1`/`v1.2` 已核实共享同一个 `componentId=a91f5aaa-7a09-452a-aa42-777e71fc736e`**，天然适合测本条）。给该系列配一条自定义比对列（引用该 `componentId`）。
+
+**执行步骤**
+1. `GET /price-adjust/comparison-columns?customerNo=CUST-0001&templateSeriesId=c7705bcc-…`，记录配置内容与 `SELECT updated_at FROM comparison_column_config WHERE template_series_id='c7705bcc-…'`。
+2. 构造一个走**模板3 v1.1**（`customer_template_id=1badebec-…`）的新料号/新单，令其进入待办池。
+3. 查询该料号抽屉的 `comparisonColumns`。
+4. 重新执行步骤 1 的查询，确认配置本身未被"升版"这个动作动过。
+
+**断言（机械可判定）**
+- 🔒 步骤 3：走 v1.1 模板的料号，`comparisonColumns` **直接命中**步骤 1 配置的自定义列（无需为 v1.1 单独再配一次——因为 `comparison_column_config` 按 `template_series_id` 存，不按 `template_id`）。
+- 🔒 步骤 4：`comparison_column_config` 的 `updated_at`/内容与步骤 1 **完全相同**（模板升版本这个动作本身**不触发**配置表任何写入）。
+
+**证据形式**：步骤 1/4 两次配置查询对比（确认零变化）；走 v1.1 的料号抽屉响应（确认命中配置）。
+
+---
+
+### #40　🔴 陈旧页面保存不退价 · driver 行（核心）
+
+> ## 🚨🚨🚨 顺序绝对不可颠倒 🚨🚨🚨
+> **必须严格按此顺序执行，任何一步提前或错序都会导致测不出问题：**
+> **① 先打开报价单页面（此刻前端持有旧价）→ ② 保持该页面不刷新 → ③ 后台执行升版（新价生效）→ ④ 回到步骤①那个陈旧页面点保存。**
+> 若写成"升版后才打开页面"，前端 `row_data` 里已经是新价，**这条用例测不出任何问题，是无效测试**。
+
+| 归属 | 测试层级 |
+|---|---|
+| **技术总监亲验**（`backtask.md` §2.3 + `fronttask.md` §12.3，与 #14 #21 #28 #41 #64 并列） | E2E(Playwright)（权威证据）+ API 测试（等效序列，辅助证据） |
+
+**前置数据**：料号 A（driver 行，元素 `Ag` ∈ 调价清单），当前价 `5450`；`CUST-0001` 调价范围内；已生成待审版本 `V1`（`Ag` 新价 `5820`），**先不通过**。
+
+**执行步骤（Playwright，权威证据，🔒 步骤顺序即上方警告框内容）**
+1. **①** Playwright `page.goto('/quotations/{id}/edit')`，进入 Step2，确认页面渲染的 `Ag` 单价 = `5450`（旧价）。**不要刷新、不要关闭这个 page**。
+2. **②** 保持该 `page` 对象存活（不执行任何会重新拉取数据的操作）。
+3. **③** 用另一个 API 调用（同一测试脚本内，不通过这个 `page`）：`POST /reviews/approve` 通过 A，等待 job 完成，确认后端 `snapshot_rows` 已是 `5820`（服务端状态已变，但**这个浏览器页面对此一无所知**）。
+4. **④** 回到步骤①的 `page`，**不刷新**，直接点击「保存」按钮（触发前端已加载的旧数据回传 `saveDraft`）。
+
+**执行步骤（API 等效序列，辅助证据，用于无浏览器环境快速复现）**
+1. `GET /api/cpq/quotations/{id}` 拿到此刻的完整 `row_data`/`snapshot_rows`（此时 `Ag=5450`），**保存这份 payload 副本**——模拟"浏览器已加载旧数据"。
+2. `POST /reviews/approve` 通过 A，等待完成，确认后端已是 `5820`。
+3. 用**步骤 1 保存的旧 payload 副本**（`Ag=5450`）原样调用 `PUT /api/cpq/quotations/{id}/draft`（模拟"陈旧页面点保存"）。
+
+**断言（机械可判定）**
+- 🔒 步骤 4/3（保存动作）**必须成功**（HTTP `200`，**不报错**——归位机制应静默纠正，而不是拒绝这次保存）。
+- 🔒 🔒 **核心断言**：保存后 `SELECT snapshot_rows FROM quotation_line_component_data WHERE ...` 中 `Ag` 单价 **仍 = `5820`**（本版价），**未退回 `5450`**——即便前端提交的 payload 里明确带着 `5450`，归位机制应在"落库 → 归位 → 重算"这个既定插入点上把它纠正回来。
+- 🔒 重新打开报价单（再 `GET` 一次）确认渲染出的单价**仍是 `5820`**（三重确认：保存成功 + 落库是新价 + 重新渲染也是新价）。
+
+**证据形式**：Playwright 执行日志（含每步时间戳，证明顺序）+ 截图（步骤①旧价截图 / 步骤④保存后重新渲染截图）；API 等效序列的完整请求/响应记录；保存前后 `snapshot_rows` 对比。
+
+---
+
+**本批（#31~#40）交回，等待下一批指令续写 #41 及以后。**
