@@ -875,6 +875,32 @@ public class CardSnapshotService {
         LOG.infof("[card-snapshot] refreshCostingCardValues done quotation=%s lines=%d", quotationId, lines.size());
     }
 
+    /**
+     * task-0729 B0 · S5（核价侧）：单行核价卡片值重算。
+     *
+     * <p>🔒 <b>不能直接复用 {@link #refreshCostingCardValues(UUID)}</b> —— 那是整单批量版本，
+     * 会重算该报价单下**全部** line item，违反「只对被升版的料号行执行重算，不碰其他行」的隔离纪律
+     * （硬约束 1 / 验收 #14 双向断言：通过料号 A 后，料号 B 的 costing_card_values 必须逐字节不变）。
+     * 本方法是同一段单行循环体的独立抽出，只写传入的这一个 {@code lineItemId}。
+     */
+    @Transactional
+    public void refreshCostingCardValuesForLine(UUID lineItemId) {
+        if (lineItemId == null) return;
+        QuotationLineItem li = QuotationLineItem.findById(lineItemId);
+        if (li == null) return;
+        Quotation q = Quotation.findById(li.quotationId);
+        if (q == null || q.costingCardTemplateId == null) return;
+        Map<String, ArrayNode> precomputed = null;
+        if (templateHasTreeTab(q.costingCardTemplateId)) {
+            Map<UUID, Map<String, ArrayNode>> rendered =
+                bomTreeRenderService.render(q.costingCardTemplateId, java.util.List.of(li));
+            precomputed = rendered.get(li.id);
+        }
+        li.costingCardValues = safeCall(() ->
+            buildCostingCardValues(li, q.costingCardTemplateId, q.customerId, q.id, null, null, precomputed));
+        LOG.infof("[card-snapshot] refreshCostingCardValuesForLine done li=%s", lineItemId);
+    }
+
     // =========================================================================
     // B2: 批量 EM 预取 —— saveDraft 首存 N-行循环外一次预取，消除每行重复的
     //     「模板 components_snapshot 读+解析」与「compdata 逐行查」。
@@ -1129,7 +1155,11 @@ public class CardSnapshotService {
      * editRows/formulaResults Phase 1 留空（Phase 2 渲染脱钩再补）。
      * AP-51: rowCount 不做 Math.max，以 snapshot_rows 行数为准。
      */
-    String buildCardValues(QuotationLineItem li, UUID templateId) {
+    /**
+     * task-0729 B0：可见性升级为 public（不改逻辑），供 {@code com.cpq.priceadjust.service.MaterialVersionUpgradeService}
+     * 的 S0（L3 口径守卫，需要用旧价重跑一遍）与 S5（重算卡片）复用，不新写第二份报价侧卡片值组装逻辑。
+     */
+    public String buildCardValues(QuotationLineItem li, UUID templateId) {
         return buildCardValues(li, templateId, null);
     }
 

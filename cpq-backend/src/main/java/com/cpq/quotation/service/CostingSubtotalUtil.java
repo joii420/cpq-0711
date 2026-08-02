@@ -16,14 +16,17 @@ import java.math.RoundingMode;
  * {@code is_subtotal} 列）。模板没有 SUBTOTAL 组件时返回 {@link BigDecimal#ZERO}（与
  * {@code LineDiscountService#recompute} 对报价侧无 SUBTOTAL 组件时的兜底一致）。
  */
-final class CostingSubtotalUtil {
+// task-0729 B0（2026-08-01）：类与 extractUnitSubtotal 可见性由包私有升级为 public
+// （仅可见性，逻辑不变），供 com.cpq.priceadjust.service.MaterialVersionUpgradeService
+// 的 S0（L3 口径守卫）与 S6（写回行金额）跨包复用，不新写第二份提取逻辑（backtask B0 S6 明确指示）。
+public final class CostingSubtotalUtil {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private CostingSubtotalUtil() {}
 
     /** 单件核价成本（未乘年用量）。解析失败/无 SUBTOTAL tab 一律返回 ZERO，不抛异常。 */
-    static BigDecimal extractUnitSubtotal(String costingCardValuesJson) {
+    public static BigDecimal extractUnitSubtotal(String costingCardValuesJson) {
         if (costingCardValuesJson == null || costingCardValuesJson.isBlank()) return BigDecimal.ZERO;
         try {
             JsonNode root = MAPPER.readTree(costingCardValuesJson);
