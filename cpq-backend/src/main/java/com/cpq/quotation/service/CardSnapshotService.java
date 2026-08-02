@@ -1049,6 +1049,75 @@ public class CardSnapshotService {
     }
 
     // =========================================================================
+    // task-0729 B8.2：《SUBTOTAL 双端对拍清单》—— 一次性只读对拍工具方法
+    // =========================================================================
+
+    /**
+     * task-0729 B8.2：逐 line item 用【已含 B8.1 口径补齐】的 {@link #buildCardValues} 重算报价侧
+     * SUBTOTAL（100% 只读——buildCardValues 只 SELECT + 纯内存计算，不落库任何字段，
+     * 不影响 li.subtotal / quoteCardValues / 任何其它列），与已落库 {@code li.subtotal} 对比。
+     *
+     * <p>取值口径与 backtask B0-S6 一致：复用 {@link CostingSubtotalUtil#extractUnitSubtotal(String)}
+     * 从组装出的 JSON 里找 {@code componentType==='SUBTOTAL'} 的 tab 取其 {@code subtotal}
+     * （不新写一套提取逻辑）。
+     *
+     * <p>合并前一次性对拍用，非常驻业务端点；对全库逐单遍历，量级见 §11.17.0（35 单/25 line_item），
+     * 单机跑量级可接受，不做分页/异步。
+     *
+     * @return 每行 {quotationNo, materialNo, quotationStatus, liSubtotal, computedSubtotal, diff, note}
+     */
+    public List<Map<String, Object>> reconcileQuoteSubtotalsForTask0729B8() {
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = em.createNativeQuery(
+            "SELECT li.id, q.quotation_number, " +
+            "       COALESCE(li.product_part_no_snapshot, li.customer_part_no, '') AS material_no, " +
+            "       li.subtotal, q.customer_template_id, q.status " +
+            "FROM quotation_line_item li " +
+            "JOIN quotation q ON q.id = li.quotation_id " +
+            "ORDER BY q.quotation_number, li.sort_order").getResultList();
+
+        List<Map<String, Object>> out = new ArrayList<>(rows.size());
+        for (Object[] r : rows) {
+            UUID liId = (UUID) r[0];
+            String quotationNo = (String) r[1];
+            String materialNo = (String) r[2];
+            java.math.BigDecimal liSubtotal = (java.math.BigDecimal) r[3];
+            UUID templateId = (UUID) r[4];
+            String status = (String) r[5];
+
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("quotationNo", quotationNo);
+            row.put("materialNo", materialNo);
+            row.put("quotationStatus", status);
+            row.put("liSubtotal", liSubtotal);
+
+            if (templateId == null) {
+                row.put("note", "无 customerTemplateId，跳过（可能是选配/异常单）");
+                out.add(row);
+                continue;
+            }
+            try {
+                QuotationLineItem li = QuotationLineItem.findById(liId);
+                if (li == null) {
+                    row.put("note", "line item 已不存在（并发删除）");
+                    out.add(row);
+                    continue;
+                }
+                String cardJson = buildCardValues(li, templateId, null); // 只读：不持久化
+                java.math.BigDecimal computed = CostingSubtotalUtil.extractUnitSubtotal(cardJson);
+                row.put("computedSubtotal", computed);
+                java.math.BigDecimal base = liSubtotal != null ? liSubtotal : java.math.BigDecimal.ZERO;
+                row.put("diff", base.subtract(computed).setScale(4, java.math.RoundingMode.HALF_UP));
+            } catch (Exception e) {
+                row.put("note", "重算异常: " + e.getMessage());
+                LOG.warnf("[b8-reconcile] li=%s quotation=%s failed: %s", liId, quotationNo, e.getMessage());
+            }
+            out.add(row);
+        }
+        return out;
+    }
+
+    // =========================================================================
     // buildCardValues — 复用 snapshot_rows 组装报价卡片值（不双写 expand）
     // =========================================================================
 
@@ -1131,8 +1200,10 @@ public class CardSnapshotService {
 
             // 4. 组装 tabs（Task 3: 填 formulaResults，加产品时 editRows 恒空；报价侧传真实墓碑）
             // F1：报价侧透传 rkf 预取（prefetch 缺失 → null → 回落逐行查）
+            // task-0729 B8.1：产品属性上下文（口径补齐，当前 0 usage 场景零额外查询开销）
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null, null, delByComp,
-                prefetch != null ? prefetch.rowKeyFieldsByComp : null);
+                prefetch != null ? prefetch.rowKeyFieldsByComp : null,
+                buildProductAttributesContext(li, li.quotationId, templateId));
 
             return MAPPER.writeValueAsString(root);
 
@@ -1304,8 +1375,10 @@ public class CardSnapshotService {
             // 5. 组装 tabs（Task 3: 填 formulaResults；核价侧 editRows 恒空）
             // 核价侧 side==COSTING 显式不传墓碑（spec §3.7 隔离）：editRowsByComp=null + rkfOverride=null + delByComp=null。
             // F1（B-1 修正）：核价侧也透传 rkf 预取（否则核价 ~1020 次 row_key_fields 单查原样保留）。
+            // task-0729 B8.1：产品属性上下文（优先取报价侧冻结结构 schema，缺失回退核价模板自身）
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null, null, null,
-                prefetch != null ? prefetch.rowKeyFieldsByComp : null);
+                prefetch != null ? prefetch.rowKeyFieldsByComp : null,
+                buildProductAttributesContext(li, quotationId, costingTemplateId));
 
             return MAPPER.writeValueAsString(root);
 
@@ -1528,12 +1601,31 @@ public class CardSnapshotService {
      * 六参重载（F1/方案 B：rowKeyFields 整单预取）：{@code rkfPrefetch} 非空时,组件行键从预取内存读
      * （key 缺失→回落逐行 {@code loadRowKeyFieldsNode}；值=NullNode 哨兵→该组件无行键,不查库）。
      * {@code rkfPrefetch=null} 时全程逐行查,与改造前逐位一致(零破坏 + kill switch)。
+     * 六参签名零破坏：delegate 到七参（productAttributesCtx=null → 空 map，行为不变）。
      */
     private ObjectNode assembleTabsWithFormulaResults(JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
                                                       Map<String, ArrayNode> editRowsByComp,
                                                       Map<String, JsonNode> rkfOverride,
                                                       Map<String, List<DeletedRowKeys.Tombstone>> delByComp,
                                                       Map<String, JsonNode> rkfPrefetch) {
+        return assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp, rkfOverride, delByComp,
+            rkfPrefetch, null);
+    }
+
+    /**
+     * 七参重载（task-0729 B8.1，D3 口径补齐）：{@code productAttributesCtx} 非空时供
+     * {@code product_attribute} token 求值（对齐前端 {@code QuotationStep2.tsx:1302-1307}
+     * {@code evalProductSubtotalFromSubtotals} 的 NUMBER 型产品属性上下文）。{@code null}=空 map，
+     * 与改造前逐位一致（零破坏）；当前库 0 组件引用该 token，属纯防御补齐。
+     */
+    private ObjectNode assembleTabsWithFormulaResults(JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
+                                                      Map<String, ArrayNode> editRowsByComp,
+                                                      Map<String, JsonNode> rkfOverride,
+                                                      Map<String, List<DeletedRowKeys.Tombstone>> delByComp,
+                                                      Map<String, JsonNode> rkfPrefetch,
+                                                      Map<String, Double> productAttributesCtx) {
+        final Map<String, Double> productAttrs =
+            productAttributesCtx != null ? productAttributesCtx : java.util.Map.of();
         ObjectNode root = MAPPER.createObjectNode();
         ArrayNode tabs = root.putArray("tabs");
 
@@ -1659,7 +1751,7 @@ public class CardSnapshotService {
             ArrayNode pass1Results = formulaCalculator.calculate(
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
                 rkfByComp.get(cid), baseRows, editRows,
-                componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>(),
+                componentSubtotals, new java.util.HashMap<>(), productAttrs, // task-0729 B8.1：产品属性上下文
                 crossTabRows, deleted, rkfNames,
                 rowCache, cid.isBlank() ? null : cid); // 带墓碑新重载：报价侧过滤删除行；核价侧 deleted=null → 不变
             List<Map<String, Object>> pass1Resolved = buildResolvedRows(
@@ -1685,7 +1777,7 @@ public class CardSnapshotService {
                 formulaResults = formulaCalculator.calculate(
                     tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
                     rkfByComp.get(cid), baseRows, editRows,
-                    componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>(),
+                    componentSubtotals, new java.util.HashMap<>(), productAttrs, // task-0729 B8.1
                     crossTabRows, deleted, rkfNames,
                     rowCache, cid.isBlank() ? null : cid);
                 resolved = buildResolvedRows(
@@ -1722,7 +1814,7 @@ public class CardSnapshotService {
             ArrayNode formulaResults = formulaCalculator.calculate(
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
                 rkfByComp.get(cid), baseRows, editRows,
-                componentSubtotals, new java.util.HashMap<>(), new java.util.HashMap<>(),
+                componentSubtotals, new java.util.HashMap<>(), productAttrs, // task-0729 B8.1
                 crossTabRows);
             List<Map<String, Object>> resolved = buildResolvedRows(
                 tab, baseRows, editRows, formulaResults, rkfByComp.get(cid));
@@ -1746,6 +1838,8 @@ public class CardSnapshotService {
                     if (expr.isArray() && expr.size() > 0) {
                         FormulaCalculator.RowContext subCtx = new FormulaCalculator.RowContext();
                         subCtx.componentSubtotals = componentSubtotals;
+                        subCtx.productAttributes = productAttrs; // task-0729 B8.1：SUBTOTAL 公式(产品小计)是
+                        // product_attribute token 最可能出现的位置，对齐前端 evalProductSubtotalFromSubtotals
                         java.math.BigDecimal evaluated = formulaCalculator.evaluateExpression(expr, subCtx);
                         if (evaluated != null) {
                             double v = evaluated.doubleValue();
@@ -1768,6 +1862,72 @@ public class CardSnapshotService {
             if (tn != null) tabs.add(tn);
         }
         return root;
+    }
+
+    /**
+     * task-0729 B8.1（D3 口径补齐）：给 FormulaCalculator 上下文构造 {@code productAttributes}
+     * （NUMBER 型）Map，供 {@code product_attribute} token 求值——对齐前端
+     * {@code QuotationStep2.tsx:1302-1307} {@code evalProductSubtotalFromSubtotals} 的口径：
+     * 只取 {@code field_type==="NUMBER"} 的属性，值取自 {@code productAttributeValues}，
+     * parse 失败/缺失的项静默跳过（不抛错、不当 0 参与求和，与前端 {@code isNaN} 跳过一致）。
+     *
+     * <p>schema 来源优先级：① 冻结结构 {@code quotation_view_structure.structure.productAttributes}
+     * （与前端 {@code item.productAttributes} 同源——Task5「productAttributes 冻进结构」）；
+     * ② 回退模板当前 {@code template.product_attributes}（结构缺失时，与 tabs 的回退顺序一致）。
+     *
+     * <p><b>短路</b>：{@code li.productAttributeValues} 为空/{@code "{}"}（当前库现状）时直接返回空
+     * map，不发起任何查询——本次改动前该场景 0 现网使用，短路后对现有性能零影响。
+     *
+     * @param quotationId 用于查冻结结构（可空——materializeAndProject 等路径经 li.quotationId 传入）
+     * @param templateId  回退查询用（报价侧传 customerTemplateId；核价侧传 costingTemplateId）
+     */
+    private Map<String, Double> buildProductAttributesContext(
+            QuotationLineItem li, UUID quotationId, UUID templateId) {
+        if (li == null || li.productAttributeValues == null) return java.util.Map.of();
+        String valuesJson = li.productAttributeValues.trim();
+        if (valuesJson.isEmpty() || "{}".equals(valuesJson)) return java.util.Map.of();
+        try {
+            JsonNode valuesNode = MAPPER.readTree(valuesJson);
+            if (!valuesNode.isObject() || valuesNode.isEmpty()) return java.util.Map.of();
+
+            JsonNode schema = null;
+            if (quotationId != null) {
+                @SuppressWarnings("unchecked")
+                var rows = em.createNativeQuery(
+                    "SELECT structure FROM quotation_view_structure WHERE quotation_id = :qid AND view_kind = :kind")
+                    .setParameter("qid", quotationId).setParameter("kind", "QUOTE_CARD").getResultList();
+                if (!rows.isEmpty() && rows.get(0) != null) {
+                    JsonNode pa = MAPPER.readTree(rows.get(0).toString()).path("productAttributes");
+                    if (pa.isArray()) schema = pa;
+                }
+            }
+            if (schema == null && templateId != null) {
+                @SuppressWarnings("unchecked")
+                var rows = em.createNativeQuery("SELECT product_attributes FROM template WHERE id = :tid")
+                    .setParameter("tid", templateId).getResultList();
+                if (!rows.isEmpty() && rows.get(0) != null) {
+                    JsonNode pa = MAPPER.readTree(rows.get(0).toString());
+                    if (pa.isArray()) schema = pa;
+                }
+            }
+            if (schema == null) return java.util.Map.of();
+
+            Map<String, Double> out = new java.util.LinkedHashMap<>();
+            for (JsonNode attr : schema) {
+                if (!"NUMBER".equals(attr.path("field_type").asText(""))) continue;
+                String name = attr.path("name").asText("");
+                if (name.isBlank()) continue;
+                JsonNode v = valuesNode.get(name);
+                if (v == null || v.isNull()) continue;
+                try {
+                    out.put(name, Double.parseDouble(v.asText()));
+                } catch (NumberFormatException ignore) { /* 与前端 isNaN 跳过对齐，不参与求和 */ }
+            }
+            return out;
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] buildProductAttributesContext failed li=%s: %s", li.id, e.getMessage());
+            return java.util.Map.of();
+        }
     }
 
     /** 组装单个 tabNode（baseRows/editRows/formulaResults/subtotal/resolvedRows）。 */
@@ -2239,7 +2399,9 @@ public class CardSnapshotService {
                 Map<String, List<DeletedRowKeys.Tombstone>> delByComp = loadTombstonesByComp(managed.id);
 
                 // 3. 组装新 quote_card_values（保留编辑 + 重算 formulaResults；报价侧传真实墓碑）
-                ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp);
+                // task-0729 B8.1：产品属性上下文（口径补齐）
+                ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp,
+                    null, buildProductAttributesContext(managed, q.id, q.customerTemplateId));
                 managed.quoteCardValues = MAPPER.writeValueAsString(root);
 
                 // 4. 报价 Excel 值前端权威（buildExcelSnapshot + saveDraft），此处不再后端重算。
@@ -2479,7 +2641,9 @@ public class CardSnapshotService {
 
             if (rebuildQuoteCardValues) {
                 // 组装 quoteCardValues（墓碑过滤）+ 物化 row_data（同墓碑 → N-1，与前端展开同序）
-                ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp);
+                // task-0729 B8.1：产品属性上下文（口径补齐）
+                ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp,
+                    null, buildProductAttributesContext(li, q.id, q.customerTemplateId));
                 li.quoteCardValues = MAPPER.writeValueAsString(root);
             }
             materializeWholeLineRowData(li, snapshot, baseRowsByComp, mergedEdits, delByComp);
@@ -2967,8 +3131,18 @@ public class CardSnapshotService {
             String code,
             String tabName,
             Map<String, Double> componentSubtotals) {
+        // task-0729 B8.1（BL-0017 遗漏路径补齐）：金额列集合（is_amount && is_subtotal），
+        // 照抄 ComponentDataEffectiveRows 的口径，不新写一套算法。amountCols ⊆ subtotalFields
+        // （is_amount 列必先 is_subtotal=true 才会被 findSubtotalFieldNames 选中），
+        // 故 subtotalFields 为空时 amountCols 必空、Σ=0，仍需登记（token 缺失时下游按 0 兜底，
+        // 但登记后与「真实登记的 0」在语义上一致，且防止把该页签排除在哨兵体系之外）。
+        java.util.Set<String> amountCols =
+            com.cpq.quotation.service.card.ComponentDataEffectiveRows.amountColsFromFields(fields);
         List<String> subtotalFields = formulaCalculator.findSubtotalFieldNames(fields);
-        if (subtotalFields.isEmpty()) return;
+        if (subtotalFields.isEmpty()) {
+            putAmountTotalSentinel(cid, code, tabName, 0.0, componentSubtotals);
+            return;
+        }
 
         // 单位换算（物化点5）：求和用换算后行（canonical）；resolvedRows 本身（落库）保持原值不动。
         List<Map<String, Object>> rowsForSum = new ArrayList<>(resolvedRows.size());
@@ -2977,6 +3151,7 @@ public class CardSnapshotService {
         }
 
         double totalSum = 0.0;
+        double amountTotal = 0.0; // BL-0017：Σ 金额列（is_amount && is_subtotal），累加未四舍五入的原始 colSum
         for (String col : subtotalFields) {
             double colSum = 0.0;
             for (Map<String, Object> row : rowsForSum) {
@@ -2998,6 +3173,7 @@ public class CardSnapshotService {
             if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + col, roundedDouble);
             componentSubtotals.put(tabName + "#" + col, roundedDouble);
             totalSum += roundedDouble;
+            if (amountCols.contains(col)) amountTotal += colSum; // 累加未舍入原值，最后统一舍入（避免复合舍入误差）
         }
         // 回填总小计（= 所有 is_subtotal 列之和，与 PASS1 computeTabSubtotalsByColumn 逻辑对称）
         double roundedTotal = java.math.BigDecimal.valueOf(totalSum)
@@ -3005,6 +3181,26 @@ public class CardSnapshotService {
         if (!cid.isBlank()) componentSubtotals.put(cid, roundedTotal);
         if (code != null && !code.isBlank()) componentSubtotals.put(code, roundedTotal);
         componentSubtotals.put(tabName, roundedTotal);
+
+        // BL-0017 哨兵键登记（task-0729 B8.1 补齐）：`${cid|code|tabName}#__amount_total__` = Σ金额列。
+        // 🔒 buildTabNode:~1806 的排除逻辑必须保留 —— 登记后该键会真的出现在 componentSubtotals 里，
+        // 若泄漏进 subtotalByColumn 会污染快照 + 造成 golden 漂移（本次未改动该排除逻辑）。
+        double roundedAmountTotal = java.math.BigDecimal.valueOf(amountTotal)
+            .setScale(4, java.math.RoundingMode.HALF_UP).doubleValue();
+        putAmountTotalSentinel(cid, code, tabName, roundedAmountTotal, componentSubtotals);
+    }
+
+    /**
+     * BL-0017 哨兵键三键写入（与本类其余 per-column key 写法对称：cid / code / tabName 三种前缀）。
+     * 抽成小方法供 {@link #backfillSubtotalsFromResolved} 的空 subtotalFields 早退分支与正常分支复用。
+     */
+    private static void putAmountTotalSentinel(
+            String cid, String code, String tabName, double amountTotal,
+            Map<String, Double> componentSubtotals) {
+        String key = com.cpq.quotation.service.card.ComponentDataEffectiveRows.AMOUNT_TOTAL_KEY;
+        if (cid != null && !cid.isBlank()) componentSubtotals.put(cid + "#" + key, amountTotal);
+        if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + key, amountTotal);
+        if (tabName != null && !tabName.isBlank()) componentSubtotals.put(tabName + "#" + key, amountTotal);
     }
 
     /**

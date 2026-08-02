@@ -55,4 +55,20 @@ public class QuotationAdminResource {
         List<Map<String, Object>> result = cardSnapshotService.migrateFreezeDrafts(dryRun);
         return ApiResponse.success(result);
     }
+
+    /**
+     * task-0729 B8.2：《SUBTOTAL 双端对拍清单》一次性生成端点（合并前置，技术总监确认用）。
+     * 100% 只读——{@link CardSnapshotService#reconcileQuoteSubtotalsForTask0729B8} 内部只
+     * SELECT + 纯内存重算，不写任何字段。逐 line item 返回 quotationNo/materialNo/liSubtotal/
+     * computedSubtotal/diff，供人工逐行定性（口径差已修复 / 历史时点漂移 / 其他）。
+     *
+     * <p>非常驻业务端点，用完可删；先按此临时端点跑出清单，不预先建正式菜单/前端页面。
+     */
+    @GET
+    @Path("/task0729-subtotal-reconcile")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<List<Map<String, Object>>> task0729SubtotalReconcile() {
+        LOG.info("[admin] task0729-subtotal-reconcile called (read-only)");
+        return ApiResponse.success(cardSnapshotService.reconcileQuoteSubtotalsForTask0729B8());
+    }
 }

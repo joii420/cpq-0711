@@ -83,12 +83,27 @@ public final class ComponentDataEffectiveRows {
         return java.util.Set.of();
     }
 
-    /** BL-0017：从组件 fields JsonNode 抽取金额列名集（is_amount && is_subtotal）。null/非数组 → 空集。 */
+    /**
+     * BL-0017：从组件 fields JsonNode 抽取金额列名集（is_amount && is_subtotal）。null/非数组 → 空集。
+     *
+     * <p>task-0729 B8.1 实测修正（2026-08-01）：两种字段 JSON 形态并存——
+     * 活组件 {@code component.fields}（snake_case: {@code is_amount}/{@code is_subtotal}）
+     * vs 冻结结构 {@code quotation_view_structure.structure.tabs[].fields}
+     * （camelCase: {@code isAmount}/{@code isSubtotal}，见
+     * {@code CardSnapshotService#buildCardStructure:292} 冻结时的显式转写）。
+     * 原实现只认 snake_case，喂冻结结构（{@code CardSnapshotService.assembleTabsWithFormulaResults}
+     * 的唯一输入源）时恒空集 → {@code __amount_total__} 哨兵恒 0，即使真实金额列非零
+     * （实测 QT-20260726-0016「加工费」列冻结态 isAmount=true/isSubtotal=true 但漏判）。
+     * 两种键名都查，与 {@link com.cpq.quotation.service.FormulaCalculator#findSubtotalFieldNames}
+     * 的既有双形态兼容写法（{@code isSubtotal || is_subtotal}）对齐，不引入新口径。
+     */
     public static java.util.Set<String> amountColsFromFields(JsonNode fields) {
         java.util.Set<String> out = new java.util.HashSet<>();
         if (fields == null || !fields.isArray()) return out;
         for (JsonNode f : fields) {
-            if (f.path("is_amount").asBoolean(false) && f.path("is_subtotal").asBoolean(false)) {
+            boolean isAmount = f.path("isAmount").asBoolean(false) || f.path("is_amount").asBoolean(false);
+            boolean isSubtotal = f.path("isSubtotal").asBoolean(false) || f.path("is_subtotal").asBoolean(false);
+            if (isAmount && isSubtotal) {
                 String n = f.path("name").asText("");
                 if (!n.isBlank()) out.add(n);
             }
