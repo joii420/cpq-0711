@@ -581,4 +581,252 @@ ORDER BY li.created_at DESC;
 
 ---
 
-**本批（#11~#20，含 #1/#7/#8/#9/#10 五处返修）交回，等待下一批指令续写 #21 及以后。**
+---
+
+### #21　🔴 核价侧联动（核心）：料号升版后核价卡片按本版客户元素价重算且数值变化；核价单 `costing_order` frozen 快照逐字节不变
+
+| 归属 | 测试层级 |
+|---|---|
+| **技术总监亲验**（`backtask.md` §2.3，前置条件已就绪：COMP-0049「元素单价」字段已由 V366 配好，实测 `expand-driver` 取到 `Ag=216770.0`，**本条现在可测，不再标"前置未就绪"**） | SQL 断言（双向，逐字段） |
+
+**前置数据**：复用现网真实数据——`QT-20260726-0018`（`status=PENDING`，材料 `S-3120014539`）已有关联 `costing_order`（`id=f07efd64-fdbe-4f12-bb1e-a54a578324d1`）。将该料号纳入 `CUST-0001` 调价范围，元素清单含 `Ag`，生成版本 `V1`（`Ag` 新价 ≠ 当前取价结果，如取价函数当前返回 `Ag=216770.0000`，构造 `element_price_version_item` 里 `Ag` 的 `current_price` 为一个明确不同的新值，如 `220000.0000`，便于断言"确实变了"而非凑巧相同）。
+
+**执行步骤**
+1. **升版前**采集基线：
+   ```sql
+   -- 核价单 frozen 快照全字段哈希（整行序列化，任何一列变了都会体现）
+   SELECT md5(row_to_json(co)::text) AS h_full, md5(co.frozen_dto::text) AS h_frozen,
+          co.total_amount, co.costing_total_amount
+   FROM costing_order co WHERE co.id = 'f07efd64-fdbe-4f12-bb1e-a54a578324d1';
+   -- 报价单内的核价卡片值（本次要变的对象）
+   SELECT li.costing_card_values FROM quotation_line_item li
+   WHERE li.quotation_id = '5ae37319-3134-402a-aa46-23c0e03aa45f' AND li.product_part_no_snapshot='S-3120014539';
+   ```
+2. `POST /reviews/approve` 通过该料号，等待 job 完成。
+3. 升版后重新执行步骤 1 的两条查询。
+
+**断言（机械可判定，双向缺一不可）**
+- 🔒 **正向**：`li.costing_card_values` 中 `Ag` 对应的元素材料成本字段值 **= 220000.0000**（本版价，精确值，非"有变化"）；且该料号核价侧 SUBTOTAL（走 `CostingSubtotalUtil#extractUnitSubtotal` 提取）升版前后**数值不同**。
+- 🔒 **反向**：`h_full`（`costing_order` 整行 `row_to_json` 的 md5）升版前后**完全相同**；`h_frozen`（`frozen_dto` 单独的 md5）**完全相同**；`total_amount`/`costing_total_amount` 数值**完全相同**——本次升版按 §11.8.2 只应动 `quotation_line_item.costing_card_values`，`costing_order` 表**一个字节都不该碰**。
+
+**证据形式**：升版前后两组 SQL 查询完整输出（含 md5 与精确数值）；`costing_card_values` 里 `Ag` 字段的 diff。
+
+---
+
+### #22　双侧同源可复现：审核页显示的「调整后核价」与通过后实际重算出的核价卡片值逐位一致
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | SQL 断言 + API 测试 |
+
+**前置数据**：复用 #21 场景，生成版本后先让该料号的预算算完（`budgetStatus=READY`）但**先不通过**。
+
+**执行步骤**
+1. `GET /reviews/{reviewId}`，读 `comparisonColumns` 中"产品总价"列（或已配置的自定义列）的 `costingAdjusted` 字段——这是**预算值**，来自 `material_price_review_column` 落库。
+2. `POST /reviews/approve` 通过，等待 job 完成。
+3. 升版后，用同一套算法（`CostingSubtotalUtil#extractUnitSubtotal`）从实际 `costing_card_values` 重新提取同一指标，得到**实际值**。
+
+**断言（机械可判定）**
+- 🔒 `SELECT costing_adjusted FROM material_price_review_column WHERE review_id=... AND column_id='col-default'`（预算值）与步骤 3 提取的实际值 **数值完全相等**（`abs(预算-实际)=0`，不是"接近"）。
+- 🔒 该结论成立的结构性依据（走查代码佐证）：`material_price_review_column.costing_adjusted` 是通道 B `dryRun=true` 时算出并落库的，`costing_card_values` 是 `dryRun=false` 时算出并落库的——**两者是同一段代码在 `dryRun` 分叉前后的产物**，理论上不可能出现结构性分叉，本条断言是对这个结构性保证的直接验证。
+
+**证据形式**：预算值与实际值的 SQL/计算过程并排对比。
+
+---
+
+### #23　比对列可配置：默认列=产品总价；可另加任意「报价侧页签指标 ↔ 核价侧页签指标」比对列
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1）。⚠️ **前端屏 1 已合入（commit `66aa072c`），但屏 3~8 尚未开发**——本条 UI 断言（比对列配置区的连线抽屉交互）暂缓，标注「待屏 1 比对列配置区 / 屏 4 抽屉交付后执行」，本批只做 API 层 | API 测试 + SQL 断言 |
+
+**前置数据**：`CUST-0001` + 系列「罗克韦尔模板1」（`templateSeriesId=a91209e6-743b-4ebe-9ede-5b2737077674`）。该系列下需要有真实 `componentId` 可引用——取该系列模板（`70f1b149-b0d9-4cb1-9245-6c3cee1bc3af`）里"材料成本"组件的 `componentId`（走 `template_component` 关联查询）。
+
+**执行步骤**
+1. `GET /price-adjust/comparison-columns?customerNo=CUST-0001&templateSeriesId=a91209e6-743b-4ebe-9ede-5b2737077674`（未配置态）。
+2. `PUT` 同端点，`columns` 追加一条 `kind=TAB_PAIR`，`quoteComponentId=<材料成本组件id>`、`quoteMetric=材料小计`、`costingComponentId=<核价物料与元素BOM组件id>`、`costingMetric=__TAB_TOTAL__`、`threshold=2.00`。
+3. 再次 `GET` 同端点。
+
+**断言（机械可判定）**
+- 🔒 步骤 1：`configured=false`，`columns` 只含 1 条 `kind=PRODUCT_TOTAL`，`removable=false`。
+- 🔒 步骤 3：`configured=true`，`columns` 含 2 条（默认列 + 新加列），新加列各字段与步骤 2 提交值逐字段相等。
+- 🔒 `SELECT columns FROM comparison_column_config WHERE customer_no='CUST-0001' AND template_series_id='a91209e6-743b-4ebe-9ede-5b2737077674'`（jsonb）与步骤 3 响应的 `columns` 内容一致（纯读落库值，无实时拼装差异）。
+
+**证据形式**：3 次 API 调用响应；`comparison_column_config` 落库 SQL 输出。
+
+---
+
+### #24　配置隔离（双向）：客户 A 的比对列配置不影响客户 B；同一客户下模板系列甲的配置不影响系列乙；新组合默认只产品总价且不可删
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | SQL 断言 + API 测试 |
+
+**前置数据**
+- 现网**仅 1 个真实客户**（`CUST-0001`）——「客户 A 不影响客户 B」这一半无法用两个真实客户验证，改用**合成 `customer_no`** 做纯配置层隔离验证（`comparison_column_config.customer_no` 是普通 `VARCHAR`、无 FK 约束，允许不挂靠真实 `customer` 表记录）：`INSERT INTO comparison_column_config (customer_no, template_series_id, columns) VALUES ('CUST-SYNTH-B', '<任意已存在的 template_series_id，如 a91209e6-...>', '[{"id":"col-x","kind":"TAB_PAIR", ...}]')`。
+- 系列甲/乙用真实数据：`a91209e6-743b-4ebe-9ede-5b2737077674`（罗克韦尔模板1）与 `61363e67-e8a0-4cb0-943c-79f29f6f0dcb`（罗克韦尔模板2）。
+
+**执行步骤**
+1. 给 `CUST-0001 × 系列甲` 配一条自定义列（同 #23 步骤 2）。
+2. 直接查询 `CUST-SYNTH-B`（合成客户）在**同一个** `template_series_id` 下的配置：`GET /comparison-columns?customerNo=CUST-SYNTH-B&templateSeriesId=a91209e6-...`。
+3. 查询 `CUST-0001 × 系列乙`（`61363e67-...`）的配置：`GET /comparison-columns?customerNo=CUST-0001&templateSeriesId=61363e67-...`。
+4. 查询一个**从未配置过**的组合（如 `CUST-0001 × 系列乙` 若步骤 3 前从未配过）。
+
+**断言（机械可判定）**
+- 🔒 步骤 2（跨客户隔离）：`CUST-SYNTH-B` 的返回**不包含**步骤 1 给 `CUST-0001` 加的那条自定义列（除非步骤 0 显式为 `CUST-SYNTH-B` 单独造了配置，那种情况下应看到的是**它自己独立造的那条**，而非 `CUST-0001` 的）。
+- 🔒 步骤 3（同客户跨系列隔离）：`CUST-0001 × 系列乙` 的 `columns` **不含**步骤 1 加给系列甲的那条自定义列。
+- 🔒 步骤 4：`configured=false`，`columns` 恰好 1 条（`kind=PRODUCT_TOTAL`），`removable=false`（`PUT` 尝试删除该列应被拒绝或被服务端强制保留，需额外验证 `PUT columns:[]` 或不含该列的提交是否被拒 `400`/或被静默补回）。
+
+**证据形式**：4 次查询响应 JSON 并排对比；`comparison_column_config` 表按 `(customer_no, template_series_id)` 分组的 SQL 输出。
+
+---
+
+### #25　🔴 行标红判定（核心）：产品总价差异为正但某自定义列差异 <0 → 整行必须标红；全橙 → 不得标红
+
+| 归属 | 测试层级 |
+|---|---|
+| 跨端(后端主导)（`backtask.md` §2.2 + `fronttask.md` §12.2，硬约束 19 专测条目）。⚠️ UI 渲染断言（`rowRed` 驱动的行背景色）标注「待屏 3 待办池交付后执行」，本批做 API 层 `rowRed`/`breachedCount` 断言 | SQL 断言 + API 测试 |
+
+**前置数据**：为 `CUST-0001 × 系列甲` 配 **3 个比对列**（对齐 `🔴1 🟠1 / 3列` 的原文标记，必须凑够 3 列才能验证"红橙分开计数+第三列静默 NORMAL 不进计数"）：
+- Col1 = 产品总价（默认列，`threshold=5.00`）。
+- Col2 = 自定义列 A（`threshold=2.00`）。
+- Col3 = 自定义列 B（`threshold=2.00`）。
+
+料号 X 的预算构造为：Col1 `diffAdjusted=+4.05`（`0≤4.05<5` → `AMBER`）；Col2 `diffAdjusted=-1.90`（`<0` → `RED`）；Col3 `diffAdjusted=+10.00`（`≥threshold` → `NORMAL`）。
+
+**执行步骤**
+1. `GET /reviews/{reviewId}`（料号 X），核对 `comparisonColumns` 三列各自 `status`。
+2. 查询待办池列表接口，核对 `breachedCount`/`amberCount`/`rowRed`/汇总标记字段。
+3. **反向用例**：另造料号 Y，三列全部落在 `[0, threshold)` 区间（全 `AMBER`）。
+
+**断言（机械可判定）**
+- 🔒 料号 X：`comparisonColumns` 里 Col1.status=`AMBER`、Col2.status=`RED`、Col3.status=`NORMAL`。
+- 🔒 🔒 **核心断言**：`SELECT breached_count, amber_count, column_count FROM material_price_review WHERE id=X的reviewId` = `(1, 1, 3)`；`rowRed = true`（`breached_count > 0`，**不是** `产品总价diff < 0`——产品总价本身是 `AMBER` 不是 `RED`，若实现误写成"产品总价判定"，此处 `rowRed` 会错判为 `false`，这条断言正是防这个）。
+- 🔒 待办池汇总标记字符串 = `🔴1 🟠1 / 3列`（与原型屏 3 样例逐字符一致）。
+- 🔒 料号 Y（反向用例）：`breached_count=0`，`rowRed=false`，标记 = `🟠3 / 3列`（**不得**因为有橙就标红）。
+
+**证据形式**：X/Y 两个料号的 `GET /reviews/{reviewId}` 与列表接口响应 JSON；`material_price_review` 汇总列 SQL 输出；标记字符串的逐字符对比。
+
+---
+
+### #26　比对列配置变更重算：改动配置并保存 → 该「客户 × 模板系列」下 `待处理` 料号预算立即（异步）刷新；`已通过`/`已驳回` 不动
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | API 测试 + SQL 断言（🔄 **返修口径**：E14-3 下重算是**异步**的，不能断言"保存后立刻同步变新值"，必须经过 `budget_status` 中间态） |
+
+**前置数据**：`CUST-0001 × 系列甲` 下有 2 条待办：`PENDING` 的料号 P（budget 已 `READY`），`APPROVED` 的料号 Q（历史已通过）。
+
+**执行步骤**
+1. 记录 P、Q 当前 `material_price_review_column` 内容（旧配置下算出的值）。
+2. `PUT /price-adjust/comparison-columns`（改阈值或加列），响应含 `budgetRecomputeTriggered:true, affectedReviewCount`。
+3. 🔒 **异步轮询**：立即查询 P 的 `budget_status`（预期短暂进入 `QUEUED`/`COMPUTING`），每隔一段时间轮询直到转回 `READY`（设置合理超时，如 10~30s，超时判失败）。
+4. Q 的 `budget_status`/`material_price_review_column` 在整个过程中重复查询。
+
+**断言（机械可判定）**
+- 🔒 步骤 2 响应 `affectedReviewCount` **等于**该「客户 × 模板系列」下 `PENDING` 状态的料号数（本例 = 1，即 P；不含 Q）。
+- 🔒 步骤 3：P 的 `budget_status` 曾经历过非 `READY` 的中间态（若实现是完全同步瞬间完成，允许"轮询第一次就已是 READY 且新值已生效"作为合规结果，但**不允许**"P 的 `material_price_review_column` 值在配置保存后长时间未更新"）；轮询结束时 P 的 `material_price_review_column` 内容**必须反映新配置**（新阈值/新增列已体现在数值与 `status` 分类上）。
+- 🔒 **`APPROVED` 的 Q 全程 `budget_status` 与 `material_price_review_column` 内容不变**（`SELECT md5(...)` 或逐字段对比，配置变更**不得**触碰已审核过的记录——审核依据必须可追溯，硬约束不变）。
+- 🔒 若额外构造一个**其他模板系列**（如系列乙）下的 `PENDING` 料号 R，本次改系列甲配置**不应触发** R 的重算（`R.budget_status` 不进入 `QUEUED`/`COMPUTING`，§11.5.4 收窄范围"仅该客户×模板系列"）。
+
+**证据形式**：改配置前后 `material_price_review_column` 内容对比（P/Q/R 三条分别记录）；`budget_status` 轮询过程日志（时间戳序列）。
+
+---
+
+### #27　列表与抽屉逐位一致：屏 3 汇总标记的红/橙计数与屏 4 抽屉逐列明细的 `status` 分布完全一致
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1）。⚠️ UI 层面的"列表页 vs 抽屉页肉眼对照"待屏 3/4 交付后再做人工复核，本批做 API/SQL 层的落库口径一致性验证 | SQL 断言 |
+
+**前置数据**：复用 #25 场景的料号 X（3 列，1 红 1 橙 1 正常）。
+
+**执行步骤**
+1. `SELECT breached_count, amber_count, column_count FROM material_price_review WHERE id=X的reviewId`（列表页汇总口径）。
+2. `SELECT status, count(*) FROM material_price_review_column WHERE review_id=X的reviewId GROUP BY status`（抽屉页明细口径）。
+
+**断言（机械可判定）**
+- 🔒 步骤 2 里 `status='RED'` 的计数 **=** 步骤 1 的 `breached_count`；`status='AMBER'` 的计数 **=** `amber_count`；`status IN ('RED','AMBER','MISSING','STALE','NORMAL')` 总计数 **=** `column_count`。
+- 🔒 两处**同读同一份落库数据**（`material_price_review` 的冗余汇总列本应是 `material_price_review_column` 的预聚合结果，而非独立实时计算）——走查代码确认汇总列写入逻辑是"预算落库时一并计算好冗余汇总列"，而非"列表接口临时 `COUNT()`"（若是后者，理论上也会数字对，但不满足"免 JOIN 免 N+1"的设计目标，需在报告里注明是否符合设计意图）。
+
+**证据形式**：两条 SQL 的输出对比表。
+
+---
+
+### #28　🔴 升版不被 saveDraft 回滚（核心）：料号升版后写 `snapshot_rows`；再执行一次 saveDraft、重新打开 → 价格仍是新价
+
+| 归属 | 测试层级 |
+|---|---|
+| **技术总监亲验**（`backtask.md` §2.3，与 #14 #21 #40 #41 #64 并列不接受口头"已通过"） | SQL 断言 + API 测试 |
+
+**🔒 顺序是本条的全部价值所在，不可打乱**：升版 → 断言 `snapshot_rows` 已新价 → **再执行一次真实 `saveDraft`** → 重新打开（`GET`）→ 断言价格仍是新价。少了"再 saveDraft"这一步，测的只是 #14/#21 已经测过的东西，测不出"销售存一次草稿就被 `ensureCardValues` 从旧 `snapshot_rows` 重建、新价静默回滚"这个本期最隐蔽的失败模式。
+
+**前置数据**：料号 A（`M-ISO-A`，复用 #14 场景或另造），在 `CUST-0001` 调价范围+元素清单内，其 `DRAFT` 单已生成版本并待审。
+
+**执行步骤**
+1. `POST /reviews/approve` 通过 A，等待 job 完成。
+2. `SELECT snapshot_rows FROM quotation_line_component_data WHERE line_item_id=... AND component_id=...`，断言 `Ag` 单价字段 = 本版价（同 #14 正向断言）。
+3. 🔒 **关键步骤**：对该报价单执行一次**真实** `PUT /api/cpq/quotations/{id}/draft`（saveDraft 端点），payload 用**该单当前从后端 `GET` 到的最新数据**回填提交（模拟销售正常保存，不刻意构造陈旧 payload——那是 #40/#41 的场景，本条测的是"哪怕是正常保存也不该回滚"）。
+4. 重新 `GET /api/cpq/quotations/{id}`（模拟"重新打开"），再次查询 `snapshot_rows` 与渲染出的 `quote_card_values`。
+
+**断言（机械可判定）**
+- 🔒 步骤 2：`snapshot_rows` 里 `Ag` 单价 = 本版价（精确值）。
+- 🔒 🔒 **核心断言**：步骤 4 的 `snapshot_rows` 与 `quote_card_values` 中 `Ag` 单价**仍然 = 本版价**，与步骤 2 完全相同（saveDraft 前后 md5 不变，或至少该字段精确值不变）——**不得**退回升版前的旧价。
+- 🔒 若发现步骤 4 价格退回旧价：判定为**该失败模式命中**，须定位是否走了"只重算 `quote_card_values` 不写 `snapshot_rows`"的实现路径（`CardSnapshotService` 全类只读 `snapshot_rows` 从不写，是本条要防的具体代码坑）。
+
+**证据形式**：三个时点（升版后 / saveDraft 前 / saveDraft 后重新打开）的 `snapshot_rows`/`quote_card_values` 完整查询输出；saveDraft 请求的 payload 记录。
+
+---
+
+### #29　手工值按列清除：某行手改过元素单价与毛重两个字段 → 升版后单价=本版价（覆盖），毛重仍是手改值（未误伤）
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | SQL 断言 |
+
+**前置数据**：料号 A 的 driver 行，在其 `row_data`/`editRows`（视具体存储位置，走查 `CardEffectiveRows` 确认字段合成口径）中**直接 SQL 构造**存量手改值（模拟"机制生效前销售已经手改过"的历史状态，因为一旦机制生效该元素单价列前端会变只读、无法再通过 UI 产生新的手改值）：
+```sql
+-- 示例：把该行的"元素单价"改成一个明显不同于取价结果的手改值 9999，"毛重"改成 88.8
+-- 具体写法依 row_data/editRows 的真实 JSON 结构而定，需先 SELECT 出该行原始 JSON 再定点替换对应字段
+```
+
+**执行步骤**
+1. 造完手改值后，先确认该行当前渲染出的单价确实是 `9999`（手改值优先级最高生效，佐证 `CardEffectiveRows` 的合成口径）。
+2. `POST /reviews/approve` 通过该料号，等待完成。
+3. 查询升版后该行的单价字段与毛重字段。
+
+**断言（机械可判定）**
+- 🔒 单价字段 **= 本版价**（如 220000.0000，不是 `9999`）——手改值被按列覆盖清除。
+- 🔒 🔒 毛重字段 **仍 = 88.8**（手改值原样保留，未被"整行清空"式的误伤实现波及）。
+- 🔒 两个断言必须**同时满足**——只测单价覆盖、不测毛重保留是不完整的（防止实现走"整行清空再重算"这种简单粗暴但误伤其他手改字段的写法）。
+
+**证据形式**：造数前后与升版后三个时点的行数据 JSON 对比（单价、毛重两个字段分别标注）。
+
+---
+
+### #30　导出走新价：料号升版后**不打开报价单**、直接导出 Excel → 导出文件中元素单价与金额均为新价
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | API 测试 |
+
+**🔒 断言前提（本条最容易漏测的一步）**：整个用例过程中**禁止**出现任何 `GET /api/cpq/quotations/{id}`（详情/编辑页数据接口）调用——一旦打开过报价单，`quoteExcelValues` 可能因为其他渲染路径被提前重算，测不出"导出接口自己 fallback 重算"这条能力。
+
+**前置数据**：料号 A 所在报价单，升版前先确保 `li.quote_excel_values` **非空**（模拟"之前导出过一次"的历史状态；若当前为空可先调用一次导出接口预热，再继续后续步骤）。
+
+**执行步骤**
+1. `POST /reviews/approve` 通过 A，等待 job 完成。
+2. **立即** `SELECT quote_excel_values FROM quotation_line_item WHERE ...`，确认 S7 已生效。
+3. 🔒 **不经过任何 `GET` 报价单详情接口**，直接调用 `GET /api/cpq/quotations/{id}/export-excel-view`（对应 `ExcelViewService.exportExcelView`，已确认服务端 fallback 会在快照为空时重算）。
+4. 再次 `SELECT quote_excel_values`，检查是否已被步骤 3 的调用重新物化。
+
+**断言（机械可判定）**
+- 🔒 步骤 2：`li.quote_excel_values IS NULL`（升版 S7 已置空，验证"导出快照失效"这一半）。
+- 🔒 🔒 **核心断言**：步骤 3 响应中该料号 `Ag` 元素单价字段 = 本版价（精确值），对应金额列 = 用本版价重算后的值——证明 fallback 重算确实生效，**不依赖"先打开过报价单"这个前提**。
+- 🔒 步骤 4（可选加固）：确认导出调用本身是否顺带把 `quote_excel_values` 重新物化（无论是否物化都不影响步骤 3 的核心结论，仅作实现细节记录）。
+
+**证据形式**：升版后立即查询 `quote_excel_values` 为空的 SQL 输出；`export-excel-view` 响应 JSON（含新价数值）；全程请求日志（证明未调用过报价单详情接口）。
+
+---
+
+**本批（#21~#30）交回，等待下一批指令续写 #31 及以后。**
