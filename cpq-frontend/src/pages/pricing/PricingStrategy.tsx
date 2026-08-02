@@ -10,6 +10,7 @@ import { customerService } from '../../services/customerService';
 import { pricingService } from '../../services/pricingService';
 import { GLOBAL_CUSTOMER_NO } from '../../types/element-price-strategy';
 import ElementPriceStrategyTab from './element-strategy/ElementPriceStrategyTab';
+import PriceAdjustStrategyTab from './price-adjust/PriceAdjustStrategyTab';
 
 /**
  * task-0722 · F6.2：定价策略页客户列表顶部固定「全局（核价成本口径）」项。
@@ -363,13 +364,30 @@ const PricingStrategy: React.FC = () => {
             {/* task-0722 follow-up (2026-07-23)：「折扣策略」Tab 已下线。
                 其配置的客户级折扣(pricing_strategy)在当前报价流程已不生效——触发入口
                 handleCalculateDiscount 无调用方、JavaDiscountCalculationService 仅被测试引用，
-                报价折扣现走 Step3 逐行 LineDiscountService。故不再展示「折扣策略」Tab，
-                直接渲染「元素价格策略」。折扣相关前端逻辑/后端端点/pricing_strategy 表数据
-                均保留未删(死代码，可逆)，如需恢复见 git 历史。 */}
-            <ElementPriceStrategyTab
-              customerNo={selectedCustomer.isGlobal ? GLOBAL_CUSTOMER_NO : selectedCustomer.code}
-              customerLabel={selectedCustomer.name}
-            />
+                报价折扣现走 Step3 逐行 LineDiscountService。故不再展示「折扣策略」Tab。折扣相关
+                前端逻辑/后端端点/pricing_strategy 表数据均保留未删(死代码，可逆)，如需恢复见 git 历史。
+
+                task-0729 屏 1：新增第 3 个 Tab「价格调整策略」（落位见 fronttask §1）。
+                🔒 全局（核价成本口径）项选中时不显示本 Tab —— 裁决 16 定了核价侧不做版本，
+                该项也不是真实客户，价格调整策略以客户为主体，与 _GLOBAL_ 无意义交叉。 */}
+            {selectedCustomer.isGlobal ? (
+              <ElementPriceStrategyTab customerNo={GLOBAL_CUSTOMER_NO} customerLabel={selectedCustomer.name} />
+            ) : (
+              <Tabs
+                items={[
+                  {
+                    key: 'element-price',
+                    label: '元素价格策略',
+                    children: <ElementPriceStrategyTab customerNo={selectedCustomer.code} customerLabel={selectedCustomer.name} />,
+                  },
+                  {
+                    key: 'price-adjust',
+                    label: <span>价格调整策略 <Tag color="blue" style={{ marginLeft: 4 }}>新</Tag></span>,
+                    children: <PriceAdjustStrategyTab customerNo={selectedCustomer.code} customerLabel={selectedCustomer.name} />,
+                  },
+                ]}
+              />
+            )}
           </>
         )}
       </Content>
