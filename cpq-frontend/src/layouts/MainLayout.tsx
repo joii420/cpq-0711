@@ -85,6 +85,8 @@ const allMenuItems: MenuItem[] = [
       { key: '/pricing', label: '定价策略', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
       // task-0729 屏 3：料号待办池，限定价经理/系统管理员（fronttask §2「落位」）
       { key: '/pricing/reviews', label: '价格调整审核', roles: ['PRICING_MANAGER', 'SYSTEM_ADMIN'] },
+      // task-0729 屏 6.2：更新任务常驻页，与「价格调整审核」并列、权限同（fronttask §5.2「落位」）
+      { key: '/pricing/jobs', label: '更新任务', roles: ['PRICING_MANAGER', 'SYSTEM_ADMIN'] },
       { key: '/system/approval-rules', label: '审批流', roles: ['SYSTEM_ADMIN'] },
     ],
   },

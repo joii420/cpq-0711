@@ -8,6 +8,8 @@ export interface ApproveImpactModalProps {
   rows: ReviewRowDTO[];
   onClose: () => void;
   onApproved: () => void;
+  /** 屏6 联动：approve 响应带回 jobId，交给上层立刻打开进度抽屉（fronttask §5.1）。 */
+  onJobCreated?: (jobId: string) => void;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -24,7 +26,7 @@ const STATUS_LABEL: Record<string, string> = {
  * 「点通过时先弹确认亮出影响面，确认后异步执行」），并非本轮擅自扩大到独立的「屏 5 任务」——
  * 没有它，屏 3 的通过按钮就是违反硬约束的不完整实现。
  */
-const ApproveImpactModal: React.FC<ApproveImpactModalProps> = ({ open, rows, onClose, onApproved }) => {
+const ApproveImpactModal: React.FC<ApproveImpactModalProps> = ({ open, rows, onClose, onApproved, onJobCreated }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<ImpactPreviewDTO | null>(null);
@@ -47,6 +49,7 @@ const ApproveImpactModal: React.FC<ApproveImpactModalProps> = ({ open, rows, onC
       const res = await priceAdjustService.approveReviews(rows.map((r) => r.reviewId));
       message.success(`已提交更新任务（jobId=${res.jobId}），共 ${res.quotationCount} 张单 / ${res.itemCount} 条明细`);
       onApproved();
+      onJobCreated?.(res.jobId);
     } catch (e: any) {
       message.error(e?.message || '通过并升版失败');
     } finally {

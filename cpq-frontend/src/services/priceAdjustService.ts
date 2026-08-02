@@ -23,6 +23,9 @@ import type {
   ReviewDetailDTO,
   ImpactPreviewDTO,
   ApproveResponse,
+  UpdateJobDTO,
+  JobsQueryParams,
+  UpdateJobItemDTO,
 } from '../types/price-adjust';
 
 /**
@@ -161,6 +164,30 @@ export const priceAdjustService = {
 
   async recomputeBudget(reviewId: string): Promise<void> {
     await api.post(`${BASE}/reviews/${encodeURIComponent(reviewId)}/recompute-budget`);
+  },
+
+  // ── §3.1~§3.3 更新任务（屏 6 + 常驻页） ──
+
+  async getJobs(params: JobsQueryParams): Promise<PageResult<UpdateJobDTO>> {
+    return (await api.get(`${BASE}/jobs`, { params })) as unknown as PageResult<UpdateJobDTO>;
+  },
+
+  async getJob(jobId: string): Promise<UpdateJobDTO> {
+    return (await api.get(`${BASE}/jobs/${encodeURIComponent(jobId)}`)) as unknown as UpdateJobDTO;
+  },
+
+  async getJobItems(jobId: string, params: { page: number; size: number; status?: string }): Promise<PageResult<UpdateJobItemDTO>> {
+    return (await api.get(`${BASE}/jobs/${encodeURIComponent(jobId)}/items`, { params })) as unknown as PageResult<UpdateJobItemDTO>;
+  },
+
+  // ── §3.4~§3.5 重试 ──
+
+  async retryJob(jobId: string): Promise<void> {
+    await api.post(`${BASE}/jobs/${encodeURIComponent(jobId)}/retry`);
+  },
+
+  async retryJobItem(itemId: string): Promise<void> {
+    await api.post(`${BASE}/job-items/${encodeURIComponent(itemId)}/retry`);
   },
 };
 

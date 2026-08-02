@@ -115,14 +115,19 @@ async function fulfillJson(route: any, body: unknown) {
 test('屏3+屏4 渲染证据（rowRed 整行标红 / 预算中间态 / 比对状态标记 / 三段抽屉）', async ({ page }) => {
   test.skip(!backendUp, 'backend down');
 
-  await page.route('**/api/cpq/price-adjust/reviews/impact', (route) => fulfillJson(route, impactPreview));
-  await page.route('**/api/cpq/price-adjust/reviews/*/recompute-budget', (route) => route.fulfill({ status: 202, contentType: 'application/json', body: '{}' }));
-  await page.route('**/api/cpq/price-adjust/reviews/*', async (route) => {
-    if (route.request().method() === 'GET') return fulfillJson(route, reviewDetail);
-    await route.continue();
-  });
-  await page.route('**/api/cpq/price-adjust/reviews', async (route) => {
-    if (route.request().method() === 'GET') return fulfillJson(route, reviewsPage);
+  // 单一 catch-all + 子串分派（与屏1 mocked spec 同款写法）——避免 glob 模式对
+  // query string 精确匹配的坑（**/reviews 不带尾部通配符匹配不到 ?status=... 的真实请求 URL）。
+  await page.route('**/api/cpq/price-adjust/**', async (route) => {
+    const url = route.request().url();
+    const method = route.request().method();
+    if (method !== 'GET') {
+      if (url.includes('/reviews/impact')) return fulfillJson(route, impactPreview);
+      if (url.includes('/recompute-budget')) { await route.fulfill({ status: 202, contentType: 'application/json', body: '{}' }); return; }
+      await route.fulfill({ status: 202, contentType: 'application/json', body: '{}' });
+      return;
+    }
+    if (url.includes('/reviews/') && !url.includes('/reviews?') && !url.endsWith('/reviews')) return fulfillJson(route, reviewDetail);
+    if (url.includes('/reviews')) return fulfillJson(route, reviewsPage);
     await route.continue();
   });
 

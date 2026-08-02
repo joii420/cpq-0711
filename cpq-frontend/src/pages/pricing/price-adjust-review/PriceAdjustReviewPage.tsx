@@ -9,6 +9,7 @@ import { buildComparisonStatusLabel } from './reviewStatusLabel';
 import ReviewDetailDrawer from './ReviewDetailDrawer';
 import ApproveImpactModal from './ApproveImpactModal';
 import RejectReasonDrawer from './RejectReasonDrawer';
+import JobProgressDrawer from '../price-adjust-jobs/JobProgressDrawer';
 import type { ReviewRowDTO, ReviewStatus } from '../../../types/price-adjust';
 
 const PAGE_SIZE = 20;
@@ -51,6 +52,8 @@ const PriceAdjustReviewPage: React.FC = () => {
   const [detailReviewId, setDetailReviewId] = useState<string | null>(null);
   const [approveRows, setApproveRows] = useState<ReviewRowDTO[] | null>(null);
   const [rejectRows, setRejectRows] = useState<ReviewRowDTO[] | null>(null);
+  // 屏6 联动：通过并升版成功后拿到 jobId，立刻打开进度抽屉（fronttask §5.1）
+  const [progressJobId, setProgressJobId] = useState<string | null>(null);
 
   const pollRef = useRef<number | null>(null);
 
@@ -234,6 +237,7 @@ const PriceAdjustReviewPage: React.FC = () => {
         rows={approveRows || []}
         onClose={() => setApproveRows(null)}
         onApproved={() => { setApproveRows(null); load(page); }}
+        onJobCreated={(jobId) => setProgressJobId(jobId)}
       />
 
       <RejectReasonDrawer
@@ -242,6 +246,8 @@ const PriceAdjustReviewPage: React.FC = () => {
         onClose={() => setRejectRows(null)}
         onSubmitted={() => { setRejectRows(null); load(page); }}
       />
+
+      <JobProgressDrawer open={!!progressJobId} jobId={progressJobId} onClose={() => setProgressJobId(null)} />
     </div>
   );
 };

@@ -418,3 +418,94 @@ export interface ReviewBatchRejectPayload {
   /** 不合格项列表，字段名未在 api.md 逐字给出，防御性可选 */
   invalidReviewIds?: string[];
 }
+
+// ═════════════════════════ §3 更新任务（屏 6 + 常驻页） ═════════════════════════
+
+export type JobStatus = 'RUNNING' | 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'STALE';
+export type JobItemStatus = 'WAITING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CONFLICT' | 'STALE';
+
+export interface UpdateJobDTO {
+  jobId: string;
+  customerNo: string;
+  versionNo: string;
+  triggeredBy: string;
+  triggeredAt: string;
+  status: JobStatus;
+  total: number;
+  success: number;
+  failed: number;
+  conflict: number;
+  stale: number;
+  finishedAt?: string | null;
+  notified?: boolean;
+}
+
+export interface JobsQueryParams {
+  page: number;
+  size: number;
+  status?: JobStatus;
+  customerNo?: string;
+}
+
+export interface UpdateJobItemDTO {
+  itemId: string;
+  quotationId: string;
+  quotationNo: string;
+  materialNo: string;
+  lineItemId: string;
+  status: JobItemStatus;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  /** L3 升版口径守卫专用（errorCode=SUBTOTAL_MISMATCH 时有值） */
+  diffValue?: number | null;
+  retryCount: number;
+  updatedAt: string;
+}
+
+// ═════════════════════════ §4 报价单侧（屏 7）· 销售只读可见 ═════════════════════════
+
+export interface PriceRevisionDTO {
+  revisionId: string;
+  revisionNo: string;
+  /** 初版（isInitial=true）时为 null（D6：initial 不挂 based_version_id） */
+  basedVersionNo: string | null;
+  isInitial: boolean;
+  sealed: boolean;
+  firstEffectiveAt: string;
+  lastUpdatedAt: string;
+  /** 同一 V 版内多次升版累积（裁决30：同期合并进同一个 R 版本） */
+  upgradedMaterialNos: string[];
+  quoteTotalAmount: number;
+}
+
+export type MaterialVersionState = 'UPGRADED' | 'REJECTED' | 'NOT_UPDATED' | 'NOT_PARTICIPATING';
+
+export interface MaterialVersionRowDTO {
+  materialNo: string;
+  materialName: string;
+  currentVersionNo: string | null;
+  state: MaterialVersionState;
+  /** state=NOT_UPDATED 时可能带出，指向在途/失败的 job_item（仅供诊断，不直接展示版本号） */
+  pendingJobItemId?: string | null;
+}
+
+export interface PriceRevisionsResponse {
+  revisions: PriceRevisionDTO[];
+  materialVersions: MaterialVersionRowDTO[];
+}
+
+export interface RevisionPreviewLineItemDTO {
+  lineItemId: string;
+  materialNo: string;
+  /** 🔒 双侧都来自快照，禁止核价侧读当前值（验收 #55） */
+  quoteCardValues: Record<string, unknown>;
+  costingCardValues: Record<string, unknown>;
+  snapshotRows?: Record<string, unknown>;
+}
+
+export interface RevisionPreviewResponse {
+  revisionNo: string;
+  readonly: true;
+  lineItems: RevisionPreviewLineItemDTO[];
+  quoteTotalAmount: number;
+}

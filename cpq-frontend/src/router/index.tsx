@@ -27,6 +27,7 @@ import ProductTemplateBinding from '../pages/template/ProductTemplateBinding';
 import TemplateComparison from '../pages/template/TemplateComparison';
 import PricingStrategy from '../pages/pricing/PricingStrategy';
 import PriceAdjustReviewPage from '../pages/pricing/price-adjust-review/PriceAdjustReviewPage';
+import UpdateJobsPage from '../pages/pricing/price-adjust-jobs/UpdateJobsPage';
 import QuotationList from '../pages/quotation/QuotationList';
 import QuotationWizard from '../pages/quotation/QuotationWizard';
 import QuotationDetail from '../pages/quotation/QuotationDetail';
@@ -108,6 +109,7 @@ const router = createBrowserRouter([
       { path: 'template-comparison', element: <TemplateComparison /> },
       { path: 'pricing', element: <PricingStrategy /> },
       { path: 'pricing/reviews', element: <RoleGuard roles={PRICE_ADJUST_REVIEW_ROLES}><PriceAdjustReviewPage /></RoleGuard> },
+      { path: 'pricing/jobs', element: <RoleGuard roles={PRICE_ADJUST_REVIEW_ROLES}><UpdateJobsPage /></RoleGuard> },
       // 报价单管理对财务(PRICING_MANAGER)关闭(2026-07-17)：列表/新建/编辑三个入口挡路由级；
       // 详情页保留——核价工作台(CostingOrderListPage)跳 /quotations/:id 审阅报价，属财务职能。
       // 后端 QuotationResource 类级 @RoleAllowed 保留 PRICING_MANAGER(costing-approve/reject + 详情读取依赖)。
