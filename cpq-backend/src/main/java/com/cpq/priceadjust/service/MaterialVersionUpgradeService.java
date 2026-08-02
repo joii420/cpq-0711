@@ -4,7 +4,10 @@ import com.cpq.priceadjust.dto.ElementPrice;
 import com.cpq.priceadjust.dto.UpgradeResult;
 import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
+import com.cpq.quotation.service.CardSnapshotService;
+import com.cpq.quotation.service.CostingSubtotalUtil;
 import com.cpq.quotation.service.FormulaCalculator;
+import com.cpq.quotation.service.LineDiscountService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -31,14 +34,29 @@ import java.util.UUID;
  * S3a/S3b 字段级写回 snapshot_rows/row_data → S4a/S4b 清手工值 → S5 重算卡片
  * （报价侧+核价侧）→ S6 写回行金额 → S7 失效导出快照 → S8 聚合单据。
  *
- * <p>🔒 <b>本次提交实现 S1 + S2 + S3a + S3b + S4a + S4b</b>（版本价读取 + 价格承载组件定位 +
- * 字段级写回 snapshot_rows/row_data + 清理 editRows/row_data 里的陈旧手改价格）。
- * S0（L3 守卫）/S5~S8 留待后续提交按同一节奏逐步补齐。
- * S5（重算卡片）未实现前，{@code quote_card_values} 本身还没有用新价重新组装——
- * 本次提交保证的是 {@code snapshot_rows}/{@code row_data} 这两个持久化底座已经是新价、
- * 且陈旧手改覆盖已清空，这正是验收 #28（升版不被 saveDraft 回滚）与验收 #29（手工值按列清除，
- * 元素/毛重等其它键不受影响）依赖的关键前提；S5 跑起来后 {@code quote_card_values} 会自然反映新价
- * （因为它读的正是这两处已经改好的底座）。
+ * <p>🔒 <b>本次提交实现完整 S0~S8</b>——通道 B 现已闭环：S0 L3 守卫（用旧价重算比对
+ * {@code li.subtotal}，超阈值直接拦下不写回）→ S1 读版本价 → S2 定位价格字段 → S3a/S3b 字段级
+ * 写回 {@code snapshot_rows}/{@code row_data} → S4a/S4b 清陈旧手改价 → S5 报价侧+核价侧重算卡片
+ * → S6 写回 {@code li.subtotal} + {@code LineDiscountService.recompute} → S7 失效导出快照 →
+ * S8 聚合 {@code quotation.totalAmount}。
+ *
+ * <p>⚠️ <b>已知差异点（如实记录，非静默假设）</b>：
+ * <ol>
+ *   <li>backtask 原文期望 S7 的前置是"{@code ExcelViewService} 的 fallback 取数源是
+ *       {@code quote_card_values}"（P4）。实测并非如此——{@code exportExcelView} 的 fallback
+ *       走 {@code getExcelView → buildRowData → buildTabJoinEffectiveRows →
+ *       ComponentDataEffectiveRows.compute}，读的是 {@code quotation_line_component_data.row_data}
+ *       （不是 {@code quote_card_values}）。本次仍按字面实现 S7（只置空 {@code quoteExcelValues}，
+ *       不新增重算代码），但存在一个真实的过渡态间隙：S4b 把非手动 {@code row_data} 条目的价格键
+ *       **删除**而非更新为新价，若升版后、下一次 saveDraft 前恰好触发 Excel 导出，fallback 会读到
+ *       "价格键缺失"而非"新价"。该间隙会在下一次 saveDraft（前端把渲染出的新价重新持久化进
+ *       row_data）后自愈，未做进一步加固（未调用 {@code ConfigureSnapshotService
+ *       .materializeLineRowData} 重物化整行 row_data——那需要额外加载 row_key_fields/tombstones，
+ *       视为超出本次 S7 字面范围的加固项，留给后续）。</li>
+ *   <li>S8 的"税额"：全工程未发现任何从行金额推导 {@code taxAmount} 的既有公式（{@code taxRate}/
+ *       {@code taxAmount} 是纯手填字段，零业务逻辑引用），故本次只重算 {@code totalAmount}，
+ *       {@code taxAmount} 原样不动——不新造一套没有先例的算法。</li>
+ * </ol>
  *
  * <p><b>dryRun</b>：语义为"整个事务最终回滚，不真正提交"，不是"跳过写库步骤"——
  * S3a/S3b 无论 dryRun 与否都会执行真实的（事务内）UPDATE，这样后续 S5（重算卡片，未实现）
@@ -80,14 +98,19 @@ public class MaterialVersionUpgradeService {
     FormulaCalculator formulaCalculator;
     @Inject
     TransactionSynchronizationRegistry txRegistry;
+    @Inject
+    CardSnapshotService cardSnapshotService;
+    @Inject
+    LineDiscountService lineDiscountService;
 
     /**
      * 单一入口。执行单位 =「报价单 × line item」。
      *
      * @param lineItemId      要升版的 quotation_line_item.id
      * @param targetVersionId 目标 element_price_version.id（S1 从其明细读一套元素价）
-     * @param dryRun          true=预算试算（S1~S6 全在内存不写库，供 B4 审核页复用）；
-     *                        false=正式执行。🔒 本次提交暂无实际写库步骤，两者行为一致（预留位）。
+     * @param dryRun          true=预算试算：S0~S8 全部在当前事务内真实执行（供 S5 读到"假设已升版"
+     *                        的新数据算出预算 subtotal/totalAmount），方法返回前整体
+     *                        {@code setRollbackOnly}，DB 最终无痕迹；false=正式执行，事务正常提交。
      */
     @Transactional
     public UpgradeResult upgrade(UUID lineItemId, UUID targetVersionId, boolean dryRun) {
@@ -116,6 +139,25 @@ public class MaterialVersionUpgradeService {
         UpgradeResult result = new UpgradeResult();
         result.dryRun = dryRun;
         result.oldSubtotal = li.subtotal;
+
+        // ---- S0：L3 口径守卫（E14-11）。必须在 S3 动 snapshot_rows 之前跑——用【当前未改动】的
+        // 数据重算一遍报价侧卡片，与已落库 li.subtotal 比对。差异超阈值 → 两端口径本就对不上，
+        // 说明后端算法与前端历史保存值有分歧，此时再拿新价去改会把错的数字当成客户报价，必须先拦。
+        String oldRecomputeJson = cardSnapshotService.buildCardValues(li, li.templateId);
+        BigDecimal oldRecomputed = CostingSubtotalUtil.extractUnitSubtotal(oldRecomputeJson);
+        BigDecimal baseline = li.subtotal != null ? li.subtotal : BigDecimal.ZERO;
+        BigDecimal diff = oldRecomputed.subtract(baseline).abs();
+        if (diff.compareTo(DEFAULT_SUBTOTAL_GUARD_THRESHOLD) > 0) {
+            UpgradeResult r = UpgradeResult.failed("SUBTOTAL_MISMATCH", String.format(
+                "L3 口径守卫拦截：后端旧价重算 %s vs li.subtotal %s，差异 %s > 阈值 %s，不写回，可重试",
+                oldRecomputed, baseline, diff, DEFAULT_SUBTOTAL_GUARD_THRESHOLD));
+            r.diffValue = diff;
+            r.dryRun = dryRun;
+            r.oldSubtotal = li.subtotal;
+            LOG.warnf("[b0-upgrade] li=%s S0 SUBTOTAL_MISMATCH diff=%s (旧价重算=%s, li.subtotal=%s)，不写回",
+                lineItemId, diff, oldRecomputed, baseline);
+            return r;
+        }
 
         // ---- S1：读版本价（一套，报价核价共用，E12）。🔒 不走视图、不走取价函数——
         //      版本明细就是权威快照，这是裁决 41「预算与实际逐位一致」结构上不可能违反的关键。
@@ -163,24 +205,59 @@ public class MaterialVersionUpgradeService {
         //      故不走 row_version 乐观锁（li 是本事务内的托管实体，随 upgrade() 整体事务一起提交/回滚）。
         int editRowsCleaned = cleanEditRowOverrides(li, priceBearing, versionPrices);
 
-        // ---- S5~S8：留待后续提交按同一节奏逐步补齐（见类头注释）。
-        result.status = UpgradeResult.Status.SKIPPED;
-        result.message = String.format(
-            "S1~S4 完成：版本价 %d 条，价格承载组件 %d 个，snapshot_rows/row_data 共改写 %d 行（%s），" +
-            "editRows 清理 %d 条；S5~S8（重算卡片/写回金额/失效导出/聚合单据）尚未实现",
-            versionPrices.size(), priceBearing.size(), totalRowsChanged, String.join(", ", perComponentSummary),
-            editRowsCleaned);
+        // ---- S5：重算卡片（报价侧 + 核价侧都算）。走既有 buildCardValues / refreshCostingCardValuesForLine，
+        //      不新写第二套卡片组装逻辑。两者都读刚被 S3 改过的 snapshot_rows/row_data，自然得到新价。
+        String newQuoteCardValues = cardSnapshotService.buildCardValues(li, li.templateId);
+        if (newQuoteCardValues != null) li.quoteCardValues = newQuoteCardValues;
+        if (q.costingCardTemplateId != null) {
+            // 🔒 单行版本（不是 refreshCostingCardValues(quotationId) 那个整单批量版本）——
+            // 后者会重算该报价单下全部 line item，违反"只对被升版的料号行执行重算"（硬约束1/验收#14）。
+            cardSnapshotService.refreshCostingCardValuesForLine(lineItemId);
+        }
 
-        // dryRun：本次 S3/S4 的写入已在当前事务内真实执行（供未来 S5 在同事务内读到新价做预算），
-        // 但整个事务在方法返回前标记 rollback-only，DB 最终不落任何痕迹。
+        // ---- S6：写回行金额（🔓 业务方已放行）。从新 quoteCardValues 提取报价侧 SUBTOTAL →
+        //      写 li.subtotal → LineDiscountService.recompute(li)。🔒 用 CostingSubtotalUtil
+        //      .extractUnitSubtotal，不新写一份（与 S0 用同一个提取方法，保证口径一致）。
+        BigDecimal newSubtotal = CostingSubtotalUtil.extractUnitSubtotal(li.quoteCardValues);
+        li.subtotal = newSubtotal;
+        lineDiscountService.recompute(li);
+        result.newSubtotal = newSubtotal;
+
+        // ---- S7：失效导出快照。ExcelViewService 的 exportExcelView（:782-786）已有 fallback 重算
+        //      （quoteExcelValues 为空 → 整行走 getExcelView 的 fallback 行），不需要新增重算代码。
+        li.quoteExcelValues = null;
+
+        // ---- S8：聚合单据。quotation.total_amount = Σ 全部 line item 的 lineTotalAmount
+        //      （PART 选配子件不单独计入整单），与 QuotationService.submit() 的既有聚合口径一致，
+        //      不新写第二套算法。🔒 只读其它行的既有 lineTotalAmount，不对它们调 recompute()
+        //      ——硬约束1"只对被升版行执行重算"，其它行的值必须是它们自己上次算出来的，不是本次现算的。
+        List<QuotationLineItem> allLines = QuotationLineItem.list("quotationId", q.id);
+        BigDecimal lineSum = BigDecimal.ZERO;
+        for (QuotationLineItem other : allLines) {
+            if ("PART".equals(other.compositeType)) continue;
+            if (other.lineTotalAmount != null) lineSum = lineSum.add(other.lineTotalAmount);
+        }
+        q.totalAmount = lineSum.setScale(4, java.math.RoundingMode.HALF_UP);
+        // taxAmount：全工程未发现任何"从行汇总推导税额"的既有公式（taxRate/taxAmount 全库零业务
+        // 逻辑引用，纯手填字段），本次不新造算法，税额原样不动——如实说明，非遗漏。
+
+        result.status = UpgradeResult.Status.SUCCESS;
+        result.message = String.format(
+            "升版成功：版本价 %d 条，价格承载组件 %d 个，snapshot_rows/row_data 共改写 %d 行（%s），" +
+            "editRows 清理 %d 条，subtotal %s→%s，quotation.totalAmount=%s",
+            versionPrices.size(), priceBearing.size(), totalRowsChanged, String.join(", ", perComponentSummary),
+            editRowsCleaned, baseline, newSubtotal, q.totalAmount);
+
+        // dryRun：本次 S3~S8 的写入已在当前事务内真实执行（供 B4 审核页在同事务内读到"假设已升版"的
+        // 数据算预算），但整个事务在方法返回前标记 rollback-only，DB 最终不落任何痕迹。
         if (dryRun) {
             txRegistry.setRollbackOnly();
         }
 
-        LOG.infof("[b0-upgrade] li=%s quotation=%s S1~S4 完成：versionPrices=%d priceBearingComponents=%d " +
-                "rowsChanged=%d editRowsCleaned=%d dryRun=%b (S5~S8 待补齐)",
+        LOG.infof("[b0-upgrade] li=%s quotation=%s 升版完成：versionPrices=%d priceBearingComponents=%d " +
+                "rowsChanged=%d editRowsCleaned=%d subtotal %s->%s dryRun=%b",
             lineItemId, q.quotationNumber, versionPrices.size(), priceBearing.size(), totalRowsChanged,
-            editRowsCleaned, dryRun);
+            editRowsCleaned, baseline, newSubtotal, dryRun);
         return result;
     }
 
