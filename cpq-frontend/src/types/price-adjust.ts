@@ -1,7 +1,8 @@
 /**
  * 客户价格调整策略与价格版本（task-0729）— 前端类型定义。
- * 权威依据：dev-docs/task-0729-客户价格调整策略和价格版本/api.md §1（屏 1 用到的部分）。
- * 本文件只覆盖屏 1（策略配置）范围；屏 3~8 的类型待后续屏交付时再补。
+ * 权威依据：dev-docs/task-0729-客户价格调整策略和价格版本/api.md §1（屏 1）+ §2（屏 3/4/5）。
+ * 本文件覆盖屏 1（策略配置）+ 屏 3（待办池）+ 屏 4（审核抽屉）+ 屏 5（通过前影响面确认）；
+ * 屏 6~8 的类型待后续屏交付时再补。
  */
 
 export type CycleType = 'DAILY' | 'WEEKLY' | 'MONTHLY_DAY' | 'MONTHLY_NTH_WEEK';
@@ -257,4 +258,163 @@ export interface VersionItemDTO {
   priceUnit: string;
   noPrice: boolean;
   inheritedFromPrevious: boolean;
+}
+
+// ═════════════════════════ §2 审核（屏 3 / 屏 4 / 屏 5） ═════════════════════════
+
+export type BudgetStatus = 'QUEUED' | 'COMPUTING' | 'READY' | 'FAILED';
+export type ReviewStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'VOIDED';
+
+// ───────────────────────── §2.1 待办池列表 ─────────────────────────
+
+export interface ReviewRowDTO {
+  reviewId: string;
+  customerNo: string;
+  customerName: string;
+  materialNo: string;
+  materialName: string;
+  currentVersionNo: string | null;
+  targetVersionNo: string;
+  budgetStatus: BudgetStatus;
+  reviewStatus: ReviewStatus;
+  basisQuotationNo: string | null;
+  basisQuotationDate: string | null;
+  quoteCostCurrent: number | null;
+  quoteCostAdjusted: number | null;
+  costingCost: number | null;
+  diffCurrent: number | null;
+  diffAdjusted: number | null;
+  /** 该料号所属模板系列的比对列总数 */
+  columnCount: number;
+  /** RED + MISSING 都计入 */
+  breachedCount: number;
+  amberCount: number;
+  /** 计入 breachedCount，但单独暴露供「⚪K」显示 */
+  missingCount: number;
+  /** 不计入 breachedCount */
+  staleCount: number;
+  /** 🔒 服务端权威：整行是否标红，前端不得自行按产品总价重算 */
+  rowRed: boolean;
+}
+
+export interface ReviewsQueryParams {
+  page: number;
+  size: number;
+  customerNo?: string;
+  /** 默认 PENDING */
+  status?: ReviewStatus;
+  breachedOnly?: boolean;
+  keyword?: string;
+  sort?: string;
+}
+
+// ───────────────────────── §2.2 料号审核抽屉（屏 4） ─────────────────────────
+
+export interface ElementChangeDTO {
+  elementCode: string;
+  elementName: string;
+  matchedRule: string;
+  previousPrice: number | null;
+  currentPrice: number | null;
+  changeRate: number | null;
+  usageQty: number | null;
+  unitPriceImpact: number | null;
+  noPrice: boolean;
+  inheritedFromPrevious: boolean;
+}
+
+export type ComparisonCellStatus = 'NORMAL' | 'RED' | 'AMBER' | 'MISSING' | 'STALE';
+
+export interface ComparisonColumnResultDTO {
+  columnId: string;
+  label: string;
+  threshold: number;
+  sortOrder: number;
+  quoteCurrent?: number | null;
+  quoteAdjusted?: number | null;
+  costingCurrent?: number | null;
+  costingAdjusted?: number | null;
+  diffCurrent?: number | null;
+  diffAdjusted?: number | null;
+  status: ComparisonCellStatus;
+  /** status=MISSING 时标注缺失侧 */
+  missingSide?: 'QUOTE' | 'COSTING';
+}
+
+export interface ReviewQuotationDTO {
+  quotationId: string;
+  quotationNo: string;
+  createdAt: string;
+  status: string;
+  /** 唯一一张判断依据单 */
+  isBasis: boolean;
+  quoteSubtotalCurrent: number | null;
+  quoteSubtotalAdjusted: number | null;
+  comparisonViewUrl: string;
+}
+
+export interface ReviewDetailDTO {
+  reviewId: string;
+  customerNo: string;
+  materialNo: string;
+  materialName: string;
+  currentVersionNo: string | null;
+  targetVersionNo: string;
+  budgetStatus: BudgetStatus;
+  reviewStatus: ReviewStatus;
+
+  // 一、为什么变
+  elementChanges: ElementChangeDTO[];
+  /** 须与「调整后报价 − 现报价」对得上（财务自检位） */
+  elementImpactTotal: number;
+
+  // 二、能不能接受
+  templateSeriesId: string;
+  templateSeriesName: string;
+  comparisonColumns: ComparisonColumnResultDTO[];
+
+  // 三、下钻
+  quotations: ReviewQuotationDTO[];
+}
+
+// ───────────────────────── §2.3 通过前影响面确认（屏 5） ─────────────────────────
+
+export interface ImpactVersionPathDTO {
+  materialNo: string;
+  from: string | null;
+  to: string;
+}
+
+export interface ImpactBreachedMaterialDTO {
+  materialNo: string;
+  breachedCount: number;
+}
+
+export interface ImpactPreviewDTO {
+  materialCount: number;
+  versionPaths: ImpactVersionPathDTO[];
+  quotationCount: number;
+  /** 🔒 只统计 5 个可更新状态（活单白名单，E14-2） */
+  byStatus: Record<string, number>;
+  breachedMaterials: ImpactBreachedMaterialDTO[];
+  excludedQuotationCount: number;
+  /** 🔒 必须显式列出被排除的单（SENT/ACCEPTED/EXPIRED/CANCELLED） */
+  excludedByStatus: Record<string, number>;
+}
+
+// ───────────────────────── §2.4~§2.6 通过 / 驳回 / 重算预算 ─────────────────────────
+
+export interface ApproveResponse {
+  jobId: string;
+  materialCount: number;
+  quotationCount: number;
+  itemCount: number;
+}
+
+/** 409 REVIEW_BUDGET_NOT_READY / REVIEW_STATUS_CHANGED（api.md §2.4）。 */
+export interface ReviewBatchRejectPayload {
+  code: 'REVIEW_BUDGET_NOT_READY' | 'REVIEW_STATUS_CHANGED';
+  message?: string;
+  /** 不合格项列表，字段名未在 api.md 逐字给出，防御性可选 */
+  invalidReviewIds?: string[];
 }

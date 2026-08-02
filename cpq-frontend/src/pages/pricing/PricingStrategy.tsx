@@ -368,8 +368,10 @@ const PricingStrategy: React.FC = () => {
                 前端逻辑/后端端点/pricing_strategy 表数据均保留未删(死代码，可逆)，如需恢复见 git 历史。
 
                 task-0729 屏 1：新增第 3 个 Tab「价格调整策略」（落位见 fronttask §1）。
-                🔒 全局（核价成本口径）项选中时不显示本 Tab —— 裁决 16 定了核价侧不做版本，
-                该项也不是真实客户，价格调整策略以客户为主体，与 _GLOBAL_ 无意义交叉。 */}
+                🔒 全局（核价成本口径）项选中时不显示本 Tab —— _GLOBAL_ 不是真实客户，价格调整
+                策略以客户为主体，与它无意义交叉（⚠️ 不是因为裁决16"核价侧不做版本"——该裁决已被
+                §11.8 + E12 推翻，核价侧现在跟随料号版本一起重算；E12 删除 _GLOBAL_ 入口后，
+                本三元分支应随之一并移除，见下方 GLOBAL_CUSTOMER_ITEM 顶部注释）。 */}
             {selectedCustomer.isGlobal ? (
               <ElementPriceStrategyTab customerNo={GLOBAL_CUSTOMER_NO} customerLabel={selectedCustomer.name} />
             ) : (

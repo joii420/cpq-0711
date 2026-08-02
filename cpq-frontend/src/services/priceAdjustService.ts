@@ -18,11 +18,16 @@ import type {
   GenerateVersionResponse,
   VersionDTO,
   VersionItemDTO,
+  ReviewRowDTO,
+  ReviewsQueryParams,
+  ReviewDetailDTO,
+  ImpactPreviewDTO,
+  ApproveResponse,
 } from '../types/price-adjust';
 
 /**
- * 客户价格调整策略与价格版本（task-0729）— 屏 1 服务层。
- * 权威依据：dev-docs/task-0729-客户价格调整策略和价格版本/api.md §1。
+ * 客户价格调整策略与价格版本（task-0729）— 屏 1 + 屏 3/4/5 服务层。
+ * 权威依据：dev-docs/task-0729-客户价格调整策略和价格版本/api.md §1（屏1）+ §2（屏3/4/5）。
  * 前缀 /api/cpq/price-adjust（api baseURL 已含 /api/cpq，此处只写 /price-adjust/...）。
  *
  * 响应为裸 DTO/裸数组，不解 {code,data} 信封（api.md §0.2：「沿用 /api/cpq/element-price/* 风格，
@@ -120,6 +125,42 @@ export const priceAdjustService = {
 
   async getVersionItems(versionId: string, params: { page: number; size: number }): Promise<PageResult<VersionItemDTO>> {
     return (await api.get(`${BASE}/versions/${encodeURIComponent(versionId)}/items`, { params })) as unknown as PageResult<VersionItemDTO>;
+  },
+
+  // ── §2.1 待办池（屏 3） ──
+
+  async getReviews(params: ReviewsQueryParams): Promise<PageResult<ReviewRowDTO>> {
+    return (await api.get(`${BASE}/reviews`, { params })) as unknown as PageResult<ReviewRowDTO>;
+  },
+
+  // ── §2.2 料号审核抽屉（屏 4） ──
+
+  async getReviewDetail(reviewId: string): Promise<ReviewDetailDTO> {
+    return (await api.get(`${BASE}/reviews/${encodeURIComponent(reviewId)}`)) as unknown as ReviewDetailDTO;
+  },
+
+  // ── §2.3 通过前影响面确认（屏 5，只读预览，无副作用） ──
+
+  async getImpactPreview(reviewIds: string[]): Promise<ImpactPreviewDTO> {
+    return (await api.post(`${BASE}/reviews/impact`, { reviewIds })) as unknown as ImpactPreviewDTO;
+  },
+
+  // ── §2.4 通过并升版 ──
+
+  async approveReviews(reviewIds: string[], comment?: string): Promise<ApproveResponse> {
+    return (await api.post(`${BASE}/reviews/approve`, { reviewIds, comment: comment ?? '' })) as unknown as ApproveResponse;
+  },
+
+  // ── §2.5 驳回（reason 必填） ──
+
+  async rejectReviews(reviewIds: string[], reason: string): Promise<void> {
+    await api.post(`${BASE}/reviews/reject`, { reviewIds, reason });
+  },
+
+  // ── §2.6 单条预算重试（budgetStatus=FAILED 时） ──
+
+  async recomputeBudget(reviewId: string): Promise<void> {
+    await api.post(`${BASE}/reviews/${encodeURIComponent(reviewId)}/recompute-budget`);
   },
 };
 

@@ -26,6 +26,7 @@ import TemplateConfiguration from '../pages/template/TemplateConfiguration';
 import ProductTemplateBinding from '../pages/template/ProductTemplateBinding';
 import TemplateComparison from '../pages/template/TemplateComparison';
 import PricingStrategy from '../pages/pricing/PricingStrategy';
+import PriceAdjustReviewPage from '../pages/pricing/price-adjust-review/PriceAdjustReviewPage';
 import QuotationList from '../pages/quotation/QuotationList';
 import QuotationWizard from '../pages/quotation/QuotationWizard';
 import QuotationDetail from '../pages/quotation/QuotationDetail';
@@ -67,6 +68,10 @@ import PartModelList from '../pages/part-model/PartModelList';
 // 与 MainLayout 菜单项 roles 保持一致；详情页 /quotations/:id 不在此列（核价工作台跳转依赖）。
 const QUOTATION_MGMT_ROLES = ['SALES_REP', 'SALES_MANAGER', 'SYSTEM_ADMIN'];
 
+// task-0729 屏 3/4：价格调整审核，限定价经理/系统管理员（fronttask §2「落位」），
+// 与 MainLayout 菜单项 roles 保持一致；菜单隐藏只防入口可见，直链仍须本守卫兜底（RoleGuard 使用约束）。
+const PRICE_ADJUST_REVIEW_ROLES = ['PRICING_MANAGER', 'SYSTEM_ADMIN'];
+
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
   // 公网客户自助选配（无 AuthGuard）
@@ -102,6 +107,7 @@ const router = createBrowserRouter([
       { path: 'template-bindings', element: <ProductTemplateBinding /> },
       { path: 'template-comparison', element: <TemplateComparison /> },
       { path: 'pricing', element: <PricingStrategy /> },
+      { path: 'pricing/reviews', element: <RoleGuard roles={PRICE_ADJUST_REVIEW_ROLES}><PriceAdjustReviewPage /></RoleGuard> },
       // 报价单管理对财务(PRICING_MANAGER)关闭(2026-07-17)：列表/新建/编辑三个入口挡路由级；
       // 详情页保留——核价工作台(CostingOrderListPage)跳 /quotations/:id 审阅报价，属财务职能。
       // 后端 QuotationResource 类级 @RoleAllowed 保留 PRICING_MANAGER(costing-approve/reject + 详情读取依赖)。
