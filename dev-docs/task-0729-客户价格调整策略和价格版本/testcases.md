@@ -1102,4 +1102,269 @@ VALUES
 
 ---
 
-**本批（#31~#40）交回，等待下一批指令续写 #41 及以后。**
+---
+
+### #41　🔴 陈旧页面保存不退价 · 手动行（与 #40 是不同的失败路径，必须单独测）
+
+> ## 🚨🚨🚨 顺序绝对不可颠倒（同 #40）🚨🚨🚨
+> **① 先打开报价单页面 → ② 保持不刷新 → ③ 后台执行升版 → ④ 回到陈旧页面点保存。**
+
+**🔒 为什么不能用 #40 的结果替代本条**：手动行的值**直接来自 `row_data` 本身**，前端提交什么就是什么；`mergeRowDataInputsIntoEdits` 的循环边界 `int n = Math.min(baseRows.size(), rowData.size())` 中 `baseRows` **只含 driver 行**，手动行排在数组尾部、下标 **≥ driverCount**，**merge 逻辑根本迭代不到它**。也就是说 #40（driver 行）的归位插入点是"落库后归位再重算"，但手动行完全绕开了 merge 这一步——两条防线不同，`#40 通过` **不代表** `#41 也通过`，必须独立执行。
+
+| 归属 | 测试层级 |
+|---|---|
+| **技术总监亲验**（`backtask.md` §2.3 + `fronttask.md` §12.3） | E2E(Playwright)（权威）+ API 测试（等效序列） |
+
+**前置数据**：某手动新增行，元素 `Ag`（∈调价清单），当前单价 `5450`；`V1`（`Ag` 新价 `5820`）待审。
+
+**执行步骤（Playwright，同 #40 的四步顺序，目标换成手动行）**
+1. 打开报价单编辑页，确认手动行渲染单价 = `5450`，**不刷新、不关闭页面**。
+2. 后台 `POST /reviews/approve` 通过（另一个上下文，不经过这个 `page`），确认后端手动行数据已是 `5820`。
+3. 回到步骤 1 的 `page`，**不刷新**，点击「保存」。
+
+**执行步骤（API 等效序列）**：同 #40 的等效序列写法，但目标行换成手动行的 `row_data` 记录。
+
+**断言（机械可判定）**
+- 🔒 保存 **成功**（`200`，不报错）。
+- 🔒 🔒 **核心断言**：保存后该手动行单价 **仍 = `5820`**，**未退回 `5450`**——即使手动行完全绕开 `mergeRowDataInputsIntoEdits`，归位机制必须在"`row_data` 落库之后、`quoteCardValues` 重算之前"这个统一插入点上同样纠正它。
+- 🔒 重新打开确认渲染仍是 `5820`。
+
+**证据形式**：同 #40 结构（Playwright 日志+截图、API 等效序列记录、保存前后 `row_data` 对比）；报告中须明确写出"本条与 #40 分别独立执行、互不替代"的执行记录。
+
+---
+
+### #42　单价列只读态：只读文本+版本徽标（非置灰）/ 清单外可编辑 / 详情页同步显示徽标（AP-50）/ 指针为空仍只读
+
+| 归属 | 测试层级 |
+|---|---|
+| **技术总监亲验**（`backtask.md` §2.3 + `fronttask.md` §12.3） | E2E(Playwright) |
+
+**前置数据**
+- 料号 A：driver 行元素 `Ag`（∈清单，指针有值，走 #14/#31 已升版场景）。
+- 料号 A 的一个手动行：元素 `Cu`（∈清单）。
+- 同一料号另一行元素 `301`（∉清单，用真实样本）。
+- 料号 B：从未升版（指针为空）、但元素 `Ag` 仍在清单里、料号在范围内、策略启用（走 §11.15.2.6(1bis) 的 A 规则——指针为空也应只读，取实时算价）。
+
+**执行步骤**
+1. Playwright 打开编辑页，分别定位 A 的 driver 行（`Ag`）、A 的手动行（`Cu`）、A 的 `301` 行。
+2. 打开该料号**详情页**（`ReadonlyProductCard`），定位同样的 `Ag` 行。
+3. 打开料号 B 的编辑页，定位 `Ag` 行。
+
+**断言（机械可判定）**
+- 🔒 ① A 的 driver 行 `Ag`：单价列渲染为**只读文本节点 + 版本徽标**（`page.locator(...).locator('input').count() = 0`，即该单元格内**不存在** `<input>` 元素，而是纯文本 + 徽标 DOM；**不是** `<input disabled>` 这种置灰输入框——用元素标签类型断言，不是用 `disabled` 属性断言）。徽标文本含版本号（如 `🔒V26080501` 或等价格式）。
+- 🔒 ① A 的手动行 `Cu`：**同样**只读文本+徽标（driver 行与手动行一视同仁，不得只测 driver 行）。
+- 🔒 ② A 的 `301` 行：单价列**是** `<input>` 且**未禁用**（`toBeEnabled()`），可正常输入。
+- 🔒 🔒 ③ **核心断言（AP-50 最容易漏）**：步骤 2 详情页的 `Ag` 行**同样**渲染只读文本+版本徽标（不是详情页本来就整页只读所以"顺便"看不出来——需要显式确认徽标 DOM 存在，而不是只确认"没有 input"，因为整页只读页面本来就没有任何 input，那不能证明徽标逻辑生效了）。
+- 🔒 ④ 料号 B（指针为空）的 `Ag` 行：**仍是**只读文本+徽标（不因指针为空跳变成可编辑；徽标内容可能显示"实时算价"而非具体版本号，但只读状态不变）。
+
+**证据形式**：4 个场景各自的截图 + DOM 结构断言日志（`input` 元素计数、徽标文本内容）。
+
+---
+
+### #43　手动行元素↔单价联动：空占位 / 填 `Ag` 自动带出转只读 / 改 `301` 解锁且**清空原值** / 再改 `Cu` 带出 Cu 价
+
+| 归属 | 测试层级 |
+|---|---|
+| 跨端(后端主导)（`backtask.md` §2.2 + `fronttask.md` §12.2） | E2E(Playwright) + API 测试 |
+
+**前置数据**：`CUST-0001` 元素清单含 `Ag`/`Cu`，不含 `301`。一张 `DRAFT` 单，新增一个手动行。
+
+**执行步骤（四步连续操作，同一行）**
+1. 新增手动行，元素列留空，检查单价列。
+2. 元素列填 `Ag`，触发失焦（`onCellBlur → PUT quote-card-edit`），检查单价列。
+3. 元素列改为 `301`，触发失焦，检查单价列。
+4. 元素列再改为 `Cu`，触发失焦，检查单价列。
+
+**断言（机械可判定）**
+- 🔒 步骤 1：单价列**只读**，占位符文本 = 「请先填写元素」（`expect(cell).toHaveText('请先填写元素')` 或对应 placeholder 断言）。
+- 🔒 步骤 2：单价列**自动带出 `Ag` 当期版本价**（精确值）并**转为只读**。
+- 🔒 🔒 **核心断言（最容易漏）**：步骤 3——单价列**解锁为可编辑**（`<input>` 存在且 `enabled`），且**原先自动带出的 `Ag` 价值已被清空**（`input.value` **不是**步骤 2 的那个值，而是空/0——"留着就是一个看起来很合理的错价"，必须显式断言"值已清空"而不仅仅是"变可编辑"）。
+- 🔒 步骤 4：单价列重新**自动带出 `Cu` 的当期版本价**（且**不是**步骤 2 `Ag` 的那个值——需要 `Ag` 价 ≠ `Cu` 价才能有效验证"确实按新元素重新取价"，若两者数值恰好相同需换一组测试数据）。
+
+**证据形式**：4 步的截图/DOM 断言 + 每步 `PUT quote-card-edit` 的响应 JSON（`quoteCardValues` 中该行单价字段的变化轨迹）。
+
+---
+
+### #44　归位不误伤：手改毛重 + 元素∈清单行 → 单价被归位、毛重原样保留；元素∉清单行整行一字节不变
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | SQL 断言 |
+
+**前置数据**：料号 A 的 driver 行 R1（元素 `Ag` ∈ 清单），手改过毛重字段（如从原始值改成 `99.9`，直接 SQL 构造存量手改状态，理由同 #29）；另一行 R2（元素 `301` ∉ 清单），先记录其完整内容 md5。
+
+**执行步骤**
+1. 记录 R1 升版前：单价（旧价）、毛重（`99.9`）；R2 的完整行 md5。
+2. `POST /reviews/approve` 通过，等待完成。
+3. 查询升版后 R1、R2。
+
+**断言（机械可判定）**
+- 🔒 R1 升版后：单价 **= 本版价**（归位结果）；毛重 **仍 = `99.9`**（原样保留，未被误伤——精确值断言，不是"大致没变"）。
+- 🔒 🔒 R2（元素∉清单）：`md5(该行完整JSON)` 升版前后 **完全相同**（"整行一个字节都不碰"——用整行哈希而不是逐字段比较，防止漏查某个隐藏字段被意外改动）。
+
+**证据形式**：R1 单价+毛重升版前后对比；R2 整行 md5 前后对比。
+
+---
+
+### #45　归位幂等：连续 3 次保存（无编辑）→ 价格值逐次相同，`snapshot_rows`/`row_data` 无累积变化
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1，与 AP-51 行数纪律同源） | SQL 断言 |
+
+**前置数据**：料号 A 已升版（`Ag` 单价 = 本版价）的一张单。
+
+**执行步骤**：不做任何字段编辑，连续 3 次 `PUT /api/cpq/quotations/{id}/draft`（每次都用**当前从 GET 拿到的最新数据**回填，模拟"用户打开后什么都没改直接连点 3 次保存"），每次保存后立即查询该行 `snapshot_rows`/`row_data`。
+
+**断言（机械可判定）**
+- 🔒 3 次保存后 `Ag` 单价字段**逐次相同**（第 1 次 = 第 2 次 = 第 3 次，精确值）。
+- 🔒 🔒 **核心断言**：`snapshot_rows`/`row_data` 里该组件的**行数**（`jsonb_array_length`）3 次保存**恒定不变**（不因反复归位而累积增删行——呼应 AP-51「driver 行权威优先，禁止 `Math.max(rowCount, baseRows.length)`」的纪律，本条是它在归位场景下的具体体现）。
+- 🔒 3 次保存的 `snapshot_rows` **整体 md5 也应相同**（若实现里存在"每次归位都重写 `updated_at` 之类的元信息"导致 md5 不同，需在报告里区分"业务字段幂等"与"元信息字段不幂等"两种情况，核心业务字段幂等是硬性要求）。
+
+**证据形式**：3 次保存后的 `snapshot_rows`/`row_data` 完整内容与 md5 对比表。
+
+---
+
+### #46　🔴 活单范围逐状态断言（核心 · 防"排除两个、其余全更新"）：9 个 `status` 逐一表态，5 更新 4 不动
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | SQL 断言（双向，逐字节） |
+
+**⚠️ 环境限制**：现网仅有 `DRAFT`(38)/`SUBMITTED`(1)/`APPROVED`(1) 三种状态的单，其余 6 种（`REJECTED`/`COSTING_REJECTED`/`SENT`/`ACCEPTED`/`EXPIRED`/`CANCELLED`）需要造。`chk_q_status` 已确认这 9 个值全部合法。
+
+**前置数据（可执行 SQL，9 张单同用一个合成料号 `M-9STATUS-TEST` 便于统一断言）**
+```sql
+-- 9 张单，quotation_number 各自唯一（撞 UNIQUE(quotation_number) 会直接报错，便于发现造数失误）
+DO $$
+DECLARE
+  statuses text[] := ARRAY['DRAFT','SUBMITTED','APPROVED','REJECTED','COSTING_REJECTED',
+                            'SENT','ACCEPTED','EXPIRED','CANCELLED'];
+  s text;
+  qid uuid;
+  i int := 1;
+BEGIN
+  FOREACH s IN ARRAY statuses LOOP
+    qid := gen_random_uuid();
+    INSERT INTO quotation (id, quotation_number, customer_id, name, sales_rep_id, status,
+                            customer_template_id, created_at, updated_at)
+    VALUES (qid, 'QT-TEST-9ST-' || lpad(i::text,2,'0'), 'f6d10ef0-04cc-45f3-829c-568c8cce3adf',
+            '9态覆盖测试-' || s, 'd1e1147c-a639-4156-aeac-9f938a65ad05', s,
+            '70f1b149-b0d9-4cb1-9245-6c3cee1bc3af', now(), now());
+    INSERT INTO quotation_line_item (id, quotation_id, product_part_no_snapshot, customer_part_no, subtotal, created_at)
+    VALUES (gen_random_uuid(), qid, 'M-9STATUS-TEST', 'M-9STATUS-TEST', 100.00, now());
+    i := i + 1;
+  END LOOP;
+END $$;
+```
+> ⚠️ 若某状态存在服务端状态机守卫（如 `ACCEPTED` 必须先经过 `SENT`），直接 `INSERT` 绕开应用层状态机是**有意为之**——本条只关心"升版时按 `status` 值分流是否正确"，不测状态流转本身是否合法，直接造终态数据是被允许的捷径。
+
+- `M-9STATUS-TEST` 纳入 `CUST-0001` 调价范围，元素清单含 `Ag`；每张单的 driver 行含一行 `Ag`（需按 #14 的手法直接构造 `quotation_line_component_data.snapshot_rows`，9 张单统一初始单价，便于后续"变/不变"判断）。生成版本 `V1`（`Ag` 新价，明确区别于初始价）。
+
+**执行步骤**
+1. 升版前：对 9 张单分别采集基线（`snapshot_rows` md5 + `quote_card_values` md5 + `li.line_total_amount`）。
+2. `POST /reviews/approve` 通过 `M-9STATUS-TEST`，等待完成（`GET /jobs/{id}` 至终态）。
+3. 升版后对 9 张单重新采集，逐一对比。
+
+**断言（机械可判定，逐状态列出，缺一不可）**
+- 🔒 **5 张必须已更新**（`DRAFT`/`SUBMITTED`/`APPROVED`/`REJECTED`/`COSTING_REJECTED`）：各自 `Ag` 单价 = 本版价（精确值），`snapshot_rows` md5 升版前后**不同**。
+- 🔒 **4 张必须逐字节不变**（`SENT`/`ACCEPTED`/`EXPIRED`/`CANCELLED`）：`snapshot_rows`/`quote_card_values` md5 升版前后**完全相同**，`li.line_total_amount` 数值**完全相同**。
+- 🔒 🔒 **专防断言**：`material_price_update_job_item` 里这 9 张单对应的记录数 **= 5**（不是 7、不是 9）——若实现写成"排除 `EXPIRED`/`CANCELLED`、其余全更新"，会把 `SENT`/`ACCEPTED` 也纳入更新范围，此时 job_item 记录数会变成 7，本断言可直接抓出这个典型错误实现。
+
+**证据形式**：9 张单升版前后的 md5/金额对比表（按 `status` 分组，5 张变化 vs 4 张不变一目了然）；`material_price_update_job_item` 记录数 SQL 输出。
+
+---
+
+### #47　无价元素不死格：本期无价但有上一版价 → 沿用上一版价（只读非空）；从无历史价 → 可编辑
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | SQL 断言 |
+
+**前置数据**（复用已实测样本）：`Ni`、`301` 当前均取不到价（`301` 非有效元素编码，行为等价"不在清单"，走 #35 已覆盖；本条聚焦 `Ni` 的两个子场景）：
+- 场景①（本期无价、有上一版价）：先在 `V0` 里让 `Ni` 有价（如手工造一条 `element_price_version_item`，`element_code='Ni', current_price=800.00`），`V0` 通过某料号升版使其吃到 `Ni=800.00`；随后生成 `V1` 时 `Ni` 取价策略返回 NULL（本期无价）。
+- 场景②（从无历史价）：另一元素（如 `Cd`）从未在任何版本里有过价，本期同样无价。
+
+**执行步骤**
+1. 生成 `V1`，查询 `element_price_version_item` 里 `Ni`/`Cd` 两条记录。
+2. 对含 `Ni` 的料号执行升版，查询该行 `Ni` 单价字段与列可编辑性标记（`__priceLocked`）。
+3. 对含 `Cd` 的料号（若从未升版，走归位而非升版）查询单价列状态。
+
+**断言（机械可判定）**
+- 🔒 `Ni` 的 `element_price_version_item`：`no_price=false`，`inherited_from_previous=true`，`current_price = 800.00`（沿用上一版价）。
+- 🔒 升版后含 `Ni` 的行：单价 **= `800.00`**（非空），`__priceLocked=true`（只读，不死格）；该料号**照常升版**（`material_price_review.status` 正常走完 `APPROVED`，不因 `Ni` 无价而卡住）。
+- 🔒 `Cd` 的 `element_price_version_item`：`no_price=true`，`inherited_from_previous=false`，`current_price=NULL`。
+- 🔒 含 `Cd` 的行：单价列 `__priceLocked=false`（**可编辑**，销售能填进去——视同不在清单，走实时算/手填）。
+
+**证据形式**：`Ni`/`Cd` 两条 `element_price_version_item` 记录；对应行的单价字段与 `__priceLocked` 标记查询输出。
+
+---
+
+### #48　🔴 成本差额预警线（金额）生效：配 50 元 + 差额 +30 → `AMBER`；配 0 + 差额 −20 → `RED`
+
+| 归属 | 测试层级 |
+|---|---|
+| 跨端(后端主导)（`backtask.md` §2.2 + `fronttask.md` §12.2）。⚠️ 前端着色渲染标注"待屏 3/4 交付后执行"，本批做 API/SQL 层 | API 测试 + SQL 断言 |
+
+**🔒 强制纪律**：`cost_diff_threshold` **配 0 永远测不出这条**（0 时 `AMBER` 区间 `[0,0)` 为空集，任何非负差额都直接落 `RED`/`NORMAL`，测不出 `AMBER` 分支是否正确实现）。必须用**非零阈值**。E13 后它是**金额**，不是百分比——若发现 API 请求体里传的是类似 `0.12`（疑似百分比语义）而不是 `50.00`（金额），判定为口径错误。
+
+**前置数据**：`CUST-0001` 的 `cost_diff_threshold` 分两轮配置：
+- 轮 1：`PUT /price-adjust/strategies/CUST-0001 {costDiffThreshold: 50.00}`，构造料号 M1，`报价侧成本 - 核价侧成本 = +30.00`。
+- 轮 2：`PUT ... {costDiffThreshold: 0.00}`，构造料号 M2，`报价侧成本 - 核价侧成本 = -20.00`。
+
+**执行步骤**：分别对 M1、M2 触发预算计算，查询 `material_price_review_column` 的默认「产品总价」列。
+
+**断言（机械可判定）**
+- 🔒 M1：`diffAdjusted = 30.00`（`0 ≤ 30 < 50`），`status='AMBER'`。
+- 🔒 M2：`diffAdjusted = -20.00`（`< 0`），`status='RED'`。
+- 🔒 `SELECT cost_diff_threshold FROM customer_price_adjust_strategy WHERE customer_no='CUST-0001'` 两轮分别 = `50.00`/`0.00`（确认口径是金额存储，非百分比小数如 `0.5`）。
+
+**证据形式**：两轮配置的 API 响应；`material_price_review_column` 两条记录的 `status`/`diffAdjusted` 输出。
+
+---
+
+### #49　缺核价数据不装作全通过：`status=MISSING` 计入整行标红；反向 `STALE` 不计入
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | SQL 断言 |
+
+**前置数据**：复用真实样本——`costing_card_values IS NULL` 的行现网约占三成（如 `QT-20260726-0002`~`0006` 对应 `S-3120014539` 的行），任取其一所在料号（若该料号已被其他用例占用，改用同类新构造的 `costing_card_values IS NULL` 行，操作等价）。另需一条 `STALE` 样本（`comparisonColumns` 某列因 `componentId` 已被模板改版删除而失效，可复用 #38 场景稍作改造，或直接把某比对列配置的 `quoteComponentId` 改成一个不存在的 UUID 来人为构造）。
+
+**执行步骤**
+1. 对核价数据缺失的料号触发预算计算，查询其 `material_price_review_column`。
+2. 对 `STALE` 样本同样查询。
+3. 查询两者各自的待办池汇总行。
+
+**断言（机械可判定）**
+- 🔒 ①：核价数据缺失那一列 `status='MISSING'`。
+- 🔒 🔒 ②：`SELECT breached_count FROM material_price_review WHERE id=...` **> 0**（`MISSING` 计入 `breached_count`），`rowRed=true`（整行标红）。
+- 🔒 ③：待办池汇总标记出现 `⚪K`（`K=missing_count`，如 `🔴0 🟠0 ⚪1 / N列`或等价格式，具体以 `missingCount>0` 时的字符串拼装规则为准，核心是**必须出现 `⚪` 标记**）。
+- 🔒 ④：抽屉对应列显示文案「—（缺核价数据）」（`missingSide` 字段辅助定位，`api.md` §2.2 示例已给出该口径）。
+- 🔒 🔒 **⑤ 反向核心断言**：`STALE` 样本那一列 `status='STALE'`，`SELECT breached_count FROM material_price_review WHERE id=(STALE样本的reviewId)` **不因这一列而增加**（即若该料号只有这一列失效、其余列正常，`breached_count` 应为 0，`rowRed=false`）——`MISSING` 与 `STALE` **必须分开处理**，前者标红后者不标红，混用会导致"模板改版就让整池飘红"或"核价缺数据却装作全通过"两个方向的错误。
+
+**证据形式**：`MISSING`/`STALE` 两条样本的 `material_price_review_column`/`material_price_review` 完整查询输出并排对比。
+
+---
+
+### #50　驳回有出口：V1 驳回后 V2 与 V1 价格相同仍进池（因与指针指向的 V0 有差异）；不在活单不自动推进（D5 反例外）
+
+| 归属 | 测试层级 |
+|---|---|
+| 后端自测（`backtask.md` §2.1） | SQL 断言 |
+
+**前置数据**：料号 W，指针当前指向 `V0`（`Ag=5450`）。生成 `V1`（`Ag=5820`），对 W 执行 `POST /reviews/reject`（驳回，指针仍在 `V0`）。随后生成 `V2`，**刻意让 `V2` 的 `Ag` 价与 `V1` 相同**（都是 `5820`，模拟"行情不再波动"）。
+
+**执行步骤**
+1. `V2` 生成后，查询 W 是否进入 `V2` 对应的待办池。
+2. 场景②（复用 #36 的手法）：另一料号 Z，同样在某期被驳回，此后 Z **不在任何活单**中，观察下一版生成后指针是否推进。
+
+**断言（机械可判定）**
+- 🔒 🔒 **核心断言**：`SELECT count(*) FROM material_price_review WHERE version_id=(V2的id) AND material_no=(W的料号)` **= 1**（W **仍然进池**）——判据是"与指针当前指向的 `V0`（`5450`）比较，`V2`（`5820`）与之确有差异"，**不是**"与上一个批次 `V1` 比较"（若按后者判断，`V2 vs V1` 无差异，W 会被误判"无事可审"而永久跳过）。
+- 🔒 场景②：`SELECT version_id FROM material_price_version_ref WHERE material_no=(Z的料号)` 在新版本生成后**仍指向驳回前的旧版本**（不自动推进），与 #36 的"未驳回料号会自动推进"形成对照——两条一起才能证明"反例外"确实生效而不是恰好都没推进。
+
+**证据形式**：W 的 `material_price_review` 进池记录；Z 的指针查询（新版本生成前后对比，佐证不自动推进）。
+
+---
+
+**本批（#41~#50）交回，等待下一批指令续写 #51 及以后。**
