@@ -1463,8 +1463,11 @@ public class FormulaCalculator {
         return null;
     }
 
-    /** 解析结果：命中的公式名（用于环定位提示）+ 其表达式。 */
-    private record ResolvedFormula(String name, JsonNode expression) {}
+    /**
+     * BL-0098：解析结果带上公式的稳定 id（可能为 null —— 存量公式尚未补 id，
+     * 或走位置回退命中了一条没有 id 的公式）。调用方须容忍 null，不得编造。
+     */
+    private record ResolvedFormula(String name, String id, JsonNode expression) {}
 
     /**
      * port resolveFormula: 0.field.formula_name 显式 1.formula_assignments[完整字段下标]
@@ -1482,7 +1485,9 @@ public class FormulaCalculator {
             : field.path("formulaName").asText(null);
         if (formulaName != null && !formulaName.isEmpty()) {
             JsonNode found = findFormulaByName(formulas, formulaName);
-            return found != null ? new ResolvedFormula(formulaName, found.path("expression")) : null;
+            return found != null
+                ? new ResolvedFormula(formulaName, idOf(found), found.path("expression"))
+                : null;
         }
 
         // 1. 模板级 formula_assignments[完整字段下标] → 公式名
@@ -1492,20 +1497,22 @@ public class FormulaCalculator {
                 String assignedName = assigned.asText("");
                 if (!assignedName.isEmpty()) {
                     JsonNode found = findFormulaByName(formulas, assignedName);
-                    if (found != null) return new ResolvedFormula(assignedName, found.path("expression"));
+                    if (found != null) {
+                        return new ResolvedFormula(assignedName, idOf(found), found.path("expression"));
+                    }
                 }
             }
         }
 
         // 2. 字段名 == 公式名
         JsonNode byName = findFormulaByName(formulas, fieldName);
-        if (byName != null) return new ResolvedFormula(fieldName, byName.path("expression"));
+        if (byName != null) return new ResolvedFormula(fieldName, idOf(byName), byName.path("expression"));
 
         // 3. positional fallback（FORMULA 字段在 fields 中的相对位置）
         int posIdx = formulaFieldPosition(fields, fieldName);
         if (posIdx >= 0 && posIdx < formulas.size()) {
             JsonNode fm = formulas.get(posIdx);
-            return new ResolvedFormula(fm.path("name").asText(""), fm.path("expression"));
+            return new ResolvedFormula(fm.path("name").asText(""), idOf(fm), fm.path("expression"));
         }
         return null;
     }
@@ -1533,9 +1540,42 @@ public class FormulaCalculator {
         return (name == null || name.isEmpty()) ? null : name;
     }
 
+    /**
+     * BL-0098：对外暴露「某 FORMULA 字段最终会用哪条公式」的**稳定 id**，供组件保存期把隐式绑定
+     * <b>固化</b>成显式 {@code formula_id}。
+     *
+     * <p>与 {@link #resolveFormulaNameForField} 共用同一个 {@link #resolveFormula} 口径 ——
+     * 固化逻辑必须复用求值期的唯一真相，自己实现一遍就是 BL-0098 在另一个层面重演。
+     *
+     * @return 解析到的公式 id；解析不到、或命中的公式尚无 id → {@code null}（调用方应保持原样不写入）
+     */
+    public String resolveFormulaIdForField(JsonNode field, JsonNode fields, JsonNode formulas,
+                                           JsonNode formulaAssignments, int fullFieldIndex) {
+        if (field == null || fields == null || formulas == null) return null;
+        ResolvedFormula rf = resolveFormula(field, fieldName(field), fields, formulas,
+                formulaAssignments, fullFieldIndex);
+        return rf == null ? null : rf.id();
+    }
+
     private JsonNode findFormulaByName(JsonNode formulas, String name) {
         for (JsonNode fm : formulas) {
             if (name.equals(fm.path("name").asText(null))) return fm;
+        }
+        return null;
+    }
+
+    /** BL-0098：取公式对象的稳定 id；缺失/空串 → null（不编造）。 */
+    private static String idOf(JsonNode formula) {
+        if (formula == null) return null;
+        String id = formula.path("id").asText(null);
+        return (id == null || id.isEmpty()) ? null : id;
+    }
+
+    /** BL-0098：按稳定 id 查公式；id 空或查不到 → null。 */
+    private JsonNode findFormulaById(JsonNode formulas, String id) {
+        if (id == null || id.isEmpty() || formulas == null || !formulas.isArray()) return null;
+        for (JsonNode fm : formulas) {
+            if (id.equals(fm.path("id").asText(null))) return fm;
         }
         return null;
     }
