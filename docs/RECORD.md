@@ -4335,3 +4335,19 @@ E2E:
 **涉及文件**：`cpq-backend/src/main/java/com/cpq/priceadjust/service/PriceReconciler.java`（新）、`.../service/MaterialVersionUpgradeService.java`（改名+改写）、`com/cpq/quotation/resource/QuotationResource.java`（saveDraft 插入归位调用）、`.../QuotationAdminResource.java`（临时验证端点）。单测回归 49/49 全绿（无新增单测，核心逻辑靠真实数据 HTTP 验证覆盖）。commit：`abd48221`。
 
 **B9（双端公式一致性 L1 golden）+ B11（通知）+ B12（核价侧 :customerCode 确认）本轮未开始**——①+B10 范围已超出预期，coordinator 要求"B10 做完立刻告诉我，亲验 #28/#40/#41"，故在此节点停下汇报，未继续推进后续三块。
+
+## [2026-08-03] 客户价格调整策略与价格版本(task-0729) B10标记透传（最优先项）+ B12确认
+
+**背景**：`worktree feat/task-0729-price-adjust`。coordinator 验收 B10 通过（`abd48221`/`bbee8053`）后指出标记未透传是前端三个缺口全卡住的最大障碍，要求最优先补上；同轮附带 quote-card-edit 集成（授权可评估跳过）+ B12（核价侧 `:customerCode` 确认）。commit：`2453c07c`。
+
+**① `__priceLocked`/`__priceVersion` 透传进 `quoteCardValues`**：`CardSnapshotService#buildResolvedRows` 是 `assembleTabsWithFormulaResults` 内部所有行输出的唯一装配点，已有 `__nodeId` 透传先例（`br.path("__nodeId")` → `resolvedRow.put`）。`PriceReconciler` 把标记写进 `snapshot_rows` 的 **`driverRow`**（不是 `br` 顶层，与 `__nodeId` 不同层级），故对齐同款模式：`resolveRowByFieldName` 调用后读 `driverRow.path("__priceLocked")`，命中则 `LinkedHashMap` 防御性转换后 put 进 `resolvedRow`。真实端到端验证（`PriceReconciler.reconcileQuotation()` → 强制 `quoteCardValues=NULL` → `POST /ensure-card-values` → 读回真实 JSON）：「材料成本」tab 的 `resolvedRows` 里 Cu 行精确出现 `{"元素":"Cu","元素单价":1850.0,"__priceLocked":true,"__priceVersion":"实时"}`，Ag 行（元素∉清单）零标记——不是只停在 `snapshot_rows` 层面，是真正流到前端会读的 JSON。
+
+**② `elementCodeField`/`elementPriceField` 透传进结构快照**：`CardSnapshotService#buildCardStructure` 与 `rowKeyFields` 同一模式（component 表直读）新增 `loadElementRoleFields(componentId)`，非空才写入 `tabNode`。验证走 SQL 直查确认底层数据正确（COMP-0027 返回 `["元素","元素单价",null]`）+ 代码模式与已验证的 `loadRowKeyFields` 逐字对齐，未做真实结构重建的 HTTP 验证（`quotation_view_structure` 是"创建即冻"，重建会影响真实存量单结构，风险大于收益，已如实说明这一验证口径差异）。
+
+**quote-card-edit（单元格失焦）集成 —— 明确未做**：评估后判断风险大于收益（`editCardValue` 仅草稿态生效且不写 `snapshot_rows`，接入需碰既有 flush/clear/重读逻辑）。归位三个时机里升版(S3/S4)与保存(saveDraft)均已接入，此项缺失影响="销售填完元素不能即时带出单价"，保存时归位仍能兜住，非数据正确性风险。coordinator 已授权可跳过但要求明确告知——特此明确：**未做**。
+
+**B12 确认结论**：核价侧取价 `:customerCode` 接入情况——扫描全部 `sql_template` 含 `element_price` 相关字样的 10 个 `component_sql_view`（8 个报价侧 `mc_view` + 1 个核价侧 `wl_ys_bom_view`(COMP-0049) + 1 个报价侧新增(COMP-0151/COMP-0154 共享 mc_view，见下）），**零处**出现字面量 `_GLOBAL_`，全部正确传 `:customerCode`。V366 迁移的 COMP-0049 本身确认无遗漏。**但发现一个真实的、需求说明已预判的现象**：`COMP-0151`/`COMP-0154`（`created_at=2026-08-03 01:59:42`，晚于 B2 迁移执行时刻，疑似并发会话为另一个 bug"施耐德BUG2"新建的组件副本）仍直接调用**旧函数** `f_customer_element_price`（task-0722 的版本，非 task-0729 B2 新增的 `f_material_element_price`），意味着这两个新组件**不参与价格调整版本机制**（指针推进对它们无效，恒走实时价）。这**不是 V366/B2 迁移本身的遗漏**（迁移只能改迁移当刻已存在的视图），而是需求说明 §11.12「迁移后的漏配」章节已明确预判的已知运营缺口——新建/新导入的元素组件默认仍写旧函数，需要 B7 的推导算法当"漏配检测器"主动扫描才能持续兜住，此举本身**不在 B12 范围内**（B12 只要求确认现状，未要求建扫描器）。已如实记账，未做代码改动。
+
+**B9（双端公式黄金用例）+ B11（通知）本轮仍未开始**——同样受限于时间预算，如实汇报，等 coordinator 下一步指示。
+
+**涉及文件**：`cpq-backend/src/main/java/com/cpq/quotation/service/CardSnapshotService.java`（`buildResolvedRows` 标记透传 + `buildCardStructure`/`loadElementRoleFields` 结构角色字段透传）。单测回归 49/49 全绿（无新增单测，两处改动均以真实数据 HTTP/SQL 验证覆盖）。commit：`2453c07c`。
