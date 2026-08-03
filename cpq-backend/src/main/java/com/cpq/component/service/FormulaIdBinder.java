@@ -105,6 +105,65 @@ public final class FormulaIdBinder {
     }
 
     /**
+     * BL-0098：用 id 反查出的**当前**公式名，刷新各处的名字冗余。
+     *
+     * <p><b>为什么必须有这一步</b>：{@code formula_name} / {@code conditional_formula.rules[].formula}
+     * / {@code default} 在绑 id 之后降级为展示冗余，但 {@link ComponentService} 的
+     * {@code validateFormulas} 仍会校验「这些名字必须存在于公式列表」。用户在 UI 改一个公式名时，
+     * 引用处的名字冗余不会跟着变 —— 若不刷新，保存会被那条校验以「绑定的公式 'X' 不存在」挡下，
+     * 于是「绑 id 后改名不断链」在数据层成立、在 UI 上却根本改不了名。
+     *
+     * <p><b>必须在 {@code validateFormulas} 之前调用</b>，否则校验先看到陈旧名字就已经抛错了。
+     *
+     * <p><b>id 查不到时刻意不动名字</b>：那是「公式被删」的真错误，应当让既有校验报出来，
+     * 而不是靠刷新名字把它掩盖掉。
+     */
+    public static void refreshNameRedundancyFromIds(List<Map<String, Object>> fields,
+                                                    List<Map<String, Object>> formulas) {
+        if (fields == null || formulas == null) return;
+        for (Map<String, Object> f : fields) {
+            if (f == null || !isFormulaField(f)) continue;
+            Object cfRaw = f.get("conditional_formula");
+            if (cfRaw instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> cf = (Map<String, Object>) cfRaw;
+                Object rulesRaw = cf.get("rules");
+                if (rulesRaw instanceof List<?> rules) {
+                    for (Object rRaw : rules) {
+                        if (rRaw instanceof Map) {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> rule = (Map<String, Object>) rRaw;
+                            refreshName(rule, "formula_id", "formula", formulas);
+                        }
+                    }
+                }
+                refreshName(cf, "default_formula_id", "default", formulas);
+                continue;
+            }
+            refreshName(f, "formula_id", "formula_name", formulas);
+        }
+    }
+
+    /** 按 {@code holder[idKey]} 反查公式，把它的当前名字写回 {@code holder[nameKey]}；查不到则不动。 */
+    private static void refreshName(Map<String, Object> holder, String idKey, String nameKey,
+                                    List<Map<String, Object>> formulas) {
+        Object idRaw = holder.get(idKey);
+        if (idRaw == null || String.valueOf(idRaw).isBlank()) return;
+        String id = String.valueOf(idRaw);
+        for (Map<String, Object> fm : formulas) {
+            if (fm == null) continue;
+            if (id.equals(String.valueOf(fm.get("id")))) {
+                Object nm = fm.get("name");
+                if (nm != null && !String.valueOf(nm).isBlank()) {
+                    holder.put(nameKey, String.valueOf(nm));
+                }
+                return;
+            }
+        }
+        // id 查不到 = 公式被删 → 保持原名字，交给 validateFormulas 报错（不掩盖真错误）
+    }
+
+    /**
      * BL-0098 补充范围：把条件公式内部的公式引用固化成 id。
      *
      * <p>条件公式结构 {@code {rules:[{when, formula, formula_id}], default, default_formula_id}}，

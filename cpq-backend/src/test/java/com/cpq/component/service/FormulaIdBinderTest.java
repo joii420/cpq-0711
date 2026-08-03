@@ -256,4 +256,73 @@ class FormulaIdBinderTest {
         assertNull(fields.get(0).get("formula_id"),
             "条件公式字段走 rules/default，不该有字段级 formula_id");
     }
+
+    // ─── 改名后用 id 反查刷新名字冗余（否则 validateFormulas 会挡住改名）──────────
+
+    @Test
+    @DisplayName("T15: 公式改名后，绑了 id 的字段名字冗余被刷新成新名（不再被校验挡住）")
+    void refresh_fieldNameRedundancy() {
+        List<Map<String, Object>> formulas = new ArrayList<>(List.of(
+            formula("id-A", "改名后的公式A")));
+        List<Map<String, Object>> fields = new ArrayList<>(List.of(
+            formulaField("成本", "id-A", "改名前的公式A")));
+
+        FormulaIdBinder.refreshNameRedundancyFromIds(fields, formulas);
+
+        assertEquals("改名后的公式A", fields.get(0).get("formula_name"));
+    }
+
+    @Test
+    @DisplayName("T16: 条件公式的规则/默认名字冗余同样被刷新")
+    void refresh_conditionalNameRedundancy() {
+        List<Map<String, Object>> formulas = new ArrayList<>(List.of(
+            formula("id-B", "规则公式新名"), formula("id-C", "默认公式新名")));
+        List<Map<String, Object>> fields = new ArrayList<>(List.of(
+            condField("材料成本", "规则公式旧名", "id-B", "默认公式旧名", "id-C")));
+
+        FormulaIdBinder.refreshNameRedundancyFromIds(fields, formulas);
+
+        assertEquals("规则公式新名", ruleNameOf(fields.get(0)));
+        assertEquals("默认公式新名", defaultNameOf(fields.get(0)));
+    }
+
+    @Test
+    @DisplayName("T17: id 查不到（公式被删）→ 保持原名字不动，让既有校验照常报错")
+    void refresh_danglingIdKeepsOldName() {
+        List<Map<String, Object>> formulas = new ArrayList<>(List.of(formula("id-A", "公式A")));
+        List<Map<String, Object>> fields = new ArrayList<>(List.of(
+            formulaField("成本", "id-已删除", "原来的名字")));
+
+        FormulaIdBinder.refreshNameRedundancyFromIds(fields, formulas);
+
+        assertEquals("原来的名字", fields.get(0).get("formula_name"),
+            "公式被删是真错误，不能靠刷新名字掩盖 —— 要让 validateFormulas 报出来");
+    }
+
+    @Test
+    @DisplayName("T18: 未绑 id 的字段不被碰（存量按名字绑定的照旧）")
+    void refresh_unboundFieldUntouched() {
+        List<Map<String, Object>> formulas = new ArrayList<>(List.of(formula("id-A", "公式A")));
+        List<Map<String, Object>> fields = new ArrayList<>(List.of(
+            formulaField("成本", null, "公式A")));
+
+        FormulaIdBinder.refreshNameRedundancyFromIds(fields, formulas);
+
+        assertEquals("公式A", fields.get(0).get("formula_name"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private String ruleNameOf(Map<String, Object> field) {
+        Map<String, Object> cf = (Map<String, Object>) field.get("conditional_formula");
+        List<Map<String, Object>> rules = (List<Map<String, Object>>) cf.get("rules");
+        Object v = rules.get(0).get("formula");
+        return v == null ? null : String.valueOf(v);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String defaultNameOf(Map<String, Object> field) {
+        Map<String, Object> cf = (Map<String, Object>) field.get("conditional_formula");
+        Object v = cf.get("default");
+        return v == null ? null : String.valueOf(v);
+    }
 }
