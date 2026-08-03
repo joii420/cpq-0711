@@ -31,7 +31,7 @@ import java.util.Optional;
  * 自制加工费 / 组成件其他费用 / 来料三表 / 客户料号关系）的关键键列 + 新增的类型冲突 / 材质缺库
  * 检查，以及 repair-0727 新增的组装加工费 / 组装加工费年降 工序解析（见
  * {@link #validateAssemblyProcess} / {@link #validateAssemblyAnnualDiscount}）；其余既有 sheet
- * （成品其他费用、电镀方案/费用、年降类）的既有 per-row 校验逻辑保留在各自 Phase 2 handler
+ * （成品其他费用、电镀方案、年降类）的既有 per-row 校验逻辑保留在各自 Phase 2 handler
  * 内 —— 若该阶段仍产生 {@code recordError}，{@link QuoteImportService#writeAll} 会整体回滚
  * （B7 §8.3），故"零写库"目标在这些场景下由事务回滚保证净效果等价，而非 Phase 1 预判。
  * 跨客户串号占号预检本身即为可选项（B8），沿用既有 {@code dontRollbackOn} + Phase 2 回滚机制。
@@ -87,6 +87,7 @@ public class QuoteImportValidator {
         // task-0730：来料回收折扣新增「值」列，与「回收折扣（%）」并存但必填其一。
         validateIncoming("来料回收折扣", sheetsByName.getOrDefault("来料回收折扣", List.of()), idx, out, true);
         validateCustomerMap(sheetsByName.getOrDefault("客户料号与宏丰料号的关系", List.of()), out);
+        validatePlatingCost(sheetsByName.getOrDefault("电镀费用", List.of()), idx, out);
 
         // repair-0727：组装工序解析结果索引只建一次（process_master 全表载入内存，AC-11 性能要求），
         // 两个 validate 方法共用同一个 Index 实例。
@@ -94,7 +95,7 @@ public class QuoteImportValidator {
         validateAssemblyProcess(sheetsByName.getOrDefault("组装加工费", List.of()), processIdx, out);
         validateAssemblyAnnualDiscount(sheetsByName.getOrDefault("组装加工费年降", List.of()), processIdx, out);
 
-        // 其余 sheet（成品其他费用/电镀方案/电镀费用/年降类/单重/元素回收折扣等）：
+        // 其余 sheet（成品其他费用/电镀方案/年降类/单重/元素回收折扣等）：
         // 仅计数不深校验——U9 规则不改，既有 Phase 2 handler 的 recordError 仍会触发整单回滚。
         for (Map.Entry<String, List<SheetRow>> e : sheetsByName.entrySet()) {
             if (out.bySheet.containsKey(e.getKey())) continue;
@@ -236,6 +237,36 @@ public class QuoteImportValidator {
             if (materialNo == null || customerProductNo == null) {
                 r.recordError(row.rowNo, "报价料号/客户产品编号", "必填项为空");
                 continue;
+            }
+            r.successRows++;
+        }
+    }
+
+    /**
+     * repair-0802：电镀费用（Q17 → unit_price）。与 {@link #validateIncoming} 的**关键差异**是
+     * 「投入料号」「投入料号名称」**均非必填**——两列皆空是合法输入（Q17 回退为销售料号，语义=
+     * 电镀针对成品自身），故此处不得照抄来料三表的「料号与名称均为空」报错分支。
+     *
+     * <p>预校验的目的只有一个：只填名称时 Q17 会走反查/铸号（**写库**），把"材质查无"这类
+     * 必然失败提前到 Phase 1（零写库）拦截，避免拖到 Phase 2 触发整单回滚。
+     */
+    private void validatePlatingCost(List<SheetRow> rows, TypeIndex idx, Outcome out) {
+        SheetImportResult r = result(out, "电镀费用");
+        for (SheetRow row : rows) {
+            r.totalRows++;
+            String materialNo = row.getStr("销售料号", "宏丰料号");
+            if (materialNo == null) { r.recordError(row.rowNo, "销售料号", "为空"); continue; }
+            String rawNo = row.exact("投入料号");
+            String rawName = row.exact("投入料号名称");
+            // 投入料号/名称均非必填：两列皆空 → 合法（Q17 回退销售料号）。
+            // 只填名称时才需预判材质缺库（与 validateIncoming 同一规则）。
+            if (isBlank(rawNo) && !isBlank(rawName)) {
+                InferResult infer = idx.infer(null, rawName);
+                if (PartTypeInferenceService.RECIPE.equals(infer.characteristic())
+                        && idx.resolveRecipeCode(null, rawName) == null) {
+                    r.recordError(row.rowNo, "投入料号名称", "未找到材质「" + rawName + "」");
+                    continue;
+                }
             }
             r.successRows++;
         }
