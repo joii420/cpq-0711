@@ -40,6 +40,9 @@ public class QuotationAdminResource {
     @Inject
     com.cpq.priceadjust.service.PriceReconciler priceReconciler;
 
+    @Inject
+    com.cpq.priceadjust.service.PriceAdjustNotificationService priceAdjustNotificationService;
+
     /**
      * 存量 DRAFT 草稿迁移：清掉 quote_card_values 里的 #ERROR 脏值（D1）。
      *
@@ -116,5 +119,18 @@ public class QuotationAdminResource {
         out.put("rowsChanged", r.rowsChanged);
         out.put("elapsedMs", ms);
         return ApiResponse.success(out);
+    }
+
+    /**
+     * task-0729 B11：{@code PriceAdjustNotificationService} 验证入口（临时，B11 开发期用）。
+     * 直接对已存在的 {@code material_price_update_job} 触发一次通知（幂等，{@code notified}
+     * 已为 true 时会原样跳过——与生产路径 {@code finalizeJob} 调用的是同一方法）。
+     */
+    @POST
+    @Path("/task0729-b11-notify-preview")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<String> task0729B11NotifyPreview(@QueryParam("jobId") String jobId) {
+        priceAdjustNotificationService.notifyJobCompletion(UUID.fromString(jobId));
+        return ApiResponse.success("done");
     }
 }

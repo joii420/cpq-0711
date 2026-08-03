@@ -37,6 +37,7 @@ public class PriceAdjustJobExecutionService {
     private static final Logger LOG = Logger.getLogger(PriceAdjustJobExecutionService.class);
 
     @Inject MaterialVersionUpgradeService materialVersionUpgradeService;
+    @Inject PriceAdjustNotificationService notificationService;
 
     @ActivateRequestContext
     public void executeJob(UUID jobId) {
@@ -155,6 +156,14 @@ public class PriceAdjustJobExecutionService {
         job.persist();
         LOG.infof("[price-adjust-job] jobId=%s finalized status=%s total=%d success=%d failed=%d conflict=%d stale=%d",
             jobId, job.status, job.totalCount, success, failed, conflict, stale);
+
+        // task-0729 B11：批次终态落库后通知（触发财务 + 受影响报价单销售负责人）。非阻断——
+        // 通知失败绝不能让批次 finalize 结果回滚（同 PriceReconciler 接入 saveDraft 的既定手法）。
+        try {
+            notificationService.notifyJobCompletion(jobId);
+        } catch (Exception e) {
+            LOG.warnf(e, "[price-adjust-job] jobId=%s 通知发送失败（不影响批次结果）", jobId);
+        }
     }
 
     // -------------------------------------------------------------------------
