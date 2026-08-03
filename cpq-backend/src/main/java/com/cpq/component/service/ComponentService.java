@@ -224,6 +224,9 @@ public class ComponentService {
         // 而固化走的位置/同名回退依赖公式名的最终形态。
         FormulaIdBinder.ensureFormulaIds(formulaList);
         FormulaIdBinder.bindFormulaIdsToFields(fieldList, formulaList);
+        // 固化后仍未绑定 → 拒绝保存，杜绝新增隐式配置（IllegalArgumentException 由
+        // GlobalExceptionMapper.handleIllegalArgument 映射成 400）。
+        FormulaIdBinder.validateExplicitBinding(fieldList);
 
         // Re-serialize after auto-correction + id binding
         String formulasJson = toJson(formulaList);
@@ -342,6 +345,7 @@ public class ComponentService {
             //    Task 8 的前端测试锁死这一点，改前端映射时务必同步复查。
             FormulaIdBinder.ensureFormulaIds(formulaList);
             FormulaIdBinder.bindFormulaIdsToFields(fieldList, formulaList);
+            FormulaIdBinder.validateExplicitBinding(fieldList);
 
             // Re-serialize after auto-correction + id binding
             component.fields = toJson(fieldList);   // 用固化后的 fieldList，不是原 fieldsJson
