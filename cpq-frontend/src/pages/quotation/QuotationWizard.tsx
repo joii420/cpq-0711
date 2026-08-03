@@ -18,6 +18,7 @@ import type { LineItem, ComponentDataItem } from './QuotationStep2';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
 import { safeSetLocalDraft } from './draftCache';
 import { stableDraftDedupKey } from './draftPayloadDedup';
+import { isKeyUnset, rowsHaveUserData } from './keyPresenceAuthority';
 import AddProductModal from './AddProductModal';
 import ConfigureProductDrawer from './ConfigureProductDrawer';
 import QuotationCreateForm from './QuotationCreateForm';
@@ -516,9 +517,9 @@ const QuotationWizard: React.FC = () => {
               const rowsEnr = Array.isArray(ec.rows) ? ec.rows : [];
               // 用户输入若已超过 enriched 默认行（filler 扩展过）以用户为准
               // 用户没动过（rowsCur 为空 / 都是空对象）则用 enriched 默认值
-              const hasUserInput = rowsCur && rowsCur.some((r: Record<string, any>) =>
-                r && Object.keys(r).some(k => k !== 'row_index' && r[k] != null && r[k] !== '')
-              );
+              // spec 2026-08-03：清空也是用户数据 —— 只看键，不看值。
+              // 原判据要求「有非空值」，导致某行被清空后整行退回 enriched 默认行。
+              const hasUserInput = rowsHaveUserData(rowsCur);
               return {
                 ...ec,
                 rows: hasUserInput ? rowsCur : rowsEnr,
@@ -1066,7 +1067,8 @@ const QuotationWizard: React.FC = () => {
         if (f.content == null || f.content === '') continue;
         const fieldKey = f.name || f.key || '';
         if (!fieldKey) continue;
-        if (enriched[fieldKey] === undefined || enriched[fieldKey] === null || enriched[fieldKey] === '') {
+        // spec 2026-08-03：仅「键不存在」才补默认值；用户清空('')必须原样保存。
+        if (isKeyUnset(enriched, fieldKey)) {
           enriched[fieldKey] = f.content;
         }
       }
@@ -1080,7 +1082,8 @@ const QuotationWizard: React.FC = () => {
         if (f.content == null || f.content === '') continue;
         const fieldKey = f.name || f.key || '';
         if (!fieldKey) continue;
-        if (enriched[fieldKey] === undefined || enriched[fieldKey] === null || enriched[fieldKey] === '') {
+        // spec 2026-08-03：同 §1.5，仅「键不存在」才补。
+        if (isKeyUnset(enriched, fieldKey)) {
           enriched[fieldKey] = f.field_type === 'INPUT_NUMBER'
             ? (coerceInputNumber(f.content) ?? f.content)  // 数值列归一，非法保留原值
             : f.content;

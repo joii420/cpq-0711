@@ -1247,36 +1247,44 @@ public class FormulaCalculator {
                 continue;
             }
 
-            // ── INPUT_NUMBER / INPUT_TEXT / INPUT: editValues 覆盖 → driverRow[name] → default_source → content ──
+            // ── INPUT_NUMBER / INPUT_TEXT / INPUT ─────────────────────────────
+            // spec 2026-08-03「键存在即权威」：editValues 明确含该字段（present 且非 null）
+            // = 用户已定值 → 原样落键，**含显式清空 ""**。
+            // 改动前这里是 `if (nonEmpty(v)) out.put(...)`，空值被挡掉不落键，导致
+            // 「用户清空」与「从未填过」在 row_data 里物理同形 → 前端 bake 判成空格子
+            // 重新烘默认值 → 用户删掉的数字重开又回来。
+            // 本口径与本类 fillInputDefaultSourceByFieldName(「仅键缺失才补」) 一致。
             if ("INPUT_NUMBER".equals(type) || "INPUT_TEXT".equals(type) || "INPUT".equals(type)) {
-                // 显式编辑(含清空'')优先且独占：editValues 明确含该字段(present, 非 null)→ 用其值, 不再回落
-                // driverRow/default_source/content（清空'' → nonEmpty 假 → 不写入 out → 下游 cross_tab 按空/0）。
-                // 与前端 buildResolvedRow 对称（仅 out[key]==null 才补 default_source）。
                 JsonNode editNode = (editValues != null) ? editValues.path(name) : null;
                 boolean editHas = editNode != null && !editNode.isMissingNode() && !editNode.isNull();
-                Object v = editHas ? nodeToObject(editNode) : null;
-                if (!editHas) {
-                    if (driverRow != null) v = nodeToObject(driverRow.path(name));
-                    if (!nonEmpty(v)) {
-                        JsonNode ds = defaultSource(f);
-                        if (ds != null && basicDataValues != null) {
-                            String dsType = ds.path("type").asText("");
-                            if ("GLOBAL_VARIABLE".equals(dsType)) {
-                                Object g = lookupBdv(basicDataValues, "@gvar:" + ds.path("code").asText(""));
+                if (editHas) {
+                    Object uv = unwrapNode(nodeToObject(editNode));
+                    // 空值的物理表示统一为 ""：若落成 null，mergeRowDataInputsIntoEdits 的
+                    // `!v.isNull()` 会跳过该键 → 下一轮又退化成「键缺失」被回填。
+                    out.put(name, uv != null ? uv : "");
+                    continue;
+                }
+                Object v = null;
+                if (driverRow != null) v = nodeToObject(driverRow.path(name));
+                if (!nonEmpty(v)) {
+                    JsonNode ds = defaultSource(f);
+                    if (ds != null && basicDataValues != null) {
+                        String dsType = ds.path("type").asText("");
+                        if ("GLOBAL_VARIABLE".equals(dsType)) {
+                            Object g = lookupBdv(basicDataValues, "@gvar:" + ds.path("code").asText(""));
+                            if (nonEmpty(g)) v = g;
+                        } else if ("BNF_PATH".equals(dsType) || "BASIC_DATA".equals(dsType)) {
+                            String p = ds.path("path").asText("");
+                            if (!p.isEmpty()) {
+                                Object g = lookupBdv(basicDataValues, bnfDriverLookupKey(p));
                                 if (nonEmpty(g)) v = g;
-                            } else if ("BNF_PATH".equals(dsType) || "BASIC_DATA".equals(dsType)) {
-                                String p = ds.path("path").asText("");
-                                if (!p.isEmpty()) {
-                                    Object g = lookupBdv(basicDataValues, bnfDriverLookupKey(p));
-                                    if (nonEmpty(g)) v = g;
-                                }
                             }
                         }
                     }
-                    if (!nonEmpty(v)) {
-                        String c = content(f);
-                        if (c != null && !c.isEmpty()) v = c;
-                    }
+                }
+                if (!nonEmpty(v)) {
+                    String c = content(f);
+                    if (c != null && !c.isEmpty()) v = c;
                 }
                 if (nonEmpty(v)) out.put(name, unwrapNode(v));
                 continue;

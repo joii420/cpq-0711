@@ -31,6 +31,7 @@ import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { useTreeCollapse } from './useTreeCollapse';
 import { splitRows, rowAt, isManualRow } from './manualRows';
 import { resolveInputDefault, resolveInputDefaultForBake } from './inputDefaults';
+import { isKeyUnset } from './keyPresenceAuthority';
 import { resolveFieldWidth } from '../component/types';
 import BomTreeAddLeafDrawer from './BomTreeAddLeafDrawer';
 import BomTreeDeleteConfirmDrawer from './BomTreeDeleteConfirmDrawer';
@@ -1866,8 +1867,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           if (!key) continue;
           const guard = `${comp.componentId}-${ri}-${key}`;
           if (bakedRef.current.has(guard)) continue;
-          const cur = curRow[key];
-          if (!(cur === undefined || cur === null || cur === '')) { bakedRef.current.add(guard); continue; }
+          // spec 2026-08-03：判据由「值为空」收紧为「键不存在」，用户清空('')不再被回填。
+          // bakedRef 只活在当前挂载实例、刷新即清零，故判据本身必须是持久的（读行数据的键）。
+          if (!isKeyUnset(curRow, key)) { bakedRef.current.add(guard); continue; }
           // 导入带出一次性烘焙默认值进行数据 → 之后用户清空(='')即真实持久值, 不再被渲染兜底回弹。
           // resolveInputDefaultForBake: 有 default_source 时只烘已解析的源值(源未命中返 undefined, 等驱动补值
           // 下一轮再烘, 不提前冻结 content); 无 default_source 时烘静态 content。bakedRef 守卫保证"清空后不再回填"。
