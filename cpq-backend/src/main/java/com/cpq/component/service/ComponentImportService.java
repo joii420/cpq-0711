@@ -164,6 +164,15 @@ public class ComponentImportService {
      * 提交导入(P3):单事务,只 INSERT 新组件 + 其 component_sql_view(全新 UUID),
      * 不 UPDATE/DELETE 任何现有数据,不绑定模板。
      *
+     * <p><b>task-0803 Task5 裁决 G4（测试评审会定稿，需求说明 §11.5，2026-08-03）</b>：
+     * 导入失败粒度 = <b>整包回滚</b>。本方法整体只有这一层 {@code @Transactional}
+     * （默认 {@code TxType.REQUIRED}），第三遍循环里
+     * {@link ComponentService#assertTreeTokenGates} 抛出的 {@code BusinessException}
+     * 不会被吞掉（见下方 catch 块只重新包装、仍然抛出），会正常传播出本方法触发整个
+     * 事务回滚——bundle 内已在第一遍 INSERT 的全部 Component/ComponentSqlView 一并撤销，
+     * 不会出现"部分组件导入成功、部分因校验闸拒绝"的半成品状态。这是明确裁决，不是
+     * 恰好如此的偶然行为；后续若要改成"按组件粒度部分提交"需先过架构评审。
+     *
      * @param ignoreMissingDeps true 时即使依赖缺失也继续(相关字段运行时取数可能失败)
      */
     @Transactional

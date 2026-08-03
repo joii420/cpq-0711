@@ -169,6 +169,76 @@ class ComponentServiceTreeTokenGateTest {
     }
 
     // ------------------------------------------------------------------
+    // 2026-08-03 评审返修：闸② 递归扫描 —— 嵌套在 cross_tab_ref.targetExpr 内的父子
+    // token 不能绕过 tabType 校验（原实现只平铺遍历顶层 token，是真实缺口）。
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("返修: 非 BOM 组件，cross_tab_ref.targetExpr 内嵌 tree_ref → 400（不能被嵌套绕过闸②）")
+    void nonBomTabType_withTreeRefNestedInsideCrossTabRef_rejected() {
+        Map<String, Object> nestedTreeRef = new HashMap<>();
+        nestedTreeRef.put("type", "tree_ref");
+        nestedTreeRef.put("dir", "PARENT");
+        nestedTreeRef.put("agg", "NONE");
+        nestedTreeRef.put("targetExpr", List.of(Map.of("type", "field", "value", "累计用量")));
+
+        Map<String, Object> crossTabRef = new HashMap<>();
+        crossTabRef.put("type", "cross_tab_ref");
+        crossTabRef.put("source", "回料");
+        crossTabRef.put("agg", "SUM");
+        crossTabRef.put("match", List.of(Map.of("a", "料号", "b", "料号")));
+        crossTabRef.put("targetExpr", List.of(nestedTreeRef));
+
+        String formulas = formulasJsonWith("嵌套父子取值公式", crossTabRef);
+        BusinessException ex = assertThrows(BusinessException.class,
+            () -> svc.assertTreeTokenGates("零件", formulas));
+        assertEquals(400, ex.getCode());
+        assertTrue(ex.getMessage().contains("嵌套父子取值公式"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("tree_ref"), ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("返修: 非 BOM 组件，cross_tab_ref.targetExpr 内嵌 tree_attr → 400（不能被嵌套绕过闸②）")
+    void nonBomTabType_withTreeAttrNestedInsideCrossTabRef_rejected() {
+        Map<String, Object> nestedTreeAttr = new HashMap<>();
+        nestedTreeAttr.put("type", "tree_attr");
+        nestedTreeAttr.put("attr", "LVL");
+
+        Map<String, Object> crossTabRef = new HashMap<>();
+        crossTabRef.put("type", "cross_tab_ref");
+        crossTabRef.put("source", "回料");
+        crossTabRef.put("agg", "SUM");
+        crossTabRef.put("match", List.of(Map.of("a", "料号", "b", "料号")));
+        crossTabRef.put("targetExpr", List.of(nestedTreeAttr));
+
+        String formulas = formulasJsonWith("嵌套层级公式", crossTabRef);
+        BusinessException ex = assertThrows(BusinessException.class,
+            () -> svc.assertTreeTokenGates("零件", formulas));
+        assertEquals(400, ex.getCode());
+        assertTrue(ex.getMessage().contains("嵌套层级公式"), ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("对照: BOM 组件，cross_tab_ref.targetExpr 内嵌合法 tree_ref → 不抛（递归扫描不误伤合法嵌套）")
+    void bomTabType_withLegalTreeRefNestedInsideCrossTabRef_passes() {
+        Map<String, Object> nestedTreeRef = new HashMap<>();
+        nestedTreeRef.put("type", "tree_ref");
+        nestedTreeRef.put("dir", "PARENT");
+        nestedTreeRef.put("agg", "NONE");
+        nestedTreeRef.put("targetExpr", List.of(Map.of("type", "field", "value", "累计用量")));
+
+        Map<String, Object> crossTabRef = new HashMap<>();
+        crossTabRef.put("type", "cross_tab_ref");
+        crossTabRef.put("source", "回料");
+        crossTabRef.put("agg", "SUM");
+        crossTabRef.put("match", List.of(Map.of("a", "料号", "b", "料号")));
+        crossTabRef.put("targetExpr", List.of(nestedTreeRef));
+
+        String formulas = formulasJsonWith("嵌套父子取值公式", crossTabRef);
+        assertDoesNotThrow(() -> svc.assertTreeTokenGates("BOM", formulas));
+    }
+
+    // ------------------------------------------------------------------
     // 闸③（反向闸，位于 applyTabType）：已配父子公式的组件改 tabType 离开 BOM → 拒绝
     // ------------------------------------------------------------------
 

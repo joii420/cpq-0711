@@ -125,25 +125,18 @@ public class ComponentService {
 
     /**
      * task-0803 Task5：判断 formulas JSON 中是否含至少一个 {@code tree_ref}/{@code tree_attr} token
-     * （只看每条公式 expression 数组的顶层 token；父子 token 不会出现在别的容器 token 内部，
-     * 与 cross_tab_ref/KSUM 的嵌套模型不同）。用于闸③"是否需要拦"的判断。
+     * （递归扫描，见 {@link #walkTokensDeep}——嵌套在 {@code cross_tab_ref.targetExpr} 等任意
+     * 子表达式容器内的父子 token 也算数，不只看 expression 数组顶层）。用于闸③"是否需要拦"的判断。
      */
     private boolean formulasContainTreeToken(String formulasJson) {
         for (Map<String, Object> formula : parseList(formulasJson)) {
-            if (formulaExpressionHasType(formula, "tree_ref", "tree_attr")) return true;
-        }
-        return false;
-    }
-
-    /** 判断一条公式的 expression 数组顶层是否含给定 type 之一。 */
-    private static boolean formulaExpressionHasType(Map<String, Object> formula, String... types) {
-        Object exprObj = formula.get("expression");
-        if (!(exprObj instanceof List<?> exprList)) return false;
-        java.util.Set<String> wanted = java.util.Set.of(types);
-        for (Object opObj : exprList) {
-            if (!(opObj instanceof Map<?, ?> m)) continue;
-            Object t = m.get("type");
-            if (t instanceof String s && wanted.contains(s)) return true;
+            Object exprObj = formula.get("expression");
+            if (!(exprObj instanceof List<?> exprList)) continue;
+            boolean[] found = {false};
+            walkTokensDeep(exprList, (type, token) -> {
+                if ("tree_ref".equals(type) || "tree_attr".equals(type)) found[0] = true;
+            });
+            if (found[0]) return true;
         }
         return false;
     }
@@ -153,12 +146,24 @@ public class ComponentService {
      * 的组件级校验闸门，保存期强制执行（需求 §4.3.7/§4.3.8）。三道闸：
      * <ul>
      *   <li>闸①：每个 {@code tree_ref} token 的 {@code targetExpr} 内层白名单
-     *       （委托 {@link TokenMappabilityValidator#validateTreeRefTargetExpr}）。</li>
-     *   <li>闸②（正向闸）：公式含 {@code tree_ref}/{@code tree_attr}，但组件
+     *       （委托 {@link TokenMappabilityValidator#validateTreeRefTargetExpr}），
+     *       不论该 {@code tree_ref} 出现在公式顶层还是嵌套在别的 token（如
+     *       {@code cross_tab_ref.targetExpr}）内部都会触发。</li>
+     *   <li>闸②（正向闸）：公式【任意嵌套深度】含 {@code tree_ref}/{@code tree_attr}，但组件
      *       {@code tabType != "BOM"} → 拒绝，错误信息点名具体公式。</li>
-     *   <li>闸④：{@code tabType == "BOM"} 的组件公式含 {@code previous_row_subtotal} → 拒绝
-     *       （树上"上一行"是展开后的数组顺序，可能是父/兄弟/叔叔的孙子，语义模糊，配了必是误用）。</li>
+     *   <li>闸④：{@code tabType == "BOM"} 的组件公式【任意嵌套深度】含
+     *       {@code previous_row_subtotal} → 拒绝（树上"上一行"是展开后的数组顺序，可能是
+     *       父/兄弟/叔叔的孙子，语义模糊，配了必是误用）。{@code hasPrev && isBom} 这个判据本身
+     *       同时覆盖"组件已是 BOM、新配 PREV 公式"与"组件已有 PREV 公式、把 tabType 改入 BOM"
+     *       两个方向——两者最终都落到"本次保存后 tabType=BOM 且 formulas 含 PREV"这一个状态，
+     *       判据没有方向性，不要在重构时拆成两条各查一半的分支。</li>
      * </ul>
+     *
+     * <p><b>2026-08-03 评审返修</b>：原实现只平铺遍历 expression 数组顶层 token，把
+     * {@code tree_ref}/{@code tree_attr} 嵌套写进 {@code cross_tab_ref.targetExpr}（或任何带
+     * 子表达式的 token 内部）即可绕过闸②/闸④。改为 {@link #walkTokensDeep} 通用递归扫描——
+     * 不针对某个具体键名，任何值为"token 数组"的字段都继续下钻，堵死这类嵌套绕过，也不怕
+     * 以后新增别的带子表达式键名的 token 类型时又漏。
      *
      * <p>package-private：供 ComponentImportService（同包）在导入 bundle 时复用（⑤），
      * 也供纯 JUnit 单测直接调用（不落库）。
@@ -178,18 +183,13 @@ public class ComponentService {
             Object exprObj = formula.get("expression");
             if (!(exprObj instanceof List<?> exprList)) continue;
 
-            boolean hasTreeToken = false;
-            boolean hasPrev = false;
-            for (Object opObj : exprList) {
-                if (!(opObj instanceof Map)) continue;
-                @SuppressWarnings("unchecked")
-                Map<String, Object> token = (Map<String, Object>) opObj;
-                Object typeObj = token.get("type");
-                String type = typeObj == null ? "" : typeObj.toString();
-
+            boolean[] hasTreeToken = {false};
+            boolean[] hasPrev = {false};
+            walkTokensDeep(exprList, (type, token) -> {
                 if ("tree_ref".equals(type)) {
-                    hasTreeToken = true;
-                    // 闸①：targetExpr 内层白名单（无论 tabType 是否为 BOM，结构非法都要拒绝）
+                    hasTreeToken[0] = true;
+                    // 闸①：targetExpr 内层白名单（无论该 tree_ref 出现在哪一层嵌套、
+                    // 也无论 tabType 是否为 BOM，结构非法都要拒绝）
                     List<Map<String, Object>> targetExpr = asTokenList(token.get("targetExpr"));
                     TokenMappabilityValidator.Result r = innerValidator.validateTreeRefTargetExpr(targetExpr);
                     if (!r.mappable()) {
@@ -197,27 +197,72 @@ public class ComponentService {
                             "公式「" + formulaName + "」的父子取值（tree_ref）非法：" + r.reason());
                     }
                 } else if ("tree_attr".equals(type)) {
-                    hasTreeToken = true;
+                    hasTreeToken[0] = true;
                 } else if ("previous_row_subtotal".equals(type)) {
-                    hasPrev = true;
+                    hasPrev[0] = true;
                 }
-            }
+            });
 
-            // 闸②：正向闸 —— 用了父子 token 但组件不是 BOM 树页签 → 拒绝，点名公式
-            if (hasTreeToken && !isBom) {
+            // 闸②：正向闸 —— 用了父子 token（含任意嵌套深度）但组件不是 BOM 树页签 → 拒绝，点名公式
+            if (hasTreeToken[0] && !isBom) {
                 throw new BusinessException(400,
                     "公式「" + formulaName + "」使用了父子取值（tree_ref/tree_attr），" +
                     "该功能仅支持 tabType=\"BOM\" 的树页签组件，当前组件 tabType=" +
                     (tabType == null || tabType.isBlank() ? "(未配置)" : tabType) + "。");
             }
             // 闸④：BOM 页签禁用 previous_row_subtotal（需求 §4.3.7，树上"上一行"语义模糊）
-            if (hasPrev && isBom) {
+            if (hasPrev[0] && isBom) {
                 throw new BusinessException(400,
                     "公式「" + formulaName + "」使用了 previous_row_subtotal（上一行取值），" +
                     "BOM 树页签禁止使用该 token（树展开后的「上一行」可能是父/兄弟/叔叔的孙子，" +
                     "语义模糊；如需父子间取值请改用 tree_ref）。");
             }
         }
+    }
+
+    /**
+     * task-0803 Task5 返修（2026-08-03 评审）：通用递归 token 访问器。
+     *
+     * <p>对 {@code tokenList} 中每个 token 调一次 {@code visitor.accept(type, token)}；
+     * 然后不论该 token 是什么类型，只要它的某个字段值满足"token 数组"形状
+     * （{@link #isTokenArrayValue}：非空 List 且元素全部是含 {@code type} 键的 Map），
+     * 就继续递归下钻——不针对 {@code targetExpr} 这个具体键名硬编码，覆盖
+     * {@code cross_tab_ref.targetExpr}/{@code tree_ref.targetExpr} 以及未来任何新增的
+     * 带子表达式键名的 token 类型。{@code match}/{@code predicate}/{@code sources} 等
+     * 元素不含 {@code type} 键的结构不会被误判为 token 数组，不会被下钻。
+     *
+     * <p>{@code visitor} 可以抛未受检异常（如 {@link BusinessException}）来中止扫描，
+     * 异常会正常沿调用栈向上传播。
+     */
+    private static void walkTokensDeep(List<?> tokenList,
+                                        java.util.function.BiConsumer<String, Map<String, Object>> visitor) {
+        if (tokenList == null) return;
+        for (Object opObj : tokenList) {
+            if (!(opObj instanceof Map<?, ?> rawToken)) continue;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> token = (Map<String, Object>) rawToken;
+            Object typeObj = token.get("type");
+            String type = typeObj == null ? "" : typeObj.toString();
+            visitor.accept(type, token);
+            for (Object v : token.values()) {
+                if (isTokenArrayValue(v)) {
+                    walkTokensDeep((List<?>) v, visitor);
+                }
+            }
+        }
+    }
+
+    /**
+     * 判断一个字段值是否是"token 数组"：非空 {@code List}，且每个元素都是含
+     * {@code type} 键的 {@code Map}（{@code match}/{@code sources} 等元素形状不同的
+     * 数组字段不满足此判据，天然被排除，不会被误当成子表达式下钻）。
+     */
+    private static boolean isTokenArrayValue(Object v) {
+        if (!(v instanceof List<?> list) || list.isEmpty()) return false;
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> m) || !m.containsKey("type")) return false;
+        }
+        return true;
     }
 
     /** JSON 反序列化后的 targetExpr Object → List&lt;Map&lt;String,Object&gt;&gt;；非 List 视为空。 */
