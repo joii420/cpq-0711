@@ -1,10 +1,60 @@
 # `BomTreeRenderService` customerId 影响面评估
 
 > 2026-08-03。coordinator 要求：动 `BomTreeRenderService`（共享渲染基础设施）之前先出影响面评估，
-> 同 S6 对拍清单 / 精度影响面清单同一个做法。**本评估不改任何代码，`BomTreeRenderService.java`
-> 全程未动一行。** 结论见文末「四、最小改动方案」。
+> 同 S6 对拍清单 / 精度影响面清单同一个做法。结论见文末「四、最小改动方案」。
 
-## 🔴 2026-08-03 补充：§3.3 矛盾已验证解开，根因与改法均已修正（见本节）
+## ✅ 2026-08-03 最终结论：真根因已用 DEBUG 日志锁死，修复已落地并全量验证（本节最新，覆盖下方两轮被推翻的假设）
+
+**本调查先后出现三版根因假设，前两版都被下一轮实测推翻，如实记录不美化：**
+
+1. **第一版（本文档最初版本）**："`BomTreeRenderService` 设计上就把 customerId 传 null，让 `$view`
+   靠 `:total_material_no` 收窄" —— coordinator 指出这只是"地基"层面的观察，未定位到底谁在读这个
+   null。
+2. **第二版**（"补充"章节，见下方保留段落）："核价侧 4 条路径遗漏了 `QuotationIdContext.set()`"
+   —— coordinator 亲自用"已设置 `QuotationIdContext`"的路径复测，**依然拿到 null，此版被证伪**。
+3. **第三版（最终，已用临时 DEBUG 日志在真实调用现场锁死，非推断）**：`:customerCode` 在
+   component `$view` driver-path 渲染链路里，走的是 `DataLoader.loadByPath`（约196~230行）里
+   `ctx.quotation = new RuntimeContext.QuotationContext(quotIdSv, customerId)` 这一行——
+   `quotIdSv` 确实来自 `QuotationIdContext`（这也是第二版"看起来有道理"的原因：quotationId/
+   priceBaseDate 确实靠它解析），但**同一行里的 `customerId` 是另一个完全独立的方法参数，从
+   `expand()`/`expandUncached()` 一路透传下来，没有任何 ThreadLocal 兜底**。`BomTreeRenderService`
+   §④ 调 `componentDriverService.expandUncached(compId, null)` 时这个 customerId 实参就是字面
+   意义上的 null，且全程没有第二条补全路径。
+
+   DEBUG 日志实测证据（`SqlViewExecutor.executeAllRows`，渲染 `wl_ys_bom_view` 那一刻打印）：
+   ```
+   ctx.quotation.id=5ae37319-...（真实 quotationId，正确）
+   ctx.quotation.customerId=null          ← 这里
+   namedParams.priceBaseDate=2026-07-27   （正确，靠 quotationId 反查得到）
+   namedParams.customerId=null / namedParams.customerCode=null
+   ```
+   quotationId 那条线全程正确，customerId 那条线全程是 null——两条线在同一个 `QuotationContext`
+   构造函数里被同时赋值，但只有一个字段真的有值来源。
+
+**修复**：`BomTreeRenderService.renderInternal()` 用 `lineItems.get(0).quotationId` 查一次
+`Quotation.customerId`，把 §④ `expandUncached(compId, null)` 的 null 改传这个真实值。
+`partNo`/`lineItemId`/`partVersion` 继续传 null（那部分的既有设计不受影响，且 `expandUncached`
+本就完全绕开 `expandCache`，改 customerId 不产生 AP-37 型缓存串号风险）。
+
+coordinator 已先行确认 `QuotationIdContext` 语义（`clear()` 无条件 `CURRENT.remove()`，不支持
+重入）并做了「保存-恢复」重入修复（提取 `renderInternal` + `prev/restore`），该修复保留并一并
+提交——它本身修的是一个真实重入隐患，不是本次 null 的根因，但与新修法不冲突。
+
+**全量验证结果**（真实数据，`QT-20260726-0018`/`S-3120014539`，探针清理完毕）：
+
+| 路径 | 结果 |
+|---|---|
+| `refreshCostingCardValuesForLine`（task-0729 B0 S5） | ✅ Cu 元素单价 null→3650，与报价侧同元素 3650 逐位相同（验收 #64 核心断言满足）|
+| `snapshotLineValuesWithUnion`→`snapshotCostingSideOnly`（加产品单行） | ✅ 同上，Cu=3650 |
+| `refreshCostingCardValues`（整单批量刷新） | ✅ 同上，Cu=3650；该单仅1个line item，无collateral影响 |
+| `CostingVersionService.switchVersion`（task-0713核价版本切换） | ⚠️ **未做完整 live-fire 验证**——真实 PENDING 核价单当前有并发 Playwright 测试在跑不便 mutate；隔离环境需先 materialize 该行才能拿到 version-options 候选，构造成本超出本轮预算。已代码走读确认它调用与 `refreshCostingCardValuesForLine` 完全相同的 3 参 `render()` 重载，结构性必然受益，但这是 code-level 确认非 live-fire 实测，验证强度弱于其余 3 条 |
+| `ConfigureSnapshotService.snapshotLines`（报价侧，"有保护"路径回归确认） | ✅ 隔离测试单外购件成本/加工费仍各1行，与修复前逐位一致——证明 render() 内新增的嵌套 QuotationIdContext 保存-恢复对已自行 set 过上下文的调用方无副作用 |
+
+commit `c602ff86`。
+
+---
+
+## 历史记录（以下两节是被推翻的第二版排查过程，保留存档不删，标题已加删除线说明）
 
 coordinator 要求先解开 §3.3 那处"理论上应 0 行、实测普遍 1 行"的矛盾再批改法。已按要求走真实验证
 （隔离测试数据 + 真实 REST 端点触发 `ConfigureSnapshotService.snapshotQuotation` 这条 saveDraft
