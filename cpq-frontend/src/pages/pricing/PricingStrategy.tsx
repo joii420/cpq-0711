@@ -4,24 +4,12 @@ import {
   Form, InputNumber, DatePicker, Select, Popconfirm, message, Alert,
   Typography, Divider,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, StopOutlined, CheckCircleOutlined, GlobalOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, StopOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { customerService } from '../../services/customerService';
 import { pricingService } from '../../services/pricingService';
-import { GLOBAL_CUSTOMER_NO } from '../../types/element-price-strategy';
 import ElementPriceStrategyTab from './element-strategy/ElementPriceStrategyTab';
 import PriceAdjustStrategyTab from './price-adjust/PriceAdjustStrategyTab';
-
-/**
- * task-0722 · F6.2：定价策略页客户列表顶部固定「全局（核价成本口径）」项。
- * 不是真实客户记录，不参与客户搜索与分页；选中它 selectedCustomer.code = '_GLOBAL_'。
- */
-const GLOBAL_CUSTOMER_ITEM = {
-  id: GLOBAL_CUSTOMER_NO,
-  code: GLOBAL_CUSTOMER_NO,
-  name: '全局（核价成本口径）',
-  isGlobal: true as const,
-};
 
 const { Sider, Content } = Layout;
 const { Search } = Input;
@@ -94,8 +82,7 @@ const PricingStrategy: React.FC = () => {
   }, [levelFilter]);
 
   useEffect(() => {
-    // 全局项(_GLOBAL_)不是真实客户，折扣策略无意义，不查
-    if (selectedCustomer && !selectedCustomer.isGlobal) {
+    if (selectedCustomer) {
       fetchStrategies(selectedCustomer.id);
     } else {
       setStrategies([]);
@@ -276,23 +263,10 @@ const PricingStrategy: React.FC = () => {
           />
         </div>
 
-        {/* task-0722 · F6.2：全局（核价成本口径）固定项 —— _GLOBAL_ 策略的唯一配置入口，不参与搜索与分页 */}
-        <div
-          onClick={() => setSelectedCustomer(GLOBAL_CUSTOMER_ITEM)}
-          style={{
-            cursor: 'pointer',
-            padding: '10px 16px',
-            background: '#f9f0ff',
-            borderLeft: selectedCustomer?.isGlobal ? '3px solid #722ed1' : '3px solid transparent',
-            borderBottom: '1px solid #f0f0f0',
-          }}
-        >
-          <div style={{ fontWeight: 500 }}><GlobalOutlined /> 全局（核价成本口径）</div>
-          <div>
-            <Tag color="purple" style={{ marginTop: 2, fontSize: 11 }}>_GLOBAL_</Tag>
-            <Text type="secondary" style={{ fontSize: 11 }}>核价单取用</Text>
-          </div>
-        </div>
+        {/* task-0729 E12（2026-08-02）：原「全局（核价成本口径）」固定项已删除——task-0722 的
+            双轨设计（核价侧走独立的 _GLOBAL_ 成本口径）已被 E12 推翻，报价侧与核价侧现在统一用
+            客户的取价策略 + 价格调整策略，不再有这个独立配置入口。实测 _GLOBAL_ 策略库内 0 条，
+            这套双轨从未真正落地。与后端 B12（核价取价改传 :customerCode）配套，需一起验收。 */}
 
         <Tabs
           size="small"
@@ -348,16 +322,10 @@ const PricingStrategy: React.FC = () => {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <div>
-                {selectedCustomer.isGlobal ? (
-                  <Text strong style={{ fontSize: 16 }}><GlobalOutlined /> {selectedCustomer.name}</Text>
-                ) : (
-                  <>
-                    <Text strong style={{ fontSize: 16 }}>{selectedCustomer.name}</Text>
-                    <Tag color={levelMap[selectedCustomer.level]?.color} style={{ marginLeft: 8 }}>
-                      {levelMap[selectedCustomer.level]?.label || selectedCustomer.level}
-                    </Tag>
-                  </>
-                )}
+                <Text strong style={{ fontSize: 16 }}>{selectedCustomer.name}</Text>
+                <Tag color={levelMap[selectedCustomer.level]?.color} style={{ marginLeft: 8 }}>
+                  {levelMap[selectedCustomer.level]?.label || selectedCustomer.level}
+                </Tag>
               </div>
             </div>
 
@@ -368,28 +336,23 @@ const PricingStrategy: React.FC = () => {
                 前端逻辑/后端端点/pricing_strategy 表数据均保留未删(死代码，可逆)，如需恢复见 git 历史。
 
                 task-0729 屏 1：新增第 3 个 Tab「价格调整策略」（落位见 fronttask §1）。
-                🔒 全局（核价成本口径）项选中时不显示本 Tab —— _GLOBAL_ 不是真实客户，价格调整
-                策略以客户为主体，与它无意义交叉（⚠️ 不是因为裁决16"核价侧不做版本"——该裁决已被
-                §11.8 + E12 推翻，核价侧现在跟随料号版本一起重算；E12 删除 _GLOBAL_ 入口后，
-                本三元分支应随之一并移除，见下方 GLOBAL_CUSTOMER_ITEM 顶部注释）。 */}
-            {selectedCustomer.isGlobal ? (
-              <ElementPriceStrategyTab customerNo={GLOBAL_CUSTOMER_NO} customerLabel={selectedCustomer.name} />
-            ) : (
-              <Tabs
-                items={[
-                  {
-                    key: 'element-price',
-                    label: '元素价格策略',
-                    children: <ElementPriceStrategyTab customerNo={selectedCustomer.code} customerLabel={selectedCustomer.name} />,
-                  },
-                  {
-                    key: 'price-adjust',
-                    label: <span>价格调整策略 <Tag color="blue" style={{ marginLeft: 4 }}>新</Tag></span>,
-                    children: <PriceAdjustStrategyTab customerNo={selectedCustomer.code} customerLabel={selectedCustomer.name} />,
-                  },
-                ]}
-              />
-            )}
+                task-0729 E12（2026-08-02）：原「全局（核价成本口径）」选中时不显示本 Tab 的三元
+                分支已随 _GLOBAL_ 入口一并删除（该分支本就是为这次删除留的过渡，见 git 历史）。
+                与后端 B12（核价取价改传 :customerCode）配套，需一起验收。 */}
+            <Tabs
+              items={[
+                {
+                  key: 'element-price',
+                  label: '元素价格策略',
+                  children: <ElementPriceStrategyTab customerNo={selectedCustomer.code} customerLabel={selectedCustomer.name} />,
+                },
+                {
+                  key: 'price-adjust',
+                  label: <span>价格调整策略 <Tag color="blue" style={{ marginLeft: 4 }}>新</Tag></span>,
+                  children: <PriceAdjustStrategyTab customerNo={selectedCustomer.code} customerLabel={selectedCustomer.name} />,
+                },
+              ]}
+            />
           </>
         )}
       </Content>

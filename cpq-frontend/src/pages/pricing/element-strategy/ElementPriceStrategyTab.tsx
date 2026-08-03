@@ -163,14 +163,10 @@ const ElementPriceStrategyTab: React.FC<Props> = ({ customerNo, customerLabel })
 
   return (
     <div>
-      {isGlobal && (
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 14 }}
-          message="此处配置的是核价成本口径，仅核价单取用；报价单取各客户自己的策略。"
-        />
-      )}
+      {/* task-0729 E12（2026-08-02）：原「此处配置的是核价成本口径，仅核价单取用」提示已删除——
+          E12 推翻 task-0722 双轨设计，报价侧与核价侧现在统一用客户的取价策略 + 价格调整策略，
+          不再有"核价成本口径"这个独立配置概念。isGlobal 变量与 GLOBAL_CUSTOMER_NO 导入按约定
+          本次不动（元素价格策略 Tab 本期仅这一处改动），随 _GLOBAL_ 入口整体退场后自然恒为 false。 */}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>
