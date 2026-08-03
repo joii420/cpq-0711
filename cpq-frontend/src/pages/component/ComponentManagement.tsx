@@ -21,7 +21,7 @@ import {
 } from 'antd';
 import { buildDraftSnapshot, rebuildFieldKeys, rebuildFormulaKeys } from './componentDraft';
 import { readDraft, clearDraft, useDraftAutosave, listAllDrafts } from './useComponentDraft';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, FolderAddOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, FolderAddOutlined, BulbOutlined } from '@ant-design/icons';
 import { componentService } from '../../services/componentService';
 import { datasourceService } from '../../services/datasourceService';
 import { tabJoinFormulaService, type TabDef } from '../../services/tabJoinFormulaService';
@@ -1018,6 +1018,14 @@ const ComponentManagement: React.FC = () => {
   // 从该组件已有字段(fields state)中选，不是自由输入；非树页签(tabType∈{材质元素,零件,外购件,主件})必填。
   const [partNoField, setPartNoField] = useState<string | undefined>(undefined);
   const [partNameField, setPartNameField] = useState<string | undefined>(undefined);
+  // task-0729 屏 8：元素列/元素单价列/货币列（组件级，与 partNoField 平级，见 types.ts 注释）
+  const [elementCodeField, setElementCodeField] = useState<string | undefined>(undefined);
+  const [elementPriceField, setElementPriceField] = useState<string | undefined>(undefined);
+  const [elementCurrencyField, setElementCurrencyField] = useState<string | undefined>(undefined);
+  // 后端 400 COMPONENT_ELEMENT_BINDING_REQUIRED 的 missingFields 命中时标 status='error'
+  const [elementBindingMissing, setElementBindingMissing] = useState<Set<string>>(new Set());
+  // element-binding-suggest 推导结果的 confidence/warnings（仅展示，不影响保存）
+  const [elementSuggestHint, setElementSuggestHint] = useState<{ confidence: 'HIGH' | 'LOW'; warnings: string[] } | null>(null);
   // 「料号列」/「料号名称列」下拉的候选项 —— 来自当前编辑态 fields(不是自由输入)，按 name 去重。
   const fieldNameOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -1079,6 +1087,9 @@ const ComponentManagement: React.FC = () => {
           payload.tabType = s.tabType;
           payload.partNoField = s.partNoField;
           payload.partNameField = s.partNameField;
+          payload.elementCodeField = s.elementCodeField;
+          payload.elementPriceField = s.elementPriceField;
+          payload.elementCurrencyField = s.elementCurrencyField;
         }
         await componentService.update(d.componentId, payload);
         clearDraft(d.componentId);
@@ -1111,10 +1122,10 @@ const ComponentManagement: React.FC = () => {
       : rowKeyFields;
     scheduleSave(buildDraftSnapshot({
       fields, formulas, dataDriverPath, rowKeyFields: draftRowKeyFields, excelColumns, bomRecursiveExpand,
-      tabType, partNoField, partNameField,
+      tabType, partNoField, partNameField, elementCodeField, elementPriceField, elementCurrencyField,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields, formulas, dataDriverPath, rowKeyFields, excelColumns, bomRecursiveExpand, tabType, partNoField, partNameField]);
+  }, [fields, formulas, dataDriverPath, rowKeyFields, excelColumns, bomRecursiveExpand, tabType, partNoField, partNameField, elementCodeField, elementPriceField, elementCurrencyField]);
 
   // Left list selection (checkboxes) + search
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
@@ -1257,6 +1268,11 @@ const ComponentManagement: React.FC = () => {
       setTabType((loaded as any).tabType ?? undefined);
       setPartNoField((loaded as any).partNoField ?? undefined);
       setPartNameField((loaded as any).partNameField ?? undefined);
+      setElementCodeField((loaded as any).elementCodeField ?? undefined);
+      setElementPriceField((loaded as any).elementPriceField ?? undefined);
+      setElementCurrencyField((loaded as any).elementCurrencyField ?? undefined);
+      setElementBindingMissing(new Set());
+      setElementSuggestHint(null);
 
       // ── 草稿自动恢复 ──
       const draft = readDraft(loaded.id);
@@ -1273,6 +1289,9 @@ const ComponentManagement: React.FC = () => {
           setTabType(draft.snapshot.tabType ?? undefined);
           setPartNoField(draft.snapshot.partNoField ?? undefined);
           setPartNameField(draft.snapshot.partNameField ?? undefined);
+          setElementCodeField(draft.snapshot.elementCodeField ?? undefined);
+          setElementPriceField(draft.snapshot.elementPriceField ?? undefined);
+          setElementCurrencyField(draft.snapshot.elementCurrencyField ?? undefined);
           setDraftBanner({ kind: 'restored', componentId: loaded.id });
         } else {
           setDraftBanner({ kind: 'stale', componentId: loaded.id });
@@ -1293,6 +1312,36 @@ const ComponentManagement: React.FC = () => {
     } catch (e: unknown) {
       const err = e as { message?: string };
       message.error('加载组件失败: ' + (err.message ?? ''));
+    }
+  };
+
+  // task-0729 屏 8（api.md §5.2）：迁移期/新建期推导预填。推导失败静默（后端本就"返回空，不报错"）；
+  // confidence=LOW 时提示需人工确认；warnings 就地展示在下拉旁。只预填当前为空的字段，不覆盖已有配置。
+  const [elementSuggestLoading, setElementSuggestLoading] = useState(false);
+  const handleFetchElementSuggest = async () => {
+    if (!selectedComponent) return;
+    setElementSuggestLoading(true);
+    try {
+      const res = await componentService.elementBindingSuggest(selectedComponent.id);
+      const data = res?.data ?? res;
+      const suggested = data?.suggested;
+      if (suggested) {
+        if (!elementCodeField && suggested.elementCodeField) setElementCodeField(suggested.elementCodeField);
+        if (!elementPriceField && suggested.elementPriceField) setElementPriceField(suggested.elementPriceField);
+        if (!elementCurrencyField && suggested.elementCurrencyField) setElementCurrencyField(suggested.elementCurrencyField);
+      }
+      setElementSuggestHint({ confidence: data?.confidence ?? 'LOW', warnings: data?.warnings ?? [] });
+      if (!suggested) {
+        message.info('未能推导出推荐值（该组件视图可能未接取价函数），可手动选择');
+      } else if (data?.confidence === 'LOW') {
+        message.warning('推导置信度较低，请人工核对预填结果');
+      } else {
+        message.success('已按推导结果预填（不覆盖已有配置）');
+      }
+    } catch (e: unknown) {
+      message.error('获取推荐值失败: ' + ((e as { message?: string }).message ?? ''));
+    } finally {
+      setElementSuggestLoading(false);
     }
   };
 
@@ -1337,9 +1386,15 @@ const ComponentManagement: React.FC = () => {
         payload.tabType = tabType;
         payload.partNoField = partNoField;
         payload.partNameField = partNameField;
+        // task-0729 屏 8：组件级三个角色字段，与 partNoField 平级提交；未接取价函数的组件
+        // 三项留空正常保存（不前端强制必填，交给后端保存期校验，见 api.md §5.1）。
+        payload.elementCodeField = elementCodeField;
+        payload.elementPriceField = elementPriceField;
+        payload.elementCurrencyField = elementCurrencyField;
       }
       await componentService.update(selectedComponent.id, payload);
       message.success('保存成功');
+      setElementBindingMissing(new Set());
       clearDraft(selectedComponent.id);
       flushDraft();
       setDraftBanner(null);
@@ -1347,7 +1402,13 @@ const ComponentManagement: React.FC = () => {
       const res = await componentService.getById(selectedComponent.id);
       setSelectedComponent(res.data);
     } catch (e: unknown) {
-      const err = e as { message?: string };
+      const err = e as { message?: string; payload?: any; response?: { data?: any } };
+      // task-0729 屏 8：400 COMPONENT_ELEMENT_BINDING_REQUIRED → 对应下拉标 status='error'
+      // （api.md §5.1 错误体是扁平结构，err.payload 惯例取的是嵌套 .data，这里双路兜底取 missingFields）。
+      const missingFields: string[] | undefined = err?.payload?.missingFields ?? err?.response?.data?.missingFields;
+      if (missingFields?.length) {
+        setElementBindingMissing(new Set(missingFields));
+      }
       // task-0721：后端 400（如"组件已被核价模板引用，无法设为 BOM 类型"）须完整展示，不吞成通用「保存失败」。
       showSaveError(err.message || '保存失败');
     } finally {
@@ -1719,6 +1780,52 @@ const ComponentManagement: React.FC = () => {
                         </>
                       );
                     })()}
+                    {/* task-0729 屏 8（需求说明 §11.15.3.1 / api.md §5.1）：元素列/元素单价列/货币列——
+                        组件级三个角色字段，同一行同一模式，从字段中选（不是自由输入）。视图若接了
+                        f_customer_element_price/f_material_element_price 取价函数，后端保存期校验
+                        元素列+元素单价列必填（400 COMPONENT_ELEMENT_BINDING_REQUIRED）；未接取价
+                        函数的组件三项留空可正常保存，前端不自行强制必填。 */}
+                    <Tooltip title="该组件视图若接了客户取价函数，须指定元素列（与「元素单价列」同必填条件）；未接取价函数可留空">
+                      <Select
+                        allowClear
+                        placeholder="元素列"
+                        style={{ width: 110 }}
+                        status={elementBindingMissing.has('elementCodeField') ? 'error' : undefined}
+                        value={elementCodeField}
+                        onChange={(v) => {
+                          setElementCodeField(v);
+                          setElementBindingMissing((s) => { if (!s.has('elementCodeField')) return s; const n = new Set(s); n.delete('elementCodeField'); return n; });
+                        }}
+                        options={fieldNameOptions}
+                      />
+                    </Tooltip>
+                    <Tooltip title="元素单价列（与「元素列」同必填条件）">
+                      <Select
+                        allowClear
+                        placeholder="元素单价列"
+                        style={{ width: 120 }}
+                        status={elementBindingMissing.has('elementPriceField') ? 'error' : undefined}
+                        value={elementPriceField}
+                        onChange={(v) => {
+                          setElementPriceField(v);
+                          setElementBindingMissing((s) => { if (!s.has('elementPriceField')) return s; const n = new Set(s); n.delete('elementPriceField'); return n; });
+                        }}
+                        options={fieldNameOptions}
+                      />
+                    </Tooltip>
+                    <Tooltip title="货币列（可空）">
+                      <Select
+                        allowClear
+                        placeholder="货币列"
+                        style={{ width: 100 }}
+                        value={elementCurrencyField}
+                        onChange={(v) => setElementCurrencyField(v)}
+                        options={fieldNameOptions}
+                      />
+                    </Tooltip>
+                    <Tooltip title="按该组件视图 SQL 推导元素列/元素单价列/货币列的推荐值（迁移期辅助，只预填当前为空的字段，不覆盖已有配置）">
+                      <Button size="small" icon={<BulbOutlined />} loading={elementSuggestLoading} onClick={handleFetchElementSuggest}>推荐</Button>
+                    </Tooltip>
                   </>
                 )}
                 <Button size="small" onClick={() => setGuideOpen(true)}>配置帮助</Button>
@@ -1748,6 +1855,9 @@ const ComponentManagement: React.FC = () => {
                           setTabType(d.snapshot.tabType ?? undefined);
                           setPartNoField(d.snapshot.partNoField ?? undefined);
                           setPartNameField(d.snapshot.partNameField ?? undefined);
+                          setElementCodeField(d.snapshot.elementCodeField ?? undefined);
+                          setElementPriceField(d.snapshot.elementPriceField ?? undefined);
+                          setElementCurrencyField(d.snapshot.elementCurrencyField ?? undefined);
                           setDraftBanner({ kind: 'restored', componentId: selectedComponent.id });
                         }
                       }}>仍恢复草稿</Button>
@@ -1760,6 +1870,21 @@ const ComponentManagement: React.FC = () => {
                     }}>放弃草稿</Button>
                   </Space>
                 }
+              />
+            )}
+            {elementSuggestHint && (elementSuggestHint.confidence === 'LOW' || elementSuggestHint.warnings.length > 0) && (
+              <Alert
+                style={{ margin: '0 0 8px' }}
+                type="warning"
+                showIcon
+                closable
+                onClose={() => setElementSuggestHint(null)}
+                message="元素列绑定推导置信度较低，请人工核对"
+                description={elementSuggestHint.warnings.length > 0 ? (
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {elementSuggestHint.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                  </ul>
+                ) : undefined}
               />
             )}
             <div className="cmm-panel">

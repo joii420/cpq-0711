@@ -155,4 +155,10 @@ export const componentService = {
    */
   expandDriver: (id: string, params: { customerId?: string; partNo?: string }) =>
     api.post(`/components/${id}/expand-driver`, params) as Promise<any>,
+  /**
+   * task-0729 屏 8（api.md §5.2）：迁移期/新建期的元素列绑定推导预填。
+   * 推导失败返回空（不报错）；confidence=LOW 时前端需提示人工确认。
+   */
+  elementBindingSuggest: (id: string) =>
+    api.get(`/components/${id}/element-binding-suggest`) as Promise<any>,
 };

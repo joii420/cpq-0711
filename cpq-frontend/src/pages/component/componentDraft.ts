@@ -12,6 +12,10 @@ export interface DraftSnapshot {
   /** task-0721 F2（2026-07-21 补充）：料号列/料号名称列字段名草稿(可空) */
   partNoField?: string;
   partNameField?: string;
+  /** task-0729 屏 8：元素列/元素单价列/货币列字段名草稿(可空) */
+  elementCodeField?: string;
+  elementPriceField?: string;
+  elementCurrencyField?: string;
 }
 
 export interface DraftEnvelope {
@@ -48,6 +52,9 @@ export function buildDraftSnapshot(input: {
   tabType?: string;
   partNoField?: string;
   partNameField?: string;
+  elementCodeField?: string;
+  elementPriceField?: string;
+  elementCurrencyField?: string;
 }): DraftSnapshot {
   return {
     fields: stripFieldKeys(input.fields),
@@ -59,6 +66,9 @@ export function buildDraftSnapshot(input: {
     tabType: input.tabType,
     partNoField: input.partNoField,
     partNameField: input.partNameField,
+    elementCodeField: input.elementCodeField,
+    elementPriceField: input.elementPriceField,
+    elementCurrencyField: input.elementCurrencyField,
   };
 }
 

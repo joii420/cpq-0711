@@ -83,6 +83,20 @@ export interface ComponentItem {
    */
   partNameField?: string;
   /**
+   * task-0729 屏 8（需求说明 §11.15.3.1 组件级三个角色字段）：该组件的 SQL 视图若接了
+   * 客户取价函数（f_customer_element_price / f_material_element_price），须显式指定
+   * 元素列 / 元素单价列 / 货币列（从字段中选，取字段 name）。
+   * 🔒 组件级属性，与 partNoField/partNameField 平级——不放进字段 config JSON，
+   * 不触发 AP-44（前端渲染层不消费这三个字段，只用于组件管理侧的绑定校验/预填）。
+   * 保存期校验（后端）：检测到取价函数 → elementCodeField + elementPriceField 必填，
+   * 否则 400 COMPONENT_ELEMENT_BINDING_REQUIRED；未接取价函数的组件三项留空可正常保存。
+   */
+  elementCodeField?: string;
+  /** 同上，元素单价列（与 elementCodeField 同必填条件） */
+  elementPriceField?: string;
+  /** 同上，货币列（可空） */
+  elementCurrencyField?: string;
+  /**
    * Task 3.1: EXCEL 组件持有的列定义(JSON 数组字符串).
    * 仅 componentType==='EXCEL' 的组件非空; 模板 Excel 视图通过 excel_component_id 引用本字段 + column_overrides 合并.
    * 数组元素形如 { col_key, title, source_type, hidden, formula, ... }.
