@@ -973,42 +973,29 @@ public class FormulaCalculator {
         List<FormulaField> formulaFields = collectFormulaFields(fields, formulas, formulaAssignments);
         List<String> order = topoOrder(formulaFields);
 
+        // ── task-0803 路由 ───────────────────────────────────────────────────
+        // 只有「行集是树」**且**「公式真用了父子 token」才走单元格拓扑求值。
+        // 任一不满足 → 下方原逐行路径**一字不动**（零回归门禁）。
+        if (com.cpq.quotation.service.formula.TreeRelations.isTreeRows(baseRows)
+                && usesTreeTokens(formulaFields)) {
+            return computeRowsCellTopo(fields, baseRows, effKeys, keep, editByKey, formulaFields,
+                order, componentSubtotals, quotationFields, productAttributes, crossTabRows);
+        }
+
         Map<String, Double> prevRowValues = null;  // Plan 2b：上一行全量公式值（按字段名）
         int idx = 0;
         for (JsonNode baseRow : baseRows) {
             // driver 默认行永久删除：idx 仍随完整集递增（effKeys.get(idx) 对齐完整集），命中则 continue（不重排）
             if (keep != null && !keep[idx]) { idx++; continue; }
 
-            JsonNode driverRow = baseRow.path("driverRow");
+            String effKey = effKeys.get(idx);
             JsonNode basicDataValues = baseRow.path("basicDataValues");
 
-            String effKey = effKeys.get(idx);
-
-            JsonNode editValues = editByKey.containsKey(effKey)
-                ? editByKey.get(effKey).path("values") : null;
-
-            // mergedRow = driverRow + editRows（编辑覆盖）
-            Map<String, JsonNode> mergedRow = mergeRow(driverRow, editValues);
-
-            // Layer 2: 字段值收集（AP-37 每 field_type）
-            Map<String, Double> fieldValues =
-                collectFieldValues(fields, mergedRow, basicDataValues);
-
-            RowContext ctx = new RowContext();
-            ctx.fieldValues = fieldValues;
-            ctx.componentSubtotals = componentSubtotals != null ? componentSubtotals : new HashMap<>();
-            ctx.quotationFields = quotationFields != null ? quotationFields : new HashMap<>();
-            ctx.productAttributes = productAttributes != null ? productAttributes : new HashMap<>();
-            ctx.basicDataValues = toBasicDataMap(basicDataValues);
-            // cross_tab_ref（Task 1.3）：兄弟组件已算行 + 本行原始合并值（含文本，供匹配键 b 取值）
-            ctx.crossTabRows = crossTabRows != null ? crossTabRows : Map.of();
-            ctx.currentRowRaw = toRawRowMap(mergedRow);
-            fillInputDefaultSourceByFieldName(fields, basicDataValues, ctx.currentRowRaw);
-
-            // 单位换算（修正时机，物化点3）：必须在 collectFieldValues + fillInputDefaultSourceByFieldName 之后做——
-            // driver / data-source(default_source $view) 列的值此刻才解析进 fieldValues / currentRowRaw，
-            // 顶部对 mergedRow 换算会漏掉它们。用同行已解析单位换算 fieldValues[C] 与 currentRowRaw[C]。
-            com.cpq.engine.unit.UnitConversion.convertResolvedRow(fields, fieldValues, ctx.currentRowRaw);
+            // task-0803：上下文构建抽成 buildRowEvalCtx，与单元格拓扑路径共用（防两条路径逻辑漂移）
+            RowEvalCtx re = buildRowEvalCtx(fields, baseRow, effKey, editByKey,
+                componentSubtotals, quotationFields, productAttributes, crossTabRows);
+            RowContext ctx = re.ctx();
+            Map<String, Double> fieldValues = re.fieldValues();
 
             // 按拓扑序求值，结果回填 fieldValues 供下游公式引用
             Map<String, Double> results = new LinkedHashMap<>();
@@ -1031,6 +1018,251 @@ public class FormulaCalculator {
             idx++;
         }
         return out;
+    }
+
+    // ======================================================================
+    // task-0803 — 单行上下文构建（两条求值路径共用）
+    // ======================================================================
+
+    /**
+     * task-0803：BOM 树页签的单元格级拓扑求值。
+     *
+     * <p>与原逐行路径的区别只在<b>求值顺序</b>：行上下文构建、条件公式选表达式、结果回填
+     * 全部复用同一套代码（{@link #buildRowEvalCtx} / {@link #selectConditionalExpr}）。
+     *
+     * <p><b>行下标口径</b>：全程按<b>完整</b> {@code baseRows} 下标（含被墓碑过滤的行），
+     * 与 {@code effKeys} 对齐；只在最后产出 {@link RowResult} 时按 {@code keep} 过滤。
+     * 这是 AP-54「渲染用过滤子集、写回用原集合」的同款纪律 —— 树关系必须建在完整下标上，
+     * 否则父子边全错位。
+     *
+     * <p><b>PREV 不支持</b>：BOM 页签禁用 {@code previous_row_subtotal}（需求 §4.3.7，
+     * 树上「上一行」语义模糊），故此路径恒置 {@code previousRowSubtotal = null}。
+     */
+    private List<RowResult> computeRowsCellTopo(JsonNode fields, JsonNode baseRows,
+            List<String> effKeys, boolean[] keep, Map<String, JsonNode> editByKey,
+            List<FormulaField> formulaFields, List<String> order,
+            Map<String, Double> componentSubtotals, Map<String, Double> quotationFields,
+            Map<String, Double> productAttributes,
+            Map<String, List<Map<String, Object>>> crossTabRows) {
+
+        int n = baseRows.size();
+        int cols = order.size();
+
+        // 1. 全量建行上下文（含被墓碑过滤的行，保持下标一一对应）
+        List<RowContext> ctxs = new ArrayList<>(n);
+        List<Map<String, Object>> resolvedRaw = new ArrayList<>(n);
+        List<Map<String, Double>> fieldValuesByRow = new ArrayList<>(n);
+        List<JsonNode> bdvByRow = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            RowEvalCtx re = buildRowEvalCtx(fields, baseRows.get(i), effKeys.get(i), editByKey,
+                componentSubtotals, quotationFields, productAttributes, crossTabRows);
+            ctxs.add(re.ctx());
+            fieldValuesByRow.add(re.fieldValues());
+            resolvedRaw.add(re.ctx().currentRowRaw);
+            bdvByRow.add(re.basicDataValues());
+        }
+
+        // 2. 树关系：被 keep 过滤掉的行 = 墓碑，既不作父也不作子
+        java.util.Set<String> deadNodeIds = new java.util.HashSet<>();
+        if (keep != null) {
+            for (int i = 0; i < n; i++) {
+                if (keep[i]) continue;
+                JsonNode nid = baseRows.get(i).get("__nodeId");
+                if (nid != null && !nid.isNull() && !nid.asText("").isEmpty()) {
+                    deadNodeIds.add(nid.asText());
+                }
+            }
+        }
+        com.cpq.quotation.service.formula.TreeRelations relations =
+            com.cpq.quotation.service.formula.TreeRelations.of(baseRows, deadNodeIds);
+
+        // 3. 树上下文回填（rowContexts 随求值逐格填充，故 PGET/C* 读到的一定是拓扑序保证已算好的）
+        java.util.Set<String> formulaCols = new java.util.LinkedHashSet<>(order);
+        TreeEvalContext tree = new TreeEvalContext(relations, ctxs, resolvedRaw, formulaCols);
+        for (int i = 0; i < n; i++) {
+            ctxs.get(i).tree = tree;
+            ctxs.get(i).rowIndex = i;
+        }
+
+        // 4. 建单元格依赖图
+        //    行内边用 buildFormulaDeps 的**精确**列依赖，不能用「按 order 串成链」的偷懒做法 ——
+        //    链边会在双向混用时造出假环（反例：R.y=CSUM(C.x) + C.w=PGET(R.z)，
+        //    若 y 早于 z、w 早于 x，链边把它们连成环，而精确图不会）。
+        Map<String, Integer> colIdx = new HashMap<>();
+        for (int c = 0; c < cols; c++) colIdx.put(order.get(c), c);
+        Map<String, List<String>> intraDeps = buildFormulaDeps(formulaFields, formulaCols);
+
+        com.cpq.quotation.service.formula.CellGraph g =
+            new com.cpq.quotation.service.formula.CellGraph(n, cols);
+        for (int r = 0; r < n; r++) {
+            for (int c = 0; c < cols; c++) {
+                String col = order.get(c);
+                for (String d : intraDeps.getOrDefault(col, List.of())) {
+                    Integer dc = colIdx.get(d);
+                    if (dc != null) g.addEdge(r, dc, r, c);
+                }
+                for (TreeDep td : treeDepsOfField(findByName(formulaFields, col))) {
+                    if ("PARENT".equals(td.dir())) {
+                        int p = relations.parentOf(r);
+                        if (p < 0) continue;                       // 根行：边不成立（PGET 返 0）
+                        for (String rc : td.cols()) {
+                            Integer dc = colIdx.get(rc);
+                            if (dc != null) g.addEdge(p, dc, r, c);
+                        }
+                    } else if ("CHILD".equals(td.dir())) {
+                        for (int kid : relations.childrenOf(r)) {
+                            for (String rc : td.cols()) {
+                                Integer dc = colIdx.get(rc);
+                                if (dc != null) g.addEdge(kid, dc, r, c);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. 按 cell 拓扑序求值
+        com.cpq.quotation.service.formula.CellGraph.Result topo = g.topoOrder();
+        List<Map<String, Double>> resultsByRow = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) resultsByRow.add(new LinkedHashMap<>());
+
+        for (com.cpq.quotation.service.formula.CellGraph.Cell cell : topo.order()) {
+            String col = order.get(cell.col());
+            FormulaField ff = findByName(formulaFields, col);
+            if (ff == null) continue;
+            RowContext ctx = ctxs.get(cell.row());
+            ctx.previousRowSubtotal = null;                        // BOM 页签禁 PREV
+            JsonNode expr = ff.isConditional()
+                ? selectConditionalExpr(ff, ctx, fields, bdvByRow.get(cell.row()))
+                : ff.expression;
+            double val = expr != null ? evaluateExpression(expr, ctx).doubleValue() : 0.0;
+            resultsByRow.get(cell.row()).put(col, val);
+            ctx.fieldValues.put(col, val);
+        }
+
+        // 6. 环上（及其下游）cell → 0，环外照常求值（不是整页签炸）
+        for (com.cpq.quotation.service.formula.CellGraph.Cell cell : topo.cycles()) {
+            String col = order.get(cell.col());
+            resultsByRow.get(cell.row()).put(col, 0.0);
+            ctxs.get(cell.row()).fieldValues.put(col, 0.0);
+        }
+
+        // 7. 产出：只对未被墓碑过滤的行；列序按 order 保持稳定（与原路径一致）
+        List<RowResult> out = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            if (keep != null && !keep[i]) continue;
+            Map<String, Double> ordered = new LinkedHashMap<>();
+            for (String col : order) {
+                Double v = resultsByRow.get(i).get(col);
+                if (v != null) ordered.put(col, v);
+            }
+            out.add(new RowResult(effKeys.get(i), ordered, fieldValuesByRow.get(i)));
+        }
+        return out;
+    }
+
+    /** 单行求值上下文的构建产物。 */
+    private record RowEvalCtx(RowContext ctx, Map<String, Double> fieldValues, JsonNode basicDataValues) {}
+
+    /** task-0803：一处 {@code tree_ref} 引用（方向 + 它引用的列名集合），用于建跨行依赖边。 */
+    private record TreeDep(String dir, java.util.Set<String> cols) {}
+
+    /** 扫一条表达式里的 {@code tree_ref} token。 */
+    private static List<TreeDep> treeDepsOf(JsonNode expr) {
+        List<TreeDep> out = new ArrayList<>();
+        if (expr == null || !expr.isArray()) return out;
+        for (JsonNode tk : expr) {
+            if ("tree_ref".equals(tk.path("type").asText(""))) {
+                out.add(new TreeDep(tk.path("dir").asText(""), collectFieldNames(tk.path("targetExpr"))));
+            }
+        }
+        return out;
+    }
+
+    /** 扫一个公式字段（含条件公式的每条规则与默认分支）里的全部 {@code tree_ref}。 */
+    private static List<TreeDep> treeDepsOfField(FormulaField ff) {
+        List<TreeDep> out = new ArrayList<>();
+        if (ff == null) return out;
+        if (ff.isConditional()) {
+            if (ff.rules != null) for (CondRule r : ff.rules) out.addAll(treeDepsOf(r.expression));
+            out.addAll(treeDepsOf(ff.defaultExpression));
+        } else {
+            out.addAll(treeDepsOf(ff.expression));
+        }
+        return out;
+    }
+
+    /** 该表达式是否含 {@code tree_attr}（不产生依赖边，但需要树上下文才能求值）。 */
+    private static boolean hasTreeAttr(JsonNode expr) {
+        if (expr == null || !expr.isArray()) return false;
+        for (JsonNode tk : expr) {
+            if ("tree_attr".equals(tk.path("type").asText(""))) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 该页签的公式是否真的用到了父子 token。
+     *
+     * <p>🔒 <b>路由判据的一半</b>：只有「行集是树」<b>且</b>「公式真用了父子 token」才走单元格拓扑；
+     * 任一不满足 → 原逐行路径<b>一字不动</b>（零回归门禁）。
+     */
+    private static boolean usesTreeTokens(List<FormulaField> ffs) {
+        if (ffs == null) return false;
+        for (FormulaField ff : ffs) {
+            if (!treeDepsOfField(ff).isEmpty()) return true;
+            if (ff.isConditional()) {
+                if (ff.rules != null) for (CondRule r : ff.rules) if (hasTreeAttr(r.expression)) return true;
+                if (hasTreeAttr(ff.defaultExpression)) return true;
+            } else if (hasTreeAttr(ff.expression)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 构建某一行的 {@link RowContext}。
+     *
+     * <p>task-0803 从 {@code computeRows} 循环体抽出，供「逐行顺序求值」（原路径）与
+     * 「单元格拓扑求值」（BOM 树路径）共用 —— 两条路径若各建一份，
+     * 单位换算时机、default_source 回填这类微妙顺序早晚会漂移。
+     */
+    private RowEvalCtx buildRowEvalCtx(JsonNode fields, JsonNode baseRow, String effKey,
+                                       Map<String, JsonNode> editByKey,
+                                       Map<String, Double> componentSubtotals,
+                                       Map<String, Double> quotationFields,
+                                       Map<String, Double> productAttributes,
+                                       Map<String, List<Map<String, Object>>> crossTabRows) {
+        JsonNode driverRow = baseRow.path("driverRow");
+        JsonNode basicDataValues = baseRow.path("basicDataValues");
+
+        JsonNode editValues = (effKey != null && editByKey.containsKey(effKey))
+            ? editByKey.get(effKey).path("values") : null;
+
+        // mergedRow = driverRow + editRows（编辑覆盖）
+        Map<String, JsonNode> mergedRow = mergeRow(driverRow, editValues);
+
+        // Layer 2: 字段值收集（AP-37 每 field_type）
+        Map<String, Double> fieldValues = collectFieldValues(fields, mergedRow, basicDataValues);
+
+        RowContext ctx = new RowContext();
+        ctx.fieldValues = fieldValues;
+        ctx.componentSubtotals = componentSubtotals != null ? componentSubtotals : new HashMap<>();
+        ctx.quotationFields = quotationFields != null ? quotationFields : new HashMap<>();
+        ctx.productAttributes = productAttributes != null ? productAttributes : new HashMap<>();
+        ctx.basicDataValues = toBasicDataMap(basicDataValues);
+        // cross_tab_ref（Task 1.3）：兄弟组件已算行 + 本行原始合并值（含文本，供匹配键 b 取值）
+        ctx.crossTabRows = crossTabRows != null ? crossTabRows : Map.of();
+        ctx.currentRowRaw = toRawRowMap(mergedRow);
+        fillInputDefaultSourceByFieldName(fields, basicDataValues, ctx.currentRowRaw);
+
+        // 单位换算（修正时机，物化点3）：必须在 collectFieldValues + fillInputDefaultSourceByFieldName 之后做——
+        // driver / data-source(default_source $view) 列的值此刻才解析进 fieldValues / currentRowRaw，
+        // 顶部对 mergedRow 换算会漏掉它们。用同行已解析单位换算 fieldValues[C] 与 currentRowRaw[C]。
+        com.cpq.engine.unit.UnitConversion.convertResolvedRow(fields, fieldValues, ctx.currentRowRaw);
+
+        return new RowEvalCtx(ctx, fieldValues, basicDataValues);
     }
 
     // ======================================================================
