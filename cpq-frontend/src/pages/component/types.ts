@@ -211,7 +211,9 @@ export interface FormulaToken {
     | 'path'              // V5 BNF 物理表路径,直接引用基础数据(mat_part / mat_bom / mat_fee 等)
     | 'global_variable'   // V104 全局变量(元素核价/材料核价/汇率) — 编译期转 BNF path
     | 'datasource_field'  // K1 引用同行 DATA_SOURCE 字段解析结果, token.name = 字段名
-    | 'cross_tab_ref';    // 跨页签引用(聚合/条件匹配另一页签字段)
+    | 'cross_tab_ref'     // 跨页签引用(聚合/条件匹配另一页签字段)
+    | 'tree_ref'          // task-0803: BOM 树父子取值引用 —— dir=PARENT(子取父,agg 恒 NONE) / dir=CHILD(父取直接子,agg=SUM|AVG|MAX|MIN|COUNT); targetExpr 为取值表达式
+    | 'tree_attr';        // task-0803: BOM 树属性引用 —— attr=LVL(层级) | IS_LEAF(是否叶子) | IS_ROOT(是否根节点)
   value?: string;
   label?: string;
   component_code?: string;
@@ -259,6 +261,21 @@ export interface FormulaToken {
    * 类型使用 unknown 避免循环依赖 formulaEngine；求值侧转 ExpressionToken 后正常访问。
    */
   predicate?: unknown;
+  // ---- tree_ref 专用字段（task-0803：BOM 树父子取值）----
+  /**
+   * tree_ref 专用：引用方向。
+   * - 'PARENT' = PGET，子行取父行的值（agg 恒为 'NONE'，父行唯一，无需聚合）。
+   * - 'CHILD'  = C* 族，父行取其「直接子」行的聚合值（agg 取 'SUM'|'AVG'|'MAX'|'MIN'|'COUNT'，见本接口既有的 agg 字段）。
+   */
+  dir?: 'PARENT' | 'CHILD';
+  // ---- tree_attr 专用字段（task-0803：BOM 树属性）----
+  /**
+   * tree_attr 专用：树属性名。
+   * - 'LVL'     = 当前行在树中的层级（根为 0，逐层 +1）。
+   * - 'IS_LEAF' = 当前行是否为叶子节点（布尔）。
+   * - 'IS_ROOT' = 当前行是否为根节点（布尔）。
+   */
+  attr?: 'LVL' | 'IS_LEAF' | 'IS_ROOT';
 }
 
 export const FIELD_TYPE_OPTIONS = [

@@ -1224,6 +1224,106 @@ export function checkMappable(tokens: FormulaToken[]): { mappable: boolean; reas
 }
 
 // ─────────────────────────────────────────────
+// tree_ref.targetExpr 内层白名单校验（task-0803 Task 6）
+// ─────────────────────────────────────────────
+
+/**
+ * task-0803：{@code tree_ref.targetExpr} 内允许的 token type 白名单。
+ *
+ * <p>🔒 必须与后端 {@code TokenMappabilityValidator.TREE_REF_INNER_ALLOWED_TYPES} 逐字一致
+ * （人工核对：两侧集合内容相同，无法共享常量跨 Java/TS 语言边界）——见
+ * `cpq-backend/src/main/java/com/cpq/component/formula/TokenMappabilityValidator.java`。
+ *
+ * <p>放行 {@code tree_attr}（PGET/C* 的 targetExpr 里允许再引用「层级/是否叶子/是否根」这类
+ * 树属性）与 {@code global_variable}（全局变量与树上下文无关，天然可算）。
+ *
+ * <p>必拒：嵌套 {@code tree_ref}（禁止 PGET/C* 套 PGET/C*，语义会失控地递归穿层）、
+ * {@code cross_tab_ref}（跨页签引用与「同页签父子行」是两套模型，混用行键语义对不上）、
+ * {@code component_subtotal} / {@code b_field} / {@code previous_row_subtotal}
+ * （这些都假定「当前页签的行序/列小计」上下文，父子取值求值时子/父行是另一行的 RowContext，
+ * 这些 token 在那个上下文里没有稳定语义）。
+ */
+const TREE_REF_INNER_ALLOWED_TYPES = new Set<string>([
+  'field', 'operator', 'number', 'bracket_open', 'bracket_close', 'global_variable', 'tree_attr',
+]);
+
+export interface TreeRefValidationResult {
+  valid: boolean;
+  reason?: string;
+}
+
+/**
+ * 递归扫描任意 token / token 数组，逐一找出其中所有 {@code tree_ref} token（无论嵌套多深），
+ * 并对每个找到的 {@code tree_ref} 校验其 {@code targetExpr} 是否只含白名单类型。
+ *
+ * <p>⚠️ 必须递归（2026-08-03 后端评审教训）：若只扫顶层 token（如"遍历公式数组，
+ * 只在 top-level token.type==='tree_ref' 时才检查"），一个 {@code tree_ref} 藏进
+ * {@code cross_tab_ref.targetExpr}（或任何其他容器 token 的 targetExpr/sources 等
+ * 数组字段）里就能悄悄绕过校验——后端 {@code TokenMappabilityValidator.validate()}
+ * 就踩过这个坑（该函数原本只在扫到 cross_tab_ref 时才下钻其 targetExpr 里的
+ * cross_tab_ref 子 token，一个 tree_ref 混进同一个 targetExpr 数组会被直接跳过）。
+ *
+ * <p>因此这里不区分"当前是否已经在 tree_ref 内部"，而是对每个 token 无差别下钻
+ * 所有"值为数组"的属性键（targetExpr 是已知的一个，未来新增的容器字段——只要是数组——
+ * 天然被这个通用遍历覆盖到，不需要逐个新字段名手动补线），一旦发现某个 token 的
+ * {@code type === 'tree_ref'}，就地校验它自身 {@code targetExpr} 的白名单，然后
+ * 继续往下钻（防御性：即使白名单类型本身按约定是叶子级、理论上不含嵌套数组，
+ * 仍然递归以防未来协议变化引入嵌套）。
+ *
+ * @returns 命中的第一条违规原因；全部合规则返回 null。
+ */
+function scanTreeRefViolations(node: unknown): string | null {
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const err = scanTreeRefViolations(item);
+      if (err) return err;
+    }
+    return null;
+  }
+  if (node && typeof node === 'object') {
+    const token = node as Record<string, unknown>;
+
+    if (token.type === 'tree_ref') {
+      const targetExpr = token.targetExpr;
+      if (Array.isArray(targetExpr)) {
+        for (const inner of targetExpr) {
+          if (!inner || typeof inner !== 'object') continue;
+          const innerType = (inner as Record<string, unknown>).type;
+          if (typeof innerType === 'string' && innerType && !TREE_REF_INNER_ALLOWED_TYPES.has(innerType)) {
+            return `tree_ref.targetExpr 内出现不允许的 token 类型「${innerType}」` +
+              '（白名单：field/operator/number/bracket_open/bracket_close/global_variable/tree_attr）。';
+          }
+        }
+      }
+    }
+
+    // 无差别下钻本 token 的所有属性值（含 targetExpr / sources 等）——保证 tree_ref
+    // 即使被包在 cross_tab_ref.targetExpr 等容器内部、嵌套任意深度也逃不掉校验。
+    for (const key of Object.keys(token)) {
+      const err = scanTreeRefViolations(token[key]);
+      if (err) return err;
+    }
+  }
+  return null;
+}
+
+/**
+ * 校验一段 {@link FormulaToken}[]（整条公式，或任意子表达式如 targetExpr）内所有
+ * {@code tree_ref} token 的 {@code targetExpr} 是否只含白名单类型。
+ *
+ * 递归扫描整棵 token 树（不仅仅是顶层），能捕获 {@code tree_ref} 被嵌套在
+ * {@code cross_tab_ref.targetExpr} 等任意容器内部的情形——详见
+ * {@link scanTreeRefViolations} 的注释。
+ */
+export function validateTreeRefWhitelist(
+  tokens: FormulaToken[] | null | undefined,
+): TreeRefValidationResult {
+  if (!tokens || tokens.length === 0) return { valid: true };
+  const err = scanTreeRefViolations(tokens);
+  return err ? { valid: false, reason: err } : { valid: true };
+}
+
+// ─────────────────────────────────────────────
 // 配色分类器(显示侧,与保存期 checkMappable 同源)
 // ─────────────────────────────────────────────
 

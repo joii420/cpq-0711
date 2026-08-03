@@ -5,7 +5,7 @@ import { evaluateArithmetic } from './precision';
 export type { GlobalVariableDefinition } from '../services/globalVariableService';
 
 export interface ExpressionToken {
-  type: 'field' | 'operator' | 'bracket_open' | 'bracket_close' | 'number' | 'component_subtotal' | 'product_attribute' | 'quotation_field' | 'path' | 'global_variable' | 'previous_row_subtotal' | 'datasource_field' | 'cross_tab_ref' | 'b_field';
+  type: 'field' | 'operator' | 'bracket_open' | 'bracket_close' | 'number' | 'component_subtotal' | 'product_attribute' | 'quotation_field' | 'path' | 'global_variable' | 'previous_row_subtotal' | 'datasource_field' | 'cross_tab_ref' | 'b_field' | 'tree_ref' | 'tree_attr';
   value?: string;
   label?: string;
   component_code?: string;
@@ -49,6 +49,21 @@ export interface ExpressionToken {
   projectToHostKey?: boolean;
   /** SUMIF 族：cross_tab_ref 的可选附加过滤条件（布尔树）。缺省 = 不过滤。 */
   predicate?: ConditionPredicate | null;
+  // ---- tree_ref 专用字段（task-0803：BOM 树父子取值。本任务仅声明类型，求值逻辑见 Task 7）----
+  /**
+   * tree_ref 专用：引用方向。
+   * - 'PARENT' = PGET，子行取父行的值（agg 恒为 'NONE'）。
+   * - 'CHILD'  = C* 族，父行取其「直接子」行的聚合值（agg 取 'SUM'|'AVG'|'MAX'|'MIN'|'COUNT'，复用本接口既有的 agg 字段）。
+   */
+  dir?: 'PARENT' | 'CHILD';
+  // ---- tree_attr 专用字段（task-0803：BOM 树属性。本任务仅声明类型，求值逻辑见 Task 7）----
+  /**
+   * tree_attr 专用：树属性名。
+   * - 'LVL'     = 当前行在树中的层级（根为 0，逐层 +1）。
+   * - 'IS_LEAF' = 当前行是否为叶子节点（布尔）。
+   * - 'IS_ROOT' = 当前行是否为根节点（布尔）。
+   */
+  attr?: 'LVL' | 'IS_LEAF' | 'IS_ROOT';
 }
 
 // ── predicate 类型 + 求值器（与后端 ConditionPredicateEvaluator 逐字一致） ──
