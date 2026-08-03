@@ -1,0 +1,194 @@
+package com.cpq.priceadjust.service;
+
+import com.cpq.priceadjust.dto.UpgradeResult;
+import com.cpq.priceadjust.entity.MaterialPriceUpdateJob;
+import com.cpq.priceadjust.entity.MaterialPriceUpdateJobItem;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.context.control.ActivateRequestContext;
+import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
+import org.jboss.logging.Logger;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * task-0729 B5 · 异步更新任务执行（api.md §3）。
+ *
+ * <p>参照既有 {@code QuoteImportService} 的既定模式：{@code ManagedExecutor.runAsync} 触发
+ * （由 {@link PriceAdjustReviewService#approve} 在同步事务提交后调用）+ 逐条
+ * {@code @Transactional(REQUIRES_NEW)} 独立提交（一单失败不回滚全批，backtask B5）。
+ *
+ * <p>三种非成功态语义（api.md §3.3）：
+ * <ul>
+ *   <li>FAILED —— 数据问题（含 S0 的 SUBTOTAL_MISMATCH），需人工处理后重试</li>
+ *   <li>CONFLICT —— 重算期间该行被改动（row_version 不匹配），直接重试即可</li>
+ *   <li>STALE —— 所属版本已被新版取代（B3 生成新版时已把未完成 job_item 提前置 STALE，
+ *       本类执行期遇到 STALE 项直接跳过不处理，终态不可重试）</li>
+ * </ul>
+ *
+ * <p>🔒 指针推进纪律（§11.6.3.2）：本类只更新 job/job_item 状态，绝不回退
+ * {@code material_price_version_ref}——个别单失败不回退整个料号的指针。
+ */
+@ApplicationScoped
+public class PriceAdjustJobExecutionService {
+
+    private static final Logger LOG = Logger.getLogger(PriceAdjustJobExecutionService.class);
+
+    @Inject MaterialVersionUpgradeService materialVersionUpgradeService;
+
+    @ActivateRequestContext
+    public void executeJob(UUID jobId) {
+        List<MaterialPriceUpdateJobItem> items = loadWaitingItems(jobId);
+        LOG.infof("[price-adjust-job] executeJob jobId=%s items=%d", jobId, items.size());
+        for (MaterialPriceUpdateJobItem item : items) {
+            try {
+                executeItem(item.id);
+            } catch (Exception e) {
+                LOG.errorf(e, "[price-adjust-job] jobId=%s item=%s 未预期异常", jobId, item.id);
+                markItemFailed(item.id, "UNEXPECTED_ERROR", e.getMessage());
+            }
+        }
+        finalizeJob(jobId);
+    }
+
+    @Transactional
+    List<MaterialPriceUpdateJobItem> loadWaitingItems(UUID jobId) {
+        return MaterialPriceUpdateJobItem.list(
+            "jobId = ?1 and status in (?2, ?3)", jobId, MaterialPriceUpdateJobItem.WAITING, MaterialPriceUpdateJobItem.CONFLICT);
+    }
+
+    /** 单条明细：找目标版本 + 调用真实升版（dryRun=false），逐条独立事务提交。 */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    void executeItem(UUID itemId) {
+        MaterialPriceUpdateJobItem item = MaterialPriceUpdateJobItem.findById(itemId);
+        if (item == null) return;
+        if (MaterialPriceUpdateJobItem.STALE.equals(item.status)) return; // 终态不处理
+
+        item.status = MaterialPriceUpdateJobItem.RUNNING;
+        item.updatedAt = OffsetDateTime.now();
+        item.persist();
+
+        MaterialPriceUpdateJob job = MaterialPriceUpdateJob.findById(item.jobId);
+        if (job == null || job.versionId == null) {
+            item.status = MaterialPriceUpdateJobItem.FAILED;
+            item.errorCode = "JOB_NOT_FOUND";
+            item.errorMessage = "job 或 versionId 缺失";
+            item.persist();
+            return;
+        }
+        if (item.lineItemId == null) {
+            item.status = MaterialPriceUpdateJobItem.FAILED;
+            item.errorCode = "LINE_ITEM_MISSING";
+            item.errorMessage = "line item 缺失";
+            item.persist();
+            return;
+        }
+
+        UpgradeResult ur = materialVersionUpgradeService.upgrade(item.lineItemId, job.versionId, false);
+        switch (ur.status) {
+            case SUCCESS, SKIPPED -> {
+                item.status = MaterialPriceUpdateJobItem.SUCCESS;
+                item.errorCode = null;
+                item.errorMessage = ur.message;
+            }
+            case CONFLICT -> {
+                item.status = MaterialPriceUpdateJobItem.CONFLICT;
+                item.errorCode = "ROW_VERSION_CONFLICT";
+                item.errorMessage = ur.message;
+                item.retryCount = item.retryCount + 1;
+            }
+            case FAILED -> {
+                item.status = MaterialPriceUpdateJobItem.FAILED;
+                item.errorCode = ur.errorCode;
+                item.errorMessage = ur.message;
+                item.diffValue = ur.diffValue;
+            }
+        }
+        item.updatedAt = OffsetDateTime.now();
+        item.persist();
+    }
+
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    void markItemFailed(UUID itemId, String errorCode, String message) {
+        MaterialPriceUpdateJobItem item = MaterialPriceUpdateJobItem.findById(itemId);
+        if (item == null) return;
+        item.status = MaterialPriceUpdateJobItem.FAILED;
+        item.errorCode = errorCode;
+        item.errorMessage = message;
+        item.updatedAt = OffsetDateTime.now();
+        item.persist();
+    }
+
+    /** 汇总批次状态：全部 SUCCESS→SUCCESS；有成功有非成功→PARTIAL；全部非成功→FAILED。 */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    void finalizeJob(UUID jobId) {
+        MaterialPriceUpdateJob job = MaterialPriceUpdateJob.findById(jobId);
+        if (job == null) return;
+        List<MaterialPriceUpdateJobItem> all = MaterialPriceUpdateJobItem.listByJob(jobId);
+        int success = 0, failed = 0, conflict = 0, stale = 0;
+        for (MaterialPriceUpdateJobItem it : all) {
+            switch (it.status) {
+                case MaterialPriceUpdateJobItem.SUCCESS -> success++;
+                case MaterialPriceUpdateJobItem.FAILED -> failed++;
+                case MaterialPriceUpdateJobItem.CONFLICT -> conflict++;
+                case MaterialPriceUpdateJobItem.STALE -> stale++;
+                default -> { /* WAITING/RUNNING 理论上不应残留，忽略 */ }
+            }
+        }
+        job.successCount = success;
+        job.failedCount = failed;
+        job.conflictCount = conflict;
+        job.staleCount = stale;
+        job.totalCount = all.size();
+        if (failed == 0 && conflict == 0 && stale == 0) {
+            job.status = MaterialPriceUpdateJob.SUCCESS;
+        } else if (success == 0 && stale == all.size()) {
+            job.status = MaterialPriceUpdateJob.STALE;
+        } else if (success == 0) {
+            job.status = MaterialPriceUpdateJob.FAILED;
+        } else {
+            job.status = MaterialPriceUpdateJob.PARTIAL;
+        }
+        job.finishedAt = OffsetDateTime.now();
+        job.persist();
+        LOG.infof("[price-adjust-job] jobId=%s finalized status=%s total=%d success=%d failed=%d conflict=%d stale=%d",
+            jobId, job.status, job.totalCount, success, failed, conflict, stale);
+    }
+
+    // -------------------------------------------------------------------------
+    // §3.4/§3.5 重试
+    // -------------------------------------------------------------------------
+
+    public void retryJob(UUID jobId) {
+        markJobRunning(jobId);
+        executeJob(jobId);
+    }
+
+    @Transactional
+    void markJobRunning(UUID jobId) {
+        MaterialPriceUpdateJob job = MaterialPriceUpdateJob.findById(jobId);
+        if (job == null) return;
+        job.status = MaterialPriceUpdateJob.RUNNING;
+        job.finishedAt = null;
+        job.persist();
+    }
+
+    public void retryJobItem(UUID itemId) {
+        MaterialPriceUpdateJobItem item = loadItem(itemId);
+        if (item == null) {
+            throw new com.cpq.common.exception.BusinessException(404, "job item 不存在: " + itemId);
+        }
+        if (MaterialPriceUpdateJobItem.STALE.equals(item.status)) {
+            throw new com.cpq.common.exception.BusinessException(409, "所属版本已被取代，STALE 项不可重试");
+        }
+        executeItem(itemId);
+        finalizeJob(item.jobId);
+    }
+
+    @Transactional
+    MaterialPriceUpdateJobItem loadItem(UUID itemId) {
+        return MaterialPriceUpdateJobItem.findById(itemId);
+    }
+}

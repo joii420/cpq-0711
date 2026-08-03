@@ -147,14 +147,21 @@ public class PriceAdjustBudgetService {
             return false;
         }
 
-        // 进池：建 review 行 + 走预算计算（B4.2 + B4.3）
-        MaterialPriceReview review = new MaterialPriceReview();
-        review.versionId = versionId;
+        // 进池：建 review 行 + 走预算计算（B4.2 + B4.3）。
+        // 🔒 find-or-create：uq_mpr_version_material UNIQUE(version_id, material_no) 决定这里必须
+        // 幂等——recomputeBudget（B5 §2.6）会用同一 versionId+materialNo 重跑本方法，若无条件 new+
+        // persist 会撞唯一约束；命中既有行时原地刷新字段，不新建第二条。
+        MaterialPriceReview review = MaterialPriceReview.findByVersionAndMaterial(versionId, materialNo);
+        if (review == null) {
+            review = new MaterialPriceReview();
+            review.versionId = versionId;
+            review.customerNo = customerNo;
+            review.materialNo = materialNo;
+            review.status = MaterialPriceReview.STATUS_PENDING;
+        }
         review.previousVersionId = previousVersionId;
-        review.customerNo = customerNo;
-        review.materialNo = materialNo;
-        review.status = MaterialPriceReview.STATUS_PENDING;
         review.budgetStatus = MaterialPriceReview.BUDGET_COMPUTING;
+        review.budgetError = null;
         if (basis != null) {
             review.basisQuotationId = basis.quotationId;
             review.templateSeriesId = basis.templateSeriesId;
