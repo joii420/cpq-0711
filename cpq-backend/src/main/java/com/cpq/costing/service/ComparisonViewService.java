@@ -354,7 +354,11 @@ public class ComparisonViewService {
      * tabName,subtotal,subtotalByColumn}]}}）原样抽取 productTotal + 逐页签 tabTotal/subtotals。
      * 不重算，只读已写好的字段（AC-3 单源纪律）。
      */
-    private SideValues extractSide(String cardValuesJson) {
+    /**
+     * task-0729 B4.3：可见性从 private 提升为 public，供 {@code PriceAdjustBudgetService}
+     * 跨包复用同一份「卡片值 JSON → productTotal/tabs」解析算法（只提可见性，不新写一份）。
+     */
+    public SideValues extractSide(String cardValuesJson) {
         if (cardValuesJson == null || cardValuesJson.isBlank()) return null;
         JsonNode root;
         try {
@@ -447,13 +451,15 @@ public class ComparisonViewService {
         SideValues costing;
     }
 
-    private static final class SideValues {
-        BigDecimal productTotal;
-        Map<String, TabVal> tabs;
+    /** task-0729 B4.3：可见性从 private 提升为 public（原因同上，跨包复用）。 */
+    public static final class SideValues {
+        public BigDecimal productTotal;
+        public Map<String, TabVal> tabs;
     }
 
-    private static final class TabVal {
-        BigDecimal tabTotal;
-        Map<String, BigDecimal> subtotals;
+    /** task-0729 B4.3：可见性从 private 提升为 public（原因同上，跨包复用）。 */
+    public static final class TabVal {
+        public BigDecimal tabTotal;
+        public Map<String, BigDecimal> subtotals;
     }
 }
