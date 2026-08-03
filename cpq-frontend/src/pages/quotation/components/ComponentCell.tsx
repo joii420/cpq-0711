@@ -85,6 +85,18 @@ export interface CellContext {
   globalVariableDefs?: Record<string, GlobalVariableDefinition>;
   /** config 模板数据（key = config_template_id） */
   configTemplates?: ConfigTemplateMap;
+  /**
+   * task-0729 跨屏 · 元素单价列只读态（fronttask §8 / api.md §4.3）：该行该单价字段是否被
+   * 价格版本锁定为只读。🔑 判定逻辑全在后端（元素∈调价清单 ∧ 料号∈范围 ∧ 策略启用，
+   * §11.15.2.6(1)），前端纯读这个标记——不新增任何拉取"调价清单"的接口，不在前端重新判断。
+   * 来源：后端在 quoteCardValues 行上追加的 `__priceLocked` 字段，调用方（QuotationStep2 /
+   * ReadonlyProductCard）从行数据里取出后原样透传，本组件不关心它是怎么算出来的。
+   * 🚨 R1：判定 UI 分支时不得再 `&& !readonly`——详情页（readonly=true）同样要显示版本徽标，
+   * 这条与 isManual（`!!ctx.isManualRow && !readonly`）刻意不同，不要照抄那行的写法。
+   */
+  priceLocked?: boolean;
+  /** 锁定时对应的价格版本号，供徽标展示（来源 `__priceVersion`） */
+  priceVersionNo?: string;
 
   // ── 仅 readonly=false 使用 ──
   /** DATABASE_QUERY 类型字段的 loading 状态 map（key = `${tabIndex}-${rowIndex}-${fieldName}`） */
@@ -266,6 +278,8 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
     onCellChange,
     onCellBlur,
     dsStateKey,
+    priceLocked,
+    priceVersionNo,
   } = ctx;
 
   // 手动行可编辑标志：仅在非只读态 + isManualRow=true 时生效
@@ -585,6 +599,41 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
   const isNumber = field.field_type === 'INPUT_NUMBER' || (field as any).is_amount;
   const rawCell = row[key];
   const isEmpty = rawCell === undefined || rawCell === null || rawCell === '';
+
+  // task-0729 跨屏·元素单价列只读态（fronttask §8.2 点 3）：手动行的"元素"字段为空时，
+  // 单价列固定"先元素后价格"的顺序——只读 + 占位「请先填写元素」，不允许在没选元素前先填价。
+  // 🔒 只有当"这就是元素单价列本身"时才生效（用组件级 elementCodeField/elementPriceField
+  // 角色绑定判断，屏 8 已让用户显式配置；活体数据里这两个字段目前多半还未被结构快照透传，
+  // 该分支在那之前天然不触发，行为与现状一致，等结构快照接上后自动生效，无需再改这里）。
+  const elementCodeFieldName = (activeComponent as any)?.elementCodeField as string | undefined;
+  const elementPriceFieldName = (activeComponent as any)?.elementPriceField as string | undefined;
+  const isThisTheElementPriceField = !!elementPriceFieldName && field.name === elementPriceFieldName;
+  if (ctx.isManualRow && isThisTheElementPriceField && elementCodeFieldName && !priceLocked) {
+    const elementCellVal = row[elementCodeFieldName];
+    const elementEmpty = elementCellVal === undefined || elementCellVal === null || elementCellVal === '';
+    if (elementEmpty) {
+      return <span className="qt-ds-placeholder" title="请先填写元素">请先填写元素</span>;
+    }
+  }
+
+  // task-0729 跨屏·元素单价列只读态（fronttask §8.2 点 1/2/5）：该字段被价格版本锁定 →
+  // 只读文本 + 版本徽标，而不是置灰输入框（置灰传达"暂时不可用"且文字变浅让价格看不清）。
+  // 🚨 R1：不按 readonly 分支二次判断——编辑页(readonly=false)和详情页(readonly=true)
+  // 都要落到这条分支，与下面 isManual 的 `&& !readonly` 写法刻意不同，勿混淆抄错。
+  if (priceLocked) {
+    const formatted = !isEmpty ? (formatPathValue(rawCell) ?? String(rawCell)) : '—';
+    return (
+      <span className="qt-price-locked-cell">
+        <span>{formatted}</span>
+        <span
+          className="qt-price-locked-badge"
+          title={`由价格版本 ${priceVersionNo ?? ''} 提供，不可手改。要调价请走价格调整审核`}
+        >
+          🔒{priceVersionNo}
+        </span>
+      </span>
+    );
+  }
 
   // readonly=true: 只读文本渲染
   if (readonly) {

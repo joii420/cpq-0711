@@ -805,6 +805,12 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                                 // 核价 BOM 树行：BASIC_DATA 缺值直接 "—"，不按根料号走 globalPathCache
                                 // （对齐编辑页 QuotationStep2.tsx cellCtx.isBomTreeRow，防子料号行误显根值/"加载中"）。
                                 isBomTreeRow: !!bomSys,
+                                // task-0729 跨屏·元素单价列只读态（AP-50：编辑页/详情页两处渲染同步，
+                                // 与编辑页 QuotationStep2.tsx 对齐同一读取口径）。🚨 R1：详情页本来就
+                                // readonly=true，priceLocked 判定不受 readonly 影响，这里必须照样透传，
+                                // 不能因为"反正详情页已经只读了"就省略——版本徽标只有这里才会挂上去。
+                                priceLocked: !!(rawRow as any).__priceLocked,
+                                priceVersionNo: (rawRow as any).__priceVersion,
                               };
                               const isFirstField = activeComp.fields[0] === field;
                               // BOM 树激活时缩进已移到系统「料号」列，字段首列不再重复缩进（避免双重缩进）。

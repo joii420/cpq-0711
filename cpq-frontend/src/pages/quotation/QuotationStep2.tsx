@@ -2809,6 +2809,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           },
                           // Phase 1 手动行标记(供后续 Task 7 ComponentCell 消费)
                           isManualRow: isManualRowFlag,
+                          // task-0729 跨屏·元素单价列只读态（fronttask §8 / api.md §4.3）：
+                          // 纯读后端在该行 quoteCardValues 上追加的标记，不在前端重新判定。
+                          // 当前后端 B10 归位机制未上线，row.__priceLocked 恒为 undefined，
+                          // priceLocked 恒 false，行为与改动前完全一致（硬约束：无标记不改变现状）。
+                          priceLocked: !!(row as any).__priceLocked,
+                          priceVersionNo: (row as any).__priceVersion,
                         };
                         const cellInner = (
                           <ComponentCell
