@@ -6,6 +6,8 @@ import com.cpq.component.entity.CostingBomTreeConfig;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.datasource.sqlview.BomTreeVarsContext;
 import com.cpq.datasource.sqlview.VersionFilterMacro;
+import com.cpq.formula.dataloader.QuotationIdContext;
+import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -124,9 +126,58 @@ public class BomTreeRenderService {
     public Map<UUID, Map<String, ArrayNode>> render(UUID templateId, List<QuotationLineItem> lineItems,
                                                      Map<UUID, Map<String, String>> overridesByComponent,
                                                      String usage) {
+        // ── task-0729（2026-08-03）：在此统一兜底设置 QuotationIdContext ──────────────────
+        // 背景：`:customerCode` 的解析走 QuotationIdContext(ThreadLocal) → DataLoader →
+        //   RuntimeContext.toNamedParams() 这条独立管线，与 render() 内部 expandUncached 的
+        //   customerId 入参无关（那个传 null 是有意为之，见 §④ 注释）。
+        //   实测 6 个直接触发 render() 的调用方中，4 个未设置该上下文，且全在核价侧：
+        //     snapshotCostingSideOnly / refreshCostingCardValues /
+        //     refreshCostingCardValuesForLine（本任务 B0 的 S5）/ CostingVersionService.switchVersion
+        //   → 挂在含树页签模板下、且 SQL 用到 :customerCode 的 $view（如 wl_ys_bom_view 的
+        //     元素单价）永远解析不到客户，取价恒为 null。详见同目录
+        //     `dev-docs/task-0729-.../BomTreeRenderService-customerId影响面评估.md`。
+        // 🔒 必须用「保存-恢复」而非无脑 set+clear：QuotationIdContext.clear() 是无条件
+        //   CURRENT.remove()，无引用计数、不支持重入。若内层无脑 clear，会把外层调用方
+        //   （如 ConfigureSnapshotService.snapshotLines，它自己已 set）的上下文一并清掉。
+        if (lineItems == null || lineItems.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+        UUID ctxQuotationId = lineItems.get(0).quotationId;
+        if (ctxQuotationId == null) {
+            return renderInternal(templateId, lineItems, overridesByComponent, usage);
+        }
+        UUID prevQuotationId = QuotationIdContext.get();
+        QuotationIdContext.set(ctxQuotationId);
+        try {
+            return renderInternal(templateId, lineItems, overridesByComponent, usage);
+        } finally {
+            if (prevQuotationId != null) {
+                QuotationIdContext.set(prevQuotationId);   // 恢复外层，而不是清空
+            } else {
+                QuotationIdContext.clear();
+            }
+        }
+    }
+
+    /**
+     * 原 render 主体；除下方 §④ 的 customerId 真根因修复外，行为逐字未变；context 管理已上提到
+     * 同名 public 包装方法。
+     */
+    private Map<UUID, Map<String, ArrayNode>> renderInternal(UUID templateId, List<QuotationLineItem> lineItems,
+                                                     Map<UUID, Map<String, String>> overridesByComponent,
+                                                     String usage) {
         Map<UUID, Map<String, ArrayNode>> out = new LinkedHashMap<>();
         if (lineItems == null || lineItems.isEmpty()) {
             return out;
+        }
+        // task-0729（2026-08-03）真根因修复：临时 DEBUG 日志实测确认 :customerCode 100% 依赖本方法
+        // §④ 传给 expandUncached 的 customerId 入参本身（QuotationIdContext 只解析 :quotationId/
+        // :priceBaseDate，对 :customerCode 无任何帮助——之前的假设已被证伪）。整单只需查一次。
+        UUID ctxCustomerId = null;
+        UUID _seedQid = lineItems.get(0).quotationId;
+        if (_seedQid != null) {
+            Quotation _q = Quotation.findById(_seedQid);
+            if (_q != null) ctxCustomerId = _q.customerId;
         }
         Map<UUID, Map<String, String>> overrides =
                 (overridesByComponent != null) ? overridesByComponent : java.util.Collections.emptyMap();
@@ -207,13 +258,16 @@ public class BomTreeRenderService {
                 // 分桶键语义按组件类型不同：树页签 = (parent_no, material_no) 边键；普通页签 = material_no。
                 Map<String, List<ExpandDriverResponse.Row>> byKey = new LinkedHashMap<>();
                 try {
-                    // 见类注释「跑组件 $view 的入口」说明：customerId/partNo/partVersion/lineItemId 全传 null，
+                    // 见类注释「跑组件 $view 的入口」说明：partNo/partVersion/lineItemId 继续传 null，
                     // 让 SqlViewExecutor 从 BomTreeVarsContext 拿 :total_material_no 收窄，
                     // 不再靠 partNo/lineItemId 维度过滤（这条 $view 对整单只跑一次）。
-                    // 用 expandUncached（Task 3.1 事项A）而非 expand：9-arg expand 的 expandCache key
-                    // 不含 :total_material_no 维度（customerId/partNo/partVersion 全传 null → key 恒定），
-                    // 30s TTL 内会与其他报价单/料号集合的同组件调用串号（AP-37 型缺维度缓存 bug）。
-                    ExpandDriverResponse resp = componentDriverService.expandUncached(compId, null);
+                    // 🔴 task-0729 真根因修复：customerId 改传上面查到的 ctxCustomerId（原先这里也传
+                    // null，是 :customerCode 在核价侧 4 条路径下恒解析不到值的直接原因——DEBUG 日志
+                    // 实测确认 QuotationIdContext 对 :customerCode 无效，唯一来源就是这个入参）。
+                    // 用 expandUncached（Task 3.1 事项A）而非 expand：该方法"仅跳过缓存读写、语义与
+                    // 9-arg expand 完全相同"（见 ComponentDriverService 类注释），即本次改 customerId
+                    // 传值不影响 AP-37 缓存维度问题——这条路径本就完全绕开 expandCache，不存在串号风险。
+                    ExpandDriverResponse resp = componentDriverService.expandUncached(compId, ctxCustomerId);
                     if (resp != null && resp.rows != null) {
                         int total = 0;
                         int kept = 0;

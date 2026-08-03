@@ -152,6 +152,32 @@ public class QuotationAdminResource {
     }
 
     /**
+     * task-0729 · BomTreeRenderService customerId 真根因修复 · 回归验证入口（临时）。
+     * 覆盖核价侧另外两条此前遗漏 QuotationIdContext 的路径：整单批量刷新
+     * （{@code CardSnapshotService.refreshCostingCardValues}）+ 加产品单行
+     * （{@code CardSnapshotService.snapshotLineValuesWithUnion} → {@code snapshotCostingSideOnly}）。
+     * 验证完即删。
+     */
+    @POST
+    @Path("/task0729-costing-whole-refresh-verify")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<String> task0729CostingWholeRefreshVerify(@QueryParam("quotationId") String quotationId) {
+        cardSnapshotService.refreshCostingCardValues(UUID.fromString(quotationId));
+        return ApiResponse.success("done");
+    }
+
+    @POST
+    @Path("/task0729-costing-addline-verify")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<String> task0729CostingAddLineVerify(@QueryParam("lineItemId") String lineItemId) {
+        com.cpq.quotation.entity.QuotationLineItem li =
+            com.cpq.quotation.entity.QuotationLineItem.findById(UUID.fromString(lineItemId));
+        if (li == null) return ApiResponse.success("line item not found");
+        cardSnapshotService.snapshotLineValuesWithUnion(li, null, null, true);
+        return ApiResponse.success("done");
+    }
+
+    /**
      * task-0729 · BomTreeRenderService customerId 影响面评估 · 第3点验证入口（临时）。
      * 直接调用 {@code ConfigureSnapshotService.snapshotQuotation}（saveDraft 走的同一个
      * 生产方法），用于对一张"从未 render 过"（quote_card_values 为 null）的隔离测试单验证
