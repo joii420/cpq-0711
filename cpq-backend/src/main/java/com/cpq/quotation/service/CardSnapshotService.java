@@ -269,6 +269,13 @@ public class CardSnapshotService {
                     } else {
                         tabNode.putArray("rowKeyFields");
                     }
+                    // task-0729 B10（标记透传第2条）：元素编码列/元素单价列/货币列冻进结构，与
+                    // rowKeyFields 同一模式（组件级角色字段，component 表直读）。前端手动行
+                    // "请先填写元素"占位分支要靠这两个字段名判断当前手动行是否命中价格承载列。
+                    String[] roleFields = loadElementRoleFields(componentId);
+                    if (roleFields[0] != null) tabNode.put("elementCodeField", roleFields[0]);
+                    if (roleFields[1] != null) tabNode.put("elementPriceField", roleFields[1]);
+                    if (roleFields[2] != null) tabNode.put("elementCurrencyField", roleFields[2]);
                 } else {
                     tabNode.putArray("rowKeyFields");
                 }
@@ -2087,6 +2094,19 @@ public class CardSnapshotService {
                     resolvedRow = new java.util.LinkedHashMap<>(resolvedRow);
                 resolvedRow.put("__nodeId", nodeId.asText());
             }
+            // task-0729 B10（标记透传）：PriceReconciler 把 __priceLocked/__priceVersion 写进
+            // snapshot_rows 的 driverRow（不是 br 顶层，与 __nodeId 不同层级）——同款透传写法，
+            // 让前端 ComponentCell 已经在读的这两个标记真正出现在 quoteCardValues 的行上。
+            JsonNode priceLocked = driverRow.path("__priceLocked");
+            if (priceLocked.isBoolean() && priceLocked.asBoolean()) {
+                if (!(resolvedRow instanceof java.util.LinkedHashMap))
+                    resolvedRow = new java.util.LinkedHashMap<>(resolvedRow);
+                resolvedRow.put("__priceLocked", true);
+                JsonNode priceVersion = driverRow.path("__priceVersion");
+                if (!priceVersion.isMissingNode() && !priceVersion.isNull()) {
+                    resolvedRow.put("__priceVersion", priceVersion.asText());
+                }
+            }
             out.add(resolvedRow);
             ri++;
         }
@@ -2850,6 +2870,27 @@ public class CardSnapshotService {
             return rows.get(0).toString();
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    /**
+     * task-0729 B10：组件三个元素角色字段（{@code element_code_field}/{@code element_price_field}/
+     * {@code element_currency_field}），与 {@link #loadRowKeyFields} 同一模式直读 component 表。
+     * 未接价格策略的组件三项皆 NULL（正常情况，不代表异常）。
+     */
+    private String[] loadElementRoleFields(String componentId) {
+        try {
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = em.createNativeQuery(
+                "SELECT element_code_field, element_price_field, element_currency_field " +
+                "FROM component WHERE id = :cid")
+                .setParameter("cid", UUID.fromString(componentId))
+                .getResultList();
+            if (rows.isEmpty() || rows.get(0) == null) return new String[]{null, null, null};
+            Object[] r = rows.get(0);
+            return new String[]{(String) r[0], (String) r[1], (String) r[2]};
+        } catch (Exception e) {
+            return new String[]{null, null, null};
         }
     }
 
