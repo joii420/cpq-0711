@@ -18,6 +18,7 @@ import type { LineItem, ComponentDataItem } from './QuotationStep2';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
 import { safeSetLocalDraft } from './draftCache';
 import { stableDraftDedupKey } from './draftPayloadDedup';
+import { isKeyUnset } from './keyPresenceAuthority';
 import AddProductModal from './AddProductModal';
 import ConfigureProductDrawer from './ConfigureProductDrawer';
 import QuotationCreateForm from './QuotationCreateForm';
@@ -1066,7 +1067,8 @@ const QuotationWizard: React.FC = () => {
         if (f.content == null || f.content === '') continue;
         const fieldKey = f.name || f.key || '';
         if (!fieldKey) continue;
-        if (enriched[fieldKey] === undefined || enriched[fieldKey] === null || enriched[fieldKey] === '') {
+        // spec 2026-08-03：仅「键不存在」才补默认值；用户清空('')必须原样保存。
+        if (isKeyUnset(enriched, fieldKey)) {
           enriched[fieldKey] = f.content;
         }
       }
@@ -1080,7 +1082,8 @@ const QuotationWizard: React.FC = () => {
         if (f.content == null || f.content === '') continue;
         const fieldKey = f.name || f.key || '';
         if (!fieldKey) continue;
-        if (enriched[fieldKey] === undefined || enriched[fieldKey] === null || enriched[fieldKey] === '') {
+        // spec 2026-08-03：同 §1.5，仅「键不存在」才补。
+        if (isKeyUnset(enriched, fieldKey)) {
           enriched[fieldKey] = f.field_type === 'INPUT_NUMBER'
             ? (coerceInputNumber(f.content) ?? f.content)  // 数值列归一，非法保留原值
             : f.content;
