@@ -22,6 +22,22 @@ public class TokenMappabilityValidator {
     );
 
     /**
+     * task-0803（BOM 父子取值 Task 5 闸①）：{@code tree_ref.targetExpr} 内允许的 token type 白名单。
+     *
+     * <p>放行 {@code tree_attr}（PGET/C* 的 targetExpr 里允许再引用「层级/是否叶子/是否根」这类
+     * 树属性）与 {@code global_variable}（全局变量与树上下文无关，天然可算）。
+     *
+     * <p>必拒：嵌套 {@code tree_ref}（禁止 PGET/C* 套 PGET/C*，语义会失控地递归穿层）、
+     * {@code cross_tab_ref}（跨页签引用与「同页签父子行」是两套模型，混用行键语义对不上）、
+     * {@code component_subtotal} / {@code b_field} / {@code previous_row_subtotal}
+     * （这些都假定「当前页签的行序/列小计」上下文，父子取值求值时子/父行是另一行的 RowContext，
+     * 这些 token 在那个上下文里没有稳定语义）。
+     */
+    private static final Set<String> TREE_REF_INNER_ALLOWED_TYPES = Set.of(
+        "field", "operator", "number", "bracket_open", "bracket_close", "global_variable", "tree_attr"
+    );
+
+    /**
      * 判定一条页签/小计公式 token 数组是否可落进宿主行键分组模型（v4-C 命门1）。
      *
      * <p><b>空 match 规则</b>：
@@ -172,6 +188,31 @@ public class TokenMappabilityValidator {
                         }
                     }
                 }
+            }
+        }
+        return new Result(true, null);
+    }
+
+    /**
+     * task-0803（BOM 父子取值 Task 5 闸①）：校验一个 {@code tree_ref} token 的 {@code targetExpr}
+     * 内层 token 类型是否落在白名单内（{@link #TREE_REF_INNER_ALLOWED_TYPES}）。
+     *
+     * <p>与 KSUM 子 token 镜像校验（{@link #validate}）同款结构：只做白名单判断，不递归展开
+     * 白名单类型自身的子结构（{@code field}/{@code operator}/{@code number}/{@code bracket_*}/
+     * {@code global_variable}/{@code tree_attr} 均为叶子级 token，无需再往下钻）。
+     *
+     * @param targetExpr {@code tree_ref} token 的 {@code targetExpr} 数组；null 视为空（放行）。
+     */
+    public Result validateTreeRefTargetExpr(List<Map<String, Object>> targetExpr) {
+        if (targetExpr == null) return new Result(true, null);
+        for (Map<String, Object> tk : targetExpr) {
+            if (tk == null) continue;
+            String type = tk.get("type") instanceof String s ? s : "";
+            if (type.isEmpty()) continue;
+            if (!TREE_REF_INNER_ALLOWED_TYPES.contains(type)) {
+                return new Result(false,
+                    "tree_ref.targetExpr 内出现不允许的 token 类型「" + type + "」" +
+                    "（白名单：field/operator/number/bracket_open/bracket_close/global_variable/tree_attr）。");
             }
         }
         return new Result(true, null);

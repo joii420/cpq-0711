@@ -43,6 +43,11 @@ public class ComponentImportService {
     @Inject
     EntityManager em;
 
+    // task-0803 Task5⑤：导入 bundle 复用 ComponentService 的父子取值(tree_ref/tree_attr)/
+    // previous_row_subtotal 校验闸(①②④)，同包 package-private 方法可直接调用。
+    @Inject
+    ComponentService componentService;
+
     @Transactional(Transactional.TxType.SUPPORTS)
     public ImportPreviewResult preview(UUID targetDirId, ComponentExportBundle bundle, String conflictPolicy) {
         ComponentDirectory dir = ComponentDirectory.findById(targetDirId);
@@ -336,6 +341,14 @@ public class ComponentImportService {
                 c.fields = MAPPER.writeValueAsString(fieldList);
                 c.formulas = MAPPER.writeValueAsString(formulaList);
                 // Panache 实体在 @Transactional 方法内已 managed，赋值后 Hibernate 脏检查自动 flush
+
+                // task-0803 Task5⑤：同一循环里跑闸①②④（父子取值 tabType 联动 + BOM 禁 PREV），
+                // 不留导入这条路径绕过配置期校验的口子。c.tabType 已在第一遍(persist 前)写入。
+                componentService.assertTreeTokenGates(c.tabType, c.formulas);
+            } catch (BusinessException e) {
+                // 校验闸门抛出的是业务语义 400（非结构解析失败），保留原始 code，只加上下文前缀。
+                throw new BusinessException(e.getCode(),
+                    "组件「" + c.name + "」(" + c.code + ") 导入失败：" + e.getMessage());
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException(
                     "组件「" + c.name + "」(" + c.code + ") 导入失败：" + e.getMessage(), e);

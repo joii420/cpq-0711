@@ -263,6 +263,15 @@ public class TabJoinPlanEvaluator {
                 "Excel 列模型暂不支持多 source 链式 SUM（sources.size=" + sources.size() +
                 "），请改用页签连表渲染（模型 A）");
         }
+        // task-0803 Task5⑥：BOM 父子取值（tree_ref/tree_attr）——Excel 列模型（本连表求值器）
+        // 没有宿主行的树上下文（父子关系只在 BOM 树页签自身的单元格拓扑路径
+        // com.cpq.quotation.service.FormulaCalculator#computeRowsCellTopo 中维护），
+        // 显式拒绝而非静默返 0（静默少算比报错更危险）。
+        Object colType = col.get("type");
+        if ("tree_ref".equals(colType) || "tree_attr".equals(colType)) {
+            throw new IllegalStateException(
+                "Excel 列模型暂不支持 BOM 父子取值（tree_ref/tree_attr），请改用页签连表渲染（模型 A）");
+        }
         // ────────────────────────────────────────────────────────────────────────────
         String expr = (String) col.getOrDefault("expression", "");
         if (expr.isBlank()) return java.math.BigDecimal.ZERO;
