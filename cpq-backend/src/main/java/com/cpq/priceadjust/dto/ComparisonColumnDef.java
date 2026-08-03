@@ -23,5 +23,15 @@ public class ComparisonColumnDef {
     public String costingMetric;
     public String costingLabel;
 
+    /** api.md §1.9：默认「产品总价」列不可删除（验收 #24③），其余列可删。 */
+    public Boolean removable = Boolean.TRUE;
+
+    /**
+     * 🔒 必须 {@code @JsonIgnore}——否则 Jackson 按 bean 约定把它序列化成 JSON 属性
+     * {@code "productTotal"}，往返（PUT 落库再 GET 读回反序列化）时因该属性无对应可写字段，
+     * 触发 {@code UnrecognizedPropertyException}，真实联调时复现为「保存成功但读回来还是默认列」
+     * （异常被 parseColumns 的兜底 catch 悄悄吞掉，表现成静默丢数据，非常隐蔽）。
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnore
     public boolean isProductTotal() { return "PRODUCT_TOTAL".equals(kind); }
 }
