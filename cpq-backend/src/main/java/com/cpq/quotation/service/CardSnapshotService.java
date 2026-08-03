@@ -1634,33 +1634,24 @@ public class CardSnapshotService {
         //   输出顺序仍按原 snapshot 顺序（拓扑序只决定计算次序，不改变 UI tab 顺序）。
 
         // 1) 组件级拓扑序（仅 NORMAL tab；SUBTOTAL 不参与，单独在原序补算）
-        // 1a) 解析表：component_code / tabName / componentId → componentId（供 component_subtotal 依赖解析）
-        Map<String, String> refToCid = new HashMap<>();
-        for (JsonNode tab : snapshot) {
-            if (!"NORMAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
-            String cid = tab.path("componentId").asText("");
-            if (!cid.isBlank()) refToCid.put(cid, cid);
-            String code = tab.path("componentCode").asText("");
-            if (!code.isBlank()) refToCid.put(code, cid);
-            String tn = tab.path("tabName").asText("");
-            if (!tn.isBlank()) refToCid.put(tn, cid);
-        }
+        // 1a) 收集参与拓扑的页签（cid + code/tabName 别名 + formulas + fields）。
+        //     依赖建图交给 CrossTabComponentOrder.buildComponentDeps —— cross_tab_ref 全量建边；
+        //     component_subtotal 按<b>列粒度</b>判定（repair-0803）：引用零依赖列（INPUT_NUMBER 等）
+        //     不建边，否则「产品.税率(INPUT) → 物料成本 → 产品.管理费」这条列级直线依赖链会被
+        //     折成 产品⇄物料 页签级假环 → topoOrder 误抛循环引用 → 整卡渲染失败（QT-20260803-0052）。
         List<String> compIds = new ArrayList<>();
-        Map<String, Set<String>> compDeps = new LinkedHashMap<>();
+        List<CrossTabComponentOrder.TabDep> tabDeps = new ArrayList<>();
         for (JsonNode tab : snapshot) {
             // 仅 NORMAL tab 进拓扑序（跳过 SUBTOTAL 及 EXCEL —— EXCEL 不参与公式计算/cross_tab_ref）
             if (!"NORMAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
             String cid = tab.path("componentId").asText("");
             compIds.add(cid);
-            // cross_tab_ref 源依赖（既有） + component_subtotal 跨组件依赖（QT-1743 修复，与前端对齐）
-            Set<String> deps = new LinkedHashSet<>(CrossTabComponentOrder.extractSourceRefs(tab.path("formulas")));
-            for (String r : CrossTabComponentOrder.extractSubtotalRefs(tab.path("formulas"))) {
-                String tcid = refToCid.get(r);
-                if (tcid != null && !tcid.equals(cid)) deps.add(tcid);  // 排除自引用（二阶列由 B6 两阶段处理）
-            }
-            compDeps.put(cid, deps);
+            tabDeps.add(new CrossTabComponentOrder.TabDep(cid,
+                tab.path("componentCode").asText(""), tab.path("tabName").asText(""),
+                tab.path("formulas"), tab.path("fields")));
         }
-        List<String> order = CrossTabComponentOrder.topoOrder(compIds, compDeps);
+        List<String> order = CrossTabComponentOrder.topoOrder(
+            compIds, CrossTabComponentOrder.buildComponentDeps(tabDeps));
 
         // componentId → snapshot tab（按 componentId 反查；SUBTOTAL 走原序补算时直接遍历 snapshot）
         Map<String, JsonNode> tabById = new LinkedHashMap<>();

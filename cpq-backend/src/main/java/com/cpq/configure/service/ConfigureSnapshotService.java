@@ -1168,35 +1168,23 @@ public class ConfigureSnapshotService {
         if (tabByComp.isEmpty()) return result;
 
         // ── 组件级拓扑序(与生产兄弟 assembleTabsWithFormulaResults 同款) ──
-        // 解析表:componentId / componentCode / tabName → componentId 字符串(供 component_subtotal 依赖解析)。
-        Map<String, String> refToCid = new HashMap<>();
+        // 建图交给 CrossTabComponentOrder.buildComponentDeps:cross_tab_ref 全量建边;
+        // component_subtotal 按列粒度判定(repair-0803)——引用零依赖列(INPUT_NUMBER 等)不建边,
+        // 避免把列级直线依赖链折成页签级假环(参见该方法 javadoc)。
+        List<String> compIds = new ArrayList<>();
+        List<CrossTabComponentOrder.TabDep> tabDeps = new ArrayList<>();
         for (Map.Entry<UUID, JsonNode> e : tabByComp.entrySet()) {
             String cid = e.getKey().toString();
             JsonNode tab = e.getValue();
-            refToCid.put(cid, cid);
-            String code = tab.path("componentCode").asText("");
-            if (!code.isBlank()) refToCid.put(code, cid);
-            String tn = tab.path("tabName").asText("");
-            if (!tn.isBlank()) refToCid.put(tn, cid);
-        }
-        List<String> compIds = new ArrayList<>();
-        Map<String, java.util.Set<String>> compDeps = new LinkedHashMap<>();
-        for (Map.Entry<UUID, JsonNode> e : tabByComp.entrySet()) {
-            String cid = e.getKey().toString();
-            JsonNode formulas = e.getValue().path("formulas");
             compIds.add(cid);
-            // cross_tab_ref 源依赖 + component_subtotal 跨组件依赖(token 精确,与前端/生产兄弟对齐)。
-            java.util.Set<String> deps = new java.util.LinkedHashSet<>(
-                    CrossTabComponentOrder.extractSourceRefs(formulas));
-            for (String r : CrossTabComponentOrder.extractSubtotalRefs(formulas)) {
-                String tcid = refToCid.get(r);
-                if (tcid != null && !tcid.equals(cid)) deps.add(tcid); // 排除自引用(本组件二阶列由引擎内两阶段处理)
-            }
-            compDeps.put(cid, deps);
+            tabDeps.add(new CrossTabComponentOrder.TabDep(cid,
+                    tab.path("componentCode").asText(""), tab.path("tabName").asText(""),
+                    tab.path("formulas"), tab.path("fields")));
         }
         List<String> order;
         try {
-            order = CrossTabComponentOrder.topoOrder(compIds, compDeps);
+            order = CrossTabComponentOrder.topoOrder(
+                    compIds, CrossTabComponentOrder.buildComponentDeps(tabDeps));
         } catch (Exception cyc) {
             // 环(配置异常)→ 降级按原序物化,绝不中止整份快照(沿用本类全程降级纪律)。
             LOG.warnf("[materialize-line] line=%s 组件拓扑序失败(降级原序): %s", lineItemId, cyc.getMessage());
