@@ -219,8 +219,15 @@ public class ComponentService {
         validateFormulas(fieldList, formulaList);  // may auto-correct formula names in-place
         detectFormulaCircularReferences(formulaList, fieldList);
 
-        // Re-serialize after auto-correction
+        // BL-0098：公式补稳定 id → 字段绑定固化成 formula_id。
+        // 顺序不可颠倒：先有 id 才能绑。必须放在 validateFormulas 之后 —— 后者会就地改公式名，
+        // 而固化走的位置/同名回退依赖公式名的最终形态。
+        FormulaIdBinder.ensureFormulaIds(formulaList);
+        FormulaIdBinder.bindFormulaIdsToFields(fieldList, formulaList);
+
+        // Re-serialize after auto-correction + id binding
         String formulasJson = toJson(formulaList);
+        fieldsJson = toJson(fieldList);   // 固化出的 formula_id 必须回到 fieldsJson，否则不落库
 
         // Auto-generate code if not provided
         String code;
@@ -327,8 +334,17 @@ public class ComponentService {
             validateFormulas(fieldList, formulaList);  // may auto-correct formula names in-place
             detectFormulaCircularReferences(formulaList, fieldList);
 
-            // Re-serialize after auto-correction
-            component.fields = fieldsJson;
+            // BL-0098：公式补稳定 id → 字段绑定固化成 formula_id。
+            // ⚠️ update 直接用前端送来的 formulas 覆盖库里的值。若前端没把 id 带回来，这里会给
+            //    每条公式重新生成新 id，导致存量 formula_id 全部失配（那一列静默不出值）。
+            //    前端已实测会自动往返 id：ComponentManagement 加载时 {...f, key} 保留全部键、
+            //    保存时 ({key: _k, ...rest}) 只剥 key、componentDraft.stripFieldKeys 同理。
+            //    Task 8 的前端测试锁死这一点，改前端映射时务必同步复查。
+            FormulaIdBinder.ensureFormulaIds(formulaList);
+            FormulaIdBinder.bindFormulaIdsToFields(fieldList, formulaList);
+
+            // Re-serialize after auto-correction + id binding
+            component.fields = toJson(fieldList);   // 用固化后的 fieldList，不是原 fieldsJson
             component.formulas = toJson(formulaList);
             component.columnCount = fieldList.size();
 
