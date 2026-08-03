@@ -4297,3 +4297,24 @@ E2E:
 ---
 
 [2026-08-02] 基础数据导入(repair-0802) 电镀费用/电镀成本增加「投入料号」，`unit_price` 两列语义归队 - **已交付合 master**（分支 `feat/repair-0802-plating-input-part-no`，7 提交） | 改 `basicdata/v6/quote/Q17PlatingCostHandler.java` + `QuoteImportValidator.java` + `basicdata/v6/pricing/P22PlatingCostHandler.java`，新增 `V372__repair0802_plating_input_part_no.sql`，测试 `Q17PlatingCostHandlerTest`(6) / `QuoteImportValidatorPlatingTest`(5) / `P22PlatingCostHandlerTest`(4) | **问题**：电镀两个 sheet 把销售料号写进 `unit_price.code` 且 `finished_material_no` 恒空，与该表其余 14 个 handler 口径相反（`code`=零件料号、`finished_material_no`=成品料号，见 `dev-docs/rule-0724-组件模板配置/4-页签属性与树.md` §零件）。实证：现役 18 行 `QUOTE/PLATING` 的 `code` 全是 `S-80011`，而该料号在 `material_master` 里 `material_name='投入零件1'`、`material_type='零件'` —— **业务本就按零件维度记电镀费用，只是 sheet 没有对应的列**。后果：费用无法上卷成品、BOM 闭包类视图取不到数。 | **改动**：两个 sheet 增加**非必填**的【投入料号】【投入料号名称】列。报价侧 Q17 照 Q06/Q07 三分支解析（有码沿用 / 仅名称反查铸号 + `material_master` upsert / 皆空回退销售料号），groupKey 加 `finished_material_no`；核价侧 P22 照 P15 范式把分组锚点从 `code` 切到 `finished_material_no`、`code` 进 content（核价侧不做名称反查，与 P15/P16/P17「品名」列一致）；`QuoteImportValidator.validatePlatingCost` 把名称反查失败提前到 Phase 1 零写库阶段拦截；V372 清理旧语义存量 + `dj_view` 改绑成品轴并暴露 `input_part_no`/`input_part_name` + 电镀成本组件加两个字段。 | **关键决策**：①**「非必填」不等于「可跳过」** —— `code` 是 NOT NULL 且在 `uq_unit_price` 13 维唯一键内，两列皆空必须回退为销售料号（语义=电镀针对成品自身），与 Q15 组装加工费年降的退化范式一致，且使存量语义零漂移。②**零 DDL** —— `finished_material_no` 早在 V276 就进了唯一键。③**存量必须清理而非迁移**：旧行 groupKey 缺一维，重导时不会被下线，两组 `is_current=true` 并存会让视图出重复行（需求说明 §6 已授权清空重导）。④**两侧范式故意不同**：报价侧 gk 含 `code`（对齐 Q06/Q07），核价侧 gk 锚 `finished_material_no`（对齐 P15），各自与本侧邻居一致优先于跨侧统一。 | 🐛 **踩坑一（协议级）**：读料号列必须用 `row.exact("投入料号")` —— `getStr` 是 contains 匹配，会命中「投入料号名称」列并**静默取错值**。 | 🚨 **踩坑二（迁移必看，本次由 dry-run 抓出，原计划写错）**：**迁移里禁止用 `component.code` 定位组件**。`component.code` 是各库独立自增的配置数据，**同一个 code 在不同库指向完全不同的组件** —— 实测 dev 库 `cpq_db_0724` 的电镀成本是 `COMP-0063`，而 test 库 `cpq_db` 的 `COMP-0063` 是「材质/元素/材料成本」组件（`COMP-0057` 才是电镀成本）。按 code 硬编码会在别的库里改错组件、污染无关配置。正解是**语义锚点** `WHERE trim(data_driver_path)='$dj_view'`。同理**字段插入位置也不能硬编码下标**（两库该组件字段序不同：test 库销售料号在第 1 位、dev 库在第 2 位），要按「销售料号」的 `WITH ORDINALITY` 下标 +0.1/+0.2 动态算。验证已确认：test 库 `COMP-0057` 正确加了两列且位置正确，无关的 `COMP-0063` 分毫未动。 | 🐛 **踩坑三（操作纪律）**：做 A/B 归因时用 `git checkout master -- <file>` 还原对照组，会**静默丢弃该文件未提交的实现改动**。正确顺序是先提交（或 stash）再 A/B。 | ⚠️ **遗留（非本次引入，已 A/B 证伪）**：`PricingVersioningImportE2ETest` 3 个用例全部失败，报 `Cannot find zip signature within the first 4096 bytes`。根因是仓库里两个 Excel 夹具（`docs/table/核价测试数据/核价系统功能基础数据功能结构所需字段（6.0版） .xlsx`、`docs/table/报价测试数据/报价系统功能基础数据功能结构所需字段V3.xlsx`）**本身不是有效 zip**（首字节 `87 7d 1c`，正常 xlsx 应为 `PK`），且 git HEAD 里存的就是这样，工作区与主仓 md5 完全一致。A/B 实证：把 P22 还原成 master 版跑同一测试，**同样 3 失败**，与本次改动无关。需要单独立项修复夹具。
+
+---
+
+[2026-08-03] 公式引擎 / 组件管理 - **BL-0098 公式绑定改绑稳定 ID（交付）** | `FormulaCalculator.java` / `FormulaIdBinder.java`(新) / `FormulaBindingAdminResource.java`(新) / `ComponentService.java` / `ComponentImportService.java` / `CardSnapshotService.java` / `V375__bl0098_formula_stable_id.sql` / `V376__bl0098_conditional_formula_ref_id.sql` / 前端 `types.ts` / `FieldConfigTable.tsx` / `ConditionalFormulaDrawer.tsx` / `QuotationStep2.tsx` / `enrichComponentData.ts` |
+
+**问题**：FORMULA 字段过去靠「名字 / 位置」找公式 —— 插/删/调序一条公式，未显式绑定的字段静默换算法；公式改名则 `collectFormulaFields` 查不到、该字段整个不进计算列表，那一列静默不出值。条件公式更阴险：按名字引用 `rules[].formula`/`default`，改名后 `if (expr != null) rules.add(...)` 静默丢掉分支，列还有值只是悄悄换了分支。
+
+**方案**：公式对象补不可变 `id`（作用域=组件内），字段与条件公式引用全部改绑 id，解析链 `formula_id → formula_name → formula_assignments → 同名 → 位置`，**原 4 级原样保留**给 13 张不迁移的老冻结单兜底。迁移 V375（公式补 id + 显式绑定翻译）+ V376（条件公式引用翻译），纯映射零推断，覆盖 `component.*` + `template.components_snapshot`；不动 `quotation_view_structure` 与 `submission_snapshot`（用户裁决 D2/D4）。
+
+**🚨 三处易漏的连锁点（写代码前必看）**：
+① **`CardSnapshotService.buildCardStructure` 是白名单逐键搬运**（`:306` 只搬 `formula_name`）。加任何字段级 config key 都必须同步补搬，否则此后新建的每张报价单冻结结构都拿不到该键，静默退回旧行为。
+② **`validateFormulas` 校验名字存在性会挡住改名**：名字降级为冗余后，UI 改公式名时引用处不跟着变 → 保存 400。须在校验**之前**用 id 反查刷新名字冗余（`refreshNameRedundancyFromIds`），顺序：补 id + 刷新 → 既有校验 → 固化 + 再刷新 → 强制绑定校验。
+③ **本项目 RBAC 是 opt-in**（`RoleFilter:65`：无 `@RoleAllowed` 则 `skip auth check too`）。新增 `/api/cpq/**` 资源不写注解 = **完全不鉴权**（本次新端点初版实测无 token 返 200，已补 `SYSTEM_ADMIN`）。
+④ **jsonb 迁移空数组陷阱**：`jsonb_agg` 对空集返回 NULL，会把 `[]` 写成 JSON null（库里 79 个 tab 的 `formulas=[]`）。内层聚合一律 `COALESCE(...,'[]'::jsonb)`。
+
+**关键纠正**：此前 BL-0098 与 repair-0803 文档称「4 处按位置猜、COMP-0157 材料成本被绑到银点材料成本公式」——**均系误判**。那 3 处是**条件公式字段**（`resolveFormula` 对其从未调用），银点材料成本公式是其显式 `default` 分支；`formulas[2]` 恰好同值纯属巧合。真正的位置回退受害者全库仅 `COMP-0049/公式测试` 一处。统计此类问题的 SQL 必须先排除 `conditional_formula` 字段。
+
+**验证**：后端纯 JUnit 38 passed（禁用 `@QuarkusTest`，因 BL-0095 致测试库 Quarkus 测试全起不来）；前端 vitest 190 passed + tsc 0 错误 + 5 个改动文件 Vite transform 200；**值不变**（22 个字段迁移前后生效公式逐条 diff 一致）；**改名不断链端到端**（PUT 返 200，原 400；`formula_id` 不变、名字冗余自动刷新）。
+
+**遗留**：`COMP-0049`（ACTIVE，2 模板引用）有 FORMULA 字段但 0 条公式，强制校验开启后该组件不可保存，需业务方处置。
+
