@@ -36,6 +36,12 @@ public class ComponentDTO {
     public String partNameField;
     /** task-0722：多行页签「行排序列」字段名，可空。 */
     public String sortField;
+    /** task-0729 B7：元素编码列（fields[].name 之一），接价格策略的组件必填。 */
+    public String elementCodeField;
+    /** task-0729 B7：元素单价列，语义同上。 */
+    public String elementPriceField;
+    /** task-0729 B7：货币列，可空。 */
+    public String elementCurrencyField;
     public String status;
     /** EXCEL 类型组件的列配置 JSON（数组），Task 1.1 新增字段 */
     public String excelColumns;
@@ -65,6 +71,9 @@ public class ComponentDTO {
         dto.partNoField = component.partNoField;
         dto.partNameField = component.partNameField;
         dto.sortField = component.sortField;
+        dto.elementCodeField = component.elementCodeField;
+        dto.elementPriceField = component.elementPriceField;
+        dto.elementCurrencyField = component.elementCurrencyField;
         dto.excelColumns = component.excelColumns;
         return dto;
     }

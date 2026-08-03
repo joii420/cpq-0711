@@ -109,6 +109,24 @@ public class Component extends PanacheEntityBase {
     @Column(name = "sort_field", length = 120)
     public String sortField;
 
+    /**
+     * task-0729 B7：元素编码列（拿它的值匹配 {@code element_price_version_item.element_code}）。
+     * 组件级角色字段，不进 {@code fields} 的 config JSON（绕开 AP-44 17 点联动）。
+     * 保存期校验：该组件任一 {@code component_sql_view.sql_template} 检测到取价函数
+     * （{@code f_customer_element_price}/{@code f_material_element_price}）→ 本字段 + {@link
+     * #elementPriceField} 必填，否则 400 COMPONENT_ELEMENT_BINDING_REQUIRED（§11.15.3.2）。
+     */
+    @Column(name = "element_code_field", length = 100)
+    public String elementCodeField;
+
+    /** task-0729 B7：元素单价列（S3 改它、S4 只清它）。组件级角色字段，语义同上。 */
+    @Column(name = "element_price_field", length = 100)
+    public String elementPriceField;
+
+    /** task-0729 B7：货币列（可空）。组件级角色字段，语义同上。 */
+    @Column(name = "element_currency_field", length = 100)
+    public String elementCurrencyField;
+
     @Column(name = "created_at", nullable = false)
     public OffsetDateTime createdAt;
 

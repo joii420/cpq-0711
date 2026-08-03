@@ -52,4 +52,13 @@ public class CreateComponentRequest {
      * 设置后快照按该字段数字感知升序排列；null=不改（更新时）/ 不排（新建时）。
      */
     public String sortField;
+
+    /**
+     * task-0729 B7（api.md §5.1）：元素编码列/元素单价列/货币列，与 partNoField/partNameField/
+     * sortField/rowKeyFields 平级。null=不变（更新时）；接价格策略的组件保存期强制要求
+     * elementCodeField+elementPriceField 非空，否则 400 COMPONENT_ELEMENT_BINDING_REQUIRED。
+     */
+    public String elementCodeField;
+    public String elementPriceField;
+    public String elementCurrencyField;
 }

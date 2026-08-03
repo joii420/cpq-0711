@@ -126,6 +126,28 @@ public class ComponentService {
     }
 
     /**
+     * task-0729 B7（§11.15.3.2）：该组件任一 {@code component_sql_view.sql_template} 检测到取价
+     * 函数（{@code f_customer_element_price}/{@code f_material_element_price}）→
+     * {@code elementCodeField}+{@code elementPriceField} 必填，否则 400
+     * {@code COMPONENT_ELEMENT_BINDING_REQUIRED}（不是警告、不是静默保存）。
+     * 未接取价函数的组件三项留空可正常保存（验收 #32③）。
+     */
+    private void assertElementBindingRequirement(Component component) {
+        if (component.id == null) return; // 新建流程尚无 id，不存在既有 sql_views，天然放行
+        List<ComponentSqlView> sqlViews = sqlViewRepository.listByComponent(component.id);
+        boolean referencesElementPriceFunction = sqlViews.stream()
+            .anyMatch(v -> ElementBindingDerivation.referencesElementPriceFunction(v.sqlTemplate));
+        if (!referencesElementPriceFunction) return;
+
+        List<String> missing = new ArrayList<>();
+        if (component.elementCodeField == null || component.elementCodeField.isBlank()) missing.add("elementCodeField");
+        if (component.elementPriceField == null || component.elementPriceField.isBlank()) missing.add("elementPriceField");
+        if (!missing.isEmpty()) {
+            throw new com.cpq.component.exception.ComponentElementBindingRequiredException(missing);
+        }
+    }
+
+    /**
      * task-0721 B4 强制护栏（2026-07-21 业务方裁决）：{@code bomRecursiveExpand} 是组件级全局开关，
      * 同一组件被多模板共用时一开全生效。现网实查：3 个开启该开关的组件
      * （COMP-0021__imp1__imp1 / COMP-0039 / COMP-0042）共 34 处模板引用，<b>全部在 COSTING 模板</b>。
@@ -206,6 +228,39 @@ public class ComponentService {
         return ComponentDTO.from(component);
     }
 
+    /**
+     * task-0729 B7（api.md §5.2）：迁移期/新建期推导预填，供屏 8 下拉给出推荐值。
+     * 逐个 sql_view 尝试，取第一个成功捕获取价函数别名的结果；🔒 推导失败返回空壳，不报错
+     * （§11.15.3.4 五步算法，运行期仅用于本推荐端点 + 迁移期批量预填，不用于报价渲染）。
+     */
+    public com.cpq.component.dto.ElementBindingSuggestDTO suggestElementBinding(UUID id) {
+        Component component = Component.findById(id);
+        if (component == null) {
+            throw new BusinessException(404, "Component not found: " + id);
+        }
+        com.cpq.component.dto.ElementBindingSuggestDTO dto = new com.cpq.component.dto.ElementBindingSuggestDTO();
+        JsonNode fields;
+        try {
+            fields = MAPPER.readTree(component.fields);
+        } catch (Exception e) {
+            return dto; // fields 解析失败：空壳返回，不报错
+        }
+
+        List<ComponentSqlView> sqlViews = sqlViewRepository.listByComponent(id);
+        for (ComponentSqlView v : sqlViews) {
+            ElementBindingDerivation.Result r = ElementBindingDerivation.derive(v.sqlTemplate, v.sqlViewName, fields);
+            if (r.alias == null) continue; // 该视图未接取价函数，试下一个
+            dto.suggested.elementCodeField = r.elementCodeField;
+            dto.suggested.elementPriceField = r.elementPriceField;
+            dto.suggested.elementCurrencyField = r.elementCurrencyField;
+            dto.alias = r.alias;
+            dto.confidence = r.confidence;
+            dto.warnings = r.warnings;
+            return dto; // 命中即返回，不再继续找下一个视图
+        }
+        return dto; // 全部视图都未接取价函数：空壳返回
+    }
+
     @Transactional
     public ComponentDTO create(CreateComponentRequest request) {
         validateRequest(request);
@@ -264,10 +319,17 @@ public class ComponentService {
         // task-0722：行排序列(可空)。非 null 时覆盖(空串=清空)。
         if (request.sortField != null) component.sortField = request.sortField.isBlank() ? null : request.sortField;
 
+        // task-0729 B7：元素编码列/元素单价列/货币列，与 partNoField 等平级（新建路径：无 sql_views
+        // 可查，requireElementBinding 天然 no-op；仍统一走一遍校验，保持新建/更新同一套逻辑）。
+        if (request.elementCodeField != null) component.elementCodeField = request.elementCodeField.isBlank() ? null : request.elementCodeField;
+        if (request.elementPriceField != null) component.elementPriceField = request.elementPriceField.isBlank() ? null : request.elementPriceField;
+        if (request.elementCurrencyField != null) component.elementCurrencyField = request.elementCurrencyField.isBlank() ? null : request.elementCurrencyField;
+
         // 行键校验（新建路径：硬拦）
         validateRowKeyConfig(component.dataDriverPath, component.fields, component.rowKeyFields, true);
 
         component.persist();
+        assertElementBindingRequirement(component);
 
         // C3: 保存后对 default_source.path 列名做软校验（只 warn，不阻断）
         warnDefaultSourcePaths(component.id, fieldList);
@@ -359,6 +421,15 @@ public class ComponentService {
         applyTabType(component, request.tabType, request.partNoField, request.partNameField);
         // task-0722：行排序列(可空)。非 null 时覆盖(空串=清空)。
         if (request.sortField != null) component.sortField = request.sortField.isBlank() ? null : request.sortField;
+
+        // task-0729 B7：元素编码列/元素单价列/货币列（null=不变，空串=清空，语义同 partNoField）。
+        if (request.elementCodeField != null) component.elementCodeField = request.elementCodeField.isBlank() ? null : request.elementCodeField;
+        if (request.elementPriceField != null) component.elementPriceField = request.elementPriceField.isBlank() ? null : request.elementPriceField;
+        if (request.elementCurrencyField != null) component.elementCurrencyField = request.elementCurrencyField.isBlank() ? null : request.elementCurrencyField;
+        // 🔒 保存期校验对象是合并后的最终状态（校验对象是【本次保存后生效的最终状态】，同
+        // assertPartNoFieldRequirement 的既定纪律）——sql_views 里任一 sqlTemplate 检测到取价
+        // 函数但 elementCodeField/elementPriceField 未配齐 → 400，拦下不让保存（验收 #32②）。
+        assertElementBindingRequirement(component);
 
         // 行键校验（更新路径：软校验，违规只告警不阻断）
         validateRowKeyConfig(component.dataDriverPath, component.fields, component.rowKeyFields, false);

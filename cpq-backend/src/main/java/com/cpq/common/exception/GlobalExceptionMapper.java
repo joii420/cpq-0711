@@ -55,6 +55,13 @@ public class GlobalExceptionMapper {
                             "invalidItems", rnre.getInvalidItems())))
                     .build();
         }
+        if (e instanceof com.cpq.component.exception.ComponentElementBindingRequiredException cebre) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(
+                            "code", "COMPONENT_ELEMENT_BINDING_REQUIRED",
+                            "missingFields", cebre.getMissingFields())))
+                    .build();
+        }
         return Response.status(e.getCode())
                 .entity(ApiResponse.error(e.getCode(), e.getMessage()))
                 .build();

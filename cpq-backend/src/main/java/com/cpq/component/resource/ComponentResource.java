@@ -67,6 +67,13 @@ public class ComponentResource {
         return ApiResponse.success(componentService.getById(id));
     }
 
+    /** task-0729 B7（api.md §5.2）：元素列绑定推导预填，供屏 8「推荐」按钮。 */
+    @GET
+    @Path("/{id}/element-binding-suggest")
+    public ApiResponse<com.cpq.component.dto.ElementBindingSuggestDTO> suggestElementBinding(@PathParam("id") UUID id) {
+        return ApiResponse.success(componentService.suggestElementBinding(id));
+    }
+
     @POST
     public ApiResponse<ComponentDTO> create(CreateComponentRequest request) {
         return ApiResponse.success(componentService.create(request));
