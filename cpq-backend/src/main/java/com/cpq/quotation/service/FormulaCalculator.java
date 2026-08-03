@@ -1400,12 +1400,18 @@ public class FormulaCalculator {
                     int ruleIdx = 0;
                     for (JsonNode rule : cf.path("rules")) {
                         ruleIdx++;   // 1-based 原始序号：解析不到的规则被跳过也不影响后续编号
-                        String rfName = rule.path("formula").asText(null);
-                        JsonNode expr = exprOfFormula(formulas, rfName);
-                        if (expr != null) rules.add(new CondRule(rule.path("when"), expr, rfName, ruleIdx));
+                        // BL-0098：先按 formula_id 认，再回落公式名（存量条件公式无 id）。
+                        JsonNode fm = condRefFormula(formulas, rule.path("formula_id"), rule.path("formulaId"),
+                                                     rule.path("formula"));
+                        if (fm != null) {
+                            rules.add(new CondRule(rule.path("when"), fm.path("expression"),
+                                                   fm.path("name").asText(""), ruleIdx));
+                        }
                     }
-                    String defName = cf.path("default").asText(null);
-                    JsonNode defExpr = exprOfFormula(formulas, defName);
+                    JsonNode defFm = condRefFormula(formulas, cf.path("default_formula_id"),
+                                                    cf.path("defaultFormulaId"), cf.path("default"));
+                    JsonNode defExpr = defFm != null ? defFm.path("expression") : null;
+                    String defName = defFm != null ? defFm.path("name").asText("") : cf.path("default").asText(null);
                     out.add(new FormulaField(name, rules, defExpr, defName));
                 } else {
                     ResolvedFormula rf = resolveFormula(f, name, fields, formulas, formulaAssignments, fullIdx);
@@ -1422,6 +1428,57 @@ public class FormulaCalculator {
         if (name == null || name.isEmpty()) return null;
         JsonNode found = findFormulaByName(formulas, name);
         return found != null ? found.path("expression") : null;
+    }
+
+    /**
+     * BL-0098：解析条件公式里一处引用（规则分支 / 默认分支）指向的公式对象。
+     *
+     * <p>优先级：{@code formula_id}（蛇形）→ {@code formulaId}（驼峰，冻结结构用）→ 公式名。
+     * <b>绑了 id 但查不到 → 返 null，不回落到名字</b> —— 与普通字段的 {@code resolveFormula}
+     * 同款语义：配置漂移（公式被删）不能静默换成别的公式算。
+     * 存量条件公式无 id，走名字分支，行为逐位不变。
+     */
+    private JsonNode condRefFormula(JsonNode formulas, JsonNode idSnake, JsonNode idCamel, JsonNode nameNode) {
+        String id = idSnake != null && !idSnake.isMissingNode() && !idSnake.isNull()
+            ? idSnake.asText(null) : null;
+        if (id == null || id.isEmpty()) {
+            id = idCamel != null && !idCamel.isMissingNode() && !idCamel.isNull()
+                ? idCamel.asText(null) : null;
+        }
+        if (id != null && !id.isEmpty()) {
+            return findFormulaById(formulas, id);   // 查不到 → null，刻意不回落名字
+        }
+        String name = nameNode != null ? nameNode.asText(null) : null;
+        if (name == null || name.isEmpty()) return null;
+        return findFormulaByName(formulas, name);
+    }
+
+    /**
+     * BL-0098 测试与固化用：条件公式第 {@code ruleIndex} 条规则最终命中的公式名。
+     * 解析不到返回 {@code null}。
+     */
+    public String resolveConditionalRuleFormulaName(JsonNode field, JsonNode formulas, int ruleIndex) {
+        if (field == null || formulas == null) return null;
+        JsonNode cf = field.has("conditional_formula") ? field.path("conditional_formula")
+            : field.path("conditionalFormula");
+        JsonNode rules = cf.path("rules");
+        if (!rules.isArray() || ruleIndex < 0 || ruleIndex >= rules.size()) return null;
+        JsonNode rule = rules.get(ruleIndex);
+        JsonNode fm = condRefFormula(formulas, rule.path("formula_id"), rule.path("formulaId"),
+                                     rule.path("formula"));
+        return fm == null ? null : fm.path("name").asText(null);
+    }
+
+    /**
+     * BL-0098 测试与固化用：条件公式默认分支最终命中的公式名。解析不到返回 {@code null}。
+     */
+    public String resolveConditionalDefaultFormulaName(JsonNode field, JsonNode formulas) {
+        if (field == null || formulas == null) return null;
+        JsonNode cf = field.has("conditional_formula") ? field.path("conditional_formula")
+            : field.path("conditionalFormula");
+        JsonNode fm = condRefFormula(formulas, cf.path("default_formula_id"), cf.path("defaultFormulaId"),
+                                     cf.path("default"));
+        return fm == null ? null : fm.path("name").asText(null);
     }
 
     /** Plan 3a：按行选条件公式表达式（首条命中即停，全不中走默认）。 */
