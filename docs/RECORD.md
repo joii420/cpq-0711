@@ -4359,3 +4359,19 @@ E2E:
 **B9（双端公式黄金用例）+ B11（通知）本轮仍未开始**——同样受限于时间预算，如实汇报，等 coordinator 下一步指示。
 
 **涉及文件**：`cpq-backend/src/main/java/com/cpq/quotation/service/CardSnapshotService.java`（`buildResolvedRows` 标记透传 + `buildCardStructure`/`loadElementRoleFields` 结构角色字段透传）。单测回归 49/49 全绿（无新增单测，两处改动均以真实数据 HTTP/SQL 验证覆盖）。commit：`2453c07c`。
+
+---
+
+[2026-08-02] task-0729 元素单价列只读态联调 —— 后端标记透传接上后暴露 3 个真实前端 wiring 缺口，全部修复并用真实数据（非注入）验证 | `cpq-frontend/src/pages/quotation/QuotationStep2.tsx` / `ReadonlyProductCard.tsx` / `components/ComponentCell.tsx` / `enrichComponentData.ts` / `BulkImportPartsDrawer.tsx` / `services/quotationService.ts` | 后端 B10 已把 `__priceLocked`/`__priceVersion` 端到端透传进 `quoteCardValues.tabs[].baseRows[].driverRow`（实测 quotation `62c3e1bd-...` Cu 行 `driverRow.__priceLocked=true`），但前端联调发现徽标始终不出现（0 badge），排查出**跟 B10 完全无关的 3 个独立前端缺口**：
+
+1. **读错数据源**：`QuotationStep2.tsx:2816`/`ReadonlyProductCard.tsx:812` 读的是 `row`/`rawRow`（= `quotation_line_component_data.row_data`，用户可编辑值持久化），标记实际挂在同一行的 `driverRow`（= driver 展开/快照的系统列对象，与 `_元素`/`_料号` 同级）——两者是**平行不同的对象**（`effectiveRows` 同时产出两个字段，从未合并）。改为读 `driverRow.__priceLocked`/`__priceVersion` 后徽标立即出现，但一出现就是**满行 9 个 INPUT_* 字段全部长出 🔒**（暴露缺口 2）。
+2. **priceLocked 语义应是"该行【元素单价字段】"，实现却按"该行所有字段"生效**：`ComponentCell.tsx` 的 `if (priceLocked)` 分支缺了 `isThisTheElementPriceField` 门槛（旁边"请先填写元素"占位分支已经在用这个门槛，`priceLocked` 分支却没抄）。改为 `if (priceLocked && isThisTheElementPriceField)` 后，9 个徽标收敛为 1 个（只挂"元素单价"列）。
+3. **`elementCodeField`/`elementPriceField` 从未进入报价渲染数据模型**（第 2 点门槛为什么之前恒为 false 的根因）：`ComponentCell.tsx` 一直用 `(activeComponent as any)?.elementCodeField` 裸 cast 读取，但 `ComponentDataItem` 接口从未声明这两个字段，`enrichComponentData.ts` 的两条组装路径（`enrichComponentData` 模板快照回退路径 / `buildComponentDataFromStructure` 结构 v2 路径——后者是 `useSnapAll=true` 时的实际运行路径）和 `BulkImportPartsDrawer.tsx` 的 `buildComponentDataFromTemplate` 都**从未把它们从后端 `CardStructureTab.elementCodeField`（`CardSnapshotService#buildCardStructure` 已经在吐）搬到 `ComponentDataItem` 上**——纯粹的前端消费遗漏，不是后端没给。三处补齐 + `CardStructureTab`/`ComponentDataItem` 类型声明补上这三个字段。
+
+**验证方法（关键，避免"注入假数据"污染判断）**：全程用真实数据链路验证，不 mock/不改前端逻辑绕过。① 用真实 quotation `62c3e1bd-...`（Cu/00137 行 `__priceLocked=true`，Ag/992 行零标记）在编辑页 + 详情页分别验证 0→1（正确 1 个）badge；② 定位到"该 quotation 的 `quotation_view_structure`(QUOTE_CARD) 与其 template 的 `components_snapshot` 都冻结于组件配上 `elementCodeField`(`updatedAt=2026-08-02T06:15`) **之前**"（架构上"结构创建即冻、永不变"，`CardSnapshotService.rebuildStructureForDraft` 已被移除自动调用，2026-06-18 R1 决策），故这条存量单据永远拿不到新字段——**为验证 3 处修复的"有值时"路径**，对这一条记录的 `quotation_view_structure.structure` 与 `template.components_snapshot` 做了**临时 SQL 补丁**（补 `elementCodeField='元素'`/`elementPriceField='元素单价'`），验证后立即用备份 JSON 原样写回（`grep -c elementPriceField` 复核=0，确认已完全复原，未污染共享开发库）。③ 复原后（存量单据真实状态）编辑页/详情页均正确回落 0 badge、18 个 input 照常可编辑——证明"无标记/无结构字段时行为与改动前完全一致"（硬约束，未破坏现状）。
+
+**已销掉的 2 个记账缺口**：① 手动行"请先填写元素"占位分支之前 no-op（缺 `elementCodeField`/`elementPriceField`）——本次 3 号修复后数据链路已通，该分支现在对新建结构的组件生效（存量结构仍待各自然重建/迁移，非本次范围）；② `priceLocked` 徽标渲染——已验证在编辑页 + 详情页均正确显示，且 R1（`priceLocked` 不受 `readonly` 影响）逐字对照两处代码确认一致。
+
+**未销掉/明确边界**：`quote-card-edit`（失焦即时联动）——后端明确未做，前端未写用例、未做任何期待，与既定结论一致。存量 DRAFT 单据（结构冻结于组件配 `elementCodeField` 之前）拿不到占位/锁定两个体验，需后续结构迁移或"草稿态显式刷新"补一个"重建结构"入口（当前 `refreshDraftQuoteCards` 只刷值不刷结构）——这是一个新发现的、真实存在的存量数据缺口，未在本次范围内处理，记录在案供后续排期。
+
+**自检**：`npx tsc --noEmit` 0 错误；6 个改动文件 Vite transform 全部 200；无既有 vitest 覆盖这些符号（无回归风险）。E2E 用真实数据人工临时脚本验证（未走 Playwright 断言常驻用例，验证后已删除临时 spec 文件），未跑 `quotation-flow.spec.ts`（按 coordinator 指示，该 spec 在本环境实测跑不完）。

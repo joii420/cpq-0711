@@ -174,6 +174,10 @@ export function buildComponentDataFromTemplate(tmpl: any): ComponentDataItem[] {
       tabType: comp.tab_type || comp.tabType || undefined,
       partNoField: comp.part_no_field || comp.partNoField || undefined,
       partNameField: comp.part_name_field || comp.partNameField || undefined,
+      // task-0729 B10：元素角色字段透传（同上，初值——后续 enrichComponentData 以 snapshot 为权威覆盖）
+      elementCodeField: comp.element_code_field || comp.elementCodeField || undefined,
+      elementPriceField: comp.element_price_field || comp.elementPriceField || undefined,
+      elementCurrencyField: comp.element_currency_field || comp.elementCurrencyField || undefined,
     };
   });
 }

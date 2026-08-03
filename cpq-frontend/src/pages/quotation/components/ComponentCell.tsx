@@ -620,7 +620,11 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
   // 只读文本 + 版本徽标，而不是置灰输入框（置灰传达"暂时不可用"且文字变浅让价格看不清）。
   // 🚨 R1：不按 readonly 分支二次判断——编辑页(readonly=false)和详情页(readonly=true)
   // 都要落到这条分支，与下面 isManual 的 `&& !readonly` 写法刻意不同，勿混淆抄错。
-  if (priceLocked) {
+  // 🚨 联调修复（2026-08-02）：priceLocked 语义是"该行【元素单价字段】被锁定"，不是"该行所有
+  // INPUT_* 字段都锁定"——必须加 isThisTheElementPriceField 缩小作用域，否则料号/材质/项次/
+  // 损耗率等同行其它可编辑列会被误锁成只读文本（联调实测复现：驱动行 priceLocked=true 时
+  // 整行 9 个字段全部长出 🔒 徽标，只有"元素单价"一列才应该锁）。
+  if (priceLocked && isThisTheElementPriceField) {
     const formatted = !isEmpty ? (formatPathValue(rawCell) ?? String(rawCell)) : '—';
     return (
       <span className="qt-price-locked-cell">

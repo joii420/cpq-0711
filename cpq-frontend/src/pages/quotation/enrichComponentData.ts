@@ -205,6 +205,12 @@ export async function enrichComponentData(
         tabType: snapshotComp.tab_type || snapshotComp.tabType || undefined,
         partNoField: snapshotComp.part_no_field || snapshotComp.partNoField || undefined,
         partNameField: snapshotComp.part_name_field || snapshotComp.partNameField || undefined,
+        // task-0729 B10：元素角色字段。components_snapshot 是 publish 时冻结的组件整行 JSON,
+        // 组件在那之后才配的这三个字段不会出现在旧快照里（结构性字段一律以 snapshot 为权威，
+        // 与上面 tabType 等同一模式）——恒 undefined 等价于历史行为，不引入新失败模式。
+        elementCodeField: snapshotComp.element_code_field || snapshotComp.elementCodeField || undefined,
+        elementPriceField: snapshotComp.element_price_field || snapshotComp.elementPriceField || undefined,
+        elementCurrencyField: snapshotComp.element_currency_field || snapshotComp.elementCurrencyField || undefined,
       } as ComponentDataItem;
     });
   } catch {
@@ -312,6 +318,12 @@ export function buildComponentDataFromStructure(
       tabType: (tab as any).tabType || undefined,
       partNoField: (tab as any).partNoField || undefined,
       partNameField: (tab as any).partNameField || undefined,
+      // task-0729 B10（标记透传第2条）：元素角色字段透传——之前本函数完全没读 tab.elementCodeField
+      // 等三个 key，导致 ComponentCell 的 (activeComponent as any)?.elementCodeField 恒 undefined，
+      // "请先填写元素"占位分支 no-op、priceLocked 徽标也无法按字段级作用域限定（会误挂到整行所有列）。
+      elementCodeField: (tab as any).elementCodeField || undefined,
+      elementPriceField: (tab as any).elementPriceField || undefined,
+      elementCurrencyField: (tab as any).elementCurrencyField || undefined,
     } as ComponentDataItem;
   });
 }

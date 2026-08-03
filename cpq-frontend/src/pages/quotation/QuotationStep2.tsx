@@ -148,6 +148,15 @@ export interface ComponentDataItem {
   tabType?: string;
   partNoField?: string;
   partNameField?: string;
+  /**
+   * task-0729 B10（标记透传第2条）：元素编码列/元素单价列/货币列（组件级角色字段，来自
+   * CardStructureTab.elementCodeField 等，见 quotationService.ts）。ComponentCell 用它做字段级
+   * 作用域判断——"手动行请先填写元素"占位 + 元素单价列只读锁定徽标都只应命中这一个字段，
+   * 不是整行。旧结构（快照早于组件配上这三个字段时冻的）恒 undefined，等价于历史行为。
+   */
+  elementCodeField?: string;
+  elementPriceField?: string;
+  elementCurrencyField?: string;
 }
 
 export interface LineItem {
@@ -2811,10 +2820,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           isManualRow: isManualRowFlag,
                           // task-0729 跨屏·元素单价列只读态（fronttask §8 / api.md §4.3）：
                           // 纯读后端在该行 quoteCardValues 上追加的标记，不在前端重新判定。
-                          // 当前后端 B10 归位机制未上线，row.__priceLocked 恒为 undefined，
-                          // priceLocked 恒 false，行为与改动前完全一致（硬约束：无标记不改变现状）。
-                          priceLocked: !!(row as any).__priceLocked,
-                          priceVersionNo: (row as any).__priceVersion,
+                          // 🚨 联调修复（2026-08-02）：标记挂在 driverRow 上（quote_card_values.tabs[].
+                          // baseRows[].driverRow.__priceLocked，与 _元素/_料号 等系统列同级），不在
+                          // row（= quotation_line_component_data.row_data，用户可编辑值持久化）上。
+                          // 之前误读 row.__priceLocked 导致标记恒 undefined、徽标永不出现。driverRow 与
+                          // row 同源于同一 ra.expIndex（见上方 effectiveRows 构造），行位置对齐；
+                          // 非 driver 行 driverRow 恒 undefined，可选链兜底 false，不影响非驱动行为。
+                          priceLocked: !!(driverRow as any)?.__priceLocked,
+                          priceVersionNo: (driverRow as any)?.__priceVersion,
                         };
                         const cellInner = (
                           <ComponentCell

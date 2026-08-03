@@ -47,6 +47,15 @@ export interface CardStructureTab {
   tabType?: string;
   partNoField?: string;
   partNameField?: string;
+  /**
+   * task-0729 B10（标记透传第2条）：元素编码列/元素单价列/货币列（组件级角色字段，
+   * CardSnapshotService#buildCardStructure 从 component 表 loadElementRoleFields 直读冻进结构）。
+   * 手动行"请先填写元素"占位分支 + 元素单价列只读态锁定徽标的字段级作用域判断都靠这三个字段名。
+   * 旧结构（快照早于组件配上这三个字段时冻的）恒 undefined，等价于历史行为（无占位/无锁定）。
+   */
+  elementCodeField?: string;
+  elementPriceField?: string;
+  elementCurrencyField?: string;
 }
 
 export interface CardStructure {

@@ -659,6 +659,11 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                             return {
                               ri,
                               rawRow: ra.row,
+                              // task-0729 联调修复（2026-08-02）：priceLocked/priceVersion 标记挂在
+                              // driverRow 上（与 __viewVersion/__rowPartNo 同源），需透传给下游 ordered.map
+                              // 消费；之前只在本闭包内部用 driverRowRaw 算 __viewVersion/__rowPartNo 就丢弃了，
+                              // 未传出去导致下方 priceLocked 只能误读 rawRow（=row_data，不携带该标记）。
+                              driverRow: driverRowRaw,
                               rowBdv: ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined,
                               formulaCache: preComputedCaches[ri] ?? {},
                               formulaErrors: preComputedErrors[ri] ?? {},
@@ -726,7 +731,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                               }
                             }
                           }
-                          return ordered.map(({ ri, rawRow, rowBdv, formulaCache, formulaErrors, _depth, _hasChildren, _nodeKey, __sys, __viewVersion, __rowPartNo }, oi) => {
+                          return ordered.map(({ ri, rawRow, driverRow, rowBdv, formulaCache, formulaErrors, _depth, _hasChildren, _nodeKey, __sys, __viewVersion, __rowPartNo }, oi) => {
                           const bomSys = activeComponentBomTree ? (__sys as import('./useDriverExpansions').BomSysCols | undefined) : undefined;
                           // task-0713（F2/F4）：树页签版本切换 —— 仅 COSTING + 有 coid + 该节点有料号时可下拉；
                           // editable=false 时纯文本只读展示（不显示交互控件，同下方非树分支同款判断）。
@@ -809,8 +814,11 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                                 // 与编辑页 QuotationStep2.tsx 对齐同一读取口径）。🚨 R1：详情页本来就
                                 // readonly=true，priceLocked 判定不受 readonly 影响，这里必须照样透传，
                                 // 不能因为"反正详情页已经只读了"就省略——版本徽标只有这里才会挂上去。
-                                priceLocked: !!(rawRow as any).__priceLocked,
-                                priceVersionNo: (rawRow as any).__priceVersion,
+                                // 🚨 联调修复（2026-08-02）：标记挂在 driverRow（quote_card_values 快照的
+                                // baseRows[].driverRow，与 _元素/_料号 等系统列同级），不在 rawRow（=
+                                // row_data，用户可编辑值持久化）上——原写法恒读不到标记，徽标永不出现。
+                                priceLocked: !!(driverRow as any)?.__priceLocked,
+                                priceVersionNo: (driverRow as any)?.__priceVersion,
                               };
                               const isFirstField = activeComp.fields[0] === field;
                               // BOM 树激活时缩进已移到系统「料号」列，字段首列不再重复缩进（避免双重缩进）。
