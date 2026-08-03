@@ -63,6 +63,10 @@ public class QuotationResource {
     @Inject
     com.cpq.configure.service.ConfigureSnapshotService snapshotService;
 
+    /** task-0729 B10：价格列归位 + 初版 R 占位行钩子，与 saveDraft 同一条链路。 */
+    @Inject
+    com.cpq.priceadjust.service.PriceReconciler priceReconciler;
+
     // 报价单整份快照 Phase 1: 4 份结构 + 行级 4 份值
     @Inject
     com.cpq.quotation.service.CardSnapshotService cardSnapshotService;
@@ -134,12 +138,28 @@ public class QuotationResource {
             // 快照尽力而为
         }
         long _s2 = (System.nanoTime() - _p1) / 1_000_000;
+
+        // task-0729 B10：价格列归位。🔒 插入位置严格不可变通——必须在 row_data 落库/snapshot_rows
+        // 重建【之后】、quoteCardValues 的懒重算【之前】：在前会被前端提交值覆盖，在后卡片值算的
+        // 是旧价。quoteCardValues 已在 quotationService.saveDraft 内部置 NULL（D-1 失效），本步只
+        // 需保证归位发生在 ensureCardValues 真正读取 snapshot_rows 之前——两者天然满足（ensureCardValues
+        // 是后续独立请求才触发的懒计算），故归位放在此处（snapshotQuotation 之后）即满足时序要求。
+        long _p2 = System.nanoTime();
+        try {
+            priceReconciler.ensureInitialRevisionPlaceholder(id); // §11.10.6：建单(首次保存且已有产品行)懒建未定型初版
+            priceReconciler.reconcileQuotation(id);
+        } catch (Exception e) {
+            // 归位尽力而为，不阻断保存（同 snapshotService 的既定容错纪律）；失败下次 saveDraft 仍会重试，幂等。
+            LOG.warnf("[price-reconcile] saveDraft id=%s 归位失败（不阻断保存）: %s", id, e.getMessage());
+        }
+        long _s3 = (System.nanoTime() - _p2) / 1_000_000;
+
         // 卡片值(quote/costing card values)不再在保存路径计算 —— 原 Phase1 块含 jsonb 上的 btrim(quote_card_values)
         // 原生查询会在解析期抛异常, 被 catch (Exception ignore) 吞掉 → 卡片值从未落库 → 前端打开时风暴。
         // 现已迁至 lazy ensureCardValues(IS NULL 谓词选中、用最新 snapshot_rows 重算)。saveDraft 重建行时
         // 已对被重建行的旧卡片值置 NULL(D-1 失效, 见 QuotationService), 故此处无需任何卡片值计算。
-        LOG.debugf("[draft-profile] id=%s total=%dms | S1.saveDraft=%dms S2.snapshotRows=%dms",
-                id, _s1 + _s2, _s1, _s2);
+        LOG.debugf("[draft-profile] id=%s total=%dms | S1.saveDraft=%dms S2.snapshotRows=%dms S3.priceReconcile=%dms",
+                id, _s1 + _s2 + _s3, _s1, _s2, _s3);
         return ApiResponse.success(dto);
     }
 

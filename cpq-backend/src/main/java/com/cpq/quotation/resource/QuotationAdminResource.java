@@ -37,6 +37,9 @@ public class QuotationAdminResource {
     @Inject
     MaterialVersionUpgradeService materialVersionUpgradeService;
 
+    @Inject
+    com.cpq.priceadjust.service.PriceReconciler priceReconciler;
+
     /**
      * 存量 DRAFT 草稿迁移：清掉 quote_card_values 里的 #ERROR 脏值（D1）。
      *
@@ -92,5 +95,26 @@ public class QuotationAdminResource {
         UpgradeResult r = materialVersionUpgradeService.upgrade(
             UUID.fromString(lineItemId), UUID.fromString(targetVersionId), dryRun);
         return ApiResponse.success(r);
+    }
+
+    /**
+     * task-0729 B10：{@code PriceReconciler} 验证入口（临时，B10 开发期用）。真实执行（非 dryRun，
+     * 归位机制本身就是幂等的，不需要 dryRun 语义）；耗时随响应一并返回，用于 E14-7 性能自检。
+     */
+    @POST
+    @Path("/task0729-b10-reconcile-preview")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<Map<String, Object>> task0729B10ReconcilePreview(
+            @QueryParam("quotationId") String quotationId) {
+        long t0 = System.nanoTime();
+        priceReconciler.ensureInitialRevisionPlaceholder(UUID.fromString(quotationId));
+        com.cpq.priceadjust.service.PriceReconciler.ReconcileResult r =
+            priceReconciler.reconcileQuotation(UUID.fromString(quotationId));
+        long ms = (System.nanoTime() - t0) / 1_000_000;
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("lineItemsInScope", r.lineItemsInScope);
+        out.put("rowsChanged", r.rowsChanged);
+        out.put("elapsedMs", ms);
+        return ApiResponse.success(out);
     }
 }

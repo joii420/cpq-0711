@@ -181,13 +181,13 @@ public class MaterialVersionUpgradeService {
             return result;
         }
 
-        // ---- S9 前置（B0-R，coordinator 补派，backtask S0~S8 八步表本身没列这步）：
-        //      该单若从未有过 R 记录 → 懒建初版（D6/§11.10.6）。必须在此刻（S3 尚未动任何数据）
-        //      物化，因为初版语义 = "这次升版之前"的整单原貌；存量单不追溯补建 —— 首次升版时才
-        //      懒建是本期唯一实现路径（coordinator 已确认为已知限制、非静默扩大范围）。
-        if (!QuotationPriceRevision.anyExists(q.id)) {
-            createInitialRevision(q);
-        }
+        // ---- S9 前置（B0-R）：初版 R 定型。§11.10.6 要求"建单时（首次保存且已有产品行）就创建
+        //      sealed=false + snapshot NULL 的占位行"——这一半由 saveDraft 链路的
+        //      PriceReconciler#ensureInitialRevisionPlaceholder 负责（同一条链路，一起做）。这里只管
+        //      "首次升版时物化+定型"这一半：若占位行已存在但未定型 → 用【此刻，S3 尚未动任何数据】
+        //      的整单原貌物化 + sealed=true；若占位行完全不存在（存量单，早于本功能上线，从未走过
+        //      saveDraft 钩子）→ 直接创建并当场定型，同样的懒建兜底（coordinator 已确认此限制）。
+        materializeAndSealInitialRevision(q);
 
         // ---- S3a + S3b + S4b：逐价格承载组件，字段级写回 snapshot_rows（driver 行）+
         //      row_data（手动行改新价 + 非手动行清陈旧价）。
@@ -524,27 +524,38 @@ public class MaterialVersionUpgradeService {
     }
 
     /**
-     * 懒建初版 R（D6/§11.10.6）：{@code basedVersionId} 留空，直接 sealed=true（用调用时刻——
-     * 尚未被本次 S3 修改——的整单原貌物化）。存量单不做建单时的"未定型占位行"追溯补建，
-     * 首次升版才懒建是本期唯一实现路径（coordinator 已确认此限制，非静默扩大范围）。
+     * 首次升版时把初版 R 定型（§11.10.6）：
+     * <ul>
+     *   <li>占位行已存在（saveDraft 钩子建单时创建的 sealed=false 行）→ 原地物化【此刻】
+     *       （升版前，S3 尚未动任何数据）的整单原貌 + 置 sealed=true；</li>
+     *   <li>占位行不存在（存量单：早于本功能上线，从未走过新的 saveDraft 钩子）→ 直接创建
+     *       并当场定型，同样懒建兜底（coordinator 已确认此限制，非静默扩大范围）。</li>
+     * </ul>
+     * 已定型（sealed=true）则 no-op——只有"首次"升版才定型初版。
      */
-    private void createInitialRevision(Quotation q) {
+    void materializeAndSealInitialRevision(Quotation q) {
+        QuotationPriceRevision initial = QuotationPriceRevision.findInitial(q.id);
+        if (initial != null && Boolean.TRUE.equals(initial.sealed)) {
+            return; // 已定型，不是首次升版，不动初版（本期 R 由 updateCurrentPeriodRevision 单独处理）
+        }
         WholeQuotationSnapshot snap = buildWholeQuotationSnapshot(q.id);
-        QuotationPriceRevision initial = new QuotationPriceRevision();
-        initial.quotationId = q.id;
-        initial.revisionNo = nextRevisionNo(q.id);
-        initial.basedVersionId = null;
+        boolean isNew = initial == null;
+        if (isNew) {
+            initial = new QuotationPriceRevision();
+            initial.quotationId = q.id;
+            initial.revisionNo = nextRevisionNo(q.id);
+            initial.basedVersionId = null;
+            initial.firstEffectiveAt = q.createdAt != null ? q.createdAt : java.time.OffsetDateTime.now();
+        }
         initial.sealed = true;
-        initial.upgradedMaterialNos = "[]";
         initial.quoteCardValues = snap.quoteCardValuesJson;
         initial.costingCardValues = snap.costingCardValuesJson;
         initial.snapshotRows = snap.snapshotRowsJson;
         initial.quoteTotalAmount = q.totalAmount;
-        initial.firstEffectiveAt = q.createdAt != null ? q.createdAt : java.time.OffsetDateTime.now();
-        initial.lastUpdatedAt = initial.firstEffectiveAt;
+        initial.lastUpdatedAt = java.time.OffsetDateTime.now();
         initial.persist();
-        LOG.infof("[b0-upgrade][R] quotation=%s 懒建初版 revisionNo=%s（升版前整单原貌已封存）",
-            q.quotationNumber, initial.revisionNo);
+        LOG.infof("[b0-upgrade][R] quotation=%s 初版 revisionNo=%s 定型（%s，升版前整单原貌已封存）",
+            q.quotationNumber, initial.revisionNo, isNew ? "存量单懒建兜底" : "占位行物化");
     }
 
     /**
