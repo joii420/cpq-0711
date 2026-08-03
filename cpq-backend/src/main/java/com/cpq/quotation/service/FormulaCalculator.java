@@ -69,7 +69,32 @@ public class FormulaCalculator {
         public Map<String, Object> currentRowRaw = new HashMap<>();
         /** cross_tab_ref：同卡片已算行存储（组件标识→行表，行=字段名→已算值）。 */
         public Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
+
+        /**
+         * task-0803：BOM 树求值上下文。
+         * {@code null} = 非树页签、或该页签公式未使用父子 token —— 此时 {@code tree_ref}/{@code tree_attr}
+         * 求值一律返 0（需求 §4.3.8 闸 ⑤ 兜底，防存量脏数据静默算错）。
+         */
+        public TreeEvalContext tree = null;
+        /** task-0803：本行在 baseRows 中的下标；{@code tree != null} 时有效，否则 -1。 */
+        public int rowIndex = -1;
     }
+
+    /**
+     * task-0803：BOM 树页签的整页签求值上下文。
+     *
+     * <p>与 {@code baseRows} 下标一一对应；{@code rowContexts} 在单元格拓扑求值过程中被逐格填充，
+     * 因此 {@code PGET}/{@code C*} 读到的父/子行值，一定是拓扑序保证已算好的那一份。
+     *
+     * @param relations      父子关系（按 {@code __nodeId} 认边，已排除墓碑）
+     * @param rowContexts    各行求值上下文（可变，随求值填充）
+     * @param resolvedRaw    各行「已解析原始值」视图（字段名 → 原始值），判「有值」用
+     * @param formulaColumns 公式列名集合 —— 需求 §4.3.4 判据 6：公式列恒有值
+     */
+    public record TreeEvalContext(com.cpq.quotation.service.formula.TreeRelations relations,
+                                  List<RowContext> rowContexts,
+                                  List<Map<String, Object>> resolvedRaw,
+                                  java.util.Set<String> formulaColumns) {}
 
     // ======================================================================
     // Layer 1 — evaluateExpression（单公式 token 数组 → BigDecimal）
@@ -222,10 +247,125 @@ public class FormulaCalculator {
                 expr.append(numStr(n != null ? n : 0.0));
                 break;
             }
+            // task-0803：BOM 页签父子取值。求值结果当字面量追加（带括号防负数与前一个运算符粘连）。
+            case "tree_ref": {
+                expr.append('(').append(evalTreeRef(token, ctx).toPlainString()).append(')');
+                break;
+            }
+            case "tree_attr": {
+                expr.append('(').append(evalTreeAttr(token, ctx).toPlainString()).append(')');
+                break;
+            }
             default:
                 // 未知 token 忽略（对齐前端 switch 不命中分支）
                 break;
         }
+    }
+
+    // ======================================================================
+    // task-0803 — BOM 页签父子取值（tree_ref / tree_attr）
+    // ======================================================================
+
+    /**
+     * {@code tree_ref} 求值：{@code dir=PARENT} 取直接父行（PGET）；{@code dir=CHILD} 聚合直接子行（C* 族）。
+     *
+     * <p>边界口径（需求 §4.3.3，全部返 0，无例外）：根行 PGET → 0；叶子行 C* → 0；
+     * 子行全部无值 → 0；拿不到树上下文（非树页签 / 存量脏数据）→ 0。
+     */
+    private BigDecimal evalTreeRef(JsonNode token, RowContext ctx) {
+        TreeEvalContext t = ctx.tree;
+        if (t == null || ctx.rowIndex < 0 || ctx.rowIndex >= t.rowContexts().size()) return ZERO;
+        JsonNode targetExpr = token.path("targetExpr");
+        if (!targetExpr.isArray() || targetExpr.size() == 0) return ZERO;
+
+        String dir = token.path("dir").asText("");
+        if ("PARENT".equals(dir)) {
+            int p = t.relations().parentOf(ctx.rowIndex);
+            if (p < 0) return ZERO;                                  // 根行无父 → 0
+            return evaluateExpression(targetExpr, t.rowContexts().get(p));
+        }
+        if (!"CHILD".equals(dir)) return ZERO;
+
+        List<Integer> kids = t.relations().childrenOf(ctx.rowIndex);
+        if (kids.isEmpty()) return ZERO;                              // 叶子行 → 0
+
+        java.util.Set<String> names = collectFieldNames(targetExpr);
+        List<BigDecimal> nums = new ArrayList<>(kids.size());
+        for (int c : kids) {
+            if (!hasValueForAgg(t, c, names)) continue;               // 空值不参与（§4.3.4）
+            nums.add(evaluateExpression(targetExpr, t.rowContexts().get(c)));
+        }
+        if (nums.isEmpty()) return ZERO;                              // 子行全无值 → 0
+        return aggregateTreeNums(token.path("agg").asText("SUM"), nums);
+    }
+
+    /** {@code tree_attr} 求值：层级 / 是否叶子 / 是否根。拿不到树上下文 → 0。 */
+    private BigDecimal evalTreeAttr(JsonNode token, RowContext ctx) {
+        TreeEvalContext t = ctx.tree;
+        if (t == null || ctx.rowIndex < 0) return ZERO;
+        return switch (token.path("attr").asText("")) {
+            case "LVL" -> BigDecimal.valueOf(t.relations().lvl(ctx.rowIndex));
+            case "IS_LEAF" -> t.relations().isLeaf(ctx.rowIndex) ? BigDecimal.ONE : ZERO;
+            case "IS_ROOT" -> t.relations().isRoot(ctx.rowIndex) ? BigDecimal.ONE : ZERO;
+            default -> ZERO;
+        };
+    }
+
+    /** 收集表达式里所有 {@code field} token 的列名（判「有值」用）。 */
+    private static java.util.Set<String> collectFieldNames(JsonNode expr) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        if (expr == null || !expr.isArray()) return out;
+        for (JsonNode tk : expr) {
+            if ("field".equals(tk.path("type").asText(""))) {
+                String v = tk.path("value").asText("");
+                if (!v.isEmpty()) out.add(v);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 需求 §4.3.4「有值」判据（实现版）：
+     * <ol>
+     *   <li>判据 5：表达式无 {@code field} token（纯常量/树属性）→ 有值（{@code CSUM(1)} = 子行数）</li>
+     *   <li>判据 6：引用的是<b>公式列</b> → 恒有值（公式列总能算出数，哪怕 0）。
+     *       <b>已明示接受的取舍</b>：聚合公式列时 spine 补位空行仍会参与（2026-08-03 用户裁决）</li>
+     *   <li>判据 3：任一引用列在该行有非空原始值 → 有值（数值 0 也算有值）</li>
+     *   <li>判据 2：引用列全部取不到值 → 无值，跳过该子行</li>
+     * </ol>
+     */
+    private static boolean hasValueForAgg(TreeEvalContext t, int rowIdx, java.util.Set<String> names) {
+        if (names.isEmpty()) return true;
+        Map<String, Object> raw = (rowIdx >= 0 && rowIdx < t.resolvedRaw().size())
+            ? t.resolvedRaw().get(rowIdx) : Map.of();
+        for (String n : names) {
+            if (t.formulaColumns().contains(n)) return true;
+            if (!isBlank(raw.get(n))) return true;
+        }
+        return false;
+    }
+
+    /**
+     * C* 族聚合。
+     *
+     * <p>🔒 <b>口径必须与 cross_tab_ref 的聚合分支保持一致</b>（本类内 {@code aggregateHits} 的
+     * {@code switch (agg)}）：BigDecimal 全程、{@code PrecisionPolicy.sum} 累加、AVG 走
+     * {@code DIVISION_SCALE + HALF_UP}、MAX/MIN 按 {@code compareTo} 选值。
+     * 这里<b>刻意另写一份而非抽取共用</b> —— cross_tab_ref 那段是热路径且语义含 {@code ERR} 分流，
+     * 抽取会改动它的代码路径，违反本任务的零回归门禁。改动任一处时请同步核对另一处。
+     * 差异仅一处：本方法支持 {@code COUNT}（返回有值子行数），cross_tab_ref 那边 COUNT 走别的路径。
+     */
+    private static BigDecimal aggregateTreeNums(String agg, List<BigDecimal> nums) {
+        if (nums == null || nums.isEmpty()) return ZERO;
+        return switch (agg) {
+            case "SUM" -> PrecisionPolicy.sum(nums);
+            case "AVG" -> PrecisionPolicy.sum(nums).divide(BigDecimal.valueOf(nums.size()),
+                PrecisionPolicy.DIVISION_SCALE, java.math.RoundingMode.HALF_UP);
+            case "MAX" -> nums.stream().max(BigDecimal::compareTo).orElse(ZERO);
+            case "MIN" -> nums.stream().min(BigDecimal::compareTo).orElse(ZERO);
+            case "COUNT" -> BigDecimal.valueOf(nums.size());
+            default -> ZERO;
+        };
     }
 
     /** path token 取值：basicDataValues["{path}"] → toNumber；缺失 → null（后端无 pathCache，basicDataValues 已解析）。 */
