@@ -1510,6 +1510,29 @@ public class FormulaCalculator {
         return null;
     }
 
+    /**
+     * repair-0803 B3（BL-0098）：对外暴露「某 FORMULA 字段最终会用哪条公式」的解析口径，
+     * 供组件保存期把隐式绑定<b>固化</b>成显式 {@code formula_name}。
+     *
+     * <p><b>为什么必须复用本方法而不是另写一套</b>：{@link #resolveFormula} 的 4 级回退
+     * （显式名 → formula_assignments → 同名 → <b>按位置</b>）是求值期的唯一真相。
+     * 固化逻辑若自己实现一遍，两处口径一旦漂移，固化结果就会与实际算法不符 ——
+     * 那正是 BL-0098 本身的问题（隐式绑定与用户认知不一致）在另一个层面重演。
+     *
+     * @param fullFieldIndex 该字段在 {@code fields} 数组中的<b>完整下标</b>（非 FORMULA 字段也计数），
+     *                       与 {@code formula_assignments} 的键一致
+     * @return 解析到的公式名；解析不到返回 {@code null}（调用方应保持原样不写入）
+     */
+    public String resolveFormulaNameForField(JsonNode field, JsonNode fields, JsonNode formulas,
+                                             JsonNode formulaAssignments, int fullFieldIndex) {
+        if (field == null || fields == null || formulas == null) return null;
+        ResolvedFormula rf = resolveFormula(field, fieldName(field), fields, formulas,
+                formulaAssignments, fullFieldIndex);
+        if (rf == null) return null;
+        String name = rf.name();
+        return (name == null || name.isEmpty()) ? null : name;
+    }
+
     private JsonNode findFormulaByName(JsonNode formulas, String name) {
         for (JsonNode fm : formulas) {
             if (name.equals(fm.path("name").asText(null))) return fm;
