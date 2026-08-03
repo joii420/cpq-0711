@@ -19,6 +19,9 @@ import java.util.UUID;
 public class CustomerPriceAdjustStrategyLog extends PanacheEntityBase {
 
     public static final String CHANGE_TYPE_COMPARISON_COLUMN = "COMPARISON_COLUMN";
+    public static final String CHANGE_TYPE_STRATEGY = "STRATEGY";
+    public static final String CHANGE_TYPE_MATERIAL_SCOPE = "MATERIAL_SCOPE";
+    public static final String CHANGE_TYPE_ELEMENT_LIST = "ELEMENT_LIST";
 
     @Id
     @GeneratedValue

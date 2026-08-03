@@ -1,6 +1,5 @@
 package com.cpq.priceadjust.resource;
 
-import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.dto.PageResult;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.common.security.RoleAllowed;
@@ -26,6 +25,9 @@ import java.util.UUID;
 
 /**
  * task-0729 B3 · 价格版本端点（api.md §1.11 / §1.12 / §1.13）。
+ *
+ * <p>🔒 2026-08-03 修正：响应体裸 DTO，不套 {@code ApiResponse} 信封（api.md §0.2 + 前端
+ * {@code api.ts} 拦截器只做一层解包，详见 {@link PriceAdjustStrategyResource} 类注释）。
  */
 @Path("/api/cpq/price-adjust/versions")
 @Produces(MediaType.APPLICATION_JSON)
@@ -52,13 +54,13 @@ public class PriceAdjustVersionResource {
         dto.itemCount = r.itemCount;
         dto.budgetJobId = r.budgetJobId;
         dto.budgetStatus = r.budgetStatus;
-        return Response.status(201).entity(ApiResponse.success(dto)).build();
+        return Response.status(201).entity(dto).build();
     }
 
     /** §1.12 版本轨迹（屏 1 底部）。进度摘要实时派生，不落库（§11.3.3(2)）。 */
     @GET
     @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
-    public ApiResponse<PageResult<VersionDTO>> list(
+    public PageResult<VersionDTO> list(
             @QueryParam("customerNo") String customerNo,
             @QueryParam("page") @DefaultValue("1") int page,
             @QueryParam("size") @DefaultValue("20") int size) {
@@ -76,14 +78,14 @@ public class PriceAdjustVersionResource {
                 .page(Page.of(page - 1, size)).list();
 
         List<VersionDTO> content = rows.stream().map(this::toDto).toList();
-        return ApiResponse.success(new PageResult<>(content, page, size, total));
+        return new PageResult<>(content, page, size, total);
     }
 
     /** §1.13 版本明细（元素级），用于屏 1 展开查看。 */
     @GET
     @Path("/{versionId}/items")
     @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
-    public ApiResponse<PageResult<VersionItemDTO>> items(@PathParam("versionId") UUID versionId) {
+    public PageResult<VersionItemDTO> items(@PathParam("versionId") UUID versionId) {
         ElementPriceVersion version = ElementPriceVersion.findById(versionId);
         if (version == null) throw new BusinessException(404, "版本不存在: " + versionId);
 
@@ -110,7 +112,7 @@ public class PriceAdjustVersionResource {
             return dto;
         }).toList();
 
-        return ApiResponse.success(new PageResult<>(content, 1, content.size(), content.size()));
+        return new PageResult<>(content, 1, content.size(), content.size());
     }
 
     private VersionDTO toDto(ElementPriceVersion v) {

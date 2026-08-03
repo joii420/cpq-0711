@@ -55,6 +55,23 @@ public class GlobalExceptionMapper {
                             "invalidItems", rnre.getInvalidItems())))
                     .build();
         }
+        if (e instanceof com.cpq.priceadjust.exception.MaterialRemovalNeedsConfirmException mrnce) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(
+                            "code", "REMOVAL_NEEDS_CONFIRM",
+                            "removedMaterialNos", mrnce.getRemovedMaterialNos(),
+                            "pendingReviewCount", mrnce.getPendingReviewCount(),
+                            "unlockedQuotationCount", mrnce.getUnlockedQuotationCount())))
+                    .build();
+        }
+        if (e instanceof com.cpq.priceadjust.exception.ElementUnselectNeedsConfirmException eunce) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(
+                            "code", "UNSELECT_NEEDS_CONFIRM",
+                            "removedElementCodes", eunce.getRemovedElementCodes(),
+                            "unlockedQuotationCount", eunce.getUnlockedQuotationCount())))
+                    .build();
+        }
         if (e instanceof com.cpq.component.exception.ComponentElementBindingRequiredException cebre) {
             return Response.status(e.getCode())
                     .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(
