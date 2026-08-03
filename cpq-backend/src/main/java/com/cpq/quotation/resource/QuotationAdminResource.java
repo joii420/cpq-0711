@@ -178,6 +178,21 @@ public class QuotationAdminResource {
     }
 
     /**
+     * task-0729 · 回归修复验证入口（临时）：直接调
+     * {@code MaterialPriceUpdateJobItem.staleAllUnfinishedByJobIds}（§11.6.3.2 STALE 标记逻辑），
+     * 隔离验证 Hibernate 6 {@code now()} 修复不影响该方法本身的 WHERE/SET 语义。验证完即删。
+     */
+    @POST
+    @Path("/task0729-stale-mark-verify")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    @jakarta.transaction.Transactional
+    public ApiResponse<Integer> task0729StaleMarkVerify(@QueryParam("jobId") String jobId) {
+        int updated = com.cpq.priceadjust.entity.MaterialPriceUpdateJobItem
+            .staleAllUnfinishedByJobIds(List.of(UUID.fromString(jobId)));
+        return ApiResponse.success(updated);
+    }
+
+    /**
      * task-0729 · BomTreeRenderService customerId 影响面评估 · 第3点验证入口（临时）。
      * 直接调用 {@code ConfigureSnapshotService.snapshotQuotation}（saveDraft 走的同一个
      * 生产方法），用于对一张"从未 render 过"（quote_card_values 为 null）的隔离测试单验证

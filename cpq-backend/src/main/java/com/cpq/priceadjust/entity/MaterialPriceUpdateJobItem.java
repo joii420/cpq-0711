@@ -69,10 +69,19 @@ public class MaterialPriceUpdateJobItem extends PanacheEntityBase {
      * job 名下未完成项（WAITING/RUNNING）一律置 STALE 终态（§11.6.3.2，版本被新版取代时）。
      * jobIds 由调用方（PriceAdjustVersionGenerationService）先按 versionId 查出 MaterialPriceUpdateJob
      * 再传入，避免这里跨实体写子查询。
+     *
+     * <p>🔒 2026-08-03 修复（回归阻断 #21/#64）：原写法 {@code updatedAt = now()} 用 HQL 函数
+     * {@code now()}，Hibernate 6 对该函数返回类型推断为 {@code java.lang.Object}，赋值给
+     * {@code OffsetDateTime} 字段时语义校验直接拒绝（{@code SemanticException: Cannot assign
+     * expression of type 'java.lang.Object' to target path 'alias_0.updatedAt'}）。此前两次
+     * 测试"成功"是因为当时待 supersede 版本名下还没有 job（{@code jobIds} 判空提前 return，
+     * 本行 HQL 从未被真正编译执行）——不是本次同步引入的新 bug，是这条从未被真实数据路径触达过
+     * 的既有代码首次被执行时暴露的语义错误。改为绑定真实 Java {@link OffsetDateTime#now()} 参数，
+     * 不再依赖 HQL 端函数推断类型。
      */
     public static int staleAllUnfinishedByJobIds(List<UUID> jobIds) {
         if (jobIds == null || jobIds.isEmpty()) return 0;
-        return update("status = ?1, updatedAt = now() where status in (?2, ?3) and jobId in ?4",
-                STALE, WAITING, RUNNING, jobIds);
+        return update("status = ?1, updatedAt = ?2 where status in (?3, ?4) and jobId in ?5",
+                STALE, OffsetDateTime.now(), WAITING, RUNNING, jobIds);
     }
 }
