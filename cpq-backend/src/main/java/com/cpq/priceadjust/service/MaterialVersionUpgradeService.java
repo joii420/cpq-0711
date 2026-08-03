@@ -2,6 +2,7 @@ package com.cpq.priceadjust.service;
 
 import com.cpq.priceadjust.dto.ElementPrice;
 import com.cpq.priceadjust.dto.UpgradeResult;
+import com.cpq.priceadjust.entity.QuotationPriceRevision;
 import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.service.CardSnapshotService;
@@ -180,6 +181,14 @@ public class MaterialVersionUpgradeService {
             return result;
         }
 
+        // ---- S9 前置（B0-R，coordinator 补派，backtask S0~S8 八步表本身没列这步）：
+        //      该单若从未有过 R 记录 → 懒建初版（D6/§11.10.6）。必须在此刻（S3 尚未动任何数据）
+        //      物化，因为初版语义 = "这次升版之前"的整单原貌；存量单不追溯补建 —— 首次升版时才
+        //      懒建是本期唯一实现路径（coordinator 已确认为已知限制、非静默扩大范围）。
+        if (!QuotationPriceRevision.anyExists(q.id)) {
+            createInitialRevision(q);
+        }
+
         // ---- S3a + S3b + S4b：逐价格承载组件，字段级写回 snapshot_rows（driver 行）+
         //      row_data（手动行改新价 + 非手动行清陈旧价）。
         int totalRowsChanged = 0;
@@ -240,6 +249,12 @@ public class MaterialVersionUpgradeService {
         q.totalAmount = lineSum.setScale(4, java.math.RoundingMode.HALF_UP);
         // taxAmount：全工程未发现任何"从行汇总推导税额"的既有公式（taxRate/taxAmount 全库零业务
         // 逻辑引用，纯手填字段），本次不新造算法，税额原样不动——如实说明，非遗漏。
+
+        // ---- S9：本期 R = 升版【后】状态（F4）。同一 V 版内多次料号升版合并进同一条
+        //      （based_version_id 天然去重键，UNIQUE(quotation_id, based_version_id)）；
+        //      🔒 E11-5：每次并入都必须用当前（升版后）状态整单覆写双侧快照，不能只改
+        //      时间戳+追加料号列表——否则切回该 R 预览会看到"先通过的新价、后通过的旧价"。
+        updateCurrentPeriodRevision(q, targetVersionId, li.productPartNoSnapshot);
 
         result.status = UpgradeResult.Status.SUCCESS;
         result.message = String.format(
@@ -495,6 +510,149 @@ public class MaterialVersionUpgradeService {
             return MAPPER.writeValueAsString(node);
         } catch (Exception e) {
             throw new IllegalStateException("序列化失败: " + e.getMessage(), e);
+        }
+    }
+
+    // =========================================================================
+    // B0-R：R 版本快照（coordinator 补派，backtask S0~S8 遗漏；载体见验收 #17/#53/#55/#56/#63）
+    // =========================================================================
+
+    private static final class WholeQuotationSnapshot {
+        String quoteCardValuesJson;
+        String costingCardValuesJson;
+        String snapshotRowsJson;
+    }
+
+    /**
+     * 懒建初版 R（D6/§11.10.6）：{@code basedVersionId} 留空，直接 sealed=true（用调用时刻——
+     * 尚未被本次 S3 修改——的整单原貌物化）。存量单不做建单时的"未定型占位行"追溯补建，
+     * 首次升版才懒建是本期唯一实现路径（coordinator 已确认此限制，非静默扩大范围）。
+     */
+    private void createInitialRevision(Quotation q) {
+        WholeQuotationSnapshot snap = buildWholeQuotationSnapshot(q.id);
+        QuotationPriceRevision initial = new QuotationPriceRevision();
+        initial.quotationId = q.id;
+        initial.revisionNo = nextRevisionNo(q.id);
+        initial.basedVersionId = null;
+        initial.sealed = true;
+        initial.upgradedMaterialNos = "[]";
+        initial.quoteCardValues = snap.quoteCardValuesJson;
+        initial.costingCardValues = snap.costingCardValuesJson;
+        initial.snapshotRows = snap.snapshotRowsJson;
+        initial.quoteTotalAmount = q.totalAmount;
+        initial.firstEffectiveAt = q.createdAt != null ? q.createdAt : java.time.OffsetDateTime.now();
+        initial.lastUpdatedAt = initial.firstEffectiveAt;
+        initial.persist();
+        LOG.infof("[b0-upgrade][R] quotation=%s 懒建初版 revisionNo=%s（升版前整单原貌已封存）",
+            q.quotationNumber, initial.revisionNo);
+    }
+
+    /**
+     * 本期 R = 升版【后】状态（F4）。{@code UNIQUE(quotation_id, based_version_id)} 天然充当
+     * "同一 V 版内多次料号升版合并进同一条"的去重键——find-or-create 命中既有行时，🔒 E11-5
+     * 要求整单双侧快照必须【覆写】为当前状态，不能只追加 upgradedMaterialNos/改时间戳。
+     */
+    private void updateCurrentPeriodRevision(Quotation q, UUID targetVersionId, String upgradedMaterialNo) {
+        WholeQuotationSnapshot snap = buildWholeQuotationSnapshot(q.id);
+        QuotationPriceRevision rev = QuotationPriceRevision.findByVersion(q.id, targetVersionId);
+        boolean isNew = rev == null;
+        if (isNew) {
+            rev = new QuotationPriceRevision();
+            rev.quotationId = q.id;
+            rev.revisionNo = nextRevisionNo(q.id);
+            rev.basedVersionId = targetVersionId;
+            rev.firstEffectiveAt = java.time.OffsetDateTime.now();
+        }
+        rev.sealed = true;
+        rev.quoteCardValues = snap.quoteCardValuesJson;       // 覆写，不是合并（E11-5）
+        rev.costingCardValues = snap.costingCardValuesJson;   // 覆写
+        rev.snapshotRows = snap.snapshotRowsJson;             // 覆写
+        rev.quoteTotalAmount = q.totalAmount;
+        rev.lastUpdatedAt = java.time.OffsetDateTime.now();
+        rev.upgradedMaterialNos = mergeMaterialNo(rev.upgradedMaterialNos, upgradedMaterialNo);
+        rev.persist();
+        LOG.infof("[b0-upgrade][R] quotation=%s %s revisionNo=%s targetVersion=%s material=%s",
+            q.quotationNumber, isNew ? "新建本期" : "并入既有本期", rev.revisionNo, targetVersionId, upgradedMaterialNo);
+    }
+
+    /**
+     * 整单双侧快照（§11.7.0）：全部产品行 × 全部页签 × 全部行，不是稀疏存储、不只存被升版的料号——
+     * 切版预览要能渲染完整原貌。结构见 {@link QuotationPriceRevision} 类注释。
+     */
+    private WholeQuotationSnapshot buildWholeQuotationSnapshot(UUID quotationId) {
+        List<QuotationLineItem> lines = QuotationLineItem.list("quotationId", quotationId);
+        ObjectNode quoteMap = MAPPER.createObjectNode();
+        ObjectNode costingMap = MAPPER.createObjectNode();
+        ObjectNode rowsMap = MAPPER.createObjectNode();
+
+        for (QuotationLineItem l : lines) {
+            String key = l.id.toString();
+            putJsonOrNull(quoteMap, key, l.quoteCardValues);
+            putJsonOrNull(costingMap, key, l.costingCardValues);
+
+            ObjectNode compMap = MAPPER.createObjectNode();
+            @SuppressWarnings("unchecked")
+            List<Object[]> cdRows = em.createNativeQuery(
+                    "SELECT component_id, snapshot_rows FROM quotation_line_component_data WHERE line_item_id = :lid")
+                .setParameter("lid", l.id).getResultList();
+            for (Object[] row : cdRows) {
+                String cid = row[0] != null ? row[0].toString() : "null";
+                putJsonOrNull(compMap, cid, (String) row[1]);
+            }
+            rowsMap.set(key, compMap);
+        }
+
+        WholeQuotationSnapshot snap = new WholeQuotationSnapshot();
+        snap.quoteCardValuesJson = writeJson(quoteMap);
+        snap.costingCardValuesJson = writeJson(costingMap);
+        snap.snapshotRowsJson = writeJson(rowsMap);
+        return snap;
+    }
+
+    private void putJsonOrNull(ObjectNode target, String key, String json) {
+        if (json == null || json.isBlank()) {
+            target.putNull(key);
+            return;
+        }
+        try {
+            target.set(key, MAPPER.readTree(json));
+        } catch (Exception e) {
+            target.putNull(key);
+        }
+    }
+
+    /** 版本号 = R + YYMMDD + 两位当日流水，按单 + 日期独立计数。 */
+    private String nextRevisionNo(UUID quotationId) {
+        String prefix = "R" + java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMdd"));
+        @SuppressWarnings("unchecked")
+        List<String> existing = em.createNativeQuery(
+                "SELECT revision_no FROM quotation_price_revision WHERE quotation_id = :qid AND revision_no LIKE :prefix")
+            .setParameter("qid", quotationId).setParameter("prefix", prefix + "%").getResultList();
+        int maxSeq = 0;
+        for (String rn : existing) {
+            if (rn != null && rn.length() == prefix.length() + 2) {
+                try {
+                    int seq = Integer.parseInt(rn.substring(prefix.length()));
+                    if (seq > maxSeq) maxSeq = seq;
+                } catch (NumberFormatException ignore) { /* 忽略非两位数字尾缀的历史脏数据 */ }
+            }
+        }
+        return prefix + String.format("%02d", maxSeq + 1);
+    }
+
+    private String mergeMaterialNo(String existingJson, String materialNo) {
+        try {
+            JsonNode parsed = existingJson != null && !existingJson.isBlank()
+                ? MAPPER.readTree(existingJson) : MAPPER.createArrayNode();
+            ArrayNode arr = parsed.isArray() ? (ArrayNode) parsed : MAPPER.createArrayNode();
+            boolean found = false;
+            for (JsonNode n : arr) {
+                if (n.asText("").equals(materialNo)) { found = true; break; }
+            }
+            if (!found && materialNo != null && !materialNo.isBlank()) arr.add(materialNo);
+            return writeJson(arr);
+        } catch (Exception e) {
+            return materialNo != null ? "[\"" + materialNo + "\"]" : "[]";
         }
     }
 
