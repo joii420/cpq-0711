@@ -4410,3 +4410,17 @@ E2E:
 **未做/边界**：没有构建一份"literally 跑通 12 位精度算法"的可执行数值对拍工具（因为结构性论证已经能完整回答问题，且 coordinator 明确要求本阶段不碰 `formulaEngine.ts`）；如果 coordinator 认为仍需要一份可执行对拍作为更强证据链，需要另行授权临时（不提交）修改 `formulaEngine.ts` 做 A/B 对照后完整还原，这是本次未做、需要额外确认的后续步骤。
 
 **自检**：③④均为只读 SQL/JSON 结构扫描（多轮独立重跑结果一致：207/0、2/2 命中数量在数据库因并发写入从 47→48 张单/28→29 条 line item 后重新验证仍然成立）；②已通过完整自检（见上一条目）；①为纯文档产出，无代码变更、不涉及 tsc/Vite/Flyway 自检链路。
+
+---
+
+[2026-08-03] task-0729 B9 收尾 —— 业务方裁定 dec-001/002/004 expected 改回 4 位（推翻 task-0801 已合并的错误前提），黄金用例终态 31/33 | `formula-golden/10-decimal-precision.json` / `formula-golden/README.md` | 业务方基于上一条目发现的"task-0801 尚未合并"事实重新裁定：本分支前后端当下本来就一致（都是 4 位 `setScale(4,HALF_UP)`），`dec-001/002/004` 最初写的 12 位 `expected` 是**按一个未经验证的转述（"task-0801 已把后端改成 12 位"）写错的口径**，不是两端真实分歧——**这正是"自己实测、不采信转述"的价值所在**：如果没有直接跑 `FormulaGoldenTest` 验证，会把一个不存在的分歧当真分歧汇报给业务方。
+
+**改动**：`dec-001` expected `3.333333333333`→`3.3333`，`dec-002` `0.333333333333`→`0.3333`，`dec-004` `2.00005`→`2.0001`，三条 `expectedSource` 均改为 `frontend-engine`（本分支前端引擎实测值）。`dec-003` notes 同步更正（原文错误地引用了未合并的 `PrecisionPolicy` 语义解释计算过程，实际数值不受影响但解释口径需要更正）。
+
+**README 加固**：文件最顶部（标题正下方，任何人打开文件第一眼就能看到）加入 🚨 大段警示——`task-0801` 真正合并进本分支时，必须同一次改动里：①同步更新前端 `formulaEngine.ts` 的精度策略跟上后端新 `PrecisionPolicy`；②把这 3 条 `expected` 改回 12 位系列值（具体数值已在警示区写死）。明确写"若只合并 `task-0801` 不动这两处，用例会自动变红——那正是黄金用例机制该干的活，不要当测试坏了绕过"，防止未来合并者重蹈本轮"以讹传讹"的覆辙。
+
+**黄金用例终态：31/33**（不是 33/33）——`amt-002/amt-003`（`component_subtotal` token 缺 `tab_name`-only 复合键查找分支）业务方已单独裁定"全库 207 处该类 token 0 处命中此变体、0 生产影响、暂不修"，这 2 条**按设计保持留红**，与本轮 dec-* 的口径修正是两件独立的事，不合并处理（避免为了凑"全绿"数字而把一个已确认的真实前端 bug 悄悄用改 `expected` 的方式掩盖）。
+
+**其余两项裁定的处置**（均已在上两条 RECORD 目录 + 对应 commit 落实，无新增动作）：除零修复 `22d08f49` 维持；精度影响面清单 `b8efe1c2` 里标注的"管理费公式 `类别='管理费'` 硬编码谓词与真实标签不匹配"作为独立既存配置缺陷已单独记账（业务方确认知悉，非本任务范围）。
+
+**自检**：`npx tsc --noEmit` 0 错误（纯 JSON+Markdown 改动，前端代码零变更）；`npx vitest run src/utils/formulaGolden.test.ts` 稳定复现 `31 passed / 2 failed`（`amt-002`/`amt-003`，符合预期，非 flaky）；`git diff formula-golden/10-decimal-precision.json` 逐行核对确认仅 `dec-001/002/004` 三条的 `expected`/`expectedSource`/`description`/`notes` 字段改动，`dec-003` 仅 `notes` 文字更正、数值不变，无其它结构改动。commit：`8f777bd5`。
