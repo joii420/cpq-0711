@@ -1480,6 +1480,20 @@ public class FormulaCalculator {
                                            JsonNode formulas, JsonNode formulaAssignments, int fullFieldIndex) {
         if (formulas == null || !formulas.isArray()) return null;
 
+        // -1. BL-0098 终态：显式 formula_id 绑定（最高优先）。
+        //     绑定了但找不到 → 返 null 不 fallback ——语义与下方 formula_name 分支一致：
+        //     配置漂移（公式被删）不能静默换成别的公式算，那正是 BL-0098 要根除的行为。
+        //     蛇形（component/template 正本）与驼峰（API/quotation_view_structure 冻结结构）都认。
+        String formulaId = field.has("formula_id") ? field.path("formula_id").asText(null)
+            : field.path("formulaId").asText(null);
+        if (formulaId != null && !formulaId.isEmpty()) {
+            JsonNode foundById = findFormulaById(formulas, formulaId);
+            return foundById != null
+                ? new ResolvedFormula(foundById.path("name").asText(""), formulaId,
+                                      foundById.path("expression"))
+                : null;
+        }
+
         // 0. 显式 formula_name 绑定（最高优先；绑定了但找不到 → null 不 fallback）
         String formulaName = field.has("formula_name") ? field.path("formula_name").asText(null)
             : field.path("formulaName").asText(null);
