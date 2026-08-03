@@ -306,6 +306,12 @@ public class CardSnapshotService {
                     if (!f.path("formula_name").isMissingNode() && !f.path("formula_name").isNull()) {
                         fieldNode.put("formulaName", f.path("formula_name").asText(null));
                     }
+                    // BL-0098（AP-44 完备性）：公式稳定 id 必须一并搬运 —— 本方法是**白名单逐键映射**，
+                    // 漏搬则此后新建的每一张报价单冻结结构都拿不到 id，求值永久退回按名字/位置猜，
+                    // 本次修复对新单形同虚设（且静默：不报错，只是绑定又变回可漂移的）。
+                    if (!f.path("formula_id").isMissingNode() && !f.path("formula_id").isNull()) {
+                        fieldNode.put("formulaId", f.path("formula_id").asText(null));
+                    }
                     // Plan 3a：条件公式整块搬运（AP-44 完备性，否则渲染期条件解析静默失效）
                     if (f.path("conditional_formula").isObject()) {
                         fieldNode.set("conditionalFormula", f.path("conditional_formula"));

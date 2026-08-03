@@ -62,7 +62,13 @@ export interface ComponentField {
   /** 列展示宽度(px)，空/0=默认 120。来自 component.fields，经 snapshot/结构透传。 */
   width?: number;
   /** Plan 3a：条件公式。存在即走条件模式（优先于 formula_name）。 */
-  conditional_formula?: { rules: { when: CondTree; formula: string }[]; default: string };
+  conditional_formula?: {
+    rules: { when: CondTree; formula: string; formula_id?: string }[];
+    default: string;
+    default_formula_id?: string;
+  };
+  /** BL-0098：公式稳定 id —— 解析主键，优先级高于 formula_name（与后端 resolveFormula 镜像）。 */
+  formula_id?: string;
   is_required?: boolean;
   formula_name?: string;  // FORMULA fields: which formula definition to use
   datasource_binding?: {
@@ -358,6 +364,12 @@ function resolveFormula(
   const field = comp.fields.find(f => (f.name || f.key) === formulaFieldName && f.field_type === 'FORMULA');
   const fieldIndex = field ? comp.fields.indexOf(field) : -1;
 
+  // -1. BL-0098 终态：field.formula_id 绑定（最高优先，与后端 FormulaCalculator.resolveFormula 镜像）。
+  //     绑了但找不到 → 返 undefined 不 fallback，避免公式被删后静默换成别的公式算。
+  if (field?.formula_id) {
+    return comp.formulas.find(f => (f as any).id === field.formula_id);
+  }
+
   // 0. (2026-05-20) field.formula_name 显式绑定 — 组件管理 UI 通过 Select 写入此字段, 优先级最高
   if (field?.formula_name) {
     const found = comp.formulas.find(f => f.name === field.formula_name);
@@ -445,10 +457,15 @@ function computeAllFormulas(
     const name = f.name || f.key || '';
     const cf = (f as any).conditional_formula;
     if (cf && Array.isArray(cf.rules)) {
+      // BL-0098：条件公式的规则/默认分支也按 formula_id 优先解析（与后端 condRefFormula 镜像）。
+      // 绑了 id 查不到 → undefined，不回落名字（配置漂移不能静默换分支）。
+      const byRef = (id?: string, name?: string) =>
+        id ? comp.formulas!.find(x => (x as any).id === id)
+           : (name ? comp.formulas!.find(x => x.name === name) : undefined);
       const rules = cf.rules
-        .map((r: any) => ({ when: r.when as CondTree, formula: comp.formulas!.find(x => x.name === r.formula)! }))
+        .map((r: any) => ({ when: r.when as CondTree, formula: byRef(r.formula_id, r.formula)! }))
         .filter((r: any) => r.formula);
-      const def = cf.default ? comp.formulas!.find(x => x.name === cf.default) : undefined;
+      const def = byRef(cf.default_formula_id, cf.default);
       formulaFields.push({ name, conditional: { rules, default: def } });
     } else {
       const formula = resolveFormula(comp, name);

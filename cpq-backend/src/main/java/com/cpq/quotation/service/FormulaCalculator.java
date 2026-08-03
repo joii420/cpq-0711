@@ -1408,12 +1408,18 @@ public class FormulaCalculator {
                     int ruleIdx = 0;
                     for (JsonNode rule : cf.path("rules")) {
                         ruleIdx++;   // 1-based 原始序号：解析不到的规则被跳过也不影响后续编号
-                        String rfName = rule.path("formula").asText(null);
-                        JsonNode expr = exprOfFormula(formulas, rfName);
-                        if (expr != null) rules.add(new CondRule(rule.path("when"), expr, rfName, ruleIdx));
+                        // BL-0098：先按 formula_id 认，再回落公式名（存量条件公式无 id）。
+                        JsonNode fm = condRefFormula(formulas, rule.path("formula_id"), rule.path("formulaId"),
+                                                     rule.path("formula"));
+                        if (fm != null) {
+                            rules.add(new CondRule(rule.path("when"), fm.path("expression"),
+                                                   fm.path("name").asText(""), ruleIdx));
+                        }
                     }
-                    String defName = cf.path("default").asText(null);
-                    JsonNode defExpr = exprOfFormula(formulas, defName);
+                    JsonNode defFm = condRefFormula(formulas, cf.path("default_formula_id"),
+                                                    cf.path("defaultFormulaId"), cf.path("default"));
+                    JsonNode defExpr = defFm != null ? defFm.path("expression") : null;
+                    String defName = defFm != null ? defFm.path("name").asText("") : cf.path("default").asText(null);
                     out.add(new FormulaField(name, rules, defExpr, defName));
                 } else {
                     ResolvedFormula rf = resolveFormula(f, name, fields, formulas, formulaAssignments, fullIdx);
@@ -1430,6 +1436,57 @@ public class FormulaCalculator {
         if (name == null || name.isEmpty()) return null;
         JsonNode found = findFormulaByName(formulas, name);
         return found != null ? found.path("expression") : null;
+    }
+
+    /**
+     * BL-0098：解析条件公式里一处引用（规则分支 / 默认分支）指向的公式对象。
+     *
+     * <p>优先级：{@code formula_id}（蛇形）→ {@code formulaId}（驼峰，冻结结构用）→ 公式名。
+     * <b>绑了 id 但查不到 → 返 null，不回落到名字</b> —— 与普通字段的 {@code resolveFormula}
+     * 同款语义：配置漂移（公式被删）不能静默换成别的公式算。
+     * 存量条件公式无 id，走名字分支，行为逐位不变。
+     */
+    private JsonNode condRefFormula(JsonNode formulas, JsonNode idSnake, JsonNode idCamel, JsonNode nameNode) {
+        String id = idSnake != null && !idSnake.isMissingNode() && !idSnake.isNull()
+            ? idSnake.asText(null) : null;
+        if (id == null || id.isEmpty()) {
+            id = idCamel != null && !idCamel.isMissingNode() && !idCamel.isNull()
+                ? idCamel.asText(null) : null;
+        }
+        if (id != null && !id.isEmpty()) {
+            return findFormulaById(formulas, id);   // 查不到 → null，刻意不回落名字
+        }
+        String name = nameNode != null ? nameNode.asText(null) : null;
+        if (name == null || name.isEmpty()) return null;
+        return findFormulaByName(formulas, name);
+    }
+
+    /**
+     * BL-0098 测试与固化用：条件公式第 {@code ruleIndex} 条规则最终命中的公式名。
+     * 解析不到返回 {@code null}。
+     */
+    public String resolveConditionalRuleFormulaName(JsonNode field, JsonNode formulas, int ruleIndex) {
+        if (field == null || formulas == null) return null;
+        JsonNode cf = field.has("conditional_formula") ? field.path("conditional_formula")
+            : field.path("conditionalFormula");
+        JsonNode rules = cf.path("rules");
+        if (!rules.isArray() || ruleIndex < 0 || ruleIndex >= rules.size()) return null;
+        JsonNode rule = rules.get(ruleIndex);
+        JsonNode fm = condRefFormula(formulas, rule.path("formula_id"), rule.path("formulaId"),
+                                     rule.path("formula"));
+        return fm == null ? null : fm.path("name").asText(null);
+    }
+
+    /**
+     * BL-0098 测试与固化用：条件公式默认分支最终命中的公式名。解析不到返回 {@code null}。
+     */
+    public String resolveConditionalDefaultFormulaName(JsonNode field, JsonNode formulas) {
+        if (field == null || formulas == null) return null;
+        JsonNode cf = field.has("conditional_formula") ? field.path("conditional_formula")
+            : field.path("conditionalFormula");
+        JsonNode fm = condRefFormula(formulas, cf.path("default_formula_id"), cf.path("defaultFormulaId"),
+                                     cf.path("default"));
+        return fm == null ? null : fm.path("name").asText(null);
     }
 
     /** Plan 3a：按行选条件公式表达式（首条命中即停，全不中走默认）。 */
@@ -1471,8 +1528,11 @@ public class FormulaCalculator {
         return null;
     }
 
-    /** 解析结果：命中的公式名（用于环定位提示）+ 其表达式。 */
-    private record ResolvedFormula(String name, JsonNode expression) {}
+    /**
+     * BL-0098：解析结果带上公式的稳定 id（可能为 null —— 存量公式尚未补 id，
+     * 或走位置回退命中了一条没有 id 的公式）。调用方须容忍 null，不得编造。
+     */
+    private record ResolvedFormula(String name, String id, JsonNode expression) {}
 
     /**
      * port resolveFormula: 0.field.formula_name 显式 1.formula_assignments[完整字段下标]
@@ -1485,12 +1545,28 @@ public class FormulaCalculator {
                                            JsonNode formulas, JsonNode formulaAssignments, int fullFieldIndex) {
         if (formulas == null || !formulas.isArray()) return null;
 
+        // -1. BL-0098 终态：显式 formula_id 绑定（最高优先）。
+        //     绑定了但找不到 → 返 null 不 fallback ——语义与下方 formula_name 分支一致：
+        //     配置漂移（公式被删）不能静默换成别的公式算，那正是 BL-0098 要根除的行为。
+        //     蛇形（component/template 正本）与驼峰（API/quotation_view_structure 冻结结构）都认。
+        String formulaId = field.has("formula_id") ? field.path("formula_id").asText(null)
+            : field.path("formulaId").asText(null);
+        if (formulaId != null && !formulaId.isEmpty()) {
+            JsonNode foundById = findFormulaById(formulas, formulaId);
+            return foundById != null
+                ? new ResolvedFormula(foundById.path("name").asText(""), formulaId,
+                                      foundById.path("expression"))
+                : null;
+        }
+
         // 0. 显式 formula_name 绑定（最高优先；绑定了但找不到 → null 不 fallback）
         String formulaName = field.has("formula_name") ? field.path("formula_name").asText(null)
             : field.path("formulaName").asText(null);
         if (formulaName != null && !formulaName.isEmpty()) {
             JsonNode found = findFormulaByName(formulas, formulaName);
-            return found != null ? new ResolvedFormula(formulaName, found.path("expression")) : null;
+            return found != null
+                ? new ResolvedFormula(formulaName, idOf(found), found.path("expression"))
+                : null;
         }
 
         // 1. 模板级 formula_assignments[完整字段下标] → 公式名
@@ -1500,20 +1576,22 @@ public class FormulaCalculator {
                 String assignedName = assigned.asText("");
                 if (!assignedName.isEmpty()) {
                     JsonNode found = findFormulaByName(formulas, assignedName);
-                    if (found != null) return new ResolvedFormula(assignedName, found.path("expression"));
+                    if (found != null) {
+                        return new ResolvedFormula(assignedName, idOf(found), found.path("expression"));
+                    }
                 }
             }
         }
 
         // 2. 字段名 == 公式名
         JsonNode byName = findFormulaByName(formulas, fieldName);
-        if (byName != null) return new ResolvedFormula(fieldName, byName.path("expression"));
+        if (byName != null) return new ResolvedFormula(fieldName, idOf(byName), byName.path("expression"));
 
         // 3. positional fallback（FORMULA 字段在 fields 中的相对位置）
         int posIdx = formulaFieldPosition(fields, fieldName);
         if (posIdx >= 0 && posIdx < formulas.size()) {
             JsonNode fm = formulas.get(posIdx);
-            return new ResolvedFormula(fm.path("name").asText(""), fm.path("expression"));
+            return new ResolvedFormula(fm.path("name").asText(""), idOf(fm), fm.path("expression"));
         }
         return null;
     }
@@ -1541,9 +1619,42 @@ public class FormulaCalculator {
         return (name == null || name.isEmpty()) ? null : name;
     }
 
+    /**
+     * BL-0098：对外暴露「某 FORMULA 字段最终会用哪条公式」的**稳定 id**，供组件保存期把隐式绑定
+     * <b>固化</b>成显式 {@code formula_id}。
+     *
+     * <p>与 {@link #resolveFormulaNameForField} 共用同一个 {@link #resolveFormula} 口径 ——
+     * 固化逻辑必须复用求值期的唯一真相，自己实现一遍就是 BL-0098 在另一个层面重演。
+     *
+     * @return 解析到的公式 id；解析不到、或命中的公式尚无 id → {@code null}（调用方应保持原样不写入）
+     */
+    public String resolveFormulaIdForField(JsonNode field, JsonNode fields, JsonNode formulas,
+                                           JsonNode formulaAssignments, int fullFieldIndex) {
+        if (field == null || fields == null || formulas == null) return null;
+        ResolvedFormula rf = resolveFormula(field, fieldName(field), fields, formulas,
+                formulaAssignments, fullFieldIndex);
+        return rf == null ? null : rf.id();
+    }
+
     private JsonNode findFormulaByName(JsonNode formulas, String name) {
         for (JsonNode fm : formulas) {
             if (name.equals(fm.path("name").asText(null))) return fm;
+        }
+        return null;
+    }
+
+    /** BL-0098：取公式对象的稳定 id；缺失/空串 → null（不编造）。 */
+    private static String idOf(JsonNode formula) {
+        if (formula == null) return null;
+        String id = formula.path("id").asText(null);
+        return (id == null || id.isEmpty()) ? null : id;
+    }
+
+    /** BL-0098：按稳定 id 查公式；id 空或查不到 → null。 */
+    private JsonNode findFormulaById(JsonNode formulas, String id) {
+        if (id == null || id.isEmpty() || formulas == null || !formulas.isArray()) return null;
+        for (JsonNode fm : formulas) {
+            if (id.equals(fm.path("id").asText(null))) return fm;
         }
         return null;
     }

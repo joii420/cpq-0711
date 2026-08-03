@@ -315,6 +315,36 @@ public class ComponentImportService {
             }
         }
 
+        // ── 第三遍：BL-0098 公式 id 补齐 + 字段绑定固化 + 显式绑定校验 ──────────
+        // 必须在第二遍 FormulaRefRemapper.remap 之后：remap 整体重写 c.formulas，
+        // 放在它之前补的 id 有被洗掉的风险。
+        // 老 bundle 不带 id/formula_id → 这里按现役回退链固化，行为与导入前一致；
+        // 新 bundle 自带 id（作用域=组件内，无需全局唯一）→ 原样保留，不重新生成。
+        for (Component c : createdComponents) {
+            try {
+                List<Map<String, Object>> fieldList = MAPPER.readValue(
+                    c.fields == null || c.fields.isBlank() ? "[]" : c.fields,
+                    MAPPER.getTypeFactory().constructCollectionType(List.class, Map.class));
+                List<Map<String, Object>> formulaList = MAPPER.readValue(
+                    c.formulas == null || c.formulas.isBlank() ? "[]" : c.formulas,
+                    MAPPER.getTypeFactory().constructCollectionType(List.class, Map.class));
+
+                FormulaIdBinder.ensureFormulaIds(formulaList);
+                FormulaIdBinder.bindFormulaIdsToFields(fieldList, formulaList);
+                FormulaIdBinder.validateExplicitBinding(fieldList);
+
+                c.fields = MAPPER.writeValueAsString(fieldList);
+                c.formulas = MAPPER.writeValueAsString(formulaList);
+                // Panache 实体在 @Transactional 方法内已 managed，赋值后 Hibernate 脏检查自动 flush
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(
+                    "组件「" + c.name + "」(" + c.code + ") 导入失败：" + e.getMessage(), e);
+            } catch (Exception e) {
+                throw new IllegalStateException(
+                    "组件「" + c.name + "」(" + c.code + ") 公式 id 处理失败：" + e.getMessage(), e);
+            }
+        }
+
         result.createdCount = result.created.size();
         result.skippedCount = result.skipped.size();
         result.sqlViewsCreated = sqlViews;

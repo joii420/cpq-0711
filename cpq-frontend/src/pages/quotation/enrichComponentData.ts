@@ -138,7 +138,10 @@ export async function enrichComponentData(
         width: f.width,
         is_required: f.is_required,
         formula_name: f.formula_name,
+        // BL-0098：公式稳定 id —— 求值解析的最高优先级键，漏透传会退回按名字/位置猜
+        formula_id: (f as any).formula_id,
         // Plan 3a：条件公式必须透传（否则渲染期 computeAllFormulas 拿不到 → 退回单一解析）
+        // 注：整个对象透传，内部的 formula_id / default_formula_id 自动跟着走
         conditional_formula: f.conditional_formula,
         // Bug C 关键字段透传: 详情页与编辑页同源
         datasource_binding: f.datasource_binding,
@@ -266,7 +269,10 @@ export function buildComponentDataFromStructure(
       width: f.width,
       is_required: f.isRequired,
       formula_name: f.formulaName,
+      // BL-0098：公式稳定 id（结构快照 camelCase；兼容 snake_case）
+      formula_id: f.formulaId ?? f.formula_id,
       // Plan 3a：条件公式透传（结构快照 camelCase；兼容 snake_case）
+      // 注：整个对象透传，内部的 formula_id / default_formula_id 自动跟着走
       conditional_formula: f.conditionalFormula ?? f.conditional_formula,
       datasource_binding: f.datasourceBinding,
       basic_data_path: f.basicDataPath,
