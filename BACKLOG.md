@@ -131,6 +131,46 @@
 - **预估规模**：S
 - **验收要点**：①新建的跨组件引用 token 中 `tab_name` 为页签名；②存量 token 兼容（回退链不变）；③单测覆盖四种 key 形状。
 
+### [BL-0100] 变更日志是「只读空壳」——查询/导出/定时清理俱全，**唯独没有任何写入方**
+- **优先级**：P1（可观测性 + 追责能力缺失；不影响功能，但每次配置类故障都要付出数倍排查成本）
+- **来源**：2026-08-02 排查 [[BL-0097]]（「卡片数据待重算」）时被此缺口直接卡住，技术总监顺藤查证
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-02
+- **现状（已逐项查证）**：
+  | 组成部分 | 状态 |
+  |---|---|
+  | 表 `basic_data_change_log`（24 列：`field_changes` jsonb / `old_value` / `new_value` / `change_source` / `affects_calculation` / `importance` …） | ✅ 设计完善 |
+  | 查询 API `ChangeLogService.search()` | ✅ 有 |
+  | 导出 API `ChangeLogService.export()` | ✅ 有 |
+  | REST 端点 `ChangeLogResource` | ✅ 有 |
+  | 定时清理 `ScheduledTaskService.cleanupChangeLog()`（CL-RETENTION-07，每月 1 号 03:00 删 5 年前数据） | ✅ 有 |
+  | **写入方** | ❌ **全工程零 `INSERT`、无实体类、`ChangeLogService` 只有 `search`/`export` 两个方法** |
+  | 表中数据 | **0 行** |
+
+  即：**系统里有一个每月定时任务，专门清理一张从未被写入过任何数据的表。**
+  `global_variable_change_log` 有一处 INSERT（`GlobalVariableService:664`），但该表同样 **0 行**（路径未被触发过）。
+- **危害**：
+  1. **比没有更危险** —— 前端若有「变更日志」入口，查出来恒空，给人"已有审计"的错觉；
+  2. **配置类故障无法追溯**：本次 [[BL-0097]] 排查中，`COMP-0157「物料」`与模板在 `2026-08-03 02:04:52` 被改过
+     （正卡在故障单算值 02:03:14 与正常单算值 02:05:28 之间，是判断因果的关键证据），
+     但**改了哪个字段、从什么改成什么，库里查不到任何记录**，只能靠用户口述回忆；
+  3. 组件/模板配置直接决定报价金额的算法，**改动无留痕 = 算错钱无法追责、无法回滚参考**。
+- **范围（建议分两步）**：
+  1. **第一步：接入配置类实体的写入**（价值最高，直接解决排查困境）——
+     `component`（`fields` / `formulas` / `excel_columns` / `data_driver_path` / `row_key_fields`）、
+     `template`（`components_snapshot` / 绑定关系）、`component_sql_view`（`sql_template`）。
+     挂载点为各自 `@Transactional` 保存入口（如 `ComponentService.update`，`:342`）。
+     表结构无需新设计，现有 24 列足够（`field_changes` 存 jsonb diff、`affects_calculation` 标记是否影响算钱）；
+  2. **第二步：补 `basic_data` 与全局变量的写入**，并验证 `global_variable_change_log` 那条既有 INSERT 是否真能触发。
+- **实现注意**：
+  - 组件保存是**整份 jsonb 覆盖**（`fields`/`formulas` 是数组），需要做**字段级 diff** 才有价值，
+    只记"整份旧值→整份新值"等于没记（一次改动几十 KB，看不出改了哪一列）；
+  - 写日志**不得阻断主流程**（保存失败优先级高于留痕），建议 try/catch 包裹 + WARN；
+  - 注意 [[BL-0097]] 的教训：**日志写入若与主保存同事务且 SQL 出错，会毒化整个事务** —— 应评估独立事务或 Savepoint。
+- **依赖**：无（表与查询侧已就绪，纯补写入）
+- **预估规模**：M（第一步 S~M，第二步 S）
+- **验收要点**：①改一次组件字段 → 日志有记录，能查到「谁 / 何时 / 哪个字段 / 旧值→新值」；②变更日志页面不再恒空；③写日志失败不影响配置保存成功；④定时清理任务从此有实际清理对象。
+
 ### [BL-0081] 复制报价单的从属数据与"复制单能否改基础数据"的行为约定
 - **优先级**：P1（repair-0729 的收尾缺口，非阻断）
 - **来源**：repair-0729 交付评审（技术总监裁决决策 4 + 架构师"对裁决的补充"）
