@@ -65,7 +65,11 @@ public final class FormulaIdBinder {
         for (int i = 0; i < fields.size(); i++) {
             Map<String, Object> f = fields.get(i);
             if (f == null || !isFormulaField(f)) continue;
-            if (f.get("conditional_formula") != null) continue;   // 条件公式不走单条绑定
+            if (f.get("conditional_formula") != null) {
+                // 条件公式字段不走字段级 formula_id，改为固化它内部的 rules[]/default 引用。
+                bindConditionalRefs(f, formulas);
+                continue;
+            }
             Object existing = f.get("formula_id");
             if (existing != null && !String.valueOf(existing).isBlank()) continue;
 
@@ -97,6 +101,55 @@ public final class FormulaIdBinder {
             throw new IllegalArgumentException(
                 "以下公式字段未绑定公式，请在字段配置中显式选择：" + unbound
                 + "（BL-0098：系统不再按位置自动匹配公式）");
+        }
+    }
+
+    /**
+     * BL-0098 补充范围：把条件公式内部的公式引用固化成 id。
+     *
+     * <p>条件公式结构 {@code {rules:[{when, formula, formula_id}], default, default_formula_id}}，
+     * 历史上 {@code formula}/{@code default} 存的是公式<b>名</b> —— 公式一改名，
+     * {@code FormulaCalculator} 查不到就<b>静默丢掉该规则/默认分支</b>（列还有值，只是悄悄换了分支，
+     * 比普通字段整列不出值更难发现）。这里给每处引用补上 id，求值端优先按 id 认。
+     */
+    @SuppressWarnings("unchecked")
+    private static void bindConditionalRefs(Map<String, Object> field, List<Map<String, Object>> formulas) {
+        Object cfRaw = field.get("conditional_formula");
+        if (!(cfRaw instanceof Map)) return;
+        Map<String, Object> cf = (Map<String, Object>) cfRaw;
+
+        Object rulesRaw = cf.get("rules");
+        if (rulesRaw instanceof List<?> rules) {
+            for (Object rRaw : rules) {
+                if (rRaw instanceof Map) {
+                    stampRef((Map<String, Object>) rRaw, "formula", "formula_id", formulas);
+                }
+            }
+        }
+        stampRef(cf, "default", "default_formula_id", formulas);
+    }
+
+    /**
+     * 把 {@code holder[nameKey]} 指向的公式名解析成 id 写入 {@code holder[idKey]}。
+     * 已有 id → 原样保留（id 是权威，不被名字覆盖）；名字解析不到 → 不写（不编造）。
+     */
+    private static void stampRef(Map<String, Object> holder, String nameKey, String idKey,
+                                 List<Map<String, Object>> formulas) {
+        Object existing = holder.get(idKey);
+        if (existing != null && !String.valueOf(existing).isBlank()) return;
+        Object nameRaw = holder.get(nameKey);
+        if (nameRaw == null) return;
+        String name = String.valueOf(nameRaw);
+        if (name.isBlank()) return;
+        for (Map<String, Object> fm : formulas) {
+            if (fm == null) continue;
+            if (name.equals(String.valueOf(fm.get("name")))) {
+                Object id = fm.get("id");
+                if (id != null && !String.valueOf(id).isBlank()) {
+                    holder.put(idKey, String.valueOf(id));
+                }
+                return;
+            }
         }
     }
 

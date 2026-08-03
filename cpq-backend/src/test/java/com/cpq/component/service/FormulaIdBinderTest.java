@@ -164,4 +164,96 @@ class FormulaIdBinderTest {
 
         FormulaIdBinder.validateExplicitBinding(fields);   // 不抛异常即通过
     }
+
+    // ─── 条件公式的引用也固化成 id（BL-0098 补充范围，2026-08-03 用户裁决）───────
+
+    private Map<String, Object> condField(String name, String ruleFormula, String ruleId,
+                                          String defFormula, String defId) {
+        Map<String, Object> rule = new LinkedHashMap<>();
+        rule.put("when", Map.of("kind", "group", "logic", "and", "children", List.of()));
+        rule.put("formula", ruleFormula);
+        if (ruleId != null) rule.put("formula_id", ruleId);
+
+        Map<String, Object> cf = new LinkedHashMap<>();
+        cf.put("rules", new ArrayList<>(List.of(rule)));
+        cf.put("default", defFormula);
+        if (defId != null) cf.put("default_formula_id", defId);
+
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("name", name);
+        f.put("field_type", "FORMULA");
+        f.put("conditional_formula", cf);
+        return f;
+    }
+
+    @SuppressWarnings("unchecked")
+    private String ruleIdOf(Map<String, Object> field) {
+        Map<String, Object> cf = (Map<String, Object>) field.get("conditional_formula");
+        List<Map<String, Object>> rules = (List<Map<String, Object>>) cf.get("rules");
+        Object v = rules.get(0).get("formula_id");
+        return v == null ? null : String.valueOf(v);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String defaultIdOf(Map<String, Object> field) {
+        Map<String, Object> cf = (Map<String, Object>) field.get("conditional_formula");
+        Object v = cf.get("default_formula_id");
+        return v == null ? null : String.valueOf(v);
+    }
+
+    @Test
+    @DisplayName("T11: 条件公式的规则与默认分支都按名字固化成 id")
+    void bind_conditionalRefsConsolidated() {
+        List<Map<String, Object>> formulas = new ArrayList<>(List.of(
+            formula("id-A", "公式A"), formula("id-B", "公式B"), formula("id-C", "公式C")));
+        List<Map<String, Object>> fields = new ArrayList<>(List.of(
+            condField("材料成本", "公式B", null, "公式C", null)));
+
+        FormulaIdBinder.bindFormulaIdsToFields(fields, formulas);
+
+        assertEquals("id-B", ruleIdOf(fields.get(0)), "规则分支应固化成 id-B");
+        assertEquals("id-C", defaultIdOf(fields.get(0)), "默认分支应固化成 id-C");
+    }
+
+    @Test
+    @DisplayName("T12: 条件公式已有的 id 不被覆盖")
+    void bind_conditionalExistingIdKept() {
+        List<Map<String, Object>> formulas = new ArrayList<>(List.of(
+            formula("id-A", "公式A"), formula("id-B", "公式B"), formula("id-C", "公式C")));
+        // 名字写"公式B"但 id 已绑 id-A → id 是权威，不能被名字覆盖回 id-B
+        List<Map<String, Object>> fields = new ArrayList<>(List.of(
+            condField("材料成本", "公式B", "id-A", "公式C", "id-A")));
+
+        FormulaIdBinder.bindFormulaIdsToFields(fields, formulas);
+
+        assertEquals("id-A", ruleIdOf(fields.get(0)));
+        assertEquals("id-A", defaultIdOf(fields.get(0)));
+    }
+
+    @Test
+    @DisplayName("T13: 条件公式引用的名字解析不到 → 不写 id（不编造）")
+    void bind_conditionalUnresolvableLeavesUnbound() {
+        List<Map<String, Object>> formulas = new ArrayList<>(List.of(formula("id-A", "公式A")));
+        List<Map<String, Object>> fields = new ArrayList<>(List.of(
+            condField("材料成本", "并不存在的公式", null, "也不存在", null)));
+
+        FormulaIdBinder.bindFormulaIdsToFields(fields, formulas);
+
+        assertNull(ruleIdOf(fields.get(0)));
+        assertNull(defaultIdOf(fields.get(0)));
+    }
+
+    @Test
+    @DisplayName("T14: 条件公式字段不会被误写字段级 formula_id（那是普通字段才有的）")
+    void bind_conditionalFieldGetsNoFieldLevelId() {
+        List<Map<String, Object>> formulas = new ArrayList<>(List.of(
+            formula("id-A", "公式A"), formula("id-B", "公式B"), formula("id-C", "公式C")));
+        List<Map<String, Object>> fields = new ArrayList<>(List.of(
+            condField("材料成本", "公式B", null, "公式C", null)));
+
+        FormulaIdBinder.bindFormulaIdsToFields(fields, formulas);
+
+        assertNull(fields.get(0).get("formula_id"),
+            "条件公式字段走 rules/default，不该有字段级 formula_id");
+    }
 }
