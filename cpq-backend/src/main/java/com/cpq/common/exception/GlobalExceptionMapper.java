@@ -33,6 +33,28 @@ public class GlobalExceptionMapper {
                             Map.of("conflictTabs", tce.getConflictTabs())))
                     .build();
         }
+        if (e instanceof com.cpq.priceadjust.exception.PendingVersionExistsException pvee) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(
+                            "code", "PENDING_VERSION_EXISTS",
+                            "pendingVersionNo", pvee.getPendingVersionNo(),
+                            "pendingReviewCount", pvee.getPendingReviewCount(),
+                            "approvedReviewCount", pvee.getApprovedReviewCount())))
+                    .build();
+        }
+        if (e instanceof com.cpq.priceadjust.exception.StrategyNoElementsException) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(),
+                            Map.of("code", "STRATEGY_NO_ELEMENTS")))
+                    .build();
+        }
+        if (e instanceof com.cpq.priceadjust.exception.ReviewNotReadyException rnre) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(
+                            "code", rnre.getErrorCode(),
+                            "invalidItems", rnre.getInvalidItems())))
+                    .build();
+        }
         return Response.status(e.getCode())
                 .entity(ApiResponse.error(e.getCode(), e.getMessage()))
                 .build();

@@ -1,0 +1,78 @@
+package com.cpq.priceadjust.entity;
+
+import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
+import jakarta.persistence.*;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * task-0729 更新批次明细：报价单 × 料号。三种非成功态语义见 api.md §3.3：
+ * FAILED（数据问题，含 SUBTOTAL_MISMATCH）/ CONFLICT（row_version 不匹配）/
+ * STALE（所属版本已被取代，终态不可重试）。
+ */
+@Entity
+@Table(name = "material_price_update_job_item")
+public class MaterialPriceUpdateJobItem extends PanacheEntityBase {
+
+    public static final String WAITING = "WAITING";
+    public static final String RUNNING = "RUNNING";
+    public static final String SUCCESS = "SUCCESS";
+    public static final String FAILED = "FAILED";
+    public static final String CONFLICT = "CONFLICT";
+    public static final String STALE = "STALE";
+
+    @Id
+    @GeneratedValue
+    public UUID id;
+
+    @Column(name = "job_id", nullable = false)
+    public UUID jobId;
+
+    @Column(name = "quotation_id", nullable = false)
+    public UUID quotationId;
+
+    @Column(name = "material_no", nullable = false, length = 50)
+    public String materialNo;
+
+    @Column(name = "line_item_id")
+    public UUID lineItemId;
+
+    @Column(name = "status", nullable = false, length = 20)
+    public String status = WAITING;
+
+    @Column(name = "error_code", length = 50)
+    public String errorCode;
+
+    @Column(name = "error_message", columnDefinition = "TEXT")
+    public String errorMessage;
+
+    @Column(name = "diff_value", precision = 20, scale = 6)
+    public BigDecimal diffValue;
+
+    @Column(name = "retry_count", nullable = false)
+    public Integer retryCount = 0;
+
+    @Column(name = "created_at", nullable = false)
+    public OffsetDateTime createdAt = OffsetDateTime.now();
+
+    @Column(name = "updated_at", nullable = false)
+    public OffsetDateTime updatedAt = OffsetDateTime.now();
+
+    public static List<MaterialPriceUpdateJobItem> listByJob(UUID jobId) {
+        return list("jobId", jobId);
+    }
+
+    /**
+     * job 名下未完成项（WAITING/RUNNING）一律置 STALE 终态（§11.6.3.2，版本被新版取代时）。
+     * jobIds 由调用方（PriceAdjustVersionGenerationService）先按 versionId 查出 MaterialPriceUpdateJob
+     * 再传入，避免这里跨实体写子查询。
+     */
+    public static int staleAllUnfinishedByJobIds(List<UUID> jobIds) {
+        if (jobIds == null || jobIds.isEmpty()) return 0;
+        return update("status = ?1, updatedAt = now() where status in (?2, ?3) and jobId in ?4",
+                STALE, WAITING, RUNNING, jobIds);
+    }
+}
