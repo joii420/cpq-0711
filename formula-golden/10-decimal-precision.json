@@ -89,7 +89,7 @@
       "previousRowSubtotal": null
     },
     "expected": "0.3000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "2026-08 更正：并非 setScale(4,HALF_UP) 规整所致（evaluateExpression 已不做该步）——加法走精确 BigDecimal（PrecisionPolicy.of(double) 用 BigDecimal.valueOf 最短十进制还原），0.1+0.2 在十进制下本就精确等于 0.3，不产生二进制浮点误差，与舍入无关。expected 用 0.3000 仅因 compareTo 按数值比较、scale 差异不影响断言结果，非声明返回值真为4位scale。"
   },
   {

@@ -23,7 +23,7 @@
       "previousRowSubtotal": null
     },
     "expected": "88.8800",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "BL-0017 哨兵键：Σ is_amount 列，本用例验证 component_subtotal token 对该特殊列名的取值路径与普通列名一致"
   },
   {

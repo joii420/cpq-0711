@@ -24,7 +24,7 @@
       "previousRowSubtotal": null
     },
     "expected": "100.5000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "componentSubtotals['COMP-A#材料小计']=100.5，命中最高优先级键"
   },
   {
@@ -52,7 +52,7 @@
       "previousRowSubtotal": null
     },
     "expected": "200.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "'COMP-A#不存在的列' 未命中 → 回退 componentSubtotals['COMP-A']=200.0"
   },
   {
@@ -80,7 +80,7 @@
       "previousRowSubtotal": null
     },
     "expected": "300.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "value=tab_name='投料页签' 直接命中组件总小计回退键"
   }
 ]

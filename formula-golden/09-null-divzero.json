@@ -89,7 +89,7 @@
       "previousRowSubtotal": null
     },
     "expected": "1.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "fieldValues.getOrDefault(fieldName, 0.0)"
   },
   {
@@ -120,7 +120,7 @@
       "previousRowSubtotal": null
     },
     "expected": "10.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "basicDataValues 未命中 → resolvePath 返回 null → appendToken 兜底 0.0"
   },
   {
@@ -138,7 +138,7 @@
       "previousRowSubtotal": null
     },
     "expected": "0.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "evaluateExpression 头部 tokens==null||size==0 直接返回 ZERO4"
   }
 ]

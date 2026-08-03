@@ -30,7 +30,7 @@
       "previousRowSubtotal": null
     },
     "expected": "25.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "= 25"
   },
   {
@@ -64,7 +64,7 @@
       "previousRowSubtotal": null
     },
     "expected": "10.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "= 10"
   },
   {
@@ -98,7 +98,7 @@
       "previousRowSubtotal": null
     },
     "expected": "5.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "productAttributes.get 缺失键 → 0.0（appendToken product_attribute 分支 v!=null?v:0.0）"
   }
 ]

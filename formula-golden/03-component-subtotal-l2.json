@@ -32,7 +32,7 @@
       "previousRowSubtotal": null
     },
     "expected": "150.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "= 100+50 = 150，验证多个 component_subtotal token 在同一表达式内独立解析"
   },
   {
@@ -82,7 +82,7 @@
       "previousRowSubtotal": null
     },
     "expected": "165.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "= 150*1.1 = 165"
   }
 ]

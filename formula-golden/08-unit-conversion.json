@@ -27,7 +27,7 @@
       "previousRowSubtotal": null
     },
     "expected": "2.5000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "= 2.5kg"
   },
   {
@@ -58,7 +58,7 @@
       "previousRowSubtotal": null
     },
     "expected": "1.5000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "= 1.5m"
   },
   {
@@ -103,7 +103,7 @@
       "previousRowSubtotal": null
     },
     "expected": "125.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "50元/kg 换算成元/g 后乘 2500g 用量 = 125"
   }
 ]

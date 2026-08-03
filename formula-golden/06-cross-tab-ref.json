@@ -45,7 +45,7 @@
       "previousRowSubtotal": null
     },
     "expected": "30.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "match a=投料行.料号 与 b=currentRowRaw.料号 相等的行(P1×2)求和 target=金额 → 10+20=30；P2 行不匹配不计入。⚠️ 仅覆盖 SUM 基本路径，KAVG/KMAX/KMIN 空集特殊分支(I-2)、多 source 广播(§4.3)、SUMIF predicate 均未覆盖，留给前端补充对应用例"
   },
   {
@@ -94,7 +94,7 @@
       "previousRowSubtotal": null
     },
     "expected": "0.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "I-1: KSUM 空集静默回落 0（不是 KAVG/KMAX/KMIN 的 null 特殊分支）"
   },
   {
@@ -143,7 +143,7 @@
       "previousRowSubtotal": null
     },
     "expected": "2.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "P1 命中 2 行"
   }
 ]

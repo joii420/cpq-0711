@@ -92,4 +92,36 @@ HALF_UP；缺值/解析异常/除零 → 0"）手推 `expected`，跑起来 3/4 
 
 - 后端：`FormulaGoldenTest.java`，`@TestFactory` 动态从每个 JSON 文件生成用例，`expectedSource
   in {manual-computed, frontend-engine}` 才断言，`pending` 显式 SKIP（不静默通过、不误报失败）。
-- 前端：待协调（本次由后端工程师建骨架，前端后续接入 `formulaEngine.test.ts`）。
+- 前端：`cpq-frontend/src/utils/formulaGolden.test.ts`（2026-08-02 交付）。同样动态从每个 JSON
+  文件生成 vitest 用例，用 `evaluateExpression`（`formulaEngine.ts`）按 `context` 映射位置参数
+  求值，`expectedSource=pending` 用 `it.skip` 跳过。执行：`npx vitest run
+  src/utils/formulaGolden.test.ts`（本仓库没有裸 `npm test`，`npx vitest run` 不带路径会把
+  `e2e/*.spec.ts` 一起扫进来导致大量 Playwright 误报——必须显式指定路径）。
+
+## 前端验证结果（2026-08-02）—— 26/33 一致，7 条真实分歧（未被"修复"，按契约交由裁定）
+
+跑通后 26 条与 `manual-computed` 逐位吻合，已把这 26 条的 `expectedSource` 改成
+`frontend-engine`（**数值未改，只改来源标记**——确认前端引擎独立算出同一个值）。
+
+**7 条不一致，`expected`/`expectedSource` 保持原样未动**（上面"两端读取方式"旧版说"不一致就
+改 expected"是本次交付前的预案；实际执行时改为**如实报告、留红、交人工裁定**，不单方面改
+`expected` 迁就任何一端——两套算法各自独立维护，静默改值等于把两边的分歧焐平，下次同类 bug
+就又发现不了了）：
+
+| id | 期望(manual-computed) | 前端实际 | 根因 |
+|---|---|---|---|
+| `dec-001` | `3.333333333333`(12位) | `3.3333`(4位) | 前端 `evaluateExpression` 末尾仍 `.toDecimalPlaces(4)`；`task-0801` 已把后端改成除法中间精度 12 位、不再提前收敛到 4 位 |
+| `dec-002` | `0.333333333333` | `0.3333` | 同上 |
+| `dec-004` | `2.00005`（不舍入） | `2.0001`（HALF_UP 舍到 4 位） | 同上——前端末尾统一 `.toDecimalPlaces(4)`，对所有运算结果一视同仁地收 4 位，不只是除法 |
+| `amt-002` | `12.3400` | `0` | **新发现，与精度无关**：`component_subtotal` token 只有 `tab_name`（无 `component_code`）时，前端取值链缺一段"`${tab_name}#${value}` 二段式列小计键"的查找——只有 `component_code` 变体有这段逻辑。后端 `FormulaCalculator.java:133-135` 注释写"与前端 1:1 对齐"且**已经实现**了 tab_name 版复合键，前端实际没有，注释描述与代码不符 |
+| `amt-003` | `101.2200` | `88.88` | 同 `amt-002` 根因，二阶表达式里第二项复合键落空退化成 0，`88.88+0=88.88` |
+| `nz-001` | `0.0000`（5÷0） | `Infinity` | **新发现**：前端末尾 `new Decimal(fn())` 对 `Infinity` 不抛异常（不会被 `catch{return 0}` 兜住），直接把 `Infinity` 传播出去；后端显式 `Double.isInfinite()→0`，前端没有对应判断 |
+| `nz-002` | `0.0000`（0÷0） | `NaN` | 同上，`NaN` 同样不被 `catch` 拦下 |
+
+**影响评估（仅供参考，非本次改动范围）**：`nz-001/002` 的 `Infinity`/`NaN` 在**渲染层**被
+`formatNumber.ts:33 if (!d.isFinite()) return null` 兜底显示成"—"，终端用户看不到字面
+"Infinity"文本；但 `evaluateExpression` 返回给调用方的**原始数值**仍是 `Infinity`/`NaN`，若被
+其它公式当 `fieldValues`/`componentSubtotals` 继续参与运算（如 `Infinity + x = Infinity` 会
+向上游传染，或 `JSON.stringify(Infinity)` 落库时被静默转成 `null`），风险面比渲染层看到的更大，
+后端在**求值源头**就归零，防护点更靠前。`amt-002/003` 的复合键缺口目前生产配置里是否有
+"只填 tab_name 不填 component_code"的 `component_subtotal` token 未逐一排查（超出本次范围）。

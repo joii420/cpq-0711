@@ -4374,4 +4374,22 @@ E2E:
 
 **未销掉/明确边界**：`quote-card-edit`（失焦即时联动）——后端明确未做，前端未写用例、未做任何期待，与既定结论一致。存量 DRAFT 单据（结构冻结于组件配 `elementCodeField` 之前）拿不到占位/锁定两个体验，需后续结构迁移或"草稿态显式刷新"补一个"重建结构"入口（当前 `refreshDraftQuoteCards` 只刷值不刷结构）——这是一个新发现的、真实存在的存量数据缺口，未在本次范围内处理，记录在案供后续排期。
 
+**自检**：`npx tsc --noEmit` 0 错误；6 个改动文件 Vite transform 全部 200；无既有 vitest 覆盖这些符号（无回归风险）。E2E 用真实数据人工临时脚本验证（未走 Playwright 断言常驻用例，验证后已删除临时 spec 文件），未跑 `quotation-flow.spec.ts`（按 coordinator 指示，该 spec 在本环境实测跑不完）。commit：`3f48e026`。
+
+---
+
+[2026-08-02] task-0729 B9 双端公式黄金用例 —— 前端侧接入 + 全量 33 条真实验证，7 条真实分歧如实留红不迁就 | `cpq-frontend/src/utils/formulaGolden.test.ts`（新增） / `formula-golden/*.json`（10 个文件，仅 `expectedSource` 字段 26 处 manual-computed→frontend-engine + 末尾补统一换行，数值零改动） / `formula-golden/README.md` | 后端 B9（commit `79150262`/`c34fabc4`）已交付 10 类目 33 条黄金用例骨架，`expected` 全部 `expectedSource=manual-computed`（后端工程师独立手推，未经前端引擎验证）。本次任务：写前端 vitest 动态读同一份 `formula-golden/*.json`（不维护副本，镜像后端 `FormulaGoldenTest.java` 的 `@TestFactory` 动态生成设计），用真实 `evaluateExpression` 逐条求值断言。
+
+**结果：26/33 一致，7 条真实分歧，三个独立根因**（均已如实记录进 `formula-golden/README.md` 新增章节，**未修改任何 `expected` 值来强行变绿**——这是 coordinator 明确要求的处理方式，与 README 旧版"不一致就改 expected"的预案不同，本次执行时改为"留红 + 交人工裁定"）：
+
+1. **`dec-001/002/004`（精度分离，coordinator 事先预判到的）**：前端 `formulaEngine.ts` 末尾恒 `.toDecimalPlaces(4)`（第 589 行），对所有算术结果一律收敛到 4 位小数；后端因并发 `task-0801` 已把 `FormulaCalculator.evaluateExpression` 改成"计算精度与呈现精度分离"（除法中间精度 12 位 HALF_UP，不在函数出口舍入）。`10/3`：后端 `3.333333333333`（12 位）vs 前端 `3.3333`（4 位）；`1/3` 同理；`2.00005+0` 后端原样保留 `2.00005`，前端因末尾统一舍入变成 `2.0001`。`dec-003`（`0.1+0.2`）因十进制精确、无中间截断问题，两端巧合一致，未受影响。
+2. **`amt-002/amt-003`（新发现，与精度无关）**：`component_subtotal` token 只带 `tab_name`（不带 `component_code`）时，前端 `evaluateExpression`（`formulaEngine.ts` 259-277 行）取值链**没有** `"${tab_name}#${value}"` 二段式复合键查找分支（只有 `component_code` 变体有）。后端 `FormulaCalculator.java:133-135` 类注释明确写"与前端 formulaEngine.ts component_subtotal 分支 1:1 对齐"且代码里**确实实现了** `tab_name` 复合键回退（优先级第 2 位）——**后端注释描述的"1:1 对齐"当前不成立**，前端缺这一段。`amt-002` 单独取值 `12.34`→前端算出 `0`；`amt-003` 二阶相加 `88.88+12.34=101.22`→前端因第二项落空算成 `88.88+0=88.88`。
+3. **`nz-001/nz-002`（新发现，与精度无关）**：除零场景。后端显式 `Double.isInfinite()` 判断后归零；前端 `evaluateExpression` 末尾 `new Decimal(fn())` 对 JS 原生 `Infinity`/`NaN` **不抛异常**（不会落进 `catch{return 0}`），直接把 `Infinity`/`NaN` 原样返回。`5/0`：后端 `0`，前端 `Infinity`；`0/0`：后端 `0`，前端 `NaN`。**风险评估（供后续参考，非本次改动范围）**：渲染层 `formatNumber.ts:33`（`!d.isFinite()→null`）兜底把这两种值显示成"—"，终端用户看不到字面"Infinity"文本，但 `evaluateExpression` 返回的**原始数值**仍是非法值，若被其它公式当 `fieldValues` 继续参与运算会向上游传染（`Infinity+x=Infinity`），或 `JSON.stringify` 落库时被静默转 `null`——比渲染层看到的风险面更大，后端在求值源头归零、防护点更靠前。
+
+**书面记账处理**：26 条一致的用例，`expectedSource` 从 `manual-computed` 改为 `frontend-engine`（**只改来源标记，`expected` 数值一字未动**——语义是"前端引擎已独立验证与该值一致"，符合 README 契约第 2 条"expected 由前端引擎产出，后端必须命中"的精神：这 26 条现在双向都已验证过）。7 条分歧的 `expected`/`expectedSource` **原样不动**（仍是 `manual-computed`），`formulaGolden.test.ts` 对这 7 条的断言**真实失败**（`26 passed / 7 failed`，非测试代码 bug）——已在 `formula-golden/README.md` 新增"前端验证结果"章节逐条列出期望值/前端实际值/根因表格，等 coordinator 裁定以哪端为准（前端补 12 位除法精度 + 复合键 + Infinity/NaN 归零跟后端对齐，还是后端为除法结果加一层 4 位展示层近似）。
+
+**vitest 全绿声明的例外说明**：本文件违反了 CLAUDE.md「修改后强制自检」里"vitest 全绿"的一般纪律，属于刻意为之——这套黄金用例机制存在的意义就是暴露两端真实不一致，若强行改 `expected` 或用 `it.skip` 隐藏这 7 条，等于把分歧焐平，下次同类回归就再也发现不了。跑法：`npx vitest run src/utils/formulaGolden.test.ts`（本仓库无裸 `npm test`；不加路径的 `npx vitest run` 会把 `e2e/*.spec.ts` 一起扫进来触发大量 Playwright 误报，已验证这是本仓库既有配置缺口，与本次改动无关——`npx vitest run` 全量跑显示 `68 failed test files` 全部是 e2e spec 被误当 vitest 文件执行，真正的 `src/**/*.test.ts(x)` 结果是 `855 passed / 7 failed`，7 个失败精确对应上述已知分歧，无任何其它回归）。
+
+**自检**：`npx tsc --noEmit` 0 错误；`formula-golden/*.json` 10 个文件 diff 逐行核对——每处改动仅 `expectedSource` 字段值 + EOF 换行规整，无数值/结构改动（`git diff | grep -v expectedSource` 确认）；`npx vitest run src/utils/formulaGolden.test.ts` 反复跑 3 次结果稳定（26/7 不变，非 flaky）。commit：`911cbcb5`（harness）+ 本次（JSON 记账 + README + RECORD）。
+
 **自检**：`npx tsc --noEmit` 0 错误；6 个改动文件 Vite transform 全部 200；无既有 vitest 覆盖这些符号（无回归风险）。E2E 用真实数据人工临时脚本验证（未走 Playwright 断言常驻用例，验证后已删除临时 spec 文件），未跑 `quotation-flow.spec.ts`（按 coordinator 指示，该 spec 在本环境实测跑不完）。
