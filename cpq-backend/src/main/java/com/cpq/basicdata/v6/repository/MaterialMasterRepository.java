@@ -358,6 +358,40 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
             .executeUpdate();
     }
 
+    /**
+     * BL-0092：删除<b>孤儿</b> pending 料号行（归属的报价单已不存在），带引用守卫。
+     *
+     * <p>与 {@link #deletePendingWithGuard} 是同一套守卫语义的"悬空版"，两者只差筛选条件：
+     * 前者筛"属于某张单"，本方法筛"归属的单已不存在"。守卫的三处引用检查逐条对称改写——
+     * 原判据是「引用方不属于本单」（{@code pending_quotation_id IS NULL OR <> :qid}），
+     * 这里对应为「引用方是有效数据」，即<b>正式行（列为 NULL）或归属的单仍存在</b>；
+     * 若引用方自己也是孤儿，则不构成有效引用（它自己也在本轮清理范围内）。
+     *
+     * <p>用途见 {@code PendingHygieneService} 类注释：{@code pending_quotation_id} 无外键约束，
+     * 迁库/DBA 直删/守卫有意留存都会产生孤儿，本方法是兜底回收的一环。
+     *
+     * @return 实际删除行数（被守卫拦下的不计入，调用方应再查一次剩余量并告警）
+     */
+    public int deleteOrphanPendingWithGuard() {
+        return em.createNativeQuery(
+                "DELETE FROM material_master mm " +
+                "WHERE mm.pending_quotation_id IS NOT NULL " +
+                "  AND NOT EXISTS (SELECT 1 FROM quotation q WHERE q.id = mm.pending_quotation_id) " +
+                "  AND NOT EXISTS (SELECT 1 FROM material_bom_item x " +
+                "                   WHERE x.component_no = mm.material_no " +
+                "                     AND (x.pending_quotation_id IS NULL " +
+                "                          OR EXISTS (SELECT 1 FROM quotation q2 WHERE q2.id = x.pending_quotation_id))) " +
+                "  AND NOT EXISTS (SELECT 1 FROM material_bom x " +
+                "                   WHERE x.material_no = mm.material_no " +
+                "                     AND (x.pending_quotation_id IS NULL " +
+                "                          OR EXISTS (SELECT 1 FROM quotation q2 WHERE q2.id = x.pending_quotation_id))) " +
+                "  AND NOT EXISTS (SELECT 1 FROM material_customer_map x " +
+                "                   WHERE x.material_no = mm.material_no " +
+                "                     AND (x.pending_quotation_id IS NULL " +
+                "                          OR EXISTS (SELECT 1 FROM quotation q2 WHERE q2.id = x.pending_quotation_id)))")
+            .executeUpdate();
+    }
+
     /** 主档记录（B5/B6 读取用于回填/预览；字段形状沿用暂存表时代的命名，避免连锁改
      *  {@code QuoteBackfillPlan}/{@code QuoteBackfillPreviewService}）。 */
     public record StagedRow(String materialNo, String materialName, String specification, String dimension,
