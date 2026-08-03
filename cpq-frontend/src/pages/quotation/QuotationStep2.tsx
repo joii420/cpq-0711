@@ -2381,7 +2381,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         <Alert
           type={cardValueError ? 'error' : 'warning'}
           showIcon
-          message={cardValueError ? '核价渲染失败' : '该料号卡片数据待重算'}
+          message={
+            // repair-0803 B1：文案按侧区分——原先写死「核价渲染失败」，报价侧带原文时也会显示成核价，误导排查方向。
+            cardValueError
+              ? (cardSide === 'COSTING' ? '核价渲染失败' : '卡片渲染失败')
+              : '该料号卡片数据待重算'
+          }
           description={
             // QUOTE 侧带可用「重算」入口(refreshCardSnapshot 仅刷报价侧);
             // COSTING 侧该入口刷不到核价值 → 不给假希望, 只留静态提示(按侧/按行重算归 BL-0012)。
@@ -2396,9 +2401,21 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                 <span style={{ color: '#8c8c8c' }}>请重新生成核价快照后查看</span>
               )
             ) : (
-              <Button size="small" loading={recomputing} disabled={!quotationId} onClick={handleRecompute}>
-                重算
-              </Button>
+              // repair-0803 B1：报价侧原先只有「重算」按钮、不展示错误原文——即便后端落了 __errorMsg
+              // 也看不到，配置员只能靠翻后端日志。现与核价侧对齐：有原文就显式展示 + 给出排查指引。
+              <span>
+                {cardValueError && (
+                  <span style={{ color: '#8c8c8c', display: 'block', marginBottom: 8 }}>
+                    <div style={{ color: '#cf1322', wordBreak: 'break-all' }}>{cardValueError}</div>
+                    <div style={{ marginTop: 4 }}>
+                      请检查该产品卡片各页签组件的 $view 取数配置（列名 / 表结构是否与视图定义一致）后重算。
+                    </div>
+                  </span>
+                )}
+                <Button size="small" loading={recomputing} disabled={!quotationId} onClick={handleRecompute}>
+                  重算
+                </Button>
+              </span>
             )
           }
           style={{ margin: 8 }}

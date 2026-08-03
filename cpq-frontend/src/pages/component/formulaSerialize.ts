@@ -642,7 +642,12 @@ export function expressionToTokens(
               targetExpr.push({
                 type: 'component_subtotal',
                 value: col,
-                tab_name: col,
+                // repair-0803 F1（BL-0099）：tab_name 应为**页签名**，原先误填列名 col，
+                // 导致后端 appendToken 第 2 级回退拼出 "税率#税率" 这类恒不命中的键。
+                // 当前靠第 1 级 component_code+"#"+col 兜住未出事，但一旦 alias 落空就会
+                // 连续跌到第 3/4 级「取整个组件小计合计」（如 产品 = 管理费+税率之和）而静默算错。
+                // 注意：本文件 :856 的 tab_name: AMOUNT_TOTAL_KEY 是 BL-0017 的哨兵键设计，不在此列。
+                tab_name: td.alias,
                 component_code: td.alias,
                 label: `${td.componentName ?? td.alias}·${col}`,
               });
@@ -821,7 +826,8 @@ export function expressionToTokens(
             result.push({
               type: 'component_subtotal',
               value: fieldPart,
-              tab_name: fieldPart,
+              // repair-0803 F1（BL-0099）：同 :645，tab_name 应为页签名而非列名。
+              tab_name: tabDef.alias,
               component_code: tabDef.alias,
               label: `${tabDef.componentName ?? tabDef.alias}·${fieldPart}`,
             });

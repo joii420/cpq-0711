@@ -518,8 +518,12 @@ public class CardSnapshotService {
             // ── Pass1:只 build 字符串到内存(只读 li,不赋字段 → 脏窗口为空,任何 fallback em 查此刻 flush 空)──
             Map<UUID, String> quoteVals = new HashMap<>();
             Map<UUID, String> costingVals = new HashMap<>();
+            // repair-0803 B1：逐行收集报价侧渲染失败原文 → 下方落带原文哨兵（对齐核价侧 BL-0030 能力）
+            Map<UUID, String> quoteErrors = new HashMap<>();
             for (QuotationLineItem li : lines) {
-                quoteVals.put(li.id, safeCall(() -> buildCardValues(li, q.customerTemplateId, prefetch)));
+                final String[] errOut = new String[1];
+                quoteVals.put(li.id, safeCall(() -> buildCardValues(li, q.customerTemplateId, prefetch, errOut)));
+                if (errOut[0] != null) quoteErrors.put(li.id, errOut[0]);
                 if (q.costingCardTemplateId != null) {
                     if (costingRenderError != null) {
                         costingVals.put(li.id, null);   // 整单渲染已失败 → 不逐 li 重试(S1 兜底会再抛),下方落带原文哨兵
@@ -540,7 +544,10 @@ public class CardSnapshotService {
                     LOG.warnf("[cardvalues-sentinel] quote build 失败 line=%s → 落失败哨兵", li.id);
                 if (costingVals.containsKey(li.id) && costingVals.get(li.id) == null)
                     LOG.warnf("[cardvalues-sentinel] costing build 失败 line=%s → 落失败哨兵", li.id);
-                li.quoteCardValues = orSentinel(quoteVals.get(li.id));
+                // repair-0803 B1：有失败原文 → 落带原文哨兵，前端显示具体错误而非通用「待重算」
+                li.quoteCardValues = quoteErrors.containsKey(li.id)
+                    ? failedSentinelWithError(quoteErrors.get(li.id))
+                    : orSentinel(quoteVals.get(li.id));
                 li.quoteValuesAt = now;
                 if (costingVals.containsKey(li.id))
                     li.costingCardValues = costingRenderError != null
@@ -1066,6 +1073,23 @@ public class CardSnapshotService {
 
     /** B2 重载：{@code prefetch!=null} 时复用预取模板 snapshot + 整单 IN compdata；{@code null}=逐行查（零破坏）。 */
     String buildCardValues(QuotationLineItem li, UUID templateId, CardValuesPrefetch prefetch) {
+        return buildCardValues(li, templateId, prefetch, null);
+    }
+
+    /**
+     * repair-0803 B1 重载：{@code errOut != null} 时把失败原文写入 {@code errOut[0]}，
+     * 供调用方落<b>带错误原文的哨兵</b>（{@link #failedSentinelWithError}）而非通用哨兵。
+     *
+     * <p><b>为什么需要</b>：报价侧原先只落 {@link #orSentinel} 通用哨兵，前端仅显示
+     * 「该料号卡片数据待重算」而<b>不含任何错误原文</b>——核价侧早有此能力（BL-0030，
+     * {@code costingRenderError} → {@code failedSentinelWithError}），报价侧一直缺。
+     * 2026-08-02 排查 QT-20260802-0049 时，因看不到是哪条 SQL 出错，只能靠翻后端控制台日志
+     * （dev 环境还不落日志文件），排查成本极高。本重载把该能力补齐到报价侧。
+     *
+     * <p>行为完全向后兼容：{@code errOut == null}（即原 3 参重载）时与改造前逐字节一致。
+     */
+    String buildCardValues(QuotationLineItem li, UUID templateId, CardValuesPrefetch prefetch,
+                           String[] errOut) {
         if (li == null || li.id == null || templateId == null) return null;
         try {
             // 1. 配置源：**优先用建单时冻结的 quotation_view_structure**（严格冻结语义）。
@@ -1139,6 +1163,13 @@ public class CardSnapshotService {
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] buildCardValues failed li=%s tmpl=%s: %s",
                 li.id, templateId, e.getMessage());
+            // repair-0803 B1：把失败原文透出给调用方（errOut==null 时行为与改造前一致）。
+            // 注意用 e.toString() 而非 getMessage()——PG 的 "current transaction is aborted" 类异常
+            // getMessage() 常为空或过短，带上异常类名才能定位到真正的首因。
+            if (errOut != null && errOut.length > 0) {
+                String msg = e.getMessage();
+                errOut[0] = "卡片渲染失败: " + ((msg == null || msg.isBlank()) ? e.toString() : msg);
+            }
             return null;
         }
     }
