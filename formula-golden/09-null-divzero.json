@@ -27,7 +27,7 @@
       "previousRowSubtotal": null
     },
     "expected": "0.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "ArithParser 结果 Infinite → evaluateExpression 判 Double.isInfinite → 返回 ZERO4"
   },
   {
@@ -58,7 +58,7 @@
       "previousRowSubtotal": null
     },
     "expected": "0.0000",
-    "expectedSource": "manual-computed",
+    "expectedSource": "frontend-engine",
     "notes": "NaN → 同样返回 ZERO4"
   },
   {

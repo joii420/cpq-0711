@@ -585,7 +585,18 @@ export function evaluateExpression(
     // Use Function constructor instead of eval for slightly better practice
     // Safe: we built the expression ourselves from controlled tokens
     const fn = new Function(`return (${expr})`);
-    const result = new Decimal(fn());
+    const raw = fn();
+    // task-0729 B9 nz-001/nz-002 修复（coordinator 裁定 2026-08-02）：除零(5/0→Infinity)、
+    // 0/0(→NaN) 之前会原样穿透返回（new Decimal(Infinity)/(NaN) 不抛异常，不会被下面的
+    // catch 兜住）。后端 FormulaCalculator 对 Double.isInfinite() 显式判 0，前端此前没有
+    // 对应判断——两端在这一点上不一致。风险不止渲染层：formatNumber.ts 的 isFinite() 只在
+    // 展示前兜底，但 evaluateExpression 返回给调用方的原始数值仍是 Infinity/NaN，若被其它
+    // 公式当 fieldValues/componentSubtotals 继续参与运算会向上游传染(Infinity+x=Infinity)，
+    // 或 JSON.stringify 落库时被静默转成 null。现与后端对齐：非有限数一律归零。
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+      return 0;
+    }
+    const result = new Decimal(raw);
     return result.toDecimalPlaces(4).toNumber();
   } catch {
     return 0;
