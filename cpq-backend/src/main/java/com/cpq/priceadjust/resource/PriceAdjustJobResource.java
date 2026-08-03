@@ -1,6 +1,5 @@
 package com.cpq.priceadjust.resource;
 
-import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.dto.PageResult;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.common.security.RoleAllowed;
@@ -24,6 +23,9 @@ import java.util.UUID;
 
 /**
  * task-0729 B5 · 更新任务端点（api.md §3，屏 6 + 常驻更新任务页）。
+ *
+ * <p>🔒 2026-08-03 修正：响应体裸 DTO，不套 {@code ApiResponse} 信封（详见
+ * {@code PriceAdjustStrategyResource} 类注释）。
  */
 @Path("/api/cpq/price-adjust")
 @Produces(MediaType.APPLICATION_JSON)
@@ -36,7 +38,7 @@ public class PriceAdjustJobResource {
     @GET
     @Path("/jobs")
     @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
-    public ApiResponse<PageResult<JobDTO>> listJobs(
+    public PageResult<JobDTO> listJobs(
             @QueryParam("page") @DefaultValue("1") int page,
             @QueryParam("size") @DefaultValue("20") int size,
             @QueryParam("status") String status,
@@ -71,22 +73,22 @@ public class PriceAdjustJobResource {
 
         List<JobDTO> content = new ArrayList<>();
         for (MaterialPriceUpdateJob j : rows) content.add(toDto(j));
-        return ApiResponse.success(new PageResult<>(content, page, size, total));
+        return new PageResult<>(content, page, size, total);
     }
 
     @GET
     @Path("/jobs/{jobId}")
     @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
-    public ApiResponse<JobDTO> getJob(@PathParam("jobId") UUID jobId) {
+    public JobDTO getJob(@PathParam("jobId") UUID jobId) {
         MaterialPriceUpdateJob j = MaterialPriceUpdateJob.findById(jobId);
         if (j == null) throw new BusinessException(404, "job 不存在: " + jobId);
-        return ApiResponse.success(toDto(j));
+        return toDto(j);
     }
 
     @GET
     @Path("/jobs/{jobId}/items")
     @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
-    public ApiResponse<PageResult<JobItemDTO>> getJobItems(
+    public PageResult<JobItemDTO> getJobItems(
             @PathParam("jobId") UUID jobId,
             @QueryParam("page") @DefaultValue("1") int page,
             @QueryParam("size") @DefaultValue("50") int size,
@@ -101,7 +103,7 @@ public class PriceAdjustJobResource {
 
         List<JobItemDTO> content = new ArrayList<>();
         for (MaterialPriceUpdateJobItem it : rows) content.add(toItemDto(it));
-        return ApiResponse.success(new PageResult<>(content, page, size, total));
+        return new PageResult<>(content, page, size, total);
     }
 
     /** §3.4 批量重试该批次全部 FAILED + CONFLICT 项（不含 STALE）。 */
@@ -112,7 +114,7 @@ public class PriceAdjustJobResource {
         MaterialPriceUpdateJob j = MaterialPriceUpdateJob.findById(jobId);
         if (j == null) throw new BusinessException(404, "job 不存在: " + jobId);
         managedExecutor.runAsync(() -> jobExecutionService.retryJob(jobId));
-        return Response.status(202).entity(ApiResponse.success(null)).build();
+        return Response.status(202).build();
     }
 
     /** §3.5 单条重试。STALE 项调用返回 409。 */
@@ -126,7 +128,7 @@ public class PriceAdjustJobResource {
             throw new BusinessException(409, "所属版本已被取代，STALE 项不可重试");
         }
         managedExecutor.runAsync(() -> jobExecutionService.retryJobItem(itemId));
-        return Response.status(202).entity(ApiResponse.success(null)).build();
+        return Response.status(202).build();
     }
 
     private JobDTO toDto(MaterialPriceUpdateJob j) {

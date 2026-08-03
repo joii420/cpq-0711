@@ -1,6 +1,5 @@
 package com.cpq.priceadjust.resource;
 
-import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.dto.PageResult;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.common.security.SessionHelper;
@@ -20,6 +19,9 @@ import java.util.UUID;
 
 /**
  * task-0729 B5 · 审核端点（api.md §2）。
+ *
+ * <p>🔒 2026-08-03 修正：响应体裸 DTO，不套 {@code ApiResponse} 信封（详见
+ * {@code PriceAdjustStrategyResource} 类注释；同批一并修正 §3 {@code PriceAdjustJobResource}）。
  */
 @Path("/api/cpq/price-adjust/reviews")
 @Produces(MediaType.APPLICATION_JSON)
@@ -32,28 +34,28 @@ public class PriceAdjustReviewResource {
 
     @GET
     @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
-    public ApiResponse<PageResult<ReviewListItemDTO>> list(
+    public PageResult<ReviewListItemDTO> list(
             @QueryParam("page") @DefaultValue("1") int page,
             @QueryParam("size") @DefaultValue("20") int size,
             @QueryParam("customerNo") String customerNo,
             @QueryParam("status") String status,
             @QueryParam("breachedOnly") @DefaultValue("false") boolean breachedOnly,
             @QueryParam("keyword") String keyword) {
-        return ApiResponse.success(reviewService.list(customerNo, status, breachedOnly, keyword, page, size));
+        return reviewService.list(customerNo, status, breachedOnly, keyword, page, size);
     }
 
     @GET
     @Path("/{reviewId}")
     @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
-    public ApiResponse<ReviewDetailDTO> detail(@PathParam("reviewId") UUID reviewId) {
-        return ApiResponse.success(reviewService.detail(reviewId));
+    public ReviewDetailDTO detail(@PathParam("reviewId") UUID reviewId) {
+        return reviewService.detail(reviewId);
     }
 
     @POST
     @Path("/impact")
     @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
-    public ApiResponse<ImpactResultDTO> impact(ApproveRejectRequest req) {
-        return ApiResponse.success(reviewService.impact(req != null ? req.reviewIds : null));
+    public ImpactResultDTO impact(ApproveRejectRequest req) {
+        return reviewService.impact(req != null ? req.reviewIds : null);
     }
 
     @POST
@@ -62,16 +64,16 @@ public class PriceAdjustReviewResource {
     public Response approve(ApproveRejectRequest req) {
         UUID actorId = sessionHelper.getCurrentUserId(httpRequest);
         PriceAdjustReviewService.ApproveResult result = reviewService.approve(req, actorId);
-        return Response.status(202).entity(ApiResponse.success(result)).build();
+        return Response.status(202).entity(result).build();
     }
 
     @POST
     @Path("/reject")
     @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
-    public ApiResponse<Void> reject(ApproveRejectRequest req) {
+    public Response reject(ApproveRejectRequest req) {
         UUID actorId = sessionHelper.getCurrentUserId(httpRequest);
         reviewService.reject(req, actorId);
-        return ApiResponse.success(null);
+        return Response.ok().build();
     }
 
     @POST
@@ -79,6 +81,6 @@ public class PriceAdjustReviewResource {
     @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
     public Response recomputeBudget(@PathParam("reviewId") UUID reviewId) {
         reviewService.recomputeBudget(reviewId);
-        return Response.status(202).entity(ApiResponse.success(null)).build();
+        return Response.status(202).build();
     }
 }
