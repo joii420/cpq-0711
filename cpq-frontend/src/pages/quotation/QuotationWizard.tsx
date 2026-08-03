@@ -18,7 +18,7 @@ import type { LineItem, ComponentDataItem } from './QuotationStep2';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
 import { safeSetLocalDraft } from './draftCache';
 import { stableDraftDedupKey } from './draftPayloadDedup';
-import { isKeyUnset } from './keyPresenceAuthority';
+import { isKeyUnset, rowsHaveUserData } from './keyPresenceAuthority';
 import AddProductModal from './AddProductModal';
 import ConfigureProductDrawer from './ConfigureProductDrawer';
 import QuotationCreateForm from './QuotationCreateForm';
@@ -517,9 +517,9 @@ const QuotationWizard: React.FC = () => {
               const rowsEnr = Array.isArray(ec.rows) ? ec.rows : [];
               // 用户输入若已超过 enriched 默认行（filler 扩展过）以用户为准
               // 用户没动过（rowsCur 为空 / 都是空对象）则用 enriched 默认值
-              const hasUserInput = rowsCur && rowsCur.some((r: Record<string, any>) =>
-                r && Object.keys(r).some(k => k !== 'row_index' && r[k] != null && r[k] !== '')
-              );
+              // spec 2026-08-03：清空也是用户数据 —— 只看键，不看值。
+              // 原判据要求「有非空值」，导致某行被清空后整行退回 enriched 默认行。
+              const hasUserInput = rowsHaveUserData(rowsCur);
               return {
                 ...ec,
                 rows: hasUserInput ? rowsCur : rowsEnr,
