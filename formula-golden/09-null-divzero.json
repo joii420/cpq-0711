@@ -1,0 +1,144 @@
+[
+  {
+    "id": "nz-001",
+    "category": "空值NULL除零",
+    "description": "除零 → 0（不抛异常）",
+    "tokens": [
+      {
+        "type": "number",
+        "value": "5"
+      },
+      {
+        "type": "operator",
+        "value": "/"
+      },
+      {
+        "type": "number",
+        "value": "0"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "0.0000",
+    "expectedSource": "manual-computed",
+    "notes": "ArithParser 结果 Infinite → evaluateExpression 判 Double.isInfinite → 返回 ZERO4"
+  },
+  {
+    "id": "nz-002",
+    "category": "空值NULL除零",
+    "description": "0/0 → 0",
+    "tokens": [
+      {
+        "type": "number",
+        "value": "0"
+      },
+      {
+        "type": "operator",
+        "value": "/"
+      },
+      {
+        "type": "number",
+        "value": "0"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "0.0000",
+    "expectedSource": "manual-computed",
+    "notes": "NaN → 同样返回 ZERO4"
+  },
+  {
+    "id": "nz-003",
+    "category": "空值NULL除零",
+    "description": "缺失 field token 取值回退 0",
+    "tokens": [
+      {
+        "type": "field",
+        "value": "不存在的字段"
+      },
+      {
+        "type": "operator",
+        "value": "+"
+      },
+      {
+        "type": "number",
+        "value": "1"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "1.0000",
+    "expectedSource": "manual-computed",
+    "notes": "fieldValues.getOrDefault(fieldName, 0.0)"
+  },
+  {
+    "id": "nz-004",
+    "category": "空值NULL除零",
+    "description": "缺失 path token 回退 0",
+    "tokens": [
+      {
+        "type": "path",
+        "path": "{$view.不存在的列}"
+      },
+      {
+        "type": "operator",
+        "value": "+"
+      },
+      {
+        "type": "number",
+        "value": "10"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "10.0000",
+    "expectedSource": "manual-computed",
+    "notes": "basicDataValues 未命中 → resolvePath 返回 null → appendToken 兜底 0.0"
+  },
+  {
+    "id": "nz-005",
+    "category": "空值NULL除零",
+    "description": "空 tokens 数组 → 0",
+    "tokens": [],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "0.0000",
+    "expectedSource": "manual-computed",
+    "notes": "evaluateExpression 头部 tokens==null||size==0 直接返回 ZERO4"
+  }
+]

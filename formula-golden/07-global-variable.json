@@ -1,0 +1,110 @@
+[
+  {
+    "id": "gvar-001",
+    "category": "global_variable",
+    "description": "全局变量直接取值: 汇率",
+    "tokens": [
+      {
+        "type": "global_variable",
+        "code": "EXCHANGE_RATE_USD"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {},
+      "basicDataValues": {
+        "@gvar:EXCHANGE_RATE_USD": 7.15,
+        "@gvar:TAX_RATE": 0.13
+      },
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "7.1500",
+    "expectedSource": "manual-computed",
+    "notes": "basicDataValues['@gvar:EXCHANGE_RATE_USD']"
+  },
+  {
+    "id": "gvar-002",
+    "category": "global_variable",
+    "description": "全局变量参与乘法: 美元金额×汇率",
+    "tokens": [
+      {
+        "type": "number",
+        "value": "100"
+      },
+      {
+        "type": "operator",
+        "value": "*"
+      },
+      {
+        "type": "global_variable",
+        "code": "EXCHANGE_RATE_USD"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {},
+      "basicDataValues": {
+        "@gvar:EXCHANGE_RATE_USD": 7.15,
+        "@gvar:TAX_RATE": 0.13
+      },
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "715.0000",
+    "expectedSource": "manual-computed",
+    "notes": "= 715"
+  },
+  {
+    "id": "gvar-003",
+    "category": "global_variable",
+    "description": "两个全局变量相乘: 金额×(1+税率)",
+    "tokens": [
+      {
+        "type": "number",
+        "value": "1000"
+      },
+      {
+        "type": "operator",
+        "value": "*"
+      },
+      {
+        "type": "bracket_open"
+      },
+      {
+        "type": "number",
+        "value": "1"
+      },
+      {
+        "type": "operator",
+        "value": "+"
+      },
+      {
+        "type": "global_variable",
+        "code": "TAX_RATE"
+      },
+      {
+        "type": "bracket_close"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {},
+      "basicDataValues": {
+        "@gvar:EXCHANGE_RATE_USD": 7.15,
+        "@gvar:TAX_RATE": 0.13
+      },
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "1130.0000",
+    "expectedSource": "manual-computed",
+    "notes": "= 1130"
+  }
+]

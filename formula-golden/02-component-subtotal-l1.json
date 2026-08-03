@@ -1,0 +1,86 @@
+[
+  {
+    "id": "cs1-001",
+    "category": "component_subtotal一阶",
+    "description": "按 component_code#列名 精确命中列小计键",
+    "tokens": [
+      {
+        "type": "component_subtotal",
+        "value": "材料小计",
+        "component_code": "COMP-A"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {
+        "COMP-A#材料小计": 100.5,
+        "COMP-A": 200.0,
+        "投料页签": 300.0
+      },
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "100.5000",
+    "expectedSource": "manual-computed",
+    "notes": "componentSubtotals['COMP-A#材料小计']=100.5，命中最高优先级键"
+  },
+  {
+    "id": "cs1-002",
+    "category": "component_subtotal一阶",
+    "description": "component_code 无列小计键时回退组件总小计",
+    "tokens": [
+      {
+        "type": "component_subtotal",
+        "value": "不存在的列",
+        "component_code": "COMP-A"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {
+        "COMP-A#材料小计": 100.5,
+        "COMP-A": 200.0,
+        "投料页签": 300.0
+      },
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "200.0000",
+    "expectedSource": "manual-computed",
+    "notes": "'COMP-A#不存在的列' 未命中 → 回退 componentSubtotals['COMP-A']=200.0"
+  },
+  {
+    "id": "cs1-003",
+    "category": "component_subtotal一阶",
+    "description": "按 tab_name 取组件总小计（无 component_code）",
+    "tokens": [
+      {
+        "type": "component_subtotal",
+        "value": "投料页签",
+        "tab_name": "投料页签"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {
+        "COMP-A#材料小计": 100.5,
+        "COMP-A": 200.0,
+        "投料页签": 300.0
+      },
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "300.0000",
+    "expectedSource": "manual-computed",
+    "notes": "value=tab_name='投料页签' 直接命中组件总小计回退键"
+  }
+]

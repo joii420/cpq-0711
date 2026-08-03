@@ -1,0 +1,88 @@
+[
+  {
+    "id": "cs2-001",
+    "category": "component_subtotal二阶",
+    "description": "两个一阶小计相加: A.材料小计 + B.加工小计",
+    "tokens": [
+      {
+        "type": "component_subtotal",
+        "value": "材料小计",
+        "component_code": "COMP-A"
+      },
+      {
+        "type": "operator",
+        "value": "+"
+      },
+      {
+        "type": "component_subtotal",
+        "value": "加工小计",
+        "component_code": "COMP-B"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {
+        "COMP-A#材料小计": 100.0,
+        "COMP-B#加工小计": 50.0
+      },
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "150.0000",
+    "expectedSource": "manual-computed",
+    "notes": "= 100+50 = 150，验证多个 component_subtotal token 在同一表达式内独立解析"
+  },
+  {
+    "id": "cs2-002",
+    "category": "component_subtotal二阶",
+    "description": "二阶小计参与括号优先级: (A+B)*1.1",
+    "tokens": [
+      {
+        "type": "bracket_open"
+      },
+      {
+        "type": "component_subtotal",
+        "value": "材料小计",
+        "component_code": "COMP-A"
+      },
+      {
+        "type": "operator",
+        "value": "+"
+      },
+      {
+        "type": "component_subtotal",
+        "value": "加工小计",
+        "component_code": "COMP-B"
+      },
+      {
+        "type": "bracket_close"
+      },
+      {
+        "type": "operator",
+        "value": "*"
+      },
+      {
+        "type": "number",
+        "value": "1.1"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {
+        "COMP-A#材料小计": 100.0,
+        "COMP-B#加工小计": 50.0
+      },
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "165.0000",
+    "expectedSource": "manual-computed",
+    "notes": "= 150*1.1 = 165"
+  }
+]

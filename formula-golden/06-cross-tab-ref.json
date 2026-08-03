@@ -1,0 +1,149 @@
+[
+  {
+    "id": "ctr-001",
+    "category": "cross_tab_ref",
+    "description": "KSUM: 按料号匹配，同卡片投料页签金额求和",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "投料",
+        "agg": "SUM",
+        "match": [
+          {
+            "a": "料号",
+            "b": "料号"
+          }
+        ],
+        "target": "金额",
+        "projectToHostKey": false
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {
+        "投料": [
+          {
+            "料号": "P1",
+            "金额": 10
+          },
+          {
+            "料号": "P1",
+            "金额": 20
+          },
+          {
+            "料号": "P2",
+            "金额": 99
+          }
+        ]
+      },
+      "currentRowRaw": {
+        "料号": "P1"
+      },
+      "previousRowSubtotal": null
+    },
+    "expected": "30.0000",
+    "expectedSource": "manual-computed",
+    "notes": "match a=投料行.料号 与 b=currentRowRaw.料号 相等的行(P1×2)求和 target=金额 → 10+20=30；P2 行不匹配不计入。⚠️ 仅覆盖 SUM 基本路径，KAVG/KMAX/KMIN 空集特殊分支(I-2)、多 source 广播(§4.3)、SUMIF predicate 均未覆盖，留给前端补充对应用例"
+  },
+  {
+    "id": "ctr-002",
+    "category": "cross_tab_ref",
+    "description": "KSUM: 匹配键不存在的料号 → 空集回落0",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "投料",
+        "agg": "SUM",
+        "match": [
+          {
+            "a": "料号",
+            "b": "料号"
+          }
+        ],
+        "target": "金额",
+        "projectToHostKey": false
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {
+        "投料": [
+          {
+            "料号": "P1",
+            "金额": 10
+          },
+          {
+            "料号": "P1",
+            "金额": 20
+          },
+          {
+            "料号": "P2",
+            "金额": 99
+          }
+        ]
+      },
+      "currentRowRaw": {
+        "料号": "P9"
+      },
+      "previousRowSubtotal": null
+    },
+    "expected": "0.0000",
+    "expectedSource": "manual-computed",
+    "notes": "I-1: KSUM 空集静默回落 0（不是 KAVG/KMAX/KMIN 的 null 特殊分支）"
+  },
+  {
+    "id": "ctr-003",
+    "category": "cross_tab_ref",
+    "description": "COUNT 聚合：命中行数",
+    "tokens": [
+      {
+        "type": "cross_tab_ref",
+        "source": "投料",
+        "agg": "COUNT",
+        "match": [
+          {
+            "a": "料号",
+            "b": "料号"
+          }
+        ],
+        "target": "金额",
+        "projectToHostKey": false
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {
+        "投料": [
+          {
+            "料号": "P1",
+            "金额": 10
+          },
+          {
+            "料号": "P1",
+            "金额": 20
+          },
+          {
+            "料号": "P2",
+            "金额": 99
+          }
+        ]
+      },
+      "currentRowRaw": {
+        "料号": "P1"
+      },
+      "previousRowSubtotal": null
+    },
+    "expected": "2.0000",
+    "expectedSource": "manual-computed",
+    "notes": "P1 命中 2 行"
+  }
+]

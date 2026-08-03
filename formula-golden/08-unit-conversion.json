@@ -1,0 +1,109 @@
+[
+  {
+    "id": "unit-001",
+    "category": "单位换算",
+    "description": "克转千克: 2500g / 1000",
+    "tokens": [
+      {
+        "type": "number",
+        "value": "2500"
+      },
+      {
+        "type": "operator",
+        "value": "/"
+      },
+      {
+        "type": "number",
+        "value": "1000"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "2.5000",
+    "expectedSource": "manual-computed",
+    "notes": "= 2.5kg"
+  },
+  {
+    "id": "unit-002",
+    "category": "单位换算",
+    "description": "毫米转米: 1500mm / 1000",
+    "tokens": [
+      {
+        "type": "number",
+        "value": "1500"
+      },
+      {
+        "type": "operator",
+        "value": "/"
+      },
+      {
+        "type": "number",
+        "value": "1000"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "1.5000",
+    "expectedSource": "manual-computed",
+    "notes": "= 1.5m"
+  },
+  {
+    "id": "unit-003",
+    "category": "单位换算",
+    "description": "单价单位换算: 元/kg 转 元/g (÷1000) 再乘用量g",
+    "tokens": [
+      {
+        "type": "bracket_open"
+      },
+      {
+        "type": "number",
+        "value": "50"
+      },
+      {
+        "type": "operator",
+        "value": "/"
+      },
+      {
+        "type": "number",
+        "value": "1000"
+      },
+      {
+        "type": "bracket_close"
+      },
+      {
+        "type": "operator",
+        "value": "*"
+      },
+      {
+        "type": "number",
+        "value": "2500"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "125.0000",
+    "expectedSource": "manual-computed",
+    "notes": "50元/kg 换算成元/g 后乘 2500g 用量 = 125"
+  }
+]

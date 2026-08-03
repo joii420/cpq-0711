@@ -1,0 +1,92 @@
+[
+  {
+    "id": "amt-001",
+    "category": "amount_total页签总计",
+    "description": "按 component_code#__amount_total__ 取金额列合计",
+    "tokens": [
+      {
+        "type": "component_subtotal",
+        "value": "__amount_total__",
+        "component_code": "COMP-A"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {
+        "COMP-A#__amount_total__": 88.88,
+        "投料#__amount_total__": 12.34
+      },
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "88.8800",
+    "expectedSource": "manual-computed",
+    "notes": "BL-0017 哨兵键：Σ is_amount 列，本用例验证 component_subtotal token 对该特殊列名的取值路径与普通列名一致"
+  },
+  {
+    "id": "amt-002",
+    "category": "amount_total页签总计",
+    "description": "按 tab_name#__amount_total__ 取金额列合计",
+    "tokens": [
+      {
+        "type": "component_subtotal",
+        "value": "__amount_total__",
+        "tab_name": "投料"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {
+        "COMP-A#__amount_total__": 88.88,
+        "投料#__amount_total__": 12.34
+      },
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "12.3400",
+    "expectedSource": "manual-computed",
+    "notes": ""
+  },
+  {
+    "id": "amt-003",
+    "category": "amount_total页签总计",
+    "description": "两个页签总计相加参与整单汇总",
+    "tokens": [
+      {
+        "type": "component_subtotal",
+        "value": "__amount_total__",
+        "component_code": "COMP-A"
+      },
+      {
+        "type": "operator",
+        "value": "+"
+      },
+      {
+        "type": "component_subtotal",
+        "value": "__amount_total__",
+        "tab_name": "投料"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {
+        "COMP-A#__amount_total__": 88.88,
+        "投料#__amount_total__": 12.34
+      },
+      "productAttributes": {},
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "101.2200",
+    "expectedSource": "manual-computed",
+    "notes": "= 101.2200"
+  }
+]

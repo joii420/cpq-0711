@@ -1,0 +1,104 @@
+[
+  {
+    "id": "pa-001",
+    "category": "product_attribute",
+    "description": "单价×产品属性(重量): 单价10 × 重量",
+    "tokens": [
+      {
+        "type": "number",
+        "value": "10"
+      },
+      {
+        "type": "operator",
+        "value": "*"
+      },
+      {
+        "type": "product_attribute",
+        "attribute_name": "重量"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {
+        "重量": 2.5,
+        "数量": 4
+      },
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "25.0000",
+    "expectedSource": "manual-computed",
+    "notes": "= 25"
+  },
+  {
+    "id": "pa-002",
+    "category": "product_attribute",
+    "description": "两个产品属性相乘: 重量×数量",
+    "tokens": [
+      {
+        "type": "product_attribute",
+        "attribute_name": "重量"
+      },
+      {
+        "type": "operator",
+        "value": "*"
+      },
+      {
+        "type": "product_attribute",
+        "attribute_name": "数量"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {
+        "重量": 2.5,
+        "数量": 4
+      },
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "10.0000",
+    "expectedSource": "manual-computed",
+    "notes": "= 10"
+  },
+  {
+    "id": "pa-003",
+    "category": "product_attribute",
+    "description": "缺失属性回退 0",
+    "tokens": [
+      {
+        "type": "product_attribute",
+        "attribute_name": "不存在的属性"
+      },
+      {
+        "type": "operator",
+        "value": "+"
+      },
+      {
+        "type": "number",
+        "value": "5"
+      }
+    ],
+    "context": {
+      "componentSubtotals": {},
+      "productAttributes": {
+        "重量": 2.5,
+        "数量": 4
+      },
+      "basicDataValues": {},
+      "quotationFields": {},
+      "crossTabRows": {},
+      "currentRowRaw": {},
+      "previousRowSubtotal": null
+    },
+    "expected": "5.0000",
+    "expectedSource": "manual-computed",
+    "notes": "productAttributes.get 缺失键 → 0.0（appendToken product_attribute 分支 v!=null?v:0.0）"
+  }
+]
