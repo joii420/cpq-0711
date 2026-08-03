@@ -330,6 +330,18 @@
   cursor: not-allowed;
 }
 
+/* task-0803: 父子取值(PGET/C* 族 + 树属性) chip —— 绿色系区分"BOM 树内取值"专属工具条 */
+.cm-treeref-chip {
+  border-color: #b7eb8f;
+  color: #389e0d;
+}
+
+.cm-treeref-chip:hover:not(:disabled) {
+  border-color: #52c41a;
+  color: #237804;
+  background: #f6ffed;
+}
+
 .cm-op-chip-hint {
   font-size: 11px;
   color: #c0c4cc;

@@ -1,9 +1,16 @@
 import React from 'react';
 import type { FormulaToken } from '../../pages/component/types';
+import { treeAttrChipLabel, treeRefChipLabel } from '../../pages/component/crossTabText';
 
 export interface FormulaZoneProps {
   tokens: FormulaToken[];
   onChange: (tokens: FormulaToken[]) => void;
+  /**
+   * task-0803 Task 8 (F-5)：点击 chip 本体（非删除的 "×"）时触发，供宿主重新打开配置抽屉编辑。
+   * 目前仅 `tree_ref` 类型的 chip 会触发（点 chip 可重新打开「父子取值」抽屉编辑）；
+   * 可选，缺省不传 = 维持原有"仅可删除、不可点击编辑"行为，向后兼容既有调用点。
+   */
+  onTokenClick?: (token: FormulaToken, index: number) => void;
 }
 
 function getChipStyle(type: FormulaToken['type']): React.CSSProperties {
@@ -64,6 +71,20 @@ function getChipStyle(type: FormulaToken['type']): React.CSSProperties {
         background: '#fff7e6',
         border: '1px solid #ffd591',
         color: '#d46b08',
+      };
+    case 'tree_ref':
+      // task-0803: BOM 树父子取值(PGET/C* 族) —— 绿色系,与 cross_tab_ref 的紫色系区分"树内取值" vs "跨页签取值"
+      return {
+        background: '#f6ffed',
+        border: '1px solid #b7eb8f',
+        color: '#389e0d',
+      };
+    case 'tree_attr':
+      // task-0803: BOM 树属性([层级]/[是否叶子]/[是否根]) —— 同色系浅一档,标记"只读标量"
+      return {
+        background: '#e6fffb',
+        border: '1px solid #87e8de',
+        color: '#08979c',
       };
     default:
       return {
@@ -134,6 +155,14 @@ function getTokenLabel(token: FormulaToken): string {
     const label = token.label || `${token.code ?? '全局变量'}`;
     return `🌐 ${label}`;
   }
+  if (token.type === 'tree_ref') {
+    // task-0803 F-5: 「父行(累计用量)」/「子行合计(用量 × 单价)」等，逐字文案见 crossTabText.ts
+    return treeRefChipLabel(token.dir, token.agg, token.targetExpr);
+  }
+  if (token.type === 'tree_attr') {
+    // task-0803 F-6: 「[层级]」/「[是否叶子]」/「[是否根]」
+    return treeAttrChipLabel(token.attr);
+  }
   if (token.label) return token.label;
   if (token.type === 'product_attribute') {
     return token.attribute_name || '产品属性';
@@ -141,7 +170,7 @@ function getTokenLabel(token: FormulaToken): string {
   return token.value || '';
 }
 
-const FormulaZone: React.FC<FormulaZoneProps> = ({ tokens, onChange }) => {
+const FormulaZone: React.FC<FormulaZoneProps> = ({ tokens, onChange, onTokenClick }) => {
   const removeToken = (index: number) => {
     const next = [...tokens];
     next.splice(index, 1);
@@ -169,9 +198,14 @@ const FormulaZone: React.FC<FormulaZoneProps> = ({ tokens, onChange }) => {
       ) : (
         tokens.map((token, index) => {
           const chipStyle = getChipStyle(token.type);
+          // task-0803 F-5：仅 tree_ref chip 可点击重新打开配置抽屉；其余 token 类型维持原有的
+          // "纯展示 + 可删除"行为不变（onTokenClick 未传或 token 类型不支持时不挂 onClick）。
+          const clickable = !!onTokenClick && token.type === 'tree_ref';
           return (
             <span
               key={index}
+              data-token-type={token.type}
+              onClick={clickable ? () => onTokenClick!(token, index) : undefined}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -179,6 +213,7 @@ const FormulaZone: React.FC<FormulaZoneProps> = ({ tokens, onChange }) => {
                 padding: '1px 6px',
                 fontSize: 12,
                 lineHeight: '20px',
+                cursor: clickable ? 'pointer' : undefined,
                 ...chipStyle,
               }}
             >
@@ -186,7 +221,11 @@ const FormulaZone: React.FC<FormulaZoneProps> = ({ tokens, onChange }) => {
               <span
                 role="button"
                 aria-label="remove"
-                onClick={() => removeToken(index)}
+                onClick={(e) => {
+                  // 阻止冒泡到外层 chip 的 onTokenClick（否则点"×"删除会连带误触发编辑抽屉）
+                  e.stopPropagation();
+                  removeToken(index);
+                }}
                 style={{
                   marginLeft: 4,
                   cursor: 'pointer',
