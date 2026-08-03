@@ -1,5 +1,35 @@
 # formula-golden — 双端公式一致性黄金用例集（task-0729 B9 L1）
 
+> ---
+> ## 🚨🚨🚨 合并 `task-0801` 前必读 —— 这里有一颗定时炸弹，合并那天必须同步拆 🚨🚨🚨
+>
+> **`task-0801`（commit `f8278099` "公式计算精度优化"，目前是独立分支，未合并进本分支）一旦合并
+> 进来，会把后端 `FormulaCalculator.evaluateExpression` 从"除法/结果统一 `setScale(4, HALF_UP)`"
+> 改成"计算精度与呈现精度分离"（除法中间精度 12 位 HALF_UP，不在函数出口舍入，展示精度 6 位另在
+> 落库/API/显示/导出边界统一规整）。**
+>
+> **合并 `task-0801` 的人，必须在同一次改动里做两件事，否则本目录 `10-decimal-precision.json` 的
+> `dec-001`/`dec-002`/`dec-004` 三条用例会立刻变红**（这不是 bug，是这套黄金用例机制故意设计成
+> "任一端漂移就当场报警"，**不要把变红当成"测试坏了"去改 `expected` 绕过**，而要按下面两步走）：
+>
+> 1. **同步更新前端 `cpq-frontend/src/utils/formulaEngine.ts` 的精度策略**，让它跟后端新的
+>    `PrecisionPolicy`（12 位除法中间精度、只在展示层收敛）保持一致，不要让前端继续在
+>    `evaluateExpression` 末尾对所有结果无条件 `.toDecimalPlaces(4)`；
+> 2. **把 `dec-001`/`dec-002`/`dec-004` 三条用例的 `expected` 改回 12 位精度系列值**
+>    （`dec-001: 3.333333333333`、`dec-002: 0.333333333333`、`dec-004: 2.00005`，历史上这三个
+>    值曾经写过又被撤销过，具体数值推导见各条 `notes` 字段）。
+>
+> **背景（2026-08-02~03 实测教训，别重蹈覆辙）**：这三条用例最早就是按"task-0801 已经把后端改成
+> 12 位"这个**未经验证的转述**写的 12 位 `expected`；后来直接在本分支上跑
+> `cd cpq-backend && ./mvnw test -Dtest=FormulaGoldenTest` 实测才发现 `task-0801`
+> **根本没合并进来**——`FormulaCalculator.java` 当前仍是 4 位，仓库里也没有 `PrecisionPolicy.java`
+> 这个类。于是业务方裁定把 `expected` 改回 4 位（本分支当下前后端本来就一致），但这不是"问题解决
+> 了"，只是"暂时不适用"——`task-0801` 迟早要合并，到那天这三条用例必须跟着一起改，不能让它们变成
+> 一个长期挂红却没人管的"狼来了"信号。**任何人合并/审查 `task-0801` 相关 PR 时，看到这段警示就该
+> 立刻联动这两处改动一起提交，不要拆成两次 PR（拆开会有一段时间线上是"后端已 12 位、前端还 4 位、
+> 用例还挂着旧 expected"的三方不一致窗口期）。**
+> ---
+
 ## 契约（不可违反）
 
 1. **前端 vitest 与后端 JUnit 读同一份文件**——`cpq-frontend/src/pages/quotation/formulaEngine.test.ts`
@@ -98,48 +128,38 @@ HALF_UP；缺值/解析异常/除零 → 0"）手推 `expected`，跑起来 3/4 
   src/utils/formulaGolden.test.ts`（本仓库没有裸 `npm test`，`npx vitest run` 不带路径会把
   `e2e/*.spec.ts` 一起扫进来导致大量 Playwright 误报——必须显式指定路径）。
 
-## 前端验证结果（2026-08-02）—— 28/33 一致，5 条真实分歧（3 条已按裁定修复，2 条留红交业务方裁定）
+## 前端验证结果（2026-08-03 终态）—— 31/33 一致，2 条已知理论分歧留红（0 生产影响，不修）
 
 跑通后 26 条与 `manual-computed` 逐位吻合，已把这 26 条的 `expectedSource` 改成
 `frontend-engine`（**数值未改，只改来源标记**——确认前端引擎独立算出同一个值）。
 
-**7 条最初不一致**（上面"两端读取方式"旧版说"不一致就改 expected"是本次交付前的预案；实际执行
+**最初 7 条不一致**（上面"两端读取方式"旧版说"不一致就改 expected"是本次交付前的预案；实际执行
 时改为**如实报告、留红、交人工裁定**，不单方面改 `expected` 迁就任何一端）。coordinator 呈报业务
-方后裁定：`nz-001/002`（除零）风险明确、改动局部 → **已修复**（`expectedSource` 相应改成
-`frontend-engine`，现 28/33）；`amt-002/003` → 先审计生产配置（见下一节，审计结果：0 生产使用，
-留作低优先级理论修复）；`dec-001/002/004` → 前端跟进但要先出影响面清单（见
-`前端精度对齐影响面清单.md`），**引擎改动本身仍未动手**：
+方后分三批裁定：
 
-| id | 期望(manual-computed) | 前端实际 | 根因 | 状态 |
-|---|---|---|---|---|
-| `dec-001` | `3.333333333333`(12位) | `3.3333`(4位) | 前端 `evaluateExpression` 末尾仍 `.toDecimalPlaces(4)` | 🔴 未动，见下方"⚠️ 关键澄清" |
-| `dec-002` | `0.333333333333` | `0.3333` | 同上 | 🔴 未动 |
-| `dec-004` | `2.00005`（不舍入） | `2.0001`（HALF_UP 舍到 4 位） | 同上——前端末尾统一 `.toDecimalPlaces(4)`，对所有运算结果一视同仁地收 4 位，不只是除法 | 🔴 未动 |
-| `amt-002` | `12.3400` | `0` | `component_subtotal` token 只有 `tab_name`（无 `component_code`）时，前端取值链缺一段"`${tab_name}#${value}` 二段式列小计键"的查找——只有 `component_code` 变体有这段逻辑。后端 `FormulaCalculator.java:133-135` 注释写"与前端 1:1 对齐"且**已经实现**了 tab_name 版复合键，前端实际没有，注释描述与代码不符 | 🟡 已审计生产配置（全库 207 处 `component_subtotal` token 无一使用 tab_name-only 变体，0 生产影响），暂不改，详见附录审计报告 |
-| `amt-003` | `101.2200` | `88.88` | 同 `amt-002` 根因 | 🟡 同上 |
-| `nz-001` | `0.0000`（5÷0） | ~~`Infinity`~~ → **已修复为 `0`** | 前端末尾 `new Decimal(fn())` 对 `Infinity` 不抛异常（不会被 `catch{return 0}` 兜住），直接把 `Infinity` 传播出去 | ✅ **已修复**（`evaluateExpression` 求值后加 `!Number.isFinite(raw)→0` 判断，与后端 `Double.isInfinite()→0` 对齐） |
-| `nz-002` | `0.0000`（0÷0） | ~~`NaN`~~ → **已修复为 `0`** | 同上，`NaN` 同样不被 `catch` 拦下 | ✅ **已修复** |
+| id | 前端实际 | 根因 | 状态 |
+|---|---|---|---|
+| `dec-001` | `3.3333` | 前端 `evaluateExpression` 末尾 `.toDecimalPlaces(4)` | ✅ **`expected` 已改回 `3.3333`（见文首 🚨 大段警示）**——本分支后端实测也是 4 位（`task-0801` 未合并），两端当下一致 |
+| `dec-002` | `0.3333` | 同上 | ✅ 同上，`expected=0.3333` |
+| `dec-004` | `2.0001` | 同上 | ✅ 同上，`expected=2.0001` |
+| `amt-002` | `0` | `component_subtotal` token 只有 `tab_name`（无 `component_code`）时，前端取值链缺一段"`${tab_name}#${value}` 二段式列小计键"的查找——只有 `component_code` 变体有这段逻辑。后端 `FormulaCalculator.java:133-135` 注释写"与前端 1:1 对齐"且**已经实现**了 tab_name 版复合键，前端实际没有，注释描述与代码不符 | 🟡 **留红，不修**——已审计生产配置（全库 207 处 `component_subtotal` token 无一使用 tab_name-only 变体，0 生产影响），业务方裁定确认这是当前 0 影响的理论缺口，降为低优先级，`expected`/`expectedSource` 原样不动（仍是 `manual-computed`），详见 `前端精度对齐影响面清单.md` §5 |
+| `amt-003` | `88.88` | 同 `amt-002` 根因 | 🟡 同上 |
+| `nz-001` | ~~`Infinity`~~ → `0` | 前端末尾 `new Decimal(fn())` 对 `Infinity` 不抛异常（不会被 `catch{return 0}` 兜住），直接把 `Infinity` 传播出去 | ✅ **已修复**（`evaluateExpression` 求值后加 `!Number.isFinite(raw)→0` 判断，与后端 `Double.isInfinite()→0` 对齐） |
+| `nz-002` | ~~`NaN`~~ → `0` | 同上，`NaN` 同样不被 `catch` 拦下 | ✅ **已修复** |
 
-### ⚠️ 关键澄清（2026-08-02 补充）：`dec-*` 的"后端 12 位精度"目前不在本分支的可运行代码里
-
-编写本清单前一直隐含假设"后端已经是 12 位中间精度"，据此认定 `dec-001/002/004` 是"前端要追上后端
-的现有真实行为"。**核实后发现这个假设对当前分支不成立**：`task-0801`（`feat/task-0801-formula-precision`
-之类的并发分支，commit `f8278099`）确实实现了 `PrecisionPolicy`（12 位除法中间精度 + 6 位展示精度分离），
-**但该分支尚未合并进 `feat/task-0729-price-adjust`**——在本 worktree 里直接跑
-`./mvnw test -Dtest=FormulaGoldenTest` 会看到 `dec-001/002/004` 这 3 条**在后端自己身上也失败**
-（`FormulaCalculator.java` 当前仍是 `setScale(4, HALF_UP)`，产出 `3.3333` 而非 `3.333333333333`，
-仓库里目前也没有 `PrecisionPolicy.java` 这个类）。
-
-也就是说：**"前端 4 位 vs 后端 12 位"这个分歧目前只存在于"两个未来会合并到一起的分支"之间，不是
-"当前正在跑的后端 vs 当前正在跑的前端"之间的活分歧**——按现状，两边现在其实是一致的（都是 4 位）。
-这个分歧会在 `task-0801` 合并回主线之后才真正成为一个需要处理的活问题。`前端精度对齐影响面清单.md`
-仍按 coordinator 指示产出（分析目标算法用文档化的 `PrecisionPolicy` 规格模拟，不依赖该分支实际合并），
-但这条"目前尚未合并"的时序信息本身也是需要 coordinator/业务方知晓的关键上下文，已同步写入清单 §4。
+**`dec-*` 三条的历史反复**（教训沉淀，别重蹈覆辙）：最早按"`task-0801` 已把后端改成 12 位"这个
+**未经验证的转述**写 12 位 `expected`；coordinator 直接在本分支跑
+`cd cpq-backend && ./mvnw test -Dtest=FormulaGoldenTest` 实测才发现 `task-0801`（commit
+`f8278099`）**根本没合并进本分支**——`FormulaCalculator.java` 当前仍是 4 位 `setScale(4, HALF_UP)`，
+仓库里也没有 `PrecisionPolicy.java`。业务方据此裁定：本分支前后端当下本来就一致（都是 4 位），
+`expected` 改回 4 位，**33/33 里的这 3 条恢复绿**（`amt-002/003` 是另一个独立、业务方已裁定"不修
+不追"的分歧，不计入这次改动范围，故整体是 31/33 而非 33/33——详见本文件末尾 commit 历史，两批裁定
+分两次提交）。`task-0801` 真正合并进来时的处理方式见文首 🚨 警示。
 
 **影响评估（仅供参考，非本次改动范围）**：`nz-001/002` 的 `Infinity`/`NaN` 在**渲染层**被
 `formatNumber.ts:33 if (!d.isFinite()) return null` 兜底显示成"—"，终端用户看不到字面
 "Infinity"文本；但 `evaluateExpression` 返回给调用方的**原始数值**仍是 `Infinity`/`NaN`，若被
 其它公式当 `fieldValues`/`componentSubtotals` 继续参与运算（如 `Infinity + x = Infinity` 会
 向上游传染，或 `JSON.stringify(Infinity)` 落库时被静默转成 `null`），风险面比渲染层看到的更大，
-后端在**求值源头**就归零，防护点更靠前。`amt-002/003` 的复合键缺口目前生产配置里是否有
-"只填 tab_name 不填 component_code"的 `component_subtotal` token 未逐一排查（超出本次范围）。
+后端在**求值源头**就归零，防护点更靠前（已修复，见上表）。`amt-002/003` 的复合键缺口生产配置
+排查结果见上表 + `前端精度对齐影响面清单.md` §5（全库 0 处使用，已排查完毕，非"待排查"）。

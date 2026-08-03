@@ -2,7 +2,7 @@
   {
     "id": "dec-001",
     "category": "小数精度",
-    "description": "除法中间精度: 10/3 按 PrecisionPolicy.DIVISION_SCALE(12位) HALF_UP，非旧文档所述的4位",
+    "description": "除法精度: 10/3（本分支前后端当前均为 4 位 HALF_UP，一致）",
     "tokens": [
       {
         "type": "number",
@@ -26,14 +26,14 @@
       "currentRowRaw": {},
       "previousRowSubtotal": null
     },
-    "expected": "3.333333333333",
-    "expectedSource": "manual-computed",
-    "notes": "2026-08 发现：task-0801 精度改造后 evaluateExpression 不再在返回前 setScale(4)——计算精度与呈现精度分离（见 PrecisionPolicy.java 类注释）。除法中间精度由 PrecisionPolicy.divide() 统一到 DIVISION_SCALE=12 位 HALF_UP，10/3=3.333333333333（12个3）。最终对外展示精度(6位, DISPLAY_SCALE)由调用方在落库/API/显示/导出边界统一规整，非本函数职责。FormulaCalculator.java 类注释第25行仍写\"4 位小数 HALF_UP\"，与当前实现不一致（已过期），此发现记录在案，不在 task-0729 范围内修正该注释（该文件由 task-0801 并发维护）。"
+    "expected": "3.3333",
+    "expectedSource": "frontend-engine",
+    "notes": "2026-08-03 更正：此前按「task-0801 已把后端改成 12 位中间精度」的转述写 expected=3.333333333333（12位），未实测验证。coordinator 直接在本分支跑 FormulaGoldenTest 实测：FormulaCalculator.java 当前仍是 setScale(4, HALF_UP)，仓库里没有 PrecisionPolicy.java——task-0801（commit f8278099）是尚未合并进本分支的独立分支。本分支前后端今天一致，都是 4 位，expected 改回 4 位使其反映本分支真实行为。🔒 task-0801 合并进来时必须同步：①更新前端 formulaEngine.ts 的精度策略；②把本文件 dec-001/002/004 三条 expected 改回 12 位系列值。若只合并 task-0801 不动这两处，这几条用例会自动变红——那正是黄金用例机制该干的活（两端漂移就当场报警），不要当成「测试坏了」去改 expected 绕过，而要去补前端实现或回滚合并。"
   },
   {
     "id": "dec-002",
     "category": "小数精度",
-    "description": "除法中间精度: 1/3 按 DIVISION_SCALE(12位) HALF_UP",
+    "description": "除法精度: 1/3（本分支前后端当前均为 4 位 HALF_UP，一致）",
     "tokens": [
       {
         "type": "number",
@@ -57,9 +57,9 @@
       "currentRowRaw": {},
       "previousRowSubtotal": null
     },
-    "expected": "0.333333333333",
-    "expectedSource": "manual-computed",
-    "notes": "同 dec-001：除法中间精度=12位 HALF_UP（PrecisionPolicy.DIVISION_SCALE），非 4 位。"
+    "expected": "0.3333",
+    "expectedSource": "frontend-engine",
+    "notes": "同 dec-001：本分支前后端当前均为 4 位 HALF_UP，一致，expected 改回 4 位反映真实行为。task-0801 合并时的处理方式见 dec-001 notes。"
   },
   {
     "id": "dec-003",
@@ -90,12 +90,12 @@
     },
     "expected": "0.3000",
     "expectedSource": "frontend-engine",
-    "notes": "2026-08 更正：并非 setScale(4,HALF_UP) 规整所致（evaluateExpression 已不做该步）——加法走精确 BigDecimal（PrecisionPolicy.of(double) 用 BigDecimal.valueOf 最短十进制还原），0.1+0.2 在十进制下本就精确等于 0.3，不产生二进制浮点误差，与舍入无关。expected 用 0.3000 仅因 compareTo 按数值比较、scale 差异不影响断言结果，非声明返回值真为4位scale。"
+    "notes": "2026-08-03 更正：0.1+0.2 在十进制下本就精确等于 0.3，不产生二进制浮点误差；无论按现行 setScale(4,HALF_UP) 规整，还是按 task-0801（尚未合并进本分支，见 dec-001 notes）的 12 位中间精度策略，两种口径在这个用例上结果都是 0.3，与舍入策略选择无关，故本条不受 dec-001/002/004 那次口径更正影响。expected 用 0.3000 仅因 compareTo 按数值比较、scale 差异不影响断言结果，非声明返回值真为4位scale。"
   },
   {
     "id": "dec-004",
     "category": "小数精度",
-    "description": "2.00005+0：验证 evaluateExpression 不再对加法结果做任何舍入（scale 原样保留）",
+    "description": "2.00005+0：本分支前后端当前均对结果做 4 位 HALF_UP 舍入（一致）",
     "tokens": [
       {
         "type": "number",
@@ -119,8 +119,8 @@
       "currentRowRaw": {},
       "previousRowSubtotal": null
     },
-    "expected": "2.00005",
-    "expectedSource": "manual-computed",
-    "notes": "2026-08 更正：原 expected=2.0001 假设内部有 HALF_UP 4位舍入，实测已不存在（task-0801 移除）。加法不经 divide()，无中间精度截断，结果原样保留 5 位小数。此用例现改为验证\"不舍入\"而非\"HALF_UP 舍入边界\"——用例名称保留 dec-004 不变，含义已更新，见本 notes。"
+    "expected": "2.0001",
+    "expectedSource": "frontend-engine",
+    "notes": "2026-08-03 更正：此前假设后端已移除 4 位舍入（task-0801 未合并进本分支的推测性描述），expected 曾写 2.00005（不舍入）。实测本分支 FormulaCalculator.java 仍 setScale(4, HALF_UP)：2.00005 的第 5 位是 5，HALF_UP 进位得 2.0001，与前端 evaluateExpression 末尾 .toDecimalPlaces(4) 结果一致。task-0801 合并时的处理方式见 dec-001 notes。"
   }
 ]
