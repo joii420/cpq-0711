@@ -43,6 +43,9 @@ public class QuotationAdminResource {
     @Inject
     com.cpq.priceadjust.service.PriceAdjustNotificationService priceAdjustNotificationService;
 
+    @Inject
+    com.cpq.configure.service.ConfigureSnapshotService configureSnapshotService;
+
     /**
      * 存量 DRAFT 草稿迁移：清掉 quote_card_values 里的 #ERROR 脏值（D1）。
      *
@@ -145,6 +148,20 @@ public class QuotationAdminResource {
     @RoleAllowed({"SYSTEM_ADMIN"})
     public ApiResponse<String> task0729CostingViewFixPreview(@QueryParam("lineItemId") String lineItemId) {
         cardSnapshotService.refreshCostingCardValuesForLine(UUID.fromString(lineItemId));
+        return ApiResponse.success("done");
+    }
+
+    /**
+     * task-0729 · BomTreeRenderService customerId 影响面评估 · 第3点验证入口（临时）。
+     * 直接调用 {@code ConfigureSnapshotService.snapshotQuotation}（saveDraft 走的同一个
+     * 生产方法），用于对一张"从未 render 过"（quote_card_values 为 null）的隔离测试单验证
+     * 首次创建路径下 BomTreeRenderService.render 的真实行为。验证完即删。
+     */
+    @POST
+    @Path("/task0729-treerender-firstcreate-verify")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<String> task0729TreeRenderFirstCreateVerify(@QueryParam("quotationId") String quotationId) {
+        configureSnapshotService.snapshotQuotation(UUID.fromString(quotationId));
         return ApiResponse.success("done");
     }
 }

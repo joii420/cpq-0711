@@ -2,8 +2,70 @@
 
 > 2026-08-03。coordinator 要求：动 `BomTreeRenderService`（共享渲染基础设施）之前先出影响面评估，
 > 同 S6 对拍清单 / 精度影响面清单同一个做法。**本评估不改任何代码，`BomTreeRenderService.java`
-> 全程未动一行。** 结论见文末「四、最小改动方案」；评估过程中发现一处未能 100% 闭环的经验性矛盾，
-> 已在 §三 如实标注，建议作为实施前必须做的验证项。
+> 全程未动一行。** 结论见文末「四、最小改动方案」。
+
+## 🔴 2026-08-03 补充：§3.3 矛盾已验证解开，根因与改法均已修正（见本节）
+
+coordinator 要求先解开 §3.3 那处"理论上应 0 行、实测普遍 1 行"的矛盾再批改法。已按要求走真实验证
+（隔离测试数据 + 真实 REST 端点触发 `ConfigureSnapshotService.snapshotQuotation` 这条 saveDraft
+生产路径），**验证步骤 1（新建路径下几行）：`外购件成本`/`加工费` 均为 1 行，不是 0 行**——
+但真正有价值的不是"1 行"这个数字本身，是顺着这个结果往回查代码，**找到了比"customerId 全程传 null"
+更精确的根因**：
+
+**`:customerCode` 在树渲染场景下真正的解析来源不是 `expandUncached(compId, customerId)` 那个显式
+参数，而是 `QuotationIdContext`（ThreadLocal）→ `DataLoader` → `RuntimeContext.toNamedParams()`
+这条独立管线（`SqlViewExecutor.enrichPriceBaseDate` 方法的 javadoc 已经点破这条管线，`enrichCustomerCode`
+同款读法，本次评估第一版没有追到这一层）。`BomTreeRenderService.render()` 内部确实把
+`customerId` 参数硬传 null，但只要**调用方在调 `render()` 之前调用过 `QuotationIdContext.set(quotationId)`**，
+`:customerCode` 照样能正确解析——`render()` 那个 null 参数根本不是唯一入口。
+
+逐个查了全部 6 个直接触发 `render()` 的方法，是否在调用前设置了 `QuotationIdContext`：
+
+| 方法 | 是否设置 `QuotationIdContext` | 侧别 | 归属场景 |
+|---|---|---|---|
+| `ConfigureSnapshotService.snapshotLines`（saveDraft/选配/V6导入，行274） | ✅ 是 | 报价侧 | 与实测"外购件成本/加工费=1行"完全吻合 |
+| `CardSnapshotService.snapshotNewLinesCardValues`（ensureCardValues新行，行508） | ✅ 是 | 核价+报价 | 唯一"受保护"的核价侧路径 |
+| `CardSnapshotService.snapshotCostingSideOnly`（加产品单行，行611-652） | ❌ 否 | 核价侧 | **受影响** |
+| `CardSnapshotService.refreshCostingCardValues`（整单批量/刷新基础数据/复制报价单，行856-883） | ❌ 否 | 核价侧 | **受影响** |
+| `CardSnapshotService.refreshCostingCardValuesForLine`（**task-0729 B0 S5**，行900-916） | ❌ 否 | 核价侧 | **受影响——本次 wl_ys_bom_view 元素单价 null 就是从这条路径实测出来的** |
+| `CostingVersionService.switchVersion`（task-0713核价版本切换） | ❌ 否 | 核价侧 | **受影响** |
+
+**对四个问题的最终结论**：
+1. **新建路径下几行**：报价侧（唯一受保护的一侧）1 行，不是 0 行——假设不成立，`wg_view`/`jg_view`
+   本身没有被打中，因为它们只经由"有保护"的 `snapshotLines` 到达。
+2. **哪些视图会被同样打中**：不是"40个组件里逐个看"，而是**精确锁定为 4 个具体方法**（上表打勾的
+   4 行）——凡是经这 4 个方法触发 `render()` 的场景，其模板下**所有**引用 `:customerCode` 的核价侧
+   视图都会受影响；本任务实测 core 侧只有 `wl_ys_bom_view`（COMP-0049）一个视图用到
+   `:customerCode`（见原 §3.1），故实际受损视图 = 这一个，但受损**场景**是 4 个（加产品/整单刷新/
+   B0升版/核价版本切换），比原评估"只有COMP-0049"的结论更完整——原评估只验证了其中一个场景
+   （B0升版），现在确认另外3个场景同样会命中。
+3. **回头找 customerCode 实际是从哪来的**：`QuotationIdContext`（ThreadLocal，由调用方在渲染入口
+   `set()`）→ `DataLoader.loadByPath` → `RuntimeContext.quotation.id` → `ctx.toNamedParams()`
+   自动暴露 `customerId`/`customerCode`/`quotationId` 三个键，与 `enrichPriceBaseDate`
+   同款注入管线（该方法 javadoc 早就写明这条管线，本次评估第一版读代码时漏看）。
+4. **根因重新定性**：不是"`BomTreeRenderService` 设计上就该传 null"，而是**核价侧 4 个方法
+   遗漏了报价侧 `snapshotLines`/`snapshotNewLinesCardValues` 都有的 `QuotationIdContext.set()`
+   调用**——是遗漏，不是设计。
+
+**推荐方案随之修正**（原"扩展 `BomTreeVarsContext` 携带 customerId"的方案地基不对，
+`BomTreeVarsContext` 从来不参与 `:customerCode` 解析，改它不会有任何效果）：
+
+**新推荐方案：在 `BomTreeRenderService.render()` 方法体最前面统一补一次
+`QuotationIdContext.set(quotationId)`（用 `lineItems.get(0).quotationId`，配类的"单模板假设"取首个
+即可）+ `finally` 块 `clear()`。** 这样无论调用方有没有记得设置，`render()` 自己兜底保证正确，一次
+改动覆盖全部 6 个调用方（含未来新增的调用方），比"扩展 BomTreeVarsContext"更小、更精确、风险更低
+——只加两行代码（set + clear），不改任何 SQL 视图、不改 `partNo`/`lineItemId` 继续传 null 的既有
+设计（那部分结论不变）。唯一要注意：与调用方已有的 `QuotationIdContext.set/clear`（如
+`snapshotLines`）会发生"内层 set 覆盖外层同值/内层 clear 提前清空外层"的嵌套问题——`QuotationIdContext`
+需要确认其 `set/clear` 语义是否支持重入（本次未读该类源码，是实施前必须先看的点，若不支持重入，
+改成"仅当当前值为空时才 set/clear"的保护写法）。
+
+**验证方法**：隔离测试客户 `TEST-0729-TREEVERIFY` + 独立测试物料 `TEST-TREE-001`（真实
+`material_bom_item`(QUOTE/OUTSOURCED) + `unit_price`(QUOTE/PROCESS) 各一行，挂罗克韦尔模板3
+真实模板）+ 全新报价单/行项（`quote_card_values` 插入时为 NULL，确认是"从未 render 过"的首次创建态）
+→ 调用真实 `ConfigureSnapshotService.snapshotQuotation`（saveDraft 同款生产方法）→
+`外购件成本`/`加工费` 均正确出 1 行（`row_data` 长度=1，非 0）。测试用 6 张表的探针数据已在
+验证完成后全部 DELETE 清理，`CUST-0001` 的 50 张真实报价单逐个计数核对未受任何影响。
 
 ---
 
@@ -136,9 +198,14 @@ customerId——具体是哪一环，本次时间预算内未能追到底，留�
 
 ---
 
-## 四、最小改动方案
+## 四、最小改动方案（⚠️ 本节是第一版评估的原始推荐，已被文首「2026-08-03 补充」取代，仅保留存档）
 
-### 推荐方案：扩展 `BomTreeVarsContext` 携带 customerId（+ priceBaseDate）
+> **最终推荐见文首「2026-08-03 补充」章节**：在 `BomTreeRenderService.render()` 内部统一补
+> `QuotationIdContext.set/clear`，不是下面这个"扩展 BomTreeVarsContext"方案——后者的地基不对
+> （`BomTreeVarsContext` 从来不参与 `:customerCode` 解析，改它没有效果）。以下内容保留作为
+> 排查过程存档，不再是推荐方案。
+
+### （已废弃）原推荐方案：扩展 `BomTreeVarsContext` 携带 customerId（+ priceBaseDate）
 
 **做法**：`BomTreeVarsContext.Vars` 目前构造为 `Vars(seed, totalMaterialNo, overrides)`
 （`render()` 方法体里两次 `set()` 调用，第一次 `Vars(seed, null, overrides)` 用于递归建树，
