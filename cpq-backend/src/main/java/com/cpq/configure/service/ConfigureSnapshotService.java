@@ -979,6 +979,97 @@ public class ConfigureSnapshotService {
     }
 
     /**
+     * spec 2026-08-03「键存在即权威」：把库内既有 {@code row_data} 里<b>已存在的 INPUT_* 键</b>
+     * 原样盖回重物化结果（含显式清空 {@code ""}）。
+     *
+     * <p><b>为什么需要</b>：{@link #computeRowDataFromSnap} 是「纯按 snapshot 重物化」（editRows 恒空），
+     * 会把用户手填/清空的 INPUT 值一并冲掉。只盖 INPUT_* 列，BASIC_DATA / DATA_SOURCE / FORMULA
+     * 一律保留新算值 —— 那正是「刷新基础数据」该刷的部分。
+     *
+     * <p><b>行对齐用 {@code row_index}</b>（物化输出必带），不用数组下标：行增删时下标会错位，
+     * {@code row_index} 匹配不上就自然退化为「用新值」，安全（AP-54 同族纪律：过滤后子集的下标
+     * 绝不当原集合下标使）。
+     *
+     * <p>静态纯函数，无 IO、无状态，便于单测（{@code OverlayExistingInputKeysTest}）。
+     *
+     * @param componentsSnapshot 模板 components_snapshot（提供各组件的 fields → INPUT 字段清单）
+     * @param fresh              重物化结果，<b>原地修改</b>
+     * @param existingByComp     库内既有 row_data（componentId → 数组），可为 null/空 → 整体不动
+     */
+    static void overlayExistingInputKeys(JsonNode componentsSnapshot,
+                                         Map<UUID, ArrayNode> fresh,
+                                         Map<UUID, JsonNode> existingByComp) {
+        if (componentsSnapshot == null || !componentsSnapshot.isArray()
+                || fresh == null || fresh.isEmpty()
+                || existingByComp == null || existingByComp.isEmpty()) {
+            return;
+        }
+        for (JsonNode tab : componentsSnapshot) {
+            UUID cid;
+            try {
+                cid = UUID.fromString(tab.path("componentId").asText(""));
+            } catch (Exception ignore) {
+                continue;
+            }
+            ArrayNode freshRows = fresh.get(cid);
+            JsonNode existingRows = existingByComp.get(cid);
+            if (freshRows == null || existingRows == null || !existingRows.isArray()) continue;
+
+            // 本组件的 INPUT_* 字段名集合
+            List<String> inputFields = new ArrayList<>();
+            for (JsonNode f : tab.path("fields")) {
+                String ft = f.path("field_type").asText("");
+                if ("INPUT_NUMBER".equals(ft) || "INPUT_TEXT".equals(ft) || "INPUT".equals(ft)) {
+                    String n = f.path("name").asText("");
+                    if (!n.isEmpty()) inputFields.add(n);
+                }
+            }
+            if (inputFields.isEmpty()) continue;
+
+            // 既有行按 row_index 建索引
+            Map<Integer, JsonNode> oldByRowIndex = new HashMap<>();
+            for (JsonNode oldRow : existingRows) {
+                if (!oldRow.isObject()) continue;
+                JsonNode ri = oldRow.get("row_index");
+                if (ri != null && ri.isInt()) oldByRowIndex.put(ri.asInt(), oldRow);
+            }
+            if (oldByRowIndex.isEmpty()) continue;
+
+            for (JsonNode freshRow : freshRows) {
+                if (!(freshRow instanceof ObjectNode)) continue;
+                JsonNode ri = freshRow.get("row_index");
+                if (ri == null || !ri.isInt()) continue;
+                JsonNode oldRow = oldByRowIndex.get(ri.asInt());
+                if (oldRow == null) continue;
+                for (String fld : inputFields) {
+                    // 「键存在即权威」：既有行有这个键就盖回（含 ""）；没有就用新烘的值。
+                    if (oldRow.has(fld)) ((ObjectNode) freshRow).set(fld, oldRow.get(fld));
+                }
+            }
+        }
+    }
+
+    /** 读本行各组件既有 row_data（componentId → 数组），供 {@link #overlayExistingInputKeys} 用。 */
+    private Map<UUID, JsonNode> loadRowDataByComp(UUID lineItemId) {
+        Map<UUID, JsonNode> out = new LinkedHashMap<>();
+        if (lineItemId == null) return out;
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT component_id, row_data FROM quotation_line_component_data " +
+                "WHERE line_item_id = :lid AND row_data IS NOT NULL")
+            .setParameter("lid", lineItemId)
+            .getResultList();
+        for (Object[] r : rows) {
+            if (r[0] == null || r[1] == null) continue;
+            try {
+                JsonNode arr = MAPPER.readTree(r[1].toString());
+                if (arr.isArray()) out.put((UUID) r[0], arr);
+            } catch (Exception ignore) { /* 单组件解析失败不影响其它组件 */ }
+        }
+        return out;
+    }
+
+    /**
      * #2 物化批量:纯计算本行 row_data(componentId→ArrayNode),<b>不落库</b>,供整单收集后
      * 一次 {@link #writeRowDataBatchAllLines}。计算与 {@link #materializeRowData} 同款
      * (parse snapByComp → baseRows → {@link #computeLineRowData}),仅去掉 per-line 写。
@@ -990,8 +1081,18 @@ public class ConfigureSnapshotService {
         for (Map.Entry<UUID, String> e : snapByComp.entrySet()) {
             baseRowsByComp.put(e.getKey(), parseRows(e.getValue()));
         }
-        return computeLineRowData(lineItemId, componentsSnapshot, baseRowsByComp,
-                Map.of(), Map.of(), Map.of());
+        LinkedHashMap<UUID, ArrayNode> freshRowData = computeLineRowData(lineItemId, componentsSnapshot,
+                baseRowsByComp, Map.of(), Map.of(), Map.of());
+        // spec 2026-08-03：上面是「纯按 snapshot 重物化」(editRows 恒空)，会冲掉用户手填/清空的
+        // INPUT 值。落库前把库内既有 row_data 的 INPUT 键盖回（含显式清空 ""），
+        // BASIC_DATA/DATA_SOURCE/FORMULA 仍用新算值。降级：查库失败只记 warn，不中止整份快照。
+        try {
+            overlayExistingInputKeys(componentsSnapshot, freshRowData, loadRowDataByComp(lineItemId));
+        } catch (Exception e) {
+            LOG.warnf("[materialize-line] line=%s 既有 INPUT 键盖回失败(已降级，本次按重物化值落库): %s",
+                    lineItemId, e.getMessage());
+        }
+        return freshRowData;
     }
 
     /**
