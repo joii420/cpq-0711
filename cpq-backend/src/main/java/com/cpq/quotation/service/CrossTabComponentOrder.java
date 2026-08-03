@@ -63,24 +63,127 @@ public final class CrossTabComponentOrder {
     /**
      * 收集所有 component_subtotal 跨组件引用的目标标识（component_code 优先，否则 tab_name）。
      * 用于把"本组件公式引用别组件列小计"也纳入拓扑依赖 —— 被引用组件必须先算，
-     * 否则其列小计尚未回填 → 引用列算成 0（QT-1743 管理费=0 根因，与前端 extractSubtotalRefs 对齐）。
+     * 否则其列小计尚未回填 → 引用列算成 0（QT-1743 管理费=0 根因）。
      * 调用方需把返回的 code/tabName 解析为 componentId 后再并入 deps（自引用由 B6 两阶段处理，调用方排除）。
+     *
+     * <p><b>注意</b>：本方法丢弃「引用的是哪一列」，按页签粒度看依赖，会把引用零依赖列
+     * （INPUT_*）也算成顺序依赖，进而可能造出假环（repair-0803）。生产建图请改用
+     * {@link #buildComponentDeps(List)}；本方法保留供既有调用方与单测使用。
      */
     public static Set<String> extractSubtotalRefs(JsonNode formulas) {
         Set<String> refs = new LinkedHashSet<>();
-        if (formulas == null || !formulas.isArray()) return refs;
+        for (SubtotalRef sr : extractSubtotalRefDetails(formulas)) refs.add(sr.ref());
+        return refs;
+    }
+
+    // ── repair-0803：component_subtotal 依赖边的「列粒度」精化 ───────────────────
+
+    /**
+     * 建图输入：一个参与拓扑排序的页签。
+     *
+     * @param cid      组件标识（componentId 字符串，图中的节点键）
+     * @param code     组件编码（可空；解析 component_subtotal 的 component_code）
+     * @param tabName  页签名（可空；component_code 缺失时的回退解析键）
+     * @param formulas 该页签 formulas 节点（[{expression:[token...]}]）
+     * @param fields   该页签 fields 节点（判定被引用列是否顺序敏感）
+     */
+    public record TabDep(String cid, String code, String tabName, JsonNode formulas, JsonNode fields) {}
+
+    /** component_subtotal 引用明细：目标页签标识 + 被引用列名 + 是否整页签合计。 */
+    private record SubtotalRef(String ref, String column, boolean tabTotal) {}
+
+    /**
+     * 构建组件级依赖图（cross_tab_ref 全量 + component_subtotal 按列粒度精化）。
+     *
+     * <p><b>为什么要按列判定</b>（repair-0803 / QT-20260803-0052）：拓扑序只解决「谁先算」。
+     * 一列的值是否取决于计算次序，取决于它<b>是不是公式列</b> ——
+     * {@link FormulaCalculator} 的 {@code collectFormulaFields} 只对 {@code field_type=="FORMULA"}
+     * 的字段求公式（{@code formula_assignments} 亦只在 FORMULA 列内部生效），其余列
+     * （INPUT_NUMBER、BASIC_DATA、DATA_SOURCE…）的值在 PASS1 之前就已由 baseRows/editRows/driver 定死，
+     * 无论页签谁先算都不会变。给这类引用建边，收益为零，却会凭空造出反向边：
+     * 「产品.税率(INPUT) → 物料成本 → 产品.管理费(FORMULA)」这条列级直线依赖链，
+     * 折成页签粒度后成了 产品⇄物料 闭环 → {@link #topoOrder} 误报循环引用 → 整卡渲染失败。
+     *
+     * <p><b>保守优先</b>：只有能确证被引用列非公式列时才省略边；整页签合计
+     * （{@code is_tab_total} / {@code __amount_total__}）、列名缺失、目标 fields 不可读、
+     * 查无此列——一律照旧建边（宁可多排一次序，不可算错值，守住 QT-1743 的修复）。
+     *
+     * @param tabs 参与拓扑的页签（仅 NORMAL；调用方需自行过滤 SUBTOTAL/EXCEL）
+     * @return cid → 依赖的 cid 集合（可直接喂 {@link #topoOrder}）
+     */
+    public static Map<String, Set<String>> buildComponentDeps(List<TabDep> tabs) {
+        Map<String, String> refToCid = new HashMap<>();
+        Map<String, JsonNode> fieldsByCid = new HashMap<>();
+        for (TabDep t : tabs) {
+            String cid = t.cid();
+            if (cid == null || cid.isBlank()) continue;
+            refToCid.put(cid, cid);
+            if (t.code() != null && !t.code().isBlank()) refToCid.put(t.code(), cid);
+            if (t.tabName() != null && !t.tabName().isBlank()) refToCid.put(t.tabName(), cid);
+            fieldsByCid.put(cid, t.fields());
+        }
+        Map<String, Set<String>> deps = new LinkedHashMap<>();
+        for (TabDep t : tabs) {
+            // cross_tab_ref：按行取源组件已算行，恒为顺序依赖，不做列粒度豁免
+            Set<String> d = new LinkedHashSet<>(extractSourceRefs(t.formulas()));
+            for (SubtotalRef sr : extractSubtotalRefDetails(t.formulas())) {
+                String tcid = refToCid.get(sr.ref());
+                // 卡片外引用（解析不到）不入图；自引用由引擎内两阶段处理（B6），不建边
+                if (tcid == null || tcid.equals(t.cid())) continue;
+                if (isOrderSensitiveColumn(fieldsByCid.get(tcid), sr)) d.add(tcid);
+            }
+            deps.put(t.cid(), d);
+        }
+        return deps;
+    }
+
+    /** 被引用列的值是否取决于页签计算次序（即是否需要为它建依赖边）。 */
+    private static boolean isOrderSensitiveColumn(JsonNode targetFields, SubtotalRef sr) {
+        if (sr.tabTotal()) return true;                                 // 整页签合计含全部公式列
+        if (sr.column() == null || sr.column().isBlank()) return true;  // 列名缺失 → 保守
+        if (targetFields == null || !targetFields.isArray()) return true;  // fields 不可读 → 保守
+        for (JsonNode f : targetFields) {
+            if (!sr.column().equals(fieldNameOf(f))) continue;
+            return isFormulaType(fieldTypeOf(f));
+        }
+        return true;                                                    // 查无此列 → 保守
+    }
+
+    /** 公式类字段（FORMULA 及未来的 *_FORMULA 变体，如 LIST_FORMULA）→ 值由公式产生，顺序敏感。 */
+    private static boolean isFormulaType(String fieldType) {
+        return "FORMULA".equals(fieldType) || fieldType.endsWith("_FORMULA");
+    }
+
+    /** 兼容 snake_case（component.fields）与 camelCase（快照 structure），对齐 FormulaCalculator。 */
+    private static String fieldTypeOf(JsonNode f) {
+        if (f.has("fieldType")) return f.path("fieldType").asText("");
+        return f.path("field_type").asText("");
+    }
+
+    private static String fieldNameOf(JsonNode f) {
+        String n = f.path("name").asText("");
+        return !n.isEmpty() ? n : f.path("key").asText("");
+    }
+
+    /** 扫描 formulas，收集 component_subtotal 引用明细（目标标识 + 列名 + 是否整页签合计）。 */
+    private static List<SubtotalRef> extractSubtotalRefDetails(JsonNode formulas) {
+        List<SubtotalRef> out = new ArrayList<>();
+        if (formulas == null || !formulas.isArray()) return out;
         for (JsonNode f : formulas) {
             JsonNode expr = f.path("expression");
             if (!expr.isArray()) continue;
             for (JsonNode tk : expr) {
-                if ("component_subtotal".equals(tk.path("type").asText(""))) {
-                    String code = tk.path("component_code").asText("");
-                    String tab = tk.path("tab_name").asText("");
-                    if (!code.isBlank()) refs.add(code);
-                    else if (!tab.isBlank()) refs.add(tab);
-                }
+                if (!"component_subtotal".equals(tk.path("type").asText(""))) continue;
+                String code = tk.path("component_code").asText("");
+                String tab = tk.path("tab_name").asText("");
+                String ref = !code.isBlank() ? code : tab;
+                if (ref.isBlank()) continue;
+                String column = tk.path("value").asText("");
+                boolean tabTotal = tk.path("is_tab_total").asBoolean(false)
+                    || "__amount_total__".equals(column);
+                out.add(new SubtotalRef(ref, column, tabTotal));
             }
         }
-        return refs;
+        return out;
     }
 }
