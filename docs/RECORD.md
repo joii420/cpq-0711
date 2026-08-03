@@ -4390,6 +4390,23 @@ E2E:
 
 **vitest 全绿声明的例外说明**：本文件违反了 CLAUDE.md「修改后强制自检」里"vitest 全绿"的一般纪律，属于刻意为之——这套黄金用例机制存在的意义就是暴露两端真实不一致，若强行改 `expected` 或用 `it.skip` 隐藏这 7 条，等于把分歧焐平，下次同类回归就再也发现不了。跑法：`npx vitest run src/utils/formulaGolden.test.ts`（本仓库无裸 `npm test`；不加路径的 `npx vitest run` 会把 `e2e/*.spec.ts` 一起扫进来触发大量 Playwright 误报，已验证这是本仓库既有配置缺口，与本次改动无关——`npx vitest run` 全量跑显示 `68 failed test files` 全部是 e2e spec 被误当 vitest 文件执行，真正的 `src/**/*.test.ts(x)` 结果是 `855 passed / 7 failed`，7 个失败精确对应上述已知分歧，无任何其它回归）。
 
-**自检**：`npx tsc --noEmit` 0 错误；`formula-golden/*.json` 10 个文件 diff 逐行核对——每处改动仅 `expectedSource` 字段值 + EOF 换行规整，无数值/结构改动（`git diff | grep -v expectedSource` 确认）；`npx vitest run src/utils/formulaGolden.test.ts` 反复跑 3 次结果稳定（26/7 不变，非 flaky）。commit：`911cbcb5`（harness）+ 本次（JSON 记账 + README + RECORD）。
+**自检**：`npx tsc --noEmit` 0 错误；`formula-golden/*.json` 10 个文件 diff 逐行核对——每处改动仅 `expectedSource` 字段值 + EOF 换行规整，无数值/结构改动（`git diff | grep -v expectedSource` 确认）；`npx vitest run src/utils/formulaGolden.test.ts` 反复跑 3 次结果稳定（26/7 不变，非 flaky）。commit：`911cbcb5`（harness）+ `ddf97f0f`（JSON 记账 + README + RECORD）。
 
-**自检**：`npx tsc --noEmit` 0 错误；6 个改动文件 Vite transform 全部 200；无既有 vitest 覆盖这些符号（无回归风险）。E2E 用真实数据人工临时脚本验证（未走 Playwright 断言常驻用例，验证后已删除临时 spec 文件），未跑 `quotation-flow.spec.ts`（按 coordinator 指示，该 spec 在本环境实测跑不完）。
+---
+
+[2026-08-02] task-0729 B9 后续三件套（coordinator 裁定后执行）—— ②除零归零已修 / ③tab_name 复合键生产审计=0影响 / ①精度对齐影响面清单=当前0金额变化+发现关键分支时序问题 | `cpq-frontend/src/utils/formulaEngine.ts`（②，已合并至上一条目 commit `22d08f49`） / `dev-docs/task-0729-客户价格调整策略和价格版本/前端精度对齐影响面清单.md`（新增） | coordinator 呈报业务方后对 7 条黄金用例分歧给出三项裁定，按"② 最快先做 → ③ 只读审计 → ① 出清单"顺序执行，三件事都做完一起汇报：
+
+**②（已提交，见上一条目 commit `22d08f49`）**：不再赘述。
+
+**③ tab_name-only `component_subtotal` 生产配置审计（只读，未改代码）**：递归扫描全库 `component.formulas`（87 个组件）+ `component.fields` + `template.components_snapshot`（10 份模板快照）+ `quotation_view_structure.structure`（106 份报价单/核价单冻结结构，2026-08-02 时点）里全部 `type="component_subtotal"` 的 token。**结果：全库 207 处该类 token，`(component_code, tab_name)` 组合分布 100% 是 `(有,有)`，0 处是 `(无,有)`（amt-002/003 暴露的 tab_name-only 变体）**——生产配置里没有任何人只填 `tab_name` 不填 `component_code`。**结论：这是一个当前 0 生产影响的理论缺口，按 coordinator 预案降为低优先级**（前端补一段镜像 `component_code` 逻辑的 `tab_name` 复合键查找分支即可，`formulaEngine.ts` 259-277 行，未着手）。
+
+**① 前端精度对齐影响面清单**（`前端精度对齐影响面清单.md`，未改 `formulaEngine.ts` 一行）：
+- **方法论**：论证"改完后哪几单金额会变"不需要重放全部报价单的公式渲染流水线——`evaluateExpression` 只在返回前做一次 `.toDecimalPlaces(4)`（不是逐操作符舍入），单个公式内部精度天然是原生 double；**唯一会被精度对齐影响的路径**是"公式 A 的结果被四舍五入后，作为另一个独立 `evaluateExpression()` 调用的输入"——即通过 `component_subtotal`/`cross_tab_ref`/`previous_row_subtotal`/`global_variable` 这些跨字段跨 Tab 引用 token 被下游消费。因此只需结构性扫描"含除法 AND 结果被链式消费"的公式，再对命中项做真实数据验证，即可完整回答问题，不必真的双算法重跑全部报价单。
+- **结构审计结果**：全库 87 个组件里只有 **2 个**（`COMP-0160`/`COMP-0135`，公式逐字相同）命中"含除法 + `is_subtotal` + 自身含 `cross_tab_ref` 链式 token"，公式为 `管理费 = (比例/100) × (材料成本汇总 + 组装加工费 - 回收成本)`。
+- **真实数据验证**：`COMP-0135` 全库 0 处实际使用；`COMP-0160` 全库仅 2 处真实使用（`QT-20260802-0050`/`QT-20260802-0051`，同客户罗克韦尔同料号 `S-3120014539`），两条当前"管理费"字段值均精确为 `0.0`——根因是一个**与本次任务无关的既有配置错配**：`cross_tab_ref` predicate 写死 `类别='管理费'`（精确字符串匹配），但真实"其他费用"Tab 的行数据类别标签是"材料管理费"/"外购件管理费"，没有一行恰好等于"管理费"三个字，predicate 命中 0 行→空集→按 I-1 决策静默回落 0，且 `费用` 列本身也全是 `null`。0 除以任何精度策略都还是 0。
+- **结论：当前库不存在任何一条会因精度对齐而改变的金额，差异 = 0。** 已在清单 §3 标注这是"脆弱的巧合"而非"公式模式天生安全"——若未来这个类别标签不匹配问题被修复，`比例/100` 才会真正参与计算，届时需要重新跑一遍本清单方法论，不能沿用"当前 0 影响"结论。
+- 🚨 **顺带发现的关键时序问题（未预期到）**：清单动笔前直接在本 worktree 跑 `cd cpq-backend && ./mvnw test -Dtest=FormulaGoldenTest`，**`dec-001/002/004` 这 3 条在后端自己身上也失败**——`FormulaCalculator.java` 当前仍是 `setScale(4, HALF_UP)`，仓库里也没有 `PrecisionPolicy.java` 这个类。`git log --oneline --all -- .../FormulaCalculator.java` 证实 `task-0801`（`feat/task-0801-...`，commit `f8278099` "公式计算精度优化"）是一个**尚未合并进 `feat/task-0729-price-adjust` 的独立分支**。也就是说"前端 4 位 vs 后端 12 位"这个分歧**目前只存在于两个尚未合并到一起的分支之间**，不是当前两条正在跑的代码路径之间的活分歧——本分支上后端现在其实和前端一样是 4 位，两边一致。已在清单 §4.0 和 `formula-golden/README.md` 同步补充这条澄清，供 coordinator 裁定 `①` 执行时机时纳入考虑（例如是否等 `task-0801` 先合并、双方再一起复核一遍）。
+
+**未做/边界**：没有构建一份"literally 跑通 12 位精度算法"的可执行数值对拍工具（因为结构性论证已经能完整回答问题，且 coordinator 明确要求本阶段不碰 `formulaEngine.ts`）；如果 coordinator 认为仍需要一份可执行对拍作为更强证据链，需要另行授权临时（不提交）修改 `formulaEngine.ts` 做 A/B 对照后完整还原，这是本次未做、需要额外确认的后续步骤。
+
+**自检**：③④均为只读 SQL/JSON 结构扫描（多轮独立重跑结果一致：207/0、2/2 命中数量在数据库因并发写入从 47→48 张单/28→29 条 line item 后重新验证仍然成立）；②已通过完整自检（见上一条目）；①为纯文档产出，无代码变更、不涉及 tsc/Vite/Flyway 自检链路。
