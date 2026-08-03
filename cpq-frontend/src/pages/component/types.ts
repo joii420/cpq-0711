@@ -100,7 +100,16 @@ export interface FieldItem {
   is_amount?: boolean;
   is_subtotal?: boolean;
   /** Plan 3a：条件公式。存在即走条件模式（优先于 formula_name）。when 为 CondTree（见 utils/condTree）。 */
-  conditional_formula?: { rules: { when: any; formula: string }[]; default: string };
+  /**
+   * Plan 3a：条件公式。存在即走条件模式（优先于 formula_name）。
+   * BL-0098：`formula_id` / `default_formula_id` 是解析主键（稳定不变），
+   * `formula` / `default` 降级为展示冗余 + 存量兼容读 —— 公式改名后名字会失配，id 不会。
+   */
+  conditional_formula?: {
+    rules: { when: any; formula: string; formula_id?: string }[];
+    default: string;
+    default_formula_id?: string;
+  };
   notes?: string;
   /**
    * LIST_FORMULA 字段类型专用配置.
@@ -124,7 +133,12 @@ export interface FieldItem {
     // HTTP_API 配置 (Phase D follow-up)
     api_config?: Record<string, any>;
   };
-  formula_name?: string;  // FORMULA fields: which formula definition to use
+  formula_name?: string;  // FORMULA fields: which formula definition to use（BL-0098 后降级为展示冗余）
+  /**
+   * BL-0098：FORMULA 字段绑定的公式**稳定 id**，解析主键，优先级高于 formula_name。
+   * 后端 FormulaCalculator.resolveFormula 按 formula_id → formula_name → … 顺序解析。
+   */
+  formula_id?: string;
   /** BASIC_DATA 字段绑定的 BNF 路径(如 mat_part.unit_weight 或 元素BOM[元素='Ag'].组成含量) */
   basic_data_path?: string;
   /** V109: 标记此字段取值来自某全局变量 (e.g. 'ELEM_PRICE'). UI 显示徽章, 路径仍走 basic_data_path. */
@@ -170,6 +184,14 @@ export interface DefaultSource {
 
 export interface FormulaItem {
   key: string;
+  /**
+   * BL-0098：公式的不可变稳定 id（作用域 = 组件内，不要求全局唯一）。
+   * 🚨 加载时必须原样保留、保存时必须原样送回 —— 丢了会让所有字段绑定失配、那些列静默不出值。
+   * 现有链路已天然满足：ComponentManagement 加载 `{...f, key}`、保存 `({key: _k, ...rest})`、
+   * componentDraft.stripFieldKeys 只剥 key。新建公式由 newFormulaRow() 就地生成，
+   * 后端 FormulaIdBinder.ensureFormulaIds 只做兜底。
+   */
+  id?: string;
   name: string;
   expression: FormulaToken[];
   result_type?: string;
@@ -309,10 +331,20 @@ export function newFieldRow(): FieldItem {
 export function newFormulaRow(): FormulaItem {
   return {
     key: `formula-${Date.now()}-${Math.random()}`,
+    // BL-0098：新建即生成稳定 id —— 否则条件公式抽屉/字段下拉在「公式尚未保存」时没有 id 可绑，
+    // 只能退回绑名字，等于绕开本次修复。后端 ensureFormulaIds 仍会兜底（防绕过 UI 的调用）。
+    id: newFormulaId(),
     name: '',
     expression: [],
     result_type: 'NUMBER',
   };
+}
+
+/** 生成公式稳定 id；优先用 crypto.randomUUID，老浏览器回退时间戳+随机数。 */
+function newFormulaId(): string {
+  const c = globalThis.crypto as Crypto | undefined;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  return `f-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 /** 行键候选（后端 row-key-candidates 端点返回）。 */

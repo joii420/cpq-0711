@@ -6,15 +6,21 @@ import CondTreeEditor, { emptyGroup } from './CondTreeEditor';
 const { Text } = Typography;
 
 export interface ConditionalFormulaValue {
-  rules: { when: CondTree; formula: string }[];
+  /**
+   * BL-0098：`formula_id` 是解析主键（公式的稳定 id），`formula` 保留公式名作展示冗余 +
+   * 存量兼容读。求值端优先按 id 认，公式改名不再静默丢规则。
+   */
+  rules: { when: CondTree; formula: string; formula_id?: string }[];
   default: string;
+  default_formula_id?: string;
 }
 
 interface Props {
   open: boolean;
   value?: ConditionalFormulaValue;
   fieldName?: string;
-  formulaOptions: { label: string; value: string }[]; // 组件公式名
+  /** BL-0098：value = 公式稳定 id（无 id 的极老存量回退为公式名），label = 公式名 */
+  formulaOptions: { label: string; value: string }[];
   columnOptions: { label: string; value: string }[];   // 组件字段名（条件列）
   onClose: () => void;
   onConfirm: (next: ConditionalFormulaValue) => void;
@@ -23,18 +29,33 @@ interface Props {
 const ConditionalFormulaDrawer: React.FC<Props> = ({
   open, value, fieldName, formulaOptions, columnOptions, onClose, onConfirm,
 }) => {
-  const [rules, setRules] = useState<{ when: CondTree; formula: string }[]>([]);
+  const [rules, setRules] = useState<{ when: CondTree; formula: string; formula_id?: string }[]>([]);
   const [def, setDef] = useState<string>('');
+  const [defId, setDefId] = useState<string | undefined>(undefined);
+
+  // BL-0098：下拉的选中值 = 公式 id；存量只有名字时按名字反查 id 回显，避免显示空白。
+  const optValueOf = (id?: string, name?: string): string | undefined => {
+    if (id && formulaOptions.some(o => o.value === id)) return id;
+    if (name) {
+      const byLabel = formulaOptions.find(o => o.label === name);
+      if (byLabel) return byLabel.value;
+    }
+    return undefined;
+  };
+  const labelOf = (v?: string) => formulaOptions.find(o => o.value === v)?.label ?? '';
 
   useEffect(() => {
     if (open) {
-      setRules(value?.rules?.length ? value.rules.map(r => ({ when: r.when || emptyGroup(), formula: r.formula })) : []);
+      setRules(value?.rules?.length
+        ? value.rules.map(r => ({ when: r.when || emptyGroup(), formula: r.formula, formula_id: r.formula_id }))
+        : []);
       setDef(value?.default || '');
+      setDefId(value?.default_formula_id);
     }
   }, [open, value]);
 
   const addRule = () => setRules([...rules, { when: emptyGroup(), formula: '' }]);
-  const updateRule = (i: number, patch: Partial<{ when: CondTree; formula: string }>) =>
+  const updateRule = (i: number, patch: Partial<{ when: CondTree; formula: string; formula_id?: string }>) =>
     setRules(rules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const removeRule = (i: number) => setRules(rules.filter((_, j) => j !== i));
   const move = (i: number, dir: -1 | 1) => {
@@ -47,7 +68,7 @@ const ConditionalFormulaDrawer: React.FC<Props> = ({
     if (rules.length === 0) { message.error('至少需 1 条规则'); return; }
     if (rules.some(r => !r.formula)) { message.error('每条规则都要选命中公式'); return; }
     if (!def) { message.error('必须选默认公式（全不命中时执行）'); return; }
-    onConfirm({ rules, default: def });
+    onConfirm({ rules, default: def, default_formula_id: defId });
   };
 
   return (
@@ -76,8 +97,9 @@ const ConditionalFormulaDrawer: React.FC<Props> = ({
           <Space>
             <Text type="secondary">则执行公式：</Text>
             <Select size="small" style={{ minWidth: 200 }} placeholder="选命中公式"
-              value={r.formula || undefined} options={formulaOptions} showSearch optionFilterProp="label"
-              onChange={v => updateRule(i, { formula: v })} />
+              value={optValueOf(r.formula_id, r.formula)} options={formulaOptions}
+              showSearch optionFilterProp="label"
+              onChange={v => updateRule(i, { formula_id: v, formula: labelOf(v) })} />
           </Space>
         </div>
       ))}
@@ -86,8 +108,8 @@ const ConditionalFormulaDrawer: React.FC<Props> = ({
       <Space>
         <Text strong>默认公式（全不命中）：</Text>
         <Select style={{ minWidth: 220 }} placeholder="必选默认公式"
-          value={def || undefined} options={formulaOptions} showSearch optionFilterProp="label"
-          onChange={setDef} />
+          value={optValueOf(defId, def)} options={formulaOptions} showSearch optionFilterProp="label"
+          onChange={v => { setDefId(v); setDef(labelOf(v)); }} />
       </Space>
     </Drawer>
   );
