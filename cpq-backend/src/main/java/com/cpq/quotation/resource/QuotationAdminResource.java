@@ -133,4 +133,18 @@ public class QuotationAdminResource {
         priceAdjustNotificationService.notifyJobCompletion(UUID.fromString(jobId));
         return ApiResponse.success("done");
     }
+
+    /**
+     * task-0729 现场缺口修复验证入口（临时）：只重算传入 lineItem 的核价卡片值
+     * （{@code CardSnapshotService#refreshCostingCardValuesForLine}），不触碰报价侧
+     * snapshot_rows/row_data，用于验证 V373（wl_ys_bom_view 元素单价 JOIN 归一到根料号）
+     * 修复效果，最小侵入。
+     */
+    @POST
+    @Path("/task0729-costing-view-fix-preview")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<String> task0729CostingViewFixPreview(@QueryParam("lineItemId") String lineItemId) {
+        cardSnapshotService.refreshCostingCardValuesForLine(UUID.fromString(lineItemId));
+        return ApiResponse.success("done");
+    }
 }
