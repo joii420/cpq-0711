@@ -398,10 +398,93 @@
 
 </details>
 
-### [BL-0092] 报价单删除时不清占号 → `material_customer_map.pending_quotation_id` 悬空，料号被永久锁死
+### [BL-0092] ~~报价单删除时不清占号~~ → 孤儿 pending 占号无防御机制
 - **优先级**：P1（用户可见功能全灭：「从已有产品添加」对**所有客户**返回空）
 - **来源**：task-0801 测试工程师修 E2E fixture 时探测发现，技术总监亲验 SQL 确认根因
-- **状态**：TODO（数据已临时清理，**代码缺陷未修**）
+- **状态**：✅ **已完成（2026-08-02，commit `fe612af9` / merge `3fc3f204`）**
+
+#### ⚠️ 先更正原始判断（登记时错了）
+
+原条目断言「删除路径无任何清理，只有 `QuoteBackfillService:145` 在审批转正时清占号」——**不成立**。
+`QuotationService.delete()` 早已调用 `cleanupPendingV6Data()`（task-0721 B8 加的），
+覆盖 `B8_PENDING_TABLES` 8 张表 + `material_master` 的 `deletePendingWithGuard`，**9 张表全覆盖**。
+
+**实测验证**：造 pending 行 → 调 `DELETE /api/cpq/quotations/{id}` → 该行残留 **0 条**。删单回收路径完整且有效。
+
+登记时我只看到转正路径就下了结论，没查 `delete()` 的实现 —— 属未穷举调用点的判断失误。
+
+#### 241 条孤儿的真实来源
+
+```
+task-0721 B8 修复合并    2026-07-21
+孤儿数据产生时间        2026-07-27 ~ 07-28   ← 全部在修复之后
+```
+正是 `cpq_db_0724` 迁库重建期，即**绕过应用层直接重建 `quotation` 表**的产物
+（与 [[BL-0078]]「E2E 夹具随迁库集体失效」同一批操作）。
+
+#### 真实缺口（本次修复的对象）
+
+1. 9 张表的 `pending_quotation_id` **零外键约束** —— 任何绕过应用层的操作（迁库 / DBA 直删 / 建库脚本）
+   都会留下永久僵尸，且系统内**没有任何机制能发现**；
+2. `material_master` 的引用守卫**有意**留下悬空（`deletePendingWithGuard` 删不掉仍被引用的行，
+   只打一行 WARN 说"需人工核查引用方"），但从无兜底机制去核查。
+
+#### 交付内容
+
+- `PendingHygieneService`：`inspect()` 只读体检 + `cleanup(dryRun)` 清理。语义与删单回收**完全一致**
+  （8 张表直接 DELETE，`material_master` 走同款引用守卫），区别仅在筛选条件从「属于某张单」
+  换成「归属的单已不存在」。`inspect()` 另用 `information_schema` 反查所有带 `pending_quotation_id`
+  的表做交叉校验，**漏加新表会在 `unmanagedTables` 里暴露，不会静默**。
+- `MaterialMasterRepository#deleteOrphanPendingWithGuard()`：原守卫的"悬空版"，三处引用检查逐条对称改写
+  （引用方是正式行或归属单仍存在 → 有效引用，不删）。
+- `PendingHygieneResource`：`GET /api/cpq/admin/pending-hygiene/inspect`、
+  `POST /api/cpq/admin/pending-hygiene/cleanup?dryRun=`（**默认 true**，真删须显式传 `false`）。
+- `PendingHygieneServiceTest` 4 用例全绿，每例都同时断言"孤儿被删"与"非孤儿仍在"
+  —— 误删活数据是本服务最严重的失败模式，安全性优先于清理彻底性。
+
+#### 历史数据清理结果（2026-08-02 经端点执行，已备份）
+
+| 表 | 清理前孤儿 | 已删 | 剩余 |
+|---|---|---|---|
+| `material_bom_item` | 85 | 85 | 0 |
+| `element_bom` / `element_bom_item` | 43 / 43 | 43 / 43 | 0 / 0 |
+| `capacity` | 32 | 32 | 0 |
+| `material_bom` | 22 | 22 | 0 |
+| `unit_price` | 12 | 12 | 0 |
+| `plating_scheme` | 2 | 2 | 0 |
+| `material_customer_map` | 0（08-01 已单独清） | — | 0 |
+| **`material_master`** | 2 | **0（守卫拦下）** | **2** |
+| **合计** | **241** | **239** | **2** |
+
+备份表 `bl0092_orphan_backup_20260802`（241 行 `row_to_json` 全量，可回滚）。
+**活数据完好性已逐表核验**：`unit_price 94-12=82` / `material_bom_item 170-85=85` /
+`element_bom_item 93-43=50` / `capacity 64-32=32`，全部精确匹配，挂活单的 pending 行一条未动。
+
+#### 遗留：`material_master` 2 条需业务判断（不阻断）
+
+守卫拦下的 2 条及其引用方（8 张表孤儿清完后，这些引用方都是**有效数据**，故守卫拦得对）：
+
+| 料号 | 被 BOM 子件引用 | 被 BOM 母件引用 | 被客户映射引用 |
+|---|---|---|---|
+| `W-1001` | 19 | 0 | 1 |
+| `S-80011` | 18 | 13 | 1 |
+
+这两个料号实际**正在被使用**，只是 pending 标记没清干净。合理处置是**转正**
+（`pending_quotation_id` 置 NULL）而非删除，但这属于业务判断，未擅自执行。
+可用 `MaterialMasterRepository#flipPending` 的同款语义处理，或确认后手工
+`UPDATE material_master SET pending_quotation_id = NULL WHERE material_no IN ('W-1001','S-80011')`。
+
+#### 未做（有意）
+未给 `pending_quotation_id` 加外键约束。`ON DELETE CASCADE` 会绕过 `material_master` 的引用守卫、
+`ON DELETE SET NULL` 会把 pending 行变成"无主僵尸"（仍占唯一约束位）——两种语义都不对。
+现方案是「应用层删单即时回收 + 端点兜底体检清理」，覆盖绕过应用层的场景。
+
+---
+
+<details>
+<summary>原始条目内容（保留追溯）</summary>
+
+- **原状态**：TODO（数据已临时清理，**代码缺陷未修**）
 - **登记日期**：2026-08-01
 - **背景（已实证）**：
   - 占号写入：新建报价单时向 `material_customer_map` 写 `pending_quotation_id` 占住料号；
@@ -430,6 +513,8 @@
 - **依赖**：无
 - **预估规模**：S（点状修）～ M（含 schema 约束与全表兜底）
 - **验收要点**：①删除一张有占号的报价单后，其占用的料号立即可被「从已有产品添加」选到；②全库不存在悬空 `pending_quotation_id`；③其它带该字段的表同口径核对通过。
+
+</details>
 
 ## P2
 
