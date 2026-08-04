@@ -2,6 +2,7 @@ package com.cpq.template.service;
 
 import com.cpq.basicdata.entity.ProductCategory;
 import com.cpq.common.exception.BusinessException;
+import com.cpq.common.exception.FormulaCycleException;
 import com.cpq.component.entity.Component;
 import com.cpq.component.service.ComponentSqlViewService;
 import com.cpq.quotation.entity.Quotation;
@@ -261,16 +262,24 @@ public class TemplateService {
             List<String> compIds = new ArrayList<>();
             Map<String, JsonNode> formulasByCompId = new LinkedHashMap<>();
             Map<String, String> namesById = new LinkedHashMap<>();
+            // repair-0803：环检测改与渲染期同口径（列粒度 component_subtotal 边），
+            // 需要 fields 判断被引用列是否公式列；plainNames 供链路文案（不带 CODE 后缀）。
+            List<CrossTabComponentOrder.TabDep> tabDeps = new ArrayList<>();
+            Map<String, String> plainNameById = new LinkedHashMap<>();
             for (TemplateComponent tc : tcs) {
                 Component comp = Component.findById(tc.componentId);
                 if (comp == null) continue;
                 String cid = comp.id.toString();
                 compIds.add(cid);
-                formulasByCompId.put(cid, parseJsonNode(comp.formulas));
+                JsonNode fx = parseJsonNode(comp.formulas);
+                formulasByCompId.put(cid, fx);
                 namesById.put(cid, comp.name + (comp.code != null && !comp.code.isBlank()
                         ? " (" + comp.code + ")" : ""));
+                plainNameById.put(cid, comp.name);
+                tabDeps.add(new CrossTabComponentOrder.TabDep(
+                        cid, comp.code, comp.name, fx, parseJsonNode(comp.fields)));
             }
-            validateCrossTabRefs(compIds, formulasByCompId, namesById);
+            validateCrossTabRefs(compIds, formulasByCompId, namesById, tabDeps, plainNameById);
         }
 
         // 阶段 2: 冻结 component_sql_view 闭包到 template.sql_views_snapshot
@@ -955,19 +964,118 @@ public class TemplateService {
      */
     void validateCrossTabRefs(List<String> compIds, Map<String, JsonNode> formulasByCompId,
                               Map<String, String> namesById) {
-        Map<String, Set<String>> deps = new LinkedHashMap<>();
+        validateCrossTabRefs(compIds, formulasByCompId, namesById, List.of(), Map.of());
+    }
+
+    /**
+     * repair-0803 重载：环检测改用 {@link CrossTabComponentOrder#buildComponentDeps}，
+     * 与<b>渲染期同口径</b>（cross_tab_ref 全量 + component_subtotal 按列粒度）。
+     *
+     * <p><b>为什么要对齐</b>：旧实现只收 {@code cross_tab_ref} 边，于是「发布通过、一渲染就报环」
+     * 成为可能（QT-20260803-0052 即此形态）。发布期与渲染期用同一张依赖图，问题才能在发布时拦下。
+     *
+     * <p>成环时抛 {@link FormulaCycleException}，携带 {@code scope=TAB} 的结构化链路
+     * （节点=页签名称，边=出自哪条公式、引用了对方哪一列），供前端弹抽屉（FR-11）。
+     *
+     * <p>零破坏：三参签名 delegate 到此并传空 {@code tabDeps} → 回落旧的 cross_tab_ref-only 建图
+     * （既有单测行为不变）。
+     *
+     * @param tabDeps       各页签的建图输入（含 fields，用于列粒度判定）；空 → 回落旧口径
+     * @param plainNameById componentId → 页签名称（不带 CODE 后缀），用于链路文案
+     */
+    void validateCrossTabRefs(List<String> compIds, Map<String, JsonNode> formulasByCompId,
+                              Map<String, String> namesById,
+                              List<CrossTabComponentOrder.TabDep> tabDeps,
+                              Map<String, String> plainNameById) {
+        // ① 悬空引用：cross_tab_ref 的 source 必须在本卡片内（口径不变）
         for (String cid : compIds) {
             JsonNode formulas = formulasByCompId.get(cid);
-            Set<String> refs = CrossTabComponentOrder.extractSourceRefs(formulas);
-            for (String src : refs) {
+            for (String src : CrossTabComponentOrder.extractSourceRefs(formulas)) {
                 if (!compIds.contains(src)) {
                     throw new BusinessException(400,
                             buildCrossTabMissingMessage(cid, src, formulas, namesById));
                 }
             }
-            deps.put(cid, refs);
         }
-        CrossTabComponentOrder.topoOrder(compIds, deps); // 成环抛 BusinessException
+
+        // ② 环检测：有 tabDeps 走列粒度（与渲染期一致）；否则回落旧口径
+        Map<String, Set<String>> deps;
+        if (tabDeps != null && !tabDeps.isEmpty()) {
+            deps = CrossTabComponentOrder.buildComponentDeps(tabDeps);
+        } else {
+            deps = new LinkedHashMap<>();
+            for (String cid : compIds) {
+                deps.put(cid, CrossTabComponentOrder.extractSourceRefs(formulasByCompId.get(cid)));
+            }
+        }
+        try {
+            CrossTabComponentOrder.topoOrder(compIds, deps, plainNameById);
+        } catch (BusinessException e) {
+            List<FormulaCycleException.Cycle> cycles =
+                    buildTabCycles(compIds, deps, formulasByCompId, plainNameById);
+            if (cycles.isEmpty()) throw e;   // 提不出链路 → 保留原文案，绝不放过环
+            throw new FormulaCycleException(e.getMessage(), cycles);
+        }
+    }
+
+    /**
+     * repair-0803：把页签级环渲染成结构化链路（scope=TAB）。
+     *
+     * <p>节点 = 页签名称；每条边扫描 from 页签的 formulas，定位「哪条公式引用了 to 页签的哪一列」。
+     * 全程只出名称，无 componentId（AC-11）。
+     */
+    private static List<FormulaCycleException.Cycle> buildTabCycles(
+            List<String> compIds, Map<String, Set<String>> deps,
+            Map<String, JsonNode> formulasByCompId, Map<String, String> plainNameById) {
+        List<String> path = CrossTabComponentOrder.findCyclePath(compIds, deps);
+        if (path.isEmpty()) return List.of();
+
+        java.util.function.Function<String, String> nm =
+                cid -> plainNameById.getOrDefault(cid, cid);
+
+        List<FormulaCycleException.Node> nodes = new ArrayList<>();
+        List<FormulaCycleException.Edge> edges = new ArrayList<>();
+        for (int i = 0; i < path.size(); i++) {
+            String from = path.get(i), to = path.get((i + 1) % path.size());
+            String[] hit = locateCrossTabRef(formulasByCompId.get(from), to, plainNameById);
+            nodes.add(new FormulaCycleException.Node(nm.apply(from), null, hit[0]));
+            edges.add(new FormulaCycleException.Edge(
+                    nm.apply(from), nm.apply(to), hit[1], hit[2], hit[0], "公式"));
+        }
+        return List.of(new FormulaCycleException.Cycle(
+                FormulaCycleException.SCOPE_TAB, null, nodes, edges));
+    }
+
+    /**
+     * 在 {@code formulas} 里找出引用了 {@code targetCid} 页签的那条引用。
+     *
+     * @return {@code [公式名, 被引用列名, 列类型说明]}，找不到则相应位为 null
+     */
+    private static String[] locateCrossTabRef(JsonNode formulas, String targetCid,
+                                              Map<String, String> plainNameById) {
+        String targetName = plainNameById.get(targetCid);
+        if (formulas == null || !formulas.isArray()) return new String[]{null, null, null};
+        for (JsonNode f : formulas) {
+            JsonNode expr = f.path("expression");
+            if (!expr.isArray()) continue;
+            for (JsonNode tk : expr) {
+                String type = tk.path("type").asText("");
+                if ("cross_tab_ref".equals(type) && targetCid.equals(tk.path("source").asText(""))) {
+                    return new String[]{f.path("name").asText(null),
+                            tk.path("sourceLabel").asText(targetName), "整表引用"};
+                }
+                if ("component_subtotal".equals(type)) {
+                    String ref = !tk.path("component_code").asText("").isBlank()
+                            ? tk.path("component_code").asText() : tk.path("tab_name").asText("");
+                    // 引用键可能是 code / tabName —— 与目标页签名称或其 code 匹配即认为命中
+                    if (!ref.isBlank() && (ref.equals(targetName) || ref.equals(targetCid))) {
+                        return new String[]{f.path("name").asText(null),
+                                tk.path("value").asText(null), "公式列"};
+                    }
+                }
+            }
+        }
+        return new String[]{null, null, null};
     }
 
     /**

@@ -151,6 +151,30 @@ class CrossTabComponentOrderTest {
         assertEquals(Set.of(), deps.get("CID-PRD"), "自引用不得建边");
     }
 
+    /** repair-0803 FR-12/AC-14：成环文案用页签名称渲染链路，且不得出现 componentId。 */
+    @Test void cycleMessage_rendersComponentNames_withoutIds() {
+        String prd = "56c8a517-e770-4429-82c7-72f216daab45";
+        String mat = "74c0cede-094e-478c-a8fe-8f0028d538cd";
+        var deps = Map.of(prd, Set.of(mat), mat, Set.of(prd));
+        var names = Map.of(prd, "产品", mat, "物料");
+
+        var ex = assertThrows(BusinessException.class,
+            () -> CrossTabComponentOrder.topoOrder(List.of(prd, mat), deps, names));
+
+        assertTrue(ex.getMessage().contains("产品") && ex.getMessage().contains("物料"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("→"), "应渲染成链路形态：" + ex.getMessage());
+        assertFalse(ex.getMessage().matches("(?s).*[0-9a-f]{8}-[0-9a-f]{4}-.*"),
+            "文案不得残留 UUID：" + ex.getMessage());
+    }
+
+    /** 名称缺失时回落 id（零破坏：两参旧签名传空映射，行为与改前一致）。 */
+    @Test void cycleMessage_fallsBackToIdWhenNameMissing() {
+        var deps = Map.of("A", Set.of("B"), "B", Set.of("A"));
+        var ex = assertThrows(BusinessException.class,
+            () -> CrossTabComponentOrder.topoOrder(List.of("A", "B"), deps));
+        assertTrue(ex.getMessage().contains("A") && ex.getMessage().contains("B"), ex.getMessage());
+    }
+
     /** 卡片外的引用（refToCid 解析不到）不入图，不影响入度。 */
     @Test void refOutsideCard_ignored() throws Exception {
         var mat = new CrossTabComponentOrder.TabDep("CID-MAT", "COMP-0157", "物料",

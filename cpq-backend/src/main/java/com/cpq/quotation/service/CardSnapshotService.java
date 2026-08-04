@@ -1812,8 +1812,14 @@ public class CardSnapshotService {
                 tab.path("componentCode").asText(""), tab.path("tabName").asText(""),
                 tab.path("formulas"), tab.path("fields")));
         }
+        // repair-0803 FR-12：成环时用页签名称渲染链路（原先直接打印 componentId 集合，配置员不可读）
+        Map<String, String> tabNameById = new LinkedHashMap<>();
+        for (CrossTabComponentOrder.TabDep td : tabDeps) {
+            String nm = (td.tabName() != null && !td.tabName().isBlank()) ? td.tabName() : td.code();
+            if (nm != null && !nm.isBlank()) tabNameById.put(td.cid(), nm);
+        }
         List<String> order = CrossTabComponentOrder.topoOrder(
-            compIds, CrossTabComponentOrder.buildComponentDeps(tabDeps));
+            compIds, CrossTabComponentOrder.buildComponentDeps(tabDeps), tabNameById);
 
         // componentId → snapshot tab（按 componentId 反查；SUBTOTAL 走原序补算时直接遍历 snapshot）
         Map<String, JsonNode> tabById = new LinkedHashMap<>();

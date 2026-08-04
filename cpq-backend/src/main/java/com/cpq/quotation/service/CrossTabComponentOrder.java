@@ -15,6 +15,19 @@ public final class CrossTabComponentOrder {
      * @return 拓扑序（保留输入相对序）；存在环抛 BusinessException(400)
      */
     public static List<String> topoOrder(List<String> components, Map<String, Set<String>> deps) {
+        return topoOrder(components, deps, Map.of());
+    }
+
+    /**
+     * repair-0803 重载：成环时用<b>组件名称</b>渲染链路，替代原先直接打印 componentId 集合
+     * （`[56c8a517-…, 74c0cede-…]` 对配置员不可读，见 FR-12 / AC-14）。
+     *
+     * <p>零破坏：两参签名 delegate 到此并传空映射 → 名称查不到时回落原 id 文案。
+     *
+     * @param nameById 组件标识 → 组件（页签）名称；缺失项按 id 原样显示
+     */
+    public static List<String> topoOrder(List<String> components, Map<String, Set<String>> deps,
+                                         Map<String, String> nameById) {
         Map<String, Integer> indeg = new LinkedHashMap<>();
         for (String c : components) indeg.put(c, 0);
         for (String c : components) {
@@ -38,9 +51,62 @@ public final class CrossTabComponentOrder {
         if (order.size() != components.size()) {
             Set<String> cyc = new LinkedHashSet<>(components);
             cyc.removeAll(order);
-            throw new BusinessException(400, "页签公式存在循环引用: " + cyc);
+            throw new BusinessException(400, "页签公式存在循环引用: " + renderCycleNames(cyc, deps, nameById));
         }
         return order;
+    }
+
+    /** 环成员 → 可读链路文案（优先按真实回路顺序 `A → B → A`；提不出路径则退化为名称列举）。 */
+    private static String renderCycleNames(Set<String> members, Map<String, Set<String>> deps,
+                                           Map<String, String> nameById) {
+        List<String> path = findCyclePath(members, deps);
+        if (path.isEmpty()) {
+            List<String> names = new ArrayList<>();
+            for (String m : members) names.add(displayName(m, nameById));
+            return String.join(", ", names);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String n : path) sb.append(displayName(n, nameById)).append(" → ");
+        sb.append(displayName(path.get(0), nameById));   // 闭合回首节点
+        return sb.toString();
+    }
+
+    private static String displayName(String id, Map<String, String> nameById) {
+        String n = nameById == null ? null : nameById.get(id);
+        return (n != null && !n.isBlank()) ? n : id;
+    }
+
+    /**
+     * 在给定节点子集内找一条回路（沿 {@code deps} 的「依赖」边前进），返回按序节点；找不到返回空表。
+     *
+     * <p>供 {@link #topoOrder} 渲染可读文案与模板发布期产出结构化环链路共用（repair-0803）。
+     * 节点规模 = 一张卡片的页签数（个位数），朴素 DFS 足够。
+     */
+    public static List<String> findCyclePath(Collection<String> members, Map<String, Set<String>> deps) {
+        Set<String> scope = new LinkedHashSet<>(members);
+        for (String start : scope) {
+            Deque<String> stack = new ArrayDeque<>();
+            Set<String> onPath = new LinkedHashSet<>();
+            List<String> found = dfsCycle(start, start, deps, scope, onPath, stack);
+            if (found != null && !found.isEmpty()) return found;
+        }
+        return List.of();
+    }
+
+    private static List<String> dfsCycle(String cur, String target, Map<String, Set<String>> deps,
+                                         Set<String> scope, Set<String> onPath, Deque<String> stack) {
+        onPath.add(cur);
+        stack.addLast(cur);
+        for (String next : deps.getOrDefault(cur, Set.of())) {
+            if (!scope.contains(next)) continue;
+            if (next.equals(target)) return new ArrayList<>(stack);          // 回到起点 → 成环
+            if (onPath.contains(next)) continue;
+            List<String> r = dfsCycle(next, target, deps, scope, onPath, stack);
+            if (r != null && !r.isEmpty()) return r;
+        }
+        stack.removeLast();
+        onPath.remove(cur);
+        return List.of();
     }
 
     /** 扫描一个组件 formulas 节点（[{expression:[token...]}]），收集所有 cross_tab_ref 的 source。 */

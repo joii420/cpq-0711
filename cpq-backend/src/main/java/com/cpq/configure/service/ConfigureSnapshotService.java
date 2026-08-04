@@ -1284,8 +1284,14 @@ public class ConfigureSnapshotService {
         }
         List<String> order;
         try {
+            // repair-0803 FR-12：环文案用页签名称（降级日志因此可读，不再是一串 componentId）
+            Map<String, String> tabNameById = new LinkedHashMap<>();
+            for (CrossTabComponentOrder.TabDep td : tabDeps) {
+                String nm = (td.tabName() != null && !td.tabName().isBlank()) ? td.tabName() : td.code();
+                if (nm != null && !nm.isBlank()) tabNameById.put(td.cid(), nm);
+            }
             order = CrossTabComponentOrder.topoOrder(
-                    compIds, CrossTabComponentOrder.buildComponentDeps(tabDeps));
+                    compIds, CrossTabComponentOrder.buildComponentDeps(tabDeps), tabNameById);
         } catch (Exception cyc) {
             // 环(配置异常)→ 降级按原序物化,绝不中止整份快照(沿用本类全程降级纪律)。
             LOG.warnf("[materialize-line] line=%s 组件拓扑序失败(降级原序): %s", lineItemId, cyc.getMessage());
