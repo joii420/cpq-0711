@@ -18,12 +18,12 @@ ALTER TABLE annual_discount DROP CONSTRAINT IF EXISTS chk_annual_discount_biz_ty
 ALTER TABLE annual_discount RENAME COLUMN biz_type TO discount_type;
 ALTER TABLE annual_discount ALTER COLUMN discount_type TYPE VARCHAR(30);
 
--- 防御性映射：设计前提"annual_discount 0 行"实测针对 dev 库 cpq_db_0724 成立；
--- 共享测试库 cpq_db 存在历史测试夹具残留的旧枚举值(INCOMING/ASSEMBLY)，与新
--- 枚举值语义等价，做等价改名而非删除，避免下面新增 CHECK 因存量行报错，
--- 也让本迁移对任何环境的同类残留都健壮。
-UPDATE annual_discount SET discount_type = 'INCOMING_MATERIAL' WHERE discount_type = 'INCOMING';
-UPDATE annual_discount SET discount_type = 'ASSEMBLY_PROCESS'  WHERE discount_type = 'ASSEMBLY';
+--- 共享测试库 cpq_db 存在历史测试夹具残留（dev 库 cpq_db_0724 实测 0 行）。
+--- annual_discount 历史上唯一的写入方是 Q19AnnualDiscountHandler（「年降系数」sheet），
+--- 它恒写 biz_type='INCOMING'（discount_strategy 常量名 '来料年降' 属老代码误导命名，
+--- 与 sheet 归属无关）。故存量行在新模型里一律是整单级年降 → FINISHED。
+--- 做等价改名而非删除：不丢数据，且让本迁移对任何环境的同类残留都健壮。
+UPDATE annual_discount SET discount_type = 'FINISHED' WHERE discount_type = 'INCOMING';
 
 ALTER TABLE annual_discount ADD CONSTRAINT chk_annual_discount_type
     CHECK (discount_type IN ('INCOMING_MATERIAL', 'ASSEMBLY_PROCESS', 'FINISHED'));
