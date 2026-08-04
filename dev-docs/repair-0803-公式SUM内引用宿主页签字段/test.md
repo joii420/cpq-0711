@@ -80,6 +80,53 @@
 
 ---
 
+## 5.5 AC 覆盖矩阵（技术总监审核结论，2026-08-04）
+
+> 审核方式：逐条比对 AC 所述行为与用例实际断言，**不看用例是否绿，看它验的是不是那件事**。
+> 所有「已覆盖」项均由技术总监亲自重跑确认，非采信工程师自述。
+
+| AC | 验收内容 | 覆盖用例 | 状态 |
+|---|---|---|---|
+| AC-1 | 宿主 FORMULA 字段被 SUM 内引用 → 20.0（修复前 10.0） | `FormulaCalculatorSumHostFieldTest#hostFormulaField_isResolvedAndBroadcastPerRow` | ✅ |
+| AC-2 | 前后端结果逐位一致 | 共享夹具 `cross-tab-cases.json` 新增 3 例，后端 `FormulaCalculatorCrossTabFixtureTest`(49) + 前端 `formulaEngine.test.ts`(109) 各自消费 | ✅ **审核时补** |
+| AC-3 | b_field 指向 INPUT_NUMBER 行为逐位不变 | `#hostInputField_broadcastsPerRow` + 夹具「prefers currentRow over host fallback」 | ✅ |
+| AC-4 | 被引用宿主公式字段自身还依赖别的公式 → 取最终值 | `#transitiveFormulaDependency_resolvesToFinalValue` | ✅ |
+| AC-5 | 互相引用报环、可定位、不静默 | `#mutualRefThroughTargetExpr_isDetectedAsCycle`、`ComponentServiceFormulaCycleStructuredTest#ac16_simpleMutualReference_*` | ✅ |
+| AC-6 | 全库跑批差异恰好等于 §5.4 那 4 条公式 | `SumHostFieldAffectedFormulasLiveScanTest#ac6_affectedFormulaSet_matchesDocumentedFourFormulas`（连真库扫 87 组件，另断言 b_field token 总数 19 防漂移，并逐条核对引用字段名防同名巧合） | ✅ 需 `RUN_LIVE_DB_SCAN=1` |
+| AC-7 | 8 条公式意图确认并落地 + 改前改后值 | — | ⛔ **阻塞：待业务确认「整单一次 / 每行一次」** |
+| AC-8 | 5 张 DRAFT 单重算无哨兵无 NaN | — | ⏳ 需合并后在主仓运行时验证 |
+| AC-9 | 编辑器选 FORMULA 字段出现「每行各计入一次」提示 | F6 已实现（`CrossTabRefDrawer.tsx`） | ⏳ 无自动化，需人工/E2E |
+| AC-10 | 结构化 FIELD 环载荷 | `ComponentServiceFormulaCycleStructuredTest#ac10_*` | ✅ |
+| AC-11 | 响应体全文零 UUID | `#ac11_responseBody_containsNoUuid`（经**真实** GlobalExceptionMapper + 生产同款 Jackson 序列化）、`TemplateCrossTabCycleStructuredTest#ac13_messageAndCycles_containNoUuid` | ✅ |
+| AC-12 | 前端弹 Drawer 且可见链路 | F3/F4 已实现 | ⏳ 无自动化，需人工/E2E |
+| AC-13 | 模板发布 scope=TAB + 中文页签名 | `TemplateCrossTabCycleStructuredTest#ac13_mutualCrossTabRef_*` | ✅ |
+| AC-14 | 渲染期文案含名称、不含 UUID | `CrossTabComponentOrderTest#cycleMessage_rendersComponentNames_withoutIds` | ✅ |
+| AC-15 | 2 个独立环分组、节点无交集 | 后端 `#ac15_twoDisjointCycles_*` ✅；前端分组展示 ⏳ 无自动化 | 🟡 部分 |
+| AC-16 | 删 `dfsCycleDetect` 后仍被拦截 | `#ac16_selfReference_stillCaught_withStructuredLocation`、`#ac16_simpleMutualReference_*` | ✅ |
+| AC-17 | E2E `quotation-flow` 通过 | — | ⏳ worktree 无独立前后端 dev server，需合并后在主仓跑 |
+
+### 关于 AC-6 用「静态影响面分析」替代「两版引擎跑批比对」的裁决
+
+AC-6 原文要求改前/改后两版引擎对同一批输入跑批比对。测试工程师改用**静态影响面扫描**，
+技术总监**认可该替代**，论证如下：
+
+本次改动只在 `b_field` 取值链上加了一个回落分支，触发条件是 `currentRowRaw` **键缺失**。而
+- 指向 FORMULA 字段 → 键必缺失（公式结果只回填 fieldValues）→ 值 0 变真值 → **结果变**
+- 指向 INPUT_* 字段 → 键存在 → 不回落 → **结果不变**
+- 指向不存在的字段 → 回落后仍取不到 → 仍 0 → **结果不变**
+
+即「结果会变」的**充要条件**就是「targetExpr 内 b_field 指向本组件 FORMULA 字段」，静态扫描
+恰好识别的就是这个集合。依赖收集的新增边同理收敛（算序改变仅在原本取不到值时才影响结果）。
+静态分析在此比动态比对更可靠——后者需要为全库 87 个组件构造可求值输入，不现实。
+
+### 无法自动化项与人工验证步骤
+
+- **T-39 并发保存**：`ComponentCycleConcurrentSaveTest` 已 `@Disabled`。该环境 `@QuarkusTest`
+  无可用登录态（干净基线 `TemplateResourceTest` 同样整片 401）。人工验证：登录后用两个浏览器
+  标签同时保存同一含环组件，均应弹环链路抽屉，且库中该组件 `updated_at` 不变。
+- **AC-9 / AC-12 / AC-15 前端部分**：需人工在组件管理页保存含环组件，确认弹出的是 Drawer
+  （非 notification/Modal）、链路与原型一致、多环分组。
+
 ## 6. 执行顺序建议
 
 1. **先跑 T-01~T-09**（取值 + 依赖）——不过不进入后续
