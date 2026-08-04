@@ -1768,19 +1768,129 @@ public class QuotationService {
             throw new BusinessException(400, "Only DRAFT quotations can be deleted");
         }
 
-        deleteLineItems(id);
-        QuotationApproval.delete("quotationId = ?1", id);
-        // v4: also clean withdraw requests (no DB cascade) and detach import records (永久保留)
-        QuotationWithdrawRequest.delete("quotationId = ?1", id);
-        em.createNativeQuery("UPDATE import_record SET quotation_id = NULL WHERE quotation_id = :qid")
-                .setParameter("qid", id)
-                .executeUpdate();
-        // task-0721 B8 状态机：报价单删除级联清理本单 pending 数据（未生效过，无保留价值）。
-        // 只有 DRAFT 才能走到这（above guard），DRAFT 单可能已导入过、留有 pending 行/pending 料号。
-        cleanupPendingV6Data(id);
-        // costing_sheet has ON DELETE CASCADE (V30) — auto-deleted with quotation
-        q.delete();
-        LOG.infof("Deleted quotation id=%s number=%s", id, q.quotationNumber);
+        try {
+            deleteLineItems(id);
+            QuotationApproval.delete("quotationId = ?1", id);
+            // v4: also clean withdraw requests (no DB cascade) and detach import records (永久保留)
+            QuotationWithdrawRequest.delete("quotationId = ?1", id);
+            em.createNativeQuery("UPDATE import_record SET quotation_id = NULL WHERE quotation_id = :qid")
+                    .setParameter("qid", id)
+                    .executeUpdate();
+            // task-0721 B8 状态机：报价单删除级联清理本单 pending 数据（未生效过，无保留价值）。
+            // 只有 DRAFT 才能走到这（above guard），DRAFT 单可能已导入过、留有 pending 行/pending 料号。
+            cleanupPendingV6Data(id);
+            // repair-0803（BL-0108）：task-0729 B1 引入的 material_price_update_job_item 表，FK 是
+            // NO ACTION 阻塞型，删除序列此前没有覆盖，导致任何被调价 job 扫过的 DRAFT 单裸报 500
+            // （FK 违反）。见方法 javadoc。
+            cleanupPriceAdjustJobItems(id);
+            // costing_sheet has ON DELETE CASCADE (V30) — auto-deleted with quotation
+            q.delete();
+            // repair-0803（BL-0108 ②）：强制在本方法体内同步 flush，让任何遗留的阻塞型 FK（含上面
+            // 未覆盖到的、以及未来任何新增的）在这里同步抛出，而不是被 @Transactional 拦截器
+            // 延后到方法返回后的提交阶段才抛——那样 catch 块根本捕获不到，只会冒泡成裸 500。
+            em.flush();
+            LOG.infof("Deleted quotation id=%s number=%s", id, q.quotationNumber);
+        } catch (BusinessException be) {
+            throw be;
+        } catch (Exception e) {
+            throw translateDeleteFailure(id, e);
+        }
+    }
+
+    /**
+     * repair-0803（BL-0108 ①，我方责任）：清理 {@code material_price_update_job_item}
+     * （task-0729 B1 引入，FK {@code material_price_update_job_item_quotation_id_fkey} 是
+     * {@code NO ACTION} 阻塞型）。直接 DELETE——job 明细对已删除的报价单没有保留价值
+     * （对应的报价单都没了，{@code retry} 也无处可试）。
+     *
+     * <p>🔒 顺序与判断：先删本单的 job_item，再检查每个受影响的 {@code job_id} 是否因此变成
+     * 空批次（该 job 名下所有 item 都已被删光）——若是，**一并删除该 job**：job 的
+     * {@code totalCount}/{@code successCount} 等汇总字段只服务于它名下的 item，item 清零后这些
+     * 数字就变成"指向不存在明细的统计"，留着是孤儿审计记录，无查阅价值。若该 job 还有其它 item
+     * （常见情况——一次批量升版通常同时覆盖同客户名下的多张报价单），则只删本单的 item，job 与
+     * 其余 item 原样保留、不受影响。
+     */
+    private void cleanupPriceAdjustJobItems(UUID quotationId) {
+        @SuppressWarnings("unchecked")
+        List<Object> jobIdRows = em.createNativeQuery(
+                "SELECT DISTINCT job_id FROM material_price_update_job_item WHERE quotation_id = :qid")
+            .setParameter("qid", quotationId)
+            .getResultList();
+        if (jobIdRows.isEmpty()) return;
+
+        int deletedItems = em.createNativeQuery(
+                "DELETE FROM material_price_update_job_item WHERE quotation_id = :qid")
+            .setParameter("qid", quotationId)
+            .executeUpdate();
+        LOG.infof("cleanupPriceAdjustJobItems: quotation=%s 清理 material_price_update_job_item %d 条",
+            quotationId, deletedItems);
+
+        for (Object jobIdObj : jobIdRows) {
+            UUID jobId = (UUID) jobIdObj;
+            long remaining = ((Number) em.createNativeQuery(
+                    "SELECT COUNT(*) FROM material_price_update_job_item WHERE job_id = :jid")
+                .setParameter("jid", jobId)
+                .getSingleResult()).longValue();
+            if (remaining == 0) {
+                em.createNativeQuery("DELETE FROM material_price_update_job WHERE id = :jid")
+                    .setParameter("jid", jobId)
+                    .executeUpdate();
+                LOG.infof("cleanupPriceAdjustJobItems: job=%s 名下 item 已因本次删除清空，一并删除该批次记录（避免孤儿审计行）",
+                    jobId);
+            }
+        }
+    }
+
+    /**
+     * repair-0803（BL-0108 ②，价值最大的一条）：把外键阻塞的裸异常翻译成可读业务错误。
+     *
+     * <p>🔒 不依赖具体异常包装类型——Hibernate 的 DELETE 语句何时真正发给数据库不确定
+     * （可能在方法体内 flush 时同步执行，也可能被 {@code @Transactional} 拦截器延后到方法
+     * 返回后的提交阶段），沿途包装类可能是 {@code ConstraintViolationException} /
+     * {@code PersistenceException} / {@code RollbackException} 等，逐层猜类型必然漏。改为
+     * 沿 {@code getCause()} 链一路找**根 {@link java.sql.SQLException}**，按 SQLState=23503
+     * （{@code foreign_key_violation}，PostgreSQL 标准错误码，与具体 driver/ORM 包装方式无关）
+     * 精确判定，再从错误信息里抠出约束名查友好名映射。
+     *
+     * <p>本方法 {@link #delete} 里额外调用 {@code em.flush()} 就是为了让 FK 检查同步发生在
+     * try 块内（不外溢到方法体外的提交阶段），使这里的 catch 真正捕获得到。
+     *
+     * <p>映射表目前只登记本方法删除序列**已知未覆盖**的两个阻塞型 FK
+     * （{@code costing_order} 是 task-0713 引入，本次按 coordinator 裁定不做级联删除，只排查
+     * 报告，见 repair-0803 需求文档 §3）——未登记的约束名走通用兜底（报约束名本身），保证
+     * **任何**未来新增的阻塞型 FK 都不会再裸 500，而是至少报出约束名可供排查。
+     */
+    private static final Map<String, String> FK_BLOCKER_FRIENDLY_NAMES = Map.of(
+        "costing_order_quotation_id_fkey", "关联的核价单（costing_order）",
+        "material_price_update_job_item_quotation_id_fkey", "关联的价格调整任务明细（material_price_update_job_item）"
+    );
+
+    private RuntimeException translateDeleteFailure(UUID quotationId, Exception e) {
+        Throwable t = e;
+        while (t != null) {
+            if (t instanceof java.sql.SQLException sqlEx && "23503".equals(sqlEx.getSQLState())) {
+                String msg = sqlEx.getMessage();
+                String constraint = extractConstraintName(msg);
+                String friendly = constraint != null ? FK_BLOCKER_FRIENDLY_NAMES.get(constraint) : null;
+                if (friendly == null) {
+                    friendly = constraint != null ? ("数据表约束 " + constraint) : "未知的关联数据";
+                }
+                LOG.warnf("delete quotation=%s 被外键阻塞: constraint=%s msg=%s", quotationId, constraint, msg);
+                return new BusinessException(409, "无法删除该报价单：存在" + friendly + "，请先处理后再删除");
+            }
+            t = t.getCause();
+        }
+        // 非外键冲突的其它异常：原样上抛，不吞掉（GlobalExceptionMapper 的既有兜底继续生效）
+        LOG.errorf(e, "delete quotation=%s 失败（非已知外键阻塞）", quotationId);
+        return (e instanceof RuntimeException re) ? re : new RuntimeException(e);
+    }
+
+    private static String extractConstraintName(String pgMessage) {
+        if (pgMessage == null) return null;
+        // Postgres 消息形如: ERROR: update or delete on table "quotation" violates foreign key
+        // constraint "xxx_fkey" on table "yyy"
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("constraint \"([^\"]+)\"").matcher(pgMessage);
+        return m.find() ? m.group(1) : null;
     }
 
     /**
