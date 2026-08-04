@@ -378,6 +378,22 @@ export function evaluateExpression(
    * 不传（非 BOM 页签的既有调用点）= undefined → 两类 token 恒返 0，不影响既有行为。
    */
   treeCtx?: TreeEvalContext,
+  /**
+   * repair-0803：<b>宿主行</b>已算字段值（字段名 → 数值），供 {@code b_field} 在 {@code currentRow}
+   * 键缺失时回落 —— 修复 targetExpr 内 b_field 引用宿主 FORMULA 字段恒取 0 的问题。
+   *
+   * <p>为什么不能复用 {@code fieldValues}：在 cross_tab_ref.targetExpr 子求值（见下方 {@code
+   * evalRowExpr}）里，{@code fieldValues} 参数装的是<b>被聚合源页签当前行</b>的列（从 {@code ar}
+   * 灌入的 {@code aFieldValues}），而 {@code b_field} 语义恒为「宿主行的列」。两者必须分开，
+   * 否则 b_field 会串到源页签同名列上。与后端 {@code RowContext.hostFieldValues} 逐字对齐
+   * （见 FormulaCalculator.java :72-83）。
+   *
+   * <p>顶层调用（{@code computeAllFormulas}）传那个随算随更新的 {@code fieldValues}（同引用，
+   * 逐个公式算完即时更新，故 b_field 能取到刚算出的宿主公式值）；{@code cross_tab_ref} 递归求值时
+   * 原样透传（不并入 {@code aFieldValues}）。不传（老调用点）= undefined → 回落分支取不到值 → 行为
+   * 与修复前一致（零破坏）。
+   */
+  hostFieldValues?: Record<string, number>,
 ): number {
   // Build expression string from tokens
   let expr = '';
@@ -387,8 +403,24 @@ export function evaluateExpression(
         expr += (fieldValues[token.value!] ?? 0).toString();
         break;
       case 'b_field': {
-        const bv = Number(currentRow?.[token.value ?? '']);
-        expr += (isNaN(bv) ? 0 : bv).toString();
+        // repair-0803：宿主行原始值优先；键缺失时回落已算字段值（hostFieldValues）。
+        // 理由：FORMULA 字段的结果只写回 fieldValues（computeAllFormulas 逐个公式算完后
+        // `fieldValues[name] = val`），从不回填 currentRow；故不回落时，targetExpr 内引用
+        // 本页签公式列恒取 0（静默少算）。与后端 FormulaCalculator `case "b_field"` 逐字对齐。
+        // 键存在但为空串 '' = 用户显式置空 → 尊重置空、按 0 算，不回落（raw != null 即视为命中，
+        // 与后端 `raw != null ? toNumber(raw) : hostFieldValues.get(n)` 口径对称；JS 里 `raw != null`
+        // 的宽松相等天然覆盖 undefined/null 两种"键缺失"形态）。
+        const key = token.value ?? '';
+        const raw = currentRow?.[key];
+        let bv: number;
+        if (raw != null) {
+          const n = Number(raw);
+          bv = isNaN(n) ? 0 : n;
+        } else {
+          const hv = hostFieldValues?.[key];
+          bv = (typeof hv === 'number' && !isNaN(hv)) ? hv : 0;
+        }
+        expr += bv.toString();
         break;
       }
       case 'operator': {
@@ -569,6 +601,10 @@ export function evaluateExpression(
               crossTabRows,
               outDiag,      // 透传 diag 袋：内层 KAVG/KMAX/KMIN 空集写 crossTabError 穿透到最外层
               treeCtx,      // 防御性透传（cross_tab_ref.targetExpr 的白名单本不含 tree_attr，但透传无害）
+              // repair-0803：宿主已算字段值原样透传（不并入 aFieldValues —— 那里装的是源页签行的列，
+              // 混入会让 targetExpr 内的 b_field 串到源页签列上）。供 b_field 键缺失时回落。
+              // 与后端 `sub.hostFieldValues = ctx.hostFieldValues;`（targetRowValue :618）逐字对齐。
+              hostFieldValues,
             );
           };
 

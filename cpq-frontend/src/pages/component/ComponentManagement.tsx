@@ -30,6 +30,7 @@ import { newFormulaRow, TAB_TYPE_COLOR } from './types';
 import FieldConfigTable from './FieldConfigTable';
 import ComponentImportDrawer from './ComponentImportDrawer';
 import ConfigGuideDrawer from './ConfigGuideDrawer';
+import FormulaCycleDrawer, { type FormulaCycle } from './FormulaCycleDrawer';
 import SqlViewListPanel from './SqlViewListPanel';
 import TabJoinFormulaDrawer, { type TabJoinFormulaSavePayload } from '../template/TabJoinFormulaDrawer';
 import { tokensToDrawerExpression } from './formulaSerialize';
@@ -1044,6 +1045,9 @@ const ComponentManagement: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [loadingTree, setLoadingTree] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  // repair-0803 F4：公式循环引用抽屉（保存检出 errorType=FORMULA_CYCLE 时打开）。
+  const [cycleDrawerOpen, setCycleDrawerOpen] = useState(false);
+  const [formulaCycles, setFormulaCycles] = useState<FormulaCycle[]>([]);
 
   // ── 草稿自动写入 + 恢复 ──
   const baselineUpdatedAt = selectedComponent?.updatedAt;
@@ -1403,6 +1407,16 @@ const ComponentManagement: React.FC = () => {
       setSelectedComponent(res.data);
     } catch (e: unknown) {
       const err = e as { message?: string; payload?: any; response?: { data?: any } };
+      // repair-0803 F4：先判 errorType，走结构化环链路抽屉——禁止用 message 文本匹配判定
+      // （文案会变，errorType 才是契约，见 api.md §4）。双路兜底同 missingFields 惯例。
+      const cyclePayload = err?.payload?.errorType === 'FORMULA_CYCLE'
+        ? err.payload
+        : (err?.response?.data?.data?.errorType === 'FORMULA_CYCLE' ? err.response.data.data : undefined);
+      if (cyclePayload) {
+        setFormulaCycles(cyclePayload.cycles ?? []);
+        setCycleDrawerOpen(true);
+        return;
+      }
       // task-0729 屏 8：400 COMPONENT_ELEMENT_BINDING_REQUIRED → 对应下拉标 status='error'
       // （api.md §5.1 错误体是扁平结构，err.payload 惯例取的是嵌套 .data，这里双路兜底取 missingFields）。
       const missingFields: string[] | undefined = err?.payload?.missingFields ?? err?.response?.data?.missingFields;
@@ -1908,6 +1922,13 @@ const ComponentManagement: React.FC = () => {
       </div>
 
       <ConfigGuideDrawer open={guideOpen} onClose={() => setGuideOpen(false)} />
+
+      {/* repair-0803 F4：公式循环引用链路抽屉 */}
+      <FormulaCycleDrawer
+        open={cycleDrawerOpen}
+        cycles={formulaCycles}
+        onClose={() => setCycleDrawerOpen(false)}
+      />
 
       {/* 公式编辑：统一 TabJoinFormulaDrawer（页签/小计 → token；EXCEL → 字符串列） */}
       {selectedComponent && (

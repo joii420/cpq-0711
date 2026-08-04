@@ -34,8 +34,12 @@ interface Props {
   onClose: () => void;
   /** Candidate source (A) components — same directory, excluding current component */
   siblingComponents: SiblingComponent[];
-  /** Current (B) component fields, for B-side match column */
-  currentFields: Array<{ name: string; label?: string }>;
+  /**
+   * Current (B) component fields, for B-side match column.
+   * repair-0803 F6：field_type 可选传入 —— FORMULA 类型字段插入 b_field 时需在编辑区提示
+   * "该值将对每个匹配行各计入一次"（D-5：不禁用，只提示）。不传时按非公式字段处理（零回归）。
+   */
+  currentFields: Array<{ name: string; label?: string; field_type?: string }>;
   onConfirm: (token: CrossTabToken) => void;
 }
 
@@ -108,6 +112,8 @@ const CrossTabRefDrawer: React.FC<Props> = ({
   const [rawText, setRawText] = useState<string>('');
   const [rawError, setRawError] = useState<string>('');
   const manualEditRef = useRef(false);
+  // repair-0803 F6：选中 FORMULA 类型的本组件字段插入 b_field 后，编辑区提示"每个匹配行各计入一次"。
+  const [bFieldFormulaHint, setBFieldFormulaHint] = useState<string | null>(null);
 
   // Reset state when drawer opens or closes
   useEffect(() => {
@@ -126,6 +132,7 @@ const CrossTabRefDrawer: React.FC<Props> = ({
       setRawText('');
       setRawError('');
       manualEditRef.current = false;
+      setBFieldFormulaHint(null);
     }
   }, [open]);
 
@@ -488,17 +495,44 @@ const CrossTabRefDrawer: React.FC<Props> = ({
                       style={{ width: 160 }}
                       placeholder="选择本组件字段"
                       value={bFieldSel}
-                      options={currentFields.map((f) => ({ label: fieldText(f), value: f.name }))}
+                      // repair-0803 F6：option 标注类型（FORMULA 字段追加"(公式)"后缀），
+                      // 不禁用该选项（D-5：不堵，只提示）；label 保持纯字符串以不破坏默认 showSearch 文本匹配。
+                      options={currentFields.map((f) => ({
+                        label: f.field_type === 'FORMULA' ? `${fieldText(f)} (公式)` : fieldText(f),
+                        value: f.name,
+                      }))}
                       onChange={(v) => {
                         const f = currentFields.find((x) => x.name === v);
                         if (f) {
                           appendToken({ type: 'b_field', value: f.name, label: fieldText(f) });
+                          // repair-0803 F6：选中 FORMULA 字段插入 b_field 后，明确告知该值将对每个匹配行各计入一次。
+                          setBFieldFormulaHint(
+                            f.field_type === 'FORMULA'
+                              ? `「${fieldText(f)}」是公式列，写在 SUM 内时将对每个匹配行各计入一次；若只需整单计一次，请写在 SUM 外。`
+                              : null,
+                          );
                         }
                         setBFieldSel(undefined);
                       }}
                       showSearch
                     />
                   </div>
+
+                  {bFieldFormulaHint && (
+                    <div
+                      style={{
+                        color: '#d46b08',
+                        fontSize: 12,
+                        lineHeight: 1.6,
+                        background: '#fffbe6',
+                        border: '1px solid #ffe58f',
+                        borderRadius: 4,
+                        padding: '6px 10px',
+                      }}
+                    >
+                      ⚠️ {bFieldFormulaHint}
+                    </div>
+                  )}
 
                   {/* Insert controls row 2: 运算符 + 数字 */}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>

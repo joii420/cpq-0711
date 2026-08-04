@@ -413,12 +413,33 @@ function resolveFormula(
   return undefined;
 }
 
-/** Get dependency field names from a formula expression (only 'field' type tokens) */
+/**
+ * repair-0803：递归收集依赖，使 SUM(...) 的 targetExpr 内引用宿主字段也进算序。
+ * 与后端 FormulaCalculator.addExprFieldDeps（五参重载，带 inTargetExpr 标志）逐字对齐：
+ *
+ * - 任意层级的 b_field → 收（其语义恒为「宿主行的列」，求值走 currentRow → hostFieldValues 回落）。
+ * - 仅顶层的 field → 收；targetExpr 内的 field 指的是被聚合源页签的列（求值时从 ar 灌进子上下文的
+ *   fieldValues），与宿主同名纯属巧合，不得计为宿主依赖，否则会凭空建边甚至误报环。
+ * - 遇 projectToHostKey=true（KSUM 子 token）即停止下探——其 inner 白名单本就拒 b_field，
+ *   继续下探无意义。
+ */
+function collectExprFieldDeps(expr: any[] | undefined, out: string[], inTargetExpr: boolean): void {
+  if (!expr) return;
+  for (const t of expr) {
+    const type = t?.type;
+    if (type === 'b_field' || (!inTargetExpr && type === 'field')) {
+      if (t.value) out.push(t.value as string);
+    } else if (type === 'cross_tab_ref' && !t.projectToHostKey) {
+      collectExprFieldDeps(t.targetExpr, out, true);
+    }
+  }
+}
+
+/** Get dependency field names from a formula expression (top-level 'field' tokens + any-level 'b_field' in targetExpr, repair-0803). */
 function getFormulaDeps(formula: ComponentFormula): string[] {
-  if (!formula.expression) return [];
-  return formula.expression
-    .filter((t: any) => t.type === 'field' && t.value)
-    .map((t: any) => t.value as string);
+  const out: string[] = [];
+  collectExprFieldDeps(formula.expression as any[] | undefined, out, false);
+  return out;
 }
 
 /**
@@ -717,7 +738,10 @@ function computeAllFormulas(
         ? evaluateExpression(
             expr, fieldValues, allComponentSubtotals || {}, undefined, quotationFields,
             pathCache, partNo, basicDataValues, prevForField, globalVariableDefs, currentRowForEval, crossTabRows,
-            diag,
+            diag, undefined,
+            // repair-0803：宿主已算字段值通道 —— 同一份 fieldValues 引用，随本循环逐个公式算完
+            // 即时更新，供 targetExpr 内 b_field 引用宿主 FORMULA 字段时回落取到"本行已算出的值"。
+            fieldValues,
           )
         : null;
       results[name] = val;
@@ -1143,6 +1167,9 @@ export function computeTabFormulasTree(
         expr, bundle.fieldValues, allComponentSubtotals || {}, undefined, quotationFields,
         pathCache, partNo, rows[cell.row].basicDataValues, undefined /* BOM 页签禁用 PREV，需求 §4.3.7 */,
         globalVariableDefs, bundle.currentRowForEval, crossTabRows, undefined, treeCtx,
+        // repair-0803：该行自己的 fieldValues 即其 hostFieldValues（与后端 buildRowEvalCtx 对每行
+        // 统一 `ctx.hostFieldValues = fieldValues` 的结构对称，逐行求值/单元格拓扑求值两条路径同源）。
+        bundle.fieldValues,
       ) : null;
     } catch {
       val = null;

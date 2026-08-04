@@ -31,6 +31,7 @@ import ViewToggle from './ViewToggle';
 import ExcelViewConfigTab from './ExcelViewConfigTab';
 import TemplateFormulasPanel from './TemplateFormulasPanel';
 import TemplateSqlViewsTab from './TemplateSqlViewsTab';
+import FormulaCycleDrawer, { type FormulaCycle } from '../component/FormulaCycleDrawer';
 import './styles.css';
 
 const { Text } = Typography;
@@ -56,6 +57,9 @@ const TemplateConfiguration: React.FC = () => {
   // presetRowsMap: tcId -> rows
   const [presetRowsMap, setPresetRowsMap] = useState<Record<string, any[]>>({});
   const [customers, setCustomers] = useState<{ id: string; name: string }[]>([]);
+  // repair-0803 F5：公式循环引用链路抽屉（发布检出 errorType=FORMULA_CYCLE 时打开，scope=TAB）。
+  const [cycleDrawerOpen, setCycleDrawerOpen] = useState(false);
+  const [formulaCycles, setFormulaCycles] = useState<FormulaCycle[]>([]);
   const [form] = Form.useForm();
   const autoSaveTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -328,6 +332,17 @@ const TemplateConfiguration: React.FC = () => {
       message.success('发布成功');
       await loadTemplate();
     } catch (e: any) {
+      // repair-0803 F5：先判 errorType，走结构化环链路抽屉（scope=TAB）——禁止用 message 文本匹配判定
+      // （文案会变，errorType 才是契约，见 api.md §4）。双路兜底：err.payload（api.ts 拦截器解包）
+      // 优先，err.response.data.data 兜底（防御未经拦截器包装的调用路径）。
+      const cyclePayload = e?.payload?.errorType === 'FORMULA_CYCLE'
+        ? e.payload
+        : (e?.response?.data?.data?.errorType === 'FORMULA_CYCLE' ? e.response.data.data : undefined);
+      if (cyclePayload) {
+        setFormulaCycles(cyclePayload.cycles ?? []);
+        setCycleDrawerOpen(true);
+        return;
+      }
       message.error(e.message || '发布失败');
     }
   };
@@ -596,6 +611,12 @@ const TemplateConfiguration: React.FC = () => {
         )
       ) : null}
     </DragOverlay>
+    {/* repair-0803 F5：公式循环引用链路抽屉（发布检出页签级环时打开） */}
+    <FormulaCycleDrawer
+      open={cycleDrawerOpen}
+      cycles={formulaCycles}
+      onClose={() => setCycleDrawerOpen(false)}
+    />
     </DndContext>
   );
 };
