@@ -39,7 +39,6 @@ public class PriceAdjustJobExecutionService {
     @Inject MaterialVersionUpgradeService materialVersionUpgradeService;
     @Inject PriceAdjustNotificationService notificationService;
 
-    @ActivateRequestContext
     public void executeJob(UUID jobId) {
         List<MaterialPriceUpdateJobItem> items = loadWaitingItems(jobId);
         LOG.infof("[price-adjust-job] executeJob jobId=%s items=%d", jobId, items.size());
@@ -60,7 +59,18 @@ public class PriceAdjustJobExecutionService {
             "jobId = ?1 and status in (?2, ?3)", jobId, MaterialPriceUpdateJobItem.WAITING, MaterialPriceUpdateJobItem.CONFLICT);
     }
 
-    /** 单条明细：找目标版本 + 调用真实升版（dryRun=false），逐条独立事务提交。 */
+    /**
+     * 单条明细：找目标版本 + 调用真实升版（dryRun=false），逐条独立事务提交。
+     *
+     * <p>task-0729 debug（2026-08-03）真根因修复：{@code @ActivateRequestContext} 从
+     * {@link #executeJob} 下移到本方法——原先挂在 {@code executeJob} 上时，request-scoped bean
+     * （如 {@code DataLoader}）在嵌套进本方法的 {@code @Transactional(REQUIRES_NEW)} 后无法解析，
+     * 实测在每个 job item 上 100% 抛 {@code ContextNotActiveException}（272 次/34 项批次），
+     * 被 {@code BomTreeRenderService} §④ 逐组件 catch 静默吞掉，导致「物料与元素BOM」等全部
+     * driver 组件页签清零、却仍报 {@code SUCCESS}。挂在本方法（即 REQUIRES_NEW 事务边界本身）
+     * 上后，request context 与该事务同生命周期，验证通过。
+     */
+    @ActivateRequestContext
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     void executeItem(UUID itemId) {
         MaterialPriceUpdateJobItem item = MaterialPriceUpdateJobItem.findById(itemId);

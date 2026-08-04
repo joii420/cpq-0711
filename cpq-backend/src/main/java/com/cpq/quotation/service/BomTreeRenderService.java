@@ -242,6 +242,14 @@ public class BomTreeRenderService {
         // （见 SqlViewExecutor#injectCostingTreeVars），故此处仍可一次 set/clear 覆盖整个循环。
         Map<String, Map<String, List<ExpandDriverResponse.Row>>> rowsByCompThenMaterial = new LinkedHashMap<>();
         Set<String> treeTabCompIds = new HashSet<>();
+        // task-0729 debug（2026-08-03）真根因修复 #2：区分「合法 0 行」与「expand 异常导致的 0 行」。
+        // 原先 §④ 每组件 catch(Exception) 只打 WARN、囫囵吞掉——render() 照常返回、上游 upgrade()
+        // 照常报 SUCCESS，但该组件（乃至整卡片）的业务行已经悄悄清零。实测这类异常在 job 执行器路径下
+        // 100% 可复现（ContextNotActiveException，见 executeItem 的 @ActivateRequestContext 修复），
+        // 却因为这个 catch 连续躲过 8 轮排查。现在：异常仍然逐组件捕获（不因一个组件失败打断其余组件
+        // 的展开循环），但循环结束后若有任何组件真正抛过异常，整体 render() 必须失败退出，不能带着
+        // 部分组件的空数据冒充成功。
+        Map<String, String> failedComponents = new LinkedHashMap<>();
         BomTreeVarsContext.set(new BomTreeVarsContext.Vars(null, g.totalMaterialNo, overrides));
         try {
             for (Object[] dc : driverComps) {
@@ -308,12 +316,23 @@ public class BomTreeRenderService {
                         }
                     }
                 } catch (Exception e) {
-                    LOG.warnf("[costing-tree-render] expand comp=%s failed: %s", cidStr, e.getMessage());
+                    LOG.errorf(e, "[costing-tree-render] expand comp=%s failed: %s", cidStr, e.getMessage());
+                    failedComponents.put(cidStr, e.getClass().getSimpleName() + ": " + e.getMessage());
                 }
                 rowsByCompThenMaterial.put(cidStr, byKey);
             }
         } finally {
             BomTreeVarsContext.clear();
+        }
+        if (!failedComponents.isEmpty()) {
+            // 🔒 不能把「组件 expand 抛异常」悄悄降级成「该组件 0 行」——那会让 upgrade() 误报
+            // SUCCESS（真实案例：ContextNotActiveException 272 次全被吞，核价卡片 17 个 tab 清零，
+            // job 却全部标记 SUCCESS）。整体抛出，交由调用方（S5 的 upgrade()）作为失败处理，
+            // 走既有 FAILED/重试通道，而不是带着残缺数据静默"成功"。
+            throw new BusinessException(500, "核价树渲染失败：" + failedComponents.size() + " 个组件 expand 抛异常（"
+                + String.join("; ", failedComponents.entrySet().stream()
+                    .map(e -> e.getKey() + "=" + e.getValue()).toList())
+                + "），为避免残缺数据冒充成功，本次渲染整体失败");
         }
 
         // ⑤ 逐卡逐组件装 baseRows

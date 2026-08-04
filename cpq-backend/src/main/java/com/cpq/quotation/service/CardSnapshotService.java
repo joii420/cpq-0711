@@ -862,13 +862,30 @@ public class CardSnapshotService {
         Map<UUID, Map<String, ExpandDriverResponse>> unionByComp = precomputeCostingDriverUnion(quotationId);
         // Task 3.1 事项B：含树页签 → 整单一次调 BomTreeRenderService.render；不含 → 恒空 map，逐 li 走老路径。
         Map<UUID, Map<String, ArrayNode>> treeBaseRowsByLine = java.util.Collections.emptyMap();
+        // task-0729 debug（2026-08-03）真根因修复 #2 的连带调整：render() 现在对 expand 异常整体抛出
+        // （不再悄悄吞成 0 行冒充成功，见 BomTreeRenderService §④）。本方法原先对 render() 调用零保护，
+        // 若不接住会让整单批量刷新因为一个组件的偶发异常直接 500、其余行也跟着刷新失败。同款
+        // costingRenderError 哨兵处理（BL-0030 既有模式，见 snapshotNewLinesCardValues:516-523）：
+        // 渲染失败 → 逐行落带原文的失败哨兵，不上抛、不影响报价侧。
+        String costingRenderError = null;
         if (templateHasTreeTab(q.costingCardTemplateId)) {
-            treeBaseRowsByLine = bomTreeRenderService.render(q.costingCardTemplateId, lines);
+            try {
+                treeBaseRowsByLine = bomTreeRenderService.render(q.costingCardTemplateId, lines);
+            } catch (Exception e) {
+                costingRenderError = "核价渲染失败: " + e.getMessage();
+                LOG.errorf("[costing-tree-render] 整单渲染失败 quotation=%s → 落错误哨兵透出前端: %s",
+                        quotationId, e.getMessage());
+            }
         }
+        final String _costingRenderError = costingRenderError;
         for (QuotationLineItem li : lines) {
             try {
                 QuotationLineItem managed = QuotationLineItem.findById(li.id);
                 if (managed == null) continue;
+                if (_costingRenderError != null) {
+                    managed.costingCardValues = failedSentinelWithError(_costingRenderError);
+                    continue;
+                }
                 Map<String, ArrayNode> precomputed = treeBaseRowsByLine.get(li.id);
                 managed.costingCardValues = safeCall(() ->
                     buildCostingCardValues(managed, q.costingCardTemplateId, q.customerId, q.id, unionByComp, null,
@@ -889,6 +906,15 @@ public class CardSnapshotService {
      * 会重算该报价单下**全部** line item，违反「只对被升版的料号行执行重算，不碰其他行」的隔离纪律
      * （硬约束 1 / 验收 #14 双向断言：通过料号 A 后，料号 B 的 costing_card_values 必须逐字节不变）。
      * 本方法是同一段单行循环体的独立抽出，只写传入的这一个 {@code lineItemId}。
+     *
+     * <p>🔒 <b>刻意不接住 {@code render()} 的异常</b>（与 {@link #refreshCostingCardValues} /
+     * {@link #snapshotNewLinesCardValues} 的 costingRenderError 哨兵模式不同）——本方法唯一的
+     * 生产调用方是 {@code MaterialVersionUpgradeService.upgrade()} 的 S5，异常必须原样上抛，
+     * 让 {@code PriceAdjustJobExecutionService.executeJob} 的既有 catch 把该 job item 标记
+     * {@code FAILED} 并整体事务回滚（不留残缺数据），而不是把「组件 expand 失败」悄悄降级成
+     * 「该组件 0 行 + item 报 SUCCESS」（task-0729 debug 2026-08-03 真实案例：272 次
+     * ContextNotActiveException 被吞，核价卡片全清零却全报成功）。谁要在此加哨兵兜底前，先确认
+     * 没有破坏这条「升版失败必须可见」的硬约束。
      */
     @Transactional
     public void refreshCostingCardValuesForLine(UUID lineItemId) {
