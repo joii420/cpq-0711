@@ -14,6 +14,8 @@ export interface TabDef {
   subtotalCols: string[];
   /** 后端标记:该 tabDef 是否为当前被编辑(宿主)组件(ComponentTabDefService 注入) */
   self?: boolean;
+  /** task-0803：该页签的类型。='BOM' 时 SUMIF 条件字段下拉追加三个树属性保留字。 */
+  tabType?: string;
 }
 
 // api 响应拦截器已 return response.data，所以调用层拿到的是 {code, message, data} 信封，需手动 .data 解包
