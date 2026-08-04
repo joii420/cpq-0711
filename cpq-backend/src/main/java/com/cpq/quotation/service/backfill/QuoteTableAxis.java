@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * task-0721 报价数据版本升级 · B5 —— 7 张版本化表的「组轴（groupKey）/ 版本列 / 主从关系」静态登记表。
+ * task-0721 报价数据版本升级 · B5 —— 8 张版本化表的「组轴（groupKey）/ 版本列 / 主从关系」静态登记表。
  *
  * <p><b>为什么要硬编码</b>：{@code unit_price} 被 10+ 个 QUOTE 侧 Handler（Q01/Q06~Q11/Q13/Q15/Q17）
  * 用不同的 {@code price_type} 子集共享，各 Handler 的 {@code groupKeyOf} Map 只放自己关心的列
@@ -32,7 +32,7 @@ final class QuoteTableAxis {
         "id", "created_at", "updated_at", "created_by", "updated_by", "is_current", "source",
         "pending_quotation_id", "pending_supersedes");
 
-    /** 单表（非主从）7 张受管表中的 4 张：unit_price / capacity / plating_scheme。 */
+    /** 单表（非主从）8 张受管表中的 4 张：unit_price / capacity / plating_scheme / annual_discount。 */
     static final class Spec {
         final String table;
         final String versionColumn;
@@ -121,7 +121,7 @@ final class QuoteTableAxis {
             "hf_part_no", "production_no"),
         new MasterSpec("element_bom", "characteristic", List.of("bom_type")));
 
-    /** 按表名取登记的轴定义；未登记（非 7 张受管表之一）返回 null。 */
+    /** 按表名取登记的轴定义；未登记（非 8 张受管表之一）返回 null。 */
     static Spec of(String table) {
         return switch (table) {
             case "unit_price" -> UNIT_PRICE;

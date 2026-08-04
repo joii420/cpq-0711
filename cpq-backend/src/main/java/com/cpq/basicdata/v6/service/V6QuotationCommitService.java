@@ -114,7 +114,7 @@ public class V6QuotationCommitService {
         // task-0721 B2：pending 归属"过户"——报价基础数据导入(QuoteImportService.processImport)
         // 发生在建单之前，当时无 quotationId 可用，暂用 importRecordId 当 pending 归属 key 落库
         // （见 ImportContext#pendingQuotationId javadoc）。此刻真实 quotationId 已产生，同事务内把
-        // 7 张表 + 占号表里 pending_quotation_id=importRecordId 的行统一改为 pending_quotation_id=q.id，
+        // 8 张表 + 占号表里 pending_quotation_id=importRecordId 的行统一改为 pending_quotation_id=q.id，
         // 与 B3（SqlViewRuntimeContext.quotationId 驱动的视图改写）/B4（快照回填）的 owner key 对齐。
         repointPendingOwnership(req.importRecordId, q.id);
 
@@ -129,7 +129,7 @@ public class V6QuotationCommitService {
     }
 
     /**
-     * task-0721 B2：把 7 张版本化表 + 占号表里 {@code pending_quotation_id = importRecordId} 的行
+     * task-0721 B2：把 8 张版本化表 + 占号表里 {@code pending_quotation_id = importRecordId} 的行
      * 全部改为 {@code pending_quotation_id = quotationId}（单表 UPDATE，无 N+1，同调用方事务内）。
      * importRecordId == quotationId（理论不会发生，两者来自不同序列）时天然 no-op。
      */

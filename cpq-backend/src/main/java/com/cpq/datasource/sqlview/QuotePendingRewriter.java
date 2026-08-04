@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
  *       {@link #rewrite(String, Connection, boolean)} 内联注释。</li>
  * </ol>
  *
- * <p><b>安全降级</b>：找不到白名单主位表（如整个模板压根不碰这 7 张表，或主位是非白名单表如
+ * <p><b>安全降级</b>：找不到白名单主位表（如整个模板压根不碰这 8 张表，或主位是非白名单表如
  * {@code material_customer_map}；或 set-op 场景全部分支都未命中）→ {@code anchorInjected=false}，
  * 不参与回填（该页签只读展示），不代表改写失败。真正的"改写失败"由启动期硬校验
  * （{@link QuoteViewValidationService}）兜底。

@@ -264,7 +264,7 @@ public class QuoteImportService {
 
     /**
      * task-0721 B2：重导覆盖 —— 同一 pending 归属 key（此刻 = importRecordId；createQuotation 后
-     * = quotationId，见 backtask B2 第 4 点）再次导入前，先清掉 7 张版本化表 + 占号表里属于它的旧
+     * = quotationId，见 backtask B2 第 4 点）再次导入前，先清掉 8 张版本化表 + 占号表里属于它的旧
      * pending 残留行，再走本次 pending 写入。当前 UI 流程每次上传都会铸新 importRecordId（不存在
      * "同一 importRecordId 再导一次"的真实调用路径），此清理对首次导入是 no-op（0 行），为未来
      * 若开放"报价单创建前多次重传同一草稿"预留正确性保障，零风险。

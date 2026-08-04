@@ -1300,7 +1300,7 @@ public class QuotationService {
         if (!"SUBMITTED".equals(q.status)) throw new BusinessException(400, "仅待核价(SUBMITTED)可核价通过");
         if (!isFinanceOrAdmin(currentUserId)) throw new BusinessException(403, "仅财务/管理员可核价");
 
-        // task-0721 B5：回填 7 张表升版 + B9 主档促升 + B7 占号表闸门翻转 + 本单 pending 残留清理，
+        // task-0721 B5：回填 8 张表升版 + B9 主档促升 + B7 占号表闸门翻转 + 本单 pending 残留清理，
         // 与状态机翻转同一事务（失败整体回滚，报价单保持 SUBMITTED，pending 保留可重试，backtask B5.4）。
         com.cpq.quotation.service.backfill.QuoteBackfillService.Summary backfillSummary =
             quoteBackfillService.execute(id, currentUserId);
@@ -1362,7 +1362,7 @@ public class QuotationService {
     /**
      * task-0721 B8 状态机：撤回<b>不回滚</b>已回填的 V6 数据（需求说明 §4.3 规则七"撤回已通过：不回滚
      * （避免抽走下游已引用的新版本数据）"）。已 APPROVED 撤回时，B5 的回填早已在核价通过那一刻完成，
-     * 7 张表 pending 行也已清理，此处除了状态流转（回 DRAFT）外，故意不做任何 V6 层面的补偿/逆操作。
+     * 8 张表 pending 行也已清理，此处除了状态流转（回 DRAFT）外，故意不做任何 V6 层面的补偿/逆操作。
      */
     @Transactional
     public QuotationDTO withdraw(UUID id, UUID currentUserId) {
