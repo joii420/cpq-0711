@@ -1448,5 +1448,118 @@
         "是否叶子": 1
       }
     }
+  },
+  {
+    "name": "用户问题-除零 2/PGET(...) 三种取不到值的情形",
+    "_doc": "用户 2026-08-03 提问：公式写 2/PGET(父列)，若 PGET 无值或为 0，是除以 0 还是除以 1？本用例用三种「取不到值」的情形固化答案：①根行无父 ②父行存在但该列为空 ③父行该列真的是 0。三者 PGET 一律返 0（§4.3.3「全部返 0，无例外」），故式子恒为 2/0。两端除零语义均为「整式返 0，不抛异常、不出 Infinity」（后端 PrecisionPolicy.divide:54 signum()==0 → ZERO；前端 precision.ts ArithDecimalParser.term:175 r.isZero() → Decimal(0)）。结论：**除数是 0 不是 1，结果 0**；引擎不会区分「没值」与「真的是 0」。n4 是对照组，父列有值 4 → 2/4 = 0.5，证明本用例的 0 确实来自除零而非公式没跑。",
+    "fields": [
+      {
+        "name": "数值",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "倒数",
+        "field_type": "FORMULA"
+      }
+    ],
+    "formulas": [
+      {
+        "name": "倒数",
+        "expression": [
+          {
+            "type": "number",
+            "value": 2
+          },
+          {
+            "type": "operator",
+            "value": "/"
+          },
+          {
+            "type": "tree_ref",
+            "dir": "PARENT",
+            "agg": "NONE",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rows": [
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 1,
+        "values": {
+          "数值": 9
+        }
+      },
+      {
+        "nodeId": "n2",
+        "parentId": "NOPE",
+        "lvl": 2,
+        "values": {}
+      },
+      {
+        "nodeId": "n3",
+        "parentId": "P_EMPTY",
+        "lvl": 2,
+        "values": {}
+      },
+      {
+        "nodeId": "P_EMPTY",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {}
+      },
+      {
+        "nodeId": "n5",
+        "parentId": "P_ZERO",
+        "lvl": 2,
+        "values": {}
+      },
+      {
+        "nodeId": "P_ZERO",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {
+          "数值": 0
+        }
+      },
+      {
+        "nodeId": "n7",
+        "parentId": "P_FOUR",
+        "lvl": 2,
+        "values": {}
+      },
+      {
+        "nodeId": "P_FOUR",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {
+          "数值": 4
+        }
+      }
+    ],
+    "expected": {
+      "0": {
+        "倒数": 0
+      },
+      "1": {
+        "倒数": 0
+      },
+      "2": {
+        "倒数": 0
+      },
+      "4": {
+        "倒数": 0
+      },
+      "6": {
+        "倒数": 0.5
+      }
+    }
   }
 ]
