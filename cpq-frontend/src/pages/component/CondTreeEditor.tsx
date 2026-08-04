@@ -16,7 +16,7 @@ export const emptyGroup = (): CondTree => ({ kind: 'group', logic: 'and', childr
 interface Props {
   value: CondTree;
   onChange: (next: CondTree) => void;
-  columnOptions: { label: string; value: string }[];
+  columnOptions: { label: string; value: string; disabled?: boolean; title?: string }[];
   onRemove?: () => void;
   depth?: number;
 }

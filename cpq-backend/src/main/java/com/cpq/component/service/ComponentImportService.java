@@ -353,7 +353,7 @@ public class ComponentImportService {
 
                 // task-0803 Task5⑤：同一循环里跑闸①②④（父子取值 tabType 联动 + BOM 禁 PREV），
                 // 不留导入这条路径绕过配置期校验的口子。c.tabType 已在第一遍(persist 前)写入。
-                componentService.assertTreeTokenGates(c.tabType, c.formulas);
+                componentService.assertTreeTokenGates(c.tabType, c.formulas, c.fields);
             } catch (BusinessException e) {
                 // 校验闸门抛出的是业务语义 400（非结构解析失败），保留原始 code，只加上下文前缀。
                 throw new BusinessException(e.getCode(),

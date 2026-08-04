@@ -115,6 +115,13 @@ public class ComponentService {
                         "该组件公式中已使用父子取值（tree_ref/tree_attr），不能将 tabType 从 BOM 改为「" +
                         (normalized == null ? "(空)" : normalized) + "」。请先删除公式中的父子取值引用，再修改 tabType。");
                 }
+                // task-0803（2026-08-04）：条件公式的 when 里用树属性同样要拦 —— 与闸②-b 对称。
+                // 漏了这条会出现「正着存不进去、但先建成 BOM 再改类型就能留下」的绕过路径。
+                if (wasBom && fieldsContainCondTreeAttr(component.fields)) {
+                    throw new BusinessException(400,
+                        "该组件已有字段的条件公式使用了树属性（[层级]/[是否叶子]/[是否根]），不能将 tabType 从 BOM 改为「" +
+                        (normalized == null ? "(空)" : normalized) + "」。请先删除条件中的树属性引用，再修改 tabType。");
+                }
                 component.bomRecursiveExpand = Boolean.FALSE;
             }
             component.tabType = normalized;
@@ -171,7 +178,61 @@ public class ComponentService {
      * @param tabType      组件【本次保存后生效】的最终 tabType（null/非 "BOM" 均按"非 BOM"处理）
      * @param formulasJson 组件【本次保存后生效】的最终 formulas JSON 字符串
      */
+    /** 组件任一字段的条件公式是否引用了树属性保留字（闸③反向闸用）。 */
+    private boolean fieldsContainCondTreeAttr(String fieldsJson) {
+        if (fieldsJson == null || fieldsJson.isBlank()) return false;
+        for (Map<String, Object> field : parseList(fieldsJson)) {
+            Object cfObj = field.get("conditional_formula");
+            if (cfObj == null) cfObj = field.get("conditionalFormula");
+            if (!(cfObj instanceof Map<?, ?> cf)) continue;
+            if (!(cf.get("rules") instanceof List<?> rules)) continue;
+            for (Object rObj : rules) {
+                if (rObj instanceof Map<?, ?> rule && condTreeUsesTreeAttrRaw(rule.get("when"))) return true;
+            }
+        }
+        return false;
+    }
+
+    /** 树属性保留字。与前端 condTree.TREE_ATTR_COLS / FormulaCalculator.TREE_ATTR_COLS 三处逐字同步。 */
+    private static final java.util.Set<String> TREE_ATTR_COLS =
+        java.util.Set.of("层级", "是否叶子", "是否根");
+
+    /** 递归判断一棵原始 Map 形态的 CondTree 是否引用树属性保留字（leaf.left 与 column 型 rhs 都算）。 */
+    @SuppressWarnings("unchecked")
+    private static boolean condTreeUsesTreeAttrRaw(Object when) {
+        if (!(when instanceof Map<?, ?> node)) return false;
+        Object kind = node.get("kind");
+        if ("group".equals(kind)) {
+            Object children = node.get("children");
+            if (children instanceof List<?> list) {
+                for (Object c : list) if (condTreeUsesTreeAttrRaw(c)) return true;
+            }
+            return false;
+        }
+        Object left = node.get("left");
+        if (left != null && TREE_ATTR_COLS.contains(left.toString())) return true;
+        Object rhs = node.get("rhs");
+        if (rhs instanceof Map<?, ?> r && "column".equals(r.get("type"))) {
+            Object v = r.get("value");
+            return v != null && TREE_ATTR_COLS.contains(v.toString());
+        }
+        return false;
+    }
+
+    /**
+     * 兼容重载：不校验条件公式（老调用点 / 单测用）。新代码请用三参版。
+     */
     void assertTreeTokenGates(String tabType, String formulasJson) {
+        assertTreeTokenGates(tabType, formulasJson, null);
+    }
+
+    /**
+     * @param fieldsJson 组件字段 JSON。task-0803（2026-08-04）：条件公式的 {@code when} 里也能用
+     *        树属性保留字（[层级]/[是否叶子]/[是否根]），而 {@code conditional_formula} 挂在
+     *        <b>fields</b> 上、不在 formulas 里 —— 只扫 formulas 会让非 BOM 页签把
+     *        「按 [是否叶子] 分流」的条件存进库，绕过闸②。传 null 表示跳过该项校验（兼容重载）。
+     */
+    void assertTreeTokenGates(String tabType, String formulasJson, String fieldsJson) {
         List<Map<String, Object>> formulas = parseList(formulasJson);
         boolean isBom = "BOM".equals(tabType);
         TokenMappabilityValidator innerValidator = new TokenMappabilityValidator();
@@ -216,6 +277,28 @@ public class ComponentService {
                     "公式「" + formulaName + "」使用了 previous_row_subtotal（上一行取值），" +
                     "BOM 树页签禁止使用该 token（树展开后的「上一行」可能是父/兄弟/叔叔的孙子，" +
                     "语义模糊；如需父子间取值请改用 tree_ref）。");
+            }
+        }
+
+        // ── 闸②-b（task-0803 2026-08-04）：条件公式 when 里的树属性保留字 ──
+        // conditional_formula 在 fields 上，上面那轮只扫了 formulas.expression，扫不到条件。
+        if (fieldsJson != null && !isBom) {
+            for (Map<String, Object> field : parseList(fieldsJson)) {
+                Object cfObj = field.get("conditional_formula");
+                if (cfObj == null) cfObj = field.get("conditionalFormula");
+                if (!(cfObj instanceof Map<?, ?> cf)) continue;
+                Object rulesObj = cf.get("rules");
+                if (!(rulesObj instanceof List<?> rules)) continue;
+                for (Object rObj : rules) {
+                    if (!(rObj instanceof Map<?, ?> rule)) continue;
+                    if (!condTreeUsesTreeAttrRaw(rule.get("when"))) continue;
+                    Object fn = field.get("name");
+                    throw new BusinessException(400,
+                        "字段「" + (fn == null || fn.toString().isBlank() ? "(未命名)" : fn)
+                        + "」的条件公式使用了树属性（[层级]/[是否叶子]/[是否根]），"
+                        + "该功能仅支持 tabType=\"BOM\" 的树页签组件，当前组件 tabType="
+                        + (tabType == null || tabType.isBlank() ? "(未配置)" : tabType) + "。");
+                }
             }
         }
     }
@@ -502,7 +585,7 @@ public class ComponentService {
         applyTabType(component, request.tabType, request.partNoField, request.partNameField);
         // task-0803 Task5 闸①②④：父子取值(tree_ref/tree_attr) + previous_row_subtotal 的
         // tabType 联动校验，必须在 applyTabType 之后跑(此时 component.tabType 已是最终生效值)。
-        assertTreeTokenGates(component.tabType, component.formulas);
+        assertTreeTokenGates(component.tabType, component.formulas, component.fields);
         // task-0722：行排序列(可空)。非 null 时覆盖(空串=清空)。
         if (request.sortField != null) component.sortField = request.sortField.isBlank() ? null : request.sortField;
 
@@ -623,7 +706,7 @@ public class ComponentService {
         // task-0803 Task5 闸①②④：父子取值(tree_ref/tree_attr) + previous_row_subtotal 的
         // tabType 联动校验，必须在 applyTabType 之后跑(此时 component.tabType 已是最终生效值，
         // component.formulas 也已是本次保存后生效的最终值)。
-        assertTreeTokenGates(component.tabType, component.formulas);
+        assertTreeTokenGates(component.tabType, component.formulas, component.fields);
         // task-0722：行排序列(可空)。非 null 时覆盖(空串=清空)。
         if (request.sortField != null) component.sortField = request.sortField.isBlank() ? null : request.sortField;
 

@@ -55,6 +55,23 @@ function toNum(v: any): number | null {
   return isNaN(n) ? null : n;
 }
 
+/**
+ * task-0803（2026-08-04）：条件公式里的树属性保留字。与表达式内口径逐字一致
+ * （`pages/component/formulaSerialize.ts` 的 TREE_ATTR_RESERVED 键）与后端
+ * `FormulaCalculator.TREE_ATTR_COLS` 三处必须同步。
+ *
+ * 🔒 保留字**优先于同名列** —— 与表达式内一致；实现上由各 lookup 在最前面拦截。
+ */
+export const TREE_ATTR_COLS = new Set(['层级', '是否叶子', '是否根']);
+
+/** 条件树里是否用到树属性保留字（供路由判据 + 保存期闸门用；leaf.left 与 column 型 rhs 都算）。 */
+export function condTreeUsesTreeAttr(tree: CondTree | null | undefined): boolean {
+  if (!tree) return false;
+  if (tree.kind === 'group') return (tree.children || []).some(condTreeUsesTreeAttr);
+  if (TREE_ATTR_COLS.has(tree.left)) return true;
+  return tree.rhs.type === 'column' && TREE_ATTR_COLS.has(tree.rhs.value);
+}
+
 /** 收集条件树引用的列名（leaf.left + column 型 rhs），供拓扑依赖。 */
 export function condTreeColumns(tree: CondTree | null | undefined): string[] {
   const out: string[] = [];

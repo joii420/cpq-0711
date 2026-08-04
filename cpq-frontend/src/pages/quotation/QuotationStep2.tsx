@@ -4,7 +4,7 @@ import { DatabaseOutlined, SettingOutlined, PlusOutlined, DownOutlined, ReloadOu
 import { evaluateExpression, getGlobalPathCache, evaluateListFormulaString, type TreeEvalContext } from '../../utils/formulaEngine';
 import { buildTreeRelations, isTreeRows as isTreeRowsInput, type TreeRowRef } from './bomTreeRelations';
 import { CellGraph } from './cellGraph';
-import { evalCondTree, condTreeColumns, type CondTree } from '../../utils/condTree';
+import { evalCondTree, condTreeColumns, condTreeUsesTreeAttr, TREE_ATTR_COLS, type CondTree } from '../../utils/condTree';
 import { usePathFormulaCache } from './usePathFormulaCache';
 import { globalVariableService, type GlobalVariableDefinition } from '../../services/globalVariableService';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
@@ -827,7 +827,11 @@ function treeDepsOfField(ff: FormulaFieldDefForTree): TreeDepDef[] {
 function fieldUsesTreeTokens(ff: FormulaFieldDefForTree): boolean {
   if (treeDepsOfField(ff).length > 0) return true;
   if (ff.conditional) {
-    if (ff.conditional.rules.some(r => hasTreeAttrInExpr(r.formula?.expression as any[]))) return true;
+    // 🚨 必须同时扫 r.when：某列可能表达式里没有任何 tree token、只在**条件**里用了树属性
+    //    （如 when [是否叶子]=1）。漏扫 → 不走单元格拓扑 → 树属性解析不出来 → 条件恒不命中
+    //    → **静默算错**（不报错，只是都走了 default 分支）。后端 usesTreeTokens 同步。
+    if (ff.conditional.rules.some(r =>
+      hasTreeAttrInExpr(r.formula?.expression as any[]) || condTreeUsesTreeAttr(r.when))) return true;
     return hasTreeAttrInExpr(ff.conditional.default?.expression as any[]);
   }
   return hasTreeAttrInExpr(ff.formula?.expression as any[]);
@@ -1128,6 +1132,13 @@ export function computeTabFormulasTree(
     let expr: any[] | undefined;
     if (ff.conditional) {
       const lookup = (colName: string) => {
+        // ⓪ 树属性保留字最优先（task-0803 2026-08-04）——与表达式内「保留字压过同名字段」一致，
+        //    也与后端 selectConditionalExpr 的 treeAttrByReservedName 前置同序。
+        if (TREE_ATTR_COLS.has(colName)) {
+          if (colName === '层级') return relations.lvl(cell.row);
+          if (colName === '是否叶子') return relations.isLeaf(cell.row) ? 1 : 0;
+          return relations.isRoot(cell.row) ? 1 : 0;
+        }
         const rv = rows[cell.row].row?.[colName];
         if (rv != null) return rv;
         const bf = comp.fields.find(f => (f.name || f.key) === colName && f.field_type === 'BASIC_DATA');

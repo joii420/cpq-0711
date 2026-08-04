@@ -15,6 +15,17 @@ import ConditionalFormulaDrawer, { type ConditionalFormulaValue } from './Condit
 import { extractSqlViewName } from './sqlViewPath';
 import './styles.css';
 
+/**
+ * task-0803（2026-08-04）：条件公式判据里可选的树属性。value 必须与表达式内的中文保留字
+ * **逐字一致**（前端 utils/condTree.TREE_ATTR_COLS、pages/component/formulaSerialize.TREE_ATTR_RESERVED、
+ * 后端 FormulaCalculator.TREE_ATTR_COLS / ComponentService.TREE_ATTR_COLS 共五处同步）。
+ */
+const TREE_ATTR_COND_OPTIONS: { label: string; value: string; title: string }[] = [
+  { label: '树属性 · 是否叶子', value: '是否叶子', title: '没有子行 → 1，否则 0' },
+  { label: '树属性 · 是否根', value: '是否根', title: '没有父行 → 1，否则 0' },
+  { label: '树属性 · 层级', value: '层级', title: '树层级，根节点为 1，逐层 +1' },
+];
+
 interface FieldConfigTableProps {
   fields: FieldItem[];
   /**
@@ -36,9 +47,16 @@ interface FieldConfigTableProps {
   onToggleRowKey?: (resolvedColumn: string, checked: boolean) => void;
   /** 组件 driver 路径（$视图…）；用于行键判定 + 字段路径选择器只列 driver 视图列。 */
   dataDriverPath?: string;
+  /**
+   * task-0803（2026-08-04）：组件页签类型。条件公式的判据列表据此追加树属性
+   * （[层级]/[是否叶子]/[是否根]）—— 非 BOM 时**可见但置灰**（AC-16 口径，不隐藏），
+   * hover 说明原因。置灰只是软提示，硬闸在后端 assertTreeTokenGates 闸②-b。
+   */
+  tabType?: string;
 }
 
 const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
+  tabType,
   fields,
   formulas,
   onChange,
@@ -801,7 +819,17 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
         formulaOptions={(formulas || [])
           .map(f => ({ label: f.name || '', value: f.id || f.name || '' }))
           .filter(o => o.value && o.label)}
-        columnOptions={fields.map(f => ({ label: f.name, value: f.name })).filter(o => o.value)}
+        columnOptions={[
+          ...fields.map(f => ({ label: f.name, value: f.name })).filter(o => o.value),
+          // task-0803：树属性直接作为条件判据，免去"先配一个 FORMULA 中转列再按它比"的绕行。
+          // 值就是表达式里同名的中文保留字，两端 lookup 都会在最前面拦截解析。
+          ...TREE_ATTR_COND_OPTIONS.map(o => ({
+            ...o,
+            disabled: tabType !== 'BOM',
+            title: tabType === 'BOM' ? o.title
+              : `树属性仅 BOM 类型页签可用（当前页签类型：${tabType || '未配置'}）`,
+          })),
+        ]}
         onClose={() => setCondFormulaKey(null)}
         onConfirm={(next) => {
           if (condFormulaKey) updateField(condFormulaKey, { conditional_formula: next });
