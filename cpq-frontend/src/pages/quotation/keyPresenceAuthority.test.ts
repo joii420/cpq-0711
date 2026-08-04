@@ -61,3 +61,42 @@ describe('rowsHaveUserData —— 清空也是用户数据', () => {
     expect(rowsHaveUserData([])).toBe(false);
   });
 });
+
+// ─── 回归护栏：建行方式必须与「键存在即权威」一致 ───────────────────────────────
+// 2026-08-03 合并后发现的真回归：buildEmptyRow 曾给每个 INPUT_* 写 ''，用它表达
+// 「还没值、请填默认值」；而本次把 '' 定义成「用户已定值」→ 新加产品/批量导入的首行
+// 默认值永不被烘（汇率/损耗率等被公式引用的列因此算 0）。键缺失才是「从未定值」。
+import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
+
+describe('buildEmptyRow 不得给 INPUT_* 预置空串（否则默认值永不烘）', () => {
+  const tmpl: any = {
+    id: 't1',
+    componentsSnapshot: [
+      {
+        componentId: 'c1',
+        componentCode: 'C1',
+        tabName: 'T',
+        componentType: 'NORMAL',
+        fields: [
+          { name: '汇率', field_type: 'INPUT_NUMBER', content: '1' },
+          { name: '备注', field_type: 'INPUT_TEXT' },
+          { name: '损耗', field_type: 'FIXED_VALUE', content: '0.05' },
+          { name: '成本', field_type: 'FORMULA' },
+        ],
+        formulas: [],
+      },
+    ],
+  };
+
+  it('INPUT_NUMBER / INPUT_TEXT 的键必须缺失 → isKeyUnset 为 true → 默认值可烘', () => {
+    const li: any = buildLineItemFromTemplate(tmpl, { partNo: 'P1' } as any);
+    const row = li.componentData[0].rows[0];
+    expect(isKeyUnset(row, '汇率')).toBe(true);
+    expect(isKeyUnset(row, '备注')).toBe(true);
+  });
+
+  it('FIXED_VALUE 仍写入真实常量（那是值，不是占位）', () => {
+    const li: any = buildLineItemFromTemplate(tmpl, { partNo: 'P1' } as any);
+    expect(li.componentData[0].rows[0]['损耗']).toBe('0.05');
+  });
+});
