@@ -21,7 +21,8 @@ interface Props {
   fieldName?: string;
   /** BL-0098：value = 公式稳定 id（无 id 的极老存量回退为公式名），label = 公式名 */
   formulaOptions: { label: string; value: string }[];
-  columnOptions: { label: string; value: string }[];   // 组件字段名（条件列）
+  /** 条件列候选：组件字段名 + task-0803 追加的树属性保留字（disabled=不可选，title=hover 原因） */
+  columnOptions: { label: string; value: string; disabled?: boolean; title?: string }[];
   onClose: () => void;
   onConfirm: (next: ConditionalFormulaValue) => void;
 }

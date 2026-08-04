@@ -2142,5 +2142,211 @@
         "倒数": 2
       }
     }
+  },
+  {
+    "name": "典型用法-条件直接用树属性（免中转列）：BOM 成本 rollup",
+    "_doc": "与第 19 条同一棵树、同一个 rollup 目标，区别是**条件里直接写 [是否叶子]**，不再配「叶=[是否叶子]」这个 FORMULA 中转列（用户 2026-08-04 的诉求）。实现要点：CondTree.left 本就是字符串，故复用与表达式完全相同的中文保留字，不改 schema、存量零迁移；两端 lookup 都在最前面拦截保留字（保留字优先于同名列，与表达式内口径一致）。🚨 **路由判据必须同步扩到 when**：本用例的 fields 里没有任何一列的**表达式**含 tree token（成本的两个分支分别是 单价*用量 和 CSUM(成本)——后者含 tree_ref，故本例仍会路由）；但若把 default 也换成纯算术，就只剩条件里有树属性，漏扫 when 会导致不走树引擎、条件恒不命中、静默走 default。见下一条用例专门覆盖该退化场景。",
+    "fields": [
+      {
+        "name": "单价",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "用量",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "成本",
+        "field_type": "FORMULA",
+        "conditional_formula": {
+          "rules": [
+            {
+              "when": {
+                "kind": "leaf",
+                "left": "是否叶子",
+                "op": "eq",
+                "rhs": {
+                  "type": "literal",
+                  "value": "1"
+                }
+              },
+              "formula": "叶成本公式"
+            }
+          ],
+          "default": "非叶成本公式"
+        }
+      }
+    ],
+    "formulas": [
+      {
+        "name": "叶成本公式",
+        "expression": [
+          {
+            "type": "field",
+            "value": "单价"
+          },
+          {
+            "type": "operator",
+            "value": "*"
+          },
+          {
+            "type": "field",
+            "value": "用量"
+          }
+        ]
+      },
+      {
+        "name": "非叶成本公式",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "SUM",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "成本"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rows": [
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 1,
+        "values": {}
+      },
+      {
+        "nodeId": "A",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {}
+      },
+      {
+        "nodeId": "B",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {
+          "单价": 7,
+          "用量": 1
+        }
+      },
+      {
+        "nodeId": "A1",
+        "parentId": "A",
+        "lvl": 3,
+        "values": {
+          "单价": 10,
+          "用量": 2
+        }
+      },
+      {
+        "nodeId": "A2",
+        "parentId": "A",
+        "lvl": 3,
+        "values": {
+          "单价": 5,
+          "用量": 3
+        }
+      }
+    ],
+    "expected": {
+      "0": {
+        "成本": 42
+      },
+      "1": {
+        "成本": 35
+      },
+      "2": {
+        "成本": 7
+      },
+      "3": {
+        "成本": 20
+      },
+      "4": {
+        "成本": 15
+      }
+    }
+  },
+  {
+    "name": "回归-仅条件里出现树属性（表达式无 tree token）：路由判据必须扫 when",
+    "_doc": "退化场景专项：所有公式表达式都是纯算术，**只有条件 when 里用了 [是否根]**。若路由判据只扫表达式（改动前的 usesTreeTokens / fieldUsesTreeTokens 就是如此），本页签不会走单元格拓扑树引擎 → 树属性解析不出来 → 条件恒不命中 → 全部静默走 default 分支，**不报错、不抛异常，只是算错**。这是本次改动最容易漏的一处，故单列一条守卫。期望：根行走「根公式」得 100，非根行走 default 得 1。若守卫失效，根行会变成 1。",
+    "fields": [
+      {
+        "name": "标记",
+        "field_type": "FORMULA",
+        "conditional_formula": {
+          "rules": [
+            {
+              "when": {
+                "kind": "leaf",
+                "left": "是否根",
+                "op": "eq",
+                "rhs": {
+                  "type": "literal",
+                  "value": "1"
+                }
+              },
+              "formula": "根公式"
+            }
+          ],
+          "default": "非根公式"
+        }
+      }
+    ],
+    "formulas": [
+      {
+        "name": "根公式",
+        "expression": [
+          {
+            "type": "number",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "name": "非根公式",
+        "expression": [
+          {
+            "type": "number",
+            "value": 1
+          }
+        ]
+      }
+    ],
+    "rows": [
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 1,
+        "values": {}
+      },
+      {
+        "nodeId": "A",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {}
+      },
+      {
+        "nodeId": "A1",
+        "parentId": "A",
+        "lvl": 3,
+        "values": {}
+      }
+    ],
+    "expected": {
+      "0": {
+        "标记": 100
+      },
+      "1": {
+        "标记": 1
+      },
+      "2": {
+        "标记": 1
+      }
+    }
   }
 ]
