@@ -3,377 +3,1450 @@
     "name": "AC-1_AC-2 PGET 取父行值 / 根行返 0",
     "_doc": "三层树 n1→(n2,n3)→n4(挂n2下)。子行 PGET(数值)=父行数值实际值；根行 PGET=0。",
     "fields": [
-      { "name": "数值", "field_type": "INPUT_NUMBER" },
-      { "name": "父值", "field_type": "FORMULA" }
+      {
+        "name": "数值",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "父值",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "父值", "expression": [
-        { "type": "tree_ref", "dir": "PARENT", "agg": "NONE", "targetExpr": [ { "type": "field", "value": "数值" } ] }
-      ] }
+      {
+        "name": "父值",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "PARENT",
+            "agg": "NONE",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "n1", "parentId": null, "lvl": 0, "values": { "数值": 100 } },
-      { "nodeId": "n2", "parentId": "n1", "lvl": 1, "values": { "数值": 10 } },
-      { "nodeId": "n3", "parentId": "n1", "lvl": 1, "values": { "数值": 20 } },
-      { "nodeId": "n4", "parentId": "n2", "lvl": 2, "values": { "数值": 5 } }
+      {
+        "nodeId": "n1",
+        "parentId": null,
+        "lvl": 0,
+        "values": {
+          "数值": 100
+        }
+      },
+      {
+        "nodeId": "n2",
+        "parentId": "n1",
+        "lvl": 1,
+        "values": {
+          "数值": 10
+        }
+      },
+      {
+        "nodeId": "n3",
+        "parentId": "n1",
+        "lvl": 1,
+        "values": {
+          "数值": 20
+        }
+      },
+      {
+        "nodeId": "n4",
+        "parentId": "n2",
+        "lvl": 2,
+        "values": {
+          "数值": 5
+        }
+      }
     ],
     "expected": {
-      "0": { "父值": 0 },
-      "1": { "父值": 100 },
-      "2": { "父值": 100 },
-      "3": { "父值": 10 }
+      "0": {
+        "父值": 0
+      },
+      "1": {
+        "父值": 100
+      },
+      "2": {
+        "父值": 100
+      },
+      "3": {
+        "父值": 10
+      }
     }
   },
   {
     "name": "AC-3 CSUM 只算直接子行不含孙辈",
     "_doc": "根的直接子是 n2(10)+n3(20)=30，刻意不含孙 n4(999) 以放大暴露误含孙辈的 bug。",
     "fields": [
-      { "name": "数值", "field_type": "INPUT_NUMBER" },
-      { "name": "汇总", "field_type": "FORMULA" }
+      {
+        "name": "数值",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "汇总",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "汇总", "expression": [
-        { "type": "tree_ref", "dir": "CHILD", "agg": "SUM", "targetExpr": [ { "type": "field", "value": "数值" } ] }
-      ] }
+      {
+        "name": "汇总",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "SUM",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "n1", "parentId": null, "lvl": 0, "values": { "数值": 0 } },
-      { "nodeId": "n2", "parentId": "n1", "lvl": 1, "values": { "数值": 10 } },
-      { "nodeId": "n3", "parentId": "n1", "lvl": 1, "values": { "数值": 20 } },
-      { "nodeId": "n4", "parentId": "n2", "lvl": 2, "values": { "数值": 999 } }
+      {
+        "nodeId": "n1",
+        "parentId": null,
+        "lvl": 0,
+        "values": {
+          "数值": 0
+        }
+      },
+      {
+        "nodeId": "n2",
+        "parentId": "n1",
+        "lvl": 1,
+        "values": {
+          "数值": 10
+        }
+      },
+      {
+        "nodeId": "n3",
+        "parentId": "n1",
+        "lvl": 1,
+        "values": {
+          "数值": 20
+        }
+      },
+      {
+        "nodeId": "n4",
+        "parentId": "n2",
+        "lvl": 2,
+        "values": {
+          "数值": 999
+        }
+      }
     ],
     "expected": {
-      "0": { "汇总": 30 },
-      "1": { "汇总": 999 },
-      "2": { "汇总": 0 },
-      "3": { "汇总": 0 }
+      "0": {
+        "汇总": 30
+      },
+      "1": {
+        "汇总": 999
+      },
+      "2": {
+        "汇总": 0
+      },
+      "3": {
+        "汇总": 0
+      }
     }
   },
   {
     "name": "AC-4_AC-5 CAVG分母只数有值行/CMIN不被空行拉成0",
     "_doc": "根 R 三个直接子：5 / 空 / 8。求和=13(空行不参与)；均值=13/2=6.5(分母只数2个有值行)；最小=5(不是0，空行不拉低)；计数=2。",
     "fields": [
-      { "name": "单价", "field_type": "INPUT_NUMBER" },
-      { "name": "求和", "field_type": "FORMULA" },
-      { "name": "均值", "field_type": "FORMULA" },
-      { "name": "最小", "field_type": "FORMULA" },
-      { "name": "计数", "field_type": "FORMULA" }
+      {
+        "name": "单价",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "求和",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "均值",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "最小",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "计数",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "求和", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "SUM",   "targetExpr": [ { "type": "field", "value": "单价" } ] } ] },
-      { "name": "均值", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "AVG",   "targetExpr": [ { "type": "field", "value": "单价" } ] } ] },
-      { "name": "最小", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "MIN",   "targetExpr": [ { "type": "field", "value": "单价" } ] } ] },
-      { "name": "计数", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "COUNT", "targetExpr": [ { "type": "field", "value": "单价" } ] } ] }
+      {
+        "name": "求和",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "SUM",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "单价"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "均值",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "AVG",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "单价"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "最小",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "MIN",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "单价"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "计数",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "COUNT",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "单价"
+              }
+            ]
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "R", "parentId": null, "lvl": 0, "values": {} },
-      { "nodeId": "a", "parentId": "R", "lvl": 1, "values": { "单价": 5 } },
-      { "nodeId": "b", "parentId": "R", "lvl": 1, "values": {} },
-      { "nodeId": "c", "parentId": "R", "lvl": 1, "values": { "单价": 8 } }
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 0,
+        "values": {}
+      },
+      {
+        "nodeId": "a",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {
+          "单价": 5
+        }
+      },
+      {
+        "nodeId": "b",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {}
+      },
+      {
+        "nodeId": "c",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {
+          "单价": 8
+        }
+      }
     ],
     "expected": {
-      "0": { "求和": 13, "均值": 6.5, "最小": 5, "计数": 2 }
+      "0": {
+        "求和": 13,
+        "均值": 6.5,
+        "最小": 5,
+        "计数": 2
+      }
     }
   },
   {
     "name": "AC-6 CMIN认0为有值",
     "_doc": "子行值为 0/5/8 → CMIN=0（不是跳过 0 取到 5）；计数=3（0 算有值，分母含它）。",
     "fields": [
-      { "name": "单价", "field_type": "INPUT_NUMBER" },
-      { "name": "最小", "field_type": "FORMULA" },
-      { "name": "计数", "field_type": "FORMULA" }
+      {
+        "name": "单价",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "最小",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "计数",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "最小", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "MIN",   "targetExpr": [ { "type": "field", "value": "单价" } ] } ] },
-      { "name": "计数", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "COUNT", "targetExpr": [ { "type": "field", "value": "单价" } ] } ] }
+      {
+        "name": "最小",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "MIN",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "单价"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "计数",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "COUNT",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "单价"
+              }
+            ]
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "R", "parentId": null, "lvl": 0, "values": {} },
-      { "nodeId": "a", "parentId": "R", "lvl": 1, "values": { "单价": 0 } },
-      { "nodeId": "b", "parentId": "R", "lvl": 1, "values": { "单价": 5 } },
-      { "nodeId": "c", "parentId": "R", "lvl": 1, "values": { "单价": 8 } }
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 0,
+        "values": {}
+      },
+      {
+        "nodeId": "a",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {
+          "单价": 0
+        }
+      },
+      {
+        "nodeId": "b",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {
+          "单价": 5
+        }
+      },
+      {
+        "nodeId": "c",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {
+          "单价": 8
+        }
+      }
     ],
     "expected": {
-      "0": { "最小": 0, "计数": 3 }
+      "0": {
+        "最小": 0,
+        "计数": 3
+      }
     }
   },
   {
     "name": "AC-7 叶子行C*全部为0",
     "_doc": "根 R 的两个直接子 a(7)/b(9) 都是叶子。叶子行的 CSUM/CAVG/CMAX/CMIN/CCOUNT 全部=0；根按正常聚合=16/8/9/7/2 顺带验证聚合本身没错。",
     "fields": [
-      { "name": "数值", "field_type": "INPUT_NUMBER" },
-      { "name": "求和", "field_type": "FORMULA" },
-      { "name": "均值", "field_type": "FORMULA" },
-      { "name": "最大", "field_type": "FORMULA" },
-      { "name": "最小", "field_type": "FORMULA" },
-      { "name": "计数", "field_type": "FORMULA" }
+      {
+        "name": "数值",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "求和",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "均值",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "最大",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "最小",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "计数",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "求和", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "SUM",   "targetExpr": [ { "type": "field", "value": "数值" } ] } ] },
-      { "name": "均值", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "AVG",   "targetExpr": [ { "type": "field", "value": "数值" } ] } ] },
-      { "name": "最大", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "MAX",   "targetExpr": [ { "type": "field", "value": "数值" } ] } ] },
-      { "name": "最小", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "MIN",   "targetExpr": [ { "type": "field", "value": "数值" } ] } ] },
-      { "name": "计数", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "COUNT", "targetExpr": [ { "type": "field", "value": "数值" } ] } ] }
+      {
+        "name": "求和",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "SUM",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "均值",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "AVG",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "最大",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "MAX",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "最小",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "MIN",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "计数",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "COUNT",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "R", "parentId": null, "lvl": 0, "values": {} },
-      { "nodeId": "a", "parentId": "R", "lvl": 1, "values": { "数值": 7 } },
-      { "nodeId": "b", "parentId": "R", "lvl": 1, "values": { "数值": 9 } }
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 0,
+        "values": {}
+      },
+      {
+        "nodeId": "a",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {
+          "数值": 7
+        }
+      },
+      {
+        "nodeId": "b",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {
+          "数值": 9
+        }
+      }
     ],
     "expected": {
-      "0": { "求和": 16, "均值": 8, "最大": 9, "最小": 7, "计数": 2 },
-      "1": { "求和": 0, "均值": 0, "最大": 0, "最小": 0, "计数": 0 },
-      "2": { "求和": 0, "均值": 0, "最大": 0, "最小": 0, "计数": 0 }
+      "0": {
+        "求和": 16,
+        "均值": 8,
+        "最大": 9,
+        "最小": 7,
+        "计数": 2
+      },
+      "1": {
+        "求和": 0,
+        "均值": 0,
+        "最大": 0,
+        "最小": 0,
+        "计数": 0
+      },
+      "2": {
+        "求和": 0,
+        "均值": 0,
+        "最大": 0,
+        "最小": 0,
+        "计数": 0
+      }
     }
   },
   {
     "name": "AC-8 树属性 层级/是否叶子/是否根",
-    "_doc": "三层树：根 层级0/是否叶子0/是否根1；n2(有子n4) 层级1/是否叶子0/是否根0；n3(叶子) 层级1/是否叶子1/是否根0；n4(叶子) 层级2/是否叶子1/是否根0。",
+    "_doc": "三层树，lvl 按生产约定 **根=1**（源头 CostingTreeGrouping:38 硬编码 nd.lvl=1，子孙按 node_path 的 '/' 数递增；2026-08-03 端到端实测确认）：根 层级1/是否叶子0/是否根1；n2(有子n4) 层级2/是否叶子0/是否根0；n3(叶子) 层级2/是否叶子1/是否根0；n4(叶子) 层级3/是否叶子1/是否根0。注：tree_attr LVL 是纯透传，本用例填生产真实值以免把错误约定固化进断言。",
     "fields": [
-      { "name": "层级", "field_type": "FORMULA" },
-      { "name": "是否叶子", "field_type": "FORMULA" },
-      { "name": "是否根", "field_type": "FORMULA" }
+      {
+        "name": "层级",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "是否叶子",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "是否根",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "层级", "expression": [ { "type": "tree_attr", "attr": "LVL" } ] },
-      { "name": "是否叶子", "expression": [ { "type": "tree_attr", "attr": "IS_LEAF" } ] },
-      { "name": "是否根", "expression": [ { "type": "tree_attr", "attr": "IS_ROOT" } ] }
+      {
+        "name": "层级",
+        "expression": [
+          {
+            "type": "tree_attr",
+            "attr": "LVL"
+          }
+        ]
+      },
+      {
+        "name": "是否叶子",
+        "expression": [
+          {
+            "type": "tree_attr",
+            "attr": "IS_LEAF"
+          }
+        ]
+      },
+      {
+        "name": "是否根",
+        "expression": [
+          {
+            "type": "tree_attr",
+            "attr": "IS_ROOT"
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "n1", "parentId": null, "lvl": 0, "values": {} },
-      { "nodeId": "n2", "parentId": "n1", "lvl": 1, "values": {} },
-      { "nodeId": "n3", "parentId": "n1", "lvl": 1, "values": {} },
-      { "nodeId": "n4", "parentId": "n2", "lvl": 2, "values": {} }
+      {
+        "nodeId": "n1",
+        "parentId": null,
+        "lvl": 1,
+        "values": {}
+      },
+      {
+        "nodeId": "n2",
+        "parentId": "n1",
+        "lvl": 2,
+        "values": {}
+      },
+      {
+        "nodeId": "n3",
+        "parentId": "n1",
+        "lvl": 2,
+        "values": {}
+      },
+      {
+        "nodeId": "n4",
+        "parentId": "n2",
+        "lvl": 3,
+        "values": {}
+      }
     ],
     "expected": {
-      "0": { "层级": 0, "是否叶子": 0, "是否根": 1 },
-      "1": { "层级": 1, "是否叶子": 0, "是否根": 0 },
-      "2": { "层级": 1, "是否叶子": 1, "是否根": 0 },
-      "3": { "层级": 2, "是否叶子": 1, "是否根": 0 }
+      "0": {
+        "层级": 1,
+        "是否叶子": 0,
+        "是否根": 1
+      },
+      "1": {
+        "层级": 2,
+        "是否叶子": 0,
+        "是否根": 0
+      },
+      "2": {
+        "层级": 2,
+        "是否叶子": 1,
+        "是否根": 0
+      },
+      "3": {
+        "层级": 3,
+        "是否叶子": 1,
+        "是否根": 0
+      }
     }
   },
   {
     "name": "AC-9 [是否叶子]与CCOUNT口径差",
     "_doc": "P 结构上有两个直接子 A/B（[是否叶子]看结构=0），但 A/B 的「数值」列全空 → CCOUNT(数值)=0。两个判据口径不同，互不干扰。",
     "fields": [
-      { "name": "数值", "field_type": "INPUT_NUMBER" },
-      { "name": "是否叶子", "field_type": "FORMULA" },
-      { "name": "计数", "field_type": "FORMULA" }
+      {
+        "name": "数值",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "是否叶子",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "计数",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "是否叶子", "expression": [ { "type": "tree_attr", "attr": "IS_LEAF" } ] },
-      { "name": "计数", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "COUNT", "targetExpr": [ { "type": "field", "value": "数值" } ] } ] }
+      {
+        "name": "是否叶子",
+        "expression": [
+          {
+            "type": "tree_attr",
+            "attr": "IS_LEAF"
+          }
+        ]
+      },
+      {
+        "name": "计数",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "COUNT",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "P", "parentId": null, "lvl": 0, "values": {} },
-      { "nodeId": "A", "parentId": "P", "lvl": 1, "values": {} },
-      { "nodeId": "B", "parentId": "P", "lvl": 1, "values": {} }
+      {
+        "nodeId": "P",
+        "parentId": null,
+        "lvl": 0,
+        "values": {}
+      },
+      {
+        "nodeId": "A",
+        "parentId": "P",
+        "lvl": 1,
+        "values": {}
+      },
+      {
+        "nodeId": "B",
+        "parentId": "P",
+        "lvl": 1,
+        "values": {}
+      }
     ],
     "expected": {
-      "0": { "是否叶子": 0, "计数": 0 }
+      "0": {
+        "是否叶子": 0,
+        "计数": 0
+      }
     }
   },
   {
     "name": "AC-10 双向混用：子项汇总(CSUM)与父项用量(PGET)同页签共存",
     "_doc": "同一页签一列自下而上(CSUM)、一列自上而下(PGET)，两列同时算对，互不干扰。",
     "fields": [
-      { "name": "数值", "field_type": "INPUT_NUMBER" },
-      { "name": "子项汇总", "field_type": "FORMULA" },
-      { "name": "父项用量", "field_type": "FORMULA" }
+      {
+        "name": "数值",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "子项汇总",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "父项用量",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "子项汇总", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "SUM", "targetExpr": [ { "type": "field", "value": "数值" } ] } ] },
-      { "name": "父项用量", "expression": [ { "type": "tree_ref", "dir": "PARENT", "agg": "NONE", "targetExpr": [ { "type": "field", "value": "数值" } ] } ] }
+      {
+        "name": "子项汇总",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "SUM",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "父项用量",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "PARENT",
+            "agg": "NONE",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "n1", "parentId": null, "lvl": 0, "values": { "数值": 100 } },
-      { "nodeId": "n2", "parentId": "n1", "lvl": 1, "values": { "数值": 10 } },
-      { "nodeId": "n3", "parentId": "n1", "lvl": 1, "values": { "数值": 20 } },
-      { "nodeId": "n4", "parentId": "n2", "lvl": 2, "values": { "数值": 5 } }
+      {
+        "nodeId": "n1",
+        "parentId": null,
+        "lvl": 0,
+        "values": {
+          "数值": 100
+        }
+      },
+      {
+        "nodeId": "n2",
+        "parentId": "n1",
+        "lvl": 1,
+        "values": {
+          "数值": 10
+        }
+      },
+      {
+        "nodeId": "n3",
+        "parentId": "n1",
+        "lvl": 1,
+        "values": {
+          "数值": 20
+        }
+      },
+      {
+        "nodeId": "n4",
+        "parentId": "n2",
+        "lvl": 2,
+        "values": {
+          "数值": 5
+        }
+      }
     ],
     "expected": {
-      "0": { "子项汇总": 30, "父项用量": 0 },
-      "1": { "子项汇总": 5, "父项用量": 100 },
-      "2": { "子项汇总": 0, "父项用量": 100 },
-      "3": { "子项汇总": 0, "父项用量": 10 }
+      "0": {
+        "子项汇总": 30,
+        "父项用量": 0
+      },
+      "1": {
+        "子项汇总": 5,
+        "父项用量": 100
+      },
+      "2": {
+        "子项汇总": 0,
+        "父项用量": 100
+      },
+      "3": {
+        "子项汇总": 0,
+        "父项用量": 10
+      }
     }
   },
   {
     "name": "AC-11 成环：A=PGET(B)且B=CSUM(A)，环上置0，其他列C正常",
     "_doc": "A/B 互相依赖对方在其他行的值，构成环 → A/B 全部置 0；C 直接引用「数值」，与环无依赖关系，正常求值。",
     "fields": [
-      { "name": "数值", "field_type": "INPUT_NUMBER" },
-      { "name": "A", "field_type": "FORMULA" },
-      { "name": "B", "field_type": "FORMULA" },
-      { "name": "C", "field_type": "FORMULA" }
+      {
+        "name": "数值",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "A",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "B",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "C",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "A", "expression": [ { "type": "tree_ref", "dir": "PARENT", "agg": "NONE", "targetExpr": [ { "type": "field", "value": "B" } ] } ] },
-      { "name": "B", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "SUM", "targetExpr": [ { "type": "field", "value": "A" } ] } ] },
-      { "name": "C", "expression": [ { "type": "field", "value": "数值" } ] }
+      {
+        "name": "A",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "PARENT",
+            "agg": "NONE",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "B"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "B",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "SUM",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "A"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "C",
+        "expression": [
+          {
+            "type": "field",
+            "value": "数值"
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "n1", "parentId": null, "lvl": 0, "values": { "数值": 100 } },
-      { "nodeId": "n2", "parentId": "n1", "lvl": 1, "values": { "数值": 10 } },
-      { "nodeId": "n3", "parentId": "n1", "lvl": 1, "values": { "数值": 20 } },
-      { "nodeId": "n4", "parentId": "n2", "lvl": 2, "values": { "数值": 5 } }
+      {
+        "nodeId": "n1",
+        "parentId": null,
+        "lvl": 0,
+        "values": {
+          "数值": 100
+        }
+      },
+      {
+        "nodeId": "n2",
+        "parentId": "n1",
+        "lvl": 1,
+        "values": {
+          "数值": 10
+        }
+      },
+      {
+        "nodeId": "n3",
+        "parentId": "n1",
+        "lvl": 1,
+        "values": {
+          "数值": 20
+        }
+      },
+      {
+        "nodeId": "n4",
+        "parentId": "n2",
+        "lvl": 2,
+        "values": {
+          "数值": 5
+        }
+      }
     ],
     "expected": {
-      "0": { "A": 0, "B": 0, "C": 100 },
-      "1": { "A": 0, "B": 0, "C": 10 },
-      "2": { "A": 0, "B": 0, "C": 20 },
-      "3": { "A": 0, "B": 0, "C": 5 }
+      "0": {
+        "A": 0,
+        "B": 0,
+        "C": 100
+      },
+      "1": {
+        "A": 0,
+        "B": 0,
+        "C": 10
+      },
+      "2": {
+        "A": 0,
+        "B": 0,
+        "C": 20
+      },
+      "3": {
+        "A": 0,
+        "B": 0,
+        "C": 5
+      }
     }
   },
   {
     "name": "AC-12 墓碑删除行不参与聚合",
     "_doc": "报价侧删掉一个子行后，父行 CSUM 立即少算该行。本夹具在求值层的建模方式=行本身不出现在行集里 —— 这与两端引擎的真实调用契约一致：前端 computeTabFormulasTree 的行集在到达求值层之前已由上游（bomTreeRelations 调用点）按墓碑过滤完毕；后端 TreeRelations 把墓碑行标记为「非存活」后，parentOf/childrenOf 对它的处理与「行不存在」完全等价（byNodeId 里找不到该 id）。因此对求值算法本身而言，两种建模（真删除 vs 标记死亡）产生的关系图逐位相同，用省略行来验证求值层聚合口径是充分且诚实的。根 R 原有三个子 a/b/c，c 已被墓碑删除 → 只出现 a/b，求和=5+8=13。",
     "fields": [
-      { "name": "数值", "field_type": "INPUT_NUMBER" },
-      { "name": "求和", "field_type": "FORMULA" }
+      {
+        "name": "数值",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "求和",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "求和", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "SUM", "targetExpr": [ { "type": "field", "value": "数值" } ] } ] }
+      {
+        "name": "求和",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "SUM",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "R", "parentId": null, "lvl": 0, "values": {} },
-      { "nodeId": "a", "parentId": "R", "lvl": 1, "values": { "数值": 5 } },
-      { "nodeId": "b", "parentId": "R", "lvl": 1, "values": { "数值": 8 } }
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 0,
+        "values": {}
+      },
+      {
+        "nodeId": "a",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {
+          "数值": 5
+        }
+      },
+      {
+        "nodeId": "b",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {
+          "数值": 8
+        }
+      }
     ],
     "expected": {
-      "0": { "求和": 13 }
+      "0": {
+        "求和": 13
+      }
     }
   },
   {
     "name": "AC-14 PGET表达式形态：PGET(用量×单价)",
     "_doc": "PGET([用量]×[单价]) = 父行的用量×单价，验证 targetExpr 支持复合表达式而不只是单个 field token。",
     "fields": [
-      { "name": "用量", "field_type": "INPUT_NUMBER" },
-      { "name": "单价", "field_type": "INPUT_NUMBER" },
-      { "name": "父值", "field_type": "FORMULA" }
+      {
+        "name": "用量",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "单价",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "父值",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "父值", "expression": [
-        { "type": "tree_ref", "dir": "PARENT", "agg": "NONE", "targetExpr": [
-          { "type": "field", "value": "用量" }, { "type": "operator", "value": "*" }, { "type": "field", "value": "单价" }
-        ] }
-      ] }
+      {
+        "name": "父值",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "PARENT",
+            "agg": "NONE",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "用量"
+              },
+              {
+                "type": "operator",
+                "value": "*"
+              },
+              {
+                "type": "field",
+                "value": "单价"
+              }
+            ]
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "R", "parentId": null, "lvl": 0, "values": { "用量": 2, "单价": 3 } },
-      { "nodeId": "A", "parentId": "R", "lvl": 1, "values": {} }
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 0,
+        "values": {
+          "用量": 2,
+          "单价": 3
+        }
+      },
+      {
+        "nodeId": "A",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {}
+      }
     ],
     "expected": {
-      "1": { "父值": 6 }
+      "1": {
+        "父值": 6
+      }
     }
   },
   {
     "name": "AC-15 内层field可为父子列：CSUM(成本)其中成本=PGET(基准)",
     "_doc": "根 R 的「成本」列本身用 PGET(基准) 算出；根的「汇总」=CSUM(成本) 引用的是「成本」这个父子取值列（而非普通输入列），验证跨列拓扑依赖合法（不是环，因为成本 PGET 的是「基准」列，汇总 CSUM 的是「成本」列，方向不同列不同）。",
     "fields": [
-      { "name": "基准", "field_type": "INPUT_NUMBER" },
-      { "name": "成本", "field_type": "FORMULA" },
-      { "name": "汇总", "field_type": "FORMULA" }
+      {
+        "name": "基准",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "成本",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "汇总",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "成本", "expression": [ { "type": "tree_ref", "dir": "PARENT", "agg": "NONE", "targetExpr": [ { "type": "field", "value": "基准" } ] } ] },
-      { "name": "汇总", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "SUM", "targetExpr": [ { "type": "field", "value": "成本" } ] } ] }
+      {
+        "name": "成本",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "PARENT",
+            "agg": "NONE",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "基准"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "汇总",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "SUM",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "成本"
+              }
+            ]
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "R", "parentId": null, "lvl": 0, "values": { "基准": 100 } },
-      { "nodeId": "A", "parentId": "R", "lvl": 1, "values": {} },
-      { "nodeId": "B", "parentId": "R", "lvl": 1, "values": {} }
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 0,
+        "values": {
+          "基准": 100
+        }
+      },
+      {
+        "nodeId": "A",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {}
+      },
+      {
+        "nodeId": "B",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {}
+      }
     ],
     "expected": {
-      "0": { "成本": 0, "汇总": 200 },
-      "1": { "成本": 100, "汇总": 0 },
-      "2": { "成本": 100, "汇总": 0 }
+      "0": {
+        "成本": 0,
+        "汇总": 200
+      },
+      "1": {
+        "成本": 100,
+        "汇总": 0
+      },
+      "2": {
+        "成本": 100,
+        "汇总": 0
+      }
     }
   },
   {
     "name": "判据5 targetExpr无field token：CSUM(1)=子行数",
     "_doc": "targetExpr 是纯常量（无 field token）→ 所有未删除子行均视为有值，CSUM(1) 等于子行数，不受任何列是否有值影响。",
     "fields": [
-      { "name": "计数", "field_type": "FORMULA" }
+      {
+        "name": "计数",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "计数", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "SUM", "targetExpr": [ { "type": "number", "value": "1" } ] } ] }
+      {
+        "name": "计数",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "SUM",
+            "targetExpr": [
+              {
+                "type": "number",
+                "value": "1"
+              }
+            ]
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "R", "parentId": null, "lvl": 0, "values": {} },
-      { "nodeId": "a", "parentId": "R", "lvl": 1, "values": {} },
-      { "nodeId": "b", "parentId": "R", "lvl": 1, "values": {} },
-      { "nodeId": "c", "parentId": "R", "lvl": 1, "values": {} }
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 0,
+        "values": {}
+      },
+      {
+        "nodeId": "a",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {}
+      },
+      {
+        "nodeId": "b",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {}
+      },
+      {
+        "nodeId": "c",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {}
+      }
     ],
     "expected": {
-      "0": { "计数": 3 }
+      "0": {
+        "计数": 3
+      }
     }
   },
   {
     "name": "判据6 公式列恒有值：CAVG分母含算出0的公式列",
     "_doc": "子行 b 的「数值」列本身为空，但「成本」是公式列(=数值)算出 0；因为成本是公式列，恒视为有值，CAVG 分母含 b → (10+0+20)/3=10，不是 (10+20)/2=15。",
     "fields": [
-      { "name": "数值", "field_type": "INPUT_NUMBER" },
-      { "name": "成本", "field_type": "FORMULA" },
-      { "name": "均值", "field_type": "FORMULA" }
+      {
+        "name": "数值",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "成本",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "均值",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "成本", "expression": [ { "type": "field", "value": "数值" } ] },
-      { "name": "均值", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "AVG", "targetExpr": [ { "type": "field", "value": "成本" } ] } ] }
+      {
+        "name": "成本",
+        "expression": [
+          {
+            "type": "field",
+            "value": "数值"
+          }
+        ]
+      },
+      {
+        "name": "均值",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "AVG",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "成本"
+              }
+            ]
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "R", "parentId": null, "lvl": 0, "values": {} },
-      { "nodeId": "a", "parentId": "R", "lvl": 1, "values": { "数值": 10 } },
-      { "nodeId": "b", "parentId": "R", "lvl": 1, "values": {} },
-      { "nodeId": "c", "parentId": "R", "lvl": 1, "values": { "数值": 20 } }
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 0,
+        "values": {}
+      },
+      {
+        "nodeId": "a",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {
+          "数值": 10
+        }
+      },
+      {
+        "nodeId": "b",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {}
+      },
+      {
+        "nodeId": "c",
+        "parentId": "R",
+        "lvl": 1,
+        "values": {
+          "数值": 20
+        }
+      }
     ],
     "expected": {
-      "0": { "均值": 10 },
-      "1": { "成本": 10 },
-      "2": { "成本": 0 },
-      "3": { "成本": 20 }
+      "0": {
+        "均值": 10
+      },
+      "1": {
+        "成本": 10
+      },
+      "2": {
+        "成本": 0
+      },
+      "3": {
+        "成本": 20
+      }
     }
   },
   {
     "name": "G5 悬空父引用：parentId指向不存在的节点",
     "_doc": "parentId='ghost' 但行集里根本没有 nodeId=ghost 的行 → 统一按「无父」处理：[是否根]=1，PGET=0。",
     "fields": [
-      { "name": "数值", "field_type": "INPUT_NUMBER" },
-      { "name": "父值", "field_type": "FORMULA" },
-      { "name": "是否根", "field_type": "FORMULA" }
+      {
+        "name": "数值",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "父值",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "是否根",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "父值", "expression": [ { "type": "tree_ref", "dir": "PARENT", "agg": "NONE", "targetExpr": [ { "type": "field", "value": "数值" } ] } ] },
-      { "name": "是否根", "expression": [ { "type": "tree_attr", "attr": "IS_ROOT" } ] }
+      {
+        "name": "父值",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "PARENT",
+            "agg": "NONE",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "是否根",
+        "expression": [
+          {
+            "type": "tree_attr",
+            "attr": "IS_ROOT"
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "x1", "parentId": "ghost", "lvl": 0, "values": { "数值": 5 } }
+      {
+        "nodeId": "x1",
+        "parentId": "ghost",
+        "lvl": 0,
+        "values": {
+          "数值": 5
+        }
+      }
     ],
     "expected": {
-      "0": { "父值": 0, "是否根": 1 }
+      "0": {
+        "父值": 0,
+        "是否根": 1
+      }
     }
   },
   {
     "name": "G6 单节点树：根同时是叶子",
     "_doc": "整个行集只有一行，parentId=null。该行既是根（无父）又是叶子（无子）：PGET=0，CSUM=0，是否根=1，是否叶子=1。",
     "fields": [
-      { "name": "数值", "field_type": "INPUT_NUMBER" },
-      { "name": "父值", "field_type": "FORMULA" },
-      { "name": "求和", "field_type": "FORMULA" },
-      { "name": "是否根", "field_type": "FORMULA" },
-      { "name": "是否叶子", "field_type": "FORMULA" }
+      {
+        "name": "数值",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "父值",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "求和",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "是否根",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "是否叶子",
+        "field_type": "FORMULA"
+      }
     ],
     "formulas": [
-      { "name": "父值", "expression": [ { "type": "tree_ref", "dir": "PARENT", "agg": "NONE", "targetExpr": [ { "type": "field", "value": "数值" } ] } ] },
-      { "name": "求和", "expression": [ { "type": "tree_ref", "dir": "CHILD", "agg": "SUM", "targetExpr": [ { "type": "field", "value": "数值" } ] } ] },
-      { "name": "是否根", "expression": [ { "type": "tree_attr", "attr": "IS_ROOT" } ] },
-      { "name": "是否叶子", "expression": [ { "type": "tree_attr", "attr": "IS_LEAF" } ] }
+      {
+        "name": "父值",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "PARENT",
+            "agg": "NONE",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "求和",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "SUM",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "是否根",
+        "expression": [
+          {
+            "type": "tree_attr",
+            "attr": "IS_ROOT"
+          }
+        ]
+      },
+      {
+        "name": "是否叶子",
+        "expression": [
+          {
+            "type": "tree_attr",
+            "attr": "IS_LEAF"
+          }
+        ]
+      }
     ],
     "rows": [
-      { "nodeId": "r1", "parentId": null, "lvl": 0, "values": { "数值": 42 } }
+      {
+        "nodeId": "r1",
+        "parentId": null,
+        "lvl": 0,
+        "values": {
+          "数值": 42
+        }
+      }
     ],
     "expected": {
-      "0": { "父值": 0, "求和": 0, "是否根": 1, "是否叶子": 1 }
+      "0": {
+        "父值": 0,
+        "求和": 0,
+        "是否根": 1,
+        "是否叶子": 1
+      }
     }
   }
 ]
