@@ -823,6 +823,36 @@ task-0721 B8 修复合并    2026-07-21
 
 </details>
 
+### [BL-0109] 价格调整预算/dryRun 路径同样漏 `@ActivateRequestContext`（与 BL-0108 同根因家族续集）—— 已修复
+- **优先级**：P1
+- **来源**：BL-0108 ①②合入 master 后测试立即复现，同一 `ContextNotActiveException` 根因家族
+- **状态**：**已修复并验证**（同分支 `fix/repair-0803-quotation-delete-fk-block` 延续，未新开）
+- **登记日期**：2026-08-03　**修复日期**：2026-08-03
+- **现象**：`recompute-budget` 两次独立复现 `budget_status=FAILED`，`budget_error` 是与
+  `PriceAdjustJobExecutionService.executeItem`（BL-0108 那次）逐字一致的
+  `ContextNotActiveException`（`DataLoader` 的 `RequestScoped` context 不可用）——区别是这次
+  **没有伪装成 SUCCESS**（BL-0108 ② 的纵深防御第一次实战验证：完整堆栈 + `FAILED` 而非假成功，
+  定位耗时从 8 轮排查缩短到立即）。
+- **根因**：`PriceAdjustBudgetService` 两层嵌套 `@Transactional(REQUIRES_NEW)`
+  （`processMaterial` 外层 → `runDryRunSnapshot` 内层，内层挂起外层另开事务）→
+  `materialVersionUpgradeService.upgrade(dryRun=true)` → S5 核价渲染 → `DataLoader`。
+  `@ActivateRequestContext` 原本只挂在**外部调用方**（`onVersionGenerated`/
+  `recomputeSingleReview`）身上，**两层 REQUIRES_NEW 边界本身都没有**。
+- **顺带发现**：`PriceAdjustComparisonColumnService`/`PriceAdjustStrategyService` 各有一处
+  **直接** `managedExecutor.runAsync(() -> budgetService.processMaterial(...))`，完全绕开
+  `onVersionGenerated`/`recomputeSingleReview` 身上挂的保护——另外两个独立裸入口（未在
+  coordinator 原排查表中）。
+- **修法**：`processMaterial` 与 `runDryRunSnapshot` **各自**补 `@ActivateRequestContext`
+  （两层都要补），修复点落在共享核心方法本身，一次性覆盖全部 4 个入口（含上面顺带发现的 2 个）。
+- **验证**：真实 `recompute-budget` 端点重放失败 review → `ContextNotActiveException` 消失，
+  `budget_status: FAILED→READY`；`@Scheduled` 同款异步机制复测（临时端点，未新建版本/未动
+  指针，验证完已移除）→ 0 次异常，正常完成；`status=PENDING`+`budget_status=READY` 确认
+  `approve` 的 `REVIEW_BUDGET_NOT_READY` 拦截不再触发。
+- **相关**：[[BL-0108]]（同一 `ContextNotActiveException` 根因家族，本条是价格调整模块内的
+  第二个中招入口——已排查全部 `managedExecutor.runAsync` 用法，确认再无第三个未覆盖入口）
+- **详情**：`dev-docs/task-0729-客户价格调整策略和价格版本/repair-0803-报价单删除阻塞外键/`
+  「续集」章节（需求文档 + test-report 同一目录延续记录）
+
 ## P2
 
 ### [BL-0070] Q04/Q05 元素BOM 相关测试 fixture 用 stale 列名（pre-existing 坏测试）
