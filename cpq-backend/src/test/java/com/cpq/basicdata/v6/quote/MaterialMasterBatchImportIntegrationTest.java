@@ -87,9 +87,19 @@ class MaterialMasterBatchImportIntegrationTest {
             .setParameter("id", recordId).getSingleResult();
     }
 
-    /** material_master(TESTP1A%) + material_customer_map(CUST) 的稳定 md5。 */
+    /**
+     * material_master(TESTP1A%) + material_customer_map(CUST) + annual_discount(本单) 的稳定 md5。
+     *
+     * <p>repair-0804：annual_discount 已纳入组级版本化 + pending 隔离，两次独立导入（各自
+     * {@code createImportRecord} 出不同 quotation）天然产生两份 pending 影子版本（如 2000/2001），
+     * 彼此都是 {@code is_current=false}——不按本单归属过滤会把两份都聚进 {@code string_agg}，
+     * 让"重导应幂等"这类跨两次独立导入的比较必然出现「同内容却两份」的伪差异。足迹的语义是
+     * 「本次导入写了什么」，故 annual_discount 段按 {@code pending_quotation_id} 限定到本单。
+     * material_master / material_customer_map 不是版本化表（原地 upsert，无 pending 概念），
+     * 保持原样不加过滤。
+     */
     @Transactional
-    String footprintMd5() {
+    String footprintMd5(UUID pendingQuotationId) {
         Object mm = em.createNativeQuery(
             "SELECT md5(COALESCE(string_agg(material_no||'|'||COALESCE(material_name,'')||'|'||" +
             "COALESCE(material_type,'')||'|'||COALESCE(unit_weight::text,''), ';' ORDER BY material_no),'')) " +
@@ -102,7 +112,8 @@ class MaterialMasterBatchImportIntegrationTest {
             "SELECT md5(COALESCE(string_agg(material_no||'|'||discount_order||'|'||COALESCE(discount_ratio::text,'')||" +
             "'|'||COALESCE(fixed_discount_value::text,'')||'|'||COALESCE(currency,'')||'|'||COALESCE(unit,'')||" +
             "'|'||COALESCE(discount_times::text,''), ';' ORDER BY material_no, discount_order),'')) " +
-            "FROM annual_discount WHERE material_no LIKE :p").setParameter("p", PFX + "%").getSingleResult();
+            "FROM annual_discount WHERE material_no LIKE :p AND pending_quotation_id = :pq")
+            .setParameter("p", PFX + "%").setParameter("pq", pendingQuotationId).getSingleResult();
         return mm + "::" + cm + "::" + ad;
     }
 
@@ -197,13 +208,15 @@ class MaterialMasterBatchImportIntegrationTest {
             .setParameter("id", recordId).getSingleResult();
     }
 
-    private void runImport(UUID user, byte[] bytes) throws Exception {
+    /** @return 本次导入创建的 import_record id（= annual_discount 落库时用的 pending_quotation_id，供 {@link #footprintMd5} 按本单归属过滤）。 */
+    private UUID runImport(UUID user, byte[] bytes) throws Exception {
         UUID recId = svc.createImportRecord(anyCustomerId(), FNAME, user);
         managedExecutor.runAsync(() -> svc.processImport(recId, CUST, FNAME, bytes, user))
             .get(60, TimeUnit.SECONDS);
         String st = statusOf(recId);
         if (!"SUCCESS".equals(st)) System.out.println("=== P1A-INTEG non-SUCCESS metadata: " + metadataOf(recId));
         assertEquals("SUCCESS", st, "导入应 SUCCESS");
+        return recId;
     }
 
     @Test
@@ -217,11 +230,11 @@ class MaterialMasterBatchImportIntegrationTest {
         // --- run 1（计往返）---
         stats.clear();
         long before = stats.getPrepareStatementCount();
-        runImport(user, bytes);
+        UUID rec1 = runImport(user, bytes);
         long after = stats.getPrepareStatementCount();
         long prepared = after - before;
 
-        String md5Run1 = footprintMd5();
+        String md5Run1 = footprintMd5(rec1);
         long mmRows = countMaterialMasterFootprint();
         // material_master 期望 = W(N)+WNULL(1) ∪ P(N) = 2N+1 个不同料号（前缀互不重叠）。
         // task-0717 repair-2 更新：E 组(来料回收折扣/Q09)"投入料号"列已固化为材质料号语义，
@@ -230,9 +243,10 @@ class MaterialMasterBatchImportIntegrationTest {
         assertEquals(2L * N + 1, mmRows, "material_master TESTP1A 行数应=2N+1（W+WNULL ∪ P；E 组 repair-2 后不再登记 master）");
 
         // --- run 2（幂等重导，验确定性）---
-        runImport(user, bytes);
-        String md5Run2 = footprintMd5();
-        assertEquals(md5Run1, md5Run2, "连跑两次 material_master/customer_map md5 必须一致（确定性/幂等）");
+        UUID rec2 = runImport(user, bytes);
+        String md5Run2 = footprintMd5(rec2);
+        assertEquals(md5Run1, md5Run2,
+            "连跑两次 material_master/customer_map/annual_discount(按本单归属) md5 必须一致（确定性/幂等）");
 
         // 该数字两遍运行（新代码 / git stash 后旧代码）对比：差值≈material_master(3 批) + annual_discount(1 批)
         // 批量节省（其余路径恒定）。
