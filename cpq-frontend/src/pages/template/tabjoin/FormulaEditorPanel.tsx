@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Space, Typography } from 'antd';
+import { Button, Space, Tooltip, Typography } from 'antd';
 import type { TabDef } from '../../../services/tabJoinFormulaService';
 import FormulaRichInput, { type FormulaRichInputHandle } from './FormulaRichInput';
 import type { ParenCheckResult } from './formulaBracketCheck';
@@ -15,6 +15,25 @@ type SumifFuncName = 'SUMIF' | 'COUNTIF' | 'AVGIF' | 'MINIF' | 'MAXIF';
 const FUNCS = ['SUM', 'AVG', 'MIN', 'MAX', 'COUNT'];
 const OPS = ['+', '-', '*', '/', '(', ')'];
 const SUMIF_TEXT_FUNCS: SumifFuncName[] = ['SUMIF', 'COUNTIF', 'AVGIF', 'MINIF', 'MAXIF'];
+
+// task-0803 F-5（2026-08-04 补）：父子取值函数 / 树属性保留字的一键插入。
+// 此前只有下方紫色框的文字说明、没有按钮，用户在 BOM 页签打开抽屉「看不到这几个选项」，
+// 只能照着说明手打——与 FUNCS/SUMIF 族有按钮的体验不一致。
+// tuple: [函数名, 悬浮说明]
+const TREE_FUNCS: [string, string][] = [
+  ['PGET', '子取父：取父行该字段的值（唯一无需聚合）'],
+  ['CSUM', '父取子：直接子行该字段求和'],
+  ['CAVG', '父取子：直接子行该字段平均（分母只数有值的行）'],
+  ['CMAX', '父取子：直接子行该字段最大值'],
+  ['CMIN', '父取子：直接子行该字段最小值'],
+  ['CCOUNT', '父取子：直接子行该字段的有值行数'],
+];
+// 树属性是保留字（含方括号），整体插入、光标落末尾
+const TREE_ATTRS: [string, string][] = [
+  ['[层级]', '当前行的树层级，根节点为 1，逐层 +1'],
+  ['[是否叶子]', '没有子行 → 1，否则 0'],
+  ['[是否根]', '没有父行 → 1，否则 0'],
+];
 
 // ──────────────────────────────────────────────
 // 括号配对深度图例（与 FormulaRichInput 的 .p0~.p3 着色同源，逐字一致）
@@ -49,6 +68,11 @@ interface Props {
   onClearExpression: () => void;
   /** 组件线（NORMAL/SUBTOTAL）点条件聚合按钮 → 展开 Drawer 底部 SUMIF 构造器并预选该函数 */
   onOpenSumif: (func: SumifFuncName) => void;
+  /**
+   * task-0803：正在编辑公式的组件的页签类型。父子取值按钮组据此启用/置灰
+   * （AC-16：非 BOM 页签必须**可见但置灰 + hover 有原因**，不得隐藏）。
+   */
+  tabType?: string;
 }
 
 // ──────────────────────────────────────────────
@@ -67,7 +91,15 @@ const FormulaEditorPanel: React.FC<Props> = ({
   onInsert,
   onClearExpression,
   onOpenSumif,
+  tabType,
 }) => {
+  // task-0803 F-5：父子取值仅 BOM 类型页签可用。口径与保存前的 checkTreeRefTabTypeGate
+  // （TabJoinFormulaDrawer.tsx）保持一致 —— 那边是硬闸（返 400/拦保存），这里是软提示（置灰）。
+  // 两处都改时务必同步，否则会出现「按钮可点但保存被拒」或反之。
+  const treeDisabled = tabType !== 'BOM';
+  const treeDisabledReason = treeDisabled
+    ? `父子取值与树属性仅 BOM 类型页签可用（当前页签类型：${tabType ?? '未配置'}）`
+    : null;
   const hasExpr = expression.trim().length > 0;
 
   return (
@@ -180,6 +212,45 @@ const FormulaEditorPanel: React.FC<Props> = ({
             {fn}
           </Button>
         ))}
+
+        {/* task-0803 F-5：父子取值（仅 BOM 页签）。AC-16 要求非 BOM 时**可见但置灰 + hover 说明原因**，
+            故这里用 disabled 而非条件隐藏；EXCEL 视图列不解析 tree_ref，整组不出现。 */}
+        {componentType !== 'EXCEL' && (
+          <>
+            <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+              父子取值
+            </Text>
+            {TREE_FUNCS.map(([fn, desc]) => (
+              <Tooltip key={fn} title={treeDisabledReason ?? `${fn}(字段名) —— ${desc}`}>
+                {/* disabled 的 Button 不触发鼠标事件，Tooltip 需外面这层 span 才能显示原因 */}
+                <span style={{ display: 'inline-block' }}>
+                  <Button
+                    size="small"
+                    disabled={treeDisabled}
+                    style={treeDisabled ? undefined : { color: '#531dab', borderColor: '#b37feb' }}
+                    onClick={() => onInsert(`${fn}()`, 1)}
+                  >
+                    {fn}
+                  </Button>
+                </span>
+              </Tooltip>
+            ))}
+            {TREE_ATTRS.map(([attr, desc]) => (
+              <Tooltip key={attr} title={treeDisabledReason ?? desc}>
+                <span style={{ display: 'inline-block' }}>
+                  <Button
+                    size="small"
+                    disabled={treeDisabled}
+                    style={treeDisabled ? undefined : { color: '#531dab', borderColor: '#b37feb' }}
+                    onClick={() => onInsert(attr)}
+                  >
+                    {attr}
+                  </Button>
+                </span>
+              </Tooltip>
+            ))}
+          </>
+        )}
       </Space>
 
       {/* 规则提示 */}
@@ -238,7 +309,7 @@ const FormulaEditorPanel: React.FC<Props> = ({
           <br />
           树属性保留字（与同名字段无关，优先解析为保留字；同样仅 BOM 类型页签可用）：
           <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>[层级]</code>
-          {'（根为 0，逐层 +1） '}
+          {'（根为 1，逐层 +1） '}
           <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>[是否叶子]</code>
           {' '}
           <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>[是否根]</code>

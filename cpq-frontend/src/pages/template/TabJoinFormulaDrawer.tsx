@@ -545,6 +545,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
         {/* 右栏：公式配置（表达式框 + 图例 + 工具条 + 规则提示）+ SUMIF 折叠区，各自独立滚动 */}
         <div style={{ padding: '14px 16px', overflow: 'auto', maxHeight: '78vh' }}>
           <FormulaEditorPanel
+            tabType={tabType}
             expression={expression}
             onChange={setExpression}
             tabDefs={tabDefs}
