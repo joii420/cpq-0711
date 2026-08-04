@@ -7,13 +7,22 @@
 
 ## 1. 任务清单
 
+> ⚠️ **后端已完成（commit `7ebfa7b9` / `0f1f8603`），实现中有 4 处订正了原方案，前端必须照订正后的做法对齐。下面 F1/F2 已按实际落地重写。**
+
 ### F1. `b_field` 取值链补回退（FR-1 / FR-2）
 
-- 文件：`src/utils/formulaEngine.ts`，`evalRowExpr` 的 `mergedRow`（`:415`）与 `b_field` 求值分支
-- 规则**必须与后端逐字一致**（`backtask.md` B1）：
-  - `currentRow` 中**键存在**（含空串）→ 用之，不回落
-  - **键缺失** → 回落 `fieldValues[name]`
+- 文件：`src/utils/formulaEngine.ts`，`evalRowExpr`（`:377`）与 `b_field` 求值分支
+- 规则**必须与后端逐字一致**：
+  - `currentRow` 中**键存在**（含空串 `''`）→ 用之，**不回落**（尊重用户显式置空）
+  - **键缺失** → 回落**宿主行已算字段值**
   - 都没有 → 0
+
+- 🔴 **订正 1（关键，后端踩过坑）**：**不能回落到当前上下文的 `fieldValues`**。
+  在 `targetExpr` 子上下文里 `fieldValues` 装的是**被聚合源页签当前行的列**（前端 `evalRowExpr` 里的
+  `aFieldValues` 就是从 `ar` 灌的），宿主的已算字段根本不在里面；直接回落会让 `b_field` 串到源页签同名列上。
+  后端为此新增了 `RowContext.hostFieldValues` 专用通道（顶层与 `fieldValues` 同引用，
+  `targetRowValue` 原样透传）。**前端需要等价机制**：给 `evaluateExpression` 增一个「宿主已算字段值」
+  参数，顶层传 `computeAllFormulas` 里那个随算随更新的 `fieldValues`，`evalRowExpr` 递归时原样透传。
 - ⚠️ 不得改 `mergedRow` 的构造（`{ ...hostRow, ...ar }`）——它同时供内层 KSUM 的 match 键取值
 
 - [ ] F1 完成
@@ -21,9 +30,14 @@
 ### F2. 依赖收集递归 targetExpr（FR-3）
 
 - 文件：`src/pages/quotation/QuotationStep2.tsx`，`getFormulaDeps`（`:407-413`）
-- 现状只 `filter(t => t.type === 'field')`，改为递归进 `cross_tab_ref.targetExpr`，识别 `b_field` + `field`
-- **递归终止**：遇 `projectToHostKey === true` 的子 token 停止下探
-- 口径与后端 `addExprFieldDeps` **必须一致**，否则前端算序与后端不同 → 同一份配置两端结果分叉
+- 现状只 `filter(t => t.type === 'field')`，改为递归进 `cross_tab_ref.targetExpr`
+
+- 🔴 **订正 2（关键）**：收集规则不是"b_field + field"，而是：
+  - **任意层级**的 `b_field` → 收（其语义恒为「宿主行的列」）
+  - **仅顶层**的 `field` → 收；**`targetExpr` 内的 `field` 一律不收** —— 它指的是**被聚合源页签**的列，
+    与宿主字段同名纯属巧合，收了会凭空建边甚至误报环
+- **递归终止**：遇 `projectToHostKey === true`（KSUM 子 token）停止下探
+- 后端实现见 `FormulaCalculator.addExprFieldDeps`（带 `inTargetExpr` 标志的五参重载），**照抄其判定**
 
 - [ ] F2 完成
 
@@ -55,6 +69,15 @@
 - 底部按钮：仅「知道了」关闭
 
 - [ ] F3 完成
+
+> 🔴 **订正 3**：后端 `message` **保持原多行定位文案逐字不变**（被既有测试
+> `ComponentServiceConditionalValidationTest.cycleMessage_containsLocation` 锁死，也是 api.md
+> 「不消费 data 的路径仍可只读 message」的落地）。`data.errorType` / `data.cycles` 是**纯新增**。
+> 故前端判定**只认 `errorType`**，且既有 `showSaveError` 的 notification 分支必须原样保留。
+>
+> 🔴 **订正 4**：页签级环的**发布期校验口径已与渲染期对齐**（后端 B7）。原实现只收
+> `cross_tab_ref` 边，这正是「模板发布通过、一渲染就报环」的成因。现在发布期也会检出
+> `scope=TAB` 的环并下发结构化链路 —— F5 因此确实有真实触发场景。
 
 ### F4. 组件保存接入抽屉（FR-10）
 
