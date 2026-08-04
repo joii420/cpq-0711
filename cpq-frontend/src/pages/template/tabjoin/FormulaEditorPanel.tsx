@@ -236,7 +236,7 @@ const FormulaEditorPanel: React.FC<Props> = ({
           <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>CCOUNT(字段名)</code>
           {' '}取「直接子」行该字段的求和/平均/最大/最小/计数（父取子，需聚合），如 <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>CSUM(用量 * 单价)</code>。
           <br />
-          树属性保留字（与同名字段无关，优先解析为保留字）：
+          树属性保留字（与同名字段无关，优先解析为保留字；同样仅 BOM 类型页签可用）：
           <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>[层级]</code>
           {'（根为 0，逐层 +1） '}
           <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>[是否叶子]</code>

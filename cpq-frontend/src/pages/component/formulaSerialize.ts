@@ -1526,13 +1526,17 @@ export function validateTreeRefWhitelist(
 }
 
 /**
- * task-0803 Task 8b（F-2 用）：递归判断一段 {@link FormulaToken}[] 内是否出现过任意 tree_ref
- * token（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT 解析后的产物），不论嵌套多深（复用
+ * task-0803 Task 8b：递归判断一段 {@link FormulaToken}[] 内是否出现过任意 tree_ref token
+ * （PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT 解析后的产物），不论嵌套多深（复用
  * {@link scanTreeRefViolations} 同款"无差别下钻所有数组属性值"的通用递归，理由同上——
  * 一个 tree_ref 藏进 cross_tab_ref.targetExpr 等容器内部也不能漏检）。
  *
- * 仅检测 tree_ref（PGET/C* 函数），不含 tree_attr（[层级]/[是否叶子]/[是否根]）——
- * F-2 的拦截文案只列举了 6 个函数，树属性保留字不在 BOM-only 限制范围内（按需求原文字面裁定）。
+ * 只测 tree_ref（不含 tree_attr）——一个类型精确的诊断用途工具函数。
+ * ⚠️ **不要**用它做 F-2 的 BOM-only 保存拦截判据：那个判据必须与后端
+ * `ComponentService.assertTreeTokenGates` 的 `hasTreeToken` 口径一致（tree_ref **或**
+ * tree_attr 任一命中即拒），否则前端放行、后端 400，体验割裂——见下方 {@link containsTreeToken}
+ * （2026-08-03 评审订正：此前误判 tree_attr 不受 BOM-only 限制，实为文案漏列，语义与
+ * tree_ref 相同；`checkTreeRefTabTypeGate` 已改用 containsTreeToken）。
  */
 export function containsTreeRef(tokens: FormulaToken[] | null | undefined): boolean {
   if (!tokens || tokens.length === 0) return false;
@@ -1541,6 +1545,31 @@ export function containsTreeRef(tokens: FormulaToken[] | null | undefined): bool
     if (node && typeof node === 'object') {
       const t = node as Record<string, unknown>;
       if (t.type === 'tree_ref') return true;
+      return Object.keys(t).some((k) => scan(t[k]));
+    }
+    return false;
+  };
+  return scan(tokens);
+}
+
+/**
+ * task-0803 Task 8b（F-2 用，2026-08-03 评审订正）：递归判断一段 {@link FormulaToken}[] 内是否
+ * 出现过 tree_ref **或** tree_attr 中的任意一种——镜像后端 `ComponentService
+ * .assertTreeTokenGates` 的 `hasTreeToken` 判定口径（该方法对 `"tree_ref".equals(type)` 与
+ * `"tree_attr".equals(type)` 一视同仁地置位 `hasTreeToken`，非 BOM 页签命中即 400）。
+ * 需求 §4.3.8 闸② 原文：「公式含 tree_ref 或 tree_attr 且 tabType≠BOM → 400」。
+ *
+ * {@link checkTreeRefTabTypeGate}（TabJoinFormulaDrawer.tsx）用这个函数做保存前拦截，
+ * 不能用只测 tree_ref 的 {@link containsTreeRef}，否则非 BOM 页签的 `[层级]` 会被前端放行、
+ * 保存时才收到后端 400，前后端口径打架。
+ */
+export function containsTreeToken(tokens: FormulaToken[] | null | undefined): boolean {
+  if (!tokens || tokens.length === 0) return false;
+  const scan = (node: unknown): boolean => {
+    if (Array.isArray(node)) return node.some(scan);
+    if (node && typeof node === 'object') {
+      const t = node as Record<string, unknown>;
+      if (t.type === 'tree_ref' || t.type === 'tree_attr') return true;
       return Object.keys(t).some((k) => scan(t[k]));
     }
     return false;

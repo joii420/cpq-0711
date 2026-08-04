@@ -12,7 +12,7 @@ import {
   expressionToTokens,
   tokensToDrawerExpression,
   checkMappable,
-  containsTreeRef,
+  containsTreeToken,
   validateTreeRefWhitelist,
 } from '../component/formulaSerialize';
 import type { FormulaToken } from '../component/types';
@@ -140,19 +140,23 @@ export function buildSumifText(input: {
 // ── task-0803 Task 8b: 父子取值（PGET/C*）保存前拦截 —— 纯函数化，供 save() 调用 + 单测直接覆盖 ──
 
 /**
- * F-2：父子取值函数（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）仅 BOM 类型页签可用。
- * 正在编辑的组件页签类型（tabType）不是 'BOM' 且解析出的 tokens 里出现过 tree_ref
- * （containsTreeRef 递归扫描，含嵌套场景）→ 返回拦截文案；合规返回 null。
- * 未配置 tabType 时人类可读标签显示「未配置」，不显示内部 code。
+ * F-2：父子取值函数（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）与树属性（[层级]/[是否叶子]/[是否根]）
+ * 仅 BOM 类型页签可用。正在编辑的组件页签类型（tabType）不是 'BOM' 且解析出的 tokens 里出现过
+ * tree_ref **或** tree_attr（containsTreeToken 递归扫描，含嵌套场景）→ 返回拦截文案；合规返回
+ * null。未配置 tabType 时人类可读标签显示「未配置」，不显示内部 code。
+ *
+ * 2026-08-03 评审订正：此前误用只测 tree_ref 的 containsTreeRef，导致非 BOM 页签的 [层级] 被
+ * 前端放行、保存时才收到后端 ComponentService.assertTreeTokenGates 的 400（该方法对 tree_ref/
+ * tree_attr 一视同仁）。改用 containsTreeToken 使前后端判据口径一致，见需求 §4.3.8 闸②。
  */
 export function checkTreeRefTabTypeGate(
   tokens: FormulaToken[],
   tabType: string | undefined,
 ): string | null {
   if (tabType === 'BOM') return null;
-  if (!containsTreeRef(tokens)) return null;
+  if (!containsTreeToken(tokens)) return null;
   const label = tabType ?? '未配置';
-  return `父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）仅 BOM 类型页签可用（当前页签类型：${label}）`;
+  return `父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）与树属性（[层级]/[是否叶子]/[是否根]）仅 BOM 类型页签可用（当前页签类型：${label}）`;
 }
 
 /**

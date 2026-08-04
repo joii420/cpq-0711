@@ -19,6 +19,7 @@ import {
   tokensToDrawerExpression,
   validateTreeRefWhitelist,
   containsTreeRef,
+  containsTreeToken,
 } from '../formulaSerialize';
 import type { TabDef } from '../../../services/tabJoinFormulaService';
 import type { FormulaToken } from '../types';
@@ -187,7 +188,10 @@ describe('F-7 嵌套非法：CSUM(...) 内层跨页签引用', () => {
   });
 });
 
-describe('containsTreeRef（F-2 用）', () => {
+// containsTreeRef 只测 tree_ref（不含 tree_attr）——诊断用途工具函数，不是 F-2 的保存拦截判据。
+// F-2 的实际判据是下面的 containsTreeToken（2026-08-03 评审订正：此前误用 containsTreeRef 做
+// F-2 拦截，导致非 BOM 页签的 [层级] 被前端放行、保存时才收到后端 400，前后端口径打架）。
+describe('containsTreeRef（只测 tree_ref，不含 tree_attr——诊断工具，非 F-2 判据）', () => {
   it('含 PGET/C* 的 tokens → true', () => {
     expect(containsTreeRef(parse('PGET(累计用量)'))).toBe(true);
     expect(containsTreeRef(parse('CSUM(用量)'))).toBe(true);
@@ -204,5 +208,33 @@ describe('containsTreeRef（F-2 用）', () => {
     expect(containsTreeRef(null)).toBe(false);
     expect(containsTreeRef(undefined)).toBe(false);
     expect(containsTreeRef([])).toBe(false);
+  });
+});
+
+// containsTreeToken（F-2 实际判据）：tree_ref 或 tree_attr 任一命中即 true，镜像后端
+// ComponentService.assertTreeTokenGates 的 hasTreeToken 口径。
+describe('containsTreeToken（F-2 实际判据：tree_ref 或 tree_attr 任一命中）', () => {
+  it('含 PGET/C* 的 tokens → true', () => {
+    expect(containsTreeToken(parse('PGET(累计用量)'))).toBe(true);
+    expect(containsTreeToken(parse('CSUM(用量)'))).toBe(true);
+  });
+  it('含裸 [层级]/[是否叶子]/[是否根] 树属性（不含任何 PGET/C*）→ 也是 true', () => {
+    expect(containsTreeToken(parse('[层级]'))).toBe(true);
+    expect(containsTreeToken(parse('[是否叶子]'))).toBe(true);
+    expect(containsTreeToken(parse('[是否根]'))).toBe(true);
+  });
+  it('不含 tree_ref 也不含 tree_attr 的普通公式 → false（不误伤）', () => {
+    expect(containsTreeToken(parse('[用量] + [单价]'))).toBe(false);
+  });
+  it('组合公式：普通字段 + CSUM(...) → true（命中顶层 tree_ref）', () => {
+    expect(containsTreeToken(parse('[用量] + CSUM(单价)'))).toBe(true);
+  });
+  it('组合公式：普通字段 + [层级] → true（命中顶层 tree_attr）', () => {
+    expect(containsTreeToken(parse('[用量] + [层级]'))).toBe(true);
+  });
+  it('null/undefined/空数组 → false', () => {
+    expect(containsTreeToken(null)).toBe(false);
+    expect(containsTreeToken(undefined)).toBe(false);
+    expect(containsTreeToken([])).toBe(false);
   });
 });

@@ -50,30 +50,41 @@ describe('checkTreeRefTabTypeGate (F-2)', () => {
 
   it('tabType=材质元素（非 BOM）且用了 CSUM → 拦截，文案含人类可读标签「材质元素」', () => {
     const msg = checkTreeRefTabTypeGate(parse('CSUM(用量)'), '材质元素');
-    expect(msg).toBe('父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）仅 BOM 类型页签可用（当前页签类型：材质元素）');
+    expect(msg).toBe('父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）与树属性（[层级]/[是否叶子]/[是否根]）仅 BOM 类型页签可用（当前页签类型：材质元素）');
   });
 
   it('tabType=零件/外购件/主件 且用了 PGET → 均拦截，标签逐字对应', () => {
     expect(checkTreeRefTabTypeGate(parse('PGET(用量)'), '零件')).toBe(
-      '父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）仅 BOM 类型页签可用（当前页签类型：零件）',
+      '父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）与树属性（[层级]/[是否叶子]/[是否根]）仅 BOM 类型页签可用（当前页签类型：零件）',
     );
     expect(checkTreeRefTabTypeGate(parse('PGET(用量)'), '外购件')).toBe(
-      '父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）仅 BOM 类型页签可用（当前页签类型：外购件）',
+      '父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）与树属性（[层级]/[是否叶子]/[是否根]）仅 BOM 类型页签可用（当前页签类型：外购件）',
     );
     expect(checkTreeRefTabTypeGate(parse('PGET(用量)'), '主件')).toBe(
-      '父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）仅 BOM 类型页签可用（当前页签类型：主件）',
+      '父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）与树属性（[层级]/[是否叶子]/[是否根]）仅 BOM 类型页签可用（当前页签类型：主件）',
     );
   });
 
   it('tabType 未配置(undefined) 且用了 PGET → 拦截，标签显示「未配置」', () => {
     const msg = checkTreeRefTabTypeGate(parse('PGET(用量)'), undefined);
-    expect(msg).toBe('父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）仅 BOM 类型页签可用（当前页签类型：未配置）');
+    expect(msg).toBe('父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）与树属性（[层级]/[是否叶子]/[是否根]）仅 BOM 类型页签可用（当前页签类型：未配置）');
   });
 
-  it('非 BOM 页签但公式里没有 PGET/C* → 放行(null)，不误伤普通公式', () => {
+  // 2026-08-03 评审订正（反转）：此前这里断言非 BOM 页签的 [层级] → 放行(null)，
+  // 依据是"F-2 只限制 6 个函数、不限制树属性"的自行裁决——已被后端实证推翻：
+  // ComponentService.assertTreeTokenGates 对 tree_ref 和 tree_attr 一视同仁地拒绝
+  // （需求 §4.3.8 闸②原文「公式含 tree_ref 或 tree_attr 且 tabType≠BOM → 400」）。
+  // 若前端继续放行，用户会在保存时才收到一条措辞完全不同的服务器 400，体验割裂。
+  it('非 BOM 页签且公式里出现树属性 [层级]/[是否叶子]/[是否根] → 同样拦截（不再放行）', () => {
+    const label = '零件';
+    const expected = `父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）与树属性（[层级]/[是否叶子]/[是否根]）仅 BOM 类型页签可用（当前页签类型：${label}）`;
+    expect(checkTreeRefTabTypeGate(parse('[层级]'), label)).toBe(expected);
+    expect(checkTreeRefTabTypeGate(parse('[是否叶子]'), label)).toBe(expected);
+    expect(checkTreeRefTabTypeGate(parse('[是否根]'), label)).toBe(expected);
+  });
+
+  it('非 BOM 页签但公式是纯普通公式（不含 PGET/C*，也不含树属性）→ 放行(null)，不误伤', () => {
     expect(checkTreeRefTabTypeGate(parse('[用量] + [累计用量]'), '零件')).toBeNull();
-    // [层级] 是树属性而非 tree_ref，F-2 只限制 6 个函数，不限制树属性
-    expect(checkTreeRefTabTypeGate(parse('[层级]'), '零件')).toBeNull();
   });
 });
 
