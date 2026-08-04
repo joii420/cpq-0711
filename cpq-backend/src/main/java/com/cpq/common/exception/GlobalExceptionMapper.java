@@ -33,6 +33,15 @@ public class GlobalExceptionMapper {
                             Map.of("conflictTabs", tce.getConflictTabs())))
                     .build();
         }
+        // repair-0803：公式循环引用 —— 下发结构化环链路供前端弹抽屉。
+        // errorType 是前端的唯一判定依据（禁止按 message 文本匹配，见 api.md §4）。
+        if (e instanceof FormulaCycleException fce) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(
+                            "errorType", "FORMULA_CYCLE",
+                            "cycles", fce.getCycles())))
+                    .build();
+        }
         if (e instanceof com.cpq.priceadjust.exception.PendingVersionExistsException pvee) {
             return Response.status(e.getCode())
                     .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(

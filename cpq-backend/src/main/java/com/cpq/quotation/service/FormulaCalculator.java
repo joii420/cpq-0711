@@ -1,6 +1,7 @@
 package com.cpq.quotation.service;
 
 import com.cpq.common.PrecisionPolicy;
+import com.cpq.common.exception.FormulaCycleException;
 import com.cpq.quotation.rowkey.DeletedRowKeys;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -67,6 +68,19 @@ public class FormulaCalculator {
         public Double previousRowSubtotal = null;
         /** cross_tab_ref：B 当前行原始值（字段名→原始值，含文本），供匹配键 b 取值。 */
         public Map<String, Object> currentRowRaw = new HashMap<>();
+        /**
+         * repair-0803：<b>宿主行</b>已算字段值（字段名 → 数值），供 {@code b_field} 在
+         * {@code currentRowRaw} 键缺失时回落。
+         *
+         * <p>为什么不复用 {@code fieldValues}：在 targetExpr 子上下文里 {@code fieldValues}
+         * 装的是<b>被聚合源页签当前行</b>的列（{@code targetRowValue} 从 arow 灌入），
+         * 而 {@code b_field} 语义恒为「宿主行的列」。两者必须分开，否则 b_field 会串到源页签列上。
+         *
+         * <p>顶层求值时本字段与 {@code fieldValues} 指向<b>同一个 map</b>（随公式逐个算完即时更新，
+         * 故 b_field 能取到刚算出的宿主公式值）；targetRowValue 构造子上下文时原样透传本字段。
+         * 未设置（默认空 map）→ b_field 回落取不到 → 行为与修复前一致（零破坏）。
+         */
+        public Map<String, Double> hostFieldValues = new HashMap<>();
         /** cross_tab_ref：同卡片已算行存储（组件标识→行表，行=字段名→已算值）。 */
         public Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
 
@@ -219,7 +233,14 @@ public class FormulaCalculator {
             }
             case "b_field": {
                 String n = token.has("value") ? token.path("value").asText("") : token.path("name").asText("");
-                Double v = toNumber(ctx.currentRowRaw.get(n));
+                // repair-0803：宿主行原始值优先；<b>键缺失</b>时回落已算字段值。
+                // 理由：FORMULA 字段的结果只回填 fieldValues（computeRows 尾部），从不写回
+                // currentRowRaw；fillInputDefaultSourceByFieldName 也只补 INPUT_ 类型。
+                // 故不回落时，targetExpr 内引用本页签公式列恒取 0（静默少算）。
+                // 键存在但为空串 = 用户显式置空 → 尊重置空、不回落（与 fillInputDefaultSourceByFieldName
+                // 的「仅键缺失才补」口径对称）。
+                Object raw = ctx.currentRowRaw.get(n);
+                Double v = (raw != null) ? toNumber(raw) : ctx.hostFieldValues.get(n);
                 expr.append(numStr(v != null ? v : 0.0));
                 break;
             }
@@ -592,6 +613,9 @@ public class FormulaCalculator {
                     : new java.util.HashMap<>();
             mergedCurrentRow.putAll(arow);   // arow 高优先，覆盖同名宿主列（与前端 {...hostRow, ...ar} 一致）
             sub.currentRowRaw = mergedCurrentRow;
+            // repair-0803：宿主已算字段值原样透传（不并进 sub.fieldValues —— 那里装的是源页签行的列，
+            // 混入会让 targetExpr 内的 field token 串到宿主列上）。供 b_field 键缺失时回落。
+            sub.hostFieldValues = ctx.hostFieldValues;
             sub.basicDataValues = ctx.basicDataValues;
             sub.crossTabRows = ctx.crossTabRows;
             sub.componentSubtotals = ctx.componentSubtotals;   // C1 新增
@@ -1248,6 +1272,9 @@ public class FormulaCalculator {
 
         RowContext ctx = new RowContext();
         ctx.fieldValues = fieldValues;
+        // repair-0803：顶层求值时宿主通道 == fieldValues（同一引用）。逐个公式算完即时写入
+        // fieldValues，b_field 因此能取到刚算好的宿主公式值；targetRowValue 会把它透传进子上下文。
+        ctx.hostFieldValues = fieldValues;
         ctx.componentSubtotals = componentSubtotals != null ? componentSubtotals : new HashMap<>();
         ctx.quotationFields = quotationFields != null ? quotationFields : new HashMap<>();
         ctx.productAttributes = productAttributes != null ? productAttributes : new HashMap<>();
@@ -2041,18 +2068,50 @@ public class FormulaCalculator {
         return -1;
     }
 
-    /** 公式字段依赖边：依赖目标 + 该引用出现的位置（用于循环引用定位提示）。 */
-    private record DepEdge(String to, String via) {}
+    /**
+     * 公式字段依赖边：依赖目标 + 该引用出现的位置（用于循环引用定位提示）。
+     *
+     * @param via            完整可读来源（如「公式「X」」「条件规则2命中的公式「Y」」），供文本渲染
+     * @param viaFormulaName 该来源对应的公式名（repair-0803 结构化载荷用；条件判断条件等无公式时为 null）
+     */
+    private record DepEdge(String to, String via, String viaFormulaName) {}
 
     private static String nzFormula(String s) { return s == null || s.isEmpty() ? "未命名公式" : s; }
 
-    /** 把表达式里 type==field 且属公式字段名的 token 收成依赖边。Plan 3a。 */
-    private void addExprFieldDeps(JsonNode expr, java.util.Set<String> nameSet, List<DepEdge> acc, String via) {
+    /** 把表达式里引用本组件公式字段的 token 收成依赖边。Plan 3a + repair-0803。 */
+    private void addExprFieldDeps(JsonNode expr, java.util.Set<String> nameSet, List<DepEdge> acc,
+                                  String via, String viaFormulaName) {
+        addExprFieldDeps(expr, nameSet, acc, via, viaFormulaName, false);
+    }
+
+    /**
+     * repair-0803：递归收集依赖，使 {@code SUM(...)} 的 targetExpr 内引用宿主字段也进算序。
+     *
+     * <p><b>哪些 token 算「引用宿主公式字段」</b>：
+     * <ul>
+     *   <li>任意层级的 {@code b_field} —— 其语义恒为「宿主行的列」（求值读 currentRowRaw，
+     *       repair-0803 后回落 fieldValues），故一律计入。</li>
+     *   <li><b>仅顶层</b>的 {@code field} —— 顶层 field 取宿主行字段值；而 targetExpr 内的
+     *       {@code field} 指的是<b>被聚合源页签</b>的列（求值时从 arow 灌进子上下文的 fieldValues），
+     *       与宿主同名纯属巧合，<b>不得</b>计为宿主依赖，否则会凭空建边甚至误报环。</li>
+     * </ul>
+     *
+     * <p><b>递归边界</b>：遇 {@code projectToHostKey=true}（KSUM 子 token）即止 —— 其 inner
+     * 白名单本就拒 {@code b_field}（见 TokenMappabilityValidator.KSUM_INNER_ALLOWED_TYPES），
+     * 内部只可能是被聚合页签自己的列，继续下探无意义。
+     *
+     * @param inTargetExpr 当前是否位于某个 cross_tab_ref 的 targetExpr 内
+     */
+    private void addExprFieldDeps(JsonNode expr, java.util.Set<String> nameSet, List<DepEdge> acc,
+                                  String via, String viaFormulaName, boolean inTargetExpr) {
         if (expr == null || !expr.isArray()) return;
         for (JsonNode t : expr) {
-            if ("field".equals(t.path("type").asText(""))) {
+            String type = t.path("type").asText("");
+            if ("b_field".equals(type) || (!inTargetExpr && "field".equals(type))) {
                 String v = t.path("value").asText("");
-                if (nameSet.contains(v)) acc.add(new DepEdge(v, via));
+                if (nameSet.contains(v)) acc.add(new DepEdge(v, via, viaFormulaName));
+            } else if ("cross_tab_ref".equals(type) && !t.path("projectToHostKey").asBoolean(false)) {
+                addExprFieldDeps(t.path("targetExpr"), nameSet, acc, via, viaFormulaName, true);
             }
         }
     }
@@ -2072,14 +2131,16 @@ public class FormulaCalculator {
                 for (CondRule r : ff.rules) {
                     String tag = "条件规则" + r.ruleIndex;
                     for (String c : com.cpq.formula.CondTreeEvaluator.columns(r.when))
-                        if (nameSet.contains(c)) edges.add(new DepEdge(c, tag + "的判断条件"));
+                        if (nameSet.contains(c))
+                            edges.add(new DepEdge(c, tag + "的判断条件", r.formulaName));
                     addExprFieldDeps(r.expression, nameSet, edges,
-                        tag + "命中的公式「" + nzFormula(r.formulaName) + "」");
+                        tag + "命中的公式「" + nzFormula(r.formulaName) + "」", r.formulaName);
                 }
                 addExprFieldDeps(ff.defaultExpression, nameSet, edges,
-                    "条件默认公式「" + nzFormula(ff.defaultFormulaName) + "」");
+                    "条件默认公式「" + nzFormula(ff.defaultFormulaName) + "」", ff.defaultFormulaName);
             } else {
-                addExprFieldDeps(ff.expression, nameSet, edges, "公式「" + nzFormula(ff.formulaName) + "」");
+                addExprFieldDeps(ff.expression, nameSet, edges,
+                    "公式「" + nzFormula(ff.formulaName) + "」", ff.formulaName);
             }
             out.put(ff.name, edges);
         }
@@ -2165,6 +2226,67 @@ public class FormulaCalculator {
             if (!hasCycle) continue;
             List<String> path = cyclePathIn(scc, deps);
             if (!path.isEmpty()) out.add(renderCycle(path, edges));
+        }
+        return out;
+    }
+
+    /**
+     * repair-0803：同 {@link #describeFormulaCycles}，但产出<b>结构化</b>环链路供前端弹抽屉。
+     *
+     * <p>复用同一套找环逻辑（Tarjan SCC + {@link #cyclePathIn}）与同一份依赖边，
+     * 故与文本版、与 {@link #topoOrder} 的算序口径**天然一致**。
+     *
+     * <p><b>只出名称</b>：节点为字段名、边标注出自哪条公式，全程无 id（AC-11）。
+     *
+     * @param componentName 组件（页签）名称，注入进每个节点；调用方提供（本类不查库）
+     */
+    public List<FormulaCycleException.Cycle> describeFormulaCyclesStructured(
+            JsonNode fields, JsonNode formulas, String componentName) {
+        List<FormulaField> ffs = collectFormulaFields(fields, formulas, null);
+        java.util.Set<String> nameSet = new java.util.HashSet<>();
+        for (FormulaField ff : ffs) nameSet.add(ff.name);
+        Map<String, List<DepEdge>> edges = buildFormulaDepEdges(ffs, nameSet);
+        Map<String, List<String>> deps = dedupeEdges(edges);
+
+        // 字段 → 其当前绑定的公式名（条件字段取默认分支公式名，边上再按具体规则覆盖）
+        Map<String, String> formulaOf = new HashMap<>();
+        List<String> nodes = new ArrayList<>();
+        for (FormulaField ff : ffs) {
+            nodes.add(ff.name);
+            String fn = ff.isConditional() ? ff.defaultFormulaName : ff.formulaName;
+            if (fn != null && !fn.isEmpty()) formulaOf.put(ff.name, fn);
+        }
+
+        List<FormulaCycleException.Cycle> out = new ArrayList<>();
+        for (java.util.Set<String> scc : stronglyConnected(nodes, deps)) {
+            boolean hasCycle = scc.size() > 1;
+            if (!hasCycle) {
+                String only = scc.iterator().next();
+                hasCycle = deps.getOrDefault(only, List.of()).contains(only);   // 自引用
+            }
+            if (!hasCycle) continue;
+            List<String> path = cyclePathIn(scc, deps);
+            if (path.isEmpty()) continue;
+
+            List<FormulaCycleException.Node> ns = new ArrayList<>();
+            for (String f : path) {
+                ns.add(new FormulaCycleException.Node(componentName, f, formulaOf.get(f)));
+            }
+            List<FormulaCycleException.Edge> es = new ArrayList<>();
+            for (int i = 0; i < path.size(); i++) {
+                String from = path.get(i);
+                String to = path.get((i + 1) % path.size());   // 末条闭合回首节点
+                String viaDesc = null, viaFormula = null;
+                for (DepEdge de : edges.getOrDefault(from, List.of())) {
+                    if (de.to().equals(to)) { viaDesc = de.via(); viaFormula = de.viaFormulaName(); break; }
+                }
+                es.add(new FormulaCycleException.Edge(
+                    from, to, null, null,
+                    viaFormula != null ? viaFormula : formulaOf.get(from),
+                    viaDesc != null ? viaDesc : "公式"));
+            }
+            out.add(new FormulaCycleException.Cycle(
+                FormulaCycleException.SCOPE_FIELD, componentName, ns, es));
         }
         return out;
     }

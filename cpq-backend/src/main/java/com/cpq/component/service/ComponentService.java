@@ -446,8 +446,10 @@ public class ComponentService {
         FormulaIdBinder.refreshNameRedundancyFromIds(fieldList, formulaList);
 
         validateFields(fieldList);
-        validateFormulas(fieldList, formulaList);  // may auto-correct formula names in-place
-        detectFormulaCircularReferences(formulaList, fieldList);
+        // repair-0803：传组件名 → 循环引用链路可显示「组件「X」内」；
+        // 原 detectFormulaCircularReferences 已删（D-9：零定位信息，能力被
+        // describeFormulaCyclesStructured + cyclicFormulaNodes 完全覆盖）。
+        validateFormulas(fieldList, formulaList, request.name);  // may auto-correct formula names in-place
 
         // BL-0098 第二段：固化绑定 + 强制显式绑定。
         // 再刷一次名字冗余 —— validateFormulas 会就地改公式名，前一次刷新可能已陈旧（幂等，代价可忽略）。
@@ -577,8 +579,8 @@ public class ComponentService {
             FormulaIdBinder.refreshNameRedundancyFromIds(fieldList, formulaList);
 
             validateFields(fieldList);
-            validateFormulas(fieldList, formulaList);  // may auto-correct formula names in-place
-            detectFormulaCircularReferences(formulaList, fieldList);
+            // repair-0803：同 create —— 传组件名 + 移除 detectFormulaCircularReferences（D-9）
+            validateFormulas(fieldList, formulaList, component.name);  // may auto-correct formula names in-place
 
             // BL-0098：公式补稳定 id → 字段绑定固化成 formula_id。
             // ⚠️ update 直接用前端送来的 formulas 覆盖库里的值。若前端没把 id 带回来，这里会给
@@ -982,6 +984,18 @@ public class ComponentService {
 
     /** Package-private for unit testing (cross_tab_ref structural validation). */
     void validateFormulas(List<Map<String, Object>> fields, List<Map<String, Object>> formulas) {
+        validateFormulas(fields, formulas, null);
+    }
+
+    /**
+     * repair-0803 重载：额外接收<b>组件名称</b>，注入循环引用链路的每个节点
+     * （前端抽屉只展示名称，不出现任何 id）。
+     *
+     * <p>零破坏：两参签名 delegate 到此并传 {@code null} —— 既有单测与其它调用方行为不变，
+     * 仅链路里 {@code componentName} 缺省（JSON 按 NON_NULL 省略）。
+     */
+    void validateFormulas(List<Map<String, Object>> fields, List<Map<String, Object>> formulas,
+                          String componentName) {
         // Validate formula names are not empty
         Set<String> formulaNames = new HashSet<>();
         for (Map<String, Object> formula : formulas) {
@@ -1031,14 +1045,18 @@ public class ComponentService {
         com.fasterxml.jackson.databind.JsonNode fieldsNode = cycMapper.valueToTree(fields);
         com.fasterxml.jackson.databind.JsonNode formulasNode = cycMapper.valueToTree(formulas);
         com.cpq.quotation.service.FormulaCalculator cycCalc = new com.cpq.quotation.service.FormulaCalculator();
-        List<String> cycles = cycCalc.describeFormulaCycles(fieldsNode, formulasNode);
-        if (!cycles.isEmpty()) {
+        // repair-0803：message 保持原多行定位文案<b>逐字不变</b>（只读 message 的既有客户端零感知，
+        // 亦是 api.md「仅新增、不改既有键」的落地）；额外把同一批环以结构化 cycles 放进 data，
+        // 供前端弹链路抽屉（errorType=FORMULA_CYCLE）。两者共用同一套找环逻辑，口径天然一致。
+        List<String> cycleTexts = cycCalc.describeFormulaCycles(fieldsNode, formulasNode);
+        if (!cycleTexts.isEmpty()) {
             StringBuilder sb = new StringBuilder("公式存在循环引用（")
-                .append(cycles.size()).append(" 处），请按以下位置检查：");
-            for (int i = 0; i < cycles.size(); i++) {
-                sb.append("\n  ").append(i + 1).append(". ").append(cycles.get(i));
+                .append(cycleTexts.size()).append(" 处），请按以下位置检查：");
+            for (int i = 0; i < cycleTexts.size(); i++) {
+                sb.append("\n  ").append(i + 1).append(". ").append(cycleTexts.get(i));
             }
-            throw new BusinessException(sb.toString());
+            throw new com.cpq.common.exception.FormulaCycleException(sb.toString(),
+                cycCalc.describeFormulaCyclesStructured(fieldsNode, formulasNode, componentName));
         }
         // 兜底：描述器万一提取不出环路径，也绝不能放过环——放过 → topoOrder 落进「环兜底」
         // 尾部追加路径 → 依赖未算先算的静默错值（比报错更难发现）。
@@ -1096,125 +1114,6 @@ public class ComponentService {
         }
     }
 
-    /**
-     * Detects circular references in formula dependency graph.
-     *
-     * <p>Two reference patterns are tracked:
-     * <ol>
-     *   <li>Direct: formula A's expression references formula name B (legacy fall-back)</li>
-     *   <li>Via FORMULA field binding: formula A references a FORMULA field whose
-     *       {@code formula_name} attribute points to formula B → A depends on B</li>
-     * </ol>
-     *
-     * <p>Cross-component references (type=component_subtotal) and quotation fields are
-     * external leaves and skipped.
-     */
-    private void detectFormulaCircularReferences(List<Map<String, Object>> formulas, List<Map<String, Object>> fields) {
-        // Map: FORMULA field name -> formula name that produces it (via formula_name binding,
-        // or by name match as fallback). This is the missing piece that lets us track
-        // dependencies when a formula references a field name (not a formula name directly).
-        Set<String> formulaNames = new HashSet<>();
-        for (Map<String, Object> formula : formulas) {
-            Object nameObj = formula.get("name");
-            if (nameObj != null) formulaNames.add(nameObj.toString());
-        }
-
-        Map<String, String> fieldNameToFormulaName = new HashMap<>();
-        for (Map<String, Object> field : fields) {
-            if (!"FORMULA".equals(field.get("field_type"))) continue;
-            Object fName = field.get("name");
-            if (fName == null) continue;
-            String fieldName = fName.toString();
-            Object boundFormula = field.get("formula_name");
-            String formulaName = (boundFormula != null && !boundFormula.toString().isBlank())
-                    ? boundFormula.toString()
-                    : (formulaNames.contains(fieldName) ? fieldName : null);
-            if (formulaName != null) {
-                fieldNameToFormulaName.put(fieldName, formulaName);
-            }
-        }
-
-        // Initialize dependency map for every formula
-        Map<String, Set<String>> deps = new LinkedHashMap<>();
-        for (String fn : formulaNames) deps.put(fn, new HashSet<>());
-
-        // Parse each formula's expression to extract dependencies
-        for (Map<String, Object> formula : formulas) {
-            Object nameObj = formula.get("name");
-            if (nameObj == null) continue;
-            String formulaName = nameObj.toString();
-            Object expr = formula.get("expression");
-            if (!(expr instanceof List)) continue;
-
-            for (Object operand : (List<?>) expr) {
-                if (!(operand instanceof Map)) continue;
-                Map<?, ?> op = (Map<?, ?>) operand;
-                Object type = op.get("type");
-                // Skip external references and literals
-                if ("component_subtotal".equals(type) || "cross_component_subtotal".equals(type)) continue;
-                if ("quotation_field".equals(type)) continue;
-                if ("path".equals(type) || "global_variable".equals(type)) continue;  // V104: 跨表/全局变量, 与本组件公式依赖无关
-                if ("operator".equals(type) || "bracket_open".equals(type) || "bracket_close".equals(type) || "number".equals(type)) continue;
-
-                // Try every plausible ref-bearing key. T4 tests showed callers may use any of:
-                //   value / ref / formulaName / fieldName / name / formula_name
-                String refName = null;
-                for (String refKey : new String[] {"value", "ref", "formulaName", "fieldName", "name", "formula_name"}) {
-                    Object v = op.get(refKey);
-                    if (v != null && !v.toString().isBlank()) {
-                        refName = v.toString();
-                        break;
-                    }
-                }
-                if (refName == null) continue;
-
-                // Resolve dependency:
-                //   - "formula_ref" type explicitly references a formula by name (T4 P1 finding)
-                //   - FORMULA-field binding maps a field name to its formula
-                //   - Fall back to direct formula-name match
-                String depFormula = null;
-                if ("formula_ref".equals(type) && formulaNames.contains(refName)) {
-                    depFormula = refName;
-                }
-                if (depFormula == null) depFormula = fieldNameToFormulaName.get(refName);
-                if (depFormula == null && formulaNames.contains(refName)) depFormula = refName;
-
-                if (depFormula != null && !depFormula.equals(formulaName)) {
-                    deps.get(formulaName).add(depFormula);
-                } else if (depFormula != null && depFormula.equals(formulaName)) {
-                    // Self-reference is a trivial cycle of length 1 — fail fast
-                    throw new BusinessException("公式 '" + formulaName + "' 存在自引用循环");
-                }
-            }
-        }
-
-        // DFS cycle detection
-        Set<String> visited = new HashSet<>();
-        Set<String> inStack = new HashSet<>();
-        for (String name : deps.keySet()) {
-            if (!visited.contains(name)) {
-                if (dfsCycleDetect(name, deps, visited, inStack)) {
-                    throw new BusinessException("公式存在循环引用，请检查公式间的依赖关系");
-                }
-            }
-        }
-    }
-
-    private boolean dfsCycleDetect(String node, Map<String, Set<String>> deps,
-                                    Set<String> visited, Set<String> inStack) {
-        visited.add(node);
-        inStack.add(node);
-        Set<String> neighbors = deps.getOrDefault(node, Collections.emptySet());
-        for (String neighbor : neighbors) {
-            if (!visited.contains(neighbor)) {
-                if (dfsCycleDetect(neighbor, deps, visited, inStack)) return true;
-            } else if (inStack.contains(neighbor)) {
-                return true;
-            }
-        }
-        inStack.remove(node);
-        return false;
-    }
 
     private void checkNotReferencedByTemplate(UUID componentId) {
         try {
