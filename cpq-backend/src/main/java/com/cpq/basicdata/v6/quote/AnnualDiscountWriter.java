@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -108,11 +109,41 @@ public class AnnualDiscountWriter {
         }
     }
 
-    /** Handler 攒分组用的小工具：把一行塞进对应的组。 */
+    /**
+     * Handler 攒分组用的小工具：把一行塞进对应的组，按「同组同 {@code discount_order} 逐字段末值非空胜」归并。
+     *
+     * <p><b>为什么不能无脑 append</b>：同一 {@code (groupKey, discount_order)} 在一个 Sheet 内允许出现多行——
+     * 真实业务场景是一行只填「年降系数」、另一行只补「单次固定年降值」，两行本质是同一条年降记录的
+     * 增量填写。{@link MaterialMasterBatchImportIntegrationTest} 187 行的 dup 夹具就显式钉死了这个契约：
+     * {@code AD1/order=1} 先来一行只带 ratio，再来一行只带 fixed，归并后必须是"ratio 保留、fixed 补上"的
+     * 一行，而不是两行。这层归并语义原来由已删除的 {@code AnnualDiscountRepository.accDiscount}
+     * （单表化改造前，逐行 {@code ON CONFLICT DO UPDATE SET col = COALESCE(EXCLUDED.col, existing.col)}
+     * 的批内等价物）承担；三个 Sheet 收敛到 {@link VersionedV6Writer} 组级版本化写入时被误判为
+     * "重复即透传给 DB 让 uq 约束 fail loud"而丢失，导致同 key 同 order 的批内重复直接撞
+     * {@code uq_annual_discount} 触发整单回滚。
+     *
+     * <p>归并只在<b>同一 groupKey（即同一 {@code key} 入参）内、且 {@code discount_order} 相等</b>
+     * （用 {@link Objects#equals} 比较，null 也算相等——理论上走不到，Phase 1 已强制 discount_order
+     * 必填，这里只是兜底防 NPE）时才发生；不同 groupKey 或不同 discount_order 一律各自成行，不会被
+     * 误合并。合并方向 = 后到的行逐字段覆盖先到的行，仅当新值非 null 才覆盖（末值非空胜），
+     * 与 {@code COALESCE(EXCLUDED, existing)} 的语义等价。
+     */
     public static void accumulate(Map<List<Object>, Map<String, Object>> groupKeyOf,
                                   Map<List<Object>, List<Map<String, Object>>> contentOf,
                                   List<Object> key, Map<String, Object> gk, Map<String, Object> content) {
         groupKeyOf.putIfAbsent(key, gk);
-        contentOf.computeIfAbsent(key, k -> new ArrayList<>()).add(content);
+        List<Map<String, Object>> rows = contentOf.computeIfAbsent(key, k -> new ArrayList<>());
+        Object order = content.get("discount_order");
+        for (Map<String, Object> existing : rows) {
+            if (Objects.equals(existing.get("discount_order"), order)) {
+                for (Map.Entry<String, Object> e : content.entrySet()) {
+                    if (e.getValue() != null) {
+                        existing.put(e.getKey(), e.getValue());
+                    }
+                }
+                return;
+            }
+        }
+        rows.add(content);
     }
 }
