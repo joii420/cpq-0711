@@ -129,3 +129,92 @@ export function parseCrossTab(text: string, siblings: SourceCompLike[]): ParseRe
     return { error: typeof e === 'string' ? e : '目标公式解析失败' };
   }
 }
+
+// ─────────────────────────────────────────────
+// task-0803 Task 8：tree_ref / tree_attr 显示文案（chip 文案 + 禁用 tooltip）
+// 与上方 cross_tab_ref 的 serialize/parse 同属"纯文本生成"职责，同放本文件。
+// ─────────────────────────────────────────────
+
+/** F-5：tree_ref 函数中文前缀（定稿，逐字，需求 §11.5.3）。key = 函数名（PGET/CSUM/...）。 */
+export const TREE_REF_FUNC_LABELS: Record<string, string> = {
+  PGET: '父行',
+  CSUM: '子行合计',
+  CAVG: '子行均值',
+  CMAX: '子行最大',
+  CMIN: '子行最小',
+  CCOUNT: '子行计数',
+};
+
+/** F-1：父子取值函数按钮的展示顺序 + 对应 dir/agg（PGET 恒 dir=PARENT/agg=NONE；C* 族恒 dir=CHILD）。 */
+export const TREE_REF_FUNC_BUTTONS: Array<{ key: string; dir: 'PARENT' | 'CHILD'; agg: string }> = [
+  { key: 'PGET', dir: 'PARENT', agg: 'NONE' },
+  { key: 'CSUM', dir: 'CHILD', agg: 'SUM' },
+  { key: 'CAVG', dir: 'CHILD', agg: 'AVG' },
+  { key: 'CMAX', dir: 'CHILD', agg: 'MAX' },
+  { key: 'CMIN', dir: 'CHILD', agg: 'MIN' },
+  { key: 'CCOUNT', dir: 'CHILD', agg: 'COUNT' },
+];
+
+/** dir + agg → 函数名（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）。反查 TREE_REF_FUNC_BUTTONS，未知 agg 兜底 CSUM。 */
+export function treeRefFuncKey(dir?: string, agg?: string): string {
+  if (dir === 'PARENT') return 'PGET';
+  const hit = TREE_REF_FUNC_BUTTONS.find((b) => b.dir === 'CHILD' && b.agg === agg);
+  return hit?.key ?? 'CSUM';
+}
+
+/** F-6：树属性 chip 文案（定稿，逐字，需求 §11.5.3）。 */
+export function treeAttrChipLabel(attr?: string): string {
+  switch (attr) {
+    case 'LVL': return '[层级]';
+    case 'IS_LEAF': return '[是否叶子]';
+    case 'IS_ROOT': return '[是否根]';
+    default: return '[树属性]';
+  }
+}
+
+/**
+ * targetExpr 内单个 token → 展示片段文本。
+ * 与 cross_tab_ref 的 exprTokenToCanonical 不同：tree_ref 的 targetExpr 引用的是
+ * "本页签"字段（无 A./B. 前缀区分——PGET/C* 求值时是在另一行的同一页签上下文里取值），
+ * 且白名单放行 tree_attr 嵌套（§4.3.5），故需递归复用 treeAttrChipLabel。
+ */
+function treeExprTokenToText(tok: FormulaToken): string {
+  switch (tok.type) {
+    case 'field': return tok.label || tok.value || '';
+    case 'operator': {
+      if (tok.value === '*') return '×';
+      if (tok.value === '/') return '÷';
+      return tok.value || '';
+    }
+    case 'bracket_open': return '(';
+    case 'bracket_close': return ')';
+    case 'number': return tok.value || '';
+    case 'global_variable': return tok.label || tok.code || '全局变量';
+    case 'tree_attr': return treeAttrChipLabel(tok.attr);
+    default: return tok.label || tok.value || '';
+  }
+}
+
+/**
+ * F-5：tree_ref chip 文案（定稿，逐字，需求 §11.5.3）——「函数中文前缀(表达式文本)」。
+ * 例：PGET([累计用量]) → `父行(累计用量)`；CSUM([用量]×[单价]) → `子行合计(用量 × 单价)`。
+ */
+export function treeRefChipLabel(dir?: string, agg?: string, targetExpr?: FormulaToken[]): string {
+  const prefix = TREE_REF_FUNC_LABELS[treeRefFuncKey(dir, agg)];
+  const exprText = targetExpr && targetExpr.length > 0 ? targetExpr.map(treeExprTokenToText).join(' ') : '';
+  return `${prefix}(${exprText})`;
+}
+
+/** F-2：页签类型未配置时的兜底展示文案。 */
+export const TAB_TYPE_UNSET_LABEL = '未配置';
+
+/**
+ * F-2：非 BOM 组件禁用 tooltip 文案（定稿，逐字，需求 §11.5.3）。
+ * 显示人类可读标签（零件/材质元素/外购件/主件），不显示内部枚举 code——
+ * 前端 `ComponentItem.tabType` 本身就是人类可读的中文字符串（无独立 code 字段），
+ * 直接展示即满足"不显示内部枚举 code"的要求；未配置（undefined/空串）时兜底显示"未配置"。
+ */
+export function treeRefDisabledTooltip(tabType?: string | null): string {
+  const label = tabType && tabType.trim() ? tabType : TAB_TYPE_UNSET_LABEL;
+  return `仅 BOM 类型页签可用（当前页签类型：${label}）`;
+}

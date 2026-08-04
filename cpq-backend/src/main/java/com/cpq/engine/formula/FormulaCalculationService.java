@@ -211,6 +211,16 @@ public class FormulaCalculationService {
                     Object dsVal = (dsName != null && rowData != null) ? rowData.get(dsName) : null;
                     expr.append(toNumericString(dsVal));
                     break;
+                case "tree_ref":
+                case "tree_attr":
+                    // task-0803：BOM 父子取值（tree_ref/tree_attr）。这条旧版求值路径
+                    // （calculateRowFormulas / calculateProductSubtotal）不构建树上下文
+                    // （无 TreeEvalContext，rowData 只是单行字段值），无法解析父/子行关系。
+                    // 与 FormulaCalculator.evalTreeRef/evalTreeAttr 在"拿不到树上下文"时的
+                    // 兜底口径对齐：一律按 0 处理，绝不能落进 default 分支被静默忽略/拼出
+                    // 语法不完整的表达式（那样只会更难排查）。
+                    expr.append("0B");
+                    break;
                 default:
                     LOG.warn("Unknown token type: " + type);
                     break;

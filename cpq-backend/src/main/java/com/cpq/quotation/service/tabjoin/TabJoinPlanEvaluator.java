@@ -263,6 +263,22 @@ public class TabJoinPlanEvaluator {
                 "Excel 列模型暂不支持多 source 链式 SUM（sources.size=" + sources.size() +
                 "），请改用页签连表渲染（模型 A）");
         }
+        // task-0803 Task5⑥：BOM 父子取值（tree_ref/tree_attr）——Excel 列模型（本连表求值器）
+        // 没有宿主行的树上下文（父子关系只在 BOM 树页签自身的单元格拓扑路径
+        // com.cpq.quotation.service.FormulaCalculator#computeRowsCellTopo 中维护），
+        // 显式拒绝而非静默返 0（静默少算比报错更危险）。
+        // 2026-08-03 评审确认的可达性结论：Excel 模型（TAB_JOIN_FORMULA/COMPONENT_FIELD 等
+        // source_type）读的是"已算好的组件行值"（如 ExcelViewService 的
+        // COMPONENT_FIELD → componentRowData.get(fieldKey)），并不重新求值组件公式本身，
+        // 所以 tree_ref 正常路径下不会真的跑到这条 evaluateColumn 里被重算；本闸与它的
+        // KSUM/多 source 同伴一样是纯防御性兜底（防手工构造的 column 配置绕过）。真正保证
+        // "遇到父子取值不会静默少算"的是 ExcelViewService（约 :481-486）
+        // 对 TAB_JOIN_FORMULA 求值异常的 try/catch → warn → 该列置空 的降级管线，不是本闸。
+        Object colType = col.get("type");
+        if ("tree_ref".equals(colType) || "tree_attr".equals(colType)) {
+            throw new IllegalStateException(
+                "Excel 列模型暂不支持 BOM 父子取值（tree_ref/tree_attr），请改用页签连表渲染（模型 A）");
+        }
         // ────────────────────────────────────────────────────────────────────────────
         String expr = (String) col.getOrDefault("expression", "");
         if (expr.isBlank()) return java.math.BigDecimal.ZERO;

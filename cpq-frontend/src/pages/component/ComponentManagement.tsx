@@ -1791,6 +1791,7 @@ const ComponentManagement: React.FC = () => {
           componentId={selectedComponent.id}
           componentType={componentType}
           selfRowKeyFields={rowKeyFields}
+          tabType={tabType}
           column={formulaDrawer.column}
           initialTokens={formulaDrawer.initialTokens}
           onClose={() => setFormulaDrawer({ open: false, formulaKey: null, excelColIndex: null, column: null, initialTokens: undefined })}

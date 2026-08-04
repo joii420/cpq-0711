@@ -5,7 +5,7 @@ import { evaluateArithmetic } from './precision';
 export type { GlobalVariableDefinition } from '../services/globalVariableService';
 
 export interface ExpressionToken {
-  type: 'field' | 'operator' | 'bracket_open' | 'bracket_close' | 'number' | 'component_subtotal' | 'product_attribute' | 'quotation_field' | 'path' | 'global_variable' | 'previous_row_subtotal' | 'datasource_field' | 'cross_tab_ref' | 'b_field';
+  type: 'field' | 'operator' | 'bracket_open' | 'bracket_close' | 'number' | 'component_subtotal' | 'product_attribute' | 'quotation_field' | 'path' | 'global_variable' | 'previous_row_subtotal' | 'datasource_field' | 'cross_tab_ref' | 'b_field' | 'tree_ref' | 'tree_attr';
   value?: string;
   label?: string;
   component_code?: string;
@@ -49,6 +49,21 @@ export interface ExpressionToken {
   projectToHostKey?: boolean;
   /** SUMIF 族：cross_tab_ref 的可选附加过滤条件（布尔树）。缺省 = 不过滤。 */
   predicate?: ConditionPredicate | null;
+  // ---- tree_ref 专用字段（task-0803：BOM 树父子取值。本任务仅声明类型，求值逻辑见 Task 7）----
+  /**
+   * tree_ref 专用：引用方向。
+   * - 'PARENT' = PGET，子行取父行的值（agg 恒为 'NONE'）。
+   * - 'CHILD'  = C* 族，父行取其「直接子」行的聚合值（agg 取 'SUM'|'AVG'|'MAX'|'MIN'|'COUNT'，复用本接口既有的 agg 字段）。
+   */
+  dir?: 'PARENT' | 'CHILD';
+  // ---- tree_attr 专用字段（task-0803：BOM 树属性。本任务仅声明类型，求值逻辑见 Task 7）----
+  /**
+   * tree_attr 专用：树属性名。
+   * - 'LVL'     = 当前行在树中的层级（根为 0，逐层 +1）。
+   * - 'IS_LEAF' = 当前行是否为叶子节点（布尔）。
+   * - 'IS_ROOT' = 当前行是否为根节点（布尔）。
+   */
+  attr?: 'LVL' | 'IS_LEAF' | 'IS_ROOT';
 }
 
 // ── predicate 类型 + 求值器（与后端 ConditionPredicateEvaluator 逐字一致） ──
@@ -101,6 +116,135 @@ export function evalPredicate(
     case '<': { const c = cmp(); return c !== null && c < 0; }
     case '>=': { const c = cmp(); return c !== null && c >= 0; }
     case '<=': { const c = cmp(); return c !== null && c <= 0; }
+  }
+}
+
+// ── task-0803 Task 7：BOM 树父子取值求值上下文（tree_ref / tree_attr） ──
+//
+// 与后端 FormulaCalculator.TreeEvalContext / RowContext.tree 镜像：undefined = 无树上下文
+// （非 BOM 页签 / 拿不到树关系）→ tree_ref/tree_attr 恒返 0（需求 §4.3.8 闸⑤）。
+//
+// 之所以不复用 evaluateExpression 现有的散装位置参数，而是打包成一个上下文对象：
+// PGET/C* 求值需要在【另一行】（父行/子行）的上下文里递归求值 targetExpr —— 该行有自己的
+// fieldValues/basicDataValues/currentRow，用位置参数表达"切到另一行"会让签名进一步爆炸。
+export interface TreeEvalContext {
+  /** 当前正在求值的行下标（对齐 rowBundles/rawPresent 数组下标）。 */
+  rowIndex: number;
+  /** 直接父行下标；-1 = 无父（根行 / 父已墓碑 / 父不在行集中，§11.5 G5 统一按"无父"处理）。 */
+  parentOf: (rowIndex: number) => number;
+  /** 直接子行下标（不含孙辈；调用方在构造前已排除墓碑行，故这里天然不含）。 */
+  childrenOf: (rowIndex: number) => number[];
+  lvl: (rowIndex: number) => number;
+  isRoot: (rowIndex: number) => boolean;
+  isLeaf: (rowIndex: number) => boolean;
+  /** 每行已解析的求值素材，供 targetExpr 在目标行（父/子）上下文求值。 */
+  rowBundles: Array<{
+    fieldValues: Record<string, number>;
+    basicDataValues?: Record<string, any>;
+    currentRow?: Record<string, any>;
+  }>;
+  /**
+   * 每行「引用列是否有值」判定用的存在性标记（field 名 → 是否非空，非 blank）。
+   * 🚨 数值 0 也是"有值"——调用方必须存布尔存在性，不能存原始值再用 `if(!v)` 判断（0 是 falsy 陷阱）。
+   */
+  rawPresent: Array<Record<string, boolean>>;
+  /** 公式列名集合 —— 判据 6：被引用列若是公式列，恒视为有值。 */
+  formulaColumns: Set<string>;
+  pathCache?: Record<string, number>;
+  partNo?: string;
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>;
+}
+
+/** targetExpr 内所有顶层 field token 的列名（判「有值」用；targetExpr 内不允许嵌套 tree_ref，故只需扫顶层）。 */
+function collectTreeRefFieldNames(expr: ExpressionToken[] | undefined): Set<string> {
+  const out = new Set<string>();
+  if (!expr) return out;
+  for (const t of expr) {
+    if (t.type === 'field' && t.value) out.add(t.value);
+  }
+  return out;
+}
+
+/**
+ * 需求 §4.3.4「有值」判据（与后端 FormulaCalculator.hasValueForAgg 逐位一致）：
+ * 1. targetExpr 无 field token（纯常量/树属性）→ 有值（判据 5）。
+ * 2. 引用的列是公式列 → 恒有值（判据 6）。
+ * 3. 至少一个引用列在该行有非空原始值 → 有值（判据 3；数值 0 算有值，判据 4）。
+ * 4. 全部引用列取不到值 → 无值（判据 2）。
+ *
+ * 🚨 判据 4 的 falsy 陷阱：这里读 `raw[n] === true`（显式布尔相等），不用 `if (raw[n])`——
+ * 后者会把"数值 0 存在"错误短路成 falsy，导致 CMIN 把 0 值子行误判为无值。
+ */
+function treeHasValue(ctx: TreeEvalContext, rowIdx: number, names: Set<string>): boolean {
+  if (names.size === 0) return true; // 判据 5
+  const raw = ctx.rawPresent[rowIdx] ?? {};
+  for (const n of names) {
+    if (ctx.formulaColumns.has(n)) return true; // 判据 6：公式列恒有值
+    if (raw[n] === true) return true;           // 判据 3/4：显式布尔判断，0 也算有值
+  }
+  return false; // 判据 2：全部取不到值
+}
+
+/** C* 族聚合（SUM/AVG/MAX/MIN/COUNT）。与 cross_tab_ref 聚合口径一致（纯 JS number 精度，非 Decimal）。 */
+function aggregateTreeNums(agg: string, nums: number[]): number {
+  if (nums.length === 0) return 0;
+  switch ((agg || 'SUM').toUpperCase()) {
+    case 'SUM': return nums.reduce((s, x) => s + x, 0);
+    case 'AVG': return nums.reduce((s, x) => s + x, 0) / nums.length;
+    case 'MAX': return Math.max(...nums);
+    case 'MIN': return Math.min(...nums);
+    case 'COUNT': return nums.length;
+    default: return 0;
+  }
+}
+
+/**
+ * {@code tree_ref} 求值：dir=PARENT 取直接父行（PGET）；dir=CHILD 聚合直接子行（C* 族）。
+ * 边界口径（需求 §4.3.3，全部返 0，无例外）：无树上下文 / 根行 PGET / 叶子行 C* / 子行全部无值 → 0。
+ */
+function evalTreeRefToken(token: ExpressionToken, ctx: TreeEvalContext | undefined): number {
+  if (!ctx || ctx.rowIndex < 0 || ctx.rowIndex >= ctx.rowBundles.length) return 0;
+  const targetExpr = token.targetExpr;
+  if (!targetExpr || targetExpr.length === 0) return 0;
+
+  if (token.dir === 'PARENT') {
+    const p = ctx.parentOf(ctx.rowIndex);
+    if (p < 0) return 0; // 根行（或父已墓碑/不在行集中）→ 0
+    const pb = ctx.rowBundles[p];
+    return evaluateExpression(
+      targetExpr, pb.fieldValues, undefined, undefined, undefined,
+      ctx.pathCache, ctx.partNo, pb.basicDataValues, undefined, ctx.globalVariableDefs,
+      pb.currentRow, undefined, undefined, { ...ctx, rowIndex: p },
+    );
+  }
+  if (token.dir !== 'CHILD') return 0;
+
+  const kids = ctx.childrenOf(ctx.rowIndex);
+  if (kids.length === 0) return 0; // 叶子行 → 0
+
+  const names = collectTreeRefFieldNames(targetExpr);
+  const nums: number[] = [];
+  for (const c of kids) {
+    if (!treeHasValue(ctx, c, names)) continue; // 空值不参与聚合
+    const cb = ctx.rowBundles[c];
+    nums.push(evaluateExpression(
+      targetExpr, cb.fieldValues, undefined, undefined, undefined,
+      ctx.pathCache, ctx.partNo, cb.basicDataValues, undefined, ctx.globalVariableDefs,
+      cb.currentRow, undefined, undefined, { ...ctx, rowIndex: c },
+    ));
+  }
+  if (nums.length === 0) return 0; // 子行全部无值 → 0
+  return aggregateTreeNums(token.agg ?? 'SUM', nums);
+}
+
+/** {@code tree_attr} 求值：层级 / 是否叶子 / 是否根。无树上下文 → 0。 */
+function evalTreeAttrToken(token: ExpressionToken, ctx: TreeEvalContext | undefined): number {
+  if (!ctx || ctx.rowIndex < 0) return 0;
+  switch (token.attr) {
+    case 'LVL': return ctx.lvl(ctx.rowIndex);
+    case 'IS_LEAF': return ctx.isLeaf(ctx.rowIndex) ? 1 : 0;
+    case 'IS_ROOT': return ctx.isRoot(ctx.rowIndex) ? 1 : 0;
+    default: return 0;
   }
 }
 
@@ -229,6 +373,11 @@ export function evaluateExpression(
    * 供渲染层显示 ⚠ 错误态(替代静默 0)。向后兼容: 老调用不传 = 零破坏。
    */
   outDiag?: { crossTabError?: string },
+  /**
+   * task-0803 Task 7：BOM 树求值上下文 — tree_ref(PGET/C*)/tree_attr(层级/是否叶子/是否根) 求值用。
+   * 不传（非 BOM 页签的既有调用点）= undefined → 两类 token 恒返 0，不影响既有行为。
+   */
+  treeCtx?: TreeEvalContext,
 ): number {
   // Build expression string from tokens
   let expr = '';
@@ -419,6 +568,7 @@ export function evaluateExpression(
               mergedRow,    // 合并行：b_field 走宿主字段，KSUM 内层 match 走 ar 字段
               crossTabRows,
               outDiag,      // 透传 diag 袋：内层 KAVG/KMAX/KMIN 空集写 crossTabError 穿透到最外层
+              treeCtx,      // 防御性透传（cross_tab_ref.targetExpr 的白名单本不含 tree_attr，但透传无害）
             );
           };
 
@@ -576,6 +726,15 @@ export function evaluateExpression(
           }
         }
         expr += (resolved ?? 0).toString();
+        break;
+      }
+      // task-0803：BOM 页签父子取值。求值结果当字面量追加（无树上下文 / 越界等一律 0，见 evalTreeRefToken/evalTreeAttrToken）。
+      case 'tree_ref': {
+        expr += evalTreeRefToken(token, treeCtx).toString();
+        break;
+      }
+      case 'tree_attr': {
+        expr += evalTreeAttrToken(token, treeCtx).toString();
         break;
       }
     }

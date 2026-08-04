@@ -206,6 +206,44 @@ const FormulaEditorPanel: React.FC<Props> = ({
         <br />
         SUMIF 用法：<code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>SUMIF([页签.条件字段]='值', [页签.值字段])</code>，可与运算符自由组合。
       </div>
+
+      {/* task-0803 F-4：父子取值语法提示（仅 NORMAL/SUBTOTAL 组件公式；EXCEL 视图列不解析 tree_ref） */}
+      {componentType !== 'EXCEL' && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: '8px 12px',
+            background: '#f6f0ff',
+            border: '1px solid #d3adf7',
+            borderRadius: 6,
+            fontSize: 12,
+            color: '#531dab',
+            lineHeight: 1.7,
+          }}
+        >
+          <strong>父子取值（仅 BOM 类型页签可用）</strong>：括号内字段名裸写，不加方括号（父子取值永远指向本页签字段，无需跨页签消歧义）。
+          <br />
+          <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>PGET(字段名)</code>
+          {' '}取父行该字段的值（子取父，唯一无需聚合）；
+          <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px', marginLeft: 4 }}>CSUM(字段名)</code>
+          {' / '}
+          <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>CAVG(字段名)</code>
+          {' / '}
+          <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>CMAX(字段名)</code>
+          {' / '}
+          <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>CMIN(字段名)</code>
+          {' / '}
+          <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>CCOUNT(字段名)</code>
+          {' '}取「直接子」行该字段的求和/平均/最大/最小/计数（父取子，需聚合），如 <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>CSUM(用量 * 单价)</code>。
+          <br />
+          树属性保留字（与同名字段无关，优先解析为保留字；同样仅 BOM 类型页签可用）：
+          <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>[层级]</code>
+          {'（根为 0，逐层 +1） '}
+          <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>[是否叶子]</code>
+          {' '}
+          <code style={{ background: '#fff', border: '1px solid #d3adf7', borderRadius: 3, padding: '0 4px' }}>[是否根]</code>
+        </div>
+      )}
     </div>
   );
 };

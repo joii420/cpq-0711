@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { ComponentDataItem, ComponentField } from './QuotationStep2';
-import { computeAllFormulas, computeProductSubtotal, buildSnapshotExpansions, buildCrossTabRows, EMPTY_LINEITEMS } from './QuotationStep2';
+import {
+  computeAllFormulas, computeProductSubtotal, buildSnapshotExpansions, buildCrossTabRows, EMPTY_LINEITEMS,
+  computeTabFormulasTree, usesTreeTokensTab, type TreeFormulaRowInput,
+} from './QuotationStep2';
 import { enrichComponentData, buildComponentDataFromStructure } from './enrichComponentData';
 import { useDriverExpansions, driverExpansionKey, fieldsOverrideHash, bnfDriverLookupKey } from './useDriverExpansions';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
@@ -103,7 +106,7 @@ function buildFormulaCache(
   // 2026-05-31 修复（小计合计/产品小计 ¥∞）：必须按行喂 driver 展开的 basicDataValues，
   // 否则 BASIC_DATA 分母字段（如 成材率）取不到值 → ?? 0 → 工序单价=单价÷0=Infinity →
   // 子小计求和 = ∞。与渲染层 preComputedCaches 同款（按 driver 行数 + 行级 bdv）。
-  driverExpansion?: { rowCount: number; rows: Array<{ basicDataValues?: Record<string, any> }> },
+  driverExpansion?: { rowCount: number; rows: Array<{ basicDataValues?: Record<string, any>; __sys?: { nodeId?: string; parentId?: string | null; lvl?: number } }> },
   // cross_tab_ref 三视图对齐 (Task 4.3): PASS1 小计循环不传（undefined），
   // 仅渲染层 PASS2 才传 crossTabRows，镜像后端两阶段。
   crossTabRows?: Record<string, Array<Record<string, any>>>,
@@ -112,11 +115,39 @@ function buildFormulaCache(
   // AP-51 行数纪律：driver 权威优先，仅 rowCount=0 时退回持久化行数。
   const effectiveCount = useDriver ? driverExpansion!.rowCount : rows.length;
   const caches: Array<{ formulaCache: Record<string, number | null>; fieldValues: Record<string, number> }> = [];
+
+  // task-0803 Task 7：BOM 树页签分流（AP-50：与编辑页 QuotationStep2 共用 computeTabFormulasTree 入口，
+  // 不各写一份）。previous_row_subtotal 链在 BOM 页签禁用（§4.3.7），命中即整页签批量算一次。
+  const hasBomSysRows = useDriver && !!driverExpansion!.rows.some((r) => r?.__sys?.nodeId !== undefined);
+  const useTree = hasBomSysRows && usesTreeTokensTab(comp);
+  let treeResults: Record<number, Record<string, number | null>> | undefined;
+  let treeFieldValuesByRow: Array<Record<string, number>> | undefined;
+  if (useTree) {
+    const treeRowInputs: TreeFormulaRowInput[] = [];
+    for (let ri = 0; ri < effectiveCount; ri++) {
+      const row = rows[ri] ?? {};
+      const expRow = driverExpansion!.rows[ri];
+      const sys = expRow?.__sys;
+      treeRowInputs.push({
+        row, basicDataValues: expRow?.basicDataValues,
+        nodeId: sys?.nodeId, parentId: sys?.parentId, lvl: sys?.lvl,
+      });
+    }
+    treeFieldValuesByRow = [];
+    treeResults = computeTabFormulasTree(
+      comp, treeRowInputs, compSubtotals, undefined, undefined, partNo, globalVariableDefs, crossTabRows,
+      { fieldValuesByRow: treeFieldValuesByRow });
+  }
+
   // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
   let prevRowValues: Record<string, number | null> | undefined = undefined;
   for (let ri = 0; ri < effectiveCount; ri++) {
     const row = rows[ri] ?? {};
     const bdv = useDriver ? driverExpansion!.rows[ri]?.basicDataValues : undefined;
+    if (treeResults) {
+      caches.push({ formulaCache: treeResults[ri] ?? {}, fieldValues: treeFieldValuesByRow?.[ri] ?? {} });
+      continue;
+    }
     // AP-50 修复：传入 out.fieldValues 让 computeAllFormulas 回填所有字段（含输入型），
     // 用于列小计累加时对输入型小计列回退取值（与 computeTabSubtotalsByColumn 同口径）。
     const fv: Record<string, number> = {};
@@ -591,6 +622,25 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     // 数值已静默归 0; 详情页同样显示 ⚠ 而非误导的 0。
                     const preComputedErrors: Array<Record<string, string>> = [];
                     {
+                      // task-0803 Task 7：BOM 树页签分流。AP-50：与编辑页 QuotationStep2 共用同一个
+                      // computeTabFormulasTree 入口（不各写一份）；命中 snapFormula(快照真零计算)仍优先。
+                      const useTreeActive = activeComponentBomTree && usesTreeTokensTab(activeComp);
+                      const treeResultsActive = useTreeActive
+                        ? computeTabFormulasTree(
+                            activeComp,
+                            Array.from({ length: effectiveCount }, (_, ri) => {
+                              const ra = rowAt(ri, activeComp, s);
+                              const sys = ra.expIndex >= 0 ? (activeDriverExpansion!.rows[ra.expIndex] as any)?.__sys : undefined;
+                              return {
+                                row: ra.row,
+                                basicDataValues: ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined,
+                                nodeId: sys?.nodeId, parentId: sys?.parentId, lvl: sys?.lvl,
+                              };
+                            }),
+                            compSubtotals, undefined, undefined, lineItem.productPartNo,
+                            globalVariableDefs, crossTabRows,
+                          )
+                        : undefined;
                       // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
                       let prevRowValues: Record<string, number | null> | undefined = undefined;
                       // 撞键消歧：详情/核价侧也按组件成批算唯一 rowKey（与编辑页 + 后端一致）。
@@ -626,6 +676,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         const errForRow: Record<string, string> = {};
                         const cache: Record<string, number | null> = (snapFormula && Object.keys(snapFormula).length > 0)
                           ? (snapFormula as Record<string, number | null>)
+                          : treeResultsActive
+                          ? (treeResultsActive[ri] ?? {})
                           : computeAllFormulas(
                               activeComp, rawRow, compSubtotals,
                               undefined, undefined, lineItem.productPartNo,

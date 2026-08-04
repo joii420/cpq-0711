@@ -12,6 +12,8 @@ import {
   expressionToTokens,
   tokensToDrawerExpression,
   checkMappable,
+  containsTreeToken,
+  validateTreeRefWhitelist,
 } from '../component/formulaSerialize';
 import type { FormulaToken } from '../component/types';
 import { checkParenBalance } from './tabjoin/formulaBracketCheck';
@@ -45,6 +47,13 @@ interface Props {
   componentType: ComponentFormulaType;
   /** 本组件行键字段，供跨页签引用构建 match[] 对齐对（仅 token 形态需要） */
   selfRowKeyFields?: string[];
+  /**
+   * task-0803 F-2：正在编辑公式的组件的页签类型属性(ComponentItem.tabType，与
+   * ComponentManagement 表单同源)。父子取值函数（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）
+   * 仅 BOM 类型页签可用，保存前据此拦截（见 save() 内 checkTreeRefTabTypeGate）。
+   * EXCEL 组件不做该项拦截（EXCEL 走 buildColumn 字符串路径，不解析 tree_ref），传或不传均可。
+   */
+  tabType?: string;
   column: any;
   /**
    * NORMAL/SUBTOTAL 模式下，编辑已有公式时传入原始 FormulaToken[]。
@@ -128,6 +137,41 @@ export function buildSumifText(input: {
   return `${input.func}(${condText}, ${valueText})`;
 }
 
+// ── task-0803 Task 8b: 父子取值（PGET/C*）保存前拦截 —— 纯函数化，供 save() 调用 + 单测直接覆盖 ──
+
+/**
+ * F-2：父子取值函数（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）与树属性（[层级]/[是否叶子]/[是否根]）
+ * 仅 BOM 类型页签可用。正在编辑的组件页签类型（tabType）不是 'BOM' 且解析出的 tokens 里出现过
+ * tree_ref **或** tree_attr（containsTreeToken 递归扫描，含嵌套场景）→ 返回拦截文案；合规返回
+ * null。未配置 tabType 时人类可读标签显示「未配置」，不显示内部 code。
+ *
+ * 2026-08-03 评审订正：此前误用只测 tree_ref 的 containsTreeRef，导致非 BOM 页签的 [层级] 被
+ * 前端放行、保存时才收到后端 ComponentService.assertTreeTokenGates 的 400（该方法对 tree_ref/
+ * tree_attr 一视同仁）。改用 containsTreeToken 使前后端判据口径一致，见需求 §4.3.8 闸②。
+ */
+export function checkTreeRefTabTypeGate(
+  tokens: FormulaToken[],
+  tabType: string | undefined,
+): string | null {
+  if (tabType === 'BOM') return null;
+  if (!containsTreeToken(tokens)) return null;
+  const label = tabType ?? '未配置';
+  return `父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）与树属性（[层级]/[是否叶子]/[是否根]）仅 BOM 类型页签可用（当前页签类型：${label}）`;
+}
+
+/**
+ * F-7：tree_ref.targetExpr 内层白名单校验的保存前拦截文案。
+ * 直接复用 formulaSerialize.validateTreeRefWhitelist（禁止另写一套校验规则）；这里只包一层
+ * 固定的终端用户文案 —— validateTreeRefWhitelist 返回的 reason 是排障用的技术性描述
+ * （如 "tree_ref.targetExpr 内出现不允许的 token 类型「cross_tab_ref」…"），不直接展示给用户。
+ */
+export const TREE_REF_INNER_VIOLATION_TEXT =
+  '父子取值的目标表达式内不能再引用跨页签数据或其他父子取值，请改用本页签的列';
+
+export function checkTreeRefInnerWhitelist(tokens: FormulaToken[]): string | null {
+  return validateTreeRefWhitelist(tokens).valid ? null : TREE_REF_INNER_VIOLATION_TEXT;
+}
+
 // ── SUMIF 条件行编辑器内部类型 ─────────────────────────────────────────────
 
 type CondOp = '=' | '!=' | '<>' | '>' | '<' | '>=' | '<=';
@@ -179,6 +223,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
   componentId,
   componentType,
   selfRowKeyFields,
+  tabType,
   column,
   initialTokens,
   onClose,
@@ -429,6 +474,20 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
       message.error(e?.message ?? '表达式解析失败，请检查语法');
       return;
     }
+
+    // F-2（task-0803）：父子取值仅 BOM 类型页签可用
+    const treeRefGateMsg = checkTreeRefTabTypeGate(tokens, tabType);
+    if (treeRefGateMsg) {
+      message.error(treeRefGateMsg);
+      return;
+    }
+    // F-7（task-0803）：tree_ref.targetExpr 内层白名单（复用 formulaSerialize.validateTreeRefWhitelist）
+    const treeRefInnerMsg = checkTreeRefInnerWhitelist(tokens);
+    if (treeRefInnerMsg) {
+      message.error(treeRefInnerMsg);
+      return;
+    }
+
     const mappable = checkMappable(tokens);
     if (!mappable.mappable) {
       message.error(`${mappable.reason ?? '该公式无法映射为组件公式'}，请改用 Excel 组件`);

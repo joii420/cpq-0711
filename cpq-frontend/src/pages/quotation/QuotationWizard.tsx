@@ -12,7 +12,10 @@ import dayjs from 'dayjs';
 import { quotationService } from '../../services/quotationService';
 import { quotationSnapshotService } from '../../services/quotationSnapshotService';
 import { customerService } from '../../services/customerService';
-import QuotationStep2, { computeProductSubtotal, computeAllFormulas, buildSnapshotExpansions, EMPTY_LINEITEMS } from './QuotationStep2';
+import QuotationStep2, {
+  computeProductSubtotal, computeAllFormulas, buildSnapshotExpansions, EMPTY_LINEITEMS,
+  computeTabFormulasTree, usesTreeTokensTab, type TreeFormulaRowInput,
+} from './QuotationStep2';
 import QuotationStep3 from './QuotationStep3';
 import type { LineItem, ComponentDataItem } from './QuotationStep2';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
@@ -1026,25 +1029,12 @@ const QuotationWizard: React.FC = () => {
     // AP-51 不变：driver 权威，driverCount 严格等于 expansion.rowCount（不取 max）。
     const s = splitRows(cd, expansion as any);
 
-    const out: Record<string, any>[] = [];
-    // 2026-05-17: 累加公式支持. 按 row_index 顺序遍历, 把上一行的 is_subtotal 字段值
-    // 作为 previousRowSubtotal 传给下一行的 computeAllFormulas, 同 ProductCard 渲染逻辑一致.
-    // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
-    let prevRowValues: Record<string, number | null> | undefined = undefined;
-    for (let i = 0; i < s.totalRows; i++) {
-      const ra = rowAt(i, cd, s);
-
-      // 手动行：原样序列化（含 _origin:'manual' 与用户已填各列值），不做富化
-      if (ra.isManual) {
-        out.push({ ...ra.row });
-        continue;
-      }
-
-      const baseRow = ra.row;
-      const basicDataValues = ra.expIndex >= 0 ? (expansion as any)?.rows?.[ra.expIndex]?.basicDataValues : undefined;
-
-      // 1. snapshot BASIC_DATA values from driver expansion → row[key]
+    // 非公式字段的行内烘焙（BASIC_DATA / FIXED_VALUE / INPUT 静态默认值 → row[key]）。
+    // 抽成小函数供下方"树路径批量预建 enriched"与"经典逐行路径"共用，避免重复维护两份同规则代码
+    // （task-0803 Task 7 新增；原逻辑内联在下方循环体内，此处纯提取，规则一字不变）。
+    const bakeNonFormulaDefaults = (baseRow: Record<string, any>, basicDataValues: Record<string, any> | undefined): Record<string, any> => {
       const enriched: Record<string, any> = { ...baseRow };
+      // 1. snapshot BASIC_DATA values from driver expansion → row[key]
       for (const f of fields) {
         if (f.field_type !== 'BASIC_DATA' || !f.basic_data_path) continue;
         const fieldKey = f.name || f.key || '';
@@ -1058,7 +1048,6 @@ const QuotationWizard: React.FC = () => {
           }
         }
       }
-
       // 1.5. snapshot FIXED_VALUE defaults → row[key]
       // driver 展开行 / 早期版本 lineItems 的 baseRow 可能没经过 buildEmptyRow，
       // 不写就会让保存后的明细页 / 重新加载后的编辑页那一列空白（材料损耗一类配置常量）。
@@ -1072,7 +1061,6 @@ const QuotationWizard: React.FC = () => {
           enriched[fieldKey] = f.content;
         }
       }
-
       // 1.6. snapshot INPUT 静态默认值 → row[key]
       //   仅"无 default_source"的静态 content 冻结落库（常量，冻结安全，后端核价/Excel 才读得到）；
       //   有 default_source 的字段不冻结——其值由各消费点解析器/后端实时给出（"源优先、实时"）。
@@ -1089,6 +1077,72 @@ const QuotationWizard: React.FC = () => {
             : f.content;
         }
       }
+      return enriched;
+    };
+
+    // task-0803 Task 7：BOM 树页签分流。BOM 页签的"手动新增行"走服务端往返落进 driver 展开的
+    // baseRows(带 __sys)，不是本函数的 _origin==='manual' 机制——树求值只覆盖非手动行，
+    // 与既有"手动行整体跳过公式计算"行为完全兼容（手动行原样序列化，见下方 isManual 分支不变）。
+    const hasBomSysRows = !!(expansion as any)?.rows?.some((r: any) => r?.__sys?.nodeId !== undefined);
+    const useTree = hasBomSysRows && usesTreeTokensTab(cd);
+    // driverIdxToTreeIdx.get(i) = 原始行下标 i 对应的 treeRowInputs 下标（回填用，O(1) 查表）
+    const driverIdxToTreeIdx = new Map<number, number>();
+    const enrichedByDriverIdx = new Map<number, Record<string, any>>();
+    let treeResults: Record<number, Record<string, number | null>> | undefined;
+    if (useTree) {
+      const treeRowInputs: TreeFormulaRowInput[] = [];
+      for (let i = 0; i < s.totalRows; i++) {
+        const ra = rowAt(i, cd, s);
+        if (ra.isManual) continue; // 手动行不参与树求值（本函数从不对手动行算公式，行为不变）
+        const basicDataValues = ra.expIndex >= 0 ? (expansion as any)?.rows?.[ra.expIndex]?.basicDataValues : undefined;
+        const enriched = bakeNonFormulaDefaults(ra.row, basicDataValues);
+        enrichedByDriverIdx.set(i, enriched);
+        const sys = ra.expIndex >= 0 ? (expansion as any)?.rows?.[ra.expIndex]?.__sys : undefined;
+        driverIdxToTreeIdx.set(i, treeRowInputs.length);
+        treeRowInputs.push({
+          row: enriched, basicDataValues,
+          nodeId: sys?.nodeId, parentId: sys?.parentId, lvl: sys?.lvl,
+        });
+      }
+      treeResults = computeTabFormulasTree(
+        cd, treeRowInputs, componentSubtotals, undefined, undefined, partNo, gvDefs);
+    }
+
+    const out: Record<string, any>[] = [];
+    // 2026-05-17: 累加公式支持. 按 row_index 顺序遍历, 把上一行的 is_subtotal 字段值
+    // 作为 previousRowSubtotal 传给下一行的 computeAllFormulas, 同 ProductCard 渲染逻辑一致.
+    // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。BOM 页签禁用 PREV（§4.3.7），
+    // useTree 命中时该链不再串行（整页签批量算一次）。
+    let prevRowValues: Record<string, number | null> | undefined = undefined;
+    for (let i = 0; i < s.totalRows; i++) {
+      const ra = rowAt(i, cd, s);
+
+      // 手动行：原样序列化（含 _origin:'manual' 与用户已填各列值），不做富化
+      if (ra.isManual) {
+        out.push({ ...ra.row });
+        continue;
+      }
+
+      const basicDataValues = ra.expIndex >= 0 ? (expansion as any)?.rows?.[ra.expIndex]?.basicDataValues : undefined;
+
+      if (treeResults) {
+        // 树路径：enriched 已在上面预建好，FORMULA 结果来自 computeTabFormulasTree 的批量结果。
+        const enriched = enrichedByDriverIdx.get(i) ?? bakeNonFormulaDefaults(ra.row, basicDataValues);
+        const treeRowIdx = driverIdxToTreeIdx.get(i);
+        const formulaCache = treeRowIdx !== undefined ? (treeResults[treeRowIdx] ?? {}) : {};
+        for (const f of fields) {
+          if (f.field_type !== 'FORMULA') continue;
+          const fieldKey = f.name || f.key || '';
+          if (!fieldKey) continue;
+          if (formulaCache[fieldKey] != null) {
+            enriched[fieldKey] = formulaCache[fieldKey];
+          }
+        }
+        out.push(enriched);
+        continue;
+      }
+
+      const enriched = bakeNonFormulaDefaults(ra.row, basicDataValues);
 
       // 2. compute FORMULA values via formula engine → row[key]
       try {
