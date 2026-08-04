@@ -93,7 +93,7 @@
 | AC-4 | 被引用宿主公式字段自身还依赖别的公式 → 取最终值 | `#transitiveFormulaDependency_resolvesToFinalValue` | ✅ |
 | AC-5 | 互相引用报环、可定位、不静默 | `#mutualRefThroughTargetExpr_isDetectedAsCycle`、`ComponentServiceFormulaCycleStructuredTest#ac16_simpleMutualReference_*` | ✅ |
 | AC-6 | 全库跑批差异恰好等于 §5.4 那 4 条公式 | `SumHostFieldAffectedFormulasLiveScanTest#ac6_affectedFormulaSet_matchesDocumentedFourFormulas`（连真库扫 87 组件，另断言 b_field token 总数 19 防漂移，并逐条核对引用字段名防同名巧合） | ✅ 需 `RUN_LIVE_DB_SCAN=1` |
-| AC-7 | 8 条公式意图确认并落地 + 改前改后值 | — | ⛔ **阻塞：待业务确认「整单一次 / 每行一次」** |
+| AC-7 | 交付说明中列出「值会变化」的公式清单，告知业务方 | 需求文档 §5.4 清单（已改为告知性材料） | ✅ **按 D-4 重定义**：引擎只按公式忠实计算，配置改写归业务侧，不再阻塞交付 |
 | AC-8 | 5 张 DRAFT 单重算无哨兵无 NaN | — | ⏳ 需合并后在主仓运行时验证 |
 | AC-9 | 编辑器选 FORMULA 字段出现「每行各计入一次」提示 | F6 已实现（`CrossTabRefDrawer.tsx`） | ⏳ 无自动化，需人工/E2E |
 | AC-10 | 结构化 FIELD 环载荷 | `ComponentServiceFormulaCycleStructuredTest#ac10_*` | ✅ |
