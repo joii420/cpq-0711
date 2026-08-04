@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
  *       {@link #rewrite(String, Connection, boolean)} 内联注释。</li>
  * </ol>
  *
- * <p><b>安全降级</b>：找不到白名单主位表（如整个模板压根不碰这 7 张表，或主位是非白名单表如
+ * <p><b>安全降级</b>：找不到白名单主位表（如整个模板压根不碰这 8 张表，或主位是非白名单表如
  * {@code material_customer_map}；或 set-op 场景全部分支都未命中）→ {@code anchorInjected=false}，
  * 不参与回填（该页签只读展示），不代表改写失败。真正的"改写失败"由启动期硬校验
  * （{@link QuoteViewValidationService}）兜底。
@@ -41,10 +41,12 @@ public final class QuotePendingRewriter {
 
     private QuotePendingRewriter() {}
 
-    /** 7 张版本化表白名单（占号表 material_customer_map 不参与，见 backtask B3.1 明确排除）。 */
+    /** 8 张版本化表白名单（占号表 material_customer_map 不参与，见 backtask B3.1 明确排除）。
+     *  repair-0804：annual_discount 并入。 */
     public static final Set<String> WHITELIST_TABLES = Set.of(
         "unit_price", "material_bom", "material_bom_item",
-        "element_bom", "element_bom_item", "capacity", "plating_scheme");
+        "element_bom", "element_bom_item", "capacity", "plating_scheme",
+        "annual_discount");
 
     /** 物化期注入的行锚点系统列名。 */
     public static final String ANCHOR_COLUMN = "__v6_id";

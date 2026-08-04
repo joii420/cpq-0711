@@ -1,6 +1,7 @@
 package com.cpq.basicdata.v6.quote;
 
 import com.cpq.basicdata.v6.parser.ImportContext;
+import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
 import com.cpq.basicdata.v6.service.ProcessNoResolver;
 import io.quarkus.test.junit.QuarkusTest;
@@ -149,6 +150,7 @@ class QuoteImportValidatorTest {
     void assemblyAnnualDiscount_blankProcessColumn_notAnError_notInMap() {
         Map<String, String> r1 = new LinkedHashMap<>();
         r1.put("宏丰料号", "TEST-QIV-MAT-3");   // 「组装工序」列干脆不填
+        r1.put("年降顺序", "1");   // repair-0804：年降顺序三类统一必填，本用例只测「组装工序为空」这一独立维度
         Map<String, List<SheetRow>> sheets = Map.of("组装加工费年降", List.of(row(1, r1)));
 
         QuoteImportValidator.Outcome out = validator.validate(sheets, ctx());
@@ -167,6 +169,7 @@ class QuoteImportValidatorTest {
         Map<String, String> r1 = new LinkedHashMap<>();
         r1.put("宏丰料号", "TEST-QIV-MAT-4");
         r1.put("组装工序", PROC_NO);   // 按编号匹配
+        r1.put("年降顺序", "1");   // repair-0804：年降顺序三类统一必填，本用例只测「组装工序可解析」这一独立维度
         Map<String, List<SheetRow>> sheets = Map.of("组装加工费年降", List.of(row(1, r1)));
 
         QuoteImportValidator.Outcome out = validator.validate(sheets, ctx());
@@ -235,5 +238,57 @@ class QuoteImportValidatorTest {
 
         assertFalse(out.hasErrors(), "来料其他费用不受新规则约束");
         assertEquals(1, out.bySheet.get("来料其他费用").successRows);
+    }
+
+    // ============ repair-0804：年降顺序三类统一必填（Phase 1 零写库拦截） ============
+
+    @Test void annualDiscountOrder_blank_isRejectedInPhase1() {
+        Map<String, String> bad = new LinkedHashMap<>();
+        bad.put("销售料号", "S-001");
+        bad.put("投入料号", "AgNi11");
+        bad.put("年降顺序", "");            // ← 空
+        bad.put("年降系数（%）", "5.5");
+
+        Map<String, List<SheetRow>> sheets = new LinkedHashMap<>();
+        sheets.put("来料年降", List.of(new SheetRow(2, bad)));
+
+        QuoteImportValidator.Outcome out = validator.validate(sheets, ctx());
+
+        assertTrue(out.hasErrors(), "年降顺序为空必须在 Phase 1 拦截（零写库）");
+        SheetImportResult r = out.bySheet.get("来料年降");
+        assertEquals(1, r.totalRows);
+        assertEquals(0, r.successRows);
+        assertEquals(1, r.failedRows);
+        assertEquals(r.totalRows, r.successRows + r.failedRows,
+            "totalRows == successRows + failedRows 不变量必须成立");
+    }
+
+    @Test void annualDiscountOrder_blank_rejectedForAllThreeSheets() {
+        for (String sheet : List.of("来料年降", "组装加工费年降", "年降系数")) {
+            Map<String, String> bad = new LinkedHashMap<>();
+            bad.put("销售料号", "S-001");
+            bad.put("投入料号", "AgNi11");
+            bad.put("年降顺序", "");
+            Map<String, List<SheetRow>> sheets = new LinkedHashMap<>();
+            sheets.put(sheet, List.of(new SheetRow(2, bad)));
+
+            QuoteImportValidator.Outcome out = validator.validate(sheets, ctx());
+            assertTrue(out.hasErrors(), sheet + "：年降顺序为空必须被拦截");
+            assertEquals(1, out.bySheet.get(sheet).failedRows, sheet + "：失败行数应为 1");
+        }
+    }
+
+    @Test void annualDiscountOrder_present_passes() {
+        Map<String, String> ok = new LinkedHashMap<>();
+        ok.put("销售料号", "S-001");
+        ok.put("年降顺序", "1");
+        ok.put("年降系数（%/年）", "3.0");
+
+        Map<String, List<SheetRow>> sheets = new LinkedHashMap<>();
+        sheets.put("年降系数", List.of(new SheetRow(2, ok)));
+
+        QuoteImportValidator.Outcome out = validator.validate(sheets, ctx());
+        assertEquals(0, out.bySheet.get("年降系数").failedRows);
+        assertEquals(1, out.bySheet.get("年降系数").successRows);
     }
 }

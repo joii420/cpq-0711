@@ -95,6 +95,10 @@ public class QuoteImportValidator {
         validateAssemblyProcess(sheetsByName.getOrDefault("组装加工费", List.of()), processIdx, out);
         validateAssemblyAnnualDiscount(sheetsByName.getOrDefault("组装加工费年降", List.of()), processIdx, out);
 
+        // repair-0804：年降顺序三类统一必填（组装加工费年降的同名校验内联在上面那个方法里）
+        validateAnnualDiscountOrder("来料年降", sheetsByName.getOrDefault("来料年降", List.of()), out);
+        validateAnnualDiscountOrder("年降系数", sheetsByName.getOrDefault("年降系数", List.of()), out);
+
         // 其余 sheet（成品其他费用/电镀方案/年降类/单重/元素回收折扣等）：
         // 仅计数不深校验——U9 规则不改，既有 Phase 2 handler 的 recordError 仍会触发整单回滚。
         for (Map.Entry<String, List<SheetRow>> e : sheetsByName.entrySet()) {
@@ -273,6 +277,26 @@ public class QuoteImportValidator {
     }
 
     /**
+     * repair-0804：年降顺序三类统一必填。{@code discount_order} 是 annual_discount 组内
+     * <b>唯一的行区分维度</b>（在 uq_annual_discount 内），为空则同组多行撞唯一键。
+     *
+     * <p>「组装加工费年降」不走本方法 —— 它已有 {@link #validateAssemblyAnnualDiscount} 占用
+     * 自己的 sheet 结果桶，年降顺序校验内联在那里（见该方法），避免同一 sheet 被两个校验器
+     * 各记一次 totalRows 导致计数翻倍。
+     */
+    private void validateAnnualDiscountOrder(String sheetName, List<SheetRow> rows, Outcome out) {
+        SheetImportResult r = result(out, sheetName);
+        for (SheetRow row : rows) {
+            r.totalRows++;
+            if (row.getInt("年降顺序") == null) {
+                r.recordError(row.rowNo, "年降顺序", "为空（年降顺序是同一组年降内区分多行的唯一维度，必填）");
+                continue;
+            }
+            r.successRows++;
+        }
+    }
+
+    /**
      * repair-0727：一行「进入解析环节」的组装工序（已具备料号）的中间态。{@code rawProcess == null}
      * 表示该行原始值为空且业务上<b>允许</b>为空（仅 T2.4 场景，见 {@link #validateAssemblyAnnualDiscount}）；
      * 此时 {@code resolved} 恒为 {@code null} 且不计入失败。只有 {@code rawProcess != null &&
@@ -316,6 +340,10 @@ public class QuoteImportValidator {
             r.totalRows++;
             String materialNo = row.getStr("销售料号", "宏丰料号");
             if (materialNo == null) { r.recordError(row.rowNo, "宏丰料号", "为空"); continue; }
+            if (row.getInt("年降顺序") == null) {
+                r.recordError(row.rowNo, "年降顺序", "为空（年降顺序是同一组年降内区分多行的唯一维度，必填）");
+                continue;
+            }
             String rawProcess = row.getStr("组装工序");
             ProcessNoResolver.Resolved resolved = rawProcess == null ? null
                 : processNoResolver.resolve(rawProcess, idx).orElse(null);
