@@ -86,6 +86,29 @@ public class MaterialPriceReview extends PanacheEntityBase {
         return find("versionId = ?1 and materialNo = ?2", versionId, materialNo).firstResult();
     }
 
+    /**
+     * 版本被新版取代时，该版本名下「待处理」审核记录一律置「已作废」（§11.6.3.2 / 验收 #7）。
+     *
+     * <p>🔒 <b>必须带 {@code status = PENDING} 谓词</b>，不能写成"该版本下所有 review 一律
+     * VOIDED"：{@code APPROVED}/{@code REJECTED} 是<b>既成事实</b>，裁决 27 明确不回滚
+     * （testcases.md:202）。指针 {@code material_price_version_ref} 同样不动——只有该料号
+     * 后续再走一次审核才会推进。
+     *
+     * <p>写法与 {@code PriceAdjustStrategyService}「移出料号 → 作废其待处理审核」那处
+     * 复用同一个 Panache 带状态谓词批量 update 惯用法（同实体、同 PENDING→VOIDED 语义）。
+     *
+     * <p>🔒 {@code updatedAt} 绑定<b>真实 Java 值</b>而非 HQL {@code now()}——同
+     * {@link MaterialPriceUpdateJobItem#staleAllUnfinishedByJobIds} 踩过的坑：Hibernate 6 对
+     * {@code now()} 的返回类型推断为 {@code java.lang.Object}，赋给 {@code OffsetDateTime}
+     * 字段时语义校验直接拒绝（{@code SemanticException}），且该路径只在真有数据时才被执行到，
+     * 空数据下永远暴露不出来。
+     */
+    public static int voidPendingByVersion(UUID versionId) {
+        if (versionId == null) return 0;
+        return update("status = ?1, updatedAt = ?2 where versionId = ?3 and status = ?4",
+                STATUS_VOIDED, OffsetDateTime.now(), versionId, STATUS_PENDING);
+    }
+
     /** D5 反例外判定：该客户×料号是否存在过 REJECTED 记录（不限本期版本）。 */
     public static boolean hasEverRejected(String customerNo, String materialNo) {
         return count("customerNo = ?1 and materialNo = ?2 and status = ?3",

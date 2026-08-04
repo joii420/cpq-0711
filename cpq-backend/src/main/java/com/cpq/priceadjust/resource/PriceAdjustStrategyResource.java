@@ -4,6 +4,7 @@ import com.cpq.common.dto.PageResult;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.common.security.SessionHelper;
 import com.cpq.priceadjust.dto.*;
+import com.cpq.priceadjust.service.PriceAdjustComparisonColumnService;
 import com.cpq.priceadjust.service.PriceAdjustStrategyService;
 import io.vertx.core.http.HttpServerRequest;
 import jakarta.inject.Inject;
@@ -12,6 +13,7 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -28,6 +30,8 @@ import java.util.UUID;
 public class PriceAdjustStrategyResource {
 
     @Inject PriceAdjustStrategyService service;
+    /** §1.8 template-series 的实现仍在比对列服务里（它是比对列配置区的数据源），只是端点挂本类。 */
+    @Inject PriceAdjustComparisonColumnService comparisonColumnService;
     @Inject SessionHelper sessionHelper;
     @Context HttpServerRequest httpRequest;
 
@@ -102,5 +106,35 @@ public class PriceAdjustStrategyResource {
             @QueryParam("page") @DefaultValue("1") int page,
             @QueryParam("size") @DefaultValue("20") int size) {
         return service.getLogs(customerNo, page, size);
+    }
+
+    /**
+     * §1.8 屏 1 比对列配置区的模板系列选择器数据源（按客户查其 QUOTATION 模板系列）。
+     *
+     * <p>🔒 <b>2026-08-04 从 {@link PriceAdjustComparisonColumnResource} 迁来 —— 它在那里
+     * 运行时永久 404</b>。原写法是类级 {@code @Path("/api/cpq/price-adjust")} + 方法级
+     * {@code @Path("/strategies/{customerNo}/template-series")}，拼出的完整路径没错，但
+     * JAX-RS 的分发是<b>两阶段</b>的（JSR-370 §3.7.2）：先按<b>类级</b> {@code @Path} 选出
+     * 匹配最具体的资源类，<b>再</b>在该类内部找方法，<b>不回溯到其他类</b>。本类的类级路径
+     * {@code /api/cpq/price-adjust/strategies} 比它的 {@code /api/cpq/price-adjust} 更具体，
+     * 于是请求先落到本类，本类当时没有这个方法 → 404，永远到不了那边。
+     *
+     * <p><b>通则（新增端点前必查）</b>：<b>方法级路径的第一段，不得等于另一个资源类的类级
+     * 路径末段</b>。本包里 {@code /api/cpq/price-adjust} 与
+     * {@code /api/cpq/price-adjust/strategies} 是嵌套关系，因此挂在前者上的方法级路径不能以
+     * {@code /strategies} 开头（{@code /reviews} 同理，见
+     * {@link PriceAdjustReviewResource}）。
+     *
+     * <p>⚠️ 这类问题<b>编译不报错、单测不报错、grep {@code @Path} 也查不出来</b>（路径字符串
+     * 明明在），只在运行时 404。对账端点必须实跑 curl 看是否 404，不能只 grep 注解。
+     *
+     * <p>迁移后完整路径 = 类级 {@code /api/cpq/price-adjust/strategies} + 方法级
+     * {@code /{customerNo}/template-series}，与 api.md §1.8 <b>逐字不变</b>，前端零改动。
+     */
+    @GET
+    @Path("/{customerNo}/template-series")
+    @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
+    public List<TemplateSeriesDTO> listTemplateSeries(@PathParam("customerNo") String customerNo) {
+        return comparisonColumnService.listTemplateSeries(customerNo);
     }
 }
