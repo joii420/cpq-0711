@@ -115,6 +115,14 @@ public final class TreeRelations {
         return (i >= 0 && i < size) ? children.get(i) : List.of();
     }
 
+    /**
+     * 该行的树层级，原样透传 baseRow 的 {@code __lvl}。
+     *
+     * <p>🚨 <b>根节点的 lvl 是 1，不是 0</b> —— 系统既有约定，源头在
+     * {@code CostingTreeGrouping:38}（根硬编码 {@code nd.lvl = 1}），子孙按 {@code node_path}
+     * 里的 {@code /} 数递增。2026-08-03 端到端实测确认；本方法不做任何归一化，
+     * 改动前请先确认上游约定是否变化。
+     */
     public int lvl(int i) {
         return (i >= 0 && i < size) ? lvl[i] : 0;
     }

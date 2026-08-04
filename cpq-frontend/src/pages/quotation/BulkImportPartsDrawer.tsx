@@ -98,12 +98,14 @@ function buildEmptyRow(fields: ComponentField[]): Record<string, any> {
       row[f.name] = f.content ?? '';
     } else if (f.field_type === 'FORMULA' || f.field_type === 'BASIC_DATA' || f.field_type === 'DATA_SOURCE') {
       row[f.name] = null;
-    } else {
-      // INPUT_TEXT/INPUT_NUMBER 故意写 ''：默认值(default_source 实时 / 静态 content)由
-      // inputDefaults.resolveInputDefault 在渲染/计算/快照回填(ProductCard useEffect)/snapshotRows
-      // 动态给出，不在建行写死，避免与 driver 行 baseRow 不一致或把默认值误冻结成用户值。
-      row[f.name] = '';
     }
+    // INPUT_TEXT/INPUT_NUMBER/INPUT：**一个键都不写**。
+    //
+    // 意图与改动前一致（默认值由 resolveInputDefault 在渲染/计算/快照回填/snapshotRows 动态给出，
+    // 不在建行写死），但表达方式必须换 —— spec 2026-08-03「键存在即权威」把 `''` 定义为
+    // 「用户已定值为空」，此处再写 `''` 等于宣告这些格子已定值，bake effect 与 snapshotRows
+    // 的 isKeyUnset 判据会一律跳过 → **新加产品/批量导入的首行默认值永不填充**（汇率/损耗率
+    // 一类被公式引用的列会因此算成 0）。键缺失才是「从未定值」的正确表达。
   }
   return row;
 }
