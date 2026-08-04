@@ -2,7 +2,7 @@
 
 > 版本：V3.7 | 日期：2026-08-03
 >
-> **V3.7（2026-08-03，repair-0804）· 年降三 Sheet 落库统一**：§8「来料年降」、§15「组装加工费年降」原落 `unit_price`（`price_type=INCOMING_MATERIAL_REDUCTION` / `COMPONENT_REDUCTION`），§19「年降系数」原落 `annual_discount` 且无版本化/无 pending 隔离/无客户维度。本次三者收敛到单表 `annual_discount`，用 `discount_type`（`INCOMING_MATERIAL` / `ASSEMBLY_PROCESS` / `FINISHED`）区分，`target_no` 为泛化挂载目标（材质料号 / 工序编号 / NULL），统一走组级版本化 + pending 隔离，并补齐 `customer_no`、补回 `seq_no`「项次」与 `discount_times`「降价次数」。`unit_price` 两个退役 `price_type` 的存量已清除，CHECK 约束保留不动。详见 `dev-docs/task-0708-导入报价单和导入核价单的数据落库规则澄清/repair-0804-年降三sheet的入库规则/需求文档.md`。
+> **V3.7（2026-08-03，repair-0804）· 年降三 Sheet 落库统一**：§8「来料年降」、§15「组装加工费年降」原落 `unit_price`（`price_type=INCOMING_MATERIAL_REDUCTION` / `COMPONENT_REDUCTION`），§19「年降系数」原落 `annual_discount` 且无版本化/无 pending 隔离/无客户维度。本次三者收敛到单表 `annual_discount`，用 `discount_type`（`INCOMING_MATERIAL` / `ASSEMBLY_PROCESS` / `FINISHED`）区分，`target_no` 为泛化挂载目标（材质料号 / 工序编号 / NULL），统一走组级版本化 + pending 隔离，并补齐 `customer_no`、补回 `seq_no`「项次」与 `discount_times`「降价次数」。`unit_price` 两个退役 `price_type` 的存量已清除，CHECK 约束保留不动。**三个 Sheet 内同一 `(销售料号, 年降顺序[, 挂载目标])` 的重复行走「组内归并、逐字段末值非空胜」**（典型：一行填「年降系数（%）」、另一行填「单次固定年降值」），与 V3.6 给「来料回收折扣」定的口径一致，不撞唯一键报错。详见 `dev-docs/task-0708-导入报价单和导入核价单的数据落库规则澄清/repair-0804-年降三sheet的入库规则/需求文档.md`。
 >
 > **V3.6（2026-07-30，task-0730）· §9 来料回收折扣新增 项次/值/货币/计价单位 四列**：`项次→seq_no`（不必填不补号，空即 NULL）、`值→pricing_price`、`货币→currency`、`计价单位→unit`；「值」与「回收折扣（%）」**并存但必填其一**（Phase 1 拦截）；同一 `(成品料号, 投入料号, COALESCE(项次,0))` 的重复行走**组内 upsert 末值胜**，不再撞唯一键报错。`CONTENT` 同步扩为 `[seq_no, cost_ratio, pricing_price, currency, unit]`（漏加会导致「只改值不改折扣%」被静默吞掉）。**顺带修正本节两处历史漂移**：主料号列名早已由「宏丰料号」改为「销售料号」（代码有回退兼容）；投入料号的名称反查规则已被 update-0723 U10 覆盖（材质走 `material_recipe`、查无即报错，只有零件/外购件才发号）。零 DDL、零 Flyway 迁移。
 >
