@@ -2267,15 +2267,21 @@ public class FormulaCalculator {
             if (!hasCycle) continue;
             List<String> path = cyclePathIn(scc, deps);
             if (path.isEmpty()) continue;
+            // cyclePathIn 返回的是<b>显式闭合</b>形态 [A,B,A]（dfsBackTo 末尾 add(target)），
+            // 而 api.md §1 约定 nodes 首尾<b>不</b>重复（由前端渲染时自行闭合）→ 此处剥掉末节点。
+            // 不剥的话 nodes=[A,B,A] 且 edges 会多绕出一条 A→A 自环。
+            List<String> ring = (path.size() > 1 && path.get(0).equals(path.get(path.size() - 1)))
+                ? path.subList(0, path.size() - 1)
+                : path;
 
             List<FormulaCycleException.Node> ns = new ArrayList<>();
-            for (String f : path) {
+            for (String f : ring) {
                 ns.add(new FormulaCycleException.Node(componentName, f, formulaOf.get(f)));
             }
             List<FormulaCycleException.Edge> es = new ArrayList<>();
-            for (int i = 0; i < path.size(); i++) {
-                String from = path.get(i);
-                String to = path.get((i + 1) % path.size());   // 末条闭合回首节点
+            for (int i = 0; i < ring.size(); i++) {
+                String from = ring.get(i);
+                String to = ring.get((i + 1) % ring.size());   // 末条闭合回首节点
                 String viaDesc = null, viaFormula = null;
                 for (DepEdge de : edges.getOrDefault(from, List.of())) {
                     if (de.to().equals(to)) { viaDesc = de.via(); viaFormula = de.viaFormulaName(); break; }
