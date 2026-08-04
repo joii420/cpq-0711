@@ -4572,3 +4572,19 @@ E2E:
 
 **自检声明**：编译 0 错误 ✅；AC-1~AC-5 全部实测通过（见 test-report.md）✅；未触碰真实业务数据（`QT-20260726-0006` 等既存阻塞记录原样未动）✅；BACKLOG.md BL-0108 状态已更新（①②已完成、③留 TODO 注明待业务决策）✅。
 
+---
+
+[2026-08-03] task-0729 repair-0803 续集（BL-0109）—— 预算/dryRun 路径同根因 ContextNotActiveException，两层嵌套 REQUIRES_NEW 各自补 @ActivateRequestContext | `cpq-backend/src/main/java/com/cpq/priceadjust/service/PriceAdjustBudgetService.java`（`processMaterial`/`runDryRunSnapshot` 各补一个 `@ActivateRequestContext`）、`dev-docs/task-0729-.../repair-0803-报价单删除阻塞外键/{需求文档.md,test-report.md}`（续集章节追加）、`BACKLOG.md`（新登记 BL-0109） | 同分支 `fix/repair-0803-quotation-delete-fk-block` 延续（未新开），BL-0108 ①②合入 master 后测试立即撞到。
+
+**现象与验证价值**：`recompute-budget` 两次独立复现 `budget_status=FAILED`，`budget_error` 与更早那次（`executeItem`）逐字一致的 `ContextNotActiveException`——**区别是这次没伪装成 SUCCESS**，BL-0108 ② 那道"不再静默吞异常"的纵深防御第一次实战验证：完整堆栈 + `FAILED` 而非假成功，定位耗时从 8 轮排查缩短到立即看懂。coordinator 原话："这个纵深防御是这次能立刻定位的唯一原因。"
+
+**根因**：`PriceAdjustBudgetService` 内**两层嵌套** `@Transactional(REQUIRES_NEW)`（`processMaterial` 外层 → `computeBudget` 无事务注解随外层 → `runDryRunSnapshot` 内层，内层挂起外层另开一个事务）→ `materialVersionUpgradeService.upgrade(dryRun=true)` → S5 核价渲染 → `DataLoader`。`@ActivateRequestContext` 原本只挂在外部调用方（`onVersionGenerated`/`recomputeSingleReview`）身上，**两层 REQUIRES_NEW 边界本身都没有**——与 `executeItem` 的教训完全一致：request context 可用性跟着"这一层 REQUIRES_NEW 边界"走，不会从外层调用方自动透传进被挂起/新开的事务。
+
+**顺带发现（未在 coordinator 原排查表里）**：`PriceAdjustComparisonColumnService`/`PriceAdjustStrategyService` 各有一处**直接** `managedExecutor.runAsync(() -> budgetService.processMaterial(...))`，完全绕开 `onVersionGenerated`/`recomputeSingleReview` 身上挂的保护——两个独立裸入口。证明"在各外部调用方分别补"必然会漏，必须收敛到 `processMaterial`/`runDryRunSnapshot`（唯一必经的 REQUIRES_NEW 边界）本身——这样一次性覆盖全部 4 个入口（`onVersionGenerated`/`recomputeSingleReview`/`ComparisonColumnService`/`StrategyService`），包括 `PriceAdjustScheduledScanService`（`@Scheduled` → `scanAndGenerate` → `generateVersionAndEnqueueBudget` → 异步 `onVersionGenerated` → `processMaterial`，同一链路自动覆盖）。全工程 `managedExecutor.runAsync` 用法逐一核查完毕：`PriceAdjustNotificationService` 确认不涉及 `@RequestScoped`（仅注入 `NotificationService`）；`QuoteImportService`/`BasicDataImportV6Resource` 已有自己的 `@ActivateRequestContext`，不同 feature area，与本 bug 家族无关。
+
+**修法**：`processMaterial` 与 `runDryRunSnapshot` **各自**补 `@ActivateRequestContext`（两层都要补，缺一层就漏一层）。
+
+**验证（真实路径，未影响 coordinator 准备的测试环境）**：①真实 `recompute-budget` 端点重放失败 review（`494dcc28-...`）——`ContextNotActiveException` 消失；②过程中意外发现一张比 coordinator 准备的 `QT-20260803-0059` 更新的杂散测试单 `QT-20260803-0062`（并发测试遗留，非本次引入）被 `findBasisLine`"取最近一张活单"选中做基准，其陈旧 `subtotal` 触发 L3 口径守卫——**这本身是 ContextNotActiveException 已消失的证据**（报错从"渲染异常"变成"数据口径不符"，性质完全不同）；对齐该杂散单 subtotal 后 `budget_status: FAILED→READY`，`column_count=1`；③走 `@Scheduled` 同款异步派发机制复测（临时端点 `task0729-scheduled-scan-path-verify`，经 `managedExecutor.runAsync` 直接派发 `onVersionGenerated`，不新建版本/不动指针，避免 supersede coordinator 的 `V26080301` PENDING 版本）对已存在版本重放——`materials=1` 正常完成，0 次异常；验证完临时端点已移除；④`status=PENDING`+`budget_status=READY` 确认满足 `doApprove` 两个前置条件，`REVIEW_BUDGET_NOT_READY` 不再拦截。
+
+**自检**：`./mvnw -o compile` 0 错误（worktree+主仓）；后端健康 401；BACKLOG.md 新登记 BL-0109（关联 BL-0108）；未清理/未改动 coordinator 准备的测试环境本身（`QT-20260803-0059`/策略配置/`element_daily_price`/`V26080301` 原样保留），仅对齐了一张不相关杂散单的陈旧字段。
+
