@@ -4,22 +4,26 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
-import com.cpq.basicdata.v6.repository.AnnualDiscountRepository;
-import com.cpq.basicdata.v6.repository.AnnualDiscountRepository.DiscountRow;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Q19 年降系数 → annual_discount。biz_type 报价默认 INCOMING。 */
+/**
+ * Q19 年降系数 → annual_discount（{@code discount_type=FINISHED}，整单级年降）。
+ *
+ * <p>repair-0804：原走 {@code AnnualDiscountRepository} 的行级 upsert（空值不覆盖、无版本化、
+ * 无 pending 隔离、无客户维度），现统一为组级版本化写入。
+ * <p>groupKey=(QUOTE, customer_no, FINISHED, material_no, target_no=null)；行集维度=discount_order。
+ */
 @ApplicationScoped
 public class Q19AnnualDiscountHandler implements SheetHandler {
 
-    @Inject AnnualDiscountRepository repo;
+    @Inject AnnualDiscountWriter annualDiscountWriter;
 
     @Override public String sheetName() { return "年降系数"; }
 
@@ -27,34 +31,27 @@ public class Q19AnnualDiscountHandler implements SheetHandler {
     @Transactional(Transactional.TxType.MANDATORY)
     public SheetImportResult handle(List<SheetRow> rows, ImportContext ctx) {
         SheetImportResult result = new SheetImportResult(sheetName());
-        // §P1-Q19 延后批量：按冲突键 (material_no, discount_order) 去重 + 末值非空胜（逐字段），
-        // 循环后一次多值 INSERT...ON CONFLICT，与逐行 upsertOne 等价。biz_type/discount_strategy 为常量。
-        Map<String, DiscountRow> acc = new LinkedHashMap<>();
+        Map<List<Object>, Map<String, Object>> groupKeyOf = new LinkedHashMap<>();
+        Map<List<Object>, List<Map<String, Object>>> contentOf = new LinkedHashMap<>();
+
         for (SheetRow row : rows) {
             result.totalRows++;
-            try {
-                String materialNo = row.getStr("销售料号", "宏丰料号");
-                Integer order = row.getInt("年降顺序");
-                if (materialNo == null || order == null) {
-                    result.recordError(row.rowNo, "宏丰料号/年降顺序", "必填项为空");
-                    continue;
-                }
-                AnnualDiscountRepository.accDiscount(acc, new DiscountRow(
-                    materialNo, order,
-                    row.getDecimal("年降系数"),
-                    row.getDecimal("单次固定年降金额"),
-                    row.getStr("货币"),
-                    row.getStr("计价单位"),
-                    row.getInt("降价次数")));
-                result.successRows++;
-                result.recordWrite("annual_discount", 1);
-            } catch (Exception e) {
-                result.recordError(row.rowNo, "_row_", e.getMessage());
+            String materialNo = row.getStr("销售料号", "宏丰料号");
+            if (materialNo == null) { result.recordError(row.rowNo, "销售料号", "为空"); continue; }
+            // 年降顺序必填由 Phase 1 拦截；此处只做兜底（Phase 1 已全量校验，走到这里属竞态）
+            if (row.getInt("年降顺序") == null) {
+                result.recordError(row.rowNo, "年降顺序", "为空");
+                continue;
             }
+            // FINISHED 为整单级年降，无挂载目标
+            List<Object> key = Arrays.asList(materialNo, null);
+            AnnualDiscountWriter.accumulate(groupKeyOf, contentOf, key,
+                AnnualDiscountWriter.groupKey("FINISHED", ctx.customerNo, materialNo, null),
+                AnnualDiscountWriter.readContent(row));
+            result.successRows++;
         }
-        if (!acc.isEmpty()) {
-            repo.upsertBatch("INCOMING", "来料年降", new ArrayList<>(acc.values()), ctx.importedBy);
-        }
+
+        annualDiscountWriter.write(groupKeyOf, contentOf, result, ctx.pendingQuotationId);
         return result;
     }
 }
