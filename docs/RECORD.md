@@ -4348,3 +4348,15 @@ E2E:
 
 **遗留**：[[BL-0105]] 前端 `resolveRowForTree` 重复约 120 行字段解析（零回归门禁造成的有意取舍，有静默漂移风险）；[[BL-0106]] 孤儿组件标注；[[BL-0107]] EXCEL 列显式提示 + 语法高亮增强；AC-29 性能阈值待业务方定（需求 §11.5 G7）。
 
+---
+
+[2026-08-03] 基础资料/Excel导入 - repair-0804 年降三 Sheet 落库统一（annual_discount 单表化） | 涉及文件：`V377__annual_discount_unify.sql` / `AnnualDiscountWriter`(新) / Q08+Q15+Q19 三 handler / `AnnualDiscountRepository`(删) / `QuoteImportValidator` / `VersionedV6Writer` / `QuotePendingRewriter` / `QuoteTableAxis` / `V6QuotationCommitService` / `QuoteImportService` / `QuotationService` |
+
+**关键决策**：
+1) 三 Sheet 业务同构，收敛到单表 `annual_discount`，`discount_type` 判别 + 单一 `target_no` 泛化目标列（语义由 type 决定：材质料号/工序编号/NULL），名称不冗余存、由视图 JOIN 主数据取。
+2) 动手窗口：改造前三条路径均「只写不读」（0 SQL 视图 / 0 组件 / 0 Java 读者，存量仅 1 行），零迁移成本；一旦客户模板开始配年降页签，成本成倍上升。
+3) 年降系数写入语义由行级 upsert（空值不覆盖）改为组级整组替换；年降顺序三类统一必填（它是组内唯一行区分维度，为空则撞唯一键）；补齐 `customer_no`（改造前跨客户静默覆盖）。
+4) ⚠️ 新表进「版本化 + pending 俱乐部」需登记 7 处，除 `VersionedV6Writer.ALLOWED_TABLES` 外漏登记都不报编译错、只静默失效（pending 不可见 / 转不了正 / 残留孤儿 / 行数翻倍）。已加 `AnnualDiscountRegistrationPointsTest` 用反射把 7 处钉成可执行断言 —— 后续再有表进这个体系，照抄这个测试即可。
+5) 环境坑：测试库 `cpq_db` 有并发会话应用的 V368~V374（master 无文件），跑 `mvnw test` 必须带 `-Dquarkus.flyway.ignore-missing-migrations=true`；改已应用迁移的文件内容后需再加 `-Dquarkus.flyway.repair-at-start=true`。
+6) 遗留：真实 Excel 端到端验证（AC-3/4/6/8~12）须在合并 master 后执行——worktree 阶段 8081 跑的是主工作区代码，看不到本分支改动。
+
